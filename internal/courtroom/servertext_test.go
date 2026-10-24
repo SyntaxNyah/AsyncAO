@@ -4,7 +4,6 @@ package courtroom
 // reason (which is what a locked-down or whitelisting server sends), and a BB popup
 // notice. All four are attacker-controlled strings that end up in a texture and on
 // the clipboard, and all four are capped here rather than at the four consumers.
-//
 // Every gate below drives the REAL path: a Packet built by protocol.NewPacket,
 // serialized with its own escaping, parsed back by protocol.ParsePacket, and handed
 // to the real Session.HandlePacket. Nothing re-implements the cap — a test that
@@ -50,11 +49,7 @@ func oneEvent(t *testing.T, evs []Event) Event {
 
 // TestARemovalReasonArrivesWholeAndKeepsItsShape is the baseline the cap must not
 // disturb: the lockdown payload this whole change exists for, through the wire.
-//
 // It pins three things a one-line label could not carry and the cap must not eat:
-// the INTERIOR NEWLINES (a lockdown puts its access code on the last line), the
-// Cyrillic (the reported server is Russian), and the "Banned: " prefix that four
-// consumers in internal/ui match with strings.HasPrefix.
 func TestARemovalReasonArrivesWholeAndKeepsItsShape(t *testing.T) {
 	const reason = "Вы не находитесь в вайт-листе сервера.\n" +
 		"Присоединитесь к нашему Discord: https://discord.gg/n95zkcBE8h\n" +
@@ -74,14 +69,6 @@ func TestARemovalReasonArrivesWholeAndKeepsItsShape(t *testing.T) {
 }
 
 // TestARemovalReasonKeepsItsPrefixWhenTheCapBites is the ban-evasion gate.
-//
-// The cap is applied to the WIRE FIELD, before the prefix is concatenated. If it were
-// applied to the joined string instead, a small enough cap would cut into the
-// "Banned: " literal itself — and shouldAutoReconnect (internal/ui/reconnect.go)
-// decides whether to redial by matching exactly that prefix. A reason that stopped
-// matching would re-arm auto-reconnect against a ban, which is the client arguing
-// with a moderator on the user's behalf.
-//
 // So: a pathological reason must still be prefixed, still be capped, and SAY it was
 // capped. The over-cap payload is Cyrillic on purpose — see the rune gate below.
 func TestARemovalReasonKeepsItsPrefixWhenTheCapBites(t *testing.T) {
@@ -109,7 +96,6 @@ func TestARemovalReasonKeepsItsPrefixWhenTheCapBites(t *testing.T) {
 
 // TestTheServerTextCapCountsRunesNotBytes is the Cyrillic half, and it is the reason
 // clampWireBytes (profilewire.go) was not reused.
-//
 // Exactly serverTextRuneCap Cyrillic runes is TWICE that many bytes. Under a byte cap
 // this payload comes back truncated; under the rune cap it comes back whole. A
 // Russian server's whitelist notice is the shape that makes the difference real.
@@ -149,14 +135,6 @@ func TestABBNoticeReachesTheUICappedAndAnEmptyOneDoesNot(t *testing.T) {
 
 // TestAControlByteCannotTruncateAServerMessage is the scrub's behavioural gate, and the
 // attack it closes is one byte long.
-//
-// Every drawn row ends in SDL_ttf and every Copy ends in SDL_SetClipboardText, and both
-// marshal through C.CString, which is NUL-TERMINATED. A server that puts a single \x00 in
-// front of its own access code would therefore have the box draw, and Copy hand over,
-// everything before that byte and nothing after it — the same unreachable tail this whole
-// change exists to end, arriving through a different door. The scrub runs inside the cap,
-// so it is applied before the rune count and what gets counted is what can be shown.
-//
 // All four prose headers, because the scrub lives in the one shared cap and a per-case
 // hand-rolled copy is exactly what must never appear.
 func TestAControlByteCannotTruncateAServerMessage(t *testing.T) {

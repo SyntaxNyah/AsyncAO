@@ -274,12 +274,6 @@ func TestANoticeWithNoWordsStillSaysSomething(t *testing.T) {
 
 // TestEveryNoticeRowFitsInsideThePanel is the arithmetic gate on the two sizing
 // helpers, across the window sizes the client can actually be.
-//
-// serverNoticeRows and drawServerNotice derive their geometry from the same constants
-// on purpose — the trap is that they drift, so the wrap is told a budget the draw then
-// refuses to paint, and rows vanish with no marker (the draw's own break guard would
-// silently eat them). config.MinWindowH is the smallest window the client allows, so
-// it is the size that has to work, not 720.
 func TestEveryNoticeRowFitsInsideThePanel(t *testing.T) {
 	for _, h := range []int32{config.MinWindowH, 600, frameHarnessH, 1080, 2160} {
 		rows := serverNoticeRows(h)
@@ -380,7 +374,6 @@ func TestTheOneLineDropDialogKeepsItsOldShape(t *testing.T) {
 // TestTheWrappedBodyIsBakedNotRewrappedEveryFrame is the alloc gate for the seam, and
 // it measures the SEAM rather than the frame for the reason the report panel's gate
 // spells out: a whole-frame budget is large enough to swallow a per-frame rewrap.
-//
 // The modals redraw sixty times a second while they are up, and the text cannot change
 // while they are open, so the wrap must run on change only.
 func TestTheWrappedBodyIsBakedNotRewrappedEveryFrame(t *testing.T) {
@@ -484,7 +477,6 @@ func serverNoticeCloseCentre(a *App, w, h int32) (x, y int32) {
 
 // TestTheNoticeBoxDrawsThroughTheFrameAndTakesItsClicks is the wiring gate: the box has
 // to be reached by App.Frame's tail, and its buttons have to work there.
-//
 // Those are two halves of one thing. The tail fences the pointer for the whole modal
 // family and then unfences just before the box draws; delete the draw call and nothing
 // appears, delete the unfence and the box appears but is dead. Both mutations pass
@@ -522,7 +514,6 @@ func TestTheNoticeBoxDrawsThroughTheFrameAndTakesItsClicks(t *testing.T) {
 // TestTheNoticeBoxLeavesTheChromeBehindItDead is the fence, driven as a user would hit
 // it: the menu bar is painted on every screen and sits nowhere near the box, so a click
 // on it is the cleanest proof that input does not reach past the modal.
-//
 // Both directions are asserted. The same click with the box closed MUST open the menu,
 // or this gate would pass against a menu bar that is broken for unrelated reasons.
 func TestTheNoticeBoxLeavesTheChromeBehindItDead(t *testing.T) {
@@ -584,7 +575,6 @@ func TestTheNoticeBoxKeepsCourtroomHotkeysOffTheWire(t *testing.T) {
 // TestEscClosesTheNoticeBoxFirst pins the Esc rung. Esc arrives as ctx.escPressed (NOT
 // keyPressed) and is answered by closeTopOverlay, which is also the reason the box is
 // still dismissable from the keyboard while handleHotkeys is standing down.
-//
 // Priority matters: a floating panel open behind the box must survive the press that
 // closes the box, or one keystroke would tear down two layers.
 func TestEscClosesTheNoticeBoxFirst(t *testing.T) {
@@ -734,9 +724,6 @@ func TestEnterInTheICFieldIsFencedWithoutEatingTheDraft(t *testing.T) {
 // and it covers the two of its six inputs the other wrap gates leave untested: the ROW
 // BUDGET and the truncation MARK. (Width is pinned by the alloc gate above, the font
 // generation by the stale-chain gate.)
-// The mark is one step further out, and the type's own comment says why it is a key
-// rather than an argument: today both callers pass the same constant, so it reads as
-// invariant from inside either one, and the day a second marker appears a cache that
 func TestEveryWrapInputIsPartOfTheCacheKey(t *testing.T) {
 	var shared paraWrapCache
 	measure := func(s string) int32 { return int32(len(s)) * 4 }
@@ -775,12 +762,6 @@ func TestEveryWrapInputIsPartOfTheCacheKey(t *testing.T) {
 
 // TestAnOversizedAttributionCannotOverflowTheHeading is the title clamp's twin, on the
 // field that is NOT client-authored.
-//
-// server comes from a.serverName, which for a lobby entry came out of the master list's
-// JSON with no per-field length of its own, so a server can choose it. It draws through
-// LabelClipped, which rasterizes the whole string before clipping the blit — the exact
-// mechanism that made a long BD reason draw NOTHING, reproduced on the attribution row
-// of the box built to end it.
 func TestAnOversizedAttributionCannotOverflowTheHeading(t *testing.T) {
 	a := froomApp(t)
 

@@ -8,13 +8,7 @@ import (
 
 // TestFontFileIsOnlyForThemesThatNameNothing pins FontFile's SCOPE, which is the
 // whole client's font chain — not any one element's.
-//
 // A theme that names families dresses its elements individually (FontFiles, #39)
-// and must not also impose a face on menus, the lobby and settings. FontFile used
-// to return the declared MESSAGE family first, which predates per-element fonts:
-// aceattorney2x's chatbox family became the app font, while the per-element table
-// was separately applying that same face to the message anyway.
-//
 // The case it exists for survives: a theme that ships one .ttf and declares no
 // family at all still restyles the client (the original #6 request).
 func TestFontFileIsOnlyForThemesThatNameNothing(t *testing.T) {
@@ -317,17 +311,8 @@ music_name_color = 4, 5, 6
 // internal/ui indexes its resolved per-element table by POSITION in this list, so
 // an identifier inserted or reordered silently hands every later element another's
 // family, size, bold and colour.
-//
-// Expressed as a frozen prefix rather than one flat expected list on purpose. A
-// flat list makes an append and an insert look identical — both are just "the
-// literal changed", and the reviewer's only defence is noticing which line moved.
-// This way an APPEND is a deliberate one-line addition to `added`, while an INSERT
-// fails loudly against the frozen prefix.
-//
 // The order is NOT AO2's set_fonts call order, and never was — AO2 calls
 // music_name after area_list (courtroom.cpp:1201-1202). It does not need to be:
-// the pairing that must hold is with internal/ui's themeFontElem enum, which
-// TestThemeFontElemOrder pins from the other side.
 func TestFontElementsIsAppendOnly(t *testing.T) {
 	// Frozen: these seven shipped first, in this order. Never edit this slice —
 	// only ever append to `added`.
@@ -364,15 +349,11 @@ func TestFontFileNoneWhenThemeShipsNoFont(t *testing.T) {
 }
 
 // TestSharpAcceptsOnlyLiteralOne pins the exact polarity of the _sharp read.
-//
-// The key reads like a boolean and every instinct says to parse it as one, but
-// AO2 is `bool antialias = get_design_element(id + "_sharp", ...) != "1"`
 // (courtroom.cpp:1237). Only the literal string "1" disables antialiasing —
 // "true", "yes" and "0" all leave it ON. Widening this to a boolean parser would
 // flip exactly the elements a theme deliberately left smooth: aceattorney2x
 // writes ic_chatlog_sharp = 0 and music_name_sharp = 0 on purpose, and under a
 // permissive parser "0" would read as "declared, therefore sharp".
-//
 // Goes red if theme.go's `raw == "1"` becomes strconv.ParseBool, `raw != "0"`, or
 // anything that trims and re-interprets the value.
 func TestSharpAcceptsOnlyLiteralOne(t *testing.T) {

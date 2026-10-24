@@ -1292,9 +1292,6 @@ func TestOOCScaleIndependent(t *testing.T) {
 // on the corrupt-file quarantine path), so the "no stored value ⇒ inherit the log
 // size" overlay never runs there. OOCScalePct had no entry in the defaults block,
 // so a brand-new install got 0 — and 0 is not "absent" once it leaves this package:
-// the UI hands it straight to the font builder, which floors the point size at 1 px
-// and renders the whole OOC log unreadable (and, because the IC log asks the same
-// shared set for 100%, rebuilds that set twice per frame).
 func TestOOCScaleFirstRunDefault(t *testing.T) {
 	fresh, err := load(filepath.Join(t.TempDir(), "does-not-exist.json"))
 	if err != nil {
@@ -1848,9 +1845,6 @@ func TestAutoReconnectDefaultPullback(t *testing.T) {
 // so a file from an older build carries a baked textCrawlMs:18 that a bare default
 // change would never reach — only the absent stamp can tell "written before the
 // move" from "deliberately 18". Four properties, one per sub-test:
-//  1. it fires exactly once — an un-stamped file lands on the new default;
-//  2. it is VALUE-AWARE — an un-stamped file holding any OTHER value keeps it,
-//     because the saver always wrote the field, so that value is a deliberate pick;
 func TestBlipSpeedDefaultMove(t *testing.T) {
 	// Pinned to the package constant, not a loose literal: if the pre-move default
 	// is ever restated, this test must move with the migration it guards.
@@ -1966,7 +1960,6 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 // having no state distinguishable from its default — the flip cannot be
 // value-aware: it is the AutoReconnect pull-back's shape, mirrored. Four
 // properties, one per sub-test:
-//  1. the flip fires on an un-stamped file — its explicit false is forced ON;
 func TestDeskManifestDefaultFlip(t *testing.T) {
 	t.Run("an un-stamped file is flipped to follow the manifest", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -2069,9 +2062,6 @@ func TestDeskManifestDefaultFlip(t *testing.T) {
 // always written, so a file from an older build carries an explicit false that a
 // bare default change could never reach, and a bool has no state distinguishable
 // from its default, so the flip cannot be value-aware.
-// Four properties, one per sub-test — the fourth is why prefsJSON.DetailedLog
-// became a *bool: as a plain bool, absent would decode to false and silently turn
-// logging back OFF for a stamped file whose key had been hand-trimmed.
 func TestDetailedLogDefaultFlip(t *testing.T) {
 	t.Run("an un-stamped file is flipped ON", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -2267,7 +2257,6 @@ func TestSmoothLogScrollPref(t *testing.T) {
 }
 
 // TestThemeFitModeRoundTrip walks EVERY theme-fit mode through save → load.
-//
 // It exists because the load overlay clamps the on-disk mode, and that clamp's
 // upper bound used to be a hard-coded ThemeFitCustom: appending ThemeFitNative
 // without moving the bound would have clamped the new default straight back to
@@ -2321,9 +2310,6 @@ func TestThemeFitModeRoundTrip(t *testing.T) {
 // only the absent stamp can tell them apart, and a bare default flip would
 // therefore reach nobody who has ever saved preferences. A stamped file is
 // respected as-is, so a user who deliberately picks Stretch afterwards keeps it.
-// The move is VALUE-AWARE, unlike its auto-reconnect sibling: it only touches a
-// file still sitting on the OLD default. Since Stretch WAS that default and the
-// saver always wrote the field, any other stored mode is provably a deliberate
 func TestThemeFitDefaultMove(t *testing.T) {
 	old := filepath.Join(t.TempDir(), PrefsFileName)
 	if err := os.WriteFile(old, []byte(`{"themeFit": 0}`), 0o600); err != nil {
@@ -2427,8 +2413,6 @@ func TestThemeFitDefaultMove(t *testing.T) {
 // not even exist yet), so a launch that ends inside the debounce window — a
 // crash, a kill, a fast quit — used to leave the file unstamped and run the
 // migration, and the one-time window snap it arms, all over again next launch.
-// The migrating launch therefore flushes the file synchronously before the app
-// gets to run.
 func TestThemeFitStampIsDurableWithoutAClose(t *testing.T) {
 	path := filepath.Join(t.TempDir(), PrefsFileName)
 	if err := os.WriteFile(path, []byte(`{"themeFit": 0}`), 0o600); err != nil {
@@ -2521,7 +2505,6 @@ func TestThemeFitDefaultMoveStampsOnce(t *testing.T) {
 
 // TestSpriteScalingMigratesEveryoneToAuto pins owner decision D2: the move to
 // Auto reaches EXISTING users, not just fresh installs.
-//
 // The old client had one client-wide linear filter, so a saved smoothScaling:true
 // is not a considered choice about per-sprite behaviour — it is the default nobody
 // touched. Respecting it as if it were a decision would leave every character

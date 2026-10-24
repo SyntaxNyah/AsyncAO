@@ -15,15 +15,6 @@ import (
 // QFontMetrics::lineSpacing() == leading() + height() (qfontmetrics.html), i.e. the
 // glyph box PLUS the designer's inter-line gap. FontLineSpacing (linespacing.go) is
 // the one place that decision is made now.
-//
-// THESE TESTS NEED A FACE WITH A LEADING, and none of the fonts reachable from this
-// module has one. Measured at 18 pt through SDL_ttf: Go Regular 21/21, Go Bold 21/21,
-// Go Mono 21/21 and the bundled OpenDyslexic 33/33 all report LineSkip == Height, i.e.
-// zero leading; of the faces a theme would plausibly bind on Windows only Times (+1),
-// Calibri (+4), Consolas (+4) and the bundled Twemoji (+2) have any. So driving the
-// raster with the default test face proves NOTHING — max(Height, LineSkip) == Height
-// there, and the pre-fix code that stacked by Height() passes every assertion below.
-// leadingFace builds the discriminating fixture instead (see its doc).
 
 // gapUnitsPerEmSample is the hhea lineGap, in the font's own design units, that
 // leadingFace authors into its copy of Go Regular. Go Regular's unitsPerEm is 2048, so
@@ -37,12 +28,7 @@ const gapUnitsPerEmSample = 500
 // was about: FreeType derives FT_Face.height (what TTF_FontLineSkip reports) as
 // ascender - descender + lineGap, while TTF_FontHeight is ascender - descender alone, so
 // authoring a lineGap is the minimal, honest way to produce LineSkip > Height.
-//
 // It is built here rather than borrowed from internal/ui/fonts (Twemoji does have +2 px)
-// so this package's tests do not reach into a sibling's assets, and so the fixture states
-// its own premise: patch ONE field and the two SDL_ttf metrics must diverge by exactly it.
-// Checksums are deliberately not recomputed — FreeType does not verify them, and a test
-// that had to re-checksum would be re-implementing sfnt rather than driving the metric.
 func leadingFace(t testing.TB, size int) *ttf.Font {
 	t.Helper()
 	data := append([]byte(nil), goregular.TTF...)

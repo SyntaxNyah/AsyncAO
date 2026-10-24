@@ -9,12 +9,10 @@ import (
 
 // TestDeskDrawnTable pins #44's decision function across the full cross product
 // of desk_mod × phase × what we know about the desk image.
-//
 // The DeskUnresolved/DeskResolved columns must reproduce the existing deskVisible
 // table VERBATIM (a regression guard on TestDeskVisiblePhaseMatrix): a desk we have
 // not been told is missing behaves exactly as it did before the fix, so a real desk
 // that is merely still streaming never blinks.
-//
 // The DeskAbsent column must be false for EVERY mod — including DeskShow, and
 // including the unknown-mod default that deskVisible answers "true" to. That is
 // AO2-Client's set_scene: it computes show_desk from desk_mod and then clears it
@@ -136,12 +134,6 @@ func TestMissingDesksBounded(t *testing.T) {
 
 // TestBackgroundChangeReDerivesDesk pins the reported "the background is missing
 // its desk on purpose, but the default desk appears anyway".
-//
-// ShowDesk is derived from the DESK BASE's residency. setBackground rewrites that
-// base and used to leave ShowDesk alone, so a room whose desk 404s inherited the
-// PREVIOUS room's answer and kept drawing its desk — for the rest of the message,
-// because a settled message has no further phase edge to correct it.
-//
 // It also pins the hazard: applyDeskMods recomputes PairActive and the speaker
 // offsets from c.current too, so re-deriving at the WRONG phase would flip pair
 // state mid-preanim. Passing the current phase must leave both untouched.
@@ -195,13 +187,6 @@ func TestBackgroundChangeWithNoMessageIsSafe(t *testing.T) {
 }
 
 // TestLateDeskUploadHealsTheMissingSet pins the other half of the desk state.
-//
-// missingDesks was insert-only, so a desk that 404'd once stayed absent for the
-// life of the Courtroom — even after it actually arrived (a server repack, a
-// local mount added, a format learned). The RENDER side already self-heals
-// (TextureStore.clearMissing on upload), so the two disagreed: the texture was
-// resident and ShowDesk still said no, for the rest of the session.
-//
 // It also makes DeskResolved a real state. It was declared and unreachable.
 func TestLateDeskUploadHealsTheMissingSet(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)

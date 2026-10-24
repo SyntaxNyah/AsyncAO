@@ -1,19 +1,7 @@
 package theme
 
 // SWAPPING A TIER ON A THEME THAT IS ALREADY ON DISK (v1.90.0 W9).
-//
-// ONE concern: the round trip the gallery's Apply button actually performs —
-// build, SAVE, reopen, apply another tier, SAVE, reopen — and the property that
-// the last reopen holds the theme the model held.
-//
 // It exists because every other gate in the wave measured a step short of it.
-// TestAMergedThemeReadsBackAsItself merges over a NIL base, which is the one case
-// with an empty carrier and therefore the one case where a stale section is
-// structurally impossible; TestPresetApplyThenUndoRestoresExactly compares the
-// bytes before and after an undo, and a section that is stale on BOTH sides
-// cancels out of that comparison exactly. Measured before the fix: 35 elements
-// written, 70 read back, and the worst shipped re-style reloading at 97 against
-// ElementCap = 96 — a theme the reader REFUSES the moment its author reopens it.
 
 import (
 	"strings"
@@ -179,7 +167,6 @@ func TestATierApplyLeavesNoTraceOfTheTierItReplaced(t *testing.T) {
 // TestAnElementBothStylesDeclareReloadsAsTheNewOne is the half of the clear that
 // a count can never see, and the one the shipped set actually hits: `chat_frame`
 // exists in more than one style fragment.
-//
 // The writer only writes a key when the MODEL has something to say about it (an
 // empty value leaves the author's line exactly as it is — setKey's first clause),
 // so an old element's section left standing under a new element of the same name
@@ -233,7 +220,6 @@ func sharedElementIDs(a, b *Preset) []string {
 // TestATierApplyOnlyClearsWhatItsAxisOwns is the ENCAPSULATION gate for the clear
 // (hard rule 11). "Replace the tier" is a wholesale act, so the fence around it is
 // the only thing between a style apply and someone's layout.
-//
 // It drives the real merge over a HAND-AUTHORED theme, because everything the
 // fence protects — an author's own pane, their comment, a manifest entry — is
 // exactly what a preset-built theme has none of.
