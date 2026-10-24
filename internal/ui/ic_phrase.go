@@ -19,7 +19,7 @@ import (
 // refreshICPhraseKeys re-reads the global key→IC-phrase binds into the per-frame
 // lookup cache (connect + bind edits only, never per frame).
 func (a *App) refreshICPhraseKeys() {
-	a.icPhraseKeys = a.d.Prefs.Load().ICPhraseBinds()
+	a.courtkeys.icPhraseKeys = a.d.Prefs.Load().ICPhraseBinds()
 }
 
 // handleICPhraseKeys sends a bound IC phrase on Alt+<bound key> in the courtroom
@@ -32,7 +32,7 @@ func (a *App) handleICPhraseKeys() bool {
 	if k == 0 {
 		return false
 	}
-	phrase, ok := a.icPhraseKeys[strings.ToLower(sdl.GetKeyName(k))]
+	phrase, ok := a.courtkeys.icPhraseKeys[strings.ToLower(sdl.GetKeyName(k))]
 	if !ok || a.link.sess == nil {
 		return false
 	}
@@ -61,21 +61,21 @@ func (a *App) sendICPhrase(phrase string) {
 // binds key → the typed IC phrase; Esc cancels. Runs every frame from the main
 // poll loop so it captures even while Settings is up. Mirrors pollShownameBind.
 func (a *App) pollICPhraseBind() {
-	if a.icPhraseBindFor == "" {
+	if a.courtkeys.icPhraseBindFor == "" {
 		return
 	}
 	c := a.ctx
 	if c.escPressed {
-		a.icPhraseBindFor = ""
+		a.courtkeys.icPhraseBindFor = ""
 		return
 	}
 	if c.keyPressed == 0 {
 		return
 	}
 	key := strings.ToLower(sdl.GetKeyName(c.keyPressed))
-	a.d.Prefs.SetICPhraseKey(key, a.icPhraseBindFor)
-	a.debug.push(fmt.Sprintf("key %q now sends IC: %q", key, a.icPhraseBindFor))
-	a.icPhraseBindFor = ""
+	a.d.Prefs.SetICPhraseKey(key, a.courtkeys.icPhraseBindFor)
+	a.debug.push(fmt.Sprintf("key %q now sends IC: %q", key, a.courtkeys.icPhraseBindFor))
+	a.courtkeys.icPhraseBindFor = ""
 	a.refreshICPhraseKeys()
 }
 
@@ -107,12 +107,12 @@ func (a *App) drawICPhraseSettings(y, w int32) int32 {
 	// Editor: the phrase + a key-capture button (the next key binds to this line).
 	settings.icPhrase, _ = c.TextField("icphrase", sdl.Rect{X: pad, Y: y, W: a.formW - 130, H: fieldH}, settings.icPhrase, "what your character says, e.g. Happy Pride Month")
 	keyLabel := "Bind key"
-	if a.icPhraseBindFor != "" {
+	if a.courtkeys.icPhraseBindFor != "" {
 		keyLabel = "press..."
 	}
 	if c.Button(sdl.Rect{X: a.formX + a.formW - 124, Y: y, W: 118, H: btnH}, keyLabel) {
 		if p := strings.TrimSpace(settings.icPhrase); p != "" {
-			a.icPhraseBindFor = p // arm: pollICPhraseBind binds the next key to this line
+			a.courtkeys.icPhraseBindFor = p // arm: pollICPhraseBind binds the next key to this line
 			a.ctx.focusID = ""
 			settings.icPhrase = ""
 			settings.statusLine = "Press a key to bind that IC phrase (Esc cancels)."

@@ -493,8 +493,8 @@ func (a *App) pollThemeApply() {
 	// until demandAsset's per-slot retry window elapses. Force a fresh
 	// re-demand so the emote grid heals immediately after a theme switch
 	// (the same invariant pollCharINI applies on a character change).
-	a.emoteBtnOff, a.emoteBtnOn, a.emoteIconPages = nil, nil, nil
-	a.emotepick.emoteAsk, a.emoteIconAsk = nil, nil
+	a.rcache.emoteBtnOff, a.rcache.emoteBtnOn, a.rcache.emoteIconPages = nil, nil, nil
+	a.emotepick.emoteAsk, a.rcache.emoteIconAsk = nil, nil
 	// #35: last, because it needs the geometry landed above (themeRectsOrig) and
 	// because a resize is the most disruptive thing this function can do. No-op
 	// unless THIS apply's generation is the one a user-initiated pick armed —

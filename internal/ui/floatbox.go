@@ -113,7 +113,7 @@ var panelSlotTable = []panelSlot{
 	// panel that isn't on screen.
 	{slotPanelMod, func(a *App) *floatWin { return &a.wins.modWin }, modDashW, modDashH, modDashMinW, modDashMinH, func(a *App) bool { return a.modUI.showModDash && a.banBox.kind == 0 }},
 	{slotPanelCM, func(a *App) *floatWin { return &a.wins.cmWin }, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, func(a *App) bool { return a.modUI.showCMPanel }},
-	{slotPanelHK, func(a *App) *floatWin { return &a.wins.hkWin }, hkSheetDefW, panelNomHKH, hkSheetMinW, hkSheetMinH, func(a *App) bool { return a.showHotkeys }},
+	{slotPanelHK, func(a *App) *floatWin { return &a.wins.hkWin }, hkSheetDefW, panelNomHKH, hkSheetMinW, hkSheetMinH, func(a *App) bool { return a.courtkeys.showHotkeys }},
 	{slotPanelEvid, func(a *App) *floatWin { return &a.wins.evidWin }, evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, func(a *App) bool { return a.showEvid }},
 	{slotPanelModcall, func(a *App) *floatWin { return &a.wins.modcallWin }, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, func(a *App) bool { return a.showModcall }},
 	{slotPanelVoice, func(a *App) *floatWin { return &a.wins.voiceWin }, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, func(a *App) bool { return a.showVoice }},
@@ -283,15 +283,15 @@ func (a *App) blockingCourtPopup() bool {
 // torn-off tab for it read as "the emoji button makes all the areas disappear"
 // in the playtest.
 func (a *App) courtModalOpen() bool {
-	return a.blockingCourtPopup() || a.showEmojiPicker
+	return a.blockingCourtPopup() || a.emoji.showEmojiPicker
 }
 
 // capturingKey reports whether ANY key-bind capture is armed (hotkey, showname,
 // jukebox, macro, IC-phrase, style-preset, hold-to-clear). Those use Esc to
 // CANCEL, so the global Esc handler must stand down while one is active.
 func (a *App) capturingKey() bool {
-	return a.bindingFor != "" || a.shownameBindFor != "" || a.jukebox.jukeBindFor != "" ||
-		a.icPhraseBindFor != "" || a.stylePresetBindFor != "" || a.holdKeyArmed ||
+	return a.courtkeys.bindingFor != "" || a.courtkeys.shownameBindFor != "" || a.jukebox.jukeBindFor != "" ||
+		a.courtkeys.icPhraseBindFor != "" || a.courtkeys.stylePresetBindFor != "" || a.holdKeyArmed ||
 		a.voicePTTBindArmed || a.macroBind >= 0
 }
 
@@ -422,10 +422,10 @@ func (a *App) closeTopOverlay() bool {
 		a.rosterMenuOpen = false // the player-row … menu (anchored popup, like the pickers)
 	case a.musicMenuOpen:
 		a.musicMenuOpen = false // the music panel's ⋮ menu (same anchored-popup contract)
-	case a.showEmojiPicker:
-		a.showEmojiPicker = false
-	case a.showReactPicker:
-		a.showReactPicker = false
+	case a.emoji.showEmojiPicker:
+		a.emoji.showEmojiPicker = false
+	case a.reactUI.showReactPicker:
+		a.reactUI.showReactPicker = false
 	case a.bgPick.show:
 		a.bgPick.show = false
 	case a.showIni:
@@ -436,8 +436,8 @@ func (a *App) closeTopOverlay() bool {
 		a.toolbox.toolboxPieces = false // A1: Esc closes the pinned per-piece panel first
 	case a.pairbox.pairPopupOpen:
 		a.pairbox.pairPopupOpen = false
-	case a.showHotkeys:
-		a.showHotkeys, a.hkCache = false, nil
+	case a.courtkeys.showHotkeys:
+		a.courtkeys.showHotkeys, a.courtkeys.hkCache = false, nil
 	// Non-blocking floating panels.
 	case a.showVoice:
 		a.showVoice = false
@@ -690,7 +690,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.showVoice && pointIn(mx, my, a.voicePanelRect(w, h)) { // Voice box — clicks must not fall through to the area list (was swapping rooms)
 		return true
 	}
-	if a.showHotkeys && pointIn(mx, my, a.hkSheetRect(w, h)) { // the floating hotkey sheet fences too
+	if a.courtkeys.showHotkeys && pointIn(mx, my, a.hkSheetRect(w, h)) { // the floating hotkey sheet fences too
 		return true
 	}
 	// The three ex-modals (#31). They fence by footprint now instead of by taking the

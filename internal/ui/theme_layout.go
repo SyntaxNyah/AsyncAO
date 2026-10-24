@@ -1113,7 +1113,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	}
 	if r, ok := lay.rect("asyncao_ic_emoji"); ok && !a.classic.panelHidden(slotICEmoji) {
 		if a.drawEmojiBarButton(r) {
-			a.showEmojiPicker = !a.showEmojiPicker
+			a.emoji.showEmojiPicker = !a.emoji.showEmojiPicker
 		}
 	}
 	if nameR, ok := lay.rect("ao2_ic_chat_name"); ok {

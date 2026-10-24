@@ -786,24 +786,24 @@ func (a *App) drawSettingsHotkeys(y, _ int32) int32 {
 		key := a.hotkeyFor(def.id)
 		lbl := "Ctrl+" + strings.ToUpper(key)
 		switch {
-		case a.hkCapture == def.id:
+		case a.courtkeys.hkCapture == def.id:
 			lbl = "press a key…"
 		case key == "":
 			lbl = "(unset)"
 		}
 		br := sdl.Rect{X: hx + 198, Y: y, W: 110, H: btnH}
 		if c.Button(br, lbl) {
-			a.hkCapture = def.id // arm capture for this action
-			a.bindingFor = ""    // don't also arm a character keybind
-			c.focusID = ""       // the capture owns the next keypress
+			a.courtkeys.hkCapture = def.id // arm capture for this action
+			a.courtkeys.bindingFor = ""    // don't also arm a character keybind
+			c.focusID = ""                 // the capture owns the next keypress
 		}
 		if c.rightClicked && c.hovering(br) {
 			a.d.Prefs.SetHotkey(def.id, "") // reset to the built-in default
-			if a.hkCapture == def.id {
-				a.hkCapture = ""
+			if a.courtkeys.hkCapture == def.id {
+				a.courtkeys.hkCapture = ""
 			}
 		}
-		if a.hkCapture != def.id && hkConflicts[key] {
+		if a.courtkeys.hkCapture != def.id && hkConflicts[key] {
 			c.Border(br, ColDanger) // clash: another action shares this key
 			c.Tooltip(br, "Ctrl+"+strings.ToUpper(key)+" is bound to more than one action — only the first fires. Rebind one.")
 		}

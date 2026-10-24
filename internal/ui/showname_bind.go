@@ -16,42 +16,42 @@ import (
 // refreshShownameKeys re-reads the global showname binds into the per-frame
 // lookup caches (startup + bind edits only — never per frame).
 func (a *App) refreshShownameKeys() {
-	a.shownameKeys = a.d.Prefs.Load().ShownameKeyBinds()
-	if len(a.shownameKeys) == 0 {
-		a.shownameKeysRev = nil
+	a.courtkeys.shownameKeys = a.d.Prefs.Load().ShownameKeyBinds()
+	if len(a.courtkeys.shownameKeys) == 0 {
+		a.courtkeys.shownameKeysRev = nil
 		return
 	}
-	a.shownameKeysRev = make(map[string]string, len(a.shownameKeys))
-	for k, sn := range a.shownameKeys {
-		a.shownameKeysRev[strings.ToLower(sn)] = k
+	a.courtkeys.shownameKeysRev = make(map[string]string, len(a.courtkeys.shownameKeys))
+	for k, sn := range a.courtkeys.shownameKeys {
+		a.courtkeys.shownameKeysRev[strings.ToLower(sn)] = k
 	}
 }
 
 // shownameKeyFor reports the key bound to a showname ("" = none) — the Settings
 // preset-list badge lookup.
 func (a *App) shownameKeyFor(showname string) string {
-	return a.shownameKeysRev[strings.ToLower(showname)]
+	return a.courtkeys.shownameKeysRev[strings.ToLower(showname)]
 }
 
 // pollShownameBind completes an armed Settings key-capture: the next plain
 // keypress binds key → the chosen showname; Esc cancels. Runs every frame from
 // the main poll loop, so it captures even while the Settings screen is up.
 func (a *App) pollShownameBind() {
-	if a.shownameBindFor == "" {
+	if a.courtkeys.shownameBindFor == "" {
 		return
 	}
 	c := a.ctx
 	if c.escPressed {
-		a.shownameBindFor = ""
+		a.courtkeys.shownameBindFor = ""
 		return
 	}
 	if c.keyPressed == 0 {
 		return
 	}
 	key := strings.ToLower(sdl.GetKeyName(c.keyPressed))
-	a.d.Prefs.SetShownameKeyBind(key, a.shownameBindFor)
-	a.debug.push(fmt.Sprintf("key %q now sets showname %q", key, a.shownameBindFor))
-	a.shownameBindFor = ""
+	a.d.Prefs.SetShownameKeyBind(key, a.courtkeys.shownameBindFor)
+	a.debug.push(fmt.Sprintf("key %q now sets showname %q", key, a.courtkeys.shownameBindFor))
+	a.courtkeys.shownameBindFor = ""
 	a.refreshShownameKeys()
 }
 
@@ -64,7 +64,7 @@ func (a *App) handleShownameKeys() bool {
 	if k == 0 {
 		return false
 	}
-	sn, ok := a.shownameKeys[strings.ToLower(sdl.GetKeyName(k))]
+	sn, ok := a.courtkeys.shownameKeys[strings.ToLower(sdl.GetKeyName(k))]
 	if !ok {
 		return false
 	}

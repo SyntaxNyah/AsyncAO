@@ -35,14 +35,14 @@ type hkEntry struct {
 // shows a key that just moved.
 func (a *App) consumeHotkeyCapture() {
 	c := a.ctx
-	if a.hkCapture == "" || c.keyPressed == 0 {
+	if a.courtkeys.hkCapture == "" || c.keyPressed == 0 {
 		return
 	}
 	if c.keyPressed != sdl.K_ESCAPE {
-		a.d.Prefs.SetHotkey(a.hkCapture, strings.ToLower(sdl.GetKeyName(c.keyPressed)))
-		a.hkCache = nil
+		a.d.Prefs.SetHotkey(a.courtkeys.hkCapture, strings.ToLower(sdl.GetKeyName(c.keyPressed)))
+		a.courtkeys.hkCache = nil
 	}
-	a.hkCapture = ""
+	a.courtkeys.hkCapture = ""
 	c.keyPressed = 0
 }
 
@@ -106,9 +106,9 @@ func (a *App) hotkeyCheatEntries() []hkEntry {
 	// bare letter (bareBindKey, qol.go — the Discord focus model gave every plain
 	// letter to the IC input), so the rows say so: a sheet that still printed a
 	// bare "M" would be advertising a key that no longer does anything.
-	out = appendKeyMapSection(out, "Character keys", a.charKeys, "Wear: ")
-	out = appendKeyMapSection(out, "Showname keys", a.shownameKeys, "Showname: ")
-	out = appendKeyMapSection(out, "IC phrases", a.icPhraseKeys, "IC: ")
+	out = appendKeyMapSection(out, "Character keys", a.courtkeys.charKeys, "Wear: ")
+	out = appendKeyMapSection(out, "Showname keys", a.courtkeys.shownameKeys, "Showname: ")
+	out = appendKeyMapSection(out, "IC phrases", a.courtkeys.icPhraseKeys, "IC: ")
 	return out
 }
 
@@ -139,6 +139,6 @@ func appendKeyMapSection(out []hkEntry, header string, binds map[string]string, 
 // opened sheet reflects the current bindings. Used by the Extras menu entry; the
 // F1 toggle rebuilds the same way on its on-transition.
 func (a *App) openHotkeyCheatSheet() {
-	a.showHotkeys = true
-	a.hkCache = a.hotkeyCheatEntries()
+	a.courtkeys.showHotkeys = true
+	a.courtkeys.hkCache = a.hotkeyCheatEntries()
 }

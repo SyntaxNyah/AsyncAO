@@ -1667,14 +1667,14 @@ func (a *App) inputFieldH() int32 {
 // ensureCharLower keeps the lowercase name cache in sync with the char
 // list (shared by char select filtering and the pairing search).
 func (a *App) ensureCharLower() {
-	if a.link.sess == nil || len(a.charLower) == len(a.link.sess.Chars) {
+	if a.link.sess == nil || len(a.charsel.charLower) == len(a.link.sess.Chars) {
 		return
 	}
-	a.charLower = make([]string, len(a.link.sess.Chars))
-	a.charHoverIDs = make([]string, len(a.link.sess.Chars))
+	a.charsel.charLower = make([]string, len(a.link.sess.Chars))
+	a.charsel.charHoverIDs = make([]string, len(a.link.sess.Chars))
 	for i := range a.link.sess.Chars {
-		a.charLower[i] = strings.ToLower(a.link.sess.Chars[i].Name)
-		a.charHoverIDs[i] = charHoverIDPrefix + a.link.sess.Chars[i].Name
+		a.charsel.charLower[i] = strings.ToLower(a.link.sess.Chars[i].Name)
+		a.charsel.charHoverIDs[i] = charHoverIDPrefix + a.link.sess.Chars[i].Name
 	}
 }
 
@@ -1688,8 +1688,8 @@ const charHoverIDPrefix = "char:"
 // ensureCharLower, but this is a DRAW loop, and paying one allocation on a path that
 // should be unreachable beats panicking the client if it ever is reached.
 func (a *App) charHoverID(i int) string {
-	if i >= 0 && i < len(a.charHoverIDs) {
-		return a.charHoverIDs[i]
+	if i >= 0 && i < len(a.charsel.charHoverIDs) {
+		return a.charsel.charHoverIDs[i]
 	}
 	if a.link.sess == nil || i < 0 || i >= len(a.link.sess.Chars) {
 		return charHoverIDPrefix
@@ -1701,15 +1701,15 @@ func (a *App) charHoverID(i int) string {
 // changes. The concat used to run every frame on a screen that is otherwise pure
 // integer layout.
 func (a *App) charSelectTitle() string {
-	if a.charSelTitle != "" && a.charSelTitleFor == a.srvMeta.serverName {
-		return a.charSelTitle
+	if a.charsel.charSelTitle != "" && a.charsel.charSelTitleFor == a.srvMeta.serverName {
+		return a.charsel.charSelTitle
 	}
-	a.charSelTitleFor = a.srvMeta.serverName
-	a.charSelTitle = charSelectHeading
+	a.charsel.charSelTitleFor = a.srvMeta.serverName
+	a.charsel.charSelTitle = charSelectHeading
 	if a.srvMeta.serverName != "" {
-		a.charSelTitle = charSelectHeading + " — " + a.srvMeta.serverName
+		a.charsel.charSelTitle = charSelectHeading + " — " + a.srvMeta.serverName
 	}
-	return a.charSelTitle
+	return a.charsel.charSelTitle
 }
 
 // Background runs the per-frame engine work without drawing — the main

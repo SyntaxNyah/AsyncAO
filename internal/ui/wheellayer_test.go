@@ -78,7 +78,7 @@ func TestHkSheetFencesPointer(t *testing.T) {
 	a := testTabApp(t)
 	const w, h = int32(1280), int32(720)
 
-	a.showHotkeys = true
+	a.courtkeys.showHotkeys = true
 	r := a.hkSheetRect(w, h)
 	a.ctx.mouseX, a.ctx.mouseY = r.X+r.W/2, r.Y+r.H/2
 	if !a.hkSheetFencesPointer(w, h) {
@@ -96,7 +96,7 @@ func TestHkSheetFencesPointer(t *testing.T) {
 	}
 	a.wins.hkWin.dragging = false
 
-	a.showHotkeys = false
+	a.courtkeys.showHotkeys = false
 	a.ctx.mouseX, a.ctx.mouseY = r.X+r.W/2, r.Y+r.H/2
 	if a.hkSheetFencesPointer(w, h) {
 		t.Fatal("a closed sheet must never fence")

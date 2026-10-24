@@ -1739,7 +1739,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	emojiGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, fH+4, tailReserve)
 	if icOptionalDraws(emojiGuardOK, emojiOv, a.classic.classicEdit, a.classic.panelHidden(slotICEmoji)) {
 		if a.drawEmojiBarButton(a.slotRect(slotICEmoji, sdl.Rect{X: icX, Y: rowY, W: fH, H: fH}, w, h)) {
-			a.showEmojiPicker = !a.showEmojiPicker
+			a.emoji.showEmojiPicker = !a.emoji.showEmojiPicker
 		}
 		icX += fH + 4
 	}

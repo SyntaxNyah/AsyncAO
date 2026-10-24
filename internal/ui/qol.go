@@ -210,20 +210,20 @@ func (a *App) hotkeyConflictKeys() map[string]bool {
 // refreshCharKeys re-reads this server's character keybinds into the
 // per-frame lookup caches (connect + bind edits only — never per frame).
 func (a *App) refreshCharKeys() {
-	a.charKeys = a.d.Prefs.Load().CharKeyBinds(a.srvMeta.serverKey)
-	if len(a.charKeys) == 0 {
-		a.charKeysRev = nil
+	a.courtkeys.charKeys = a.d.Prefs.Load().CharKeyBinds(a.srvMeta.serverKey)
+	if len(a.courtkeys.charKeys) == 0 {
+		a.courtkeys.charKeysRev = nil
 		return
 	}
-	a.charKeysRev = make(map[string]string, len(a.charKeys))
-	for k, ch := range a.charKeys {
-		a.charKeysRev[ch] = k
+	a.courtkeys.charKeysRev = make(map[string]string, len(a.courtkeys.charKeys))
+	for k, ch := range a.courtkeys.charKeys {
+		a.courtkeys.charKeysRev[ch] = k
 	}
 }
 
 // charKeyFor reports the key bound to a character on this server ("" =
 // none) — the wardrobe badge lookup.
-func (a *App) charKeyFor(char string) string { return a.charKeysRev[char] }
+func (a *App) charKeyFor(char string) string { return a.courtkeys.charKeysRev[char] }
 
 // pollCharBind completes an armed wardrobe key-capture: the next plain
 // keypress binds key → character on this server. Esc OR any mouse click cancels
@@ -233,21 +233,21 @@ func (a *App) charKeyFor(char string) string { return a.charKeysRev[char] }
 // itself can't self-cancel: pollCharBind runs in the update phase BEFORE the
 // wardrobe arms bindingFor in the render phase, and c.clicked is a one-frame edge.
 func (a *App) pollCharBind() {
-	if a.bindingFor == "" {
+	if a.courtkeys.bindingFor == "" {
 		return
 	}
 	c := a.ctx
 	if c.escPressed || c.clicked {
-		a.bindingFor = ""
+		a.courtkeys.bindingFor = ""
 		return
 	}
 	if c.keyPressed == 0 {
 		return
 	}
 	key := strings.ToLower(sdl.GetKeyName(c.keyPressed))
-	a.d.Prefs.SetCharKeyBind(a.srvMeta.serverKey, key, a.bindingFor)
-	a.debug.push(fmt.Sprintf("key %q now wears %s (this server only)", key, a.bindingFor))
-	a.bindingFor = ""
+	a.d.Prefs.SetCharKeyBind(a.srvMeta.serverKey, key, a.courtkeys.bindingFor)
+	a.debug.push(fmt.Sprintf("key %q now wears %s (this server only)", key, a.courtkeys.bindingFor))
+	a.courtkeys.bindingFor = ""
 	a.refreshCharKeys()
 }
 
@@ -270,7 +270,7 @@ func (a *App) handleCharKeys() {
 	if key == 0 {
 		return
 	}
-	if name := a.charKeys[strings.ToLower(sdl.GetKeyName(key))]; name != "" {
+	if name := a.courtkeys.charKeys[strings.ToLower(sdl.GetKeyName(key))]; name != "" {
 		a.wearFromMenu(name)
 	}
 }
@@ -287,7 +287,7 @@ func (a *App) handleEmoteKeys() {
 	if key < sdl.K_1 || key > sdl.K_9 || a.emotepick.emotePerPage <= 0 {
 		return
 	}
-	if a.charKeys[strings.ToLower(sdl.GetKeyName(key))] != "" {
+	if a.courtkeys.charKeys[strings.ToLower(sdl.GetKeyName(key))] != "" {
 		return // a character keybind owns this digit
 	}
 	// Map the on-screen slot through the visible list (favs-only filters it),
@@ -935,12 +935,12 @@ const (
 // hkSheetRect is the hotkey cheat sheet's floating-window rect (floatwin.go):
 // movable + resizable, default-sized to fit its two columns of shortcuts.
 func (a *App) hkSheetRect(w, h int32) sdl.Rect {
-	if a.hkCache == nil {
-		a.hkCache = a.hotkeyCheatEntries()
+	if a.courtkeys.hkCache == nil {
+		a.courtkeys.hkCache = a.hotkeyCheatEntries()
 	}
 	// Default tall enough to show a good chunk; the list scrolls, so the exact fit
 	// doesn't matter and resizing smaller never drops rows.
-	defH := int32(len(a.hkCache))*hkRowH + floatTitleH + 14
+	defH := int32(len(a.courtkeys.hkCache))*hkRowH + floatTitleH + 14
 	if defH > 540 {
 		defH = 540
 	}
@@ -958,7 +958,7 @@ func (a *App) hkSheetRect(w, h int32) sdl.Rect {
 // (lobby / settings / char-select / menus), where the sheet previously let
 // the wheel, hover and drags fall straight through to the list below it.
 func (a *App) hkSheetFencesPointer(w, h int32) bool {
-	if !a.showHotkeys {
+	if !a.courtkeys.showHotkeys {
 		return false
 	}
 	return a.wins.hkWin.dragging || a.wins.hkWin.resizing ||
@@ -969,10 +969,10 @@ func (a *App) hkSheetFencesPointer(w, h int32) bool {
 // drag the title to park it out of the way and keep it open while you play.
 func (a *App) drawHotkeyCheatSheet(w, h int32) {
 	c := a.ctx
-	if a.hkCache == nil { // opened without openHotkeyCheatSheet (defensive)
-		a.hkCache = a.hotkeyCheatEntries()
+	if a.courtkeys.hkCache == nil { // opened without openHotkeyCheatSheet (defensive)
+		a.courtkeys.hkCache = a.hotkeyCheatEntries()
 	}
-	entries := a.hkCache
+	entries := a.courtkeys.hkCache
 	pressed := c.mouseDown && !a.hkPrevDown // own press edge (drawn over every screen)
 	a.hkPrevDown = c.mouseDown
 	r := a.hkSheetRect(w, h)
@@ -981,8 +981,8 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi) // title bar / drag handle
 	c.Heading(r.X+pad, r.Y+6, "Hotkeys — your shortcuts", ColText)
 	if c.Button(sdl.Rect{X: r.X + r.W - 28, Y: r.Y + 5, W: 20, H: 20}, "x") {
-		a.showHotkeys = false
-		a.hkCache = nil
+		a.courtkeys.showHotkeys = false
+		a.courtkeys.hkCache = nil
 		return
 	}
 	c.Label(r.X+r.W-150, r.Y+10, "F1 to close", ColTextDim)
@@ -1041,20 +1041,20 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 						c.Tooltip(row, "Click to rebind · right-click to reset to the default")
 					}
 					if c.ClickedIn(row) {
-						a.hkCapture = e.action // the next keypress binds this action
-						a.bindingFor = ""      // don't also arm a character keybind
-						c.focusID = ""         // the capture owns that keypress
+						a.courtkeys.hkCapture = e.action // the next keypress binds this action
+						a.courtkeys.bindingFor = ""      // don't also arm a character keybind
+						c.focusID = ""                   // the capture owns that keypress
 					}
 					if c.rightClicked && c.hovering(row) {
 						a.d.Prefs.SetHotkey(e.action, "")
-						if a.hkCapture == e.action {
-							a.hkCapture = ""
+						if a.courtkeys.hkCapture == e.action {
+							a.courtkeys.hkCapture = ""
 						}
-						a.hkCache = nil // the row's key changed; rebuild on the next frame
+						a.courtkeys.hkCache = nil // the row's key changed; rebuild on the next frame
 					}
 				}
 				shown := e.key
-				if e.action != "" && a.hkCapture == e.action {
+				if e.action != "" && a.courtkeys.hkCapture == e.action {
 					shown = "press a key…"
 					keyCol = ColStar
 				}

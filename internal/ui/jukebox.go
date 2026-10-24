@@ -635,7 +635,7 @@ func (a *App) drawJukeKeyBadge(r sdl.Rect, bound, target string) {
 	c.Tooltip(r, "Bind a key (click, then press a key) — it fires on "+bareBindChordPrefix+"that key. Right-click clears.")
 	if c.hovering(r) {
 		if c.clicked {
-			a.bindingFor = "" // don't also arm a character keybind
+			a.courtkeys.bindingFor = "" // don't also arm a character keybind
 			a.jukebox.jukeBindFor = target
 			c.focusID = "" // the capture owns the next keypress
 		} else if c.rightClicked && bound != "" {

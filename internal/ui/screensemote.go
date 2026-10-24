@@ -591,15 +591,15 @@ func gridRows(h, cellH, gap int32) int32 {
 func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool, label string) bool {
 	c := a.ctx
 	base := a.link.urls.EmoteButton(me, i+1, selected)
-	cache, gen := &a.emoteBtnOff, &a.emoteBtnOffGen
+	cache, gen := &a.rcache.emoteBtnOff, &a.rcache.emoteBtnOffGen
 	if selected {
-		cache, gen = &a.emoteBtnOn, &a.emoteBtnOnGen
+		cache, gen = &a.rcache.emoteBtnOn, &a.rcache.emoteBtnOnGen
 	}
 	page, ok := a.cachedPage(cache, gen, len(a.emotepick.emotes), i, base)
 	if !ok {
 		a.demandAsset(&a.emotepick.emoteAsk, len(a.emotepick.emotes), i, base, assets.AssetTypeEmoteButton) // AssetType: EmoteButton
 		if selected {
-			page, ok = a.cachedPage(&a.emoteBtnOff, &a.emoteBtnOffGen, len(a.emotepick.emotes), i, a.link.urls.EmoteButton(me, i+1, false))
+			page, ok = a.cachedPage(&a.rcache.emoteBtnOff, &a.rcache.emoteBtnOffGen, len(a.emotepick.emotes), i, a.link.urls.EmoteButton(me, i+1, false))
 		}
 	}
 	if ok && len(page.Frames) > 0 {
@@ -616,10 +616,10 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 		// shows the same icon. Grey only remains until even the icon streams in. One small
 		// icon per character (NOT the full sprite), so no streaming storm / budget hit.
 		iconBase := a.link.urls.CharIcon(me)
-		if ip, iok := a.cachedPage(&a.emoteIconPages, &a.emoteIconGen, 1, 0, iconBase); iok && len(ip.Frames) > 0 {
+		if ip, iok := a.cachedPage(&a.rcache.emoteIconPages, &a.rcache.emoteIconGen, 1, 0, iconBase); iok && len(ip.Frames) > 0 {
 			_ = c.Ren.Copy(ip.Frames[0], nil, &btn)
 		} else {
-			pending := a.demandAsset(&a.emoteIconAsk, 1, 0, iconBase, assets.AssetTypeCharIcon) // AssetType: CharIcon
+			pending := a.demandAsset(&a.rcache.emoteIconAsk, 1, 0, iconBase, assets.AssetTypeCharIcon) // AssetType: CharIcon
 			c.Fill(btn, ColPanel)
 			c.Border(btn, ColPanelHi)
 			if pending {
@@ -693,13 +693,13 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 	y += fieldH + 8
 
 	a.ensureCharLower()
-	query := a.pairQ.get(a.pairbox.pairSearch)
+	query := a.charsel.pairQ.get(a.pairbox.pairSearch)
 	lineH := int32(22)
 	listTop := y
 	listH := r.Y + r.H - listTop - pad
 	matches := int32(0)
 	for i := range a.link.sess.Chars {
-		if i != a.link.sess.MyCharID && (query == "" || strings.Contains(a.charLower[i], query)) {
+		if i != a.link.sess.MyCharID && (query == "" || strings.Contains(a.charsel.charLower[i], query)) {
 			matches++
 		}
 	}
@@ -713,7 +713,7 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 		if i == a.link.sess.MyCharID { // can't pair with yourself
 			continue
 		}
-		if query != "" && !strings.Contains(a.charLower[i], query) {
+		if query != "" && !strings.Contains(a.charsel.charLower[i], query) {
 			continue
 		}
 		if rowY > listTop+listH-lineH {
@@ -1003,13 +1003,13 @@ func (a *App) drawGhostSprite(pv sdl.Rect, name, base string, alts []string, off
 		// Warm once per (character, base) — not per frame. Re-warms when the
 		// base CHANGES (emote pick, pair message) even with the table full:
 		// only brand-new characters count against the cap.
-		if a.ghostWarm[name] != base {
-			if a.ghostWarm == nil {
-				a.ghostWarm = map[string]string{}
+		if a.courtkeys.ghostWarm[name] != base {
+			if a.courtkeys.ghostWarm == nil {
+				a.courtkeys.ghostWarm = map[string]string{}
 			}
-			_, known := a.ghostWarm[name]
-			if known || len(a.ghostWarm) < ghostWarmCap {
-				a.ghostWarm[name] = base
+			_, known := a.courtkeys.ghostWarm[name]
+			if known || len(a.courtkeys.ghostWarm) < ghostWarmCap {
+				a.courtkeys.ghostWarm[name] = base
 				a.d.Manager.PrefetchChain(base, alts, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (ghost editor)
 			}
 		}
@@ -1318,11 +1318,11 @@ func (a *App) sendIC() {
 	// per-message content like the effects frame. AsyncAO viewers float the emoji; AO2/webAO
 	// see clean text. When your own message echoes back you'll see it float too (matched
 	// against your log), so there's no separate local echo.
-	if a.pendingReactSet {
-		if marker := a.pendingReact.EncodeMarker(); marker != "" {
+	if a.reactUI.pendingReactSet {
+		if marker := a.reactUI.pendingReact.EncodeMarker(); marker != "" {
 			text += marker
 		}
-		a.pendingReactSet = false
+		a.reactUI.pendingReactSet = false
 	}
 	// AO2 additive parity (courtroom.cpp:2320-2326, 6563-6573): with the additive
 	// box on, AO2 glues each fragment onto your previous line, so it keeps a literal

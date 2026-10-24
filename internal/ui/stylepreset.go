@@ -67,10 +67,10 @@ func (a *App) drawStylePresets(c *Ctx, x, y, w int32) int32 {
 	c.LabelClipped(x, y, w, "Saved styles — Save current, click to apply, bind a key:", ColTextDim)
 	y += 20
 	const saveBtnW = int32(70)
-	a.stylePresetNameInput, _ = c.TextField("stylePresetName", sdl.Rect{X: x, Y: y, W: w - saveBtnW - 4, H: 22}, a.stylePresetNameInput, "name this mood")
+	a.courtkeys.stylePresetNameInput, _ = c.TextField("stylePresetName", sdl.Rect{X: x, Y: y, W: w - saveBtnW - 4, H: 22}, a.courtkeys.stylePresetNameInput, "name this mood")
 	if c.Button(sdl.Rect{X: x + w - saveBtnW, Y: y, W: saveBtnW, H: 22}, "Save") {
-		a.saveStylePreset(a.stylePresetNameInput)
-		a.stylePresetNameInput = ""
+		a.saveStylePreset(a.courtkeys.stylePresetNameInput)
+		a.courtkeys.stylePresetNameInput = ""
 	}
 	y += 28
 	const bindW, delW = int32(48), int32(22)
@@ -81,9 +81,9 @@ func (a *App) drawStylePresets(c *Ctx, x, y, w int32) int32 {
 		}
 		// The chord, not the letter: handleStylePresetKeys reads bareBindKey
 		// (qol.go), so this preset applies on Alt+<key>. "..." is armed.
-		keyLabel := bindChipLabel(pr.Key, a.stylePresetBindFor == pr.Name, "...", "key")
+		keyLabel := bindChipLabel(pr.Key, a.courtkeys.stylePresetBindFor == pr.Name, "...", "key")
 		if c.Button(sdl.Rect{X: x + applyW + 4, Y: y, W: bindW, H: 22}, keyLabel) {
-			a.stylePresetBindFor = pr.Name // arm the key-capture (pollStylePresetBind finishes it)
+			a.courtkeys.stylePresetBindFor = pr.Name // arm the key-capture (pollStylePresetBind finishes it)
 		}
 		if c.Button(sdl.Rect{X: x + applyW + bindW + 8, Y: y, W: delW, H: 22}, "x") {
 			a.d.Prefs.DeleteStylePreset(i)
@@ -98,12 +98,12 @@ func (a *App) drawStylePresets(c *Ctx, x, y, w int32) int32 {
 // chosen preset (by name); Esc cancels. Runs every frame from the main poll loop, mirroring
 // pollShownameBind, so it captures even with the Style box open.
 func (a *App) pollStylePresetBind() {
-	if a.stylePresetBindFor == "" {
+	if a.courtkeys.stylePresetBindFor == "" {
 		return
 	}
 	c := a.ctx
 	if c.escPressed {
-		a.stylePresetBindFor = ""
+		a.courtkeys.stylePresetBindFor = ""
 		return
 	}
 	if c.keyPressed == 0 {
@@ -111,13 +111,13 @@ func (a *App) pollStylePresetBind() {
 	}
 	key := strings.ToLower(sdl.GetKeyName(c.keyPressed))
 	for i, pr := range a.d.Prefs.Load().StylePresets() {
-		if pr.Name == a.stylePresetBindFor {
+		if pr.Name == a.courtkeys.stylePresetBindFor {
 			a.d.Prefs.SetStylePresetKey(i, key)
 			a.debug.push(fmt.Sprintf("key %q now applies style %q", key, pr.Name))
 			break
 		}
 	}
-	a.stylePresetBindFor = ""
+	a.courtkeys.stylePresetBindFor = ""
 }
 
 // handleStylePresetKeys applies a key-bound preset on Alt+<bound key> in the

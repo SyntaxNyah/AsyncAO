@@ -52,13 +52,13 @@ func TestReactionRingBounded(t *testing.T) {
 	for i := 0; i < reactionFloatsMax+8; i++ {
 		a.spawnReactionFloat(uint8(i % courtroom.ReactionCount()))
 	}
-	if len(a.reactionFloats) != reactionFloatsMax {
-		t.Fatalf("ring len = %d, want capped at %d", len(a.reactionFloats), reactionFloatsMax)
+	if len(a.reactUI.reactionFloats) != reactionFloatsMax {
+		t.Fatalf("ring len = %d, want capped at %d", len(a.reactUI.reactionFloats), reactionFloatsMax)
 	}
 	// An unknown palette index spawns nothing (a reaction from a newer peer).
-	before := len(a.reactionFloats)
+	before := len(a.reactUI.reactionFloats)
 	a.spawnReactionFloat(uint8(courtroom.ReactionCount()))
-	if len(a.reactionFloats) != before {
+	if len(a.reactUI.reactionFloats) != before {
 		t.Error("an out-of-range index spawned a float")
 	}
 }
@@ -76,16 +76,16 @@ func TestOnIncomingReactionGate(t *testing.T) {
 
 	// Unknown ref → no float.
 	a.onIncomingReaction(courtroom.WireReaction{Ref: 1, Index: 0})
-	if len(a.reactionFloats) != 0 {
+	if len(a.reactUI.reactionFloats) != 0 {
 		t.Fatal("a reaction with an unmatched ref floated")
 	}
 	// Matched ref, default (show) → float.
 	a.onIncomingReaction(courtroom.WireReaction{Ref: 4242, Index: 2})
-	if len(a.reactionFloats) != 1 {
-		t.Fatalf("a matched reaction didn't float (got %d)", len(a.reactionFloats))
+	if len(a.reactUI.reactionFloats) != 1 {
+		t.Fatalf("a matched reaction didn't float (got %d)", len(a.reactUI.reactionFloats))
 	}
 	// Viewer opted out → suppressed.
-	a.reactionFloats = a.reactionFloats[:0]
+	a.reactUI.reactionFloats = a.reactUI.reactionFloats[:0]
 	prefs.Update(func(
 		sn *config.
 			Settings) {
@@ -98,7 +98,7 @@ func TestOnIncomingReactionGate(t *testing.T) {
 	})
 
 	a.onIncomingReaction(courtroom.WireReaction{Ref: 4242, Index: 2})
-	if len(a.reactionFloats) != 0 {
+	if len(a.reactUI.reactionFloats) != 0 {
 		t.Error("HideReactions didn't suppress an incoming float")
 	}
 }
@@ -108,26 +108,26 @@ func TestOnIncomingReactionGate(t *testing.T) {
 // the queued emoji reacts to; the click consumes the snapshot.
 func TestQueueReactionSnapshot(t *testing.T) {
 	a := &App{env: env{}}
-	a.lastReactRef, a.lastReactName = 777, "Phoenix"
+	a.reactUI.lastReactRef, a.reactUI.lastReactName = 777, "Phoenix"
 	// The opener that took this snapshot was removed with the IC-bar React button; set
 	// the state it produced and keep the consuming half under test.
-	a.showReactPicker, a.reactTargetRef, a.reactTargetName = true, a.lastReactRef, a.lastReactName
-	if !a.showReactPicker || a.reactTargetRef != 777 {
-		t.Fatalf("open didn't snapshot: show=%v target=%d", a.showReactPicker, a.reactTargetRef)
+	a.reactUI.showReactPicker, a.reactUI.reactTargetRef, a.reactUI.reactTargetName = true, a.reactUI.lastReactRef, a.reactUI.lastReactName
+	if !a.reactUI.showReactPicker || a.reactUI.reactTargetRef != 777 {
+		t.Fatalf("open didn't snapshot: show=%v target=%d", a.reactUI.showReactPicker, a.reactUI.reactTargetRef)
 	}
-	a.lastReactRef, a.lastReactName = 888, "Maya" // a new message lands while open
+	a.reactUI.lastReactRef, a.reactUI.lastReactName = 888, "Maya" // a new message lands while open
 	a.queueReaction(5)
-	if !a.pendingReactSet || a.pendingReact.Ref != 777 || a.pendingReact.Index != 5 {
-		t.Fatalf("queued = %+v set=%v, want ref 777 index 5 (the snapshot)", a.pendingReact, a.pendingReactSet)
+	if !a.reactUI.pendingReactSet || a.reactUI.pendingReact.Ref != 777 || a.reactUI.pendingReact.Index != 5 {
+		t.Fatalf("queued = %+v set=%v, want ref 777 index 5 (the snapshot)", a.reactUI.pendingReact, a.reactUI.pendingReactSet)
 	}
-	if a.showReactPicker {
+	if a.reactUI.showReactPicker {
 		t.Error("picking an emoji didn't close the palette")
 	}
 	// A pick with no target queues nothing (just closes).
-	a.pendingReactSet, a.reactTargetRef = false, 0
-	a.showReactPicker = true
+	a.reactUI.pendingReactSet, a.reactUI.reactTargetRef = false, 0
+	a.reactUI.showReactPicker = true
 	a.queueReaction(1)
-	if a.pendingReactSet {
+	if a.reactUI.pendingReactSet {
 		t.Error("queued a reaction with no target message")
 	}
 }
@@ -149,16 +149,16 @@ func TestDrawReactionFloatsZeroAlloc(t *testing.T) {
 	white := sdl.Color{R: 255, G: 255, B: 255, A: 255}
 	// Pre-warm the badge cache directly (bypasses the system emoji face, which a headless
 	// test can't rely on) so ensureReactBadge is a pure map hit in the measured loop.
-	a.reactBadges = map[uint8]*render.Badge{}
+	a.reactUI.reactBadges = map[uint8]*render.Badge{}
 	for i := 0; i < 2; i++ {
 		b, err := render.RasterizeBadge(ren, font, "A", white, render.DefaultDevScale)
 		if err != nil || b == nil {
 			t.Fatalf("RasterizeBadge: %v", err)
 		}
 		defer b.Destroy()
-		a.reactBadges[uint8(i)] = b
+		a.reactUI.reactBadges[uint8(i)] = b
 	}
-	a.reactBadgeDevScale = a.ctx.textDevPct // matches the zero-value Ctx above; keeps the map from self-purging mid-test
+	a.reactUI.reactBadgeDevScale = a.ctx.textDevPct // matches the zero-value Ctx above; keeps the map from self-purging mid-test
 
 	vp := sdl.Rect{X: 0, Y: 0, W: 512, H: 384}
 
@@ -169,15 +169,15 @@ func TestDrawReactionFloatsZeroAlloc(t *testing.T) {
 
 	// Active floats: fixed frame clock so they stay mid-life (never cull) across the run.
 	a.frameNow = time.Now()
-	a.reactionFloats = []reactionFloat{
+	a.reactUI.reactionFloats = []reactionFloat{
 		{index: 0, born: a.frameNow.Add(-400 * time.Millisecond), xJit: 20},
 		{index: 1, born: a.frameNow.Add(-700 * time.Millisecond), xJit: -30},
 	}
 	if allocs := testing.AllocsPerRun(200, func() { a.drawReactionFloats(vp) }); allocs != 0 {
 		t.Errorf("active drawReactionFloats allocated %.1f/op, want 0 (#2 zero-perf constraint)", allocs)
 	}
-	if len(a.reactionFloats) != 2 {
-		t.Errorf("floats were culled mid-life: %d left, want 2", len(a.reactionFloats))
+	if len(a.reactUI.reactionFloats) != 2 {
+		t.Errorf("floats were culled mid-life: %d left, want 2", len(a.reactUI.reactionFloats))
 	}
 }
 

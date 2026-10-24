@@ -157,7 +157,7 @@ func (a *App) charSelectShowTaken(themedUI bool, lay *charSelectLayoutCache) boo
 	if _, ok := lay.rect(charSelectTakenKey); !ok {
 		return true
 	}
-	return a.charShowTaken
+	return a.charsel.charShowTaken
 }
 
 // charSelectNameListRect resolves where AO2's char_list column goes this frame, or
@@ -257,7 +257,7 @@ func (a *App) drawCharSelectControls(lay *charSelectLayoutCache, g charGridPlan)
 func (a *App) drawCharSelectControlsIn(lay *charSelectLayoutCache, g charGridPlan) bool {
 	c := a.ctx
 	if r, ok := lay.rect(charSelectSearchKey); ok {
-		a.charSearch, _ = c.TextField("charsearch", r, a.charSearch, "Search...")
+		a.charsel.charSearch, _ = c.TextField("charsearch", r, a.charsel.charSearch, "Search...")
 	}
 	// char_taken: AO2's filter checkbox, default CHECKED = show taken characters
 	// (charselect.cpp:99). The kit's checkbox is a fixed 16 px box plus a label, so it
@@ -272,12 +272,12 @@ func (a *App) drawCharSelectControlsIn(lay *charSelectLayoutCache, g charGridPla
 		if gap := (r.H - checkboxBoxPx) / 2; gap > 0 {
 			y += gap
 		}
-		was := a.charShowTaken
-		a.charShowTaken = c.Checkbox(r.X, y, "Taken", a.charShowTaken)
-		if a.charShowTaken != was {
+		was := a.charsel.charShowTaken
+		a.charsel.charShowTaken = c.Checkbox(r.X, y, "Taken", a.charsel.charShowTaken)
+		if a.charsel.charShowTaken != was {
 			// The filter changed under both views: a scroll offset measured against
 			// the old content height would leave either view parked past its end.
-			a.charScroll, a.charListScroll = 0, 0
+			a.charsel.charScroll, a.charsel.charListScroll = 0, 0
 		}
 		c.Tooltip(sdl.Rect{X: r.X, Y: y, W: r.W, H: checkboxBoxPx},
 			"Show characters other players are already using")
@@ -352,10 +352,10 @@ func (a *App) drawCharSelectPageArrows(lay *charSelectLayoutCache, g charGridPla
 // gridScroll is the active tab's grid scroll offset. Both tabs share one plan and one
 // set of page arrows, so the arrows need to know which offset they are stepping.
 func (a *App) gridScroll() *int32 {
-	if a.charTab == charTabWardrobe {
+	if a.charsel.charTab == charTabWardrobe {
 		return &a.iniScroll
 	}
-	return &a.charScroll
+	return &a.charsel.charScroll
 }
 
 // drawCharNameList is AO2's char_list: a scrolling column of character names beside
@@ -380,11 +380,11 @@ func (a *App) drawCharNameList(lay *charSelectLayoutCache, rows charListRows, qu
 	body := sdl.Rect{X: r.X, Y: r.Y + rowH, W: r.W, H: r.H - rowH}
 	matches := rows.matches(query, showTaken)
 	contentH := matches * rowH
-	scroll := a.charListScroll
+	scroll := a.charsel.charListScroll
 	scroll -= c.WheelIn(body) * scrollStepPx
 	track := sdl.Rect{X: body.X + body.W - scrollBarW, Y: body.Y, W: scrollBarW, H: body.H}
 	scroll = c.VScrollbar("charlist", track, scroll, contentH, body.H)
-	a.charListScroll = scroll
+	a.charsel.charListScroll = scroll
 	textW := body.W - scrollBarW - scrollBarGap - charListTextInsetPx
 	if textW < 1 {
 		return
@@ -405,7 +405,7 @@ func (a *App) drawCharNameList(lay *charSelectLayoutCache, rows charListRows, qu
 		}
 		row := sdl.Rect{X: body.X, Y: y, W: body.W - scrollBarW, H: rowH}
 		switch {
-		case i == a.charListSel:
+		case i == a.charsel.charListSel:
 			c.Fill(row, ColAccent) // the same character the grid outlines
 		case c.hovering(row):
 			c.Fill(row, ColPanelHi)
@@ -429,7 +429,7 @@ func (a *App) drawCharNameList(lay *charSelectLayoutCache, rows charListRows, qu
 			return
 		}
 		if c.clicked {
-			a.charListSel = i
+			a.charsel.charListSel = i
 			*a.gridScroll() = revealRowInGrid(g, ord, *a.gridScroll())
 		}
 	}
@@ -461,7 +461,7 @@ func (a *App) drawCharListTabs(r sdl.Rect) {
 		}
 		chip := sdl.Rect{X: x, Y: r.Y, W: w, H: r.H}
 		clicked := false
-		if a.charTab == tb.id {
+		if a.charsel.charTab == tb.id {
 			clicked = c.ButtonCol(chip, tb.label, ColAccent, ColAccent, ColAccent, ColBackground)
 		} else {
 			clicked = c.Button(chip, tb.label)
@@ -484,11 +484,11 @@ var charSelectTabs = [...]struct {
 // own slice, so a selection carried across would point at a different character (or
 // past the end of a shorter list) — it is dropped, along with the column's scroll.
 func (a *App) selectCharTab(id int) {
-	if a.charTab == id {
+	if a.charsel.charTab == id {
 		return
 	}
-	a.charTab = id
-	a.charListSel, a.charListScroll = -1, 0
+	a.charsel.charTab = id
+	a.charsel.charListSel, a.charsel.charListScroll = -1, 0
 	if id == charTabWardrobe {
 		a.ensureIniList()
 	}
