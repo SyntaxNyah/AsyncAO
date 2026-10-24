@@ -60,7 +60,7 @@ func TestThemeChromeGoesStillUnderReduceMotion(t *testing.T) {
 	// non-vacuity check — without it a themeFrame hardwired to frame 0 would pass
 	// the accessibility half perfectly.
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
-	a.themeFXFrozen = a.reduceMotionNow()
+	a.fxPool.themeFXFrozen = a.reduceMotionNow()
 	a.frame.frameAnimChrome = false
 	moving := a.themeFrame(page)
 	if moving == page.Frames[0] {
@@ -73,7 +73,7 @@ func TestThemeChromeGoesStillUnderReduceMotion(t *testing.T) {
 	// Motion SUPPRESSED.
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true })
 	defer a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
-	a.themeFXFrozen = a.reduceMotionNow()
+	a.fxPool.themeFXFrozen = a.reduceMotionNow()
 	a.frame.frameAnimChrome = false
 	still := a.themeFrame(page)
 	if still != page.Frames[0] {
@@ -97,7 +97,7 @@ func TestThemeFrameAndElementFrameShareOneIndexer(t *testing.T) {
 	defer cleanup()
 	page := animatedThemePage(t, a, themeTexKey("gatebutton"))
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
-	a.themeFXFrozen = false
+	a.fxPool.themeFXFrozen = false
 
 	for _, el := range []time.Duration{0, 45 * time.Millisecond, 130 * time.Millisecond, time.Second} {
 		a.toolbox.themeAt = a.now().Add(-el)

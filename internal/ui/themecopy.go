@@ -121,7 +121,7 @@ func (a *App) appliedThemeEditReason() themeEditReason {
 		name, _ = a.d.Prefs.Load().Theme()
 	}
 	entry, known := a.themeCatalogSnapshot().Entry(name)
-	return themeEditReasonFor(a.themeSidecar != nil, entry, known)
+	return themeEditReasonFor(a.elemBake.themeSidecar != nil, entry, known)
 }
 
 // ---------------------------------------------------------------------------
@@ -158,7 +158,7 @@ func (a *App) copyThemeForEditing(name string, intent themeCopyIntent) {
 		a.noteThemeCopy("could not work out where " + name + " lives on this machine")
 		return
 	}
-	if themeEditReasonFor(a.themeSidecar != nil, entry, true) == themeEditInPlace {
+	if themeEditReasonFor(a.elemBake.themeSidecar != nil, entry, true) == themeEditInPlace {
 		a.noteThemeCopy(name + " is already yours — it can be edited where it is")
 		return
 	}

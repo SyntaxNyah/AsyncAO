@@ -311,7 +311,7 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 	// own chip exists — past themeFXCap a stateful effect freezes at its first frame,
 	// which is easy to mistake for "the effect is broken".
 	fxCol := ColTextDim
-	if a.themeFXOver {
+	if a.fxPool.themeFXOver {
 		fxCol = ColTierYellow
 	}
 	c.LabelClipped(r.X, y, r.W, a.themeFXDebugLine(), fxCol)
@@ -321,11 +321,11 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 // open (the diagnostics-path allocation policy at the top of this file).
 func (a *App) themeFXDebugLine() string {
 	state := "live"
-	if a.themeFXFrozen {
+	if a.fxPool.themeFXFrozen {
 		state = "frozen (reduce motion)"
 	}
 	over := ""
-	if a.themeFXOver {
+	if a.fxPool.themeFXOver {
 		over = " · POOL FULL (further stateful effects freeze at frame 0)"
 	}
 	return fmt.Sprintf("theme fx %d / %d slots · %d elements · %s%s",

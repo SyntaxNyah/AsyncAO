@@ -385,7 +385,7 @@ func (a *App) pollThemeApply() {
 	// a sidecar landing after the invalidation would not be baked until something
 	// else happened to invalidate again. nil (a stock AO2 theme) clears the previous
 	// theme's elements, which is the whole of the theme-swap prune for this tier.
-	a.themeSidecar = res.sidecar
+	a.elemBake.themeSidecar = res.sidecar
 	// …and immediately back again if the EDITOR owns this theme's model. Applies are
 	// not user-initiated — healTheme re-kicks one on any T1 eviction of a theme
 	// texture, the texture-filter row kicks one, boot kicks two — so without this line
@@ -401,10 +401,10 @@ func (a *App) pollThemeApply() {
 	a.landThemeMedia(res)
 	// The refusal surface lands with it, and the acknowledgement is keyed on the
 	// REASON rather than re-armed unconditionally.
-	if a.themeSidecarErr != res.sidecarErr {
-		a.themeSidecarErrAck = false
+	if a.fxPool.themeSidecarErr != res.sidecarErr {
+		a.fxPool.themeSidecarErrAck = false
 	}
-	a.themeSidecarErr, a.themeSidecarTip = res.sidecarErr, res.sidecarTip
+	a.fxPool.themeSidecarErr, a.fxPool.themeSidecarTip = res.sidecarErr, res.sidecarTip
 	a.invalidateThemeCanvases()
 	a.themeSounds = res.sounds
 	a.toolbox.themeAt = time.Now() // restart the theme-art animation clock
@@ -652,7 +652,7 @@ func (a *App) themeFrame(page *render.TexturePage) *sdl.Texture {
 	if len(page.Frames) == 1 {
 		return page.Frames[0]
 	}
-	if a.themeFXFrozen {
+	if a.fxPool.themeFXFrozen {
 		return page.Frames[0] // ReduceMotion, latched once per frame (reduceMotionNow)
 	}
 	idx, live := elementFrameIndex(page, a.themeElapsed(), true)

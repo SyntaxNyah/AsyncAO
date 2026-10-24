@@ -108,11 +108,11 @@ type themeClock struct {
 
 // applyThemeClocks loads a theme's [clock.N] groups into the pool.
 func (a *App) applyThemeClocks(sc *theme.Sidecar) {
-	for i := range a.themeClocks {
-		a.themeClocks[i] = themeClock{speedPct: clampClockSpeed(sc.ClockSpeedPct(i))}
+	for i := range a.fxPool.themeClocks {
+		a.fxPool.themeClocks[i] = themeClock{speedPct: clampClockSpeed(sc.ClockSpeedPct(i))}
 	}
-	a.themeFX = [themeFXCap]fxState{}
-	a.themeFXOver = false
+	a.fxPool.themeFX = [themeFXCap]fxState{}
+	a.fxPool.themeFXOver = false
 }
 
 // clampClockSpeed bounds a group's speed to the format's own range.
@@ -155,10 +155,10 @@ func (a *App) elementElapsed(e *bakedElement) time.Duration {
 // — but it would fire on the render thread, and one predictable compare is cheaper
 // than that risk. TestClockPoolIsFixed pins both halves.
 func (a *App) clockElapsed(i uint8) time.Duration {
-	if int(i) >= len(a.themeClocks) {
+	if int(i) >= len(a.fxPool.themeClocks) {
 		i = 0
 	}
-	c := &a.themeClocks[i]
+	c := &a.fxPool.themeClocks[i]
 	if c.paused {
 		return c.frozen
 	}
@@ -177,10 +177,10 @@ func (a *App) clockElapsed(i uint8) time.Duration {
 // must answer for the SAME group, or a bad index would read time from clock 0 and
 // pausedness from nothing.
 func (a *App) clockPaused(i uint8) bool {
-	if int(i) >= len(a.themeClocks) {
+	if int(i) >= len(a.fxPool.themeClocks) {
 		i = 0
 	}
-	return a.themeClocks[i].paused
+	return a.fxPool.themeClocks[i].paused
 }
 
 // noteElementAnimating is the ONE census call on the element path — the funnel
@@ -215,7 +215,7 @@ func (a *App) elementFrame(e *bakedElement) *sdl.Texture {
 	// ReduceMotion, latched once per pass rather than read per element: frame 0,
 	// nothing noted. The accessibility branch and the pacing census agree by
 	// construction, because they are the same return.
-	if a.themeFXFrozen {
+	if a.fxPool.themeFXFrozen {
 		return e.page.Frames[0]
 	}
 	idx, live := elementFrameIndex(e.page, a.elementElapsed(e), e.loop)
@@ -292,20 +292,20 @@ type fxState struct {
 // beginThemeFXPass advances the pool's frame stamp, sweeps the slots nobody asked
 // for, and latches this pass's ReduceMotion answer.
 func (a *App) beginThemeFXPass() {
-	a.themeFXFrame++
-	a.themeFXOver = false
+	a.fxPool.themeFXFrame++
+	a.fxPool.themeFXOver = false
 	// ReduceMotion is the ONLY accessibility gate in this feature, and it is read
 	// ONCE here rather than per element: the two AllocsPerRun gates forbid a prefs
 	// read on the per-element path, and a pass that changed its mind halfway would
 	// freeze half a theme. App.Frame latches the same answer for the theme-chrome
 	// draw sites, which run outside any pass; both go through reduceMotionNow.
-	a.themeFXFrozen = a.reduceMotionNow()
-	for i := range a.themeFX {
-		s := &a.themeFX[i]
+	a.fxPool.themeFXFrozen = a.reduceMotionNow()
+	for i := range a.fxPool.themeFX {
+		s := &a.fxPool.themeFX[i]
 		if s.owner == fxOwnerNone {
 			continue
 		}
-		if a.themeFXFrame-s.lastFrame > themeFXIdleFrames {
+		if a.fxPool.themeFXFrame-s.lastFrame > themeFXIdleFrames {
 			*s = fxState{}
 		}
 	}
@@ -321,17 +321,17 @@ func (a *App) beginThemeFXPass() {
 func (a *App) acquireElementFX(idx int16, gen uint64, el time.Duration) (*fxState, bool) {
 	want := idx + 1 // see fxOwnerNone
 	free := -1
-	for i := range a.themeFX {
-		s := &a.themeFX[i]
+	for i := range a.fxPool.themeFX {
+		s := &a.fxPool.themeFX[i]
 		if s.owner == want && s.gen == gen {
 			// A GAP IN THE STAMPS IS A RE-APPEARANCE, and a re-appearance restarts the
 			// one-shot. Without this a stamp bound to `visible_when = shout:objection`
 			// would fire on the first shout and then sit finished — a second shout inside
 			// the sweep's two-second window would find the slot still held and still done.
-			if s.lastFrame+1 < a.themeFXFrame {
+			if s.lastFrame+1 < a.fxPool.themeFXFrame {
 				s.startedAt = el
 			}
-			s.lastFrame = a.themeFXFrame
+			s.lastFrame = a.fxPool.themeFXFrame
 			return s, true
 		}
 		if free < 0 && s.owner == fxOwnerNone {
@@ -339,11 +339,11 @@ func (a *App) acquireElementFX(idx int16, gen uint64, el time.Duration) (*fxStat
 		}
 	}
 	if free < 0 {
-		a.themeFXOver = true
+		a.fxPool.themeFXOver = true
 		return nil, false
 	}
-	s := &a.themeFX[free]
-	*s = fxState{startedAt: el, gen: gen, lastFrame: a.themeFXFrame, owner: want}
+	s := &a.fxPool.themeFX[free]
+	*s = fxState{startedAt: el, gen: gen, lastFrame: a.fxPool.themeFXFrame, owner: want}
 	return s, true
 }
 
@@ -351,8 +351,8 @@ func (a *App) acquireElementFX(idx int16, gen uint64, el time.Duration) (*fxStat
 // never asks.
 func (a *App) themeFXInUse() int {
 	n := 0
-	for i := range a.themeFX {
-		if a.themeFX[i].owner != fxOwnerNone {
+	for i := range a.fxPool.themeFX {
+		if a.fxPool.themeFX[i].owner != fxOwnerNone {
 			n++
 		}
 	}

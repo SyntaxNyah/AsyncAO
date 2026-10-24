@@ -193,7 +193,7 @@ type themeEditor struct {
 
 // openThemeEditor arms the editor over the applied theme.
 func (a *App) openThemeEditor(from Screen) bool {
-	if a.themeSidecar == nil {
+	if a.elemBake.themeSidecar == nil {
 		return false
 	}
 	if a.classic.classicEdit {
@@ -224,7 +224,7 @@ func (a *App) openThemeEditor(from Screen) bool {
 // path — the exact drift the encapsulation rule forbids.
 func (a *App) armThemeEditor(from Screen) bool {
 	name, _ := a.d.Prefs.Load().Theme()
-	doc := newThemeDoc(name, a.themeSidecar)
+	doc := newThemeDoc(name, a.elemBake.themeSidecar)
 	if doc == nil {
 		return false
 	}
@@ -1563,7 +1563,7 @@ func (a *App) reclaimThemeDoc() {
 	if name != a.te.doc.name {
 		return // a different theme is applied now; the document is not about it
 	}
-	a.themeSidecar = a.te.doc.side
+	a.elemBake.themeSidecar = a.te.doc.side
 	// THE GEOMETRY TIER NEEDS THE SAME TREATMENT, and it needs it in this order.
 	// pollThemeApply has just replaced a.themeRects wholesale with a map built from
 	// the sidecar ON DISK, so every unsaved [overrides] edit is missing from it and

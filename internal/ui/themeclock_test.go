@@ -61,7 +61,7 @@ func fxTestElement(k theme.EffectKind) bakedElement {
 func fxTestConditional(a *App, k theme.EffectKind) bakedElement {
 	e := fxTestElement(k)
 	e.condAxis, e.cond = theme.CondPos, 0
-	a.condLive[theme.CondPos] = 0
+	a.elemBake.condLive[theme.CondPos] = 0
 	return e
 }
 
@@ -404,8 +404,8 @@ func TestElementFrameIsAFunctionOfElapsed(t *testing.T) {
 // frame, on every themed install that uses the feature at all.
 func TestElapsedForIsAllocFree(t *testing.T) {
 	a := &App{env: env{}, toolbox: toolboxState{themeAt: time.Now().Add(-time.Second)}}
-	a.themeClocks[1] = themeClock{speedPct: 250}
-	a.themeClocks[2] = themeClock{paused: true, frozen: 400 * time.Millisecond}
+	a.fxPool.themeClocks[1] = themeClock{speedPct: 250}
+	a.fxPool.themeClocks[2] = themeClock{paused: true, frozen: 400 * time.Millisecond}
 	// Every arm of clockElapsed in one fixture: the shared anchor, a scaled group, a
 	// paused group and an out-of-range index that falls back to clock 0.
 	els := [...]bakedElement{
@@ -619,8 +619,8 @@ func TestElementEffectsAreAllocFreeAtCap(t *testing.T) {
 		lay.el[i].clock = uint8(i % 3)
 		live++
 	}
-	a.themeClocks[1] = themeClock{speedPct: 250}
-	a.themeClocks[2] = themeClock{speedPct: theme.SpeedMinPct}
+	a.fxPool.themeClocks[1] = themeClock{speedPct: 250}
+	a.fxPool.themeClocks[2] = themeClock{speedPct: theme.SpeedMinPct}
 	if live != theme.ElementCap {
 		t.Fatalf("seeded %d live effects, want %d", live, theme.ElementCap)
 	}
@@ -657,8 +657,8 @@ func TestElementEffectsAreAllocFreeAtCap(t *testing.T) {
 // needs nobody to remember to call it.
 func TestFXPoolIsFixedAndSelfClears(t *testing.T) {
 	a, _ := newEffectsRig(t)
-	if len(a.themeFX) != themeFXCap {
-		t.Fatalf("the FX pool holds %d slots, want themeFXCap (%d)", len(a.themeFX), themeFXCap)
+	if len(a.fxPool.themeFX) != themeFXCap {
+		t.Fatalf("the FX pool holds %d slots, want themeFXCap (%d)", len(a.fxPool.themeFX), themeFXCap)
 	}
 	if themeFXCap != theme.EffectBindCap {
 		t.Errorf("themeFXCap is %d but theme.EffectBindCap is %d — the format's own constant says internal/ui "+
@@ -705,7 +705,7 @@ func TestFXPoolIsFixedAndSelfClears(t *testing.T) {
 	if granted != themeFXCap {
 		t.Errorf("the pool granted %d slots, want exactly %d", granted, themeFXCap)
 	}
-	if !a.themeFXOver {
+	if !a.fxPool.themeFXOver {
 		t.Error("the pool ran out and did not record it — the F8 line and the editor chip are how a user " +
 			"finds out an effect froze at frame 0 instead of being broken")
 	}
@@ -730,7 +730,7 @@ func TestFXPoolIsFixedAndSelfClears(t *testing.T) {
 		t.Errorf("%d slots still held %d passes after the last request — without the sweep a fired "+
 			"one-shot holds its slot forever", got, themeFXIdleFrames+1)
 	}
-	if a.themeFXOver {
+	if a.fxPool.themeFXOver {
 		t.Error("themeFXOver survived the sweep — it describes the LAST pass, not the session")
 	}
 
@@ -745,16 +745,16 @@ func TestFXPoolIsFixedAndSelfClears(t *testing.T) {
 		for i := 0; i < themeFXCap+1; i++ { // +1 so the exhaustion flag is set too
 			b.acquireElementFX(int16(i), 1, 0)
 		}
-		if got := b.themeFXInUse(); got != themeFXCap || !b.themeFXOver {
+		if got := b.themeFXInUse(); got != themeFXCap || !b.fxPool.themeFXOver {
 			t.Fatalf("the pre-apply state is %d slots / over=%v, want a full pool that recorded its "+
-				"exhaustion", got, b.themeFXOver)
+				"exhaustion", got, b.fxPool.themeFXOver)
 		}
 		b.applyThemeClocks(nil)
 		if got := b.themeFXInUse(); got != 0 {
 			t.Errorf("%d slots survived a theme apply — the incoming theme would be refused its own "+
 				"one-shots until the sweep caught up", got)
 		}
-		if b.themeFXOver {
+		if b.fxPool.themeFXOver {
 			t.Error("themeFXOver survived a theme apply — it describes the pass, not the install")
 		}
 	}
@@ -825,8 +825,8 @@ func TestOneShotEffectReleasesItsFXSlot(t *testing.T) {
 // and a speed clamped into the format's own range.
 func TestClockPoolIsFixed(t *testing.T) {
 	a := &App{env: env{}, toolbox: toolboxState{themeAt: time.Now().Add(-2 * time.Second)}}
-	if len(a.themeClocks) != theme.ClockCap {
-		t.Fatalf("the clock pool holds %d groups, want theme.ClockCap (%d)", len(a.themeClocks), theme.ClockCap)
+	if len(a.fxPool.themeClocks) != theme.ClockCap {
+		t.Fatalf("the clock pool holds %d groups, want theme.ClockCap (%d)", len(a.fxPool.themeClocks), theme.ClockCap)
 	}
 	// Clock 99 clamps to 0. The reader already refuses it (parseClockIndex), so this
 	// is the belt — and the failure it prevents is an index panic on the render
@@ -863,10 +863,10 @@ func TestClockPoolIsFixed(t *testing.T) {
 	sc.Clocks[1] = theme.ClockSpec{SpeedPct: 9999, Declared: true}
 	sc.Clocks[2] = theme.ClockSpec{SpeedPct: 200, Declared: true}
 	a.applyThemeClocks(sc)
-	if got := a.themeClocks[1].speedPct; got != theme.SpeedMaxPct {
+	if got := a.fxPool.themeClocks[1].speedPct; got != theme.SpeedMaxPct {
 		t.Errorf("an out-of-range group loaded at %d, want %d", got, theme.SpeedMaxPct)
 	}
-	if got := a.themeClocks[2].speedPct; got != 200 {
+	if got := a.fxPool.themeClocks[2].speedPct; got != 200 {
 		t.Errorf("group 2 loaded at %d, want 200", got)
 	}
 	// A double-speed group must actually run twice as fast as the shared anchor.
@@ -877,14 +877,14 @@ func TestClockPoolIsFixed(t *testing.T) {
 	// Applying a STOCK theme (no sidecar) must put every group back to nominal, or
 	// the outgoing theme's speeds would leak into the incoming one.
 	a.applyThemeClocks(nil)
-	for i := range a.themeClocks {
-		if got := a.themeClocks[i].speedPct; got != theme.SpeedNominalPct {
+	for i := range a.fxPool.themeClocks {
+		if got := a.fxPool.themeClocks[i].speedPct; got != theme.SpeedNominalPct {
 			t.Fatalf("group %d survived a stock-theme apply at %d, want %d", i, got, theme.SpeedNominalPct)
 		}
 	}
 	// Paused groups hold their frozen elapsed — the editor's scrub, and the reason
 	// `paused`/`frozen` are designed in rather than retrofitted.
-	a.themeClocks[3] = themeClock{speedPct: theme.SpeedNominalPct, paused: true, frozen: 750 * time.Millisecond}
+	a.fxPool.themeClocks[3] = themeClock{speedPct: theme.SpeedNominalPct, paused: true, frozen: 750 * time.Millisecond}
 	if got := a.clockElapsed(3); got != 750*time.Millisecond {
 		t.Errorf("a paused group resolved to %v, want its frozen 750ms", got)
 	}
@@ -1023,7 +1023,7 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 	prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true })
 	a.toolbox.themeAt = time.Now()
 	a.beginThemeFXPass()
-	if !a.themeFXFrozen {
+	if !a.fxPool.themeFXFrozen {
 		t.Fatal("ReduceMotion did not latch on the pass — the branch is read once per pass, not per element")
 	}
 
@@ -1105,7 +1105,7 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 	a, lay, cleanup := stageThemedWithSidecar(t, "w5_clocks.ini")
 	defer cleanup()
-	sc := a.themeSidecar
+	sc := a.elemBake.themeSidecar
 
 	// Our own file: a degrade note here means the fixture is writing something this
 	// build cannot read, and every assertion below would be measuring the survivors.
@@ -1136,7 +1136,7 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 	// author wrote rather than the nominal anchor.
 	a.applyThemeClocks(sc)
 	for _, tc := range []struct{ group, want int }{{1, 250}, {2, 40}, {15, 400}} {
-		if got := a.themeClocks[tc.group].speedPct; int(got) != tc.want {
+		if got := a.fxPool.themeClocks[tc.group].speedPct; int(got) != tc.want {
 			t.Errorf("[clock.%d] loaded at %d%%, want %d%% — group 15 is the LAST one, and an off-by-one "+
 				"in the pool drops exactly that group and nothing else", tc.group, got, tc.want)
 		}

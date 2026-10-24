@@ -289,7 +289,7 @@ func TestShoutConditionInternsAsTheLiveStem(t *testing.T) {
 			VisibleWhen: theme.Condition{Axis: theme.CondShout, Value: s.key},
 		})
 	}
-	a.themeSidecar = sc
+	a.elemBake.themeSidecar = sc
 	a.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
 	lay := &a.themeLay

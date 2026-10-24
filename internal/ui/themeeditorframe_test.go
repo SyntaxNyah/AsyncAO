@@ -26,12 +26,12 @@ const editorChromeAllocBudget = 512
 func stageEditorApp(t *testing.T) (*App, func()) {
 	t.Helper()
 	a, cleanup := stageFrameDrivenApp(t)
-	if a.themeSidecar == nil {
-		a.themeSidecar = theme.NewSidecar()
+	if a.elemBake.themeSidecar == nil {
+		a.elemBake.themeSidecar = theme.NewSidecar()
 	}
 	el := editProbeElement()
 	el.Locked, el.Hidden = false, false
-	a.themeSidecar.Elements = append(a.themeSidecar.Elements, el)
+	a.elemBake.themeSidecar.Elements = append(a.elemBake.themeSidecar.Elements, el)
 	if !a.openThemeEditor(ScreenCourtroom) {
 		cleanup()
 		t.Fatal("openThemeEditor refused a theme that has a sidecar")
@@ -70,7 +70,7 @@ func TestThemeEditorScreenSurvivesRealFrames(t *testing.T) {
 func TestThemeEditorFrameStaysInsideItsChromeBudget(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()
-	a.te.selectOnly(elementTarget(len(a.themeSidecar.Elements) - 1))
+	a.te.selectOnly(elementTarget(len(a.elemBake.themeSidecar.Elements) - 1))
 
 	if n := allocsPerFrame(editorAllocFrames, editorChromeAllocBudget, func() { driveFrame(a) }); n > editorChromeAllocBudget {
 		t.Fatalf("one editor frame allocates %.0f/op, past the named budget of %d — the usual cause is a "+
@@ -113,7 +113,7 @@ func TestEditorEscLadderClearsThenLeaves(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()
 	driveFrame(a)
-	a.te.selectOnly(elementTarget(len(a.themeSidecar.Elements) - 1))
+	a.te.selectOnly(elementTarget(len(a.elemBake.themeSidecar.Elements) - 1))
 
 	pressEsc := func() {
 		a.ctx.BeginFrame(frameHarnessDt)
@@ -165,12 +165,12 @@ func TestEditorOwnsCtrlZThroughTheRealChord(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()
 	driveFrame(a)
-	idx := len(a.themeSidecar.Elements) - 1
+	idx := len(a.elemBake.themeSidecar.Elements) - 1
 	a.te.selectOnly(elementTarget(idx))
-	before := a.themeSidecar.Elements[idx].Rect
+	before := a.elemBake.themeSidecar.Elements[idx].Rect
 
 	a.editorNudgeSelection(1, 0, false)
-	if a.themeSidecar.Elements[idx].Rect == before {
+	if a.elemBake.themeSidecar.Elements[idx].Rect == before {
 		t.Fatal("the nudge did not move the element")
 	}
 
@@ -181,7 +181,7 @@ func TestEditorOwnsCtrlZThroughTheRealChord(t *testing.T) {
 	if a.ctx.hotkey != 0 {
 		t.Error("a consumed chord must zero c.hotkey, or it also fires whatever it is bound to")
 	}
-	if got := a.themeSidecar.Elements[idx].Rect; got != before {
+	if got := a.elemBake.themeSidecar.Elements[idx].Rect; got != before {
 		t.Errorf("Ctrl+Z left the rect at %+v, want %+v", got, before)
 	}
 
@@ -189,7 +189,7 @@ func TestEditorOwnsCtrlZThroughTheRealChord(t *testing.T) {
 	if !a.editorUndoChord() {
 		t.Fatal("Ctrl+Y on the editor screen must be consumed by the editor")
 	}
-	if got := a.themeSidecar.Elements[idx].Rect; got == before {
+	if got := a.elemBake.themeSidecar.Elements[idx].Rect; got == before {
 		t.Error("Ctrl+Y did not redo the nudge")
 	}
 }
@@ -204,7 +204,7 @@ func TestEditorUndoChordReachesTheEditorThroughAFrameWithNoRoom(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()
 	driveFrame(a)
-	idx := len(a.themeSidecar.Elements) - 1
+	idx := len(a.elemBake.themeSidecar.Elements) - 1
 	a.te.selectOnly(elementTarget(idx))
 
 	// NO ROOM: drawEditorCanvas takes its offline arm, which is the arm that reaches no
@@ -216,15 +216,15 @@ func TestEditorUndoChordReachesTheEditorThroughAFrameWithNoRoom(t *testing.T) {
 			"arm is the one the Settings entry point uses", a.screen, a.te != nil)
 	}
 
-	before := a.themeSidecar.Elements[idx].Rect
+	before := a.elemBake.themeSidecar.Elements[idx].Rect
 	a.editorNudgeSelection(1, 0, false)
-	edited := a.themeSidecar.Elements[idx].Rect
+	edited := a.elemBake.themeSidecar.Elements[idx].Rect
 	if edited == before {
 		t.Fatal("the nudge did not move the element; there is nothing for the chord to undo")
 	}
 
 	driveHotkey(a, sdl.K_z)
-	if got := a.themeSidecar.Elements[idx].Rect; got != before {
+	if got := a.elemBake.themeSidecar.Elements[idx].Rect; got != before {
 		t.Fatalf("Ctrl+Z driven through a REAL frame with no room left the rect at %+v, want %+v — the "+
 			"chord is dispatched only from the courtroom passes, so the editor's own screen never "+
 			"claims it when it is opened from Settings with no server attached", got, before)
@@ -235,7 +235,7 @@ func TestEditorUndoChordReachesTheEditorThroughAFrameWithNoRoom(t *testing.T) {
 	}
 
 	driveHotkey(a, sdl.K_y)
-	if got := a.themeSidecar.Elements[idx].Rect; got != edited {
+	if got := a.elemBake.themeSidecar.Elements[idx].Rect; got != edited {
 		t.Errorf("Ctrl+Y through a real frame left the rect at %+v, want the redone %+v", got, edited)
 	}
 }

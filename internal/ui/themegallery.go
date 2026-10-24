@@ -374,7 +374,7 @@ func (a *App) applyGalleryPick() {
 		return
 	}
 	sc.AdoptPresetMerge(merged)
-	a.themeSidecar = sc
+	a.elemBake.themeSidecar = sc
 	g.undo = snap
 	a.te.ring = themeEditRing{}
 	a.te.doc.dirty = true

@@ -177,8 +177,8 @@ func stagedRoomPaths() []stagedRoomPath {
 		// demo — is that same pref arriving, not an exemption from it).
 		name: "the theme editor's canned preview (enterEditorPreview)",
 		drive: func(t *testing.T, a *App) *courtroom.Courtroom {
-			if a.themeSidecar == nil {
-				a.themeSidecar = theme.NewSidecar()
+			if a.elemBake.themeSidecar == nil {
+				a.elemBake.themeSidecar = theme.NewSidecar()
 			}
 			if !a.armThemeEditor(ScreenSettings) {
 				t.Fatal("armThemeEditor refused a theme that has a sidecar — the preview cannot be reached")

@@ -253,6 +253,14 @@ type App struct {
 	// site (the pilot for the decomposition; more components follow).
 	updates selfUpdate
 
+	// elemBake is the theme element bake's own state (free elements: the parsed
+	// sidecar, the bake generation, the two sort keys and the visible_when memo).
+	// Lifted off App's flat namespace: it is read only by the themed element pass.
+	elemBake elemBakeState
+	// fxPool is the fixed clock pool plus the stateful-effect pool and the sidecar
+	// refusal the chip quotes (element clocks / effects).
+	fxPool themeFXState
+
 	// --- the theme editor (themeeditor.go) --------------------------
 	//
 	// ONE POINTER, nil while the editor is shut, and that is the whole of its cost
@@ -911,72 +919,8 @@ type App struct {
 	themeEmoteGap  [2]int
 	themeLay       themeLayoutCache
 	// --- free elements (themeelements.go / themeelementbake.go) -----
-	//
-	// themeSidecar is the applied theme's parsed asyncao_theme.ini, or nil for a
-	// stock AO2 theme — which is every theme that has never been opened in the
-	// editor, so nil is the ordinary case and every read of it is nil-safe. Loaded
-	// on the theme-apply goroutine (theme.Load), landed here by pollThemeApply, and
-	// read ONLY by the cold bake in themeLayoutIn.
-	themeSidecar *theme.Sidecar
-	// themeElemGen stamps each element bake. Monotonic across rebuilds, so the
-	// per-frame condition memo below cannot mistake a fresh (zeroed) cache for the
-	// one its indices were interned against.
-	themeElemGen uint64
-	// elemBakeBand / elemBakeZ are the bake's two SORT KEYS, held beside the baked
-	// array instead of inside it: the draw path has no use for either, and a second
-	// full copy of the array would be 11 KiB of App for one insertion sort.
-	elemBakeBand [theme.ElementCap]theme.ElementBand
-	elemBakeZ    [theme.ElementCap]int16
-	// condSrc / condLive memoise this frame's visible_when resolution: the live
-	// string each axis was last resolved from, and the interned index it resolved
-	// to (condAlwaysVisible = nothing in this theme matches). condGen is the bake
-	// generation they belong to. Refreshed once per themed pass, never per element.
-	condSrc  [theme.ConditionAxisCount]string
-	condLive [theme.ConditionAxisCount]int16
-	condGen  uint64
-	// condSpeaking is the one VALUE-LESS condition axis: a message is on the stage.
-	condSpeaking bool
 	// --- element clocks + effects (themeclock.go) -------------------
-	//
-	// themeClocks is the FIXED authoring-clock pool. Clock 0 is the shared themeAt
-	// anchor, so the ZERO VALUE of this array is "every element runs exactly as
-	// themeFrame always has" — which is why nothing has to initialise it and a stock
-	// AO2 theme costs nothing for it. Re-loaded beside a.themeAt in pollThemeApply.
-	themeClocks [theme.ClockCap]themeClock
-	// themeFX is the STATEFUL-effect pool: the three decaying one-shots need an
-	// origin, the five periodic kinds are pure arithmetic and take no slot. Fixed,
-	// self-clearing (see beginThemeFXPass), and zero-value-free by construction —
-	// fxState.owner is the baked index PLUS ONE so that 0 means "free".
-	themeFX [themeFXCap]fxState
-	// themeFXFrame is the pool's own pass counter, and the sweep's only input. Not a
-	// global frame counter: it advances once per ELEMENT pass, which is the only
-	// cadence the pool cares about.
-	themeFXFrame uint64
-	// themeFXOver records that the pool ran out during THIS pass — the editor's chip
-	// and the F8 line read it. Cleared by every sweep, so it describes the last
-	// pass rather than the session.
-	themeFXOver bool
-	// themeFXFrozen latches ReduceMotion for the FRAME. ONE prefs read per frame,
-	// never per element or per draw site (the two AllocsPerRun gates forbid the
-	// latter, and the theme-chrome draw sites number about ten), and it is what
-	// makes the accessibility answer and the pacing census the same decision.
-	themeFXFrozen bool
-	// themeSidecarErr / themeSidecarTip are the applied theme's sidecar REFUSAL, as
-	// the two strings the chip needs (themeerrchip.go): the debug-log line and the
-	// hover text. Both are built on the apply goroutine because both format; "" is a
-	// theme whose extension tier loaded (or which has none at all), which is almost
-	// every theme.
-	// They exist because theme.Theme.SidecarErr had no consumer and a refused sidecar
-	// is INVISIBLE: the theme applies, its AO2 half renders, and every element,
-	// override, palette role and pane in the file is silently gone.
-	themeSidecarErr string
-	themeSidecarTip string
-	// themeSidecarErrAck is the chip's acknowledgement. Re-armed (cleared) by every
-	// apply that still refuses, so dismissing it can never lose the state — and never
-	// cleared on a timer, because the condition does not expire on its own.
-	themeSidecarErrAck bool
 	// --- theme media (thememedia.go) --------------------------------
-	//
 	// themeMediaKeys is the set of theme:// media and generator keys THIS client
 	// uploaded — the declared set the swap prune reconciles against. It is a UI-side
 	// mirror rather than a store query for the same reason themeTex is: the prune

@@ -40,7 +40,7 @@ const (
 // not the theme" — gating it to the courtroom would hide it on the very screen the
 // user is standing on when they change themes.
 func (a *App) themeErrChipActive() bool {
-	return a.themeSidecarErr != "" && !a.themeSidecarErrAck
+	return a.fxPool.themeSidecarErr != "" && !a.fxPool.themeSidecarErrAck
 }
 
 // themeErrChipRect is the chip's rect in the menu-bar band, right-aligned.
@@ -102,7 +102,7 @@ func (a *App) handleThemeErrChipInput(w int32) {
 	if !c.hovering(r) {
 		return
 	}
-	c.Tooltip(r, a.themeSidecarTip)
+	c.Tooltip(r, a.fxPool.themeSidecarTip)
 	if !c.clicked {
 		return
 	}
@@ -112,7 +112,7 @@ func (a *App) handleThemeErrChipInput(w int32) {
 	// Acknowledged: the log owns the detail from here, and the next apply that still
 	// refuses re-arms the chip (pollThemeApply). Never cleared by a TIMER — the
 	// condition it reports does not expire on its own.
-	a.themeSidecarErrAck = true
+	a.fxPool.themeSidecarErrAck = true
 }
 
 // drawThemeErrChip paints the chip. Called from drawMenuBar (phase 2), so it lands

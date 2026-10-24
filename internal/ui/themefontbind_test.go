@@ -144,7 +144,7 @@ func TestElementFontAndSizeAreCarriedNotDrawn(t *testing.T) {
 		Text: "AMADEUS", Font: "Terminal Mono", Size: 27,
 		Color: theme.RGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF},
 	}}
-	a.themeSidecar = sc
+	a.elemBake.themeSidecar = sc
 	a.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
 	if a.themeLay.elN != 1 {

@@ -799,7 +799,7 @@ func stageElementNudge(t *testing.T, mutate func(*theme.Element)) *App {
 	if mutate != nil {
 		mutate(&el)
 	}
-	a.themeSidecar = &theme.Sidecar{Elements: []theme.Element{el}}
+	a.elemBake.themeSidecar = &theme.Sidecar{Elements: []theme.Element{el}}
 	a.editTgt = elementTarget(0)
 	return a
 }
@@ -833,7 +833,7 @@ func TestElementNudgeMatchesTheSlotNudge(t *testing.T) {
 				if !pressNudge(t, elemApp, key, coarse, stripEditW, stripEditH) {
 					t.Fatal("an element selection must claim the arrow key too")
 				}
-				elemAfter := elemApp.themeSidecar.Elements[0].Rect
+				elemAfter := elemApp.elemBake.themeSidecar.Elements[0].Rect
 				if elemAfter != slotAfter {
 					t.Fatalf("the element moved to %+v where the slot moved to %+v — same key, same start, same grid",
 						elemAfter, slotAfter)
@@ -857,7 +857,7 @@ func TestElementNudgeIsOnePixelAndReBakes(t *testing.T) {
 	}
 	want := elemNudgeRect
 	want.X += layoutNudgePx
-	if got := a.themeSidecar.Elements[0].Rect; got != want {
+	if got := a.elemBake.themeSidecar.Elements[0].Rect; got != want {
 		t.Fatalf("one arrow press moved the element %+v → %+v, want %+v", elemNudgeRect, got, want)
 	}
 	if a.themeLay.valid {
@@ -874,7 +874,7 @@ func TestElementNudgeRefusesALockedElementButStillEatsTheKey(t *testing.T) {
 	if !pressNudge(t, a, sdl.K_RIGHT, false, stripEditW, stripEditH) {
 		t.Fatal("the editor must still CONSUME the key it refuses to act on")
 	}
-	if got := a.themeSidecar.Elements[0].Rect; got != elemNudgeRect {
+	if got := a.elemBake.themeSidecar.Elements[0].Rect; got != elemNudgeRect {
 		t.Fatalf("a locked element moved %+v → %+v", elemNudgeRect, got)
 	}
 }
@@ -887,8 +887,8 @@ func TestElementNudgeSurvivesAThemeWithNoElements(t *testing.T) {
 		name string
 		prep func(*App)
 	}{
-		{"no sidecar at all", func(a *App) { a.themeSidecar = nil }},
-		{"an index past the end", func(a *App) { a.editTgt = elementTarget(len(a.themeSidecar.Elements) + 5) }},
+		{"no sidecar at all", func(a *App) { a.elemBake.themeSidecar = nil }},
+		{"an index past the end", func(a *App) { a.editTgt = elementTarget(len(a.elemBake.themeSidecar.Elements) + 5) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := stageElementNudge(t, nil)
