@@ -8,19 +8,6 @@ import (
 // The bypass list is the only thing standing between "proxy everything" and
 // breaking someone's LAN AO server, and getting it wrong in the permissive
 // direction is a privacy leak: traffic the user believes is proxied goes direct.
-//
-// This is hand-written rather than delegated to golang.org/x/net/http/httpproxy,
-// and that is not a not-invented-here choice. Two reasons, in order:
-//
-//  1. It is measurably WRONG for this job. Fed a real Windows ProxyOverride —
-//     `<local>;localhost;127.*;10.*;172.16.*;192.168.*` — through the `;`→`,`
-//     translation every off-the-shelf library ships, five of five rules leaked.
-//     `<local>` is inexpressible there at all, and `10.*` / `172.16.*` /
-//     `192.168.*` can NEVER match an IP literal, because a non-IP entry becomes
-//     a domain match and a domain match declines every address.
-//  2. net/http VENDORS httpproxy; the copy is not importable from outside the
-//     standard library, so using it means a new module for a matcher we would
-//     have to wrap and correct anyway.
 
 // maxBypassEntries caps how many rules one list can contribute. The raw string
 // comes from the operating system's configuration — a registry value, an
@@ -165,7 +152,6 @@ func octetWildcard(prefix string) (netip.Prefix, bool) {
 
 // match reports whether host goes DIRECT. host is a bare hostname or IP literal
 // with no port and no brackets.
-//
 // Loopback is always direct, ahead of every configured rule. That mirrors what
 // the standard library does unconditionally, so AsyncAO can never contradict the
 // rest of the Go ecosystem about localhost — and a proxy carrying 127.0.0.1

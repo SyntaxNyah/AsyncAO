@@ -51,9 +51,6 @@ const (
 // transcribed from AO2-Client/bin/base/themes/default/courtroom_design.ini with
 // the source line beside each value.
 // theme in issue #20's screenshot, among them.
-// Verified against the stock art: a dark-run scan of the default theme's
-// 714×668 charselect_background.png finds exactly 7 horizontal runs starting at
-// x=226 and 9 vertical runs starting at y=36, each 60 px, pitch 67 — which is
 var charSelectDefaultRects = map[string]theme.Rect{
 	charSelectCanvasKey:     {X: 0, Y: 0, W: 714, H: 668},    // courtroom_design.ini:150
 	charSelectListKey:       {X: 25, Y: 36, W: 190, H: 596},  // :151
@@ -175,10 +172,6 @@ type charSelectLayoutCache struct {
 
 	// --- DESIGN-SPACE values, kept because the grid cannot be laid out from the
 	// scaled ones without drifting off the artwork (see the header comment).
-	//
-	// designW/designH are the canvas AO2 would have called setFixedSize with. Every
-	// mapping in charselectgrid.go is `design * area.<extent> / design<extent>`, so
-	// both halves of that ratio have to be reachable from the cache.
 	designW, designH int32
 	// spacingDesignX/Y are char_button_spacing AS DECLARED, before any scaling.
 	// AO2 computes its column and row COUNTS from the design rect and the design
@@ -210,8 +203,6 @@ func (l *charSelectLayoutCache) rect(key string) (sdl.Rect, bool) {
 // button_width and char_button_spacing by the single Options::themeScalingFactor()
 // (charselect.cpp:158, text_file_functions.cpp:212-213), so the cell is square at
 // every window shape; our scale is per-axis and, in Stretch only, scaleX != scaleY.
-// min() rather than max(): a cell grown by the looser axis would overflow
-// char_buttons on the tighter one and silently drop a whole column off the grid.
 func (l *charSelectLayoutCache) cellScale() float64 {
 	if l.scaleY < l.scaleX {
 		return l.scaleY
@@ -252,8 +243,6 @@ func (a *App) charSelectLayoutIn(w, h, top int32) *charSelectLayoutCache {
 	// band, fit or theme change behind it. Left out, a cache built while the canvas
 	// was on would keep the screen letterboxed after the toggle went off — the same
 	// class of stale-key bug the server-tab strip's parked-ness flag was added for.
-	// It is alloc-free and short-circuits on the commonest case (no design table at
-	// all) before it touches prefs, so the cache-hit path stays cheap.
 	if lay.valid && lay.winW == w && lay.winH == h && lay.topOff == top && lay.fit == fit &&
 		a.charSelectThemed() {
 		return lay
@@ -274,9 +263,6 @@ func (a *App) charSelectLayoutIn(w, h, top int32) *charSelectLayoutCache {
 	// than the canvas is what keeps Crop's overflow anchored where the mode says and
 	// leaves Custom's upward pan possible, while still guaranteeing this screen never
 	// paints into, or hit-tests inside, chrome that belongs to somebody else.
-	// A degenerate result (W or H == 0) is possible — an extreme Custom pan can carry
-	// the whole canvas off-screen — and means exactly what it says: nothing to draw
-	// this frame. Callers must treat it as such rather than clipping to it.
 	lay.clip = lay.area
 	if lay.clip.Y < top {
 		lay.clip.H -= top - lay.clip.Y
@@ -355,7 +341,6 @@ func (a *App) drawCharSelectBackdrop(w, h int32, lay *charSelectLayoutCache) {
 	// &lay.area into cgo would heap-allocate per frame even on the branches above
 	// (escape analysis is static) — the shared scratch is the house idiom, and SDL
 	// copies the rect during the call without retaining the pointer.
-	//
 	// Plain Copy, no CopyEx rotation branch (unlike drawScreenBackdrop): A4's
 	// per-key angles are baked into the COURTROOM layout cache from the themed
 	// editor's key set, and char select is deliberately outside both — there is no

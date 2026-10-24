@@ -83,7 +83,6 @@ type themeMediaPlan struct {
 	Gens []themeGenPlanEntry
 	// ElemKeys is the T1 key each ELEMENT resolves to, indexed by the element's own
 	// position in Sidecar.Elements ("" for an element that has no art).
-	//
 	// It exists so the BAKE can resolve a page with an indexed load instead of
 	// re-deriving a key. Re-deriving would mean lowercasing a name and hashing a
 	// param list once per element per rebuild, and the bake's allocation ceiling
@@ -114,7 +113,6 @@ type themeGenPlanEntry struct {
 
 // planThemeMedia decides what a theme's declared art costs before anything is read
 // from disk. Runs on the theme-apply goroutine.
-//
 // DECLARATION ORDER, first-come-first-served, with an explicit refusal — never an
 // eviction to make room for a latecomer. That is design §Q2's "silent eviction is
 // forbidden", and the reason is that a theme whose appearance depended on the order
@@ -212,9 +210,6 @@ func (plan *themeMediaPlan) planElements(sc *theme.Sidecar, themeID string) {
 // else: the kind, the media id, the generator name and its params, the `hidden` flag
 // that Inert() turns on, and the element COUNT and ORDER (the keys are indexed by
 // position, so a delete that shifts the tail changes the answer).
-// ALLOCATION-FREE, which typeSig does not have to be and this does: it is read on
-// EVERY editor frame. That is why it folds the RAW fields instead of building the
-// normalised theme.GeneratorSpec the key is hashed from — GeneratorSpecOf lower-cases
 func themeArtSig(sc *theme.Sidecar) uint64 {
 	h := typeSigOffset64
 	if sc == nil {
@@ -278,12 +273,6 @@ func themeMediaMiB(n int64) string {
 
 // themeMediaPath resolves a [media] file inside the theme folder, refusing anything
 // that escapes it.
-//
-// internal/safepath is THE copy of the zip-slip / symlink / `..` / depth guards
-// (CLAUDE.md's package map says so in as many words), and a theme is exactly the
-// untrusted-archive shape those guards exist for: the file name comes out of a file
-// a stranger wrote, and the format's own §6 says "absolute file paths, or any path
-// outside the theme folder" are deliberately not in it.
 func themeMediaPath(dir, file string) (string, bool) {
 	if dir == "" || file == "" {
 		return "", false
@@ -329,7 +318,6 @@ func themeSanitizeID(name string) string {
 
 // loadThemeMedia reads and decodes one planned entry, downscaling it when its long
 // edge is past themeMediaMaxEdgePx. Theme-apply goroutine only (hard rule 2).
-//
 // The downscale is x/image/draw's CatmullRom, which is already a DIRECT dependency
 // doing exactly this in assets/thumbcache.go — no new dependency, no
 // docs/ARCHITECTURE.md justification, and emphatically not a hand-rolled box filter.
@@ -429,7 +417,6 @@ func themeArtOverWarnPct(bytes, budget int64) bool {
 // loadThemeMediaSet decodes every PLANNED entry and rasterises every planned
 // generator tile. Theme-apply goroutine only: it reads files and fills 256² pixel
 // buffers, neither of which may happen on a frame (hard rule 2).
-//
 // An entry that fails to decode is downgraded to mediaMissing in place, so the
 // element still exists and still says why — the same "never a silent drop" rule the
 // over-budget path follows.

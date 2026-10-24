@@ -25,13 +25,10 @@ import (
 // smaller than the sprites they stand in for, so they stay useful long after
 // the full asset was evicted ("more permanent, allows more stuff, REALLY low
 // quality").
-//
 // Every path is bounded and off the hot loop (§17.4 / spec §2): Store and
 // RequestLoad are non-blocking enqueues that DROP when their queue is full
 // (thumbs are speculative — the paced heal retry re-asks), one goroutine
 // encodes, one loads+decodes, and the render thread only drains Results()
-// (upload is the caller's, on the render thread). A webpenc-less build
-// (fallback) just never stores; loads of an empty cache miss harmlessly.
 type ThumbCache struct {
 	disk *cache.DiskCache
 
@@ -143,7 +140,6 @@ func (t *ThumbCache) SetBudget(bytes int64) { t.budget.Store(bytes) }
 // after the texture upload — only an independently-owned copy may cross the
 // queue (see thumbJob). At ~64 px the CatmullRom pass is a small fraction of
 // the decode that just ran, and the whole path is opt-in. Non-blocking enqueue:
-// a full queue drops the job (the next decode re-offers).
 func (t *ThumbCache) Store(base string, d *Decoded) {
 	if !t.enabled.Load() || d == nil || len(d.Frames) == 0 || d.Frames[0] == nil {
 		return
@@ -300,17 +296,6 @@ func (t *ThumbCache) prune() {
 // Split out of prune so the one case that cannot be staged on a real directory —
 // an entry the snapshot listed but that is GONE by the time this pass reaches it
 // — is drivable through the remove hook instead of raced.
-//
-// That case is the whole reason this function is careful about its arithmetic. A
-// vanished file has already given its bytes back, so it counts as freed. The
-// caller's ReadDir is a snapshot and anything may empty an entry behind it: the
-// open sweep overlapping the every-thumbPruneEvery one, a cleanup tool, the user
-// emptying the folder. Crediting only remove's own successes left total
-// overstated by every vanished file and walked the sweep straight past the
-// budget, deleting live thumbnails (a flaky TestThumbPruneBudget was this bug
-// reproducing itself against the encode worker's open sweep). Any OTHER error
-// means the bytes really are still there — a locked file — so total keeps them
-// and the file survives to the next sweep.
 func pruneToBudget(files []thumbFile, total, budget int64, remove func(string) error) {
 	if total <= budget {
 		return

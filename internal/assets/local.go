@@ -36,8 +36,6 @@ const (
 // that walk carries a named cap (rule 4), and the product of the three is its
 // whole worst case: mounts × localFoldMaxDepth directory scans, each reading at
 // most localFoldScanCap entries in localFoldScanChunk-sized batches.
-// The whole cost is paid on the miss path only, and at most once per URL per
-// localNotFoundCacheTTL: the conclusive miss it ends in is memoized (rule 6).
 const (
 	localFoldScanChunk = 256
 	localFoldScanCap   = 16384
@@ -48,9 +46,6 @@ const (
 // the network: the "Legacy support for servers without an asset server"
 // checkbox. Mounts are searched in order, first hit wins (AO2-Client mount
 // path semantics — any folder layout, not just a default /base).
-// It satisfies the manager's Fetcher contract; a file missing from every
-// mount maps to network.ErrAssetNotFound so learned formats, fallback
-// chains, and missing-asset warnings behave identically to streaming — and,
 type LocalFetcher struct {
 	mounts []string
 	origin string
@@ -174,9 +169,6 @@ func (l *LocalFetcher) Fetch(_ context.Context, rawURL string) ([]byte, error) {
 	// they do not, so on the Linux AppImage/Flatpak (and a case-sensitive macOS
 	// volume) EVERY asset of every capitalised pack folder was unreachable — a
 	// whole-character miss, not an edge case.
-	// Only the DECODED spelling is folded: the raw one exists for exported archives,
-	// which write their escaped names to disk verbatim and are therefore already
-	// answered byte-for-byte by attempt 1. (When the rel holds a malformed escape
 	if data, err := l.readRelFold(decoded); err != nil {
 		return nil, err
 	} else if data != nil {
@@ -196,9 +188,6 @@ func (l *LocalFetcher) Fetch(_ context.Context, rawURL string) ([]byte, error) {
 // try another spelling), and (nil,err) on a real I/O error or a path escape.
 // The escape guard runs HERE so it re-checks the DECODED rel too — a "%2e%2e"
 // must not slip past by decoding into ".." afterwards.
-// It is safepath's predicate, not a private one: this was the third copy of the
-// same boundary in the tree and the only one that missed absolute paths and
-// Windows drive-relative names.
 func (l *LocalFetcher) readRel(rel string) ([]byte, error) {
 	if safepath.UnsafeRel(rel) {
 		return nil, fmt.Errorf("assets: refusing path escape %q", rel)
@@ -226,9 +215,6 @@ func (l *LocalFetcher) readRel(rel string) ([]byte, error) {
 // first-hit-wins and same (nil,nil) "missing everywhere" answer, but each segment
 // of rel is matched against the real directory entry names when the exact spelling
 // is not there.
-// The EXACT spellings keep reading through a link — and into a FIFO, where they have
-// always been able to block — deliberately and unchanged: that is pre-existing policy
-// for a path the caller spelled out byte-for-byte, one os.ReadFile with no enumeration
 func (l *LocalFetcher) readRelFold(rel string) ([]byte, error) {
 	// Defence in depth: the same rel already passed this guard in readRel above.
 	// Kept because this walk appends path segments of its own, and a guard that
