@@ -49,7 +49,7 @@ func TestSkipFrameExpExtendsToMenus(t *testing.T) {
 	// previews orphaned by a screen switch have no draw tail left to close
 	// them, and the old state check held the event-driven loop at the ACTIVE
 	// cap until restart (the stuck-at-active-cap report).
-	a.previewBase = "srv/characters/witch/(a)normal"
+	a.budget.previewBase = "srv/characters/witch/(a)normal"
 	if !a.SkipFrame(true, false) {
 		t.Error("exp: a bare previewBase (no drawn box) must skip — the orphan cap latch")
 	}
@@ -58,7 +58,7 @@ func TestSkipFrameExpExtendsToMenus(t *testing.T) {
 		t.Error("exp: a drawn animated preview must keep rendering (census)")
 	}
 	a.frame.drawnAnimChrome = false
-	a.previewBase = ""
+	a.budget.previewBase = ""
 	a.screen = ScreenAbout
 	if !a.SkipFrame(true, false) {
 		t.Error("exp: a static About screen must skip")
@@ -180,11 +180,11 @@ func TestSkipFrameSharedRefusals(t *testing.T) {
 		// A bare previewBase must NOT hold frames in either mode: an orphaned
 		// preview (screen switched under it) has no draw tail left to close it,
 		// and keying the skip on the state latched the pace at the active cap.
-		a.previewBase = "srv/characters/witch/(a)normal"
+		a.budget.previewBase = "srv/characters/witch/(a)normal"
 		if !a.SkipFrame(true, false) {
 			t.Errorf("exp=%v: a bare previewBase (no drawn box) must skip — the orphan cap latch", exp)
 		}
-		a.previewBase = ""
+		a.budget.previewBase = ""
 		a.frame.drawnAnimChrome = true
 		if a.SkipFrame(true, false) {
 			t.Errorf("exp=%v: animated chrome on screen (theme art, splash, badge, a DRAWN animated preview) must keep frames coming", exp)

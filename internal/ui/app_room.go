@@ -1483,7 +1483,7 @@ func (a *App) wantsFullRate() bool {
 	// and input like any other chrome; only a live call's audio engine needs
 	// steady frames (SkipFrame's voice exception keeps them coming regardless —
 	// this keeps their PACE at the full rate the engine was tuned for).
-	if a.sel.replaying || a.sel.makerOpen || a.sel.gifExporting || a.link.voiceJoined || a.perfHUD {
+	if a.sel.replaying || a.sel.makerOpen || a.sel.gifExporting || a.link.voiceJoined || a.budget.perfHUD {
 		return true
 	}
 	return len(a.reactUI.reactionFloats) > 0 || a.splitActive()
@@ -1578,10 +1578,10 @@ func (a *App) applyMusicStreaming(on bool) {
 		a.link.room.StreamMusic = on
 	}
 	if !on {
-		a.d.Audio.StopMusic()           // halt the current track and cancel any pending fetch
-		a.musicTabDucked = false        // stream stopped: not ducked (invariant)
-		a.musicAwaitURL = ""            // and no pending un-duck (nothing will be delivered)
-		a.musicAwaitSince = time.Time{} // clear the timeout stamp with the await it belongs to
+		a.d.Audio.StopMusic()                  // halt the current track and cancel any pending fetch
+		a.budget.musicTabDucked = false        // stream stopped: not ducked (invariant)
+		a.budget.musicAwaitURL = ""            // and no pending un-duck (nothing will be delivered)
+		a.budget.musicAwaitSince = time.Time{} // clear the timeout stamp with the await it belongs to
 	}
 }
 
@@ -1602,12 +1602,12 @@ func (a *App) applyMusicAcrossTabs(on bool) {
 	})
 
 	if on {
-		a.musicTabDucked = false
-		a.musicAwaitURL = ""
-		a.musicAwaitSince = time.Time{}
+		a.budget.musicTabDucked = false
+		a.budget.musicAwaitURL = ""
+		a.budget.musicAwaitSince = time.Time{}
 		a.applyAudioVolumes()
 	} else {
-		a.musicTabDucked = true
+		a.budget.musicTabDucked = true
 		a.applyAudioVolumes()
 	}
 }
@@ -1701,9 +1701,9 @@ func (a *App) resumeActiveTabMusic() {
 		// so nothing new will be delivered — clear any await and drop the duck so the
 		// state stays coherent (a held await with no incoming url would silently duck
 		// this stream forever). applyAudioVolumes reflects the un-ducked decision.
-		a.musicAwaitURL = ""
-		a.musicAwaitSince = time.Time{}
-		a.musicTabDucked = false
+		a.budget.musicAwaitURL = ""
+		a.budget.musicAwaitSince = time.Time{}
+		a.budget.musicTabDucked = false
 		a.applyAudioVolumes()
 		return
 	}
@@ -1727,23 +1727,23 @@ func (a *App) resumeActiveTabMusic() {
 func (a *App) applyResumeDuck(sameTrack bool, url string) {
 	if sameTrack {
 		// Nothing awaited once we're on our own track; the right song is audible now.
-		a.musicAwaitURL = ""
-		a.musicAwaitSince = time.Time{}
-		a.musicTabDucked = false
-	} else if a.musicTabDucked {
+		a.budget.musicAwaitURL = ""
+		a.budget.musicAwaitSince = time.Time{}
+		a.budget.musicTabDucked = false
+	} else if a.budget.musicTabDucked {
 		// Swap path, and there's a real duck to hold: arm the await so the duck lifts
 		// only once THIS track is the one the mixer is playing (never a foreign track
 		// mid-fetch). GATED on the duck deliberately, mirroring the DJ /play arm (which
 		// arms only `if a.musicTabDucked`). Under MusicAcrossTabs ON the duck is already
 		// down (no acoustic isolation wanted) — arming an await then is pure liability:
-		a.musicAwaitURL = url       // un-duck only once THIS track is the one playing
-		a.musicAwaitSince = a.now() // stamp for the never-arrives timeout release
+		a.budget.musicAwaitURL = url       // un-duck only once THIS track is the one playing
+		a.budget.musicAwaitSince = a.now() // stamp for the never-arrives timeout release
 	}
 	// The active tab just claimed the single stream with its own track (resume,
 	// either the same track it kept rolling or a freshly-fetched one): it now owns
 	// the stream, so its per-server music volume governs it. a.serverKey is the
 	// active tab's key here — see musicOwnerKey.
-	a.musicOwnerKey = a.srvMeta.serverKey
+	a.budget.musicOwnerKey = a.srvMeta.serverKey
 	a.applyAudioVolumes()
 }
 
@@ -2172,7 +2172,7 @@ func (a *App) demandAsset(stamps *[]time.Time, n, idx int, base string, t assets
 	if a.d.Manager.IsConclusiveMiss(base, t) {
 		return false
 	}
-	if a.iconAskBudget <= 0 {
+	if a.budget.iconAskBudget <= 0 {
 		return true // budget spent this frame, not a verdict on the asset
 	}
 	if len(*stamps) != n {
@@ -2183,7 +2183,7 @@ func (a *App) demandAsset(stamps *[]time.Time, n, idx int, base string, t assets
 		return true
 	}
 	(*stamps)[idx] = now
-	a.iconAskBudget--
+	a.budget.iconAskBudget--
 	a.d.Manager.Prefetch(base, t, network.PriorityLow)
 	return true
 }
@@ -2230,14 +2230,14 @@ const (
 // off-thread and lands in previewEmoteRes. previewChar guards it to one parse
 // per character.
 func (a *App) ensurePreviewEmotes(name string, cycle bool) {
-	if name == "" || name == a.previewChar || a.link.urls.Origin() == "" {
+	if name == "" || name == a.budget.previewChar || a.link.urls.Origin() == "" {
 		return
 	}
-	a.previewChar = name
-	a.previewEmoteCycle = cycle
-	a.previewAnims = nil
-	a.previewLabels = nil
-	a.previewEmoteIdx = 0
+	a.budget.previewChar = name
+	a.budget.previewEmoteCycle = cycle
+	a.budget.previewAnims = nil
+	a.budget.previewLabels = nil
+	a.budget.previewEmoteIdx = 0
 	url := a.charINIURL(name)
 	key := a.srvMeta.serverKey
 	mgr := a.d.Manager
@@ -2278,23 +2278,23 @@ func (a *App) ensurePreviewEmotes(name string, cycle bool) {
 func (a *App) pollPreviewEmotes() {
 	select {
 	case res := <-a.previewEmoteRes:
-		if res.key != a.srvMeta.serverKey || res.char != a.previewChar {
+		if res.key != a.srvMeta.serverKey || res.char != a.budget.previewChar {
 			return
 		}
-		a.previewAnims = res.anims
-		a.previewLabels = res.labels
-		a.previewEmoteIdx = 0
+		a.budget.previewAnims = res.anims
+		a.budget.previewLabels = res.labels
+		a.budget.previewEmoteIdx = 0
 		if len(res.anims) == 0 {
 			return
 		}
-		if !a.previewEmoteCycle {
+		if !a.budget.previewEmoteCycle {
 			// char-select portrait. The box outlives the trigger cell (the travel
 			// corridor keeps it up once the cursor leaves), so a late parse has to
 			// correct it here instead of waiting for another hover frame.
 			a.correctPortraitPreview(res.char)
 			return
 		}
-		if a.previewBase == a.link.urls.Emote(res.char, previewIdleAnim, courtroom.EmoteIdle) {
+		if a.budget.previewBase == a.link.urls.Emote(res.char, previewIdleAnim, courtroom.EmoteIdle) {
 			a.setPreviewEmote(0)
 		}
 	default:
@@ -2307,17 +2307,17 @@ func (a *App) pollPreviewEmotes() {
 // Until the parse lands it answers the convention, so the common pack still
 // fills the box from ONE optimistic probe and never pays for a second.
 func (a *App) previewPortraitAnim(name string) string {
-	if name != a.previewChar || len(a.previewAnims) == 0 {
+	if name != a.budget.previewChar || len(a.budget.previewAnims) == 0 {
 		return previewIdleAnim // not parsed (yet): the optimistic convention
 	}
-	for _, anim := range a.previewAnims {
+	for _, anim := range a.budget.previewAnims {
 		// Case-insensitive: emote anims are lowercased into the URL (segPath), so
 		// a char.ini "Normal" resolves to the very base already probed.
 		if strings.EqualFold(anim, previewIdleAnim) {
 			return previewIdleAnim
 		}
 	}
-	return a.previewAnims[0]
+	return a.budget.previewAnims[0]
 }
 
 // setCharPortraitPreview points the char-select hover box at name's portrait and
@@ -2327,8 +2327,8 @@ func (a *App) previewPortraitAnim(name string) string {
 // demand per frame and no more.
 func (a *App) setCharPortraitPreview(name string) {
 	anim := a.previewPortraitAnim(name)
-	a.previewBase = a.link.urls.Emote(name, anim, courtroom.EmoteIdle)
-	a.d.Manager.PrefetchChain(a.previewBase, a.link.urls.EmoteAlts(name, anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+	a.budget.previewBase = a.link.urls.Emote(name, anim, courtroom.EmoteIdle)
+	a.d.Manager.PrefetchChain(a.budget.previewBase, a.link.urls.EmoteAlts(name, anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
 }
 
 // correctPortraitPreview repoints an ALREADY-OPEN char-select portrait after its
@@ -2337,7 +2337,7 @@ func (a *App) setCharPortraitPreview(name string) {
 // have "normal" costs no second probe, and a box another surface has since
 // claimed is left alone.
 func (a *App) correctPortraitPreview(name string) {
-	if a.previewBase != a.link.urls.Emote(name, previewIdleAnim, courtroom.EmoteIdle) {
+	if a.budget.previewBase != a.link.urls.Emote(name, previewIdleAnim, courtroom.EmoteIdle) {
 		return
 	}
 	if a.previewPortraitAnim(name) == previewIdleAnim {
@@ -2349,18 +2349,18 @@ func (a *App) correctPortraitPreview(name string) {
 // setPreviewEmote points the preview box at emote i (wrapping) of the previewed
 // character — the talk (b) pose, like the courtroom emote strip's hover.
 func (a *App) setPreviewEmote(i int) {
-	n := len(a.previewAnims)
-	if n == 0 || a.previewChar == "" {
+	n := len(a.budget.previewAnims)
+	if n == 0 || a.budget.previewChar == "" {
 		return
 	}
-	a.previewEmoteIdx = ((i % n) + n) % n
-	anim := a.previewAnims[a.previewEmoteIdx]
-	a.previewBase = a.link.urls.Emote(a.previewChar, anim, courtroom.EmoteTalk)
-	a.d.Manager.PrefetchChain(a.previewBase, a.link.urls.EmoteAlts(a.previewChar, anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview cycle)
+	a.budget.previewEmoteIdx = ((i % n) + n) % n
+	anim := a.budget.previewAnims[a.budget.previewEmoteIdx]
+	a.budget.previewBase = a.link.urls.Emote(a.budget.previewChar, anim, courtroom.EmoteTalk)
+	a.d.Manager.PrefetchChain(a.budget.previewBase, a.link.urls.EmoteAlts(a.budget.previewChar, anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview cycle)
 }
 
 // cyclePreviewEmote steps the try-before-wear preview by delta (wrapping).
-func (a *App) cyclePreviewEmote(delta int) { a.setPreviewEmote(a.previewEmoteIdx + delta) }
+func (a *App) cyclePreviewEmote(delta int) { a.setPreviewEmote(a.budget.previewEmoteIdx + delta) }
 
 // clampEmoteSel returns the emote index / grid scroll row to use after an emote
 // list of length n is (re)loaded. A still-valid index is PRESERVED — so a tab

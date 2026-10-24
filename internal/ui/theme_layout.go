@@ -828,7 +828,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		if nameR, ok := lay.rect("ooc_chat_name"); ok {
 			a.ensureNameOpts()
 			dd := int32(0)
-			if len(a.nameOpts) > 1 && nameR.W > 60 { // tiny ▾ picker, fitted inside the theme's box
+			if len(a.budget.nameOpts) > 1 && nameR.W > 60 { // tiny ▾ picker, fitted inside the theme's box
 				dd = 20
 				nameR.W -= dd + 2
 			}
@@ -1109,7 +1109,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		}
 		a.ensureNameOpts()
 		dd := int32(0)
-		if len(a.nameOpts) > 1 && nameR.W > 60 { // tiny ▾ saved-name picker, fitted inside the theme's box
+		if len(a.budget.nameOpts) > 1 && nameR.W > 60 { // tiny ▾ saved-name picker, fitted inside the theme's box
 			dd = 20
 			nameR.W -= dd + 2
 		}
@@ -1680,7 +1680,7 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 			}
 		}
 	}
-	if a.previewBase != "" {
+	if a.budget.previewBase != "" {
 		// Clamp to the WINDOW, not the stage — the box is draggable anywhere
 		// (playtest: the preview could not be moved out of the viewport).
 		a.drawSpritePreview(a.frame.winW, a.frame.winH, false, a.previewedEmoteName()) // ARM 2: caption the emote name

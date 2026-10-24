@@ -446,7 +446,7 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 		}
 	}
 
-	if a.previewBase != "" {
+	if a.budget.previewBase != "" {
 		a.drawSpritePreview(w, h, true, "") // wardrobe: try-before-wear emote cycle (the nav bar captions the name)
 		a.dismissPreviewOnClick()           // pin-aware, and disarms the trigger's dwell id
 	}
@@ -608,7 +608,7 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	}
 	c.popClip(clipPrev, clipHad)
 
-	if a.previewBase != "" {
+	if a.budget.previewBase != "" {
 		a.drawSpritePreview(w, h, true, "") // try-before-wear preview, same as Characters (nav bar captions the name)
 		a.dismissPreviewOnClick()           // pin-aware, and disarms the trigger's dwell id
 	}
@@ -908,9 +908,9 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 	}
 
 	if c.HoverPreview(a.iniHoverID(idx), cell) {
-		a.previewBase = a.link.urls.Emote(name, "normal", courtroom.EmoteIdle)
-		a.d.Manager.PrefetchChain(a.previewBase, a.link.urls.EmoteAlts(name, "normal", courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
-		a.ensurePreviewEmotes(name, previewEmoteNav)                                                                                                           // try-before-wear: load this character's emotes to cycle
+		a.budget.previewBase = a.link.urls.Emote(name, "normal", courtroom.EmoteIdle)
+		a.d.Manager.PrefetchChain(a.budget.previewBase, a.link.urls.EmoteAlts(name, "normal", courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+		a.ensurePreviewEmotes(name, previewEmoteNav)                                                                                                                  // try-before-wear: load this character's emotes to cycle
 	}
 	if c.hovering(cell) {
 		a.inibrowse.iniHoverChar = name // number keys 0-9 quick-file the hovered character

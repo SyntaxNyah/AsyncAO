@@ -55,10 +55,10 @@ func (a *App) oocNameOrDefault() string {
 	if n := strings.TrimSpace(a.compose.oocName); n != "" {
 		return n
 	}
-	if a.defaultOOC == "" {
-		a.defaultOOC = fmt.Sprintf("AsyncAO%d", 1+rand.IntN(defaultOOCNameRange))
+	if a.budget.defaultOOC == "" {
+		a.budget.defaultOOC = fmt.Sprintf("AsyncAO%d", 1+rand.IntN(defaultOOCNameRange))
 	}
-	return a.defaultOOC
+	return a.budget.defaultOOC
 }
 
 // queueOOCLines schedules lines for paced automated OOC sending (the
@@ -370,9 +370,9 @@ func (a *App) drawMacroSettings(y int32, w int32) int32 {
 
 	// Editor row: name, key capture, lines, add.
 	settings.macroName, _ = c.TextField("macroname", sdl.Rect{X: pad, Y: y, W: 130, H: fieldH}, settings.macroName, "name")
-	keyLabel := bindChipLabel(settings.macroKey, a.macroBind >= 0, "press...", "set key")
+	keyLabel := bindChipLabel(settings.macroKey, a.budget.macroBind >= 0, "press...", "set key")
 	if c.Button(sdl.Rect{X: pad + 136, Y: y, W: 86, H: btnH}, keyLabel) {
-		a.macroBind = 0 // arm capture (Esc cancels)
+		a.budget.macroBind = 0 // arm capture (Esc cancels)
 		a.ctx.focusID = ""
 	}
 	settings.macroLines, _ = c.TextField("macrolines", sdl.Rect{X: pad + 228, Y: y, W: a.formW - 358, H: fieldH},
@@ -523,17 +523,17 @@ func (a *App) syncLoginBuffers() {
 
 // pollMacroBind completes an armed macro key capture.
 func (a *App) pollMacroBind() {
-	if a.macroBind < 0 {
+	if a.budget.macroBind < 0 {
 		return
 	}
 	c := a.ctx
 	if c.escPressed {
-		a.macroBind = -1
+		a.budget.macroBind = -1
 		return
 	}
 	if c.keyPressed == 0 {
 		return
 	}
 	settings.macroKey = strings.ToLower(sdl.GetKeyName(c.keyPressed))
-	a.macroBind = -1
+	a.budget.macroBind = -1
 }

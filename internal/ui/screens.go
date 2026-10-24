@@ -169,7 +169,7 @@ func (a *App) handlePreviewInput() {
 	// per frame above every screen, so a pass that publishes nothing (char select,
 	// settings) can never replay a courtroom frame's stale mark into pushOverlayOwner.
 	a.previewFence = previewFenceLatch{}
-	if a.previewBase == "" {
+	if a.budget.previewBase == "" {
 		a.previewDrag = false
 		return
 	}
@@ -197,7 +197,7 @@ func (a *App) handlePreviewInput() {
 	// Wheel zoom in/out over the box; claim the wheel so the list/grid under it
 	// doesn't also scroll (same range as the − / + buttons).
 	if c.wheelY != 0 && c.hovering(box) {
-		a.previewZoom = int(clampI32(int32(a.previewZoom)+c.wheelY, 1, previewZoomMax))
+		a.budget.previewZoom = int(clampI32(int32(a.budget.previewZoom)+c.wheelY, 1, previewZoomMax))
 		c.wheelY = 0
 		c.wheelTaken = true
 	}
@@ -275,8 +275,8 @@ func (a *App) drawPreviewZoom(frame sdl.Rect, srcW, srcH, shownH int32) {
 		pct = shownH * 100 / srcH
 	}
 	caption := fmt.Sprintf("%d×%d · %d%%", srcW, srcH, pct)
-	if a.previewZoom > 1 {
-		caption += fmt.Sprintf(" · %dx", a.previewZoom)
+	if a.budget.previewZoom > 1 {
+		caption += fmt.Sprintf(" · %dx", a.budget.previewZoom)
 	}
 	capW := c.TextWidth(caption) + 12
 	lvl := sdl.Rect{X: frame.X + (frame.W-capW)/2, Y: y, W: capW, H: bh}
@@ -290,14 +290,14 @@ func (a *App) drawPreviewZoom(frame sdl.Rect, srcW, srcH, shownH int32) {
 	c.Tooltip(minus, "Zoom out (or scroll the wheel over the box)")
 	c.Tooltip(plus, "Zoom in (or scroll the wheel) — at >1× move the mouse to pan. Drag the box to move it.")
 	if c.hovering(minus) && c.clicked {
-		if a.previewZoom > 1 {
-			a.previewZoom--
+		if a.budget.previewZoom > 1 {
+			a.budget.previewZoom--
 		}
 		c.clicked = false
 	}
 	if c.hovering(plus) && c.clicked {
-		if a.previewZoom < previewZoomMax {
-			a.previewZoom++
+		if a.budget.previewZoom < previewZoomMax {
+			a.budget.previewZoom++
 		}
 		c.clicked = false
 	}
@@ -314,10 +314,10 @@ func (a *App) drawPreviewEmoteNav(frame sdl.Rect) {
 	bar := sdl.Rect{X: frame.X, Y: frame.Y - barH - 2, W: frame.W, H: barH}
 	c.Fill(bar, sdl.Color{R: 0, G: 0, B: 0, A: 210})
 	caption := ""
-	if a.previewEmoteIdx < len(a.previewLabels) {
-		caption = a.previewLabels[a.previewEmoteIdx]
+	if a.budget.previewEmoteIdx < len(a.budget.previewLabels) {
+		caption = a.budget.previewLabels[a.budget.previewEmoteIdx]
 	}
-	caption = fmt.Sprintf("%s (%d/%d)", caption, a.previewEmoteIdx+1, len(a.previewAnims))
+	caption = fmt.Sprintf("%s (%d/%d)", caption, a.budget.previewEmoteIdx+1, len(a.budget.previewAnims))
 	c.LabelClipped(bar.X+navW+4, bar.Y+3, bar.W-2*navW-8, caption, ColAccent)
 	if c.Button(sdl.Rect{X: bar.X, Y: bar.Y, W: navW, H: barH}, "<") {
 		a.cyclePreviewEmote(-1)

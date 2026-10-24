@@ -31,8 +31,8 @@ const (
 
 // recordFrameDt feeds the ring (called every Frame with the real dt).
 func (a *App) recordFrameDt(dtMs float32) {
-	a.frameDts[a.frameDtIdx] = dtMs
-	a.frameDtIdx = (a.frameDtIdx + 1) % perfHUDFrames
+	a.budget.frameDts[a.budget.frameDtIdx] = dtMs
+	a.budget.frameDtIdx = (a.budget.frameDtIdx + 1) % perfHUDFrames
 }
 
 // drawPerfHUD renders the overlay (top-left, under the tab strip).
@@ -48,7 +48,7 @@ func (a *App) drawPerfHUD(w, h int32) {
 	// 60 fps budget, amber to 33 ms, red above.
 	var sum, worst float32
 	for i := 0; i < perfHUDFrames; i++ {
-		dt := a.frameDts[(a.frameDtIdx+i)%perfHUDFrames]
+		dt := a.budget.frameDts[(a.budget.frameDtIdx+i)%perfHUDFrames]
 		sum += dt
 		if dt > worst {
 			worst = dt

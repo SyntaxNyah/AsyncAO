@@ -112,7 +112,7 @@ func stageFrameDrivenApp(t *testing.T) (*App, func()) {
 	// for an armed capture (the IC focus claim, every bare-key bind) is silently
 	// disabled and pollMacroBind eats the first keystroke into a preference. The
 	// gates read as "the feature is broken"; the feature was never reached.
-	a.macroBind = macroBindIdle
+	a.budget.macroBind = macroBindIdle
 	return a, cleanup
 }
 

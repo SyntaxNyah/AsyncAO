@@ -682,11 +682,11 @@ func (a *App) previewOverlayRow(choices []string, row int) {
 	folder := a.myOverlayFolder()
 	res, ok := a.overlayResolve(name, folder)
 	if ok && res.Base != "" {
-		a.previewBase = res.Base
-		a.previewFor = "" // restart the preview clock on the new pick (screens.go:1331-1335)
+		a.budget.previewBase = res.Base
+		a.budget.previewFor = "" // restart the preview clock on the new pick (screens.go:1331-1335)
 		a.previewPinned = true
-		a.previewNameFor = res.Base
-		a.previewName = name
+		a.budget.previewNameFor = res.Base
+		a.budget.previewName = name
 		a.overlays.overlayPreviewBase = res.Base // ownership: the close edge takes down only this box
 	}
 	// The SAME sentinel filter the message path uses (courtroom.OverlaySoundPlayable,
@@ -712,7 +712,7 @@ func (a *App) overlayPreviewCloseEdge() {
 	if a.ctx.ddOpen == overlayEffectsDDID {
 		return // still open: keep the box up across rows
 	}
-	if a.previewBase == a.overlays.overlayPreviewBase {
+	if a.budget.previewBase == a.overlays.overlayPreviewBase {
 		// Routed through closeSpritePreview, never a raw previewBase = "": it also
 		// clears the pin latch and disarms the dwell id (screens.go:1563-1576), the
 		// trap the five earlier dismissal sites fell into.

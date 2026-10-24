@@ -1553,7 +1553,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// it does nothing"): the field fills the SLOT'S live width/height, not the
 	// fixed default, so the editor's resize handles actually take effect.
 	snW, snDD := nameBox.W, int32(0)
-	if len(a.nameOpts) > 1 { // a tiny ▾ saved-name picker, fitted INSIDE the box width so nothing downstream shifts
+	if len(a.budget.nameOpts) > 1 { // a tiny ▾ saved-name picker, fitted INSIDE the box width so nothing downstream shifts
 		snDD = 22
 		snW -= snDD + 2
 	}

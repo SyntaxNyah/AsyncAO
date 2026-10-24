@@ -298,14 +298,14 @@ func TestMusicTabDuckOnPark(t *testing.T) {
 
 	// Default (pref OFF): parking ducks the backgrounded stream to silence.
 	a.parkActive()
-	if !a.musicTabDucked {
+	if !a.budget.musicTabDucked {
 		t.Fatal("default: parking a tab must duck the still-rolling stream to silence")
 	}
 
 	// Re-activate the tab (it has no music, so the duck still stands — a backgrounded
 	// tab's stream is being kept alive under it).
 	a.activateTab(0)
-	if !a.musicTabDucked {
+	if !a.budget.musicTabDucked {
 		t.Fatal("setup: after re-activating a tab with no music, the duck should still stand")
 	}
 	// A DJ /play on the ACTIVE tab while the stream is still ducked-foreign: the
@@ -315,12 +315,12 @@ func TestMusicTabDuckOnPark(t *testing.T) {
 	// HandlePacket normally sets MusicTrack; set it directly so the handler's gate sees it.
 	a.link.sess.MusicTrack = "Trial.opus"
 	a.handleSessionEvents([]courtroom.Event{{Kind: courtroom.EventMusic, Text: "Trial.opus"}})
-	if !a.musicTabDucked {
+	if !a.budget.musicTabDucked {
 		t.Error("a DJ /play while ducked-foreign must KEEP the duck until the requested track is delivered")
 	}
 	wantAwait := a.link.urls.MusicURL("Trial.opus")
-	if a.musicAwaitURL != wantAwait {
-		t.Errorf("EventMusic while ducked must record the awaited URL: got %q, want %q", a.musicAwaitURL, wantAwait)
+	if a.budget.musicAwaitURL != wantAwait {
+		t.Errorf("EventMusic while ducked must record the awaited URL: got %q, want %q", a.budget.musicAwaitURL, wantAwait)
 	}
 
 	// Pref ON: parking keeps the backgrounded stream AUDIBLE (no duck).
@@ -336,7 +336,7 @@ func TestMusicTabDuckOnPark(t *testing.T) {
 	})
 
 	a.parkActive()
-	if a.musicTabDucked {
+	if a.budget.musicTabDucked {
 		t.Error("with MusicAcrossTabs ON, parking must NOT duck the backgrounded stream")
 	}
 }
@@ -351,15 +351,15 @@ func TestMusicAwaitDeliverySettles(t *testing.T) {
 	a := testTabApp(t)
 
 	// Ducked, awaiting a specific track.
-	a.musicTabDucked = true
-	a.musicAwaitURL = "http://cdn/trial.opus"
+	a.budget.musicTabDucked = true
+	a.budget.musicAwaitURL = "http://cdn/trial.opus"
 
 	// A DIFFERENT track is what's currently playing (the still-loading-away foreign
 	// stream): the duck must HOLD and the await must survive — this is the whole bug.
 	if a.settleAwaitedDuck("http://cdn/foreign.opus") {
 		t.Fatal("settle must NOT un-duck while a foreign track is current")
 	}
-	if !a.musicTabDucked || a.musicAwaitURL == "" {
+	if !a.budget.musicTabDucked || a.budget.musicAwaitURL == "" {
 		t.Fatal("a foreign current track must leave both the duck and the await intact")
 	}
 
@@ -368,10 +368,10 @@ func TestMusicAwaitDeliverySettles(t *testing.T) {
 	if !a.settleAwaitedDuck("http://cdn/trial.opus") {
 		t.Fatal("settle must un-duck once the awaited track is current")
 	}
-	if a.musicTabDucked {
+	if a.budget.musicTabDucked {
 		t.Error("the duck must lift when the awaited track is delivered")
 	}
-	if a.musicAwaitURL != "" {
+	if a.budget.musicAwaitURL != "" {
 		t.Error("the await must clear once satisfied")
 	}
 
@@ -390,25 +390,25 @@ func TestMusicResumeDuckDecision(t *testing.T) {
 
 	// Same track already live, but ducked with a stale await from an earlier swap.
 	a := testTabApp(t)
-	a.musicTabDucked = true
-	a.musicAwaitURL = "http://cdn/stale.opus"
+	a.budget.musicTabDucked = true
+	a.budget.musicAwaitURL = "http://cdn/stale.opus"
 	a.applyResumeDuck(true, url)
-	if a.musicTabDucked {
+	if a.budget.musicTabDucked {
 		t.Error("same-track resume must un-duck immediately (the right song is already rolling)")
 	}
-	if a.musicAwaitURL != "" {
+	if a.budget.musicAwaitURL != "" {
 		t.Error("same-track resume must clear any stale await (nothing is being awaited)")
 	}
 
 	// Different track live: hold the duck, await this url.
 	b := testTabApp(t)
-	b.musicTabDucked = true
+	b.budget.musicTabDucked = true
 	b.applyResumeDuck(false, url)
-	if !b.musicTabDucked {
+	if !b.budget.musicTabDucked {
 		t.Error("different-track resume must HOLD the duck until this tab's track is delivered")
 	}
-	if b.musicAwaitURL != url {
-		t.Errorf("different-track resume must await this tab's url: got %q, want %q", b.musicAwaitURL, url)
+	if b.budget.musicAwaitURL != url {
+		t.Errorf("different-track resume must await this tab's url: got %q, want %q", b.budget.musicAwaitURL, url)
 	}
 }
 
@@ -424,9 +424,9 @@ func TestMusicAwaitClearedOnParkAndStop(t *testing.T) {
 	}
 	a.srvMeta.serverName, a.srvMeta.serverKey = "Srv", "wss://srv:2096"
 	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
-	a.musicAwaitURL = "http://cdn/stale.opus"
+	a.budget.musicAwaitURL = "http://cdn/stale.opus"
 	a.parkActive()
-	if a.musicAwaitURL != "" {
+	if a.budget.musicAwaitURL != "" {
 		t.Error("parkActive must clear a stale await (switch-back-mid-await guard)")
 	}
 
@@ -435,10 +435,10 @@ func TestMusicAwaitClearedOnParkAndStop(t *testing.T) {
 	// guard without touching SDL — the headless stand-in the render tests use too.
 	b := testTabApp(t)
 	b.d.Audio = &render.Audio{}
-	b.musicTabDucked = true
-	b.musicAwaitURL = "http://cdn/stale.opus"
+	b.budget.musicTabDucked = true
+	b.budget.musicAwaitURL = "http://cdn/stale.opus"
 	b.applyMusicStreaming(false)
-	if b.musicTabDucked || b.musicAwaitURL != "" {
+	if b.budget.musicTabDucked || b.budget.musicAwaitURL != "" {
 		t.Error("streaming OFF must clear both the tab-duck and the await (stopped ⇒ not ducked, no await)")
 	}
 }
@@ -454,14 +454,14 @@ func TestMusicAcrossTabsToggleUnwedges(t *testing.T) {
 	// never arrived). The old gated code cleared the duck but NOT the latch here; the
 	// unconditional action must clear both so the stream is truly un-wedged.
 	a := testTabApp(t)
-	a.musicTabDucked = true
-	a.musicAwaitURL = "http://cdn/never-arrives.opus"
-	a.musicAwaitSince = a.now()
+	a.budget.musicTabDucked = true
+	a.budget.musicAwaitURL = "http://cdn/never-arrives.opus"
+	a.budget.musicAwaitSince = a.now()
 	a.applyMusicAcrossTabs(true)
-	if a.musicTabDucked {
+	if a.budget.musicTabDucked {
 		t.Error("toggle ON must lift the duck on a wedged background stream")
 	}
-	if a.musicAwaitURL != "" {
+	if a.budget.musicAwaitURL != "" {
 		t.Error("toggle ON must clear the never-arriving await latch (the second silencer)")
 	}
 	if !a.d.Prefs.Load().MusicAcrossTabs {
@@ -472,7 +472,7 @@ func TestMusicAcrossTabsToggleUnwedges(t *testing.T) {
 	// must not manufacture a duck or an await out of a clean stream.
 	b := testTabApp(t)
 	b.applyMusicAcrossTabs(true)
-	if b.musicTabDucked || b.musicAwaitURL != "" {
+	if b.budget.musicTabDucked || b.budget.musicAwaitURL != "" {
 		t.Error("toggle ON with nothing ducked must stay clean (no-op)")
 	}
 
@@ -482,9 +482,9 @@ func TestMusicAcrossTabsToggleUnwedges(t *testing.T) {
 	// defer-to-next-tab-switch design, which read as the checkbox doing nothing.)
 	// The stream is ducked, not stopped: position keeps advancing.
 	d := testTabApp(t)
-	d.musicTabDucked = false
+	d.budget.musicTabDucked = false
 	d.applyMusicAcrossTabs(false)
-	if !d.musicTabDucked {
+	if !d.budget.musicTabDucked {
 		t.Error("toggle OFF must re-duck live audio immediately — the label promises silent-now")
 	}
 	if d.d.Prefs.Load().MusicAcrossTabs {
@@ -501,30 +501,30 @@ func TestMusicAwaitTimeoutReleases(t *testing.T) {
 	a := testTabApp(t)
 	a.d.Audio = &render.Audio{} // disabled: Frame/CurrentMusicURL are safe no-ops
 	base := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
-	a.frameNow = base
-	a.musicTabDucked = true
-	a.musicAwaitURL = "http://cdn/never-arrives.opus" // CurrentMusicURL ("") never equals this
-	a.musicAwaitSince = base
+	a.budget.frameNow = base
+	a.budget.musicTabDucked = true
+	a.budget.musicAwaitURL = "http://cdn/never-arrives.opus" // CurrentMusicURL ("") never equals this
+	a.budget.musicAwaitSince = base
 
 	// Just before the deadline: the awaited track still hasn't landed, but a real
 	// download could still be in flight — the duck must HOLD.
-	a.frameNow = base.Add(musicAwaitTimeout - time.Millisecond)
+	a.budget.frameNow = base.Add(musicAwaitTimeout - time.Millisecond)
 	a.settleAwaitedMusic()
-	if !a.musicTabDucked || a.musicAwaitURL == "" {
+	if !a.budget.musicTabDucked || a.budget.musicAwaitURL == "" {
 		t.Fatal("before the timeout the duck and await must hold (a slow download may still arrive)")
 	}
 
 	// At/after the deadline: nothing will ever arrive on this await, so release it and
 	// lift the duck — permanent silence is the worse outcome.
-	a.frameNow = base.Add(musicAwaitTimeout)
+	a.budget.frameNow = base.Add(musicAwaitTimeout)
 	a.settleAwaitedMusic()
-	if a.musicTabDucked {
+	if a.budget.musicTabDucked {
 		t.Error("past musicAwaitTimeout the duck must release (never-arrives self-heal)")
 	}
-	if a.musicAwaitURL != "" {
+	if a.budget.musicAwaitURL != "" {
 		t.Error("past musicAwaitTimeout the await latch must clear")
 	}
-	if !a.musicAwaitSince.IsZero() {
+	if !a.budget.musicAwaitSince.IsZero() {
 		t.Error("releasing the await must drop its timeout stamp")
 	}
 }
@@ -1453,8 +1453,8 @@ func TestMoveTab(t *testing.T) {
 func TestSettleAwaitTimeoutDecision(t *testing.T) {
 	a := testTabApp(t)
 	base := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
-	a.musicAwaitURL = "http://cdn/awaited.opus"
-	a.musicAwaitSince = base
+	a.budget.musicAwaitURL = "http://cdn/awaited.opus"
+	a.budget.musicAwaitSince = base
 
 	// Frozen clock (minimized: frameNow never advanced) — the deadline can't pass,
 	// so the decision is None and the duck would hold. This is the wedge.
@@ -1475,7 +1475,7 @@ func TestSettleAwaitTimeoutDecision(t *testing.T) {
 	}
 	// No stamp (await armed without a since) never times out — can't wedge on a
 	// missing deadline.
-	a.musicAwaitSince = time.Time{}
+	a.budget.musicAwaitSince = time.Time{}
 	if got := a.settleAwaitTimeout("http://cdn/foreign.opus", base.Add(time.Hour)); got != awaitTimeoutNone {
 		t.Errorf("a zero since must never time out, got %v", got)
 	}
@@ -1499,16 +1499,16 @@ func TestCloseParkedTabPreservesActiveAwait(t *testing.T) {
 	}
 	a.activeTab = 1
 	// The active tab is mid-cross-tab-resume: ducked, awaiting its OWN track's bytes.
-	a.musicTabDucked = true
-	a.musicAwaitURL = "http://cdn/active-tab.opus"
-	a.musicAwaitSince = a.now()
+	a.budget.musicTabDucked = true
+	a.budget.musicAwaitURL = "http://cdn/active-tab.opus"
+	a.budget.musicAwaitSince = a.now()
 
 	a.closeParkedTab(0) // ✕ on the background chip
 
-	if a.musicAwaitURL != "http://cdn/active-tab.opus" {
+	if a.budget.musicAwaitURL != "http://cdn/active-tab.opus" {
 		t.Error("closing a background chip must NOT cancel the active tab's in-flight fetch (await must survive)")
 	}
-	if !a.musicTabDucked {
+	if !a.budget.musicTabDucked {
 		t.Error("the active tab's resume duck must survive the background-chip close (settle will lift it on delivery)")
 	}
 	if len(a.tabs) != 1 || a.tabs[0].state.srvMeta.serverName != "" {
@@ -1528,12 +1528,12 @@ func TestCloseParkedTabStopsOrphanStream(t *testing.T) {
 		{},
 	}
 	a.activeTab = 1
-	a.musicTabDucked = true // ducked orphan, but NO await armed
-	a.musicAwaitURL = ""
+	a.budget.musicTabDucked = true // ducked orphan, but NO await armed
+	a.budget.musicAwaitURL = ""
 
 	a.closeParkedTab(0)
 
-	if a.musicTabDucked {
+	if a.budget.musicTabDucked {
 		t.Error("with no await armed, closing a chip must stop the orphaned ducked stream (leak guard)")
 	}
 }
@@ -1575,15 +1575,15 @@ func TestEventMusicStopClearsAwait(t *testing.T) {
 	a := testTabApp(t)
 	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	// Mid-resume: an await is armed for a prior track.
-	a.musicTabDucked = true
-	a.musicAwaitURL = "http://cdn/prior.opus"
-	a.musicAwaitSince = a.now()
+	a.budget.musicTabDucked = true
+	a.budget.musicAwaitURL = "http://cdn/prior.opus"
+	a.budget.musicAwaitSince = a.now()
 	// A ~stop lands: HandlePacket would clear MusicTrack; set it empty directly so the
 	// handler's gate sees the ~stop shape (like TestMusicTabDuckOnPark sets it).
 	a.link.sess.MusicTrack = ""
 	a.handleSessionEvents([]courtroom.Event{{Kind: courtroom.EventMusic, Text: "~stop.mp3"}})
-	if a.musicAwaitURL != "" || !a.musicAwaitSince.IsZero() {
-		t.Errorf("a ~stop must clear the orphaned await, got url=%q since=%v", a.musicAwaitURL, a.musicAwaitSince)
+	if a.budget.musicAwaitURL != "" || !a.budget.musicAwaitSince.IsZero() {
+		t.Errorf("a ~stop must clear the orphaned await, got url=%q since=%v", a.budget.musicAwaitURL, a.budget.musicAwaitSince)
 	}
 }
 

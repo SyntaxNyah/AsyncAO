@@ -355,7 +355,7 @@ func (a *App) drawBgPanel(w, h int32) {
 	}
 	c.popClip(clipPrev, clipHad)
 
-	if a.previewBase != "" {
+	if a.budget.previewBase != "" {
 		a.drawSpritePreview(w, h, false, "") // background preview: no emote-name caption
 		a.dismissPreviewOnClick()            // pin-aware, and disarms the trigger's dwell id
 	}
@@ -443,13 +443,13 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool, budget *int6
 	// Hover → large preview (the actual defenseempty image, high priority);
 	// click → select it as the /bg target (and keep the preview up).
 	if c.HoverPreview("bg:"+name, cell) {
-		a.previewBase = base
+		a.budget.previewBase = base
 		a.d.Manager.Prefetch(base, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (preview)
 	}
 	if c.hovering(cell) && c.clicked {
 		a.bgPick.sel = name
 		a.bgPick.status = ""
-		a.previewBase = base
+		a.budget.previewBase = base
 		a.d.Manager.Prefetch(base, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (selected preview)
 	}
 }

@@ -432,7 +432,7 @@ func (a *App) drawFrameBars(r sdl.Rect) {
 		barW = 1
 	}
 	for i := 0; i < perfHUDFrames; i++ {
-		dt := a.frameDts[(a.frameDtIdx+i)%perfHUDFrames]
+		dt := a.budget.frameDts[(a.budget.frameDtIdx+i)%perfHUDFrames]
 		hPx := int32(float32(r.H) * dt / perfHUDScaleMs)
 		if hPx > r.H {
 			hPx = r.H
@@ -456,7 +456,7 @@ func (a *App) drawFrameBars(r sdl.Rect) {
 func (a *App) frameStats() (avg, worst, fps float32) {
 	var sum float32
 	for i := 0; i < perfHUDFrames; i++ {
-		dt := a.frameDts[i]
+		dt := a.budget.frameDts[i]
 		sum += dt
 		if dt > worst {
 			worst = dt

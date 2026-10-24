@@ -33,14 +33,14 @@ func (a *App) previewEmote(char string, e *courtroom.Emote) {
 		name = e.Anim
 	}
 	if e.Preanim != "" && e.Preanim != "-" { // "-" / "" = no preanim (AO convention)
-		a.previewBase = a.link.urls.Emote(char, e.Preanim, courtroom.EmotePreanim)
-		a.previewName, a.previewNameFor = name, a.previewBase
-		a.d.Manager.Prefetch(a.previewBase, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preanim preview)
+		a.budget.previewBase = a.link.urls.Emote(char, e.Preanim, courtroom.EmotePreanim)
+		a.budget.previewName, a.budget.previewNameFor = name, a.budget.previewBase
+		a.d.Manager.Prefetch(a.budget.previewBase, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preanim preview)
 		return
 	}
-	a.previewBase = a.link.urls.Emote(char, e.Anim, courtroom.EmoteTalk)
-	a.previewName, a.previewNameFor = name, a.previewBase
-	a.d.Manager.PrefetchChain(a.previewBase, a.link.urls.EmoteAlts(char, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+	a.budget.previewBase = a.link.urls.Emote(char, e.Anim, courtroom.EmoteTalk)
+	a.budget.previewName, a.budget.previewNameFor = name, a.budget.previewBase
+	a.d.Manager.PrefetchChain(a.budget.previewBase, a.link.urls.EmoteAlts(char, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
 }
 
 // followPinnedPreview retargets an ALREADY-OPEN, PINNED preview box to the emote
@@ -48,7 +48,7 @@ func (a *App) previewEmote(char string, e *courtroom.Emote) {
 // selected" instead of freezing on whichever cell the hover/right-click that
 // opened it happened to land on (playtest: "stuck on one you called it on").
 func (a *App) followPinnedPreview(char string, e *courtroom.Emote) {
-	if a.previewBase == "" || !a.previewIsPinned() {
+	if a.budget.previewBase == "" || !a.previewIsPinned() {
 		return
 	}
 	a.previewEmote(char, e)
@@ -57,7 +57,7 @@ func (a *App) followPinnedPreview(char string, e *courtroom.Emote) {
 // drawSpritePreviewFallback paints the shared sprite-preview box on the courtroom
 // passes where its PRIMARY draw site — the tail of the emote grid — did not run.
 func (a *App) drawSpritePreviewFallback(themed bool) {
-	if a.previewBase == "" || a.emoteGridDrewPreview {
+	if a.budget.previewBase == "" || a.emoteGridDrewPreview {
 		return
 	}
 	// Latch BEFORE drawing, not after reading: the latch is cleared once per frame
@@ -83,10 +83,10 @@ func (a *App) drawSpritePreviewFallback(themed bool) {
 // previewBase (not a per-cell hover) keeps the caption up while the cursor
 // travels from the grid cell to the box (the preview boxes show the name too).
 func (a *App) previewedEmoteName() string {
-	if a.previewBase == "" || a.previewNameFor != a.previewBase {
+	if a.budget.previewBase == "" || a.budget.previewNameFor != a.budget.previewBase {
 		return ""
 	}
-	return a.previewName
+	return a.budget.previewName
 }
 
 func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
@@ -237,7 +237,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		}
 	}
 
-	if a.previewBase != "" {
+	if a.budget.previewBase != "" {
 		// Clamp to the WINDOW, not the stage — the box is draggable anywhere
 		// (playtest: the preview could not be moved out of the viewport).
 		a.drawSpritePreview(a.frame.winW, a.frame.winH, false, a.previewedEmoteName()) // ARM 2: caption the emote name

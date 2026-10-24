@@ -40,7 +40,7 @@ func TestSpritePreviewTravelCorridor(t *testing.T) {
 	box := sdl.Rect{X: 600, Y: 500, W: 200, H: 200}
 	// corridor = unionRect(trigger, box) = x[100,800) y[100,700)
 	open := func() {
-		a.previewBase, a.previewEntered = "x", false
+		a.budget.previewBase, a.previewEntered = "x", false
 		a.previewFrameRect, a.previewTriggerRect = box, trigger
 		c.clicked, c.hoverID = false, ""
 	}
@@ -50,7 +50,7 @@ func TestSpritePreviewTravelCorridor(t *testing.T) {
 	c.hoverID, c.hoverRect = "char:x", trigger
 	c.mouseX, c.mouseY = trigger.X+5, trigger.Y+5
 	a.closeSpritePreviewOnLeave()
-	if a.previewBase == "" {
+	if a.budget.previewBase == "" {
 		t.Fatal("cursor on the trigger: preview must stay open")
 	}
 
@@ -58,14 +58,14 @@ func TestSpritePreviewTravelCorridor(t *testing.T) {
 	c.hoverID = ""
 	c.mouseX, c.mouseY = 350, 300
 	a.closeSpritePreviewOnLeave()
-	if a.previewBase == "" {
+	if a.budget.previewBase == "" {
 		t.Fatal("cursor in the travel corridor: preview must stay open")
 	}
 
 	// Off the corridor (moved away) → closes.
 	c.mouseX, c.mouseY = 900, 40
 	a.closeSpritePreviewOnLeave()
-	if a.previewBase != "" {
+	if a.budget.previewBase != "" {
 		t.Fatal("cursor strayed off the travel path: preview must close")
 	}
 
@@ -75,12 +75,12 @@ func TestSpritePreviewTravelCorridor(t *testing.T) {
 	c.hoverID = ""
 	c.mouseX, c.mouseY = box.X+10, box.Y+10
 	a.closeSpritePreviewOnLeave()
-	if a.previewBase == "" || !a.previewEntered {
+	if a.budget.previewBase == "" || !a.previewEntered {
 		t.Fatal("cursor in the box: must stay open and mark entered")
 	}
 	c.mouseX, c.mouseY = 350, 300 // in the corridor, but the box was already entered
 	a.closeSpritePreviewOnLeave()
-	if a.previewBase != "" {
+	if a.budget.previewBase != "" {
 		t.Fatal("after entering the box, leaving it must close (not held by the corridor)")
 	}
 
@@ -90,7 +90,7 @@ func TestSpritePreviewTravelCorridor(t *testing.T) {
 	c.mouseX, c.mouseY = trigger.X+5, trigger.Y+5
 	c.clicked = true
 	a.closeSpritePreviewOnLeave()
-	if a.previewBase != "" {
+	if a.budget.previewBase != "" {
 		t.Fatal("a click must dismiss the preview")
 	}
 }
@@ -106,12 +106,12 @@ func TestSpritePreviewStaleTriggerCloses(t *testing.T) {
 	c := a.ctx
 	trigger := sdl.Rect{X: 100, Y: 100, W: 80, H: 80}
 	box := sdl.Rect{X: 600, Y: 500, W: 200, H: 200}
-	a.previewBase, a.previewEntered = "x", false
+	a.budget.previewBase, a.previewEntered = "x", false
 	a.previewFrameRect, a.previewTriggerRect = box, trigger
 	c.hoverID, c.hoverRect = "char:x", trigger // stale: the trigger's screen is gone
 	c.mouseX, c.mouseY = 900, 40               // off the trigger, the box, and the corridor
 	a.closeSpritePreviewOnLeave()
-	if a.previewBase != "" {
+	if a.budget.previewBase != "" {
 		t.Fatal("a stale trigger id must not pin the preview open (the cap-latch bug)")
 	}
 }
@@ -122,10 +122,10 @@ func TestSpritePreviewStaleTriggerCloses(t *testing.T) {
 // re-arm that carried a "closed" preview across a char pick into the courtroom.
 func TestCloseSpritePreviewDisarmsDwell(t *testing.T) {
 	a := testTabApp(t)
-	a.previewBase = "x"
+	a.budget.previewBase = "x"
 	a.ctx.hoverID = "char:x"
 	a.closeSpritePreview()
-	if a.previewBase != "" || a.ctx.hoverID != "" {
+	if a.budget.previewBase != "" || a.ctx.hoverID != "" {
 		t.Fatal("closeSpritePreview must clear the trigger id (no instant dwell re-open)")
 	}
 }
@@ -139,14 +139,14 @@ func TestScreenSwitchDropsOrphanPreview(t *testing.T) {
 	a := testTabApp(t)
 	a.screen = ScreenCharSelect
 	a.noteScreenTransition() // absorb the initial lobby→charselect flip
-	a.previewBase, a.previewPinned = "x", true
+	a.budget.previewBase, a.previewPinned = "x", true
 	a.ctx.hoverID, a.ctx.hoverRect = "char:x", sdl.Rect{X: 1, Y: 1, W: 10, H: 10}
 	a.previewFrameRect = sdl.Rect{X: 5, Y: 5, W: 50, H: 50}
 	a.previewTriggerRect = sdl.Rect{X: 1, Y: 1, W: 10, H: 10}
 
 	a.screen = ScreenCourtroom
 	a.noteScreenTransition()
-	if a.previewBase != "" || a.previewPinned || a.ctx.hoverID != "" {
+	if a.budget.previewBase != "" || a.previewPinned || a.ctx.hoverID != "" {
 		t.Fatal("a screen switch must drop the orphaned preview + pin + trigger id")
 	}
 	if a.previewFrameRect.W != 0 || a.previewTriggerRect.W != 0 {
@@ -154,9 +154,9 @@ func TestScreenSwitchDropsOrphanPreview(t *testing.T) {
 	}
 
 	// Same screen: a live preview stays untouched.
-	a.previewBase = "y"
+	a.budget.previewBase = "y"
 	a.noteScreenTransition()
-	if a.previewBase == "" {
+	if a.budget.previewBase == "" {
 		t.Fatal("no switch → the live preview must stay")
 	}
 }
@@ -205,7 +205,7 @@ func waitPortraitEmotes(t *testing.T, a *App) {
 	deadline := time.Now().Add(previewParseWait)
 	for time.Now().Before(deadline) {
 		a.pollPreviewEmotes()
-		if len(a.previewAnims) > 0 {
+		if len(a.budget.previewAnims) > 0 {
 			return
 		}
 		time.Sleep(time.Millisecond)
@@ -226,23 +226,23 @@ func TestCharSelectPortraitFallsBackToFirstEmote(t *testing.T) {
 	// Frame 1 — the hover: parse the char.ini, show the optimistic convention.
 	a.ensurePreviewEmotes(char, previewEmotePortrait)
 	a.setCharPortraitPreview(char)
-	if want := a.link.urls.Emote(char, "normal", courtroom.EmoteIdle); a.previewBase != want {
-		t.Fatalf("first frame must probe the conventional idle pose\n got %q\nwant %q", a.previewBase, want)
+	if want := a.link.urls.Emote(char, "normal", courtroom.EmoteIdle); a.budget.previewBase != want {
+		t.Fatalf("first frame must probe the conventional idle pose\n got %q\nwant %q", a.budget.previewBase, want)
 	}
 
 	// …the parse lands (the cursor may already have left the cell, so the drain,
 	// not the next hover frame, has to be what corrects the box).
 	waitPortraitEmotes(t, a)
-	if want := a.link.urls.Emote(char, "SNormal", courtroom.EmoteIdle); a.previewBase != want {
-		t.Fatalf("a pack with no \"normal\" emote must fall back to its first real emote\n got %q\nwant %q", a.previewBase, want)
+	if want := a.link.urls.Emote(char, "SNormal", courtroom.EmoteIdle); a.budget.previewBase != want {
+		t.Fatalf("a pack with no \"normal\" emote must fall back to its first real emote\n got %q\nwant %q", a.budget.previewBase, want)
 	}
 	if got := a.previewPortraitAnim(char); got != "SNormal" {
 		t.Fatalf("previewPortraitAnim = %q, want the first real emote", got)
 	}
 	// Re-hovering the same cell must be stable, never bounce back to "normal".
 	a.setCharPortraitPreview(char)
-	if want := a.link.urls.Emote(char, "SNormal", courtroom.EmoteIdle); a.previewBase != want {
-		t.Fatalf("a later hover frame reverted the correction: got %q, want %q", a.previewBase, want)
+	if want := a.link.urls.Emote(char, "SNormal", courtroom.EmoteIdle); a.budget.previewBase != want {
+		t.Fatalf("a later hover frame reverted the correction: got %q, want %q", a.budget.previewBase, want)
 	}
 }
 
@@ -260,8 +260,8 @@ func TestCharSelectPortraitKeepsNormalWhenPackHasIt(t *testing.T) {
 	a.setCharPortraitPreview(char)
 	normal := a.link.urls.Emote(char, "normal", courtroom.EmoteIdle)
 	waitPortraitEmotes(t, a)
-	if a.previewBase != normal {
-		t.Fatalf("a pack that has \"normal\" must keep the optimistic base\n got %q\nwant %q", a.previewBase, normal)
+	if a.budget.previewBase != normal {
+		t.Fatalf("a pack that has \"normal\" must keep the optimistic base\n got %q\nwant %q", a.budget.previewBase, normal)
 	}
 	if got := a.previewPortraitAnim(char); got != "normal" {
 		t.Fatalf("previewPortraitAnim = %q, want the conventional %q", got, "normal")
@@ -276,7 +276,7 @@ func TestPortraitPreviewIgnoresOtherTabsParse(t *testing.T) {
 	a, char := portraitTestApp(t, "SNormal")
 	a.ensurePreviewEmotes(char, previewEmotePortrait)
 	a.setCharPortraitPreview(char)
-	normal := a.previewBase
+	normal := a.budget.previewBase
 	a.srvMeta.serverKey = "ws://other.tab" // the user switched tabs mid-parse
 
 	// A local-mount parse lands in single-digit milliseconds; this window is the
@@ -286,12 +286,12 @@ func TestPortraitPreviewIgnoresOtherTabsParse(t *testing.T) {
 	for time.Now().Before(deadline) {
 		a.pollPreviewEmotes()
 		time.Sleep(time.Millisecond)
-		if len(a.previewAnims) > 0 {
+		if len(a.budget.previewAnims) > 0 {
 			t.Fatal("another tab's char.ini parse must be dropped, not applied")
 		}
 	}
-	if a.previewBase != normal {
-		t.Fatalf("a dropped parse must leave the preview base alone: got %q, want %q", a.previewBase, normal)
+	if a.budget.previewBase != normal {
+		t.Fatalf("a dropped parse must leave the preview base alone: got %q, want %q", a.budget.previewBase, normal)
 	}
 }
 

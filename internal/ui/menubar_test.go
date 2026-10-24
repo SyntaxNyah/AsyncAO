@@ -636,9 +636,9 @@ func TestMenuBarItemActionFiresAndCloses(t *testing.T) {
 	viewTitle := menuBarMenus[menuBarIndexOf("View")].title
 	perf := menuRow(t, "View", "Performance overlay")
 	a.menuOpen = viewTitle
-	before := a.perfHUD
+	before := a.budget.perfHUD
 	a.fireMenuItem(perf)
-	if a.perfHUD == before {
+	if a.budget.perfHUD == before {
 		t.Error("an enabled item's action must fire")
 	}
 	if a.menuBarOpen() {

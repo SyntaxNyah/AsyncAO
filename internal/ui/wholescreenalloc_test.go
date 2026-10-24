@@ -52,7 +52,7 @@ func stageSettledCourtroom(t testing.TB) (*App, func()) {
 	a.musicPct, a.playerPct, a.areaPct, a.modDashPct = a.logPct, a.logPct, a.logPct, a.logPct
 	// Pin a fixed frame clock so the append-time IC stamps (and anything else
 	// that reads a.now()) are deterministic across the measured frames.
-	a.frameNow = time.Date(2026, 7, 12, 16, 11, 0, 0, time.UTC)
+	a.budget.frameNow = time.Date(2026, 7, 12, 16, 11, 0, 0, time.UTC)
 
 	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {

@@ -151,9 +151,9 @@ func (a *App) freezeSessionUnderDialog(raw string) {
 	if a.d.Audio != nil {
 		// The server's area music must not outlive the connection (as Disconnect does).
 		a.d.Audio.StopMusic()
-		a.musicTabDucked = false
-		a.musicAwaitURL = ""
-		a.musicAwaitSince = time.Time{}
+		a.budget.musicTabDucked = false
+		a.budget.musicAwaitURL = ""
+		a.budget.musicAwaitSince = time.Time{}
 	}
 	a.stopVoiceAudio() // free the voice devices with the connection
 	a.link.voiceJoined, a.link.voiceMicOn = false, false

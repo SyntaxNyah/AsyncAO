@@ -60,7 +60,7 @@ func newPreviewFeedApp(t testing.TB) *App {
 	a.d.Preview = render.NewPreviewWindow()
 	t.Cleanup(a.d.Preview.Close)
 	a.resetSessionState()
-	a.previewBase = previewFeedFixtureBase
+	a.budget.previewBase = previewFeedFixtureBase
 	return a
 }
 
@@ -128,7 +128,7 @@ func TestToggleDetachPreviewOpensAndReattaches(t *testing.T) {
 // on previewBase, ever calls SetFrame).
 func TestToggleDetachPreviewWithNoEmoteSelectedIsANoOp(t *testing.T) {
 	a := newPreviewFeedApp(t)
-	a.previewBase = ""
+	a.budget.previewBase = ""
 	a.toggleDetachPreview()
 	if a.previewIsDetached() {
 		t.Fatal("toggling with nothing previewed opened a window anyway")
@@ -191,7 +191,7 @@ func TestFeedDetachedPreviewFrameUploadsOnce(t *testing.T) {
 	}
 
 	// A NEW pick re-feeds.
-	a.previewBase = "preview-fixture://sprite-2" // not resident: feed must retry, not crash
+	a.budget.previewBase = "preview-fixture://sprite-2" // not resident: feed must retry, not crash
 	a.feedDetachedPreviewFrame()
 	if a.previewWinFedBase == "preview-fixture://sprite-2" {
 		t.Fatal("feedDetachedPreviewFrame marked a NON-resident base as fed")
@@ -209,7 +209,7 @@ func TestFeedDetachedPreviewFrameUploadsOnce(t *testing.T) {
 // absorbs the redundant calls invisibly. The gate itself is pinned by
 func TestFeedDetachedPreviewFrameAdvancesOnIndexChangeOnly(t *testing.T) {
 	a := newAnimatedPreviewFeedApp(t)
-	a.previewBase = previewAnimFeedFixtureBase
+	a.budget.previewBase = previewAnimFeedFixtureBase
 
 	a.toggleDetachPreview() // real OS window creation — measurably slow, so the clock is set up AFTER this, not before
 	if !a.previewIsDetached() {
@@ -223,29 +223,29 @@ func TestFeedDetachedPreviewFrameAdvancesOnIndexChangeOnly(t *testing.T) {
 	// real elapsed time — a.now() returns a.frameNow verbatim whenever it is
 	// non-zero (app.go), so setting both directly makes this deterministic.
 	base := time.Now()
-	a.previewAt = base
-	a.frameNow = base
+	a.budget.previewAt = base
+	a.budget.frameNow = base
 	a.feedDetachedPreviewFrame()
 	if a.previewWinFedFrame != 0 {
 		t.Fatalf("previewWinFedFrame = %d at elapsed=0, want 0 (the first frame)", a.previewWinFedFrame)
 	}
 
 	// Still inside frame 0's window: a repeat call must not change anything.
-	a.frameNow = base.Add(previewAnimFrameDelay / 2)
+	a.budget.frameNow = base.Add(previewAnimFrameDelay / 2)
 	a.feedDetachedPreviewFrame()
 	if a.previewWinFedFrame != 0 {
 		t.Fatalf("previewWinFedFrame = %d before the first frame boundary, want 0", a.previewWinFedFrame)
 	}
 
 	// Crossed into frame 1.
-	a.frameNow = base.Add(previewAnimFrameDelay + previewAnimFrameDelay/2)
+	a.budget.frameNow = base.Add(previewAnimFrameDelay + previewAnimFrameDelay/2)
 	a.feedDetachedPreviewFrame()
 	if a.previewWinFedFrame != 1 {
 		t.Fatalf("previewWinFedFrame = %d after crossing into frame 1's window, want 1", a.previewWinFedFrame)
 	}
 
 	// Crossed into frame 2.
-	a.frameNow = base.Add(2*previewAnimFrameDelay + previewAnimFrameDelay/2)
+	a.budget.frameNow = base.Add(2*previewAnimFrameDelay + previewAnimFrameDelay/2)
 	a.feedDetachedPreviewFrame()
 	if a.previewWinFedFrame != 2 {
 		t.Fatalf("previewWinFedFrame = %d after crossing into frame 2's window, want 2", a.previewWinFedFrame)
@@ -253,7 +253,7 @@ func TestFeedDetachedPreviewFrameAdvancesOnIndexChangeOnly(t *testing.T) {
 
 	// The loop wraps: 3*delay + delay/2 modulo the 3*delay total lands back
 	// in frame 0's window.
-	a.frameNow = base.Add(3*previewAnimFrameDelay + previewAnimFrameDelay/2)
+	a.budget.frameNow = base.Add(3*previewAnimFrameDelay + previewAnimFrameDelay/2)
 	a.feedDetachedPreviewFrame()
 	if a.previewWinFedFrame != 0 {
 		t.Fatalf("previewWinFedFrame = %d after the loop wrapped back to frame 0, want 0", a.previewWinFedFrame)
@@ -318,7 +318,7 @@ func TestPreviewFeedNeeded(t *testing.T) {
 // at 0 through every iteration below — this test would fail loudly.
 func TestAdvanceDetachedPreviewAnimatesWithoutFrame(t *testing.T) {
 	a := newAnimatedPreviewFeedApp(t)
-	a.previewBase = previewAnimFeedFixtureBase
+	a.budget.previewBase = previewAnimFeedFixtureBase
 
 	a.toggleDetachPreview() // real OS window creation — the clock is pinned AFTER this, not before
 	if !a.previewIsDetached() {
@@ -328,15 +328,15 @@ func TestAdvanceDetachedPreviewAnimatesWithoutFrame(t *testing.T) {
 	// Pin the loop anchor and frame clock together (see the sibling test's
 	// comment for why: a.now() prefers a.frameNow whenever it's non-zero).
 	base := time.Now()
-	a.previewAt = base
-	a.frameNow = base
+	a.budget.previewAt = base
+	a.budget.frameNow = base
 
 	seenFrames := map[int]bool{a.previewWinFedFrame: true}
 	// Walk the clock across two full loops purely through AdvanceDetachedPreview
 	// — the same call cmd/asyncao's run() makes from its minimized/SkipFrame
 	// branches, never app.Frame().
 	for step := 1; step <= 12; step++ {
-		a.frameNow = base.Add(time.Duration(step) * (previewAnimFrameDelay / 2))
+		a.budget.frameNow = base.Add(time.Duration(step) * (previewAnimFrameDelay / 2))
 		a.AdvanceDetachedPreview()
 		seenFrames[a.previewWinFedFrame] = true
 	}
@@ -372,7 +372,7 @@ func TestPreviewAnimWakeCapZeroWhenClosedOrStatic(t *testing.T) {
 // wrong reason (a gate that always returns 0).
 func TestPreviewAnimWakeCapPositiveWhenAnimating(t *testing.T) {
 	a := newAnimatedPreviewFeedApp(t)
-	a.previewBase = previewAnimFeedFixtureBase
+	a.budget.previewBase = previewAnimFeedFixtureBase
 	a.toggleDetachPreview()
 	if !a.previewIsDetached() {
 		t.Fatal("setup: toggle did not detach")
@@ -429,12 +429,12 @@ func BenchmarkAdvanceDetachedPreviewClosed(b *testing.B) {
 
 func BenchmarkAdvanceDetachedPreviewOpenAnimating(b *testing.B) {
 	a := newAnimatedPreviewFeedApp(b)
-	a.previewBase = previewAnimFeedFixtureBase
+	a.budget.previewBase = previewAnimFeedFixtureBase
 	a.toggleDetachPreview()
 	if !a.previewIsDetached() {
 		b.Skip("preview window unavailable")
 	}
-	base := a.previewAt
+	base := a.budget.previewAt
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -443,7 +443,7 @@ func BenchmarkAdvanceDetachedPreviewOpenAnimating(b *testing.B) {
 		// boundary — the steady-state "open and actually animating" cost the
 		// task's benchmark requirement asks for, not a best-case all-cache-hit
 		// single index.
-		a.frameNow = base.Add(time.Duration(i%3) * previewAnimFrameDelay)
+		a.budget.frameNow = base.Add(time.Duration(i%3) * previewAnimFrameDelay)
 		a.AdvanceDetachedPreview()
 	}
 }
@@ -551,15 +551,15 @@ func TestDetachedPreviewSurvivesSessionReset(t *testing.T) {
 		t.Fatal("setup: toggle did not detach")
 	}
 	fedBefore := a.previewWinFedBase
-	baseBefore := a.previewBase
+	baseBefore := a.budget.previewBase
 
 	a.resetSessionState() // the primitive every tab switch / disconnect / new-tab path calls
 
 	if !a.previewIsDetached() {
 		t.Error("resetSessionState closed the detached preview window")
 	}
-	if a.previewBase != baseBefore {
-		t.Errorf("previewBase changed across resetSessionState: %q -> %q", baseBefore, a.previewBase)
+	if a.budget.previewBase != baseBefore {
+		t.Errorf("previewBase changed across resetSessionState: %q -> %q", baseBefore, a.budget.previewBase)
 	}
 	if a.previewWinFedBase != fedBefore {
 		t.Errorf("previewWinFedBase changed across resetSessionState: %q -> %q", fedBefore, a.previewWinFedBase)

@@ -203,7 +203,7 @@ func (a *App) drawWardrobeBgsBody(panel sdl.Rect, w, h int32) {
 	}
 	c.popClip(clipPrev, clipHad)
 
-	if a.previewBase != "" {
+	if a.budget.previewBase != "" {
 		a.drawSpritePreview(w, h, false, "") // background preview: no emote-name caption
 		a.dismissPreviewOnClick()            // pin-aware, and disarms the trigger's dwell id
 	}
@@ -287,7 +287,7 @@ func (a *App) drawBgFavCell(idx int, cell sdl.Rect) {
 
 	// Hover → large preview; a plain click (not a drag) changes the room to it.
 	if c.HoverPreview("bgfav:"+name, cell) {
-		a.previewBase = base
+		a.budget.previewBase = base
 		a.d.Manager.Prefetch(base, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (favourite preview)
 	}
 	if c.hovering(cell) && c.clicked && !a.inibrowse.iniDragging {

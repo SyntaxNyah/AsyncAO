@@ -55,7 +55,7 @@ func TestModBulkSelectionCap(t *testing.T) {
 func TestSendBulk(t *testing.T) {
 	a := testTabApp(t)
 	a.link.sess = courtroom.NewRehearsalSession("", nil) // swallows sends
-	a.frameNow = time.Now()
+	a.budget.frameNow = time.Now()
 	a.link.cmSoftwareOverride = courtroom.SoftwareWhisker // "/kick <uid> <reason>" — builds from UID alone
 	a.roster.rosterLegacy = true
 	a.roster.areaPlayers = []areaPlayer{

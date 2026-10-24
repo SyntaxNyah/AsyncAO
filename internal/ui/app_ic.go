@@ -622,10 +622,10 @@ func (a *App) themePage(stem string) (*render.TexturePage, bool) {
 // now is the frame's clock snapshot (real time for callers outside a
 // frame, e.g. headless tests).
 func (a *App) now() time.Time {
-	if a.frameNow.IsZero() {
+	if a.budget.frameNow.IsZero() {
 		return time.Now()
 	}
-	return a.frameNow
+	return a.budget.frameNow
 }
 
 // themeElapsed is the animation clock for looping theme art: time since

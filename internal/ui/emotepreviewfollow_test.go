@@ -69,19 +69,19 @@ func TestSelectEmoteUpdatesPinnedPreview(t *testing.T) {
 	a := emotePreviewFollowTestApp(t)
 	a.previewEmote("TestChar", &a.emotepick.emotes[0]) // as if emote 0's hover/right-click opened the box
 	a.previewPinned = true                             // …and the right-click pinned it
-	openedOn := a.previewBase
+	openedOn := a.budget.previewBase
 	if openedOn == "" {
 		t.Fatal("fixture did not open a preview — nothing below is measuring the follow")
 	}
 
 	a.selectEmote(1)
 
-	if a.previewBase == openedOn {
+	if a.budget.previewBase == openedOn {
 		t.Fatal("selectEmote(1) left the pinned preview on emote 0 — it must follow the click")
 	}
 	want := a.link.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
-	if a.previewBase != want {
-		t.Fatalf("previewBase = %q, want %q (emote 1's talk sprite)", a.previewBase, want)
+	if a.budget.previewBase != want {
+		t.Fatalf("previewBase = %q, want %q (emote 1's talk sprite)", a.budget.previewBase, want)
 	}
 	if got := a.previewedEmoteName(); got != "sad" {
 		t.Fatalf("previewedEmoteName() = %q, want %q — the caption must move with the box", got, "sad")
@@ -98,16 +98,16 @@ func TestSelectEmoteUpdatesPinnedPreview(t *testing.T) {
 func TestSelectEmoteLeavesUnpinnedPreviewAlone(t *testing.T) {
 	a := emotePreviewFollowTestApp(t)
 	a.previewEmote("TestChar", &a.emotepick.emotes[0]) // hover only — no right-click, no sticky pref
-	openedOn := a.previewBase
+	openedOn := a.budget.previewBase
 	if openedOn == "" || a.previewIsPinned() {
 		t.Fatal("fixture must open an UNPINNED preview")
 	}
 
 	a.selectEmote(1)
 
-	if a.previewBase != openedOn {
+	if a.budget.previewBase != openedOn {
 		t.Fatalf("previewBase changed to %q — selectEmote must leave an unpinned preview alone "+
-			"(closing it is the draw site's job)", a.previewBase)
+			"(closing it is the draw site's job)", a.budget.previewBase)
 	}
 }
 
@@ -119,15 +119,15 @@ func TestSelectEmoteLeavesUnpinnedPreviewAlone(t *testing.T) {
 func TestSelectEmoteNeverOpensAClosedPreview(t *testing.T) {
 	a := emotePreviewFollowTestApp(t)
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewPinned = true }) // sticky "always pinned" — nothing hovered yet
-	if a.previewBase != "" {
+	if a.budget.previewBase != "" {
 		t.Fatal("fixture must start with the box closed")
 	}
 
 	a.selectEmote(0)
 
-	if a.previewBase != "" {
+	if a.budget.previewBase != "" {
 		t.Fatalf("previewBase = %q after a pick with no preview open — a selection must never "+
-			"spontaneously open the box", a.previewBase)
+			"spontaneously open the box", a.budget.previewBase)
 	}
 }
 
@@ -140,15 +140,15 @@ func TestFollowPinnedPreviewIsAPureGuard(t *testing.T) {
 
 	// Closed: must not open.
 	a.followPinnedPreview("TestChar", &a.emotepick.emotes[0])
-	if a.previewBase != "" {
+	if a.budget.previewBase != "" {
 		t.Fatal("followPinnedPreview opened a closed box")
 	}
 
 	// Open + unpinned: must not move.
 	a.previewEmote("TestChar", &a.emotepick.emotes[0])
-	before := a.previewBase
+	before := a.budget.previewBase
 	a.followPinnedPreview("TestChar", &a.emotepick.emotes[1])
-	if a.previewBase != before {
+	if a.budget.previewBase != before {
 		t.Fatal("followPinnedPreview moved an unpinned box")
 	}
 
@@ -156,8 +156,8 @@ func TestFollowPinnedPreviewIsAPureGuard(t *testing.T) {
 	a.previewPinned = true
 	a.followPinnedPreview("TestChar", &a.emotepick.emotes[1])
 	want := a.link.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
-	if a.previewBase != want {
-		t.Fatalf("followPinnedPreview left previewBase = %q, want %q", a.previewBase, want)
+	if a.budget.previewBase != want {
+		t.Fatalf("followPinnedPreview left previewBase = %q, want %q", a.budget.previewBase, want)
 	}
 }
 
@@ -192,7 +192,7 @@ func TestFollowPinnedPreviewFollowsWhileDetached(t *testing.T) {
 	a.selectEmote(1)
 
 	want := a.link.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
-	if a.previewBase != want {
-		t.Fatalf("previewBase = %q, want %q — a detached preview must follow the click", a.previewBase, want)
+	if a.budget.previewBase != want {
+		t.Fatalf("previewBase = %q, want %q — a detached preview must follow the click", a.budget.previewBase, want)
 	}
 }

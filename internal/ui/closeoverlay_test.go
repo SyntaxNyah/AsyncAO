@@ -50,7 +50,7 @@ func TestCloseTopOverlay(t *testing.T) {
 // is armed (those use Esc to cancel).
 func TestCapturingKey(t *testing.T) {
 	a := testTabApp(t)
-	a.macroBind = -1 // mirror the real App default (NewApp sets -1 = no macro armed)
+	a.budget.macroBind = -1 // mirror the real App default (NewApp sets -1 = no macro armed)
 	if a.capturingKey() {
 		t.Fatal("fresh app should not be capturing a key (macroBind must default to -1)")
 	}
@@ -59,7 +59,7 @@ func TestCapturingKey(t *testing.T) {
 		t.Error("an armed hotkey capture should report capturingKey")
 	}
 	a.courtkeys.bindingFor = ""
-	a.macroBind = 0 // 0 = armed (slot 0)
+	a.budget.macroBind = 0 // 0 = armed (slot 0)
 	if !a.capturingKey() {
 		t.Error("an armed macro capture should report capturingKey")
 	}

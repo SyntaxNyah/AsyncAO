@@ -37,7 +37,7 @@ func TestLobbyAutoRefreshDue(t *testing.T) {
 func TestLobbyEntryAutoRefresh(t *testing.T) {
 	a := testTabApp(t)
 	base := time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
-	a.frameNow = base // fake clock: a.now() reads the frame snapshot (reconnect.go idiom)
+	a.budget.frameNow = base // fake clock: a.now() reads the frame snapshot (reconnect.go idiom)
 	a.lobby.lobbyResult = make(chan lobbyFetch, 1)
 	a.d.MasterURL = "://no-network" // missing scheme: http.NewRequestWithContext errors before any I/O
 
@@ -55,7 +55,7 @@ func TestLobbyEntryAutoRefresh(t *testing.T) {
 
 	// Sitting on the lobby: however stale the stamp, no transition = no request
 	// (the trigger is purely edge — there is no polling timer to fire).
-	a.frameNow = base.Add(2 * lobbyAutoRefreshMinInterval)
+	a.budget.frameNow = base.Add(2 * lobbyAutoRefreshMinInterval)
 	a.lobby.lastLobbyRefreshAt = time.Time{} // even maximally due…
 	a.noteScreenTransition()
 	if a.lobby.lobbyFetching {
@@ -64,7 +64,7 @@ func TestLobbyEntryAutoRefresh(t *testing.T) {
 
 	// Re-entry INSIDE the cap: suppressed — a manual refresh (or any fetch)
 	// moments ago already armed the stamp.
-	a.lobby.lastLobbyRefreshAt = a.frameNow.Add(-lobbyAutoRefreshMinInterval / 2)
+	a.lobby.lastLobbyRefreshAt = a.budget.frameNow.Add(-lobbyAutoRefreshMinInterval / 2)
 	a.frame.drawnScreen = ScreenSettings // last frame drew Settings → this frame is an entry edge
 	a.noteScreenTransition()
 	if a.lobby.lobbyFetching {
@@ -72,7 +72,7 @@ func TestLobbyEntryAutoRefresh(t *testing.T) {
 	}
 
 	// Leaving the lobby: never fires, regardless of staleness.
-	a.lobby.lastLobbyRefreshAt = a.frameNow.Add(-2 * lobbyAutoRefreshMinInterval)
+	a.lobby.lastLobbyRefreshAt = a.budget.frameNow.Add(-2 * lobbyAutoRefreshMinInterval)
 	a.screen = ScreenSettings // drawnScreen settled on ScreenLobby above
 	a.noteScreenTransition()
 	if a.lobby.lobbyFetching {
@@ -85,8 +85,8 @@ func TestLobbyEntryAutoRefresh(t *testing.T) {
 	if !a.lobby.lobbyFetching {
 		t.Error("re-entering the lobby past the cap must refresh immediately")
 	}
-	if !a.lobby.lastLobbyRefreshAt.Equal(a.frameNow) {
-		t.Errorf("the auto fetch must re-arm the cap stamp: got %v, want %v", a.lobby.lastLobbyRefreshAt, a.frameNow)
+	if !a.lobby.lastLobbyRefreshAt.Equal(a.budget.frameNow) {
+		t.Errorf("the auto fetch must re-arm the cap stamp: got %v, want %v", a.lobby.lastLobbyRefreshAt, a.budget.frameNow)
 	}
 	<-a.lobby.lobbyResult
 }
@@ -96,9 +96,9 @@ func TestLobbyEntryAutoRefresh(t *testing.T) {
 // must not push the cap out (only fetch STARTS arm it).
 func TestRefreshServersDedupKeepsCapStamp(t *testing.T) {
 	a := testTabApp(t)
-	a.frameNow = time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
+	a.budget.frameNow = time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
 	a.lobby.lobbyFetching = true // a fetch is already in flight
-	armed := a.frameNow.Add(-lobbyAutoRefreshMinInterval / 2)
+	armed := a.budget.frameNow.Add(-lobbyAutoRefreshMinInterval / 2)
 	a.lobby.lastLobbyRefreshAt = armed
 	a.RefreshServers() // dedup'd: must be a pure no-op
 	if !a.lobby.lastLobbyRefreshAt.Equal(armed) {
@@ -116,7 +116,7 @@ func TestRefreshServersDedupKeepsCapStamp(t *testing.T) {
 func TestLobbyEntryDrainsParkedFetch(t *testing.T) {
 	a := testTabApp(t)
 	base := time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
-	a.frameNow = base
+	a.budget.frameNow = base
 	a.lobby.lobbyResult = make(chan lobbyFetch, 1)
 	a.d.MasterURL = "://no-network" // missing scheme: the fetch goroutine errors before any I/O
 
@@ -188,7 +188,7 @@ func TestPollLobbyFetchKeepsSelectionByIdentity(t *testing.T) {
 // them so a transient master hiccup can't throw the cache away.
 func TestRefreshKeepsPingSortAndPrunes(t *testing.T) {
 	a := testTabApp(t)
-	a.frameNow = time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
+	a.budget.frameNow = time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
 	a.lobby.lobbyResult = make(chan lobbyFetch, 1)
 	a.d.MasterURL = "://no-network"
 	alpha := network.ServerEntry{IP: "a.example", WSPort: 1001, Name: "Alpha", Players: 1}

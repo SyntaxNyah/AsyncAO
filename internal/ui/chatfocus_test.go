@@ -13,7 +13,7 @@ import (
 // focusTestApp is a courtroom App whose IC field drew on the last painted frame —
 // the state claimTypingForIC requires before it will take a keystroke.
 func focusTestApp() *App {
-	a := &App{env: env{ctx: &Ctx{}}, macroBind: -1}
+	a := &App{env: env{ctx: &Ctx{}}, budget: budgetState{macroBind: -1}}
 	a.screen = ScreenCourtroom
 	a.ctx.drawnFieldSeq = []string{icFieldID}
 	return a
@@ -246,7 +246,7 @@ func colorPickTestApp(t *testing.T) *App {
 	t.Helper()
 	a := testTabApp(t)
 	a.screen = ScreenCourtroom
-	a.macroBind = macroBindIdle
+	a.budget.macroBind = macroBindIdle
 	return a
 }
 
@@ -269,7 +269,7 @@ func TestBareBindKeyRequiresAlt(t *testing.T) {
 		{"a capture owns the key", true, false, true, sdl.K_m, 0},
 		{"no key this frame", true, false, false, 0, 0},
 	} {
-		a := &App{env: env{ctx: &Ctx{}}, macroBind: -1}
+		a := &App{env: env{ctx: &Ctx{}}, budget: budgetState{macroBind: -1}}
 		a.ctx.keyPressed, a.ctx.altHeld, a.ctx.ctrlHeld = tc.key, tc.alt, tc.ctrl
 		if tc.arm {
 			a.courtkeys.bindingFor = "Judge"
@@ -280,7 +280,7 @@ func TestBareBindKeyRequiresAlt(t *testing.T) {
 	}
 	// Focus is deliberately NOT a fence any more: an Alt chord is never text, so a
 	// bind must still fire while the user is in the chat box.
-	a := &App{env: env{ctx: &Ctx{}}, macroBind: -1}
+	a := &App{env: env{ctx: &Ctx{}}, budget: budgetState{macroBind: -1}}
 	a.ctx.keyPressed, a.ctx.altHeld, a.ctx.focusID = sdl.K_m, true, icFieldID
 	if a.bareBindKey() != sdl.K_m {
 		t.Error("an Alt chord must fire even with the IC box focused — it can never be mistaken for typing")

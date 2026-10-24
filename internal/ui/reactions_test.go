@@ -168,10 +168,10 @@ func TestDrawReactionFloatsZeroAlloc(t *testing.T) {
 	}
 
 	// Active floats: fixed frame clock so they stay mid-life (never cull) across the run.
-	a.frameNow = time.Now()
+	a.budget.frameNow = time.Now()
 	a.reactUI.reactionFloats = []reactionFloat{
-		{index: 0, born: a.frameNow.Add(-400 * time.Millisecond), xJit: 20},
-		{index: 1, born: a.frameNow.Add(-700 * time.Millisecond), xJit: -30},
+		{index: 0, born: a.budget.frameNow.Add(-400 * time.Millisecond), xJit: 20},
+		{index: 1, born: a.budget.frameNow.Add(-700 * time.Millisecond), xJit: -30},
 	}
 	if allocs := testing.AllocsPerRun(200, func() { a.drawReactionFloats(vp) }); allocs != 0 {
 		t.Errorf("active drawReactionFloats allocated %.1f/op, want 0 (#2 zero-perf constraint)", allocs)

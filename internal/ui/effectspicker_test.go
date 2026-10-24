@@ -380,8 +380,8 @@ func TestEffectPreviewFiltersTheSoundSentinels(t *testing.T) {
 		}
 	}()
 	a.previewOverlayRow(choices, 1)
-	if want := overlayThemeKey("/themes/t/effects/tv on.webp"); a.previewBase != want {
-		t.Errorf("previewBase = %q, want the effect's own art %q", a.previewBase, want)
+	if want := overlayThemeKey("/themes/t/effects/tv on.webp"); a.budget.previewBase != want {
+		t.Errorf("previewBase = %q, want the effect's own art %q", a.budget.previewBase, want)
 	}
 	// A preview is an audition: it commits nothing.
 	if a.emotepick.overlayChoiceIdx != 0 || a.emotepick.sfxChoiceIdx != 0 {
@@ -399,19 +399,19 @@ func TestPreviewClearsWhenTheDropdownCloses(t *testing.T) {
 	a, choices := effectPreviewApp(t)
 	a.ctx.ddOpen = overlayEffectsDDID
 	a.previewOverlayRow(choices, 1)
-	if a.previewBase == "" || !a.previewPinned {
-		t.Fatalf("fixture: the preview must open pinned, base = %q pinned = %v", a.previewBase, a.previewPinned)
+	if a.budget.previewBase == "" || !a.previewPinned {
+		t.Fatalf("fixture: the preview must open pinned, base = %q pinned = %v", a.budget.previewBase, a.previewPinned)
 	}
 
 	a.pollOverlayRosters() // the per-frame home of the close edge
-	if a.previewBase == "" {
+	if a.budget.previewBase == "" {
 		t.Fatal("the box must survive while the list is OPEN — auditioning a second row re-points it")
 	}
 
 	a.ctx.ddOpen = "" // click-away / pick / toggle shut: dropdownEx clears it
 	a.pollOverlayRosters()
-	if a.previewBase != "" {
-		t.Errorf("previewBase = %q — the preview must clear when the dropdown closes (spec 1.d)", a.previewBase)
+	if a.budget.previewBase != "" {
+		t.Errorf("previewBase = %q — the preview must clear when the dropdown closes (spec 1.d)", a.budget.previewBase)
 	}
 	if a.previewPinned {
 		t.Error("the pin must go with the box, or the next hover preview can never leave-close")
@@ -423,10 +423,10 @@ func TestPreviewClearsWhenTheDropdownCloses(t *testing.T) {
 	// Ownership: a box some OTHER trigger re-pointed since is not ours to close.
 	a.ctx.ddOpen = overlayEffectsDDID
 	a.previewOverlayRow(choices, 1)
-	a.previewBase = "characters/phoenix/(a)normal" // an emote-grid hover took the shared slot
+	a.budget.previewBase = "characters/phoenix/(a)normal" // an emote-grid hover took the shared slot
 	a.ctx.ddOpen = ""
 	a.pollOverlayRosters()
-	if a.previewBase != "characters/phoenix/(a)normal" {
+	if a.budget.previewBase != "characters/phoenix/(a)normal" {
 		t.Error("the close edge closed a box it does not own (previewBase is one shared slot)")
 	}
 	if a.overlays.overlayPreviewBase != "" {
