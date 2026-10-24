@@ -289,7 +289,6 @@ func (c *Ctx) popRowLabelLimit(prev int32) { c.rowLabelRight = prev }
 // armed limit: the label itself when it fits (and always when no limit is armed),
 // otherwise AO2's own chop-two-append-ellipsis truncation. Returns fit=false when it
 // had to shorten, so the caller can offer the full text some other way.
-//
 // The ellipsis matters: a hard clip is indistinguishable from a rendering fault —
 // which is precisely how the overflowing settings text was reported ("cut off at the
 // right border"). A trailing "…" says the sentence continues.
@@ -369,9 +368,6 @@ const (
 // truncate_label_text, called for guard/pre/flip/slide at :1167-1170 and for
 // immediate at :1078). A theme is free to give a toggle a 51x19 rect, and AO2
 // sizes the widget to the rect and shortens the LABEL rather than overflowing it.
-// Pure, and measure is injected, so it is testable without a renderer. Called at
-// layout-build time rather than per frame; the happy path returns before the loop
-// allocates anything.
 func truncateLabelTo(label string, avail int32, measure func(string) int32) string {
 	return truncateLabelToMarker(label, avail, truncateEllipsis, measure)
 }
@@ -408,7 +404,6 @@ func truncateLabelToMarker(label string, avail int32, marker string, measure fun
 // truncateChopFor is how many runes one pass removes so the net loss is exactly one
 // original character: the marker's own runes (which the previous pass appended and
 // this one must take back) plus one.
-//
 // For AO2's single-rune ellipsis this is 2 — courtroom.cpp:6750-6754's literal
 // chop of two — which is what truncateChopRunes names and what
 // TestTruncateChopMatchesAO2ForTheEllipsis (labelellipsis_test.go) pins.
@@ -420,9 +415,6 @@ func truncateChopFor(marker string) int {
 // surfaces that draw in a theme-declared font rather than the chrome one, where
 // c.TextWidth (the chrome face's memo) would ellipsize against the wrong metrics.
 // Callers on a per-frame path should test the fits case with fontTextWidth first:
-// The MARKER is chosen against the same face (ellipsisFor): a theme-declared
-// display font that has no U+2026 gets "..." instead of the .notdef box that was
-// showing up at the end of every shortened music-banner title. Resolved here rather
 func (c *Ctx) fitLabelToFont(f *ttf.Font, label string, avail int32) string {
 	return c.fitLabelToFontWeight(f, label, avail, false)
 }
@@ -454,7 +446,6 @@ func (c *Ctx) CheckboxLabelAvail(r sdl.Rect) int32 {
 // the rect's own top. ThemeFitNative can downscale a canvas until the rect is
 // shorter than the 16 px box, and a negative offset would lift the box out of its
 // own row and into whatever is drawn above it.
-//
 // Extracted so a test can drive the real arithmetic: the first version of that
 // test recomputed the formula in its own body and would have passed with the floor
 // deleted from production.
@@ -469,8 +460,6 @@ func checkboxBoxY(r sdl.Rect) int32 {
 // AO2 places every toggle by design rect (set_size_and_pos), and several are far
 // narrower than their label — aceattorney2x gives `flip` 51x19 — so a checkbox
 // that grows to its text cannot honour a theme.
-// No id parameter: Checkbox has none either, c.onRow collects by label, and an
-// unused parameter is a staticcheck finding.
 func (c *Ctx) CheckboxIn(r sdl.Rect, label string, value bool) bool {
 	if c.onRow != nil {
 		c.onRow(label, r.Y) // settings-search collect pass, as Checkbox does
@@ -687,10 +676,6 @@ func wordForwardBoundary(runes []rune, pos int) int {
 // the new value and caret. Pure and rune-aware (multibyte shownames — Häschen,
 // fünfzehn, 🍅 — so the caret is by rune, never by byte), so it carries all the
 // edit logic that the draw path (which needs a renderer) can't unit-test.
-// Native selection semantics: insert/backspace/delete replace the range;
-// plain Left/Right collapse to the range's edge; Home/End collapse to the
-// text's ends. (Shift-extension keeps the anchor OUT of the input — the
-// caller moves only the caret.)
 func editStep(value string, caret int, in editInput) (string, int) {
 	runes := []rune(value)
 	if caret < 0 {
@@ -1129,8 +1114,6 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 	// non-ASCII — e.g. a saved Japanese showname greyed in the empty showname box.
 	// Route it through the same per-glyph raster on an opted-in field (fb.primary !=
 	// nil), keyed by the dim colour so the value/placeholder rasters never collide.
-	// Cached + self-invalidating like the value raster (one map hit/frame, no
-	// per-frame alloc); plain-ASCII placeholders stay on the single-font path.
 	if !drawn && show == placeholder && show != "" && fb.primary != nil && !isASCII(show) {
 		if m := c.emojiRaster(show, col, fb.primary, fb.emoji); m != nil {
 			cp, ch := c.pushClip(sdl.Rect{X: r.X + padX, Y: r.Y, W: avail, H: r.H})
@@ -1319,9 +1302,6 @@ const fieldCaretMarginPx = int32(16)
 // otherwise moves the view the SMALLEST distance that brings the caret back in
 // (plus fieldCaretMarginPx of lead). Always clamped to [0, fullW-avail], so a
 // value that shrank underneath the field can never leave a gap on the right.
-// It replaces the old stateless "centre the caret" rule. That rule recomputed
-// the view from the caret every frame, which meant clicking into a long line —
-// or dragging a selection through one — re-centred the text under the pointer
 func scrollKeep(cur, fullW, caretX, avail int32) int32 {
 	if fullW <= avail || avail <= 0 {
 		return 0 // it all fits: head-aligned, no scroll state to keep
@@ -1480,8 +1460,6 @@ func (c *Ctx) Dropdown(id string, r sdl.Rect, options []string, cur int) (int, b
 // row: rowHWant sets the (taller) open-row height, thumbW the strip width, and
 // thumb paints the idx-th row's image at end-of-frame (it shares the deferred
 // overlay paint, so the thumbnails sit above everything like the list itself).
-// The closed control is unchanged. thumb runs on the render thread in
-// FinishFrame, so an on-demand cachedPage/Prefetch from it is safe.
 func (c *Ctx) DropdownThumbs(id string, r sdl.Rect, options []string, cur int, rowHWant, thumbW int32, thumb func(idx int, r sdl.Rect)) (int, bool) {
 	return c.dropdownEx(id, r, options, cur, rowHWant, thumbW, thumb)
 }
@@ -1889,8 +1867,6 @@ func (c *Ctx) VScrollbar(id string, track sdl.Rect, scroll, content, visible int
 	// non-positive height) hands us visible <= 0. With an empty list content is
 	// 0 too, so maxScroll = content - visible is POSITIVE and slips past the
 	// guard below, then thumbH = track.H*visible/content divides by content=0.
-	// Guard both: nothing scrolls (and nothing draws) when there's no content or
-	// no visible viewport — the same "everything fits" outcome as maxScroll<=0.
 	if content <= 0 || visible <= 0 {
 		return 0
 	}
@@ -1944,8 +1920,6 @@ func (c *Ctx) VScrollbar(id string, track sdl.Rect, scroll, content, visible int
 // by id, hover-gated, and mouse-down anywhere on the track jumps the thumb —
 // so it's grabbable rather than a fiddly +/- button press. Continuous (any
 // int in range).
-// sliderWheelDivisor sets the wheel step to 1/100 of a slider's range (≥1), so
-// the ubiquitous percent sliders step by exactly 1 per tick.
 const sliderWheelDivisor = 100
 
 func (c *Ctx) Slider(id string, track sdl.Rect, value, maxVal int32) int32 {

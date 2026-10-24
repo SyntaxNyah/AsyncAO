@@ -63,7 +63,6 @@ const (
 
 	// editorHeaderBtnW / editorHeaderBtnGap size the header band's button row (Fonts,
 	// Undo, Redo, Save, Back), laid out from the right edge.
-	//
 	// PACKAGE-LEVEL rather than local to the draw, because the band's geometry is what a
 	// gate has to press to prove the header behaves — and a gate that hard-coded 62
 	// would stop pressing the button the day the row was re-spaced, silently.
@@ -165,9 +164,6 @@ type themeEditor struct {
 	// and the pointer IS the flag — the shape `gallery` and `report` already use,
 	// for the same reason: it carries a whole offline session and a room, and a
 	// session that never presses the button should pay one nil pointer.
-	// DISTINCT FROM livePaused BELOW, deliberately. That is a FREEZE switch whose
-	// value is that its off state does LESS work; this is a player whose whole job
-	// is to do more. One control cannot honestly mean both.
 	preview *editorPreview
 
 	// livePaused is the LIVE PREVIEW toggle, stored INVERTED so the zero value is
@@ -352,7 +348,6 @@ func (a *App) editorInvalidateLive() {
 
 // setEditorLive flips the toggle and, on the way back ON, pays the one reconcile
 // the frozen frames skipped.
-//
 // THE RESUME IS UNCONDITIONAL, not "if anything changed": the plan's signature is
 // exactly what says whether anything changed (editorSyncArt compares it), and this
 // is the one moment the answer has to be re-asked rather than trusted.
@@ -482,7 +477,6 @@ func (e *themeEditor) selectClear() { e.selN = 0 }
 
 // selectPrimary makes an ALREADY-SELECTED target the one the inspector follows and
 // the one a multi-drag is led by, by swapping it to the front.
-//
 // A swap rather than a re-select, because a press on one member of a multi-selection
 // must not throw the rest away — that is precisely the gesture "grab this box and
 // move all five" is made of. A target that is not selected at all is selected alone,
@@ -559,9 +553,6 @@ func (a *App) drawThemeEditor(w, h int32) {
 	// rails — and every one of them is hidden by NOT RUNNING rather than by being
 	// asked to hide itself. That is the only version of "hides all editing chrome"
 	// that stays true when the next rail is added.
-	// BELOW the poll cluster, deliberately: a save or an export started before
-	// Preview was pressed must still land while the demo plays, or the chip that
-	// says so would arrive minutes late. The two polls that MUTATE THE DOCUMENT
 	if a.editorPreviewOn() {
 		a.te.peek = false
 		a.drawEditorPreviewScreen(w, h)
@@ -651,7 +642,6 @@ func (a *App) editorPanelUp() bool {
 // it lives beside it so the two are read together: a panel added to the OR above and
 // not closed here would be a panel Esc walks past — which is exactly the hole the Fonts
 // panel had (app.go's ScreenThemeEditor arm).
-//
 // It closes ALL of them rather than "the top one", because the editor has no panel
 // stack: design §3.1's panels are alternatives, never layers, and a "topmost" that is
 // really a one-element set is a z-order nobody maintains.
@@ -676,9 +666,6 @@ func (a *App) drawEditorCanvas(w, h int32) {
 		// the editor hit-tests with raw pointIn — and it is needed for the same
 		// reason: the kit is single-pass, so a press that selects a themed widget
 		// would ALSO press whatever real button is painted there.
-		// A BRACKET, not an assignment: an open dropdown belonging to the RAILS holds
-		// modalOn legitimately, and forcing it false on the way out would drop its
-		// fence and let the click behind it through. (app.go's own toolbox-under-an-
 		saved := a.ctx.modalOn
 		a.ctx.modalOn = true
 		a.drawCourtroom(w, h)
@@ -889,7 +876,6 @@ func (te *themeEditor) editorPlate(base sdl.Color) sdl.Color {
 }
 
 // drawEditorElementRail is the LEFT rail: the z-order list.
-//
 // Clipped with pushClip/popClip and NEVER with a raw Ren.SetClipRect — the raw call
 // clips DRAW only and lets clicks and hovers leak past the edge, which is the class
 // of bug the char-select grid shipped in v1.55.8. hovering() honours the kit's clip
@@ -1084,7 +1070,6 @@ func (a *App) drawEditorInspector(w, h int32) {
 
 // drawInspectorTail is what a rail carries BELOW its rows: the widget arm's parity
 // note and its Reset, and the text arm's format-1 note.
-//
 // SEPARATE FROM THE TABLE because neither is a FIELD. Reset is an action (it removes a
 // row rather than setting a value), and the notes are statements about the format. A
 // row invented for either would have to carry a mutator that mutates nothing, which is
@@ -1205,7 +1190,6 @@ func (a *App) drawInspectorRow(f *inspectorField, t editTarget, r sdl.Rect) {
 
 // drawInspectorPick is an fkPick row: two step buttons that walk the LIVE list, then
 // the value itself as free text.
-//
 // THE TEXT FIELD IS NOT A FALLBACK, it is the row's contract. Every fkPick field is
 // read as free text by the format (see fieldKind's own comment), so a build that has
 // never heard of `generator = ripples` must still be able to hold and re-save that
@@ -1247,7 +1231,6 @@ func (a *App) drawInspectorPick(f *inspectorField, t editTarget, ctl sdl.Rect, o
 
 // editorWriteStringField is the ONE path a typed or picked string takes to the
 // document: validate what the FORMAT validates, intern, apply.
-//
 // The validation is here rather than in the setter because a setter cannot say no —
 // it has no return value and the op has already been recorded by the time it runs, so
 // a refusal there is either a silent no-op (an undo step that does nothing) or a
@@ -1269,8 +1252,6 @@ func (a *App) editorWriteStringField(f *inspectorField, t editTarget, s string) 
 		// ignored, an id outside the reader's grammar — because a setter cannot say no
 		// and a refusal discovered there would leave an undo entry claiming a rename
 		// that never happened.
-		// The message is theme's own, so the editor cannot quote a grammar or a cap the
-		// format does not actually have.
 		el := a.te.doc.element(t)
 		if el == nil {
 			return
@@ -1423,8 +1404,6 @@ func (a *App) editorNudgeSelection(dx, dy int, coarse bool) {
 	// optimisation — it is what makes a nudge burst one undo step. The group id is
 	// part of the coalescing identity (coalesceKey), so opening a FRESH group on every
 	// tap would give consecutive taps different keys and defeat the merge entirely.
-	// One element = no group = the taps coalesce; many elements = one group per tap,
-	// which undoes together and is the correct step for a multi-select nudge.
 	if a.te.selN > 1 {
 		a.te.ring.begin()
 		defer a.te.ring.end()
@@ -1480,7 +1459,6 @@ func (a *App) editorToggleField(f editField) {
 }
 
 // editorDeleteSelection removes every selected element as one grouped op.
-//
 // HIGHEST INDEX FIRST. Identity is the INDEX (theme.Element), so removing element 3
 // renumbers everything after it — deleting in ascending order would delete the
 // wrong rows from the second one on. Descending is the only order in which the
@@ -1514,9 +1492,6 @@ func (a *App) editorDeleteSelection() {
 	// §3.3's error-copy rule forbids — and the two have OPPOSITE remedies: a locked
 	// element wants L, a full graveyard wants a save or a reopen. One sentence covering
 	// both taught the user nothing about either.
-	// The counting needs no second predicate and no new state. The lock is tested here,
-	// before the funnel, so it is known without asking the document twice; a target the
-	// selection outlived is skipped as neither (nothing was prevented — see
 	locked, full := 0, 0
 	for i := 0; i < n; i++ {
 		t := elementTarget(idxs[i])

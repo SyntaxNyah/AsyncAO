@@ -54,7 +54,6 @@ func slotRectOf(v editValue) (theme.Rect, bool) {
 
 // editField names ONE addressable field. It is the third coordinate of an edit
 // (space, target, field) and the index into the get/set tables below.
-//
 // APPEND-ONLY, at the END. Ops are never persisted, so a reorder cannot corrupt a
 // saved theme — but the inspector table is indexed by these and a reorder would
 // silently re-point every row in it.
@@ -160,7 +159,6 @@ func (f editField) String() string {
 }
 
 // editFieldGet reads one field out of an element into the fixed-size payload.
-//
 // A TABLE, NOT A SWITCH, and indexed by the enum: a field appended to editField
 // without a reader here is a nil entry that
 // TestEveryEditFieldHasAGetterAndASetter names, where a switch's default would
@@ -241,13 +239,7 @@ var editFieldGet = [editFieldCount]func(*themeDoc, *theme.Element) editValue{
 }
 
 // editFieldSet writes one field back.
-//
 // EVERY SETTER CLAMPS TO THE FORMAT'S OWN RANGE, in the format's own constants.
-// Defence in depth rather than duplication: the reader clamps what it parses, but
-// the editor writes the model directly, and Sidecar.Bytes() REFUSES a model outside
-// the grammar — so an unclamped spinner would turn a save into an error dialog
-// long after the edit that caused it. Clamping here means the document is always
-// saveable, which is the property autosave rests on.
 var editFieldSet = [editFieldCount]func(*themeDoc, *theme.Element, editValue){
 	editFieldRect: func(_ *themeDoc, e *theme.Element, v editValue) {
 		e.Rect = theme.Rect{X: int(v.i[0]), Y: int(v.i[1]), W: int(v.i[2]), H: int(v.i[3])}
@@ -398,13 +390,6 @@ func truncRunes(s string, max int) string {
 // ---------------------------------------------------------------------------
 
 // themeDoc is everything the editor edits, for ONE theme.
-//
-// side is the AUTHORITATIVE model while the editor is open: a.themeSidecar points
-// at the same *theme.Sidecar, and reclaimThemeDoc re-installs it after every theme
-// apply (see the file header). The lossless carrier and the AO2-compat export live
-// inside the Sidecar itself and are reached only through its guarded Bytes() — this
-// type deliberately holds no *theme.INIDoc, because holding one would be the
-// second writer the theme package's API census exists to forbid.
 type themeDoc struct {
 	// name is the theme folder this document belongs to. The reclaim check compares
 	// it against the applied theme, so a document is never re-installed over a
@@ -504,7 +489,6 @@ func (d *themeDoc) bindLive(rects map[string]theme.Rect) {
 // intern returns the id of s, adding it if there is room. A FULL TABLE returns
 // editStrNone — i.e. "", which the op layer treats as a refused construction rather
 // than as a silent edit to the empty string (mutateElemField checks the round trip).
-//
 // A linear scan of at most editStrCap: this runs on an inspector edit, never per
 // frame, and a map would allocate on every miss.
 func (d *themeDoc) intern(s string) editStrID {
@@ -674,7 +658,6 @@ func (d *themeDoc) mediaRowAt(idx int) string {
 
 // writeMediaRow is the ONE writer of the [media] table. An empty value REMOVES the
 // row; an index at the end APPENDS.
-//
 // THE CAP REFUSES, IT DOES NOT EVICT, exactly as writeFontRow, setOverrideRow and
 // insertAt do: a document that dropped somebody else's picture to make room for this
 // one would save a theme whose elements point at nothing.
@@ -705,7 +688,6 @@ func (d *themeDoc) writeMediaRow(idx int, v string) bool {
 
 // fontRowSep joins a family and its file inside ONE interned string, so a [fonts] row
 // fits the fixed-size editValue that makes the ring allocation-free.
-//
 // U+001F (unit separator) because INIDoc refuses control characters in a value, so
 // neither half can ever contain it — the encoding cannot be ambiguous for any string
 // the reader would accept, which is the property a hand-picked printable separator
@@ -740,7 +722,6 @@ const (
 )
 
 // typeSig signs the TYPE tables — [fonts] and [fontbind] — and nothing else.
-//
 // THE NARROWNESS IS THE POINT. Its one consumer asks "would a theme apply resolve
 // different FACES than the ones on screen?", and applySidecarFonts reads exactly these
 // two tables. Signing the whole document instead would answer "did anything change",
@@ -762,11 +743,8 @@ func (d *themeDoc) typeSig() uint64 {
 }
 
 // typeSigFold folds one string plus a TERMINATOR into the running hash.
-//
 // The terminator is load-bearing: without it {"ab","c"} and {"a","bc"} sign alike, so
 // moving one character between a family and its file would read as no change at all.
-// It is fontRowSep's byte for the reason that constant already argues — INIDoc refuses
-// control characters in a value, so it cannot occur inside either half.
 func typeSigFold(h uint64, s string) uint64 {
 	for i := 0; i < len(s); i++ {
 		h = (h ^ uint64(s[i])) * typeSigPrime64
@@ -793,7 +771,6 @@ func boolByte(on bool) uint8 {
 }
 
 // applyFontRow writes one row of a type table and returns its inverse.
-//
 // ONE ARM FOR BOTH TABLES, because they are the same operation over two []KV-shaped
 // stores: read the current value at an index, refuse if a cap says no, write, and hand
 // back what was there. Two arms would be two chances to get the add-versus-replace
@@ -833,7 +810,6 @@ func (d *themeDoc) fontRowAt(kind editOpKind, idx int) string {
 // writeFontRow is the ONE writer of both tables. An empty value REMOVES the row; an
 // index at the end APPENDS. Returns false for a refusal — a cap, or an index that is
 // neither an existing row nor the append slot.
-//
 // THE CAP REFUSES, IT DOES NOT EVICT, exactly as setOverrideRow and insertAt do: a
 // document that dropped somebody else's family to make room for this one would save a
 // theme whose bindings point at nothing.
@@ -900,7 +876,6 @@ func (d *themeDoc) writeFontBind(class, family string) bool {
 // how a theme behaves for somebody who only uses it.
 
 // slotEditable reports that a design key is one this document may author.
-//
 // It is sidecarOverrideTarget's first two gates (themeoverrides.go), asked of the
 // LIVE map rather than the apply goroutine's: editable, and actually placed by this
 // build. The tab strip is refused on top of them — see editorSlotKeyEditable
@@ -942,9 +917,6 @@ func (d *themeDoc) applySlotRect(op themeEditOp) (themeEditOp, editApplyResult) 
 		// field arm follows, and here it also means a plain CLICK on a widget (press,
 		// no movement, release) never writes a row. Marking a theme edited because
 		// somebody selected a box would be a diff nobody asked for.
-		// AND IT IS NOT A REFUSAL EITHER, which is the half that shipped wrong: every
-		// frame of a drag that holds still lands here, as does every frame a drag sits
-		// against clampDesignRectToCanvas, so answering "refused" put a four-second
 		return op, applyNoChange
 	}
 	op.before = editValueSlotRect(cur, hadRow)
@@ -956,7 +928,6 @@ func (d *themeDoc) applySlotRect(op themeEditOp) (themeEditOp, editApplyResult) 
 
 // applySlotReset removes this document's [overrides] row for a widget, putting the
 // geometry back to what the tiers below resolved when the editor opened.
-//
 // A ROW THAT WAS NEVER THERE IS NOT A RESET, and answering applyNoChange for it is
 // the same ruling applySlotRect's equal-rect arm makes: pressing Reset on an
 // untouched widget must not mark the theme edited, and must not chip a refusal for a
@@ -1198,7 +1169,6 @@ func (d *themeDoc) removeAt(t editTarget, v editValue) (theme.Element, bool) {
 }
 
 // insertAt puts a parked body back at the target's index.
-//
 // THE CAP REFUSES, IT DOES NOT TRUNCATE — the same ruling the reader follows
 // (design §3.3, TestSidecarCapsRefuseNotTruncate): an insert past theme.ElementCap
 // fails loudly here so the UI can name the cap, rather than succeeding into a model

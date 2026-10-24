@@ -47,12 +47,6 @@ const (
 	// an idle one (~0.5 packets/s of active courtroom chatter → ~18 h; idle rooms →
 	// days), because an occluded-but-healthy client is indistinguishable from a
 	// wedged one down here and must not be torn down inside any plausible stall.
-	// Costs ~1.6 MiB of preallocated channel buffer per connection (48 B/slot) —
-	// noise against the 256 MiB budget, and the courtroom's own bounded IC queue
-	// (messageQueueCap drop-oldest + packed-room catch-up) collapses the replay on
-	// restore, so depth here never turns into a replay storm. Still a hard, named
-	// bound: exhaustion means the drain has been dead for many busy hours with
-	// traffic still arriving, and THEN we disconnect (errReadBacklogOverflow).
 	readBacklogCap = 32768
 	// readBacklogMaxBytes bounds the WIRE bytes parked in the backlog channel, so a
 	// hostile/buggy server spraying maximum-size frames (maxIncomingBytes each)
@@ -164,14 +158,6 @@ func (c *Conn) wake() {
 // certificates are verified by the transport. SkipTLSVerify mirrors the
 // power-user "Validate server certificates" setting being OFF (the app default,
 // so self-signed community AO servers stay reachable). ws:// is never affected.
-//
-// Origin, when non-empty, is sent as the HTTP Origin header on the WebSocket
-// handshake — the power-user escape hatch for servers that allowlist only their
-// own web client's origin on the SOCKET (e.g. sof.beauty accepts only
-// "webao.sof.beauty"; the check is trivially spoofable, but without the header
-// the server refuses the upgrade). Empty = no Origin header (today's behaviour;
-// a native client normally sends none). The asset-fetch counterpart is the
-// separate Asset Origin override in internal/network.
 type DialOptions struct {
 	SkipTLSVerify bool
 	Origin        string
@@ -215,14 +201,6 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 	// Only wss:// is affected — ws:// upgrades over plain TCP and ignores the TLS
 	// config. We install a custom client ONLY when skipping verification, so the
 	// verifying default keeps coder/websocket's shared default client untouched.
-	//
-	// The transport is CLONED from the stdlib default rather than built from an
-	// empty literal, and that is the whole point of this branch's rewrite. An
-	// empty literal inherits nothing: it dropped Proxy (a nil Proxy means NEVER
-	// proxy, so the game socket went direct while the lobby list did not), and it
-	// dropped the dial, TLS-handshake and idle-connection timeouts with it. Since
-	// skip-verify is the SHIPPED DEFAULT — most community AO servers use
-	// self-signed certificates — that was the path essentially everyone took.
 	if len(opts) > 0 && opts[0].SkipTLSVerify {
 		transport := netproxy.Transport()
 		// Opt-in, gated behind the power-user Security toggle (default OFF =
@@ -451,8 +429,6 @@ func (c *Conn) Close() {
 // socket alive). It therefore NEVER blocks on a channel send: packets go into
 // backlog non-blockingly, and deliverLoop does the blocking hand-off to
 // Incoming. Backlog exhaustion (count or bytes) is the deliberate exception:
-// the drain has been dead for the whole bound with traffic still arriving, so
-// the client is wedged and disconnecting is correct.
 func (c *Conn) readLoop() {
 	// readLoop is backlog's only sender, so it closes it on exit; deliverLoop
 	// then finishes delivering whatever is parked and closes Incoming — a
@@ -463,9 +439,6 @@ func (c *Conn) readLoop() {
 	// nothing while the drain is stalled (nobody is watching a stalled
 	// window; on resume pumpConnection drains the parked packets AND hits the
 	// channel close in the same call, so the drop surfaces the same frame).
-	// Until then deliverLoop just stays parked — bounded, one per conn, and
-	// released by the resume, by keepaliveLoop's write-failure Close, or by
-	// the app's own teardown Close.
 	defer close(c.backlog)
 	for {
 		msgType, data, err := c.ws.Read(context.Background())

@@ -111,7 +111,6 @@ type elemBandRange struct{ lo, hi int16 }
 // elemPainters dispatches by kind. A FIXED ARRAY, indexed — never a map, never a
 // switch that a new kind can silently fall out of, and never a method value (that
 // allocates a closure; themeslots.go carries the same rule for themeSlot.draw).
-//
 // Every entry is non-nil by contract, because drawElementBands calls through it
 // without a nil check: TestEveryElementKindHasAPainter is what keeps that true, and
 // paintElementStub is what a kind whose painter has not landed yet points at.
@@ -125,7 +124,6 @@ var elemPainters = [theme.ElementKindCount]func(*App, *bakedElement){
 }
 
 // paintElementStub is the placeholder painter: it draws nothing, deliberately.
-//
 // It exists so the table is TOTAL from the first commit of the wave — the band loop
 // indexes elemPainters with no nil check, and a nil entry would be a panic on the
 // render thread the first time a stranger's theme used that kind. It is also the
@@ -177,7 +175,6 @@ func (a *App) drawElement(lay *themeLayoutCache, e *bakedElement, idx int16) {
 	// The fast path, and the one every stock element takes: no effect at all. One
 	// compare, then the painter — this is what keeps "0 effects = 0 cost" true inside
 	// a themed frame that already has elements in it.
-	//
 	// The upper bound is the same defence in depth as the kind check above: the
 	// resolver degrades an out-of-range effect on its own, but effectIsStateful below
 	// is indexed with it, and an index panic on the render thread is not a thing to
@@ -207,11 +204,6 @@ func (a *App) drawElement(lay *themeLayoutCache, e *bakedElement, idx int16) {
 	if effectIsStateful[e.fx.kind] && e.condAxis != theme.CondAlways {
 		// A nil st (pool exhaustion) is the named graceful degrade: the resolver
 		// freezes the effect at its first frame and reports static.
-		//
-		// lay.condGen IS the bake generation (themeElemGen, stamped in
-		// bakeThemeElements): a cold rebuild re-numbers the baked array, so a slot
-		// stamped with the previous one must not answer for whatever element inherited
-		// its index.
 		st, _ = a.acquireElementFX(idx, lay.condGen, el)
 	}
 	fx := resolveElementEffect(e.fx, el, st)
@@ -226,8 +218,6 @@ func (a *App) drawElement(lay *themeLayoutCache, e *bakedElement, idx int16) {
 	// A static effect's terms are its FINAL state, not "no effect": a wash whose fade
 	// has finished resolves to env 0 and must paint nothing, where skipping the apply
 	// would leave it drawing at its full authored opacity over an AO2 widget, forever.
-	// A free element's static terms are the neutral transform, so the two lines below
-	// cost it a struct copy and change nothing.
 	saved := applyElementFX(e, fx)
 	elemPainters[e.kind](a, e)
 	restoreElementFX(e, saved)
@@ -241,7 +231,6 @@ func (a *App) drawElement(lay *themeLayoutCache, e *bakedElement, idx int16) {
 // COMPARE against an index the bake interned and refreshElementConditions
 // resolved once for this frame. Deliberately not an expression language —
 // anything richer needs a parser on the frame path (docs/THEME-FORMAT.md §3).
-//
 // An unknown axis leaves the element VISIBLE, which is the format's own rule:
 // "an element a future condition would have hidden is better shown than lost".
 func (a *App) elementVisible(e *bakedElement) bool {
@@ -386,7 +375,6 @@ func (a *App) stageShout() string {
 // APPEND-ONLY: the id is baked, and a theme reloaded mid-session must resolve to
 // the same silhouette it did a frame ago. elemShapePill is appended rather than
 // slotted beside elemShapeRounded for exactly that reason.
-// THE VOCABULARY IS shapemask.go's, EXTENDED (design §2): sharp / rounded / pill
 // are the three names this client already persists (shapemask.go:38-40, and the
 // same three in internal/config), and the 14 shipped themes were authored against
 const (
@@ -424,7 +412,6 @@ const elemShapePillDiv = int32(2)
 
 // paintElementShape draws a procedural silhouette: the fill first, then the outline
 // as per-band edge posts plus two caps.
-//
 // The outline is drawn as edges rather than as "fill the outer silhouette in the
 // stroke colour, then the inner one in the fill colour", because that trick needs an
 // OPAQUE fill — and a frame element is precisely a stroke over a TRANSPARENT fill,
@@ -631,7 +618,6 @@ func paintElementGradient(a *App, e *bakedElement) {
 
 // paintElementRadial ramps from stop B at the edge to stop A at the centre as
 // concentric RECTANGLE rings, drawn outside-in so each one covers the last.
-//
 // Rectangular, not circular, for the same reason the linear case is cardinal: a true
 // circle needs geometry. It reads correctly as a vignette or a centre glow inside a
 // box, which is what the two-stop plate is for; `generator = glow` is the circular
@@ -660,9 +646,6 @@ func paintElementRadial(c *Ctx, e *bakedElement) {
 // is not the kit's own lerpColor (eggs.go), whose alpha stays at a.A. A two-stop
 // plate ramping from opaque to transparent is the vignette idiom, and it is the
 // whole reason theme.RGBA carries alpha at all.
-// Integer arithmetic, and no closure. Both are deliberate: a ramp that wobbled with
-// float rounding would shimmer between two frames of an unchanged window, and a
-// per-channel closure is exactly the allocation lerpColor's own comment warns about
 func elemStopColor(a, b sdl.Color, i, n int32) sdl.Color {
 	if n <= 0 {
 		return a
@@ -722,22 +705,15 @@ func paintElementText(a *App, e *bakedElement) {
 }
 
 // elemTileCap bounds how many blits ONE tiled element may issue in a frame.
-//
 // `fit = tile` repeats a source at its NATIVE size, so a 4x4 generator tile stretched
 // across a 1512x648 canvas is 61 236 draw calls — a number that is a function of the
 // window rather than of the theme, which is exactly the shape hard rule 4 forbids.
-// Past the cap the element falls back to a single stretched blit: it still shows, it
-// just stops being a repeat. 4096 is more repeats than any pattern reads as at any
-// realistic window size, and it is a fixed ceiling on the whole element band.
 const elemTileCap = 4096
 
 // paintElementArt draws an ElemImage's media page or an ElemGen's generator tile —
 // ONE painter for both kinds, because after the bake they are the same thing: a
 // resolved *render.TexturePage plus a fit mode, a tint and a rotation. The only
 // difference is where the page came from, and that question was settled at bake.
-// ZERO ALLOCATIONS, like every other painter here. Every *sdl.Rect handed across cgo
-// is one of the two persistent scratch fields (the ui.go cgoRect contract) — passing
-// &local would heap-allocate on every blit, which at 96 elements is the classic
 func paintElementArt(a *App, e *bakedElement) {
 	if e.page == nil || e.r.W <= 0 || e.r.H <= 0 || len(e.page.Frames) == 0 {
 		return
@@ -754,9 +730,6 @@ func paintElementArt(a *App, e *bakedElement) {
 	// into its alpha at bake (fadeColor). Both are restored afterwards, because the
 	// page is SHARED — two elements tinting one generator tile must not see each
 	// other's colour, and the theme's chrome draws from the same store.
-	// RESTORED INLINE, NOT WITH defer — and the reason is style, not allocation. Go
-	// open-codes a single non-escaping defer, so the closure form measures 0 allocs
-	// here and both AllocsPerRun gates stay green either way; what the inline form
 	_ = tex.SetColorMod(e.tint.R, e.tint.G, e.tint.B)
 	_ = tex.SetAlphaMod(e.tint.A)
 	switch e.fit {
@@ -912,7 +885,6 @@ func paintElementNineSlice(c *Ctx, e *bakedElement, tex *sdl.Texture) {
 }
 
 // paintElementPane draws a split-screen region's PLATE and its divider frame.
-//
 // The [pane.*] section itself paints nothing — it reparents its host widgets and
 // that is all it does (design §Q1: "the host widget draws EXACTLY ONCE, at the
 // pane's rect"). A theme that wants the region to LOOK like a region declares a

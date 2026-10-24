@@ -4,10 +4,6 @@ package update
 // unit-testable in a temp dir without touching the live executable — the caller
 // supplies os.Executable() at the one call site. On Windows a RUNNING .exe
 // can't be deleted or overwritten, but it CAN be renamed, so the swap is:
-//
-//	download -> verify -> rename(target -> .old) -> rename(new -> target)
-//	  (next boot) delete .old        (on failure) rename(.old -> target)
-//
 // Rollback is the safety net for the AV-quarantine-mid-swap case CLAUDE.md
 // warns about: if installing the new binary fails, the old one is renamed back
 // so the install is never left broken. Verification here is INTEGRITY (the
@@ -123,8 +119,6 @@ func Download(ctx context.Context, url, destPath string) (int64, error) {
 	// this every macOS/Linux self-update would install a binary the OS refuses
 	// to launch — and CleanupOldVersion unlinks the .old backup right after the
 	// stage, so there'd be nothing runnable left. Windows ignores the exec bit.
-	// Best-effort (the swap is the critical path; a chmod error surfaces at
-	// launch anyway, and only exotic filesystems fail chmod on a file we own).
 	if runtime.GOOS != "windows" {
 		_ = os.Chmod(destPath, stagedBinaryMode)
 	}
@@ -307,12 +301,6 @@ func ExtractTarGz(tarPath, destDir string) error {
 // runtime libraries — "" on Windows (DLLs sit flat beside the exe), "lib" on
 // macOS (dylibs). The binary is the flat .exe, or the flat file that is neither
 // a library nor documentation (the macOS bare binary); documentation (.txt/.md)
-// is ignored. Runtime files are
-// swapped FIRST via the rename-with-rollback swap (a loaded library, like a
-// running binary, can be renamed but not overwritten), then the binary is
-// swapped LAST as the commit point, so a failed library swap leaves the OLD
-// binary in place. A library that didn't exist before simply moves in.
-// stagingDir is left empty on success.
 func StageBundle(stagingDir, targetExe, libSubdir string) error {
 	dir := filepath.Dir(targetExe)
 	var newBin string
@@ -425,21 +413,6 @@ const bundledLibDirName = "lib"
 // the tarball shipped. This is the SONAME-skew brick documented in
 // docs/CODE-SIGNING.md: the self-updater swaps only the bare binary, not lib/,
 // so a Homebrew dependency crossing a SONAME bump (e.g. libavif.16 → libavif.17)
-// makes the new binary reference a dylib the stale lib/ lacks; @executable_path/lib
-// misses and — for the no-Homebrew tarball audience the bundle exists to serve —
-// there is no /opt/homebrew/lib fallback, so dyld fails to launch it.
-//
-// It is a NO-OP on every non-darwin platform (Windows/Linux never bundle a
-// sibling lib/ this way) and — critically — FAIL-OPEN: any inability to inspect
-// the binary or the lib/ (parse error, no macho, unreadable dir) returns nil so
-// a real update is never blocked by the guard itself. It refuses only the two
-// provable cases when a sibling lib/ EXISTS: the new binary imports a dylib
-// straight from a Homebrew prefix (mis-bundled asset — a correct release build
-// never does, see bundle-macos.sh check_clean), or it imports an @rpath dylib
-// the installed lib/ lacks (SONAME skew). No sibling lib/ (a brew install, or a
-// bare download beside no lib/) → nil, because the rpath fallback to
-// /opt/homebrew/lib covers those.
-//
 // Called as the FIRST thing in StageReplace, before any rename, so a refusal
 // leaves the install completely untouched — a false positive costs the user a
 // manual tarball re-download, never a broken install.

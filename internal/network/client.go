@@ -3,7 +3,6 @@
 // and talks to the AO master server. Every request must earn its RTT:
 // duplicate in-flight fetches collapse via singleflight, cached 404s never
 // touch the wire inside their TTL, and failing hosts back off exponentially.
-//
 // The game connection itself is WebSocket-only (see internal/protocol);
 // legacy raw-TCP servers are intentionally unsupported.
 package network
@@ -77,14 +76,6 @@ const (
 	// same host, so reusing it for the body collapsed a large music track's
 	// download window toward adaptiveTimeoutFloor (2s) and cut multi-MB files
 	// mid-stream — "big music silently doesn't play" (§1.1). 180s (not 60s)
-	// because catbox.moe and similar free hosts throttle large bodies below
-	// ~166 KB/s, so a multi-MB mp3 can exceed a minute mid-download and get cut
-	// with "context canceled". 180s covers a ~10-40MB track on a slow-but-
-	// flowing link (matching the videomux.go maxMusicBytes=40<<20 precedent)
-	// while still bounding a genuinely wedged socket so a fetch worker can
-	// never be pinned forever (rule 4). Deliberately fixed, not adaptive: body
-	// throughput and header latency are unrelated, and the largest payloads
-	// (music) are exactly the ones the small-asset EWMA under-serves.
 	bodyTransferBudget = 180 * time.Second
 
 	// NotFoundCacheSize / NotFoundCacheTTL bound the negative cache: a 404
@@ -256,15 +247,6 @@ func newClient(timeout, notFoundTTL time.Duration) *Client {
 
 // PreResolve warms the DNS cache for host so the first asset probe never
 // blocks on a lookup. Call it at server connect with the asset host.
-//
-// A NO-OP when a proxy carries traffic to that host, and this is a privacy
-// property rather than an optimisation. Behind a proxy the transport dials the
-// PROXY and the proxy resolves the origin, so the origin's name never needs to
-// reach this machine's resolver — warming it anyway would publish to the local
-// (and often the ISP's) DNS exactly the server name the user routed through a
-// proxy in order not to disclose. The proxy's own hostname still resolves
-// locally, which is unavoidable and is not the thing being protected.
-//
 // It is also useless work in that case: DialContext's cached-IP substitution
 // applies to the address the transport asks for, which is the proxy's.
 func (c *Client) PreResolve(ctx context.Context, host string) {
@@ -377,9 +359,6 @@ func (c *Client) adaptiveTimeout(host string) time.Duration {
 // "Go-http-client" UA sits on WAF/bot-filter lists (asset mirrors live
 // behind Cloudflare and friends), and an identifiable agent lets server
 // owners find this client in their access logs when debugging reports.
-// update.Version is link-time stamped, so init sees the real release
-// version ("dev" on unstamped builds). The WS handshake and the updater
-// already send their own identities (protocol.conn, update).
 var clientUserAgent = "AsyncAO/" + update.Version
 
 const (
@@ -499,7 +478,6 @@ func (c *Client) fetchAttempt(url string) ([]byte, error) {
 // destination is allocated exactly once at final size and filled with
 // io.ReadFull — no growth, no copies. Unknown lengths accumulate in a pooled
 // scratch buffer and are copied out once.
-//
 // Deliberate deviation from spec §7's "pooled []byte" for the known-
 // length path: the returned payload is retained indefinitely by the T2/T3
 // caches, so a pooled buffer could never be returned to the pool — pooling
@@ -585,7 +563,6 @@ func (c *Client) recordFailure(host string) {
 	// waves" report). While still inside the current window, we EXTEND it
 	// (re-arm from now) without bumping the counter, so a burst stays at the
 	// first-failure tier. A genuinely-down host still climbs across windows:
-	// each window that fully elapses before the next failure increments once.
 	if now.Before(b.until) {
 		delay := backoffBase << (b.failures - 1)
 		if delay > backoffMax || delay <= 0 {

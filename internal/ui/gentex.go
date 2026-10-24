@@ -29,9 +29,6 @@ const genPctMax = int32(100)
 // a stranger wrote, and a tile is at most theme.GenTileMaxPx on a side — so
 // `pitch = 100000` is not a big pattern, it is a denial of service on the
 // theme-apply goroutine.
-// It was exactly that, and the hostile row of TestGeneratorTileNeverExceedsMaxPx is
-// what found it: halftone's dot radius reached 34 000 px and genDisc walked a
-// 68 000² coordinate box clipping every pixel, to paint at most 65 536 of them. The
 const (
 	// genIntParamMax clamps pitch / size / count at parse time. Four tiles' worth:
 	// past it a measurement cannot describe anything inside a 256 px tile, and every
@@ -177,7 +174,6 @@ type genEntry struct {
 // `radial`, `mottle`, `checkerdisc`, `skyline`, `wingmark`) — each of which
 // replaces between two and six independently-invented names, so the count is a
 // merge result rather than a wish list.
-//
 // A map rather than an array because the key is a string from a file; it is read
 // once per element per theme apply, on the apply goroutine, never on a frame.
 var genRegistry = map[string]genEntry{
@@ -232,7 +228,6 @@ func GeneratorKnown(name string) bool {
 // genTileSizeOf is the tile ONE SPEC would rasterise to, already clamped into
 // [genTileMinPx, theme.GenTileMaxPx]. The admission planner budgets a generator
 // with it without rasterising anything.
-//
 // It takes the SPEC, not (name, params), because the two-argument form permitted
 // GenTileSize(nameA, paramsOfB) — budget one tile, raster another — and the budget
 // is the only thing standing between a stranger's theme and the texture store. The
@@ -394,7 +389,6 @@ func genFill(img *image.RGBA, c color.RGBA) {
 // genBlend composites src OVER the pixel at (x, y) with an extra coverage factor in
 // [0, 1]. Straight (non-premultiplied) alpha, because that is what
 // render.TextureStore.buildPage uploads and what SDL's BLENDMODE_BLEND expects.
-//
 // Out of bounds is a no-op rather than a panic: the shape generators below walk
 // analytic curves whose rounding can step one pixel past an edge, and clamping at
 // the writer is one check instead of one at every caller.
@@ -862,8 +856,6 @@ func drawHatch(w, h int32, p GenParams) *image.RGBA {
 // A filled rectangle tile with a decorated edge, drawn 9-sliced so the edge keeps a
 // fixed device size at any anchor size.
 // pitch: groove period px (0 = flat face). size: edge extent px (default 6).
-// count: edge mode — 0 bevel, 1 chamfer, 2 capsule, 3 notch. Angle: light direction.
-// Pcts[0] (`pct`): bevel/keyline strength (default 60).
 func tilePlate(p GenParams) (int32, int32) {
 	e := 2 * (p.sizeOr(6) + p.pitchOr(0))
 	return clampTilePx(e), clampTilePx(e)
@@ -1015,9 +1007,6 @@ func drawFrame(w, h int32, p GenParams) *image.RGBA {
 // that edge, 1 at a corner. The gap and the bezel's barrel both measure it, and
 // one spelling is what keeps the two from disagreeing about which edge is
 // nearest.
-// THE `gap = 100` HALF OF THAT WAS NOT A BUG IN THIS FUNCTION, and the fix above
-// did not cure it: with the axes correct, 100 still opens the whole half-edge and
-// still paints nothing, because the fraction has no corner left over to keep —
 func frameAlong(x, y, w, h int32, dx, dy float64) float64 {
 	if dy < dx {
 		return math.Abs(float64(x)+0.5-float64(w)/2) / (float64(w) / 2)
@@ -1029,9 +1018,6 @@ func frameAlong(x, y, w, h int32, dx, dy float64) float64 {
 // sundisc. One polar function with six presets' worth of knobs.
 // pitch: ray count (default 12). size: outer radius px (0 = fill the tile).
 // count: repeats packed into the tile (default 1). seed: jitter.
-// Pcts[0] (`inner`): inner radius as a percent of outer — 100 is hairlines,
-// 0 is full wedges (default 0). Pcts[1] (`squash`): 100 is a circle, 45 the
-// perspective ellipse (default 100).
 func tileRadial(p GenParams) (int32, int32) {
 	r := p.sizeOr(64)
 	n := int32(clampInt(int(p.countOr(1)), 1, int(genRepeatCap)))
@@ -1102,9 +1088,6 @@ func genRing(img *image.RGBA, cx, cy, r, width float64, c color.RGBA) {
 // which is genuinely a different function from `noise` (per-pixel) and not a
 // parameterisation of it — all three authors said so independently.
 // pitch: base feature size px (16 = newsprint, 96 = cloud, 2 = cork granule).
-// size: octaves 1..4 (default 2). count: speck density 0..100 (0 = smooth).
-// seed: REQUIRED. Pcts[0] (`fade`): vertical ramp to transparent.
-// Pcts[1] (`amp`): luma swing (default 100).
 func tileMottle(p GenParams) (int32, int32) { return theme.GenTileMaxPx, theme.GenTileMaxPx }
 
 func drawMottle(w, h int32, p GenParams) *image.RGBA {
@@ -1149,9 +1132,6 @@ func drawMottle(w, h int32, p GenParams) *image.RGBA {
 // pitch/`cells`: cells across the diameter (default 6). size/`ring`: ring band px
 // (default 8). Angle: rotation. Pcts[1] (`squash`): 100 circle, 45 the graded
 // perspective value (default 100).
-// THE ADOPTED CLAUSE (thh_courtroom ESC-2): `bg` is the DARK CHECKER CELL, and the
-// tile OUTSIDE the disc is transparent by construction. One consumer draws its disc
-// over a near-black void and cannot tell the difference; the other draws it over a
 func tileCheckerdisc(p GenParams) (int32, int32) {
 	return theme.GenTileMaxPx, theme.GenTileMaxPx
 }
@@ -1202,8 +1182,6 @@ func drawCheckerdisc(w, h int32, p GenParams) *image.RGBA {
 // two of that preset's roles (mountain ranges and equalizer columns) with one
 // algorithm, and nothing else in the set draws a horizon.
 // pitch: ridge segment width px (default 16). size: peak height px (default 48).
-// HORIZONTALLY WRAPPING and bilaterally symmetric about the tile centre, so a
-// tiled range has no seam and no repeated silhouette.
 func tileSkyline(p GenParams) (int32, int32) {
 	return theme.GenTileMaxPx, clampTilePx(p.sizeOr(48) * 2)
 }
@@ -1257,8 +1235,6 @@ func drawSkyline(w, h int32, p GenParams) *image.RGBA {
 // is the design document's own worked example: §2.2's `[element.butterflies]` IS
 // this element, so cutting it would mean the spec's headline example does not ship.
 // size: mark size px (default 12). count: marks per tile (default 6).
-// TORUS-WRAPPED: every mark is stamped nine times, once per neighbouring tile, so a
-// mark crossing an edge appears on both sides and `fit = tile` has no seam.
 func tileWingmark(p GenParams) (int32, int32) {
 	return theme.GenTileMaxPx, theme.GenTileMaxPx
 }

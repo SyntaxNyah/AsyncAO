@@ -1,18 +1,6 @@
 package theme
 
 // THE PRESET LIBRARY: the shipped 21 x 14 gallery, parsed once.
-//
-// ONE concern — turning the embedded fragment tree into an ORDERED, BOUNDED,
-// IMMUTABLE set of *Preset. It owns no rendering, no merging and no UI; the
-// merge is presetmerge.go and the gallery is internal/ui.
-//
-// IMMUTABLE AFTER LOAD, and that is load-bearing rather than tidy. Every caller
-// holds *Preset values straight out of this table, so a caller that mutated one
-// would change what every OTHER theme in the session gets applied. The merge
-// therefore deep-copies on the way out (presetmerge.go) and nothing here hands
-// back a slice a caller is invited to append to. Pinned by
-// TestPresetLibraryIsImmutableAcrossCallers.
-//
 // PARSED ONCE, LAZILY. sync.Once, not an init(): a client that never opens the
 // gallery should not pay 35 INI parses at start-up, and hard rule 2 forbids
 // doing them on a draw path — Library() is called from the theme-apply
@@ -53,7 +41,6 @@ const (
 	// half again of headroom for the class to grow, and an order of magnitude short
 	// of the inherited bound, so a fragment that ballooned is a review question
 	// rather than a silent binary-size change.
-	//
 	// REFUSED, not truncated, for the same reason the axis caps are: half a
 	// fragment is a gallery card nobody can explain.
 	PresetFragmentByteCap = 64 << 10
@@ -97,13 +84,6 @@ var (
 )
 
 // ShippedPresets returns the library embedded in this binary.
-//
-// A FAILURE IS A BUILD BUG, NOT A USER'S PROBLEM: the fragments ship inside the
-// executable, so nothing a user does can break them, and every one of them is
-// parsed by TestEveryEmbeddedPresetParses before the binary exists. The error is
-// still returned rather than panicked on, because a panic on the theme-apply
-// goroutine would take the client down over decoration.
-//
 // COLD PATH ONLY (hard rule 2): first call parses 35 INI files.
 func ShippedPresets() (*PresetLibrary, error) {
 	shippedLibOnce.Do(func() {
@@ -113,7 +93,6 @@ func ShippedPresets() (*PresetLibrary, error) {
 }
 
 // LoadPresetLibrary parses an axis tree out of any fs.FS.
-//
 // CONSUMER-DEFINED INTERFACE (hard rule 11, interface segregation): it takes
 // fs.FS rather than *embed.FS so the gates can drive it from a hand-built
 // fstest.MapFS — which is the only way to test what happens to a DUPLICATE id or
@@ -204,7 +183,6 @@ func loadOnePreset(src fs.FS, dir, name string) (*Preset, error) {
 }
 
 // Layouts / Styles return the ordered fragments of one axis.
-//
 // THE SLICE IS SHARED, NOT COPIED, and the type is what keeps that safe: a
 // caller can reorder its own copy of the header but cannot reach a *Preset's
 // contents without going through the merge, which deep-copies. Copying here
@@ -247,7 +225,6 @@ func (l *PresetLibrary) Combinations() int {
 // returns (nil, nil): a theme that names only a style is a legal theme, and
 // forcing the caller to distinguish "" from a typo at every site is how a
 // missing tier turns into an error dialog.
-//
 // An UNKNOWN id returns ErrPresetUnknown, which callers surface as a note and
 // never as a refusal — it is exactly what a theme authored on a newer build
 // looks like here (format rule 1).

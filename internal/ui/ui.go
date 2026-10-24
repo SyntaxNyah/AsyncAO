@@ -183,9 +183,6 @@ type Ctx struct {
 	// pushPanelFont/popPanelFont, and every chrome-faced widget inside it — labels,
 	// buttons, checkboxes, dropdowns, text fields — follows, because they all read
 	// chromeFace() rather than c.font directly.
-	// Zeroed by BeginFrame as well as by the panels' own defers, for the same
-	// reason the overlay fence documents: a panic unwinding a bracket must not
-	// leave the whole client dressed in one panel's font.
 	panelFont *ttf.Font
 	// panelWidth memoises TextWidth while a panel face is armed. widthCache is
 	// keyed by STRING alone and belongs to the chrome face, so a panel face must
@@ -223,8 +220,6 @@ type Ctx struct {
 	// ~800 call sites that draw menus, buttons, tab titles, character names, area
 	// names, tooltips — can fall back to a covering face instead of rendering
 	// whatever the embedded Latin font makes of a non-Latin string, which was tofu.
-	// Built lazily on the first non-ASCII chrome label, so a Latin-only session
-	// never pays for it.
 	chromeSet    fontSet
 	chromeSetDev fontSet
 	// textDevPct is the DEVICE font scale for text rasterization (#77): device px
@@ -268,9 +263,6 @@ type Ctx struct {
 	// loaded LAZILY off-thread only after a message carries a non-ASCII rune. Unlike
 	// the emoji face these DO join the per-size set (after the embedded font), so
 	// pickFont resolves a single-script run (a Cyrillic / Tifinagh / Indic showname)
-	// to a covering face. nil until the first non-ASCII message → pure-ASCII sessions
-	// keep the len==1 fast path. RWFromMem aliases the bytes, so they must outlive the
-	// faces. Bumping fontChainGen on install rebuilds every set.
 	fallbackData [][]byte
 	// sfnt coverage faces for the PICK (parsed once from the same bytes as the ttf
 	// faces, in the same order as a set's entries: chain, embedded, fallback). The
@@ -425,10 +417,6 @@ type Ctx struct {
 	// (FillRect/DrawRect/SetClipRect): a pointer argument escapes through cgo,
 	// so passing &local heap-allocates on EVERY call — ~95 allocations per
 	// courtroom frame, invisible until the whole-screen gate measured it.
-	// Pointing SDL at this long-lived field instead costs nothing
-	// (internal/render's idiom). Safe to share across call kinds: SDL copies
-	// the rect during the call and never retains the pointer, and Ctx is
-	// render-thread-only.
 	cgoRect sdl.Rect
 	// cgoSrc is the SECOND persistent scratch rect, for the one call shape that
 	// needs two at once: Renderer.Copy(tex, src, dst) with a NON-NIL source rect.
@@ -667,7 +655,6 @@ type panelWidthKey struct {
 
 // chromeFace is the face every chrome widget draws and measures in: the panel's
 // own when one is armed, the client's otherwise.
-//
 // One always-false, perfectly-predicted branch on the unset path, returning the
 // identical c.font pointer — so textTexture receives the identical
 // textKey{text, color, font}, hits the identical cache entry and the identical
@@ -857,7 +844,6 @@ func (c *Ctx) dropThemeElemSets() {
 // are settled it returns before the byte scan — so a pure-ASCII session never trips it
 // and the single-font fast path stays untouched (0-perf rule). The CJK latch is kept
 // SEPARATE from the broad one so the broad load (fired by the first European accent)
-// can't swallow a later CJK trigger.
 func (c *Ctx) noteScript(text string) {
 	needBroad := c.fallbackData == nil && !c.wantFallback
 	needCJK := c.cjkData == nil && !c.wantCJK
@@ -1072,9 +1058,6 @@ func (c *Ctx) coverRunes(primary *ttf.Font, runes []rune) []*ttf.Font {
 // supplementary-plane emoji and carries no VS16, so render.NeedsEmojiFallback says
 // there is nothing to route and the colour-emoji face is never even loaded, while
 // the text chain has no glyph either: the character draws as a box forever.
-// Cost: one BMPPictograph compare per rune, and a cmap walk only for the runes that
-// pass it — so an ASCII or CJK line pays a byte-cheap scan and no font work. It is
-// called only from the paths that have ALREADY decided the whole-line pick failed
 func (c *Ctx) uncoveredPictograph(primary *ttf.Font, text string) bool {
 	s := c.setOf(primary)
 	if s == nil {
@@ -1368,9 +1351,6 @@ func (c *Ctx) themeFontsFor(el themeFontElem, face, pct int) []*ttf.Font {
 // at pct×(textDevPct/100) so the message-raster/emoji paths rasterize crisp. It
 // keys on textDevPct via s.devPct so a UI-scale change rebuilds it even though
 // pct is unchanged. Shares the device chrome face as the embedded last resort.
-// It rebuilds from the LOGICAL set's recorded source chain (fontSet.srcChain), so
-// a per-element theme set's device sibling uses the theme face, not the global
-// chain.
 func (c *Ctx) fontsForDev(logical, dev *fontSet, pct int) []*ttf.Font {
 	return c.buildSet(dev, logical.srcChain, logical.srcCover, pct, int(c.textDevPct), c.fontDev, true)
 }
@@ -1501,7 +1481,6 @@ func (c *Ctx) TakeMissingRunes(dst []rune) []rune {
 // aliases them), the chain generation bumps so every per-size set rebuilds, and
 // the pointer-keyed caches purge because their baked per-rune picks — including
 // the cached "nothing to add" verdicts — were decided against the old chain.
-// Bounded by censusFaceCap; past it the call is a no-op. Render thread.
 func (c *Ctx) AddCensusFace(data []byte) {
 	if len(data) == 0 || len(c.censusData) >= censusFaceCap {
 		return
@@ -1543,8 +1522,6 @@ func (c *Ctx) SetEmojiFont(data []byte) {
 // the App after a non-ASCII message; nil clears). The byte slices must stay
 // referenced for the faces' lifetime (RWFromMem aliases them). Bumps fontChainGen so
 // every per-size set rebuilds with the new faces appended after the embedded font.
-// Idempotent on identical bytes — guarded by the App's one-shot load gate. Render
-// thread.
 func (c *Ctx) SetFallbackFonts(data [][]byte) {
 	if len(data) == 0 && c.fallbackData == nil {
 		return
@@ -1640,9 +1617,6 @@ func (c *Ctx) emojiDeviceFont(pct int) *ttf.Font {
 // a Tifinagh / Indic line resolves to the covering fallback face. cover is aligned
 // with fonts; the last entry is the unconditional fallback (used when nothing
 // covers, so the result is at worst the same .notdef box as before).
-// The second result stays HONEST — true only when the face covers every rune, the
-// invisible ones included. That bool is the raster gate (coversFace), and a face with
-// no glyph for a formatting rune must still let the per-glyph raster hand that one rune
 func pickFont(fonts []*ttf.Font, cover []*sfnt.Font, buf *sfnt.Buffer, text string) (*ttf.Font, bool) {
 	if len(fonts) == 1 {
 		return fonts[0], true
@@ -1820,9 +1794,6 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 // draws): the visible-field order rebuilds from scratch as this frame's
 // TextFields register. Split from BeginFrame so input-only skipped passes
 // keep the last drawn frame's field order for Tab cycling (see BeginFrame).
-// The truncate is a SWAP, not a clear: the outgoing list becomes drawnFieldSeq
-// (what is on screen right now) and this frame builds into the buffer that held
-// the frame-before-last's, so both answers exist for the whole pass and neither
 func (c *Ctx) BeginDraw() {
 	c.drawnFieldSeq, c.fieldSeq = c.fieldSeq, c.drawnFieldSeq[:0]
 }
@@ -2664,7 +2635,6 @@ func (c *Ctx) Heading(x, y int32, text string, col sdl.Color) {
 }
 
 // LabelClipped draws text clipped to maxW.
-//
 // F2: an armed row-label limit narrows maxW to the container's right edge AND
 // ellipsises, because maxW alone is a HARD cut — the caller's own bound, which for
 // the settings font-chain line is the WINDOW rather than the card it draws in. The
