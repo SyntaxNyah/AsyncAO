@@ -355,8 +355,8 @@ func menuTogglePlainBackdrops(a *App, _ int) {
 	}
 }
 
-func menuPerfHUDOn(a *App, _ int) bool { return a.perfHUD }
-func menuTogglePerfHUD(a *App, _ int)  { a.perfHUD = !a.perfHUD }
+func menuPerfHUDOn(a *App, _ int) bool { return a.budget.perfHUD }
+func menuTogglePerfHUD(a *App, _ int)  { a.budget.perfHUD = !a.budget.perfHUD }
 
 // --- Window (#35) ---
 

@@ -248,9 +248,9 @@ func (a *App) Disconnect() {
 	// disconnect, kick, or a dropped socket all land here).
 	if a.d.Audio != nil {
 		a.d.Audio.StopMusic()
-		a.musicTabDucked = false        // a fresh session's music must start audible, not ducked
-		a.musicAwaitURL = ""            // stream stopped: drop any pending un-duck (invariant: stopped ⇒ no await)
-		a.musicAwaitSince = time.Time{} // and its timeout stamp
+		a.budget.musicTabDucked = false        // a fresh session's music must start audible, not ducked
+		a.budget.musicAwaitURL = ""            // stream stopped: drop any pending un-duck (invariant: stopped ⇒ no await)
+		a.budget.musicAwaitSince = time.Time{} // and its timeout stamp
 	}
 	a.stopVoiceAudio() // free the voice capture/playback devices with the connection
 	a.link.voiceJoined, a.link.voiceMicOn = false, false
@@ -477,9 +477,9 @@ func (a *App) effectiveShowname() string {
 // rebuilt only when the preset count changes, so the per-frame chat row reads a
 // cached slice instead of copying the preset list every draw.
 func (a *App) ensureNameOpts() {
-	if n := a.d.Prefs.Load().ShownameCount(); a.nameOpts == nil || n != a.nameOptsLen {
-		a.nameOptsLen = n
-		a.nameOpts = append([]string{"▾"}, a.d.Prefs.Load().ShownameList()...)
+	if n := a.d.Prefs.Load().ShownameCount(); a.budget.nameOpts == nil || n != a.budget.nameOptsLen {
+		a.budget.nameOptsLen = n
+		a.budget.nameOpts = append([]string{"▾"}, a.d.Prefs.Load().ShownameList()...)
 	}
 }
 
@@ -487,11 +487,11 @@ func (a *App) ensureNameOpts() {
 // preset (or "" if nothing was picked). Shown only when presets exist; reused by
 // the IC showname box and the OOC name box.
 func (a *App) pickNameDropdown(id string, r sdl.Rect) string {
-	if len(a.nameOpts) <= 1 {
+	if len(a.budget.nameOpts) <= 1 {
 		return ""
 	}
-	if next, changed := a.ctx.Dropdown(id, r, a.nameOpts, 0); changed && next > 0 {
-		return a.nameOpts[next]
+	if next, changed := a.ctx.Dropdown(id, r, a.budget.nameOpts, 0); changed && next > 0 {
+		return a.budget.nameOpts[next]
 	}
 	return ""
 }
@@ -669,10 +669,10 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				// per-server music volume governs the stream — including when the user later
 				// backgrounds THIS tab under MusicAcrossTabs ON and the stream keeps playing
 				// its song under a different active tab. See musicOwnerKey.
-				a.musicOwnerKey = a.srvMeta.serverKey
-				if a.musicTabDucked {
-					a.musicAwaitURL = a.link.urls.MusicURL(a.link.sess.MusicTrack)
-					a.musicAwaitSince = a.now() // stamp for the never-arrives timeout release
+				a.budget.musicOwnerKey = a.srvMeta.serverKey
+				if a.budget.musicTabDucked {
+					a.budget.musicAwaitURL = a.link.urls.MusicURL(a.link.sess.MusicTrack)
+					a.budget.musicAwaitSince = a.now() // stamp for the never-arrives timeout release
 				}
 			} else {
 				// A ~stop (MusicTrack cleared): the room's handler will StopMusic the
@@ -689,7 +689,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				// The stream is being stopped (silent): drop the owner stamp so a later
 				// volume compose can't scale a (now-nonexistent) stream by a stale owner's
 				// per-server level. Harmless if already "" ; the next real track re-stamps.
-				a.musicOwnerKey = ""
+				a.budget.musicOwnerKey = ""
 			}
 		// NOTE: these three arms used to call maybeRefetchRoster, which
 		// sent a /gas back at the server on a 3 s debounce. That automatic tier is

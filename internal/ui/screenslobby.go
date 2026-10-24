@@ -756,7 +756,7 @@ func (a *App) drawWardrobeGridCells(w, h int32, g charGridPlan, rows charListRow
 		a.drawCharSelectorHalo(hoverCell, g.haloPx)
 	}
 	c.popClip(prev, had)
-	if a.previewBase != "" {
+	if a.budget.previewBase != "" {
 		a.drawSpritePreview(w, h, false, "") // character preview: no emote-name caption
 		a.closeSpritePreviewOnLeave()
 	}
@@ -992,7 +992,7 @@ func (a *App) drawCharSelect(w, h int32) {
 		a.drawCharSelectorHalo(hoverCell, g.haloPx)
 	}
 	c.popClip(prev, had)
-	if a.previewBase != "" {
+	if a.budget.previewBase != "" {
 		a.drawSpritePreview(w, h, false, "") // character preview: no emote-name caption
 		a.closeSpritePreviewOnLeave()
 	}
@@ -1151,9 +1151,9 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	// box — still occludes us (overlayfence.go).
 	prevOwner := c.pushOverlayOwner(a.previewOwnerMark())
 	defer c.popOverlayOwner(prevOwner)
-	page, ok := a.d.Store.Get(a.previewBase)
+	page, ok := a.d.Store.Get(a.budget.previewBase)
 	ready := ok && len(page.Frames) > 0
-	cycling := cycle && len(a.previewAnims) > 1
+	cycling := cycle && len(a.budget.previewAnims) > 1
 	if !ready && !cycling {
 		a.previewFrameRect = sdl.Rect{} // no box this frame — no phantom wheel/drag target
 		return
@@ -1180,10 +1180,10 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	if ready {
 		// The preview exists to show the sprite — restart its loop per pick so
 		// animated idles play instead of freezing on frame 0.
-		if a.previewBase != a.previewFor {
-			a.previewFor = a.previewBase
-			a.previewAt = time.Now()
-			a.previewZoom = 1 // a new sprite starts unzoomed
+		if a.budget.previewBase != a.budget.previewFor {
+			a.budget.previewFor = a.budget.previewBase
+			a.budget.previewAt = time.Now()
+			a.budget.previewZoom = 1 // a new sprite starts unzoomed
 		}
 		srcW, srcH := page.W, page.H
 		if srcW < 1 {
@@ -1225,11 +1225,11 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	c.Fill(frame, ColPanel)
 	c.Border(frame, ColAccent)
 	if ready {
-		tex := page.Frames[pageFrameLoop(page, a.now().Sub(a.previewAt))]
-		if a.previewZoom > 1 {
+		tex := page.Frames[pageFrameLoop(page, a.now().Sub(a.budget.previewAt))]
+		if a.budget.previewZoom > 1 {
 			// Magnifier: blit a window of the sprite centered on where the
 			// cursor sits over the box — move the mouse to pan around it.
-			zw, zh := page.W/int32(a.previewZoom), page.H/int32(a.previewZoom)
+			zw, zh := page.W/int32(a.budget.previewZoom), page.H/int32(a.budget.previewZoom)
 			if zw < 1 {
 				zw = 1
 			}
@@ -1436,7 +1436,7 @@ func (a *App) closeSpritePreviewOnLeave() {
 
 // closeSpritePreview tears down the hover-preview box and resets its travel state.
 func (a *App) closeSpritePreview() {
-	a.previewBase = ""
+	a.budget.previewBase = ""
 	a.previewEntered = false
 	a.previewPinned = false
 	// Disarm the dwell too: closing with the pointer still resting on the
@@ -1541,7 +1541,7 @@ func (a *App) fenceSpritePreview() {
 	// No preview up, or none drawn last frame (drawSpritePreview zeroes the rect
 	// when the sprite isn't ready) — nothing is painted there, and fencing pixels
 	// nothing painted is the mirror image of the leak this fixes.
-	if a.previewBase == "" || a.previewFrameRect.W <= 0 || a.previewFrameRect.H <= 0 {
+	if a.budget.previewBase == "" || a.previewFrameRect.W <= 0 || a.previewFrameRect.H <= 0 {
 		return
 	}
 	c.fenceOverlay(a.previewFrameRect)

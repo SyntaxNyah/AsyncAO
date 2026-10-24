@@ -91,15 +91,15 @@ func (a *App) drawSettingsVoice(y, _ int32) int32 {
 	// bindChipLabel: pollVoicePTT reads the shared Alt gate (bareBindKey, qol.go),
 	// so the mic toggles on Alt+<key> — printing the bare letter would advertise a
 	// press that now just types into whatever field has focus.
-	keyLabel := bindChipLabel(a.d.Prefs.Load().VoicePTTKey, a.voicePTTBindArmed, "press a key…  (Esc cancels)", "(unbound)")
+	keyLabel := bindChipLabel(a.d.Prefs.Load().VoicePTTKey, a.budget.voicePTTBindArmed, "press a key…  (Esc cancels)", "(unbound)")
 	c.Label(pad+120, y+4, keyLabel, ColAccent)
 	y += 26
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 130, H: btnH}, "Bind key") {
-		a.voicePTTBindArmed = !a.voicePTTBindArmed
+		a.budget.voicePTTBindArmed = !a.budget.voicePTTBindArmed
 	}
 	if c.Button(sdl.Rect{X: pad + 140, Y: y, W: 90, H: btnH}, "Clear") {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.VoicePTTKey = "" })
-		a.voicePTTBindArmed = false
+		a.budget.voicePTTBindArmed = false
 	}
 	y += 30
 	c.Label(pad, y, "Press the bound key while in voice to toggle your mic on/off (same as the Talk button).", ColTextDim)

@@ -22,15 +22,15 @@ func TestResumeArmGatedByDuck(t *testing.T) {
 	// ON path: nothing ducked (the audible continuity stream). The swap branch must NOT
 	// arm an await — and the stream stays audible (no tab-duck manufactured).
 	a := testTabApp(t)
-	a.musicTabDucked = false
+	a.budget.musicTabDucked = false
 	a.applyResumeDuck(false, url)
-	if a.musicAwaitURL != "" {
-		t.Errorf("ON (no duck): swap resume must NOT arm an await, got %q", a.musicAwaitURL)
+	if a.budget.musicAwaitURL != "" {
+		t.Errorf("ON (no duck): swap resume must NOT arm an await, got %q", a.budget.musicAwaitURL)
 	}
-	if !a.musicAwaitSince.IsZero() {
+	if !a.budget.musicAwaitSince.IsZero() {
 		t.Error("ON (no duck): no await → no timeout stamp")
 	}
-	if a.musicTabDucked {
+	if a.budget.musicTabDucked {
 		t.Error("ON (no duck): must not manufacture a duck (stream stays audible)")
 	}
 
@@ -40,9 +40,9 @@ func TestResumeArmGatedByDuck(t *testing.T) {
 	// here, and past 10s awaitTimeoutStop silenced the stream.)
 	a.d.Audio = &render.Audio{} // disabled: CurrentMusicURL "" is safe
 	base := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
-	a.frameNow = base.Add(2 * musicAwaitTimeout)
+	a.budget.frameNow = base.Add(2 * musicAwaitTimeout)
 	a.settleAwaitedMusic()
-	if a.musicAwaitURL != "" || a.musicTabDucked {
+	if a.budget.musicAwaitURL != "" || a.budget.musicTabDucked {
 		t.Error("ON (no duck): settleAwaitedMusic must no-op — no await to time out, stream never silenced")
 	}
 
@@ -51,15 +51,15 @@ func TestResumeArmGatedByDuck(t *testing.T) {
 	// wrong-song-during-fetch guard the swap path exists for. This preserves
 	// TestMusicResumeDuckDecision's ducked-true case.
 	b := testTabApp(t)
-	b.musicTabDucked = true
+	b.budget.musicTabDucked = true
 	b.applyResumeDuck(false, url)
-	if b.musicAwaitURL != url {
-		t.Errorf("OFF (ducked): swap resume must arm the await, got %q want %q", b.musicAwaitURL, url)
+	if b.budget.musicAwaitURL != url {
+		t.Errorf("OFF (ducked): swap resume must arm the await, got %q want %q", b.budget.musicAwaitURL, url)
 	}
-	if b.musicAwaitSince.IsZero() {
+	if b.budget.musicAwaitSince.IsZero() {
 		t.Error("OFF (ducked): an armed await needs its timeout stamp")
 	}
-	if !b.musicTabDucked {
+	if !b.budget.musicTabDucked {
 		t.Error("OFF (ducked): the duck must hold until delivery")
 	}
 }
@@ -76,20 +76,20 @@ func TestOwnerMusicInputs(t *testing.T) {
 	// No owner set: the active tab's values pass through unchanged.
 	a := testTabApp(t)
 	a.srvMeta.serverKey = active
-	a.musicOwnerKey = ""
+	a.budget.musicOwnerKey = ""
 	if m, mu := a.ownerMusicInputs(100, 0); m != 100 || mu != 0 {
 		t.Errorf("unset owner → active pass-through, got (%d,%d) want (100,0)", m, mu)
 	}
 
 	// Owner == active tab: still pass-through (the common single-owner case).
-	a.musicOwnerKey = active
+	a.budget.musicOwnerKey = active
 	if m, mu := a.ownerMusicInputs(80, 55); m != 80 || mu != 55 {
 		t.Errorf("owner==active → active pass-through, got (%d,%d) want (80,55)", m, mu)
 	}
 
 	// Distinct owner WITH a per-server profile (music=100), active tab music=0: the music
 	// channel must follow the OWNER, so the stream is audible despite the active tab's 0.
-	a.musicOwnerKey = owner
+	a.budget.musicOwnerKey = owner
 	a.d.Prefs.SetServerAudioVolumes(owner, 100, 100, 70, 60) // enables the owner profile
 	if m, mu := a.ownerMusicInputs(100, 0); mu != 100 || m != 100 {
 		t.Errorf("distinct owner (music=100) must govern, got (%d,%d) want master=100 music=100", m, mu)
@@ -102,7 +102,7 @@ func TestOwnerMusicInputs(t *testing.T) {
 	}
 
 	// Distinct owner WITHOUT a profile: graceful fallback to the active tab's values.
-	a.musicOwnerKey = "wss://unprofiled:2096"
+	a.budget.musicOwnerKey = "wss://unprofiled:2096"
 	if m, mu := a.ownerMusicInputs(90, 44); m != 90 || mu != 44 {
 		t.Errorf("unprofiled owner → active fallback, got (%d,%d) want (90,44)", m, mu)
 	}
@@ -120,15 +120,15 @@ func TestOwnerClearedOnStop(t *testing.T) {
 	// A real track: the active tab becomes the audible owner.
 	a.link.sess.MusicTrack = "Trial.opus"
 	a.handleSessionEvents([]courtroom.Event{{Kind: courtroom.EventMusic, Text: "Trial.opus"}})
-	if a.musicOwnerKey != "wss://srv:2096" {
-		t.Errorf("a real track must stamp the active tab as owner, got %q", a.musicOwnerKey)
+	if a.budget.musicOwnerKey != "wss://srv:2096" {
+		t.Errorf("a real track must stamp the active tab as owner, got %q", a.budget.musicOwnerKey)
 	}
 
 	// A ~stop clears MusicTrack; the handler must drop the owner stamp with it.
 	a.link.sess.MusicTrack = ""
 	a.handleSessionEvents([]courtroom.Event{{Kind: courtroom.EventMusic, Text: "~stop.mp3"}})
-	if a.musicOwnerKey != "" {
-		t.Errorf("a ~stop must clear the owner stamp, got %q", a.musicOwnerKey)
+	if a.budget.musicOwnerKey != "" {
+		t.Errorf("a ~stop must clear the owner stamp, got %q", a.budget.musicOwnerKey)
 	}
 }
 
@@ -161,7 +161,7 @@ func TestBackgroundMusicFollow(t *testing.T) {
 
 	})
 
-	a.musicOwnerKey = bgKey
+	a.budget.musicOwnerKey = bgKey
 	s := newSession("Battle.opus")
 	url, ok := a.backgroundMusicFollow(s)
 	if !ok || url != s.link.urls.MusicURL("Battle.opus") {
@@ -182,7 +182,7 @@ func TestBackgroundMusicFollow(t *testing.T) {
 
 	})
 
-	b.musicOwnerKey = bgKey
+	b.budget.musicOwnerKey = bgKey
 	if _, ok := b.backgroundMusicFollow(newSession("Battle.opus")); ok {
 		t.Error("OFF must not switch the stream (acoustic isolation)")
 	}
@@ -201,7 +201,7 @@ func TestBackgroundMusicFollow(t *testing.T) {
 
 	})
 
-	c.musicOwnerKey = "wss://other:2096"
+	c.budget.musicOwnerKey = "wss://other:2096"
 	if _, ok := c.backgroundMusicFollow(newSession("Battle.opus")); ok {
 		t.Error("ON but not the owner: must not switch a foreign-owned stream")
 	}
@@ -220,7 +220,7 @@ func TestBackgroundMusicFollow(t *testing.T) {
 
 	})
 
-	d.musicOwnerKey = bgKey
+	d.budget.musicOwnerKey = bgKey
 	if _, ok := d.backgroundMusicFollow(newSession("")); ok {
 		t.Error("~stop (empty track) must not switch")
 	}
@@ -248,7 +248,7 @@ func TestRouteBackgroundEventMusicPreservesLatch(t *testing.T) {
 	tab := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "BG", serverKey: "wss://bg:2096"}, link: linkState{urls: courtroom.NewURLBuilder("https://cdn.example/base/")}}}
 	tab.state.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	tab.state.link.sess.MusicTrack = "Song.opus"
-	a.musicOwnerKey = "wss://bg:2096"
+	a.budget.musicOwnerKey = "wss://bg:2096"
 
 	// A background music change must not mark the tab dead or set a reason.
 	a.routeBackgroundEvent(tab, courtroom.Event{Kind: courtroom.EventMusic, Text: "Song.opus", Loop: true})

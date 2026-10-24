@@ -151,7 +151,7 @@ func TestFramePace(t *testing.T) {
 
 	// The perf HUD's scrolling graph keeps full rate.
 	a.frame.lastInputAt = time.Time{}
-	a.perfHUD = true
+	a.budget.perfHUD = true
 	if got := a.FramePace(true); got != budget(120) {
 		t.Errorf("perf-HUD pace = %v, want the full cap", got)
 	}

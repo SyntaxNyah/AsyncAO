@@ -16,7 +16,7 @@ func TestMacroQueuePacing(t *testing.T) {
 	a := testTabApp(t)
 	a.link.sess = courtroom.NewRehearsalSession("", nil) // swallows sends
 	t0 := time.Now()
-	a.frameNow = t0
+	a.budget.frameNow = t0
 
 	a.queueOOCLines([]string{"/login", "user pass", "/tsundere 1"})
 	if len(a.oocQueue) != 3 {
@@ -27,17 +27,17 @@ func TestMacroQueuePacing(t *testing.T) {
 	if len(a.oocQueue) != 2 {
 		t.Fatalf("at t0 exactly one line must send, %d left", len(a.oocQueue))
 	}
-	a.frameNow = t0.Add(macroLineDelay)
+	a.budget.frameNow = t0.Add(macroLineDelay)
 	a.processOOCQueue() // still inside oocSendMinGap — nothing may leave yet
 	if len(a.oocQueue) != 2 {
 		t.Fatalf("a send inside oocSendMinGap must be held back, %d left", len(a.oocQueue))
 	}
-	a.frameNow = t0.Add(oocSendMinGap)
+	a.budget.frameNow = t0.Add(oocSendMinGap)
 	a.processOOCQueue()
 	if len(a.oocQueue) != 1 {
 		t.Fatalf("at t0+oocSendMinGap the second line must send, %d left", len(a.oocQueue))
 	}
-	a.frameNow = t0.Add(2 * oocSendMinGap)
+	a.budget.frameNow = t0.Add(2 * oocSendMinGap)
 	a.processOOCQueue()
 	if len(a.oocQueue) != 0 {
 		t.Fatalf("the last line must send one gap later, %d left", len(a.oocQueue))
@@ -61,7 +61,7 @@ func TestOOCQueueNeverBursts(t *testing.T) {
 	a := testTabApp(t)
 	a.link.sess = courtroom.NewRehearsalSession("", nil) // swallows sends
 	t0 := time.Now()
-	a.frameNow = t0
+	a.budget.frameNow = t0
 
 	const backlog = 8
 	var lines []string
@@ -75,7 +75,7 @@ func TestOOCQueueNeverBursts(t *testing.T) {
 
 	// The pathological frame: the drain was stalled for minutes, so every entry
 	// is long past due. Exactly one line may leave.
-	a.frameNow = t0.Add(5 * time.Minute)
+	a.budget.frameNow = t0.Add(5 * time.Minute)
 	a.processOOCQueue()
 	if got := backlog - len(a.oocQueue); got != 1 {
 		t.Fatalf("a stalled drain released %d lines in one pass, want 1 (this is the flood-kick bug)", got)
@@ -83,7 +83,7 @@ func TestOOCQueueNeverBursts(t *testing.T) {
 
 	// And the backlog clears at one line per gap, never faster.
 	for i := 1; i < backlog; i++ {
-		a.frameNow = t0.Add(5*time.Minute + time.Duration(i)*oocSendMinGap)
+		a.budget.frameNow = t0.Add(5*time.Minute + time.Duration(i)*oocSendMinGap)
 		a.processOOCQueue()
 		if want := backlog - i - 1; len(a.oocQueue) != want {
 			t.Fatalf("after %d gaps: %d queued, want %d", i, len(a.oocQueue), want)
@@ -100,7 +100,7 @@ func TestFetchRosterDoesNotStackDuplicates(t *testing.T) {
 	a := testTabApp(t)
 	a.link.sess = courtroom.NewRehearsalSession("", nil)
 	t0 := time.Now()
-	a.frameNow = t0
+	a.budget.frameNow = t0
 
 	a.fetchRoster()
 	if len(a.oocQueue) != 1 {
@@ -109,7 +109,7 @@ func TestFetchRosterDoesNotStackDuplicates(t *testing.T) {
 	// Press repeatedly with the drain stalled — the queue must not grow.
 	const pressGap = time.Second
 	for i := 1; i <= 20; i++ {
-		a.frameNow = t0.Add(time.Duration(i) * pressGap)
+		a.budget.frameNow = t0.Add(time.Duration(i) * pressGap)
 		a.fetchRoster()
 	}
 	if len(a.oocQueue) != 1 {
@@ -144,16 +144,16 @@ func TestOOCNameFallback(t *testing.T) {
 func TestInLoginGrace(t *testing.T) {
 	a := &App{env: env{}}
 	base := time.Now()
-	a.frameNow = base
+	a.budget.frameNow = base
 	if a.inLoginGrace() {
 		t.Error("no login yet (zero loginAt) must not be in grace")
 	}
 	a.loginAt = base
-	a.frameNow = base.Add(2 * time.Second)
+	a.budget.frameNow = base.Add(2 * time.Second)
 	if !a.inLoginGrace() {
 		t.Error("2s after login must be within the grace window")
 	}
-	a.frameNow = base.Add(loginCallwordGrace + time.Second)
+	a.budget.frameNow = base.Add(loginCallwordGrace + time.Second)
 	if a.inLoginGrace() {
 		t.Error("past the window must not be in grace")
 	}
@@ -198,7 +198,7 @@ func TestAutoLoginFiresOnce(t *testing.T) {
 		a := testTabApp(t)
 		a.link.sess = courtroom.NewRehearsalSession("", nil)
 		a.link.sess.Software = software
-		a.frameNow = time.Now()
+		a.budget.frameNow = time.Now()
 		a.srvMeta.serverKey = "ws://login.test"
 		a.d.Prefs.SetServerLogin(a.srvMeta.serverKey, "admin", "hunter2", true) // AutoLogin ON
 		a.d.Prefs.Update(func(

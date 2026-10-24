@@ -229,8 +229,8 @@ func (a *App) forgetParsedINIs() {
 	a.overlays.charMetaCache = nil // remote speakers: refetched on their next message
 	// The preview's own latch, or the next hover over the SAME character would be
 	// dropped as "already showing that one" and keep the pre-edit emote list.
-	a.previewChar, a.previewAnims, a.previewLabels = "", nil, nil
-	a.previewEmoteIdx = 0
+	a.budget.previewChar, a.budget.previewAnims, a.budget.previewLabels = "", nil, nil
+	a.budget.previewEmoteIdx = 0
 	a.compose.iniWarmed = "" // the hover warm's latch, same reason
 	if a.link.sess != nil && a.activeCharName() != "" {
 		a.loadCharINI() // the emote strip in front of the user, reloaded in place

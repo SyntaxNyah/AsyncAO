@@ -168,8 +168,8 @@ func (lobby1 *lobbyState) mergedFavorites(e *env) []network.ServerEntry {
 // Frame runs one UI frame: connection pump, screen logic, drawing.
 func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	defer a.frameCrashLog() // last-resort: capture the stack of any unrecovered panic before it kills the app
-	a.frameNow = time.Now()
-	a.frame.lastFrameDrawn = a.frameNow // SkipFrame's heartbeat: a real frame was drawn
+	a.budget.frameNow = time.Now()
+	a.frame.lastFrameDrawn = a.budget.frameNow // SkipFrame's heartbeat: a real frame was drawn
 
 	// Drain debug logs from render package (loop points diagnostics, etc.)
 	if a.d.Audio != nil {
@@ -239,7 +239,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// F3 toggles the perf HUD on any screen; consumed so plain-key
 	// macro/character binds named "f3" can't double-fire.
 	if a.ctx.keyPressed == sdl.K_F3 {
-		a.perfHUD = !a.perfHUD
+		a.budget.perfHUD = !a.budget.perfHUD
 		a.ctx.keyPressed = 0
 	}
 	// F1 toggles the hotkey cheat-sheet on any screen (consumed so a plain-key
@@ -459,7 +459,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.overlays.pollCharMeta() // land remote char.ini fetches (per-character blips + chatbox skins)
 	a.pollBgList()            // drain bg discovery even when the picker is closed (slideshow)
 	a.processOOCQueue()
-	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
+	a.budget.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	switch {
 	case a.sel.gifExporting:
 		// M16 GIF export drives the viewport itself in the draw-phase tick — skip
@@ -721,7 +721,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.drawMenuBar(winW, winH)
 	// Perf HUD (F3) and the debug overlay paint over every screen
 	// (allocs acceptable: opt-in diagnostics paths, never on by default).
-	if a.perfHUD {
+	if a.budget.perfHUD {
 		a.drawPerfHUD(winW, winH)
 	}
 	if a.d.Prefs.Load().DebugOverlay {

@@ -291,8 +291,8 @@ func (a *App) courtModalOpen() bool {
 // CANCEL, so the global Esc handler must stand down while one is active.
 func (a *App) capturingKey() bool {
 	return a.courtkeys.bindingFor != "" || a.courtkeys.shownameBindFor != "" || a.jukebox.jukeBindFor != "" ||
-		a.courtkeys.icPhraseBindFor != "" || a.courtkeys.stylePresetBindFor != "" || a.holdKeyArmed ||
-		a.voicePTTBindArmed || a.macroBind >= 0
+		a.courtkeys.icPhraseBindFor != "" || a.courtkeys.stylePresetBindFor != "" || a.budget.holdKeyArmed ||
+		a.budget.voicePTTBindArmed || a.budget.macroBind >= 0
 }
 
 // pollVoicePTT handles the push-to-talk key: captures it when the Voice-settings
@@ -301,9 +301,9 @@ func (a *App) capturingKey() bool {
 // no other capture).
 func (a *App) pollVoicePTT() {
 	c := a.ctx
-	if a.voicePTTBindArmed {
+	if a.budget.voicePTTBindArmed {
 		if c.escPressed {
-			a.voicePTTBindArmed = false // Esc cancels the capture
+			a.budget.voicePTTBindArmed = false // Esc cancels the capture
 			return
 		}
 		if c.keyPressed != 0 {
@@ -313,7 +313,7 @@ func (a *App) pollVoicePTT() {
 					sn.VoicePTTKey = pv1
 				})
 			}
-			a.voicePTTBindArmed = false
+			a.budget.voicePTTBindArmed = false
 			c.keyPressed = 0
 		}
 		return
@@ -471,7 +471,7 @@ func (a *App) closeTopOverlay() bool {
 	// A PINNED sprite preview: it paints INSIDE the courtroom pass, i.e. under
 	// every floating panel above, so its case sits here — below them, above
 	// theater mode. Unpinned boxes need no case: they close on their own leave.
-	case a.previewBase != "" && a.previewIsPinned():
+	case a.budget.previewBase != "" && a.previewIsPinned():
 		a.closeSpritePreview()
 	case a.theaterOn: // theater mode's "Esc exits" — handled here so it beats the leave-server shortcut
 		a.setTheater(false)

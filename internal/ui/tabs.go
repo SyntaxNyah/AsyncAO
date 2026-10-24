@@ -219,14 +219,14 @@ func (a *App) parkActive() {
 	// picks up right where it was, in sync. If the INCOMING tab has its own song,
 	// buildRoom swaps the stream (audible) and clears the duck there; the parked
 	// tab's musicStartedAt lets a later return seek back near where it would be.
-	a.musicTabDucked = !a.d.Prefs.Load().MusicAcrossTabs
+	a.budget.musicTabDucked = !a.d.Prefs.Load().MusicAcrossTabs
 	// The outgoing tab's stream (whatever it is) is now the backgrounded one, freshly
 	// (re-)ducked; any await the just-parked tab held is void — the INCOMING tab's
 	// activateTab→buildRoom→resumeActiveTabMusic re-derives the correct await (or
 	// none) off ITS own track. Clearing here is the switch-back-mid-await guard: a
 	// stale await can't un-duck the new backgrounded context.
-	a.musicAwaitURL = ""
-	a.musicAwaitSince = time.Time{} // drop the timeout stamp with the void await
+	a.budget.musicAwaitURL = ""
+	a.budget.musicAwaitSince = time.Time{} // drop the timeout stamp with the void await
 	// Clear the message duck BEFORE composing volumes. musicDucked is the ACTIVE,
 	// drawn room's "a message is on stage → dip music to 35%" flag; a backgrounded
 	// stream has no message on stage from the mixer's view (it's either ducked to 0
@@ -390,9 +390,9 @@ func (a *App) closeParkedTab(i int) {
 	// tab (cross-tab continuity kept it rolling silently — see parkActive). Closing
 	// a background tab could be closing that owner, and we can't cheaply tell which
 	// tab owns the stream, so stop it to avoid an orphaned stream leaking (rule §4).
-	if a.d.Audio != nil && a.musicTabDucked && a.musicAwaitURL == "" {
+	if a.d.Audio != nil && a.budget.musicTabDucked && a.budget.musicAwaitURL == "" {
 		a.d.Audio.StopMusic()
-		a.musicTabDucked = false
+		a.budget.musicTabDucked = false
 	}
 	a.tabs = append(a.tabs[:i], a.tabs[i+1:]...)
 	if a.activeTab > i {
@@ -646,7 +646,7 @@ func (a *App) backgroundMusicFollow(s *sessionState) (url string, ok bool) {
 	if !a.d.Prefs.Load().MusicAcrossTabs || a.d.Audio == nil {
 		return "", false
 	}
-	if a.musicOwnerKey == "" || a.musicOwnerKey != s.srvMeta.serverKey {
+	if a.budget.musicOwnerKey == "" || a.budget.musicOwnerKey != s.srvMeta.serverKey {
 		return "", false // stream is silent-isolated, or owned by another tab: don't touch it
 	}
 	if s.link.sess == nil || s.link.sess.MusicTrack == "" {

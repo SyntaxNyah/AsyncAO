@@ -1144,8 +1144,8 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 	// A fixed frame snapshot: the ratios below are exact facts about the arithmetic,
 	// not a race between two time.Now() calls.
 	a.toolbox.themeAt = time.Now()
-	a.frameNow = a.toolbox.themeAt.Add(time.Second)
-	defer func() { a.frameNow = time.Time{} }()
+	a.budget.frameNow = a.toolbox.themeAt.Add(time.Second)
+	defer func() { a.budget.frameNow = time.Time{} }()
 	if got := a.clockElapsed(15); got != 4*time.Second {
 		t.Errorf("a 400%% group resolved %v at one second on the shared anchor, want 4s", got)
 	}
@@ -1195,7 +1195,7 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 	// And the whole frame moves. Non-vacuity for everything above: a fixture that
 	// parsed, baked and then sat still would pass every assertion so far.
 	draw := func() { a.drawCourtroom(1280, 720) }
-	a.frameNow = time.Time{}
+	a.budget.frameNow = time.Time{}
 	a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
 	a.frame.frameAnimChrome = false
 	draw()

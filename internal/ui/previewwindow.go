@@ -48,7 +48,7 @@ func (a *App) previewIsDetached() bool {
 // detaching an empty box would open a window nothing could ever fill (only
 // feedDetachedPreviewFrame, gated on previewBase, ever calls SetFrame).
 func (a *App) toggleDetachPreview() {
-	if a.previewBase == "" {
+	if a.budget.previewBase == "" {
 		return
 	}
 	if a.previewIsDetached() {
@@ -128,16 +128,16 @@ func (a *App) syncPreviewWindow() {
 // every full redraw of the main window, which is the whole reason a preview
 // gets popped out in the first place.
 func (a *App) feedDetachedPreviewFrame() {
-	if a.previewBase == "" {
+	if a.budget.previewBase == "" {
 		return
 	}
-	page, ok := a.d.Store.Get(a.previewBase)
+	page, ok := a.d.Store.Get(a.budget.previewBase)
 	if !ok || len(page.Frames) == 0 {
 		return // still loading — retried next call, previewWinFedBase left alone
 	}
-	idx := pageFrameLoop(page, a.now().Sub(a.previewAt))
+	idx := pageFrameLoop(page, a.now().Sub(a.budget.previewAt))
 	animated := page.Animated && len(page.Frames) > 1 // pageFrameLoop's own "loop at all" guard
-	if !previewFeedNeeded(a.previewWinFedBase, a.previewBase, a.previewWinFedPage, page,
+	if !previewFeedNeeded(a.previewWinFedBase, a.budget.previewBase, a.previewWinFedPage, page,
 		animated, a.previewWinFedFrame, idx) {
 		return // same pick, same source page, nothing new to show
 	}
@@ -145,7 +145,7 @@ func (a *App) feedDetachedPreviewFrame() {
 	// a page with no frames is a terminal answer for THIS base (already
 	// handled above); a readback failure below must not retry every call
 	// either, matching the original single-feed contract this preserves.
-	a.previewWinFedBase = a.previewBase
+	a.previewWinFedBase = a.budget.previewBase
 	a.previewWinFedPage = page
 	a.previewWinFedFrame = idx
 	if !animated {
@@ -156,7 +156,7 @@ func (a *App) feedDetachedPreviewFrame() {
 		_ = a.d.Preview.SetFrame(img)
 		return
 	}
-	_ = a.d.Preview.ShowAnimFrame(a.previewBase, page, idx, func() (*image.RGBA, error) {
+	_ = a.d.Preview.ShowAnimFrame(a.budget.previewBase, page, idx, func() (*image.RGBA, error) {
 		return readTexturePixels(a.ctx.Ren, page.Frames[idx], page.W, page.H)
 	})
 }
@@ -204,7 +204,7 @@ func (a *App) PreviewAnimWakeCap() time.Duration {
 	if !a.previewIsDetached() || a.d.Store == nil {
 		return 0
 	}
-	page, ok := a.d.Store.Get(a.previewBase)
+	page, ok := a.d.Store.Get(a.budget.previewBase)
 	if !ok || !page.Animated || len(page.Frames) < 2 {
 		return 0
 	}

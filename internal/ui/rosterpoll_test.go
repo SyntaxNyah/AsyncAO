@@ -49,7 +49,7 @@ func TestNoSessionEverFiresATimedRosterPoll(t *testing.T) {
 
 			const step = 250 * time.Millisecond
 			for elapsed := time.Duration(0); elapsed < rosterPollProbeWindow; elapsed += step {
-				a.frameNow = t0.Add(elapsed)
+				a.budget.frameNow = t0.Add(elapsed)
 				a.handleSessionEvents([]courtroom.Event{
 					{Kind: courtroom.EventCharsUpdated},
 					{Kind: courtroom.EventAreasUpdated},
@@ -72,7 +72,7 @@ func TestNoSessionEverFiresATimedRosterPoll(t *testing.T) {
 func TestAManualRosterFetchStillWorksAndShowsItsReply(t *testing.T) {
 	a := testTabApp(t)
 	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
-	a.frameNow = time.Now()
+	a.budget.frameNow = time.Now()
 
 	a.fetchRoster()
 	if len(a.oocQueue) != 1 || a.oocQueue[0].line != rosterCmd {

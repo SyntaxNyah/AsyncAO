@@ -458,7 +458,7 @@ func TestApplyAreaJumpFollowLifecycle(t *testing.T) {
 
 	t.Run("armed and live nudges", func(t *testing.T) {
 		a := scrollFollowTestApp()
-		a.frameNow = base
+		a.budget.frameNow = base
 		rows := a.playerRosterRows("")
 		a.roster.areaJumpFollow = "Pizza Room 3"
 		a.roster.areaJumpFollowUntil = base.Add(time.Second) // still in the window
@@ -474,7 +474,7 @@ func TestApplyAreaJumpFollowLifecycle(t *testing.T) {
 
 	t.Run("past deadline disarms and holds scroll", func(t *testing.T) {
 		a := scrollFollowTestApp()
-		a.frameNow = base
+		a.budget.frameNow = base
 		rows := a.playerRosterRows("")
 		a.roster.areaJumpFollow = "Pizza Room 3"
 		a.roster.areaJumpFollowUntil = base // now is NOT before the deadline → expired
@@ -490,7 +490,7 @@ func TestApplyAreaJumpFollowLifecycle(t *testing.T) {
 
 	t.Run("disarmed is a no-op", func(t *testing.T) {
 		a := scrollFollowTestApp()
-		a.frameNow = base
+		a.budget.frameNow = base
 		rows := a.playerRosterRows("")
 		a.roster.areaJumpFollow = "" // disarmed
 		a.roster.playerScroll = 9
@@ -508,7 +508,7 @@ func TestApplyAreaJumpFollowLifecycle(t *testing.T) {
 func TestJumpToAreaArmsFollow(t *testing.T) {
 	a := testTabApp(t)
 	base := time.Unix(2_000, 0)
-	a.frameNow = base
+	a.budget.frameNow = base
 	a.link.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
 
 	a.jumpToArea("Courtroom 2")

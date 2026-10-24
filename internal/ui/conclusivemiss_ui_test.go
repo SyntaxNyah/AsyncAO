@@ -120,16 +120,16 @@ func TestDemandAssetStopsAskingForAConclusiveMiss(t *testing.T) {
 
 	base := a.link.urls.CharIcon("gold_ship")
 	var stamps []time.Time
-	a.iconAskBudget = charIconAskPerFrame
+	a.budget.iconAskBudget = charIconAskPerFrame
 
 	// The FIRST pass must really ask — otherwise the "stopped asking" assertion
 	// below is measuring a demand that never started.
 	if !a.demandAsset(&stamps, 1, 0, base, assets.AssetTypeCharIcon) {
 		t.Fatal("the first demand for an unprobed base reported the art can never arrive — nothing has been probed yet")
 	}
-	if a.iconAskBudget != charIconAskPerFrame-1 {
+	if a.budget.iconAskBudget != charIconAskPerFrame-1 {
 		t.Fatalf("the first demand spent %d budget slots, want 1 — it never reached Prefetch, so this gate is vacuous",
-			charIconAskPerFrame-a.iconAskBudget)
+			charIconAskPerFrame-a.budget.iconAskBudget)
 	}
 
 	settleMissUI(t, a, base, assets.AssetTypeCharIcon)
@@ -137,14 +137,14 @@ func TestDemandAssetStopsAskingForAConclusiveMiss(t *testing.T) {
 	// Open the retry window and refill the budget: neither may be what stops the
 	// next ask. Only the miss gate may.
 	stamps[0] = time.Time{}
-	a.iconAskBudget = charIconAskPerFrame
+	a.budget.iconAskBudget = charIconAskPerFrame
 	if a.demandAsset(&stamps, 1, 0, base, assets.AssetTypeCharIcon) {
 		t.Error("demandAsset reported a conclusively-absent icon as still arriving — callers use that answer to keep " +
 			"the frame pump awake for art that is never coming")
 	}
-	if a.iconAskBudget != charIconAskPerFrame {
+	if a.budget.iconAskBudget != charIconAskPerFrame {
 		t.Errorf("a conclusively-absent icon still spent %d budget slot(s) — the 2 s re-ask cadence is still running",
-			charIconAskPerFrame-a.iconAskBudget)
+			charIconAskPerFrame-a.budget.iconAskBudget)
 	}
 	// And it stays stopped: the field symptom was the REPEAT, so one silent pass
 	// proves nothing.
@@ -152,21 +152,21 @@ func TestDemandAssetStopsAskingForAConclusiveMiss(t *testing.T) {
 		stamps[0] = time.Time{}
 		a.demandAsset(&stamps, 1, 0, base, assets.AssetTypeCharIcon)
 	}
-	if a.iconAskBudget != charIconAskPerFrame {
+	if a.budget.iconAskBudget != charIconAskPerFrame {
 		t.Errorf("20 further passes over an absent icon spent %d budget slot(s), want 0",
-			charIconAskPerFrame-a.iconAskBudget)
+			charIconAskPerFrame-a.budget.iconAskBudget)
 	}
 
 	// The negative control: the gate keys on the BASE, so a sibling asset of the
 	// same character is untouched by its neighbour's verdict. Without this, a gate
 	// that simply stopped demanding everything would pass.
 	sibling := a.link.urls.EmoteButton("gold_ship", 1, false)
-	a.iconAskBudget = charIconAskPerFrame
+	a.budget.iconAskBudget = charIconAskPerFrame
 	var siblingStamps []time.Time
 	if !a.demandAsset(&siblingStamps, 1, 0, sibling, assets.AssetTypeEmoteButton) {
 		t.Fatal("an unprobed sibling base was reported absent — one asset's verdict is being applied to another")
 	}
-	if a.iconAskBudget != charIconAskPerFrame-1 {
+	if a.budget.iconAskBudget != charIconAskPerFrame-1 {
 		t.Error("an unprobed sibling base was never asked for — the gate is suppressing demand it has no verdict on")
 	}
 }
@@ -183,7 +183,7 @@ func TestRetryMissingAssetsResumesTheDemand(t *testing.T) {
 
 	base := a.link.urls.CharIcon("mejiro_mcqueen")
 	var stamps []time.Time
-	a.iconAskBudget = charIconAskPerFrame
+	a.budget.iconAskBudget = charIconAskPerFrame
 	a.demandAsset(&stamps, 1, 0, base, assets.AssetTypeCharIcon)
 	settleMissUI(t, a, base, assets.AssetTypeCharIcon)
 
@@ -196,11 +196,11 @@ func TestRetryMissingAssetsResumesTheDemand(t *testing.T) {
 	}
 
 	stamps[0] = time.Time{}
-	a.iconAskBudget = charIconAskPerFrame
+	a.budget.iconAskBudget = charIconAskPerFrame
 	if !a.demandAsset(&stamps, 1, 0, base, assets.AssetTypeCharIcon) {
 		t.Error("after the flush the icon is still reported as never arriving")
 	}
-	if a.iconAskBudget != charIconAskPerFrame-1 {
+	if a.budget.iconAskBudget != charIconAskPerFrame-1 {
 		t.Error("after the flush the icon was still not asked for — the button cannot recover a repacked server")
 	}
 }
@@ -223,7 +223,7 @@ func TestBlankEmoteCellDoesNotHoldTheFramePumpAwake(t *testing.T) {
 	// Frame 1 must FLAG: nothing has been probed, so the art may still arrive and
 	// the pump has to stay awake to receive it. Without this the gate would pass
 	// against a draw that never flagged anything.
-	a.iconAskBudget = charIconAskPerFrame
+	a.budget.iconAskBudget = charIconAskPerFrame
 	a.frame.frameDemandPending = false
 	a.drawEmoteImageButton(btn, me, 0, false, "normal")
 	if !a.frame.frameDemandPending {
@@ -240,7 +240,7 @@ func TestBlankEmoteCellDoesNotHoldTheFramePumpAwake(t *testing.T) {
 	settled := false
 	deadline := time.Now().Add(missGateSettle)
 	for time.Now().Before(deadline) && !settled {
-		a.iconAskBudget = charIconAskPerFrame
+		a.budget.iconAskBudget = charIconAskPerFrame
 		a.emotepick.emoteAsk, a.rcache.emoteIconAsk = nil, nil // reopen the retry window
 		a.drawEmoteImageButton(btn, me, 0, false, "normal")
 		drainManager(a)
@@ -258,7 +258,7 @@ func TestBlankEmoteCellDoesNotHoldTheFramePumpAwake(t *testing.T) {
 
 	// The permanently-grey frame: still blank, but nothing can change that, so the
 	// pump is free to sleep.
-	a.iconAskBudget = charIconAskPerFrame
+	a.budget.iconAskBudget = charIconAskPerFrame
 	a.emotepick.emoteAsk, a.rcache.emoteIconAsk = nil, nil
 	a.frame.frameDemandPending = false
 	a.drawEmoteImageButton(btn, me, 0, false, "normal")

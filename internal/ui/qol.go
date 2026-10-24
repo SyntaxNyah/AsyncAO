@@ -686,9 +686,9 @@ func (a *App) applyAudioVolumes() {
 	// == the active tab, ownerMusicInputs returns the active (master, music) and the two
 	// calls are identical — behaviour is unchanged for the common single-tab case.
 	mMusic, _, _, _ := mixChannels(musicMaster, musicVol, sfx, blip, alert,
-		a.audio.masterMuted, a.audio.musicMuted, a.audio.sfxMuted, a.audio.blipMuted, a.musicDucked, a.musicTabDucked)
+		a.audio.masterMuted, a.audio.musicMuted, a.audio.sfxMuted, a.audio.blipMuted, a.musicDucked, a.budget.musicTabDucked)
 	_, mSFX, mBlip, mAlert := mixChannels(master, music, sfx, blip, alert,
-		a.audio.masterMuted, a.audio.musicMuted, a.audio.sfxMuted, a.audio.blipMuted, a.musicDucked, a.musicTabDucked)
+		a.audio.masterMuted, a.audio.musicMuted, a.audio.sfxMuted, a.audio.blipMuted, a.musicDucked, a.budget.musicTabDucked)
 	a.d.Audio.SetVolumes(mMusic, mSFX, mBlip)
 	a.d.Audio.SetAlertVolume(mAlert)
 }
@@ -703,10 +703,10 @@ func (a *App) applyAudioVolumes() {
 // makes no extra prefs call. A method with no mixer dependency, so the volume math
 // stays testable without a device (the codebase's settleAwaitTimeout idiom).
 func (a *App) ownerMusicInputs(activeMaster, activeMusic int) (master, music int) {
-	if a.musicOwnerKey == "" || a.musicOwnerKey == a.srvMeta.serverKey {
+	if a.budget.musicOwnerKey == "" || a.budget.musicOwnerKey == a.srvMeta.serverKey {
 		return activeMaster, activeMusic
 	}
-	if on, m, mu, _, _ := a.d.Prefs.ServerAudio(a.musicOwnerKey); on {
+	if on, m, mu, _, _ := a.d.Prefs.ServerAudio(a.budget.musicOwnerKey); on {
 		return m, mu
 	}
 	return activeMaster, activeMusic
@@ -761,7 +761,7 @@ func (a *App) settleAwaitedMusic() {
 	// Idle short-circuit: the overwhelmingly common per-frame case is "nothing
 	// awaited" — one field read, no Audio call, no allocation. Only when a track is
 	// actually pending do we poll the mixer's current URL.
-	if a.musicAwaitURL == "" || a.d.Audio == nil {
+	if a.budget.musicAwaitURL == "" || a.d.Audio == nil {
 		return
 	}
 	cur := a.d.Audio.CurrentMusicURL()
@@ -787,11 +787,11 @@ func (a *App) settleAwaitedMusic() {
 	case awaitTimeoutStop:
 		a.d.Audio.StopMusic() // foreign stream loaded: silence it rather than reveal the wrong song
 		a.clearMusicAwait()
-		a.musicTabDucked = false
+		a.budget.musicTabDucked = false
 		a.applyAudioVolumes()
 	case awaitTimeoutUnduck:
 		a.clearMusicAwait()
-		a.musicTabDucked = false
+		a.budget.musicTabDucked = false
 		a.applyAudioVolumes()
 	}
 }
@@ -815,7 +815,7 @@ const (
 // / resumeSeek). Given the mixer's current URL and the clock, it decides how to release
 // a wedged await once the deadline passes:
 func (a *App) settleAwaitTimeout(cur string, now time.Time) awaitTimeoutAction {
-	if a.musicAwaitSince.IsZero() || now.Sub(a.musicAwaitSince) < musicAwaitTimeout {
+	if a.budget.musicAwaitSince.IsZero() || now.Sub(a.budget.musicAwaitSince) < musicAwaitTimeout {
 		return awaitTimeoutNone
 	}
 	if cur == "" {
@@ -829,8 +829,8 @@ func (a *App) settleAwaitTimeout(cur string, now time.Time) awaitTimeoutAction {
 // stamp with no await is dead weight). The duck flag is cleared separately by callers
 // because some (streaming-off, disconnect) also stop the stream in the same breath.
 func (a *App) clearMusicAwait() {
-	a.musicAwaitURL = ""
-	a.musicAwaitSince = time.Time{}
+	a.budget.musicAwaitURL = ""
+	a.budget.musicAwaitSince = time.Time{}
 }
 
 // musicAwaitTimeout bounds how long the cross-tab music duck may wait for an
@@ -850,12 +850,12 @@ const musicAwaitTimeout = 10 * time.Second
 // whether it un-ducked (the applyAudioVolumes side effect happens here so callers
 // don't have to). A "" await is the idle no-op.
 func (a *App) settleAwaitedDuck(cur string) bool {
-	if a.musicAwaitURL == "" || cur != a.musicAwaitURL {
+	if a.budget.musicAwaitURL == "" || cur != a.budget.musicAwaitURL {
 		return false // nothing awaited, or the awaited track hasn't landed yet — keep the duck
 	}
-	a.musicAwaitURL = ""
-	a.musicAwaitSince = time.Time{} // await satisfied: drop the timeout stamp with it
-	a.musicTabDucked = false
+	a.budget.musicAwaitURL = ""
+	a.budget.musicAwaitSince = time.Time{} // await satisfied: drop the timeout stamp with it
+	a.budget.musicTabDucked = false
 	a.applyAudioVolumes()
 	return true
 }
@@ -1119,9 +1119,9 @@ func (a *App) cyclePos() {
 // own client regardless of DJ rights.
 func (a *App) stopMusic() {
 	a.d.Audio.StopMusic()
-	a.musicTabDucked = false        // stream stopped: a later track must start audible (invariant: stopped ⇒ not ducked)
-	a.musicAwaitURL = ""            // and no pending un-duck can survive the stop (invariant: stopped ⇒ no await)
-	a.musicAwaitSince = time.Time{} // and no dangling timeout stamp
+	a.budget.musicTabDucked = false        // stream stopped: a later track must start audible (invariant: stopped ⇒ not ducked)
+	a.budget.musicAwaitURL = ""            // and no pending un-duck can survive the stop (invariant: stopped ⇒ no await)
+	a.budget.musicAwaitSince = time.Time{} // and no dangling timeout stamp
 	if a.link.room != nil {
 		a.link.room.Scene.MusicTrack = "" // clear the Now-Playing display
 	}

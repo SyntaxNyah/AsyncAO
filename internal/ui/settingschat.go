@@ -57,17 +57,17 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	if hcOn {
 		c.Label(pad+16, y+4, "Clear key:", ColTextDim)
 		keyLabel := hcKey
-		if a.holdKeyArmed {
+		if a.budget.holdKeyArmed {
 			keyLabel = "press a key…  (Esc cancels)"
 		}
 		if c.Button(sdl.Rect{X: pad + 96, Y: y, W: 200, H: btnH}, keyLabel) {
-			a.holdKeyArmed = !a.holdKeyArmed
+			a.budget.holdKeyArmed = !a.budget.holdKeyArmed
 		}
-		if a.holdKeyArmed && c.keyPressed != 0 {
+		if a.budget.holdKeyArmed && c.keyPressed != 0 {
 			if c.keyPressed != sdl.K_ESCAPE {
 				a.d.Prefs.SetHoldClearKey(sdl.GetKeyName(c.keyPressed))
 			}
-			a.holdKeyArmed = false
+			a.budget.holdKeyArmed = false
 			c.keyPressed = 0 // consume — don't let the captured key act elsewhere
 		}
 		y += btnH + 6
