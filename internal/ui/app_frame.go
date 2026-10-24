@@ -257,7 +257,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// perf HUD, also reachable from Extras → Debug and Settings → Power user.
 	// Consumed so a plain-key macro/char bind named "f8" can't double-fire.
 	if a.ctx.keyPressed == sdl.K_F8 {
-		a.toggleDebugPanel()
+		a.debugPanel.toggleDebugPanel()
 		a.ctx.keyPressed = 0
 	}
 	// ESC leaves a full-screen menu back to where it opened — the instinctive
@@ -439,7 +439,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollNotebook()
 	a.pollJukebox()
 	a.pollCharBind()
-	a.pollJukeBind()
+	a.jukebox.pollJukeBind(&a.env)
 	a.pollMacroBind()
 	a.pollShownameBind()
 	a.pollICPhraseBind()
@@ -453,11 +453,11 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollAutoReconnect() // M2: due auto-retry fires from the lobby; a single time-compare otherwise
 	a.pollTimer()         // #97 local alarm: one compare while running, zero cost when idle
 	a.pollDownload()
-	a.pollMakerExport() // M16: deliver the self-contained archive export result
-	a.tickContentJob()  // content report / package: drain probe results + poll the package goroutine (no-op when idle)
-	a.pollGifExport()   // M16: deliver the off-thread GIF encode result
-	a.pollCharMeta()    // land remote char.ini fetches (per-character blips + chatbox skins)
-	a.pollBgList()      // drain bg discovery even when the picker is closed (slideshow)
+	a.pollMakerExport()       // M16: deliver the self-contained archive export result
+	a.tickContentJob()        // content report / package: drain probe results + poll the package goroutine (no-op when idle)
+	a.pollGifExport()         // M16: deliver the off-thread GIF encode result
+	a.overlays.pollCharMeta() // land remote char.ini fetches (per-character blips + chatbox skins)
+	a.pollBgList()            // drain bg discovery even when the picker is closed (slideshow)
 	a.processOOCQueue()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	switch {

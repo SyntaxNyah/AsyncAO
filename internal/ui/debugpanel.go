@@ -49,7 +49,7 @@ var debugSections = []string{"Session", "Packets", "Perf", "Cache", "Log", "Font
 
 // toggleDebugPanel opens / closes the Debug panel (Extras → Debug, the F8 key,
 // or Settings → Power user → Diagnostics).
-func (a *App) toggleDebugPanel() { a.debugPanel.open = !a.debugPanel.open }
+func (debugpanel *debugPanelState) toggleDebugPanel() { debugpanel.open = !debugpanel.open }
 
 // debugPanelRect is the Debug panel's floating-window rect (floatwin.go).
 func (a *App) debugPanelRect(w, h int32) sdl.Rect {

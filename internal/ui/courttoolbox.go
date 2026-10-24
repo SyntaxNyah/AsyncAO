@@ -276,10 +276,10 @@ func toolboxChipTipID(i int) string {
 // panel). Each chip draws a vector icon and carries a Tooltip with the full
 // word. The slice is package-level with method values, so it never re-allocates.
 var compactToolboxChips = []compactChip{
-	{iconPin, "Pin the toolbox open (press again or the grip to unpin)", (*App).compactTogglePin},
+	{iconPin, "Pin the toolbox open (press again or the grip to unpin)", func(a *App) { a.toolbox.compactTogglePin() }},
 	{iconTheater, "Theater mode — stage only, Esc exits", (*App).compactTheater},
 	{iconEdit, "Edit layout — drag & resize every box", (*App).compactEditLayout},
-	{iconEyeOff, "Hide UI pieces — per-piece show/hide list", (*App).compactHideUI},
+	{iconEyeOff, "Hide UI pieces — per-piece show/hide list", func(a *App) { a.toolbox.compactHideUI() }},
 }
 
 func (a *App) compactTheater()    { a.setTheater(!a.theaterOn) }
@@ -287,10 +287,10 @@ func (a *App) compactEditLayout() { a.openLayoutEditor() }
 
 // compactTogglePin latches the flyout open / closed. Unpinning also closes the
 // per-piece panel so a later hover doesn't silently re-reveal it.
-func (a *App) compactTogglePin() {
-	a.toolbox.toolboxPinned = !a.toolbox.toolboxPinned
-	if !a.toolbox.toolboxPinned {
-		a.toolbox.toolboxPieces = false
+func (toolbox1 *toolboxState) compactTogglePin() {
+	toolbox1.toolboxPinned = !toolbox1.toolboxPinned
+	if !toolbox1.toolboxPinned {
+		toolbox1.toolboxPieces = false
 	}
 }
 
@@ -298,10 +298,10 @@ func (a *App) compactTogglePin() {
 // the replacement for the retired drawUICfgPanel dialog. Opening it implies
 // pinning: the panel is gated on toolboxPinned, so without this a click from a
 // hover-only flyout would set a flag that shows nothing.
-func (a *App) compactHideUI() {
-	a.toolbox.toolboxPieces = !a.toolbox.toolboxPieces
-	if a.toolbox.toolboxPieces {
-		a.toolbox.toolboxPinned = true
+func (toolbox1 *toolboxState) compactHideUI() {
+	toolbox1.toolboxPieces = !toolbox1.toolboxPieces
+	if toolbox1.toolboxPieces {
+		toolbox1.toolboxPinned = true
 	}
 }
 
@@ -426,7 +426,7 @@ func (a *App) drawCompactToolbox(lat compactToolboxLatch) {
 	// pixels, so it must own the click. The one genuine double-fire (a chip arming the
 	// editor mid-pass, then the post-courtroom site drawing the toolbox a second time)
 	if !editing && c.hovering(grip) && c.clicked {
-		a.compactTogglePin()
+		a.toolbox.compactTogglePin()
 	}
 	gripTip := "Toolbox — click to pin/unpin"
 	if editing {

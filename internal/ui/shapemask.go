@@ -304,10 +304,10 @@ func (a *App) refreshShapeMasks() {
 // (textures.go Purge → page.destroy()), so a shaped draw later in the same
 // frame would Copy a freed texture (the stale-handle/black-flash class). Any
 // future mid-frame Store.Purge()/invalidation site must make this same call.
-func (a *App) invalidateShapeMasks() {
-	a.toolbox.shapeMasksBuilt = false
-	a.toolbox.shapeResolvedShape = "" // drop the resolve memo with the pointers
-	c := a.ctx
+func (toolbox1 *toolboxState) invalidateShapeMasks(e *env) {
+	toolbox1.shapeMasksBuilt = false
+	toolbox1.shapeResolvedShape = "" // drop the resolve memo with the pointers
+	c := e.ctx
 	c.shapeMaskReady = false
 	c.shapeFillTex, c.shapeStrokeTex = nil, nil
 }

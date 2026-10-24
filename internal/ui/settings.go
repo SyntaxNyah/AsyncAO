@@ -1686,7 +1686,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Store.Purge()
 		// Purge destroyed the pinned shape masks SYNCHRONOUSLY — drop the
 		// frame-resolved Ctx pointers before anything shaped draws this frame.
-		a.invalidateShapeMasks()
+		a.toolbox.invalidateShapeMasks(&a.env)
 		c.purgeTextCache()
 		a.applyThemeAsync()
 		// Purge also destroyed the pinned missingno placeholder — re-pin the

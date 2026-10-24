@@ -164,7 +164,7 @@ func (a *App) extrasWidgets() []extrasWidget {
 
 			}},
 			{"Hotkeys", "Show every keyboard shortcut, including your custom ones (F1)", "", func() { a.openHotkeyCheatSheet() }},
-			{"Debug", "Diagnostics: server software, live packet inspector, performance + asset/prefetch stats, and the failure log (F8, or Settings → Power user)", "", func() { a.toggleDebugPanel() }},
+			{"Debug", "Diagnostics: server software, live packet inspector, performance + asset/prefetch stats, and the failure log (F8, or Settings → Power user)", "", func() { a.debugPanel.toggleDebugPanel() }},
 			{"Timer", "A personal countdown timer + alarm (for RP / casing pace)", "", func() { a.openTimer() }},
 			{"Sprite Style", "Recolour / glow / warp your character — other AsyncAO players see it", "", func() { a.openSpriteStyle() }},
 			{"SFX Browser", "Browse, preview (▶) and favourite (★) sounds for your next IC message — incl. any sound by name", "", func() { a.toggleSfxBrowser() }},

@@ -139,7 +139,7 @@ func TestPackCharMetaComesFromTheMount(t *testing.T) {
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		a.pollCharMeta()
+		a.overlays.pollCharMeta()
 		if m := a.charMetaFor("witch"); m.done {
 			if m.showname != "The Witch" {
 				t.Errorf("showname = %q, want the PACK's %q", m.showname, "The Witch")
