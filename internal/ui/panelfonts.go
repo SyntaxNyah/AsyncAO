@@ -79,9 +79,9 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 	// answer is to install the fonts rather than to override every panel by hand.
 	// Persistent here, unlike the toast on apply, which is gone by the time anyone
 	// goes looking.
-	if a.themeFontWarn != "" {
+	if a.font.themeFontWarn != "" {
 		y = a.settingsSection(y, w, "This theme's fonts are missing")
-		y = a.settingsDesc(pad, y, a.themeFontWarn, ColDanger)
+		y = a.settingsDesc(pad, y, a.font.themeFontWarn, ColDanger)
 		y += 6
 	} else {
 		y = a.settingsSection(y, w, "Your font folder")
@@ -149,8 +149,8 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 	// A family that resolved to nothing is the single most likely way this
 	// confuses someone, so it is reported HERE, beside the box they typed it in,
 	// and not only in the debug log.
-	if len(a.panelFontMissing) > 0 {
-		y = a.settingsDesc(pad, y, "Not found, so the theme's font is still being used for: "+strings.Join(a.panelFontMissing, ", ")+
+	if len(a.font.panelFontMissing) > 0 {
+		y = a.settingsDesc(pad, y, "Not found, so the theme's font is still being used for: "+strings.Join(a.font.panelFontMissing, ", ")+
 			". On Windows a family name like \"Arial\" or \"Comic Sans MS\" works; elsewhere give the full path to a .ttf or .otf file.", ColDanger)
 		y += 6
 	}
@@ -170,7 +170,7 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 // also what discards a box left holding something unusable.
 func (a *App) panelSizeText(fieldID, rowID string, saved int) string {
 	if a.ctx.focusID == fieldID {
-		if s, editing := a.panelSizeEdit[rowID]; editing {
+		if s, editing := a.font.panelSizeEdit[rowID]; editing {
 			return s
 		}
 	}
@@ -188,10 +188,10 @@ func (a *App) panelSizeText(fieldID, rowID string, saved int) string {
 // incomplete rather than wrong: it is almost always a number mid-typing, and
 // rejecting it outright is the same trap as clamping it.
 func (a *App) commitPanelSize(fieldID, rowID string, cur config.PanelFont, text string) {
-	if a.panelSizeEdit == nil {
-		a.panelSizeEdit = make(map[string]string, len(panelFontRows))
+	if a.font.panelSizeEdit == nil {
+		a.font.panelSizeEdit = make(map[string]string, len(panelFontRows))
 	}
-	a.panelSizeEdit[rowID] = text
+	a.font.panelSizeEdit[rowID] = text
 
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {

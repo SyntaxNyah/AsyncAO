@@ -572,8 +572,8 @@ func (a *App) drawDebugFonts(r sdl.Rect) {
 		line("ic_chatlog: theme sizes it but names no family - client's chain, theme's point size", ColTextDim)
 	default:
 		name := "(unresolved)"
-		if idx := f.faceIdx(); idx >= 0 && idx < len(a.themeFaceNames) {
-			name = a.themeFaceNames[idx]
+		if idx := f.faceIdx(); idx >= 0 && idx < len(a.font.themeFaceNames) {
+			name = a.font.themeFaceNames[idx]
 		}
 		line("ic_chatlog font file: "+name, ColText)
 	}

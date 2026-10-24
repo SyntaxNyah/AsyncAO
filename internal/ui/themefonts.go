@@ -243,10 +243,10 @@ func (a *App) elemChromeFont(el themeFontElem, userPct int) *ttf.Font {
 // between "this setting does nothing" and "this setting is already set".
 func (a *App) themeFaceNameFor(el themeFontElem) string {
 	i := a.skin.themeFonts.e[el].faceIdx()
-	if i < 0 || i >= len(a.themeFaceNames) {
+	if i < 0 || i >= len(a.font.themeFaceNames) {
 		return ""
 	}
-	return a.themeFaceNames[i]
+	return a.font.themeFaceNames[i]
 }
 
 // messagePct is the chatbox message's resolved draw scale — the theme's

@@ -45,7 +45,7 @@ func (a *App) maybeWarnMissingFonts(themeName string, families []string, body, d
 	// the modal up has still seen it, and re-showing it on next launch would be
 	// the nagging this is designed to avoid.
 	a.d.Prefs.MarkFontWarnShown(themeName)
-	a.fontWarnDlg = fontWarnDialog{open: true, theme: themeName, families: families, body: body, dir: dir}
+	a.font.fontWarnDlg = fontWarnDialog{open: true, theme: themeName, families: families, body: body, dir: dir}
 	return true
 }
 
@@ -61,7 +61,7 @@ const (
 // the render hot path — only while open.
 func (a *App) drawFontWarnDialog(w, h int32) {
 	c := a.ctx
-	if !a.fontWarnDlg.open {
+	if !a.font.fontWarnDlg.open {
 		return
 	}
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 160})
@@ -74,13 +74,13 @@ func (a *App) drawFontWarnDialog(w, h int32) {
 	// user has to go and find, and burying them inside the explanation makes them
 	// hard to act on.
 	y := m.Y + 48
-	c.LabelClipped(m.X+pad, y, fontWarnW-2*pad, strings.Join(a.fontWarnDlg.families, ", "), ColAccent)
+	c.LabelClipped(m.X+pad, y, fontWarnW-2*pad, strings.Join(a.font.fontWarnDlg.families, ", "), ColAccent)
 	y += 26
 
 	// Then the explanation, wrapped to the panel. wrapToWidth is the same helper
 	// the logs use, so a long font list cannot spill past the border (the §3.4
 	// class of bug the disconnect dialog's comment names).
-	for _, line := range a.wrapDialogBody(a.fontWarnDlg.body, fontWarnW-2*pad) {
+	for _, line := range a.wrapDialogBody(a.font.fontWarnDlg.body, fontWarnW-2*pad) {
 		if y > m.Y+fontWarnH-btnH-pad-24 {
 			break
 		}
@@ -89,18 +89,18 @@ func (a *App) drawFontWarnDialog(w, h int32) {
 	}
 
 	by := m.Y + fontWarnH - btnH - pad
-	if a.fontWarnDlg.dir != "" {
+	if a.font.fontWarnDlg.dir != "" {
 		if c.Button(sdl.Rect{X: m.X + pad, Y: by, W: 170, H: btnH}, "Open fonts folder") {
-			openInFileManager(a.fontWarnDlg.dir)
+			openInFileManager(a.font.fontWarnDlg.dir)
 		}
 		if c.Button(sdl.Rect{X: m.X + pad + 178, Y: by, W: 140, H: btnH}, "Reload theme") {
-			a.fontWarnDlg = fontWarnDialog{}
+			a.font.fontWarnDlg = fontWarnDialog{}
 			a.applyThemeAsync()
 			return
 		}
 	}
 	if c.Button(sdl.Rect{X: m.X + fontWarnW - pad - 110, Y: by, W: 110, H: btnH}, "Got it") {
-		a.fontWarnDlg = fontWarnDialog{}
+		a.font.fontWarnDlg = fontWarnDialog{}
 	}
 }
 

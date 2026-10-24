@@ -931,7 +931,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// value (alloc-free); the chain flows from the DEFAULT positions, never an
 	// override, so freeing one slot never cascades the rest (unchanged behaviour).
 	// ENTER is the only sender. The shout row ARMS (courtroom.cpp:6048-6127) and
-	if a.drawICInputRow(icBar, rowY, w, h, fH) && !a.serverNoticeDlg.open {
+	if a.drawICInputRow(icBar, rowY, w, h, fH) && !a.font.serverNoticeDlg.open {
 		a.sendIC()
 	}
 

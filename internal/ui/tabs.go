@@ -970,7 +970,7 @@ func (a *App) handleTabBar(w, h int32) {
 	// because the box is on App and does NOT park with the tab), and for a REMOVED
 	// notice the strip must stay inert so the appeal text cannot be scrolled away
 	// behind a tab switch before it has been read or copied.
-	if a.serverNoticeDlg.open {
+	if a.font.serverNoticeDlg.open {
 		a.tabDragFrom, a.tabDragging = -1, false
 		return
 	}

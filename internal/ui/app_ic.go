@@ -426,22 +426,22 @@ func (a *App) pollThemeApply() {
 	// Theme font (#6): an AO theme that ships its own .ttf now applies it (below a
 	// manual font / the dyslexia toggle). Re-resolve only when it actually changed,
 	// so a same-font theme switch doesn't re-kick the off-thread font read.
-	if a.themeFontFile != res.fontPath {
-		a.themeFontFile = res.fontPath
+	if a.font.themeFontFile != res.fontPath {
+		a.font.themeFontFile = res.fontPath
 		a.applyFontConfig()
 	}
 	// Per-panel font diagnostics, for the Settings screen: the file names each
 	// element resolved to (so an empty box can say what it is already using) and
 	// the families that resolved to nothing (so a typo is visible where it was
 	// typed, not only in the debug log).
-	a.themeFaceNames = res.faceNames
-	a.panelFontMissing = res.panelFontsMissing
+	a.font.themeFaceNames = res.faceNames
+	a.font.panelFontMissing = res.panelFontsMissing
 	a.landThemeFonts(res)
 	// A theme whose fonts are missing renders in the client's own face and says
 	// nothing about it — from the user's side that reads as "the client got the
 	// font wrong", which is exactly how it was reported. Say so, once per apply,
 	// on screen AND in the debug log, and name the fix rather than the fault.
-	a.themeFontWarn = res.themeFontWarn
+	a.font.themeFontWarn = res.themeFontWarn
 	if res.themeFontWarn != "" {
 		// The debug log ALWAYS, the modal at most once per theme. A theme with
 		// missing fonts has them missing on every apply, so warning every time

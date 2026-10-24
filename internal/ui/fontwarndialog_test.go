@@ -18,15 +18,15 @@ func TestFontWarnDialogOpensOncePerTheme(t *testing.T) {
 	if !a.maybeWarnMissingFonts("AceAttorney 2x", fams, "body", `C:\fonts`) {
 		t.Fatal("the first apply of a theme with missing fonts must warn")
 	}
-	if !a.fontWarnDlg.open {
+	if !a.font.fontWarnDlg.open {
 		t.Fatal("it reported warning but left the dialog closed")
 	}
-	a.fontWarnDlg = fontWarnDialog{} // the user dismissed it
+	a.font.fontWarnDlg = fontWarnDialog{} // the user dismissed it
 
 	if a.maybeWarnMissingFonts("AceAttorney 2x", fams, "body", `C:\fonts`) {
 		t.Error("the SAME theme warned twice — every reload would reopen this")
 	}
-	if a.fontWarnDlg.open {
+	if a.font.fontWarnDlg.open {
 		t.Error("a repeat apply reopened the dialog")
 	}
 
@@ -73,7 +73,7 @@ func TestFontWarnDialogStaysShutWhenNothingIsMissing(t *testing.T) {
 		if a.maybeWarnMissingFonts(tc.name, tc.fams, tc.body, "") {
 			t.Errorf("%s: warned with %s", tc.name, tc.label)
 		}
-		if a.fontWarnDlg.open {
+		if a.font.fontWarnDlg.open {
 			t.Errorf("%s: dialog opened with %s", tc.name, tc.label)
 		}
 	}

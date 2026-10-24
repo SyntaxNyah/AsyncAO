@@ -43,7 +43,7 @@ func TestAPreCourtroomBanRaisesTheNoticeBoxWithTheTail(t *testing.T) {
 
 	a.handleInvoluntaryDrop("Banned: " + noticeLockdownReason)
 
-	d := &a.serverNoticeDlg
+	d := &a.font.serverNoticeDlg
 	if !d.open {
 		t.Fatal("a pre-courtroom ban raised no box — the reason is back to one lobby label, " +
 			"which is the bug this exists to fix")
@@ -100,7 +100,7 @@ func TestOnlyAServersOwnWordsRaiseTheBox(t *testing.T) {
 			a := froomApp(t)
 			a.link.room = nil
 			a.handleInvoluntaryDrop(tc.reason)
-			if got := a.serverNoticeDlg.open; got != tc.want {
+			if got := a.font.serverNoticeDlg.open; got != tc.want {
 				t.Errorf("box open = %v, want %v for %q", got, tc.want, tc.reason)
 			}
 		})
@@ -116,7 +116,7 @@ func TestADeliberateDisconnectIsSilent(t *testing.T) {
 	a.link.room = nil
 	a.deliberateClose = true
 	a.handleInvoluntaryDrop("Kicked: you left")
-	if a.serverNoticeDlg.open {
+	if a.font.serverNoticeDlg.open {
 		t.Error("a deliberate close raised a modal")
 	}
 }
@@ -130,14 +130,14 @@ func TestARemovalNoticeCannotBeBuriedByAnythingElse(t *testing.T) {
 	a.openServerNotice(serverNoticeRemoved, "The server banned you.", "S", noticeLockdownReason)
 
 	a.openServerNotice(serverNoticeInfo, serverNoticeInfoTitle, "S", "read the rules")
-	if a.serverNoticeDlg.kind != serverNoticeRemoved || !strings.Contains(a.serverNoticeDlg.body, noticeLockdownCode) {
+	if a.font.serverNoticeDlg.kind != serverNoticeRemoved || !strings.Contains(a.font.serverNoticeDlg.body, noticeLockdownCode) {
 		t.Fatal("an info notice buried a removal notice")
 	}
 
 	// The disconnect dialog is the other blocking modal: it dismisses a live INFO
 	// notice (moot the instant the session is gone) and must leave a removal alone.
 	a.openDisconnectDialog("S", "ws://s", "connection lost", a.now())
-	if !a.serverNoticeDlg.open || a.serverNoticeDlg.kind != serverNoticeRemoved {
+	if !a.font.serverNoticeDlg.open || a.font.serverNoticeDlg.kind != serverNoticeRemoved {
 		t.Error("the disconnect dialog destroyed a removal notice")
 	}
 
@@ -145,13 +145,13 @@ func TestARemovalNoticeCannotBeBuriedByAnythingElse(t *testing.T) {
 	b := froomApp(t)
 	b.openServerNotice(serverNoticeInfo, serverNoticeInfoTitle, "S", "motd")
 	b.openDisconnectDialog("S", "ws://s", "connection lost", b.now())
-	if b.serverNoticeDlg.open {
+	if b.font.serverNoticeDlg.open {
 		t.Error("an info notice stayed up under the disconnect dialog — two blocking modals stacked")
 	}
 
 	// A removal always replaces whatever is showing, including another removal.
 	a.openServerNotice(serverNoticeRemoved, "Kicked", "S2", "second")
-	if a.serverNoticeDlg.body != "second" || a.serverNoticeDlg.server != "S2" {
+	if a.font.serverNoticeDlg.body != "second" || a.font.serverNoticeDlg.server != "S2" {
 		t.Error("a second removal did not replace the first")
 	}
 }
@@ -162,16 +162,16 @@ func TestARemovalNoticeCannotBeBuriedByAnythingElse(t *testing.T) {
 func TestOpeningANoticeDropsEveryFieldOfThePreviousOne(t *testing.T) {
 	a := froomApp(t)
 	a.openServerNotice(serverNoticeInfo, "first", "S1", "first body")
-	a.serverNoticeDlg.wrap.get(func(string) int32 { return 1 }, 0, "first body", 100, 4, "")
-	if a.serverNoticeDlg.wrap.lines == nil {
+	a.font.serverNoticeDlg.wrap.get(func(string) int32 { return 1 }, 0, "first body", 100, 4, "")
+	if a.font.serverNoticeDlg.wrap.lines == nil {
 		t.Fatal("the fixture never baked a wrap, so nothing below is proving it gets dropped")
 	}
 	a.openServerNotice(serverNoticeInfo, "second", "S2", "second body")
-	if a.serverNoticeDlg.wrap.lines != nil {
+	if a.font.serverNoticeDlg.wrap.lines != nil {
 		t.Error("the previous notice's laid-out body survived into the new one")
 	}
 	a.closeServerNotice()
-	d := &a.serverNoticeDlg
+	d := &a.font.serverNoticeDlg
 	if d.open || d.kind != serverNoticeNone || d.title != "" || d.server != "" || d.body != "" ||
 		d.wrap.lines != nil {
 		t.Errorf("closing left state behind (%+v) — the zero value is the closed state", *d)
@@ -186,7 +186,7 @@ func TestAnOversizedTitleCannotOverflowTheHeading(t *testing.T) {
 	a := froomApp(t)
 	long := strings.Repeat("б", serverNoticeTitleRuneCap*2)
 	a.openServerNotice(serverNoticeInfo, long, "S", "body")
-	title := a.serverNoticeDlg.title
+	title := a.font.serverNoticeDlg.title
 	if n := len([]rune(title)); n > serverNoticeTitleRuneCap+1 {
 		t.Errorf("title kept %d runes, past the %d cap", n, serverNoticeTitleRuneCap)
 	}
@@ -196,7 +196,7 @@ func TestAnOversizedTitleCannotOverflowTheHeading(t *testing.T) {
 
 	exact := strings.Repeat("б", serverNoticeTitleRuneCap)
 	a.openServerNotice(serverNoticeInfo, exact, "S", "body")
-	if a.serverNoticeDlg.title != exact {
+	if a.font.serverNoticeDlg.title != exact {
 		t.Error("a title of exactly the cap was truncated — the clamp is counting bytes, " +
 			"and Cyrillic is two bytes a rune")
 	}
@@ -500,12 +500,12 @@ func TestTheNoticeBoxDrawsThroughTheFrameAndTakesItsClicks(t *testing.T) {
 	// makes the arm below meaningful rather than "any click closes it".
 	x, y := serverNoticeCloseCentre(a, frameHarnessW, frameHarnessH)
 	driveClickAt(a, frameHarnessW/2, y-serverNoticeLineH*3)
-	if !a.serverNoticeDlg.open {
+	if !a.font.serverNoticeDlg.open {
 		t.Fatal("a click on the panel body closed the box")
 	}
 
 	driveClickAt(a, x, y)
-	if a.serverNoticeDlg.open {
+	if a.font.serverNoticeDlg.open {
 		t.Error("the box's own dismiss button did nothing — the frame tail is not restoring the " +
 			"pointer for it, so the modal is unclosable by mouse")
 	}
@@ -540,7 +540,7 @@ func TestTheNoticeBoxLeavesTheChromeBehindItDead(t *testing.T) {
 		t.Error("the menu bar took a click through the notice box — the strip must be inert " +
 			"(menuBarSuppressed) and the pointer fenced while a blocking modal is up")
 	}
-	if !a.serverNoticeDlg.open {
+	if !a.font.serverNoticeDlg.open {
 		t.Error("the click dismissed the box from outside the panel")
 	}
 }
@@ -585,7 +585,7 @@ func TestEscClosesTheNoticeBoxFirst(t *testing.T) {
 	if !a.closeTopOverlay() {
 		t.Fatal("Esc did not close anything with the box up")
 	}
-	if a.serverNoticeDlg.open {
+	if a.font.serverNoticeDlg.open {
 		t.Error("Esc closed something else and left the box up")
 	}
 	if !a.showVoice {
@@ -641,7 +641,7 @@ func TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou(t *testing.T) {
 		t.Errorf("Enter under the notice box dialled %q — the box's own text is the reason that "+
 			"server is unreachable", a.lastConnURL)
 	}
-	if !a.serverNoticeDlg.open {
+	if !a.font.serverNoticeDlg.open {
 		t.Error("Enter dismissed the box; only Esc and its own button do that, and a ban reason " +
 			"must not vanish on the keystroke that was trying to rejoin")
 	}
@@ -767,20 +767,20 @@ func TestAnOversizedAttributionCannotOverflowTheHeading(t *testing.T) {
 
 	a.openServerNotice(serverNoticeRemoved, "The server banned you.",
 		strings.Repeat("server-name ", 400), noticeLockdownReason)
-	if n := len([]rune(a.serverNoticeDlg.server)); n > serverNoticeTitleRuneCap+1 {
+	if n := len([]rune(a.font.serverNoticeDlg.server)); n > serverNoticeTitleRuneCap+1 {
 		t.Errorf("the attribution row kept %d runes, past the %d cap (+1 for the marker)",
 			n, serverNoticeTitleRuneCap)
 	}
-	if !strings.HasSuffix(a.serverNoticeDlg.server, "…") {
-		t.Errorf("a clamped attribution was cut with no marker: %q", a.serverNoticeDlg.server)
+	if !strings.HasSuffix(a.font.serverNoticeDlg.server, "…") {
+		t.Errorf("a clamped attribution was cut with no marker: %q", a.font.serverNoticeDlg.server)
 	}
 	// RUNES, not bytes, and Cyrillic is the case that catches a byte cap: exactly at the
 	// cap it must pass through untouched, where a byte cap would cut it in half.
 	atCap := strings.Repeat("я", serverNoticeTitleRuneCap)
 	a.openServerNotice(serverNoticeRemoved, "T", atCap, "b")
-	if a.serverNoticeDlg.server != atCap {
+	if a.font.serverNoticeDlg.server != atCap {
 		t.Errorf("a Cyrillic attribution exactly at the %d-rune cap was cut to %d runes — the "+
-			"clamp is counting bytes", serverNoticeTitleRuneCap, len([]rune(a.serverNoticeDlg.server)))
+			"clamp is counting bytes", serverNoticeTitleRuneCap, len([]rune(a.font.serverNoticeDlg.server)))
 	}
 }
 
@@ -820,7 +820,7 @@ func TestTheNoticeBoxStaysClickableInAWindowSmallerThanItself(t *testing.T) {
 			"panel is off the left edge or its buttons are above their own heading, which is "+
 			"exactly the state where a whitelist code cannot be copied", cx, cy, tinyW, tinyH)
 	}
-	if !a.serverNoticeDlg.open {
+	if !a.font.serverNoticeDlg.open {
 		t.Error("Copy dismissed the box")
 	}
 }

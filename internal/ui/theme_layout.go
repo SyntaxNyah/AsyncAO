@@ -936,7 +936,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		// themed-only hole — a user on an AO2 theme could Enter a line into a room the
 		// server has already removed them from. fencePointer blanks the mouse and leaves
 		// the keyboard alone, so the box's pointer fence cannot cover this.
-		if send && !a.serverNoticeDlg.open {
+		if send && !a.font.serverNoticeDlg.open {
 			a.sendIC()
 		}
 	}

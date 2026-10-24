@@ -1513,7 +1513,7 @@ func (a *App) applyFontConfig() {
 		// embedded font (loadFontChainAsync clears on an empty string).
 		paths := strings.TrimSpace(a.d.Prefs.Load().FontOverridePaths)
 		if paths == "" {
-			paths = a.themeFontFile
+			paths = a.font.themeFontFile
 		}
 		a.loadFontChainAsync(paths)
 	}
@@ -1533,7 +1533,7 @@ func (a *App) loadFontChainAsync(raw string) {
 	if len(paths) > fontChainCap {
 		paths = paths[:fontChainCap]
 	}
-	ch := a.fontRes
+	ch := a.font.fontRes
 	go func() {
 		var res fontLoad
 		var failed []string
@@ -1570,7 +1570,7 @@ func (a *App) loadFontChainAsync(raw string) {
 // the chain (fonts build lazily per scale) and force a chat re-raster.
 func (a *App) pollFontChain() {
 	select {
-	case res := <-a.fontRes:
+	case res := <-a.font.fontRes:
 		// Precedence guard: if the dyslexia toggle flipped on while this manual
 		// chain was loading off-thread, the embedded font already won — don't
 		// let the stale result clobber it.

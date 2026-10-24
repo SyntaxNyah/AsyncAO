@@ -682,7 +682,7 @@ func (a *App) drawSplitInput(r sdl.Rect) {
 	// App-level and pointer-blinds the whole frame, which leaves a still-focused field's
 	// Enter as the one action that can fire while the user is reading a ban. A line the
 	// user did not see themselves send is the same defect whichever server receives it.
-	if send && !a.serverNoticeDlg.open {
+	if send && !a.font.serverNoticeDlg.open {
 		a.sendICSplit()
 	}
 }

@@ -409,7 +409,7 @@ func (a *App) drawLobby(w, h int32) {
 	// fence (App.Frame) only blanks the MOUSE — fencePointer leaves the keyboard alone.
 	// Enter would redial the server whose ban message is the reason the box is on screen,
 	// which is the same hazard the quick-connect key is gated for.
-	if c.focusID == "" && !a.serverNoticeDlg.open {
+	if c.focusID == "" && !a.font.serverNoticeDlg.open {
 		// Enter reads c.enter, NOT c.keyPressed, and that is a fix rather than a style
 		// choice: HandleEvent answers K_RETURN/K_KP_ENTER with `c.enter = true` and only
 		// reaches `c.keyPressed = e.Keysym.Sym` in its DEFAULT arm (ui.go), so keyPressed

@@ -384,7 +384,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// whole reason for being there is that the server just removed us, so letting a
 	// keypress redial past it would be the client arguing with the ban. (The sibling
 	// confirms are NOT gated here; that gap is pre-existing and untouched.)
-	if a.link.sess == nil && !a.serverNoticeDlg.open && a.ctx.hotkey != 0 && strings.ToLower(sdl.GetKeyName(a.ctx.hotkey)) == a.hotkeyFor(hotkeyQuickConnect) {
+	if a.link.sess == nil && !a.font.serverNoticeDlg.open && a.ctx.hotkey != 0 && strings.ToLower(sdl.GetKeyName(a.ctx.hotkey)) == a.hotkeyFor(hotkeyQuickConnect) {
 		a.quickConnect()
 	}
 	a.updates.pumpInput(winW, winH) // self-update: one-shot check, drain, chip/modal click before screens
@@ -554,7 +554,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// behind draw click-proof (no fat-finger underneath — for the disconnect dialog,
 	// no stray IC send can reach the dead socket in the frozen courtroom). Restored
 	// just before the modal draws, below.
-	if a.dialogs.confirmDisconnect || a.dialogs.pendingCloseTab != nil || a.dialogs.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.dialogs.disconnectDlg.open || a.serverNoticeDlg.open || a.fontWarnDlg.open || a.evid.evidDiscardConfirm || a.evid.evidServerPickerOpen || demoBrowser.open {
+	if a.dialogs.confirmDisconnect || a.dialogs.pendingCloseTab != nil || a.dialogs.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.dialogs.disconnectDlg.open || a.font.serverNoticeDlg.open || a.font.fontWarnDlg.open || a.evid.evidDiscardConfirm || a.evid.evidServerPickerOpen || demoBrowser.open {
 		a.ctx.fencePointer()
 	} else if a.hkSheetFencesPointer(winW, winH) {
 		// The hotkey sheet floats over EVERY screen and draws at the frame tail:
@@ -739,7 +739,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// while hovered/dragged so the screens beneath drew pointer-blind.
 		// Skipped while a confirm modal is up: that fence belongs to the modal
 		// (drawn after), and the sheet must stay inert under it.
-		if !a.dialogs.confirmDisconnect && a.dialogs.pendingCloseTab == nil && a.dialogs.hidePrompt == "" && !a.showQuitConfirm && a.makerExportPack == 0 && !a.dialogs.disconnectDlg.open && !a.serverNoticeDlg.open && !a.fontWarnDlg.open && !a.evid.evidDiscardConfirm && !a.evid.evidServerPickerOpen && !demoBrowser.open {
+		if !a.dialogs.confirmDisconnect && a.dialogs.pendingCloseTab == nil && a.dialogs.hidePrompt == "" && !a.showQuitConfirm && a.makerExportPack == 0 && !a.dialogs.disconnectDlg.open && !a.font.serverNoticeDlg.open && !a.font.fontWarnDlg.open && !a.evid.evidDiscardConfirm && !a.evid.evidServerPickerOpen && !demoBrowser.open {
 			a.ctx.unfencePointer()
 		}
 		a.drawHotkeyCheatSheet(winW, winH)
@@ -787,7 +787,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// when both are somehow up — though they cannot be: a removal notice and the
 	// dialog are mutually exclusive branches of handleInvoluntaryDrop, and
 	// openDisconnectDialog dismisses a live INFO notice for exactly this reason.
-	if a.serverNoticeDlg.open {
+	if a.font.serverNoticeDlg.open {
 		a.ctx.unfencePointer()
 		a.drawServerNotice(winW, winH)
 	}
@@ -795,7 +795,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// unconditionally-while-open so its fence is always released here. Last of the
 	// modals because it is the least urgent — a disconnect dialog up at the same
 	// time is about the session, and must be the one in front.
-	if a.fontWarnDlg.open {
+	if a.font.fontWarnDlg.open {
 		a.ctx.unfencePointer()
 		a.drawFontWarnDialog(winW, winH)
 	}
