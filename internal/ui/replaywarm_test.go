@@ -65,7 +65,7 @@ func TestStartReplayWarmEnumeratesAndSplits(t *testing.T) {
 	// no seed sub-phase; isolate the enumeration
 
 	a.startReplayWarm(replayWarmRec("http://example.test/"))
-	w := a.replayWarm
+	w := a.sel.replayWarm
 	if w == nil {
 		t.Fatal("an http-origin recording must arm the replay pre-warm")
 	}
@@ -122,11 +122,11 @@ func TestTickReplayWarmConclusiveMissEndsPromptly(t *testing.T) {
 		})
 	}
 	a.startReplayWarm(rec)
-	if a.replayWarm == nil {
+	if a.sel.replayWarm == nil {
 		t.Fatal("warm not armed")
 	}
 	// Fresh creation: the hard cap is 20 s away, so only the miss release can end this.
-	a.replayWarm.created = time.Now()
+	a.sel.replayWarm.created = time.Now()
 
 	const tickBudget = 80
 	ticks := 0
@@ -135,7 +135,7 @@ func TestTickReplayWarmConclusiveMissEndsPromptly(t *testing.T) {
 		// tickReplayWarm may END the warm this very tick (the release firing is
 		// the point of the test) — endReplayWarm nils a.replayWarm, so re-check
 		// before touching the state or the success path panics on nil.
-		w := a.replayWarm
+		w := a.sel.replayWarm
 		if w == nil {
 			ticks++
 			break
@@ -177,11 +177,11 @@ func TestTickReplayWarmHardCapBackstop(t *testing.T) {
 		})
 	}
 	a.startReplayWarm(rec)
-	if a.replayWarm == nil {
+	if a.sel.replayWarm == nil {
 		t.Fatal("warm not armed")
 	}
 	// Stamp creation just past the hard cap so the first tick's backstop fires.
-	a.replayWarm.created = time.Now().Add(-gifWarmHardCap - time.Second)
+	a.sel.replayWarm.created = time.Now().Add(-gifWarmHardCap - time.Second)
 
 	a.tickReplayWarm()
 	if a.replayWarming() {
@@ -207,19 +207,19 @@ func TestTickReplayWarmPrefetchesMusicOnce(t *testing.T) {
 	})
 
 	a.startReplayWarm(replayWarmRec("http://example.test/"))
-	if a.replayWarm == nil || len(a.replayWarm.musicRefs) == 0 {
+	if a.sel.replayWarm == nil || len(a.sel.replayWarm.musicRefs) == 0 {
 		t.Fatal("warm not armed with music refs")
 	}
-	if a.replayWarm.musicDone {
+	if a.sel.replayWarm.musicDone {
 		t.Fatal("musicDone set before any tick")
 	}
 	a.tickReplayWarm()
-	if !a.replayWarm.musicDone {
+	if !a.sel.replayWarm.musicDone {
 		t.Error("music prefetch one-shot never fired on the first tick")
 	}
 	// A second tick must not un-latch it (would re-queue the fetch each frame).
 	a.tickReplayWarm()
-	if a.replayWarm != nil && !a.replayWarm.musicDone {
+	if a.sel.replayWarm != nil && !a.sel.replayWarm.musicDone {
 		t.Error("music one-shot un-latched on a later tick")
 	}
 }

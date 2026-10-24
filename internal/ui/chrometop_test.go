@@ -38,9 +38,9 @@ func TestTopChromeHDropsTheMenuBarOnFullWindowOverlays(t *testing.T) {
 		name string
 		set  func(*App)
 	}{
-		{"gif export", func(a *App) { a.gifExporting = true }},
-		{"replay", func(a *App) { a.replaying, a.replayRoom = true, newRoomForTest(t) }},
-		{"scene maker", func(a *App) { a.makerOpen = true }},
+		{"gif export", func(a *App) { a.sel.gifExporting = true }},
+		{"replay", func(a *App) { a.sel.replaying, a.sel.replayRoom = true, newRoomForTest(t) }},
+		{"scene maker", func(a *App) { a.sel.makerOpen = true }},
 		{"theater", func(a *App) { a.theaterOn = true }},
 	}
 	for _, tc := range cases {
@@ -748,9 +748,9 @@ func TestTabStripIgnoresExportSpaceGeometry(t *testing.T) {
 		name string
 		set  func(*App)
 	}{
-		{"gif export", func(a *App) { a.gifExporting = true }},
-		{"replay", func(a *App) { a.replaying, a.replayRoom = true, a.link.room }},
-		{"scene maker", func(a *App) { a.makerOpen = true }},
+		{"gif export", func(a *App) { a.sel.gifExporting = true }},
+		{"replay", func(a *App) { a.sel.replaying, a.sel.replayRoom = true, a.link.room }},
+		{"scene maker", func(a *App) { a.sel.makerOpen = true }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := stageTabbarlessCourtroom(t, themeName)

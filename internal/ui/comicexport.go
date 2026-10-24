@@ -160,7 +160,7 @@ func (a *App) finishComicExport(j *gifExportJob) {
 	stem := j.name + "-comic-" + time.Now().Format("20060102-150405")
 	a.warnLine = fmt.Sprintf("Encoding comic (%d panels)…", len(panels))
 	a.warnAt = time.Now()
-	ch := a.gifResultCh
+	ch := a.sel.gifResultCh
 	go func() { ch <- composeAndWriteComic(panels, stem, capped) }()
 }
 

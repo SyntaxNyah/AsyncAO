@@ -49,7 +49,7 @@ func exportChatPct(vpH int32, textScale int) int {
 // Video") — no trip through the maker. A bundled archive renders from its own
 // folder (the archive source is dropped when the export finishes).
 func (a *App) sceneExportFromPath(path string, kind exportKind) {
-	if a.gifExporting || a.replaying || a.recActive {
+	if a.sel.gifExporting || a.sel.replaying || a.sel.recActive {
 		a.warnLine = "Finish the current replay / recording first."
 		a.warnAt = time.Now()
 		return
@@ -59,14 +59,14 @@ func (a *App) sceneExportFromPath(path string, kind exportKind) {
 	origin := a.demoDefaultOrigin()
 	base := filepath.Base(path)
 	loadCh := make(chan gifLoadResult, gifLoadBuf)
-	a.gif = &gifExportJob{
+	a.sel.gif = &gifExportJob{
 		loading:  true,
 		loadCh:   loadCh,
 		loadName: base,
 		loadPath: path,
 		loadKind: kind,
 	}
-	a.gifExporting = true
+	a.sel.gifExporting = true
 	// The overlay draws while the disk work runs; without a bracket the loading
 	// screen renders at the live UI scale, which is fine — the export scale bracket
 	// is set later, when capture is set up (startSceneExport, after the load lands).
@@ -87,16 +87,16 @@ func (a *App) sceneExportFromPath(path string, kind exportKind) {
 // capture target, spawns the encoder/ffmpeg, enumerates the scene's assets, and
 // begins the incremental warm). Render thread only.
 func (a *App) finishLoadedExport(res gifLoadResult) {
-	kind := a.gif.loadKind
-	path := a.gif.loadPath
+	kind := a.sel.gif.loadKind
+	path := a.sel.gif.loadPath
 	// The shell job is replaced wholesale by startSceneExport's real job; clear the
 	// flags first so startSceneExport's `if a.gifExporting { return }` guard reads a
 	// clean slate. This all runs inside ONE tickGifExport call before this frame's
 	// draw, so the brief a.gifExporting=false window is never observed — and if
 	// startSceneExport refuses (empty scene / no ffmpeg), the flags correctly stay
 	// cleared and its warnLine shows on the normal screen.
-	a.gif = nil
-	a.gifExporting = false
+	a.sel.gif = nil
+	a.sel.gifExporting = false
 	a.emitLoadNotes(res)
 	rec := res.rec
 	if rec.Bundled {
@@ -509,7 +509,7 @@ type gifLoadResult struct {
 // (exportGIF), an animated WebP (exportWebP), or an MP4/WebM video (exportVideo).
 // Must be called on the render thread (it creates the capture target).
 func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKind) {
-	if a.gifExporting {
+	if a.sel.gifExporting {
 		return
 	}
 	if scene == nil || len(scene.Events) == 0 {
@@ -613,8 +613,8 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 		audio = courtroom.NopAudio{}
 	case exportVideo:
 		audioCap = &audioCapture{frameRef: func() int {
-			if a.gif != nil {
-				return a.gif.captured
+			if a.sel.gif != nil {
+				return a.sel.gif.captured
 			}
 			return 0
 		}}
@@ -640,8 +640,8 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 	if scene.StartBg != "" {
 		room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: scene.StartBg})
 	}
-	if a.gifResultCh == nil {
-		a.gifResultCh = make(chan exportResult, gifResultBuf)
+	if a.sel.gifResultCh == nil {
+		a.sel.gifResultCh = make(chan exportResult, gifResultBuf)
 	}
 
 	// Pre-warm: enumerate every sprite / background / desk the scene needs; the
@@ -665,7 +665,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 	}
 
 	now := time.Now()
-	a.gif = &gifExportJob{
+	a.sel.gif = &gifExportJob{
 		room:        room,
 		ct:          ct,
 		events:      append([]recEvent(nil), scene.Events...),
@@ -696,7 +696,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 		// it is still being fed to the pool.
 		pendingWarm: warmRefs,
 	}
-	a.gifExporting = true
+	a.sel.gifExporting = true
 	a.beginExportScaleBracket() // #77: exports render at native (100%) scale, not the live UI scale
 
 	// Seed the recording's origin formats BEFORE the warm, so the warm probes the
@@ -707,7 +707,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 	// the first warm tick on the result.
 	if strings.HasPrefix(scene.Origin, "http") && a.d.Prefs.Load().AutoDetectFormats && !a.originSeeded(scene.Origin) {
 		a.markOriginSeeded(scene.Origin)
-		a.startExportSeed(a.gif, scene.Origin)
+		a.startExportSeed(a.sel.gif, scene.Origin)
 		a.warnLine = "Checking the server's format manifest…"
 	} else {
 		a.warnLine = "Loading scene assets…"
@@ -758,10 +758,10 @@ func (a *App) tickGifSeed(j *gifExportJob) {
 // chrome underneath, and no scale-change event fires while it runs, so a single
 // bracket holds. Idempotent (a second begin keeps the first saved value).
 func (a *App) beginExportScaleBracket() {
-	if a.exportSavedDevScale != 0 {
+	if a.sel.exportSavedDevScale != 0 {
 		return // already bracketed
 	}
-	a.exportSavedDevScale = int(a.ctx.textDevPct)
+	a.sel.exportSavedDevScale = int(a.ctx.textDevPct)
 	a.ctx.SetTextDevScale(DefaultScalePct)
 }
 
@@ -769,11 +769,11 @@ func (a *App) beginExportScaleBracket() {
 // beginExportScaleBracket. No-op when not bracketed, so finishers can call it
 // unconditionally.
 func (a *App) endExportScaleBracket() {
-	if a.exportSavedDevScale == 0 {
+	if a.sel.exportSavedDevScale == 0 {
 		return
 	}
-	a.ctx.SetTextDevScale(a.exportSavedDevScale)
-	a.exportSavedDevScale = 0
+	a.ctx.SetTextDevScale(a.sel.exportSavedDevScale)
+	a.sel.exportSavedDevScale = 0
 }
 
 // tickGifExport captures a bounded batch of frames (render thread). Feeds the
@@ -781,9 +781,9 @@ func (a *App) endExportScaleBracket() {
 // FIXED dt (faster than real-time), renders into the offscreen target, and
 // quantizes — dropping the RGBA at once so only paletted frames are retained.
 func (a *App) tickGifExport() {
-	j := a.gif
+	j := a.sel.gif
 	if j == nil {
-		a.gifExporting = false
+		a.sel.gifExporting = false
 		// Unreachable today (a.gif is set before a.gifExporting), but this abort path
 		// must restore the live text scale like every other export exit or a future
 		// refactor that makes it reachable strands the UI on 100% device fonts. end
@@ -810,8 +810,8 @@ func (a *App) tickGifExport() {
 		// No viewport to render into: end the (already past-loading) export cleanly,
 		// restoring the text scale like every other exit. startSceneExport set the
 		// bracket when it built this job, so it must be released here.
-		a.gif = nil
-		a.gifExporting = false
+		a.sel.gif = nil
+		a.sel.gifExporting = false
 		a.endExportScaleBracket()
 		return
 	}
@@ -888,8 +888,8 @@ func (a *App) tickGifLoad(j *gifExportJob) {
 	select {
 	case res := <-j.loadCh:
 		if res.err != nil {
-			a.gif = nil
-			a.gifExporting = false
+			a.sel.gif = nil
+			a.sel.gifExporting = false
 			a.warnLine = "Couldn't load recording: " + res.err.Error()
 			a.warnAt = time.Now()
 			return
@@ -1366,9 +1366,9 @@ func (a *App) drawExportStamp(j *gifExportJob, vp sdl.Rect) {
 // finishGifExport tears down the capture, restores the viewport's preanim
 // callback, and hands the frames to an off-thread encode+write.
 func (a *App) finishGifExport() {
-	j := a.gif
-	a.gif = nil
-	a.gifExporting = false
+	j := a.sel.gif
+	a.sel.gif = nil
+	a.sel.gifExporting = false
 	a.endExportScaleBracket() // #77: restore the live UI scale for the message raster
 	if j == nil {
 		return
@@ -1382,7 +1382,7 @@ func (a *App) finishGifExport() {
 	}
 	a.endBundledReplay() // drop the archive source if the export was from a bundled archive
 	a.restoreViewportPreanim()
-	a.makerPreviewIdx = -1 // the export drove the shared viewport — force the preview pane to rebuild
+	a.sel.makerPreviewIdx = -1 // the export drove the shared viewport — force the preview pane to rebuild
 
 	if j.kind == exportVideo {
 		a.finishVideoExport(j) // ffmpeg has been writing vidPath all along — just flush + wait
@@ -1411,7 +1411,7 @@ func (a *App) finishGifExport() {
 	delayCs, loop := j.delayCs, j.loop
 	a.warnLine = fmt.Sprintf("Encoding GIF (%d frames)…", len(frames))
 	a.warnAt = time.Now()
-	ch := a.gifResultCh
+	ch := a.sel.gifResultCh
 	go func() { ch <- encodeAndWriteGIF(frames, stem, delayCs, loop) }()
 }
 
@@ -1432,7 +1432,7 @@ func (a *App) finishWebpExport(j *gifExportJob, stem string) {
 	enc := j.webp
 	a.warnLine = fmt.Sprintf("Encoding WebP (%d frames)…", j.captured)
 	a.warnAt = time.Now()
-	ch := a.gifResultCh
+	ch := a.sel.gifResultCh
 	go func() {
 		data, err := enc.Assemble()
 		enc.Close()
@@ -1493,7 +1493,7 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 	subFps := j.fps
 	a.warnLine = fmt.Sprintf("Finishing video (%d frames)…", j.captured)
 	a.warnAt = time.Now()
-	ch := a.gifResultCh
+	ch := a.sel.gifResultCh
 	go func() {
 		if err := enc.Finish(); err != nil {
 			_ = os.Remove(path) // a failed encode leaves a corrupt file — don't keep it
@@ -1560,9 +1560,9 @@ func (a *App) restoreViewportPreanim() {
 		return
 	}
 	switch {
-	case a.makerOpen && a.makerPreviewRoom != nil:
-		a.d.Viewport.OnPreanimDone = a.makerPreviewRoom.NotifyPreanimDone
-		a.d.Viewport.OnFrameShown = a.makerPreviewRoom.NotifyFrameShown // #17: frame effects follow the same room
+	case a.sel.makerOpen && a.sel.makerPreviewRoom != nil:
+		a.d.Viewport.OnPreanimDone = a.sel.makerPreviewRoom.NotifyPreanimDone
+		a.d.Viewport.OnFrameShown = a.sel.makerPreviewRoom.NotifyFrameShown // #17: frame effects follow the same room
 	case a.link.room != nil:
 		a.d.Viewport.OnPreanimDone = a.link.room.NotifyPreanimDone
 		a.d.Viewport.OnFrameShown = a.link.room.NotifyFrameShown
@@ -1614,11 +1614,11 @@ func writeWebp(data []byte, stem string) exportResult {
 // #71 opt-in is on and the export succeeded, puts the finished FILE on the OS
 // clipboard so it pastes straight into Discord/Explorer.
 func (a *App) pollGifExport() {
-	if a.gifResultCh == nil {
+	if a.sel.gifResultCh == nil {
 		return
 	}
 	select {
-	case res := <-a.gifResultCh:
+	case res := <-a.sel.gifResultCh:
 		a.warnLine = res.msg
 		if res.path != "" && a.d.Prefs.Load().Export.CopyToClipboard {
 			if copyFileToClipboard(res.path) {
@@ -1635,7 +1635,7 @@ func (a *App) pollGifExport() {
 func (a *App) drawGifProgress(winW, winH int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: winW, H: winH}, sdl.Color{R: 10, G: 10, B: 14, A: 255})
-	j := a.gif
+	j := a.sel.gif
 	cx := winW / 2
 	cy := winH / 2
 
@@ -1652,8 +1652,8 @@ func (a *App) drawGifProgress(winW, winH int32) {
 		c.Label(cx-120, cy-30, "📖  Reading "+verb+"…", ColText)
 		c.LabelClipped(cx-160, cy, 320, j.loadName, ColTextDim)
 		if c.Button(sdl.Rect{X: cx - 60, Y: cy + 54, W: 120, H: btnH}, "✕ Cancel") {
-			a.gif = nil // abandon the pending result; the goroutine finishes and dies
-			a.gifExporting = false
+			a.sel.gif = nil // abandon the pending result; the goroutine finishes and dies
+			a.sel.gifExporting = false
 		}
 		return
 	}
@@ -1665,8 +1665,8 @@ func (a *App) drawGifProgress(winW, winH int32) {
 		c.Label(cx-120, cy-30, "🔎  Checking server formats…", ColText)
 		c.LabelClipped(cx-160, cy, 320, j.seedOriginTo, ColTextDim)
 		if c.Button(sdl.Rect{X: cx - 60, Y: cy + 54, W: 120, H: btnH}, "✕ Cancel") {
-			a.gif = nil // abandon the pending seed; the goroutine finishes and dies
-			a.gifExporting = false
+			a.sel.gif = nil // abandon the pending seed; the goroutine finishes and dies
+			a.sel.gifExporting = false
 			a.endExportScaleBracket() // startSceneExport set the bracket before seeding
 		}
 		return

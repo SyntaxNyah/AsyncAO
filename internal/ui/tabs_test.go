@@ -239,7 +239,7 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 	a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip = 30, -20, true
 	a.inibrowse.iniChar = "SwappedChar"
 	a.compose.sidePref = "wit"
-	a.logSelActive = true // a stale log-text highlight must not survive the switch
+	a.sel.logSelActive = true // a stale log-text highlight must not survive the switch
 
 	a.parkActive()
 	if a.activeTab != -1 || a.srvMeta.serverName != "" || len(a.chatlog.icLog) != 0 || a.compose.icInput != "" {
@@ -256,7 +256,7 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 		t.Fatalf("park must reset per-session pair/iniswap/pos: ini=%q side=%q off=%d/%d flip=%v",
 			a.inibrowse.iniChar, a.compose.sidePref, a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip)
 	}
-	if a.logSelActive {
+	if a.sel.logSelActive {
 		t.Error("park must clear the log text selection (its anchors point into the old log)")
 	}
 	parked := &a.tabs[0].state

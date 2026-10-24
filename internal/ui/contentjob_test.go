@@ -597,7 +597,7 @@ func TestCancelMidProbeLeakFree(t *testing.T) {
 	// Drive the render-thread tick until the job leaves the seed phase and the
 	// probe workers spin up (StartContentReport returns during phaseSeeding).
 	seedDeadline := time.Now().Add(5 * time.Second)
-	for a.content != nil && a.content.phase == phaseSeeding && time.Now().Before(seedDeadline) {
+	for a.sel.content != nil && a.sel.content.phase == phaseSeeding && time.Now().Before(seedDeadline) {
 		a.tickContentJob()
 		time.Sleep(2 * time.Millisecond)
 	}
@@ -607,7 +607,7 @@ func TestCancelMidProbeLeakFree(t *testing.T) {
 	// just trades that for the client's transport-retry backoff parking the
 	// workers. probeLive counts exactly the feeder + workers the cancel
 	// contract promises to reap, and nothing else.
-	j := a.content
+	j := a.sel.content
 	if j == nil {
 		t.Fatal("no job after start")
 	}
@@ -620,7 +620,7 @@ func TestCancelMidProbeLeakFree(t *testing.T) {
 		t.Fatal("probe goroutines never started")
 	}
 	a.CancelContentJob()
-	if a.content != nil || a.contentBusy {
+	if a.sel.content != nil || a.sel.contentBusy {
 		t.Fatal("cancel must clear the job immediately")
 	}
 	close(gate) // let the held fetches 404 cleanly; workers then observe stop / drained workCh
@@ -675,7 +675,7 @@ func TestCancelMidPackageLeakFree(t *testing.T) {
 		t.Fatal("package refused")
 	}
 	a.CancelContentJob() // drop before the goroutine may have delivered
-	if a.content != nil {
+	if a.sel.content != nil {
 		t.Fatal("cancel must clear the packaging job")
 	}
 	// The lone package goroutine writes a tiny bundle and exits; the count returns
@@ -726,14 +726,14 @@ func autoBundleServer(t *testing.T) (*httptest.Server, string) {
 // armRecording puts the app into an active recording with the given origin +
 // events, ready for stopRecording (bypassing startRecording's a.urls dependency).
 func armRecording(a *App, origin string, events []recEvent) {
-	a.rec = &sceneRecording{
+	a.sel.rec = &sceneRecording{
 		Version:    recordingVersion,
 		Origin:     origin,
 		StartBg:    "courtroom",
 		RecordedAt: time.Now().Format(time.RFC3339),
 		Events:     events,
 	}
-	a.recActive = true
+	a.sel.recActive = true
 }
 
 // newestAorec returns the newest .aorec filename under recordingsDir() whose stem
@@ -778,7 +778,7 @@ func driveAutoBundleToDone(t *testing.T, a *App) {
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		a.tickContentJob()
-		if a.content == nil {
+		if a.sel.content == nil {
 			return
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -875,7 +875,7 @@ func TestStopRecordingPrefOffNoBundle(t *testing.T) {
 	armRecording(a, origin, []recEvent{msgEvent("Phoenix", "normal", "", "", "")})
 	a.stopRecording()
 
-	if a.content != nil {
+	if a.sel.content != nil {
 		t.Fatal("pref OFF must start NO content job")
 	}
 	name := waitForNewAorec(t, before, 5*time.Second)
@@ -908,7 +908,7 @@ func TestStopRecordingEmptyOriginNoBundle(t *testing.T) {
 	armRecording(a, "", []recEvent{msgEvent("Phoenix", "normal", "", "", "")}) // no origin
 	a.stopRecording()
 
-	if a.content != nil {
+	if a.sel.content != nil {
 		t.Fatal("empty-origin recording must start NO content job")
 	}
 	name := waitForNewAorec(t, before, 5*time.Second)
@@ -942,8 +942,8 @@ func TestStopRecordingSkipsWhenJobBusy(t *testing.T) {
 	if !a.StartContentReport(synthRecording(""), "busyholder") {
 		t.Fatal("holder report refused")
 	}
-	held := a.content
-	if held == nil || !a.contentBusy {
+	held := a.sel.content
+	if held == nil || !a.sel.contentBusy {
 		t.Fatal("holder job should be busy")
 	}
 
@@ -952,10 +952,10 @@ func TestStopRecordingSkipsWhenJobBusy(t *testing.T) {
 	done := a.stopRecording()
 
 	// The busy holder is untouched: no new job replaced it, contentBusy still set.
-	if a.content != held {
+	if a.sel.content != held {
 		t.Error("auto-build must NOT replace the running content job")
 	}
-	if a.content != nil && a.content.auto {
+	if a.sel.content != nil && a.sel.content.auto {
 		t.Error("the running job should still be the manual holder, not an auto-build")
 	}
 	// The flat .aorec still lands (auto-build skip is silent, recording save intact).
@@ -1095,7 +1095,7 @@ func drainContentJob(t *testing.T, a *App) {
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		a.tickContentJob()
-		j := a.content
+		j := a.sel.content
 		if j == nil || j.phase == phaseReport || j.phase == phaseDone {
 			return
 		}

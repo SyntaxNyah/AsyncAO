@@ -1224,7 +1224,7 @@ func (a *App) resetSessionState() {
 	// The IC/OOC log text selection lives on App (not sessionState) but is anchored
 	// into the ACTIVE log's wrapped lines — leaving it set across a session change
 	// (park/disconnect/connect) would highlight stale lines in a different tab's log.
-	a.logSelActive, a.logSelDragging = false, false
+	a.sel.logSelActive, a.sel.logSelDragging = false, false
 	// Bump the log-view epoch so the shared IC/OOC wrap+filter caches can't serve
 	// the outgoing session's wrapped/coloured lines to the incoming one: their keys
 	// carry the per-session log seq, which both start at 0 in every tab, so without

@@ -198,8 +198,8 @@ func parseHex6(s string) (int, bool) {
 // hue around the ring, saturation along the radius, at full value. Pixels
 // outside the disc are transparent. Cached for the App's lifetime.
 func (a *App) ensureColorWheel() *sdl.Texture {
-	if a.colorWheel != nil {
-		return a.colorWheel
+	if a.sel.colorWheel != nil {
+		return a.sel.colorWheel
 	}
 	const d = colorWheelDiam
 	pix := make([]byte, d*d*4) // ABGR8888 == [R,G,B,A] bytes (render/textures.go)
@@ -224,7 +224,7 @@ func (a *App) ensureColorWheel() *sdl.Texture {
 	}
 	_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
 	_ = tex.Update(nil, unsafe.Pointer(&pix[0]), d*4)
-	a.colorWheel = tex
+	a.sel.colorWheel = tex
 	return tex
 }
 
@@ -429,10 +429,10 @@ func (a *App) drawHighlightPicker(y, w int32) int32 {
 
 	})
 	if c.focusID != "highlighthex" {
-		a.colorHex = fmt.Sprintf("%06x", cur) // reflect wheel/slider edits when not typing
+		a.sel.colorHex = fmt.Sprintf("%06x", cur) // reflect wheel/slider edits when not typing
 	}
-	if next, _ := c.TextField("highlighthex", sdl.Rect{X: hx, Y: wy + 42, W: 100, H: fieldH}, a.colorHex, "RRGGBB"); next != a.colorHex {
-		a.colorHex = next
+	if next, _ := c.TextField("highlighthex", sdl.Rect{X: hx, Y: wy + 42, W: 100, H: fieldH}, a.sel.colorHex, "RRGGBB"); next != a.sel.colorHex {
+		a.sel.colorHex = next
 		if rgb, ok := parseHex6(next); ok {
 			a.d.Prefs.Update(func(
 				sn *config.

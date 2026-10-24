@@ -89,11 +89,11 @@ func TestFramePace(t *testing.T) {
 
 	// A live animation surface forces the full cap even with no input (the
 	// replay transport here; the same branch covers maker/export/voice/toasts).
-	a.replaying = true
+	a.sel.replaying = true
 	if got := a.FramePace(true); got != budget(60) {
 		t.Errorf("replaying pace = %v, want the full cap", got)
 	}
-	a.replaying = false
+	a.sel.replaying = false
 
 	// Custom rates flow through: the classic idle tier follows the idle slider,
 	// the active cap follows the active slider.
@@ -184,11 +184,11 @@ func TestAudioPaceActive(t *testing.T) {
 	}
 
 	// Replay drives its own room: the live room is excluded from audio pacing.
-	a.replaying = true
+	a.sel.replaying = true
 	if a.AudioActive() || a.AudioPaceActive(time.Second) {
 		t.Error("replay must exclude the live room from audio pacing")
 	}
-	a.replaying = false
+	a.sel.replaying = false
 
 	// A nil room is never audio-active (lobby).
 	a.link.room = nil

@@ -124,8 +124,8 @@ func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
 // — the snapshot must never act on another session). Same set/RELEASE
 // discipline as emojiPickerFence: an un-released modalOn freezes the UI.
 func (a *App) rosterMenuFence(c *Ctx) {
-	live := a.screen == ScreenCourtroom && !a.gifExporting && !a.replaying &&
-		!a.makerOpen && a.activeTab == a.roster.rosterMenuTab
+	live := a.screen == ScreenCourtroom && !a.sel.gifExporting && !a.sel.replaying &&
+		!a.sel.makerOpen && a.activeTab == a.roster.rosterMenuTab
 	if a.roster.rosterMenuOpen && !live {
 		a.roster.rosterMenuOpen = false
 	}

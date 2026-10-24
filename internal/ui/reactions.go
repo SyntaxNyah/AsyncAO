@@ -294,7 +294,7 @@ func (a *App) queueReaction(index uint8) {
 // mirrors emojiPickerFence (c.modalOn persists across frames, so it MUST be released the
 // frame the palette closes, or the UI freezes). Courtroom-only, force-closed elsewhere.
 func (a *App) reactPickerFence(c *Ctx) {
-	courtroomActive := a.screen == ScreenCourtroom && !a.gifExporting && !a.replaying && !a.makerOpen
+	courtroomActive := a.screen == ScreenCourtroom && !a.sel.gifExporting && !a.sel.replaying && !a.sel.makerOpen
 	if a.reactUI.showReactPicker && !courtroomActive {
 		a.reactUI.showReactPicker = false
 	}

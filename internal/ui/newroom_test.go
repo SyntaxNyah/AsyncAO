@@ -136,9 +136,9 @@ func stagedRoomPaths() []stagedRoomPath {
 		name: "a replay (startReplay)",
 		drive: func(t *testing.T, a *App) *courtroom.Courtroom {
 			a.startReplay(gateScene(), "gate")
-			return a.replayRoom
+			return a.sel.replayRoom
 		},
-		stop: func(a *App) { a.replaying = false },
+		stop: func(a *App) { a.sel.replaying = false },
 	}, {
 		// The same entry point, in the other of its two modes: a Preview launched
 		// from the scene maker is authoring, so it takes the exemption the export
@@ -146,11 +146,11 @@ func stagedRoomPaths() []stagedRoomPath {
 		// startReplay is production code no gate reaches.
 		name: "a replay previewed from the scene maker (startReplay, makerOpen)",
 		drive: func(t *testing.T, a *App) *courtroom.Courtroom {
-			a.makerOpen = true
+			a.sel.makerOpen = true
 			a.startReplay(gateScene(), "gate")
-			return a.replayRoom
+			return a.sel.replayRoom
 		},
-		stop:      func(a *App) { a.replaying, a.makerOpen = false, false },
+		stop:      func(a *App) { a.sel.replaying, a.sel.makerOpen = false, false },
 		authoring: true,
 	}, {
 		name: "the scene maker's preview (ensureMakerPreview)",
@@ -159,16 +159,16 @@ func stagedRoomPaths() []stagedRoomPath {
 			// event into the room it just built, and a message would drive the
 			// blip mixer, which this fixture has no SDL audio device for. The room
 			// is built and wired either way, which is what is under test.
-			a.makerScene = &sceneRecording{
+			a.sel.makerScene = &sceneRecording{
 				Version: recordingVersion,
 				Origin:  gateOrigin,
 				Events:  []recEvent{{Kind: int(courtroom.EventBackground), Text: "courtroom"}},
 			}
-			a.makerSel = 0
+			a.sel.makerSel = 0
 			a.ensureMakerPreview()
-			return a.makerPreviewRoom
+			return a.sel.makerPreviewRoom
 		},
-		stop:      func(a *App) { a.makerScene, a.makerPreviewRoom = nil, nil },
+		stop:      func(a *App) { a.sel.makerScene, a.sel.makerPreviewRoom = nil, nil },
 		authoring: true,
 	}, {
 		// The theme editor's canned Preview. A VIEWING room, not an authoring one:
@@ -197,13 +197,13 @@ func stagedRoomPaths() []stagedRoomPath {
 		name: "the comic/video export (startSceneExport)",
 		drive: func(t *testing.T, a *App) *courtroom.Courtroom {
 			a.startSceneExport(gateScene(), "gate", exportComic)
-			if a.gif == nil {
+			if a.sel.gif == nil {
 				t.Fatal("startSceneExport did not begin an export — the fixture cannot reach the export room")
 			}
-			return a.gif.room
+			return a.sel.gif.room
 		},
 		stop: func(a *App) {
-			a.gif, a.gifExporting = nil, false
+			a.sel.gif, a.sel.gifExporting = nil, false
 			a.endExportScaleBracket()
 		},
 		authoring: true,
@@ -346,26 +346,26 @@ func TestExportKeepsItsDeliberateReduceMotionOverride(t *testing.T) {
 	defer a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 
 	a.startSceneExport(gateScene(), "gate", exportComic)
-	if a.gif == nil || a.gif.room == nil {
+	if a.sel.gif == nil || a.sel.gif.room == nil {
 		t.Fatal("no export room")
 	}
-	if a.gif.room.ReduceMotion {
+	if a.sel.gif.room.ReduceMotion {
 		t.Error("the export room inherited ReduceMotion — an export must carry what the author wrote, not what this viewer set")
 	}
-	a.gif, a.gifExporting = nil, false
+	a.sel.gif, a.sel.gifExporting = nil, false
 	a.endExportScaleBracket()
 
-	a.makerScene = &sceneRecording{
+	a.sel.makerScene = &sceneRecording{
 		Version: recordingVersion,
 		Origin:  gateOrigin,
 		Events:  []recEvent{{Kind: int(courtroom.EventBackground), Text: "courtroom"}},
 	}
-	a.makerSel = 0
+	a.sel.makerSel = 0
 	a.ensureMakerPreview()
-	if a.makerPreviewRoom == nil {
+	if a.sel.makerPreviewRoom == nil {
 		t.Fatal("no preview room")
 	}
-	if a.makerPreviewRoom.ReduceMotion {
+	if a.sel.makerPreviewRoom.ReduceMotion {
 		t.Error("the maker preview inherited ReduceMotion — authoring must SHOW what is being authored, or the preview is a lie")
 	}
 }

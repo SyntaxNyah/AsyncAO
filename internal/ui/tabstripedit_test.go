@@ -434,9 +434,9 @@ func TestTabStripPaintSiteIsExclusiveWhileEditing(t *testing.T) {
 				"no room":     func(a *App) { a.link.room = nil },
 				"no session":  func(a *App) { a.link.sess = nil },
 				"theater":     func(a *App) { a.theaterOn = true },
-				"gif export":  func(a *App) { a.gifExporting = true },
-				"replay":      func(a *App) { a.replaying, a.replayRoom = true, a.link.room },
-				"scene maker": func(a *App) { a.makerOpen = true },
+				"gif export":  func(a *App) { a.sel.gifExporting = true },
+				"replay":      func(a *App) { a.sel.replaying, a.sel.replayRoom = true, a.link.room },
+				"scene maker": func(a *App) { a.sel.makerOpen = true },
 			} {
 				a := base()
 				break_(a)

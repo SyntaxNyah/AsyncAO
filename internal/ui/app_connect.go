@@ -924,7 +924,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.debug.push("server: " + ev.Text)
 			continue
 		}
-		if a.recActive { // M16: tap the scene event stream for a replay recording
+		if a.sel.recActive { // M16: tap the scene event stream for a replay recording
 			a.recordEvent(ev)
 		}
 		a.bufferReplayEvent(ev) // instant-replay rolling buffer (no-op unless the opt-in pref is on)

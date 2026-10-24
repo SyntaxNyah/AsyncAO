@@ -505,18 +505,18 @@ func (a *App) importRecordingToVideo(dest string) {
 // interchange shape (makerSave's .demo sibling; same never-overwrite policy,
 // same off-thread write).
 func (a *App) makerExportDemo() {
-	if a.makerScene == nil || len(a.makerScene.Events) == 0 {
+	if a.sel.makerScene == nil || len(a.sel.makerScene.Events) == 0 {
 		a.warnLine = "Nothing to export yet — add a line first."
 		a.warnAt = time.Now()
 		return
 	}
-	data, err := recordingToDemo(a.makerScene)
+	data, err := recordingToDemo(a.sel.makerScene)
 	if err != nil {
 		a.warnLine = "Demo export failed: " + err.Error()
 		a.warnAt = time.Now()
 		return
 	}
-	name := sanitizeStem(a.makerName) + "-" + time.Now().Format("20060102-150405") + demoExt
+	name := sanitizeStem(a.sel.makerName) + "-" + time.Now().Format("20060102-150405") + demoExt
 	go func() {
 		dir := recordingsDir()
 		if dir == "" {

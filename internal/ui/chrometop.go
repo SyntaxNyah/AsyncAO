@@ -23,7 +23,7 @@ func (a *App) topChromeH() int32 { return a.menuBarHeight() + a.tabStripBandH() 
 // afford to re-spell it: the menu bar neither paints nor reserves its band in these
 // modes (menuBarShows), and the server-tab strip must not read the themed courtroom's
 func (a *App) screenDispatchPreempted() bool {
-	return a.gifExporting || (a.replaying && a.replayRoom != nil) || a.makerOpen
+	return a.sel.gifExporting || (a.sel.replaying && a.sel.replayRoom != nil) || a.sel.makerOpen
 }
 
 // tabStripPaintsUnderEditor reports whether the server-tab strip's paint belongs to
