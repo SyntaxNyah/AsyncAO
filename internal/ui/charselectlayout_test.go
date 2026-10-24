@@ -546,16 +546,6 @@ func TestCharSelectLayoutCacheKeys(t *testing.T) {
 
 // TestCharSelectCanvasFollowsCustomZoomAndPan is the regression test for the one input
 // that moves this canvas from OUTSIDE its cache key.
-//
-// charSelectLayoutCache keys on (window, chrome band, fit mode, themed). ThemeZoom and
-// ThemePan are in none of those — they are read inside fitDesignCanvas, and only under
-// ThemeFitCustom — so the five sites that move them (the three Settings sliders and the
-// fit preview's wheel-zoom and drag-pan) have to invalidate by hand. All five cleared
-// the COURTROOM cache alone, so under Custom the courtroom re-fitted while char select
-// kept the old canvas, the old widget rects and the old grid until an unrelated rebuild
-// happened along: Settings → drag the pan → re-pick a character showed the two screens
-// at different zooms. They go through invalidateThemeCanvases now, and the sweep below
-// pins that nothing can clear one cache without the other again.
 func TestCharSelectCanvasFollowsCustomZoomAndPan(t *testing.T) {
 	const w, h int32 = 1152, 864
 	a := stageCharSelect(t, stockCharSelectDesign())

@@ -211,7 +211,6 @@ func TestLocalOverlaySwapDuringFetchesRaceClean(t *testing.T) {
 // change behavior. We install an overlay pointing at a DIFFERENT mount that does
 // NOT contain the asset; the local-mode manager must still resolve from its own
 // source (never the overlay).
-//
 // The routing is by ORIGIN, not by mode (netFetch → localSourceFor): the decoy
 // overlay was built over a different mount set, so it owns a different
 // local://m-<hash>/ origin and cannot claim this URL. That is what keeps this
@@ -242,15 +241,6 @@ func TestLocalModeManagerIgnoresOverlay(t *testing.T) {
 
 // TestLocalModeServesTheNewMountSetAfterARescan is the load-bearing proof for
 // the reported "is not under local origin" failure.
-//
-// Attaching a folder mid-session re-mints the local origin (its hash covers the
-// whole mount list), so ui/app.go rebuildAssetOrigin points the URL builder at
-// local://m-<NEW>/ and re-pushes a matching overlay. A local-mode Manager's own
-// source is still the LocalFetcher built at startup over the OLD set, and used
-// to be the only thing consulted — so every freshly-built URL came back
-// "assets: … is not under local origin …" until the user restarted the client
-// (reloading, which rebuilt the Manager, was the reported workaround).
-//
 // Here the NEW mount holds the only copy of the asset, so nothing but correct
 // origin routing can make this pass.
 func TestLocalModeServesTheNewMountSetAfterARescan(t *testing.T) {
@@ -313,7 +303,6 @@ func TestStaleLocalOriginStillServesFromTheSetItWasMintedUnder(t *testing.T) {
 // claim the origin reports "cannot serve" — never a 404, which would let the
 // diagnostic walk mark the asset [missing] (the contract
 // TestStreamingManagerNilOverlayCannotServe pins for the nil case).
-//
 // If someone "simplified" localSourceFor to just return the overlay whenever one
 // is installed, this fails: the overlay would answer with its own conclusive
 // ErrAssetNotFound for a mount set it never scanned.

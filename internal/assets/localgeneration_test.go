@@ -26,17 +26,6 @@ func mountWith(t *testing.T, rel, body string) string {
 
 // TestRetiredMountOriginsStayServable is the regression pin for the mount-rescan
 // origin race, at the generation depth the field report actually reaches.
-//
-// A LocalFetcher's origin hashes its whole mount list (local.go NewLocalFetcher),
-// so attaching a folder MINTS A NEW ORIGIN and the old fetcher refuses the old
-// URLs ("is not under local origin"). Routing by origin fixed the first
-// generation — the overlay serves the new URLs, the Manager's own source keeps
-// serving the ones minted at startup. But a URL builder is PER-TAB and the UI
-// does not re-mint it on a tab switch (ui/tabs.go activateTab), so after a
-// SECOND change a parked tab holds generation-2 URLs while the overlay is on 3
-// and the fixed source on 1: nothing claims them, and only a restart fixes it —
-// the same symptom, one attach later.
-//
 // Every generation inside the cap must keep answering its own URLs, and each
 // must answer ONLY its own (the cache separation is the feature, not a
 // side-effect).

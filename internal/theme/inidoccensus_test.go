@@ -1,16 +1,6 @@
 //go:build themecensus
 
 // OPT-IN: run with `go test -tags themecensus ./internal/theme/`.
-//
-// The checked-in aceattorney2x fixture is one theme by one author. The property
-// INIDoc has to hold is a property of the ECOSYSTEM — ~80 third-party packs, 517
-// INI files, fifteen years of hand-editing in whatever text editor was open —
-// and that corpus is hundreds of megabytes of art nobody's machine has at the
-// same path, so it is env-gated rather than checked in. Set it before a release
-// audit:
-//
-//	$env:ASYNCAO_THEME_CORPUS = "C:\...\Skrapegropen AO THEMES"
-//	go test -tags themecensus -run TestINIDocRoundTripsTheThemeCorpus ./internal/theme/
 
 package theme
 

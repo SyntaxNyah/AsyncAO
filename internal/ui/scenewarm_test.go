@@ -12,12 +12,6 @@ import (
 
 // TestKeepSceneAssetsWarm pins the anti-eviction warm's contract on all three
 // paths, using nil-in-test deps as tripwires:
-//   - lobby (no room, no replay): early return before touching Store/Manager;
-//   - every stage base resident: pure touch — the nil Manager proves no
-//     re-demand job is ever submitted for resident art (a panic here would
-//     mean pool spam every tick, a perf regression);
-//   - a missing base inside the throttle window: the demand is skipped (the
-//     nil Manager again proves it), so a cold sprite can't spam the pool.
 func TestKeepSceneAssetsWarm(t *testing.T) {
 	a := testTabApp(t)
 	a.keepSceneAssetsWarm() // lobby: must be a no-op without Store/Manager
@@ -129,10 +123,6 @@ func TestHealSceneryFutilityLatch(t *testing.T) {
 // resets (the v1.56.0 latch conflated them: a merely-SLOW load burned the
 // whole budget against one in-flight fetch, and a blankpost repeating the
 // same emote never reset it):
-//   - asks WITHOUT a landing bound at warmMaxHealAsks (slow origin / 404);
-//   - a LANDING resets the asks (markSceneResident) and arms the churn edge;
-//   - landed-then-evicted-again cycles bound at warmMaxHealChurns;
-//   - an idle→ceremony phase transition resets everything, warm set unchanged.
 func TestSceneHealBudget(t *testing.T) {
 	a := testTabApp(t)
 

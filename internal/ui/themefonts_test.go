@@ -95,7 +95,6 @@ func TestThemeFontPxIsQtsConversion(t *testing.T) {
 // resolved back to a face at UIFontSize×pct/100, which rounds DOWN — so a percent
 // that is merely close reopens a pixel short, and the two truncations compounded
 // into a 7 px face for a declared 8 pt.
-//
 // It asserts the ROUND TRIP rather than a magic percent: whatever the scale is,
 // asking for P points must reopen at exactly themeFontPx(P).
 func TestThemeFontPctRoundTripsToThePixelSize(t *testing.T) {
@@ -145,7 +144,6 @@ func TestElemPctFolds(t *testing.T) {
 // build time, but its FACE was resolved at the theme's declared point size with no
 // canvas factor at all — so on any fit that is not exactly 1:1 (Letterbox /
 // Stretch / Crop / Custom, or Native in a window narrower than the design canvas)
-// the box shrank and the glyphs did not. It was the only themed text surface that
 // never got the fold the chatbox children have had since #21.
 func TestMusicNamePctFoldsTheCanvas(t *testing.T) {
 	a := testTabApp(t)
@@ -423,14 +421,7 @@ func TestThemeFontsPrefRoundTrips(t *testing.T) {
 
 // TestChatboxInkNeedsAnActualColourKey pins the gate on the chatbox ink, which
 // used to be Theme.HasFont and had to become FontSpec.ColorSet.
-//
-// HasFont answers "did the theme mention this element AT ALL — size or colour",
-// and FontSpec.Color carries the parser's WHITE default whenever no colour was
-// declared. Together those meant a theme that only SIZED its chatbox — a very
-// ordinary thing to write — silently forced white message and showname ink,
-// discarding whatever the client had. AO2 cannot make this mistake: it reads the
 // colour from its own key and the size key implies nothing (courtroom.cpp:1223-1225).
-//
 // Goes red if either gate drifts back to HasFont, or if some later refactor
 // starts trusting FontSpec.Color without consulting ColorSet.
 func TestChatboxInkNeedsAnActualColourKey(t *testing.T) {
@@ -470,7 +461,6 @@ func TestChatboxInkNeedsAnActualColourKey(t *testing.T) {
 // TestDeclaredFontInkIgnoresTheParserDefault asserts the GATE directly, which the
 // test above cannot: that one pins the parser behaviour that makes the gate
 // correct, but would stay green if the gate itself reverted to Theme.HasFont.
-//
 // Goes red the moment declaredFontInk trusts spec.Color without consulting
 // spec.ColorSet — which is precisely the bug, since the parser's default colour is
 // opaque white and would be reported as the theme's deliberate choice.

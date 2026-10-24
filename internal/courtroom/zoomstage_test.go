@@ -8,16 +8,6 @@ import (
 
 // TestZoomEmoteHidesDeskAndPair pins the stage a zoom emote takes over (#126
 // playtest — Crystalwarrior quoted AO2's handle_ic_speaking).
-//
-// AO2's zoom is a SOLO shot and two separate behaviours build it:
-//
-//   - handle_ic_speaking hides the desk outright (courtroom.cpp:3459). It sits on
-//     the TALK side of the phase machine, and play_preanim re-runs set_scene first
-//     (:4055-4073), so a PREANIM_ZOOM still shows its desk through the
-//     preanimation and loses it when the talking starts — the same talk-only
-//     asymmetry the mod 4/5 EX pair already has in applyDeskMods.
-//   - handle_ic_message never calls display_pair_character for a zoom (:3160), and
-//     that runs BEFORE the phase machine, so the pair is gone in BOTH phases.
 func TestZoomEmoteHidesDeskAndPair(t *testing.T) {
 	for _, tc := range []struct {
 		name string
