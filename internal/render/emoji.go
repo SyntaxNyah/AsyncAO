@@ -6,7 +6,6 @@ package render
 // emoji face — and laid out side by side. This file holds the PURE routing: which
 // runes belong to the emoji font. The rasterizer (text.go) turns runs into
 // textures; the UI owns loading the emoji face.
-//
 // Routing is codepoint-based (no font metrics), so it's allocation-light and
 // table-tested. The base signal is the supplementary plane (U+10000+) where the
 // bulk of emoji, skin-tone modifiers and regional-indicator flags live; on top of
@@ -31,11 +30,6 @@ const (
 // path. A tight byte scan, no rune decoding, no allocation, so an all-BMP/ASCII
 // message (the overwhelming common case) pays almost nothing and stays on the
 // single-font fast path. Two signals:
-//   - a 4-byte UTF-8 sequence (lead byte >= 0xF0) = a supplementary-plane rune
-//     (U+10000+), where most emoji, skin tones and flags live;
-//   - VS16 (U+FE0F = EF B8 8F), which promotes a BMP char to a color emoji
-//     (❤️ = U+2764 U+FE0F, ✌️, ☺️ …) — these have NO supplementary byte, so the
-//     first signal alone would miss them.
 func needsEmojiFallback(s string) bool {
 	for i := 0; i < len(s); i++ {
 		b := s[i]
@@ -66,14 +60,6 @@ const (
 
 // isEmojiBase reports a rune that on its own selects an emoji glyph. VS15 forces
 // text presentation, so it never counts as a base.
-//
-// This used to read "any rune above U+FFFF", which quietly broke every other
-// supplementary-plane script. The routing this feeds is an unconditional OVERRIDE
-// of the covering text face, and the bundled colour-emoji face holds emoji and
-// nothing else — so Linear B, Gothic, Old Italic, Deseret, cuneiform, Egyptian
-// hieroglyphs, the mathematical alphanumerics, Adlam and CJK Extension B were all
-// forced onto a face that had no glyph for them, and drew its .notdef box even
-// when a face already in the chain could have rendered them.
 func isEmojiBase(r rune) bool { return r >= emojiBlockLo && r <= emojiBlockHi && r != runeVS15 }
 
 // bmpPictographBlocks are the BASIC MULTILINGUAL PLANE blocks whose characters
@@ -87,17 +73,6 @@ func isEmojiBase(r rune) bool { return r >= emojiBlockLo && r <= emojiBlockHi &&
 // described: hearts and sparkles as boxes while CJK and Greek — which the TEXT
 // tiers and the system-font census answer — came out fine. The v1.87 Unicode census
 // covered SCRIPTS; symbol blocks were never in it.
-//
-// THIS TABLE IS NOT A ROUTING RULE ON ITS OWN. Membership only makes a rune
-// ELIGIBLE for the colour face; the caller promotes it solely when no face in the
-// text chain covers it (Ctx.uncoveredPictographMask). That gate is the whole design:
-// ★, →, ▪ and ™ live in these blocks and every decent text font has them, and they
-// must keep drawing in the row's own face at the row's own weight. Routing by
-// codepoint alone is the exact mistake isEmojiBase's doc records — "any rune above
-// U+FFFF" forced Linear B, cuneiform and CJK Ext-B onto a face with no glyph for
-// them — and doing it here would have handed every arrow and trademark sign to the
-// emoji font.
-//
 // Ranges, not a rune set, because these are contiguous Unicode blocks; a sorted
 // fixed array so the lookup is a short scan with no map and no allocation.
 var bmpPictographBlocks = [...][2]rune{
@@ -385,7 +360,6 @@ func WrapEmojiAware(primary, emoji *ttf.Font, text string, maxW int32, maxLines 
 // then overflowed the column (#42, the half of it the v1.81.2 wrapToWidth fix
 // didn't reach). Same greedy line breaker as WrapEmojiAware (break at the last
 // space, else cut at a rune boundary), so only the metric changes.
-//
 // Cost: one measure per rune step, each handed a fresh candidate string — the
 // same order as WrapEmojiAware's per-step measureRuns, and build-time only (the
 // log caches its wrap), never the render loop. maxLines 0 = uncapped.

@@ -2,7 +2,6 @@
 // GitHub Releases API for the latest published release, compares its semver tag
 // to the running build, and — when newer — returns the release together with
 // its patch notes (the release body) and the downloadable asset URL.
-//
 // The package is pure Go (no SDL/CGO) and does EXACTLY ONE network GET per
 // Check — there is no polling or ticker here. The caller fires Check once, on
 // its own goroutine, AFTER the window is up, so the update check adds zero cost
@@ -104,10 +103,6 @@ type ghRelease struct {
 // returns the latest release when its tag is a higher semver than current. It
 // returns (nil, nil) when the build is already current/newer or when current is
 // an unstamped dev build, and an error only on a transport/decode failure.
-//
-// assetMatch selects which release asset is the download: the first asset whose
-// (lowercased) name contains it wins — pass e.g. "windows" or ".zip". An empty
-// assetMatch takes the first asset; if nothing matches, AssetURL stays "".
 func Check(ctx context.Context, releasesURL, current, assetMatch string) (*Release, error) {
 	if current == "" || current == devVersion {
 		return nil, nil // unstamped/dev build never self-updates
@@ -135,15 +130,6 @@ func Check(ctx context.Context, releasesURL, current, assetMatch string) (*Relea
 // wins whenever its tag differs from the running one. Unlike the stable
 // channel it deliberately allows sideways and DOWNGRADE offers: hopping onto
 // the test branch (whose prerelease tags rank below the stable they preview)
-// and hopping back off it are both "updates" here, so semver-forward gating
-// would strand people. The never-regress publishing rule still protects the
-// STABLE feed; this is the opt-in exception, and the same strict per-platform
-// assetMatch keeps the self-replace from ever renaming the WRONG asset (a .zip
-// or .tar.gz) over the running binary. One residual macOS-only skew it does NOT
-// cover — the bare-binary swap leaving a stale sibling lib/ behind across a
-// dependency SONAME bump — is caught at swap time by StageReplace's
-// preflightDarwinSwap (apply.go), which refuses before touching the install and
-// points the user at the bundle tarball. See docs/CODE-SIGNING.md.
 func CheckExperimental(ctx context.Context, listURL, current, assetMatch string) (*Release, error) {
 	if current == "" || current == devVersion {
 		return nil, nil // unstamped/dev build never self-updates
@@ -282,25 +268,6 @@ func pathBase(name string) string {
 
 // SelfUpdateAssetMatch returns the release-asset name substring that UNIQUELY
 // identifies this platform's self-update payload, for Check's assetMatch.
-//
-// Windows and macOS now match their BUNDLE (Windows: exe + DLLs zip; macOS:
-// binary + lib/ tarball), not the bare binary: the runtime engine libraries
-// sit beside the binary and a bare swap can't refresh them — a new build that
-// ships a new engine (or a new SONAME) would otherwise leave an updated binary
-// unable to load the stale libs (the v1.95.1 SDL Mixer X breakage). The
-// self-updater downloads the bundle and extracts it over the install (see
-// StageBundle). Linux is self-contained and keeps its single-file AppImage:
-//
-//	windows -> asyncao-windows-x86_64-bundle.zip  (exe + runtime DLLs)
-//	linux   -> AsyncAO-linux-x86_64.AppImage      (self-contained single file)
-//	darwin  -> asyncao-macos-bundle-arm64.tar.gz  (binary + bundled lib/)
-//
-// Every non-default variant is named so it does NOT contain its platform's
-// token: the Discord-free builds carry …-nodiscord…, the Windows nodiscord
-// bundle is …-nodiscord-bundle.zip, and the macOS Homebrew edition is
-// …-macos-homebrew-arm64.tar.gz — the "-nodiscord-"/"-homebrew-" break the
-// token run, so the self-updater always lands on the default bundle and never
-// renames a Homebrew tarball or a nodiscord variant over the running install.
 // An unknown GOOS falls back to the bare OS name (old behaviour: best-effort
 // first match). Match is case-insensitive (Check lowercases both sides), so the
 // .AppImage capitalisation is fine.

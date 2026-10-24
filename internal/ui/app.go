@@ -58,7 +58,6 @@ const (
 	// list from going stale over a play session while bounding master-server load
 	// from rapid menu/tab bouncing to at most one request a minute; past the cap
 	// the refresh fires immediately on entry (edge-triggered, no polling timer).
-	// The manual Refresh button deliberately bypasses this — explicit user intent.
 	lobbyAutoRefreshMinInterval = time.Minute
 	logLines                    = 8
 	logLineMax                  = 120 // single-line UI (toasts/warnings) — NOT the IC log
@@ -409,12 +408,6 @@ type App struct {
 	previewEmoteIdx int
 	// previewEmoteCycle records WHICH surface asked for the emote list, because
 	// the two want different landings when the parse comes back:
-	//   true  (previewEmoteNav)      — the wardrobe's ‹ › navigator: always jump
-	//         to emote 0 so the caption index matches the sprite on screen.
-	//   false (previewEmotePortrait) — the char-select grid's single portrait:
-	//         keep the optimistic "normal" probe (right for almost every pack,
-	//         and already resolved) and repoint ONLY when the char.ini names no
-	//         emote "normal" — see correctPortraitPreview.
 	previewEmoteCycle bool
 
 	// --- async result channels (App-global plumbing; payloads carry the
@@ -591,8 +584,6 @@ type App struct {
 	// thread sends those runes on censusReq and installs whatever face comes back on
 	// censusRes; the goroutine that walks the machine's font directories is started
 	// on the first miss, so a session that never hits one never scans anything.
-	// missingBuf is the reusable drain buffer — the drain runs every frame, so it
-	// must not allocate.
 	censusReq     chan rune
 	censusRes     chan []byte
 	censusStarted bool
@@ -647,9 +638,6 @@ type App struct {
 	// logs/<server>/<session>.log, opened lazily on that session's first logged
 	// message. Keyed by (server, sessionState.logSession) — keyed by server ALONE,
 	// two tabs on one server shared a writer and interleaved into a single file.
-	// An entry lives exactly as long as the session that owns it: reapTranscripts
-	// retires and deletes it the moment nothing does (tab closed, session reset),
-	// and CloseTranscript drains whatever is left at exit. Holding them to shutdown
 	translogs map[translogKey]*transcriptWriter
 	// nextLogSession mints sessionState.logSession. Monotonic for the process, so an
 	// id is never reused even after a tab closes — a reused id would let a new tab
@@ -778,9 +766,6 @@ type App struct {
 	// in px, dur in ms) so the maker draw stays alloc-free; horizontal scroll;
 	// makerDragHandle is which crop handle is being dragged (0 none, 1 In, 2 Out);
 	// makerPrevDown carries the mouse-press edge for grabbing a handle.
-	// makerDragSeg is the segment being drag-reordered (-1 = none; 0 is a valid
-	// index, so it MUST be initialised to -1); makerDragMoved marks the armed press
-	// as a real drag once it crosses the threshold; makerDragX is the press-origin x.
 	makerSegX       []int32
 	makerSegW       []int32
 	makerTLDur      []float64
@@ -978,9 +963,6 @@ type App struct {
 	// never per element or per draw site (the two AllocsPerRun gates forbid the
 	// latter, and the theme-chrome draw sites number about ten), and it is what
 	// makes the accessibility answer and the pacing census the same decision.
-	// TWO latch points, both calling reduceMotionNow so there is one spelling of
-	// the read: App.Frame, because themeFrame is reached from screens that never
-	// open an element pass (char select, settings previews, the export capture);
 	themeFXFrozen bool
 	// themeSidecarErr / themeSidecarTip are the applied theme's sidecar REFUSAL, as
 	// the two strings the chip needs (themeerrchip.go): the debug-log line and the
@@ -1063,7 +1045,6 @@ type App struct {
 	// concerns and stay on. Session state (not persisted), mirroring layoutSnap's
 	// treatment. Stored as the "off" sense deliberately: the zero value is false =
 	// magnet ON, so float panels snap in normal play (before any editor opens)
-	// exactly as before this chip existed — no init/reset wiring needed.
 	layoutMagnetOff bool
 	// Overlap cycling: Tab steps through the stack of boxes under the cursor (smallest first) so a
 	// big box hidden under a small one is still reachable. editPickSig is the current stack's
@@ -1088,8 +1069,6 @@ type App struct {
 	// OTHER open floating surface's rect, rebuilt once per frame at the top of
 	// drawFloatingPanels ONLY while a drag is active (empty on settled frames).
 	// Reused so a long drag allocates nothing; bounded by panelMagnetCap.
-	// themeAlignScratch is the themed layout editor's design-space candidate buffer
-	// (the classic editor already has alignScratch).
 	panelMagnetRects  []sdl.Rect
 	themeAlignScratch []sdl.Rect
 	// layoutPresetName is the Settings name field for saving the current layout as a
@@ -1223,8 +1202,6 @@ type App struct {
 	// frame", so drawSpritePreviewFallback can stand in for the emote grid's draw
 	// site on the passes where the grid did not run (panel hidden, no themed
 	// `emotes` rect, char.ini still loading) without ever compositing the box twice.
-	// Set by the two grid painters and by the fallback itself; cleared once per
-	// frame by pollOverlayRosters, ahead of every screen draw.
 	emoteGridDrewPreview bool
 	// This frame's overlay-fence answer for the box (#37, fenceSpritePreview). Reset
 	// by handlePreviewInput at the top of every frame, so a pass that never publishes
@@ -1466,8 +1443,6 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		// (VolStripOn OFF) — so a user who quit muted a week ago would get
 		// total silence on this launch with no on-screen sign why. One line,
 		// same corrupt-prefs mechanism, no new panel/modal/settings row.
-		// `else`: the corrupt-prefs notice is rarer and more consequential
-		// (you lost settings), so it wins the single warnLine slot.
 		a.warnLine = line
 		a.warnAt = time.Now()
 	}
@@ -1476,7 +1451,6 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	// kicking it here means it is usually already resident by the time the first
 	// room's cold-load storm demands anything; starting it on connect would race
 	// the character-icon prefetch and lose to the resident-texture short-circuit.
-	// A no-op — not even a goroutine — when no mounts are configured.
 	a.applyMountLayer()
 	return a
 }
@@ -1803,8 +1777,6 @@ func (a *App) rederiveMessageDuck() {
 // the char icon — so T1's LRU never drops them mid-tab-out (Background draws
 // nothing, so a render never touches them; an incoming message then uploads over
 // the selected button and it blanks for a moment on restore). Background-only:
-// the URL build + map ops here would break the 0-alloc render path (a drawn
-// frame's emote row already touches these).
 func (a *App) keepActiveAssetsWarm() {
 	if a.link.room == nil || a.link.sess == nil {
 		return
@@ -1832,7 +1804,6 @@ func (a *App) keepActiveAssetsWarm() {
 // shapes and conflating them regressed (shipped a single demand
 // counter, and a merely-SLOW load burned it against ONE in-flight fetch —
 // three 250 ms keeper ticks — leaving a healthy scene latched for the epoch):
-// Both reset when the warm set changes or a new message ceremony begins.
 const (
 	warmMaxHealChurns = 3
 	warmMaxHealAsks   = 8

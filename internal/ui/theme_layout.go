@@ -107,8 +107,6 @@ type themeLayoutCache struct {
 	// draw path then stays integer-only, so a font size cannot wobble between two
 	// frames of an unchanged window; and the float rounding happens exactly once per
 	// window/fit/theme change instead of twice per frame.
-	// 0 means "no canvas": the early return above for a theme with no courtroom /
-	// viewport rect leaves it zero, and so does every hand-built cache in a test.
 	textPct int
 	// shownameExtra is `showname_extra_width` in WINDOW pixels — the theme's
 	// design-space value already multiplied by the canvas scale, baked here for the
@@ -151,8 +149,6 @@ type themeLayoutCache struct {
 	// than computed at draw time because a theme legitimately declares rects too
 	// narrow for their labels — aceattorney2x gives `flip` 51x19, leaving 29 px —
 	// and truncation allocates, which the themed frame's zero-alloc gate forbids.
-	// An absent key means "the label fits": the draw site falls back to the
-	// constant, which is the byte-identical path for every theme with roomy rects.
 	toggleLabel map[string]string
 	// --- free elements (v1.90.0 W3; design §2, docs/THEME-FORMAT.md §4) ---------
 	//
@@ -246,7 +242,6 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 	// Scaled by scaleX because it is ADDED TO a width that was scaled by scaleX
 	// (the showname rect, below) — the two have to move together or the widened
 	// plate stops lining up with the art the swap brings in.
-	//
 	// Floored at one pixel rather than truncated to nothing: a rung that rounds away
 	// would take the SKIN SWAP with it, so a heavily downscaled canvas would drop
 	// back to the narrow chatbox art mid-message. One pixel of widening with the
@@ -310,9 +305,6 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 	// editor depends on: its drag box, its drag origin, its Tab-cycle stacking order,
 	// its resize-grip probe and its right-click reset all read lay.r[themeTabBarKey],
 	// and a box that is not on the widget is worse than no box.
-	// A degenerate strip (no tabs, or chips too small to be a usable drag target) drops
-	// the key entirely rather than leaving the stale transform behind — nothing is
-	// painted there, so nothing may be editable there either.
 	if _, present := a.themeRects[themeTabBarKey]; present {
 		if strip, ok := a.tabStripCacheRect(lay, w, h, stripW, stripParked); ok {
 			lay.r[themeTabBarKey] = strip
@@ -454,8 +446,6 @@ func (a *App) fitDesignCanvas(designW, designH, w, h, top int32, fit int) themeC
 		// resizable, so we reproduce that at scale exactly 1.0 and only ever scale
 		// DOWN — a window smaller than the theme's canvas shrinks uniformly rather
 		// than clipping anything, which matters because config.MinWindowW/H (640×480)
-		// is BELOW several real themes' design sizes and ABOVE several others'. The
-		// centring below already supplies the bars.
 		s := math.Min(1, math.Min(sx, sy))
 		f.scaleX, f.scaleY = s, s
 	case config.ThemeFitStretch:
@@ -663,8 +653,6 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// themed editor drags it (it's a normal key in lay.r). Set for the whole pass —
 	// the editor's over-toolbox suppression + the post-court draw both read
 	// compactToolboxStripRect, which consults this. Absent ⇒ classic-slot default.
-	// Cleared after the themed pass (drawCompactToolbox for THIS courtroom draws
-	// post-court in app.go, so the flag must outlive this function — cleared there).
 	if tr, ok := lay.rect("asyncao_toolbox"); ok {
 		a.toolbox.toolboxThemeRect, a.toolbox.toolboxThemeRectOn = tr, true
 	} else {
@@ -761,7 +749,6 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 
 	// Modal popups: same shared list as the classic path, so the two can't
 	// drift (the bg picker once drew in classic but was missing here).
-	//
 	// And the same EDITOR GUARD as the classic path, which this return never had: a
 	// modal open when the themed editor armed ended the pass here, so the editor never
 	// drew — no banner, no Done chip, no Esc handler — while its fence had already
@@ -889,8 +876,6 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// `player_list` (courtroom.cpp:879), separate from the music_list rect that
 	// ui_music_list (:867) and ui_area_list (:864) share. So the rule is the
 	// canonical one, in two halves:
-	// No asyncao_* key is invented for it: the AO2 key exists, and inventing a
-	// parallel one would be the actual violation.
 	rosterOwnRect := false
 	if r, ok := lay.rect("player_list"); ok && !a.classic.panelHidden(panelLog) {
 		a.drawPlayerList(insetThemedBody(r))
@@ -989,7 +974,6 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// immediate (AO2 ui_immediate, courtroom.cpp:1072-1084 — it reads "immediate"
 	// first and falls back to "pre_no_interrupt"; aceattorney2x declares only the
 	// latter, which is exactly why the alt spelling has to be probed).
-	//
 	// Gated on cccc_ic_support: the Immediate FIELD only exists on the 2.6 wire, so
 	// AO2 hides ui_immediate (with ui_pair_button and ui_ic_chat_name) when the
 	// server does not advertise it (courtroom.cpp:747-759). Offering the toggle on
@@ -1345,8 +1329,6 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// themed editor is armed. The pinned per-piece panel is NOT drawn here (it
 	// needs real input this fenced pass can't give it — see the classic path in
 	// screens.go); it draws post-courtroom in app.go alongside drawFloatingPanels.
-	// Unconditional: the `!a.layoutEdit` gate now lives in the latch, so the fence
-	// published at the top of this pass and the draw share one decision.
 	a.drawCompactToolboxInPass()
 
 	if a.warnActive() {
@@ -1448,9 +1430,6 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 		// the SKIN art via CopyEx. Only the skin rotates — the showname/message text
 		// drawn below stays axis-aligned (opt-in cosmetic mismatch, accepted for the
 		// cheap tier, same as any rotated themed chrome).
-		// The DESTINATION is the ao2_chatbox rect whichever rung is showing: AO2
-		// stretches the swapped art into the widget it already sized
-		// (AOImage::setImage scales the pixmap to size() with IgnoreAspectRatio,
 		if ang := lay.angle(themeChatboxKey); ang == 0 {
 			_ = c.Ren.Copy(a.themeFrame(skinPage), nil, &c.cgoRect)
 		} else {
@@ -1484,7 +1463,6 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	// font) so a non-Latin name resolves to a covering face; emoji-aware so a
 	// colour-emoji name renders the glyphs, not tofu. #39: the theme's own showname
 	// family / point size / bold, matching the classic overlay.
-	// The Y is AO2's, unchanged: ui_vp_showname is given a horizontal-only
 	// alignment (courtroom.cpp:93, and again in the block above), which CLEARS
 	// QLabel's default AlignVCenter, so AO2 draws the name at the TOP of the
 	nameX, nameW := a.shownameSpanFor(nameBox, snFont, snEmoji, sc.ShownameText, nameCol)
@@ -1492,7 +1470,6 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	// client's "Bold names" pref; the themed box never has, and quietly turning that
 	// on for every themed user is a look change nobody asked for — kept out of #39's
 	// scope deliberately.
-	//
 	// The weight is in the RASTER now, not a second pass one logical pixel right: at a
 	// fractional UI scale that offset scaled with everything else and the two copies
 	// landed on different sub-pixel phases, so the name read doubled (F1b).
@@ -1720,7 +1697,6 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 // themedExtrasHint fires a one-time-per-session toast when a themed (AO2) layout
 // is in use, pointing players at where AsyncAO's own features live — a legacy AO2
 // theme carries no element key for any of them, so they would otherwise be lost.
-//
 // It names the Extras MENU now, not a button: the bottom-left chip row this used
 // to point at was deleted because it painted over the theme's own canvas (#21,
 // rule (c)). The hotkey still opens the box directly, so it stays in the line.

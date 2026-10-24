@@ -48,13 +48,6 @@ const (
 	// under the old single tier every big streaming burst swept them out and
 	// the next drawn frame flashed the grid back to fallbacks while they
 	// re-streamed: the "emote buttons visibly refresh/redraw" playtest report.
-	// The same churn in the other direction is also gone: a 4000-icon
-	// char-select scroll now competes only with other small textures, never
-	// evicting the sprites on stage. (The stage layers and theme chrome grew
-	// their own protections earlier — keepSceneAssetsWarm, the pinned tier;
-	// this closes the gap for the button/icon grids.)
-	// (the small-tier carve-out arithmetic now lives in cache.SmallTierBytes /
-	// cache.MainTierBytes, shared with the animated decode cap)
 )
 
 // smallTexTier reports whether an asset type belongs in the small-UI shield.
@@ -187,12 +180,6 @@ func (p *TexturePage) reduceToStill() {
 // churn — see smallTexBudgetDiv), and the pinned map (theme chrome). A base
 // lives in exactly one tier: the pump routes uploads by asset type, and
 // theme keys use their own scheme.
-//
-// generation increments on every mutation (upload, eviction, purge — either
-// LRU). The viewport caches *TexturePage pointers against it, so steady-state
-// frames reuse pages with zero LRU lookups; any mutation forces a re-lookup
-// before a cached pointer can dangle (destroys only happen later in the same
-// frame, in DrainDestroyQueue, after rendering consulted the generation).
 type TextureStore struct {
 	ren *sdl.Renderer
 	t1  *cache.ByteBudgetLRU[string, *TexturePage]
@@ -269,12 +256,6 @@ type TextureStore struct {
 	// the manager's reportMissing Warning, relayed here by the App's render-thread
 	// warning drain). drawSprite's miss branch draws the shared MissingKey
 	// placeholder for a base in this set instead of holding a DIFFERENT (stale)
-	// character. UNLIKE `failed`, this carries NO mutex: both the writer
-	// (MarkMissing, from drainWarnings) and the reader (IsMissing, from drawSprite)
-	// run on the locked render thread, and it is never read off-thread. If any
-	// FUTURE caller touches it from another goroutine this invariant breaks —
-	// keep it render-thread-only. Cleared per base in uploadTier (a healed
-	// re-upload drops the flag), bounding any false flash to ~one message.
 	missing map[string]struct{}
 
 	// budget is the T1 byte budget this store was built with (the default, or
@@ -611,7 +592,6 @@ func (s *TextureStore) ContainsAnimated(base string) bool {
 // "non-active characters are a still" memory cap: only the active speaker's
 // animation stays full; the pair and every previously-shown animation collapse
 // to frame 0 and re-stream (~20 ms) when they become active again.
-// Render thread only. Returns how many pages it downgraded.
 func (s *TextureStore) ReduceAnimatedExcept(active map[string]bool) int {
 	reduced := 0
 
@@ -946,7 +926,6 @@ func (s *TextureStore) dropOversizedOrderLocked(base string) {
 // losing the courtroom backdrop to LRU pressure flashed the stage black).
 // Replacing an existing pinned page routes the old one through the
 // destroy queue. Render thread only.
-//
 // IT REFUSES THE TWO THEME-MEDIA SUB-PREFIXES (thememedia.go). Pinned is
 // eviction-exempt and therefore count-uncapped by nature, which is fine for the
 // bounded stem tables the client itself uploads and is not fine at all for art a
@@ -964,7 +943,6 @@ func (s *TextureStore) UploadPinned(base string, d *assets.Decoded) error {
 
 // uploadPinnedTracked is the shared body of UploadPinned and UploadThemeMedia: build
 // the page, replace any predecessor, and keep the theme-media ledger in step.
-//
 // `admitted` says the caller already passed the admission gate. It is a parameter
 // rather than a re-derivation from the key so the two doors cannot both think the
 // other one checked: UploadPinned passes false and has already refused every key
@@ -1043,12 +1021,10 @@ func reservedKey(key string) bool {
 // many it dropped. Render thread ONLY, and USER-INITIATED only: it snapshots
 // every key in all three spaces, so it allocates proportionally to the resident
 // set and must never run per frame.
-//
 // It exists because resolution short-circuits on a resident texture: without it,
 // switching the asset source or pressing Rescan would leave the CURRENT speaker
 // and background showing the old source's art until they happened to evict —
 // which is the very first thing anyone tests after adding a pack.
-//
 // The keys are SNAPSHOTTED before anything is removed. Removing while iterating
 // re-enters the cache through the eviction callback, which is exactly what the
 // onEvict contract forbids.
@@ -1090,7 +1066,6 @@ func (s *TextureStore) ForgetMissing() {
 
 // ForgetFailed empties the decode negative cache — the bulk sibling of
 // clearFailed. Render thread, user-initiated.
-//
 // Rescan MUST call this. The prefetch gate consults the failed set BEFORE the
 // mount layer is ever reached, so a base whose SERVER copy is corrupt — the single
 // most plausible reason to deploy a pack in the first place — would stay

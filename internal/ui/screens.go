@@ -76,9 +76,6 @@ const (
 // cursor rather than the raw `w - <literal> - pad` rects it used to carry, because
 // those literals ran off the left edge of the window long before config.MinWindowW:
 // "What's New" landed at x=-78 and "Logs" at x=-198 on a 640-wide window.
-// PHONE BOOK STAYS. Its label flips to "← All servers" on the phone-book page, so it
-// is not really a command — it is that page's only way BACK, and burying a back
-// affordance inside a menu strands anyone who does not know the menu is there. It is
 const (
 	// lobbyUtilBtnW is the comfortable width when the window has room for the whole
 	// cluster — the historical width, so a normal window is pixel-identical.
@@ -230,10 +227,6 @@ func (a *App) handlePreviewInput() {
 	// strip). Claiming the press here keeps a drag from selecting whatever icon is
 	// underneath, and a real move swallows the release so click-to-dismiss/select
 	// doesn't fire.
-	// The chrome buttons are excluded from the drag-start test: a PRESS on one has
-	// c.clicked == false (the click arrives on the release frame), so without this
-	// the press would start a body drag and the release would return through the
-	// branch above with previewDrag still latched.
 	body := sdl.Rect{X: box.X, Y: box.Y, W: box.W, H: box.H - previewDragBottomReserve}
 	if c.mouseDown && !a.previewDrag && c.hovering(body) && !c.hovering(detachB) && !c.hovering(pinB) && !c.hovering(closeB) {
 		a.previewDrag = true
@@ -443,9 +436,6 @@ func (a *App) drawCourtroom(w, h int32) {
 	// which this function force-clears each frame and only drawCourtroomThemed
 	// re-arms — so publishing any earlier would fence the bottom-right DEFAULT rect
 	// even under a theme that parks the toolbox somewhere else entirely.
-	// drawCompactToolboxInPass (bottom of this function) replays the latch rather
-	// than re-deriving it, so the fence and the pixels agree even though
-	// handleHotkeys and the modal return both run in between.
 	a.fenceCompactToolbox(w, h)
 	// …and the sprite-preview box (#37), which floats over the right-hand column.
 	// AFTER the toolbox deliberately: the toolbox paints above the box, so its
@@ -509,11 +499,6 @@ func (a *App) drawCourtroom(w, h int32) {
 	// Modal popups: the kit has no z-aware input, so the controls
 	// underneath simply don't draw (and don't see clicks) — same pattern
 	// as the iniswap menu. Shared with the themed path (drawCourtroomModals).
-	//
-	// layoutEditorArmed, not classicEdit: the same guard has to hold in BOTH passes
-	// (its absence from the themed twin is what made a modal-plus-editor state an
-	// unrecoverable lock), and only one predicate can hold in both without drifting.
-	// See modalReturnSkippedWhileEditing for the whole rule.
 	if !a.modalReturnSkippedWhileEditing() && a.drawCourtroomModals(w, h) {
 		return // skipped while editing: modals are closed on entry, so the editor is never stranded
 	}
@@ -556,9 +541,6 @@ func (a *App) drawCourtroom(w, h int32) {
 	// and the editor hands them drag/resize handles this same frame; their content shows (inert)
 	// so you see what you're arranging. In normal play they draw post-courtroom (app.go) where the
 	// content is interactive and the pointer is fenced over them. (torntabs.go)
-	// The strip is painted just BEFORE it, replaying the frame's paint-site latch
-	// (chrometop.go) rather than riding the classicEdit flag: this pass force-stops the
-	// classic editor when a themed layout takes over, and the latch — taken at the top,
 	a.drawTabBarInPass(w, h)
 	if a.classic.classicEdit {
 		a.drawTornTabs(w, h)
@@ -653,7 +635,6 @@ var courtroomModals = []courtroomModal{
 
 // closeCourtroomModals shuts EVERY return-to-top courtroom popup by walking the one
 // table that defines the set. Both layout editors call it as they arm.
-//
 // Exhaustive BY CONSTRUCTION rather than by hand: a new row added to courtroomModals
 // is closed by the editors the moment it exists, so the set that can strand an editor
 // and the set the editors clear can never diverge again.
@@ -673,7 +654,6 @@ func (a *App) modalReturnSkippedWhileEditing() bool { return a.layoutEditorArmed
 // courtroomModalUp reports whether drawCourtroomModals will take the screen — the
 // predicate half of the table above, for anything that must decide BEFORE the pass
 // reaches the modal check (the compact toolbox's overlay fence).
-//
 // Deliberately NOT blockingCourtPopup (floatbox.go): that set is a different
 // question (which popups the Extras box and torn-off tabs yield to), it OMITS
 // showSfxBrowser, and it ADDS classicEdit. Reusing it would fence a band of the SFX
@@ -899,9 +879,6 @@ func (a *App) drawDisconnectConfirm(w, h int32) {
 // layout, fence discipline (drawn top-level, pointer restored just before it, one
 // modal at a time), and "Don't ask again" → Instant-disconnect pref — but its own
 // copy naming the server, and Yes closes just THIS tab (confirmPendingCloseTab)
-// instead of the live session. You stay on whatever screen you're on, so the copy
-// deliberately does NOT say "return to the lobby" (unlike the disconnect modal).
-// Off the render hot path (only while a close is pending).
 func (a *App) drawCloseTabConfirm(w, h int32) {
 	c := a.ctx
 	t := a.dialogs.pendingCloseTab
