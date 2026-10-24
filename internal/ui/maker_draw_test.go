@@ -138,7 +138,7 @@ func TestMakerDrawNoPanic(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 
-	a := &App{env: env{ctx: ctx, d: Deps{Prefs: prefs}}, makerName: "test", makerTrimStart: -1, makerTrimEnd: -1}
+	a := &App{env: env{ctx: ctx, d: Deps{Prefs: prefs}}, sel: selState{makerName: "test", makerTrimStart: -1, makerTrimEnd: -1}}
 	// A real session + bg list enables the char/background autocompletes — the
 	// draw paths a nil-session test would skip.
 	a.link.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Sekai"}, {Name: "Phoenix"}, {Name: "Häschen"}}}
