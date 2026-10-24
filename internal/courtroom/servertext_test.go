@@ -191,5 +191,3 @@ func TestAControlByteCannotTruncateAServerMessage(t *testing.T) {
 		}
 	}
 }
-
-

@@ -2,13 +2,6 @@ package theme
 
 // AO2 screen-effect overlays (`effects.ini`) — the parse, the two-pass merge and
 // the theme-local art ladder. Canon is ../AO2-Client; it wins every conflict.
-//
-// NAMING FENCE. internal/theme already owns EffectBind / EffectKind /
-// effectNames / FXNone (sidecar*.go — theme-editor WIDGET DECORATION, unrelated),
-// and internal/courtroom owns TextEffect* / EffectSpan / EffectMark (animated chat
-// TEXT). Everything this file adds is therefore prefixed Overlay… / overlay…. A
-// bare `Effect` type in this package is a review-blocking defect.
-//
 // This file deliberately does NOT touch ini.go: INI has no section enumerator
 // (GetSection needs the name up front), so the group scan below walks indices
 // 0…OverlayFXIndexScanCap. That is rule-4/rule-9 clean and immune to whatever
@@ -206,7 +199,6 @@ func (f OverlayFX) coerce() OverlayFX {
 	// prefix test: "truely", "TRUE" and "True" are false here and true nowhere
 	// else — pinned by TestRespectOffsetRequiresExactTrue. Trailing whitespace is
 	// NOT a case this has to reject: ParseINI stores TrimSpace(value) (ini.go:120)
-	// and so does canon, which reads this through QSettings IniFormat
 	// (text_file_functions.cpp:869) — readIniLine strips it before the compare.
 	f.RespectOffset = f.raw[fxPropRespectOffset] == overlayBoolTrue
 	// sticky is read on the SENDING side only (courtroom.cpp:2348-2354).
@@ -222,15 +214,6 @@ func (f OverlayFX) coerce() OverlayFX {
 
 // parseOverlayLayer reproduces do_effect's layer switch INCLUDING its two
 // documented defects (courtroom.cpp:3216-3237):
-//
-//   - "under" does NOT exist. The shipped effects.ini header documents
-//     under/character/over/chat; the code implements behind/character/over/else,
-//     so "under" lands on CHAT. Both stock inis actually write "behind".
-//   - "beho" is a truncation typo in the `gloom` entry, present in KFO's file AND
-//     in AO2's own bin/base/themes/default/effects/effects.ini:151. It falls to
-//     the else branch → CHAT. Do not normalise it.
-//
-// layer is the only property AO2 lowercases before comparing (:3217).
 func parseOverlayLayer(raw string) OverlayLayer {
 	switch strings.ToLower(raw) {
 	case "behind":
@@ -250,7 +233,6 @@ func parseOverlayLayer(raw string) OverlayLayer {
 // groups with no `name`, an empty `name` or an over-long one are skipped
 // (:814-829). A v1 file (no [version] major, or major < 2) is migrated IN MEMORY
 // first; unlike AO2 this never writes a .old file back to the user's theme.
-//
 // Pure: no disk access, no SDL, bounded by OverlayFXCap / OverlayFXIndexScanCap.
 func ParseOverlayFX(r io.Reader) ([]OverlayFX, error) {
 	ini, err := ParseINI(r)
@@ -380,24 +362,8 @@ type OverlayFXSet struct {
 // MergeOverlayFX builds the roster. list is the DISPLAY order (the list pass);
 // files are every existing effects.ini across BOTH ladders in probe order (the
 // property pass).
-//
-// THE MERGE ASYMMETRY — the trap this whole function exists for.
 // get_effect_property (text_file_functions.cpp:860-888) walks paths + misc_paths
 // and never breaks the OUTER file loop, only the inner group loop (:883).
-// Therefore:
-//
-//   - the LAST file in the ladder wins, which is the opposite of art resolution
-//     (first hit wins) and the opposite of loadFirstINI's first-hit-per-key merge;
-//   - the assignment at :879 precedes the emptiness test at :880, so a later file
-//     that HAS the group but OMITS the property clobbers an earlier non-empty
-//     value back to "" — i.e. to the coerced default.
-//
-// Both fall out of replacing the whole record per file: "which file was last to
-// carry a matching group" depends only on the NAME, so it is the same file for
-// every property, and a per-record swap is exactly a per-property last-wins.
-// Within one file, duplicate names collapse per property to the FIRST non-empty
-// value in group order — the inner loop's break condition.
-//
 // Never use loadFirstINI for effects.ini.
 func MergeOverlayFX(list []string, files ...[]OverlayFX) *OverlayFXSet {
 	set := &OverlayFXSet{byName: make(map[string]OverlayFX, OverlayFXCap)}
@@ -415,8 +381,6 @@ func MergeOverlayFX(list []string, files ...[]OverlayFX) *OverlayFXSet {
 	// character's own misc/<folder>/effects.ini, then the origin manifest. Dropping
 	// the tail (the obvious `i >= cap: break`) would throw away exactly the files
 	// whose values survive and keep only the ones every later file overrides, i.e.
-	// it would silently invert the ladder for any character whose ladder is deeper
-	// than the cap.
 	if drop := len(files) - OverlayFXFileCap; drop > 0 {
 		files = files[drop:]
 	}
@@ -492,7 +456,6 @@ func OverlayFXNames(file []OverlayFX) []string {
 
 // dirIsSubtheme reports whether one of t.dirs is a SUBTHEME folder of the active
 // theme — "<…>/themes/<name>/<sub>" or the flat-import "<…>/<name>/<sub>".
-//
 // A base-name test alone cannot answer this: the subtheme dir's base is the
 // SUBTHEME name, so the theme name has to be read one level up. That is exactly
 // the bug this pair replaced — with a base-only filter every subtheme directory
@@ -573,16 +536,7 @@ func (t *Theme) contentRoots() []string {
 // themes/<theme>/<subtheme>/misc/<misc>/<stem>.<ext> then
 // themes/<theme>/misc/<misc>/<stem>.<ext> — AO2's get_asset_paths tiers 2 and 3
 // (path_functions.cpp:181-189).
-//
-// This is a THEME-LOCAL directory probe: zero network, no zero-fallback exposure.
-// It is the shared seam between the theme editor's per-character chatbox work
-// (Q5/W8) and the effects overlay's rungs 5-6 — one implementation, two callers,
-// the internal/safepath precedent. Under no circumstances add a second misc
-// resolver.
-//
-// misc comes from a server-supplied char.ini, so it goes through safepath.Join:
 // a "../../.." folder must be a refusal, not a read of somebody's private files.
-// Off-thread only (hard rule 2) — it stats the disk.
 func (t *Theme) FindAssetMisc(misc, stem string, exts []string) (string, bool) {
 	misc = strings.TrimSpace(misc)
 	if misc == "" || stem == "" {
@@ -623,12 +577,7 @@ func findAssetSafe(dir, stem string, exts []string) (string, bool) {
 
 // FindOverlayArt locates an effect's art in the THEME tier only — rungs 1-4 of
 // the ladder, i.e. get_image("effects/"+name, …, misc=""):
-//
-//	themes/<t>/<sub>/effects/<n>, themes/<t>/effects/<n>,
-//	themes/default/effects/<n>, effects/<n>
-//
 // Extensions walk .webp → .apng → .gif → .png at EVERY rung (get_image_suffix).
-// Off-thread only.
 func (t *Theme) FindOverlayArt(name string) (string, bool) {
 	return t.findOverlayThemeTier(name)
 }
@@ -648,21 +597,6 @@ func (t *Theme) FindOverlayMisc(misc, name string) (string, bool) {
 
 // FindOverlayElement walks the WHOLE local ladder for one element, in AO2's
 // order (path_functions.cpp:175-216 through get_effect's two get_image calls):
-//
-//	 1-3  themes/<t>/<sub>/effects/<e>, themes/<t>/effects/<e>, themes/default/effects/<e>
-//	 4    effects/<e>
-//	 5-6  themes/<t>/<sub>/misc/<m>/<e>, themes/<t>/misc/<m>/<e>     [FindAssetMisc]
-//	 7    themes/<t>/<sub>/<e>
-//	 8    misc/<m>/<e>            [ALSO the one ORIGIN rung — see URLBuilder.OverlayEffectMisc]
-//	 9    themes/<t>/<e>
-//	10    themes/default/<e>
-//	11    <e>
-//
-// Rungs 1/5/7 exist only while a SUBTHEME is set; with none they simply drop out
-// of the walk (theme.Load contributes no subtheme dirs), which is how AO2's own
-// `p_subtheme != ""` guards behave. The flat-import tier ("<root>/<name>") rides
-// with the active theme's dirs, which is where theme.Load already puts it.
-//
 // Rung 8 is the only rung a streaming client may also have to ask the ORIGIN for;
 // on disk it is an ordinary probe, so it stays in this walk and the network chain
 // is only reached when the whole local ladder misses. Off-thread only.

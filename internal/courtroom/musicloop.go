@@ -12,8 +12,6 @@ import (
 // byte math and DRO's sample math independently reduce to once a channel/byte-size
 // factor is removed (../DRO-Client/src/draudiostream.cpp:319 confirms
 // "m_loop_start / double(l_sample_rate)", no byte or channel multiplier at all).
-// AsyncAO targets a time-addressed seek API (Mix_SetMusicPosition takes a double)
-// instead of BASS's byte-addressed one, so it never reintroduces AO2's own latent
 // bug of hardcoding stereo (aomusicplayer.cpp:99 num_channels = 2, silently wrong for
 // a mono source).
 type LoopPoints struct {
@@ -24,14 +22,6 @@ type LoopPoints struct {
 
 // DROTrackMeta is one [N] section of a DRO sounds/music/<folder>/<folder>.ini
 // manifest, matched to a track by its `filename` key (draudiotrackmetadata.cpp:64).
-//
-// title is deliberately NOT a field. Wiring it into the zero-allocation
-// MusicDisplayName path (courtroom.go) is a separate design problem, and parsing a
-// value nothing ever reads is precisely the "parsed but never applied" failure
-// CLAUDE.md names by example (the sidecar [overrides] tier that shipped inert
-// through four waves behind exactly such a mirror). DEFERRED, not forgotten
-// (binding decision D18) — MusicDisplayName keeps computing the Now-Playing text
-// purely and synchronously from the wire track name alone.
 type DROTrackMeta struct {
 	PlayOnce bool
 	Loop     LoopPoints
@@ -156,15 +146,6 @@ func legacySecondsValue(s string) float64 {
 
 // resolveLegacySeconds converts ONE legacy-key value into seconds for the running
 // single-pass scan, in the precedence Part B requires:
-//  1. an explicit trailing unit suffix on THIS value (D13) always wins — seconds,
-//     regardless of secondsMode;
-//  2. otherwise the running seconds=true mode (aomusicplayer.cpp:81-90) — the value
-//     is already seconds;
-//  3. otherwise it is a sample count, converted via /sampleRate exactly as AO2's own
-//     byte math reduces once its channel/byte-size factor is removed (recon 4/14) —
-//     but ok=false when sampleRate is unusable (<=0): a garbage 0-second bound would
-//     be worse than leaving the caller's running value untouched, so the caller must
-//     skip the update entirely rather than accept a fabricated zero.
 func resolveLegacySeconds(val string, secondsMode bool, sampleRate int) (seconds float64, ok bool) {
 	if rest, isSeconds := trimUnitSuffix(val); isSeconds {
 		return legacySecondsValue(rest), true
@@ -191,7 +172,6 @@ func parseFloat(s string) (float64, bool) {
 // ParseAOLoopSidecar parses an AO music-loop sidecar (webAO/AO2-Client convention:
 // "<track-url>.txt" alongside the track itself) into a resolved loop window in
 // SECONDS.
-//
 // The legacy grammar below replicates ../AO2-Client/src/aomusicplayer.cpp:71-123
 // LINE FOR LINE, IN FILE ORDER, CASE-SENSITIVELY: it is a SINGLE FORWARD PASS, not a
 // two-pass scan. `seconds=true` is a running flag that affects ONLY the lines below
@@ -201,25 +181,6 @@ func parseFloat(s string) (float64, bool) {
 // five-order-of-magnitude silent corruption of a file that already works today.
 // Never "fix" this into a two-pass scan: a superset may accept MORE files, it must
 // never change what an existing one means.
-//
-// Layered ON TOP, never folded into that ordered scan, is Part B's additive grammar
-// (binding decisions D12/D13): the case-INSENSITIVE `loop_start_sec` / `loop_end_sec`
-// / `loop_length_sec` keys (plain seconds, no sample-rate math, evaluated in a
-// SEPARATE pass because their names can never collide with anything AO2 itself
-// emits — order among themselves does not matter) and a trailing "s"/"sec" unit
-// suffix directly on a legacy value (resolveLegacySeconds). Each bound resolves
-// independently: one bound may come from a *_sec key while the other comes from the
-// legacy grammar in the very same file.
-//
-// sampleRate is the track's own real sample rate (internal/assets.SniffAudioSampleRate
-// — read by the render-side caller, never re-derived here). sampleRate <= 0
-// (unresolved) degrades any SAMPLE-mode bound to "unset" rather than dividing by zero
-// or fabricating a bogus 0-second bound; a *_sec-suffixed or seconds-mode value is
-// unaffected, since neither needs the rate at all.
-//
-// ok is false only when data is empty or every line was unparseable (nothing to
-// report either way) — an absent end is reported via HaveEnd == false, never via
-// ok == false.
 func ParseAOLoopSidecar(data []byte, sampleRate int) (LoopPoints, bool) {
 	if len(data) == 0 {
 		return LoopPoints{}, false
@@ -325,16 +286,6 @@ func unquoteDROValue(v string) string {
 
 // parseDROManifest tokenizes a DRO audiotrack manifest: QSettings::IniFormat [N]
 // groups of key=value pairs, values optionally wrapped in double quotes.
-//
-// This is a SEPARATE small scanner from internal/theme's INI reader
-// (theme.ParseINI), not a second general-purpose one: theme.INI stores everything as
-// a flat "section/key" map with no way to ENUMERATE the sections it read, and this
-// parser's whole job is to walk each [N] group in file order looking for the one
-// whose filename matches — a real capability gap in the shared reader, not a style
-// choice, and internal/theme/ini.go is not a file this task may touch. What IS
-// reused is theme.ParseINI's own discipline: blank lines skipped, keys matched
-// case-insensitively, one map of keys per section.
-//
 // A key appearing before any [section] header is skipped (not a shape DRO ever
 // writes); a section with no readable filename can never match a track and needs no
 // warning (hard rule 6 — a missing/unusable sidecar stays silent).
@@ -412,8 +363,6 @@ func droLoopSeconds(v string, secondsMode bool, sampleRate int) (seconds float64
 // two sections claiming the same filename is a malformed manifest DRO itself only
 // warns about (draudiotrackmetadata.cpp:83-87), not something this parser needs to
 // adjudicate further. ok=false when no section's filename matches at all.
-//
-// title is read by nobody — see DROTrackMeta's own doc comment (decision D18).
 func ParseDROLoopSidecar(data []byte, trackRel string, sampleRate int) (DROTrackMeta, bool) {
 	for _, sec := range parseDROManifest(data) {
 		fn, present := sec.kv[droFilenameKey]
@@ -466,9 +415,6 @@ func ClampLoopPoints(start, end, dur float64) (float64, float64) {
 // metadata for a URL-shaped track name — aomusicplayer.cpp has no sidecar path for
 // one at all, and DRAudiotrackMetadata's own constructor short-circuits on the URL
 // regex before ever touching s_audiotrack_cache (draudiotrackmetadata.cpp:98-109).
-//
-// IsDirectMusicURL is only unambiguous on the track's ORIGINAL, pre-resolution
-// wire name (exactly how isMusicURL is used everywhere else in this file:
 // MusicURL itself, courtroom.go:799/831). A caller holding only the fully
 // resolved URLBuilder.MusicURL() output cannot fall back to this gate: an asset
 // origin is itself an http(s) URL, so a legitimate origin-built track ALSO starts
@@ -493,7 +439,6 @@ func IsDirectMusicURL(url string) bool {
 // query string — precisely how a Discord CDN /play link is shaped
 // ("...song.mp3?ex=&is=&hm=", already documented on MusicDisplayName) — keeps
 // that '?' raw, because MusicURL returns such a track completely unchanged.
-//
 // This cannot, on its own, catch a direct link that carries NEITHER a query
 // string nor a fragment (a plain "https://host/sounds/music/x.opus" masquerading
 // as a resolved track) — a caller that still has the ORIGINAL wire text available
@@ -508,13 +453,6 @@ func hasRawQueryOrFragment(s string) bool {
 // with and per-segment URL-unescapes the remainder back to the track's AUTHORED
 // spelling (the inverse of escapePreservingSlashes) — the shape DRO's own manifest
 // stores under `filename` (draudiotrackmetadata.cpp:64), which is never URL-escaped.
-//
-// ok=false for a musicURL carrying a raw query string or fragment
-// (hasRawQueryOrFragment — a direct link's own signature, Part D) even when its
-// path coincidentally CONTAINS "sounds/music/" (a Discord CDN mirror or a
-// same-convention origin can be shaped exactly like that), checked BEFORE the
-// substring search for exactly this reason. ok=false too for a URL with no such
-// segment at all (a local-mount or differently-laid-out origin).
 func MusicRelPath(musicURL string) (rel string, ok bool) {
 	if hasRawQueryOrFragment(musicURL) {
 		return "", false
@@ -543,12 +481,6 @@ func MusicRelPath(musicURL string) (rel string, ok bool) {
 // names its own manifest (binding decision D26, matching the issue's own worked
 // example: sounds/music/dro_castlevania/dro_castlevania.ini for a track at
 // sounds/music/dro_castlevania/<file>).
-//
-// ok=false for a musicURL carrying a raw query string or fragment
-// (hasRawQueryOrFragment, checked before the "sounds/music/" search for the same
-// coincidental-substring reason MusicRelPath guards against) or for a track with
-// no folder segment at all — DRO's per-folder convention has nothing to
-// approximate for a bare filename.
 func DROLoopManifestURL(musicURL string) (string, bool) {
 	if hasRawQueryOrFragment(musicURL) {
 		return "", false

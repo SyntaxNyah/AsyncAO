@@ -37,17 +37,6 @@ const writeProbeName = ".asyncao-writetest"
 // ConfigBaseDir returns the directory that holds asset_preferences.json and the
 // rest of AsyncAO's per-user data (notebooks, jukebox). It is **portable-first**
 // with an OS-config-dir fallback:
-//
-//  1. If a portable config already exists beside the executable
-//     (<exeDir>/config/asset_preferences.json), use it — a copied folder or a
-//     stick keeps its settings.
-//  2. Otherwise, if the classic OS config dir already has one
-//     (<os.UserConfigDir>/AsyncAO/asset_preferences.json), use that — existing
-//     installs are never stranded.
-//  3. Fresh install: portable beside the exe when that directory is writable
-//     (the common case — unzipped to Desktop/Downloads/a stick); else fall back
-//     to the OS config dir (Program Files / locked-down installs).
-//
 // The result is memoized: the active location is fixed for the process lifetime,
 // so the writability probe in step 3 (a single create+delete) runs exactly once
 // — never per call. That matters because DefaultPath() flows through here and is
@@ -105,7 +94,6 @@ const FontsDirName = "fonts"
 
 // UserFontsDir is where AsyncAO looks for fonts the USER supplied — the last
 // resort before the operating system's own font folders.
-//
 // It exists because of how AO themes are actually distributed. A theme names its
 // families ("Ace Name", "Igiari Cyrillic", "DangitSpeaker") and ships none of the
 // files, because in AO2 they live in the BASE's fonts/ folder and Qt registers
@@ -113,12 +101,6 @@ const FontsDirName = "fonts"
 // themes-only repository, a zip from a friend — so a user who has never
 // downloaded a full base has the theme and none of its fonts, and every string
 // in it renders in the wrong face with nothing to say why.
-//
-// Putting the folder beside the preferences rather than beside a content root is
-// deliberate: it belongs to the USER, not to any one asset pack, so it keeps
-// working when they switch packs, add a second one, or have none at all. It
-// follows a portable install onto the stick with everything else.
-//
 // Empty string if the config location cannot be resolved, which callers treat as
 // "no such tier" rather than as an error — a missing font folder is the normal
 // state, not a fault.
@@ -140,24 +122,6 @@ const ThemesDirName = theme.ThemesDirName
 // exports, editable copies, saved presets — and the third root theme lookups
 // search (internal/ui's themeLoadRoots, appended LAST so nothing that resolves
 // today resolves differently).
-//
-// Portable-first, exactly like ConfigBaseDir and for the same reason: an
-// unzipped-to-Desktop or USB-stick install must carry its themes with it, and a
-// Program Files install must not try to write beside the exe. In the portable
-// case the folder sits beside the executable — NOT inside config/ — because that
-// is the drop convention the client has always documented (<exeDir>/themes/<name>),
-// so a portable user's write root and their drop folder are the same folder.
-//
-// The writability question is ALREADY answered and memoized by ConfigBaseDir's
-// step-3 probe, and the executable's directory is memoized by executableDir, so
-// every input this joins is resolved at most once per process: no fresh
-// MkdirAll/create/remove per session, no risk of the write root silently
-// relocating between sessions, and after the first call no syscalls at all — a
-// draw path may call it (hard rule 2). The FIRST call, on a cold process, does
-// pay for whichever memo is still empty, so a caller that can avoid it on a
-// draw path still should (see drawThemeCatalogRows, which prefers the scan's
-// published WriteRoot).
-//
 // Empty string if the config location cannot be resolved — callers treat that as
 // "no write root", never as an error, exactly like UserFontsDir.
 func UserThemesDir() string {
@@ -184,10 +148,7 @@ func userThemesDir(portable bool, exeDir, configBase string) string {
 // resolveConfigBase is the pure resolution policy (no I/O of its own — existence
 // and writability are injected so it's unit-testable). Returns the chosen base
 // directory and whether that base is the portable one.
-//
 // The step-1 trigger is the existence of the prefs *file*, never the directory:
-// an accidentally-created empty config/ folder must not hijack an existing
-// OS-config user onto fresh defaults. Do not "simplify" this to a dir check.
 func resolveConfigBase(exeDir, osDir string, exists func(string) bool, writable func(string) bool) (dir string, portable bool) {
 	portableDir := ""
 	if exeDir != "" {
@@ -223,20 +184,9 @@ func resolveConfigBase(exeDir, osDir string, exists func(string) bool, writable 
 // with a copied install or a USB stick. The source (e.g. AppData) is left
 // untouched: migration is a copy, never a move, so a botched run can't lose
 // settings. Takes effect on the next launch. Returns the destination directory.
-//
 // All three are copied together because, while resolution keeps them in one
 // place automatically, the migration copy is the single spot where that
 // consistency isn't free — copying only prefs would strand notebooks/jukebox.
-//
-// THEMES travel too, but not into config/. The write root is portable-aware
-// (UserThemesDir): while config lives in AppData the user's themes sit at
-// <AppData>/AsyncAO/themes, and after this migration the client writes them to
-// <exeDir>/themes. Letting the tree copy carry them would land them in
-// <exeDir>/config/themes instead — still readable (it is the config root), but
-// no longer the folder anything WRITES to, so the collection would silently
-// split in two and every later export would land somewhere the old themes are
-// not. The themes folder is therefore excluded from the tree copy and copied to
-// the portable write root instead.
 func (p *AssetPreferences) MigrateToPortable() (string, error) {
 	dest := PortableConfigDir()
 	if dest == "" {
@@ -293,7 +243,6 @@ func copyTree(src, dst string) error { return copyTreeExcept(src, dst, nil) }
 // copyTreeExcept is copyTree with a set of TOP-LEVEL entry names to leave behind
 // (matched by name, so only the roots of the copy are filtered — a nested
 // "themes" folder inside a notebook directory is still copied).
-//
 // The match is case-INSENSITIVE (skipEntry): Windows and macOS filesystems fold
 // case, so a user whose folder is spelled "Themes" has the same directory the
 // exact-match set was meant to exclude, and an exact match would copy it into
@@ -386,7 +335,6 @@ var (
 
 // ExecutableDir is executableDir for callers outside this package — the ONE
 // spelling of "the directory the running executable is in".
-//
 // It is exported because internal/ui resolves the same directory to build its
 // theme search roots, and it used to do so with a raw os.Executable +
 // filepath.Dir. That skips the EvalSymlinks step below, so on a symlinked or
@@ -395,7 +343,6 @@ var (
 // write-root backstop, the origin badge) is a string comparison by design. Two
 // spellings there mean a root scanned twice, or a "bundled" theme badged
 // "read-only". One memoized answer, shared, is the fix.
-//
 // All THREE theme root builders now call it — the catalog scan
 // (ui/themecatalog.go), the picker's shared list (ui.themeSearchRootsNow) and
 // the loader (ui.applyThemeAsync) — which is what makes their root lists equal

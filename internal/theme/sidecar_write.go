@@ -4,36 +4,6 @@ package theme
 // lossless document the reader kept, so comments, blank lines, key order, key
 // casing, unknown keys, entire unknown sections and the author's own formatting
 // all survive byte-identical.
-//
-// THE ONE RULE THAT MAKES THAT TRUE (setKey, below): a key is written only when
-// the document does not ALREADY MEAN what the model says. "Means" is decided by
-// running the reader's own parser over the current text and formatting the
-// result — so a differently-spelled but equivalent value ("1,2,3,4"), an
-// out-of-range value the reader clamped, and an UNKNOWN ENUM VALUE the reader
-// degraded are all left exactly as the author wrote them.
-//
-// "The reader's own parser" INCLUDES ITS RANGE CONVERSION. Every field the
-// reader narrows has a canonicaliser that narrows identically (canonZ,
-// canonTimeMs, canonByte, canonAmp, canonSize, canonSlice); canonInt is for the
-// two UNBOUNDED integers alone. A canonicaliser that skipped the conversion
-// would report an untouched file as changed and rewrite a line nobody edited —
-// which is the whole failure this type exists to prevent.
-//
-// The same applies to SECTION NAMES: they come from the model's own record of
-// what the reader saw (Element.ID, Pane.ID, ClockSpec.ID), never rebuilt, or a
-// legal alternative spelling gains a duplicate section beside it.
-//
-// LIMIT, stated plainly: THE WRITER STILL HAS NO DELETE, and the distinction
-// matters now that INIDoc has one. INIDoc.RemoveSection (W9) removes a section
-// on request; nothing in this file calls it, because "the model no longer holds
-// this" and "the author deleted this" are not the same claim — the reader
-// deliberately SKIPS an element whose `kind` a newer build invented and preserves
-// its section, so a writer that pruned every element section the model lacks
-// would delete exactly the forward-compat data rule 3 exists to protect.
-// Deletion is therefore driven by the ACT that meant it: the preset tier replace
-// (presetmerge.go's clearReplacedTier) and the editor's element delete. There is
-// still no KEY delete at all — an empty model value leaves the author's line
-// alone (setKey, below).
 
 import (
 	"io"
@@ -43,13 +13,6 @@ import (
 
 // elementFieldKeys maps every Element FIELD to the wire key that carries it, in
 // the order a freshly written element lists them.
-//
-// IT IS THE FORMAT. TestSidecarSchemaMatchesTheElementStruct reflects Element
-// against this table and fails on any field that is missing, so a field added to
-// the struct without a key here cannot silently save as nothing — the
-// model-vs-format drift class that TestEverySavedPreferenceIsAlsoLoaded closed
-// for preferences, applied to the theme format.
-//
 // An empty key means the value is carried by the SECTION NAME instead. There is
 // no third category.
 var elementFieldKeys = []struct{ field, key string }{
@@ -93,30 +56,9 @@ var elementFieldKeys = []struct{ field, key string }{
 }
 
 // Bytes serialises the sidecar back through its lossless document.
-//
-// IT VALIDATES FIRST (Sidecar.Validate, sidecar_validate.go) and refuses BEFORE
-// it edits anything, so an editor holding a live model can never write a file
-// the reader would refuse or silently truncate. That check is the writer's
-// precondition, not an option: there is no exported path around it, which is
-// the whole point — a caller that could skip it would skip it.
-//
-// THAT CLAIM IS ENFORCED, NOT ASSERTED (ledger L32).
-// TestNoExportedPathWritesASidecarWithoutTheGuard censuses this package's whole
-// API for a symbol that hands out a writable *INIDoc or emits sidecar bytes
-// without going through the guard. The claim was FALSE when it was first
-// written — Sidecar.Doc() returned the live document and INIDoc.Set/Bytes/Write
-// are all exported — and it survived because nothing executed it.
-//
-// W7 reopens the door deliberately and narrowly: its undo ring and autosave need
-// the document, so the wave that owns those CALL SITES adds the one path they
-// need, guarded, and extends the census's allow-list with the reason. That is
-// the open–closed shape — open to a wave that names its callers, closed against
-// a general-purpose accessor nobody can arbitrate.
-//
 // COLD PATH ONLY (hard rule 2). On error the document may hold a partial edit —
 // the caller discards it rather than writing it, which is why the atomic
 // temp+fsync+rename dance belongs to whoever owns the destination directory.
-// A VALIDATION error leaves the document untouched.
 func (s *Sidecar) Bytes() ([]byte, error) {
 	if s == nil {
 		return nil, nil
@@ -149,7 +91,6 @@ func (s *Sidecar) Bytes() ([]byte, error) {
 
 // Write serialises to w. It does not touch the disk itself — the atomic
 // temp+fsync+rename dance belongs to whoever owns the destination directory.
-//
 // Named Write, not WriteTo, to mirror INIDoc.Write: io.WriterTo's WriteTo has a
 // fixed (int64, error) signature, and go vet's stdmethods check is right that a
 // method wearing that name should be that interface.
@@ -195,14 +136,6 @@ func (s *Sidecar) writeInto(d *INIDoc) error {
 type canonFunc func(string) string
 
 // setKey is the whole preservation contract in nine lines.
-//
-//   - want == "": the model has nothing to say. An existing line is left alone
-//     (there is no KEY delete — see the file header) and no line is created.
-//   - the key is ABSENT: written only when it differs from the format default,
-//     so a fresh file lists what the author chose and nothing else.
-//   - the key is PRESENT: written only when the document does not already mean
-//     it. That single comparison is what preserves comments, spellings,
-//     clamped values and unknown enum values through a save.
 func setKey(d *INIDoc, section, key, want, def string, canon canonFunc) error {
 	if want == "" {
 		return nil
@@ -508,7 +441,6 @@ func (s *Sidecar) writeElement(d *INIDoc, e *Element) error {
 // the scalar alias ("nine_slice = 12") and still means it. Writing the
 // canonical four-tuple beside it would be a diff nobody asked for — and two
 // keys saying the same thing, which is worse than either spelling.
-//
 // It is deliberately narrow: the moment the model's inset stops matching what
 // the alias says, the canonical key IS written, so an edit is never lost.
 func sliceIsHeldByItsAlias(d *INIDoc, section string, e *Element) bool {
@@ -638,14 +570,6 @@ func canonFree(s string) string { return encodeFreeText(decodeFreeText(s)) }
 
 // canonMetaFree / canonMetaPlain are canonFree / canonPlain THROUGH the metadata
 // truncation, and they are the reason the degrade never reaches the author's file.
-//
-// A canonicaliser answers "what does the text on disk mean to THIS reader?", and
-// what a 300-rune credit means to this reader is its first 240 runes (metatext.go).
-// Saying so here makes setKey's comparison come out equal, so the line is left
-// exactly as the author wrote it — and a newer build with a bigger cap reads their
-// whole sentence back. Canonicalising WITHOUT the truncation would rewrite that
-// line to the short version on the first save of an unrelated rect nudge, which is
-// the silent-truncate-then-save data loss §7's caps block exists to prevent.
 func canonMetaFree(s string) string {
 	v, _ := truncMetaRunes(decodeFreeText(s))
 	return encodeFreeText(v)
@@ -661,7 +585,6 @@ func canonMetaPlain(s string) string {
 // it. (format is additionally the one key a save always stamps — §7's writer
 // rules — so a file that spells it 0, or spells it nothing an integer, is the
 // one line the writer does rewrite, into the grammar it can be read by.)
-//
 // Every integer the reader NARROWS has its own canonicaliser below, because a
 // canonicaliser that skips the reader's conversion reports an untouched file as
 // changed and rewrites the author's line.

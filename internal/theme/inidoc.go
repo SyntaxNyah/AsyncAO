@@ -11,27 +11,10 @@ import (
 // into them. ParseINI's map stays the fast READ path (theme.Load, char.ini);
 // INIDoc is the WRITE path and is COLD ONLY — it is never touched from a draw,
 // decode or resolver path (rule 2).
-//
-// Serialising re-emits every line VERBATIM except the ones whose value actually
-// changed, so comments, blank lines, key order, key casing, unknown keys, entire
-// unknown sections, and the author's own formatting all survive byte-identical. A
-// writer that rebuilt from the map would silently delete every comment in a
-// fifteen-year-old community theme the first time a user nudged one box — and the
-// checked-in aceattorney2x fixture is comment-dominated, so that is not a
-// hypothetical.
-//
-// Set replaces only the VALUE SPAN of a line, which is why a trailing comment
-// survives an edit:
-//
-//	music_name = 1, 1, 134, 22  ; Relative to music_display.
-//	                ↓ Set("", "music_name", "2, 2, 100, 20")
-//	music_name = 2, 2, 100, 20  ; Relative to music_display.
-//
 // CLASSIFICATION IS PARITY-BOUND. Every line is read here EXACTLY as ParseINI
 // reads it — same BOM strip, same whole-line ';' truncation, same '#' rule, same
 // last-declaration-wins on a repeated key. If the two ever disagreed, INIDoc
 // would rewrite a line the reader does not read, which is a silent no-op edit.
-// FuzzINIDocRoundTrip pins the agreement on both halves.
 type INIDoc struct {
 	lines   []iniLine      // cap IniDocLineCap
 	index   map[string]int // "section/key" (lowercased) -> line
@@ -137,7 +120,6 @@ type iniLine struct {
 	// line, and the section NAME INSIDE THE BRACKETS for a header line. Both
 	// exclude the surrounding whitespace and any ';' comment that follows, which
 	// is what makes an edit preserve a trailing comment on either kind of line.
-	//
 	// ONE SPAN, ONE SPLICER. Bytes replaces raw[valStart:valEnd] with whatever
 	// `touched` holds for the line and re-emits the rest verbatim, so a header
 	// rename and a value edit are the same three writes rather than two
@@ -209,7 +191,6 @@ func ParseINIDoc(src []byte) (*INIDoc, error) {
 // (see INIDoc.bom), so l.raw is pure line content here — which is also why a
 // U+FEFF that reaches this function is ordinary key text, exactly as the reader
 // treats a mid-file one (iniparity_test.go's mid-file case).
-//
 // This is ParseINI's body, expressed in OFFSETS instead of trimmed copies. Any
 // change to one must be mirrored in the other; FuzzINIDocRoundTrip fails
 // loudly when they drift.
@@ -274,7 +255,6 @@ func (d *INIDoc) Get(section, key string) (string, bool) {
 
 // Set records a new value for key under section, adding the key — and the
 // section header, if that is missing too — when it is not already declared.
-//
 // It refuses a value it could not read back as itself (rule: never emit a value
 // that reads as something else). A ';' would truncate the line at the reader,
 // and a newline would split it in two, so free text is percent-encoded by the
@@ -295,7 +275,6 @@ func (d *INIDoc) Set(section, key, value string) error {
 }
 
 // RenameSection moves a whole section under a new name, losslessly.
-//
 // THE BYTES DO NOT MOVE — the NAME does. Only the header line's own name span is
 // spliced; every key, comment, blank line and unknown line under it stays exactly
 // where the author put it, in the author's own spelling, and the section keeps its
@@ -306,16 +285,6 @@ func (d *INIDoc) Set(section, key, value string) error {
 // whatever the section described (sidecar_write.go's stated limit, and the exact
 // duplication TestElementIdIsNotAnInspectorField was written to forbid until this
 // function existed).
-//
-// EVERY header for the section is renamed, not just the first. A file may open the
-// same section twice — the reader treats the two runs as one section (last
-// declaration wins per key), so leaving the second header behind would split one
-// section into two under different names and silently strand half its keys.
-//
-// It REFUSES rather than merges when `to` already exists: merging two sections is
-// not a rename, it is a key collision whose winner depends on line order, and a
-// caller that wants it can say so in two calls.
-//
 // COLD PATH (hard rule 2), like every other mutator here.
 func (d *INIDoc) RenameSection(from, to string) error {
 	f := strings.ToLower(strings.TrimSpace(from))
@@ -359,38 +328,6 @@ func (d *INIDoc) RenameSection(from, to string) error {
 
 // RemoveSection deletes a whole section: its header, its keys, and the comments
 // the author wrote INSIDE it.
-//
-// WHY A LOSSLESS DOCUMENT NEEDS A DELETE AT ALL. "Emit the original bytes on any
-// line I did not deliberately change" is the promise, and it is exactly right for
-// every line the model still MEANS something about. It is wrong for a section the
-// model has DROPPED: without a delete, a removed element's section stays in the
-// file, the next read resurrects it, and the theme on disk is not the theme the
-// user saved. Measured on the preset gallery before this existed: apply a second
-// style to a saved theme and 35 elements are written out and 70 read back; the
-// worst shipped re-style reloads at 97 against ElementCap = 96, which the reader
-// then REFUSES. A delete is a deliberate change like any other — what has to stay
-// narrow is who calls it, and the callers are the tier replace (presetmerge.go)
-// and the editor's element delete, both of which act on an explicit user act.
-//
-// EVERY RUN GOES, not just the first. A file may open one section twice (the
-// reader treats the two runs as one section, last declaration wins per key), so
-// leaving the second behind would leave half the section standing under a header
-// whose keys have vanished.
-//
-// WHAT IT DELIBERATELY KEEPS: the trailing run of blank lines and comments that
-// sits between the section's last KEY and the next header. Those bytes are as
-// likely to be the author's introduction to the section BELOW as a footnote to
-// the one being deleted (sectionEnd's comment already accepts the same ambiguity
-// from the other side), and guessing wrong deletes prose this type exists to
-// preserve. A stale comment left behind is cosmetic; a deleted paragraph is not.
-// The kept lines are re-parented to the section in effect where the run stood,
-// which is exactly where a re-parse would put them — without that, sectionEnd
-// would still find the vanished section and append its next key with no header.
-//
-// ErrINIDocNoSection reports a section the document never declared, which is the
-// ORDINARY case for an element authored this session: nothing to delete is not a
-// failure, and the callers ignore it.
-//
 // COLD PATH (hard rule 2), like every other mutator here.
 func (d *INIDoc) RemoveSection(name string) error {
 	sec := strings.ToLower(strings.TrimSpace(name))
@@ -602,14 +539,6 @@ func (d *INIDoc) insertLine(at int, raw, section, key string, isKey bool) int {
 
 // sectionEnd returns the index one past the last line of section, and whether a
 // header for it has to be created.
-//
-// THE CONVENTION, stated as it actually behaves: every line up to the next
-// header belongs to the section ABOVE it (classifyINILine assigns the section in
-// effect), trailing comments and blank lines included. A new key therefore lands
-// at the very end of that run — immediately before the next header — and when
-// the author wrote a comment block INTRODUCING the next section, the new key
-// lands underneath that comment.
-//
 // That placement is accepted, not overlooked. Deciding that a trailing comment
 // "really" belongs to the section below means guessing at prose, and a wrong
 // guess moves the author's own words, which is the one thing this type exists to
@@ -652,9 +581,6 @@ func (d *INIDoc) reindex() {
 
 // badINIToken reports a section or key that could not survive a write/read
 // round trip: the reader would truncate it, split it, or fail to find the '='.
-//
-// U+FEFF is refused ANYWHERE in the token, not just as a prefix, even though only
-// a leading one on the file's first line actually drifts (there the reader strips
 // it — ini.go:34 — and reads back "k" for a key this document indexed as
 // utf8BOM+"k"; a literal BOM is never spelled out in this source because it is
 // invisible in every editor and diff, which is what makes the bug class so

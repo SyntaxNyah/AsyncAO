@@ -180,4 +180,3 @@ type ResolvedAsset struct {
 // resolver falls through to the next tier and records a miss instead), so the
 // type, its Error() and this helper were dead — deadcode + `git grep -w` at the
 // tip found no constructor anywhere, tests included.
-

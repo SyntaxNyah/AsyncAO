@@ -1,5 +1,4 @@
 // Package config persists user-tunable asset preferences.
-//
 // Concurrency model (spec §5): mutators take the write lock, mutate in
 // memory, and non-blockingly signal a single saver goroutine — they never
 // touch the disk. The saver debounces (DefaultSaveDebounce after the last
@@ -96,7 +95,6 @@ const defaultThemeLayout = true
 
 // Theme-fit modes: how an AO2 theme's FIXED design size fills a differently
 // shaped window.
-//
 // Native is the shipped default because stock AO2 never scales a theme at all —
 // setFixedSize makes the window BE the canvas (AO2-Client charselect.cpp:83, and
 // set_courtroom_size() for the courtroom), so a theme's pixels land on screen
@@ -106,7 +104,6 @@ const defaultThemeLayout = true
 // clipped. Stretch (the old default — webAO-style) fills edge-to-edge with a
 // slight aspect distortion; Letterbox keeps the exact proportions with bars;
 // Crop scales up to fill and lets the overflow run off-screen.
-//
 // These values are PERSISTED, so the list is APPEND-ONLY: renumbering would
 // silently reinterpret every saved choice. Native therefore sits at 4, which
 // means the zero value is no longer the default — a file written before Native
@@ -173,10 +170,6 @@ const defaultShoutBypassQueue = true
 // stays real-time — in a busy room the newest message types out in full (with
 // its sprite, name and effects) while any backlog behind it flashes past, so
 // the textbox always tracks the latest line instead of crawling seconds behind.
-// At the default of 1, a message plays in full only when nothing is queued
-// behind it (calm back-and-forth still plays every line; only a genuine pile-up
-// catches up). Raise it to let a deeper backlog animate. DefaultCatchUpThreshold
-// is exported so the UI can show it; clamped to [catchUpThresholdMin, catchUpThresholdMax].
 const (
 	DefaultCatchUpThreshold = 1
 	catchUpThresholdMin     = 1
@@ -315,11 +308,6 @@ const (
 // Emote-grid icon spacing (LOGICAL px), the gap on BOTH axes between cells in the
 // AsyncAO courtroom emote grid. Default is the value that used to be hardcoded, so
 // nobody's grid moves on upgrade.
-//
-// LOGICAL px, not device px: the grid rect it divides is laid out in logical space,
-// so one setting holds the same visual gap at 100% and at 200% UI scale. Device px
-// would make the icons drift closer together as the UI scaled up.
-//
 // Min is 0 ON PURPOSE (butt the icons together — AO2 themes ship "0, 0" spacings
 // for exactly that look), which is why the on-disk DTO carries this as a *int: with
 // a plain int, "0" and "this config predates the setting" are the same bytes, and
@@ -355,15 +343,9 @@ const defaultAutoLoginToast = true
 
 // defaultFontCensus ships ON: text in a script the bundled chain can't draw finds
 // a font already installed on the machine instead of rendering as empty boxes.
-//
 // It is a preference at all because it is the one font path whose INPUT is the
 // user's operating system rather than anything AsyncAO ships — it indexes the
 // system font directories and installs what it finds into the live chat chain.
-// That makes it the first suspect whenever text misbehaves on a platform the
-// developers can't reproduce on, and being able to switch it off settles in one
-// try what would otherwise be a long remote guessing game. Off, the client falls
-// back to the bundled chain: Latin and the curated scripts still render, the rest
-// go back to boxes.
 const defaultFontCensus = true
 
 // defaultScreenEffects ships ON: the AO2 screenshake (\s) and realization flash
@@ -933,14 +915,6 @@ const (
 	// courtroom.h:333 `int text_crawl = 40`). It is ALSO the blip clock: chat_tick
 	// fires one blip every BlipRate letters, so the crawl interval is the "blip
 	// speed" a user actually hears.
-	//
-	// It used to be 18 (courtroom.DefaultCharInterval, spec §1), which crawled well
-	// over twice as fast as every other AO client and machine-gunned the blips.
-	// courtroom.DefaultCharInterval stays at 18 as the LIBRARY's own zero-config
-	// default (its tests are written against it); the shipped client always pushes
-	// this preference into the room (applyTimingToRoom), so this is the value that
-	// reaches a player. Existing installs are moved once by
-	// BlipSpeedDefaultMigrated — see load().
 	DefaultTextCrawlMs = 40
 	MinTextCrawlMs     = 5
 	MaxTextCrawlMs     = 100
@@ -1026,31 +1000,15 @@ type AssetPreferences struct {
 	// was still sitting on the old Stretch default, so the move actually changed
 	// what the user sees. Never serialized (unexported): it describes this
 	// process's load, not the file, and the persisted record is the stamp itself.
-	//
 	// It exists because the mode flip alone leaves an upgrading user staring at a
 	// small centred canvas ringed by bars where an edge-to-edge Stretch courtroom
 	// used to be — an outcome that can only be undone by hunting through Settings.
-	// The UI reads it
-	// once at startup (ThemeFitDefaultJustMoved) to arm the same one-shot window
-	// snap a deliberate theme pick arms, so the first launch after updating lands
-	// on the theme's design size and every later launch is untouched. Config never
-	// reaches into the UI; it only reports what it did. See load().
 	themeFitMovedToNative bool
 
 	// themeFitStampPending records that THIS load wrote the one-shot
 	// ThemeFitDefaultMigrated stamp that the file did not carry. Never serialized
 	// (unexported): it describes this load, and newWithDebounce clears it by
 	// flushing the file synchronously before the app can run.
-	//
-	// The debounced saver is not enough for a stamp. markDirty only queues, and
-	// during load() the dirty channel does not even exist yet, so the stamp reaches
-	// disk on the next unrelated mutation — or, failing that, only on Close. A
-	// launch that ends before either (a crash, a kill, a fast quit) leaves the file
-	// unstamped, and the migration AND the one-time window snap it arms both run
-	// again next launch. Writing once here is what makes "once, ever" true rather
-	// than "once per persisted stamp"; it is a boot-path write of one small file,
-	// not a render/decode/resolver path (hard rule 2), and it is the same reasoning
-	// the corrupt-file quarantine rename in load() already uses.
 	themeFitStampPending bool
 
 	// formatGen increments on every mutation that changes any effective
@@ -1162,7 +1120,6 @@ type ServerWarmInfo struct {
 	// perks off /login too, and the same flow signs either in. PLAINTEXT
 	// in the prefs file — the same trust level as a saved browser
 	// password without an OS keychain; the settings UI says so out loud.
-	// AutoLogin sends the flow on every join.
 	LoginUser string `json:"loginUser,omitempty"`
 	LoginPass string `json:"loginPass,omitempty"`
 	AutoLogin bool   `json:"autoLogin,omitempty"`
@@ -1420,10 +1377,6 @@ func defaultSettings() *Settings {
 		// documents the box as "the new default" — only this seed still said otherwise,
 		// so a first-run user got the Legacy-style hybrid (a log tab PLUS a second
 		// always-visible OOC bar at the bottom) the rest of the UI treats as opt-in.
-		// EXISTING configs are untouched: prefsJSON.OOCInLogTab carries no omitempty, so
-		// every file ever saved holds an explicit value that the unconditional load
-		// overlay copies back — no migration stamp needed (unlike ThemeFitDefaultMigrated,
-		// where the sibling field's zero value was ambiguous with "never written").
 		OOCInLogTab: false,
 
 		MusicVol:        defaultStartVolume,
@@ -1913,7 +1866,6 @@ func (p *AssetPreferences) EmoteHoverNamesDelay() time.Duration {
 
 // EmoteGridGap returns the gap between emote icons on the AsyncAO grid, in
 // LOGICAL px. Read once per grid draw (never per cell) — it takes the pref lock.
-//
 // No "<= 0 means default" rescue here, unlike PreviewHeightPx: zero is a value the
 // user can pick (icons flush against each other), so the only way to get the
 // default back is the slider. defaultPrefs seeds it and the load overlay only
@@ -2381,7 +2333,6 @@ func (p *AssetPreferences) ClearPanelFonts() {
 
 // Proxy modes. The values are persisted, so their ORDER is load-bearing and new
 // modes must be appended.
-//
 // The mirror of netproxy.Mode, spelled out here rather than imported, because
 // internal/config sits below internal/netproxy and a preference package that
 // depends on a network package would invert the layering. A test in internal/ui,
@@ -2639,7 +2590,6 @@ func (p *AssetPreferences) SetTheme(name, dir string) {
 // SetSubtheme stores the AO2 subtheme folder ("" = none). The value is
 // sanitized here as well as on load: it is joined onto a filesystem path, so a
 // separator or a ".." must never survive the setter either.
-//
 // An EMPTY argument clears the pick; a non-empty one that cannot be a folder
 // name is REFUSED rather than folded into a clear. The two are different user
 // intents ("no subtheme" vs "this subtheme"), and silently turning the second
@@ -3320,9 +3270,6 @@ func (p *AssetPreferences) SetAudioVolumes(music, sfx, blip int) {
 // strip's SFX cell) is session-only (see ui.toggleSFXMute / ui.resetSessionState),
 // so its field and accessors are retained only for schema compatibility and are
 // never read by the app — an accidental Mute-SFX press must not survive a restart.
-// Named *VolMuted (not SFXMuted) to stay clear of two unrelated existing
-// names: courtroom.Config.SFXMuted (the per-emote-SFX-name mute predicate)
-// and AssetPreferences.MutedSFX (the M11 per-name mute list).
 
 // HoldClear reports the hold-to-clear settings: whether it's on, the key name
 // (SDL key name, e.g. "Backspace"), and the hold duration in ms.
@@ -3567,8 +3514,6 @@ const (
 	// alpha, ~4x smaller); DXT1 = BC1 (4 bpp, 1-bit alpha, ~8x smaller). Lossy
 	// (4x4 blocks); applies only to canvases whose width/height are multiples of
 	// 4 and only when the renderer advertises the format.
-	// Stored value 0 = absent (omitempty) -> the shipped default (DXT5). The
-	// explicit modes are 1/2/3 so "Off" stays a real, selectable choice.
 	TexCompressOff  = 1
 	TexCompressDXT5 = 2
 	TexCompressDXT1 = 3
@@ -3582,8 +3527,6 @@ const (
 	// every monitor refresh — on a 144/165 Hz laptop panel that's a full-screen
 	// GPU composite 165×/sec while IDLE (fans, +10 °C — the playtest report).
 	// Three caps, all sleep-based (vsync stays on for tear-free presents):
-	// foreground (the ceiling), idle (nothing animating), unfocused (another
-	// window has focus; minimized already naps).
 	FPSCapDefault = FPSUnlimited // Active default = ∞ / vsync-paced (the playtesters' hard default; the ceiling only bites if you type a number or drag off ∞)
 	FPSCapMin     = 1
 	FPSCapMax     = 240
@@ -3620,10 +3563,6 @@ const (
 	// Background knobs (the Settings 0 / bottom-of-slider position). The loop
 	// stops issuing periodic idle redraws in that state and waits purely on real
 	// damage + scheduled deadlines (caret flip, clock tick, animation frame).
-	// Distinct from FPSUnlimited (uncapped) and from 0, which stays "the shipped
-	// default" on the wire — so an ABSENT key loads as the default, not off, and
-	// only an explicit choice writes FPSOff. The Active cap has no "off" (0 fps
-	// while interacting is meaningless), so the Active row never emits it.
 	FPSOff = -2
 )
 
@@ -3811,7 +3750,6 @@ func (p *AssetPreferences) ResetPowerUser() {
 // `effects` — LAST field, whose index depends on whether the conditional showname
 // preceded it (courtroom.Session.RequestMusicWithFlags); the server's echo carries
 // them at field 5. AO2-Client src/datatypes.h:95-101.
-//
 // Duplicated here as plain ints rather than imported from internal/courtroom for
 // the same reason SpriteLoad* is: config must not depend on the packages that
 // consume it.
@@ -4359,7 +4297,6 @@ const LearnedExtCap = 4
 // moving it to the FRONT of whatever was already learned instead of replacing
 // the list. The resolver calls this on every successful probe; persistence is
 // lazy via the debounced saver.
-//
 // Promote, not overwrite: a host can serve more than one format for the same
 // class, and dropping the others is what stranded ~560 PNG-button characters on
 // umineko.online behind a lone .webp candidate. Mirrors assets.promoteExt — the
@@ -4562,7 +4499,6 @@ func (s *Settings) ThemeRectOverrides(theme string) map[string][4]int {
 // HasThemeRectOverride reports whether one widget carries a persisted layout-editor
 // override under a theme — the allocation-free probe ThemeRectOverrides cannot be
 // (it copies the whole map, so a per-frame caller would allocate every frame).
-//
 // It exists because for one key the override's PRESENCE is itself the state: the
 // server-tab strip is client chrome whose "the user has placed this on the theme's
 // canvas" flag cannot be recovered from its geometry (a legitimate drag can land
@@ -5169,7 +5105,6 @@ func (p *AssetPreferences) SetMacros(in []MacroSpec) {
 // Stretch→Native theme-fit move: the stamp was absent (so this is the first run
 // after updating for this file) AND the file was still on the old Stretch
 // default, so the mode actually changed under the user.
-//
 // It is the upgrade signal for the #35 window snap — the caller uses it to arm
 // exactly one automatic resize to the theme's design size, so an existing user
 // does not go from an edge-to-edge courtroom to a small canvas ringed by bars
@@ -5179,7 +5114,6 @@ func (p *AssetPreferences) SetMacros(in []MacroSpec) {
 // the migrating launch (newWithDebounce) rather than left to the debounced saver
 // — a stamp that can be lost to a crash inside the debounce window would only
 // buy "once per persisted stamp", and the move would re-run and re-snap.
-//
 // Pure read (no consume), so it is safe to call from anywhere; the caller owns
 // the "act on it once" decision. A file that kept a deliberate Letterbox/Crop/
 // Custom pick reports FALSE — its look did not change, so nothing should move.
@@ -5294,11 +5228,8 @@ func (p *AssetPreferences) LocalAssets() (enabled bool, mounts []string) {
 // SetLocalAssets toggles no-streaming mode and stores the ordered mount
 // folder list. It returns false — changing nothing — when the call would GROW
 // the list past LocalMountCap.
-//
 // Refusing only GROWTH is deliberate. A flat `len(mounts) > LocalMountCap`
 // rejection would brick any user who already has more mounts saved than the cap:
-// every caller (the mode toggle, the Remove button, the downloader's add button)
-// routes the WHOLE list through here, so they could never prune back under it.
 func (p *AssetPreferences) SetLocalAssets(enabled bool, mounts []string) bool {
 	accepted := true
 	p.Update(func(sn *Settings) {
@@ -5314,14 +5245,6 @@ func (p *AssetPreferences) SetLocalAssets(enabled bool, mounts []string) bool {
 
 // LayeredAssets reports the mode where local mounts are read ALONGSIDE
 // the server's stream, with the user's own files winning at the same path.
-//
-// It is the ONE place the two stored bools are normalized, so the reachable
-// fourth state (both set) has exactly one defined meaning: Local-only WINS, and
-// layering is inert. That matters because the two modes are structurally
-// incompatible — Local-only builds a local-mode Manager whose URLs already carry
-// the local:// origin, and layering a mount origin over a mount origin would
-// double-serve. Everything that gates on layering must call THIS, never the raw
-// field.
 func (p *AssetPreferences) LayeredAssets() (layered bool, mounts []string) {
 	snap := p.Load()
 
@@ -5349,7 +5272,6 @@ func (p *AssetPreferences) SetLayeredAssets(layered bool) {
 // BaseMountsEqual reports whether want is exactly the mount list the asset
 // pipeline is reading right now — the SAME list LocalAssets/LayeredAssets would
 // hand back, in the same order — without copying it out.
-//
 // It exists because both accessors allocate: each takes `make([]string, n)` +
 // copy under the lock, which is correct for a caller that keeps the slice but is
 // pure waste for a caller that only wants to know "did this change since last
@@ -5357,12 +5279,7 @@ func (p *AssetPreferences) SetLayeredAssets(layered bool) {
 // FRAME while its tab is open, so with mounts configured the copy was one or two
 // heap allocations per frame for an answer that is a comparison. Comparing under
 // the read lock costs nothing and never escapes the stored slice.
-//
 // The mode logic mirrors ui's baseMounts and is pinned by a parity test there:
-// Local-only wins, layering applies only when it is on with mounts and the
-// exclusive flag is off (LayeredAssets' normalization), and neither mode means
-// no mounts at all — offering folders the pipeline is not reading would list
-// characters that then fail to load.
 func (p *AssetPreferences) BaseMountsEqual(want []string) bool {
 	snap := p.Load()
 
@@ -5401,7 +5318,6 @@ func (p *AssetPreferences) AddFavorite(name, url, description string) {
 // (rejected to avoid a silent, surprising merge onto that target). A no-op edit
 // (nothing actually changed) returns true — the caller treats false purely as
 // an error signal, so an unchanged Save must not report failure. markDirty()
-// fires only on a real change.
 func (p *AssetPreferences) UpdateFavorite(oldURL, newName, newURL, description string) bool {
 	if oldURL == "" || newURL == "" {
 		return false

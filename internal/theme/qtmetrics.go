@@ -1,52 +1,11 @@
 package theme
 
 // The row pitch Qt gives a face, read out of the face's own OS/2 table.
-//
-// WHY THIS FILE EXISTS. AO2 stacks the chatbox message's wrapped rows with Qt's
 // text engine (ui_vp_message is a QTextEdit — AO2-Client src/courtroom.h:626,
 // constructed at src/courtroom.cpp:97). AsyncAO stacks them with the metric
 // SDL_ttf reports (internal/render.FontLineSpacing). Those two read DIFFERENT
 // tables out of the same font file, and for a face that disagrees with itself the
 // gap is enormous:
-//
-//   - FreeType — and therefore SDL_ttf's TTF_FontHeight / TTF_FontLineSkip — takes
-//     ascent, descent and the line gap from `hhea`, always.
-//   - Qt reads OS/2 as well, and OS/2 gets the last word. Its fsSelection bit 7
-//     (USE_TYPO_METRICS) picks WHICH of the two metric families in that table the
-//     font designer meant: set, Qt uses sTypoAscender/Descender/LineGap; clear, it
-//     uses usWinAscent/usWinDescent with the external-leading rule below.
-//
-// MEASURED, not reasoned about. A probe built against the Qt 6.5.3 kit on this
-// box (QFontDatabase::addApplicationFont + QFontMetricsF, run under the `windows`
-// platform plugin — Windows is the platform every AO2 release ships for, so it is
-// the platform whose numbers "AO2 parity" means):
-//
-//	face             px   fsSel   Qt asc/desc/leading   Qt lineSpacing   hhea (SDL_ttf)
-//	DangitV3IC       24   0x0040       27 / 8 / 0             35              24
-//	Arial            40   0x0040       36 / 8 / 0             44              46
-//	Calibri          40   0x0040      38 / 11 / 0             49              49
-//	Segoe UI         40   0x0040      43 / 10 / 0             53              53
-//	Comic Sans MS    40   0x0040      44 / 12 / 0             56              56
-//	Verdana          40   0x0040       40 / 8 / 0             48              48
-//	Twemoji          24   0x00c0    21 / 3 / 2.62           26.62             27
-//	OpenDyslexic     24   0x00c0      31 / 12 / 0             43              43
-//
-// The first six have USE_TYPO_METRICS CLEAR and Qt takes their win metrics; the
-// last two — which are AsyncAO's OWN bundled faces — have it SET and Qt takes
-// their typo metrics, which for both equal their hhea. That is why the branch is
-// not optional: reading win metrics unconditionally would have handed
-// OpenDyslexic a 51 px row pitch where both Qt and SDL_ttf say 43, i.e. it would
-// have broken the dyslexia font to fix a theme font.
-//
-// DangitV3IC is the `message_font` of the shipped DRRA / KFO theme family
-// (base/themes/DRRA qHD Left/courtroom_fonts.ini: `message = 18`,
-// `message_font = DangitV3IC`), and it is the face in the side-by-side capture
-// this work was measured against: its hhea says 880/-120/0 over a 1000 upem —
-// exactly 1.000 em, i.e. 24 px at an 18 pt (= 24 px) size — while its OS/2 says
-// usWinAscent 1107, usWinDescent 334, i.e. 1.441 em = 35 px. The capture's AO2
-// side measures a 35 px baseline-to-baseline pitch and the AsyncAO side 24 px.
-// This table is the whole of that defect.
-//
 // It is a THEME concern rather than a render one because the input is a font FILE
 // and the read is parse work that belongs on the theme-apply goroutine (hard rule
 // 2), next to every other per-theme font decision. internal/render consumes the
@@ -58,7 +17,6 @@ import "encoding/binary"
 // are expressed against. Font units rather than pixels because a single face is
 // opened at several sizes (the chatbox zoom, the canvas fold, the device scale)
 // and the conversion has to happen per size.
-//
 // The zero value is deliberately inert: Pitch returns 0 for it, and 0 is what
 // every consumer treats as "no Qt opinion, keep the SDL_ttf metric".
 type QtRowPitch struct {
@@ -71,20 +29,6 @@ type QtRowPitch struct {
 	Ascent  int
 	Descent int
 	// Leading is the extra gap between rows.
-	//
-	// In the typo branch it is sTypoLineGap verbatim. In the win branch it is NOT
-	// the raw line gap: the win metrics already swallow part of it, and the
-	// platform rule subtracts what they swallowed —
-	//
-	//	external = max(0, sTypoLineGap - ((usWinAscent + usWinDescent) - (sTypoAscender - sTypoDescender)))
-	//
-	// which is what makes Arial's 67-unit typo line gap come out as ZERO leading
-	// (its win metrics are already 366 units taller than its typo metrics) and
-	// Calibri's 452-unit gap likewise. All six win-branch faces in the table above
-	// land on external = 0 under this rule, and every one of their measured Qt
-	// lineSpacings is then exactly ascent + descent. The term is kept because a
-	// face whose win metrics are TIGHTER than its typo metrics does produce a
-	// non-zero leading and dropping it would silently under-space it.
 	Leading int
 	// UsesTypoMetrics records which branch was taken. Not consulted by Pitch —
 	// the branch is already baked into the three numbers — but a test that has to
@@ -99,7 +43,6 @@ func (q QtRowPitch) Valid() bool { return q.UnitsPerEm > 0 && q.Ascent+q.Descent
 
 // Pitch is the baseline-to-baseline step Qt would use for this face at emPx
 // pixels, or 0 when the face carried no usable metrics.
-//
 // Each of the three parts is scaled and rounded SEPARATELY, because that is what
 // Qt does to the ascent and the descent (QFixed::round() per metric in
 // QFontEngine::initializeHeightMetrics, measurable in the table above: Calibri's
@@ -177,14 +120,6 @@ const (
 )
 
 // ReadQtRowPitch parses a font file's head + OS/2 tables out of `data`.
-//
-// It is total: any malformed, truncated or unexpected input returns the zero
-// value, which every consumer reads as "no Qt opinion". Theme fonts are
-// third-party files shipped inside theme archives, so "refuse quietly and keep
-// the SDL_ttf metric" is the only acceptable failure mode — a panic here would
-// take down a theme apply, and an error would be one more thing for six call
-// sites to ignore identically.
-//
 // Runs on the theme-apply goroutine, once per distinct face (hard rule 2).
 func ReadQtRowPitch(data []byte) QtRowPitch {
 	head, os2 := sfntTables(data)

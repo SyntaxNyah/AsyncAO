@@ -1,24 +1,6 @@
 package theme
 
 // ONE PRESET FRAGMENT: the parsed form of internal/theme/presets/{layout,style}/<id>.ini.
-//
-// A fragment IS an asyncao_theme.ini (the same grammar, the same reader, the
-// same caps) plus a [preset] header that names the axis it belongs to. There is
-// no second parser and no second format — which is the property that makes the
-// gallery's data hand-editable and a user's own theme a legal preset source.
-//
-// THE TWO AXES ARE A PARTITION, NOT A CONVENTION. A layout fragment may declare
-// only the sections that place things; a style fragment only the sections that
-// dress them. The partition is a table here (presetTierSections), it is enforced
-// on every parse, and it is what makes the 21x14 gallery orthogonal: two
-// fragments drawn from different axes can never write the same key, so merging
-// them is a concatenation rather than a negotiation.
-//
-// It is also what makes APPLYING one reversible. "Replace the layout tier" is a
-// well-defined act precisely because the tier owns a closed set of sections; if
-// the sets overlapped, replacing one would have to guess which half of an
-// overlapping section belonged to whom.
-//
 // SDL-free and cold-path only, exactly like the reader it wraps (hard rules 1
 // and 2).
 
@@ -51,7 +33,6 @@ const (
 	// (retro_lowres is 640x480) halved, so a deliberately tiny canvas is still
 	// legal; the ceiling is four times the widest shipped fragment (21:9 at
 	// 1512), which is past any canvas a design-space geometry stays readable in.
-	//
 	// CLAMPED, never refused: a typo'd canvas is a fragment that lays out
 	// strangely, not a fragment that must stop the gallery from opening.
 	PresetDesignMinPx = 240
@@ -114,14 +95,6 @@ func PresetKindOf(s string) (PresetKind, bool) {
 }
 
 // presetTierSections is THE PARTITION, as data.
-//
-// Indexed by PresetKind. Each entry lists the exact sections that axis owns:
-// plain names, and prefixes for the id-suffixed families. A section in neither
-// list is owned by neither axis and is refused in both (there is no third
-// tier), which is what keeps [theme] and [import] — identity and provenance —
-// out of preset data entirely: a fragment is a contribution to a theme, never a
-// theme, and a fragment that could name itself the author would overwrite one.
-//
 // TestLayoutAndStylePresetKeySetsAreDisjoint asserts over this table AND over
 // the shipped fragments, so neither the rule nor the data can drift alone.
 var presetTierSections = [PresetKindCount]struct {
@@ -147,14 +120,6 @@ var presetManifestSections = []string{secFonts, secMedia, secSounds}
 
 // presetTierClears reports whether applying tier k must delete this section from
 // the carrier before the writer re-emits the tier's own model into it.
-//
-// IT IS THE PARTITION AGAIN, with the two exceptions the merge already states:
-// the manifests are merged rather than replaced, and [element.*] is owned by both
-// axes so it is decided per ELEMENT (droppedElementIDs) rather than per section.
-// Everything else a tier owns is CONFIGURATION, which presetmerge.go's header
-// says is replaced wholesale — and a replacement that left the previous tier's
-// lines in the file is not one. Anything an axis does not own is untouched, so a
-// style apply cannot reach [overrides] and a layout apply cannot reach [palette].
 func presetTierClears(k PresetKind, section string) bool {
 	if section == secPreset || strings.HasPrefix(section, secElementPrefix) {
 		return false
@@ -204,7 +169,6 @@ func presetElementKindOK(k PresetKind, ek ElementKind) bool {
 }
 
 // Preset is one parsed fragment: its header, and the sidecar tier it carries.
-//
 // Side is a FULL *Sidecar rather than a reduced struct on purpose. The whole
 // argument for the format is that a preset is written in exactly the grammar a
 // user authors, so anything a user can write a preset must be able to carry —
@@ -261,14 +225,6 @@ func (p *Preset) Elements() []Element {
 // ParsePreset reads one fragment. The BODY goes through ParseSidecar — the same
 // reader, the same caps, the same degrades — and only the [preset] header and
 // the tier partition are this function's own.
-//
-// IT REFUSES where the sidecar reader degrades, and the asymmetry is deliberate.
-// Format rule 1 ("reading never refuses") protects a STRANGER'S theme, which
-// must render as well as it can whatever is wrong with it. A fragment is OURS,
-// shipped inside the binary: a refusal here is a build-time gate failure, not a
-// user's evening ruined, and the one thing worse than a preset that fails to
-// parse is a preset that half-parses into a gallery card nobody can explain.
-//
 // COLD PATH ONLY (hard rule 2).
 func ParsePreset(src []byte) (*Preset, error) {
 	sc, err := ParseSidecar(src)
@@ -294,15 +250,6 @@ func ParsePreset(src []byte) (*Preset, error) {
 	// Free text rides the same four-character encoding every other free-text
 	// value in the format does (%25 %3B %0A %0D), so a semicolon in a description
 	// survives the INI comment rule.
-	//
-	// THE LENGTH RULE IS THE METADATA DEGRADE (metatext.go), not the refusal
-	// freeText applies. name/description/credit are display text in the exact
-	// sense that ruling names: nothing resolves them, nothing paints them into the
-	// courtroom, and no other value's meaning depends on them. A 377-rune
-	// attribution — which `investigation` genuinely carries, and should, because a
-	// "zero bytes of art" claim is worth spelling out — must not be able to take
-	// the whole preset out of the gallery. Same seam, same constant, same note:
-	// truncMetaRunes is called, never re-implemented.
 	p.Name = sc.degradePresetText(p, "name", metaFree(mustGet(doc, secPreset, "name")))
 	p.Description = sc.degradePresetText(p, "description", metaFree(mustGet(doc, secPreset, "description")))
 	p.Credit = sc.degradePresetText(p, "credit", metaFree(mustGet(doc, secPreset, "credit")))
@@ -337,7 +284,6 @@ func mustGet(d *INIDoc, section, key string) string {
 
 // degradePresetText applies the METADATA class rule (metatext.go) to one
 // [preset] header string: truncate to NameRuneCap and note it, never refuse.
-//
 // It calls truncMetaRunes rather than repeating the rune walk — the note text is
 // the same sentence degradeMeta writes, because a user who hits the cap from a
 // preset and from a theme should not have to learn that they are two rules.
@@ -354,7 +300,6 @@ func (s *Sidecar) degradePresetText(p *Preset, key, v string) string {
 
 // validateTier enforces the partition: the sections, the element kinds and the
 // style axis's anchor rule.
-//
 // It walks the DOCUMENT for sections rather than the model, because a section
 // the model dropped (an unknown one, a [theme] block) is still a section the
 // fragment declared — and "the reader ignored it" is exactly the shape a
