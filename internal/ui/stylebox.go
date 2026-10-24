@@ -26,8 +26,8 @@ const pathStrokeCap = 256
 // sketch a loop (sampled to up to 16 waypoints on release), or CLICK to drop a single waypoint;
 // centre = the sprite's rest spot. Your sprite loops through the path — overriding the Move
 // cycle — transmitted + stacking. Shows the live stroke / saved path; a Clear button removes it.
-func (a *App) drawStylePathEditor(x, y int32, p config.SpriteStylePref) int32 {
-	c := a.ctx
+func (toolbox1 *toolboxState) drawStylePathEditor(e *env, x, y int32, p config.SpriteStylePref) int32 {
+	c := e.ctx
 	c.Label(x, y, "Or draw a custom path (drag to sketch · click to add a point · centre = rest):", ColTextDim)
 	y += 18
 	box := sdl.Rect{X: x, Y: y, W: stylePathBox, H: stylePathBox}
@@ -41,38 +41,38 @@ func (a *App) drawStylePathEditor(x, y int32, p config.SpriteStylePref) int32 {
 	// drag-to-sketch press or a tap-to-add-point (the clipped-grids-need-pushClip
 	// class — raw pointIn would leak the interaction past the clip edge, #C).
 	inBox := c.hovering(box)
-	press := c.mouseDown && !a.toolbox.pathPrevDown
-	a.toolbox.pathPrevDown = c.mouseDown
+	press := c.mouseDown && !toolbox1.pathPrevDown
+	toolbox1.pathPrevDown = c.mouseDown
 	if press && inBox { // begin a stroke
-		a.toolbox.pathDrawing, a.toolbox.pathStroke = true, a.toolbox.pathStroke[:0]
+		toolbox1.pathDrawing, toolbox1.pathStroke = true, toolbox1.pathStroke[:0]
 	}
-	if a.toolbox.pathDrawing && c.mouseDown && len(a.toolbox.pathStroke) < pathStrokeCap {
-		a.toolbox.pathStroke = append(a.toolbox.pathStroke, sdl.Point{
+	if toolbox1.pathDrawing && c.mouseDown && len(toolbox1.pathStroke) < pathStrokeCap {
+		toolbox1.pathStroke = append(toolbox1.pathStroke, sdl.Point{
 			X: int32(clampInt(int(c.mouseX), int(box.X), int(box.X+box.W))),
 			Y: int32(clampInt(int(c.mouseY), int(box.Y), int(box.Y+box.H))),
 		})
 	}
-	if a.toolbox.pathDrawing && !c.mouseDown { // release: a real drag samples a new path; a tap adds one point
-		a.toolbox.pathDrawing = false
+	if toolbox1.pathDrawing && !c.mouseDown { // release: a real drag samples a new path; a tap adds one point
+		toolbox1.pathDrawing = false
 		switch {
-		case strokeMoved(a.toolbox.pathStroke):
-			p.Path, p.PathLen = samplePathStroke(a.toolbox.pathStroke, box)
-			a.d.Prefs.SetSpriteStyle(p)
+		case strokeMoved(toolbox1.pathStroke):
+			p.Path, p.PathLen = samplePathStroke(toolbox1.pathStroke, box)
+			e.d.Prefs.SetSpriteStyle(p)
 		case inBox && int(p.PathLen) < len(p.Path):
 			gx := uint8(clampInt(int((c.mouseX-box.X)*16/box.W), 0, 15))
 			gy := uint8(clampInt(int((c.mouseY-box.Y)*16/box.H), 0, 15))
 			p.Path[p.PathLen] = gx<<4 | gy
 			p.PathLen++
-			a.d.Prefs.SetSpriteStyle(p)
+			e.d.Prefs.SetSpriteStyle(p)
 		}
-		a.toolbox.pathStroke = a.toolbox.pathStroke[:0]
+		toolbox1.pathStroke = toolbox1.pathStroke[:0]
 	}
 
 	// The live stroke while sketching, else the saved path (dots + connecting loop).
-	if a.toolbox.pathDrawing && len(a.toolbox.pathStroke) > 1 {
+	if toolbox1.pathDrawing && len(toolbox1.pathStroke) > 1 {
 		_ = c.Ren.SetDrawColor(ColTierGreen.R, ColTierGreen.G, ColTierGreen.B, 255)
-		for i := 1; i < len(a.toolbox.pathStroke); i++ {
-			_ = c.Ren.DrawLine(a.toolbox.pathStroke[i-1].X, a.toolbox.pathStroke[i-1].Y, a.toolbox.pathStroke[i].X, a.toolbox.pathStroke[i].Y)
+		for i := 1; i < len(toolbox1.pathStroke); i++ {
+			_ = c.Ren.DrawLine(toolbox1.pathStroke[i-1].X, toolbox1.pathStroke[i-1].Y, toolbox1.pathStroke[i].X, toolbox1.pathStroke[i].Y)
 		}
 	} else if n := int(p.PathLen); n >= 1 {
 		_ = c.Ren.SetDrawColor(ColAccent.R, ColAccent.G, ColAccent.B, 255)
@@ -88,13 +88,13 @@ func (a *App) drawStylePathEditor(x, y int32, p config.SpriteStylePref) int32 {
 	rx := box.X + box.W + 8
 	if c.Button(sdl.Rect{X: rx, Y: box.Y, W: 84, H: btnH}, "Clear path") {
 		p.Path, p.PathLen = [16]uint8{}, 0
-		a.d.Prefs.SetSpriteStyle(p)
+		e.d.Prefs.SetSpriteStyle(p)
 	}
 	if p.PathLen > 0 { // undo the last waypoint (handy when click-building a path point by point)
 		if c.Button(sdl.Rect{X: rx, Y: box.Y + btnH + 6, W: 84, H: btnH}, "Undo point") {
 			p.PathLen--
 			p.Path[p.PathLen] = 0 // zero the freed slot so equal paths stay == (the pref is compared by value)
-			a.d.Prefs.SetSpriteStyle(p)
+			e.d.Prefs.SetSpriteStyle(p)
 		}
 	}
 	ly := box.Y + 2*(btnH+6)
@@ -775,7 +775,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	}
 	c.Tooltip(mb, "A looping movement path your sprite follows on the viewport — orbit, bounce, sway or drift. Transmitted to other AsyncAO players; stacks with the colour/glow effects above. Left-click next · right-click back.")
 	y += 30
-	y = a.drawStylePathEditor(x, y, p) // #34 B2: draw-your-own custom path
+	y = a.toolbox.drawStylePathEditor(&a.env, x, y, p) // #34 B2: draw-your-own custom path
 
 	// Outline / drop-shadow (#8) — silhouette effects drawn behind the sprite, transmitted.
 	if next := c.Checkbox(x, y, "Outline", p.Outline); next != p.Outline {

@@ -584,20 +584,20 @@ func (a *App) handleJukeboxKeys() bool {
 // plain keypress binds it; Esc cancels. Runs in the frame polls BEFORE
 // handleHotkeys and CONSUMES the key, so binding a song never also plays it the
 // same frame.
-func (a *App) pollJukeBind() {
-	if a.jukebox.jukeBindFor == "" || a.jukebox.juke == nil {
+func (jukebox1 *jukeboxState) pollJukeBind(e *env) {
+	if jukebox1.jukeBindFor == "" || jukebox1.juke == nil {
 		return
 	}
-	c := a.ctx
+	c := e.ctx
 	if c.escPressed {
-		a.jukebox.jukeBindFor = ""
+		jukebox1.jukeBindFor = ""
 		return
 	}
 	if c.keyPressed == 0 {
 		return
 	}
-	a.jukebox.applyJukeKey(a.jukebox.jukeBindFor, strings.ToLower(sdl.GetKeyName(c.keyPressed)))
-	a.jukebox.jukeBindFor = ""
+	jukebox1.applyJukeKey(jukebox1.jukeBindFor, strings.ToLower(sdl.GetKeyName(c.keyPressed)))
+	jukebox1.jukeBindFor = ""
 	c.keyPressed = 0 // consume: don't let the just-bound key also fire this frame
 }
 

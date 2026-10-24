@@ -28,7 +28,7 @@ func TestJukeBindCaptureConsumesKey(t *testing.T) {
 	a := &App{env: env{ctx: &Ctx{}}, jukebox: jukeboxState{juke: j}, macroBind: -1}
 	a.jukebox.jukeBindFor = "e:0:0"
 	a.ctx.keyPressed = sdl.K_a
-	a.pollJukeBind()
+	a.jukebox.pollJukeBind(&a.env)
 
 	if a.ctx.keyPressed != 0 {
 		t.Error("pollJukeBind must consume the keypress so it can't also fire this frame")

@@ -200,17 +200,17 @@ func (a *App) charMetaFetchOne(url, char string) {
 
 // pollCharMeta drains landed char.ini fetches into the cache (called once per
 // frame from the poll cluster; no-op with nothing pending).
-func (a *App) pollCharMeta() {
-	if a.overlays.charMetaRes == nil {
+func (overlay *overlayState) pollCharMeta() {
+	if overlay.charMetaRes == nil {
 		return
 	}
 	for {
 		select {
-		case res := <-a.overlays.charMetaRes:
-			if a.overlays.charMetaCache == nil {
-				a.overlays.charMetaCache = make(map[string]charMeta, charMetaCap)
+		case res := <-overlay.charMetaRes:
+			if overlay.charMetaCache == nil {
+				overlay.charMetaCache = make(map[string]charMeta, charMetaCap)
 			}
-			a.overlays.charMetaCache[res.url] = charMeta{
+			overlay.charMetaCache[res.url] = charMeta{
 				blips: res.blips, chat: res.chat, effects: res.effects,
 				realization: res.realization, scaling: res.scaling,
 				showname: res.showname, idle: res.idle, done: true,
@@ -219,7 +219,7 @@ func (a *App) pollCharMeta() {
 			}
 			// Our own character's effects folder may have just arrived: drop the
 			// picker's per-frame memos so the roster is re-resolved for it.
-			a.overlays.overlayInvalidateMemos()
+			overlay.overlayInvalidateMemos()
 		default:
 			return
 		}

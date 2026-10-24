@@ -329,9 +329,9 @@ func (a *App) toggleModSelected(uid string) {
 
 // clearModSelected drops the whole bulk selection (the "Clear" button) — also the escape hatch for
 // ticked players who have since left, since their rows are gone and can't be unticked individually.
-func (a *App) clearModSelected() {
-	for k := range a.modDash.selected {
-		delete(a.modDash.selected, k)
+func (moddash *modDashState) clearModSelected() {
+	for k := range moddash.selected {
+		delete(moddash.selected, k)
 	}
 }
 
@@ -664,7 +664,7 @@ func (a *App) drawModDashActions(x, y, w int32) {
 		nStr := strconv.Itoa(n)
 		c.Label(x, y, "Bulk — "+nStr+" ticked", modDashChipOn)
 		if c.Button(sdl.Rect{X: x + w - 64, Y: y - 4, W: 64, H: btnH}, "Clear") {
-			a.clearModSelected()
+			a.modDash.clearModSelected()
 		}
 		y += 22
 		if a.amIMod() && a.dashSoftwareKnown() {
@@ -1199,7 +1199,7 @@ func (a *App) sendBulk(isBan bool) int {
 		return 0
 	}
 	a.queueOOCLines(cmds) // paced + capped (macroQueueCap)
-	a.clearModSelected()
+	a.modDash.clearModSelected()
 	a.modUI.bulkBoxUIDs = nil
 	a.warnLine = clampLine("Queued " + strconv.Itoa(len(cmds)) + " " + action + " command(s).")
 	a.warnAt = a.now()

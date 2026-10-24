@@ -396,7 +396,7 @@ func menuInCourtroom(a *App, _ int) bool { return a.screen == ScreenCourtroom }
 // command palette and the hotkeys are one implementation each.
 func menuActTheater(a *App, _ int)      { a.compactTheater() }
 func menuActEditLayout(a *App, _ int)   { a.compactEditLayout() }
-func menuActHideUIPieces(a *App, _ int) { a.compactHideUI() }
+func menuActHideUIPieces(a *App, _ int) { a.toolbox.compactHideUI() }
 
 func menuToolboxPiecesOpen(a *App, _ int) bool {
 	return a.toolbox.toolboxPinned && a.toolbox.toolboxPieces

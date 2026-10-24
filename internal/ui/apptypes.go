@@ -159,6 +159,7 @@ type activeWarmState struct {
 // own tab is open). The font tab readout resolves through the same calls
 // drawICLogList makes (fontpickdebug.go, the "funky fonts" readout).
 type debugPanelState struct {
+	env        *env
 	open       bool        // the panel is open
 	section    int         // active tab: 0 Session · 1 Packets · 2 Perf · 3 Cache · 4 Log · 5 Fonts
 	pktScroll  int32       // Packets list scroll offset
@@ -177,6 +178,7 @@ type debugPanelState struct {
 // the slice on every join/leave, so an index would repoint a ban at whoever
 // shifted into that slot.
 type modDashState struct {
+	env         *env
 	targetUID   string          // selected target's UID ("" = none)
 	scroll      int32           // roster scroll offset
 	showAudit   bool            // left column shows the session audit log instead of the roster

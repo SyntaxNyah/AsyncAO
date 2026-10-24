@@ -58,7 +58,7 @@ type paletteExtra struct {
 var paletteExtraActions = []paletteExtra{
 	{"Edit Layout", "Rearrange the courtroom — drag & resize every box", (*App).compactEditLayout},
 	{"Theater", "Theater mode — stage only, Esc exits", (*App).compactTheater},
-	{"Hide UI pieces", "Per-piece show/hide list for the courtroom chrome", (*App).compactHideUI},
+	{"Hide UI pieces", "Per-piece show/hide list for the courtroom chrome", func(a *App) { a.toolbox.compactHideUI() }},
 }
 
 // fuzzyMatch reports whether every rune of query appears in s in order

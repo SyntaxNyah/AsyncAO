@@ -32,7 +32,7 @@ func TestModBulkSelection(t *testing.T) {
 	if a.modDash.selected["1"] {
 		t.Error("untick didn't remove the UID")
 	}
-	a.clearModSelected()
+	a.modDash.clearModSelected()
 	if len(a.modDash.selected) != 0 {
 		t.Errorf("clear left %d entries", len(a.modDash.selected))
 	}

@@ -87,7 +87,7 @@ func TestPartnerIdleComesFromTheirCharINI(t *testing.T) {
 	convURL := a.charINIURL("Phoenix")
 	a.overlays.charMetaRes <- charMetaFetch{url: oddURL, showname: "Beatrice", idle: "HSmug"}
 	a.overlays.charMetaRes <- charMetaFetch{url: convURL, showname: "Phoenix", idle: "normal"}
-	a.pollCharMeta()
+	a.overlays.pollCharMeta()
 
 	if got := a.iniIdleAnimFor("Beatrice", ghostFallbackEmote); got != "HSmug" {
 		t.Errorf("the partner's idle = %q, want %q — the preview is still minting the "+
@@ -191,7 +191,7 @@ func TestACharINIOnTheWireReachesTheIdleCache(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("the char.ini fetch never landed in %v — nothing downstream of this can be trusted", charINIGateTimeout)
 		}
-		a.pollCharMeta()
+		a.overlays.pollCharMeta()
 		time.Sleep(charINIGatePoll)
 	}
 
