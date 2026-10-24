@@ -111,9 +111,6 @@ const (
 	// spriteOvCap bounds the client-side sprite override table.
 	spriteOvCap = 128
 
-	// debugLogCap bounds the in-app failure log (rule §17.4: nothing is
-	// unbounded); the oldest lines fall off.
-	debugLogCap = 120
 	// debugOverlayLines is how many of the newest log lines the overlay
 	// draws (the full ring stays browsable in Settings).
 	debugOverlayLines = 10

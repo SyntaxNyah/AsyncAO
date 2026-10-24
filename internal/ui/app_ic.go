@@ -685,35 +685,6 @@ func (a *App) healTheme() {
 	}
 }
 
-// debugStampLayout prefixes every ring row with the wall clock of its LATEST
-// sighting (the ring is diagnostics, so absolute time beats elapsed).
-const debugStampLayout = "15:04:05 "
-
-// debugFoldWindow is how long a message stays foldable: seen again within this
-// of its last sighting, it collapses into the existing row's ×N counter instead
-// of appending another.
-// This is presentation ONLY. Nothing here changes which packets are handled or
-// which assets are probed; the deferred-packet decision stands.
-const debugFoldWindow = 90 * time.Second
-
-// debugEntry is one row of the bounded failure ring. text is derived from the
-// other three and cached, so the fold costs one re-render per PUSH rather than
-// per draw (the panel redraws at frame rate while it is open).
-type debugEntry struct {
-	raw   string    // the caller's message — the fold key
-	at    time.Time // latest sighting; the fold window is measured from it
-	count int       // sightings folded into this row
-	text  string    // rendered row: stamp + raw (+ "  ×N")
-}
-
-// render rebuilds the displayed row from the entry's state.
-func (e debugEntry) render() string {
-	if e.count > 1 {
-		return e.at.Format(debugStampLayout) + e.raw + fmt.Sprintf("  ×%d", e.count)
-	}
-	return e.at.Format(debugStampLayout) + e.raw
-}
-
 // logSpeakerAnimDiag logs the active speaker sprite's animation stats to the
 // debug log once per base change (#110 frame-rate diagnostic). The debug panel
 // cache inspector shows the same numbers live; this puts a record in the log.

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/debuglog"
 )
 
 // drawDebugOverlay paints the bounded failure log plus a one-line session
@@ -42,7 +44,7 @@ func (a *App) drawDebugOverlay(w, h int32) {
 	c.LabelClipped(panel.X+6, y, panel.W-12, a.debugColdLoadLine(), ColAccent)
 	y += lineH
 	for _, e := range lines {
-		c.LabelClipped(panel.X+6, y, panel.W-12, e.text, ColTextDim)
+		c.LabelClipped(panel.X+6, y, panel.W-12, e.Text, ColTextDim)
 		y += lineH
 	}
 }
@@ -54,7 +56,7 @@ func (a *App) drawDebugOverlay(w, h int32) {
 func (a *App) debugHealthLine() string {
 	if a.link.sess == nil {
 		return "debug · no session (lobby) · log " +
-			fmt.Sprintf("%d/%d", a.debug.len(), debugLogCap)
+			fmt.Sprintf("%d/%d", a.debug.len(), debuglog.Cap)
 	}
 	age := "none yet"
 	if !a.lastPktAt.IsZero() {
@@ -69,7 +71,7 @@ func (a *App) debugHealthLine() string {
 		wire = "json"
 	}
 	return fmt.Sprintf("debug · phase %s · server %s · wire %s · last pkt %s · log %d/%d",
-		a.link.sess.Phase(), software, wire, age, a.debug.len(), debugLogCap)
+		a.link.sess.Phase(), software, wire, age, a.debug.len(), debuglog.Cap)
 }
 
 // debugDiagLine is the second readout: live structural counts that catch leaks
