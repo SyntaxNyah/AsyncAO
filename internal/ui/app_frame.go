@@ -198,7 +198,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// alone would have left them reading a stale answer — or, before this, no
 	// answer at all: animated chrome kept moving under the accessibility option
 	// AND kept the pacer at the animation cadence.
-	a.themeFXFrozen = a.reduceMotionNow()
+	a.fxPool.themeFXFrozen = a.reduceMotionNow()
 	a.frame.drawnCaretOn = a.ctx.caretOn
 	// Animated-chrome census: the draw sites below mark the flag; promote it
 	// at frame end so SkipFrame reads what THIS frame actually put on screen.

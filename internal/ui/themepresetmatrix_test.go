@@ -86,7 +86,7 @@ func stagePresetCombination(t testing.TB, a *App, l, s *theme.Preset, w, h int32
 	}
 	rects["courtroom"] = theme.Rect{W: l.DesignW, H: l.DesignH}
 	a.themeRects = rects
-	a.themeSidecar = merged
+	a.elemBake.themeSidecar = merged
 	foldSidecarOverrides(a.themeRects, merged)
 	a.themeRectsOrig = cloneRects(a.themeRects)
 
@@ -168,7 +168,7 @@ func TestEveryLayoutTimesEveryStyleIsCoherent(t *testing.T) {
 			for _, l := range lib.Layouts() {
 				combos++
 				lay := stagePresetCombination(t, a, l, s, canvas.w, canvas.h)
-				sc := a.themeSidecar
+				sc := a.elemBake.themeSidecar
 				for i := range sc.Elements {
 					el := &sc.Elements[i]
 					box, ok := a.resolveElementRect(lay, sc, el)
@@ -274,7 +274,7 @@ func TestPresetMatrixWouldCatchADriftedElement(t *testing.T) {
 
 	l, s := lib.Layouts()[0], lib.Styles()[0]
 	lay := stagePresetCombination(t, a, l, s, 1512, 648)
-	sc := a.themeSidecar
+	sc := a.elemBake.themeSidecar
 
 	const anchorKey = "emotes"
 	base, ok := absSlotRect(lay, anchorKey)
@@ -360,7 +360,7 @@ func TestAnAbsentAnchorIsInertRatherThanMisplaced(t *testing.T) {
 		ID: "ghost", Kind: theme.ElemShape, Shape: "sharp", Anchor: "no_such_slot_key",
 		Fill: theme.RGBA{R: 255, A: 255},
 	}
-	if r, ok := a.resolveElementRect(lay, a.themeSidecar, &ghost); ok {
+	if r, ok := a.resolveElementRect(lay, a.elemBake.themeSidecar, &ghost); ok {
 		t.Fatalf("an element anchored to a key nothing places resolved to %v — R10 says it is inert", r)
 	}
 }

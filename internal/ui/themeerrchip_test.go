@@ -109,16 +109,16 @@ func TestSidecarRefusalIsVisibleOnScreen(t *testing.T) {
 	}
 
 	// The chip arms on the landed state, and a click acknowledges it.
-	a.themeSidecarErr, a.themeSidecarTip = line, tip
+	a.fxPool.themeSidecarErr, a.fxPool.themeSidecarTip = line, tip
 	if !a.themeErrChipActive() {
 		t.Fatal("with a refusal landed the chip is not active — nothing on screen reports it")
 	}
-	a.themeSidecarErrAck = true
+	a.fxPool.themeSidecarErrAck = true
 	if a.themeErrChipActive() {
 		t.Error("an acknowledged refusal keeps drawing — the chip cannot be dismissed")
 	}
 	// Fixing the file clears it outright, which is what makes the fix visible.
-	a.themeSidecarErr, a.themeSidecarErrAck = "", false
+	a.fxPool.themeSidecarErr, a.fxPool.themeSidecarErrAck = "", false
 	if a.themeErrChipActive() {
 		t.Error("the chip stayed armed after the refusal cleared")
 	}
@@ -140,8 +140,8 @@ func TestSidecarRefusalChipDoesNotOverlapItsNeighbours(t *testing.T) {
 			"the other two chips' rects must be unchanged for every install without one", got, w)
 	}
 
-	a.themeSidecarErr = "theme \"x\": refused"
-	a.themeSidecarTip = "refused"
+	a.fxPool.themeSidecarErr = "theme \"x\": refused"
+	a.fxPool.themeSidecarTip = "refused"
 	errRect, ok := a.themeErrChipRect(w)
 	if !ok {
 		t.Skip("the menu bar is not painting in this fixture — the geometry cannot be measured here")

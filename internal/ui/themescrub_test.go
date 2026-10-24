@@ -27,7 +27,7 @@ func TestPausedClockNeverPinsTheFrameRate(t *testing.T) {
 	// Clock 1 is HELD at a point a quarter into the period — the position
 	// TestLiveElementAlwaysNotesTheCensus proves every kind is unambiguously live at.
 	const held = time.Duration(fxTestPeriodMs) * time.Millisecond / 4
-	a.themeClocks[1] = themeClock{paused: true, frozen: held}
+	a.fxPool.themeClocks[1] = themeClock{paused: true, frozen: held}
 
 	for k := theme.EffectKind(0); k < theme.EffectKindCount; k++ {
 		if k == theme.FXNone {
@@ -82,7 +82,7 @@ func TestPausedClockStillAppliesItsTerms(t *testing.T) {
 
 	// A drift is pure geometry, so its held terms are visible as a moved rect.
 	const held = time.Duration(fxTestPeriodMs) * time.Millisecond / 4
-	a.themeClocks[1] = themeClock{paused: true, frozen: held}
+	a.fxPool.themeClocks[1] = themeClock{paused: true, frozen: held}
 
 	el := fxTestElement(theme.FXDrift)
 	el.clock = 1
@@ -97,7 +97,7 @@ func TestPausedClockStillAppliesItsTerms(t *testing.T) {
 	}
 	// The same clock, unpaused, is at exactly the same position: a scrub holds a real
 	// frame of the animation rather than a neutral one.
-	a.themeClocks[1] = themeClock{}
+	a.fxPool.themeClocks[1] = themeClock{}
 	a.toolbox.themeAt = time.Now().Add(-held)
 	free := fxTestElement(theme.FXDrift)
 	free.clock = 1

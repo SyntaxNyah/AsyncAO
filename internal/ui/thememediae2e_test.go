@@ -71,7 +71,7 @@ func stageW4MediaTheme(t *testing.T) (*App, *theme.Sidecar, themeMediaPlan, func
 	res.loadThemeMediaSet(false)
 
 	a, cleanup := stageThemedCourtroom(t)
-	a.themeSidecar = sc
+	a.elemBake.themeSidecar = sc
 	a.landThemeMedia(&res)
 	a.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
@@ -247,7 +247,7 @@ func TestThemeMediaSwapPrunesTheOutgoingThemesArt(t *testing.T) {
 	// A stock AO2 theme: no sidecar, no plan, no media.
 	var stock themeApply
 	stock.loadThemeMediaSet(false)
-	a.themeSidecar = nil
+	a.elemBake.themeSidecar = nil
 	a.landThemeMedia(&stock)
 
 	if got := a.d.Store.ThemeMediaBytes(); got != 0 {

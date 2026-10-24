@@ -220,7 +220,7 @@ func (a *App) nudgeThemedRect(tgt editTarget, dx, dy int, coarse bool, w, h int3
 // nudge dispatches on a target instead of on which editor is armed (W6).
 func (a *App) nudgeThemeElement(tgt editTarget, dx, dy int, coarse bool) {
 	idx, ok := tgt.elemIdx()
-	sc := a.themeSidecar
+	sc := a.elemBake.themeSidecar
 	if !ok || sc == nil || idx < 0 || idx >= len(sc.Elements) {
 		return
 	}

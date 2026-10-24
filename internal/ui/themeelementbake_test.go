@@ -64,7 +64,7 @@ func stageThemedWithSidecar(t testing.TB, name string) (*App, *themeLayoutCache,
 // reset/undo restore from, the live one is what the editor's own rung is applied
 // over.
 func applyFixtureSidecar(a *App, sc *theme.Sidecar) error {
-	a.themeSidecar = sc
+	a.elemBake.themeSidecar = sc
 	foldSidecarOverrides(a.themeRectsOrig, sc)
 	foldSidecarOverrides(a.themeRects, sc)
 	a.themeLay.valid = false
@@ -96,7 +96,7 @@ func TestStockAO2ThemeGetsZeroElements(t *testing.T) {
 
 	a.drawCourtroom(1280, 720)
 	lay := &a.themeLay
-	if a.themeSidecar != nil {
+	if a.elemBake.themeSidecar != nil {
 		t.Fatal("the stock fixture carries a sidecar — it is meant to be a plain AO2 theme")
 	}
 	if lay.elN != 0 {
@@ -122,7 +122,7 @@ func TestSidecarSwapClearsThePreviousThemesElements(t *testing.T) {
 		t.Fatal("the ordering fixture baked nothing — the rest of this test proves nothing")
 	}
 
-	a.themeSidecar = nil
+	a.elemBake.themeSidecar = nil
 	a.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
 	if lay.elN != 0 {
@@ -143,7 +143,7 @@ func TestElementsAreNotInThemeLayoutKeys(t *testing.T) {
 	if lay.elN == 0 {
 		t.Fatal("the render fixture baked no elements — this gate would be vacuous")
 	}
-	sc := a.themeSidecar
+	sc := a.elemBake.themeSidecar
 	for i := range sc.Elements {
 		id := sc.Elements[i].ID
 		if id == "" {
@@ -303,7 +303,7 @@ func TestPaneReparentsExactlyOnce(t *testing.T) {
 	a, lay, cleanup := stageThemedWithSidecar(t, "w3_panes.ini")
 	defer cleanup()
 
-	pane, ok := a.paneRect(lay, &a.themeSidecar.Panes[0])
+	pane, ok := a.paneRect(lay, &a.elemBake.themeSidecar.Panes[0])
 	if !ok {
 		t.Fatal("the pane did not resolve — its space is missing from the fixture layout")
 	}
@@ -348,7 +348,7 @@ func TestPaneHostKeepsExactlyOneDrawSite(t *testing.T) {
 	a, _, cleanup := stageThemedWithSidecar(t, "w3_panes.ini")
 	defer cleanup()
 
-	p := &a.themeSidecar.Panes[0]
+	p := &a.elemBake.themeSidecar.Panes[0]
 	for h := 0; h < p.NHosts; h++ {
 		key := p.Hosts[h]
 		slot := themeSlotFor(key)
@@ -379,7 +379,7 @@ func TestPaneDoesNotRehomeAParentRelativeChild(t *testing.T) {
 		Hosts:  [theme.PaneHostCap]string{"showname"},
 		NHosts: 1,
 	}}
-	a.themeSidecar = sc
+	a.elemBake.themeSidecar = sc
 	a.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
 
@@ -514,7 +514,7 @@ func TestVisibleWhenSurvivesARebake(t *testing.T) {
 	a.compose.sidePref = "def"
 	a.drawCourtroom(1280, 720)
 	genBefore := lay.condGen
-	liveBefore := a.condLive[theme.CondPos]
+	liveBefore := a.elemBake.condLive[theme.CondPos]
 	if liveBefore < 0 {
 		t.Fatalf("pos:def did not resolve to an interned index (condN=%d)", lay.condN)
 	}
@@ -524,12 +524,12 @@ func TestVisibleWhenSurvivesARebake(t *testing.T) {
 	if lay.condGen == genBefore {
 		t.Fatal("a rebuild did not bump the intern generation — the memo cannot know its indices are stale")
 	}
-	if a.condLive[theme.CondPos] < 0 {
+	if a.elemBake.condLive[theme.CondPos] < 0 {
 		t.Fatal("pos:def stopped resolving after a rebuild — the memo did not re-resolve against the new table")
 	}
-	if lay.condVal[a.condLive[theme.CondPos]] != "def" {
+	if lay.condVal[a.elemBake.condLive[theme.CondPos]] != "def" {
 		t.Fatalf("pos resolved to slot %d, which holds %q, want \"def\"",
-			a.condLive[theme.CondPos], lay.condVal[a.condLive[theme.CondPos]])
+			a.elemBake.condLive[theme.CondPos], lay.condVal[a.elemBake.condLive[theme.CondPos]])
 	}
 }
 

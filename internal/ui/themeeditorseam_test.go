@@ -48,8 +48,8 @@ func TestTheEditorCanvasIsTheLiveCourtroomPassAtFullBleed(t *testing.T) {
 		t.Fatal("the fixture never reached drawCourtroomThemed on a plain courtroom frame — the witness " +
 			"below would be measuring nothing")
 	}
-	if a.themeSidecar == nil {
-		a.themeSidecar = theme.NewSidecar()
+	if a.elemBake.themeSidecar == nil {
+		a.elemBake.themeSidecar = theme.NewSidecar()
 	}
 	if !a.openThemeEditor(ScreenCourtroom) {
 		t.Fatal("openThemeEditor refused a theme that has a sidecar")
@@ -107,7 +107,7 @@ func TestARailPressNeverReachesTheCanvas(t *testing.T) {
 	// A box whose painted right edge lands just inside the rail, so its whole body is
 	// under chrome.
 	wpx := int(float64(editRailW-editorSeamRailBitePx-lay.area.X) / lay.scaleX)
-	a.themeSidecar.Elements[el.elem].Rect = theme.Rect{X: 0, Y: editorSeamBoxTopPx, W: wpx, H: editorSeamBoxTopPx}
+	a.elemBake.themeSidecar.Elements[el.elem].Rect = theme.Rect{X: 0, Y: editorSeamBoxTopPx, W: wpx, H: editorSeamBoxTopPx}
 	a.invalidateThemeCanvases()
 	driveFrame(a)
 
@@ -137,7 +137,7 @@ func TestARailPressNeverReachesTheCanvas(t *testing.T) {
 
 	// NON-VACUITY: the identical press two pixels past the rail's edge DOES work, so
 	// the gate above is not passing because presses never do.
-	a.themeSidecar.Elements[el.elem].Rect = editorCentreRect(a, 0, 0)
+	a.elemBake.themeSidecar.Elements[el.elem].Rect = editorCentreRect(a, 0, 0)
 	a.invalidateThemeCanvases()
 	driveFrame(a)
 	ox, oy := editorCentreOf(editorPainted(t, a, el))
@@ -313,7 +313,7 @@ func TestUnsavedEditsSurviveARealBackgroundThemeApply(t *testing.T) {
 
 	a.d.Prefs.SetTheme(editorSeamThemeName, root)
 	driveUntilThemeApplied(t, a)
-	if a.themeSidecar == nil || len(a.themeSidecar.Elements) == 0 {
+	if a.elemBake.themeSidecar == nil || len(a.elemBake.themeSidecar.Elements) == 0 {
 		t.Fatal("the fixture theme landed no elements — there is nothing for an apply to discard")
 	}
 	if !a.openThemeEditor(ScreenCourtroom) {
@@ -322,9 +322,9 @@ func TestUnsavedEditsSurviveARealBackgroundThemeApply(t *testing.T) {
 	driveFrame(a)
 
 	a.te.selectOnly(elementTarget(0))
-	authored := a.themeSidecar.Elements[0].Rect
+	authored := a.elemBake.themeSidecar.Elements[0].Rect
 	a.editorNudgeSelection(1, 0, false)
-	edited := a.themeSidecar.Elements[0].Rect
+	edited := a.elemBake.themeSidecar.Elements[0].Rect
 	if edited == authored {
 		t.Fatal("the nudge changed nothing; every assertion below would pass vacuously")
 	}
@@ -336,12 +336,12 @@ func TestUnsavedEditsSurviveARealBackgroundThemeApply(t *testing.T) {
 	if a.te == nil {
 		t.Fatal("the apply closed the editor")
 	}
-	if got := a.themeSidecar.Elements[0].Rect; got != edited {
+	if got := a.elemBake.themeSidecar.Elements[0].Rect; got != edited {
 		t.Fatalf("a real background theme apply discarded the unsaved edit (%+v, want %+v) — applies are "+
 			"not user-initiated, so this is a user's work vanishing between keystrokes with nothing on "+
 			"screen to explain it", got, edited)
 	}
-	if a.themeSidecar != a.te.doc.side {
+	if a.elemBake.themeSidecar != a.te.doc.side {
 		t.Error("the applied sidecar is no longer the document's — the editor is now authoring a model " +
 			"nothing draws from")
 	}

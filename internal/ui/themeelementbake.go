@@ -98,10 +98,10 @@ type bakeElement struct {
 func (a *App) bakeThemeElements(lay *themeLayoutCache) {
 	// Every rebuild gets a fresh generation, so App's per-axis condition memo cannot
 	// carry an index resolved against the PREVIOUS intern table (a.condGen).
-	a.themeElemGen++
-	lay.condGen = a.themeElemGen
+	a.elemBake.themeElemGen++
+	lay.condGen = a.elemBake.themeElemGen
 
-	sc := a.themeSidecar
+	sc := a.elemBake.themeSidecar
 	if sc == nil {
 		return
 	}
@@ -125,8 +125,8 @@ func (a *App) bakeThemeElements(lay *themeLayoutCache) {
 			continue // an absent anchor is INERT, not an error (design §6.6 R10)
 		}
 		lay.el[n] = be.el
-		a.elemBakeBand[n] = be.band
-		a.elemBakeZ[n] = be.z
+		a.elemBake.elemBakeBand[n] = be.band
+		a.elemBake.elemBakeZ[n] = be.z
 		n++
 	}
 	// [effect.<widget key>] LAST, so a theme that filled the array with its own
@@ -141,8 +141,8 @@ func (a *App) bakeThemeElements(lay *themeLayoutCache) {
 			continue
 		}
 		lay.el[n] = be.el
-		a.elemBakeBand[n] = be.band
-		a.elemBakeZ[n] = be.z
+		a.elemBake.elemBakeBand[n] = be.band
+		a.elemBake.elemBakeZ[n] = be.z
 		n++
 	}
 	a.sortBakedElements(lay, n)
@@ -154,7 +154,7 @@ func (a *App) bakeThemeElements(lay *themeLayoutCache) {
 	}
 	var started [theme.ElementBandCount]bool
 	for i := 0; i < n; i++ {
-		b := a.elemBakeBand[i]
+		b := a.elemBake.elemBakeBand[i]
 		if int(b) >= len(lay.band) {
 			continue // a band the reader could not produce; paints nowhere
 		}
@@ -604,13 +604,13 @@ func (a *App) sortBakedElements(lay *themeLayoutCache, n int) {
 		n = elemZSortCap
 	}
 	for i := 1; i < n; i++ {
-		el, band, z := lay.el[i], a.elemBakeBand[i], a.elemBakeZ[i]
+		el, band, z := lay.el[i], a.elemBake.elemBakeBand[i], a.elemBake.elemBakeZ[i]
 		j := i - 1
-		for j >= 0 && bakedAfter(a.elemBakeBand[j], a.elemBakeZ[j], band, z) {
-			lay.el[j+1], a.elemBakeBand[j+1], a.elemBakeZ[j+1] = lay.el[j], a.elemBakeBand[j], a.elemBakeZ[j]
+		for j >= 0 && bakedAfter(a.elemBake.elemBakeBand[j], a.elemBake.elemBakeZ[j], band, z) {
+			lay.el[j+1], a.elemBake.elemBakeBand[j+1], a.elemBake.elemBakeZ[j+1] = lay.el[j], a.elemBake.elemBakeBand[j], a.elemBake.elemBakeZ[j]
 			j--
 		}
-		lay.el[j+1], a.elemBakeBand[j+1], a.elemBakeZ[j+1] = el, band, z
+		lay.el[j+1], a.elemBake.elemBakeBand[j+1], a.elemBake.elemBakeZ[j+1] = el, band, z
 	}
 }
 

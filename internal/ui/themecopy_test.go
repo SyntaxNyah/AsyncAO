@@ -63,7 +63,7 @@ func copyRig(t *testing.T, origin themeOrigin) (*App, string, string) {
 // session's work and then strand the user with advice to copy a folder by hand.
 func TestSaveRefusalOffersTheCopy(t *testing.T) {
 	a, _, _ := copyRig(t, themeOriginBundled)
-	a.themeSidecar = theme.NewSidecar()
+	a.elemBake.themeSidecar = theme.NewSidecar()
 	if !a.openThemeEditorForTest(ScreenLobby) {
 		t.Fatal("a bundled theme with a native tier would not open in the editor")
 	}
@@ -123,7 +123,7 @@ func TestTheRowFollowsTheAppliedTheme(t *testing.T) {
 	}
 	// A native tier, but somebody else's folder: still a copy, and offered BEFORE
 	// the session rather than after it.
-	a.themeSidecar = theme.NewSidecar()
+	a.elemBake.themeSidecar = theme.NewSidecar()
 	if row := a.themeEditorRow(); !row.copies {
 		t.Errorf("a bundled theme with a native tier offers %q — Save would refuse it after a whole "+
 			"session's work", row.button)
@@ -283,7 +283,7 @@ func TestASecondCopyIsRefusedRatherThanRaced(t *testing.T) {
 // or a future call site.
 func TestATagalongCopyOfAThemeWeAlreadyOwnIsRefused(t *testing.T) {
 	a, src, _ := copyRig(t, themeOriginYours)
-	a.themeSidecar = theme.NewSidecar()
+	a.elemBake.themeSidecar = theme.NewSidecar()
 	a.copyThemeForEditing("paper", themeCopyThenOpen)
 	if a.themeCopy != nil {
 		t.Fatal("a theme that is already ours was duplicated — the editor can write it where it is")

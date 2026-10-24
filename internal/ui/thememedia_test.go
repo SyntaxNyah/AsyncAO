@@ -108,7 +108,7 @@ func TestOverBudgetElementIsCreatedNotDropped(t *testing.T) {
 
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
-	a.themeSidecar = sc
+	a.elemBake.themeSidecar = sc
 	a.themeMediaPlan = plan
 	a.themeLay.valid = false
 	var seen []*bakedElement

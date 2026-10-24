@@ -25,5 +25,3 @@ func (d *debugSink) lines() []debuglog.Entry { return d.Lines() }
 
 // len is the ring's row count.
 func (d *debugSink) len() int { return d.Len() }
-
-

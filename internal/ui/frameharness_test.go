@@ -217,7 +217,7 @@ func TestTheFrameHarnessReallyDrivesAFrame(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()
 
-	before := a.themeFXFrame
+	before := a.fxPool.themeFXFrame
 	driveFrame(a)
 
 	if a.frame.lastFrameDrawn.IsZero() {
@@ -231,15 +231,15 @@ func TestTheFrameHarnessReallyDrivesAFrame(t *testing.T) {
 		t.Fatal("the themed layout never validated — the frame took the classic branch and every " +
 			"element/theme gate below would be measuring nothing")
 	}
-	if a.themeFXFrame == before {
+	if a.fxPool.themeFXFrame == before {
 		t.Fatal("beginThemeFXPass never ran — the element pass hook is the one both the live " +
 			"courtroom and the offscreen export share")
 	}
 	// And a second frame advances the pass exactly once more: the hook is per PASS,
 	// and a double-open would sweep every stateful effect a frame early.
-	one := a.themeFXFrame
+	one := a.fxPool.themeFXFrame
 	driveFrame(a)
-	if got := a.themeFXFrame - one; got != 1 {
+	if got := a.fxPool.themeFXFrame - one; got != 1 {
 		t.Fatalf("one frame advanced the FX pass by %d, want exactly 1 — the pass hook fired %d times "+
 			"in one frame, which halves themeFXIdleFrames for every one-shot", got, got)
 	}
@@ -266,9 +266,9 @@ func TestSidecarRefusalChipReachesTheScreenAndTakesItsClick(t *testing.T) {
 		t.Fatal("the refusal chip painted on a fixture with no theme error")
 	}
 
-	a.themeSidecarErr = themeSidecarRefusalLine("harness", t.TempDir(), theme.ErrSidecarCap)
-	a.themeSidecarTip = themeSidecarRefusalTip("harness", theme.ErrSidecarCap)
-	if a.themeSidecarErr == "" || a.themeSidecarTip == "" {
+	a.fxPool.themeSidecarErr = themeSidecarRefusalLine("harness", t.TempDir(), theme.ErrSidecarCap)
+	a.fxPool.themeSidecarTip = themeSidecarRefusalTip("harness", theme.ErrSidecarCap)
+	if a.fxPool.themeSidecarErr == "" || a.fxPool.themeSidecarTip == "" {
 		t.Fatal("the fixture produced no refusal strings — nothing below is measuring the chip")
 	}
 	driveFrame(a)
@@ -293,7 +293,7 @@ func TestSidecarRefusalChipReachesTheScreenAndTakesItsClick(t *testing.T) {
 	a.debugPanel.open = false
 	cx, cy := frameHarnessRectCentre(r)
 	driveClickAt(a, cx, cy)
-	if !a.themeSidecarErrAck {
+	if !a.fxPool.themeSidecarErrAck {
 		t.Error("a click on the chip did not acknowledge the refusal — App.Frame is not claiming its " +
 			"input before the screens see it")
 	}
@@ -344,17 +344,17 @@ func TestThemeApplyLoadsTheClockPoolThroughAFrame(t *testing.T) {
 	}
 
 	// The pool starts at the stock answer, so "the apply loaded it" is a real change.
-	if got := a.themeClocks[1].speedPct; got == clockHarnessSpeedPct {
+	if got := a.fxPool.themeClocks[1].speedPct; got == clockHarnessSpeedPct {
 		t.Fatalf("clock 1 already reads %d before the apply — the gate would pass with the call deleted", got)
 	}
 	a.d.Prefs.SetTheme("clockharness", root)
 	driveUntilThemeApplied(t, a)
 
-	if a.themeSidecar == nil {
+	if a.elemBake.themeSidecar == nil {
 		t.Fatal("the apply landed no sidecar — the fixture theme did not load, so nothing below " +
 			"is measuring the clock tier")
 	}
-	if got := a.themeClocks[1].speedPct; got != clockHarnessSpeedPct {
+	if got := a.fxPool.themeClocks[1].speedPct; got != clockHarnessSpeedPct {
 		t.Fatalf("clock 1 runs at %d%% after the apply, want the theme's authored %d%% — "+
 			"pollThemeApply is not calling applyThemeClocks, so every [clock.N] group in every "+
 			"theme is inert and each one silently runs at the shared anchor's rate",
@@ -362,17 +362,17 @@ func TestThemeApplyLoadsTheClockPoolThroughAFrame(t *testing.T) {
 	}
 	// Clock 0 is the shared anchor and is never declared: it must come back nominal,
 	// or a theme declaring one group would re-time every element that named none.
-	if got := a.themeClocks[0].speedPct; got != themeSpeedNominal {
+	if got := a.fxPool.themeClocks[0].speedPct; got != themeSpeedNominal {
 		t.Errorf("clock 0 runs at %d%%, want the nominal %d%% — the shared anchor is not the anchor",
 			got, themeSpeedNominal)
 	}
 	// The apply also drops the stateful-effect pool, because every slot's generation
 	// went stale with the bake. A slot surviving one would freeze the incoming
 	// theme's one-shots at frame 0 until the idle sweep collected it.
-	for i := range a.themeFX {
-		if a.themeFX[i].owner != fxOwnerNone {
+	for i := range a.fxPool.themeFX {
+		if a.fxPool.themeFX[i].owner != fxOwnerNone {
 			t.Fatalf("FX slot %d survived a theme apply owning element %d — the incoming theme's "+
-				"one-shots are refused until the sweep runs", i, a.themeFX[i].owner-1)
+				"one-shots are refused until the sweep runs", i, a.fxPool.themeFX[i].owner-1)
 		}
 	}
 }
@@ -410,11 +410,11 @@ func TestEveryElementPaintHappensInsideAnOpenPass(t *testing.T) {
 	var stamps []uint64
 	saved := elemPainters
 	for k := range elemPainters {
-		elemPainters[k] = func(app *App, _ *bakedElement) { stamps = append(stamps, app.themeFXFrame) }
+		elemPainters[k] = func(app *App, _ *bakedElement) { stamps = append(stamps, app.fxPool.themeFXFrame) }
 	}
 	t.Cleanup(func() { elemPainters = saved })
 
-	before := a.themeFXFrame
+	before := a.fxPool.themeFXFrame
 	driveFrame(a)
 	elemPainters = saved
 

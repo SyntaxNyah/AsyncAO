@@ -40,8 +40,8 @@ func stageEditorArt(t *testing.T) (a *App, cleanup func(), shape editTarget, gen
 	el.Kind = theme.ElemGen
 	el.Gen = artRigGenerator
 	el.GenParams[0] = theme.KV{Key: artRigParamKey, Value: artRigParamOne}
-	a.themeSidecar.Elements = append(a.themeSidecar.Elements, el)
-	genIdx = len(a.themeSidecar.Elements) - 1
+	a.elemBake.themeSidecar.Elements = append(a.elemBake.themeSidecar.Elements, el)
+	genIdx = len(a.elemBake.themeSidecar.Elements) - 1
 	driveFrame(a)
 	return a, cleanup, tgts[0], genIdx
 }
@@ -50,7 +50,7 @@ func stageEditorArt(t *testing.T) (a *App, cleanup func(), shape editTarget, gen
 // planner computes it — through theme.GeneratorSpecOf and render.ThemeGenKey, the two
 // published functions, never a second spelling of the hash.
 func artKeyOf(a *App, idx int) string {
-	return render.ThemeGenKey(theme.GeneratorSpecOf(&a.themeSidecar.Elements[idx]).Hash())
+	return render.ThemeGenKey(theme.GeneratorSpecOf(&a.elemBake.themeSidecar.Elements[idx]).Hash())
 }
 
 // drawnPages is the set of pages the last bake actually put in front of the painter.
@@ -310,13 +310,13 @@ func TestDiscardingADeleteOnExitPutsTheNeighboursArtBack(t *testing.T) {
 		t.Fatalf("fixture: want a generator with art (%q) sitting after the shape (shape %v, generator %d)",
 			key, shape, genIdx)
 	}
-	n := len(a.themeSidecar.Elements)
+	n := len(a.elemBake.themeSidecar.Elements)
 
 	a.te.selectOnly(shape)
 	a.editorDeleteSelection()
 	driveFrame(a)
-	if len(a.themeSidecar.Elements) != n-1 {
-		t.Fatalf("the delete did not remove an element (%d, want %d)", len(a.themeSidecar.Elements), n-1)
+	if len(a.elemBake.themeSidecar.Elements) != n-1 {
+		t.Fatalf("the delete did not remove an element (%d, want %d)", len(a.elemBake.themeSidecar.Elements), n-1)
 	}
 
 	a.requestEditorExit()
@@ -326,9 +326,9 @@ func TestDiscardingADeleteOnExitPutsTheNeighboursArtBack(t *testing.T) {
 	}
 	driveFrame(a)
 
-	if len(a.themeSidecar.Elements) != n {
+	if len(a.elemBake.themeSidecar.Elements) != n {
 		t.Fatalf("the discard restored %d elements, want the %d the editor opened over",
-			len(a.themeSidecar.Elements), n)
+			len(a.elemBake.themeSidecar.Elements), n)
 	}
 	if got := a.themeMediaPlan.ElemKey(genIdx); got != key {
 		t.Fatalf("the restored generator at index %d resolves to %q, want its own tile %q — the plan is "+

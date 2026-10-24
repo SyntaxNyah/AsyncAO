@@ -710,23 +710,23 @@ func TestEditsSurviveAThemeReapply(t *testing.T) {
 	prefs.SetTheme("fixture", "")
 	sc := theme.NewSidecar()
 	sc.Elements = append(sc.Elements, editProbeElement())
-	a.themeSidecar = sc
+	a.elemBake.themeSidecar = sc
 	if !a.openThemeEditorForTest(ScreenSettings) {
 		t.Fatal("the editor refused to open over a sidecar")
 	}
 	editUnlockAll(a.te.doc)
 	a.te.selectOnly(elementTarget(0))
 	a.editorNudgeSelection(1, 0, false)
-	edited := a.themeSidecar.Elements[0].Rect
+	edited := a.elemBake.themeSidecar.Elements[0].Rect
 
 	// The apply, exactly as pollThemeApply does it: a freshly parsed sidecar lands
 	// over the live one…
-	a.themeSidecar = theme.NewSidecar()
-	a.themeSidecar.Elements = append(a.themeSidecar.Elements, editProbeElement())
+	a.elemBake.themeSidecar = theme.NewSidecar()
+	a.elemBake.themeSidecar.Elements = append(a.elemBake.themeSidecar.Elements, editProbeElement())
 	// …and the reclaim puts the edited document back.
 	a.reclaimThemeDoc()
 
-	if got := a.themeSidecar.Elements[0].Rect; got != edited {
+	if got := a.elemBake.themeSidecar.Elements[0].Rect; got != edited {
 		t.Fatalf("a background theme apply discarded the unsaved edit (%+v, want %+v) — applies are not "+
 			"user-initiated, so this is work vanishing with nothing on screen to say why", got, edited)
 	}
@@ -734,9 +734,9 @@ func TestEditsSurviveAThemeReapply(t *testing.T) {
 	// …and a DIFFERENT theme correctly loses it: the document is about one theme.
 	prefs.SetTheme("somethingelse", "")
 	fresh := theme.NewSidecar()
-	a.themeSidecar = fresh
+	a.elemBake.themeSidecar = fresh
 	a.reclaimThemeDoc()
-	if a.themeSidecar != fresh {
+	if a.elemBake.themeSidecar != fresh {
 		t.Error("the reclaim pasted the old theme's document over a DIFFERENT theme")
 	}
 }
@@ -748,7 +748,7 @@ func TestEditsSurviveAThemeReapply(t *testing.T) {
 // half it forgot — the document's binding to the applied design map — is exactly
 // the kind of thing that then only fails on a real screen.
 func (a *App) openThemeEditorForTest(from Screen) bool {
-	if a.themeSidecar == nil {
+	if a.elemBake.themeSidecar == nil {
 		return false
 	}
 	return a.armThemeEditor(from)

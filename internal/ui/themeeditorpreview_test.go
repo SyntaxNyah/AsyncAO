@@ -418,7 +418,7 @@ func TestBothDoorsLeavePreviewWithTheSelectionRestored(t *testing.T) {
 			a, cleanup := stageEditorApp(t)
 			defer cleanup()
 			driveFrame(a)
-			tgt := elementTarget(len(a.themeSidecar.Elements) - 1)
+			tgt := elementTarget(len(a.elemBake.themeSidecar.Elements) - 1)
 			a.te.selectOnly(tgt)
 			enterPreviewByButton(t, a)
 			if a.te.selN != 0 {
@@ -486,9 +486,9 @@ func TestBlankThemeFromTheRealNewFlowCanPreview(t *testing.T) {
 	if a.te == nil {
 		t.Fatal("the real New-theme flow did not open the editor over the theme it just created")
 	}
-	if len(a.themeSidecar.Elements) != 0 {
+	if len(a.elemBake.themeSidecar.Elements) != 0 {
 		t.Fatalf("the created theme carries %d elements — this is meant to be the BLANK template",
-			len(a.themeSidecar.Elements))
+			len(a.elemBake.themeSidecar.Elements))
 	}
 
 	enterPreviewByButton(t, a)

@@ -489,7 +489,7 @@ func applyThemeGeometryForTest(a *App, layout map[string]theme.Rect) {
 // applyThemeGeometryWithSidecarForTest is the same replay with the theme's
 // AsyncAO tier present — the case where the seed's ORDER is observable.
 func applyThemeGeometryWithSidecarForTest(a *App, layout map[string]theme.Rect, sc *theme.Sidecar) {
-	a.themeSidecar = sc
+	a.elemBake.themeSidecar = sc
 	a.tabBarSeeded = seedTabBarThroughOverrides(layout, sc)
 	a.themeRectsOrig = layout
 	rects := make(map[string]theme.Rect, len(layout))

@@ -179,7 +179,7 @@ func (a *App) drawElement(lay *themeLayoutCache, e *bakedElement, idx int16) {
 	// resolver degrades an out-of-range effect on its own, but effectIsStateful below
 	// is indexed with it, and an index panic on the render thread is not a thing to
 	// leave to a stranger's file.
-	if e.fx.kind == theme.FXNone || e.fx.kind >= theme.EffectKindCount || a.themeFXFrozen {
+	if e.fx.kind == theme.FXNone || e.fx.kind >= theme.EffectKindCount || a.fxPool.themeFXFrozen {
 		if e.wash {
 			// A WASH IS ITS EFFECT, so with no live effect there is nothing to paint —
 			// and this branch is the one that matters, because ReduceMotion reaches it.
@@ -239,12 +239,12 @@ func (a *App) elementVisible(e *bakedElement) bool {
 		return true
 	case theme.CondSpeaking:
 		// The one value-less axis: no interning, just the live flag.
-		return a.condSpeaking
+		return a.elemBake.condSpeaking
 	case theme.CondPos, theme.CondChar, theme.CondSide, theme.CondShout:
 		// cond < 0 means the element's value never interned, which the bake cannot
 		// produce for these axes — treat it as "never matches" rather than "always",
 		// because a gate that silently opens is the failure nobody notices.
-		return e.cond >= 0 && a.condLive[e.condAxis] == e.cond
+		return e.cond >= 0 && a.elemBake.condLive[e.condAxis] == e.cond
 	}
 	return true
 }
@@ -299,17 +299,17 @@ func (a *App) refreshElementConditionsFrom(lay *themeLayoutCache, src elemCondSo
 		return
 	}
 	// Speaking is a flag, not a value: nothing to intern, nothing to memoise.
-	a.condSpeaking = src.speaking
+	a.elemBake.condSpeaking = src.speaking
 	if lay.condN == 0 {
 		return // no valued condition anywhere in this theme — skip the whole pass
 	}
 	// The generation guard: a cold rebuild re-interns every value, so an index
 	// resolved against the OLD table would point at the wrong string.
-	if a.condGen != lay.condGen {
-		a.condGen = lay.condGen
-		for i := range a.condSrc {
-			a.condSrc[i] = condSrcUnresolved
-			a.condLive[i] = condAlwaysVisible
+	if a.elemBake.condGen != lay.condGen {
+		a.elemBake.condGen = lay.condGen
+		for i := range a.elemBake.condSrc {
+			a.elemBake.condSrc[i] = condSrcUnresolved
+			a.elemBake.condLive[i] = condAlwaysVisible
 		}
 	}
 	a.resolveConditionAxis(lay, theme.CondPos, src.pos)
@@ -326,17 +326,17 @@ const condSrcUnresolved = "\x00"
 // and out; changed ⇒ a linear scan of the interned table (≤ 96 entries, and only on
 // the frame the session actually moved).
 func (a *App) resolveConditionAxis(lay *themeLayoutCache, axis theme.ConditionAxis, live string) {
-	if a.condSrc[axis] == live {
+	if a.elemBake.condSrc[axis] == live {
 		return
 	}
-	a.condSrc[axis] = live
-	a.condLive[axis] = condAlwaysVisible
+	a.elemBake.condSrc[axis] = live
+	a.elemBake.condLive[axis] = condAlwaysVisible
 	if live == "" {
 		return
 	}
 	for i := 0; i < lay.condN; i++ {
 		if lay.condVal[i] == live {
-			a.condLive[axis] = int16(i)
+			a.elemBake.condLive[axis] = int16(i)
 			return
 		}
 	}

@@ -418,7 +418,7 @@ func TestApplyingAPresetSurvivesTheSaveThatFollowsIt(t *testing.T) {
 	// AND A SECOND RE-STYLE ON TOP, which is where the leak stopped being cosmetic:
 	// the union of two styles was 97 elements against a cap of 96, so the reader
 	// REFUSED the theme its own author had just saved.
-	a.themeSidecar = sc
+	a.elemBake.themeSidecar = sc
 	g.styleIdx = presetIndexOf(g.lib.Styles(), "thh_courtroom")
 	a.applyGalleryPick()
 	raw, err = sc.Bytes()
@@ -439,16 +439,16 @@ func TestGalleryApplyKeepsTheLiveSidecarPointer(t *testing.T) {
 	defer cleanup()
 
 	live := a.editorSidecar()
-	if a.themeSidecar != live {
+	if a.elemBake.themeSidecar != live {
 		t.Fatal("the fixture already has two sidecars — this proves nothing")
 	}
 	a.gallery().styleIdx = presetIndexOf(a.gallery().lib.Styles(), "terminal")
 	a.applyGalleryPick()
-	if a.editorSidecar() != live || a.themeSidecar != live {
+	if a.editorSidecar() != live || a.elemBake.themeSidecar != live {
 		t.Fatal("Apply replaced the live sidecar pointer — the editor and the courtroom now hold different themes")
 	}
 	a.undoGalleryPick()
-	if a.editorSidecar() != live || a.themeSidecar != live {
+	if a.editorSidecar() != live || a.elemBake.themeSidecar != live {
 		t.Fatal("Undo replaced the live sidecar pointer")
 	}
 }
