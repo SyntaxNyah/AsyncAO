@@ -289,9 +289,6 @@ func (c *Ctx) popRowLabelLimit(prev int32) { c.rowLabelRight = prev }
 // armed limit: the label itself when it fits (and always when no limit is armed),
 // otherwise AO2's own chop-two-append-ellipsis truncation. Returns fit=false when it
 // had to shorten, so the caller can offer the full text some other way.
-// The ellipsis matters: a hard clip is indistinguishable from a rendering fault —
-// which is precisely how the overflowing settings text was reported ("cut off at the
-// right border"). A trailing "…" says the sentence continues.
 func (c *Ctx) fitRowLabel(x int32, label string) (string, bool) {
 	if c.rowLabelRight <= 0 || label == "" {
 		return label, true
@@ -446,9 +443,6 @@ func (c *Ctx) CheckboxLabelAvail(r sdl.Rect) int32 {
 // the rect's own top. ThemeFitNative can downscale a canvas until the rect is
 // shorter than the 16 px box, and a negative offset would lift the box out of its
 // own row and into whatever is drawn above it.
-// Extracted so a test can drive the real arithmetic: the first version of that
-// test recomputed the formula in its own body and would have passed with the floor
-// deleted from production.
 func checkboxBoxY(r sdl.Rect) int32 {
 	if off := (r.H - checkboxBoxPx) / 2; off > 0 {
 		return r.Y + off

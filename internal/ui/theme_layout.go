@@ -1470,9 +1470,6 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	// client's "Bold names" pref; the themed box never has, and quietly turning that
 	// on for every themed user is a look change nobody asked for — kept out of #39's
 	// scope deliberately.
-	// The weight is in the RASTER now, not a second pass one logical pixel right: at a
-	// fractional UI scale that offset scaled with everything else and the two copies
-	// landed on different sub-pixel phases, so the name read doubled (F1b).
 	a.labelEmojiWeight(snFont, snEmoji, nameX, nameBox.Y, nameW, sc.ShownameText, nameCol, a.elemBold(elemShowname))
 
 	// The message folds the canvas scale in for the same reason the showname does:

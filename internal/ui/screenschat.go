@@ -140,10 +140,6 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// themes that declare no ao2_chatbox rect, so there is no theme-authored
 	// showname box for a theme-authored alignment to place text across. The themed
 	// chatbox honours it (chatboxfit.go).
-	// Bold the showname for readability (default on, plus the theme's showname_bold).
-	// The weight is rasterized into the glyphs — ONE device-exact draw — not a second
-	// pass a logical pixel to the right: that offset multiplied by the UI scale and
-	// read as a doubled, smeared name at 105%+ (F1b).
 	snBold := a.d.Prefs.Load().BoldNamesOn() || a.elemBold(elemShowname)
 	a.labelEmojiWeight(snFont, snEmoji, box.X+chatOverlayPadX, box.Y+chatOverlayNameY, box.W-2*chatOverlayPadX, sc.ShownameText, nameCol, snBold)
 
@@ -490,9 +486,6 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool, pct int) {
 			// without recording rasterText, so every later frame re-entered, failed
 			// identically, and drew NOTHING — a permanently blank chatbox under a
 			// showname that still painted, with no message anywhere and no diagnostic.
-			// Arm the plain-label fallback so drawChatOverlay still puts the words on
-			// screen, and say so in the debug log so the next report carries the
-			// actual SDL error instead of "the text is invisible".
 			a.debug.push("chatbox raster failed: " + err.Error() + " — drawing the message unrasterized")
 			a.raster.rasterFailedText = sc.MessageText
 			return
@@ -1030,7 +1023,6 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 // knobs — from the block origin (clusterX, y). clusterX / y arrive by value and the
 // local x cursor never escapes, so the row stays allocation-free (moved verbatim
 // from drawICControls).
-// The buttons ARM (toggleShout, icarms.go); the armed one wears drawArmedOverlay,
 // standing in for AO2's "*_selected" sprite swap (courtroom.cpp:6062 etc.). It used
 // to return a modifier the caller fed straight into sendIC, which is why a click
 func (a *App) drawICShoutRow(clusterX, y, w, h int32) {
@@ -1170,7 +1162,6 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 	// long Row 2 would push the PAIR off the right edge, so wrap them down to a
 	// fresh row when they wouldn't fit. Everything below keys off y2 (icY = y2 +
 	// btnH + …), so bumping it in place drops the IC area and judge strip with it.
-	// Constant widths keep this alloc-free.
 	const keysW, styleW, btnGap int32 = 90, 84, 6
 	if x+keysW+btnGap+styleW > clusterRight {
 		y2 += btnH + 4
@@ -1626,9 +1617,6 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// width for users with a narrower stage ("the IC bar disappeared"). Widths key off the
 	// slot (icBar.W), so the same guard holds after the bar is moved/resized. Inlined (no
 	// closure) to keep this per-frame row allocation-free.
-	// The message counter no longer reserves any tail width — it draws INSIDE the input's
-	// right edge now (drawMsgCounter), so tailReserve is just the input floor (minICInputW,
-	// a package-level const shared with the layout tests). sfxDDW / preW are package-level too.
 	tailReserve := int32(minICInputW)
 	// "Pre" toggle (AO2-Client ui_pre): send the selected emote's preanimation.
 	// AUTO-FOLLOWS each emote pick (selectEmote), and the user can override until

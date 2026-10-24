@@ -69,7 +69,6 @@ const (
 	// canvas the whole window. menuBarHeight() already reports 0 whenever the bar
 	// is not shown and every screen offsets by topChromeH(), so nothing else has
 	// to learn about this.
-	//
 	// It is a MOUSE LIFELINE (mouseLifelines, courttoolbox.go) — under a theme it
 	// is the only one of the three that draws at all, because ctrlSettingsSlot
 	// belongs to the classic IC row and the themed ★ Extras chip row was deleted

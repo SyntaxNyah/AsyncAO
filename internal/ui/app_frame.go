@@ -579,7 +579,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// The band's two right-anchored chips: claimed just BEFORE the bar publishes its
 	// strip fence, because that fence covers their rects (they share the band) and
 	// would blank hovering() for them. Same pre-screen discipline as the update chip.
-	//
 	// OUTERMOST FIRST. The theme-sidecar refusal chip is right-anchored at the window
 	// edge and the missing-asset chip is anchored to ITS left edge, so claiming them
 	// in this order is claiming them right-to-left, which is the order their rects
@@ -886,7 +885,6 @@ func samePath(a, b string) bool {
 // chatbox skin (chatbox.webp/png in the theme dir, AO2 convention) and the
 // message/showname font colors — and publishes them to the render thread via
 // themeRes. Settings re-triggers it on every theme change.
-//
 // It returns the themeGen it allocated for this load, so a caller that means to
 // act on THIS apply's landing (the #35 window snap) can name it. Every other
 // caller ignores it.
