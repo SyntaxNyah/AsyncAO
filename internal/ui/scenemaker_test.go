@@ -154,10 +154,7 @@ func TestMakerCropRange(t *testing.T) {
 		return recEvent{Kind: int(courtroom.EventMessage), Message: &protocol.ChatMessage{Message: text}}
 	}
 	newApp := func() *App {
-		return &App{env: env{}, makerScene: &sceneRecording{StartBg: "lobby", Events: []recEvent{bg("court"), msg("a"), msg("b"), msg("c"), msg("d")}},
-			makerTrimStart: -1,
-			makerTrimEnd:   -1,
-		}
+		return &App{env: env{}, sel: selState{makerScene: &sceneRecording{StartBg: "lobby", Events: []recEvent{bg("court"), msg("a"), msg("b"), msg("c"), msg("d")}}, makerTrimStart: -1, makerTrimEnd: -1}}
 	}
 
 	// No crop: whole scene, a fresh clone.
@@ -216,7 +213,7 @@ func TestMakerCropRange(t *testing.T) {
 // and replays the effect instead of showing a stale frame.
 func TestMakerPreviewKeyReflectsEffects(t *testing.T) {
 	base := &protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", Side: "wit"}
-	a := &App{env: env{}, makerScene: &sceneRecording{Events: []recEvent{{Kind: int(courtroom.EventMessage), Message: base}}}}
+	a := &App{env: env{}, sel: selState{makerScene: &sceneRecording{Events: []recEvent{{Kind: int(courtroom.EventMessage), Message: base}}}}}
 	k0 := a.makerPreviewKeyFor(0)
 
 	for _, mut := range []func(m *protocol.ChatMessage){

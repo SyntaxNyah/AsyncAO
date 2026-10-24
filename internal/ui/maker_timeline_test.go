@@ -78,9 +78,9 @@ func TestReindexAfterMove(t *testing.T) {
 // TestMakerMoveEvent pins the end-to-end reorder: the slice is reordered and the
 // selection + crop In/Out follow their events (not their old slots).
 func TestMakerMoveEvent(t *testing.T) {
-	a := &App{env: env{}, makerScene: &sceneRecording{Events: []recEvent{
+	a := &App{env: env{}, sel: selState{makerScene: &sceneRecording{Events: []recEvent{
 		{Text: "0"}, {Text: "1"}, {Text: "2"}, {Text: "3"},
-	}}}
+	}}}}
 	a.sel.makerSel = 0
 	a.sel.makerTrimStart, a.sel.makerTrimEnd = 1, 2 // crop covers events "1","2"
 
