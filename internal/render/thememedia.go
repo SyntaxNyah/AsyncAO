@@ -2,33 +2,9 @@ package render
 
 // Theme media — the bounded user-art tier (v1.90.0 W4).
 // docs/wip/THEME-EDITOR-DESIGN.md §Q2.
-//
-// A native theme may declare imported art (`[media]`) and procedural generator
-// tiles (`generator =`). Both land as PINNED texture pages, because chrome losing
-// an eviction fight against streaming sprites is the exact black-flash / glitching-
-// buttons defect UploadPinned was introduced to fix. Pinned means eviction-exempt,
-// and eviction-exempt means the ceiling has to live at the door instead.
-//
-// THE KEYS RIDE theme://. Reusing the reserved scheme (rather than inventing a
-// second `userimg://`) inherits reservedKey(), the App's pollThemeApply upload loop,
-// its theme-swap prune, themePage's generation-keyed negative cache and healTheme's
-// paced re-kick with zero new code — the single largest code reduction in this
-// design.
-//
-//	theme://m/<themeid>/<mediaid>   imported art   (themeid = the sanitized folder)
-//	theme://g/<paramhash>           generator tile (content-addressed)
-//
-// THE THEME NAMESPACE ON m/ IS MANDATORY, and it is a correctness requirement, not
-// tidiness. The swap prune drops the keys the NEW theme does not declare; with bare
-// ids (`theme://m/bg`) two themes that both declare `bg` leave the old page resident
-// and the new theme silently renders the old texture. `g/` needs no namespace
-// because a content address cannot collide with a different content.
-//
 // TWO ENFORCEMENT POINTS, because a bug in one is a budget breach and the budget IS
 // the product: internal/ui plans the whole media set against ThemeMediaByteCap
 // BEFORE it decodes anything, and UploadThemeMedia refuses at the store.
-// UploadPinned rejects both sub-prefixes outright, so no future caller can route
-// around the accounting by reaching for the older, un-gated door.
 
 import (
 	"fmt"
@@ -67,7 +43,6 @@ const (
 	// ThemeMediaCap / ThemeGenCap bound the COUNTS (hard rule 4). Bytes alone are
 	// not a bound: 24 tiny pages and 24 000 tiny pages have the same byte cost and
 	// very different map, prune and upload costs.
-	//
 	// 24 covers every one of the fourteen shipped style presets with headroom (the
 	// densest declares none at all — they are generator-only by design). 12 tiles at
 	// GenTileMaxPx² ARGB is 3 MiB, inside the media budget at every T1 size.
@@ -76,7 +51,6 @@ const (
 )
 
 // ThemeMediaByteCap is the LIVE theme-media allowance for a T1 budget, in bytes.
-//
 // It is a FUNCTION rather than a constant because TexBudgetMiB is a power-user
 // preference: someone who raised T1 to 256 MiB to hold a 4000-character roster has
 // not thereby asked for 96 MiB of pinned decoration, and someone who dropped it to
@@ -135,11 +109,9 @@ var ErrThemeMediaBudget = fmt.Errorf("render: theme media exceeds its budget")
 
 // UploadThemeMedia is UploadPinned with the admission gate. It is the ONLY producer
 // of theme://m/ and theme://g/ pages.
-//
 // The Decoded is released on every path including the refusals, because the caller
 // handed ownership over: a refusal that leaked the decode buffer would make the
 // budget check itself the leak.
-//
 // Render thread only.
 func (s *TextureStore) UploadThemeMedia(key string, d *assets.Decoded, texBudgetMiB int) error {
 	if !IsThemeMediaKey(key) {
@@ -189,21 +161,6 @@ func (s *TextureStore) UploadThemeMedia(key string, d *assets.Decoded, texBudget
 }
 
 // The three residency readouts.
-//
-// RENDER THREAD ONLY. They read plain ints written by noteThemeMediaAdded /
-// noteThemeMediaRemoved on the upload and prune paths, which are render-thread-only
-// by construction — so these are plain reads rather than atomics, and every caller
-// has to be on that thread too.
-//
-// The doc here used to say they feed "the 1 Hz metrics sampler", which is a
-// GOROUTINE (internal/metrics), and that is the dangerous kind of wrong: the
-// neighbouring store counters are atomics for exactly that reason, so a reader
-// taking the sentence at face value would wire an unsynchronised int read into a
-// sampler and get a -race failure (hard rule 8) that reads like a bug in the
-// sampler. The live callers are the editor's budget bar and the F8 debug panel,
-// both on the render thread. If a sampler ever does want these, PROMOTE the fields
-// to atomics first — do not relax the sentence again.
-//
 // ThemeMediaBytes is the resident theme-media payload, in bytes.
 func (s *TextureStore) ThemeMediaBytes() int64 { return s.themeMediaBytes }
 

@@ -2,37 +2,6 @@ package theme
 
 // The sidecar WRITE GUARD — the one thing standing between a live editor model
 // and a theme that cannot be loaded again.
-//
-// THE FAILURE THIS PREVENTS. Every Sidecar field is exported and mutable, and
-// internal/ui already edits the live model in place (layoutnudge.go). Without a
-// guard, Sidecar.Bytes() will happily emit what ParseSidecar then refuses or
-// silently drops:
-//
-//   - an Element.ID outside the id grammar ("" or "my plate") writes an
-//     [element.my plate] section the next load SKIPS, so the author's element is
-//     gone from the model while still sitting in the file;
-//   - two elements sharing an id write one section, so the editor edits the
-//     first and saves the last ("duplicate element" is the first feature any
-//     editor ships);
-//   - any collection over its named cap, or one over-long watermark past
-//     TextRuneCap, is ErrSidecarCap on the next load — the WHOLE theme refuses,
-//     which is the precise data loss the caps block claims to prevent.
-//
-// Both id failures reach [effect.<target>] too, under that section's own
-// grammar (a widget key, not an id): an empty or over-long target is preserved
-// and dropped, and two binds on one target collapse into one section that
-// EffectFor reads as the first and writeEffects saves as the last.
-//
-// All of them are silent at the moment of saving, which is the worst possible
-// moment for them to be silent.
-//
-// ONE SOURCE, NOT A SECOND SPELLING. Every rule below is the READER's rule,
-// reached through the reader's own helpers — capErr for the collection caps,
-// checkRuneCap for the lengths, validID for the ids, validEffectTarget for the
-// [effect.*] widget keys — so the two directions cannot drift. Nothing here
-// restates a limit; it only asks the reader's question of the model instead of
-// of a file.
-//
 // COLD PATH ONLY (hard rule 2), like the rest of the sidecar: it walks slices
 // and formats strings, and it runs on whatever goroutine is about to write a
 // file.
@@ -44,21 +13,13 @@ import (
 
 // ErrSidecarInvalid reports a MODEL the writer refuses because the reader would
 // not read it back as itself: a bad id, or two entries claiming one section.
-//
 // It is distinct from ErrSidecarCap because the fix is different and the blame
 // is different: a cap refusal says "this theme is too big", this one says "the
 // thing that built this model produced something the format cannot express".
-// Both are returned by Sidecar.Validate and both stop Bytes before a byte is
-// written.
 var ErrSidecarInvalid = errors.New("theme: sidecar model would not read back")
 
 // Validate reports the FIRST reason ParseSidecar would refuse — or silently
 // drop part of — the file Bytes() is about to write.
-//
-// It is the writer's precondition, and Bytes() runs it before it touches the
-// document, so an editor cannot brick a theme at save time. A nil *Sidecar is
-// the stock-AO2-theme case and is trivially valid.
-//
 // PARSED MODELS ALWAYS PASS, by construction: every rule here is a rule the
 // reader already enforced (a refusal) or already skipped (an invalid id never
 // enters the model). That is what makes the lossless round-trip gates unchanged
@@ -112,7 +73,6 @@ func (s *Sidecar) validateCaps() error {
 
 // validateIDs enforces the id grammar and, on top of it, UNIQUENESS — which is
 // a writer-only rule and the one invariant here the reader cannot state.
-//
 // The reader gets uniqueness for free: a repeated [element.x] is ONE section, so
 // no file it accepts can carry two. A MODEL can, and the writer resolves it by
 // letting the last declaration win while every reader (FindElement, the editor's
@@ -161,7 +121,6 @@ func (s *Sidecar) validateIDs() error {
 	// [clock.7] to slot 7, so a spelling that does not read back as the slot it
 	// sits in silently moves the whole group. "" is the editor-declared case and
 	// is written in the canonical spelling (writeClocks), so it is exempt.
-	//
 	// The loop starts at 1 for the reason writeClocks' does: clock 0 is the
 	// shared theme anchor, never declared and never written, so a guard judging
 	// slot 0 would be judging a section the writer cannot emit. Unreachable

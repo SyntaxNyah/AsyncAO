@@ -672,9 +672,6 @@ func (c *Courtroom) QueueLen() int { return len(c.queue) }
 // "holdit", "objection", "takethat", "custom" — or "" when the stage is idle or
 // the message carried no shout. It is ShoutName over the live message's
 // objection modifier, i.e. exactly the stem the bubble and the cry resolve from.
-// Read-only, allocation-free (ShoutName returns constants) and called at most
-// once per frame — it is the source for a free element's `visible_when =
-// shout:<name>` condition (docs/THEME-FORMAT.md §3).
 func (c *Courtroom) CurrentShout() string {
 	if c.phase == PhaseIdle || c.current == nil {
 		return ""
@@ -840,9 +837,6 @@ func (c *Courtroom) audioSettled(base string) bool {
 // so the wait gate cannot drift from the play path. AO2's handle_emote_mod
 // reaches play_preanim only for PREANIM / PREANIM_ZOOM, or for IDLE / ZOOM with
 // immediate ticked (../AO2-Client/src/courtroom.cpp:2889-2910).
-// It says nothing about whether the ART exists — the callers own that (the play
-// path checks spriteConfirmedMissing before parking Active on it; the gate
-// treats a confirmed miss as settled).
 func preanimWillPlay(msg *protocol.ChatMessage) bool {
 	return hasPreanim(msg) &&
 		(msg.EmoteMod == protocol.EmoteModPreanim || msg.EmoteMod == protocol.EmoteModPreanimZoom || msg.Immediate)
@@ -876,9 +870,6 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 	// is only what the message SETTLES onto, a second or more later. Waiting for
 	// idle alone therefore opened the gate onto a cold talk sprite and flashed the
 	// placeholder for exactly the pre-message-stall window this audit is about.
-	// It is not a widening in cost: the arm below already warms talk beside idle
-	// (it always has), so this waits for a fetch that was already in flight, and a
-	// conclusively-404'd talk sprite counts as settled like every other — the gate
 	if ready {
 		ready = c.spriteSettled(c.urls.Emote(msg.CharName, msg.Emote, EmoteTalk))
 	}
@@ -1146,9 +1137,6 @@ func (c *Courtroom) setBackground(bg, pos string, wipe bool) {
 	// but the default desk appears anyway": a room whose desk 404s kept drawing the
 	// PREVIOUS room's desk until the next phase edge, and a settled message has no
 	// further edge.
-	// Passing the CURRENT phase is what makes this safe. applyDeskMods also
-	// recomputes PairActive and the speaker offsets from c.current, so a wrong
-	// phase argument would flip pair state mid-preanim; at the current phase it
 	if wipe {
 		c.wipeStage()
 		return
@@ -1295,9 +1283,6 @@ func AdditiveOutgoingLeadingSpace(text string) string {
 // it out (rather than duplicating the test at the call site) keeps that one source
 // of truth. Stripping first matters: funColor may have prepended \cr/\c# markup, so
 // the raw first byte would be '\', not the visible rune.
-// The no-space suppression mirrors additiveNeedsJoiner's CJK decision on the one
-// boundary rune the sender can see (its own fragment's first rune; the previous
-// message's ending is only known to receivers): a half-width space glued to a
 func AdditiveWantsLeadingSpace(text string) bool {
 	stripped := StripChatMarkup(text)
 	if stripped == "" {
@@ -1339,7 +1324,6 @@ func additiveNeedsJoiner(prev, frag string) bool {
 // Covers the CJK Han/Hiragana/Katakana/Hangul scripts PLUS the two Unicode
 // punctuation blocks AO2's JP users actually hit — CJK Symbols & Punctuation
 // (U+3000-303F: 。、「」…, which are script=Common and so NOT in unicode.Han)
-// and Halfwidth/Fullwidth Forms (U+FF00-FFEF: ！？，．… and fullwidth letters).
 func isNoSpaceRune(r rune) bool {
 	switch {
 	case r >= 0x3000 && r <= 0x303F: // CJK Symbols and Punctuation (。、「」〜…)
@@ -1723,9 +1707,6 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 // while the char.ini fetch is still in flight — so a female character's first
 // message never sounds the male default before her set loads. Re-run from the
 // talk ticks until the meta lands (pollCharMeta flips it to known=true).
-// ONE mint for every blip URL in the client (blipurl.go): the guard that
-// rejects sentinels, and AO2's get_blips ladder — the modern sounds/blips/
-// set, AO1's sounds/general/sfx-blip<name>, and the plain general sound —
 func (c *Courtroom) resolveBlip() {
 	c.blipPending = false
 	ref, pending := c.blipRefFor(c.blipWire, c.blipSpeaker)
@@ -1744,7 +1725,6 @@ func (c *Courtroom) resolveBlip() {
 // begin() will before the message is current. pending means the speaker's char.ini
 // blip set is still in flight and there is nothing to wait for yet (resolveBlip
 // re-asks on the talk ticks); the caller should skip the blip rather than hold.
-// ONE mint, shared with resolveBlip, so the gate and the play path cannot drift.
 func (c *Courtroom) blipRefFor(blipWire, blipSpeaker string) (AssetRef, bool) {
 	if blipWire != "" {
 		return c.urls.BlipRef(blipWire), false
@@ -1966,9 +1946,6 @@ func (c *Courtroom) fireSFXDelay() {
 // realization path entirely (it is an `else if`, :4173-4177); plain
 // REALIZATION=1 is that fallback flash; SCREENSHAKE=1 shakes for IDLE/ZOOM
 // emote mods.
-// The named effect now drives a real OVERLAY (do_effect). The flash/shake
-// name mapping below survives as the fallback for when the overlay does NOT
-// resolve — no theme effects.ini on disk, no origin pack, no engine wired — so a
 func (c *Courtroom) fireMessageEffects(msg *protocol.ChatMessage) {
 	// Reduce-motion gates the VISUAL effects only — the feedback sounds still
 	// play (accessibility: kill the shake/flash, keep the audio cue).
@@ -2080,8 +2057,6 @@ func (c *Courtroom) startTalking() {
 	// no such hole because its emptiness test reads the RAW wire text
 	// (start_chat_ticking, ../AO2-Client/src/courtroom.cpp:4183) and a raw "\f"
 	// is not empty, so chat_tick walks the escape and calls do_flash (:4442-4448).
-	// An immediate-mode preanim does NOT keep this open: AO2's blank-post arm of
-	// start_chat_ticking starts the queue timer right there (courtroom.cpp:
 	if c.Typewriter.Done() && !c.Typewriter.EffectsPending() {
 		c.enterLinger()
 		return
@@ -2108,9 +2083,6 @@ func (c *Courtroom) enterLinger() {
 // expires. It runs OUTSIDE the phase switch because the animation deliberately
 // outlives its phase: AO2 leaves anim_state at 4 and lets the layer play on
 // while text_state reaches 2 and the queue timer runs.
-// The speaker lands wherever the message currently is: still crawling → the talk
-// loop; settled → idle. Both are what the next Update of that phase would have
-// drawn anyway.
 func (c *Courtroom) tickImmediatePreanim(dt time.Duration) {
 	if c.imPreLeft <= 0 {
 		return
@@ -2272,9 +2244,6 @@ func (c *Courtroom) spriteConfirmedMissing(base string) bool {
 // of the text, release a preanim that's waiting on the viewport callback, and
 // collapse every timed phase (shout / preanim / linger) with a huge step. A
 // replay/player "next" uses it so the following event can be fed immediately.
-// The loop is bounded — shout→preanim→talking→linger→idle is ≤4 hops — and a
-// queued message would begin via dequeue (replay feeds one at a time, so the
-// queue is empty here).
 func (c *Courtroom) SkipToIdle() {
 	const bigStep = time.Hour // collapse any phase timer in a single Update
 	for i := 0; i < 8 && c.phase != PhaseIdle; i++ {
@@ -2451,8 +2420,6 @@ func (c *Courtroom) spriteAlts(character, emote string, kind EmoteKind) []string
 // AO2 flips the EX/pre/emote modes between the preanim and the talk/idle phase
 // (courtroom.cpp:4075-4091 preanim vs :4134-4152 talk); this table is exactly
 // those two switch statements:
-// The old collapse (one static bool per message) wrongly showed the desk during a
-// mod-2 preanim and hid it during a mod-3 preanim.
 func deskVisible(deskMod int, preanim bool) bool {
 	switch deskMod {
 	case protocol.DeskShow:
@@ -2500,9 +2467,6 @@ func DeskDrawn(deskMod int, preanim bool, res DeskResolution) bool {
 // DeskAbsent changes the outcome of DeskDrawn, so a base we have not been told
 // about is simply DeskUnresolved. Game-thread only: a map read plus, where the
 // room was wired one, the same T1 residency probe the sprite wait-gate uses.
-// SpriteReady is the same same-thread T1 map probe the sprite wait-gate uses,
-// and it is nil in rigs that never wired it — an unwired room simply keeps the
-// old two-state answer.
 func (c *Courtroom) deskResolutionOf(base string) DeskResolution {
 	if base == "" {
 		return DeskUnresolved
@@ -2526,7 +2490,6 @@ func (c *Courtroom) deskResolution() DeskResolution {
 // conclusively 404'd (every configured format probed). Called from the App's
 // warning drain on the game/render thread, exactly like NotifyAssetMissing, and
 // costs no extra probe — it rides the Warning the desk prefetch already emitted.
-//
 // One Manager serves every room, so bases for OTHER rooms arrive here too; the
 // Scene.DeskBase compare makes those a string-compare no-op (the wrong-room
 // contract NotifyAssetMissing already follows).
