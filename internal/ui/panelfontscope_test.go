@@ -28,7 +28,7 @@ func TestChromeFaceIsTheClientFontWhenUnset(t *testing.T) {
 	// An element the USER never touched must not arm anything, even when a THEME
 	// dressed it. A theme that merely sizes its music list must not resize the
 	// jukebox's buttons for someone who set nothing.
-	a.themeFonts.e[elemMusicList] = themeElemFont{pct: 150, face: 1}
+	a.skin.themeFonts.e[elemMusicList] = themeElemFont{pct: 150, face: 1}
 	if got := a.elemChromeFont(elemMusicList, DefaultScalePct); got != nil {
 		t.Errorf("a THEME-dressed element armed the panel scope (%v) — the scope is for the user's own pick only", got)
 	}
@@ -55,11 +55,11 @@ func TestPanelScopeArmsUnderTheDyslexiaSwitch(t *testing.T) {
 	res.panelFace[elemPlayerList] = 1 // a FAMILY only, no size
 	res.faceData = [][]byte{{0x00}}
 	a.landThemeFonts(res)
-	if !a.themeFonts.e[elemPlayerList].userFont {
+	if !a.skin.themeFonts.e[elemPlayerList].userFont {
 		t.Error("a family-only pick lost its panel scope under the dyslexia switch — the panel would render in two fonts")
 	}
 	// The accessibility font still claims the FACE; only the scope survives.
-	if a.themeFonts.e[elemPlayerList].face != 0 {
+	if a.skin.themeFonts.e[elemPlayerList].face != 0 {
 		t.Error("the dyslexia switch let a per-panel face through")
 	}
 }
@@ -73,10 +73,10 @@ func TestPanelScopeSurvivesThemeFontsOff(t *testing.T) {
 	res := &themeApply{}
 	res.panelPct[elemNotes] = 200
 	a.landThemeFonts(res)
-	if !a.themeFonts.e[elemNotes].userFont {
+	if !a.skin.themeFonts.e[elemNotes].userFont {
 		t.Error("the theme-fonts opt-out cleared the user's own panel scope")
 	}
-	if got := a.themeFonts.e[elemNotes].pct; got != 200 {
+	if got := a.skin.themeFonts.e[elemNotes].pct; got != 200 {
 		t.Errorf("the user's SIZE was cleared by the opt-out: pct = %d, want 200", got)
 	}
 	// The face itself only exists where a real font chain does; headlessly the

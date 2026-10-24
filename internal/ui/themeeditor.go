@@ -230,7 +230,7 @@ func (a *App) armThemeEditor(from Screen) bool {
 	}
 	// The document is bound to the APPLIED design map, because an [overrides] edit
 	// has to move a pixel as well as write a row (themeDoc.live).
-	doc.bindLive(a.themeRects)
+	doc.bindLive(a.skin.themeRects)
 	a.te = &themeEditor{doc: doc}
 	a.te.editorReturn = from
 	return true
@@ -891,7 +891,7 @@ func (a *App) drawEditorElementRail(w, h int32) {
 	// theme with notes shows one row fewer of elements rather than drawing the chip
 	// over the element count (design §3.1: the chip lives in the rail footer).
 	chipH := int32(0)
-	if len(a.themeReport) > 0 {
+	if len(a.skin.themeReport) > 0 {
 		chipH = editRowH
 	}
 	body := sdl.Rect{X: rail.X, Y: rail.Y + editRowH, W: rail.W, H: rail.H - editRowH*2 - chipH}
@@ -1570,6 +1570,6 @@ func (a *App) reclaimThemeDoc() {
 	// the document is pointed at a map nobody draws from any more. Re-binding alone
 	// would leave the pixels wrong; re-folding alone would leave the document holding
 	// a dead map.
-	a.te.doc.bindLive(a.themeRects)
-	foldSidecarOverrides(a.themeRects, a.te.doc.side)
+	a.te.doc.bindLive(a.skin.themeRects)
+	foldSidecarOverrides(a.skin.themeRects, a.te.doc.side)
 }

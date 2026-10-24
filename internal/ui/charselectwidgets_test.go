@@ -788,7 +788,7 @@ func TestWardrobeGridPaintsTheHoverSelectorToo(t *testing.T) {
 	if err := a.d.Store.UploadPinned(themeTexKey(themeStemCharSelector), dec); err != nil {
 		t.Skipf("theme upload unavailable: %v", err)
 	}
-	a.themeTex[themeStemCharSelector] = true
+	a.skin.themeTex[themeStemCharSelector] = true
 	with := shot()
 	if sameRegion(without, with) {
 		t.Error("the Wardrobe grid ignored the theme's char_selector — the same cell shows a hover " +

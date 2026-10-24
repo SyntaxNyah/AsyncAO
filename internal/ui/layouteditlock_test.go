@@ -138,7 +138,7 @@ func TestThemedEditorSurvivesAnOpenCourtroomModal(t *testing.T) {
 
 			a.ctx.purgeTextCache()
 			a.drawCourtroom(w, h)
-			if !a.themeLay.valid {
+			if !a.skin.themeLay.valid {
 				t.Fatal("fixture: the courtroom did not take the THEMED branch")
 			}
 			if !textCacheHasLabel(a.ctx, layoutEditorBannerText) {
@@ -307,7 +307,7 @@ func TestTabStripDragIsExactAtEveryScale(t *testing.T) {
 				a.uiScalePct = 100
 				a.layoutEdit, a.layoutSnap = true, false
 				tc.apply(a)
-				a.themeLay.valid = false
+				a.skin.themeLay.valid = false
 
 				lay := a.themeWindowLayout(tc.w, tc.h)
 				before, ok := lay.rect(themeTabBarKey)
@@ -372,7 +372,7 @@ func TestTabStripBoxSurvivesADiscardedDrag(t *testing.T) {
 				a.uiScalePct = 100
 				a.layoutEdit, a.layoutSnap = true, false
 				tc.apply(a)
-				a.themeLay.valid = false
+				a.skin.themeLay.valid = false
 
 				lay := a.themeWindowLayout(tc.w, tc.h)
 				before, ok := lay.rect(themeTabBarKey)
@@ -423,7 +423,7 @@ func TestTabStripParkedNessIsPartOfTheLayoutCacheKey(t *testing.T) {
 	// Park it by writing ONLY what parked-ness is made of, and deliberately NOT
 	// touching themeLay.valid — the whole point is that the cache notices by itself.
 	placed := stripDesignRect(int(docked.X)-100, int(docked.Y)+220)
-	a.themeRects[themeTabBarKey] = placed
+	a.skin.themeRects[themeTabBarKey] = placed
 	a.d.Prefs.SetThemeRectOverride(stripEditTheme, themeTabBarKey,
 		[4]int{placed.X, placed.Y, placed.W, placed.H})
 	parked, ok := a.themeWindowLayout(w, h).rect(themeTabBarKey)
@@ -490,11 +490,11 @@ func TestTabStripDragReleaseInvalidatesTheLayoutCache(t *testing.T) {
 
 	ctx.mouseDown = false
 	a.themeWindowLayout(stripEditW, stripEditH) // the frame's rebuild, before the release is seen
-	if !a.themeLay.valid {
+	if !a.skin.themeLay.valid {
 		t.Fatal("fixture: the cache must be valid going into the release, or nothing is being tested")
 	}
-	a.drawLayoutEditor(stripEditW, stripEditH, &a.themeLay)
-	if a.themeLay.valid {
+	a.drawLayoutEditor(stripEditW, stripEditH, &a.skin.themeLay)
+	if a.skin.themeLay.valid {
 		t.Error("the drag release left the layout cache valid: the strip's box heals only when something else in the key moves")
 	}
 }
@@ -558,7 +558,7 @@ func TestMagnetSeesTheLiveTabStripNotTheInertSeed(t *testing.T) {
 	if !ok {
 		t.Fatal("the strip has no live rect")
 	}
-	seed := a.themeRects[themeTabBarKey]
+	seed := a.skin.themeRects[themeTabBarKey]
 	seedRect := sdl.Rect{X: int32(seed.X), Y: int32(seed.Y), W: int32(seed.W), H: int32(seed.H)}
 
 	got := a.magnetSiblingRect(themeTabBarKey, seed, lay)
@@ -576,7 +576,7 @@ func TestMagnetSeesTheLiveTabStripNotTheInertSeed(t *testing.T) {
 		t.Errorf("the magnet sees %+v, want the painted strip in design units %+v", got, want)
 	}
 	// Every other key still reports its stored design rect, unchanged.
-	vp := a.themeRects["viewport"]
+	vp := a.skin.themeRects["viewport"]
 	if got := a.magnetSiblingRect("viewport", vp, lay); got != (sdl.Rect{X: int32(vp.X), Y: int32(vp.Y), W: int32(vp.W), H: int32(vp.H)}) {
 		t.Errorf("a theme's own widget must still magnet to its stored design rect, got %+v", got)
 	}
@@ -601,7 +601,7 @@ func TestSnappedTabStripDragStaysOnTheStrip(t *testing.T) {
 			a.uiScalePct = 100
 			a.layoutEdit, a.layoutSnap = true, true
 			tc.apply(a)
-			a.themeLay.valid = false
+			a.skin.themeLay.valid = false
 
 			lay := a.themeWindowLayout(tc.w, tc.h)
 			before, ok := lay.rect(themeTabBarKey)
@@ -667,7 +667,7 @@ func TestSnappedTabStripLandsOnTheWindowGrid(t *testing.T) {
 			a.uiScalePct = 100
 			a.layoutEdit, a.layoutSnap = true, true
 			tc.apply(a)
-			a.themeLay.valid = false
+			a.skin.themeLay.valid = false
 
 			lay := a.themeWindowLayout(tc.w, tc.h)
 			before, ok := lay.rect(themeTabBarKey)
@@ -713,7 +713,7 @@ func TestTabStripRoundTripIsStableAcrossScales(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			a := stageTabbarlessCourtroom(t, stripEditTheme)
 			tc.apply(a)
-			a.themeLay.valid = false
+			a.skin.themeLay.valid = false
 			lay := a.themeWindowLayout(tc.w, tc.h)
 			if !lay.valid {
 				t.Fatal("themeWindowLayout did not validate")

@@ -173,7 +173,7 @@ func (a *App) nudgeThemedRect(tgt editTarget, dx, dy int, coarse bool, w, h int3
 	if themeName == "" {
 		return // the editor disarms itself with no theme; nothing to persist against
 	}
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 	if !lay.valid {
 		return
 	}
@@ -200,7 +200,7 @@ func (a *App) nudgeThemedRect(tgt editTarget, dx, dy int, coarse bool, w, h int3
 	} else {
 		r.X = nudgeCoord(r.X, dx, coarse, 0, layoutGridDesign)
 		r.Y = nudgeCoord(r.Y, dy, coarse, 0, layoutGridDesign)
-		if court, ok := a.themeRectsOrig["courtroom"]; ok {
+		if court, ok := a.skin.themeRectsOrig["courtroom"]; ok {
 			r = clampDesignRectToCanvas(r, court)
 		}
 	}
@@ -208,7 +208,7 @@ func (a *App) nudgeThemedRect(tgt editTarget, dx, dy int, coarse bool, w, h int3
 		return // hard against a stop: no move, and so no undo entry to trip over later
 	}
 	a.pushLayoutUndo()
-	a.themeRects[key] = r
+	a.skin.themeRects[key] = r
 	// The same write the drag's release makes. For the strip this override IS its
 	// placement flag (tabStripPlacementRecorded), so a nudged strip is "placed" exactly
 	// as a dragged one is — it leaves the chrome band and stays where it was put.

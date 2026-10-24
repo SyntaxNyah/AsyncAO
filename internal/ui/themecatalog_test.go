@@ -108,11 +108,11 @@ func TestThemeCatalogIsBoundedAndPublishedAtomically(t *testing.T) {
 	// number of entries depends on what the developer happens to have in
 	cat2Len := len(cat2.Entries)
 	a := &App{env: env{}}
-	a.themeCat.Store(cat2)
+	a.skin.themeCat.Store(cat2)
 	if got := a.themeCatalogSnapshot(); got != cat2 {
 		t.Errorf("snapshot read back a different pointer")
 	}
-	a.themeCat.Store(cat)
+	a.skin.themeCat.Store(cat)
 	if got := a.themeCatalogSnapshot(); got != cat || len(cat2.Entries) != cat2Len {
 		t.Errorf("publishing a new catalog disturbed the old one (cat2 held %d entries, now %d)",
 			cat2Len, len(cat2.Entries))
@@ -296,12 +296,12 @@ func TestThemeCatalogTriggerFloorIsOnlyForTheAutomaticOnes(t *testing.T) {
 	t.Cleanup(func() { _ = prefs.Close() })
 
 	a := &App{env: env{d: Deps{Prefs: prefs}}}
-	a.themeCat.Store(&themeCatalog{ScannedAt: time.Now()}) // "just scanned"
+	a.skin.themeCat.Store(&themeCatalog{ScannedAt: time.Now()}) // "just scanned"
 
 	// On-open is floored: it must bail without starting anything.
 	a.requestThemeCatalog(themeScanOnOpen)
 	waitForCatalogScan(t, a)
-	if a.themeCatBusy.Load() {
+	if a.skin.themeCatBusy.Load() {
 		t.Errorf("floored request left the single-flight latched")
 	}
 
@@ -310,7 +310,7 @@ func TestThemeCatalogTriggerFloorIsOnlyForTheAutomaticOnes(t *testing.T) {
 	waitForCatalogScan(t, a)
 
 	// And an aged snapshot lets the automatic trigger through again.
-	a.themeCat.Store(&themeCatalog{ScannedAt: time.Now().Add(-2 * themeScanMinInterval)})
+	a.skin.themeCat.Store(&themeCatalog{ScannedAt: time.Now().Add(-2 * themeScanMinInterval)})
 	a.requestThemeCatalog(themeScanOnOpen)
 	waitForCatalogScan(t, a)
 
@@ -329,7 +329,7 @@ func TestThemeCatalogTriggerFloorIsOnlyForTheAutomaticOnes(t *testing.T) {
 func waitForCatalogScan(t *testing.T, a *App) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
-	for a.themeCatBusy.Load() {
+	for a.skin.themeCatBusy.Load() {
 		if time.Now().After(deadline) {
 			t.Fatal("theme catalog scan never finished")
 		}

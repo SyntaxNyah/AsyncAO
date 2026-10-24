@@ -1701,8 +1701,8 @@ func chatBaseColor(a *App, sc *courtroom.Scene, skinned, comicInk bool) sdl.Colo
 		// the theme's message colour — AO2's get_design_element ladder resolves the
 		// chatbox folder before the theme (Courtroom::set_font).
 		col = sdl.Color{R: sc.ChatSkinMsgColor.R, G: sc.ChatSkinMsgColor.G, B: sc.ChatSkinMsgColor.B, A: 255}
-	case skinned && a.themeHasMsg:
-		col = a.themeMsgCol
+	case skinned && a.skin.themeHasMsg:
+		col = a.skin.themeMsgCol
 	}
 	return col
 }

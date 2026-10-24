@@ -43,14 +43,14 @@ func (c *Ctx) themeFaceRowPitch(face int, emPx int32) int32 {
 // MessageRaster keeps its lineH in, because the raster rasterises its line
 // textures with the device-scaled sibling face (#77).
 func (a *App) themeRowPitchDevice(el themeFontElem, pct int) int32 {
-	return a.ctx.themeFaceRowPitch(a.themeFonts.e[el].faceIdx(), faceEmPx(pct, int(a.ctx.textDevPct)))
+	return a.ctx.themeFaceRowPitch(a.skin.themeFonts.e[el].faceIdx(), faceEmPx(pct, int(a.ctx.textDevPct)))
 }
 
 // themeRowPitchLogical is the same number in LOGICAL pixels, for the animated
 // per-glyph path — which stays on the logical face by design (renderAnimated's
 // #77 Part A note) and would be spaced for the wrong size by the device figure.
 func (a *App) themeRowPitchLogical(el themeFontElem, pct int) int32 {
-	return a.ctx.themeFaceRowPitch(a.themeFonts.e[el].faceIdx(), faceEmPx(pct, DefaultScalePct))
+	return a.ctx.themeFaceRowPitch(a.skin.themeFonts.e[el].faceIdx(), faceEmPx(pct, DefaultScalePct))
 }
 
 // messageRowPitchLogical is the row advance a chatbox MESSAGE actually gets in

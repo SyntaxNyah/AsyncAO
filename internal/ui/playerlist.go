@@ -149,13 +149,13 @@ func playerSortLabel(mode int) string {
 // this menu's rows act on.
 // ghost/inert control is exactly what musicMenuRowLive's `!themed` guard and #21's
 func (a *App) rosterMenuThemed() bool {
-	if !a.themeLay.valid || !a.d.Prefs.Load().ThemeLayoutOn {
+	if !a.skin.themeLay.valid || !a.d.Prefs.Load().ThemeLayoutOn {
 		return false // classic geometry: this panel is chrome, and so is any torn panel
 	}
 	if a.classic.panelHidden(panelLog) {
 		return false // the themed panel that hosts the music list is not on screen
 	}
-	_, ok := a.themeLay.rect("music_list")
+	_, ok := a.skin.themeLay.rect("music_list")
 	return ok
 }
 

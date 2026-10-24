@@ -133,7 +133,7 @@ func (a *App) appliedThemeEditReason() themeEditReason {
 // Every refusal is a visible line naming the offender and the fix (design §3.3) —
 // a button that sometimes does nothing is worse than one that says why it cannot.
 func (a *App) copyThemeForEditing(name string, intent themeCopyIntent) {
-	if a.themeCopy != nil {
+	if a.skin.themeCopy != nil {
 		a.noteThemeCopy("a theme is already being copied — let it finish first")
 		return
 	}
@@ -168,7 +168,7 @@ func (a *App) copyThemeForEditing(name string, intent themeCopyIntent) {
 		return
 	}
 	job := &themeCopyJob{from: name, src: entry.Dir, intent: intent, done: make(chan themeCopyResult, 1)}
-	a.themeCopy = job
+	a.skin.themeCopy = job
 	// The name is the design's pre-fill; themepack sanitizes it and suffixes any
 	// collision, so pressing the button twice yields "… (edited) (2)" rather than
 	// overwriting the first copy.
@@ -211,11 +211,11 @@ func (a *App) noteThemeCopy(line string) {
 // beside pollThemeBundle and for the same reason: a result that arrives between
 // frames must not touch UI state from another goroutine.
 func (a *App) pollThemeCopy() {
-	if a.themeCopy == nil {
+	if a.skin.themeCopy == nil {
 		return
 	}
 	select {
-	case res := <-a.themeCopy.done:
+	case res := <-a.skin.themeCopy.done:
 		a.landThemeCopy(res)
 	default:
 	}
@@ -224,8 +224,8 @@ func (a *App) pollThemeCopy() {
 // landThemeCopy is the ONE place a finished copy changes app state, so the polled
 // path and any awaited one cannot drift.
 func (a *App) landThemeCopy(res themeCopyResult) {
-	job := a.themeCopy
-	a.themeCopy = nil
+	job := a.skin.themeCopy
+	a.skin.themeCopy = nil
 	if res.err != nil {
 		// themepack's errors already name the cap, the number and the offending
 		// entry; the theme's name is prefixed so the line says which copy failed.
@@ -276,7 +276,7 @@ func (a *App) landThemeCopy(res themeCopyResult) {
 		// 5. THE EDITOR OPENS OVER IT once that apply lands: the button says "Copy
 		// for editing", and a button that copies and then stops has done half of
 		// what it offered.
-		a.themeEditArmGen, a.themeEditArmFrom = gen, a.screen
+		a.skin.themeEditArmGen, a.skin.themeEditArmFrom = gen, a.screen
 		a.noteThemeCopy(line)
 		return
 	}
@@ -331,7 +331,7 @@ func (a *App) carryThemeRectOverrides(from, to string) {
 // reads it with no lock at all. A losing CAS means a real scan published first,
 // and its answer is the better one by definition.
 func (a *App) noteCopiedTheme(from string, m *themepack.Manifest) {
-	prev := a.themeCat.Load()
+	prev := a.skin.themeCat.Load()
 	if prev == nil {
 		return // nothing to extend; the requested scan is the whole answer
 	}
@@ -360,7 +360,7 @@ func (a *App) noteCopiedTheme(from string, m *themepack.Manifest) {
 	sort.Slice(next.Entries, func(i, j int) bool {
 		return strings.ToLower(next.Entries[i].Name) < strings.ToLower(next.Entries[j].Name)
 	})
-	a.themeCat.CompareAndSwap(prev, &next)
+	a.skin.themeCat.CompareAndSwap(prev, &next)
 }
 
 // themeKindAfterCopy is the copy's badge, derived from the source's.
@@ -384,23 +384,23 @@ func themeKindAfterCopy(src themeKind) themeKind {
 // disarm when a later apply has outraced it (generations only increase, so an
 // arming left set could never match again).
 func (a *App) maybeOpenEditorAfterCopy(gen uint64) {
-	if a.themeEditArmGen == 0 {
+	if a.skin.themeEditArmGen == 0 {
 		return
 	}
-	if gen != a.themeEditArmGen {
-		if gen > a.themeEditArmGen {
-			a.themeEditArmGen = 0
+	if gen != a.skin.themeEditArmGen {
+		if gen > a.skin.themeEditArmGen {
+			a.skin.themeEditArmGen = 0
 		}
 		return
 	}
-	a.themeEditArmGen = 0
+	a.skin.themeEditArmGen = 0
 	if a.te != nil {
 		return // an editor is already open over something; never replace it silently
 	}
-	if a.screen != a.themeEditArmFrom {
+	if a.screen != a.skin.themeEditArmFrom {
 		return // the user walked away; an editor that opens itself later is a hijack
 	}
-	if !a.openThemeEditor(a.themeEditArmFrom) {
+	if !a.openThemeEditor(a.skin.themeEditArmFrom) {
 		a.warnBundle("The copy applied but the editor would not open over it — pick it in Settings ▸ Theme.")
 	}
 }
@@ -453,7 +453,7 @@ func buildThemeEditorRow(reason themeEditReason, busy bool) themeEditorRowText {
 
 // themeEditorRow is the row as the Settings screen finds it.
 func (a *App) themeEditorRow() themeEditorRowText {
-	return buildThemeEditorRow(a.appliedThemeEditReason(), a.themeCopy != nil)
+	return buildThemeEditorRow(a.appliedThemeEditReason(), a.skin.themeCopy != nil)
 }
 
 // copyAppliedThemeForEditing is the row's other act: copy what cannot be opened.
@@ -475,11 +475,11 @@ func (a *App) copyAppliedThemeForEditing(intent themeCopyIntent) {
 // landing — the twin of editorAwaitExport, and it exists for the same reason: a
 // gate asserts on the FILES rather than on a goroutine having been started.
 func (a *App) awaitThemeCopy(within time.Duration) bool {
-	if a.themeCopy == nil {
+	if a.skin.themeCopy == nil {
 		return true
 	}
 	select {
-	case res := <-a.themeCopy.done:
+	case res := <-a.skin.themeCopy.done:
 		a.landThemeCopy(res)
 		return res.err == nil
 	case <-time.After(within):

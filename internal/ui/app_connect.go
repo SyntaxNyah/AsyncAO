@@ -335,11 +335,11 @@ func (a *App) applyWindowSize(w, h int) {
 // themeLayout()'s own validity test: a theme with a courtroom rect but no
 // viewport draws through the CLASSIC layout, so its canvas is not what is on
 func (a *App) themeDesignWindowSize() (int, int, bool) {
-	r, ok := a.themeRectsOrig["courtroom"]
+	r, ok := a.skin.themeRectsOrig["courtroom"]
 	if !ok || r.W <= 0 || r.H <= 0 {
 		return 0, 0, false
 	}
-	if _, ok := a.themeRectsOrig["viewport"]; !ok {
+	if _, ok := a.skin.themeRectsOrig["viewport"]; !ok {
 		return 0, 0, false
 	}
 	return r.W, r.H, true

@@ -177,12 +177,12 @@ func (a *App) drawThemePreview(y int32) int32 {
 	}
 	// Same skin-gated color rule as the live chatbox (readability).
 	nameCol := ColAccent
-	if skinned && a.themeHasName {
-		nameCol = a.themeNameCol
+	if skinned && a.skin.themeHasName {
+		nameCol = a.skin.themeNameCol
 	}
 	msgCol := ColText
-	if skinned && a.themeHasMsg {
-		msgCol = a.themeMsgCol
+	if skinned && a.skin.themeHasMsg {
+		msgCol = a.skin.themeMsgCol
 	}
 	c.Label(prev.X+8, prev.Y+6, "Showname", nameCol)
 	c.Label(prev.X+8, prev.Y+30, "Message text preview.", msgCol)

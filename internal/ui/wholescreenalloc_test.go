@@ -154,13 +154,13 @@ func TestDrawCourtroomThemeFontsZeroAlloc(t *testing.T) {
 
 	// Sizes deliberately DIFFER per element: one shared fontSet would rebuild —
 	// and purgeTextCache — every frame, which would read as a huge alloc count.
-	a.themeFonts.e[elemShowname] = themeElemFont{pct: themeFontPct(14), bold: true}
-	a.themeFonts.e[elemMessage] = themeElemFont{pct: themeFontPct(13)}
-	a.themeFonts.e[elemICChatlog] = themeElemFont{pct: themeFontPct(11)}
-	a.themeFonts.e[elemServerChatlog] = themeElemFont{pct: themeFontPct(9)}
-	a.themeFonts.e[elemMusicList] = themeElemFont{pct: themeFontPct(8), bold: true}
-	a.themeFonts.e[elemMusicName] = themeElemFont{pct: themeFontPct(10)}
-	a.themeFonts.e[elemAreaList] = themeElemFont{pct: themeFontPct(9)}
+	a.skin.themeFonts.e[elemShowname] = themeElemFont{pct: themeFontPct(14), bold: true}
+	a.skin.themeFonts.e[elemMessage] = themeElemFont{pct: themeFontPct(13)}
+	a.skin.themeFonts.e[elemICChatlog] = themeElemFont{pct: themeFontPct(11)}
+	a.skin.themeFonts.e[elemServerChatlog] = themeElemFont{pct: themeFontPct(9)}
+	a.skin.themeFonts.e[elemMusicList] = themeElemFont{pct: themeFontPct(8), bold: true}
+	a.skin.themeFonts.e[elemMusicName] = themeElemFont{pct: themeFontPct(10)}
+	a.skin.themeFonts.e[elemAreaList] = themeElemFont{pct: themeFontPct(9)}
 
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
@@ -178,9 +178,9 @@ func TestDrawCourtroomThemeFontsZeroAlloc(t *testing.T) {
 func stageThemedCourtroom(t testing.TB) (*App, func()) {
 	t.Helper()
 	a, cleanup := stageSettledCourtroom(t)
-	a.themeRects = make(map[string]theme.Rect, len(ao2DefaultDesignRects)+1)
+	a.skin.themeRects = make(map[string]theme.Rect, len(ao2DefaultDesignRects)+1)
 	for k, r := range ao2DefaultDesignRects {
-		a.themeRects[k] = r
+		a.skin.themeRects[k] = r
 	}
 	// toolboxDesignRect: the compact toolbox strip parked in the one genuinely EMPTY
 	// band of the stock 714×579 design space — x 5…125, y 354…378, between the emote
@@ -192,13 +192,13 @@ func stageThemedCourtroom(t testing.TB) (*App, func()) {
 	// `emotes`.) What the gate measures is that the themed arm of the toolbox
 	// (a.toolboxThemeRectOn) draws without allocating.
 	toolboxDesignRect := theme.Rect{X: 5, Y: 354, W: 120, H: 24}
-	a.themeRects["asyncao_toolbox"] = toolboxDesignRect
+	a.skin.themeRects["asyncao_toolbox"] = toolboxDesignRect
 	// A SEPARATE copy, exactly like the live theme apply (app.go): the layout
 	// editor's Reset writes themeRectsOrig back into themeRects, so aliasing one
 	// map would silently make Reset a no-op for anyone who extends this fixture.
-	a.themeRectsOrig = cloneRects(a.themeRects)
+	a.skin.themeRectsOrig = cloneRects(a.skin.themeRects)
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true }) // default-ON today; pinned here so a default flip can't silently un-gate this
-	a.themeLay.valid = false                                                // force the first frame to build the cache from the rects above
+	a.skin.themeLay.valid = false                                           // force the first frame to build the cache from the rects above
 	return a, cleanup
 }
 
@@ -219,7 +219,7 @@ func TestDrawCourtroomThemedZeroAlloc(t *testing.T) {
 	// a silently-classic frame would make this a duplicate of the gate above and
 	// leave the themed path uncovered again.
 	draw()
-	if !a.themeLay.valid {
+	if !a.skin.themeLay.valid {
 		t.Fatal("themeLayout did not validate — the fixture's rects never reached the themed branch")
 	}
 	if !a.toolbox.toolboxThemeRectOn {
@@ -255,7 +255,7 @@ func TestDrawCourtroomThemedDivergentZoomZeroAlloc(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 	draw()
-	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
+	if !a.skin.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
 
@@ -275,15 +275,15 @@ func TestDrawCourtroomThemedCentredShownameZeroAlloc(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
 
-	a.themeShownameAlign = shownameAlignCenter
+	a.skin.themeShownameAlign = shownameAlignCenter
 	// A theme-declared showname size too, so the measure runs on the ELEMENT face
 	// (#39) and not on the chrome font that a lazier implementation would reach for.
-	a.themeFonts.e[elemShowname] = themeElemFont{pct: themeFontPct(14), bold: true}
+	a.skin.themeFonts.e[elemShowname] = themeElemFont{pct: themeFontPct(14), bold: true}
 
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 	draw()
-	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
+	if !a.skin.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
 	name := a.link.room.Scene.ShownameText

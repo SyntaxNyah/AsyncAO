@@ -821,7 +821,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 func (a *App) drawThemeFitPreview(box sdl.Rect) {
 	c := a.ctx
 	c.Fill(box, sdl.Color{R: 0, G: 0, B: 0, A: 255})
-	court, ok := a.themeRects["courtroom"]
+	court, ok := a.skin.themeRects["courtroom"]
 	if ok && court.W > 0 && court.H > 0 {
 		base := float64(box.W) / float64(court.W) // min-fit within the box
 		if by := float64(box.H) / float64(court.H); by < base {

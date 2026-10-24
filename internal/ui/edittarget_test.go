@@ -371,7 +371,7 @@ func TestThemedEditorResizesFromTheTopLeftHandle(t *testing.T) {
 	a.drawLayoutEditor(stripEditW, stripEditH, a.themeWindowLayout(stripEditW, stripEditH))
 
 	want := theme.Rect{X: 120, Y: 410, W: 180, H: 110}
-	if got := a.themeRects["emotes"]; got != want {
+	if got := a.skin.themeRects["emotes"]; got != want {
 		t.Fatalf("a (+%d,+%d) drag on the top-left handle gave %+v, want %+v (the far corner stays at 300,520)",
 			dx, dy, got, want)
 	}
@@ -404,7 +404,7 @@ func TestThemedResizeHandleReachesTheMagnet(t *testing.T) {
 
 	// Flush with ic_chatlog's right edge, with the widget's own right edge unmoved.
 	want := theme.Rect{X: 97, Y: 400, W: 203, H: 120}
-	if got := a.themeRects["emotes"]; got != want {
+	if got := a.skin.themeRects["emotes"]; got != want {
 		t.Fatalf("a snapped left-handle drag gave %+v, want %+v — the left edge must snap flush to ic_chatlog (x=97)",
 			got, want)
 	}

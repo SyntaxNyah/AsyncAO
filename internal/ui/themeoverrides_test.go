@@ -77,7 +77,7 @@ func TestThemeApplyRunsTheOverridesTier(t *testing.T) {
 
 	// The fixture loaded at all. Without this a missing theme would land an empty
 	// map and every assertion below would read as "the fold did not run".
-	if got, ok := a.themeRects[ao2CanvasKey]; !ok || got != ovLiveCanvas {
+	if got, ok := a.skin.themeRects[ao2CanvasKey]; !ok || got != ovLiveCanvas {
 		t.Fatalf("the fixture theme did not load: %s = %+v (present=%v), want %+v — nothing below is "+
 			"measuring the overrides tier", ao2CanvasKey, got, ok, ovLiveCanvas)
 	}
@@ -85,7 +85,7 @@ func TestThemeApplyRunsTheOverridesTier(t *testing.T) {
 	// The unmoved key proves the AO2 backstop ran, which is what makes the moved
 	// key's stock value a meaningful "not applied" answer.
 	stockUnmoved := ao2DefaultDesignRects[ovLiveStillStockKey]
-	if got, ok := a.themeRects[ovLiveStillStockKey]; !ok || got != stockUnmoved {
+	if got, ok := a.skin.themeRects[ovLiveStillStockKey]; !ok || got != stockUnmoved {
 		t.Fatalf("%s = %+v (present=%v), want AO2's stock %+v — the backstop did not fill the keys the "+
 			"fixture's design file is silent about, so this gate cannot tell an applied override from an "+
 			"unapplied one", ovLiveStillStockKey, got, ok, stockUnmoved)
@@ -96,7 +96,7 @@ func TestThemeApplyRunsTheOverridesTier(t *testing.T) {
 		t.Fatalf("the fixture overrides %s to AO2's own stock rect %+v — the gate would pass with the "+
 			"fold deleted", ovLiveMovedKey, stockMoved)
 	}
-	got, ok := a.themeRects[ovLiveMovedKey]
+	got, ok := a.skin.themeRects[ovLiveMovedKey]
 	if !ok {
 		t.Fatalf("%s is absent from a.themeRects entirely", ovLiveMovedKey)
 	}
@@ -112,7 +112,7 @@ func TestThemeApplyRunsTheOverridesTier(t *testing.T) {
 	}
 	// themeRectsOrig is the PRISTINE map the layout editor resets to. An override
 	// that reached only the working copy would silently un-apply on the first reset.
-	if orig := a.themeRectsOrig[ovLiveMovedKey]; orig != ovLiveRect {
+	if orig := a.skin.themeRectsOrig[ovLiveMovedKey]; orig != ovLiveRect {
 		t.Errorf("themeRectsOrig has %s = %+v, want %+v — the author's rect must be the rect "+
 			"\"reset layout\" restores, not the stock one", ovLiveMovedKey, orig, ovLiveRect)
 	}

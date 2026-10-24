@@ -184,7 +184,7 @@ func TestThemedEditorBoxFollowsAClassicSlotOverride(t *testing.T) {
 	// Persisted and reloaded the way the classic editor's drag-end does it.
 	a.d.Prefs.SetClassicSlot(slotTabBar, [4]float64{0.6, 0.7, 0.2, 0.05})
 	a.classic.classicOvLoaded = false
-	a.themeLay.valid = false
+	a.skin.themeLay.valid = false
 
 	box, ok := a.themeWindowLayout(stripEditW, stripEditH).rect(themeTabBarKey)
 	if !ok {
@@ -219,10 +219,10 @@ func TestThemedEditorHonoursADragOntoThePristineSeedPosition(t *testing.T) {
 		Y: int(box.Y+300) - int(lay.offY),
 		W: int(box.W), H: int(box.H),
 	}
-	a.themeRectsOrig[themeTabBarKey] = landing
+	a.skin.themeRectsOrig[themeTabBarKey] = landing
 
 	_, after := dragStrip(t, a, ctx, 40, 300)
-	if got := a.themeRects[themeTabBarKey]; got != landing {
+	if got := a.skin.themeRects[themeTabBarKey]; got != landing {
 		t.Fatalf("fixture: the drag landed at %+v, want the pristine %+v — the coincidence is not being tested", got, landing)
 	}
 	if !a.tabStripThemeParked() {
@@ -336,7 +336,7 @@ func TestTabStripPlacementSurvivesAnUnrelatedUndo(t *testing.T) {
 
 	lay := a.themeWindowLayout(stripEditW, stripEditH)
 	box, _ := lay.rect(themeTabBarKey)
-	a.themeRectsOrig[themeTabBarKey] = theme.Rect{
+	a.skin.themeRectsOrig[themeTabBarKey] = theme.Rect{
 		X: int(box.X+40) - int(lay.offX),
 		Y: int(box.Y+300) - int(lay.offY),
 		W: int(box.W), H: int(box.H),
@@ -345,18 +345,18 @@ func TestTabStripPlacementSurvivesAnUnrelatedUndo(t *testing.T) {
 	if !a.tabStripThemeParked() {
 		t.Fatal("fixture: the placement did not take")
 	}
-	placed := a.themeRects[themeTabBarKey]
+	placed := a.skin.themeRects[themeTabBarKey]
 
 	// An unrelated edit, then undo it. restoreLayout walks every key, so the strip
 	// passes through its rect-equals-original branch on the way.
 	a.pushLayoutUndo()
-	a.themeRects["viewport"] = theme.Rect{X: 10, Y: 10, W: 200, H: 150}
+	a.skin.themeRects["viewport"] = theme.Rect{X: 10, Y: 10, W: 200, H: 150}
 	a.layoutEditUndo()
 
 	if !a.tabStripThemeParked() {
 		t.Fatal("undoing an unrelated edit un-parked the server-tab strip")
 	}
-	if got := a.themeRects[themeTabBarKey]; got != placed {
+	if got := a.skin.themeRects[themeTabBarKey]; got != placed {
 		t.Fatalf("the strip's design rect drifted through the undo: %+v, want %+v", got, placed)
 	}
 }

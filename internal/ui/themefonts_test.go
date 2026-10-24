@@ -124,16 +124,16 @@ func TestElemPctFolds(t *testing.T) {
 		{"clamped at the ceiling", 400, 250, themeFontMaxPct},
 		{"clamped at the floor", 25, 50, themeFontMinPct},
 	} {
-		a.themeFonts = themeFontTable{}
-		a.themeFonts.e[elemMusicList].pct = tc.themePct
+		a.skin.themeFonts = themeFontTable{}
+		a.skin.themeFonts.e[elemMusicList].pct = tc.themePct
 		if got := a.elemPct(elemMusicList, tc.userPct); got != tc.want {
 			t.Errorf("%s: elemPct(theme=%d, user=%d) = %d, want %d",
 				tc.name, tc.themePct, tc.userPct, got, tc.want)
 		}
 	}
 	// A dressed element must NOT leak into its neighbours.
-	a.themeFonts = themeFontTable{}
-	a.themeFonts.e[elemICChatlog].pct = 200
+	a.skin.themeFonts = themeFontTable{}
+	a.skin.themeFonts.e[elemICChatlog].pct = 200
 	if got := a.elemPct(elemServerChatlog, 100); got != 100 {
 		t.Errorf("server_chatlog picked up ic_chatlog's size: %d", got)
 	}
@@ -147,8 +147,8 @@ func TestElemPctFolds(t *testing.T) {
 // never got the fold the chatbox children have had since #21.
 func TestMusicNamePctFoldsTheCanvas(t *testing.T) {
 	a := testTabApp(t)
-	a.themeFonts = themeFontTable{}
-	a.themeFonts.e[elemMusicName].pct = 100
+	a.skin.themeFonts = themeFontTable{}
+	a.skin.themeFonts.e[elemMusicName].pct = 100
 
 	full := &themeLayoutCache{textPct: DefaultScalePct} // 1:1 canvas
 	half := &themeLayoutCache{textPct: 50}              // the canvas at half size
@@ -170,7 +170,7 @@ func TestMusicNamePctFoldsTheCanvas(t *testing.T) {
 // deliberate, not an oversight.
 func TestElemLabelFontAtPctKeepsTheUndressedContract(t *testing.T) {
 	a := testTabApp(t)
-	a.themeFonts = themeFontTable{}
+	a.skin.themeFonts = themeFontTable{}
 	for _, pct := range []int{50, 100, 200} {
 		if got := a.elemLabelFontAtPct(elemMusicName, pct); got != a.ctx.font {
 			t.Errorf("undressed at %d%%: got %p, want the chrome face %p", pct, got, a.ctx.font)
@@ -315,7 +315,7 @@ func TestThemeFontsSuppressedByUserOverride(t *testing.T) {
 			res.fontTable.e[elemICChatlog] = themeElemFont{pct: 150, face: 1, bold: true}
 			res.faceData = [][]byte{{0x00}}
 			a.landThemeFonts(res)
-			got := a.themeFonts.e[elemICChatlog]
+			got := a.skin.themeFonts.e[elemICChatlog]
 			if got.face != 0 {
 				t.Errorf("face = %d, want 0 (the user's font wins the FAMILY)", got.face)
 			}
@@ -343,8 +343,8 @@ func TestThemeFontsOffRestoresDefaults(t *testing.T) {
 	}
 	a.landThemeFonts(res)
 	for el := themeFontElem(0); el < themeFontElemCount; el++ {
-		if a.themeFonts.e[el].dressed() {
-			t.Errorf("element %d still dressed with the setting off: %+v", el, a.themeFonts.e[el])
+		if a.skin.themeFonts.e[el].dressed() {
+			t.Errorf("element %d still dressed with the setting off: %+v", el, a.skin.themeFonts.e[el])
 		}
 		if got := a.elemPct(el, 123); got != 123 {
 			t.Errorf("element %d elemPct = %d, want the user zoom 123 unchanged", el, got)
@@ -385,9 +385,9 @@ func TestWrapCachesKeyOnResolvedPct(t *testing.T) {
 	}
 	// A theme lands with its own sizes — nothing else changes (same log seq, same
 	// width, same font generation), so ONLY the resolved pct can invalidate.
-	a.themeFonts.e[elemICChatlog].pct = themeFontPct(18)
-	a.themeFonts.e[elemServerChatlog].pct = themeFontPct(9)
-	a.themeFonts.e[elemAreaList].pct = themeFontPct(6)
+	a.skin.themeFonts.e[elemICChatlog].pct = themeFontPct(18)
+	a.skin.themeFonts.e[elemServerChatlog].pct = themeFontPct(9)
+	a.skin.themeFonts.e[elemAreaList].pct = themeFontPct(6)
 	a.icWrapped(colW, false)
 	a.oocWrapped(colW)
 	a.areaWrapped(nil, colW, "", areaQuerySlotOwn)

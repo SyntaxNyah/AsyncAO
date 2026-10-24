@@ -43,7 +43,7 @@ func copyRig(t *testing.T, origin themeOrigin) (*App, string, string) {
 	a := &App{env: env{}}
 	a.d.Prefs = newTestPrefs(t)
 	a.d.Prefs.SetTheme("paper", "")
-	a.themeCat.Store(&themeCatalog{
+	a.skin.themeCat.Store(&themeCatalog{
 		Entries: []themeCatalogEntry{{
 			Name: "paper", Dir: src, Kind: themeKindAO2, Origin: origin,
 		}},
@@ -132,7 +132,7 @@ func TestTheRowFollowsTheAppliedTheme(t *testing.T) {
 	cat := a.themeCatalogSnapshot()
 	next := *cat
 	next.Entries = []themeCatalogEntry{{Name: "paper", Dir: cat.Entries[0].Dir, Origin: themeOriginYours}}
-	a.themeCat.Store(&next)
+	a.skin.themeCat.Store(&next)
 	if row := a.themeEditorRow(); row.copies {
 		t.Errorf("a theme that is already ours offers %q — copying it would duplicate a folder for nothing", row.button)
 	}
@@ -162,7 +162,7 @@ func TestCopyingAnAO2ThemeMakesItEditableAndLeavesTheOriginalAlone(t *testing.T)
 		t.Fatalf("the row offers %q for a theme with no native tier", row.button)
 	}
 	a.copyAppliedThemeForEditing(themeCopyThenOpen)
-	if a.themeCopy == nil {
+	if a.skin.themeCopy == nil {
 		t.Fatalf("the button started nothing: %s", a.warnLine)
 	}
 	if !a.awaitThemeCopy(copyGateWait) {
@@ -197,7 +197,7 @@ func TestCopyingAnAO2ThemeMakesItEditableAndLeavesTheOriginalAlone(t *testing.T)
 	if name, _ := a.d.Prefs.Load().Theme(); name != "paper (edited)" {
 		t.Errorf("the copy was not selected: pref says %q", name)
 	}
-	if a.themeGen.Load() == 0 {
+	if a.skin.themeGen.Load() == 0 {
 		t.Error("the copy applied no theme — the editor opens over the APPLIED theme, so a copy that does " +
 			"not apply cannot be edited")
 	}
@@ -206,11 +206,11 @@ func TestCopyingAnAO2ThemeMakesItEditableAndLeavesTheOriginalAlone(t *testing.T)
 		t.Errorf("the layout override did not follow the copy: %v", got)
 	}
 	// AND THE EDITOR IS ARMED to open over it once that apply lands.
-	if a.themeEditArmGen == 0 {
+	if a.skin.themeEditArmGen == 0 {
 		t.Error("nothing arms the editor — \"Copy for editing\" would copy and then leave the user on the " +
 			"Settings screen with no editor")
 	}
-	drainThemeApply(t, a, a.themeGen.Load())
+	drainThemeApply(t, a, a.skin.themeGen.Load())
 }
 
 // TestTheCopyIsInTheCatalogBeforeAnyRescan. The editor's Save resolves its write
@@ -260,12 +260,12 @@ func TestTheCopyIsInTheCatalogBeforeAnyRescan(t *testing.T) {
 func TestASecondCopyIsRefusedRatherThanRaced(t *testing.T) {
 	a, _, _ := copyRig(t, themeOriginBundled)
 	a.copyThemeForEditing("paper", themeCopyThenOpen)
-	first := a.themeCopy
+	first := a.skin.themeCopy
 	if first == nil {
 		t.Fatalf("the copy started nothing: %s", a.warnLine)
 	}
 	a.copyThemeForEditing("paper", themeCopyThenOpen)
-	if a.themeCopy != first {
+	if a.skin.themeCopy != first {
 		t.Fatal("a second press replaced the job in flight — the first goroutine's result would land on a " +
 			"job nobody is holding")
 	}
@@ -275,7 +275,7 @@ func TestASecondCopyIsRefusedRatherThanRaced(t *testing.T) {
 	if !a.awaitThemeCopy(copyGateWait) {
 		t.Fatalf("the copy never finished: %s", a.warnLine)
 	}
-	drainThemeApply(t, a, a.themeGen.Load())
+	drainThemeApply(t, a, a.skin.themeGen.Load())
 }
 
 // TestATagalongCopyOfAThemeWeAlreadyOwnIsRefused. The offer and the act read ONE
@@ -285,7 +285,7 @@ func TestATagalongCopyOfAThemeWeAlreadyOwnIsRefused(t *testing.T) {
 	a, src, _ := copyRig(t, themeOriginYours)
 	a.elemBake.themeSidecar = theme.NewSidecar()
 	a.copyThemeForEditing("paper", themeCopyThenOpen)
-	if a.themeCopy != nil {
+	if a.skin.themeCopy != nil {
 		t.Fatal("a theme that is already ours was duplicated — the editor can write it where it is")
 	}
 	if !strings.Contains(a.warnLine, "already yours") {
@@ -301,7 +301,7 @@ func TestATagalongCopyOfAThemeWeAlreadyOwnIsRefused(t *testing.T) {
 func TestARefusedCopySaysWhyAndWritesNothing(t *testing.T) {
 	a, _, root := copyRig(t, themeOriginBundled)
 	a.copyThemeForEditing("a theme that is not installed", themeCopyThenOpen)
-	if a.themeCopy != nil {
+	if a.skin.themeCopy != nil {
 		t.Fatal("a copy of a theme the catalog does not know started anyway")
 	}
 	if !strings.Contains(a.warnLine, "not in the theme list") {
@@ -319,32 +319,32 @@ func TestARefusedCopySaysWhyAndWritesNothing(t *testing.T) {
 // healTheme's eviction re-kick, the texture-filter apply or a boot apply.
 func TestTheEditorOnlyOpensItselfForTheApplyThatArmedIt(t *testing.T) {
 	a := &App{env: env{}}
-	a.themeEditArmGen, a.themeEditArmFrom = 7, ScreenSettings
+	a.skin.themeEditArmGen, a.skin.themeEditArmFrom = 7, ScreenSettings
 	a.screen = ScreenSettings
 
 	a.maybeOpenEditorAfterCopy(6) // an OLDER apply
 	if a.te != nil {
 		t.Fatal("an unrelated older apply opened the editor")
 	}
-	if a.themeEditArmGen != 7 {
+	if a.skin.themeEditArmGen != 7 {
 		t.Fatal("an older apply spent the arming — the copy's own landing would never open the editor")
 	}
 	a.maybeOpenEditorAfterCopy(9) // a NEWER one has outraced it
 	if a.te != nil {
 		t.Fatal("an unrelated newer apply opened the editor")
 	}
-	if a.themeEditArmGen != 0 {
+	if a.skin.themeEditArmGen != 0 {
 		t.Error("an outraced arming was left set — generations only increase, so it could never match again")
 	}
 
 	// And the user who walked away is never hijacked.
-	a.themeEditArmGen, a.themeEditArmFrom = 11, ScreenSettings
+	a.skin.themeEditArmGen, a.skin.themeEditArmFrom = 11, ScreenSettings
 	a.screen = ScreenCourtroom
 	a.maybeOpenEditorAfterCopy(11)
 	if a.te != nil {
 		t.Error("the editor opened itself over a screen the user had moved to")
 	}
-	if a.themeEditArmGen != 0 {
+	if a.skin.themeEditArmGen != 0 {
 		t.Error("the arming survived its own apply — it must be consumed either way")
 	}
 }
@@ -377,7 +377,7 @@ func TestASaveRefusalOffersTheCopyAndTheSecondPressTakesIt(t *testing.T) {
 	cat := a.themeCatalogSnapshot()
 	next := *cat
 	next.WriteRoot = root
-	a.themeCat.Store(&next)
+	a.skin.themeCat.Store(&next)
 	from := a.te.doc.name
 
 	// A session's worth of work, unsaved.
@@ -390,12 +390,12 @@ func TestASaveRefusalOffersTheCopyAndTheSecondPressTakesIt(t *testing.T) {
 	if !strings.Contains(a.te.status, "Press Save again") {
 		t.Fatalf("the refusal is %q — it must offer the act that fixes it, not homework", a.te.status)
 	}
-	if a.themeCopy != nil {
+	if a.skin.themeCopy != nil {
 		t.Fatal("the FIRST press copied something — the offer is a confirmation, not an act")
 	}
 
 	a.editorSave() // the confirming press
-	if a.themeCopy == nil {
+	if a.skin.themeCopy == nil {
 		t.Fatalf("the second press started no copy: %s", a.te.status)
 	}
 	if !a.awaitThemeCopy(copyGateWait) {
@@ -426,7 +426,7 @@ func TestASaveRefusalOffersTheCopyAndTheSecondPressTakesIt(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(src, theme.SidecarFileName)); err == nil {
 		t.Error("the editor wrote into the bundled theme it was refused — that is the whole point of the copy")
 	}
-	drainThemeApply(t, a, a.themeGen.Load())
+	drainThemeApply(t, a, a.skin.themeGen.Load())
 }
 
 // TestAnExpiredOfferDoesNotCopy — the confirmation means "yes, now", not "the next
@@ -436,7 +436,7 @@ func TestAnExpiredOfferDoesNotCopy(t *testing.T) {
 	a.te = &themeEditor{doc: newThemeDoc("paper", theme.NewSidecar())}
 	a.te.copyAt = time.Now().Add(-themeCopyConfirmWindow - time.Second)
 	a.offerCopyOnSaveRefusal(errThemeNotYours)
-	if a.themeCopy != nil {
+	if a.skin.themeCopy != nil {
 		t.Fatal("an offer the user can no longer see still authorised a copy")
 	}
 	if !strings.Contains(a.te.status, "Press Save again") {
@@ -460,7 +460,7 @@ func TestOnlyTheNotYoursRefusalOffersACopy(t *testing.T) {
 		t.Error("an unrelated refusal armed the copy offer — pressing Save again would copy a theme for a " +
 			"reason a copy does not fix")
 	}
-	if a.themeCopy != nil {
+	if a.skin.themeCopy != nil {
 		t.Error("an unrelated refusal started a copy")
 	}
 }

@@ -124,8 +124,8 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	nameCol := ColAccent
 	if skinned && sc.ChatSkinNameHas {
 		nameCol = sdl.Color{R: sc.ChatSkinNameColor.R, G: sc.ChatSkinNameColor.G, B: sc.ChatSkinNameColor.B, A: 255}
-	} else if skinned && a.themeHasName {
-		nameCol = a.themeNameCol
+	} else if skinned && a.skin.themeHasName {
+		nameCol = a.skin.themeNameCol
 	}
 	if a.d.Prefs.Load().NameColors { // per-speaker name colour wins over accent/theme
 		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.Load().NameSat)/100, float64(a.d.Prefs.Load().NameVal)/100)

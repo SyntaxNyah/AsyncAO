@@ -134,8 +134,8 @@ func (a *App) overlayRosterFor(folder string) *overlayRoster {
 	folder = strings.TrimSpace(folder)
 	// A theme change invalidates every roster: the theme tier contributes both
 	// names and properties, and its art paths move with it.
-	if a.overlays.overlayRosterGen != a.themeAppliedGen {
-		a.overlays.overlayRosterGen = a.themeAppliedGen
+	if a.overlays.overlayRosterGen != a.skin.themeAppliedGen {
+		a.overlays.overlayRosterGen = a.skin.themeAppliedGen
 		a.overlays.overlayRosters = nil
 		a.overlays.overlayInvalidateMemos()
 	}
@@ -200,7 +200,7 @@ func (a *App) overlayRosterFetchOne(key, folder string) {
 	t := a.overlays.overlayTheme
 	// The apply generation this resolve belongs to. Compared again when the result
 	// lands: a theme applied in the meantime moved every path this walk resolved.
-	gen := a.themeAppliedGen
+	gen := a.skin.themeAppliedGen
 	manifestURL := ""
 	if folder != "" && a.link.urls.Origin() != "" {
 		manifestURL = a.link.urls.OverlayEffectManifest(folder)
@@ -300,7 +300,7 @@ func (a *App) pollOverlayRosters() {
 				// The fetch slot is freed whatever the verdict — a dropped result must
 				// still let the key be resolved again.
 				delete(a.overlays.overlayRosterInFlight, res.key)
-				if res.gen != a.themeAppliedGen {
+				if res.gen != a.skin.themeAppliedGen {
 					// A theme apply landed while this was in flight. Its art/icon paths,
 					// its theme-tier property files and its display order all belong to
 					// the PREVIOUS theme, so filing it under the new one would show the
@@ -477,7 +477,7 @@ func (a *App) overlayEffectSound(folder, name string) string {
 		if own := a.charMetaFor(a.activeCharName()).realization; own != "" {
 			return own
 		}
-		return a.themeSounds[overlayRealizationEffect]
+		return a.skin.themeSounds[overlayRealizationEffect]
 	}
 	if fx, ok := a.overlayRosterFXFor(folder, name); ok {
 		return fx.Sound

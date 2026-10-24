@@ -130,7 +130,7 @@ func (a *App) drawThemeMakeRows(y, w int32) int32 {
 	if c.onRow != nil {
 		c.onRow("Create the theme", y)
 	}
-	busy := a.themeCreate != nil || a.themeCopy != nil
+	busy := a.skin.themeCreate != nil || a.skin.themeCopy != nil
 	label := themeMakeVerb
 	if busy {
 		label = themeMakeBusy

@@ -121,7 +121,7 @@ func (p *themeReportPanel) bake(c *Ctx, report []string, w int32) {
 // not drawn either: "nothing was wrong with this theme" is best said by there
 // being nothing to click, not by a panel that says "0 notes".
 func (a *App) openThemeReport() {
-	if a.te == nil || len(a.themeReport) == 0 {
+	if a.te == nil || len(a.skin.themeReport) == 0 {
 		return
 	}
 	a.te.report = &themeReportPanel{}
@@ -172,7 +172,7 @@ func (a *App) drawThemeReportPanel(w, h int32) {
 
 	body := sdl.Rect{X: r.X + editRowPad, Y: r.Y + editReportRowH + 2,
 		W: r.W - editRowPad*2, H: r.H - editReportRowH*editReportChromeRows - editRowPad}
-	p.bake(c, a.themeReport, body.W)
+	p.bake(c, a.skin.themeReport, body.W)
 
 	rows := int(body.H / editReportRowH)
 	if rows > editReportVisibleRows {
@@ -203,7 +203,7 @@ func (a *App) drawThemeReportPanel(w, h int32) {
 // drawEditorReportChip is the LEFT RAIL FOOTER chip design §3.1 names —
 // `Imported · 4 notes` — and the only way into the panel.
 func (a *App) drawEditorReportChip(rail sdl.Rect, y int32) int32 {
-	n := len(a.themeReport)
+	n := len(a.skin.themeReport)
 	if n == 0 {
 		return 0
 	}

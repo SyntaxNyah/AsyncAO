@@ -42,8 +42,8 @@ func (a *App) applyThemeAsync() uint64 {
 	// theme-media allowance is a function of it (render.ThemeMediaByteCap) and the
 	// goroutine below must not take the preferences lock.
 	texBudgetMiB := a.d.Prefs.Load().TexBudgetMiB()
-	gen := a.themeGen.Add(1)
-	themeRes := &a.themeRes
+	gen := a.skin.themeGen.Add(1)
+	themeRes := &a.skin.themeRes
 	go func() {
 		res := themeApply{
 			gen:    gen,
@@ -319,7 +319,7 @@ func (a *App) applyThemeAsync() uint64 {
 // drop) the chatbox skin, adopt the colors, force a chat re-raster, and
 // report what happened (settings status line + debug log).
 func (a *App) pollThemeApply() {
-	res := a.themeRes.Swap(nil)
+	res := a.skin.themeRes.Swap(nil)
 	if res == nil {
 		return
 	}
@@ -328,24 +328,24 @@ func (a *App) pollThemeApply() {
 	// result). Landing it would revert to the stale theme and — because an older
 	// boot/global "default" apply carries an empty fontPath — clear the chat font
 	// (the "applies then reverts" bug). Drop anything older than what's applied.
-	if res.gen < a.themeAppliedGen {
+	if res.gen < a.skin.themeAppliedGen {
 		res.releaseDecoded()
 		return
 	}
-	a.themeAppliedGen = res.gen
+	a.skin.themeAppliedGen = res.gen
 	// Upload every loaded stem into the PINNED tier — theme chrome must
 	// never lose an eviction fight against streaming sprites (the cause
 	// of the black-flashing backdrop / glitching buttons) — and drop
 	// residents the new theme doesn't ship (plain stems and btn/ art).
 	for stem, d := range res.images {
 		if err := a.d.Store.UploadPinned(themeTexKey(stem), d); err == nil {
-			a.themeTex[stem] = true
+			a.skin.themeTex[stem] = true
 		}
 	}
-	for stem := range a.themeTex {
+	for stem := range a.skin.themeTex {
 		if res.images[stem] == nil {
 			a.d.Store.Remove(themeTexKey(stem))
-			delete(a.themeTex, stem)
+			delete(a.skin.themeTex, stem)
 		}
 	}
 	// Geometry: pristine design rects kept aside, the user's layout-editor
@@ -356,13 +356,13 @@ func (a *App) pollThemeApply() {
 	// applyRectOverrides — which only rewrites keys that already exist — to
 	// re-apply a drag after a reload. Only the FLAG crosses here.
 	a.tabBarSeeded = res.tabBarSeeded
-	a.themeRectsOrig = res.layout
+	a.skin.themeRectsOrig = res.layout
 	rects := make(map[string]theme.Rect, len(res.layout))
 	for k, v := range res.layout {
 		rects[k] = v
 	}
-	a.themeRects = a.applyRectOverrides(rects)
-	a.themeEmoteCell, a.themeEmoteGap = res.emoteCell, res.emoteGap
+	a.skin.themeRects = a.applyRectOverrides(rects)
+	a.skin.themeEmoteCell, a.skin.themeEmoteGap = res.emoteCell, res.emoteGap
 	// The effects picker's per-row icon size, and a roster/icon-cache drop: the new
 	// theme contributes different names, properties AND art paths, so a cached
 	// roster (or an icon page keyed by row index) from the old one would be wrong.
@@ -373,8 +373,8 @@ func (a *App) pollThemeApply() {
 	// Lands beside the geometry it belongs to. A themeless apply carries the zero
 	// value, which is Left — so dropping a theme restores AO2's own default rather
 	// than leaving the previous theme's alignment behind.
-	a.themeShownameAlign = res.shownameAlign
-	a.themeShownameExtra = res.shownameExtra
+	a.skin.themeShownameAlign = res.shownameAlign
+	a.skin.themeShownameExtra = res.shownameExtra
 	// Char select's own geometry lands beside the courtroom's (#20). No
 	// applyRectOverrides pass: these keys are deliberately not editable — they are not
 	// in a.themeRects, so the layout editor never sees them and there is nothing to
@@ -406,7 +406,7 @@ func (a *App) pollThemeApply() {
 	}
 	a.fxPool.themeSidecarErr, a.fxPool.themeSidecarTip = res.sidecarErr, res.sidecarTip
 	a.invalidateThemeCanvases()
-	a.themeSounds = res.sounds
+	a.skin.themeSounds = res.sounds
 	a.toolbox.themeAt = time.Now() // restart the theme-art animation clock
 	// The element clock groups re-anchor WITH it (design §Q3), so a theme reload
 	// restarts every phase together instead of leaving the incoming theme's motion
@@ -415,12 +415,12 @@ func (a *App) pollThemeApply() {
 	a.applyThemeClocks(res.sidecar)
 	// Apply (or restore) the stylesheet palette; label textures are
 	// color-keyed, so purge the text cache to re-rasterize in new colors.
-	a.themePalette = res.palette // remember it so a chrome-preset change can re-overlay it (#M3)
+	a.skin.themePalette = res.palette // remember it so a chrome-preset change can re-overlay it (#M3)
 	applyThemePalette(res.palette)
 	a.ctx.purgeTextCache()
 	a.pushRealizationToRoom()
-	a.themeMsgCol, a.themeHasMsg = res.msgCol, res.hasMsg
-	a.themeNameCol, a.themeHasName = res.nameCol, res.hasName
+	a.skin.themeMsgCol, a.skin.themeHasMsg = res.msgCol, res.hasMsg
+	a.skin.themeNameCol, a.skin.themeHasName = res.nameCol, res.hasName
 	a.raster.rasterText = "" // re-raster the current message with theme colors
 	a.toolbox.themeAppliedName = res.name
 	// Theme font (#6): an AO theme that ships its own .ttf now applies it (below a
@@ -598,7 +598,7 @@ func themeApplySummary(res *themeApply) string {
 // from overlay draws that run every frame. Misses heal (paced) and cache
 // negatively until the next upload/eviction bumps the generation.
 func (a *App) themePage(stem string) (*render.TexturePage, bool) {
-	if !a.themeTex[stem] {
+	if !a.skin.themeTex[stem] {
 		return nil, false
 	}
 	gen := a.d.Store.Generation()
@@ -669,7 +669,7 @@ func (a *App) pushRealizationToRoom() {
 	if a.link.room == nil {
 		return
 	}
-	if name := a.themeSounds["realization"]; name != "" {
+	if name := a.skin.themeSounds["realization"]; name != "" {
 		a.link.room.RealizationSFX = a.link.urls.SFX(name) // AssetType: SFX (realization)
 	} else {
 		a.link.room.RealizationSFX = ""
@@ -679,8 +679,8 @@ func (a *App) pushRealizationToRoom() {
 // healTheme re-runs the theme load when T1 evicted a theme texture the UI
 // still needs — paced to one ask per themeHealPeriod (healScenery pattern).
 func (a *App) healTheme() {
-	if time.Since(a.themeHealAt) > themeHealPeriod {
-		a.themeHealAt = time.Now()
+	if time.Since(a.skin.themeHealAt) > themeHealPeriod {
+		a.skin.themeHealAt = time.Now()
 		a.applyThemeAsync()
 	}
 }

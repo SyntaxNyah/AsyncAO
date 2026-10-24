@@ -21,8 +21,8 @@ func paneHostFixture(t *testing.T, host, rowKey string, row theme.Rect, seed map
 	a, cleanup := stageThemedCourtroom(t)
 	t.Cleanup(cleanup)
 	for k, r := range seed {
-		a.themeRects[k] = r
-		a.themeRectsOrig[k] = r
+		a.skin.themeRects[k] = r
+		a.skin.themeRectsOrig[k] = r
 	}
 	sc := theme.NewSidecar()
 	sc.Panes = []theme.Pane{{
@@ -36,7 +36,7 @@ func paneHostFixture(t *testing.T, host, rowKey string, row theme.Rect, seed map
 	if err := applyFixtureSidecar(a, sc); err != nil {
 		t.Fatal(err)
 	}
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 	pane, ok := a.paneRect(lay, &sc.Panes[0])
 	if !ok {
 		t.Fatal("the pane did not resolve — its space is missing from the fixture layout")
@@ -60,7 +60,7 @@ func TestPaneRefusesTheOverrideTheLayoutTierRefused(t *testing.T) {
 	design := theme.Rect{X: 20, Y: 30, W: 120, H: 90}
 	row := theme.Rect{X: 200, Y: 150, W: 60, H: 40}
 	a, pane, got := paneHostFixture(t, host, host, row, map[string]theme.Rect{host: design})
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 
 	// The tier refused the row, so the host keeps its DESIGN rect, re-based onto
 	// the pane's origin. That is what a reparent is.
@@ -91,7 +91,7 @@ func TestPaneHonoursAO2sOtherSpellingForAPaneHost(t *testing.T) {
 	}
 	row := theme.Rect{X: 12, Y: 140, W: 80, H: 24}
 	a, pane, got := paneHostFixture(t, host, "immediate", row, nil)
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 
 	wantX := pane.X + int32(float64(row.X)*lay.scaleX)
 	wantY := pane.Y + int32(float64(row.Y)*lay.scaleY)

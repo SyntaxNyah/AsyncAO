@@ -181,7 +181,7 @@ func TestSliderIdleThumbFloorSurvivesADerivedPanelHi(t *testing.T) {
 	activeKitColors = defaultKitColors
 	nearBlack := theme.RGB{R: 10, G: 10, B: 12}
 	applyThemePalette(theme.Palette{Panel: &nearBlack})
-	a.themePalette = theme.Palette{Panel: &nearBlack}
+	a.skin.themePalette = theme.Palette{Panel: &nearBlack}
 
 	trackLuma := colLuma(ColPanel)
 	got := sampleSliderIdleThumb(t, a, ct)

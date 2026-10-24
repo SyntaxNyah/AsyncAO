@@ -96,10 +96,10 @@ func badgeAngle(lay *themeLayoutCache, key string) float64 {
 // this is a plain map probe — never a prefs read on the draw path). 0 (absent or
 // explicit) routes through the plain Copy path.
 func (a *App) themedRotationDeg(key string) float64 {
-	if a.themeLay.ang == nil {
+	if a.skin.themeLay.ang == nil {
 		return 0
 	}
-	b, ok := a.themeLay.ang[key]
+	b, ok := a.skin.themeLay.ang[key]
 	if !ok || b == 0 {
 		return 0
 	}
@@ -179,8 +179,8 @@ func (a *App) cycleThemeRotation(themeName, key string, fine bool) {
 		return
 	}
 	cur := uint8(0)
-	if a.themeLay.ang != nil {
-		cur = a.themeLay.ang[key]
+	if a.skin.themeLay.ang != nil {
+		cur = a.skin.themeLay.ang[key]
 	}
 	next := nextRotationByte(cur, fine)
 	if next == 0 {

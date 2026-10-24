@@ -57,8 +57,8 @@ func artKeyOf(a *App, idx int) string {
 // The DRAWN answer, which is the one the defect was about.
 func drawnPages(a *App) map[*render.TexturePage]bool {
 	out := map[*render.TexturePage]bool{}
-	for i := 0; i < a.themeLay.elN; i++ {
-		if p := a.themeLay.el[i].page; p != nil {
+	for i := 0; i < a.skin.themeLay.elN; i++ {
+		if p := a.skin.themeLay.el[i].page; p != nil {
 			out[p] = true
 		}
 	}

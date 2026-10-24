@@ -166,7 +166,7 @@ func (e errThemeCreate) Error() string { return string(e) }
 // Returns whether a job was started, so a caller that has UI state to clear (the
 // Settings name field) can tell a start from a refusal without re-deriving it.
 func (a *App) startThemeCreate(name string, sc *theme.Sidecar, intent themeCreateIntent) bool {
-	if a.themeCreate != nil {
+	if a.skin.themeCreate != nil {
 		a.noteThemeCopy("a theme is already being created — let it finish first")
 		return false
 	}
@@ -197,7 +197,7 @@ func (a *App) startThemeCreate(name string, sc *theme.Sidecar, intent themeCreat
 	}
 	root := cat.WriteRoot
 	job := &themeCreateJob{name: want, intent: intent, done: make(chan themeCreateResult, 1)}
-	a.themeCreate = job
+	a.skin.themeCreate = job
 	go func() {
 		m, err := themepack.CreateFromSidecar(root, job.name, sc)
 		job.done <- themeCreateResult{manifest: m, err: err}
@@ -237,11 +237,11 @@ func (a *App) startThemeCreateFromTemplate(t themeCreateTemplate, name string, p
 // beside pollThemeCopy and for the same reason: a result that arrives between
 // frames must not touch UI state from another goroutine.
 func (a *App) pollThemeCreate() {
-	if a.themeCreate == nil {
+	if a.skin.themeCreate == nil {
 		return
 	}
 	select {
-	case res := <-a.themeCreate.done:
+	case res := <-a.skin.themeCreate.done:
 		a.landThemeCreate(res)
 	default:
 	}
@@ -253,8 +253,8 @@ func (a *App) pollThemeCreate() {
 // out: a scan publishes a snapshot built before this folder existed, and the seed
 // below is what lets the very next Save resolve a theme that is sitting on disk.
 func (a *App) landThemeCreate(res themeCreateResult) {
-	job := a.themeCreate
-	a.themeCreate = nil
+	job := a.skin.themeCreate
+	a.skin.themeCreate = nil
 	if res.err != nil {
 		a.noteThemeCopy("could not create " + job.name + ": " + res.err.Error())
 		return
@@ -289,6 +289,6 @@ func (a *App) landThemeCreate(res themeCreateResult) {
 	}
 	settings.themeName = m.Root
 	gen := a.applyThemeAsync()
-	a.themeEditArmGen, a.themeEditArmFrom = gen, a.screen
+	a.skin.themeEditArmGen, a.skin.themeEditArmFrom = gen, a.screen
 	a.noteThemeCopy("Created " + m.Root + " — opening the editor over it")
 }

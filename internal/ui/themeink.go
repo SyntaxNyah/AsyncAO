@@ -165,7 +165,7 @@ func (a *App) elemInk(el themeFontElem, canvasInk bool) (sdl.Color, bool) {
 	if !canvasInk {
 		return sdl.Color{}, false
 	}
-	f := a.themeFonts.e[el]
+	f := a.skin.themeFonts.e[el]
 	return f.color, f.colorSet
 }
 

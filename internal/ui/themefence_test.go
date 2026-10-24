@@ -33,14 +33,14 @@ func TestClassicDispatchFence(t *testing.T) {
 	a, cleanup := stageSettledCourtroom(t)
 	defer cleanup()
 
-	if a.themeRects != nil {
+	if a.skin.themeRects != nil {
 		t.Fatal("fixture regression: stageSettledCourtroom must stage NO theme rects")
 	}
 	a.drawCourtroom(classicDigestW, classicDigestH)
 
 	// themeWindowLayout returns &a.themeLay, so this IS the value the dispatch
 	// branched on one call earlier.
-	if a.themeLay.valid {
+	if a.skin.themeLay.valid {
 		t.Error("a themeless frame validated the themed layout cache — drawCourtroom would dispatch to drawCourtroomThemed")
 	}
 	if a.toolbox.toolboxThemeRectOn {

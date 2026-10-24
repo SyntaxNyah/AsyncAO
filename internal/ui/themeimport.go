@@ -130,7 +130,7 @@ type themeImportRowText struct {
 // the row offering to import a bundle whose consent had lapsed — a button that
 // promises something the funnel would refuse.
 func (a *App) themeImportRow() themeImportRowText {
-	ti := &a.themeImp
+	ti := &a.skin.themeImp
 	armed := ""
 	if ti.armedPath != "" && ti.armedFor(ti.armedPath) {
 		armed = ti.armedPath
@@ -170,7 +170,7 @@ func buildThemeImportRow(armed string, busy bool) themeImportRowText {
 // decides what a bundle does, and the browse and drag paths cannot drift apart
 // about consent, caps or where the theme lands.
 func (a *App) themeImportRowAction() {
-	if p := a.themeImp.armedPath; p != "" && a.themeImp.armedFor(p) {
+	if p := a.skin.themeImp.armedPath; p != "" && a.skin.themeImp.armedFor(p) {
 		a.handleThemeBundleDrop(p)
 		return
 	}
@@ -193,8 +193,8 @@ func (a *App) handleThemeBundleDrop(path string) {
 // bundleDrop is the whole of what a dropped bundle does, against a write root the
 // caller resolved.
 func (a *App) bundleDrop(path, root string) {
-	if a.themeImp.job != nil {
-		a.warnBundle("A theme bundle is already being " + a.themeImp.job.stageWord() + " — let it finish first.")
+	if a.skin.themeImp.job != nil {
+		a.warnBundle("A theme bundle is already being " + a.skin.themeImp.job.stageWord() + " — let it finish first.")
 		return
 	}
 	if root == "" {
@@ -204,9 +204,9 @@ func (a *App) bundleDrop(path, root string) {
 		return
 	}
 	stage := themeImportInspect
-	if a.themeImp.armedFor(path) {
+	if a.skin.themeImp.armedFor(path) {
 		stage = themeImportExtract
-		a.themeImp.armedPath = "" // consent is spent by the act it authorises
+		a.skin.themeImp.armedPath = "" // consent is spent by the act it authorises
 	}
 	a.startThemeBundleJob(stage, path, root)
 }
@@ -218,7 +218,7 @@ func (a *App) bundleDrop(path, root string) {
 // the same discipline requestThemeCatalog uses for the custom root.
 func (a *App) startThemeBundleJob(stage themeImportStage, path, root string) {
 	job := &themeBundleJob{stage: stage, path: path, done: make(chan themeBundleResult, 1)}
-	a.themeImp.job = job
+	a.skin.themeImp.job = job
 	go func() {
 		var m *themepack.Manifest
 		var err error
@@ -252,11 +252,11 @@ func (j *themeBundleJob) stageWord() string {
 // beside pollThemeApply and for the same reason: a result that arrives between
 // frames must not touch UI state from another goroutine.
 func (a *App) pollThemeBundle() {
-	if a.themeImp.job == nil {
+	if a.skin.themeImp.job == nil {
 		return
 	}
 	select {
-	case res := <-a.themeImp.job.done:
+	case res := <-a.skin.themeImp.job.done:
 		a.landThemeBundle(res)
 	default:
 	}
@@ -265,8 +265,8 @@ func (a *App) pollThemeBundle() {
 // landThemeBundle is the ONE place a finished stage changes app state, so the
 // polled path and any awaited one cannot drift.
 func (a *App) landThemeBundle(res themeBundleResult) {
-	job := a.themeImp.job
-	a.themeImp.job = nil
+	job := a.skin.themeImp.job
+	a.skin.themeImp.job = nil
 	if res.err != nil {
 		// EVERY REFUSAL SAYS WHY. themepack's errors already name the cap, the
 		// number and the offending entry; the file name is prefixed so a user with
@@ -275,8 +275,8 @@ func (a *App) landThemeBundle(res themeBundleResult) {
 		return
 	}
 	if job.stage == themeImportInspect {
-		a.themeImp.armedPath = job.path
-		a.themeImp.armedAt = time.Now()
+		a.skin.themeImp.armedPath = job.path
+		a.skin.themeImp.armedAt = time.Now()
 		a.warnBundle(themeBundleConsentLine(res.manifest, filepath.Base(job.path)))
 		return
 	}

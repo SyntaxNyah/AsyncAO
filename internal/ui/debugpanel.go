@@ -329,7 +329,7 @@ func (a *App) themeFXDebugLine() string {
 		over = " · POOL FULL (further stateful effects freeze at frame 0)"
 	}
 	return fmt.Sprintf("theme fx %d / %d slots · %d elements · %s%s",
-		a.themeFXInUse(), themeFXCap, a.themeLay.elN, state, over)
+		a.themeFXInUse(), themeFXCap, a.skin.themeLay.elN, state, over)
 }
 
 // focusSuffix annotates the pacer line with the window's focus state (the
@@ -564,7 +564,7 @@ func (a *App) drawDebugFonts(r sdl.Rect) {
 		themeName = "(none - default AO2 look)"
 	}
 	line("Theme: "+themeName, ColAccent)
-	f := a.themeFonts.e[elemICChatlog]
+	f := a.skin.themeFonts.e[elemICChatlog]
 	switch {
 	case !f.dressed():
 		line("ic_chatlog: undressed - draws in the client's own font chain", ColTextDim)

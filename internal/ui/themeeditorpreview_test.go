@@ -216,15 +216,15 @@ func stageThemePageForTest(t *testing.T, a *App, stem string) {
 	if err := a.d.Store.Upload(themeTexKey(stem), dec); err != nil {
 		t.Fatalf("upload theme://%s: %v", stem, err)
 	}
-	if a.themeTex == nil {
-		a.themeTex = map[string]bool{}
+	if a.skin.themeTex == nil {
+		a.skin.themeTex = map[string]bool{}
 	}
 	if a.themePages == nil {
 		// The per-stem page cache the apply mints; a hand-built fixture never runs
 		// that path, and themePage writes into it unconditionally.
 		a.themePages = map[string]*render.TexturePage{}
 	}
-	a.themeTex[stem] = true
+	a.skin.themeTex[stem] = true
 }
 
 // ---------------------------------------------------------------------------
@@ -473,10 +473,10 @@ func TestBlankThemeFromTheRealNewFlowCanPreview(t *testing.T) {
 		t.Fatal("startThemeCreate refused the blank theme — the real New-theme flow is unreachable from this fixture")
 	}
 	// REAL FRAMES land it: pollThemeCreate is App.Frame's own call.
-	for i := 0; i < frameHarnessApplyFrames && a.themeCreate != nil; i++ {
+	for i := 0; i < frameHarnessApplyFrames && a.skin.themeCreate != nil; i++ {
 		driveFrame(a)
 	}
-	if a.themeCreate != nil {
+	if a.skin.themeCreate != nil {
 		t.Fatal("the create never landed")
 	}
 	// The landing applies the theme and arms the editor; drive until it is open.
@@ -518,10 +518,10 @@ func seedWritableThemeRootForTest(t *testing.T, a *App) string {
 	name, _ := a.d.Prefs.Load().Theme()
 	a.d.Prefs.SetTheme(name, root)
 	deadline := time.Now().Add(editorGateSaveWait)
-	for a.themeCatBusy.Load() && time.Now().Before(deadline) {
+	for a.skin.themeCatBusy.Load() && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	a.themeCat.Store(&themeCatalog{WriteRoot: root})
+	a.skin.themeCat.Store(&themeCatalog{WriteRoot: root})
 	return root
 }
 

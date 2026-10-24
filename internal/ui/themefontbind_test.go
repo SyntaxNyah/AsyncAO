@@ -145,10 +145,10 @@ func TestElementFontAndSizeAreCarriedNotDrawn(t *testing.T) {
 		Color: theme.RGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF},
 	}}
 	a.elemBake.themeSidecar = sc
-	a.themeLay.valid = false
+	a.skin.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
-	if a.themeLay.elN != 1 {
-		t.Fatalf("the fixture baked %d elements, want 1", a.themeLay.elN)
+	if a.skin.themeLay.elN != 1 {
+		t.Fatalf("the fixture baked %d elements, want 1", a.skin.themeLay.elN)
 	}
 	// CARRIED: the reader kept both values, so a save round-trips them and a later
 	// format can start honouring them without an upgrade path.
@@ -156,7 +156,7 @@ func TestElementFontAndSizeAreCarriedNotDrawn(t *testing.T) {
 		t.Errorf("the reader dropped the element's font/size (%q / %d) — the keys must survive a load", got.Font, got.Size)
 	}
 	// NOT DRAWN: the baked row still points at the client chrome face.
-	if got := a.themeLay.el[0].fontIdx; got != elemFontChrome {
+	if got := a.skin.themeLay.el[0].fontIdx; got != elemFontChrome {
 		t.Errorf("the bake resolved fontIdx %d for an element that declares a font — if element fonts now "+
 			"render, docs/THEME-FORMAT.md §3's \"carried, not drawn in format 1\" paragraph is a lie", got)
 	}

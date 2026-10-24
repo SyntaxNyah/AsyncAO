@@ -155,7 +155,7 @@ type layoutSnapshot struct {
 // was still docked when the press landed — and restoreLayout's parked arm writes the
 // override, which IS the placement flag. See tabStripPlacementRecorded (tabs.go).
 func (a *App) layoutSnapshotNow() layoutSnapshot {
-	return layoutSnapshot{rects: cloneRects(a.themeRects), parked: a.tabStripPlacementRecorded()}
+	return layoutSnapshot{rects: cloneRects(a.skin.themeRects), parked: a.tabStripPlacementRecorded()}
 }
 
 // pushLayoutUndo snapshots the current rects BEFORE an edit and forks history
@@ -198,16 +198,16 @@ func (a *App) layoutEditRedo() {
 // overrides, so undo survives a theme reload (a key back at its original rect
 // clears its override; otherwise it's re-written).
 func (a *App) restoreLayout(themeName string, snap layoutSnapshot) {
-	for k := range a.themeRects {
+	for k := range a.skin.themeRects {
 		r, ok := snap.rects[k]
 		if !ok {
 			continue
 		}
-		a.themeRects[k] = r
+		a.skin.themeRects[k] = r
 		if k == themeTabBarKey && a.tabBarSeeded {
 			continue // placement is explicit, not geometric — restored below
 		}
-		if r == a.themeRectsOrig[k] {
+		if r == a.skin.themeRectsOrig[k] {
 			a.d.Prefs.ClearThemeRectOverride(themeName, k)
 		} else {
 			a.d.Prefs.SetThemeRectOverride(themeName, k, [4]int{r.X, r.Y, r.W, r.H})
@@ -219,7 +219,7 @@ func (a *App) restoreLayout(themeName string, snap layoutSnapshot) {
 	// touched would be "placed" the moment any other widget moved. Restore the flag the
 	// snapshot recorded instead. Only meaningful when the key was SYNTHESIZED — a theme
 	// that declares it is parked unconditionally.
-	if r, present := a.themeRects[themeTabBarKey]; present && a.tabBarSeeded {
+	if r, present := a.skin.themeRects[themeTabBarKey]; present && a.tabBarSeeded {
 		if snap.parked {
 			a.d.Prefs.SetThemeRectOverride(themeName, themeTabBarKey, [4]int{r.X, r.Y, r.W, r.H})
 		} else {
@@ -286,7 +286,7 @@ func (a *App) openLayoutEditor() {
 	if a.theaterOn {
 		a.setTheater(false)
 	}
-	if a.themeLay.valid && a.d.Prefs.Load().ThemeLayoutOn {
+	if a.skin.themeLay.valid && a.d.Prefs.Load().ThemeLayoutOn {
 		a.startLayoutEdit()
 		return
 	}
@@ -374,8 +374,8 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		// home but stayed rotated would contradict the reset message below.
 		// themeLay.valid=false re-bakes lay.ang empty on the next rebuild.
 		a.d.Prefs.ClearThemeRectRotation(themeName, "")
-		for k, r := range a.themeRectsOrig {
-			a.themeRects[k] = r
+		for k, r := range a.skin.themeRectsOrig {
+			a.skin.themeRects[k] = r
 		}
 		a.invalidateThemeCanvases()
 		a.debug.push("layout edit: all overrides reset for " + themeName)
@@ -484,9 +484,9 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	}
 	// Right-click resets the hovered widget to the theme's own rect.
 	if c.rightClicked && hoverKey != "" && !overToolbox {
-		if orig, ok := a.themeRectsOrig[hoverKey]; ok {
+		if orig, ok := a.skin.themeRectsOrig[hoverKey]; ok {
 			a.pushLayoutUndo()
-			a.themeRects[hoverKey] = orig
+			a.skin.themeRects[hoverKey] = orig
 			a.d.Prefs.ClearThemeRectOverride(themeName, hoverKey)
 			// A4: a per-piece reset clears the piece's tilt with its rect,
 			// mirroring clearClassicSlot's classicRot delete.
@@ -536,7 +536,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 			// Piece-to-piece magnet (M3): grid first (above), then snap the dragged
 			// rect's edges/centre flush to the OTHER widgets and to the extent's
 			// edges/centre. Shift already bypassed the whole snap block above.
-			switch court, ok := a.themeRectsOrig["courtroom"]; {
+			switch court, ok := a.skin.themeRectsOrig["courtroom"]; {
 			case screenDrag:
 				a.themeAlignScratch = a.themeAlignScratch[:0]
 				for k, sr := range lay.r {
@@ -553,7 +553,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 				r.X, r.Y = int(dr.X-lay.offX), int(dr.Y-lay.offY)
 			case ok:
 				a.themeAlignScratch = a.themeAlignScratch[:0]
-				for k, tr := range a.themeRects {
+				for k, tr := range a.skin.themeRects {
 					if k == editKey || !themeKeyEditable(k) {
 						continue
 					}
@@ -584,16 +584,16 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		// the WINDOW instead, through the same transform the cache paints with.
 		if screenDrag {
 			r = clampTabStripScreen(r, lay, w, h)
-		} else if court, ok := a.themeRectsOrig["courtroom"]; ok {
+		} else if court, ok := a.skin.themeRectsOrig["courtroom"]; ok {
 			r = clampDesignRectToCanvas(r, court) // shared with the arrow-key nudge (layoutnudge.go)
 		}
-		a.themeRects[editKey] = r
+		a.skin.themeRects[editKey] = r
 		a.invalidateThemeCanvases()
 	}
 	// Release persists the edit.
 	if a.editDrag != 0 && !c.mouseDown {
 		if editKey != "" {
-			r := a.themeRects[editKey]
+			r := a.skin.themeRects[editKey]
 			if r == a.editBase { // a click with no move: discard the begin snapshot
 				if n := len(a.editUndo); n > 0 {
 					// The tab strip's drag base is the preimage of its PAINTED box, not
@@ -603,7 +603,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 					// sibling list and the next reset to trip over.
 					if editKey == themeTabBarKey {
 						if pre, ok := a.editUndo[n-1].rects[editKey]; ok {
-							a.themeRects[editKey] = pre
+							a.skin.themeRects[editKey] = pre
 						}
 					}
 					a.editUndo = a.editUndo[:n-1]
@@ -676,7 +676,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		}
 	}
 	if editKey != "" {
-		r := a.themeRects[editKey]
+		r := a.skin.themeRects[editKey]
 		// The strip is stored in canvas-relative CLIENT px, not design px
 		// (tabStripCacheRect), so the readout must not claim otherwise — the two agree
 		// only at scale 1.
@@ -698,8 +698,8 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	if editKey != "" {
 		rotKey = editKey
 	}
-	if rotKey != "" && a.themeLay.ang != nil {
-		if label := rotationChipLabel(a.themeLay.ang[rotKey]); label != "" {
+	if rotKey != "" && a.skin.themeLay.ang != nil {
+		if label := rotationChipLabel(a.skin.themeLay.ang[rotKey]); label != "" {
 			// Sits left of the Phase-3 chips (profile when present, else magnet) so it
 			// never overpaints them.
 			rotRightX := magnetBtn.X
@@ -718,11 +718,11 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 // the grid rounds the PAINTED coordinate instead of this one (snapTabStripScreen).
 func (a *App) editBaseFor(key string, lay *themeLayoutCache) theme.Rect {
 	if key != themeTabBarKey {
-		return a.themeRects[key]
+		return a.skin.themeRects[key]
 	}
 	box, ok := lay.rect(key)
 	if !ok {
-		return a.themeRects[key]
+		return a.skin.themeRects[key]
 	}
 	return theme.Rect{
 		X: int(box.X - lay.offX),

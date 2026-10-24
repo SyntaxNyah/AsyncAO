@@ -218,10 +218,10 @@ func (a *App) charSelectThemed() bool {
 	if len(a.charSelDesign.r) == 0 || !a.d.Prefs.Load().ThemeLayoutOn {
 		return false
 	}
-	if r, ok := a.themeRects["courtroom"]; !ok || r.W <= 0 || r.H <= 0 {
+	if r, ok := a.skin.themeRects["courtroom"]; !ok || r.W <= 0 || r.H <= 0 {
 		return false
 	}
-	_, ok := a.themeRects["viewport"]
+	_, ok := a.skin.themeRects["viewport"]
 	return ok
 }
 

@@ -247,7 +247,7 @@ func (a *App) playThemeSFX(key string) {
 	if a.link.room == nil {
 		return
 	}
-	if name := a.themeSounds[key]; name != "" {
+	if name := a.skin.themeSounds[key]; name != "" {
 		a.d.Audio.PlaySFX(a.link.urls.SFX(name), 0) // AssetType: SFX (court sound)
 	}
 }

@@ -110,22 +110,22 @@ func TestOverBudgetElementIsCreatedNotDropped(t *testing.T) {
 	defer cleanup()
 	a.elemBake.themeSidecar = sc
 	a.themeMediaPlan = plan
-	a.themeLay.valid = false
+	a.skin.themeLay.valid = false
 	var seen []*bakedElement
 	restore := captureElementPaints(t, &seen)
 	a.drawCourtroom(1280, 720)
 	restore()
-	if a.themeLay.elN != len(sc.Elements) {
+	if a.skin.themeLay.elN != len(sc.Elements) {
 		t.Fatalf("the bake produced %d elements for %d declared — an over-budget element must still exist",
-			a.themeLay.elN, len(sc.Elements))
+			a.skin.themeLay.elN, len(sc.Elements))
 	}
 	if len(seen) != len(sc.Elements) {
 		t.Fatalf("%d painter calls for %d elements — a placeholder element must still be dispatched", len(seen), len(sc.Elements))
 	}
 	// Its page is nil (nothing landed), which is what makes the painter draw nothing
 	// rather than probe — the state the editor decorates with the hatch placeholder.
-	for i := 0; i < a.themeLay.elN; i++ {
-		if a.themeLay.el[i].page != nil {
+	for i := 0; i < a.skin.themeLay.elN; i++ {
+		if a.skin.themeLay.el[i].page != nil {
 			t.Errorf("baked element %d resolved a page, but nothing was uploaded in this fixture", i)
 		}
 	}

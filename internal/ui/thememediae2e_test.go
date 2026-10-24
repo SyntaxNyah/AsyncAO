@@ -73,9 +73,9 @@ func stageW4MediaTheme(t *testing.T) (*App, *theme.Sidecar, themeMediaPlan, func
 	a, cleanup := stageThemedCourtroom(t)
 	a.elemBake.themeSidecar = sc
 	a.landThemeMedia(&res)
-	a.themeLay.valid = false
+	a.skin.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
-	if !a.themeLay.valid {
+	if !a.skin.themeLay.valid {
 		cleanup()
 		t.Fatal("the media fixture never reached the themed branch — nothing was baked")
 	}
@@ -103,7 +103,7 @@ func bakedByID(t *testing.T, a *App, sc *theme.Sidecar, id string) *bakedElement
 		t.Fatalf("%q is not in the fixture", id)
 	}
 	src := &sc.Elements[di]
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 	want, ok := a.resolveElementRect(lay, sc, src)
 	if !ok {
 		t.Fatalf("element %q resolved to no rect — it is inert, so nothing below can be measured", id)
@@ -177,9 +177,9 @@ func TestHandAuthoredMediaSidecarRendersEndToEnd(t *testing.T) {
 	}
 
 	// --- the bake: every declared element exists, art or no art -------------
-	if a.themeLay.elN != len(sc.Elements) {
+	if a.skin.themeLay.elN != len(sc.Elements) {
 		t.Fatalf("the bake produced %d elements for %d declared — an over-budget or missing one was lost, "+
-			"and design §Q2 says the author's work survives a refused file", a.themeLay.elN, len(sc.Elements))
+			"and design §Q2 says the author's work survives a refused file", a.skin.themeLay.elN, len(sc.Elements))
 	}
 	for _, id := range []string{"wallpaper", "paperfield", "scanwash", "chatframe", "sealcontain", "sealcover", "discbadge", "disctwin", "platewash"} {
 		if e := bakedByID(t, a, sc, id); e.page == nil {
@@ -220,7 +220,7 @@ func TestHandAuthoredMediaSidecarRendersEndToEnd(t *testing.T) {
 	// --- the draw: every element is dispatched, and the frame is clean ------
 	var seen []*bakedElement
 	restore := captureElementPaints(t, &seen)
-	a.themeLay.valid = false
+	a.skin.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
 	restore()
 	if len(seen) != len(sc.Elements) {
@@ -300,7 +300,7 @@ func TestExportDrawsTheSameElementBandsAsTheScreen(t *testing.T) {
 	// (docs/THEME-FORMAT.md §4) and the baked array is band-sorted, so a correct pass
 	// walks it in strictly increasing index order. A single band call in the wrong
 	// place — or two of them transposed — shows up here and nowhere else.
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 	prev := -1
 	for _, e := range exported {
 		i := indexOfBaked(lay, e)
@@ -390,9 +390,9 @@ func TestExportBorrowsTheThemeLayoutCacheWithoutThrashing(t *testing.T) {
 	j := &gifExportJob{room: newRoomForTest(t), chatPct: DefaultScalePct}
 	dst := sdl.Rect{X: 0, Y: 0, W: w, H: h}
 	a.drawExportScene(j, &j.room.Scene, dst) // the one cold rebuild per job
-	if !a.themeLay.valid || a.themeLay.topOff != 0 {
+	if !a.skin.themeLay.valid || a.skin.themeLay.topOff != 0 {
 		t.Fatalf("the export's layout is valid=%v topOff=%d — an export frame reserves no chrome band",
-			a.themeLay.valid, a.themeLay.topOff)
+			a.skin.themeLay.valid, a.skin.themeLay.topOff)
 	}
 	// Every capture after the first is a cache HIT: gifFramesPerTick captures a tick,
 	// all at the same dst.

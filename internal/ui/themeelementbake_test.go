@@ -55,7 +55,7 @@ func stageThemedWithSidecar(t testing.TB, name string) (*App, *themeLayoutCache,
 		cleanup()
 		t.Fatal(err)
 	}
-	return a, &a.themeLay, cleanup
+	return a, &a.skin.themeLay, cleanup
 }
 
 // applyFixtureSidecar lands a sidecar the way pollThemeApply does, in the SAME
@@ -65,11 +65,11 @@ func stageThemedWithSidecar(t testing.TB, name string) (*App, *themeLayoutCache,
 // over.
 func applyFixtureSidecar(a *App, sc *theme.Sidecar) error {
 	a.elemBake.themeSidecar = sc
-	foldSidecarOverrides(a.themeRectsOrig, sc)
-	foldSidecarOverrides(a.themeRects, sc)
-	a.themeLay.valid = false
+	foldSidecarOverrides(a.skin.themeRectsOrig, sc)
+	foldSidecarOverrides(a.skin.themeRects, sc)
+	a.skin.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
-	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
+	if !a.skin.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		return errFixtureNotThemed
 	}
 	return nil
@@ -95,7 +95,7 @@ func TestStockAO2ThemeGetsZeroElements(t *testing.T) {
 	defer cleanup()
 
 	a.drawCourtroom(1280, 720)
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 	if a.elemBake.themeSidecar != nil {
 		t.Fatal("the stock fixture carries a sidecar — it is meant to be a plain AO2 theme")
 	}
@@ -123,7 +123,7 @@ func TestSidecarSwapClearsThePreviousThemesElements(t *testing.T) {
 	}
 
 	a.elemBake.themeSidecar = nil
-	a.themeLay.valid = false
+	a.skin.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
 	if lay.elN != 0 {
 		t.Fatalf("after swapping to a theme with no sidecar, elN is %d — the previous theme's elements survived", lay.elN)
@@ -152,7 +152,7 @@ func TestElementsAreNotInThemeLayoutKeys(t *testing.T) {
 		if _, present := lay.r[id]; present {
 			t.Errorf("element id %q reached the SCALED rect cache — elements must never enter the slot-key namespace", id)
 		}
-		if _, present := a.themeRects[id]; present {
+		if _, present := a.skin.themeRects[id]; present {
 			t.Errorf("element id %q reached a.themeRects — it would become a draggable, persistable box", id)
 		}
 		if themeSlotFor(id) != nil {
@@ -333,7 +333,7 @@ func TestPaneReparentsExactlyOnce(t *testing.T) {
 	// Idempotence over rebuilds: the same theme, re-baked, must land in the same
 	// place. This is the cumulative-drift failure stated directly.
 	before := lay.r["ic_chatlog"]
-	a.themeLay.valid = false
+	a.skin.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
 	if after := lay.r["ic_chatlog"]; after != before {
 		t.Fatalf("a second bake moved the host from %+v to %+v — the reparent is compounding", before, after)
@@ -380,16 +380,16 @@ func TestPaneDoesNotRehomeAParentRelativeChild(t *testing.T) {
 		NHosts: 1,
 	}}
 	a.elemBake.themeSidecar = sc
-	a.themeLay.valid = false
+	a.skin.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
 
 	// showname's design rect is chatbox-relative and small; if it had been
 	// re-homed it would now carry the pane's absolute origin.
-	got, ok := a.themeLay.r["showname"]
+	got, ok := a.skin.themeLay.r["showname"]
 	if !ok {
 		t.Skip("this fixture layout does not place showname")
 	}
-	if got.X >= a.themeLay.area.X+int32(300*a.themeLay.scaleX) {
+	if got.X >= a.skin.themeLay.area.X+int32(300*a.skin.themeLay.scaleX) {
 		t.Fatalf("showname baked at %+v — a chatbox child was re-homed into a pane, so its draw site "+
 			"will add the chatbox origin on top of the pane's", got)
 	}
@@ -519,7 +519,7 @@ func TestVisibleWhenSurvivesARebake(t *testing.T) {
 		t.Fatalf("pos:def did not resolve to an interned index (condN=%d)", lay.condN)
 	}
 
-	a.themeLay.valid = false // a window resize, a fit change, a theme apply
+	a.skin.themeLay.valid = false // a window resize, a fit change, a theme apply
 	a.drawCourtroom(1280, 720)
 	if lay.condGen == genBefore {
 		t.Fatal("a rebuild did not bump the intern generation — the memo cannot know its indices are stale")

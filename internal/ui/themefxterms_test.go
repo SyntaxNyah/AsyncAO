@@ -218,7 +218,7 @@ func TestNoPainterMutatesItsBakedElement(t *testing.T) {
 
 	const w, h = 1280, 720
 	a.drawCourtroom(w, h) // cold rebuild first: themeLayoutIn replaces the whole cache
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 	seedBakedElements(a, lay, theme.ElementCap, seedElementArt(t, a))
 	if lay.elN != theme.ElementCap {
 		t.Fatalf("seeded %d elements, want %d", lay.elN, theme.ElementCap)
