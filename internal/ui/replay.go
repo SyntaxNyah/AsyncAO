@@ -618,7 +618,7 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 	// under the viewer's own visual prefs instead of NewCourtroom's defaults.
 	a.sel.replayRoom = a.newRoom(courtroom.NewURLBuilder(rec.Origin), nil, a.d.Audio)
 	a.sel.replayRoom.Typewriter.Interval, a.sel.replayRoom.TextStay = a.replayTiming() // slower than live + slider-driven
-	a.sel.replayRoom.CatchUp = false                                               // play every recorded line in full; the driver feeds one at a time
+	a.sel.replayRoom.CatchUp = false                                                   // play every recorded line in full; the driver feeds one at a time
 	// POST-CONSTRUCTION OVERRIDE, and the only one this mode needs: a Preview
 	// launched from the maker is authoring (show the scene's screenshake, flash
 	// and overlays), while a normal replay honours the viewer's reduce-motion,
