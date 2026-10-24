@@ -1,23 +1,6 @@
 package themepack
 
 // CREATE FROM A MODEL — "a theme from nothing" (v1.90.0 W9, the preset gallery).
-//
-// ONE concern: turning a *theme.Sidecar that exists only in memory into a theme
-// FOLDER inside the write root. It is the third way a theme arrives, beside
-// Extract (from a bundle) and CopyForEditing (from another folder), and it is
-// here rather than in internal/ui for the reason the other two are: this package
-// owns the write root's naming, its collision suffixing, its permissions and its
-// part-file-then-rename discipline, and a fourth copy of those in the UI is a
-// fourth chance to get one of them wrong.
-//
-// WHAT IT DELIBERATELY DOES NOT DO: write a courtroom_design.ini. A gallery theme
-// is an AsyncAO NATIVE theme — its geometry lives in the sidecar's [overrides],
-// laid over whatever AO2 base the loader resolves (theme.Load's ladder), and
-// design §5 R3's first mitigation layer is "courtroom_design.ini is never written
-// in the normal path at all". Creating one here would make every gallery theme a
-// full AO2 theme fork on day one, and the AO2-compat export already exists for
-// people who want that.
-//
 // BLOCKING — goroutine only (hard rule 2).
 
 import (
@@ -34,11 +17,9 @@ import (
 var ErrCreateNoModel = errors.New("themepack: no sidecar to create a theme from")
 
 // CreateFromSidecar writes sc into a NEW folder under themesRoot.
-//
 // The name is sanitized and collision-suffixed exactly as an import is, so
 // building the same pair twice gives "Neon Netrunner" and "Neon Netrunner (2)"
 // rather than one overwriting the other.
-//
 // THE BYTES GO THROUGH Sidecar.Bytes, which is the write guard: a model that
 // would not load back cannot reach the disk, and the refusal happens before the
 // folder is created rather than after (design §3.3 — every refusal names the

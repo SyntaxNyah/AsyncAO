@@ -14,7 +14,6 @@ import (
 // "<emote>|<frame>=<value>|…^<emote>|…^<emote>|…^" into a per-frame effect map and
 // fires each effect when the layer displaying that emote crosses the frame
 // (src/courtroom.cpp:2779-2787 decode, src/animationlayer.cpp:472-569 map+fire).
-//
 // The three "^"-separated sections are, in fixed send order, the PREANIM emote,
 // the "(b)" TALK emote, and the "(a)" IDLE emote (courtroom.cpp:2268-2269
 // emotes_to_check = {pre_emote, "(b)"+emote, "(a)"+emote}). AO2 matches an
@@ -23,14 +22,6 @@ import (
 // each section to a phase group by position instead of reconstructing the resolved
 // spelling across our URL-encoding/lowercasing boundary — identical behaviour for
 // a well-formed packet, simpler and encoding-proof.
-//
-// Divergence from AO2, kept deliberately (see the cluster trap "at most once per
-// message"): AO2 re-fires a trigger every time a looping talk/idle animation wraps
-// past the frame. We use a forward-only cursor per group, so each in-range trigger
-// spends on the first ascent and never re-fires on a loop. That matches the
-// once-per-playback contract and avoids a talk loop machine-gunning an SFX.
-//
-// Second, minor divergence: AO2 only calls setFrameEffects when FRAME_SFX is
 // non-empty (courtroom.cpp:2778 gates the whole parse on realization[SFX]), so a
 // message carrying only FRAME_SCREENSHAKE / FRAME_REALIZATION with an empty
 // FRAME_SFX drops shake+realize entirely there. buildFrameTriggers parses all
@@ -51,7 +42,6 @@ const (
 // FRAME_* string (thousands of "<n>=<sfx>" pairs); the table is built once at
 // message-begin, but it's still bounded memory + parse work per message. 256 is
 // far above any real preanim's frame count (long dramatic clips run ~150 frames)
-// yet a hard ceiling on abuse. Excess triggers past the cap are dropped.
 const maxFrameTriggers = 256
 
 // frameTrigger is one authored effect at a source frame index (the sender's raw,
@@ -163,21 +153,9 @@ func (c *Courtroom) resolveFrameSFX(name string) string {
 // activeFrameGroup reports which trigger group the speaker layer's Active base
 // belongs to (preanim / talk / idle), or -1 when it matches none (a shout bubble,
 // a blank layer). Pure comparison against the bases begin() set — no allocation.
-//
-// The three sprite bases can COLLIDE: a char that reuses one file for talk+idle
-// has TalkBase == IdleBase, and one whose preanim resolves to the same file as its
-// talk/idle sprite has PreanimBase == TalkBase or PreanimBase == IdleBase. A switch
-// on Active alone would silently pick whichever case lists first, mis-binding the
-// group (AO2 avoids this by matching effect.emote_name against the layer's resolved
 // file, animationlayer.cpp:558). So we DERIVE the group from the phase machine —
 // the authoritative record of which sprite phase is playing — and only then confirm
 // Active actually holds that group's base (a shout/blank layer confirms none → -1):
-//   - PlayOnce marks the one-shot preanim, spanning BOTH the blocking PhasePreanim
-//     wait and an IMMEDIATE-mode preanim that plays over the text during
-//     PhaseTalking (courtroom.go:1259 pins that exact state) — so PlayOnce, not
-//     c.phase == PhasePreanim, is the correct preanim discriminator.
-//   - Otherwise PhaseTalking means the talk loop; any settled non-talk phase that
-//     still shows a sprite is idle.
 func (c *Courtroom) activeFrameGroup() int {
 	sp := &c.Scene.Speaker
 	switch {

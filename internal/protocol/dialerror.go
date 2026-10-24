@@ -11,7 +11,6 @@ import (
 // produced: the TCP connection and (for wss://) the TLS handshake both succeeded,
 // the HTTP upgrade request went out, and the server replied with a status other
 // than 101 — plus, often, an explanation.
-//
 // It exists because that explanation was being thrown away. Dial discarded the
 // *http.Response, so a server refusing the upgrade on purpose was indistinguishable
 // from one that is not a WebSocket server at all, and the client said the wrong
@@ -22,7 +21,6 @@ import (
 // would let them in if they read its message (Nyathena's server.go answers a
 // firewall block with 403 Forbidden, a connection-rate trip with 429, and a lockdown
 // whose socket accept failed with 503 and the join message as the body).
-//
 // Errors are values, so this stays in the package that PRODUCES the failure and
 // internal/ui reads it with errors.As. Nothing new points the wrong way.
 type DialError struct {
@@ -50,27 +48,10 @@ func (e *DialError) Error() string {
 func (e *DialError) Unwrap() error { return e.Err }
 
 // dialBodyMaxBytes bounds how much of a refusal body we keep.
-//
-// coder/websocket already limits what it buffers to the first 1024 bytes of a
-// failed handshake's body (dial.go), so this is defence in depth rather than the
-// only bound — a future library change must not turn an attacker-controlled
-// response into an unbounded read on a connect path (rule §17.4).
 const dialBodyMaxBytes = 1024
 
 // dialBody pulls the server's explanation out of a refusal response, or returns ""
 // when there is nothing worth showing a human.
-//
-// Requires text/plain, and that requirement is the point rather than pedantry. A 403
-// or 503 from the AO server itself is http.Error, which is text/plain; the same
-// status from a reverse proxy or a CDN in front of it is an HTML error page, and
-// piping markup into a modal that says "the server told you this" would be both
-// unreadable and a lie about who said it.
-//
-// Control characters are dropped and newlines and tabs kept, by SanitizeText — the
-// same scrub the wire-packet path uses, for the same reason: the string lands in a
-// texture through SDL_ttf and on the clipboard through SDL_SetClipboardText, and both
-// marshal via C.CString, where an embedded NUL silently truncates everything after it.
-//
 // The body is safe to read here and needs no Close: on a handshake failure the
 // library has already drained it, closed the real one, and replaced resp.Body with
 // an in-memory reader over what it kept.

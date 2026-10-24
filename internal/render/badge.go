@@ -38,8 +38,6 @@ type Badge struct {
 // glyph keeps its own colours and ignores col (SDL_ttf draws the colour bitmap) — exactly
 // what a reaction emoji wants. Render thread; call once per distinct badge and cache the
 // result. Returns (nil, nil) for empty text or a nil font.
-//
-// devScale is the device font scale (100 = 1:1) the caller opened font at — see
 // Badge.devScale. Passing DefaultDevScale reproduces every pre-#77 caller byte for byte
 // (Size/Draw both take the identity branch).
 func RasterizeBadge(ren *sdl.Renderer, font *ttf.Font, text string, col sdl.Color, devScale int32) (*Badge, error) {
@@ -90,23 +88,6 @@ func (b *Badge) RawSize() (w, h int32) {
 // full opacity so the cached texture is never left dimmed for the next caller (the
 // set→draw→restore discipline the shared-texture FX use). Zero-alloc — dst must be a
 // reused scratch rect, not a fresh local (a cgo address-of forces a heap escape).
-//
-// renderPct is the renderer's CURRENT scale percent (100 = 1:1) — the same contract
-// MessageRaster.DrawScaled uses, and read from the same place (Ctx.RenderScalePct).
-// When it matches the devScale the badge was rasterized at, the blit goes device-exact:
-// a SetScale(1,1) bracket copies the texture's OWN device pixels (RawSize) with no
-// resample, instead of letting ren.SetScale stretch a rounded-down-then-up logical dst
-// back to a (possibly mismatched) device size — see MessageRaster.deviceExact for the
-// mechanism this mirrors, one fixed-size texture instead of one growing raster.
-//
-// clip is the LOGICAL clip rect currently set on ren, or nil for none — required, not
-// optional, for the reason MessageRaster.DrawScaled documents at length: SDL backends
-// disagree on WHEN a clip rect converts to device pixels (most bake it at SET time;
-// macOS's Metal renderer evaluates it against whatever scale is in force at USE time),
-// so the exact bracket must re-assert whatever clip is ambient, in device pixels, itself
-// — or a Metal-backed renderer silently shrinks a clip that was set under a different
-// scale for the duration of this blit. Passing nil when no clip is active costs nothing
-// extra (no SetClipRect call at all, exactly like before this parameter existed).
 func (b *Badge) Draw(ren *sdl.Renderer, dst *sdl.Rect, alpha uint8, renderPct int32, clip *sdl.Rect) {
 	if b == nil || b.tex == nil {
 		return

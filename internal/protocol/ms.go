@@ -314,10 +314,6 @@ func kfoFrameTemplate(pre, emote string) string {
 // clampDeskMod collapses the expanded 2.9 desk mods (2–5) down to the legacy
 // hide/show values when the server did NOT advertise expanded_desk_mods, matching
 // AO2-Client's on_chat_return_pressed clamp (courtroom.cpp:2021-2031):
-//
-//	DESK_PRE_ONLY (3), DESK_PRE_ONLY_EX (5)     → DESK_HIDE (0)
-//	DESK_EMOTE_ONLY (2), DESK_EMOTE_ONLY_EX (4) → DESK_SHOW (1)
-//
 // A strict-validator server (same class as the KFO/LemmyAO fixes) rejects the
 // whole MS otherwise; 0/1 pass everywhere. When the feature IS advertised the mod
 // rides raw. Same clamp table as ms.go's other legacy-value normalizations.
@@ -517,12 +513,6 @@ func parseEffect(raw string) aolib.Effect {
 // objection-internal, 3 is meaningless, 4 aliases zoom — and, when the "Pre"
 // toggle wants it, an emote with a preanimation upgrades idle→preanim and
 // zoom→preanim-zoom (the latter only when the server advertises prezoom).
-// Strict receivers (LemmyAO schema-validates MS broadcasts) DROP messages
-// whose emote_modifier carries a raw legacy value, so sending ini values
-// verbatim made us invisible to them.
-//
-// preanim mirrors AO2-Client's ui_pre checkbox: true (Pre checked) reproduces
-// the historical behavior — the emote's preanim rides the message. false (Pre
 // UNCHECKED) forces the "pre off" branch (courtroom.cpp:2080-2092): a preanim
 // mod is downgraded to idle (preanim_zoom→zoom) so the intro is suppressed
 // even when the char.ini emote defines one.
@@ -570,16 +560,6 @@ func formatObjection(mod int, custom string, features FeatureSet) string {
 // formatPairID emits the charid_pair field: "-1" unpaired, else the partner's
 // id, with the 2.8 "^<order>" reorder suffix appended only on effects servers
 // AND only for a NON-default order (speaker behind).
-//
-// "<id>" and "<id>^0" render identically on AO2-Client/webAO — display_pair_
-// character splits on "^" and a missing suffix defaults to speaker-in-front
-// (order 0). But the bare integer is the only form strict parsers accept:
-// LemmyAO (a webAO fork that schema-validates broadcasts) parses charid_pair
-// with Number("5^0") → NaN and DROPS the whole MS, so a paired AsyncAO client
-// was invisible to LemmyAO users. Emitting the suffix only when it actually
-// changes the z-order keeps pair reordering working on capable clients while
-// staying compatible with strict ones for the common (front) pairing — and the
-// non-default "behind" order, which genuinely needs the suffix, still sends it.
 func formatPairID(pairWith, order int, features FeatureSet) string {
 	if pairWith <= UnpairedCharID {
 		return strconv.Itoa(UnpairedCharID)

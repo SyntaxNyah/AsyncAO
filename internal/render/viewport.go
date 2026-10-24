@@ -987,8 +987,6 @@ func (v *Viewport) reduceInactiveAnimations(scene *courtroom.Scene) {
 // An empty base still clears immediately, and the courtroom's HIGH-priority
 // prefetch makes the swap a frame after the texture lands. Contains is a plain
 // map probe — no I/O, no allocation.
-// The BACKGROUND layer is its only caller; the desk adds two release conditions
-// on top of this gate and goes through syncAnimDesk (see there for why).
 func (v *Viewport) syncAnimSticky(a *animState, base string) {
 	if a.base == base {
 		return
@@ -1002,9 +1000,6 @@ func (v *Viewport) syncAnimSticky(a *animState, base string) {
 // stickiness (a real desk that is still streaming must not blink off — that is
 // the whole point of the sticky gate) and adds the two release conditions the
 // desk needs and the background does not:
-// Scoped to the desk on purpose: a CHARACTER sprite has no such pairing invariant,
-// and hold-previous there is a deliberate webAO-compatible default
-// (SpriteLoadHoldPrev, with its own thumb/held/missingno ladder and max-age knob).
 func (v *Viewport) syncAnimDesk(deskBase, bgBase string) {
 	if v.deskAnim.base == deskBase {
 		return
@@ -1230,9 +1225,6 @@ func SpeedlineFallbackKey(side string) string {
 // the speaker's char-folder chain that is resident, else the bundled stock burst
 // for their side. Mirrors effectiveShoutBase's resident-check fallback.
 // "" = no zoom emote.
-// The chain is ordered most-specific-first by courtroom.SpeedlinesCandidates —
-// the position's own <pos>_speedlines before the AO2 side stem — and every
-// candidate is a full URL, so this is a first-resident-wins walk over at most two
 // (a missing-asset alert) is replaced by the stock burst issue #126 added.
 func effectiveSpeedlineBase(scene *courtroom.Scene, store *TextureStore) string {
 	if scene.SpeedlinesSide == "" {
@@ -1292,7 +1284,6 @@ func (v *Viewport) drawFill(ren *sdl.Renderer, base string, anim *animState, vp 
 // surface, so it calls this immediately after the chatbox/message draw with the
 // stage rect (the layer is never resized on reparent: it always covers the
 // viewport rect, only its parent changes).
-// Render thread only.
 func (v *Viewport) DrawOverlayChat(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect) {
 	if scene == nil {
 		return
@@ -1304,9 +1295,6 @@ func (v *Viewport) DrawOverlayChat(ren *sdl.Renderer, scene *courtroom.Scene, vp
 // the RAW blit: containment is the caller's — the three in-viewport rungs go
 // through drawOverlayInStage, the `chat` rung (DrawOverlayChat) is uncontained
 // because canon reparents it out of the viewport.
-// Zero-alloc: pointer math on a Scene.Overlay the courtroom precomputed, the
-// persistent v.ovRect scratch for the cgo destination (taking &localRect would
-// heap-escape on EVERY call), and an early return before anything else when no
 func (v *Viewport) drawOverlay(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect, layer uint8) {
 	o := &scene.Overlay
 	if o.Base == "" || o.Layer != layer {
@@ -1337,8 +1325,6 @@ func (v *Viewport) drawOverlay(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl
 // (courtroom.cpp:3218-3232) and Qt clips a child widget to its parent's rect, so
 // none of those three can paint a pixel outside the stage. Ours can —
 // overlayDstRect is free to leave the viewport, and does so by DEFAULT:
-// Not this rung (or nothing to blit) returns before touching the clip state, so a
-// no-overlay frame still issues no SDL call at all and never dereferences ren.
 func (v *Viewport) drawOverlayInStage(ren *sdl.Renderer, scene *courtroom.Scene, vp, stage sdl.Rect, layer uint8) {
 	o := &scene.Overlay
 	if o.Base == "" || o.Layer != layer || v.overlayHidden(o) {
@@ -1927,10 +1913,6 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	// never bleeds onto the next user of this SHARED T1 page (next frame, emote
 	// preview, wardrobe grid). ColorMod leaves alpha alone so the transparent
 	// cutout stays cut out; AlphaMod handles opacity; ADD blend makes a glow.
-	// INVARIANT: drawSprite is the *only* place the renderer MOD-brackets a texture
-	// for drawing — SetColorMod / SetBlendMode / SetAlphaMod (besides the upload
-	// default BLENDMODE_BLEND at textures.go, the variant readback in variant.go,
-	// Any future effect that mods a texture elsewhere MUST restore it too, or art bleeds.
 	if doColorMod {
 		_ = tex.SetColorMod(modR, modG, modB)
 	}

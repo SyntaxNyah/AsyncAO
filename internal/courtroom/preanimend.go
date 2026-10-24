@@ -2,21 +2,7 @@ package courtroom
 
 // This file owns ONE concern: the single door out of a one-shot preanimation,
 // and the record of who walked through it.
-//
-// Why it exists. "The preanimation is randomly interrupted" is unreproducible
-// by construction — four different things can end the animation, three of them
-// asynchronous (a render callback, a 404 warning, a bound expiring), and the
-// stage looks identical afterwards whichever one fired. Nothing recorded WHICH,
-// so every report was a guess. Funnelling the release through endPreanim makes
-// the answer a value the debug surface can read (LastPreanimEnd) or a hook can
-// stream (OnPreanimEnd), at zero cost when nobody is listening.
-//
 // The funnel is also the fix for a real defect, not just instrumentation:
-// releasing the one-shot was four scattered `PlayOnce = false` writes, so
-// NotifyPreanimDone — the callback that CUTS the animation — was the only
-// notifier of the pair without the staleness guard its sibling
-// NotifyPreanimStarted carries (see the guard there). One door means one place
-// where that check has to be right.
 
 // PreanimEndReason names the thing that ended the one-shot preanimation that
 // was on stage. It is diagnostic only: the stage result is the same for every
@@ -81,12 +67,6 @@ func (r PreanimEndReason) String() string {
 // PlayOnce latch, records why, and notifies any listener. Callers keep owning
 // what the speaker shows NEXT (talk loop vs idle) — that differs per site and
 // is not this seam's concern.
-//
-// Idempotent by design: with no one-shot on stage there is nothing to end, so a
-// second call (a wipe right after a new message, a 404 arriving after the
-// natural finish) reports nothing rather than overwriting the real reason with
-// a bookkeeping one.
-//
 // Game thread only, like every other Courtroom method.
 func (c *Courtroom) endPreanim(reason PreanimEndReason) {
 	if !c.Scene.Speaker.PlayOnce {

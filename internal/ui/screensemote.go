@@ -294,9 +294,6 @@ func (a *App) emotePageCounter(page, pages, n int) string {
 // one heap allocation per frame for as long as the tab is open — invisible to
 // the classic whole-screen gate (it only ever draws the IC-log tab) but measured
 // the moment the themed gate put the music/areas panel on screen.
-// Each list owns its OWN memo rather than sharing one slot: the Music and Areas
-// panels can be visible at once (a torn-off tab beside a docked one, or a theme
-// that gives them separate rects), and one shared slot would then rebuild twice
 type shownTotalMemo struct {
 	label        string
 	shown, total int
@@ -457,7 +454,6 @@ func (a *App) drawMsgCounter(input sdl.Rect, on bool) {
 // has to measure the very same string one step BEFORE the field draws, and the
 // two must never disagree about the width — a reservation that is narrower than
 // the drawn count is exactly the overlap this whole band exists to stop.
-// Reformats only on a length change, so a settled frame stays 0-alloc.
 func (a *App) refreshICCount() int {
 	n := utf8.RuneCountInString(a.compose.icInput)
 	if n != a.compose.icCountN {
@@ -647,8 +643,6 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 // old one-by-one </> cycle was unusable on 4000-char servers); offsets,
 // flip and z-order live in the right column.
 // sendPairOrder issues a /pairorder command to reorder the active group roster.
-// uid is the member's player UID and op is front|back|up|down. No-op without a
-// session (the Pair panel is only reachable in-court, but guard anyway).
 func (a *App) sendPairOrder(uid int, op string) {
 	if a.link.sess == nil {
 		return
@@ -1266,10 +1260,6 @@ func (a *App) sendIC() {
 	// the END of the text — other AsyncAO clients decode + render it on this
 	// character; AO2/webAO see nothing. End placement keeps the visible text intact
 	// if a server length-limits the message (worst case: the style is dropped).
-	// Send-on-CHANGE: the marker rides only the messages where YOUR style changed
-	// (and a clear when you turn it off), not every line — other clients typewriter
-	// the invisible run and blip on each character, so a marker on every message was
-	// audible spam. lastSentStyle tracks what we last transmitted this session.
 	curStyle := a.mySpriteStyle()
 	if marker := curStyle.EncodeChangeMarker(a.compose.lastSentStyle); marker != "" {
 		text += marker
@@ -1357,7 +1347,6 @@ func (a *App) sendIC() {
 		// echo re-runs this EmoteMod through scenemaker, so the LOCAL staging
 		// (scenemaker.go's pre := EmoteMod==Preanim…) follows the same decision
 		// — what you see matches what you sent. immediate stays false here:
-		// a.icImmediate rides the separate OutgoingMS.Immediate field.
 		EmoteMod:    emoteMod, // normalized + possibly sfx_on_idle-promoted above
 		CharID:      a.link.sess.MyCharID,
 		Objection:   shout,
@@ -1403,7 +1392,6 @@ func (a *App) sendIC() {
 	// The ONE-SHOT arms clear here, exactly where AO2 clears them — beside
 	// objection_state the moment the packet is built (courtroom.cpp:2327-2329,
 	// and :2362 for the slide, "Slides can't be sticky for nausea reasons").
-	//
 	// Unlike the input above, these are cleared OPTIMISTICALLY rather than on the
 	// server's echo. A swallowed send costs one flash nobody notices; a stuck arm
 	// fires on every following line, which is the failure everyone notices.
@@ -1454,8 +1442,6 @@ func (a *App) clearPreAfterSend() {
 // with a prefix-aware check (issue #56 — a plain exact-match gate discarded
 // the pending snapshot on ANY edit, including simply continuing to type the
 // next line during the round trip, and the box was then never cleared):
-// A send the server swallowed never echoes, so everything stays put for an
-// immediate re-Enter regardless of which branch a LATER echo would have hit.
 func (s *sessionState) noteOwnICEcho() {
 	// Strip only the part that actually sent; whatever was typed on top
 	// of it during the round trip is real, unsent draft and stays. When
@@ -1821,9 +1807,6 @@ func sceneNeedsStyled(styles []courtroom.StyleRun) bool {
 // extended AsyncAO colours (#98), then the two "fun colour" modes — so every
 // colour is picked from one list rather than hidden in Settings. Built once at
 // package init — the IC input row reads it every frame, so it must not allocate.
-// extColorFirst is where the extended entries start; icColorRainbowIdx /
-// icColorRandomIdx are the trailing fun-mode positions (all len-derived so they
-// shift correctly if the palettes change).
 var (
 	extColorFirst     = len(render.TextColorNames())
 	icColorRainbowIdx = extColorFirst + render.ExtColorCount()

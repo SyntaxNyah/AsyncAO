@@ -42,12 +42,6 @@ func eventWindowID(ev sdl.Event) (id uint32, ok bool) {
 // eventForPreviewWindow reports whether ev is addressed to the preview
 // window identified by previewWindowID, so the run loop's event dispatch can
 // route it to the preview's own handler instead of uiCtx.HandleEvent.
-//
-// previewWindowID == 0 means the preview is closed (PreviewWindow.ID's
-// documented sentinel — 0 is never a real SDL window id), and every event
-// then routes to the main Ctx exactly as before a preview window could
-// exist: the overwhelmingly common case costs one uint32 comparison against
-// a constant and nothing else.
 func eventForPreviewWindow(ev sdl.Event, previewWindowID uint32) bool {
 	if previewWindowID == 0 {
 		return false
@@ -61,19 +55,6 @@ func eventForPreviewWindow(ev sdl.Event, previewWindowID uint32) bool {
 // the same reason mainWindowShouldQuit is (quit.go): so it is testable
 // without a live event loop or a live window, and so a test can drive the
 // REAL function the loop calls rather than a re-implementation of it.
-//
-// THE COORDINATE-ALIASING GATE. ui.Ctx.HandleEvent writes every
-// MouseMotionEvent/MouseButtonEvent's raw .X/.Y straight into the shared
-// c.mouseX/c.mouseY with no window-origin check of its own (ui.go) — and
-// SDL's mouse coordinates are window-CLIENT-relative, so an ungated second
-// window's mouse motion would silently alias onto the main window's
-// hit-testing space and produce phantom hovers/clicks. Routing a
-// preview-window event to preview.HandleEvent INSTEAD of uiCtx.HandleEvent —
-// never both — is what keeps that from happening. It reports whether the
-// event was the preview's, so callers doing further main-window-only
-// bookkeeping (display-change / focus / file-drop handling in run()) know to
-// skip it too: those all read the MAIN window's own state and would at best
-// waste a re-check, at worst mis-scope, if a preview-only event reached them.
 func dispatchEvent(ev sdl.Event, uiCtx *ui.Ctx, preview *render.PreviewWindow) (consumedByPreview bool) {
 	if eventForPreviewWindow(ev, preview.ID()) {
 		preview.HandleEvent(ev)

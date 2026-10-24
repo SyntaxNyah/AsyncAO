@@ -116,7 +116,6 @@ func (a *App) applyThemeClocks(sc *theme.Sidecar) {
 }
 
 // clampClockSpeed bounds a group's speed to the format's own range.
-//
 // DEFENCE IN DEPTH, not duplication: the reader already clamps what it parses, but
 // the editor writes this field directly (W7) and elementElapsed divides by it. A
 // speed of zero here would be an absent marker in the FILE and a divide-by-nothing in
@@ -141,7 +140,6 @@ func (a *App) reduceMotionNow() bool { return a.d.Prefs != nil && a.d.Prefs.Load
 
 // elementElapsed is the element's own animation position: the shared anchor, scaled
 // by its clock group's speed, offset by its own free phase.
-//
 // The wave plan calls this "elapsed-for" (TestElapsedForIsAllocFree); the function
 // keeps design §Q3's own spelling. ALLOC-FREE and pointer-free: two array indexes,
 // one subtraction and at most one multiply-divide.
@@ -152,7 +150,6 @@ func (a *App) elementElapsed(e *bakedElement) time.Duration {
 // clockElapsed is one clock group's position. Split from elementElapsed because the
 // [effect.*] binds and the editor's scrub want the group's own time without an
 // element to read it through.
-//
 // AN OUT-OF-RANGE INDEX FALLS BACK TO CLOCK 0 rather than panicking. The reader
 // already clamps `clock = 99` to 0 (parseClockIndex), so this can only fire on a bug
 // — but it would fire on the render thread, and one predictable compare is cheaper
@@ -176,7 +173,6 @@ func (a *App) clockElapsed(i uint8) time.Duration {
 
 // clockPaused reports that a clock group is HELD — the editor's scrub, and
 // "hold to inspect a frame".
-//
 // Same out-of-range fallback as clockElapsed, and for the same reason: the pair
 // must answer for the SAME group, or a bad index would read time from clock 0 and
 // pausedness from nothing.
@@ -204,7 +200,6 @@ func (a *App) noteElementAnimating(clock uint8) {
 // ---------------------------------------------------------------------------
 
 // elementFrame picks an element's current animation frame.
-//
 // It honours themeFrame's contract exactly (app.go): a STATIC page costs one len
 // check and never notes the census, an animated one notes it so the pacer keeps
 // stepping. The two differences are the element's own clock (elementElapsed rather
@@ -251,8 +246,6 @@ func elementFrameIndex(page *render.TexturePage, el time.Duration, loop bool) (i
 		// pageFrameLoop's negative remainder holds frame 0 just as motionlessly. A page
 		// whose clock has not reached it is a STILL PICTURE, and a still picture that
 		// pins the frame rate is the defect this file's doctrine exists to prevent.
-		// It self-starts: the client keeps drawing at the idle cadence, so elapsed goes
-		// on advancing and the page notes again on the first frame it crosses zero.
 		return 0, false
 	}
 	if !loop {
@@ -274,7 +267,6 @@ const fxOwnerNone = int16(0)
 
 // fxState is one STATEFUL effect's hysteresis: where its one-shot began, and whether
 // anybody is still asking for it.
-//
 // Only the three DECAYING kinds (fade / shake / slam) take a slot. The five periodic
 // ones are pure functions of elapsed and would gain nothing from state — which is the
 // whole reason the pool can be 24 entries for a format that allows 96 elements.
@@ -320,7 +312,6 @@ func (a *App) beginThemeFXPass() {
 }
 
 // acquireElementFX finds (or claims) the pool slot for one baked element.
-//
 // A LINEAR SCAN OF 24 — cheaper than a map probe, allocation-free, and bounded by a
 // constant rather than by the theme. ok=false is POOL EXHAUSTION, which is graceful
 // and named: the caller then resolves the effect at its FIRST FRAME, statically. That
@@ -337,9 +328,6 @@ func (a *App) acquireElementFX(idx int16, gen uint64, el time.Duration) (*fxStat
 			// one-shot. Without this a stamp bound to `visible_when = shout:objection`
 			// would fire on the first shout and then sit finished — a second shout inside
 			// the sweep's two-second window would find the slot still held and still done.
-			// The pool's job is to remember WHEN this effect began, and it began again.
-			// Strictly "missed a pass": a same-pass re-ask (which the draw loop cannot
-			// produce, but a caller might) must not restart anything.
 			if s.lastFrame+1 < a.themeFXFrame {
 				s.startedAt = el
 			}
@@ -414,7 +402,6 @@ var fxAlwaysOrigin = &fxState{}
 
 // effectIsStateful reports whether a kind needs a pool slot: the three DECAYING
 // one-shots do (they need an origin), the five periodic ones do not.
-//
 // A table rather than a switch, and indexed by the enum, so a kind appended to
 // theme.EffectKind gets a considered answer here instead of falling into whichever
 // half the switch's default happened to be.
@@ -546,7 +533,6 @@ func resolveDecayEffect(kind theme.EffectKind, amp, t, local float64) elemFX {
 }
 
 // shakeNoise is a deterministic [-1, 1] sample for one quantised shake step.
-//
 // An integer hash, not math/rand and not a per-frame value: the shake has to be a
 // pure function of elapsed or an exported GIF stops matching the screen it was
 // exported from. Two multipliers give the X and Y streams different sequences without
@@ -622,9 +608,6 @@ func applyElementFX(e *bakedElement, fx elemFX) elemFXSave {
 		// procedural painters read col / col2 / stroke and the art painter reads only
 		// tint.A (SetAlphaMod). An effect that dimmed three of the four would be an
 		// effect that works on some kinds and not others.
-		// TEXT IS THE ONE EXCEPTION, and it is a frame-cost exception rather than a
-		// design one: the label cache keys on the ink COLOUR (ui.go textKey), so
-		// darkening it would rasterise a fresh texture on every frame a fade moved.
 		if e.kind == theme.ElemText {
 			e.fxDim = 255 - uint8(math.Round(255*fx.alpha))
 		} else {

@@ -23,9 +23,6 @@ import (
 // the themed Edit-layout entry). This consolidates those three entry points into
 // one toolbox, collapsed to small hover-revealed chips so it stays out of the way
 // during normal play.
-// Perf (it draws per-frame in normal play, under the ui AllocsPerRun gates): the
-// chip set is a fixed package-level slice with CONSTANT labels, so nothing is
-// allocated per frame and the TextWidth probes hit the width cache after warm-up.
 
 const (
 	// compactGripW/H size the collapsed grip (the slim edge tab). Deliberately
@@ -322,9 +319,6 @@ func (a *App) drawCompactToolboxInPass() {
 // and outside the editor's modal fence, force-expanded so Edit/Hide-UI/Theater stay
 // reachable. It evaluates its own latch because the in-pass fence deliberately
 // stands down for that frame.
-// It stands down in turn if the in-pass site already took a latch this frame: a
-// hotkey can arm the editor from INSIDE the pass (handleHotkeys runs mid-pass), and
-// drawing the toolbox twice would hit-test its chips twice on a single click —
 func (a *App) drawCompactToolboxOverEditor(w, h int32) {
 	if a.toolbox.toolboxFence.set {
 		return
@@ -521,9 +515,6 @@ func compactToolboxHoverRect(grip sdl.Rect) sdl.Rect {
 // the toolbox draws post-courtroom as a stable target and force-expands, so its
 // grip/chips are always reachable for Edit/Hide-UI/Theater without hunting for the
 // hover sweet spot over the busy editor overlay (A1 Phase 1).
-// Evaluated ONCE per frame, by latchCompactToolbox at the top of the courtroom pass
-// (the draw replays the answer): the fence must cover the strip on exactly the frames
-// the strip is on screen, and a second evaluation at draw time could disagree — the
 func (a *App) compactToolboxExpanded(strip, grip sdl.Rect) bool {
 	c := a.ctx
 	return a.classic.classicEdit || a.layoutEdit || a.toolbox.toolboxPinned ||
@@ -561,7 +552,6 @@ type compactToolboxLatch struct {
 
 // latchCompactToolbox computes that answer. Split out so the post-courtroom draw
 // site can reuse the identical predicate without publishing a fence.
-//
 // Geometry note: the strip's position depends on a.toolboxThemeRectOn
 // (compactToolboxStripRect), which drawCourtroom force-clears every frame and only
 // drawCourtroomThemed re-arms — so this must run INSIDE the pass, below the theme
@@ -689,9 +679,6 @@ func (a *App) editOverToolbox(w, h int32) bool {
 // the bottom-right above the toolbox strip. Factored out so boxFencesPointer and
 // the draw agree on frame one (the click-leak class the recon flagged: a fence
 // rect that disagrees with the draw rect leaks a click through the panel).
-// toolboxPiecesMinW / toolboxPiecesMinH bound a dragged-and-resized panel. Wide
-// enough for the filter box and the Close button — the no-strand lifeline —
-// side by side, and tall enough for the header, one row and the footer.
 const (
 	toolboxPiecesMinW = 200
 	toolboxPiecesMinH = toolboxPiecesHeaderH + toolboxPiecesFooterH + toolboxPiecesRowPitch
@@ -699,7 +686,6 @@ const (
 
 // toolboxPiecesRect is where the Hide-UI-pieces panel sits: wherever the user
 // last dragged it, or its old bottom-right home the first time.
-//
 // It was fixed in that corner with no way to move it — dragging did nothing, and
 // the layout editor did not offer it either — so a panel that landed awkwardly,
 // or underneath something else, could not be shifted at all. It is a floatWin
@@ -813,9 +799,6 @@ var mouseLifelines = [...]string{panelToolbox, ctrlSettingsSlot, panelMenuBar}
 // it went. The feedback is not decoration: these binds exist precisely for when
 // you cannot see or reach the panel that owns the switch, so pressing one and
 // getting no response at all would be its own dead end.
-// Routed through setPanelHiddenGuarded rather than setPanelHidden, so the
-// keyboard is held to the same no-strand rule as the panel. A hotkey that can
-// strand you is worse than no hotkey: the person who pressed it is by definition
 func (a *App) toggleChromePanel(id, label string) {
 	hide := !a.classic.panelHidden(id)
 	a.setPanelHiddenGuarded(id, hide)
