@@ -60,9 +60,9 @@ func sfxIdlePromotion(mod, pickIdx int, sfxOnIdle, prezoom bool) (int, bool) {
 // drift between two copies of the same control:
 // (../AO2-Client/src/courtroom.cpp:5498-5505). Picking a sound is a step in
 func (a *App) applySFXPick(next int) {
-	a.sfxChoiceIdx = next
-	if next > 0 && next < len(a.sfxChoices) {
-		a.d.Audio.PlaySFX(a.urls.SFX(a.sfxChoices[next]), 0) // preview the picked sound
+	a.emotepick.sfxChoiceIdx = next
+	if next > 0 && next < len(a.emotepick.sfxChoices) {
+		a.d.Audio.PlaySFX(a.urls.SFX(a.emotepick.sfxChoices[next]), 0) // preview the picked sound
 	}
 	a.bounceFocusToIC() // courtroom.cpp:5501
 }

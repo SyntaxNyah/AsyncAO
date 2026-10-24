@@ -34,7 +34,7 @@ func flipSendApp(t *testing.T) (*App, *[]protocol.Packet) {
 	a.sess.Features[protocol.FeatureFlipping] = struct{}{}
 	a.sess.Features[protocol.FeatureCCCCIC] = struct{}{} // required for the pair block to serialize
 	a.sess.Features[protocol.FeatureEffects] = struct{}{}
-	a.icInput = "over the phone"
+	a.compose.icInput = "over the phone"
 	return a, &sent
 }
 
@@ -74,14 +74,14 @@ func lastSentMS(t *testing.T, a *App, sent *[]protocol.Packet) *protocol.ChatMes
 func TestICBarFlipRidesSharedField(t *testing.T) {
 	a, sent := flipSendApp(t)
 
-	a.pairFlip = true // the state either view writes
+	a.pairbox.pairFlip = true // the state either view writes
 	a.sendICFresh()
 	if msg := lastSentMS(t, a, sent); !msg.Flip {
 		t.Error("pairFlip=true must ride OutgoingMS.Flip (the shared IC-bar / Pair-panel field)")
 	}
 
-	a.pairFlip = false
-	a.icInput = "back to normal"
+	a.pairbox.pairFlip = false
+	a.compose.icInput = "back to normal"
 	a.sendICFresh()
 	if msg := lastSentMS(t, a, sent); msg.Flip {
 		t.Error("pairFlip=false must clear OutgoingMS.Flip")
@@ -122,18 +122,18 @@ func TestICBarFlipGatedOnFlippingFeature(t *testing.T) {
 // outgoing pair block (front = HasOrder false or Order==InFront; behind carries the ^1).
 func TestPairOrderSegmentsMapToWire(t *testing.T) {
 	a, sent := flipSendApp(t)
-	a.pairWith = 1 // must pair with someone for the order to be meaningful on the wire
+	a.pairbox.pairWith = 1 // must pair with someone for the order to be meaningful on the wire
 
 	// "To front" segment → PairSpeakerInFront.
-	a.pairOrder = protocol.PairSpeakerInFront
+	a.pairbox.pairOrder = protocol.PairSpeakerInFront
 	a.sendICFresh()
 	if msg := lastSentMS(t, a, sent); msg.Pair.Order != protocol.PairSpeakerInFront {
 		t.Errorf("front segment: wire pair order = %d, want PairSpeakerInFront (%d)", msg.Pair.Order, protocol.PairSpeakerInFront)
 	}
 
 	// "To behind" segment → PairSpeakerBehind (rides the ^1 suffix).
-	a.pairOrder = protocol.PairSpeakerBehind
-	a.icInput = "behind you"
+	a.pairbox.pairOrder = protocol.PairSpeakerBehind
+	a.compose.icInput = "behind you"
 	a.sendICFresh()
 	msg := lastSentMS(t, a, sent)
 	if msg.Pair.Order != protocol.PairSpeakerBehind || !msg.Pair.HasOrder {

@@ -1815,13 +1815,13 @@ func (a *App) keepActiveAssetsWarm() {
 	}
 	// Futility latch reset: a new character/emote pick warms different bases, so
 	// the per-base demand counters start over (see warmMaxDemandsPerBase).
-	if me != a.activeWarm.char || a.emoteIdx != a.activeWarm.idx {
-		a.activeWarm.char, a.activeWarm.idx = me, a.emoteIdx
+	if me != a.activeWarm.char || a.emotepick.emoteIdx != a.activeWarm.idx {
+		a.activeWarm.char, a.activeWarm.idx = me, a.emotepick.emoteIdx
 		clear(a.activeWarm.demands)
 	}
-	if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {
-		a.activeWarm.warmBase(&a.env, a.urls.EmoteButton(me, a.emoteIdx+1, true), assets.AssetTypeEmoteButton)  // selected "on" image
-		a.activeWarm.warmBase(&a.env, a.urls.EmoteButton(me, a.emoteIdx+1, false), assets.AssetTypeEmoteButton) // "off" fallback
+	if a.emotepick.emoteIdx >= 0 && a.emotepick.emoteIdx < len(a.emotepick.emotes) {
+		a.activeWarm.warmBase(&a.env, a.urls.EmoteButton(me, a.emotepick.emoteIdx+1, true), assets.AssetTypeEmoteButton)  // selected "on" image
+		a.activeWarm.warmBase(&a.env, a.urls.EmoteButton(me, a.emotepick.emoteIdx+1, false), assets.AssetTypeEmoteButton) // "off" fallback
 	}
 	a.activeWarm.warmBase(&a.env, a.urls.CharIcon(me), assets.AssetTypeCharIcon)
 }

@@ -121,7 +121,7 @@ func TestDisableEffectsSuppressesEveryLocalFX(t *testing.T) {
 // though the dedicated HideReactions opt-out is untouched.
 func TestDisableEffectsSuppressesIncomingReactions(t *testing.T) {
 	a, prefs := newEffectsRig(t)
-	a.icLog = []icEntry{{speaker: "Phoenix", ref: 4242}}
+	a.chatlog.icLog = []icEntry{{speaker: "Phoenix", ref: 4242}}
 
 	a.onIncomingReaction(courtroom.WireReaction{Ref: 4242, Index: 2})
 	if len(a.reactionFloats) != 1 {

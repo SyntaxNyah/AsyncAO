@@ -51,8 +51,8 @@ func fxPickerRowCount() int { return len(fxEffectOrder) + 1 + len(inlineMarkupBu
 func (a *App) fxButton(r sdl.Rect) {
 	c := a.ctx
 	label, border, txt := "FX", ColTextDim, ColText
-	if a.icEffect != courtroom.TextEffectNone {
-		label, border, txt = icEffectLabel(a.icEffect), ColAccent, ColAccent
+	if a.compose.icEffect != courtroom.TextEffectNone {
+		label, border, txt = icEffectLabel(a.compose.icEffect), ColAccent, ColAccent
 	}
 	a.fxBtnRect = r
 	if c.ButtonCol(r, label, ColPanel, ColPanelHi, border, txt) {
@@ -176,7 +176,7 @@ func (a *App) drawFxPicker(w, h int32) {
 		if c.hovering(row) {
 			c.Fill(row, ColPanelHi)
 			if c.clicked {
-				a.icEffect = e
+				a.compose.icEffect = e
 				a.showFxPicker = false
 			}
 		}
@@ -184,7 +184,7 @@ func (a *App) drawFxPicker(w, h int32) {
 		if e != courtroom.TextEffectNone {
 			name, col = icEffectLabel(e), ColText
 		}
-		if e == a.icEffect {
+		if e == a.compose.icEffect {
 			col = ColAccent // mark the active effect
 		}
 		c.Label(row.X+4, y+3, name, col)
@@ -218,7 +218,7 @@ func (a *App) drawFxPicker(w, h int32) {
 // and wrapping it would create unsupported nesting). Run BEFORE ParseTextEffects so the wrap is
 // parsed like any markup.
 func (a *App) applyStickyEffect(text string) string {
-	tag := effectTagName(a.icEffect)
+	tag := effectTagName(a.compose.icEffect)
 	if tag == "" || text == "" || text == " " || strings.ContainsRune(text, '[') {
 		return text
 	}

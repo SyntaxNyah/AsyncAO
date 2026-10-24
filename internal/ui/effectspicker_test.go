@@ -177,42 +177,42 @@ func TestOutgoingEffectsFieldShape(t *testing.T) {
 		a.overlayRosterKey(""): {
 			set: theme.MergeOverlayFX([]string{"tv on", "sticky one"}, fx)},
 	}
-	a.icPreanim = true
+	a.compose.icPreanim = true
 
-	a.overlayChoiceIdx = 0
+	a.emotepick.overlayChoiceIdx = 0
 	if got := a.outgoingEffectsField(); got != "" {
 		t.Errorf("the None row must send %q, got %q", "", got)
 	}
-	a.overlayChoiceIdx = 1
+	a.emotepick.overlayChoiceIdx = 1
 	if got := a.outgoingEffectsField(); got != "tv on||switch tv" {
 		t.Errorf("field = %q, want \"tv on||switch tv\"", got)
 	}
 	// Pre unchecked AND an explicit SFX override: the effect's own sound is
 	// muted so the two do not overlap.
-	a.icPreanim, a.sfxChoiceIdx = false, 3
+	a.compose.icPreanim, a.emotepick.sfxChoiceIdx = false, 3
 	if got := a.outgoingEffectsField(); got != "tv on||0" {
 		t.Errorf("field = %q, want the anti-overlap \"0\" sound", got)
 	}
-	a.icPreanim, a.sfxChoiceIdx = true, 0
+	a.compose.icPreanim, a.emotepick.sfxChoiceIdx = true, 0
 
 	// AO2 ships `stickyeffects = true` (options.cpp:430-433), but AsyncAO ships it
 	// OFF: courtroom.cpp:2348 resets when false, so a stock AsyncAO client clears a
 	// plain effect to None after a send.
-	a.overlayChoiceIdx = 1
+	a.emotepick.overlayChoiceIdx = 1
 	a.clearEffectsAfterSend()
-	if a.overlayChoiceIdx != 0 {
+	if a.emotepick.overlayChoiceIdx != 0 {
 		t.Error("the shipped default is non-sticky: a plain effect must clear to None")
 	}
 	// With the (OWED) global turned off, the per-effect `sticky` override is what
 	// decides — the other half of courtroom.cpp:2348-2354.
-	a.overlayChoiceIdx = 2
+	a.emotepick.overlayChoiceIdx = 2
 	a.overlayPostSendReset(false)
-	if a.overlayChoiceIdx != 2 {
+	if a.emotepick.overlayChoiceIdx != 2 {
 		t.Error("a sticky effect must survive the send (courtroom.cpp:2348-2354)")
 	}
-	a.overlayChoiceIdx = 1
+	a.emotepick.overlayChoiceIdx = 1
 	a.overlayPostSendReset(false)
-	if a.overlayChoiceIdx != 0 {
+	if a.emotepick.overlayChoiceIdx != 0 {
 		t.Error("a non-sticky effect must clear to None once the global is off")
 	}
 }
@@ -389,8 +389,8 @@ func TestEffectPreviewFiltersTheSoundSentinels(t *testing.T) {
 		t.Errorf("previewBase = %q, want the effect's own art %q", a.previewBase, want)
 	}
 	// A preview is an audition: it commits nothing.
-	if a.overlayChoiceIdx != 0 || a.sfxChoiceIdx != 0 {
-		t.Errorf("the preview changed a selection: effect = %d sfx = %d", a.overlayChoiceIdx, a.sfxChoiceIdx)
+	if a.emotepick.overlayChoiceIdx != 0 || a.emotepick.sfxChoiceIdx != 0 {
+		t.Errorf("the preview changed a selection: effect = %d sfx = %d", a.emotepick.overlayChoiceIdx, a.emotepick.sfxChoiceIdx)
 	}
 }
 
@@ -552,11 +552,11 @@ func TestEffectsDropdownClosedIsZeroAlloc(t *testing.T) {
 		t.Errorf("the None row must carry NO key (courtroom.cpp:5606-5610 asks, no theme ships one) — got %q", a.overlays.overlayIconKeys[0])
 	}
 
-	a.overlayChoiceIdx = 1 // an effect is PICKED: the state that regressed
+	a.emotepick.overlayChoiceIdx = 1 // an effect is PICKED: the state that regressed
 	tr := sdl.Rect{X: 4, Y: 4, W: 24, H: 20}
 	draw := func() {
 		_ = a.overlayChoices()
-		a.overlayIconDraw(a.overlayChoiceIdx, tr)
+		a.overlayIconDraw(a.emotepick.overlayChoiceIdx, tr)
 	}
 	draw() // warm the cached page pointer and any lazy renderer state
 	if n := testing.AllocsPerRun(200, draw); n != 0 {
@@ -757,8 +757,8 @@ func TestEffectIconsAreNotFetchedUntilTheDropdownOpens(t *testing.T) {
 	}
 	// And that one is row 0, "None", which carries no key at all — so a client that
 	// never picks an effect and never opens the list asks the origin for nothing.
-	if a.overlayChoiceIdx != 0 {
-		t.Fatalf("fixture: the picker starts on None, got %d", a.overlayChoiceIdx)
+	if a.emotepick.overlayChoiceIdx != 0 {
+		t.Fatalf("fixture: the picker starts on None, got %d", a.emotepick.overlayChoiceIdx)
 	}
 	if len(a.overlays.overlayIconKeys) == 0 || a.overlays.overlayIconKeys[0] != "" {
 		t.Error("the None row carries an icon key, want none")
@@ -814,7 +814,7 @@ func TestCharINIRealizationOverridesTheEffectSound(t *testing.T) {
 			icon: map[string]string{},
 		},
 	}
-	a.icPreanim = true
+	a.compose.icPreanim = true
 
 	// Nothing in char.ini: the THEME's courtroom_sounds.ini realization wins over
 	// the pack's, which is get_custom_realization's own fallback (:900).
@@ -837,13 +837,13 @@ func TestCharINIRealizationOverridesTheEffectSound(t *testing.T) {
 	if len(choices) != 3 || choices[1] != "realization" {
 		t.Fatalf("fixture: choices = %v", choices)
 	}
-	a.overlayChoiceIdx = 1
+	a.emotepick.overlayChoiceIdx = 1
 	if got := a.outgoingEffectsField(); got != "realization||mine" {
 		t.Errorf("outgoing field = %q, want \"realization||mine\"", got)
 	}
 	// The anti-overlap rule still runs LAST, exactly as in canon
 	// (courtroom.cpp:2302-2305 mutates fx_sound after get_effect_property).
-	a.icPreanim, a.sfxChoiceIdx = false, 3
+	a.compose.icPreanim, a.emotepick.sfxChoiceIdx = false, 3
 	if got := a.outgoingEffectsField(); got != "realization||0" {
 		t.Errorf("outgoing field = %q, want the anti-overlap \"0\"", got)
 	}
@@ -866,7 +866,7 @@ func TestRightClickSFXRowPreviewsWithoutSelecting(t *testing.T) {
 	}
 	newApp := func(c *Ctx) *App {
 		a := &App{env: env{ctx: c}}
-		a.sfxChoices = []string{"SFX: auto", "sfx-one", "sfx-two"}
+		a.emotepick.sfxChoices = []string{"SFX: auto", "sfx-one", "sfx-two"}
 		return a
 	}
 
@@ -879,15 +879,15 @@ func TestRightClickSFXRowPreviewsWithoutSelecting(t *testing.T) {
 	// that row 0 does nothing is the negative case in TestRightClickSFXRowActuallyPreviews.
 	a := newApp(&Ctx{})
 	list := sdl.Rect{X: 100, Y: 200, W: 120, H: 90}
-	stampOpenDropdown(a.ctx, "sfxdd", list, 30, len(a.sfxChoices), 0)
+	stampOpenDropdown(a.ctx, "sfxdd", list, 30, len(a.emotepick.sfxChoices), 0)
 	a.ctx.mouseX, a.ctx.mouseY = 150, 265 // 65 px in → row 2
 	a.ctx.rightClicked = true
 	a.sfxRowRightClickPreview()
 	if a.ctx.rightClicked {
 		t.Error("the right-click must be CONSUMED — an unconsumed one leaks past the modal capture")
 	}
-	if a.sfxChoiceIdx != 0 {
-		t.Errorf("the audition selected row %d — right-click previews, left-click picks", a.sfxChoiceIdx)
+	if a.emotepick.sfxChoiceIdx != 0 {
+		t.Errorf("the audition selected row %d — right-click previews, left-click picks", a.emotepick.sfxChoiceIdx)
 	}
 	a.ctx.mouseY = 205 // row 0
 	a.ctx.rightClicked = true
@@ -896,14 +896,14 @@ func TestRightClickSFXRowPreviewsWithoutSelecting(t *testing.T) {
 		t.Error("row 0 is still a row of the OPEN list: in-range rows are consumed whether or not " +
 			"the caller has anything to do with them, or the click leaks past the modal capture")
 	}
-	if a.sfxChoiceIdx != 0 {
-		t.Errorf("row 0 (\"SFX: auto\") set the override to %d", a.sfxChoiceIdx)
+	if a.emotepick.sfxChoiceIdx != 0 {
+		t.Errorf("row 0 (\"SFX: auto\") set the override to %d", a.emotepick.sfxChoiceIdx)
 	}
 
 	// Half 2 — an SFX-BROWSER row. Same gesture, same result: no override, no
 	// toast, and the browser stays open (a left-click on the body would close it).
 	b := newApp(ctx)
-	b.showSfxBrowser = true
+	b.emotepick.showSfxBrowser = true
 	row := sdl.Rect{X: 0, Y: 0, W: 300, H: sfxBrowserRowH}
 	b.ctx.mouseX, b.ctx.mouseY = 200, sfxBrowserRowH/2 // over the LABEL, past ★ and ▶
 	b.ctx.rightClicked = true
@@ -911,10 +911,10 @@ func TestRightClickSFXRowPreviewsWithoutSelecting(t *testing.T) {
 	if b.ctx.rightClicked {
 		t.Error("the browser row must consume its right-click (the modal backdrop is underneath)")
 	}
-	if b.sfxChoiceIdx != 0 {
-		t.Errorf("the browser audition set the override to %d", b.sfxChoiceIdx)
+	if b.emotepick.sfxChoiceIdx != 0 {
+		t.Errorf("the browser audition set the override to %d", b.emotepick.sfxChoiceIdx)
 	}
-	if !b.showSfxBrowser {
+	if !b.emotepick.showSfxBrowser {
 		t.Error("auditioning closed the browser — that is what USING a sound does")
 	}
 	if b.warnLine != "" {
@@ -937,7 +937,7 @@ func TestRightClickSFXRowActuallyPreviews(t *testing.T) {
 	reached := func(c *Ctx, hit func(*App)) (fired bool) {
 		a := &App{env: env{ctx: c}}
 		a.urls = courtroom.NewURLBuilder("https://one.test/base") // an origin: previewSFX proceeds
-		a.sfxChoices = []string{"SFX: auto", "sfx-one", "sfx-two"}
+		a.emotepick.sfxChoices = []string{"SFX: auto", "sfx-one", "sfx-two"}
 		defer func() { fired = recover() != nil }()
 		hit(a)
 		return false

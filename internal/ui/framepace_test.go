@@ -288,29 +288,29 @@ func TestHardCapBudget(t *testing.T) {
 // scrollbar-drag snap marks nothing.
 func TestEaseICScrollAnimates(t *testing.T) {
 	a := &App{env: env{}}
-	a.frameDtMs = 16 // frame-rate-independent ease constant (promoted from sessionState)
+	a.chatlog.frameDtMs = 16 // frame-rate-independent ease constant (promoted from sessionState)
 
 	// Target far from the visual offset → still easing → animates, advancing partway.
-	a.icScroll, a.icScrollVis, a.frameAnimChrome = 500, 0, false
-	if got := a.easeICScroll(1000, false); got <= 0 || a.icScrollVis >= 500 {
-		t.Errorf("ease should advance partway toward the target, got %v (vis=%v)", got, a.icScrollVis)
+	a.chatlog.icScroll, a.chatlog.icScrollVis, a.frameAnimChrome = 500, 0, false
+	if got := a.easeICScroll(1000, false); got <= 0 || a.chatlog.icScrollVis >= 500 {
+		t.Errorf("ease should advance partway toward the target, got %v (vis=%v)", got, a.chatlog.icScrollVis)
 	}
 	if !a.frameAnimChrome {
 		t.Error("mid-ease must mark frameAnimChrome so the glide keeps rendering at idle=0")
 	}
 
 	// Settled within the deadband → no animation.
-	a.icScroll, a.icScrollVis, a.frameAnimChrome = 500, 500, false
+	a.chatlog.icScroll, a.chatlog.icScrollVis, a.frameAnimChrome = 500, 500, false
 	a.easeICScroll(1000, false)
 	if a.frameAnimChrome {
 		t.Error("a settled scroll must not keep rendering")
 	}
 
 	// A scrollbar drag snaps 1:1 (no ease) → no animation even when far from target.
-	a.icScroll, a.icScrollVis, a.frameAnimChrome = 0, 500, false
+	a.chatlog.icScroll, a.chatlog.icScrollVis, a.frameAnimChrome = 0, 500, false
 	a.easeICScroll(1000, true)
-	if a.frameAnimChrome || a.icScrollVis != 0 {
-		t.Errorf("a 1:1 drag snap must pin vis to target and not animate (vis=%v anim=%v)", a.icScrollVis, a.frameAnimChrome)
+	if a.frameAnimChrome || a.chatlog.icScrollVis != 0 {
+		t.Errorf("a 1:1 drag snap must pin vis to target and not animate (vis=%v anim=%v)", a.chatlog.icScrollVis, a.frameAnimChrome)
 	}
 }
 

@@ -144,8 +144,8 @@ func (a *App) msgEntries() []msgEntry {
 		}
 	}
 	seen := map[string]bool{}
-	threads := make([]string, 0, len(a.pmThreads))
-	for k := range a.pmThreads {
+	threads := make([]string, 0, len(a.compose.pmThreads))
+	for k := range a.compose.pmThreads {
 		threads = append(threads, k)
 	}
 	sort.Strings(threads)
@@ -424,7 +424,7 @@ func (a *App) drawMsgThreadBody(box sdl.Rect) {
 	}
 	c := a.ctx
 	c.Border(box, ColPanelHi)
-	lines := a.pmThreads[strings.ToLower(strings.TrimSpace(a.msgs.msgSel))]
+	lines := a.compose.pmThreads[strings.ToLower(strings.TrimSpace(a.msgs.msgSel))]
 	partnerChar := a.rosterCharByName(a.msgs.msgSel)
 	a.drawChatBubbles(box, len(lines), func(i int) (string, string, bool, string, time.Time) {
 		ln := &lines[i]

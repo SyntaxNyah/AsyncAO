@@ -254,11 +254,11 @@ func TestApplyThemePaletteReadabilityFloor(t *testing.T) {
 func TestICWrapped(t *testing.T) {
 	a := &App{env: env{ctx: &Ctx{}}}
 	a.logPct = DefaultScalePct // share the (nil) chrome font: 8 px/char path
-	a.icLog = []icEntry{
+	a.chatlog.icLog = []icEntry{
 		{text: strings.Repeat("word ", 40), color: 2},
 		{text: "short", color: 0},
 	}
-	a.icLogSeq = 1
+	a.chatlog.icLogSeq = 1
 
 	rows := a.icWrapped(160, false) // 20 chars per row at the 8 px fallback
 	if len(rows) < 3 {
@@ -289,8 +289,8 @@ func TestICWrapped(t *testing.T) {
 func TestICWrappedTimestamps(t *testing.T) {
 	a := &App{env: env{ctx: &Ctx{}}}
 	a.logPct = DefaultScalePct
-	a.icLog = []icEntry{{text: "Phoenix: hold it", color: 2, stamp: "14:32"}}
-	a.icLogSeq = 1
+	a.chatlog.icLog = []icEntry{{text: "Phoenix: hold it", color: 2, stamp: "14:32"}}
+	a.chatlog.icLogSeq = 1
 
 	off := a.icWrapped(800, false)
 	if len(off) != 1 || off[0].text != "Phoenix: hold it" {
@@ -417,8 +417,8 @@ func TestTabChipLabelMemoized(t *testing.T) {
 func TestDebugDiagLine(t *testing.T) {
 	a := &App{env: env{}}
 	a.tabs = []*courtTab{{}, {}}
-	a.icLog = make([]icEntry, 3)
-	a.oocLog = make([]string, 1)
+	a.chatlog.icLog = make([]icEntry, 3)
+	a.chatlog.oocLog = make([]string, 1)
 	got := a.debugDiagLine()
 	for _, want := range []string{"tabs 2", "area —", "queue 0", "ic 3", "ooc 1", "goroutines "} {
 		if !strings.Contains(got, want) {

@@ -68,7 +68,7 @@ func (a *App) handleShownameKeys() bool {
 	if !ok {
 		return false
 	}
-	a.shownameOverride = sn // the in-courtroom override effectiveShowname reads
+	a.compose.shownameOverride = sn // the in-courtroom override effectiveShowname reads
 	a.warnLine = clampLine("Showname → " + sn)
 	a.warnAt = a.now()
 	return true

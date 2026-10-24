@@ -103,9 +103,9 @@ func TestPushOOCSuppressedRosterBurstNeverReachesDisk(t *testing.T) {
 		t.Fatal("opening the transcript writer created no new file")
 	}
 
-	beforeOOC := len(a.oocLog)
+	beforeOOC := len(a.chatlog.oocLog)
 	a.pushOOC("5 players online", "") // looksLikeAreaList == true
-	if len(a.oocLog) != beforeOOC {
+	if len(a.chatlog.oocLog) != beforeOOC {
 		t.Fatal("setup broken: the roster burst reached the on-screen OOC log, so it wasn't actually suppressed")
 	}
 

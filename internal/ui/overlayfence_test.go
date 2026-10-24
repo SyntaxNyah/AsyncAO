@@ -351,7 +351,7 @@ func TestCompactToolboxNoFenceUnderCourtroomModal(t *testing.T) {
 			case 1:
 				a.bgPick.show = true
 			case 2:
-				a.showSfxBrowser = true
+				a.emotepick.showSfxBrowser = true
 			default:
 				t.Fatalf("courtroomModals grew to %d entries — extend this switch", len(courtroomModals))
 			}
@@ -435,14 +435,14 @@ func TestCourtroomModalUpMatchesDraw(t *testing.T) {
 	// blockingCourtPopup is a DIFFERENT question and must not be mistaken for this
 	// one: it omits the SFX browser and adds classicEdit. Pinned so a future "just
 	// reuse it" refactor has to confront that.
-	a.showSfxBrowser = true
+	a.emotepick.showSfxBrowser = true
 	if !a.courtroomModalUp() {
 		t.Error("the SFX browser IS in the return-to-top modal set (drawCourtroomModals draws it)")
 	}
 	if a.blockingCourtPopup() {
 		t.Error("blockingCourtPopup deliberately does NOT list the SFX browser — do not reuse it as the modal predicate")
 	}
-	a.showSfxBrowser = false
+	a.emotepick.showSfxBrowser = false
 	a.classic.classicEdit = true
 	if a.courtroomModalUp() {
 		t.Error("the layout editor is not a return-to-top modal, though blockingCourtPopup counts it")

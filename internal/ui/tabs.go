@@ -544,12 +544,12 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 			// and quietly cost the strip its anchor.
 			speaker := icSpeakerName(ev.Message, force, nil)
 			line, _, bodyRuneStart, styles := icLogEntry(ev.Message, force, "", nil)
-			s.icLog = append(s.icLog, icEntry{text: capLogLine(line, speaker), color: ev.Message.TextColor, friend: fr, friendColor: fc, speaker: speaker, pos: icPos(ev.Message), stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart})
-			if cap := a.icLogCapFor(); cap > 0 && len(s.icLog) > cap {
-				copy(s.icLog, s.icLog[len(s.icLog)-cap:])
-				s.icLog = s.icLog[:cap]
+			s.chatlog.icLog = append(s.chatlog.icLog, icEntry{text: capLogLine(line, speaker), color: ev.Message.TextColor, friend: fr, friendColor: fc, speaker: speaker, pos: icPos(ev.Message), stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart})
+			if cap := a.icLogCapFor(); cap > 0 && len(s.chatlog.icLog) > cap {
+				copy(s.chatlog.icLog, s.chatlog.icLog[len(s.chatlog.icLog)-cap:])
+				s.chatlog.icLog = s.chatlog.icLog[:cap]
 			}
-			s.icLogSeq++
+			s.chatlog.icLogSeq++
 			t.unread++
 			if fr {
 				a.signalFriend(s.serverName, ev.Message) // alert even from a backgrounded server
@@ -568,9 +568,9 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		if len(line) > oocLineCap {
 			line = line[:oocLineCap] + "…"
 		}
-		s.oocLog = appendCapped(s.oocLog, line, icLogCap)
-		s.oocSpeakers = appendCapped(s.oocSpeakers, ev.Name, icLogCap) // parallel: for name colours
-		s.oocSeq++
+		s.chatlog.oocLog = appendCapped(s.chatlog.oocLog, line, icLogCap)
+		s.chatlog.oocSpeakers = appendCapped(s.chatlog.oocSpeakers, ev.Name, icLogCap) // parallel: for name colours
+		s.chatlog.oocSeq++
 		a.logDetailedOOC(s.serverName, s.logSession, line) // detailed transcript (opt-in), the PARKED tab's own file
 		// OOC still LOGS, but by default it doesn't bump the unread badge: servers
 		// post auto-messages in OOC (hourly "hydration" reminders, etc.) and a "(1)"
@@ -586,13 +586,13 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		// A modcall on a backgrounded server still alerts the mod (toast +
 		// the tab's OOC log + unread), like the friend signal.
 		modcallLine := "[MOD CALL] " + ev.Text
-		s.oocLog = appendCapped(s.oocLog, modcallLine, icLogCap)
-		s.oocSpeakers = appendCapped(s.oocSpeakers, "", icLogCap) // system line — no name tint
-		s.oocSeq++
+		s.chatlog.oocLog = appendCapped(s.chatlog.oocLog, modcallLine, icLogCap)
+		s.chatlog.oocSpeakers = appendCapped(s.chatlog.oocSpeakers, "", icLogCap) // system line — no name tint
+		s.chatlog.oocSeq++
 		a.logDetailedOOC(s.serverName, s.logSession, modcallLine) // detailed transcript (opt-in), the PARKED tab's own file
 		t.unread++
 		a.signalModcall(s.serverName, ev.Text)
-		a.autoClipModcall(s.serverName, s.icLog, ev.Text) // freeze IC context even on a backgrounded server
+		a.autoClipModcall(s.serverName, s.chatlog.icLog, ev.Text) // freeze IC context even on a backgrounded server
 	case courtroom.EventBackground:
 		a.d.Prefs.RememberServerBackground(s.serverKey, ev.Text)
 		if ev.Wipe {
@@ -605,7 +605,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		// KFO-family servers carry the pos INSIDE an area change's BN and send no SP
 		// at all, so without this a parked tab keeps whatever side it had when it was
 		// parked. SP had the same hole; one case closes both.
-		s.sidePref = ev.Text
+		s.compose.sidePref = ev.Text
 	case courtroom.EventMusic:
 		// A DJ /play on a BACKGROUNDED tab. HandlePacket already advanced this tab's
 		// s.sess.MusicTrack (the return-switch reads exactly that on activation, via the
@@ -624,9 +624,9 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		t.dead = true
 		t.deadReason = ev.Text // "Kicked: …" / "Banned: …" — the dialog names it on activation
 		disconnectLine := "SERVER: disconnected: " + ev.Text
-		s.oocLog = appendCapped(s.oocLog, disconnectLine, icLogCap)
-		s.oocSpeakers = appendCapped(s.oocSpeakers, "", icLogCap) // system line
-		s.oocSeq++
+		s.chatlog.oocLog = appendCapped(s.chatlog.oocLog, disconnectLine, icLogCap)
+		s.chatlog.oocSpeakers = appendCapped(s.chatlog.oocSpeakers, "", icLogCap) // system line
+		s.chatlog.oocSeq++
 		a.logDetailedOOC(s.serverName, s.logSession, disconnectLine) // detailed transcript (opt-in), the PARKED tab's own file
 	}
 }
@@ -1218,12 +1218,27 @@ func (a *App) resetSessionState() {
 		// own, and a fresh session starts centered/unflipped — the old prefs
 		// seeding made offsets "inexplicably saved" across client restarts
 		// (playtest), so pairing state deliberately does not persist.
-		pairWith:       protocol.UnpairedCharID,
+		pairbox:        pairBoxState{pairWith: protocol.UnpairedCharID},
 		playerSort:     clampMode(a.d.Prefs.Load().PlayerListSort, playerSortModes), // remembered Players-tab sorts
 		playerAreaSort: clampMode(a.d.Prefs.Load().PlayerListAreaSort, areaSortModes),
 		// OOC name is per-tab (typed names leaked across tabs from App);
 		// fresh tabs start from the saved default.
-		oocName: a.defaultOOCName(),
+		compose: composeState{
+			oocName: a.defaultOOCName(),
+			// pmThreads keeps the Friends-tab DM history bounded per session.
+			pmThreads: map[string][]pmLine{},
+			// -1 = editing the live draft, not browsing history (#8); the OOC
+			// recall ring uses the same convention.
+			icRecallIdx:  -1,
+			oocRecallIdx: -1,
+			// Logs follow the tail until the user scrolls up.
+			icStick:  true,
+			oocStick: true,
+			// "Pre" defaults ON so a fresh join reproduces the historical
+			// always-play-the-emote's-preanim behavior; selectEmote then
+			// auto-follows each subsequent emote pick (AO2-Client ui_pre).
+			icPreanim: true,
+		},
 		// The volume-view toggles are per-session UI but PERSISTED prefs:
 		// NewApp restored them once and every connect wiped them back to
 		// hidden (playtest: the show/hide volume option did not persist).
@@ -1237,24 +1252,14 @@ func (a *App) resetSessionState() {
 		// literal. A boot-only seed (dndOn's pattern, App.dndOn) would look
 		// right at launch and silently un-mute the instant the user connects
 		// to a server. Reseed here, every time, like volStripOn.
-		masterMuted:  a.d.Prefs.Load().MasterVolMuted,
-		musicMuted:   a.d.Prefs.Load().MusicVolMuted,
-		sfxMuted:     false,
-		blipMuted:    a.d.Prefs.Load().BlipVolMuted,
-		spriteOv:     map[string][2]int{},
-		pmThreads:    map[string][]pmLine{},
-		evidIdx:      -1,
-		icRecallIdx:  -1, // -1 = editing the live draft, not browsing history (#8)
-		oocRecallIdx: -1, // same, for the OOC recall ring
+		masterMuted: a.d.Prefs.Load().MasterVolMuted,
+		musicMuted:  a.d.Prefs.Load().MusicVolMuted,
+		sfxMuted:    false,
+		blipMuted:   a.d.Prefs.Load().BlipVolMuted,
+		spriteOv:    map[string][2]int{},
+		evidIdx:     -1,
 		// Full bars so the first HP packets don't fire penalty sfx.
 		hpPrev: [2]int{courtroom.HPBarMax, courtroom.HPBarMax},
-		// Logs follow the tail until the user scrolls up.
-		icStick:  true,
-		oocStick: true,
-		// "Pre" defaults ON so a fresh join reproduces the historical
-		// always-play-the-emote's-preanim behavior; selectEmote then
-		// auto-follows each subsequent emote pick (AO2-Client ui_pre).
-		icPreanim: true,
 		// AO2 seeds char select's "Taken" filter CHECKED on every join
 		// (charselect.cpp:99) — the roster shows everyone, taken or not — and never
 		// persists it. Seeded here for the same reason every other session toggle is:

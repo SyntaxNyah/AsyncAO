@@ -586,7 +586,7 @@ func (a *App) drawThemeButton(key, label string, r sdl.Rect) bool {
 // IC row's crammed and theme-placed (asyncao_ic_sfx, #4b) paths so they can't drift.
 func (a *App) drawThemedSFXPicker(rect sdl.Rect) {
 	c := a.ctx
-	if next, changed := c.Dropdown("sfxdd", rect, a.sfxChoices, a.sfxChoiceIdx); changed {
+	if next, changed := c.Dropdown("sfxdd", rect, a.emotepick.sfxChoices, a.emotepick.sfxChoiceIdx); changed {
 		a.applySFXPick(next) // pick + audition + focus bounce (icsfx.go; courtroom.cpp:5498-5502)
 	}
 	a.sfxRowRightClickPreview()
@@ -786,14 +786,14 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		// fitThemedChips owns the strip's geometry (themechips.go): a design rect's
 		// width is theme data, and a straight line of chip constants ran past the
 		// panel's right edge the moment a theme sized this log narrower than 152 px.
-		chips, n := fitThemedChips(panelBody, themedLogViews[:], themedLogViews[:], a.logTab)
+		chips, n := fitThemedChips(panelBody, themedLogViews[:], themedLogViews[:], a.chatlog.logTab)
 		for i := int32(0); i < n; i++ {
 			if c.Button(chips[i].r, chips[i].label) {
-				a.logTab = chips[i].tab
+				a.chatlog.logTab = chips[i].tab
 			}
 		}
 		inner := themedStripBody(panelBody, n)
-		switch a.logTab {
+		switch a.chatlog.logTab {
 		case logTabOOC:
 			a.drawOOCLogList(inner, true)
 		case logTabNotes:
@@ -810,7 +810,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// a theme declaring only one of the two rects gets only that panel, per
 	// set_size_and_pos's hide-when-missing rule.
 	dbgRect, okDbg := lay.rect("ms_chatlog")
-	showDebug := a.debugOOC && okDbg
+	showDebug := a.chatlog.debugOOC && okDbg
 	if okOOC && !merged && !showDebug && !a.classic.panelHidden(panelOOC) {
 		a.drawOOCLogList(insetThemedBody(oocRect), true)
 	}
@@ -823,8 +823,8 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		// button is inert without an ms_chatlog rect: with nowhere to draw the debug
 		// log, toggling would just blank the panel.
 		if c.Button(tr, a.oocToggleLabel()) && okDbg {
-			a.debugOOC = !a.debugOOC
-			a.debugOOCScroll = 0
+			a.chatlog.debugOOC = !a.chatlog.debugOOC
+			a.chatlog.debugOOCScroll = 0
 		}
 	}
 	// OOC inputs draw wherever the theme put them — independent of how
@@ -832,7 +832,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	if !a.classic.panelHidden(panelOOC) {
 		if in, ok := lay.rect("ooc_chat_message"); ok {
 			var send bool
-			a.oocInput, send = c.TextField("ooc", in, a.oocInput, "OOC chat...")
+			a.compose.oocInput, send = c.TextField("ooc", in, a.compose.oocInput, "OOC chat...")
 			if send {
 				a.submitOOC()
 			}
@@ -848,10 +848,10 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			// TAB-LOCAL (like the classic OOC box): the saved default is the
 			// Settings → Identity field only, so a name typed here can't
 			// follow you into other tabs.
-			onP, onE := a.icFieldFonts(a.oocName) // CJK-safe OOC name (ASCII stays fast path)
-			a.oocName, _ = c.TextFieldEmoji("oocname", nameR, a.oocName, "OOC name", onP, onE)
+			onP, onE := a.icFieldFonts(a.compose.oocName) // CJK-safe OOC name (ASCII stays fast path)
+			a.compose.oocName, _ = c.TextFieldEmoji("oocname", nameR, a.compose.oocName, "OOC name", onP, onE)
 			if name := a.pickNameDropdown("oocpick", sdl.Rect{X: nameR.X + nameR.W + 2, Y: nameR.Y, W: dd, H: nameR.H}); name != "" {
-				a.oocName = name
+				a.compose.oocName = name
 			}
 		}
 	}
@@ -880,7 +880,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// chip beside it are duplicate controls inside the design canvas (#21's parity
 	if r, ok := lay.rect("switch_area_music"); ok && !a.classic.panelHidden(panelLog) {
 		if a.drawThemeButton("switch_area_music", "A/M", r) {
-			a.logTab = themedSwitchAreaMusic(a.logTab)
+			a.chatlog.logTab = themedSwitchAreaMusic(a.chatlog.logTab)
 		}
 	}
 
@@ -909,17 +909,17 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		// not — and in EITHER case fitThemedChips keeps it inside the panel. Three
 		// chips at their natural widths want 224 px; this theme's music_list body is
 		// 212 and AO2's own stock default is 220, which is the reported overflow.
-		chips, n := fitThemedChips(panelBody, themedListStrip(lay), themedListViews[:], a.logTab)
+		chips, n := fitThemedChips(panelBody, themedListStrip(lay), themedListViews[:], a.chatlog.logTab)
 		for i := int32(0); i < n; i++ {
 			if c.Button(chips[i].r, chips[i].label) {
-				a.logTab = chips[i].tab
+				a.chatlog.logTab = chips[i].tab
 			}
 		}
 		inner := themedStripBody(panelBody, n)
 		switch {
-		case a.logTab == logTabAreas:
+		case a.chatlog.logTab == logTabAreas:
 			a.drawAreaList(inner, true)
-		case a.logTab == logTabPlayers && !rosterOwnRect:
+		case a.chatlog.logTab == logTabPlayers && !rosterOwnRect:
 			a.drawPlayerList(inner)
 		default:
 			// rosterOwnRect lands here on purpose: with the roster already painted at
@@ -936,13 +936,13 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// THE IC BAR IS AO2'S, NOT A CRAM OF ASYNCAO CHROME (#21, rules (a)/(b)/(e)).
 	if in, ok := lay.rect("ao2_ic_chat_message"); ok {
 		var send bool
-		icPrimary, icEmoji := a.icFieldFonts(a.icInput) // #M5: show typed emoji/unicode, not tofu
+		icPrimary, icEmoji := a.icFieldFonts(a.compose.icInput) // #M5: show typed emoji/unicode, not tofu
 		// AO2's own placeholder (courtroom.cpp ui_ic_chat_message).
 		// Same counter/chip reservation the classic bar makes (screens.go): the band
 		// is declared before the field so typed text clips short of it.
 		counterOn := a.d.Prefs.Load().MessageCounter
 		c.ReserveFieldTail(icFieldID, a.icFieldTailReserve(counterOn))
-		a.icInput, send = c.TextFieldEmoji(icFieldID, in, a.icInput, "Message in-character", icPrimary, icEmoji)
+		a.compose.icInput, send = c.TextFieldEmoji(icFieldID, in, a.compose.icInput, "Message in-character", icPrimary, icEmoji)
 		a.recallIC() // #8: Up/Down recall recently-sent lines when the IC field is focused
 		a.drawMsgCounter(in, counterOn)
 		// Same notice fence as the classic bar's send site (screens.go), and the twin is
@@ -963,7 +963,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		c.Fill(swatch, sw)
 		c.Border(swatch, ColPanelHi)
 		a.icSwatchRect = swatch // the free-hex wheel anchors here (v1.52.0)
-		if a.icCustomOn && c.clicked && c.hovering(swatch) {
+		if a.compose.icCustomOn && c.clicked && c.hovering(swatch) {
 			a.showICColorWheel = !a.showICColorWheel // re-open to adjust (same as the classic row)
 		}
 		// Freeze the IC field's selection so a picked colour can wrap it (§3.8,
@@ -982,7 +982,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	if r, ok := themedToggleRect(lay, "pre", "", "asyncao_ic_pre"); ok && !a.classic.panelHidden(slotICPre) {
 		// bounceOnToggle: ui_pre → focus_ic_input (courtroom.cpp:502), the same wiring
 		// the classic row carries — both IC bars or neither.
-		a.icPreanim = a.bounceOnToggle(c.CheckboxIn(r, lay.themedToggleLabel("pre", "Pre"), a.icPreanim), a.icPreanim)
+		a.compose.icPreanim = a.bounceOnToggle(c.CheckboxIn(r, lay.themedToggleLabel("pre", "Pre"), a.compose.icPreanim), a.compose.icPreanim)
 		c.Tooltip(r, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
 	}
 
@@ -995,7 +995,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// server does not advertise it (courtroom.cpp:747-759). Offering the toggle on
 	// a server that drops the field is a control that silently does nothing.
 	if r, ok := themedToggleRect(lay, "immediate", "pre_no_interrupt", "asyncao_ic_immediate"); ok && a.sessHasCCCC() {
-		a.icImmediate = c.CheckboxIn(r, lay.themedToggleLabel("immediate", "Immediate"), a.icImmediate)
+		a.compose.icImmediate = c.CheckboxIn(r, lay.themedToggleLabel("immediate", "Immediate"), a.compose.icImmediate)
 		c.Tooltip(r, "Immediate: the preanim plays without holding back the text")
 	}
 
@@ -1007,7 +1007,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// silently cleared, because pairFlip is real pair state that parks per tab.
 	if r, ok := themedToggleRect(lay, "flip", "", ""); ok &&
 		!a.classic.panelHidden(slotICFlip) && a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping) {
-		a.pairFlip = a.bounceOnToggle(c.CheckboxIn(r, lay.themedToggleLabel("flip", "Flip"), a.pairFlip), a.pairFlip) // ui_flip → focus_ic_input (courtroom.cpp:503)
+		a.pairbox.pairFlip = a.bounceOnToggle(c.CheckboxIn(r, lay.themedToggleLabel("flip", "Flip"), a.pairbox.pairFlip), a.pairbox.pairFlip) // ui_flip → focus_ic_input (courtroom.cpp:503)
 		c.Tooltip(r, "Flip: mirror your character's emotes. Same setting as the Pair panel's flip toggle.")
 	}
 
@@ -1019,17 +1019,17 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// clear it unconditionally (it had nowhere to draw the toggle at all).
 	if r, ok := themedToggleRect(lay, "additive", "", ""); ok &&
 		a.sess != nil && a.sess.Features.Has(protocol.FeatureAdditive) && a.d.Prefs.Load().AdditiveText {
-		a.icAdditive = a.bounceOnToggle(c.CheckboxIn(r, lay.themedToggleLabel("additive", "Additive"), a.icAdditive), a.icAdditive) // :504 → :6572
+		a.compose.icAdditive = a.bounceOnToggle(c.CheckboxIn(r, lay.themedToggleLabel("additive", "Additive"), a.compose.icAdditive), a.compose.icAdditive) // :504 → :6572
 		c.Tooltip(r, "Additive: this message adds to your last one instead of replacing it (2.8 narration-style RP).")
 	} else {
-		a.icAdditive = false
+		a.compose.icAdditive = false
 	}
 
 	// slide_enable (AO2 ui_slide, courtroom.cpp:1096): slide the character into
 	// position rather than cutting. The send site clears it afterwards — AO2 says
 	// "Slides can't be sticky for nausea reasons" (courtroom.cpp:2362).
 	if r, ok := themedToggleRect(lay, "slide_enable", "", ""); ok {
-		a.icSlide = a.bounceOnToggle(c.CheckboxIn(r, lay.themedToggleLabel("slide_enable", "Slide"), a.icSlide), a.icSlide) // ui_slide_enable → focus_ic_input (courtroom.cpp:506)
+		a.compose.icSlide = a.bounceOnToggle(c.CheckboxIn(r, lay.themedToggleLabel("slide_enable", "Slide"), a.compose.icSlide), a.compose.icSlide) // ui_slide_enable → focus_ic_input (courtroom.cpp:506)
 		c.Tooltip(r, "Slide: the character slides into position for this message instead of cutting.")
 	}
 
@@ -1065,7 +1065,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// guard (AO2 ui_guard, courtroom.cpp:1092): silence modcall ALERTS for this
 	// session. Mod-only, as AO2 shows it only once you hold the role.
 	if r, ok := themedToggleRect(lay, "guard", "", ""); ok && a.amIMod() {
-		a.modcallGuard = c.CheckboxIn(r, lay.themedToggleLabel("guard", "Guard"), a.modcallGuard)
+		a.compose.modcallGuard = c.CheckboxIn(r, lay.themedToggleLabel("guard", "Guard"), a.compose.modcallGuard)
 		c.Tooltip(r, "Guard: silence the modcall sound and window flash. The OOC line and the auto-clip still arrive.")
 	}
 
@@ -1077,14 +1077,14 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		if a.drawThemeButton("realization", "Flash", r) {
 			a.toggleRealization() // arms the WIRE FLAG *and* the effects row — icarms.go
 		}
-		a.drawArmedOverlay(r, a.icRealize)
+		a.drawArmedOverlay(r, a.compose.icRealize)
 		c.Tooltip(r, "Realization: a white flash + sound on your next message. Clears after it sends.")
 	}
 	if r, ok := themedToggleRect(lay, "screenshake", "", ""); ok {
 		if a.drawThemeButton("screenshake", "Shake", r) {
 			a.toggleScreenshake()
 		}
-		a.drawArmedOverlay(r, a.icShake)
+		a.drawArmedOverlay(r, a.compose.icShake)
 		c.Tooltip(r, "Screenshake: shake the courtroom on your next message. Clears after it sends.")
 	}
 
@@ -1131,13 +1131,13 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		}
 		// CJK showname renders as real glyphs while typed (same route as the classic
 		// layout's box and the IC input) — plain ASCII keeps the single-font fast path.
-		snPrimary, snEmoji := a.icFieldFonts(a.shownameOverride)
-		if a.shownameOverride == "" {
+		snPrimary, snEmoji := a.icFieldFonts(a.compose.shownameOverride)
+		if a.compose.shownameOverride == "" {
 			snPrimary, snEmoji = a.icFieldFonts(namePlaceholder) // route a CJK placeholder too
 		}
-		a.shownameOverride, _ = c.TextFieldEmoji("icshownameov", nameR, a.shownameOverride, namePlaceholder, snPrimary, snEmoji)
+		a.compose.shownameOverride, _ = c.TextFieldEmoji("icshownameov", nameR, a.compose.shownameOverride, namePlaceholder, snPrimary, snEmoji)
 		if name := a.pickNameDropdown("snpick", sdl.Rect{X: nameR.X + nameR.W + 2, Y: nameR.Y, W: dd, H: nameR.H}); name != "" {
-			a.shownameOverride = name
+			a.compose.shownameOverride = name
 		}
 	}
 
@@ -1161,7 +1161,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 				if a.drawThemeButton(s.key, s.label, r) {
 					a.toggleShout(s.mod)
 				}
-				a.drawArmedOverlay(r, a.icShout == s.mod)
+				a.drawArmedOverlay(r, a.compose.icShout == s.mod)
 			}
 		}
 		if a.sess.Features.Has(protocol.FeatureCustomObjections) && a.hasCustomShout() {
@@ -1169,13 +1169,13 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 				if a.drawThemeButton("custom_objection", a.customShoutLabel(), r) {
 					a.toggleShout(protocol.ShoutCustom)
 				}
-				a.drawArmedOverlay(r, a.icShout == protocol.ShoutCustom)
-				if len(a.customShouts) > 0 {
+				a.drawArmedOverlay(r, a.compose.icShout == protocol.ShoutCustom)
+				if len(a.compose.customShouts) > 0 {
 					cyc := sdl.Rect{X: r.X + r.W + 2, Y: r.Y, W: 18, H: r.H}
 					if c.Button(cyc, "▾") {
-						a.customIdx++
-						if a.customIdx >= len(a.customShouts) {
-							a.customIdx = -1
+						a.compose.customIdx++
+						if a.compose.customIdx >= len(a.compose.customShouts) {
+							a.compose.customIdx = -1
 						}
 					}
 				}
@@ -1240,7 +1240,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// Ctx.Dropdown's `changed` already reports. selectEmote IS AO2's select_emote,
 	if r, ok := lay.rect("emote_dropdown"); ok {
 		a.ensureEmoteChoices()
-		if next, changed := c.Dropdown("emotedd", r, a.emoteChoices, a.emoteIdx); changed {
+		if next, changed := c.Dropdown("emotedd", r, a.emotepick.emoteChoices, a.emotepick.emoteIdx); changed {
 			a.selectEmote(next)
 		}
 	}
@@ -1249,24 +1249,24 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// something else is worn — AO2 resets the box to 0 on remove (:5436-5452).
 	if r, ok := lay.rect("iniswap_dropdown"); ok {
 		a.ensureIniswapChoices()
-		cur := iniswapCurrentIndex(a.iniswapChoices, a.activeCharName())
-		if next, changed := c.Dropdown("inidd", r, a.iniswapChoices, cur); changed {
+		cur := iniswapCurrentIndex(a.emotepick.iniswapChoices, a.activeCharName())
+		if next, changed := c.Dropdown("inidd", r, a.emotepick.iniswapChoices, cur); changed {
 			if next == 0 {
 				a.setIniswap("") // back to the player's own character
-			} else if next < len(a.iniswapChoices) {
-				a.setIniswap(a.iniswapChoices[next])
+			} else if next < len(a.emotepick.iniswapChoices) {
+				a.setIniswap(a.emotepick.iniswapChoices[next])
 			}
 			// AO2 refocuses IC on EVERY iniswap change, not only on remove
 			// (courtroom.cpp:5361-5363, the first statement of the handler).
 			c.FocusField("ic")
 		}
-		if rr, ok := lay.rect("iniswap_remove"); ok && cur != 0 && cur < len(a.iniswapChoices) {
+		if rr, ok := lay.rect("iniswap_remove"); ok && cur != 0 && cur < len(a.emotepick.iniswapChoices) {
 			if a.drawThemeButton("iniswap_remove", "X", rr) {
 				// Drop it from the saved wardrobe AND stop wearing it. RemoveWardrobe
 				// is a no-op for a folder that was only ever worn (a server
 				// iniswap.txt entry never added to the wardrobe), which is exactly
 				// the case the trailing choices entry exists for.
-				a.d.Prefs.RemoveWardrobe(a.serverKey, a.iniswapChoices[cur])
+				a.d.Prefs.RemoveWardrobe(a.serverKey, a.emotepick.iniswapChoices[cur])
 				a.setIniswap("")
 				c.FocusField("ic")
 			}
@@ -1274,7 +1274,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	}
 	if r, ok := lay.rect("pair_button"); ok {
 		if a.drawThemeButton("pair_button", "Pair", r) {
-			a.showPair = !a.showPair
+			a.pairbox.showPair = !a.pairbox.showPair
 		}
 	}
 	if r, ok := lay.rect("call_mod"); ok {
@@ -1614,19 +1614,19 @@ func (m emoteGridMetrics) cellRect(r sdl.Rect, n int32) sdl.Rect {
 // (emote_button_size/spacing scaled), paging with emote_left/right.
 func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect) {
 	c := a.ctx
-	if a.charINIBusy {
+	if a.compose.charINIBusy {
 		c.Label(r.X, r.Y, "Loading emotes...", ColTextDim)
 		return
 	}
 	a.refreshEmoteView() // favourite set + visible-index list (#77)
-	vis := a.emoteVisible
+	vis := a.favstyle.emoteVisible
 	// The rect r stays per-axis scaled (it is the theme's container, and the
 	// grid reflows/pages into whatever shape it takes), but the CELL scales
 	// uniformly so the button art keeps its designed aspect — see
 	// emoteCellScale for why (#33).
 	grid := emoteGridLayout(r, a.themeEmoteCell, a.themeEmoteGap, emoteCellScale(lay.scaleX, lay.scaleY))
 	a.setEmoteGridMetrics(int(grid.cols), int(grid.rows), len(vis))
-	perPage := a.emotePerPage
+	perPage := a.emotepick.emotePerPage
 	if a.emoteGridScrolls() { // mouse-wheel scrolls BY ROW (parity with the classic row)
 		if d := c.WheelIn(r); d != 0 {
 			a.scrollEmoteRows(int(-d) * emoteWheelRows)
@@ -1641,9 +1641,9 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 	hoverNamesDelay := a.d.Prefs.EmoteHoverNamesDelay()
 	for slot := start; slot < len(vis) && slot < start+perPage; slot++ {
 		i := vis[slot] // real index into a.emotes (favs-only filters which show)
-		e := &a.emotes[i]
+		e := &a.emotepick.emotes[i]
 		btn := grid.cellRect(r, int32(slot-start))
-		selected := i == a.emoteIdx
+		selected := i == a.emotepick.emoteIdx
 		if selected {
 			c.Fill(sdl.Rect{X: btn.X - 2, Y: btn.Y - 2, W: btn.W + 4, H: btn.H + 4}, ColAccent)
 		}
@@ -1661,8 +1661,8 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 		if a.drawEmoteFavStar(btn, i) {
 			// star toggled — swallow this cell's select for the frame
 		} else if picked {
-			a.emoteIdx = i
-			a.icPreanim = emoteHasPreanim(e) // "Pre" auto-follows the pick (AO2-Client ui_pre)
+			a.emotepick.emoteIdx = i
+			a.compose.icPreanim = emoteHasPreanim(e) // "Pre" auto-follows the pick (AO2-Client ui_pre)
 			a.speculateEmote(me, e)
 			a.followPinnedPreview(me, e) // a pinned box follows the pick; a closed one stays closed
 			c.FocusField("ic")           // AO2 focus_ic_input: pick emote, keep typing

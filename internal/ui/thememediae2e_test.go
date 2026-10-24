@@ -356,7 +356,7 @@ func TestExportConditionsFollowTheExportedRoom(t *testing.T) {
 	defer cleanup()
 
 	a.room.Scene.Position = "wit"
-	a.sidePref = "pro"
+	a.compose.sidePref = "pro"
 	j := &gifExportJob{room: newRoomForTest(t)}
 	j.room.Scene.Position = "def"
 

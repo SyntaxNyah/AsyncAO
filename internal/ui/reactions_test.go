@@ -17,7 +17,7 @@ import (
 // scan), and won't match beyond the recent-window bound.
 func TestReactionTargetMatch(t *testing.T) {
 	a := &App{env: env{}}
-	a.icLog = []icEntry{
+	a.chatlog.icLog = []icEntry{
 		{speaker: "Phoenix", ref: 111},
 		{speaker: "", ref: 0}, // a system line
 		{speaker: "Maya", ref: 222},
@@ -33,14 +33,14 @@ func TestReactionTargetMatch(t *testing.T) {
 	}
 
 	// Beyond the recent-window bound: a ref only in a far-older entry isn't found.
-	a.icLog = make([]icEntry, reactionMatchScan+10)
-	for i := range a.icLog {
-		a.icLog[i] = icEntry{speaker: "x", ref: uint32(1000 + i)}
+	a.chatlog.icLog = make([]icEntry, reactionMatchScan+10)
+	for i := range a.chatlog.icLog {
+		a.chatlog.icLog[i] = icEntry{speaker: "x", ref: uint32(1000 + i)}
 	}
 	if a.reactionTargetKnown(1000) { // oldest, outside the scan window
 		t.Error("matched a ref older than the scan window")
 	}
-	if !a.reactionTargetKnown(uint32(1000 + len(a.icLog) - 1)) {
+	if !a.reactionTargetKnown(uint32(1000 + len(a.chatlog.icLog) - 1)) {
 		t.Error("didn't match the most recent ref")
 	}
 }
@@ -72,7 +72,7 @@ func TestOnIncomingReactionGate(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 	a := &App{env: env{d: Deps{Prefs: prefs}}}
-	a.icLog = []icEntry{{speaker: "Phoenix", ref: 4242}}
+	a.chatlog.icLog = []icEntry{{speaker: "Phoenix", ref: 4242}}
 
 	// Unknown ref → no float.
 	a.onIncomingReaction(courtroom.WireReaction{Ref: 1, Index: 0})

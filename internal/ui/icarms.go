@@ -24,11 +24,11 @@ import (
 // two states have to be exact inverses of each other or the arm/disarm pair stops
 // round-tripping, which is a worse bug than the one it would paper over.
 func (a *App) toggleRealization() {
-	a.icRealize = !a.icRealize
-	if a.icRealize {
+	a.compose.icRealize = !a.compose.icRealize
+	if a.compose.icRealize {
 		a.selectOverlayEffectByName(courtroomRealizationEffectName)
 	} else {
-		a.overlayChoiceIdx = 0
+		a.emotepick.overlayChoiceIdx = 0
 	}
 	a.bounceFocusToIC() // :6178 focus_ic_input
 }
@@ -41,10 +41,10 @@ func (a *App) toggleRealization() {
 // states, which is the same reason canon's four handlers are equivalent to a
 // single assignment.
 func (a *App) toggleShout(mod int) {
-	if a.icShout == mod {
-		a.icShout = 0 // clicking the armed shout disarms it (:6050-6054)
+	if a.compose.icShout == mod {
+		a.compose.icShout = 0 // clicking the armed shout disarms it (:6050-6054)
 	} else {
-		a.icShout = mod
+		a.compose.icShout = mod
 	}
 	a.bounceFocusToIC() // :6065 / :6085 / :6105 / :6125 focus_ic_input
 }
@@ -54,7 +54,7 @@ func (a *App) toggleShout(mod int) {
 // motion the receiver derives from the wire flag alone — so this really is just
 // the boolean, plus the same focus bounce its sibling does.
 func (a *App) toggleScreenshake() {
-	a.icShake = !a.icShake
+	a.compose.icShake = !a.compose.icShake
 	a.bounceFocusToIC()
 }
 
@@ -98,7 +98,7 @@ func (a *App) drawArmedOverlay(r sdl.Rect, armed bool) {
 func (a *App) selectOverlayEffectByName(name string) {
 	for i, choice := range a.overlayChoices() {
 		if strings.EqualFold(strings.TrimSpace(choice), name) {
-			a.overlayChoiceIdx = i
+			a.emotepick.overlayChoiceIdx = i
 			return
 		}
 	}

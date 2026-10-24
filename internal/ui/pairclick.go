@@ -266,9 +266,9 @@ func looksLikeAreaList(text string) bool {
 // openPairPopup opens the click-to-pair popup targeting char, pre-filling the
 // UID only when /getarea gave a confident name match (else blank — never a guess).
 func (a *App) openPairPopup(char string) {
-	a.pairPopupOpen = true
-	a.pairPopupChar = char
-	a.pairPopupUID = a.areaUIDs[strings.ToLower(strings.TrimSpace(char))]
+	a.pairbox.pairPopupOpen = true
+	a.pairbox.pairPopupChar = char
+	a.pairbox.pairPopupUID = a.areaUIDs[strings.ToLower(strings.TrimSpace(char))]
 	a.pairListScroll = 0
 }
 
@@ -298,7 +298,7 @@ func (a *App) pairPopPanelRect(w, h int32) sdl.Rect {
 func (a *App) drawPairPopup(w, h int32, pressed *bool) {
 	c := a.ctx
 	if c.escPressed {
-		a.pairPopupOpen = false
+		a.pairbox.pairPopupOpen = false
 		return
 	}
 	wasActive := a.wins.pairPopWin.dragging || a.wins.pairPopWin.resizing // detect the drag/resize-end frame for slot persistence
@@ -310,7 +310,7 @@ func (a *App) drawPairPopup(w, h int32, pressed *bool) {
 	c.Heading(panel.X+pad, panel.Y+6, "Pair via /pair <UID>", ColText)
 	closeB := sdl.Rect{X: panel.X + pw - 74 - pad, Y: panel.Y + 4, W: 74, H: btnH}
 	if c.Button(closeB, "Close") {
-		a.pairPopupOpen = false
+		a.pairbox.pairPopupOpen = false
 		return
 	}
 	a.floatWinDrag(&a.wins.pairPopWin, sdl.Rect{X: panel.X, Y: panel.Y, W: closeB.X - panel.X - 4, H: floatTitleH}, pressed)
@@ -322,19 +322,19 @@ func (a *App) drawPairPopup(w, h int32, pressed *bool) {
 	}
 	x := panel.X + 18
 	y := panel.Y + floatTitleH + 10
-	if a.pairPopupChar != "" {
-		c.LabelClipped(x, y, pw-36, "Clicked: "+a.pairPopupChar, ColTextDim)
+	if a.pairbox.pairPopupChar != "" {
+		c.LabelClipped(x, y, pw-36, "Clicked: "+a.pairbox.pairPopupChar, ColTextDim)
 		y += 22
 	}
 	// Reliable core: an editable UID + Send. Only pre-filled on a confident match.
 	c.Label(x, y+5, "UID:", ColTextDim)
-	a.pairPopupUID, _ = c.TextField("pairuid", sdl.Rect{X: x + 40, Y: y, W: 150, H: fieldH}, a.pairPopupUID, "client id")
-	uid := strings.TrimSpace(a.pairPopupUID)
+	a.pairbox.pairPopupUID, _ = c.TextField("pairuid", sdl.Rect{X: x + 40, Y: y, W: 150, H: fieldH}, a.pairbox.pairPopupUID, "client id")
+	uid := strings.TrimSpace(a.pairbox.pairPopupUID)
 	if c.Button(sdl.Rect{X: x + 200, Y: y, W: 120, H: btnH}, "Send /pair") && uid != "" {
 		a.queueOOCLines([]string{"/pair " + uid})
 		a.warnLine = clampLine("Sent /pair " + uid + " (pairs on servers that support it).")
 		a.warnAt = a.now()
-		a.pairPopupOpen = false
+		a.pairbox.pairPopupOpen = false
 		return
 	}
 	y += fieldH + 10
@@ -393,10 +393,10 @@ func (a *App) drawPairPlayerList(r sdl.Rect) {
 			if c.hovering(row) {
 				c.Fill(row, ColPanelHi)
 				if c.clicked {
-					a.pairPopupUID = p.uid
-					a.pairPopupChar = p.name
+					a.pairbox.pairPopupUID = p.uid
+					a.pairbox.pairPopupChar = p.name
 					if p.showname != "" {
-						a.pairPopupChar = p.showname // recognise them by the IC name
+						a.pairbox.pairPopupChar = p.showname // recognise them by the IC name
 					}
 				}
 			}

@@ -648,7 +648,7 @@ type courtroomModal struct {
 var courtroomModals = []courtroomModal{
 	{func(a *App) bool { return a.showIni }, (*App).drawIniswapPanel, func(a *App) { a.showIni = false }},
 	{func(a *App) bool { return a.bgPick.show }, (*App).drawBgPanel, func(a *App) { a.bgPick.show = false }},
-	{func(a *App) bool { return a.showSfxBrowser }, (*App).drawSfxBrowser, func(a *App) { a.showSfxBrowser = false }}, // #12 SFX Browser (preview + favourites)
+	{func(a *App) bool { return a.emotepick.showSfxBrowser }, (*App).drawSfxBrowser, func(a *App) { a.emotepick.showSfxBrowser = false }}, // #12 SFX Browser (preview + favourites)
 }
 
 // closeCourtroomModals shuts EVERY return-to-top courtroom popup by walking the one

@@ -368,11 +368,11 @@ func TestThemeFontsOffRestoresDefaults(t *testing.T) {
 func TestWrapCachesKeyOnResolvedPct(t *testing.T) {
 	a := testTabApp(t)
 	a.logPct, a.oocPct, a.areaPct = DefaultScalePct, DefaultScalePct, DefaultScalePct
-	a.icLog = append(a.icLog, icEntry{text: "Objection! That contradicts the autopsy report."})
-	a.icLogSeq++
-	a.oocLog = append(a.oocLog, "Welcome to the server, please read the rules.")
-	a.oocSpeakers = append(a.oocSpeakers, "MOTD")
-	a.oocSeq++
+	a.chatlog.icLog = append(a.chatlog.icLog, icEntry{text: "Objection! That contradicts the autopsy report."})
+	a.chatlog.icLogSeq++
+	a.chatlog.oocLog = append(a.chatlog.oocLog, "Welcome to the server, please read the rules.")
+	a.chatlog.oocSpeakers = append(a.chatlog.oocSpeakers, "MOTD")
+	a.chatlog.oocSeq++
 	a.sess = &courtroom.Session{Areas: []string{"Courtroom 1", "Courtroom 2"}}
 	a.areaInfoSeq++
 
@@ -381,9 +381,9 @@ func TestWrapCachesKeyOnResolvedPct(t *testing.T) {
 	a.oocWrapped(colW)
 	a.areaWrapped(nil, colW, "", areaQuerySlotOwn)
 	if a.icWrapPct != DefaultScalePct || a.oocWrapPct != DefaultScalePct ||
-		a.areaWrap[areaQuerySlotOwn].pct != DefaultScalePct {
+		a.chatlog.areaWrap[areaQuerySlotOwn].pct != DefaultScalePct {
 		t.Fatalf("undressed wrap keys must be the user zoom: ic=%d ooc=%d area=%d",
-			a.icWrapPct, a.oocWrapPct, a.areaWrap[areaQuerySlotOwn].pct)
+			a.icWrapPct, a.oocWrapPct, a.chatlog.areaWrap[areaQuerySlotOwn].pct)
 	}
 	// A theme lands with its own sizes — nothing else changes (same log seq, same
 	// width, same font generation), so ONLY the resolved pct can invalidate.
@@ -399,7 +399,7 @@ func TestWrapCachesKeyOnResolvedPct(t *testing.T) {
 	if a.oocWrapPct != themeFontPct(9) {
 		t.Errorf("OOC wrap kept the stale key %d, want %d", a.oocWrapPct, themeFontPct(9))
 	}
-	if got := a.areaWrap[areaQuerySlotOwn].pct; got != themeFontPct(6) {
+	if got := a.chatlog.areaWrap[areaQuerySlotOwn].pct; got != themeFontPct(6) {
 		t.Errorf("area wrap kept the stale key %d, want %d", got, themeFontPct(6))
 	}
 }

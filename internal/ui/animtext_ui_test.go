@@ -147,7 +147,7 @@ func TestFxEffectCoverage(t *testing.T) {
 // markup (inline wins). The wrap round-trips through ParseTextEffects to a whole-message span.
 func TestApplyStickyEffect(t *testing.T) {
 	a := &App{env: env{}}
-	a.icEffect = courtroom.TextEffectRainbow
+	a.compose.icEffect = courtroom.TextEffectRainbow
 	if got := a.applyStickyEffect("hello world"); got != "[rainbow]hello world[/rainbow]" {
 		t.Fatalf("wrap = %q", got)
 	}
@@ -161,7 +161,7 @@ func TestApplyStickyEffect(t *testing.T) {
 	if got := a.applyStickyEffect("type [shake]hi[/shake]"); strings.HasPrefix(got, "[rainbow]") {
 		t.Errorf("sticky wrapped a message that already has inline markup: %q", got)
 	}
-	a.icEffect = courtroom.TextEffectNone
+	a.compose.icEffect = courtroom.TextEffectNone
 	if got := a.applyStickyEffect("plain"); got != "plain" { // off → untouched
 		t.Errorf("off wrap = %q, want \"plain\"", got)
 	}

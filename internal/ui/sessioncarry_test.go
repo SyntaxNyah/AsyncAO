@@ -42,18 +42,18 @@ func wsTestServer(t *testing.T) string {
 // IC/OOC/area-log content so a test can tell "restored" from "started blank"
 // at a glance.
 func seedCarryableLog(a *App, tag string) {
-	a.icLog = []icEntry{{text: tag + "-ic-line", color: 2}}
-	a.icLogSeq = 3
-	a.icReadMark = 1
-	a.oocLog = []string{tag + "-ooc-line"}
-	a.oocSpeakers = []string{tag + "-mod"}
-	a.oocSeq = 5
+	a.chatlog.icLog = []icEntry{{text: tag + "-ic-line", color: 2}}
+	a.chatlog.icLogSeq = 3
+	a.compose.icReadMark = 1
+	a.chatlog.oocLog = []string{tag + "-ooc-line"}
+	a.chatlog.oocSpeakers = []string{tag + "-mod"}
+	a.chatlog.oocSeq = 5
 	a.areaLogs = map[string][]icEntry{"Basement": {{text: tag + "-area-line"}}}
 	a.areaLogOrder = []string{"Basement"}
 }
 
 func logIsEmpty(a *App) bool {
-	return len(a.icLog) == 0 && len(a.oocLog) == 0 && len(a.oocSpeakers) == 0 && len(a.areaLogs) == 0 && len(a.areaLogOrder) == 0
+	return len(a.chatlog.icLog) == 0 && len(a.chatlog.oocLog) == 0 && len(a.chatlog.oocSpeakers) == 0 && len(a.areaLogs) == 0 && len(a.areaLogOrder) == 0
 }
 
 // TestReconnectFromDialogRestoresLogOnSameServer pins the user-facing ask: a
@@ -82,11 +82,11 @@ func TestReconnectFromDialogRestoresLogOnSameServer(t *testing.T) {
 	if a.screen != ScreenCharSelect {
 		t.Fatalf("a successful redial lands on char select, got %v", a.screen)
 	}
-	if len(a.icLog) != 1 || a.icLog[0].text != "before-ic-line" {
-		t.Errorf("icLog not restored, got %+v", a.icLog)
+	if len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "before-ic-line" {
+		t.Errorf("icLog not restored, got %+v", a.chatlog.icLog)
 	}
-	if len(a.oocLog) != 1 || a.oocLog[0] != "before-ooc-line" || a.oocSpeakers[0] != "before-mod" {
-		t.Errorf("oocLog/oocSpeakers not restored, got %v / %v", a.oocLog, a.oocSpeakers)
+	if len(a.chatlog.oocLog) != 1 || a.chatlog.oocLog[0] != "before-ooc-line" || a.chatlog.oocSpeakers[0] != "before-mod" {
+		t.Errorf("oocLog/oocSpeakers not restored, got %v / %v", a.chatlog.oocLog, a.chatlog.oocSpeakers)
 	}
 	if got := a.areaLogs["Basement"]; len(got) != 1 || got[0].text != "before-area-line" {
 		t.Errorf("areaLogs not restored, got %v", a.areaLogs)
@@ -117,7 +117,7 @@ func TestDeliberateLeavePathsNeverCarryTheLog(t *testing.T) {
 			t.Fatal("the redial to a real, reachable server must have succeeded")
 		}
 		if !logIsEmpty(a) {
-			t.Errorf("a deliberate Disconnect must never carry a log, got icLog=%v oocLog=%v", a.icLog, a.oocLog)
+			t.Errorf("a deliberate Disconnect must never carry a log, got icLog=%v oocLog=%v", a.chatlog.icLog, a.chatlog.oocLog)
 		}
 	})
 
@@ -138,7 +138,7 @@ func TestDeliberateLeavePathsNeverCarryTheLog(t *testing.T) {
 			t.Fatal("the redial to a real, reachable server must have succeeded")
 		}
 		if !logIsEmpty(a) {
-			t.Errorf("Back to lobby must never carry a log, got icLog=%v oocLog=%v", a.icLog, a.oocLog)
+			t.Errorf("Back to lobby must never carry a log, got icLog=%v oocLog=%v", a.chatlog.icLog, a.chatlog.oocLog)
 		}
 	})
 }
@@ -167,7 +167,7 @@ func TestKickAndBanNeverCarryTheLog(t *testing.T) {
 				t.Fatal("the redial to a real, reachable server must have succeeded")
 			}
 			if !logIsEmpty(a) {
-				t.Errorf("%s must never carry a log, got icLog=%v oocLog=%v", reason, a.icLog, a.oocLog)
+				t.Errorf("%s must never carry a log, got icLog=%v oocLog=%v", reason, a.chatlog.icLog, a.chatlog.oocLog)
 			}
 		})
 	}
@@ -233,11 +233,11 @@ func TestAutoReconnectCarriesLogAcrossAFailedThenSuccessfulRetry(t *testing.T) {
 	if a.conn == nil {
 		t.Fatal("the retry against a real, reachable server must have succeeded")
 	}
-	if len(a.icLog) != 1 || a.icLog[0].text != "before-ic-line" {
-		t.Errorf("icLog not restored on the successful retry, got %+v", a.icLog)
+	if len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "before-ic-line" {
+		t.Errorf("icLog not restored on the successful retry, got %+v", a.chatlog.icLog)
 	}
-	if len(a.oocLog) != 1 || a.oocLog[0] != "before-ooc-line" {
-		t.Errorf("oocLog not restored on the successful retry, got %v", a.oocLog)
+	if len(a.chatlog.oocLog) != 1 || a.chatlog.oocLog[0] != "before-ooc-line" {
+		t.Errorf("oocLog not restored on the successful retry, got %v", a.chatlog.oocLog)
 	}
 	if a.pendingSessionCarry != nil {
 		t.Error("the carry must be consumed (one-shot) after a successful apply")
@@ -284,7 +284,7 @@ func TestReconnectToADifferentServerNeverCarriesTheLog(t *testing.T) {
 		t.Fatal("the join to server B must have succeeded")
 	}
 	if !logIsEmpty(a) {
-		t.Errorf("server B's fresh session must start blank, not carry A's log, got icLog=%v oocLog=%v", a.icLog, a.oocLog)
+		t.Errorf("server B's fresh session must start blank, not carry A's log, got icLog=%v oocLog=%v", a.chatlog.icLog, a.chatlog.oocLog)
 	}
 	if a.pendingSessionCarry != nil {
 		t.Error("the mismatched carry must be discarded (one-shot), not left pending")
@@ -299,7 +299,7 @@ func TestReconnectToADifferentServerNeverCarriesTheLog(t *testing.T) {
 		t.Fatal("the rejoin to server A must have succeeded")
 	}
 	if !logIsEmpty(a) {
-		t.Errorf("A's discarded carry must not resurface on a later rejoin, got icLog=%v oocLog=%v", a.icLog, a.oocLog)
+		t.Errorf("A's discarded carry must not resurface on a later rejoin, got icLog=%v oocLog=%v", a.chatlog.icLog, a.chatlog.oocLog)
 	}
 }
 
@@ -318,8 +318,7 @@ func TestSessionCarryDoesNotLeakIntoAParkedTab(t *testing.T) {
 	parked := &courtTab{state: sessionState{
 		serverName: "Server B",
 		serverKey:  "ws://parked.example",
-		icLog:      []icEntry{{text: "server-b-ic-line"}},
-		oocLog:     []string{"server-b-ooc-line"},
+		chatlog:    chatLogState{icLog: []icEntry{{text: "server-b-ic-line"}}, oocLog: []string{"server-b-ooc-line"}},
 	}}
 	a.tabs = append(a.tabs, parked)
 
@@ -332,15 +331,15 @@ func TestSessionCarryDoesNotLeakIntoAParkedTab(t *testing.T) {
 	if a.conn == nil {
 		t.Fatal("the redial to a real, reachable server must have succeeded")
 	}
-	if len(a.icLog) != 1 || a.icLog[0].text != "server-a-ic-line" {
-		t.Errorf("tab A's own log must be restored, got %+v", a.icLog)
+	if len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "server-a-ic-line" {
+		t.Errorf("tab A's own log must be restored, got %+v", a.chatlog.icLog)
 	}
 	// The parked tab must be byte-for-byte what it was — never overwritten by
 	// tab A's carry, and never itself donated into tab A's restored session.
-	if len(parked.state.icLog) != 1 || parked.state.icLog[0].text != "server-b-ic-line" {
-		t.Errorf("parked tab B's log was disturbed, got %+v", parked.state.icLog)
+	if len(parked.state.chatlog.icLog) != 1 || parked.state.chatlog.icLog[0].text != "server-b-ic-line" {
+		t.Errorf("parked tab B's log was disturbed, got %+v", parked.state.chatlog.icLog)
 	}
-	if len(parked.state.oocLog) != 1 || parked.state.oocLog[0] != "server-b-ooc-line" {
-		t.Errorf("parked tab B's OOC log was disturbed, got %v", parked.state.oocLog)
+	if len(parked.state.chatlog.oocLog) != 1 || parked.state.chatlog.oocLog[0] != "server-b-ooc-line" {
+		t.Errorf("parked tab B's OOC log was disturbed, got %v", parked.state.chatlog.oocLog)
 	}
 }

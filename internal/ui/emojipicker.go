@@ -97,7 +97,7 @@ func (a *App) drawEmojiPicker(w, h int32) {
 // insertICEmoji appends an emoji to the IC input and re-focuses it; on the focus change
 // the kit puts the caret at the end, right after the inserted emoji.
 func (a *App) insertICEmoji(emoji string) {
-	a.icInput += emoji
+	a.compose.icInput += emoji
 	a.ctx.FocusField("ic")
 }
 

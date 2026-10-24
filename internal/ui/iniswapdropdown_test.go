@@ -122,14 +122,14 @@ func TestPosRemoveHiddenWhileTheCharINIIsInFlight(t *testing.T) {
 	}
 
 	// A character that declares "def": standing on it is not an override.
-	a.charDefaultSide = "def"
-	a.sidePref = "def"
+	a.compose.charDefaultSide = "def"
+	a.compose.sidePref = "def"
 	if posRemoveVisible(a.mySide(), a.defaultSide()) {
 		t.Error("standing on the character's OWN default is not an override")
 	}
 
 	// A real /pos override: now it shows, and reverting targets the declared side.
-	a.sidePref = "pro"
+	a.compose.sidePref = "pro"
 	if !posRemoveVisible(a.mySide(), a.defaultSide()) {
 		t.Error("a side that differs from the character's default must offer the revert")
 	}
@@ -140,8 +140,8 @@ func TestPosRemoveHiddenWhileTheCharINIIsInFlight(t *testing.T) {
 	// THE BUG: switching characters must not leave the old default behind. With a
 	// stale "def" and a fresh character sitting at "wit", the button would paint
 	// and one click would send "/pos def" for a character that never asked for it.
-	a.charDefaultSide = ""
-	a.sidePref = ""
+	a.compose.charDefaultSide = ""
+	a.compose.sidePref = ""
 	if posRemoveVisible(a.mySide(), a.defaultSide()) {
 		t.Error("a cleared default must hide the button, not offer the previous character's side")
 	}
@@ -153,12 +153,12 @@ func TestPosRemoveHiddenWhileTheCharINIIsInFlight(t *testing.T) {
 // this proves the default actually gets emptied when the character changes.
 func TestCharacterChangeClearsTheDeclaredSide(t *testing.T) {
 	a := testTabApp(t)
-	a.charDefaultSide = "def"
+	a.compose.charDefaultSide = "def"
 	a.setIniswap("SomeOtherFolder")
-	if a.charDefaultSide != "" {
+	if a.compose.charDefaultSide != "" {
 		t.Errorf("setIniswap left charDefaultSide=%q — the previous character's default "+
 			"survives, so pos_remove would offer to /pos a side this character never declared",
-			a.charDefaultSide)
+			a.compose.charDefaultSide)
 	}
 	if posRemoveVisible(a.mySide(), a.defaultSide()) {
 		t.Error("pos_remove must be hidden in the window between an iniswap and its char.ini")

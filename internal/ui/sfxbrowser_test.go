@@ -7,24 +7,24 @@ import "testing"
 // reflects the browser's pick.
 func TestSelectSFXOverride(t *testing.T) {
 	a := testTabApp(t)
-	a.sfxChoices = []string{sfxAutoLabel, "stab", "boom"}
-	a.sfxChoiceIdx = 0
+	a.emotepick.sfxChoices = []string{sfxAutoLabel, "stab", "boom"}
+	a.emotepick.sfxChoiceIdx = 0
 
 	a.selectSFXOverride("boom")
-	if a.sfxChoiceIdx != 2 {
-		t.Errorf("selecting existing 'boom' = idx %d, want 2", a.sfxChoiceIdx)
+	if a.emotepick.sfxChoiceIdx != 2 {
+		t.Errorf("selecting existing 'boom' = idx %d, want 2", a.emotepick.sfxChoiceIdx)
 	}
 	a.selectSFXOverride("STAB") // case-insensitive match of "stab"
-	if a.sfxChoiceIdx != 1 {
-		t.Errorf("case-insensitive select = idx %d, want 1", a.sfxChoiceIdx)
+	if a.emotepick.sfxChoiceIdx != 1 {
+		t.Errorf("case-insensitive select = idx %d, want 1", a.emotepick.sfxChoiceIdx)
 	}
 	a.selectSFXOverride("zap") // not present -> append + select
-	if a.sfxChoiceIdx != 3 || len(a.sfxChoices) != 4 || a.sfxChoices[3] != "zap" {
-		t.Errorf("append select: idx=%d choices=%v", a.sfxChoiceIdx, a.sfxChoices)
+	if a.emotepick.sfxChoiceIdx != 3 || len(a.emotepick.sfxChoices) != 4 || a.emotepick.sfxChoices[3] != "zap" {
+		t.Errorf("append select: idx=%d choices=%v", a.emotepick.sfxChoiceIdx, a.emotepick.sfxChoices)
 	}
 	a.selectSFXOverride("   ") // blank is a no-op
-	if a.sfxChoiceIdx != 3 {
-		t.Errorf("blank override moved the index to %d", a.sfxChoiceIdx)
+	if a.emotepick.sfxChoiceIdx != 3 {
+		t.Errorf("blank override moved the index to %d", a.emotepick.sfxChoiceIdx)
 	}
 }
 
@@ -32,11 +32,11 @@ func TestSelectSFXOverride(t *testing.T) {
 // (a sound that's BOTH is shown once, as a favourite), and the query filters case-insensitively.
 func TestSfxBrowserRows(t *testing.T) {
 	a := testTabApp(t)
-	a.iniChar = "tester"                                    // activeCharName() -> "tester" (no session needed)
-	a.sfxChoices = []string{sfxAutoLabel, "stab", "boom"}   // idx 0 is auto; "stab"/"boom" are char sounds
-	a.sfxChoicesForName, a.sfxChoicesForCount = "tester", 0 // matches ensureSFXChoices' guard (0 emotes) -> no rebuild
-	a.d.Prefs.ToggleSfxFavorite("boom")                     // also a char sound -> dedup to one (fav) row
-	a.d.Prefs.ToggleSfxFavorite("zap")                      // favourite only
+	a.iniChar = "tester"                                                        // activeCharName() -> "tester" (no session needed)
+	a.emotepick.sfxChoices = []string{sfxAutoLabel, "stab", "boom"}             // idx 0 is auto; "stab"/"boom" are char sounds
+	a.emotepick.sfxChoicesForName, a.emotepick.sfxChoicesForCount = "tester", 0 // matches ensureSFXChoices' guard (0 emotes) -> no rebuild
+	a.d.Prefs.ToggleSfxFavorite("boom")                                         // also a char sound -> dedup to one (fav) row
+	a.d.Prefs.ToggleSfxFavorite("zap")                                          // favourite only
 
 	rows := a.sfxBrowserRows()
 	if len(rows) != 3 {
@@ -49,7 +49,7 @@ func TestSfxBrowserRows(t *testing.T) {
 		t.Errorf("char-only sound should follow, unstarred: %v", rows[2])
 	}
 
-	a.sfxBrowserQuery = "bo" // filter
+	a.emotepick.sfxBrowserQuery = "bo" // filter
 	rows = a.sfxBrowserRows()
 	if len(rows) != 1 || rows[0].name != "boom" {
 		t.Errorf("query 'bo' = %v, want [boom]", rows)

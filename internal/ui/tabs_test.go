@@ -229,52 +229,52 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 	// A session must exist or activation treats the tab as dead. The
 	// rehearsal constructor gives a real offline session without a conn.
 	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
-	a.icInput = "half-typed message"
-	a.icLog = append(a.icLog, icEntry{text: "Phoenix: hold it", color: 2})
-	a.icLogSeq = 7
-	a.oocLog = append(a.oocLog, "mod: welcome")
-	a.oocSeq = 3
+	a.compose.icInput = "half-typed message"
+	a.chatlog.icLog = append(a.chatlog.icLog, icEntry{text: "Phoenix: hold it", color: 2})
+	a.chatlog.icLogSeq = 7
+	a.chatlog.oocLog = append(a.chatlog.oocLog, "mod: welcome")
+	a.chatlog.oocSeq = 3
 	// The three settings that used to LEAK across tabs (playtest reports): the
 	// pair placement (was App-global), the iniswap override, and the /pos side.
-	a.pairOffX, a.pairOffY, a.pairFlip = 30, -20, true
+	a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip = 30, -20, true
 	a.iniChar = "SwappedChar"
-	a.sidePref = "wit"
+	a.compose.sidePref = "wit"
 	a.logSelActive = true // a stale log-text highlight must not survive the switch
 
 	a.parkActive()
-	if a.activeTab != -1 || a.serverName != "" || len(a.icLog) != 0 || a.icInput != "" {
+	if a.activeTab != -1 || a.serverName != "" || len(a.chatlog.icLog) != 0 || a.compose.icInput != "" {
 		t.Fatalf("park must leave a pristine live session: name=%q log=%d input=%q",
-			a.serverName, len(a.icLog), a.icInput)
+			a.serverName, len(a.chatlog.icLog), a.compose.icInput)
 	}
-	if a.spriteOv == nil || a.pairWith == 0 {
+	if a.spriteOv == nil || a.pairbox.pairWith == 0 {
 		t.Fatal("reset state must re-init maps and sentinels")
 	}
 	// Park must hand the live session a PRISTINE pair/iniswap/pos — not the parked
 	// tab's values (that shared-live-field bleed was the bug). Pair placement reseeds
 	// from prefs (default 0/0/false in this fresh test config).
-	if a.iniChar != "" || a.sidePref != "" || a.pairOffX != 0 || a.pairOffY != 0 || a.pairFlip {
+	if a.iniChar != "" || a.compose.sidePref != "" || a.pairbox.pairOffX != 0 || a.pairbox.pairOffY != 0 || a.pairbox.pairFlip {
 		t.Fatalf("park must reset per-session pair/iniswap/pos: ini=%q side=%q off=%d/%d flip=%v",
-			a.iniChar, a.sidePref, a.pairOffX, a.pairOffY, a.pairFlip)
+			a.iniChar, a.compose.sidePref, a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip)
 	}
 	if a.logSelActive {
 		t.Error("park must clear the log text selection (its anchors point into the old log)")
 	}
 	parked := &a.tabs[0].state
-	if parked.serverName != "Skrapegropen" || parked.icLogSeq != 7 || len(parked.oocLog) != 1 {
+	if parked.serverName != "Skrapegropen" || parked.chatlog.icLogSeq != 7 || len(parked.chatlog.oocLog) != 1 {
 		t.Fatalf("parked state lost data: %+v", parked.serverName)
 	}
 
 	a.activateTab(0)
-	if a.activeTab != 0 || a.serverName != "Skrapegropen" || a.icInput != "half-typed message" {
-		t.Fatalf("activate must restore the session: name=%q input=%q", a.serverName, a.icInput)
+	if a.activeTab != 0 || a.serverName != "Skrapegropen" || a.compose.icInput != "half-typed message" {
+		t.Fatalf("activate must restore the session: name=%q input=%q", a.serverName, a.compose.icInput)
 	}
-	if a.icLogSeq != 7 || len(a.icLog) != 1 || a.icLog[0].color != 2 {
+	if a.chatlog.icLogSeq != 7 || len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].color != 2 {
 		t.Fatal("activate must restore logs and seqs bit-for-bit")
 	}
 	// The previously-leaking settings come back with THIS tab's session.
-	if a.iniChar != "SwappedChar" || a.sidePref != "wit" || a.pairOffX != 30 || a.pairOffY != -20 || !a.pairFlip {
+	if a.iniChar != "SwappedChar" || a.compose.sidePref != "wit" || a.pairbox.pairOffX != 30 || a.pairbox.pairOffY != -20 || !a.pairbox.pairFlip {
 		t.Fatalf("activate must restore per-session pair/iniswap/pos: ini=%q side=%q off=%d/%d flip=%v",
-			a.iniChar, a.sidePref, a.pairOffX, a.pairOffY, a.pairFlip)
+			a.iniChar, a.compose.sidePref, a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip)
 	}
 	if a.tabs[0].state.serverName != "" {
 		t.Fatal("the active tab's parked slot must be zeroed")
@@ -581,10 +581,10 @@ func TestTabSwitchNoLogCrossover(t *testing.T) {
 	}
 	a.serverName, a.serverKey = "Alpha", "wss://alpha:2096"
 	a.sess = courtroom.NewRehearsalSession("", []string{"Apollo"})
-	a.icLog = []icEntry{{text: "ALPHA-IC-only line", color: 2}}
-	a.icLogSeq = 1
-	a.oocLog, a.oocSpeakers = []string{"ALPHA-OOC-only line"}, []string{"amod"}
-	a.oocSeq = 1
+	a.chatlog.icLog = []icEntry{{text: "ALPHA-IC-only line", color: 2}}
+	a.chatlog.icLogSeq = 1
+	a.chatlog.oocLog, a.chatlog.oocSpeakers = []string{"ALPHA-OOC-only line"}, []string{"amod"}
+	a.chatlog.oocSeq = 1
 	// Prime the caches under tab A.
 	aICseen := a.icWrapped(800, false)
 	aOOCseen := a.oocWrapped(800)
@@ -600,10 +600,10 @@ func TestTabSwitchNoLogCrossover(t *testing.T) {
 	}
 	a.serverName, a.serverKey = "Beta", "wss://beta:2096"
 	a.sess = courtroom.NewRehearsalSession("", []string{"Klavier"})
-	a.icLog = []icEntry{{text: "BETA-IC-only line", color: 4}}
-	a.icLogSeq = 1
-	a.oocLog, a.oocSpeakers = []string{"BETA-OOC-only line"}, []string{"bmod"}
-	a.oocSeq = 1
+	a.chatlog.icLog = []icEntry{{text: "BETA-IC-only line", color: 4}}
+	a.chatlog.icLogSeq = 1
+	a.chatlog.oocLog, a.chatlog.oocSpeakers = []string{"BETA-OOC-only line"}, []string{"bmod"}
+	a.chatlog.oocSeq = 1
 
 	bIC := a.icWrapped(800, false)
 	bOOC := a.oocWrapped(800)
@@ -632,8 +632,8 @@ func TestTabSwitchNoLogCrossover(t *testing.T) {
 	}
 	// The colour rides the entry, so a crossover would also mis-tint: pin the source
 	// entry's colour is tab A's (2), never tab B's (4).
-	if len(a.icLog) != 1 || a.icLog[0].color != 2 {
-		t.Fatalf("tab A log colour must be its own (2), got %v", a.icLog)
+	if len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].color != 2 {
+		t.Fatalf("tab A log colour must be its own (2), got %v", a.chatlog.icLog)
 	}
 }
 
@@ -686,7 +686,7 @@ func TestBuildRoomRebindsSceneryPerTab(t *testing.T) {
 func TestEnsureSFXChoices(t *testing.T) {
 	a := testTabApp(t)
 	a.iniChar = "TestChar" // activeCharName() → this, no session needed
-	a.emotes = []courtroom.Emote{
+	a.emotepick.emotes = []courtroom.Emote{
 		{Anim: "normal", SFXName: "0"},       // silence → skipped
 		{Anim: "slam", SFXName: "deskslam"},  // sound
 		{Anim: "point", SFXName: "deskslam"}, // duplicate → skipped
@@ -696,18 +696,18 @@ func TestEnsureSFXChoices(t *testing.T) {
 	}
 	a.ensureSFXChoices()
 	want := []string{sfxAutoLabel, "deskslam", "gavel"}
-	if len(a.sfxChoices) != len(want) {
-		t.Fatalf("choices = %v, want %v", a.sfxChoices, want)
+	if len(a.emotepick.sfxChoices) != len(want) {
+		t.Fatalf("choices = %v, want %v", a.emotepick.sfxChoices, want)
 	}
 	for i, w := range want {
-		if a.sfxChoices[i] != w {
-			t.Errorf("choice %d = %q, want %q", i, a.sfxChoices[i], w)
+		if a.emotepick.sfxChoices[i] != w {
+			t.Errorf("choice %d = %q, want %q", i, a.emotepick.sfxChoices[i], w)
 		}
 	}
-	a.sfxChoiceIdx, a.sfxChoicesForName = 5, "\x00stale" // out-of-range pick + a never-matching name forces a rebuild
+	a.emotepick.sfxChoiceIdx, a.emotepick.sfxChoicesForName = 5, "\x00stale" // out-of-range pick + a never-matching name forces a rebuild
 	a.ensureSFXChoices()
-	if a.sfxChoiceIdx != 0 {
-		t.Errorf("out-of-range pick must clamp to auto (0), got %d", a.sfxChoiceIdx)
+	if a.emotepick.sfxChoiceIdx != 0 {
+		t.Errorf("out-of-range pick must clamp to auto (0), got %d", a.emotepick.sfxChoiceIdx)
 	}
 }
 
@@ -957,7 +957,7 @@ func TestSendICSplitTargetsPinnedSession(t *testing.T) {
 	a := testTabApp(t)
 	// Primary (left) session: a distinct identity that must survive the send.
 	a.serverName = "PrimaryServer"
-	a.icInput = "primary draft"
+	a.compose.icInput = "primary draft"
 	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	a.sess.MyCharID = 1
 
@@ -970,10 +970,9 @@ func TestSendICSplitTargetsPinnedSession(t *testing.T) {
 	pin := &courtTab{state: sessionState{
 		serverName: "PinnedServer",
 		sess:       pinnedSess,
-		sidePref:   "wit",
+		compose:    composeState{sidePref: "wit", icInput: "hello from the right pane"},
 		evidIdx:    -1,
-		pairWith:   protocol.UnpairedCharID,
-		icInput:    "hello from the right pane",
+		pairbox:    pairBoxState{pairWith: protocol.UnpairedCharID},
 	}}
 	a.tabs = append(a.tabs, pin)
 	a.splitTab = pin
@@ -995,18 +994,18 @@ func TestSendICSplitTargetsPinnedSession(t *testing.T) {
 	// 2. The pinned input is KEPT until the pinned server echoes it back
 	//    (keep-until-echo: a send the server swallows must not cost the typed
 	//    line) — the send only snapshots it as pending, in the PINNED state.
-	if pin.state.icInput != "hello from the right pane" {
-		t.Errorf("pinned input must be kept until the echo, got %q", pin.state.icInput)
+	if pin.state.compose.icInput != "hello from the right pane" {
+		t.Errorf("pinned input must be kept until the echo, got %q", pin.state.compose.icInput)
 	}
-	if pin.state.icPendingSent != "hello from the right pane" {
-		t.Errorf("pinned pending snapshot = %q, want the sent line", pin.state.icPendingSent)
+	if pin.state.compose.icPendingSent != "hello from the right pane" {
+		t.Errorf("pinned pending snapshot = %q, want the sent line", pin.state.compose.icPendingSent)
 	}
-	if a.icPendingSent != "" {
-		t.Errorf("the PRIMARY session must not inherit the pinned pending, got %q", a.icPendingSent)
+	if a.compose.icPendingSent != "" {
+		t.Errorf("the PRIMARY session must not inherit the pinned pending, got %q", a.compose.icPendingSent)
 	}
 	// 3. The primary session is fully restored — name and its own draft intact.
-	if a.serverName != "PrimaryServer" || a.icInput != "primary draft" {
-		t.Errorf("primary must be untouched: name=%q input=%q", a.serverName, a.icInput)
+	if a.serverName != "PrimaryServer" || a.compose.icInput != "primary draft" {
+		t.Errorf("primary must be untouched: name=%q input=%q", a.serverName, a.compose.icInput)
 	}
 	if a.sess.MyCharID != 1 {
 		t.Errorf("primary session pointer must be restored (MyCharID 1), got %d", a.sess.MyCharID)
@@ -1023,10 +1022,10 @@ func TestSendICSplitTargetsPinnedSession(t *testing.T) {
 // one tab's live placement never seeds another's.
 func TestResetSessionStatePairIsSessionOnly(t *testing.T) {
 	a := testTabApp(t)
-	a.pairOffX, a.pairOffY, a.pairFlip = 15, 25, true // a live tab's placement
-	a.resetSessionState()                             // new tab / disconnect / park path
-	if a.pairOffX != 0 || a.pairOffY != 0 || a.pairFlip {
-		t.Errorf("fresh session pair = %d/%d/%v, want 0/0/false (session-only)", a.pairOffX, a.pairOffY, a.pairFlip)
+	a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip = 15, 25, true // a live tab's placement
+	a.resetSessionState()                                                     // new tab / disconnect / park path
+	if a.pairbox.pairOffX != 0 || a.pairbox.pairOffY != 0 || a.pairbox.pairFlip {
+		t.Errorf("fresh session pair = %d/%d/%v, want 0/0/false (session-only)", a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip)
 	}
 }
 
@@ -1042,22 +1041,22 @@ func TestOOCNamePerTab(t *testing.T) {
 		t.Fatal("allocateTab must succeed")
 	}
 	a.resetSessionState()
-	if a.oocName != "DefaultName" {
-		t.Fatalf("fresh tab must seed the saved default, got %q", a.oocName)
+	if a.compose.oocName != "DefaultName" {
+		t.Fatalf("fresh tab must seed the saved default, got %q", a.compose.oocName)
 	}
-	a.oocName = "TabOnlyName" // typed into the courtroom field (tab-local)
+	a.compose.oocName = "TabOnlyName" // typed into the courtroom field (tab-local)
 	a.parkActive()
 	if !a.allocateTab() {
 		t.Fatal("second allocateTab must succeed")
 	}
 	a.resetSessionState()
-	if a.oocName != "DefaultName" {
-		t.Errorf("a new tab must NOT inherit another tab's typed name, got %q", a.oocName)
+	if a.compose.oocName != "DefaultName" {
+		t.Errorf("a new tab must NOT inherit another tab's typed name, got %q", a.compose.oocName)
 	}
 	if got := a.d.Prefs.Load().OOCName; got != "DefaultName" {
 		t.Errorf("typing in the courtroom field must not rewrite the saved default, got %q", got)
 	}
-	if got := a.tabs[0].state.oocName; got != "TabOnlyName" {
+	if got := a.tabs[0].state.compose.oocName; got != "TabOnlyName" {
 		t.Errorf("the parked tab must keep its own typed name, got %q", got)
 	}
 }
@@ -1114,14 +1113,14 @@ func TestTabBackgroundRouting(t *testing.T) {
 	// OOC by default LOGS but does NOT bump the unread badge: server auto-messages
 	// (hourly reminders, etc.) shouldn't light up a "(1)" when nobody chatted.
 	a.routeBackgroundEvent(tab, courtroom.Event{Kind: courtroom.EventOOC, Name: "mod", Text: "hi"})
-	if tab.unread != 0 || len(tab.state.oocLog) != 1 {
-		t.Fatalf("OOC must log but not badge by default: unread=%d ooc=%d", tab.unread, len(tab.state.oocLog))
+	if tab.unread != 0 || len(tab.state.chatlog.oocLog) != 1 {
+		t.Fatalf("OOC must log but not badge by default: unread=%d ooc=%d", tab.unread, len(tab.state.chatlog.oocLog))
 	}
 	// IC chat always bumps the badge.
 	msg := &protocol.ChatMessage{Message: "objection!", TextColor: 2}
 	a.routeBackgroundEvent(tab, courtroom.Event{Kind: courtroom.EventMessage, Message: msg})
-	if tab.unread != 1 || len(tab.state.icLog) != 1 {
-		t.Fatalf("IC chat must badge: unread=%d ic=%d", tab.unread, len(tab.state.icLog))
+	if tab.unread != 1 || len(tab.state.chatlog.icLog) != 1 {
+		t.Fatalf("IC chat must badge: unread=%d ic=%d", tab.unread, len(tab.state.chatlog.icLog))
 	}
 	// With the opt-in pref ON, OOC counts toward the badge too.
 	a.d.Prefs.Update(func(
@@ -1139,7 +1138,7 @@ func TestTabBackgroundRouting(t *testing.T) {
 	if tab.unread != 2 {
 		t.Fatalf("with NotifyOnOOC on, OOC must badge: unread=%d", tab.unread)
 	}
-	if tab.state.icLogSeq == 0 || tab.state.oocSeq == 0 {
+	if tab.state.chatlog.icLogSeq == 0 || tab.state.chatlog.oocSeq == 0 {
 		t.Fatal("background appends must bump the cache-key seqs")
 	}
 
@@ -1202,37 +1201,37 @@ func TestPerAreaScrollback(t *testing.T) {
 
 	})
 
-	a.icLog = []icEntry{{text: "lobby line"}} // default area (curArea "")
+	a.chatlog.icLog = []icEntry{{text: "lobby line"}} // default area (curArea "")
 
 	a.switchAreaScrollback("C1")
-	if len(a.icLog) != 0 {
-		t.Fatalf("entering a fresh area must start empty, got %d", len(a.icLog))
+	if len(a.chatlog.icLog) != 0 {
+		t.Fatalf("entering a fresh area must start empty, got %d", len(a.chatlog.icLog))
 	}
 	a.curArea = "C1"
-	a.icLog = append(a.icLog, icEntry{text: "c1 line"})
+	a.chatlog.icLog = append(a.chatlog.icLog, icEntry{text: "c1 line"})
 
 	a.switchAreaScrollback("C2")
-	if len(a.icLog) != 0 {
-		t.Fatalf("second fresh area must start empty, got %d", len(a.icLog))
+	if len(a.chatlog.icLog) != 0 {
+		t.Fatalf("second fresh area must start empty, got %d", len(a.chatlog.icLog))
 	}
 	a.curArea = "C2"
 
 	a.switchAreaScrollback("C1") // back to C1 → its line returns
-	if len(a.icLog) != 1 || a.icLog[0].text != "c1 line" {
-		t.Fatalf("returning to an area must restore its log, got %v", a.icLog)
+	if len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "c1 line" {
+		t.Fatalf("returning to an area must restore its log, got %v", a.chatlog.icLog)
 	}
 	a.curArea = "C1"
 
 	a.switchAreaScrollback("") // back to the default area
-	if len(a.icLog) != 1 || a.icLog[0].text != "lobby line" {
-		t.Fatalf("default area log lost: %v", a.icLog)
+	if len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "lobby line" {
+		t.Fatalf("default area log lost: %v", a.chatlog.icLog)
 	}
 
 	// OFF (default): switching areas must not touch the log.
 	b := testTabApp(t)
-	b.icLog = []icEntry{{text: "x"}}
+	b.chatlog.icLog = []icEntry{{text: "x"}}
 	b.switchAreaScrollback("Other")
-	if len(b.icLog) != 1 {
+	if len(b.chatlog.icLog) != 1 {
 		t.Error("with per-area scrollback off, switching areas must leave the log alone")
 	}
 }

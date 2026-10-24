@@ -1158,7 +1158,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	onPrimary, onEmoji := a.icFieldFonts(savedOOC) // CJK-safe OOC name (ASCII stays fast path)
 	if next, _ := c.TextFieldEmoji("oocdefault", sdl.Rect{X: pad + 480, Y: y, W: 200, H: fieldH}, savedOOC, "blank = AsyncAO<n>", onPrimary, onEmoji); next != savedOOC {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.OOCName = next })
-		a.oocName = next // the ACTIVE tab adopts the new default right away
+		a.compose.oocName = next // the ACTIVE tab adopts the new default right away
 	}
 	y += 38
 
@@ -1189,7 +1189,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 				a.refreshShownameKeys() // its keybind (if any) was cleared too
 			}
 			if c.Button(sdl.Rect{X: pad + 38, Y: y, W: 46, H: 18}, "Use") {
-				a.shownameOverride = name // apply now (the in-courtroom override)
+				a.compose.shownameOverride = name // apply now (the in-courtroom override)
 			}
 			// Per-preset keybind: arm a capture (pollShownameBind binds the next
 			// key to this showname); right-click the button clears the bind.
@@ -1343,7 +1343,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 
 		})
 
-		a.emoteFavRev++ // rebuild the view for the new state
+		a.favstyle.emoteFavRev++ // rebuild the view for the new state
 	}
 	y += 26
 	favOnly := a.d.Prefs.Load().EmoteFavOnly
@@ -1359,7 +1359,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 
 		})
 
-		a.emoteFavRev++ // rebuild the visible list for the new filter state
+		a.favstyle.emoteFavRev++ // rebuild the visible list for the new filter state
 	}
 	y += 26
 	favBox := a.d.Prefs.Load().FavEmoteBox

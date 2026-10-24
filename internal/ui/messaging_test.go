@@ -22,7 +22,7 @@ func TestRouteIncomingPM(t *testing.T) {
 
 	body := "hey there" + courtroom.WireMessage{Kind: courtroom.MsgDM}.EncodeMarker()
 	a.routeIncomingPM(0, "Phoenix", body)
-	got := a.pmThreads["phoenix"]
+	got := a.compose.pmThreads["phoenix"]
 	if len(got) != 1 || got[0].fromMe || got[0].text != "hey there" {
 		t.Errorf("routeIncomingPM recorded wrong: %+v", got)
 	}

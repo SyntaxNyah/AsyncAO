@@ -403,29 +403,29 @@ func (a *App) ensureSFXChoices() {
 	// Plain-field guard, not a concatenated key: this runs every frame, and
 	// building a "<char>:<n>" string just to compare it allocated per frame.
 	name := a.activeCharName()
-	if a.sfxChoicesForName == name && a.sfxChoicesForCount == len(a.emotes) {
+	if a.emotepick.sfxChoicesForName == name && a.emotepick.sfxChoicesForCount == len(a.emotepick.emotes) {
 		return
 	}
-	a.sfxChoicesForName, a.sfxChoicesForCount = name, len(a.emotes)
-	a.sfxChoices = append(a.sfxChoices[:0], sfxAutoLabel)
-	for i := range a.emotes {
-		s := a.emotes[i].SFXName
+	a.emotepick.sfxChoicesForName, a.emotepick.sfxChoicesForCount = name, len(a.emotepick.emotes)
+	a.emotepick.sfxChoices = append(a.emotepick.sfxChoices[:0], sfxAutoLabel)
+	for i := range a.emotepick.emotes {
+		s := a.emotepick.emotes[i].SFXName
 		if s == "" || s == "0" || s == "1" {
 			continue
 		}
 		dup := false
-		for _, ex := range a.sfxChoices {
+		for _, ex := range a.emotepick.sfxChoices {
 			if ex == s {
 				dup = true
 				break
 			}
 		}
 		if !dup {
-			a.sfxChoices = append(a.sfxChoices, s)
+			a.emotepick.sfxChoices = append(a.emotepick.sfxChoices, s)
 		}
 	}
-	if a.sfxChoiceIdx >= len(a.sfxChoices) {
-		a.sfxChoiceIdx = 0
+	if a.emotepick.sfxChoiceIdx >= len(a.emotepick.sfxChoices) {
+		a.emotepick.sfxChoiceIdx = 0
 	}
 }
 
@@ -680,8 +680,8 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// was OOC while OOC is a box, or it has been torn into its own floating panel (torntabs.go), fall
 	// back to the IC log so the docked area still shows something.
 	oocAsTab := a.d.Prefs.Load().LegacyDevTheme || a.d.Prefs.Load().OOCInLogTab
-	if (!oocAsTab && a.logTab == logTabOOC) || a.classic.tabTorn(a.logTab) || a.tabHidden(a.logTab) {
-		a.logTab = logTabLog
+	if (!oocAsTab && a.chatlog.logTab == logTabOOC) || a.classic.tabTorn(a.chatlog.logTab) || a.tabHidden(a.chatlog.logTab) {
+		a.chatlog.logTab = logTabLog
 	}
 	// The docked strip skips any torn-off tab and compacts the rest (0-alloc stack array).
 	docked, numLogTabs := a.dockedLogTabs(oocAsTab)
@@ -692,7 +692,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 			bw = (r.W - volBtnW) - (numLogTabs-1)*tab // last tab takes the remainder before the Vol toggle
 		}
 		if c.Button(sdl.Rect{X: r.X + i*tab, Y: r.Y, W: bw, H: btnH}, docked[i].label) {
-			a.logTab = docked[i].id
+			a.chatlog.logTab = docked[i].id
 		}
 	}
 	volBtn := sdl.Rect{X: r.X + r.W - volBtnW, Y: r.Y, W: volBtnW, H: btnH}
@@ -723,7 +723,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// The Music tab tunes its OWN scale (musicPct) so you can shrink long track
 	// titles without shrinking the IC log.
 	scale := &a.logPct
-	switch a.logTab {
+	switch a.chatlog.logTab {
 	case logTabMusic:
 		scale = &a.musicPct // the Music tab tunes its own scale
 	case logTabAreas:
@@ -734,7 +734,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 		scale = &a.oocPct // the OOC tab resizes OOC text, independent of the IC log
 	}
 	a.zoomWheel(r, scale, config.MinLogScalePercent, config.MaxLogScalePercent)
-	switch a.logTab {
+	switch a.chatlog.logTab {
 	case logTabMusic:
 		a.drawMusicList(inner, false, false, false)
 		return
@@ -772,9 +772,9 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	const filterBtnW = int32(48)
 	filterBtn := sdl.Rect{X: inner.X, Y: rowY, W: filterBtnW, H: rowH}
 	if c.Button(filterBtn, "Filter") {
-		a.logFilterOpen = !a.logFilterOpen
+		a.chatlog.logFilterOpen = !a.chatlog.logFilterOpen
 	}
-	if a.logFilterOpen {
+	if a.chatlog.logFilterOpen {
 		c.Border(filterBtn, ColAccent) // active cue, matching the Vol toggle
 	}
 	c.Tooltip(filterBtn, "Show/hide advanced filters (only showname / position)")
@@ -787,7 +787,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	if !showExports {
 		searchW = inner.W - (filterBtnW + 4)
 	}
-	a.logSearch, _ = c.TextField("logsearch", sdl.Rect{X: searchX, Y: rowY, W: searchW, H: rowH}, a.logSearch, "Search log...")
+	a.chatlog.logSearch, _ = c.TextField("logsearch", sdl.Rect{X: searchX, Y: rowY, W: searchW, H: rowH}, a.chatlog.logSearch, "Search log...")
 	if showExports {
 		bx := searchX + searchW + 4
 		if c.Button(sdl.Rect{X: bx, Y: rowY, W: logExportBtnW, H: rowH}, "Copy") {
@@ -804,14 +804,14 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// Advanced filters (#129): a second row of two fields — "Showname" (only that
 	// speaker) and "Pos" (only that position) — shown when Filter is expanded.
 	// Both are inclusive and stack on top of the text search above.
-	if a.logFilterOpen {
+	if a.chatlog.logFilterOpen {
 		frH := rowH
 		half := (inner.W - 4) / 2
-		a.logFilterShowname, _ = c.TextField("logfilter_showname", sdl.Rect{X: inner.X, Y: listY, W: half, H: frH}, a.logFilterShowname, "Showname…")
-		a.logFilterPos, _ = c.TextField("logfilter_pos", sdl.Rect{X: inner.X + half + 4, Y: listY, W: inner.W - half - 4, H: frH}, a.logFilterPos, "Pos (e.g. wit)…")
+		a.chatlog.logFilterShowname, _ = c.TextField("logfilter_showname", sdl.Rect{X: inner.X, Y: listY, W: half, H: frH}, a.chatlog.logFilterShowname, "Showname…")
+		a.chatlog.logFilterPos, _ = c.TextField("logfilter_pos", sdl.Rect{X: inner.X + half + 4, Y: listY, W: inner.W - half - 4, H: frH}, a.chatlog.logFilterPos, "Pos (e.g. wit)…")
 		// Colour filter (#49): a second row narrowing to entries that use the
 		// picked colour (message-level or any inline span). "Any color" = off.
-		a.logFilterColor, _ = c.Dropdown("logfilter_color", sdl.Rect{X: inner.X, Y: listY + frH + logSearchRowGap, W: inner.W, H: frH}, logColorFilterChoices, a.logFilterColor)
+		a.chatlog.logFilterColor, _ = c.Dropdown("logfilter_color", sdl.Rect{X: inner.X, Y: listY + frH + logSearchRowGap, W: inner.W, H: frH}, logColorFilterChoices, a.chatlog.logFilterColor)
 		listY += 2*frH + 2*logSearchRowGap
 	}
 	// false: this is the classic docked Log tab, AsyncAO chrome outside any theme's
@@ -976,9 +976,9 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		if oocBar.H > fH {
 			oocRowY = oocBar.Y + (oocBar.H-fH)/2
 		}
-		oocPrimary, oocEmoji := a.icFieldFonts(a.oocInput) // #M5: emoji/unicode in the OOC bar too
+		oocPrimary, oocEmoji := a.icFieldFonts(a.compose.oocInput) // #M5: emoji/unicode in the OOC bar too
 		var sendOOC bool
-		a.oocInput, sendOOC = c.TextFieldEmoji("ooc", sdl.Rect{X: oocBar.X, Y: oocRowY, W: oocBar.W, H: fH}, a.oocInput, "OOC chat…  (set your OOC name in the OOC tab)", oocPrimary, oocEmoji)
+		a.compose.oocInput, sendOOC = c.TextFieldEmoji("ooc", sdl.Rect{X: oocBar.X, Y: oocRowY, W: oocBar.W, H: fH}, a.compose.oocInput, "OOC chat…  (set your OOC name in the OOC tab)", oocPrimary, oocEmoji)
 		if sendOOC {
 			a.submitOOC() // shared OOC send: uses your OOC name (or the server default) + clears
 		}
@@ -1061,7 +1061,7 @@ func (a *App) drawICShoutRow(clusterX, y, w, h int32) {
 			if c.Button(shoutRect, s.label) {
 				a.toggleShout(s.mod)
 			}
-			a.drawArmedOverlay(shoutRect, a.icShout == s.mod)
+			a.drawArmedOverlay(shoutRect, a.compose.icShout == s.mod)
 			x += shoutW + 6
 		}
 		// Custom interjection (2.10): the button ARMS the active pick;
@@ -1074,14 +1074,14 @@ func (a *App) drawICShoutRow(clusterX, y, w, h int32) {
 			if c.Button(customRect, label) {
 				a.toggleShout(protocol.ShoutCustom)
 			}
-			a.drawArmedOverlay(customRect, a.icShout == protocol.ShoutCustom)
+			a.drawArmedOverlay(customRect, a.compose.icShout == protocol.ShoutCustom)
 			x += bw + 4
-			if len(a.customShouts) > 0 {
+			if len(a.compose.customShouts) > 0 {
 				if c.Button(sdl.Rect{X: x, Y: y, W: 26, H: btnH}, "▾") {
 					// −1 (base) → 0 → … → len−1 → −1
-					a.customIdx++
-					if a.customIdx >= len(a.customShouts) {
-						a.customIdx = -1
+					a.compose.customIdx++
+					if a.compose.customIdx >= len(a.compose.customShouts) {
+						a.compose.customIdx = -1
 					}
 				}
 				x += 32
@@ -1090,7 +1090,7 @@ func (a *App) drawICShoutRow(clusterX, y, w, h int32) {
 	}
 	if !a.classic.panelHidden("ctrl.pair") { // hideable: hiding compacts, like ctrlSlot
 		if a.movableButton("ctrl.pair", sdl.Rect{X: x, Y: y, W: 70, H: btnH}, "Pair...", w, h) {
-			a.showPair = !a.showPair
+			a.pairbox.showPair = !a.pairbox.showPair
 		}
 		x += 80
 	}
@@ -1450,7 +1450,7 @@ func (a *App) drawICColorStrip(colorBox sdl.Rect) {
 	c.Fill(swatch, sw)
 	c.Border(swatch, ColPanelHi)
 	a.icSwatchRect = swatch // the free-hex wheel anchors here
-	if a.icCustomOn && c.clicked && c.hovering(swatch) {
+	if a.compose.icCustomOn && c.clicked && c.hovering(swatch) {
 		a.showICColorWheel = !a.showICColorWheel // re-open to adjust (re-picking "Custom…" in the dropdown doesn't fire changed)
 	}
 	colorDDW := colorBox.W - 32
@@ -1574,13 +1574,13 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// TextFieldEmoji + icFieldFonts treatment the IC input below uses. Plain-ASCII
 	// names keep the byte-identical single-font fast path (icFieldFonts is nil for
 	// ASCII). The placeholder is a saved showname, which can itself be CJK.
-	snPrimary, snEmoji := a.icFieldFonts(a.shownameOverride)
-	if a.shownameOverride == "" {
+	snPrimary, snEmoji := a.icFieldFonts(a.compose.shownameOverride)
+	if a.compose.shownameOverride == "" {
 		snPrimary, snEmoji = a.icFieldFonts(namePlaceholder) // route a CJK placeholder too
 	}
-	a.shownameOverride, _ = c.TextFieldEmoji("icshownameov", sdl.Rect{X: nameBox.X, Y: nameBox.Y, W: snW, H: nameBox.H}, a.shownameOverride, namePlaceholder, snPrimary, snEmoji)
+	a.compose.shownameOverride, _ = c.TextFieldEmoji("icshownameov", sdl.Rect{X: nameBox.X, Y: nameBox.Y, W: snW, H: nameBox.H}, a.compose.shownameOverride, namePlaceholder, snPrimary, snEmoji)
 	if name := a.pickNameDropdown("snpick", sdl.Rect{X: nameBox.X + snW + 2, Y: nameBox.Y, W: snDD, H: nameBox.H}); name != "" {
-		a.shownameOverride = name
+		a.compose.shownameOverride = name
 	}
 	// Immediate (AO non-interrupting preanim): the preanim plays without
 	// holding back the text. Session toggle; rides the next message via
@@ -1594,7 +1594,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// the rest of the row. slotRect is alloc-free off the edit path.
 	immedDef := sdl.Rect{X: immedX, Y: rowY, W: immedW, H: fH}
 	immedBox := a.slotRect(slotICImmediate, immedDef, w, h)
-	a.icImmediate = c.Checkbox(immedBox.X, immedBox.Y+(immedBox.H-16)/2, "Immediate", a.icImmediate)
+	a.compose.icImmediate = c.Checkbox(immedBox.X, immedBox.Y+(immedBox.H-16)/2, "Immediate", a.compose.icImmediate)
 	c.Tooltip(immedBox, "Immediate: the preanim plays without holding back the text (non-interrupting preanim)")
 	icX := immedX + immedW + 6 // downstream flows from the DEFAULT position, not the override
 	// Additive (#14, 2.8): the next message APPENDS to your last one (narration RP).
@@ -1612,11 +1612,11 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 		// bounceOnToggle: ui_additive → on_additive_clicked → focus_ic_input
 		// (courtroom.cpp:504, :6572). The leading-space half of that handler lives at
 		// the send site (AdditiveWantsLeadingSpace), not here.
-		a.icAdditive = a.bounceOnToggle(c.Checkbox(addBox.X, addBox.Y+(addBox.H-16)/2, "Additive", a.icAdditive), a.icAdditive)
+		a.compose.icAdditive = a.bounceOnToggle(c.Checkbox(addBox.X, addBox.Y+(addBox.H-16)/2, "Additive", a.compose.icAdditive), a.compose.icAdditive)
 		c.Tooltip(addBox, "Additive: this message adds to your last one instead of replacing it (2.8 narration-style RP).")
 		icX += icAddW + 6 // downstream flows from the DEFAULT position, not the override
 	} else {
-		a.icAdditive = false
+		a.compose.icAdditive = false
 	}
 	icCounterOn := a.d.Prefs.Load().MessageCounter
 	// The IC input must always keep at least minICInputW. Each optional IC-bar button is
@@ -1645,7 +1645,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	if icOptionalDraws(preGuardOK, preOv, a.classic.classicEdit, a.classic.panelHidden(slotICPre)) {
 		preBox := a.slotRect(slotICPre, sdl.Rect{X: icX, Y: rowY, W: preW, H: fH}, w, h)
 		// bounceOnToggle: ui_pre is wired straight to focus_ic_input (courtroom.cpp:502).
-		a.icPreanim = a.bounceOnToggle(c.Checkbox(preBox.X, preBox.Y+(preBox.H-16)/2, "Pre", a.icPreanim), a.icPreanim)
+		a.compose.icPreanim = a.bounceOnToggle(c.Checkbox(preBox.X, preBox.Y+(preBox.H-16)/2, "Pre", a.compose.icPreanim), a.compose.icPreanim)
 		c.Tooltip(preBox, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
 		icX += preW + 6 // downstream flows from the DEFAULT position, not the override
 	}
@@ -1681,7 +1681,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 		// view bounces; the Pair panel's mirror of the same bool is not an IC-bar
 		// control, and a redraw carrying the value the other view just wrote compares
 		// equal here, so the two views cannot bounce each other.
-		a.pairFlip = a.bounceOnToggle(c.Checkbox(flipBox.X, flipBox.Y+(flipBox.H-16)/2, "Flip", a.pairFlip), a.pairFlip)
+		a.pairbox.pairFlip = a.bounceOnToggle(c.Checkbox(flipBox.X, flipBox.Y+(flipBox.H-16)/2, "Flip", a.pairbox.pairFlip), a.pairbox.pairFlip)
 		c.Tooltip(flipBox, "Flip: mirror your character's emotes. Same setting as the Pair panel's flip toggle.")
 		icX += icFlipW + 6 // downstream flows from the DEFAULT position, not the override
 	}
@@ -1699,7 +1699,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	switch {
 	case icOptionalDraws(sfxGuardOK, sfxOv, a.classic.classicEdit, false):
 		sfxRect := a.slotRect(slotICSFX, sdl.Rect{X: icX, Y: rowY, W: sfxDDW, H: fH}, w, h) // movable (#4a)
-		if next, changed := c.Dropdown("sfxdd", sfxRect, a.sfxChoices, a.sfxChoiceIdx); changed {
+		if next, changed := c.Dropdown("sfxdd", sfxRect, a.emotepick.sfxChoices, a.emotepick.sfxChoiceIdx); changed {
 			a.applySFXPick(next) // pick + audition + focus bounce (icsfx.go; courtroom.cpp:5498-5502)
 		}
 		a.sfxRowRightClickPreview() // right-click auditions a row without picking it
@@ -1711,7 +1711,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 		// dot marks an active override so the collapsed control still signals "not auto".
 		compactRect := sdl.Rect{X: icX, Y: rowY, W: sfxCompactW, H: fH}
 		label := "SFX"
-		if a.sfxChoiceIdx > 0 {
+		if a.emotepick.sfxChoiceIdx > 0 {
 			label = "SFX•" // an override is active (not the "auto" default)
 		}
 		if c.Button(compactRect, label) {
@@ -1756,12 +1756,12 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// so it needs no tail reserve; an override repositions/resizes the field and the counter
 	// rides along inside it.
 	icBox := a.slotRect(slotICInput, sdl.Rect{X: icX, Y: rowY, W: icW, H: fH}, w, h)
-	icPrimary, icEmoji := a.icFieldFonts(a.icInput) // #M5: show typed emoji/unicode, not tofu
+	icPrimary, icEmoji := a.icFieldFonts(a.compose.icInput) // #M5: show typed emoji/unicode, not tofu
 	// Reserve the counter + muted-chip band BEFORE the field draws, so the typed
 	// line clips short of them instead of running underneath (the overdrawn-counter
 	// report). No-op when both are off/absent.
 	c.ReserveFieldTail(icFieldID, a.icFieldTailReserve(icCounterOn))
-	a.icInput, send = c.TextFieldEmoji(icFieldID, icBox, a.icInput, "Talk in-character here…  (/pair <id>, /unpair, /offset <x> [y], /pos <side>)", icPrimary, icEmoji)
+	a.compose.icInput, send = c.TextFieldEmoji(icFieldID, icBox, a.compose.icInput, "Talk in-character here…  (/pair <id>, /unpair, /offset <x> [y], /pos <side>)", icPrimary, icEmoji)
 	a.recallIC() // #8: Up/Down recall recently-sent lines when the IC field is focused
 	a.drawMsgCounter(icBox, icCounterOn)
 	// Muted (#13): the server disabled our IC speech (MU). Draw a persistent chip

@@ -74,7 +74,7 @@ type fontPickRow struct {
 // dimming, off the SAME a.icLog/ghostLogSpan state).
 func (a *App) icFontPickRows(out []fontPickRow) []fontPickRow {
 	out = out[:0]
-	if len(a.icLog) == 0 {
+	if len(a.chatlog.icLog) == 0 {
 		return out
 	}
 	c := a.ctx
@@ -87,11 +87,11 @@ func (a *App) icFontPickRows(out []fontPickRow) []fontPickRow {
 	icInk := a.elemInkOr(elemICChatlog, a.themeLay.valid, ColText)
 	ghost := a.ghostLogSpan(nil) // the rows argument is unused (ghosttext.go) — nil is what a real caller passes too
 	lo := 0
-	if len(a.icLog) > debugFontRowCap {
-		lo = len(a.icLog) - debugFontRowCap
+	if len(a.chatlog.icLog) > debugFontRowCap {
+		lo = len(a.chatlog.icLog) - debugFontRowCap
 	}
-	for i := lo; i < len(a.icLog); i++ {
-		e := &a.icLog[i]
+	for i := lo; i < len(a.chatlog.icLog); i++ {
+		e := &a.chatlog.icLog[i]
 		text := e.text
 		if showStamps && e.stamp != "" {
 			text = e.stamp + "  " + text

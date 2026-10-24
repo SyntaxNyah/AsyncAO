@@ -62,7 +62,7 @@ func (a *App) focusLogSearch() {
 // (called inside the line loop, under the text — the same layering the selection
 // highlight uses). A non-empty a.logSearch must already be active.
 func (a *App) drawLogSearchHighlight(which, li int, listX, y, wrapW, lineH int32, text string, font *ttf.Font) {
-	q := strings.TrimSpace(a.logSearch)
+	q := strings.TrimSpace(a.chatlog.logSearch)
 	if q == "" {
 		return
 	}

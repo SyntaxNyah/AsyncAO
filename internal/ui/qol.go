@@ -284,7 +284,7 @@ func (a *App) handleEmoteKeys() {
 		return // the user removed the Alt+1..9 number row; the digits are plain text again
 	}
 	key := a.bareBindKey()
-	if key < sdl.K_1 || key > sdl.K_9 || a.emotePerPage <= 0 {
+	if key < sdl.K_1 || key > sdl.K_9 || a.emotepick.emotePerPage <= 0 {
 		return
 	}
 	if a.charKeys[strings.ToLower(sdl.GetKeyName(key))] != "" {
@@ -294,8 +294,8 @@ func (a *App) handleEmoteKeys() {
 	// so the number keys pick exactly what that grid cell shows.
 	a.refreshEmoteView()
 	slot := a.emoteFirstSlot() + int(key-sdl.K_1)
-	if slot >= 0 && slot < len(a.emoteVisible) {
-		a.selectEmote(a.emoteVisible[slot])
+	if slot >= 0 && slot < len(a.favstyle.emoteVisible) {
+		a.selectEmote(a.favstyle.emoteVisible[slot])
 	}
 }
 
@@ -473,7 +473,7 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeyEvidence):
 		a.toggleEvidence()
 	case a.hotkeyFor(hotkeyPairMenu):
-		a.showPair = true
+		a.pairbox.showPair = true
 	case a.hotkeyFor(hotkeyModcall):
 		a.showModcall = true
 	case a.hotkeyFor(hotkeyUIChrome):
@@ -1152,9 +1152,9 @@ func (a *App) stopMusic() {
 // jumpLogs snaps every scrollback to its newest line.
 func (a *App) jumpLogs() {
 	const snapToTail = 1 << 30 // clamped by each scrollbar
-	a.icScroll = snapToTail
-	a.oocScroll = snapToTail
-	a.icStick, a.oocStick = true, true // jumping to newest re-arms follow
+	a.chatlog.icScroll = snapToTail
+	a.chatlog.oocScroll = snapToTail
+	a.compose.icStick, a.compose.oocStick = true, true // jumping to newest re-arms follow
 }
 
 // --- callwords ----------------------------------------------------------------------
@@ -1628,7 +1628,7 @@ func (a *App) oocWrapped(width int32) []string {
 	// so a theme swap that only changes the point size re-wraps instead of leaving
 	// rows measured at the old size.
 	pct := a.elemPct(elemServerChatlog, a.oocPct)
-	if a.oocWrap != nil && a.oocWrapSeq == a.oocSeq && a.oocWrapEpoch == a.logViewEpoch &&
+	if a.oocWrap != nil && a.oocWrapSeq == a.chatlog.oocSeq && a.oocWrapEpoch == a.logViewEpoch &&
 		a.oocWrapGen == a.ctx.fontChainGen &&
 		a.oocWrapW == width && a.oocWrapPct == pct && a.oocWrapMask == streamer {
 		return a.oocWrap
@@ -1647,10 +1647,10 @@ func (a *App) oocWrapped(width int32) []string {
 	// speaker.
 	nameOn := a.d.Prefs.Load().NameColors
 	boldNames := a.logRowBoldPref(logSelOOC)
-	for i, entry := range a.oocLog {
+	for i, entry := range a.chatlog.oocLog {
 		sp := ""
-		if i < len(a.oocSpeakers) {
-			sp = a.oocSpeakers[i]
+		if i < len(a.chatlog.oocSpeakers) {
+			sp = a.chatlog.oocSpeakers[i]
 		}
 		measure := func(s string) int32 {
 			return a.logDrawnWidthNamed(elemServerChatlog, a.oocPct, s, sp, nameOn, boldNames)
@@ -1754,7 +1754,7 @@ func (a *App) oocWrapped(width int32) []string {
 	}
 	a.oocWrap, a.oocWrapName, a.oocWrapCont, a.oocWrapSrc = out, name, cont, src
 	a.oocWrapLink, a.oocWrapLinkAt = links, linkAt
-	a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = a.oocSeq, width, pct, streamer
+	a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = a.chatlog.oocSeq, width, pct, streamer
 	a.oocWrapEpoch = a.logViewEpoch
 	a.oocWrapGen = a.ctx.fontChainGen
 	return out
@@ -1820,9 +1820,9 @@ const icWrapMaxLinesPerEntry = 16
 func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 	// #39: key on the RESOLVED scale (theme "ic_chatlog" size × the log zoom).
 	pct := a.elemPct(elemICChatlog, a.logPct)
-	if a.icWrap != nil && a.icWrapSeq == a.icLogSeq && a.icWrapEpoch == a.logViewEpoch &&
-		a.icWrapQuery == a.logSearch && a.icWrapShowname == a.logFilterShowname && a.icWrapPos == a.logFilterPos &&
-		a.icWrapColor == a.logFilterColor &&
+	if a.icWrap != nil && a.icWrapSeq == a.chatlog.icLogSeq && a.icWrapEpoch == a.logViewEpoch &&
+		a.icWrapQuery == a.chatlog.logSearch && a.icWrapShowname == a.chatlog.logFilterShowname && a.icWrapPos == a.chatlog.logFilterPos &&
+		a.icWrapColor == a.chatlog.logFilterColor &&
 		a.icWrapW == width && a.icWrapPct == pct && a.icWrapGen == a.ctx.fontChainGen &&
 		a.icWrapStamp == showStamps {
 		return a.icWrap
@@ -1841,7 +1841,7 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 		boldNames = a.logRowBoldPref(logSelIC)
 	}
 	for _, i := range a.icLogFiltered() {
-		entry := &a.icLog[i]
+		entry := &a.chatlog.icLog[i]
 		measure := func(s string) int32 {
 			return a.logDrawnWidthNamed(elemICChatlog, a.logPct, s, entry.speaker, nameOn, boldNames)
 		}
@@ -1893,8 +1893,8 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 		out = []icWrapLine{} // non-nil marks the cache as populated
 	}
 	a.icWrap, a.icWrapSeq, a.icWrapQuery, a.icWrapW, a.icWrapPct, a.icWrapGen, a.icWrapStamp =
-		out, a.icLogSeq, a.logSearch, width, pct, a.ctx.fontChainGen, showStamps
-	a.icWrapShowname, a.icWrapPos, a.icWrapColor = a.logFilterShowname, a.logFilterPos, a.logFilterColor
+		out, a.chatlog.icLogSeq, a.chatlog.logSearch, width, pct, a.ctx.fontChainGen, showStamps
+	a.icWrapShowname, a.icWrapPos, a.icWrapColor = a.chatlog.logFilterShowname, a.chatlog.logFilterPos, a.chatlog.logFilterColor
 	a.icWrapEpoch = a.logViewEpoch
 	return out
 }
@@ -2130,17 +2130,17 @@ func (p *paraWrapCache) get(measure func(string) int32, gen int, s string, width
 // per-frame cost is a handful of comparisons instead of a 1024-line scan plus a
 // slice allocation.
 func (a *App) icLogFiltered() []int {
-	if a.icFilter != nil && a.icFilterSeq == a.icLogSeq && a.icFilterEpoch == a.logViewEpoch &&
-		a.icFilterQuery == a.logSearch && a.icFilterShowname == a.logFilterShowname && a.icFilterPos == a.logFilterPos &&
-		a.icFilterColor == a.logFilterColor {
+	if a.icFilter != nil && a.icFilterSeq == a.chatlog.icLogSeq && a.icFilterEpoch == a.logViewEpoch &&
+		a.icFilterQuery == a.chatlog.logSearch && a.icFilterShowname == a.chatlog.logFilterShowname && a.icFilterPos == a.chatlog.logFilterPos &&
+		a.icFilterColor == a.chatlog.logFilterColor {
 		return a.icFilter
 	}
 	out := a.icFilter[:0]
-	q := strings.ToLower(strings.TrimSpace(a.logSearch))
-	showname := strings.ToLower(strings.TrimSpace(a.logFilterShowname))
-	pos := strings.ToLower(strings.TrimSpace(a.logFilterPos))
-	for i := range a.icLog {
-		e := &a.icLog[i]
+	q := strings.ToLower(strings.TrimSpace(a.chatlog.logSearch))
+	showname := strings.ToLower(strings.TrimSpace(a.chatlog.logFilterShowname))
+	pos := strings.ToLower(strings.TrimSpace(a.chatlog.logFilterPos))
+	for i := range a.chatlog.icLog {
+		e := &a.chatlog.icLog[i]
 		if q != "" && !strings.Contains(strings.ToLower(e.text), q) {
 			continue
 		}
@@ -2150,7 +2150,7 @@ func (a *App) icLogFiltered() []int {
 		if pos != "" && !strings.EqualFold(e.pos, pos) {
 			continue
 		}
-		if !icEntryUsesColor(e, a.logFilterColor) {
+		if !icEntryUsesColor(e, a.chatlog.logFilterColor) {
 			continue
 		}
 		out = append(out, i)
@@ -2158,8 +2158,8 @@ func (a *App) icLogFiltered() []int {
 	if out == nil {
 		out = []int{} // non-nil marks the cache as populated
 	}
-	a.icFilter, a.icFilterSeq, a.icFilterQuery = out, a.icLogSeq, a.logSearch
-	a.icFilterShowname, a.icFilterPos, a.icFilterColor = a.logFilterShowname, a.logFilterPos, a.logFilterColor
+	a.icFilter, a.icFilterSeq, a.icFilterQuery = out, a.chatlog.icLogSeq, a.chatlog.logSearch
+	a.icFilterShowname, a.icFilterPos, a.icFilterColor = a.chatlog.logFilterShowname, a.chatlog.logFilterPos, a.chatlog.logFilterColor
 	a.icFilterEpoch = a.logViewEpoch
 	return out
 }
@@ -2169,7 +2169,7 @@ func (a *App) copyICLog() {
 	idx := a.icLogFiltered()
 	var b strings.Builder
 	for _, i := range idx {
-		b.WriteString(a.icLog[i].text)
+		b.WriteString(a.chatlog.icLog[i].text)
 		b.WriteString("\r\n")
 	}
 	_ = sdl.SetClipboardText(b.String())
@@ -2180,8 +2180,8 @@ func (a *App) copyICLog() {
 // preserved in HTML via the AO palette). Snapshot on the render thread,
 // file I/O off it.
 func (a *App) exportICLog(asHTML bool) {
-	entries := make([]icEntry, len(a.icLog))
-	copy(entries, a.icLog)
+	entries := make([]icEntry, len(a.chatlog.icLog))
+	copy(entries, a.chatlog.icLog)
 	server := strings.Map(func(r rune) rune {
 		if strings.ContainsRune(`\/:*?"<>| `, r) {
 			return '-'

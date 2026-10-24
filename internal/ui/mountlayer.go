@@ -231,7 +231,7 @@ func (a *App) forgetParsedINIs() {
 	// dropped as "already showing that one" and keep the pre-edit emote list.
 	a.previewChar, a.previewAnims, a.previewLabels = "", nil, nil
 	a.previewEmoteIdx = 0
-	a.iniWarmed = "" // the hover warm's latch, same reason
+	a.compose.iniWarmed = "" // the hover warm's latch, same reason
 	if a.sess != nil && a.activeCharName() != "" {
 		a.loadCharINI() // the emote strip in front of the user, reloaded in place
 	}

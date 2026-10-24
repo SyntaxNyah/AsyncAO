@@ -72,7 +72,7 @@ func (a *App) amICM() bool {
 	}
 	// Looser: our showname / character / OOC name as a substring (covers the servers that name the
 	// CM by one of those instead of the uid).
-	for _, id := range []string{a.effectiveShowname(), a.myCharName(), a.oocName} {
+	for _, id := range []string{a.effectiveShowname(), a.myCharName(), a.compose.oocName} {
 		if id = strings.ToLower(strings.TrimSpace(id)); id != "" && strings.Contains(cm, id) {
 			return true
 		}

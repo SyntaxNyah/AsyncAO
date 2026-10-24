@@ -107,7 +107,7 @@ const (
 )
 
 var panelSlotTable = []panelSlot{
-	{slotPanelPair, func(a *App) *floatWin { return &a.wins.pairWin }, pairPanelDefW, panelNomPairH, pairPanelMinW, pairPanelMinH, func(a *App) bool { return a.showPair }},
+	{slotPanelPair, func(a *App) *floatWin { return &a.wins.pairWin }, pairPanelDefW, panelNomPairH, pairPanelMinW, pairPanelMinH, func(a *App) bool { return a.pairbox.showPair }},
 	// The mod dashboard hides while its own ban box is open (they share the modWin
 	// draw slot in drawFloatingPanels) — match that so the census never carries a
 	// panel that isn't on screen.
@@ -131,7 +131,7 @@ var panelSlotTable = []panelSlot{
 	// every sibling panel has.
 	{slotPanelTimer, func(a *App) *floatWin { return &a.wins.timerWin }, timerPanelDefW, timerPanelDefH, timerPanelMinW, timerPanelMinH, func(a *App) bool { return a.showTimer }},
 	{slotPanelLogin, func(a *App) *floatWin { return &a.wins.loginWin }, loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, func(a *App) bool { return a.showLogin }},
-	{slotPanelPairPop, func(a *App) *floatWin { return &a.wins.pairPopWin }, pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, func(a *App) bool { return a.pairPopupOpen }},
+	{slotPanelPairPop, func(a *App) *floatWin { return &a.wins.pairPopWin }, pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, func(a *App) bool { return a.pairbox.pairPopupOpen }},
 }
 
 // extrasWidgets returns the canonical widget table, built once and cached. The
@@ -148,7 +148,7 @@ func (a *App) extrasWidgets() []extrasWidget {
 			{"Evidence", "Add / view case evidence", hotkeyEvidence, func() { a.toggleEvidence() }},
 			{"Call Mod", "Call a moderator to this room", hotkeyModcall, func() { a.showModcall = true }},
 			{"Mod / CM", "Server-aware moderation + room (CM) controls — ban/kick with a live command preview", hotkeyModDash, func() { a.toggleModDash() }},
-			{"Pair", "Pair up — share the stage with another character", hotkeyPairMenu, func() { a.showPair = true }},
+			{"Pair", "Pair up — share the stage with another character", hotkeyPairMenu, func() { a.pairbox.showPair = true }},
 			{"Login", "Log in with saved credentials", hotkeyLogin, func() { a.openLoginDialog() }},
 			{"★ Fav Emotes", "Floating box of just your starred emotes (Ctrl+A)", hotkeyFavEmotes, func() {
 				a.d.Prefs.Update(func(
@@ -434,8 +434,8 @@ func (a *App) closeTopOverlay() bool {
 		a.showTimer = false
 	case a.toolbox.toolboxPinned && a.toolbox.toolboxPieces:
 		a.toolbox.toolboxPieces = false // A1: Esc closes the pinned per-piece panel first
-	case a.pairPopupOpen:
-		a.pairPopupOpen = false
+	case a.pairbox.pairPopupOpen:
+		a.pairbox.pairPopupOpen = false
 	case a.showHotkeys:
 		a.showHotkeys, a.hkCache = false, nil
 	// Non-blocking floating panels.
@@ -457,12 +457,12 @@ func (a *App) closeTopOverlay() bool {
 		a.showFxPicker = false
 	case a.showCMPanel:
 		a.showCMPanel = false
-	case a.showPair:
-		a.showPair = false
-	case a.showSfxBrowser:
-		a.showSfxBrowser = false
-	case a.showStyleBox:
-		a.showStyleBox = false
+	case a.pairbox.showPair:
+		a.pairbox.showPair = false
+	case a.emotepick.showSfxBrowser:
+		a.emotepick.showSfxBrowser = false
+	case a.favstyle.showStyleBox:
+		a.favstyle.showStyleBox = false
 	// The Extras box LAST of the panels: a picker opened from it (SFX / style) closes
 	// first, then the box itself. (#28: every courtroom popup answers Esc — and so Esc
 	// can't fall through to the courtroom's leave-the-server shortcut while one is open.)
@@ -637,7 +637,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.previewDrag || a.previewResize {
 		return true
 	}
-	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
+	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favstyle.favBoxDragging || a.favstyle.styleBoxDragging || a.favstyle.styleBoxResizing ||
 		a.wins.pairWin.dragging || a.wins.pairWin.resizing || a.wins.modWin.dragging || a.wins.modWin.resizing || a.wins.cmWin.dragging || a.wins.cmWin.resizing ||
 		a.wins.evidWin.dragging || a.wins.evidWin.resizing || a.wins.modcallWin.dragging || a.wins.modcallWin.resizing || a.wins.msgWin.dragging || a.wins.msgWin.resizing ||
 		a.wins.voiceWin.dragging || a.wins.voiceWin.resizing || a.wins.banWin.dragging || a.wins.banWin.resizing || a.wins.debugWin.dragging || a.wins.debugWin.resizing ||
@@ -654,7 +654,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.toolbox.showWidgets && pointIn(mx, my, a.extrasBoxRect(w, h)) {
 		return true
 	}
-	if a.showPair && pointIn(mx, my, a.pairPanelRect(w, h)) { // the Pair / Mod / CM boxes fence too
+	if a.pairbox.showPair && pointIn(mx, my, a.pairPanelRect(w, h)) { // the Pair / Mod / CM boxes fence too
 		return true
 	}
 	if a.showModDash && a.banBox.kind == 0 && pointIn(mx, my, a.modDashRect(w, h)) { // dashboard hides while its ban box is open
@@ -702,7 +702,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.showLogin && pointIn(mx, my, a.loginPanelRect(w, h)) {
 		return true
 	}
-	if a.pairPopupOpen && pointIn(mx, my, a.pairPopPanelRect(w, h)) {
+	if a.pairbox.pairPopupOpen && pointIn(mx, my, a.pairPopPanelRect(w, h)) {
 		return true
 	}
 	// The pinned per-piece toolbox panel (A1) fences too — its checkboxes must not
@@ -722,7 +722,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.d.Prefs.Load().FavEmoteBox && pointIn(mx, my, a.favBoxRect(w, h)) {
 		return true
 	}
-	if a.showStyleBox {
+	if a.favstyle.showStyleBox {
 		if sr, _ := a.styleBoxRect(w, h); pointIn(mx, my, sr) {
 			return true
 		}
@@ -954,7 +954,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	if !c.mouseDown {
 		a.extrasPressing = false // a cell press can't outlive the button
 		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing ||
-			a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
+			a.favstyle.favBoxDragging || a.favstyle.styleBoxDragging || a.favstyle.styleBoxResizing ||
 			a.wins.pairWin.dragging || a.wins.pairWin.resizing || a.wins.modWin.dragging || a.wins.modWin.resizing || a.wins.cmWin.dragging || a.wins.cmWin.resizing ||
 			a.wins.evidWin.dragging || a.wins.evidWin.resizing || a.wins.modcallWin.dragging || a.wins.modcallWin.resizing || a.wins.msgWin.dragging || a.wins.msgWin.resizing ||
 			a.wins.voiceWin.dragging || a.wins.voiceWin.resizing || a.wins.banWin.dragging || a.wins.banWin.resizing || a.wins.debugWin.dragging || a.wins.debugWin.resizing ||
@@ -972,7 +972,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	}
 	a.drawFloatingExtras(w, h, &pressed)
 	// Pair / Mod / CM are floating boxes now (drawn last = on top, real input).
-	if a.showPair {
+	if a.pairbox.showPair {
 		a.drawPairPanel(w, h, &pressed)
 	}
 	if a.showModDash && a.banBox.kind == 0 { // the dashboard hides while its ban/kick box is open (below)
@@ -1003,7 +1003,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	if a.showLogin {
 		a.drawLoginDialog(w, h, &pressed)
 	}
-	if a.pairPopupOpen {
+	if a.pairbox.pairPopupOpen {
 		a.drawPairPopup(w, h, &pressed)
 	}
 	if a.showModcall { // call-mod is a floating box now — chat stays live behind it
@@ -1031,7 +1031,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 // Sprite Style), sharing the press edge from drawFloatingPanels.
 func (a *App) drawFloatingExtras(w, h int32, pressed *bool) {
 	favOpen := a.d.Prefs.Load().FavEmoteBox
-	if !a.toolbox.showWidgets && len(a.extrasDetached) == 0 && !favOpen && !a.showStyleBox {
+	if !a.toolbox.showWidgets && len(a.extrasDetached) == 0 && !favOpen && !a.favstyle.showStyleBox {
 		return // every Extras box closed — nothing to draw
 	}
 	if a.toolbox.showWidgets {
@@ -1041,7 +1041,7 @@ func (a *App) drawFloatingExtras(w, h int32, pressed *bool) {
 	if favOpen {
 		a.drawFavEmoteBox(w, h, pressed)
 	}
-	if a.showStyleBox {
+	if a.favstyle.showStyleBox {
 		a.drawSpriteStyleBox(w, h, pressed)
 	}
 }

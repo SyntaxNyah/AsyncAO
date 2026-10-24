@@ -30,7 +30,7 @@ var courtroomModalOpeners = []struct {
 	// The timer, the login dialog and the pair popup left this table in #31 — they are
 	// non-blocking floatWin panels now, so they cannot end the pass and cannot strand
 	// an editor. What remains is the set that genuinely takes the screen.
-	{"SFX browser", func(a *App) { a.showSfxBrowser = true }},
+	{"SFX browser", func(a *App) { a.emotepick.showSfxBrowser = true }},
 }
 
 // TestEveryCourtroomModalCloseUndoesItsOpen pins the modal table's internal
@@ -128,7 +128,7 @@ func TestThemedEditorSurvivesAnOpenCourtroomModal(t *testing.T) {
 	}{
 		{"iniswap", func(a *App) { a.showIni = true }},
 		{"background picker", func(a *App) { a.bgPick.show = true }},
-		{"SFX browser", func(a *App) { a.showSfxBrowser = true }},
+		{"SFX browser", func(a *App) { a.emotepick.showSfxBrowser = true }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a, w, h, cleanup := stageThemedEditorFixture(t)

@@ -15,26 +15,26 @@ func TestLogMusicChange(t *testing.T) {
 	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix", "Maya"})
 
 	a.logMusicChange(courtroom.Event{Kind: courtroom.EventMusic, Text: "Trial.opus", Int: 1, Name: "Mystic Maya"})
-	if len(a.icLog) != 1 {
-		t.Fatalf("icLog = %d, want 1 music line", len(a.icLog))
+	if len(a.chatlog.icLog) != 1 {
+		t.Fatalf("icLog = %d, want 1 music line", len(a.chatlog.icLog))
 	}
-	if a.icLog[0].text != "Mystic Maya has played a song: Trial" {
-		t.Errorf("music line = %q, want 'Mystic Maya has played a song: Trial'", a.icLog[0].text)
+	if a.chatlog.icLog[0].text != "Mystic Maya has played a song: Trial" {
+		t.Errorf("music line = %q, want 'Mystic Maya has played a song: Trial'", a.chatlog.icLog[0].text)
 	}
 
 	a.logMusicChange(courtroom.Event{Kind: courtroom.EventMusic, Text: "Cross.opus", Int: 0}) // no showname → char name
-	if a.icLog[1].text != "Phoenix has played a song: Cross" {
-		t.Errorf("fallback line = %q, want 'Phoenix has played a song: Cross'", a.icLog[1].text)
+	if a.chatlog.icLog[1].text != "Phoenix has played a song: Cross" {
+		t.Errorf("fallback line = %q, want 'Phoenix has played a song: Cross'", a.chatlog.icLog[1].text)
 	}
 
 	a.logMusicChange(courtroom.Event{Kind: courtroom.EventMusic, Text: "Theme.opus", Int: -1})  // system: no charID
 	a.logMusicChange(courtroom.Event{Kind: courtroom.EventMusic, Text: "Pizza Room 3", Int: 1}) // area transfer
-	if len(a.icLog) != 2 {
-		t.Errorf("system music + area transfer must not log, icLog = %d, want 2", len(a.icLog))
+	if len(a.chatlog.icLog) != 2 {
+		t.Errorf("system music + area transfer must not log, icLog = %d, want 2", len(a.chatlog.icLog))
 	}
 
 	a.logMusicChange(courtroom.Event{Kind: courtroom.EventMusic, Text: "~stop.mp3", Int: 1})
-	if a.icLog[2].text != "Maya has stopped the music" {
-		t.Errorf("stop line = %q, want 'Maya has stopped the music'", a.icLog[2].text)
+	if a.chatlog.icLog[2].text != "Maya has stopped the music" {
+		t.Errorf("stop line = %q, want 'Maya has stopped the music'", a.chatlog.icLog[2].text)
 	}
 }

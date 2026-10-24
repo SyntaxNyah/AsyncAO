@@ -23,10 +23,10 @@ const (
 // toggleSfxBrowser opens / closes the browser (Extras entry). Opening clears the stale query so the
 // full list shows first.
 func (a *App) toggleSfxBrowser() {
-	a.showSfxBrowser = !a.showSfxBrowser
-	if a.showSfxBrowser {
-		a.sfxBrowserQuery = ""
-		a.sfxBrowserScroll = 0
+	a.emotepick.showSfxBrowser = !a.emotepick.showSfxBrowser
+	if a.emotepick.showSfxBrowser {
+		a.emotepick.sfxBrowserQuery = ""
+		a.emotepick.sfxBrowserScroll = 0
 	}
 }
 
@@ -39,14 +39,14 @@ func (a *App) selectSFXOverride(name string) {
 	if name == "" {
 		return
 	}
-	for i := 1; i < len(a.sfxChoices); i++ { // idx 0 is "SFX: auto" — never the override
-		if strings.EqualFold(a.sfxChoices[i], name) {
-			a.sfxChoiceIdx = i
+	for i := 1; i < len(a.emotepick.sfxChoices); i++ { // idx 0 is "SFX: auto" — never the override
+		if strings.EqualFold(a.emotepick.sfxChoices[i], name) {
+			a.emotepick.sfxChoiceIdx = i
 			return
 		}
 	}
-	a.sfxChoices = append(a.sfxChoices, name)
-	a.sfxChoiceIdx = len(a.sfxChoices) - 1
+	a.emotepick.sfxChoices = append(a.emotepick.sfxChoices, name)
+	a.emotepick.sfxChoiceIdx = len(a.emotepick.sfxChoices) - 1
 }
 
 // previewSFX plays a sound name through the normal SFX channel (the same preview the dropdown does).
@@ -70,10 +70,10 @@ func (a *App) previewSFX(name string) {
 // previewOverlayRow's row-0 ("None") arm is the same shape.
 func (a *App) sfxRowRightClickPreview() {
 	row, ok := a.ctx.DropdownRowRightClicked("sfxdd")
-	if !ok || row <= 0 || row >= len(a.sfxChoices) {
+	if !ok || row <= 0 || row >= len(a.emotepick.sfxChoices) {
 		return
 	}
-	a.previewSFX(a.sfxChoices[row]) // same origin guard: silent in the lobby
+	a.previewSFX(a.emotepick.sfxChoices[row]) // same origin guard: silent in the lobby
 }
 
 // sfxBrowserRow is one displayed sound: its name and whether it's currently starred.
@@ -87,21 +87,21 @@ type sfxBrowserRow struct {
 // query substring (case-insensitive). Allocations here are fine — it runs only while the opt-in
 // modal is open, never on the render hot path.
 func (a *App) sfxBrowserRows() []sfxBrowserRow {
-	q := strings.ToLower(strings.TrimSpace(a.sfxBrowserQuery))
+	q := strings.ToLower(strings.TrimSpace(a.emotepick.sfxBrowserQuery))
 	match := func(name string) bool { return q == "" || strings.Contains(strings.ToLower(name), q) }
 
 	favs := a.d.Prefs.Load().SfxFavoritesList() // lowercased bare names
-	seen := make(map[string]bool, len(favs)+len(a.sfxChoices))
-	rows := make([]sfxBrowserRow, 0, len(favs)+len(a.sfxChoices))
+	seen := make(map[string]bool, len(favs)+len(a.emotepick.sfxChoices))
+	rows := make([]sfxBrowserRow, 0, len(favs)+len(a.emotepick.sfxChoices))
 	for _, f := range favs {
 		seen[f] = true
 		if match(f) {
 			rows = append(rows, sfxBrowserRow{name: f, fav: true})
 		}
 	}
-	a.ensureSFXChoices()                     // make sure this character's sounds are populated
-	for i := 1; i < len(a.sfxChoices); i++ { // skip idx 0 ("SFX: auto")
-		name := a.sfxChoices[i]
+	a.ensureSFXChoices()                               // make sure this character's sounds are populated
+	for i := 1; i < len(a.emotepick.sfxChoices); i++ { // skip idx 0 ("SFX: auto")
+		name := a.emotepick.sfxChoices[i]
 		if seen[strings.ToLower(name)] { // already shown as a favourite
 			continue
 		}
@@ -119,7 +119,7 @@ func (a *App) drawSfxBrowser(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 200}) // backdrop dim
 	if c.escPressed {
-		a.showSfxBrowser = false
+		a.emotepick.showSfxBrowser = false
 		return
 	}
 	bw, bh := sfxBrowserW, sfxBrowserH
@@ -127,7 +127,7 @@ func (a *App) drawSfxBrowser(w, h int32) {
 	// A click on the dimmed backdrop (outside the panel) closes — a quick escape that matches the
 	// emoji picker's feel; a click inside is handled by the widgets below.
 	if c.clicked && !pointIn(c.mouseX, c.mouseY, panel) {
-		a.showSfxBrowser = false
+		a.emotepick.showSfxBrowser = false
 		return
 	}
 	c.Fill(panel, ColPanel)
@@ -137,17 +137,17 @@ func (a *App) drawSfxBrowser(w, h int32) {
 
 	c.Heading(x, panel.Y+12, "SFX Browser", ColText)
 	if c.Button(sdl.Rect{X: panel.X + bw - 16 - 64, Y: panel.Y + 12, W: 64, H: btnH}, "Close") {
-		a.showSfxBrowser = false
+		a.emotepick.showSfxBrowser = false
 		return
 	}
 
 	y := panel.Y + 46
-	a.sfxBrowserQuery, _ = c.TextField("sfxquery", sdl.Rect{X: x, Y: y, W: innerW, H: fieldH}, a.sfxBrowserQuery, "search sounds — or type any sound name…")
+	a.emotepick.sfxBrowserQuery, _ = c.TextField("sfxquery", sdl.Rect{X: x, Y: y, W: innerW, H: fieldH}, a.emotepick.sfxBrowserQuery, "search sounds — or type any sound name…")
 	y += fieldH + 6
 
 	// Free-text power row: Use / preview / star the EXACT typed name (any server sound, listed or
 	// not). Shown only when the query isn't already an exact list entry (avoids a duplicate row).
-	typed := strings.TrimSpace(a.sfxBrowserQuery)
+	typed := strings.TrimSpace(a.emotepick.sfxBrowserQuery)
 	if typed != "" && !a.sfxBrowserHasExact(typed) {
 		rowR := sdl.Rect{X: x, Y: y, W: innerW, H: sfxBrowserRowH}
 		a.drawSfxRow(rowR, typed, a.d.Prefs.Load().IsSfxFavorite(typed), "Use “"+typed+"”")
@@ -165,15 +165,15 @@ func (a *App) drawSfxBrowser(w, h int32) {
 	}
 	c.Border(listR, ColPanelHi)
 	if !c.ctrlHeld {
-		a.sfxBrowserScroll -= c.WheelIn(listR) * scrollStepPx
+		a.emotepick.sfxBrowserScroll -= c.WheelIn(listR) * scrollStepPx
 	}
 	contentH := int32(len(rows)) * sfxBrowserRowH
 	track := sdl.Rect{X: listR.X + listR.W - scrollBarW, Y: listR.Y, W: scrollBarW, H: listR.H}
-	a.sfxBrowserScroll = c.VScrollbar("sfxbrowserlist", track, a.sfxBrowserScroll, contentH, listR.H)
+	a.emotepick.sfxBrowserScroll = c.VScrollbar("sfxbrowserlist", track, a.emotepick.sfxBrowserScroll, contentH, listR.H)
 	clipPrev, clipHad := c.pushClip(listR)
 	defer c.popClip(clipPrev, clipHad)
 	rowW := listR.W - scrollBarW - 4
-	rowY := listR.Y - a.sfxBrowserScroll
+	rowY := listR.Y - a.emotepick.sfxBrowserScroll
 	for i := range rows {
 		if rowY > listR.Y+listR.H {
 			break
@@ -243,6 +243,6 @@ func (a *App) drawSfxRow(r sdl.Rect, name string, fav bool, useLabel string) {
 		a.selectSFXOverride(name)
 		a.warnLine = clampLine("SFX for your next message: " + name)
 		a.warnAt = a.now()
-		a.showSfxBrowser = false
+		a.emotepick.showSfxBrowser = false
 	}
 }

@@ -22,9 +22,9 @@ func TestDisableAltEmoteRowGatesNumberRow(t *testing.T) {
 	t.Cleanup(func() { _ = prefs.Close() })
 
 	a := &App{env: env{d: Deps{Prefs: prefs}, ctx: &Ctx{}}}
-	a.emotePerPage = 9
-	a.emotes = []courtroom.Emote{{Comment: "normal"}}
-	a.emoteVisible = []int{0}
+	a.emotepick.emotePerPage = 9
+	a.emotepick.emotes = []courtroom.Emote{{Comment: "normal"}}
+	a.favstyle.emoteVisible = []int{0}
 	a.ctx.keyPressed, a.ctx.altHeld = sdl.K_1, true
 
 	prefs.Update(func(
@@ -42,7 +42,7 @@ func TestDisableAltEmoteRowGatesNumberRow(t *testing.T) {
 	if a.ctx.focusNext != "" {
 		t.Errorf("a disabled number row still picked an emote: focusNext = %q", a.ctx.focusNext)
 	}
-	if a.emoteIdx != 0 {
-		t.Errorf("a disabled number row changed the selection to %d", a.emoteIdx)
+	if a.emotepick.emoteIdx != 0 {
+		t.Errorf("a disabled number row changed the selection to %d", a.emotepick.emoteIdx)
 	}
 }

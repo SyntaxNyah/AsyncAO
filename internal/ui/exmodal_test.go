@@ -28,7 +28,7 @@ var exModalPanels = []struct {
 }{
 	{"timer", func(a *App) { a.showTimer = true }, (*App).timerPanelRect},
 	{"login", func(a *App) { a.showLogin = true }, (*App).loginPanelRect},
-	{"pair popup", func(a *App) { a.pairPopupOpen = true }, (*App).pairPopPanelRect},
+	{"pair popup", func(a *App) { a.pairbox.pairPopupOpen = true }, (*App).pairPopPanelRect},
 }
 
 // TestExModalsNoLongerTakeTheScreen is the issue as reported: with one of them open
@@ -94,7 +94,7 @@ func TestExModalsAreClosedByEsc(t *testing.T) {
 			if !a.closeTopOverlay() {
 				t.Fatal("Esc must resolve this panel, not fall through to the leave-the-server shortcut")
 			}
-			if a.showTimer || a.showLogin || a.pairPopupOpen {
+			if a.showTimer || a.showLogin || a.pairbox.pairPopupOpen {
 				t.Error("Esc left the panel open")
 			}
 		})

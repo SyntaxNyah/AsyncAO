@@ -44,14 +44,14 @@ func TestRefreshEmoteView(t *testing.T) {
 
 	a := &App{env: env{d: Deps{Prefs: prefs}}}
 	a.iniChar = "Apollo" // activeCharName() returns this with no session
-	a.emotes = make([]courtroom.Emote, 5)
+	a.emotepick.emotes = make([]courtroom.Emote, 5)
 
 	// Default (favs-only OFF): every emote visible, in list order.
 	a.refreshEmoteView()
-	if len(a.emoteVisible) != 5 {
-		t.Fatalf("default visible = %d, want 5", len(a.emoteVisible))
+	if len(a.favstyle.emoteVisible) != 5 {
+		t.Fatalf("default visible = %d, want 5", len(a.favstyle.emoteVisible))
 	}
-	for i, v := range a.emoteVisible {
+	for i, v := range a.favstyle.emoteVisible {
 		if v != i {
 			t.Fatalf("visible[%d] = %d, want %d", i, v, i)
 		}
@@ -71,18 +71,18 @@ func TestRefreshEmoteView(t *testing.T) {
 
 	})
 
-	a.emoteFavRev++ // mirror the UI's invalidation when a favourite/filter changes
+	a.favstyle.emoteFavRev++ // mirror the UI's invalidation when a favourite/filter changes
 	a.refreshEmoteView()
-	if got := a.emoteVisible; len(got) != 2 || got[0] != 1 || got[1] != 3 {
+	if got := a.favstyle.emoteVisible; len(got) != 2 || got[0] != 1 || got[1] != 3 {
 		t.Fatalf("favs-only visible = %v, want [1 3]", got)
 	}
-	if got := a.favBoxList; len(got) != 2 || got[0] != 1 || got[1] != 3 {
+	if got := a.favstyle.favBoxList; len(got) != 2 || got[0] != 1 || got[1] != 3 {
 		t.Fatalf("favBoxList = %v, want [1 3]", got)
 	}
-	if _, ok := a.emoteFavSet[1]; !ok {
+	if _, ok := a.favstyle.emoteFavSet[1]; !ok {
 		t.Error("emoteFavSet should contain emote 1")
 	}
-	if _, ok := a.emoteFavSet[0]; ok {
+	if _, ok := a.favstyle.emoteFavSet[0]; ok {
 		t.Error("emoteFavSet should not contain emote 0")
 	}
 
@@ -104,12 +104,12 @@ func TestRefreshEmoteView(t *testing.T) {
 
 	})
 
-	a.emoteFavRev++
+	a.favstyle.emoteFavRev++
 	a.refreshEmoteView()
-	if len(a.emoteVisible) != 5 {
-		t.Fatalf("favs-only off visible = %d, want 5 (all)", len(a.emoteVisible))
+	if len(a.favstyle.emoteVisible) != 5 {
+		t.Fatalf("favs-only off visible = %d, want 5 (all)", len(a.favstyle.emoteVisible))
 	}
-	if got := a.favBoxList; len(got) != 2 || got[0] != 1 || got[1] != 3 {
+	if got := a.favstyle.favBoxList; len(got) != 2 || got[0] != 1 || got[1] != 3 {
 		t.Fatalf("favBoxList with filter off = %v, want [1 3]", got)
 	}
 }

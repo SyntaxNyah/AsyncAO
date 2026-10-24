@@ -51,7 +51,7 @@ func TestAreaWrappedCache(t *testing.T) {
 	if len(first) != 2 {
 		t.Fatalf("first pass: %d rows, want 2", len(first))
 	}
-	a.areaWrap[areaQuerySlotOwn].rows = a.areaWrap[areaQuerySlotOwn].rows[:0] // clobber the cached result
+	a.chatlog.areaWrap[areaQuerySlotOwn].rows = a.chatlog.areaWrap[areaQuerySlotOwn].rows[:0] // clobber the cached result
 	second := a.areaWrapped(nil, 200, "", areaQuerySlotOwn)
 	if len(second) != 0 {
 		t.Fatalf("memo failed: unchanged inputs re-scanned (got %d rows)", len(second))
@@ -85,8 +85,8 @@ func TestAreaWrappedSlotsAreIndependent(t *testing.T) {
 		t.Fatalf("themed slot rows = %v, want just Beta — the passed-in query must drive the wrap", themed)
 	}
 	// Both slots must still be memo HITS for their own inputs (clobber-and-re-ask).
-	a.areaWrap[areaQuerySlotOwn].rows = a.areaWrap[areaQuerySlotOwn].rows[:0]
-	a.areaWrap[areaQuerySlotThemed].rows = a.areaWrap[areaQuerySlotThemed].rows[:0]
+	a.chatlog.areaWrap[areaQuerySlotOwn].rows = a.chatlog.areaWrap[areaQuerySlotOwn].rows[:0]
+	a.chatlog.areaWrap[areaQuerySlotThemed].rows = a.chatlog.areaWrap[areaQuerySlotThemed].rows[:0]
 	if rows := a.areaWrapped(nil, 200, "", areaQuerySlotOwn); len(rows) != 0 {
 		t.Errorf("own slot re-wrapped after the themed slot drew: %d rows", len(rows))
 	}

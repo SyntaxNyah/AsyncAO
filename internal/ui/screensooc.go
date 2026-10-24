@@ -75,24 +75,24 @@ const logScrollEaseTauMs = 50.0
 // target and returns it clamped. snap (a scrollbar drag) pins it 1:1 — a drag
 // must track the hand exactly. Frame-rate independent via frameDtMs.
 func (a *App) easeICScroll(maxScroll int32, snap bool) int32 {
-	target := float64(a.icScroll)
-	if snap || math.Abs(target-a.icScrollVis) < 0.5 {
-		a.icScrollVis = target
+	target := float64(a.chatlog.icScroll)
+	if snap || math.Abs(target-a.chatlog.icScrollVis) < 0.5 {
+		a.chatlog.icScrollVis = target
 	} else {
-		dt := float64(a.frameDtMs)
+		dt := float64(a.chatlog.frameDtMs)
 		if dt <= 0 {
 			dt = 16
 		}
-		a.icScrollVis += (target - a.icScrollVis) * (1 - math.Exp(-dt/logScrollEaseTauMs))
+		a.chatlog.icScrollVis += (target - a.chatlog.icScrollVis) * (1 - math.Exp(-dt/logScrollEaseTauMs))
 		a.NoteAnimating() // still gliding toward the target: keep frames coming so the ease doesn't freeze mid-scroll at idle=0
 	}
-	if a.icScrollVis < 0 {
-		a.icScrollVis = 0
+	if a.chatlog.icScrollVis < 0 {
+		a.chatlog.icScrollVis = 0
 	}
-	if m := float64(maxScroll); a.icScrollVis > m {
-		a.icScrollVis = m
+	if m := float64(maxScroll); a.chatlog.icScrollVis > m {
+		a.chatlog.icScrollVis = m
 	}
-	return int32(a.icScrollVis)
+	return int32(a.chatlog.icScrollVis)
 }
 
 // drawICLogList renders the colored IC scrollback (search-filtered,
@@ -134,21 +134,21 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	// VScrollbar's clamp of a shrunken log); anything the clamp itself moves is the
 	// FOLLOW. The two get different easing, so they have to be told apart — see the
 	// instant-follow branch below.
-	scrollAtEntry := a.icScroll
+	scrollAtEntry := a.chatlog.icScroll
 	if !zoomed { // a zoom consumed the wheel — don't also scroll
 		if d := c.WheelIn(list); d != 0 {
-			a.icScroll -= d * scrollStepPx
-			a.icStick = a.icScroll >= maxScroll // bottom re-sticks, up releases
+			a.chatlog.icScroll -= d * scrollStepPx
+			a.compose.icStick = a.chatlog.icScroll >= maxScroll // bottom re-sticks, up releases
 		}
 	}
-	before := a.icScroll
-	a.icScroll = c.VScrollbar("icscroll", track, a.icScroll, contentH, list.H)
-	if a.icScroll != before {
-		a.icStick = a.icScroll >= maxScroll // bar drag follows the same rule
+	before := a.chatlog.icScroll
+	a.chatlog.icScroll = c.VScrollbar("icscroll", track, a.chatlog.icScroll, contentH, list.H)
+	if a.chatlog.icScroll != before {
+		a.compose.icStick = a.chatlog.icScroll >= maxScroll // bar drag follows the same rule
 	}
 	// AUTO-SCROLL: while stuck, every new line lands in view no matter
 	// how many wrapped rows it added.
-	if a.icStick {
+	if a.compose.icStick {
 		// AO2 PARITY, and the default: the follow jump is INSTANT. AO2-Client's log is
 		// a QTextEdit whose scrollbar is slammed to maximum() the moment a line is
 		// appended — there is no glide — and a message that has already finished
@@ -156,14 +156,14 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 		// "Smooth log scrolling", pin the VISUAL offset to the new bottom here, which
 		// makes easeICScroll's "already there" branch take over (no NoteAnimating, so
 		// the follow also costs no extra frames at a low idle cap).
-		if a.icScroll != maxScroll && a.icScroll == scrollAtEntry && !a.d.Prefs.Load().SmoothLogScroll {
-			a.icScrollVis = float64(maxScroll)
+		if a.chatlog.icScroll != maxScroll && a.chatlog.icScroll == scrollAtEntry && !a.d.Prefs.Load().SmoothLogScroll {
+			a.chatlog.icScrollVis = float64(maxScroll)
 		}
-		a.icScroll = maxScroll
-		a.icReadMark = len(a.icLog) // caught up to the bottom: everything is read
+		a.chatlog.icScroll = maxScroll
+		a.compose.icReadMark = len(a.chatlog.icLog) // caught up to the bottom: everything is read
 	}
-	if a.icReadMark > len(a.icLog) {
-		a.icReadMark = len(a.icLog) // log was capped/cleared
+	if a.compose.icReadMark > len(a.chatlog.icLog) {
+		a.compose.icReadMark = len(a.chatlog.icLog) // log was capped/cleared
 	}
 	// #22 smooth scrolling: the on-screen offset EASES toward the target so
 	// wheel steps and sticky-bottom jumps glide instead of teleporting
@@ -204,9 +204,9 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	// up with unread; caught-up frames (icReadMark == len) skip it entirely, so
 	// the hot render path pays nothing.
 	firstUnreadRow := -1
-	if a.icReadMark < len(a.icLog) {
+	if a.compose.icReadMark < len(a.chatlog.icLog) {
 		for ri := range rows {
-			if rows[ri].entry >= a.icReadMark {
+			if rows[ri].entry >= a.compose.icReadMark {
 				firstUnreadRow = ri
 				break
 			}
@@ -225,7 +225,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	hoverLinkEntry := -1
 	if c.hovering(list) && c.mouseX < list.X+wrapW {
 		if li := int((c.mouseY - list.Y + visScroll) / lineH); li >= 0 && li < len(rows) {
-			if a.icLog[rows[li].entry].url != "" {
+			if a.chatlog.icLog[rows[li].entry].url != "" {
 				hoverLinkEntry = rows[li].entry
 			}
 		}
@@ -246,7 +246,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 			// into the leftover "$c0" placeholder (courtroom.cpp:3929/:3972), so it can
 			// never overwrite a colour the message actually asked for.
 			col := icInk
-			if ecol := a.icLog[row.entry].color; ecol > 0 {
+			if ecol := a.chatlog.icLog[row.entry].color; ecol > 0 {
 				col = render.TextColor(ecol)
 			}
 			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
@@ -255,9 +255,9 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 			// the master toggle + the entry flag — a no-friend log is byte-
 			// identical to before. A `name=hex` entry recolors the glow per
 			// friend; the alpha carries the (optional) pulse.
-			if friendsOn && a.icLog[row.entry].friend {
+			if friendsOn && a.chatlog.icLog[row.entry].friend {
 				tint := friendTintColor
-				if fc := a.icLog[row.entry].friendColor; fc >= 0 {
+				if fc := a.chatlog.icLog[row.entry].friendColor; fc >= 0 {
 					tint.R, tint.G, tint.B = uint8(fc>>16), uint8(fc>>8), uint8(fc)
 				}
 				tint.A = friendAlpha
@@ -287,7 +287,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 			// system/evidence lines or when a long name wrapped off this row).
 			lineSpeaker := ""
 			if nameColorsOn && a.icRowIsEntryStart(ri) {
-				lineSpeaker = a.icLog[row.entry].speaker
+				lineSpeaker = a.chatlog.icLog[row.entry].speaker
 			}
 			// Not said yet → faint. AFTER the link-hover override deliberately: a
 			// hovered link on an unspoken line should still read as unspoken, and the
@@ -303,14 +303,14 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 			// Inline-colour body (#123): a styled entry draws its body in the
 			// authored colours; a ghosted or link-hovered row keeps the single-colour
 			// path (its override colour is a transient UI state, not the message).
-			if styles := a.icLog[row.entry].styles; len(styles) > 0 && row.entry != hoverLinkEntry && !ghostedRow {
+			if styles := a.chatlog.icLog[row.entry].styles; len(styles) > 0 && row.entry != hoverLinkEntry && !ghostedRow {
 				bodyLen := utf8.RuneCountInString(row.text) - row.headRunes
 				spans := inlineSpanAt(styles, row.headRunes, row.bodyOff, bodyLen, col)
 				a.drawColoredLogRow(font, c.EmojiFont(icPct), list.X+indent, y, wrapW-indent, row.text, spans)
 			} else {
 				a.drawLogLineNamed(font, c.EmojiFont(icPct), list.X+indent, y, wrapW-indent, row.text, lineSpeaker, col, nameColorsOn, nameSat, nameVal, boldNames)
 			}
-			if u := a.icLog[row.entry].url; u != "" {
+			if u := a.chatlog.icLog[row.entry].url; u != "" {
 				if c.hovering(rowRect) {
 					c.Tooltip(rowRect, "Open "+u)
 					if c.clicked {
@@ -323,7 +323,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 			// pinning lives on its chord; double-click selects the line; pairing moved
 			// to the player list's Pair button.
 			if pinChord && c.hovering(sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}) {
-				a.pinNote(a.icLog[row.entry].text)
+				a.pinNote(a.chatlog.icLog[row.entry].text)
 			}
 		}
 		y += lineH
@@ -331,7 +331,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	// "N new" pill: while scrolled up, show how many messages arrived since you
 	// last caught up. Clicking it jumps to the FIRST unread line (read forward
 	// from where you left off); the Jump-logs hotkey still snaps to newest.
-	if unread := len(a.icLog) - a.icReadMark; unread > 0 && !a.icStick {
+	if unread := len(a.chatlog.icLog) - a.compose.icReadMark; unread > 0 && !a.compose.icStick {
 		label := fmt.Sprintf("↓ %d new", unread)
 		bw := c.TextWidth(label) + 20
 		pill := sdl.Rect{X: list.X + (list.W-bw)/2, Y: list.Y + list.H - 26, W: bw, H: 22}
@@ -340,17 +340,17 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 		if c.hovering(pill) {
 			c.Tooltip(pill, "Left-click: jump to the newest message · right-click: first unread")
 			if c.clicked { // left-click → snap straight to the latest message
-				a.icScroll, a.icStick = maxScroll, true
+				a.chatlog.icScroll, a.compose.icStick = maxScroll, true
 			} else if c.rightClicked { // right-click → read forward from the first unread
 				if firstUnreadRow >= 0 {
-					a.icScroll = clampI32(int32(firstUnreadRow)*lineH, 0, maxScroll)
-					a.icStick = a.icScroll >= maxScroll
+					a.chatlog.icScroll = clampI32(int32(firstUnreadRow)*lineH, 0, maxScroll)
+					a.compose.icStick = a.chatlog.icScroll >= maxScroll
 				} else {
-					a.icStick = true // unread rows scrolled off the cap: just go live
+					a.compose.icStick = true // unread rows scrolled off the cap: just go live
 				}
 			}
 		}
-	} else if !a.icStick && maxScroll > 0 {
+	} else if !a.compose.icStick && maxScroll > 0 {
 		// #217 scroll-to-bottom: scrolled up with nothing new to announce, so the
 		// accent "N new" pill above doesn't fire — offer a plain "jump to latest"
 		// button (Discord-style) so you don't have to drag the scrollbar all the
@@ -365,7 +365,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 		if c.hovering(pill) {
 			c.Tooltip(pill, "Jump to the newest message")
 			if c.clicked {
-				a.icScroll, a.icStick = maxScroll, true
+				a.chatlog.icScroll, a.compose.icStick = maxScroll, true
 			}
 		}
 	}
@@ -409,25 +409,25 @@ func (a *App) drawOOCLogList(list sdl.Rect, canvasInk bool) {
 	}
 	if !zoomed {
 		if d := c.WheelIn(list); d != 0 {
-			a.oocScroll -= d * scrollStepPx
-			a.oocStick = a.oocScroll >= maxScroll // bottom re-sticks, up releases
+			a.chatlog.oocScroll -= d * scrollStepPx
+			a.compose.oocStick = a.chatlog.oocScroll >= maxScroll // bottom re-sticks, up releases
 		}
 	}
-	before := a.oocScroll
-	a.oocScroll = c.VScrollbar("oocscroll", track, a.oocScroll, contentH, list.H)
-	if a.oocScroll != before {
-		a.oocStick = a.oocScroll >= maxScroll
+	before := a.chatlog.oocScroll
+	a.chatlog.oocScroll = c.VScrollbar("oocscroll", track, a.chatlog.oocScroll, contentH, list.H)
+	if a.chatlog.oocScroll != before {
+		a.compose.oocStick = a.chatlog.oocScroll >= maxScroll
 	}
-	if a.oocStick {
-		a.oocScroll = maxScroll
+	if a.compose.oocStick {
+		a.chatlog.oocScroll = maxScroll
 	}
 	// Drag-select / Ctrl+C (before the loop so a real drag swallows the click).
-	a.handleLogSelect(logSelOOC, list, a.oocScroll, lineH, wrapW)
+	a.handleLogSelect(logSelOOC, list, a.chatlog.oocScroll, lineH, wrapW)
 	// Hovering a link tints THAT link (all of it, across the rows the wrap split
 	// it into) — not the whole message, and not its neighbours (#38).
-	hoverSpan, hoverID := a.oocHoverSpan(list, a.oocScroll, lineH, wrapW, len(lines))
+	hoverSpan, hoverID := a.oocHoverSpan(list, a.chatlog.oocScroll, lineH, wrapW, len(lines))
 	clipPrev, clipHad := c.pushClip(list) // top/bottom row clipped to the rect, not the tabs
-	y := list.Y - a.oocScroll
+	y := list.Y - a.chatlog.oocScroll
 	for li, line := range lines {
 		if y > list.Y+list.H-lineH {
 			break
@@ -578,12 +578,12 @@ func (jukebox1 *jukeboxState) oocLinkActions(rowRect, linkRect sdl.Rect, url str
 // The name falls back to the sticky AsyncAO<n> — servers reject empty
 // OOC names, and commands must always be sendable.
 func (a *App) submitOOC() {
-	if strings.TrimSpace(a.oocInput) == "" || a.sess == nil {
+	if strings.TrimSpace(a.compose.oocInput) == "" || a.sess == nil {
 		return
 	}
-	a.sess.SendOOC(a.oocNameOrDefault(), a.oocInput)
-	a.recordSentOOC(a.oocInput) // remember the raw line for Up-arrow recall (mirrors IC #8)
-	a.oocInput = ""             // clears at send (no echo protocol) — the field's undo history catches it (Ctrl+Z)
+	a.sess.SendOOC(a.oocNameOrDefault(), a.compose.oocInput)
+	a.recordSentOOC(a.compose.oocInput) // remember the raw line for Up-arrow recall (mirrors IC #8)
+	a.compose.oocInput = ""             // clears at send (no echo protocol) — the field's undo history catches it (Ctrl+Z)
 }
 
 // drawOOCPanel is the actual OOC box: full scrollable history plus the
@@ -627,25 +627,25 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	}
 	if !zoomed { // a zoom consumed the wheel — don't also scroll
 		if d := c.WheelIn(list); d != 0 {
-			a.oocScroll -= d * scrollStepPx
-			a.oocStick = a.oocScroll >= maxScroll // bottom re-sticks, up releases
+			a.chatlog.oocScroll -= d * scrollStepPx
+			a.compose.oocStick = a.chatlog.oocScroll >= maxScroll // bottom re-sticks, up releases
 		}
 	}
-	before := a.oocScroll
-	a.oocScroll = c.VScrollbar("oocscroll", track, a.oocScroll, contentH, list.H)
-	if a.oocScroll != before {
-		a.oocStick = a.oocScroll >= maxScroll
+	before := a.chatlog.oocScroll
+	a.chatlog.oocScroll = c.VScrollbar("oocscroll", track, a.chatlog.oocScroll, contentH, list.H)
+	if a.chatlog.oocScroll != before {
+		a.compose.oocStick = a.chatlog.oocScroll >= maxScroll
 	}
-	if a.oocStick {
-		a.oocScroll = maxScroll
+	if a.compose.oocStick {
+		a.chatlog.oocScroll = maxScroll
 	}
 	// Drag-select / Ctrl+C + links — same as the themed OOC log (this is the
 	// classic OOC tab's own scrollback; it must behave identically).
-	a.handleLogSelect(logSelOOC, list, a.oocScroll, lineH, wrapW)
+	a.handleLogSelect(logSelOOC, list, a.chatlog.oocScroll, lineH, wrapW)
 	// Hovering a link tints THAT link only — same contract as the themed log (#38).
-	hoverSpan, hoverID := a.oocHoverSpan(list, a.oocScroll, lineH, wrapW, len(lines))
+	hoverSpan, hoverID := a.oocHoverSpan(list, a.chatlog.oocScroll, lineH, wrapW, len(lines))
 	clipPrev, clipHad := c.pushClip(list) // scrollback only; restored before the fields below
-	y := list.Y - a.oocScroll
+	y := list.Y - a.chatlog.oocScroll
 	for li, line := range lines {
 		if y > list.Y+list.H-lineH {
 			break
@@ -676,8 +676,8 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	if withInput {
 		// The OOC message bar lives INSIDE the box now (one unified OOC chat), not a separate bottom row.
 		var sent bool
-		oocPrimary, oocEmoji := a.icFieldFonts(a.oocInput)
-		a.oocInput, sent = c.TextFieldEmoji("oocmsg", sdl.Rect{X: r.X, Y: fy, W: r.W - 4, H: fH}, a.oocInput, "OOC chat… (Enter to send)", oocPrimary, oocEmoji)
+		oocPrimary, oocEmoji := a.icFieldFonts(a.compose.oocInput)
+		a.compose.oocInput, sent = c.TextFieldEmoji("oocmsg", sdl.Rect{X: r.X, Y: fy, W: r.W - 4, H: fH}, a.compose.oocInput, "OOC chat… (Enter to send)", oocPrimary, oocEmoji)
 		if sent {
 			a.submitOOC()
 		}
@@ -691,8 +691,8 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	// default lives in Settings → Identity.
 	// A CJK OOC name must render as real glyphs while typed (same fallback route as
 	// the IC input); plain ASCII keeps the single-font fast path (icFieldFonts is nil).
-	onPrimary, onEmoji := a.icFieldFonts(a.oocName)
-	a.oocName, _ = c.TextFieldEmoji("oocname2", sdl.Rect{X: r.X, Y: fy, W: r.W - 4, H: fH}, a.oocName, "OOC name (this tab)", onPrimary, onEmoji)
+	onPrimary, onEmoji := a.icFieldFonts(a.compose.oocName)
+	a.compose.oocName, _ = c.TextFieldEmoji("oocname2", sdl.Rect{X: r.X, Y: fy, W: r.W - 4, H: fH}, a.compose.oocName, "OOC name (this tab)", onPrimary, onEmoji)
 }
 
 // areaWrapMaxLines bounds how many lines a single area name or its detail
@@ -758,7 +758,7 @@ func (row areaWrapRow) lineCount() int32 {
 // (areaInfoSeq), search query, card width, zoom, or font chain changed —
 // never per frame (mirrors icWrapped in qol.go).
 func (a *App) areaWrapped(font *ttf.Font, cardW int32, query string, slot int) []areaWrapRow {
-	m := &a.areaWrap[slot]
+	m := &a.chatlog.areaWrap[slot]
 	// #39: key on the RESOLVED scale (theme "area_list" size × the area zoom), not
 	// the raw zoom — a theme swap that only changes the point size must re-wrap.
 	pct := a.elemPct(elemAreaList, a.areaPct)

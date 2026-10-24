@@ -76,15 +76,15 @@ func (a *App) ensureIniswapChoices() {
 	own := a.myCharName()
 	gen := a.d.Prefs.WardrobeGeneration()
 	worn := a.activeCharName()
-	if a.iniswapChoicesForChar == own && a.iniswapChoicesGen == gen && a.iniswapChoicesWorn == worn {
+	if a.emotepick.iniswapChoicesForChar == own && a.emotepick.iniswapChoicesGen == gen && a.emotepick.iniswapChoicesWorn == worn {
 		return
 	}
-	a.iniswapChoicesForChar, a.iniswapChoicesGen, a.iniswapChoicesWorn = own, gen, worn
+	a.emotepick.iniswapChoicesForChar, a.emotepick.iniswapChoicesGen, a.emotepick.iniswapChoicesWorn = own, gen, worn
 	var wardrobe []string
 	if own != "" {
 		wardrobe = a.d.Prefs.Load().WardrobeList(a.serverKey)
 	}
-	a.iniswapChoices = buildIniswapChoices(a.iniswapChoices, own, wardrobe, worn)
+	a.emotepick.iniswapChoices = buildIniswapChoices(a.emotepick.iniswapChoices, own, wardrobe, worn)
 }
 
 // pos_remove: the little X beside the position dropdown that reverts to the
@@ -97,8 +97,8 @@ func (a *App) ensureIniswapChoices() {
 // resolves to the same value AsyncAO's mySide() already falls back to, which is
 // what makes pos_remove correctly HIDDEN while a char.ini is in flight.
 func (a *App) defaultSide() string {
-	if a.charDefaultSide != "" {
-		return a.charDefaultSide
+	if a.compose.charDefaultSide != "" {
+		return a.compose.charDefaultSide
 	}
 	return "wit"
 }

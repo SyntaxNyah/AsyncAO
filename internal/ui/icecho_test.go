@@ -31,18 +31,18 @@ func TestSendICKeepsInputUntilEcho(t *testing.T) {
 	var sent []protocol.Packet
 	a.sess = courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
 	a.sess.MyCharID = 7
-	a.icInput = "gotcha — the clock was stopped"
+	a.compose.icInput = "gotcha — the clock was stopped"
 
 	a.sendIC()
 
 	if len(sent) != 1 || sent[0].Header != "MS" {
 		t.Fatalf("want exactly one MS out, got %+v", sent)
 	}
-	if a.icInput != "gotcha — the clock was stopped" {
-		t.Errorf("input must be KEPT until the echo, got %q", a.icInput)
+	if a.compose.icInput != "gotcha — the clock was stopped" {
+		t.Errorf("input must be KEPT until the echo, got %q", a.compose.icInput)
 	}
-	if a.icPendingSent != a.icInput {
-		t.Errorf("pending snapshot = %q, want the typed line", a.icPendingSent)
+	if a.compose.icPendingSent != a.compose.icInput {
+		t.Errorf("pending snapshot = %q, want the typed line", a.compose.icPendingSent)
 	}
 }
 
@@ -51,13 +51,13 @@ func TestSendICKeepsInputUntilEcho(t *testing.T) {
 // still holds exactly what was sent.
 func TestOwnEchoClearsUnchangedInput(t *testing.T) {
 	a := testTabApp(t)
-	a.icInput, a.icPendingSent, a.evidPresent = "same line", "same line", true
+	a.compose.icInput, a.compose.icPendingSent, a.evidPresent = "same line", "same line", true
 
 	a.noteOwnICEcho()
 
-	if a.icInput != "" || a.icPendingSent != "" || a.evidPresent {
+	if a.compose.icInput != "" || a.compose.icPendingSent != "" || a.evidPresent {
 		t.Errorf("own echo must clear box+pending+present, got input=%q pending=%q present=%v",
-			a.icInput, a.icPendingSent, a.evidPresent)
+			a.compose.icInput, a.compose.icPendingSent, a.evidPresent)
 	}
 }
 
@@ -66,15 +66,15 @@ func TestOwnEchoClearsUnchangedInput(t *testing.T) {
 // UNCHANGED box), while the pending snapshot is still consumed.
 func TestOwnEchoKeepsEditedInput(t *testing.T) {
 	a := testTabApp(t)
-	a.icInput, a.icPendingSent = "already retyping the next line", "the sent line"
+	a.compose.icInput, a.compose.icPendingSent = "already retyping the next line", "the sent line"
 
 	a.noteOwnICEcho()
 
-	if a.icInput != "already retyping the next line" {
-		t.Errorf("edited input must survive the echo, got %q", a.icInput)
+	if a.compose.icInput != "already retyping the next line" {
+		t.Errorf("edited input must survive the echo, got %q", a.compose.icInput)
 	}
-	if a.icPendingSent != "" {
-		t.Errorf("pending must still be consumed, got %q", a.icPendingSent)
+	if a.compose.icPendingSent != "" {
+		t.Errorf("pending must still be consumed, got %q", a.compose.icPendingSent)
 	}
 }
 
@@ -85,15 +85,15 @@ func TestOwnEchoKeepsEditedInput(t *testing.T) {
 // verbatim, so it is never lost and never has to be retyped.
 func TestOwnEchoStripsAppendedContinuation(t *testing.T) {
 	a := testTabApp(t)
-	a.icInput, a.icPendingSent = "gotcha and here's more", "gotcha"
+	a.compose.icInput, a.compose.icPendingSent = "gotcha and here's more", "gotcha"
 
 	a.noteOwnICEcho()
 
-	if a.icInput != " and here's more" {
-		t.Errorf("a continuation typed on top of the sent line must survive, got %q", a.icInput)
+	if a.compose.icInput != " and here's more" {
+		t.Errorf("a continuation typed on top of the sent line must survive, got %q", a.compose.icInput)
 	}
-	if a.icPendingSent != "" {
-		t.Errorf("pending must still be consumed, got %q", a.icPendingSent)
+	if a.compose.icPendingSent != "" {
+		t.Errorf("pending must still be consumed, got %q", a.compose.icPendingSent)
 	}
 }
 
@@ -105,12 +105,12 @@ func TestOwnEchoStripsAppendedContinuation(t *testing.T) {
 // "nothing pending" as "a blankpost was sent, so clear anyway").
 func TestOwnEchoStripsAppendedContinuation_EmptyPending(t *testing.T) {
 	a := testTabApp(t)
-	a.icInput, a.icPendingSent = "fresh draft", ""
+	a.compose.icInput, a.compose.icPendingSent = "fresh draft", ""
 
 	a.noteOwnICEcho()
 
-	if a.icInput != "fresh draft" {
-		t.Errorf("an empty pending snapshot must not touch the draft, got %q", a.icInput)
+	if a.compose.icInput != "fresh draft" {
+		t.Errorf("an empty pending snapshot must not touch the draft, got %q", a.compose.icInput)
 	}
 }
 
@@ -123,16 +123,16 @@ func TestActiveTabOwnEchoStripsAppendedContinuation(t *testing.T) {
 	a := testTabApp(t)
 	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	a.sess.MyCharID = 0
-	a.icInput, a.icPendingSent = "gotcha and here's more", "gotcha"
+	a.compose.icInput, a.compose.icPendingSent = "gotcha and here's more", "gotcha"
 
 	own := &protocol.ChatMessage{CharID: 0, CharName: "Phoenix", Message: "gotcha"}
 	a.handleSessionEvents([]courtroom.Event{{Kind: courtroom.EventMessage, Message: own}})
 
-	if a.icInput != " and here's more" {
-		t.Errorf("active-tab own echo must strip only the sent prefix, got %q", a.icInput)
+	if a.compose.icInput != " and here's more" {
+		t.Errorf("active-tab own echo must strip only the sent prefix, got %q", a.compose.icInput)
 	}
-	if a.icPendingSent != "" {
-		t.Errorf("pending must still be consumed, got %q", a.icPendingSent)
+	if a.compose.icPendingSent != "" {
+		t.Errorf("pending must still be consumed, got %q", a.compose.icPendingSent)
 	}
 }
 
@@ -146,20 +146,19 @@ func TestBackgroundEchoStripsAppendedContinuation(t *testing.T) {
 	sess := courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	sess.MyCharID = 0
 	tab := &courtTab{state: sessionState{
-		sess:          sess,
-		icInput:       "gotcha and here's more",
-		icPendingSent: "gotcha",
+		sess:    sess,
+		compose: composeState{icInput: "gotcha and here's more", icPendingSent: "gotcha"},
 	}}
 	a.tabs = append(a.tabs, tab)
 
 	own := &protocol.ChatMessage{CharID: 0, CharName: "Phoenix", Message: "gotcha"}
 	a.routeBackgroundEvent(tab, courtroom.Event{Kind: courtroom.EventMessage, Message: own})
 
-	if tab.state.icInput != " and here's more" {
-		t.Errorf("parked-tab own echo must strip only the sent prefix, got %q", tab.state.icInput)
+	if tab.state.compose.icInput != " and here's more" {
+		t.Errorf("parked-tab own echo must strip only the sent prefix, got %q", tab.state.compose.icInput)
 	}
-	if tab.state.icPendingSent != "" {
-		t.Errorf("pending must still be consumed, got %q", tab.state.icPendingSent)
+	if tab.state.compose.icPendingSent != "" {
+		t.Errorf("pending must still be consumed, got %q", tab.state.compose.icPendingSent)
 	}
 }
 
@@ -171,23 +170,22 @@ func TestBackgroundEchoClearsParkedInput(t *testing.T) {
 	sess := courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	sess.MyCharID = 0
 	tab := &courtTab{state: sessionState{
-		sess:          sess,
-		icInput:       "parked line",
-		icPendingSent: "parked line",
+		sess:    sess,
+		compose: composeState{icInput: "parked line", icPendingSent: "parked line"},
 	}}
 	a.tabs = append(a.tabs, tab)
 
 	foreign := &protocol.ChatMessage{CharID: 3, CharName: "Edgeworth", Message: "hold it"}
 	a.routeBackgroundEvent(tab, courtroom.Event{Kind: courtroom.EventMessage, Message: foreign})
-	if tab.state.icInput != "parked line" || tab.state.icPendingSent != "parked line" {
+	if tab.state.compose.icInput != "parked line" || tab.state.compose.icPendingSent != "parked line" {
 		t.Fatalf("a foreign message must not clear the parked input, got input=%q pending=%q",
-			tab.state.icInput, tab.state.icPendingSent)
+			tab.state.compose.icInput, tab.state.compose.icPendingSent)
 	}
 
 	own := &protocol.ChatMessage{CharID: 0, CharName: "Phoenix", Message: "parked line"}
 	a.routeBackgroundEvent(tab, courtroom.Event{Kind: courtroom.EventMessage, Message: own})
-	if tab.state.icInput != "" || tab.state.icPendingSent != "" {
+	if tab.state.compose.icInput != "" || tab.state.compose.icPendingSent != "" {
 		t.Errorf("own echo must clear the parked input, got input=%q pending=%q",
-			tab.state.icInput, tab.state.icPendingSent)
+			tab.state.compose.icInput, tab.state.compose.icPendingSent)
 	}
 }

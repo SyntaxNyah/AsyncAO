@@ -321,7 +321,7 @@ func (a *App) styleBoxRect(w, h int32) (sdl.Rect, int32) {
 	bh := extrasTitleH + styleBoxPad // title + top pad
 	bh += 50                         // 3-line "what it does / who sees it" note
 	bh += 20                         // preview header row
-	if !a.stylePrevOff {
+	if !a.favstyle.stylePrevOff {
 		bh += stylePrevH + 8 // the live preview strip
 	}
 	bh += 26 // Tint + Hue-paint row
@@ -357,8 +357,8 @@ func (a *App) styleBoxRect(w, h int32) (sdl.Rect, int32) {
 	bh += 22 + 28 + int32(a.d.Prefs.Load().StylePresetCount())*26
 	bh += styleBoxPad
 	bw := styleBoxW
-	if a.styleBoxUserW > 0 {
-		bw = a.styleBoxUserW // user-dragged width (the sliders / notes follow r.W)
+	if a.favstyle.styleBoxUserW > 0 {
+		bw = a.favstyle.styleBoxUserW // user-dragged width (the sliders / notes follow r.W)
 	}
 	if bw < styleBoxMinW {
 		bw = styleBoxMinW
@@ -370,8 +370,8 @@ func (a *App) styleBoxRect(w, h int32) (sdl.Rect, int32) {
 	if bh > h-styleBoxWinMargin {
 		bh = h - styleBoxWinMargin
 	}
-	x, y := a.styleBoxX, a.styleBoxY
-	if !a.styleBoxPlaced {
+	x, y := a.favstyle.styleBoxX, a.favstyle.styleBoxY
+	if !a.favstyle.styleBoxPlaced {
 		x, y = w-bw-24, 96
 	}
 	maxX, maxY := w-bw-8, h-bh-8
@@ -408,7 +408,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	c.Fill(sw, swCol)
 	c.Border(sw, ColBackground)
 	if c.Button(sdl.Rect{X: r.X + r.W - 24, Y: r.Y + 4, W: 18, H: extrasTitleH - 8}, "x") {
-		a.showStyleBox = false
+		a.favstyle.showStyleBox = false
 		return
 	}
 	a.handleStyleBoxDrag(sdl.Rect{X: r.X, Y: r.Y, W: r.W - 56, H: extrasTitleH}, w, h, pressed)
@@ -424,12 +424,12 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
-	a.styleBoxScroll -= c.WheelIn(bodyRect) * scrollStepPx
-	if a.styleBoxScroll < 0 {
-		a.styleBoxScroll = 0
+	a.favstyle.styleBoxScroll -= c.WheelIn(bodyRect) * scrollStepPx
+	if a.favstyle.styleBoxScroll < 0 {
+		a.favstyle.styleBoxScroll = 0
 	}
-	if a.styleBoxScroll > maxScroll {
-		a.styleBoxScroll = maxScroll
+	if a.favstyle.styleBoxScroll > maxScroll {
+		a.favstyle.styleBoxScroll = maxScroll
 	}
 	// pushClip (not a raw SetClipRect) so hovering() honours the clip: a slider,
 	// swatch or checkbox scrolled behind the title bar / off the bottom must not
@@ -439,7 +439,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	clipPrev, clipHad := c.pushClip(bodyRect)
 
 	x := r.X + styleBoxPad
-	y := r.Y + extrasTitleH + 6 - a.styleBoxScroll
+	y := r.Y + extrasTitleH + 6 - a.favstyle.styleBoxScroll
 
 	// What it does + how others see it (the user asked for this in the box).
 	noteW := r.W - styleBoxPad*2
@@ -455,23 +455,23 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	// path with the current style applied — paint, restyle, glitch, motion and all.
 	c.Label(x, y+1, "Preview", ColTextDim)
 	tgl := "Hide"
-	if a.stylePrevOff {
+	if a.favstyle.stylePrevOff {
 		tgl = "Show"
 	}
 	if c.Button(sdl.Rect{X: x + noteW - 44, Y: y - 1, W: 44, H: 18}, tgl) {
-		a.stylePrevOff = !a.stylePrevOff
+		a.favstyle.stylePrevOff = !a.favstyle.stylePrevOff
 	}
 	y += 20
-	if !a.stylePrevOff {
+	if !a.favstyle.stylePrevOff {
 		pv := sdl.Rect{X: x, Y: y, W: noteW, H: stylePrevH}
 		// The real stage background behind the sprite (the pair-ghost pattern): a
 		// flat fill stands in until it streams.
 		bgPart, _ := courtroom.PositionScene(a.mySide())
 		bgBase := a.urls.Background(a.sess.Background, bgPart)
-		if bgBase != a.stylePrevBgKey {
-			a.stylePrevBgPages, a.stylePrevBgKey = nil, bgBase
+		if bgBase != a.favstyle.stylePrevBgKey {
+			a.favstyle.stylePrevBgPages, a.favstyle.stylePrevBgKey = nil, bgBase
 		}
-		if page, ok := a.cachedPage(&a.stylePrevBgPages, &a.stylePrevBgGen, 1, 0, bgBase); ok && len(page.Frames) > 0 {
+		if page, ok := a.cachedPage(&a.favstyle.stylePrevBgPages, &a.favstyle.stylePrevBgGen, 1, 0, bgBase); ok && len(page.Frames) > 0 {
 			_ = c.Ren.Copy(page.Frames[0], nil, &pv)
 		} else {
 			c.Fill(pv, sdl.Color{R: 12, G: 12, B: 16, A: 255})
@@ -481,12 +481,12 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		}
 		if me := a.activeCharName(); me != "" && a.d.Viewport != nil {
 			anim := ghostFallbackEmote
-			if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {
-				anim = a.emotes[a.emoteIdx].Anim
+			if a.emotepick.emoteIdx >= 0 && a.emotepick.emoteIdx < len(a.emotepick.emotes) {
+				anim = a.emotepick.emotes[a.emotepick.emoteIdx].Anim
 			}
 			sbase := a.urls.Emote(me, anim, courtroom.EmoteIdle)
-			if a.stylePrevWarm != sbase { // warm once per emote base, not per frame
-				a.stylePrevWarm = sbase
+			if a.favstyle.stylePrevWarm != sbase { // warm once per emote base, not per frame
+				a.favstyle.stylePrevWarm = sbase
 				a.d.Manager.PrefetchChain(sbase, a.urls.EmoteAlts(me, anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (style preview)
 			}
 			a.d.Viewport.RenderStylePreview(c.Ren, sbase, styleFromPref(p), pv)
@@ -874,10 +874,10 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 				}
 			}
 		}
-		drawHex(x, "A", "glitchHexA", &a.glitchHexA, effA, func(col sdl.Color) {
+		drawHex(x, "A", "glitchHexA", &a.favstyle.glitchHexA, effA, func(col sdl.Color) {
 			p.GlitchAR, p.GlitchAG, p.GlitchAB = col.R, col.G, col.B
 		})
-		drawHex(x+half+8, "B", "glitchHexB", &a.glitchHexB, effB, func(col sdl.Color) {
+		drawHex(x+half+8, "B", "glitchHexB", &a.favstyle.glitchHexB, effB, func(col sdl.Color) {
 			p.GlitchBR, p.GlitchBG, p.GlitchBB = col.R, col.G, col.B
 		})
 		y += 30
@@ -911,18 +911,18 @@ func (a *App) handleStyleBoxDrag(handle sdl.Rect, w, h int32, pressed *bool) {
 	if *pressed && pointIn(c.mouseX, c.mouseY, handle) {
 		*pressed = false
 		r, _ := a.styleBoxRect(w, h)
-		a.styleBoxDragging = true
-		a.styleBoxGrabDX, a.styleBoxGrabDY = c.mouseX-r.X, c.mouseY-r.Y
+		a.favstyle.styleBoxDragging = true
+		a.favstyle.styleBoxGrabDX, a.favstyle.styleBoxGrabDY = c.mouseX-r.X, c.mouseY-r.Y
 	}
 	if !c.mouseDown {
-		a.styleBoxDragging = false
+		a.favstyle.styleBoxDragging = false
 	}
-	if a.styleBoxDragging {
-		a.styleBoxX, a.styleBoxY = c.mouseX-a.styleBoxGrabDX, c.mouseY-a.styleBoxGrabDY
-		a.styleBoxPlaced = true
+	if a.favstyle.styleBoxDragging {
+		a.favstyle.styleBoxX, a.favstyle.styleBoxY = c.mouseX-a.favstyle.styleBoxGrabDX, c.mouseY-a.favstyle.styleBoxGrabDY
+		a.favstyle.styleBoxPlaced = true
 		if !a.siblingMagnetOff() && len(a.panelMagnetRects) > 0 { // M3: piece-to-piece magnet
 			r, _ := a.styleBoxRect(w, h)
-			a.styleBoxX, a.styleBoxY, a.alignGuides = snapRectToSiblings(r, a.panelMagnetRects, w, h, a.alignGuides)
+			a.favstyle.styleBoxX, a.favstyle.styleBoxY, a.alignGuides = snapRectToSiblings(r, a.panelMagnetRects, w, h, a.alignGuides)
 		}
 	}
 }
@@ -934,19 +934,19 @@ func (a *App) handleStyleResize(grip, r sdl.Rect, pressed *bool) {
 	c := a.ctx
 	if *pressed && pointIn(c.mouseX, c.mouseY, grip) {
 		*pressed = false
-		a.styleBoxResizing = true
-		a.styleBoxX, a.styleBoxY = r.X, r.Y // pin the corner so the box doesn't re-default
-		a.styleBoxPlaced = true
-		a.styleBoxGrabDX = (r.X + r.W) - c.mouseX
+		a.favstyle.styleBoxResizing = true
+		a.favstyle.styleBoxX, a.favstyle.styleBoxY = r.X, r.Y // pin the corner so the box doesn't re-default
+		a.favstyle.styleBoxPlaced = true
+		a.favstyle.styleBoxGrabDX = (r.X + r.W) - c.mouseX
 	}
 	if !c.mouseDown {
-		a.styleBoxResizing = false
+		a.favstyle.styleBoxResizing = false
 	}
-	if a.styleBoxResizing {
-		nw := (c.mouseX + a.styleBoxGrabDX) - r.X
+	if a.favstyle.styleBoxResizing {
+		nw := (c.mouseX + a.favstyle.styleBoxGrabDX) - r.X
 		if nw < styleBoxMinW {
 			nw = styleBoxMinW
 		}
-		a.styleBoxUserW = nw // styleBoxRect clamps the window ceiling
+		a.favstyle.styleBoxUserW = nw // styleBoxRect clamps the window ceiling
 	}
 }

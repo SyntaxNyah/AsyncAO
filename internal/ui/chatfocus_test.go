@@ -40,7 +40,7 @@ func TestTypingClaimsTheICInputOnTheFIRSTKeystroke(t *testing.T) {
 		t.Fatal("the fixture's courtroom painted no IC input, so nothing below is measuring the claim")
 	}
 	a.ctx.focusID = "" // nothing focused, which is the whole precondition
-	before := a.icInput
+	before := a.compose.icInput
 
 	driveTypedText(a, "h")
 
@@ -48,9 +48,9 @@ func TestTypingClaimsTheICInputOnTheFIRSTKeystroke(t *testing.T) {
 		t.Fatalf("focus = %q after typing with nothing focused, want %q — the claim refused a real "+
 			"frame's keystroke (it reads the list BeginDraw just emptied)", a.ctx.focusID, icFieldID)
 	}
-	if want := before + "h"; a.icInput != want {
+	if want := before + "h"; a.compose.icInput != want {
 		t.Fatalf("the IC input holds %q, want %q — the FIRST keystroke was swallowed: the claim has to "+
-			"land before the field draws, in the same frame, or this is plain click-to-focus", a.icInput, want)
+			"land before the field draws, in the same frame, or this is plain click-to-focus", a.compose.icInput, want)
 	}
 	if !a.ctx.caretOn {
 		t.Error("the caret must land visible, as the Tab cycle does")
@@ -186,8 +186,8 @@ func TestBounceOnToggleFiresOnTheCHANGEOnly(t *testing.T) {
 func TestSFXPickBouncesFocusAndAuditions(t *testing.T) {
 	a := focusTestApp()
 	a.applySFXPick(0) // row 0 is "auto": no audition, so no audio device is needed
-	if a.sfxChoiceIdx != 0 {
-		t.Errorf("the pick did not land (idx %d)", a.sfxChoiceIdx)
+	if a.emotepick.sfxChoiceIdx != 0 {
+		t.Errorf("the pick did not land (idx %d)", a.emotepick.sfxChoiceIdx)
 	}
 	if a.ctx.focusNext != icFieldID {
 		t.Errorf("an SFX pick queued focus onto %q, want %q (courtroom.cpp:5501)", a.ctx.focusNext, icFieldID)
@@ -202,8 +202,8 @@ func TestICColorPickBouncesFocusExceptTheColourWheel(t *testing.T) {
 	// Whole-message branch: no frozen selection, a standard palette pick.
 	a := colorPickTestApp(t)
 	a.applyICColorPick(2)
-	if a.icColor != 2 {
-		t.Fatalf("the pick did not land (icColor %d) — nothing below is measuring the bounce", a.icColor)
+	if a.compose.icColor != 2 {
+		t.Fatalf("the pick did not land (icColor %d) — nothing below is measuring the bounce", a.compose.icColor)
 	}
 	if a.ctx.focusNext != icFieldID {
 		t.Errorf("a colour pick queued focus onto %q, want %q (courtroom.cpp:6402)", a.ctx.focusNext, icFieldID)
@@ -214,14 +214,14 @@ func TestICColorPickBouncesFocusExceptTheColourWheel(t *testing.T) {
 	// markup. Canon bounces here too: the focus call sits below the if/else, not
 	// inside the else.
 	b := colorPickTestApp(t)
-	b.icInput = "hello world"
+	b.compose.icInput = "hello world"
 	b.ctx.focusID, b.ctx.caretField = icFieldID, icFieldID
 	b.ctx.selAnchor, b.ctx.caret = 6, 11 // "world"
 	b.captureICColorSel()
 	b.ctx.focusID = "" // the dropdown's open-click unfocuses the field
 	b.applyICColorPick(1)
-	if b.icInput != "hello `world`" {
-		t.Fatalf("the wrap did not land (%q) — nothing below is measuring the bounce", b.icInput)
+	if b.compose.icInput != "hello `world`" {
+		t.Fatalf("the wrap did not land (%q) — nothing below is measuring the bounce", b.compose.icInput)
 	}
 	if b.ctx.focusNext != icFieldID {
 		t.Errorf("a selection-wrapping pick queued focus onto %q, want %q — focus_ic_input is the last "+

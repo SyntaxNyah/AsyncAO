@@ -789,9 +789,9 @@ func TestICLogStoresLongLine(t *testing.T) {
 	a := &App{env: env{}}
 	msg := "Phoenix: " + strings.Repeat("b", 200) // 209 chars, over the old cap
 	a.pushIC(msg, 0, false, -1, "Phoenix")
-	if a.icLog[0].text != msg {
+	if a.chatlog.icLog[0].text != msg {
 		t.Errorf("IC log cut a %d-rune line to %d (must wrap, not truncate)",
-			len([]rune(msg)), len([]rune(a.icLog[0].text)))
+			len([]rune(msg)), len([]rune(a.chatlog.icLog[0].text)))
 	}
 }
 
@@ -839,7 +839,7 @@ func TestICLogFilterCache(t *testing.T) {
 	if again := a.icLogFiltered(); &again[0] != &first[0] {
 		t.Error("cache not reused on unchanged input")
 	}
-	a.logSearch = "objection"
+	a.chatlog.logSearch = "objection"
 	if got := a.icLogFiltered(); len(got) != 1 || got[0] != 1 {
 		t.Errorf("query filter = %v, want [1]", got)
 	}
@@ -857,29 +857,29 @@ func TestICLogFilterShownamePos(t *testing.T) {
 	a.pushIC("Phoenix: hello court", 0, false, -1, "Phoenix")
 	a.pushIC("Edgeworth: OBJECTION", 2, false, -1, "Edgeworth")
 	a.pushIC("Judge: order in the court", 3, false, -1, "Judge")
-	a.icLog[0].pos = "def"
-	a.icLog[1].pos = "pro"
-	a.icLog[2].pos = "jud"
+	a.chatlog.icLog[0].pos = "def"
+	a.chatlog.icLog[1].pos = "pro"
+	a.chatlog.icLog[2].pos = "jud"
 
 	// No filter: all three.
 	if got := a.icLogFiltered(); len(got) != 3 {
 		t.Fatalf("unfiltered = %d, want 3", len(got))
 	}
 	// Showname only: Edgeworth.
-	a.logFilterShowname = "edgeworth"
+	a.chatlog.logFilterShowname = "edgeworth"
 	if got := a.icLogFiltered(); len(got) != 1 || got[0] != 1 {
 		t.Errorf("showname filter = %v, want [1]", got)
 	}
 	// Pos only: the judge.
-	a.logFilterShowname = ""
-	a.logFilterPos = "jud"
+	a.chatlog.logFilterShowname = ""
+	a.chatlog.logFilterPos = "jud"
 	if got := a.icLogFiltered(); len(got) != 1 || got[0] != 2 {
 		t.Errorf("pos filter = %v, want [2]", got)
 	}
 	// Showname + pos + text stack: Edgeworth's OBJECTION from the pro position.
-	a.logFilterShowname = "edgeworth"
-	a.logFilterPos = "pro"
-	a.logSearch = "objection"
+	a.chatlog.logFilterShowname = "edgeworth"
+	a.chatlog.logFilterPos = "pro"
+	a.chatlog.logSearch = "objection"
 	if got := a.icLogFiltered(); len(got) != 1 || got[0] != 1 {
 		t.Errorf("stacked filter = %v, want [1]", got)
 	}

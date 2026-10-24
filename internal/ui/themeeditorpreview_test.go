@@ -161,12 +161,12 @@ func TestPreviewDemoDrivesTheRealCourtroomPainters(t *testing.T) {
 	if sc.MusicTrack != editorPreviewTrack {
 		t.Errorf("the music banner is playing %q, want the canned title %q", sc.MusicTrack, editorPreviewTrack)
 	}
-	if got := len(a.te.preview.state.icLog); got != len(editorPreviewLog) {
+	if got := len(a.te.preview.state.chatlog.icLog); got != len(editorPreviewLog) {
 		t.Errorf("the demo's IC scrollback holds %d rows, want the canned %d", got, len(editorPreviewLog))
 	}
 	// The LIVE session's own log is untouched: the demo appended into its own
 	// sessionState, which is the whole point of the swap.
-	if strings.Contains(strings.Join(icLogTexts(a.icLog), "\n"), editorPreviewLog[0].line) {
+	if strings.Contains(strings.Join(icLogTexts(a.chatlog.icLog), "\n"), editorPreviewLog[0].line) {
 		t.Error("a canned demo line landed in the LIVE session's IC log — the pass leaked out of the demo state")
 	}
 }
@@ -778,13 +778,13 @@ func TestThePreviewPassDoesNotEatThePrimarysCharINI(t *testing.T) {
 	// A serverKey the demo cannot possibly match, and a result fetched FOR it.
 	const primaryKey = "wss://preview.gate.invalid/ws"
 	a.serverKey = primaryKey
-	a.charINIBusy = true
+	a.compose.charINIBusy = true
 
 	// THE RESULT ARRIVES WHILE THE DEMO IS UP, which is the whole case: the frame
 	// that ENTERS the demo still draws the live courtroom under it (the press lands
 	// mid-frame), and that pass is entitled to the result.
 	enterPreviewByButton(t, a)
-	a.emotes = nil
+	a.emotepick.emotes = nil
 	a.charINIres <- charINIFetch{key: primaryKey, ini: &courtroom.CharINI{
 		Emotes: []courtroom.Emote{{Comment: "pinnedpass", Anim: "pinnedpass", Preanim: "-"}},
 	}}
@@ -794,17 +794,17 @@ func TestThePreviewPassDoesNotEatThePrimarysCharINI(t *testing.T) {
 			"must raise pinnedPass, or every poll drawCourtroom makes on an App-wide channel steals a " +
 			"result that belongs to the live courtroom")
 	}
-	if len(a.emotes) != 0 {
-		t.Errorf("the demo pass applied the primary's emote list (%d emotes) to the App", len(a.emotes))
+	if len(a.emotepick.emotes) != 0 {
+		t.Errorf("the demo pass applied the primary's emote list (%d emotes) to the App", len(a.emotepick.emotes))
 	}
 
 	pressEscFrame(a)
 	driveFrames(a, 3)
-	if len(a.emotes) != 1 || a.emotes[0].Anim != "pinnedpass" {
+	if len(a.emotepick.emotes) != 1 || a.emotepick.emotes[0].Anim != "pinnedpass" {
 		t.Errorf("after the demo the live session holds %d emote(s) (%v), want the char.ini result it was "+
-			"waiting for — a dropped result never comes back", len(a.emotes), a.emotes)
+			"waiting for — a dropped result never comes back", len(a.emotepick.emotes), a.emotepick.emotes)
 	}
-	if a.charINIBusy {
+	if a.compose.charINIBusy {
 		t.Error("the live session is still waiting for a char.ini that has already landed")
 	}
 }
