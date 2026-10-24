@@ -1,7 +1,6 @@
 package ui
 
 // THE DOCUMENT AND THE TIMELINE (v1.90.0 W7a).
-//
 // These gates DRIVE the seam rather than mirroring it: every one of them goes
 // through themeDoc.apply / revert and the real inspector table, so deleting the
 // funnel, the inverse or a table row fails the suite. Rule 11's own words: a
@@ -106,7 +105,6 @@ func editDocRig(t *testing.T, n int) (*App, *themeDoc) {
 const editNonDefaultKind = theme.ElementKind(1)
 
 // editUnlockAll clears the probe element's authored lock.
-//
 // The probe is LOCKED by construction (every field non-default, see
 // editProbeElement), and the lock is a real refusal: the nudge and the delete both
 // honour it. A gate about coalescing or about the graveyard must therefore say out
@@ -226,9 +224,6 @@ func TestEveryEditFieldHasAGetterAndASetter(t *testing.T) {
 // STRUCTURALLY: a row's `mut` must RETURN an op and must not mutate — so a field
 // physically cannot bypass the undo stack, and every field added in v1.9x is
 // automatically undoable.
-// BEHAVIOURALLY, hash-verified: apply the op through the document, prove the model
-// really changed, revert it, and prove the SERIALISED DOCUMENT is byte-identical to
-// what it was. An inverse that is merely "the setter run again" would pass a
 func TestEveryInspectorFieldIsUndoable(t *testing.T) {
 	for k := theme.ElementKind(0); k < theme.ElementKindCount; k++ {
 		for i := range inspectorFields[k] {
@@ -748,7 +743,6 @@ func TestEditsSurviveAThemeReapply(t *testing.T) {
 
 // openThemeEditorForTest is openThemeEditor without the overlay teardown, which
 // needs a renderer. It exists so this file's gates run headlessly.
-//
 // It calls the PRODUCTION arm (armThemeEditor) rather than restating it: a helper
 // that built the editor its own way would be a second construction path, and the
 // half it forgot — the document's binding to the applied design map — is exactly

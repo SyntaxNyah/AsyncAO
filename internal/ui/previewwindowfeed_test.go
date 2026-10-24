@@ -28,8 +28,6 @@ const previewFeedFixtureBase = "preview-fixture://sprite"
 // renderer) with ONE resident fixture texture under previewFeedFixtureBase,
 // a real (closed) render.PreviewWindow, and real temp-file preferences —
 // everything feedDetachedPreviewFrame/syncPreviewWindow actually touch.
-// previewBase starts pointed at the fixture, as if a hover had already
-// opened the in-app box before the user detached it.
 func newPreviewFeedApp(t testing.TB) *App {
 	t.Helper()
 	ren, cleanup := newCaptureHarness(t)
@@ -268,9 +266,6 @@ func TestFeedDetachedPreviewFrameAdvancesOnIndexChangeOnly(t *testing.T) {
 // stops being cosmetic the moment a pick overflows the animation cache
 // budget, where an uncached ordinal calls fill on EVERY visit and losing the
 // gate turns one readback per animation tick into one per rendered frame.
-// Weaken any arm of previewFeedNeeded and a named case here fails: return
-// true unconditionally and both "nothing changed" cases fail; drop the page
-// comparison and the re-decode case fails; drop the `animated &&` and the
 func TestPreviewFeedNeeded(t *testing.T) {
 	pageA, pageB := &render.TexturePage{}, &render.TexturePage{}
 	const baseA, baseB = "char://a", "char://b"
@@ -603,8 +598,6 @@ func TestSyncPreviewWindowClosedIsZeroAlloc(t *testing.T) {
 // on internal/assets/mountserve_test.go's BenchmarkActiveMountLayerNoMounts /
 // BenchmarkActiveMountLayerConfigured — run together so the RATIO is the
 // meaningful number:
-//
-//	go test ./internal/ui/... -run NONE -bench SyncPreviewWindow -benchmem
 func BenchmarkSyncPreviewWindowClosed(b *testing.B) {
 	a := &App{env: env{ctx: &Ctx{}}, activeTab: -1}
 	prefs, err := config.New(filepath.Join(b.TempDir(), "prefs.json"))

@@ -1,7 +1,6 @@
 package ui
 
 // Arrow-key nudging in the two layout editors.
-//
 // Everything here drives the REAL router (editorNudgeKeys) off a real ctx key field
 // rather than calling the arms directly, because the routing is half the feature: a
 // plain arrow arrives on c.keyPressed — the field a focused text field's caret, the
@@ -27,7 +26,6 @@ const nudgeWidgetKey = "emotes"
 var nudgeCanvas = theme.Rect{X: 0, Y: 0, W: 714, H: 579}
 
 // TestRegSlotRefusesAnUnnamedSlot pins the classic editor's registry guard.
-//
 // "" is the editor's own spelling of "nothing selected" (classicEditKey, and the
 // reason editTarget carries an explicit space field), so an unnamed registration
 // puts a hoverable, draggable box in slotReg that compares EQUAL to the unselected
@@ -270,7 +268,6 @@ func TestThemedNudgeRespectsTheCanvasClamp(t *testing.T) {
 }
 
 // TestTabStripNudgeMovesOneScreenPixelAtEveryScale is the special case.
-//
 // The server-tab strip is intrinsically sized CLIENT chrome whose stored X/Y are
 // canvas-relative CLIENT px, not design px (themeTabBarKey) — so "one pixel" for it means
 // one SCREEN pixel, at every fit mode and every layout scale, not one design pixel that
@@ -625,7 +622,6 @@ func TestNudgeIgnoresADegenerateBox(t *testing.T) {
 }
 
 // TestPaletteKeepsItsArrowsWhileAnEditorIsArmed pins the yield rule.
-//
 // An armed editor is not exclusive: handleHotkeys runs unconditionally from both
 // courtroom passes and editorUndoChord only diverts Ctrl+Z/Y, so Ctrl+Space opens the
 // command palette mid-edit; the palette is not in courtroomModals and
@@ -790,7 +786,6 @@ var elemNudgeRect = theme.Rect{X: 101, Y: 403, W: 90, H: 24}
 // W7's editor leaves behind when the user clicks a decoration. W6 ships no UI that can
 // produce it, which is exactly why it is constructed here: the machinery has to be
 // correct before the screen that drives it exists.
-//
 // No layout cache is staged because the element arm needs none: an element's authored
 // rect is the thing being moved, and the bake is what turns it into pixels afterwards.
 func stageElementNudge(t *testing.T, mutate func(*theme.Element)) *App {
@@ -811,7 +806,6 @@ func stageElementNudge(t *testing.T, mutate func(*theme.Element)) *App {
 
 // TestElementNudgeMatchesTheSlotNudge is the wave's parity requirement: an arrow key
 // must address a free element EXACTLY as it addresses a themed slot.
-//
 // Both arms are driven through the real router from the same off-grid start, and the
 // two deltas are compared rather than each being checked against a hand-written number
 // — a test that asserted "1" twice would still pass if the two arms drifted onto

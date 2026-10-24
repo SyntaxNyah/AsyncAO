@@ -340,8 +340,6 @@ func TestLobbyUtilRowStaysOnScreen(t *testing.T) {
 // opposite way off the same window — `fieldX + 290 / +390 / +560` put the TLS
 // checkbox, "Save to phone book" and the whole Connect button outside a
 // config.MinWindowW window, and Connect is the row's entire point.
-// The measured widths below are a real chrome font's, give or take; the layout is pure
-// arithmetic over them, so the property holds for any font that produces them.
 func TestLobbyDirectConnectRowStaysOnScreen(t *testing.T) {
 	const fullW, shortW, tlsW, saveW = int32(332), int32(96), int32(90), int32(142)
 	for _, w := range []int32{config.MinWindowW, 700, 800, 1024, config.DefaultWindowW, 1920} {

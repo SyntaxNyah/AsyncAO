@@ -449,7 +449,6 @@ func TestMusicAwaitClearedOnParkAndStop(t *testing.T) {
 // plain-ducked case the old inline `if next && a.musicTabDucked` handled. The wedge
 // the old code missed: a stream stuck behind an await that never became current
 // (a fetch that 404'd/failed silently), where the toggle appeared to "do nothing".
-// nil Audio — pure flag inspection (applyAudioVolumes no-ops without a device).
 func TestMusicAcrossTabsToggleUnwedges(t *testing.T) {
 	// The discriminating wedge: duck HELD and the await latch ARMED (a track that
 	// never arrived). The old gated code cleared the duck but NOT the latch here; the
@@ -498,8 +497,6 @@ func TestMusicAcrossTabsToggleUnwedges(t *testing.T) {
 // stalled download) must not wedge the stream silent forever. Before the timeout the
 // duck HOLDS (a slow-but-real download is still coming); at/after musicAwaitTimeout
 // settleAwaitedMusic releases the await and lifts the duck so the stream self-heals.
-// Uses a real (disabled) render.Audio so CurrentMusicURL is a safe empty string, and
-// drives a.now() via frameNow (the reconnect.go fake-clock idiom).
 func TestMusicAwaitTimeoutReleases(t *testing.T) {
 	a := testTabApp(t)
 	a.d.Audio = &render.Audio{} // disabled: Frame/CurrentMusicURL are safe no-ops
