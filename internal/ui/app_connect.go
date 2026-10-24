@@ -321,9 +321,6 @@ func (a *App) applyWindowSize(w, h int) {
 	// maximized guard, and on Windows the backend's SetWindowPos runs against an
 	// HWND that still carries WS_MAXIMIZE, so Default / Fit to screen / Custom /
 	// Theme's design size all appeared to do nothing. Drop out of maximized first.
-	// This lives HERE and not in Ctx.ResizeWindow on purpose: applyFullscreen's
-	// leave-fullscreen snap-back shares ResizeWindow, and F11 must not silently
-	// un-maximize as a side effect. See Ctx.UnmaximizeWindow for the SDL sources.
 	a.ctx.UnmaximizeWindow()
 	uw, uh := a.ctx.WindowDisplayUsable()
 	w, h = config.ClampWindowSize(w, h, uw, uh)
@@ -562,9 +559,6 @@ func (a *App) pumpConnection() {
 	// goroutine — NOT this loop — actually sends the ping every keepaliveInterval, so
 	// it keeps flowing even while the window is minimized and Windows has stalled this
 	// render loop (the old per-frame send died there, and the server idle-dropped us).
-	// Setting it here each frame is a cheap atomic swap; while minimized this loop may
-	// not run, but MyCharID can't change then anyway, so the last-set payload stays
-	// correct.
 	a.link.conn.SetKeepalive(a.link.sess.KeepalivePacket())
 	// Half-dead write side (#7a): Session.reply records the FIRST failed outgoing
 	// write into sendErr and then silently swallows every later packet. A non-nil
@@ -1012,7 +1006,6 @@ func icBodyStyled(m *protocol.ChatMessage) (string, []courtroom.StyleRun) {
 // the first rung. Canon draws the log through get_showname too
 // (log_chatmessage, courtroom.cpp:2528-2538), so a second local rule here is
 // how the two surfaces drift — which they had, both missing the middle rung.
-//
 // Stored on the entry so per-speaker name colours tint exactly that prefix.
 func icSpeakerName(m *protocol.ChatMessage, forceChar bool, ini courtroom.IniShowname) string {
 	return courtroom.DisplayName(m, forceChar, ini)
@@ -1067,8 +1060,6 @@ func (a *App) rebuildAssetOrigin() {
 	// every mounts/pref change (this is the one funnel settings.go routes through),
 	// regardless of the legacy enabled flag: mounts are the recording-resolution
 	// base even mid-streaming-session (the content report's "Local base" source).
-	// nil when no mounts. A local-mode Manager ignores the overlay (its source
-	// already is the LocalFetcher); pushing is a harmless no-op there.
 	if a.d.Manager != nil {
 		if _, mounts := a.localAssets(); len(mounts) > 0 {
 			a.d.Manager.SetLocalOverlay(assets.NewLocalFetcher(mounts))

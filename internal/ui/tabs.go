@@ -843,8 +843,6 @@ func (a *App) tabStripCacheRect(lay *themeLayoutCache, w, h, total int32, parked
 		// classic slot override when the user moved the strip in the DEFAULT-layout
 		// editor (that override outlives a switch TO a theme, and it also zeroes the
 		// chrome band, so the strip really is floating there), else the docked home.
-		// Only the origin survives: the slot's persisted W/H are window fractions and
-		// the strip is move-only, so its size is always the chips'.
 		a.classic.ensureClassicOv()
 		r := a.classic.slotRect(slotTabBar, def, w, h)
 		r.W, r.H = def.W, def.H
@@ -877,12 +875,7 @@ func (a *App) tabStripOrigin(def sdl.Rect, w, h int32) sdl.Rect {
 
 // tabStripThemeRect returns the active theme's home for the strip, when the themed
 // courtroom is the thing actually on screen.
-//
 // The gate excludes gif export, replay and the scene maker as well as theater mode:
-// all three PREEMPT the screen dispatch while leaving a.screen == Courtroom and
-// a.room non-nil, and — worse — they rebuild the SHARED layout cache at the export
-// frame's own dimensions with no chrome band (themeLayout vs themeWindowLayout). The
-// strip would read export-space geometry and teleport for the whole export.
 func (a *App) tabStripThemeRect() (sdl.Rect, bool) {
 	if a.screen != ScreenCourtroom || a.link.room == nil || a.theaterOn || a.screenDispatchPreempted() {
 		return sdl.Rect{}, false
@@ -1062,7 +1055,6 @@ func (a *App) tabTearingOff() bool {
 // to tear-off mode (no reorder); releasing there pops it out as a floating client
 // window at the cursor. Returns true when a release ended a drag, so the caller
 // swallows the click (a reorder/tear-off must not also switch/close the tab).
-// Pressing the right ✕ third never arms — that stays a close-click target.
 func (a *App) handleTabDrag(rects []sdl.Rect, pressed bool) bool {
 	c := a.ctx
 	if pressed && a.tabDragFrom < 0 {

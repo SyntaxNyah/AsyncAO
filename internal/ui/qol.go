@@ -1031,7 +1031,6 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 				// where people actually go to find out what a key does, so it is also
 				// where they want to change it — sending them to Settings to act on
 				// what they are already looking at is the long way round.
-				//
 				// Same capture the Settings rows arm (a.hkCapture), so there is one
 				// rebinding path and not two that can disagree.
 				row := sdl.Rect{X: x, Y: y, W: labelW + hkKeyGap, H: hkRowH}
@@ -1289,8 +1288,6 @@ func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) 
 // looser prefix match (containsWordPrefix): the stem must begin a word but need
 // not end one, so "obj*" catches "objection". A lone "*" (empty stem) never
 // matches — it would otherwise fire on every message, defeating the whole point.
-// Extracted from checkCallwords so the pure matching logic is unit-testable
-// without the SDL/audio side effects of callwordAlert.
 func callwordHit(lower, word string) bool {
 	if stem, ok := strings.CutSuffix(word, "*"); ok {
 		return stem != "" && containsWordPrefix(lower, stem)
@@ -1486,8 +1483,6 @@ type oocLinkSpan struct {
 // this is already far past anything legitimate; it exists so a hostile MOTD line
 // of thousands of "www.x.y" tokens cannot grow the span table without bound
 // (hard rule 4). Links past the cap still DISPLAY — they just aren't clickable.
-// Total spans stay bounded too: a link adds one span per row it touches, so a
-// paragraph contributes at most (links + its row count) spans.
 const oocLinksPerParagraphMax = 64
 
 // appendLinkSpans records the clickable link regions of ONE wrapped paragraph.
@@ -1685,9 +1680,6 @@ func (a *App) oocWrapped(width int32) []string {
 			// colour emoji as narrow tofu and hard-split it mid-rune); plain lines keep
 			// the cheap word-wrap. BOTH break against the same per-candidate drawn
 			// width, so neither can measure a row in a face the draw won't use (#42).
-			// Ask for remaining+1 rows (the "+1 probe"): the wrap functions cap
-			// SILENTLY (they don't report truncation), so an extra row lets us tell a
-			// paragraph that exactly filled the budget from one that overflowed it. We
 			probe := remaining + 1
 			var lines []string
 			if ef := a.ctx.EmojiFont(pct); ef != nil && render.NeedsEmojiFallback(trimmed) {
@@ -1833,7 +1825,6 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 	// the bold speaker/prefix split drawLogLineNamed draws. Read once here; the
 	// per-entry closure below binds the speaker. Prefs are nil in the bare-App
 	// headless fixtures, so guard them (the bold split is unreachable there anyway:
-	// a nil font measures through the 8 px/char fallback).
 	nameOn := false
 	boldNames := false
 	if a.d.Prefs != nil {

@@ -139,8 +139,6 @@ type settingsState struct {
 	// because they are exactly that — what the tab's controls are showing — and they
 	// die with nothing: the act reads them once and hands values to the funnel
 	// (settingsthemeeditor.go). Render thread only, like the rest of this struct.
-	//
-	// newThemeName is the name field's live text (empty = use the placeholder).
 	newThemeName string
 	// newThemeTemplate is the picked starting point. The zero value is templateBlank,
 	// which is the right default: it is the one template with no prerequisite.
@@ -172,7 +170,6 @@ type settingsState struct {
 	// strings and clones no slices per frame. That matters here because the
 	// settings screen has no allocation gate: a per-frame regression on this page
 	// would not be caught by the benchmark suite, so the cache is the guard.
-	// fmtOrderOK distinguishes "never built" from "built at generation 0".
 	fmtOrderText []string
 	fmtOrderGen  uint64
 	fmtOrderOK   bool
@@ -227,9 +224,6 @@ const (
 	// and taking a bundle somebody sent you. It exists because the editor — the
 	// flagship — deserves a dedicated tab: a feature you have to scroll to
 	// discover is a feature nobody discovers.
-	// IMMEDIATELY AFTER Theme, not at the end: the two are read as a pair ("pick
-	// one" / "make one"), and the sidebar is scanned top to bottom, so the
-	// authoring tab has to be where the eye already is when it fails to find the
 	tabThemeEditor
 	tabAssets
 	// tabFormats owns EVERY control that decides which image/audio file type is
@@ -540,9 +534,6 @@ func (a *App) drawSettings(w, h int32) {
 	// it must go click-dead (header Back/search, tab strip, tab body), so a click on
 	// the modal can't also fire a widget beneath it. Recomputed fresh each frame from
 	// the open flag — no cross-frame persist-and-release bug (unlike emojiPickerFence).
-	// The base-folder wizard (basewizard.go) is the same kind of blocking modal and
-	// joins the same fence. It is NOT exclusive with the browser — its step 1 opens
-	// one on top of itself — so the wizard fences ITSELF while the browser is up;
 	if demoBrowser.open || contentPanel.open || baseWizard.open {
 		c.modalOn = true
 	}
@@ -1471,9 +1462,6 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// ANIMATED preview holds the frame pacer at the active cap for as long as it is
 	// up — true of the right-click pin already, but a sticky default makes it the
 	// steady state, hence the note in the label.
-	// The row says "pin button", never a 📌. This label is drawn through
-	// chromeFaceFor like every other settings string, and U+1F4CC is outside the
-	// chrome face's coverage on plenty of installs — a tofu box in the one sentence
 	pinned := a.d.Prefs.Load().PreviewPinned
 	if next := c.Checkbox(pad, y, "Keep the sprite preview pinned: it stays open until you close it (the pin button on the box toggles this too; an animated preview keeps the client at full frame rate while it is up)", pinned); next != pinned {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewPinned = next })

@@ -1131,7 +1131,6 @@ func (a *App) FramePace(focused bool) time.Duration {
 	// must never leave the pacer with a zero budget — under the ∞ default cap
 	// the classic loop's lobby/caret renders became a zero-sleep spin here, and
 	// ∞ idle ("as fast as the active cap", the Settings tooltip's own words)
-	// resolves through the cap so a finite cap still rules.
 	if a.d.Prefs.Load().EventDrivenLoop || idleOff || idleUnlimited {
 		a.frame.lastPacerTier = pacerIdleActiveCap
 		return backstopBudget(full)
@@ -1333,7 +1332,6 @@ func (a *App) NoteDeadline() { a.uiDirty = true }
 // frame so that frame is guaranteed regardless of the input-grace timing, instead
 // of leaving the new state stranded until cursor motion or the idle tick reveals
 // it (the report of a screen that only repaints on the next mouse movement).
-// Idle-safe: no input, no follow-up.
 func (a *App) NoteInteraction() { a.uiDirty = true }
 
 const (
@@ -1630,8 +1628,6 @@ const musicResumeMaxSeekSec = 600 // 10 minutes
 // and total duration snapDur (seconds) captured at swap-out — plus elapsedSec of
 // wall time since, it returns where to seek the resumed stream and whether to
 // play it at all:
-// A negative elapsedSec (clock skew) clamps to 0 so base can never go below
-// snapPos — a negative math.Mod would fail the seek and silently restart.
 func resumeSeek(snapPos, snapDur, elapsedSec float64, loop bool) (seekSec float64, play bool) {
 	if elapsedSec < 0 {
 		elapsedSec = 0
@@ -2374,9 +2370,6 @@ func (a *App) cyclePreviewEmote(delta int) { a.setPreviewEmote(a.previewEmoteIdx
 // first emote at the top of the grid. Index and scroll move together so a kept
 // index can't desync from a stale scroll position. Pure so the session-isolation
 // behaviour is pinned by a unit test, not a manual rebuild.
-// The second value was a PAGE index before the grid learned to scroll by row
-// (emotescroll.go); it is a row now. The contract is unchanged — "keep it, or
-// zero both" — which is why the signature and every caller stayed put.
 func clampEmoteSel(idx, row, n int) (int, int) {
 	if idx < 0 || idx >= n {
 		return 0, 0

@@ -535,9 +535,6 @@ type contentPackageResult struct {
 // returning false so the caller can keep its button disabled. rec must be
 // non-nil; the origin comes from rec.Origin (the caller filled it via
 // demoDefaultOrigin on load), so this touches no other App fields.
-// The report is enumerated synchronously here (pure + fast — no I/O), then the
-// probe work is fed to a bounded set of goroutines. If the origin is empty the
-// job short-circuits to phaseReport with everything StatusUnknown flagged
 func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 	if a.contentBusy {
 		a.warnLine = "A content report / package is already running — let it finish first."
@@ -741,8 +738,6 @@ func (a *App) startProbePhase(j *contentJob) {
 	// finishContentProbe / CancelContentJob), so once the render thread stops
 	// draining resultCh — the hard-cap end, or a Cancel — the feeder and workers
 	// unblock immediately and die instead of leaking wedged on a full channel.
-	// Without that stop, a hard-cap end with > contentResultBuf un-drained items
-	// would strand every worker on its send forever.
 	j.probeLive.Add(1)
 	go func() {
 		defer j.probeLive.Add(-1)
@@ -1044,7 +1039,6 @@ func (a *App) CancelContentJob() {
 // is written into the bundle as MISSING-CONTENT.txt (the gap list). Single-flight
 // (the same a.contentBusy job continues into packaging). rec supplies the events
 // + StartBg the bundled .aorec needs. Returns false if no probed report is ready.
-// Render thread only (spawns the goroutine; disk work happens inside it).
 func (a *App) PackageContentBundle(rec *sceneRecording) bool {
 	j := a.content
 	if j == nil || j.phase != phaseReport {
@@ -1126,8 +1120,6 @@ func (a *App) tickContentPackage(j *contentJob) {
 		// The size-cap abort returns dir != "" (a PARTIAL write) — don't claim a clean
 		// "packaged with its assets" for it; fall through to the writer's honest
 		// "Package stopped at the … cap" line instead. Any hard failure (dir == "")
-		// surfaces the writer's own message too. A manual Studio job always keeps the
-		// engine's verbose "Packaged N assets…" line as before.
 		if auto {
 			if res.dir != "" && !strings.Contains(res.msg, "size cap") {
 				a.warnLine = "Recording packaged with its assets — recordings\\" + filepath.Base(res.dir)

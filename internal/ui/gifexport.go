@@ -1179,11 +1179,6 @@ func (a *App) drawGifThemedFrame(j *gifExportJob, sc *courtroom.Scene, dst sdl.R
 
 // exportCondSource is elemCondSource for an export frame: the STAGE axes come from
 // the job's own room, the two CLIENT-state axes from the live client.
-//
-// pos and char are the local player's pos dropdown and character folder. Neither is
-// recorded — a .aorec carries the stage, not the reader's UI state — so there is
-// nothing else they could resolve to, and taking them from the live client is at
-// least the same answer the session that made the recording would have given.
 func (a *App) exportCondSource(j *gifExportJob) elemCondSource {
 	src := elemCondSource{pos: a.mySide(), char: a.myCharName()}
 	if j == nil || j.room == nil {
@@ -1519,9 +1514,6 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 				// isn't silently missing most of its sound with no word to the user. Only
 				// on the success branch — the silent-fallback message below already says
 				// there's no sound, so a "N cues left out" tail there would just confuse.
-				// "left out", not "past the cap": failed downloads don't consume cap
-				// slots, so this count can include resolve failures — keep the wording
-				// directional rather than claiming a precise cause (review nit).
 				if audioDropped > 0 {
 					soundNote += fmt.Sprintf(" (%d sound cue(s) left out)", audioDropped)
 				}

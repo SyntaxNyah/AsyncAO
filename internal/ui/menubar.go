@@ -164,8 +164,6 @@ const (
 // USED to be buttons in drawLobby's right-hand utility cluster; that cluster ran seven
 // buttons deep and pushed "Logs" clean off the left edge of a 640 px window, so
 // everything that is not a lobby *page* affordance moved in here (screens.go).
-// "Direct connect…" is new only as a row — it focuses the field the lobby has always
-// drawn, which is otherwise a mouse-only target you have to find first.
 var menuServersItems = []menuItem{
 	{kind: menuItemAction, label: "Refresh server list", enabled: menuCanRefreshServers, act: menuActRefreshServers},
 	{kind: menuItemCheck, label: "Sort by connect time", checked: menuPingSortOn, enabled: menuCanPingSort, act: menuTogglePingSort},
@@ -620,9 +618,6 @@ func (a *App) closeMenuBar() { a.menuOpen, a.menuSub = "", "" }
 // it still paints: a blocking window modal owns the frame (the same set App.Frame
 // fences the pointer for). Leaving the bar live under a modal would let its own
 // modalOn blank the modal's buttons.
-// The layout editors are in here too, but they never reach the inert path — they
-// stand the whole widget down one step earlier, at menuBarPaints, because they own
-// the pixels as well as the input. Keeping them in this predicate means every
 func (a *App) menuBarSuppressed() bool {
 	return a.layoutEditorArmed() ||
 		a.dialogs.confirmDisconnect || a.dialogs.pendingCloseTab != nil || a.dialogs.hidePrompt != "" ||
@@ -853,12 +848,6 @@ func (a *App) menuBarFrame(w, h int32) {
 	}
 	// The FENCE follows the PIXELS, the INPUT follows ownership — two different
 	// questions, deliberately answered separately:
-	//   - c.ptrFenced means a LATER overlay (a blocking modal, the hotkey sheet)
-	//     already owns the pointer for this frame and will unfence for its own pass.
-	//     A fence left in the registry would then blank ITS widgets over pixels we
-	//     never painted, so publish nothing at all.
-	//   - Otherwise publish: the strip really is painted over the top band of every
-	//     screen dispatched below, so those screens must not hit-test underneath it.
 	a.menuBar.live = !c.ptrFenced
 	// The Iniswap chip shares this band, so its click must be claimed BEFORE the
 	// strip's fence covers its rect — the same ordering the missing-asset chip gets
@@ -1109,7 +1098,6 @@ func (a *App) drawMenuPanes() {
 
 // menuBarHot is THE hover-feedback rule, shared by the strip's titles and the panes'
 // rows so the two can never gate differently.
-//
 // Both halves of the gate replay the LATCH, never live state: `live` is "phase 1
 // published our fences and may take input", `inert` is "a blocking window modal owned
 // the frame when phase 1 ran". Highlighting under a cursor whose click the bar has
