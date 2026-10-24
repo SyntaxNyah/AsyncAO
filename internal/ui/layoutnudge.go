@@ -280,7 +280,7 @@ func (a *App) nudgeClassicSlot(tgt editTarget, dx, dy int, coarse bool, w, h int
 	if key == "" || a.classic.classicEditDrag != 0 {
 		return
 	}
-	base, ok := a.classicSlotCurrentRect(key, w, h)
+	base, ok := a.classic.classicSlotCurrentRect(key, w, h)
 	if !ok {
 		return
 	}
@@ -316,11 +316,11 @@ func (a *App) nudgeClassicSlot(tgt editTarget, dx, dy int, coarse bool, w, h int
 // nudge runs pre-screen, and the courtroom pass that rebuilds the registry has not run
 // yet. Only a slot with NO override needs the registry, and then only for the rect the
 // layout computed for it — which is exactly what a first nudge has to start from.
-func (a *App) classicSlotCurrentRect(key string, w, h int32) (sdl.Rect, bool) {
-	if ov, has := a.classic.classicOv[key]; has {
-		return a.classic.anchoredRect(key, ov, w, h), true
+func (classic1 *classicState) classicSlotCurrentRect(key string, w, h int32) (sdl.Rect, bool) {
+	if ov, has := classic1.classicOv[key]; has {
+		return classic1.anchoredRect(key, ov, w, h), true
 	}
-	info, reg := a.classic.slotReg[key]
+	info, reg := classic1.slotReg[key]
 	return info.cur, reg
 }
 

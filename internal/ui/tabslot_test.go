@@ -98,12 +98,12 @@ func TestTabStripDocksInsideTheChromeBand(t *testing.T) {
 func TestTabBarSlotOverrideRepositions(t *testing.T) {
 	a := testTabApp(t)
 	def := sdl.Rect{X: 500, Y: 0, W: 160, H: tabBarH}
-	if got := a.slotRect(slotTabBar, def, 1000, 800); got != def {
+	if got := a.classic.slotRect(slotTabBar, def, 1000, 800); got != def {
 		t.Errorf("no override: slotRect = %+v, want the default %+v", got, def)
 	}
 	a.classic.classicOv = map[string][4]float64{slotTabBar: {0.1, 0.5, 0.16, 0.03}}
 	want := sdl.Rect{X: 100, Y: 400, W: 160, H: 24}
-	if got := a.slotRect(slotTabBar, def, 1000, 800); got != want {
+	if got := a.classic.slotRect(slotTabBar, def, 1000, 800); got != want {
 		t.Errorf("override: slotRect = %+v, want the moved spot %+v", got, want)
 	}
 }
@@ -120,7 +120,7 @@ func TestTabBarSlotIsMoveOnlyAndRegisters(t *testing.T) {
 	}
 	a := testTabApp(t)
 	a.classic.classicEdit = true
-	a.slotRect(slotTabBar, sdl.Rect{X: 10, Y: 0, W: 100, H: tabBarH}, 1000, 800)
+	a.classic.slotRect(slotTabBar, sdl.Rect{X: 10, Y: 0, W: 100, H: tabBarH}, 1000, 800)
 	if _, ok := a.classic.slotReg[slotTabBar]; !ok {
 		t.Error("while editing, the strip must register its slot so the editor hands it drag handles")
 	}

@@ -97,9 +97,9 @@ func tabHideID(tab int) string {
 
 // tabHidden reports whether the user fully hid a right-column tab (UI… popup):
 // gone from the docked strip AND not drawn even if it was torn out.
-func (a *App) tabHidden(tab int) bool {
+func (classic1 *classicState) tabHidden(tab int) bool {
 	id := tabHideID(tab)
-	return id != "" && a.classic.panelHidden(id)
+	return id != "" && classic1.panelHidden(id)
 }
 
 // dockedLogTabs builds the docked tab strip, skipping any tab torn into a floating
@@ -111,15 +111,15 @@ func (a *App) dockedLogTabs(oocAsTab bool) ([7]dockTab, int32) {
 	n := int32(0)
 	d[n] = dockTab{logTabLog, "Log"} // never tear-offable
 	n++
-	if !a.classic.tabTorn(logTabMusic) && !a.tabHidden(logTabMusic) {
+	if !a.classic.tabTorn(logTabMusic) && !a.classic.tabHidden(logTabMusic) {
 		d[n] = dockTab{logTabMusic, "Music"}
 		n++
 	}
-	if !a.classic.tabTorn(logTabAreas) && !a.tabHidden(logTabAreas) {
+	if !a.classic.tabTorn(logTabAreas) && !a.classic.tabHidden(logTabAreas) {
 		d[n] = dockTab{logTabAreas, "Areas"}
 		n++
 	}
-	if !a.classic.tabTorn(logTabPlayers) && !a.tabHidden(logTabPlayers) {
+	if !a.classic.tabTorn(logTabPlayers) && !a.classic.tabHidden(logTabPlayers) {
 		d[n] = dockTab{logTabPlayers, "Players"}
 		n++
 	}
@@ -127,11 +127,11 @@ func (a *App) dockedLogTabs(oocAsTab bool) ([7]dockTab, int32) {
 		d[n] = dockTab{logTabOOC, "OOC"}
 		n++
 	}
-	if !a.classic.tabTorn(logTabNotes) && !a.tabHidden(logTabNotes) {
+	if !a.classic.tabTorn(logTabNotes) && !a.classic.tabHidden(logTabNotes) {
 		d[n] = dockTab{logTabNotes, "Notes"}
 		n++
 	}
-	if !a.classic.tabTorn(logTabFriends) && !a.tabHidden(logTabFriends) {
+	if !a.classic.tabTorn(logTabFriends) && !a.classic.tabHidden(logTabFriends) {
 		d[n] = dockTab{logTabFriends, "Friends"}
 		n++
 	}
@@ -158,12 +158,12 @@ func (a *App) drawTabContent(id int, inner sdl.Rect) {
 // tornTabRect returns a torn panel's screen rect (override → px, honouring a
 // window pin), or ok=false when the tab isn't torn. No slotReg write, so the
 // pointer-fence pass can call it.
-func (a *App) tornTabRect(key string, w, h int32) (sdl.Rect, bool) {
-	ov, ok := a.classic.classicOv[key]
+func (classic1 *classicState) tornTabRect(key string, w, h int32) (sdl.Rect, bool) {
+	ov, ok := classic1.classicOv[key]
 	if !ok {
 		return sdl.Rect{}, false
 	}
-	return a.classic.anchoredRect(key, ov, w, h), true
+	return classic1.anchoredRect(key, ov, w, h), true
 }
 
 // tornTabDefaultRect is where a tab lands the first time it's popped out: a
@@ -243,10 +243,10 @@ func (a *App) bringTornToFront(w, h int32) {
 	for j := len(order) - 1; j >= 0; j-- {
 		idx := order[j]
 		t := tornTabTable[idx]
-		if _, torn := a.classic.classicOv[t.key]; !torn || a.tabHidden(t.id) {
+		if _, torn := a.classic.classicOv[t.key]; !torn || a.classic.tabHidden(t.id) {
 			continue
 		}
-		r, ok := a.tornTabRect(t.key, w, h)
+		r, ok := a.classic.tornTabRect(t.key, w, h)
 		if !ok || r.W < classicMinPx || r.H < classicMinPx {
 			continue
 		}
@@ -284,10 +284,10 @@ func (a *App) drawTornTabs(w, h int32) {
 		if _, torn := a.classic.classicOv[t.key]; !torn {
 			continue
 		}
-		if a.tabHidden(t.id) {
+		if a.classic.tabHidden(t.id) {
 			continue // fully hidden: don't draw it even though it has a torn-out override
 		}
-		r := a.slotRect(t.key, a.tornTabDefaultRect(idx, w, h), w, h)
+		r := a.classic.slotRect(t.key, a.tornTabDefaultRect(idx, w, h), w, h)
 		if r.W < classicMinPx || r.H < classicMinPx {
 			continue
 		}

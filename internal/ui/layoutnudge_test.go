@@ -375,7 +375,7 @@ func stageClassicNudge(t *testing.T) *App {
 // the persisted override — so the assertions are about what the user SEES, not about the
 // float the editor happened to write.
 func classicNudgeRect(a *App) sdl.Rect {
-	r, _ := a.classicSlotCurrentRect(slotOOC, classicNudgeW, classicNudgeH)
+	r, _ := a.classic.classicSlotCurrentRect(slotOOC, classicNudgeW, classicNudgeH)
 	return r
 }
 
@@ -476,7 +476,7 @@ func TestClassicNudgePersistsAndUndoes(t *testing.T) {
 		t.Fatalf("nudged slot Y=%d, want %d", got.Y, before.Y+1)
 	}
 
-	a.classicEditUndo()
+	a.classic.classicEditUndo()
 	if _, ok := a.classic.classicOv[slotOOC]; ok {
 		t.Error("undo must drop the override the nudge minted")
 	}

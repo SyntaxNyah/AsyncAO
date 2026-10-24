@@ -280,7 +280,7 @@ func TestMenuExtrasCarriesEveryToolboxCommand(t *testing.T) {
 // was covering, a hotkey, or the Settings screen.
 func TestMenuExtrasTogglesTheFloatingToolbox(t *testing.T) {
 	a := stageMenuBarApp(t)
-	a.seedHiddenFromPrefs() // the real App seeds the hidden-chrome map at boot, before any frame
+	a.classic.seedHiddenFromPrefs(&a.env) // the real App seeds the hidden-chrome map at boot, before any frame
 	row := menuRow(t, menuExtrasTitle, "Floating toolbox")
 
 	if !row.checked(a, 0) {

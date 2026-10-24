@@ -38,7 +38,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// layout-editor override lifts it anywhere — off the sprites or out of the stage
 	// entirely. Everything below lays out relative to box, so move + resize follow.
 	if movableBox {
-		box = a.slotRect(slotChatbox, box, w, h)
+		box = a.classic.slotRect(slotChatbox, box, w, h)
 	}
 	// Per-character chatbox skin (char.ini chat=<misc>, playtest ask): the
 	// SPEAKER's own box art wins over the theme skin — AO2's get_chat priority.
@@ -680,7 +680,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// was OOC while OOC is a box, or it has been torn into its own floating panel (torntabs.go), fall
 	// back to the IC log so the docked area still shows something.
 	oocAsTab := a.d.Prefs.Load().LegacyDevTheme || a.d.Prefs.Load().OOCInLogTab
-	if (!oocAsTab && a.chatlog.logTab == logTabOOC) || a.classic.tabTorn(a.chatlog.logTab) || a.tabHidden(a.chatlog.logTab) {
+	if (!oocAsTab && a.chatlog.logTab == logTabOOC) || a.classic.tabTorn(a.chatlog.logTab) || a.classic.tabHidden(a.chatlog.logTab) {
 		a.chatlog.logTab = logTabLog
 	}
 	// The docked strip skips any torn-off tab and compacts the rest (0-alloc stack array).
@@ -930,7 +930,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// sit after the palette so they're picked like any colour instead of being buried in
 	// Settings. icColorSelected drives the active row + swatch; applyICColorPick routes
 	// the pick — both shared with the themed row so the two layouts can't drift.
-	colorBox := a.slotRect(slotICColor, sdl.Rect{X: icBar.X, Y: rowY, W: 32 + colorSelectW, H: fH}, w, h)
+	colorBox := a.classic.slotRect(slotICColor, sdl.Rect{X: icBar.X, Y: rowY, W: 32 + colorSelectW, H: fH}, w, h)
 	a.drawICColorStrip(colorBox) // swatch + colour dropdown (rect by value — alloc-free)
 	// The rest of the IC bar (showname → Immediate → Additive → SFX → emoji → FX →
 	// text input → muted chip) is one sequential cursor chain, kept together in
@@ -949,7 +949,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	emoteY := postY // #8: the emote grid follows the control block + judge strip, below the IC bar
 	if !a.classic.panelHidden(panelEmotes) {
 		emoteDef := sdl.Rect{X: pad, Y: emoteY, W: w - 2*pad, H: h - emoteY - 30}
-		a.drawEmoteRow(a.slotRect(slotEmotes, emoteDef, w, h), vp)
+		a.drawEmoteRow(a.classic.slotRect(slotEmotes, emoteDef, w, h), vp)
 	}
 	a.drawSpritePreviewFallback(false)
 
@@ -971,7 +971,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		// the bottom row, the row centred within the slot height. Registered only while it
 		// actually draws, so the editor offers a handle for it only when OOC is a tab.
 		oocBarDef := sdl.Rect{X: pad, Y: oocY, W: w - 3*pad, H: fH}
-		oocBar := a.slotRect(slotOOCBar, oocBarDef, w, h)
+		oocBar := a.classic.slotRect(slotOOCBar, oocBarDef, w, h)
 		oocRowY := oocBar.Y
 		if oocBar.H > fH {
 			oocRowY = oocBar.Y + (oocBar.H-fH)/2
@@ -1057,7 +1057,7 @@ func (a *App) drawICShoutRow(clusterX, y, w, h int32) {
 			// lookup: the armed overlay has to land on the rect the button actually
 			// DREW at (the layout editor can have moved it), and asking twice repeats
 			// the editor's slot bookkeeping for nothing. This is movableButton inlined.
-			shoutRect := a.slotRect(s.key, sdl.Rect{X: x, Y: y, W: shoutW, H: btnH}, w, h)
+			shoutRect := a.classic.slotRect(s.key, sdl.Rect{X: x, Y: y, W: shoutW, H: btnH}, w, h)
 			if c.Button(shoutRect, s.label) {
 				a.toggleShout(s.mod)
 			}
@@ -1315,7 +1315,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 		}
 	}
 	if a.amIMod() {
-		mR := a.slotRect("ctrl.mod", sdl.Rect{X: x, Y: y2, W: 54, H: btnH}, w, h)
+		mR := a.classic.slotRect("ctrl.mod", sdl.Rect{X: x, Y: y2, W: 54, H: btnH}, w, h)
 		if c.Button(mR, "Mod") {
 			a.toggleModDash()
 		}
@@ -1324,7 +1324,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 		x += 60
 	}
 	if a.srvMeta.amICMNow {
-		cR := a.slotRect("ctrl.cm", sdl.Rect{X: x, Y: y2, W: 46, H: btnH}, w, h)
+		cR := a.classic.slotRect("ctrl.cm", sdl.Rect{X: x, Y: y2, W: 46, H: btnH}, w, h)
 		if c.Button(cR, "CM") {
 			a.toggleCMPanel()
 		}
@@ -1394,7 +1394,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 			y2 += btnH + 4
 			x = clusterX
 		}
-		gcR := a.slotRect("ctrl.groupchat", sdl.Rect{X: x, Y: y2, W: gcW, H: btnH}, w, h)
+		gcR := a.classic.slotRect("ctrl.groupchat", sdl.Rect{X: x, Y: y2, W: gcW, H: btnH}, w, h)
 		if c.Button(gcR, "Group Chat") {
 			a.msgs.toggleMessages()
 		}
@@ -1412,7 +1412,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 			x = clusterX
 		}
 		vcLabel, vcBord := a.voiceButtonState()
-		vcR := a.slotRect("ctrl.voice", sdl.Rect{X: x, Y: y2, W: vcW, H: btnH}, w, h)
+		vcR := a.classic.slotRect("ctrl.voice", sdl.Rect{X: x, Y: y2, W: vcW, H: btnH}, w, h)
 		if c.Button(vcR, vcLabel) {
 			a.toggleVoice()
 		}
@@ -1557,7 +1557,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// Showname box (+ saved-name picker) — an individually movable slot (#4a). Draws at
 	// the slot; the row cursor below flows from the DEFAULT nameX so moving it never
 	// cascades the rest.
-	nameBox := a.slotRect(slotICShowname, sdl.Rect{X: nameX, Y: rowY, W: shownameBoxW, H: fH}, w, h)
+	nameBox := a.classic.slotRect(slotICShowname, sdl.Rect{X: nameX, Y: rowY, W: shownameBoxW, H: fH}, w, h)
 	// fix ("the showname box is not resizable — it has the ui for it but
 	// it does nothing"): the field fills the SLOT'S live width/height, not the
 	// fixed default, so the editor's resize handles actually take effect.
@@ -1593,7 +1593,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// DEFAULT immedX below — never the override — so freeing Immediate doesn't cascade
 	// the rest of the row. slotRect is alloc-free off the edit path.
 	immedDef := sdl.Rect{X: immedX, Y: rowY, W: immedW, H: fH}
-	immedBox := a.slotRect(slotICImmediate, immedDef, w, h)
+	immedBox := a.classic.slotRect(slotICImmediate, immedDef, w, h)
 	a.compose.icImmediate = c.Checkbox(immedBox.X, immedBox.Y+(immedBox.H-16)/2, "Immediate", a.compose.icImmediate)
 	c.Tooltip(immedBox, "Immediate: the preanim plays without holding back the text (non-interrupting preanim)")
 	icX := immedX + immedW + 6 // downstream flows from the DEFAULT position, not the override
@@ -1608,7 +1608,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 		// advances by the DEFAULT width below — so an un-edited bar is pixel-identical and
 		// moving Additive never cascades the rest. slotRect is alloc-free off the edit path.
 		addDef := sdl.Rect{X: icX, Y: rowY, W: icAddW, H: fH}
-		addBox := a.slotRect(slotICAdditive, addDef, w, h)
+		addBox := a.classic.slotRect(slotICAdditive, addDef, w, h)
 		// bounceOnToggle: ui_additive → on_additive_clicked → focus_ic_input
 		// (courtroom.cpp:504, :6572). The leading-space half of that handler lives at
 		// the send site (AdditiveWantsLeadingSpace), not here.
@@ -1643,7 +1643,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	_, preOv := a.classic.classicOv[slotICPre]
 	preGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, preW+6, tailReserve)
 	if icOptionalDraws(preGuardOK, preOv, a.classic.classicEdit, a.classic.panelHidden(slotICPre)) {
-		preBox := a.slotRect(slotICPre, sdl.Rect{X: icX, Y: rowY, W: preW, H: fH}, w, h)
+		preBox := a.classic.slotRect(slotICPre, sdl.Rect{X: icX, Y: rowY, W: preW, H: fH}, w, h)
 		// bounceOnToggle: ui_pre is wired straight to focus_ic_input (courtroom.cpp:502).
 		a.compose.icPreanim = a.bounceOnToggle(c.Checkbox(preBox.X, preBox.Y+(preBox.H-16)/2, "Pre", a.compose.icPreanim), a.compose.icPreanim)
 		c.Tooltip(preBox, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
@@ -1659,7 +1659,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	_, fxOv := a.classic.classicOv[slotICFx]
 	fxGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, fxBtnW+4, tailReserve)
 	if icOptionalDraws(fxGuardOK, fxOv, a.classic.classicEdit, false) {
-		a.fxButton(a.slotRect(slotICFx, sdl.Rect{X: icX, Y: rowY, W: fxBtnW, H: fH}, w, h))
+		a.fxButton(a.classic.slotRect(slotICFx, sdl.Rect{X: icX, Y: rowY, W: fxBtnW, H: fH}, w, h))
 		icX += fxBtnW + 4
 	}
 	// "Flip" toggle (AO2-Client ui_flip): mirror your character's emotes for this and
@@ -1676,7 +1676,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// vanishes: the field is real pair state, and a stale flip simply stops being SHOWN.
 	flipInChain := a.link.sess != nil && a.link.sess.Features.Has(protocol.FeatureFlipping)
 	if flipInChain && !a.classic.panelHidden(slotICFlip) {
-		flipBox := a.slotRect(slotICFlip, sdl.Rect{X: icX, Y: rowY, W: icFlipW, H: fH}, w, h)
+		flipBox := a.classic.slotRect(slotICFlip, sdl.Rect{X: icX, Y: rowY, W: icFlipW, H: fH}, w, h)
 		// bounceOnToggle: ui_flip → focus_ic_input (courtroom.cpp:503). Only the IC-bar
 		// view bounces; the Pair panel's mirror of the same bool is not an IC-bar
 		// control, and a redraw carrying the value the other view just wrote compares
@@ -1698,7 +1698,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	sfxCompactGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, sfxCompactW+4, tailReserve)
 	switch {
 	case icOptionalDraws(sfxGuardOK, sfxOv, a.classic.classicEdit, false):
-		sfxRect := a.slotRect(slotICSFX, sdl.Rect{X: icX, Y: rowY, W: sfxDDW, H: fH}, w, h) // movable (#4a)
+		sfxRect := a.classic.slotRect(slotICSFX, sdl.Rect{X: icX, Y: rowY, W: sfxDDW, H: fH}, w, h) // movable (#4a)
 		if next, changed := c.Dropdown("sfxdd", sfxRect, a.emotepick.sfxChoices, a.emotepick.sfxChoiceIdx); changed {
 			a.applySFXPick(next) // pick + audition + focus bounce (icsfx.go; courtroom.cpp:5498-5502)
 		}
@@ -1738,7 +1738,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	_, emojiOv := a.classic.classicOv[slotICEmoji]
 	emojiGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, fH+4, tailReserve)
 	if icOptionalDraws(emojiGuardOK, emojiOv, a.classic.classicEdit, a.classic.panelHidden(slotICEmoji)) {
-		if a.drawEmojiBarButton(a.slotRect(slotICEmoji, sdl.Rect{X: icX, Y: rowY, W: fH, H: fH}, w, h)) {
+		if a.drawEmojiBarButton(a.classic.slotRect(slotICEmoji, sdl.Rect{X: icX, Y: rowY, W: fH, H: fH}, w, h)) {
 			a.emoji.showEmojiPicker = !a.emoji.showEmojiPicker
 		}
 		icX += fH + 4
@@ -1755,7 +1755,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// of the bar; the message counter now draws INSIDE this box's right edge (drawMsgCounter),
 	// so it needs no tail reserve; an override repositions/resizes the field and the counter
 	// rides along inside it.
-	icBox := a.slotRect(slotICInput, sdl.Rect{X: icX, Y: rowY, W: icW, H: fH}, w, h)
+	icBox := a.classic.slotRect(slotICInput, sdl.Rect{X: icX, Y: rowY, W: icW, H: fH}, w, h)
 	icPrimary, icEmoji := a.icFieldFonts(a.compose.icInput) // #M5: show typed emoji/unicode, not tofu
 	// Reserve the counter + muted-chip band BEFORE the field draws, so the typed
 	// line clips short of them instead of running underneath (the overdrawn-counter

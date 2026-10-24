@@ -484,7 +484,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	// Movable + resizable stage. With no override the View knob / divider own its
 	// 4:3 size (vpDef); once you drag a viewport handle in the editor, that override
 	// wins (free position + size; the scene fills it) until you reset the box.
-	vp := a.slotRect(slotViewport, vpDef, w, h)
+	vp := a.classic.slotRect(slotViewport, vpDef, w, h)
 	c.Fill(vp, sdl.Color{R: 0, G: 0, B: 0, A: 255})
 	a.renderViewportZoomed(vp)
 	a.drawStageRecordButton(vp)
@@ -527,7 +527,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	rw := w - rx - pad
 	if !a.classic.panelHidden(panelLog) {
 		rcolDef := sdl.Rect{X: rx, Y: vpDef.Y, W: rw, H: vpDef.H}
-		rcol := a.slotRect(slotRightCol, rcolDef, w, h)
+		rcol := a.classic.slotRect(slotRightCol, rcolDef, w, h)
 		// OOC lives in its own box by default; the Legacy theme — or the opt-in
 		// "OOC in the log tab" toggle (the old layout, set in the layout editor) —
 		// instead routes the whole column to the tabbed log with an OOC tab.
@@ -595,7 +595,7 @@ func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect, w, h int32) {
 		return // the log fills the column; there's no OOC box to draw
 	}
 	// The OOC box is its OWN slot — drag it anywhere / resize it independently of the log.
-	box := a.slotRect(slotOOC, boxDef, w, h)
+	box := a.classic.slotRect(slotOOC, boxDef, w, h)
 	// Guard against a stale slot override (saved at a different window size / UI scale)
 	// dropping the OOC box onto the log's tab strip — the "OOC overlapping the menu
 	// bars" report. While it sits over the right column, keep its top below the tab row

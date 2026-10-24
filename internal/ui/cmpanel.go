@@ -20,7 +20,7 @@ func (a *App) toggleCMPanel() { a.modUI.showCMPanel = !a.modUI.showCMPanel }
 
 // cmPanelRect is the CM panel's floating-window rect (floatwin.go).
 func (a *App) cmPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.wins.cmWin, slotPanelCM, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, w, h); ok {
+	if r, ok := a.classic.seedPanelFromSlot(&a.wins.cmWin, slotPanelCM, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, w, h); ok {
 		return r
 	}
 	return a.wins.cmWin.rect(cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, w, h)
@@ -54,7 +54,7 @@ func (a *App) drawCMPanel(w, h int32, pressed *bool) {
 	a.floatWinResize(&a.wins.cmWin, cgrip, panel, cmPanelMinW, cmPanelMinH, pressed)
 	a.drawResizeGrip(cgrip)
 	if wasActive && !a.wins.cmWin.dragging && !a.wins.cmWin.resizing { // drag/resize just ended → remember where
-		a.persistPanelSlot(slotPanelCM, panel, w, h)
+		a.classic.persistPanelSlot(&a.env, slotPanelCM, panel, w, h)
 	}
 	x := panel.X + modDashIn
 

@@ -226,12 +226,12 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	// button is always stuck in the emote grid corner") and hideable like any
 	// control button.
 	if !a.classic.panelHidden("ctrl.favsfilter") {
-		a.drawEmoteFavToggle(a.slotRect("ctrl.favsfilter", sdl.Rect{X: r.X + r.W - 158, Y: r.Y + r.H - btnH, W: 64, H: btnH}, a.frame.winW, a.frame.winH))
+		a.drawEmoteFavToggle(a.classic.slotRect("ctrl.favsfilter", sdl.Rect{X: r.X + r.W - 158, Y: r.Y + r.H - btnH, W: 64, H: btnH}, a.frame.winW, a.frame.winH))
 	}
 	// Swap to a random available character — replaced the old "Random" emote
 	// button (redundant with per-send auto-random + the wheel cycling emotes).
 	if !a.classic.panelHidden("ctrl.randchar") {
-		rcb := a.slotRect("ctrl.randchar", sdl.Rect{X: r.X + r.W - 92, Y: r.Y + r.H - btnH, W: 92, H: btnH}, a.frame.winW, a.frame.winH)
+		rcb := a.classic.slotRect("ctrl.randchar", sdl.Rect{X: r.X + r.W - 92, Y: r.Y + r.H - btnH, W: 92, H: btnH}, a.frame.winW, a.frame.winH)
 		if c.Button(rcb, "Rand char") {
 			a.randomChar()
 		}
@@ -676,7 +676,7 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 	a.floatWinResize(&a.wins.pairWin, grip, r, pairPanelMinW, pairPanelMinH, pressed)
 	a.drawResizeGrip(grip)
 	if wasActive && !a.wins.pairWin.dragging && !a.wins.pairWin.resizing { // drag/resize just ended → remember where
-		a.persistPanelSlot(slotPanelPair, r, w, h)
+		a.classic.persistPanelSlot(&a.env, slotPanelPair, r, w, h)
 	}
 
 	contentTop := r.Y + floatTitleH + 10
@@ -858,7 +858,7 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 // resizable, clamped on-screen, with a window-height-responsive default size.
 func (a *App) pairPanelRect(w, h int32) sdl.Rect {
 	defH := clampI32(h-120, pairPanelMinH, 560)
-	if r, ok := a.seedPanelFromSlot(&a.wins.pairWin, slotPanelPair, pairPanelDefW, defH, pairPanelMinW, pairPanelMinH, w, h); ok {
+	if r, ok := a.classic.seedPanelFromSlot(&a.wins.pairWin, slotPanelPair, pairPanelDefW, defH, pairPanelMinW, pairPanelMinH, w, h); ok {
 		return r
 	}
 	return a.wins.pairWin.rect(pairPanelDefW, defH, pairPanelMinW, pairPanelMinH, w, h)

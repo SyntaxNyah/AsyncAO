@@ -50,7 +50,7 @@ func isAreaMenuKind(k musicMenuKind) bool { return k >= areaMenuKindBase }
 // parameter is what keeps the forward in musicMenuRowLive the same shape as the other
 // four — a per-row predicate, so a future row that needs a narrower condition has
 func (a *App) areaMenuRowLive(_ musicMenuKind) bool {
-	if a.tabHidden(logTabAreas) {
+	if a.classic.tabHidden(logTabAreas) {
 		return false
 	}
 	return a.chatlog.logTab == logTabAreas || a.classic.tabTorn(logTabAreas)

@@ -1403,7 +1403,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	if p := d.Prefs.Load().ErrorSpriteFile; p != "" {
 		a.applyErrorSprite(p)
 	}
-	a.seedHiddenFromPrefs() // hidden-chrome set + the A6 no-strand normalization
+	a.classic.seedHiddenFromPrefs(&a.env) // hidden-chrome set + the A6 no-strand normalization
 	// Global jukebox library loads off-thread (it can be large); it lands via
 	// pollJukebox so the keybinds and wardrobe tab have it ready.
 	go func() {

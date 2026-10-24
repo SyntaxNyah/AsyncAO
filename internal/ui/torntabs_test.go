@@ -111,11 +111,11 @@ func TestDockedLogTabsNoAlloc(t *testing.T) {
 func TestTornTabRect(t *testing.T) {
 	var a App
 	const w, h = 1000, 800
-	if _, ok := a.tornTabRect("tab:music", w, h); ok {
+	if _, ok := a.classic.tornTabRect("tab:music", w, h); ok {
 		t.Fatal("no override: tornTabRect must report not-torn")
 	}
 	a.classic.classicOv = map[string][4]float64{"tab:music": {0.5, 0.25, 0.2, 0.5}}
-	r, ok := a.tornTabRect("tab:music", w, h)
+	r, ok := a.classic.tornTabRect("tab:music", w, h)
 	if !ok {
 		t.Fatal("override present: tornTabRect must report torn")
 	}

@@ -208,10 +208,10 @@ func (classic1 *classicState) setPanelHidden(id string, hide bool) {
 // (setPanelHiddenGuarded); this catches the WHOLESALE writes — startup load,
 // prefs reset/import, layout-profile apply — whose saved Hidden slice may
 // predate the guard or carry a stranded pair.
-func (a *App) seedHiddenFromPrefs() {
-	a.classic.hidden = map[string]bool{}
-	for _, id := range a.d.Prefs.Load().HiddenPanels() {
-		a.classic.hidden[id] = true
+func (classic1 *classicState) seedHiddenFromPrefs(e *env) {
+	classic1.hidden = map[string]bool{}
+	for _, id := range e.d.Prefs.Load().HiddenPanels() {
+		classic1.hidden[id] = true
 	}
 	// Every mouse lifeline hidden at once — a saved set that predates the guard, a
 	// layout profile, or a prefs import — un-hides the toolbox, which is the one
@@ -220,20 +220,20 @@ func (a *App) seedHiddenFromPrefs() {
 	// hid the toolbox and the menu bar had no mouse chrome left.
 	stranded := true
 	for _, l := range mouseLifelines {
-		if !a.classic.hidden[l] {
+		if !classic1.hidden[l] {
 			stranded = false
 			break
 		}
 	}
 	if stranded {
-		a.classic.setPanelHidden(panelToolbox, false)
+		classic1.setPanelHidden(panelToolbox, false)
 	}
 	// panelExtras is retired (#21): the row it hid no longer exists, so a stale
 	// entry would sit in HiddenPanels forever hiding nothing. Dropped on load
 	// rather than migrated, because there is no successor to move it to — the
 	// Extras MENU is not hideable, it is the chrome home those commands moved to.
-	if a.classic.hidden[panelExtras] {
-		a.classic.setPanelHidden(panelExtras, false)
+	if classic1.hidden[panelExtras] {
+		classic1.setPanelHidden(panelExtras, false)
 	}
 }
 
@@ -796,7 +796,7 @@ func (a *App) drawPosSelect(x, y, h int32) int32 {
 	if a.classic.panelHidden("ctrl.pos") {
 		return x // hidden: the row compacts, exactly like ctrlSlot
 	}
-	r := a.slotRect("ctrl.pos", sdl.Rect{X: x, Y: y, W: labelW + ddDefW, H: h}, a.frame.winW, a.frame.winH)
+	r := a.classic.slotRect("ctrl.pos", sdl.Rect{X: x, Y: y, W: labelW + ddDefW, H: h}, a.frame.winW, a.frame.winH)
 	c.Label(r.X, r.Y+(r.H-int32(c.font.Height()))/2, "Pos", ColTextDim)
 	ddW := r.W - labelW
 	if ddW < 60 {
@@ -1009,7 +1009,7 @@ func evidDescViewH(panelBottom, descTop int32) int32 {
 // (right column) stay visible — you can keep talking and follow the conversation while
 // you browse evidence (#5). Once dragged/resized (placed) the floatWin geometry wins.
 func (a *App) evidPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.wins.evidWin, slotPanelEvid, evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, w, h); ok {
+	if r, ok := a.classic.seedPanelFromSlot(&a.wins.evidWin, slotPanelEvid, evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, w, h); ok {
 		return r
 	}
 	if !a.wins.evidWin.placed {
@@ -1081,7 +1081,7 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	a.floatWinResize(&a.wins.evidWin, grip, r, evidPanelMinW, evidPanelMinH, pressed)
 	a.drawResizeGrip(grip)
 	if wasActive && !a.wins.evidWin.dragging && !a.wins.evidWin.resizing { // drag/resize just ended → remember where
-		a.persistPanelSlot(slotPanelEvid, r, w, h)
+		a.classic.persistPanelSlot(&a.env, slotPanelEvid, r, w, h)
 	}
 	contentTop := r.Y + floatTitleH + 8
 
@@ -1633,7 +1633,7 @@ const (
 // (like the evidence panel) so the IC input and log stay clear; once dragged or
 // resized (placed) the floatWin geometry wins.
 func (a *App) modcallPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.wins.modcallWin, slotPanelModcall, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, w, h); ok {
+	if r, ok := a.classic.seedPanelFromSlot(&a.wins.modcallWin, slotPanelModcall, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, w, h); ok {
 		return r
 	}
 	if !a.wins.modcallWin.placed {
@@ -1667,7 +1667,7 @@ func (a *App) drawModcallPanel(w, h int32, pressed *bool) {
 	a.floatWinResize(&a.wins.modcallWin, grip, r, modcallPanelMinW, modcallPanelMinH, pressed)
 	a.drawResizeGrip(grip)
 	if wasActive && !a.wins.modcallWin.dragging && !a.wins.modcallWin.resizing { // drag/resize just ended → remember where
-		a.persistPanelSlot(slotPanelModcall, r, w, h)
+		a.classic.persistPanelSlot(&a.env, slotPanelModcall, r, w, h)
 	}
 
 	c.Label(r.X+pad, r.Y+floatTitleH+8, "Reason (some servers make it optional):", ColText)

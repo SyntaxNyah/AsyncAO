@@ -199,35 +199,35 @@ func (classic1 *classicState) slotAnchorMode(name string) string {
 // cycleSlotAnchor advances the hovered slot through the A-key pin cycle. A
 // slot with no override yet gets one minted from its current on-screen rect
 // (pin-in-place without a drag); clearing the pin keeps the override.
-func (a *App) cycleSlotAnchor(name string, w, h int32) {
-	next := nextAnchorMode(a.classic.slotAnchorMode(name))
-	if _, ok := a.classic.classicOv[name]; !ok {
+func (classic1 *classicState) cycleSlotAnchor(e *env, name string, w, h int32) {
+	next := nextAnchorMode(classic1.slotAnchorMode(name))
+	if _, ok := classic1.classicOv[name]; !ok {
 		// Pin-in-place: the anchor re-bases an override, so mint one from the
 		// rect the slot drew at this frame.
-		info, reg := a.classic.slotReg[name]
+		info, reg := classic1.slotReg[name]
 		if !reg {
 			return
 		}
 		ov := rectToFrac(info.cur, w, h)
-		if a.classic.classicOv == nil {
-			a.classic.classicOv = make(map[string][4]float64, classicSlotRegCap)
+		if classic1.classicOv == nil {
+			classic1.classicOv = make(map[string][4]float64, classicSlotRegCap)
 		}
-		a.classic.classicOv[name] = ov
-		a.d.Prefs.SetClassicSlot(name, ov)
+		classic1.classicOv[name] = ov
+		e.d.Prefs.SetClassicSlot(name, ov)
 	}
 	if next == "" {
-		delete(a.classic.classicAnchor, name)
-		a.d.Prefs.ClearClassicAnchor(name)
-		a.debug.push("layout: " + classicSlotLabel(name) + " unpinned")
+		delete(classic1.classicAnchor, name)
+		e.d.Prefs.ClearClassicAnchor(name)
+		e.debug.push("layout: " + classicSlotLabel(name) + " unpinned")
 		return
 	}
 	hm, vm, _ := parseAnchorMode(next)
-	if a.classic.classicAnchor == nil {
-		a.classic.classicAnchor = make(map[string]anchorRef, classicSlotRegCap)
+	if classic1.classicAnchor == nil {
+		classic1.classicAnchor = make(map[string]anchorRef, classicSlotRegCap)
 	}
-	a.classic.classicAnchor[name] = anchorRef{h: hm, v: vm, winW: w, winH: h}
-	a.d.Prefs.SetClassicAnchor(name, config.ClassicAnchor{Mode: next, WinW: int(w), WinH: int(h)})
-	a.debug.push("layout: " + classicSlotLabel(name) + " pinned to the " + anchorModeLabel(next))
+	classic1.classicAnchor[name] = anchorRef{h: hm, v: vm, winW: w, winH: h}
+	e.d.Prefs.SetClassicAnchor(name, config.ClassicAnchor{Mode: next, WinW: int(w), WinH: int(h)})
+	e.debug.push("layout: " + classicSlotLabel(name) + " pinned to the " + anchorModeLabel(next))
 }
 
 // syncAnchorWindow re-bases a slot's LOCAL anchor to the current window —

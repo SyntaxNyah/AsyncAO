@@ -128,7 +128,7 @@ func (a *App) applyProfile(p config.LayoutProfile) {
 	// seedHiddenFromPrefs also normalizes a profile that hides BOTH mouse
 	// lifelines (toolbox grip + Settings button) — the A6 no-strand invariant.
 	a.d.Prefs.SetHiddenPanels(p.Hidden)
-	a.seedHiddenFromPrefs()
+	a.classic.seedHiddenFromPrefs(&a.env)
 	// Editor snap grid.
 	gridPx := p.GridPx
 	a.d.Prefs.Update(func(sn *config.Settings) {
@@ -161,14 +161,14 @@ func (a *App) applyProfile(p config.LayoutProfile) {
 // other box where the user put it — so a premade is a quick stage resize, not a full
 // layout swap. ensureClassicOv first so persisted other-slot overrides aren't dropped
 // when the courtroom hasn't been entered yet this session.
-func (a *App) applyStagePreset(vp [4]float64) {
-	a.classic.ensureClassicOv()
-	ov := cloneClassicOv(a.classic.classicOv)
+func (classic1 *classicState) applyStagePreset(vp [4]float64) {
+	classic1.ensureClassicOv()
+	ov := cloneClassicOv(classic1.classicOv)
 	if ov == nil {
 		ov = map[string][4]float64{}
 	}
 	ov[slotViewport] = vp
-	a.classic.applyLayoutPreset(ov)
+	classic1.applyLayoutPreset(ov)
 }
 
 // theaterStageFrac builds the "Theater" premade's viewport fraction: one big 4:3 stage
