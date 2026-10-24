@@ -1,11 +1,6 @@
 package ui
 
 // THE CHROME-ROW REFLOW GUARD (v1.90.0 W7b).
-//
-// These gates DRIVE the shipping planner and the shipping Music header — no
-// re-implementation of the placement anywhere below, because a mirror of the cursor
-// would pass while the real one overlapped (rule 11).
-//
 // The headline is TestSqueezedMusicPanelNeverStacksItsHeader: the reported defect was
 // a screenshot of an imported AO2 theme whose music panel drew Expand all and
 // Collapse all on top of each other, so the gate is the same arithmetic — a squeezed
@@ -58,7 +53,6 @@ func assertNoOverlap(t *testing.T, what string, block sdl.Rect, p *chromeRowPlan
 }
 
 // TestChromeRowNeverOverlapsAtAnySize is the totality claim, swept.
-//
 // Every width from "narrower than one control" to "roomier than the natural row" and
 // every height from "no room for a line at all" to "room for three": for ALL of them
 // the plan is either empty or non-overlapping. There is no size at which the planner
@@ -140,12 +134,6 @@ func planRect(p chromeRowPlan, id int) (sdl.Rect, bool) {
 }
 
 // TestSqueezedMusicPanelNeverStacksItsHeader is the REPORTED DEFECT, end to end.
-//
-// It drives the two real placers the themed music panel uses — fitThemedChips for the
-// roster/Music/Areas chip strip and planMusicHeader for the action row — over the same
-// squeezed shape an imported AO2 theme produces, and requires that nothing the panel
-// draws lands on anything else it draws.
-//
 // The two are placed by SEPARATE calls in theme_layout.go, reconciled by
 // themedStripBody, and that reconciliation is exactly what a short panel can falsify;
 // so the gate asserts across BOTH, not inside either.

@@ -82,17 +82,6 @@ func TestBadgeEmptyAndNilSafe(t *testing.T) {
 // scale is known (renderPct<=0, so deviceExactAt is false and the plain resampling Copy
 // runs, which is exactly what ran before ensureReactBadge/Draw learned about device scale
 // at all) — and reads the real backbuffer both times.
-//
-//   - At 100% (the identity scale) neither call can take the exact branch (deviceExactAt
-//     excludes DefaultDevScale by design — "not worth it," same as MessageRaster), so the
-//     two paint IDENTICALLY: a bug here would have to be a DIFFERENT bug, not this one.
-//   - At a fractional scale the exact branch paints the texture's own device pixels 1:1
-//     while the lied-to call resamples a logical-sized copy back up through SetScale —
-//     two different pixel operations on the same anti-aliased glyph, which cannot land on
-//     the same bytes. Reverting Draw's device-exact branch (or ensureReactBadge's
-//     emojiDeviceFont/textDevPct wiring that feeds it a real devScale) collapses both
-//     calls onto the same code path again and this test goes back to passing where it
-//     must fail.
 func TestBadgeDeviceExactDiffersFromResampleAtFractionalScale(t *testing.T) {
 	const canvasW, canvasH = 100, 100
 	paint := func(t *testing.T, pct, badgeDevScale, calledRenderPct int32) []byte {

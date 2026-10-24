@@ -64,7 +64,6 @@ func pressEscFrame(a *App) {
 
 // TestPreviewButtonIsWideLabelledAndBesideShare pins requirement 1: a PROMINENT
 // control, not a small toggle, in the band that already carries Save and Share.
-//
 // The three properties are pinned together because each one alone is satisfiable
 // by the thing the brief refused: a wide button somewhere else, a narrow button
 // beside Share, or a labelled control that is not a button at all.
@@ -128,7 +127,6 @@ func TestTheHeaderRowKeepsItsExistingSlots(t *testing.T) {
 // TestPreviewDemoDrivesTheRealCourtroomPainters pins requirement 3: the demo is
 // the real typewriter, the real showname plate, the real music banner and the real
 // IC log, not a mock renderer.
-//
 // The typewriter assertion is the load-bearing one: VisibleRunes is what the
 // chatbox painter reveals, it is strictly between "nothing" and "everything" while
 // the line crawls, and it only moves because App.Frame advanced the demo room.
@@ -235,7 +233,6 @@ func stageThemePageForTest(t *testing.T, a *App, stem string) {
 
 // countingFetcher is the canary: an assets.Fetcher that records every probe the
 // manager makes of its byte source and forwards nothing.
-//
 // A COUNTER AND NOT A LOG, because what is being asserted is a zero. It answers
 // every URL with a conclusive miss so a demo that DID probe would be counted once
 // per URL rather than blocking.
@@ -249,7 +246,6 @@ func (f *countingFetcher) Fetch(_ context.Context, _ string) ([]byte, error) {
 // TestEditorPreviewProbesNothing pins requirement 4: a driven demo must not put a
 // single probe on the fetch path. No character art, no background, no desk, no
 // blip file, no music stream — nothing.
-//
 // The manager is rebuilt around the canary so the count is the WHOLE truth for
 // this App, and the demo is driven long enough to rest and play its line a second
 // time, because a loop that re-staged the message would re-run the prefetch fan-out
@@ -404,7 +400,6 @@ func TestReduceMotionFreezesTheEditorPreview(t *testing.T) {
 // the button are the same door (exitEditorPreview), and both must put the
 // selection back — a preview that silently deselected your work would be an
 // expensive button to press.
-//
 // The Esc half also pins the RUNG ORDER: the press must be eaten by the preview
 // and must not fall through to the editor's own ladder, which would arm the
 // discard chip (or leave the editor) on a document the user cannot even see.
@@ -461,7 +456,6 @@ func TestBothDoorsLeavePreviewWithTheSelectionRestored(t *testing.T) {
 // with nothing faked: startThemeCreateFromTemplate(templateBlank, …) is the
 // Settings row's own call, pollThemeCreate lands it from inside App.Frame, and the
 // editor arms itself over the applied theme. Only then is Preview pressed.
-//
 // It is the case most likely to break, because a blank theme has NO
 // courtroom_design.ini: the courtroom falls to the classic layout, and a demo that
 // only worked over themed geometry would look perfect in every other gate here.
@@ -518,9 +512,6 @@ func TestBlankThemeFromTheRealNewFlowCanPreview(t *testing.T) {
 // temp folder: the catalog snapshot startThemeCreate reads to decide where this
 // install may write, and the preferences' custom theme root the subsequent apply
 // resolves the new folder under.
-// Nothing about the create is faked — the funnel, the goroutine, themepack's own
-// CreateFromSidecar, the landing and the apply all run. What is substituted is a
-// machine fact (where this install's themes live), exactly as editorFixtureCatalog
 func seedWritableThemeRootForTest(t *testing.T, a *App) string {
 	t.Helper()
 	root := t.TempDir()
@@ -555,7 +546,6 @@ func themeDocFingerprint(t *testing.T, a *App) string {
 // TestPreviewIgnoresAKeyAndClickStorm pins requirement 9 through the REAL event
 // path: SDL keys and Ctrl chords folded in by Ctx.HandleEvent, text input, and
 // clicks all over the window, every one of them delivered to App.Frame.
-//
 // The chords matter most. Ctrl+Z / Ctrl+Y are claimed PRE-SCREEN (app.go, gated on
 // themeEditorOpen), so they are the one input that reaches the document without
 // passing through any surface the demo hides — a preview that only hid the rails
@@ -916,7 +906,6 @@ func decodedPixelForTest() *assets.Decoded {
 
 // TestEditorPreviewHasExactlyOneConstructionSite is the seam's first gate: the
 // preview state may be born in exactly one function.
-//
 // Same shape and same reason as TestRoomConstructionHasExactlyOneCallSite: a state
 // that can be constructed two ways will one day be constructed half-wired — this
 // one owns an offline session, a room, the viewport's callbacks, a saved selection

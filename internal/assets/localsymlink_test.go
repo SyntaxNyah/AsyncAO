@@ -13,14 +13,6 @@ import (
 // directory nor a regular file — and the non-link half needs mkfifo, so it lives in the
 // unix-only localnonregular_unix_test.go beside the parity gate that drives both byte
 // sources over one tree.
-//
-// The fold (local.go attempt 3) enumerates directories — os.Open + ReadDir — to spell
-// a segment the URL got the case of wrong. An adversarial mount review pointed that
-// capability at a link and walked straight out of the mount: the two probe shapes it
-// used are the first two gates below, and they failed before foldJoin learned to lstat
-// its candidate. safepath.WalkFiles refuses the same route for the mount INDEX and says
-// why in its doc.
-//
 // The third gate is the SCOPE line: an exactly-spelled path still reads through a link,
 // because that is pre-existing policy for a name the caller wrote out in full and the
 // fold was never what granted it. The fourth is the happy path, so the refusal is
@@ -53,7 +45,6 @@ func skipIfTheLoweredPathResolves(t *testing.T, p string) {
 // lowercased URL characters/up/secret.txt asks the fold to spell "Up" for it. Before
 // the lstat refusal the fold enumerated characters/, matched "Up", descended through
 // the link and served a file that was never in the mount at all.
-//
 // The miss it becomes must be an ORDINARY miss: rule 6 memoizes it like any absent
 // asset, so a hostile pack cannot turn every re-demand into a fresh directory scan
 // (the courtroom re-Prefetches the desk on every IC message). A refusal that returned
@@ -94,14 +85,10 @@ func TestLocalFetcherFoldRefusesASymlinkedDirectory(t *testing.T) {
 // FILE half of the policy decision. A pack ships characters/Evil/(a)Normal.png as a
 // link to /outside/id_rsa; every sprite URL the client mints is lowercase, so only the
 // fold can reach that name — and reaching it meant decoding a private key as a texture.
-//
 // The decision is to refuse it. Refusing only DIRECTORY links would close the traversal
 // and leave the exfiltration — the exact case safepath.WalkFiles' doc describes ("a link
 // at characters/x/(a)a.png pointing at ~/.ssh/id_rsa would be indexed, read, and uploaded
 // as a texture"), and that walk skips a linked FILE just as flatly as a linked directory.
-// The rest of WalkFiles' shape — every OTHER non-regular entry — is pinned by
-// localnonregular_unix_test.go; the first draft of this refusal claimed that shape while
-// covering only the links these two gates drive.
 func TestLocalFetcherFoldRefusesASymlinkedFile(t *testing.T) {
 	mount, outside := t.TempDir(), t.TempDir()
 	const key = "PRIVATE KEY"
@@ -134,7 +121,6 @@ func TestLocalFetcherFoldRefusesASymlinkedFile(t *testing.T) {
 // batch and what must not WIDEN that reach; narrowing the exact path is a separate
 // decision with separate consequences (an exported scene archive may legitimately be a
 // tree of links), and it is deliberately not taken here.
-//
 // It needs no case-sensitivity skip: the exact spelling resolves on every filesystem,
 // which is the point.
 func TestLocalFetcherExactSpellingStillReadsThroughASymlink(t *testing.T) {

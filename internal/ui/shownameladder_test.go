@@ -212,9 +212,6 @@ func TestChatboxBlankRungIsDistinctAndDeclinesADuplicate(t *testing.T) {
 // skin decision, the one the widen-and-swap ladder is not: a post whose showname
 // trims to nothing wears the plate-less box (AO2-Client courtroom.cpp:3320-3331,
 // `if (ui_vp_showname->text().trimmed().isEmpty())`).
-// Both arms of AO2's branch are here, and so are the two states a streaming client
-// adds: a theme that ships no blank art at all (most of them) must be byte-identical
-// to the pre-fix draw, and the decision must stay free per frame — it runs on every
 func TestChatboxSkinForShownameFollowsTheTrimmedName(t *testing.T) {
 	a, cleanup := ladderHarness(t)
 	defer cleanup()
@@ -365,7 +362,6 @@ func TestChatboxLadderArtSkippedWithoutABaseSkin(t *testing.T) {
 // TestThemeLayoutBakesShownameExtra pins that the rung height is scaled with the
 // rect it widens and baked on the cold rebuild, so the draw path stays integer
 // only.
-//
 // AO2 does not scale it — get_element_dimensions applies themeScalingFactor to
 // the showname rect while get_design_element hands extra_width back raw — but AO2
 // also ships that factor at 1, so the two agree everywhere AO2 runs. Ours is 1
@@ -470,7 +466,6 @@ func pinFlatThemeArt(t *testing.T, a *App, stem string) *render.TexturePage {
 // message lands on is decided by what the ACTIVE THEME already has pinned in T1,
 // and by nothing else. No probe, no fetch, no disk touch per message — a theme
 // that ships no variants answers from a map read, forever.
-//
 // It walks the four cases the corpus actually contains: both variants (60 of 74
 // themes), med only, neither (14, P5Theme among them), and a theme that declares
 // no extra_width at all (nine).
@@ -545,7 +540,6 @@ func TestChatboxSkinLadderRidesResidency(t *testing.T) {
 
 // TestChatboxSkinLadderProbesNothingPerMessage is the streaming-client contract,
 // stated as a test rather than as a comment.
-//
 // The negative — "this theme has no med skin" — must be answered from state the
 // theme apply already landed, with no lookup that could ever reach the disk or
 // the network. themePage's first line is the themeTex map probe, so a stem that
@@ -581,10 +575,6 @@ func TestChatboxSkinLadderProbesNothingPerMessage(t *testing.T) {
 // FIRING — the state a stock-theme player is in the moment somebody with a long
 // showname speaks, and the only one of the themed gates that reaches the measure,
 // the two variant probes and the skin swap on every frame.
-// The other themed gates leave themeTex empty, so their chatbox is the flat panel
-// and the ladder short-circuits on the first integer test. This one pins all three
-// skins and gives the theme the stock 24 px rung, so the frame really does measure
-// the name and blit a swapped page 200 times.
 func TestDrawCourtroomThemedLadderZeroAlloc(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
@@ -656,7 +646,6 @@ func mustPage(t *testing.T, a *App, stem string) *render.TexturePage {
 }
 
 // TestShownameLadderReachesBothDrawSites is the mirror-site guard (4.7e).
-//
 // The live themed chatbox and the video / comic export's themed chatbox draw the
 // same theme's chatbox. If only one of them runs the ladder, a long showname
 // renders on the wide plate on screen and spills off the narrow one in the

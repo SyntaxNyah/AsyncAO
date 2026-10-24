@@ -1,19 +1,6 @@
 package theme
 
 // The SHIPPED SPEC is a test input.
-//
-// docs/THEME-FORMAT.md is written so a third party can implement a reader
-// without ever reading this source, which makes every number in it a promise.
-// A promise nothing checks drifts: the constant moves, the document keeps
-// saying the old number, and the next third-party writer emits files we refuse.
-//
-// So the census trick internal/theme already runs over INIDoc (see
-// inidoccensus_test.go) is pointed at the document itself. The parser below is
-// TOLERANT OF PROSE — it reads markdown tables and matches substrings, so the
-// document stays readable English — and STRICT ON NUMBERS: every published
-// figure is compared against the Go constant it claims to describe, and §7's
-// caps table is checked for TOTALITY IN BOTH DIRECTIONS, so a row added to the
-// document without an expectation here fails as loudly as a missing one.
 
 import (
 	"fmt"

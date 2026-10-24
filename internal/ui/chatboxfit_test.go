@@ -44,9 +44,6 @@ func layWith(rects map[string]sdl.Rect) *themeLayoutCache {
 // is QTextDocument::documentMargin — default 4. A Qt 6.5.3 probe of that exact
 // widget at this exact size reports documentMargin 4.0, a position-0 text cursor
 // at (4, 4) and a first-block bounding rect 234 px wide inside a 242 px viewport.
-// SYMMETRIC on purpose: the chatlog's inset deliberately spares the right edge
-// because a scrollbar track lives there, and reusing it here would leave the
-// message text hard against the theme's right margin.
 func TestThemedMessageCarriesQtDocumentMargin(t *testing.T) {
 	box := sdl.Rect{X: 400, Y: 300, W: 256, H: 78}
 	_, msg := chatboxTextRects(box, layWith(stockChatboxRects), box.Y+chatBoxTopStrip)
@@ -328,10 +325,6 @@ func TestClassicChatOverlayInsetValuesUnchanged(t *testing.T) {
 // faceSizeFor mirrors Ctx.buildSet's own size arithmetic
 //
 //	size = UIFontSize * pct * devPct / (DefaultScalePct ^ 2)
-//
-// which is the only thing about a percent that reaches the screen. Two percents
-// with the same face size are the same picture drawn twice, and the point of
-// canonFontPct is that they are never asked for as two different cache keys.
 func faceSizeFor(pct, devPct int) int {
 	if devPct <= 0 {
 		devPct = DefaultScalePct
@@ -374,7 +367,6 @@ func TestCanvasTextScalePctTakesTheTighterAxis(t *testing.T) {
 }
 
 // TestFoldIsIdentityAtOneToOne is the "the default case does not move" guard.
-//
 // ThemeFitNative is the shipped default and pins the scale at exactly 1.0 for
 // any window at least as large as the theme's canvas — the majority of the
 // reference corpus, since the import auto-resize snaps the window to the canvas.
@@ -402,10 +394,6 @@ func TestFoldIsIdentityAtOneToOne(t *testing.T) {
 
 // TestFoldAppliesTheCanvasOutsideTheDeclaredClamp pins the ORDER of the two
 // clamps, which is the whole hazard.
-//
-// themeFontMinPct/themeFontMaxPct exist to reject sloppy theme data and they
-// genuinely bind on real themes: `microsoft surface 4k webao` declares
-// `message = 50`, i.e. 416%, which clips to 400% before any canvas is involved.
 // The canvas scale is not theme data and must not be judged by that clamp — it
 // multiplies outside it — and the product then gets its own, higher cap.
 func TestFoldAppliesTheCanvasOutsideTheDeclaredClamp(t *testing.T) {
@@ -585,7 +573,6 @@ func TestThemeLayoutBakesTheCanvasTextScale(t *testing.T) {
 }
 
 // TestThemedChatboxRectsResolvedInOnePlace is the mirror-site guard.
-//
 // The live themed chatbox (theme_layout.go) and the export's themed chatbox
 // (gifexport.go) each used to resolve the showname / message child rects with
 // their own copy of the arithmetic, so a fix to one silently left the other

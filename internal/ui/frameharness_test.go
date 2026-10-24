@@ -42,7 +42,6 @@ const (
 
 // stageFrameDrivenApp is a themed, settled courtroom App that App.Frame can be
 // called on directly.
-//
 // Everything it adds beyond stageThemedCourtroom is either a dependency Frame
 // dereferences without a nil check, or a one-shot latch that would otherwise start a
 // goroutine or a network read on frame 1. Nothing here changes what is DRAWN.
@@ -144,7 +143,6 @@ func driveFrames(a *App, n int) {
 }
 
 // driveClickAt runs one real frame carrying a committed left-click at (x, y).
-//
 // The input is seeded BETWEEN BeginFrame and App.Frame, which is exactly where
 // HandleEvent puts it in the live loop: BeginFrame clears the snapshot (and
 // re-reads the cursor from SDL, which is (0,0) under the dummy driver), so anything
@@ -161,7 +159,6 @@ func driveClickAt(a *App, x, y int32) {
 
 // driveTypedText runs one real frame carrying TEXT INPUT — one SDL_TEXTINPUT
 // event's worth, which is what a printable keystroke actually delivers.
-//
 // Seeded between BeginFrame (which clears c.typed, ui.go) and App.Frame, exactly
 // where HandleEvent appends it in the live loop. c.keyPressed is deliberately left
 // alone: a letter arrives as text, not as a keycode, which is the whole reason the
@@ -190,7 +187,6 @@ func driveEnter(a *App) {
 
 // driveUntilThemeApplied kicks a theme apply and drives REAL FRAMES until
 // pollThemeApply — App.Frame's own call, not a hand call — has landed it.
-//
 // This is what makes every apply-tier gate below a call-site gate: awaitThemeApply
 // (panelfonts_test.go) calls a.pollThemeApply() itself, so deleting the call from
 // App.Frame leaves it green. Here the only thing that can land the result is the
@@ -259,9 +255,6 @@ func TestTheFrameHarnessReallyDrivesAFrame(t *testing.T) {
 // only geometry gate t.Skip()s on exactly that condition and the visibility gate
 // asserts nothing but themeErrChipActive().
 // So this drives real frames and asks the two questions a user would:
-// Mutations it answers to: `return sdl.Rect{}, false` at the top of themeErrChipRect;
-// deleting `a.drawThemeErrChip(w)` from drawMenuBar; deleting
-// `a.handleThemeErrChipInput(winW)` from App.Frame.
 func TestSidecarRefusalChipReachesTheScreenAndTakesItsClick(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()
@@ -329,8 +322,6 @@ const clockHarnessSpeedPct = int16(250)
 // `a.applyThemeClocks(res.sidecar)` — a call the suite could delete and stay green,
 // because both clock gates call applyThemeClocks themselves and the shared fixture
 // assigns a.themeSidecar by hand without ever running pollThemeApply.
-// `[clock.N]` was in the same parsed-documented-never-invoked state `[overrides]`
-// shipped in for four waves, and this is the shape that catches it:
 func TestThemeApplyLoadsTheClockPoolThroughAFrame(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()
@@ -403,9 +394,6 @@ func formatClockHarnessSpeed() string {
 // It is frame-driven because the ordering only exists inside a frame: the pass opens
 // at the top of drawCourtroomThemed's element work and the three bands paint after it,
 // which is a fact about App.Frame's dispatch and about nothing smaller.
-// The mutation it answers to: delete `a.beginThemeFXPass()` from
-// refreshElementConditionsFrom. The stamp then never advances, so every painted
-// element is seen at a pass number that did not move.
 func TestEveryElementPaintHappensInsideAnOpenPass(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()

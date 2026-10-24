@@ -43,7 +43,6 @@ func menuBarFrameFor(a *App, w, h int32) {
 // chips still answer the mouse (both editors hit-test with raw pointIn, which no fence
 // covers) but they are invisible, and Done is the editor's primary exit — reachable in
 // one click from the Extras menu's own "Edit layout…" row.
-//
 // The RESERVED BAND must not move with the paint: it is what every screen and the
 // themed layout cache offset content by, so dropping it on entry would shift the very
 // widgets the editor exists to place.
@@ -96,14 +95,6 @@ func TestMenuBarStandsDownUnderALayoutEditor(t *testing.T) {
 // dispatch, so an editor can be armed or dismissed between them and phase 1's answer
 // goes stale in BOTH directions — the reason the decision is re-taken after
 // menuBarInput and settled again at the paint site (menuBarPaintsNow).
-//
-// Measured at 1280x720 before the fix: the Extras → "Edit layout…" row fires INSIDE
-// menuBarInput, so the frame it arms an editor ended with menuBar.draws=true,
-// menuBarPaints=false and one published fence — the strip painted straight over the
-// banner the courtroom pass then drew. The mirror: the classic editor lays out its
-// chips, handles their clicks and paints its banner LAST, so the frame Done is pressed
-// returned before painting anything, and phase 1's stand-down left the 22 px band EMPTY
-// for that frame.
 func TestMenuBarPaintDecisionSurvivesAMidFrameEditor(t *testing.T) {
 	const w, h = int32(1280), int32(720)
 
@@ -367,10 +358,6 @@ func TestMenuBarFrameFitsInTheFenceRegistry(t *testing.T) {
 // TestMenuBarFenceOutlivesTheScreenPass is THE ordering precondition (menubar.go's
 // header). App-level publication has to sit BELOW every in-pass publisher in the
 // fence registry, because registry order is paint order:
-//
-//   - a widget a screen draws under the strip must be inert, and
-//   - drawCourtroom's `defer c.overlayFenceRelease(mark)` must not take the bar's
-//     fence down with the pass, or the post-courtroom overlays would draw through it.
 func TestMenuBarFenceOutlivesTheScreenPass(t *testing.T) {
 	a := stageMenuBarApp(t)
 	c := a.ctx
