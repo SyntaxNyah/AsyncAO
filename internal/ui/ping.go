@@ -100,12 +100,12 @@ func (lobby1 *lobbyState) startPinging() {
 // Turning it ON goes through startPinging, which refuses a second in-flight sweep, so
 // this is safe to call repeatedly.
 func (a *App) toggleConnectTimeSort() {
-	if a.lobby.pingMode {
-		a.lobby.pingMode = false
+	if a.conn.lobby.pingMode {
+		a.conn.lobby.pingMode = false
 		a.applyServerSort()
 		return
 	}
-	a.lobby.startPinging()
+	a.conn.lobby.startPinging()
 }
 
 // pollPing drains probe results into a.pings on the render thread — a
@@ -113,22 +113,22 @@ func (a *App) toggleConnectTimeSort() {
 func (a *App) pollPing() {
 	for {
 		select {
-		case r := <-a.lobby.pingRes:
-			if r.gen != a.lobby.pingGen {
+		case r := <-a.conn.lobby.pingRes:
+			if r.gen != a.conn.lobby.pingGen {
 				continue // a superseded sweep
 			}
 			if r.url == "" { // done
-				a.lobby.pinging = false
+				a.conn.lobby.pinging = false
 				a.applyServerSort()
 				continue
 			}
-			if a.lobby.pings == nil {
-				a.lobby.pings = map[string]time.Duration{}
+			if a.conn.lobby.pings == nil {
+				a.conn.lobby.pings = map[string]time.Duration{}
 			}
 			if r.ok {
-				a.lobby.pings[r.url] = r.rtt
+				a.conn.lobby.pings[r.url] = r.rtt
 			} else {
-				a.lobby.pings[r.url] = -1 // unreachable
+				a.conn.lobby.pings[r.url] = -1 // unreachable
 			}
 		default:
 			return
@@ -139,10 +139,10 @@ func (a *App) pollPing() {
 // applyServerSort rebuilds the lobby list (ping-aware when pingMode) and resets
 // the index-based selection — mirroring the refresh / favourite re-sorts.
 func (a *App) applyServerSort() {
-	a.lobby.servers = a.lobby.mergedFavorites(&a.env)
+	a.conn.lobby.servers = a.conn.lobby.mergedFavorites(&a.env)
 	// Clear all three selection caches together (descLinks included — a stale
 	// link slice is a latent trap for any draw path that consults it alone).
-	a.lobby.selServer, a.lobby.descLines, a.lobby.descLinks = -1, nil, nil // row indices changed with the sort
+	a.conn.lobby.selServer, a.conn.lobby.descLines, a.conn.lobby.descLinks = -1, nil, nil // row indices changed with the sort
 }
 
 // sortByPing orders joinable servers by connect RTT — favorites pinned, probed

@@ -81,15 +81,15 @@ func TestPumpConnectionSurvivesServerKick(t *testing.T) {
 		t.Error("Disconnect should have torn the session down (sess != nil)")
 	}
 	// Fix #2: the kick reason and reconnect state must SURVIVE Disconnect.
-	if a.connErr != "Kicked: you are kicked" {
-		t.Errorf("connErr = %q, want %q (reason must outlive Disconnect)", a.connErr, "Kicked: you are kicked")
+	if a.conn.connErr != "Kicked: you are kicked" {
+		t.Errorf("connErr = %q, want %q (reason must outlive Disconnect)", a.conn.connErr, "Kicked: you are kicked")
 	}
-	if a.lastConnURL != "ws://test.example" {
-		t.Errorf("lastConnURL = %q, want %q (Reconnect target must survive)", a.lastConnURL, "ws://test.example")
+	if a.conn.lastConnURL != "ws://test.example" {
+		t.Errorf("lastConnURL = %q, want %q (Reconnect target must survive)", a.conn.lastConnURL, "ws://test.example")
 	}
 	// #1: a kick must NOT arm auto-reconnect (retrying reads as ban evasion / bad
 	// optics). The manual Reconnect button still works — that's the lastConnURL above.
-	if !a.autoReconnectAt.IsZero() {
+	if !a.conn.autoReconnectAt.IsZero() {
 		t.Error("a server kick must NOT arm auto-reconnect (autoReconnectAt should stay zero)")
 	}
 }

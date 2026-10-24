@@ -90,11 +90,11 @@ func friendlyConnError(wsURL string, err error) string {
 // context.Background() (Dial's full 10s budget); restore-on-launch passes a
 // short timeout so a dead remembered server can't freeze boot for long.
 func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
-	a.connErr = ""                              // a fresh attempt clears any stale lobby error/reason
-	a.deliberateClose = false                   // a fresh connection starts with no pending deliberate-close intent
-	a.lastConnName, a.lastConnURL = name, wsURL // remember for one-click Reconnect on a drop/failure
-	a.d.Prefs.SetLastServer(name, wsURL)        // persist for auto-connect / quick-connect on next launch
-	a.lobby.pinging = false                     // leaving the lobby: don't let a dropped done-sentinel wedge re-ping
+	a.conn.connErr = ""                                   // a fresh attempt clears any stale lobby error/reason
+	a.conn.deliberateClose = false                        // a fresh connection starts with no pending deliberate-close intent
+	a.conn.lastConnName, a.conn.lastConnURL = name, wsURL // remember for one-click Reconnect on a drop/failure
+	a.d.Prefs.SetLastServer(name, wsURL)                  // persist for auto-connect / quick-connect on next launch
+	a.conn.lobby.pinging = false                          // leaving the lobby: don't let a dropped done-sentinel wedge re-ping
 	a.parkActive()
 	if !a.allocateTab() {
 		return // connErr set; lobby shows it
@@ -131,7 +131,7 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 		Origin:        a.d.Prefs.Load().WSOrigin, // power-user: servers that allowlist their web client's origin ("" = none)
 	})
 	if err != nil {
-		a.connErr = friendlyConnError(wsURL, err) // #9: human guidance, not a raw Go error
+		a.conn.connErr = friendlyConnError(wsURL, err) // #9: human guidance, not a raw Go error
 		a.debug.push("connect failed: " + err.Error())
 		// A refusal the server EXPLAINED gets the notice box, same as a BD reason:
 		// the explanation is how you get in (a Discord invite to ask for a whitelist
@@ -143,7 +143,7 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 		a.closeActiveTab()
 		a.screen = ScreenLobby
 		if refused {
-			a.openServerNotice(serverNoticeRemoved, a.connErr, noticeServer, de.Body)
+			a.openServerNotice(serverNoticeRemoved, a.conn.connErr, noticeServer, de.Body)
 		}
 		return
 	}
@@ -280,11 +280,11 @@ func (a *App) Disconnect() {
 	// socket so rehearsal / an already-dead tab can't claim a phantom target;
 	// connectWith seeds lastConn* for the dial-FAILURE case (no session here).
 	if a.link.conn != nil {
-		a.lastConnName, a.lastConnURL = a.srvMeta.serverName, a.srvMeta.serverKey
+		a.conn.lastConnName, a.conn.lastConnURL = a.srvMeta.serverName, a.srvMeta.serverKey
 	}
 	a.closeActiveTab()
 	a.resetSessionState()
-	a.lobby.selServer, a.lobby.descLines = -1, nil
+	a.conn.lobby.selServer, a.conn.lobby.descLines = -1, nil
 	// Drain in-flight fetches so stale payloads can't land later (polls
 	// also key-guard, this just frees the slots).
 	select {
@@ -306,7 +306,7 @@ func (a *App) Disconnect() {
 	a.screen = ScreenLobby
 	// Consume the deliberate-close intent: it applied only to THIS teardown. A
 	// later unexpected drop on a fresh connection must be treated as unexpected.
-	a.deliberateClose = false
+	a.conn.deliberateClose = false
 }
 
 // applyWindowSize resizes the window to a clamped, recentered size and persists
@@ -567,7 +567,7 @@ func (a *App) pumpConnection() {
 	// failure is a transport drop, never a ban/kick, so it's not deliberate).
 	if err := a.link.sess.SendErr(); err != nil {
 		reason := "connection lost: " + err.Error()
-		a.connErr = reason
+		a.conn.connErr = reason
 		a.debug.push("disconnected: " + reason)
 		a.handleInvoluntaryDrop(reason) // freeze under the dialog (or plain teardown) + arm auto-reconnect
 		return
@@ -598,7 +598,7 @@ func (a *App) pumpConnection() {
 				if err := a.link.conn.Err(); err != nil {
 					reason = err.Error()
 				}
-				a.connErr = reason
+				a.conn.connErr = reason
 				a.debug.push("disconnected: " + reason)
 				a.handleInvoluntaryDrop(reason) // freeze under the dialog (or plain teardown) + arm auto-reconnect
 				return
@@ -899,7 +899,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				a.evid.evidConflict = true
 			}
 		case courtroom.EventDisconnect:
-			a.connErr = ev.Text
+			a.conn.connErr = ev.Text
 			a.debug.push("disconnected: " + ev.Text)
 			// #60: KK/KB/BD surface here as "Kicked: …" / "Banned: …" — play the
 			// matching feedback sound (cooldown-gated, so an auto-reconnect retry
@@ -1091,7 +1091,7 @@ func (a *App) rebuildAssetOrigin() {
 		origin = a.link.sess.AssetURL
 	}
 	if origin == "" {
-		a.connErr = `server provided no asset URL — set Settings > Assets > Asset source to "Only use my folders"`
+		a.conn.connErr = `server provided no asset URL — set Settings > Assets > Asset source to "Only use my folders"`
 		return
 	}
 	a.installAssetOrigin(origin)

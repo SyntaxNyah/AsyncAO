@@ -264,7 +264,7 @@ func (a *App) drawServerHelp(w, h int32) {
 	// Two passes: measure (for the scrollbar), then draw. WrapText is width-memoized,
 	// so the doubled calls are cheap; the catalog is a dozen entries.
 	draw := func(measure bool) int32 {
-		y := top - a.lobby.helpScroll
+		y := top - a.conn.lobby.helpScroll
 		para := func(text string, col sdl.Color, x, wrapW int32, maxLines int) {
 			for _, ln := range c.WrapText(text, wrapW, maxLines) {
 				if !measure && y+lineH > top && y < top+view.H {
@@ -344,15 +344,15 @@ func (a *App) drawServerHelp(w, h int32) {
 		}
 		y += lineH / 2
 		para(serverHelpOutro, ColTextDim, x0, colW, 8)
-		return (y + a.lobby.helpScroll) - top // content height
+		return (y + a.conn.lobby.helpScroll) - top // content height
 	}
 
 	contentH := draw(true)
 	if !c.ctrlHeld && c.hovering(view) {
-		a.lobby.helpScroll -= c.wheelY * scrollStepPx
+		a.conn.lobby.helpScroll -= c.wheelY * scrollStepPx
 	}
 	track := sdl.Rect{X: w - scrollBarW - 4, Y: view.Y, W: scrollBarW, H: view.H}
-	a.lobby.helpScroll = c.VScrollbar("helpscroll", track, a.lobby.helpScroll, contentH, view.H)
+	a.conn.lobby.helpScroll = c.VScrollbar("helpscroll", track, a.conn.lobby.helpScroll, contentH, view.H)
 	draw(false)
 }
 

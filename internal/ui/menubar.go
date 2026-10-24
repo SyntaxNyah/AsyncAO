@@ -290,21 +290,21 @@ func buildThemeFitMenu() []menuItem {
 // neither would be a silent no-op — the failure mode the disabled-not-absent rule
 // above exists to avoid.
 
-func menuCanRefreshServers(a *App, _ int) bool { return !a.lobby.lobbyFetching }
+func menuCanRefreshServers(a *App, _ int) bool { return !a.conn.lobby.lobbyFetching }
 func menuActRefreshServers(a *App, _ int)      { a.RefreshServers() }
 
-func menuPhoneBookOn(a *App, _ int) bool { return a.lobby.phoneBookPage }
+func menuPhoneBookOn(a *App, _ int) bool { return a.conn.lobby.phoneBookPage }
 func menuTogglePhoneBook(a *App, _ int) {
 	a.menuGoto(ScreenLobby)
-	a.setPhoneBookPage(!a.lobby.phoneBookPage)
+	a.setPhoneBookPage(!a.conn.lobby.phoneBookPage)
 }
 
 // menuCanPingSort dims the row while a sweep is in flight: startPinging refuses a
 // second one (it would race its own results), so a live row there would do nothing.
 // Dimming is also the only progress feedback the menu can give — the on-screen button
 // this replaced said "Pinging…" in its label, which a static menu row cannot.
-func menuCanPingSort(a *App, _ int) bool { return !a.lobby.pinging }
-func menuPingSortOn(a *App, _ int) bool  { return a.lobby.pingMode }
+func menuCanPingSort(a *App, _ int) bool { return !a.conn.lobby.pinging }
+func menuPingSortOn(a *App, _ int) bool  { return a.conn.lobby.pingMode }
 func menuTogglePingSort(a *App, _ int) {
 	a.menuGoto(ScreenLobby)
 	a.toggleConnectTimeSort()

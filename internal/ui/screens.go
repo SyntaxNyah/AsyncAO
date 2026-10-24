@@ -825,7 +825,7 @@ func (a *App) handleSpriteDrag(vp sdl.Rect) {
 // dropped connection, auto-reconnect teardown — keep calling Disconnect() direct.
 func (a *App) requestDisconnect() {
 	if a.d.Prefs.Load().InstantDisconnect {
-		a.deliberateClose = true // user chose to leave — the drop paths must not auto-reconnect (#1)
+		a.conn.deliberateClose = true // user chose to leave — the drop paths must not auto-reconnect (#1)
 		a.Disconnect()
 		return
 	}
@@ -865,7 +865,7 @@ func (a *App) drawDisconnectConfirm(w, h int32) {
 	}
 	if c.Button(sdl.Rect{X: m.X + pad, Y: m.Y + mh - btnH - pad, W: 170, H: btnH}, "Yes, disconnect") {
 		a.dialogs.confirmDisconnect = false
-		a.deliberateClose = true // user confirmed leaving — suppress auto-reconnect on this teardown (#1)
+		a.conn.deliberateClose = true // user confirmed leaving — suppress auto-reconnect on this teardown (#1)
 		a.Disconnect()
 		return
 	}

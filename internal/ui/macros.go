@@ -489,7 +489,7 @@ func (a *App) drawLoginSettings(y, _ int32) int32 {
 // first, then every joinable lobby/favorite entry. Cached against the
 // (server count, active key) pair — WebSocketURL allocates per entry.
 func (a *App) loginTargets() ([]string, []string) {
-	if settings.loginSrvCount == len(a.lobby.servers) && settings.loginSrvFor == a.srvMeta.serverKey && settings.loginNames != nil {
+	if settings.loginSrvCount == len(a.conn.lobby.servers) && settings.loginSrvFor == a.srvMeta.serverKey && settings.loginNames != nil {
 		return settings.loginNames, settings.loginKeys
 	}
 	var names, keys []string
@@ -497,8 +497,8 @@ func (a *App) loginTargets() ([]string, []string) {
 		names = append(names, a.srvMeta.serverName+" (connected)")
 		keys = append(keys, a.srvMeta.serverKey)
 	}
-	for i := range a.lobby.servers {
-		e := &a.lobby.servers[i]
+	for i := range a.conn.lobby.servers {
+		e := &a.conn.lobby.servers[i]
 		if !e.Joinable() {
 			continue
 		}
@@ -510,7 +510,7 @@ func (a *App) loginTargets() ([]string, []string) {
 		keys = append(keys, url)
 	}
 	settings.loginNames, settings.loginKeys = names, keys
-	settings.loginSrvCount, settings.loginSrvFor = len(a.lobby.servers), a.srvMeta.serverKey
+	settings.loginSrvCount, settings.loginSrvFor = len(a.conn.lobby.servers), a.srvMeta.serverKey
 	return names, keys
 }
 

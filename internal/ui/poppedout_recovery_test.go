@@ -34,23 +34,23 @@ func TestAutoReconnectIdempotentInDueWindow(t *testing.T) {
 
 	})
 	a.screen = ScreenLobby // the retry fires only from the lobby (v1.70.0 behaviour)
-	a.connErr = "connection closed"
-	a.autoReconnectTries = 0
-	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
+	a.conn.connErr = "connection closed"
+	a.conn.autoReconnectTries = 0
+	a.conn.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 
 	a.pollAutoReconnect()
-	firstTries := a.autoReconnectTries
+	firstTries := a.conn.autoReconnectTries
 	if firstTries == 0 {
 		t.Fatal("the first poll must fire the due retry")
 	}
 	// The dial failed and backed off: autoReconnectAt is now in the future, so an
 	// immediately-following poll (same tick) sees an un-due retry.
-	if a.autoReconnectAt.IsZero() || !a.now().Before(a.autoReconnectAt) {
-		t.Fatalf("after a failed dial the retry must be rescheduled into the future, got %v (now %v)", a.autoReconnectAt, a.now())
+	if a.conn.autoReconnectAt.IsZero() || !a.now().Before(a.conn.autoReconnectAt) {
+		t.Fatalf("after a failed dial the retry must be rescheduled into the future, got %v (now %v)", a.conn.autoReconnectAt, a.now())
 	}
 	a.pollAutoReconnect() // same due window
-	if a.autoReconnectTries != firstTries {
-		t.Errorf("double-polling must not double-dial: tries went %d→%d in one due window", firstTries, a.autoReconnectTries)
+	if a.conn.autoReconnectTries != firstTries {
+		t.Errorf("double-polling must not double-dial: tries went %d→%d in one due window", firstTries, a.conn.autoReconnectTries)
 	}
 }
 

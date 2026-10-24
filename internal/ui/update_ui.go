@@ -105,7 +105,7 @@ func (a *App) wireComponentEnvs() {
 	a.modDash.env = &a.env
 	a.overlays.env = &a.env
 	a.classic.env = &a.env
-	a.lobby.env = &a.env
+	a.conn.lobby.env = &a.env
 	a.palette.env = &a.env
 	a.client.env = &a.env
 	a.sceneWarm.env = &a.env

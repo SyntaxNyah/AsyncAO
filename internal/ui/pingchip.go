@@ -40,10 +40,10 @@ func (a *App) updatePingLoop() {
 	if !a.d.Prefs.Load().PingChip {
 		want = nil
 	}
-	if want == a.lobby.pingConn {
+	if want == a.conn.lobby.pingConn {
 		return // already pinging the right conn (or both nil)
 	}
-	a.lobby.stopPingLoop()
+	a.conn.lobby.stopPingLoop()
 	if want != nil {
 		a.startPingLoop(want)
 	}
@@ -51,9 +51,9 @@ func (a *App) updatePingLoop() {
 
 func (a *App) startPingLoop(conn *protocol.Conn) {
 	ctx, cancel := context.WithCancel(context.Background())
-	a.lobby.pingCancel = cancel
-	a.lobby.pingConn = conn
-	a.lobby.pingRTT.Store(0)
+	a.conn.lobby.pingCancel = cancel
+	a.conn.lobby.pingConn = conn
+	a.conn.lobby.pingRTT.Store(0)
 	go a.pingLoop(ctx, conn)
 }
 
@@ -73,13 +73,13 @@ func (lobby1 *lobbyState) stopPingLoop() {
 func (a *App) pingLoop(ctx context.Context, conn *protocol.Conn) {
 	t := time.NewTicker(pingChipInterval)
 	defer t.Stop()
-	a.lobby.pingOnce(ctx, conn) // one immediate ping so the chip fills in fast
+	a.conn.lobby.pingOnce(ctx, conn) // one immediate ping so the chip fills in fast
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			a.lobby.pingOnce(ctx, conn)
+			a.conn.lobby.pingOnce(ctx, conn)
 		}
 	}
 }
@@ -120,7 +120,7 @@ func (a *App) drawPingChip(x, y int32) {
 		return
 	}
 	c := a.ctx
-	rtt := a.lobby.pingRTT.Load()
+	rtt := a.conn.lobby.pingRTT.Load()
 	unknown := rtt == 0
 	ms := int(rtt / int64(time.Millisecond))
 	bars, col := pingQuality(ms, unknown)
@@ -137,13 +137,13 @@ func (a *App) drawPingChip(x, y int32) {
 		c.Fill(sdl.Rect{X: x + i*(barW+gap), Y: y + (chipH - bh), W: barW, H: bh}, bc)
 	}
 
-	if a.lobby.pingLabelMs != ms || a.lobby.pingLabel == "" { // rebuild the tooltip only when the ms moves
+	if a.conn.lobby.pingLabelMs != ms || a.conn.lobby.pingLabel == "" { // rebuild the tooltip only when the ms moves
 		if unknown {
-			a.lobby.pingLabel = "Ping: — (measuring…)"
+			a.conn.lobby.pingLabel = "Ping: — (measuring…)"
 		} else {
-			a.lobby.pingLabel = fmt.Sprintf("Ping: %d ms", ms)
+			a.conn.lobby.pingLabel = fmt.Sprintf("Ping: %d ms", ms)
 		}
-		a.lobby.pingLabelMs = ms
+		a.conn.lobby.pingLabelMs = ms
 	}
-	c.Tooltip(sdl.Rect{X: x, Y: y, W: chipW, H: chipH}, a.lobby.pingLabel)
+	c.Tooltip(sdl.Rect{X: x, Y: y, W: chipW, H: chipH}, a.conn.lobby.pingLabel)
 }

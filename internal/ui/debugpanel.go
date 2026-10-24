@@ -142,7 +142,7 @@ func (a *App) drawDebugSession(r sdl.Rect) {
 	line(a.debugHealthLine(), ColText) // phase · server · wire · last pkt · log fill
 	line(a.debugDiagLine(), ColText)   // tabs · area · queue · ic · ooc · goroutines
 
-	rtt := a.lobby.pingRTT.Load()
+	rtt := a.conn.lobby.pingRTT.Load()
 	switch {
 	case rtt > 0:
 		line(fmt.Sprintf("Ping (WS round-trip): %d ms", rtt/int64(time.Millisecond)), ColText)

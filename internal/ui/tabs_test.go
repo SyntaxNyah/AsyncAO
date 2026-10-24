@@ -1086,7 +1086,7 @@ func TestTabCap(t *testing.T) {
 	if a.allocateTab() {
 		t.Fatalf("allocate beyond the multi-tab cap=%d must refuse", config.DefaultMultiTabCap)
 	}
-	if a.connErr == "" {
+	if a.conn.connErr == "" {
 		t.Fatal("the refusal must explain itself on connErr")
 	}
 }
@@ -1277,10 +1277,10 @@ func TestRequestCloseTabConfirms(t *testing.T) {
 	// A manually-closed BACKGROUND tab must never arm the ACTIVE session's
 	// auto-reconnect (that logic is App-level, scoped to pumpConnection; closing a
 	// parked tab closes its own conn directly and touches neither field).
-	if !a.autoReconnectAt.IsZero() {
+	if !a.conn.autoReconnectAt.IsZero() {
 		t.Error("closing a background tab must not arm auto-reconnect (that's active-session logic)")
 	}
-	if a.deliberateClose {
+	if a.conn.deliberateClose {
 		t.Error("closing a background tab must not flip the active session's deliberateClose flag")
 	}
 
