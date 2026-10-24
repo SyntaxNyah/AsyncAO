@@ -1691,10 +1691,10 @@ func (a *App) resumeActiveTabMusic() {
 		// its real duration. This is the drift-free path the users were promised.
 		elapsed := a.now().Sub(snapAt).Seconds()
 		seekSec, play = resumeSeek(snapPos, snapDur, elapsed, resumeLoop)
-	} else if !a.musicStartedAt.IsZero() {
+	} else if !a.musicTab.musicStartedAt.IsZero() {
 		// No snapshot (old build, resolver miss, mod/midi with unknown length, or a
 		// first play): keep the legacy wall-clock estimate, capped, exactly as before.
-		if el := a.now().Sub(a.musicStartedAt).Seconds(); el > 0 && el <= musicResumeMaxSeekSec {
+		if el := a.now().Sub(a.musicTab.musicStartedAt).Seconds(); el > 0 && el <= musicResumeMaxSeekSec {
 			seekSec = el
 		}
 	}
@@ -1756,8 +1756,8 @@ func (a *App) applyResumeDuck(sameTrack bool, url string) {
 // list character, the wire carries the custom folder; AO2-Client
 // set_iniswap semantics), else our picked character.
 func (a *App) activeCharName() string {
-	if a.iniChar != "" {
-		return a.iniChar
+	if a.inibrowse.iniChar != "" {
+		return a.inibrowse.iniChar
 	}
 	return a.myCharName()
 }
@@ -1765,7 +1765,7 @@ func (a *App) activeCharName() string {
 // setIniswap applies a custom character override ("" reverts to the picked
 // character) and reloads the emote list for the new active folder.
 func (a *App) setIniswap(name string) {
-	a.iniChar = name
+	a.inibrowse.iniChar = name
 	a.compose.charDefaultSide = "" // the new folder's char.ini decides the default side; until it lands there is none
 	a.emotepick.emoteAsk = nil
 	a.emotepick.emoteIdx, a.emotepick.emoteRow = 0, 0 // new active folder = new emote list: start at the first
@@ -1811,7 +1811,7 @@ func (a *App) charSlotByName(name string) int {
 // switch we can't perform (taken slot, or a name that isn't a server character)
 // falls back to an iniswap — with a toast, so a favourite never silently swaps.
 func (a *App) wardrobeClick(name string) {
-	a.showIni = false
+	a.inibrowse.showIni = false
 	if a.link.room == nil {
 		// Char-select Wardrobe tab: pick the REAL free character (the switch a
 		// favourite is expected to do) when it's a claimable server slot; only
@@ -1825,7 +1825,7 @@ func (a *App) wardrobeClick(name string) {
 			slot = a.charSlotByName(name)
 			taken = slot >= 0 && a.link.sess.Chars[slot].Taken
 		}
-		if wardrobeAction(a.iniSwapMode, slot, taken) == actSwitch {
+		if wardrobeAction(a.inibrowse.iniSwapMode, slot, taken) == actSwitch {
 			a.pickCharacter(slot)
 			return
 		}
@@ -1834,11 +1834,11 @@ func (a *App) wardrobeClick(name string) {
 	}
 	slot := a.charSlotByName(name)
 	taken := slot >= 0 && a.link.sess.Chars[slot].Taken
-	if wardrobeAction(a.iniSwapMode, slot, taken) == actSwitch {
+	if wardrobeAction(a.inibrowse.iniSwapMode, slot, taken) == actSwitch {
 		a.pickCharacter(slot) // CC → PV → EventCharPicked → enterCourtroom (iniswap clears)
 		return
 	}
-	if !a.iniSwapMode { // a switch was wanted but impossible — say why, don't swap silently
+	if !a.inibrowse.iniSwapMode { // a switch was wanted but impossible — say why, don't swap silently
 		switch {
 		case slot < 0:
 			a.warnLine = name + " isn't a character on this server — worn as an iniswap"
@@ -1855,7 +1855,7 @@ func (a *App) wardrobeClick(name string) {
 // still needs a server SLOT, so claim the first free one and wear the
 // custom when PV confirms (enterCourtroom applies pendingIni).
 func (a *App) wearFromMenu(name string) {
-	a.showIni = false
+	a.inibrowse.showIni = false
 	if a.link.room != nil {
 		a.setIniswap(name)
 		a.screen = ScreenCourtroom
@@ -1873,15 +1873,15 @@ func (a *App) wearFromMenu(name string) {
 		a.warnAt = time.Now()
 		return
 	}
-	a.pendingIni = name
+	a.inibrowse.pendingIni = name
 	a.pickCharacter(free) // rehearsal resolves locally
 }
 
 // openIniswap shows the wardrobe menu (courtroom modal).
 func (a *App) openIniswap() {
-	a.showIni = true
+	a.inibrowse.showIni = true
 	a.ensureIniList()
-	if a.wardSection == wardSectionBackgrounds {
+	if a.wardrobe.wardSection == wardSectionBackgrounds {
 		a.rebuildBgFav() // favourites may have changed since this section last drew
 	}
 }
@@ -1892,11 +1892,11 @@ func (a *App) openIniswap() {
 // is a memory hit).
 func (a *App) ensureIniList() {
 	a.rebuildIniMenu() // wardrobe is local: usable before (or without) the txt
-	if a.iniServer != nil || a.iniBusy || a.link.urls.Origin() == "" {
+	if a.inibrowse.iniServer != nil || a.inibrowse.iniBusy || a.link.urls.Origin() == "" {
 		return
 	}
-	a.iniBusy = true
-	a.iniListErr = ""
+	a.inibrowse.iniBusy = true
+	a.inibrowse.iniListErr = ""
 	url := a.link.urls.Origin() + iniswapFileName
 	bgURL := a.link.urls.BackgroundsRoot()
 	key := a.srvMeta.serverKey
@@ -1937,12 +1937,12 @@ func (a *App) pollIniswap() {
 		if res.key != a.srvMeta.serverKey {
 			return // landed after a tab switch: not this server's list
 		}
-		a.iniBusy = false
+		a.inibrowse.iniBusy = false
 		if res.err != nil {
-			a.iniListErr = "no server list (" + res.err.Error() + ") — your wardrobe still works"
-			a.iniServer = nil
+			a.inibrowse.iniListErr = "no server list (" + res.err.Error() + ") — your wardrobe still works"
+			a.inibrowse.iniServer = nil
 		} else {
-			a.iniServer = filterServerIniswaps(res.names, res.bgs,
+			a.inibrowse.iniServer = filterServerIniswaps(res.names, res.bgs,
 				a.d.Prefs.Load().ServerWarmInfoFor(a.srvMeta.serverKey).Backgrounds)
 		}
 		a.rebuildIniMenu()
@@ -1954,21 +1954,21 @@ func (a *App) pollIniswap() {
 // favourites — instant swaps, persisted across sessions and servers),
 // then server-list entries not already in the wardrobe.
 func (a *App) rebuildIniMenu() {
-	names, fromWardrobe, inServer := mergeWardrobe(a.d.Prefs.Load().WardrobeList(a.srvMeta.serverKey), a.iniServer)
-	a.iniList = names
-	a.iniWardrobe = fromWardrobe
-	a.iniServerMem = inServer
-	a.iniLower = make([]string, len(names))
+	names, fromWardrobe, inServer := mergeWardrobe(a.d.Prefs.Load().WardrobeList(a.srvMeta.serverKey), a.inibrowse.iniServer)
+	a.inibrowse.iniList = names
+	a.inibrowse.iniWardrobe = fromWardrobe
+	a.inibrowse.iniServerMem = inServer
+	a.inibrowse.iniLower = make([]string, len(names))
 	folders := a.d.Prefs.Load().WardrobeFolderMap(a.srvMeta.serverKey)
-	a.iniFolders = make([]string, len(names))
-	a.iniHoverIDs = make([]string, len(names))
+	a.inibrowse.iniFolders = make([]string, len(names))
+	a.inibrowse.iniHoverIDs = make([]string, len(names))
 	for i, n := range names {
 		lower := strings.ToLower(n)
-		a.iniLower[i] = lower
-		a.iniFolders[i] = folders[lower] // "" when unsorted / not filed
-		a.iniHoverIDs[i] = iniHoverIDPrefix + n
+		a.inibrowse.iniLower[i] = lower
+		a.inibrowse.iniFolders[i] = folders[lower] // "" when unsorted / not filed
+		a.inibrowse.iniHoverIDs[i] = iniHoverIDPrefix + n
 	}
-	a.iniAsk = nil
+	a.inibrowse.iniAsk = nil
 	// Toggling a star reorders the list at the SAME length (wardrobe entries
 	// float up), and cachedPage keys its icon slice by index without re-checking
 	// the URL — so drop the idx→page cache here or a reorder would paint the
@@ -1987,13 +1987,13 @@ const iniHoverIDPrefix = "iniswap:"
 // rebuildIniMenu, but this is a DRAW loop, and paying one allocation on a path that
 // should be unreachable beats panicking the client if it ever is reached.
 func (a *App) iniHoverID(i int) string {
-	if i >= 0 && i < len(a.iniHoverIDs) {
-		return a.iniHoverIDs[i]
+	if i >= 0 && i < len(a.inibrowse.iniHoverIDs) {
+		return a.inibrowse.iniHoverIDs[i]
 	}
-	if i < 0 || i >= len(a.iniList) {
+	if i < 0 || i >= len(a.inibrowse.iniList) {
 		return iniHoverIDPrefix
 	}
-	return iniHoverIDPrefix + a.iniList[i]
+	return iniHoverIDPrefix + a.inibrowse.iniList[i]
 }
 
 // applyPendingFav applies a wardrobe ★ toggle that a cell DEFERRED this frame. It
@@ -2002,12 +2002,12 @@ func (a *App) iniHoverID(i int) string {
 // slices mid-iteration and panicked on a remove (the reported crash). A no-op when
 // nothing was deferred.
 func (a *App) applyPendingFav() {
-	if a.iniFavPending == "" {
+	if a.inibrowse.iniFavPending == "" {
 		return
 	}
-	name := a.iniFavPending
-	a.iniFavPending = ""
-	if a.iniFavPendingAdd {
+	name := a.inibrowse.iniFavPending
+	a.inibrowse.iniFavPending = ""
+	if a.inibrowse.iniFavPendingAdd {
 		a.d.Prefs.AddWardrobe(a.srvMeta.serverKey, name)
 	} else {
 		a.d.Prefs.RemoveWardrobe(a.srvMeta.serverKey, name)

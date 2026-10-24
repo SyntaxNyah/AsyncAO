@@ -646,7 +646,7 @@ type courtroomModal struct {
 // logs, the music list and every button while they were open. They are drawn from
 // drawFloatingPanels instead, and the courtroom stays live behind them.
 var courtroomModals = []courtroomModal{
-	{func(a *App) bool { return a.showIni }, (*App).drawIniswapPanel, func(a *App) { a.showIni = false }},
+	{func(a *App) bool { return a.inibrowse.showIni }, (*App).drawIniswapPanel, func(a *App) { a.inibrowse.showIni = false }},
 	{func(a *App) bool { return a.bgPick.show }, (*App).drawBgPanel, func(a *App) { a.bgPick.show = false }},
 	{func(a *App) bool { return a.emotepick.showSfxBrowser }, (*App).drawSfxBrowser, func(a *App) { a.emotepick.showSfxBrowser = false }}, // #12 SFX Browser (preview + favourites)
 }
@@ -849,7 +849,7 @@ func (a *App) requestDisconnect() {
 		a.Disconnect()
 		return
 	}
-	a.confirmDisconnect = true
+	a.dialogs.confirmDisconnect = true
 }
 
 // drawDisconnectConfirm paints the "are you sure" overlay: a dimmed screen + a
@@ -884,13 +884,13 @@ func (a *App) drawDisconnectConfirm(w, h int32) {
 
 	}
 	if c.Button(sdl.Rect{X: m.X + pad, Y: m.Y + mh - btnH - pad, W: 170, H: btnH}, "Yes, disconnect") {
-		a.confirmDisconnect = false
+		a.dialogs.confirmDisconnect = false
 		a.deliberateClose = true // user confirmed leaving — suppress auto-reconnect on this teardown (#1)
 		a.Disconnect()
 		return
 	}
 	if c.Button(sdl.Rect{X: m.X + mw - pad - 110, Y: m.Y + mh - btnH - pad, W: 110, H: btnH}, "Cancel") {
-		a.confirmDisconnect = false
+		a.dialogs.confirmDisconnect = false
 	}
 }
 
@@ -904,7 +904,7 @@ func (a *App) drawDisconnectConfirm(w, h int32) {
 // Off the render hot path (only while a close is pending).
 func (a *App) drawCloseTabConfirm(w, h int32) {
 	c := a.ctx
-	t := a.pendingCloseTab
+	t := a.dialogs.pendingCloseTab
 	if t == nil {
 		return // defensive: the outer guard only draws this while pending
 	}
@@ -944,7 +944,7 @@ func (a *App) drawCloseTabConfirm(w, h int32) {
 		return
 	}
 	if c.Button(sdl.Rect{X: m.X + mw - pad - 110, Y: m.Y + mh - btnH - pad, W: 110, H: btnH}, "Cancel") {
-		a.pendingCloseTab = nil
+		a.dialogs.pendingCloseTab = nil
 	}
 }
 
@@ -1010,7 +1010,7 @@ func (a *App) handleSpriteHide(vp sdl.Rect) {
 	}
 	for _, layer := range layers {
 		if r, ok := a.spriteHitRect(vp, layer); ok && c.hovering(r) && layer.Name != "" {
-			a.hidePrompt = layer.Name // open the confirm for this sprite
+			a.dialogs.hidePrompt = layer.Name // open the confirm for this sprite
 			break
 		}
 	}
@@ -1027,28 +1027,28 @@ func (a *App) drawHideSpriteConfirm(w, h int32) {
 	c.Fill(m, ColPanel)
 	c.Border(m, ColAccent)
 	c.Heading(m.X+pad, m.Y+pad, "Hide this sprite?", ColText)
-	c.Label(m.X+pad, m.Y+50, "Hide \""+a.hidePrompt+"\" from the viewport for this session?", ColText)
+	c.Label(m.X+pad, m.Y+50, "Hide \""+a.dialogs.hidePrompt+"\" from the viewport for this session?", ColText)
 	c.Label(m.X+pad, m.Y+74, "Reshow all with the \"Reshow hidden sprites\" key, or turn this off in Settings → General.", ColTextDim)
 	if c.Button(sdl.Rect{X: m.X + pad, Y: m.Y + mh - btnH - pad, W: 150, H: btnH}, "Hide it") {
-		if a.hiddenSprites == nil {
-			a.hiddenSprites = make(map[string]struct{}, 4)
+		if a.dialogs.hiddenSprites == nil {
+			a.dialogs.hiddenSprites = make(map[string]struct{}, 4)
 		}
-		a.hiddenSprites[strings.ToLower(a.hidePrompt)] = struct{}{}
-		a.hidePrompt = ""
+		a.dialogs.hiddenSprites[strings.ToLower(a.dialogs.hidePrompt)] = struct{}{}
+		a.dialogs.hidePrompt = ""
 		return
 	}
 	if c.Button(sdl.Rect{X: m.X + mw - pad - 110, Y: m.Y + mh - btnH - pad, W: 110, H: btnH}, "Cancel") {
-		a.hidePrompt = ""
+		a.dialogs.hidePrompt = ""
 	}
 }
 
 // reshowSprites un-hides every sprite hidden this session (the Reshow key + the
 // Settings button).
 func (a *App) reshowSprites() {
-	if len(a.hiddenSprites) == 0 {
+	if len(a.dialogs.hiddenSprites) == 0 {
 		return
 	}
-	a.hiddenSprites = nil
+	a.dialogs.hiddenSprites = nil
 	a.warnLine = "Hidden sprites are showing again."
 	a.warnAt = time.Now()
 }

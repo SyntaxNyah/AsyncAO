@@ -371,7 +371,7 @@ func (a *App) handleHotkeys() {
 		// still dismissable from the keyboard.
 		return
 	}
-	if a.disconnectDlg.open {
+	if a.dialogs.disconnectDlg.open {
 		// The courtroom is FROZEN under the involuntary-disconnect dialog: its
 		// scene still draws (so this runs, called from drawCourtroom), but the
 		// session's socket is gone. The pointer fence stops mouse actions, but
@@ -467,7 +467,7 @@ func (a *App) handleHotkeys() {
 		a.openIniswap()
 	case a.hotkeyFor(hotkeyJukebox):
 		a.openIniswap()
-		a.wardSection = wardSectionJukebox
+		a.wardrobe.wardSection = wardSectionJukebox
 	case a.hotkeyFor(hotkeyBackground):
 		a.openBgPicker()
 	case a.hotkeyFor(hotkeyEvidence):
@@ -592,7 +592,7 @@ func (a *App) quickSwapNext() {
 	}
 	next := 0 // current char not in the ring (or nothing worn) → start at the first
 	for i, n := range ring {
-		if strings.EqualFold(n, a.iniChar) {
+		if strings.EqualFold(n, a.inibrowse.iniChar) {
 			next = (i + 1) % len(ring)
 			break
 		}
@@ -610,10 +610,10 @@ func (a *App) quickSwapNext() {
 // false every session). The volume strip's SFX cell shares this same in-memory
 // flag, so the hotkey and the strip still never disagree within a session.
 func (a *App) toggleSFXMute() {
-	a.sfxMuted = !a.sfxMuted
+	a.audio.sfxMuted = !a.audio.sfxMuted
 	a.applyAudioVolumes()
 	a.warnLine = "SFX unmuted"
-	if a.sfxMuted {
+	if a.audio.sfxMuted {
 		a.warnLine = "SFX muted (press the Mute SFX hotkey again to restore)"
 	}
 	a.warnAt = time.Now()
@@ -686,9 +686,9 @@ func (a *App) applyAudioVolumes() {
 	// == the active tab, ownerMusicInputs returns the active (master, music) and the two
 	// calls are identical — behaviour is unchanged for the common single-tab case.
 	mMusic, _, _, _ := mixChannels(musicMaster, musicVol, sfx, blip, alert,
-		a.masterMuted, a.musicMuted, a.sfxMuted, a.blipMuted, a.musicDucked, a.musicTabDucked)
+		a.audio.masterMuted, a.audio.musicMuted, a.audio.sfxMuted, a.audio.blipMuted, a.musicDucked, a.musicTabDucked)
 	_, mSFX, mBlip, mAlert := mixChannels(master, music, sfx, blip, alert,
-		a.masterMuted, a.musicMuted, a.sfxMuted, a.blipMuted, a.musicDucked, a.musicTabDucked)
+		a.audio.masterMuted, a.audio.musicMuted, a.audio.sfxMuted, a.audio.blipMuted, a.musicDucked, a.musicTabDucked)
 	a.d.Audio.SetVolumes(mMusic, mSFX, mBlip)
 	a.d.Audio.SetAlertVolume(mAlert)
 }

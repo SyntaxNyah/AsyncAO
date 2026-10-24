@@ -510,7 +510,7 @@ func diskCacheBudgetLabel(mib int) string {
 
 func (a *App) drawSettings(w, h int32) {
 	c := a.ctx
-	if a.showReset { // factory-reset pop-up owns the screen + input this frame
+	if a.inibrowse.showReset { // factory-reset pop-up owns the screen + input this frame
 		a.drawResetConfirm(w, h)
 		return
 	}
@@ -1555,11 +1555,11 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.RightClickHideSprite = next })
 	}
 	y += 26
-	if len(a.hiddenSprites) > 0 {
+	if len(a.dialogs.hiddenSprites) > 0 {
 		if c.Button(sdl.Rect{X: pad + 20, Y: y, W: 200, H: btnH}, "Reshow hidden sprites") {
 			a.reshowSprites()
 		}
-		c.Label(pad+232, y+5, fmt.Sprintf("%d sprite(s) hidden this session — un-hide them all", len(a.hiddenSprites)), ColTextDim)
+		c.Label(pad+232, y+5, fmt.Sprintf("%d sprite(s) hidden this session — un-hide them all", len(a.dialogs.hiddenSprites)), ColTextDim)
 		y += 32
 	}
 	// Hide the desk (the foreground table the character stands behind).

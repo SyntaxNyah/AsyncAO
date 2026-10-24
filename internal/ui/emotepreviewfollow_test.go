@@ -61,7 +61,7 @@ func emotePreviewFollowTestApp(t *testing.T) *App {
 		Decoder:   decoder,
 	})
 	a.link.urls = courtroom.NewURLBuilder(assets.LocalOriginFor([]string{mount}))
-	a.iniChar = "TestChar" // activeCharName() returns this with no session/iniswap
+	a.inibrowse.iniChar = "TestChar" // activeCharName() returns this with no session/iniswap
 	a.emotepick.emotes = []courtroom.Emote{
 		{Anim: "happy", Comment: "happy"},
 		{Anim: "sad", Comment: "sad"},

@@ -49,8 +49,8 @@ func TestRefreshAreaFilterSlotsDoNotEvictEachOther(t *testing.T) {
 	}
 	// Clobber BOTH results, then re-ask both with their own queries: two memo
 	// hits, so neither is rebuilt.
-	a.areaFiltered[areaQuerySlotOwn] = a.areaFiltered[areaQuerySlotOwn][:0]
-	a.areaFiltered[areaQuerySlotThemed] = a.areaFiltered[areaQuerySlotThemed][:0]
+	a.areaTab.areaFiltered[areaQuerySlotOwn] = a.areaTab.areaFiltered[areaQuerySlotOwn][:0]
+	a.areaTab.areaFiltered[areaQuerySlotThemed] = a.areaTab.areaFiltered[areaQuerySlotThemed][:0]
 	if got := a.refreshAreaFilter("al", areaQuerySlotOwn); len(got) != 0 {
 		t.Errorf("own slot re-scanned after the themed slot ran: got %v", got)
 	}
@@ -70,8 +70,8 @@ func TestRefreshAreaFilterMemo(t *testing.T) {
 	if got := a.refreshAreaFilter("al", areaQuerySlotOwn); len(got) != 2 { // Alpha (0), Alabama (2)
 		t.Fatalf("first pass: filtered %v, want 2 matches", got)
 	}
-	a.areaFiltered[areaQuerySlotOwn] = a.areaFiltered[areaQuerySlotOwn][:0] // clobber the cached result
-	got := a.refreshAreaFilter("al", areaQuerySlotOwn)                      // same query + same list ⇒ memo hit, no rebuild
+	a.areaTab.areaFiltered[areaQuerySlotOwn] = a.areaTab.areaFiltered[areaQuerySlotOwn][:0] // clobber the cached result
+	got := a.refreshAreaFilter("al", areaQuerySlotOwn)                                      // same query + same list ⇒ memo hit, no rebuild
 	if len(got) != 0 {
 		t.Fatalf("memo failed: the identical query re-scanned (got %v)", got)
 	}

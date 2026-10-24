@@ -995,7 +995,7 @@ func (a *App) applySpriteOverridesTo(room *courtroom.Courtroom) {
 		return
 	}
 	hideDesk := a.d.Prefs.Load().HideDesk
-	if !hideDesk && len(a.spriteOv) == 0 && len(a.hiddenSprites) == 0 {
+	if !hideDesk && len(a.spriteOv) == 0 && len(a.dialogs.hiddenSprites) == 0 {
 		return // nothing hidden/moved (the common case): one pref read, then out
 	}
 	sc := &room.Scene
@@ -1009,7 +1009,7 @@ func (a *App) applySpriteOverridesTo(room *courtroom.Courtroom) {
 		key := strings.ToLower(layer.Name)
 		// Hidden sprites ("Missingno"): drop the layer entirely this session. The
 		// check is before the !Visible skip — a hidden sprite is otherwise visible.
-		if _, hidden := a.hiddenSprites[key]; hidden {
+		if _, hidden := a.dialogs.hiddenSprites[key]; hidden {
 			layer.Visible = false
 			continue
 		}
@@ -1036,20 +1036,20 @@ func (a *App) healScenery() {
 	// when the settled working set exceeds the T1 main tier, every heal evicts
 	// another live base and this loop — paced or not — churned decode→upload→
 	// evict→re-demand forever (the focused half of the idle-CPU-burn report).
-	if sc.BackgroundBase != "" && !(sc.BackgroundBase == a.bgAskBase && now.Sub(a.bgAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.BackgroundBase) && a.sceneWarm.healAllowed(sc.BackgroundBase) {
-		a.bgAskBase, a.bgAskAt = sc.BackgroundBase, now
+	if sc.BackgroundBase != "" && !(sc.BackgroundBase == a.demand.bgAskBase && now.Sub(a.demand.bgAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.BackgroundBase) && a.sceneWarm.healAllowed(sc.BackgroundBase) {
+		a.demand.bgAskBase, a.demand.bgAskAt = sc.BackgroundBase, now
 		a.d.Manager.Prefetch(sc.BackgroundBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
 	}
 	// IsMissing is checked alongside Contains because a base that 404'd
 	// conclusively can never become Contains: without this the desk arm re-demanded
 	// a known-absent desk every charIconRetryInterval for the whole heal budget,
 	// which is what produced the ×5..×9 runs of the same missing-asset line (#27).
-	if sc.DeskBase != "" && !(sc.DeskBase == a.deskAskBase && now.Sub(a.deskAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.DeskBase) && !a.d.Store.IsMissing(sc.DeskBase) && a.sceneWarm.healAllowed(sc.DeskBase) {
-		a.deskAskBase, a.deskAskAt = sc.DeskBase, now
+	if sc.DeskBase != "" && !(sc.DeskBase == a.demand.deskAskBase && now.Sub(a.demand.deskAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.DeskBase) && !a.d.Store.IsMissing(sc.DeskBase) && a.sceneWarm.healAllowed(sc.DeskBase) {
+		a.demand.deskAskBase, a.demand.deskAskAt = sc.DeskBase, now
 		a.d.Manager.Prefetch(sc.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
 	}
-	a.sceneWarm.healSpriteLayer(&a.env, &sc.Speaker, &a.spkAskBase, &a.spkAskAt, now)
-	a.sceneWarm.healSpriteLayer(&a.env, &sc.Pair, &a.pairAskBase, &a.pairAskAt, now)
+	a.sceneWarm.healSpriteLayer(&a.env, &sc.Speaker, &a.demand.spkAskBase, &a.demand.spkAskAt, now)
+	a.sceneWarm.healSpriteLayer(&a.env, &sc.Pair, &a.demand.pairAskBase, &a.demand.pairAskAt, now)
 }
 
 // healSpriteLayer re-demands one visible character sprite layer if its active

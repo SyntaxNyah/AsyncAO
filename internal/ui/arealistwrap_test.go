@@ -57,7 +57,7 @@ func TestAreaWrappedCache(t *testing.T) {
 		t.Fatalf("memo failed: unchanged inputs re-scanned (got %d rows)", len(second))
 	}
 
-	a.areaInfoSeq++ // simulate an ARUP update
+	a.areaTab.areaInfoSeq++ // simulate an ARUP update
 	third := a.areaWrapped(nil, 200, "", areaQuerySlotOwn)
 	if len(third) != 2 {
 		t.Fatalf("areaInfoSeq bump did not invalidate the memo: got %d rows", len(third))
@@ -134,25 +134,25 @@ func TestRefreshMusicGroups(t *testing.T) {
 	}}
 
 	a.refreshMusicGroups("")
-	if len(a.musicRows) != 5 {
-		t.Fatalf("expanded: got %d rows, want 5 (2 headers + 3 tracks)", len(a.musicRows))
+	if len(a.musicTab.musicRows) != 5 {
+		t.Fatalf("expanded: got %d rows, want 5 (2 headers + 3 tracks)", len(a.musicTab.musicRows))
 	}
-	if !a.musicRows[0].header || a.musicRows[0].ti != 0 {
-		t.Fatalf("row 0 = %+v, want header at index 0", a.musicRows[0])
+	if !a.musicTab.musicRows[0].header || a.musicTab.musicRows[0].ti != 0 {
+		t.Fatalf("row 0 = %+v, want header at index 0", a.musicTab.musicRows[0])
 	}
 
 	// Collapse the first category: its two tracks (indices 1,2) vanish, the
 	// second category and its track stay.
-	a.musicCollapsed = map[int]bool{0: true}
-	a.musicCollapseGen++
+	a.musicTab.musicCollapsed = map[int]bool{0: true}
+	a.musicTab.musicCollapseGen++
 	a.refreshMusicGroups("")
 	want := []musicRow{{ti: 0, header: true}, {ti: 3, header: true}, {ti: 4}}
-	if len(a.musicRows) != len(want) {
-		t.Fatalf("collapsed: got %v, want %v", a.musicRows, want)
+	if len(a.musicTab.musicRows) != len(want) {
+		t.Fatalf("collapsed: got %v, want %v", a.musicTab.musicRows, want)
 	}
 	for i, r := range want {
-		if a.musicRows[i] != r {
-			t.Fatalf("collapsed row %d = %+v, want %+v", i, a.musicRows[i], r)
+		if a.musicTab.musicRows[i] != r {
+			t.Fatalf("collapsed row %d = %+v, want %+v", i, a.musicTab.musicRows[i], r)
 		}
 	}
 }
@@ -167,21 +167,21 @@ func TestRefreshMusicGroupsSearchBypassesCollapse(t *testing.T) {
 		"==Cave Story==", "balcony.mp3", "gravity.mp3",
 		"==Umineko==", "dawn.mp3",
 	}}
-	a.musicCollapsed = map[int]bool{0: true} // Cave Story collapsed
+	a.musicTab.musicCollapsed = map[int]bool{0: true} // Cave Story collapsed
 
 	a.refreshMusicGroups(strings.ToLower("gravity"))
 	want := []musicRow{{ti: 0, header: true}, {ti: 2}} // header pulled in for context + the one match
-	if len(a.musicRows) != len(want) {
-		t.Fatalf("search rows = %v, want %v", a.musicRows, want)
+	if len(a.musicTab.musicRows) != len(want) {
+		t.Fatalf("search rows = %v, want %v", a.musicTab.musicRows, want)
 	}
 	for i, r := range want {
-		if a.musicRows[i] != r {
-			t.Fatalf("search row %d = %+v, want %+v", i, a.musicRows[i], r)
+		if a.musicTab.musicRows[i] != r {
+			t.Fatalf("search row %d = %+v, want %+v", i, a.musicTab.musicRows[i], r)
 		}
 	}
 	// Collapse state itself must be untouched — clearing the query returns to
 	// the manually-collapsed layout, not a stale expanded one.
-	if !a.musicCollapsed[0] {
+	if !a.musicTab.musicCollapsed[0] {
 		t.Fatalf("search must not mutate collapse state")
 	}
 }
@@ -197,21 +197,21 @@ func TestSetAllMusicCollapsed(t *testing.T) {
 		"==A==", "a1.mp3", "==B==", "b1.mp3", "b2.mp3",
 	}}
 
-	genBefore := a.musicCollapseGen
+	genBefore := a.musicTab.musicCollapseGen
 	a.setAllMusicCollapsed(true)
-	if a.musicCollapseGen == genBefore {
+	if a.musicTab.musicCollapseGen == genBefore {
 		t.Fatalf("Collapse All did not bump musicCollapseGen")
 	}
-	if !a.musicCollapsed[0] || !a.musicCollapsed[2] {
-		t.Fatalf("Collapse All must fold every header: %v", a.musicCollapsed)
+	if !a.musicTab.musicCollapsed[0] || !a.musicTab.musicCollapsed[2] {
+		t.Fatalf("Collapse All must fold every header: %v", a.musicTab.musicCollapsed)
 	}
 
-	genBefore = a.musicCollapseGen
+	genBefore = a.musicTab.musicCollapseGen
 	a.setAllMusicCollapsed(false)
-	if a.musicCollapseGen == genBefore {
+	if a.musicTab.musicCollapseGen == genBefore {
 		t.Fatalf("Expand All did not bump musicCollapseGen")
 	}
-	if len(a.musicCollapsed) != 0 {
-		t.Fatalf("Expand All must clear all collapse state: %v", a.musicCollapsed)
+	if len(a.musicTab.musicCollapsed) != 0 {
+		t.Fatalf("Expand All must clear all collapse state: %v", a.musicTab.musicCollapsed)
 	}
 }

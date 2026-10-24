@@ -100,7 +100,7 @@ func TestHandleInvoluntaryDropFreezesALiveCourtroom(t *testing.T) {
 
 		a.handleInvoluntaryDrop(tc.reason)
 
-		if !a.disconnectDlg.open {
+		if !a.dialogs.disconnectDlg.open {
 			t.Errorf("%s: a live courtroom must freeze under the dialog, not vanish", tc.name)
 		}
 		if a.screen != ScreenCourtroom {
@@ -159,7 +159,7 @@ func TestHandleInvoluntaryDropWithNoRoomGoesToLobby(t *testing.T) {
 		}
 		a.handleInvoluntaryDrop(tc.reason)
 
-		if a.disconnectDlg.open {
+		if a.dialogs.disconnectDlg.open {
 			t.Errorf("%s: nothing to freeze, so no dialog", tc.name)
 		}
 		if a.screen != ScreenLobby {
@@ -183,7 +183,7 @@ func TestVoluntaryDisconnectGoesToLobby(t *testing.T) {
 	a.link.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, a.link.sess, courtroom.NopAudio{})
 	a.deliberateClose = true // the user chose to leave
 	a.handleInvoluntaryDrop("connection closed")
-	if a.disconnectDlg.open {
+	if a.dialogs.disconnectDlg.open {
 		t.Error("a deliberate close must NEVER open the dialog")
 	}
 	if a.screen != ScreenLobby {
@@ -252,7 +252,7 @@ func TestBackToLobbyLandsInPostDisconnectState(t *testing.T) {
 	a.autoReconnectAt = a.now().Add(2 * time.Second) // a countdown was running
 	a.closeDisconnectDialogToLobby()
 
-	if a.disconnectDlg.open {
+	if a.dialogs.disconnectDlg.open {
 		t.Error("Back to lobby must clear the dialog (release its fence)")
 	}
 	if a.screen != ScreenLobby {
@@ -278,7 +278,7 @@ func TestReconnectFromDialogRedials(t *testing.T) {
 
 	a.reconnectFromDisconnectDialog()
 
-	if a.disconnectDlg.open {
+	if a.dialogs.disconnectDlg.open {
 		t.Error("Reconnect must clear the dialog first (fence release)")
 	}
 	// Connect seeds lastConn* to the redial target; with no reachable server the dial
@@ -301,7 +301,7 @@ func TestEscClosesDisconnectDialogToLobby(t *testing.T) {
 	if !a.closeTopOverlay() {
 		t.Fatal("Esc must be handled by closeTopOverlay while the dialog is up")
 	}
-	if a.disconnectDlg.open {
+	if a.dialogs.disconnectDlg.open {
 		t.Error("Esc must clear the dialog")
 	}
 	if a.screen != ScreenLobby {
@@ -323,7 +323,7 @@ func TestDialogCloseAlwaysReleasesFence(t *testing.T) {
 		a.openDisconnectDialog("Test Server", "ws://test.example", "connection closed", time.Time{})
 		a.ctx.fencePointer() // stand in for the frame-tail fence set while the dialog is up
 		close(a)
-		if a.disconnectDlg.open {
+		if a.dialogs.disconnectDlg.open {
 			t.Errorf("%s: the dialog must be closed so its fence releases (else a stuck freeze)", name)
 		}
 	}
@@ -344,7 +344,7 @@ func TestParkedTabDeathArmsWithoutActiveModal(t *testing.T) {
 	if bg.deadReason != "Kicked: afk" {
 		t.Errorf("the reason must latch on the tab, got %q", bg.deadReason)
 	}
-	if a.disconnectDlg.open {
+	if a.dialogs.disconnectDlg.open {
 		t.Error("a PARKED tab's death must NOT open a modal over the active tab")
 	}
 }
@@ -365,14 +365,14 @@ func TestActivateDeadInCourtTabOpensDialog(t *testing.T) {
 
 	a.activateTab(1)
 
-	if !a.disconnectDlg.open {
+	if !a.dialogs.disconnectDlg.open {
 		t.Fatal("activating a dead-in-court tab must open the disconnect dialog")
 	}
 	if a.screen != ScreenCourtroom {
 		t.Errorf("the dialog sits over the tab's restored courtroom, screen=%v", a.screen)
 	}
-	if a.disconnectDlg.reason.raw != "Banned: naughty" {
-		t.Errorf("the dialog must show the latched reason, got %q", a.disconnectDlg.reason.raw)
+	if a.dialogs.disconnectDlg.reason.raw != "Banned: naughty" {
+		t.Errorf("the dialog must show the latched reason, got %q", a.dialogs.disconnectDlg.reason.raw)
 	}
 	if a.tabs[a.activeTab].dead {
 		t.Error("the dead flag must be consumed — the dialog now owns this drop")
@@ -393,7 +393,7 @@ func TestTabBarInertUnderDialog(t *testing.T) {
 	if a.activeTab != before {
 		t.Errorf("the strip must be inert under the dialog (active tab changed %d→%d)", before, a.activeTab)
 	}
-	if !a.disconnectDlg.open {
+	if !a.dialogs.disconnectDlg.open {
 		t.Error("the dialog must still be up (the click must not have resolved it)")
 	}
 }

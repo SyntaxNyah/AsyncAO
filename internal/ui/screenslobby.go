@@ -677,18 +677,18 @@ func (a *App) drawWardrobeGrid(w, h int32, g charGridPlan, rows charListRows, qu
 	// The open move-to-folder menu resolves its clicks BEFORE the grid draws, so a
 	// click on it can never leak through to a cell underneath (drawWardrobeCharsBody's
 	// own ordering rule; the menu is painted last, on top).
-	if a.iniMenuChar != "" {
+	if a.inibrowse.iniMenuChar != "" {
 		opts := a.iniFolderMenuOpts()
-		a.handleIniFolderMenu(iniFolderMenuRect(a.iniMenuAt, len(opts), w, h), opts)
+		a.handleIniFolderMenu(iniFolderMenuRect(a.inibrowse.iniMenuAt, len(opts), w, h), opts)
 	}
 	a.drawWardrobeGridCells(w, h, g, rows, query)
 	// A ★ toggle a cell deferred: it rebuilds the slices the loop just ranged, so it
 	// runs after the loop, never during it.
 	a.applyPendingFav()
 	// ...and the menu paints last, above the grid and any sprite preview.
-	if a.iniMenuChar != "" {
+	if a.inibrowse.iniMenuChar != "" {
 		opts := a.iniFolderMenuOpts()
-		a.drawIniFolderMenu(iniFolderMenuRect(a.iniMenuAt, len(opts), w, h), opts)
+		a.drawIniFolderMenu(iniFolderMenuRect(a.inibrowse.iniMenuAt, len(opts), w, h), opts)
 	}
 }
 
@@ -698,7 +698,7 @@ func (a *App) drawWardrobeGrid(w, h int32, g charGridPlan, rows charListRows, qu
 // the list has to be applied on exactly that frame.
 func (a *App) drawWardrobeGridCells(w, h int32, g charGridPlan, rows charListRows, query string) {
 	c := a.ctx
-	if len(a.iniList) == 0 {
+	if len(a.inibrowse.iniList) == 0 {
 		// Anchored on the GRID's viewport, not on the window: under a theme the grid
 		// starts wherever char_buttons is (x=353 at 1:1 on the stock table), so an
 		// empty-state line drawn from x=pad landed out in the left-hand name column.
@@ -709,10 +709,10 @@ func (a *App) drawWardrobeGridCells(w, h int32, g charGridPlan, rows charListRow
 			msgX, msgW = pad, w-2*pad
 		}
 		switch {
-		case a.iniBusy:
+		case a.inibrowse.iniBusy:
 			c.LabelClipped(msgX, g.view.Y+8, msgW, "Fetching "+iniswapFileName+"...", ColTextDim)
-		case a.iniListErr != "":
-			c.LabelClipped(msgX, g.view.Y+8, msgW, a.iniListErr, ColTextDim)
+		case a.inibrowse.iniListErr != "":
+			c.LabelClipped(msgX, g.view.Y+8, msgW, a.inibrowse.iniListErr, ColTextDim)
 		default:
 			c.LabelClipped(msgX, g.view.Y+8, msgW,
 				"Wardrobe empty — tap the ★ on any character in the Characters tab to save it here (it stays per server).", ColTextDim)
@@ -722,7 +722,7 @@ func (a *App) drawWardrobeGridCells(w, h int32, g charGridPlan, rows charListRow
 
 	// The wardrobe has no taken slots (a folder cannot be occupied by another
 	// player), so the shared filter runs with the taken arm permanently open.
-	a.iniScroll = a.charGridScroll(w, "iniscroll", g, a.iniScroll, rows.matches(query, true))
+	a.inibrowse.iniScroll = a.charGridScroll(w, "iniscroll", g, a.inibrowse.iniScroll, rows.matches(query, true))
 
 	n := int32(0)
 	// The theme's hover selector, remembered here and painted after the loop for the
@@ -739,11 +739,11 @@ func (a *App) drawWardrobeGridCells(w, h int32, g charGridPlan, rows charListRow
 	// cell scrolled half under the bar isn't clickable up there (hovering() honours
 	// clipRect) — else clicking the search/tabs picks the hidden character.
 	prev, had := c.pushClip(g.view)
-	for i := range a.iniList {
+	for i := range a.inibrowse.iniList {
 		if rows.hidden(i, query, true) {
 			continue
 		}
-		cell := g.cellAt(n, a.iniScroll)
+		cell := g.cellAt(n, a.inibrowse.iniScroll)
 		n++
 		if g.visible(cell) {
 			if c.hovering(cell) {
@@ -929,7 +929,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	showTaken := a.charSelectShowTaken(themedUI, csLay)
 
 	if a.charsel.charTab == charTabWardrobe {
-		rows := charListRows{n: len(a.iniList), names: a.iniList, lower: a.iniLower}
+		rows := charListRows{n: len(a.inibrowse.iniList), names: a.inibrowse.iniList, lower: a.inibrowse.iniLower}
 		if themedUI {
 			a.drawCharNameList(csLay, rows, query, showTaken, g)
 		}
@@ -1054,7 +1054,7 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 		c.Tooltip(cell, slot.Name)
 	}
 	// While this character is the active download, mark the cell.
-	if a.dl.active && a.dl.target == slot.Name {
+	if a.audio.dl.active && a.audio.dl.target == slot.Name {
 		c.Fill(cell, sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 70})
 		c.Label(cell.X+4, cell.Y+4, downloadGlyph+"…", ColText)
 	}

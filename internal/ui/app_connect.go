@@ -237,8 +237,8 @@ func (a *App) Disconnect() {
 	// up (a quit-while-frozen, say) must not strand a fenced modal over an empty
 	// lobby (the emoji-picker freeze class). Cheap: a struct assignment on a rarely-
 	// set field. Guards the invariant disconnectDlg.open ⇒ screen == Courtroom.
-	if a.disconnectDlg.open {
-		a.disconnectDlg = disconnectDialog{}
+	if a.dialogs.disconnectDlg.open {
+		a.dialogs.disconnectDlg = disconnectDialog{}
 	}
 	a.cancelAutoReconnect() // teardown cancels any pending retry; the EventDisconnect path re-arms after
 	if a.link.conn != nil {
@@ -659,7 +659,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// tab switch computes elapsed = now - start). A ~stop clears MusicTrack,
 			// so the stamp is harmless then (resume only reads it when a track
 			// remains). See musicStartedAt.
-			a.musicStartedAt = a.now()
+			a.musicTab.musicStartedAt = a.now()
 			// A LIVE music change on the ACTIVE tab (a DJ /play) makes this tab the
 			// audible owner of the single stream — but only ONCE the requested track is
 			// actually what the mixer is playing. If the stream is still ducked-foreign
@@ -708,7 +708,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 		case courtroom.EventAreasUpdated:
 			a.rebuildLiveRoster()
 			a.srvMeta.amICMNow = a.amICM() // the ARUP CM column may have changed — refresh the cached flag
-			a.areaInfoSeq++                // invalidate the area-list word-wrap cache (screens.go areaWrapped)
+			a.areaTab.areaInfoSeq++        // invalidate the area-list word-wrap cache (screens.go areaWrapped)
 		case courtroom.EventPlayersUpdated:
 			a.rebuildLiveRoster()
 			a.srvMeta.amICMNow = a.amICM() // a PU may have moved us to another area — refresh the cached flag  // server-pushed PR/PU: the live roster's primary source
@@ -1626,8 +1626,8 @@ func (a *App) enterCourtroom() {
 	// new char.ini. A tab REACTIVATION must NOT run these — activateTab calls
 	// buildRoom directly so the parked iniswap + /pos override survive (they were
 	// leaking across tabs: re-entering a tab un-iniswapped you and reset your /pos).
-	a.iniChar = a.pendingIni
-	a.pendingIni = ""
+	a.inibrowse.iniChar = a.inibrowse.pendingIni
+	a.inibrowse.pendingIni = ""
 	a.compose.sidePref = ""
 	a.compose.charDefaultSide = "" // a fresh character declares its own default; the old one must not outlive it
 	// FRESH entry / character switch starts at the first emote (page 0). The

@@ -102,7 +102,7 @@ func TestPinnedPaneDeathSurfacesWarning(t *testing.T) {
 	if a.splitTab != nil {
 		t.Error("the pinned pane must be cleared when its server dies (existing behavior)")
 	}
-	if a.disconnectDlg.open {
+	if a.dialogs.disconnectDlg.open {
 		t.Error("a parked pinned-tab death must NOT pop a modal over the active tab (unchanged)")
 	}
 	// The vanished pane's death is announced with the server name.

@@ -84,7 +84,7 @@ func TestHideSpriteSuppression(t *testing.T) {
 		t.Error("desk should render again when hide-desk is off")
 	}
 
-	a.hiddenSprites = map[string]struct{}{"booba": {}}
+	a.dialogs.hiddenSprites = map[string]struct{}{"booba": {}}
 	a.applySpriteOverrides()
 	if a.link.room.Scene.Speaker.Visible {
 		t.Error("hidden sprite still visible")
@@ -94,7 +94,7 @@ func TestHideSpriteSuppression(t *testing.T) {
 	}
 
 	a.reshowSprites()
-	if a.hiddenSprites != nil {
+	if a.dialogs.hiddenSprites != nil {
 		t.Error("reshow must clear the hidden-set")
 	}
 	a.link.room.Scene.Speaker.Visible = true // the courtroom re-sets Visible each frame
@@ -114,7 +114,7 @@ func TestRequestDisconnectConfirms(t *testing.T) {
 	t.Cleanup(func() { _ = prefs.Close() })
 	a := &App{env: env{d: Deps{Prefs: prefs}}}
 	a.requestDisconnect()
-	if !a.confirmDisconnect {
+	if !a.dialogs.confirmDisconnect {
 		t.Error("with instant-disconnect off, requestDisconnect must open the confirm modal, not disconnect")
 	}
 }

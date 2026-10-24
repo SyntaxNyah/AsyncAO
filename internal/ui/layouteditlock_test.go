@@ -25,7 +25,7 @@ var courtroomModalOpeners = []struct {
 	name string
 	open func(*App)
 }{
-	{"iniswap", func(a *App) { a.showIni = true }},
+	{"iniswap", func(a *App) { a.inibrowse.showIni = true }},
 	{"background picker", func(a *App) { a.bgPick.show = true }},
 	// The timer, the login dialog and the pair popup left this table in #31 — they are
 	// non-blocking floatWin panels now, so they cannot end the pass and cannot strand
@@ -126,7 +126,7 @@ func TestThemedEditorSurvivesAnOpenCourtroomModal(t *testing.T) {
 		name string
 		open func(*App)
 	}{
-		{"iniswap", func(a *App) { a.showIni = true }},
+		{"iniswap", func(a *App) { a.inibrowse.showIni = true }},
 		{"background picker", func(a *App) { a.bgPick.show = true }},
 		{"SFX browser", func(a *App) { a.emotepick.showSfxBrowser = true }},
 	} {

@@ -222,7 +222,7 @@ func TestActiveWarmThrottleAndLatch(t *testing.T) {
 	// The warmed icon is resident so the pass is touch-only.
 	a.link.room = &courtroom.Courtroom{}
 	a.link.sess = &courtroom.Session{}
-	a.iniChar = "TestChar" // activeCharName() override — no picked char needed
+	a.inibrowse.iniChar = "TestChar" // activeCharName() override — no picked char needed
 	a.link.urls = courtroom.NewURLBuilder("http://warmtest/")
 	a.emotepick.emoteIdx = -1 // out of range: only the char icon warms
 	dec := &assets.Decoded{

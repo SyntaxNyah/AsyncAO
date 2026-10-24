@@ -98,8 +98,8 @@ func TestFilterServerIniswaps(t *testing.T) {
 	a.iniRes = make(chan iniswapFetch, 1)
 	a.iniRes <- iniswapFetch{names: names(), bgs: []string{"uminekobeach", "higurashischoolday"}}
 	a.pollIniswap()
-	if len(a.iniServer) != 2 || a.iniServer[0] != "Aigis" || a.iniServer[1] != "Zeta" {
-		t.Fatalf("pollIniswap must drop background names, iniServer = %v", a.iniServer)
+	if len(a.inibrowse.iniServer) != 2 || a.inibrowse.iniServer[0] != "Aigis" || a.inibrowse.iniServer[1] != "Zeta" {
+		t.Fatalf("pollIniswap must drop background names, iniServer = %v", a.inibrowse.iniServer)
 	}
 }
 

@@ -29,28 +29,28 @@ func TestApplyPendingFavKeepsSlicesConsistent(t *testing.T) {
 
 	assertParallel := func(where string, wantLen int) {
 		t.Helper()
-		n := len(a.iniList)
+		n := len(a.inibrowse.iniList)
 		if n != wantLen {
 			t.Fatalf("%s: iniList = %d, want %d", where, n, wantLen)
 		}
-		if len(a.iniWardrobe) != n || len(a.iniFolders) != n || len(a.iniLower) != n {
+		if len(a.inibrowse.iniWardrobe) != n || len(a.inibrowse.iniFolders) != n || len(a.inibrowse.iniLower) != n {
 			t.Fatalf("%s: parallel slices out of sync — list=%d wardrobe=%d folders=%d lower=%d",
-				where, n, len(a.iniWardrobe), len(a.iniFolders), len(a.iniLower))
+				where, n, len(a.inibrowse.iniWardrobe), len(a.inibrowse.iniFolders), len(a.inibrowse.iniLower))
 		}
 	}
 	assertParallel("after build", 3)
 
 	// Defer-and-apply a REMOVE of the LAST entry — the index that used to walk past
 	// the end of the shrunk slices.
-	a.iniFavPending, a.iniFavPendingAdd = a.iniList[len(a.iniList)-1], false
+	a.inibrowse.iniFavPending, a.inibrowse.iniFavPendingAdd = a.inibrowse.iniList[len(a.inibrowse.iniList)-1], false
 	a.applyPendingFav()
 	assertParallel("after remove", 2)
-	if a.iniFavPending != "" {
+	if a.inibrowse.iniFavPending != "" {
 		t.Error("pending fav must be cleared after apply")
 	}
 
 	// An ADD grows it back, still consistent; an empty pending is a no-op.
-	a.iniFavPending, a.iniFavPendingAdd = "Franziska", true
+	a.inibrowse.iniFavPending, a.inibrowse.iniFavPendingAdd = "Franziska", true
 	a.applyPendingFav()
 	assertParallel("after add", 3)
 	a.applyPendingFav()

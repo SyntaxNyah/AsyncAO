@@ -67,11 +67,11 @@ func TestReconnectFromDialogRestoresLogOnSameServer(t *testing.T) {
 	seedCarryableLog(a, "before")
 
 	a.handleInvoluntaryDrop("connection closed") // freezes: sess/room/logs all survive
-	if !a.disconnectDlg.open {
+	if !a.dialogs.disconnectDlg.open {
 		t.Fatal("test setup: expected the dialog to freeze open")
 	}
-	if a.disconnectDlg.url != url {
-		t.Fatalf("test setup: dialog url = %q, want %q", a.disconnectDlg.url, url)
+	if a.dialogs.disconnectDlg.url != url {
+		t.Fatalf("test setup: dialog url = %q, want %q", a.dialogs.disconnectDlg.url, url)
 	}
 
 	a.reconnectFromDisconnectDialog()
@@ -127,7 +127,7 @@ func TestDeliberateLeavePathsNeverCarryTheLog(t *testing.T) {
 		a.lastConnName, a.lastConnURL = "Test Server", url
 		seedCarryableLog(a, "stale")
 		a.handleInvoluntaryDrop("connection closed") // freeze first, as the real path requires
-		if !a.disconnectDlg.open {
+		if !a.dialogs.disconnectDlg.open {
 			t.Fatal("test setup: expected the dialog to freeze open")
 		}
 
@@ -319,7 +319,7 @@ func TestSessionCarryDoesNotLeakIntoAParkedTab(t *testing.T) {
 	a.tabs = append(a.tabs, parked)
 
 	a.handleInvoluntaryDrop("connection closed") // freezes tab 0 in place
-	if !a.disconnectDlg.open {
+	if !a.dialogs.disconnectDlg.open {
 		t.Fatal("test setup: expected the dialog to freeze open")
 	}
 	a.reconnectFromDisconnectDialog()

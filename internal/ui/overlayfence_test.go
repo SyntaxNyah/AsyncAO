@@ -347,7 +347,7 @@ func TestCompactToolboxNoFenceUnderCourtroomModal(t *testing.T) {
 			// set the flags directly through the same fields the predicate reads.
 			switch i {
 			case 0:
-				a.showIni = true
+				a.inibrowse.showIni = true
 			case 1:
 				a.bgPick.show = true
 			case 2:

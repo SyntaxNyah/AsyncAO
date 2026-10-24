@@ -353,7 +353,7 @@ func (a *App) drawCharSelectPageArrows(lay *charSelectLayoutCache, g charGridPla
 // set of page arrows, so the arrows need to know which offset they are stepping.
 func (a *App) gridScroll() *int32 {
 	if a.charsel.charTab == charTabWardrobe {
-		return &a.iniScroll
+		return &a.inibrowse.iniScroll
 	}
 	return &a.charsel.charScroll
 }
