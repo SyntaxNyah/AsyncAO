@@ -28,7 +28,7 @@ func (a *App) iniFolderMenuOpts() []folderMenuOpt {
 	for _, f := range a.wardrobeFolders() {
 		opts = append(opts, folderMenuOpt{label: f, folder: f})
 	}
-	if nf := strings.TrimSpace(a.iniNewFold); nf != "" {
+	if nf := strings.TrimSpace(a.inibrowse.iniNewFold); nf != "" {
 		opts = append(opts, folderMenuOpt{label: "+ new: " + nf, folder: nf})
 	}
 	return opts
@@ -65,7 +65,7 @@ const iniDragThreshold = 6
 func (a *App) handleIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
 	c := a.ctx
 	if c.escPressed {
-		a.iniMenuChar = ""
+		a.inibrowse.iniMenuChar = ""
 		return
 	}
 	if !c.clicked {
@@ -75,17 +75,17 @@ func (a *App) handleIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
 		row := sdl.Rect{X: rect.X, Y: rect.Y + 2 + int32(i)*iniMenuRowH, W: rect.W, H: iniMenuRowH}
 		if c.hovering(row) {
 			if opt.remove {
-				a.d.Prefs.RemoveWardrobe(a.srvMeta.serverKey, a.iniMenuChar) // unfavourite (also drops its folder)
+				a.d.Prefs.RemoveWardrobe(a.srvMeta.serverKey, a.inibrowse.iniMenuChar) // unfavourite (also drops its folder)
 			} else {
-				a.d.Prefs.SetWardrobeFolder(a.srvMeta.serverKey, a.iniMenuChar, opt.folder)
+				a.d.Prefs.SetWardrobeFolder(a.srvMeta.serverKey, a.inibrowse.iniMenuChar, opt.folder)
 			}
 			a.rebuildIniMenu()
-			a.iniMenuChar = ""
+			a.inibrowse.iniMenuChar = ""
 			c.clicked = false
 			return
 		}
 	}
-	a.iniMenuChar = "" // clicked outside → close
+	a.inibrowse.iniMenuChar = "" // clicked outside → close
 	c.clicked = false
 }
 
@@ -95,7 +95,7 @@ func (a *App) drawIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
 	c := a.ctx
 	c.Fill(rect, sdl.Color{R: 18, G: 18, B: 26, A: 245})
 	c.Border(rect, ColAccent)
-	cur := a.d.Prefs.Load().WardrobeFolderMap(a.srvMeta.serverKey)[strings.ToLower(a.iniMenuChar)]
+	cur := a.d.Prefs.Load().WardrobeFolderMap(a.srvMeta.serverKey)[strings.ToLower(a.inibrowse.iniMenuChar)]
 	for i, opt := range opts {
 		row := sdl.Rect{X: rect.X, Y: rect.Y + 2 + int32(i)*iniMenuRowH, W: rect.W, H: iniMenuRowH}
 		if c.hovering(row) {
@@ -128,7 +128,7 @@ const (
 // grid region. A tab is a mouseup, so a section never switches mid-drag.
 func (a *App) drawIniswapPanel(w, h int32) {
 	c := a.ctx
-	a.iniPressed = c.mouseDown && !a.iniPrevDown // mouse went down this frame (drag arm; shared)
+	a.inibrowse.iniPressed = c.mouseDown && !a.inibrowse.iniPrevDown // mouse went down this frame (drag arm; shared)
 	// Kept clear of the app-chrome band (#14, chrometop.go): the menu bar and the
 	// docked server-tab strip paint AFTER the screens, so a panel starting at the raw
 	// pad*3 would have its top edge and title covered by the strip.
@@ -138,10 +138,10 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	c.Border(panel, ColAccent)
 	c.Heading(panel.X+pad, panel.Y+8, "Wardrobe", ColText)
 	if c.Button(sdl.Rect{X: panel.X + panel.W - 90 - pad, Y: panel.Y + 8, W: 90, H: btnH}, "Close") {
-		a.showIni = false
-		a.iniMenuChar = ""
-		a.wardDelFolder = ""
-		a.iniPrevDown = c.mouseDown
+		a.inibrowse.showIni = false
+		a.inibrowse.iniMenuChar = ""
+		a.wardrobe.wardDelFolder = ""
+		a.inibrowse.iniPrevDown = c.mouseDown
 		return
 	}
 	// Section tabs on the header row.
@@ -152,20 +152,20 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	}{{wardSectionCharacters, "Characters"}, {wardSectionBackgrounds, "Backgrounds"}, {wardSectionIniswaps, "Iniswaps"}, {wardSectionJukebox, "Jukebox"}} {
 		r := sdl.Rect{X: tabX, Y: panel.Y + 8, W: 120, H: btnH}
 		bg := ColPanel
-		if a.wardSection == t.id {
+		if a.wardrobe.wardSection == t.id {
 			bg = ColPanelHi
 		}
 		c.Fill(r, bg)
 		c.Border(r, ColAccent)
 		c.Label(r.X+12, r.Y+5, t.label, ColText)
-		if c.hovering(r) && c.clicked && a.wardSection != t.id {
-			a.wardSection = t.id
+		if c.hovering(r) && c.clicked && a.wardrobe.wardSection != t.id {
+			a.wardrobe.wardSection = t.id
 			// Each section owns its own preview — and its own dwell, so this goes
 			// through closeSpritePreview rather than blanking previewBase.
 			a.closeSpritePreview()
-			a.iniMenuChar = ""         // close any open character move-to-folder menu
-			a.wardDelFolder = ""       // close any open folder-delete confirmation
-			a.jukebox.jukeBindFor = "" // cancel any armed jukebox key-capture
+			a.inibrowse.iniMenuChar = ""  // close any open character move-to-folder menu
+			a.wardrobe.wardDelFolder = "" // close any open folder-delete confirmation
+			a.jukebox.jukeBindFor = ""    // cancel any armed jukebox key-capture
 			if t.id == wardSectionBackgrounds {
 				a.rebuildBgFav()
 			}
@@ -182,7 +182,7 @@ func (a *App) drawIniswapPanel(w, h int32) {
 			c.LabelClipped(hintX, panel.Y+13, hintW, "Binding "+a.courtkeys.bindingFor+": press a key — or Esc / click to cancel", ColAccent)
 		}
 	}
-	switch a.wardSection {
+	switch a.wardrobe.wardSection {
 	case wardSectionBackgrounds:
 		a.drawWardrobeBgsBody(panel, w, h)
 	case wardSectionIniswaps:
@@ -195,40 +195,40 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	a.applyPendingFav() // a ★ toggle a cell deferred: rebuild AFTER the grid loop, never during it
 	// Shared drag ghost: a label trailing the cursor shows what's being dragged
 	// (a character or a background — whichever section armed the drag).
-	if a.iniDragging && a.iniDragChar != "" {
-		g := sdl.Rect{X: c.mouseX + 12, Y: c.mouseY + 8, W: c.TextWidth(a.iniDragChar) + 16, H: 22}
+	if a.inibrowse.iniDragging && a.inibrowse.iniDragChar != "" {
+		g := sdl.Rect{X: c.mouseX + 12, Y: c.mouseY + 8, W: c.TextWidth(a.inibrowse.iniDragChar) + 16, H: 22}
 		c.Fill(g, sdl.Color{R: 0, G: 0, B: 0, A: 225})
 		c.Border(g, ColAccent)
-		c.Label(g.X+6, g.Y+3, a.iniDragChar, ColAccent)
+		c.Label(g.X+6, g.Y+3, a.inibrowse.iniDragChar, ColAccent)
 	}
 	// Shared end-of-frame drag bookkeeping (once per frame, both sections).
 	if !c.mouseDown {
-		a.iniDragChar = ""
-		a.iniDragging = false
+		a.inibrowse.iniDragChar = ""
+		a.inibrowse.iniDragging = false
 	}
-	a.iniPrevDown = c.mouseDown
+	a.inibrowse.iniPrevDown = c.mouseDown
 }
 
 // drawWardrobeCharsBody is the Characters section: the navigable wardrobe grid.
 func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 	c := a.ctx
 	a.pollIniswap()
-	a.pollPreviewEmotes() // try-before-wear: drain a previewed char's emote list
-	a.iniHoverChar = ""   // recomputed by the cells this frame (quick-file target)
+	a.pollPreviewEmotes()         // try-before-wear: drain a previewed char's emote list
+	a.inibrowse.iniHoverChar = "" // recomputed by the cells this frame (quick-file target)
 	// Move-to-folder menu: handle its clicks FIRST so they can't leak to the
 	// folder icons/grid underneath (it's painted last, on top).
-	if a.iniMenuChar != "" {
+	if a.inibrowse.iniMenuChar != "" {
 		opts := a.iniFolderMenuOpts()
-		a.handleIniFolderMenu(iniFolderMenuRect(a.iniMenuAt, len(opts), w, h), opts)
+		a.handleIniFolderMenu(iniFolderMenuRect(a.inibrowse.iniMenuAt, len(opts), w, h), opts)
 	}
 
 	y := panel.Y + 44
 	active := "none (using " + a.myCharName() + ")"
-	if a.iniChar != "" {
-		active = a.iniChar
+	if a.inibrowse.iniChar != "" {
+		active = a.inibrowse.iniChar
 	}
 	c.LabelClipped(panel.X+pad, y+4, 340, "Wearing: "+active, ColAccent)
-	if a.iniChar != "" {
+	if a.inibrowse.iniChar != "" {
 		if c.Button(sdl.Rect{X: panel.X + 360, Y: y, W: 130, H: btnH}, "Take off") {
 			a.setIniswap("")
 		}
@@ -239,21 +239,21 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 	// keep your slot. Per session (resets on restart). Iniswap-by-name now lives
 	// on the Iniswaps tab's search box.
 	const swapLabel = "Iniswap instead of switching character"
-	a.iniSwapMode = c.Checkbox(panel.X+pad, y, swapLabel, a.iniSwapMode)
+	a.inibrowse.iniSwapMode = c.Checkbox(panel.X+pad, y, swapLabel, a.inibrowse.iniSwapMode)
 	c.Tooltip(sdl.Rect{X: panel.X + pad, Y: y, W: 22 + c.TextWidth(swapLabel), H: 16},
 		"Off (default): clicking a character switches you to them (takes a slot). On: wears them as an iniswap — no slot taken.")
 	y += 32
-	a.iniSearch, _ = c.TextField("iniswapsearch", sdl.Rect{X: panel.X + pad, Y: y, W: 230, H: fieldH}, a.iniSearch, "Search...")
+	a.inibrowse.iniSearch, _ = c.TextField("iniswapsearch", sdl.Rect{X: panel.X + pad, Y: y, W: 230, H: fieldH}, a.inibrowse.iniSearch, "Search...")
 	// Add any folder name on the current asset base to the wardrobe —
 	// no server list required (★ marks saved entries; ★ persists
 	// across sessions and servers).
 	var addNow bool
-	a.iniAdd, addNow = c.TextField("iniswapadd", sdl.Rect{X: panel.X + pad + 240, Y: y, W: 230, H: fieldH}, a.iniAdd, "Add char (or folder/char) to wardrobe...")
+	a.inibrowse.iniAdd, addNow = c.TextField("iniswapadd", sdl.Rect{X: panel.X + pad + 240, Y: y, W: 230, H: fieldH}, a.inibrowse.iniAdd, "Add char (or folder/char) to wardrobe...")
 	if c.Button(sdl.Rect{X: panel.X + pad + 476, Y: y, W: 60, H: btnH}, "Add") || addNow {
 		// "folder/char" files it explicitly; otherwise it joins the folder
 		// you're currently viewing ("" at the top level = unfiled).
-		raw := strings.TrimSpace(a.iniAdd)
-		folder, char := a.iniFolder, raw
+		raw := strings.TrimSpace(a.inibrowse.iniAdd)
+		folder, char := a.inibrowse.iniFolder, raw
 		if i := strings.IndexByte(raw, '/'); i >= 0 {
 			folder, char = strings.TrimSpace(raw[:i]), strings.TrimSpace(raw[i+1:])
 		}
@@ -261,18 +261,18 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 			if folder != "" {
 				a.d.Prefs.SetWardrobeFolder(a.srvMeta.serverKey, char, folder)
 			}
-			a.iniAdd = ""
+			a.inibrowse.iniAdd = ""
 			a.rebuildIniMenu()
 		}
 	}
 	statusX := panel.X + pad + 550
 	switch {
-	case a.iniBusy:
+	case a.inibrowse.iniBusy:
 		c.Label(statusX, y+4, "Fetching "+iniswapFileName+"...", ColTextDim)
-	case a.iniListErr != "":
-		c.LabelClipped(statusX, y+4, panel.X+panel.W-statusX-pad, a.iniListErr, ColTextDim)
+	case a.inibrowse.iniListErr != "":
+		c.LabelClipped(statusX, y+4, panel.X+panel.W-statusX-pad, a.inibrowse.iniListErr, ColTextDim)
 	default:
-		c.Label(statusX, y+4, fmt.Sprintf("%d entries", len(a.iniList)), ColTextDim)
+		c.Label(statusX, y+4, fmt.Sprintf("%d entries", len(a.inibrowse.iniList)), ColTextDim)
 	}
 	y += 30
 	// One-line orientation — the Wardrobe confused some newcomers. Names the two
@@ -289,11 +289,11 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 	// that removes a character from the folder). Folders are membership-derived;
 	// typing a name below makes a transient folder cell so the FIRST character
 	// has something to drop onto. A search spans every folder.
-	query := a.charsel.iniQ.get(a.iniSearch)
+	query := a.charsel.iniQ.get(a.inibrowse.iniSearch)
 	searching := query != ""
 
 	folderCells := a.wardrobeFolders()
-	if nf := strings.TrimSpace(a.iniNewFold); nf != "" { // a just-typed folder is a drop target before it has members
+	if nf := strings.TrimSpace(a.inibrowse.iniNewFold); nf != "" { // a just-typed folder is a drop target before it has members
 		seen := false
 		for _, f := range folderCells {
 			if strings.EqualFold(f, nf) {
@@ -306,22 +306,22 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 		}
 	}
 	charVisible := func(i int) bool {
-		if i >= len(a.iniWardrobe) || i >= len(a.iniFolders) || i >= len(a.iniLower) {
+		if i >= len(a.inibrowse.iniWardrobe) || i >= len(a.inibrowse.iniFolders) || i >= len(a.inibrowse.iniLower) {
 			return false // never index past the parallel slices if they ever shrink mid-frame
 		}
 		// Characters is YOUR wardrobe only — starred or filed into a folder. The
 		// full server list lives on the Iniswaps tab (★ there adds it here).
-		if !a.iniWardrobe[i] && a.iniFolders[i] == "" {
+		if !a.inibrowse.iniWardrobe[i] && a.inibrowse.iniFolders[i] == "" {
 			return false
 		}
 		if searching { // search ignores the folder you're in — find anyone
-			return strings.Contains(a.iniLower[i], query)
+			return strings.Contains(a.inibrowse.iniLower[i], query)
 		}
-		return strings.EqualFold(a.iniFolders[i], a.iniFolder) // "" = top level = unfiled
+		return strings.EqualFold(a.inibrowse.iniFolders[i], a.inibrowse.iniFolder) // "" = top level = unfiled
 	}
 	countInFolder := func(name string) int {
 		n := 0
-		for _, f := range a.iniFolders {
+		for _, f := range a.inibrowse.iniFolders {
 			if strings.EqualFold(f, name) {
 				n++
 			}
@@ -329,34 +329,34 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 		return n
 	}
 
-	if a.wardDelFolder != "" {
+	if a.wardrobe.wardDelFolder != "" {
 		// A folder delete awaits confirmation: the bar replaces the nav row.
-		choice := a.drawFolderDeleteConfirm(panel.X+pad, y, panel.W-2*pad, countInFolder(a.wardDelFolder), "characters")
+		choice := a.drawFolderDeleteConfirm(panel.X+pad, y, panel.W-2*pad, countInFolder(a.wardrobe.wardDelFolder), "characters")
 		if choice == folderDeleteWithItems || choice == folderDeleteKeepItems {
-			a.d.Prefs.DeleteWardrobeFolder(a.srvMeta.serverKey, a.wardDelFolder, choice == folderDeleteKeepItems)
-			if strings.EqualFold(a.iniNewFold, a.wardDelFolder) {
-				a.iniNewFold = "" // also drop the transient "new folder" chip if it named this one
+			a.d.Prefs.DeleteWardrobeFolder(a.srvMeta.serverKey, a.wardrobe.wardDelFolder, choice == folderDeleteKeepItems)
+			if strings.EqualFold(a.inibrowse.iniNewFold, a.wardrobe.wardDelFolder) {
+				a.inibrowse.iniNewFold = "" // also drop the transient "new folder" chip if it named this one
 			}
-			if strings.EqualFold(a.iniFolder, a.wardDelFolder) { // we were inside the deleted folder
-				a.iniFolder = ""
-				a.iniScroll = 0
+			if strings.EqualFold(a.inibrowse.iniFolder, a.wardrobe.wardDelFolder) { // we were inside the deleted folder
+				a.inibrowse.iniFolder = ""
+				a.inibrowse.iniScroll = 0
 			}
-			a.wardDelFolder = ""
+			a.wardrobe.wardDelFolder = ""
 			a.rebuildIniMenu()
 		} else if choice == folderDeleteCancel {
-			a.wardDelFolder = ""
+			a.wardrobe.wardDelFolder = ""
 		}
 	} else {
 		switch {
 		case searching:
 			c.Label(panel.X+pad, y+4, "Search spans every folder — clear it to browse folders", ColTextDim)
-		case a.iniFolder == "":
-			a.iniNewFold, _ = c.TextField("ininewfold", sdl.Rect{X: panel.X + pad, Y: y, W: 240, H: fieldH}, a.iniNewFold, "New folder name, then drag chars onto it")
+		case a.inibrowse.iniFolder == "":
+			a.inibrowse.iniNewFold, _ = c.TextField("ininewfold", sdl.Rect{X: panel.X + pad, Y: y, W: 240, H: fieldH}, a.inibrowse.iniNewFold, "New folder name, then drag chars onto it")
 			c.LabelClipped(panel.X+pad+250, y+4, panel.X+panel.W-(panel.X+pad+250)-pad, "Drag a character onto a folder to file it · open a folder to see inside · × on a folder deletes it", ColTextDim)
 		default:
 			back := sdl.Rect{X: panel.X + pad, Y: y, W: 150, H: btnH}
 			c.Fill(back, ColPanel)
-			if a.iniDragging && c.hovering(back) {
+			if a.inibrowse.iniDragging && c.hovering(back) {
 				c.Border(back, ColAccent) // drop here to take the character out of the folder
 			} else {
 				c.Border(back, ColPanelHi)
@@ -364,16 +364,16 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 			c.Label(back.X+8, back.Y+5, "‹ All folders", ColText)
 			c.Tooltip(back, "Back to all folders — or drop a character here to take it out of this folder")
 			if c.hovering(back) && c.clicked {
-				if a.iniDragging && a.iniDragChar != "" {
-					a.d.Prefs.SetWardrobeFolder(a.srvMeta.serverKey, a.iniDragChar, "")
+				if a.inibrowse.iniDragging && a.inibrowse.iniDragChar != "" {
+					a.d.Prefs.SetWardrobeFolder(a.srvMeta.serverKey, a.inibrowse.iniDragChar, "")
 					a.rebuildIniMenu()
 					c.clicked = false // consume the drop
 				} else {
-					a.iniFolder = ""
-					a.iniScroll = 0
+					a.inibrowse.iniFolder = ""
+					a.inibrowse.iniScroll = 0
 				}
 			}
-			c.LabelClipped(back.X+back.W+12, y+5, panel.X+panel.W-(back.X+back.W+12)-pad, fmt.Sprintf("%s — %d character(s) · right-click a character to move it", a.iniFolder, countInFolder(a.iniFolder)), ColAccent)
+			c.LabelClipped(back.X+back.W+12, y+5, panel.X+panel.W-(back.X+back.W+12)-pad, fmt.Sprintf("%s — %d character(s) · right-click a character to move it", a.inibrowse.iniFolder, countInFolder(a.inibrowse.iniFolder)), ColAccent)
 		}
 	}
 	y += btnH + 8
@@ -388,12 +388,12 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 	if cols < 1 {
 		cols = 1
 	}
-	showFolders := !searching && a.iniFolder == ""
+	showFolders := !searching && a.inibrowse.iniFolder == ""
 	slots := int32(0)
 	if showFolders {
 		slots += int32(len(folderCells))
 	}
-	for i := range a.iniList {
+	for i := range a.inibrowse.iniList {
 		if charVisible(i) {
 			slots++
 		}
@@ -402,15 +402,15 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 	contentH := (slots + cols - 1) / cols * cellH
 	visibleH := panel.Y + panel.H - gridTop - pad
 
-	a.iniScroll -= c.WheelIn(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH}) * scrollStepPx
+	a.inibrowse.iniScroll -= c.WheelIn(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH}) * scrollStepPx
 	track := sdl.Rect{X: panel.X + panel.W - pad - scrollBarW, Y: gridTop, W: scrollBarW, H: visibleH}
-	a.iniScroll = c.VScrollbar("iniscroll", track, a.iniScroll, contentH, visibleH)
+	a.inibrowse.iniScroll = c.VScrollbar("iniscroll", track, a.inibrowse.iniScroll, contentH, visibleH)
 
 	clipPrev, clipHad := c.pushClip(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH})
 	slot := int32(0)
 	place := func() (sdl.Rect, bool) {
 		x := panel.X + pad + (slot%cols)*(iconCell+iconGap)
-		yy := gridTop + (slot/cols)*cellH - a.iniScroll
+		yy := gridTop + (slot/cols)*cellH - a.inibrowse.iniScroll
 		slot++
 		return sdl.Rect{X: x, Y: yy, W: iconCell, H: iconCell}, yy > gridTop-iconCell && yy < panel.Y+panel.H-charCellCaptionH
 	}
@@ -421,7 +421,7 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 			}
 		}
 	}
-	for i := range a.iniList {
+	for i := range a.inibrowse.iniList {
 		if !charVisible(i) {
 			continue
 		}
@@ -433,14 +433,14 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 
 	// Number-key quick-file: hover a character (no field focused, no menu open)
 	// and press a digit to file it — 1-9 = that-numbered folder, 0 = unsorted.
-	if a.iniHoverChar != "" && c.focusID == "" && a.iniMenuChar == "" {
+	if a.inibrowse.iniHoverChar != "" && c.focusID == "" && a.inibrowse.iniMenuChar == "" {
 		switch {
 		case c.keyPressed == sdl.K_0:
-			a.d.Prefs.SetWardrobeFolder(a.srvMeta.serverKey, a.iniHoverChar, "")
+			a.d.Prefs.SetWardrobeFolder(a.srvMeta.serverKey, a.inibrowse.iniHoverChar, "")
 			a.rebuildIniMenu()
 		case c.keyPressed >= sdl.K_1 && c.keyPressed <= sdl.K_9:
 			if folders := a.wardrobeFolders(); int(c.keyPressed-sdl.K_1) < len(folders) {
-				a.d.Prefs.SetWardrobeFolder(a.srvMeta.serverKey, a.iniHoverChar, folders[c.keyPressed-sdl.K_1])
+				a.d.Prefs.SetWardrobeFolder(a.srvMeta.serverKey, a.inibrowse.iniHoverChar, folders[c.keyPressed-sdl.K_1])
 				a.rebuildIniMenu()
 			}
 		}
@@ -454,9 +454,9 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 	// Move-to-folder menu paints last (above the grid + preview). The shared
 	// drag ghost and end-of-frame drag cleanup live in the drawIniswapPanel
 	// wrapper — one place for both sections.
-	if a.iniMenuChar != "" {
+	if a.inibrowse.iniMenuChar != "" {
 		opts := a.iniFolderMenuOpts()
-		a.drawIniFolderMenu(iniFolderMenuRect(a.iniMenuAt, len(opts), w, h), opts)
+		a.drawIniFolderMenu(iniFolderMenuRect(a.inibrowse.iniMenuAt, len(opts), w, h), opts)
 	}
 }
 
@@ -466,28 +466,28 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 // No folders in either — organizing lives in Characters.
 func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	c := a.ctx
-	a.pollIniswap()            // drain the server list (fetched on open)
-	a.pollLocalCharFolders()   // ...and the local-mount folder scan (iniswapbase.go)
-	a.ensureLocalCharFolders() // starts one only when the mount list actually changed
-	a.iniHoverChar = ""        // recomputed by the cells (quick-file target; unused here)
+	a.pollIniswap()               // drain the server list (fetched on open)
+	a.pollLocalCharFolders()      // ...and the local-mount folder scan (iniswapbase.go)
+	a.ensureLocalCharFolders()    // starts one only when the mount list actually changed
+	a.inibrowse.iniHoverChar = "" // recomputed by the cells (quick-file target; unused here)
 	serverN, baseN := a.baseSourceCounts()
 	// Memoized: this body draws every frame the tab is up (iniswapbase.go).
-	serverLabel, baseLabel, statusLabel := a.iniBase.sourceLabels(serverN, baseN)
+	serverLabel, baseLabel, statusLabel := a.inibrowse.iniBase.sourceLabels(serverN, baseN)
 
 	y := panel.Y + 44
 	var iniswapNow bool
-	a.iniSearch, iniswapNow = c.TextField("iniswapsearch", sdl.Rect{X: panel.X + pad, Y: y, W: 230, H: fieldH}, a.iniSearch, "Iniswap a folder by name, or search the list…")
+	a.inibrowse.iniSearch, iniswapNow = c.TextField("iniswapsearch", sdl.Rect{X: panel.X + pad, Y: y, W: 230, H: fieldH}, a.inibrowse.iniSearch, "Iniswap a folder by name, or search the list…")
 	c.Tooltip(sdl.Rect{X: panel.X + pad, Y: y, W: 230, H: fieldH},
 		"Type any character folder on the base and press Enter to iniswap into it — or just type to filter the list below.")
 	if iniswapNow { // Enter → legacy iniswap into the typed folder (whether or not it's in the list)
-		if name := strings.TrimSpace(a.iniSearch); name != "" {
-			a.iniSearch = ""
+		if name := strings.TrimSpace(a.inibrowse.iniSearch); name != "" {
+			a.inibrowse.iniSearch = ""
 			a.wearFromMenu(name)
 		}
 	}
 	statusX := panel.X + pad + 250
 	switch {
-	case a.iniBusy:
+	case a.inibrowse.iniBusy:
 		c.Label(statusX, y+4, "Fetching "+iniswapFileName+"...", ColTextDim)
 	case serverN == 0:
 		// No iniswap.txt on this server (404 or none published): say so calmly — the
@@ -504,9 +504,9 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	// two more, and on the many servers that publish no iniswap.txt they are the ONLY
 	// ones. A server with no published list opens on the base browser once per server
 	// (the autoDone/autoKey latch) rather than on the empty state this replaces.
-	if !a.iniBusy && (!a.iniBase.autoDone || a.iniBase.autoKey != a.srvMeta.serverKey) {
-		a.iniBase.autoDone, a.iniBase.autoKey = true, a.srvMeta.serverKey
-		a.iniBase.show = serverN == 0 && baseN > 0
+	if !a.inibrowse.iniBusy && (!a.inibrowse.iniBase.autoDone || a.inibrowse.iniBase.autoKey != a.srvMeta.serverKey) {
+		a.inibrowse.iniBase.autoDone, a.inibrowse.iniBase.autoKey = true, a.srvMeta.serverKey
+		a.inibrowse.iniBase.show = serverN == 0 && baseN > 0
 	}
 	for i, src := range [...]struct {
 		show  bool
@@ -516,12 +516,12 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 		{true, baseLabel},
 	} {
 		r := sdl.Rect{X: panel.X + pad + int32(i)*(iniBaseSourceChipW+6), Y: y, W: iniBaseSourceChipW, H: btnH}
-		if c.Button(r, src.label) && a.iniBase.show != src.show {
-			a.iniBase.show = src.show
-			a.iniBase.scroll = 0
-			a.iniBrowseScroll = 0
+		if c.Button(r, src.label) && a.inibrowse.iniBase.show != src.show {
+			a.inibrowse.iniBase.show = src.show
+			a.inibrowse.iniBase.scroll = 0
+			a.inibrowse.iniBrowseScroll = 0
 		}
-		if a.iniBase.show == src.show {
+		if a.inibrowse.iniBase.show == src.show {
 			c.Border(r, ColAccent) // active source
 		}
 	}
@@ -529,14 +529,14 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 		"Every character folder this client knows exists on the base: the server's own character roster, plus the characters/ folders in your local mounts.")
 	y += btnH + 6
 
-	if a.iniBase.show {
-		a.drawIniswapBaseBody(panel, y, a.charsel.iniQ.get(a.iniSearch))
+	if a.inibrowse.iniBase.show {
+		a.drawIniswapBaseBody(panel, y, a.charsel.iniQ.get(a.inibrowse.iniSearch))
 		return
 	}
 
 	// No server list yet → a mini guide for owners (where to put iniswap.txt) and
 	// players (they can still wear any folder by name).
-	if !a.iniBusy && serverN == 0 {
+	if !a.inibrowse.iniBusy && serverN == 0 {
 		base := a.link.urls.Origin()
 		if base == "" {
 			base = "https://your-server.com/base/"
@@ -563,14 +563,14 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 		return
 	}
 
-	query := a.charsel.iniQ.get(a.iniSearch)
+	query := a.charsel.iniQ.get(a.inibrowse.iniSearch)
 	// The Iniswaps tab is the server's iniswap.txt ONLY — a favourite that isn't
 	// a server iniswap (or any favourite on a server with no list) stays out.
 	visible := func(i int) bool {
-		if i >= len(a.iniServerMem) || !a.iniServerMem[i] {
+		if i >= len(a.inibrowse.iniServerMem) || !a.inibrowse.iniServerMem[i] {
 			return false
 		}
-		return query == "" || strings.Contains(a.iniLower[i], query)
+		return query == "" || strings.Contains(a.inibrowse.iniLower[i], query)
 	}
 
 	gridTop := y
@@ -580,7 +580,7 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 		cols = 1
 	}
 	slots := int32(0)
-	for i := range a.iniList {
+	for i := range a.inibrowse.iniList {
 		if visible(i) {
 			slots++
 		}
@@ -589,18 +589,18 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	contentH := (slots + cols - 1) / cols * cellH
 	visibleH := panel.Y + panel.H - gridTop - pad
 
-	a.iniBrowseScroll -= c.WheelIn(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH}) * scrollStepPx
+	a.inibrowse.iniBrowseScroll -= c.WheelIn(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH}) * scrollStepPx
 	track := sdl.Rect{X: panel.X + panel.W - pad - scrollBarW, Y: gridTop, W: scrollBarW, H: visibleH}
-	a.iniBrowseScroll = c.VScrollbar("inibrowsescroll", track, a.iniBrowseScroll, contentH, visibleH)
+	a.inibrowse.iniBrowseScroll = c.VScrollbar("inibrowsescroll", track, a.inibrowse.iniBrowseScroll, contentH, visibleH)
 
 	clipPrev, clipHad := c.pushClip(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH})
 	slot := int32(0)
-	for i := range a.iniList {
+	for i := range a.inibrowse.iniList {
 		if !visible(i) {
 			continue
 		}
 		x := panel.X + pad + (slot%cols)*(iconCell+iconGap)
-		yy := gridTop + (slot/cols)*cellH - a.iniBrowseScroll
+		yy := gridTop + (slot/cols)*cellH - a.inibrowse.iniBrowseScroll
 		slot++
 		if yy > gridTop-iconCell && yy < panel.Y+panel.H-charCellCaptionH {
 			a.drawIniswapCell(i, sdl.Rect{X: x, Y: yy, W: iconCell, H: iconCell}, cellClickIniswap, true)
@@ -646,7 +646,7 @@ func (a *App) drawFolderShape(cell sdl.Rect, count int, name string, hover, drop
 // reports a click on it. Shared by both wardrobe sections; the caller opens the
 // delete confirmation. The × claims its own click so the folder doesn't open.
 func (a *App) folderDeleteHit(cell sdl.Rect, hover bool) bool {
-	if !hover || a.iniDragging {
+	if !hover || a.inibrowse.iniDragging {
 		return false
 	}
 	c := a.ctx
@@ -675,7 +675,7 @@ func (a *App) drawFolderDeleteConfirm(x, y, maxW int32, count int, noun string) 
 	if c.escPressed {
 		return folderDeleteCancel
 	}
-	label := fmt.Sprintf("Delete folder \"%s\" (%d %s)?", a.wardDelFolder, count, noun)
+	label := fmt.Sprintf("Delete folder \"%s\" (%d %s)?", a.wardrobe.wardDelFolder, count, noun)
 	c.LabelClipped(x, y+5, 320, label, ColDanger)
 	bx := x + 332
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 150, H: btnH}, fmt.Sprintf("Delete + %d items", count)) {
@@ -698,20 +698,20 @@ func (a *App) drawFolderDeleteConfirm(x, y, maxW int32, count int, noun string) 
 func (a *App) drawIniFolderCell(name string, count int, cell sdl.Rect) {
 	c := a.ctx
 	hover := c.hovering(cell)
-	a.drawFolderShape(cell, count, name, hover, a.iniDragging && hover)
+	a.drawFolderShape(cell, count, name, hover, a.inibrowse.iniDragging && hover)
 	if a.folderDeleteHit(cell, hover) {
-		a.wardDelFolder = name
+		a.wardrobe.wardDelFolder = name
 		return // the × claimed the click; don't open the folder
 	}
 	c.Tooltip(cell, "Open the "+name+" folder — or drop a character here to file it")
 	if hover && c.clicked {
-		if a.iniDragging && a.iniDragChar != "" {
-			a.d.Prefs.SetWardrobeFolder(a.srvMeta.serverKey, a.iniDragChar, name)
+		if a.inibrowse.iniDragging && a.inibrowse.iniDragChar != "" {
+			a.d.Prefs.SetWardrobeFolder(a.srvMeta.serverKey, a.inibrowse.iniDragChar, name)
 			a.rebuildIniMenu()
 			c.clicked = false // consume the drop
 		} else {
-			a.iniFolder = name
-			a.iniScroll = 0
+			a.inibrowse.iniFolder = name
+			a.inibrowse.iniScroll = 0
 		}
 	}
 }
@@ -750,7 +750,7 @@ const (
 // above already names it there.
 func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption bool) {
 	c := a.ctx
-	name := a.iniList[idx]
+	name := a.inibrowse.iniList[idx]
 
 	// Hover hint for what a click does here. Registered before the star/key-badge
 	// tooltips below, which override it on their own sub-rects (Tooltip = last
@@ -776,13 +776,13 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 	// handler and ghost live in drawIniswapPanel). A press that never moves is
 	// just a click and still wears/toggles below — the click actions are gated
 	// on !a.iniDragging so a drag never also fires them.
-	if a.iniPressed && a.iniMenuChar == "" && c.hovering(cell) {
-		a.iniDragChar = name
-		a.iniDragStart = [2]int32{c.mouseX, c.mouseY}
-		a.iniDragging = false
+	if a.inibrowse.iniPressed && a.inibrowse.iniMenuChar == "" && c.hovering(cell) {
+		a.inibrowse.iniDragChar = name
+		a.inibrowse.iniDragStart = [2]int32{c.mouseX, c.mouseY}
+		a.inibrowse.iniDragging = false
 	}
-	if a.iniDragChar == name && c.mouseDown {
-		dx, dy := c.mouseX-a.iniDragStart[0], c.mouseY-a.iniDragStart[1]
+	if a.inibrowse.iniDragChar == name && c.mouseDown {
+		dx, dy := c.mouseX-a.inibrowse.iniDragStart[0], c.mouseY-a.inibrowse.iniDragStart[1]
 		if dx < 0 {
 			dx = -dx
 		}
@@ -790,13 +790,13 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 			dy = -dy
 		}
 		if dx+dy > iniDragThreshold {
-			a.iniDragging = true
+			a.inibrowse.iniDragging = true
 		}
 	}
 
 	c.Fill(cell, ColBackground)
 	base := a.link.urls.CharIcon(name)
-	if page, ok := a.cachedPage(&a.rcache.iniPages, &a.rcache.iniPagesGen, len(a.iniList), idx, base); ok && len(page.Frames) > 0 {
+	if page, ok := a.cachedPage(&a.rcache.iniPages, &a.rcache.iniPagesGen, len(a.inibrowse.iniList), idx, base); ok && len(page.Frames) > 0 {
 		// Shared scratch, not &cell: cell is a PARAMETER, and escape analysis is
 		// static, so a cgo pointer taken from it moves it to the heap on every call —
 		// including the placeholder branch below, which never touches SDL. One
@@ -808,7 +808,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 		c.cgoRect = cell
 		_ = c.Ren.Copy(page.Frames[0], nil, &c.cgoRect)
 	} else {
-		a.demandAsset(&a.iniAsk, len(a.iniList), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon (wardrobe)
+		a.demandAsset(&a.inibrowse.iniAsk, len(a.inibrowse.iniList), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon (wardrobe)
 		initial := name
 		if len(initial) > 2 {
 			initial = initial[:2]
@@ -831,8 +831,8 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 	if cellFitsCornerChrome(cell) {
 		// Folder tag (top-left): the category this character is filed under
 		// (right-click the cell to file it into the active folder).
-		if idx < len(a.iniFolders) && a.iniFolders[idx] != "" {
-			ft := a.iniFolders[idx]
+		if idx < len(a.inibrowse.iniFolders) && a.inibrowse.iniFolders[idx] != "" {
+			ft := a.inibrowse.iniFolders[idx]
 			tw := c.TextWidth(ft) + 6
 			if maxW := cell.W - iniCellStarLaneW; tw > maxW { // leave the top-right for the star
 				tw = maxW
@@ -846,19 +846,19 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 		// wearing — the favourites list itself, exactly like lobby stars.
 		star := sdl.Rect{X: cell.X + cell.W - iniCellStarPx - 1, Y: cell.Y + 1, W: iniCellStarPx, H: iniCellStarPx}
 		starCol := ColTextDim
-		if idx < len(a.iniWardrobe) && a.iniWardrobe[idx] {
+		if idx < len(a.inibrowse.iniWardrobe) && a.inibrowse.iniWardrobe[idx] {
 			starCol = ColStar
 		}
 		c.Label(star.X+2, star.Y, "★", starCol)
 		c.Tooltip(star, "★ add to / remove from your wardrobe (right-click the cell for more)")
-		if c.hovering(star) && c.clicked && !a.iniDragging {
+		if c.hovering(star) && c.clicked && !a.inibrowse.iniDragging {
 			// DEFER the toggle: rebuilding the wardrobe here shrinks the iniList/
 			// iniWardrobe/iniFolders slices the grid loop is currently ranging, which
 			// panicked on a REMOVE (the reported crash). The HOST applies it after its
 			// loop — drawIniswapPanel for the wardrobe modal, drawWardrobeGrid for the
 			// char-select Wardrobe tab.
-			a.iniFavPending = name
-			a.iniFavPendingAdd = idx >= len(a.iniWardrobe) || !a.iniWardrobe[idx]
+			a.inibrowse.iniFavPending = name
+			a.inibrowse.iniFavPendingAdd = idx >= len(a.inibrowse.iniWardrobe) || !a.inibrowse.iniWardrobe[idx]
 			c.clicked = false // consumed; don't also wear it
 			return
 		}
@@ -885,7 +885,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 			}
 			c.Label(badge.X+4, badge.Y+1, badgeLabel, col)
 			if c.hovering(badge) {
-				if c.clicked && !a.iniDragging {
+				if c.clicked && !a.inibrowse.iniDragging {
 					a.courtkeys.bindingFor = name
 					c.focusID = "" // capture owns the next keypress outright
 					return         // don't also wear it
@@ -902,8 +902,8 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 	// Right-click the cell opens a "move to folder" menu (pick any destination,
 	// including a brand-new one). The key badge's own right-click ran first.
 	if c.rightClicked && c.hovering(cell) {
-		a.iniMenuChar = name
-		a.iniMenuAt = [2]int32{c.mouseX, c.mouseY}
+		a.inibrowse.iniMenuChar = name
+		a.inibrowse.iniMenuAt = [2]int32{c.mouseX, c.mouseY}
 		return
 	}
 
@@ -913,9 +913,9 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 		a.ensurePreviewEmotes(name, previewEmoteNav)                                                                                                           // try-before-wear: load this character's emotes to cycle
 	}
 	if c.hovering(cell) {
-		a.iniHoverChar = name // number keys 0-9 quick-file the hovered character
-		a.warmCharINI(name)   // wearing it = memory hit, not an RTT
-		if c.clicked && !a.iniDragging {
+		a.inibrowse.iniHoverChar = name // number keys 0-9 quick-file the hovered character
+		a.warmCharINI(name)             // wearing it = memory hit, not an RTT
+		if c.clicked && !a.inibrowse.iniDragging {
 			if click == cellClickChar {
 				a.wardrobeClick(name) // Characters tab: switch to the char (or iniswap if ticked)
 			} else {
@@ -947,14 +947,14 @@ func (a *App) refreshMusicFilter(query string) {
 	if n > 0 {
 		key.first, key.last = a.link.sess.Music[0], a.link.sess.Music[n-1]
 	}
-	if key == a.musicFilterMemo {
+	if key == a.musicTab.musicFilterMemo {
 		return
 	}
-	a.musicFilterMemo = key
-	a.musicFiltered = a.musicFiltered[:0]
+	a.musicTab.musicFilterMemo = key
+	a.musicTab.musicFiltered = a.musicTab.musicFiltered[:0]
 	for i, track := range a.link.sess.Music {
 		if strings.Contains(strings.ToLower(track), query) {
-			a.musicFiltered = append(a.musicFiltered, i)
+			a.musicTab.musicFiltered = append(a.musicTab.musicFiltered, i)
 		}
 	}
 }
@@ -990,28 +990,28 @@ type musicGroupKey struct {
 // header pulled in for context even if that header didn't itself match.
 func (a *App) refreshMusicGroups(query string) {
 	n := len(a.link.sess.Music)
-	key := musicGroupKey{q: query, n: n, collapseGen: a.musicCollapseGen}
+	key := musicGroupKey{q: query, n: n, collapseGen: a.musicTab.musicCollapseGen}
 	if n > 0 {
 		key.first, key.last = a.link.sess.Music[0], a.link.sess.Music[n-1]
 	}
-	if key == a.musicGroupMemo && a.musicRows != nil {
+	if key == a.musicTab.musicGroupMemo && a.musicTab.musicRows != nil {
 		return
 	}
-	a.musicGroupMemo = key
-	a.musicRows = a.musicRows[:0]
+	a.musicTab.musicGroupMemo = key
+	a.musicTab.musicRows = a.musicTab.musicRows[:0]
 
 	if query == "" {
 		collapsed := false
 		for i, entry := range a.link.sess.Music {
 			if !courtroom.HasAudioExt(entry) {
-				collapsed = a.musicCollapsed[i]
-				a.musicRows = append(a.musicRows, musicRow{ti: i, header: true})
+				collapsed = a.musicTab.musicCollapsed[i]
+				a.musicTab.musicRows = append(a.musicTab.musicRows, musicRow{ti: i, header: true})
 				continue
 			}
 			if collapsed {
 				continue
 			}
-			a.musicRows = append(a.musicRows, musicRow{ti: i})
+			a.musicTab.musicRows = append(a.musicTab.musicRows, musicRow{ti: i})
 		}
 		return
 	}
@@ -1022,7 +1022,7 @@ func (a *App) refreshMusicGroups(query string) {
 			pendingHeader = i
 			headerShown = strings.Contains(strings.ToLower(entry), query)
 			if headerShown {
-				a.musicRows = append(a.musicRows, musicRow{ti: i, header: true})
+				a.musicTab.musicRows = append(a.musicTab.musicRows, musicRow{ti: i, header: true})
 			}
 			continue
 		}
@@ -1030,10 +1030,10 @@ func (a *App) refreshMusicGroups(query string) {
 			continue
 		}
 		if pendingHeader >= 0 && !headerShown {
-			a.musicRows = append(a.musicRows, musicRow{ti: pendingHeader, header: true})
+			a.musicTab.musicRows = append(a.musicTab.musicRows, musicRow{ti: pendingHeader, header: true})
 			headerShown = true
 		}
-		a.musicRows = append(a.musicRows, musicRow{ti: i})
+		a.musicTab.musicRows = append(a.musicTab.musicRows, musicRow{ti: i})
 	}
 }
 
@@ -1042,22 +1042,22 @@ func (a *App) refreshMusicGroups(query string) {
 // once, instead of one toggle (and one memo-invalidating bump) per category.
 func (a *App) setAllMusicCollapsed(collapsed bool) {
 	if !collapsed {
-		if len(a.musicCollapsed) == 0 {
+		if len(a.musicTab.musicCollapsed) == 0 {
 			return // already all-expanded (the default, empty-map state) — no-op
 		}
-		a.musicCollapsed = nil
-		a.musicCollapseGen++
+		a.musicTab.musicCollapsed = nil
+		a.musicTab.musicCollapseGen++
 		return
 	}
-	if a.musicCollapsed == nil {
-		a.musicCollapsed = make(map[int]bool)
+	if a.musicTab.musicCollapsed == nil {
+		a.musicTab.musicCollapsed = make(map[int]bool)
 	}
 	for i, entry := range a.link.sess.Music {
 		if !courtroom.HasAudioExt(entry) {
-			a.musicCollapsed[i] = true
+			a.musicTab.musicCollapsed[i] = true
 		}
 	}
-	a.musicCollapseGen++
+	a.musicTab.musicCollapseGen++
 }
 
 // areaFilterKey memoizes the areas-list filter (#20), mirroring musicFilterKey.
@@ -1083,17 +1083,17 @@ func (a *App) refreshAreaFilter(query string, slot int) []int {
 	if n > 0 {
 		key.first, key.last = a.link.sess.Areas[0], a.link.sess.Areas[n-1]
 	}
-	if key == a.areaFilterMemo[slot] {
-		return a.areaFiltered[slot]
+	if key == a.areaTab.areaFilterMemo[slot] {
+		return a.areaTab.areaFiltered[slot]
 	}
-	a.areaFilterMemo[slot] = key
-	out := a.areaFiltered[slot][:0]
+	a.areaTab.areaFilterMemo[slot] = key
+	out := a.areaTab.areaFiltered[slot][:0]
 	for i, area := range a.link.sess.Areas {
 		if strings.Contains(strings.ToLower(area), query) {
 			out = append(out, i)
 		}
 	}
-	a.areaFiltered[slot] = out
+	a.areaTab.areaFiltered[slot] = out
 	return out
 }
 
@@ -1169,7 +1169,7 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 	// merely hiding its control: musicVolMode persists across restarts, so a user
 	// who left it on and then applied a theme would otherwise open to a volume view
 	// with no way out of it.
-	volMode := a.musicVolMode && !themed
+	volMode := a.musicTab.musicVolMode && !themed
 	// Now-Playing indicator: the current track from the server's MC (cleared on
 	// stop / area transfer), so you can see and silence what's playing.
 	//
@@ -1186,7 +1186,7 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 	if now != "" {
 		// Same short name the list rows and the IC "has played a song" line use
 		// (courtroom.MusicDisplayName — AO2 list_music), so the three agree.
-		nowLabel = a.musicNowLabel.text(now)
+		nowLabel = a.musicTab.musicNowLabel.text(now)
 	}
 	// The search row is dropped WHOLE — draw and reserved height — in two cases:
 	// the theme declared its own music_search rect (searchExternal, below), and the
@@ -1203,10 +1203,10 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 	// uses last frame's outcome — a.musicFiltered is already populated, so no extra
 	// scan — and the live query/filter/label are all evaluated after the draw below.
 	prevShown := total
-	if strings.TrimSpace(a.musicSearch) != "" {
-		prevShown = len(a.musicFiltered)
+	if strings.TrimSpace(a.musicTab.musicSearch) != "" {
+		prevShown = len(a.musicTab.musicFiltered)
 	}
-	plan := planMusicHeader(r, nowLabel, a.musicCount.text(prevShown, total), hideSearchRow, nowPlayingExternal, c.TextWidth)
+	plan := planMusicHeader(r, nowLabel, a.musicTab.musicCount.text(prevShown, total), hideSearchRow, nowPlayingExternal, c.TextWidth)
 
 	// --- header row 1: the four actions, the overflow menu, the readout ---
 	if br, ok := plan.rect(musicItemStop); ok {
@@ -1259,18 +1259,18 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 	// courtroom.cpp:219-222), so the row is skipped entirely and the track list
 	// gets those pixels back. Volume mode skips it for its own reason (hideSearchRow).
 	if br, ok := plan.rect(musicItemSearch); ok {
-		a.musicSearch, _ = c.TextField("musicsearch", sdl.Rect{X: br.X, Y: br.Y, W: br.W, H: fieldH}, a.musicSearch, "Search music…  (Ctrl+wheel resizes)")
+		a.musicTab.musicSearch, _ = c.TextField("musicsearch", sdl.Rect{X: br.X, Y: br.Y, W: br.W, H: fieldH}, a.musicTab.musicSearch, "Search music…  (Ctrl+wheel resizes)")
 	}
 	// Evaluated AFTER the field, so the filter, the count and the rows below all run
 	// on the text typed THIS frame — see the measurement note above the plan.
-	query := strings.ToLower(strings.TrimSpace(a.musicSearch))
+	query := strings.ToLower(strings.TrimSpace(a.musicTab.musicSearch))
 	shown := total
 	if query != "" {
 		a.refreshMusicFilter(query)
-		shown = len(a.musicFiltered)
+		shown = len(a.musicTab.musicFiltered)
 	}
 	if br, ok := plan.rect(musicItemCount); ok {
-		c.Label(br.X, br.Y+plStripLabelOffY, a.musicCount.text(shown, total), ColTextDim)
+		c.Label(br.X, br.Y+plStripLabelOffY, a.musicTab.musicCount.text(shown, total), ColTextDim)
 	}
 	r.Y += plan.h
 	r.H -= plan.h
@@ -1281,7 +1281,7 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 
 	// Hover-gated (playtest: the music list scrolled from anywhere).
 	if !c.ctrlHeld { // ctrl+wheel resizes text (musicPct), never scrolls
-		a.musicScroll -= c.WheelIn(r) * scrollStepPx
+		a.musicTab.musicScroll -= c.WheelIn(r) * scrollStepPx
 	}
 	// #39: the theme's "music_list" size/family, folded with the music zoom
 	// (independent of the IC log scale).
@@ -1293,13 +1293,13 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 	trackInk := a.elemInkOr(elemMusicList, themed, ColText)
 	lineH := int32(font.Height()) + 10
 	a.refreshMusicGroups(query) // grouped + (search: auto-expanded) row layout — cached, see screens.go
-	rows := a.musicRows
+	rows := a.musicTab.musicRows
 	contentH := int32(len(rows)) * lineH
 	bar := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
-	a.musicScroll = c.VScrollbar("musicscroll", bar, a.musicScroll, contentH, r.H)
+	a.musicTab.musicScroll = c.VScrollbar("musicscroll", bar, a.musicTab.musicScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r) // partial top/bottom row stays inside the panel
 	defer c.popClip(clipPrev, clipHad)
-	y := r.Y - a.musicScroll
+	y := r.Y - a.musicTab.musicScroll
 	for _, mr := range rows {
 		if y > r.Y+r.H {
 			break
@@ -1314,21 +1314,21 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 				// guaranteed to cover Geometric Shapes (see jukebox.go's "Play" button
 				// comment: those tofu on fonts without that block).
 				glyph := "[-] " // expanded
-				if a.musicCollapsed[mr.ti] {
+				if a.musicTab.musicCollapsed[mr.ti] {
 					glyph = "[+] " // collapsed
 				}
 				header := glyph + musicCategoryLabel(entry)
 				c.LabelClippedFontWeight(font, r.X+4, y+4, row.W-8, header, ColAccent, musicBold)
 				if c.ClickedIn(row) { // toggle just this category, not a track request
-					if a.musicCollapsed == nil {
-						a.musicCollapsed = make(map[int]bool)
+					if a.musicTab.musicCollapsed == nil {
+						a.musicTab.musicCollapsed = make(map[int]bool)
 					}
-					if a.musicCollapsed[mr.ti] {
-						delete(a.musicCollapsed, mr.ti)
+					if a.musicTab.musicCollapsed[mr.ti] {
+						delete(a.musicTab.musicCollapsed, mr.ti)
 					} else {
-						a.musicCollapsed[mr.ti] = true
+						a.musicTab.musicCollapsed[mr.ti] = true
 					}
-					a.musicCollapseGen++
+					a.musicTab.musicCollapseGen++
 				}
 			} else {
 				if hover {

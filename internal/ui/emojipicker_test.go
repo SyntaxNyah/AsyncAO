@@ -64,7 +64,7 @@ func TestEmojiPickerKeepsPanels(t *testing.T) {
 		t.Error("the open picker must NOT hide torn-off panels / the Extras box")
 	}
 	a.emoji.showEmojiPicker = false
-	a.showIni = true // a genuinely blocking popup still hides them
+	a.inibrowse.showIni = true // a genuinely blocking popup still hides them
 	if a.extrasSurfaceLive() {
 		t.Error("a blocking popup must hide the Extras surface")
 	}

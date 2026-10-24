@@ -185,7 +185,7 @@ func (a *App) baseMounts() []string {
 // last one. Cheap and allocation-free when nothing changed (a slice compare), which
 // is what lets a draw path call it every frame.
 func (a *App) ensureLocalCharFolders() {
-	b := &a.iniBase
+	b := &a.inibrowse.iniBase
 	if b.scanning {
 		return
 	}
@@ -216,7 +216,7 @@ func (a *App) ensureLocalCharFolders() {
 
 // pollLocalCharFolders lands a finished scan. Non-blocking, like pollIniswap.
 func (a *App) pollLocalCharFolders() {
-	b := &a.iniBase
+	b := &a.inibrowse.iniBase
 	if b.res == nil {
 		return
 	}
@@ -237,7 +237,7 @@ func (a *App) pollLocalCharFolders() {
 // for what the SERVER will accept), then any local folder the roster did not name.
 // Memoized — see iniBaseBrowser.names.
 func (a *App) baseNames() ([]string, []string) {
-	b := &a.iniBase
+	b := &a.inibrowse.iniBase
 	chars := 0
 	if a.link.sess != nil {
 		chars = len(a.link.sess.Chars)
@@ -283,7 +283,7 @@ func (a *App) baseNames() ([]string, []string) {
 // baseSourceCounts is what the two source chips advertise.
 func (a *App) baseSourceCounts() (serverList, base int) {
 	n := 0
-	for _, in := range a.iniServerMem {
+	for _, in := range a.inibrowse.iniServerMem {
 		if in {
 			n++
 		}
@@ -307,7 +307,7 @@ func (a *App) drawIniswapBaseBody(panel sdl.Rect, y int32, query string) {
 
 	if len(names) == 0 {
 		msg := "Nothing to list yet — this server sent no character roster and you have no local mounts."
-		if a.iniBase.scanning {
+		if a.inibrowse.iniBase.scanning {
 			msg = "Reading your local mounts…"
 		}
 		c.LabelClipped(panel.X+pad, y+4, panel.W-2*pad, msg, ColTextDim)
@@ -319,10 +319,10 @@ func (a *App) drawIniswapBaseBody(panel sdl.Rect, y int32, query string) {
 		"A plain web asset base can't be listed — type any folder name above and press Enter to wear it. "+
 			"The names below come from this server's character roster and from your local mounts.", ColTextDim)
 	y += 20
-	if a.iniBase.scanErr != "" {
-		c.LabelClipped(panel.X+pad, y, panel.W-2*pad, a.iniBase.scanErr, ColTextDim)
+	if a.inibrowse.iniBase.scanErr != "" {
+		c.LabelClipped(panel.X+pad, y, panel.W-2*pad, a.inibrowse.iniBase.scanErr, ColTextDim)
 		y += 18
-	} else if a.iniBase.truncatedN {
+	} else if a.inibrowse.iniBase.truncatedN {
 		c.LabelClipped(panel.X+pad, y, panel.W-2*pad,
 			"Showing the first names found — this base has more than the browser lists.", ColTextDim)
 		y += 18
@@ -346,9 +346,9 @@ func (a *App) drawIniswapBaseBody(panel sdl.Rect, y int32, query string) {
 	if visibleH <= 0 {
 		return
 	}
-	a.iniBase.scroll -= c.WheelIn(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH}) * scrollStepPx
+	a.inibrowse.iniBase.scroll -= c.WheelIn(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH}) * scrollStepPx
 	track := sdl.Rect{X: panel.X + panel.W - pad - scrollBarW, Y: gridTop, W: scrollBarW, H: visibleH}
-	a.iniBase.scroll = c.VScrollbar("inibasescroll", track, a.iniBase.scroll, contentH, visibleH)
+	a.inibrowse.iniBase.scroll = c.VScrollbar("inibasescroll", track, a.inibrowse.iniBase.scroll, contentH, visibleH)
 
 	clipPrev, clipHad := c.pushClip(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH})
 	slot := int32(0)
@@ -357,7 +357,7 @@ func (a *App) drawIniswapBaseBody(panel sdl.Rect, y int32, query string) {
 			continue
 		}
 		x := panel.X + pad + (slot%cols)*(iconCell+iconGap)
-		yy := gridTop + (slot/cols)*rowPitch - a.iniBase.scroll
+		yy := gridTop + (slot/cols)*rowPitch - a.inibrowse.iniBase.scroll
 		slot++
 		if yy <= gridTop-iconCell || yy >= panel.Y+panel.H-charCellCaptionH {
 			continue
@@ -366,11 +366,11 @@ func (a *App) drawIniswapBaseBody(panel sdl.Rect, y int32, query string) {
 		c.Tooltip(cell, names[i])
 		c.Fill(cell, ColBackground)
 		base := a.link.urls.CharIcon(names[i])
-		if page, ok := a.cachedPage(&a.iniBase.pages, &a.iniBase.pagesGen, len(names), i, base); ok && len(page.Frames) > 0 {
+		if page, ok := a.cachedPage(&a.inibrowse.iniBase.pages, &a.inibrowse.iniBase.pagesGen, len(names), i, base); ok && len(page.Frames) > 0 {
 			c.cgoRect = cell
 			_ = c.Ren.Copy(page.Frames[0], nil, &c.cgoRect)
 		} else {
-			a.demandAsset(&a.iniBase.ask, len(names), i, base, assets.AssetTypeCharIcon) // AssetType: CharIcon (base browser)
+			a.demandAsset(&a.inibrowse.iniBase.ask, len(names), i, base, assets.AssetTypeCharIcon) // AssetType: CharIcon (base browser)
 			initial := names[i]
 			if len(initial) > 2 {
 				initial = initial[:2]

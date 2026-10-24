@@ -179,7 +179,7 @@ func TestPumpConnectionFreezesAnInCourtDrop(t *testing.T) {
 		t.Fatal("a dropped socket should have stopped the pump")
 	}
 
-	if !a.disconnectDlg.open {
+	if !a.dialogs.disconnectDlg.open {
 		t.Error("an in-court drop must freeze under the disconnect dialog, not boot to the lobby")
 	}
 	if a.screen != ScreenCourtroom {
@@ -193,8 +193,8 @@ func TestPumpConnectionFreezesAnInCourtDrop(t *testing.T) {
 	}
 	// The redial target must be THIS server, re-captured before the conn was
 	// nilled — lastConn* is global and a second tab would otherwise steal it.
-	if a.disconnectDlg.url != "ws://test.example" {
-		t.Errorf("dialog redial url = %q, want this server's", a.disconnectDlg.url)
+	if a.dialogs.disconnectDlg.url != "ws://test.example" {
+		t.Errorf("dialog redial url = %q, want this server's", a.dialogs.disconnectDlg.url)
 	}
 	if !a.autoReconnectAt.IsZero() {
 		t.Error("a frozen session must not arm a countdown pollAutoReconnect can never fire off the lobby")

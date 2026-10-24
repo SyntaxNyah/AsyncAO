@@ -653,8 +653,8 @@ func TestCharSelectPageArrowsStepWholePages(t *testing.T) {
 	a.ctx.mouseX, a.ctx.mouseY = right.X+right.W/2, right.Y+right.H/2
 	a.ctx.clicked = true
 	a.drawCharSelectPageArrows(lay, g)
-	if a.iniScroll != wantPage || a.charsel.charScroll != 0 {
-		t.Errorf("on the Wardrobe tab the arrows moved the wrong grid: ini=%d chars=%d", a.iniScroll, a.charsel.charScroll)
+	if a.inibrowse.iniScroll != wantPage || a.charsel.charScroll != 0 {
+		t.Errorf("on the Wardrobe tab the arrows moved the wrong grid: ini=%d chars=%d", a.inibrowse.iniScroll, a.charsel.charScroll)
 	}
 }
 
@@ -719,13 +719,13 @@ func TestCharSelectWardrobeTabHostsItsOwnDeferredActions(t *testing.T) {
 	lay := a.charSelectLayout(w, h) // themeless: the classic plan, which is what this tab had
 	g := a.charSelectGridPlan(w, h, 40, lay)
 	rows := func() charListRows {
-		return charListRows{n: len(a.iniList), names: a.iniList, lower: a.iniLower}
+		return charListRows{n: len(a.inibrowse.iniList), names: a.inibrowse.iniList, lower: a.inibrowse.iniLower}
 	}
 
 	// The ★.
-	a.iniFavPending, a.iniFavPendingAdd = "Phoenix", true
+	a.inibrowse.iniFavPending, a.inibrowse.iniFavPendingAdd = "Phoenix", true
 	a.drawWardrobeGrid(w, h, g, rows(), "")
-	if a.iniFavPending != "" {
+	if a.inibrowse.iniFavPending != "" {
 		t.Error("a deferred ★ toggle survived the frame — on this screen the star does nothing")
 	}
 	if list := a.d.Prefs.Load().WardrobeList(a.srvMeta.serverKey); len(list) != 1 || list[0] != "Phoenix" {
@@ -734,20 +734,20 @@ func TestCharSelectWardrobeTabHostsItsOwnDeferredActions(t *testing.T) {
 
 	// The move-to-folder menu: Esc is handleIniFolderMenu's own close path, so a screen
 	// that never runs it can never close what its own cells arm.
-	a.iniMenuChar, a.iniMenuAt = "Phoenix", [2]int32{50, 50}
+	a.inibrowse.iniMenuChar, a.inibrowse.iniMenuAt = "Phoenix", [2]int32{50, 50}
 	a.ctx.escPressed = true
 	a.drawWardrobeGrid(w, h, g, rows(), "")
 	a.ctx.escPressed = false
-	if a.iniMenuChar != "" {
+	if a.inibrowse.iniMenuChar != "" {
 		t.Error("the char-select Wardrobe tab never serviced the move-to-folder menu its own cells arm")
 	}
 
 	// ...and the empty-wardrobe arm returns early, so the host bookkeeping has to sit
 	// OUTSIDE it: a ★ that emptied the list must still be applied on that very frame.
-	a.iniList, a.iniLower, a.iniFolders, a.iniWardrobe, a.iniHoverIDs = nil, nil, nil, nil, nil
-	a.iniFavPending, a.iniFavPendingAdd = "Phoenix", false
+	a.inibrowse.iniList, a.inibrowse.iniLower, a.inibrowse.iniFolders, a.inibrowse.iniWardrobe, a.inibrowse.iniHoverIDs = nil, nil, nil, nil, nil
+	a.inibrowse.iniFavPending, a.inibrowse.iniFavPendingAdd = "Phoenix", false
 	a.drawWardrobeGrid(w, h, g, charListRows{}, "")
-	if a.iniFavPending != "" {
+	if a.inibrowse.iniFavPending != "" {
 		t.Error("the empty-wardrobe arm skipped the host bookkeeping")
 	}
 	if list := a.d.Prefs.Load().WardrobeList(a.srvMeta.serverKey); len(list) != 0 {
@@ -777,7 +777,7 @@ func TestWardrobeGridPaintsTheHoverSelectorToo(t *testing.T) {
 	}
 	cell := g.cellAt(0, 0)
 	a.ctx.mouseX, a.ctx.mouseY = cell.X+cell.W/2, cell.Y+cell.H/2 // parked ON the cell
-	rows := charListRows{n: len(a.iniList), names: a.iniList, lower: a.iniLower}
+	rows := charListRows{n: len(a.inibrowse.iniList), names: a.inibrowse.iniList, lower: a.inibrowse.iniLower}
 	shot := func() []byte {
 		a.ctx.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
 		a.drawWardrobeGrid(w, h, g, rows, "")

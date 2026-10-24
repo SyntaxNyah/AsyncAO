@@ -421,7 +421,7 @@ func (a *App) requestCloseTab(i int) {
 		a.closeParkedTab(i) // nothing to confirm — close now (unchanged behavior)
 		return
 	}
-	a.pendingCloseTab = t // stash the pointer; the modal revalidates it before acting
+	a.dialogs.pendingCloseTab = t // stash the pointer; the modal revalidates it before acting
 }
 
 // confirmPendingCloseTab is the "Yes" action of the tab-close confirm: it
@@ -433,8 +433,8 @@ func (a *App) requestCloseTab(i int) {
 // draw so it's unit-testable without the CGO/SDL button (the draw path can't run
 // headlessly).
 func (a *App) confirmPendingCloseTab() {
-	t := a.pendingCloseTab
-	a.pendingCloseTab = nil
+	t := a.dialogs.pendingCloseTab
+	a.dialogs.pendingCloseTab = nil
 	if t == nil {
 		return
 	}
@@ -955,7 +955,7 @@ func (a *App) handleTabBar(w, h int32) {
 	// Disconnect/Quit/hide-sprite confirms don't originate from the strip, so they
 	// keep the strip's pre-existing pass-through — this fixes only the modal born on
 	// it.) Keep drag state cleared so a release later doesn't act on a stale grab.
-	if a.pendingCloseTab != nil {
+	if a.dialogs.pendingCloseTab != nil {
 		a.tabDragFrom, a.tabDragging = -1, false
 		return
 	}
@@ -967,7 +967,7 @@ func (a *App) handleTabBar(w, h int32) {
 	// never drains (s.conn==nil) — a zombie tab. The dialog itself parks with the tab
 	// (it's on sessionState), so it wouldn't paint over the new tab; the hazard is the
 	// zombie slot plus the wipe-and-resurface-stale-modal race resetSessionState opens.
-	if a.disconnectDlg.open {
+	if a.dialogs.disconnectDlg.open {
 		a.tabDragFrom, a.tabDragging = -1, false
 		return
 	}
@@ -1227,7 +1227,7 @@ func (a *App) resetSessionState() {
 		// always-play-the-emote's-preanim behavior; selectEmote then
 		// auto-follows each subsequent emote pick (AO2-Client ui_pre).
 		icPreanim: true,
-	}, volStripOn: a.d.Prefs.Load().VolStripOn, musicVolMode: a.d.Prefs.Load().MusicVolMode, masterMuted: a.d.Prefs.Load().MasterVolMuted, musicMuted: a.d.Prefs.Load().MusicVolMuted, sfxMuted: false, blipMuted: a.d.Prefs.Load().BlipVolMuted, spriteOv: map[string][2]int{}, evidIdx: -1, hpPrev: [2]int{courtroom.HPBarMax, courtroom.HPBarMax}, charsel: charGridState{charShowTaken: true, charListSel: -1}}
+	}, musicTab: musicTabState{volStripOn: a.d.Prefs.Load().VolStripOn, musicVolMode: a.d.Prefs.Load().MusicVolMode}, audio: audioLevelState{masterMuted: a.d.Prefs.Load().MasterVolMuted, musicMuted: a.d.Prefs.Load().MusicVolMuted, sfxMuted: false, blipMuted: a.d.Prefs.Load().BlipVolMuted}, spriteOv: map[string][2]int{}, evidIdx: -1, hpPrev: [2]int{courtroom.HPBarMax, courtroom.HPBarMax}, charsel: charGridState{charShowTaken: true, charListSel: -1}}
 	a.wireComponentEnvs()
 	// The IC/OOC log text selection lives on App (not sessionState) but is anchored
 	// into the ACTIVE log's wrapped lines — leaving it set across a session change

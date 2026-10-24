@@ -12,10 +12,10 @@ import (
 // restore is queued). No-op when not pending — a single bool check per frame, so
 // boot stays byte-identical when off.
 func (a *App) fireAutoConnect() {
-	if !a.autoConnectPending {
+	if !a.dialogs.autoConnectPending {
 		return
 	}
-	a.autoConnectPending = false
+	a.dialogs.autoConnectPending = false
 	if a.link.sess != nil || a.lastConnURL != "" {
 		return // a tab restore (or anything) already started connecting
 	}

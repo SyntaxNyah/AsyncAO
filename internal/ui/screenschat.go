@@ -648,16 +648,16 @@ func (a *App) drawVolumeStrip(r sdl.Rect) {
 		}
 		return v
 	}
-	if nv := cell(0, "master", "Master", fmt.Sprintf("%d%%", master), "", int32(master), 0, 100, &a.masterMuted); int(nv) != master {
+	if nv := cell(0, "master", "Master", fmt.Sprintf("%d%%", master), "", int32(master), 0, 100, &a.audio.masterMuted); int(nv) != master {
 		a.setEffectiveVolumes(int(nv), music, sfx, blip)
 	}
-	if nv := cell(1, "music", "Music", fmt.Sprintf("%d%%", music), "", int32(music), 0, 100, &a.musicMuted); int(nv) != music {
+	if nv := cell(1, "music", "Music", fmt.Sprintf("%d%%", music), "", int32(music), 0, 100, &a.audio.musicMuted); int(nv) != music {
 		a.setEffectiveVolumes(master, int(nv), sfx, blip)
 	}
-	if nv := cell(2, "sfx", "SFX", fmt.Sprintf("%d%%", sfx), "", int32(sfx), 0, 100, &a.sfxMuted); int(nv) != sfx {
+	if nv := cell(2, "sfx", "SFX", fmt.Sprintf("%d%%", sfx), "", int32(sfx), 0, 100, &a.audio.sfxMuted); int(nv) != sfx {
 		a.setEffectiveVolumes(master, music, int(nv), blip)
 	}
-	if nv := cell(3, "blip", "Blips", fmt.Sprintf("%d%%", blip), "", int32(blip), 0, 100, &a.blipMuted); int(nv) != blip {
+	if nv := cell(3, "blip", "Blips", fmt.Sprintf("%d%%", blip), "", int32(blip), 0, 100, &a.audio.blipMuted); int(nv) != blip {
 		a.setEffectiveVolumes(master, music, sfx, int(nv))
 	}
 	// Blip cadence (1 blip / N letters; left = faster). Mirrors Settings → Blips. No mute.
@@ -697,20 +697,20 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	}
 	volBtn := sdl.Rect{X: r.X + r.W - volBtnW, Y: r.Y, W: volBtnW, H: btnH}
 	if c.Button(volBtn, "Vol") {
-		a.volStripOn = !a.volStripOn
+		a.musicTab.volStripOn = !a.musicTab.volStripOn
 		{
-			pv1 := a.volStripOn
+			pv1 := a.musicTab.volStripOn
 			a.d.Prefs.Update(func(sn *config.Settings) { // persist so it survives a restart
 				sn.VolStripOn = pv1
 			})
 		}
 	}
-	if a.volStripOn {
+	if a.musicTab.volStripOn {
 		c.Border(volBtn, ColAccent) // active cue
 	}
 	c.Tooltip(volBtn, "Show/hide volume sliders on screen (chat stays usable)")
 	innerY := r.Y + btnH + logPanelRowGapPx
-	if a.volStripOn {
+	if a.musicTab.volStripOn {
 		// Just the two slider rows — the streaming checkbox moved to Settings →
 		// Audio only (the popover was getting cluttered).
 		a.drawVolumeStrip(sdl.Rect{X: r.X + logPanelInsetPx, Y: innerY, W: r.W - 2*logPanelInsetPx, H: volStripRowsH})

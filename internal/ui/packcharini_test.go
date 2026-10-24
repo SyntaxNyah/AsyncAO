@@ -110,7 +110,7 @@ func TestMountedPackSuppliesTheEmoteList(t *testing.T) {
 		"characters/witch/char.ini": "[Emotions]\nnumber = 2\n" +
 			"1 = Grin#-#grin#0#\n2 = Glare#-#glare#0#\n",
 	})
-	a.iniChar = "witch" // activeCharName's override rung — a worn local folder
+	a.inibrowse.iniChar = "witch" // activeCharName's override rung — a worn local folder
 
 	a.loadCharINI()
 	awaitCharINI(t, a)

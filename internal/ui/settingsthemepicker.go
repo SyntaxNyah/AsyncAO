@@ -90,8 +90,8 @@ func (a *App) drawDownloaderSettings(y, _ int32) int32 {
 			}
 		}
 		y += 30
-		if a.dl.active || len(a.dl.queue) > 0 {
-			status := a.dl.status
+		if a.audio.dl.active || len(a.audio.dl.queue) > 0 {
+			status := a.audio.dl.status
 			pauseLabel := "Pause"
 			if a.dlPaused.Load() {
 				pauseLabel = "Resume"
@@ -105,8 +105,8 @@ func (a *App) drawDownloaderSettings(y, _ int32) int32 {
 				a.cancelDownload()
 			}
 			y += 30
-		} else if a.dl.status != "" {
-			c.LabelClipped(pad+20, y+4, w-pad-40-scrollBarW, a.dl.status, ColTextDim)
+		} else if a.audio.dl.status != "" {
+			c.LabelClipped(pad+20, y+4, w-pad-40-scrollBarW, a.audio.dl.status, ColTextDim)
 			y += 26
 		}
 	}

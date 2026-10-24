@@ -43,7 +43,7 @@ func TestRefreshEmoteView(t *testing.T) {
 	t.Cleanup(func() { _ = prefs.Close() })
 
 	a := &App{env: env{d: Deps{Prefs: prefs}}}
-	a.iniChar = "Apollo" // activeCharName() returns this with no session
+	a.inibrowse.iniChar = "Apollo" // activeCharName() returns this with no session
 	a.emotepick.emotes = make([]courtroom.Emote, 5)
 
 	// Default (favs-only OFF): every emote visible, in list order.

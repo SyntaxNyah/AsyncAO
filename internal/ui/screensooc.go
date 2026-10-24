@@ -762,7 +762,7 @@ func (a *App) areaWrapped(font *ttf.Font, cardW int32, query string, slot int) [
 	// #39: key on the RESOLVED scale (theme "area_list" size × the area zoom), not
 	// the raw zoom — a theme swap that only changes the point size must re-wrap.
 	pct := a.elemPct(elemAreaList, a.areaPct)
-	if m.rows != nil && m.seq == a.areaInfoSeq && m.query == query &&
+	if m.rows != nil && m.seq == a.areaTab.areaInfoSeq && m.query == query &&
 		m.cardW == cardW && m.pct == pct && m.gen == a.ctx.fontChainGen {
 		return m.rows
 	}
@@ -803,7 +803,7 @@ func (a *App) areaWrapped(font *ttf.Font, cardW int32, query string, slot int) [
 			detailLines: wrapToWidth(constFont(font), detail, detailW, areaWrapMaxLines),
 		})
 	}
-	m.rows, m.seq, m.query, m.cardW, m.pct, m.gen = out, a.areaInfoSeq, query, cardW, pct, a.ctx.fontChainGen
+	m.rows, m.seq, m.query, m.cardW, m.pct, m.gen = out, a.areaTab.areaInfoSeq, query, cardW, pct, a.ctx.fontChainGen
 	return m.rows
 }
 
@@ -942,13 +942,13 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 	slot := areaQuerySlotOwn
 	if searchExternal {
 		slot = areaQuerySlotThemed
-		query = strings.ToLower(strings.TrimSpace(a.musicSearch))
+		query = strings.ToLower(strings.TrimSpace(a.musicTab.musicSearch))
 	} else {
 		// head.field, never a rect built here: the inset, the counter's room and the
 		// clearance from the ⋮ are one split (splitAreaHeaderRow), so the box cannot
 		// drift out from under the rule that keeps this row's three occupants apart.
-		a.areaSearch, _ = c.TextField("areasearch", head.field, a.areaSearch, "Search areas…")
-		query = strings.ToLower(strings.TrimSpace(a.areaSearch))
+		a.areaTab.areaSearch, _ = c.TextField("areasearch", head.field, a.areaTab.areaSearch, "Search areas…")
+		query = strings.ToLower(strings.TrimSpace(a.areaTab.areaSearch))
 	}
 	total := len(a.link.sess.Areas)
 	shown := total
@@ -959,17 +959,17 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 		// The count keeps its own (much shorter) line, left-aligned on the card column:
 		// it is the only thing left on this row, and right-aligning a lone "3 / 3"
 		// against a panel edge reads as a stray number.
-		c.Label(r.X+2, r.Y+areaCountRowLabelOffY, a.areaCount.text(shown, total), ColTextDim)
+		c.Label(r.X+2, r.Y+areaCountRowLabelOffY, a.areaTab.areaCount.text(shown, total), ColTextDim)
 		r.Y += areaCountRowH
 		r.H -= areaCountRowH
 	} else {
 		// Same split as the field above — the counter sits in the room the ⋮ left it.
-		c.Label(head.count.X, head.count.Y, a.areaCount.text(shown, total), ColTextDim)
+		c.Label(head.count.X, head.count.Y, a.areaTab.areaCount.text(shown, total), ColTextDim)
 		r.Y += fieldH + 6
 		r.H -= fieldH + 6
 	}
 	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
-		a.areaScroll -= c.WheelIn(r) * scrollStepPx
+		a.areaTab.areaScroll -= c.WheelIn(r) * scrollStepPx
 	}
 	// #39: the theme's "area_list" size/family, folded with the area zoom.
 	font := a.elemFont(elemAreaList, a.areaPct) // area-list zoom, independent of the IC log
@@ -982,10 +982,10 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 		contentH += areaRowLineHN(subH, row.lineCount())
 	}
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
-	a.areaScroll = c.VScrollbar("areascroll", track, a.areaScroll, contentH, r.H)
+	a.areaTab.areaScroll = c.VScrollbar("areascroll", track, a.areaTab.areaScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r) // partial top/bottom row stays inside the panel
 	defer c.popClip(clipPrev, clipHad)
-	y := r.Y - a.areaScroll
+	y := r.Y - a.areaTab.areaScroll
 	for _, row := range rows {
 		rowH := areaRowLineHN(subH, row.lineCount())
 		if y > r.Y+r.H {
@@ -1055,7 +1055,7 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 func (a *App) wardrobeFolders() []string {
 	var out []string
 	seen := map[string]struct{}{}
-	for _, f := range a.iniFolders {
+	for _, f := range a.inibrowse.iniFolders {
 		if f == "" {
 			continue
 		}

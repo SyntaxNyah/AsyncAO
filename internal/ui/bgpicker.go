@@ -422,7 +422,7 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool, budget *int6
 	}
 
 	// Mark the cell while this background is downloading or queued (v2).
-	if a.dl.active && a.dl.target == name {
+	if a.audio.dl.active && a.audio.dl.target == name {
 		c.Fill(cell, sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 70})
 		c.Label(cell.X+4, cell.Y+4, downloadGlyph+"…", ColText)
 	} else if downloaderOn && a.dlQueuedTarget(name) {

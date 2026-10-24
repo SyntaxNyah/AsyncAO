@@ -625,8 +625,8 @@ func (a *App) closeMenuBar() { a.menuOpen, a.menuSub = "", "" }
 // the pixels as well as the input. Keeping them in this predicate means every
 func (a *App) menuBarSuppressed() bool {
 	return a.layoutEditorArmed() ||
-		a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" ||
-		a.showQuitConfirm || a.disconnectDlg.open || a.serverNoticeDlg.open
+		a.dialogs.confirmDisconnect || a.dialogs.pendingCloseTab != nil || a.dialogs.hidePrompt != "" ||
+		a.showQuitConfirm || a.dialogs.disconnectDlg.open || a.serverNoticeDlg.open
 }
 
 // menuBarIndexOf maps a stored menu title to its index in menuBarMenus, or -1.

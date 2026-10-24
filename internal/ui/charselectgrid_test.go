@@ -591,11 +591,11 @@ func cellChromeHarness(t *testing.T) (*App, *sdl.Renderer, func()) {
 	a.link.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Phoenix"}}}
 	a.ensureCharLower()
 	a.charsel.wardrobeMembers = map[string]bool{}
-	a.iniList = []string{"Phoenix"}
-	a.iniLower = []string{"phoenix"}
-	a.iniFolders = []string{""}
-	a.iniWardrobe = []bool{false}
-	a.iniHoverIDs = []string{iniHoverIDPrefix + "Phoenix"}
+	a.inibrowse.iniList = []string{"Phoenix"}
+	a.inibrowse.iniLower = []string{"phoenix"}
+	a.inibrowse.iniFolders = []string{""}
+	a.inibrowse.iniWardrobe = []bool{false}
+	a.inibrowse.iniHoverIDs = []string{iniHoverIDPrefix + "Phoenix"}
 	// The two theme-texture maps the real constructor always creates together
 	// (themePage writes into themePages on the first resident lookup).
 	a.themeTex = map[string]bool{}
@@ -638,13 +638,13 @@ func TestSmallCellsSuppressCornerChromeOnBothTabs(t *testing.T) {
 			return shot(cell, func() { a.drawCharCell(&a.link.sess.Chars[0], cell, 0, on, plan) })
 		}},
 		{"Wardrobe ★", func(cell sdl.Rect, on bool) []byte {
-			a.iniWardrobe = []bool{on}
+			a.inibrowse.iniWardrobe = []bool{on}
 			return shot(cell, func() { a.drawIniswapCell(0, cell, cellClickChar, false) })
 		}},
 		{"Wardrobe folder tag", func(cell sdl.Rect, on bool) []byte {
-			a.iniFolders = []string{""}
+			a.inibrowse.iniFolders = []string{""}
 			if on {
-				a.iniFolders = []string{"Prosecutors"}
+				a.inibrowse.iniFolders = []string{"Prosecutors"}
 			}
 			return shot(cell, func() { a.drawIniswapCell(0, cell, cellClickChar, false) })
 		}},
@@ -756,14 +756,14 @@ func TestIniHoverIDsAreCachedNotRebuilt(t *testing.T) {
 	a.d.Prefs.AddWardrobe(a.srvMeta.serverKey, "Phoenix")
 	a.d.Prefs.AddWardrobe(a.srvMeta.serverKey, "Edgeworth")
 	a.rebuildIniMenu()
-	if len(a.iniList) < 2 {
-		t.Fatalf("fixture built a %d-entry wardrobe", len(a.iniList))
+	if len(a.inibrowse.iniList) < 2 {
+		t.Fatalf("fixture built a %d-entry wardrobe", len(a.inibrowse.iniList))
 	}
-	if len(a.iniHoverIDs) != len(a.iniList) {
-		t.Fatalf("hover ids = %d, want one per wardrobe entry (%d)", len(a.iniHoverIDs), len(a.iniList))
+	if len(a.inibrowse.iniHoverIDs) != len(a.inibrowse.iniList) {
+		t.Fatalf("hover ids = %d, want one per wardrobe entry (%d)", len(a.inibrowse.iniHoverIDs), len(a.inibrowse.iniList))
 	}
-	for i := range a.iniList {
-		if want := iniHoverIDPrefix + a.iniList[i]; a.iniHoverID(i) != want {
+	for i := range a.inibrowse.iniList {
+		if want := iniHoverIDPrefix + a.inibrowse.iniList[i]; a.iniHoverID(i) != want {
 			t.Errorf("id %d = %q, want %q", i, a.iniHoverID(i), want)
 		}
 	}
@@ -773,8 +773,8 @@ func TestIniHoverIDsAreCachedNotRebuilt(t *testing.T) {
 	// A list change rebuilds the cache with it, never leaves it behind.
 	a.d.Prefs.AddWardrobe(a.srvMeta.serverKey, "Franziska")
 	a.rebuildIniMenu()
-	if len(a.iniHoverIDs) != len(a.iniList) {
-		t.Errorf("after a wardrobe change: %d ids for %d entries", len(a.iniHoverIDs), len(a.iniList))
+	if len(a.inibrowse.iniHoverIDs) != len(a.inibrowse.iniList) {
+		t.Errorf("after a wardrobe change: %d ids for %d entries", len(a.inibrowse.iniHoverIDs), len(a.inibrowse.iniList))
 	}
 	// Out of range: a fallback string, not a panic in the middle of a frame.
 	if got := a.iniHoverID(99); got != iniHoverIDPrefix {

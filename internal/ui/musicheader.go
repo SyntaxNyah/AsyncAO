@@ -299,7 +299,7 @@ func (a *App) musicMenuRowChecked(k musicMenuKind) bool {
 	}
 	switch k {
 	case musicMenuVolumeView:
-		return a.musicVolMode
+		return a.musicTab.musicVolMode
 	case musicMenuRosterLegacy:
 		return a.rosterLegacy
 	case musicMenuPairStatus:
@@ -477,8 +477,8 @@ func (a *App) musicMenuAct(k musicMenuKind) {
 	}
 	switch k {
 	case musicMenuVolumeView:
-		a.musicVolMode = !a.musicVolMode
-		mode := a.musicVolMode
+		a.musicTab.musicVolMode = !a.musicTab.musicVolMode
+		mode := a.musicTab.musicVolMode
 		a.d.Prefs.Update(func(sn *config.Settings) {
 			sn.MusicVolMode = mode
 		})

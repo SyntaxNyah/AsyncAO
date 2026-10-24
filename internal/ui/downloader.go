@@ -114,35 +114,35 @@ func downloadsRoot() string {
 // done-advance AND resume, and a paused downloader simply doesn't advance it —
 // one rule, no special resume path (advisor #2).
 func (a *App) pollDownload() {
-	if a.dl.progress != nil {
+	if a.audio.dl.progress != nil {
 		select {
-		case p := <-a.dl.progress:
-			a.dl.files, a.dl.bytes = p.files, p.bytes
+		case p := <-a.audio.dl.progress:
+			a.audio.dl.files, a.audio.dl.bytes = p.files, p.bytes
 			if p.done {
-				a.dl.active = false
-				a.dl.cancel = nil
-				if len(a.dl.queue) > 0 {
-					a.dl.status = fmt.Sprintf("Downloaded %s — %d files, %.1f MiB%s. (%d queued)",
-						p.label, p.files, float64(p.bytes)/(1<<20), dlErrSuffix(p.errs), len(a.dl.queue))
+				a.audio.dl.active = false
+				a.audio.dl.cancel = nil
+				if len(a.audio.dl.queue) > 0 {
+					a.audio.dl.status = fmt.Sprintf("Downloaded %s — %d files, %.1f MiB%s. (%d queued)",
+						p.label, p.files, float64(p.bytes)/(1<<20), dlErrSuffix(p.errs), len(a.audio.dl.queue))
 				} else {
-					a.dl.status = fmt.Sprintf("Downloaded %s — %d files, %.1f MiB%s. (Add the downloads folder to local mounts to use offline.)",
+					a.audio.dl.status = fmt.Sprintf("Downloaded %s — %d files, %.1f MiB%s. (Add the downloads folder to local mounts to use offline.)",
 						p.label, p.files, float64(p.bytes)/(1<<20), dlErrSuffix(p.errs))
 				}
 			} else {
-				a.dl.status = fmt.Sprintf("Downloading %s... %d files, %.1f MiB", p.label, p.files, float64(p.bytes)/(1<<20))
+				a.audio.dl.status = fmt.Sprintf("Downloading %s... %d files, %.1f MiB", p.label, p.files, float64(p.bytes)/(1<<20))
 				// Build the compact chip string here (only when progress changes),
 				// so the per-frame indicator draw stays allocation-free.
-				a.dl.chip = fmt.Sprintf("%s Downloading %s — %d files, %.1f MiB%s",
-					downloadGlyph, p.label, p.files, float64(p.bytes)/(1<<20), dlQueued(len(a.dl.queue)))
+				a.audio.dl.chip = fmt.Sprintf("%s Downloading %s — %d files, %.1f MiB%s",
+					downloadGlyph, p.label, p.files, float64(p.bytes)/(1<<20), dlQueued(len(a.audio.dl.queue)))
 			}
 		default:
 		}
 	}
 	// Advance the queue when idle and not paused (covers done-advance and
 	// resume; pause stops it here).
-	if !a.dl.active && !a.dlPaused.Load() && len(a.dl.queue) > 0 {
-		next := a.dl.queue[0]
-		a.dl.queue = append(a.dl.queue[:0], a.dl.queue[1:]...)
+	if !a.audio.dl.active && !a.dlPaused.Load() && len(a.audio.dl.queue) > 0 {
+		next := a.audio.dl.queue[0]
+		a.audio.dl.queue = append(a.audio.dl.queue[:0], a.audio.dl.queue[1:]...)
 		a.launchDownload(next)
 	}
 }
@@ -166,10 +166,10 @@ func dlQueued(n int) string {
 // (Cancel button, disconnect, quit). Clearing the queue first means the done
 // snapshot won't auto-start the next one.
 func (a *App) cancelDownload() {
-	a.dl.queue = a.dl.queue[:0]
+	a.audio.dl.queue = a.audio.dl.queue[:0]
 	a.dlPaused.Store(false) // a paused worker wakes on ctx.Done(); clear so the next grab isn't silently paused
-	if a.dl.cancel != nil {
-		a.dl.cancel()
+	if a.audio.dl.cancel != nil {
+		a.audio.dl.cancel()
 	}
 }
 
@@ -177,7 +177,7 @@ func (a *App) cancelDownload() {
 // the per-cell "queued" marker). Linear over the bounded queue (dlQueueCap),
 // only for visible cells — cheap.
 func (a *App) dlQueuedTarget(target string) bool {
-	for _, q := range a.dl.queue {
+	for _, q := range a.audio.dl.queue {
 		if q.target == target {
 			return true
 		}
@@ -204,11 +204,11 @@ func (a *App) drawDownloadBadge(cell sdl.Rect, tip string) bool {
 // Progress-only — Cancel lives in Settings (a button in this post-screen
 // overlay would race clicks with the widgets drawn underneath it).
 func (a *App) drawDownloadIndicator(w int32) {
-	if !a.dl.active {
+	if !a.audio.dl.active {
 		return
 	}
 	c := a.ctx
-	bw := c.TextWidth(a.dl.chip) + 20
+	bw := c.TextWidth(a.audio.dl.chip) + 20
 	x := (w - bw) / 2
 	if x < 0 {
 		x = 0
@@ -222,7 +222,7 @@ func (a *App) drawDownloadIndicator(w int32) {
 		col = ColTextDim // dimmed while paused (progress isn't advancing)
 	}
 	c.Border(chip, col)
-	c.Label(chip.X+10, chip.Y+5, a.dl.chip, col)
+	c.Label(chip.X+10, chip.Y+5, a.audio.dl.chip, col)
 }
 
 // startCharDownload grabs one character's folder plus the sfx/blips its
@@ -248,29 +248,29 @@ func (a *App) enqueueDownload(req dlReq) {
 		return
 	}
 	if a.d.Client == nil || a.link.urls.Origin() == "" {
-		a.dl.status = "Downloader needs a connected server with an asset URL."
+		a.audio.dl.status = "Downloader needs a connected server with an asset URL."
 		return
 	}
-	if !a.dl.active {
+	if !a.audio.dl.active {
 		a.launchDownload(req)
 		return
 	}
-	if a.dl.target == req.target {
-		a.dl.status = req.label + " is already downloading."
+	if a.audio.dl.target == req.target {
+		a.audio.dl.status = req.label + " is already downloading."
 		return
 	}
-	for _, q := range a.dl.queue {
+	for _, q := range a.audio.dl.queue {
 		if q.target == req.target {
-			a.dl.status = req.label + " is already queued."
+			a.audio.dl.status = req.label + " is already queued."
 			return
 		}
 	}
-	if len(a.dl.queue) >= dlQueueCap {
-		a.dl.status = "Download queue is full — let some finish first."
+	if len(a.audio.dl.queue) >= dlQueueCap {
+		a.audio.dl.status = "Download queue is full — let some finish first."
 		return
 	}
-	a.dl.queue = append(a.dl.queue, req)
-	a.dl.status = fmt.Sprintf("Queued %s (%d waiting).", req.label, len(a.dl.queue))
+	a.audio.dl.queue = append(a.audio.dl.queue, req)
+	a.audio.dl.status = fmt.Sprintf("Queued %s (%d waiting).", req.label, len(a.audio.dl.queue))
 }
 
 // launchDownload runs one recursive folder download off-thread (rule §17.2 —
@@ -278,24 +278,24 @@ func (a *App) enqueueDownload(req dlReq) {
 // on, a server is connected, and nothing is active. soundChar non-empty means
 // "after the folder, resolve the char.ini sound dependencies".
 func (a *App) launchDownload(req dlReq) {
-	if a.dl.progress == nil {
-		a.dl.progress = make(chan dlProgress, 1)
+	if a.audio.dl.progress == nil {
+		a.audio.dl.progress = make(chan dlProgress, 1)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	a.dl.active = true
-	a.dl.label = req.label
-	a.dl.target = req.target
-	a.dl.files, a.dl.bytes = 0, 0
-	a.dl.cancel = cancel
-	a.dl.status = "Starting " + req.label + "..."
-	a.dl.chip = downloadGlyph + " Starting " + req.label + "..." // seeded; progress refreshes it
+	a.audio.dl.active = true
+	a.audio.dl.label = req.label
+	a.audio.dl.target = req.target
+	a.audio.dl.files, a.audio.dl.bytes = 0, 0
+	a.audio.dl.cancel = cancel
+	a.audio.dl.status = "Starting " + req.label + "..."
+	a.audio.dl.chip = downloadGlyph + " Starting " + req.label + "..." // seeded; progress refreshes it
 
 	// Snapshot everything the goroutine touches; it must not read App fields.
 	// dlPaused is the one exception — an atomic, safe to share (advisor #3).
 	// The bandwidth cap is snapshot here (applies per job; a slider change hits
 	// the next grab, which with a queue is soon enough).
 	job := &dlJob{
-		label: req.label, base: downloadsRoot(), progress: a.dl.progress,
+		label: req.label, base: downloadsRoot(), progress: a.audio.dl.progress,
 		paused: &a.dlPaused, capBPS: int64(a.d.Prefs.DownloadCapKBps()) * 1024, start: time.Now(),
 	}
 	client := a.d.Client

@@ -52,52 +52,11 @@ type sessionState struct {
 	compose   composeState
 	pairbox   pairBoxState
 	emotepick emotePickState
-	// musicCount / areaCount memoize the "<shown> / <total>" header counters of
-	// the Music and Areas lists (shownTotalMemo, screens.go) — same reason as
-	// emotePageLabel: a bare Sprintf there is one allocation per frame for as long
-	// as the tab is open. Separate slots because both panels can be on screen at
-	// once. Per-SESSION (the counts come from a.sess.Music / a.sess.Areas), so
-	// they park and restore with the tab exactly like the emote memo above.
-	musicCount shownTotalMemo
-	areaCount  shownTotalMemo
-	// musicNowLabel memoizes the Music header's "Now playing: <track>" readout for
-	// exactly the same reason (nowPlayingMemo, screens.go).
-	musicNowLabel nowPlayingMemo
-	favstyle      favStyleState
-	chipUI        chipRowState
-	chatlog       chatLogState
-	musicScroll   int32
-	// Music-list search (AO2/webAO parity): the query plus a memoized filter so
-	// a list of thousands isn't re-scanned (and re-lowercased — that allocates)
-	// every frame. musicFiltered holds matching indices into a.sess.Music.
-	musicSearch     string
-	musicFiltered   []int
-	musicFilterMemo musicFilterKey
-	// Music-list category collapse (Issue #17 — AO2/KFO parity: categories
-	// were flat with no fold triangle and no Expand/Collapse All). Collapsed
-	// state is keyed by the category HEADER's index into a.sess.Music (not
-	// its text — servers can reuse a category name, and the index is unique
-	// per occurrence). Absent from the map = expanded (the default AO2 look).
-	musicCollapsed   map[int]bool
-	musicCollapseGen uint64
-	musicRows        []musicRow
-	musicGroupMemo   musicGroupKey
-	// Areas-list search (#20 — parity with the Music tab beside it). Same
-	// memoized-filter shape: the query + a cheap Areas-list identity so a
-	// hub server's hundreds of areas aren't re-scanned (and re-lowercased —
-	// that allocates) every frame. areaFiltered holds matching indices into
-	// a.sess.Areas (which parallels a.sess.AreaInfo, so the ORIGINAL index
-	// is what indexes both).
-	areaSearch     string
-	areaFiltered   [areaQuerySlots][]int
-	areaFilterMemo [areaQuerySlots]areaFilterKey
-	areaScroll     int32
-	// areaInfoSeq bumps on every EventAreasUpdated (ARUP) so areaWrapped
-	// (screens.go) knows when to re-wrap; it deliberately excludes cosmetic
-	// per-frame state (a.curArea) which the draw loop re-reads live instead.
-	areaInfoSeq  uint64
-	volStripOn   bool // the log panel's toggleable on-screen volume strip
-	musicVolMode bool // Music tab shows the volume sliders instead of the track list
+	musicTab  musicTabState
+	areaTab   areaTabState
+	favstyle  favStyleState
+	chipUI    chipRowState
+	chatlog   chatLogState
 
 	// --- case notebook (per-server pins) ---
 	notebook     *config.Notebook
@@ -231,127 +190,19 @@ type sessionState struct {
 	// which one purpose now backs: the merged local asset source browser
 	// (demobrowser.go + mergebrowse.go, purposeEvidenceImage).
 
-	// --- wardrobe / iniswap (client favourites + server iniswap.txt) ---
-	iniChar      string   // active override folder ("" = picked character)
-	pendingIni   string   // wear this once PV confirms (char-select joins)
-	iniServer    []string // the server's iniswap.txt names (may be empty)
-	iniList      []string // merged menu: wardrobe first, then server extras
-	iniWardrobe  []bool   // parallel to iniList: wardrobe membership (star)
-	iniServerMem []bool   // parallel to iniList: is in the server's iniswap.txt (Iniswaps tab filter)
-	iniLower     []string // lowercased names for the search filter
-	iniFolders   []string // parallel to iniList: each entry's folder ("" = unsorted)
-	// iniHoverIDs caches each wardrobe cell's HoverPreview id ("iniswap:"+name),
-	// parallel to iniList. It was a runtime concat inside the cell draw, i.e. one heap
-	// allocation per VISIBLE CELL per frame on three grids — the exact twin of the
-	// Characters grid's charHoverIDs, and it has to be the twin now that both tabs of
-	// char select lay out on one plan. Rebuilt with the list (rebuildIniMenu).
-	iniHoverIDs []string
-	// A wardrobe ★ toggle is DEFERRED out of the cell to after the grid loop: it
-	// rebuilds (and shrinks) the iniList/iniWardrobe/iniFolders slices the loop is
-	// ranging, so toggling mid-loop panicked on a remove (the crash report).
-	iniFavPending    string // char to toggle ("" = none)
-	iniFavPendingAdd bool   // true = add to wardrobe, false = remove
-	iniListErr       string
-	iniBusy          bool
-	showIni          bool
-	showReset        bool // factory-reset confirmation pop-up (Settings)
-	iniSearch        string
-	iniAdd           string   // "add folder to wardrobe" input
-	iniSwapMode      bool     // Characters tab: click iniswaps instead of switching char (off=switch; per session)
-	iniFolder        string   // open wardrobe folder ("" = top level/root, else folder name)
-	iniNewFold       string   // "new folder" text input
-	iniMenuChar      string   // wardrobe char with an open "move to folder" menu ("" = none)
-	iniMenuAt        [2]int32 // that menu's top-left (cursor at right-click)
-	iniHoverChar     string   // wardrobe char under the cursor this frame (number-key quick-file)
-	// Drag-to-file (app-drawer style): drag a character cell onto a folder
-	// chip to file it. iniDragChar is armed on press; iniDragging flips once
-	// the move passes iniDragThreshold (and then suppresses the wear-click).
-	iniDragChar     string
-	iniDragStart    [2]int32
-	iniDragging     bool
-	iniPrevDown     bool // mouse-held tracker for press detection in the modal
-	iniPressed      bool // mouse went down this frame (computed per frame)
-	iniScroll       int32
-	iniBrowseScroll int32       // separate scroll for the Iniswaps (browse-all) tab
-	iniAsk          []time.Time // demand pacing stamps, parallel to iniList
-	// iniBase is the Iniswaps tab's "From your base" source: the server's character
-	// ROSTER plus the character folders found under the user's local mounts. It is a
-	// separate browser (iniswapbase.go) rather than more entries in iniList on
-	// purpose — iniList is the wardrobe's index-keyed backing store, ranged whole by
-	// char select's Wardrobe tab, so a 4000-name roster merged into it would flood
-	// that grid and invalidate every cached icon page.
-	iniBase iniBaseBrowser
+	inibrowse iniBrowseState
 
-	// wardSection selects the open wardrobe tab (wardSectionCharacters /
-	// wardSectionBackgrounds). The Backgrounds section organizes favourite
-	// backgrounds into the same navigable folders as characters.
-	wardSection int
-	// wardDelFolder is the folder a delete confirmation is open for ("" = none);
-	// the active section decides whether it deletes characters or backgrounds.
-	wardDelFolder string
-	// Backgrounds-section state. bgFavList is the favourites in ONE stable
-	// order (FavBackgroundList); navigation filters via a predicate, never by
-	// rebuilding the list, so the index-keyed bgFavPages cache stays valid
-	// (see the cachedPage reorder invariant). bgFavPages is its OWN cache —
-	// never share bgPick.pages (different index space). Nulled only when the
-	// favourites set/order changes (rebuildBgFav), not on folder navigation.
-	bgFavList     []string
-	bgFavLower    []string // lowercased, parallel — search
-	bgFavFolders  []string // folder per favourite, parallel — nav filter
-	bgFavFolder   string   // open background folder ("" = top level)
-	bgFavNewFold  string   // "new folder" text input (Backgrounds section)
-	bgFavSearch   string
-	bgFavScroll   int32
-	bgFavAsk      []time.Time // demand pacing stamps, parallel to bgFavList
-	bgFavPages    []*render.TexturePage
-	bgFavPagesGen uint64
+	wardrobe wardrobePickState
 
 	// bgPick is the "change background" modal (background/ autoindex grid).
 	bgPick bgPicker
 
-	// dl is the opt-in single-asset downloader (off by default). The pause flag
-	// shared with the worker lives in App proper (a.dlPaused), NOT here — this
-	// struct is copied by value on tab park/activate, which can't copy an
-	// atomic, and the worker needs one stable global flag anyway.
-	dl downloader
+	audio audioLevelState
 
-	// sfxMuted is the SFX mute (Mute SFX hotkey); showHotkeys toggles the F1
-	// hotkey cheat-sheet overlay; musicDucked tracks whether music is
-	// currently ducked under a playing message (transition-driven).
-	// masterMuted/musicMuted/blipMuted are the per-channel mute toggles in the
-	// volume strip (#10). All four PERSIST (config.AssetPreferences'
-	sfxMuted           bool
-	masterMuted        bool
-	musicMuted         bool
-	blipMuted          bool
-	confirmDisconnect  bool                // a Disconnect confirm popup is open (unless instant-disconnect is set)
-	disconnectDlg      disconnectDialog    // involuntary-disconnect modal over the FROZEN courtroom (zero value = closed). Lives on sessionState DELIBERATELY: it is a per-tab session modal (it belongs to the frozen room/logs it draws over), so it parks/restores with its OWN tab rather than bleeding onto whatever tab is active, and resetSessionState clears it for free — no App-level special-casing. Nothing needs it to outlive resetSessionState: closeDisconnectDialogToLobby / reconnectFromDisconnectDialog snapshot name/url into locals and clear the dialog BEFORE the teardown that resets. Because it's per-tab, EVERY park/swap surface must be inert while it's open, or a park would copy the open dialog into a slot and resetSessionState would wipe the live copy — a stale modal resurfacing cross-tab. Two surfaces do a PRIMARY-session switch and both are now guarded: handleTabBar (tabs.go) and the pinned-client control-swap consume (a.pendingControlSwap, above); with both guarded an open dialog can never park at all. Do NOT move this to App even so: an App-level open dialog would paint tab 0's reason + redial target over a DIFFERENT pinned server's live courtroom, and its Reconnect would tear down that healthy session to dial the wrong one — the per-tab placement is what makes it belong to the frozen server, and the guards are a second line, not the reason.
-	pendingCloseTab    *courtTab           // a "close this tab?" confirm is open for this background tab (nil = none). A POINTER, not an index: tabs reorder/reap/tear-off between the ✕-click and the confirm, so the index would go stale — revalidate the pointer is still in a.tabs before acting (see confirmPendingCloseTab). Doubles as the open flag, like hidePrompt. ⚠ Lives on sessionState (parked/copied per tab), safe ONLY because every live park/swap path is strip-guarded, pointer-fenced, or resets session state — a NEW park/swap path must keep one of those protections or this field moves to App (the conn-error-state precedent), else a parked slot could resurface a stale modal.
-	hidePrompt         string              // a "hide this sprite?" confirm is open for this char name ("" = none)
-	hiddenSprites      map[string]struct{} // chars hidden from the viewport this session (lowercased); nil until first hide
-	autoConnectPending bool                // fire auto-connect-to-last-server once, on the first frame
-	musicDucked        bool
-	// musicStartedAt stamps when the ACTIVE tab's current area track began playing
-	// (frame clock). It is App-level and single-valued — it does NOT park per tab
-	// (an earlier comment claimed it did; it never has). Re-stamped by the active-tab
-	// EventMusic handler on every track change. Its ONLY reader is resumeActiveTabMusic's
-	// FALLBACK seek estimate (now-minus-start, capped) for the case where no per-URL
-	// SwappedOutSnap exists; SwappedOutSnap is the drift-free primary. Because it tracks
-	// the active tab, the estimate is only rough for a tab whose song changed while
-	// backgrounded — acceptable: that path also lacks a snapshot, and a backgrounded
-	// change that IS followed audibly (MusicAcrossTabs ON, routeBackgroundEvent) makes
-	// the return a same-track no-op that never seeks. Zero = unknown (resume from top).
-	musicStartedAt time.Time
+	dialogs     dialogPromptState
+	musicDucked bool
 
-	// scenery self-heal stamps (healScenery pacing)
-	bgAskBase   string
-	bgAskAt     time.Time
-	deskAskBase string
-	deskAskAt   time.Time
-	spkAskBase  string // speaker sprite heal pacing
-	spkAskAt    time.Time
-	pairAskBase string // pair sprite heal pacing
-	pairAskAt   time.Time
+	demand demandClockState
 
 	areaUIDs      map[string]string
 	areaPlayers   []areaPlayer

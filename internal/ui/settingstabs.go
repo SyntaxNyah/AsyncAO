@@ -1182,7 +1182,7 @@ func (a *App) drawSettingsReset(y, _ int32) int32 {
 	y += 26
 	// Factory reset: opens a pop-up offering settings-only or a full wipe.
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 220, H: btnH}, "Reset to defaults…") {
-		a.showReset = true
+		a.inibrowse.showReset = true
 	}
 	y += 34
 	return y
@@ -1195,7 +1195,7 @@ func (a *App) drawSettingsReset(y, _ int32) int32 {
 func (a *App) drawResetConfirm(w, h int32) {
 	c := a.ctx
 	if c.escPressed { // ESC cancels the confirm (the safe default), like Cancel
-		a.showReset = false
+		a.inibrowse.showReset = false
 		return
 	}
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 235})
@@ -1227,7 +1227,7 @@ func (a *App) drawResetConfirm(w, h int32) {
 	}
 	y += 42
 	if c.Button(sdl.Rect{X: x, Y: y, W: 120, H: btnH}, "Cancel") {
-		a.showReset = false
+		a.inibrowse.showReset = false
 	}
 }
 
@@ -1259,7 +1259,7 @@ func (a *App) applyFactoryReset(wipeAll bool) {
 	a.lobby.pings, a.lobby.pingMode, a.lobby.pinging = nil, false, false
 	a.lobby.pingGen++
 	a.RefreshServers() // favourites/master re-merge
-	a.showReset = false
+	a.inibrowse.showReset = false
 	a.warnAt = time.Now()
 }
 

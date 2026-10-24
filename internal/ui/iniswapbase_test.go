@@ -187,12 +187,12 @@ func TestEnsureLocalCharFoldersIsAllocationFreeWhenUnchanged(t *testing.T) {
 		t.Fatal("SetLocalAssets refused")
 	}
 	a := &App{env: env{d: Deps{Prefs: prefs}}}
-	a.iniBase.scanned = mounts // the state after a completed scan: nothing has changed
+	a.inibrowse.iniBase.scanned = mounts // the state after a completed scan: nothing has changed
 
 	if n := testing.AllocsPerRun(200, a.ensureLocalCharFolders); n != 0 {
 		t.Errorf("ensureLocalCharFolders allocates %v time(s) per frame with mounts configured, want 0", n)
 	}
-	if a.iniBase.scanning {
+	if a.inibrowse.iniBase.scanning {
 		t.Error("the unchanged path started a scan")
 	}
 }

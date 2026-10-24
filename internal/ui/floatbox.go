@@ -143,7 +143,7 @@ func (a *App) extrasWidgets() []extrasWidget {
 			{"Character", "Open character select", hotkeyCharMenu, func() { a.screen = ScreenCharSelect }},
 			{"Random char", "Swap to a random free character", hotkeyRandomChar, func() { a.randomChar() }},
 			{"Wardrobe", "Iniswap — borrow another character's look", hotkeyWardrobe, func() { a.openIniswap() }},
-			{"Jukebox", "Your saved music playlists", hotkeyJukebox, func() { a.openIniswap(); a.wardSection = wardSectionJukebox }},
+			{"Jukebox", "Your saved music playlists", hotkeyJukebox, func() { a.openIniswap(); a.wardrobe.wardSection = wardSectionJukebox }},
 			{"Background", "Change the courtroom background", hotkeyBackground, func() { a.openBgPicker() }},
 			{"Evidence", "Add / view case evidence", hotkeyEvidence, func() { a.toggleEvidence() }},
 			{"Call Mod", "Call a moderator to this room", hotkeyModcall, func() { a.showModcall = true }},
@@ -271,7 +271,7 @@ func (a *App) blockingCourtPopup() bool {
 	// ban/kick box used to be a blocking modal; it's a draggable floating box now too, with
 	// the live preview + the explicit Send button keeping the destructive-action safety.
 	// showTimer / showLogin / pairPopupOpen left this set in #31 along with their rows
-	return a.showIni || a.bgPick.show ||
+	return a.inibrowse.showIni || a.bgPick.show ||
 		a.classic.classicEdit
 }
 
@@ -380,7 +380,7 @@ func (a *App) closeTopOverlay() bool {
 	// and no way out. Esc == Back to lobby, which runs the real teardown → lobby (and
 	// releases the dialog's fence LAST, so it's freed this frame — the emoji-picker
 	// freeze class).
-	case a.disconnectDlg.open:
+	case a.dialogs.disconnectDlg.open:
 		a.closeDisconnectDialogToLobby()
 	// The server-notice box, immediately below the disconnect dialog: it MUST answer
 	// Esc like every sibling, or Esc falls through to the screen arm underneath and
@@ -390,20 +390,20 @@ func (a *App) closeTopOverlay() bool {
 	// whichever applies, was already settled before the box opened.
 	case a.serverNoticeDlg.open:
 		a.closeServerNotice()
-	case a.pendingCloseTab != nil:
+	case a.dialogs.pendingCloseTab != nil:
 		// The tab-close confirm CAN be open on the lobby (park a server via "+",
 		// then click a background chip's ✕): without this, Esc falls through
 		// closeTopOverlay to ScreenLobby's requestQuit(), stacking a Quit modal over
 		// this one. The pointer fence doesn't cover Esc (keyboard, handled before the
 		// fence) — the modal must answer Esc itself (floatbox.go doctrine: Esc can't
 		// fall through while a popup is open). Cancel == drop the pending target.
-		a.pendingCloseTab = nil
+		a.dialogs.pendingCloseTab = nil
 	case a.showQuitConfirm:
 		a.showQuitConfirm = false
 	case a.banBox.kind != 0:
 		a.banBox.kind = 0
-	case a.showReset:
-		a.showReset = false
+	case a.inibrowse.showReset:
+		a.inibrowse.showReset = false
 	// The two LAYOUT EDITORS, immediately below the blocking window modals above and
 	// above everything else. That is exactly where their pixels sit: the six modals
 	// above are painted by App.Frame AFTER the screen dispatch, so they cover an
@@ -428,8 +428,8 @@ func (a *App) closeTopOverlay() bool {
 		a.reactUI.showReactPicker = false
 	case a.bgPick.show:
 		a.bgPick.show = false
-	case a.showIni:
-		a.showIni = false
+	case a.inibrowse.showIni:
+		a.inibrowse.showIni = false
 	case a.showTimer:
 		a.showTimer = false
 	case a.toolbox.toolboxPinned && a.toolbox.toolboxPieces:
@@ -477,10 +477,10 @@ func (a *App) closeTopOverlay() bool {
 		a.setTheater(false)
 	// Char-select wardrobe popups: close them on Esc before the char-select screen's own
 	// Esc (back / leave) can fire (#28).
-	case a.wardDelFolder != "":
-		a.wardDelFolder = ""
-	case a.iniMenuChar != "":
-		a.iniMenuChar = ""
+	case a.wardrobe.wardDelFolder != "":
+		a.wardrobe.wardDelFolder = ""
+	case a.inibrowse.iniMenuChar != "":
+		a.inibrowse.iniMenuChar = ""
 	default:
 		return false
 	}

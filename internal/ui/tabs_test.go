@@ -85,7 +85,7 @@ func TestDoNotDisturbSilencesCallword(t *testing.T) {
 // to "seed once in NewApp".
 func TestMuteStateSurvivesResetSessionState(t *testing.T) {
 	a := testTabApp(t) // already ran resetSessionState() once, with mutes off in prefs
-	if a.masterMuted || a.musicMuted || a.sfxMuted || a.blipMuted {
+	if a.audio.masterMuted || a.audio.musicMuted || a.audio.sfxMuted || a.audio.blipMuted {
 		t.Fatal("a fresh session must default unmuted")
 	}
 	a.d.Prefs.Update(func(
@@ -102,22 +102,22 @@ func TestMuteStateSurvivesResetSessionState(t *testing.T) {
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.SFXVolMuted = true })
 	// Simulates the seam every Connect/Disconnect actually calls.
 	a.resetSessionState()
-	if !a.masterMuted {
+	if !a.audio.masterMuted {
 		t.Error("resetSessionState did not seed the persisted master mute")
 	}
-	if a.sfxMuted {
+	if a.audio.sfxMuted {
 		t.Error("SFX mute must be session-only — never reseeded from prefs")
 	}
-	if a.musicMuted || a.blipMuted {
+	if a.audio.musicMuted || a.audio.blipMuted {
 		t.Error("channels that were never muted must not come back muted")
 	}
 	// The regression this test exists for: reset a SECOND time (a park→Connect
 	// or a Disconnect after this one) and confirm the mute survives again.
 	a.resetSessionState()
-	if !a.masterMuted {
+	if !a.audio.masterMuted {
 		t.Error("master mute was wiped on a second session reset — the connect/disconnect trap")
 	}
-	if a.sfxMuted {
+	if a.audio.sfxMuted {
 		t.Error("SFX mute must stay session-only across a second reset")
 	}
 }
@@ -237,7 +237,7 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 	// The three settings that used to LEAK across tabs (playtest reports): the
 	// pair placement (was App-global), the iniswap override, and the /pos side.
 	a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip = 30, -20, true
-	a.iniChar = "SwappedChar"
+	a.inibrowse.iniChar = "SwappedChar"
 	a.compose.sidePref = "wit"
 	a.logSelActive = true // a stale log-text highlight must not survive the switch
 
@@ -252,9 +252,9 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 	// Park must hand the live session a PRISTINE pair/iniswap/pos — not the parked
 	// tab's values (that shared-live-field bleed was the bug). Pair placement reseeds
 	// from prefs (default 0/0/false in this fresh test config).
-	if a.iniChar != "" || a.compose.sidePref != "" || a.pairbox.pairOffX != 0 || a.pairbox.pairOffY != 0 || a.pairbox.pairFlip {
+	if a.inibrowse.iniChar != "" || a.compose.sidePref != "" || a.pairbox.pairOffX != 0 || a.pairbox.pairOffY != 0 || a.pairbox.pairFlip {
 		t.Fatalf("park must reset per-session pair/iniswap/pos: ini=%q side=%q off=%d/%d flip=%v",
-			a.iniChar, a.compose.sidePref, a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip)
+			a.inibrowse.iniChar, a.compose.sidePref, a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip)
 	}
 	if a.logSelActive {
 		t.Error("park must clear the log text selection (its anchors point into the old log)")
@@ -272,9 +272,9 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 		t.Fatal("activate must restore logs and seqs bit-for-bit")
 	}
 	// The previously-leaking settings come back with THIS tab's session.
-	if a.iniChar != "SwappedChar" || a.compose.sidePref != "wit" || a.pairbox.pairOffX != 30 || a.pairbox.pairOffY != -20 || !a.pairbox.pairFlip {
+	if a.inibrowse.iniChar != "SwappedChar" || a.compose.sidePref != "wit" || a.pairbox.pairOffX != 30 || a.pairbox.pairOffY != -20 || !a.pairbox.pairFlip {
 		t.Fatalf("activate must restore per-session pair/iniswap/pos: ini=%q side=%q off=%d/%d flip=%v",
-			a.iniChar, a.compose.sidePref, a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip)
+			a.inibrowse.iniChar, a.compose.sidePref, a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip)
 	}
 	if a.tabs[0].state.srvMeta.serverName != "" {
 		t.Fatal("the active tab's parked slot must be zeroed")
@@ -685,7 +685,7 @@ func TestBuildRoomRebindsSceneryPerTab(t *testing.T) {
 // ("0"/"1"/empty) and duplicates are dropped, and an out-of-range pick clamps to auto.
 func TestEnsureSFXChoices(t *testing.T) {
 	a := testTabApp(t)
-	a.iniChar = "TestChar" // activeCharName() → this, no session needed
+	a.inibrowse.iniChar = "TestChar" // activeCharName() → this, no session needed
 	a.emotepick.emotes = []courtroom.Emote{
 		{Anim: "normal", SFXName: "0"},       // silence → skipped
 		{Anim: "slam", SFXName: "deskslam"},  // sound
@@ -1263,15 +1263,15 @@ func TestRequestCloseTabConfirms(t *testing.T) {
 	}
 	a.activeTab = 0
 	a.requestCloseTab(1)
-	if a.pendingCloseTab != a.tabs[1] {
-		t.Fatalf("Instant OFF must stash the pending target, got %v", a.pendingCloseTab)
+	if a.dialogs.pendingCloseTab != a.tabs[1] {
+		t.Fatalf("Instant OFF must stash the pending target, got %v", a.dialogs.pendingCloseTab)
 	}
 	if len(a.tabs) != 2 {
 		t.Fatalf("the tab must NOT close before confirm, have %d tabs", len(a.tabs))
 	}
 	// "Yes" closes it and clears the pending state.
 	a.confirmPendingCloseTab()
-	if a.pendingCloseTab != nil {
+	if a.dialogs.pendingCloseTab != nil {
 		t.Error("confirm must clear the pending target")
 	}
 	if len(a.tabs) != 1 {
@@ -1303,7 +1303,7 @@ func TestRequestCloseTabConfirms(t *testing.T) {
 	})
 
 	b.requestCloseTab(1)
-	if b.pendingCloseTab != nil {
+	if b.dialogs.pendingCloseTab != nil {
 		t.Error("Instant ON must not open a confirm")
 	}
 	if len(b.tabs) != 1 {
@@ -1315,7 +1315,7 @@ func TestRequestCloseTabConfirms(t *testing.T) {
 	d.tabs = []*courtTab{{}, {state: sessionState{srvMeta: serverMetaState{serverName: "Bg"}}, dead: true}}
 	d.activeTab = 0
 	d.requestCloseTab(1)
-	if d.pendingCloseTab != nil {
+	if d.dialogs.pendingCloseTab != nil {
 		t.Error("a dead tab must not open a confirm (nothing live to lose)")
 	}
 	if len(d.tabs) != 1 {
@@ -1337,8 +1337,8 @@ func TestConfirmPendingCloseTabByPointer(t *testing.T) {
 	a.activeTab = 0
 
 	a.requestCloseTab(2) // arm a close on `target` (index 2 at click time)
-	if a.pendingCloseTab != target {
-		t.Fatalf("pending target must be the pointer at index 2, got %v", a.pendingCloseTab)
+	if a.dialogs.pendingCloseTab != target {
+		t.Fatalf("pending target must be the pointer at index 2, got %v", a.dialogs.pendingCloseTab)
 	}
 	// The strip reorders under the open modal: `keep` moves to the end. `target`
 	// is now at a DIFFERENT index than when the ✕ was clicked.
@@ -1371,10 +1371,10 @@ func TestConfirmPendingCloseTabDropsStale(t *testing.T) {
 	survivor := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Survivor"}}}
 	a.tabs = []*courtTab{{}, survivor}
 	a.activeTab = 0
-	a.pendingCloseTab = gone // a pointer no longer in a.tabs
+	a.dialogs.pendingCloseTab = gone // a pointer no longer in a.tabs
 
 	a.confirmPendingCloseTab()
-	if a.pendingCloseTab != nil {
+	if a.dialogs.pendingCloseTab != nil {
 		t.Error("confirm must clear the pending target even when it's stale")
 	}
 	if len(a.tabs) != 2 || !slices.Contains(a.tabs, survivor) {
@@ -1400,8 +1400,8 @@ func TestConfirmPendingCloseTabRunsClearSplit(t *testing.T) {
 	}
 
 	a.requestCloseTab(1) // Instant OFF (default) → deferred confirm
-	if a.pendingCloseTab != pinned {
-		t.Fatalf("pending target must be the pinned tab, got %v", a.pendingCloseTab)
+	if a.dialogs.pendingCloseTab != pinned {
+		t.Fatalf("pending target must be the pinned tab, got %v", a.dialogs.pendingCloseTab)
 	}
 	a.confirmPendingCloseTab()
 	if a.splitTab != nil || a.splitActive() {

@@ -334,7 +334,7 @@ func (a *App) playRandomMusic() {
 		return
 	}
 	n := 0
-	for _, mr := range a.musicRows {
+	for _, mr := range a.musicTab.musicRows {
 		if !mr.header && mr.ti >= 0 && mr.ti < len(a.link.sess.Music) {
 			n++
 		}
@@ -343,7 +343,7 @@ func (a *App) playRandomMusic() {
 		return
 	}
 	pick := rand.IntN(n)
-	for _, mr := range a.musicRows {
+	for _, mr := range a.musicTab.musicRows {
 		if mr.header || mr.ti < 0 || mr.ti >= len(a.link.sess.Music) {
 			continue
 		}

@@ -864,7 +864,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	searchExternal := false
 	if r, ok := lay.rect("music_search"); ok && !a.classic.panelHidden(panelLog) {
 		searchExternal = true
-		a.musicSearch, _ = c.TextField("musicsearch", r, a.musicSearch, "Search")
+		a.musicTab.musicSearch, _ = c.TextField("musicsearch", r, a.musicTab.musicSearch, "Search")
 	}
 	// The music plate, and the now-playing name AO2 parents inside it. Drawn before
 	// the panel so the panel can drop its own row when this one has taken over — and

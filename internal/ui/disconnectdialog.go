@@ -142,8 +142,8 @@ func (a *App) freezeSessionUnderDialog(raw string) {
 	// clearing it cancels a moot confirm and leaves hiddenSprites alone. We do NOT
 	// clear showQuitConfirm (a GLOBAL quit choice) or pendingCloseTab (a DIFFERENT
 	// tab's confirm) — neither is ours to cancel on a drop.
-	a.confirmDisconnect = false
-	a.hidePrompt = ""
+	a.dialogs.confirmDisconnect = false
+	a.dialogs.hidePrompt = ""
 	if a.link.conn != nil {
 		a.link.conn.Close() // idempotent: the socket is already dead on every drop path
 	}
@@ -237,7 +237,7 @@ func (a *App) openDisconnectDialog(name, url, raw string, hiddenUntil time.Time)
 	if a.serverNoticeDlg.open && a.serverNoticeDlg.kind == serverNoticeInfo {
 		a.closeServerNotice()
 	}
-	a.disconnectDlg = disconnectDialog{
+	a.dialogs.disconnectDlg = disconnectDialog{
 		open:        true,
 		reason:      friendlyDisconnectReason(raw),
 		name:        name,
@@ -263,7 +263,7 @@ func (a *App) openDisconnectDialog(name, url, raw string, hiddenUntil time.Time)
 // path, so this teardown must not re-arm — mark it deliberate. Clears the dialog
 // LAST so its fence is released this frame (the emoji-picker freeze class).
 func (a *App) closeDisconnectDialogToLobby() {
-	a.disconnectDlg = disconnectDialog{}
+	a.dialogs.disconnectDlg = disconnectDialog{}
 	a.deliberateClose = true // Back to lobby is a user choice — this teardown must not auto-reconnect
 	a.cancelAutoReconnect()  // and the user opted out of any pending countdown
 	a.Disconnect()
@@ -276,8 +276,8 @@ func (a *App) closeDisconnectDialogToLobby() {
 // over. Clears the dialog first so its fence releases; a failed dial lands on the
 // lobby with connErr, just like the lobby button.
 func (a *App) reconnectFromDisconnectDialog() {
-	name, url := a.disconnectDlg.name, a.disconnectDlg.url
-	a.disconnectDlg = disconnectDialog{}
+	name, url := a.dialogs.disconnectDlg.name, a.dialogs.disconnectDlg.url
+	a.dialogs.disconnectDlg = disconnectDialog{}
 	a.deliberateClose = true // reconnecting on purpose — the frozen-tab teardown must not auto-retry
 	if url != "" {
 		// Clicking Reconnect IS "we're coming back": snapshot today's log before
@@ -300,17 +300,17 @@ func (a *App) reconnectFromDisconnectDialog() {
 // hot path — only while open.
 func (a *App) drawDisconnectDialog(w, h int32) {
 	c := a.ctx
-	if !a.disconnectDlg.open {
+	if !a.dialogs.disconnectDlg.open {
 		return // defensive: the outer guard only draws this while open
 	}
-	if a.now().Before(a.disconnectDlg.hiddenUntil) {
+	if a.now().Before(a.dialogs.disconnectDlg.hiddenUntil) {
 		return // still within the grace window — a quick self-heal must stay invisible
 	}
-	raw := a.disconnectDlg.reason.raw
+	raw := a.dialogs.disconnectDlg.reason.raw
 	if raw == "" {
 		raw = "connection ended"
 	}
-	friendly := a.disconnectDlg.reason.friendly
+	friendly := a.dialogs.disconnectDlg.reason.friendly
 	friendlyH := int32(0)
 	if friendly != "" {
 		friendlyH = discDlgFriendlyH
@@ -322,7 +322,7 @@ func (a *App) drawDisconnectDialog(w, h int32) {
 	// over the whole untruncated string either way.
 	textW := int32(discDlgW) - 2*pad
 	rows := discDlgRawRows(h, friendlyH)
-	lines, _ := a.disconnectDlg.wrap.get(a.chromeWrapMeasure(), a.ctx.fontChainGen,
+	lines, _ := a.dialogs.disconnectDlg.wrap.get(a.chromeWrapMeasure(), a.ctx.fontChainGen,
 		raw, textW, rows, serverNoticeTruncMark)
 
 	mh := discDlgChromeH() + friendlyH + int32(len(lines))*discDlgLineH

@@ -1440,7 +1440,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	// if both are on (it reopens exactly what you had).
 	if d.Prefs.Load().AutoConnectOnLaunch && len(a.restoreQueue) == 0 {
 		if _, url := d.Prefs.Load().LastServer(); url != "" {
-			a.autoConnectPending = true
+			a.dialogs.autoConnectPending = true
 		}
 	}
 	a.applyChromePreset(d.Prefs.Load().ChromeTheme()) // #M3: apply the saved client chrome theme at launch
@@ -1459,7 +1459,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		}
 		a.warnLine = clampLine(msg)
 		a.warnAt = time.Now()
-	} else if line := mutedChannelsBootNotice(a.masterMuted, a.musicMuted, a.sfxMuted, a.blipMuted); line != "" {
+	} else if line := mutedChannelsBootNotice(a.audio.masterMuted, a.audio.musicMuted, a.audio.sfxMuted, a.audio.blipMuted); line != "" {
 		// Silent-launch trap: the mute flags just seeded in resetSessionState
 		// (above) are real and persisted, but the volume strip that shows a
 		// muted channel (the red "muted" label) defaults HIDDEN

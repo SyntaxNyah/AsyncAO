@@ -68,7 +68,7 @@ func TestAPreCourtroomBanRaisesTheNoticeBoxWithTheTail(t *testing.T) {
 	if d.title == "" {
 		t.Error("no title: the box would draw a blank heading band")
 	}
-	if a.disconnectDlg.open {
+	if a.dialogs.disconnectDlg.open {
 		t.Error("the disconnect dialog opened too — it must never be up off the courtroom screen")
 	}
 	if a.screen != ScreenLobby {
