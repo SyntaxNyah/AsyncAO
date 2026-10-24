@@ -82,11 +82,11 @@ func fixtureBundle(t *testing.T, folder string) string {
 // been started.
 func awaitBundle(t *testing.T, a *App) {
 	t.Helper()
-	if a.themeImp.job == nil {
+	if a.skin.themeImp.job == nil {
 		t.Fatal("no bundle job is in flight — the drop started nothing")
 	}
 	select {
-	case res := <-a.themeImp.job.done:
+	case res := <-a.skin.themeImp.job.done:
 		a.landThemeBundle(res)
 	case <-time.After(bundleGateWait):
 		t.Fatal("the bundle job never finished")
@@ -159,16 +159,16 @@ func TestTheSecondDropImports(t *testing.T) {
 	}
 	// LIVE, NOT NEXT LAUNCH (design §Q4): the import kicks an apply itself, which
 	// is the whole "two drops later you are looking at it" experience.
-	if a.themeGen.Load() == 0 {
+	if a.skin.themeGen.Load() == 0 {
 		t.Error("the import applied no theme — this is deliberately not ImportSettings' " +
 			"freeze-and-apply-next-launch semantics")
 	}
-	drainThemeApply(t, a, a.themeGen.Load())
+	drainThemeApply(t, a, a.skin.themeGen.Load())
 	// AND THE CONSENT IS SPENT. A third drop must describe again rather than
 	// import again — otherwise "drop it twice" quietly becomes "every drop from
 	// now on imports".
 	a.bundleDrop(pack, root)
-	if a.themeImp.job == nil || a.themeImp.job.stage != themeImportInspect {
+	if a.skin.themeImp.job == nil || a.skin.themeImp.job.stage != themeImportInspect {
 		t.Error("a third drop went straight to extraction — consent must be spent by the act it authorises")
 	}
 }
@@ -183,7 +183,7 @@ func TestAnotherBundleDoesNotInheritTheFirstsConsent(t *testing.T) {
 	a.bundleDrop(first, root)
 	awaitBundle(t, a)
 	a.bundleDrop(second, root)
-	if a.themeImp.job == nil || a.themeImp.job.stage != themeImportInspect {
+	if a.skin.themeImp.job == nil || a.skin.themeImp.job.stage != themeImportInspect {
 		t.Fatal("dropping a DIFFERENT bundle imported it on the strength of the previous one's consent")
 	}
 	awaitBundle(t, a)
@@ -199,9 +199,9 @@ func TestAnExpiredConsentDoesNotImport(t *testing.T) {
 	pack := fixtureBundle(t, "paper")
 	a.bundleDrop(pack, root)
 	awaitBundle(t, a)
-	a.themeImp.armedAt = time.Now().Add(-themeImportConsentWindow - time.Second)
+	a.skin.themeImp.armedAt = time.Now().Add(-themeImportConsentWindow - time.Second)
 	a.bundleDrop(pack, root)
-	if a.themeImp.job == nil || a.themeImp.job.stage != themeImportInspect {
+	if a.skin.themeImp.job == nil || a.skin.themeImp.job.stage != themeImportInspect {
 		t.Fatal("an expired consent still authorised an import")
 	}
 }
@@ -235,12 +235,12 @@ func TestOnlyOneBundleJobRunsAtATime(t *testing.T) {
 	a, root := dropRig(t)
 	pack := fixtureBundle(t, "paper")
 	a.bundleDrop(pack, root)
-	first := a.themeImp.job
+	first := a.skin.themeImp.job
 	if first == nil {
 		t.Fatal("the drop started nothing")
 	}
 	a.bundleDrop(fixtureBundle(t, "ink"), root)
-	if a.themeImp.job != first {
+	if a.skin.themeImp.job != first {
 		t.Fatal("a second drop replaced the job in flight — the first goroutine's result would land " +
 			"on a job nobody is holding")
 	}
@@ -264,7 +264,7 @@ func TestAnImportNeverRepointsTheThemeRoot(t *testing.T) {
 	if _, customRoot := a.d.Prefs.Load().Theme(); customRoot != `C:\somewhere\the\user\chose` {
 		t.Errorf("the import repointed the theme root to %q — that is the W2 bug arriving by the front door", customRoot)
 	}
-	drainThemeApply(t, a, a.themeGen.Load())
+	drainThemeApply(t, a, a.skin.themeGen.Load())
 }
 
 // ---------------------------------------------------------------------------
@@ -311,8 +311,8 @@ func TestEveryDegradeReachesASurface(t *testing.T) {
 	if !strings.Contains(a.warnLine, "paper") || !strings.Contains(a.warnLine, "note") {
 		t.Errorf("the line does not say which theme or how many notes:\n  %s", a.warnLine)
 	}
-	if len(a.themeReport) != len(report) {
-		t.Errorf("the editor kept %d of %d notes", len(a.themeReport), len(report))
+	if len(a.skin.themeReport) != len(report) {
+		t.Errorf("the editor kept %d of %d notes", len(a.skin.themeReport), len(report))
 	}
 
 	// AND IT DOES NOT NAG. An apply is not a user action — healTheme re-kicks one
@@ -677,11 +677,11 @@ func TestTheImportRowSaysWhatWillHappenNext(t *testing.T) {
 func TestAnExpiredConsentTakesTheImportButtonAway(t *testing.T) {
 	a := &App{env: env{}}
 	pack := fixtureBundle(t, "paper")
-	a.themeImp.armedPath, a.themeImp.armedAt = pack, time.Now()
+	a.skin.themeImp.armedPath, a.skin.themeImp.armedAt = pack, time.Now()
 	if got := a.themeImportRow(); got.button != "Import" {
 		t.Fatalf("a live consent shows %q", got.button)
 	}
-	a.themeImp.armedAt = time.Now().Add(-2 * themeImportConsentWindow)
+	a.skin.themeImp.armedAt = time.Now().Add(-2 * themeImportConsentWindow)
 	if got := a.themeImportRow(); got.button != "Browse…" {
 		t.Errorf("an EXPIRED consent still offers %q — the memo is keyed on the stored path "+
 			"rather than the live one", got.button)

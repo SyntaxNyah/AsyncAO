@@ -212,8 +212,8 @@ func TestShownameAlignReadFromDesignINI(t *testing.T) {
 // that says nothing — keeps the placement AsyncAO has always drawn.
 func TestShownameAlignZeroValueIsLeft(t *testing.T) {
 	var a App
-	if a.themeShownameAlign != shownameAlignLeft {
-		t.Fatalf("zero-value themeShownameAlign = %d, want left", a.themeShownameAlign)
+	if a.skin.themeShownameAlign != shownameAlignLeft {
+		t.Fatalf("zero-value themeShownameAlign = %d, want left", a.skin.themeShownameAlign)
 	}
 	var zero shownameAlign
 	if zero != shownameAlignLeft {

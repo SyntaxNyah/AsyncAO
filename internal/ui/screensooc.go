@@ -853,7 +853,7 @@ func (a *App) themedListSearchDrew() bool {
 	if a.classic.panelHidden(panelLog) {
 		return false
 	}
-	_, ok := a.themeLay.rect("music_search")
+	_, ok := a.skin.themeLay.rect("music_search")
 	return ok
 }
 

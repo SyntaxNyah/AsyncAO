@@ -56,7 +56,7 @@ func TestThemedRotationResolve(t *testing.T) {
 	if got := a.themedRotationDeg("defense_bar"); got != 0 {
 		t.Fatalf("nil ang → %g, want 0", got)
 	}
-	a.themeLay.ang = map[string]uint8{"defense_bar": 0, "call_mod": 192}
+	a.skin.themeLay.ang = map[string]uint8{"defense_bar": 0, "call_mod": 192}
 	if got := a.themedRotationDeg("defense_bar"); got != 0 {
 		t.Fatalf("explicit-0 byte → %g, want 0", got)
 	}
@@ -64,10 +64,10 @@ func TestThemedRotationResolve(t *testing.T) {
 		t.Fatalf("byte 192 → %g, want 270", got)
 	}
 	// The cache accessor agrees with the App helper.
-	if got := a.themeLay.angle("call_mod"); got != 270 {
+	if got := a.skin.themeLay.angle("call_mod"); got != 270 {
 		t.Fatalf("themeLayoutCache.angle = %g, want 270", got)
 	}
-	if got := a.themeLay.angle("absent"); got != 0 {
+	if got := a.skin.themeLay.angle("absent"); got != 0 {
 		t.Fatalf("absent key angle = %g, want 0", got)
 	}
 }

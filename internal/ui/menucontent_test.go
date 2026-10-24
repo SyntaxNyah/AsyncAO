@@ -164,24 +164,24 @@ func TestMenuKeepAspectRatioReusesTheFitSetter(t *testing.T) {
 	if !keep.checked(a, 0) {
 		t.Fatalf("the shipped default (%d) keeps the aspect ratio, so the row must start checked", config.DefaultThemeFit)
 	}
-	a.themeLay.valid = true
+	a.skin.themeLay.valid = true
 	a.fireMenuItem(keep)
 	if got := a.d.Prefs.Load().ThemeFit; got != config.ThemeFitStretch {
 		t.Errorf("unticking must select Stretch, got mode %d", got)
 	}
-	if a.themeLay.valid {
+	if a.skin.themeLay.valid {
 		t.Error("a fit mutation must invalidate the theme layout cache")
 	}
 	if keep.checked(a, 0) {
 		t.Error("Stretch is the mode that does NOT keep the aspect ratio")
 	}
 
-	a.themeLay.valid = true
+	a.skin.themeLay.valid = true
 	a.fireMenuItem(keep)
 	if got := a.d.Prefs.Load().ThemeFit; got != config.DefaultThemeFit {
 		t.Errorf("re-ticking must return to the shipped default %d, got %d", config.DefaultThemeFit, got)
 	}
-	if a.themeLay.valid {
+	if a.skin.themeLay.valid {
 		t.Error("a fit mutation must invalidate the theme layout cache")
 	}
 
@@ -223,7 +223,7 @@ func TestMenuWindowThemeDesignSizeFollowsTheSharedOffer(t *testing.T) {
 	if a.menuItemEnabled(row) {
 		t.Error("with no theme canvas the row must be offered DISABLED, not act silently")
 	}
-	a.themeRectsOrig = map[string]theme.Rect{
+	a.skin.themeRectsOrig = map[string]theme.Rect{
 		"courtroom": {X: 0, Y: 0, W: 714, H: 579},
 		"viewport":  {X: 0, Y: 0, W: 256, H: 192},
 	}

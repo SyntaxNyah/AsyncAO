@@ -65,7 +65,7 @@ func stageEditorCanvas(t *testing.T, offsets ...[2]int) (*App, func(), []editTar
 	t.Helper()
 	a, cleanup := stageFrameDrivenApp(t)
 	driveFrame(a) // one frame first: the layout cache builds on its cold path
-	if !a.themeLay.valid || a.themeLay.scaleX <= 0 {
+	if !a.skin.themeLay.valid || a.skin.themeLay.scaleX <= 0 {
 		cleanup()
 		t.Fatal("the fixture never built a themed layout — there is no canvas to edit")
 	}
@@ -92,7 +92,7 @@ func stageEditorCanvas(t *testing.T, offsets ...[2]int) (*App, func(), []editTar
 // editorCentreRect is a editorGateBoxPx box at the design canvas's centre, offset by
 // (ox, oy) design px so several can be placed apart.
 func editorCentreRect(a *App, ox, oy int) theme.Rect {
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 	w := int(float64(lay.area.W) / lay.scaleX)
 	h := int(float64(lay.area.H) / lay.scaleY)
 	return theme.Rect{
@@ -105,7 +105,7 @@ func editorCentreRect(a *App, ox, oy int) theme.Rect {
 // editorPainted is a target's box on screen, through the production resolver.
 func editorPainted(t *testing.T, a *App, tgt editTarget) sdl.Rect {
 	t.Helper()
-	g, ok := a.editorTargetGeom(&a.themeLay, tgt)
+	g, ok := a.editorTargetGeom(&a.skin.themeLay, tgt)
 	if !ok {
 		t.Fatalf("%v has no box on the canvas — the gate cannot press it", tgt)
 	}
@@ -115,7 +115,7 @@ func editorPainted(t *testing.T, a *App, tgt editTarget) sdl.Rect {
 // editorAuthored is a target's authored rect, through the document.
 func editorAuthored(t *testing.T, a *App, tgt editTarget) theme.Rect {
 	t.Helper()
-	g, ok := a.editorTargetGeom(&a.themeLay, tgt)
+	g, ok := a.editorTargetGeom(&a.skin.themeLay, tgt)
 	if !ok {
 		t.Fatalf("%v has no geometry", tgt)
 	}
@@ -179,10 +179,10 @@ func drivePreciseDrag(t *testing.T, a *App, x0, y0, x1, y1 int32) {
 func editorFixtureCatalog(t *testing.T, a *App, dir string, origin themeOrigin) {
 	t.Helper()
 	deadline := time.Now().Add(editorGateSaveWait)
-	for a.themeCatBusy.Load() && time.Now().Before(deadline) {
+	for a.skin.themeCatBusy.Load() && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	a.themeCat.Store(&themeCatalog{
+	a.skin.themeCat.Store(&themeCatalog{
 		Entries:   []themeCatalogEntry{{Name: a.te.doc.name, Dir: dir, Origin: origin}},
 		WriteRoot: dir,
 	})
@@ -193,7 +193,7 @@ func editorFixtureCatalog(t *testing.T, a *App, dir string, origin themeOrigin) 
 // itself, so a gate can never silently measure a different box.
 func editorWidgetTarget(t *testing.T, a *App) editTarget {
 	t.Helper()
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 	keys := make([]string, 0, len(lay.r))
 	for k := range lay.r {
 		if editorSlotKeyEditable(k) {
@@ -231,7 +231,7 @@ func TestCanvasProbePutsElementsAheadOfWidgets(t *testing.T) {
 	widget := editorWidgetTarget(t, a)
 	box := editorPainted(t, a, widget)
 	cx, cy := editorCentreOf(box)
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 	a.elemBake.themeSidecar.Elements[el.elem].Rect = theme.Rect{
 		X: int(float64(cx-lay.area.X)/lay.scaleX) - 6,
 		Y: int(float64(cy-lay.area.Y)/lay.scaleY) - 6,
@@ -240,12 +240,12 @@ func TestCanvasProbePutsElementsAheadOfWidgets(t *testing.T) {
 	a.invalidateThemeCanvases()
 	driveFrame(a)
 
-	if got, _ := a.editorProbe(&a.themeLay, cx, cy); got != el {
+	if got, _ := a.editorProbe(&a.skin.themeLay, cx, cy); got != el {
 		t.Fatalf("a press on a 12x12 element sitting on %s resolved to %v, want the element — "+
 			"largest-wins across the two populations makes every decoration unselectable by mouse",
 			widget.designKey(), got)
 	}
-	if got, _ := a.editorProbe(&a.themeLay, box.X+2, box.Y+2); got != widget {
+	if got, _ := a.editorProbe(&a.skin.themeLay, box.X+2, box.Y+2); got != widget {
 		t.Fatalf("the widget's own pixels resolved to %v, want %v — space priority must not make "+
 			"widgets unreachable either", got, widget)
 	}
@@ -259,14 +259,14 @@ func TestCanvasProbeSkipsHiddenElementsAndTheClientTabStrip(t *testing.T) {
 	defer cleanup()
 	el := tgts[0]
 	cx, cy := editorCentreOf(editorPainted(t, a, el))
-	if got, _ := a.editorProbe(&a.themeLay, cx, cy); got != el {
+	if got, _ := a.editorProbe(&a.skin.themeLay, cx, cy); got != el {
 		t.Fatalf("the visible element did not answer its own pixels (%v)", got)
 	}
 
 	a.elemBake.themeSidecar.Elements[el.elem].Hidden = true
 	a.invalidateThemeCanvases()
 	driveFrame(a)
-	if got, _ := a.editorProbe(&a.themeLay, cx, cy); got == el {
+	if got, _ := a.editorProbe(&a.skin.themeLay, cx, cy); got == el {
 		t.Error("a HIDDEN element still hit-tests — you would be dragging something you cannot see")
 	}
 
@@ -545,7 +545,7 @@ func TestDraggingAWidgetWritesAnOverrideRowNotAPreference(t *testing.T) {
 	if row == before {
 		t.Fatalf("the row still holds the pre-drag rect %+v", before)
 	}
-	if live := a.themeRects[key]; live != row {
+	if live := a.skin.themeRects[key]; live != row {
 		t.Errorf("the resolved geometry is %+v while the row says %+v — an edit that writes only the "+
 			"row does not move a pixel until the theme is switched and back", live, row)
 	}
@@ -577,7 +577,7 @@ func TestUndoOfAWidgetDragRemovesTheRowItCreated(t *testing.T) {
 	if _, still := a.elemBake.themeSidecar.OverrideRect(key); still {
 		t.Errorf("undoing the drag left an [overrides] row for %s behind", key)
 	}
-	if got := a.themeRects[key]; got != before {
+	if got := a.skin.themeRects[key]; got != before {
 		t.Errorf("undo left the resolved rect at %+v, want %+v", got, before)
 	}
 }
@@ -698,15 +698,15 @@ func TestWidgetEditsSurviveAThemeReapply(t *testing.T) {
 	key := widget.designKey()
 	cx, cy := editorCentreOf(editorPainted(t, a, widget))
 	drivePreciseDrag(t, a, cx, cy, cx+40, cy+24)
-	edited := a.themeRects[key]
+	edited := a.skin.themeRects[key]
 
 	// The apply, exactly as pollThemeApply does it: a freshly resolved map lands over
 	// the live one carrying only what is on DISK…
-	a.themeRects = cloneRects(a.themeRectsOrig)
+	a.skin.themeRects = cloneRects(a.skin.themeRectsOrig)
 	// …and the reclaim puts the document back on top of it.
 	a.reclaimThemeDoc()
 
-	if got := a.themeRects[key]; got != edited {
+	if got := a.skin.themeRects[key]; got != edited {
 		t.Fatalf("a background theme apply discarded the unsaved widget edit (%+v, want %+v) — applies "+
 			"are not user-initiated, so this is work vanishing with nothing on screen to say why",
 			got, edited)

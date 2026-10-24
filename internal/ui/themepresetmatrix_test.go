@@ -85,12 +85,12 @@ func stagePresetCombination(t testing.TB, a *App, l, s *theme.Preset, w, h int32
 		rects[k] = r
 	}
 	rects["courtroom"] = theme.Rect{W: l.DesignW, H: l.DesignH}
-	a.themeRects = rects
+	a.skin.themeRects = rects
 	a.elemBake.themeSidecar = merged
-	foldSidecarOverrides(a.themeRects, merged)
-	a.themeRectsOrig = cloneRects(a.themeRects)
+	foldSidecarOverrides(a.skin.themeRects, merged)
+	a.skin.themeRectsOrig = cloneRects(a.skin.themeRects)
 
-	a.themeLay.valid = false
+	a.skin.themeLay.valid = false
 	lay := a.themeLayout(w, h)
 	if !lay.valid {
 		t.Fatalf("%s x %s at %dx%d: the layout cache did not validate", l.ID, s.ID, w, h)
@@ -284,7 +284,7 @@ func TestPresetMatrixWouldCatchADriftedElement(t *testing.T) {
 	// The shoves are DESIGN-space, like every fragment rect, so they are derived
 	// from the anchor's design rect; the device rects then scale together and the
 	// ratios above hold exactly.
-	design, placed := a.themeRects[anchorKey]
+	design, placed := a.skin.themeRects[anchorKey]
 	if !placed || design.W <= 0 || design.H <= 0 {
 		t.Skipf("%q has no design rect to size the arms against", anchorKey)
 	}

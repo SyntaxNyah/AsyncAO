@@ -218,7 +218,7 @@ func TestCharSelectCanvasIgnoresRectPosition(t *testing.T) {
 func stageCharSelect(t *testing.T, d charSelectDesign) *App {
 	t.Helper()
 	a := testTabApp(t)
-	a.themeRects = map[string]theme.Rect{
+	a.skin.themeRects = map[string]theme.Rect{
 		"courtroom": {X: 0, Y: 0, W: 944, H: 600},
 		"viewport":  {X: 0, Y: 0, W: 256, H: 192},
 	}
@@ -645,7 +645,7 @@ func TestCharSelectKeysStayOutOfTheCourtroomLayout(t *testing.T) {
 	// And the courtroom layout genuinely does mangle them, which is why: build a
 	// courtroom layout from the stock design and confirm spectator would be dropped.
 	a := testTabApp(t)
-	a.themeRects = map[string]theme.Rect{
+	a.skin.themeRects = map[string]theme.Rect{
 		"courtroom": {X: 0, Y: 0, W: 714, H: 579},
 		"viewport":  {X: 0, Y: 0, W: 256, H: 192},
 		"spectator": charSelectDefaultRects[charSelectSpectatorKey],
@@ -666,7 +666,7 @@ func TestCharSelectSharesTheCourtroomFitMaths(t *testing.T) {
 		d.r[charSelectCanvasKey] = theme.Rect{W: 944, H: 600} // same size as the courtroom below
 		a := stageCharSelect(t, d)
 		a.d.Prefs.SetThemeFit(mode)
-		a.themeLay.valid, a.charSelLay.valid = false, false
+		a.skin.themeLay.valid, a.charSelLay.valid = false, false
 		court := a.themeWindowLayout(w, h)
 		if !court.valid {
 			t.Fatalf("mode %d: courtroom layout did not build", mode)

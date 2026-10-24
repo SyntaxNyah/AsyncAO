@@ -372,7 +372,7 @@ func TestThemeLayoutBakesShownameExtra(t *testing.T) {
 	// Native fit on a window at least as large as the canvas: scale 1, so the
 	// baked value is the theme's own number and a stock theme is unchanged.
 	a := stageNativeFit(t, designW, designH)
-	a.themeShownameExtra = 24
+	a.skin.themeShownameExtra = 24
 	lay := a.themeLayout(1152, 864)
 	if !lay.valid {
 		t.Fatal("themeLayout did not validate")
@@ -384,7 +384,7 @@ func TestThemeLayoutBakesShownameExtra(t *testing.T) {
 	// A canvas scaled DOWN scales the rung with it. Native takes the tighter axis,
 	// so a full-height window half the canvas's width is exactly a half scale.
 	b := stageNativeFit(t, designW, designH)
-	b.themeShownameExtra = 24
+	b.skin.themeShownameExtra = 24
 	half := b.themeLayout(designW/2, designH)
 	if got, want := half.shownameExtraPx(), int32(12); got != want {
 		t.Fatalf("on a half-size canvas the baked rung is %d px, want %d", got, want)
@@ -393,7 +393,7 @@ func TestThemeLayoutBakesShownameExtra(t *testing.T) {
 	// ...but never to nothing: a rung that rounded away would take the SKIN SWAP
 	// with it, dropping a long name back onto the narrow art mid-message.
 	c := stageNativeFit(t, designW, designH)
-	c.themeShownameExtra = 1
+	c.skin.themeShownameExtra = 1
 	tiny := c.themeLayout(designW/40, designH/40)
 	if got := tiny.shownameExtraPx(); got < 1 {
 		t.Fatalf("a heavily downscaled canvas baked a %d px rung — the ladder would silently vanish", got)
@@ -401,7 +401,7 @@ func TestThemeLayoutBakesShownameExtra(t *testing.T) {
 
 	// A theme that declares no ladder bakes zero, and so does a hand-built cache.
 	d := stageNativeFit(t, designW, designH)
-	d.themeShownameExtra = 0
+	d.skin.themeShownameExtra = 0
 	if got := d.themeLayout(1152, 864).shownameExtraPx(); got != 0 {
 		t.Fatalf("a theme with no showname_extra_width baked %d px, want 0", got)
 	}
@@ -435,7 +435,7 @@ func ladderHarness(t *testing.T) (*App, func()) {
 	a.d.Store = store
 	// The two theme-texture maps the real constructor always creates together
 	// (themePage writes into themePages on the first resident lookup).
-	a.themeTex = map[string]bool{}
+	a.skin.themeTex = map[string]bool{}
 	a.themePages = map[string]*render.TexturePage{}
 	return a, func() {
 		store.Purge()
@@ -454,7 +454,7 @@ func pinFlatThemeArt(t *testing.T, a *App, stem string) *render.TexturePage {
 	if err := a.d.Store.UploadPinned(themeTexKey(stem), dec); err != nil {
 		t.Skipf("theme upload unavailable: %v", err)
 	}
-	a.themeTex[stem] = true
+	a.skin.themeTex[stem] = true
 	page, ok := a.themePage(stem)
 	if !ok {
 		t.Fatalf("pinned %q did not become resident", stem)
@@ -581,14 +581,14 @@ func TestDrawCourtroomThemedLadderZeroAlloc(t *testing.T) {
 
 	// The two maps the real constructor creates together; stageThemedCourtroom's
 	// chatbox is deliberately unskinned, so it never needed them.
-	a.themeTex = map[string]bool{}
+	a.skin.themeTex = map[string]bool{}
 	a.themePages = map[string]*render.TexturePage{}
 	for _, stem := range []string{themeStemChatbox, chatboxRungMed.texStem(), chatboxRungBig.texStem()} {
 		pinFlatThemeArt(t, a, stem)
 	}
-	a.themeShownameExtra = 24 // the stock AO2 theme's own value
-	a.themeShownameAlign = shownameAlignCenter
-	a.themeLay.valid = false // rebake the rung height into the layout cache
+	a.skin.themeShownameExtra = 24 // the stock AO2 theme's own value
+	a.skin.themeShownameAlign = shownameAlignCenter
+	a.skin.themeLay.valid = false // rebake the rung height into the layout cache
 
 	// The fixture's speaker has a five-letter showname, which fits the stock
 	// theme's 46 px name box with room to spare — the ladder would never run. Give
@@ -602,11 +602,11 @@ func TestDrawCourtroomThemedLadderZeroAlloc(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 	draw()
-	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
+	if !a.skin.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
 	// Prove the ladder actually fires on this frame, or the gate passes vacuously.
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 	if lay.shownameExtraPx() <= 0 {
 		t.Fatalf("the layout baked a %d px rung — the ladder is off", lay.shownameExtraPx())
 	}

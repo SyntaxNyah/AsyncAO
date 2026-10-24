@@ -500,7 +500,7 @@ func (a *App) editorClampGeometry(t editTarget, r theme.Rect) theme.Rect {
 	if t.space != spaceDesign {
 		return r
 	}
-	if court, ok := a.themeRectsOrig["courtroom"]; ok {
+	if court, ok := a.skin.themeRectsOrig["courtroom"]; ok {
 		return clampDesignRectToCanvas(r, court)
 	}
 	return r

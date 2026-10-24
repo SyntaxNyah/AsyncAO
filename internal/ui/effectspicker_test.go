@@ -622,7 +622,7 @@ func TestOverlayIconKeysFollowTheRoster(t *testing.T) {
 func TestStaleRosterResultIsDropped(t *testing.T) {
 	a := &App{env: env{ctx: &Ctx{}}}
 	a.link.urls = courtroom.NewURLBuilder("https://one.test/base")
-	a.themeAppliedGen = 7
+	a.skin.themeAppliedGen = 7
 	key := a.overlayRosterKey("transitions")
 	a.overlays.overlayRosterRes = make(chan overlayRosterFetch, overlayManifestResCap)
 	a.overlays.overlayRosterInFlight = map[string]bool{key: true}
@@ -796,7 +796,7 @@ func TestCharINIRealizationOverridesTheEffectSound(t *testing.T) {
 	a.link.urls = courtroom.NewURLBuilder("https://one.test/base")
 	a.link.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Phoenix"}}}
 	a.link.sess.MyCharID = 0
-	a.themeSounds = map[string]string{"realization": "themerealize"}
+	a.skin.themeSounds = map[string]string{"realization": "themerealize"}
 	// Pre-seeded (settled, nothing declared): charMetaFor would otherwise fire a
 	// fetch through the nil Manager.
 	a.overlays.charMetaCache = map[string]charMeta{a.charINIURL("Phoenix"): {done: true}}

@@ -67,7 +67,7 @@ func TestTheEditorCanvasIsTheLiveCourtroomPassAtFullBleed(t *testing.T) {
 			"pixel the user is editing against is one this client does not actually draw, and the " +
 			"1:1 promise the whole screen is built on is gone")
 	}
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 	if !lay.valid {
 		t.Fatal("the editor frame left no themed layout — the canvas resolved no geometry to edit")
 	}
@@ -99,7 +99,7 @@ func TestARailPressNeverReachesTheCanvas(t *testing.T) {
 	a.d.Prefs.SetThemeFit(config.ThemeFitLetterbox)
 	a.invalidateThemeCanvases()
 	driveFrame(a)
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 	if lay.area.X >= editRailW-editorSeamRailBitePx {
 		t.Fatalf("the canvas starts at x=%d even under a filling fit, clear of the %d px rail — there is "+
 			"no overlap to press in, so this gate would pin nothing", lay.area.X, editRailW)
@@ -354,11 +354,11 @@ func TestUnsavedEditsSurviveARealBackgroundThemeApply(t *testing.T) {
 	}
 	const probeKey = "asyncao_seam_probe"
 	probeRect := theme.Rect{X: 1, Y: 2, W: 3, H: 4}
-	a.themeRects[probeKey] = probeRect
+	a.skin.themeRects[probeKey] = probeRect
 	if got, ok := a.te.doc.live[probeKey]; !ok || got != probeRect {
 		t.Error("the document is bound to a map the frame no longer resolves from — pollThemeApply " +
 			"replaces a.themeRects wholesale, so a reclaim that re-installs the sidecar without " +
 			"re-binding leaves every widget edit writing into a dead object")
 	}
-	delete(a.themeRects, probeKey)
+	delete(a.skin.themeRects, probeKey)
 }

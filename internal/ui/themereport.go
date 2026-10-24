@@ -128,8 +128,8 @@ func themeReportLine(name string, report []string) string {
 // re-kicks one on any T1 eviction of a theme texture, the texture-filter row kicks
 // one, boot kicks two — so "say it on every apply" would re-post the same four
 func (a *App) noteThemeReport(name string, report []string) {
-	same := sameReport(a.themeReport, report)
-	a.themeReport = report
+	same := sameReport(a.skin.themeReport, report)
+	a.skin.themeReport = report
 	if len(report) == 0 || same {
 		return
 	}

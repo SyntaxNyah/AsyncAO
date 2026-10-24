@@ -596,7 +596,7 @@ func cellChromeHarness(t *testing.T) (*App, *sdl.Renderer, func()) {
 	a.inibrowse.iniHoverIDs = []string{iniHoverIDPrefix + "Phoenix"}
 	// The two theme-texture maps the real constructor always creates together
 	// (themePage writes into themePages on the first resident lookup).
-	a.themeTex = map[string]bool{}
+	a.skin.themeTex = map[string]bool{}
 	a.themePages = map[string]*render.TexturePage{}
 	return a, ren, func() {
 		store.Purge()

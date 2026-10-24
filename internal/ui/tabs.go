@@ -796,7 +796,7 @@ func (a *App) tabStripThemeParked() bool {
 	if !a.layoutEdit || a.editDrag == 0 || a.editTgt.designKey() != themeTabBarKey {
 		return false
 	}
-	_, present := a.themeRects[themeTabBarKey]
+	_, present := a.skin.themeRects[themeTabBarKey]
 	return present // a placement is happening right now
 }
 
@@ -807,7 +807,7 @@ func (a *App) tabStripThemeParked() bool {
 // a drag is in flight, and one caller needs the recorded one: layoutSnapshotNow. An
 // undo step's job is to describe state that can be WRITTEN BACK, and restoreLayout
 func (a *App) tabStripPlacementRecorded() bool {
-	if _, present := a.themeRects[themeTabBarKey]; !present {
+	if _, present := a.skin.themeRects[themeTabBarKey]; !present {
 		return false // no key at all ⇒ no themed home
 	}
 	if !a.tabBarSeeded {
@@ -852,7 +852,7 @@ func (a *App) tabStripCacheRect(lay *themeLayoutCache, w, h, total int32, parked
 	// twin is clampTabStripScreen; all three must keep the same form and the same
 	// order of operations or the grab point drifts again.
 	r := def
-	d := a.themeRects[themeTabBarKey]
+	d := a.skin.themeRects[themeTabBarKey]
 	r.X = clampI32(lay.offX+int32(d.X), 0, maxI32(w-r.W, 0))
 	r.Y = clampI32(lay.offY+int32(d.Y), 0, maxI32(h-r.H, 0))
 	return r, true
@@ -880,7 +880,7 @@ func (a *App) tabStripThemeRect() (sdl.Rect, bool) {
 	if a.screen != ScreenCourtroom || a.link.room == nil || a.theaterOn || a.screenDispatchPreempted() {
 		return sdl.Rect{}, false
 	}
-	if !a.themeLay.valid || !a.d.Prefs.Load().ThemeLayoutOn {
+	if !a.skin.themeLay.valid || !a.d.Prefs.Load().ThemeLayoutOn {
 		return sdl.Rect{}, false
 	}
 	if !a.tabStripThemeParked() {
@@ -889,7 +889,7 @@ func (a *App) tabStripThemeRect() (sdl.Rect, bool) {
 		// slot override / docked default rather than to the synthesized rect.
 		return sdl.Rect{}, false
 	}
-	return a.themeLay.rect(themeTabBarKey)
+	return a.skin.themeLay.rect(themeTabBarKey)
 }
 
 // buildTabChipLabel formats a chip's text from its key: the (clipped) name,

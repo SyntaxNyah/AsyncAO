@@ -806,12 +806,12 @@ func TestMenuBarThemeFitSubmenuMirrorsSettings(t *testing.T) {
 			t.Fatalf("row %d diverged from themeFitOptions: %q/%d vs %q/%d",
 				i, it.label, it.arg, themeFitOptions[i].label, themeFitOptions[i].mode)
 		}
-		a.themeLay.valid = true
+		a.skin.themeLay.valid = true
 		a.fireMenuItem(it)
 		if got := a.d.Prefs.Load().ThemeFit; got != it.arg {
 			t.Fatalf("row %d must apply mode %d through SetThemeFit, got %d", i, it.arg, got)
 		}
-		if a.themeLay.valid {
+		if a.skin.themeLay.valid {
 			t.Fatalf("row %d must invalidate the layout cache, like every other fit mutation", i)
 		}
 		if !it.checked(a, it.arg) {

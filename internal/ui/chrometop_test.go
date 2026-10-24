@@ -238,7 +238,7 @@ func TestThemedCanvasSitsUnderTheChromeBand(t *testing.T) {
 	a := testTabApp(t)
 	a.tabs = []*courtTab{{}}
 	a.activeTab = 0
-	a.themeRects = map[string]theme.Rect{
+	a.skin.themeRects = map[string]theme.Rect{
 		"courtroom": {X: 0, Y: 0, W: 714, H: 579},
 		"viewport":  {X: 0, Y: 0, W: 256, H: 192},
 	}
@@ -278,7 +278,7 @@ func TestExportFrameCarriesNoChromeBand(t *testing.T) {
 	a := testTabApp(t)
 	a.tabs = []*courtTab{{}}
 	a.activeTab = 0
-	a.themeRects = map[string]theme.Rect{
+	a.skin.themeRects = map[string]theme.Rect{
 		"courtroom": {X: 0, Y: 0, W: 714, H: 579},
 		"viewport":  {X: 0, Y: 0, W: 256, H: 192},
 	}
@@ -405,7 +405,7 @@ func TestThemedWidgetsStayClearOfTheBandInEveryFitMode(t *testing.T) {
 			a := testTabApp(t)
 			a.tabs = []*courtTab{{}}
 			a.activeTab = 0
-			a.themeRects = map[string]theme.Rect{
+			a.skin.themeRects = map[string]theme.Rect{
 				"courtroom":   {X: 0, Y: 0, W: 714, H: 579},
 				"viewport":    {X: 0, Y: 0, W: 714, H: 382}, // top-anchored: the first thing to escape
 				"ao2_chatbox": {X: 0, Y: 415, W: 714, H: 164},
@@ -435,7 +435,7 @@ func TestThemedWidgetsStayClearOfTheBandInEveryFitMode(t *testing.T) {
 	a := testTabApp(t)
 	a.tabs = []*courtTab{{}}
 	a.activeTab = 0
-	a.themeRects = map[string]theme.Rect{
+	a.skin.themeRects = map[string]theme.Rect{
 		"courtroom": {X: 0, Y: 0, W: 714, H: 579},
 		"viewport":  {X: 0, Y: 0, W: 714, H: 382},
 	}
@@ -491,13 +491,13 @@ func applyThemeGeometryForTest(a *App, layout map[string]theme.Rect) {
 func applyThemeGeometryWithSidecarForTest(a *App, layout map[string]theme.Rect, sc *theme.Sidecar) {
 	a.elemBake.themeSidecar = sc
 	a.tabBarSeeded = seedTabBarThroughOverrides(layout, sc)
-	a.themeRectsOrig = layout
+	a.skin.themeRectsOrig = layout
 	rects := make(map[string]theme.Rect, len(layout))
 	for k, v := range layout {
 		rects[k] = v
 	}
-	a.themeRects = a.applyRectOverrides(rects)
-	a.themeLay.valid = false
+	a.skin.themeRects = a.applyRectOverrides(rects)
+	a.skin.themeLay.valid = false
 }
 
 // TestThemeAuthorCanPlaceTheTabStripFromTheSidecar is L48: an
@@ -520,11 +520,11 @@ func TestThemeAuthorCanPlaceTheTabStripFromTheSidecar(t *testing.T) {
 	sc.Overrides = []theme.KeyRect{{Key: themeTabBarKey, Rect: authored}}
 	applyThemeGeometryWithSidecarForTest(a, stockLikeThemeLayout(), sc)
 
-	if got := a.themeRectsOrig[themeTabBarKey]; got != authored {
+	if got := a.skin.themeRectsOrig[themeTabBarKey]; got != authored {
 		t.Fatalf("the pristine map holds %+v, want the author's %+v — the client's own seed overwrote an "+
 			"[overrides] row, so reset/undo would restore a rect nobody chose", got, authored)
 	}
-	if got := a.themeRects[themeTabBarKey]; got != authored {
+	if got := a.skin.themeRects[themeTabBarKey]; got != authored {
 		t.Errorf("the live map holds %+v, want the author's %+v", got, authored)
 	}
 	if a.tabBarSeeded {
@@ -578,7 +578,7 @@ func TestTabStripIsEditableUnderAThemeThatNeverDeclaredIt(t *testing.T) {
 	if !a.tabBarSeeded {
 		t.Fatal("a theme with no asyncao_tabbar must get the key synthesized at apply time")
 	}
-	if _, ok := a.themeRectsOrig[themeTabBarKey]; !ok {
+	if _, ok := a.skin.themeRectsOrig[themeTabBarKey]; !ok {
 		t.Fatal("the seed must land in the PRISTINE map: reset/undo restore from it, and applyRectOverrides only rewrites keys that already exist")
 	}
 
@@ -623,9 +623,9 @@ func TestTabStripIsEditableUnderAThemeThatNeverDeclaredIt(t *testing.T) {
 	// (this is exactly what drawLayoutEditor does at press/release —
 	// TestThemedEditorDragMovesAndPersistsTheTabStrip drives the real thing).
 	moved := theme.Rect{X: 280, Y: 267, W: 240, H: int(tabBarH)}
-	a.themeRects[themeTabBarKey] = moved
+	a.skin.themeRects[themeTabBarKey] = moved
 	a.d.Prefs.SetThemeRectOverride(themeName, themeTabBarKey, [4]int{moved.X, moved.Y, moved.W, moved.H})
-	a.themeLay.valid = false
+	a.skin.themeLay.valid = false
 	if !a.tabStripThemeParked() {
 		t.Fatal("a moved strip must count as parked, or the drag has nowhere to take effect")
 	}
@@ -643,7 +643,7 @@ func TestTabStripIsEditableUnderAThemeThatNeverDeclaredIt(t *testing.T) {
 	// seed going into the pristine map first, applyRectOverrides has nothing to write
 	// onto and the user's drag is silently lost on the next theme load.
 	applyThemeGeometryForTest(a, stockLikeThemeLayout())
-	if got := a.themeRects[themeTabBarKey]; got != moved {
+	if got := a.skin.themeRects[themeTabBarKey]; got != moved {
 		t.Errorf("after a theme re-apply the strip is at %+v, want the persisted %+v", got, moved)
 	}
 	if !a.tabStripThemeParked() {
@@ -707,7 +707,7 @@ func TestThemedEditorDragMovesAndPersistsTheTabStrip(t *testing.T) {
 		t.Fatalf("the strip paints at %+v, want the box's origin (%d,%d)", rects, moved.X, moved.Y)
 	}
 
-	want := a.themeRects[themeTabBarKey]
+	want := a.skin.themeRects[themeTabBarKey]
 	ov := a.d.Prefs.Load().ThemeRectOverrides(themeName)
 	if got, ok := ov[themeTabBarKey]; !ok || got != [4]int{want.X, want.Y, want.W, want.H} {
 		t.Fatalf("the release must persist the override, got %v (present=%v)", got, ok)
@@ -722,7 +722,7 @@ func TestThemedEditorDragMovesAndPersistsTheTabStrip(t *testing.T) {
 	}
 	// The placement survives a theme reload.
 	applyThemeGeometryForTest(a, stockLikeThemeLayout())
-	if got := a.themeRects[themeTabBarKey]; got != want {
+	if got := a.skin.themeRects[themeTabBarKey]; got != want {
 		t.Errorf("the drag was lost on a theme reload: %+v, want %+v", got, want)
 	}
 	if got, ok := a.themeWindowLayout(w, h).rect(themeTabBarKey); !ok || got != moved {
@@ -770,9 +770,9 @@ func TestTabStripIgnoresExportSpaceGeometry(t *testing.T) {
 // parked-ness was inferred from geometry — the inference a drag landing on the pristine
 // seed silently defeated, which is why it is gone.
 func parkTabStripForTest(a *App, themeName string, r theme.Rect) {
-	a.themeRects[themeTabBarKey] = r
+	a.skin.themeRects[themeTabBarKey] = r
 	a.d.Prefs.SetThemeRectOverride(themeName, themeTabBarKey, [4]int{r.X, r.Y, r.W, r.H})
-	a.themeLay.valid = false
+	a.skin.themeLay.valid = false
 }
 
 // TestTabStripFollowsTheThemeRect pins the consumption side: with the themed
@@ -785,7 +785,7 @@ func TestTabStripFollowsTheThemeRect(t *testing.T) {
 	a.activeTab = 0
 	a.link.room = newRoomForTest(t)
 	a.screen = ScreenCourtroom
-	a.themeRects = map[string]theme.Rect{
+	a.skin.themeRects = map[string]theme.Rect{
 		"courtroom":    {X: 0, Y: 0, W: 714, H: 579},
 		"viewport":     {X: 0, Y: 0, W: 256, H: 192},
 		themeTabBarKey: {X: 300, Y: 400, W: 200, H: 22},

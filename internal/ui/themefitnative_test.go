@@ -40,12 +40,12 @@ func stageNativeFit(t *testing.T, designW, designH int32) *App {
 	// courtroom + viewport are the two keys themeLayout() requires before it will
 	// validate; viewport is a quarter-size stage so it survives the
 	// minThemedElementPx floor at every scale exercised here.
-	a.themeRects = map[string]theme.Rect{
+	a.skin.themeRects = map[string]theme.Rect{
 		"courtroom": {X: 0, Y: 0, W: int(designW), H: int(designH)},
 		"viewport":  {X: 0, Y: 0, W: int(designW) / 4, H: int(designH) / 4},
 	}
 	a.d.Prefs.SetThemeFit(config.ThemeFitNative)
-	a.themeLay.valid = false
+	a.skin.themeLay.valid = false
 	return a
 }
 
@@ -175,7 +175,7 @@ func TestThemeFitNativeIsTheDefault(t *testing.T) {
 	if got := a.d.Prefs.Load().ThemeFit; got != config.ThemeFitNative {
 		t.Fatalf("stock ThemeFitMode = %d, want Native(%d)", got, config.ThemeFitNative)
 	}
-	a.themeRects = map[string]theme.Rect{
+	a.skin.themeRects = map[string]theme.Rect{
 		"courtroom": {X: 0, Y: 0, W: 714, H: 579},
 		"viewport":  {X: 0, Y: 0, W: 256, H: 192},
 	}

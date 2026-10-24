@@ -156,12 +156,12 @@ func TestThemedNudgeMovesExactlyOneDesignPixel(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := stageThemedNudge(t)
-			before := a.themeRects[nudgeWidgetKey]
+			before := a.skin.themeRects[nudgeWidgetKey]
 			if !pressNudge(t, a, tc.key, false, stripEditW, stripEditH) {
 				t.Fatal("an armed editor must claim the arrow key")
 			}
 			want := theme.Rect{X: before.X + tc.dx, Y: before.Y + tc.dy, W: before.W, H: before.H}
-			if got := a.themeRects[nudgeWidgetKey]; got != want {
+			if got := a.skin.themeRects[nudgeWidgetKey]; got != want {
 				t.Fatalf("one arrow press moved the widget %+v → %+v, want %+v", before, got, want)
 			}
 		})
@@ -184,12 +184,12 @@ func TestThemedCoarseNudgeLandsOnTheGrid(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := stageThemedNudge(t)
-			before := a.themeRects[nudgeWidgetKey]
+			before := a.skin.themeRects[nudgeWidgetKey]
 			if before.X%layoutGridDesign == 0 || before.Y%layoutGridDesign == 0 {
 				t.Fatalf("fixture: %+v starts ON the grid, so a coarse step cannot be distinguished from a plain one", before)
 			}
 			pressNudge(t, a, tc.key, true, stripEditW, stripEditH)
-			got := a.themeRects[nudgeWidgetKey]
+			got := a.skin.themeRects[nudgeWidgetKey]
 			moved := got.X != before.X
 			landed := got.X
 			if got.Y != before.Y {
@@ -220,7 +220,7 @@ func TestThemedCoarseNudgeLandsOnTheGrid(t *testing.T) {
 // survives a theme reload), and the editor's existing Ctrl+Z puts it back.
 func TestThemedNudgePersistsAndUndoes(t *testing.T) {
 	a := stageThemedNudge(t)
-	before := a.themeRects[nudgeWidgetKey]
+	before := a.skin.themeRects[nudgeWidgetKey]
 
 	pressNudge(t, a, sdl.K_RIGHT, false, stripEditW, stripEditH)
 	ov, ok := a.d.Prefs.Load().ThemeRectOverrides(stripEditTheme)[nudgeWidgetKey]
@@ -232,7 +232,7 @@ func TestThemedNudgePersistsAndUndoes(t *testing.T) {
 	}
 
 	a.layoutEditUndo()
-	if got := a.themeRects[nudgeWidgetKey]; got != before {
+	if got := a.skin.themeRects[nudgeWidgetKey]; got != before {
 		t.Fatalf("after undo the widget is at %+v, want its pre-nudge %+v", got, before)
 	}
 	if _, still := a.d.Prefs.Load().ThemeRectOverrides(stripEditTheme)[nudgeWidgetKey]; still {
@@ -245,9 +245,9 @@ func TestThemedNudgePersistsAndUndoes(t *testing.T) {
 // phantom undo entry behind (a bare click's no-op discard exists for the same reason).
 func TestThemedNudgeRespectsTheCanvasClamp(t *testing.T) {
 	a := stageThemedNudge(t)
-	r := a.themeRects[nudgeWidgetKey]
+	r := a.skin.themeRects[nudgeWidgetKey]
 	r.X, r.Y = 0, 0 // flush into the canvas's top-left corner
-	a.themeRects[nudgeWidgetKey] = r
+	a.skin.themeRects[nudgeWidgetKey] = r
 	a.invalidateThemeCanvases()
 	a.themeWindowLayout(stripEditW, stripEditH)
 
@@ -256,7 +256,7 @@ func TestThemedNudgeRespectsTheCanvasClamp(t *testing.T) {
 			t.Fatal("the editor must still CONSUME the key it refuses to act on")
 		}
 	}
-	if got := a.themeRects[nudgeWidgetKey]; got != r {
+	if got := a.skin.themeRects[nudgeWidgetKey]; got != r {
 		t.Fatalf("a widget flush against the canvas edge moved to %+v, want %+v", got, r)
 	}
 	if len(a.editUndo) != 0 {
@@ -282,7 +282,7 @@ func TestTabStripNudgeMovesOneScreenPixelAtEveryScale(t *testing.T) {
 			tc.apply(a)
 			a.layoutEdit = true
 			a.editTgt = designTarget(themeTabBarKey)
-			a.themeLay.valid = false
+			a.skin.themeLay.valid = false
 
 			before, ok := a.themeWindowLayout(tc.w, tc.h).rect(themeTabBarKey)
 			if !ok {
@@ -592,7 +592,7 @@ func TestNudgeIgnoresADegenerateBox(t *testing.T) {
 	a.link.sess = &courtroom.Session{}
 	a.layoutEdit = true
 	a.editTgt = designTarget(themeTabBarKey)
-	a.themeLay.valid = false
+	a.skin.themeLay.valid = false
 	lay := a.themeWindowLayout(stripEditW, stripEditH)
 	if _, ok := lay.rect(themeTabBarKey); !ok {
 		t.Fatal("fixture: the strip must start with a real box, or the collapse below proves nothing")
@@ -819,7 +819,7 @@ func TestElementNudgeMatchesTheSlotNudge(t *testing.T) {
 			}
 			t.Run(name, func(t *testing.T) {
 				slotApp := stageThemedNudge(t)
-				slotBefore := slotApp.themeRects[nudgeWidgetKey]
+				slotBefore := slotApp.skin.themeRects[nudgeWidgetKey]
 				if slotBefore != elemNudgeRect {
 					t.Fatalf("fixture drift: the slot starts at %+v, the element at %+v — the two must match for a parity claim",
 						slotBefore, elemNudgeRect)
@@ -827,7 +827,7 @@ func TestElementNudgeMatchesTheSlotNudge(t *testing.T) {
 				if !pressNudge(t, slotApp, key, coarse, stripEditW, stripEditH) {
 					t.Fatal("an armed editor must claim the arrow key")
 				}
-				slotAfter := slotApp.themeRects[nudgeWidgetKey]
+				slotAfter := slotApp.skin.themeRects[nudgeWidgetKey]
 
 				elemApp := stageElementNudge(t, nil)
 				if !pressNudge(t, elemApp, key, coarse, stripEditW, stripEditH) {
@@ -851,7 +851,7 @@ func TestElementNudgeMatchesTheSlotNudge(t *testing.T) {
 // layout so the next frame re-bakes the element's absolute rect from it.
 func TestElementNudgeIsOnePixelAndReBakes(t *testing.T) {
 	a := stageElementNudge(t, nil)
-	a.themeLay.valid = true // whatever a previous frame left behind
+	a.skin.themeLay.valid = true // whatever a previous frame left behind
 	if !pressNudge(t, a, sdl.K_RIGHT, false, stripEditW, stripEditH) {
 		t.Fatal("an armed editor must claim the arrow key")
 	}
@@ -860,7 +860,7 @@ func TestElementNudgeIsOnePixelAndReBakes(t *testing.T) {
 	if got := a.elemBake.themeSidecar.Elements[0].Rect; got != want {
 		t.Fatalf("one arrow press moved the element %+v → %+v, want %+v", elemNudgeRect, got, want)
 	}
-	if a.themeLay.valid {
+	if a.skin.themeLay.valid {
 		t.Error("a moved element left the layout cache valid — the bake resolves its absolute rect, so nothing would redraw")
 	}
 }

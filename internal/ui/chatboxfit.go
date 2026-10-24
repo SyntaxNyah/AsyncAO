@@ -389,8 +389,8 @@ func (a *App) themedChatFace(el themeFontElem, userPct int, lay *themeLayoutCach
 // what keeps the default and every `left` theme on a per-frame path that never
 // measures text at all, byte-identical to the code before alignment existed.
 func (a *App) shownameSpanFor(box sdl.Rect, primary, emoji *ttf.Font, text string, col sdl.Color) (x, maxW int32) {
-	if a.themeShownameAlign == shownameAlignLeft {
+	if a.skin.themeShownameAlign == shownameAlignLeft {
 		return box.X, box.W
 	}
-	return shownameSpan(box, a.labelEmojiWidth(primary, emoji, text, col), a.themeShownameAlign)
+	return shownameSpan(box, a.labelEmojiWidth(primary, emoji, text, col), a.skin.themeShownameAlign)
 }

@@ -555,7 +555,7 @@ func TestIdleElementsDoNotPinTheFrameRate(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 	draw()
-	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
+	if !a.skin.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
 	// The baseline: this fixture's own chrome must already be settled, or the
@@ -566,7 +566,7 @@ func TestIdleElementsDoNotPinTheFrameRate(t *testing.T) {
 		t.Skip("the fixture's own chrome notes the census — this gate cannot isolate the element model here")
 	}
 	// Now fill it with elements that are all, in one way or another, STILL.
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 	seedBakedElements(a, lay, theme.ElementCap, nil)
 	for i := 0; i < lay.elN; i++ {
 		switch i % 3 {
@@ -605,10 +605,10 @@ func TestElementEffectsAreAllocFreeAtCap(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 	draw() // themeLayoutIn rebuilds on its cold path; seed AFTER it
-	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
+	if !a.skin.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 	seedBakedElements(a, lay, theme.ElementCap, seedElementArt(t, a))
 	// Every kind in rotation, at full amplitude, on a mix of clock groups so the
 	// scaled and the shared-anchor arms of clockElapsed are both inside the gate.

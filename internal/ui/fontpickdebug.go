@@ -84,7 +84,7 @@ func (a *App) icFontPickRows(out []fontPickRow) []fontPickRow {
 	// case elemInkOr honours a theme's own ic_chatlog_color. a.themeLay.valid
 	// is the same flag drawCourtroom itself reads to choose the themed vs
 	// classic draw path, so this tracks the real dispatch rather than guessing.
-	icInk := a.elemInkOr(elemICChatlog, a.themeLay.valid, ColText)
+	icInk := a.elemInkOr(elemICChatlog, a.skin.themeLay.valid, ColText)
 	ghost := a.ghostLogSpan(nil) // the rows argument is unused (ghosttext.go) — nil is what a real caller passes too
 	lo := 0
 	if len(a.chatlog.icLog) > debugFontRowCap {

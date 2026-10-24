@@ -195,7 +195,7 @@ func TestTheReportWrapsOnChangeAndNotPerFrame(t *testing.T) {
 func TestTheReportChipAllocatesNothingPerFrame(t *testing.T) {
 	a, cleanup := stageReportEditor(t)
 	defer cleanup()
-	if len(a.themeReport) == 0 {
+	if len(a.skin.themeReport) == 0 {
 		t.Fatal("the fixture reports nothing, so no chip is drawn and this gate measures nothing")
 	}
 

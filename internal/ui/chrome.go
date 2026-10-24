@@ -107,7 +107,7 @@ func (a *App) applyChromePreset(key string) {
 	} else {
 		activeKitColors = chromePresets[chromePresetIndex(key)].colors
 	}
-	applyThemePalette(a.themePalette) // restore the new base, then re-lay the theme over it
+	applyThemePalette(a.skin.themePalette) // restore the new base, then re-lay the theme over it
 	a.ctx.purgeTextCache()
 }
 

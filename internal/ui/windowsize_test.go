@@ -30,21 +30,21 @@ func designCanvas(w, h int) map[string]theme.Rect {
 // stageThemeCanvas gives a headless App an already-applied theme canvas.
 func stageThemeCanvas(a *App, w, h int) {
 	rects := designCanvas(w, h)
-	a.themeRectsOrig = rects
-	a.themeRects = rects
-	a.themeLay.valid = false
+	a.skin.themeRectsOrig = rects
+	a.skin.themeRects = rects
+	a.skin.themeLay.valid = false
 }
 
 // startThemeApply allocates a generation the way applyThemeAsync does, WITHOUT
 // running the off-thread load. Tests use it to model an apply that is in flight.
-func startThemeApply(a *App) uint64 { return a.themeGen.Add(1) }
+func startThemeApply(a *App) uint64 { return a.skin.themeGen.Add(1) }
 
 // landThemeApplyGen drives ONE real pollThemeApply landing for an already
 // allocated generation, so the one-shot is pinned where it actually runs.
 // Everything else on themeApply is left zero: with no images and no sounds the
 // landing touches neither the (nil) TextureStore nor the (nil) room.
 func landThemeApplyGen(a *App, gen uint64, layout map[string]theme.Rect) {
-	a.themeRes.Store(&themeApply{gen: gen, name: "fixture", layout: layout})
+	a.skin.themeRes.Store(&themeApply{gen: gen, name: "fixture", layout: layout})
 	a.pollThemeApply()
 }
 
@@ -123,7 +123,7 @@ func TestThemeDesignWindowSizeReadsTheCourtroomRect(t *testing.T) {
 	}
 	// A theme declaring a degenerate canvas must not be offered: resizing to 0
 	// would only be clamped back up to the minimum window and confuse the user.
-	a.themeRectsOrig = map[string]theme.Rect{"courtroom": {X: 0, Y: 0, W: 0, H: 579}}
+	a.skin.themeRectsOrig = map[string]theme.Rect{"courtroom": {X: 0, Y: 0, W: 0, H: 579}}
 	if _, _, ok := a.themeDesignWindowSize(); ok {
 		t.Error("a zero-width courtroom rect must report no design size")
 	}
@@ -553,8 +553,8 @@ func TestThemeResizeArmingDisarmsWhenOutraced(t *testing.T) {
 func TestThemeDesignSizeNeedsAViewportToo(t *testing.T) {
 	a := testTabApp(t)
 	courtOnly := map[string]theme.Rect{"courtroom": {X: 0, Y: 0, W: 714, H: 579}}
-	a.themeRectsOrig, a.themeRects = courtOnly, courtOnly
-	a.themeLay.valid = false
+	a.skin.themeRectsOrig, a.skin.themeRects = courtOnly, courtOnly
+	a.skin.themeLay.valid = false
 	if lay := a.themeLayout(714, 579); lay.valid {
 		t.Fatal("fixture is wrong: themeLayout validated a theme with no viewport")
 	}

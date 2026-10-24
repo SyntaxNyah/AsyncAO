@@ -203,7 +203,7 @@ func (a *App) themeWindowLayout(w, h int32) *themeLayoutCache {
 // two caches have DIFFERENT keys and the difference is invisible where the mutation
 // happens. themeLayoutCache keys on (w, h, band, fit, strip width, strip parked);
 func (a *App) invalidateThemeCanvases() {
-	a.themeLay.valid = false
+	a.skin.themeLay.valid = false
 	a.charSelLay.valid = false
 }
 
@@ -211,7 +211,7 @@ func (a *App) invalidateThemeCanvases() {
 // edge, rebuilding on window resize, band change, fit change or theme swap
 // (pollThemeApply invalidates).
 func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 	fit := a.d.Prefs.Load().ThemeFit
 	// Measured before the validity test, because they ARE part of the key (see
 	// themeLayoutCache.tabStripW / .tabStripParked). Both are alloc-free and
@@ -225,8 +225,8 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 		return lay
 	}
 	*lay = themeLayoutCache{winW: w, winH: h, topOff: top, fit: fit, tabStripW: stripW, tabStripParked: stripParked}
-	court, okCourt := a.themeRects["courtroom"]
-	_, okVP := a.themeRects["viewport"]
+	court, okCourt := a.skin.themeRects["courtroom"]
+	_, okVP := a.skin.themeRects["viewport"]
 	if !okCourt || !okVP || court.W <= 0 || court.H <= 0 {
 		return lay
 	}
@@ -246,8 +246,8 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 	// would take the SKIN SWAP with it, so a heavily downscaled canvas would drop
 	// back to the narrow chatbox art mid-message. One pixel of widening with the
 	// right art beats none with the wrong art.
-	if a.themeShownameExtra > 0 {
-		lay.shownameExtra = int32(float64(a.themeShownameExtra) * f.scaleX)
+	if a.skin.themeShownameExtra > 0 {
+		lay.shownameExtra = int32(float64(a.skin.themeShownameExtra) * f.scaleX)
 		if lay.shownameExtra < 1 {
 			lay.shownameExtra = 1
 		}
@@ -264,8 +264,8 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 		bounds.H -= top - bounds.Y
 		bounds.Y = top
 	}
-	lay.r = make(map[string]sdl.Rect, len(a.themeRects))
-	for key, r := range a.themeRects {
+	lay.r = make(map[string]sdl.Rect, len(a.skin.themeRects))
+	for key, r := range a.skin.themeRects {
 		if r.X > court.W || r.Y > court.H {
 			continue // off-design = hidden (the 11037 convention, both axes)
 		}
@@ -305,7 +305,7 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 	// editor depends on: its drag box, its drag origin, its Tab-cycle stacking order,
 	// its resize-grip probe and its right-click reset all read lay.r[themeTabBarKey],
 	// and a box that is not on the widget is worse than no box.
-	if _, present := a.themeRects[themeTabBarKey]; present {
+	if _, present := a.skin.themeRects[themeTabBarKey]; present {
 		if strip, ok := a.tabStripCacheRect(lay, w, h, stripW, stripParked); ok {
 			lay.r[themeTabBarKey] = strip
 		} else {
@@ -1379,8 +1379,8 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	nameCol := ColAccent
 	if skinned && sc.ChatSkinNameHas {
 		nameCol = sdl.Color{R: sc.ChatSkinNameColor.R, G: sc.ChatSkinNameColor.G, B: sc.ChatSkinNameColor.B, A: 255}
-	} else if skinned && a.themeHasName {
-		nameCol = a.themeNameCol
+	} else if skinned && a.skin.themeHasName {
+		nameCol = a.skin.themeNameCol
 	}
 	if a.d.Prefs.Load().NameColors { // per-speaker name colour wins over accent/theme
 		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.Load().NameSat)/100, float64(a.d.Prefs.Load().NameVal)/100)
@@ -1598,7 +1598,7 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 	// grid reflows/pages into whatever shape it takes), but the CELL scales
 	// uniformly so the button art keeps its designed aspect — see
 	// emoteCellScale for why (#33).
-	grid := emoteGridLayout(r, a.themeEmoteCell, a.themeEmoteGap, emoteCellScale(lay.scaleX, lay.scaleY))
+	grid := emoteGridLayout(r, a.skin.themeEmoteCell, a.skin.themeEmoteGap, emoteCellScale(lay.scaleX, lay.scaleY))
 	a.setEmoteGridMetrics(int(grid.cols), int(grid.rows), len(vis))
 	perPage := a.emotepick.emotePerPage
 	if a.emoteGridScrolls() { // mouse-wheel scrolls BY ROW (parity with the classic row)

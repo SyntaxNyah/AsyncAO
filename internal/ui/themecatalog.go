@@ -176,7 +176,7 @@ const (
 )
 
 // themeCatalogSnapshot is the ONLY read a draw path may do.
-func (a *App) themeCatalogSnapshot() *themeCatalog { return a.themeCat.Load() }
+func (a *App) themeCatalogSnapshot() *themeCatalog { return a.skin.themeCat.Load() }
 
 // requestThemeCatalog kicks a scan if this reason allows one. Render thread;
 // everything expensive happens on the goroutine it starts.
@@ -185,12 +185,12 @@ func (a *App) themeCatalogSnapshot() *themeCatalog { return a.themeCat.Load() }
 // cleared by the scanner goroutine when it publishes, so both ends touch it and
 // -race would (rightly) fail on anything less.
 func (a *App) requestThemeCatalog(reason themeScanReason) {
-	if !a.themeCatBusy.CompareAndSwap(false, true) {
+	if !a.skin.themeCatBusy.CompareAndSwap(false, true) {
 		return // a scan is already in flight; its result is the fresher one anyway
 	}
-	prev := a.themeCat.Load()
+	prev := a.skin.themeCat.Load()
 	if reason == themeScanOnOpen && prev != nil && time.Since(prev.ScannedAt) < themeScanMinInterval {
-		a.themeCatBusy.Store(false)
+		a.skin.themeCatBusy.Store(false)
 		return
 	}
 	// Everything the scan needs, snapshotted on this thread: the custom root is
@@ -198,12 +198,12 @@ func (a *App) requestThemeCatalog(reason themeScanReason) {
 	_, customRoot := a.d.Prefs.Load().Theme()
 	statOnly := reason == themeScanOnFocus
 	go func() {
-		defer a.themeCatBusy.Store(false)
+		defer a.skin.themeCatBusy.Store(false)
 		next := scanThemeCatalog(customRoot, prev, statOnly)
 		if next == nil {
 			return // focus-gain stat found nothing new: keep the snapshot we have
 		}
-		a.themeCat.Store(next)
+		a.skin.themeCat.Store(next)
 	}()
 }
 
@@ -430,14 +430,14 @@ func fileExists(path string) bool {
 // focus. It only LATCHES: the actual stat happens off-thread, and only while
 // the screen that cares is the visible one — the user story is "I dropped a
 // theme in Explorer and came back", not "poll the disk forever".
-func (a *App) NoteFocusGained() { a.themeCatFocusStat = true }
+func (a *App) NoteFocusGained() { a.skin.themeCatFocusStat = true }
 
 // consumeThemeFocusStat is the settings screen's end of that latch.
 func (a *App) consumeThemeFocusStat() bool {
-	if !a.themeCatFocusStat {
+	if !a.skin.themeCatFocusStat {
 		return false
 	}
-	a.themeCatFocusStat = false
+	a.skin.themeCatFocusStat = false
 	return true
 }
 

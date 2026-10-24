@@ -57,11 +57,11 @@ func TestThemeRowPitchNeedsTheElementToBeDressed(t *testing.T) {
 		t.Errorf("an undressed message element = %d, want 0", got)
 	}
 	// face is 1-BASED (0 = undressed), so slot 0 is spelled 1 here.
-	a.themeFonts.e[elemShowname].face = 1
+	a.skin.themeFonts.e[elemShowname].face = 1
 	if got := a.themeRowPitchLogical(elemMessage, DefaultScalePct); got != 0 {
 		t.Errorf("dressing the SHOWNAME moved the message pitch to %d", got)
 	}
-	a.themeFonts.e[elemMessage].face = 1
+	a.skin.themeFonts.e[elemMessage].face = 1
 	want := c.themeFaceRowPitch(0, faceEmPx(DefaultScalePct, DefaultScalePct))
 	if got := a.themeRowPitchLogical(elemMessage, DefaultScalePct); got != want {
 		t.Errorf("a dressed message element = %d, want %d", got, want)
@@ -79,7 +79,7 @@ func TestThemeRowPitchDeviceFollowsTheDeviceScale(t *testing.T) {
 	c := newPitchCtx()
 	c.SetThemeFaces([][]byte{openDyslexicOTF})
 	a := &App{env: env{ctx: c}}
-	a.themeFonts.e[elemMessage].face = 1
+	a.skin.themeFonts.e[elemMessage].face = 1
 
 	c.textDevPct = DefaultScalePct
 	at100 := a.themeRowPitchDevice(elemMessage, DefaultScalePct)
@@ -146,7 +146,7 @@ func TestMessageRowPitchNeverTightensTheFaceMetric(t *testing.T) {
 	// Install a face whose Qt pitch is far larger than the chrome face's metric
 	// and bind it to the message: the answer must move to the larger number.
 	c.SetThemeFaces([][]byte{openDyslexicOTF})
-	a.themeFonts.e[elemMessage].face = 1
+	a.skin.themeFonts.e[elemMessage].face = 1
 	qt := a.themeRowPitchLogical(elemMessage, DefaultScalePct)
 	if qt <= face {
 		t.Skipf("fixture pitch %d does not exceed the face metric %d", qt, face)

@@ -139,7 +139,7 @@ const (
 // returns userPct UNCHANGED, which is the byte-identical pre-#39 path. Pure
 // integer arithmetic on a fixed array — no map, no lock, no prefs read.
 func (a *App) elemPct(el themeFontElem, userPct int) int {
-	f := a.themeFonts.e[el]
+	f := a.skin.themeFonts.e[el]
 	if f.pct == 0 {
 		return userPct
 	}
@@ -173,7 +173,7 @@ func (a *App) elemFontFor(el themeFontElem, userPct int, text string) *ttf.Font 
 // set, whose family) is identical either way; only the arithmetic in front of it
 // differs, so it belongs in one place and the routing in another.
 func (a *App) elemFontAtPct(el themeFontElem, pct int, text string) *ttf.Font {
-	f := a.themeFonts.e[el]
+	f := a.skin.themeFonts.e[el]
 	if !f.dressed() && elemChat(el) {
 		return a.ctx.ChatFontFor(pct, text)
 	}
@@ -183,7 +183,7 @@ func (a *App) elemFontAtPct(el themeFontElem, pct int, text string) *ttf.Font {
 // elemFont is elemFontFor's metrics twin (line height / column measure): the
 // element set's PRIMARY face, no per-line coverage pick.
 func (a *App) elemFont(el themeFontElem, userPct int) *ttf.Font {
-	f := a.themeFonts.e[el]
+	f := a.skin.themeFonts.e[el]
 	pct := a.elemPct(el, userPct)
 	if !f.dressed() && elemChat(el) {
 		return a.ctx.ChatFont(pct)
@@ -196,7 +196,7 @@ func (a *App) elemFont(el themeFontElem, userPct int) *ttf.Font {
 // the label is byte-identical, while a theme that sizes/names music_name gets
 // its own.
 func (a *App) elemLabelFont(el themeFontElem, userPct int) *ttf.Font {
-	if !a.themeFonts.e[el].dressed() {
+	if !a.skin.themeFonts.e[el].dressed() {
 		return a.ctx.font
 	}
 	return a.elemFont(el, userPct)
@@ -209,7 +209,7 @@ func (a *App) elemLabelFont(el themeFontElem, userPct int) *ttf.Font {
 // pct: that is the #39 contract (a theme that declares nothing for this element
 // must draw byte-identically to a client with no theme at all), and it is the
 func (a *App) elemLabelFontAtPct(el themeFontElem, pct int) *ttf.Font {
-	f := a.themeFonts.e[el]
+	f := a.skin.themeFonts.e[el]
 	if !f.dressed() {
 		return a.ctx.font
 	}
@@ -226,12 +226,12 @@ func (a *App) elemEmoji(el themeFontElem, userPct int) *ttf.Font {
 
 // elemBold reports el's "<id>_bold", OR'd into each draw site's existing
 // bold gate (the weight the site hands LabelClippedFontWeight / labelEmojiWeight).
-func (a *App) elemBold(el themeFontElem) bool { return a.themeFonts.e[el].bold }
+func (a *App) elemBold(el themeFontElem) bool { return a.skin.themeFonts.e[el].bold }
 
 // elemChromeFont is the face a PANEL should dress its whole self in, or nil to
 // leave the client's chrome alone. Handed straight to Ctx.pushPanelFont.
 func (a *App) elemChromeFont(el themeFontElem, userPct int) *ttf.Font {
-	if !a.themeFonts.e[el].userFont {
+	if !a.skin.themeFonts.e[el].userFont {
 		return nil
 	}
 	return a.elemFont(el, userPct)
@@ -242,7 +242,7 @@ func (a *App) elemChromeFont(el themeFontElem, userPct int) *ttf.Font {
 // an empty per-panel font box is currently giving them, which is the difference
 // between "this setting does nothing" and "this setting is already set".
 func (a *App) themeFaceNameFor(el themeFontElem) string {
-	i := a.themeFonts.e[el].faceIdx()
+	i := a.skin.themeFonts.e[el].faceIdx()
 	if i < 0 || i >= len(a.themeFaceNames) {
 		return ""
 	}
@@ -259,7 +259,7 @@ func (a *App) messagePct() int { return a.elemPct(elemMessage, a.chatPct) }
 // the theme's FAMILY without the theme's point size overriding that fit, so the
 // size fold happens at the caller (messagePct) and never in here.
 func (a *App) messageFontFor(pct int, text string) *ttf.Font {
-	f := a.themeFonts.e[elemMessage]
+	f := a.skin.themeFonts.e[elemMessage]
 	if !f.dressed() {
 		return a.ctx.ChatFontFor(pct, text)
 	}
@@ -596,7 +596,7 @@ func (a *App) landThemeFonts(res *themeApply) {
 	// sampling that feeds it already happened off-thread; what is left here is
 	// integer arithmetic on a landed struct.
 	guardThemeInk(res, &tbl)
-	a.themeFonts = tbl
+	a.skin.themeFonts = tbl
 	// The chatbox message raster bakes its face and scale; re-raster it so a
 	// theme swap doesn't leave the old size on screen until the next message.
 	a.raster.rasterText = ""

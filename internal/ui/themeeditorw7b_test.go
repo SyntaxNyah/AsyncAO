@@ -592,7 +592,7 @@ func drainThemeApply(t *testing.T, a *App, gen uint64) {
 	t.Helper()
 	deadline := time.Now().Add(editorGateApplyWait)
 	for time.Now().Before(deadline) {
-		if res := a.themeRes.Load(); res != nil && res.gen >= gen {
+		if res := a.skin.themeRes.Load(); res != nil && res.gen >= gen {
 			return
 		}
 		time.Sleep(time.Millisecond)
@@ -615,12 +615,12 @@ func TestSavingGeometryDoesNotRestartTheTheme(t *testing.T) {
 		t.Fatal("the fixture nudge did not dirty the document; the save below would prove nothing")
 	}
 
-	before := a.themeGen.Load()
+	before := a.skin.themeGen.Load()
 	a.editorSave()
 	if !a.editorAwaitSave(editorGateSaveWait) {
 		t.Fatalf("the save did not land: %s", a.te.status)
 	}
-	if got := a.themeGen.Load(); got != before {
+	if got := a.skin.themeGen.Load(); got != before {
 		t.Errorf("saving a rect nudge kicked %d theme apply(s) — pollThemeApply re-anchors a.themeAt "+
 			"and purges the text cache, so every animated element in the theme restarts and the text "+
 			"cache hitches, once per save", got-before)
@@ -646,12 +646,12 @@ func TestSavingATypeEditAppliesTheThemeOnce(t *testing.T) {
 		t.Fatal("the fixture binding was refused")
 	}
 
-	before := a.themeGen.Load()
+	before := a.skin.themeGen.Load()
 	a.editorSave()
 	if !a.editorAwaitSave(editorGateSaveWait) {
 		t.Fatalf("the save did not land: %s", a.te.status)
 	}
-	kicked := a.themeGen.Load()
+	kicked := a.skin.themeGen.Load()
 	if kicked <= before {
 		t.Fatalf("saving a [fontbind] edit kicked no apply (gen %d → %d) — the row would be on disk and "+
 			"the courtroom would still be drawn in the old face until the user switched themes and back",
@@ -666,7 +666,7 @@ func TestSavingATypeEditAppliesTheThemeOnce(t *testing.T) {
 	if !a.editorAwaitSave(editorGateSaveWait) {
 		t.Fatalf("the second save did not land: %s", a.te.status)
 	}
-	if got := a.themeGen.Load(); got != kicked {
+	if got := a.skin.themeGen.Load(); got != kicked {
 		t.Errorf("a second save re-applied unchanged type tables (gen %d → %d) — the gate must compare "+
 			"against the last APPLY, not against whether the tables were ever edited", kicked, got)
 	}
@@ -735,7 +735,7 @@ func TestASaveDoesNotStaleTheTypeSignature(t *testing.T) {
 	if !a.editorAwaitSave(editorGateSaveWait) {
 		t.Fatalf("the save did not land: %s", a.te.status)
 	}
-	kicked := a.themeGen.Load()
+	kicked := a.skin.themeGen.Load()
 	if doc.typeSigApplied != doc.typeSig() {
 		t.Fatal("typeSigApplied does not match the tables that were just saved and applied")
 	}

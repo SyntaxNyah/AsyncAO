@@ -208,13 +208,13 @@ func TestDrawElementBandsZeroAllocWithNoElements(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 	draw()
-	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
+	if !a.skin.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch — the element bands never ran")
 	}
-	if a.themeLay.elN != 0 {
-		t.Fatalf("the stock fixture baked %d elements, want 0 — this gate measures the NO-element case", a.themeLay.elN)
+	if a.skin.themeLay.elN != 0 {
+		t.Fatalf("the stock fixture baked %d elements, want 0 — this gate measures the NO-element case", a.skin.themeLay.elN)
 	}
-	for b, rg := range a.themeLay.band {
+	for b, rg := range a.skin.themeLay.band {
 		if rg.lo != 0 || rg.hi != 0 {
 			t.Fatalf("band %d is %+v on a theme with no elements, want {0 0}", b, rg)
 		}
@@ -256,10 +256,10 @@ func TestDrawElementBandsZeroAllocWith96Elements(t *testing.T) {
 	// One frame FIRST: themeLayoutIn rebuilds the whole cache (`*lay = themeLayoutCache{…}`)
 	// on its cold path, which would wipe anything seeded before it.
 	draw()
-	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
+	if !a.skin.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch — the element bands never ran")
 	}
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 	seedBakedElements(a, lay, theme.ElementCap, seedElementArt(t, a))
 	if lay.elN != theme.ElementCap {
 		t.Fatalf("seeded %d elements, want %d", lay.elN, theme.ElementCap)
@@ -322,11 +322,11 @@ func BenchmarkThemedFrameNoElements(b *testing.B) {
 	// Prove the themed branch really ran: a silently-classic frame would measure a
 	// screen the element model never touches.
 	draw()
-	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
+	if !a.skin.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		b.Fatal("the fixture did not reach the themed branch — the benchmark would measure the classic path")
 	}
-	if a.themeLay.elN != 0 {
-		b.Fatalf("the fixture baked %d elements — this benchmark measures the NO-element case", a.themeLay.elN)
+	if a.skin.themeLay.elN != 0 {
+		b.Fatalf("the fixture baked %d elements — this benchmark measures the NO-element case", a.skin.themeLay.elN)
 	}
 	// Settle first (text atlas, width memos, the demand pump's negative caching) so
 	// b.N measures steady-state frames rather than the app warming up. The gates'

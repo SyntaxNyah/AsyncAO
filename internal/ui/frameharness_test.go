@@ -196,12 +196,12 @@ func driveUntilThemeApplied(t *testing.T, a *App) {
 	gen := a.applyThemeAsync()
 	for i := 0; i < frameHarnessApplyFrames; i++ {
 		driveFrame(a)
-		if a.themeAppliedGen >= gen {
+		if a.skin.themeAppliedGen >= gen {
 			return
 		}
 	}
 	t.Fatalf("no theme apply landed in %d real frames (generation %d, applied %d) — "+
-		"App.Frame is not draining the apply result", frameHarnessApplyFrames, gen, a.themeAppliedGen)
+		"App.Frame is not draining the apply result", frameHarnessApplyFrames, gen, a.skin.themeAppliedGen)
 }
 
 // ---------------------------------------------------------------------------
@@ -227,7 +227,7 @@ func TestTheFrameHarnessReallyDrivesAFrame(t *testing.T) {
 		t.Fatal("the menu bar's phase-1 latch was never taken — menuBarFrame runs above the screen " +
 			"dispatch, so nothing that calls drawCourtroom can reach it")
 	}
-	if !a.themeLay.valid {
+	if !a.skin.themeLay.valid {
 		t.Fatal("the themed layout never validated — the frame took the classic branch and every " +
 			"element/theme gate below would be measuring nothing")
 	}
@@ -399,7 +399,7 @@ func TestEveryElementPaintHappensInsideAnOpenPass(t *testing.T) {
 	defer cleanup()
 
 	driveFrame(a) // one frame first: themeLayoutIn replaces the whole cache on its cold path
-	lay := &a.themeLay
+	lay := &a.skin.themeLay
 	seedBakedElements(a, lay, elementPassGateCount, seedElementArt(t, a))
 	if lay.elN != elementPassGateCount {
 		t.Fatalf("seeded %d elements, want %d", lay.elN, elementPassGateCount)
