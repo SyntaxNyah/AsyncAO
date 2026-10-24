@@ -14,7 +14,7 @@ func TestSlotRectOverrideAndDefault(t *testing.T) {
 	const w, h = 1000, 500
 
 	// No override → the exact computed default (the safety invariant).
-	if got := a.slotRect(slotOOC, def, w, h); got != def {
+	if got := a.classic.slotRect(slotOOC, def, w, h); got != def {
 		t.Fatalf("no-override slotRect = %+v, want default %+v", got, def)
 	}
 
@@ -23,7 +23,7 @@ func TestSlotRectOverrideAndDefault(t *testing.T) {
 		slotOOC: {0.5, 0.25, 0.2, 0.4}, // x=500 y=125 w=200 h=200
 	}
 	want := sdl.Rect{X: 500, Y: 125, W: 200, H: 200}
-	if got := a.slotRect(slotOOC, def, w, h); got != want {
+	if got := a.classic.slotRect(slotOOC, def, w, h); got != want {
 		t.Fatalf("override slotRect = %+v, want %+v", got, want)
 	}
 }
@@ -39,8 +39,8 @@ func TestSlotNoAlloc(t *testing.T) {
 		slotViewport: {0.2, 0.2, 0.5, 0.5},
 	}
 	if n := testing.AllocsPerRun(200, func() {
-		_ = a.slotRect(slotOOC, def, w, h)
-		_ = a.slotRect(slotViewport, def, w, h)
+		_ = a.classic.slotRect(slotOOC, def, w, h)
+		_ = a.classic.slotRect(slotViewport, def, w, h)
 	}); n != 0 {
 		t.Fatalf("slotRect allocates %v/op on the render path; want 0", n)
 	}

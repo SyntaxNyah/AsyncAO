@@ -189,8 +189,8 @@ func rectToFrac(r sdl.Rect, w, h int32) [4]float64 {
 // shrunk only if the result would leave the window) — the immediate feedback for
 // the editor's "4:3" toggle. Undoable and persisted like any drag. No-op when
 // the stage is already 4:3 or isn't registered this frame.
-func (a *App) snapViewportTo43(w, h int32) {
-	info, ok := a.classic.slotReg[slotViewport]
+func (classic1 *classicState) snapViewportTo43(e *env, w, h int32) {
+	info, ok := classic1.slotReg[slotViewport]
 	if !ok {
 		return
 	}
@@ -208,14 +208,14 @@ func (a *App) snapViewportTo43(w, h int32) {
 		return // already 4:3 — no phantom undo entry
 	}
 	r.H = nh
-	a.classic.pushClassicUndo()
-	if a.classic.classicOv == nil {
-		a.classic.classicOv = make(map[string][4]float64, classicSlotRegCap)
+	classic1.pushClassicUndo()
+	if classic1.classicOv == nil {
+		classic1.classicOv = make(map[string][4]float64, classicSlotRegCap)
 	}
 	ov := rectToFrac(r, w, h)
-	a.classic.classicOv[slotViewport] = ov
-	a.d.Prefs.SetClassicSlot(slotViewport, ov)
-	a.debug.push("edit layout: stage snapped to 4:3")
+	classic1.classicOv[slotViewport] = ov
+	e.d.Prefs.SetClassicSlot(slotViewport, ov)
+	e.debug.push("edit layout: stage snapped to 4:3")
 }
 
 // regSlot records a slot's drawn/default rects for the editor (edit-only path).
@@ -232,13 +232,13 @@ func (classic1 *classicState) regSlot(name string, cur, def sdl.Rect) {
 // slotRect returns a movable+resizable widget's rect: the user override (frac→px)
 // if present, else the layout's computed default. Reads a.classicOv lock-free; on
 // the common (non-edit) frame it touches no map writer and allocates nothing.
-func (a *App) slotRect(name string, def sdl.Rect, w, h int32) sdl.Rect {
+func (classic1 *classicState) slotRect(name string, def sdl.Rect, w, h int32) sdl.Rect {
 	cur := def
-	if ov, ok := a.classic.classicOv[name]; ok {
-		cur = a.classic.anchoredRect(name, ov, w, h) // fracToRect unless the slot is window-pinned
+	if ov, ok := classic1.classicOv[name]; ok {
+		cur = classic1.anchoredRect(name, ov, w, h) // fracToRect unless the slot is window-pinned
 	}
-	if a.classic.classicEdit {
-		a.classic.regSlot(name, cur, def)
+	if classic1.classicEdit {
+		classic1.regSlot(name, cur, def)
 	}
 	return cur
 }
@@ -251,7 +251,7 @@ func (a *App) slotRect(name string, def sdl.Rect, w, h int32) sdl.Rect {
 // string literal (no per-frame formatting) to keep the row allocation-free. Returns
 // whether the button was clicked this frame.
 func (a *App) movableButton(key string, def sdl.Rect, label string, w, h int32) bool {
-	return a.ctx.Button(a.slotRect(key, def, w, h), label)
+	return a.ctx.Button(a.classic.slotRect(key, def, w, h), label)
 }
 
 // ctrlSlot positions one courtroom control button at the shared row cursor *x and
@@ -265,7 +265,7 @@ func (a *App) ctrlSlot(x *int32, y2, wdt, adv, w, h int32, key string) (sdl.Rect
 	if a.classic.panelHidden(key) {
 		return sdl.Rect{}, false
 	}
-	r := a.slotRect(key, sdl.Rect{X: *x, Y: y2, W: wdt, H: btnH}, w, h)
+	r := a.classic.slotRect(key, sdl.Rect{X: *x, Y: y2, W: wdt, H: btnH}, w, h)
 	*x += adv
 	return r, true
 }
@@ -590,24 +590,24 @@ func (classic1 *classicState) restoreClassicOv(snap map[string][4]float64) {
 // and the result persists. (Right-click only resets a box to DEFAULT; undo gets
 // a previous CUSTOM spot back.) Driven by editorUndoChord — Ctrl chords arrive
 // on the hotkey channel, so the editor's draw loop never sees them.
-func (a *App) classicEditUndo() {
-	if len(a.classic.classicUndo) == 0 {
+func (classic1 *classicState) classicEditUndo() {
+	if len(classic1.classicUndo) == 0 {
 		return
 	}
-	a.classic.classicRedo = append(a.classic.classicRedo, cloneClassicOv(a.classic.classicOv))
-	snap := a.classic.classicUndo[len(a.classic.classicUndo)-1]
-	a.classic.classicUndo = a.classic.classicUndo[:len(a.classic.classicUndo)-1]
-	a.classic.restoreClassicOv(snap)
+	classic1.classicRedo = append(classic1.classicRedo, cloneClassicOv(classic1.classicOv))
+	snap := classic1.classicUndo[len(classic1.classicUndo)-1]
+	classic1.classicUndo = classic1.classicUndo[:len(classic1.classicUndo)-1]
+	classic1.restoreClassicOv(snap)
 }
 
-func (a *App) classicEditRedo() {
-	if len(a.classic.classicRedo) == 0 {
+func (classic1 *classicState) classicEditRedo() {
+	if len(classic1.classicRedo) == 0 {
 		return
 	}
-	a.classic.classicUndo = append(a.classic.classicUndo, cloneClassicOv(a.classic.classicOv))
-	snap := a.classic.classicRedo[len(a.classic.classicRedo)-1]
-	a.classic.classicRedo = a.classic.classicRedo[:len(a.classic.classicRedo)-1]
-	a.classic.restoreClassicOv(snap)
+	classic1.classicUndo = append(classic1.classicUndo, cloneClassicOv(classic1.classicOv))
+	snap := classic1.classicRedo[len(classic1.classicRedo)-1]
+	classic1.classicRedo = classic1.classicRedo[:len(classic1.classicRedo)-1]
+	classic1.restoreClassicOv(snap)
 }
 
 // drawClassicEditor paints the slot-editor overlay and owns every interaction.
@@ -676,7 +676,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 		// behaviour only constrained future resize drags, which read as "the 4:3
 		// button does nothing" in the playtest.
 		if a.layoutAspect {
-			a.snapViewportTo43(w, h)
+			a.classic.snapViewportTo43(&a.env, w, h)
 		}
 	}
 	if c.clicked && pointIn(c.mouseX, c.mouseY, magnetBtn) {
@@ -753,7 +753,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// reference when the window resizes, instead of drifting with the
 	// fractions. Consumed so a char keybind on A can't also fire mid-edit.
 	if a.classic.classicEditDrag == 0 && hoverKey != "" && c.keyPressed == sdl.K_a {
-		a.cycleSlotAnchor(hoverKey, w, h)
+		a.classic.cycleSlotAnchor(&a.env, hoverKey, w, h)
 		c.keyPressed = 0
 	}
 

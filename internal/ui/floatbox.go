@@ -563,7 +563,7 @@ func (a *App) seedExtrasFromSlot(w, h int32) {
 // on a drag/resize-END frame (never per-frame) so its position + size survive a
 // relaunch. Mirrors persistPanelSlot for the non-floatWin Extras box.
 func (a *App) persistExtrasSlot(w, h int32) {
-	a.persistPanelSlot(slotExtras, a.extrasBoxRect(w, h), w, h)
+	a.classic.persistPanelSlot(&a.env, slotExtras, a.extrasBoxRect(w, h), w, h)
 }
 
 // detachedBoxRect is the i-th torn-off widget's screen rect: its (possibly
@@ -731,7 +731,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	// clickable, so a click in one must not also land on the stage behind it.
 	if len(a.classic.classicOv) > 0 {
 		for i := range tornTabTable {
-			if r, ok := a.tornTabRect(tornTabTable[i].key, w, h); ok && pointIn(mx, my, r) {
+			if r, ok := a.classic.tornTabRect(tornTabTable[i].key, w, h); ok && pointIn(mx, my, r) {
 				return true
 			}
 		}

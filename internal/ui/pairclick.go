@@ -283,7 +283,7 @@ const (
 // pairPopPanelRect is the panel's screen rect, seeded from its persisted layout
 // slot on first open and clamped on-screen thereafter (the modcallPanelRect idiom).
 func (a *App) pairPopPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.wins.pairPopWin, slotPanelPairPop, pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, w, h); ok {
+	if r, ok := a.classic.seedPanelFromSlot(&a.wins.pairPopWin, slotPanelPairPop, pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, w, h); ok {
 		return r
 	}
 	return a.wins.pairPopWin.rect(pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, w, h)
@@ -318,7 +318,7 @@ func (a *App) drawPairPopup(w, h int32, pressed *bool) {
 	a.floatWinResize(&a.wins.pairPopWin, grip, panel, pairPopPanelMinW, pairPopPanelMinH, pressed)
 	a.drawResizeGrip(grip)
 	if wasActive && !a.wins.pairPopWin.dragging && !a.wins.pairPopWin.resizing { // drag/resize just ended → remember where
-		a.persistPanelSlot(slotPanelPairPop, panel, w, h)
+		a.classic.persistPanelSlot(&a.env, slotPanelPairPop, panel, w, h)
 	}
 	x := panel.X + 18
 	y := panel.Y + floatTitleH + 10

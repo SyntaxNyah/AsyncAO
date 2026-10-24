@@ -63,7 +63,7 @@ func (a *App) voiceButtonState() (label string, border sdl.Color) {
 }
 
 func (a *App) voicePanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.wins.voiceWin, slotPanelVoice, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, w, h); ok {
+	if r, ok := a.classic.seedPanelFromSlot(&a.wins.voiceWin, slotPanelVoice, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, w, h); ok {
 		return r
 	}
 	if !a.wins.voiceWin.placed {
@@ -219,7 +219,7 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 	a.floatWinResize(&a.wins.voiceWin, grip, r, voicePanelMinW, voicePanelMinH, pressed)
 	a.drawResizeGrip(grip)
 	if wasActive && !a.wins.voiceWin.dragging && !a.wins.voiceWin.resizing { // drag/resize just ended → remember where
-		a.persistPanelSlot(slotPanelVoice, r, w, h)
+		a.classic.persistPanelSlot(&a.env, slotPanelVoice, r, w, h)
 	}
 
 	x := r.X + pad

@@ -412,7 +412,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	} {
 		bw := c.TextWidth(pm.label) + 16
 		if c.Button(sdl.Rect{X: bx, Y: y, W: bw, H: btnH}, pm.label) {
-			a.applyStagePreset(pm.vp)
+			a.classic.applyStagePreset(pm.vp)
 			a.debug.push("layout: stage preset applied")
 		}
 		bx += bw + 6
@@ -1267,7 +1267,7 @@ func (a *App) applyFactoryReset(wipeAll bool) {
 // the subset NewApp seeds — so a reset (or import) takes effect without a
 // restart. Not a hot path.
 func (a *App) applyPrefsToState() {
-	a.seedHiddenFromPrefs() // hidden-chrome set + the A6 no-strand normalization
+	a.classic.seedHiddenFromPrefs(&a.env) // hidden-chrome set + the A6 no-strand normalization
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = a.d.Prefs.Load().LayoutScales()
 	a.oocPct = a.d.Prefs.Load().OOCScalePct
 	a.uiScalePct = a.d.Prefs.Load().UIScalePct

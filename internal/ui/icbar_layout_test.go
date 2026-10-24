@@ -42,22 +42,22 @@ func TestICBarSlotsAreEditable(t *testing.T) {
 	}
 	a := testTabApp(t)
 	def := sdl.Rect{X: 100, Y: 50, W: 200, H: 24}
-	if got := a.slotRect(slotICInput, def, 1000, 800); got != def {
+	if got := a.classic.slotRect(slotICInput, def, 1000, 800); got != def {
 		t.Errorf("no override: slotRect = %+v, want the default %+v", got, def)
 	}
 	a.classic.classicOv = map[string][4]float64{slotICInput: {0.2, 0.1, 0.3, 0.04}}
-	if got, want := a.slotRect(slotICInput, def, 1000, 800), (sdl.Rect{X: 200, Y: 80, W: 300, H: 32}); got != want {
+	if got, want := a.classic.slotRect(slotICInput, def, 1000, 800), (sdl.Rect{X: 200, Y: 80, W: 300, H: 32}); got != want {
 		t.Errorf("override: slotRect = %+v, want the moved spot %+v", got, want)
 	}
 
 	// Additive is the newest pulled-out piece (2.8 servers only): un-edited it draws at
 	// its default spot (pixel-identical to the old fixed offset), and an override moves it.
 	addDef := sdl.Rect{X: 120, Y: 60, W: 84, H: 26}
-	if got := a.slotRect(slotICAdditive, addDef, 1000, 800); got != addDef {
+	if got := a.classic.slotRect(slotICAdditive, addDef, 1000, 800); got != addDef {
 		t.Errorf("Additive no override: slotRect = %+v, want the default %+v", got, addDef)
 	}
 	a.classic.classicOv = map[string][4]float64{slotICAdditive: {0.1, 0.2, 0.084, 0.0325}}
-	if got, want := a.slotRect(slotICAdditive, addDef, 1000, 800), (sdl.Rect{X: 100, Y: 160, W: 84, H: 26}); got != want {
+	if got, want := a.classic.slotRect(slotICAdditive, addDef, 1000, 800), (sdl.Rect{X: 100, Y: 160, W: 84, H: 26}); got != want {
 		t.Errorf("Additive override: slotRect = %+v, want the moved spot %+v", got, want)
 	}
 }

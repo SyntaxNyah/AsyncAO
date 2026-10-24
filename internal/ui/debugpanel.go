@@ -53,7 +53,7 @@ func (a *App) toggleDebugPanel() { a.debugPanel.open = !a.debugPanel.open }
 
 // debugPanelRect is the Debug panel's floating-window rect (floatwin.go).
 func (a *App) debugPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.wins.debugWin, slotPanelDebug, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, w, h); ok {
+	if r, ok := a.classic.seedPanelFromSlot(&a.wins.debugWin, slotPanelDebug, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, w, h); ok {
 		return r
 	}
 	return a.wins.debugWin.rect(debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, w, h)
@@ -76,7 +76,7 @@ func (a *App) drawDebugPanel(w, h int32, pressed *bool) {
 	a.floatWinResize(&a.wins.debugWin, grip, panel, debugPanelMinW, debugPanelMinH, pressed)
 	a.drawResizeGrip(grip)
 	if wasActive && !a.wins.debugWin.dragging && !a.wins.debugWin.resizing { // drag/resize just ended → remember where
-		a.persistPanelSlot(slotPanelDebug, panel, w, h)
+		a.classic.persistPanelSlot(&a.env, slotPanelDebug, panel, w, h)
 	}
 	x := panel.X + debugPanelIn
 

@@ -289,7 +289,7 @@ func (a *App) placeClientAt(mx, my int32) {
 
 // clientWinRect is the floating client window's clamped screen rect.
 func (a *App) clientWinRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.wins.clientWin, slotPanelClient, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, w, h); ok {
+	if r, ok := a.classic.seedPanelFromSlot(&a.wins.clientWin, slotPanelClient, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, w, h); ok {
 		return r
 	}
 	return a.wins.clientWin.rect(clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, w, h)
@@ -337,7 +337,7 @@ func (a *App) drawFloatClient(w, h int32, pressed *bool) {
 	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
 	a.floatWinResize(&a.wins.clientWin, grip, r, clientWinMinW, clientWinMinH, pressed)
 	if wasActive && !a.wins.clientWin.dragging && !a.wins.clientWin.resizing { // drag/resize just ended → remember where
-		a.persistPanelSlot(slotPanelClient, r, w, h)
+		a.classic.persistPanelSlot(&a.env, slotPanelClient, r, w, h)
 	}
 	body := sdl.Rect{X: r.X, Y: r.Y + floatTitleH, W: r.W, H: r.H - floatTitleH}
 	if a.client.clientFull && a.canRenderFullClient() {

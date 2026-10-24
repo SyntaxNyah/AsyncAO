@@ -260,7 +260,7 @@ const (
 // loginPanelRect is the panel's screen rect, seeded from its persisted layout slot
 // on first open and clamped on-screen thereafter (the modcallPanelRect idiom).
 func (a *App) loginPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.wins.loginWin, slotPanelLogin, loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, w, h); ok {
+	if r, ok := a.classic.seedPanelFromSlot(&a.wins.loginWin, slotPanelLogin, loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, w, h); ok {
 		return r
 	}
 	return a.wins.loginWin.rect(loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, w, h)
@@ -291,7 +291,7 @@ func (a *App) drawLoginDialog(w, h int32, pressed *bool) {
 	a.floatWinResize(&a.wins.loginWin, grip, panel, loginPanelMinW, loginPanelMinH, pressed)
 	a.drawResizeGrip(grip)
 	if wasActive && !a.wins.loginWin.dragging && !a.wins.loginWin.resizing { // drag/resize just ended → remember where
-		a.persistPanelSlot(slotPanelLogin, panel, w, h)
+		a.classic.persistPanelSlot(&a.env, slotPanelLogin, panel, w, h)
 	}
 	y := panel.Y + floatTitleH + 8
 	c.LabelClipped(panel.X+pad, y, panel.W-2*pad, a.srvMeta.serverName, ColText)

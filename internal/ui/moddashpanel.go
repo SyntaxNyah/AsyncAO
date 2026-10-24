@@ -107,7 +107,7 @@ func banBoxDims(kind int) (defH, minH int32) {
 // the open kind. Shared banWin geometry: a position/size the mod set carries over.
 func (a *App) banBoxRect(w, h int32) sdl.Rect {
 	defH, minH := banBoxDims(a.banBox.kind)
-	if r, ok := a.seedPanelFromSlot(&a.wins.banWin, slotPanelBan, banBoxDefW, defH, banBoxMinW, minH, w, h); ok {
+	if r, ok := a.classic.seedPanelFromSlot(&a.wins.banWin, slotPanelBan, banBoxDefW, defH, banBoxMinW, minH, w, h); ok {
 		return r
 	}
 	return a.wins.banWin.rect(banBoxDefW, defH, banBoxMinW, minH, w, h)
@@ -493,7 +493,7 @@ func (a *App) fetchAreaForBan() {
 // drawModDashPanel paints the dashboard (or the ban/kick box on top of it) and handles its input.
 // modDashRect is the Mod dashboard's floating-window rect (floatwin.go).
 func (a *App) modDashRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.wins.modWin, slotPanelMod, modDashW, modDashH, modDashMinW, modDashMinH, w, h); ok {
+	if r, ok := a.classic.seedPanelFromSlot(&a.wins.modWin, slotPanelMod, modDashW, modDashH, modDashMinW, modDashMinH, w, h); ok {
 		return r
 	}
 	return a.wins.modWin.rect(modDashW, modDashH, modDashMinW, modDashMinH, w, h)
@@ -516,7 +516,7 @@ func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
 	a.floatWinResize(&a.wins.modWin, mgrip, panel, modDashMinW, modDashMinH, pressed)
 	a.drawResizeGrip(mgrip)
 	if wasActive && !a.wins.modWin.dragging && !a.wins.modWin.resizing { // drag/resize just ended → remember where
-		a.persistPanelSlot(slotPanelMod, panel, w, h)
+		a.classic.persistPanelSlot(&a.env, slotPanelMod, panel, w, h)
 	}
 	x := panel.X + modDashIn
 
@@ -948,7 +948,7 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 	a.floatWinResize(&a.wins.banWin, bgrip, panel, banBoxMinW, minH, pressed)
 	a.drawResizeGrip(bgrip)
 	if wasActive && !a.wins.banWin.dragging && !a.wins.banWin.resizing { // drag/resize just ended → remember where
-		a.persistPanelSlot(slotPanelBan, panel, w, h)
+		a.classic.persistPanelSlot(&a.env, slotPanelBan, panel, w, h)
 	}
 	x := panel.X + modDashIn
 	maxW := pw - 2*modDashIn
@@ -1069,7 +1069,7 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	a.floatWinResize(&a.wins.banWin, bgrip, panel, banBoxMinW, minH, pressed)
 	a.drawResizeGrip(bgrip)
 	if wasActive && !a.wins.banWin.dragging && !a.wins.banWin.resizing { // drag/resize just ended → remember where
-		a.persistPanelSlot(slotPanelBan, panel, w, h)
+		a.classic.persistPanelSlot(&a.env, slotPanelBan, panel, w, h)
 	}
 	x := panel.X + modDashIn
 	maxW := pw - 2*modDashIn

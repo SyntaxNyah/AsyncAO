@@ -38,15 +38,15 @@ func (msg *msgState) toggleMessages() { msg.showMessages = !msg.showMessages }
 // panel's historical tuck / centre) — this helper only owns the slot-seed path,
 // never a panel's default, so wiring it in can't move an un-persisted panel.
 // panelSlotTable is the canonical enumeration of the panels this drives.
-func (a *App) seedPanelFromSlot(fw *floatWin, slot string, defW, defH, minW, minH, w, h int32) (sdl.Rect, bool) {
+func (classic1 *classicState) seedPanelFromSlot(fw *floatWin, slot string, defW, defH, minW, minH, w, h int32) (sdl.Rect, bool) {
 	if fw.placed {
 		return sdl.Rect{}, false
 	}
-	ov, ok := a.classic.classicOv[slot]
+	ov, ok := classic1.classicOv[slot]
 	if !ok {
 		return sdl.Rect{}, false
 	}
-	r := a.classic.anchoredRect(slot, ov, w, h) // positioned via Edit Layout → start there
+	r := classic1.anchoredRect(slot, ov, w, h) // positioned via Edit Layout → start there
 	fw.x, fw.y, fw.w, fw.h, fw.placed = r.X, r.Y, r.W, r.H, true
 	return fw.rect(defW, defH, minW, minH, w, h), true
 }
@@ -59,16 +59,16 @@ func (a *App) seedPanelFromSlot(fw *floatWin, slot string, defW, defH, minW, min
 // re-deriving it from def/min sizes) keeps panels with a dynamic default height in
 // sync automatically. Callers must invoke it only on the drag/resize-END frame
 // (the wasActive guard) — never per-frame.
-func (a *App) persistPanelSlot(slot string, r sdl.Rect, w, h int32) {
+func (classic1 *classicState) persistPanelSlot(e *env, slot string, r sdl.Rect, w, h int32) {
 	frac := rectToFrac(r, w, h)
-	if a.classic.classicOv == nil {
-		a.classic.classicOv = make(map[string][4]float64, classicSlotRegCap)
+	if classic1.classicOv == nil {
+		classic1.classicOv = make(map[string][4]float64, classicSlotRegCap)
 	}
-	a.classic.classicOv[slot] = frac
-	a.classic.syncAnchorWindow(slot, w, h) // a pinned slot's override now describes THIS window
-	a.d.Prefs.SetClassicSlot(slot, frac)
-	if m := a.classic.slotAnchorMode(slot); m != "" {
-		a.d.Prefs.SetClassicAnchor(slot, config.ClassicAnchor{Mode: m, WinW: int(w), WinH: int(h)})
+	classic1.classicOv[slot] = frac
+	classic1.syncAnchorWindow(slot, w, h) // a pinned slot's override now describes THIS window
+	e.d.Prefs.SetClassicSlot(slot, frac)
+	if m := classic1.slotAnchorMode(slot); m != "" {
+		e.d.Prefs.SetClassicAnchor(slot, config.ClassicAnchor{Mode: m, WinW: int(w), WinH: int(h)})
 	}
 }
 
@@ -76,7 +76,7 @@ func (a *App) persistPanelSlot(slot string, r sdl.Rect, w, h int32) {
 // persisted layout slot (if you positioned it in Edit Layout), else tucks it
 // top-left; thereafter the live floatWin geometry (drag / resize) wins.
 func (a *App) msgPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.seedPanelFromSlot(&a.wins.msgWin, slotMessages, msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h); ok {
+	if r, ok := a.classic.seedPanelFromSlot(&a.wins.msgWin, slotMessages, msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h); ok {
 		return r
 	}
 	if !a.wins.msgWin.placed { // historical default: tuck top-left (not centred)
@@ -99,7 +99,7 @@ func (a *App) msgSlotDefaultRect(w, h int32) sdl.Rect {
 // drag/resize-END frame (never per-frame). Thin wrapper over the generic
 // persistPanelSlot now that every panel shares that path.
 func (a *App) persistMsgSlot(w, h int32) {
-	a.persistPanelSlot(slotMessages, a.wins.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h), w, h)
+	a.classic.persistPanelSlot(&a.env, slotMessages, a.wins.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h), w, h)
 }
 
 // drawMessagesSlotGhost draws an inert titled placeholder for the Group Chat panel
@@ -111,7 +111,7 @@ func (a *App) drawMessagesSlotGhost(w, h int32) {
 		return
 	}
 	c := a.ctx
-	r := a.slotRect(slotMessages, a.msgSlotDefaultRect(w, h), w, h)
+	r := a.classic.slotRect(slotMessages, a.msgSlotDefaultRect(w, h), w, h)
 	if r.W < classicMinPx || r.H < classicMinPx {
 		return
 	}

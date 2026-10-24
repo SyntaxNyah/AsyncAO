@@ -725,7 +725,7 @@ func (a *App) toolboxPiecesRect(w, h int32) sdl.Rect {
 	// Never placed and nothing saved: keep the original corner, so an existing
 	// user's panel does not move on them just because it became draggable.
 	if !a.wins.piecesWin.placed {
-		if r, ok := a.seedPanelFromSlot(&a.wins.piecesWin, slotPanelPieces, pw, panelH, toolboxPiecesMinW, toolboxPiecesMinH, w, h); ok {
+		if r, ok := a.classic.seedPanelFromSlot(&a.wins.piecesWin, slotPanelPieces, pw, panelH, toolboxPiecesMinW, toolboxPiecesMinH, w, h); ok {
 			return r
 		}
 		x := w - pw - compactToolboxMargin
@@ -835,7 +835,7 @@ func (a *App) toggleChromePanel(id, label string) {
 // through. Wholesale hidden-set writes (profile apply, prefs import/reset)
 // normalize the same invariant in seedHiddenFromPrefs instead.
 func (a *App) setPanelHiddenGuarded(id string, hide bool) {
-	if hide && a.lastMouseLifeline(id) {
+	if hide && a.classic.lastMouseLifeline(id) {
 		a.warnLine = "Kept: that's the last mouse route back to the client's controls. (Ctrl+F reopens this panel.)"
 		a.warnAt = time.Now()
 		return
@@ -845,7 +845,7 @@ func (a *App) setPanelHiddenGuarded(id string, hide bool) {
 
 // lastMouseLifeline reports whether hiding id would leave every mouse lifeline
 // hidden. A id that is not a lifeline is never refused.
-func (a *App) lastMouseLifeline(id string) bool {
+func (classic1 *classicState) lastMouseLifeline(id string) bool {
 	isLifeline := false
 	for _, l := range mouseLifelines {
 		if l == id {
@@ -857,7 +857,7 @@ func (a *App) lastMouseLifeline(id string) bool {
 		return false
 	}
 	for _, l := range mouseLifelines {
-		if l != id && !a.classic.panelHidden(l) {
+		if l != id && !classic1.panelHidden(l) {
 			return false // something else still gets them back
 		}
 	}
@@ -908,7 +908,7 @@ func (a *App) drawToolboxPieces(w, h int32) {
 	wasManip := a.wins.piecesWin.dragging
 	a.floatWinDrag(&a.wins.piecesWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W, H: toolboxFilterY}, &piecesPressed)
 	if wasManip && !a.wins.piecesWin.dragging {
-		a.persistPanelSlot(slotPanelPieces, panel, w, h) // remember where, across sessions
+		a.classic.persistPanelSlot(&a.env, slotPanelPieces, panel, w, h) // remember where, across sessions
 	}
 	if !c.mouseDown && wasManip {
 		c.clicked = false // a finished drag is not a click on whatever is underneath

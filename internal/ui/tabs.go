@@ -846,7 +846,7 @@ func (a *App) tabStripCacheRect(lay *themeLayoutCache, w, h, total int32, parked
 		// Only the origin survives: the slot's persisted W/H are window fractions and
 		// the strip is move-only, so its size is always the chips'.
 		a.classic.ensureClassicOv()
-		r := a.slotRect(slotTabBar, def, w, h)
+		r := a.classic.slotRect(slotTabBar, def, w, h)
 		r.W, r.H = def.W, def.H
 		return r, true
 	}
@@ -872,7 +872,7 @@ func (a *App) tabStripOrigin(def sdl.Rect, w, h int32) sdl.Rect {
 		cur.X, cur.Y = tr.X, tr.Y
 		return cur
 	}
-	return a.slotRect(slotTabBar, def, w, h)
+	return a.classic.slotRect(slotTabBar, def, w, h)
 }
 
 // tabStripThemeRect returns the active theme's home for the strip, when the themed

@@ -342,9 +342,9 @@ func (a *App) editorUndoChord() bool {
 	}
 	switch {
 	case a.classic.classicEdit && c.hotkey == sdl.K_z:
-		a.classicEditUndo()
+		a.classic.classicEditUndo()
 	case a.classic.classicEdit:
-		a.classicEditRedo()
+		a.classic.classicEditRedo()
 	case c.hotkey == sdl.K_z:
 		a.layoutEditUndo()
 	default:
@@ -944,7 +944,7 @@ func (a *App) hkSheetRect(w, h int32) sdl.Rect {
 	if defH > 540 {
 		defH = 540
 	}
-	if r, ok := a.seedPanelFromSlot(&a.wins.hkWin, slotPanelHK, hkSheetDefW, defH, hkSheetMinW, hkSheetMinH, w, h); ok {
+	if r, ok := a.classic.seedPanelFromSlot(&a.wins.hkWin, slotPanelHK, hkSheetDefW, defH, hkSheetMinW, hkSheetMinH, w, h); ok {
 		return r
 	}
 	return a.wins.hkWin.rect(hkSheetDefW, defH, hkSheetMinW, hkSheetMinH, w, h)
@@ -995,7 +995,7 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 	a.floatWinResize(&a.wins.hkWin, hgrip, r, hkSheetMinW, hkSheetMinH, &pressed)
 	a.drawResizeGrip(hgrip)
 	if wasManip && !a.wins.hkWin.dragging && !a.wins.hkWin.resizing { // drag/resize just ended → remember where
-		a.persistPanelSlot(slotPanelHK, r, w, h)
+		a.classic.persistPanelSlot(&a.env, slotPanelHK, r, w, h)
 	}
 	if !c.mouseDown && wasManip {
 		c.clicked = false // a finished drag/resize isn't a click underneath

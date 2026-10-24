@@ -65,7 +65,7 @@ func TestTopChromeHDropsTheMenuBarOnFullWindowOverlays(t *testing.T) {
 // tab strip is unaffected — it docks under the bar and reads topChromeH itself.
 func TestHidingTheMenuBarGivesTheBandBack(t *testing.T) {
 	a := testTabApp(t)
-	a.seedHiddenFromPrefs() // the production path that builds a.hidden
+	a.classic.seedHiddenFromPrefs(&a.env) // the production path that builds a.hidden
 	a.tabs = []*courtTab{{}}
 	a.activeTab = 0
 	if got, want := a.topChromeH(), menuBarH+tabBarH; got != want {
@@ -87,7 +87,7 @@ func TestHidingTheMenuBarGivesTheBandBack(t *testing.T) {
 		t.Errorf("band = %d after unhiding, want %d", got, want)
 	}
 	a.classic.setPanelHidden(panelMenuBar, true)
-	a.seedHiddenFromPrefs()
+	a.classic.seedHiddenFromPrefs(&a.env)
 	if !a.classic.panelHidden(panelMenuBar) {
 		t.Error("hiding the menu bar did not survive seedHiddenFromPrefs")
 	}
@@ -186,7 +186,7 @@ func TestLobbyHeaderRowShedsBeforeItOverlapsTheUtilityCluster(t *testing.T) {
 // old two-way guard could never fire.
 func TestMenuBarIsAMouseLifeline(t *testing.T) {
 	a := testTabApp(t)
-	a.seedHiddenFromPrefs()
+	a.classic.seedHiddenFromPrefs(&a.env)
 
 	// Hiding two of the three is allowed — one route survives.
 	a.setPanelHiddenGuarded(ctrlSettingsSlot, true)
@@ -205,7 +205,7 @@ func TestMenuBarIsAMouseLifeline(t *testing.T) {
 	}
 	// Order must not matter: the menu bar is not privileged, it is just one of three.
 	b := testTabApp(t)
-	b.seedHiddenFromPrefs()
+	b.classic.seedHiddenFromPrefs(&b.env)
 	b.setPanelHiddenGuarded(panelMenuBar, true)
 	b.setPanelHiddenGuarded(ctrlSettingsSlot, true)
 	b.setPanelHiddenGuarded(panelToolbox, true)
@@ -216,7 +216,7 @@ func TestMenuBarIsAMouseLifeline(t *testing.T) {
 	// apply, a prefs import) is normalised on load instead of refused.
 	c := testTabApp(t)
 	c.d.Prefs.SetHiddenPanels([]string{panelToolbox, ctrlSettingsSlot, panelMenuBar})
-	c.seedHiddenFromPrefs()
+	c.classic.seedHiddenFromPrefs(&c.env)
 	if c.classic.panelHidden(panelToolbox) {
 		t.Error("a stranded saved set must un-hide the toolbox on load")
 	}

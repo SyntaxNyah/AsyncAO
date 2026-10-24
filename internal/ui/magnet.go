@@ -103,10 +103,10 @@ func (a *App) collectOpenPanelRects(w, h int32) {
 	// must not be an invisible magnet target either.
 	if len(a.classic.classicOv) > 0 {
 		for i := range tornTabTable {
-			if a.tabHidden(tornTabTable[i].id) {
+			if a.classic.tabHidden(tornTabTable[i].id) {
 				continue
 			}
-			if r, ok := a.tornTabRect(tornTabTable[i].key, w, h); ok && r.W >= classicMinPx && r.H >= classicMinPx {
+			if r, ok := a.classic.tornTabRect(tornTabTable[i].key, w, h); ok && r.W >= classicMinPx && r.H >= classicMinPx {
 				add(r)
 			}
 		}
