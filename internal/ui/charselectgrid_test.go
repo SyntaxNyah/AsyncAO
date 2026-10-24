@@ -588,7 +588,7 @@ func cellChromeHarness(t *testing.T) (*App, *sdl.Renderer, func()) {
 	// The pointer parked far away: hover chrome (the "+key" badge, every tooltip) must
 	// not be what makes two renders differ.
 	ctx.mouseX, ctx.mouseY = -1000, -1000
-	a.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Phoenix"}}}
+	a.link.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Phoenix"}}}
 	a.ensureCharLower()
 	a.wardrobeMembers = map[string]bool{}
 	a.iniList = []string{"Phoenix"}
@@ -631,11 +631,11 @@ func TestSmallCellsSuppressCornerChromeOnBothTabs(t *testing.T) {
 	}{
 		{"Characters ★", func(cell sdl.Rect, on bool) []byte {
 			a.wardrobeMembers = map[string]bool{"phoenix": on}
-			return shot(cell, func() { a.drawCharCell(&a.sess.Chars[0], cell, 0, false, plan) })
+			return shot(cell, func() { a.drawCharCell(&a.link.sess.Chars[0], cell, 0, false, plan) })
 		}},
 		{"Characters download badge", func(cell sdl.Rect, on bool) []byte {
 			a.wardrobeMembers = map[string]bool{}
-			return shot(cell, func() { a.drawCharCell(&a.sess.Chars[0], cell, 0, on, plan) })
+			return shot(cell, func() { a.drawCharCell(&a.link.sess.Chars[0], cell, 0, on, plan) })
 		}},
 		{"Wardrobe ★", func(cell sdl.Rect, on bool) []byte {
 			a.iniWardrobe = []bool{on}
@@ -719,13 +719,13 @@ func TestStockTableAtTheWindowFloorSuppressesCornerChrome(t *testing.T) {
 // charLower, and survive an out-of-range index without panicking a draw.
 func TestCharHoverIDsAreCachedNotRebuilt(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Phoenix"}, {Name: "Edgeworth"}}}
+	a.link.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Phoenix"}, {Name: "Edgeworth"}}}
 	a.ensureCharLower()
-	if len(a.charHoverIDs) != len(a.sess.Chars) {
-		t.Fatalf("hover ids = %d, want one per character (%d)", len(a.charHoverIDs), len(a.sess.Chars))
+	if len(a.charHoverIDs) != len(a.link.sess.Chars) {
+		t.Fatalf("hover ids = %d, want one per character (%d)", len(a.charHoverIDs), len(a.link.sess.Chars))
 	}
-	for i := range a.sess.Chars {
-		if want := "char:" + a.sess.Chars[i].Name; a.charHoverID(i) != want {
+	for i := range a.link.sess.Chars {
+		if want := "char:" + a.link.sess.Chars[i].Name; a.charHoverID(i) != want {
 			t.Errorf("id %d = %q, want %q", i, a.charHoverID(i), want)
 		}
 	}
@@ -734,7 +734,7 @@ func TestCharHoverIDsAreCachedNotRebuilt(t *testing.T) {
 	}
 	// A roster change rebuilds both caches together, never one of them.
 	a.charLower = nil
-	a.sess.Chars = append(a.sess.Chars, courtroom.CharacterSlot{Name: "Franziska"})
+	a.link.sess.Chars = append(a.link.sess.Chars, courtroom.CharacterSlot{Name: "Franziska"})
 	a.ensureCharLower()
 	if len(a.charHoverIDs) != 3 || a.charHoverID(2) != "char:Franziska" {
 		t.Errorf("after a roster change: ids %v", a.charHoverIDs)
@@ -752,9 +752,9 @@ func TestCharHoverIDsAreCachedNotRebuilt(t *testing.T) {
 // AND both wardrobe-panel bodies.
 func TestIniHoverIDsAreCachedNotRebuilt(t *testing.T) {
 	a := testTabApp(t)
-	a.serverKey = "ws://hover.test"
-	a.d.Prefs.AddWardrobe(a.serverKey, "Phoenix")
-	a.d.Prefs.AddWardrobe(a.serverKey, "Edgeworth")
+	a.srvMeta.serverKey = "ws://hover.test"
+	a.d.Prefs.AddWardrobe(a.srvMeta.serverKey, "Phoenix")
+	a.d.Prefs.AddWardrobe(a.srvMeta.serverKey, "Edgeworth")
 	a.rebuildIniMenu()
 	if len(a.iniList) < 2 {
 		t.Fatalf("fixture built a %d-entry wardrobe", len(a.iniList))
@@ -771,7 +771,7 @@ func TestIniHoverIDsAreCachedNotRebuilt(t *testing.T) {
 		t.Errorf("iniHoverID allocates %v per cell, want 0", n)
 	}
 	// A list change rebuilds the cache with it, never leaves it behind.
-	a.d.Prefs.AddWardrobe(a.serverKey, "Franziska")
+	a.d.Prefs.AddWardrobe(a.srvMeta.serverKey, "Franziska")
 	a.rebuildIniMenu()
 	if len(a.iniHoverIDs) != len(a.iniList) {
 		t.Errorf("after a wardrobe change: %d ids for %d entries", len(a.iniHoverIDs), len(a.iniList))
@@ -790,7 +790,7 @@ func TestCharSelectTitleIsCached(t *testing.T) {
 	if got := a.charSelectTitle(); got != charSelectHeading {
 		t.Errorf("no server: title = %q, want %q", got, charSelectHeading)
 	}
-	a.serverName = "Skrapegropen"
+	a.srvMeta.serverName = "Skrapegropen"
 	want := charSelectHeading + " — Skrapegropen"
 	if got := a.charSelectTitle(); got != want {
 		t.Errorf("title = %q, want %q", got, want)
@@ -798,7 +798,7 @@ func TestCharSelectTitleIsCached(t *testing.T) {
 	if n := testing.AllocsPerRun(200, func() { _ = a.charSelectTitle() }); n != 0 {
 		t.Errorf("charSelectTitle allocates %v per frame, want 0", n)
 	}
-	a.serverName = "Somewhere else"
+	a.srvMeta.serverName = "Somewhere else"
 	if got := a.charSelectTitle(); got != charSelectHeading+" — Somewhere else" {
 		t.Errorf("a server change did not rebuild the title: %q", got)
 	}

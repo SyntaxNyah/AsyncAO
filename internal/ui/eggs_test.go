@@ -96,7 +96,7 @@ func eggOracleRig(t *testing.T) (*App, *render.CaptureTarget, sdl.Rect, sdl.Rect
 	}
 	// drawCreatorEgg clamps its rings to (0,0,winW,winH); Frame never runs in this
 	// harness, so pin them or every ring is skipped as off-window.
-	a.winW, a.winH = eggOracleW, eggOracleH
+	a.frame.winW, a.frame.winH = eggOracleW, eggOracleH
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.ScreenEffects = true })
 	vp := sdl.Rect{X: 0, Y: 0, W: eggOracleW, H: eggOracleH}
 	box := sdl.Rect{X: eggOracleInset, Y: eggOracleInset, W: eggOracleW - 2*eggOracleInset, H: eggOracleH - 2*eggOracleInset}
@@ -145,7 +145,7 @@ func TestReduceMotionFreezesEveryEgg(t *testing.T) {
 				}
 
 				a.eggs.msg, a.eggs.kind = "", eggNone
-				a.frameAnimChrome = false
+				a.frame.frameAnimChrome = false
 				painted := eggPaintedPixels(t, a.ctx.Ren, ct, half.draw)
 				switch {
 				case arm.paints && painted == 0:
@@ -155,7 +155,7 @@ func TestReduceMotionFreezesEveryEgg(t *testing.T) {
 					t.Errorf("egg %d's %s painted %d px under ReduceMotion — the accessibility opt-out "+
 						"does not reach this egg", kind, half.name, painted)
 				}
-				if got := a.frameAnimChrome; got != arm.paints {
+				if got := a.frame.frameAnimChrome; got != arm.paints {
 					t.Errorf("egg %d's %s noted the pacing census = %v with ReduceMotion=%v, want %v — "+
 						"a frozen egg still holding the client at the animation cadence is the motion "+
 						"budget spent on motion the user asked not to see", kind, half.name, got, arm.reduce, arm.paints)
@@ -186,20 +186,20 @@ func TestEveryEggPacesTheFrameLimiter(t *testing.T) {
 		sc := courtroom.Scene{MessageText: text}
 
 		a.eggs.msg, a.eggs.kind = "", eggNone
-		a.frameAnimChrome = false
+		a.frame.frameAnimChrome = false
 		a.drawStageEgg(vp, &sc)
 		if a.eggs.kind != kind {
 			t.Fatalf("drawStageEgg resolved egg %d for %q, want %d", a.eggs.kind, text, kind)
 		}
-		if got, want := a.frameAnimChrome, eggDrawsOnStage(kind); got != want {
+		if got, want := a.frame.frameAnimChrome, eggDrawsOnStage(kind); got != want {
 			t.Errorf("egg %d: drawStageEgg noted the pacing census = %v, want %v — a stage field that "+
 				"animates without noting leaves the frame limiter at the idle cap", kind, got, want)
 		}
 
 		a.eggs.msg, a.eggs.kind = "", eggNone
-		a.frameAnimChrome = false
+		a.frame.frameAnimChrome = false
 		a.drawChatEgg(box, text)
-		if !a.frameAnimChrome {
+		if !a.frame.frameAnimChrome {
 			t.Errorf("egg %d: drawChatEgg did not note the pacing census — the ring animates while the "+
 				"limiter idles, so the glow steps instead of glowing", kind)
 		}
@@ -213,10 +213,10 @@ func TestEveryEggPacesTheFrameLimiter(t *testing.T) {
 	}
 	sc := courtroom.Scene{MessageText: inert}
 	a.eggs.msg, a.eggs.kind = "", eggNone
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	a.drawStageEgg(vp, &sc)
 	a.drawChatEgg(box, inert)
-	if a.frameAnimChrome {
+	if a.frame.frameAnimChrome {
 		t.Error("a message with no creator in it held the client at the animation cadence — every " +
 			"ordinary post would keep the frame limiter awake")
 	}
@@ -491,7 +491,7 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 	// sets these) never runs in this harness, so pin them or every ring clamps to
 	// nothing and the fills — the primitives the gate most needs to measure — are
 	// skipped.
-	a.winW, a.winH = w, h
+	a.frame.winW, a.frame.winH = w, h
 	draw := func() { a.drawCourtroom(w, h) }
 
 	// Each egg has a DISTINCT draw path and every one of the SEVEN is a row here:
@@ -518,8 +518,8 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 		{"hello Northgate", eggNorthgate},
 		{"hello Mint", eggMint},
 	} {
-		a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(0, "Witch", tc.text)})
-		a.room.SkipToIdle()
+		a.link.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(0, "Witch", tc.text)})
+		a.link.room.SkipToIdle()
 		// Sanity: the egg must actually resolve, or this gate would pass vacuously.
 		draw()
 		if a.eggs.kind != tc.want {

@@ -26,14 +26,14 @@ func flipSendApp(t *testing.T) (*App, *[]protocol.Packet) {
 	t.Helper()
 	a := testTabApp(t)
 	var sent []protocol.Packet
-	a.sess = courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
+	a.link.sess = courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
 	// A tiny two-char list so MyCharID / PairWith are in range and ParseMS accepts them.
-	a.sess.Chars = []courtroom.CharacterSlot{{Name: "Phoenix"}, {Name: "Maya"}}
-	a.sess.MyCharID = 0
-	a.sess.Features = protocol.FeatureSet{}
-	a.sess.Features[protocol.FeatureFlipping] = struct{}{}
-	a.sess.Features[protocol.FeatureCCCCIC] = struct{}{} // required for the pair block to serialize
-	a.sess.Features[protocol.FeatureEffects] = struct{}{}
+	a.link.sess.Chars = []courtroom.CharacterSlot{{Name: "Phoenix"}, {Name: "Maya"}}
+	a.link.sess.MyCharID = 0
+	a.link.sess.Features = protocol.FeatureSet{}
+	a.link.sess.Features[protocol.FeatureFlipping] = struct{}{}
+	a.link.sess.Features[protocol.FeatureCCCCIC] = struct{}{} // required for the pair block to serialize
+	a.link.sess.Features[protocol.FeatureEffects] = struct{}{}
 	a.compose.icInput = "over the phone"
 	return a, &sent
 }
@@ -47,7 +47,7 @@ func flipSendApp(t *testing.T) (*App, *[]protocol.Packet) {
 // objection_state), so a test that wants one on the wire arms it the way the
 // button does — toggleShout — and this just sends.
 func (a *App) sendICFresh() {
-	a.lastICSend = time.Time{}
+	a.srvMeta.lastICSend = time.Time{}
 	a.sendIC()
 }
 
@@ -59,7 +59,7 @@ func lastSentMS(t *testing.T, a *App, sent *[]protocol.Packet) *protocol.ChatMes
 	if len(*sent) == 0 || (*sent)[len(*sent)-1].Header != "MS" {
 		t.Fatalf("want an MS packet out, got %+v", *sent)
 	}
-	msg, err := protocol.ParseMS((*sent)[len(*sent)-1].Fields, a.sess.Features, len(a.sess.Chars))
+	msg, err := protocol.ParseMS((*sent)[len(*sent)-1].Fields, a.link.sess.Features, len(a.link.sess.Chars))
 	if err != nil {
 		t.Fatalf("ParseMS: %v", err)
 	}
@@ -97,20 +97,20 @@ func TestICBarFlipGatedOnFlippingFeature(t *testing.T) {
 	a := testTabApp(t)
 
 	// No session → never shown (the nil guard).
-	a.sess = nil
-	if a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping) {
+	a.link.sess = nil
+	if a.link.sess != nil && a.link.sess.Features.Has(protocol.FeatureFlipping) {
 		t.Fatal("nil session must not show the IC-bar Flip toggle")
 	}
 
 	// Session without the feature → hidden (mirrors AO2 hiding ui_flip).
-	a.sess = &courtroom.Session{Features: protocol.FeatureSet{}}
-	if a.sess.Features.Has(protocol.FeatureFlipping) {
+	a.link.sess = &courtroom.Session{Features: protocol.FeatureSet{}}
+	if a.link.sess.Features.Has(protocol.FeatureFlipping) {
 		t.Error("a non-flipping server must NOT show the IC-bar Flip toggle")
 	}
 
 	// Session WITH the feature → shown.
-	a.sess.Features[protocol.FeatureFlipping] = struct{}{}
-	if !a.sess.Features.Has(protocol.FeatureFlipping) {
+	a.link.sess.Features[protocol.FeatureFlipping] = struct{}{}
+	if !a.link.sess.Features.Has(protocol.FeatureFlipping) {
 		t.Error("a flipping server must show the IC-bar Flip toggle")
 	}
 }

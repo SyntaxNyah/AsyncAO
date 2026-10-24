@@ -121,12 +121,12 @@ func stagedRoomPaths() []stagedRoomPath {
 		name: "the live courtroom (buildRoom)",
 		drive: func(t *testing.T, a *App) *courtroom.Courtroom {
 			a.buildRoom()
-			return a.room
+			return a.link.room
 		},
 	}, {
 		name: "the pinned split pane (pinToSplit)",
 		drive: func(t *testing.T, a *App) *courtroom.Courtroom {
-			tab := &courtTab{state: sessionState{serverName: "Pinned", sess: &courtroom.Session{}}}
+			tab := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Pinned"}, link: linkState{sess: &courtroom.Session{}}}}
 			a.tabs = append(a.tabs, tab)
 			a.pinToSplit(tab)
 			return a.splitRoom
@@ -187,7 +187,7 @@ func stagedRoomPaths() []stagedRoomPath {
 			if a.te == nil || a.te.preview == nil {
 				t.Fatal("enterEditorPreview staged no preview")
 			}
-			return a.te.preview.state.room
+			return a.te.preview.state.link.room
 		},
 		stop: func(a *App) {
 			a.exitEditorPreview()

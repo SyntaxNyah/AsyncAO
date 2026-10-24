@@ -153,12 +153,12 @@ func (a *App) msgEntries() []msgEntry {
 		seen[k] = true
 		out = append(out, msgEntry{label: k, name: k})
 	}
-	if a.room != nil {
+	if a.link.room != nil {
 		roster := a.rosterView()
 		for i := range roster {
 			name := strings.TrimSpace(roster[i].name)
 			lk := strings.ToLower(name)
-			if name == "" || seen[lk] || !a.room.RemoteIsAsyncAO(name) {
+			if name == "" || seen[lk] || !a.link.room.RemoteIsAsyncAO(name) {
 				continue
 			}
 			seen[lk] = true
@@ -251,8 +251,8 @@ func (a *App) drawDMView(rx, top, rw, bottom int32) {
 	a.drawMsgCharIcon(partnerChar, a.msgs.msgSel, sdl.Rect{X: rx, Y: hy - 2, W: 22, H: 22})
 	a.labelName(rx+28, hy, rw-28, a.msgs.msgSel, nameColor(a.msgs.msgSel, msgNameSat, msgNameVal)) // CJK-safe DM peer
 	hy += 22
-	if a.room != nil {
-		if p, ok := a.room.RemoteProfile(a.msgs.msgSel); ok {
+	if a.link.room != nil {
+		if p, ok := a.link.room.RemoteProfile(a.msgs.msgSel); ok {
 			if line := strings.TrimSpace(p.Pronouns + "   " + p.Tag); line != "" {
 				c.LabelClipped(rx, hy, rw, line, ColTextDim)
 				hy += 16
@@ -347,7 +347,7 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 	y += 16
 	c.LabelClipped(box.X, y, box.W-8, "Green = on AsyncAO (gets the full group chat). Others can still be invited — they get a one-off PM.", ColTierYellow)
 	y += 18
-	if a.room == nil {
+	if a.link.room == nil {
 		return
 	}
 	// Show EVERYONE in the room (no AsyncAO-detection filter — that needed people to
@@ -367,7 +367,7 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 		if name == "" || p.uid == "" || uid == me || g.hasMember(uid) {
 			continue
 		}
-		isAO := a.room.RemoteIsAsyncAO(name)
+		isAO := a.link.room.RemoteIsAsyncAO(name)
 		// AsyncAO users get the FULL group chat, so highlight their row green ("compatible");
 		// everyone else can still be invited (they just get a one-off PM).
 		if isAO {
@@ -441,7 +441,7 @@ func (a *App) drawMsgThreadBody(box sdl.Rect) {
 // to the name when there's no live id (some servers accept it).
 func (a *App) sendDirectMessage(target, text string) {
 	text = strings.TrimSpace(text)
-	if text == "" || target == "" || a.sess == nil {
+	if text == "" || target == "" || a.link.sess == nil {
 		return
 	}
 	id := a.friendUID(target)
@@ -450,9 +450,9 @@ func (a *App) sendDirectMessage(target, text string) {
 	}
 	body := text + courtroom.WireMessage{Kind: courtroom.MsgDM}.EncodeMarker()
 	if uid, err := strconv.Atoi(id); err == nil {
-		a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{uid}, body))
+		a.link.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{uid}, body))
 	} else {
-		a.sess.SendOOC(a.oocNameOrDefault(), "/pm "+id+" "+body)
+		a.link.sess.SendOOC(a.oocNameOrDefault(), "/pm "+id+" "+body)
 	}
 	a.pmAppend(target, true, text)
 }

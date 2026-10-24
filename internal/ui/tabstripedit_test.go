@@ -148,7 +148,7 @@ func TestThemedEditorBoxIsAlwaysThePaintedTabStrip(t *testing.T) {
 
 	// A SECOND session: the strip's intrinsic width changes with no window, band, fit
 	// or theme change to invalidate the layout cache on.
-	a.tabs = append(a.tabs, &courtTab{state: sessionState{serverName: "second server"}})
+	a.tabs = append(a.tabs, &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "second server"}}})
 	wider := check("docked, after a tab was added")
 	if wider.W == docked.W {
 		t.Fatalf("fixture: adding a tab must change the strip's intrinsic width (still %d)", wider.W)
@@ -165,7 +165,7 @@ func TestThemedEditorBoxIsAlwaysThePaintedTabStrip(t *testing.T) {
 	}
 
 	// A THIRD session, now that it is parked: same invariant, other branch.
-	a.tabs = append(a.tabs, &courtTab{state: sessionState{serverName: "third server"}})
+	a.tabs = append(a.tabs, &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "third server"}}})
 	check("parked, after another tab was added")
 }
 
@@ -426,8 +426,8 @@ func TestTabStripPaintSiteIsExclusiveWhileEditing(t *testing.T) {
 				a.tabs = []*courtTab{{}}
 				a.activeTab = 0
 				a.screen = ScreenCourtroom
-				a.room = newRoomForTest(t)
-				a.sess = &courtroom.Session{}
+				a.link.room = newRoomForTest(t)
+				a.link.sess = &courtroom.Session{}
 				armEditor(a)
 				return a
 			}
@@ -436,11 +436,11 @@ func TestTabStripPaintSiteIsExclusiveWhileEditing(t *testing.T) {
 			}
 			for name, break_ := range map[string]func(*App){
 				"lobby":       func(a *App) { a.screen = ScreenLobby },
-				"no room":     func(a *App) { a.room = nil },
-				"no session":  func(a *App) { a.sess = nil },
+				"no room":     func(a *App) { a.link.room = nil },
+				"no session":  func(a *App) { a.link.sess = nil },
 				"theater":     func(a *App) { a.theaterOn = true },
 				"gif export":  func(a *App) { a.gifExporting = true },
-				"replay":      func(a *App) { a.replaying, a.replayRoom = true, a.room },
+				"replay":      func(a *App) { a.replaying, a.replayRoom = true, a.link.room },
 				"scene maker": func(a *App) { a.makerOpen = true },
 			} {
 				a := base()
@@ -454,8 +454,8 @@ func TestTabStripPaintSiteIsExclusiveWhileEditing(t *testing.T) {
 			a.tabs = []*courtTab{{}}
 			a.activeTab = 0
 			a.screen = ScreenCourtroom
-			a.room = newRoomForTest(t)
-			a.sess = &courtroom.Session{}
+			a.link.room = newRoomForTest(t)
+			a.link.sess = &courtroom.Session{}
 			if a.tabStripPaintsUnderEditor() {
 				t.Error("with no editor armed the strip belongs to App.Frame's over-everything paint")
 			}
@@ -550,11 +550,11 @@ func TestLayoutEditorBannerSurvivesTheTabStrip(t *testing.T) {
 				t.Skipf("output size unavailable: %v", err)
 			}
 			// Enough sessions that the centred strip reaches the Done chip.
-			a.serverName = "first session"
+			a.srvMeta.serverName = "first session"
 			a.tabs = []*courtTab{
 				{},
-				{state: sessionState{serverName: "second session"}},
-				{state: sessionState{serverName: "third session"}},
+				{state: sessionState{srvMeta: serverMetaState{serverName: "second session"}}},
+				{state: sessionState{srvMeta: serverMetaState{serverName: "third session"}}},
 			}
 			a.activeTab = 0
 			tc.arm(a)

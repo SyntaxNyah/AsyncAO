@@ -373,7 +373,7 @@ func TestWrapCachesKeyOnResolvedPct(t *testing.T) {
 	a.chatlog.oocLog = append(a.chatlog.oocLog, "Welcome to the server, please read the rules.")
 	a.chatlog.oocSpeakers = append(a.chatlog.oocSpeakers, "MOTD")
 	a.chatlog.oocSeq++
-	a.sess = &courtroom.Session{Areas: []string{"Courtroom 1", "Courtroom 2"}}
+	a.link.sess = &courtroom.Session{Areas: []string{"Courtroom 1", "Courtroom 2"}}
 	a.areaInfoSeq++
 
 	const colW = 240

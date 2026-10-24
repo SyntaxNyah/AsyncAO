@@ -1067,7 +1067,7 @@ func (a *App) drawICShoutRow(clusterX, y, w, h int32) {
 		// Custom interjection (2.10): the button ARMS the active pick;
 		// the ▾ cycler steps base custom → each named [Shouts] entry.
 		// Only for characters that actually ship one (hasCustomShout).
-		if a.sess.Features.Has(protocol.FeatureCustomObjections) && a.hasCustomShout() {
+		if a.link.sess.Features.Has(protocol.FeatureCustomObjections) && a.hasCustomShout() {
 			label := a.customShoutLabel()
 			bw := c.TextWidth(label) + 16
 			customRect := sdl.Rect{X: x, Y: y, W: bw, H: btnH}
@@ -1196,7 +1196,7 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 	if a.amIMod() {
 		modW = 54
 	}
-	if a.amICMNow {
+	if a.srvMeta.amICMNow {
 		cmW = 46
 	}
 	// Only wrap when the group actually draws something (else an empty Mod/CM row
@@ -1323,7 +1323,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 		c.Tooltip(mR, "Moderation tools — server-aware ban / kick")
 		x += 60
 	}
-	if a.amICMNow {
+	if a.srvMeta.amICMNow {
 		cR := a.slotRect("ctrl.cm", sdl.Rect{X: x, Y: y2, W: 46, H: btnH}, w, h)
 		if c.Button(cR, "CM") {
 			a.toggleCMPanel()
@@ -1363,7 +1363,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 	// plain "Login..." that opens the dialog. Right-click always opens the dialog (log
 	// in / switch / re-login). Account name is per-server (a.serverKey), so it's
 	// correct across multi-server tabs.
-	acct := strings.TrimSpace(a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey).LoginUser)
+	acct := strings.TrimSpace(a.d.Prefs.Load().ServerWarmInfoFor(a.srvMeta.serverKey).LoginUser)
 	loginLabel, loginW := "Login...", int32(70)
 	if acct != "" {
 		loginLabel, loginW = acct, c.TextWidth(acct)+18
@@ -1371,7 +1371,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 	if loginR, ok := a.ctrlSlot(&x, y2, loginW, loginW+6, w, h, "ctrl.login"); ok {
 		if c.Button(loginR, loginLabel) {
 			if acct != "" {
-				a.sess.SendOOC(a.oocNameOrDefault(), "/account") // view your profile
+				a.link.sess.SendOOC(a.oocNameOrDefault(), "/account") // view your profile
 			} else {
 				a.openLoginDialog()
 			}
@@ -1449,9 +1449,9 @@ func (a *App) drawICColorStrip(colorBox sdl.Rect) {
 	icSel, sw := a.icColorSelected()
 	c.Fill(swatch, sw)
 	c.Border(swatch, ColPanelHi)
-	a.icSwatchRect = swatch // the free-hex wheel anchors here
+	a.lookUI.icSwatchRect = swatch // the free-hex wheel anchors here
 	if a.compose.icCustomOn && c.clicked && c.hovering(swatch) {
-		a.showICColorWheel = !a.showICColorWheel // re-open to adjust (re-picking "Custom…" in the dropdown doesn't fire changed)
+		a.lookUI.showICColorWheel = !a.lookUI.showICColorWheel // re-open to adjust (re-picking "Custom…" in the dropdown doesn't fire changed)
 	}
 	colorDDW := colorBox.W - 32
 	if colorDDW < 60 {
@@ -1601,7 +1601,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// Shown only when the server advertises additive AND the master pref is on (AO2
 	// shows ui_additive whenever the server advertises it, courtroom.cpp:1638-1644).
 	// When hidden the toggle is forced off so a stale check can't ride a message.
-	if a.sess != nil && a.sess.Features.Has(protocol.FeatureAdditive) && a.d.Prefs.Load().AdditiveText {
+	if a.link.sess != nil && a.link.sess.Features.Has(protocol.FeatureAdditive) && a.d.Prefs.Load().AdditiveText {
 		// icAddW ("Additive") is a package-level const, shared with the layout tests.
 		// Movable slot (#4a), same wrap-not-extract rule as Immediate above: draws through
 		// slotRect so the editor can pull it out into its own spot, but the row cursor still
@@ -1674,7 +1674,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// (#4a). pairFlip is SESSION state that already parks/resets per tab,
 	// so — unlike icAdditive in the themed row — it needs NO forced-off reset when the feature
 	// vanishes: the field is real pair state, and a stale flip simply stops being SHOWN.
-	flipInChain := a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping)
+	flipInChain := a.link.sess != nil && a.link.sess.Features.Has(protocol.FeatureFlipping)
 	if flipInChain && !a.classic.panelHidden(slotICFlip) {
 		flipBox := a.slotRect(slotICFlip, sdl.Rect{X: icX, Y: rowY, W: icFlipW, H: fH}, w, h)
 		// bounceOnToggle: ui_flip → focus_ic_input (courtroom.cpp:503). Only the IC-bar
@@ -1767,7 +1767,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// Muted (#13): the server disabled our IC speech (MU). Draw a persistent chip
 	// over the input's right edge so a muted player sees WHY their sends do
 	// nothing; sendIC refuses the send and keeps the typed line intact.
-	if a.sess != nil && a.sess.Muted {
+	if a.link.sess != nil && a.link.sess.Muted {
 		chipW := a.mutedChipW() // the ONE metric; icMutedBandW reserves off the same number
 		if chipW < icBox.W {    // only when it fits inside the field
 			chip := sdl.Rect{X: icBox.X + icBox.W - chipW - 2, Y: icBox.Y + 2, W: chipW, H: icBox.H - 4}

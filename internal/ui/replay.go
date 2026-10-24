@@ -104,12 +104,12 @@ func (a *App) startRecording() {
 		return
 	}
 	bg := ""
-	if a.sess != nil {
-		bg = a.sess.Background
+	if a.link.sess != nil {
+		bg = a.link.sess.Background
 	}
 	a.rec = &sceneRecording{
 		Version:    recordingVersion,
-		Origin:     a.urls.Origin(),
+		Origin:     a.link.urls.Origin(),
 		StartBg:    bg,
 		RecordedAt: time.Now().Format(time.RFC3339),
 	}
@@ -134,9 +134,9 @@ func (a *App) recEventFrom(ev courtroom.Event) recEvent {
 	// PROFILE marker but no style marker, and such a line from a styled speaker still
 	// needs the style re-injected for a self-contained clip. DecodeSpriteStyle scans all
 	// frames, so appending the style after an existing profile marker decodes fine.
-	if ev.Kind == courtroom.EventMessage && ev.Message != nil && a.room != nil &&
+	if ev.Kind == courtroom.EventMessage && ev.Message != nil && a.link.room != nil &&
 		!courtroom.HasStyleMarker(ev.Message.Message) {
-		if style := a.room.RecalledStyle(ev.Message.CharID); style.Active() {
+		if style := a.link.room.RecalledStyle(ev.Message.CharID); style.Active() {
 			msgCopy := *ev.Message
 			msgCopy.Message = ev.Message.Message + style.EncodeMarker()
 			ev.Message = &msgCopy // record the self-contained copy, not the bare line
@@ -186,7 +186,7 @@ func (a *App) bufferReplayEvent(ev courtroom.Event) {
 	if !recordable(ev.Kind) {
 		return
 	}
-	origin := a.urls.Origin()
+	origin := a.link.urls.Origin()
 	if a.replayBuf == nil || a.replayBufOrigin != origin {
 		a.replayBuf = make([]replayBufEntry, instantReplayMaxEvents)
 		a.replayBufW, a.replayBufN, a.replayBufOrigin = 0, 0, origin
@@ -287,8 +287,8 @@ func (a *App) clipInstantReplay() {
 	}
 	window := time.Duration(a.d.Prefs.Load().InstantReplaySecondsValue()) * time.Second
 	bg := ""
-	if a.sess != nil {
-		bg = a.sess.Background
+	if a.link.sess != nil {
+		bg = a.link.sess.Background
 	}
 	now := time.Now()
 	clip := buildClip(a.linearizeReplayBuf(), now.Add(-window), a.replayBufOrigin, bg)
@@ -740,9 +740,9 @@ func (a *App) stopReplay() {
 	a.replayChapters = nil
 	a.replayChaptersOpen = false
 	if a.d.Viewport != nil { // rebind preanim completion to the live room (or clear it)
-		if a.room != nil {
-			a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
-			a.d.Viewport.OnFrameShown = a.room.NotifyFrameShown // #17: frame effects back to the live room
+		if a.link.room != nil {
+			a.d.Viewport.OnPreanimDone = a.link.room.NotifyPreanimDone
+			a.d.Viewport.OnFrameShown = a.link.room.NotifyFrameShown // #17: frame effects back to the live room
 		} else {
 			a.d.Viewport.OnPreanimDone = nil
 			a.d.Viewport.OnFrameShown = nil
@@ -774,9 +774,9 @@ func (a *App) recoverReplay(where string) {
 	a.replayChapters = nil
 	a.replayChaptersOpen = false
 	if a.d.Viewport != nil {
-		if a.room != nil {
-			a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
-			a.d.Viewport.OnFrameShown = a.room.NotifyFrameShown // #17: frame effects back to the live room
+		if a.link.room != nil {
+			a.d.Viewport.OnPreanimDone = a.link.room.NotifyPreanimDone
+			a.d.Viewport.OnFrameShown = a.link.room.NotifyFrameShown // #17: frame effects back to the live room
 		} else {
 			a.d.Viewport.OnPreanimDone = nil
 			a.d.Viewport.OnFrameShown = nil

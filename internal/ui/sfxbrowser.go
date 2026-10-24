@@ -53,10 +53,10 @@ func (a *App) selectSFXOverride(name string) {
 // Gated on a connected origin: in the lobby urls.SFX has no host, so there's nothing to play.
 func (a *App) previewSFX(name string) {
 	name = strings.TrimSpace(name)
-	if name == "" || a.urls.Origin() == "" {
+	if name == "" || a.link.urls.Origin() == "" {
 		return
 	}
-	a.d.Audio.PlaySFX(a.urls.SFX(name), 0)
+	a.d.Audio.PlaySFX(a.link.urls.SFX(name), 0)
 }
 
 // sfxRowRightClickPreview auditions the SFX dropdown row under the pointer

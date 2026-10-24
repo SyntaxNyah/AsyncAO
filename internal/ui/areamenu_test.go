@@ -42,14 +42,14 @@ func TestAreaMenuRowsAreAllReachableActions(t *testing.T) {
 	if a.areaMenuRowEnabled(areaMenuCMPanel) {
 		t.Error("the CM row is offered without CM — the panel it opens self-closes, so the click does nothing and explains nothing")
 	}
-	a.amICMNow = true
+	a.srvMeta.amICMNow = true
 	if !a.areaMenuRowEnabled(areaMenuCMPanel) {
 		t.Error("the CM row stays grey while we DO hold CM — greyed rather than hidden means it must come back when the server grants it")
 	}
 	// The CM route is not a duplicate control: it opens the panel that already owns
 	// lock / unlock / area-kick.
 	a.areaMenuAct(areaMenuCMPanel)
-	if !a.showCMPanel {
+	if !a.modUI.showCMPanel {
 		t.Error("the CM row must open the CM panel rather than growing its own lock/kick copies")
 	}
 }

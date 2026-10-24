@@ -35,9 +35,9 @@ func transcriptTestApp(t *testing.T, server string) *App {
 			true
 
 	})
-	a.serverName = server
+	a.srvMeta.serverName = server
 	t.Cleanup(a.CloseTranscript)
-	if a.transcriptFor(server, a.logSession) == nil {
+	if a.transcriptFor(server, a.srvMeta.logSession) == nil {
 		t.Skip("transcript writers unavailable in this environment (no writable exe dir)")
 	}
 	return a
@@ -55,14 +55,14 @@ func TestReconnectCyclesDoNotStrandTranscriptWriters(t *testing.T) {
 	a := transcriptTestApp(t, server)
 
 	for i := 0; i < transcriptWriterCap*2; i++ {
-		w := a.transcriptFor(server, a.logSession)
+		w := a.transcriptFor(server, a.srvMeta.logSession)
 		if w == nil {
 			t.Fatalf("reconnect %d got no transcript writer — detailed logging has silently stopped for the rest of the run (F4)", i)
 		}
 		w.write("cycle")
 		// A disconnect/reconnect: the live session ends and a fresh one is minted.
 		a.resetSessionState()
-		a.serverName = server
+		a.srvMeta.serverName = server
 	}
 	if n := len(a.translogs); n > 1 {
 		t.Errorf("%d transcript writers still open after %d reconnects, want at most the live one — "+
@@ -79,12 +79,12 @@ func TestAParkedTabKeepsItsTranscriptAndAClosedTabLosesIt(t *testing.T) {
 	a := transcriptTestApp(t, server)
 
 	// Tab one logs, then parks; tab two becomes live and logs too.
-	parked := a.logSession
+	parked := a.srvMeta.logSession
 	a.tabs = append(a.tabs, &courtTab{})
 	a.activeTab = 0
 	a.parkActive() // copies the session into the slot, then resets — and reaps
-	a.serverName = server
-	live := a.logSession
+	a.srvMeta.serverName = server
+	live := a.srvMeta.logSession
 	if a.transcriptFor(server, live) == nil {
 		t.Fatal("the new live session got no writer")
 	}
@@ -116,7 +116,7 @@ func TestAParkedTabKeepsItsTranscriptAndAClosedTabLosesIt(t *testing.T) {
 func TestRetiredWritersCannotBePanickedIntoAShutdown(t *testing.T) {
 	const server = "Skrapegropen"
 	a := transcriptTestApp(t, server)
-	w := a.transcriptFor(server, a.logSession)
+	w := a.transcriptFor(server, a.srvMeta.logSession)
 	if w == nil {
 		t.Fatal("no writer to retire")
 	}

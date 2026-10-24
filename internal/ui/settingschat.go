@@ -170,8 +170,8 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 
 		})
 
-		if a.room != nil {
-			a.room.AdditiveText = next // apply live
+		if a.link.room != nil {
+			a.link.room.AdditiveText = next // apply live
 		}
 	}
 	y += 26
@@ -878,19 +878,19 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		a.d.Prefs.SetFriendSoundPath(next)
 	}
 	y += 32
-	if a.serverKey == "" {
+	if a.srvMeta.serverKey == "" {
 		c.Label(pad, y+4, "Friends: connect to a server to set its highlighted shownames.", ColTextDim)
 		y += 30
 	} else {
 		c.Label(pad, y+4, "Friends:", ColText)
-		if settings.friendKey != a.serverKey { // reload buffer per server
-			settings.friendInput = strings.Join(a.d.Prefs.Load().ServerFriends(a.serverKey), ", ")
-			settings.friendKey = a.serverKey
+		if settings.friendKey != a.srvMeta.serverKey { // reload buffer per server
+			settings.friendInput = strings.Join(a.d.Prefs.Load().ServerFriends(a.srvMeta.serverKey), ", ")
+			settings.friendKey = a.srvMeta.serverKey
 		}
 		var friendCommit bool
 		settings.friendInput, friendCommit = c.TextField("friends", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH}, settings.friendInput, "showname, showname=ffcc00, showname=ffcc00=Nickname, ... (per server)")
 		if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Save") || friendCommit {
-			a.d.Prefs.SetServerFriends(a.serverKey, strings.Split(settings.friendInput, ","))
+			a.d.Prefs.SetServerFriends(a.srvMeta.serverKey, strings.Split(settings.friendInput, ","))
 			settings.statusLine = "Friends saved for this server."
 		}
 		y += 28
@@ -899,19 +899,19 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 
 	y = a.settingsSection(y, w, "Ignored players")
-	if a.serverKey == "" {
+	if a.srvMeta.serverKey == "" {
 		c.Label(pad, y+4, "Ignored: connect to a server to manage its ignore list.", ColTextDim)
 		y += 30
 	} else {
 		c.Label(pad, y+4, "Ignored:", ColText)
-		if settings.ignoreKey != a.serverKey { // reload buffer per server
-			settings.ignoreInput = strings.Join(a.d.Prefs.Load().ServerIgnored(a.serverKey), ", ")
-			settings.ignoreKey = a.serverKey
+		if settings.ignoreKey != a.srvMeta.serverKey { // reload buffer per server
+			settings.ignoreInput = strings.Join(a.d.Prefs.Load().ServerIgnored(a.srvMeta.serverKey), ", ")
+			settings.ignoreKey = a.srvMeta.serverKey
 		}
 		var ignoreCommit bool
 		settings.ignoreInput, ignoreCommit = c.TextField("ignored", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH}, settings.ignoreInput, "showname1, showname2, ... (saved per server)")
 		if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Save") || ignoreCommit {
-			a.d.Prefs.SetServerIgnored(a.serverKey, strings.Split(settings.ignoreInput, ","))
+			a.d.Prefs.SetServerIgnored(a.srvMeta.serverKey, strings.Split(settings.ignoreInput, ","))
 			settings.statusLine = "Ignore list saved for this server."
 		}
 		y += 28

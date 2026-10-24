@@ -41,13 +41,13 @@ func TestHideSpriteSuppression(t *testing.T) {
 	t.Cleanup(func() { _ = prefs.Close() })
 	a := &App{env: env{}} // field assignment, not a keyed literal (known phantom "unknown field" glitch)
 	a.d.Prefs = prefs
-	a.room = &courtroom.Courtroom{}
-	a.room.Scene.Speaker = courtroom.SpriteLayer{Name: "Booba", Visible: true}
-	a.room.Scene.Pair = courtroom.SpriteLayer{Name: "Phoenix", Visible: true}
-	a.room.Scene.ShowDesk = true
+	a.link.room = &courtroom.Courtroom{}
+	a.link.room.Scene.Speaker = courtroom.SpriteLayer{Name: "Booba", Visible: true}
+	a.link.room.Scene.Pair = courtroom.SpriteLayer{Name: "Phoenix", Visible: true}
+	a.link.room.Scene.ShowDesk = true
 
 	a.applySpriteOverrides() // empty hidden-set + no overrides + desk shown: a no-op
-	if !a.room.Scene.Speaker.Visible || !a.room.Scene.Pair.Visible || !a.room.Scene.ShowDesk {
+	if !a.link.room.Scene.Speaker.Visible || !a.link.room.Scene.Pair.Visible || !a.link.room.Scene.ShowDesk {
 		t.Fatal("empty hidden-set / hide-desk-off must not change anything")
 	}
 
@@ -64,7 +64,7 @@ func TestHideSpriteSuppression(t *testing.T) {
 	})
 
 	a.applySpriteOverrides()
-	if a.room.Scene.ShowDesk {
+	if a.link.room.Scene.ShowDesk {
 		t.Error("hide-desk did not suppress ShowDesk")
 	}
 	prefs.Update(func(
@@ -78,18 +78,18 @@ func TestHideSpriteSuppression(t *testing.T) {
 
 	})
 
-	a.room.Scene.ShowDesk = true // the courtroom re-sets it each frame
+	a.link.room.Scene.ShowDesk = true // the courtroom re-sets it each frame
 	a.applySpriteOverrides()
-	if !a.room.Scene.ShowDesk {
+	if !a.link.room.Scene.ShowDesk {
 		t.Error("desk should render again when hide-desk is off")
 	}
 
 	a.hiddenSprites = map[string]struct{}{"booba": {}}
 	a.applySpriteOverrides()
-	if a.room.Scene.Speaker.Visible {
+	if a.link.room.Scene.Speaker.Visible {
 		t.Error("hidden sprite still visible")
 	}
-	if !a.room.Scene.Pair.Visible {
+	if !a.link.room.Scene.Pair.Visible {
 		t.Error("non-hidden pair wrongly hidden")
 	}
 
@@ -97,9 +97,9 @@ func TestHideSpriteSuppression(t *testing.T) {
 	if a.hiddenSprites != nil {
 		t.Error("reshow must clear the hidden-set")
 	}
-	a.room.Scene.Speaker.Visible = true // the courtroom re-sets Visible each frame
+	a.link.room.Scene.Speaker.Visible = true // the courtroom re-sets Visible each frame
 	a.applySpriteOverrides()
-	if !a.room.Scene.Speaker.Visible {
+	if !a.link.room.Scene.Speaker.Visible {
 		t.Error("after reshow the sprite must render again")
 	}
 }
@@ -141,7 +141,7 @@ func TestMakerDrawNoPanic(t *testing.T) {
 	a := &App{env: env{ctx: ctx, d: Deps{Prefs: prefs}}, makerName: "test", makerTrimStart: -1, makerTrimEnd: -1}
 	// A real session + bg list enables the char/background autocompletes — the
 	// draw paths a nil-session test would skip.
-	a.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Sekai"}, {Name: "Phoenix"}, {Name: "Häschen"}}}
+	a.link.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Sekai"}, {Name: "Phoenix"}, {Name: "Häschen"}}}
 	a.bgPick.server = []string{"court", "gs4", "lobby"}
 	a.makerScene = &sceneRecording{
 		Version: recordingVersion,

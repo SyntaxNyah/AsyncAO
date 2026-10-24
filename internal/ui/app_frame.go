@@ -123,7 +123,7 @@ func (a *App) reselectServer(url string) {
 	}
 	for i := range a.lobby.servers {
 		if a.lobby.servers[i].WebSocketURL() == url {
-			a.lobby.selectServerRow(&a.env, i, a.winW)
+			a.lobby.selectServerRow(&a.env, i, a.frame.winW)
 			return
 		}
 	}
@@ -169,7 +169,7 @@ func (lobby1 *lobbyState) mergedFavorites(e *env) []network.ServerEntry {
 func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	defer a.frameCrashLog() // last-resort: capture the stack of any unrecovered panic before it kills the app
 	a.frameNow = time.Now()
-	a.lastFrameDrawn = a.frameNow // SkipFrame's heartbeat: a real frame was drawn
+	a.frame.lastFrameDrawn = a.frameNow // SkipFrame's heartbeat: a real frame was drawn
 
 	// Drain debug logs from render package (loop points diagnostics, etc.)
 	if a.d.Audio != nil {
@@ -184,7 +184,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// frame, whose own snapshot then matches (self-limiting, never misses).
 	a.uiDirty = false
 	if a.d.Store != nil {
-		a.drawnGen = a.d.Store.Generation()
+		a.frame.drawnGen = a.d.Store.Generation()
 	}
 	// Chrome SHAPE (A5): resolve the active shape + its mask textures into the
 	// Ctx once per frame so every shaped widget draw is a plain field read. On
@@ -199,28 +199,28 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// answer at all: animated chrome kept moving under the accessibility option
 	// AND kept the pacer at the animation cadence.
 	a.themeFXFrozen = a.reduceMotionNow()
-	a.drawnCaretOn = a.ctx.caretOn
+	a.frame.drawnCaretOn = a.ctx.caretOn
 	// Animated-chrome census: the draw sites below mark the flag; promote it
 	// at frame end so SkipFrame reads what THIS frame actually put on screen.
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	// Demand-pump census (experimental loop): a draw that leaves a streaming grid
 	// cell blank marks frameDemandPending so NextWakeDelay keeps re-rendering at
 	// the demand cadence until the cell fills. Promoted at frame end beside the
 	// anim-chrome flag.
-	a.frameDemandPending = false
+	a.frame.frameDemandPending = false
 	defer func() {
-		a.drawnAnimChrome = a.frameAnimChrome
-		a.drawnDemandPending = a.frameDemandPending
+		a.frame.drawnAnimChrome = a.frame.frameAnimChrome
+		a.frame.drawnDemandPending = a.frame.frameDemandPending
 	}()
-	a.ctx.BeginDraw()           // the visible-field order rebuilds as this frame's TextFields register
-	a.winW, a.winH = winW, winH // cached for deep draw helpers (preview clamp)
+	a.ctx.BeginDraw()                       // the visible-field order rebuilds as this frame's TextFields register
+	a.frame.winW, a.frame.winH = winW, winH // cached for deep draw helpers (preview clamp)
 	a.chatlog.frameDtMs = float32(dt.Seconds() * 1000)
 	a.recordFrameDt(a.chatlog.frameDtMs)
 	// One-time: push the initial Discord presence once the app is up, so "Playing
 	// AsyncAO — In the lobby" appears immediately on launch (not only after you join
 	// a room). updatePresence no-ops when presence is unset or the toggle is off.
-	if !a.presenceInit {
-		a.presenceInit = true
+	if !a.srvMeta.presenceInit {
+		a.srvMeta.presenceInit = true
 		a.updatePresence()
 	}
 	// Stamp the sprite-preview config onto the context once per frame so every
@@ -329,7 +329,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 				// char-select's only exit is leaving the server, through the confirm.
 				if a.ctx.focusID != "" {
 					a.ctx.focusID = ""
-				} else if a.room != nil {
+				} else if a.link.room != nil {
 					a.screen = ScreenCourtroom
 				} else {
 					a.requestDisconnect()
@@ -384,7 +384,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// whole reason for being there is that the server just removed us, so letting a
 	// keypress redial past it would be the client arguing with the ban. (The sibling
 	// confirms are NOT gated here; that gap is pre-existing and untouched.)
-	if a.sess == nil && !a.serverNoticeDlg.open && a.ctx.hotkey != 0 && strings.ToLower(sdl.GetKeyName(a.ctx.hotkey)) == a.hotkeyFor(hotkeyQuickConnect) {
+	if a.link.sess == nil && !a.serverNoticeDlg.open && a.ctx.hotkey != 0 && strings.ToLower(sdl.GetKeyName(a.ctx.hotkey)) == a.hotkeyFor(hotkeyQuickConnect) {
 		a.quickConnect()
 	}
 	a.updates.pumpInput(winW, winH) // self-update: one-shot check, drain, chip/modal click before screens
@@ -482,12 +482,12 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// — it is not being drawn, and a preview that let a live message play out
 		// behind it would drop the frames that message needed.
 		a.driveEditorPreview(dt)
-	case a.room != nil:
+	case a.link.room != nil:
 		a.healScenery()
-		if a.roomPreAdvanced {
-			a.roomPreAdvanced = false // the audio-paced loop already advanced the room this present cycle; just draw it
+		if a.frame.roomPreAdvanced {
+			a.frame.roomPreAdvanced = false // the audio-paced loop already advanced the room this present cycle; just draw it
 		} else {
-			a.room.Update(dt)
+			a.link.room.Update(dt)
 		}
 		a.applySpriteOverrides()
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
@@ -501,12 +501,12 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.d.Viewport.SetPreanimLoop(a.d.Prefs.Load().LoopPreanim)                                             // opt-in: keep preanims wrapping (default OFF; AO2 plays them once)
 		a.d.Viewport.SetPostFX(a.postFX())                                                                    // #10 retro overlays
 		a.d.Viewport.SetWeather(render.Weather(a.d.Prefs.WeatherType()), a.d.Prefs.Load().WeatherIntensity()) // #124 ambient weather
-		a.d.Viewport.Update(&a.room.Scene, dt)
+		a.d.Viewport.Update(&a.link.room.Scene, dt)
 		a.logSpeakerAnimDiag() // #110: log the speaker sprite's frame/delay stats once per base change
 		// This frame IS the draw the doorbell exists to force, and the viewport is
 		// now bound to the new overlay, so the draw-site censuses take over from
 		// here — sync the latch instead of ringing (noteOverlayStart).
-		a.drawnOverlayGen = a.room.Scene.Overlay.Gen
+		a.frame.drawnOverlayGen = a.link.room.Scene.Overlay.Gen
 		if a.splitActive() { // drive the pinned right-pane stage on its OWN viewport
 			a.splitRoom.Update(dt)
 			a.applySpriteOverridesTo(a.splitRoom) // Hide-desk / Missingno / offsets are user choices, not per-room ones
@@ -526,7 +526,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// touched only when the duck state flips, and the prefs read is
 		// short-circuited so it costs nothing between messages.
 		a.rederiveMessageDuck()
-		a.updateSlideshow(a.room.Phase())
+		a.updateSlideshow(a.link.room.Phase())
 	}
 	a.d.Audio.Frame()
 	a.settleAwaitedMusic() // delivery-time cross-tab un-duck: lift once the awaited track is what's playing

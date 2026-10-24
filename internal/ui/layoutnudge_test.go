@@ -120,7 +120,7 @@ func nudgeThemeLayout() map[string]theme.Rect {
 func stageThemedNudge(t *testing.T) *App {
 	t.Helper()
 	a := stageTabbarlessCourtroom(t, stripEditTheme)
-	a.sess = &courtroom.Session{} // editorDrawSiteRuns: an editor only owns a live courtroom
+	a.link.sess = &courtroom.Session{} // editorDrawSiteRuns: an editor only owns a live courtroom
 	applyThemeGeometryForTest(a, nudgeThemeLayout())
 	a.layoutEdit = true
 	a.editTgt = designTarget(nudgeWidgetKey)
@@ -281,7 +281,7 @@ func TestTabStripNudgeMovesOneScreenPixelAtEveryScale(t *testing.T) {
 	for _, tc := range themeFitDragCases {
 		t.Run(tc.name, func(t *testing.T) {
 			a := stageTabbarlessCourtroom(t, stripEditTheme)
-			a.sess = &courtroom.Session{}
+			a.link.sess = &courtroom.Session{}
 			tc.apply(a)
 			a.layoutEdit = true
 			a.editTgt = designTarget(themeTabBarKey)
@@ -321,7 +321,7 @@ func TestTabStripNudgeMovesOneScreenPixelAtEveryScale(t *testing.T) {
 func TestTabStripNudgeFollowsAClickSelection(t *testing.T) {
 	a, ctx, cleanup := stripEditFixture(t)
 	defer cleanup()
-	a.sess = &courtroom.Session{}
+	a.link.sess = &courtroom.Session{}
 
 	// A press-and-release that goes nowhere: it selects without persisting anything.
 	before, after := dragStrip(t, a, ctx, 0, 0)
@@ -363,8 +363,8 @@ func stageClassicNudge(t *testing.T) *App {
 	t.Helper()
 	a := testTabApp(t)
 	a.screen = ScreenCourtroom
-	a.room = newRoomForTest(t)
-	a.sess = &courtroom.Session{}
+	a.link.room = newRoomForTest(t)
+	a.link.sess = &courtroom.Session{}
 	a.classic.classicEdit = true
 	a.classic.classicTgt = classicTarget(slotOOC)
 	a.classic.regSlot(slotOOC, sdl.Rect{X: 301, Y: 205, W: 320, H: 140}, sdl.Rect{X: 301, Y: 205, W: 320, H: 140})
@@ -524,8 +524,8 @@ func TestArrowsAreUntouchedWithNoEditorArmed(t *testing.T) {
 	}{
 		{"no editor armed", func(a *App) { a.classic.classicEdit, a.layoutEdit = false, false }},
 		{"not on the courtroom screen", func(a *App) { a.screen = ScreenSettings }},
-		{"no room", func(a *App) { a.room = nil }},
-		{"no session", func(a *App) { a.sess = nil }},
+		{"no room", func(a *App) { a.link.room = nil }},
+		{"no session", func(a *App) { a.link.sess = nil }},
 		{"theater mode owns the stage", func(a *App) { a.theaterOn = true }},
 		{"a gif export preempts the screen dispatch", func(a *App) { a.gifExporting = true }},
 		{"the scene maker preempts the screen dispatch", func(a *App) { a.makerOpen = true }},
@@ -592,7 +592,7 @@ func TestNudgeConsumesTheKeyItOwns(t *testing.T) {
 // synthesized SEED (seedTabBarDesignRect) that nothing ever paints or hit-tests. The
 func TestNudgeIgnoresADegenerateBox(t *testing.T) {
 	a := stageTabbarlessCourtroom(t, stripEditTheme)
-	a.sess = &courtroom.Session{}
+	a.link.sess = &courtroom.Session{}
 	a.layoutEdit = true
 	a.editTgt = designTarget(themeTabBarKey)
 	a.themeLay.valid = false
@@ -797,8 +797,8 @@ func stageElementNudge(t *testing.T, mutate func(*theme.Element)) *App {
 	t.Helper()
 	a := testTabApp(t)
 	a.screen = ScreenCourtroom
-	a.room = newRoomForTest(t)
-	a.sess = &courtroom.Session{}
+	a.link.room = newRoomForTest(t)
+	a.link.sess = &courtroom.Session{}
 	a.layoutEdit = true
 	el := theme.Element{ID: "badge", Kind: theme.ElemShape, Rect: elemNudgeRect}
 	if mutate != nil {

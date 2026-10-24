@@ -27,8 +27,8 @@ func menuKinds(a *App) map[rosterMenuKind]bool {
 func TestRosterMenuItems(t *testing.T) {
 	a := testTabApp(t)
 	a.screen = ScreenCourtroom
-	a.serverKey = "ws://test"
-	a.sess = courtroom.NewSession(func(p protocol.Packet) error { return nil }, "")
+	a.srvMeta.serverKey = "ws://test"
+	a.link.sess = courtroom.NewSession(func(p protocol.Packet) error { return nil }, "")
 	p := areaPlayer{uid: "7", name: "Phoenix", ipid: "AbCd1234"}
 
 	a.openRosterMenu(&p, false, false, sdl.Point{X: 10, Y: 10})
@@ -83,7 +83,7 @@ func TestRosterMenuFence(t *testing.T) {
 	a := testTabApp(t)
 	c := a.ctx
 	a.screen = ScreenCourtroom
-	a.serverKey = "ws://test"
+	a.srvMeta.serverKey = "ws://test"
 	p := areaPlayer{uid: "3", name: "Edgeworth"}
 	a.openRosterMenu(&p, false, false, sdl.Point{X: 5, Y: 5})
 	if !a.rosterMenuOpen {

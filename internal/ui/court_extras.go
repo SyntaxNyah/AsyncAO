@@ -245,11 +245,11 @@ func (a *App) seedHiddenFromPrefs() {
 // Callword/friend alerts deliberately don't go through here — they use the
 // built-in ping so a sparse theme can never silence them.
 func (a *App) playThemeSFX(key string) {
-	if a.room == nil {
+	if a.link.room == nil {
 		return
 	}
 	if name := a.themeSounds[key]; name != "" {
-		a.d.Audio.PlaySFX(a.urls.SFX(name), 0) // AssetType: SFX (court sound)
+		a.d.Audio.PlaySFX(a.link.urls.SFX(name), 0) // AssetType: SFX (court sound)
 	}
 }
 
@@ -292,7 +292,7 @@ func (a *App) handleWTCE(name string, variant int) {
 		// Fully custom WTCE: image and sfx share the packet string
 		// (handle_wtce's else branch). No preloaded texture → text banner.
 		a.startSplash(name)
-		a.d.Audio.PlaySFX(a.urls.SFX(name), 0) // AssetType: SFX (custom wtce)
+		a.d.Audio.PlaySFX(a.link.urls.SFX(name), 0) // AssetType: SFX (custom wtce)
 	}
 }
 
@@ -359,7 +359,7 @@ func pageFrameLoop(page *render.TexturePage, elapsed time.Duration) int {
 func (a *App) timerChipLabels(now time.Time) []string {
 	chips := a.chipUI.timerChips[:0]
 	for id := 0; id < courtroom.TimerCount; id++ {
-		t := &a.sess.Timers[id]
+		t := &a.link.sess.Timers[id]
 		if !t.Visible {
 			continue
 		}
@@ -397,13 +397,13 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 		if okDef {
 			// A4: themed HP bars resolve their angle from the baked layout cache
 			// (lay!=nil here — okDef came from lay.rect); an unrotated bar reads 0.
-			a.drawHPBarRect(defR, true, a.sess.HPDef, lay.angle("defense_bar"))
+			a.drawHPBarRect(defR, true, a.link.sess.HPDef, lay.angle("defense_bar"))
 		} else {
-			barH = a.drawHPBar(vp, true, a.sess.HPDef)
+			barH = a.drawHPBar(vp, true, a.link.sess.HPDef)
 		}
 		if okPro {
-			a.drawHPBarRect(proR, false, a.sess.HPPro, lay.angle("prosecution_bar"))
-		} else if h2 := a.drawHPBar(vp, false, a.sess.HPPro); h2 > barH {
+			a.drawHPBarRect(proR, false, a.link.sess.HPPro, lay.angle("prosecution_bar"))
+		} else if h2 := a.drawHPBar(vp, false, a.link.sess.HPPro); h2 > barH {
 			barH = h2
 		}
 	}
@@ -611,7 +611,7 @@ func (a *App) judgeVisible() bool {
 	if a.classic.panelHidden(panelJudge) {
 		return false
 	}
-	switch a.sess.Judge {
+	switch a.link.sess.Judge {
 	case courtroom.JudgeShow:
 		return true
 	case courtroom.JudgeHide:
@@ -632,28 +632,28 @@ func (a *App) drawJudgeRow(x, y int32) int32 {
 		return hit
 	}
 	if put("Witness Testimony") {
-		a.sess.SendWTCE("testimony1", 0)
+		a.link.sess.SendWTCE("testimony1", 0)
 	}
 	if put("Cross Examination") {
-		a.sess.SendWTCE("testimony2", 0)
+		a.link.sess.SendWTCE("testimony2", 0)
 	}
 	if put("Not Guilty") {
-		a.sess.SendWTCE("judgeruling", 0)
+		a.link.sess.SendWTCE("judgeruling", 0)
 	}
 	if put("Guilty") {
-		a.sess.SendWTCE("judgeruling", 1)
+		a.link.sess.SendWTCE("judgeruling", 1)
 	}
 	if put("Def -") {
-		a.sess.SendHP(1, a.sess.HPDef-1)
+		a.link.sess.SendHP(1, a.link.sess.HPDef-1)
 	}
 	if put("Def +") {
-		a.sess.SendHP(1, a.sess.HPDef+1)
+		a.link.sess.SendHP(1, a.link.sess.HPDef+1)
 	}
 	if put("Pro -") {
-		a.sess.SendHP(2, a.sess.HPPro-1)
+		a.link.sess.SendHP(2, a.link.sess.HPPro-1)
 	}
 	if put("Pro +") {
-		a.sess.SendHP(2, a.sess.HPPro+1)
+		a.link.sess.SendHP(2, a.link.sess.HPPro+1)
 	}
 	return btnH + 4
 }
@@ -663,21 +663,21 @@ func (a *App) drawJudgeRow(x, y int32) int32 {
 // last-seen background's standard position parts — all LOW priority
 // through the normal pool, shed freely under real load.
 func (a *App) prewarmServer() {
-	info := a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey)
+	info := a.d.Prefs.Load().ServerWarmInfoFor(a.srvMeta.serverKey)
 	if info.Char != "" {
-		a.d.Manager.Prefetch(a.urls.CharIcon(info.Char), assets.AssetTypeCharIcon, network.PriorityLow) // AssetType: CharIcon (pre-warm)
-		idle := a.urls.Emote(info.Char, "normal", courtroom.EmoteIdle)
-		talk := a.urls.Emote(info.Char, "normal", courtroom.EmoteTalk)
-		a.d.Manager.PrefetchChain(idle, a.urls.EmoteAlts(info.Char, "normal", courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (pre-warm)
-		a.d.Manager.PrefetchChain(talk, a.urls.EmoteAlts(info.Char, "normal", courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (pre-warm)
+		a.d.Manager.Prefetch(a.link.urls.CharIcon(info.Char), assets.AssetTypeCharIcon, network.PriorityLow) // AssetType: CharIcon (pre-warm)
+		idle := a.link.urls.Emote(info.Char, "normal", courtroom.EmoteIdle)
+		talk := a.link.urls.Emote(info.Char, "normal", courtroom.EmoteTalk)
+		a.d.Manager.PrefetchChain(idle, a.link.urls.EmoteAlts(info.Char, "normal", courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (pre-warm)
+		a.d.Manager.PrefetchChain(talk, a.link.urls.EmoteAlts(info.Char, "normal", courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (pre-warm)
 	}
 	if info.Background != "" {
 		// wit/def/pro/jud cover the courtroom core (standardPositions
 		// leads with exactly those four).
 		for _, pos := range standardPositions[:4] {
 			bgPart, deskPart := courtroom.PositionScene(pos)
-			a.d.Manager.Prefetch(a.urls.Background(info.Background, bgPart), assets.AssetTypeBackground, network.PriorityLow)    // AssetType: Background (pre-warm)
-			a.d.Manager.Prefetch(a.urls.Background(info.Background, deskPart), assets.AssetTypeDeskOverlay, network.PriorityLow) // AssetType: DeskOverlay (pre-warm)
+			a.d.Manager.Prefetch(a.link.urls.Background(info.Background, bgPart), assets.AssetTypeBackground, network.PriorityLow)    // AssetType: Background (pre-warm)
+			a.d.Manager.Prefetch(a.link.urls.Background(info.Background, deskPart), assets.AssetTypeDeskOverlay, network.PriorityLow) // AssetType: DeskOverlay (pre-warm)
 		}
 	}
 }
@@ -686,15 +686,15 @@ func (a *App) prewarmServer() {
 // the user hits enter: idle/talk loops, the preanim, and its char.ini SFX.
 // LOW priority — shed-able speculation, never a render-path cost (§10).
 func (a *App) speculateEmote(me string, e *courtroom.Emote) {
-	idle := a.urls.Emote(me, e.Anim, courtroom.EmoteIdle)
-	talk := a.urls.Emote(me, e.Anim, courtroom.EmoteTalk)
-	a.d.Manager.PrefetchChain(idle, a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (picked emote idle)
-	a.d.Manager.PrefetchChain(talk, a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (picked emote talk)
+	idle := a.link.urls.Emote(me, e.Anim, courtroom.EmoteIdle)
+	talk := a.link.urls.Emote(me, e.Anim, courtroom.EmoteTalk)
+	a.d.Manager.PrefetchChain(idle, a.link.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (picked emote idle)
+	a.d.Manager.PrefetchChain(talk, a.link.urls.EmoteAlts(me, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (picked emote talk)
 	if e.Preanim != "" && e.Preanim != "-" {
-		a.d.Manager.Prefetch(a.urls.Emote(me, e.Preanim, courtroom.EmotePreanim), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (picked preanim)
+		a.d.Manager.Prefetch(a.link.urls.Emote(me, e.Preanim, courtroom.EmotePreanim), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (picked preanim)
 	}
 	if e.SFXName != "" && e.SFXName != "0" && e.SFXName != "1" {
-		a.d.Manager.Prefetch(a.urls.SFX(e.SFXName), assets.AssetTypeSFX, network.PriorityLow) // AssetType: SFX (picked emote)
+		a.d.Manager.Prefetch(a.link.urls.SFX(e.SFXName), assets.AssetTypeSFX, network.PriorityLow) // AssetType: SFX (picked emote)
 	}
 }
 
@@ -728,8 +728,8 @@ func (a *App) customShoutLabel() string {
 var standardPositions = []string{"wit", "def", "pro", "jud", "hld", "hlp", "jur", "sea"}
 
 func (a *App) posChoices() []string {
-	if a.sess != nil && len(a.sess.PosList) > 0 {
-		return a.sess.PosList
+	if a.link.sess != nil && len(a.link.sess.PosList) > 0 {
+		return a.link.sess.PosList
 	}
 	return standardPositions
 }
@@ -751,8 +751,8 @@ func (a *App) applySide(side string) {
 		return
 	}
 	a.compose.sidePref = side
-	if a.sess != nil {
-		a.sess.SendOOC(a.oocNameOrDefault(), "/pos "+side)
+	if a.link.sess != nil {
+		a.link.sess.SendOOC(a.oocNameOrDefault(), "/pos "+side)
 	}
 }
 
@@ -787,7 +787,7 @@ func (a *App) drawPosSelect(x, y, h int32) int32 {
 	// the DEFAULT width either way (wrap-not-extract), so moving or hiding it
 	// never cascades the rest of the row.
 	ddDefW := int32(posSelectW)
-	if a.sess != nil && a.sess.Background != "" {
+	if a.link.sess != nil && a.link.sess.Background != "" {
 		// Wider control so the CLOSED box fits the current position's bg thumbnail
 		// + the side code + the chevron ("show the thing that's already selected").
 		ddDefW = int32(posSelectThumbW)
@@ -796,7 +796,7 @@ func (a *App) drawPosSelect(x, y, h int32) int32 {
 	if a.classic.panelHidden("ctrl.pos") {
 		return x // hidden: the row compacts, exactly like ctrlSlot
 	}
-	r := a.slotRect("ctrl.pos", sdl.Rect{X: x, Y: y, W: labelW + ddDefW, H: h}, a.winW, a.winH)
+	r := a.slotRect("ctrl.pos", sdl.Rect{X: x, Y: y, W: labelW + ddDefW, H: h}, a.frame.winW, a.frame.winH)
 	c.Label(r.X, r.Y+(r.H-int32(c.font.Height()))/2, "Pos", ColTextDim)
 	ddW := r.W - labelW
 	if ddW < 60 {
@@ -812,8 +812,8 @@ func (a *App) drawPosSelect(x, y, h int32) int32 {
 		}
 	}
 	bg := ""
-	if a.sess != nil {
-		bg = a.sess.Background
+	if a.link.sess != nil {
+		bg = a.link.sess.Background
 	}
 	if bg == "" { // no background yet → nothing to thumbnail; plain text dropdown
 		if next, changed := c.Dropdown("posdd", ctrl, choices, cur); changed {
@@ -842,8 +842,8 @@ func (a *App) posThumbDraw(i int, tr sdl.Rect) {
 	c := a.ctx
 	choices := a.posChoices()
 	bg := ""
-	if a.sess != nil {
-		bg = a.sess.Background
+	if a.link.sess != nil {
+		bg = a.link.sess.Background
 	}
 	if i < 0 || i >= len(choices) || bg == "" {
 		c.Fill(tr, sdl.Color{R: 10, G: 10, B: 14, A: 255})
@@ -851,7 +851,7 @@ func (a *App) posThumbDraw(i int, tr sdl.Rect) {
 		return
 	}
 	bgPart, _ := courtroom.PositionScene(choices[i])
-	base := a.urls.Background(bg, bgPart)
+	base := a.link.urls.Background(bg, bgPart)
 	if page, ok := a.cachedPage(&a.pairbox.posBgPages, &a.pairbox.posBgGen, len(choices), i, base); ok && len(page.Frames) > 0 {
 		_ = c.Ren.Copy(page.Frames[0], nil, &tr)
 	} else {
@@ -866,14 +866,14 @@ func (a *App) posThumbDraw(i int, tr sdl.Rect) {
 // sendCasingPrefs pushes the persisted SETCASE subscription on join (the
 // tsuserver family keeps it per connection).
 func (a *App) sendCasingPrefs() {
-	if a.sess == nil {
+	if a.link.sess == nil {
 		return
 	}
 	enabled, roles := a.d.Prefs.Load().Casing()
-	if !enabled || !a.sess.Features.Has(protocol.FeatureCasingAlerts) {
+	if !enabled || !a.link.sess.Features.Has(protocol.FeatureCasingAlerts) {
 		return
 	}
-	a.sess.SetCasingPrefs(
+	a.link.sess.SetCasingPrefs(
 		roles&courtroom.CaseRoleDef != 0,
 		roles&courtroom.CaseRolePro != 0,
 		roles&courtroom.CaseRoleJudge != 0,
@@ -889,23 +889,23 @@ func (a *App) sendCasingPrefs() {
 // (wire ids are shifted by 1; 0 = none per legacy standards).
 func (a *App) noteEvidencePresented(msg *protocol.ChatMessage) {
 	id := msg.EvidenceID
-	if a.sess == nil || id <= 0 || id > len(a.sess.Evidence) {
+	if a.link.sess == nil || id <= 0 || id > len(a.link.sess.Evidence) {
 		return
 	}
-	item := a.sess.Evidence[id-1]
+	item := a.link.sess.Evidence[id-1]
 	img := item.Image
 	// #59: the local presenter can override the displayed image, decoupling the
 	// shown picture from the evidence id (legacy clients still show the
 	// evidence's own image; the server-side hook for remote custom images rides
 	// this same override).
-	if msg.CharID == a.sess.MyCharID && a.evidPresentImage != "" {
+	if msg.CharID == a.link.sess.MyCharID && a.evidPresentImage != "" {
 		img = a.evidPresentImage
 	}
 	name := msg.Showname
 	if name == "" {
 		name = msg.CharName
 	}
-	fr, fc := a.friendMessage(a.serverKey, msg)
+	fr, fc := a.friendMessage(a.srvMeta.serverKey, msg)
 	a.pushIC(name+" presented evidence: "+item.Name, 0, fr, fc, "") // system line — no speaker tint
 	a.evShowImg = img
 	a.evShowAt = time.Now()
@@ -920,14 +920,14 @@ func (a *App) evidURL(name string) string {
 	if !a.evidStream && a.evidLocalOrigin != "" {
 		return courtroom.NewURLBuilder(a.evidLocalOrigin).Evidence(name)
 	}
-	return a.urls.Evidence(name)
+	return a.link.urls.Evidence(name)
 }
 
 // demandEvidence paces thumbnail fetches for the evidence grid: one exact
 // fetch per item per retry interval while the panel is open.
 func (a *App) demandEvidence(idx int, url string) {
-	if len(a.evidAsk) != len(a.sess.Evidence) {
-		a.evidAsk = make([]time.Time, len(a.sess.Evidence))
+	if len(a.evidAsk) != len(a.link.sess.Evidence) {
+		a.evidAsk = make([]time.Time, len(a.link.sess.Evidence))
 	}
 	if idx < 0 || idx >= len(a.evidAsk) || time.Since(a.evidAsk[idx]) < charIconRetryInterval {
 		return
@@ -1049,7 +1049,7 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	if availW < 0 {
 		availW = 0
 	}
-	c.LabelClippedFont(c.fontBig, r.X+pad, r.Y+6, availW, fmt.Sprintf("Evidence (%d)", len(a.sess.Evidence)), ColText)
+	c.LabelClippedFont(c.fontBig, r.X+pad, r.Y+6, availW, fmt.Sprintf("Evidence (%d)", len(a.link.sess.Evidence)), ColText)
 	if c.Button(closeB, "Close") {
 		a.showEvid = false
 		c.popClip(titleClip, titleHad)
@@ -1149,14 +1149,14 @@ func (a *App) drawEvidenceList(list sdl.Rect) {
 	}
 	icon := a.evidIconSize
 	rowH := icon + 8
-	contentH := int32(len(a.sess.Evidence)) * (rowH + 4)
+	contentH := int32(len(a.link.sess.Evidence)) * (rowH + 4)
 	a.evidScroll -= c.WheelIn(list) * scrollStepPx
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
 	a.evidScroll = c.VScrollbar("evidlist", track, a.evidScroll, contentH, list.H)
 	listClipPrev, listClipHad := c.pushClip(list)
 	rowW := list.W - scrollBarW
-	for i := range a.sess.Evidence {
-		item := &a.sess.Evidence[i]
+	for i := range a.link.sess.Evidence {
+		item := &a.link.sess.Evidence[i]
 		cy := list.Y + int32(i)*(rowH+4) - a.evidScroll
 		if cy+rowH <= list.Y || cy >= list.Y+list.H {
 			continue // culled: only a screenful of rows draws, not the whole list
@@ -1208,14 +1208,14 @@ func (a *App) drawEvidenceGrid(grid sdl.Rect) {
 	if cols < 1 {
 		cols = 1
 	}
-	rows := (int32(len(a.sess.Evidence)) + cols - 1) / cols
+	rows := (int32(len(a.link.sess.Evidence)) + cols - 1) / cols
 	contentH := rows*(cell+cellGap+evidNameBandH) - cellGap
 	a.evidScroll -= c.WheelIn(grid) * scrollStepPx
 	track := sdl.Rect{X: grid.X + grid.W - scrollBarW, Y: grid.Y, W: scrollBarW, H: grid.H}
 	a.evidScroll = c.VScrollbar("evidgrid", track, a.evidScroll, contentH, grid.H)
 	clipPrev, clipHad := c.pushClip(grid)
-	for i := range a.sess.Evidence {
-		item := &a.sess.Evidence[i]
+	for i := range a.link.sess.Evidence {
+		item := &a.link.sess.Evidence[i]
 		col, row := int32(i)%cols, int32(i)/cols
 		cx := grid.X + col*(cell+cellGap)
 		cy := grid.Y + row*(cell+cellGap+evidNameBandH) - a.evidScroll
@@ -1278,11 +1278,11 @@ func (a *App) drawEvidenceInspector(rect sdl.Rect) {
 	}
 
 	iy := rect.Y
-	if a.evidIdx < 0 || a.evidIdx >= len(a.sess.Evidence) {
+	if a.evidIdx < 0 || a.evidIdx >= len(a.link.sess.Evidence) {
 		c.Label(ix, iy, "Select an item.", ColTextDim)
 		return
 	}
-	sel := &a.sess.Evidence[a.evidIdx]
+	sel := &a.link.sess.Evidence[a.evidIdx]
 	if a.evidDescScrollIdx != a.evidIdx { // switched item: don't carry over the old description's scroll offset
 		a.evidDescScroll, a.evidDescScrollIdx = 0, a.evidIdx
 	}
@@ -1334,7 +1334,7 @@ func (a *App) drawEvidenceInspector(rect sdl.Rect) {
 		a.evidName, a.evidDesc, a.evidImage = sel.Name, sel.Description, sel.Image
 	}
 	if c.Button(sdl.Rect{X: ix + (iw-6)/2 + 6, Y: iy, W: (iw - 6) / 2, H: btnH}, "Delete") {
-		a.sess.DeleteEvidence(a.evidIdx)
+		a.link.sess.DeleteEvidence(a.evidIdx)
 		a.evidPresent = false
 	}
 	iy += btnH + 6
@@ -1391,9 +1391,9 @@ func (a *App) drawEvidenceEditor(rect sdl.Rect) {
 		name, desc, img := strings.TrimSpace(a.evidName), strings.TrimSpace(a.evidDesc), strings.TrimSpace(a.evidImage)
 		if name != "" {
 			if a.evidIdx < 0 {
-				a.sess.AddEvidence(name, desc, img)
+				a.link.sess.AddEvidence(name, desc, img)
 			} else {
-				a.sess.EditEvidence(a.evidIdx, name, desc, img)
+				a.link.sess.EditEvidence(a.evidIdx, name, desc, img)
 			}
 			a.evidEditing = false
 			a.evidConflict = false
@@ -1545,8 +1545,8 @@ func (a *App) drawEvidenceInspectorWindow(w, h int32, pressed *bool) {
 	c.Border(r, ColAccent)
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)
 	title := "Evidence inspector"
-	if a.evidIdx >= 0 && a.evidIdx < len(a.sess.Evidence) {
-		title = a.sess.Evidence[a.evidIdx].Name
+	if a.evidIdx >= 0 && a.evidIdx < len(a.link.sess.Evidence) {
+		title = a.link.sess.Evidence[a.evidIdx].Name
 	}
 	c.Heading(r.X+pad, r.Y+6, title, ColText)
 	popB := sdl.Rect{X: r.X + r.W - 80 - pad, Y: r.Y + 3, W: 80, H: btnH}
@@ -1573,7 +1573,7 @@ func (a *App) evidInspectorRect(w, h int32) sdl.Rect {
 // the user right-clicked. Clicking outside closes it.
 func (a *App) drawEvidenceContextMenu() {
 	c := a.ctx
-	if a.evidIdx < 0 || a.evidIdx >= len(a.sess.Evidence) {
+	if a.evidIdx < 0 || a.evidIdx >= len(a.link.sess.Evidence) {
 		a.evidCtxMenu = false
 		return
 	}
@@ -1582,13 +1582,13 @@ func (a *App) drawEvidenceContextMenu() {
 		act   func()
 	}{
 		{"Edit", func() {
-			sel := &a.sess.Evidence[a.evidIdx]
+			sel := &a.link.sess.Evidence[a.evidIdx]
 			a.evidEditing = true
 			a.evidName, a.evidDesc, a.evidImage = sel.Name, sel.Description, sel.Image
 			a.evidCtxMenu = false
 		}},
 		{"Delete", func() {
-			a.sess.DeleteEvidence(a.evidIdx)
+			a.link.sess.DeleteEvidence(a.evidIdx)
 			a.evidPresent = false
 			a.evidCtxMenu = false
 		}},
@@ -1597,7 +1597,7 @@ func (a *App) drawEvidenceContextMenu() {
 			a.evidCtxMenu = false
 		}},
 		{"Pin to notebook", func() {
-			sel := &a.sess.Evidence[a.evidIdx]
+			sel := &a.link.sess.Evidence[a.evidIdx]
 			a.pinNote("[evidence] " + sel.Name + ": " + sel.Description)
 			a.evidCtxMenu = false
 		}},
@@ -1659,7 +1659,7 @@ func (a *App) drawModcallPanel(w, h int32, pressed *bool) {
 	c.Heading(r.X+pad, r.Y+6, "Call a moderator", ColText)
 	closeB := sdl.Rect{X: r.X + r.W - 80 - pad, Y: r.Y + 3, W: 80, H: btnH}
 	if c.Button(closeB, "Close") {
-		a.showModcall, a.modReason = false, ""
+		a.showModcall, a.modUI.modReason = false, ""
 		return
 	}
 	a.floatWinDrag(&a.wins.modcallWin, sdl.Rect{X: r.X, Y: r.Y, W: closeB.X - r.X - 4, H: floatTitleH}, pressed)
@@ -1671,11 +1671,11 @@ func (a *App) drawModcallPanel(w, h int32, pressed *bool) {
 	}
 
 	c.Label(r.X+pad, r.Y+floatTitleH+8, "Reason (some servers make it optional):", ColText)
-	a.modReason, _ = c.TextField("modreason", sdl.Rect{X: r.X + pad, Y: r.Y + floatTitleH + 32, W: r.W - 2*pad, H: fieldH}, a.modReason, "What needs attention?")
+	a.modUI.modReason, _ = c.TextField("modreason", sdl.Rect{X: r.X + pad, Y: r.Y + floatTitleH + 32, W: r.W - 2*pad, H: fieldH}, a.modUI.modReason, "What needs attention?")
 	if c.Button(sdl.Rect{X: r.X + pad, Y: r.Y + r.H - btnH - 12, W: 110, H: btnH}, "Call mod") {
-		a.sess.CallMod(strings.TrimSpace(a.modReason))
+		a.link.sess.CallMod(strings.TrimSpace(a.modUI.modReason))
 		a.pushOOC("CLIENT: Moderator called.", "")
-		a.showModcall, a.modReason = false, ""
+		a.showModcall, a.modUI.modReason = false, ""
 	}
 }
 

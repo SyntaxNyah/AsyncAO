@@ -21,7 +21,7 @@ func TestApplyPendingFavKeepsSlicesConsistent(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 	a := &App{env: env{d: Deps{Prefs: prefs}}}
-	a.serverKey = "s"
+	a.srvMeta.serverKey = "s"
 	for _, n := range []string{"Phoenix", "Edgeworth", "Maya"} {
 		prefs.AddWardrobe("s", n)
 	}

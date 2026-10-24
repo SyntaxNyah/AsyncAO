@@ -1278,8 +1278,8 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 
 		})
 
-		if a.room != nil {
-			a.room.HideSpriteStyles = next
+		if a.link.room != nil {
+			a.link.room.HideSpriteStyles = next
 		}
 	}
 	y += 26
@@ -1420,8 +1420,8 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 
 		})
 
-		if a.room != nil {
-			a.room.ForceCharNames = next // apply to the running session immediately
+		if a.link.room != nil {
+			a.link.room.ForceCharNames = next // apply to the running session immediately
 		}
 	}
 	y += 26

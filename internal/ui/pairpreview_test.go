@@ -174,7 +174,7 @@ func TestPairPlacementStillReachesTheWire(t *testing.T) {
 	// …and on a 2.9 server the VERTICAL half rides with it, in canon's "x&y"
 	// spelling. Without y_offset only X is representable, which is why the arm
 	// above asserts the bare number.
-	a.sess.Features[protocol.FeatureYOffset] = struct{}{}
+	a.link.sess.Features[protocol.FeatureYOffset] = struct{}{}
 	a.compose.icInput = "and vertically"
 	a.sendICFresh()
 	if got := (*sent)[len(*sent)-1].Field(outgoingSelfOffsetField); got != "-37&21" {

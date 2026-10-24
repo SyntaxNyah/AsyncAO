@@ -286,7 +286,7 @@ func (a *App) demoDefaultOrigin() string {
 	if m := a.mountOrigin(); m != "" {
 		return m // mounts configured: resolve the demo against the local base (AO2 parity)
 	}
-	return a.urls.Origin()
+	return a.link.urls.Origin()
 }
 
 // loadRecordingAny opens a recording by extension: our .aorec JSON, or an AO2

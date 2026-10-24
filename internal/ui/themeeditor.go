@@ -670,7 +670,7 @@ func (a *App) closeEditorPanels() {
 // and "you must join a courtroom before you may edit your theme" is not an
 // acceptable sentence. With a live room it is the real courtroom pass, 1:1. Without
 func (a *App) drawEditorCanvas(w, h int32) {
-	if a.room != nil && a.sess != nil && !a.theaterOn {
+	if a.link.room != nil && a.link.sess != nil && !a.theaterOn {
 		// THE COURTROOM'S OWN WIDGETS GO INERT while it is being used as a canvas.
 		// This is layoutEditFence's trick — modalOn blanks hovering() everywhere and
 		// the editor hit-tests with raw pointIn — and it is needed for the same

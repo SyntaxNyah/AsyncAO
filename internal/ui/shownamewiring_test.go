@@ -47,7 +47,7 @@ func TestShownameRungIsUnknownUntilTheFetchLands(t *testing.T) {
 	// A real origin, because charMetaFor keys by the full char.ini URL and answers
 	// nothing at all without one — the same per-server separation every cache in
 	// this client is built on.
-	a.urls = courtroom.NewURLBuilder("http://assets.example.test/base/")
+	a.link.urls = courtroom.NewURLBuilder("http://assets.example.test/base/")
 	url := a.charINIURL("Phoenix")
 	// The IN-FLIGHT marker charMetaFor plants on a miss: the entry exists, the
 	// fetch has not settled. Seeded rather than provoked so this gate measures the

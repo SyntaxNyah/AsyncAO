@@ -64,8 +64,8 @@ func packApp(t *testing.T, files map[string]string) *App {
 	t.Cleanup(idx.Retire)
 	a.d.Manager.SetMountLayer(assets.NewMountLayer(idx, []string{dir}, []string{packAppOrigin}))
 
-	a.urls = courtroom.NewURLBuilder(packAppOrigin)
-	a.sess = &courtroom.Session{}
+	a.link.urls = courtroom.NewURLBuilder(packAppOrigin)
+	a.link.sess = &courtroom.Session{}
 	a.charINIres = make(chan charINIFetch, 1)
 	return a
 }

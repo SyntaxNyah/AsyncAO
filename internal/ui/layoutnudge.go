@@ -31,7 +31,7 @@ const (
 // carrying a second copy of the conjunction.
 func (a *App) editorDrawSiteRuns() bool {
 	return a.layoutEditorArmed() && a.screen == ScreenCourtroom &&
-		a.room != nil && a.sess != nil && !a.theaterOn && !a.screenDispatchPreempted()
+		a.link.room != nil && a.link.sess != nil && !a.theaterOn && !a.screenDispatchPreempted()
 }
 
 // keyboardSurfaceOverEditor reports whether some OTHER keyboard surface owns this

@@ -15,7 +15,7 @@ func TestApplySide(t *testing.T) {
 	var sent []protocol.Packet
 	s := courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
 	a := &App{env: env{}}
-	a.sess = s
+	a.link.sess = s
 
 	// A real change lowercases, stores, and fires exactly one /pos over OOC (CT).
 	a.applySide("  Def ")

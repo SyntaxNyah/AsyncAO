@@ -678,7 +678,7 @@ func TestMenuBarItemActionFiresAndCloses(t *testing.T) {
 
 	// Disabled: Servers → Disconnect with no session.
 	disc := menuRow(t, menuServersTitle, "Disconnect")
-	a.sess = nil
+	a.link.sess = nil
 	if a.menuItemEnabled(disc) {
 		t.Fatal("Disconnect must be disabled with no session (the enabled-predicate fixture)")
 	}

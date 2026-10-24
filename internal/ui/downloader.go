@@ -230,13 +230,13 @@ func (a *App) drawDownloadIndicator(w int32) {
 // OUTSIDE the character folder, so a plain folder grab leaves it silent.
 func (a *App) startCharDownload(char string) {
 	dest := filepath.Join(downloadsRoot(), "characters", strings.ToLower(char))
-	a.enqueueDownload(dlReq{label: "character " + char, rootURL: a.urls.CharFolder(char), destBase: dest, soundChar: char, target: char})
+	a.enqueueDownload(dlReq{label: "character " + char, rootURL: a.link.urls.CharFolder(char), destBase: dest, soundChar: char, target: char})
 }
 
 // startBgDownload grabs one background's folder (no external sound deps).
 func (a *App) startBgDownload(bg string) {
 	dest := filepath.Join(downloadsRoot(), "background", strings.ToLower(bg))
-	a.enqueueDownload(dlReq{label: "background " + bg, rootURL: a.urls.BackgroundFolder(bg), destBase: dest, target: bg})
+	a.enqueueDownload(dlReq{label: "background " + bg, rootURL: a.link.urls.BackgroundFolder(bg), destBase: dest, target: bg})
 }
 
 // enqueueDownload starts a grab immediately when idle, else queues it behind
@@ -247,7 +247,7 @@ func (a *App) enqueueDownload(req dlReq) {
 	if !a.d.Prefs.Load().CharDownloaderOn {
 		return
 	}
-	if a.d.Client == nil || a.urls.Origin() == "" {
+	if a.d.Client == nil || a.link.urls.Origin() == "" {
 		a.dl.status = "Downloader needs a connected server with an asset URL."
 		return
 	}
@@ -299,7 +299,7 @@ func (a *App) launchDownload(req dlReq) {
 		paused: &a.dlPaused, capBPS: int64(a.d.Prefs.DownloadCapKBps()) * 1024, start: time.Now(),
 	}
 	client := a.d.Client
-	urls := a.urls
+	urls := a.link.urls
 	exts := audioProbeExts()
 	soundChar, rootURL, destBase := req.soundChar, req.rootURL, req.destBase
 	go func() {

@@ -400,7 +400,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	// strip twice or not at all.
 	a.latchTabStripPaint()
 	a.pollCharINI()
-	if a.room == nil || a.sess == nil {
+	if a.link.room == nil || a.link.sess == nil {
 		if a.classic.classicEdit {
 			a.classic.stopClassicEdit() // session dropped mid-edit — release the fence so the lobby isn't stuck
 		}
@@ -498,7 +498,7 @@ func (a *App) drawCourtroom(w, h int32) {
 		a.handleSpriteHide(vp) // right-click → hide-sprite confirm (default ON)
 	}
 	a.handleHotkeys() // Ctrl-chords (shouts, pos, music, screenshot...)
-	if a.rehearsal {
+	if a.srvMeta.rehearsal {
 		c.Label(vp.X+8, vp.Y+8, rehearsalBadge, ColTierYellow)
 	}
 	a.drawChatOverlay(vp, true, w, h) // classic layout: the chatbox is a movable slot
@@ -788,7 +788,7 @@ func (a *App) handleSpriteDrag(vp sdl.Rect) {
 		return // opt-in (Settings → General); off by default so stray clicks can't nudge sprites
 	}
 	c := a.ctx
-	sc := &a.room.Scene
+	sc := &a.link.room.Scene
 	pressed := c.mouseDown && !a.prevDown
 	a.prevDown = c.mouseDown
 	if !c.mouseDown {
@@ -916,7 +916,7 @@ func (a *App) drawCloseTabConfirm(w, h int32) {
 	// The server name is variable-length and drawn on a fixed-width panel, so clip
 	// it (LabelClipped) — an over-long name must not spill past the border onto the
 	// scene behind (the §3.4 class of bug that just landed one commit upstream).
-	name := t.state.serverName
+	name := t.state.srvMeta.serverName
 	if name == "" {
 		name = "this server"
 	}
@@ -996,14 +996,14 @@ func (a *App) drawQuitConfirm(w, h int32) {
 // Only at 1× zoom (zoomed hit rects lie) and not over the chatbox area.
 func (a *App) handleSpriteHide(vp sdl.Rect) {
 	c := a.ctx
-	if !c.rightClicked || a.room == nil || !a.d.Prefs.Load().RightClickHideSprite || a.courtModalOpen() {
+	if !c.rightClicked || a.link.room == nil || !a.d.Prefs.Load().RightClickHideSprite || a.courtModalOpen() {
 		return // a blocking popup fences the stage
 	}
 	boxH := vp.H / 4 * int32(a.boxPct) / DefaultScalePct
 	if !c.hovering(vp) || c.mouseY >= vp.Y+vp.H-boxH {
 		return
 	}
-	sc := &a.room.Scene
+	sc := &a.link.room.Scene
 	layers := [2]*courtroom.SpriteLayer{&sc.Speaker, &sc.Pair}
 	if sc.PairActive && !sc.SpeakerInFront {
 		layers[0], layers[1] = &sc.Pair, &sc.Speaker

@@ -20,7 +20,7 @@ func armsTestApp(t *testing.T, names ...string) *App {
 	// macroBind:-1 mirrors NewApp: the zero value reads as "a macro bind capture is
 	// armed" (capturingKey), which would make every focus bounce a no-op.
 	a := &App{env: env{ctx: &Ctx{}}, macroBind: -1}
-	a.urls = courtroom.NewURLBuilder("https://one.test/base")
+	a.link.urls = courtroom.NewURLBuilder("https://one.test/base")
 	a.overlays.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {set: theme.MergeOverlayFX(names)},
 	}

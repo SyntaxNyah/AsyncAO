@@ -51,10 +51,10 @@ func (a *App) queueGroupInvite(gid uint32, name string, ownerUID int, ownerName 
 // acceptInvite joins the group and tells the owner; opens the new group.
 func (a *App) acceptInvite(inv groupInvite) {
 	a.applyGroupInvite(inv.gid, inv.name, inv.ownerUID, inv.ownerName)
-	if a.sess != nil {
+	if a.link.sess != nil {
 		body := "[AsyncAO joined the group]" +
 			courtroom.WireMessage{Kind: courtroom.MsgJoin, GroupID: inv.gid}.EncodeMarker()
-		a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{inv.ownerUID}, body))
+		a.link.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{inv.ownerUID}, body))
 	}
 	a.msgs.removePendingInvite(inv.gid)
 	a.msgs.showMessages, a.msgs.msgSelGroup, a.msgs.msgSel = true, inv.gid, ""
@@ -62,10 +62,10 @@ func (a *App) acceptInvite(inv groupInvite) {
 
 // declineInvite drops the invite and tells the owner to remove us.
 func (a *App) declineInvite(inv groupInvite) {
-	if a.sess != nil {
+	if a.link.sess != nil {
 		body := "[AsyncAO declined the invite]" +
 			courtroom.WireMessage{Kind: courtroom.MsgLeave, GroupID: inv.gid}.EncodeMarker()
-		a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{inv.ownerUID}, body))
+		a.link.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{inv.ownerUID}, body))
 	}
 	a.msgs.removePendingInvite(inv.gid)
 }

@@ -111,7 +111,7 @@ func (a *App) paletteMatches(query string) []paletteMatch {
 			out = append(out, paletteMatch{label: e.label, hint: e.desc, widget: -1, run: e.run})
 		}
 	}
-	if a.sess != nil {
+	if a.link.sess != nil {
 		for _, line := range courtroom.CommandReference(a.detectedSoftware()) {
 			if len(out) >= paletteMaxN {
 				return out

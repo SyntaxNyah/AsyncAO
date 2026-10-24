@@ -33,7 +33,7 @@ func stageSettledCourtroom(t testing.TB) (*App, func()) {
 	a.ctx = ctx
 	a.uiScalePct = 100
 	a.screen = ScreenCourtroom
-	a.serverName = "AllocGate"
+	a.srvMeta.serverName = "AllocGate"
 	// Seed the layout scales exactly as the live app does (app.go: loadPrefs).
 	// testTabApp never runs that path, so vpPct/logPct/... default to Go's zero
 	// — a 0% viewport is 0×0, which collapses the whole right column (rcol.H=0)
@@ -64,8 +64,8 @@ func stageSettledCourtroom(t testing.TB) (*App, func()) {
 
 	// A minimal, quiescent session: no visible timers/clocks (they'd change text
 	// every frame), no players/areas panels that vary.
-	a.sess = &courtroom.Session{}
-	a.room = newRoomForTest(t)
+	a.link.sess = &courtroom.Session{}
+	a.link.room = newRoomForTest(t)
 
 	// Resident stage bases: upload a tiny texture for each so the draw is a pure
 	// touch — a miss would fire healScenery / keepSceneAssetsWarm, whose map
@@ -85,9 +85,9 @@ func stageSettledCourtroom(t testing.TB) (*App, func()) {
 	}
 	// Drive a message and settle it so the stage has a real speaker, then make
 	// every base it references resident.
-	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(0, "Witch", "settled line")})
-	a.room.SkipToIdle()
-	sc := &a.room.Scene
+	a.link.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(0, "Witch", "settled line")})
+	a.link.room.SkipToIdle()
+	sc := &a.link.room.Scene
 	upload(sc.BackgroundBase)
 	upload(sc.DeskBase)
 	upload(sc.Speaker.Active)
@@ -286,7 +286,7 @@ func TestDrawCourtroomThemedCentredShownameZeroAlloc(t *testing.T) {
 	if !a.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
-	name := a.room.Scene.ShownameText
+	name := a.link.room.Scene.ShownameText
 	if name == "" {
 		t.Fatal("the fixture has no showname on screen — the alignment path would not run")
 	}

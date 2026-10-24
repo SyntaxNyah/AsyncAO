@@ -24,8 +24,8 @@ func (a *App) applyThemeAsync() uint64 {
 	// Per-server theme binding: while this session declares one, it wins
 	// over the global pick (set on connect from ServerWarmInfo.Theme;
 	// Disconnect/resetSessionState clears it and re-applies the global).
-	if a.themeBound != "" {
-		name = a.themeBound
+	if a.srvMeta.themeBound != "" {
+		name = a.srvMeta.themeBound
 	}
 	anims := a.d.Prefs.Load().PreferAnimated
 	// The AO2 subtheme folder to prefer inside that theme. Read HERE, on the
@@ -512,7 +512,7 @@ func (a *App) pollThemeApply() {
 // tab switches, and disconnect funnel through here. No-op when the
 // right theme is already applied (loads are async but not free).
 func (a *App) ensureThemeForSession() {
-	want := a.themeBound
+	want := a.srvMeta.themeBound
 	if want == "" {
 		want, _ = a.d.Prefs.Load().Theme()
 	}
@@ -671,13 +671,13 @@ func (a *App) themeFrame(page *render.TexturePage) *sdl.Texture {
 // URL (the state machine plays it at message-display time, where AO2's
 // handle_ic_message does — the theme INI itself lives UI-side).
 func (a *App) pushRealizationToRoom() {
-	if a.room == nil {
+	if a.link.room == nil {
 		return
 	}
 	if name := a.themeSounds["realization"]; name != "" {
-		a.room.RealizationSFX = a.urls.SFX(name) // AssetType: SFX (realization)
+		a.link.room.RealizationSFX = a.link.urls.SFX(name) // AssetType: SFX (realization)
 	} else {
-		a.room.RealizationSFX = ""
+		a.link.room.RealizationSFX = ""
 	}
 }
 
@@ -730,10 +730,10 @@ func (a *App) logSpeakerAnimDiag() {
 	if !ok {
 		return
 	}
-	if si.Base == a.lastSpeakerDiagBase {
+	if si.Base == a.frame.lastSpeakerDiagBase {
 		return // same base already logged — don't flood the ring
 	}
-	a.lastSpeakerDiagBase = si.Base
+	a.frame.lastSpeakerDiagBase = si.Base
 	a.debug.push(fmt.Sprintf("speaker anim: %s · %d/%d frames · delays %d/%d/%d ms (min/avg/max)",
 		si.Base, si.Kept, si.Source,
 		si.MinDelay/time.Millisecond, si.AvgDelay/time.Millisecond, si.MaxDelay/time.Millisecond))
@@ -779,8 +779,8 @@ func (a *App) drainWarnings() {
 			// compares the base against its own current message, so wrong-room
 			// bases are a string-compare no-op.
 			if w.Type == assets.AssetTypeCharSprite {
-				if a.room != nil {
-					a.room.NotifyAssetMissing(w.Base)
+				if a.link.room != nil {
+					a.link.room.NotifyAssetMissing(w.Base)
 				}
 				if a.splitRoom != nil {
 					a.splitRoom.NotifyAssetMissing(w.Base)
@@ -813,8 +813,8 @@ func (a *App) drainWarnings() {
 			// droppable Warning lane, no new channel/goroutine (§17.4); each room
 			// string-compares against its own scene, so wrong-room bases are a no-op.
 			if w.Type == assets.AssetTypeDeskOverlay {
-				if a.room != nil {
-					a.room.NotifyDeskMissing(w.Base)
+				if a.link.room != nil {
+					a.link.room.NotifyDeskMissing(w.Base)
 				}
 				if a.splitRoom != nil {
 					a.splitRoom.NotifyDeskMissing(w.Base)
@@ -843,8 +843,8 @@ func (a *App) drainWarnings() {
 			// fallback (black bg / normal chatbox / silent) already covers it.
 			switch w.Type {
 			case assets.AssetTypeBackground, assets.AssetTypeMisc, assets.AssetTypeSFX, assets.AssetTypeBlip, assets.AssetTypeShoutBubble:
-				if a.room != nil {
-					a.room.NotifyAssetMissing(w.Base)
+				if a.link.room != nil {
+					a.link.room.NotifyAssetMissing(w.Base)
 				}
 				if a.splitRoom != nil {
 					a.splitRoom.NotifyAssetMissing(w.Base)
@@ -980,7 +980,7 @@ func (a *App) postFX() render.PostFX {
 // while no overrides exist).
 // applySpriteOverrides applies them to the ACTIVE room. Every other live room
 // goes through applySpriteOverridesTo — see there for why they must.
-func (a *App) applySpriteOverrides() { a.applySpriteOverridesTo(a.room) }
+func (a *App) applySpriteOverrides() { a.applySpriteOverridesTo(a.link.room) }
 
 // applySpriteOverridesTo applies the session's hide/move overrides to ONE room.
 //
@@ -1030,7 +1030,7 @@ func (a *App) applySpriteOverridesTo(room *courtroom.Courtroom) {
 // nothing else re-demands it, so it vanishes mid-message. Paced one ask per
 // base per charIconRetryInterval; HIGH because this is the live scene.
 func (a *App) healScenery() {
-	sc := &a.room.Scene
+	sc := &a.link.room.Scene
 	now := time.Now()
 	// Each heal consults the shared per-scene futility budget (sceneHealAllowed):
 	// when the settled working set exceeds the T1 main tier, every heal evicts
@@ -1121,14 +1121,14 @@ func (a *App) icStamp() string { return a.now().Format(icStampLayout) }
 // allocates nothing, so it's safe per message even in a catch-up burst.
 // ignoreSpeaker reports whether an IC message is from an ignored player (#81),
 func (a *App) ignoreSpeaker(m *protocol.ChatMessage) bool {
-	if m == nil || a.serverKey == "" {
+	if m == nil || a.srvMeta.serverKey == "" {
 		return false
 	}
 	name := strings.TrimSpace(m.Showname)
 	if name == "" {
 		name = strings.TrimSpace(m.CharName)
 	}
-	return a.d.Prefs.Load().ServerIgnoreMatch(a.serverKey, name)
+	return a.d.Prefs.Load().ServerIgnoreMatch(a.srvMeta.serverKey, name)
 }
 
 func (a *App) friendMessage(serverKey string, m *protocol.ChatMessage) (bool, int32) {
@@ -1227,26 +1227,26 @@ func (a *App) signalModcall(serverName, notice string) {
 // per frame, and no-ops entirely when off, so it costs the default path nothing.
 // Bounded FIFO over visited areas (rule §17.4). Both maps park per tab.
 func (a *App) switchAreaScrollback(toArea string) {
-	if !a.d.Prefs.Load().PerAreaScroll || toArea == a.curArea {
+	if !a.d.Prefs.Load().PerAreaScroll || toArea == a.srvMeta.curArea {
 		return
 	}
-	if a.areaLogs == nil {
-		a.areaLogs = map[string][]icEntry{}
+	if a.srvMeta.areaLogs == nil {
+		a.srvMeta.areaLogs = map[string][]icEntry{}
 	}
 	// Save the area we're leaving (curArea); track its key order for eviction.
-	if _, seen := a.areaLogs[a.curArea]; !seen {
-		a.areaLogOrder = append(a.areaLogOrder, a.curArea)
+	if _, seen := a.srvMeta.areaLogs[a.srvMeta.curArea]; !seen {
+		a.srvMeta.areaLogOrder = append(a.srvMeta.areaLogOrder, a.srvMeta.curArea)
 	}
-	a.areaLogs[a.curArea] = a.chatlog.icLog
-	for len(a.areaLogOrder) > areaLogCacheMax {
-		oldest := a.areaLogOrder[0]
-		a.areaLogOrder = a.areaLogOrder[1:]
+	a.srvMeta.areaLogs[a.srvMeta.curArea] = a.chatlog.icLog
+	for len(a.srvMeta.areaLogOrder) > areaLogCacheMax {
+		oldest := a.srvMeta.areaLogOrder[0]
+		a.srvMeta.areaLogOrder = a.srvMeta.areaLogOrder[1:]
 		if oldest != toArea { // never evict the log we're about to load
-			delete(a.areaLogs, oldest)
+			delete(a.srvMeta.areaLogs, oldest)
 		}
 	}
 	// Load the target area's saved log (nil = unvisited = a fresh empty log).
-	a.chatlog.icLog = a.areaLogs[toArea]
+	a.chatlog.icLog = a.srvMeta.areaLogs[toArea]
 	a.chatlog.icLogSeq++ // invalidate the wrap + filter caches
 	a.chatlog.icScroll, a.compose.icStick = 0, true
 	a.compose.icReadMark = len(a.chatlog.icLog)
@@ -1334,11 +1334,11 @@ func (a *App) transcriptSeqFor(server string) int {
 // ones off their own tab state, which is exactly how the two message seams file
 // their lines (see logDetailed) — so a writer is owned precisely when some seam
 func (a *App) transcriptOwned(k translogKey) bool {
-	if k.server == a.serverName && k.session == a.logSession {
+	if k.server == a.srvMeta.serverName && k.session == a.srvMeta.logSession {
 		return true
 	}
 	for _, t := range a.tabs {
-		if t != nil && t.state.serverName == k.server && t.state.logSession == k.session {
+		if t != nil && t.state.srvMeta.serverName == k.server && t.state.srvMeta.logSession == k.session {
 			return true
 		}
 	}
@@ -1481,7 +1481,7 @@ func (a *App) pushOOC(line, speaker string) {
 	// same as AO2's single append_server_chatmessage entry point — so this one
 	// call site is the transcript's for the whole channel, "log only what's
 	// shown" (the truncated, post-suppression `line` above, not the raw input).
-	a.logDetailedOOC(a.serverName, a.logSession, line) // detailed transcript (opt-in), this tab's own file
+	a.logDetailedOOC(a.srvMeta.serverName, a.srvMeta.logSession, line) // detailed transcript (opt-in), this tab's own file
 }
 
 func appendCapped(list []string, line string, cap int) []string {

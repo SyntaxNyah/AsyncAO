@@ -11,8 +11,8 @@ import (
 // chatting / follow the log) — only the cursor being OVER the panel fences.
 func TestEvidencePanelNonBlocking(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", nil)
-	a.room = &courtroom.Courtroom{}
+	a.link.sess = courtroom.NewRehearsalSession("", nil)
+	a.link.room = &courtroom.Courtroom{}
 	const w, h = int32(1000), int32(800)
 
 	a.showEvid = true

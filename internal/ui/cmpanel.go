@@ -16,7 +16,7 @@ import (
 // controls once you're CM.
 
 // toggleCMPanel opens / closes the CM panel (its row button + the mod dashboard's pointer).
-func (a *App) toggleCMPanel() { a.showCMPanel = !a.showCMPanel }
+func (a *App) toggleCMPanel() { a.modUI.showCMPanel = !a.modUI.showCMPanel }
 
 // cmPanelRect is the CM panel's floating-window rect (floatwin.go).
 func (a *App) cmPanelRect(w, h int32) sdl.Rect {
@@ -38,8 +38,8 @@ const (
 // Now a movable/resizable, non-blocking floating box (chat stays live behind it).
 func (a *App) drawCMPanel(w, h int32, pressed *bool) {
 	c := a.ctx
-	if c.escPressed || !a.amICMNow {
-		a.showCMPanel = false // Esc, or we no longer hold CM
+	if c.escPressed || !a.srvMeta.amICMNow {
+		a.modUI.showCMPanel = false // Esc, or we no longer hold CM
 		return
 	}
 	sw := a.detectedSoftware()
@@ -60,7 +60,7 @@ func (a *App) drawCMPanel(w, h int32, pressed *bool) {
 
 	c.Heading(x, panel.Y+12, "CM — Area Control", ColText)
 	if c.Button(sdl.Rect{X: panel.X + pw - modDashIn - 74, Y: panel.Y + 12, W: 74, H: btnH}, "Close") {
-		a.showCMPanel = false
+		a.modUI.showCMPanel = false
 		return
 	}
 	c.LabelClipped(x, panel.Y+46, pw-2*modDashIn, "Area: "+a.myAreaName(), ColTextDim)
@@ -108,14 +108,14 @@ func (a *App) drawCMRoster(r sdl.Rect, sw courtroom.ServerSoftware) {
 		return
 	}
 	if !c.ctrlHeld {
-		a.cmRosterScroll -= c.WheelIn(r) * scrollStepPx
+		a.modUI.cmRosterScroll -= c.WheelIn(r) * scrollStepPx
 	}
 	contentH := int32(len(roster)) * modRosterRowH
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
-	a.cmRosterScroll = c.VScrollbar("cmroster", track, a.cmRosterScroll, contentH, r.H)
+	a.modUI.cmRosterScroll = c.VScrollbar("cmroster", track, a.modUI.cmRosterScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r)
 	defer c.popClip(clipPrev, clipHad)
-	rowY := r.Y - a.cmRosterScroll
+	rowY := r.Y - a.modUI.cmRosterScroll
 	rowW := r.W - scrollBarW - 4
 	for i := range roster {
 		p := roster[i]

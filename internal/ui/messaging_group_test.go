@@ -11,7 +11,7 @@ import (
 // being kicked drops the group locally.
 func TestGroupStateMachine(t *testing.T) {
 	a := &App{env: env{}}
-	a.sess = &courtroom.Session{PlayerID: 7} // me = uid 7
+	a.link.sess = &courtroom.Session{PlayerID: 7} // me = uid 7
 
 	a.applyGroupInvite(100, "Squad", 3, "Owner")
 	g := a.msgs.msgGroups[100]
@@ -44,7 +44,7 @@ func TestGroupStateMachine(t *testing.T) {
 // is ignored (no phantom group created).
 func TestGroupTextUnknownIgnored(t *testing.T) {
 	a := &App{env: env{}}
-	a.sess = &courtroom.Session{PlayerID: 7}
+	a.link.sess = &courtroom.Session{PlayerID: 7}
 	a.applyGroupText(999, 3, "X", "ghost")
 	if len(a.msgs.msgGroups) != 0 {
 		t.Error("group text for an unknown group must not create one")

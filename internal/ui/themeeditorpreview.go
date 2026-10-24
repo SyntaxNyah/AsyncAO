@@ -184,17 +184,17 @@ func (a *App) enterEditorPreview() {
 	// OFFLINE session (session.go) and it is exactly the right shape here: phase
 	// Ready, no transport, an empty character list, a send func that discards.
 	// Origin "" so nothing it mints can name a real host.
-	p.state.sess = courtroom.NewRehearsalSession("", nil)
-	p.state.rehearsal = true
-	p.state.urls = courtroom.NewURLBuilder("")
-	p.state.serverName = editorPreviewShowname
+	p.state.link.sess = courtroom.NewRehearsalSession("", nil)
+	p.state.srvMeta.rehearsal = true
+	p.state.link.urls = courtroom.NewURLBuilder("")
+	p.state.srvMeta.serverName = editorPreviewShowname
 	// Construction IS wiring (newroom.go): the demo speaker blips, skins and flashes
 	// exactly like a live one, and the room starts under the AUTHOR'S OWN viewing
 	// preferences — which is the whole point. This is a VIEWING room, not an
 	// authoring one: a theme is judged as a player will see it, so reduce-motion and
 	// the effect gates must reach it (requirement 6 is that ReduceMotion freezes the
 	// demo, not that the demo overrides it).
-	p.state.room = a.newRoom(p.state.urls, nil, nil)
+	p.state.link.room = a.newRoom(p.state.link.urls, nil, nil)
 	a.te.preview = p
 
 	// The scrollback and the first beats go through the REAL append and the REAL
@@ -247,9 +247,9 @@ func (a *App) exitEditorPreview() {
 	// viewport still pointed at a room nobody holds delivers a preanim-done to a
 	// dead scene.
 	if a.d.Viewport != nil {
-		if a.room != nil {
-			a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
-			a.d.Viewport.OnFrameShown = a.room.NotifyFrameShown
+		if a.link.room != nil {
+			a.d.Viewport.OnPreanimDone = a.link.room.NotifyPreanimDone
+			a.d.Viewport.OnFrameShown = a.link.room.NotifyFrameShown
 		} else {
 			a.d.Viewport.OnPreanimDone = nil
 			a.d.Viewport.OnFrameShown = nil
@@ -276,7 +276,7 @@ func (a *App) bindViewportToPreview() {
 	if a.d.Viewport == nil || !a.editorPreviewOn() {
 		return
 	}
-	room := a.te.preview.state.room
+	room := a.te.preview.state.link.room
 	a.d.Viewport.OnPreanimDone = room.NotifyPreanimDone
 	a.d.Viewport.OnFrameShown = room.NotifyFrameShown // #17: frame effects follow the demo's sprite
 }
@@ -295,7 +295,7 @@ func (a *App) startEditorPreviewBeat() {
 	if !a.editorPreviewOn() {
 		return
 	}
-	room := a.te.preview.state.room
+	room := a.te.preview.state.link.room
 	room.HandleEvent(courtroom.Event{Kind: courtroom.EventMusic, Text: editorPreviewTrack, Int: -1})
 	a.replayEditorPreviewLine()
 }
@@ -308,7 +308,7 @@ func (a *App) replayEditorPreviewLine() {
 		return
 	}
 	a.te.preview.rest = editorPreviewRest
-	a.te.preview.state.room.HandleEvent(courtroom.Event{
+	a.te.preview.state.link.room.HandleEvent(courtroom.Event{
 		Kind: courtroom.EventMessage,
 		Message: &protocol.ChatMessage{
 			CharName: editorPreviewChar,
@@ -332,7 +332,7 @@ func (a *App) driveEditorPreview(dt time.Duration) {
 		return
 	}
 	p := a.te.preview
-	room := p.state.room
+	room := p.state.link.room
 	if a.reduceMotionNow() {
 		return // frozen: no clock, no loop, no census
 	}

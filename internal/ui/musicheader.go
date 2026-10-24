@@ -286,7 +286,7 @@ func (a *App) musicMenuRowEnabled(k musicMenuKind) bool {
 		return a.musicEffectsSupported()
 	case musicMenuRosterRefresh:
 		// The pull is an OOC command, so it needs a session to send it down.
-		return a.sess != nil
+		return a.link.sess != nil
 	}
 	return true
 }
@@ -340,7 +340,7 @@ func musicMenuRowIsToggle(k musicMenuKind) bool {
 // musicEffectsSupported reports whether this server can carry the MUSIC_EFFECT
 // bitmask at all.
 func (a *App) musicEffectsSupported() bool {
-	return a.sess != nil && a.sess.Features.Has(protocol.FeatureEffects)
+	return a.link.sess != nil && a.link.sess.Features.Has(protocol.FeatureEffects)
 }
 
 // openMusicMenu opens the overflow menu with its top-left preferred at `at` (the

@@ -92,7 +92,7 @@ type bgPicker struct {
 func (a *App) openBgPicker() {
 	a.bgPick.show = true
 	if a.bgPick.sel == "" {
-		a.bgPick.sel = a.sess.Background // default the /bg target to what's up now
+		a.bgPick.sel = a.link.sess.Background // default the /bg target to what's up now
 	}
 	a.ensureBgList()
 }
@@ -102,14 +102,14 @@ func (a *App) openBgPicker() {
 // fetch rides Manager.FetchRaw (T2 + disk cached, singleflight), so a reopen
 // is a memory hit — same path as the iniswap.txt fetch.
 func (a *App) ensureBgList() {
-	if a.bgPick.forKey != a.serverKey {
+	if a.bgPick.forKey != a.srvMeta.serverKey {
 		// New server: seed the list INSTANTLY from last session's cached
 		// discovery (snappy, like the char list), then refresh below. Cloned so
 		// the picker can't mutate the prefs' backing slice.
-		a.bgPick.server = append([]string(nil), a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey).Backgrounds...)
+		a.bgPick.server = append([]string(nil), a.d.Prefs.Load().ServerWarmInfoFor(a.srvMeta.serverKey).Backgrounds...)
 		a.bgPick.fetched = false
 		a.bgPick.listErr = ""
-		a.bgPick.forKey = a.serverKey
+		a.bgPick.forKey = a.srvMeta.serverKey
 	}
 	a.rebuildBgList()
 	if a.bgPick.res == nil {
@@ -117,13 +117,13 @@ func (a *App) ensureBgList() {
 	}
 	// Fetch once per server per session (gated on fetched, NOT on the seeded
 	// list — the cache shows immediately while the fresh listing loads).
-	if a.bgPick.fetched || a.bgPick.busy || a.urls.Origin() == "" {
+	if a.bgPick.fetched || a.bgPick.busy || a.link.urls.Origin() == "" {
 		return
 	}
 	a.bgPick.busy = true
 	a.bgPick.listErr = ""
-	listURL := a.urls.BackgroundsRoot()
-	key := a.serverKey
+	listURL := a.link.urls.BackgroundsRoot()
+	key := a.srvMeta.serverKey
 	ch := a.bgPick.res
 	mgr := a.d.Manager
 	go func() {
@@ -153,7 +153,7 @@ func (a *App) ensureBgList() {
 func (a *App) pollBgList() {
 	select {
 	case res := <-a.bgPick.res:
-		if res.key != a.serverKey {
+		if res.key != a.srvMeta.serverKey {
 			return // landed after a tab switch: not this server's list
 		}
 		a.bgPick.busy = false
@@ -166,7 +166,7 @@ func (a *App) pollBgList() {
 			}
 		} else {
 			a.bgPick.server = res.names
-			a.d.Prefs.RememberServerBackgrounds(a.serverKey, res.names) // cache for next session
+			a.d.Prefs.RememberServerBackgrounds(a.srvMeta.serverKey, res.names) // cache for next session
 		}
 		a.rebuildBgList()
 	default:
@@ -179,7 +179,7 @@ func (a *App) pollBgList() {
 // background on screen and the starred ones are always reachable even on a host
 // with no listing. fav is built parallel to the list for the per-cell star.
 func (a *App) rebuildBgList() {
-	favList := a.d.Prefs.Load().FavBackgroundList(a.serverKey)
+	favList := a.d.Prefs.Load().FavBackgroundList(a.srvMeta.serverKey)
 	favSet := make(map[string]struct{}, len(favList))
 	for _, n := range favList {
 		favSet[strings.ToLower(strings.TrimSpace(n))] = struct{}{}
@@ -198,10 +198,10 @@ func (a *App) rebuildBgList() {
 		seen[k] = struct{}{}
 		names = append(names, n)
 	}
-	if a.sess != nil { // nil when the Scene Maker is opened offline (Settings → Studio → Edit)
-		add(a.sess.Background)
+	if a.link.sess != nil { // nil when the Scene Maker is opened offline (Settings → Studio → Edit)
+		add(a.link.sess.Background)
 	}
-	add(a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey).Background)
+	add(a.d.Prefs.Load().ServerWarmInfoFor(a.srvMeta.serverKey).Background)
 	for _, n := range favList {
 		add(n)
 	}
@@ -230,17 +230,17 @@ func (a *App) requestBackground(name string) {
 	if name == "" {
 		return
 	}
-	if a.rehearsal || a.sess == nil {
-		if a.sess != nil {
-			a.sess.Background = name
+	if a.srvMeta.rehearsal || a.link.sess == nil {
+		if a.link.sess != nil {
+			a.link.sess.Background = name
 		}
-		if a.room != nil {
-			a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: name})
+		if a.link.room != nil {
+			a.link.room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: name})
 		}
 		a.bgPick.status = "Background set locally: " + name
 		return
 	}
-	a.sess.SendOOC(a.oocNameOrDefault(), "/bg "+name)
+	a.link.sess.SendOOC(a.oocNameOrDefault(), "/bg "+name)
 	a.bgPick.status = "Requested /bg " + name + " — the server applies it if your area is unlocked (or you're a mod)."
 }
 
@@ -261,14 +261,14 @@ func (a *App) drawBgPanel(w, h int32) {
 	}
 
 	y := panel.Y + 44
-	cur := a.sess.Background
+	cur := a.link.sess.Background
 	if cur == "" {
 		cur = "(none)"
 	}
 	c.LabelClipped(panel.X+pad, y+4, 300, "Current: "+cur, ColAccent)
 	if a.bgPick.sel != "" {
 		label := "Change to '" + clampLine(a.bgPick.sel) + "' (/bg)"
-		if a.rehearsal {
+		if a.srvMeta.rehearsal {
 			label = "Show '" + clampLine(a.bgPick.sel) + "' (local)"
 		}
 		bw := c.TextWidth(label) + 24
@@ -365,7 +365,7 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool, budget *int6
 	c := a.ctx
 	name := a.bgPick.list[idx]
 	c.Fill(cell, ColBackground)
-	base := a.urls.Background(name, bgThumbPart)
+	base := a.link.urls.Background(name, bgThumbPart)
 	if page, ok := a.cachedPage(&a.bgPick.pages, &a.bgPick.pagesGen, len(a.bgPick.list), idx, base); ok && len(page.Frames) > 0 {
 		// Resident: always draw it (it's already in T1) and bill its footprint.
 		_ = c.Ren.Copy(page.Frames[0], nil, &cell)
@@ -392,7 +392,7 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool, budget *int6
 	if strings.EqualFold(name, a.bgPick.sel) {
 		c.Border(sdl.Rect{X: cell.X - 2, Y: cell.Y - 2, W: cell.W + 4, H: cell.H + 4}, ColAccent)
 	}
-	if strings.EqualFold(name, a.sess.Background) {
+	if strings.EqualFold(name, a.link.sess.Background) {
 		tag := sdl.Rect{X: cell.X + 1, Y: cell.Y + 1, W: c.TextWidth("current") + 8, H: 16}
 		c.Fill(tag, sdl.Color{R: 0, G: 0, B: 0, A: 190})
 		c.Label(tag.X+4, tag.Y+1, "current", ColAccent)
@@ -413,9 +413,9 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool, budget *int6
 	c.Tooltip(star, "Favorite this background (saved per server)")
 	if c.hovering(star) && c.clicked {
 		if starred {
-			a.d.Prefs.RemoveFavBackground(a.serverKey, name)
+			a.d.Prefs.RemoveFavBackground(a.srvMeta.serverKey, name)
 		} else {
-			a.d.Prefs.AddFavBackground(a.serverKey, name)
+			a.d.Prefs.AddFavBackground(a.srvMeta.serverKey, name)
 		}
 		a.rebuildBgList()
 		return // the star claimed the click; don't also select this background

@@ -29,7 +29,7 @@ func TestKeepSceneAssetsWarm(t *testing.T) {
 		t.Skipf("texture store unavailable: %v", err)
 	}
 	a.d.Store = store
-	a.room = &courtroom.Courtroom{}
+	a.link.room = &courtroom.Courtroom{}
 
 	upload := func(base string) {
 		t.Helper()
@@ -44,22 +44,22 @@ func TestKeepSceneAssetsWarm(t *testing.T) {
 	}
 	upload("warm://bg")
 	upload("warm://idle")
-	a.room.Scene.BackgroundBase = "warm://bg"
-	a.room.Scene.Speaker.Visible = true
-	a.room.Scene.Speaker.Active = "warm://idle"
-	a.room.Scene.Speaker.IdleBase = "warm://idle"
+	a.link.room.Scene.BackgroundBase = "warm://bg"
+	a.link.room.Scene.Speaker.Visible = true
+	a.link.room.Scene.Speaker.Active = "warm://idle"
+	a.link.room.Scene.Speaker.IdleBase = "warm://idle"
 	a.keepSceneAssetsWarm() // resident: touch-only (nil Manager untouched)
 
 	// A missing base while the throttle window is closed: no demand either.
-	a.room.Scene.ShowDesk = true
-	a.room.Scene.DeskBase = "warm://missing-desk"
+	a.link.room.Scene.ShowDesk = true
+	a.link.room.Scene.DeskBase = "warm://missing-desk"
 	a.sceneWarm.lastDemand = time.Now()
 	a.keepSceneAssetsWarm()
 
 	// Steady state (everything resident) is on the per-frame path: pin it at
 	// zero heap allocations, like every other per-frame touch.
-	a.room.Scene.ShowDesk = false
-	a.room.Scene.DeskBase = ""
+	a.link.room.Scene.ShowDesk = false
+	a.link.room.Scene.DeskBase = ""
 	if n := testing.AllocsPerRun(1000, func() { a.keepSceneAssetsWarm() }); n != 0 {
 		t.Fatalf("keepSceneAssetsWarm allocates %.1f/op resident, want 0", n)
 	}
@@ -81,8 +81,8 @@ func TestSceneWarmFutilityLatch(t *testing.T) {
 		t.Skipf("texture store unavailable: %v", err)
 	}
 	a.d.Store = store
-	a.room = &courtroom.Courtroom{}
-	a.room.Scene.BackgroundBase = "warm://never-lands"
+	a.link.room = &courtroom.Courtroom{}
+	a.link.room.Scene.BackgroundBase = "warm://never-lands"
 
 	// Latched past the churn cap: throttle open + missing base → no demand.
 	a.sceneWarm.set = [6]string{"warm://never-lands", "", "", "", "", ""}
@@ -99,7 +99,7 @@ func TestSceneWarmFutilityLatch(t *testing.T) {
 	if err := store.Upload("warm://next-message", dec); err != nil {
 		t.Fatalf("upload: %v", err)
 	}
-	a.room.Scene.BackgroundBase = "warm://next-message"
+	a.link.room.Scene.BackgroundBase = "warm://next-message"
 	a.keepSceneAssetsWarm()
 	if len(a.sceneWarm.demands) != 0 {
 		t.Fatalf("a warm-set change must reset the futility counters, still holds %v", a.sceneWarm.demands)
@@ -119,8 +119,8 @@ func TestHealSceneryFutilityLatch(t *testing.T) {
 		t.Skipf("texture store unavailable: %v", err)
 	}
 	a.d.Store = store
-	a.room = &courtroom.Courtroom{}
-	a.room.Scene.BackgroundBase = "warm://never-lands"
+	a.link.room = &courtroom.Courtroom{}
+	a.link.room.Scene.BackgroundBase = "warm://never-lands"
 	a.sceneWarm.demands = map[string]sceneHealState{"warm://never-lands": {churns: warmMaxHealChurns + 1}}
 	a.healScenery() // latched: no demand submitted
 }
@@ -179,13 +179,13 @@ func TestSceneHealBudget(t *testing.T) {
 	}
 	a.d.Store = store
 	a.sceneWarm.lastDemand = time.Now()
-	a.room = newRoomForTest(t)
-	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(1, "Witch", "a new message begins")})
-	if a.room.Phase() == courtroom.PhaseIdle {
+	a.link.room = newRoomForTest(t)
+	a.link.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(1, "Witch", "a new message begins")})
+	if a.link.room.Phase() == courtroom.PhaseIdle {
 		t.Fatal("test setup: the message never started a ceremony")
 	}
-	a.sceneWarm.phase = a.room.Phase() // no phase edge on the sync pass
-	a.keepSceneAssetsWarm()            // syncs sceneWarmSet (its clear consumed here)
+	a.sceneWarm.phase = a.link.room.Phase() // no phase edge on the sync pass
+	a.keepSceneAssetsWarm()                 // syncs sceneWarmSet (its clear consumed here)
 	a.sceneWarm.demands = map[string]sceneHealState{"warm://latched": {churns: warmMaxHealChurns + 1}}
 	a.sceneWarm.phase = courtroom.PhaseIdle // as if the previous epoch ended idle
 	a.keepSceneAssetsWarm()                 // warm set unchanged: only the idle→ceremony edge can clear
@@ -220,17 +220,17 @@ func TestActiveWarmThrottleAndLatch(t *testing.T) {
 
 	// A char/emote change resets the counters (keepActiveAssetsWarm's gate).
 	// The warmed icon is resident so the pass is touch-only.
-	a.room = &courtroom.Courtroom{}
-	a.sess = &courtroom.Session{}
+	a.link.room = &courtroom.Courtroom{}
+	a.link.sess = &courtroom.Session{}
 	a.iniChar = "TestChar" // activeCharName() override — no picked char needed
-	a.urls = courtroom.NewURLBuilder("http://warmtest/")
+	a.link.urls = courtroom.NewURLBuilder("http://warmtest/")
 	a.emotepick.emoteIdx = -1 // out of range: only the char icon warms
 	dec := &assets.Decoded{
 		Frames: []*image.RGBA{image.NewRGBA(image.Rect(0, 0, 2, 2))},
 		Delays: []time.Duration{0},
 		Width:  2, Height: 2,
 	}
-	if err := store.Upload(a.urls.CharIcon("TestChar"), dec); err != nil {
+	if err := store.Upload(a.link.urls.CharIcon("TestChar"), dec); err != nil {
 		t.Fatalf("upload: %v", err)
 	}
 	a.activeWarm.char, a.activeWarm.idx = "SomeoneElse", 2

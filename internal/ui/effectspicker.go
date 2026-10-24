@@ -128,7 +128,7 @@ type overlayTexLoad struct {
 // separation is structural (the repo's cache-key convention) and two servers'
 // packs of the same name can never be confused.
 func (a *App) overlayRosterKey(folder string) string {
-	return a.urls.Origin() + "|" + strings.ToLower(strings.TrimSpace(folder))
+	return a.link.urls.Origin() + "|" + strings.ToLower(strings.TrimSpace(folder))
 }
 
 // overlayRosterFor answers from the cache and fires ONE async resolve on a miss.
@@ -146,7 +146,7 @@ func (a *App) overlayRosterFor(folder string) *overlayRoster {
 	}
 	// The memo, because this runs on the zero-alloc courtroom frame and the cache
 	// KEY is a concatenation. Plain string compares, no allocation.
-	if a.overlays.overlayMemoValid && a.overlays.overlayMemoFolder == folder && a.overlays.overlayMemoOrigin == a.urls.Origin() {
+	if a.overlays.overlayMemoValid && a.overlays.overlayMemoFolder == folder && a.overlays.overlayMemoOrigin == a.link.urls.Origin() {
 		return a.overlays.overlayMemoRoster
 	}
 	key := a.overlayRosterKey(folder)
@@ -168,7 +168,7 @@ func (a *App) overlayRosterFor(folder string) *overlayRoster {
 		}
 		r = nil
 	}
-	a.overlays.overlayMemoOrigin, a.overlays.overlayMemoFolder, a.overlays.overlayMemoValid = a.urls.Origin(), folder, true
+	a.overlays.overlayMemoOrigin, a.overlays.overlayMemoFolder, a.overlays.overlayMemoValid = a.link.urls.Origin(), folder, true
 	a.overlays.overlayMemoRoster = r
 	return r
 }
@@ -207,8 +207,8 @@ func (a *App) overlayRosterFetchOne(key, folder string) {
 	// lands: a theme applied in the meantime moved every path this walk resolved.
 	gen := a.themeAppliedGen
 	manifestURL := ""
-	if folder != "" && a.urls.Origin() != "" {
-		manifestURL = a.urls.OverlayEffectManifest(folder)
+	if folder != "" && a.link.urls.Origin() != "" {
+		manifestURL = a.link.urls.OverlayEffectManifest(folder)
 	}
 	mgr := a.d.Manager
 	// The RESULT CHANNEL is captured here, on the render thread, rather than read
@@ -441,10 +441,10 @@ func (a *App) overlayResolve(name, folder string) (courtroom.OverlayResolved, bo
 	// is no asset Manager to ask with: an effect with neither local art nor a
 	// reachable origin simply does not exist, and canon clears for exactly that
 	// (courtroom.cpp:3188-3194).
-	if a.urls.Origin() == "" || a.d.Manager == nil {
+	if a.link.urls.Origin() == "" || a.d.Manager == nil {
 		return out, false
 	}
-	cands := a.urls.OverlayEffectMisc(folder, name)
+	cands := a.link.urls.OverlayEffectMisc(folder, name)
 	if len(cands) == 0 {
 		return out, false
 	}
@@ -471,10 +471,10 @@ func (a *App) overlayEffectsFolderFor(char string) string {
 // an origin-less URLBuilder would hand back a relative "sounds/general/<name>".
 func (a *App) overlayCustomRealizationFor(char string) string {
 	name := a.charMetaFor(char).realization
-	if name == "" || a.urls.Origin() == "" {
+	if name == "" || a.link.urls.Origin() == "" {
 		return ""
 	}
-	return a.urls.SFX(name) // AssetType: SFX (per-character realization)
+	return a.link.urls.SFX(name) // AssetType: SFX (per-character realization)
 }
 
 // overlayEffectSound is get_effect_property(fx, char, folder, "sound") — the
@@ -561,7 +561,7 @@ func (a *App) bakeOverlayIconKeys(folder string, roster *overlayRoster) {
 	choices := a.overlays.overlayChoicesCache
 	a.overlays.overlayIconKeys = make([]string, len(choices))
 	a.overlays.overlayIconPaths = make([]string, len(choices))
-	origin := a.urls.Origin()
+	origin := a.link.urls.Origin()
 	for i := 1; i < len(choices); i++ {
 		name := choices[i]
 		if p, ok := roster.icon[strings.ToLower(name)]; ok {
@@ -573,7 +573,7 @@ func (a *App) bakeOverlayIconKeys(folder string, roster *overlayRoster) {
 			// a RELATIVE "misc/<folder>/icons/<name>", and demandAsset would submit it.
 			continue
 		}
-		if cands := a.urls.OverlayEffectMiscIcon(folder, name); len(cands) > 0 {
+		if cands := a.link.urls.OverlayEffectMiscIcon(folder, name); len(cands) > 0 {
 			a.overlays.overlayIconKeys[i] = cands[0]
 		}
 	}
@@ -583,7 +583,7 @@ func (a *App) bakeOverlayIconKeys(folder string, roster *overlayRoster) {
 // (courtroom.cpp:5582-5613): hidden while SPECTATING (m_cid == -1) and hidden
 // when the roster is empty.
 func (a *App) overlayEffectsVisible() bool {
-	if a.sess == nil || a.sess.MyCharID < 0 {
+	if a.link.sess == nil || a.link.sess.MyCharID < 0 {
 		return false
 	}
 	return len(a.overlayChoices()) > 1 // "None" alone is an empty roster
@@ -809,7 +809,7 @@ func (a *App) drawOverlayChatLayer(vp sdl.Rect) {
 	// renderScene dereferences a.room unless a replay owns the stage, and this is
 	// called from a draw tail that a themed layout can reach with no chatbox rect
 	// (so drawChatOverlay's own deref did not run first).
-	if a.room == nil && !(a.replaying && a.replayRoom != nil) {
+	if a.link.room == nil && !(a.replaying && a.replayRoom != nil) {
 		return
 	}
 	a.d.Viewport.DrawOverlayChat(a.ctx.Ren, a.renderScene(), vp)

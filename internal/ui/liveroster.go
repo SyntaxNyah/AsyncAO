@@ -166,16 +166,16 @@ func rosterEqual(a, b []areaPlayer) bool {
 // reorder invariant — a same-length new roster reuses indices) and restamps the
 // memo time so the grouped-rows cache rebuilds once.
 func (a *App) rebuildLiveRoster() {
-	if a.rosterLegacy || a.sess == nil {
+	if a.rosterLegacy || a.link.sess == nil {
 		return
 	}
 	var next []areaPlayer
-	if live := a.sess.Players(); len(live) > 0 {
+	if live := a.link.sess.Players(); len(live) > 0 {
 		// Primary: the server-pushed PR/PU roster — live UIDs, shownames, OOC
 		// names and areas, plus spectators, with no /getarea polling. IPID is
 		// enriched by UID from the last snapshot (mod-only) when present.
 		a.livePlayersOn = true
-		next = buildLivePlayers(live, a.sess.Areas, a.ipidByUID())
+		next = buildLivePlayers(live, a.link.sess.Areas, a.ipidByUID())
 	} else {
 		a.livePlayersOn = false
 		if len(a.areaPlayers) > 0 {
@@ -183,7 +183,7 @@ func (a *App) rebuildLiveRoster() {
 		}
 		// Pre-PR/PU fallback: name-only rows from CharsCheck so the list isn't blank.
 		n, ok := a.curAreaPlayers()
-		next = buildLiveRoster(a.sess.Chars, n, ok, a.curArea, a.shownameFor, a.areaPlayers)
+		next = buildLiveRoster(a.link.sess.Chars, n, ok, a.srvMeta.curArea, a.shownameFor, a.areaPlayers)
 	}
 	if rosterEqual(a.liveRoster, next) {
 		return
@@ -327,12 +327,12 @@ func (a *App) rosterView() []areaPlayer {
 // on a fresh join). Falls back to curArea for servers that don't report our own
 // area. Used to float our area to the top of the grouped player list.
 func (a *App) myAreaName() string {
-	if a.sess != nil {
-		if id, ok := a.sess.PlayerArea(a.sess.PlayerID); ok && id >= 0 && id < len(a.sess.Areas) {
-			return a.sess.Areas[id]
+	if a.link.sess != nil {
+		if id, ok := a.link.sess.PlayerArea(a.link.sess.PlayerID); ok && id >= 0 && id < len(a.link.sess.Areas) {
+			return a.link.sess.Areas[id]
 		}
 	}
-	return a.curArea
+	return a.srvMeta.curArea
 }
 
 // rosterStamp is the active roster's last-change time — the memo-invalidation

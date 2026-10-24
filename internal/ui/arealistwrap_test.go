@@ -14,7 +14,7 @@ import (
 func TestAreaWrappedWordWraps(t *testing.T) {
 	a := testTabApp(t)
 	long := "Courtroom Number One With A Very Long Extended Name For Wrapping"
-	a.sess = &courtroom.Session{
+	a.link.sess = &courtroom.Session{
 		Areas:    []string{long, "Lobby"},
 		AreaInfo: []courtroom.AreaInfo{{Players: -1}, {Players: -1}},
 	}
@@ -42,7 +42,7 @@ func TestAreaWrappedWordWraps(t *testing.T) {
 // bump of areaInfoSeq (what EventAreasUpdated does) must force a rebuild.
 func TestAreaWrappedCache(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = &courtroom.Session{
+	a.link.sess = &courtroom.Session{
 		Areas:    []string{"Alpha", "Beta"},
 		AreaInfo: []courtroom.AreaInfo{{Players: -1}, {Players: -1}},
 	}
@@ -71,7 +71,7 @@ func TestAreaWrappedCache(t *testing.T) {
 // and this rebuild word-wraps every area, which allocates.
 func TestAreaWrappedSlotsAreIndependent(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = &courtroom.Session{
+	a.link.sess = &courtroom.Session{
 		Areas:    []string{"Alpha", "Beta", "Alabama"},
 		AreaInfo: []courtroom.AreaInfo{{Players: -1}, {Players: -1}, {Players: -1}},
 	}
@@ -128,7 +128,7 @@ func TestMusicCategoryLabel(t *testing.T) {
 // header at all yet) shows every track.
 func TestRefreshMusicGroups(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = &courtroom.Session{Music: []string{
+	a.link.sess = &courtroom.Session{Music: []string{
 		"==Cave Story==", "a.mp3", "b.mp3",
 		"==Umineko==", "c.mp3",
 	}}
@@ -163,7 +163,7 @@ func TestRefreshMusicGroups(t *testing.T) {
 // collapse state is bypassed while searching, not mutated.
 func TestRefreshMusicGroupsSearchBypassesCollapse(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = &courtroom.Session{Music: []string{
+	a.link.sess = &courtroom.Session{Music: []string{
 		"==Cave Story==", "balcony.mp3", "gravity.mp3",
 		"==Umineko==", "dawn.mp3",
 	}}
@@ -193,7 +193,7 @@ func TestRefreshMusicGroupsSearchBypassesCollapse(t *testing.T) {
 // memoized row layout rebuilds.
 func TestSetAllMusicCollapsed(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = &courtroom.Session{Music: []string{
+	a.link.sess = &courtroom.Session{Music: []string{
 		"==A==", "a1.mp3", "==B==", "b1.mp3", "b2.mp3",
 	}}
 

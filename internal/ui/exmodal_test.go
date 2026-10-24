@@ -37,8 +37,8 @@ func TestExModalsNoLongerTakeTheScreen(t *testing.T) {
 	for _, p := range exModalPanels {
 		t.Run(p.name, func(t *testing.T) {
 			a := testTabApp(t)
-			a.sess = courtroom.NewRehearsalSession("", nil)
-			a.room = &courtroom.Courtroom{}
+			a.link.sess = courtroom.NewRehearsalSession("", nil)
+			a.link.room = &courtroom.Courtroom{}
 			a.toolbox.showWidgets = true
 			p.open(a)
 
@@ -66,8 +66,8 @@ func TestExModalsFenceTheirFootprint(t *testing.T) {
 	for _, p := range exModalPanels {
 		t.Run(p.name, func(t *testing.T) {
 			a := testTabApp(t)
-			a.sess = courtroom.NewRehearsalSession("", nil)
-			a.room = &courtroom.Courtroom{}
+			a.link.sess = courtroom.NewRehearsalSession("", nil)
+			a.link.room = &courtroom.Courtroom{}
 			p.open(a)
 			r := p.rect(a, w, h)
 

@@ -29,8 +29,8 @@ import (
 func TestSendICKeepsInputUntilEcho(t *testing.T) {
 	a := testTabApp(t)
 	var sent []protocol.Packet
-	a.sess = courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
-	a.sess.MyCharID = 7
+	a.link.sess = courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
+	a.link.sess.MyCharID = 7
 	a.compose.icInput = "gotcha — the clock was stopped"
 
 	a.sendIC()
@@ -121,8 +121,8 @@ func TestOwnEchoStripsAppendedContinuation_EmptyPending(t *testing.T) {
 // test instead of silently reverting to the old exact-match behavior.
 func TestActiveTabOwnEchoStripsAppendedContinuation(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
-	a.sess.MyCharID = 0
+	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.link.sess.MyCharID = 0
 	a.compose.icInput, a.compose.icPendingSent = "gotcha and here's more", "gotcha"
 
 	own := &protocol.ChatMessage{CharID: 0, CharName: "Phoenix", Message: "gotcha"}
@@ -146,7 +146,7 @@ func TestBackgroundEchoStripsAppendedContinuation(t *testing.T) {
 	sess := courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	sess.MyCharID = 0
 	tab := &courtTab{state: sessionState{
-		sess:    sess,
+		link:    linkState{sess: sess},
 		compose: composeState{icInput: "gotcha and here's more", icPendingSent: "gotcha"},
 	}}
 	a.tabs = append(a.tabs, tab)
@@ -170,7 +170,7 @@ func TestBackgroundEchoClearsParkedInput(t *testing.T) {
 	sess := courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	sess.MyCharID = 0
 	tab := &courtTab{state: sessionState{
-		sess:    sess,
+		link:    linkState{sess: sess},
 		compose: composeState{icInput: "parked line", icPendingSent: "parked line"},
 	}}
 	a.tabs = append(a.tabs, tab)

@@ -91,7 +91,7 @@ func (msg *msgState) demandMsgIcon(base string) {
 func (a *App) drawMsgCharIcon(char, displayName string, cell sdl.Rect) {
 	c := a.ctx
 	if char != "" {
-		base := a.urls.CharIcon(char)
+		base := a.link.urls.CharIcon(char)
 		if page, ok := a.d.Store.Get(base); ok && len(page.Frames) > 0 {
 			_ = c.Ren.Copy(page.Frames[0], nil, &cell)
 			c.Border(cell, ColPanelHi)

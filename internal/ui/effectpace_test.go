@@ -35,8 +35,8 @@ func overlayPace(t *testing.T, store *render.TextureStore, a *App, base string, 
 	if err := store.Upload(base, dec); err != nil {
 		t.Fatalf("upload %s: %v", base, err)
 	}
-	a.room.Scene.Overlay = courtroom.SceneOverlay{Base: base, Loop: loop, Gen: a.room.Scene.Overlay.Gen + 1}
-	a.d.Viewport.Update(&a.room.Scene, 0) // bind the page (fresh frame: the full delay is due)
+	a.link.room.Scene.Overlay = courtroom.SceneOverlay{Base: base, Loop: loop, Gen: a.link.room.Scene.Overlay.Gen + 1}
+	a.d.Viewport.Update(&a.link.room.Scene, 0) // bind the page (fresh frame: the full delay is due)
 }
 
 func TestALiveEffectOverlayHoldsTheFrameRate(t *testing.T) {
@@ -48,7 +48,7 @@ func TestALiveEffectOverlayHoldsTheFrameRate(t *testing.T) {
 	}
 	a := testTabApp(t)
 	a.ctx.Ren = ren
-	a.room = &courtroom.Courtroom{}
+	a.link.room = &courtroom.Courtroom{}
 	a.d.Viewport = render.NewViewport(store)
 	a.d.Prefs.Update(func(
 		sn *config.
@@ -73,37 +73,37 @@ func TestALiveEffectOverlayHoldsTheFrameRate(t *testing.T) {
 	})
 
 	// the reported setting: an idle floor of 10 fps
-	a.lastInputAt = time.Now().Add(-time.Hour)
-	a.lastMotionAt = a.lastInputAt
+	a.frame.lastInputAt = time.Now().Add(-time.Hour)
+	a.frame.lastMotionAt = a.frame.lastInputAt
 	vp := sdl.Rect{X: 0, Y: 0, W: 64, H: 48}
 
 	// Baseline: an empty stage draws and censuses NOTHING (the zero-cost-closed half —
 	// a census that reports on a still screen is the idle-CPU-burn bug).
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	a.renderViewportZoomed(vp)
-	if a.frameAnimChrome {
+	if a.frame.frameAnimChrome {
 		t.Fatal("a static stage must not report animating")
 	}
 
 	// A live LOOPING effect on stage: the draw site reports it.
 	overlayPace(t, store, a, "theme://fx-loop", 80*time.Millisecond, true)
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	a.renderViewportZoomed(vp)
-	if !a.frameAnimChrome {
+	if !a.frame.frameAnimChrome {
 		t.Fatal("a live screen-effect overlay must report animating from its draw site — " +
 			"without it the effect plays at the idle rate (the ~10 fps report)")
 	}
 
 	// …and the pacer acts on it: no static skip, and the anim-chrome tier, not idle.
-	a.drawnAnimChrome = a.frameAnimChrome // App.Frame's end-of-frame promotion
+	a.frame.drawnAnimChrome = a.frame.frameAnimChrome // App.Frame's end-of-frame promotion
 	if a.SkipFrame(true, false) {
 		t.Error("a frame that drew a live effect must not be skipped")
 	}
 	if got, idle := a.FramePace(true), time.Second/10; got >= idle {
 		t.Errorf("pace with a live effect = %v, want well under the %v idle rate", got, idle)
 	}
-	if a.lastPacerTier != pacerAnimChrome {
-		t.Errorf("pacer tier = %v, want the anim-chrome census tier", pacerTierLabel(a.lastPacerTier))
+	if a.frame.lastPacerTier != pacerAnimChrome {
+		t.Errorf("pacer tier = %v, want the anim-chrome census tier", pacerTierLabel(a.frame.lastPacerTier))
 	}
 
 	// The other direction — the release. A ONE-SHOT effect that has played out is a
@@ -111,20 +111,20 @@ func TestALiveEffectOverlayHoldsTheFrameRate(t *testing.T) {
 	// full rate for as long as its last frame is displayed.
 	overlayPace(t, store, a, "theme://fx-once", 20*time.Millisecond, false)
 	for i := 0; i < 10; i++ { // run the clip past its end
-		a.d.Viewport.Update(&a.room.Scene, 20*time.Millisecond)
+		a.d.Viewport.Update(&a.link.room.Scene, 20*time.Millisecond)
 	}
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	a.renderViewportZoomed(vp)
-	if a.frameAnimChrome {
+	if a.frame.frameAnimChrome {
 		t.Error("a finished one-shot overlay must release the census — it is a still picture now")
 	}
 
 	// And clearing the effect entirely releases it too.
-	a.room.Scene.Overlay = courtroom.SceneOverlay{Gen: a.room.Scene.Overlay.Gen}
-	a.d.Viewport.Update(&a.room.Scene, 0)
-	a.frameAnimChrome = false
+	a.link.room.Scene.Overlay = courtroom.SceneOverlay{Gen: a.link.room.Scene.Overlay.Gen}
+	a.d.Viewport.Update(&a.link.room.Scene, 0)
+	a.frame.frameAnimChrome = false
 	a.renderViewportZoomed(vp)
-	if a.frameAnimChrome {
+	if a.frame.frameAnimChrome {
 		t.Error("with no overlay on stage nothing may report animating")
 	}
 }
@@ -145,7 +145,7 @@ func TestAParkedLoopWakesForAnEffect(t *testing.T) {
 	}
 	a := testTabApp(t)
 	a.ctx.Ren = ren
-	a.room = &courtroom.Courtroom{}
+	a.link.room = &courtroom.Courtroom{}
 	a.d.Viewport = render.NewViewport(store)
 	a.d.Prefs.Update(func(
 		sn *config.
@@ -160,8 +160,8 @@ func TestAParkedLoopWakesForAnEffect(t *testing.T) {
 	})
 
 	// idle renders OFF: only real deadlines wake
-	a.lastInputAt = time.Now().Add(-time.Hour)
-	a.lastMotionAt = a.lastInputAt
+	a.frame.lastInputAt = time.Now().Add(-time.Hour)
+	a.frame.lastMotionAt = a.frame.lastInputAt
 
 	// Static stage, no damage: the park is the Background-only housekeeping floor.
 	a.uiDirty = false
@@ -171,7 +171,7 @@ func TestAParkedLoopWakesForAnEffect(t *testing.T) {
 
 	// An effect is TRIGGERED while nothing is drawing — exactly what happens when the
 	// room advances from Background. The Gen bump must ring the doorbell.
-	a.room.Scene.Overlay = courtroom.SceneOverlay{Base: "theme://fx-loop", Loop: true, Gen: 1}
+	a.link.room.Scene.Overlay = courtroom.SceneOverlay{Base: "theme://fx-loop", Loop: true, Gen: 1}
 	a.noteOverlayStart()
 	if !a.RenderNeeded() {
 		t.Error("an effect trigger seen from Background must mark damage, or the first frame waits " +

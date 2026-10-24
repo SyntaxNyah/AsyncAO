@@ -80,12 +80,7 @@ func TestPinnedPaneDeathSurfacesWarning(t *testing.T) {
 
 	a := testTabApp(t)
 	// A background tab pinned as the float pane, on the live-then-closing conn.
-	pinned := &courtTab{state: sessionState{
-		serverName: "PinnedServer",
-		serverKey:  "ws://pinned",
-		conn:       conn,
-		sess:       courtroom.NewSession(func(protocol.Packet) error { return nil }, ""),
-	}}
+	pinned := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "PinnedServer", serverKey: "ws://pinned"}, link: linkState{conn: conn, sess: courtroom.NewSession(func(protocol.Packet) error { return nil }, "")}}}
 	a.tabs = []*courtTab{pinned, {}}
 	a.activeTab = 1 // the user is looking at a DIFFERENT tab
 	a.splitTab = pinned

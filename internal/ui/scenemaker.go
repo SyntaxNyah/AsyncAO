@@ -185,10 +185,10 @@ func (a *App) openSceneMaker(rec *sceneRecording, name string) {
 // origin of the connected server (if any) and the player's current character —
 // so "New scene → Preview" shows a real sprite out of the box where possible.
 func (a *App) newScene() {
-	origin := a.urls.Origin() // the connected server's asset base, "" when offline
+	origin := a.link.urls.Origin() // the connected server's asset base, "" when offline
 	bg := ""
-	if a.sess != nil {
-		bg = a.sess.Background // seed the live background so Preview lands on a real scene (with a desk), not a character floating on black
+	if a.link.sess != nil {
+		bg = a.link.sess.Background // seed the live background so Preview lands on a real scene (with a desk), not a character floating on black
 	}
 	rec := &sceneRecording{
 		Version: recordingVersion,
@@ -423,9 +423,9 @@ func (a *App) teardownMakerPreview() {
 	a.makerPreviewOrig = ""
 	a.makerPreviewIdx = -1
 	if a.d.Viewport != nil {
-		if a.room != nil {
-			a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
-			a.d.Viewport.OnFrameShown = a.room.NotifyFrameShown // #17: frame effects back to the live room
+		if a.link.room != nil {
+			a.d.Viewport.OnPreanimDone = a.link.room.NotifyPreanimDone
+			a.d.Viewport.OnFrameShown = a.link.room.NotifyFrameShown // #17: frame effects back to the live room
 		} else {
 			a.d.Viewport.OnPreanimDone = nil
 			a.d.Viewport.OnFrameShown = nil
@@ -1096,13 +1096,13 @@ func (a *App) drawMakerList(x, y, w, h int32) {
 // so it costs almost nothing even with the field open on a huge roster.
 func (a *App) drawCharSuggestions(x, y, leftX, availW int32, m *protocol.ChatMessage) int32 {
 	typed := strings.TrimSpace(m.CharName)
-	if a.sess == nil || typed == "" {
+	if a.link.sess == nil || typed == "" {
 		return y
 	}
 	var buf [makerCharSuggest]string
 	n := 0
-	for i := 0; i < len(a.sess.Chars) && n < makerCharSuggest; i++ {
-		name := a.sess.Chars[i].Name
+	for i := 0; i < len(a.link.sess.Chars) && n < makerCharSuggest; i++ {
+		name := a.link.sess.Chars[i].Name
 		if strings.EqualFold(name, typed) {
 			continue // don't suggest the exact thing already typed
 		}

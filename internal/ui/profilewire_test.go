@@ -11,11 +11,11 @@ import (
 // player-list row — while a player we've received nothing for shows no card.
 func TestRemoteProfileThroughRoom(t *testing.T) {
 	a := &App{env: env{}}
-	a.room = newRoomForTest(t)
+	a.link.room = newRoomForTest(t)
 	prof := courtroom.WireProfile{Pronouns: "they/them", Tag: "objection enjoyer"}
 
-	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(3, "Phoenix", "hold it"+prof.EncodeMarker())})
-	a.room.SkipToIdle()
+	a.link.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(3, "Phoenix", "hold it"+prof.EncodeMarker())})
+	a.link.room.SkipToIdle()
 
 	got, ok := a.profileFor(&areaPlayer{name: "Phoenix"}, false)
 	if !ok {
@@ -34,22 +34,22 @@ func TestRemoteProfileThroughRoom(t *testing.T) {
 // channel, and a profile-frame misread as a style clear would wipe the style).
 func TestProfileMarkerKeepsStyle(t *testing.T) {
 	a := &App{env: env{}}
-	a.room = newRoomForTest(t)
+	a.link.room = newRoomForTest(t)
 	style := courtroom.SpriteStyle{Tint: true, R: 9, G: 9, B: 200}
 
-	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(5, "Phoenix", "styled"+style.EncodeMarker())})
-	a.room.SkipToIdle()
-	if !a.room.RecalledStyle(5).Active() {
+	a.link.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(5, "Phoenix", "styled"+style.EncodeMarker())})
+	a.link.room.SkipToIdle()
+	if !a.link.room.RecalledStyle(5).Active() {
 		t.Fatal("style was not remembered")
 	}
 
 	prof := courtroom.WireProfile{Pronouns: "he/him"}
-	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(5, "Phoenix", "just a profile"+prof.EncodeMarker())})
-	a.room.SkipToIdle()
-	if !a.room.RecalledStyle(5).Active() {
+	a.link.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(5, "Phoenix", "just a profile"+prof.EncodeMarker())})
+	a.link.room.SkipToIdle()
+	if !a.link.room.RecalledStyle(5).Active() {
 		t.Error("a profile-only message wiped the speaker's sprite style")
 	}
-	if got, ok := a.room.RemoteProfile("Phoenix"); !ok || got.Pronouns != "he/him" {
+	if got, ok := a.link.room.RemoteProfile("Phoenix"); !ok || got.Pronouns != "he/him" {
 		t.Errorf("profile not remembered alongside the style: (%+v,%v)", got, ok)
 	}
 }

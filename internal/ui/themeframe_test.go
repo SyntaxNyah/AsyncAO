@@ -69,12 +69,12 @@ func TestThemeChromeGoesStillUnderReduceMotion(t *testing.T) {
 	// the accessibility half perfectly.
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 	a.themeFXFrozen = a.reduceMotionNow()
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	moving := a.themeFrame(page)
 	if moving == page.Frames[0] {
 		t.Error("an animated theme page held frame 0 a whole second in — the chrome never steps")
 	}
-	if !a.frameAnimChrome {
+	if !a.frame.frameAnimChrome {
 		t.Error("an animated theme page did not note the census — the pacer would idle and freeze it")
 	}
 
@@ -82,13 +82,13 @@ func TestThemeChromeGoesStillUnderReduceMotion(t *testing.T) {
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true })
 	defer a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 	a.themeFXFrozen = a.reduceMotionNow()
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	still := a.themeFrame(page)
 	if still != page.Frames[0] {
 		t.Error("theme chrome kept animating under ReduceMotion — a person who turns it on because motion " +
 			"makes them ill is not helped by a client that stills the elements and not the chatbox")
 	}
-	if a.frameAnimChrome {
+	if a.frame.frameAnimChrome {
 		t.Error("theme chrome noted the animation census under ReduceMotion — the client holds the animation " +
 			"frame rate for a picture that is not moving, so the option delivers neither stillness nor the idle rate")
 	}

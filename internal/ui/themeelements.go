@@ -281,7 +281,7 @@ type elemCondSource struct {
 // liveCondSource is the source for the live courtroom pass.
 func (a *App) liveCondSource() elemCondSource {
 	return elemCondSource{
-		speaking: a.room != nil && a.room.Phase() != courtroom.PhaseIdle,
+		speaking: a.link.room != nil && a.link.room.Phase() != courtroom.PhaseIdle,
 		pos:      a.mySide(),
 		char:     a.myCharName(),
 		side:     a.stageSide(),
@@ -359,10 +359,10 @@ func (a *App) resolveConditionAxis(lay *themeLayoutCache, axis theme.ConditionAx
 // dresses the defence bench wants the first, one that dresses YOUR controls wants
 // the second.
 func (a *App) stageSide() string {
-	if a.room == nil {
+	if a.link.room == nil {
 		return ""
 	}
-	return a.room.Scene.Position
+	return a.link.room.Scene.Position
 }
 
 // stageShout is the shout stem of the message on screen ("" when idle / none) —
@@ -371,10 +371,10 @@ func (a *App) stageSide() string {
 // lines use) interned the stem anyway, at bake: elemShoutConditions folds the two
 // spellings together so this side stays one field read.
 func (a *App) stageShout() string {
-	if a.room == nil {
+	if a.link.room == nil {
 		return ""
 	}
-	return a.room.CurrentShout()
+	return a.link.room.CurrentShout()
 }
 
 // ---------------------------------------------------------------------------

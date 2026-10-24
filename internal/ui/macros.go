@@ -64,7 +64,7 @@ func (a *App) oocNameOrDefault() string {
 // queueOOCLines schedules lines for paced automated OOC sending (the
 // shared pipeline under the login automation and user macros).
 func (a *App) queueOOCLines(lines []string) {
-	if a.sess == nil {
+	if a.link.sess == nil {
 		return
 	}
 	now := a.now()
@@ -89,7 +89,7 @@ func (a *App) queueOOCLines(lines []string) {
 // single pass, so a queue that accumulated while the drain was stalled left as
 // one burst and the server kicked us for OOC flooding.
 func (a *App) processOOCQueue() {
-	if len(a.oocQueue) == 0 || a.sess == nil {
+	if len(a.oocQueue) == 0 || a.link.sess == nil {
 		return
 	}
 	now := a.now()
@@ -101,7 +101,7 @@ func (a *App) processOOCQueue() {
 	if a.oocQueue[0].due.After(now) {
 		return // the entry's own schedule hasn't come round yet
 	}
-	a.sess.SendOOC(a.oocNameOrDefault(), a.oocQueue[0].line)
+	a.link.sess.SendOOC(a.oocNameOrDefault(), a.oocQueue[0].line)
 	a.lastAutoOOC = now
 	a.oocQueue = a.oocQueue[:copy(a.oocQueue, a.oocQueue[1:])]
 }
@@ -154,8 +154,8 @@ func (a *App) handleMacroKeys() bool {
 //   - Athena/Nyathena/Whisker/unknown: "/login <user> <pass>"
 func (a *App) loginLines(user, pass string) []string {
 	soft := ""
-	if a.sess != nil {
-		soft = strings.ToLower(a.sess.Software)
+	if a.link.sess != nil {
+		soft = strings.ToLower(a.link.sess.Software)
 	}
 	switch {
 	case strings.Contains(soft, "akashi"):
@@ -170,7 +170,7 @@ func (a *App) loginLines(user, pass string) []string {
 
 // loginNow queues the login flow from the saved credentials.
 func (a *App) loginNow() {
-	info := a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey)
+	info := a.d.Prefs.Load().ServerWarmInfoFor(a.srvMeta.serverKey)
 	if info.LoginUser == "" {
 		a.debug.push("login: no saved credentials for this server (Login... dialog)")
 		return
@@ -184,12 +184,12 @@ func (a *App) loginNow() {
 // automation explains itself before you trust it with credentials.
 func (a *App) loginFlowPreview() string {
 	soft := "unknown software"
-	if a.sess != nil && a.sess.Software != "" {
-		soft = a.sess.Software
+	if a.link.sess != nil && a.link.sess.Software != "" {
+		soft = a.link.sess.Software
 	}
 	lower := ""
-	if a.sess != nil {
-		lower = strings.ToLower(a.sess.Software)
+	if a.link.sess != nil {
+		lower = strings.ToLower(a.link.sess.Software)
 	}
 	switch {
 	case strings.Contains(lower, "akashi"):
@@ -210,11 +210,11 @@ func (a *App) autoLoginOnReady() {
 	// area changes) — each one re-ran this and re-queued the login, spamming OOC.
 	// The latch clears on a fresh connection (resetSessionState), so a real
 	// reconnect logs in again; a manual loginNow is unaffected (it's not gated).
-	if a.autoLoginTried {
+	if a.link.autoLoginTried {
 		return
 	}
-	a.autoLoginTried = true
-	info := a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey)
+	a.link.autoLoginTried = true
+	info := a.d.Prefs.Load().ServerWarmInfoFor(a.srvMeta.serverKey)
 	if !info.AutoLogin || info.LoginUser == "" {
 		return
 	}
@@ -233,8 +233,8 @@ func (a *App) autoLoginOnReady() {
 	if !a.d.Prefs.Load().StreamerModeOn {
 		line += " as " + info.LoginUser
 	}
-	if a.serverName != "" {
-		line += " on " + a.serverName
+	if a.srvMeta.serverName != "" {
+		line += " on " + a.srvMeta.serverName
 	}
 	a.warnLine = clampLine(line)
 	a.warnAt = time.Now()
@@ -294,7 +294,7 @@ func (a *App) drawLoginDialog(w, h int32, pressed *bool) {
 		a.persistPanelSlot(slotPanelLogin, panel, w, h)
 	}
 	y := panel.Y + floatTitleH + 8
-	c.LabelClipped(panel.X+pad, y, panel.W-2*pad, a.serverName, ColText)
+	c.LabelClipped(panel.X+pad, y, panel.W-2*pad, a.srvMeta.serverName, ColText)
 	y += 20
 	// The dialog names the exact flow it will run for THIS server's
 	// software — the automation explains itself.
@@ -314,12 +314,12 @@ func (a *App) drawLoginDialog(w, h int32, pressed *bool) {
 	// Clear of the resize grip in the corner (it would otherwise sit on Cancel).
 	by := panel.Y + panel.H - btnH - 18
 	if c.Button(sdl.Rect{X: panel.X + pad, Y: by, W: 130, H: btnH}, "Save & login") {
-		a.d.Prefs.SetServerLogin(a.serverKey, strings.TrimSpace(a.loginUser), a.loginPass, a.loginAuto)
+		a.d.Prefs.SetServerLogin(a.srvMeta.serverKey, strings.TrimSpace(a.loginUser), a.loginPass, a.loginAuto)
 		a.loginNow()
 		a.showLogin = false
 	}
 	if c.Button(sdl.Rect{X: panel.X + pad + 140, Y: by, W: 90, H: btnH}, "Save") {
-		a.d.Prefs.SetServerLogin(a.serverKey, strings.TrimSpace(a.loginUser), a.loginPass, a.loginAuto)
+		a.d.Prefs.SetServerLogin(a.srvMeta.serverKey, strings.TrimSpace(a.loginUser), a.loginPass, a.loginAuto)
 		a.showLogin = false
 	}
 	if c.Button(sdl.Rect{X: panel.X + panel.W - 90 - pad, Y: by, W: 90, H: btnH}, "Cancel") {
@@ -329,7 +329,7 @@ func (a *App) drawLoginDialog(w, h int32, pressed *bool) {
 
 // openLoginDialog loads the saved credentials into the edit buffers.
 func (a *App) openLoginDialog() {
-	info := a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey)
+	info := a.d.Prefs.Load().ServerWarmInfoFor(a.srvMeta.serverKey)
 	a.loginUser, a.loginPass, a.loginAuto = info.LoginUser, info.LoginPass, info.AutoLogin
 	a.showLogin = true
 }
@@ -419,8 +419,8 @@ func (a *App) drawLoginSettings(y, _ int32) int32 {
 		return y + 26
 	}
 	cur := 0
-	if settings.loginKey == "" && a.serverKey != "" {
-		settings.loginKey = a.serverKey
+	if settings.loginKey == "" && a.srvMeta.serverKey != "" {
+		settings.loginKey = a.srvMeta.serverKey
 	}
 	for i, k := range keys {
 		if k == settings.loginKey {
@@ -435,7 +435,7 @@ func (a *App) drawLoginSettings(y, _ int32) int32 {
 	if next, changed := c.Dropdown("loginsrv", sdl.Rect{X: pad + 80, Y: y, W: 280, H: btnH}, names, cur); changed {
 		settings.loginKey, settings.loginLoaded = keys[next], false
 	}
-	if settings.loginKey == a.serverKey && a.sess != nil {
+	if settings.loginKey == a.srvMeta.serverKey && a.link.sess != nil {
 		c.LabelClipped(pad+372, y+4, w-pad-372-scrollBarW, a.loginFlowPreview(), ColAccent)
 	} else {
 		c.LabelClipped(pad+372, y+4, w-pad-372-scrollBarW, "flow auto-detects from the server software when you join", ColTextDim)
@@ -451,7 +451,7 @@ func (a *App) drawLoginSettings(y, _ int32) int32 {
 
 	saveTarget := func() {
 		a.d.Prefs.SetServerLogin(settings.loginKey, strings.TrimSpace(settings.loginUser), settings.loginPass, settings.loginAuto)
-		if settings.loginKey == a.serverKey {
+		if settings.loginKey == a.srvMeta.serverKey {
 			a.syncLoginBuffers() // the courtroom Login... dialog shows the same
 		}
 	}
@@ -470,7 +470,7 @@ func (a *App) drawLoginSettings(y, _ int32) int32 {
 		settings.statusLine = "Login saved (plain text in the prefs file) — it fires on your next join."
 	}
 	// Login now only makes sense against the live session.
-	if settings.loginKey == a.serverKey && a.sess != nil {
+	if settings.loginKey == a.srvMeta.serverKey && a.link.sess != nil {
 		if c.Button(sdl.Rect{X: pad + 648, Y: y, W: 100, H: btnH}, "Login now") {
 			saveTarget()
 			a.loginNow()
@@ -489,13 +489,13 @@ func (a *App) drawLoginSettings(y, _ int32) int32 {
 // first, then every joinable lobby/favorite entry. Cached against the
 // (server count, active key) pair — WebSocketURL allocates per entry.
 func (a *App) loginTargets() ([]string, []string) {
-	if settings.loginSrvCount == len(a.lobby.servers) && settings.loginSrvFor == a.serverKey && settings.loginNames != nil {
+	if settings.loginSrvCount == len(a.lobby.servers) && settings.loginSrvFor == a.srvMeta.serverKey && settings.loginNames != nil {
 		return settings.loginNames, settings.loginKeys
 	}
 	var names, keys []string
-	if a.sess != nil && a.serverKey != "" {
-		names = append(names, a.serverName+" (connected)")
-		keys = append(keys, a.serverKey)
+	if a.link.sess != nil && a.srvMeta.serverKey != "" {
+		names = append(names, a.srvMeta.serverName+" (connected)")
+		keys = append(keys, a.srvMeta.serverKey)
 	}
 	for i := range a.lobby.servers {
 		e := &a.lobby.servers[i]
@@ -503,21 +503,21 @@ func (a *App) loginTargets() ([]string, []string) {
 			continue
 		}
 		url := e.WebSocketURL()
-		if url == a.serverKey {
+		if url == a.srvMeta.serverKey {
 			continue
 		}
 		names = append(names, e.Name)
 		keys = append(keys, url)
 	}
 	settings.loginNames, settings.loginKeys = names, keys
-	settings.loginSrvCount, settings.loginSrvFor = len(a.lobby.servers), a.serverKey
+	settings.loginSrvCount, settings.loginSrvFor = len(a.lobby.servers), a.srvMeta.serverKey
 	return names, keys
 }
 
 // syncLoginBuffers loads this server's saved credentials into the edit
 // buffers (connect time, so the settings boxes show the truth).
 func (a *App) syncLoginBuffers() {
-	info := a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey)
+	info := a.d.Prefs.Load().ServerWarmInfoFor(a.srvMeta.serverKey)
 	a.loginUser, a.loginPass, a.loginAuto = info.LoginUser, info.LoginPass, info.AutoLogin
 }
 

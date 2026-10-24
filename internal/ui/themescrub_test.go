@@ -46,9 +46,9 @@ func TestPausedClockNeverPinsTheFrameRate(t *testing.T) {
 		}
 		el := fxTestElement(k)
 		el.clock = 1
-		a.frameAnimChrome = false
+		a.frame.frameAnimChrome = false
 		a.drawElement(lay, &el, int16(k))
-		if a.frameAnimChrome {
+		if a.frame.frameAnimChrome {
 			t.Errorf("%s on a PAUSED clock noted the animation census — the client would sit at the "+
 				"animation cadence on a frame the user deliberately froze, and there is nothing on "+
 				"screen to explain why the fans are on", k)
@@ -59,11 +59,11 @@ func TestPausedClockNeverPinsTheFrameRate(t *testing.T) {
 	page := fxTestElement(theme.FXNone)
 	page.kind, page.page, page.loop = theme.ElemImage, fxTestPage(t, fxTestStore(t), 4, 50*time.Millisecond), true
 	page.clock = 1
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	if got := a.elementFrame(&page); got == nil {
 		t.Fatal("elementFrame returned nil for a four-frame page")
 	}
-	if a.frameAnimChrome {
+	if a.frame.frameAnimChrome {
 		t.Error("a LOOPING page on a paused clock noted the census — elementFrameIndex reports live=true " +
 			"for a loop unconditionally, so this is the second site the scrub pins the pacer from")
 	}
@@ -73,9 +73,9 @@ func TestPausedClockNeverPinsTheFrameRate(t *testing.T) {
 	live := fxTestElement(theme.FXPulse)
 	live.clock = 0
 	a.toolbox.themeAt = time.Now().Add(-held)
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	a.drawElement(lay, &live, 0)
-	if !a.frameAnimChrome {
+	if !a.frame.frameAnimChrome {
 		t.Fatal("the same effect on a RUNNING clock did not note the census — this gate would pass with " +
 			"NoteAnimating deleted outright")
 	}

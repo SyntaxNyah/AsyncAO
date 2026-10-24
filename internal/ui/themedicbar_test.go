@@ -180,11 +180,11 @@ func TestImmediateIsGatedOnCCCC(t *testing.T) {
 	if a.sessHasCCCC() {
 		t.Error("a nil session must not report CCCC support")
 	}
-	a.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
+	a.link.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
 	if a.sessHasCCCC() {
 		t.Error("a session with no advertised features must not report CCCC support")
 	}
-	a.sess.Features = protocol.ParseFeatures([]string{protocol.FeatureCCCCIC})
+	a.link.sess.Features = protocol.ParseFeatures([]string{protocol.FeatureCCCCIC})
 	if !a.sessHasCCCC() {
 		t.Error("a server advertising cccc_ic_support must report it")
 	}

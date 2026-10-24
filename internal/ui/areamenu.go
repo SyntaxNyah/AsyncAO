@@ -62,7 +62,7 @@ func (a *App) areaMenuRowLive(_ musicMenuKind) bool {
 func (a *App) areaMenuRowEnabled(k musicMenuKind) bool {
 	switch k {
 	case areaMenuBackground, areaMenuRefresh:
-		return a.sess != nil // both talk to the server (a /bg, a /getareas)
+		return a.link.sess != nil // both talk to the server (a /bg, a /getareas)
 	case areaMenuCMPanel:
 		// The panel does NOT say it for us. drawCMPanel opens with
 		// `if c.escPressed || !a.amICMNow { a.showCMPanel = false; return }`
@@ -72,7 +72,7 @@ func (a *App) areaMenuRowEnabled(k musicMenuKind) bool {
 		// uses (`enabled: menuAmICM`, menubar.go), which is the mod/CM doctrine spelled
 		// out beside it. The words a greyed row cannot carry are in the mod dashboard
 		// ("Type /cm to claim CM", moddashpanel.go).
-		return a.amICMNow
+		return a.srvMeta.amICMNow
 	}
 	return true
 }

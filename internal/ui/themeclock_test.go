@@ -496,9 +496,9 @@ func TestStaticElementNeverCallsNoteAnimating(t *testing.T) {
 	for i, c := range cases {
 		el := c.el
 		before := el
-		a.frameAnimChrome = false
+		a.frame.frameAnimChrome = false
 		a.drawElement(lay, &el, int16(i))
-		if a.frameAnimChrome {
+		if a.frame.frameAnimChrome {
 			t.Errorf("%s noted the animation census — a still element that pins the frame rate is the "+
 				"idle-CPU-burn defect (NoteAnimating is for a draw site that produced a DIFFERENT pixel "+
 				"this frame, never for state)", c.what)
@@ -534,12 +534,12 @@ func TestLiveElementAlwaysNotesTheCensus(t *testing.T) {
 			continue
 		}
 		el := fxTestElement(k)
-		a.frameAnimChrome = false
+		a.frame.frameAnimChrome = false
 		// A quarter of the way into the period: every kind, periodic or decaying, is
 		// unambiguously live there.
 		a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
 		a.drawElement(lay, &el, int16(k))
-		if !a.frameAnimChrome {
+		if !a.frame.frameAnimChrome {
 			t.Errorf("%s did not note the animation census a quarter into its period — the pacer may "+
 				"sleep, and the effect freezes mid-animation", k)
 		}
@@ -548,11 +548,11 @@ func TestLiveElementAlwaysNotesTheCensus(t *testing.T) {
 	// with no effect attached.
 	el := fxTestElement(theme.FXNone)
 	el.kind, el.page, el.loop = theme.ElemImage, fxTestPage(t, fxTestStore(t), 4, 50*time.Millisecond), true
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	if got := a.elementFrame(&el); got == nil {
 		t.Fatal("elementFrame returned nil for a four-frame page")
 	}
-	if !a.frameAnimChrome {
+	if !a.frame.frameAnimChrome {
 		t.Error("a looping animated page did not note the census — it would freeze on whatever frame the pacer idled at")
 	}
 }
@@ -571,9 +571,9 @@ func TestIdleElementsDoNotPinTheFrameRate(t *testing.T) {
 	}
 	// The baseline: this fixture's own chrome must already be settled, or the
 	// assertion below would be measuring something else entirely.
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	draw()
-	if a.frameAnimChrome {
+	if a.frame.frameAnimChrome {
 		t.Skip("the fixture's own chrome notes the census — this gate cannot isolate the element model here")
 	}
 	// Now fill it with elements that are all, in one way or another, STILL.
@@ -595,9 +595,9 @@ func TestIdleElementsDoNotPinTheFrameRate(t *testing.T) {
 	draw()
 	a.toolbox.themeAt = time.Now().Add(-time.Hour - 10*time.Second)
 	draw()
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	draw()
-	if a.frameAnimChrome {
+	if a.frame.frameAnimChrome {
 		t.Fatalf("a themed frame carrying %d STILL elements pinned the frame rate — the client would "+
 			"never fall to the idle cadence, and there is nothing on screen to explain why", lay.elN)
 	}
@@ -646,9 +646,9 @@ func TestElementEffectsAreAllocFreeAtCap(t *testing.T) {
 	}
 	// Non-vacuity: with 96 live effects the frame MUST have been noting the census
 	// throughout, or the gate above measured a screen where nothing moved.
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	draw()
-	if !a.frameAnimChrome {
+	if !a.frame.frameAnimChrome {
 		t.Fatal("no element noted the animation census during the measured frames — the gate was " +
 			"measuring the static path, not the motion path it is named for")
 	}
@@ -789,9 +789,9 @@ func TestOneShotEffectReleasesItsFXSlot(t *testing.T) {
 	el := fxTestConditional(a, theme.FXSlam)
 	a.toolbox.themeAt = time.Now()
 	a.beginThemeFXPass()
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	a.drawElement(lay, &el, 0)
-	if !a.frameAnimChrome {
+	if !a.frame.frameAnimChrome {
 		t.Fatal("a slam that has just started did not note the census")
 	}
 	if got := a.themeFXInUse(); got != 1 {
@@ -802,9 +802,9 @@ func TestOneShotEffectReleasesItsFXSlot(t *testing.T) {
 	// noting. Holding is correct — this is what stops the replay loop.
 	a.toolbox.themeAt = time.Now().Add(-period * 3)
 	a.beginThemeFXPass()
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	a.drawElement(lay, &el, 0)
-	if a.frameAnimChrome {
+	if a.frame.frameAnimChrome {
 		t.Error("a finished one-shot is still noting the census")
 	}
 	if got := a.themeFXInUse(); got != 1 {
@@ -825,9 +825,9 @@ func TestOneShotEffectReleasesItsFXSlot(t *testing.T) {
 	// shout, using no trigger syntax at all (design §6.6 R5 cut triggers for v1.90.0).
 	a.toolbox.themeAt = time.Now()
 	a.beginThemeFXPass()
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	a.drawElement(lay, &el, 0)
-	if !a.frameAnimChrome {
+	if !a.frame.frameAnimChrome {
 		t.Error("a one-shot did not replay after its slot was swept — a shout stamp would fire once per session")
 	}
 }
@@ -947,9 +947,9 @@ func TestEffectBindNeverBuriesItsWidget(t *testing.T) {
 	// Mid-fade: visible, and no stronger than the authored peak.
 	a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 2)
 	a.beginThemeFXPass()
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	a.drawElement(lay, &el, 0)
-	if !a.frameAnimChrome {
+	if !a.frame.frameAnimChrome {
 		t.Error("a running fade bind did not note the census")
 	}
 	fx := resolveElementEffect(el.fx, a.elementElapsed(&el), fxAlwaysOrigin)
@@ -962,9 +962,9 @@ func TestEffectBindNeverBuriesItsWidget(t *testing.T) {
 	// test — a wash that settles opaque is a theme that has covered the stage.
 	a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond * 5)
 	a.beginThemeFXPass()
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	a.drawElement(lay, &el, 0)
-	if a.frameAnimChrome {
+	if a.frame.frameAnimChrome {
 		t.Error("a finished fade bind is still noting the census")
 	}
 	done := resolveElementEffect(el.fx, a.elementElapsed(&el), fxAlwaysOrigin)
@@ -1044,11 +1044,11 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 	for k := theme.EffectKind(0); k < theme.EffectKindCount; k++ {
 		el := fxTestElement(k)
 		before := el
-		a.frameAnimChrome = false
+		a.frame.frameAnimChrome = false
 		// A quarter into the period — every kind is live there when motion is allowed.
 		a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
 		a.drawElement(lay, &el, int16(k))
-		if a.frameAnimChrome {
+		if a.frame.frameAnimChrome {
 			t.Errorf("%s noted the animation census under ReduceMotion — the screen would keep the client "+
 				"at the animation cadence for motion the user asked not to see", k)
 		}
@@ -1060,11 +1060,11 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 	art := fxTestElement(theme.FXNone)
 	art.kind, art.page, art.loop = theme.ElemImage, page, true
 	a.toolbox.themeAt = time.Now().Add(-time.Second)
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	if got := a.elementFrame(&art); got != page.Frames[0] {
 		t.Error("an animated page did not hold frame 0 under ReduceMotion")
 	}
-	if a.frameAnimChrome {
+	if a.frame.frameAnimChrome {
 		t.Error("an animated page noted the census under ReduceMotion")
 	}
 	// No slot is taken either: a frozen effect has no state to keep.
@@ -1084,13 +1084,13 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 	a.beginThemeFXPass()
 	plate := fxTestElement(theme.FXFade)
 	plate.wash = true
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	a.drawElement(lay, &plate, 0)
 	if len(seen) != 0 {
 		t.Error("a wash painted under ReduceMotion — its plate exists only because of its effect, so a " +
 			"frozen one draws its full authored PEAK over the widget it decorates, forever")
 	}
-	if a.frameAnimChrome {
+	if a.frame.frameAnimChrome {
 		t.Error("a frozen wash noted the animation census")
 	}
 
@@ -1100,9 +1100,9 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 	a.beginThemeFXPass()
 	el := fxTestElement(theme.FXPulse)
 	a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	a.drawElement(lay, &el, 0)
-	if !a.frameAnimChrome {
+	if !a.frame.frameAnimChrome {
 		t.Error("unticking ReduceMotion did not bring the motion back")
 	}
 }
@@ -1213,9 +1213,9 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 	draw := func() { a.drawCourtroom(1280, 720) }
 	a.frameNow = time.Time{}
 	a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
-	a.frameAnimChrome = false
+	a.frame.frameAnimChrome = false
 	draw()
-	if !a.frameAnimChrome {
+	if !a.frame.frameAnimChrome {
 		t.Fatal("a themed frame carrying the whole W5 fixture noted nothing — the file parsed and baked " +
 			"and does not animate")
 	}
@@ -1240,18 +1240,18 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 		elN := lay.elN
 		lay.elN = 0
 		draw()
-		a.frameAnimChrome = false
+		a.frame.frameAnimChrome = false
 		draw()
-		quiet := !a.frameAnimChrome
+		quiet := !a.frame.frameAnimChrome
 		lay.elN = elN
 		if !quiet {
 			t.Skip("the fixture's own chrome notes the census under ReduceMotion — this gate cannot " +
 				"isolate the element model here")
 		}
 		draw() // one pass to latch the branch, since it is read at the TOP of a pass
-		a.frameAnimChrome = false
+		a.frame.frameAnimChrome = false
 		draw()
-		if a.frameAnimChrome {
+		if a.frame.frameAnimChrome {
 			t.Error("the W5 fixture kept noting the animation census under ReduceMotion — a person who " +
 				"turns it on because motion makes them ill is not helped by a theme that keeps moving")
 		}

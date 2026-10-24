@@ -20,12 +20,12 @@ func froomApp(t *testing.T) *App {
 	name, _ := a.d.Prefs.Load().Theme()
 	a.toolbox.themeAppliedName = name
 	a.d.Viewport = render.NewViewport(nil)
-	a.serverName, a.serverKey = "Test Server", "ws://test.example"
+	a.srvMeta.serverName, a.srvMeta.serverKey = "Test Server", "ws://test.example"
 	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
 	a.tabs = []*courtTab{{}}
 	a.activeTab = 0
-	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
-	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, a.sess, courtroom.NopAudio{})
+	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.link.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, a.link.sess, courtroom.NopAudio{})
 	a.screen = ScreenCourtroom
 	return a
 }
@@ -108,10 +108,10 @@ func TestHandleInvoluntaryDropFreezesALiveCourtroom(t *testing.T) {
 		}
 		// The whole point: the session and room survive so the logs and the last
 		// rendered frame are still there to read.
-		if a.sess == nil || a.room == nil {
+		if a.link.sess == nil || a.link.room == nil {
 			t.Errorf("%s: sess/room were torn down — the logs and last frame are gone", tc.name)
 		}
-		if a.conn != nil {
+		if a.link.conn != nil {
 			t.Errorf("%s: the conn must be nilled so the pump stops and the room freezes", tc.name)
 		}
 		if a.connErr != tc.reason {
@@ -155,7 +155,7 @@ func TestHandleInvoluntaryDropWithNoRoomGoesToLobby(t *testing.T) {
 
 		a.deliberateClose = tc.deliberate
 		if tc.roomless {
-			a.room = nil // char-select, or a session that never reached a courtroom
+			a.link.room = nil // char-select, or a session that never reached a courtroom
 		}
 		a.handleInvoluntaryDrop(tc.reason)
 
@@ -179,8 +179,8 @@ func TestHandleInvoluntaryDropWithNoRoomGoesToLobby(t *testing.T) {
 // drop path stand-in every deliberate caller shares (they all set deliberateClose).
 func TestVoluntaryDisconnectGoesToLobby(t *testing.T) {
 	a := froomApp(t)
-	a.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
-	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, a.sess, courtroom.NopAudio{})
+	a.link.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
+	a.link.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, a.link.sess, courtroom.NopAudio{})
 	a.deliberateClose = true // the user chose to leave
 	a.handleInvoluntaryDrop("connection closed")
 	if a.disconnectDlg.open {
@@ -258,7 +258,7 @@ func TestBackToLobbyLandsInPostDisconnectState(t *testing.T) {
 	if a.screen != ScreenLobby {
 		t.Errorf("Back to lobby must land on the lobby, got %v", a.screen)
 	}
-	if a.sess != nil || a.room != nil || a.conn != nil {
+	if a.link.sess != nil || a.link.room != nil || a.link.conn != nil {
 		t.Error("Back to lobby runs the full teardown — session/room/conn must all be gone")
 	}
 	if !a.autoReconnectAt.IsZero() {
@@ -334,7 +334,7 @@ func TestDialogCloseAlwaysReleasesFence(t *testing.T) {
 // pop the dialog over whatever ACTIVE tab the user is looking at.
 func TestParkedTabDeathArmsWithoutActiveModal(t *testing.T) {
 	a := testTabApp(t)
-	bg := &courtTab{state: sessionState{serverName: "Background", serverKey: "ws://bg"}, inCourt: true}
+	bg := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Background", serverKey: "ws://bg"}}, inCourt: true}
 	a.tabs = []*courtTab{bg, {}}
 	a.activeTab = 1
 	a.routeBackgroundEvent(bg, courtroom.Event{Kind: courtroom.EventDisconnect, Text: "Kicked: afk"})
@@ -355,11 +355,11 @@ func TestParkedTabDeathArmsWithoutActiveModal(t *testing.T) {
 func TestActivateDeadInCourtTabOpensDialog(t *testing.T) {
 	a := froomApp(t) // active tab 0 is a live courtroom
 	dead := &courtTab{
-		state:   sessionState{serverName: "Dropped", serverKey: "ws://dropped"},
+		state:   sessionState{srvMeta: serverMetaState{serverName: "Dropped", serverKey: "ws://dropped"}},
 		dead:    true,
 		inCourt: true,
 	}
-	dead.state.sess = courtroom.NewRehearsalSession("", []string{"Edgeworth"})
+	dead.state.link.sess = courtroom.NewRehearsalSession("", []string{"Edgeworth"})
 	dead.deadReason = "Banned: naughty"
 	a.tabs = append(a.tabs, dead) // index 1
 
@@ -385,7 +385,7 @@ func TestActivateDeadInCourtTabOpensDialog(t *testing.T) {
 // up over the wrong server. The active tab must be unchanged after a simulated click.
 func TestTabBarInertUnderDialog(t *testing.T) {
 	a := froomApp(t)
-	a.tabs = append(a.tabs, &courtTab{state: sessionState{serverName: "Other", serverKey: "ws://other"}})
+	a.tabs = append(a.tabs, &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Other", serverKey: "ws://other"}}})
 	a.openDisconnectDialog("Test Server", "ws://test.example", "connection closed", time.Time{})
 	before := a.activeTab
 	a.ctx.mouseDown = true // a press this frame, as a chip click would present

@@ -79,8 +79,8 @@ func (a *App) profileFor(p *areaPlayer, isMe bool) (config.ProfilePref, bool) {
 		}
 		return config.ProfilePref{}, false
 	}
-	if a.room != nil && p != nil && p.name != "" {
-		if wp, ok := a.room.RemoteProfile(p.name); ok {
+	if a.link.room != nil && p != nil && p.name != "" {
+		if wp, ok := a.link.room.RemoteProfile(p.name); ok {
 			return config.ProfilePref{Enabled: true, ShowOnList: true, Pronouns: wp.Pronouns, Tag: wp.Tag}, true
 		}
 	}

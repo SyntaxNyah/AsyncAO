@@ -82,7 +82,7 @@ func (a *App) ensureIniswapChoices() {
 	a.emotepick.iniswapChoicesForChar, a.emotepick.iniswapChoicesGen, a.emotepick.iniswapChoicesWorn = own, gen, worn
 	var wardrobe []string
 	if own != "" {
-		wardrobe = a.d.Prefs.Load().WardrobeList(a.serverKey)
+		wardrobe = a.d.Prefs.Load().WardrobeList(a.srvMeta.serverKey)
 	}
 	a.emotepick.iniswapChoices = buildIniswapChoices(a.emotepick.iniswapChoices, own, wardrobe, worn)
 }

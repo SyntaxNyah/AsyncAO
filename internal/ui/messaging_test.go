@@ -18,7 +18,7 @@ func TestRouteIncomingPM(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 	a := &App{env: env{d: Deps{Prefs: prefs}}}
-	a.serverKey = "s"
+	a.srvMeta.serverKey = "s"
 
 	body := "hey there" + courtroom.WireMessage{Kind: courtroom.MsgDM}.EncodeMarker()
 	a.routeIncomingPM(0, "Phoenix", body)

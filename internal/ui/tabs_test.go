@@ -48,8 +48,8 @@ func testTabApp(t testing.TB) *App {
 	// dials (connectWith) leaves a live protocol Conn — close it so its
 	// read/deliver/keepalive loops and the peer's websocket/handler all stop.
 	t.Cleanup(func() {
-		if a.conn != nil {
-			a.conn.Close()
+		if a.link.conn != nil {
+			a.link.conn.Close()
 		}
 		a.CloseTranscript()
 		_ = prefs.Close()
@@ -143,13 +143,13 @@ func TestHotkeyConflictKeys(t *testing.T) {
 // name, case-insensitive, ignoring any =colour suffix).
 func TestToggleServerFriend(t *testing.T) {
 	a := testTabApp(t)
-	a.serverKey = "wss://srv:2096"
+	a.srvMeta.serverKey = "wss://srv:2096"
 	a.toggleServerFriend("Alice")
-	if ok, _ := a.d.Prefs.Load().ServerFriendMatch(a.serverKey, "alice"); !ok {
+	if ok, _ := a.d.Prefs.Load().ServerFriendMatch(a.srvMeta.serverKey, "alice"); !ok {
 		t.Fatal("first toggle should add Alice as a friend")
 	}
 	a.toggleServerFriend("ALICE") // case-insensitive remove
-	if ok, _ := a.d.Prefs.Load().ServerFriendMatch(a.serverKey, "Alice"); ok {
+	if ok, _ := a.d.Prefs.Load().ServerFriendMatch(a.srvMeta.serverKey, "Alice"); ok {
 		t.Error("second toggle should remove Alice")
 	}
 }
@@ -224,11 +224,11 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 	if !a.allocateTab() {
 		t.Fatal("first allocate must succeed")
 	}
-	a.serverName = "Skrapegropen"
-	a.serverKey = "wss://skra.example:2096"
+	a.srvMeta.serverName = "Skrapegropen"
+	a.srvMeta.serverKey = "wss://skra.example:2096"
 	// A session must exist or activation treats the tab as dead. The
 	// rehearsal constructor gives a real offline session without a conn.
-	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	a.compose.icInput = "half-typed message"
 	a.chatlog.icLog = append(a.chatlog.icLog, icEntry{text: "Phoenix: hold it", color: 2})
 	a.chatlog.icLogSeq = 7
@@ -242,9 +242,9 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 	a.logSelActive = true // a stale log-text highlight must not survive the switch
 
 	a.parkActive()
-	if a.activeTab != -1 || a.serverName != "" || len(a.chatlog.icLog) != 0 || a.compose.icInput != "" {
+	if a.activeTab != -1 || a.srvMeta.serverName != "" || len(a.chatlog.icLog) != 0 || a.compose.icInput != "" {
 		t.Fatalf("park must leave a pristine live session: name=%q log=%d input=%q",
-			a.serverName, len(a.chatlog.icLog), a.compose.icInput)
+			a.srvMeta.serverName, len(a.chatlog.icLog), a.compose.icInput)
 	}
 	if a.spriteOv == nil || a.pairbox.pairWith == 0 {
 		t.Fatal("reset state must re-init maps and sentinels")
@@ -260,13 +260,13 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 		t.Error("park must clear the log text selection (its anchors point into the old log)")
 	}
 	parked := &a.tabs[0].state
-	if parked.serverName != "Skrapegropen" || parked.chatlog.icLogSeq != 7 || len(parked.chatlog.oocLog) != 1 {
-		t.Fatalf("parked state lost data: %+v", parked.serverName)
+	if parked.srvMeta.serverName != "Skrapegropen" || parked.chatlog.icLogSeq != 7 || len(parked.chatlog.oocLog) != 1 {
+		t.Fatalf("parked state lost data: %+v", parked.srvMeta.serverName)
 	}
 
 	a.activateTab(0)
-	if a.activeTab != 0 || a.serverName != "Skrapegropen" || a.compose.icInput != "half-typed message" {
-		t.Fatalf("activate must restore the session: name=%q input=%q", a.serverName, a.compose.icInput)
+	if a.activeTab != 0 || a.srvMeta.serverName != "Skrapegropen" || a.compose.icInput != "half-typed message" {
+		t.Fatalf("activate must restore the session: name=%q input=%q", a.srvMeta.serverName, a.compose.icInput)
 	}
 	if a.chatlog.icLogSeq != 7 || len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].color != 2 {
 		t.Fatal("activate must restore logs and seqs bit-for-bit")
@@ -276,7 +276,7 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 		t.Fatalf("activate must restore per-session pair/iniswap/pos: ini=%q side=%q off=%d/%d flip=%v",
 			a.iniChar, a.compose.sidePref, a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip)
 	}
-	if a.tabs[0].state.serverName != "" {
+	if a.tabs[0].state.srvMeta.serverName != "" {
 		t.Fatal("the active tab's parked slot must be zeroed")
 	}
 }
@@ -293,8 +293,8 @@ func TestMusicTabDuckOnPark(t *testing.T) {
 	if !a.allocateTab() {
 		t.Fatal("allocate")
 	}
-	a.serverName, a.serverKey = "Srv", "wss://srv:2096"
-	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.srvMeta.serverName, a.srvMeta.serverKey = "Srv", "wss://srv:2096"
+	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 
 	// Default (pref OFF): parking ducks the backgrounded stream to silence.
 	a.parkActive()
@@ -313,12 +313,12 @@ func TestMusicTabDuckOnPark(t *testing.T) {
 	// audible during the new track's download) — it KEEPS the duck and records the
 	// awaited URL, so the delivery-time settle can lift it once the right track lands.
 	// HandlePacket normally sets MusicTrack; set it directly so the handler's gate sees it.
-	a.sess.MusicTrack = "Trial.opus"
+	a.link.sess.MusicTrack = "Trial.opus"
 	a.handleSessionEvents([]courtroom.Event{{Kind: courtroom.EventMusic, Text: "Trial.opus"}})
 	if !a.musicTabDucked {
 		t.Error("a DJ /play while ducked-foreign must KEEP the duck until the requested track is delivered")
 	}
-	wantAwait := a.urls.MusicURL("Trial.opus")
+	wantAwait := a.link.urls.MusicURL("Trial.opus")
 	if a.musicAwaitURL != wantAwait {
 		t.Errorf("EventMusic while ducked must record the awaited URL: got %q, want %q", a.musicAwaitURL, wantAwait)
 	}
@@ -422,8 +422,8 @@ func TestMusicAwaitClearedOnParkAndStop(t *testing.T) {
 	if !a.allocateTab() {
 		t.Fatal("allocate")
 	}
-	a.serverName, a.serverKey = "Srv", "wss://srv:2096"
-	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.srvMeta.serverName, a.srvMeta.serverKey = "Srv", "wss://srv:2096"
+	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	a.musicAwaitURL = "http://cdn/stale.opus"
 	a.parkActive()
 	if a.musicAwaitURL != "" {
@@ -541,21 +541,21 @@ func TestStageRestoreMsg(t *testing.T) {
 	if a.stageRestoreMsg() != nil {
 		t.Fatal("no session: want nil")
 	}
-	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	if a.stageRestoreMsg() != nil {
 		t.Fatal("no LastIC: want nil")
 	}
 	msg := &protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", Message: "Hello!"}
-	a.sess.LastIC = msg
+	a.link.sess.LastIC = msg
 	if a.stageRestoreMsg() != msg {
 		t.Fatal("want the session's LastIC back")
 	}
-	a.serverKey = "wss://test.example/ws"
-	a.d.Prefs.SetServerIgnored(a.serverKey, []string{"Phoenix"})
+	a.srvMeta.serverKey = "wss://test.example/ws"
+	a.d.Prefs.SetServerIgnored(a.srvMeta.serverKey, []string{"Phoenix"})
 	if a.stageRestoreMsg() != nil {
 		t.Fatal("an ignored speaker must not be re-staged")
 	}
-	a.d.Prefs.SetServerIgnored(a.serverKey, nil)
+	a.d.Prefs.SetServerIgnored(a.srvMeta.serverKey, nil)
 	if a.stageRestoreMsg() != msg {
 		t.Fatal("clearing the ignore list must restore the seed")
 	}
@@ -579,8 +579,8 @@ func TestTabSwitchNoLogCrossover(t *testing.T) {
 	if !a.allocateTab() {
 		t.Fatal("allocate tab A")
 	}
-	a.serverName, a.serverKey = "Alpha", "wss://alpha:2096"
-	a.sess = courtroom.NewRehearsalSession("", []string{"Apollo"})
+	a.srvMeta.serverName, a.srvMeta.serverKey = "Alpha", "wss://alpha:2096"
+	a.link.sess = courtroom.NewRehearsalSession("", []string{"Apollo"})
 	a.chatlog.icLog = []icEntry{{text: "ALPHA-IC-only line", color: 2}}
 	a.chatlog.icLogSeq = 1
 	a.chatlog.oocLog, a.chatlog.oocSpeakers = []string{"ALPHA-OOC-only line"}, []string{"amod"}
@@ -598,8 +598,8 @@ func TestTabSwitchNoLogCrossover(t *testing.T) {
 	if !a.allocateTab() {
 		t.Fatal("allocate tab B")
 	}
-	a.serverName, a.serverKey = "Beta", "wss://beta:2096"
-	a.sess = courtroom.NewRehearsalSession("", []string{"Klavier"})
+	a.srvMeta.serverName, a.srvMeta.serverKey = "Beta", "wss://beta:2096"
+	a.link.sess = courtroom.NewRehearsalSession("", []string{"Klavier"})
 	a.chatlog.icLog = []icEntry{{text: "BETA-IC-only line", color: 4}}
 	a.chatlog.icLogSeq = 1
 	a.chatlog.oocLog, a.chatlog.oocSpeakers = []string{"BETA-OOC-only line"}, []string{"bmod"}
@@ -619,8 +619,8 @@ func TestTabSwitchNoLogCrossover(t *testing.T) {
 
 	// Switch BACK to tab A (index 0) and assert its own lines return, not tab B's.
 	a.activateTab(0)
-	if a.serverName != "Alpha" {
-		t.Fatalf("switch back must restore tab A, got %q", a.serverName)
+	if a.srvMeta.serverName != "Alpha" {
+		t.Fatalf("switch back must restore tab A, got %q", a.srvMeta.serverName)
 	}
 	aIC := a.icWrapped(800, false)
 	aOOC := a.oocWrapped(800)
@@ -719,12 +719,9 @@ func TestControlPinnedClientSwaps(t *testing.T) {
 	if !a.allocateTab() {
 		t.Fatal("allocate primary tab")
 	}
-	a.serverName, a.serverKey = "Primary", "wss://primary"
-	a.sess = courtroom.NewRehearsalSession("", []string{"P"})
-	a.tabs = append(a.tabs, &courtTab{state: sessionState{
-		serverName: "Pinned", serverKey: "wss://pinned",
-		sess: courtroom.NewRehearsalSession("", []string{"Q"}),
-	}})
+	a.srvMeta.serverName, a.srvMeta.serverKey = "Primary", "wss://primary"
+	a.link.sess = courtroom.NewRehearsalSession("", []string{"P"})
+	a.tabs = append(a.tabs, &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Pinned", serverKey: "wss://pinned"}, link: linkState{sess: courtroom.NewRehearsalSession("", []string{"Q"})}}})
 	a.activeTab, a.tabDragFrom = 0, -1
 	a.pinToSplit(a.tabs[1])
 	if !a.splitActive() || a.splitTab != a.tabs[1] {
@@ -733,8 +730,8 @@ func TestControlPinnedClientSwaps(t *testing.T) {
 
 	a.controlPinnedClient()
 
-	if a.activeTab != 1 || a.serverName != "Pinned" {
-		t.Fatalf("the pinned server must become the live primary: activeTab=%d name=%q", a.activeTab, a.serverName)
+	if a.activeTab != 1 || a.srvMeta.serverName != "Pinned" {
+		t.Fatalf("the pinned server must become the live primary: activeTab=%d name=%q", a.activeTab, a.srvMeta.serverName)
 	}
 	if !a.splitActive() || a.splitTab != a.tabs[0] {
 		t.Fatal("the old primary must become the new float")
@@ -829,7 +826,7 @@ func TestRenderFullClientTextureRestores(t *testing.T) {
 	a.ctx.Ren = ren
 	a.uiScalePct = 100
 	// Distinctive primary state that must survive the pinned pass untouched.
-	a.serverName = "PrimaryServer"
+	a.srvMeta.serverName = "PrimaryServer"
 	a.screen = ScreenCourtroom
 	primaryVP := render.NewViewport(nil)
 	a.d.Viewport = primaryVP
@@ -837,12 +834,12 @@ func TestRenderFullClientTextureRestores(t *testing.T) {
 	// early-returns (and sets a.screen=lobby, which the snapshot must undo).
 	a.splitVP = render.NewViewport(nil)
 	a.splitRoom = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, nil, courtroom.NopAudio{})
-	a.splitTab = &courtTab{state: sessionState{serverName: "PinnedServer"}} // sess stays nil
+	a.splitTab = &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "PinnedServer"}}} // sess stays nil
 
 	a.renderFullClientTexture(640, 480)
 
-	if a.serverName != "PrimaryServer" {
-		t.Errorf("primary sessionState not restored: serverName=%q", a.serverName)
+	if a.srvMeta.serverName != "PrimaryServer" {
+		t.Errorf("primary sessionState not restored: serverName=%q", a.srvMeta.serverName)
 	}
 	if a.d.Viewport != primaryVP {
 		t.Error("primary viewport (a.d.Viewport) not restored")
@@ -850,7 +847,7 @@ func TestRenderFullClientTextureRestores(t *testing.T) {
 	if a.screen != ScreenCourtroom {
 		t.Errorf("primary screen not restored: got %v (the pinned pass set it to lobby)", a.screen)
 	}
-	if a.room != nil {
+	if a.link.room != nil {
 		t.Error("primary room not restored (must stay nil here, not the splitRoom)")
 	}
 	if a.client.pinnedPass {
@@ -889,7 +886,7 @@ func TestTabTearOffToSplit(t *testing.T) {
 	c := a.ctx
 	a.tabs = []*courtTab{
 		{}, // index 0: the active (left) tab — its live session lives in a.sessionState
-		{state: sessionState{serverName: "Pinned", sess: courtroom.NewRehearsalSession("", []string{"X"})}},
+		{state: sessionState{srvMeta: serverMetaState{serverName: "Pinned"}, link: linkState{sess: courtroom.NewRehearsalSession("", []string{"X"})}}},
 	}
 	a.activeTab = 0
 	a.tabDragFrom = -1 // NewApp seeds this idle sentinel; the raw test App needs it too
@@ -956,10 +953,10 @@ func TestTabTearOffToSplit(t *testing.T) {
 func TestSendICSplitTargetsPinnedSession(t *testing.T) {
 	a := testTabApp(t)
 	// Primary (left) session: a distinct identity that must survive the send.
-	a.serverName = "PrimaryServer"
+	a.srvMeta.serverName = "PrimaryServer"
 	a.compose.icInput = "primary draft"
-	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
-	a.sess.MyCharID = 1
+	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.link.sess.MyCharID = 1
 
 	// Pinned (right) session on a send-capturing conn, with a distinctive char id
 	// (4242) so "the pinned identity was used" is unambiguous against MS's many
@@ -968,11 +965,11 @@ func TestSendICSplitTargetsPinnedSession(t *testing.T) {
 	pinnedSess := courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
 	pinnedSess.MyCharID = 4242
 	pin := &courtTab{state: sessionState{
-		serverName: "PinnedServer",
-		sess:       pinnedSess,
-		compose:    composeState{sidePref: "wit", icInput: "hello from the right pane"},
-		evidIdx:    -1,
-		pairbox:    pairBoxState{pairWith: protocol.UnpairedCharID},
+		srvMeta: serverMetaState{serverName: "PinnedServer"},
+		link:    linkState{sess: pinnedSess},
+		compose: composeState{sidePref: "wit", icInput: "hello from the right pane"},
+		evidIdx: -1,
+		pairbox: pairBoxState{pairWith: protocol.UnpairedCharID},
 	}}
 	a.tabs = append(a.tabs, pin)
 	a.splitTab = pin
@@ -1004,11 +1001,11 @@ func TestSendICSplitTargetsPinnedSession(t *testing.T) {
 		t.Errorf("the PRIMARY session must not inherit the pinned pending, got %q", a.compose.icPendingSent)
 	}
 	// 3. The primary session is fully restored — name and its own draft intact.
-	if a.serverName != "PrimaryServer" || a.compose.icInput != "primary draft" {
-		t.Errorf("primary must be untouched: name=%q input=%q", a.serverName, a.compose.icInput)
+	if a.srvMeta.serverName != "PrimaryServer" || a.compose.icInput != "primary draft" {
+		t.Errorf("primary must be untouched: name=%q input=%q", a.srvMeta.serverName, a.compose.icInput)
 	}
-	if a.sess.MyCharID != 1 {
-		t.Errorf("primary session pointer must be restored (MyCharID 1), got %d", a.sess.MyCharID)
+	if a.link.sess.MyCharID != 1 {
+		t.Errorf("primary session pointer must be restored (MyCharID 1), got %d", a.link.sess.MyCharID)
 	}
 	// 4. Focus stays in the right pane so you can keep typing there.
 	if a.ctx.focusNext != "ic-split" {
@@ -1086,7 +1083,7 @@ func TestTabCap(t *testing.T) {
 		if !a.allocateTab() {
 			t.Fatalf("allocate %d must succeed", i)
 		}
-		a.serverName = "srv"
+		a.srvMeta.serverName = "srv"
 		a.parkActive()
 	}
 	if a.allocateTab() {
@@ -1105,8 +1102,8 @@ func TestTabBackgroundRouting(t *testing.T) {
 	if !a.allocateTab() {
 		t.Fatal("allocate")
 	}
-	a.serverName = "bg"
-	a.serverKey = "wss://bg.example"
+	a.srvMeta.serverName = "bg"
+	a.srvMeta.serverKey = "wss://bg.example"
 	a.parkActive()
 
 	tab := a.tabs[0]
@@ -1160,15 +1157,15 @@ func TestTabBackgroundRouting(t *testing.T) {
 // order, and dead / rehearsal / blank-URL / duplicate-URL slots are skipped.
 func TestCollectOpenTabs(t *testing.T) {
 	a := &App{env: env{}, activeTab: 1}
-	a.serverName = "Active"
-	a.serverKey = "wss://active:2096"
+	a.srvMeta.serverName = "Active"
+	a.srvMeta.serverKey = "wss://active:2096"
 	a.tabs = []*courtTab{
-		{state: sessionState{serverName: "Parked", serverKey: "wss://parked:2096"}},
+		{state: sessionState{srvMeta: serverMetaState{serverName: "Parked", serverKey: "wss://parked:2096"}}},
 		{}, // index 1 = the active tab (its session lives in a.sessionState)
-		{state: sessionState{serverName: "Dead", serverKey: "wss://dead:2096"}, dead: true},
-		{state: sessionState{serverName: "Reh", serverKey: "wss://reh:2096", rehearsal: true}},
-		{state: sessionState{serverName: "NoURL"}},                               // blank URL → skipped
-		{state: sessionState{serverName: "Dup", serverKey: "wss://active:2096"}}, // dup of active
+		{state: sessionState{srvMeta: serverMetaState{serverName: "Dead", serverKey: "wss://dead:2096"}}, dead: true},
+		{state: sessionState{srvMeta: serverMetaState{serverName: "Reh", serverKey: "wss://reh:2096", rehearsal: true}}},
+		{state: sessionState{srvMeta: serverMetaState{serverName: "NoURL"}}},                               // blank URL → skipped
+		{state: sessionState{srvMeta: serverMetaState{serverName: "Dup", serverKey: "wss://active:2096"}}}, // dup of active
 	}
 	got := a.collectOpenTabs()
 	want := []config.OpenTab{
@@ -1207,20 +1204,20 @@ func TestPerAreaScrollback(t *testing.T) {
 	if len(a.chatlog.icLog) != 0 {
 		t.Fatalf("entering a fresh area must start empty, got %d", len(a.chatlog.icLog))
 	}
-	a.curArea = "C1"
+	a.srvMeta.curArea = "C1"
 	a.chatlog.icLog = append(a.chatlog.icLog, icEntry{text: "c1 line"})
 
 	a.switchAreaScrollback("C2")
 	if len(a.chatlog.icLog) != 0 {
 		t.Fatalf("second fresh area must start empty, got %d", len(a.chatlog.icLog))
 	}
-	a.curArea = "C2"
+	a.srvMeta.curArea = "C2"
 
 	a.switchAreaScrollback("C1") // back to C1 → its line returns
 	if len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "c1 line" {
 		t.Fatalf("returning to an area must restore its log, got %v", a.chatlog.icLog)
 	}
-	a.curArea = "C1"
+	a.srvMeta.curArea = "C1"
 
 	a.switchAreaScrollback("") // back to the default area
 	if len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "lobby line" {
@@ -1261,8 +1258,8 @@ func TestRequestCloseTabConfirms(t *testing.T) {
 	// Instant OFF, a live background tab: the ✕ opens the confirm, tab survives.
 	a := testTabApp(t)
 	a.tabs = []*courtTab{
-		{},                                      // index 0: the active (left) tab — live session in a.sessionState
-		{state: sessionState{serverName: "Bg"}}, // index 1: live background tab (dead == false)
+		{}, // index 0: the active (left) tab — live session in a.sessionState
+		{state: sessionState{srvMeta: serverMetaState{serverName: "Bg"}}}, // index 1: live background tab (dead == false)
 	}
 	a.activeTab = 0
 	a.requestCloseTab(1)
@@ -1292,7 +1289,7 @@ func TestRequestCloseTabConfirms(t *testing.T) {
 
 	// Instant ON: the ✕ closes immediately, no modal.
 	b := testTabApp(t)
-	b.tabs = []*courtTab{{}, {state: sessionState{serverName: "Bg"}}}
+	b.tabs = []*courtTab{{}, {state: sessionState{srvMeta: serverMetaState{serverName: "Bg"}}}}
 	b.activeTab = 0
 	b.d.Prefs.Update(func(
 		sn *config.
@@ -1315,7 +1312,7 @@ func TestRequestCloseTabConfirms(t *testing.T) {
 
 	// A DEAD tab always closes immediately, even with Instant OFF.
 	d := testTabApp(t)
-	d.tabs = []*courtTab{{}, {state: sessionState{serverName: "Bg"}, dead: true}}
+	d.tabs = []*courtTab{{}, {state: sessionState{srvMeta: serverMetaState{serverName: "Bg"}}, dead: true}}
 	d.activeTab = 0
 	d.requestCloseTab(1)
 	if d.pendingCloseTab != nil {
@@ -1333,9 +1330,9 @@ func TestRequestCloseTabConfirms(t *testing.T) {
 // confirm, and assert the right tab died and activeTab bookkeeping stayed correct.
 func TestConfirmPendingCloseTabByPointer(t *testing.T) {
 	a := testTabApp(t)
-	keep := &courtTab{state: sessionState{serverName: "Keep"}}
-	target := &courtTab{state: sessionState{serverName: "Target"}}
-	other := &courtTab{state: sessionState{serverName: "Other"}}
+	keep := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Keep"}}}
+	target := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Target"}}}
+	other := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Other"}}}
 	a.tabs = []*courtTab{{}, keep, target, other} // index 0 active
 	a.activeTab = 0
 
@@ -1359,7 +1356,7 @@ func TestConfirmPendingCloseTabByPointer(t *testing.T) {
 	if !slices.Contains(a.tabs, keep) || !slices.Contains(a.tabs, other) {
 		t.Error("confirm must not close the wrong (reordered) tabs")
 	}
-	if a.activeTab != 0 || a.tabs[0].state.serverName != "" {
+	if a.activeTab != 0 || a.tabs[0].state.srvMeta.serverName != "" {
 		t.Errorf("the active tab bookkeeping must survive the reorder+close, activeTab=%d", a.activeTab)
 	}
 }
@@ -1370,8 +1367,8 @@ func TestConfirmPendingCloseTabByPointer(t *testing.T) {
 // on a dangling pointer — no panic, no wrong tab closed.
 func TestConfirmPendingCloseTabDropsStale(t *testing.T) {
 	a := testTabApp(t)
-	gone := &courtTab{state: sessionState{serverName: "Gone"}}
-	survivor := &courtTab{state: sessionState{serverName: "Survivor"}}
+	gone := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Gone"}}}
+	survivor := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Survivor"}}}
 	a.tabs = []*courtTab{{}, survivor}
 	a.activeTab = 0
 	a.pendingCloseTab = gone // a pointer no longer in a.tabs
@@ -1392,8 +1389,8 @@ func TestConfirmPendingCloseTabDropsStale(t *testing.T) {
 func TestConfirmPendingCloseTabRunsClearSplit(t *testing.T) {
 	a := testTabApp(t)
 	pinned := &courtTab{state: sessionState{
-		serverName: "Pinned",
-		sess:       courtroom.NewRehearsalSession("", []string{"X"}),
+		srvMeta: serverMetaState{serverName: "Pinned"},
+		link:    linkState{sess: courtroom.NewRehearsalSession("", []string{"X"})},
 	}}
 	a.tabs = []*courtTab{{}, pinned}
 	a.activeTab = 0
@@ -1500,7 +1497,7 @@ func TestCloseParkedTabPreservesActiveAwait(t *testing.T) {
 	a.d.Audio = &render.Audio{} // disabled stand-in; StopMusic is a guarded no-op
 	// Two tabs: index 0 a background chip, index 1 the active tab mid-resume.
 	a.tabs = []*courtTab{
-		{state: sessionState{serverName: "Background", serverKey: "wss://bg:2096"}},
+		{state: sessionState{srvMeta: serverMetaState{serverName: "Background", serverKey: "wss://bg:2096"}}},
 		{},
 	}
 	a.activeTab = 1
@@ -1517,7 +1514,7 @@ func TestCloseParkedTabPreservesActiveAwait(t *testing.T) {
 	if !a.musicTabDucked {
 		t.Error("the active tab's resume duck must survive the background-chip close (settle will lift it on delivery)")
 	}
-	if len(a.tabs) != 1 || a.tabs[0].state.serverName != "" {
+	if len(a.tabs) != 1 || a.tabs[0].state.srvMeta.serverName != "" {
 		t.Fatalf("the background tab must be removed and the active tab (index 0 now) kept, tabs=%d", len(a.tabs))
 	}
 }
@@ -1530,7 +1527,7 @@ func TestCloseParkedTabStopsOrphanStream(t *testing.T) {
 	a := testTabApp(t)
 	a.d.Audio = &render.Audio{}
 	a.tabs = []*courtTab{
-		{state: sessionState{serverName: "Background", serverKey: "wss://bg:2096"}},
+		{state: sessionState{srvMeta: serverMetaState{serverName: "Background", serverKey: "wss://bg:2096"}}},
 		{},
 	}
 	a.activeTab = 1
@@ -1564,7 +1561,7 @@ func TestRederiveMessageDuckClearsStale(t *testing.T) {
 	})
 
 	// ducking enabled, so the phase is what decides
-	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, nil, courtroom.NopAudio{})
+	a.link.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, nil, courtroom.NopAudio{})
 	// A message finished (phase is Idle) but the duck flag is stale-true.
 	a.musicDucked = true
 	a.rederiveMessageDuck()
@@ -1579,14 +1576,14 @@ func TestRederiveMessageDuckClearsStale(t *testing.T) {
 // the fix only the 10s timeout (frozen while minimized) released it, orphaning the duck.
 func TestEventMusicStopClearsAwait(t *testing.T) {
 	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	// Mid-resume: an await is armed for a prior track.
 	a.musicTabDucked = true
 	a.musicAwaitURL = "http://cdn/prior.opus"
 	a.musicAwaitSince = a.now()
 	// A ~stop lands: HandlePacket would clear MusicTrack; set it empty directly so the
 	// handler's gate sees the ~stop shape (like TestMusicTabDuckOnPark sets it).
-	a.sess.MusicTrack = ""
+	a.link.sess.MusicTrack = ""
 	a.handleSessionEvents([]courtroom.Event{{Kind: courtroom.EventMusic, Text: "~stop.mp3"}})
 	if a.musicAwaitURL != "" || !a.musicAwaitSince.IsZero() {
 		t.Errorf("a ~stop must clear the orphaned await, got url=%q since=%v", a.musicAwaitURL, a.musicAwaitSince)
@@ -1615,8 +1612,8 @@ func TestParkClearsMessageDuckBeforeVolumes(t *testing.T) {
 	if !a.allocateTab() {
 		t.Fatal("allocate")
 	}
-	a.serverName, a.serverKey = "Srv", "wss://srv:2096"
-	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.srvMeta.serverName, a.srvMeta.serverKey = "Srv", "wss://srv:2096"
+	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	a.musicDucked = true // a message was on stage when the user switched away
 
 	a.parkActive()

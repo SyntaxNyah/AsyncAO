@@ -105,8 +105,8 @@ func stageThemedEditorFixture(t *testing.T) (*App, int32, int32, func()) {
 		t.Skipf("output size unavailable: %v", err)
 	}
 	a.d.Prefs.SetTheme(stripEditTheme, "") // drawLayoutEditor disarms itself with no theme name
-	a.serverName = "first session"
-	a.tabs = []*courtTab{{}, {state: sessionState{serverName: "second session"}}}
+	a.srvMeta.serverName = "first session"
+	a.tabs = []*courtTab{{}, {state: sessionState{srvMeta: serverMetaState{serverName: "second session"}}}}
 	a.activeTab = 0
 	a.layoutEdit, a.layoutSnap = true, false
 	return a, w, h, cleanup

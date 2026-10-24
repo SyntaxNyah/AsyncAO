@@ -36,7 +36,7 @@ func (a *App) openServerEvidencePicker() {
 		// Seed with the case evidence already on hand so the modal is never empty
 		// while the index fetch runs.
 		seen := map[string]bool{}
-		for _, it := range a.sess.Evidence {
+		for _, it := range a.link.sess.Evidence {
 			name := strings.TrimSpace(it.Image)
 			if name == "" || seen[strings.ToLower(name)] {
 				continue
@@ -52,7 +52,7 @@ func (a *App) openServerEvidencePicker() {
 	a.evidServerPickerOpen = true
 	a.evidServerScroll = 0
 	a.evidServerSearch = ""
-	if !a.evidServerBusy && a.urls.Origin() != "" {
+	if !a.evidServerBusy && a.link.urls.Origin() != "" {
 		a.evidServerBusy = true
 		go a.fetchServerEvidenceIndex()
 	}
@@ -68,7 +68,7 @@ func (a *App) fetchServerEvidenceIndex() {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), evidServerFetchTO)
 	defer cancel()
-	data, err := a.d.Manager.FetchRaw(ctx, a.urls.EvidenceRoot())
+	data, err := a.d.Manager.FetchRaw(ctx, a.link.urls.EvidenceRoot())
 	if err != nil {
 		a.evidServerRes <- nil
 		return
@@ -192,7 +192,7 @@ func (a *App) drawServerEvidencePicker(w, h int32) {
 			continue
 		}
 		rc := sdl.Rect{X: cx, Y: cy, W: evidServerCell, H: evidServerCell}
-		url := a.urls.Evidence(name)
+		url := a.link.urls.Evidence(name)
 		if page, ok := a.d.Store.Get(url); ok && len(page.Frames) > 0 {
 			_ = c.Ren.Copy(page.Frames[0], nil, &rc)
 		} else {

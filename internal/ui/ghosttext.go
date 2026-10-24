@@ -96,10 +96,10 @@ func firstQueuedEntry(log []icEntry, n int) int {
 // and because dropping it would silently change every call site's shape in a
 // change whose whole point is that the row dimension went away.
 func (a *App) ghostLogSpan(_ []icWrapLine) ghostSpan {
-	if a.room == nil || a.d.Prefs == nil || !a.d.Prefs.Load().GhostCrawlText {
+	if a.link.room == nil || a.d.Prefs == nil || !a.d.Prefs.Load().GhostCrawlText {
 		return ghostSpan{}
 	}
-	n := queuedCount(a.room.QueueLen())
+	n := queuedCount(a.link.room.QueueLen())
 	if n == 0 {
 		return ghostSpan{} // nothing behind the current line: nothing to preview
 	}

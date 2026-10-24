@@ -1571,9 +1571,9 @@ func (a *App) restoreViewportPreanim() {
 	case a.makerOpen && a.makerPreviewRoom != nil:
 		a.d.Viewport.OnPreanimDone = a.makerPreviewRoom.NotifyPreanimDone
 		a.d.Viewport.OnFrameShown = a.makerPreviewRoom.NotifyFrameShown // #17: frame effects follow the same room
-	case a.room != nil:
-		a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
-		a.d.Viewport.OnFrameShown = a.room.NotifyFrameShown
+	case a.link.room != nil:
+		a.d.Viewport.OnPreanimDone = a.link.room.NotifyPreanimDone
+		a.d.Viewport.OnFrameShown = a.link.room.NotifyFrameShown
 	default:
 		a.d.Viewport.OnPreanimDone = nil
 		a.d.Viewport.OnFrameShown = nil
