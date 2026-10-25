@@ -24,6 +24,9 @@ type subCue struct {
 }
 
 // subtitleLine extracts the speaker + plain display text for a recorded message:
+// zero-width wire frames stripped, the "~~" centre prefix dropped, and the
+// typewriter's markup ({}, \cN, \b, \i) removed — exactly what the export
+// chatbox renders (export rooms don't expand inline emotes, so neither do we).
 func subtitleLine(msg *protocol.ChatMessage) (speaker, text string) {
 	if msg == nil {
 		return "", ""

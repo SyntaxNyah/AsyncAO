@@ -16,6 +16,12 @@ package courtroom
 // base that ships the same set twice; otherwise it just changes how many probes
 // it takes to find the one file that exists, and every miss is 404-cached
 // (rule §17.6), so a settled chain costs nothing.
+// Each rung splits by CASE, lowercase first. AO2 read a case-insensitive local
+// filesystem and never had to choose; HTTP mirrors do — webAO-convention mirrors
+// lowercase every path, raw content folders keep the author's case. Same shape
+// and same order as the chatbox skin (MiscChatboxCandidates) and the screen-effect
+// overlay (OverlayEffectMisc): the lowercase spelling is the asset's identity
+// everywhere, the authored spelling is an alt, and identical spellings collapse.
 
 import (
 	"strconv"
@@ -55,6 +61,11 @@ const (
 // guaranteed miss. The parse-side feature gate (protocol.ParseMS's getBlips) is
 // the real fix; this is the belt at the prefetch boundary so no server, hostile or
 // merely odd, can mint asset URLs out of that field.
+// It is not exported and it has no second copy: every blip URL in the client is
+// minted by BlipRef, which applies this guard first. The live funnel and the
+// Studio content report used to carry two different versions of it — the report's
+// checked only for "" and "-1", so a KFO "<id>^0" or a bare "0" became a probed
+// URL there while the funnel dropped it.
 func validBlipName(name string) bool {
 	name = strings.TrimSpace(name)
 	if name == "" {

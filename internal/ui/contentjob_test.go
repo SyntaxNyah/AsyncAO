@@ -164,6 +164,10 @@ func TestEnumerateContentEmptyOrigin(t *testing.T) {
 
 // TestReportBlipsRideTheOneMint pins that the content report asks
 // courtroom.URLBuilder.BlipRef for its blips instead of building the URL itself.
+// It used to build it inline behind its own sentinel check that knew only "" and
+// "-1", so a KFO "<id>^0" or a bare "0" became a probed URL here (and a "missing"
+// line in the user's report) while the live funnel dropped it — and it probed only
+// the sounds/blips/ spelling, never AO2's legacy sounds/general/sfx-blip<name>
 // (../AO2-Client/src/text_file_functions.cpp:515-527). Driving the real enumerator
 // and comparing against the mint is what keeps the two from drifting again.
 func TestReportBlipsRideTheOneMint(t *testing.T) {
@@ -398,6 +402,8 @@ func TestContentProbeFoundMissing(t *testing.T) {
 // TestPackageBundleLayout pins the package's on-disk shape against the EXISTING
 // bundle format: the found asset lands at its origin-relative path, the bundled
 // .aorec is present + marked Bundled, and the plain-text gap list is written in.
+// It also round-trips the sprite bytes to prove packaging reuses the probed
+// bytes verbatim.
 func TestPackageBundleLayout(t *testing.T) {
 	withExeDataRoot(t)
 	sprite := pngBytes()
@@ -669,6 +675,11 @@ func TestCancelMidProbeLeakFree(t *testing.T) {
 		time.Sleep(2 * time.Millisecond)
 	}
 	// The STRUCTURAL leak observable: the job's own live-goroutine counter.
+	// Global runtime.NumGoroutine deltas flaked the full gate twice — HTTP
+	// keep-alive readers linger past any deadline, and force-closing conns
+	// just trades that for the client's transport-retry backoff parking the
+	// workers. probeLive counts exactly the feeder + workers the cancel
+	// contract promises to reap, and nothing else.
 	j := a.sel.content
 	if j == nil {
 		t.Fatal("no job after start")

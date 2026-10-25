@@ -2,6 +2,11 @@ package ui
 
 // F5, the ROUTING half — see internal/render/pictograph_test.go for the eligibility
 // table.
+//
+// The rule: a BMP pictograph is handed the colour-emoji face ONLY when no face in
+// the text chain covers it. That gate is what keeps ★, →, ▪ and ™ drawing in the
+// row's own family at the row's own weight on the (many) machines whose text fonts
+// have them, while ♥ and ✨ stop being boxes on the machines whose fonts do not.
 
 import (
 	"strings"
@@ -19,6 +24,9 @@ import (
 // (♡ ★ ● ■ ← — every decent text font has them, and they must keep drawing in the
 // row's own family at the row's own weight). A census that treats the two alike
 // cannot tell "correctly promoted" from "handed to a face with no glyph for it".
+//
+// colour=true means: if the text chain lacks it, the bundled colour face MUST have
+// it, because that is where the gate will send it.
 var symbolCorpus = []struct {
 	name   string
 	colour bool
@@ -41,6 +49,9 @@ var symbolCorpus = []struct {
 }
 
 // symbolCensusUnroutable is a codepoint deep in a supplementary Private Use Area:
+// no font ships it, and it is outside every pictograph block, so NO route can claim
+// it. It exists to prove the census's own predicate can still say "no" — the defect
+// this test was rewritten for was a gate whose answer was structurally always "yes".
 const symbolCensusUnroutable = rune(0x0F0000)
 
 // TestUncoveredSymbolsRouteToTheEmojiFace drives the real coverage gate against the
@@ -122,6 +133,7 @@ func TestUncoveredSymbolsRouteToTheEmojiFace(t *testing.T) {
 // admits whole blocks, so a rune could be routed off a text chain that has no glyph
 // for it onto a colour face that has no glyph for it either — a box swapped for a
 // different box, with the v1.87 last-resort census bypassed on the way.
+//
 // The bundled Twemoji is the face under test because it is the guaranteed one: the
 // OS emoji font is used only where SDL_ttf can render it (bestEmojiFont), so
 // Twemoji is what every other machine falls back to. Pure sfnt cmap probe — no SDL,
@@ -162,9 +174,13 @@ func TestTheColourFaceDrawsEverySymbolWePromoteToIt(t *testing.T) {
 }
 
 // TestSymbolCensusCoversTheSymbolBlocks extends the v1.87 Unicode census to symbols.
+// The v1.87 pass proved the client could draw 27 SCRIPTS; it never asked about
+// hearts, stars, arrows or dingbats, which is how the gap survived it.
+//
 // Every corpus rune must have a route: a face in the TEXT CHAIN draws it, or — for
 // the emoji-presentation ones — the eligibility table admits it and the colour face
 // it is promoted to has the glyph. "Neither" is a permanent box.
+//
 // The order matters and is the fix to this test's first version, which asked
 // BMPPictograph first and `continue`d on yes. Every rune in the corpus is inside an
 // eligible block, so that skipped the whole body: setCovers was never called, the
@@ -226,6 +242,12 @@ func TestSymbolCensusCoversTheSymbolBlocks(t *testing.T) {
 	// are covered by neither tier here — but on a real desktop the broad-Unicode
 	// fallback tier loads a system face that has them, and this fixture never triggers
 	// that load. Failing on it would be asserting a property of the TEST MACHINE.
+	//
+	// DEFERRED, named so it is not mistaken for coverage: the eligibility table admits
+	// these ornaments by block, so on a machine whose chain also lacks them the gate
+	// promotes them to the colour face, which has no glyph either — a box for a box,
+	// with the last-resort census skipped on the way. Narrowing the table or gating
+	// promotion on the colour face's own cmap is the fix; neither is in this change.
 	if len(ornaments) > 0 {
 		t.Logf("ornaments with no route on THIS machine's chain (deferred class — see the note above):\n  %s",
 			strings.Join(ornaments, "\n  "))

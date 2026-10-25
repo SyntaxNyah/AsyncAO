@@ -3,8 +3,13 @@ package netproxy
 import "strings"
 
 // parseScutil reads the dictionary `scutil --proxy` prints on macOS.
+//
+// Platform-NEUTRAL on purpose, even though only the darwin build calls it. The
+// parsing is where the bugs live, and a file named discover_darwin.go can only
+// ever be compiled — let alone tested — on a machine nobody here develops on.
 // Keeping the syscall (a subprocess) on one side of this line and the decision
 // on the other is what makes the decision testable everywhere.
+//
 // The format is a block of `Key : Value` lines, with ExceptionsList rendered as
 // a nested `<array> { 0 : *.local  1 : 169.254/16 }`.
 func parseScutil(out string) *Policy {

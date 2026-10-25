@@ -31,6 +31,8 @@ type hkEntry struct {
 // consumeHotkeyCapture binds the next keypress to whichever action armed the
 // capture; Esc cancels. The key is consumed so it cannot also fire something
 // else on its way past.
+// Invalidates the sheet's cached rows on a real change, since one of them now
+// shows a key that just moved.
 func (a *App) consumeHotkeyCapture() {
 	c := a.ctx
 	if a.courtkeys.hkCapture == "" || c.keyPressed == 0 {

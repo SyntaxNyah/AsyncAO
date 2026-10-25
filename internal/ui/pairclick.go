@@ -5,6 +5,7 @@ package ui
 // carry the CHARACTER, not the player's client UID — so the UID is sourced from
 // the /getarea player list (parsed passively in pushOOC), with manual entry as
 // the always-available fallback. The popup is honest about what it resolved:
+// the UID is pre-filled ONLY on a confident match, never a guess.
 
 import (
 	"strconv"
@@ -65,6 +66,7 @@ const areaPlayersCap = 200
 // parseAreaLine best-effort-parses a /getarea player row "[<uid>] <name>"
 // (optionally a trailing "(showname)") into the UID map + picker list. Server
 // formats vary, so a miss is fine — the popup's manual UID box covers it.
+// Called per incoming OOC line; allocation-light (no regexp).
 func (a *App) parseAreaLine(line string) {
 	s := strings.TrimSpace(line)
 	// Find the first "[<digits>]". A server may prefix a "[Title]" tag before the
@@ -98,6 +100,12 @@ func (a *App) parseAreaLine(line string) {
 // double-click auto-fill (last writer wins — that path always has a manual box).
 func (a *App) addAreaPlayer(name, uid string) {
 	// Akashi's mod /getarea packs everything onto one line:
+	//   "<char> (<showname>) (<ipid>): <ooc name>"   (showname/ipid/ooc optional).
+	// Peel the trailing ": ooc" and "(ipid)", then a leading "(showname)/(pos)",
+	// leaving the BARE character — so it matches the CharsCheck name (the live-
+	// roster merge key) AND the IPID/OOC buttons get their values. tsuserver's
+	// separate Showname:/OOC:/IPID: lines still fill in via setAreaField (they
+	// leave these empty here).
 	var showname, ipid, ooc string
 	if i := strings.LastIndex(name, "): "); i >= 0 { // "(ipid): ooc" tail (mod view)
 		ooc = strings.TrimSpace(name[i+3:])

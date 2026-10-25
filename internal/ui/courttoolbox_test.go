@@ -107,6 +107,9 @@ func TestUICfgRetired(t *testing.T) {
 }
 
 // TestEditLayoutHotkey pins FIX 2b: the Edit-Layout hotkey (default Ctrl+F2)
+// opens the live layout editor — the keyboard un-strand path for a user who can't
+// reach the toolbox Edit chip. With no theme layout, openLayoutEditor arms the
+// classic slot editor (classicEdit).
 func TestEditLayoutHotkey(t *testing.T) {
 	a := testTabApp(t)
 	a.link.sess = &courtroom.Session{} // handleHotkeys early-returns without a session

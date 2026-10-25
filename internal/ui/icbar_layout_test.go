@@ -63,6 +63,11 @@ func TestICBarSlotsAreEditable(t *testing.T) {
 }
 
 // TestICOptionalDrawsOverrideWins pins the narrow-bar drop-discipline escape hatch:
+// a width-guarded optional IC-bar button (Pre / SFX / emoji / FX) must still draw when
+// the user saved a slot override or the classic editor is armed — otherwise a dropped
+// button can never be grabbed or forced back (the movable-slot promise). The un-edited
+// narrow bar with no override must still drop it (guard intact = byte-identical play),
+// and a hidden piece never draws whatever else is true.
 func TestICOptionalDrawsOverrideWins(t *testing.T) {
 	// (a) an override forces the button to draw on a narrow bar (guard failed).
 	if !icOptionalDraws(false /*guardOK*/, true /*override*/, false /*editing*/, false /*hidden*/) {
@@ -90,10 +95,13 @@ func TestICOptionalDrawsOverrideWins(t *testing.T) {
 // TestThemeKeysExposeAsyncICControls pins #4b: the AsyncAO-only IC controls are listed
 // in themeLayoutKeys, so a custom theme that defines asyncao_ic_<x> in its design.ini has
 // those rects loaded — letting theme-makers place colour/SFX/buttons separately.
+//
 // asyncao_ic_react is deliberately NOT in that list any more (#21). The React button was
 // removed by request and the key was left ingested "as a no-op for compatibility"
 // (theme_layout.go), which meant the themed layout editor kept offering a drag box for a
 // widget that does not exist — the ghost-box class the themeSlots registry exists to end.
+// A theme may still declare the key; it simply resolves to nothing, exactly as it did when
+// the button was live-but-removed.
 func TestThemeKeysExposeAsyncICControls(t *testing.T) {
 	want := []string{
 		"asyncao_ic_color", "asyncao_ic_immediate", "asyncao_ic_pre", "asyncao_ic_sfx",
@@ -123,6 +131,11 @@ func TestThemeKeysExposeAsyncICControls(t *testing.T) {
 // icConsumedBeforeOptionals is the width the IC bar spends left of the first optional
 // button (colour swatch + dropdown, showname box, Immediate toggle, and — on flipping
 // servers — the now-unconditional Flip toggle). Additive adds another band on 2.8 servers.
+// It references the SAME package-level consts the row uses (shownameBoxW, immedW, icAddW,
+// icFlipW, colorSelectW) so the test drifts WITH the layout — a width change fails the
+// geometry pin instead of silently passing. Only colorLead (32) and gap (6) are inline
+// literals in the row itself. At the 1280×720 default (colorSelectW=86, no additive, no
+// flipping) this is 372, the wave-7 figure.
 func icConsumedBeforeOptionals(additive, flipping bool) int32 {
 	const (
 		colorLead = 32 // icBar.X → nameX also adds colorSelectW below (matches drawICInputRow)
@@ -143,6 +156,7 @@ func icConsumedBeforeOptionals(additive, flipping bool) int32 {
 // icBarButtonFits passes, and returns which drew plus the final input width (floored at
 // minICInputW). Flip is unconditional (v1.80.2) and is now accounted for inside
 // icConsumedBeforeOptionals; it does not appear in the optional loop.
+// fH is the row height (emoji is an fH-square button).
 func icOptionalSurvival(barW, fH int32, additive, flipping bool) (pre, fx, sfx, emoji bool, inputW int32) {
 	tail := int32(minICInputW)
 	used := icConsumedBeforeOptionals(additive, flipping)
@@ -198,6 +212,8 @@ func TestICBarConsumedGeometry(t *testing.T) {
 // falls below its floor — with the message counter both ON and OFF (the counter now draws
 // INSIDE the field, so it no longer steals tail width and the outcome is identical either
 // way). preW must be small enough that Pre(preW+6)+FX(fxBtnW+4) fits with >= 6px margin.
+// With Flip unconditional (v1.80.2), this is tested on a non-flipping server (the common
+// "no flipping feature" path) and on a flipping server to confirm Pre+FX still survive.
 func TestICBarPreFXSurvive720p(t *testing.T) {
 	const (
 		barW = 666

@@ -6,6 +6,11 @@ import (
 )
 
 // TestMP3TracksMintExactURLs pins the URL half of the MP3 music contract:
+// whatever spelling an mp3 track arrives in, the URL handed to the audio sink is
+// COMPLETE (extension included) so the manager's exact path can take it —
+// PrefetchExact, never the format-probing ladder (CLAUDE.md: music tracks carry
+// their extension, AO2-Client get_music_path).
+//
 // The direct-link cases are the ones that regress quietly: a DJ /play link is
 // returned byte for byte, NOT lowercased, NOT re-escaped and NOT stripped of its
 // query string — Discord CDN links carry a signed ?ex=&is=&hm= suffix and a

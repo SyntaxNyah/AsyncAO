@@ -9,6 +9,11 @@ import (
 )
 
 // CaptureTarget is a reusable offscreen render target for the scene GIF export:
+// the scene is rendered into a FIXED, capped-size texture (decoupled from the
+// window) and read back to an *image.RGBA. Capping the size here bounds memory
+// by construction — every captured frame is born at the export resolution, so a
+// long scene can't balloon past the budget — and the readback is cheaper than a
+// full-window grab. Render-thread only (it binds the renderer's target).
 type CaptureTarget struct {
 	tex  *sdl.Texture
 	w, h int32

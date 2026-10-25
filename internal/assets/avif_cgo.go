@@ -145,6 +145,9 @@ func decodeAVIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 // decodeAVIFAnimStream is decodeAVIF's incremental form: it walks the same
 // avifDecoder and emits each frame from kept index 1 (frame 0 was already
 // delivered by the progressive first frame) as a single-frame chunk via emit.
+// It streams only when the clip needs no decimation (the common case); when
+// decimation is needed it returns streamed=false so the caller falls back to
+// the classic full decode. total is the source frame count.
 func decodeAVIFAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed bool, total int, err error) {
 	var pinner runtime.Pinner
 	pinner.Pin(&data[0])

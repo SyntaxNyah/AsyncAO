@@ -130,6 +130,7 @@ func TestPackTextNeverTeachesLearnedFormats(t *testing.T) {
 // pack is usually carved out of some server's base and ships a copy, and serving
 // it would reseed the CURRENT host's learned probe order from the pack author's
 // conventions — a wrong-format probe on every cold asset for that host.
+//
 // The predicate itself (listings, empty rels) is pinned by
 // TestMountLayerExcludesManifestAndListings; this is the end-to-end half, and it
 // is the manifest alone because a folder mount cannot hold a listing rel to be

@@ -12,6 +12,7 @@ import (
 // allowlist: only /play links from allowlisted "unique" hosts are recorded
 // (newest-first, deduped, with a precomputed "<name> — <by>" label). Server
 // songs (bare names) and non-allowlisted hosts (e.g. the server's own host)
+// still play but are NOT recorded; Discord records only audio files.
 func TestNoteMusicHistory(t *testing.T) {
 	a := testTabApp(t)
 	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix", "Maya"})

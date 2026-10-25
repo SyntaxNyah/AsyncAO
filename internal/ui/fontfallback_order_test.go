@@ -3,6 +3,12 @@ package ui
 import "testing"
 
 // TestCJKHanCandidateOrder pins the Japanese-first Han preference — the root-cause fix.
+// The renderer takes the FIRST loaded face that covers a Han rune (pickFont / coverRunes
+// walk the chain in order), so whichever Han face firstReadable returns is the one a
+// Japanese showname resolves to. Given a fake availability set, firstReadableFunc must
+// prefer the modern proportional Japanese face over Microsoft YaHei (the old first-found
+// Chinese winner) and over the legacy MS Gothic. No real font files are read — the
+// existence predicate is injected — so this runs identically on CI / non-Windows.
 func TestCJKHanCandidateOrder(t *testing.T) {
 	yuGothM := `C:\Windows\Fonts\YuGothM.ttc`
 	yuGothR := `C:\Windows\Fonts\YuGothR.ttc`

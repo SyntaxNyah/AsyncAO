@@ -214,6 +214,8 @@ func TestInkReadabilityGuard(t *testing.T) {
 
 // TestApplyThemePaletteReadabilityFloor pins the kit-wide ink guard: a
 // stylesheet whose text has no contrast against its own panels (playtest:
+// GrayGarden = black on black settings) gets readable ink re-derived from
+// the panel's lightness; switching back restores the stock palette.
 func TestApplyThemePaletteReadabilityFloor(t *testing.T) {
 	defer applyThemePalette(theme.Palette{}) // restore stock for other tests
 	rgb := func(r, g, b uint8) *theme.RGB { return &theme.RGB{R: r, G: g, B: b} }

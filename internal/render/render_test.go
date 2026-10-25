@@ -177,6 +177,9 @@ func BenchmarkRenderFrame(b *testing.B) {
 }
 
 // TestRenderFrameZeroAllocs enforces the alloc gate in plain go test.
+// TestPerRuneStyles pins the span→per-rune-style flattening the styled raster
+// builds on (pure; no SDL), including bold/italic. A short partition repeats
+// the last span's style.
 func TestPerRuneStyles(t *testing.T) {
 	white := sdl.Color{R: 255, G: 255, B: 255, A: 255}
 	red := sdl.Color{R: 200, G: 0, B: 0, A: 255}

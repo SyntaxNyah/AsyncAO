@@ -202,6 +202,9 @@ func TestCharSelectThemedRowNeedsItsEssentialsONSCREEN(t *testing.T) {
 
 // TestCharSelectTinyCellFallsBackToTheClassicScreen pins the cell floor against the
 // one corpus theme that exercises the downscale path.
+// `microsoft surface 4k webao` declares a canvas far larger than any real window, so
+// at config.MinWindowW/H it scales to about a quarter. With the floor at 8 px the
+// themed grid was KEPT there on a 14 px cell: 64 px icon textures crushed to 14 px,
 // — AsyncAO's own header row sitting over a themed grid. The pre-#20 screen gave that
 func TestCharSelectTinyCellFallsBackToTheClassicScreen(t *testing.T) {
 	const w, h = config.MinWindowW, config.MinWindowH
@@ -237,6 +240,11 @@ func TestCharSelectTinyCellFallsBackToTheClassicScreen(t *testing.T) {
 }
 
 // TestCharListTabsShowWhichRosterIsActive pins the roster switch's selected state.
+// It was invisible: the active chip was Fill(chip, ColAccent) followed by
+// Button(chip, ...) on the IDENTICAL rect, and Button fills again with an opaque
+// ColPanel/ColPanelHi. Both chips then took Button's ColAccent border, so Characters
+// and Wardrobe rendered pixel-for-pixel the same whichever one you were on. The test
+// captures the two chips and requires them to differ.
 func TestCharListTabsShowWhichRosterIsActive(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
@@ -277,6 +285,9 @@ func TestCharListTabsShowWhichRosterIsActive(t *testing.T) {
 }
 
 // TestCharSelectControlsAtTheWindowFloor is C3, both ends.
+// DOWN: only `microsoft surface 4k webao` exercises the downscale path. Its 22 px
+// design controls land on 5 px at 640x480, below the layout's own minThemedElementPx,
+// so the themed row must FALL BACK to AsyncAO's header rather than leave the user
 func TestCharSelectControlsAtTheWindowFloor(t *testing.T) {
 	const w, h = config.MinWindowW, config.MinWindowH
 

@@ -1,4 +1,10 @@
 // Package config persists user-tunable asset preferences.
+// Concurrency model (spec §5): mutators take the write lock, mutate in
+// memory, and non-blockingly signal a single saver goroutine — they never
+// touch the disk. The saver debounces (DefaultSaveDebounce after the last
+// signal), marshals under the read lock, writes a temp file, and renames it
+// over the real file so a crash never corrupts preferences. SaveNow is the
+// only synchronous flush and exists for shutdown and Settings-Apply.
 package config
 
 import (
@@ -302,6 +308,12 @@ const (
 // Emote-grid icon spacing (LOGICAL px), the gap on BOTH axes between cells in the
 // AsyncAO courtroom emote grid. Default is the value that used to be hardcoded, so
 // nobody's grid moves on upgrade.
+// Min is 0 ON PURPOSE (butt the icons together — AO2 themes ship "0, 0" spacings
+// for exactly that look), which is why the on-disk DTO carries this as a *int: with
+// a plain int, "0" and "this config predates the setting" are the same bytes, and
+// every existing user's grid would silently collapse to a zero gap on upgrade. Max
+// is bounded so a slider can never starve the grid down to one column — the column
+// arithmetic in drawEmoteRow floors at 1 either way.
 const (
 	DefaultEmoteGridGapPx = 6
 	MinEmoteGridGapPx     = 0
@@ -310,6 +322,9 @@ const (
 
 // defaultEmoteHoverNames ships ON: resting the cursor on an emote button in the
 // grid shows that emote's name (its char.ini [Emotions] comment) as a tooltip.
+// OFF disables the hint entirely. Distinct from the sprite hover-PREVIEW (which
+// pops the full-size art): this is the lightweight name-only tooltip, so people
+// who keep the heavier preview off can still see which emote a cell is.
 const defaultEmoteHoverNames = true
 
 // Emote-name tooltip hover dwell: how long the cursor must rest on an emote cell
@@ -347,6 +362,12 @@ const defaultScreenEffects = true
 const defaultWordDelete = true
 
 // defaultRecordingsKeepAssets ships ON: when an in-app scene recording (.aorec)
+// stops, its assets are ALREADY warm in the cache (the user was just connected,
+// rendering them live), so packaging them into a self-contained bundle folder is
+// a near-free cache drain that costs the user nothing — and the recording then
+// survives its CDN going dark, exactly like a hand-triggered "Package this RP"
+// bundle. A dedicated Settings toggle turns the auto-bundle off (the flat .aorec
+// still lands either way; the bundle is purely additive).
 const defaultRecordingsKeepAssets = true
 
 // defaultAdditiveText ships ON: the 2.8 ADDITIVE flag is honored — an ADDITIVE=1
@@ -458,6 +479,9 @@ const defaultMusicStreaming = true
 // defaultShowMissingPlaceholder ships ON: like AO2-Client, AsyncAO draws a
 // "placeholder" (the missingno glitch sprite) for a character emote sprite whose
 // whole fallback chain 404'd, instead of holding the previous (different)
+// character on stage. AO2 shows it unconditionally; we make it opt-OUT for players
+// who prefer a blank stage or the last-sprite hold. NOT omitempty (see the *bool
+// load DTO): an explicit OFF must persist, not read back as "absent → default ON".
 const defaultShowMissingPlaceholder = true
 
 // defaultICCustomColor seeds the free IC hex colour picker before
@@ -826,6 +850,10 @@ const (
 )
 
 // ClampWindowSize fits a requested window size into [min, display-usable].
+// usableW/H ≤ 0 means the display size is unknown (skip the ceiling). Pure, so
+// the live SDL resize AND the startup clamp share it (a saved oversize on a
+// smaller monitor can't re-strand the window off-screen) — and it's testable
+// without SDL.
 func ClampWindowSize(reqW, reqH, usableW, usableH int) (int, int) {
 	w, h := reqW, reqH
 	if w < MinWindowW {
@@ -916,6 +944,10 @@ func clampPercent(v, min, max int) int {
 }
 
 // DPIScalePercent maps a display DPI to the auto UI-scale percent (#77 Part B):
+// dpi / BaselineDPI, as a percent, rounded half-up, floored at
+// MinAutoUIScalePercent. 96 dpi → 100%, 144 dpi → 150%, 168 dpi → 175%. It is
+// the pure seam the DPI-seeding path funnels through so a HiDPI monitor's
+// DEFAULT size is correct without the user finding the slider; the floor keeps
 // the never-auto-shrink rule (#6). A non-positive or sub-baseline dpi returns
 // the floor (an unreliable reading must not shrink us). It does NOT snap to the
 // UI-scale step — SetAutoScaleFromWindow does that once after combining this
@@ -995,6 +1027,9 @@ type AssetPreferences struct {
 }
 
 // DiscordPrefs configures the OPTIONAL Rich Presence integration.
+// Disabled by default; when first enabled, showname + character + server
+// display and the area stays hidden (some players don't want their
+// location broadcast — every field is the user's choice).
 type DiscordPrefs struct {
 	Enabled    bool `json:"enabled"`
 	ShowServer bool `json:"showServer"`
@@ -1025,6 +1060,9 @@ func defaultDiscordPrefs() DiscordPrefs {
 
 // ServerWarmInfo remembers what a server looked like last visit, so a
 // reconnect can pre-warm it (last character used, last background seen).
+// It also owns the server-scoped player state: the wardrobe (custom
+// character list — per server since wardrobes carrying between servers
+// was a playtest bug) and the character keybinds.
 type ServerWarmInfo struct {
 	Char       string `json:"char,omitempty"`
 	Background string `json:"background,omitempty"`
@@ -1193,6 +1231,7 @@ func DefaultPath() (string, error) {
 // or unreadable) and starts the debounced saver goroutine. The returned
 // preferences are always usable; a non-nil error reports a malformed or
 // unreadable existing file that was replaced by defaults in memory.
+// Call Close to flush pending changes and stop the saver.
 func New(path string) (*AssetPreferences, error) {
 	return newWithDebounce(path, DefaultSaveDebounce)
 }
@@ -1204,6 +1243,11 @@ func newWithDebounce(path string, debounce time.Duration) (*AssetPreferences, er
 	p.stop = make(chan struct{})
 	p.done = make(chan struct{})
 	// Durable one-shot stamp. It runs HERE and not inside load() for two reasons:
+	// load() is only half-overlaid at the point the migration decides, so writing
+	// there would persist defaults for every field it has not reached yet; and
+	// bare load() is the white-box test entry point, while this is the one the app
+	// actually boots through. Boot path, one small file, and only on the single
+	// launch that migrates — see themeFitStampPending.
 	if p.themeFitStampPending {
 		p.themeFitStampPending = false
 		if serr := p.SaveNow(); serr != nil {
@@ -1385,6 +1429,8 @@ func load(path string) (*AssetPreferences, error) {
 		// A malformed EXISTING file: quarantine it (rename aside) BEFORE
 		// returning defaults, so the debounced saver can never clobber the
 		// only copy of the user's favourites/logins/macros/learned formats.
+		// The rename runs on the startup load path (no saver exists yet, no
+		// render/decode path) — cheap synchronous I/O is fine here (spec §2
 		// bars sync I/O on hot paths only). See item #3.
 		perr = fmt.Errorf("config: parsing %s (using defaults): %w", path, perr)
 		backup := path + corruptSuffixPrefix + time.Now().Format(corruptStampLayout)
@@ -1820,6 +1866,10 @@ func (p *AssetPreferences) EmoteHoverNamesDelay() time.Duration {
 
 // EmoteGridGap returns the gap between emote icons on the AsyncAO grid, in
 // LOGICAL px. Read once per grid draw (never per cell) — it takes the pref lock.
+// No "<= 0 means default" rescue here, unlike PreviewHeightPx: zero is a value the
+// user can pick (icons flush against each other), so the only way to get the
+// default back is the slider. defaultPrefs seeds it and the load overlay only
+// overwrites a value the file actually carried, so it can never arrive unset.
 func (p *AssetPreferences) EmoteGridGap() int {
 	snap := p.Load()
 
@@ -2540,6 +2590,10 @@ func (p *AssetPreferences) SetTheme(name, dir string) {
 // SetSubtheme stores the AO2 subtheme folder ("" = none). The value is
 // sanitized here as well as on load: it is joined onto a filesystem path, so a
 // separator or a ".." must never survive the setter either.
+// An EMPTY argument clears the pick; a non-empty one that cannot be a folder
+// name is REFUSED rather than folded into a clear. The two are different user
+// intents ("no subtheme" vs "this subtheme"), and silently turning the second
+// into the first would let one bad value wipe a good one.
 func (p *AssetPreferences) SetSubtheme(sub string) {
 	clean := theme.SanitizeSubtheme(sub)
 	if clean == "" && strings.TrimSpace(sub) != "" {
@@ -3313,6 +3367,9 @@ const (
 	SpriteLoadModeCount = 4 // number of valid modes (for the Settings mode picker + load clamp)
 
 	// defaultSpriteLoadMode is what a fresh install (and a power-user reset) uses:
+	// Default (strict sequencing) — wait for every sprite, the background, desk,
+	// chatbox, speedlines, SFX and blip before a message plays, so nothing ever
+	// pops in mid-ceremony.
 	defaultSpriteLoadMode = SpriteLoadDefault
 )
 
@@ -3437,6 +3494,10 @@ const (
 	TexBudgetSafeMaxMiB = 128
 
 	// Per-animated-asset decode budget, MiB (the #110 downscale-to-fit budget).
+	// LIVE-applied: the decoder reads it atomically, so changing it reshapes NEW
+	// animated decodes without a restart. 128 = the shipped default (downscales
+	// very large clips to fit; lower = softer, far less RAM). The oversized GPU
+	// overflow cap stays large enough to hold many compressed clips resident.
 	AnimatedBudgetDefaultMiB = 128
 	AnimatedBudgetMinMiB     = 64
 	AnimatedBudgetMaxMiB     = 512
@@ -3465,6 +3526,7 @@ const (
 	// Frame pacing (the GPU-burn fix): the loop used to re-render the whole UI
 	// every monitor refresh — on a 144/165 Hz laptop panel that's a full-screen
 	// GPU composite 165×/sec while IDLE (fans, +10 °C — the playtest report).
+	// Three caps, all sleep-based (vsync stays on for tear-free presents):
 	FPSCapDefault = FPSUnlimited // Active default = ∞ / vsync-paced (the playtesters' hard default; the ceiling only bites if you type a number or drag off ∞)
 	FPSCapMin     = 1
 	FPSCapMax     = 240
@@ -3506,6 +3568,9 @@ const (
 
 // normalizeFPSPref maps a stored rate knob onto its valid domain: 0 keeps the
 // default (the getter resolves it), FPSUnlimited (∞) and FPSOff (never redraw)
+// pass through as-is, anything else clamps to [min, max]. Any other negative is
+// treated as ∞ defensively. Shared by the setters and the disk-load overlay so
+// a hand-edited file obeys the same rules as the sliders.
 func normalizeFPSPref(fps, min, max int) int {
 	switch fps {
 	case 0, FPSUnlimited, FPSOff:
@@ -3685,6 +3750,9 @@ func (p *AssetPreferences) ResetPowerUser() {
 // `effects` — LAST field, whose index depends on whether the conditional showname
 // preceded it (courtroom.Session.RequestMusicWithFlags); the server's echo carries
 // them at field 5. AO2-Client src/datatypes.h:95-101.
+// Duplicated here as plain ints rather than imported from internal/courtroom for
+// the same reason SpriteLoad* is: config must not depend on the packages that
+// consume it.
 const (
 	MusicFlagFadeIn   = 1 // ramp the NEW track up
 	MusicFlagFadeOut  = 2 // ramp the PREVIOUS track down
@@ -3756,6 +3824,7 @@ func (s *Settings) WardrobeList(serverKey string) []string {
 // pre-per-server wardrobe: the FIRST server connected to after the
 // update inherits the collection (in practice the user's main server),
 // then the legacy list clears and every other server starts clean.
+// Connect calls this; it is a no-op once claimed.
 func (p *AssetPreferences) ClaimLegacyWardrobe(serverKey string) {
 	if serverKey == "" {
 		return
@@ -4228,6 +4297,10 @@ const LearnedExtCap = 4
 // moving it to the FRONT of whatever was already learned instead of replacing
 // the list. The resolver calls this on every successful probe; persistence is
 // lazy via the debounced saver.
+// Promote, not overwrite: a host can serve more than one format for the same
+// class, and dropping the others is what stranded ~560 PNG-button characters on
+// umineko.online behind a lone .webp candidate. Mirrors assets.promoteExt — the
+// two must stay in step or a restart would resurrect the truncated list.
 func (p *AssetPreferences) RecordLearned(host, typeName, ext string) {
 	if ext == "" {
 		return
@@ -4397,6 +4470,8 @@ func RotationDegToByte(deg int) uint8 {
 
 // NextCoarseRotation advances a rotation byte through RotCoarseCycle. A byte
 // that isn't exactly one of the four coarse angles (a prior Shift+R fine tilt)
+// snaps up to the next coarse angle at or above it, so the coarse key always
+// makes visible progress.
 func NextCoarseRotation(cur uint8) uint8 {
 	for _, b := range RotCoarseCycle {
 		if b > cur {
@@ -4533,6 +4608,9 @@ func sanitizeClassicLayout(in map[string][4]float64) map[string][4]float64 {
 }
 
 // sanitizeLayoutPresets validates persisted named layout snapshots on load (#34):
+// each preset's slot map runs through sanitizeClassicLayout (so it inherits the same
+// NaN/clamp/cap guards), blank names and now-empty presets are dropped, and the whole
+// set is bounded by layoutPresetCap.
 func sanitizeLayoutPresets(in map[string]map[string][4]float64) map[string]map[string][4]float64 {
 	if len(in) == 0 {
 		return nil
@@ -4602,6 +4680,9 @@ func sanitizeClassicRotations(in map[string]uint8) map[string]uint8 {
 
 // sanitizeThemeRectRotations validates persisted per-theme rotation maps on load
 // (A4). Unlike the sibling ThemeRectOv (which loads raw), this axis is sanitized:
+// blank theme/key names are dropped and the same themeOvThemesCap (outer) /
+// themeOvRectsCap (inner) bounds apply, so a hand-edited pref can't smuggle in an
+// unbounded set. Any byte is a valid angle. Nil-safe.
 func sanitizeThemeRectRotations(in map[string]map[string]uint8) map[string]map[string]uint8 {
 	if len(in) == 0 {
 		return nil
@@ -4802,6 +4883,13 @@ type ClassicAnchor struct {
 }
 
 // LayoutProfile is a named, full-state snapshot of the courtroom layout (A6):
+// the classic slot overrides (window fractions), their window anchors, the
+// hidden-chrome set, and the editor snap-grid step. Applying a profile restores
+// all four axes at once. It is a strict superset of the retired LayoutPresets
+// (which carried only Classic) — legacy presets migrate in as Classic-only
+// profiles. Each axis is sanitized on load through the same helpers the live
+// axes use, so a profile can never smuggle in geometry the resolver would have
+// to defend against.
 type LayoutProfile struct {
 	Classic map[string][4]float64    `json:"classic,omitempty"`
 	Anchors map[string]ClassicAnchor `json:"anchors,omitempty"`
@@ -4914,6 +5002,8 @@ func (s *Settings) LayoutGridSize() int {
 
 // SetClassicLayout REPLACES every default-courtroom slot override at once — the
 // classic editor's undo/redo restores a whole snapshot, so it can't go slot-by-slot.
+// The map is copied (never aliased), empty keys skipped, and bounded by classicSlotCap;
+// a nil/empty map clears all overrides.
 func (p *AssetPreferences) SetClassicLayout(m map[string][4]float64) {
 	var clean map[string][4]float64
 	if len(m) == 0 {
@@ -4936,6 +5026,9 @@ func (p *AssetPreferences) SetClassicLayout(m map[string][4]float64) {
 // SetClassicAnchors REPLACES every slot's window pin at once (symmetric to
 // SetClassicLayout) — applyProfile restores a whole anchor snapshot, so it can't
 // go slot-by-slot. The map is sanitized (bad mode / non-positive window dropped)
+// and copied (never aliased); a nil/empty map clears all pins. Unlike
+// ClearClassicSlot this does NOT touch ClassicLayout — a profile carries both
+// axes independently, and the caller sets them together.
 func (p *AssetPreferences) SetClassicAnchors(m map[string]ClassicAnchor) {
 	clean := sanitizeClassicAnchors(m) // drops junk + bounds at classicSlotCap
 	p.Update(func(sn *Settings) {
@@ -5021,6 +5114,9 @@ func (p *AssetPreferences) SetMacros(in []MacroSpec) {
 // the migrating launch (newWithDebounce) rather than left to the debounced saver
 // — a stamp that can be lost to a crash inside the debounce window would only
 // buy "once per persisted stamp", and the move would re-run and re-snap.
+// Pure read (no consume), so it is safe to call from anywhere; the caller owns
+// the "act on it once" decision. A file that kept a deliberate Letterbox/Crop/
+// Custom pick reports FALSE — its look did not change, so nothing should move.
 func (p *AssetPreferences) ThemeFitDefaultJustMoved() bool {
 
 	return p.themeFitMovedToNative
@@ -5132,6 +5228,8 @@ func (p *AssetPreferences) LocalAssets() (enabled bool, mounts []string) {
 // SetLocalAssets toggles no-streaming mode and stores the ordered mount
 // folder list. It returns false — changing nothing — when the call would GROW
 // the list past LocalMountCap.
+// Refusing only GROWTH is deliberate. A flat `len(mounts) > LocalMountCap`
+// rejection would brick any user who already has more mounts saved than the cap:
 func (p *AssetPreferences) SetLocalAssets(enabled bool, mounts []string) bool {
 	accepted := true
 	p.Update(func(sn *Settings) {
@@ -5181,6 +5279,7 @@ func (p *AssetPreferences) SetLayeredAssets(layered bool) {
 // FRAME while its tab is open, so with mounts configured the copy was one or two
 // heap allocations per frame for an answer that is a comparison. Comparing under
 // the read lock costs nothing and never escapes the stored slice.
+// The mode logic mirrors ui's baseMounts and is pinned by a parity test there:
 func (p *AssetPreferences) BaseMountsEqual(want []string) bool {
 	snap := p.Load()
 

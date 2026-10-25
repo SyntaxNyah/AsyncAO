@@ -364,6 +364,8 @@ func TestBoundedFrameCount(t *testing.T) {
 // TestDecodeGIFDownscalesToFitBudget runs a real decode through the budget: a
 // GIF whose frame count exceeds the cap at native size is DOWNSCALED (never
 // decimated) so every authored frame fits at a smaller canvas — the #110 fix:
+// smooth (full frame count) without the memory hog, instead of dropping frames
+// into a slideshow.
 func TestDecodeGIFDownscalesToFitBudget(t *testing.T) {
 	pinSmallAnimatedBudget(t)
 	const w, h = 500, 500
@@ -677,8 +679,15 @@ func TestDecoderThumbnailsFixedCellTypes(t *testing.T) {
 
 // TestDownscaleKeepsSourceFrames pins that resizing an animation preserves its
 // SOURCE frame space.
+//
+// Both downscalers rebuilt Decoded as a fresh struct literal and listed every
+// field except SourceFrames, so a decimated animation that was ALSO taller than
+// the display came out of fit() with SourceFrames == 0. FrameKeepIndex reads a
+// non-positive sourceTotal as "no decimation happened" and returns the identity,
+// so the viewport mapped kept-frame ordinals straight onto source indices and
 // #17 networked frame effects fired on the wrong frames — silently, and only for
 // animations that hit both paths, which is why it survived.
+//
 // The two conditions are independent: a downscale changes PIXELS, decimation
 // changes FRAME COUNT. Neither downscaler drops a frame, so SourceFrames must
 // come through untouched.

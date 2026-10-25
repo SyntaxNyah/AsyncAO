@@ -101,6 +101,9 @@ func TestSceneWarmFutilityLatch(t *testing.T) {
 }
 
 // TestHealSceneryFutilityLatch pins the drawn-path half of the churn breaker:
+// healScenery shares the per-scene futility budget (sceneHealAllowed), so an
+// over-tier or permanently-404 base stops being re-demanded from the
+// live-scene heal too — the nil Manager is the tripwire; a demand would panic.
 func TestHealSceneryFutilityLatch(t *testing.T) {
 	a := testTabApp(t)
 	ren, cleanup := newCaptureHarness(t)

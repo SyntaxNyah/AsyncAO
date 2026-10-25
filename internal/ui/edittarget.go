@@ -2,11 +2,18 @@ package ui
 
 // The EDIT TARGET — one representation of "the thing being dragged", shared by both
 // overlay editors (v1.90.0 W6, docs/wip/THEME-EDITOR-DESIGN.md §W6).
+// BEHAVIOUR-NEUTRAL BY CONSTRUCTION. W6 ships no new UI, so nothing constructs an
+// element target outside the tests yet; the classic and design arms carry exactly the
+// keys their private string fields carried before. What changes is that there is now
 
 import "github.com/veandco/go-sdl2/sdl"
 
 // editSpace names WHICH editing model a target belongs to — the coordinate system its
 // geometry lives in, the store its edits persist to, and the rules its resize obeys.
+//
+// The zero value is deliberately NOT a real space. "Nothing is selected" is a state
+// both editors spend most of their time in, and it has to be distinguishable from
+// every payload space without looking at the payload.
 type editSpace uint8
 
 const (
@@ -34,6 +41,8 @@ const (
 	// spaceMedia: ONE ROW OF THE THEME'S [media] TABLE (v1.90.0 W10) — a declared
 	// image, identified by its INDEX in Sidecar.Media, exactly as a font row is
 	// identified by its index in Sidecar.Fonts.
+	// LIKE spaceFont IT CARRIES NO GEOMETRY. The image's rect belongs to the
+	// ELEMENT that draws it (spaceElement); this row is the declaration of the file.
 	spaceMedia
 )
 
@@ -43,6 +52,7 @@ const (
 const elemTargetNone = -1
 
 // editTarget is one thing being dragged, nudged or resized.
+//
 // A VALUE, not a handle: it is copied freely, compared with ==, and holds no pointer
 // into the layout cache — so a target that outlives a rebuild (a selection surviving a
 // window resize) is stale in the harmless way rather than the dangling way.
@@ -57,6 +67,9 @@ type editTarget struct {
 
 // newEditTarget is the ONE constructor. It PANICS on a target that does not say what
 // it is, or that carries the other space's payload.
+// TestEditTargetSpaceIsExplicitNotInferred pins every refusal below, and
+// TestEditTargetIsOnlyBuiltByItsConstructors pins that no other file sidesteps them
+// with a composite literal.
 func newEditTarget(space editSpace, key string, elem int) editTarget {
 	switch space {
 	case spaceClassic, spaceDesign:
@@ -80,6 +93,12 @@ func newEditTarget(space editSpace, key string, elem int) editTarget {
 }
 
 // noTarget is the empty selection.
+//
+// It is EXACTLY the zero value, which is what lets an App field that nobody has
+// assigned yet mean "nothing selected" without an initializer — and what lets a
+// cleared selection compare equal to a fresh one. It exists as a function so no caller
+// outside this file has to write a composite literal, which is what
+// TestEditTargetIsOnlyBuiltByItsConstructors forbids.
 func noTarget() editTarget { return editTarget{} }
 
 // classicTarget / designTarget / elementTarget are the three named constructors. They
@@ -179,6 +198,7 @@ func resizeEdgesFor(t editTarget) uint8 {
 
 // themedResizeEdges is the DESIGN-space twin of slotResizeEdges: all four sides for a
 // theme's own widget, none for the server-tab strip.
+//
 // Derived from themedKeyResizable rather than restating it, so the strip's exemption
 // (and the argument behind it) lives in exactly one place.
 func themedResizeEdges(key string) uint8 {
@@ -199,6 +219,9 @@ const handleCount = 8
 const handleBottomRight = 3
 
 // editHandleRoomPx is the smallest box that is offered its FULL handle set, per axis.
+// The classic editor does not need this rule and does not use it: its probe is a
+// margin BAND around every edge (classicEdgeAt), which covers a small slot completely
+// — and the escape hatch it grew for that is Alt-forces-a-move, documented at its
 const editHandleRoomPx = 5 * layoutHandlePx
 
 // handleGripMask is the set of classicHandles indices a box at r offers, as a bitmask

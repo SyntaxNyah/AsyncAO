@@ -2,6 +2,9 @@ package ui
 
 // The free-element render model (v1.90.0 W3) — docs/wip/THEME-EDITOR-DESIGN.md §2,
 // docs/THEME-FORMAT.md §4.
+// Zero base cost: a stock AO2 theme declares no elements, so lay.band is all-zero
+// and the three loops are three `for i := 0; i < 0`. That is BENCHMARKED
+// (BenchmarkThemedFrameNoElements), not asserted — the v1.89.0 "0 base = 0 cost"
 
 import (
 	"math"
@@ -28,6 +31,7 @@ type bakedEffect struct {
 
 // bakedElement is ONE element, resolved. Every field is a value the painter can use
 // without a lookup: no map probe, no string build, no prefs read, no allocation.
+//
 // FIELD ORDER IS BY SIZE, not by theme.Element's authoring order — this struct is
 // replicated 96 times inside App and padding is the only cost nobody notices.
 type bakedElement struct {
@@ -88,6 +92,9 @@ type bakedElement struct {
 	loop   bool
 	// wash marks an [effect.<widget key>] BIND: a plate over an AO2 widget's own box
 	// that exists ONLY because of its effect (themeelementbake.go bakeEffectBind).
+	// It changes exactly one rule, and the rule is not a detail: a wash's fill alpha
+	// is the effect's ENVELOPE (elemFX.env × the authored peak), not a modulation of
+	// an alpha it was authored with. A free element is there whether or not its effect
 	wash bool
 }
 
@@ -117,6 +124,11 @@ var elemPainters = [theme.ElementKindCount]func(*App, *bakedElement){
 }
 
 // paintElementStub is the placeholder painter: it draws nothing, deliberately.
+// It exists so the table is TOTAL from the first commit of the wave — the band loop
+// indexes elemPainters with no nil check, and a nil entry would be a panic on the
+// render thread the first time a stranger's theme used that kind. It is also the
+// marker TestEveryElementKindHasAPainter compares against, so "which kinds do not
+// paint yet" is a mechanical fact rather than a comment somebody has to maintain.
 func paintElementStub(*App, *bakedElement) {}
 
 // drawElementBands paints one band of free elements.
@@ -141,6 +153,9 @@ func (a *App) drawElementBands(lay *themeLayoutCache, b theme.ElementBand) {
 }
 
 // drawElement paints ONE element: the visibility gate, the motion, the painter.
+// Nothing here allocates. The FX terms are a value, the save is a local that does not
+// escape, and the painter is still handed the SAME &lay.el[i] the two AllocsPerRun
+// gates assert it gets — which is why the motion is applied in place and put back
 func (a *App) drawElement(lay *themeLayoutCache, e *bakedElement, idx int16) {
 	// Defence in depth: kind ultimately comes from a file a stranger wrote. The
 	// reader SKIPS an element whose kind it does not know (docs/THEME-FORMAT.md
@@ -160,11 +175,19 @@ func (a *App) drawElement(lay *themeLayoutCache, e *bakedElement, idx int16) {
 	// The fast path, and the one every stock element takes: no effect at all. One
 	// compare, then the painter — this is what keeps "0 effects = 0 cost" true inside
 	// a themed frame that already has elements in it.
+	// The upper bound is the same defence in depth as the kind check above: the
+	// resolver degrades an out-of-range effect on its own, but effectIsStateful below
+	// is indexed with it, and an index panic on the render thread is not a thing to
+	// leave to a stranger's file.
 	if e.fx.kind == theme.FXNone || e.fx.kind >= theme.EffectKindCount || a.fxPool.themeFXFrozen {
 		if e.wash {
 			// A WASH IS ITS EFFECT, so with no live effect there is nothing to paint —
 			// and this branch is the one that matters, because ReduceMotion reaches it.
 			// Painting the plate here would draw it at the full baked PEAK, forever:
+			// `[effect.viewport] effect = fade, amp_pct = 100` (matsuribayashi_dawn) is
+			// an opaque sheet over the whole stage, and the accessibility option would
+			// be the thing that put it there. Freezing means amp 0 resolved still
+			// (elemFXNeutral, env 0), and env 0 on a wash is exactly this return.
 			return
 		}
 		elemPainters[e.kind](a, e)
@@ -192,6 +215,9 @@ func (a *App) drawElement(lay *themeLayoutCache, e *bakedElement, idx int16) {
 		a.noteElementAnimating(e.clock)
 	}
 	// The terms are applied EVEN WHEN STATIC, and that is not a missed optimisation.
+	// A static effect's terms are its FINAL state, not "no effect": a wash whose fade
+	// has finished resolves to env 0 and must paint nothing, where skipping the apply
+	// would leave it drawing at its full authored opacity over an AO2 widget, forever.
 	saved := applyElementFX(e, fx)
 	elemPainters[e.kind](a, e)
 	restoreElementFX(e, saved)
@@ -205,6 +231,7 @@ func (a *App) drawElement(lay *themeLayoutCache, e *bakedElement, idx int16) {
 // COMPARE against an index the bake interned and refreshElementConditions
 // resolved once for this frame. Deliberately not an expression language —
 // anything richer needs a parser on the frame path (docs/THEME-FORMAT.md §3).
+// An unknown axis leaves the element VISIBLE, which is the format's own rule:
 // "an element a future condition would have hidden is better shown than lost".
 func (a *App) elementVisible(e *bakedElement) bool {
 	switch e.condAxis {
@@ -385,6 +412,10 @@ const elemShapePillDiv = int32(2)
 
 // paintElementShape draws a procedural silhouette: the fill first, then the outline
 // as per-band edge posts plus two caps.
+// The outline is drawn as edges rather than as "fill the outer silhouette in the
+// stroke colour, then the inner one in the fill colour", because that trick needs an
+// OPAQUE fill — and a frame element is precisely a stroke over a TRANSPARENT fill,
+// which is why theme.RGBA carries alpha at all.
 func paintElementShape(a *App, e *bakedElement) {
 	if e.r.W <= 0 || e.r.H <= 0 {
 		return
@@ -538,6 +569,9 @@ const elemGradientDirStep = theme.AngleCount / elemGradientDirCount
 
 // paintElementGradient draws a two-stop plate: linear along a cardinal axis, or a
 // concentric ring ramp when the element asked for radial.
+// LINEAR GRADIENTS QUANTISE TO THE NEAREST CARDINAL DIRECTION in W3, and that is a
+// deliberate deviation rather than an oversight: an arbitrary angle needs rotated
+// geometry (SDL_RenderGeometry), which would be a brand-new cgo surface inside the
 func paintElementGradient(a *App, e *bakedElement) {
 	if e.r.W <= 0 || e.r.H <= 0 {
 		return
@@ -584,6 +618,10 @@ func paintElementGradient(a *App, e *bakedElement) {
 
 // paintElementRadial ramps from stop B at the edge to stop A at the centre as
 // concentric RECTANGLE rings, drawn outside-in so each one covers the last.
+// Rectangular, not circular, for the same reason the linear case is cardinal: a true
+// circle needs geometry. It reads correctly as a vignette or a centre glow inside a
+// box, which is what the two-stop plate is for; `generator = glow` is the circular
+// one, and it lands in W4 as a tile.
 func paintElementRadial(c *Ctx, e *bakedElement) {
 	n := elemGradientBands
 	if half := min32(e.r.W, e.r.H) / 2; half > 0 && half < n {
@@ -667,6 +705,9 @@ func paintElementText(a *App, e *bakedElement) {
 }
 
 // elemTileCap bounds how many blits ONE tiled element may issue in a frame.
+// `fit = tile` repeats a source at its NATIVE size, so a 4x4 generator tile stretched
+// across a 1512x648 canvas is 61 236 draw calls — a number that is a function of the
+// window rather than of the theme, which is exactly the shape hard rule 4 forbids.
 const elemTileCap = 4096
 
 // paintElementArt draws an ElemImage's media page or an ElemGen's generator tile —
@@ -712,6 +753,7 @@ func paintElementArt(a *App, e *bakedElement) {
 // place art reaches the renderer, so `rot` genuinely does reach some fit modes and
 // not others. Scoped here rather than left as the older, flatly false claim that no
 // fit mode could drop it:
+// So a theme that wants a spinning frame authors it at `fit = stretch|contain|cover`.
 func paintElementBlit(c *Ctx, e *bakedElement, tex *sdl.Texture, dst sdl.Rect) {
 	c.cgoRect = dst
 	if e.ang == 0 {
@@ -787,6 +829,9 @@ func paintElementFitted(c *Ctx, e *bakedElement, tex *sdl.Texture) {
 // paintElementNineSlice draws the source as a 9-slice: corners at SOURCE size, edges
 // keeping their source thickness and stretching only along the edge axis, centre
 // stretched both ways.
+// Nine blits, two persistent scratch rects, no allocation. The rects are set and
+// consumed one at a time, which is what makes ONE src scratch and ONE dst scratch
+// enough for all nine.
 func paintElementNineSlice(c *Ctx, e *bakedElement, tex *sdl.Texture) {
 	sw, sh := e.page.W, e.page.H
 	if sw <= 0 || sh <= 0 {
@@ -840,6 +885,12 @@ func paintElementNineSlice(c *Ctx, e *bakedElement, tex *sdl.Texture) {
 }
 
 // paintElementPane draws a split-screen region's PLATE and its divider frame.
+// The [pane.*] section itself paints nothing — it reparents its host widgets and
+// that is all it does (design §Q1: "the host widget draws EXACTLY ONCE, at the
+// pane's rect"). A theme that wants the region to LOOK like a region declares a
+// `kind = pane` element anchored to it; the bake then folds the pane's own
+// `divider` / `divider_px` into that element's stroke when the element declares
+// none, so the two spellings agree instead of competing.
 func paintElementPane(a *App, e *bakedElement) {
 	if e.r.W <= 0 || e.r.H <= 0 {
 		return

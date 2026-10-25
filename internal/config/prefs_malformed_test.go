@@ -11,6 +11,9 @@ import (
 
 // malformedCases are the load-path malformed / adversarial inputs (Order 1A-a): every
 // shape the on-disk file can take — unmarshal errors (empty, truncated, BOM, wrong type)
+// and valid-JSON-but-needs-normalize (null/array/string roots, duplicate keys, huge or
+// negative numbers, unknown keys). Each is run through BOTH the old load() and
+// snapshotLoad and compared on error class and whole-struct dump.
 func malformedCases() []struct{ name, data string } {
 	return []struct{ name, data string }{
 		{"empty", ""},

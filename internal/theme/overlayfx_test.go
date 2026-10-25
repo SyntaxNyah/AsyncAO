@@ -9,6 +9,11 @@ import (
 )
 
 // Fixtures are HAND-AUTHORED Go constants, not checked-in reference files.
+// The two real corpora used to verify this parser (KFO's stock effects.ini and a
+// third-party misc/ transitions pack) ship credits naming individual authors and
+// third-party game audio with no licence grant — a redistribution question this
+// repo does not need to answer. A hand-authored fixture is strictly better
+// anyway: it carries the pathological cases a shipped file does not.
 
 // fxV2Fixture exercises every key, every layer spelling (including the two canon
 // defects), the case-sensitivity of the boolean parse, names and sound paths with

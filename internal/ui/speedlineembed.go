@@ -22,6 +22,9 @@ var defenseSpeedlinesPNG []byte
 var prosecutionSpeedlinesPNG []byte
 
 // uploadEmbeddedSpeedlines decodes and pins the two bundled speedline fallbacks.
+// Called once at startup (render thread), best-effort like uploadEmbeddedMissingno:
+// a decode/upload failure just means a zoom emote on a pack without speedlines
+// draws nothing behind the speaker — the effect degrades, it does not crash.
 func (a *App) uploadEmbeddedSpeedlines() {
 	if a.d.Store == nil {
 		return

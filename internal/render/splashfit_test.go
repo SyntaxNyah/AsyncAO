@@ -11,6 +11,7 @@ import (
 )
 
 // TestSplashFitRectKeepsTheAspectAndCentres is the reported defect, as numbers.
+//
 // A 256x192 (4:3) shout bubble on a 960x540 (16:9) stage: AO2 scales it by the
 // HEIGHT factor 540/192 = 2.8125, giving 720x540, and its centre-aligned QLabel
 // puts it at x = (960-720)/2 = 120. The old full-fill blit gave 960x540 at x=0 —

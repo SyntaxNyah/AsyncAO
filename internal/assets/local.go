@@ -22,6 +22,9 @@ const LocalScheme = "local://"
 
 // localNotFoundCacheSize / localNotFoundCacheTTL bound LocalFetcher's negative cache — the
 // mount-side twin of network.Client's (network/client.go:74-77).
+// The memo is missMemo, not the expirable.LRU network.Client uses, and that is a HARD requirement
+// rather than a preference: golang-lru v2.0.7 starts an unstoppable janitor goroutine per instance
+// and a LocalFetcher is minted many times per session. See missmemo.go for the measurement.
 const (
 	localNotFoundCacheSize = 2048
 	localNotFoundCacheTTL  = 30 * time.Second
@@ -119,6 +122,9 @@ func (l *LocalFetcher) Mounts() []string {
 // Fetch reads the file addressed by a local:// URL, trying each mount in
 // order. The context is accepted for interface symmetry; local reads are not
 // cancellable.
+// A miss on ALL THREE spellings across every mount is conclusive, and conclusive
+// misses are memoized for localNotFoundCacheTTL: hard rule 6 applies to this
+// byte source exactly as it does to the streaming one — which is also what keeps
 func (l *LocalFetcher) Fetch(_ context.Context, rawURL string) ([]byte, error) {
 	rel, ok := strings.CutPrefix(rawURL, l.origin)
 	if !ok {
@@ -180,6 +186,8 @@ func (l *LocalFetcher) Fetch(_ context.Context, rawURL string) ([]byte, error) {
 // readRel searches every mount for rel, returning (bytes,nil) on the first
 // non-empty hit, (nil,nil) when rel is missing everywhere (so the caller can
 // try another spelling), and (nil,err) on a real I/O error or a path escape.
+// The escape guard runs HERE so it re-checks the DECODED rel too — a "%2e%2e"
+// must not slip past by decoding into ".." afterwards.
 func (l *LocalFetcher) readRel(rel string) ([]byte, error) {
 	if safepath.UnsafeRel(rel) {
 		return nil, fmt.Errorf("assets: refusing path escape %q", rel)
@@ -232,6 +240,11 @@ func (l *LocalFetcher) readRelFold(rel string) ([]byte, error) {
 			return data, nil
 		}
 		// Read errors are surfaced exactly as readRel surfaces them, deliberately:
+		// a failing disk must not be memoized as "this asset does not exist" on one
+		// spelling while the other reports it. The only NEW way to reach this branch
+		// is a rel that folds onto a DIRECTORY — which the exact spellings already
+		// error on today (EISDIR) and which no asset URL spells, since every one of
+		// them carries a format extension.
 		if err != nil && !os.IsNotExist(err) {
 			return nil, fmt.Errorf("assets: reading local asset %s: %w", p, err)
 		}

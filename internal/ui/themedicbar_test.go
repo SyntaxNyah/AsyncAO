@@ -31,6 +31,10 @@ func fixtureLayout(t *testing.T) *themeLayoutCache {
 
 // TestThemedICControlsHaveTheirOwnRows pins the theme's INTENT: every control the
 // old bar crammed into the message rect has a rect of its own, on another row.
+// This is a fixture assertion, not a proof about the draw — see
+// TestThemedICInputAcceptsAClickWhereTheCramUsedToBe for that half. Kept separate
+// because a reviewer correctly pointed out that this one passed before the fix
+// too: the cram lived entirely in draw code, never in the layout.
 func TestThemedICControlsHaveTheirOwnRows(t *testing.T) {
 	lay := fixtureLayout(t)
 
@@ -58,6 +62,9 @@ func TestThemedICControlsHaveTheirOwnRows(t *testing.T) {
 
 // TestThemedICInputAcceptsAClickWhereTheCramUsedToBe is the headline regression,
 // pinned behaviourally.
+// A geometry assertion cannot catch this — the cram was entirely in draw code, so
+// the layout cache looked identical before and after. Driving a real themed frame
+// and clicking is the only thing that distinguishes them.
 func TestThemedICInputAcceptsAClickWhereTheCramUsedToBe(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()

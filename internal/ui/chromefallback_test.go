@@ -8,6 +8,16 @@ import (
 )
 
 // TestChromeLabelFallsBackForNonLatin is the "tofu everywhere" regression.
+//
+// Plain Label / LabelClipped / Heading rendered straight from ONE face with no
+// fallback chain at all, so every non-Latin string outside the chat and log paths
+// drew as .notdef boxes no matter how many fallback faces were loaded. That is
+// most of the client's text: character names in the picker, area names, tab
+// titles, menu entries, tooltips, player names, button captions.
+//
+// It asserts the pick, not pixels: with a broad face installed, a Cyrillic label
+// must resolve to a DIFFERENT face than the embedded Latin one, and ASCII must
+// still resolve to the embedded face so the common path is untouched.
 func TestChromeLabelFallsBackForNonLatin(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
@@ -78,6 +88,12 @@ func TestChromeFallbackLeavesPanelFacesAlone(t *testing.T) {
 
 // TestUncoveredChromeLabelAsksTheCensus pins the hand-off that makes the chrome
 // fallback self-healing rather than a one-shot.
+//
+// The chrome path is the ONE path that could not feed the census: it resolves
+// through a single-face pick, not the per-glyph raster, so a character name in a
+// script nothing loaded covers drew boxes and never asked for a font. It only came
+// right by accident — if some MESSAGE elsewhere in the session happened to use the
+// same script and pulled the face in.
 func TestUncoveredChromeLabelAsksTheCensus(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()

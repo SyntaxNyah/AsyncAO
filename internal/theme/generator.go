@@ -1,6 +1,11 @@
 package theme
 
 // Procedural generators — the SPEC half (v1.90.0 W4).
+// docs/wip/THEME-EDITOR-DESIGN.md §6.3, docs/THEME-FORMAT.md §5.
+// That last point is why the hash has to be a real hash of the real bytes, and why
+// the generator contract's first clause is DETERMINISM (gentex.go): a generator
+// that returned different pixels for the same params would have the cache serve
+// whichever one happened to be rastered first, forever.
 
 import (
 	"strings"
@@ -45,6 +50,7 @@ type GeneratorSpec struct {
 // GeneratorSpecOf builds the spec for an element. It is the ONE place an Element's
 // generator fields become a spec, so the hash can never be computed from a
 // differently-normalised view of the same element.
+//
 // Cold path (the theme-apply goroutine): it lowercases and trims, which allocates.
 func GeneratorSpecOf(e *Element) GeneratorSpec {
 	if e == nil {
@@ -121,6 +127,7 @@ func (g GeneratorSpec) Hash() uint64 {
 // [palette] roles while `#101010` beside them worked, and a generator whose `tint`
 // disagreed with the element's `fill` about `#1C1C1C` would be the same bug with a
 // second place to fix it.
+// Accepts `#rrggbb`, `#rrggbbaa` (either hex case) and `r, g, b[, a]`.
 func ParseRGBA(v string) (RGBA, bool) { return parseRGBAValue(v) }
 
 // Param returns the value written for key, and whether it was written at all.

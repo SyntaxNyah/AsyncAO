@@ -210,6 +210,9 @@ type Ctx struct {
 	chatSet fontSet
 	logSet  fontSet
 	// Device-scaled siblings of chatSet/logSet (#77): built at pct×(textDevPct/100)
+	// so the message-raster/emoji paths rasterize crisp at final device size.
+	// The LOGICAL sets above stay the wrap/measure baseline (unchanged callers);
+	// deviceFontFor maps a logical set face to its device sibling by set+index.
 	chatSetDev fontSet
 	logSetDev  fontSet
 	// The CHROME set: the same chain again, but headed by the chrome face and at the
@@ -251,6 +254,9 @@ type Ctx struct {
 	coverHintOK   bool
 	// Color-emoji fallback face (e.g. Segoe UI Emoji), kept SEPARATE from the
 	// chain so the common single-font fast path (pickSet len==1) is unchanged.
+	// emojiData is the font file bytes (read off-thread by the App; nil = none/not
+	// loaded); emojiFonts builds faces per size lazily. RWFromMem aliases the bytes,
+	// so emojiData must outlive the faces.
 	emojiData  []byte
 	emojiFonts map[int]*ttf.Font
 	// Broad-Unicode TEXT fallback faces (Segoe UI, Ebrima, Nirmala, Segoe UI Symbol),
@@ -276,6 +282,9 @@ type Ctx struct {
 	wantCJK  bool
 	// Census tier: faces the system-font census supplied on demand, because a rune
 	// reached the draw that NOTHING in the curated chain covered (fontcensus.go).
+	// Appended last, so it never outranks a curated pick — the census answers "some
+	// font here has this glyph", the tiers answer "this is the right face for this
+	// script", and the second question is the better one when both can.
 	censusData  [][]byte
 	censusCover []*sfnt.Font
 	// missingRunes is the render thread's fixed-size record of runes nothing could
@@ -288,6 +297,9 @@ type Ctx struct {
 	missingN     int
 	// Per-element theme faces (#39): the font FILES the active theme's
 	// courtroom_fonts.ini named, read off-thread on theme apply (≤ themeFaceCap)
+	// and installed via SetThemeFaces. RWFromMem aliases the bytes, so they must
+	// outlive their faces — SetThemeFaces closes the element sets BEFORE dropping
+	// them. themeFaceCover holds the index-aligned sfnt cmap face for the PICK.
 	themeFaceData  [][]byte
 	themeFaceCover []*sfnt.Font
 	// themeFaceQt is the index-aligned Qt ROW PITCH of each of those faces —
@@ -408,6 +420,12 @@ type Ctx struct {
 	cgoRect sdl.Rect
 	// cgoSrc is the SECOND persistent scratch rect, for the one call shape that
 	// needs two at once: Renderer.Copy(tex, src, dst) with a NON-NIL source rect.
+	// The free elements' 9-slice painter (themeelements.go) issues nine of those
+	// per element, and reusing cgoRect for both arguments would have the
+	// destination overwrite the source before SDL read it. Identical contract to
+	// cgoRect otherwise — SDL copies during the call and never retains the
+	// pointer, and Ctx is render-thread-only, so the pair is set and consumed one
+	// blit at a time.
 	cgoSrc sdl.Rect
 	// Chrome SHAPE (A5): the App resolves the active shape + its fill/stroke
 	// mask textures into these fields ONCE per frame (refreshShapeMasks) so the
@@ -482,6 +500,9 @@ type Ctx struct {
 	// Multiline TextArea state (#83). taCaret/taSelAnchor are RUNE indices into
 	// the area's value; taScroll is its vertical scroll in pixels; taCaretField
 	// names which area owns the caret (focus change resets it, like caretField).
+	// Focus is shared with TextField (c.focusID) so clipboard chords / select-all
+	// are captured the same way, but the caret lives HERE and never touches
+	// c.caret/c.selAnchor — the single-line field's math stays independent.
 	taCaret      int
 	taSelAnchor  int
 	taCaretField string
@@ -496,6 +517,11 @@ type Ctx struct {
 	// drawnFieldSeq is the field order of the last frame that FINISHED drawing —
 	// the double-buffer partner of fieldSeq, swapped in BeginDraw. It exists
 	// because fieldSeq is empty for the whole pre-screen half of App.Frame:
+	// BeginDraw truncates it at the top of the pass and the TextFields only
+	// re-register ~280 lines later, so a pre-screen reader (claimTypingForIC,
+	// chatfocus.go) asking fieldSeq "is that box on screen?" always got "no" and
+	// its whole feature was dead code. Swapped, never copied, so the answer costs
+	// no allocation and no per-frame walk.
 	drawnFieldSeq []string
 	tabShift      bool // shift held at the Tab press → cycle backwards
 	// focusNext is a queued FocusField request, applied at the next
@@ -527,6 +553,12 @@ type Ctx struct {
 	// Overlay fence registry (overlayfence.go): rects published by chrome that
 	// paints OVER other widgets — the compact toolbox strip today, the menu bar
 	// next — so hovering() can refuse hits underneath them in a single-pass kit.
+	// A fixed array + count (hard rule 4): publishing never grows a slice and
+	// never allocates. overlayOwner suspends the test while the occluder
+	// hit-tests its OWN widgets (the dropdown's raw-pointIn precedent, scoped),
+	// and overlayOwnerMark bounds that suspend to the owner's own publication
+	// onwards — fences published EARLIER (an app-wide menu bar's open dropdown)
+	// still occlude the owner, because registry order is paint order.
 	overlayFences     [overlayFenceCap]sdl.Rect
 	overlayFenceN     int
 	overlayFenceDrops int
@@ -602,6 +634,7 @@ func loadEmbeddedFont(size int) (*ttf.Font, error) {
 }
 
 // Font exposes the chrome font (typewriter rasterizer reuse).
+//
 // Deliberately NOT panel-scoped: the typewriter rasterizer and the other callers
 // of this want the client's own face regardless of which panel is mid-draw.
 func (c *Ctx) Font() *ttf.Font { return c.font }
@@ -622,6 +655,10 @@ type panelWidthKey struct {
 
 // chromeFace is the face every chrome widget draws and measures in: the panel's
 // own when one is armed, the client's otherwise.
+// One always-false, perfectly-predicted branch on the unset path, returning the
+// identical c.font pointer — so textTexture receives the identical
+// textKey{text, color, font}, hits the identical cache entry and the identical
+// atlas slot. Identical pointer in, identical pixels out.
 func (c *Ctx) chromeFace() *ttf.Font {
 	if c.panelFont != nil {
 		return c.panelFont
@@ -631,6 +668,9 @@ func (c *Ctx) chromeFace() *ttf.Font {
 
 // chromeFaceFor is chromeFace for a KNOWN string: the same face when it can draw
 // the text, otherwise the first face in the fallback chain that can.
+// Pure ASCII short-circuits before anything is built, so the common case is a
+// one-pass byte scan and nothing else. A panel-dressed face is left alone: its
+// whole point is that the user chose that family for that panel.
 func (c *Ctx) chromeFaceFor(text string) *ttf.Font {
 	face := c.chromeFace()
 	if c.panelFont != nil || !hasNonASCII(text) {
@@ -658,6 +698,7 @@ func hasNonASCII(s string) bool {
 
 // pushPanelFont arms f as the chrome face and RETURNS THE PREVIOUS ONE, which
 // the caller hands straight back to popPanelFont:
+// A nil face (the overwhelmingly common case — no override set) writes nothing.
 // So is a face that IS the chrome face: arming it would only add a pointless
 // non-nil panelFont for every later branch to test.
 func (c *Ctx) pushPanelFont(f *ttf.Font) *ttf.Font {
@@ -879,6 +920,9 @@ func (c *Ctx) pickIn(s *fontSet, fonts []*ttf.Font, pct int, text string) *ttf.F
 	if !covered {
 		// The picked face can't draw the whole string, so some of it may be about to
 		// come out as .notdef — offer those runes to the census.
+		// Without it the chrome path could never feed the census at all, so a Thai or
+		// Cherokee character name in the picker drew boxes forever and only ever came
+		// right by accident — if some MESSAGE elsewhere in the session happened to
 		c.noteUncoveredIn(s, text)
 	}
 	if c.pickMemo == nil {
@@ -915,6 +959,7 @@ func (c *Ctx) noteUncoveredIn(s *fontSet, text string) {
 // noteCoverHint records the pick just made so the covers() gate every caller runs
 // IMMEDIATELY afterwards — with the face it just received — is a pointer + string
 // compare instead of a set scan plus a map probe. Purely an accelerator:
+// coversFace stays correct when the hint misses.
 func (c *Ctx) noteCoverHint(f *ttf.Font, text string, covered bool) {
 	c.coverHintFont, c.coverHintText, c.coverHintOK = f, text, covered
 }
@@ -943,6 +988,9 @@ const setPairCount = 3 + int(themeFontElemCount)
 
 // setPairs returns every (logical, device) pair in ONE place, so setOf /
 // setIndexOf / Destroy / SetChromeFont can never miss a set as sets are added.
+// Returned BY VALUE as a fixed-size array — stack, no allocation — and walked
+// only on raster-BUILD paths (coverRunes / deviceTextFont / a font swap), never
+// per frame: ≤ setPairCount pairs × ≤ 8 faces is a bounded pointer scan.
 func (c *Ctx) setPairs() [setPairCount][2]*fontSet {
 	var out [setPairCount][2]*fontSet
 	out[0] = [2]*fontSet{&c.chatSet, &c.chatSetDev}
@@ -1402,6 +1450,7 @@ func (c *Ctx) buildSet(s *fontSet, chain [][]byte, chainCover []*sfnt.Font, pct,
 // noteUncovered records a rune that no face in the chain could draw, so the App
 // can ask the census whether anything installed on this machine can. Called from
 // the raster BUILD path only (coverRunes), never per frame, and allocation-free:
+// the queue is a fixed array that stops accepting once full.
 func (c *Ctx) noteUncovered(r rune) {
 	if c.missingN >= len(c.missingRunes) {
 		return
@@ -1597,6 +1646,9 @@ func coverHasRune(f *sfnt.Font, buf *sfnt.Buffer, r rune) bool {
 }
 
 // coverScan answers the pick's two different questions in ONE pass over text:
+// The two answers differ only for the runes isInvisibleRune names, which is exactly
+// the point. A nil face covers nothing. Allocation-free: the reused sfnt buffer, and
+// an early return the moment a VISIBLE rune is missing (the common rejection).
 func coverScan(f *sfnt.Font, buf *sfnt.Buffer, text string) (visible, all bool) {
 	if f == nil {
 		return false, false
@@ -1726,6 +1778,10 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	// Hold-to-clear timer: accumulate while the bound key is physically held,
 	// reset (and re-arm) the moment it's released. holdKey/holdOn were stamped
 	// last frame by App.Frame — one frame stale is fine.
+	// !ctrlHeld: a Ctrl-held "hold" is meaningless for any bound key (Ctrl+key
+	// is a chord, not a hold), and it MUST NOT accumulate when the bound key is
+	// Backspace — else holding Ctrl+Backspace would fire the whole-field wipe
+	// instead of word-deletes. ctrlHeld is fresh (set this BeginFrame at ~1314).
 	if c.holdOn && c.keyHeld(c.holdKey) && !c.ctrlHeld {
 		c.holdAcc += dt
 	} else {
@@ -1768,6 +1824,8 @@ func (c *Ctx) CaretVisible() (on, focused bool) {
 // NextHoverDue reports the nearest PENDING hover deadline — a tooltip dwell
 // (TooltipAfter) or a sprite hover-preview — so the experimental loop can wake
 // and render the reveal even though a resting pointer generates no events.
+// Deadlines already reached report ok=false: the reveal drew on the frame the
+// dwell crossed, and a shown tooltip/preview needs no further wakes from here.
 func (c *Ctx) NextHoverDue() (time.Duration, bool) {
 	due, ok := time.Duration(0), false
 	consider := func(d time.Duration) {
@@ -2089,6 +2147,7 @@ func (c *Ctx) hovering(r sdl.Rect) bool {
 	}
 	// A later-drawn overlay published its painted footprint this pass
 	// (overlayfence.go): it owns those PIXELS, so it must own the INPUT there too.
+	// Without this, pressing a compact-toolbox chip that sits over an AO2 theme's
 	// control rect also pressed the button underneath — issue #26, and PART of open
 	// issue #37: this is the only place the registry is consulted, so it covers
 	// hovering()-based hit tests only. Raw pointIn() sites (editOverToolbox, the
@@ -2221,6 +2280,9 @@ func clipIntersect(r, prev sdl.Rect, had bool) sdl.Rect {
 // first OOC line.
 func (c *Ctx) pushClip(r sdl.Rect) (prev sdl.Rect, had bool) {
 	// The previous clip comes from the mirror fields, NOT an SDL query:
+	// GetClipRect's named-return pointer escapes through cgo and heap-allocates
+	// per call. The mirror is authoritative because all NESTED clipping flows
+	// through pushClip/popClip — the remaining raw Ren.SetClipRect sites are
 	// leaf draw-only regions (the #31 audit) that never pushClip inside their
 	// clip window.
 	prev, had = c.clipRect, c.clipOn
@@ -2434,6 +2496,7 @@ func uiLogicalFromDevice(device, devPct int32) int32 {
 
 // uiDeviceFromLogical is the exact inverse of uiLogicalFromDevice: it maps a
 // LOGICAL coordinate to the device pixel the renderer's SetScale(devPct/100)
+// lands it on, using the SAME "round half up" rule (add half the divisor before
 // dividing). #77 draws whole-string label textures into logical dst rects and
 // lets SetScale resample them; the focused text field instead projects its own
 // moving parts here and draws them under SetScale(1,1) so a fractional scale can
@@ -2447,6 +2510,8 @@ func uiDeviceFromLogical(logical, devPct int32) int32 {
 
 // deviceExactText reports whether the focused text field should draw its moving
 // parts (value texture, selection, caret) on the device-exact path (#77 S1/S2).
+// Pure predicate over c.textDevPct so a test can pin the gate without a renderer:
+// only a FRACTIONAL user scale needs it. At 100% (or unset) it is false and the
 // field keeps every line of its pre-#77-fix scaled behavior byte-identical — no
 // SetScale flip, no projection. c.textDevPct tracks the same UIScale main.go
 // feeds ren.SetScale (SetUIScale → SetTextDevScale, ui.go:1469/1482), and the
@@ -2487,6 +2552,9 @@ func (c *Ctx) blitLabel(t cachedText, x, y, wLog int32) {
 // blitLabelScaled is blitLabel's pre-generalization path, kept as its own named
 // function (not inlined) so a test can drive it directly as the "old behavior"
 // reference for an A/B pixel comparison without re-deriving its arithmetic. #77:
+// the SRC sub-rect stays in DEVICE px (the texture is device-sized), the DST in
+// LOGICAL px (the renderer's ambient SetScale maps it back onto device pixels —
+// exact only when that mapping happens to round-trip, see blitLabel's doc).
 func (c *Ctx) blitLabelScaled(t cachedText, x, y, wLog int32) {
 	srcW := wLog
 	if t.devPct > 0 && t.devPct != DefaultScalePct {
@@ -2567,6 +2635,11 @@ func (c *Ctx) Heading(x, y int32, text string, col sdl.Color) {
 }
 
 // LabelClipped draws text clipped to maxW.
+// F2: an armed row-label limit narrows maxW to the container's right edge AND
+// ellipsises, because maxW alone is a HARD cut — the caller's own bound, which for
+// the settings font-chain line is the WINDOW rather than the card it draws in. The
+// two bounds compose: whichever is tighter wins, and unarmed this is the previous
+// call verbatim.
 func (c *Ctx) LabelClipped(x, y, maxW int32, text string, col sdl.Color) {
 	if shown, fit := c.fitRowLabel(x, text); !fit {
 		text = shown

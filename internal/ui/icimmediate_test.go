@@ -4,6 +4,8 @@ import "testing"
 
 // TestOutgoingImmediateRequiresPre pins the #122 fix: the IMMEDIATE wire flag must
 // be off whenever the "Pre" toggle is off, no matter what the Immediate toggle says.
+// Sending IMMEDIATE=1 on its own still read as an immediate preanimation on the
+// receiving end, which is the reported bug.
 func TestOutgoingImmediateRequiresPre(t *testing.T) {
 	cases := []struct {
 		name               string

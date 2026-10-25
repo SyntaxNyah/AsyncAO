@@ -3,6 +3,9 @@ package ui
 import "unicode/utf8"
 
 // Inline AO markup, made reachable without memorising the code language (#131).
+// The chatbox already renders every one of these codes (typewriter.go); this is
+// the INPUT side — buttons that insert the code at the caret so a player can drop
+// a shake / flash / pause / speed change mid-sentence the way they'd pick a colour.
 
 // insertRunesAt returns s with code spliced in at rune offset at (clamped). Pure —
 // no SDL — so the splice is drivable in a test.

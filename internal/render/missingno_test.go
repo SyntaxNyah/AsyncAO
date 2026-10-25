@@ -27,6 +27,8 @@ func greenPage() *assets.Decoded {
 
 // TestMissingnoOnlyOnConfirmedMissing pins the disjoint-state contract that keeps
 // the placeholder from ever flashing over a still-loading sprite:
+// It uses a SYNTHETIC MissingKey page (green), not the embedded art, so it builds
+// and runs without the //go:embed asset present (that lives in internal/ui).
 func TestMissingnoOnlyOnConfirmedMissing(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
@@ -74,6 +76,9 @@ func TestMissingnoOnlyOnConfirmedMissing(t *testing.T) {
 	}
 
 	// (a) Swap to an UNCACHED, NOT-yet-missing base. This is a still-loading ghost:
+	//     hold-previous must bridge with the RED previous sprite; missingno (green)
+	//     must NOT appear. This is the regression trap the disjoint-state gate exists
+	//     for — a pref-only placeholder would draw green here.
 	scene.Speaker.Active = "ghost"
 	vp.Update(scene, 16*time.Millisecond)
 	if r, g := centre(); r == 0 || g != 0 {

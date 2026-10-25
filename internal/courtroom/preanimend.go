@@ -19,6 +19,10 @@ const (
 	// had art; every other one cut it short.
 	PreanimEndFinished
 	// PreanimEndTimeout — the bound expired before any "done" arrived:
+	// PreanimTimeout for a still-decoding preanim, or the duration
+	// NotifyPreanimStarted reported plus preanimPlaybackSlack for one that
+	// played. Seeing this on a preanim that DID decode is the signature of the
+	// "randomly interrupted" report.
 	PreanimEndTimeout
 	// PreanimEndMissing — the asset manager proved the preanim can never
 	// resolve (NotifyAssetMissing; AO2 skips a missing preanim synchronously,
@@ -63,6 +67,7 @@ func (r PreanimEndReason) String() string {
 // PlayOnce latch, records why, and notifies any listener. Callers keep owning
 // what the speaker shows NEXT (talk loop vs idle) — that differs per site and
 // is not this seam's concern.
+// Game thread only, like every other Courtroom method.
 func (c *Courtroom) endPreanim(reason PreanimEndReason) {
 	if !c.Scene.Speaker.PlayOnce {
 		return

@@ -6,6 +6,9 @@ package ui
 // file. It rides the autoindex listing (same discovery as the background
 // picker) to walk a folder, and uses network.Client.Fetch directly — NOT the
 // asset cache — so a bulk grab never evicts live T2/T3 entries.
+// Scope is deliberately offline/local: downloads write a structured base
+// (downloads/{characters,background,sounds}/...) usable via the "Read assets
+// from local folders" mode (or rehearsal). Using a downloaded asset LIVE
 
 import (
 	"context"
@@ -198,6 +201,8 @@ func (a *App) drawDownloadBadge(cell sdl.Rect, tip string) bool {
 
 // drawDownloadIndicator floats a live progress chip (top-center, just under
 // the tab strip) while a download runs, so a grab is visible from any screen.
+// Progress-only — Cancel lives in Settings (a button in this post-screen
+// overlay would race clicks with the widgets drawn underneath it).
 func (a *App) drawDownloadIndicator(w int32) {
 	if !a.audio.dl.active {
 		return
@@ -287,6 +292,8 @@ func (a *App) launchDownload(req dlReq) {
 
 	// Snapshot everything the goroutine touches; it must not read App fields.
 	// dlPaused is the one exception — an atomic, safe to share (advisor #3).
+	// The bandwidth cap is snapshot here (applies per job; a slider change hits
+	// the next grab, which with a queue is soon enough).
 	job := &dlJob{
 		label: req.label, base: downloadsRoot(), progress: a.audio.dl.progress,
 		paused: &a.dlPaused, capBPS: int64(a.d.Prefs.DownloadCapKBps()) * 1024, start: time.Now(),

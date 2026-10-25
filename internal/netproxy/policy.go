@@ -10,6 +10,9 @@ import (
 
 // A Policy is an immutable answer to "where does traffic go". One is built by
 // discovery, published through SetPolicy, and read by every dial without a lock.
+// Nothing mutates a Policy after it is published — a refresh builds a new one and
+// swaps the pointer — which is what makes the read path safe from every
+// transport goroutine at once.
 
 // Mode is where the policy came from, and it is a USER choice rather than a
 // detected fact: a user who can see that AsyncAO found a proxy must be able to
@@ -33,6 +36,11 @@ const (
 // carry but whose destination we cannot work out — in practice, a machine
 // configured with an automatic proxy script (PAC or WPAD) on a platform where
 // AsyncAO cannot evaluate one.
+//
+// Returning an error FAILS THE REQUEST rather than quietly connecting direct,
+// and that is the whole point. Falling back to direct is precisely the defect
+// being fixed: traffic the user believes is tunnelled would leave the machine,
+// and it would do so on exactly the configurations that are hardest to notice.
 // The user-facing side of this is a banner naming the situation and offering the
 // two ways out (enter the proxy by hand, or switch to Never use a proxy) — an
 // error with no explanation would be worse than the leak.
@@ -146,6 +154,7 @@ func (p *Policy) bypassCount() int {
 // bare `host:port`, which every platform writes and which url.Parse reads as a
 // scheme — so a scheme is supplied when one is missing rather than letting
 // "proxy.example:8080" parse as scheme "proxy.example".
+//
 // Returns nil for anything unusable rather than an error: a malformed entry in a
 // multi-scheme list must not discard the entries beside it.
 func parseProxyURL(raw string) *url.URL {
@@ -172,6 +181,7 @@ func parseProxyURL(raw string) *url.URL {
 // parseProxyServer reads the per-scheme proxy string every platform writes in
 // one of two shapes: a bare `host:port` meaning "everything", or a
 // `scheme=host:port` list separated by `;` or spaces.
+//
 // The list form is why this cannot be a one-liner. Windows writes
 // `http=a:8080;https=b:8080;ftp=c:8080`, and reading only the first entry — or
 // treating the whole string as one URL — sends https traffic to the http proxy
@@ -219,6 +229,7 @@ func parseProxyServer(raw string) (httpVia, httpsVia *url.URL) {
 // proxy setting there, only this convention, and a desktop's GUI proxy setting
 // does not reach a non-GLib application. That is a platform fact, not a gap in
 // AsyncAO.
+//
 // Implemented against the environment directly rather than through
 // http.ProxyFromEnvironment because that function memoises its answer behind a
 // process-wide sync.Once on first use, so a refresh could never see a change.

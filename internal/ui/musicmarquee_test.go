@@ -4,6 +4,9 @@ package ui
 // (../AO2-Client/src/scrolltext.cpp), plus the two wirings that make it real: the
 // draw joins the pacing census, and the plate reaches it only when a title does not
 // fit and ReduceMotion is off.
+//
+// The port shipped with NO tests at all, which is how the census call came to be
+// deletable with the whole package still green.
 
 import (
 	"testing"
@@ -168,6 +171,10 @@ func TestMarqueeSlotRestartsOnANewTitle(t *testing.T) {
 }
 
 // TestMarqueeSlotSteadyStateAllocatesNothing is the render-loop gate for the port.
+// The tiled string is one heap allocation, and it was built at the draw site — i.e.
+// on every frame the banner scrolled, inside the loop the whole-screen AllocsPerRun
+// gates hold at zero. Pure Go, no renderer: the slot is the only thing that can
+// allocate here, so this pins it directly.
 func TestMarqueeSlotSteadyStateAllocatesNothing(t *testing.T) {
 	var m marqueeSlot
 	now := time.Second
@@ -187,6 +194,10 @@ func TestMarqueeSlotSteadyStateAllocatesNothing(t *testing.T) {
 // the texture LabelClippedFontWeight actually blits, or the draw clamps
 // (ui.go LabelClippedFontWeight: `if w > maxW { w = maxW }`) and the tail of every
 // copy — the separator — is cut.
+//
+// It drives the two production functions against each other rather than
+// re-implementing either, and it states the failure it is guarding: measured plain,
+// the bound is SHORTER than the bold texture, which is the clamp.
 func TestMarqueeTileWidthIsTheDrawnWidth(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
@@ -213,6 +224,9 @@ func TestMarqueeTileWidthIsTheDrawnWidth(t *testing.T) {
 			boldW, boldTex.logicalW())
 	}
 	// The regression this replaces, stated as the thing that must NOT be the bound.
+	// (If a face ever emboldened to the same advance the guard is vacuous, not wrong,
+	// so it is skipped rather than failed — scaleblur_test.go owns the bold>plain
+	// property for the chrome face.)
 	if plainW >= boldTex.logicalW() {
 		t.Skipf("this face emboldens without widening (plain %d, bold texture %d): nothing to clamp", plainW, boldTex.logicalW())
 	}

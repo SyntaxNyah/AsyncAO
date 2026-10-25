@@ -7,6 +7,11 @@ import (
 )
 
 // The Hide-UI-pieces panel became a floating window.
+//
+// It used to be nailed to the bottom-right corner: dragging did nothing, and the
+// layout editor did not offer it either, so a panel that landed awkwardly — or
+// underneath something else — could not be shifted at all. That is a poor place
+// for the one surface whose job is rescuing a layout.
 
 const (
 	piecesTestW = 1280
@@ -16,6 +21,8 @@ const (
 // TestPiecesPanelKeepsItsOldHomeUntilMoved is the compatibility half, and the
 // reason the corner maths was kept rather than replaced by a centred default. A
 // panel becoming draggable must not RELOCATE for people who were happy with it:
+// nothing has been dragged and nothing is saved, so it must appear exactly where
+// it always did.
 func TestPiecesPanelKeepsItsOldHomeUntilMoved(t *testing.T) {
 	a := testTabApp(t)
 	got := a.toolboxPiecesRect(piecesTestW, piecesTestH)

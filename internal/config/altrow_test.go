@@ -6,6 +6,9 @@ import (
 )
 
 // TestDisableAltEmoteRowPref pins the Alt+1..9 emote number row kill-switch:
+// OFF by default (the row works) and a setter round-trip that also survives a
+// save/reload (covering the prefsJSON DTO + load overlay, not just the live
+// setter).
 func TestDisableAltEmoteRowPref(t *testing.T) {
 	path := filepath.Join(t.TempDir(), PrefsFileName)
 	p, err := New(path)

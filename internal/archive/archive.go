@@ -1,5 +1,9 @@
 // Package archive bundles a scene's assets into a self-contained folder so a
 // recorded/built `.aorec` keeps its visuals even if the origin CDN goes away.
+// It resolves every asset the scene needs through the SAME manager candidate
+// logic the renderer uses (Manager.ResolveRaw / SceneAssets), then writes each
+// at the exact origin-relative path replay will later request — symmetry by
+// construction, proved by the export→replay round-trip test.
 package archive
 
 import (
@@ -34,6 +38,7 @@ type Result struct {
 // upstream by SceneAssets, so each unique asset is fetched + written once (small
 // archives). Missing assets are skipped — the zero-fallback renderer degrades
 // gracefully, so a 404 here just 404s on replay too, never aborts the export.
+//
 // The returned Formats is the archive's manifest: replay seeds the resolver from
 // it so the bundled (possibly non-webp) files resolve on the first probe.
 func ExportAssets(ctx context.Context, mgr *assets.Manager, origin, startBg string, events []courtroom.Event, destDir string) (*Result, error) {
@@ -77,6 +82,11 @@ func ExportAssets(ctx context.Context, mgr *assets.Manager, origin, startBg stri
 // resolveRef fetches one asset's bytes + the concrete URL it lives at. Exact refs
 // (music) are a direct fetch; bases probe candidates, walking the alternate
 // sprite spellings (bare X, then the "(a)/X" folder — EmoteAlts order).
+// It resolves through the user's local packs as well as the server (the
+// ResolveRawLayered path, which never teaches the server's learned formats and
+// never writes pack bytes into the server-keyed caches), and reports which
+// answered so the caller can both place the file correctly and warn about
+// bundling private art.
 func resolveRef(ctx context.Context, mgr *assets.Manager, ref courtroom.AssetRef) (string, []byte, bool, bool) {
 	if ref.Exact {
 		if data, err := mgr.FetchRaw(ctx, ref.Base); err == nil && len(data) > 0 {

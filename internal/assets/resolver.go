@@ -32,6 +32,7 @@ const learnedExtCap = 4
 // learnedTable is the immutable snapshot behind the resolver's atomic
 // pointer: host → fixed per-type extension list. Lookups are one atomic
 // load, one map access, one array index — no locks (spec §17.5).
+// The list is read-only by contract: writers copy-on-write (see promoteExt).
 type learnedTable struct {
 	hosts map[string]*[AssetTypeCount][]string
 }
@@ -40,6 +41,8 @@ var emptyLearnedTable = &learnedTable{hosts: map[string]*[AssetTypeCount][]strin
 
 // promoteExt returns prev with ext moved to the FRONT, as a fresh slice — the
 // published table is immutable, so this never writes through to prev.
+// Returns prev unchanged (same backing array) when ext is already the front, so
+// the steady-state hit does no allocation and RecordSuccess can skip its CAS.
 func promoteExt(prev []string, ext string) []string {
 	if len(prev) > 0 && prev[0] == ext {
 		return prev
@@ -125,6 +128,8 @@ func (r *Resolver) WarmFromPrefs() {
 		// The whole persisted list, not just exts[0]: a host that learned two
 		// formats for a class must come back with both, or the second session
 		// re-enters the single-candidate dead end the list exists to prevent.
+		// The snapshot is already a copy, but clamp it to the cap in case an
+		// older / hand-edited prefs file carries a longer one.
 		if len(exts) > learnedExtCap {
 			exts = exts[:learnedExtCap]
 		}
@@ -167,6 +172,11 @@ func (r *Resolver) LearnedList(host string, t AssetType) []string {
 
 // BuildCandidates returns the URLs to probe for base (the full URL without
 // extension) of type t served by host. Learned hit → exactly one candidate.
+// Miss → the preference FormatList for the type (zero-fallback defaults are
+// a single format, spec §4). Callers must hand the result back via
+// PutCandidates.
+// Fast path budget: < 100 ns, ≤ 1 alloc (the joined URL string) — gated by
+// BenchmarkBuildCandidates_Learned and TestBuildCandidatesLearnedAllocGate.
 func (r *Resolver) BuildCandidates(base string, t AssetType, host string) *Candidates {
 	c := r.pool.Get().(*Candidates)
 	c.URLs = c.URLs[:0]
@@ -174,6 +184,10 @@ func (r *Resolver) BuildCandidates(base string, t AssetType, host string) *Candi
 	tbl := r.table.Load()
 	if arr := tbl.hosts[host]; arr != nil {
 		// Deliberately the FRONT of the learned list only, never the whole list:
+		// the zero-fallback pillar is "exactly one network probe per asset by
+		// default", and the front is the format that most recently worked on this
+		// host. The rest of the list is the recovery ladder, spent only after this
+		// one actually 404s — see BuildFullListCandidates.
 		if exts := arr[t]; len(exts) > 0 {
 			r.learnedHits.Add(1)
 			c.Learned = true
@@ -194,6 +208,10 @@ func (r *Resolver) BuildCandidates(base string, t AssetType, host string) *Candi
 // base WITHOUT reading or writing the shared learned table. It exists to close
 // the learned-format empty-window race: the manager's stale-learned re-probe
 // (a learned-first candidate 404'd) used to blank the shared per-(host, type)
+// It does NOT bump learnedMisses: that counter tracks learned-TABLE lookups
+// that missed, and this method performs no table lookup — counting it would
+// double-count the same asset (BuildCandidates already recorded the miss that
+// sent the manager here) and skew the hit-rate metric.
 func (r *Resolver) BuildFullListCandidates(base string, t AssetType, host string) *Candidates {
 	c := r.pool.Get().(*Candidates)
 	c.URLs = c.URLs[:0]
@@ -341,6 +359,10 @@ func (r *Resolver) InvalidateAll() {
 
 // cloneTableForHost shallow-copies the host map and deep-copies only the
 // touched host's array, guaranteeing the published table is immutable.
+// The per-type element is a slice header, so the array copy shares the LISTS
+// with the old table. That is safe and deliberate: a published list is never
+// written in place — promoteExt always builds a fresh slice — so sharing costs
+// one header copy per type and keeps concurrent readers on a valid snapshot.
 func cloneTableForHost(old *learnedTable, host string) *learnedTable {
 	hosts := make(map[string]*[AssetTypeCount][]string, len(old.hosts)+1)
 	for h, arr := range old.hosts {

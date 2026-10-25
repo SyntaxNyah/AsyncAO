@@ -2,6 +2,9 @@ package ui
 
 // THE EDITOR'S ART SYNC (v1.90.0 W7b) — docs/wip/THEME-EDITOR-DESIGN.md
 // §"Live preview, no Apply button".
+// WHAT IT DELIBERATELY DOES NOT DO: kick a theme apply. An apply re-anchors a.themeAt,
+// restarts every clock group and purges the text cache, which is precisely the hitch
+// TestSavingGeometryDoesNotRestartTheTheme exists to forbid. The tiles land through
 
 import (
 	"image"
@@ -15,6 +18,9 @@ import (
 // whatever tiles the new plan needs. Render thread, once per editor frame BEFORE the
 // canvas draws (the bake it feeds runs inside that draw), and once more from
 // closeThemeEditor, which is the last frame there will be.
+//
+// THE SETTLED PATH IS ONE HASH AND A COMPARE, allocation-free (themeArtSig's own note),
+// so the editor's frame budget (editorChromeAllocBudget) is untouched between edits.
 func (a *App) editorSyncArt() {
 	if a.te == nil || a.te.doc == nil || a.te.doc.side == nil || a.d.Store == nil {
 		return
@@ -62,6 +68,9 @@ func (a *App) editorSyncArt() {
 }
 
 // pruneEditorGenTiles drops every generator tile the new plan no longer wants.
+// GENERATOR KEYS ONLY. A [media] page belongs to a declared row that no element edit can
+// remove, and an element that stopped pointing at one may point back at it on the next
+// keystroke or the next Ctrl+Z — dropping it would mean re-reading the file from the
 func (a *App) pruneEditorGenTiles(plan *themeMediaPlan) {
 	for key := range a.themeMediaKeys {
 		if !strings.HasPrefix(key, render.ThemeGenKeyPrefix) || themeGenPlanned(plan.Gens, key) {
@@ -74,6 +83,9 @@ func (a *App) pruneEditorGenTiles(plan *themeMediaPlan) {
 
 // landEditorGenTiles rasterises and uploads every planned tile that is not in the store
 // already.
+// A REFUSAL IS A CHIP, never a silent absence: the store re-checks the budget at the
+// door, and an element whose tile was refused would otherwise just stop drawing with
+// nothing anywhere to say why (design §3.3 — name the offender, name the limit).
 func (a *App) landEditorGenTiles() {
 	for i := range a.themeMediaPlan.Gens {
 		g := &a.themeMediaPlan.Gens[i]

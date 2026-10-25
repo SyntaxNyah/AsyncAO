@@ -9,6 +9,9 @@ package ui
 // quit (requestRelaunch → MaybeRelaunch). It degrades to opening the release
 // page in the browser only when the release has no matching asset or the
 // install dir is read-only (the low-level pieces live in internal/update).
+// Input is handled in handleUpdateInput BEFORE the screens draw (the kit has
+// one per-frame click bool, so a modal must consume it first — same pattern as
+// the tab strip); drawUpdateAvailable only paints, in the overlay phase, using
 
 import (
 	"context"
@@ -40,6 +43,11 @@ const (
 
 // selfUpdate is the M13 self-update component: the one-shot launch check, the
 // persistent "update available" chip, and the What's New patch-notes modal.
+// Its env pointer is wired to &App.env once in NewApp, so the component reaches
+// the shared deps/ctx/notice/navigation through one pointer.
+// Field names are deliberately short and unprefixed: INSIDE the component the
+// receiver already says whose state it is (s.rel, s.busy). From App the access
+// is spelled a.updates.rel — one hop, no promotion, so a reader can tell
 type selfUpdate struct {
 	env *env
 
@@ -383,6 +391,10 @@ func (s *selfUpdate) pumpInput(w, h int32) {
 
 // handleUpdateInput consumes the chip / modal interaction before the screens
 // see this frame's click. No-op until the one-shot check found a release.
+// While the modal is up it hit-tests with raw pointIn, NOT hovering():
+// updateModalFence holds the kit's modal fence (modalOn) so everything
+// underneath is pointer-blind on every screen — hovering() is false for the
+// modal itself too, by design (the same discipline as the emoji picker).
 func (s *selfUpdate) handleUpdateInput(w, h int32) {
 	if s.rel == nil {
 		return
@@ -431,6 +443,8 @@ func (s *selfUpdate) handleUpdateInput(w, h int32) {
 // under the scrim reacts — no wheel scroll (WheelIn), no hover highlights, no
 // scrollbar/slider drags. Released the frame after the modal closes, exactly
 // like emojiPickerFence (an un-released modalOn would freeze the whole UI).
+// The modal's own interaction runs on raw pointIn (handleUpdateInput /
+// drawUpdateButton), so the fence never blinds it.
 func (s *selfUpdate) updateModalFence(c *Ctx) {
 	if s.rel != nil && s.show {
 		c.modalOn = true

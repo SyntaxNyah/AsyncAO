@@ -18,6 +18,13 @@ const previewWindowTitle = "AsyncAO — Emote Preview"
 
 // previewWinDefaultW/H is the detached window's INITIAL client size on the
 // very first pop-out (no saved rect yet — config.AssetPreferences.
+// PreviewWindowRect reports ok=false). A square matching the in-app box's
+// own shipped default HEIGHT: big enough to read most sprites without
+// re-deriving the box's own width-from-aspect math a second time, and
+// Present already letterboxes whatever aspect actually arrives. The user's
+// own OS-native window-border resize takes over from there, and THAT size
+// is what gets remembered (SetPreviewWindowRect) — this constant is only
+// ever consulted once per install.
 const (
 	previewWinDefaultH = int32(config.DefaultPreviewHeightPx)
 	previewWinDefaultW = previewWinDefaultH
@@ -28,6 +35,9 @@ const (
 // truth the pop-out button, drawSpritePreview and previewIsPinned all read —
 // there is no separate "detached" bool anywhere on App to go stale if the
 // window closes itself (its own titlebar X, per measured fact 1):
+// render.PreviewWindow.IsOpen() is already live, and already reconciled the
+// instant its own Close() runs. a.d.Preview is nil-safe (IsOpen checks the
+// receiver itself), so this is safe even in tests that never wire Deps.Preview.
 func (a *App) previewIsDetached() bool {
 	return a.d.Preview.IsOpen()
 }
@@ -35,6 +45,8 @@ func (a *App) previewIsDetached() bool {
 // toggleDetachPreview pops the sprite-preview box out into its own OS window,
 // or closes that window and re-attaches to the in-app box — requirement 1
 // (v1.93.0 preview-window-wire). A no-op with nothing currently previewed:
+// detaching an empty box would open a window nothing could ever fill (only
+// feedDetachedPreviewFrame, gated on previewBase, ever calls SetFrame).
 func (a *App) toggleDetachPreview() {
 	if a.budget.previewBase == "" {
 		return
@@ -153,6 +165,9 @@ func (a *App) feedDetachedPreviewFrame() {
 // to show" decision, factored out as a pure function so it can be driven
 // exhaustively by a test. It is not a duplicate of the gate: it IS the gate,
 // its only production caller being the line above.
+// A frequency gate rather than a correctness one — ShowAnimFrame's own cache
+// would absorb a redundant call on the normal path — but it stops being merely
+// an optimization the moment a pick overflows the animation cache budget:
 func previewFeedNeeded(fedBase, base string, fedPage, page *render.TexturePage, animated bool, fedIdx, idx int) bool {
 	if fedBase != base || fedPage != page {
 		return true // different pick, or the same base re-decoded into a new page
@@ -163,6 +178,11 @@ func previewFeedNeeded(fedBase, base string, fedPage, page *render.TexturePage, 
 // AdvanceDetachedPreview is syncPreviewWindow's entry point for the main
 // loop's NON-Frame passes — cmd/asyncao's minimized branch and its
 // SkipFrame branch both call app.Background(dt) and skip app.Frame()
+// entirely, and handlePreviewInput (the only other syncPreviewWindow call
+// site) only runs inside Frame(). Without this second call site, a popped-out
+// window showing an animated pick would freeze the instant the main window
+// minimizes or the static-skip gate engages — exactly the case a user pops
+// the window out FOR (watching it while alt-tabbed away).
 func (a *App) AdvanceDetachedPreview() {
 	a.syncPreviewWindow()
 }
@@ -193,6 +213,12 @@ func (a *App) PreviewAnimWakeCap() time.Duration {
 
 // readTexturePixels reads an ALREADY-UPLOADED texture on the MAIN renderer
 // back into CPU memory, for handing to a DIFFERENT renderer's SetFrame.
+// render.PreviewWindow's own doc explains why this — not re-entering
+// internal/assets for a second decode — is the right way to feed it: the
+// asset is, by construction, already decoded and uploaded by the time a
+// preview is on screen to detach, and internal/assets.Manager's own
+// T1-residency short-circuit would make a second Prefetch for it a silent
+// no-op with no decode event to catch.
 func readTexturePixels(ren *sdl.Renderer, tex *sdl.Texture, w, h int32) (*image.RGBA, error) {
 	if ren == nil || tex == nil || w <= 0 || h <= 0 {
 		return nil, fmt.Errorf("ui: readTexturePixels: nothing to read")

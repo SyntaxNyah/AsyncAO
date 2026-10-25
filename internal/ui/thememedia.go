@@ -83,6 +83,11 @@ type themeMediaPlan struct {
 	Gens []themeGenPlanEntry
 	// ElemKeys is the T1 key each ELEMENT resolves to, indexed by the element's own
 	// position in Sidecar.Elements ("" for an element that has no art).
+	// It exists so the BAKE can resolve a page with an indexed load instead of
+	// re-deriving a key. Re-deriving would mean lowercasing a name and hashing a
+	// param list once per element per rebuild, and the bake's allocation ceiling
+	// (elemBakeAllocCeil) is a CONSTANT rather than a per-element budget precisely so
+	// that a preset swap cannot hitch the frame it lands on.
 	ElemKeys []string
 	// Bytes / GenBytes are what the plan commits.
 	Bytes, GenBytes int64
@@ -108,6 +113,10 @@ type themeGenPlanEntry struct {
 
 // planThemeMedia decides what a theme's declared art costs before anything is read
 // from disk. Runs on the theme-apply goroutine.
+// DECLARATION ORDER, first-come-first-served, with an explicit refusal — never an
+// eviction to make room for a latecomer. That is design §Q2's "silent eviction is
+// forbidden", and the reason is that a theme whose appearance depended on the order
+// its author added elements is a theme nobody can debug.
 func planThemeMedia(sc *theme.Sidecar, themeID, dir string, texBudgetMiB int) themeMediaPlan {
 	// BOTH numbers come from internal/render, by CALL rather than by copy. The store
 	// re-checks each one at the door, and two copies of a budget are two budgets.
@@ -152,6 +161,9 @@ func planThemeMedia(sc *theme.Sidecar, themeID, dir string, texBudgetMiB int) th
 // planElements derives the ELEMENT half of a plan: the T1 key every element resolves
 // to, the generator tiles those keys need, and the signature of the model they came
 // from.
+// Generator tiles are deduplicated by content address, and they are planned against
+// their own count cap rather than competing with images for one, because a tile is
+// 256 KiB at worst and refusing one to keep a wallpaper would be the wrong trade in
 func (plan *themeMediaPlan) planElements(sc *theme.Sidecar, themeID string) {
 	if sc == nil {
 		plan.ElemKeys, plan.Gens, plan.GenBytes, plan.ArtSig = nil, nil, 0, themeArtSig(nil)
@@ -306,6 +318,9 @@ func themeSanitizeID(name string) string {
 
 // loadThemeMedia reads and decodes one planned entry, downscaling it when its long
 // edge is past themeMediaMaxEdgePx. Theme-apply goroutine only (hard rule 2).
+// The downscale is x/image/draw's CatmullRom, which is already a DIRECT dependency
+// doing exactly this in assets/thumbcache.go — no new dependency, no
+// docs/ARCHITECTURE.md justification, and emphatically not a hand-rolled box filter.
 func loadThemeMedia(path string, anims bool) (*assets.Decoded, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -322,6 +337,7 @@ func loadThemeMedia(path string, anims bool) (*assets.Decoded, error) {
 }
 
 // downscaleThemeMedia resamples every frame when the long edge is over the cap.
+//
 // It returns the SAME Decoded when nothing needs resizing, which is the ordinary
 // case and costs one comparison — the v1.89.0 "0 base = 0 cost" habit applied one
 // tier down.
@@ -381,6 +397,7 @@ func themeDecimationNote(d *assets.Decoded) string {
 
 // themeArtBarLabel is the editor's permanent budget line: what is spent, out of
 // what, and how many of each cap is in use.
+//
 // PERMANENT rather than shown-at-the-cap, because the whole point is that the user
 // can always see who to blame before they hit it.
 func themeArtBarLabel(bytes int64, images, gens int, budget int64) string {
@@ -400,6 +417,9 @@ func themeArtOverWarnPct(bytes, budget int64) bool {
 // loadThemeMediaSet decodes every PLANNED entry and rasterises every planned
 // generator tile. Theme-apply goroutine only: it reads files and fills 256² pixel
 // buffers, neither of which may happen on a frame (hard rule 2).
+// An entry that fails to decode is downgraded to mediaMissing in place, so the
+// element still exists and still says why — the same "never a silent drop" rule the
+// over-budget path follows.
 func (res *themeApply) loadThemeMediaSet(anims bool) {
 	res.media = map[string]*assets.Decoded{}
 	for i := range res.mediaPlan.Entries {
@@ -434,6 +454,9 @@ func (res *themeApply) loadThemeMediaSet(anims bool) {
 
 // releaseDecoded hands every pixel buffer this apply is still holding back to the
 // decoder's pool, for an apply that will never land.
+// Release is idempotent (it nils both Frames and the pooled list), so this is safe
+// against a future caller that releases twice, and it is pure memory bookkeeping —
+// no I/O, nothing that could not run on either side of the hand-off.
 func (res *themeApply) releaseDecoded() {
 	for _, d := range res.images {
 		if d != nil {
@@ -487,6 +510,7 @@ func (a *App) landThemeMedia(res *themeApply) {
 // theme apply behind it.
 // It exists for the editor (W7), where changing one image must not restage the whole
 // theme — and the two things it deliberately does NOT do are the whole point:
+// Gated by TestIncrementalMediaLandDoesNotRestartTheThemeClock. Render thread only.
 func (a *App) landThemeMediaPage(key string, d *assets.Decoded) error {
 	if d == nil {
 		return fmt.Errorf("theme media %s: nothing to land", key)

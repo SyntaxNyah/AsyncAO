@@ -1,6 +1,11 @@
 package theme
 
 // THE DEFERRED ELEMENT-SECTION DELETE (v1.90.0 W9).
+//
+// ONE concern: Sidecar.RetireElementSection and the write-time flush behind it.
+// What it is FOR — an editor delete that survives a save — is gated where the act
+// lives (internal/ui's themeeditordoc_test.go); this is the seam.
+//
 // The property that makes the deferral worth having, and the reason the removal
 // is not simply performed on the spot: an element delete's undo is a per-element
 // resurrection, and the file has to come back BYTE-IDENTICAL when the user

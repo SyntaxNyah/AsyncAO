@@ -10,6 +10,8 @@ import (
 
 // TestLoadGolden pins the OLD load()'s whole-struct output for a corpus of inputs, so
 // deleting load() (and prefsJSON) in the persistence swap does not delete the oracle.
+// Each case records the resulting whole-Prefs struct as DECODED JSON, not bytes.
+//
 // Regenerate with: GOLDEN_REGEN=1 go test ./internal/config -run TestLoadGolden
 const loadGoldenName = "load_golden.json"
 

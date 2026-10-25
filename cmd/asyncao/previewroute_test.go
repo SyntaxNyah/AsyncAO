@@ -65,6 +65,10 @@ func newHeadlessSDLVideo(t testing.TB) func() {
 // TestPreviewWindowCloseNeverQuitsTheAppButClosesThePreview drives the THREE
 // real pieces this phase's requirement 3 depends on — together, the way
 // run()'s handleEv actually calls them — against a REAL second SDL window:
+// mainWindowShouldQuit (close-safety phase), eventForPreviewWindow, and
+// PreviewWindow.HandleEvent. It is the "WINDOWEVENT_CLOSE on the preview id
+// closes ONLY the preview" requirement turned into a test that would fail if
+// any one of the three regressed.
 func TestPreviewWindowCloseNeverQuitsTheAppButClosesThePreview(t *testing.T) {
 	cleanup := newHeadlessSDLVideo(t)
 	defer cleanup()
@@ -154,6 +158,14 @@ func newHeadlessMainCtx(t *testing.T) (*ui.Ctx, func()) {
 // phase brief calls for by name: feed a synthetic preview-window-tagged
 // MouseMotionEvent through the REAL dispatch (dispatchEvent — the exact
 // function run()'s handleEv calls, not a re-implementation of its branch)
+// and assert the main Ctx's cursor state is untouched.
+//
+// Root cause this pins: ui.Ctx.HandleEvent writes MouseMotionEvent.X/Y
+// straight into the shared c.mouseX/c.mouseY with no window-origin check of
+// its own (ui.go). SDL's coordinates are window-CLIENT-relative, so without
+// dispatchEvent's gate a second window's raw mouse motion would silently
+// alias onto the main window's hit-testing — phantom hovers and clicks.
+//
 // Both directions are asserted, not just the negative: a main-window (or
 // preview-closed) event MUST still reach uiCtx (the positive control — a
 // dispatchEvent that dropped every event on the floor would pass a

@@ -7,6 +7,10 @@ import (
 
 // TestResumeSeek pins the wave-13 exact, loop-aware cross-tab resume math
 // (resumeSeek), the code that ACTUALLY ships in resumeActiveTabMusic. It covers:
+// loop wrapping (including multi-wrap of a short loop parked a long time), a
+// non-looping one-shot that ended while parked (play=false, don't restart),
+// unknown duration (dur<=0 → seek 0, honest restart-from-top), and a negative
+// elapsed (clock skew) clamping so it never produces a negative seek.
 func TestResumeSeek(t *testing.T) {
 	const eps = 1e-9
 	cases := []struct {

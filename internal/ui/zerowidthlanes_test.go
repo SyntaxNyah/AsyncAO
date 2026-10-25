@@ -1,6 +1,9 @@
 package ui
 
 // Gates for the zero-width sidechannel's DISPLAY boundary.
+// The four gates are deliberately different in kind — behavioural for what the
+// user sees, source-structural for the seams a unit test cannot reach (App
+// methods), and one cross-package harvest that keeps the codec alphabet and the
 
 import (
 	"go/ast"
@@ -18,6 +21,7 @@ import (
 
 // codecRunes harvests the sidechannel's alphabet FROM ITS OWN SOURCE: the zwStart
 // sentinel and every entry of octalSyms in courtroom/spritestyle.go.
+//
 // Harvested rather than copied on purpose. A literal list here would be a mirror —
 // it would keep passing while the codec grew a tenth rune the font predicate has
 // never heard of, which is exactly the shape of the bug these gates exist for. It
@@ -132,6 +136,9 @@ func containsAnyRune(s string, runes []rune) rune {
 // display formatters: a style marker built by courtroom.SpriteStyle.EncodeMarker is
 // appended to an ordinary body, and every line a human reads must come back with the
 // visible text byte-for-byte and not one codec rune.
+//
+// This is the behavioural half. It cannot reach the App methods (pushOOC, pmAppend,
+// routeBackgroundEvent), which is what TestEveryDisplayLaneStripsTheSidechannel is for.
 func TestDisplayLanesStripTheZeroWidthSidechannel(t *testing.T) {
 	runes := codecRunes(t)
 
@@ -272,6 +279,9 @@ func TestStoredLinkComesFromTheStoredText(t *testing.T) {
 
 // TestIsInvisibleRuneCoversTheWholeZeroWidthCodec is the drift catcher behind the font
 // fix, and the one gate that spans the two packages.
+// pickFont may ignore a rune the face lacks ONLY when isInvisibleRune says it draws
+// nothing. The codec picks its runes for a different reason — that they pass an
+// arbitrary AO server — so the two sets are maintained independently and nothing but
 func TestIsInvisibleRuneCoversTheWholeZeroWidthCodec(t *testing.T) {
 	runes := codecRunes(t)
 	if len(runes) != 9 { // the sentinel plus the eight data symbols
@@ -337,6 +347,8 @@ func TestIsInvisibleRuneCoversTheWholeZeroWidthCodec(t *testing.T) {
 
 // TestPickFontIgnoresInvisibleRunesWhenChoosingAFace pins the render-side half of the
 // fix directly on the production picker.
+// Hermetic: pickFont only compares and returns the font pointers, never dereferences
+// them, so empty sentinels stand in for real faces and this runs with no SDL at all.
 func TestPickFontIgnoresInvisibleRunesWhenChoosingAFace(t *testing.T) {
 	marker := courtroom.SpriteStyle{Tint: true, R: 10, G: 20, B: 30}.EncodeMarker()
 	if marker == "" {
@@ -413,6 +425,9 @@ func TestPickFontIgnoresInvisibleRunesWhenChoosingAFace(t *testing.T) {
 	// string this client has not drawn before at this (set, scale) — so this is not a
 	// per-frame cost; it is the cost of every FIRST sighting of a line, which for a
 	// busy log is every line. The reused sfnt buffer is what makes zero possible.
+	// Measured through allocsPerFrame, not a bare AllocsPerRun window: that window
+	// counts the WHOLE process, so a background burst under two concurrent
+	// `go test ./internal/ui` runs read 92/op here (2026-10-20) with no per-call
 	marked := "abc" + marker // concatenated OUTSIDE the measured closure
 	if n := allocsPerFrame(50, 0, func() { pickFont(fonts, cover, &buf, marked) }); n != 0 {
 		t.Errorf("pickFont allocated %v times per call on the early-return path", n)

@@ -29,6 +29,10 @@ func (a *App) claimTypingForIC() {
 // than assigned (FocusField → applied at the next BeginFrame) so it survives the
 // same frame's click-away unfocus no matter where the calling widget sits in draw
 // order — the same reason every other FocusField caller queues.
+//
+// It is a no-op outside the courtroom and while a key-bind capture is armed, so a
+// shared widget (the SFX picker also appears in the theme editor's preview) can
+// call it unconditionally.
 func (a *App) bounceFocusToIC() {
 	if a.screen != ScreenCourtroom || a.capturingKey() {
 		return

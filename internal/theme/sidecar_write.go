@@ -13,6 +13,8 @@ import (
 
 // elementFieldKeys maps every Element FIELD to the wire key that carries it, in
 // the order a freshly written element lists them.
+// An empty key means the value is carried by the SECTION NAME instead. There is
+// no third category.
 var elementFieldKeys = []struct{ field, key string }{
 	{"ID", ""}, // the [element.<id>] section suffix, never a key
 	{"Kind", "kind"},
@@ -54,6 +56,9 @@ var elementFieldKeys = []struct{ field, key string }{
 }
 
 // Bytes serialises the sidecar back through its lossless document.
+// COLD PATH ONLY (hard rule 2). On error the document may hold a partial edit —
+// the caller discards it rather than writing it, which is why the atomic
+// temp+fsync+rename dance belongs to whoever owns the destination directory.
 func (s *Sidecar) Bytes() ([]byte, error) {
 	if s == nil {
 		return nil, nil
@@ -61,6 +66,8 @@ func (s *Sidecar) Bytes() ([]byte, error) {
 	// THE METADATA DEGRADE runs BEFORE the guard, in the same order the reader runs
 	// it: a model carrying a 300-rune credit (a preset, a copy-for-editing stamp, an
 	// inspector row) shortens with a note rather than making the whole save fail.
+	// Validate then only ever sees values inside the cap, which is why its length
+	// walk skips exactly these keys (metatext.go).
 	s.degradeMeta()
 	if err := s.Validate(); err != nil {
 		return nil, err
@@ -84,6 +91,9 @@ func (s *Sidecar) Bytes() ([]byte, error) {
 
 // Write serialises to w. It does not touch the disk itself — the atomic
 // temp+fsync+rename dance belongs to whoever owns the destination directory.
+// Named Write, not WriteTo, to mirror INIDoc.Write: io.WriterTo's WriteTo has a
+// fixed (int64, error) signature, and go vet's stdmethods check is right that a
+// method wearing that name should be that interface.
 func (s *Sidecar) Write(w io.Writer) error {
 	b, err := s.Bytes()
 	if err != nil {
@@ -431,6 +441,8 @@ func (s *Sidecar) writeElement(d *INIDoc, e *Element) error {
 // the scalar alias ("nine_slice = 12") and still means it. Writing the
 // canonical four-tuple beside it would be a diff nobody asked for — and two
 // keys saying the same thing, which is worse than either spelling.
+// It is deliberately narrow: the moment the model's inset stops matching what
+// the alias says, the canonical key IS written, so an edit is never lost.
 func sliceIsHeldByItsAlias(d *INIDoc, section string, e *Element) bool {
 	raw, ok := d.Get(section, "nine_slice")
 	if !ok {
@@ -445,6 +457,9 @@ func sliceIsHeldByItsAlias(d *INIDoc, section string, e *Element) bool {
 
 // ---------------------------------------------------------------------------
 // Formatters. AO2's exact shapes: "x, y, w, h" with ", ", plain decimal ints.
+// atoiTrim is deliberately lenient (see its comment) and NOTHING here may
+// depend on that leniency — TestWriterNeverEmitsAValueThatReadsAsZero holds it.
+// ---------------------------------------------------------------------------
 
 func formatInt(v int) string { return strconv.Itoa(v) }
 
@@ -547,6 +562,7 @@ func formatCondition(c Condition) string {
 // Canonicalisers: format(parse(raw)) with the READER's parser, one per value
 // type. A missing or unparseable value must canonicalise to whatever the reader
 // STORED for it, or an untouched save would rewrite a line nobody edited.
+// ---------------------------------------------------------------------------
 
 func canonPlain(s string) string { return strings.TrimSpace(s) }
 

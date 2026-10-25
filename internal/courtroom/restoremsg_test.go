@@ -42,6 +42,10 @@ func TestSessionRecordsLastIC(t *testing.T) {
 }
 
 // TestRestoreMessageSettled pins the restore's end state on a fresh room:
+// phase idle, idle sprite active, full text revealed — with the ceremony's
+// sounds and one-shot screen effects (field realization AND the inline \s
+// code) all skipped, and the real audio sink back in place for the next live
+// message.
 func TestRestoreMessageSettled(t *testing.T) {
 	room, sess, _, audio := newCourtroomRig(t)
 	setupReadySession(t, sess)
@@ -130,6 +134,8 @@ func TestRestoreMessageBypassesCatchUp(t *testing.T) {
 // TestRestoreMessageHonorsRoomPrefs pins that a restore bakes the ROOM's
 // viewer knobs into the settled scene — buildRoom pushes prefs
 // (applyTimingToRoom) BEFORE restoring for exactly this reason: begin()
+// decides showname-vs-charname and the transmitted-style gate at stage time,
+// and nothing recomputes the scene afterwards.
 func TestRestoreMessageHonorsRoomPrefs(t *testing.T) {
 	styled := SpriteStyle{Tint: true, R: 255, Wobble: true, HueCycle: true, Glitch: true}
 	mkMsg := func() *protocol.ChatMessage {

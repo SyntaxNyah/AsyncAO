@@ -179,6 +179,8 @@ const jukeHistoryDomainOther = "other"
 
 // refreshJukeGroups (re)builds the domain-grouped row layout for the "Music
 // history" playlist: entries bucketed under a header per domain, domains sorted.
+// Memoized against (playlist, revision); the per-frame draw just walks the
+// cached slice, so the grouping costs nothing on the render loop.
 func (jukebox1 *jukeboxState) refreshJukeGroups(pl int, entries []config.JukeboxEntry) {
 	key := jukeGroupCacheKey{pl: pl, rev: jukebox1.jukeCacheRev}
 	if key == jukebox1.jukeGroupKey && jukebox1.jukeGroupRows != nil {

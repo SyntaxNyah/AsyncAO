@@ -13,6 +13,9 @@ import (
 )
 
 // #35 — window restore + auto-resize to the theme's design size.
+// The un-maximize half of the fix is NOT covered here: SDL's dummy video driver
+// implements no MaximizeWindow, so SDL_WINDOW_MAXIMIZED can never be raised
+// headlessly. It rests on the SDL sources quoted at Ctx.UnmaximizeWindow and
 
 // designCanvas is one theme's declared courtroom_design.ini geometry, in the
 // shape pollThemeApply receives it. viewport is a quarter-size stage purely so
@@ -38,6 +41,8 @@ func startThemeApply(a *App) uint64 { return a.skin.themeGen.Add(1) }
 
 // landThemeApplyGen drives ONE real pollThemeApply landing for an already
 // allocated generation, so the one-shot is pinned where it actually runs.
+// Everything else on themeApply is left zero: with no images and no sounds the
+// landing touches neither the (nil) TextureStore nor the (nil) room.
 func landThemeApplyGen(a *App, gen uint64, layout map[string]theme.Rect) {
 	a.skin.themeRes.Store(&themeApply{gen: gen, name: "fixture", layout: layout})
 	a.pollThemeApply()
@@ -53,6 +58,11 @@ func landThemeApply(a *App, layout map[string]theme.Rect) uint64 {
 // TestCenteredWindowPosTargetsTheGivenDisplay pins the SDL magic value the
 // recentring fix depends on. SDL_SetWindowPosition reads the target display out
 // of the LOW 16 BITS of the position (SDL 2.32.10 src/video/SDL_video.c:
+// `int displayIndex = (x & 0xFFFF);`), and SDL_video.h defines the bare
+// SDL_WINDOWPOS_CENTERED as SDL_WINDOWPOS_CENTERED_DISPLAY(0). So "centered"
+// literally means "on the primary monitor" unless the index is encoded — which
+// is the bug: WindowDisplayUsable clamps the size against the display the window
+// is ON, and the old recenter then dropped it on display 0 anyway.
 func TestCenteredWindowPosTargetsTheGivenDisplay(t *testing.T) {
 	if got := CenteredWindowPos(0); got != int32(sdl.WINDOWPOS_CENTERED) {
 		t.Errorf("CenteredWindowPos(0) = %#x, want the bare sdl.WINDOWPOS_CENTERED %#x", got, int32(sdl.WINDOWPOS_CENTERED))
@@ -98,6 +108,9 @@ func TestCenteredWindowPosTargetsTheGivenDisplay(t *testing.T) {
 }
 
 // TestThemeDesignWindowSizeReadsTheCourtroomRect pins the target of the resize.
+// `courtroom` is the theme's canvas: stock AO2 feeds it to set_courtroom_size()
+// and the window simply IS the canvas. It is also the only rect present on 100%
+// of the reference corpus, unlike char_select.
 func TestThemeDesignWindowSizeReadsTheCourtroomRect(t *testing.T) {
 	a := testTabApp(t)
 	if _, _, ok := a.themeDesignWindowSize(); ok {
@@ -316,6 +329,10 @@ func TestThemeResizeGuardsStillConsumeTheOneShot(t *testing.T) {
 }
 
 // TestThemeScanFromUserGatesTheAutoResize pins the trap in the import landing:
+// pollThemeScan re-applies the theme for ANY scan whose root resolved, and the
+// Settings screen fires one automatically the first time it opens. Only a scan
+// the user asked for may arm the resize, or merely opening Settings would move
+// the window of everyone who has a custom theme folder saved.
 func TestThemeScanFromUserGatesTheAutoResize(t *testing.T) {
 	a := testTabApp(t)
 	t.Cleanup(resetThemeScanState)
@@ -565,6 +582,8 @@ func TestThemeDesignSizeNeedsAViewportToo(t *testing.T) {
 // the SAME one-shot. Without it an existing user's first launch after updating
 // swaps an edge-to-edge courtroom for a small centred canvas ringed by bars, and
 // the only way out is a settings hunt — the outcome the product rule forbids.
+// The trigger is the STAMP being newly written, never "is this boot", so it can
+// fire exactly once ever.
 func TestThemeFitUpgradeSnapIsArmedOnceAtBoot(t *testing.T) {
 	// A file that predates the move: no stamp, still on the old Stretch default.
 	dir := t.TempDir()

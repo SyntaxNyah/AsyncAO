@@ -6,6 +6,12 @@ package render
 // emoji face — and laid out side by side. This file holds the PURE routing: which
 // runes belong to the emoji font. The rasterizer (text.go) turns runs into
 // textures; the UI owns loading the emoji face.
+// Routing is codepoint-based (no font metrics), so it's allocation-light and
+// table-tested. The base signal is the supplementary plane (U+10000+) where the
+// bulk of emoji, skin-tone modifiers and regional-indicator flags live; on top of
+// that the BMP joiners/selectors that build COMPOUND emoji are absorbed into the
+// adjacent emoji run so sequences render whole instead of fragmenting back to the
+// text font mid-emoji.
 
 import (
 	"github.com/veandco/go-sdl2/sdl"
@@ -58,6 +64,15 @@ func isEmojiBase(r rune) bool { return r >= emojiBlockLo && r <= emojiBlockHi &&
 
 // bmpPictographBlocks are the BASIC MULTILINGUAL PLANE blocks whose characters
 // have an emoji presentation and are routinely absent from ordinary text faces:
+// hearts, stars, sparkles, dingbats, the weather/zodiac symbols, arrows and the
+// clock/technical pictographs. They are the F5 gap. Unlike the supplementary-plane
+// emoji isEmojiBase routes, these are plain BMP codepoints — a bare ♥ (U+2665), ✨
+// (U+2728) or ⭐ (U+2B50) carries no VS16 and no 4-byte lead, so needsEmojiFallback
+// says "no emoji here", nothing ever asks for the colour face, and the character
+// draws as the text font's .notdef box. That is exactly what the field report
+// described: hearts and sparkles as boxes while CJK and Greek — which the TEXT
+// tiers and the system-font census answer — came out fine. The v1.87 Unicode census
+// covered SCRIPTS; symbol blocks were never in it.
 // Ranges, not a rune set, because these are contiguous Unicode blocks; a sorted
 // fixed array so the lookup is a short scan with no map and no allocation.
 var bmpPictographBlocks = [...][2]rune{
@@ -89,6 +104,8 @@ var bmpPictographRunes = [...]rune{
 
 // BMPPictograph reports whether r is a BMP character with an emoji presentation —
 // i.e. one the COLOUR-EMOJI face can draw when no text face on the machine can.
+// See bmpPictographBlocks: this is an eligibility test, never a routing decision on
+// its own. Pure; ASCII short-circuits, so a plain line pays one compare per rune.
 func BMPPictograph(r rune) bool {
 	if r < 0x00A9 {
 		return false // ASCII and Latin-1 punctuation: never a pictograph
@@ -343,6 +360,9 @@ func WrapEmojiAware(primary, emoji *ttf.Font, text string, maxW int32, maxLines 
 // then overflowed the column (#42, the half of it the v1.81.2 wrapToWidth fix
 // didn't reach). Same greedy line breaker as WrapEmojiAware (break at the last
 // space, else cut at a rune boundary), so only the metric changes.
+// Cost: one measure per rune step, each handed a fresh candidate string — the
+// same order as WrapEmojiAware's per-step measureRuns, and build-time only (the
+// log caches its wrap), never the render loop. maxLines 0 = uncapped.
 func WrapMeasured(measure func(string) int32, text string, maxW int32, maxLines int) []string {
 	runes := []rune(text)
 	if len(runes) == 0 || measure == nil {

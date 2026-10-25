@@ -1,6 +1,9 @@
 package ui
 
 // THE THEME CREATOR (v1.90.0 W10) — "make a theme from nothing", from Settings.
+// OFF THE RENDER THREAD (hard rule 2) and single-flight (hard rule 4): the job
+// pointer IS the flag, the channel is buffered so the goroutine never blocks on an
+// app that moved on. themeCopyJob's shape exactly.
 
 import (
 	"strings"
@@ -32,6 +35,7 @@ const (
 // ---------------------------------------------------------------------------
 
 // themeCreateTemplate is WHICH starting point a new theme is cut from.
+//
 // A SMALL ORDERED ENUM with a name table beside it, so the picker is a cycler over
 // the enum rather than a list of strings some other switch has to stay in step
 // with. themeCreateTemplateCount sizes both tables, which is what makes adding a
@@ -117,6 +121,10 @@ type themeCreateResult struct {
 // newThemeSidecarFrom builds the MODEL a template starts from, or the reason it
 // cannot. PURE except for the preset library read, and that is behind a sync.Once
 // over embedded bytes (theme.ShippedPresets) rather than the disk.
+//
+// templateCopyCurrent is absent BY CONSTRUCTION rather than by omission: it has no
+// model to build (see the file header), so asking for one is a caller bug and says
+// so, instead of quietly producing a blank theme with the right name on it.
 func newThemeSidecarFrom(t themeCreateTemplate, display string, pair theme.PresetPair) (*theme.Sidecar, error) {
 	switch t {
 	case templatePreset:
@@ -200,6 +208,10 @@ func (a *App) startThemeCreate(name string, sc *theme.Sidecar, intent themeCreat
 
 // startThemeCreateFromTemplate is the SETTINGS entry point: build the model the
 // template describes, then mint it.
+//
+// templateCopyCurrent is routed to themecopy.go here rather than inside the funnel,
+// because it is a different act with a different landing (a copy carries files and
+// layout overrides) and the funnel's job is to be the one MINT, not the one button.
 func (a *App) startThemeCreateFromTemplate(t themeCreateTemplate, name string, pair theme.PresetPair) bool {
 	if t == templateCopyCurrent {
 		a.copyAppliedThemeForEditing(themeCopyThenOpen)
@@ -236,6 +248,7 @@ func (a *App) pollThemeCreate() {
 }
 
 // landThemeCreate is the ONE place a finished create changes app state.
+//
 // THE RESCAN IS REQUESTED LAST (deferred), for the reason landThemeCopy spells
 // out: a scan publishes a snapshot built before this folder existed, and the seed
 // below is what lets the very next Save resolve a theme that is sitting on disk.
@@ -266,6 +279,10 @@ func (a *App) landThemeCreate(res themeCreateResult) {
 	// SAME arming maybeOpenEditorAfterCopy already owns (themecopy.go): one
 	// generation, consumed when its own apply lands, disarmed when a later apply
 	// outraces it. A second open path here would be a second set of those rails.
+	//
+	// The CUSTOM root is left exactly as it was — the folder landed under the write
+	// root themeLoadRoots already walks, so repointing anything would be the W2 bug
+	// arriving by the front door.
 	if a.d.Prefs != nil {
 		_, customRoot := a.d.Prefs.Load().Theme()
 		a.d.Prefs.SetTheme(m.Root, customRoot)

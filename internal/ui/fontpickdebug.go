@@ -13,6 +13,9 @@ package ui
 // "chromeShare" branch); and a single-slot coverage-hint cache
 // (Ctx.coverHintFont/Text) that only stays valid because nothing currently
 // runs between the pick and the read for the SAME text.
+// Read only from drawDebugFonts (debugpanel.go), which runs only while the
+// panel is open on its Fonts tab. The normal IC/OOC draw calls nothing in
+// this file — TestICLogDrawAllocationIsUnaffectedByTheFontDebugReadout pins
 
 import (
 	"github.com/veandco/go-sdl2/sdl"

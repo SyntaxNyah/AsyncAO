@@ -25,6 +25,10 @@ import (
 // smaller than the sprites they stand in for, so they stay useful long after
 // the full asset was evicted ("more permanent, allows more stuff, REALLY low
 // quality").
+// Every path is bounded and off the hot loop (§17.4 / spec §2): Store and
+// RequestLoad are non-blocking enqueues that DROP when their queue is full
+// (thumbs are speculative — the paced heal retry re-asks), one goroutine
+// encodes, one loads+decodes, and the render thread only drains Results()
 type ThumbCache struct {
 	disk *cache.DiskCache
 
@@ -289,6 +293,9 @@ func (t *ThumbCache) prune() {
 }
 
 // pruneToBudget deletes oldest-first until the snapshot's bytes fall to budget.
+// Split out of prune so the one case that cannot be staged on a real directory —
+// an entry the snapshot listed but that is GONE by the time this pass reaches it
+// — is drivable through the remove hook instead of raced.
 func pruneToBudget(files []thumbFile, total, budget int64, remove func(string) error) {
 	if total <= budget {
 		return

@@ -6,6 +6,7 @@
 // so it has neither GIF's 256-colour banding nor its size, and (unlike GIF, which
 // must hold every frame for the final EncodeAll) libwebp compresses each frame as
 // it's added, so the encoder's memory stays bounded no matter how long the scene.
+//
 // Thin CGO binding over libwebpmux's WebPAnimEncoder (mux.h) + the core encoder
 // (encode.h). SDL-free and off the render hot path; the capture side that feeds
 // it lives in the UI layer. A no-CGO build gets the stub in webpenc_fallback.go.

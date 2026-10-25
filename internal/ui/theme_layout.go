@@ -115,6 +115,9 @@ type themeLayoutCache struct {
 	shownameExtra int32
 	offX, offY    int32
 	// topOff is the app-chrome band reserved ABOVE the canvas (#14; topChromeH).
+	// Part of the cache key: the live courtroom builds with the band, an export
+	// frame builds without it, and both share this one cache — so a stale entry
+	// built for the other would silently draw the canvas at the wrong height.
 	topOff int32
 	// tabStripW is the server-tab strip's INTRINSIC width (tabStripIntrinsicW) at build
 	// time, and part of the cache key. The strip is the one entry in r that is not a
@@ -139,6 +142,7 @@ type themeLayoutCache struct {
 	// ang holds each rotatable key's persisted rotation angle byte (A4), baked in
 	// alongside r at rebuild time from the active theme's ThemeRectRotations so the
 	// draw path resolves angles lock-free (a plain map probe, never a prefs read).
+	// nil / an absent key means angle 0 = the plain, byte-identical Copy path.
 	ang map[string]uint8
 	// toggleLabel holds each AO2 toggle's label already shortened to its own design
 	// rect (truncateLabelTo, ui.go — AO2's truncate_label_text). Baked here rather
@@ -179,12 +183,16 @@ type themeLayoutCache struct {
 // origin-anchored — no client chrome reserved. That is what an offscreen export
 // frame wants (gifexport.go: a video frame is not the window and must never carry
 // the client's own furniture), and it is the plain geometry the fit-mode tests pin.
+// The live window goes through themeWindowLayout instead.
 func (a *App) themeLayout(w, h int32) *themeLayoutCache {
 	return a.themeLayoutIn(w, h, 0)
 }
 
 // themeWindowLayout is the WINDOW's layout: the design canvas is fitted into the
 // height LEFT under the app-chrome band and offset down by it (#14).
+// In the three modes that cannot overflow — Native, Letterbox, Stretch — that puts
+// the canvas itself wholly below the band. Crop scales UP by design and Custom can be
+// panned anywhere, so in those two the ART may run up behind the band and the band's
 func (a *App) themeWindowLayout(w, h int32) *themeLayoutCache {
 	return a.themeLayoutIn(w, h, a.topChromeH())
 }
@@ -234,6 +242,10 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 	// Scaled by scaleX because it is ADDED TO a width that was scaled by scaleX
 	// (the showname rect, below) — the two have to move together or the widened
 	// plate stops lining up with the art the swap brings in.
+	// Floored at one pixel rather than truncated to nothing: a rung that rounds away
+	// would take the SKIN SWAP with it, so a heavily downscaled canvas would drop
+	// back to the narrow chatbox art mid-message. One pixel of widening with the
+	// right art beats none with the wrong art.
 	if a.skin.themeShownameExtra > 0 {
 		lay.shownameExtra = int32(float64(a.skin.themeShownameExtra) * f.scaleX)
 		if lay.shownameExtra < 1 {
@@ -244,6 +256,9 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 	lay.area = f.area
 	// WIDGET BOUNDS = the canvas, minus whatever part of it sits above the reserved
 	// chrome band. offY is only >= top while the canvas FITS the room under the band:
+	// Crop scales UP on purpose and Custom's pan can push the canvas anywhere, so in
+	// those two modes the centring term goes negative and the canvas top rises past
+	// the band. That is fine for the ART — the band's owners (menu bar, tab strip)
 	bounds := lay.area
 	if bounds.Y < top {
 		bounds.H -= top - bounds.Y
@@ -283,6 +298,13 @@ func (a *App) themeLayoutIn(w, h, top int32) *themeLayoutCache {
 	}
 	// The server-tab strip (#14) is INTRINSICALLY SIZED CLIENT chrome that happens to
 	// carry a design-space key, so the generic transform above is never right for it:
+	// its size comes from the chips (so a stored W/H is meaningless), and while nobody
+	// has parked it its home is the reserved band ABOVE this canvas — a place design
+	// coordinates cannot name. tabStripCacheRect therefore OVERWRITES the transform
+	// with the live painted rect in both states, which is the invariant the themed
+	// editor depends on: its drag box, its drag origin, its Tab-cycle stacking order,
+	// its resize-grip probe and its right-click reset all read lay.r[themeTabBarKey],
+	// and a box that is not on the widget is worse than no box.
 	if _, present := a.skin.themeRects[themeTabBarKey]; present {
 		if strip, ok := a.tabStripCacheRect(lay, w, h, stripW, stripParked); ok {
 			lay.r[themeTabBarKey] = strip
@@ -512,6 +534,8 @@ func (a *App) drawScreenBackdrop(w, h int32, stem string) {
 		c.cgoRect = dst
 		// A4: structured angle==0 → Copy / else CopyEx. The lobby/charselect
 		// backdrops aren't editor-hoverable keys, so this resolves 0 (plain Copy)
+		// today — the branch keeps the backdrop bolt-on-ready. themedRotationDeg
+		// reads the baked cache map, never prefs.
 		if ang := a.themedRotationDeg(stem); ang == 0 {
 			_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
 		} else {
@@ -603,6 +627,8 @@ const (
 
 // insetThemedBody applies themedLogInsetPx to a themed panel body before it goes to one
 // of the shared (classic-facing) draw helpers.
+// A rect too small to hold the margin is returned untouched: an inverted rect draws
+// worse than a flush one, and rect() only guarantees minThemedElementPx.
 func insetThemedBody(r sdl.Rect) sdl.Rect {
 	if r.W <= themedLogInsetPx || r.H <= 2*themedLogInsetPx {
 		return r
@@ -634,6 +660,11 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	}
 	// Latch this frame's toolbox decision and occlude whatever the strip covers
 	// (#26 — the reported symptom is a theme whose "Call Mod" button sits under it).
+	// HERE, right after the rect above is resolved and before a single themed widget
+	// draws: the strip's position depends on that flag, and the fence is only
+	// consulted at hit-test time, so it has to exist before the widgets it occludes
+	// are drawn. drawCompactToolboxInPass (bottom of this function) replays the latch
+	// rather than re-deriving it, so the fence and the pixels agree.
 	a.fenceCompactToolbox(w, h)
 	// …and the sprite-preview box (#37), which floats over the theme's music list.
 	// AFTER the toolbox deliberately: the toolbox paints above the box, so its
@@ -711,10 +742,18 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// BAND 2 of 3: between the stage and the panels — over the viewport and the
 	// chatbox, BEHIND the chat logs and every panel widget the second half of this
 	// pass paints.
+	// BEFORE the modal early-return below, deliberately. The mid band dresses the
+	// STAGE, which is still on screen while a modal is up, so it has to paint on
+	// the frames the return aborts too — decoration that vanished every time a popup
 	a.drawElementBands(lay, theme.BandMid)
 
 	// Modal popups: same shared list as the classic path, so the two can't
 	// drift (the bg picker once drew in classic but was missing here).
+	// And the same EDITOR GUARD as the classic path, which this return never had: a
+	// modal open when the themed editor armed ended the pass here, so the editor never
+	// drew — no banner, no Done chip, no Esc handler — while its fence had already
+	// killed the modal's own buttons and the menu bar and tab strip had both stood
+	// down for it. See modalReturnSkippedWhileEditing (screens.go).
 	if !a.modalReturnSkippedWhileEditing() && a.drawCourtroomModals(w, h) {
 		return
 	}
@@ -851,6 +890,10 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		// at r.X/r.Y, so without it a theme showed padded logs beside a flush list.
 		panelBody := insetThemedBody(r)
 		// The strip carries only what AO2's own buttons cannot reach (themechips.go):
+		// the roster alone when switch_area_music drew, all three views when it did
+		// not — and in EITHER case fitThemedChips keeps it inside the panel. Three
+		// chips at their natural widths want 224 px; this theme's music_list body is
+		// 212 and AO2's own stock default is 220, which is the reported overflow.
 		chips, n := fitThemedChips(panelBody, themedListStrip(lay), themedListViews[:], a.chatlog.logTab)
 		for i := int32(0); i < n; i++ {
 			if c.Button(chips[i].r, chips[i].label) {
@@ -931,6 +974,8 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// immediate (AO2 ui_immediate, courtroom.cpp:1072-1084 — it reads "immediate"
 	// first and falls back to "pre_no_interrupt"; aceattorney2x declares only the
 	// latter, which is exactly why the alt spelling has to be probed).
+	// Gated on cccc_ic_support: the Immediate FIELD only exists on the 2.6 wire, so
+	// AO2 hides ui_immediate (with ui_pair_button and ui_ic_chat_name) when the
 	// server does not advertise it (courtroom.cpp:747-759). Offering the toggle on
 	// a server that drops the field is a control that silently does nothing.
 	if r, ok := themedToggleRect(lay, "immediate", "pre_no_interrupt", "asyncao_ic_immediate"); ok && a.sessHasCCCC() {
@@ -1092,6 +1137,9 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		}
 		// ARM, never send: the button sets objection_state and the interjection
 		// rides the next message (courtroom.cpp:6048-6127, built at :2136-2147).
+		// drawArmedOverlay stands in for canon's "*_selected" sprite swap, which a
+		// streaming client has no stem tier for — same substitute realization and
+		// screenshake already use (icarms.go).
 		for _, s := range shouts {
 			if r, ok := lay.rect(s.key); ok {
 				if a.drawThemeButton(s.key, s.label, r) {
@@ -1159,6 +1207,9 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		}
 		// pos_remove reverts to the character's OWN declared side, and is offered
 		// only while the current side differs from it (AO2-Client courtroom.cpp:5285-5292).
+		// While a char.ini is still in flight defaultSide() reads "wit", which is
+		// get_char_side's own fallback — so this stays hidden rather than offering to
+		// revert to a side we have not read yet.
 		if rr, ok := lay.rect("pos_remove"); ok && posRemoveVisible(a.mySide(), a.defaultSide()) {
 			if a.drawThemeButton("pos_remove", "X", rr) {
 				a.applySide(a.defaultSide())
@@ -1266,6 +1317,12 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	a.drawElementBands(lay, theme.BandOverlay)
 
 	// NOTHING of AsyncAO's own draws inside the design canvas (#21, rule (c)).
+	// A row of ★ Extras / Hotkeys / Restyle / Mod / CM chips used to be pinned
+	// here at the raw window's bottom-left, which under a theme like
+	// aceattorney2x painted AND clicked straight through
+	// music_list = 0,323,216,277. No design key existed for a theme author to
+	// move it, so relocating was the only answer: those commands now live in the
+	// menu bar, above the canvas, reachable from every screen.
 
 	// Compact hover toolbox (#27/A1): slim bottom-right grip → Theater / Edit /
 	// Hide-UI icon chips on hover or pin. Normal play only — skipped while the
@@ -1279,6 +1336,9 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	}
 
 	// Layout editor overlay: last, above everything it edits.
+	// It replays the frame's paint-site latch (chrometop.go) rather than the layoutEdit
+	// flag, so the two sites are exact complements of ONE decision taken at the top of
+	// the pass: a mid-pass arm (the command palette draws after this site) or disarm
 	a.drawTabBarInPass(w, h)
 	if a.layoutEdit {
 		a.drawLayoutEditor(w, h, lay)
@@ -1413,6 +1473,10 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	a.labelEmojiWeight(snFont, snEmoji, nameX, nameBox.Y, nameW, sc.ShownameText, nameCol, a.elemBold(elemShowname))
 
 	// The message folds the canvas scale in for the same reason the showname does:
+	// its wrap width came from a design rect that the canvas already scaled, so a
+	// font that did not scale with it changed how much text fits a theme-authored
+	// box — overrunning the frame on one side of 1:1 and rattling around inside it
+	// on the other.
 	a.ensureChatRaster(wrapW, skinned, a.themedChatPct(elemMessage, a.chatPct, lay))
 	// Text selection works on the themed chatbox too (drag a range / dbl-click
 	// a word / triple-click all; Ctrl+C / right-click copies) — same handler
@@ -1578,6 +1642,10 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 			c.FocusField("ic")           // AO2 focus_ic_input: pick emote, keep typing
 		}
 		// Right-click pins the preview open, exactly as the CLASSIC emote row does.
+		// Without it there was no way at all to pin on an AO2 theme, which is where
+		// the report came from. It adds no pixels to the theme's design canvas: the
+		// preview box is AsyncAO's own floating surface. The LATCH only, never the
+		// preference — see the classic site for why.
 		if c.rightClicked && c.hovering(btn) {
 			a.previewPinned = true
 		}
@@ -1626,6 +1694,7 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 // themedExtrasHint fires a one-time-per-session toast when a themed (AO2) layout
 // is in use, pointing players at where AsyncAO's own features live — a legacy AO2
 // theme carries no element key for any of them, so they would otherwise be lost.
+// It names the Extras MENU now, not a button: the bottom-left chip row this used
 // to point at was deleted because it painted over the theme's own canvas (#21,
 // rule (c)). The hotkey still opens the box directly, so it stays in the line.
 func (a *App) themedExtrasHint() {
@@ -1825,6 +1894,9 @@ func (a *App) drawMusicMarquee(font *ttf.Font, dst sdl.Rect, inset, ty int32, la
 		return
 	}
 	// The clip is the music_name rect, INSIDE the plate clip the caller pushed:
+	// Qt confines the ScrollText's painting to its own widget, and a copy that
+	// starts left of the margin (or runs past the right edge) must be cut at the
+	// widget, not at the plate.
 	clipPrev, clipHad := c.pushClip(dst)
 	defer c.popClip(clipPrev, clipHad)
 

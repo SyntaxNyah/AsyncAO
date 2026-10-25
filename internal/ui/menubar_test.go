@@ -29,6 +29,7 @@ func stageMenuBarApp(t *testing.T) *App {
 // menuBarFrameFor runs one phase-1 the way App.Frame does — with the per-frame
 // overlay-fence registry cleared first. That clear is BeginFrame's job (ui.go) and
 // these unit fixtures don't run it; without it the BOUNDED registry (overlayFenceCap)
+// fills across successive synthetic frames and later publications are dropped.
 func menuBarFrameFor(a *App, w, h int32) {
 	a.ctx.overlayFenceN, a.ctx.overlayFenceDrops = 0, 0
 	a.ctx.overlayOwner, a.ctx.overlayOwnerMark = false, 0
@@ -325,6 +326,7 @@ func TestMenuBarShowsNoHoverFeedbackWhileInert(t *testing.T) {
 // TestMenuBarFrameFitsInTheFenceRegistry is the loud half of the bounded-registry
 // rule: a real frame with a pane AND a submenu open, plus the compact toolbox strip
 // published inside the courtroom pass, must not have a single publication DROPPED.
+// A drop is silent — the occluder still paints, only its input protection is gone.
 func TestMenuBarFrameFitsInTheFenceRegistry(t *testing.T) {
 	a := stageMenuBarApp(t)
 	c := a.ctx
@@ -399,6 +401,8 @@ func TestMenuBarFenceOutlivesTheScreenPass(t *testing.T) {
 }
 
 // TestMenuBarPaneOccludesAnOccluder is the composability half of the precondition:
+// the compact toolbox brackets its own draw with pushOverlayOwner, and that suspend
+// is MARK-scoped. An open menu pane published App-level (i.e. EARLIER) must still
 // occlude the toolbox's chips, or the click-through bug #26 fixed reappears one
 // level up with the roles swapped.
 func TestMenuBarPaneOccludesAnOccluder(t *testing.T) {

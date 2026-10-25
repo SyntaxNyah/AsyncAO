@@ -2,6 +2,10 @@ package ui
 
 // Per-field undo/redo for the kit's text fields (playtest: the fields did not
 // behave like native ones — no Ctrl+Z among other gaps).
+// Every field gets a bounded history keyed by its id. Two things feed it:
+// Bounds (hard rule 4): fieldHistFieldsCap histories × fieldUndoDepth
+// snapshots each, LRU-evicted; histories are wiped on tab switch / fresh
+// session so a draft can never resurface across sessions (the multi-tab
 
 import (
 	"time"
@@ -87,6 +91,7 @@ func (h *fieldHistory) step(cur string, curCaret int, redo bool) (fieldSnap, boo
 // OUT-OF-BAND change — value != the value this field drew last. A field's
 // FIRST sighting only seeds the detector: a restored draft is a starting
 // state, not a change to undo out of. Cost on the steady no-change path:
+// one map hit + one string compare.
 func (c *Ctx) fieldTrack(id, value string) *fieldHistory {
 	if c.fieldHists == nil {
 		c.fieldHists = make(map[string]*fieldHistory, fieldHistFieldsCap)

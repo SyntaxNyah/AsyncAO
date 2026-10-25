@@ -15,6 +15,8 @@ import (
 // the duration of that blit. Only rows containing colour emoji or mixed scripts
 // took the raster branch, which is why it looked like a font bug: every plain row
 // beside it stopped neatly at the panel edge.
+//
+// clipIntersect is pushClip's whole arithmetic, split out so this runs headless.
 func TestClipIntersectNarrowsNeverWidens(t *testing.T) {
 	outer := sdl.Rect{X: 100, Y: 100, W: 200, H: 100}
 	for _, tc := range []struct {

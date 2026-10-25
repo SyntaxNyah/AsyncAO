@@ -1,6 +1,10 @@
 package ui
 
 // themeFrame's half of the animation contract (L22).
+// The suite RECORDED that divergence instead of failing on it: two gates in
+// themeclock_test.go t.Skip when the fixture's own chrome notes the census under
+// ReduceMotion, which is exactly the symptom. These gates drive themeFrame
+// itself, so there is nothing to skip.
 
 import (
 	"image"
@@ -85,6 +89,9 @@ func TestThemeChromeGoesStillUnderReduceMotion(t *testing.T) {
 // TestThemeFrameAndElementFrameShareOneIndexer keeps the two from drifting apart
 // again. They differ in WHOSE CLOCK they read and in nothing else, so given the
 // same elapsed and a looping page they must select the same frame.
+// Stated as an identity over the shared pure core rather than as two hardcoded
+// numbers: elementFrameIndex is what both call, and the day one of them stops
+// calling it this is what says so.
 func TestThemeFrameAndElementFrameShareOneIndexer(t *testing.T) {
 	a, cleanup := stageSettledCourtroom(t)
 	defer cleanup()

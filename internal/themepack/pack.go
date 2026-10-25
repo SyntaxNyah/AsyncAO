@@ -56,6 +56,8 @@ const (
 
 	// packDirPerm / packFilePerm are the permissions extraction creates with —
 	// the same 0755 / 0644 every other directory and file this client writes uses.
+	// The archive's own mode bits are deliberately NOT honoured: an executable bit
+	// out of a stranger's zip is a thing to drop, not to reproduce.
 	packDirPerm  = 0o755
 	packFilePerm = 0o644
 
@@ -69,6 +71,11 @@ const (
 // a bundled font with no licence file beside it is a NAMED warning rather than a
 // silent redistribution — and the probe has to recognise what people actually
 // name these files.
+// "ofl" IS IN THE LIST and its absence was a real defect: the SIL Open Font
+// License is overwhelmingly shipped as "<Face>-OFL.txt" (it is the name the
+// design's own example uses), which contains neither "license" nor "licence". A
+// probe that missed it would warn about every correctly-licensed OFL font, and a
+// warning that fires when nothing is wrong is a warning everybody learns to skip.
 var packLicenseHints = [...]string{
 	"licen",   // LICENSE, LICENCE, Court-License.txt
 	"ofl",     // <Face>-OFL.txt — the SIL Open Font License's usual spelling
@@ -122,6 +129,9 @@ type FontEntry struct {
 
 // Manifest is everything a user can be shown about a bundle before committing to
 // it, plus what Extract/Write/CopyForEditing actually did.
+// A VALUE, fully populated, never a handle: the consent sheet renders it on the
+// render thread while the archive itself is closed, so no draw path can end up
+// holding an open file (hard rule 2).
 type Manifest struct {
 	// Root is the bundle's single root folder — the theme's IDENTITY
 	// (docs/THEME-FORMAT.md §1), sanitized. After Extract it is the folder that
@@ -206,6 +216,10 @@ const NameRuneCap = 48
 
 // SanitizeName turns any string into a folder name this client is willing to
 // create: lowercase, and only the characters a theme folder has ever needed.
+// LOWERCASED, per the design. Two of the three platforms this ships on have
+// case-insensitive filesystems, so a "Paper" beside a "paper" is a collision on
+// one machine and two themes on another; folding the case makes the answer the
+// same everywhere, and the pretty name still comes from [theme] name.
 func SanitizeName(s string) string {
 	var b []rune
 	dot := false
@@ -264,6 +278,10 @@ const packCaseSetHint = 64
 
 // caseSet answers "have I already accepted an entry that IS this path, on a
 // filesystem that does not care about case?".
+// WHAT IT DOES NOT MODEL, named rather than implied: macOS additionally folds
+// Unicode normalisation (a composed "é" and a decomposed one are one file on
+// APFS), and that is not case. This covers the collision all three platforms
+// have, not every idea of sameness a filesystem can hold.
 type caseSet struct {
 	// seen maps the lowered path to the SOURCE spelling that claimed it, so a
 	// refusal can name the pair rather than only the newcomer.

@@ -85,6 +85,11 @@ func themedSwitchAreaMusic(view int) int {
 
 // themedViewIndex is where view sits in a panel's cycle, or 0 — the panel's own
 // default — for anything else.
+//
+// "Anything else" is routine, not defensive: logTab is ONE field shared by both
+// themed panels, so while the user is on Notes the list panel is showing Music
+// (its switch's default branch) and while the user is on Players the log panel is
+// showing IC (likewise). Index 0 is the truth in both cases.
 func themedViewIndex(views []themedChipSpec, view int) int {
 	for i := range views {
 		if views[i].tab == view {
@@ -98,6 +103,9 @@ func themedViewIndex(views []themedChipSpec, view int) int {
 // panel body) and returns the chips plus how many to draw. `views` is the panel's
 // full cycle, which `want` is normally all of.
 // It is total, and it degrades in this order:
+// A chip for the CURRENT view selects the NEXT one whenever the strip is showing
+// fewer chips than the panel has views — cases 3 above, and the roster-only strip,
+// where it is the way back out. With a chip per view (the ordinary case) it stays
 func fitThemedChips(body sdl.Rect, want, views []themedChipSpec, view int) ([themedChipsMax]themedChip, int32) {
 	var out [themedChipsMax]themedChip
 	n := len(want)
@@ -154,6 +162,9 @@ var themedMusicOnlyStrip = themedListViews[:2]
 // removes a chip the THEME has already provided a control for, which is #21's
 // parity rule read literally — a duplicate control inside the design canvas is a
 // violation, and the strip is only owed the views the theme leaves unreachable:
+// Shared by the draw site and the geometry census so the two cannot drift — a
+// census that transcribed this rule would go on reporting a strip the courtroom
+// had stopped drawing. Map probes and slices of a package array: no allocation.
 func themedListStrip(lay *themeLayoutCache) []themedChipSpec {
 	_, ownRoster := lay.rect("player_list")
 	_, hasSwitch := lay.rect("switch_area_music")
@@ -169,6 +180,9 @@ func themedListStrip(lay *themeLayoutCache) []themedChipSpec {
 }
 
 // themedStripBody is the panel body left for the list UNDER a strip of n chips.
+// n == 0 (a panel too small for even one chip) hands the whole body back rather
+// than reserving room for a strip that did not draw — and keeps `inner.H` from
+// going negative on a panel barely taller than the strip.
 func themedStripBody(body sdl.Rect, n int32) sdl.Rect {
 	if n <= 0 {
 		return body

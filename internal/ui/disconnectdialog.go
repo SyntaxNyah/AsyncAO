@@ -9,9 +9,17 @@ import (
 )
 
 // Involuntary-disconnect dialog.
+// This is one more member of the confirm-modal family (drawDisconnectConfirm /
+// drawCloseTabConfirm / drawQuitConfirm): same dimmed backdrop, same fence
+// discipline (fenced with the family in app.go's frame tail, pointer restored
 
 // disconnectDialog is the modal's state. The zero value is closed/inert (open ==
 // false), so an App with no drop showing costs a single bool check per frame.
+// It lives on sessionState (see the field doc in app.go for why it's per-tab, not
+// on App): it parks/restores with its own tab, so an active-tab drop shows THIS
+// dialog directly. A tab that drops while BACKGROUNDED can't pop a modal then (it
+// would cover whatever tab the user is looking at), so it arms its own deadReason
+// instead and surfaces this same dialog on reactivation (see tabs.go, activateTab).
 type disconnectDialog struct {
 	open   bool
 	reason disconnectReason
@@ -87,6 +95,9 @@ func friendlyDisconnectReason(raw string) disconnectReason {
 
 // serverRemovalMessage pulls the SERVER'S OWN words out of a drop reason, which is
 // the only thing the notice box is for.
+// A removal with no reason attached returns false too. "The server banned you."
+// is already on screen; a modal whose body is "no reason given" adds a click and
+// no information.
 func serverRemovalMessage(raw string) (string, bool) {
 	rest, cut := strings.CutPrefix(raw, "Kicked: ")
 	if !cut {
@@ -115,6 +126,8 @@ const serverNoticeRemovedFallbackTitle = "The server closed your connection"
 // that must happen the instant the link dies — and deliberately not the session
 // reset, tab close or navigation, which wait for the dialog's Back to lobby /
 // Reconnect so the room stays drawable underneath.
+// Its guards make it a no-op for the half a parked tab has already done (its
+// socket was nilled when it died), so both arms can call it unconditionally.
 func (a *App) freezeSessionUnderDialog(raw string) {
 	// Re-capture the redial target BEFORE nilling the conn, exactly as Disconnect
 	// does and for the same reason: lastConn* is GLOBAL and in a multi-tab session
@@ -162,11 +175,19 @@ func (a *App) handleInvoluntaryDrop(reason string) {
 	// one click. That is the same end state a PARKED tab reaches via activateTab,
 	// and playtesters reported the inconsistency directly — a background tab showed
 	// the box while the tab they were looking at was slammed to the server list.
+	// This restores the freeze v1.81.4 removed, WITHOUT the two things that made it
+	// a bug then: there is no grace window (see freezeSessionUnderDialog), and no
+	// auto-reconnect is armed here. Arming would paint a countdown that
 	if !deliberate && a.link.room != nil && a.link.sess != nil && a.screen == ScreenCourtroom {
 		a.freezeSessionUnderDialog(reason)
 		return
 	}
 	// No room to freeze (char-select, already torn down) or a deliberate close:
+	// today's plain teardown to the lobby, which still arms auto-reconnect for a
+	// genuine transport drop. shouldAutoReconnect suppresses ban/kick.
+	// The two surfaces stay mutually exclusive by construction: the branch above
+	// returns, so a drop either freezes under the disconnect dialog (which gets the
+	// same wrapped body and Copy) or lands here and raises the notice box. Never
 	noticeBody, showNotice := "", false
 	if !deliberate {
 		noticeBody, showNotice = serverRemovalMessage(reason)
@@ -209,6 +230,10 @@ func (a *App) openDisconnectDialog(name, url, raw string, hiddenUntil time.Time)
 	// A BB popup notice can be on screen when the link dies — a server that is about
 	// to close the socket is exactly the kind that just sent one. Two blocking modals
 	// would then stack, and the server's MOTD is moot the instant the session is gone.
+	// ONLY an info notice is dismissed: a serverNoticeRemoved box is the only copy of
+	// the appeal instructions the user will get, and nothing may destroy it. (It
+	// cannot be open here anyway — a removal takes the other branch of
+	// handleInvoluntaryDrop — so this is the invariant, stated where it is enforced.)
 	if a.font.serverNoticeDlg.open && a.font.serverNoticeDlg.kind == serverNoticeInfo {
 		a.closeServerNotice()
 	}
@@ -257,6 +282,8 @@ func (a *App) reconnectFromDisconnectDialog() {
 	if url != "" {
 		// Clicking Reconnect IS "we're coming back": snapshot today's log before
 		// the teardown below wipes it, so the redial to this SAME server (below)
+		// can restore it — applySessionCarryIfPending checks the key match, so
+		// this is a no-op harvest if url somehow changes before the dial lands.
 		a.snapshotSessionCarry()
 	}
 	a.Disconnect() // full teardown of the frozen session → lobby
@@ -306,6 +333,11 @@ func (a *App) drawDisconnectDialog(w, h int32) {
 		mh = lim
 	}
 	// Same absolute floor and same edge clamps as the notice box, for the same reason:
+	// the window clamp above is the one line that can hand back a height smaller than
+	// the chrome, and the buttons' y is measured from the panel's BOTTOM, so a collapsed
+	// panel stacks Reconnect on top of the heading. friendlyH is inside the floor here
+	// (the notice box has no equivalent row) so one row of the server's own reason is
+	// always visible, not just the sentence we wrote about it.
 	if floor := discDlgChromeH() + friendlyH + discDlgLineH; mh < floor {
 		mh = floor
 	}

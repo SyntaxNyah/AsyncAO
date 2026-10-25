@@ -43,6 +43,7 @@ func TestParseAreaBlock(t *testing.T) {
 // TestParseAreaShowname pins the verbose /getarea format: a "Showname:" line
 // (inline "Showname: X" or the name on the next line) aliases that showname to
 // the preceding [uid], so a double-clicked IC line (which displays the SHOWNAME)
+// auto-fills the UID. Shownames are aliases, not extra roster rows.
 func TestParseAreaShowname(t *testing.T) {
 	a := &App{env: env{}}
 	a.parseAreaBlock("[21] dante pxz\nShowname:\niumiro\n[22] Klavier\nShowname: Gavin")
@@ -261,3 +262,4 @@ func TestLooksLikeAreaList(t *testing.T) {
 // roster poll could latch itself off (rosterCmdUnsupported) instead of asking forever. The
 // poll is gone (liveroster.go, 2026-08-08), so the refusal now belongs in the OOC log where
 // the person who pressed the button can read it, and there is nothing left to classify.
+// TestNoSessionEverFiresATimedRosterPoll (rosterpoll_test.go) is what guards the new rule.

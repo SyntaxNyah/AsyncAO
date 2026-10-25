@@ -131,6 +131,7 @@ type ChatMessage struct {
 // AO2-Client chatmessage_enqueue/unpack_chatmessage: packets shorter than
 // MSMinimum are rejected; fields at index ≥ MSMinimum are honored only when
 // the server advertised cccc_ic_support; absent fields read as "".
+// charListSize bounds CHAR_ID validation (pass 0 to skip the upper bound).
 func ParseMS(fields []string, features FeatureSet, charListSize int) (*ChatMessage, error) {
 	if len(fields) < MSMinimum {
 		return nil, fmt.Errorf("protocol: MS packet has %d fields, minimum %d", len(fields), MSMinimum)
@@ -149,6 +150,14 @@ func ParseMS(fields []string, features FeatureSet, charListSize int) (*ChatMessa
 	// getBlips is get() with AO2-Client's CUSTOM_BLIPS gate on top
 	// (courtroom.cpp:4249-4255 reads m_chatmessage[BLIPNAME] only when
 	// serverdata advertises BASE_FEATURE_SET::CUSTOM_BLIPS, serverdata.h:64).
+	// Indices 30/31 are the 2.9.1 blipname/slide pair, and BuildFields appends
+	// them as a pair under that same feature. KFO-Server does NOT advertise
+	// custom_blips and reuses both slots for its "triplex" third-pairing
+	// extension — third_charid at 30 (idle value the literal "-1") and
+	// third_folder at 31 — so reading them ungated turned a sentinel into a
+	// blip URL on every incoming message. Gating Slide alongside Blipname is
+	// deliberate: on a server that genuinely advertises custom_blips the two
+	// always ship together, so behaviour is unchanged everywhere else.
 	getBlips := func(i int) string {
 		if !features.Has(FeatureCustomBlips) {
 			return ""
@@ -305,6 +314,9 @@ func kfoFrameTemplate(pre, emote string) string {
 // clampDeskMod collapses the expanded 2.9 desk mods (2–5) down to the legacy
 // hide/show values when the server did NOT advertise expanded_desk_mods, matching
 // AO2-Client's on_chat_return_pressed clamp (courtroom.cpp:2021-2031):
+// A strict-validator server (same class as the KFO/LemmyAO fixes) rejects the
+// whole MS otherwise; 0/1 pass everywhere. When the feature IS advertised the mod
+// rides raw. Same clamp table as ms.go's other legacy-value normalizations.
 func clampDeskMod(mod int, features FeatureSet) int {
 	if features.Has(FeatureExpandedDeskMods) {
 		return mod

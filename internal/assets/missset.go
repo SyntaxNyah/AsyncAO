@@ -38,6 +38,11 @@ const missChainSeparator = "\x00"
 const missTypeRaw = AssetTypeCount
 
 // missSetOverflowEvictShift sizes the batch dropped when the set is full:
+// capacity>>shift entries, i.e. an eighth. Batching amortizes the O(n log n)
+// overflow scan over that many inserts instead of paying it on every insert
+// past the cap. Dropping the oldest eighth costs at most one extra pipeline
+// pass per dropped key before it is recorded again, so the set has no
+// correctness stake in what it forgets — only a traffic one.
 const missSetOverflowEvictShift = 3
 
 // missSet remembers, for the LIFE OF THE SESSION, that a prefetch chain was
@@ -46,6 +51,8 @@ const missSetOverflowEvictShift = 3
 // Settings, which is exactly what a user does when sprites look missing — would
 // change nothing on screen, because the gate sits above the resolver and would
 // never let the new list be tried.
+// Bounded (rule §17.4) and mutex-guarded: written by pool workers on the
+// exhaustion path, read by the render thread on every prefetch.
 type missSet struct {
 	mu       sync.Mutex
 	keys     map[missChain]uint64 // key → insertion sequence (eviction order)
@@ -170,6 +177,9 @@ func (s *missSet) forgetUnder(prefix string) {
 }
 
 // size is the remembered-chain count (the Settings button's label, and tests).
+// Takes the generation like the rest: a label that counted chains no probe
+// would consult any more would send the user to press a button that has nothing
+// left to do.
 func (s *missSet) size(gen uint64) int {
 	if s == nil {
 		return 0

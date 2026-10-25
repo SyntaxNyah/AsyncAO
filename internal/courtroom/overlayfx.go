@@ -3,6 +3,9 @@ package courtroom
 // AO2 screen-effect OVERLAYS — the wire parse, the scene model and the trigger /
 // clear lifecycle. Canon is ../AO2-Client (do_effect, courtroom.cpp:3182-3273 and
 // start_chat_ticking, :4154-4177); it wins every conflict.
+// NAMING FENCE: this package already owns TextEffect* / EffectSpan / EffectMark
+// (effectwire.go — animated chat TEXT, a different feature entirely), so every
+// identifier here is prefixed Overlay… / overlay….
 
 import (
 	"strings"
@@ -118,6 +121,10 @@ const (
 	// effect waiting forever (hard rule 4).
 	overlayPendingTTL = 10 * time.Second
 	// overlayPendingRetryInterval paces the re-ask. Deliberately NOT every frame:
+	// the resolver keys its roster cache by "origin|folder", a concatenation it can
+	// memoise for only ONE folder at a time, and the picker asks for OUR OWN folder
+	// every frame — so a per-frame re-ask for a different folder would allocate on
+	// the zero-alloc courtroom frame.
 	overlayPendingRetryInterval = 200 * time.Millisecond
 )
 
@@ -156,6 +163,8 @@ func OverlaySoundPlayable(sound string) bool {
 
 // parseEffectsField splits the 2.8 EFFECTS wire field, verbatim per
 // start_chat_ticking (courtroom.cpp:4154-4172):
+// The ≥4 case is why this cannot take parts[len-1] as the sound: a sender that
+// pads the field would have its FOLDER read as the sound and its sound dropped.
 func parseEffectsField(raw string) (fx, folder, sound string) {
 	parts := strings.Split(raw, "|")
 	fx = parts[0]
@@ -182,6 +191,8 @@ func BuildEffectsField(name, folder, sound string) string {
 
 // clearOverlay is AO2's `ui_vp_effect->stopPlayback(); hide()`. Gen is preserved
 // (it only ever counts UP) so a later retrigger of the same base still restarts.
+// A clear also cancels a deferred arm: "nothing is on stage" has to mean nothing
+// is on its way either, or a superseded request would pop up a message later.
 func (c *Courtroom) clearOverlay() {
 	gen := c.Scene.Overlay.Gen
 	c.Scene.Overlay = SceneOverlay{Gen: gen}
@@ -218,6 +229,10 @@ func (c *Courtroom) fireOverlay(name, folder string, flip bool, offX, offY int) 
 	// exactly what the gated path leaves behind either way.
 	if !c.effectsVisible() {
 		// ScreenEffects off / ReduceMotion on: no overlay may be on screen at all.
+		// Canon returns here WITHOUT clearing (:3202-3205), which leaves the
+		// previous effect playing — the exact permanent wash reduce-motion exists
+		// to kill. Clearing also makes "ReduceMotion forbids a looping overlay"
+		// fall out of the one gate instead of needing a second knob.
 		c.clearOverlay()
 		return false
 	}
@@ -330,9 +345,15 @@ func (c *Courtroom) tickOverlayPending(dt time.Duration) {
 // get_effect_property replaces the merged effects.ini `sound` wholesale with
 // get_custom_realization (text_file_functions.cpp:889-892). Exported because the
 // SEND side lives in internal/ui (it builds the outgoing field from the roster)
+// and a second spelling there would drift.
 const OverlayRealizationEffect = "realization"
 
 // realizationSFXFor is AO2's get_custom_realization (text_file_functions.cpp:
+// 896-903): the SPEAKER's own char.ini [Options] realization when it declares
+// one, else the theme's courtroom_sounds.ini "realization". Canon applies that
+// precedence in both places a realization sound is chosen — the legacy
+// REALIZATION=1 receive path and the outgoing effects field — so it lives in one
+// helper here rather than being re-derived at each.
 func (c *Courtroom) realizationSFXFor(char string) string {
 	if c.Chars != nil && char != "" {
 		if sfx := strings.TrimSpace(c.Chars.CustomRealizationFor(char)); sfx != "" {

@@ -1,6 +1,14 @@
 package ui
 
 // The wiring gate for the per-server HDID.
+//
+// WHY SOURCE AND NOT BEHAVIOUR (the srcgate_test.go rationale, applied here): the
+// property is "the id we hand a session is the one derived for the server that
+// session is connecting to". A behavioural test can only see the id a session got,
+// and every wrong answer is a well-shaped id too — a constant, a cached one from
+// the previous tab, the same value for both tabs. What makes it right is that the
+// derivation reads the address being dialled, at the call, and that is placement.
+//
 // These are deletion-catchers, not mirrors: they contain no copy of the hashing
 // and would go red if the funnel were bypassed, not if it changed shape.
 

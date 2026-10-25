@@ -20,6 +20,9 @@ type reactUIState struct {
 	reactSpawnSeq      int32
 	// React trigger: showReactPicker toggles the palette (reactFenceOn tracks our modal
 	// fence so it's released on close, like the emoji picker); reactBtnRect anchors it.
+	// reactTarget{Ref,Name} is the message snapshotted when the palette opened. pendingReact
+	// (+set) is the queued reaction that rides the next IC send; lastReact{Ref,Name} tracks
+	// the most recent IC message, the snapshot source.
 	showReactPicker bool
 	reactFenceOn    bool
 	reactBtnRect    sdl.Rect

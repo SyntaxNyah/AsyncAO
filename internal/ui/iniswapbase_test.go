@@ -32,6 +32,11 @@ func mkCharPack(t *testing.T, names ...string) string {
 // TestScanLocalCharFoldersListsMountedCharacters is the whole point of the "From
 // your base" source: a user with a content pack mounted can browse and wear what is
 // IN it, without the server publishing anything.
+//
+// It also pins the three rules the scan is built on — files are not characters,
+// mounts are first-hit-wins (so an earlier pack shadows a later one, exactly as
+// BuildMountIndex resolves asset reads), and the result is name-sorted so the grid
+// does not reshuffle between scans.
 func TestScanLocalCharFoldersListsMountedCharacters(t *testing.T) {
 	first := mkCharPack(t, "Phoenix", "edgeworth")
 	second := mkCharPack(t, "EDGEWORTH", "Maya") // duplicate in a different case + one new
@@ -170,6 +175,7 @@ func TestBaseMountsEqualMatchesBaseMounts(t *testing.T) {
 // TestEnsureLocalCharFoldersIsAllocationFreeWhenUnchanged pins the claim that
 // licenses calling this from a draw path. The measured subject is a client WITH
 // mounts configured — a mountless one escapes trivially because make([]string, 0)
+// returns no allocation at all, which is exactly how the per-frame copy hid.
 func TestEnsureLocalCharFoldersIsAllocationFreeWhenUnchanged(t *testing.T) {
 	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
 	if err != nil {

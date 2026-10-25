@@ -200,6 +200,9 @@ var menuWindowItems = []menuItem{
 // menuExtrasItems is issue #26: the compact bottom-right toolbox's chips, migrated.
 // stopped the reported click-through. What #26 actually needed was a way to get those
 // menuExtrasItems is the chrome home for AsyncAO's own controls (#21, rule (c)).
+// The first three rows replace a chip row that used to be pinned at the raw
+// window's bottom-left in themed mode (drawThemedExtrasButton, deleted). Under a
+// real AO2 theme that row painted and clicked straight through the theme's own
 var menuExtrasItems = []menuItem{
 	// The Wardrobe's written path from EVERY screen. The band's own Iniswap chip is
 	// the fast route (iniswapchip.go), but that chip is dropped whenever the band gets
@@ -210,6 +213,11 @@ var menuExtrasItems = []menuItem{
 	{kind: menuItemCheck, label: "AsyncAO Extras box", checked: menuExtrasBoxOpen, enabled: menuInCourtroom, act: menuToggleExtrasBox},
 	{kind: menuItemCheck, label: "Restyle character…", checked: menuSpriteStyleOpen, enabled: menuInCourtroom, act: menuToggleSpriteStyle},
 	// Text FX and the emoji picker have NO AO2 design key, so under #21 rule (c)
+	// this menu is their home. They are not optional rows: the themed IC bar draws
+	// them only at the asyncao_ic_fx / asyncao_ic_emoji override rects, which no
+	// stock AO2 theme declares — without these two rows a themed player cannot
+	// reach either control at all, and icEffect is sticky, so an effect armed in
+	// the classic layout would wrap every line with no way to clear it.
 	{kind: menuItemCheck, label: "Text FX…", checked: menuFxPickerOpen, enabled: menuInCourtroom, act: menuToggleFxPicker},
 	{kind: menuItemCheck, label: "Emoji picker…", checked: menuEmojiPickerOpen, enabled: menuInCourtroom, act: menuToggleEmojiPicker},
 	{kind: menuItemSeparator},
@@ -293,6 +301,8 @@ func menuTogglePhoneBook(a *App, _ int) {
 
 // menuCanPingSort dims the row while a sweep is in flight: startPinging refuses a
 // second one (it would race its own results), so a live row there would do nothing.
+// Dimming is also the only progress feedback the menu can give — the on-screen button
+// this replaced said "Pinging…" in its label, which a static menu row cannot.
 func menuCanPingSort(a *App, _ int) bool { return !a.conn.lobby.pinging }
 func menuPingSortOn(a *App, _ int) bool  { return a.conn.lobby.pingMode }
 func menuTogglePingSort(a *App, _ int) {
@@ -573,6 +583,9 @@ func (a *App) menuBarPaintsNow() bool {
 }
 
 // noteEditorBanner is how the two layout editors publish "the band is mine this frame".
+// Called from the exact statement that fills the banner, never from the arm path, so
+// the flag means what menuBarPaintsNow needs it to mean: painted, not merely armed.
+// App.Frame clears it every frame, next to the tab strip's paint latch.
 func (toolbox1 *toolboxState) noteEditorBanner() { toolbox1.editorBannerPainted = true }
 
 // layoutEditorArmed is "one of the two layout editors owns the screen": the classic
@@ -583,6 +596,8 @@ func (a *App) layoutEditorArmed() bool { return a.classic.classicEdit || a.layou
 // menuBarHeight is the vertical space the bar occupies — the ONE number the layout
 // stage offsets screen content by, so no caller ever hardcodes menuBarH. Reports
 // ZERO whenever the bar is not shown, so the offset can be applied unconditionally.
+// Deliberately menuBarShows, NOT menuBarPaints: see menuBarPaints for why a layout
+// edit must not move the band it is editing against.
 func (a *App) menuBarHeight() int32 {
 	if !a.menuBarShows() {
 		return 0
@@ -610,6 +625,10 @@ func (a *App) menuBarSuppressed() bool {
 }
 
 // menuBarIndexOf maps a stored menu title to its index in menuBarMenus, or -1.
+// The open menu is remembered BY TITLE rather than by index so that the &App{} zero
+// value is "closed" — a zero index would mean "Servers is open" on every freshly
+// built App, including every test fixture — and so that reordering the model cannot
+// silently reinterpret the open pane.
 func menuBarIndexOf(title string) int {
 	if title == "" {
 		return -1
@@ -752,6 +771,9 @@ func menuPaneRowRect(pane sdl.Rect, items []menuItem, idx int) sdl.Rect {
 
 // menuPaneRowFits reports whether a row is WHOLLY inside a clamped pane (menuPaneRect
 // shortens a pane that would run off the bottom of the window).
+// It is THE rule for "does this row exist this frame", consulted by the draw and by
+// the hit test alike. They used to disagree: the draw stopped at the first row whose
+// bottom passed the clamp, while the hit test accepted any point inside both the pane
 func menuPaneRowFits(pane, row sdl.Rect) bool { return row.Y+row.H <= pane.Y+pane.H }
 
 // menuPaneRowAt returns the index of the row under (x, y) inside pane, or -1 (also
@@ -896,6 +918,8 @@ func (a *App) menuBarStandDown(w int32) {
 // menuBarModalFence holds the kit's modal fence while a pane is open and RELEASES it
 // the frame it closes — the rostermenu.go discipline, because modalOn persists
 // across frames and an un-released one freezes the whole UI (app.go says so).
+// menuFenceOn records that WE set it, so a bar that never took the fence never
+// touches it.
 func (a *App) menuBarModalFence(c *Ctx) {
 	if a.menuBarOpen() {
 		c.modalOn = true
@@ -1019,6 +1043,9 @@ func (a *App) fireMenuItem(it *menuItem) {
 // drawMenuBar paints the strip and any open pane, REPLAYING the latch phase 1
 // computed rather than re-deriving it. Call it after the screen dispatch: the kit is
 // single-pass, so the last thing painted is the thing on top.
+// The one thing it does not replay is whether to paint at all: that is the frame's last
+// undecided bit, and menuBarPaintsNow settles it here. Everything the paint uses —
+// geometry, the open pane, hover eligibility — is still the latch, so a bar recovered
 func (a *App) drawMenuBar(w, _ int32) {
 	if !a.menuBarPaintsNow() {
 		return
@@ -1071,6 +1098,11 @@ func (a *App) drawMenuPanes() {
 
 // menuBarHot is THE hover-feedback rule, shared by the strip's titles and the panes'
 // rows so the two can never gate differently.
+// Both halves of the gate replay the LATCH, never live state: `live` is "phase 1
+// published our fences and may take input", `inert` is "a blocking window modal owned
+// the frame when phase 1 ran". Highlighting under a cursor whose click the bar has
+// already refused advertises a control that is not there — the same input-vs-pixels
+// lie menuPaneRowFits exists to prevent one level down.
 func (a *App) menuBarHot(r sdl.Rect) bool {
 	return a.menuBar.live && !a.menuBar.inert && pointIn(a.ctx.mouseX, a.ctx.mouseY, r)
 }

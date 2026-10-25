@@ -37,6 +37,8 @@ func collectPresence(raw map[string]json.RawMessage, prefix string, out map[stri
 
 // snapshotLoad is the B0 candidate load: start from the defaults, unmarshal the file
 // OVER them, run the ordered legacy-key migrations, then normalize (clamps + stamps)
+// using the presence pre-pass. A JSON decode error returns the (untouched) defaults and
+// the unmarshal error so load() can wrap it and quarantine the file exactly as today.
 func snapshotLoad(data []byte) (*AssetPreferences, error) {
 	p := defaultPrefs("")
 	s := p.settings.Load()
@@ -103,6 +105,7 @@ func migrateLegacyKeys(s *Settings, data []byte, presence map[string]bool) {
 // normalize reproduces load()'s range clamps and one-shot stamps over a
 // snapshot-loaded value, so defaultPrefs + Unmarshal-over-defaults + normalize ==
 // load() for every field and case. The clamps are the same functions/constants load()
+// uses; the resets use the defaultPrefs reference so a default change keeps them in step.
 func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bool) (changed bool) {
 	def := defaultSettings()
 

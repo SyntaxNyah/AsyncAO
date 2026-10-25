@@ -1,6 +1,10 @@
 package ui
 
 // THE DOCUMENT AND THE TIMELINE (v1.90.0 W7a).
+// These gates DRIVE the seam rather than mirroring it: every one of them goes
+// through themeDoc.apply / revert and the real inspector table, so deleting the
+// funnel, the inverse or a table row fails the suite. Rule 11's own words: a
+// mirror-test that re-implements the seam's logic does not count.
 
 import (
 	"crypto/sha256"
@@ -33,6 +37,12 @@ func editProbeElement() theme.Element {
 		Shape: "hex",
 		Gen:   "grid",
 		// GenParams / Slice / NoDecimate are set for the reason the whole fixture is:
+		// the writer's setKey has no DELETE, so a key that started ABSENT and was edited
+		// and reverted keeps the line it grew, and the byte round trip below would fail
+		// for a reason that says nothing about the inverse. `decimate` is the sharpest
+		// case — it is written INVERTED (formatBool(!NoDecimate), default "yes"), so a
+		// probe that left it false would emit nothing, gain `decimate = no` on the edit,
+		// and come back with a line the original never had.
 		GenParams:  [theme.GenParamCap]theme.KV{{Key: "cols", Value: "4"}, {Key: "rows", Value: "2"}},
 		Slice:      [4]int16{3, 4, 5, 6},
 		NoDecimate: true,
@@ -95,6 +105,11 @@ func editDocRig(t *testing.T, n int) (*App, *themeDoc) {
 const editNonDefaultKind = theme.ElementKind(1)
 
 // editUnlockAll clears the probe element's authored lock.
+// The probe is LOCKED by construction (every field non-default, see
+// editProbeElement), and the lock is a real refusal: the nudge and the delete both
+// honour it. A gate about coalescing or about the graveyard must therefore say out
+// loud that it is not testing the lock — the one that IS
+// (TestLockedElementsRefuseDestructiveEdits) sets it back explicitly.
 func editUnlockAll(d *themeDoc) {
 	for i := range d.side.Elements {
 		d.side.Elements[i].Locked = false
@@ -143,6 +158,7 @@ func alterValue(t *testing.T, d *themeDoc, f *inspectorField, v editValue) editV
 		// than a shortcut: every fkPick field is read as FREE TEXT by the format, so a
 		// name outside this build's live list has to survive a write and a read
 		// unchanged. Appending a letter produces exactly such a name ("grid" -> "gridz")
+		// and the hash round trip below is what proves it round-trips.
 		out.s = d.intern(d.str(v.s) + "z")
 	}
 	return out
@@ -542,6 +558,9 @@ func TestGraveyardIsBoundedAndRefusesRatherThanLosingABody(t *testing.T) {
 
 // TestDeletingAnElementPersistsThroughTheSave closes the gap the preset wave's
 // own carrier bug pointed at: NO element deletion had ever reached the file.
+// The writer edits the lossless document the reader kept, so an element taken out
+// of `side.Elements` and nowhere else is re-emitted from its own surviving
+// [element.<id>] section on the next save and read straight back in — a delete
 func TestDeletingAnElementPersistsThroughTheSave(t *testing.T) {
 	_, doc := editDocRig(t, 2)
 	editUnlockAll(doc)
@@ -724,6 +743,10 @@ func TestEditsSurviveAThemeReapply(t *testing.T) {
 
 // openThemeEditorForTest is openThemeEditor without the overlay teardown, which
 // needs a renderer. It exists so this file's gates run headlessly.
+// It calls the PRODUCTION arm (armThemeEditor) rather than restating it: a helper
+// that built the editor its own way would be a second construction path, and the
+// half it forgot — the document's binding to the applied design map — is exactly
+// the kind of thing that then only fails on a real screen.
 func (a *App) openThemeEditorForTest(from Screen) bool {
 	if a.elemBake.themeSidecar == nil {
 		return false

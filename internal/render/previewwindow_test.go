@@ -324,6 +324,9 @@ func TestPreviewWindowShowAnimFrameRespectsCacheBudget(t *testing.T) {
 
 // TestPreviewWindowShowAnimFrameFailedSwitchClearsTheOldPick pins the one
 // case where a stale frame could outlive the pick it belongs to.
+// Delete the `p.tex != nil && !p.texIsCached` destroy or the unconditional
+// clear that follows it in resetAnimCache and this test fails on the
+// "still displaying the previous pick" assertion.
 func TestPreviewWindowShowAnimFrameFailedSwitchClearsTheOldPick(t *testing.T) {
 	_, cleanup := newHeadlessRenderer(t)
 	defer cleanup()

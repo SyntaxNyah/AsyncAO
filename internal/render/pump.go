@@ -69,6 +69,10 @@ func (p *Pump) Frame() {
 			// TRANSIENT (network-stage) failures never enter the negative
 			// cache: the bytes were never seen, so the asset is fine and the
 			// next demand (message prefetch, scene warm) must retry it.
+			// Pinning these for decodeFailTTL made one flaky-origin backoff
+			// window blank every asset it touched for 30 s — the "whole
+			// server's files go missing in waves" report. They're counted,
+			// not logged (a backoff burst would flood the log).
 			if d.Err != nil && d.Transient {
 				p.transientErrs.Add(1)
 				return
@@ -86,6 +90,11 @@ func (p *Pump) Frame() {
 			}
 			// PROVENANCE SPLIT (v1.89.0 layering). d.Base is the SERVER's URL even
 			// when the bytes came from the user's local pack, so MarkFailed(d.Base)
+			// below would take the SERVER's perfectly good copy of this asset offline
+			// for decodeFailTTL because ONE file in a hand-assembled pack is damaged.
+			// Quarantine the pack ENTRY instead and leave the base clean, so the very
+			// next demand re-enters resolution, skips the bad entry, and fetches the
+			// server's copy.
 			if d.Err != nil && d.FromPack {
 				if p.mgr.QuarantinePack(d.URL) {
 					log.Printf("render: local pack file %s failed to decode (%v) — using the server's copy instead", d.URL, d.Err)

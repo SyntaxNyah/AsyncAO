@@ -362,6 +362,10 @@ func TestChatboxLadderArtSkippedWithoutABaseSkin(t *testing.T) {
 // TestThemeLayoutBakesShownameExtra pins that the rung height is scaled with the
 // rect it widens and baked on the cold rebuild, so the draw path stays integer
 // only.
+// AO2 does not scale it — get_element_dimensions applies themeScalingFactor to
+// the showname rect while get_design_element hands extra_width back raw — but AO2
+// also ships that factor at 1, so the two agree everywhere AO2 runs. Ours is 1
+// only at the Native default on a window that fits the canvas.
 func TestThemeLayoutBakesShownameExtra(t *testing.T) {
 	const designW, designH = 714, 579 // the stock AO2 canvas
 
@@ -462,6 +466,9 @@ func pinFlatThemeArt(t *testing.T, a *App, stem string) *render.TexturePage {
 // message lands on is decided by what the ACTIVE THEME already has pinned in T1,
 // and by nothing else. No probe, no fetch, no disk touch per message — a theme
 // that ships no variants answers from a map read, forever.
+// It walks the four cases the corpus actually contains: both variants (60 of 74
+// themes), med only, neither (14, P5Theme among them), and a theme that declares
+// no extra_width at all (nine).
 func TestChatboxSkinLadderRidesResidency(t *testing.T) {
 	a, cleanup := ladderHarness(t)
 	defer cleanup()
@@ -639,6 +646,11 @@ func mustPage(t *testing.T, a *App, stem string) *render.TexturePage {
 }
 
 // TestShownameLadderReachesBothDrawSites is the mirror-site guard (4.7e).
+// The live themed chatbox and the video / comic export's themed chatbox draw the
+// same theme's chatbox. If only one of them runs the ladder, a long showname
+// renders on the wide plate on screen and spills off the narrow one in the
+// exported file — which is exactly the class of drift chatboxTextRects was
+// consolidated to end.
 func TestShownameLadderReachesBothDrawSites(t *testing.T) {
 	for _, file := range []string{"theme_layout.go", "gifexport.go"} {
 		src, err := os.ReadFile(filepath.Join(".", file))

@@ -250,6 +250,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 			// #35: a deliberate pick may snap the window to the new canvas. Arm the
 			// gen this very apply allocated, so a heal already in flight (themePage
 			// heals from any theme-art draw, this screen's live preview included)
+			// cannot land first and spend the arming on the OLD theme's canvas.
 			a.themeResizeArmGen = a.applyThemeAsync()
 		}
 	} else {
@@ -813,6 +814,10 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 }
 
 // drawThemeFitPreview draws a big interactive preview of the Custom theme fit:
+// the theme's courtroom background scaled + panned exactly as the live courtroom
+// would (the box carries the window aspect, so the crop you see is the crop you
+// get). Drag to pan, scroll to zoom — both write the prefs and re-fit live.
+// Settings-screen only; never the courtroom hot path.
 func (a *App) drawThemeFitPreview(box sdl.Rect) {
 	c := a.ctx
 	c.Fill(box, sdl.Color{R: 0, G: 0, B: 0, A: 255})

@@ -9,6 +9,11 @@ import (
 
 // Character profile (#101): the local model, this Settings editor, a reusable card
 // renderer (with a live preview), and the cross-client wire (slice 2). Configurable:
+// Enable is the master switch, "Show on player list" controls visibility. The card is
+// standard-client-safe; the cross-client slice (pronouns + tagline) rides the same
+// invisible zero-width IC channel as the sprite style (courtroom.WireProfile), so other
+// AsyncAO players see it AFTER you speak, while AO2/webAO are unaffected. The bigger
+// fields (bio, theme song, art) stay LOCAL — too large for the message channel.
 
 // drawProfileSettings draws the "Your profile" Settings section and returns the y
 // below it. Settings-only; never a hot path.
@@ -83,6 +88,9 @@ func (a *App) profileFor(p *areaPlayer, isMe bool) (config.ProfilePref, bool) {
 }
 
 // myWireProfile is the cross-client slice of our profile to transmit (#101 slice 2):
+// empty unless the profile is enabled AND set to show on the list (the same gate the
+// local card uses), so disabling either stops transmitting (and sends a clear). Only
+// pronouns + tagline travel — the receiver's card title uses our live showname.
 func (a *App) myWireProfile() courtroom.WireProfile {
 	pr := a.d.Prefs.Load().MyProfile
 	if !pr.Enabled || !pr.ShowOnList {

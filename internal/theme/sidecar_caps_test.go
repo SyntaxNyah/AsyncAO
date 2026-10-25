@@ -32,6 +32,7 @@ type sidecarCapRow struct {
 
 // sidecarCapRows is the table: the ten growable collections of the model, plus
 // the one cap that is an int beside a fixed array rather than a slice length.
+//
 // Order follows validateCaps' own rows, so a reader can put the two side by side.
 func sidecarCapRows() []sidecarCapRow {
 	return []sidecarCapRow{{
@@ -186,6 +187,9 @@ func capEntryID(prefix string, i int) string { return prefix + formatInt(i) }
 // missing validateCaps rows died on. For every capped collection: the model at
 // the cap saves, the file at the cap loads, and one past it is refused by BOTH,
 // with the same sentinel.
+// Deleting any row from validateCaps turns this red on that collection's
+// over-cap half; changing one to a different cap constant turns it red on the
+// at-cap half. That is the whole point — the mapping is enforced by execution
 func TestEveryCappedCollectionIsGuardedInBothDirections(t *testing.T) {
 	// Every fixture file states its own format, as a real theme does.
 	const header = "[" + secTheme + "]\nformat = 1\n\n"
@@ -239,6 +243,7 @@ var sidecarCapRowsNotACollectionField = map[string]string{
 
 // TestEveryModelCollectionHasACapGate is the anti-omission device: the required
 // set of rows is DERIVED from the Sidecar type, not remembered.
+//
 // Writing the rows out by hand is what failed the first time — seven of eleven
 // were never written, and the seven matching rules in validateCaps were therefore
 // deletable with this package green. A field added to the model now fails here on
@@ -280,6 +285,7 @@ func TestEveryModelCollectionHasACapGate(t *testing.T) {
 
 // sidecarModelCollections walks the Sidecar TYPE and returns the path of every
 // exported slice a holder of the model can grow ("Elements", "Import.Subthemes").
+//
 // Slices only: a fixed array is bounded by its own type and cannot be overfilled
 // — except where an int count rides beside one, which is the one row the map
 // above accounts for. Unexported fields are skipped because no editor holds them.

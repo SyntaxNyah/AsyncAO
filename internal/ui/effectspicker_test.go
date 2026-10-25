@@ -848,6 +848,9 @@ func TestCharINIRealizationOverridesTheEffectSound(t *testing.T) {
 // IC-bar sfxdd row and the SFX-BROWSER row audition on right-click and commit
 // nothing. Left-click is what picks; before this there was no way to hear a sound
 // without putting it on your next message.
+// No origin, so previewSFX is its documented lobby no-op — this half pins the
+// non-effects (selection, consumption, modal state). The positive half is the
+// test below.
 func TestRightClickSFXRowPreviewsWithoutSelecting(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()

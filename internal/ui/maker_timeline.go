@@ -12,6 +12,9 @@ import (
 // how long that event was on screen in the recording (its OffsetMs gap to the
 // next event), so you SEE the pacing: which message dominates, where the dead air
 // is. Click a segment to select it; drag the ⟦ ⟧ handles to crop In/Out directly.
+// Honest-axis guards: segments are by ARRAY ORDER (offsets drive width only, so
+// edits don't reshuffle them); idle gaps are CLAMPED [min,max] in ms so an AFK
+// pause can't swallow the strip, plus a MIN PIXEL floor so every event stays
 
 const (
 	makerTimelineH = int32(72) // total strip height (label + track + scrub lane + overhang)
@@ -41,6 +44,10 @@ func abs32(v int32) int32 {
 }
 
 // makerTLDurations fills durs (reused) with each event's display duration in ms:
+// the recorded OffsetMs gap to the next event, clamped [min,max]. When the
+// offsets carry no pacing signal at all (a hand-built scene, or an archive that
+// didn't capture wall-clock — every gap <= 0), it falls back to equal widths
+// rather than a degenerate fused bar. By array order.
 func makerTLDurations(evs []recEvent, durs []float64) []float64 {
 	durs = durs[:0]
 	if len(evs) == 0 {

@@ -84,6 +84,9 @@ type overlayOwnerScope struct {
 // occluder must bracket its own widgets with these, or its published rect would
 // blank ITSELF — the same self-fencing problem the open dropdown works around with
 // raw pointIn().
+// Nested/re-entrant safe in both directions: the previous value is restored rather
+// than force-cleared, and an inner owner can only ever suspend MORE than the outer
+// one (it takes the smaller mark), because it draws inside the outer occluder and
 func (c *Ctx) pushOverlayOwner(mark int) overlayOwnerScope {
 	prev := overlayOwnerScope{on: c.overlayOwner, mark: c.overlayOwnerMark}
 	// Clamp: a mark taken before a release (or from a latch computed earlier in the

@@ -10,6 +10,9 @@ import (
 // session's read loop stays up decoding server packets. Before the sync.Once
 // fix, every Dial re-ran RegisterVoiceCodecs + RegisterGroupPairCodec, which
 // re-write packetutil.customCodecs and aolib's packet registry (plain maps)
+// while a previous session's readLoop (receiveCustom) reads them — a concurrent
+// map read/write fatal (the two-tab connect crash). The fix registers once, so
+// this hammer is race-free.
 func TestConcurrentDialCodecRegistrationIsSafe(t *testing.T) {
 	srv := echoAOServer(t)
 

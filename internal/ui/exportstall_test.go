@@ -167,6 +167,12 @@ func describeExportStall(a *App, ticks int) string {
 // hard cap (the reported "export that never even converts"). It exercises the real
 // pipeline: startSceneExport, the format seed against the 404 origin, the pre-warm
 // with the conclusive-miss release, the capture loop, and the off-thread encode.
+//
+// This is permanent armor: on code without the settled-includes-missing release,
+// the warm would never latch warmSubmitDone (no ref ever prunes from warmInFlight),
+// so it would sit warming until gifWarmHardCap — 20 s of wall clock — which blows
+// this test's fast tick budget AND its wall-time guard. The fix makes the misses
+// settle the warm in a handful of ticks.
 func TestExportAll404DrivesToCompletionGIF(t *testing.T) {
 	a, origin := newExportStallHarness(t)
 
@@ -175,6 +181,11 @@ func TestExportAll404DrivesToCompletionGIF(t *testing.T) {
 	// window, the whole pendingWarm list submits in one tick, warmSubmitDone latches
 	// even without the miss release, and gifWarmMax (6 s) ends the warm — the export
 	// would then "complete" on the buggy code too and the test would prove nothing.
+	// Above the window, an unfixed warm can never prune its in-flight set (nothing
+	// becomes resident, and without the miss-as-settled release nothing else clears
+	// it), so pendingWarm sticks, warmSubmitDone never latches, and ONLY the 20 s
+	// gifWarmHardCap ends it — blowing this test's budget with a.gif still set. That
+	// is the discriminating armor.
 	rec := &sceneRecording{
 		Version: recordingVersion,
 		Origin:  origin,
@@ -202,6 +213,8 @@ func TestExportAll404DrivesToCompletionGIF(t *testing.T) {
 	// Smallest legal frame + slowest legal fps (SetExportOpts clamps to the
 	// mins): each captured frame advances the sim by the LARGEST legal dt and
 	// quantizes the FEWEST pixels, so the whole script fits the tick budget.
+	// Without this the test captured full-size frames — ~64ms/tick — and ran
+	// out of wall clock while genuinely converging (the first gate round).
 	a.d.Prefs.SetExportOpts(config.ExportOptions{HeightPx: 1, FPS: 1, Quality: 1, TextScale: 100}) // fastest crawl/linger
 
 	wallStart := time.Now()
@@ -226,6 +239,11 @@ func TestExportAll404DrivesToCompletionGIF(t *testing.T) {
 	// Wall-time guard: the whole drive must be far under the 20 s warm hard cap that a
 	// regressed stall would burn. (Generous: CI + the 404 round-trips, but nowhere
 	// near 20 s.)
+	// No separate wall guard: a healthy full cap-out measured 41s on the dev
+	// box (software renderer, -p 1, suite under load), so any tighter ceiling
+	// is flake surface. The 90s completion deadline inside
+	// driveExportToCompletion is the bound that matters — the export either
+	// finishes inside it or the diagnostic Fatal above names the held phase.
 	_ = wallStart
 
 	// The off-thread GIF encode delivers on a.gifResultCh; poll it (bounded) so the

@@ -32,6 +32,8 @@ const gwlpHwndParent = -8
 // window manager keeps them z-ordered together (see the package-level
 // comment above for the measured reasoning). Call once, right after a
 // successful Open/OpenAt/OpenAtClamped.
+// Render-thread only (hard rule 1): every branch here either touches an SDL
+// window handle or nothing at all.
 func (p *PreviewWindow) LinkOwner(mainWin *sdl.Window) bool {
 	if p == nil || p.win == nil || mainWin == nil {
 		return false
@@ -55,6 +57,14 @@ func (p *PreviewWindow) LinkOwner(mainWin *sdl.Window) bool {
 	// MSDN's own documented pattern for SetWindowLongPtrW: a 0 return is
 	// ALSO the legitimate "this window had no owner before" value, so a
 	// bare `prev == 0` check cannot tell success from failure on its own.
+	// Clear the last-error slot first, then only treat a 0 return as a
+	// genuine failure if GetLastError became non-zero as a result of THIS
+	// call. (syscall.LazyProc.Call's returned error is always non-nil —
+	// it is GetLastError() wrapped as a syscall.Errno regardless of
+	// outcome, per the syscall package's own documented contract, the
+	// same gotcha internal/ui/dpiseed_windows.go's GetDpiForWindow call
+	// already works around — so the errno VALUE is what matters here, not
+	// its nil-ness.)
 	if procSetLastError.Find() == nil {
 		procSetLastError.Call(0)
 	}

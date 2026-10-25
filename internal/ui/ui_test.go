@@ -77,6 +77,9 @@ func TestParseIniswapList(t *testing.T) {
 }
 
 // TestFilterServerIniswaps pins the wardrobe's background filter (playtest:
+// a server's combined iniswap.txt put its whole background/ dir in the
+// Iniswaps grid). Exclusion = live autoindex ∪ remembered names, matched
+// case-insensitively; with neither list the input passes through untouched.
 func TestFilterServerIniswaps(t *testing.T) {
 	names := func() []string { return []string{"Aigis", "uminekobeach", "Zeta", "HigurashiSchoolDay"} }
 
@@ -620,6 +623,9 @@ func TestWrapToWidthMOTD(t *testing.T) {
 }
 
 // TestOOCWrapURLFullLink pins the fix for links the OOC wrapper hard-splits:
+// a long Discord CDN URL (a '&'-laden query string) is captured WHOLE from the
+// source entry, so every wrapped row of it opens the full link — not the
+// truncated fragment a per-display-line scan used to grab at the first '&'.
 // Post-#38 the pieces are spans that share ONE link id, so the hover tint still
 // covers the whole link across the rows it was split into.
 func TestOOCWrapURLFullLink(t *testing.T) {
@@ -881,6 +887,8 @@ func TestICLogFilterShownamePos(t *testing.T) {
 
 // TestWrapTextCaps pins the lobby description wrapper: nil for blank
 // input, the line cap holds, and the capped line gains an ellipsis.
+// (Headless: TextWidth returns 0 without a font, so everything fits one
+// line unless the cap forces splits — we exercise the cap path.)
 func TestWrapTextCaps(t *testing.T) {
 	c := &Ctx{widthCache: map[string]int32{}}
 	if got := c.WrapText("   ", 100, 4); got != nil {

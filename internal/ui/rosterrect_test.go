@@ -2,6 +2,8 @@ package ui
 
 // Gates for THE ROSTER'S RULING under an AO2 theme (theme_layout.go states it):
 // the player list is drawn at AO2's own `player_list` rect (courtroom.cpp:879)
+// when the theme declares one, and shares music_list — AO2's own reuse, since
+// ui_area_list (:864) and ui_music_list (:867) already share it — when it does not.
 
 import (
 	"testing"

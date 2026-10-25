@@ -84,6 +84,10 @@ func (a *App) queueOOCLines(lines []string) {
 // BOTH Frame and Background (App.Background), so the queue drains at the same
 // rate whether the window is focused, unfocused or minimized — the drain must
 // never be coupled to the render loop (see oocSendMinGap for why).
+//
+// The one-at-a-time walk is the point: the old loop sent every due entry in a
+// single pass, so a queue that accumulated while the drain was stalled left as
+// one burst and the server kicked us for OOC flooding.
 func (a *App) processOOCQueue() {
 	if len(a.oocQueue) == 0 || a.link.sess == nil {
 		return
@@ -145,6 +149,9 @@ func (a *App) handleMacroKeys() bool {
 
 // loginLines builds the wire flow for this server's software. Three
 // shapes exist in the wild:
+//   - Akashi: "/login" then "<user> <pass>" answering its prompt
+//   - KFO-Server: "/login <pass>" — password only, no username
+//   - Athena/Nyathena/Whisker/unknown: "/login <user> <pass>"
 func (a *App) loginLines(user, pass string) []string {
 	soft := ""
 	if a.link.sess != nil {
@@ -201,6 +208,8 @@ func (a *App) autoLoginOnReady() {
 	// Fire at most once per session ("try once and stop"). EventReady rides the
 	// DONE packet, which some servers re-send mid-session (the WAP/Akashi fork,
 	// area changes) — each one re-ran this and re-queued the login, spamming OOC.
+	// The latch clears on a fresh connection (resetSessionState), so a real
+	// reconnect logs in again; a manual loginNow is unaffected (it's not gated).
 	if a.link.autoLoginTried {
 		return
 	}
@@ -259,6 +268,7 @@ func (a *App) loginPanelRect(w, h int32) sdl.Rect {
 
 // drawLoginDialog edits this server's credentials (plaintext storage —
 // the dialog says so) and fires the flow.
+//
 // A non-blocking floatWin rather than a return-to-top modal (#31): typing a
 // username should not blank the courtroom behind it, and the flow-preview line
 // describes what the server will be sent — which is easier to trust while you can
@@ -390,6 +400,9 @@ func (a *App) drawMacroSettings(y int32, w int32) int32 {
 }
 
 // drawLoginSettings is the Settings section for the built-in login:
+// pick ANY known server (connected or not) and configure its account
+// ahead of time — the credentials wait in its per-server slot and fire
+// (auto or manual) the next time you join. Returns the next y.
 func (a *App) drawLoginSettings(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX

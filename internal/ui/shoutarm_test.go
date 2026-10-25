@@ -5,6 +5,7 @@ package ui
 // back to the message. The interjection rides the NEXT message — the MS
 // objection field is assembled from objection_state at :2136-2147 and cleared in
 // reset_ui at :2327.
+// These gates drive the real state and the real packet builder.
 
 import (
 	"testing"
@@ -50,6 +51,8 @@ func TestShoutRidesTheNextMessage(t *testing.T) {
 
 // TestShoutDisarmsAfterTheSend is courtroom.cpp:2327 (reset_ui clears
 // objection_state UNCONDITIONALLY — it is not one of the three sticky options).
+// A stuck arm shouts on every following line, which is the failure everybody
+// notices.
 func TestShoutDisarmsAfterTheSend(t *testing.T) {
 	a, sent := flipSendApp(t)
 	a.toggleShout(protocol.ShoutTakeThat)
@@ -86,6 +89,9 @@ func TestShoutsAreMutuallyExclusiveAndToggleOff(t *testing.T) {
 // same lane as this defect (the realization button, 0fc8f38 item 8): it must
 // keep arming — and now that its neighbour in the same bar arms too, the two
 // have to ride ONE message and clear together.
+// The effects-row half of the realization arm keeps its own gate
+// (TestRealizationArmsTheEffectsRowNotJustTheFlag, icarms_test.go, which owns
+// the roster fixture); this one is about the wire and the reset.
 func TestRealizationStillArmsAlongsideTheShout(t *testing.T) {
 	a, sent := flipSendApp(t)
 	a.toggleRealization()

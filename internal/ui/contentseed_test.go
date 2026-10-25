@@ -168,6 +168,16 @@ func TestContentFullChainProbeFindsPNG(t *testing.T) {
 }
 
 // TestContentMixedFormatNoManifestBothFound pins the mixed-format honesty case:
+// a no-manifest origin (seedAbsent) whose TWO characters carry DIFFERENT per-asset
+// formats — Alpha only .gif, Beta only .png — must report BOTH Found. Both sprites
+// share one (host, CharSprite) learned slot, and the 8 probe workers run
+// concurrently, so whichever sprite RecordSuccess-learns its format first would,
+// under a "learned miss is terminal" policy, lock the OTHER sprite out: it would be
+// single-probed at the sibling's format, 404, and be falsely reported Missing —
+// nondeterministically by worker scheduling. The fix makes a learned MISS fall
+// through to the full-chain walk on the diagnostic path, so each sprite is found at
+// its own format regardless of probe order. Without the fix this flakes/fails by
+// worker order; with it, both are deterministically Found.
 func TestContentMixedFormatNoManifestBothFound(t *testing.T) {
 	sprite := pngBytes() // opaque bytes; the probe never decodes them
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

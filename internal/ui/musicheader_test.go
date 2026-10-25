@@ -14,6 +14,8 @@ import (
 // since Ctx.Button ends in `hover && c.clicked` with no click consumption, ONE
 // click fired BOTH: expanding the categories also stopped the music. With only the
 // plate external, the search TextField landed on the button instead.
+// These drive the REAL planner across the whole flag matrix, so the property the
+// bug violated is the thing asserted.
 
 func musicHeaderItemName(id int) string {
 	switch id {

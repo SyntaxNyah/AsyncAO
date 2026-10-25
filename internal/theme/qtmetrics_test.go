@@ -1,6 +1,11 @@
 package theme
 
 // The Qt row-pitch reader, held against NUMBERS QT ITSELF PRODUCED.
+// The two faces are the ones the repository ships, so the gate needs no fixture
+// and cannot rot when a machine lacks a font. Both happen to have
+// USE_TYPO_METRICS SET, which is exactly the branch a win-metrics-only reader
+// would get wrong — and would get wrong in the direction that damages the
+// client's own text rather than a theme's.
 
 import (
 	"os"
@@ -58,6 +63,10 @@ func TestReadQtRowPitchMatchesQtForTheBundledFaces(t *testing.T) {
 
 // TestQtRowPitchWinBranchArithmetic pins the OTHER branch — the one no bundled
 // face exercises and the one the reported defect lives in.
+// The face itself is not in the repository (it belongs to a third-party theme
+// pack), so the struct is built directly. That is not a mirror test: the
+// arithmetic under test is Pitch's, and the field values are the ones the reader
+// is separately proven to extract by the bundled-face gate above.
 func TestQtRowPitchWinBranchArithmetic(t *testing.T) {
 	q := QtRowPitch{UnitsPerEm: 1000, Ascent: 1107, Descent: 334}
 	if got := q.Pitch(24); got != 35 {

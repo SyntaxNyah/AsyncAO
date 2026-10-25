@@ -395,6 +395,9 @@ func (a *App) drawForkConnector(x0, cardX, y int32) {
 var serverCapBox = sdl.Color{R: 78, G: 82, B: 96, A: 255}
 
 // drawServerCaps draws the WS / WSS / Players capability chips for one project:
+// WS is always a yellow ✓ (every catalog server speaks WS); WSS is a green ✓
+// (native) or red ✕; Players is a green ✓ (native live list), a yellow ✓ marked
+// "plugin", or a red ✕.
 func (a *App) drawServerCaps(x, y int32, p *serverProject) {
 	c := a.ctx
 	const icon = 13
@@ -477,6 +480,9 @@ func (a *App) linkLabel(x, y, maxW int32, url string) {
 // can't flood the box. Both scheme-prefixed (http/https) and bare "www." links
 // are recognised — a bare "www.x" keeps its bare display text everywhere and is
 // promoted to https:// only at OPEN time (schemeForOpen).
+// Detection is token-based: strings.Fields splits on whitespace, so a candidate
+// must be a WHOLE token that starts with the prefix after the wrapper/trailing
+// trim. That gives the boundary rule for free: "foo.www.bar" is one token that
 func extractURLs(s string, max int) []string {
 	var out []string
 	for _, tok := range strings.Fields(s) {

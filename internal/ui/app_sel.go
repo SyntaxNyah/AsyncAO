@@ -78,6 +78,9 @@ type selState struct {
 	// Instant replay (rolling clip buffer, see replay.go): when the opt-in pref is
 	// on, every scene-mutating event is also stamped into replayBuf — a bounded
 	// ring — so the clip key can save the last window WITHOUT a prior recording.
+	// Allocated lazily on first capture, nilled when disabled or the origin changes
+	// (a clip must never mix two servers' assets). replayBufW = next write slot,
+	// replayBufN = entries held (<= cap), replayBufOrigin = the CDN they came from.
 	replayBuf       []replayBufEntry
 	replayBufW      int
 	replayBufN      int

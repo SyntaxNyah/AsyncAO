@@ -1,6 +1,9 @@
 package theme
 
 // AO2-COMPAT EXPORT (v1.90.0 W8) — design §Q4 "Also work in AO2-Client".
+// AND ASYNCAO-LOST.txt GOES IN THE BUNDLE. A file in the archive beats a dialog
+// in our UI: it survives re-share, renaming and re-zipping, and it reaches the
+// AO2 user who will never see our export sheet.
 
 import (
 	"fmt"
@@ -42,6 +45,11 @@ func BakeAO2Design(src []byte, s *Sidecar) ([]byte, error) {
 // StripForAO2 returns a COPY of the sidecar with the tier that has just been
 // baked emptied out, so the exported theme does not apply its overrides twice
 // when an AsyncAO client opens it.
+// The lossless carrier is deliberately NOT copied — the copy re-emits from the
+// model into a fresh document, which is exactly right for a DERIVED file: the
+// bundle's sidecar is a new artefact, and carrying the original's untouched
+// [overrides] lines into it would put back the rows this function exists to
+// remove.
 func StripForAO2(s *Sidecar) *Sidecar {
 	if s == nil {
 		return nil
@@ -58,6 +66,10 @@ func StripForAO2(s *Sidecar) *Sidecar {
 
 // LostToAO2 names, by id and kind, everything an AO2-Client will not show. It is
 // the body of ASYNCAO-LOST.txt.
+// EVERY LINE IS ACTIONABLE OR IT IS NOT WRITTEN. "Your theme is different in
+// AO2" helps nobody; "[element.butterflies] (image) — AsyncAO free elements have
+// no AO2 equivalent" tells the reader exactly what they are missing and lets the
+// author decide whether it mattered.
 func LostToAO2(s *Sidecar) []string {
 	if s == nil {
 		return nil
@@ -108,6 +120,7 @@ func LostToAO2(s *Sidecar) []string {
 }
 
 // LostReport renders LostToAO2 as the file's whole text, header included.
+//
 // The header explains itself to somebody who has never heard of AsyncAO, because
 // that is exactly who finds this file: a person who unzipped a theme a friend
 // sent them and is reading the odd shouty text file in it.

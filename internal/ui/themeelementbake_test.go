@@ -1,6 +1,12 @@
 package ui
 
 // The free-element BAKE's gates (v1.90.0 W3).
+// The draw path's gates live in themeelements_test.go and were written first,
+// against a stub painter table, because that is what the wave plan asked for. These
+// are the other half: what the bake must PRODUCE for those loops to be drawing the
+// right thing — anchor deltas, skip-if-absent, pane reparenting, band order,
+// condition interning — measured against sidecars a human wrote by hand under
+// testdata/sidecars, before any UI exists that could author them.
 
 import (
 	"errors"
@@ -181,6 +187,10 @@ func bakedByFill(lay *themeLayoutCache, col sdl.Color) (*bakedElement, int) {
 
 // TestAnchoredRectIsASignedDelta is design §6.6 R1, measured: an anchored element's
 // rect is the ANCHOR'S box plus the rect, component by component, in DESIGN pixels.
+// The delta scales with the canvas, which is the half that is easy to get wrong: a
+// six-pixel inflate authored against a 714-wide canvas must still be six DESIGN
+// pixels at 1280x720, or a frame that hugs its chatbox at one window size stands off
+// it at another.
 func TestAnchoredRectIsASignedDelta(t *testing.T) {
 	_, lay, cleanup := stageThemedWithSidecar(t, "w3_render.ini")
 	defer cleanup()
@@ -208,6 +218,10 @@ func TestAnchoredRectIsASignedDelta(t *testing.T) {
 
 // TestElementWithAnAbsentAnchorIsInert is design §6.6 R10: an element whose anchor
 // key no layout declares is INERT — no widget, no decoration — and is NOT an error.
+// Skip-if-absent rather than "fall back to the canvas": a decoration placed
+// relative to a widget that is not there has no defined position, and putting it
+// somewhere anyway is how a theme ends up with a badge floating in the middle of
+// the stage on exactly the layouts its author never tried.
 func TestElementWithAnAbsentAnchorIsInert(t *testing.T) {
 	_, lay, cleanup := stageThemedWithSidecar(t, "w3_render.ini")
 	defer cleanup()
@@ -443,6 +457,8 @@ func TestElementDrawOrderIsBakedNotSorted(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestVisibleWhenIsInternedAndGatesTheDraw pins the condition pipeline end to end:
+// the bake interns each distinct value once, and the draw path gates on an integer
+// compare against the index the frame resolved.
 // The gate must be able to say NO. A condition that is always true is not a
 // condition, and "the element drew" is not evidence that anything was evaluated —
 // so this drives the live state both ways and demands the dispatch count move.
@@ -520,6 +536,9 @@ func TestVisibleWhenSurvivesARebake(t *testing.T) {
 // TestUnknownConditionAxisLeavesTheElementVisible is the format's own rule
 // (docs/THEME-FORMAT.md §3): "an unknown axis leaves the element visible — an
 // element a future condition would have hidden is better shown than lost".
+// It is checked against an axis OUT of the enum, which is exactly what a theme from
+// a newer client produces, and it is the one case where the safe default is to
+// paint rather than to skip.
 func TestUnknownConditionAxisLeavesTheElementVisible(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
@@ -591,6 +610,9 @@ func BenchmarkElementBandBake(b *testing.B) {
 // TestHandAuthoredSidecarRendersEveryW3Painter is the wave's ship criterion stated
 // as a test: the hand-authored fixture reaches shape, gradient, text AND pane, on a
 // real themed frame, through the real band loops.
+// It counts dispatches per KIND rather than inspecting pixels: the software
+// renderer these tests run on is not a pixel oracle, and what W3 owes is that the
+// model resolves and dispatches — the pixels are what a human verifies on a screen.
 func TestHandAuthoredSidecarRendersEveryW3Painter(t *testing.T) {
 	a, _, cleanupA := stageThemedWithSidecar(t, "w3_render.ini")
 	seen := map[theme.ElementKind]int{}

@@ -9,6 +9,7 @@ import (
 // TestFontFileIsOnlyForThemesThatNameNothing pins FontFile's SCOPE, which is the
 // whole client's font chain — not any one element's.
 // A theme that names families dresses its elements individually (FontFiles, #39)
+// The case it exists for survives: a theme that ships one .ttf and declares no
 // family at all still restyles the client (the original #6 request).
 func TestFontFileIsOnlyForThemesThatNameNothing(t *testing.T) {
 	// (a) Names a family → dresses that element, imposes nothing globally.
@@ -120,6 +121,7 @@ func TestFontFileBaseFontsNeedsDeclaredFamily(t *testing.T) {
 }
 
 // TestFontFileFromThemeFontsSubdir is the reporter's case for #39 (Lymantriina):
+// the theme declares "IBM Plex Serif" and ships it in its OWN fonts/ subfolder.
 // The pre-#39 scan skipped every directory entry, so the family never resolved
 // and the theme's font silently never applied. AO2-Client registers <base>/fonts
 // RECURSIVELY (main.cpp:44-55), so a subfolder is a normal place to find one.
@@ -192,6 +194,7 @@ func TestFontFileBaseFontsRecursive(t *testing.T) {
 
 // TestFontFileSystemDirAlias pins the system-font tier — the ONLY way a theme
 // declaring plain "Arial" or "Times New Roman" (DRRetribution, KFO qHD, DR Theme)
+// can resolve at all, since neither ships the file. AO2 gets this from Qt's
 // system font database (get_qfont, courtroom.cpp:1263).
 func TestFontFileSystemDirAlias(t *testing.T) {
 	root := t.TempDir()
@@ -305,6 +308,9 @@ music_name_color = 4, 5, 6
 }
 
 // TestFontElementsIsAppendOnly pins the property that actually matters:
+// internal/ui indexes its resolved per-element table by POSITION in this list, so
+// an identifier inserted or reordered silently hands every later element another's
+// family, size, bold and colour.
 // The order is NOT AO2's set_fonts call order, and never was — AO2 calls
 // music_name after area_list (courtroom.cpp:1201-1202). It does not need to be:
 func TestFontElementsIsAppendOnly(t *testing.T) {
@@ -348,6 +354,8 @@ func TestFontFileNoneWhenThemeShipsNoFont(t *testing.T) {
 // flip exactly the elements a theme deliberately left smooth: aceattorney2x
 // writes ic_chatlog_sharp = 0 and music_name_sharp = 0 on purpose, and under a
 // permissive parser "0" would read as "declared, therefore sharp".
+// Goes red if theme.go's `raw == "1"` becomes strconv.ParseBool, `raw != "0"`, or
+// anything that trims and re-interprets the value.
 func TestSharpAcceptsOnlyLiteralOne(t *testing.T) {
 	for _, tc := range []struct {
 		raw  string

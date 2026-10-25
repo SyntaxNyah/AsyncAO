@@ -21,10 +21,16 @@ const (
 	// miniature at a time and hover-scrub walks a column, so the working set is a
 	// column's worth; 24 holds the longer axis (21 layouts) plus the pair the
 	// pointer left behind, which is what makes scrubbing back up a cache hit.
+	//
+	// It is a HARD bound with an LRU behind it (hard rule 4), not a hint: a cache
+	// keyed on 294 combinations that grew on demand would be 294 entries after one
+	// idle minute of scrubbing.
 	presetThumbCap = 24
 	// presetThumbBoxCap bounds how many slot rects one miniature draws. A layout
 	// declares 59-60 [overrides] rows and the card is ~200 px wide, so past this
 	// the boxes are smaller than their own borders and the picture stops improving.
+	// The bake takes the FIRST presetThumbBoxCap in the layout's own declaration
+	// order, which is stage-first in every shipped fragment.
 	presetThumbBoxCap = 48
 	// presetThumbUnit is the miniature's normalised coordinate space. Integer, so
 	// the bake has no floats in it and the draw is one multiply and one divide per
@@ -120,6 +126,13 @@ func (c *presetThumbCache) oldest() int {
 }
 
 // bakePresetThumb fills one miniature from the two fragments.
+//
+// IT READS THE FRAGMENTS DIRECTLY rather than merging them, and that is the one
+// place in this wave where not going through the merge is right: a merge allocates
+// a whole Sidecar plus a document per pair, and the miniature needs two things the
+// merge cannot add to — the layout's rows and the style's palette are disjoint by
+// the very rule that makes the merge a concatenation. Pinned by
+// TestTheThumbnailShowsTheLayoutItIsFor.
 func bakePresetThumb(t *presetThumb, l, s *theme.Preset) {
 	t.layout, t.style = l.ID, s.ID
 	t.wash, t.ink = presetPaletteColor(s.Side.Palette.Panel, ColPanel), presetPaletteColor(s.Side.Palette.Text, ColText)
@@ -197,6 +210,9 @@ func maxInt32(a, b int32) int32 {
 // galleryCredit is the hovered style's `[preset] credit`, wrapped, baked on
 // change.
 // IT EXISTS BECAUSE OF THE ALLOC GATE, not because wrapping is expensive.
+// WHY THE CREDIT IS ON SCREEN AT ALL. §6.5 clause 7 is a CONTRACT — "zero bytes of
+// bundled art; every [preset] credit line states it" — and a contract nobody can
+// read is a comment. TestEveryShippedPresetShipsZeroBytesOfArt proves the corpus
 type galleryCredit struct {
 	// style / w are what the bake was for. Both, because a narrower panel rewraps
 	// the same text differently and a stale wrap overflows the column it was cut to.
@@ -264,6 +280,12 @@ type themeGallery struct {
 }
 
 // openThemeGallery arms the panel, loading the library on first use.
+//
+// THE LIBRARY LOAD IS THE ONE BLOCKING THING HERE and it is 35 INI parses behind a
+// sync.Once, on a button press rather than on a frame — the same class of cold work
+// the font rail's directory walk already does at its own open. A failure is a chip,
+// never a refusal to open: an empty gallery that says why beats a button that does
+// nothing.
 func (a *App) openThemeGallery() {
 	if a.te == nil {
 		return
@@ -328,6 +350,9 @@ func presetAt(list []*theme.Preset, i int) *theme.Preset {
 
 // applyGalleryPick replaces both tiers of the OPEN theme with the picked pair, as
 // one undoable act.
+// THE UNDO RING IS RESET, deliberately. Its ops identify an element BY INDEX
+// (theme.Element's own doc comment), and this replaces the element list wholesale,
+// so every op already in the ring points at a row that is no longer the row it
 func (a *App) applyGalleryPick() {
 	g, sc := a.gallery(), a.editorSidecar()
 	if g == nil || sc == nil {
@@ -375,6 +400,9 @@ func (a *App) undoGalleryPick() {
 }
 
 // createThemeFromGalleryPick writes a NEW theme from the picked pair.
+// THE INTENT IS themeCreateThenNote, which is the one thing this caller decides
+// differently: the editor is open over a theme the user may have unsaved work in,
+// so the new one is written and NAMED rather than applied and opened.
 func (a *App) createThemeFromGalleryPick() {
 	g := a.gallery()
 	if g == nil {
@@ -394,6 +422,9 @@ func (a *App) createThemeFromGalleryPick() {
 // that said only "Vaporwave" would collide with itself the moment the same style
 // is built on a second layout — and themepack's collision suffix would then be
 // the only thing telling them apart.
+// NIL-SAFE ON BOTH AXES (v1.90.0 W10). It used to be called only behind a
+// pair.Empty() guard; the create moved to the shared funnel, which makes that guard
+// newThemeSidecarFrom's, and a name derived before the refusal would have
 func galleryThemeName(pair theme.PresetPair) string {
 	switch {
 	case pair.Layout == nil && pair.Style == nil:

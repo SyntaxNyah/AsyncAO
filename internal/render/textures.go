@@ -51,6 +51,9 @@ const (
 )
 
 // smallTexTier reports whether an asset type belongs in the small-UI shield.
+// Exactly the decode-thumbnailed types (decoder.go decodeTargetPx): both are
+// guaranteed small per frame, so the shield can never be flooded by full-size
+// art wearing the wrong label.
 func smallTexTier(t assets.AssetType) bool {
 	return t == assets.AssetTypeCharIcon || t == assets.AssetTypeEmoteButton
 }
@@ -186,6 +189,11 @@ type TextureStore struct {
 	small *cache.ByteBudgetLRU[string, *TexturePage]
 	// pinned holds pages exempt from LRU eviction: the active theme's
 	// chrome (skin, splashes, bars, buttons, full-screen backdrops).
+	// Bounded by the theme stem tables (≈40 pages), render-thread only.
+	// Without pinning, themed backdrops churned against streaming
+	// sprites in the LRU and the stage flashed black every time an
+	// eviction caught them (the gen-keyed UI cache stopped refreshing
+	// their recency, making it constant).
 	pinned      map[string]*TexturePage
 	pinnedBytes int64
 	// oversized holds animated pages too large for the main LRU tier's budget
@@ -244,6 +252,10 @@ type TextureStore struct {
 	failed   map[string]time.Time
 
 	// missing is the CONCLUSIVELY-MISSING char-sprite set (the missingno gate):
+	// a base whose whole fallback chain 404'd (every format of every spelling —
+	// the manager's reportMissing Warning, relayed here by the App's render-thread
+	// warning drain). drawSprite's miss branch draws the shared MissingKey
+	// placeholder for a base in this set instead of holding a DIFFERENT (stale)
 	missing map[string]struct{}
 
 	// budget is the T1 byte budget this store was built with (the default, or
@@ -392,6 +404,9 @@ const missingSetCap = 512
 
 // MarkMissing records that base's whole fallback chain 404'd, so drawSprite
 // draws the missingno placeholder for it instead of a stale hold-previous.
+// Render thread ONLY (called from the App's warning drain; see the `missing`
+// field comment for the no-mutex invariant). Bounded + dedup, matching
+// courtroom.recordMissing's stop-inserting-when-full policy.
 func (s *TextureStore) MarkMissing(base string) {
 	if base == "" {
 		return
@@ -869,6 +884,12 @@ func (s *TextureStore) AppendStream(base string, d *assets.Decoded) error {
 			return err
 		}
 		// Streamed appends must inherit the page's already-latched filter.
+		// buildFrames creates each texture under the client-wide hint (linear),
+		// and applyScaleMode's memo skips a page whose scaleModeSet is already
+		// latched — so without this, only the establishing frame 0 keeps nearest
+		// while every appended frame stays bilinear (the "frame 0 crisp, the
+		// rest blurry" regression). No Flush is needed: these are brand-new
+		// textures with no copies queued in the batch yet.
 		if page.scaleModeSet && scaleModeSupported {
 			for _, t := range frames {
 				setTextureScaleMode(t, page.scaleMode)
@@ -902,6 +923,15 @@ func (s *TextureStore) dropOversizedOrderLocked(base string) {
 }
 
 // UploadPinned is Upload into the eviction-exempt tier (theme chrome:
+// losing the courtroom backdrop to LRU pressure flashed the stage black).
+// Replacing an existing pinned page routes the old one through the
+// destroy queue. Render thread only.
+// IT REFUSES THE TWO THEME-MEDIA SUB-PREFIXES (thememedia.go). Pinned is
+// eviction-exempt and therefore count-uncapped by nature, which is fine for the
+// bounded stem tables the client itself uploads and is not fine at all for art a
+// stranger's theme declares. UploadThemeMedia is the gated door for those, and a
+// second un-gated door beside it would be a budget nobody enforces — so this one is
+// locked rather than documented. Gated by TestUploadPinnedRejectsThemeMediaPrefixes.
 func (s *TextureStore) UploadPinned(base string, d *assets.Decoded) error {
 	if IsThemeMediaKey(base) {
 		d.Release()
@@ -913,6 +943,10 @@ func (s *TextureStore) UploadPinned(base string, d *assets.Decoded) error {
 
 // uploadPinnedTracked is the shared body of UploadPinned and UploadThemeMedia: build
 // the page, replace any predecessor, and keep the theme-media ledger in step.
+// `admitted` says the caller already passed the admission gate. It is a parameter
+// rather than a re-derivation from the key so the two doors cannot both think the
+// other one checked: UploadPinned passes false and has already refused every key
+// this would apply to, UploadThemeMedia passes true and has already measured it.
 func (s *TextureStore) uploadPinnedTracked(base string, d *assets.Decoded, admitted bool) error {
 	defer d.Release()
 	page, err := s.buildPage(d)
@@ -967,6 +1001,10 @@ func (s *TextureStore) Remove(base string) {
 }
 
 // reservedKeySchemes are the T1 key namespaces that are NOT server asset URLs:
+// theme chrome, the held-frame scenery bridge, thumbnails, editor shapes and the
+// missingno placeholder. A local-pack sweep must never touch them — they are not
+// something a mount can re-answer, and dropping the pinned placeholder or the
+// theme pages would blank chrome the pack has nothing to do with.
 var reservedKeySchemes = [...]string{"theme://", "held://", "thumb://", "shape://", "missingno://"}
 
 // reservedKey reports whether a T1 key belongs to one of those namespaces.
@@ -987,6 +1025,9 @@ func reservedKey(key string) bool {
 // switching the asset source or pressing Rescan would leave the CURRENT speaker
 // and background showing the old source's art until they happened to evict —
 // which is the very first thing anyone tests after adding a pack.
+// The keys are SNAPSHOTTED before anything is removed. Removing while iterating
+// re-enters the cache through the eviction callback, which is exactly what the
+// onEvict contract forbids.
 func (s *TextureStore) RemoveWhere(pred func(key string) bool) int {
 	if pred == nil {
 		return 0

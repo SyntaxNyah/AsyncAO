@@ -142,6 +142,7 @@ func (d *DiskCache) SetCompression(on bool) { d.compress.Store(on) }
 // deliberate spec exception, so no cache is silently deleted). A positive cap
 // makes the writer goroutine sweep the OLDEST blobs past it. Live-safe: the
 // writer reads the value each sweep.
+//
 // The store is followed by a coalescing wake so the change is enforced NOW —
 // not only after diskPruneEvery more stores land (and not never, on a
 // read-only session whose writer is parked on the empty queue). The
@@ -166,7 +167,13 @@ func DefaultDiskRoot() (string, error) {
 
 // NewDiskCache opens (creating if needed) the disk tier rooted at root and
 // starts its writer goroutine. Call Close to drain pending writes.
+//
 // initialBudget is the auto-prune byte cap the at-open sweep enforces (#34):
+// it is stored BEFORE the writer starts, so writerLoop's first d.prune() reads
+// the real value instead of the atomic's default 0 — this is what makes the
+// "at open" enforcement required by the spec actually fire on whatever a
+// previous session left. 0 = unlimited (the deliberate T3 default). Pass 0
+// from callers that will only ever set the budget live via SetBudget.
 func NewDiskCache(root string, initialBudget int64) (*DiskCache, error) {
 	if err := os.MkdirAll(root, diskDirPerm); err != nil {
 		return nil, fmt.Errorf("cache: creating disk cache root %s: %w", root, err)
@@ -337,6 +344,8 @@ func (d *DiskCache) writerLoop() {
 
 // write lands one blob via temp file + rename so readers never observe a
 // partial blob under the final name — or, for a delete op, removes the blob.
+// It returns true when a blob was actually stored (a completed non-delete
+// write), which writerLoop counts toward the next byte-budget sweep.
 func (d *DiskCache) write(w diskWrite) bool {
 	if w.del {
 		// A missing file is a no-op success (nothing to purge); other errors

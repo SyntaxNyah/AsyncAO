@@ -16,6 +16,7 @@ import (
 // icons and little customization): character icons on every message/member/DM surface, a stable
 // per-person name colour, chat-app bubbles with timestamps drawn newest-first
 // from the bottom, a per-group accent chip, and unread counts in the chat list.
+// All of it is LOCAL rendering — the wire (the /pm fan-out) is untouched.
 
 const (
 	// msgBubbleIconPx / msgBubbleLineH size a thread bubble's icon and text rows.
@@ -127,6 +128,7 @@ func msgStamp(at time.Time) string {
 // walking backwards until the box is full — variable-height bubbles (wrapped
 // text) work naturally this way. Mine sit right-aligned in an accent-tinted
 // bubble; others left, in panel bubbles with their icon + coloured name.
+// lineAt returns (from, text, fromMe, char, at) for entry i.
 func (a *App) drawChatBubbles(box sdl.Rect, n int, lineAt func(i int) (string, string, bool, string, time.Time)) {
 	c := a.ctx
 	if n == 0 {

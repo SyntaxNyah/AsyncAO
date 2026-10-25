@@ -33,6 +33,8 @@ const (
 	// (retro_lowres is 640x480) halved, so a deliberately tiny canvas is still
 	// legal; the ceiling is four times the widest shipped fragment (21:9 at
 	// 1512), which is past any canvas a design-space geometry stays readable in.
+	// CLAMPED, never refused: a typo'd canvas is a fragment that lays out
+	// strangely, not a fragment that must stop the gallery from opening.
 	PresetDesignMinPx = 240
 	PresetDesignMaxPx = 6048
 )
@@ -54,6 +56,8 @@ var (
 	ErrPresetTier = errors.New("theme: preset declares a section its axis does not own")
 	// ErrPresetElementKind reports `kind = pane` in a style fragment or a
 	// non-pane element in a layout fragment. Same partition, one level down:
+	// [element.*] is the one section BOTH axes may declare, so the kind decides
+	// which tier the element belongs to.
 	ErrPresetElementKind = errors.New("theme: preset element kind belongs to the other axis")
 	// ErrPresetAnchor reports a style element that neither anchors to a slot key
 	// nor appears in its own [preset] full_canvas list (design §6.1, gated by
@@ -63,7 +67,10 @@ var (
 )
 
 // PresetKind is which axis a fragment belongs to.
+//
 // WIRE NAMES ARE THE FORMAT, exactly as they are for every sidecar enum:
+// append-only, at the end, never renamed. Unlike those enums this one does not
+// degrade — see ErrPresetKind.
 type PresetKind uint8
 
 const (
@@ -162,6 +169,11 @@ func presetElementKindOK(k PresetKind, ek ElementKind) bool {
 }
 
 // Preset is one parsed fragment: its header, and the sidecar tier it carries.
+// Side is a FULL *Sidecar rather than a reduced struct on purpose. The whole
+// argument for the format is that a preset is written in exactly the grammar a
+// user authors, so anything a user can write a preset must be able to carry —
+// and the moment the preset model is a subset, the two grammars start to drift
+// and the editor grows a second code path for "things only presets can do".
 type Preset struct {
 	Kind        PresetKind
 	ID          string // [a-z0-9_-]{1,24}; the file stem and the [theme] *_preset value
@@ -213,6 +225,7 @@ func (p *Preset) Elements() []Element {
 // ParsePreset reads one fragment. The BODY goes through ParseSidecar — the same
 // reader, the same caps, the same degrades — and only the [preset] header and
 // the tier partition are this function's own.
+// COLD PATH ONLY (hard rule 2).
 func ParsePreset(src []byte) (*Preset, error) {
 	sc, err := ParseSidecar(src)
 	if err != nil {
@@ -271,6 +284,9 @@ func mustGet(d *INIDoc, section, key string) string {
 
 // degradePresetText applies the METADATA class rule (metatext.go) to one
 // [preset] header string: truncate to NameRuneCap and note it, never refuse.
+// It calls truncMetaRunes rather than repeating the rune walk — the note text is
+// the same sentence degradeMeta writes, because a user who hits the cap from a
+// preset and from a theme should not have to learn that they are two rules.
 func (s *Sidecar) degradePresetText(p *Preset, key, v string) string {
 	cut, dropped := truncMetaRunes(v)
 	if dropped == 0 {

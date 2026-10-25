@@ -1,6 +1,9 @@
 package ui
 
 // THE EDITOR'S PANEL FENCE (v1.90.0 W7b) — docs/wip/THEME-EDITOR-DESIGN.md §3.1.
+// Both halves are driven through App.Frame, never by calling the fence's predicate and
+// asserting on it — a gate that checked editorPanelUp() would be a mirror of the fix
+// (rule 11's mirror clause) and would stay green with both call sites deleted.
 
 import (
 	"testing"
@@ -12,6 +15,9 @@ import (
 
 // editorEyeToggleAt is the eye hit box of element rail row idx, in the rail's own
 // arithmetic (drawEditorElementRail's body, then drawEditorElementRow's toggles).
+// The coordinates are duplicated rather than exported, and the gate that uses them
+// PROVES them first with the panel closed — a stale coordinate would otherwise make the
+// fenced half pass vacuously by missing the row entirely.
 func editorEyeToggleAt(idx int32) (x, y int32) {
 	rowY := int32(editBannerH+editRowH) + idx*editRowH
 	lockX := int32(editRailW - editToggleW - editRowPad)
@@ -22,6 +28,11 @@ func editorEyeToggleAt(idx int32) (x, y int32) {
 
 // TestAnOpenPanelFencesTheCanvasUnderIt is the headline half: a press inside the panel
 // must not reach the canvas at all.
+// The assertion is on the SELECTION and the GESTURE rather than on one element's rect,
+// because that covers every shape the hole could take: with the fence missing the press
+// either starts a drag on the box under the panel, or re-selects some AO2 widget there,
+// or finds nothing and CLEARS the selection. All three are visible failures of "the
+// surface behind a panel is click-dead"; all three fail this gate.
 func TestAnOpenPanelFencesTheCanvasUnderIt(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()
@@ -56,6 +67,10 @@ func TestAnOpenPanelFencesTheCanvasUnderIt(t *testing.T) {
 
 // TestAnOpenPanelFencesTheRailsBehindIt is the other half, and it is a CONTROL plus a
 // TREATMENT so it cannot pass by missing its target.
+// Phase 1 (panel closed) proves the click really lands on the eye toggle. Phase 2 (panel
+// open) proves the same click is dead. Design §3.1 fences the whole surface behind a
+// panel, not merely the pixels it covers, which is why this holds at 1280 px where the
+// panel and the rails do not overlap.
 func TestAnOpenPanelFencesTheRailsBehindIt(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()
@@ -97,6 +112,10 @@ func TestAnOpenPanelFencesTheRailsBehindIt(t *testing.T) {
 }
 
 // TestThePanelNeverCoversTheHeaderBand pins the ONE deliberate exception in the fence:
+// the header draws before it is raised, so Undo/Redo/Save/Back/Fonts stay live with a
+// panel open — including the button that closes it.
+// That is only safe while the panel cannot reach the band, so the invariant is swept
+// rather than assumed, at the window sizes the client actually runs at.
 func TestThePanelNeverCoversTheHeaderBand(t *testing.T) {
 	for _, wh := range [][2]int32{
 		{640, 480}, {800, 600}, {1024, 576}, {1280, 720}, {1920, 1080}, {3840, 2160},

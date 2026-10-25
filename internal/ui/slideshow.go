@@ -45,6 +45,8 @@ func (a *App) updateSlideshow(phase courtroom.MessagePhase) {
 // renderScene returns the scene the viewport should draw: the live room scene
 // normally, or — while the slideshow override is active — a shallow copy that
 // swaps in the rotating background (desk hidden so it reads as a clean stage).
+// The real scene is never mutated; the copy is stored in slideScene so taking
+// its address adds no per-frame allocation.
 func (a *App) renderScene() *courtroom.Scene {
 	if a.sel.replaying && a.sel.replayRoom != nil { // M16: the stage shows the replay, not the live room
 		return &a.sel.replayRoom.Scene

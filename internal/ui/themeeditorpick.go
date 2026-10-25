@@ -51,6 +51,9 @@ type pickCache struct {
 }
 
 // editorPickNames returns the live list for one source, or nil.
+// That last clause is the guard's ONLY observable — without it the slow path still
+// returns an empty list, it just caches one first — so it is what
+// TestOnlyPickerRowsNameAPickSource asserts. Deleting the pickNone disjunct fails
 func (te *themeEditor) editorPickNames(src pickSource) []string {
 	if src == pickNone || int(src) >= int(pickSourceCount) {
 		return nil

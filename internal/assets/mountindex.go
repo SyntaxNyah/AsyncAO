@@ -79,6 +79,9 @@ func (e *mountError) Unwrap() error { return e.err }
 func (e *mountError) Mount() string { return e.mount }
 
 // extBit returns the stem-mask bit for ext and whether ext is indexed at all.
+// An unindexed extension is not an error: the lookup simply falls back to a
+// direct exact-key probe, so adding a format to the probe chain without adding
+// it here degrades to a map hit rather than a miss.
 func extBit(ext string) (uint16, bool) {
 	for i, e := range indexedExts {
 		if e == ext {
@@ -89,6 +92,9 @@ func extBit(ext string) (uint16, bool) {
 }
 
 // packFile locates one indexed file. rel is the EXACT on-disk (or in-archive)
+// relative path; it is left EMPTY when that path equals the folded key, which is
+// the common all-lowercase case and halves the index's string data. mount is the
+// index of the source it came from.
 type packFile struct {
 	rel   string
 	mount uint8
@@ -131,6 +137,11 @@ type mountSource interface {
 }
 
 // BuildMountIndex walks every mount in order and returns the published index.
+// BLOCKING — goroutine only.
+// Errors are deliberately not fatal. A mount that cannot be opened (an unplugged
+// drive, a deleted folder, a corrupt zip) is skipped with its error recorded, and
+// whatever else indexed still serves: the layer only ever ADDS hits over the
+// network path, so partial degradation is always safe.
 func BuildMountIndex(mounts []string) (*MountIndex, []error) {
 	ix := &MountIndex{
 		mounts: append([]string(nil), mounts...),
@@ -348,6 +359,10 @@ func (q *quarantine) mark(foldedRel string) bool {
 
 // foldRel maps a URL-relative path onto the index's ONE key space: percent
 // decoded per segment, then lowercased.
+// Decoding per SEGMENT rather than over the whole string keeps a literal "%2F"
+// inside a filename from inventing a path separator. Folding case is what makes a
+// pack authored on Windows resolve identically on Linux, which is strictly better
+// than today's reliance on NTFS being case-insensitive.
 func foldRel(rel string) string {
 	if !needsFold(rel) {
 		return rel
@@ -445,6 +460,9 @@ func (d *dirSource) walk(fn func(rel string) bool) error {
 }
 
 // zipSource is a .zip pack mount.
+// LIFETIME: the handle is owned by the MountIndex and closed only when the last
+// reference drops (see acquire/release), never when the layer pointer is swapped
+// — otherwise a Rescan during a read would close the file mid-ReadAt.
 type zipSource struct {
 	path   string
 	rc     *zip.ReadCloser

@@ -98,6 +98,9 @@ type Decoded struct {
 	// SourceFrames is the animation's pre-decimation frame count — the frame
 	// space the FILE was authored in (and, since AO2 never decimates, the space
 	// remote clients transmit networked frame-synced effect indices in; #17).
+	// len(Frames) may be smaller after frameDecimator dropped frames to fit the
+	// T1 byte budget. 0 for a static image / a decoder that didn't set it
+	// (treated as len(Frames), the safe identity).
 	SourceFrames int
 	// Partial marks an incomplete delivery: more frames for the same base
 	// follow from the same decode job. For a classic progressive delivery the
@@ -106,11 +109,20 @@ type Decoded struct {
 	Partial bool
 	// Stream marks an incremental (streaming) delivery: these frames are a
 	// PREFIX EXTENSION of the same base's resident page, not a replacement.
+	// FrameOffset is the 0-based kept-frame index these frames begin at — 0 for
+	// the establishing first frame (which parks the page in the oversized map
+	// so it can grow without LRU byte-accounting churn), k>0 for an append.
+	// When Partial is false the stream is complete and the page stops being
+	// treated as a growing prefix (the renderer may then finish a playOnce
+	// layer and report its true duration).
 	Stream      bool
 	FrameOffset int
 	// Width and Height are the canvas dimensions in pixels.
 	Width, Height int
 	// Compressed holds DXT1/DXT5-encoded frame payloads, parallel to Frames.
+	// nil when compression is off/unsupported; DXTFormat is the FOURCC when set.
+	// When non-nil, Frames has already been released and the render thread
+	// uploads Compressed instead of raw RGBA.
 	Compressed [][]byte
 	// DXTFormat is the compressed-texture FOURCC of Compressed (0 = raw RGBA).
 	DXTFormat uint32

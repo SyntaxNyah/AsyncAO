@@ -154,6 +154,9 @@ const (
 
 // TestACharINIOnTheWireReachesTheIdleCache is the END-TO-END gate for the fetch,
 // and it exists because every other gate in this file starts downstream of it.
+// So this one writes a REAL char.ini into the Manager's mount folder, lets the
+// real fetch goroutine read it, pumps the real poll, and asks the real seam. It
+// closes `showname` in the same pass, which had the identical hole.
 func TestACharINIOnTheWireReachesTheIdleCache(t *testing.T) {
 	a, mount, cleanup := roomFactoryAppMounted(t)
 	defer cleanup()

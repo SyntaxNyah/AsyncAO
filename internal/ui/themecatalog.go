@@ -3,6 +3,9 @@ package ui
 // The theme catalog: what themes exist, where they came from, and what shape
 // they are in — scanned OFF-THREAD and published as an immutable snapshot.
 // It exists because the theme picker is about to stop being a list of names.
+// There is deliberately NO filesystem watcher. A cross-platform watcher is a
+// dependency, a goroutine and an unbounded event stream bought to save one
+// second over four triggers that cost nothing: drag-and-drop (which knows what
 
 import (
 	"os"
@@ -63,6 +66,8 @@ const (
 
 // themeKindLabel is the badge text. Short by design: it sits beside a name in a
 // row that already has a dropdown and two arrows.
+//
+// The zero-value badge names WHAT IS MISSING rather than diagnosing the folder:
 // "broken" would be a verdict the rest of the client disagrees with the moment
 // this function's file list and normalizeThemeRoot's drift apart again.
 func themeKindLabel(k themeKind) string {
@@ -175,6 +180,10 @@ func (a *App) themeCatalogSnapshot() *themeCatalog { return a.skin.themeCat.Load
 
 // requestThemeCatalog kicks a scan if this reason allows one. Render thread;
 // everything expensive happens on the goroutine it starts.
+//
+// Single-flight via an atomic bool rather than a plain field: the flag is
+// cleared by the scanner goroutine when it publishes, so both ends touch it and
+// -race would (rightly) fail on anything less.
 func (a *App) requestThemeCatalog(reason themeScanReason) {
 	if !a.skin.themeCatBusy.CompareAndSwap(false, true) {
 		return // a scan is already in flight; its result is the fresher one anyway
@@ -230,6 +239,12 @@ func scanThemeCatalog(customRoot string, prev *themeCatalog, statOnly bool) *the
 	}
 	seen := map[string]bool{}
 	// The SAME list, in the same order, that themeLoadRoots and the picker build:
+	// the catalog must not claim a theme the loader would never find, nor hide one
+	// it would. Same STRINGS too, not merely the same places — all three builders
+	// take their exe root from config.ExecutableDir (see above), which is what makes
+	// the samePath/origin comparisons agree on a symlinked install; the loader and
+	// the picker are pinned to that by TestThemeRootBuildersShareOneExeDir. First
+	// hit per name wins, and its origin badge is the root it was found in.
 	type rootSpec struct {
 		dir    string
 		origin themeOrigin

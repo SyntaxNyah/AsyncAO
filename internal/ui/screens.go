@@ -75,6 +75,7 @@ const (
 // The lobby header's right-hand utility cluster. It is laid out by a RIGHT-TO-LEFT
 // cursor rather than the raw `w - <literal> - pad` rects it used to carry, because
 // those literals ran off the left edge of the window long before config.MinWindowW:
+// "What's New" landed at x=-78 and "Logs" at x=-198 on a 640-wide window.
 const (
 	// lobbyUtilBtnW is the comfortable width when the window has room for the whole
 	// cluster — the historical width, so a normal window is pixel-identical.
@@ -89,6 +90,9 @@ const (
 	// lobbyUtilBtnCount is how many buttons the cluster lays out. It MUST match the
 	// number of cursor steps in drawLobby; it is what turns "does the row fit?" into
 	// arithmetic instead of a measured pass.
+	// One. Refresh and the connect-time sort came back from the Servers menu by
+	// request, but NOT to this cluster: it shares the header row with the
+	// Privacy/Glossary/What's New trio, and three utility buttons squeezed that row
 	lobbyUtilBtnCount int32 = 1
 	// lobbyDirectRowDropY is how far below the header the direct-connect row sits;
 	// lobbyListActionsDropY is how far below THAT the server list's own action strip
@@ -152,6 +156,7 @@ func (a *App) previewOwnerMark() int {
 // left-drag reposition. It runs in App.Frame BEFORE any screen draws, against
 // last frame's cached box rect, so it claims the wheel and the mouse press ahead
 // of the grid/list scroll and the icon clicks UNDER the box (it overlaps them).
+// Off the hot path — a no-op whenever no preview is up.
 func (a *App) handlePreviewInput() {
 	c := a.ctx
 	// Runs EVERY frame, before either early return below: the detached
@@ -239,6 +244,10 @@ func (a *App) handlePreviewInput() {
 			a.previewOffY = a.previewDragBase[1] + dy
 		} else {
 			// A press that STARTED on the box owns its own release, moved or not.
+			// Unmoved, this used to fall through unconsumed: the box dismissed itself
+			// from closeSpritePreviewOnLeave's "any click dismisses" arm, but the very
+			// same click ALSO landed on whatever the box was floating over — over the
+			// right-hand column that is a music row, so dismissing the preview started
 			// playing a track (#37). Dismissing HERE keeps the old feel and makes the
 			// consume unconditional, which is the actual fix.
 			if !a.previewDragMoved && !a.previewIsPinned() {
@@ -403,6 +412,8 @@ func (a *App) drawCourtroom(w, h int32) {
 
 	// Theme-driven geometry: when the theme ships courtroom_design.ini
 	// (and the toggle is on), the courtroom IS the theme's layout.
+	// themeWindowLayout, not themeLayout: the design canvas is fitted into the height
+	// left UNDER the app-chrome band and offset down by it, so it can never slide
 	// beneath the menu bar / server-tab strip (#14).
 	if lay := a.themeWindowLayout(w, h); lay.valid && a.d.Prefs.Load().ThemeLayoutOn {
 		if a.classic.classicEdit {
@@ -494,6 +505,9 @@ func (a *App) drawCourtroom(w, h int32) {
 
 	// Right column: log + music. In the new (default) layout the OOC gets its OWN always-visible
 	// box under the IC log; the Legacy Developer theme keeps OOC as a tab (its old handling).
+	// Anchored to the DEFAULT stage spot (vpDef), not the moved viewport — each box is placed
+	// independently, so dragging the stage doesn't drag the column with it. The whole column is a
+	// slot ("rightcol"), draggable/resizable on BOTH the default and Legacy themes.
 	rx := vpDef.X + vpDef.W + pad
 	rw := w - rx - pad
 	if !a.classic.panelHidden(panelLog) {
@@ -523,6 +537,10 @@ func (a *App) drawCourtroom(w, h int32) {
 	a.drawCompactToolboxInPass()
 
 	// Live slot editor overlay (default layout only) — drawn LAST so it sits over every widget.
+	// Torn-off tab panels draw HERE while editing (before the editor) so slotRect registers them
+	// and the editor hands them drag/resize handles this same frame; their content shows (inert)
+	// so you see what you're arranging. In normal play they draw post-courtroom (app.go) where the
+	// content is interactive and the pointer is fenced over them. (torntabs.go)
 	a.drawTabBarInPass(w, h)
 	if a.classic.classicEdit {
 		a.drawTornTabs(w, h)
@@ -561,6 +579,9 @@ func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect, w, h int32) {
 	// The OOC box is its OWN slot — drag it anywhere / resize it independently of the log.
 	box := a.classic.slotRect(slotOOC, boxDef, w, h)
 	// Guard against a stale slot override (saved at a different window size / UI scale)
+	// dropping the OOC box onto the log's tab strip — the "OOC overlapping the menu
+	// bars" report. While it sits over the right column, keep its top below the tab row
+	// so Log / Music / Areas / … stay visible and clickable.
 	if box.X < rcol.X+rcol.W && box.X+box.W > rcol.X {
 		if top := rcol.Y + btnH + 4; box.Y < top {
 			box.H -= top - box.Y
@@ -600,6 +621,7 @@ type courtroomModal struct {
 // courtroomModals is that list, in the switch's original priority order. Package
 // level with plain function values, so walking it allocates nothing per frame (the
 // compactToolboxChips precedent).
+// The Timer, the auto-login dialog and the click-to-pair popup USED to be rows here
 // and are non-blocking floatWin panels now (#31: "bringing up the Extras → Timer
 // hides all the other UI"). A row in this table ends the courtroom pass outright, so
 // a countdown, a two-field credential form and a UID box each blanked the scene, the
@@ -613,6 +635,9 @@ var courtroomModals = []courtroomModal{
 
 // closeCourtroomModals shuts EVERY return-to-top courtroom popup by walking the one
 // table that defines the set. Both layout editors call it as they arm.
+// Exhaustive BY CONSTRUCTION rather than by hand: a new row added to courtroomModals
+// is closed by the editors the moment it exists, so the set that can strand an editor
+// and the set the editors clear can never diverge again.
 func (a *App) closeCourtroomModals() {
 	for i := range courtroomModals {
 		courtroomModals[i].close(a)
@@ -621,11 +646,18 @@ func (a *App) closeCourtroomModals() {
 
 // modalReturnSkippedWhileEditing reports whether the courtroom pass must SKIP its
 // return-to-top modal check this frame because a layout editor owns the screen.
+// The classic pass has carried this guard since the editor existed; the themed twin
+// never did. Sharing ONE predicate is the point — a guard that holds in one pass and
+// not the other is exactly how the lock was reachable.
 func (a *App) modalReturnSkippedWhileEditing() bool { return a.layoutEditorArmed() }
 
 // courtroomModalUp reports whether drawCourtroomModals will take the screen — the
 // predicate half of the table above, for anything that must decide BEFORE the pass
 // reaches the modal check (the compact toolbox's overlay fence).
+// Deliberately NOT blockingCourtPopup (floatbox.go): that set is a different
+// question (which popups the Extras box and torn-off tabs yield to), it OMITS
+// showSfxBrowser, and it ADDS classicEdit. Reusing it would fence a band of the SFX
+// browser dead and mis-answer while the editor is armed.
 func (a *App) courtroomModalUp() bool {
 	for i := range courtroomModals {
 		if courtroomModals[i].open(a) {
@@ -638,6 +670,11 @@ func (a *App) courtroomModalUp() bool {
 // drawCourtroomModals draws whichever return-to-top courtroom popup is open and
 // reports whether one took the screen — the caller then returns, because the
 // kit has no z-aware input so nothing underneath should draw or take clicks.
+// SHARED by the classic and themed courtroom so the two lists can't drift: the
+// background picker once drew in the classic path but was missing from the
+// themed switch, so on a custom theme the Extras → Background button opened a
+// picker that never rendered. (showPair is NOT here — it's a non-returning
+// overlay drawn on top in both paths.)
 func (a *App) drawCourtroomModals(w, h int32) bool {
 	for i := range courtroomModals {
 		if courtroomModals[i].open(a) {
@@ -721,6 +758,8 @@ func (a *App) spriteHitRect(vp sdl.Rect, layer *courtroom.SpriteLayer) (sdl.Rect
 // handleSpriteDrag implements client-side sprite repositioning: grab any
 // character in the viewport and put them wherever you want — the server
 // keeps setting positions per message, the override (keyed by character)
+// wins afterwards. Right-click a sprite to reset it. All math runs on
+// press/drag edges only; idle frames cost one bool check.
 func (a *App) handleSpriteDrag(vp sdl.Rect) {
 	if a.cam.dragVpDivider || a.courtModalOpen() {
 		return // the resize divider owns this press, or a blocking popup fences the stage
@@ -931,6 +970,7 @@ func (a *App) drawQuitConfirm(w, h int32) {
 // handleSpriteHide opens the "hide this sprite?" confirm when the user right-clicks
 // a character sprite (default ON; Settings can disable). Hidden sprites are dropped
 // from the viewport for the session — for players who'd rather not see certain art.
+// Only at 1× zoom (zoomed hit rects lie) and not over the chatbox area.
 func (a *App) handleSpriteHide(vp sdl.Rect) {
 	c := a.ctx
 	if !c.rightClicked || a.link.room == nil || !a.d.Prefs.Load().RightClickHideSprite || a.courtModalOpen() {
@@ -992,6 +1032,9 @@ func (a *App) reshowSprites() {
 
 // chatBoxTopStrip is the showname strip above the message text (text draws at box.Y+chatBoxTopStrip);
 // chatBoxBottomPad leaves a little air under the last line. Used to grow the box to fit its message.
+// These are AsyncAO's OWN furniture, not AO2 geometry: the classic overlay
+// invents a chatbox where the theme declares none, so nothing here is a
+// courtroom_design.ini rect. They double as the themed chatbox's fallback for a
 const (
 	chatBoxTopStrip  = int32(26)
 	chatBoxBottomPad = int32(8)

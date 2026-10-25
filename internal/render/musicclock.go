@@ -6,7 +6,9 @@ package render
 // source cannot report a duration/position (mod/midi return -1); in every one
 // of those cases callers fall back to the wall-clock estimate rather than
 // seeking blindly.
+//
 // Main-thread only: a.music is owned by the render thread (rule #1).
+//
 // This used to resolve Mix_MusicDuration / Mix_GetMusicPosition through a
 // dlsym/GetProcAddress shim (so a pre-2.6 SDL_mixer link would not break the
 // build). That shim is gone now: the binary links SDL Mixer X directly
@@ -20,6 +22,9 @@ func (a *Audio) MusicClock() (posSec, durSec float64, ok bool) {
 	posSec = a.music.Position()
 	if durSec < 0 || posSec < 0 {
 		// Duration or position unknown (mod/midi, or the source refused it).
+		// Without a length we cannot loop-wrap on resume, and a -1 position
+		// would seed the resume math with a negative base, so either way
+		// report unknown and let the caller restart from the top.
 		return posSec, durSec, false
 	}
 	return posSec, durSec, true

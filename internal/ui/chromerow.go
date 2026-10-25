@@ -45,6 +45,9 @@ const (
 )
 
 // chromeCtlNeverDrop is the priority a control that must never be dropped carries.
+// The ⋮ overflow menu is the live example: every row it hosts is reachable ONLY
+// through it inside a theme's canvas, so dropping it deletes features rather than
+// hiding them.
 const chromeCtlNeverDrop uint8 = 0
 
 // ---------------------------------------------------------------------------
@@ -52,6 +55,12 @@ const chromeCtlNeverDrop uint8 = 0
 // ---------------------------------------------------------------------------
 
 // chromeCtl is ONE control a row wants placed.
+//
+// `min` is the narrowest the control is still worth drawing at, which is NOT the same
+// question as chromeCtlMinPx: an icon button's label is a vector glyph and does not
+// shrink, so its min equals its natural width, while a flexible readout is happy to
+// clip. A control whose min exceeds the line is dropped rather than clamped — clamping
+// it is how a 96 px chip ends up 12 px past its panel.
 type chromeCtl struct {
 	id  int
 	w   int32
@@ -91,6 +100,9 @@ func (p *chromeRowPlan) placed() int { return p.n }
 
 // planChromeRow lays want across r, in want's own order, and returns a plan in which
 // no two controls intersect and every control is inside r.
+//
+// maxLines bounds the wrap independently of the height (a header that may take at most
+// two lines however tall the panel is); 0 means "as many as the height allows".
 func planChromeRow(r sdl.Rect, want []chromeCtl, maxLines int32) chromeRowPlan {
 	var active [chromeRowMaxCtls]chromeCtl
 	n := len(want)
@@ -148,6 +160,11 @@ func chromeDropIndex(ctls []chromeCtl) (int, bool) {
 // layChromeRow is ONE placement attempt through ONE cursor. ok=false means at least
 // one control did not fit; the partial plan comes back anyway so the caller can keep
 // the fullest attempt.
+//
+// THE CURSOR IS THE GUARANTEE. x only ever advances by the width just taken plus the
+// gap, and a wrap resets it to the left edge on a NEW line — so two slots can only
+// share pixels if the pitch were smaller than the height, which is a compile-time
+// relationship between two named constants, not a runtime one.
 func layChromeRow(r sdl.Rect, ctls []chromeCtl, maxLines int32, shrink bool) (chromeRowPlan, bool) {
 	var p chromeRowPlan
 	if r.W < chromeCtlMinPx || len(ctls) == 0 {
@@ -182,12 +199,17 @@ func layChromeRow(r sdl.Rect, ctls []chromeCtl, maxLines int32, shrink bool) (ch
 			continue
 		}
 		// A forced break only costs a line once something is already on the current one:
+		// an empty second half of a row must not reserve a blank line. This is the ONE
+		// implementation of that laziness — plStrip carried an unreachable second
+		// spelling of it and no longer does.
 		brk := ctls[i].brk && x > r.X
 		if !brk {
 			if avail := r.X + r.W - x; w > avail {
 				// A FLEX control SHRINKS INTO THE TAIL of this line rather than costing a
 				// whole one — plStrip.placeFlex's own rule, kept: a clipped readout would
 				// rather lose its last few words than push a real button onto a second row.
+				// A fixed control (min == its natural width, every icon button) cannot, so
+				// it wraps.
 				if ctls[i].min < ctls[i].w && ctls[i].min <= avail {
 					w = avail
 				} else {

@@ -43,6 +43,9 @@ func flipSendApp(t *testing.T) (*App, *[]protocol.Packet) {
 // limit) so back-to-back sends both land, but resetting lastICSend keeps the test correct
 // even if a non-zero default were ever introduced (sendIC drops sends inside the window,
 // screens.go:6138-6140, and stamps lastICSend on each accepted send).
+// It takes no shout: an interjection is ARMED state now (a.icShout, AO2's
+// objection_state), so a test that wants one on the wire arms it the way the
+// button does — toggleShout — and this just sends.
 func (a *App) sendICFresh() {
 	a.srvMeta.lastICSend = time.Time{}
 	a.sendIC()
@@ -86,6 +89,10 @@ func TestICBarFlipRidesSharedField(t *testing.T) {
 }
 
 // TestICBarFlipGatedOnFlippingFeature pins the AO2 parity (courtroom.cpp:1629-1636):
+// the IC-bar Flip toggle is shown ONLY when the server advertises "flipping". The row's
+// visibility predicate is `a.sess != nil && a.sess.Features.Has(FeatureFlipping)` — this
+// pins that exact gate so a future refactor can't strand the toggle on a non-flipping
+// server (where AO2 hides ui_flip) or hide it on one that supports it.
 func TestICBarFlipGatedOnFlippingFeature(t *testing.T) {
 	a := testTabApp(t)
 

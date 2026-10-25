@@ -423,6 +423,7 @@ func TestLocalFetcherRejectsEncodedTraversal(t *testing.T) {
 	// %2e%2e decodes to ".." — the decoded attempt must be refused. Raw
 	// "%2e%2e" is not a real file (miss), and the decoded form hits the ".."
 	// guard, so the net result is an error (not-found or path-escape refusal)
+	// and NEVER the secret bytes.
 	data, err := lf.Fetch(context.Background(), lf.BaseURL()+"%2e%2e/secret.txt")
 	if err == nil {
 		t.Fatalf("encoded traversal was NOT rejected — got %q (mount escape possible)", data)

@@ -88,6 +88,9 @@ func TestRenameSectionRefusesWhatWouldMergeOrBreak(t *testing.T) {
 }
 
 // TestRenameSectionRenamesEveryHeaderForOneSection pins the split-section case.
+// A file that opens the same section twice is ONE section to the reader (last
+// declaration wins per key), so renaming only the first header would strand the
+// second run's keys under the old name.
 func TestRenameSectionRenamesEveryHeaderForOneSection(t *testing.T) {
 	src := "[element.box]\nkind = box\n\n[other]\nx = 1\n\n[element.box]\nrect = 1, 2, 3, 4\n"
 	d, err := ParseINIDoc([]byte(src))

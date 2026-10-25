@@ -196,6 +196,12 @@ func TestDownload(t *testing.T) {
 }
 
 // TestDownloadStagedExecutable pins the unix exec bit on the staged binary:
+// os.Create alone yields 0644 (0666 & umask) and StageReplace's renames
+// preserve mode, so without Download's explicit chmod every macOS / Linux
+// self-update would install a binary the OS refuses to launch — and the .old
+// backup is unlinked right after the stage, leaving nothing runnable. Windows
+// has no exec bit (Download deliberately skips the chmod there), so the test
+// skips too.
 func TestDownloadStagedExecutable(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("no exec bit on Windows; Download skips the chmod there")

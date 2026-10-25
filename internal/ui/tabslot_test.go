@@ -10,6 +10,7 @@ import (
 )
 
 // TestTabStripDefaultXCentresInTheWindow replaces TestTabStripDefaultXClearsDockTabs.
+//
 // WHAT CHANGED AND WHY. The old test pinned issue #2's workaround: the strip FLOATED
 // over the stage, so its default X was centred in the gap LEFT of the docked
 // Log/Music/Areas column and the test asserted `x + total <= dockLeftX`. Issue #14

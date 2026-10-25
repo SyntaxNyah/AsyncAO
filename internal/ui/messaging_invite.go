@@ -8,6 +8,9 @@ import (
 )
 
 // Group invites are explicit now: an incoming invite is queued (not auto-joined)
+// and surfaced as a top-centre banner with Accept / Decline, plus a window flash
+// and — when you're tabbed away — a desktop toast. Accepting joins the group and
+// tells the owner; declining tells the owner to drop you.
 
 const maxPendingInvites = 8
 

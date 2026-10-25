@@ -269,6 +269,9 @@ func toolboxChipTipID(i int) string {
 }
 
 // compactToolboxChips is the fixed chip set, right-to-left from the grip (A1):
+// Pin (latch the flyout open), Theater, Edit layout, Hide-UI (the per-piece
+// panel). Each chip draws a vector icon and carries a Tooltip with the full
+// word. The slice is package-level with method values, so it never re-allocates.
 var compactToolboxChips = []compactChip{
 	{iconPin, "Pin the toolbox open (press again or the grip to unpin)", func(a *App) { a.toolbox.compactTogglePin() }},
 	{iconTheater, "Theater mode — stage only, Esc exits", (*App).compactTheater},
@@ -424,6 +427,12 @@ func (a *App) drawCompactToolbox(lat compactToolboxLatch) {
 		gripTip = "Toolbox — drag this grip to move it"
 	}
 	// The whole strip is the tooltip's avoid rect, and the hints are DWELL hints.
+	// Both for the same reason: this strip lives in the bottom-right corner, on top
+	// of whatever the theme declared there (AO2's call_mod / change_character /
+	// reload_theme cluster on the reference themes), so an instant ~262x30 hint
+	// thrown at the first hovered frame wallpapered the theme's own buttons as the
+	// cursor swept past. TooltipAfter makes it deliberate; TooltipGroup keeps the
+	// box off the strip AND off its neighbouring chips once it does show.
 	c.TooltipGroup(strip)
 	c.TooltipAfter(toolboxTipIDGrip, grip, gripTip)
 	for i, ch := range compactToolboxChips {
@@ -543,6 +552,10 @@ type compactToolboxLatch struct {
 
 // latchCompactToolbox computes that answer. Split out so the post-courtroom draw
 // site can reuse the identical predicate without publishing a fence.
+// Geometry note: the strip's position depends on a.toolboxThemeRectOn
+// (compactToolboxStripRect), which drawCourtroom force-clears every frame and only
+// drawCourtroomThemed re-arms — so this must run INSIDE the pass, below the theme
+// dispatch, never from an App-level pre-pass where the flag is stale.
 func (a *App) latchCompactToolbox(w, h int32) compactToolboxLatch {
 	lat := compactToolboxLatch{set: true, mark: a.ctx.overlayFenceMark()}
 	if a.classic.panelHidden(panelToolbox) {
@@ -622,6 +635,7 @@ func (a *App) compactToolboxStripRect(w, h int32) sdl.Rect {
 	// Register with the editor while editing (so it hands the toolbox move handles),
 	// exactly as slotRect does — but with the NORMALIZED rect, so the editor's drag
 	// base and this draw agree on the strip's true W/H. Done inline (not via slotRect)
+	// precisely because slotRect can't apply the move-only W/H normalization above.
 	if a.classic.classicEdit {
 		a.classic.regSlot(slotToolbox, cur, def)
 	}
@@ -637,6 +651,14 @@ func (a *App) compactToolboxStripRect(w, h int32) sdl.Rect {
 func (a *App) editOverToolbox(w, h int32) bool {
 	c := a.ctx
 	// The CHIPS (strip minus the grip) stay live buttons in the editor (Phase 1:
+	// Theater / Edit / Hide-UI), so suppress a slot-move/right-click over them — the
+	// chip press wins. The GRIP is deliberately EXCLUDED: it's the toolbox's drag
+	// handle (Phase 2), so a press there must reach the editor and grab the toolbox to
+	// move it, exactly like a floatWin title bar. When the themed twin is active the
+	// toolbox IS an editable themed key (asyncao_toolbox) the themed editor drags as a
+	// normal box, so don't suppress the chips region either — let the themed editor own
+	// the whole strip. The classic editor drags via the slotToolbox registration
+	// (compactToolboxStripRect → regSlot) whenever the press lands on the grip.
 	if !a.toolbox.toolboxThemeRectOn && !a.classic.panelHidden(panelToolbox) {
 		strip := a.compactToolboxStripRect(w, h)
 		grip := compactToolboxGripRect(strip)
@@ -664,6 +686,11 @@ const (
 
 // toolboxPiecesRect is where the Hide-UI-pieces panel sits: wherever the user
 // last dragged it, or its old bottom-right home the first time.
+// It was fixed in that corner with no way to move it — dragging did nothing, and
+// the layout editor did not offer it either — so a panel that landed awkwardly,
+// or underneath something else, could not be shifted at all. It is a floatWin
+// now, which brings the drag, the cross-session position and the de-overlap
+// cascade with it (panelSlotTable, floatbox.go).
 func (a *App) toolboxPiecesRect(w, h int32) sdl.Rect {
 	panelH := a.toolboxPiecesContentH() + toolboxPiecesHeaderH + toolboxPiecesFooterH
 	if panelH > toolboxPiecesMaxH {
@@ -763,6 +790,9 @@ func (a *App) toolboxPiecesContentH() int32 {
 
 // mouseLifelines are the chrome routes a pure-mouse user has back to the client's
 // own controls. Hiding the LAST surviving one is refused (A6, #21).
+// The set is three, not two, and the third is why: ctrlSettingsSlot is drawn only
+// by drawICControls, which runs on the CLASSIC path — a themed courtroom returns
+// long before it. So for a themed user that lifeline never exists to be hidden,
 var mouseLifelines = [...]string{panelToolbox, ctrlSettingsSlot, panelMenuBar}
 
 // toggleChromePanel flips one chrome piece from the keyboard and says which way
@@ -786,6 +816,7 @@ func (a *App) toggleChromePanel(id, label string) {
 // guard: hiding the last mouse lifeline is refused with a toast explaining why,
 // instead of applied-then-silently-undone. Every other toggle passes straight
 // through. Wholesale hidden-set writes (profile apply, prefs import/reset)
+// normalize the same invariant in seedHiddenFromPrefs instead.
 func (classic1 *classicState) setPanelHiddenGuarded(e *env, id string, hide bool) {
 	if hide && classic1.lastMouseLifeline(id) {
 		e.warnLine = "Kept: that's the last mouse route back to the client's controls. (Ctrl+F reopens this panel.)"
@@ -836,6 +867,11 @@ func (a *App) drawToolboxPieces(w, h int32) {
 		return
 	}
 	// The palette (Ctrl+Space) draws ON TOP of this panel (app.go draw order)
+	// but neither is modal — on a narrow window the two overlap, and this
+	// panel, drawn (and input-polled) FIRST, would eat clicks under the
+	// palette's rows: a Z/input inversion. Stand down while the palette is up
+	// (its fence in boxFencesPointer reads the same flag, so draw and fence
+	// stay in lockstep — the ddOpen dropdown precedent).
 	if a.palette.paletteOpen {
 		return
 	}
@@ -848,6 +884,8 @@ func (a *App) drawToolboxPieces(w, h int32) {
 	// The TITLE strip is the drag handle — the band above the filter box, not the
 	// whole header, so grabbing it can never swallow a click meant for the filter
 	// field. (The Close button lives in the footer, so it is clear either way.)
+	// piecesPressed is this panel's OWN press edge: it draws over other surfaces
+	// and so cannot share the frame's click.
 	piecesPressed := c.mouseDown && !a.toolbox.piecesPrevDown
 	a.toolbox.piecesPrevDown = c.mouseDown
 	wasManip := a.wins.piecesWin.dragging

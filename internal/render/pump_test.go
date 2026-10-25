@@ -117,6 +117,10 @@ func TestPumpUploadsPrefetchByBase(t *testing.T) {
 }
 
 // TestPumpTransientErrorsDontPin pins the negative-cache split (live report:
+// a flaky mirror behind Cloudflare 5xx'd in bursts and every touched asset
+// vanished for decodeFailTTL): a NETWORK-stage failure reaching the pump must
+// stay out of the decode negative cache — the asset remains re-demandable the
+// moment the origin recovers — while genuinely corrupt bytes still pin.
 func TestPumpTransientErrorsDontPin(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()

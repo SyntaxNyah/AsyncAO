@@ -9,6 +9,7 @@ import (
 // The panel font SCOPE: setting a font for a panel dresses that whole panel —
 // its labels, buttons, checkboxes and fields — rather than only the rows someone
 // remembered to wire. These pin the two properties the design lives or dies on:
+// it is total, and it is invisible when unset.
 
 // TestChromeFaceIsTheClientFontWhenUnset is requirement one, and the reason the
 // scope is an OVERRIDE rather than a swap of c.font. With nothing armed, every

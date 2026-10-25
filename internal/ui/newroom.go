@@ -10,6 +10,10 @@ import (
 // newRoom builds a courtroom AND wires it: the char.ini-driven callbacks
 // (blips, chatbox skins, sprite scaling), the screen-effect overlay engine, and
 // the pref-driven visual gates every mode shares.
+//
+// sess may be nil (a replay, a preview and an export all stage a recording
+// rather than a live session) and audio may be nil — NewCourtroom substitutes
+// its own no-op sink, and the wiring below is nil-safe throughout.
 func (a *App) newRoom(urls courtroom.URLBuilder, sess *courtroom.Session, audio courtroom.AudioSink) *courtroom.Courtroom {
 	room := courtroom.NewCourtroom(urls, a.d.Manager, sess, audio)
 	// Per-character blips + chatbox skins + scaling from the speaker's char.ini,

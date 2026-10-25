@@ -73,6 +73,10 @@ func (a *App) applyMountLayer() {
 
 	// ENTER / REBUILD: compare what we WANT against what the live index was
 	// actually BUILT from — never against a key stamped when a walk was kicked.
+	// Stamping on kick opens a re-kick hole: rapid mount edits advance the stamp,
+	// the in-flight walk lands stale and is dropped, and the reconcile then sees
+	// "stamp already matches" and never kicks again, so the pack silently never
+	// appears. Deriving the identity from the index itself cannot drift.
 	want := mountSetKey(mounts)
 	have := ""
 	if a.mountIndex != nil {
@@ -165,7 +169,12 @@ func (a *App) pollMountIndex() {
 
 // publishMountLayer wraps the current index with every live asset origin and
 // installs it. Returns the published layer.
+//
 // Origins come from each tab's URL BUILDER, never from a session's raw asset URL:
+// the server's ASS field is stored verbatim and often omits its trailing slash,
+// and only the builder normalizes it. An unnormalized origin yields a rel with a
+// leading slash that can never match an index key, so the pack would go silently
+// inert while Settings cheerfully reported thousands of indexed files.
 func (a *App) publishMountLayer(mounts []string) *assets.MountLayer {
 	origins := make([]string, 0, len(a.tabs)+1)
 	if o := a.link.urls.Origin(); o != "" {
@@ -185,6 +194,9 @@ func (a *App) publishMountLayer(mounts []string) *assets.MountLayer {
 }
 
 // rescanLocalPacks drops the render-side state a source change invalidates.
+// It deliberately does NOT rebuild the room. buildRoom re-arms the live-roster
+// poll, which queues an OOC /gas — the documented server flood-kick vector — so a
+// user tidying their mount list would emit one per click. It also does not bump
 func (a *App) rescanLocalPacks(layer *assets.MountLayer) {
 	// FIRST, and not behind the Store guard: parsed INIs are UI state, not
 	// textures, and gating them on a texture store existing would be an
@@ -210,6 +222,9 @@ func (a *App) rescanLocalPacks(layer *assets.MountLayer) {
 
 // forgetParsedINIs drops everything derived from a char.ini so a source change is
 // visible without a reconnect.
+// It re-reads the ACTIVE character's ini directly rather than rebuilding the
+// room, for the reason rescanLocalPacks does not rebuild: buildRoom re-arms the
+// live-roster poll, whose queued OOC /gas is the documented server flood-kick
 func (a *App) forgetParsedINIs() {
 	a.overlays.charMetaCache = nil // remote speakers: refetched on their next message
 	// The preview's own latch, or the next hover over the SAME character would be

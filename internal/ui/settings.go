@@ -274,6 +274,9 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 	},
 	tabTheme: {
 		// sections: Theme, Layout & fit, Layout presets, Lobby, Preview & binding.
+		// Emote-grid spacing had NO keyword at all and its only written path named
+		// a tab that does not exist, so it was effectively unreachable. Every word
+		// someone would actually type for it lives here, on the tab that owns it.
 		"emote icon spacing", "emote spacing", "icon spacing", "emote gap", "spacing", "gap",
 		"emote grid", "emote icons",
 		"theme", "theme picker", "chatbox", "skin", "default theme",
@@ -319,6 +322,9 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"split screen", "procedural", "halftone", "generator",
 		// The image/animated-webp intake (this wave). "upload" is the word a person
 		// actually types for it even though nothing is uploaded anywhere.
+		// NOT "webp" and NOT anything containing it ("animated webp"): tabFormats'
+		// own note reserves "webp"/"gif" for tabStudio's video export, and this tab
+		// sits ahead of both. "animated image" carries the same question.
 		"add an image", "upload an image", "upload image", "add art", "picture",
 		"animated image", "theme art", "theme image",
 		// Live preview, the editor rail's own toggle.
@@ -345,6 +351,14 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 	tabFormats: {
 		// sections: How formats work, This server, Automatic detection, Formats per
 		// asset type, Fallbacks, Learned formats.
+		// NOTE the table is scanned in TAB ORDER and matches forward (the query is a
+		// SUBSTRING of a term), so a term here silently steals every query a LATER
+		// tab answers better — including queries hidden inside a longer term. Absent
+		// on purpose, each because a later tab owns the word: "blip"/"volume"
+		// (Audio); "ignore"/"callword" (Chat); "password" (Account); "webp"/"gif"
+		// (Studio's video export — so no "webp format" either, which would still
+		// contain "webp"); "export"/"import" (Studio, Data); "extensions.json"
+		// (its ".json" tail would swallow Data's "json").
 		"image format", "file type", "file types", "extension", "extensions", "manifest",
 		"format profile", "server format profile", "per-server format", "pin format",
 		"probe", "probing", "one probe", "probe order", "format order", "which format",
@@ -638,6 +652,11 @@ func (a *App) drawSettings(w, h int32) {
 
 	// #26 gather-search: with a query typed, the card region becomes a RESULTS
 	// list of every matching setting across every tab (click → jump + flash).
+	// Skipped while the .demo browser is open (!demoBrowser.open): this branch
+	// returns EARLY, which would jump over the end-of-function fence release +
+	// browser draw — stranding c.modalOn=true and freezing the whole UI (the
+	// un-released-fence failure the emoji picker documents). Falling through draws
+	// the fenced (click-dead, covered) tab body instead, so the release always runs.
 	if q := strings.ToLower(strings.TrimSpace(settings.search)); q != "" && !demoBrowser.open {
 		if !settings.indexBuilt {
 			a.buildSettingsIndex(w, contentTop)
@@ -752,6 +771,7 @@ func (a *App) drawSettingsTabBody(tab int, y, w, h int32) int32 {
 // buildSettingsIndex runs every tab's draw once with the input FENCED and all
 // drawing CLIPPED AWAY, purely to collect each row's label/tab/offset through
 // the Ctx.onRow hook (checkboxes; sections + slider rows record directly).
+// A few milliseconds, once per search session — never on a normal frame.
 func (a *App) buildSettingsIndex(w, contentTop int32) {
 	c := a.ctx
 	settings.index = settings.index[:0]
@@ -1500,6 +1520,9 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	// (Emote-grid icon spacing lives under Theme > Layout & fit — it is a layout
 	// measurement and AO2 themes override it, which is where people look for it.)
+	// Sprite repositioning: drag a character in the viewport to move them (the
+	// override sticks per character until reset). OFF by default so a stray click
+	// can't nudge a sprite; right-clicking a sprite resets just that one.
 	move := a.d.Prefs.Load().SpriteMoveOn
 	if next := c.Checkbox(pad, y, "Let me drag character sprites to reposition them (OFF by default; right-click a sprite to reset it)", move); next != move {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteMoveOn = next })
@@ -1874,6 +1897,10 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// Dyslexia-friendly font: a persisted one-click toggle backed by the bundled
 	// OpenDyslexic (no install needed). Drives the IC/OOC chat + log text and
 	// takes precedence over the manual override below.
+	// The census reads the machine's OWN fonts, so it is the only text path whose
+	// behaviour differs per operating system. Exposed so a player seeing wrong or
+	// missing text can take the whole subsystem out of the picture in one click
+	// instead of waiting for a build.
 	census := a.d.Prefs.Load().FontCensus
 	if next := c.Checkbox(pad, y, "Use fonts installed on this computer (ON by default): lets text in scripts the bundled fonts don't cover borrow a font from your system. Turn off if text renders wrongly or goes missing — the client then uses only the fonts it ships with.", census); next != census {
 		a.d.Prefs.Update(func(
@@ -1990,6 +2017,9 @@ const (
 
 // drawDemoToVideoCallout draws the prominent ".demo → video" entry point at the
 // top of the Studio tab: a highlighted panel (the c.Fill(ColPanel)+c.Border(ColAccent)
+// idiom) with a one-line pitch, the in-app Import file browser (ALL platforms),
+// the cross-platform drag hint, and — without ffmpeg — the ColDanger fallback note.
+// Shadows pad/w per the mandatory settings idiom.
 func (a *App) drawDemoToVideoCallout(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX

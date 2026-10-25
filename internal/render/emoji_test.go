@@ -77,6 +77,7 @@ func TestAssignEmoji(t *testing.T) {
 // to agree with a draw that resolves DIFFERENT faces per row. Here the stand-in
 // metric charges a row that contains the marker word far more per rune, and that
 // alone must force the extra break; a fixed-metric wrap can't see it. Pure Go:
+// no font, no SDL.
 func TestWrapMeasuredBreaksOnTheCallersWidth(t *testing.T) {
 	const (
 		narrowPx = 6   // px per rune for an ordinary row

@@ -13,6 +13,11 @@ import (
 // and a row there ends the courtroom pass outright — so opening a countdown blanked
 // the scene, the logs, the music list and every button behind it. They are
 // non-blocking floatWin panels now.
+//
+// These tests pin the three halves of that: they no longer take the pass, they no
+// longer suppress the Extras surface, and they still fence their own footprint so
+// a click on one cannot ALSO land on the courtroom underneath (which is the
+// click-through the pass-taking used to prevent for free).
 
 // exModalPanels is the set #31 moved, with the flag that opens each and the rect fn
 // the fence and the draw share.
@@ -128,6 +133,8 @@ func TestExModalsPersistTheirPosition(t *testing.T) {
 }
 
 // TestExModalPanelsFitTheirMinimumSize is the resize floor these panels gained.
+// Every one of them lays widgets out from fixed offsets, so a minimum that is
+// smaller than the content lets a button escape the panel — the same class of bug
 // as #30, which is being fixed in this release for the Extras box.
 func TestExModalPanelsFitTheirMinimumSize(t *testing.T) {
 	for _, tc := range []struct {

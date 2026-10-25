@@ -41,6 +41,10 @@ const (
 
 // marqueeScrolls is AO2's scrollEnabled: the title travels only when it does not
 // fit (scrolltext.cpp:47, `singleTextWidth > width() - leftMargin * 2`).
+//
+// avail is already `width - 2*leftMargin` at the call site, which is the same
+// number the static path uses to decide whether to ellipsize — so the marquee and
+// the fallback can never disagree about whether a title fits.
 func marqueeScrolls(textW, avail int32) bool { return textW > avail }
 
 // marqueeScrollPos is AO2's scrollPos at a given elapsed time, in pixels.
@@ -62,6 +66,11 @@ func marqueeScrollPos(elapsed time.Duration, wholeW int32) int32 {
 // marqueeFirstX is where the first copy of the tiled title is drawn, relative to
 // the widget's left edge: AO2's `qMin(-scrollPos, 0) + leftMargin`
 // (scrolltext.cpp:75).
+//
+// The qMin is what makes the negative start a PAUSE rather than the title sliding
+// in from the right: a negative scrollPos yields a positive -scrollPos, which the
+// min clamps to 0, so the text stays pinned at the margin until the counter
+// crosses zero.
 func marqueeFirstX(scrollPos, leftMargin int32) int32 {
 	off := -scrollPos
 	if off > 0 {
@@ -75,6 +84,9 @@ func marqueeFirstX(scrollPos, leftMargin int32) int32 {
 // It exists because AO2 resets the scroll whenever the text changes
 // (ScrollText::setText → updateText, scrolltext.cpp:24-28/51): a new track has to
 // start from the pre-roll pause, not halfway through the previous track's cycle.
+// ONE slot, not a map: there is exactly one marquee surface (the music banner), and
+// a map keyed by widget id would be an unbounded cache for a single entry (hard
+// rule 4). A second marquee surface should take a second named slot, so the bound
 type marqueeSlot struct {
 	label string        // the title the epoch belongs to
 	tiled string        // label + ao2MarqueeSeparator, built once per title

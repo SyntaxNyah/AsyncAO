@@ -1,6 +1,9 @@
 package ui
 
 // "Swap from your base" — the Iniswaps tab's second source.
+// THREADING. The local scan is os.ReadDir on the user's disk, so it runs on a
+// goroutine and lands through a buffered channel that the draw drains — hard rule 2
+// (no synchronous disk I/O on a draw path). It is bounded twice: at most
 
 import (
 	"fmt"
@@ -18,6 +21,9 @@ import (
 
 const (
 	// iniBaseCharsDir is the sub-folder of a mount that holds character folders.
+	// AO2-Client mount paths point at a BASE (the folder holding characters/,
+	// background/, sounds/ …), which is the same layout the streaming URL builder
+	// assumes, so this is the one place a mount is turned into a character list.
 	iniBaseCharsDir = "characters"
 	// iniBaseLocalFolderCap bounds ONE scan's result. A content pack with more
 	// character folders than this is already past anything a person browses; the
@@ -92,6 +98,8 @@ type iniBaseBrowser struct {
 
 // sourceLabels returns the two source-chip labels and the server-count status line
 // for these counts, rebuilding the strings only when a count actually moved.
+// labelServer is never legitimately empty, so it doubles as the "unset" marker (the
+// zero counts are a real pair — an empty server list beside no mounts).
 func (b *iniBaseBrowser) sourceLabels(serverN, baseN int) (server, base, status string) {
 	if b.labelServer == "" || b.labelServerN != serverN || b.labelBaseN != baseN {
 		b.labelServerN, b.labelBaseN = serverN, baseN
@@ -104,6 +112,10 @@ func (b *iniBaseBrowser) sourceLabels(serverN, baseN int) (server, base, status 
 
 // scanLocalCharFolders walks each mount's characters/ folder and returns the folder
 // names. BLOCKING — goroutine only.
+//
+// A mount that cannot be opened is skipped, not fatal: mounts go missing (an
+// unplugged drive, a deleted folder, an archive rather than a folder) and whatever
+// else resolved is still worth showing — the same degradation BuildMountIndex makes.
 func scanLocalCharFolders(mounts []string) iniBaseScan {
 	out := iniBaseScan{mounts: append([]string(nil), mounts...)}
 	seen := make(map[string]struct{})
@@ -156,6 +168,9 @@ func scanLocalCharFolders(mounts []string) iniBaseScan {
 // mode is actually ON. Both accessors hand back the stored paths whatever their
 // mode flag says, so the flag is what must be tested: offering folders from mounts
 // the asset pipeline is not reading would list characters that then fail to load.
+// This COPIES (both accessors do), so it is for callers that keep the list. The
+// staleness check does not: it asks config.BaseMountsEqual, which answers the same
+// question against the stored slice under the read lock. The two must agree on
 func (a *App) baseMounts() []string {
 	if on, mounts := a.d.Prefs.LocalAssets(); on {
 		return mounts
@@ -220,6 +235,7 @@ func (a *App) pollLocalCharFolders() {
 // baseNames is the merged, sorted, de-duplicated list of every character folder the
 // client knows exists on this base: the server's roster first (it is authoritative
 // for what the SERVER will accept), then any local folder the roster did not name.
+// Memoized — see iniBaseBrowser.names.
 func (a *App) baseNames() ([]string, []string) {
 	b := &a.inibrowse.iniBase
 	chars := 0
@@ -278,6 +294,12 @@ func (a *App) baseSourceCounts() (serverList, base int) {
 
 // drawIniswapBaseBody draws the "From your base" source: a search-filtered grid of
 // 64 px char-icon cells, one per character folder, click to wear.
+//
+// It draws art cells like the wardrobe, but through its OWN index-keyed page cache
+// (a.iniBase.pages / .ask) rather than a.iniPages — a second list under the same
+// indices is the cachedPage reorder trap the wardrobe's own comments describe.
+// Demand stays paced (only visible cells ask), so browsing a four-thousand-character
+// roster stays free.
 func (a *App) drawIniswapBaseBody(panel sdl.Rect, y int32, query string) {
 	c := a.ctx
 	names, lower := a.baseNames()

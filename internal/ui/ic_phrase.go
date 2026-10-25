@@ -9,6 +9,12 @@ import (
 )
 
 // IC quick-phrases: bind a key to a canned IC line ("Alt+E → Happy Pride Month")
+// so pressing that chord makes your CHARACTER say the line in IC — the IC
+// counterpart to the OOC-only macros. Same shape as the showname keybinds
+// (showname_bind.go): a global key→text map, cached per connect, dispatched
+// through the shared Alt gate (bareBindKey, qol.go), and a Settings key-capture to
+// set one. You still press the bare letter to BIND it; it FIRES as Alt+<key>,
+// which is why every row here prints bareBindLabel and not the raw letter.
 
 // refreshICPhraseKeys re-reads the global key→IC-phrase binds into the per-frame
 // lookup cache (connect + bind edits only, never per frame).

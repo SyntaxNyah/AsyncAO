@@ -13,6 +13,9 @@ import (
 )
 
 // Live voice AUDIO — the slice that turns the VS_* signaling (courtroom/voice.go)
+// + the Opus codec (internal/voice) into real talking. It captures the mic,
+// encodes Opus, and hands frames to the session (VS_FRAME); and decodes peers'
+// VS_AUDIO, mixes them, and plays the result.
 // Threading / hard rule #1: every SDL audio call here runs on the MAIN thread —
 // Safety: the engine only exists while you've JOINED a Nyathena voice channel
 // (opt-in; default is not-in-voice) and the server advertised voice (VS_CAPS), so
@@ -85,6 +88,8 @@ type voiceEngine struct {
 
 // newVoiceEngine opens the audio devices and the encoder. captureDev is the mic
 // device name ("" = system default); outVol is the initial output volume (0..100).
+// Playback is required; capture is best-effort (no mic ⇒ listen-only). Returns an
+// error only when no audio at all is possible — the caller stays presence-only.
 func newVoiceEngine(send func(b64 string), captureDev string, outVol int) (*voiceEngine, error) {
 	spec := sdl.AudioSpec{
 		Freq:     voice.SampleRate,

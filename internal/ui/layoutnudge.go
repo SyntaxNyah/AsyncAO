@@ -1,6 +1,9 @@
 package ui
 
 // Arrow-key nudging in the two layout editors.
+// Everything a nudge writes goes through the SAME state a mouse drag's release writes,
+// so a nudged widget persists, undoes with the editor's existing Ctrl+Z, and is put back
+// by right-click reset and "Reset all" with no extra bookkeeping.
 
 import (
 	"github.com/veandco/go-sdl2/sdl"
@@ -23,6 +26,9 @@ const (
 
 // editorDrawSiteRuns reports whether an armed layout editor's own draw actually REACHES
 // the screen this frame.
+// The server-tab strip's paint-site predicate needs exactly this question answered
+// (tabStripPaintsUnderEditor, chrometop.go), which is why it delegates here instead of
+// carrying a second copy of the conjunction.
 func (a *App) editorDrawSiteRuns() bool {
 	return a.layoutEditorArmed() && a.screen == ScreenCourtroom &&
 		a.link.room != nil && a.link.sess != nil && !a.theaterOn && !a.screenDispatchPreempted()
@@ -58,6 +64,9 @@ func nudgeKeyDir(key sdl.Keycode) (dx, dy int, ok bool) {
 
 // takeNudgeKey reads this frame's nudge off the TWO channels an armed editor owns and
 // CONSUMES it.
+// Consumes whichever channel it read even when the nudge then turns out to be a no-op
+// (nothing selected, or the widget is already against a stop). That is the same promise
+// editorUndoChord makes for Ctrl+Z/Y: while an editor is armed, a key it owns can never
 func takeNudgeKey(c *Ctx) (dx, dy int, coarse, ok bool) {
 	if dx, dy, ok = nudgeKeyDir(c.hotkey); ok {
 		c.hotkey = 0
@@ -74,6 +83,9 @@ func takeNudgeKey(c *Ctx) (dx, dy int, coarse, ok bool) {
 // next line", not "move by one line's worth". That is what makes the coarse nudge land
 // on the SAME lattice a snapped drag lands on (snapDesign / classicSnapTo round to it)
 // from any starting offset, including a widget the theme authored off-grid.
+// The floor correction matters: the server-tab strip's stored Y is legitimately negative
+// while it is docked in the chrome band above the canvas, and Go's integer division
+// truncates toward zero, which would step the wrong way there.
 func gridStepTo(v, dir, g int) int {
 	if g <= 0 {
 		g = layoutGridDesign
@@ -105,6 +117,11 @@ func nudgeCoord(v, dir int, coarse bool, phase, grid int) int {
 
 // editorNudgeKeys routes this frame's arrow key to the armed layout editor and reports
 // whether it belonged to one (and was therefore consumed).
+// It runs PRE-SCREEN, beside the other app-wide key claims, for the same reason
+// editorUndoChord had to be hoisted out of the editors' draw bodies: both editors draw
+// LAST in their pass, long after the focused text field, the IC/OOC recall rings, the
+// pair-ghost offset nudge and the emote-preview cycler have all had a look at
+// c.keyPressed. An in-draw check would have been handed a key that was already spent.
 func (a *App) editorNudgeKeys(w, h int32) bool {
 	if !a.editorDrawSiteRuns() || a.palette.keyboardSurfaceOverEditor(&a.env) {
 		return false // no editor owns the screen: arrows belong to whoever else wants them
@@ -131,6 +148,11 @@ func (a *App) editorNudgeKeys(w, h int32) bool {
 }
 
 // editSelection is the armed editor's current target.
+// The two editors are mutually exclusive by construction (openLayoutEditor arms one or
+// the other, and drawCourtroom force-stops the classic one under a theme), so this is
+// a lookup rather than a priority rule — but it is written as a switch on the armed
+// flag rather than "whichever field is non-empty", because a stale selection left in
+// the OTHER editor's field is exactly the sort of thing that outlives a theme swap.
 func (a *App) editSelection() editTarget {
 	switch {
 	case a.layoutEdit:
@@ -156,6 +178,11 @@ func (a *App) nudgeThemedRect(tgt editTarget, dx, dy int, coarse bool, w, h int3
 		return
 	}
 	// lay.rect, NOT a bare lay.r probe: rect also rejects a degenerate (W<=0 || H<=0)
+	// entry, which is the SAME question editBaseFor asks two lines below. A bare probe
+	// would let a degenerate key through, editBaseFor would then fall back to
+	// a.themeRects[key] — for the tab strip, the inert synthesized seed — and the nudge
+	// would move and PERSIST that seed, marking the strip placed at a coordinate nothing
+	// ever painted. That is exactly the phantom the drag's no-op discard exists to stop.
 	if _, drawn := lay.rect(key); !drawn {
 		return // hidden, omitted or clamped out of the canvas this frame: no box to move
 	}
@@ -269,6 +296,11 @@ func (classic1 *classicState) nudgeClassicSlot(e *env, tgt editTarget, dx, dy in
 }
 
 // classicSlotCurrentRect is the selected slot's rect right now.
+// An existing override is resolved live (anchoredRect — window pins included) rather
+// than read out of the slot registry, because the registry is one frame behind here: the
+// nudge runs pre-screen, and the courtroom pass that rebuilds the registry has not run
+// yet. Only a slot with NO override needs the registry, and then only for the rect the
+// layout computed for it — which is exactly what a first nudge has to start from.
 func (classic1 *classicState) classicSlotCurrentRect(key string, w, h int32) (sdl.Rect, bool) {
 	if ov, has := classic1.classicOv[key]; has {
 		return classic1.anchoredRect(key, ov, w, h), true

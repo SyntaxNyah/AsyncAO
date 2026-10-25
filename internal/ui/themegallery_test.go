@@ -50,6 +50,9 @@ func stageGalleryEditor(t testing.TB) (*App, func()) {
 // gallery is 294 cells and hover-scrub walks them, so a cache that grew on demand
 // would hold 294 baked miniatures after a minute of idle mousing — which is the
 // shape of every unbounded cache that has ever shipped by accident.
+// It drives get() with every combination, which is also the only honest way to
+// prove the LRU never corrupts an entry: after the flood, a re-ask must return the
+// right miniature for the pair, not whichever one happened to be in that slot.
 func TestPresetThumbCacheIsBounded(t *testing.T) {
 	lib, err := theme.ShippedPresets()
 	if err != nil {
@@ -315,6 +318,9 @@ func mustFindStyle(t testing.TB, lib *theme.PresetLibrary, id string) *theme.Pre
 // the property it pins is the one that makes a gallery safe to touch: pressing
 // Apply on a theme you have been editing is REVERSIBLE, exactly, including the
 // parts of the model the panel never mentions.
+// It compares the SERIALISED theme before and after, not a field list. A field
+// list is a second place that has to know what a preset can change, and it would
+// have gone stale the first time the merge learned to touch a new section.
 func TestPresetApplyThenUndoRestoresExactly(t *testing.T) {
 	a, cleanup := stageGalleryEditor(t)
 	defer cleanup()
@@ -449,6 +455,8 @@ func TestGalleryApplyKeepsTheLiveSidecarPointer(t *testing.T) {
 
 // TestGalleryPickRunsTheMergeEngine is the ENCAPSULATION gate (hard rule 11), and
 // it is written in the shape TestThemeApplyRunsTheOverridesTier established:
+// perform the real act through the real button path, then assert on something only
+// the real engine could have produced.
 func TestGalleryPickRunsTheMergeEngine(t *testing.T) {
 	a, cleanup := stageGalleryEditor(t)
 	defer cleanup()

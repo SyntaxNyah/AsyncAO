@@ -11,6 +11,11 @@ import (
 
 const (
 	// minLoopWindowSec is the shortest loop-end minus loop-start interval (#48)
+	// we'll arm. A narrower window could be skipped in its entirety by a single
+	// idle Frame() gap (~500 ms default worst case), so a 1-second floor refuses
+	// windows shorter than double that. Authors who need sub-second precision
+	// loops (techno/trance stabs) should use a DAW's own seamless-loop export,
+	// not sidecar points — this is for area ambience and courtroom tracks.
 	minLoopWindowSec = 1.0
 
 	// loopMetaCacheMaxAge is how long a conclusively-missing sidecar (fetch 404,
@@ -62,6 +67,8 @@ func (a *Audio) applyLoopPoints(url string, data []byte) {
 		// Cache miss: fetch and parse synchronously so we can arm on the FIRST
 		// playthrough. The .txt file is small (typically <100 bytes) and the music
 		// bytes are already in memory for sample rate sniffing, so this is fast.
+		// We write the result to the cache immediately so subsequent plays don't
+		// re-fetch.
 		log.Printf("render: loop cache MISS for %q, fetching synchronously", url)
 		meta = a.fetchLoopMeta(url, data)
 
@@ -89,6 +96,7 @@ func (a *Audio) applyLoopPoints(url string, data []byte) {
 	// skipped by a single idle Frame() gap) or if loop_start >= loop_end (the
 	// parser already clamped this, but an all-zero LoopPoints also satisfies
 	// found=true when a DRO .ini exists but has no loop keys — belt-and-braces).
+	// Also refuse if HaveEnd is false (no loop_end was ever defined).
 	p := meta.points
 	log.Printf("render: checking loop arm conditions: HaveEnd=%v, window=%.2fs, start=%.2fs, end=%.2fs",
 		p.HaveEnd, p.EndSec-p.StartSec, p.StartSec, p.EndSec)

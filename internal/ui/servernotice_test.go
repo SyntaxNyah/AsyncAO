@@ -33,6 +33,9 @@ const (
 
 // TestAPreCourtroomBanRaisesTheNoticeBoxWithTheTail is the regression gate for the
 // reported defect, driven through the real drop path.
+// handleInvoluntaryDrop with no room to freeze is the arm a refused handshake lands on
+// (the server answers our join with BD and closes, so there is no courtroom yet). It
+// must now raise the box, attribute it to the server we dialled, and keep the WHOLE
 func TestAPreCourtroomBanRaisesTheNoticeBoxWithTheTail(t *testing.T) {
 	a := froomApp(t)
 	a.link.room = nil // a drop before the courtroom: char-select, or a refused join
@@ -371,6 +374,8 @@ func TestTheOneLineDropDialogKeepsItsOldShape(t *testing.T) {
 // TestTheWrappedBodyIsBakedNotRewrappedEveryFrame is the alloc gate for the seam, and
 // it measures the SEAM rather than the frame for the reason the report panel's gate
 // spells out: a whole-frame budget is large enough to swallow a per-frame rewrap.
+// The modals redraw sixty times a second while they are up, and the text cannot change
+// while they are open, so the wrap must run on change only.
 func TestTheWrappedBodyIsBakedNotRewrappedEveryFrame(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()
@@ -472,6 +477,10 @@ func serverNoticeCloseCentre(a *App, w, h int32) (x, y int32) {
 
 // TestTheNoticeBoxDrawsThroughTheFrameAndTakesItsClicks is the wiring gate: the box has
 // to be reached by App.Frame's tail, and its buttons have to work there.
+// Those are two halves of one thing. The tail fences the pointer for the whole modal
+// family and then unfences just before the box draws; delete the draw call and nothing
+// appears, delete the unfence and the box appears but is dead. Both mutations pass
+// every test of drawServerNotice itself.
 func TestTheNoticeBoxDrawsThroughTheFrameAndTakesItsClicks(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()
@@ -603,6 +612,9 @@ func TestTheNoticeBoxFreezesTheTabStrip(t *testing.T) {
 
 // TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou drives the first of the two
 // holes the pointer fence structurally cannot cover.
+// The second half is not decoration, it is the only thing standing between this gate
+// and vacuity — the arm being fenced shipped DEAD. It read c.keyPressed, which
+// HandleEvent can never set to Return (Return is answered with c.enter in an earlier
 func TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()
@@ -686,6 +698,7 @@ func TestEnterInTheICFieldIsFencedWithoutEatingTheDraft(t *testing.T) {
 			// FATAL, not an error: with the fence gone the draft is already spent, and the
 			// non-vacuity press below then sends a REAL IC line — which on a fixture with no
 			// socket panics inside Session.reply and buries this failure in a stack trace.
+			// Stopping here keeps a broken fence reading as a broken fence.
 			if a.compose.icInput != draft {
 				t.Fatalf("icInput = %q, want %q — either the send went through under the box or the "+
 					"keystroke was swallowed somewhere that took the draft with it", a.compose.icInput, draft)
@@ -774,6 +787,9 @@ func TestAnOversizedAttributionCannotOverflowTheHeading(t *testing.T) {
 // TestTheNoticeBoxStaysClickableInAWindowSmallerThanItself is the gate on the two
 // degradation clamps, and it is behavioural on purpose: both of them are arithmetic that
 // looks harmless and fails as "the button is not there".
+// One click proves both: it lands on Copy under the clamps and misses it (into the gap
+// between the buttons, or off the row entirely) under either failure. Driven on the real
+// Ctx rather than through driveFrame because the harness drives a fixed 1280x720, and
 func TestTheNoticeBoxStaysClickableInAWindowSmallerThanItself(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()

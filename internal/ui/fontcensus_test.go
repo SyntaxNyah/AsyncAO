@@ -119,6 +119,12 @@ func TestMissingRuneQueueIsBoundedAndDedupes(t *testing.T) {
 
 // TestScaledChatboxStillAsksTheCensus pins the census hand-off on the DEVICE
 // resolver, not just the 1:1 one.
+//
+// deviceCoverRunes delegates upward only at exactly 100%; every other UI scale
+// runs its own loop. Auto-scale ships ON and a maximised 1080p window lands
+// around 130%, so the un-delegated branch is the COMMON case — leaving the
+// hand-off out of it meant the IC chatbox, the surface the whole fix was written
+// for, never once asked the census for a font it was missing.
 func TestScaledChatboxStillAsksTheCensus(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()

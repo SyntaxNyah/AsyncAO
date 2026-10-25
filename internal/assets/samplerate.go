@@ -6,6 +6,7 @@ import "encoding/binary"
 // container's own header claims, sniffed purely from bytes already
 // resident in memory — zero I/O (hard rule 2), in the same bounded,
 // magic-byte-walking style as Sniff (sniff.go).
+//
 // AO and DRO loop points (issue #48) are expressed in SAMPLE COUNTS, but
 // AsyncAO seeks in seconds — SDL_mixer's Mix_SetMusicPosition takes a
 // double — so converting needs `seconds = samples / rate`, and SDL_mixer
@@ -15,6 +16,8 @@ import "encoding/binary"
 // and then never reads it again — BASS positions are byte offsets into a
 // fixed 16-bit stereo decode (`bytes = value * sample_size(2) *
 // num_channels(2)`), so its sample-to-byte math never touches the rate.
+// Do not "simplify" this sniffer away by citing AO2 as precedent: this is
+// the one place AsyncAO's own math genuinely needs the rate AO2's doesn't.
 func SniffAudioSampleRate(data []byte) (rate int, ok bool) {
 	switch {
 	case hasPrefix(data, []byte("RIFF")) && len(data) >= riffHeaderLen && string(data[8:12]) == "WAVE":
@@ -36,6 +39,7 @@ const (
 	// opusNativeSampleRate is hardcoded per RFC 7845 §5.1: Opus ALWAYS
 	// decodes at 48 kHz regardless of what OpusHead's own
 	// input_sample_rate field says — that field is informational only.
+	// Reading it instead of this constant is the single easiest silent
 	// scaling bug in the whole loop-point feature (issue #48 decision 15).
 	opusNativeSampleRate = 48000
 

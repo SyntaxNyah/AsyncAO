@@ -8,6 +8,10 @@ import (
 )
 
 // CM / mod dashboard (#130): a STANDALONE panel (its own thing — never bloats the player list)
+// with server-software-aware moderation. This file holds the wire-signal detection that drives
+// it: the server software (ID packet), whether we're mod (AUTH), and whether we're our area's CM
+// (ARUP CM column). All read on demand (panel draw / events), never per frame — the panel is
+// opt-in (closed by default = zero cost).
 
 // detectedSoftware resolves the server software for the dashboard's command syntax: the user's
 // override if they set one, else auto-detected from the ID-packet software string captured on
@@ -29,6 +33,9 @@ func (a *App) amIMod() bool {
 
 // myAreaInfo returns the live ARUP state for our current area (ok=false when unknown). AreaInfo
 // is parallel to the area-name list, so we match our area's name to its index. We use myAreaName()
+// — the server-pushed area of OUR uid (a.sess.PlayerArea(PlayerID)), falling back to the
+// click-driven curArea — NOT curArea directly: a freshly-joined CM hasn't clicked an area, so
+// curArea would be empty/stale and the CM section would never appear.
 func (a *App) myAreaInfo() (courtroom.AreaInfo, bool) {
 	if a.link.sess == nil {
 		return courtroom.AreaInfo{}, false

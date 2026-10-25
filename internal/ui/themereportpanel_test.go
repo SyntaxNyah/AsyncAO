@@ -1,6 +1,11 @@
 package ui
 
 // THE IMPORT REPORT PANEL'S GATES (v1.90.0 W9).
+// The property that matters is the one hard rule 11 names: App.themeReport was a
+// bounded slice written on every theme apply, kept "for the editor", and read by
+// nothing but a test — the sidecar-[overrides] shape exactly. These gates fail if
+// it goes back to that, and they do it by driving the REAL rail chip and the REAL
+// panel rather than by asserting over the slice a second time.
 
 import (
 	"strings"
@@ -20,6 +25,9 @@ var reportFixtureNotes = []string{
 
 // stageReportEditor opens the frame-driven editor over a theme whose apply
 // produced notes.
+// The report is INSTALLED THE WAY THE APPLY INSTALLS IT — through noteThemeReport,
+// the one landing site the poll uses — so the fixture cannot pass by writing a
+// slice somewhere the real path never touches.
 func stageReportEditor(t *testing.T) (*App, func()) {
 	t.Helper()
 	a, cleanup, _ := stageEditorCanvas(t)
@@ -42,6 +50,9 @@ func reportChipCentre() (x, y int32) {
 // new seam, and it is driven through App.Frame rather than by calling the panel's
 // own predicate — a gate that asserted on themeReportPanelUp() would be a mirror
 // of the fix and would stay green with the rail's call site deleted.
+// It looks for a note's OWN WORDS in what the panel bakes: text the panel has no
+// way to invent, because it came out of the sidecar reader. A surface that had
+// re-implemented "say something about the theme" (a count, a canned sentence)
 func TestTheImportReportReachesAUserSurface(t *testing.T) {
 	a, cleanup := stageReportEditor(t)
 	defer cleanup()
@@ -132,6 +143,9 @@ func TestTheReportPanelIsAPanelAndNotAModal(t *testing.T) {
 }
 
 // TestTheReportWrapsOnChangeAndNotPerFrame is the alloc-discipline gate.
+// themeReportCap is 69 notes; Ctx.WrapText allocates; the editor frame is bounded
+// by editorChromeAllocBudget. Wrapping on the draw would be that budget's named
+// regression, at sixty-nine strings a frame.
 func TestTheReportWrapsOnChangeAndNotPerFrame(t *testing.T) {
 	a, cleanup := stageReportEditor(t)
 	report := reportFixtureNotes

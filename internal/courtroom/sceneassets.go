@@ -15,6 +15,9 @@ func IsBlankSpeaker(charName string) bool {
 }
 
 // AssetRef is one asset a scene needs, for the self-contained archive exporter.
+// Base is an extensionless AO base (sprite / background / desk) the exporter
+// resolves via Manager.ResolveRaw, OR a complete URL when Exact is set (music
+// carries its own extension).
 // The DESK's nil is deliberate and must stay — set_scene's desk arm has no
 // fallback (BackgroundFallbacks' documented asymmetry, pinned by
 // TestTheDeskKeepsItsNoFallbackContract); "symmetrising" it with the
@@ -35,6 +38,10 @@ type AssetRef struct {
 // playable music. De-duplicated by (type, base), so a 100-line scene with three
 // characters bundles three characters' art, not a hundred copies — that keeps
 // the archive as small as possible.
+// Exotica (shout bubbles, blip sounds, pair-partner edge art) is intentionally
+// omitted: the zero-fallback renderer degrades gracefully on a missing asset, so
+// v1 bundles the spine and those simply 404 on replay rather than bloating every
+// archive. Keep this in sync with begin / setBackground (the prefetch sites).
 func SceneAssets(urls URLBuilder, startBg string, events []Event) []AssetRef {
 	bg := startBg
 	var out []AssetRef
@@ -67,6 +74,11 @@ func SceneAssets(urls URLBuilder, startBg string, events []Event) []AssetRef {
 			}
 			bgPart, deskPart := PositionScene(m.Side) // Scene.Position == msg.Side
 			// The background carries the witness ladder (prefetchScenery's chain):
+			// a position whose art only resolves through witnessempty/wit would
+			// otherwise be enumerated as its primary stem alone, resolve to nothing,
+			// and be bundled as nothing — so the replay of an archived scene would
+			// show black exactly where the live client showed the witness view. The
+			// desk deliberately gets no ladder (BackgroundFallbacks' contract).
 			add(urls.Background(bg, bgPart), backgroundAltURLs(urls, bg, bgPart), assets.AssetTypeBackground, false)
 			add(urls.Background(bg, deskPart), nil, assets.AssetTypeDeskOverlay, false)
 			// Sprites carry the full spelling chain: "(a)X" → bare X → "(a)/X".

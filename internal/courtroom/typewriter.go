@@ -36,6 +36,9 @@ const (
 
 	// blipsPerUpdate bounds the blips ONE Update may emit, and it is the whole of
 	// AsyncAO's departure from AO2's blip timing.
+	// The budget therefore sits on the AUDIBLE half ONLY; the reveal stays proportional
+	// to dt (see Update). Capping the reveal instead coupled the crawl to the caller's
+	// step rate: the exporters captured a fraction of the requested crawl and truncated
 	blipsPerUpdate = 1
 )
 
@@ -59,6 +62,10 @@ const (
 	// `Color >= ColorExtBase`.
 	ColorExtBase = 0x1000
 	// ColorHexBase tags an EXACT transmitted colour (v1.52.0, requested by Tifera:
+	// any hex colour while chatting). StyleRun.Color is ColorHexBase + 0xRRGGBB, parsed
+	// from the inline `\c#RRGGBB` code. Sits above ColorExtBase + any letter
+	// (≈0x107A) so the render switch can branch `>= ColorHexBase` first; the
+	// packed range spans exactly 24 bits, so the two can never collide.
 	ColorHexBase = 0x2000
 )
 
@@ -91,6 +98,9 @@ type ao2Markup struct {
 // ao2Markups is the STOCK default-theme table, in AO2 colour order c1..c8
 // (c0 is the uncoloured default — no delimiter). Values verbatim from
 // AO2-Client/bin/base/themes/default/chat_config.ini:
+// AsyncAO's theme system is asset-driven and does not (yet) expose per-theme
+// remappable chat markup, so we hard-code the stock table: it is what every
+// AO2/webAO peer sends by default, which is exactly the interop target. Every
 var ao2Markups = [...]ao2Markup{
 	{Start: '`', End: '`', Palette: 1, Remove: true},  // c1 green
 	{Start: '~', End: '~', Palette: 2, Remove: true},  // c2 red
@@ -310,6 +320,9 @@ func parsePauseDuration(rs []rune, at int) (ms, digits int) {
 // they index into the typewriter's runes by simple accumulation — the reveal
 // and the styling can never drift (one parse, one rune sequence). Two inline
 // colour schemes are honoured:
+// A literal backtick, tilde, pipe, º, №, √, or a matched bracket pair therefore
+// now colours chat instead of showing verbatim — escape with a leading `\` to
+// type one literally.
 type StyleRun struct {
 	Len    int  // clean runes covered
 	Color  int  // palette index, ColorDefault / ColorRainbow, or ColorExtBase+code
@@ -382,6 +395,11 @@ func (t *Typewriter) startJoined(prefix, message string) {
 
 	speed := speedStepDefault
 	// base is the AsyncAO-native `\c` colour (ColorDefault until a `\cN` code).
+	// ao2 is the AO2 inline-markup nesting stack (§3.8): while it is non-empty its
+	// innermost colour WINS over base, so an AO2 span colours text even mid-message
+	// and returns to base when it closes — the "return to default" that the render-
+	// only `\c` scheme lacks. curColor folds the two into the run colour, so the
+	// two schemes compose in one message without confusing each other.
 	base := ColorDefault
 	var ao2 ao2ColorStack
 	curColor := func() int {
@@ -586,6 +604,8 @@ func (t *Typewriter) addMidMark(m MidMark) {
 // prefix are DROPPED (they fired on the original line; a re-reveal must not re-fire
 // them), matching SkipToEnd's rule for skipped marks. prefix "" is identical to
 // Start(message).
+// The tail also gets its OWN effect-mark budget rather than whatever the accumulated
+// prefix left of one — see effectMarksMax, and TestAppendTailKeepsItsOwnEffectBudget.
 func (t *Typewriter) StartAppend(prefix, message string) {
 	t.startJoined(prefix, message)
 	// The processed-prefix rune count is what StripChatMarkup yields for the prefix:
@@ -777,6 +797,9 @@ func (t *Typewriter) Update(dt time.Duration) (revealed, blips int) {
 // tickBlip advances AO2's blip_ticker for one just-revealed rune and reports whether
 // that rune is DUE to sound a blip. Transcribed from Courtroom::chat_tick
 // (AO2-Client courtroom.cpp:4540-4555):
+// Whether the due blip is actually SOUNDED is Update's call (blipsPerUpdate) — the
+// ticker keeps AO2's phase either way, so a blip dropped for being simultaneous with
+// another does not shift the rhythm of the rest of the line.
 func (t *Typewriter) tickBlip(r rune, need time.Duration) bool {
 	if r == '\n' {
 		// AO2: `\n` is a formatting_char (:4436-4439) and never reaches the blip
@@ -797,6 +820,10 @@ func (t *Typewriter) tickBlip(r rune, need time.Duration) bool {
 // effectiveBlipRate is AO2's per-character blip period for a rune whose delay is
 // need: the user's BlipRate, raised when the crawl is fast enough that firing
 // every BlipRate-th character would machine-gun. AO2-Client courtroom.cpp:
+// 4528-4537 —
+//
+//	int b_rate = blip_rate;
+//	if (msg_delay != 0 && msg_delay <= 25)
 func (t *Typewriter) effectiveBlipRate(need time.Duration) int {
 	rate := t.BlipRate
 	if rate < 1 {

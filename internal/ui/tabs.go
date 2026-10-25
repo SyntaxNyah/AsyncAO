@@ -447,6 +447,10 @@ func (a *App) confirmPendingCloseTab() {
 }
 
 // pumpBackgroundTabs drains every parked tab's connection on a budget:
+// the session reducer keeps its court state current, chat lands in the
+// tab's own logs (unread counter, callword flash), and a closed
+// connection marks the tab dead. Runs on the render thread like the
+// active pump — no locks anywhere.
 func (a *App) pumpBackgroundTabs() {
 	for i, t := range a.tabs {
 		if i == a.activeTab || t.dead {
@@ -514,6 +518,9 @@ func (a *App) pumpBackgroundTabs() {
 }
 
 // routeBackgroundEvent applies the few events a parked tab surfaces:
+// chat into its logs (+unread, callword flash), disconnects mark it
+// dead. Everything else already mutated the tab's session in
+// HandlePacket and re-renders from it on activation.
 func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 	s := &t.state
 	switch ev.Kind {
@@ -673,6 +680,7 @@ func (a *App) tabBarRects(w, h int32) (rects []sdl.Rect, add sdl.Rect) {
 	// Default origin: DOCKED — window-centred, directly under the menu bar, in the
 	// band chrometop.go reserves for it. The whole strip is a MOVE-ONLY layout slot,
 	// so an Edit Layout drag still lifts it anywhere; un-edited it uses this default.
+	// ensureClassicOv loads the override map slotRect reads.
 	a.classic.ensureClassicOv()
 	def := a.tabStripDockedRect(total, w)
 	origin := a.tabStripOrigin(def, w, h)
@@ -778,6 +786,9 @@ func seedTabBarThroughOverrides(layout map[string]theme.Rect, sc *theme.Sidecar)
 
 // tabStripThemeParked reports whether the THEME's design layout owns where the strip
 // sits, as opposed to the client chrome band it docks in by default.
+// Cheap enough for the draw path: the recorded ladder short-circuits first, so an
+// ordinary frame still costs one map probe on latched state plus two RLock'd prefs
+// probes and no allocation (that is what HasThemeRectOverride is for). Only a frame
 func (a *App) tabStripThemeParked() bool {
 	if a.tabStripPlacementRecorded() {
 		return true
@@ -809,6 +820,7 @@ func (a *App) tabStripPlacementRecorded() bool {
 // tabStripIntrinsicW is the strip's chip-driven width for the layout cache: the same
 // number tabBarRects lays the chips out with, with the headless guard the cache needs
 // (themeLayoutIn runs in unit fixtures and export paths that may not have built a Ctx).
+// Alloc-free — tabChipLabel and TextWidth are both memoized.
 func (a *App) tabStripIntrinsicW() int32 {
 	if a.ctx == nil || len(a.tabs) == 0 {
 		return 0
@@ -818,6 +830,9 @@ func (a *App) tabStripIntrinsicW() int32 {
 
 // tabStripCacheRect is the strip's entry in the themed layout cache: THE LIVE PAINTED
 // RECT, parked or not.
+// Takes the half-built cache, the already-measured width and the already-resolved
+// parked flag explicitly: it runs inside themeLayoutIn before lay.valid, so it must
+// neither recurse into the rebuild nor re-measure or re-probe what the caller has.
 func (a *App) tabStripCacheRect(lay *themeLayoutCache, w, h, total int32, parked bool) (sdl.Rect, bool) {
 	if total < minThemedElementPx {
 		return sdl.Rect{}, false // no chips (or a degenerate strip): nothing to place
@@ -939,6 +954,12 @@ func (a *App) handleTabBar(w, h int32) {
 	}
 	// The involuntary-disconnect dialog freezes a tab whose network session is dead
 	// but whose sessionState is STILL LIVE (conn nil, sess/room kept for viewing).
+	// handleTabBar runs in the update phase, BEFORE the frame-tail pointer fence that
+	// covers the dialog — so without this guard a chip click here would activateTab
+	// away, parkActive the frozen (not-dead) session into a slot that pumpBackgroundTabs
+	// never drains (s.conn==nil) — a zombie tab. The dialog itself parks with the tab
+	// (it's on sessionState), so it wouldn't paint over the new tab; the hazard is the
+	// zombie slot plus the wipe-and-resurface-stale-modal race resetSessionState opens.
 	if a.dialogs.disconnectDlg.open {
 		a.tabDragFrom, a.tabDragging = -1, false
 		return

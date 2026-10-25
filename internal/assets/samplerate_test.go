@@ -132,6 +132,8 @@ func buildFLAC(sampleRate uint32) []byte {
 
 // mp3FrameHeaderBytes builds a 4-byte MPEG1 Layer III frame header (the
 // 0xFFFB two-byte sync is the common no-CRC MPEG1/Layer III combination)
+// carrying rateIndex (0/1/2, the wire's own 2-bit field) at its own bit
+// position.
 func mp3FrameHeaderBytes(rateIndex byte) []byte {
 	const (
 		byte1MPEG1LayerIIINoCRC = 0xFB // sync tail(111) version(11=MPEG1) layer(01=III) protection(1=none)
@@ -262,6 +264,11 @@ func TestSniffAudioSampleRateReservedMP3IndicesFail(t *testing.T) {
 // field back out of the fixture and assert the sniffer returns THAT value —
 // it would pass whether the implementation hardcodes 48000 or faithfully
 // decodes the field, because an honest fixture makes the two coincide.
+// Instead this test builds a technically-valid OpusHead packet that
+// DECLARES A WRONG RATE — 44100, a real and extremely common rate, not a
+// nonsense sentinel — and asserts the answer is 48000 regardless. The only
+// way that assertion can pass is if the sniffer never reads the field.
+//
 // THE MUTATION THIS ANSWERS TO: replace the OpusHead branch's
 // `return opusNativeSampleRate, true` with a decode of payload offset 12
 // (`return int(binary.LittleEndian.Uint32(payload[12:16])), true`). This
@@ -336,6 +343,10 @@ func TestSniffAudioSampleRateRejectsGarbage(t *testing.T) {
 
 // TestSniffAudioSampleRateRejectsTruncatedInputForEveryFormat feeds every
 // prefix length of every happy-path fixture (0 through the full length)
+// through the sniffer: it must never panic or read out of bounds (the
+// assignment's core safety contract), and definitely-too-short prefixes
+// must report ok=false rather than a garbage rate read from whatever bytes
+// happened to be present.
 func TestSniffAudioSampleRateRejectsTruncatedInputForEveryFormat(t *testing.T) {
 	tests := []struct {
 		name          string

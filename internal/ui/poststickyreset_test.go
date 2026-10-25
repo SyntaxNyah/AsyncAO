@@ -37,6 +37,14 @@ const stickySFXPickedRow = 3
 
 // TestClearSFXAfterSendReadsTheRealPreferences is the courtroom.cpp:2340 truth
 // table, driven end to end:
+//
+//	!clearSoundsDropdownOnPlayEnabled()  ==  !StickySoundsOn()
+//	&& (playSelectedSFXOnIdle() || ui_pre->isChecked())
+//
+// The second conjunct is the half that had NO behavioural gate at all — deleting it
+// outright was mutation-proven green. It exists so a pick made on an idle line (a
+// stock client transmits that silently) is not thrown away before the user gets to
+// tick Pre and send it for real.
 func TestClearSFXAfterSendReadsTheRealPreferences(t *testing.T) {
 	for _, tc := range []struct {
 		name         string

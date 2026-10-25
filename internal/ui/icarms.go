@@ -6,6 +6,8 @@ package ui
 // This file exists because the realization toggle is NOT just a boolean, and
 // treating it as one is exactly why "the Realization button does nothing" was
 // reported. AO2's Courtroom::on_realization_clicked (courtroom.cpp:6158-6179)
+// Render thread; no allocation beyond the effects-choice slice the picker already
+// caches.
 
 import (
 	"strings"
@@ -14,8 +16,13 @@ import (
 )
 
 // toggleRealization is on_realization_clicked, transcribed.
+//
 // The disarm branch resetting the effects pick to "None" UNCONDITIONALLY is
 // canon, not an oversight of ours: courtroom.cpp:6173 calls setCurrentIndex(0)
+// without asking what is selected, so un-arming realization also drops an
+// unrelated effect the user had picked. Faithfulness wins here — the button's
+// two states have to be exact inverses of each other or the arm/disarm pair stops
+// round-tripping, which is a worse bug than the one it would paper over.
 func (a *App) toggleRealization() {
 	a.compose.icRealize = !a.compose.icRealize
 	if a.compose.icRealize {
@@ -85,6 +92,9 @@ func (a *App) drawArmedOverlay(r sdl.Rect, armed bool) {
 // leave it alone when the character's effects pack has no such row — AO2 checks
 // the bool for exactly that reason, and a theme/pack without a realization effect
 // must still be able to arm the wire flag.
+// Case-insensitive where AO2 compares exactly. Deliberate, and it follows the
+// precedent already in this codebase: effectspicker.go's own realization
+// special-case (:577) uses EqualFold because effects.ini capitalisation varies in
 func (a *App) selectOverlayEffectByName(name string) {
 	for i, choice := range a.overlayChoices() {
 		if strings.EqualFold(strings.TrimSpace(choice), name) {

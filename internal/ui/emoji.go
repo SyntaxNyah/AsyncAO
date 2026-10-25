@@ -52,6 +52,10 @@ func emojiFontSystemPath() string {
 }
 
 // colorFontRenderable reports whether SDL_ttf (FreeType, via the version we ship)
+// can actually render this font's colour glyphs: a CBDT/sbix bitmap strike or a
+// COLR **version 0** table. A COLR **version 1** font (Windows' 2025 Segoe UI
+// Emoji) is NOT renderable — SDL_ttf 2.x has no COLRv1 paint support, so its
+// glyphs come out as empty boxes. Pure sfnt table-directory scan; unit-tested.
 func colorFontRenderable(b []byte) bool {
 	if len(b) < 12 {
 		return false
@@ -112,6 +116,9 @@ func (a *App) ensureEmojiFontLoad() {
 }
 
 // pollEmojiFont installs the emoji face on the render thread once its bytes land:
+// pre-warm it at the current chat scale (so the first emoji doesn't stall a frame
+// building a ~12 MB face mid-raster) and force a chat re-raster so a visible emoji
+// message repaints in color.
 func (a *App) pollEmojiFont() {
 	select {
 	case data := <-a.font.emojiFontRes:

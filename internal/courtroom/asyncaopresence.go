@@ -5,6 +5,7 @@ package courtroom
 // AsyncAO client, because AO2 / webAO never emit the channel. We record the
 // speaker's character name so the player list can badge them, and so a future
 // messaging feature knows who can receive cross-client messages.
+//
 // It's necessarily PASSIVE: a peer becomes known only AFTER they emit a marker
 // (speak with a style/profile, react, …). There's no way to enumerate every
 // client in the room without a presence beacon (extra traffic), so "who's on

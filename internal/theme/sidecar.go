@@ -1,6 +1,9 @@
 package theme
 
 // asyncao_theme.ini — the AsyncAO extension tier of a theme folder.
+// SDL-free by hard rule 1, and cold-path only: parsing walks maps and allocates
+// strings, so it belongs on the theme-apply goroutine and never on a draw,
+// decode or resolver path (rule 2).
 
 import (
 	"errors"
@@ -28,6 +31,7 @@ const (
 	// are never assigned an official meaning. Anything matching them is carried
 	// through untouched, so a third-party tool can squat here forever without
 	// ever colliding with a key AsyncAO adds later.
+	// Pinned by TestVendorNamespaceIsPreservedAndNeverAssigned.
 	VendorSectionPrefix = "x."
 	VendorKeyPrefix     = "x_"
 )
@@ -194,6 +198,7 @@ const (
 var elementKindNames = [ElementKindCount]string{"image", "shape", "gradient", "gen", "text", "pane"}
 
 // ElementBand is WHERE in the themed pass an element paints.
+//
 // THREE, not a global z-sort, because the themed pass is hand-ordered across
 // the stage and panel phases and carries a mid-sequence abort (the courtroom
 // modals' early return) that a flat sortable list cannot reproduce.
@@ -368,6 +373,9 @@ type Condition struct {
 }
 
 // Element is one free element: a box the AO2 registry has no row for.
+// EVERY FIELD IS IN elementFieldKeys (sidecar_write.go), and
+// TestSidecarSchemaMatchesTheElementStruct fails on any that is not: a field
+// added here without a wire key would save silently as nothing, which is the
 type Element struct {
 	ID    string // [a-z0-9_-]{1,24}; the section suffix; editor-only
 	Kind  ElementKind
@@ -377,6 +385,7 @@ type Element struct {
 
 	// Anchor is a themeSlots key (or a pane id when Space == SpacePane). ""
 	// means the Space's own origin, and Rect is then absolute in that space.
+	//
 	// ANCHORS MAY NOT CHAIN. An anchor is a slot key or a pane id, NEVER
 	// another element: one bake pass, no cycle detection, no depth cap.
 	Anchor string
@@ -507,6 +516,7 @@ func (e Element) Inert() bool {
 }
 
 // Pane is split-screen. It REPARENTS the listed slot keys into a second rect:
+// each host widget draws EXACTLY ONCE, at the pane's position.
 // Calling the host's draw site twice was rejected and must stay rejected: the
 // immediate-mode kit has ONE drag owner and a documented single wheel consumer,
 // so a widget cannot be in two places.
@@ -555,6 +565,9 @@ type ClockSpec struct {
 	// ID is the [clock.<ID>] suffix EXACTLY as the file spells it, and it is
 	// carried for the same reason Pane and Element carry theirs: the section
 	// name is the author's, not ours to re-derive.
+	// It is empty for a group the editor declared rather than read; that one is
+	// written in the canonical spelling, because there is no author's spelling
+	// to preserve.
 	ID       string
 	SpeedPct int16
 	Declared bool
@@ -635,6 +648,9 @@ type KeyAngle struct {
 // Sidecar is a parsed asyncao_theme.ini PLUS the lossless document it came
 // from. The document is what preserves everything this build does not
 // understand; the struct is what this build draws.
+// A nil *Sidecar is the STOCK AO2 THEME: every accessor is nil-safe and returns
+// nothing, so "a theme with no sidecar produces zero elements" needs no branch
+// at any call site.
 type Sidecar struct {
 	Format   int // as READ; may be greater than ThemeFormatVersion
 	Revision int // the author's own bump; informational
@@ -679,6 +695,7 @@ func NewSidecar() *Sidecar {
 // The lossless document is NOT exposed. It was, as Doc() *INIDoc, with zero
 // production consumers and a nil check for a test — and INIDoc's Set/Bytes/Write
 // are exported, so it handed any caller a second writer with no arbitration:
+// sc.Doc().Set("element.x", "z", "9") is silently reverted by the next Bytes()
 
 // IsFutureFormat reports a theme authored by a NEWER AsyncAO. It never blocks
 // reading (rule 1); it is what gates the editor into read-only with a
@@ -766,6 +783,10 @@ func (s *Sidecar) UnretireElementSection(id string) {
 // flushRetiredSections performs the deferred removals. Called by Bytes, before
 // any key is written, so a retired section cannot be resurrected by the very
 // write that was supposed to delete it.
+// UNCONDITIONAL: an id still in the model is not a reason to keep its lines. The
+// only thing that cancels a retirement is UnretireElementSection, because the
+// caller that re-added the element is the only one that knows the two acts are
+// the same element rather than two elements sharing a name.
 func (s *Sidecar) flushRetiredSections() {
 	if s.doc == nil || len(s.retire) == 0 {
 		return
@@ -925,6 +946,9 @@ type sidecarMigration func(*INIDoc) error
 var sidecarMigrations = []sidecarMigration{}
 
 // migrateSidecar walks the chain from the file's format up to this build's.
+// The bound is the CHAIN'S OWN LENGTH rather than ThemeFormatVersion, and the two
+// are the same number by TestMigrationChainCoversEveryFormatVersion — a step
+// exists to reach each grammar after the first. Reading the length is what lets a
 func migrateSidecar(from int, d *INIDoc) error {
 	if d == nil {
 		return nil
@@ -951,6 +975,9 @@ func migrateSidecar(from int, d *INIDoc) error {
 // ---------------------------------------------------------------------------
 
 // The FOUR characters percent-encoding covers, and nothing else.
+// SCOPE IS ENUMERATED, NOT GENERAL: decoding applies ONLY to the free-text keys
+// of asyncao_theme.ini, never to an AO2 root-section value, where inventing an
+// escape AO2 does not have would break parity with every existing theme.
 const (
 	freeTextEscape  = '%'
 	freeTextPercent = "%25"
@@ -989,6 +1016,8 @@ func encodeFreeText(s string) string {
 // decodeFreeText reverses encodeFreeText. Only the four sequences are decoded —
 // "nothing else is escaped" — so a literal "%20" a human typed stays "%20",
 // which is consistent because our own writer spells a literal '%' as "%25".
+// The hex digits are matched case-insensitively so a third-party writer that
+// emits "%3b" is understood.
 func decodeFreeText(s string) string {
 	if !strings.ContainsRune(s, freeTextEscape) {
 		return s
