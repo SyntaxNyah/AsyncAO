@@ -1149,7 +1149,7 @@ func (a *App) PackageContentBundle(rec *sceneRecording) bool {
 	// file boundary and removes the partial folder: a dropped job must not leave a
 	// bundle behind, and its send still lands in the 1-slot buffer (no leak).
 	go func() {
-		done <- writeContentBundleCancel(mgr, destDir, stem, &recCopy, urls, reportLines, cancel) // 1-buffered: always accepts
+		done <- packageWriteBundle(mgr, destDir, stem, &recCopy, urls, reportLines, cancel) // 1-buffered: always accepts
 	}()
 
 	if !j.auto { // an auto-build stays silent until its single completion toast
@@ -1229,17 +1229,32 @@ func packageCancelled(cancel <-chan struct{}) bool {
 	}
 }
 
-// writeContentBundleCancel is writeContentBundle with a cancel signal: on cancel it
+// removePartial deletes a folder the writer created, and only then: a pre-existing
+// folder may hold the user's files, and a cancel must never take those.
+func removePartial(destDir string, created bool) {
+	if created {
+		_ = os.RemoveAll(destDir)
+	}
+}
+
+// packageWriteBundle is the writer the package goroutine runs. A test swaps it to
+// observe cancellation without depending on disk timing.
+var packageWriteBundle = writeContentBundleCancel
+
 // deletes the partial folder and says so, because a dropped job must not leave a
 // bundle behind for the user to find.
 func writeContentBundleCancel(mgr *assets.Manager, destDir, stem string, rec *sceneRecording, foundURLs, reportLines []string, cancel <-chan struct{}) contentPackageResult {
 	if packageCancelled(cancel) {
-		_ = os.RemoveAll(destDir)
 		return contentPackageResult{msg: "Packaging cancelled."}
 	}
+	// A pre-existing folder can hold the user's own files: only a folder THIS writer
+	// created may be removed on cancel.
+	_, statErr := os.Stat(destDir)
+	created := os.IsNotExist(statErr)
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return contentPackageResult{msg: "Package failed: " + err.Error()}
 	}
+	dropPartial := func() { removePartial(destDir, created) }
 	origin := rec.Origin
 	var (
 		written  int
@@ -1300,7 +1315,7 @@ func writeContentBundleCancel(mgr *assets.Manager, destDir, stem string, rec *sc
 	// not a soft per-file writeErr like a stray asset: reporting "Packaged N assets…"
 	// for a folder that can never replay would be a lie.
 	if packageCancelled(cancel) {
-		_ = os.RemoveAll(destDir)
+		dropPartial()
 		return contentPackageResult{msg: "Packaging cancelled."}
 	}
 	out := *rec
