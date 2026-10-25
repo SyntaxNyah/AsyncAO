@@ -102,10 +102,6 @@ func (a *App) insertICEmoji(emoji string) {
 }
 
 // emojiPickerFence manages the picker's modal fence each frame, BEFORE the screen draws.
-// c.modalOn PERSISTS across frames (like the dropdown's), so it MUST be released the
-// frame the picker closes — otherwise the whole UI stays fenced and frozen (the reported
-// open-then-close bug). The picker is courtroom-only, so it's force-closed if any other
-// screen / overlay is up, to never strand the fence elsewhere.
 func (a *App) emojiPickerFence(c *Ctx) {
 	courtroomActive := a.screen == ScreenCourtroom && !a.sel.gifExporting && !a.sel.replaying && !a.sel.makerOpen
 	if a.emoji.showEmojiPicker && !courtroomActive {

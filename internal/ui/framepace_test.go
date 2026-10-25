@@ -356,11 +356,6 @@ func TestTalkBudget(t *testing.T) {
 // speaker loop: unfocused paces at the 80 ms flip cadence (not the flat
 // 100 ms trickle), focused idle keeps its existing [full, idle] clamp, and a
 // stage with nothing animating stays on the flat rate.
-// NOTE: this pins FramePace's RETURN value only. The main loop now floors the
-// actual inter-frame time at HardCapBudget (the unfocused cap), so when this
-// 80 ms cadence is faster than the unfocused cap the RENDERED rate is the cap,
-// not the cadence (the "caps are always obeyed" contract — the user's explicit
-// ask). FramePace still returns the cadence as a tier hint; the loop clamps it.
 func TestFramePaceUnfocusedFollowsAnim(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()

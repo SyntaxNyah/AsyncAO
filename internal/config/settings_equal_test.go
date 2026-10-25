@@ -8,8 +8,6 @@ import (
 
 // TestEqualMatchesDeepEqual pins the generated equal() against reflect.DeepEqual over a
 // fully-filled struct, flipping every exported field ONE AT A TIME, so a field equal()
-// forgets to compare (or a snapEqual helper drops a field) fails here. Mutation line: drop
-// one field's comparison from equal() in settings_clone.go and this oracle fails.
 func TestEqualMatchesDeepEqual(t *testing.T) {
 	a := filledSettings()
 

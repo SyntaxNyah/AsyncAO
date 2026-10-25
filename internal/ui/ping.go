@@ -96,8 +96,6 @@ func (lobby1 *lobbyState) startPinging() {
 // re-sort immediately (applyServerSort), because pingMode alone only decides which
 // comparator the NEXT sort uses; without it the list would stay in RTT order with the
 // toggle reading "off".
-// Turning it ON goes through startPinging, which refuses a second in-flight sweep, so
-// this is safe to call repeatedly.
 func (a *App) toggleConnectTimeSort() {
 	if a.conn.lobby.pingMode {
 		a.conn.lobby.pingMode = false

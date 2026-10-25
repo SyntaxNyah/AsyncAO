@@ -281,8 +281,6 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y += 26
 	// Detailed transcript logging (opt-OUT since the flip — every other
 	// AO client saves the log, and people only discover they wanted it afterwards).
-	// Existing configs are moved once by DetailedLogDefaultMigrated; turning it back
-	// off here sticks forever.
 	detLog := a.d.Prefs.Load().DetailedLog
 	if next := c.Checkbox(pad, y, "Save the chat log to disk (ON by default): append every IC line to logs/transcript.log with timestamp, server, area, character + showname", detLog); next != detLog {
 		a.d.Prefs.Update(func(

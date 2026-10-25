@@ -236,9 +236,6 @@ func (a *App) navBrowseTo(dir string) {
 
 // loadBrowseDir reads one directory OFF the render thread: the Windows drives
 // view when dir=="", else os.ReadDir filtered to sub-directories + recordings.
-// Returns the capped, sorted entries and the overflow count. Any I/O error
-// (an unreadable/rights-denied dir) comes back so the draw can show it while
-// leaving ".." and the quick-jumps navigable.
 func loadBrowseDir(dir string, keep func(string) bool) (entries []browseEntry, more int, err error) {
 	if dir == "" { // Windows drives view (never reached off Windows)
 		return listDrives(), 0, nil
@@ -548,11 +545,6 @@ func (a *App) drawDemoBrowser(w, h int32) {
 
 	// Quick-jump row: Home / Downloads / Desktop / recordings\ (+ Drives on
 	// Windows). Each is a no-op when its path didn't resolve at open (empty).
-	// THE MERGED BROWSE HAS NO QUICK JUMPS, and that is the point: every one of them
-	// leaves the mounts, which is exactly what this browser must never do. Their row
-	// carries the one thing a user needs to know about this listing instead — that it
-	// is the LOCAL asset sources, merged, and nothing else (ChocomintCake: "have a
-	// highlight that tells u its local only like a tip").
 	if s.merged {
 		c.LabelClipped(inX, y+4, inW, mergedBrowseTip, ColAccent)
 		y += btnH + 8
@@ -717,9 +709,6 @@ func browseMoreLabel(more int) string {
 }
 
 // pickBrowsedFile is the browser's PICK action, routed by the browser's purpose.
-// Close the browser first (every branch does), then:
-// The video branch is deliberately untouched from the original single-purpose
-// browser so that flow can't regress (pinned by a test).
 func (a *App) pickBrowsedFile(path string) {
 	purpose := demoBrowser.purpose
 	demoBrowser.open = false

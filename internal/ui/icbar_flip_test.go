@@ -86,10 +86,6 @@ func TestICBarFlipRidesSharedField(t *testing.T) {
 }
 
 // TestICBarFlipGatedOnFlippingFeature pins the AO2 parity (courtroom.cpp:1629-1636):
-// the IC-bar Flip toggle is shown ONLY when the server advertises "flipping". The row's
-// visibility predicate is `a.sess != nil && a.sess.Features.Has(FeatureFlipping)` — this
-// pins that exact gate so a future refactor can't strand the toggle on a non-flipping
-// server (where AO2 hides ui_flip) or hide it on one that supports it.
 func TestICBarFlipGatedOnFlippingFeature(t *testing.T) {
 	a := testTabApp(t)
 

@@ -117,9 +117,6 @@ func TestPumpConnectionReconnectsOnTransportDrop(t *testing.T) {
 }
 
 // TestPumpConnectionFreezesAnInCourtDrop is the INTEGRATION twin of the test above:
-// This is the behaviour two playtesters reported missing: a background tab showed
-// the disconnect box while the tab they were looking at was slammed to the server
-// list.
 func TestPumpConnectionFreezesAnInCourtDrop(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ws, err := websocket.Accept(w, r, nil)

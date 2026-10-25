@@ -102,18 +102,8 @@ func awaitDelivery(t *testing.T, mgr *assets.Manager, want string) string {
 }
 
 // TestMissingPositionBackgroundFallsBackToTheWitnessView is the field report:
-// a custom position ("night") that exists in one area's background and not in
-// the next left the PREVIOUS room's background on screen, because the sticky
-// scenery gate waits for the new base to become resident and a 404'd base never
-// does.
-//
-// AO2 never reaches that state — get_pos_path only overrides the default
-// witness view when the position's own file exists
 // (../AO2-Client/src/path_functions.cpp:108-159), and set_scene repeats the wit
 // arm once more before hiding the layer (../AO2-Client/src/courtroom.cpp:
-// 4613-4626). A streaming client cannot stat, so the ladder is a candidate
-// chain: the witness art answers under the POSITION's own base, which is the
-// key Scene.BackgroundBase (and therefore the viewport) reads.
 func TestMissingPositionBackgroundFallsBackToTheWitnessView(t *testing.T) {
 	r := newBGRig(t)
 	r.seedBG(t, "court", defaultPosBackground) // the area ships only the witness view
@@ -134,10 +124,6 @@ func TestMissingPositionBackgroundFallsBackToTheWitnessView(t *testing.T) {
 }
 
 // TestAreaChangeRevalidatesThePositionBackground drives the exact live sequence:
-// the room is staged at a custom position, then a BN moves it to a background
-// that has no art for that position. The new area's witness view must answer
-// under the position's base — nothing may be left waiting on a base that will
-// never resolve.
 func TestAreaChangeRevalidatesThePositionBackground(t *testing.T) {
 	r := newBGRig(t)
 	r.seedBG(t, "old", "night")              // the area we start in HAS the custom pos

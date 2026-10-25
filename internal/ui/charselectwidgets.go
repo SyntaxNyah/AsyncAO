@@ -229,10 +229,6 @@ func charSelectTabsW(c *Ctx) int32 {
 // drawCharSelectControls draws the mapped controls at their theme rects and reports
 // whether one of them changed the screen — in which case drawCharSelect must return
 // immediately rather than keep laying out a screen that is going away.
-// Every control here is an EXISTING AsyncAO control moved to a theme rect, not a new
-// one: the same search field id (so the query, the focus ring and the undo history all
-// survive a theme change), the same Spectate action, the same requestDisconnect
-// confirmation, the same Back-to-courtroom rule the classic header uses.
 func (a *App) drawCharSelectControls(lay *charSelectLayoutCache, g charGridPlan) bool {
 	c := a.ctx
 	// The canvas region under the app-chrome band. Under Native, Letterbox and
@@ -312,11 +308,6 @@ func (a *App) drawCharSelectControlsIn(lay *charSelectLayoutCache, g charGridPla
 }
 
 // drawCharSelectPageArrows wires char_select_left / char_select_right.
-// AO2 PAGES its grid and these are the page buttons. AsyncAO scrolls, and the scroll
-// is already quantised to whole rows (charGridScroll), so a page maps cleanly: step by
-// as many whole rows as the viewport holds. That gives the arrows AO2's feel — a press
-// replaces the visible page — while leaving the scrollbar, the wheel and the search
-// working, which paging would have taken away.
 func (a *App) drawCharSelectPageArrows(lay *charSelectLayoutCache, g charGridPlan) {
 	c := a.ctx
 	scroll := a.gridScroll()

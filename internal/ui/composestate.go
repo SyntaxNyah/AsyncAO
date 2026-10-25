@@ -40,9 +40,6 @@ type composeState struct {
 	pmInput  string
 	// pmThreads is the per-conversation PM history (keyed by the partner's
 	// canonical name via pmThreadKey) the Friends tab shows as a little DM thread.
-	// Outgoing lines append on send; incoming ones are best-effort parsed out of
-	// OOC (detectIncomingPM — server formats vary, a miss just stays in the OOC
-	// log). Session-scoped (PMs are per-server) and bounded.
 	pmThreads map[string][]pmLine
 	// shownameOverride is the in-courtroom showname box: when non-blank
 	// it wins over the persisted Settings showname for outgoing messages
@@ -92,8 +89,6 @@ type composeState struct {
 	// (courtroom.cpp:2362) — which the send site does, not this field.
 	icSlide bool
 	// icRealize / icShake are AO2's realization_state / screenshake_state (#21):
-	// ONE-SHOT arms that ride the next message — the white flash and the camera
-	// shake. AO2 clears both the instant the packet is built, next to
 	// objection_state (courtroom.cpp:2327-2329), which is what stops a stuck arm
 	// firing on every following line.
 	icRealize bool

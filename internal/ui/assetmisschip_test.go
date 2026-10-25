@@ -76,8 +76,6 @@ func TestDebugLogTabIsResolvedByName(t *testing.T) {
 
 // TestInvisibleAssetMissChipReportsNoRect pins the shared-geometry helper's honesty
 // (ledger L64, under L20).
-// It does NOT touch the ruled two-answers-per-frame skew between the input pass and
-// drawMenuBar's phase 2; that is a different, deliberate property.
 func TestInvisibleAssetMissChipReportsNoRect(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()

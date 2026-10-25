@@ -1,9 +1,6 @@
 package ui
 
 // Mouse text selection for the IC/OOC logs (drag to highlight, Ctrl+C to copy).
-// The render + input wiring (which feeds these from the live logs) lives with
-// the IC/OOC draw paths; all of it is gated on an active selection so a log
-// with no selection draws exactly as before.
 
 import "strings"
 

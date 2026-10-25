@@ -28,9 +28,6 @@ const (
 
 	// editorPreviewSlotFromRight is the Preview button's SLOT in the header row,
 	// counting from the right edge: Back(0) Save(1) Redo(2) Undo(3) Fonts(4)
-	// Gallery(5) Share(6) — so Preview is 7, the leftmost, immediately beside
-	// Share. Adding it at the LEFT end is what keeps every existing slot index
-	// (and every gate that presses one) exactly where it was.
 	editorPreviewSlotFromRight = 7
 
 	// editorPreviewEnterLabel / editorPreviewExitLabel are the button's two
@@ -159,9 +156,6 @@ func (a *App) editorPreviewOn() bool { return a.te != nil && a.te.preview != nil
 // constructed — TestEditorPreviewHasOneConstructionSite fails the build gate on a
 // second one, for the reason newroom.go gives about rooms: a state that can be
 // born two ways will one day be born half-wired.
-// Everything editing owns goes down first (panels, the live drag, the selection),
-// because the demo covers the whole window and a gesture that survived under it
-// would resume against pixels the user can no longer see.
 func (a *App) enterEditorPreview() {
 	if a.te == nil || a.te.preview != nil || a.d.Manager == nil {
 		return
@@ -211,9 +205,6 @@ func (a *App) enterEditorPreview() {
 
 // exitEditorPreview leaves the demo and puts editing back exactly as it was: the
 // selection, the viewport's callbacks and the manager's network gate.
-// THE ONE DOOR OUT, and both affordances (the button and the Esc rung) call it, so
-// "leaving restores everything" is a property of the exit rather than a rule two
-// call sites have to remember.
 func (a *App) exitEditorPreview() {
 	if a.te == nil || a.te.preview == nil {
 		return
@@ -286,8 +277,6 @@ func (a *App) bindViewportToPreview() {
 // startEditorPreviewBeat feeds the canned scene's opening beats into the demo
 // room: the music change (which fills the banner and starts the marquee) and the
 // sample message (which starts the typewriter, the blips and the showname plate).
-// Through room.HandleEvent, the same door a packet comes in by, so the demo is
-// staged by the production state machine rather than by writing Scene fields.
 func (a *App) startEditorPreviewBeat() {
 	if !a.editorPreviewOn() {
 		return
@@ -431,9 +420,6 @@ func (a *App) drawEditorPreviewCanvas(w, h int32) {
 
 // drawEditorPreviewExit draws the one door back, in the header band's own Preview
 // slot so the control does not jump between the two states.
-// The band is claimed (noteEditorBanner) exactly as drawEditorHeader claims it —
-// without that the menu bar paints an opaque strip straight over this button, and
-// then the only way out is the keyboard.
 func (a *App) drawEditorPreviewExit(w int32) {
 	c := a.ctx
 	a.toolbox.noteEditorBanner()
@@ -450,9 +436,6 @@ func (a *App) drawEditorPreviewExit(w int32) {
 // editorPreviewBtnRect is the Preview button's box in the header band — ONE
 // publisher, so the enter door, the exit door and every gate that presses either
 // are the same pixels.
-// The wide button is RIGHT-ALIGNED on the standard slot it occupies, so the seven
-// buttons to its right keep their existing positions (and the gates that count
-// slots from the right keep pressing what they always pressed).
 func editorPreviewBtnRect(w int32) sdl.Rect {
 	slotX := w - editRowPad - editorHeaderBtnW -
 		editorPreviewSlotFromRight*(editorHeaderBtnW+editorHeaderBtnGap)
@@ -466,8 +449,6 @@ func editorPreviewBtnRect(w int32) sdl.Rect {
 
 // drawEditorPreviewFigure paints the procedural stand-in on the stage: a head, a
 // neck and a tapering torso, built from rectangles.
-// Called from renderViewportZoomed beside drawStageEgg — the one place both the
-// classic and the themed courtroom hand over the stage rect.
 func (a *App) drawEditorPreviewFigure(vp sdl.Rect) {
 	if !a.editorPreviewOn() || vp.W <= 0 || vp.H <= 0 {
 		return

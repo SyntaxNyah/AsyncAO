@@ -1,10 +1,6 @@
 package themepack
 
 // EXTRACT — turn a bundle into a theme folder, or leave the disk untouched.
-// COLLISIONS SUFFIX, THEY DO NOT OVERWRITE. Re-shared themes are renamed
-// constantly, so "paper" arriving twice is two themes far more often than it is
-// one theme twice — and the cost of guessing wrong in the overwrite direction is
-// somebody else's work, silently gone.
 
 import (
 	"archive/zip"
@@ -64,12 +60,6 @@ func Extract(packPath, themesRoot string) (*Manifest, error) {
 }
 
 // writeEntries materialises the accepted entries under dest.
-// THAT INVARIANT IS PINNED, not assumed: TestTheDeclaredSizeIsAHardCeilingOnWhat
-// AnEntryCanDeliver drives a forged under-declaring archive through the real
-// reader, so a future Go that relaxed the check would fail this package rather
-// than silently un-bound its extractor. The per-entry cap below is re-checked
-// anyway — it is one comparison, and it is the one line that would hold if that
-// gate ever went red.
 func writeEntries(zr *zip.Reader, entries []packEntry, dest string) error {
 	for _, e := range entries {
 		out, err := safepath.Join(dest, e.rel)
@@ -115,9 +105,6 @@ func writeOneEntry(f *zip.File, out, rel string) error {
 
 // freeName returns the first unused folder name under root: base, then
 // "base (2)", "base (3)" … up to PackCollisionCap.
-// BOUNDED (hard rule 4), and the bound has a behaviour: past it the import
-// refuses and names the number, rather than probing forever or overwriting the
-// sixteenth copy.
 func freeName(root, base string) (string, error) {
 	for i := 1; i <= PackCollisionCap; i++ {
 		name := base

@@ -31,7 +31,6 @@ func newMixedFleetResolver(t *testing.T, host string) (*Resolver, *config.AssetP
 
 // TestMixedFleetBothFormatsStayReachable is the regression test for the
 // umineko.online "every emote button shows the same icon" report.
-//
 // That server declares its emote buttons as [".png", ".webp"] and genuinely
 // ships both (~560 PNG-button characters, ~490 WebP-button). The learned table
 // used to hold ONE extension per (host, type), so the first WebP character to
@@ -39,7 +38,6 @@ func newMixedFleetResolver(t *testing.T, host string) (*Resolver, *config.AssetP
 // probed .webp, 404'd, and had nothing left to try, because EmoteButton's
 // configured list (config.defaultFormatOrders) is the single entry .webp. The
 // grid fell back to the character icon in every cell.
-//
 // The invariant this pins: whichever format most recently succeeded, the OTHER
 // one the server declared is still reachable on the recovery path. Order may
 // churn; membership must not shrink.

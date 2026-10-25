@@ -62,10 +62,6 @@ func marqueeScrollPos(elapsed time.Duration, wholeW int32) int32 {
 // marqueeFirstX is where the first copy of the tiled title is drawn, relative to
 // the widget's left edge: AO2's `qMin(-scrollPos, 0) + leftMargin`
 // (scrolltext.cpp:75).
-// The qMin is what makes the negative start a PAUSE rather than the title sliding
-// in from the right: a negative scrollPos yields a positive -scrollPos, which the
-// min clamps to 0, so the text stays pinned at the margin until the counter
-// crosses zero.
 func marqueeFirstX(scrollPos, leftMargin int32) int32 {
 	off := -scrollPos
 	if off > 0 {

@@ -8,7 +8,6 @@ import (
 )
 
 // The emote SFX rides the PREANIM — plus any hand-picked sound.
-//
 // AO2 wires play_sfx to exactly one trigger — sfx_delay_timer (courtroom.cpp:432) —
 // and starts that timer in exactly one place, play_preanim (:4054), which
 // handle_emote_mod reaches only for PREANIM / PREANIM_ZOOM (:2892-2896) or for
@@ -16,7 +15,6 @@ import (
 // AUTO SFX never starts that timer — AsyncAO armed the deadline for every message,
 // so a "SFX: auto" line sent with Pre unchecked still fired the emote's char.ini
 // sound: the receive half of the 2026-08-08 field report.
-//
 // A hand-PICKED sound is different: outgoingSFXName ships it whenever the dropdown
 // row is > 0, regardless of Pre (courtroom.cpp:2102-2104), so an IDLE/ZOOM line
 // carrying a real name is a sender that explicitly asked for a sound, and it must

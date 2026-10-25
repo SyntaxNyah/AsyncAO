@@ -16,16 +16,6 @@ import (
 // structural privacy property — ../LemmyAO/src/voice/voice.ts). This file owns
 // the wire + the session-side presence state only; the opus codec lives in
 // internal/voice and mic capture / playback in internal/render (hard rule #1).
-//
-// The whole feature is gated on the server's VS_CAPS advert, so a server that
-// never sends VS_CAPS has zero voice surface and an unchanged wire.
-//
-// Wire (canonical, '#' separator / '%' terminator; base64 needs no escaping):
-//
-//	s2c  VS_CAPS#<enabled>#<ptt_only>#<max_peers>#<codec>#<sample_rate>#<frame_ms>#<max_frame_bytes>#%
-//	s2c  VS_PEERS#<csv_uids>#%
-//	s2c  VS_JOIN#<uid>#%   VS_LEAVE#<uid>#%   VS_SPEAK#<uid>#<on>#%   VS_AUDIO#<from_uid>#<b64>#%
-//	c2s  VS_JOIN#%         VS_LEAVE#%         VS_SPEAK#<on>#%         VS_FRAME#<b64>#%
 
 // voicePeerCap bounds the voice peer / speaking maps (hard rule #4: no unbounded
 // caches). Far above any real voice room; a reconnect re-dumps VS_PEERS, so a hit

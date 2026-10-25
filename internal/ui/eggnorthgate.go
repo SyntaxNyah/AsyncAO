@@ -149,9 +149,6 @@ func (a *App) drawEggAurora(vp sdl.Rect, t float64) {
 
 // drawEggAuroraRing — the Northgate chatbox half. Three rings holding three
 // points on the SAME sliding ramp, the whole band breathing on its own clock.
-// Distinct from the Crystalwarrior ring (three points on the full hue wheel,
-// washing to white together) and from the FanatSors rainbow (one colour chasing
-// the wheel with the rings barely apart).
 func (a *App) drawEggAuroraRing(box, win sdl.Rect, t float64) {
 	c := a.ctx
 	base := math.Mod(t/eggNorthDriftSecs, 1)

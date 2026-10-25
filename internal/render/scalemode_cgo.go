@@ -53,7 +53,6 @@ const scaleModeSupported = C.SDL_MAJOR_VERSION > 2 ||
 // setTextureScaleMode points one texture at one filter. Reports whether it took;
 // a false return means "this SDL can't", never "the texture is broken", so the
 // caller's correct response is to leave the client-wide hint in charge.
-//
 // Render thread only.
 func setTextureScaleMode(tex *sdl.Texture, mode sdl.ScaleMode) bool {
 	if tex == nil {
@@ -107,7 +106,6 @@ func (p *TexturePage) applyScaleMode(ren *sdl.Renderer, mode sdl.ScaleMode) {
 // would keep the client-wide filter while the code claimed otherwise), so the
 // round-trip test needs a way to ask SDL directly. cgo is not permitted in
 // _test.go files, which is why it sits here rather than beside its test.
-// Render thread only.
 func textureScaleMode(tex *sdl.Texture) (sdl.ScaleMode, bool) {
 	if tex == nil {
 		return sdl.ScaleModeNearest, false

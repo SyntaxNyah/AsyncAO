@@ -7,7 +7,6 @@ import "strings"
 // sprite style (#103) / profile (#101) / status (#M1), told apart by a leading magic byte,
 // so every AsyncAO viewer animates the text while AO2/webAO render the plain message: the
 // [shake]…[/shake] markup is stripped before send and the spans are invisible on the wire.
-//
 // Unlike style/profile/status (per-speaker STATE, sent on change), effects are per-message
 // CONTENT, so the frame rides every message that carries an effect (there is nothing to
 // recall). The codec is SDL-free plain data; the UI translates a TextEffectSpan into the

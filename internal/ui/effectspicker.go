@@ -2,9 +2,6 @@ package ui
 
 // The AO2 screen-effect overlay picker (ui_effects_dropdown) and everything the
 // live overlay needs on this side of the fence: the per-(origin, misc folder)
-// roster resolve, the theme-tier art loader, the per-row icons, the right-click
-// preview, and the outgoing "<name>|<folder>|<sound>" field.
-// NAMING FENCE (see docs/wip/EFFECTS-OVERLAY-SPEC.md §"Naming fence"):
 
 import (
 	"bytes"
@@ -115,9 +112,6 @@ func (a *App) overlayRosterKey(folder string) string {
 }
 
 // overlayRosterFor answers from the cache and fires ONE async resolve on a miss.
-// Returns nil until it lands — the speaker's NEXT message (or the next frame the
-// dropdown draws) picks it up, the same streaming shape as sprites and char.ini
-// metadata. Render thread only.
 func (a *App) overlayRosterFor(folder string) *overlayRoster {
 	folder = strings.TrimSpace(folder)
 	// A theme change invalidates every roster: the theme tier contributes both
@@ -136,9 +130,6 @@ func (a *App) overlayRosterFor(folder string) *overlayRoster {
 	r, cached := a.overlays.overlayRosters[key]
 	if !cached && !a.overlays.overlayRosterInFlight[key] {
 		// The SETTLED cache is a cache: past the cap it resets and a re-resolve heals.
-		// The in-flight SET is not part of it and is never wiped here — see
-		// overlayManifestCap. A reset that dropped a marker would let this very call
-		// spawn a duplicate goroutine for a key already being resolved.
 		if len(a.overlays.overlayRosters) >= overlayManifestCap {
 			a.overlays.overlayRosters = nil
 		}
@@ -377,9 +368,6 @@ func (overlay *overlayState) overlayDemandTheme(e *env, path, key string) {
 
 // overlayResolve is the courtroom's OverlayFor hook: an effect NAME + misc
 // FOLDER become merged properties and a T1 key / URL.
-// It returns ok=false only when there is no art anywhere to point at, which is
-// what makes do_effect's "unknown effect name clears the overlay" reachable — and
-// Pending while the folder's roster is still resolving, because until it lands
 func (a *App) overlayResolve(name, folder string) (courtroom.OverlayResolved, bool) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -725,9 +713,6 @@ func (a *App) outgoingEffectsField() string {
 
 // clearEffectsAfterSend applies AO2's post-send reset to the effects dropdown.
 // CANON, read carefully because the upstream accessor is misnamed:
-// AsyncAO answers canon's shipped default, and as of the 2026-08-09 batch the
-// OWED user-facing toggle exists: Prefs.StickyEffectsOn() (defaultStickyEffects =
-// true, the same value options.cpp ships). Turning it OFF is what arms the
 func (a *App) clearEffectsAfterSend() {
 	a.overlayPostSendReset(a.d.Prefs.Load().StickyEffects)
 }
@@ -754,7 +739,6 @@ func (a *App) overlayPostSendReset(globalSticky bool) {
 // layer OUT of the viewport onto the Courtroom (courtroom.cpp:3234-3237), which
 // is why it cannot ride Viewport.Render like the other three: it must paint after
 // the chatbox. Called immediately after drawChatOverlay in both layouts.
-// Free when nothing is on stage — DrawOverlayChat's first test is the base.
 func (a *App) drawOverlayChatLayer(vp sdl.Rect) {
 	if a.d.Viewport == nil || a.ctx == nil {
 		return

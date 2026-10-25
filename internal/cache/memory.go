@@ -51,7 +51,6 @@ const DefaultMaxAnimatedDecodedAssetBytes = 128 << 20
 // DefaultOversizedTextureBytes caps the render TextureStore's eviction-exempt
 // OVERFLOW tier in total: an animated page that still exceeds the main LRU
 // tier's budget (the animated budget is larger than the default main tier)
-// lives there, and this bounds how many such pages can be resident at once.
 const DefaultOversizedTextureBytes = 500 << 20
 
 // MaxDecodedAssetBytes is the per-asset decoded-payload cap (Σ w×h×4 across
@@ -221,10 +220,6 @@ func (c *ByteBudgetLRU[K, V]) Purge() {
 }
 
 // Keys returns a SNAPSHOT of the current keys, oldest first.
-// Snapshotting is also what makes those sweeps safe. Removing while iterating
-// re-enters the cache through the eviction callback, which the texture store
-// documents as forbidden — so a caller must collect the keys it wants first and
-// only then call Remove on each.
 func (c *ByteBudgetLRU[K, V]) Keys() []K {
 	return c.lru.Keys()
 }

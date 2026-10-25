@@ -356,9 +356,6 @@ func TestTabStripPlacementSurvivesAnUnrelatedUndo(t *testing.T) {
 
 // TestTabStripUndoOfTheFirstDragSendsItHome is the OTHER half of the parked-flag
 // contract, and the half the path that actually produces snapshots gets wrong.
-// Measured at Native 714x760 with snap off before the fix: docked {317 22 79 22},
-// drag (+40,+300) → {357 322 79 22}, one undo step with parked=TRUE, and after
-// layoutEditUndo the strip read parked with its box back at the pristine SEED's canvas
 func TestTabStripUndoOfTheFirstDragSendsItHome(t *testing.T) {
 	a, ctx, cleanup := stripEditFixture(t)
 	defer cleanup()
@@ -400,8 +397,6 @@ func TestTabStripUndoOfTheFirstDragSendsItHome(t *testing.T) {
 
 // TestTabStripPaintSiteIsExclusiveWhileEditing pins the gate that decides between the
 // strip's two draw sites: App.Frame's over-everything paint (after the screen dispatch)
-// and the in-pass one under a layout editor's overlay. Exactly one may run per frame —
-// running both paints the strip twice, running neither loses it.
 func TestTabStripPaintSiteIsExclusiveWhileEditing(t *testing.T) {
 	arm := map[string]func(*App){
 		"themed editor":  func(a *App) { a.layoutEdit = true },

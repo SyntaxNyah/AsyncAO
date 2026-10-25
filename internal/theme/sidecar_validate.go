@@ -2,9 +2,6 @@ package theme
 
 // The sidecar WRITE GUARD — the one thing standing between a live editor model
 // and a theme that cannot be loaded again.
-// COLD PATH ONLY (hard rule 2), like the rest of the sidecar: it walks slices
-// and formats strings, and it runs on whatever goroutine is about to write a
-// file.
 
 import (
 	"errors"
@@ -20,10 +17,6 @@ var ErrSidecarInvalid = errors.New("theme: sidecar model would not read back")
 
 // Validate reports the FIRST reason ParseSidecar would refuse — or silently
 // drop part of — the file Bytes() is about to write.
-// PARSED MODELS ALWAYS PASS, by construction: every rule here is a rule the
-// reader already enforced (a refusal) or already skipped (an invalid id never
-// enters the model). That is what makes the lossless round-trip gates unchanged
-// evidence rather than rewritten assertions.
 func (s *Sidecar) Validate() error {
 	if s == nil {
 		return nil
@@ -73,10 +66,6 @@ func (s *Sidecar) validateCaps() error {
 
 // validateIDs enforces the id grammar and, on top of it, UNIQUENESS — which is
 // a writer-only rule and the one invariant here the reader cannot state.
-// The reader gets uniqueness for free: a repeated [element.x] is ONE section, so
-// no file it accepts can carry two. A MODEL can, and the writer resolves it by
-// letting the last declaration win while every reader (FindElement, the editor's
-// own list) sees the first.
 func (s *Sidecar) validateIDs() error {
 	// One namespace per section prefix — an element and a pane may share an id,
 	// because [element.x] and [pane.x] are different sections.
@@ -101,12 +90,6 @@ func (s *Sidecar) validateIDs() error {
 	}
 	// [effect.<target>] is the one section family whose suffix is NOT an id: it
 	// names an AO2 widget, so the reader's rule is validEffectTarget, not validID.
-	// Both of its refusals cost the same as an element's — the reader preserves
-	// the section, drops the bind, and the author's effect is gone from the model
-	// while still in the file — and the duplicate case is the headline damage
-	// verbatim: EffectFor returns the FIRST bind while writeEffects lets the LAST
-	// one win, so an editor edits one effect and saves another. W7's effects panel
-	// authors exactly these sections.
 	for i := range s.Effects {
 		target := s.Effects[i].Target
 		if !validEffectTarget(target) {
@@ -121,11 +104,6 @@ func (s *Sidecar) validateIDs() error {
 	// [clock.7] to slot 7, so a spelling that does not read back as the slot it
 	// sits in silently moves the whole group. "" is the editor-declared case and
 	// is written in the canonical spelling (writeClocks), so it is exempt.
-	// The loop starts at 1 for the reason writeClocks' does: clock 0 is the
-	// shared theme anchor, never declared and never written, so a guard judging
-	// slot 0 would be judging a section the writer cannot emit. Unreachable
-	// today — the reader refuses [clock.0] outright (readClock) — and matching
-	// the writer is what keeps the two from drifting apart.
 	for i := 1; i < ClockCap; i++ {
 		id := s.Clocks[i].ID
 		if id == "" {

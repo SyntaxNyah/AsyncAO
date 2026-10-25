@@ -13,9 +13,6 @@ import (
 )
 
 // The measurement every zero-alloc draw gate runs on.
-// WHY THIS IS NOT LOOSENING THE GATE. A per-frame allocation is in EVERY window by
-// definition, so it can never produce a clean one: allocsPerFrame below still
-// fails it on the first reading. Only an event that is over by the next window can
 
 const (
 	// allocGateFrames is the window a whole-screen gate measures. Named so the

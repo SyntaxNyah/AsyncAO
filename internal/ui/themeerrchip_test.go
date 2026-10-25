@@ -52,9 +52,6 @@ fill = #ff0000
 
 // TestSidecarRefusalIsVisibleOnScreen is the ship-blocker gate: a refused sidecar
 // must reach a surface the user can see, and a clean one must reach none.
-// It drives the two halves the chip is built from — the strings the apply goroutine
-// renders, and the chip's own active/rect decision — rather than a screenshot,
-// because the property is "somebody is told", not "the pixels are here".
 func TestSidecarRefusalIsVisibleOnScreen(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
@@ -175,10 +172,6 @@ func TestSidecarRefusalChipDoesNotOverlapItsNeighbours(t *testing.T) {
 }
 
 // TestThemeBadgeReflectsASidecarRefusal is the catalog half.
-// A badge is a promise about what will happen when you pick the theme. "AO2 +
-// native" on a folder whose native file the loader is going to refuse is that
-// promise being broken silently — and a sidecar-ONLY folder in that state loads
-// nothing whatsoever, which is precisely what the zero-value badge means.
 func TestThemeBadgeReflectsASidecarRefusal(t *testing.T) {
 	write := func(name string, sidecar []byte, ao2 bool) string {
 		dir := filepath.Join(t.TempDir(), theme.ThemesDirName, name)

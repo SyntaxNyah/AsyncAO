@@ -17,9 +17,6 @@ import (
 // URL for it came out as
 // "characters/sg%2Ffaris%20nyannyan/(b)suprised" — the identity escaped as ONE
 // path segment.
-//
-// CANON. AO2-Client joins the identity verbatim:
-// get_character_path returns VPath("characters/" + p_char + "/" + p_file)
 // (../AO2-Client/src/path_functions.cpp:43-46), so a '/' in the name is a real
 // directory. webAO agrees at the URL layer — `characters/${encodeURI(name)}/…`
 // (../webAO/src/viewport/utils/preloadMessageAssets.ts:30) — and JavaScript's
@@ -128,11 +125,6 @@ func TestNestedCharacterIdentityCannotClimbOut(t *testing.T) {
 }
 
 // TestEveryCharacterPathBuilderNests is the encapsulation test for the seam:
-// charSeg is the ONE place a character folder is spelled, and this proves it
-// cannot be bypassed. It reflects over EVERY exported URLBuilder method, calls
-// each with the nested identity as its first string argument, and fails any
-// result that addresses characters/ with the separator escaped away.
-//
 // Deliberately not a hand-maintained list: a NEW char-path builder added
 // tomorrow without going through charSeg is caught automatically, because its
 // output contains "characters/" and its %2F is visible here.
@@ -205,7 +197,6 @@ func flattenStrings(v reflect.Value) []string {
 // source: the URL the builder mints for a nested identity is fetched, unmodified,
 // by the production assets.LocalFetcher from a mount laid out the way AO2 lays
 // one out (characters/SG/Faris NyanNyan/).
-//
 // It is the URL SPELLING that was broken, not the mount: LocalFetcher's second
 // attempt percent-decodes each segment, and url.PathUnescape turns "%2F" back
 // into a separator, so the old spelling happened to resolve HERE while 404ing on

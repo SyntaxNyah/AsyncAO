@@ -26,9 +26,6 @@ func TestPlayMusicAtIdempotent(t *testing.T) {
 	}
 
 	// Enabled + this exact URL already the live stream: PlayMusicAt is a no-op.
-	// A non-nil sentinel *mix.Music makes MusicPlaying() true without decoding; the
-	// guard only compares != nil and never dereferences it, so pointing it at a real
-	// dummy byte is safe (mix.Music is an opaque C type — can't be allocated with new).
 	var dummy byte
 	live := &Audio{
 		enabled:  true,
@@ -213,11 +210,6 @@ func TestPurgePendingMusic(t *testing.T) {
 }
 
 // TestExpirePendingSkipsMusic pins the "big music silently doesn't play" follow-up:
-// a slow music download can outlive pendingPlayTTL (the network layer budgets up to
-// bodyTransferBudget = 60s for a track body), so expirePending must NOT time-expire a
-// pendingMusic entry — dropping it would discard the bytes when they land late in
-// onAudioBytes. Small SFX/blip entries still expire to keep the map bounded. Headless:
-// expirePending only mutates the local a.pending map, no SDL/Manager needed.
 func TestExpirePendingSkipsMusic(t *testing.T) {
 	past := time.Now().Add(-time.Hour)
 	future := time.Now().Add(time.Hour)

@@ -88,7 +88,6 @@ func TestNextAnimDue(t *testing.T) {
 // TestNextAnimDueClampsStaleCursor pins the defensive cursor clamp: a page
 // replaced by a shorter re-decode can leave a.frame pointing past the page's
 // frame count, and NextAnimDue must still schedule a deadline (never panic)
-// while the next Update's advance clamps the cursor back into range.
 func TestNextAnimDueClampsStaleCursor(t *testing.T) {
 	v := NewViewport(nil)
 	scene := &courtroom.Scene{}
@@ -111,7 +110,6 @@ func TestNextAnimDueClampsStaleCursor(t *testing.T) {
 // floor, never free-run the loop (with the ∞ default cap the pacing sleep
 // never fired and vsync — unreliable for windowed presents — was the only
 // brake: the idle-CPU-burn class). Playback speed is untouched: advance()
-// folds every elapsed frame per step.
 func TestNextAnimDueFloor(t *testing.T) {
 	v := NewViewport(nil)
 	scene := &courtroom.Scene{}
@@ -266,7 +264,6 @@ func TestFinishedOneShotRestartsAsLoop(t *testing.T) {
 	// The restart call above already consumed one 100 ms step (the guard resets
 	// to frame 0, then that same tick's advance steps 0→1 — identical to any
 	// post-reset tick; at real frame pacing dt ≪ delay so frame 0 shows fully).
-	// Two more steps walk 1→2→wrap back to 0, proving the layer genuinely loops.
 	for i := 0; i < 2; i++ {
 		if v.advanceSpeaker(page, 100*time.Millisecond, false) {
 			t.Fatalf("a loop must never report completion (step %d)", i)
@@ -348,11 +345,6 @@ func TestPreanimLoopFiresDoneOnce(t *testing.T) {
 
 // TestProgressivePartialDoesNotFinishPreanim pins the progressive-decode swap
 // fix: the renderer's fast 1-frame "Partial" delivery (assets.Decoded.Partial)
-// must NOT be mistaken for a genuine single-frame animation. A playOnce preanim
-// must not complete (latch finished / fire OnPreanimDone) on the partial, or a
-// preanimation would "finish" after one frame and hand the stage to the
-// still-decoding talk loop (the swap stutter). The FULL frame set then plays the
-// preanim to its natural last frame and completes exactly once.
 func TestProgressivePartialDoesNotFinishPreanim(t *testing.T) {
 	v := NewViewport(nil)
 	v.speakerAnim.reset("characters/x/intro")

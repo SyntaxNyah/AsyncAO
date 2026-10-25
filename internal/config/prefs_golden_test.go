@@ -12,13 +12,6 @@ import (
 // fillGoldenPrefs, which gives every exported field a distinct non-zero value so an
 // omitempty field actually appears and every map/slice is non-empty — so the file
 // never leaks a real username, home path or server address.
-//
-// TestGoldenPrefsRoundTrip loads the golden through the real New()/SaveNow() path and
-// compares the result as DECODED JSON (map[string]any), not bytes: a later restructure
-// that regroups fields into embedded structs may reorder keys and must not change the
-// key set or any value, and a duplicate-key collision from embedding must not silently
-// drop a field.
-//
 // Regenerate with: GOLDEN_REGEN=1 go test ./internal/config -run TestGoldenFixtureRegenerate
 
 const goldenPrefsName = "prefs_golden.json"
@@ -157,9 +150,6 @@ func TestGoldenFixtureRegenerate(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Load back and save once more so the committed golden is the STABLE (post-clamp)
-	// state: several numeric prefs clamp to a valid floor/ceiling on load, so the raw
-	// filled values do not round-trip. The stable golden does, and the round-trip test
-	// then asserts idempotence — the property a restructure must preserve.
 	reloaded, err := New(full.path)
 	if err != nil {
 		t.Fatal(err)

@@ -10,9 +10,6 @@ import (
 // TestIsEvidenceImageName pins the evidence browse's file filter to the decode
 // pipeline's image list (PNG/WebP/GIF/APNG/AVIF, case-insensitive), so the browser
 // never offers a file the thumbnailer can't sniff.
-// This is also the rule that keeps credit.txt out of the listing: the old "Choose"
-// grid applied NO extension filter at all and showed it, which is one of the three
-// things the playtest killed that grid for.
 func TestIsEvidenceImageName(t *testing.T) {
 	yes := []string{"knife.png", "K.WEBP", "x.gif", "y.apng", "z.avif"}
 	no := []string{"note.txt", "track.opus", "knife", "x.png.bak", "", "credit.txt"}
@@ -99,9 +96,6 @@ func TestIsZipMount(t *testing.T) {
 }
 
 // TestListMergedMountDirMergesFirstMountWins pins the core of the merged listing:
-// The keep rule is the real evidence-image filter, so the same call also pins that
-// non-images (a credit.txt beside the art) never reach the list — the second half of
-// what the retired "Choose" grid got wrong.
 func TestListMergedMountDirMergesFirstMountWins(t *testing.T) {
 	root := t.TempDir()
 	first := filepath.Join(root, "first")

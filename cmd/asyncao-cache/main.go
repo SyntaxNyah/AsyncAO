@@ -1,19 +1,4 @@
 // Command asyncao-cache is the companion CLI for AsyncAO's T3 disk cache:
-// inspect it, prune it, or pre-seed/warm it from a server's asset origin —
-// all without launching the client. Pure Go (no SDL, no CGO): builds with
-// CGO_ENABLED=0 on any platform.
-//
-// Usage:
-//
-//	asyncao-cache stats                          point-in-time size/count
-//	asyncao-cache inspect [-top 20]              largest blobs + age spread
-//	asyncao-cache prune -older 720h              drop blobs older than DURATION
-//	asyncao-cache prune -max-bytes 1073741824    drop oldest until under BYTES
-//	asyncao-cache prune -all                     clear everything
-//	asyncao-cache warm -list urls.txt [-j 8]     fetch URLs into the cache
-//	asyncao-cache warm -base URL -chars chars.txt  warm char icons via the
-//	                                             origin's extensions.json
-//
 // Keys are xxhash64 of the FULL asset URL (per-server separation is
 // structural), so inspect cannot map blobs back to URLs — by design.
 package main

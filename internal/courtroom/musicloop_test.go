@@ -4,10 +4,6 @@ import "testing"
 
 // TestParseAOLoopSidecarMatchesCanonLineOrder pins the SINGLE-FORWARD-PASS,
 // order-dependent contract at the heart of the parser (aomusicplayer.cpp:71-123):
-// a `loop_start` line that appears BEFORE a later `seconds=true` line was authored
-// as SAMPLES, and must stay samples. A two-pass "scan for seconds first" parser
-// would silently reinterpret this exact file as 44100 SECONDS instead of the 1
-// second it actually is — the fatal-flaw regression this test exists to catch.
 func TestParseAOLoopSidecarMatchesCanonLineOrder(t *testing.T) {
 	data := []byte("loop_start=44100\nseconds=true\n")
 	pts, ok := ParseAOLoopSidecar(data, 44100)
@@ -154,7 +150,6 @@ func TestExplicitSecondsUnitSuffixOnALegacyValue(t *testing.T) {
 // needs no dedicated comment syntax — it is simply unparseable, like AO2's own
 // bare lines), CRLF endings (the trailing '\r' must be trimmed away, never leak
 // into a value), and a line with SEVERAL '=' signs (AO2's own QString::split("=")
-// keeps only args[1] — "1" here — and silently drops anything past the second
 // '=', matching aomusicplayer.cpp:75-79 exactly).
 func TestParseAOLoopSidecarLineTokenizing(t *testing.T) {
 	data := []byte("\r\n; a bare comment with no equals sign\r\nloop_start=1=2\r\n\r\nloop_end=3\r\n")
@@ -172,8 +167,6 @@ func TestParseAOLoopSidecarLineTokenizing(t *testing.T) {
 
 // TestParseAOLoopSidecarGarbageAndExtremeValues pins AO2's own "no validation, no
 // rejection" discipline (aomusicplayer.cpp:92-124: unchecked toUInt()/toDouble()):
-// non-numeric, negative and enormous values never panic and never crash the scan —
-// they degrade silently, exactly like the reference client.
 func TestParseAOLoopSidecarGarbageAndExtremeValues(t *testing.T) {
 	cases := []struct {
 		name string
@@ -226,9 +219,6 @@ func TestUnresolvedSampleRateDegradesSampleModeToUnset(t *testing.T) {
 }
 
 // TestLoopLengthSecUsesTheFinalStartBound pins Part B's stated evaluation order:
-// loop_length_sec is computed AFTER the start bound is fully resolved (legacy or
-// _sec-overridden), using WHICHEVER value is final — never the legacy value that
-// was overridden away.
 func TestLoopLengthSecUsesTheFinalStartBound(t *testing.T) {
 	data := []byte("loop_start=999\nloop_start_sec=10\nloop_length_sec=5\n")
 	pts, ok := ParseAOLoopSidecar(data, 1)
@@ -305,8 +295,6 @@ loop_end=300
 
 // TestParseDROLoopSidecarMatchesByFilenameCaseInsensitively pins DRO's own
 // case-insensitive cache key (draudiotrackmetadata.cpp:82-89, l_lower_track_name)
-// against SEVERAL groups: the requested trackRel is cased differently from the
-// manifest's own `filename`/`Filename` key spelling in BOTH directions.
 func TestParseDROLoopSidecarMatchesByFilenameCaseInsensitively(t *testing.T) {
 	meta, ok := ParseDROLoopSidecar([]byte(droManifestFixture), "INTRO.OPUS", 100)
 	if !ok {

@@ -247,9 +247,6 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 }
 
 // emoteHasPreanim reports whether an emote defines a usable pre-animation.
-// "-"/"" is AO's "no preanim" convention. This is the single source of truth
-// for both the "Pre" auto-follow (selectEmote) and the send-path hasPre echo,
-// so the toggle's default can never drift from what actually rides the wire.
 func emoteHasPreanim(e *courtroom.Emote) bool {
 	return e.Preanim != "" && e.Preanim != "-"
 }
@@ -257,7 +254,6 @@ func emoteHasPreanim(e *courtroom.Emote) bool {
 // selectEmote picks emote i (shared by click, the Random button, and the
 // number-key shortcut): warms its pressed button art + the sprites the next
 // message will need, and refocuses the IC input (AO2 focus_ic_input).
-// Out-of-range indices are ignored.
 func (a *App) selectEmote(i int) {
 	if i < 0 || i >= len(a.emotepick.emotes) {
 		return
@@ -446,9 +442,6 @@ func (a *App) drawMsgCounter(input sdl.Rect, on bool) {
 
 // refreshICCount refreshes the cached count string when the typed length changed
 // and returns the length. Split out because the RESERVATION (icFieldTailReserve)
-// has to measure the very same string one step BEFORE the field draws, and the
-// two must never disagree about the width — a reservation that is narrower than
-// the drawn count is exactly the overlap this whole band exists to stop.
 func (a *App) refreshICCount() int {
 	n := utf8.RuneCountInString(a.compose.icInput)
 	if n != a.compose.icCountN {
@@ -615,10 +608,6 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 			c.Border(btn, ColPanelHi)
 			if pending {
 				// Blank cell, art still possible: keep the demand pump alive at idle.
-				// Gated on the demand rather than on the blankness — a character with
-				// no button art AND no icon is a permanently grey cell, and flagging it
-				// pinned the client at the demand cadence forever, awake and
-				// re-rendering for something that could never arrive.
 				a.frame.frameDemandPending = true
 			}
 		}
@@ -637,7 +626,6 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 // drawPairPanel: partner picking is a searchable click-to-pick list (the
 // old one-by-one </> cycle was unusable on 4000-char servers); offsets,
 // flip and z-order live in the right column.
-// sendPairOrder issues a /pairorder command to reorder the active group roster.
 func (a *App) sendPairOrder(uid int, op string) {
 	if a.link.sess == nil {
 		return
@@ -834,9 +822,6 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 
 	// Offset ghost editor: drag your sprite live; partner shows as a
 	// translucent ghost at their last-known placement.
-	//
-	// grip is handed down so a press the panel's RESIZE corner already consumed
-	// cannot also start a sprite drag — see drawPairGhost.
 	pv := sdl.Rect{X: rx, Y: ry, W: r.W/2 - 2*pad, H: r.Y + r.H - pad - ry}
 	if pv.H >= ghostMinHeightPx {
 		a.drawPairGhost(pv, grip)
@@ -1072,7 +1057,6 @@ func (a *App) offsetControl(id string, x, y int32, label string, val int, buf *s
 	// displays the edit buffer, not val, so refresh it — wheeling never blurs,
 	// and the row froze at its old number until a click-off (playtest: the rows
 	// answered the buttons and the wheel but displayed 0 until clicked away from).
-	// Typing keeps its partial-input buffer: this only fires on mouse edits.
 	if val != typed && c.focusID == id {
 		*buf = strconv.Itoa(val) // textField clamps the caret to the new length
 	}
@@ -1153,7 +1137,6 @@ func (a *App) midEmoteResolver(stem string) (courtroom.MidEmote, bool) {
 // sendIC takes no shout argument any more. The interjection is ARMED state
 // (a.icShout = AO2's objection_state) and the packet reads it here, which is
 // where canon reads it too — on_chat_return_pressed, courtroom.cpp:2136-2147.
-// Passing a shout in was what made a shout BUTTON a send button.
 func (a *App) sendIC() {
 	shout := a.compose.icShout
 	text := strings.TrimSpace(a.compose.icInput)
@@ -1540,7 +1523,6 @@ const defaultSide = "wit"
 // the last speaker's position. Inheriting Scene.Position teleported us
 // to whoever spoke last AND leaked custom side strings that strict
 // receivers (LemmyAO's MS schema enumerates the eight standard sides)
-// reject wholesale.
 func (a *App) mySide() string {
 	if a.compose.sidePref != "" {
 		return a.compose.sidePref
@@ -1611,8 +1593,6 @@ func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct in
 	// Per-glyph fallback raster when the message has emoji OR mixes scripts no single
 	// face covers (covers() reads the pick just made above — no rescan): each rune
 	// routes to the color-emoji face or its covering text face, baseline-aligned.
-	// Gated cheaply so PLAIN single-script messages (the overwhelming common case)
-	// never reach here and stay on the untouched fast paths below — zero change.
 	needEmoji := render.NeedsEmojiFallback(sc.MessageText)
 	if needEmoji || !a.ctx.coversFace(logFont, sc.MessageText) {
 		if needEmoji {

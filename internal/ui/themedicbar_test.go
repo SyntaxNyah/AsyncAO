@@ -58,9 +58,6 @@ func TestThemedICControlsHaveTheirOwnRows(t *testing.T) {
 
 // TestThemedICInputAcceptsAClickWhereTheCramUsedToBe is the headline regression,
 // pinned behaviourally.
-// A geometry assertion cannot catch this — the cram was entirely in draw code, so
-// the layout cache looked identical before and after. Driving a real themed frame
-// and clicking is the only thing that distinguishes them.
 func TestThemedICInputAcceptsAClickWhereTheCramUsedToBe(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()

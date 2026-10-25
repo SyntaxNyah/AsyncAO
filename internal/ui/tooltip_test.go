@@ -107,8 +107,6 @@ func TestUnionRectGroupsTheWholeSurface(t *testing.T) {
 
 // TestOnlyOneTooltipIsArmedPerFrame pins the exclusivity the kit already has by
 // construction (one tipText string, cleared every BeginFrame, last writer wins)
-// and that hovering() honours the overlay fence — so of two stacked controls only
-// the TOPMOST can arm a hint. A future second painter would break this.
 func TestOnlyOneTooltipIsArmedPerFrame(t *testing.T) {
 	c := &Ctx{}
 	under := sdl.Rect{X: 100, Y: 100, W: 200, H: 40}

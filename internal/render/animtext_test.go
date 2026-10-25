@@ -259,9 +259,6 @@ func TestRasterizeAnimatedPerRuneFonts(t *testing.T) {
 }
 
 // TestRasterizeAnimatedNonUniformAdvance pins that the pen advances by each rune's OWN font:
-// a proportional base + a fixed-width fallback produce a non-uniform run of x positions, so
-// CJK (which used to get one uniform base advance per rune) lays out at real widths. Also
-// pins left-to-right monotonicity across the mixed faces.
 func TestRasterizeAnimatedNonUniformAdvance(t *testing.T) {
 	base, cleanup := newAnimTestFont(t, 18)
 	defer cleanup()

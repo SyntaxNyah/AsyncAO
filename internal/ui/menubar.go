@@ -293,8 +293,6 @@ func menuTogglePhoneBook(a *App, _ int) {
 
 // menuCanPingSort dims the row while a sweep is in flight: startPinging refuses a
 // second one (it would race its own results), so a live row there would do nothing.
-// Dimming is also the only progress feedback the menu can give — the on-screen button
-// this replaced said "Pinging…" in its label, which a static menu row cannot.
 func menuCanPingSort(a *App, _ int) bool { return !a.conn.lobby.pinging }
 func menuPingSortOn(a *App, _ int) bool  { return a.conn.lobby.pingMode }
 func menuTogglePingSort(a *App, _ int) {
@@ -575,9 +573,6 @@ func (a *App) menuBarPaintsNow() bool {
 }
 
 // noteEditorBanner is how the two layout editors publish "the band is mine this frame".
-// Called from the exact statement that fills the banner, never from the arm path, so
-// the flag means what menuBarPaintsNow needs it to mean: painted, not merely armed.
-// App.Frame clears it every frame, next to the tab strip's paint latch.
 func (toolbox1 *toolboxState) noteEditorBanner() { toolbox1.editorBannerPainted = true }
 
 // layoutEditorArmed is "one of the two layout editors owns the screen": the classic
@@ -588,8 +583,6 @@ func (a *App) layoutEditorArmed() bool { return a.classic.classicEdit || a.layou
 // menuBarHeight is the vertical space the bar occupies — the ONE number the layout
 // stage offsets screen content by, so no caller ever hardcodes menuBarH. Reports
 // ZERO whenever the bar is not shown, so the offset can be applied unconditionally.
-// Deliberately menuBarShows, NOT menuBarPaints: see menuBarPaints for why a layout
-// edit must not move the band it is editing against.
 func (a *App) menuBarHeight() int32 {
 	if !a.menuBarShows() {
 		return 0
@@ -617,10 +610,6 @@ func (a *App) menuBarSuppressed() bool {
 }
 
 // menuBarIndexOf maps a stored menu title to its index in menuBarMenus, or -1.
-// The open menu is remembered BY TITLE rather than by index so that the &App{} zero
-// value is "closed" — a zero index would mean "Servers is open" on every freshly
-// built App, including every test fixture — and so that reordering the model cannot
-// silently reinterpret the open pane.
 func menuBarIndexOf(title string) int {
 	if title == "" {
 		return -1
@@ -763,9 +752,6 @@ func menuPaneRowRect(pane sdl.Rect, items []menuItem, idx int) sdl.Rect {
 
 // menuPaneRowFits reports whether a row is WHOLLY inside a clamped pane (menuPaneRect
 // shortens a pane that would run off the bottom of the window).
-// It is THE rule for "does this row exist this frame", consulted by the draw and by
-// the hit test alike. They used to disagree: the draw stopped at the first row whose
-// bottom passed the clamp, while the hit test accepted any point inside both the pane
 func menuPaneRowFits(pane, row sdl.Rect) bool { return row.Y+row.H <= pane.Y+pane.H }
 
 // menuPaneRowAt returns the index of the row under (x, y) inside pane, or -1 (also
@@ -910,8 +896,6 @@ func (a *App) menuBarStandDown(w int32) {
 // menuBarModalFence holds the kit's modal fence while a pane is open and RELEASES it
 // the frame it closes — the rostermenu.go discipline, because modalOn persists
 // across frames and an un-released one freezes the whole UI (app.go says so).
-// menuFenceOn records that WE set it, so a bar that never took the fence never
-// touches it.
 func (a *App) menuBarModalFence(c *Ctx) {
 	if a.menuBarOpen() {
 		c.modalOn = true

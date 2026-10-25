@@ -8,8 +8,6 @@ import (
 
 // exeDataMu guards exeDataRoot and downloadsRootMemo. Tests set the root while
 // goroutines spawned by the code under test (the async .aorec write, for one)
-// are still reading it, so a plain package var raced under -race: the CI race
-// job caught TestStopRecordingPrefOffNoBundle on exactly that overlap.
 var (
 	exeDataMu         sync.RWMutex
 	exeDataRoot       string

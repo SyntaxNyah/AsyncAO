@@ -12,12 +12,8 @@ import (
 // `set_background(content.at(0), content.size() >= 2)`
 // (../AO2-Client/src/packet_distribution.cpp) — and AsyncAO's reducer read only
 // field 0, so the flag never arrived and no teardown existed to run.
-//
 // These tests pin BOTH halves: the reducer's arity rule, and the stage teardown
 // itself. The most load-bearing negative is TestPlainBackgroundChangeNeverWipes:
-// fourteen call sites build an EventBackground with no server BN behind them, and
-// one of them is buildRoom's re-seed, which runs on every tab switch IMMEDIATELY
-// BEFORE the message restore it would otherwise erase.
 
 // TestBNWipeIsKeyedOnArityNotPosValue pins the exact upstream rule. The tempting
 // simplification — wipe only when the pos is non-empty — is wrong: akashi's area

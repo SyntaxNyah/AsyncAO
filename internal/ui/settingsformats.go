@@ -124,8 +124,6 @@ func (a *App) noteSearchRow(label string, y int32) {
 
 // formatsTabPointer draws the "the format controls live on their own tab now"
 // jump button used by the Assets and Power user tabs. A pointer, never a copy:
-// duplicating a control is how the two tabs ended up disagreeing about where
-// formats belong. Returns the next y.
 func (a *App) formatsTabPointer(y int32) int32 {
 	c := a.ctx
 	pad := a.formX

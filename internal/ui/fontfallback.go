@@ -57,10 +57,6 @@ func hasCJKLetter(s string) bool {
 }
 
 // parseCover parses font bytes for the cmap-based coverage check used by the PICK.
-// SDL_ttf's GlyphMetrics returns .notdef metrics WITHOUT error for missing glyphs in
-// this build, so it can't tell coverage — sfnt's cmap lookup (GlyphIndex != 0) can.
-// Handles both single fonts (.ttf) and collections (.ttc, e.g. Nirmala) by trying the
-// first face. nil on parse failure → that face is simply never chosen by coverage.
 func parseCover(data []byte) *sfnt.Font {
 	if f, err := sfnt.Parse(data); err == nil {
 		return f
@@ -94,9 +90,6 @@ func fallbackFontCandidates() []string {
 	case "windows":
 		return []string{
 			// Broad Latin / Cyrillic / Greek / Armenian / Georgian / Hebrew / Arabic.
-			// NOT Thai, despite what this comment used to claim: segoeui.ttf has no
-			// U+0E01. Thai, Lao and Khmer live in Leelawadee UI / Khmer UI, and the
-			// census finds them.
 			`C:\Windows\Fonts\segoeui.ttf`,
 			`C:\Windows\Fonts\seguisym.ttf`, // Segoe UI Symbol — arrows / math / technical / dingbats / Braille
 			`C:\Windows\Fonts\ebrima.ttf`,   // Ebrima — African scripts incl. Tifinagh and Ethiopic

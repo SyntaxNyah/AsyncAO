@@ -4,11 +4,6 @@ package courtroom
 // reason (which is what a locked-down or whitelisting server sends), and a BB popup
 // notice. All four are attacker-controlled strings that end up in a texture and on
 // the clipboard, and all four are capped here rather than at the four consumers.
-// Every gate below drives the REAL path: a Packet built by protocol.NewPacket,
-// serialized with its own escaping, parsed back by protocol.ParsePacket, and handed
-// to the real Session.HandlePacket. Nothing re-implements the cap — a test that
-// called capServerText directly and compared it with its own truncation would stay
-// green with the call sites deleted, which is the failure mode rule 11 names.
 
 import (
 	"strings"
@@ -96,9 +91,6 @@ func TestARemovalReasonKeepsItsPrefixWhenTheCapBites(t *testing.T) {
 
 // TestTheServerTextCapCountsRunesNotBytes is the Cyrillic half, and it is the reason
 // clampWireBytes (profilewire.go) was not reused.
-// Exactly serverTextRuneCap Cyrillic runes is TWICE that many bytes. Under a byte cap
-// this payload comes back truncated; under the rune cap it comes back whole. A
-// Russian server's whitelist notice is the shape that makes the difference real.
 func TestTheServerTextCapCountsRunesNotBytes(t *testing.T) {
 	atCap := strings.Repeat("б", serverTextRuneCap)
 	if len(atCap) != 2*serverTextRuneCap {

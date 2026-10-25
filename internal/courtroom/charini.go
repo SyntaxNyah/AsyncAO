@@ -56,7 +56,6 @@ type CharINI struct {
 	Showname string
 	// NeedsShowname is the [Options] needs_showname= opt-out, kept RAW because
 	// canon tests it with startsWith rather than a boolean parse:
-	// get_showname returns the empty string when it starts with "false"
 	// (text_file_functions.cpp:465-468), which is a deliberate blank plate and
 	// not "fall back to the folder name". ShownameOrFolder is that rule.
 	NeedsShowname string
@@ -71,7 +70,6 @@ type CharINI struct {
 	// folder ROOT (not in an effects/ subfolder) plus icons/. AO2 defaults
 	// get_effect / get_effects / get_effect_property's p_folder to this whenever
 	// the caller passes none (text_file_functions.cpp:772, :836-839, :855-858).
-	// Empty = the theme's own effects only.
 	Effects string
 	// Realization is the [Options] realization= sound NAME: the character's own
 	// realization SFX. Canon gives it two jobs, both of which override whatever
@@ -181,9 +179,6 @@ func ParseCharINI(data []byte) (*CharINI, error) {
 			Anim:    parts[2],
 			Mod:     atoiOr(parts[3], 0),
 			// AO2 shows the desk when the emote omits its optional 5th (desk_mod)
-			// field (get_desk_mod → -1, a non-hide value); only an explicit 0/3/5
-			// hides it. Defaulting to 0 here would wrongly hide the desk for the
-			// majority of emotes, which have no desk_mod field.
 			DeskMod: protocol.DeskShow,
 		}
 		if len(parts) > emoteFieldCount {
@@ -228,12 +223,10 @@ func ParseCharINI(data []byte) (*CharINI, error) {
 // :3286 initialize_chatbox, :3868 append_ic_text, :4798). Only the OUTGOING
 // send reads the [OptionsN] per-emote override (:2219), so it is deliberately
 // not transcribed here.
-//
 // Canon's order matters and is not the obvious one: needs_showname is tested
 // FIRST, so a character that opts out gets a genuinely BLANK name — not the
 // folder name — and blank is a real answer that routes into the plate-less
 // chatblank rung. Only then does an absent showname fall back to the folder.
-//
 // A nil receiver (no char.ini fetched yet, or an unparsable one) answers the
 // folder name, which is exactly what canon answers for an unreadable ini.
 func (c *CharINI) ShownameOrFolder(folder string) string {
@@ -254,14 +247,12 @@ func (c *CharINI) ShownameOrFolder(folder string) string {
 // a character is picked (enter_courtroom leaves m_emote_id at 0 and paints the
 // first button pressed, courtroom.cpp:1487 / on_emote_clicked), so it is
 // literally what a player looks like before they touch anything.
-//
 // IT EXISTS BECAUSE "normal" IS A CONVENTION, NOT A GUARANTEE. Plenty of packs
 // spell their poses SNormal / SCry / HSmug and ship no `normal.*` sprite at all;
 // a surface that mints characters/<x>/(a)normal for them probes a 404 and draws
 // an empty box. Every preview in this client that needs "the sprite this
 // character shows when idle" wants THIS answer, and one function for it is what
 // stops the next surface from spelling the literal again.
-//
 // A nil receiver (nothing fetched yet, or an unparsable ini) and an ini with no
 // [Emotions] both answer "" — an ABSENT answer, never a guess. The caller keeps
 // its own optimistic convention for that window, which is what lets the common

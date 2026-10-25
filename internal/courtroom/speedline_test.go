@@ -10,10 +10,6 @@ import (
 // TestZoomSide pins the position → speedline-side mapping (#126).
 // else-branch taking everything else (courtroom.cpp:3463-3471). v1.98.0 shipped it
 // on the defense side, which drew the wrong burst for every witness.
-// IT IS ALSO NEVER "" NOW. v1.98.0 returned "" for judge/jury/seance as a
-// deliberate deviation from AO2's catch-all else, and the playtest killed the
-// deviation — an empty side drew NO burst at all for a judge zoom, and AO2's else
-// branch already answers the question with defense_speedlines. Crystalwarrior:
 func TestZoomSide(t *testing.T) {
 	prosecution := []string{"pro", "hlp", "wit"}
 	// Everything else, including the three positions v1.98.0 blanked and the empty
@@ -87,8 +83,6 @@ func TestSpeedlinesURL(t *testing.T) {
 
 // TestZoomEmoteSetsSpeedlines pins that a zoom/preanim-zoom message stages the
 // speaker's speedline chain + side, and a non-zoom message clears them (#126).
-// It deliberately does NOT pin any magnification: AO2's zoom never rescales the
-// character layer, it only hides the desk + pair and plays the speedlines
 // (courtroom.cpp:3456-3477). v1.98.0 magnified the speaker 1.5x on top of the
 // character's own zoom preanimation art, which the playtest reported as a double
 // zoom, so the magnification was removed rather than fixed.

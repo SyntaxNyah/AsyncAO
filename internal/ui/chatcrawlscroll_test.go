@@ -38,9 +38,6 @@ func TestAFittingMessageNeverScrolls(t *testing.T) {
 
 // TestSixLinesInAThreeLineBoxKeepTheRevealInView is the report: at EVERY step of
 // the crawl the row being revealed has to be inside the box.
-// It also pins Qt's MINIMUM-movement rule — ensureCursorVisible scrolls just far
-// enough, so the reader keeps as much earlier text as the box can hold and the
-// view advances one row at a time instead of jumping to the end.
 func TestSixLinesInAThreeLineBoxKeepTheRevealInView(t *testing.T) {
 	const lineH = 20
 	const availH = 3 * lineH // a three-row box
@@ -176,9 +173,6 @@ func TestChatCrawlClipRaisesOnlyTheTop(t *testing.T) {
 
 // TestAnimatedSpansKeepTheirTopPixels is the field-8 reviewer's deferred defect,
 // pinned from both ends at once.
-// THE FIX has to be exactly as narrow as the defect, which is why both halves
-// are here: the animated painter gets the whole box back, and a SCROLLED
-// (non-animated) message still may not reach the name plate. A remedy that
 func TestAnimatedSpansKeepTheirTopPixels(t *testing.T) {
 	// The classic overlay's real geometry, same as the name-plate gate above.
 	const lineH, rows = 20, 6

@@ -76,9 +76,6 @@ func lobbyDirectRow(w, fullW, shortW, tlsW, saveW int32) directRowLayout {
 }
 
 // lobbyUtilWidth is the width every button of the cluster shares at window width w:
-// the comfortable default when the whole row fits, otherwise the room that exists
-// split evenly, floored at lobbyUtilBtnMinW. Pure + alloc-free, so the "nothing
-// leaves the window" property below is unit-pinnable.
 func lobbyUtilWidth(w int32) int32 {
 	bw := lobbyUtilBtnW
 	room := w - 2*pad
@@ -168,9 +165,6 @@ func (a *App) drawLobby(w, h int32) {
 	}
 
 	// Top bar buttons, laid out RIGHT TO LEFT by lobbyUtilStop (stop 0 = rightmost).
-	// They used to be pinned by raw `w - <literal> - pad` rects
-	// (110/230/350/470/590/710/830); at config.MinWindowW those literals put "What's
-	// New" at x=-78 and "Logs" at x=-198, i.e. clean off the left edge of the window.
 	utilW := lobbyUtilWidth(w)
 	pbBtn := sdl.Rect{X: lobbyUtilStop(w, 0), Y: hdrY, W: utilW, H: btnH}
 	// The leftmost of the cluster: its X is what the centred Privacy/Glossary pair
@@ -690,8 +684,6 @@ func (a *App) drawWardrobeGridCells(w, h int32, g charGridPlan, rows charListRow
 		// Anchored on the GRID's viewport, not on the window: under a theme the grid
 		// starts wherever char_buttons is (x=353 at 1:1 on the stock table), so an
 		// empty-state line drawn from x=pad landed out in the left-hand name column.
-		// Classic keeps its old position exactly — there g.view.X is 0 and the width is
-		// the whole window.
 		msgX, msgW := g.view.X+pad, g.view.W-2*pad
 		if !g.themed {
 			msgX, msgW = pad, w-2*pad
@@ -999,8 +991,6 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 		// &cell into cgo would heap-allocate the PARAMETER once per VISIBLE CELL per
 		// frame — a 7×9 themed grid is 63 of them, and escape analysis is static so
 		// the placeholder branch pays it too. Shared scratch (ui.go cgoRect contract:
-		// SDL copies the rect during the call and never retains the pointer); the
-		// cachedPage lookup above is done, so nothing can interleave.
 		c.cgoRect = cell
 		_ = c.Ren.Copy(page.Frames[0], nil, &c.cgoRect)
 	} else {
@@ -1501,9 +1491,6 @@ func unionRect(a, b sdl.Rect) sdl.Rect {
 const previewDragBottomReserve = 22
 
 // previewFenceLatch is the sprite-preview box's per-frame overlay-fence answer:
-// the registry depth taken just BEFORE its footprint was published, handed to
-// pushOverlayOwner so the box's own − / + zoom buttons and pinned × stay live
-// while everything painted UNDER the box goes inert (overlayfence.go).
 type previewFenceLatch struct {
 	mark int  // registry depth before our publication (0 when nothing was published)
 	on   bool // we published — so the draw must suspend it for its own widgets

@@ -20,9 +20,6 @@ var reportFixtureNotes = []string{
 
 // stageReportEditor opens the frame-driven editor over a theme whose apply
 // produced notes.
-// The report is INSTALLED THE WAY THE APPLY INSTALLS IT — through noteThemeReport,
-// the one landing site the poll uses — so the fixture cannot pass by writing a
-// slice somewhere the real path never touches.
 func stageReportEditor(t *testing.T) (*App, func()) {
 	t.Helper()
 	a, cleanup, _ := stageEditorCanvas(t)
@@ -135,9 +132,6 @@ func TestTheReportPanelIsAPanelAndNotAModal(t *testing.T) {
 }
 
 // TestTheReportWrapsOnChangeAndNotPerFrame is the alloc-discipline gate.
-// themeReportCap is 69 notes; Ctx.WrapText allocates; the editor frame is bounded
-// by editorChromeAllocBudget. Wrapping on the draw would be that budget's named
-// regression, at sixty-nine strings a frame.
 func TestTheReportWrapsOnChangeAndNotPerFrame(t *testing.T) {
 	a, cleanup := stageReportEditor(t)
 	report := reportFixtureNotes

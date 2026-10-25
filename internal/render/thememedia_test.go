@@ -1,7 +1,6 @@
 package render
 
 // Gates for the bounded user-art tier (v1.90.0 W4 — design §Q2).
-//
 // The budget IS the product here. Theme media is PINNED, i.e. eviction-exempt: no
 // LRU will ever take it back, so every byte admitted is a byte committed for as
 // long as the theme is applied. That makes the door the only place the number can
@@ -18,7 +17,6 @@ import (
 )
 
 // newThemeMediaDecoded builds a one-frame decoded page of the given size.
-//
 // Deliberately a fresh allocation per call. UploadThemeMedia releases what it is
 // handed on EVERY path, refusals included — a caller that had to remember to free a
 // rejected buffer would make the budget check itself the leak — so a shared fixture
@@ -65,7 +63,6 @@ func residentThemeMedia(s *TextureStore) (keys map[string]bool, bytes int64, ima
 
 // TestThemeMediaBudgetTracksTexBudgetMiB pins the SCALING rule: the allowance is a
 // fraction of the user's own T1 budget, clamped at both ends.
-//
 // A fixed ceiling was the obvious alternative and it is wrong in both directions —
 // 48 MiB is 75% of the default 64 MiB T1 and a 1.5x overcommit at the 32 MiB
 // minimum, while the bare ratio gives 96 MiB at a 256 MiB budget, which is no
@@ -89,7 +86,6 @@ func TestThemeMediaBudgetTracksTexBudgetMiB(t *testing.T) {
 		prev = got
 	}
 	// The two clamps really clamp, at the two ends they exist for.
-	//
 	// The FLOOR is deliberately below the ratio's answer at the 32 MiB minimum
 	// (3/8 of 32 is 12 MiB, which is what a minimum-budget install gets): it is a
 	// backstop for a budget SMALLER than the settings row allows — a hand-edited
@@ -124,7 +120,6 @@ func TestThemeMediaBudgetTracksTexBudgetMiB(t *testing.T) {
 
 // TestThemeMediaKeysAreThemeNamespaced pins the collision bug the key scheme exists
 // to prevent.
-//
 // The theme-swap prune drops keys the NEW theme does not declare. With bare ids
 // (`theme://m/bg`) two themes that both declare `bg` leave the old page resident,
 // the prune sees a key the new theme DOES declare, and the new theme silently
@@ -147,9 +142,6 @@ func TestThemeMediaKeysAreThemeNamespaced(t *testing.T) {
 	}
 	// Generator tiles are content-addressed, so the namespace question does not
 	// arise: the same params ARE the same tile, whoever declared them.
-	// SAID PLAINLY, so nobody reads the equality as the evidence: on its own it is
-	// nearly vacuous. ThemeGenKey is a pure Sprintf, so only a stateful or
-	// counter-based builder could ever fail it — a key mangled but still injective
 	const tileHash = uint64(0x0123456789abcdef)
 	byUmineko, byTrial := ThemeGenKey(tileHash), ThemeGenKey(tileHash)
 	if byUmineko != byTrial {
@@ -181,7 +173,6 @@ func TestThemeMediaKeysAreThemeNamespaced(t *testing.T) {
 }
 
 // TestUploadPinnedRejectsThemeMediaPrefixes pins the SECOND DOOR being locked.
-//
 // UploadPinned is eviction-exempt and count-uncapped by nature. That is correct for
 // the bounded stem tables the client itself uploads and catastrophic for art a
 // stranger's theme declares, so the admission gate is only worth anything if
@@ -290,7 +281,6 @@ func TestThemeMediaAdmissionIsBounded(t *testing.T) {
 }
 
 // TestThemeMediaOneItemCannotEatTheBudget pins the per-item cap.
-//
 // Without it, one 4K wallpaper takes the entire allowance and every other element
 // in the theme becomes an over-budget placeholder — which reads to the author as
 // "the editor broke", because the thing they can see is fine and everything else
@@ -403,9 +393,6 @@ func TestThemeMediaAdmissionByteTotalIsOrderIndependent(t *testing.T) {
 
 // TestPinnedBytesStayUnderThemeBudgetAcrossThreeApplies is the leak gate, and it
 // takes three applies on purpose.
-// A single-apply test cannot catch the failure mode this is written against: the
-// swap that does not PRUNE. Pinned pages are eviction-exempt, so a theme whose art
-// is not dropped when the next theme lands stays resident forever — and the symptom
 func TestPinnedBytesStayUnderThemeBudgetAcrossThreeApplies(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()

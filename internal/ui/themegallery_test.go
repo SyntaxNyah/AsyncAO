@@ -449,8 +449,6 @@ func TestGalleryApplyKeepsTheLiveSidecarPointer(t *testing.T) {
 
 // TestGalleryPickRunsTheMergeEngine is the ENCAPSULATION gate (hard rule 11), and
 // it is written in the shape TestThemeApplyRunsTheOverridesTier established:
-// perform the real act through the real button path, then assert on something only
-// the real engine could have produced.
 func TestGalleryPickRunsTheMergeEngine(t *testing.T) {
 	a, cleanup := stageGalleryEditor(t)
 	defer cleanup()

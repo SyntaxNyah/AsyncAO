@@ -1,7 +1,6 @@
 package theme
 
 // The WRITE GUARD's gates.
-//
 // They drive Sidecar.Bytes(), never Sidecar.Validate() directly — the guard is
 // only worth anything if it is on the path the editor actually takes, and a
 // gate that called Validate() itself would leave the `if err := s.Validate()`
@@ -117,9 +116,6 @@ func TestBytesRefusesAModelTheReaderWouldRefuse(t *testing.T) {
 			// is gone deliberately — and the property the row was really guarding, "a
 			// [theme] string past the cap does not silently become a broken save", moves
 			// to the key in that section that is still structural.
-			// `base` names the terminal AO2 fallback FOLDER: a truncated one resolves a
-			// different theme, or none, so shortening it is not a degrade of the same
-			// value but a silent substitution of another. TestMetadataCapsDegradeAndStructuralCapsRefuse
 			name:  "theme base past NameRuneCap",
 			want:  ErrSidecarCap,
 			build: func(s *Sidecar) { s.Meta.Base = strings.Repeat("n", NameRuneCap+1) },
@@ -198,9 +194,6 @@ func TestBytesRefusesAModelTheReaderWouldRefuse(t *testing.T) {
 // rawDocBytes serialises the lossless document WITHOUT the model, so the gate
 // above can ask "did the refused save leave the file alone?" without going
 // through the guard it is testing.
-// TEST-ONLY, and on a _test.go file rather than on the type: the whole point of
-// the guard is that there is no unvalidated way out, and this method is the
-// shape that breaks it. When this comment was first written the claim was
 func (s *Sidecar) rawDocBytes() []byte {
 	if s == nil || s.doc == nil {
 		return nil
@@ -238,7 +231,6 @@ func legalSidecar(t *testing.T) *Sidecar {
 // the cap classes, the same over-cap collection is put to BOTH directions of the
 // production code — the model through Bytes(), the equivalent FILE through
 // ParseSidecar — and the two must agree, with the same sentinel.
-//
 // It is not a mirror: neither side restates a limit, both sides are called.
 func TestTheWriterRefusesExactlyWhatTheReaderRefuses(t *testing.T) {
 	// One [overrides] row per line, one past the cap.
@@ -308,9 +300,6 @@ func TestTheEffectTargetRuleHasOneSpelling(t *testing.T) {
 
 // TestTheGuardIsNeverStricterThanTheReader is the open–closed half stated
 // directly: ANYTHING ParseSidecar accepts, Bytes() must still write.
-// It walks the whole shipped fixture corpus rather than a hand-built model,
-// because those files are what the reader was built against — the alien
-// spellings, the alias keys, the future-format file and the vendor sections all
 func TestTheGuardIsNeverStricterThanTheReader(t *testing.T) {
 	dirs, err := os.ReadDir(themesFixtureDir)
 	if err != nil {

@@ -35,10 +35,6 @@ func TestDPISeedFloor(t *testing.T) {
 }
 
 // TestExplicitScaleWinsOverSeed pins that an explicitly-saved scale ALWAYS wins:
-// with Auto off (the only state in which a user can commit a manual scale),
-// UIScale() returns the manual value and ignores the DPI-seeded detected value
-// entirely. This is the structural reason Part B needs no new "user chose it"
-// marker pref — UIScaleAuto IS the marker.
 func TestExplicitScaleWinsOverSeed(t *testing.T) {
 	a := testTabApp(t)
 	// Simulate a HiDPI seed having fired…

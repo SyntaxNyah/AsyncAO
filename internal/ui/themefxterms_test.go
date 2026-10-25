@@ -15,7 +15,6 @@ import (
 
 // fxTermsAt drives ONE drawElement at a chosen elapsed and returns what the painter
 // received, by value, plus the baked row afterwards.
-//
 // The elapsed is set the way every other gate in this package sets it — by moving
 // a.themeAt back — so the clock the element reads is the one the client reads.
 func fxTermsAt(t *testing.T, a *App, lay *themeLayoutCache, e bakedElement, elapsed time.Duration) (got, after bakedElement) {
@@ -171,10 +170,6 @@ func TestEveryFXTermReachesThePixel(t *testing.T) {
 
 // TestReduceMotionPaintsTheAuthoredFormNotTheFrozenPeak is the accessibility half of
 // the same reading, and it is the one an "obvious" implementation gets backwards.
-// Under ReduceMotion every effect resolves neutral — so a FREE element paints its
-// authored form (still), and a WASH paints NOTHING (env 0). Freezing a wash at its
-// baked peak instead would make the accessibility option the thing that put an opaque
-// sheet over the stage.
 func TestReduceMotionPaintsTheAuthoredFormNotTheFrozenPeak(t *testing.T) {
 	a, prefs := newEffectsRig(t)
 	prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true })
@@ -208,9 +203,6 @@ func TestReduceMotionPaintsTheAuthoredFormNotTheFrozenPeak(t *testing.T) {
 
 // TestNoPainterMutatesItsBakedElement is ledger L37: the painter contract's
 // undocumented, untested clause.
-// It runs the REAL painter table, unlike every other element gate in the package —
-// which is precisely why the clause had no coverage: the one gate that looked
-// relevant runs with the recorder swapped in, so it pins drawElement and no painter.
 func TestNoPainterMutatesItsBakedElement(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()

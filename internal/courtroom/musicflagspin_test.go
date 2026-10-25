@@ -16,7 +16,6 @@ import (
 // system stops the copies from drifting apart, so this file is the pin — the
 // discipline TestEverySavedPreferenceIsAlsoLoaded already applies to the other
 // cross-package duplication here.
-//
 // The pin lives on the courtroom side because that is the side with unexported
 // constants; a test in internal/ui could only compare exported names, which is
 // exactly what an unused exported alias block would be worth.
@@ -24,7 +23,6 @@ import (
 // TestMusicEffectBitsMatchTheSendSidePreference holds the two copies of the
 // MUSIC_EFFECT bit values numerically equal. Both the individual bits and the
 // mask are asserted: the mask catches the drift a per-bit table can't see, i.e.
-// AO2 defining a fifth flag that lands in one copy only.
 func TestMusicEffectBitsMatchTheSendSidePreference(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -56,7 +54,6 @@ func TestMusicEffectBitsMatchTheSendSidePreference(t *testing.T) {
 
 // TestMusicFlagsSurviveTheWireRoundTrip is the behavioral half: the number the
 // preference puts on the wire has to mean the same thing when it comes back.
-//
 // The two directions do NOT share a field index — outgoing MC is
 // MC#<song>#<cid>#<showname>#<flags> (RequestMusicWithFlags) while the server's
 // echo is MC#<song>#<cid>#<showname>#<looping>#<channel>#<flags> — so the echo
@@ -119,8 +116,6 @@ func TestMusicFlagsSurviveTheWireRoundTrip(t *testing.T) {
 // The trap is the EMPTY showname on a cccc_ic_support-only server: appending it
 // "because flags are positional" is wrong twice over — canon appends nothing, and
 // without `effects` there is no flags field behind it for an omission to shift.
-// A stray empty field there is a third MC field that a server reading field 3 as a
-// showname sees as a deliberate blank name.
 func TestRequestMusicWithFlagsMatchesCanonsShownameCondition(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

@@ -156,12 +156,6 @@ func waitDecoded(t *testing.T, m *Manager) DecodedAsset {
 }
 
 // retryDecoded re-issues prefetch on a ticker until a decoded asset lands.
-// A single immediate re-prefetch after a failure can race the prior pass's
-// per-asset inflight-key release (the missing-asset warning is delivered just
-// before resolveChain returns and frees the key) and get collapsed by the
-// singleflight dedup (§17.6) — then dropped. Production never single-shots
-// like that: the demand pipeline retries on its interval and self-heals. This
-// mirrors that, so the test pins "eventually delivers", not a one-shot race.
 func retryDecoded(t *testing.T, m *Manager, prefetch func()) DecodedAsset {
 	t.Helper()
 	deadline := time.After(managerWait)
@@ -193,9 +187,6 @@ func waitWarning(t *testing.T, m *Manager) Warning {
 }
 
 // TestManagerWebPOnlyServerOneProbePerAsset is integration scenario §15.1:
-// fallbacks OFF against a server shipping the preferred format — probe count
-// must equal asset count exactly. (Payloads carry PNG magic so the test
-// runs without CGO; the manager sniffs payloads, never extensions.)
 func TestManagerWebPOnlyServerOneProbePerAsset(t *testing.T) {
 	sprite := encodePNG(t, 8, 8, color.RGBA{G: 255, A: 255})
 	cs := newCountingServer(t, map[string][]byte{
@@ -299,7 +290,6 @@ func TestManagerLearnedWarmStart(t *testing.T) {
 // so resolve must consult T1 by base — a resident texture costs zero probes
 // and zero decodes (spec §8: T1 hit → done). This was once checked per
 // candidate URL, extension included, which can never match the store key:
-// every re-Prefetch of a visible asset silently re-decoded and re-uploaded.
 func TestManagerT1ShortCircuitUsesBaseKey(t *testing.T) {
 	icon := encodePNG(t, 4, 4, color.White)
 	cs := newCountingServer(t, map[string][]byte{
@@ -437,11 +427,6 @@ func TestManagerPrefetchChain(t *testing.T) {
 }
 
 // TestManagerAbsentAssetKeepsLearned pins the seed-survival fix (live log:
-// one missing OPTIONAL emotions/buttonN_on wiped the manifest-seeded png for
-// the whole host, and every later button probed the webp default and missed
-// art that exists): when the stale-learned re-probe finds NOTHING in any
-// format — the asset is simply absent — the learned format is restored, so
-// the NEXT asset of the class still resolves learned-first in one probe.
 func TestManagerAbsentAssetKeepsLearned(t *testing.T) {
 	art := encodePNG(t, 8, 8, color.RGBA{G: 180, A: 255})
 	cs := newCountingServer(t, map[string][]byte{

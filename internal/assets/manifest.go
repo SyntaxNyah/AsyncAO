@@ -11,8 +11,6 @@ import (
 // Server asset manifest, webAO-compatible: every server ships its own
 // "extensions.json" at the asset origin (e.g. <origin>/extensions.json)
 // declaring the extension order it serves per asset class. Reference:
-// webAO src/client/fetchLists.ts fetchExtensions.
-//
 // Seeding the per-host learned table from it turns the cold-load probe
 // storm into exactly one fetch per asset: the learned slot answers first,
 // and the user's configured per-type order still covers servers without a
@@ -143,7 +141,6 @@ func (m *Manifest) manifestSeedTargets() []struct {
 // for host, in the order the manifest lists them: the first is what gets probed,
 // the rest are the recovery ladder for when it 404s. Returns how many types
 // were seeded. Call Resolver.WarmFromPrefs afterwards to publish.
-//
 // ALL of them, not just the first. A server declaring
 // "emotions_extensions": [".png", ".webp"] is telling us its emote-button fleet
 // is genuinely mixed — umineko.online ships ~560 PNG-button and ~490

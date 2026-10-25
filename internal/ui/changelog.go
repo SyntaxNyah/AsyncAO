@@ -110,9 +110,6 @@ func changelogHeaderMatches(title, cur string) bool {
 
 // markChangelogSeen records the current build version as seen — called when the
 // user opens the What's New screen.
-// Nothing displays "unread" any more. The green dot this stamp used to drive rode
-// the Help title in the menu bar, where it read as a defect in the strip rather
-// than as a notification (it overlapped the title's last glyph) and nagged about
 func (a *App) markChangelogSeen() {
 	{
 		pv1 := strings.TrimSpace(update.Version)

@@ -35,8 +35,6 @@ func (a *App) previewIsDetached() bool {
 // toggleDetachPreview pops the sprite-preview box out into its own OS window,
 // or closes that window and re-attaches to the in-app box — requirement 1
 // (v1.93.0 preview-window-wire). A no-op with nothing currently previewed:
-// detaching an empty box would open a window nothing could ever fill (only
-// feedDetachedPreviewFrame, gated on previewBase, ever calls SetFrame).
 func (a *App) toggleDetachPreview() {
 	if a.budget.previewBase == "" {
 		return

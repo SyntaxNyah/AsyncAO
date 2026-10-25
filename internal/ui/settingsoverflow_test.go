@@ -37,9 +37,6 @@ const settingsHelpLineRunes = 150
 // TestNoSettingsRowLabelEscapesTheCard is the overflow census. At a NARROW card —
 // the settings minimum, which is what a small window resolves to — every label the
 // settings form draws must fit inside the card once the row-label limit is armed.
-// It also asserts the bug was real and broad: with the limit disarmed (the pre-fix
-// state) a substantial number of these labels overflow. Without that half, a fix
-// that quietly stopped arming the limit would still pass.
 func TestNoSettingsRowLabelEscapesTheCard(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()

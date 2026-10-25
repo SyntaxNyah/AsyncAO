@@ -181,10 +181,6 @@ func (c *Courtroom) activeFrameGroup() int {
 
 // NotifyFrameShown is called by the render side each time the SPEAKER layer draws
 // a new frame, with src the frame index in the SENDER's raw (un-decimated) space.
-// It fires every not-yet-fired trigger in the active group up to and including src
-// (a decimated jump can skip past several source frames in one step, so the cursor
-// sweeps the whole [cursor, src] range). Game-thread only, like the other Notify*
-// callbacks; a message with no frame triggers returns on the first guard.
 func (c *Courtroom) NotifyFrameShown(src int) {
 	if c.frameTriggers.total == 0 {
 		return

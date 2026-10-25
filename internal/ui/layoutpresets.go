@@ -52,7 +52,6 @@ func (a *App) currentLayoutProfileLabel() string {
 // cycleLayoutProfile advances the banner Profile chip to the next saved profile
 // (wrapping) and applies it through the EXISTING applyProfile — the banner is a
 // shortcut for the Settings → Theme "Layout profiles" list, not a second system.
-// No-op when no profiles exist. Editor path only (never a per-frame draw).
 func (a *App) cycleLayoutProfile() {
 	names := a.sortedLayoutProfileNames()
 	if len(names) == 0 {

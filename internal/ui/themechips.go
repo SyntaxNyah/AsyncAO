@@ -85,10 +85,6 @@ func themedSwitchAreaMusic(view int) int {
 
 // themedViewIndex is where view sits in a panel's cycle, or 0 — the panel's own
 // default — for anything else.
-// "Anything else" is routine, not defensive: logTab is ONE field shared by both
-// themed panels, so while the user is on Notes the list panel is showing Music
-// (its switch's default branch) and while the user is on Players the log panel is
-// showing IC (likewise). Index 0 is the truth in both cases.
 func themedViewIndex(views []themedChipSpec, view int) int {
 	for i := range views {
 		if views[i].tab == view {
@@ -173,9 +169,6 @@ func themedListStrip(lay *themeLayoutCache) []themedChipSpec {
 }
 
 // themedStripBody is the panel body left for the list UNDER a strip of n chips.
-// n == 0 (a panel too small for even one chip) hands the whole body back rather
-// than reserving room for a strip that did not draw — and keeps `inner.H` from
-// going negative on a panel barely taller than the strip.
 func themedStripBody(body sdl.Rect, n int32) sdl.Rect {
 	if n <= 0 {
 		return body

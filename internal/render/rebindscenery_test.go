@@ -8,16 +8,6 @@ import (
 )
 
 // TestRebindSceneryForcesNewBaseAcrossSwitch pins the multi-tab background fix:
-// the SHARED viewport's scenery layers (bg + desk) are sticky (syncAnimSticky
-// keeps the last good scenery until the incoming base is resident), which is the
-// right hold WITHIN one session but LEAKS across a tab switch — the viewport would
-// keep painting the previous tab's background under the newly-activated tab whose
-// own bg is not yet resident (the "both tabs show the same background" bug).
-// RebindScenery, called at the room-rebuild seam (buildRoom / pinToSplit), force-
-// binds the layers to the new scene's bases BYPASSING the residency gate, so the
-// swap shows the CORRECT new base at once. This test reproduces the leak (a plain
-// Update with a non-resident new bg holds the old base) and proves the rebind
-// fixes it.
 func TestRebindSceneryForcesNewBaseAcrossSwitch(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
@@ -47,8 +37,6 @@ func TestRebindSceneryForcesNewBaseAcrossSwitch(t *testing.T) {
 
 	// Switch to tab B whose bg is NOT resident (it was evicted / never warmed while
 	// backgrounded — the common case). A plain Update alone can't swap the scenery:
-	// syncAnimSticky holds the OLD base because the new one isn't resident. This is
-	// exactly the wrong-background-shown state the bug reports.
 	sceneB := &courtroom.Scene{BackgroundBase: bgB, DeskBase: deskB}
 	v.Update(sceneB, 16*time.Millisecond)
 	if v.bgAnim.base != bgA {

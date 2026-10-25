@@ -1,9 +1,6 @@
 package ui
 
 // THE FONT RAIL (v1.90.0 W7b) — docs/wip/THEME-EDITOR-DESIGN.md §3.1's panel list.
-// THE FILE COPY IS NOT AN OP, and that asymmetry is deliberate. Undo restores the
-// [fonts] ROW; the .ttf stays in the theme's fonts\ folder. A font file nobody
-// references is inert — it is not read, not opened and not shipped by anything but an
 
 import (
 	"os"
@@ -158,7 +155,6 @@ func (a *App) drawEditorFontFamilies(r sdl.Rect, y int32) int32 {
 
 // editorFontCycler is a `< family >` control over the families this theme declares,
 // with "(none)" first. Returns the (possibly changed) family.
-//
 // It shares pickAnchorNone's spelling of "nothing" with the inspector's own pickers so
 // the two surfaces do not invent two words for one state.
 func (a *App) editorFontCycler(r sdl.Rect, cur string, names []string) string {
@@ -330,10 +326,6 @@ func (a *App) pollEditorFont() {
 }
 
 // editorThemeDir is the folder this document lives in, or the reason there is none.
-// It is editorSidecarPath's directory, deliberately: the ONE authority on "where this
-// theme lives and is it ours to write" already refuses a bundled or read-only theme
-// with a reason, and a face copied beside a sidecar we may not write would be a file
-// dropped into somebody else's folder.
 func (a *App) editorThemeDir() (string, error) {
 	p, err := a.editorSidecarPath()
 	if err != nil {
@@ -362,7 +354,6 @@ func fontFamilyFromFile(base string) string {
 // copyFileAtomically writes src's bytes to dest via a temp file beside it, then
 // renames — the same shape writeFileAtomically uses, so a crash mid-copy leaves the
 // theme without the face rather than with half of one.
-//
 // GOROUTINE-ONLY, and it touches nothing but its two arguments.
 func copyFileAtomically(src, dest string) error {
 	b, err := os.ReadFile(src)

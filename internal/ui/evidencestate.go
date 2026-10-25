@@ -18,8 +18,6 @@ type evidenceState struct {
 	evidScroll  int32
 	// evidDescScroll (Issue #15) scrolls the inspector's description text
 	// instead of forcing the whole panel to be resized to read it.
-	// evidDescScrollIdx remembers which item it belongs to so switching the
-	// selection resets the scroll rather than carrying over a stale offset.
 	evidDescScroll    int32
 	evidDescScrollIdx int
 	evidAsk           []time.Time // thumbnail demand pacing, parallel to Evidence

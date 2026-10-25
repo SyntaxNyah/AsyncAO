@@ -12,11 +12,6 @@ import (
 // internal/config sits BELOW internal/netproxy and a preference package that
 // imported a network package would invert the layering. main.go converts one to
 // the other with a plain cast.
-// So a divergence is silent and total: adding a mode to one enum and not the
-// other would make a user's chosen setting resolve to a different one — most
-// dangerously, "never use a proxy" resolving to "use the system's", which is the
-// exact escape hatch a user reaches for when the detected proxy cannot carry AO
-// traffic. internal/ui imports both, so the pin lives here.
 func TestProxyModeEnumsAgree(t *testing.T) {
 	for _, tc := range []struct {
 		name string

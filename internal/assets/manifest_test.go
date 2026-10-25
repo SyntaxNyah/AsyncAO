@@ -41,7 +41,6 @@ func TestManifestParseSanitizes(t *testing.T) {
 // live mirrors ship png misc art beside webp emotes), backgrounds cover desk
 // overlays, empty classes seed nothing, and the learned entry keeps EVERY
 // declared extension in the manifest's own order.
-//
 // The full list, not just the first: a server declaring two formats for a class
 // serves both, and truncating to exts[0] left the other half of its fleet behind
 // a single candidate with no way to fall back (see learnedTable / promoteExt).
@@ -61,7 +60,6 @@ func TestManifestSeedLearned(t *testing.T) {
 	// Desks follow the manifest by default (deliberate default flip, user order
 	// 2026-08-08 — desks auto-detect like every other class), so the background
 	// class seeds background AND desk: charicon(1) + emote(sprite, bubble = 2)
-	// + background(bg, desk = 2) = 5; Misc unseeded by design.
 	if n := m.SeedLearned(prefs, host); n != 5 {
 		t.Fatalf("seeded %d, want 5 (desks follow by default, misc never)", n)
 	}

@@ -22,8 +22,6 @@ const bundleGateWait = 10 * time.Second
 
 // dropRig is an App a drop can be delivered to, plus a themes root that is a
 // temp directory rather than the developer's real AppData.
-// THE ROOT IS A PARAMETER, which is the whole reason bundleDrop is split out of
-// handleThemeBundleDrop: a gate that had to go through config.UserThemesDir()
 func dropRig(t *testing.T) (*App, string) {
 	t.Helper()
 	return &App{env: env{}}, filepath.Join(t.TempDir(), "themes")
@@ -273,8 +271,6 @@ func TestAnImportNeverRepointsTheThemeRoot(t *testing.T) {
 
 // TestEveryDegradeReachesASurface is the gate that had to exist before the
 // metadata ruling could.
-// It drives buildThemeReport and noteThemeReport, which is the shipped pair, and
-// then asserts on a.warnLine — the surface a human actually reads.
 func TestEveryDegradeReachesASurface(t *testing.T) {
 	// A sidecar carrying one of each input class: a metadata degrade (W8), and an
 	// element the reader skipped (the forward-compat path, W1).
@@ -434,7 +430,6 @@ func TestTheDropRouterAndTheExtractorAgreeOnWhatABundleIs(t *testing.T) {
 
 // stageExportable opens the editor over a real theme FOLDER, saves once so the
 // folder holds the document that is about to be bundled, and returns the folder.
-//
 // The save is not scaffolding: Share bundles the FILES ON DISK, so a gate that
 // exported an unsaved document would be measuring an empty folder.
 func stageExportable(t *testing.T, a *App) string {

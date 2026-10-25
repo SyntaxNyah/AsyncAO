@@ -1,9 +1,6 @@
 package ui
 
 // Arrow-key nudging in the two layout editors.
-// Everything a nudge writes goes through the SAME state a mouse drag's release writes,
-// so a nudged widget persists, undoes with the editor's existing Ctrl+Z, and is put back
-// by right-click reset and "Reset all" with no extra bookkeeping.
 
 import (
 	"github.com/veandco/go-sdl2/sdl"
@@ -26,9 +23,6 @@ const (
 
 // editorDrawSiteRuns reports whether an armed layout editor's own draw actually REACHES
 // the screen this frame.
-// The server-tab strip's paint-site predicate needs exactly this question answered
-// (tabStripPaintsUnderEditor, chrometop.go), which is why it delegates here instead of
-// carrying a second copy of the conjunction.
 func (a *App) editorDrawSiteRuns() bool {
 	return a.layoutEditorArmed() && a.screen == ScreenCourtroom &&
 		a.link.room != nil && a.link.sess != nil && !a.theaterOn && !a.screenDispatchPreempted()
@@ -64,9 +58,6 @@ func nudgeKeyDir(key sdl.Keycode) (dx, dy int, ok bool) {
 
 // takeNudgeKey reads this frame's nudge off the TWO channels an armed editor owns and
 // CONSUMES it.
-// Consumes whichever channel it read even when the nudge then turns out to be a no-op
-// (nothing selected, or the widget is already against a stop). That is the same promise
-// editorUndoChord makes for Ctrl+Z/Y: while an editor is armed, a key it owns can never
 func takeNudgeKey(c *Ctx) (dx, dy int, coarse, ok bool) {
 	if dx, dy, ok = nudgeKeyDir(c.hotkey); ok {
 		c.hotkey = 0

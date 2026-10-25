@@ -3,9 +3,6 @@ package theme
 // The sidecar READER. It walks the lossless document (never a second parser),
 // so classification here is the same classification the write path uses and the
 // same one ParseINI uses — the parity FuzzINIDocRoundTrip pins.
-// NoteCap is the one cap that is NOT a load cap. It bounds the import REPORT,
-// so every degrade/skip site absorbs its error (`_ = s.note(...)`) and keeps
-// loading: a theme is never refused for having too many things to say about it.
 
 import (
 	"fmt"
@@ -44,7 +41,6 @@ const (
 
 // ParseSidecar reads asyncao_theme.ini content into a Sidecar, keeping the
 // lossless document for the write path.
-//
 // COLD PATH ONLY (hard rule 2): it allocates freely and must run on the
 // theme-apply goroutine, never on a draw, decode or resolver path.
 func ParseSidecar(src []byte) (*Sidecar, error) {
@@ -70,9 +66,6 @@ func ParseSidecar(src []byte) (*Sidecar, error) {
 		return nil, err
 	}
 	// THE METADATA DEGRADE, after the sections and before the caller sees the model:
-	// an over-long credit shortens the STRING and notes it rather than refusing the
-	// theme (metatext.go). It runs here, once, over the table both directions share,
-	// so no reader of a metadata field ever has to remember to bound it.
 	s.degradeMeta()
 	return s, nil
 }
@@ -80,7 +73,6 @@ func ParseSidecar(src []byte) (*Sidecar, error) {
 // LoadSidecar reads one asyncao_theme.ini. A missing file is NOT an error: it
 // is the stock-AO2-theme case, and it returns (nil, nil) so callers get the
 // nil-safe Sidecar accessors instead of a branch.
-//
 // BLOCKING — goroutine only (hard rule 2).
 func LoadSidecar(path string) (*Sidecar, error) {
 	f, err := os.Open(path)
@@ -121,9 +113,6 @@ func LoadSidecarIn(dirs []string) (*Sidecar, string, error) {
 
 // docSections is the ordered section view of a document: section names in
 // DECLARATION order, each with its unique keys in declaration order.
-// Order is load-bearing twice over: element z-ties break on declaration index,
-// and a file whose element order depended on Go's map iteration would render
-// differently on every launch.
 type docSections struct {
 	names []string
 	keys  map[string][]string
@@ -208,9 +197,6 @@ func (s *Sidecar) readSections(d *INIDoc, secs docSections) error {
 // still correct. Refusing here would make §7.1 ("a reader NEVER refuses to
 // load because of format") unenforceable, because §7.4's unknown-kind skip —
 // the forward-compat path itself — notes once per element.
-// The error return is kept so the drop is VISIBLE at each call site rather
-// than hidden inside this function; a site that legitimately refuses uses a
-// load cap (ElementCap, PreservedCap, …), never this one.
 func (s *Sidecar) note(format string, args ...any) error {
 	if len(s.notes) >= NoteCap {
 		return fmt.Errorf("%w: more than %d problems in one sidecar", ErrSidecarCap, NoteCap)
@@ -523,9 +509,6 @@ func (s *Sidecar) readPane(d *INIDoc, name string, keys []string) error {
 
 // resolvePaneHosts enforces the two structural pane rules AFTER every pane is
 // read, because both are cross-pane properties:
-// A violation drops the HOST, never the theme: the rest of the pane is a
-// perfectly good split, and refusing to load would punish the reader of a file
-// the author can no longer fix.
 func (s *Sidecar) resolvePaneHosts() error {
 	claimed := make(map[string]string, PaneCap*PaneHostCap)
 	for i := range s.Panes {
@@ -809,10 +792,6 @@ func (s *Sidecar) plainText(section, key, raw string) (string, error) {
 
 // metaFree / metaPlain are the free-text decode / plainText WITHOUT the length
 // refusal, for the metadata class alone. The bound is not skipped, it is MOVED:
-// degradeMeta applies it once, at the end of the parse, over the one table both
-// directions share (metatext.go). Splitting it that way is what lets the rule be stated in a
-// single place instead of at a dozen assignment sites that each have to remember
-// which of the two caps they are under.
 func metaFree(raw string) string  { return decodeFreeText(raw) }
 func metaPlain(raw string) string { return strings.TrimSpace(raw) }
 
@@ -874,8 +853,6 @@ func (s *Sidecar) genParams(section, raw string) ([GenParamCap]KV, error) {
 // conditionOf parses "always | speaking | pos:X | char:X | side:X | shout:X".
 // An unknown axis degrades to always-visible: an element a future axis would
 // have hidden is better shown than lost.
-// It returns the PROBLEM as text rather than noting it, so the writer can share
-// the parse without inventing notes on a save.
 func conditionOf(raw string) (Condition, string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

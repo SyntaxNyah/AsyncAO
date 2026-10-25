@@ -8,8 +8,6 @@ import (
 // configured with, so they assert INVARIANTS rather than values — a dev box, a
 // CI runner and a corporate laptop all give different answers and all three must
 // be handled without a crash.
-// The parsing and matching that turn these readings into a decision are covered
-// by the platform-neutral tests, which is where the logic deliberately lives:
 
 // TestWinhttpIEConfigDoesNotFault is the load-bearing one. It exercises the
 // hand-rolled struct layout, the System32-only DLL load, the UTF-16 walk and the
@@ -121,9 +119,6 @@ func TestAutoDetectAloneDoesNotFailClosed(t *testing.T) {
 }
 
 // TestWinhttpProxyForURLSeparatesDirectFromFailed pins the three-way outcome.
-// Collapsing "resolved: go direct" into "could not resolve" is precisely how a
-// fail-closed client breaks a working machine; collapsing it the other way is
-// how a leaky one ignores a real proxy.
 func TestWinhttpProxyForURLSeparatesDirectFromFailed(t *testing.T) {
 	cfg, ok := winhttpIEConfig()
 	if !ok {

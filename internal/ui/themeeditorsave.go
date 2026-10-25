@@ -1,9 +1,6 @@
 package ui
 
 // SAVING THE DOCUMENT (v1.90.0 W7a) — docs/wip/THEME-EDITOR-DESIGN.md §3.3.
-// OFF THE RENDER THREAD (hard rule 2). Serialising is cheap and pure and happens on
-// the render thread so the guard's refusal can be shown immediately; the WRITE is a
-// goroutine. Exactly one can be in flight — the job pointer is the flag — and its
 
 import (
 	"errors"
@@ -34,7 +31,6 @@ type editSaveJob struct {
 }
 
 // editorSave serialises the document and starts the write.
-//
 // Every refusal below is a CHIP, never a silent no-op: a Save button that sometimes
 // does nothing is worse than one that says why it cannot.
 func (a *App) editorSave() {
@@ -64,9 +60,6 @@ func (a *App) editorSave() {
 
 // offerCopyOnSaveRefusal turns "you may not write this theme" into something the
 // user can press (v1.90.0 W8, design §Q5).
-// PRESS-AGAIN RATHER THAN A MODAL: the design allows exactly two modals in the
-// whole editor and W7 spends neither, so a third here would be the modal misery
-// requirement 10 forbids. It is the same idiom requestEditorExit and the import
 func (a *App) offerCopyOnSaveRefusal(err error) {
 	if !errors.Is(err, errThemeNotYours) {
 		a.te.note(err.Error())
@@ -121,9 +114,6 @@ func (a *App) landEditorSave(err error) {
 
 // applyThemeAfterSaveIfTypeChanged kicks a theme apply when — and ONLY when — the
 // saved file's TYPE tables differ from the ones the faces on screen were resolved from.
-// AFTER THE WRITE rather than at the edit, and that ordering is also load-bearing: an
-// apply re-reads the file, so kicking one on an unsaved binding would resolve the OLD
-// file and look like the edit had been thrown away. reclaimThemeDoc re-installs the
 func (a *App) applyThemeAfterSaveIfTypeChanged() {
 	if a.te == nil || a.te.doc == nil {
 		return
@@ -138,10 +128,6 @@ func (a *App) applyThemeAfterSaveIfTypeChanged() {
 
 // editorSidecarPath resolves where this theme's asyncao_theme.ini belongs, or the
 // reason there is nowhere to put it.
-// THE CATALOG IS THE AUTHORITY, not config.UserThemesDir directly: the catalog is
-// what already answers "where did this theme come from and is it ours" for the
-// settings list, and asking it here is what makes "the editor never writes outside
-// the write root" a property of one function rather than of every caller.
 func (a *App) editorSidecarPath() (string, error) {
 	name := a.te.doc.name
 	if name == "" {
@@ -168,7 +154,6 @@ func (a *App) editorSidecarPath() (string, error) {
 }
 
 // writeFileAtomically replaces path with b: temp file beside it, then rename.
-//
 // GOROUTINE-ONLY, and it touches nothing but its two arguments — no App, no
 // document, no preference — which is what makes the race detector's answer here
 // trivial rather than argued.

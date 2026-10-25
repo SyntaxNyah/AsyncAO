@@ -141,8 +141,6 @@ func (classic1 *classicState) ensureClassicOv() {
 
 // fracPx resolves one stored window-fraction against an extent, rounding to the NEAREST
 // pixel instead of truncating.
-// Rounding is also the fix at the right end: it leaves what is written to disk alone (a
-// drag onto 360 of 1000 px still persists 0.36) and only makes reading it back exact.
 func fracPx(f float64, extent int32) int32 {
 	return int32(math.Floor(f*float64(extent) + 0.5))
 }
@@ -158,9 +156,6 @@ func fracToRect(f [4]float64, w, h int32) sdl.Rect {
 }
 
 // rectToFrac is the inverse — screen pixels to window fractions for persistence.
-// Deliberately the plain quotient: the stored value is the number a user (or a preset,
-// or a test) reads, so a drag that lands on 360 of 1000 px must persist 0.36 and nothing
-// cleverer. Exactness is fracPx's job, at the other end.
 func rectToFrac(r sdl.Rect, w, h int32) [4]float64 {
 	if w <= 0 || h <= 0 {
 		return [4]float64{}
@@ -423,10 +418,6 @@ func pickResizeSlot(reg map[string]slotInfo, keys []string, hoverKey string, mx,
 // classicHandles returns the 8 resize handles (4 corners + 4 edge midpoints) of r
 // so the editor can paint them — making "drag an edge to resize one dimension"
 // discoverable.
-// SHARED WITH THE DESIGN PATH since W6: the themed editor probes and paints these same
-// squares (edittarget.go handleGripAt / handleGripMask), which is what closed the
-// recon's PARTIAL — index handleBottomRight is bit-identical to the single corner grip
-// that editor used to have, so the generalization is a superset of it.
 func classicHandles(r sdl.Rect) [handleCount]sdl.Rect {
 	const hp = layoutHandlePx
 	cx := r.X + r.W/2 - hp/2
@@ -517,7 +508,6 @@ func controlsBlockOrigin(r sdl.Rect, ok bool, w, defY int32) (clusterX, blockY, 
 // viewportOverridden reports whether the user has dragged/resized the stage in
 // the classic editor. The View knob and the edge divider then defer to that
 // override (it would otherwise change vpPct silently, which the override shadows)
-// until the box is reset.
 func (classic1 *classicState) viewportOverridden() bool {
 	_, ok := classic1.classicOv[slotViewport]
 	return ok
@@ -701,7 +691,6 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// Hover: the stack of boxes under the cursor, SMALLEST area first (so a small box on
 	// a big one is grabbable), with Tab cycling which is armed — now that there are many
 	// slots they really can overlap (drag the control block over the emote grid, etc.).
-	// The pick index resets whenever the stack under the cursor changes.
 	hoverKey := ""
 	var stack []string
 	// The selected slot's key, resolved once: every arm below that used to read the
@@ -765,7 +754,6 @@ func (a *App) drawClassicEditor(w, h int32) {
 		// button — is almost ALL edge, so a plain drag kept resizing it instead of
 		// moving it (playtest: dragging a small button resized it instead of moving it
 		// unless it was grown first). Hold Alt to grab-and-move anything regardless of size.
-		// Shift stays pixel-precise, so Alt+Shift = a precise move.
 		resizeKey, resizeEdges := "", uint8(0)
 		if sdl.GetModState()&sdl.KMOD_ALT == 0 {
 			resizeKey, resizeEdges = pickResizeSlot(a.classic.slotReg, keys, hoverKey, c.mouseX, c.mouseY, layoutHandlePx)

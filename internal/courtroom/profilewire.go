@@ -3,13 +3,6 @@ package courtroom
 import "unicode/utf8"
 
 // WireProfile is the small, cross-client slice of a character profile (#101 slice 2)
-// that travels between AsyncAO clients: just the identity glance — pronouns and a
-// one-line tagline. It rides the SAME invisible zero-width channel as the sprite style
-// (a marker appended to an IC message), so standard AO2/webAO clients render nothing
-// and are unaffected. The larger profile fields (bio, art image, theme song) stay
-// local: they're too big for the message channel and the roster card doesn't show art
-// yet. The card's title uses the speaker's live showname, so the name isn't sent here.
-//
 // Like the sprite style it is transmitted ONLY on change (a profile rarely changes), so
 // the invisible run rides at most the speaker's first post-join message, not every line.
 type WireProfile struct {
@@ -23,10 +16,6 @@ const (
 	// blip on each character, and the payload also eats into the server's IC
 	// message-length limit (a tsuserver default is ~256 chars). The codec packs 3 bits
 	// per invisible rune, so the worst case here (16+24 fields + ~4 overhead = 44 bytes)
-	// is ~117 invisible runes on ONE message; send-on-change means it rides at most a
-	// player's first post-join message, not every line. The local profile fields can be
-	// longer — only this subset transmits, clamped. (Tightening these shrinks the blip
-	// and the length cost; loosening them grows both.)
 	wireProfilePronounsMax = 16
 	wireProfileTagMax      = 24
 

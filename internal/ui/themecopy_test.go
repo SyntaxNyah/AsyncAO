@@ -347,9 +347,6 @@ func TestTheEditorOnlyOpensItselfForTheApplyThatArmedIt(t *testing.T) {
 
 // TestASaveRefusalOffersTheCopyAndTheSecondPressTakesIt is the wave's worst path,
 // closed: a bundled theme opened, took a session's work, and refused to save.
-// It drives the real buttons — editorSave twice — and asserts on the FILE the
-// second press produces, on the DOCUMENT following the user into the copy, and on
-// the provenance surviving the save that lands on top of it.
 func TestASaveRefusalOffersTheCopyAndTheSecondPressTakesIt(t *testing.T) {
 	a, cleanup, _ := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()

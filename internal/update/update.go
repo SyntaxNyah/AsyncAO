@@ -2,12 +2,6 @@
 // GitHub Releases API for the latest published release, compares its semver tag
 // to the running build, and — when newer — returns the release together with
 // its patch notes (the release body) and the downloadable asset URL.
-// The package is pure Go (no SDL/CGO) and does EXACTLY ONE network GET per
-// Check — there is no polling or ticker here. The caller fires Check once, on
-// its own goroutine, AFTER the window is up, so the update check adds zero cost
-// to the boot critical path (the self-replace and the "What's New" UI live with
-// the caller; this package only decides "is there a newer build, and what does
-// it say"). See docs/FEATURES.md and the M13 plan.
 package update
 
 import (
@@ -76,9 +70,6 @@ type Release struct {
 const (
 	// sumsAssetName is the release asset the workflow publishes with one
 	// "<sha256>  <filename>" line per binary (see .github/workflows/release.yml).
-	// Its presence turns on authenticity-adjacent verification of the download;
-	// its absence (every release cut before this shipped) leaves the update flow
-	// exactly as it was — an unverified but integrity-capped download.
 	sumsAssetName = "SHA256SUMS.txt"
 	// maxSumsBytes caps the SHA256SUMS download (rule §17.4). A sums manifest is
 	// a handful of 64-hex-plus-filename lines — kilobytes at most — so this is

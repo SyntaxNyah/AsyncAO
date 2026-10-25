@@ -140,10 +140,6 @@ func TestTwoTabsOOCLogsGoToSeparateFiles(t *testing.T) {
 	t.Cleanup(a.CloseTranscript)
 
 	// Open each tab's writer EXPLICITLY, independent of the OOC seam under test:
-	// transcriptFor itself is unconditional (the DetailedLogOn gate lives in
-	// logDetailed/logDetailedOOC, not here), so an unwritable exe dir skips
-	// cleanly here and a BROKEN OOC seam instead shows up as a content mismatch
-	// below — never a false skip that would hide the regression.
 	before := transcriptLogFiles(t, server)
 	if a.transcriptFor(server, a.srvMeta.logSession) == nil {
 		t.Skip("transcript writers unavailable in this environment (no writable exe dir)")

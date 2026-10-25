@@ -695,15 +695,10 @@ func TestAceAttorney2xCensusNotesTabIsReachable(t *testing.T) {
 
 // censusShippedOmissions are the layout keys that real, in-the-wild copies of
 // AO2 themes DO NOT declare, so the AO2 stock backstop has to supply them.
-// Measured, not guessed: both themes in the user's Skrapegropen pack —
-// `AceAttorney 2x` (944x600) and `CCBig VA-11 HALL-A` (1262x700) — declare 73 of
-// the 74 courtroom layout keys, and the single key each omits is this one. It is
 var censusShippedOmissions = []string{"slide_enable"}
 
 // TestAO2BackstopNeverLandsOnAnAuthoredRect is the root-cause gate for the
 // reported "the Slide checkbox is in the wrong place" defect.
-// This drives the fixture with each shipped omission deleted BEFORE the backstop
-// runs, which is the same code path an older theme copy takes.
 func TestAO2BackstopNeverLandsOnAnAuthoredRect(t *testing.T) {
 	th := loadAceAttorney2x(t)
 	for _, omit := range censusShippedOmissions {
@@ -753,8 +748,6 @@ func TestAO2BackstopNeverLandsOnAnAuthoredRect(t *testing.T) {
 
 // themeCorpusEnv points at a directory of real AO2 themes (the folder CONTAINING
 // `themes/`, which is what theme.Load takes). Env-gated rather than checked in:
-// the corpus is ~80 third-party theme packs and hundreds of megabytes of art, and
-// nobody's machine has it at the same path. Set it before a release audit:
 const themeCorpusEnv = "ASYNCAO_THEME_CORPUS"
 
 // TestAO2BackstopAcrossTheThemeCorpus is the blast-radius measurement for the

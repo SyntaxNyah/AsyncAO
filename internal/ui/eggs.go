@@ -1,9 +1,6 @@
 package ui
 
 // Creator easter eggs in the IC chatbox.
-// The scan is once per message (creatorEgg, a pure function, table-tested) and
-// cached on the eggs component via refresh's compare-and-store, so a settled frame
-// costs one string compare — not a rescan and not an allocation. The per-frame
 
 import (
 	"math"
@@ -106,8 +103,6 @@ func creatorEgg(text string) uint8 {
 
 // eggWordPresent reports whether word appears in low (already lower-cased) as a
 // WHOLE WORD — i.e. with a non-letter, non-digit on both sides or a string edge.
-// Allocation-free: it indexes the string the caller already lower-cased, and the
-// loop carries no closure.
 func eggWordPresent(low, word string) bool {
 	if word == "" {
 		return false
@@ -434,8 +429,6 @@ func (a *App) drawEggSweep(ring, win sdl.Rect, t float64) {
 	// Walk the segment [start, start+length) around the perimeter, emitting one
 	// clamped fill per edge it touches. perimSegment maps a 1-D perimeter span to
 	// an edge-aligned rect; wrapping is handled by splitting at the perimeter seam.
-	// A plain loop (no closure) keeps the draw allocation-free — a capturing
-	// closure could tempt escape analysis onto the heap.
 	for length > 0 {
 		r, consumed := perimSegment(ring, start, length, th)
 		if consumed <= 0 {
@@ -763,9 +756,6 @@ func eggShardTaper(s int32) float64 {
 }
 
 // eggShardGlint returns a 0..1 flash for a shard whose cycle is offset by phase:
-// a cosine hump over the leading eggCrystalGlintFrac of each period, zero for the
-// rest. Sharing one clock with a per-shard offset is what makes the field twinkle
-// instead of strobing as a unit.
 func eggShardGlint(t, phase float64) float64 {
 	u := math.Mod(t/eggCrystalGlintSecs+phase, 1)
 	if u >= eggCrystalGlintFrac {

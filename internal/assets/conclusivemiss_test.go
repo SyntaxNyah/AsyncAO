@@ -33,15 +33,6 @@ func settleMiss(t *testing.T, rig *testRig, prefetch func()) {
 }
 
 // TestConclusiveMissStopsTheProbeButNotTheWarning is the field defect, reduced:
-// a grid cell whose art the server does not have is re-demanded every
-// charIconRetryInterval for as long as it is on screen (ui/app.go demandAsset),
-// because that loop only ever terminated on the texture becoming resident and a
-// 404'd base never does. On a roster where most characters ship no char_icon and
-// no emotions/button<N>_off art that is a 404 leaving the client every couple of
-// seconds, indefinitely.
-// Both halves are load-bearing and they pull in opposite directions. The server
-// must see the probes STOP — that is the whole fix. The warning must keep firing
-// — Courtroom.NotifyAssetMissing rides that lane to skip a preanimation that can
 func TestConclusiveMissStopsTheProbeButNotTheWarning(t *testing.T) {
 	cs := newCountingServer(t, nil) // serves nothing: every probe 404s
 	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
@@ -164,9 +155,6 @@ func TestRehearsalMissesAreNotRemembered(t *testing.T) {
 
 // TestFormatPreferenceChangeRetiresTheMemory pins what "exhausted" is relative
 // to, and it is not the base alone.
-// The scenario is TestManagerPNGOnlyServerWarnsThenFallbacksRecover's, which is
-// how the hole was found: a PNG-only server with fallbacks off warns, then
-// turning fallbacks on loads it without a restart.
 func TestFormatPreferenceChangeRetiresTheMemory(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -210,7 +198,6 @@ func TestFormatPreferenceChangeRetiresTheMemory(t *testing.T) {
 
 // TestSourceChangeForgetsRememberedMisses pins the flush where it cannot be
 // skipped: inside the setters themselves.
-//
 // Supplying an asset the server does not have is the entire reason to attach a
 // local pack, and the prefetch gate sits ABOVE the mount layer — so a remembered
 // miss would shadow exactly the files the user just made available, with nothing

@@ -20,8 +20,6 @@ func sfntCovers(t *testing.T, f *sfnt.Font, r rune) bool {
 
 // TestFontCoverageMatrix is the empirical ground truth the broad-Unicode fix rests on,
 // using the SAME sfnt cmap check the renderer's pick uses:
-// Each system font is skipped if not installed (CI / non-Windows), but the embedded
-// assertions always run.
 func TestFontCoverageMatrix(t *testing.T) {
 	const (
 		tifinaghYath = 0x2D5C // ⵜ — from the reported ⵜⵉⴼⴻⵔⴰ
@@ -82,9 +80,6 @@ func TestFontCoverageMatrix(t *testing.T) {
 }
 
 // TestScriptLoadGate pins the cheap byte/rune gate that decides which font tiers load:
-// pure-ASCII trips nothing (the 0-perf invariant), European non-ASCII trips the broad
-// tier but NOT the heavy CJK one, and only an actual Han/Kana/Hangul LETTER (not CJK
-// punctuation) trips CJK. Keeps a stray accent from pulling in ~30 MB of CJK faces.
 func TestScriptLoadGate(t *testing.T) {
 	cases := []struct {
 		text             string

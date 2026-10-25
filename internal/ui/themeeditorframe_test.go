@@ -78,8 +78,6 @@ func TestThemeEditorFrameStaysInsideItsChromeBudget(t *testing.T) {
 
 // TestBackDoesNotOutliveTheRailsThatDrawAfterIt is a crash gate, and it is one a
 // function-level test could not have found.
-// It drives the real button through the real frame, so it also fails if the band is
-// re-spaced out from under it (a miss leaves the editor open, which is the assertion).
 func TestBackDoesNotOutliveTheRailsThatDrawAfterIt(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()

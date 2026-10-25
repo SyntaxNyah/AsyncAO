@@ -151,8 +151,6 @@ type charSelectLayoutCache struct {
 	// themeScalingFactor() — see cellScale.
 	scaleX, scaleY float64
 	// area is the whole scaled canvas. The backdrop blits into precisely this rect:
-	// AO2 resizes ui_char_select_background to the char_select rect and
-	// AOImage::setImage then scales the art into it with Qt::IgnoreAspectRatio
 	// (aoimage.cpp:29-31), so the art's own native size is irrelevant. That is what
 	// makes `alter ego (mobi)` — 576×639 art on a 537×1080 canvas — look right.
 	area sdl.Rect
@@ -207,9 +205,6 @@ func (l *charSelectLayoutCache) cellScale() float64 {
 }
 
 // charSelectThemed reports whether char select draws on the theme's canvas.
-// Every corpus theme that ships any geometry at all declares both keys (courtroom
-// and viewport are the only two rects present in 100% of the corpus), so this
-// costs no real theme its canvas.
 func (a *App) charSelectThemed() bool {
 	if len(a.charSelDesign.r) == 0 || !a.d.Prefs.Load().ThemeLayoutOn {
 		return false

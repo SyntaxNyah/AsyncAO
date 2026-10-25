@@ -18,9 +18,6 @@ import (
 // allocates nothing.
 
 // stageSettledCourtroom builds a headless App whose courtroom is fully settled:
-// a real font-loaded Ctx over a software renderer, a session + room with an
-// idle (typewriter-finished) message, and every stage base resident in the
-// texture store so no miss fires the (map-allocating) scene heal / warm path.
 func stageSettledCourtroom(t testing.TB) (*App, func()) {
 	t.Helper()
 	ren, cleanup := newCaptureHarness(t)
@@ -157,9 +154,6 @@ func TestDrawCourtroomThemeFontsZeroAlloc(t *testing.T) {
 
 // stageThemedCourtroom is stageSettledCourtroom plus the theme geometry that
 // makes screens.go dispatch to drawCourtroomThemed instead of the classic path.
-// The classic gates never reach that function: their fixture leaves themeRects
-// empty, so themeLayout() returns lay.valid=false and drawCourtroom takes the
-// classic branch — which is exactly how the themed composite shipped ungated.
 func stageThemedCourtroom(t testing.TB) (*App, func()) {
 	t.Helper()
 	a, cleanup := stageSettledCourtroom(t)

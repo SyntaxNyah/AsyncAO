@@ -461,9 +461,6 @@ func TestMountOriginIgnoresEnabledFlag(t *testing.T) {
 
 // TestDemoImportUnderMountsWarnsPositively pins that importing a .demo when mounts
 // are configured (a) resolves against the local base (a local:// origin) and (b)
-// does NOT fire the empty-origin "won't stream" warning — instead it gets the
-// positive "resolving from your local assets" note. This is the end-to-end proof
-// that the empty-origin warning is suppressed when mounts cover the demo.
 func TestDemoImportUnderMountsWarnsPositively(t *testing.T) {
 	a := testTabApp(t)
 	mount := t.TempDir()

@@ -543,8 +543,6 @@ func (a *App) useLocalSetupPath() {
 // drawContentPanel draws the modal content-report panel LAST in drawSettings
 // (topmost), with the page's modal fence already released by the caller so its
 // c.Button / c.VScrollbar / c.hovering widgets work normally. No-op when closed.
-// Purely reads the engine's report (cached across the post-package clear); it
-// never mutates the report or touches the filesystem/network.
 func (a *App) drawContentPanel(w, h int32) {
 	s := &contentPanel
 	if !s.open {
@@ -561,7 +559,6 @@ func (a *App) drawContentPanel(w, h int32) {
 		// The job just cleared (packaging finished, or a report-only end): the engine
 		// exposes the "Packaged N… into <folder>" summary + bundle path ONLY via
 		// warnLine, so snapshot it once here to keep showing it after the toast fades.
-		// A close/Cancel can't reach this (it clears sawJob + closes the panel).
 		s.doneMsg = a.warnLine
 	}
 	// Package-when-ready latch: fire the build the first frame the probe is ready.

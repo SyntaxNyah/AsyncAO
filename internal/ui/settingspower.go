@@ -74,9 +74,6 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y += 10
 
 	// Update channel: stable releases vs the experimental test-branch feed.
-	// Power-user by design — test builds exist for extensive debugging and may
-	// move sideways or DOWN in version; the strict per-platform asset match
-	// still applies, and flipping back rejoins stable on its next release.
 	y = a.settingsSection(y, w, "Update channel")
 	expCh := a.d.Prefs.Load().UpdateExperimental
 	if next := c.Checkbox(pad, y, "Get experimental test builds (the MayAO-Test branch) instead of stable releases", expCh); next != expCh {

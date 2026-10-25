@@ -1,12 +1,6 @@
 package themepack
 
 // WRITE — turn a theme folder into one shareable file.
-// There is deliberately no exported "plan it first" entry point yet. The design's
-// export SHEET wants those numbers before the click, and getting them means a
-// disk walk, which is goroutine-only (hard rule 2) — so the sheet needs its own
-// off-thread stage, and an exported primitive whose only caller was a test would
-// be the parsed-but-never-applied shape rule 11 forbids. It arrives with the
-// sheet.
 
 import (
 	"archive/zip"
@@ -29,11 +23,6 @@ type srcEntry struct {
 // Extra is a bundle member produced by the CALLER rather than read off the
 // folder: the AO2-compat export's baked courtroom_design.ini, its emptied
 // sidecar, and ASYNCAO-LOST.txt.
-// AN EXTRA REPLACES a folder entry with the same Rel, which is what makes
-// "bake the overrides into the design INI, but only in the bundle" possible
-// WITHOUT ever writing that file back into the author's own folder — the
-// highest-blast-radius risk the design names (§Q5 R3). The bytes exist for the
-// length of one zip and are never on disk under the theme's name.
 type Extra struct {
 	// Rel is the bundle path inside the theme folder, forward slashes.
 	Rel string

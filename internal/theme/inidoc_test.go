@@ -10,7 +10,6 @@ import (
 
 // aceattorney2xDir is the checked-in issue-#21 theme fixture: the exact theme
 // from the side-by-side screenshot, comment-dominated, authored by a stranger.
-//
 // It lives under internal/ui because that is where it was first needed (the rect
 // census). The round-trip gate reads it from there rather than duplicating 10 KB
 // of third-party INI, and it MUST be that copy: internal/ui/testdata is checked
@@ -602,12 +601,10 @@ func iniDocRoundTrip(t *testing.T, raw string) {
 
 // assertReaderParity checks that the document agrees with ParseINI — the READ
 // path — about every key and value in the source.
-//
 // It reports whether parity was actually CHECKED. bufio's 64 KiB token limit is
 // well under IniDocByteCap (1 MiB), so a legal-to-us file can be unreadable to
 // the reader, and a silent return would let a corpus run report "517 files
 // byte-identical" while never having compared a single key in some of them.
-// Callers that audit a whole corpus count the false and say so.
 func assertReaderParity(t *testing.T, name, raw string, d *INIDoc) bool {
 	t.Helper()
 	ini, err := ParseINI(strings.NewReader(raw))

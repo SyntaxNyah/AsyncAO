@@ -147,8 +147,6 @@ func TestOverlayFenceOwnerSuspendComposes(t *testing.T) {
 
 // TestOverlayFenceResetsPerFrame pins the reset discipline that keeps this from
 // becoming the stranded-modalOn failure mode (an un-released fence FREEZES the UI):
-// BeginFrame zeroes the registry unconditionally, and within a frame a pass releases
-// exactly its own publications back to a mark.
 func TestOverlayFenceResetsPerFrame(t *testing.T) {
 	_, cleanup := newCaptureHarness(t) // BeginFrame reads live SDL mouse/mod state
 	defer cleanup()
@@ -206,8 +204,6 @@ func TestOverlayFenceHasHeadroomForEveryLivePublisher(t *testing.T) {
 
 // TestOverlayFenceBounded pins hard rule 4: the registry is a fixed array, so
 // publishing past overlayFenceCap drops the extra rect instead of growing anything.
-// The degraded behaviour is a click leaking through (today's behaviour), never a
-// runaway allocation or a panic.
 func TestOverlayFenceBounded(t *testing.T) {
 	c := &Ctx{}
 	const overshoot = 3

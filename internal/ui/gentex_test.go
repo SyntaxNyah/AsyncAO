@@ -1,10 +1,6 @@
 package ui
 
 // Gates for the procedural generators (v1.90.0 W4 — design §6.3).
-// The generator contract has four clauses and three of them are only checkable by a
-// test: purity is invisible until two runs disagree, the tile cap is invisible until
-// a theme eats the media budget with one element, and resize-invariance is invisible
-// until somebody drags a window and the client re-rasters seventeen tiles per frame.
 
 import (
 	"bytes"
@@ -46,9 +42,6 @@ func genExerciseParams(name string) theme.GeneratorSpec {
 
 // TestEveryGeneratorKindRasterizes is the totality gate: every registry name
 // produces a tile, and a name outside it produces nothing rather than a panic.
-// Totality matters here for the same reason it matters for the element painter
-// table — the name comes out of a file a stranger wrote, so "we never tested that
-// one" is the same as "that one crashes on somebody else's machine".
 func TestEveryGeneratorKindRasterizes(t *testing.T) {
 	names := GeneratorNames()
 	if len(names) == 0 {

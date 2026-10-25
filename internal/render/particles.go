@@ -11,7 +11,6 @@ import (
 // drifting over the scene. A fixed, bounded particle pool (§17.4) drawn from ONE cached soft-dot
 // texture, tinted + shaped per weather; nothing is allocated per frame (the pool is reused, the
 // dot built once, the blit destination a scratch rect). Off → an early return, byte-identical.
-// Purely local eye-candy — nothing on the wire.
 
 // Weather selects the ambient overlay (None = off).
 type Weather uint8

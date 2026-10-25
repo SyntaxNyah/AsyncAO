@@ -407,8 +407,6 @@ func TestAdvanceDetachedPreviewClosedIsZeroAlloc(t *testing.T) {
 // BenchmarkAdvanceDetachedPreviewClosed / ...Open are the closed-vs-open pair
 // for the new loop-level call site, modeled on
 // BenchmarkSyncPreviewWindowClosed/Open:
-//
-//	go test ./internal/ui/... -run NONE -bench AdvanceDetachedPreview -benchmem
 func BenchmarkAdvanceDetachedPreviewClosed(b *testing.B) {
 	a := &App{env: env{ctx: &Ctx{}}, activeTab: -1}
 	prefs, err := config.New(filepath.Join(b.TempDir(), "prefs.json"))

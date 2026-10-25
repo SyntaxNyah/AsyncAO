@@ -7,10 +7,6 @@ import "strings"
 // "just send two packets" hack that silently depends on the queue. The user types a
 // Discord-style :stem: (or right-clicks an emote in the grid); on send the shortcode
 // is converted to the INTERNAL marker, which travels literally on the wire:
-//
-//	<e:<pre>:<emote>:<sfx>>   a mid-text emote  (pre/sfx "-" or "" = none)
-//	<s:<sfx>>                 a mid-text sound only
-//
 // AsyncAO strips these markers from the displayed text (typewriter.go, in lock-step
 // with StripChatMarkup) and renders the sprite / plays the sound at that point in the
 // crawl; non-AsyncAO clients show the readable "<e:...>" text. Fields are matched

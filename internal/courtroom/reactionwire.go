@@ -6,15 +6,6 @@ package courtroom
 // same wall that killed M2 slice 2), so the reaction PIGGYBACKS on the reactor's NEXT
 // IC message via the SAME invisible zero-width channel as the sprite style / profile /
 // status / effects, told apart by a leading magic byte.
-//
-// The hard part is naming the target across clients: a reaction frame can't carry a
-// message index (clients join at different times, so indices don't line up), so it
-// carries a CONTENT-STABLE ref — a hash of the target's character name + clean text,
-// which every client computes identically for the same wire message. The receiver scans
-// its recent IC log for a message with the matching ref and floats the emoji from there.
-// A stray/old ref simply matches nothing (benign). The emoji itself is a 1-byte index
-// into a fixed, append-only palette (reactionSet), so the wire stays tiny — other clients
-// typewriter the invisible run and blip on each rune, so a short tail matters.
 
 const (
 	// reactionFrameMagic is the first payload byte of a reaction frame, distinct from the
@@ -24,9 +15,6 @@ const (
 	reactionWireVersion = 1
 
 	// reactionFrameBytes is the fixed payload size: magic(1) + version(1) + ref(4, big-endian)
-	// + palette index(1) = 7 bytes ≈ 19 invisible runes (3 bits/rune). Per-message content
-	// (a reaction targets one message), so it rides only the message that carries a reaction —
-	// not every line.
 	reactionFrameBytes = 7
 )
 

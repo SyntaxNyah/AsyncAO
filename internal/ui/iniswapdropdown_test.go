@@ -6,7 +6,6 @@ import (
 
 // TestIniswapCurrentIndexIsAbsolute pins the index mapping, which is the one
 // destructive thing in this feature: it feeds RemoveWardrobe, which PERSISTS.
-// The tempting implementation is to scan choices[1:] (skipping the own-folder row)
 // uses the index directly (courtroom.cpp:5340-5347).
 func TestIniswapCurrentIndexIsAbsolute(t *testing.T) {
 	choices := []string{"Phoenix", "Edgeworth", "Godot", "Franziska"}

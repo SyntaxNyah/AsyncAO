@@ -42,9 +42,6 @@ const (
 
 // stageFrameDrivenApp is a themed, settled courtroom App that App.Frame can be
 // called on directly.
-// Everything it adds beyond stageThemedCourtroom is either a dependency Frame
-// dereferences without a nil check, or a one-shot latch that would otherwise start a
-// goroutine or a network read on frame 1. Nothing here changes what is DRAWN.
 func stageFrameDrivenApp(t *testing.T) (*App, func()) {
 	t.Helper()
 	a, cleanup := stageThemedCourtroom(t)
@@ -196,9 +193,6 @@ func driveUntilThemeApplied(t *testing.T, a *App) {
 
 // TestTheFrameHarnessReallyDrivesAFrame proves the fixture is not a decoration: one
 // call to driveFrame must leave behind the marks only App.Frame makes.
-//   - lastFrameDrawn is stamped at the top of Frame and nowhere else;
-//   - the menu-bar latch is taken by menuBarFrame (phase 1), which sits ABOVE the
-//     screen dispatch and which no drawCourtroom call reaches;
 func TestTheFrameHarnessReallyDrivesAFrame(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()

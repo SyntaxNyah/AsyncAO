@@ -28,8 +28,6 @@ const editorSeamThemeName = "w7aseamgate"
 
 // TestTheEditorCanvasIsTheLiveCourtroomPassAtFullBleed is the wave's headline
 // requirement, asked mechanically.
-// Mutations it answers to: replacing `a.drawCourtroom(w, h)` in drawEditorCanvas with
-// the geometry arm (or with any mockup); insetting the canvas by the rails.
 func TestTheEditorCanvasIsTheLiveCourtroomPassAtFullBleed(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()
@@ -166,9 +164,6 @@ const (
 
 // TestSpacePeekIsAnAlphaChangeNeverAClip pins the one decision on this screen that
 // was made to CLOSE a bug class rather than to fix a bug.
-// Mutations it answers to: editorPlate darkening/tinting instead of fading (the
-// peek stops being a peek and the rails just change colour); any editor file
-// reaching for the renderer's own clip.
 func TestSpacePeekIsAnAlphaChangeNeverAClip(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()
@@ -193,7 +188,6 @@ func TestSpacePeekIsAnAlphaChangeNeverAClip(t *testing.T) {
 	}
 
 	// The source half: no editor file CALLS the renderer's clip.
-	//
 	// Parsed, not grepped, and the difference is not fastidiousness: this very file's
 	// prose names the forbidden call in order to explain why it is forbidden, and a
 	// text census would read the warning as the violation. Only call expressions count.
@@ -246,9 +240,6 @@ func editorSeamFiles(t *testing.T) []string {
 
 // editorSeamCallees names every function one source actually CALLS, by the callee's
 // final identifier (so `c.Ren.SetClipRect(&r)` reports "SetClipRect").
-// It exists so a "never call X" census cannot be tripped by the comment that explains
-// why X is never called — the failure mode the first draft of the peek gate had, and
-// the one that makes source censuses get deleted instead of fixed.
 func editorSeamCallees(t *testing.T, name string) []string {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -279,9 +270,6 @@ func editorSeamCallees(t *testing.T, name string) []string {
 
 // TestUnsavedEditsSurviveARealBackgroundThemeApply is the durability seam driven by
 // the FRAME rather than by a hand-called reclaim.
-// Its sibling TestEditsSurviveAThemeReapply calls a.reclaimThemeDoc() itself, which
-// means it stays green if the call is DELETED from pollThemeApply — and greener still
-// if the call is merely MOVED above `a.themeSidecar = res.sidecar`, where it would be
 func TestUnsavedEditsSurviveARealBackgroundThemeApply(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()

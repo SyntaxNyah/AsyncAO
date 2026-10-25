@@ -72,10 +72,6 @@ func TestFriendlyDisconnectReason(t *testing.T) {
 // state a PARKED tab reaches via activateTab. Playtesters reported the two arms
 // disagreeing: a background tab showed the box while the tab they were looking at
 // was slammed to the server list.
-// Auto-reconnect is deliberately NOT armed while frozen: pollAutoReconnect returns
-// early off the lobby, so a countdown here would tick to zero and never fire, and a
-// background retry is exactly the v1.81.4 regression that dumped users at
-// char-select while minimized.
 func TestHandleInvoluntaryDropFreezesALiveCourtroom(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -123,10 +119,6 @@ func TestHandleInvoluntaryDropFreezesALiveCourtroom(t *testing.T) {
 }
 
 // TestHandleInvoluntaryDropWithNoRoomGoesToLobby pins the other half of the fork.
-// A deliberate close, or a drop with no courtroom to freeze (char-select, an
-// already-torn-down session), keeps the plain teardown to the lobby — and still
-// arms auto-reconnect for a genuine transport drop. shouldAutoReconnect suppresses
-// ban/kick and deliberate closes.
 func TestHandleInvoluntaryDropWithNoRoomGoesToLobby(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -379,9 +371,6 @@ func TestActivateDeadInCourtTabOpensDialog(t *testing.T) {
 }
 
 // TestTabBarInertUnderDialog pins the state-safety guard: while the (background-tab)
-// dialog is up, handleTabBar must NOT act on a chip click — otherwise activating
-// another tab would park a frozen session into a zombie slot while the dialog stayed
-// up over the wrong server. The active tab must be unchanged after a simulated click.
 func TestTabBarInertUnderDialog(t *testing.T) {
 	a := froomApp(t)
 	a.tabs = append(a.tabs, &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Other", serverKey: "ws://other"}}})

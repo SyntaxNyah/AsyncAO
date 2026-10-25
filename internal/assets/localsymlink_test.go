@@ -13,10 +13,6 @@ import (
 // directory nor a regular file — and the non-link half needs mkfifo, so it lives in the
 // unix-only localnonregular_unix_test.go beside the parity gate that drives both byte
 // sources over one tree.
-// The third gate is the SCOPE line: an exactly-spelled path still reads through a link,
-// because that is pre-existing policy for a name the caller wrote out in full and the
-// fold was never what granted it. The fourth is the happy path, so the refusal is
-// visible as aimed at what a name IS rather than at folding.
 
 // mustSymlink links link -> target, skipping the test when the host cannot make one
 // (Windows without developer mode) — the same accommodation safepath's own
@@ -121,8 +117,6 @@ func TestLocalFetcherFoldRefusesASymlinkedFile(t *testing.T) {
 // batch and what must not WIDEN that reach; narrowing the exact path is a separate
 // decision with separate consequences (an exported scene archive may legitimately be a
 // tree of links), and it is deliberately not taken here.
-// It needs no case-sensitivity skip: the exact spelling resolves on every filesystem,
-// which is the point.
 func TestLocalFetcherExactSpellingStillReadsThroughASymlink(t *testing.T) {
 	mount, outside := t.TempDir(), t.TempDir()
 	const body = "LINKED-SPRITE"

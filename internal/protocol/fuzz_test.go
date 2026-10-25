@@ -6,11 +6,8 @@ import (
 )
 
 // Fuzz targets for the two hostile-input parsers on the wire's front line:
-// every byte here arrives from an untrusted server. The contract these pin is
-// ROBUSTNESS, not round-trip purity — the parsers must never panic, hang, or
 // allocate unboundedly on malformed input (CLAUDE.md rules #4, #7). The
 // deliberate lossy behaviours (SC/LE double-decode, the ^order/offset splits)
-// are protocol law and are NOT asserted here.
 
 // FuzzParsePacket exercises the wire framing/unescape path (packet.go): the
 // #-split, terminator handling, and the <num>/<percent>/<dollar>/<and> decode.

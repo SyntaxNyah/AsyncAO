@@ -134,7 +134,6 @@ func emptyRoot(t *testing.T) string {
 // The two halves of the consent-sheet spoof: the sidecar a sheet would happily
 // describe, and a forged one claiming a different author under a licence that
 // forbids what the sheet said was allowed.
-//
 // THEY DIFFER ONLY IN THE CASE OF THEIR FILE NAME, which is the whole trick —
 // two entries in an archive, one file on Windows and macOS, last one wins.
 const (
@@ -151,7 +150,6 @@ const (
 // TestPackRefusesEveryHostileShape drives Extract against the archives an
 // attacker actually sends, and asserts BOTH halves each time: the refusal
 // happened, and the destination is still empty.
-//
 // The second half is the one that matters. A guard that refuses AFTER writing
 // four of six entries has already put a stranger's files on the disk.
 func TestPackRefusesEveryHostileShape(t *testing.T) {
@@ -376,7 +374,6 @@ func TestPackSkipsSymlinks(t *testing.T) {
 
 // TestInspectReadsOnlyTheCentralDirectory is the property the whole consent flow
 // rests on: describing a stranger's archive must not run its decompressor.
-//
 // The fixture's payload is NOT a valid deflate stream while its directory entry
 // is well-formed, so anything that opened it would fail. Inspect must succeed.
 func TestInspectReadsOnlyTheCentralDirectory(t *testing.T) {
@@ -507,7 +504,6 @@ func warningNames(m *Manifest, want string) bool {
 // TestTheExporterRefusesWhatTheImporterRefuses is write.go's symmetry claim for
 // the one-file-per-name rule: an exporter looser than the importer ships bundles
 // only the author's FILESYSTEM can open.
-//
 // It can only run where the pair can exist. On Windows and macOS the second
 // os.WriteFile overwrites the first, so there is nothing to refuse — the test
 // says so out loud rather than pretending to have checked.
@@ -660,11 +656,6 @@ func TestFontWithoutLicenceFileIsWarnedOnExport(t *testing.T) {
 	}
 	// And with one beside it, the warning goes away — otherwise the warning is
 	// noise and gets ignored, which is the same as not having one.
-	// "Court-OFL.txt" and not "Court-LICENSE.txt": the SIL Open Font License is
-	// overwhelmingly shipped under the former, which contains neither "license" nor
-	// "licence" — a probe that missed it would warn about every correctly-licensed
-	// OFL font, and a warning that fires when nothing is wrong is one everybody
-	// learns to skip.
 	mustWrite(t, filepath.Join(src, "fonts", "Court-OFL.txt"), "SIL Open Font License")
 	m2, err := Write(src, filepath.Join(t.TempDir(), "paper2"+PackExt), nil)
 	if err != nil {
@@ -788,8 +779,6 @@ func TestSanitizeNameIsTotal(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // addUnderDeclared writes an entry whose central directory UNDER-states its size:
-// a real deflate stream of body, advertised as `declared` bytes.
-//
 // This is the other half of addDeclared. That one over-states, which is how a zip
 // bomb passes a naive extractor; this one under-states, which is how a bomb passes
 // an extractor that checks the DECLARATION and then trusts it. Go's own reader
@@ -825,9 +814,6 @@ func (b *packBuilder) addUnderDeclared(name string, declared uint64, body []byte
 
 // TestTheDeclaredSizeIsAHardCeilingOnWhatAnEntryCanDeliver pins the STDLIB
 // invariant the whole extraction budget rests on.
-// So the invariant is DRIVEN, not assumed: a forged under-declaring archive goes
-// through the real reader, and the read must be refused. A future Go that relaxed
-// the check would fail here — in the package that depends on it, with this comment
 func TestTheDeclaredSizeIsAHardCeilingOnWhatAnEntryCanDeliver(t *testing.T) {
 	const realBytes = 64 << 10
 	body := bytes.Repeat([]byte("A"), realBytes)

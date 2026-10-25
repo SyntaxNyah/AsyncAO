@@ -158,10 +158,6 @@ func isStyledCut(path string) bool {
 	// Windows' terse convention: a style letter tacked onto the family stem —
 	// segoeuib (bold), segoeuii (italic), segoeuiz (bold italic), LeelaUIb,
 	// LeelUIsl (semilight), mmrtextb.
-	// A BARE trailing "i" is deliberately not in this list: plenty of regular faces
-	// legitimately end in one (segoeui, LeelaUI, gadugi), and demoting those ranked
-	// every family's bold cut above its regular. Windows spells italic as a DOUBLED
-	// i on a stem that already ends in one, which is what "ii" catches.
 	for _, suf := range []string{"bi", "bd", "sl", "z", "ii"} {
 		if strings.HasSuffix(stem, suf) {
 			return true

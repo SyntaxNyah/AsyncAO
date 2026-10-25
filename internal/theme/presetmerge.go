@@ -3,7 +3,6 @@ package theme
 // THE FOUR-TIER MERGE.
 // A rendered AsyncAO theme is four tiers stacked in this order, lowest first:
 // WHAT "APPLYING A PRESET" MEANS, stated once, because everything else follows:
-// COLD PATH ONLY (hard rule 2): it allocates a whole model.
 
 import (
 	"errors"
@@ -37,7 +36,6 @@ type PresetPair struct {
 func (p PresetPair) Empty() bool { return p.Layout == nil && p.Style == nil }
 
 // ResolvePresets reads a theme's declared axes out of its own [theme] section.
-//
 // AN UNKNOWN ID IS NOT AN ERROR IN THE THEME'S SENSE (format rule 1): a theme
 // authored on a newer build names a preset this one has never heard of, and the
 // right behaviour is to render everything else and say so. The unresolved ids
@@ -66,9 +64,6 @@ func (l *PresetLibrary) ResolvePresets(sc *Sidecar) (pair PresetPair, missing []
 }
 
 // MergePresets returns a NEW sidecar: `base` with both tiers applied.
-// A nil `base` is "a theme from nothing", which is what the gallery's create
-// action passes: the result is a fresh sidecar whose document is empty, so the
-// writer emits every section canonically instead of editing someone's file.
 func MergePresets(base *Sidecar, pair PresetPair) (*Sidecar, error) {
 	out, err := clonePresetBase(base)
 	if err != nil {
@@ -91,8 +86,6 @@ const PresetGeneratedBy = "AsyncAO theme gallery"
 
 // NewThemeFromPresets builds a theme FROM NOTHING: a fresh sidecar carrying both
 // tiers, its identity stamped, its document empty.
-// It is therefore the gallery's PRIMARY action, and the reason the gallery
-// creates rather than converts.
 func NewThemeFromPresets(name string, pair PresetPair) (*Sidecar, error) {
 	out, err := MergePresets(nil, pair)
 	if err != nil {
@@ -112,9 +105,6 @@ func NewThemeFromPresets(name string, pair PresetPair) (*Sidecar, error) {
 }
 
 // PresetUndo is the one-deep snapshot a preset apply can be reverted from.
-// The snapshot is opaque on purpose. It holds a whole *Sidecar, and exposing that
-// would hand a caller a second model of the same theme with no arbitration —
-// which is the exact door Sidecar.Doc() was deleted for (ledger L32).
 type PresetUndo struct{ snap *Sidecar }
 
 // Valid reports a snapshot that can be restored. A zero PresetUndo is "nothing
@@ -123,7 +113,6 @@ type PresetUndo struct{ snap *Sidecar }
 func (u *PresetUndo) Valid() bool { return u != nil && u.snap != nil }
 
 // SnapshotForPreset captures everything ApplyPresetTier can change.
-//
 // IT IS clonePresetBase, DELIBERATELY — the same deep copy the merge uses, so the
 // snapshot cannot fall behind a field the merge learned to touch. A hand-written
 // field list here would be the second place that has to know Sidecar's shape, and
@@ -159,9 +148,6 @@ func (s *Sidecar) RestorePreset(u *PresetUndo) bool {
 
 // AdoptPresetMerge takes over a merged model IN PLACE, keeping this object's
 // identity.
-// It is a no-op if src is nil or is this very sidecar: adopting yourself is what
-// a caller does when the merge changed nothing, and it must not be a way to
-// half-assign.
 func (s *Sidecar) AdoptPresetMerge(src *Sidecar) {
 	if s == nil || src == nil || s == src {
 		return
@@ -172,7 +158,6 @@ func (s *Sidecar) AdoptPresetMerge(src *Sidecar) {
 }
 
 // clonePresetBase deep-copies a sidecar, document included.
-//
 // THE DOCUMENT IS RE-PARSED FROM ITS OWN BYTES rather than field-copied. INIDoc
 // holds a line list, a section index and a touched set, and a struct copy would
 // alias the first two — so the "copy" would write through into the original the
@@ -211,8 +196,6 @@ func clonePresetBase(base *Sidecar) (*Sidecar, error) {
 // ApplyPresetTier replaces ONE axis of this sidecar IN PLACE.
 // In place, because the editor's live model is shared by pointer with the
 // courtroom's renderer (a.themeSidecar and themeDoc.side are the same object):
-// ALL OF IT OR NONE OF IT. Every refusal is decided before the first field
-// moves, so a failed apply leaves a model that was never half-written.
 func (s *Sidecar) ApplyPresetTier(p *Preset) error {
 	if s == nil || p == nil {
 		return nil
@@ -252,8 +235,6 @@ func (s *Sidecar) ApplyPresetTier(p *Preset) error {
 
 // clearReplacedTier deletes, from the lossless CARRIER, every section this tier
 // replace has just taken over in the MODEL.
-// A section the document never carried is not an error: an element authored this
-// session, or a whole theme built from nothing, has no lines to remove yet.
 func (s *Sidecar) clearReplacedTier(p *Preset) {
 	if s.doc == nil {
 		return
@@ -277,9 +258,6 @@ func (s *Sidecar) clearReplacedTier(p *Preset) {
 // droppedElementIDs is the set of element ids whose sections this tier replace
 // takes over: the ones the incoming axis OWNS in the model, plus every id the
 // incoming fragment itself declares.
-// A section for an id in NEITHER set is untouched, which is what keeps a
-// preserved forward-compat element (one whose `kind` this build does not know, so
-// the reader skipped it and kept its lines — format rule 3) out of the blast.
 func (s *Sidecar) droppedElementIDs(p *Preset) map[string]struct{} {
 	out := make(map[string]struct{}, len(s.Elements))
 	for i := range s.Elements {
@@ -296,7 +274,6 @@ func (s *Sidecar) droppedElementIDs(p *Preset) map[string]struct{} {
 // splitElementsByTier partitions this sidecar's elements into the ones the
 // incoming tier does NOT own (kept, in their existing order) and returns the
 // tier's own contribution (adopted, deep-copied out of the immutable library).
-//
 // OWNERSHIP IS BY KIND, and it is the same test the parser enforces on the
 // fragment (presetElementKindOK). One rule, one spelling: a pane element is
 // layout, everything else is style, in the file and in the apply alike.

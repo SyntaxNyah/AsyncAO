@@ -9,10 +9,6 @@ package ui
 // topChromeH is the height of the app-wide client-chrome band at the top of the
 // window — THE reserved top offset every screen offsets its content by, and the only
 // place the two strip heights are added together.
-// It is safe to apply unconditionally: menuBarHeight() already reports 0 for the
-// modes that take the whole window instead of a screen (gif export, replay, scene
-// maker, theater), and tabStripBandH() reports 0 whenever the strip is not docked in
-// the band. A screen therefore never has to ask WHICH chrome is showing.
 func (a *App) topChromeH() int32 { return a.menuBarHeight() + a.tabStripBandH() }
 
 // screenDispatchPreempted reports whether a FULL-WINDOW mode has taken this frame

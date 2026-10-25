@@ -167,12 +167,6 @@ func TestATierApplyLeavesNoTraceOfTheTierItReplaced(t *testing.T) {
 // TestAnElementBothStylesDeclareReloadsAsTheNewOne is the half of the clear that
 // a count can never see, and the one the shipped set actually hits: `chat_frame`
 // exists in more than one style fragment.
-// The writer only writes a key when the MODEL has something to say about it (an
-// empty value leaves the author's line exactly as it is — setKey's first clause),
-// so an old element's section left standing under a new element of the same name
-// keeps every string the newcomer does not set: its `anchor`, its `generator`,
-// its `text`. The result reads back as a row that is half of each style, and
-// every count in this file agrees with it.
 func TestAnElementBothStylesDeclareReloadsAsTheNewOne(t *testing.T) {
 	lib := shippedLibraryFor(t)
 	layout := lib.Layouts()[0]

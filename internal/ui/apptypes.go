@@ -270,11 +270,6 @@ type themeApply struct {
 	sidecar *theme.Sidecar
 	// sidecarErr / sidecarTip are a REFUSED sidecar, rendered here into the two
 	// strings the chip needs (themeerrchip.go). Both empty in the ordinary case.
-	// The distinction the pair carries is "the file exists and could not be read",
-	// which is emphatically not "there is no file": a theme with no sidecar is a
-	// stock AO2 theme and reports nothing. Rendered on this goroutine because both
-	// format, and because the error's own text is the only place the failing section
-	// and its numbers exist.
 	sidecarErr string
 	sidecarTip string
 	// mediaPlan is the theme's declared art, PLANNED against the media budget before
@@ -322,8 +317,6 @@ type themeApply struct {
 	iniKeys     int
 	// unbound is the #21 unbound-design-key report: rect-shaped keys this theme
 	// declares that reach no widget at all. "" when the theme is fully covered.
-	// Built on the apply goroutine (it walks every design key), pushed to the
-	// DEBUG LOG on land — never to the player's screen.
 	unbound  string
 	probed   []string
 	inkGuard string // readability guard verdict ("" = colors kept)
@@ -381,9 +374,6 @@ const themeStemChatbox = "chatbox"
 
 // themeStemChatboxMed / themeStemChatboxBig are the two WIDER chatbox skins of
 // AO2's showname widen-and-swap ladder, as T1 stems.
-// They are T1 KEYS, not file names: the files are named after whichever base
-// candidate resolved (chatmed / chatboxmed / ...), which is only known once the
-// theme has been walked, so they cannot live in themeImageStems' static table.
 const (
 	themeStemChatboxMed = "chatboxmed"
 	themeStemChatboxBig = "chatboxbig"
@@ -440,8 +430,6 @@ func avgSkinLuma(img *image.RGBA, step int) int {
 // avgSkinLumaRect is the same average over ONE sub-rectangle of img — what the
 // per-element ink guard needs, because a courtroom background is one image and
 // each font element sits over its own patch of it.
-// Takes the rect rather than an (*image.RGBA).SubImage: SubImage allocates a
-// fresh header per call, and this runs once per element per theme apply.
 func avgSkinLumaRect(img *image.RGBA, r image.Rectangle, step int) int {
 	b := r.Intersect(img.Bounds())
 	if b.Empty() {
@@ -502,10 +490,6 @@ func themeImageStems() map[string][]string {
 		"lobbybackground":     {"lobbybackground", "loadingbackground"},
 		themeStemCharSelectBG: {"charselect_background"},
 		// The two char-select cell overlays AOCharButton ships as theme art (#20):
-		// char_taken covers a taken button, char_selector is the 62x62 hover halo
-		// (AO2-Client aocharbutton.cpp). Both optional — 40 and 38 of the 74 reference
-		// themes ship them — and both tiny (60x60 / 62x62), so pinning them costs a few
-		// KiB for the two most visible pieces of char-select parity.
 		themeStemCharTaken:    {"char_taken"},
 		themeStemCharSelector: {"char_selector"},
 	}

@@ -34,7 +34,6 @@ type lobbyState struct {
 	// "Phone Fanat" chip (phone-book page only): a dim bottom-right button that
 	// pops a quip when clicked. phoneFanatLine holds the currently-shown line and
 	// phoneFanatShownAt stamps the click so it lingers for fanatShowDuration.
-	// Ephemeral — never persisted.
 	phoneFanatLine    string
 	phoneFanatShownAt time.Time
 	// click-to-expand selection: first click opens the full description

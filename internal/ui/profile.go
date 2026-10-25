@@ -83,9 +83,6 @@ func (a *App) profileFor(p *areaPlayer, isMe bool) (config.ProfilePref, bool) {
 }
 
 // myWireProfile is the cross-client slice of our profile to transmit (#101 slice 2):
-// empty unless the profile is enabled AND set to show on the list (the same gate the
-// local card uses), so disabling either stops transmitting (and sends a clear). Only
-// pronouns + tagline travel — the receiver's card title uses our live showname.
 func (a *App) myWireProfile() courtroom.WireProfile {
 	pr := a.d.Prefs.Load().MyProfile
 	if !pr.Enabled || !pr.ShowOnList {

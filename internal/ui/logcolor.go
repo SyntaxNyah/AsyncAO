@@ -14,9 +14,6 @@ import (
 // this file maps those runs onto the log's wrapped display rows and draws them.
 
 // inlineSpanAt returns the render colour spans for one wrapped log row's body:
-// a leading default-colour span for the head (timestamp + "<speaker>: "), then
-// the style runs covering the body runes [bodyOff, bodyOff+bodyLen). Pure — no
-// SDL — so the mapping is drivable in a test.
 func inlineSpanAt(styles []courtroom.StyleRun, headRunes, bodyOff, bodyLen int, def sdl.Color) []render.ColorSpan {
 	out := make([]render.ColorSpan, 0, len(styles)+1)
 	if headRunes > 0 {
@@ -52,9 +49,6 @@ func inlineSpanAt(styles []courtroom.StyleRun, headRunes, bodyOff, bodyLen int, 
 }
 
 // drawColoredLogRow draws one log row whose spans may carry more than one colour.
-// A row that needs the emoji/mixed-script raster, or that no single face covers,
-// falls back to a single colour — coverage wins over colour, the same rule the
-// log's existing name-split already follows (logselect_wire.go logRowSplit).
 func (a *App) drawColoredLogRow(font, emojiFont *ttf.Font, x, y, wrapW int32, text string, spans []render.ColorSpan) {
 	c := a.ctx
 	if len(spans) == 0 || (emojiFont != nil && render.NeedsEmojiFallback(text)) || !c.coversFace(font, text) {

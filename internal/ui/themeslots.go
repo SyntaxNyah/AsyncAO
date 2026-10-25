@@ -10,10 +10,6 @@ package ui
 import "github.com/veandco/go-sdl2/sdl"
 
 // themeSlotRelSpace is the coordinate system a design rect is expressed in.
-// AO2's own courtroom_design.ini says this out loud in its section banners
-// ("**COORDINATE SYSTEM RELATIVE TO ...**"). AsyncAO hard-coded exactly one case
-// of it — `key != "showname" && key != "message"` — and had no way to say the
-// other two.
 type themeSlotRelSpace uint8
 
 const (
@@ -144,10 +140,6 @@ var themeSlots = [...]themeSlot{
 	{key: "guard", phase: phasePanels, state: slotStateHandDrawn},        // courtroom.cpp:1092
 	{key: "slide_enable", phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:1096
 	// showname_enable and casing are NOT placed by upstream AO2-Client:
-	// ui_showname_enable is a bare declaration (courtroom.h) and there is no
-	// set_size_and_pos for it or for "casing" anywhere in src/. They are
-	// KFO-Client / 2.9-era elements, so the only citation we can honestly give is
-	// the theme itself (aceattorney2x courtroom_design.ini:162 and :213).
 	{key: "showname_enable", phase: phasePanels, state: slotStateHandDrawn},
 	{key: "casing", phase: phasePanels, state: slotStateInert},
 

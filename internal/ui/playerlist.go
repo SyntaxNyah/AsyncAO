@@ -78,7 +78,6 @@ func areaSortLabel(mode int) string {
 // sortAreaOrder orders the area-group names in place for the A→Z and most-populated
 // modes (the default /gas mode is handled by applyGasAreaOrder, which needs our
 // current area + the snapshot order). Stable, so a tie keeps the incoming order.
-// Pure (groups supplies each area's size) — tested directly.
 func sortAreaOrder(order []string, groups map[string][]int, mode int) {
 	switch mode {
 	case areaSortName:
@@ -158,8 +157,6 @@ func (a *App) rosterMenuThemed() bool {
 
 // drawPlayerList renders the area roster — one row per UID — under a ONE-ROW header
 // (Sort · Rooms · Status · ⋮), with per-row icon + highlights + Pair / Copy actions.
-// Everything the header used to carry and no longer does now lives in the ⋮ overflow
-// (musicheader.go); see playerlisttoolbar.go for what moved and why.
 func (a *App) drawPlayerList(r sdl.Rect) {
 	// The user's own font for this panel, if they set one — every label, button,
 	// checkbox and field below follows it, so the panel changes as a whole rather
@@ -200,9 +197,6 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 		labels.rooms = "Rooms: " + areaSortLabel(a.roster.playerAreaSort)
 	}
 	// Both toggles are read ONCE here rather than at their (now menu-side) switches:
-	// drawPlayerRow consults followShow/pairStatusShow for every row, and the switches
-	// live in a menu that is usually closed, so the per-row answer has to come from
-	// the pref itself — otherwise a theme would silently turn the features off.
 	a.roster.followShow, a.roster.pairStatusShow = a.d.Prefs.Load().FollowEnabled, a.d.Prefs.Load().ShowPairStatus
 	plan := planPlayerToolbar(r, labels, multiArea, c.TextWidth)
 	for i := 0; i < plan.n; i++ {
@@ -407,7 +401,6 @@ func (a *App) applyAreaJumpFollow(rows []rosterRow, viewH int32) {
 // OOC/IPID detail beneath, role highlight (you / speaker / friend), Spectator/CM
 // chips, and right-aligned Pair / Copy-UID / Copy-IPID actions. idx is the index
 // into areaPlayers (sort-stable) — the key for the icon cache.
-// joinFlashColor is the amber "just joined" row tint, faded out over joinFlashWindow.
 var joinFlashColor = sdl.Color{R: 240, G: 200, B: 90, A: 255}
 
 func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet map[string]bool) {

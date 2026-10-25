@@ -27,8 +27,6 @@ import (
 // recording model + the replay renderer, so there is no second renderer and no
 // new asset path — and because it's a full-window overlay drawn only while
 // makerOpen, it costs nothing on the live render hot path.
-// A scene is just a list of recEvents, and .aorec is pretty-printed JSON, so a
-// scene built here is hand-editable in any text editor too (and vice-versa).
 
 const (
 	// defaultMakerEmote is the starter sprite stem for a new line — the bare
@@ -770,10 +768,6 @@ func (a *App) pollMakerExport() {
 }
 
 // eventSummary returns a short tag + one-line description for the event list.
-// It is a DISPLAY string, so the zero-width sidechannel comes off, the same rule
-// icMessageBody follows. The event itself keeps its literal Message: makerSave and
-// makerExportDemo serialise that field verbatim, because a replay has to re-decode
-// the very same marker to reproduce the sprite style it was played with.
 func eventSummary(e recEvent) (tag, text string) {
 	switch courtroom.EventKind(e.Kind) {
 	case courtroom.EventMessage:
@@ -923,9 +917,6 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 
 // drawMakerOpenPicker lists saved recordings to load straight into the maker
 // (the "import existing recordings to edit" ask) — no trip out to Settings.
-// drawMakerExportPanel is the in-maker "⚙ Export options" body: the shared export
-// controls (size / fps / quality / loop / speed) plus guidance. The 🎞 GIF / 🎬
-// WebP buttons in the actions row run the export with these settings.
 func (a *App) drawMakerExportPanel(x, y int32) {
 	c := a.ctx
 	c.Label(x, y, "⚙ Export options — apply to 🎞 GIF / 🎬 WebP (buttons above)", ColAccent)
@@ -1357,11 +1348,6 @@ func (a *App) packContribution(scene *sceneRecording) int {
 }
 
 // drawExportPackConfirm asks before a bundle carries the user's private art.
-// It states the consequence rather than the mechanism: the point is not that
-// files are copied, it is that a file they are about to hand to someone else
-// will contain art only they have. Declining exports NOTHING — a partial,
-// server-only bundle would silently produce a recording that plays wrong for the
-// recipient, which is worse than not exporting.
 func (a *App) drawExportPackConfirm(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 160})

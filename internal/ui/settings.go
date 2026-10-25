@@ -274,9 +274,6 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 	},
 	tabTheme: {
 		// sections: Theme, Layout & fit, Layout presets, Lobby, Preview & binding.
-		// Emote-grid spacing had NO keyword at all and its only written path named
-		// a tab that does not exist, so it was effectively unreachable. Every word
-		// someone would actually type for it lives here, on the tab that owns it.
 		"emote icon spacing", "emote spacing", "icon spacing", "emote gap", "spacing", "gap",
 		"emote grid", "emote icons",
 		"theme", "theme picker", "chatbox", "skin", "default theme",
@@ -322,9 +319,6 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"split screen", "procedural", "halftone", "generator",
 		// The image/animated-webp intake (this wave). "upload" is the word a person
 		// actually types for it even though nothing is uploaded anywhere.
-		// NOT "webp" and NOT anything containing it ("animated webp"): tabFormats'
-		// own note reserves "webp"/"gif" for tabStudio's video export, and this tab
-		// sits ahead of both. "animated image" carries the same question.
 		"add an image", "upload an image", "upload image", "add art", "picture",
 		"animated image", "theme art", "theme image",
 		// Live preview, the editor rail's own toggle.
@@ -758,7 +752,6 @@ func (a *App) drawSettingsTabBody(tab int, y, w, h int32) int32 {
 // buildSettingsIndex runs every tab's draw once with the input FENCED and all
 // drawing CLIPPED AWAY, purely to collect each row's label/tab/offset through
 // the Ctx.onRow hook (checkboxes; sections + slider rows record directly).
-// A few milliseconds, once per search session — never on a normal frame.
 func (a *App) buildSettingsIndex(w, contentTop int32) {
 	c := a.ctx
 	settings.index = settings.index[:0]
@@ -1507,9 +1500,6 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	// (Emote-grid icon spacing lives under Theme > Layout & fit — it is a layout
 	// measurement and AO2 themes override it, which is where people look for it.)
-	// Sprite repositioning: drag a character in the viewport to move them (the
-	// override sticks per character until reset). OFF by default so a stray click
-	// can't nudge a sprite; right-clicking a sprite resets just that one.
 	move := a.d.Prefs.Load().SpriteMoveOn
 	if next := c.Checkbox(pad, y, "Let me drag character sprites to reposition them (OFF by default; right-click a sprite to reset it)", move); next != move {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteMoveOn = next })
@@ -2000,9 +1990,6 @@ const (
 
 // drawDemoToVideoCallout draws the prominent ".demo → video" entry point at the
 // top of the Studio tab: a highlighted panel (the c.Fill(ColPanel)+c.Border(ColAccent)
-// idiom) with a one-line pitch, the in-app Import file browser (ALL platforms),
-// the cross-platform drag hint, and — without ffmpeg — the ColDanger fallback note.
-// Shadows pad/w per the mandatory settings idiom.
 func (a *App) drawDemoToVideoCallout(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX

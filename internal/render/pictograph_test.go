@@ -2,9 +2,6 @@ package render
 
 // F5 — hearts, sparkles and other SYMBOLS drawing as boxes while CJK and Greek came
 // out fine.
-// These gates pin the eligibility table. The ROUTING decision (only promote a rune no
-// text face covers) is coverage-driven and lives in package ui, where the font chain
-// is; see TestUncoveredSymbolsRouteToTheEmojiFace there.
 
 import "testing"
 

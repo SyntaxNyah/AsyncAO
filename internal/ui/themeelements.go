@@ -2,9 +2,6 @@ package ui
 
 // The free-element render model (v1.90.0 W3) — docs/wip/THEME-EDITOR-DESIGN.md §2,
 // docs/THEME-FORMAT.md §4.
-// Zero base cost: a stock AO2 theme declares no elements, so lay.band is all-zero
-// and the three loops are three `for i := 0; i < 0`. That is BENCHMARKED
-// (BenchmarkThemedFrameNoElements), not asserted — the v1.89.0 "0 base = 0 cost"
 
 import (
 	"math"
@@ -31,7 +28,6 @@ type bakedEffect struct {
 
 // bakedElement is ONE element, resolved. Every field is a value the painter can use
 // without a lookup: no map probe, no string build, no prefs read, no allocation.
-//
 // FIELD ORDER IS BY SIZE, not by theme.Element's authoring order — this struct is
 // replicated 96 times inside App and padding is the only cost nobody notices.
 type bakedElement struct {
@@ -92,9 +88,6 @@ type bakedElement struct {
 	loop   bool
 	// wash marks an [effect.<widget key>] BIND: a plate over an AO2 widget's own box
 	// that exists ONLY because of its effect (themeelementbake.go bakeEffectBind).
-	// It changes exactly one rule, and the rule is not a detail: a wash's fill alpha
-	// is the effect's ENVELOPE (elemFX.env × the authored peak), not a modulation of
-	// an alpha it was authored with. A free element is there whether or not its effect
 	wash bool
 }
 
@@ -148,9 +141,6 @@ func (a *App) drawElementBands(lay *themeLayoutCache, b theme.ElementBand) {
 }
 
 // drawElement paints ONE element: the visibility gate, the motion, the painter.
-// Nothing here allocates. The FX terms are a value, the save is a local that does not
-// escape, and the painter is still handed the SAME &lay.el[i] the two AllocsPerRun
-// gates assert it gets — which is why the motion is applied in place and put back
 func (a *App) drawElement(lay *themeLayoutCache, e *bakedElement, idx int16) {
 	// Defence in depth: kind ultimately comes from a file a stranger wrote. The
 	// reader SKIPS an element whose kind it does not know (docs/THEME-FORMAT.md
@@ -202,9 +192,6 @@ func (a *App) drawElement(lay *themeLayoutCache, e *bakedElement, idx int16) {
 		a.noteElementAnimating(e.clock)
 	}
 	// The terms are applied EVEN WHEN STATIC, and that is not a missed optimisation.
-	// A static effect's terms are its FINAL state, not "no effect": a wash whose fade
-	// has finished resolves to env 0 and must paint nothing, where skipping the apply
-	// would leave it drawing at its full authored opacity over an AO2 widget, forever.
 	saved := applyElementFX(e, fx)
 	elemPainters[e.kind](a, e)
 	restoreElementFX(e, saved)
@@ -551,9 +538,6 @@ const elemGradientDirStep = theme.AngleCount / elemGradientDirCount
 
 // paintElementGradient draws a two-stop plate: linear along a cardinal axis, or a
 // concentric ring ramp when the element asked for radial.
-// LINEAR GRADIENTS QUANTISE TO THE NEAREST CARDINAL DIRECTION in W3, and that is a
-// deliberate deviation rather than an oversight: an arbitrary angle needs rotated
-// geometry (SDL_RenderGeometry), which would be a brand-new cgo surface inside the
 func paintElementGradient(a *App, e *bakedElement) {
 	if e.r.W <= 0 || e.r.H <= 0 {
 		return
@@ -683,9 +667,6 @@ func paintElementText(a *App, e *bakedElement) {
 }
 
 // elemTileCap bounds how many blits ONE tiled element may issue in a frame.
-// `fit = tile` repeats a source at its NATIVE size, so a 4x4 generator tile stretched
-// across a 1512x648 canvas is 61 236 draw calls — a number that is a function of the
-// window rather than of the theme, which is exactly the shape hard rule 4 forbids.
 const elemTileCap = 4096
 
 // paintElementArt draws an ElemImage's media page or an ElemGen's generator tile —
@@ -731,7 +712,6 @@ func paintElementArt(a *App, e *bakedElement) {
 // place art reaches the renderer, so `rot` genuinely does reach some fit modes and
 // not others. Scoped here rather than left as the older, flatly false claim that no
 // fit mode could drop it:
-// So a theme that wants a spinning frame authors it at `fit = stretch|contain|cover`.
 func paintElementBlit(c *Ctx, e *bakedElement, tex *sdl.Texture, dst sdl.Rect) {
 	c.cgoRect = dst
 	if e.ang == 0 {

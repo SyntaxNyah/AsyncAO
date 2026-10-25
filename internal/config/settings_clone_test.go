@@ -11,7 +11,6 @@ import (
 // oracle the generated Clone (settings_clone.go) is pinned against: the generated
 // clone must DeepEqual this on a fully-filled struct, and the mutate-every-collection
 // test below must pass (no aliasing).
-//
 // Mutation line: drop one collection's deep copy in settings_clone.go (e.g. remove the
 // `c.MusicHosts = append(...)` line) and TestSettingsCloneNeverAliases fails — the clone
 // shares that collection with the original.

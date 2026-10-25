@@ -24,9 +24,6 @@ type connState struct {
 	lastConnName string // M2: the server we were dropped from, for one-click Reconnect
 	lastConnURL  string // its ws URL (serverKey); set on connect, re-captured at Disconnect
 	// M2 auto-reconnect: after an unexpected drop, retry lastConnURL with backoff.
-	// autoReconnectAt is the next attempt (zero = not retrying); pollAutoReconnect
-	// fires it from the frame loop (a single time compare when idle — 0 per-frame
-	// cost). autoReconnectMsg is the cached lobby status (rebuilt per attempt only).
 	autoReconnectAt    time.Time
 	autoReconnectTries int
 	autoReconnectMsg   string

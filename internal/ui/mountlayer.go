@@ -185,9 +185,6 @@ func (a *App) publishMountLayer(mounts []string) *assets.MountLayer {
 }
 
 // rescanLocalPacks drops the render-side state a source change invalidates.
-// It deliberately does NOT rebuild the room. buildRoom re-arms the live-roster
-// poll, which queues an OOC /gas — the documented server flood-kick vector — so a
-// user tidying their mount list would emit one per click. It also does not bump
 func (a *App) rescanLocalPacks(layer *assets.MountLayer) {
 	// FIRST, and not behind the Store guard: parsed INIs are UI state, not
 	// textures, and gating them on a texture store existing would be an
@@ -213,9 +210,6 @@ func (a *App) rescanLocalPacks(layer *assets.MountLayer) {
 
 // forgetParsedINIs drops everything derived from a char.ini so a source change is
 // visible without a reconnect.
-// It re-reads the ACTIVE character's ini directly rather than rebuilding the
-// room, for the reason rescanLocalPacks does not rebuild: buildRoom re-arms the
-// live-roster poll, whose queued OOC /gas is the documented server flood-kick
 func (a *App) forgetParsedINIs() {
 	a.overlays.charMetaCache = nil // remote speakers: refetched on their next message
 	// The preview's own latch, or the next hover over the SAME character would be

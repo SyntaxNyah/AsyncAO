@@ -230,10 +230,6 @@ func (a *App) editorProbeSlots(lay *themeLayoutCache, mx, my int32) (editTarget,
 }
 
 // slotPickBeats is the widget population's ordering.
-// THE KEY IS THE FINAL TIE-BREAK, and it is not decoration: lay.r is a MAP, so a
-// theme with two identical editable rects under the cursor would otherwise resolve
-// to whichever one Go's randomised iteration happened to reach first — a different
-// widget on different frames, which reads as the editor picking at random.
 func slotPickBeats(key string, r sdl.Rect, grip bool, bestKey string, best sdl.Rect, bestGrip bool) bool {
 	if grip != bestGrip {
 		return grip
@@ -264,7 +260,6 @@ func editorCanvasRect(w, h int32) sdl.Rect {
 }
 
 // editorCanvasInput resolves this frame's pointer over the canvas.
-//
 // Order: finish or advance a live gesture FIRST (a drag that left the canvas rect,
 // or crossed a rail, must keep running — the button is still down), then take a new
 // press.
@@ -431,9 +426,6 @@ func editorRescale(d int, from, to float64) int {
 
 // editorMagnet snaps the candidate flush to its siblings, in PAINTED space, and
 // folds the correction back into authored units (see the file header).
-// CANVAS-LOCAL, not window-absolute: alignRect's extent argument is a width and a
-// height measured from the origin, so feeding it painted window coordinates with the
-// canvas's own W/H would put the "right edge" magnet at x = canvas width instead of
 func (a *App) editorMagnet(lay *themeLayoutCache, primary editTargetGeom, r theme.Rect, kind, edges uint8) theme.Rect {
 	self := a.te.primary()
 	ox, oy := lay.area.X, lay.area.Y
@@ -504,10 +496,6 @@ func (a *App) editorWriteGeometry(t editTarget, r theme.Rect) {
 }
 
 // editorEndGesture closes the gesture and its undo group.
-// Nothing is "committed" here and nothing needs to be: every frame already wrote
-// through editorApply, so the document has been correct the whole way down. What the
-// release does is close the group, which is what makes the NEXT edit a separate undo
-// step instead of merging into this drag.
 func (a *App) editorEndGesture() {
 	if a.te == nil {
 		return
@@ -524,7 +512,6 @@ func (a *App) editorEndGesture() {
 
 // drawEditorCanvasOverlay outlines what can be edited, draws the handles the box
 // under the pointer offers, and prints the geometry readout.
-//
 // It draws AFTER the canvas and BEFORE the rails, so the rails cover it exactly
 // where they cover the frame — the same agreement editorCanvasRect makes for input.
 func (a *App) drawEditorCanvasOverlay(w, h int32, lay *themeLayoutCache) {
@@ -563,10 +550,8 @@ func (a *App) drawEditorCanvasOverlay(w, h int32, lay *themeLayoutCache) {
 }
 
 // drawEditorBox outlines ONE box and paints the handles it offers.
-//
 // The full handle set goes on the box being WORKED (selected or hovered) and the
 // single bottom-right grip on every other, which is the classic editor's doctrine:
-// a quiet outline at rest, the full treatment under the cursor.
 func (a *App) drawEditorBox(lay *themeLayoutCache, t, hover editTarget) {
 	g, ok := a.editorTargetGeom(lay, t)
 	if !ok {
@@ -601,10 +586,6 @@ func (a *App) drawEditorBox(lay *themeLayoutCache, t, hover editTarget) {
 }
 
 // drawEditorReadout prints the primary selection's numbers, in ITS OWN UNITS.
-// Naming the unit is not decoration: a widget's rect is design px, a `space = window`
-// element's is window px, and an anchored element's is a signed DELTA on its anchor
-// (§6.6 R1) — three different meanings for four numbers, and a readout that implied
-// one of them would teach the user the wrong model of the format.
 func (a *App) drawEditorReadout(w, h int32, lay *themeLayoutCache) {
 	t := a.te.primary()
 	if !t.armed() {

@@ -60,7 +60,6 @@ type baseWizardState struct {
 var baseWizard = baseWizardState{res: make(chan baseScan, baseScanResCap), mode: assetSrcLayered}
 
 // openBaseWizard opens the modal, seeded from the current setup.
-//
 // Seeding matters more than it looks: re-opening this to CHANGE something is at
 // least as common as a first run, and starting blank would make a user who only
 // wants to flip "never stream" go and find their folder on disk again.
@@ -114,9 +113,6 @@ func (w *baseWizardState) pollBaseScan() {
 
 // baseWizardTakesDrop gives the OPEN wizard first refusal on a dropped path,
 // reporting whether it consumed the drop.
-// Global claims still win: a .aotheme or a recording dropped on the open wizard
-// belongs to HandleFileDrop, and stealing it here would resurrect the two-owners
-// bug from the other side. Anything unclaimed is a folder pick, including a .zip,
 func (a *App) baseWizardTakesDrop(path string) bool {
 	if !baseWizard.open || claimDroppedFile(path, settings.importArmed) != dropClaimNone {
 		return false
@@ -126,10 +122,6 @@ func (a *App) baseWizardTakesDrop(path string) bool {
 }
 
 // resolveDroppedBasePath turns an SDL drop into a pick, off-thread.
-// A dropped FILE means its folder, matching resolveDroppedFolder and the rest of
-// the app — except for a .zip, which is a mountable pack in its own right and
-// whose parent folder is emphatically not what the user meant. The stat is why
-// this is a goroutine: a drop from a network share must not stall the frame.
 func resolveDroppedBasePath(path string) {
 	w := &baseWizard
 	if strings.EqualFold(filepath.Ext(path), ".zip") {
@@ -268,8 +260,6 @@ func (a *App) baseWizStepPick(x, y, w int32) int32 {
 	y += baseWizRowH + 4
 	// The near-miss correction. It is a BUTTON rather than a sentence because the
 	// two mistakes it catches (the install root, the characters/ folder itself)
-	// are both one click from right, and a user who has just been told their pick
-	// is wrong should not have to go back through the browser to act on it.
 	if s.scanned && s.scan.suggest != "" {
 		if c.Button(sdl.Rect{X: x + 16, Y: y, W: 150, H: btnH}, "Use that one instead") {
 			s.setBasePath(s.scan.suggest)

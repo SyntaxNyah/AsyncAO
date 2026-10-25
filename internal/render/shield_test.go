@@ -93,9 +93,6 @@ func TestSmallTexTier(t *testing.T) {
 // TestShieldSurvivesSpriteChurn is the regression test for the "emote buttons
 // visibly refresh/redraw" report: a shield-tier page whose LRU recency is never
 // touched (exactly how the gen-keyed UI page caches behave on steady frames)
-// must survive a sprite streaming burst that provably churns the main tier.
-// Under the old single tier the same burst swept the buttons out and the next
-// drawn frame flashed the grid back to fallbacks.
 func TestShieldSurvivesSpriteChurn(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
@@ -320,10 +317,6 @@ func TestOversizedMapCapEviction(t *testing.T) {
 }
 
 // TestOversizedUploadDropsStalePartial pins the "static after reconnect" fix:
-// a progressive upload leaves a 1-frame Partial in the MAIN tier, and the full
-// clip overflows to the oversized map. The stale partial must be dropped when
-// the full clip lands, or an oversized-cap eviction resurrects the static frame
-// (and the T1 Contains probe then short-circuits a re-decode forever).
 func TestOversizedUploadDropsStalePartial(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()

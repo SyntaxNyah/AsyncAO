@@ -136,7 +136,6 @@ func downscaleDecoded(d *Decoded, target int) *Decoded {
 // downsample). Doing one HIGH-QUALITY CatmullRom downscale here — once, off the
 // render thread — lands a near-display-size texture, so the per-frame CopyEx
 // then has a far gentler ratio and the result is sharper AND cheaper to draw.
-// Downscale-only: a no-op when the asset already fits.
 func downscaleDecodedAspect(d *Decoded, maxH int) *Decoded {
 	if maxH <= 0 || d.Height <= maxH {
 		return d
@@ -270,11 +269,6 @@ func downscaleFrame(src *image.RGBA, tw, th int) (*image.RGBA, *[]byte) {
 }
 
 // boundedFrameCount reports how many frames of an animation may stay resident:
-// the count whose decoded bytes fit maxAnimatedDecodedAssetBytes — never below
-// one frame (a single canvas larger than the budget fails at upload with a
-// clear error instead). The decoders honour this budget by DECIMATION, not
-// truncation (see frameDecimator): the returned count is how many evenly-spaced
-// frames to keep across the whole clip, not a prefix length.
 func boundedFrameCount(width, height, frames int) int {
 	canvasBytes := width * height * rgbaBytesPerPixel
 	if canvasBytes <= 0 {
@@ -306,8 +300,6 @@ func boundedFrameCount(width, height, frames int) int {
 // composes onto the running canvas); only the kept frames are copied out, so the
 // resident cost stays bounded while decode CPU scales with the source length —
 // an acceptable trade for a one-shot preanim decoded off the render thread.
-// Short animations (frames ≤ budget) decimate to themselves: idles and talk
-// loops are never touched.
 
 // frameKeepIndex maps kept-frame ordinal j∈[0,keep) to its SOURCE frame index
 // when sampling `keep` frames out of `total` (1 ≤ keep ≤ total), spanning both
@@ -325,11 +317,6 @@ func frameKeepIndex(j, total, keep int) int {
 // index for the same (total, keep) decimation the decoders applied. The render
 // side needs it to convert a decimated (kept) frame ordinal back into the
 // sender's raw frame space when firing networked frame-synced effects (#17):
-// wire frame indices are authored against the un-decimated file, so a trigger
-// must be tested against the SOURCE index a kept frame stands in for. Guards
-// keep>total / non-positive args to a safe identity so a malformed page never
-// panics. Reuses the private helper so the rounding formula lives in one place
-// (a duplicated ratio was a shipped bug — see decoder.go's page-cap history).
 func FrameKeepIndex(keptOrdinal, sourceTotal, keptCount int) int {
 	if keptCount <= 0 || sourceTotal <= 0 || keptCount >= sourceTotal {
 		return keptOrdinal // identity: no decimation happened (or bad args)
@@ -436,9 +423,6 @@ func DecodeWorkers() int {
 const defaultAnimatedDecodeConcurrency = 2
 
 // animGate is a live-adjustable semaphore bounding concurrent animated decodes.
-// A buffered channel cannot be resized, so the limit is an atomic the condition
-// variable re-checks each time a worker waits for a free slot. limit <= 0 means
-// "unlimited".
 type animGate struct {
 	mu     sync.Mutex
 	cond   *sync.Cond
@@ -687,7 +671,6 @@ func (p *DecoderPool) compressIfEnabled(d *Decoded) {
 // types (char icons / emote buttons) to a small square thumbnail, every other
 // (full-size) type to the display-height sprite cap — or, for animated assets,
 // the tighter animated-only cap when one is set (the opt-in memory knob).
-// Both are downscale-only, so already-small assets pass through untouched.
 func (p *DecoderPool) fit(t AssetType, d *Decoded) *Decoded {
 	if d == nil {
 		return d
@@ -866,9 +849,6 @@ func sniffMaybeAnimated(data []byte) bool {
 
 // streamableFormat reports the definitely-animated CGO containers whose
 // decoders can stream frames incrementally (WebP ANMF / AV1 image sequence).
-// GIF and APNG are excluded: their DecodeAll decodes every frame up front, so
-// there is no per-frame decode to overlap and they keep the classic
-// progressive+full path.
 func streamableFormat(data []byte) bool {
 	switch Sniff(data) {
 	case FormatWebPAnim, FormatAVIFAnim:
@@ -931,7 +911,6 @@ func fitEstablishingPrefix(first *Decoded, data []byte, maxH int) *Decoded {
 // page grows and the renderer plays the prefix instead of holding frame 0
 // until the whole clip decodes (docs/ANIMATION-COLD-LOAD-INVESTIGATION.md gap
 // #3).
-//
 // A decoder may refuse to stream (when the frame budget forces decimation —
 // rare, since downscale-to-fit keeps everything in budget); in that case this
 // falls back to the classic full decode so spreadLoopDelays keeps working.
@@ -1022,9 +1001,6 @@ func (p *DecoderPool) Stats() DecoderStats {
 
 // DecodeImage decodes a payload by sniffed format. Exported for benchmarks
 // and the emote preview path; the client itself goes through the pool.
-// DecodeImage decodes a payload by sniffed format with no decode-time downscale
-// (maxH = 0). Exported for benchmarks and the emote preview path; the client
-// goes through the pool, which passes its sprite cap via DecodeImageSized.
 func DecodeImage(data []byte, playAnimations bool) (*Decoded, error) {
 	return DecodeImageSized(data, playAnimations, 0)
 }

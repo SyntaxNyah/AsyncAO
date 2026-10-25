@@ -373,9 +373,6 @@ func TestMotionRedrawDefaultAndMigration(t *testing.T) {
 
 // TestEmoteHoverNamesRoundTrip pins the emote-name hover pref (ARM 2): a fresh
 // install defaults ON with the 5 s dwell; an explicit OFF and a custom (clamped)
-// delay both survive a save/reload — the six-site contract (struct field, JSON
-// DTO pointer, constructor default, load overlay, getter/setter, this test) that
-// guards the documented save-but-don't-load trap.
 func TestEmoteHoverNamesRoundTrip(t *testing.T) {
 	// 1) Fresh install → ON, default dwell.
 	fresh, path := newTestPrefs(t)
@@ -1416,7 +1413,6 @@ func TestCallWordAddRemove(t *testing.T) {
 // escape hatch: "obj*" matches "objection" at a word start) survives the whole
 // storage pipeline intact — lowercasing/trimming must NOT strip the '*' (it's not
 // a letter, so strings.ToLower leaves it), and it must round-trip through disk.
-// The UI matcher relies on the '*' still being there after load.
 func TestCallWordWildcardRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), PrefsFileName)
 	p, err := newWithDebounce(path, testDebounce)
@@ -2505,9 +2501,6 @@ func TestThemeFitDefaultMoveStampsOnce(t *testing.T) {
 
 // TestSpriteScalingMigratesEveryoneToAuto pins owner decision D2: the move to
 // Auto reaches EXISTING users, not just fresh installs.
-// The old client had one client-wide linear filter, so a saved smoothScaling:true
-// is not a considered choice about per-sprite behaviour — it is the default nobody
-// touched. Respecting it as if it were a decision would leave every character
 // issue #21 reports as blurry exactly as blurry after the update, which is the
 // whole point of the change.
 func TestSpriteScalingMigratesEveryoneToAuto(t *testing.T) {

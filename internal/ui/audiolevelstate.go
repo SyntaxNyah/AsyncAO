@@ -10,7 +10,6 @@ type audioLevelState struct {
 	// sfxMuted is the SFX mute (Mute SFX hotkey); showHotkeys toggles the F1
 	// hotkey cheat-sheet overlay; musicDucked tracks whether music is
 	// currently ducked under a playing message (transition-driven).
-	// masterMuted/musicMuted/blipMuted are the per-channel mute toggles in the
 	// volume strip (#10). All four PERSIST (config.AssetPreferences'
 	sfxMuted    bool
 	masterMuted bool

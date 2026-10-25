@@ -102,7 +102,6 @@ func demoToRecording(data []byte, origin string) (rec *sceneRecording, skipped, 
 	// capReached: the scene already holds maxRecordedEvents. We keep a coherent
 	// PREFIX (stop-at-cap, exactly recordEvent's replay.go:155 / makerInsert's
 	// scenemaker.go:436 semantics — NOT the instant-replay ring's oldest-eviction:
-	// OffsetMs is cumulative, so only a leading run stays timeline-consistent).
 	capReached := func() bool { return len(rec.Events) >= maxRecordedEvents }
 	for _, raw := range records {
 		pkt, err := protocol.ParsePacket(strings.TrimSuffix(raw, "\n"))
@@ -261,9 +260,6 @@ func (a *App) mountOrigin() string {
 
 // demoDefaultOrigin picks the asset host an imported .demo streams from — the
 // user-set source-selection default:
-// Only .demo import is steered here: loadRecordingForExport ignores this origin
-// for a .aorec (an .aorec carries its own recorded Origin, stamped at record
-// time — the .aorec-defaults-to-its-recorded-server half of the matrix).
 func (a *App) demoDefaultOrigin() string {
 	if m := a.mountOrigin(); m != "" {
 		return m // mounts configured: resolve the demo against the local base (AO2 parity)
@@ -412,9 +408,6 @@ func (a *App) HandleFileDrop(path string) {
 // unchanged; only what it does is.)
 
 // handleThemeFontDrop parks a dropped .ttf / .otf (v1.90.0 W4's font intake).
-// So it says exactly what to do, naming the folder and both keys — the same shape,
-// and for the same reason, as handleThemeBundleDrop above. A dead silent drop would
-// be worse than the bug it replaces.
 func (a *App) handleThemeFontDrop(path string) {
 	// W7b LANDED THE DEFERRAL. The paragraph above states exactly what was missing —
 	// "the sidecar WRITER is wired to the editor's document and its undo stack (W7)" —
@@ -437,9 +430,6 @@ func (a *App) handleThemeFontDrop(path string) {
 }
 
 // handleThemeImageDrop routes a dropped picture (v1.90.0 W10's image intake).
-// The claim alone already fixed the half that was actively wrong: the file no longer
-// falls through to the Settings screen's theme-folder arm, which used to repoint the
-// user's theme root at whatever folder the picture came out of.
 func (a *App) handleThemeImageDrop(path string) {
 	if a.editorTakeImage(path) {
 		return

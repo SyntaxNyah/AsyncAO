@@ -13,7 +13,6 @@ import (
 // The issue #21 fixture: the exact theme from the side-by-side screenshot,
 // checked in as its three text files. No art and no TTFs — the font tests
 // synthesize faces, and 13 MiB of PNGs would buy nothing a rect test can read.
-// Before this existed, every themed-layout change was verified by screenshot.
 
 // aceattorney2xRoot is the fixture's CONTENT ROOT (the folder containing
 // themes/), which is the shape theme.Load takes.
@@ -57,9 +56,6 @@ const (
 )
 
 // aceattorney2xBoundRects is how many of those rect keys reach a themeSlots row.
-// If this fails, do NOT edit the constant to match: diff the two key sets and
-// decide about each key. Being able to notice a key nobody decided about is the
-// entire purpose of the oracle below.
 const aceattorney2xBoundRects = 74
 
 // TestAceAttorney2xFixtureLoads pins the fixture's own shape and the rects the
@@ -141,9 +137,6 @@ func TestAceAttorney2xEveryRectIsAccountedFor(t *testing.T) {
 }
 
 // TestAO2DefaultRectsCoverEveryBoundSlot pins the fallback tier's completeness.
-// The three exemptions are stated, not silent: player_list is absent from AO2's
-// own stock file, the asyncao_* opt-ins are AsyncAO's and have no AO2 default,
-// and "immediate" is spelled pre_no_interrupt there (the row carries both).
 func TestAO2DefaultRectsCoverEveryBoundSlot(t *testing.T) {
 	var missing []string
 	for i := range themeSlots {
@@ -234,9 +227,6 @@ func TestAO2DefaultRectsNeverInventACanvas(t *testing.T) {
 
 // TestAceAttorney2xFontDeclarations pins what the typography commits have to
 // honour, read off the checked-in courtroom_fonts.ini rather than a memory of it.
-// FOUR families, not three: evidence_description_font = Times New Roman is a
-// fourth, unreachable today only because theme.FontElements has no evidence
-// member.
 func TestAceAttorney2xFontDeclarations(t *testing.T) {
 	th := loadAceAttorney2x(t)
 

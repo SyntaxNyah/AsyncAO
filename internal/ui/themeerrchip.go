@@ -27,26 +27,15 @@ const (
 	// breathing room the menu titles get on the left (menuBarPadX).
 	themeErrChipMarginX = int32(4)
 	// themeErrChipMinGapX is the clearance the chip demands from the menu titles.
-	// Below it the chip is dropped whole for the frame rather than drawn over a
-	// title: chrome must never lie about what is clickable, and the F8 debug log
-	// carries the same line unconditionally either way.
 	themeErrChipMinGapX = int32(12)
 )
 
 // themeErrChipActive reports whether the chip should draw and take input.
-// Deliberately NOT gated on a screen. A theme is picked in Settings and judged in
-// the courtroom, and the whole failure this reports is "I applied a theme and it is
-// not the theme" — gating it to the courtroom would hide it on the very screen the
-// user is standing on when they change themes.
 func (a *App) themeErrChipActive() bool {
 	return a.fxPool.themeSidecarErr != "" && !a.fxPool.themeSidecarErrAck
 }
 
 // themeErrChipRect is the chip's rect in the menu-bar band, right-aligned.
-// ok=false means DRAW NOTHING this frame.
-// It measures its clearance against the menu TITLES ALONE (menuBarTitlesRight) and
-// not against menuBarLeftContentRight, which is a correctness requirement rather
-// than a simplification: menuBarLeftContentRight asks iniswapChipRect, iniswapChipRect
 func (a *App) themeErrChipRect(w int32) (sdl.Rect, bool) {
 	if !a.themeErrChipActive() || !a.menuBarPaints() {
 		return sdl.Rect{}, false
@@ -66,10 +55,6 @@ func (a *App) themeErrChipRect(w int32) (sdl.Rect, bool) {
 
 // menuBarRightContentLeft is the left edge of everything RIGHT-anchored in the band
 // OUTSIDE the caller — the mirror of menuBarLeftContentRight (iniswapchip.go).
-// It returns the window width when nothing is right-anchored, which is exactly the
-// value the missing-asset chip and the Iniswap chip used to hardcode: with no theme
-// error on screen every rect in this band is byte-identical to what it was before
-// this chip existed.
 func (a *App) menuBarRightContentLeft(w int32) int32 {
 	if r, ok := a.themeErrChipRect(w); ok {
 		return r.X

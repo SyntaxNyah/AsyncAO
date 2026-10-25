@@ -14,9 +14,6 @@ import (
 )
 
 // TestConnJSONModeFromDecryptorCapability pins the Nyathena JSON negotiation:
-// the legacy decryptor greeting carries "JSON" (decryptor#JSON#%) and the
-// connection must flip its outbound wire to JSON so the rest of the handshake
-// answers the server in kind.
 func TestConnJSONModeFromDecryptorCapability(t *testing.T) {
 	got := make(chan string, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

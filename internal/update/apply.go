@@ -4,11 +4,6 @@ package update
 // unit-testable in a temp dir without touching the live executable — the caller
 // supplies os.Executable() at the one call site. On Windows a RUNNING .exe
 // can't be deleted or overwritten, but it CAN be renamed, so the swap is:
-// Rollback is the safety net for the AV-quarantine-mid-swap case CLAUDE.md
-// warns about: if installing the new binary fails, the old one is renamed back
-// so the install is never left broken. Verification here is INTEGRITY (the
-// download isn't corrupt/truncated), NOT authenticity — that needs release
-// signing, which slots in at VerifyChecksum's call site later.
 
 import (
 	"archive/tar"
@@ -48,9 +43,6 @@ func BackupPath(targetPath string) string { return targetPath + ".old" }
 func StagedPath(targetPath string) string { return targetPath + ".new" }
 
 // CleanupOldVersion removes a leftover .old backup from a previous update.
-// Safe to call on every boot: a no-op when absent, and a still-locked backup
-// (an AV scan holding it) is simply left for a later boot. Caller should run it
-// OFF the boot critical path (it touches the disk).
 func CleanupOldVersion(targetPath string) {
 	_ = os.Remove(BackupPath(targetPath))
 }
@@ -131,9 +123,6 @@ func Download(ctx context.Context, url, destPath string) (int64, error) {
 const stagedBinaryMode = 0o755
 
 // VerifyChecksum reports whether the file at path has the given hex SHA-256.
-// This is INTEGRITY (corruption/truncation), not authenticity: a compromised
-// release could publish a matching sum. An empty wantHex skips the check (no
-// sum was published) and returns nil so the caller can still proceed.
 func VerifyChecksum(path, wantHex string) error {
 	if strings.TrimSpace(wantHex) == "" {
 		return nil
@@ -413,9 +402,6 @@ const bundledLibDirName = "lib"
 // the tarball shipped. This is the SONAME-skew brick documented in
 // docs/CODE-SIGNING.md: the self-updater swaps only the bare binary, not lib/,
 // so a Homebrew dependency crossing a SONAME bump (e.g. libavif.16 → libavif.17)
-// Called as the FIRST thing in StageReplace, before any rename, so a refusal
-// leaves the install completely untouched — a false positive costs the user a
-// manual tarball re-download, never a broken install.
 func preflightDarwinSwap(newPath, targetPath string) error {
 	if runtime.GOOS != "darwin" {
 		return nil
@@ -460,9 +446,6 @@ func preflightDarwinSwap(newPath, targetPath string) error {
 
 // homebrewImports returns the imported dylib paths that resolve inside a
 // Homebrew prefix (/opt/homebrew on Apple Silicon, /usr/local on Intel).
-// System locations (/usr/lib, /System/…) and @-relative names pass through.
-// Pure (no I/O) and split out so it is unit-testable off macOS, like
-// missingBundledDylibs below.
 func homebrewImports(imported []string) []string {
 	var bad []string
 	for _, name := range imported {

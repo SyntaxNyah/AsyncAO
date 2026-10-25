@@ -5,7 +5,6 @@ import "testing"
 // TestPublishedEnumNamesMatchTheTables is the point of the accessors: the editor's
 // dropdowns must offer the FORMAT's own wire names, indexed by the enum's own
 // values, not a second list that drifts.
-//
 // It drives each enum's String() — the same function the reader and writer resolve
 // through — so a name published here that String() does not agree with fails, and
 // so does a table that grew a value the accessor forgot.

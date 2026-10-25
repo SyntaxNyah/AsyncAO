@@ -34,12 +34,6 @@ func mustFifo(t *testing.T, p string) {
 // ONE tree through BOTH byte sources — because "the fold refuses what the index walk
 // skips" is the sentence the whole refusal rests on, and the first draft of that refusal
 // made it while being false.
-//
-// The tree is a pack shipping characters/Phoenix/(a)Normal.png as a FIFO. The index walk
-// skips it (WalkFiles refuses every non-regular entry) so the index over this mount is
-// EMPTY. The fold, refusing only symlinks, matched the authored case the lowercased URL
-// got wrong, handed the path back, and os.ReadFile blocked on the pool worker forever.
-//
 // So the gate asserts both halves and asserts them the same way: the index does not
 // cover the URL, and the fetcher answers a MISS — promptly. The deadline is the load
 // bearing part; without it a regression stalls the run instead of reporting.

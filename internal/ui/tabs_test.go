@@ -17,8 +17,6 @@ import (
 
 // testTabApp builds a headless App with just enough wiring for the tab
 // machinery (real prefs for callword checks; no SDL, no network).
-//
-// testing.TB so benchmarks can stage an App too — see newCaptureHarness.
 func testTabApp(t testing.TB) *App {
 	t.Helper()
 	prefs, err := config.New(filepath.Join(t.TempDir(), "prefs.json"))
@@ -307,7 +305,6 @@ func TestMusicTabDuckOnPark(t *testing.T) {
 	// handler must NOT un-duck at request time (that would make the FOREIGN track
 	// audible during the new track's download) — it KEEPS the duck and records the
 	// awaited URL, so the delivery-time settle can lift it once the right track lands.
-	// HandlePacket normally sets MusicTrack; set it directly so the handler's gate sees it.
 	a.link.sess.MusicTrack = "Trial.opus"
 	a.handleSessionEvents([]courtroom.Event{{Kind: courtroom.EventMusic, Text: "Trial.opus"}})
 	if !a.budget.musicTabDucked {
@@ -475,7 +472,6 @@ func TestMusicAcrossTabsToggleUnwedges(t *testing.T) {
 	// the checkbox label promises "silent while backgrounded" now, and the user
 	// flipping the box is itself the yank request. (This inverts the earlier
 	// defer-to-next-tab-switch design, which read as the checkbox doing nothing.)
-	// The stream is ducked, not stopped: position keeps advancing.
 	d := testTabApp(t)
 	d.budget.musicTabDucked = false
 	d.applyMusicAcrossTabs(false)
@@ -1549,9 +1545,6 @@ func TestRederiveMessageDuckClearsStale(t *testing.T) {
 }
 
 // TestEventMusicStopClearsAwait pins the ~stop await-clear (the missing release seam):
-// a ~stop clears sess.MusicTrack, and the UI EventMusic handler must clear any armed
-// cross-tab await so the "stopped ⇒ no await" invariant holds at this site too — before
-// the fix only the 10s timeout (frozen while minimized) released it, orphaning the duck.
 func TestEventMusicStopClearsAwait(t *testing.T) {
 	a := testTabApp(t)
 	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})

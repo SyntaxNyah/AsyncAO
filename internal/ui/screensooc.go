@@ -107,8 +107,6 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	// frame, outside the row loop.
 	icInk := a.elemInkOr(elemICChatlog, canvasInk, ColText)
 	// #39: the theme's "ic_chatlog" size/family/bold, folded with the log zoom.
-	// icPct is the RESOLVED scale — everything below (the wrap cache key, the
-	// per-row pick, the emoji face) must use the same one or the wrap and the draw
 	// disagree (the #42 class of bug).
 	icPct := a.elemPct(elemICChatlog, a.logPct)
 	font := a.elemFont(elemICChatlog, a.logPct)
@@ -217,7 +215,6 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	// Link hover spans the WHOLE message: hovering any wrapped row of a linked
 	// entry tints every one of its rows (playtest: only the hovered row lit up,
 	// so a wrapped link read as one highlighted line among plain ones). O(1):
-	// the hovered row indexes straight into rows; the loop compares entry ids.
 	hoverLinkEntry := -1
 	if c.hovering(list) && c.mouseX < list.X+wrapW {
 		if li := int((c.mouseY - list.Y + visScroll) / lineH); li >= 0 && li < len(rows) {

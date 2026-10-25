@@ -124,9 +124,6 @@ func TestStripRemovesAllZeroWidth(t *testing.T) {
 
 // TestStripsOlderClientMarker pins the mixed-build playtest case: a NEW client must
 // fully clean an OLDER client's 1-bit marker (U+2060 framing a run of U+200B/U+200C)
-// so no invisible runes leak into the log — 200B/200C are in the new symbol set, so
-// strip drops them. (Decode yields no style: the old run mis-parses under the 3-bit
-// reader, the intended benign degrade until everyone updates to render styles again.)
 func TestStripsOlderClientMarker(t *testing.T) {
 	var b strings.Builder
 	b.WriteString("hi")

@@ -10,12 +10,6 @@ import (
 // TestSubthemeTierProbeOrderMatchesAO2 pins the subtheme tier against
 // AO2-Client's get_asset_paths (path_functions.cpp:175-216), which is the canon
 // this whole interop exists for. Of the eight tiers there, three are ours:
-//
-//	:190-193  themes/<theme>/<subtheme>/<element>   subtheme path
-//	:198-201  themes/<theme>/<element>              theme path
-//	:202-205  themes/<default>/<element>            default theme path — p_default_theme
-//	                                                is passed with NO subtheme
-//
 // The asymmetric last line is the part that needs a gate: it looks like an
 // oversight, "fixing" it into symmetry would resolve files AO2 cannot, and one
 // user's "night" would start reading out of the bundled default's "night".

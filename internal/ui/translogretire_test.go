@@ -1,9 +1,6 @@
 package ui
 
 // F4, the LIFETIME half — see translogsplit_test.go for the identity half.
-// The rule now is ownership: a writer lives exactly as long as some session — the
-// live one or a parked tab's — can still write to it. reapTranscripts asks that
-// question rather than trusting a list of teardown sites to stay complete.
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -96,10 +93,6 @@ func TestAParkedTabKeepsItsTranscriptAndAClosedTabLosesIt(t *testing.T) {
 }
 
 // TestRetiredWritersCannotBePanickedIntoAShutdown is the seam's robustness contract.
-// retire closes the writer's channel, so a second retire, a shutdown drain over the
-// same writer, or a line that raced the teardown would each panic on a naive
-// implementation — and all three are reachable (a reap and CloseTranscript can see
-// the same writer; the message seam holds a pointer it just fetched).
 func TestRetiredWritersCannotBePanickedIntoAShutdown(t *testing.T) {
 	const server = "Skrapegropen"
 	a := transcriptTestApp(t, server)

@@ -54,9 +54,6 @@ func tileMaxAlpha(img *image.RGBA) uint8 {
 }
 
 // TestNoShippedPresetGeneratorElementRasterisesAnEmptyTile is the gate.
-// Both fixes are in the FRAGMENTS (the drafts were audited statically; this is
-// the first wave that runs them through real code), and both use the colour the
-// author had already written elsewhere in the same element rather than a new one.
 func TestNoShippedPresetGeneratorElementRasterisesAnEmptyTile(t *testing.T) {
 	var seen, blank int
 	presetGenElements(t, func(p *theme.Preset, el theme.Element) {

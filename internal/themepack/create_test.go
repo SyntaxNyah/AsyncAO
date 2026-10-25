@@ -1,7 +1,6 @@
 package themepack
 
 // CreateFromSidecar's gates (v1.90.0 W9) — the third way a theme arrives.
-//
 // It is a WRITE PATH into the user's themes folder, so what it owes is the same
 // as what Extract and CopyForEditing owe: it lands inside the root it was given,
 // it never overwrites what is already there, and a refusal leaves nothing behind.

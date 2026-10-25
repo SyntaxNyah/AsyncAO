@@ -16,7 +16,6 @@ import (
 
 // stockChatboxRects is AO2's shipped `default` theme, the same source
 // ao2DefaultDesignRects (ao2defaultrects.go) is transcribed from:
-// The two children are CHATBOX-RELATIVE, which is why theme_layout.go leaves
 // them un-offset (AO2 parents both widgets to ui_vp_chatbox, courtroom.cpp:91).
 var stockChatboxRects = map[string]sdl.Rect{
 	"showname": {X: 1, Y: 0, W: 46, H: 15},
@@ -155,9 +154,6 @@ func TestInsetChatRectNeverInverts(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestParseShownameAlign mirrors AO2's own ladder (courtroom.cpp:3338-3354):
-// lowercase the value, test "right" / "center" / "justify", else left. `justify`
-// maps to CENTRE because that is the branch AO2 wrote for it — Qt::AlignHCenter,
-// identical to "center".
 func TestParseShownameAlign(t *testing.T) {
 	cases := []struct {
 		raw  string
@@ -441,9 +437,6 @@ func TestCanonFontPctOpensTheSameFaceSize(t *testing.T) {
 }
 
 // TestCanvasFontFoldDoesNotThrashOnDragResize is the performance contract.
-// The drag simulated here is a 4:3 window dragged from 400 to 1600 px wide over
-// the stock 714x579 canvas — 1201 distinct sizes, all of which the layout cache
-// rebuilds for.
 func TestCanvasFontFoldDoesNotThrashOnDragResize(t *testing.T) {
 	const (
 		designW, designH = 714.0, 579.0
@@ -486,9 +479,6 @@ func TestCanvasFontFoldDoesNotThrashOnDragResize(t *testing.T) {
 
 // TestThemedChatboxScaleParityAcrossTheCorpus is the measurement this work was
 // justified by, frozen as a test.
-// The rows are real numbers read out of the reference corpus (design canvas from
-// `courtroom`, message width from `message`, point size from courtroom_fonts.ini
-// `message`) and span the whole measured range. The window is 1152x864 on
 func TestThemedChatboxScaleParityAcrossTheCorpus(t *testing.T) {
 	const winW, winH = 1152.0, 864.0
 	for _, tc := range []struct {

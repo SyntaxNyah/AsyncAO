@@ -12,9 +12,6 @@ import (
 // caret/selection/scroll (see the Ctx ta* fields) so it never entangles with
 // the single-line field's math, but shares c.focusID so HandleEvent captures
 // clipboard chords and select-all for it exactly as it does for TextField.
-// This widget only ever draws while the evidence editor is in EDIT mode (an
-// off-the-hot-path modal state), so unlike the courtroom chrome it is allowed
-// to allocate (layout + wrap rebuild per frame).
 
 // editAreaUp/editAreaDown are TextArea-only caret moves. They extend the editOp
 // space AFTER editWordRight (the last editStep op) and are intercepted by
@@ -363,8 +360,6 @@ func (c *Ctx) taIndexAt(lines []taLine, ly int, mx int32) int {
 
 // layoutTextArea lays the value out into visual lines: hard breaks at '\n',
 // then a greedy word wrap (breaking at the last space before overflow) at maxW.
-// Each line records its [start,end) rune range into the whole value so the
-// caret, click mapping and selection all stay on the same coordinates.
 func (c *Ctx) layoutTextArea(value string, maxW int32) []taLine {
 	runes := []rune(value)
 	lines := make([]taLine, 0, 8)

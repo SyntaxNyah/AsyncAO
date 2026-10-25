@@ -25,7 +25,6 @@ import (
 const w4MediaFixture = "w4_media.ini"
 
 // writeThemePNG puts a real, decodable PNG inside a theme folder.
-//
 // REAL, not a stub: loadThemeMediaSet runs assets.DecodeImage on it, and a fixture
 // of arbitrary bytes would take the "could not be decoded" arm and pass an
 // end-to-end test by never reaching the end.

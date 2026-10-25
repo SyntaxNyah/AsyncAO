@@ -1,9 +1,6 @@
 package ui
 
 // Shared source-structure helpers for the wiring gates in this package.
-// These are deletion-catchers, never mirrors: they assert that PRODUCTION code calls
-// production functions in a required relationship. They contain no copy of the logic
-// under test, so they cannot go green against a re-implementation.
 
 import (
 	"go/ast"

@@ -102,10 +102,6 @@ func (w *transcriptWriter) close() {
 // detailedLogLine formats one IC message for the transcript, AO-style: a bracketed timestamp, then
 // "showname (char)" — showname FIRST, falling back to just the character when there's no distinct
 // showname — then the message. No server (it's the folder) or area/pipe columns. Pure — unit-tested.
-// The body is stripped of the zero-width sidechannel (courtroom/spritestyle.go) for the same reason
-// icMessageBody strips it: this file is READ — by the user, and by the in-app log browser — so it is
-// a display string, not a wire record. Nothing re-decodes a transcript, so keeping the marker would
-// buy nothing and cost a file full of invisible runes that break search and copy-paste.
 func detailedLogLine(now time.Time, m *protocol.ChatMessage) string {
 	char := strings.TrimSpace(m.CharName)
 	show := strings.TrimSpace(m.Showname)
@@ -146,15 +142,9 @@ func oocLogLine(now time.Time, line string) string {
 
 // transcriptWriterCap bounds how many live transcript writers ONE RUN may hold open (hard rule
 // #4: no unbounded goroutines / open files). One writer = one open file + one goroutine.
-// The reap is what makes that true. Without it every reconnect minted a session, opened a file and
-// a goroutine, and abandoned both still-open; the 64th cycle hit this cap and transcription stopped
-// for the rest of the run with nothing on screen to say so. Past the cap a new session still simply
 const transcriptWriterCap = 64
 
 // translogKey identifies ONE transcript writer: a server AND the tab session writing to it.
-// The session half is what keeps two tabs on the same server in two files — keyed by server
-// alone they shared a writer and interleaved into one. Comparable (both value fields), so it
-// is a map key directly.
 type translogKey struct {
 	server  string
 	session int

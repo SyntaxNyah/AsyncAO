@@ -4,11 +4,6 @@ package packetutil
 // AsyncAO keeps them as a client extension, registered both-wire via
 // RegisterCodec so the JSON wire carries them too (LemmyAO/Nyathena speak the
 // same shapes). Wire contract:
-//
-//	S→C  VS_CAPS#<enabled>#<ptt_only>#<max_peers>#<codec>#<sample_rate>#<frame_ms>#<max_frame_bytes>#%
-//	S→C  VS_PEERS#<csv_uids>#%
-//	S→C  VS_JOIN#<uid>#%   VS_LEAVE#<uid>#%   VS_SPEAK#<uid>#<on>#%   VS_AUDIO#<from_uid>#<b64>#%
-//	C→S  VS_JOIN#%         VS_LEAVE#%         VS_SPEAK#<on>#%         VS_FRAME#<b64>#%
 
 import (
 	"strings"

@@ -36,9 +36,6 @@ const (
 )
 
 // iniswapChipActive reports whether the chip should draw and take input this frame.
-// Courtroom only: iniswapping needs a character and a session, and the modal itself
-// is a courtroom modal. Suppressed while the Wardrobe is already open, so the chip
-// never sits on top of the thing it opens.
 func (a *App) iniswapChipActive() bool {
 	return a.screen == ScreenCourtroom && a.link.sess != nil && !a.inibrowse.showIni &&
 		!a.sel.gifExporting && !a.sel.replaying && !a.sel.makerOpen
@@ -60,8 +57,6 @@ func (a *App) iniswapChipRect(w int32) (sdl.Rect, bool) {
 	// The reserve is taken off menuBarRightContentLeft, not off `w`: the band grew a
 	// third chip (themeerrchip.go) which is right-anchored OUTSIDE the missing-asset
 	// one, so the strip this chip must stay clear of starts where that chip starts.
-	// With no theme error on screen menuBarRightContentLeft is exactly `w` and this
-	// line is byte-identical to what it was.
 	if x+cw > a.menuBarRightContentLeft(w)-iniswapChipRightReservePx {
 		return sdl.Rect{}, false
 	}
@@ -74,10 +69,6 @@ func (a *App) iniswapChipRect(w int32) (sdl.Rect, bool) {
 }
 
 // menuBarLeftContentRight is the right edge of everything LEFT-anchored in the band:
-// the menu titles, plus the Iniswap chip when it drew. The right-aligned
-// missing-asset chip measures its clearance against this, so the two chips can never
-// be drawn on top of each other — the one thing the band's "drop rather than
-// overlap" rule cannot express with a single anchor.
 func (a *App) menuBarLeftContentRight(w int32) int32 {
 	right := a.menuBarTitlesRight()
 	if r, ok := a.iniswapChipRect(w); ok {

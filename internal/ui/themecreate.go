@@ -1,9 +1,6 @@
 package ui
 
 // THE THEME CREATOR (v1.90.0 W10) — "make a theme from nothing", from Settings.
-// OFF THE RENDER THREAD (hard rule 2) and single-flight (hard rule 4): the job
-// pointer IS the flag, the channel is buffered so the goroutine never blocks on an
-// app that moved on. themeCopyJob's shape exactly.
 
 import (
 	"strings"
@@ -239,7 +236,6 @@ func (a *App) pollThemeCreate() {
 }
 
 // landThemeCreate is the ONE place a finished create changes app state.
-//
 // THE RESCAN IS REQUESTED LAST (deferred), for the reason landThemeCopy spells
 // out: a scan publishes a snapshot built before this folder existed, and the seed
 // below is what lets the very next Save resolve a theme that is sitting on disk.
@@ -270,9 +266,6 @@ func (a *App) landThemeCreate(res themeCreateResult) {
 	// SAME arming maybeOpenEditorAfterCopy already owns (themecopy.go): one
 	// generation, consumed when its own apply lands, disarmed when a later apply
 	// outraces it. A second open path here would be a second set of those rails.
-	// The CUSTOM root is left exactly as it was — the folder landed under the write
-	// root themeLoadRoots already walks, so repointing anything would be the W2 bug
-	// arriving by the front door.
 	if a.d.Prefs != nil {
 		_, customRoot := a.d.Prefs.Load().Theme()
 		a.d.Prefs.SetTheme(m.Root, customRoot)

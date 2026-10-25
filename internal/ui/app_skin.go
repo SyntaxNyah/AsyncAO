@@ -33,8 +33,6 @@ type skinState struct {
 	// themeReport is the applied theme's IMPORT REPORT (themereport.go) — every
 	// degrade, missing family and unbound key the last apply noticed. Bounded by
 	// themeReportCap and replaced wholesale at each landing, never appended to.
-	// TWO READERS, both load-bearing: noteThemeReport says the headline on the warn
-	// line, and the editor's rail chip plus in-canvas panel (themereportpanel.go)
 	themeReport []string
 	// themeImp is the .aotheme TRANSPORT state machine (themeimport.go): the
 	// pending consent, and the one bundle job that may be in flight. On App
@@ -91,8 +89,6 @@ type skinState struct {
 	themeFonts themeFontTable
 	// Theme courtroom geometry (courtroom_design.ini): design-space rects
 	// + emote grid metrics; themeLay caches the window-scaled rects.
-	// themeRectsOrig keeps the theme's PRISTINE geometry so the layout
-	// editor's right-click/Reset can restore it under the user overrides.
 	themeRects     map[string]theme.Rect
 	themeRectsOrig map[string]theme.Rect
 	themeEmoteCell [2]int

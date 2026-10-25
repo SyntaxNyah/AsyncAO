@@ -1,10 +1,6 @@
 package ui
 
 // THE DOCUMENT AND THE TIMELINE (v1.90.0 W7a).
-// These gates DRIVE the seam rather than mirroring it: every one of them goes
-// through themeDoc.apply / revert and the real inspector table, so deleting the
-// funnel, the inverse or a table row fails the suite. Rule 11's own words: a
-// mirror-test that re-implements the seam's logic does not count.
 
 import (
 	"crypto/sha256"
@@ -147,7 +143,6 @@ func alterValue(t *testing.T, d *themeDoc, f *inspectorField, v editValue) editV
 		// than a shortcut: every fkPick field is read as FREE TEXT by the format, so a
 		// name outside this build's live list has to survive a write and a read
 		// unchanged. Appending a letter produces exactly such a name ("grid" -> "gridz")
-		// and the hash round trip below is what proves it round-trips.
 		out.s = d.intern(d.str(v.s) + "z")
 	}
 	return out
@@ -547,9 +542,6 @@ func TestGraveyardIsBoundedAndRefusesRatherThanLosingABody(t *testing.T) {
 
 // TestDeletingAnElementPersistsThroughTheSave closes the gap the preset wave's
 // own carrier bug pointed at: NO element deletion had ever reached the file.
-// The writer edits the lossless document the reader kept, so an element taken out
-// of `side.Elements` and nowhere else is re-emitted from its own surviving
-// [element.<id>] section on the next save and read straight back in — a delete
 func TestDeletingAnElementPersistsThroughTheSave(t *testing.T) {
 	_, doc := editDocRig(t, 2)
 	editUnlockAll(doc)

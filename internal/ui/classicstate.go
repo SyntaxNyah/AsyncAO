@@ -48,8 +48,6 @@ type classicState struct {
 	classicChromeBot int32
 	// tornZ is the session-scoped tear-off panel z-order (torntabs.go), a
 	// permutation of tornTabTable indices back-to-front. Empty = table order.
-	// It exists so clicking a floating panel brings it to the front instead of
-	// the fixed order always drawing Players over Music/Areas.
 	tornZ  []int
 	hidden map[string]bool
 }

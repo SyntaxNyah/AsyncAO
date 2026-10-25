@@ -2,9 +2,6 @@ package ui
 
 // GHOST TEXT — the IC log's QUEUED, not-yet-started messages, drawn faint. One
 // concern, one file.
-// NO PACING CENSUS. The ghost boundary only moves when the play queue does, and
-// a playing message already holds the pacer at the talk tier and refuses
-// SkipFrame (roomBusy) — a NoteAnimating here would be a second, redundant claim
 
 import (
 	"github.com/veandco/go-sdl2/sdl"
@@ -59,8 +56,6 @@ func queuedCount(queued int) int {
 // firstQueuedEntry walks the log BACKWARD over the `n` most recent speech lines
 // and returns the index of the oldest of them — the first message still waiting
 // in the queue. Backward because the pairing is with the TAIL of the log:
-// system lines (music, evidence) interleave freely and are skipped, since they
-// were true the instant they appeared and were never queued.
 func firstQueuedEntry(log []icEntry, n int) int {
 	if n <= 0 {
 		return len(log)

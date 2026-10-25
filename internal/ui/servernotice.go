@@ -102,9 +102,6 @@ type serverNoticeDialog struct {
 }
 
 // openServerNotice raises the box for one server-authored message.
-// PRECEDENCE: a removal always replaces whatever is showing, and an info notice
-// never replaces a removal. A server that spams a MOTD popup as it closes the
-// socket must not be able to bury the ban reason underneath it — that reason is
 func (a *App) openServerNotice(kind serverNoticeKind, title, server, body string) {
 	if kind == serverNoticeNone {
 		return
@@ -174,8 +171,6 @@ func serverNoticeChromeH() int32 {
 
 // serverNoticeBody returns the wrapped body, whether it all fit, and rebakes the
 // cache only when the text, the width, the row budget or the font chain changed.
-// Measured through chromeFaceFor — the face LabelClipped will actually draw each
-// row in — not through the bare ctx font. Measuring in a face that does not cover
 // the script and drawing in one that does is the #42 bug class, and it is not
 // hypothetical here: the reported notice is Russian.
 func (a *App) serverNoticeBody(width int32, rows int) ([]string, bool) {

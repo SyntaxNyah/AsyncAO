@@ -675,7 +675,6 @@ func TestFocusedFieldKeepsItsCaretKeys(t *testing.T) {
 // the nudge. A field keeps eating keys while it holds focus — the editors' fence blanks
 // the POINTER, not the keyboard — so an IC box focused before Ctrl+F2 would otherwise
 // swallow every nudge for the whole edit, from a caret the editor's chrome covers.
-// Both arm paths share closeEditorBlockingOverlays, so both are pinned here.
 func TestArmingAnEditorDropsTheFocusedField(t *testing.T) {
 	for _, tc := range []struct {
 		name string

@@ -43,9 +43,6 @@ func TestProxyDefaultsToTheEnvironment(t *testing.T) {
 
 // TestSetResolverTakesEffectAfterFirstUse is the reason Proxy exists at all
 // instead of assigning http.ProxyFromEnvironment straight into every transport:
-// the stdlib function memoises the environment behind a sync.Once on FIRST USE,
-// process-wide. Anything read later — a settings change, an OS-config refresh —
-// could never change the answer.
 func TestSetResolverTakesEffectAfterFirstUse(t *testing.T) {
 	req := &http.Request{URL: mustURL(t, "https://example.test/x")}
 	if _, err := Proxy(req); err != nil { // force the stdlib's Once to fire first

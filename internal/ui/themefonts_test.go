@@ -239,10 +239,6 @@ func TestBuildThemeFontTableFaceCap(t *testing.T) {
 	fonts := ""
 	files := map[string]string{}
 	// Families are DERIVED from the element list, not a literal sized to match it.
-	// A hand-written slice indexed by element position panics the moment an
-	// identifier is appended to theme.FontElements — which is what adding
-	// debug_log did — and the panic reads like a production bug rather than a
-	// stale fixture.
 	for i, id := range theme.FontElements {
 		fonts += id + " = 12\n" + id + "_font = Fam " + string(rune('A'+i)) + "\n"
 		files["fonts/fam"+string(rune('a'+i))+".ttf"] = "x"
@@ -420,8 +416,6 @@ func TestThemeFontsPrefRoundTrips(t *testing.T) {
 // TestChatboxInkNeedsAnActualColourKey pins the gate on the chatbox ink, which
 // used to be Theme.HasFont and had to become FontSpec.ColorSet.
 // colour from its own key and the size key implies nothing (courtroom.cpp:1223-1225).
-// Goes red if either gate drifts back to HasFont, or if some later refactor
-// starts trusting FontSpec.Color without consulting ColorSet.
 func TestChatboxInkNeedsAnActualColourKey(t *testing.T) {
 	// Size only. HasFont says yes, ColorSet says no — and no is correct.
 	sized, _ := writeThemeFonts(t, "SizeOnly", "message = 20\nshowname = 14\n", nil)

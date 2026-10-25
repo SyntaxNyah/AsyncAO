@@ -75,9 +75,6 @@ func evidenceRelFromMerged(path string) string {
 
 // mergedBrowseMounts returns the local asset sources this browse walks: the
 // local-only mount set when that mode is on, else the layered set, else nil.
-// STREAM MODE IS DELIBERATELY NIL, rather than "the mounts the user configured but
-// is not using". This browse is the LOCAL half of the source story: listing folders
-// the pipeline never reads would offer filenames that mean nothing at the origin,
 func (a *App) mergedBrowseMounts() []string {
 	if a.d.Prefs == nil {
 		return nil
@@ -92,11 +89,6 @@ func (a *App) mergedBrowseMounts() []string {
 }
 
 // startMergedBrowseLoad kicks the off-thread listing of one virtual directory.
-// The mount set is resolved HERE, on the render thread, and captured by the
-// goroutine — prefs are render-thread state and the loader may not touch them
-// (§17.4: off-thread work captures its inputs before it starts). Single-flight is
-// the browser's own loading latch (navBrowseTo sets it, the draw clears it when the
-// result lands), so the cap-1 result channel can never block the sender.
 func (a *App) startMergedBrowseLoad(dir string, keep func(string) bool) {
 	mounts := a.mergedBrowseMounts()
 	if len(mounts) == 0 {

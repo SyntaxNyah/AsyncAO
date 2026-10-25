@@ -324,9 +324,6 @@ func formatReplayWindow(d time.Duration) string {
 
 // stopRecording ends capture and writes the .aorec next to the exe under
 // recordings\ off the render thread (§17.2: file I/O never blocks rendering).
-// It returns a done channel closed when the deferred .aorec write finishes (or
-// gives up), so a caller can wait for the file instead of polling the filesystem;
-// nil when nothing was written.
 func (a *App) stopRecording() <-chan struct{} {
 	if !a.sel.recActive {
 		return nil
@@ -695,7 +692,6 @@ func (a *App) replayMessagePos() (cur, total int) {
 // advanceReplay feeds the next recorded event whenever the replay room returns
 // to idle, so the courtroom's own pacing (typewriter / preanim / linger) times
 // the playback — NOT the recorded wall-clock deltas, which would double-drag.
-// When the stream is exhausted and the room settles, the replay ends.
 func (a *App) advanceReplay(dt time.Duration) {
 	if !a.sel.replaying || a.sel.replayRoom == nil {
 		return
@@ -784,9 +780,6 @@ func (a *App) driveReplay(dt time.Duration) {
 	a.sel.replayRoom.Typewriter.Interval, a.sel.replayRoom.TextStay = a.replayTiming() // live Playback-speed slider
 	// H5 pre-warm: while the FLAT recording's sprites + music load, hold the first
 	// event off-stage (advanceReplay is skipped) so playback starts warm, not popping.
-	// The room + viewport still Update so the stage (StartBg, once resident) draws
-	// under the loading overlay. The phase self-ends (all-ready / quiesce / hard cap)
-	// or the Skip button clears it; either way the next frame feeds the first event.
 	if a.replayWarming() {
 		a.tickReplayWarm()
 		a.sel.replayRoom.Update(dt)

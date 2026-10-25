@@ -210,9 +210,6 @@ func scanBaseZip(path string, s baseScan) baseScan {
 
 // listSubdirs counts a directory's sub-folders and returns the first `sample` of
 // their names (sample 0 = count only). A missing directory is not an error here:
-// It reads in batches against baseScanEntryCap rather than calling ReadDir(-1),
-// so a directory with a hundred thousand entries costs a bounded slice instead of
-// materialising all of them (rule 4).
 func listSubdirs(dir string, sample int) (names []string, n int, capped bool) {
 	f, err := os.Open(dir)
 	if err != nil {
@@ -245,9 +242,6 @@ func listSubdirs(dir string, sample int) (names []string, n int, capped bool) {
 // baseSuggestion finds a better path than the one picked, for the two mistakes
 // that actually happen. Only called when the pick itself does not look like a
 // base, so it never second-guesses a correct answer.
-// ONE LEVEL TOO DEEP is the folder literally named characters/ (or one of its
-// siblings): its parent is the base. ONE LEVEL TOO HIGH is the install root that
-// CONTAINS the base, which is the shape every AO2 client install has.
 func baseSuggestion(path string) string {
 	if isBaseSubdirName(filepath.Base(path)) {
 		if parent := filepath.Dir(path); parent != path {

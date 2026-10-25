@@ -59,8 +59,6 @@ func TestQuitEventStillEndsTheRunLoop(t *testing.T) {
 
 // TestOtherWindowEventOnMainWindowDoesNotEndTheRunLoop guards against a
 // too-broad rewrite (e.g. "any WindowEvent for the main window quits")
-// collapsing the Event-code check: only WINDOWEVENT_CLOSE is a quit
-// signal, not every window event the main window can receive.
 func TestOtherWindowEventOnMainWindowDoesNotEndTheRunLoop(t *testing.T) {
 	ev := &sdl.WindowEvent{
 		Type:     sdl.WINDOWEVENT,

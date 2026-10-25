@@ -7,8 +7,6 @@ import (
 // AO2's ooc_toggle: one button that swaps the server chat panel for the debug
 // log (issue #21 label 10, "server/debug?").
 // AO2 wires ui_ooc_toggle to on_ooc_toggle_clicked (../AO2-Client/src/courtroom.cpp:5197):
-// The button's label names what is CURRENTLY on screen, not what clicking does
-// (AO2 sets "Server" at :1014 while server chat is up). Easy to invert.
 
 const (
 	// debugPanelLineGap matches the log lists' row spacing.
@@ -26,10 +24,6 @@ func (s *sessionState) oocToggleLabel() string {
 }
 
 // drawThemedDebugLog paints the bounded failure ring into a theme's rect.
-// Deliberately plainer than drawOOCLogList: the debug ring is diagnostics, so it
-// has no name colouring, no link spans and no drag-select — just stamped lines,
-// wrapped and scrollable. It shares the log font so it matches the panel it
-// replaces.
 func (a *App) drawThemedDebugLog(list sdl.Rect) {
 	c := a.ctx
 	if list.W <= 2*debugPanelPad || list.H <= 0 {
@@ -50,9 +44,6 @@ func (a *App) drawThemedDebugLog(list sdl.Rect) {
 	// #21 label 16: "debug_log_color". This panel only ever draws inside the
 	// theme's design canvas (it IS the ms_chatlog element), so canvasInk is
 	// unconditionally true here — unlike the log lists, which have chrome twins.
-	// AO2's debug_log_error_color / _warning_color etc. are a DIFFERENT family: they
-	// go through AOApplication::get_color rather than set_font's per-element key,
-	// and are out of scope (this ring is not severity-tagged).
 	ink := a.elemInkOr(elemDebugLog, true, ColTextDim)
 	lineH := int32(font.Height()) + debugPanelLineGap
 	wrapW := body.W - scrollBarW - scrollBarGap

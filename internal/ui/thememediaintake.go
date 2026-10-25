@@ -1,10 +1,6 @@
 package ui
 
 // IMAGE INTAKE (v1.90.0 W10) — "an easy way to upload images and animated webps".
-// BUDGET-AWARE AT INTAKE. The W4 plan already refuses an over-cap image at APPLY
-// time with a self-describing placeholder; refusing it HERE as well means the user
-// finds out while they can still pick a smaller file, and the refusal is the chip
-// (design §3.3: name the offender, name the limit, offer the fix) rather than an
 
 import (
 	"errors"
@@ -176,12 +172,6 @@ func (a *App) editorTakeImage(path string) bool {
 }
 
 // runEditImageJob is the whole off-thread half. GOROUTINE ONLY.
-// THE ORDER IS THE POINT: refuse by SIZE before anything is read, hash the bytes we
-// actually copied (so the [media] row's verification is of the file in the theme,
-// not of whatever the source has become since), copy atomically, then decode the
-// COPY — because the copy is the file the theme will load, and decoding the source
-// instead would let a truncated write ship a row whose hash and size describe a
-// picture that is not there.
 func runEditImageJob(job *editImageJob, anims bool) editImageResult {
 	info, err := os.Stat(job.src)
 	if err != nil {
@@ -250,7 +240,6 @@ func (a *App) pollEditorImage() {
 }
 
 // landEditorImage is the ONE place a finished intake changes the document.
-//
 // IT ALWAYS DISPOSES OF THE DECODED PAGE — uploaded on the happy path, released on
 // every refusal. A Decoded that reaches neither is a pooled buffer that never goes
 // back (releaseDecoded's own note).
@@ -325,10 +314,6 @@ func (a *App) applyImageIntakeOps(row theme.MediaEntry, el theme.Element) string
 }
 
 // editImageBudgetRefusal is the intake's budget verdict, or "" for one that fits.
-// IT ASKS THE SAME TWO NUMBERS THE PLANNER ASKS, by CALL rather than by copy
-// (planThemeMedia's own note: two copies of a budget are two budgets). The
-// arithmetic is the planner's too — per-item first, then the running total — so an
-// image accepted here cannot be refused by the plan on the next apply.
 func (a *App) editImageBudgetRefusal(want int64) string {
 	mib := a.d.Prefs.Load().TexBudgetMiB()
 	item := render.ThemeMediaItemByteCap(mib)
@@ -346,10 +331,6 @@ func (a *App) editImageBudgetRefusal(want int64) string {
 }
 
 // noteIntakenMedia appends the plan entry for a row this client has just written.
-// The twin of noteCopiedTheme, and it exists for the same reason: the authoritative
-// producer (planThemeMedia / the theme scan) cannot run here, and waiting for it
-// would leave a window in which the element the user just added resolves to no key
-// at all. Bounded by render.ThemeMediaCap, which is the plan's own bound.
 func (a *App) noteIntakenMedia(row theme.MediaEntry, path string) {
 	if len(a.themeMediaPlan.Entries) >= render.ThemeMediaCap {
 		return // hard rule 4: the plan's own bound wins over convenience

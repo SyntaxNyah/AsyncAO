@@ -46,9 +46,6 @@ func TestComponentEnvWiring(t *testing.T) {
 	}
 
 	// walkBlob visits a state blob (App, or an embedded blob such as sessionState):
-	// its EMBEDDED fields are blobs to descend into, its NAMED struct fields are
-	// components to check. That is what covers a component parked inside
-	// sessionState without re-promoting anything.
 	var walkBlob func(v reflect.Value, path string)
 	walkBlob = func(v reflect.Value, path string) {
 		for v.Kind() == reflect.Ptr {

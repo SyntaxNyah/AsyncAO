@@ -65,7 +65,6 @@ const areaPlayersCap = 200
 // parseAreaLine best-effort-parses a /getarea player row "[<uid>] <name>"
 // (optionally a trailing "(showname)") into the UID map + picker list. Server
 // formats vary, so a miss is fine — the popup's manual UID box covers it.
-// Called per incoming OOC line; allocation-light (no regexp).
 func (a *App) parseAreaLine(line string) {
 	s := strings.TrimSpace(line)
 	// Find the first "[<digits>]". A server may prefix a "[Title]" tag before the

@@ -7,9 +7,6 @@ import (
 )
 
 // TestAreaMenuRowsAreAllReachableActions pins the area kebab's model (areamenu.go):
-// every row maps to something that already exists, the one toggle is the one that
-// keeps the menu open, and the two server rows grey out with no session rather than
-// vanishing.
 func TestAreaMenuRowsAreAllReachableActions(t *testing.T) {
 	a := &App{env: env{ctx: &Ctx{}}}
 	for _, row := range areaMenuRows {
@@ -57,11 +54,6 @@ func TestAreaMenuRowsAreAllReachableActions(t *testing.T) {
 // TestAreaMenuButtonTakesRoomFromItsOwnRow pins the layout rule the roster toolbar
 // was rebuilt to enforce: a control added to a header row must SHRINK its neighbours,
 // not draw over them — a theme's music_list panel is 212 px wide and has no slack.
-// It DRIVES splitAreaHeaderRow, which is the row's entire arithmetic, and asserts
-// only RELATIONSHIPS between the rects that come back. The first cut of this gate
-// recomputed the split from the same constants the drawer used and compared the answer
-// with itself: a tautology that could not fail, and did not, when the count label was
-// pointed back at the full panel width and drew under the ⋮.
 func TestAreaMenuButtonTakesRoomFromItsOwnRow(t *testing.T) {
 	// 212 px is the theme music_list with no slack; the others are a classic docked tab
 	// and a torn-off panel dragged wider.
@@ -130,12 +122,6 @@ func TestAreaMenuButtonTakesRoomFromItsOwnRow(t *testing.T) {
 // forgets to gate itself is not a dead row, it is five rows appearing in a menu
 // about a list the user is not looking at. That is exactly how the first cut of
 // this kit shipped.
-// It drives musicMenuRowDrawn (the pane's own row filter) rather than re-deciding
-// liveness, and asserts BOTH directions: nothing of the block on the Music view,
-// all of it — divider included — on the Areas view. The divider matters on its own,
-// because it carries the shared musicMenuSeparator kind and so is invisible to
-// every per-kind predicate: gate the four rows and forget the fifth and the music
-// menu ends in a rule under its last row with nothing beneath it.
 func TestMusicViewMenuCarriesNoAreaRow(t *testing.T) {
 	const themed = false // the classic panel; the volume row's answer is not what's under test
 

@@ -1,9 +1,6 @@
 // Package videoenc is the MP4/WebM side of the scene exporter: it turns the
 // captured RGBA frames into a real video file by streaming them into a SYSTEM
 // ffmpeg over a stdin pipe (rawvideo → H.264/VP9).
-//
-// Unlike internal/webpenc this package is PURE GO — no CGO, no build-time
-// dependency — because ffmpeg is invoked as an external process, not linked.
 // That is deliberate and load-bearing: the app must boot and run fully WITHOUT
 // ffmpeg installed (only the video-export action is then disabled), so the
 // encoder can't be a linked library (user constraint: "it still boots even
@@ -128,8 +125,6 @@ type Encoder struct {
 
 // New starts an ffmpeg that reads rawvideo (RGBA, w×h, fps) from stdin and writes
 // an encoded video to outPath in the chosen format at the given quality (0..100).
-// ffmpeg must exist — guard with Available first. The process runs until
-// Finish/Close. Returns an error if ffmpeg can't be started.
 func New(outPath string, w, h, fps, quality int, format Format) (*Encoder, error) {
 	if w <= 0 || h <= 0 {
 		return nil, fmt.Errorf("videoenc: bad size %dx%d", w, h)
@@ -320,7 +315,6 @@ func lastStderrLines(s string) string {
 // probeDurationSec asks ffmpeg for path's container duration by parsing the
 // "Duration: HH:MM:SS.ss" header of `ffmpeg -i` output (which exits non-zero with
 // no output requested — expected, and cheap: headers only, nothing decodes).
-// ok=false when ffmpeg is missing or the header doesn't parse (e.g. "N/A").
 func probeDurationSec(path string) (secs float64, ok bool) {
 	bin := FFmpegPath()
 	if bin == "" {

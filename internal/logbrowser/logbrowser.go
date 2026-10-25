@@ -1,7 +1,4 @@
 // Package logbrowser is the pure logic + disk IO behind the log browser screen:
-// scanning the logs/ tree, loading a scope off-thread, and filtering/stats over the
-// loaded lines. It holds no UI state (scroll, selection, query) and never touches SDL
-// or App — ui keeps those and calls this package's functions.
 package logbrowser
 
 import (

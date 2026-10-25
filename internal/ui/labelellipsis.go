@@ -16,17 +16,10 @@ import (
 // truncateEllipsisASCII is the fallback marker for a face with no U+2026: three
 // FULL STOPS, the typographic ancestor of the ellipsis and a character every face
 // that can draw a sentence already has.
-// Not "..", not a single ".", and not U+22EF or any of the other Unicode ellipsis
-// relatives: three periods is what every text renderer degrades an ellipsis to, and
-// each of the alternatives is either ambiguous with a real full stop or just as
-// likely to be missing as U+2026 itself.
 const truncateEllipsisASCII = "..."
 
 // ellipsisFor returns the truncation marker `f` can draw, walking down from AO2's
 // own U+2026 to three periods to nothing at all.
-// COST: one bounded pointer scan (setOf, then f's index in that set) plus one cmap
-// probe per call, and it is called only on the branch where a label did not fit —
-// the same branch that was already about to walk the string re-measuring it. The
 func (c *Ctx) ellipsisFor(f *ttf.Font) string {
 	cov := c.faceCover(f)
 	if cov == nil {

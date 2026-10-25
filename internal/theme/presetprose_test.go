@@ -97,8 +97,6 @@ var presetProseBan = []presetProseRule{
 // presetProseFormatKeys are keys of the FORMAT whose names collide with the
 // banned vocabulary. `shape_tier` is a published chrome key an author sets, so a
 // comment explaining it must stay legal even though "tier" is banned as a word.
-// They are blanked out of the comment before the table runs, which is narrower
-// than weakening the patterns and keeps the collision visible in one place.
 var presetProseFormatKeys = []string{"shape_tier"}
 
 // presetProseRequiredRules is the deletion catcher. A rule may be renamed only
@@ -174,8 +172,6 @@ func eachPresetLine(t *testing.T, visit func(path string, n int, line string)) {
 // presetCorpusCoverage is the verdict on a corpus walk: it compares what the
 // walk visited against the SHIPPED LIBRARY and returns one sentence per way the
 // two disagree.
-// A library with an EMPTY axis is itself a complaint, so passing nil (or a
-// library that failed to load) cannot make this return "all clear".
 func presetCorpusCoverage(lib *PresetLibrary, visited [PresetKindCount]map[string]bool) []string {
 	var out []string
 	for k := PresetKind(0); k < PresetKindCount; k++ {
@@ -387,7 +383,6 @@ func TestPresetCorpusWalkReadsEveryShippedFragment(t *testing.T) {
 // TestPresetCorpusCoverageCatchesADroppedAxis is the encapsulation half (hard
 // rule 11): the coverage verdict cannot fire on the shipped corpus, so a verdict
 // nobody has watched fail is a verdict nobody knows works.
-//
 // It drives presetCorpusCoverage — the same function eachPresetLine calls, not a
 // copy of its reasoning — with censuses that are wrong in each of the ways a
 // broken walk is wrong, and with a nil library, which is the case where "no

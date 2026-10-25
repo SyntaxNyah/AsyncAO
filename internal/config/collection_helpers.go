@@ -100,7 +100,6 @@ func toggleInt(list []int, v int) ([]int, bool) {
 // promoteFront moves ext to the front of list, deduped (exact) and bounded by cap, so
 // the most-recently-seen entry leads the preference order (RecordLearned's
 // promote-not-overwrite rule).
-// Mutation: change the len(next) == cap guard to > and TestCollectionHelpersPromoteFront fails.
 func promoteFront(list []string, ext string, cap int) []string {
 	next := make([]string, 0, len(list)+1)
 	next = append(next, ext)

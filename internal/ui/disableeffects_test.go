@@ -26,10 +26,6 @@ func newEffectsRig(t *testing.T) (*App, *config.AssetPreferences) {
 // render-side choke points that carry the LOCAL eye-candy. Every knob is turned
 // ON first, so a regression that forgets to consult the master shows up as a
 // non-zero field rather than as a default that happened to already be false.
-// UserScaling is deliberately EXCLUDED from the suppression: it decides how big a
-// sprite draws (char.ini / the enlarging rule), not whether it sparkles, so the
-// test asserts it SURVIVES. Zeroing it would silently resize every character the
-// moment someone asked for a calmer screen.
 func TestDisableEffectsSuppressesEveryLocalFX(t *testing.T) {
 	a, prefs := newEffectsRig(t)
 

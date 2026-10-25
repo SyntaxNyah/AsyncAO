@@ -11,13 +11,6 @@ import (
 // server relays each message only to its recipients (the owner's logs see it, like
 // all traffic — other players don't). The server attributes every PM to its real
 // sender, so group roles (owner-only kick) can't be forged.
-//
-// The PM body is the human-readable text PLUS a tiny invisible control frame
-// (magic 0x74) carrying the KIND and, for groups, the group id / control fields. A
-// non-AsyncAO recipient just reads the text; AsyncAO threads it and acts on the
-// frame. Group state (members, owner) is reconstructed client-side from these
-// control messages — there is NO server-side group.
-//
 // Nyathena / Athena (and tsuserver) take "/pm <uid[,uid...]> <message>": the comma
 // list fans the message out to every recipient in ONE command, the server
 // delivering it privately to each. Received PMs arrive as a server CT whose Name is
