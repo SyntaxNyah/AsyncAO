@@ -491,6 +491,64 @@ func TestWriteContentBundleCancelRemovesPartial(t *testing.T) {
 	}
 }
 
+// TestRemovePartialSparesUserFolder pins the created-only rule: a folder the writer
+// did not create survives a cancel with everything in it.
+func TestRemovePartialSparesUserFolder(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "bundle")
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	user := filepath.Join(dest, "my-notes.txt")
+	if err := os.WriteFile(user, []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	removePartial(dest, false) // we did not create it
+	if _, err := os.Stat(user); err != nil {
+		t.Errorf("pre-existing folder must survive: %v", err)
+	}
+	removePartial(dest, true) // we did create it
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Errorf("created folder must be removed; Stat err=%v", err)
+	}
+}
+
+// TestCancelContentJobStopsPackaging drives the whole path: the package goroutine
+// runs a stub writer that waits for the cancel channel, CancelContentJob closes it,
+// and the writer observes the cancel instead of finishing its work.
+func TestCancelContentJobStopsPackaging(t *testing.T) {
+	old := packageWriteBundle
+	started := make(chan struct{})
+	sawCancel := make(chan struct{})
+	packageWriteBundle = func(_ *assets.Manager, _, _ string, _ *sceneRecording, _, _ []string, cancel <-chan struct{}) contentPackageResult {
+		close(started)
+		<-cancel
+		close(sawCancel)
+		return contentPackageResult{msg: "Packaging cancelled."}
+	}
+	t.Cleanup(func() { packageWriteBundle = old })
+
+	dir := recordingsDir()
+	if dir == "" {
+		t.Skip("no recordings dir resolvable in this environment")
+	}
+	a := headlessProbeApp(t, assets.NewLocalFetcher([]string{t.TempDir()}), true)
+	rec := &sceneRecording{Version: recordingVersion, Origin: "http://example.invalid/", StartBg: "courtroom", Events: []recEvent{msgEvent("Phoenix", "normal", "", "", "")}}
+	if !a.StartContentReport(rec, "cancelslow") {
+		t.Fatal("report refused")
+	}
+	drainContentJob(t, a)
+	if !a.PackageContentBundle(rec) {
+		t.Fatal("package refused")
+	}
+	<-started
+	a.CancelContentJob()
+	select {
+	case <-sawCancel:
+	case <-time.After(5 * time.Second):
+		t.Fatal("CancelContentJob did not reach the package writer")
+	}
+}
+
 // TestWriteContentBundleDirect exercises the writer without the App/probe
 // plumbing (layout + gap-list + never-overwrite + external-skip + byte round-
 // trip). It re-drains bytes from a LocalFetcher-backed Manager, mirroring how
