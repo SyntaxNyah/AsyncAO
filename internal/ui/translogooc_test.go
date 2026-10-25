@@ -69,11 +69,6 @@ func transcriptNewFile(t *testing.T, server string, before map[string]bool) (str
 }
 
 // TestPushOOCSuppressedRosterBurstNeverReachesDisk pins "log only what's shown":
-// the /gas reply burst that pushOOC deliberately keeps OFF the on-screen OOC log
-// (the suppression window) must not reach the transcript file either. Checked by
-// reading the file back after a synchronous CloseTranscript, not by peeking the
-// writer's channel length — the background goroutine can drain a wrongly-queued
-// line before an in-process check ever observes it, which would hide the bug.
 func TestPushOOCSuppressedRosterBurstNeverReachesDisk(t *testing.T) {
 	withExeDataRoot(t)
 	const server = "Skrapegropen-ooc-suppressed"

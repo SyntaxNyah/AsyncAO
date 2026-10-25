@@ -14,11 +14,6 @@ import (
 // against a ColPanel track, and every built-in chrome preset put those two
 // within 28 luma units of each other — under the kit's own 48-unit
 // minInkSkinContrast readability floor (see sliderIdleThumbColor, ui.go).
-// These tests drive the REAL draw path (an actual Ctx.Slider/VScrollbar call
-// into an offscreen render target, with the painted pixel read back) rather
-// than re-checking sliderIdleThumbColor's arithmetic in isolation — a test
-// that only re-derived the math would stay green even if a callsite reverted
-// to the raw `col := ColPanelHi` this fix replaces.
 
 const (
 	// sliderThumbFixtureW/H size the offscreen target the tests paint into —

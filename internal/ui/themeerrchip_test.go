@@ -1,13 +1,7 @@
 package ui
 
 // Gates for the theme-sidecar refusal surface (v1.90.0 W4).
-//
 // The defect these exist against is not a crash or a wrong pixel — it is SILENCE.
-// theme.Theme.SidecarErr() shipped in W1 with no consumers, so a theme whose
-// asyncao_theme.ini the reader refused applied anyway, rendered its AO2 half, and
-// dropped every element, override, palette role and pane in the file with nothing
-// anywhere to say so. A test that only checked "the theme still loads" would have
-// passed throughout. These check that somebody is TOLD.
 
 import (
 	"fmt"
@@ -58,7 +52,6 @@ fill = #ff0000
 
 // TestSidecarRefusalIsVisibleOnScreen is the ship-blocker gate: a refused sidecar
 // must reach a surface the user can see, and a clean one must reach none.
-//
 // It drives the two halves the chip is built from — the strings the apply goroutine
 // renders, and the chip's own active/rect decision — rather than a screenshot,
 // because the property is "somebody is told", not "the pixels are here".
@@ -182,7 +175,6 @@ func TestSidecarRefusalChipDoesNotOverlapItsNeighbours(t *testing.T) {
 }
 
 // TestThemeBadgeReflectsASidecarRefusal is the catalog half.
-//
 // A badge is a promise about what will happen when you pick the theme. "AO2 +
 // native" on a folder whose native file the loader is going to refuse is that
 // promise being broken silently — and a sidecar-ONLY folder in that state loads

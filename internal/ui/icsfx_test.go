@@ -54,7 +54,6 @@ func TestOutgoingSFXFollowsThePreCheckbox(t *testing.T) {
 // TestSFXOnIdlePromotesTheEmoteModExtends the rule above for the preference the
 // field-batch gate could only assume: AO2's sfx_on_idle / "Always Send SFX"
 // (options.cpp:569-572, `config.value("sfx_on_idle", false)`).
-//
 // The gate above pins SFX_NAME, which sfx_on_idle does NOT touch. What the option
 // changes is the emote MOD — courtroom.cpp:2107-2115 rewrites IDLE→PREANIM and
 // ZOOM→PREANIM_ZOOM with an empty pre name and no delay, because AO plays a

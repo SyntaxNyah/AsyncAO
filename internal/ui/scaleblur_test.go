@@ -173,9 +173,6 @@ func TestWeightedLabelMatchesPlainWhenNotBold(t *testing.T) {
 // REAL production draw path (labelCoveringCentered), not a reimplementation of
 // DrawScaled's contract. It compares the production call's painted pixels against the
 // SAME underlying raster (same emojiRaster cache key, so literally the same texture)
-//   - At 100% deviceExact is false for BOTH calls by design (the identity scale has
-//     nothing to fold), so they must be byte-identical — a regression here would be a
-//     DIFFERENT bug, and this test correctly does not claim to catch one.
 func TestLabelCoveringCenteredDeviceExactAtFractionalScale(t *testing.T) {
 	const canvasW, canvasH = 400, 200
 	const text = "React \U0001F600 label" // U+1F600 is supplementary-plane → NeedsEmojiFallback is unconditionally true
@@ -306,8 +303,6 @@ func TestLabelDeviceExactAtFractionalScale(t *testing.T) {
 			// excludes DefaultScalePct unconditionally — so blitLabel takes the
 			// OLD blitLabelScaled branch even though the ambient SetScale above
 			// is still fractional. Production knob, not a gate reimplementation:
-			// this is the same beginRenderScaleOverride an offscreen export
-			// bracket calls to keep RenderScalePct honest inside its own SetScale.
 			c.beginRenderScaleOverride(DefaultScalePct)
 		}
 		c.Label(4, 4, text, col)

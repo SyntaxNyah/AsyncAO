@@ -4,7 +4,6 @@ package ui
 // (../AO2-Client/src/scrolltext.cpp), plus the two wirings that make it real: the
 // draw joins the pacing census, and the plate reaches it only when a title does not
 // fit and ReduceMotion is off.
-//
 // The port shipped with NO tests at all, which is how the census call came to be
 // deletable with the whole package still green.
 
@@ -194,7 +193,6 @@ func TestMarqueeSlotSteadyStateAllocatesNothing(t *testing.T) {
 // the texture LabelClippedFontWeight actually blits, or the draw clamps
 // (ui.go LabelClippedFontWeight: `if w > maxW { w = maxW }`) and the tail of every
 // copy — the separator — is cut.
-//
 // It drives the two production functions against each other rather than
 // re-implementing either, and it states the failure it is guarding: measured plain,
 // the bound is SHORTER than the bold texture, which is the clamp.

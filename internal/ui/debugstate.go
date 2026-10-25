@@ -8,11 +8,8 @@ import (
 // window and the rendered row live in that package now — a compile-enforced
 // boundary (ui cannot see the []Entry; it can only Push/PushAt/Lines/Len), which
 // is the shape the rest of the decomposition is aiming at.
-//
 // It stays a named type with unexported method names so App's ~130 call sites
 // keep reading as a.debug.push(...) rather than growing an import at each one.
-// The clock-injected PushAt has no adapter: its only in-tree caller is the fold
-// test, which now lives beside the code it pins.
 type debugSink struct {
 	debuglog.Sink
 }

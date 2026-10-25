@@ -98,7 +98,6 @@ const (
 
 // themeEditReasonFor is the whole rule, PURE over its three facts so the row's
 // wording and the action's refusal are testable without a window or a theme.
-//
 // AN UNKNOWN THEME (no catalog entry yet) with a native tier is treated as
 // editable, which is deliberate: that is the state during the first frames after
 // the editor opens, and downgrading it to "copy first" would flip the button under
@@ -191,7 +190,6 @@ func (a *App) copyThemeForEditing(name string, intent themeCopyIntent) {
 
 // noteThemeCopy posts one line where the user is actually looking: the editor's
 // rail chip when the editor is open, the client's shared warn line otherwise.
-//
 // ONE function rather than a parameter at every call site, because the action has
 // two entry points and a refusal delivered to the surface the user is NOT on is a
 // silent refusal.
@@ -291,7 +289,6 @@ func (a *App) landThemeCopy(res themeCopyResult) {
 }
 
 // retargetEditorDoc points the open session at the copy.
-//
 // THE UNSAVED WORK IS THE POINT. The copy is made from the FILES ON DISK, so a
 // path that closed the document and reopened it over the copy would charge a
 // session's work for the privilege of being allowed to save — which is exactly the
@@ -312,7 +309,6 @@ func (a *App) retargetEditorDoc(name string, prov theme.ImportInfo) {
 
 // carryThemeRectOverrides copies the layout editor's per-theme tweaks onto the
 // copy's name (design §Q5 step 5).
-//
 // Bounded by preferences' own caps: SetThemeRectOverride refuses past
 // themeOvThemesCap / themeOvRectsCap, so this cannot grow the file without limit
 // however many copies a user makes.
@@ -376,7 +372,6 @@ func themeKindAfterCopy(src themeKind) themeKind {
 }
 
 // maybeOpenEditorAfterCopy opens the editor over a copy once ITS apply lands.
-//
 // Called from pollThemeApply beside maybeResizeToThemeDesign, and armed exactly as
 // that one is — by a single generation, so it cannot leak onto healTheme's
 // eviction re-kick, the texture-filter apply or a boot apply. The guard rails are
@@ -432,7 +427,6 @@ type themeEditorRowText struct {
 }
 
 // buildThemeEditorRow is the row's wording. PURE over its two inputs.
-//
 // THE BUTTON IS NEVER ABSENT, which is the defect this closes: the row used to
 // draw the "copy it for editing first" sentence with no button beside it, so an
 // AO2 theme — the state every AO2 user is in on first run — offered advice and no
@@ -457,7 +451,6 @@ func (a *App) themeEditorRow() themeEditorRowText {
 }
 
 // copyAppliedThemeForEditing is the row's other act: copy what cannot be opened.
-//
 // It resolves the NAME (the applied theme is the only thing the editor can open,
 // so it is the only thing worth copying) and hands off. The draw site keeps the
 // branch itself — Settings is the design's headline entry point and

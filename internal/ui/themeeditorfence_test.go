@@ -28,11 +28,6 @@ func editorEyeToggleAt(idx int32) (x, y int32) {
 
 // TestAnOpenPanelFencesTheCanvasUnderIt is the headline half: a press inside the panel
 // must not reach the canvas at all.
-// The assertion is on the SELECTION and the GESTURE rather than on one element's rect,
-// because that covers every shape the hole could take: with the fence missing the press
-// either starts a drag on the box under the panel, or re-selects some AO2 widget there,
-// or finds nothing and CLEARS the selection. All three are visible failures of "the
-// surface behind a panel is click-dead"; all three fail this gate.
 func TestAnOpenPanelFencesTheCanvasUnderIt(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()
@@ -67,10 +62,6 @@ func TestAnOpenPanelFencesTheCanvasUnderIt(t *testing.T) {
 
 // TestAnOpenPanelFencesTheRailsBehindIt is the other half, and it is a CONTROL plus a
 // TREATMENT so it cannot pass by missing its target.
-// Phase 1 (panel closed) proves the click really lands on the eye toggle. Phase 2 (panel
-// open) proves the same click is dead. Design §3.1 fences the whole surface behind a
-// panel, not merely the pixels it covers, which is why this holds at 1280 px where the
-// panel and the rails do not overlap.
 func TestAnOpenPanelFencesTheRailsBehindIt(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()

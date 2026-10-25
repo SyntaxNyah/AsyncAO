@@ -3,9 +3,6 @@ package ui
 import "testing"
 
 // TestPollCharBindCancel pins that an armed wardrobe key-capture is dismissable:
-// Esc cancels it, and (the accidental-arm escape) so does any mouse click — so a
-// stray arm can never trap you into pressing a key. An idle capture is a no-op.
-//
 // Fields are ASSIGNED, not set in a keyed &App{} literal: bindingFor is a real
 // field but keyed App literals hit the known phantom "unknown field" glitch.
 func TestPollCharBindCancel(t *testing.T) {

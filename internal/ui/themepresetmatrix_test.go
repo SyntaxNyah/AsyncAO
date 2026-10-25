@@ -66,7 +66,6 @@ var presetMatrixCanvases = [...]struct {
 // stagePresetCombination applies one (layout, style) pair to a themed App the
 // way the client does: the layout's own design canvas, the AO2 backstop under
 // its [overrides], the merged sidecar, and one cold rebuild.
-//
 // It uses the SAME two-map fold applyFixtureSidecar does (pristine + live),
 // because that is what the client has by the time anything bakes.
 func stagePresetCombination(t testing.TB, a *App, l, s *theme.Preset, w, h int32) *themeLayoutCache {
@@ -146,11 +145,9 @@ type ornamentSite struct {
 }
 
 // TestEveryLayoutTimesEveryStyleIsCoherent is acceptance clause 4.
-//
 // It is one test rather than 294 subtests on purpose: a subtest per combination
 // makes a single broken style print 21 near-identical failures and buries the
 // one line that says which. This prints the WORST offender per (style, canvas)
-// and a census, which is what a person debugging a preset actually needs.
 func TestEveryLayoutTimesEveryStyleIsCoherent(t *testing.T) {
 	lib, err := theme.ShippedPresets()
 	if err != nil {
@@ -261,9 +258,6 @@ func TestEveryLayoutTimesEveryStyleIsCoherent(t *testing.T) {
 // arithmetic driven with elements the shipped set does not contain. It measures
 // anchorHalo(anchor) — what the matrix measures — because an earlier arm
 // measured the raw anchor and stayed green with anchorHaloPct mutated to 2000.
-// The arms are the three failures the matrix claims to detect (drift, growth,
-// inversion), sized in units of the anchor's own extent so they pin the halo
-// constant, plus the metric run the other way on a correctly placed element.
 func TestPresetMatrixWouldCatchADriftedElement(t *testing.T) {
 	lib, err := theme.ShippedPresets()
 	if err != nil {

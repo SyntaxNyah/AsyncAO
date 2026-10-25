@@ -36,8 +36,6 @@ type chatLogState struct {
 	logTab   int
 	// debugOOC swaps the themed server_chatlog panel for the debug log — what
 	// AO2's ooc_toggle button does (on_ooc_toggle_clicked, courtroom.cpp:5197:
-	// show ui_debug_log, hide ui_server_chatlog, relabel the button).
-	//
 	// Stored INVERTED relative to AO2's server_ooc so the ZERO value is AO2's
 	// initial state (server chat visible, button reads "Server"). A field that
 	// defaulted true would have to be seeded in resetSessionState, and forgetting

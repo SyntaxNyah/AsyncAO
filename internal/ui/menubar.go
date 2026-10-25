@@ -200,9 +200,6 @@ var menuWindowItems = []menuItem{
 // menuExtrasItems is issue #26: the compact bottom-right toolbox's chips, migrated.
 // stopped the reported click-through. What #26 actually needed was a way to get those
 // menuExtrasItems is the chrome home for AsyncAO's own controls (#21, rule (c)).
-// The first three rows replace a chip row that used to be pinned at the raw
-// window's bottom-left in themed mode (drawThemedExtrasButton, deleted). Under a
-// real AO2 theme that row painted and clicked straight through the theme's own
 var menuExtrasItems = []menuItem{
 	// The Wardrobe's written path from EVERY screen. The band's own Iniswap chip is
 	// the fast route (iniswapchip.go), but that chip is dropped whenever the band gets
@@ -213,11 +210,6 @@ var menuExtrasItems = []menuItem{
 	{kind: menuItemCheck, label: "AsyncAO Extras box", checked: menuExtrasBoxOpen, enabled: menuInCourtroom, act: menuToggleExtrasBox},
 	{kind: menuItemCheck, label: "Restyle character…", checked: menuSpriteStyleOpen, enabled: menuInCourtroom, act: menuToggleSpriteStyle},
 	// Text FX and the emoji picker have NO AO2 design key, so under #21 rule (c)
-	// this menu is their home. They are not optional rows: the themed IC bar draws
-	// them only at the asyncao_ic_fx / asyncao_ic_emoji override rects, which no
-	// stock AO2 theme declares — without these two rows a themed player cannot
-	// reach either control at all, and icEffect is sticky, so an effect armed in
-	// the classic layout would wrap every line with no way to clear it.
 	{kind: menuItemCheck, label: "Text FX…", checked: menuFxPickerOpen, enabled: menuInCourtroom, act: menuToggleFxPicker},
 	{kind: menuItemCheck, label: "Emoji picker…", checked: menuEmojiPickerOpen, enabled: menuInCourtroom, act: menuToggleEmojiPicker},
 	{kind: menuItemSeparator},
@@ -1043,9 +1035,6 @@ func (a *App) fireMenuItem(it *menuItem) {
 // drawMenuBar paints the strip and any open pane, REPLAYING the latch phase 1
 // computed rather than re-deriving it. Call it after the screen dispatch: the kit is
 // single-pass, so the last thing painted is the thing on top.
-// The one thing it does not replay is whether to paint at all: that is the frame's last
-// undecided bit, and menuBarPaintsNow settles it here. Everything the paint uses —
-// geometry, the open pane, hover eligibility — is still the latch, so a bar recovered
 func (a *App) drawMenuBar(w, _ int32) {
 	if !a.menuBarPaintsNow() {
 		return
@@ -1098,11 +1087,6 @@ func (a *App) drawMenuPanes() {
 
 // menuBarHot is THE hover-feedback rule, shared by the strip's titles and the panes'
 // rows so the two can never gate differently.
-// Both halves of the gate replay the LATCH, never live state: `live` is "phase 1
-// published our fences and may take input", `inert` is "a blocking window modal owned
-// the frame when phase 1 ran". Highlighting under a cursor whose click the bar has
-// already refused advertises a control that is not there — the same input-vs-pixels
-// lie menuPaneRowFits exists to prevent one level down.
 func (a *App) menuBarHot(r sdl.Rect) bool {
 	return a.menuBar.live && !a.menuBar.inert && pointIn(a.ctx.mouseX, a.ctx.mouseY, r)
 }

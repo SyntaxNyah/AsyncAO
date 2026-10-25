@@ -159,7 +159,6 @@ func (a *App) editorPreviewOn() bool { return a.te != nil && a.te.preview != nil
 // constructed — TestEditorPreviewHasOneConstructionSite fails the build gate on a
 // second one, for the reason newroom.go gives about rooms: a state that can be
 // born two ways will one day be born half-wired.
-//
 // Everything editing owns goes down first (panels, the live drag, the selection),
 // because the demo covers the whole window and a gesture that survived under it
 // would resume against pixels the user can no longer see.
@@ -212,7 +211,6 @@ func (a *App) enterEditorPreview() {
 
 // exitEditorPreview leaves the demo and puts editing back exactly as it was: the
 // selection, the viewport's callbacks and the manager's network gate.
-//
 // THE ONE DOOR OUT, and both affordances (the button and the Esc rung) call it, so
 // "leaving restores everything" is a property of the exit rather than a rule two
 // call sites have to remember.
@@ -288,7 +286,6 @@ func (a *App) bindViewportToPreview() {
 // startEditorPreviewBeat feeds the canned scene's opening beats into the demo
 // room: the music change (which fills the banner and starts the marquee) and the
 // sample message (which starts the typewriter, the blips and the showname plate).
-//
 // Through room.HandleEvent, the same door a packet comes in by, so the demo is
 // staged by the production state machine rather than by writing Scene fields.
 func (a *App) startEditorPreviewBeat() {
@@ -324,9 +321,6 @@ func (a *App) replayEditorPreviewLine() {
 // driveEditorPreview advances the demo one frame. Called from App.Frame's scene
 // switch, beside driveMakerPreview and for the same reason: the shared viewport
 // must track the room that is on screen, not the live one behind it.
-// IT RIDES THE PACING CENSUS. While it animates it calls NoteAnimating every
-// frame, exactly like the marquee and the theme clock, so FramePace holds the
-// active cap and the crawl is smooth on a screen the pacer otherwise parks
 func (a *App) driveEditorPreview(dt time.Duration) {
 	if !a.editorPreviewOn() {
 		return
@@ -437,7 +431,6 @@ func (a *App) drawEditorPreviewCanvas(w, h int32) {
 
 // drawEditorPreviewExit draws the one door back, in the header band's own Preview
 // slot so the control does not jump between the two states.
-//
 // The band is claimed (noteEditorBanner) exactly as drawEditorHeader claims it —
 // without that the menu bar paints an opaque strip straight over this button, and
 // then the only way out is the keyboard.
@@ -457,7 +450,6 @@ func (a *App) drawEditorPreviewExit(w int32) {
 // editorPreviewBtnRect is the Preview button's box in the header band — ONE
 // publisher, so the enter door, the exit door and every gate that presses either
 // are the same pixels.
-//
 // The wide button is RIGHT-ALIGNED on the standard slot it occupies, so the seven
 // buttons to its right keep their existing positions (and the gates that count
 // slots from the right keep pressing what they always pressed).

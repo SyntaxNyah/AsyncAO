@@ -2,10 +2,6 @@ package ui
 
 // The layout editors' UNRECOVERABLE states, and the one frame-level decision that
 // keeps the server-tab strip painted exactly once.
-// Everything here drives the REAL courtroom pass. The lock these pin was not visible
-// in any arithmetic: every predicate involved was individually correct, and the app
-// died from the COMBINATION — an editor armed, a modal holding the pass, and four
-// separate surfaces each correctly standing down for a fifth that never drew.
 
 import (
 	"testing"
@@ -58,10 +54,6 @@ func TestEveryCourtroomModalCloseUndoesItsOpen(t *testing.T) {
 // TestArmingALayoutEditorClosesEveryCourtroomModal is the second of the three
 // belt-and-braces guarantees against the hard lock: with every return-to-top modal
 // open at once, arming either editor must leave none of them up.
-// The arm paths used to close a HAND-WRITTEN list of nine popups that had drifted
-// three entries behind this table — showTimer, pairPopupOpen and showSfxBrowser were
-// all missing — and any one of those three open when the editor armed took the
-// courtroom pass before the editor's overlay drew.
 func TestArmingALayoutEditorClosesEveryCourtroomModal(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -545,11 +537,6 @@ func assertStripBoxIsOnTheStrip(t *testing.T, a *App, w, h int32, stage string) 
 }
 
 // TestMagnetSeesTheLiveTabStripNotTheInertSeed pins the sibling-list fix.
-// While the strip is unparked its stored entry is the SYNTHESIZED SEED — a
-// tabBarDesignSeedW-wide box centred on the canvas that nothing paints and nothing
-// hit-tests — so every OTHER widget's snapped drag was magnetting to a phantom while
-// the strip sat in the chrome band. The magnet must read the same live rect the
-// editor's drag box, stacking order, grip probe and reset all read.
 func TestMagnetSeesTheLiveTabStripNotTheInertSeed(t *testing.T) {
 	a := stageTabbarlessCourtroom(t, stripEditTheme)
 	const w, h = int32(1000), int32(900)

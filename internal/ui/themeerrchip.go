@@ -34,7 +34,6 @@ const (
 )
 
 // themeErrChipActive reports whether the chip should draw and take input.
-//
 // Deliberately NOT gated on a screen. A theme is picked in Settings and judged in
 // the courtroom, and the whole failure this reports is "I applied a theme and it is
 // not the theme" — gating it to the courtroom would hide it on the very screen the
@@ -67,7 +66,6 @@ func (a *App) themeErrChipRect(w int32) (sdl.Rect, bool) {
 
 // menuBarRightContentLeft is the left edge of everything RIGHT-anchored in the band
 // OUTSIDE the caller — the mirror of menuBarLeftContentRight (iniswapchip.go).
-//
 // It returns the window width when nothing is right-anchored, which is exactly the
 // value the missing-asset chip and the Iniswap chip used to hardcode: with no theme
 // error on screen every rect in this band is byte-identical to what it was before
@@ -133,7 +131,6 @@ func (a *App) drawThemeErrChip(w int32) {
 
 // themeSidecarRefusalLine renders one refused sidecar as the single line that goes
 // to the debug log and the Settings status line.
-//
 // Built on the theme-apply goroutine, never on a draw: it formats. `name` is the
 // theme as that apply resolved it, `dir` is the directory the refused file was found
 // in ("" when the loader could not say), and `err` is theme.Theme.SidecarErr's own

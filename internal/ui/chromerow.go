@@ -55,7 +55,6 @@ const chromeCtlNeverDrop uint8 = 0
 // ---------------------------------------------------------------------------
 
 // chromeCtl is ONE control a row wants placed.
-//
 // `min` is the narrowest the control is still worth drawing at, which is NOT the same
 // question as chromeCtlMinPx: an icon button's label is a vector glyph and does not
 // shrink, so its min equals its natural width, while a flexible readout is happy to
@@ -160,7 +159,6 @@ func chromeDropIndex(ctls []chromeCtl) (int, bool) {
 // layChromeRow is ONE placement attempt through ONE cursor. ok=false means at least
 // one control did not fit; the partial plan comes back anyway so the caller can keep
 // the fullest attempt.
-//
 // THE CURSOR IS THE GUARANTEE. x only ever advances by the width just taken plus the
 // gap, and a wrap resets it to the left edge on a NEW line — so two slots can only
 // share pixels if the pitch were smaller than the height, which is a compile-time

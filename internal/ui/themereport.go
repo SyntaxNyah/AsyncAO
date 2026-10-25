@@ -26,7 +26,6 @@ const themeReportExtras = 5
 // imports: recorded by the reader, applied by nothing, and — until the report
 // existed — invisible to the author whose theme was quietly missing half of what
 // they shipped.
-//
 // A TABLE over the sidecar's own flags, so a third inherited gap is a row rather
 // than a branch, and TestImportReportNamesEveryDeclaredGap walks it: the gate
 // cannot pass while a declared gap has no line.
@@ -50,10 +49,6 @@ var themeReportGaps = [...]struct {
 }
 
 // buildThemeReport collects everything noticed about one applied theme.
-//
-// GOROUTINE-ONLY: it runs inside applyThemeAsync's worker, over the sidecar that
-// worker just parsed, so the render thread never walks the notes.
-//
 // The ORDER is by who can act on it: the reader's own degrades first (they name a
 // line in the file), then the fonts (the user can install one), then the unbound
 // keys (a theme-author diagnostic). A report is read from the top.
@@ -103,7 +98,6 @@ func buildThemeReport(sc *theme.Sidecar, fontsMissing []string, unbound string) 
 
 // themeReportLine is the one sentence the client says about a report, or "" when
 // there is nothing to say.
-//
 // IT NAMES THE FIRST NOTE, not just the count. "4 notes" with no way to see them
 // is the invisible state this file exists to remove, one indirection later; the
 // first note is the one most likely to be the reason the theme looks wrong.

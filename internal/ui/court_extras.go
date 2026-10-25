@@ -64,14 +64,6 @@ const (
 	// only make it unnameable. Nothing may hide behind it again.
 	panelExtras = "extras"
 	// panelMenuBar hides the top menu strip (#14). Same spirit as panelToolbox:
-	// client furniture a user may not want, and on a themed courtroom it is the
-	// one band that sits ABOVE the theme's design canvas, so hiding it hands the
-	// canvas the whole window. menuBarHeight() already reports 0 whenever the bar
-	// is not shown and every screen offsets by topChromeH(), so nothing else has
-	// to learn about this.
-	// It is a MOUSE LIFELINE (mouseLifelines, courttoolbox.go) — under a theme it
-	// is the only one of the three that draws at all, because ctrlSettingsSlot
-	// belongs to the classic IC row and the themed ★ Extras chip row was deleted
 	// in #21. Hiding the last surviving lifeline is refused.
 	panelMenuBar = "menubar"
 	// panelToolbox hides the compact hover toolbox (#27) — the slim bottom-right
@@ -139,9 +131,6 @@ const ctrlSettingsSlot = "ctrl.settings"
 // hideableButtons drives the "Control buttons" grid in the UI popup — the
 // customizable courtroom toolbar (screens.go ctrlSlot). Each id is a ctrl.*
 // slot key; ticking one hides that button and the row compacts with no gap.
-// "UI…" itself is deliberately absent (it's the way back to this popup) and so
-// are the contextual buttons (Mod/CM/Pos/Group/Voice/Disconnect) that already
-// appear and disappear on their own.
 var hideableButtons = []struct{ id, label string }{
 	{"ctrl.character", "Character"},
 	{"ctrl.wardrobe", "Wardrobe"},
@@ -990,10 +979,6 @@ const (
 // evidDescViewH is the pure height arithmetic behind the Issue #15
 // description viewport: whatever's left between descTop (just under the
 // item's name heading) and panelBottom (the panel's inner bottom edge)
-// after reserving the fixed trailing block (image line + present button +
-// edit/delete row + pin button), floored at evidDescMinViewH so a tiny or
-// mid-resize panel still shows a usable, scrollable region rather than a
-// zero/negative-height rect.
 func evidDescViewH(panelBottom, descTop int32) int32 {
 	trailH := int32(evidInspectorImageLineH + evidInspectorBtnRowH*2 + evidInspectorLastBtnH)
 	viewH := panelBottom - descTop - trailH

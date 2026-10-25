@@ -18,7 +18,6 @@ import (
 // whatever tiles the new plan needs. Render thread, once per editor frame BEFORE the
 // canvas draws (the bake it feeds runs inside that draw), and once more from
 // closeThemeEditor, which is the last frame there will be.
-//
 // THE SETTLED PATH IS ONE HASH AND A COMPARE, allocation-free (themeArtSig's own note),
 // so the editor's frame budget (editorChromeAllocBudget) is untouched between edits.
 func (a *App) editorSyncArt() {

@@ -49,11 +49,6 @@ const (
 // gates it: an edit, Ctrl+Z, Ctrl+Shift+Z, and the value is back — through SDL's
 // event, the kit's HandleEvent, App.Frame and the chord claimer, with nothing called
 // by hand.
-// TestEditorRedoRidesCtrlShiftZ pins the same spelling one layer in (it stamps
-// c.hotkey and calls editorUndoChord itself, which is what lets it run without a
-// window). This one is the layer OUT: it would fail if App.Frame stopped claiming
-// the chord pre-screen, or if HandleEvent stopped routing Ctrl+Z to c.hotkey at all
-// — neither of which the inner gate can see.
 func TestRedoRidesTheRealKeyDispatch(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()

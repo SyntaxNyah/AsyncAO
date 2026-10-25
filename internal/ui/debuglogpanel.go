@@ -26,7 +26,6 @@ func (s *sessionState) oocToggleLabel() string {
 }
 
 // drawThemedDebugLog paints the bounded failure ring into a theme's rect.
-//
 // Deliberately plainer than drawOOCLogList: the debug ring is diagnostics, so it
 // has no name colouring, no link spans and no drag-select — just stamped lines,
 // wrapped and scrollable. It shares the log font so it matches the panel it
@@ -46,15 +45,11 @@ func (a *App) drawThemedDebugLog(list sdl.Rect) {
 	// neighbour's font looks harmless, but AO2 dresses this widget from its own
 	// identifier — set_font(ui_debug_log, "", "debug_log", p_char),
 	// courtroom.cpp:1198 — and a theme can size or colour the two differently.
-	// aceattorney2x is exactly that case: it declares server_chatlog_sharp = 1 and
-	// no debug_log_sharp at all, so sharing the key would render this panel with a
-	// treatment its author asked for somewhere else.
 	font := a.elemFont(elemDebugLog, a.oocPct)
 	bold := a.elemBold(elemDebugLog)
 	// #21 label 16: "debug_log_color". This panel only ever draws inside the
 	// theme's design canvas (it IS the ms_chatlog element), so canvasInk is
 	// unconditionally true here — unlike the log lists, which have chrome twins.
-	//
 	// AO2's debug_log_error_color / _warning_color etc. are a DIFFERENT family: they
 	// go through AOApplication::get_color rather than set_font's per-element key,
 	// and are out of scope (this ring is not severity-tagged).

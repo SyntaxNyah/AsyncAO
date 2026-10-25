@@ -2,7 +2,6 @@ package ui
 
 // The truncation MARKER (labelellipsis.go) and the arithmetic it feeds
 // (truncateChopFor / truncateLabelToMarker, ui.go).
-//
 // Both shipped untested. truncateChopFor's own doc comment named a test that was
 // never written, and the marker ladder shipped INERT: it asked Ctx.setCovers, which
 // answers for the whole font CHAIN, and buildSet appends the embedded goregular face
@@ -104,7 +103,6 @@ func TestEllipsisLadderPrefersAO2sMarker(t *testing.T) {
 }
 
 // TestEllipsisForAsksTheDrawingFace is the regression gate for the inert version.
-//
 // A THEME-declared face is the whole reason this code exists, and the face used here
 // (Twemoji) covers neither U+2026 nor '.', while the SET it lives in ends — as every
 // set does — with the embedded goregular last resort, which covers both. Asking the

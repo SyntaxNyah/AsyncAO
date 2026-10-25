@@ -379,11 +379,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.fireAutoConnect() // one-shot: auto-connect to the last server on launch (opt-in)
 	// Quick-connect key: the courtroom hotkey handler is sess-gated and never runs
 	// in the lobby, so dispatch this one here, only while offline.
-	// Gated on the notice box: it is the one blocking modal that is routinely up on
-	// the LOBBY with no session, which is precisely when this dispatch is live. Its
-	// whole reason for being there is that the server just removed us, so letting a
-	// keypress redial past it would be the client arguing with the ban. (The sibling
-	// confirms are NOT gated here; that gap is pre-existing and untouched.)
 	if a.link.sess == nil && !a.font.serverNoticeDlg.open && a.ctx.hotkey != 0 && strings.ToLower(sdl.GetKeyName(a.ctx.hotkey)) == a.hotkeyFor(hotkeyQuickConnect) {
 		a.quickConnect()
 	}
@@ -558,12 +553,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.ctx.fencePointer()
 	} else if a.hkSheetFencesPointer(winW, winH) {
 		// The hotkey sheet floats over EVERY screen and draws at the frame tail:
-		// while the cursor sits on it (or its drag/resize is in flight), the
-		// screens draw pointer-blind and the sheet unfences for its own pass
-		// below — without this, scrolling the sheet also scrolled the lobby /
-		// settings list underneath it (the kit has no z-aware input; the fence
-		// IS the layering). The courtroom pass already applies the same rule
-		// via boxFencesPointer, so this only changes the other screens.
 		a.ctx.fencePointer()
 	}
 
@@ -579,19 +568,11 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// The band's two right-anchored chips: claimed just BEFORE the bar publishes its
 	// strip fence, because that fence covers their rects (they share the band) and
 	// would blank hovering() for them. Same pre-screen discipline as the update chip.
-	// OUTERMOST FIRST. The theme-sidecar refusal chip is right-anchored at the window
-	// edge and the missing-asset chip is anchored to ITS left edge, so claiming them
-	// in this order is claiming them right-to-left, which is the order their rects
-	// resolve in (themeerrchip.go).
 	a.handleThemeErrChipInput(winW)
 	a.handleAssetMissChipInput(winW)
 
 	// App-wide menu bar (#14, menubar.go), phase 1: publish its overlay fences and
 	// resolve its own input. THIS CALL MUST STAY ABOVE THE SCREEN DISPATCH BELOW.
-	// drawCourtroom takes an overlayFenceMark at the top of its pass and releases
-	// back to it, and the compact toolbox's owner-suspend is MARK-SCOPED — so a
-	// fence published after (or inside) a pass cannot occlude that pass, and an open
-	// menu pane published late would be suspended by the toolbox along with its own
 	// strip: issue #26's click-through, one level up. The paint half runs after the
 	// screens (single-pass kit: last painted is on top).
 	a.menuBarFrame(winW, winH)
@@ -643,11 +624,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.drawCourtroom(winW, winH)      // primary always full-screen; the pinned server floats on top
 			a.drawFloatingPanels(winW, winH) // non-blocking Extras + Pair + the floating client window, on top of the live courtroom (input already restored)
 			// The pinned per-piece toolbox panel draws HERE (not inside drawCourtroom):
-			// its checkboxes/scrollbar/Close need real input, but boxFencesPointer runs
-			// the whole courtroom pass pointer-blind while the cursor is over the panel,
-			// so drawing it inside that pass left it dead (the recon BLOCKER). Post-court
-			// the fence is already lifted (drawCourtroom's deferred unfencePointer ran on
-			// return). Drawn AFTER drawFloatingPanels = above the other floating panels:
 			editingLayout := a.classic.classicEdit || a.layoutEdit
 			if editingLayout {
 				savedModal := a.ctx.modalOn
@@ -730,9 +706,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// The menu bar's OPEN pane paints here, above the two diagnostics overlays: a
 	// dropdown is a popup and belongs on the popup layer with the kit's deferred
 	// lists (FinishFrame, below), while the F3 graph is client-level diagnostics.
-	// Painted with the strip it drew FIRST, and the performance overlay covered the
-	// menu the user had just opened. Nothing is re-decided here — drawMenuPanes
-	// replays the same phase-1 latch drawMenuBar does.
 	a.drawMenuPanes()
 	if a.courtkeys.showHotkeys {
 		// Restore the pointer for the sheet's own pass — it was fenced above
@@ -773,10 +746,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// The involuntary-disconnect dialog (now reached only for a background/parked
 	// tab's death, surfaced on reactivation) draws LAST of the blocking modals, over
 	// the already-painted frozen courtroom (its scene + logs stayed drawn under it).
-	// Own block, not folded into the switch above: drawing it unconditionally-when-open
-	// guarantees the fence set for it (7068) is always released here — never a
-	// fenced-but-invisible dialog (the emoji-picker freeze class). Restore the pointer
-	// for its own buttons first.
 	if a.dialogs.disconnectDlg.open {
 		a.ctx.unfencePointer()
 		a.drawDisconnectDialog(winW, winH)
@@ -815,10 +784,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 }
 
 // themeLoadRoots orders the content roots theme.Load searches for theme `name`.
-// A custom themes folder (customRoot) is searched FIRST for named themes — but is
-// dropped for the stock "default": theme packs ship their own themes/default, and
-// since the custom root wins, that custom default would otherwise SHADOW the
-// built-in one, making the stock default unreachable once you've set a folder
 // (#87). The app directory is always the built-in fallback. Pure, for testing.
 func themeLoadRoots(name, customRoot, exeDir, configBase string) []string {
 	if name == theme.DefaultThemeName {
@@ -885,6 +850,5 @@ func samePath(a, b string) bool {
 // chatbox skin (chatbox.webp/png in the theme dir, AO2 convention) and the
 // message/showname font colors — and publishes them to the render thread via
 // themeRes. Settings re-triggers it on every theme change.
-// It returns the themeGen it allocated for this load, so a caller that means to
 // act on THIS apply's landing (the #35 window snap) can name it. Every other
 // caller ignores it.

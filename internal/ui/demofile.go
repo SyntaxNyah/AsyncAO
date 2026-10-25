@@ -15,9 +15,6 @@ import (
 )
 
 // AO2 .demo backwards compatibility ("it's backwards COMPATIBILITY baby"):
-// read the demo files AO2's built-in recorder writes — play them in the replay
-// player, edit them in the Scene Maker, export them to GIF/WebP/Video/Comic —
-// and write our recordings BACK out as .demo so AO2 users can watch them.
 // The format (canonical: ../AO2-Client/src/demoserver.cpp): a text file of raw
 // wait-desync bug (waits recorded one slot late — AO2 PR #496); AO2 detects
 const (
@@ -86,9 +83,6 @@ func fixDemoWaitDesync(records []string) []string {
 // — the scene model deliberately covers what the stage shows. origin is the
 // asset host to stream from (demos don't store one; AO2 plays them against a
 // local base folder).
-// Two independent counters come back: skipped (packets we recognize but don't
-// model — SC/CT/HP/…, byte-identical to before) and truncated (valid scene
-// packets dropped because the scene already holds maxRecordedEvents). They are
 func demoToRecording(data []byte, origin string) (rec *sceneRecording, skipped, truncated int, err error) {
 	records := fixDemoWaitDesync(parseDemoRecords(data))
 	if len(records) == 0 {
@@ -96,8 +90,6 @@ func demoToRecording(data []byte, origin string) (rec *sceneRecording, skipped, 
 	}
 	// Demos are recorded by 2.8+ clients from servers with the full feature set
 	// (the demo server itself advertises everything), so extended fields parse.
-	// custom_blips is named explicitly because indices 30/31 are only the
-	// blipname/slide pair under that feature (ParseMS's getBlips gate, mirroring
 	// AO2-Client courtroom.cpp:4251) and our own writer — protocol.BuildServerMS,
 	// which defines this file format — always lays them out that way, so omitting
 	// it would silently drop per-emote blips from every re-imported export. A demo
@@ -260,16 +252,6 @@ func recordingToDemo(rec *sceneRecording) ([]byte, error) {
 // mountOrigin returns the local:// origin the configured local-asset mounts
 // resolve against, or "" when no mounts are set. It keys off mounts being
 // CONFIGURED (len>0), NOT the legacy "read from local folders" enabled flag:
-// mounts are now the recording-resolution base even in a normal streaming
-// session, because the streaming Manager consults a local:// OVERLAY (built from
-// exactly this mount set) for local:// URLs. The legacy checkbox now means only
-// "the LIVE session reads from local folders instead of streaming"; it no longer
-// gates whether a local:// origin resolves. The origin string comes from the
-// canonical local-origin helper (a deterministic hash of the ordered mount set),
-// so it equals the origin both the wired production overlay AND a local-mode
-// source serve — byte-for-byte the same keyspace, no drift. It asks for the
-// origin STRING rather than building a fetcher to read BaseURL off: a fetcher
-// carries the rule-6 negative memo and this call site only ever wanted a label.
 func (a *App) mountOrigin() string {
 	if _, mounts := a.localAssets(); len(mounts) > 0 {
 		return assets.LocalOriginFor(mounts)
@@ -293,8 +275,6 @@ func (a *App) demoDefaultOrigin() string {
 // .demo (converted on the fly — same model, so Play/Edit/Export all work). It
 // emits the import notes (skipped/truncated debug line, empty-origin warning) as
 // side effects on the CALLER's thread — so it must run on the render thread.
-// The async export path (loadRecordingForExport) uses the pure core instead and
-// replays those notes when the result lands back on the render thread.
 func (a *App) loadRecordingAny(path string) (*sceneRecording, error) {
 	res := loadRecordingForExport(path, a.demoDefaultOrigin())
 	if res.err != nil {
@@ -310,7 +290,6 @@ func (a *App) loadRecordingAny(path string) (*sceneRecording, error) {
 // user-facing notes — so it is safe to run OFF the render thread (the async
 // export loader goroutine). origin is the asset host an imported .demo streams
 // from (a .demo stores none); it is resolved on the render thread and passed in.
-// The render thread replays res.debug / res.warnMsg via emitLoadNotes.
 func loadRecordingForExport(path, origin string) gifLoadResult {
 	if !strings.EqualFold(filepath.Ext(path), demoExt) {
 		rec, err := loadRecording(path)
@@ -403,9 +382,6 @@ func importDroppedRecording(path string) string {
 // AO2 .demo is copied into recordings\ (importDroppedRecording) and then, by
 // default, starts playing immediately — share a recording by literally dragging
 // the file onto someone's AsyncAO. Anything else is politely ignored.
-// It is also the single owner of dropped THEME BUNDLES, which is new and is the
-// point of routing through claimDroppedFile: a .aotheme used to fall through
-// both here (warned as "not a recording") and into the Settings screen's
 func (a *App) HandleFileDrop(path string) {
 	switch claimDroppedFile(path, settings.importArmed) {
 	case dropClaimRecording:

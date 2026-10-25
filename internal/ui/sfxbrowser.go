@@ -62,12 +62,6 @@ func (a *App) previewSFX(name string) {
 // sfxRowRightClickPreview auditions the SFX dropdown row under the pointer
 // WITHOUT selecting it (spec 1.e). Left-click picks and previews; before this
 // there was no way to hear a sound without committing it to your next message.
-// Consumes the click (DropdownRowRightClicked does), so it never leaks to the
-// widget under the open list. Row 0 is "SFX: auto" — the emote's own sound, which
-// has no name to play here — so it is refused AFTER that consume, deliberately:
-// the consume is the open list's modal fence and belongs to every in-range row,
-// while "there is nothing to audition" is this caller's business.
-// previewOverlayRow's row-0 ("None") arm is the same shape.
 func (a *App) sfxRowRightClickPreview() {
 	row, ok := a.ctx.DropdownRowRightClicked("sfxdd")
 	if !ok || row <= 0 || row >= len(a.emotepick.sfxChoices) {

@@ -1,7 +1,6 @@
 package ui
 
 // designPair / emote-grid spacing parity with AO2.
-//
 // AO2's get_button_spacing (AO2-Client text_file_functions.cpp:193-216) parses
 // "x, y" with QString::toInt() and applies NO positivity test, so a spacing of
 // 0 means "flush buttons" — a dozen shipped themes (the CC* family, AAI,

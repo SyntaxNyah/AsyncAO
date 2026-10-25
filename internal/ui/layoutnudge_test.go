@@ -1,11 +1,6 @@
 package ui
 
 // Arrow-key nudging in the two layout editors.
-// Everything here drives the REAL router (editorNudgeKeys) off a real ctx key field
-// rather than calling the arms directly, because the routing is half the feature: a
-// plain arrow arrives on c.keyPressed — the field a focused text field's caret, the
-// IC/OOC recall rings and the pair-ghost offset all read — and a Ctrl+arrow arrives on
-// c.hotkey, where a user-rebound action would otherwise pick it up.
 
 import (
 	"testing"
@@ -26,12 +21,6 @@ const nudgeWidgetKey = "emotes"
 var nudgeCanvas = theme.Rect{X: 0, Y: 0, W: 714, H: 579}
 
 // TestRegSlotRefusesAnUnnamedSlot pins the classic editor's registry guard.
-// "" is the editor's own spelling of "nothing selected" (classicEditKey, and the
-// reason editTarget carries an explicit space field), so an unnamed registration
-// puts a hoverable, draggable box in slotReg that compares EQUAL to the unselected
-// state — and its release would call config.SetClassicSlot(""), which keys the
-// persisted layout by name. Only a caller passing a COMPUTED key can reach it, which
-// is exactly what W7's element work will be doing.
 func TestRegSlotRefusesAnUnnamedSlot(t *testing.T) {
 	a := testTabApp(t)
 	r := sdl.Rect{X: 10, Y: 20, W: 30, H: 40}
@@ -50,9 +39,6 @@ func TestRegSlotRefusesAnUnnamedSlot(t *testing.T) {
 // TestOversizeRectIsMovedNotShrunk pins clampDesignRectToCanvas' documented
 // translate-vs-limit choice, which had no test at all and reads as a bug at the call
 // site: a widget WIDER than the canvas comes back at a NEGATIVE X.
-// It is deliberate — the clamp moves boxes and the resize gesture sizes them, so a
-// move that silently changed a theme's authored width would be unrecoverable — but a
-// deliberate surprise with no gate is one refactor away from being "fixed" into a
 func TestOversizeRectIsMovedNotShrunk(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -268,12 +254,6 @@ func TestThemedNudgeRespectsTheCanvasClamp(t *testing.T) {
 }
 
 // TestTabStripNudgeMovesOneScreenPixelAtEveryScale is the special case.
-// The server-tab strip is intrinsically sized CLIENT chrome whose stored X/Y are
-// canvas-relative CLIENT px, not design px (themeTabBarKey) — so "one pixel" for it means
-// one SCREEN pixel, at every fit mode and every layout scale, not one design pixel that
-// the scale would then turn into zero or two. It also has to come out PLACED: the
-// persisted override IS its placement flag (tabStripPlacementRecorded), so a nudged strip
-// must leave the docked chrome band exactly as a dragged one does.
 func TestTabStripNudgeMovesOneScreenPixelAtEveryScale(t *testing.T) {
 	for _, tc := range themeFitDragCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -622,12 +602,6 @@ func TestNudgeIgnoresADegenerateBox(t *testing.T) {
 }
 
 // TestPaletteKeepsItsArrowsWhileAnEditorIsArmed pins the yield rule.
-// An armed editor is not exclusive: handleHotkeys runs unconditionally from both
-// courtroom passes and editorUndoChord only diverts Ctrl+Z/Y, so Ctrl+Space opens the
-// command palette mid-edit; the palette is not in courtroomModals and
-// closeEditorBlockingOverlays leaves it open. It draws AFTER the courtroom pass — on
-// top of the editor — and steers with ↑/↓ while its search field steers a caret with
-// ←/→, so a pre-screen nudge claiming those keys silently strips the palette of both.
 func TestPaletteKeepsItsArrowsWhileAnEditorIsArmed(t *testing.T) {
 	a := stageClassicNudge(t)
 	before := classicNudgeRect(a)
@@ -806,10 +780,6 @@ func stageElementNudge(t *testing.T, mutate func(*theme.Element)) *App {
 
 // TestElementNudgeMatchesTheSlotNudge is the wave's parity requirement: an arrow key
 // must address a free element EXACTLY as it addresses a themed slot.
-// Both arms are driven through the real router from the same off-grid start, and the
-// two deltas are compared rather than each being checked against a hand-written number
-// — a test that asserted "1" twice would still pass if the two arms drifted onto
-// different grids or different modifiers.
 func TestElementNudgeMatchesTheSlotNudge(t *testing.T) {
 	for _, coarse := range []bool{false, true} {
 		for _, key := range []sdl.Keycode{sdl.K_LEFT, sdl.K_RIGHT, sdl.K_UP, sdl.K_DOWN} {

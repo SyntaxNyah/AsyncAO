@@ -50,7 +50,6 @@ type overlayState struct {
 	// (a concat), nor the char.ini URL (a concat), nor the choice slice (a copy +
 	// a prepend) may be rebuilt per frame. All three are baked on a state change
 	// and compared with plain string/pointer equality, which allocates nothing.
-	// pollOverlayRosters and pollCharMeta invalidate them when their inputs land.
 	overlayMemoOrigin    string
 	overlayMemoFolder    string
 	overlayMemoValid     bool

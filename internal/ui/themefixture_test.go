@@ -13,10 +13,7 @@ import (
 // The issue #21 fixture: the exact theme from the side-by-side screenshot,
 // checked in as its three text files. No art and no TTFs — the font tests
 // synthesize faces, and 13 MiB of PNGs would buy nothing a rect test can read.
-//
 // Before this existed, every themed-layout change was verified by screenshot.
-// That is how the IC-bar cram shipped as "intended" and stayed that way through
-// several releases.
 
 // aceattorney2xRoot is the fixture's CONTENT ROOT (the folder containing
 // themes/), which is the shape theme.Load takes.
@@ -60,8 +57,6 @@ const (
 )
 
 // aceattorney2xBoundRects is how many of those rect keys reach a themeSlots row.
-// The remainder are 3 char-select keys and 27 written deferrals.
-//
 // If this fails, do NOT edit the constant to match: diff the two key sets and
 // decide about each key. Being able to notice a key nobody decided about is the
 // entire purpose of the oracle below.
@@ -146,11 +141,6 @@ func TestAceAttorney2xEveryRectIsAccountedFor(t *testing.T) {
 }
 
 // TestAO2DefaultRectsCoverEveryBoundSlot pins the fallback tier's completeness.
-// It is what makes "a missing rect draws nothing" survivable: a theme that
-// declares only courtroom+viewport must still resolve a whole AO2 courtroom,
-// because AO2 itself falls through to its bundled base/themes/default and a
-// streaming client has no such tree on disk.
-//
 // The three exemptions are stated, not silent: player_list is absent from AO2's
 // own stock file, the asyncao_* opt-ins are AsyncAO's and have no AO2 default,
 // and "immediate" is spelled pre_no_interrupt there (the row carries both).

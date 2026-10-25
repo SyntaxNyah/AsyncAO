@@ -73,9 +73,6 @@ func (s charListRows) taken(i int) bool {
 // hidden is AO2's filter_character_list (AO2-Client charselect.cpp:347-372) in one
 // place: the taken checkbox first, then the search text. Both the grid loop and the
 // name column call it, which is what keeps a clicked name pointing at the right cell.
-//
-// showTaken is the char_taken checkbox's state, and it is passed rather than read off
-// App on purpose: the checkbox only exists on the themed canvas, so the classic screen
 // hands `true` and behaves exactly as it did before #20 instead of inheriting a filter
 // it has no control for.
 func (s charListRows) hidden(i int, query string, showTaken bool) bool {
@@ -232,7 +229,6 @@ func charSelectTabsW(c *Ctx) int32 {
 // drawCharSelectControls draws the mapped controls at their theme rects and reports
 // whether one of them changed the screen — in which case drawCharSelect must return
 // immediately rather than keep laying out a screen that is going away.
-//
 // Every control here is an EXISTING AsyncAO control moved to a theme rect, not a new
 // one: the same search field id (so the query, the focus ring and the undo history all
 // survive a theme change), the same Spectate action, the same requestDisconnect
@@ -316,7 +312,6 @@ func (a *App) drawCharSelectControlsIn(lay *charSelectLayoutCache, g charGridPla
 }
 
 // drawCharSelectPageArrows wires char_select_left / char_select_right.
-//
 // AO2 PAGES its grid and these are the page buttons. AsyncAO scrolls, and the scroll
 // is already quantised to whole rows (charGridScroll), so a page maps cleanly: step by
 // as many whole rows as the viewport holds. That gives the arrows AO2's feel — a press
@@ -440,9 +435,6 @@ func (a *App) drawCharNameList(lay *charSelectLayoutCache, rows charListRows, qu
 // header. The Wardrobe is AsyncAO's own addition with no AO2 counterpart, so it needs
 // a home on the canvas that no theme rect describes; the column header is that home,
 // because the column is the thing whose CONTENTS the switch changes.
-// The width fallback matters too: charSelectNameListRect admits columns narrow enough
-// that two natural-width chips do not fit, and clipping the second one to whatever was
-// left could leave it a pixel wide — an unreachable Wardrobe tab. When the natural
 func (a *App) drawCharListTabs(r sdl.Rect) {
 	c := a.ctx
 	n := int32(len(charSelectTabs))

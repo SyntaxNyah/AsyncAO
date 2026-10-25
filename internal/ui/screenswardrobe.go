@@ -980,14 +980,6 @@ type musicGroupKey struct {
 }
 
 // refreshMusicGroups (re)builds the visible row layout for the Music tab:
-// every category header, plus its tracks unless the header is collapsed.
-// Memoized against (query, list identity, collapse generation) so folding a
-// category — or typing in the search box — costs an O(N) rescan only on the
-// frame that actually changed something (the icWrapped/refreshMusicFilter
-// idiom), never per frame.
-// While a search is active, collapse state is bypassed entirely: matching
-// tracks always show (auto-expanded, VSCode-style), with their category
-// header pulled in for context even if that header didn't itself match.
 func (a *App) refreshMusicGroups(query string) {
 	n := len(a.link.sess.Music)
 	key := musicGroupKey{q: query, n: n, collapseGen: a.musicTab.musicCollapseGen}
@@ -1061,11 +1053,6 @@ func (a *App) setAllMusicCollapsed(collapsed bool) {
 }
 
 // areaFilterKey memoizes the areas-list filter (#20), mirroring musicFilterKey.
-// Keyed by the query plus a cheap identity of the Areas list (len +
-// first/last name), which changes whenever the server resends the area list.
-// It deliberately does NOT key on AreaInfo (player counts / status / lock):
-// those change on every area packet, and the name filter doesn't depend on
-// them, so including them would defeat the memo and re-scan constantly.
 type areaFilterKey struct {
 	q           string
 	n           int
@@ -1172,9 +1159,6 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 	volMode := a.musicTab.musicVolMode && !themed
 	// Now-Playing indicator: the current track from the server's MC (cleared on
 	// stop / area transfer), so you can see and silence what's playing.
-	//
-	// nowPlayingExternal means the THEME declared a music_display plate and the
-	// themed pass already painted the name on it (AO2 parents ui_music_name inside
 	// that plate — courtroom.cpp:171), so only the READOUT is dropped. The row
 	// itself belongs to the header buttons and is placed either way; that coupling
 	// is exactly what used to paint Expand all on top of Stop music.

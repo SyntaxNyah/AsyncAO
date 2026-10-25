@@ -131,9 +131,6 @@ var docBacktickedWord = regexp.MustCompile("`([a-z0-9_]+)`")
 // TestPublishedGeneratorVocabularyMatchesTheTables is the generator sibling of the
 // shape census above, and it exists because the generator surface is the ONE place
 // in this format where the same slot has several legal spellings.
-// Both directions, and both tables: a key in the code and not the document is
-// undiscoverable, a key in the document and not the code degrades a conforming
-// theme silently, and a generator NAME missing from the document is a feature
 func TestPublishedGeneratorVocabularyMatchesTheTables(t *testing.T) {
 	doc := readFormatDoc(t)
 	head := strings.Index(doc, publishedGenParamHeading)

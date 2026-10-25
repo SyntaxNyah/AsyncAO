@@ -95,8 +95,6 @@ func TestThemeFontPxIsQtsConversion(t *testing.T) {
 // resolved back to a face at UIFontSize×pct/100, which rounds DOWN — so a percent
 // that is merely close reopens a pixel short, and the two truncations compounded
 // into a 7 px face for a declared 8 pt.
-// It asserts the ROUND TRIP rather than a magic percent: whatever the scale is,
-// asking for P points must reopen at exactly themeFontPx(P).
 func TestThemeFontPctRoundTripsToThePixelSize(t *testing.T) {
 	for points := 6; points <= 32; points++ {
 		pct := themeFontPct(points)
@@ -461,9 +459,6 @@ func TestChatboxInkNeedsAnActualColourKey(t *testing.T) {
 // TestDeclaredFontInkIgnoresTheParserDefault asserts the GATE directly, which the
 // test above cannot: that one pins the parser behaviour that makes the gate
 // correct, but would stay green if the gate itself reverted to Theme.HasFont.
-// Goes red the moment declaredFontInk trusts spec.Color without consulting
-// spec.ColorSet — which is precisely the bug, since the parser's default colour is
-// opaque white and would be reported as the theme's deliberate choice.
 func TestDeclaredFontInkIgnoresTheParserDefault(t *testing.T) {
 	// The exact shape a size-only theme produces: the WHITE parser default, unset.
 	sizeOnly := theme.FontSpec{Size: 20, SizeSet: true, Color: theme.RGB{R: 255, G: 255, B: 255}}

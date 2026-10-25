@@ -35,19 +35,8 @@ func stageSettledCourtroom(t testing.TB) (*App, func()) {
 	a.screen = ScreenCourtroom
 	a.srvMeta.serverName = "AllocGate"
 	// Seed the layout scales exactly as the live app does (app.go: loadPrefs).
-	// testTabApp never runs that path, so vpPct/logPct/... default to Go's zero
-	// — a 0% viewport is 0×0, which collapses the whole right column (rcol.H=0)
-	// and leaves the IC-log list a degenerate few px high. That silently robbed
-	// the gate of the log raster (empty list, no rows drawn). With the real
-	// default scales (viewport 66%) a 1280×720 frame gives the log list a
-	// realistic positive height, so drawICLogList actually rasters its lines.
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = a.d.Prefs.Load().LayoutScales()
 	// The FIVE remaining panel zooms, seeded EXACTLY the way loadPrefs does (app.go)
-	// and with no normalization on top: the fixture must reproduce a real install,
-	// not a tidied-up one. (This used to carry an `if a.oocPct == 0 { = logPct }`
-	// patch, which quietly papered over a shipped first-run bug — OOCScalePct had no
-	// entry in the config defaults block — AND hid the divergent-zoom allocation the
-	// sibling gate below now pins. Both are fixed; the patch is gone.)
 	a.oocPct = a.d.Prefs.Load().OOCScalePct
 	a.musicPct, a.playerPct, a.areaPct, a.modDashPct = a.logPct, a.logPct, a.logPct, a.logPct
 	// Pin a fixed frame clock so the append-time IC stamps (and anything else
@@ -144,10 +133,6 @@ func TestDrawCourtroomZeroAlloc(t *testing.T) {
 // TestDrawCourtroomThemeFontsZeroAlloc is the same gate with a THEME's
 // per-element font table applied (#39): distinct sizes on the chatbox, the IC
 // log, the OOC log, the music list and the area list, plus bold on two of them.
-// It proves the per-element accessors add nothing per frame — elemPct is
-// arithmetic on a fixed array, the element fontSets are built once and then
-// cached, and setPairs (walked by setOf / deviceTextFont) returns a stack array
-// rather than a fresh slice.
 func TestDrawCourtroomThemeFontsZeroAlloc(t *testing.T) {
 	a, cleanup := stageSettledCourtroom(t)
 	defer cleanup()
@@ -268,9 +253,6 @@ func TestDrawCourtroomThemedDivergentZoomZeroAlloc(t *testing.T) {
 // TestDrawCourtroomThemedCentredShownameZeroAlloc is the themed gate with the
 // showname CENTRED — the state 50 of the 97 design files in the reference corpus
 // ask for, and the one that costs something.
-// Left alignment short-circuits before measuring anything (shownameSpanFor), so
-// the gates above never touch the measuring path at all. Centre and right have to
-// know how wide the name is, and the only honest way to get that is through the
 func TestDrawCourtroomThemedCentredShownameZeroAlloc(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()

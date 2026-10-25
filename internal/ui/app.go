@@ -516,12 +516,6 @@ type App struct {
 	layoutSnap   bool // snap edits to a design-space grid (toggle in the editor)
 	layoutAspect bool // lock the viewport (stage) to 4:3 while resizing it in the editor
 	// layoutMagnetOff backs the persistent "Magnet: on/off" banner chip (Phase 3):
-	// when true it OR's into the sibling-magnet bypass (siblingMagnetOff), disabling
-	// the forced piece-to-piece snap without holding Shift per drag. It gates ONLY
-	// snapToSiblings — screen-edge snapping and the de-overlap pass are separate
-	// concerns and stay on. Session state (not persisted), mirroring layoutSnap's
-	// treatment. Stored as the "off" sense deliberately: the zero value is false =
-	// magnet ON, so float panels snap in normal play (before any editor opens)
 	layoutMagnetOff bool
 	// Overlap cycling: Tab steps through the stack of boxes under the cursor (smallest first) so a
 	// big box hidden under a small one is still reachable. editPickSig is the current stack's
@@ -700,12 +694,6 @@ type App struct {
 	previewPinned      bool // right-click pins the sprite-preview box open until you close it (its x)
 	// previewWinFedBase is the previewBase whose CURRENT frame the detached
 	// preview OS window (a.d.Preview) was last fed via a texture readback.
-	// Compared against previewBase every frame (only while detached — see
-	// syncPreviewWindow) so a new pick re-feeds exactly once, and going
-	// not-ready (still loading) clears it so the eventual ready flip feeds
-	// too. Deliberately App-level, not a field on render.PreviewWindow
-	// itself: it names a COMPARISON this package owns (previewBase is
-	// internal/ui's own concept), not preview-window state.
 	previewWinFedBase string
 	// previewWinFedPage is the *render.TexturePage feedDetachedPreviewFrame
 	// last fed FROM, for the same base above. Tracked separately from the
@@ -721,10 +709,6 @@ type App struct {
 	// previewWinFedFrame is the page-relative frame INDEX last fed for
 	// previewWinFedBase/previewWinFedPage, animated pages only (always 0 for
 	// a static/1-frame page, matching pageFrameLoop's own "no loop" answer).
-	// feedDetachedPreviewFrame recomputes the current index every call
-	// (cheap, pure — pageFrameLoop) but only does GPU work when it differs
-	// from this, which is what lets a looping animation's readback+cache
-	// stay keyed on ACTUAL frame changes instead of firing every call.
 	previewWinFedFrame int
 	// previewWinWasOpen is syncPreviewWindow's OWN falling-edge latch — "was
 	// the detached window open as of last frame" — used ONLY to detect the
@@ -1416,11 +1400,6 @@ func (a *App) keepSceneAssetsWarm() {
 	sc := a.renderScene()
 	// Futility latch resets. (1) A new message / room rebuild swaps the warm
 	// set — a fixed array compare, no allocation on the settled steady state.
-	// (2) A new ceremony resets even an UNCHANGED set: a blankpost repeating
-	// the same emote stages identical bases, which the compare can't see, and
-	// begin()'s one-shot HIGH prefetch is skipped for bases resident at that
-	// instant — evicted a moment later they'd be loaderless (and latched from
-	// the previous epoch) for the whole message.
 	warmSet := [6]string{sc.BackgroundBase, sc.DeskBase,
 		sc.Speaker.Active, sc.Speaker.IdleBase, sc.Pair.Active, sc.ChatSkinBase}
 	if warmSet != a.sceneWarm.set {

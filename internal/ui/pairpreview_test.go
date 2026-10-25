@@ -19,9 +19,6 @@ func containedIn(inner, outer sdl.Rect) bool {
 // TestTheGhostOverhangsItsStageAndTheClipCatchesIt is the report, put as the two
 // facts that make the fix load-bearing — and only those two, because an earlier
 // draft of this sweep asserted neither.
-// What it deliberately does NOT do is assert containment of an intersection with
-// the stage, which is true for every input by construction and cannot fail. The
-// sprite GEOMETRY is pinned next door (TestPairPreviewFitIsHeightBoundAndCentred)
 func TestTheGhostOverhangsItsStageAndTheClipCatchesIt(t *testing.T) {
 	// Stages the pair panel produces at the window sizes the client runs at
 	// (pv = the right column below the numeric rows; pairPanelMinW 440 upward).

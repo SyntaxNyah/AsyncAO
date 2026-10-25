@@ -23,7 +23,6 @@ import (
 // to drop the row selection and its cached description (the list is re-filtered, so
 // every index moves), reset the scroll, and abandon any half-finished row edit —
 // four things a second copy of the toggle would eventually forget one of.
-//
 // Idempotent on purpose: the menu's "Direct connect…" row leaves the Phone Book page
 // unconditionally, and doing that from the all-servers page must not clear a
 // selection the user is reading.
@@ -192,15 +191,6 @@ func (a *App) claimPhoneFanatClick(w, h int32) {
 
 // drawPhoneFanatChip draws the small, dim, always-visible "Phone Fanat" chip in
 // the Phone Book page's bottom-right corner, plus the active quip just above it.
-// The CLICK is already handled (and consumed) by claimPhoneFanatClick before the
-// rows draw, so this pass is visual only — the button's return is discarded and
-// can't double-fire (c.clicked is false by now on a chip click). Called only
-// from inside the phone-book branch of drawLobby, so the whole mechanism costs
-// nothing anywhere else and can never leak onto the courtroom or the plain
-// all-servers lobby. Ephemeral — nothing here persists. Alloc-free: the chip
-// label is a fixed string (text-texture cache hit) and the quip only draws while
-// active; the lobby 0-alloc gate stages ScreenLobby WITHOUT phoneBookPage, so
-// the chip never draws in that gate by construction.
 func (a *App) drawPhoneFanatChip(w, h int32) {
 	c := a.ctx
 	chip := phoneFanatChipRect(w, h)

@@ -8,7 +8,6 @@ import (
 )
 
 // Keyboard toggles for the two chrome bars.
-//
 // They exist because the only way to hide or show them was the UI-chrome panel,
 // which is itself a piece of chrome: anything drawn over it, or a layout that put
 // it awkwardly, left no route back except the mouse. A key that does not depend

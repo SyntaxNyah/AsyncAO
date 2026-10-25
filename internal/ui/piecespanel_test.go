@@ -7,7 +7,6 @@ import (
 )
 
 // The Hide-UI-pieces panel became a floating window.
-//
 // It used to be nailed to the bottom-right corner: dragging did nothing, and the
 // layout editor did not offer it either, so a panel that landed awkwardly — or
 // underneath something else — could not be shifted at all. That is a poor place

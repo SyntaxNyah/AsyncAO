@@ -149,7 +149,6 @@ func (a *App) drawThemeMakeRows(y, w int32) int32 {
 }
 
 // drawThemePresetAxes is the two-cycler pick for templatePreset.
-//
 // THE LIBRARY LOAD IS ONE sync.Once OVER EMBEDDED BYTES (theme.ShippedPresets), not
 // a disk read — the fragments ship inside the executable — so it is safe on a
 // frame. A failure draws a line and no cyclers rather than refusing the tab: an
@@ -187,7 +186,6 @@ func (a *App) drawThemePresetAxes(y, w int32) int32 {
 
 // drawThemeEditorOpenRow is the row that MOVED here from the Theme tab, unchanged in
 // behaviour: open what can be opened, copy what cannot.
-//
 // The two strings and the branch are themecopy.go's (themeEditorRow /
 // copyAppliedThemeForEditing) and are untouched by the move — the row is in a
 // different place, not a different row.
@@ -280,7 +278,6 @@ func (a *App) drawThemeAuthoringHint(y, w int32) int32 {
 // ---------------------------------------------------------------------------
 
 // presetAxisNameCache memoizes the two dropdowns' label slices.
-//
 // KEYED ON THE LIBRARY POINTER, which is a valid identity precisely because
 // theme.ShippedPresets is immutable after load and hands back the same pointer
 // every time (presetlib.go's "IMMUTABLE AFTER LOAD" note). Without the memo the tab
@@ -314,7 +311,6 @@ func presetAxisLabels(list []*theme.Preset) []string {
 }
 
 // presetPair is the pair the two dropdowns currently name.
-//
 // It resolves through theme.ShippedPresets rather than through the cached label
 // slices, because a NAME is not an identity — MergePresets needs the *Preset, and
 // re-deriving it from a label would be a second lookup table to keep in step with

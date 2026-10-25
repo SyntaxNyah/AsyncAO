@@ -61,9 +61,6 @@ func (a *App) editorExport() {
 	// words, at the moment the author can still fix it. Without this the sheet would
 	// happily bundle a theme whose model has since drifted past a cap, and the
 	// recipient would be the one who found out.
-	// IT IS SIDE-EFFECT FREE, which is why it is Validate rather than a throwaway
-	// bytes(): a "check" that rewrote the lossless carrier on its way past would be a
-	// save nobody asked for.
 	if err := a.te.doc.side.Validate(); err != nil {
 		a.te.note("this theme would not save, so it cannot be shared: " + err.Error())
 		return

@@ -102,7 +102,6 @@ func (w *transcriptWriter) close() {
 // detailedLogLine formats one IC message for the transcript, AO-style: a bracketed timestamp, then
 // "showname (char)" — showname FIRST, falling back to just the character when there's no distinct
 // showname — then the message. No server (it's the folder) or area/pipe columns. Pure — unit-tested.
-//
 // The body is stripped of the zero-width sidechannel (courtroom/spritestyle.go) for the same reason
 // icMessageBody strips it: this file is READ — by the user, and by the in-app log browser — so it is
 // a display string, not a wire record. Nothing re-decodes a transcript, so keeping the marker would
@@ -184,12 +183,6 @@ func sanitizeLogFolder(server string) string {
 
 // transcriptPathFor is logs/<server>/<YYYY-MM-DD_HH-MM-SS>[-<seq>].log beside the exe — one file
 // per TAB SESSION (the dirs are created). The timestamp names the file so each run is its own log.
-//
-// seq is that server's 1-based file ordinal within this run and appears only from the SECOND file
-// on, so a single-tab session keeps the exact historical bare-timestamp name and every already-
-// written log still parses. It exists because the timestamp only resolves to the second: two tabs
-// joining one server in the same second would otherwise be handed the identical path and append
-// into each other, defeating the split. See transcriptFilename for the name rule (pure, tested).
 func transcriptPathFor(server string, now time.Time, seq int) (string, error) {
 	root, err := exeDataDir()
 	if err != nil {

@@ -102,12 +102,6 @@ func exportLearnedAsync(d Deps) {
 }
 
 // makePortableAsync copies the active config set (settings + notebooks + jukebox)
-// into a config/ folder beside the executable, AND your themes folder to the
-// portable write root beside it (<exeDir>/themes — not inside config/, which is
-// not where anything writes themes after the move), so the whole set travels with
-// a portable copy or USB stick. Off-thread (§17.2: no sync disk I/O on the render
-// thread); the move takes effect on the next launch.
-//
 // Themes are the one half that can fail on its own, and MigrateToPortable says so
 // with ErrThemesNotMigrated rather than an opaque error. That case is reported as
 // what it is — the settings DID move — because "Make portable failed" would send

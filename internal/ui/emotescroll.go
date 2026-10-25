@@ -15,8 +15,6 @@ const emoteWheelRows = 1
 // answer below reads these, so a grid that reflowed (window resize, a theme
 // swap, the icon-spacing slider) cannot leave the number keys or the page label
 // describing the previous shape.
-//
-// totalCells is the length of the VISIBLE emote list (favs-only already applied).
 func (a *App) setEmoteGridMetrics(cols, rowsPerPage, totalCells int) {
 	if cols < 1 {
 		cols = 1

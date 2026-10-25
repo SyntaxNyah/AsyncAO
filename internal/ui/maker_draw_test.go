@@ -197,11 +197,6 @@ func TestMakerDrawNoPanic(t *testing.T) {
 
 // TestSpriteOverridesReachEveryLiveRoom pins that the session's hide/move choices
 // are USER-level, not per-room.
-//
-// applySpriteOverrides hard-coded a.room, so the pinned/split pane, the replay
-// room and the scene-maker preview were all silently exempt: turning Hide desk on
-// (toggle or keybind) left the desk drawn in the pinned pane, and a character
-// hidden with Missingno reappeared there.
 func TestSpriteOverridesReachEveryLiveRoom(t *testing.T) {
 	a := testTabApp(t)
 	a.d.Prefs.Update(func(
@@ -236,7 +231,6 @@ func TestSpriteOverridesReachEveryLiveRoom(t *testing.T) {
 // above, and it has to read source to do its job: the behaviour test proves the
 // helper works on any room, but the actual bug was a call site that was never
 // written. Only a census of the draw paths can see that.
-//
 // Rule: every Update of a room that is NOT a.room must be followed closely by
 // applySpriteOverridesTo for that same room. a.room is exempt — it goes through
 // the applySpriteOverrides() wrapper, and its Background-loop Update draws

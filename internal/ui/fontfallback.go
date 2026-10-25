@@ -89,9 +89,6 @@ func parseCover(data []byte) *sfnt.Font {
 // (fontcensus.go) supplies anything else on demand, from whatever is actually
 // installed. Absent files are skipped, so an unusual install just leans on the
 // census sooner.
-// Every OS gets a list. Returning nil off Windows — which this used to do — left
-// macOS and Linux with nothing but the embedded 744-glyph Latin face, so Cyrillic,
-// Greek, Hebrew, Arabic, every Indic script and all of CJK were permanently tofu
 func fallbackFontCandidates() []string {
 	switch runtime.GOOS {
 	case "windows":
@@ -198,11 +195,6 @@ var cjkHanCandidates = []string{
 // cjkHanChineseBackstop is the ORDERED Chinese Han face preference, loaded AFTER the
 // JP-first pick as a coverage backstop. Yu Gothic's cmap is JIS/Adobe-Japan1 — a SUBSET of
 // the GB18030 Han that YaHei covers — so Simplified-Chinese-only characters (讲/说/边, …)
-// that the old YaHei-first pick rendered would tofu if only Yu Gothic loaded. Appending a
-// Chinese face keeps those covered: coverRunes gives Yu Gothic the win for the shared Han a
-// Japanese showname uses (the pretty proportional glyphs), and this face catches the CN-only
-// runes it lacks. Residual: shared Han in a Chinese sentence shows JP glyph *shapes* — fixing
-// that needs per-run script detection (out of scope); this only kills the tofu.
 var cjkHanChineseBackstop = []string{
 	`C:\Windows\Fonts\msyh.ttc`,     // Microsoft YaHei — Simplified Chinese (GB18030)
 	`C:\Windows\Fonts\msjh.ttc`,     // Microsoft JhengHei — Traditional Chinese

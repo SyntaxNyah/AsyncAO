@@ -954,12 +954,6 @@ func (a *App) handleTabBar(w, h int32) {
 	}
 	// The involuntary-disconnect dialog freezes a tab whose network session is dead
 	// but whose sessionState is STILL LIVE (conn nil, sess/room kept for viewing).
-	// handleTabBar runs in the update phase, BEFORE the frame-tail pointer fence that
-	// covers the dialog — so without this guard a chip click here would activateTab
-	// away, parkActive the frozen (not-dead) session into a slot that pumpBackgroundTabs
-	// never drains (s.conn==nil) — a zombie tab. The dialog itself parks with the tab
-	// (it's on sessionState), so it wouldn't paint over the new tab; the hazard is the
-	// zombie slot plus the wipe-and-resurface-stale-modal race resetSessionState opens.
 	if a.dialogs.disconnectDlg.open {
 		a.tabDragFrom, a.tabDragging = -1, false
 		return

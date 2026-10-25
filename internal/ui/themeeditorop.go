@@ -109,17 +109,11 @@ const (
 	// again rather than write the baseline into one.
 	opSlotReset
 	// opFontFamily: one [fonts] row — a family name and the file under <theme>/fonts.
-	// The target is a spaceFont target whose index is the row's position in
-	// Sidecar.Fonts; an index equal to len(Fonts) APPENDS. before/after carry
-	// "family<sep>file" as one interned string (fontRowValue), and an EMPTY after
-	// removes the row — which is what makes "delete a family" and "undo an add" the
-	// same code path.
 	opFontFamily
 	// opFontBind: one [fontbind] row — a FontElements class id bound to a [fonts]
 	// family. The target's index is the class's index in theme.FontElements, which is
 	// append-only and therefore a stable identity (TestFontElementsIsAppendOnly);
 	// before/after carry the family, "" meaning "no binding".
-	//
 	// THIS IS THE TIER THAT RENDERS. An element's own `font`/`size` are carried and
 	// not drawn in format 1 (paintElementText's measurement); a class binding is
 	// resolved by applySidecarFonts on every theme apply and changes the real face.
@@ -164,7 +158,6 @@ type themeEditOp struct {
 
 // coalesceKey is the identity two ops must share to merge into one undo step: the
 // same kind, on the same target, in the same field, inside the same group.
-//
 // The TARGET is part of it and that is the load-bearing half: without it, dragging
 // element 3 and then element 7 inside the same 400 ms would merge into one op whose
 // `before` belonged to element 3 and whose `after` belonged to element 7 — an undo
@@ -186,7 +179,6 @@ func (op themeEditOp) coalesceKey() coalesceKey {
 // ---------------------------------------------------------------------------
 
 // themeEditRing is the editor's single timeline.
-//
 // A FIXED ARRAY WITH TWO CURSORS, not a slice: `n` is how many ops the timeline
 // holds and `applied` is how many of them are currently in effect, so redo is
 // simply applied < n. A new push after an undo TRUNCATES the redo tail (n =
@@ -227,7 +219,6 @@ func (r *themeEditRing) end() { r.group = 0 }
 
 // push records an applied op. Returns false for an op that was merged into its
 // predecessor or was never a mutation, so a caller can tell "nothing new happened".
-//
 // ZERO ALLOCATION. The full-ring case shifts the array down by one with copy(),
 // which moves 127 values on the stack-free array that already lives on App. Growing
 // a slice instead would allocate on a drag.
@@ -259,7 +250,6 @@ func (r *themeEditRing) push(op themeEditOp, now time.Time) bool {
 }
 
 // coalescableKind reports whether two adjacent ops of this kind may merge.
-//
 // STRUCTURAL ops never merge, and the reason is that merging them is meaningless
 // rather than merely unwanted: two adds are two different elements, and an add
 // followed by a delete inside the window is two facts about the document, not one

@@ -139,15 +139,6 @@ const (
 	// gifWarmHardCap is the ABSOLUTE wall-clock ceiling on the whole warm phase,
 	// measured from job creation (not from warmSubmitDone like gifWarmMax). It is
 	// the backstop the incremental submitter needs: outstanding = len(warmInFlight)
-	// = submitted bases not yet resident, and a submitted ref that 404s (or resolves
-	// to a base other than r.Base) NEVER becomes T1-resident, so it never leaves the
-	// in-flight set. If ≥warmInFlightWindow such refs pile up, room stays 0,
-	// pendingWarm never drains, warmSubmitDone never latches, and the gifWarmMax
-	// clock (which only starts at warmSubmitDone) would never run — the phase would
-	// hang forever on a missing-origin imported .demo (exactly the 404-heavy scene
-	// this async path exists to serve). This anchor guarantees the phase ends and
-	// the export proceeds regardless of pending/submit state. Generous headroom
-	// over gifWarmMax so a large, still-progressing warm isn't guillotined early.
 	gifWarmHardCap = 20 * time.Second
 
 	// Incremental warm submission (the freeze fix). startSceneExport MUST NOT loop
@@ -483,11 +474,6 @@ type gifExportJob struct {
 
 	// Async load phase: the disk read + parse runs on ONE goroutine off the render
 	// thread (a 30–60 MB .aorec or an all-day .demo froze the window otherwise).
-	// loadCh (gifLoadBuf-buffered) delivers the parsed recording; the render thread
-	// finishes the export on delivery. loadName is the file base for the overlay;
-	// loadKind is the requested format. The channel is per-job identity: on Cancel
-	// the job (and its channel) is dropped, so a late goroutine send lands in a
-	// buffer nobody polls (never blocks — the goroutine finishes and dies).
 	loading  bool
 	loadCh   chan gifLoadResult
 	loadName string
@@ -733,11 +719,6 @@ func (a *App) startExportSeed(j *gifExportJob, origin string) {
 }
 
 // tickGifSeed polls the format-seed goroutine without blocking (render thread).
-// On delivery it republishes the resolver table (so the warm's first candidate
-// sees the seeded formats — WarmFromPrefs on the render thread, matching
-// pollManifest discipline) and drops into the warm phase. Nothing to do until the
-// goroutine sends. A Cancel that nils a.gif never reaches here (tickGifExport's
-// j==nil guard fires and the buffered send is GC'd with the job).
 func (a *App) tickGifSeed(j *gifExportJob) {
 	select {
 	case res := <-j.seedDone:
@@ -881,9 +862,6 @@ func (a *App) tickGifExport() {
 // tickGifLoad polls the off-thread disk-load result without blocking (render
 // thread). Nothing to do until the loader sends; on an error the export exits
 // cleanly, and on success finishLoadedExport runs the render-thread export tail.
-// The loading shell job holds no capture target or encoder yet, so an error
-// teardown here can't leak either — it just clears the export flags (no
-// endExportScaleBracket needed: loading never set the bracket).
 func (a *App) tickGifLoad(j *gifExportJob) {
 	select {
 	case res := <-j.loadCh:
@@ -1256,9 +1234,6 @@ func (a *App) drawGifThemedChatbox(j *gifExportJob, sc *courtroom.Scene, box sdl
 	// Rasterize once per line, wrapped to the design message width and shrunk to
 	// fit the box height (keyed by text like the default path — only one of the two
 	// chatbox paths runs across a whole export, so the shared cache never drifts).
-	// The MESSAGE deliberately does NOT take the canvas fold the showname above
-	// takes. j.chatPct is exportChatPct, already derived from the capture height,
-	// and fitChatRaster then shrinks it until the block fits the box — so this text
 	if j.chatRaster == nil || j.chatText != sc.MessageText {
 		if j.chatRaster != nil {
 			j.chatRaster.Destroy()

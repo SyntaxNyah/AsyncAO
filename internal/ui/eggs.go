@@ -552,7 +552,6 @@ func eggPaletteAt(u float64) sdl.Color {
 // or reset when the message changes — and every AsyncAO client in the room draws
 // the identical fall. math/rand is deliberately NOT used: it would need a seeded
 // source (per-client divergence) and a call into a locked global.
-// Mixer is MurmurHash3's finalizer (public domain).
 func eggHash(i uint32) uint32 {
 	i ^= i >> 16
 	i *= 0x7feb352d

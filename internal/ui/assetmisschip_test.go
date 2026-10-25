@@ -7,11 +7,6 @@ import (
 )
 
 // TestAssetMissRingDedupsWithinTheCooldown pins the burst suppressor behind GH #27.
-// The old banner re-stamped its 12 s timer on EVERY warning with no dedup, and the
-// desk-heal loop re-demanded a conclusively-missing base up to 8 times per message
-// at a 2 s cadence — so a background that legitimately ships no desk made the red
-// line permanent, which also pinned the frame pacer at full rate (warnActive is in
-// the full-rate gate).
 func TestAssetMissRingDedupsWithinTheCooldown(t *testing.T) {
 	var r assetMissRing
 	t0 := time.Now()

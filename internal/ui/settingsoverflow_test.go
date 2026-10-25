@@ -9,9 +9,6 @@ import (
 // settingsCheckboxCorpus / settingsHelpCorpus / settingsRowCorpus are a hardcoded,
 // representative sample of the settings form labels, a few checkbox rows plus a few
 // sentence-length bare help lines. They stand in for the old settings.go source harvest:
-// the census only needs labels long enough to overflow a narrow card, and a fixed list
-// keeps the test input owned by this file rather than re-derived from production each
-// run (which is what made the corpus a source-scanning gate).
 var (
 	settingsCheckboxCorpus = []string{
 		"Keep the sprite preview pinned: it stays open until you close it (the pin button on the box toggles this too; an animated preview keeps the client at full frame rate while it is up)",
@@ -40,7 +37,6 @@ const settingsHelpLineRunes = 150
 // TestNoSettingsRowLabelEscapesTheCard is the overflow census. At a NARROW card —
 // the settings minimum, which is what a small window resolves to — every label the
 // settings form draws must fit inside the card once the row-label limit is armed.
-//
 // It also asserts the bug was real and broad: with the limit disarmed (the pre-fix
 // state) a substantial number of these labels overflow. Without that half, a fix
 // that quietly stopped arming the limit would still pass.

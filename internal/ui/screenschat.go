@@ -57,10 +57,6 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	if _, hasSkin := a.themePage(themeStemChatbox); !hasSkin && charSkin == nil {
 		// #39: the theme's "message" point size decides the line height, so a
 		// theme-sized message grows the flat panel by the right amount.
-		// render.FontLineSpacing, NOT font.Height(): the raster stacks its wrapped rows
-		// by the font's LINE SPACING (leading included — linespacing.go), so sizing the
-		// grow with the shorter glyph box under-grows the panel by one leading per row
-		// and clips the tail of a long message.
 		msgPct := a.messagePct()
 		lineH := a.messageRowPitchLogical(msgPct, a.messageFontFor(msgPct, sc.MessageText))
 		if g := grownChatBoxH(box.H, vp.H, int32(a.chatMsgLines(box.W-2*chatOverlayPadX, sc)), lineH); g > box.H {
@@ -208,12 +204,6 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 			// DrawScaled, not Draw: at a scaled UI the revealed prefix must blit
 			// device-exact or the crawl re-stretches the whole run by a pixel every
 			// time its width changes parity, and the settled text wobbles as it types.
-			// msgClip, not textRect and not box: it is the clip actually set above,
-			// and the device-exact path must re-assert THAT one inside its 1:1
-			// bracket or the backend may read it against the wrong scale (see
-			// draw()). Handing it `box` here would restore the name band as a paint
-			// target for every scaled UI — the exact defect, on the exact machines
-			// hardest to reproduce it on.
 			a.raster.msRaster.DrawScaled(c.Ren, sc.VisibleRunes, textRect.X, msgY, c.RenderScalePct(), &msgClip)
 		}
 		_ = c.Ren.SetClipRect(nil)
@@ -544,11 +534,6 @@ func clampF64(v, min, max float64) float64 {
 }
 
 // volStripRowsH is the height of the quick volume popover's two slider rows:
-// "label NN%" (click = mute) over a full-width slider. Named (rule 9) and
-// shared with drawLogPanel's box height so the two can't drift apart. (The
-// the "stream custom music" checkbox row was removed —
-// playtest: it cluttered the popover; the toggle lives ONLY in Settings →
-// Audio now.)
 const volStripRowsH = int32(44)
 
 // persistChannelMute saves one channel's click-to-mute toggle so it survives a
@@ -1638,12 +1623,6 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 		icX += preW + 6 // downstream flows from the DEFAULT position, not the override
 	}
 	// #M5: dedicated Text FX cycle button (Off → Shake → Wave → Rainbow) — movable (#4a).
-	// A CORE button like Pre (redesign): drawn BEFORE the SFX dropdown and the emoji
-	// button so it outranks them under the drop discipline — on a narrow bar SFX/emoji yield
-	// first and FX survives (the reverse of the pre-redesign order, where FX dropped so SFX
-	// could stay). Its guard prices in only its own fxBtnW+4 plus the input floor. Override /
-	// editor win over the drop (same rule as Pre); FX has no panelHidden gate in the classic
-	// row, so pass hidden=false to keep it a pure width/override/edit call.
 	_, fxOv := a.classic.classicOv[slotICFx]
 	fxGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, fxBtnW+4, tailReserve)
 	if icOptionalDraws(fxGuardOK, fxOv, a.classic.classicEdit, false) {

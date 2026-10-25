@@ -14,9 +14,6 @@ const (
 	// eggMintFingers is the named cap on the frost field PER EDGE (hard rule 4),
 	// and the egg draws two edges — top and bottom — so the per-frame fill count
 	// is pinned at 2*eggMintFingers + eggMintFlecks whatever the stage measures.
-	// Only two edges: the left and right of a 4:3 stage are where a standing
-	// sprite's shoulders are, and frost there covers the character the message is
-	// about.
 	eggMintFingers = 22
 	// eggMintReachMinFrac / MaxFrac bound how far a finger grows in, as a fraction
 	// of STAGE HEIGHT, so the frost scales with the stage rather than shrinking to

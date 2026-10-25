@@ -176,8 +176,6 @@ func TestLobbyHeaderRowShedsBeforeItOverlapsTheUtilityCluster(t *testing.T) {
 
 // TestMenuBarIsAMouseLifeline pins the strand an adversarial review found. Under a
 // THEME the menu bar is the only mouse route back to the client's own controls:
-// ctrlSettingsSlot is drawn by drawICControls, which the themed path returns long
-// before, and the ★ Extras chip row that used to be the themed fallback was
 // deleted in #21 because it painted over the design canvas. So hiding the toolbox
 // and then the menu bar left a themed user with no mouse chrome at all, while the
 // old two-way guard could never fire.

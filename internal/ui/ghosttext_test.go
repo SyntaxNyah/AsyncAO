@@ -132,10 +132,6 @@ func TestGhostSpanGhostsWholeQueuedEntriesOnly(t *testing.T) {
 // TestGhostSpanPromotesWhenTheQueueDrains walks the live sequence the report
 // describes, driving the REAL boundary resolution (ghostSpan + firstQueuedEntry,
 // the two pieces ghostLogSpan composes) rather than restating it:
-//
-//	3 messages logged, 1 crawling, 2 queued → the two successors are ghosted
-//	the crawl finishes, one dequeues        → the promoted one draws normal
-//	the queue empties                       → nothing is ghosted anywhere
 func TestGhostSpanPromotesWhenTheQueueDrains(t *testing.T) {
 	log := []icEntry{
 		{text: "A: crawling", speech: true},

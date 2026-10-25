@@ -155,11 +155,6 @@ func TestToggleServerFriend(t *testing.T) {
 }
 
 // TestFunColor pins the M61 message-colour modes + the extended colours (#98)
-// + the free hex pick (v1.52.0): neither leaves text+colour alone, random
-// swaps the colour, rainbow prefixes \cr and wins over random, an extended
-// colour prepends \c<code> and reports the nearest-standard wire colour, a
-// custom hex prepends \c#RRGGBB with the nearest wire index and beats ext,
-// and a blank/space send is never decorated.
 func TestFunColor(t *testing.T) {
 	if txt, col := funColor("hi", 4, -1, -1, false, false, 7); txt != "hi" || col != 4 {
 		t.Errorf("neither: got (%q,%d), want (hi,4)", txt, col)
@@ -559,15 +554,6 @@ func TestStageRestoreMsg(t *testing.T) {
 }
 
 // TestTabSwitchNoLogCrossover pins the multi-tab log-crossover fix (playtest:
-// switching tabs showed the OTHER server's IC/OOC lines with the wrong colours).
-// The IC/OOC wrap+filter caches live on App and were keyed only by the per-session
-// log seq — which starts at 0 in EVERY tab — so two tabs at the same seq collided
-// on the shared cache and a switch served tab A's wrapped lines under tab B. The
-// fix folds a per-view epoch (bumped on every session swap) into every log cache
-// key. This test sets up two tabs whose logs carry DISTINCT lines at the SAME seq
-// (the exact collision the bug needed), switches back and forth, and asserts each
-// active tab's wrapped IC + OOC output contains ONLY its own lines both directions,
-// plus that the epoch actually advanced across the switch (the fixed seam).
 func TestTabSwitchNoLogCrossover(t *testing.T) {
 	a := testTabApp(t)
 	a.logPct, a.oocPct = DefaultScalePct, DefaultScalePct // nil-font 8 px/char path
@@ -942,11 +928,6 @@ func TestTabTearOffToSplit(t *testing.T) {
 }
 
 // TestSendICSplitTargetsPinnedSession pins the dual-input invariant (pass 2c):
-// typing into the right pane sends on the PINNED server (its conn, its char id)
-// via a momentary sessionState swap, marks the PINNED input pending (keep-until-
-// echo), and leaves the primary session bit-for-bit untouched. The swap reuses
-// the unmodified sendIC, so a regression that forgets to restore the primary —
-// or that sends on the wrong conn/identity — fails here.
 func TestSendICSplitTargetsPinnedSession(t *testing.T) {
 	a := testTabApp(t)
 	// Primary (left) session: a distinct identity that must survive the send.

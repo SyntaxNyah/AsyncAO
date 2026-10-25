@@ -13,12 +13,6 @@ import (
 // visible control, its persistence, and the five close paths that ignored the pin.
 
 // TestPreviewChromeRectsAreDisjointAndInsideTheFrame pins the shared rect helpers.
-// The close button's rect used to be written literally TWICE — once in the draw
-// and once in the input handler — which is one edit away from a control whose
-// pixels and hit box disagree. Extended for the pop-out button (v1.93.0
-// preview-window-wire) rather than left behind it: a third chrome slot is
-// exactly the kind of addition that silently overlaps an existing one if
-// nothing re-checks the whole row.
 func TestPreviewChromeRectsAreDisjointAndInsideTheFrame(t *testing.T) {
 	for _, frame := range []sdl.Rect{
 		{X: 0, Y: 0, W: 200, H: 240},

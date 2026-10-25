@@ -170,13 +170,6 @@ type debugPanelState struct {
 }
 
 // modDashState is the mod dashboard's per-session view and selection state (#13):
-// the selected target, the roster and audit scroll offsets, the left-column view
-// switch, the bounded session audit log, and the bulk tick set. All per-session
-// (per-tab): a new server connection starts with an empty log and selection.
-//
-// targetUID is the selection, never a roster index — rebuildLiveRoster replaces
-// the slice on every join/leave, so an index would repoint a ban at whoever
-// shifted into that slot.
 type modDashState struct {
 	env         *env
 	targetUID   string          // selected target's UID ("" = none)
@@ -277,7 +270,6 @@ type themeApply struct {
 	sidecar *theme.Sidecar
 	// sidecarErr / sidecarTip are a REFUSED sidecar, rendered here into the two
 	// strings the chip needs (themeerrchip.go). Both empty in the ordinary case.
-	//
 	// The distinction the pair carries is "the file exists and could not be read",
 	// which is emphatically not "there is no file": a theme with no sidecar is a
 	// stock AO2 theme and reports nothing. Rendered on this goroutine because both
@@ -389,11 +381,9 @@ const themeStemChatbox = "chatbox"
 
 // themeStemChatboxMed / themeStemChatboxBig are the two WIDER chatbox skins of
 // AO2's showname widen-and-swap ladder, as T1 stems.
-//
 // They are T1 KEYS, not file names: the files are named after whichever base
 // candidate resolved (chatmed / chatboxmed / ...), which is only known once the
 // theme has been walked, so they cannot live in themeImageStems' static table.
-// The keys are fixed so every draw site names the same two textures.
 const (
 	themeStemChatboxMed = "chatboxmed"
 	themeStemChatboxBig = "chatboxbig"
@@ -450,11 +440,8 @@ func avgSkinLuma(img *image.RGBA, step int) int {
 // avgSkinLumaRect is the same average over ONE sub-rectangle of img — what the
 // per-element ink guard needs, because a courtroom background is one image and
 // each font element sits over its own patch of it.
-//
 // Takes the rect rather than an (*image.RGBA).SubImage: SubImage allocates a
 // fresh header per call, and this runs once per element per theme apply.
-// PixOffset already accounts for the image origin, so the sampling body is
-// unchanged from the whole-image case.
 func avgSkinLumaRect(img *image.RGBA, r image.Rectangle, step int) int {
 	b := r.Intersect(img.Bounds())
 	if b.Empty() {
@@ -538,7 +525,6 @@ const themeBtnPrefix = "btn/"
 // themeSlots registry (themeslots.go) so a key cannot carry art without a row.
 // Loaded with a PNG-FIRST ext order: the bare splash names
 // ("crossexamination.gif") and these button files ("crossexamination.png")
-// collide by stem, and on every real theme the button is the png.
 func themeButtonStems() map[string][]string {
 	m := make(map[string][]string, len(themeSlots))
 	for i := range themeSlots {

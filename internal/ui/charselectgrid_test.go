@@ -369,9 +369,6 @@ func TestCharGridStartsOnAWholeLatticeRow(t *testing.T) {
 // TestCharGridScrolledCellsStayOnTheArtworkLattice is the scrolled half of the drift
 // proof, at a scale where the lattice is genuinely fractional (944x644 puts the stock
 // canvas at ~0.898, so a row is 59.98 device px and no integer pitch can express it).
-// The backdrop does NOT scroll — its slot frames are static — so scrolling by m rows
-// has to put grid row r exactly where frame row r-m is painted. That is what the
-// row-snapped offset is FOR, and it is why the offset is taken from the lattice
 func TestCharGridScrolledCellsStayOnTheArtworkLattice(t *testing.T) {
 	const (
 		w, h               int32 = 944, 644 // the import auto-snap size for AceAttorney2x

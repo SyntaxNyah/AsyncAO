@@ -83,10 +83,6 @@ type skinState struct {
 	themeShownameAlign shownameAlign
 	// themeShownameExtra is the active theme's `showname_extra_width` in DESIGN
 	// pixels — the rung height of AO2's widen-and-swap ladder (chatboxfit.go).
-	// Design space, not window space: themeLayoutIn scales it with the rect it
-	// widens and bakes the result into the layout cache, so the draw path never
-	// touches a float. Zero (the value nine reference themes declare, and the value
-	// a themeless App carries) disables the ladder.
 	themeShownameExtra int
 	// themeFonts is the applied theme's per-element courtroom_fonts.ini table
 	// (#39): declared point size folded to a percent, the resolved family's face

@@ -46,9 +46,6 @@ func TestSkipFrameExpExtendsToMenus(t *testing.T) {
 	// …but a live surface on Settings still forces frames through the later
 	// gates (the mic-test meter, streaming damage, or a DRAWN animated preview
 	// via the anim-chrome census). A bare previewBase must NOT refuse anymore:
-	// previews orphaned by a screen switch have no draw tail left to close
-	// them, and the old state check held the event-driven loop at the ACTIVE
-	// cap until restart (the stuck-at-active-cap report).
 	a.budget.previewBase = "srv/characters/witch/(a)normal"
 	if !a.SkipFrame(true, false) {
 		t.Error("exp: a bare previewBase (no drawn box) must skip — the orphan cap latch")

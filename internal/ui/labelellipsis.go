@@ -16,7 +16,6 @@ import (
 // truncateEllipsisASCII is the fallback marker for a face with no U+2026: three
 // FULL STOPS, the typographic ancestor of the ellipsis and a character every face
 // that can draw a sentence already has.
-//
 // Not "..", not a single ".", and not U+22EF or any of the other Unicode ellipsis
 // relatives: three periods is what every text renderer degrades an ellipsis to, and
 // each of the alternatives is either ambiguous with a real full stop or just as
@@ -59,9 +58,6 @@ func ellipsisForCoverage(hasEllipsis, hasFullStop bool) string {
 // f belongs to no built set (the chrome-only and headless paths), or its cover face
 // failed to parse. nil means "don't guess", and every caller keeps its pre-existing
 // behaviour on it.
-//
-// setOf resolves the SET; the index of f inside that set is what picks its own cover,
-// because buildSet appends fonts and covers in lockstep (a skipped face skips both).
 func (c *Ctx) faceCover(f *ttf.Font) *sfnt.Font {
 	if f == nil {
 		return nil

@@ -162,7 +162,6 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 
 // panelSizeText is what the size box should display this frame: the text the
 // user is typing while the box has focus, and the SAVED value otherwise.
-//
 // The two differ on purpose, and only while typing. A half-typed number is not a
 // size — "1" on the way to "18" is below the minimum, and "1" on the way to "120"
 // is below it too — so it is held as text and never round-tripped through the
@@ -182,7 +181,6 @@ func (a *App) panelSizeText(fieldID, rowID string, saved int) string {
 
 // commitPanelSize takes one keystroke's worth of typing: it always remembers the
 // raw text, and saves a size only when the text actually is one.
-//
 // Emptying the box CLEARS the override — that is how a panel is put back — so an
 // empty string commits immediately. Anything below the minimum is treated as
 // incomplete rather than wrong: it is almost always a number mid-typing, and

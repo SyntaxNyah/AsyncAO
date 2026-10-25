@@ -89,8 +89,6 @@ func (w *baseWizardState) setBasePath(path string) {
 // result is tagged with the path it scanned, and pollBaseScan re-kicks when a
 // superseded one lands — the same reconcile-on-landing shape applyMountLayer uses
 // for the mount index, and the reason neither needs a queue.
-// BOTH the path and the channel are passed as arguments, so the goroutine holds
-// no reference to w at all and the only shared object left is the channel itself.
 func (w *baseWizardState) kickScan() {
 	if w.scanning || w.path == "" {
 		return
@@ -128,7 +126,6 @@ func (a *App) baseWizardTakesDrop(path string) bool {
 }
 
 // resolveDroppedBasePath turns an SDL drop into a pick, off-thread.
-//
 // A dropped FILE means its folder, matching resolveDroppedFolder and the rest of
 // the app — except for a .zip, which is a mountable pack in its own right and
 // whose parent folder is emphatically not what the user meant. The stat is why
@@ -150,7 +147,6 @@ func resolveDroppedBasePath(path string) {
 
 // applyBaseWizard commits the pick: the folder becomes mount 1 and the chosen
 // mode is applied. The ONLY function in this file that writes anything.
-//
 // FIRST in the list, because mounts are searched first-hit-wins — the folder the
 // user just pointed at and inspected is the one that should win a tie. An exact
 // re-pick moves it to the front instead of adding a duplicate.
@@ -200,8 +196,6 @@ func (a *App) drawBaseWizard(w, h int32) {
 	// while it is up every widget here must go click-dead — otherwise the click
 	// that picks a browser row would also fire whatever wizard control happens to
 	// sit under it. Restored on the way out so the browser's own draw is unfenced:
-	// the app.go release-and-restore idiom, deferred because this function returns
-	// from three places.
 	fenced := c.modalOn
 	c.modalOn = fenced || demoBrowser.open
 	defer func() { c.modalOn = fenced }()
@@ -410,7 +404,6 @@ func baseScanINILine(s baseScan) string {
 
 // baseScanWarnings is everything the user needs told about this folder BEFORE
 // they commit to it. Empty for a folder that is simply fine.
-//
 // Pure over the scan, and separate from baseScanReport, because these are the
 // lines with consequences: each one names something that would otherwise be
 // discovered as "I set it up and my character still looks wrong".

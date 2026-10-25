@@ -12,9 +12,6 @@ type clientState struct {
 	clientHdr     string
 	clientHdrName string
 	// clientFull toggles the full-theme view (the WHOLE pinned client UI, view-only)
-	// vs compact (stage + log + input). Full-theme renders the pinned drawCourtroom
-	// into clientTex at the logical screen size (so the theme lays out exactly as the
-	// primary), then shrink-blits it into the window — recreated only on a size change.
 	// VIEW-ONLY by necessity: the kit is single-instance (fixed widget ids would
 	// collide with the primary's, and a.screen / modal writes would leak), so input is
 	// neutralized during that pass; you watch the whole theme and chat via the input

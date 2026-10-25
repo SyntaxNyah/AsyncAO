@@ -7,7 +7,6 @@ package ui
 // handle_chatmessage clears the input only when the server echoes YOUR message
 // back (CHAR_ID == m_cid) — these tests pin that parity in AsyncAO: a send
 // snapshots the line as pending, and only the own-echo consumes it.
-//
 // Issue #56: AO2-Client's own-echo clears the box unconditionally, but a plain
 // exact-match gate here discarded the pending snapshot on ANY mismatch — most
 // commonly just typing the start of the next line during the round trip —

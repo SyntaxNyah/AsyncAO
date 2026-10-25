@@ -158,8 +158,6 @@ func (c *Ctx) WindowSize() (int, int) {
 // actually on (NOT display 0 — see CenteredWindowPos), so a too-big or
 // off-screen window snaps back into view. No-op headless; the caller clamps the
 // size first.
-// Deliberately does NOT un-maximize: applyFullscreen's leave-fullscreen snap-back
-// shares this call, and F11 must not also change a maximized window's state.
 func (c *Ctx) ResizeWindow(w, h int) {
 	if c.win == nil {
 		return

@@ -22,10 +22,7 @@ const (
 	// extrasMinH is the resize floor. It USED to be 430 — "4 volume sliders + all 13
 	// widgets' rows + hint still fit" — because the widget grid had no scroll
 	// container and the box height was the only thing keeping the cells inside it.
-	// The widget table has since grown to 23 entries, which is 12 rows and about 500px
 	// of grid, so that arithmetic stopped holding long before it was reported (#30).
-	// The grid scrolls now, so this only has to fit the box's FIXED furniture plus a
-	// couple of rows of grid: title + 4 volume rows + 2 cells + the hint line.
 	extrasMinH    = int32(240)
 	extrasVolRowH = int32(21) // one volume-slider row at the top of the box
 	extrasTitleH  = int32(26) // title bar / drag handle height (main + torn boxes)
@@ -84,9 +81,6 @@ type panelSlot struct {
 // panelSlotTable is the CANONICAL enumeration of the persistable floatWin panels
 // (every floatWin except msgWin, which keeps its historical slotMessages key and
 // its own seed/persist wrappers). It is the single source of truth for:
-// Nominal heights for the panels whose real default height is computed at draw
-// time (ban box: by kind; hotkey sheet + pairing: window-height responsive). Only
-// the census below uses these — the live seed still passes each panel's own
 const (
 	panelNomBanH    = int32(600) // banBoxDims default (ban kind) height
 	panelNomBanMinH = int32(556) // banBoxDims default (ban kind) minimum height
@@ -186,7 +180,6 @@ func (a *App) extrasWidgets() []extrasWidget {
 // toggleExtrasBox shows/hides the AsyncAO Extras box. ONE implementation, because
 // two keys reach it now: the configurable Ctrl chord (hotkeyExtras) and — since
 // GH #51 — Esc in the bare courtroom, which used to leave the server outright.
-//
 // Theater is stage-only (setTheater's invariant): summoning the box from there
 // means "give me the UI back", so it exits theater and shows the box rather than
 // drawing floating chrome over the bare stage.
@@ -332,8 +325,6 @@ func (a *App) pollVoicePTT() {
 // modal first), returning whether it closed anything. This is the Esc "back out
 // of whatever's open" handler for the courtroom & lobby — one press, one layer,
 // so repeated Esc peels overlays off in order. The layout editor (classicEdit)
-// is excluded: it owns Esc itself (Done + save). Menu SCREENS are handled by the
-// caller; this is only the overlay flags.
 func (a *App) closeTopOverlay() bool {
 	c := a.ctx
 	switch {
@@ -371,15 +362,6 @@ func (a *App) closeTopOverlay() bool {
 	case contentPanel.open:
 		a.closeContentPanel()
 	// Blocking / confirm modals (highest priority).
-	// The involuntary-disconnect dialog is FIRST: it's the most blocking modal (a
-	// frozen courtroom sits under it, its network session already gone), so Esc must
-	// resolve IT before anything else. Unlike the sibling modals below — which just
-	// flip a bool false — this one CANNOT simply close: the session under it is
-	// dead-but-still-drawn (conn nil, sess/room live, screen Courtroom), so merely
-	// clearing the flag would strand the user in a frozen courtroom with no dialog
-	// and no way out. Esc == Back to lobby, which runs the real teardown → lobby (and
-	// releases the dialog's fence LAST, so it's freed this frame — the emoji-picker
-	// freeze class).
 	case a.dialogs.disconnectDlg.open:
 		a.closeDisconnectDialogToLobby()
 	// The server-notice box, immediately below the disconnect dialog: it MUST answer
@@ -506,7 +488,6 @@ func (a *App) extrasBoxRect(w, h int32) sdl.Rect {
 	// read the un-seeded (centred) rect the frame before the draw adopted the saved
 	// spot, leaking a click through the box's real footprint. seedExtrasFromSlot is
 	// self-guarded (!extrasPlaced) and sets extrasPlaced, so this never double-seeds.
-	// Mirrors the floatWin panels' seed-in-rect-fn idiom (seedPanelFromSlot).
 	a.seedExtrasFromSlot(w, h)
 	bw, bh := extrasBoxW, extrasBoxH
 	if a.extrasUserW > 0 {
@@ -1203,7 +1184,6 @@ const (
 
 // extrasGridLayout resolves that geometry from the box rect, the Y the volume
 // sliders finished at, and the number of cells that will actually draw.
-//
 // The viewport stops extrasHintH short of the box's bottom edge so the "drag a
 // widget out…" line keeps its row, and it is floored at zero height: a box
 // squeezed by a small window must produce an empty viewport, never a negative one

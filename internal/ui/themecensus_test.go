@@ -147,11 +147,6 @@ const (
 )
 
 // buildAceCensus resolves every box the themed courtroom draws for the fixture.
-// It drives the REAL themeLayoutIn over the REAL ingest pipeline (themeLayoutKeys
-// → ElementRect → applyAO2DefaultRects), so the rects are the ones a player gets,
-// including the off-design filter, the canvas clamp and the minThemedElementPx
-// floor. Only the hand-computed sub-rects are recomputed here, from the same
-// named constants the draw sites use.
 func buildAceCensus(t *testing.T) ([]censusBox, *themeLayoutCache) {
 	t.Helper()
 	boxes, lay := buildAceCensusAt(t, censusW, censusH)
@@ -764,10 +759,6 @@ const themeCorpusEnv = "ASYNCAO_THEME_CORPUS"
 
 // TestAO2BackstopAcrossTheThemeCorpus is the blast-radius measurement for the
 // backstop defect, taken over REAL themes rather than the one fixture.
-// It walks every theme in the corpus, ingests it exactly as pollThemeApply does,
-// and reports each key the stock backstop had to supply that then lands on a rect
-// the AUTHOR declared. A theme is only affected when it omits a key AND its canvas
-// is not AO2's own 714x579 — which describes most of the corpus.
 func TestAO2BackstopAcrossTheThemeCorpus(t *testing.T) {
 	root := os.Getenv(themeCorpusEnv)
 	if root == "" {

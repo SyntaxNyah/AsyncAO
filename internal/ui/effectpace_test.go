@@ -16,12 +16,10 @@ import (
 // ends. Since v1.55 nothing animates for free: a draw site that moved this frame has to
 // SAY so (the census doctrine — count draw sites, never bare state), and an effect that
 // never registers plays at whatever the idle knob says. The report was ~10 fps overlays.
-//
 // This drives the REAL draw site (App.renderViewportZoomed, the one call every stage
 // layout goes through) rather than re-calling Viewport.AmbientAnimating itself, because
 // a census test that re-implements the census proves nothing about the wiring. Only the
 // one-line end-of-frame promotion (frameAnimChrome → drawnAnimChrome, App.Frame's defer)
-// is done by hand, because Frame needs a whole screen.
 
 // overlayPace uploads a 2-frame page and stages it as the scene's screen effect.
 func overlayPace(t *testing.T, store *render.TextureStore, a *App, base string, delay time.Duration, loop bool) {
@@ -133,9 +131,6 @@ func TestALiveEffectOverlayHoldsTheFrameRate(t *testing.T) {
 // cannot: the event-driven loop parked on its OS event wait takes no pass at all, so
 // SkipFrame's refusal never runs. Only NextWakeDelay decides when a frame comes back,
 // and it used to know about carets, clocks and the idle tick — nothing about the stage.
-// Both directions are pinned: the TRIGGER rings immediately (noteOverlayStart, the
-// NotifyPreanimStarted precedent), and a running clip's next frame is a scheduled wake
-// instead of an idle-rate one.
 func TestAParkedLoopWakesForAnEffect(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()

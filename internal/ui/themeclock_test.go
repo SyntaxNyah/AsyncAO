@@ -182,10 +182,6 @@ func TestEveryEffectKindIsResolvable(t *testing.T) {
 
 // TestPeriodicEffectsNeverGoIdleMidCycle is the other half of the doctrine, and the
 // one a naive implementation gets wrong.
-// A sine crosses zero twice per period. A static test written on the INSTANTANEOUS
-// term would therefore report "nothing moved" at every crossing, the pacer would drop
-// to the idle rate for that frame, and a running animation would stutter twice a
-// cycle — on a machine fast enough to sample the crossing, which is every machine.
 func TestPeriodicEffectsNeverGoIdleMidCycle(t *testing.T) {
 	for k := theme.EffectKind(0); k < theme.EffectKindCount; k++ {
 		if k == theme.FXNone || effectIsStateful[k] {
@@ -444,7 +440,6 @@ func fxDrawRig(t *testing.T) (*App, *themeLayoutCache, *[]*bakedElement, func())
 // TestStaticElementNeverCallsNoteAnimating is the idle half of the doctrine at the
 // per-element level: an element with no effect, an amplitude-zero effect, a finished
 // one-shot or a static page must leave the census untouched.
-// This is the v1.56.0 idle-CPU-burn arc's rule applied to a brand-new draw surface.
 // A themed client sitting on a settled courtroom must fall to the idle rate, and one
 // element quietly noting every frame is enough to stop that happening — with nothing
 // on screen to explain why the fans are on.
@@ -595,9 +590,6 @@ func TestIdleElementsDoNotPinTheFrameRate(t *testing.T) {
 // TestElementEffectsAreAllocFreeAtCap extends W3's cap-full alloc gate over the code
 // this wave added: theme.ElementCap elements, every effect kind in rotation, all of
 // them LIVE, drawn on every frame.
-// It is also the gate that catches the subtle one: an alpha effect on an ElemText
-// that folded its alpha into the ink colour would miss the label cache and rasterise
-// a texture EVERY FRAME (ui.go textKey includes the colour). That is invisible to
 func TestElementEffectsAreAllocFreeAtCap(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
@@ -763,10 +755,6 @@ func TestFXPoolIsFixedAndSelfClears(t *testing.T) {
 // TestOneShotEffectReleasesItsFXSlot is the pool's whole reason for existing, seen
 // from the element's side: a slam fires, finishes, the element goes away, and the
 // slot comes back on its own.
-// The slot is deliberately NOT released the instant the one-shot finishes. Releasing
-// it there would let the very next pass re-acquire a fresh slot, restart the effect
-// and note the census again — an infinite replay that pins the pacer forever, which
-// is precisely the failure themeFXIdleFrames is named for.
 func TestOneShotEffectReleasesItsFXSlot(t *testing.T) {
 	a, lay, _, restore := fxDrawRig(t)
 	defer restore()
@@ -1061,11 +1049,6 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 
 	// A WASH is the one element whose frozen form is not its baked form, and it is
 	// the case that makes ReduceMotion dangerous rather than merely disappointing.
-	// `[effect.viewport] effect = fade, amp_pct = 100` bakes a plate at FULL opacity
-	// over the whole stage and lets the effect's envelope decide how much of it
-	// shows. Painting it under the frozen branch draws the peak — a solid sheet over
-	// the courtroom, put there by the accessibility option. Freezing resolves amp 0,
-	// and amp 0 on a wash is nothing at all.
 	seen = seen[:0]
 	prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true }) // already on; restated so the block reads on its own
 	a.beginThemeFXPass()
@@ -1205,10 +1188,6 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 	}
 	// ReduceMotion stills the same frame. Measured HERE rather than on a synthetic
 	// element because this is the shape a user actually has: a real theme, applied.
-	// A SUB-TEST so its skip is its own. The census is a whole-frame signal, so the
-	// fixture's own chrome can drown the element model out — the same limitation
-	// TestIdleElementsDoNotPinTheFrameRate names — and a skip there must not hide
-	// the assertions above, which have already run.
 	t.Run("reduce motion stills the whole frame", func(t *testing.T) {
 		prefs := a.d.Prefs
 		if prefs == nil {

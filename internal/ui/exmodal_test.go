@@ -13,7 +13,6 @@ import (
 // and a row there ends the courtroom pass outright — so opening a countdown blanked
 // the scene, the logs, the music list and every button behind it. They are
 // non-blocking floatWin panels now.
-//
 // These tests pin the three halves of that: they no longer take the pass, they no
 // longer suppress the Extras surface, and they still fence their own footprint so
 // a click on one cannot ALSO land on the courtroom underneath (which is the

@@ -2,11 +2,6 @@ package ui
 
 // The free-element BAKE (v1.90.0 W3) — docs/wip/THEME-EDITOR-DESIGN.md §2,
 // docs/THEME-FORMAT.md §3-4.
-// COLD PATH, NOT A FREE PATH. themeLayoutIn's rebuild runs on the render thread
-// during a frame (a window resize, a fit change, a theme apply), so the bake is
-// bounded rather than merely "not per frame": fixed arrays throughout, one pass per
-// BenchmarkElementBandBake pins its allocation ceiling — a preset swap must not
-// hitch.
 
 import (
 	"strings"
@@ -67,9 +62,6 @@ func elemShapeIDOK(name string) (uint8, bool) {
 // elemFullCanvasPct is design §6.6 R7: an empty-anchor courtroom-space element that
 // covers at least this percentage of the ACTIVE canvas AFTER the uniform fit is a
 // FULL-CANVAS element, and is snapped flush to the canvas.
-// The snap is what makes the rule mean something at render time rather than only in
-// W9's coherence matrix. A wallpaper authored against a 714x579 canvas and applied
-// on a 1512x648 one lands a pixel or two short on one axis after the fit rounds;
 const elemFullCanvasPct = 90
 
 // elemZSortCap is the insertion sort's bound. It is theme.ElementCap by
@@ -198,12 +190,6 @@ func (a *App) bakeOneElement(lay *themeLayoutCache, sc *theme.Sidecar, src *them
 			stroke:   fadeColor(src.Stroke, op),
 			// The tint takes the opacity fold like every other colour on the row, and
 			// it is the ONLY route `opacity` has into image and generator art:
-			// paintElementArt's one alpha knob is SetAlphaMod(tint.A). Read straight
-			// through sdlColorOf, an absent tint resolved to opaque white and a wash
-			// authored at `opacity = 60` drew at full strength — silently, on every
-			// vignette, scrim and overlay tile in the shipped themes, which reach for
-			// exactly that idiom. fadeColor is the same folding the fill, fill2 and
-			// stroke above already take, so all six kinds now mean one thing by it.
 			tint:     fadeColor(src.EffectiveTint(), op),
 			cond:     condAlwaysVisible,
 			condAxis: src.VisibleWhen.Axis,
@@ -243,12 +229,6 @@ func (a *App) bakeOneElement(lay *themeLayoutCache, sc *theme.Sidecar, src *them
 }
 
 // elemBindZ is the z every [effect.*] bind bakes at: the top of the overlay band.
-// A bind is a HIGHLIGHT ON a widget, so it belongs above the free elements an author
-// placed in the same band — a glow that a decorative plate covered would be a glow
-// nobody can see. int16's maximum rather than a chosen number, because "on top of
-// everything in this band" is the actual intent and any smaller value is a guess that
-// one more element could overtake. Binds keep their declaration order among
-// themselves, because the insertion sort is stable and they all share this key.
 const elemBindZ = int16(32767)
 
 // bakeEffectBind turns one [effect.<widget key>] section into a baked element.
@@ -330,9 +310,6 @@ func elemConditionValue(cond theme.Condition) string {
 // Courtroom.CurrentShout reports. An unrecognised value is returned verbatim: it
 // simply never matches, which is the format's rule for a condition naming something
 // this build has no idea about.
-// Allocation-free by construction (EqualFold compares, ShoutName returns constants),
-// which matters because the bake's whole allocation budget is elemBakeAllocCeil for
-// a theme of any size.
 func elemShoutStem(v string) string {
 	name := strings.TrimSpace(v)
 	for _, s := range elemShoutConditions {
@@ -516,10 +493,6 @@ func snapFullCanvas(r, canvas sdl.Rect) sdl.Rect {
 // bakePanes REPARENTS every pane host: the host's entry in lay.r is rewritten to a
 // box inside the pane, and the widget's own draw site — unchanged, called once —
 // then paints there.
-// EXACTLY ONCE per host per rebuild. Host sets are disjoint by construction (the
-// reader drops a duplicate claim), and this walks each pane's hosts in order, so no
-// key can be rewritten twice — TestPaneReparentsExactlyOnce pins it, because a
-// second reparent would compose the pane offset onto an already-reparented rect and
 func (a *App) bakePanes(lay *themeLayoutCache, sc *theme.Sidecar) {
 	if len(sc.Panes) == 0 {
 		return

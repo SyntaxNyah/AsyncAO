@@ -623,9 +623,6 @@ func TestWrapToWidthMOTD(t *testing.T) {
 }
 
 // TestOOCWrapURLFullLink pins the fix for links the OOC wrapper hard-splits:
-// a long Discord CDN URL (a '&'-laden query string) is captured WHOLE from the
-// source entry, so every wrapped row of it opens the full link — not the
-// truncated fragment a per-display-line scan used to grab at the first '&'.
 // Post-#38 the pieces are spans that share ONE link id, so the hover tint still
 // covers the whole link across the rows it was split into.
 func TestOOCWrapURLFullLink(t *testing.T) {

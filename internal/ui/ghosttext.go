@@ -49,10 +49,6 @@ func (g ghostSpan) ghosted(_ int, e int) bool {
 
 // queuedCount is how many IC messages the courtroom has taken in but not yet
 // STARTED saying — the play queue, and only the play queue.
-// The message on stage is deliberately excluded whatever phase it is in. It is
-// the line the reader is watching; ghosting it (which the first cut did for
-// PhaseShout / PhasePreanim / PhaseTalking) hides the text at the exact moment
-// the chatbox is revealing it.
 func queuedCount(queued int) int {
 	if queued < 0 {
 		return 0

@@ -42,14 +42,6 @@ const (
 	bgCellGap    int32 = 10
 	bgCellLabelH int32 = 14
 	// bgThumbBudgetBytes caps the bg-picker's resident thumbnail textures.
-	// Thumbnails are FULL-RESOLUTION backgrounds (≈3.5 MiB each at 1280x720),
-	// so a screenful of HD backgrounds would blow the 64 MiB T1 and the LRU
-	// would thrash -- cells flickering black ("disco"). Capping demand to ~52
-	// MiB keeps the resident set inside T1 (leaving room for the hover preview
-	// and UI text); overflow cells show the name until scrolled. The cap is
-	// BYTE-based off the observed thumbnail size, so small-background servers
-	// (where everything fits) still show every thumbnail -- no regression.
-	// (Proper fix: decode/render downscaled thumbnails -- a focused render pass.)
 	bgThumbBudgetBytes int64 = 52 << 20
 	// bgThumbEstBytes seeds the per-thumb estimate before any has resolved.
 	bgThumbEstBytes int64 = 4 << 20

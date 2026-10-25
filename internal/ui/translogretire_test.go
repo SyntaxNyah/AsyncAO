@@ -37,10 +37,6 @@ func transcriptTestApp(t *testing.T, server string) *App {
 
 // TestReconnectCyclesDoNotStrandTranscriptWriters is the regression itself. Far more
 // reconnects than the cap, and the log must still be being written at the end.
-// The two assertions are deliberately different in kind. The map size proves the
-// files and goroutines are actually released; the final non-nil writer proves the
-// USER-VISIBLE symptom is gone — before the reap, cycle 65 and every one after it
-// got nil back and simply stopped transcribing.
 func TestReconnectCyclesDoNotStrandTranscriptWriters(t *testing.T) {
 	const server = "Skrapegropen"
 	a := transcriptTestApp(t, server)

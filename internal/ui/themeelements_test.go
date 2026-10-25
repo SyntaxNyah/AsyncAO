@@ -198,9 +198,6 @@ func indexOfBaked(lay *themeLayoutCache, e *bakedElement) int {
 // TestDrawElementBandsZeroAllocWithNoElements is the gate that matters most,
 // because it covers every install that never touches the theme editor: a theme
 // with NO elements must add exactly nothing to a settled themed frame.
-// It is the alloc half of the v1.89.0 "0 base = 0 cost" rule (the ns/op half is
-// BenchmarkThemedFrameNoElements below). A stock AO2 theme leaves the baked array
-// zeroed and every band range at {0, 0}, so the three band loops must not even
 func TestDrawElementBandsZeroAllocWithNoElements(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
@@ -240,9 +237,6 @@ func TestDrawElementBandsZeroAllocWithNoElements(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestDrawElementBandsZeroAllocWith96Elements is the same gate at theme.ElementCap:
-// the densest theme the format allows, every kind represented, drawn on every
-// frame, still allocating nothing.
-//
 // This is the constitution every future painter is bound by. A painter that
 // formats a string, clones a slice, probes a map with a built key, takes &localRect
 // into cgo (the classic themed-frame leak — see the cgoRect contract in ui.go) or
@@ -310,9 +304,6 @@ func TestDrawElementBandsZeroAllocWith96Elements(t *testing.T) {
 // BenchmarkThemedFrameNoElements is the v1.89.0 "0 base = 0 cost" rule applied to
 // the element model: a theme that declares NO elements must pay for the feature in
 // three empty loops and nothing else.
-// BENCHMARKED, NOT ASSERTED — the same rule layered assets shipped under: a nil
-// layer is one atomic load, and the way that was settled was by measuring it, not
-// by claiming it. The target is "within noise of the pre-feature baseline", so the
 func BenchmarkThemedFrameNoElements(b *testing.B) {
 	a, cleanup := stageThemedCourtroom(b)
 	defer cleanup()
@@ -408,7 +399,6 @@ func TestEveryElementKindHasAPainter(t *testing.T) {
 const bakedElementByteCeil = 128
 
 // TestBakedElementStaysSmall pins the memory the model costs every install.
-//
 // The baked array is INLINE in themeLayoutCache, which is a field on App, so its
 // size is paid once at startup by every user whether they own a themed install or
 // not — and it is re-zeroed on every cold rebuild. bakedElementByteCeil is what

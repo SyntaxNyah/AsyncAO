@@ -37,12 +37,6 @@ func editProbeElement() theme.Element {
 		Shape: "hex",
 		Gen:   "grid",
 		// GenParams / Slice / NoDecimate are set for the reason the whole fixture is:
-		// the writer's setKey has no DELETE, so a key that started ABSENT and was edited
-		// and reverted keeps the line it grew, and the byte round trip below would fail
-		// for a reason that says nothing about the inverse. `decimate` is the sharpest
-		// case — it is written INVERTED (formatBool(!NoDecimate), default "yes"), so a
-		// probe that left it false would emit nothing, gain `decimate = no` on the edit,
-		// and come back with a line the original never had.
 		GenParams:  [theme.GenParamCap]theme.KV{{Key: "cols", Value: "4"}, {Key: "rows", Value: "2"}},
 		Slice:      [4]int16{3, 4, 5, 6},
 		NoDecimate: true,
@@ -105,11 +99,6 @@ func editDocRig(t *testing.T, n int) (*App, *themeDoc) {
 const editNonDefaultKind = theme.ElementKind(1)
 
 // editUnlockAll clears the probe element's authored lock.
-// The probe is LOCKED by construction (every field non-default, see
-// editProbeElement), and the lock is a real refusal: the nudge and the delete both
-// honour it. A gate about coalescing or about the graveyard must therefore say out
-// loud that it is not testing the lock — the one that IS
-// (TestLockedElementsRefuseDestructiveEdits) sets it back explicitly.
 func editUnlockAll(d *themeDoc) {
 	for i := range d.side.Elements {
 		d.side.Elements[i].Locked = false
@@ -743,10 +732,6 @@ func TestEditsSurviveAThemeReapply(t *testing.T) {
 
 // openThemeEditorForTest is openThemeEditor without the overlay teardown, which
 // needs a renderer. It exists so this file's gates run headlessly.
-// It calls the PRODUCTION arm (armThemeEditor) rather than restating it: a helper
-// that built the editor its own way would be a second construction path, and the
-// half it forgot — the document's binding to the applied design map — is exactly
-// the kind of thing that then only fails on a real screen.
 func (a *App) openThemeEditorForTest(from Screen) bool {
 	if a.elemBake.themeSidecar == nil {
 		return false

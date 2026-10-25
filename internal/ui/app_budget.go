@@ -15,23 +15,10 @@ type budgetState struct {
 	frameNow time.Time
 	// musicTabDucked silences the single music stream because it belongs to a
 	// BACKGROUNDED tab (cross-tab music continuity). It's App-level, not per-tab:
-	// the one music stream is a global resource, and the flag describes whether
-	// the ACTIVE tab owns it. Set true in parkActive when the outgoing tab's
-	// still-rolling stream is handed to the background (so it keeps its position
-	// but goes inaudible — tabs stay acoustically isolated); cleared when the
-	// active tab takes the stream back (its resumed track is what's playing).
 	musicTabDucked bool
 	// musicOwnerKey is the serverKey of the tab whose track is in the single music
 	// stream right now — stamped at the play sites (the active-tab EventMusic handler
 	// and applyResumeDuck, both while a.serverKey is the tab starting the track).
-	// Cross-tab continuity (MusicAcrossTabs ON) lets a BACKGROUNDED owner keep the
-	// stream audible while a DIFFERENT tab is active; applyAudioVolumes must then scale
-	// that stream by the OWNER's per-server music volume, not the active tab's — else an
-	// active tab whose per-server music=0 would deterministically silence the owner's
-	// continuity stream (a second "toggle does nothing" path). "" = unset: the volume
-	// read falls back to the active tab's serverKey (the pre-owner behaviour, correct
-	// when the active tab owns its own stream). A stale owner after a stop is harmless
-	// (nothing is playing to mis-scale) and the next play re-stamps it.
 	musicOwnerKey string
 	// musicAwaitURL is the MusicURL the ACTIVE tab has requested while the single
 	// stream is still ducked-foreign (musicTabDucked true): the duck may only lift

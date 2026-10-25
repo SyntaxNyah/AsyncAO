@@ -72,9 +72,6 @@ func (a *App) toggleEmoteFav(realIdx int) {
 // cell's emote-select). The ★ is ALWAYS shown — dim grey when not yet a
 // favourite, gold when it is — so favouriting is discoverable (a hover-only star
 // is invisible until you happen to hover; the whole feature then goes unnoticed).
-// A faint backing only appears when it's favourited or the cell is hovered, so an
-// idle grid stays subtle, not noisy. Must be drawn AFTER the cell button (sits on
-// top) and its result must win over the button's pick — see the call sites.
 func (a *App) drawEmoteFavStar(cell sdl.Rect, realIdx int) bool {
 	if !a.d.Prefs.Load().EmoteFavStars {
 		return false // favourites are opt-in (default off): no badge, no tofu on every cell

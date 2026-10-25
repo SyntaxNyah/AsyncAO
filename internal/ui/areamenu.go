@@ -27,8 +27,6 @@ const (
 // draws: the action people came for first, the list-maintenance row next, then the
 // panel-level setting, then the route out to CM. Package-level so opening the menu
 // allocates nothing.
-// The leading divider carries the SHARED musicMenuSeparator kind on purpose, so the
-// menu's every-row invariants (a separator is the one row allowed an empty label)
 var areaMenuRows = [...]musicMenuRow{
 	{musicMenuSeparator, ""},
 	{areaMenuBackground, "Change the background…"},
@@ -68,10 +66,6 @@ func (a *App) areaMenuRowEnabled(k musicMenuKind) bool {
 		// `if c.escPressed || !a.amICMNow { a.showCMPanel = false; return }`
 		// (cmpanel.go), and floatbox.go only calls it while showCMPanel — so without CM
 		// the route closes the menu, paints nothing and says nothing: a dead click.
-		// Grey it on exactly the gate the menu bar's own copy of this action already
-		// uses (`enabled: menuAmICM`, menubar.go), which is the mod/CM doctrine spelled
-		// out beside it. The words a greyed row cannot carry are in the mod dashboard
-		// ("Type /cm to claim CM", moddashpanel.go).
 		return a.srvMeta.amICMNow
 	}
 	return true
@@ -135,7 +129,6 @@ const (
 
 // areaHeaderLayout is the area list's header row split into the three things that
 // draw on it, left to right: the search field, the "shown / total" counter and the ⋮.
-//
 // Rects, not widths. The caller used to get a width back from drawAreaMenuButton and
 // re-derive the other two from it with its own arithmetic, which meant the rule this
 // type exists to hold — nothing on this row may reach under the button — lived in
@@ -151,9 +144,6 @@ type areaHeaderLayout struct {
 // the ⋮ so that each takes its room OUT OF THE ROW instead of drawing over its
 // neighbour — the overlap class the roster toolbar was rebuilt to stop, on a theme's
 // 212 px music_list, which has no slack.
-// Pure, and the ONLY place the row's arithmetic exists: the button is placed here
-// rather than by the drawer, and the field and counter are measured back from the
-// button's left edge, so shrinking-to-fit is structural rather than a convention the
 func splitAreaHeaderRow(row sdl.Rect) areaHeaderLayout {
 	button := sdl.Rect{X: row.X + row.W - areaMenuButtonW, Y: row.Y, W: areaMenuButtonW, H: row.H}
 	// Everything else shares what is left of the row once the button and its clearance
@@ -175,7 +165,6 @@ func splitAreaHeaderRow(row sdl.Rect) areaHeaderLayout {
 
 // drawAreaMenuButton draws the Areas view's ⋮ in the rect splitAreaHeaderRow reserved
 // for it.
-//
 // It opens the SAME popup the Music header and the roster toolbar open — including
 // openMusicMenuFromButton's click consumption, without which the menu's own
 // click-away test closes it on the frame it opened (musicheader.go documents that

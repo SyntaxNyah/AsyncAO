@@ -18,8 +18,6 @@ const bareBindChordPrefix = "Alt+"
 const bareBindUnboundLabel = "(no key)"
 
 // bareBindLabel renders a user-assigned plain-key bind the way it now FIRES:
-// Alt+<KEY>.
-//
 // The single-character case is TABLE-LOOKED-UP, not concatenated, because the
 // wardrobe grid paints one of these per bound cell on every frame the char-select
 // screen is up and `"Alt+" + s` allocates every time. Multi-character SDL key names

@@ -206,7 +206,6 @@ func (a *App) applyManualUIScale(pct int) {
 // exact px width for power users; 0 px = "Fit" (size by the View % knob / edge
 // drag, the prior behaviour). The entry buffer is written only on edit / commit
 // / chip / slider — never reseeded per frame — so it stays freely editable.
-// Settings screen only; off the courtroom hot path.
 func (a *App) drawViewportSizeRow(y int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -338,10 +337,8 @@ func (a *App) emoteNameDelayRow(y int32, ms int) int {
 // gap in LOGICAL px. Same shape as emoteNameDelayRow (slider + wheel-over-the-row
 // nudge + a live readout), and it shadows pad from a.formX like every settings
 // draw helper must — without that shadow the row renders under the sidebar.
-//
 // The range starts at 0 on purpose (icons flush against each other) and the value
 // is NOT snapped to a step, unlike the half-second grid on the delay row above:
-// this setting is specified in pixels, so every pixel in range must be reachable.
 func (a *App) emoteGridGapRow(y int32, gap int) int {
 	c := a.ctx
 	pad := a.formX

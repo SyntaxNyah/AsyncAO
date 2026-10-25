@@ -114,7 +114,6 @@ func TestThemeSlotTableIsTotal(t *testing.T) {
 // `draw` and flips those rows to slotStateTable. Until then EVERY row must still
 // have a nil draw — a row that carried one while the dispatcher does not exist yet
 // would simply never paint.
-//
 // When the harvest lands, this test is what tells you to rewrite it.
 func TestNoSlotHasGraduatedToTheTableYet(t *testing.T) {
 	for i := range themeSlots {
@@ -267,9 +266,6 @@ func TestThemeSlotRelSpaces(t *testing.T) {
 // Old name, still use it to not break compatibility (AO2-Client courtroom.cpp:831),
 // with the server chatlog at its own key (:834). Treating the two as one drew the
 // OOC log in the debug log's box.
-// The row started INERT — ingested so the key wasn't reported unbound, but with
-// nothing painting it. It is now hand-drawn: drawThemedDebugLog paints the failure
-// ring there, and ooc_toggle swaps the two panels per on_ooc_toggle_clicked (:5197).
 func TestMsChatlogIsTheDebugLog(t *testing.T) {
 	s := themeSlotFor("ms_chatlog")
 	if s == nil {
@@ -291,7 +287,6 @@ func TestMsChatlogIsTheDebugLog(t *testing.T) {
 // is the easy thing to invert: ui_ooc_toggle reads "Server" WHILE server chat is
 // showing (courtroom.cpp:1014) and flips to "Debug" once the debug log is up
 // (:5203). It names what you are looking at, not what clicking will do.
-//
 // It also pins the zero value. debugOOC is stored inverted from AO2's server_ooc
 // precisely so a fresh sessionState needs no seeding — a default-true field that
 // resetSessionState forgets is a standing bug class in this package.

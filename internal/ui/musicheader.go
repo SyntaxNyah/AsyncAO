@@ -170,7 +170,6 @@ func musicHeaderItemLabel(id int, now, count string) string {
 // --- the overflow ("kebab") menu ------------------------------------------------
 
 // musicMenuKind enumerates the rows of the LIST PANEL's overflow menu.
-//
 // It is named for the Music header it started on, but the menu belongs to the whole
 // right-hand list panel — Music, Areas and the roster share one rect, one ⋮ and one
 // pane. The roster rows below are the four controls the Players toolbar debloated out
@@ -238,9 +237,6 @@ var musicMenuRows = append([]musicMenuRow{
 // view is not offered inside a theme's design canvas: the theme declares its own
 // music_slider / sfx_slider / blip_slider rects and those win (#21), so offering
 // both would put two sets of volume controls on one screen.
-// The AREA block is the case that does NOT generalise from that, and areamenu.go
-// owns the reason: its rows act on the area list itself, so they are offered only
-// from the Areas view. Without this forward the block leaks into the Music header's
 func (a *App) musicMenuRowLive(k musicMenuKind, themed bool) bool {
 	if isAreaMenuKind(k) {
 		return a.areaMenuRowLive(k) // areamenu.go owns the AREA block

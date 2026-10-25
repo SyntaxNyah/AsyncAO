@@ -124,11 +124,6 @@ func reactionAlpha(prog float64) uint8 {
 
 // ensureReactBadge returns the cached float badge for a palette index, building it once
 // from the colour-emoji face at the CURRENT device text scale. Returns nil (not cached)
-// while the face is still loading, so it retries on a later frame; warmReactBadges
-// pre-builds all of them once the face lands.
-// A UI-scale change purges every cached badge first (reactBadgeDevScale mismatch) — the
-// same "one stale scale invalidates the whole cache" idiom SetTextDevScale already uses
-// for the label/emoji-raster caches. Without it a badge built at whatever scale was
 func (a *App) ensureReactBadge(index uint8) *render.Badge {
 	if a.ctx.textDevPct != a.reactUI.reactBadgeDevScale {
 		a.purgeReactBadges()

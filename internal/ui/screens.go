@@ -90,9 +90,6 @@ const (
 	// lobbyUtilBtnCount is how many buttons the cluster lays out. It MUST match the
 	// number of cursor steps in drawLobby; it is what turns "does the row fit?" into
 	// arithmetic instead of a measured pass.
-	// One. Refresh and the connect-time sort came back from the Servers menu by
-	// request, but NOT to this cluster: it shares the header row with the
-	// Privacy/Glossary/What's New trio, and three utility buttons squeezed that row
 	lobbyUtilBtnCount int32 = 1
 	// lobbyDirectRowDropY is how far below the header the direct-connect row sits;
 	// lobbyListActionsDropY is how far below THAT the server list's own action strip
@@ -244,10 +241,6 @@ func (a *App) handlePreviewInput() {
 			a.previewOffY = a.previewDragBase[1] + dy
 		} else {
 			// A press that STARTED on the box owns its own release, moved or not.
-			// Unmoved, this used to fall through unconsumed: the box dismissed itself
-			// from closeSpritePreviewOnLeave's "any click dismisses" arm, but the very
-			// same click ALSO landed on whatever the box was floating over — over the
-			// right-hand column that is a music row, so dismissing the preview started
 			// playing a track (#37). Dismissing HERE keeps the old feel and makes the
 			// consume unconditional, which is the actual fix.
 			if !a.previewDragMoved && !a.previewIsPinned() {
@@ -621,7 +614,6 @@ type courtroomModal struct {
 // courtroomModals is that list, in the switch's original priority order. Package
 // level with plain function values, so walking it allocates nothing per frame (the
 // compactToolboxChips precedent).
-// The Timer, the auto-login dialog and the click-to-pair popup USED to be rows here
 // and are non-blocking floatWin panels now (#31: "bringing up the Extras → Timer
 // hides all the other UI"). A row in this table ends the courtroom pass outright, so
 // a countdown, a two-field credential form and a UID box each blanked the scene, the
@@ -654,10 +646,6 @@ func (a *App) modalReturnSkippedWhileEditing() bool { return a.layoutEditorArmed
 // courtroomModalUp reports whether drawCourtroomModals will take the screen — the
 // predicate half of the table above, for anything that must decide BEFORE the pass
 // reaches the modal check (the compact toolbox's overlay fence).
-// Deliberately NOT blockingCourtPopup (floatbox.go): that set is a different
-// question (which popups the Extras box and torn-off tabs yield to), it OMITS
-// showSfxBrowser, and it ADDS classicEdit. Reusing it would fence a band of the SFX
-// browser dead and mis-answer while the editor is armed.
 func (a *App) courtroomModalUp() bool {
 	for i := range courtroomModals {
 		if courtroomModals[i].open(a) {
@@ -670,11 +658,6 @@ func (a *App) courtroomModalUp() bool {
 // drawCourtroomModals draws whichever return-to-top courtroom popup is open and
 // reports whether one took the screen — the caller then returns, because the
 // kit has no z-aware input so nothing underneath should draw or take clicks.
-// SHARED by the classic and themed courtroom so the two lists can't drift: the
-// background picker once drew in the classic path but was missing from the
-// themed switch, so on a custom theme the Extras → Background button opened a
-// picker that never rendered. (showPair is NOT here — it's a non-returning
-// overlay drawn on top in both paths.)
 func (a *App) drawCourtroomModals(w, h int32) bool {
 	for i := range courtroomModals {
 		if courtroomModals[i].open(a) {

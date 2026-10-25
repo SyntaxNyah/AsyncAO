@@ -54,10 +54,6 @@ type lobbyState struct {
 	pingGen  int
 	// #128 connection-quality chip (optional, off by default). A single background goroutine
 	// pings the ACTIVE conn and stores the round-trip time; the frame loop (updatePingLoop)
-	// starts/stops/retargets it as the active conn changes (connect / tab switch / reconnect /
-	// disconnect) or the chip toggles. pingRTT is the only field the goroutine touches (atomic,
-	// read by the render thread); the rest are render-thread-only. When the chip is off there's
-	// no goroutine at all, so it's truly zero-cost by default.
 	pingRTT     atomic.Int64       // round-trip nanoseconds (0 = unknown); goroutine→render
 	pingConn    *protocol.Conn     // the conn the live loop targets (nil = no loop)
 	pingCancel  context.CancelFunc // stops the live loop

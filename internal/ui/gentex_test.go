@@ -131,10 +131,6 @@ func TestOneRegistryProbeAnswersKnownSizedAndRastered(t *testing.T) {
 
 // TestEveryGeneratorIsDeterministic is clause 1, and it is the one that makes the
 // content-addressed cache key VALID.
-// The key is the hash of the params. If the same params could produce two different
-// rasters, the cache would serve whichever one happened to land first — so the tile
-// a theme gets would depend on which element the apply reached first, which is not a
-// cosmetic bug but a theme that renders differently on consecutive launches.
 func TestEveryGeneratorIsDeterministic(t *testing.T) {
 	for _, name := range GeneratorNames() {
 		spec := genExerciseParams(name)
@@ -222,11 +218,6 @@ func TestGeneratorTileNeverExceedsMaxPx(t *testing.T) {
 }
 
 // TestGeneratorKeyIsResizeInvariant pins the property that makes a window drag free.
-// The tile carries no width, no height and no theme in its key, so the SAME
-// generator at any canvas size is the same cache entry: nothing re-rasters, nothing
-// re-pins, nothing re-uploads. The element stretches or repeats it. A key that
-// carried `<w>x<h>` would make every resize a full re-raster of every generator
-// element, on the theme-apply goroutine, while the user is still dragging.
 func TestGeneratorKeyIsResizeInvariant(t *testing.T) {
 	spec := genExerciseParams("stripes")
 	key := render.ThemeGenKey(spec.Hash())
@@ -266,8 +257,6 @@ func TestGeneratorKeyIsResizeInvariant(t *testing.T) {
 }
 
 // assertGenParamsAllResolve is the whole rule, applied to one element list:
-// every `gen_params` key must resolve to a slot, and no two keys in one element
-// may land on the same one.
 // It is a function taking a corpus because there are TWO of them, and the second
 // one arrived with the gate pointed at the first. An unrecognised key is ignored
 // with no note anywhere ("a generator ignores what it does not use"), and aliases
@@ -307,10 +296,6 @@ func assertGenParamsAllResolve(t *testing.T, where string, elements []theme.Elem
 // genInkedPixels counts the pixels a tile actually paints. Coverage rather than a
 // pixel-by-pixel expectation: what these knobs claim is "more ink" or "less ink",
 // and a hand-written bitmap would pin the anti-aliasing instead of the parameter.
-// EVERY FIXTURE BELOW USES A TRANSPARENT `bg`, and that is not cosmetic: a tile
-// with an opaque background inks every pixel it has, so this counter reads the
-// tile SIZE and no parameter can move it. Both of the first two arms passed
-// vacuously that way before the fixtures were fixed.
 func genInkedPixels(t *testing.T, g theme.GeneratorSpec) int {
 	t.Helper()
 	img := RasterGenerator(g)
@@ -436,11 +421,6 @@ func TestEveryShippedGenParamResolvesToASlot(t *testing.T) {
 
 // TestCheckerdiscCornersAreTransparent pins the ADOPTED CLAUSE from the preset
 // workflow's escalation ESC-2.
-// `bg` is the dark checker CELL; the tile outside the disc is transparent by
-// construction. One consumer draws its medallion over a near-black void and cannot
-// tell the difference; the other draws it over a gold floor, where an opaque
-// background square erases the floor. The clause is invisible to the preset that
-// proposed it, which is exactly why it needs a gate rather than a comment.
 func TestCheckerdiscCornersAreTransparent(t *testing.T) {
 	img := RasterGenerator(genFixtureSpec("checkerdisc",
 		"cells", "6", "ring", "8", "squash", "45",

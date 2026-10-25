@@ -291,10 +291,6 @@ func (a *App) applyThemeAsync() uint64 {
 		// THE IMPORT REPORT (themereport.go). Built HERE — after the fonts, which
 		// are one of its three inputs — because every input is already on this
 		// goroutine and the render thread must never walk the notes (hard rule 2).
-		// It is the surface that stops Sidecar.Notes() being collected and read by
-		// nothing but tests, its own metadata degrade included: a
-		// degrade-with-a-note whose note reaches nobody is a silent truncation with
-		// extra steps.
 		res.report = buildThemeReport(res.sidecar, res.themeFontsMissing, res.unbound)
 		// Newest-wins publish: never overwrite a higher-gen result (this
 		// load may have been outraced by a later pick).
@@ -350,11 +346,6 @@ func (a *App) pollThemeApply() {
 	}
 	// Geometry: pristine design rects kept aside, the user's layout-editor
 	// overrides applied on a copy, scaled cache invalidated.
-	// The server-tab strip's synthesized key was seeded on the apply goroutine,
-	// into this same pristine map, before the [overrides] fold (see there). It is
-	// in themeRectsOrig for reset/undo to restore from, and in the copy below for
-	// applyRectOverrides — which only rewrites keys that already exist — to
-	// re-apply a drag after a reload. Only the FLAG crosses here.
 	a.tabBarSeeded = res.tabBarSeeded
 	a.skin.themeRectsOrig = res.layout
 	rects := make(map[string]theme.Rect, len(res.layout))
@@ -525,11 +516,6 @@ const themeUnboundReportCap = 12
 
 // unboundDesignKeys lists the theme's rect-shaped design keys that reach no
 // widget: not a themeSlots row, not a deliberate deferral, not a char-select key.
-// "" when the theme is fully covered.
-// This is the observability that makes "a missing rect draws nothing" supportable
-// — a player who loses a control can be told which key their theme declares that
-// AsyncAO does not read. Allocates, and walks every design key: apply goroutine
-// only (hard rule 2).
 func unboundDesignKeys(t *theme.Theme) string {
 	var names []string
 	for key := range t.DesignKeys() {
@@ -1119,9 +1105,6 @@ func (a *App) friendMessage(serverKey string, m *protocol.ChatMessage) (bool, in
 // signalFriend fires the opt-in alert signals when a friend speaks: an in-app
 // toast + window flash (FriendNotify) and a sound (FriendSound — a custom file,
 // else the built-in ping). Streamer mode suppresses them (same as callwords).
-// Called at the message seam when friendMessage is true (active OR background
-// tab, so you're alerted even while looking at another server). The glow is
-// drawn separately in the log.
 func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 	if a.d.Prefs.Load().StreamerModeOn || a.dndOn {
 		return

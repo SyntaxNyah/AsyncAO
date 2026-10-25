@@ -48,11 +48,6 @@ func (c *Ctx) TextWidth(text string) int32 {
 		return c.panelTextWidth(text)
 	}
 	// Non-Latin measures on the face it will actually DRAW with (chromeFaceFor).
-	// widthCache holds the embedded chrome face's advances, and a fallback face's
-	// are different — measuring one and painting the other is how a label ends up
-	// clipped, mis-centred, or overlapping its neighbour. The font-keyed memo is
-	// used instead, so a chain change can never leave a stale width behind: its key
-	// carries the face pointer, and a rebuilt chain means new pointers.
 	if hasNonASCII(text) {
 		if f := c.chromeFaceFor(text); f != c.font {
 			w, _ := c.fontTextWidth(f, text)
@@ -237,9 +232,6 @@ func (c *Ctx) ButtonCol(r sdl.Rect, label string, bg, hoverBg, border, text sdl.
 // Checkbox draws a toggle; returns the (possibly flipped) value.
 // checkboxBoxPx is the tick box's side, checkboxLabelGapPx the gap between it and
 // the label, and checkboxTickInsetPx the inset of the filled tick inside the box.
-// Named (hard rule 9) so CheckboxWidth below can measure a checkbox WITHOUT drawing
-// it — the lobby's direct-connect row has to know how much space two of them take
-// before it can place the Connect button on a 640 px window.
 const (
 	checkboxBoxPx       = int32(16)
 	checkboxLabelGapPx  = int32(6)
@@ -272,8 +264,6 @@ type rowLabelKey struct {
 
 // pushRowLabelLimit arms a RIGHT EDGE (in logical window px) past which a chrome ROW
 // widget's label must not draw, and returns the previous limit for popRowLabelLimit.
-// 0 disarms — the pre-existing "labels grow to their text" behaviour, which every
-// caller outside the bracket keeps.
 // A bracket rather than a parameter because Checkbox has hundreds of call sites and
 // the limit is a property of the CONTAINER, not of any one row: the settings card
 // knows its own right edge, and a row inside it should not have to be told twice.
@@ -372,9 +362,6 @@ func truncateLabelTo(label string, avail int32, measure func(string) int32) stri
 // truncateLabelToMarker is truncateLabelTo with the trailing marker chosen by the
 // caller — for the surfaces that draw in a THEME-declared face, where U+2026 may
 // have no glyph and renders as a .notdef box (labelellipsis.go).
-// Both AO2 behaviours the single-marker version documented survive verbatim: a
-// label measuring EXACTLY avail is left alone (AO2's condition is `>`), and a chop
-// that would leave nothing but the marker abandons the truncation and keeps the
 func truncateLabelToMarker(label string, avail int32, marker string, measure func(string) int32) string {
 	if avail <= 0 || measure(label) <= avail {
 		return label
@@ -474,11 +461,6 @@ func (c *Ctx) CheckboxIn(r sdl.Rect, label string, value bool) bool {
 	}
 	// The hit area is the THEME'S rect, not the ink: AO2's widget is the rect, and
 	// a truncated label would otherwise shrink the click target below its box.
-	// The click is CONSUMED, unlike Checkbox's. AO2 design rects legitimately
-	// overlap — aceattorney2x puts guard at 425,473,61x19 and additive at
-	// 428,473,80x19, 58 px of overlap, and AO2's own stock default overlaps pre and
-	// flip by 21 px. Qt resolves that by delivering the press to one widget;
-	// immediate mode would fire BOTH, so one click would flip two toggles. Same
 	if c.hovering(r) && c.clicked {
 		c.clicked = false
 		return !value

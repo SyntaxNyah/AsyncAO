@@ -78,7 +78,6 @@ func TestPaneRefusesTheOverrideTheLayoutTierRefused(t *testing.T) {
 
 // TestPaneHonoursAO2sOtherSpellingForAPaneHost is the same seam from the other
 // side: a row written with the identifier AO2 reads FIRST must reach the widget.
-//
 // AO2 probes "immediate" then "pre_no_interrupt" for one button
 // (courtroom.cpp:1072), and its stock file spells the second — so the backstop
 // only ever fills that one. The layout tier folds the alias; the pane's raw read

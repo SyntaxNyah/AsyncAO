@@ -12,7 +12,6 @@ import (
 // set_courtroom_size() for the courtroom), so a theme's pixels land on screen
 // pixels untouched. Our window is resizable, so Native reproduces that by
 // pinning the scale at exactly 1.0 and only ever scaling DOWN.
-//
 // Both ends of that clamp are real, and the reference corpus proves it: 640×480
 // (config.MinWindowW/H) is BELOW the canvas of the largest shipped themes and
 // ABOVE the canvas of the smallest, so a plain min(sx, sy) would silently

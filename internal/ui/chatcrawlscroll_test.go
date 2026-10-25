@@ -38,7 +38,6 @@ func TestAFittingMessageNeverScrolls(t *testing.T) {
 
 // TestSixLinesInAThreeLineBoxKeepTheRevealInView is the report: at EVERY step of
 // the crawl the row being revealed has to be inside the box.
-//
 // It also pins Qt's MINIMUM-movement rule — ensureCursorVisible scrolls just far
 // enough, so the reader keeps as much earlier text as the box can hold and the
 // view advances one row at a time instead of jumping to the end.
@@ -90,10 +89,6 @@ func TestCrawlRowFollowsTheRevealedRune(t *testing.T) {
 // rows that scrolled out the top landed on the showname strip. "a\nb\nc\nd"
 // produces about one row of scroll, and one row (>=20 px at AO2's pitch) is nearly
 // as tall as the 22 logical px the classic overlay gives the plate.
-// The gate measures the TOP EDGE OF THE PAINT, which nothing did before: the
-// topmost row's origin against the clip that is actually in force. It asserts the
-// premise as well as the fix — that the unbounded origin really does reach into
-// the name band — so it cannot pass by clipping something that was never in
 func TestTheScrolledMessageNeverPaintsOnTheNamePlate(t *testing.T) {
 	// The classic overlay's real geometry (screens.go): the name inks at
 	// box.Y+chatOverlayNameY and the message starts at box.Y+chatBoxTopStrip, so
@@ -254,9 +249,6 @@ const maxAnimLiftPx = 3
 // sites: the decision has exactly one home now, so this drives that home with
 // both shapes it can be handed and asserts the two answers are the two DIFFERENT
 // rects — which is what an inverted predicate cannot satisfy.
-// Its sibling gates assert the two answers are each CORRECT (the whole box for
-// the #M5 painter, the raised edge for the raster). This one asserts they are
-// not the same rect, so a branch that collapsed to one answer — `anim == nil`,
 func TestTheAnimatedExemptionKnowsWhichWayRoundItIs(t *testing.T) {
 	// A box whose text origin is genuinely inside it, or both arms would answer
 	// the box and the difference this gate measures would not exist.

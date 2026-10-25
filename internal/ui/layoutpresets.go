@@ -65,10 +65,6 @@ func (a *App) cycleLayoutProfile() {
 
 // Layout premades + full-state profiles (#34 → A6): flip the whole courtroom
 // between named setups (a big stage for watching, a wide log for moderating, …).
-// applyLayoutPreset swaps just the ClassicLayout override map (used by the anchorless
-// theater premades); applyProfile (A6) restores a full LayoutProfile — classic slots,
-// anchors, hidden set, grid — at once. The Settings → Theme "Layout profiles" section
-// owns the save/load UI; these helpers apply them and define the built-in premades.
 
 const (
 	// Theater premade geometry (#34) — the stage's share of the window. One big 4:3
@@ -125,8 +121,6 @@ func (a *App) applyProfile(p config.LayoutProfile) {
 	// the live map from HiddenPanels() (NOT the raw p.Hidden slice) so live and
 	// durable read the SAME sanitized source — SetHiddenPanels dedups/caps, and
 	// seeding a.hidden from the unsanitized slice would diverge from what persisted.
-	// seedHiddenFromPrefs also normalizes a profile that hides BOTH mouse
-	// lifelines (toolbox grip + Settings button) — the A6 no-strand invariant.
 	a.d.Prefs.SetHiddenPanels(p.Hidden)
 	a.classic.seedHiddenFromPrefs(&a.env)
 	// Editor snap grid.

@@ -47,11 +47,6 @@ func TestEchoClearRecoverableViaHistory(t *testing.T) {
 
 // TestAO2ColorSpliceAndUndo pins §3.8 select-and-colour, now folded into the IC
 // colour dropdown to match AO2's on_text_color_changed (courtroom.cpp:6364-6390):
-// captureICColorSel freezes the field's selection while it's still focused, and a
-// palette pick from the dropdown wraps exactly those runes in that colour's AO2
-// delimiters — surviving the open-click that unfocuses the field. The splice is
-// Ctrl+Z-able via the out-of-band history, and a no-selection pick sets the
-// whole-message colour like before.
 func TestAO2ColorSpliceAndUndo(t *testing.T) {
 	a := testTabApp(t)
 	c := a.ctx

@@ -255,8 +255,6 @@ func TestCurAreaPlayers(t *testing.T) {
 // optimistic local selection (curArea) AND sends the MC area transfer, so every
 // jump entry point (header click, cards, chips, auto-follow) updates the
 // current-area highlight — the reported "click to jump doesn't select" bug.
-// Per-area scrollback is OFF here (the default), so switchAreaScrollback no-ops
-// and exactly one MC packet goes out.
 func TestJumpToAreaSelectsAndSends(t *testing.T) {
 	a := testTabApp(t)
 	var sent []protocol.Packet

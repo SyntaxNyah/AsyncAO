@@ -41,11 +41,6 @@ type sfxCue struct {
 // audioCapture is the video export's courtroom.AudioSink: it plays nothing and just
 // records music + SFX/shout cues for the post-capture mux. Driven by the export room
 // on the render thread only, so the slice appends need no lock.
-//
-// droppedAtCapture counts cues turned away by the per-list maxAudioClips guard below
-// (the FIRST of the two cap sites). It feeds the honesty note in finishVideoExport so
-// an hours-long scene that fired hundreds of SFX/songs isn't silently truncated with
-// no word to the user — the mux's own combined-cap drop is counted separately there.
 type audioCapture struct {
 	frameRef         func() int // current export frame (captured count) at call time
 	music            []musicCue
@@ -120,13 +115,6 @@ type songSegment struct {
 }
 
 // songSegments turns the captured music cues into ordered, non-overlapping windows:
-// each track plays from its cue until the NEXT cue (a song change OR a stop), or — for
-// the last track — to the video's end (endFrame). A stop cue bounds the previous
-// window and contributes none of its own. fps converts frames to ms via frameToMs
-// (multiply-first, so a long export doesn't drift). A single song collapses to one
-// untrimmed segment (the slice-1 bed); changes become several. The trim is computed as
-// the DIFFERENCE of two frameToMs offsets, not (Δframes)*constant, so the window
-// boundary stays exact too.
 func (m *audioCapture) songSegments(fps, endFrame int) []songSegment {
 	var segs []songSegment
 	for i, c := range m.music {

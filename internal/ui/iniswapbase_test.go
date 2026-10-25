@@ -32,7 +32,6 @@ func mkCharPack(t *testing.T, names ...string) string {
 // TestScanLocalCharFoldersListsMountedCharacters is the whole point of the "From
 // your base" source: a user with a content pack mounted can browse and wear what is
 // IN it, without the server publishing anything.
-//
 // It also pins the three rules the scan is built on — files are not characters,
 // mounts are first-hit-wins (so an earlier pack shadows a later one, exactly as
 // BuildMountIndex resolves asset reads), and the result is name-sorted so the grid

@@ -45,9 +45,6 @@ func snapDesign(v int) int {
 // snapTabStripScreen rounds the server-tab strip's stored origin so that its PAINTED
 // box lands on the WINDOW's grid — the grid the user is looking at — rather than on one
 // whose phase is the design canvas's origin.
-// Snapping the painted coordinate also retires the negative-tolerant rounding this key
-// used to need. Its STORED value is legitimately negative while it is docked in the band
-// above the canvas, and flooring that at zero would have yanked it onto the stage on the
 func snapTabStripScreen(r theme.Rect, lay *themeLayoutCache) theme.Rect {
 	r.X = snapDesign(r.X+int(lay.offX)) - int(lay.offX)
 	r.Y = snapDesign(r.Y+int(lay.offY)) - int(lay.offY)
@@ -55,7 +52,6 @@ func snapTabStripScreen(r theme.Rect, lay *themeLayoutCache) theme.Rect {
 }
 
 // themedKeyResizable reports whether a themed key honours the corner-grip resize.
-//
 // The server-tab strip does not: it has no authored size to change (its W/H come from
 // the chips), so a grip would either do nothing or smear it. The classic layout system
 // already registers the SAME widget move-only — slotResizeEdges(slotTabBar) == 0,
@@ -136,7 +132,6 @@ func cloneRects(m map[string]theme.Rect) map[string]theme.Rect {
 }
 
 // layoutSnapshot is one undo/redo step.
-//
 // It carries the server-tab strip's PLACED flag beside the rects because that flag is
 // not recoverable from them: a drag that lands on the seed's own coordinates is still
 // a placement (the placement is read from the persisted override, not the geometry), so
@@ -148,7 +143,6 @@ type layoutSnapshot struct {
 }
 
 // layoutSnapshotNow captures the current editable state.
-//
 // The strip's flag comes from tabStripPlacementRecorded, NOT tabStripThemeParked: the
 // two differ exactly while a drag is in flight, and the press site pushes its snapshot
 // AFTER arming the drag, so the live predicate would record "parked" for a strip that
@@ -252,9 +246,6 @@ func (a *App) startLayoutEdit() {
 // closeEditorBlockingOverlays shuts everything that would either strand a layout
 // editor or float, inert, over it. Shared by BOTH editors so their arm paths cannot
 // drift from each other or from the modal table.
-// The FOCUSED FIELD goes too. A text field keeps eating keys while it holds focus —
-// the pointer fence blanks hovering(), not the keyboard — so an IC box still focused
-// from before Ctrl+F2 would swallow the editor's arrow-key nudge and its own Esc for
 func (a *App) closeEditorBlockingOverlays() {
 	a.closeCourtroomModals()
 	a.evid.showEvid, a.courtxtra.showModcall, a.pairbox.showPair = false, false, false
@@ -577,7 +568,6 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		}
 		// Keep it on the stage (the engine's clamp would rescue it, but
 		// editing should feel solid, not rubber-bandy).
-		//
 		// The server-tab strip is CLIENT chrome, not a stage widget: its home is the
 		// band ABOVE the canvas, so the design courtroom is the wrong cage — this clamp
 		// would shove it onto the stage on the first pixel of every drag. It clamps to
@@ -749,7 +739,6 @@ func (a *App) magnetSiblingRect(key string, stored theme.Rect, lay *themeLayoutC
 }
 
 // clampTabStripScreen keeps the tab strip's stored origin inside the window.
-//
 // The cache paints the strip at offX + X (and the Y twin) and clamps THAT into the
 // window; clamping the stored value to the same range here — the same subtraction, no
 // scale, no rounding — is what keeps the two in lockstep, so dragging past an edge and

@@ -9,7 +9,6 @@ import (
 // changelog path naming "Settings -> Interface" — a tab that has never existed —
 // and no search keyword at all. So it was real, wired, and effectively
 // unreachable: the written path led nowhere and searching for it found nothing.
-//
 // These gates pin that it stays findable.
 
 // TestEmoteSpacingIsSearchable pins that every word someone would plausibly type
@@ -34,7 +33,6 @@ func TestEmoteSpacingIsSearchable(t *testing.T) {
 // TestChangelogNamesNoInventedSettingsTab pins the specific mistake that made
 // this control unreachable: release notes told people to click a tab that has
 // never existed, so no amount of looking could succeed.
-//
 // Deliberately NARROW. A general "every Settings -> X names a real tab" lint
 // drowns in false positives, because the notes legitimately write section titles
 // ("Settings -> Fonts") and run prose straight on from a tab name ("Settings ->

@@ -60,7 +60,6 @@ type framePaceState struct {
 	// plays its blips) at the fine audio cadence via Background between presents, so
 	// audio never batches to the frame rate. When set, the next Frame skips its own
 	// room.Update (the room is already current) but still advances the UI + draws.
-	// Consumed (cleared) by that Frame. See AudioPaceActive / MarkRoomPreAdvanced.
 	roomPreAdvanced bool
 	// lastSpeakerDiagBase is the speaker sprite base last logged to the debug
 	// log (pushDebug) — the #110 animation diagnostic logs once per base change,

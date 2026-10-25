@@ -11,11 +11,9 @@ import (
 // without paging the full grid. Press a button to select that emote (it sends on
 // your next message), exactly like the grid. OFF by default (the FavEmoteBox
 // pref); opened by its rebindable hotkey (default Ctrl+A) or the Settings tick.
-//
 // Non-invasive, like the Extras box: the scene/chat/logs stay live underneath,
 // and it shares the Extras surface's single per-frame mouse-press edge so exactly
 // one box grabs a given press. Drawn only while open, so it's free when closed.
-// The render loop (render.Viewport) is untouched.
 
 const (
 	favBoxCols   = int32(4)     // max emote buttons per row

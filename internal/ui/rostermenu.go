@@ -5,9 +5,6 @@ package ui
 // at higher text zoom it landed ON the OOC/IPID line — so every single-player
 // action now lives in one anchored popup, opened by the row's "…" button or by
 // right-clicking the row (the shortcut; the button keeps it discoverable).
-// Input discipline: while open the menu holds the kit's modal fence (modalOn),
-// so everything underneath — rows, lists, wheel — is pointer-blind on the
-// whole screen; the menu itself hit-tests with raw pointIn, exactly like the
 
 import (
 	"github.com/veandco/go-sdl2/sdl"

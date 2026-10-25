@@ -65,11 +65,6 @@ type charMeta struct {
 	// the name chain whether rung 2 has one.
 	showname string
 	// idle is courtroom.CharINI.IdleAnim: the FIRST [Emotions] entry's anim, i.e.
-	// the pose AO2 has selected the instant this character is picked. It is what a
-	// PREVIEW of somebody else must mint their sprite from, because "normal" is a
-	// convention plenty of packs do not keep. Empty until the fetch lands and for
-	// an ini with no emotes — an absent answer, so the reader keeps its optimistic
-	// convention for that window rather than drawing nothing.
 	idle string
 	done bool // fetch settled (hit or miss) — misses cache too (no refetch loop)
 	// stamp is when an IN-FLIGHT marker (done=false) was armed. A dropped async
@@ -318,9 +313,6 @@ func (r envResolver) OnPreanimEnd(courtroom.PreanimEndReason) {}
 // char.ini lookups (blips, chatbox skin/ink/showname/realization, scaling), the
 // asset/overlay engine, and the local env (side, inline emotes, preanim-end) — so
 // a room behaves identically in every mode.
-// ONE production caller: App.newRoom (newroom.go). Construction and wiring are
-// the same step on purpose — this used to be several call sites, and two of the
-// five forgot it.
 func (a *App) wireRoomCharMeta(room *courtroom.Courtroom) {
 	if room == nil {
 		return
@@ -346,9 +338,6 @@ func (a *App) iniIdleAnimFor(char, fallback string) string {
 // char.ini [Options] scaling= request (issue #21 label 15). It rides the SAME
 // cache and the SAME single fetch as blips and chat skins, so honouring every
 // character's declared filter costs no extra network probe.
-// Auto until the fetch lands — the speaker's NEXT message picks it up, and the
-// renderer's geometry rule covers the gap meanwhile, so a first message is never
-// wrong, only potentially less specific than the author asked for.
 func (a *App) remoteScalingFor(char string) courtroom.ScalingMode {
 	return a.charMetaFor(char).scaling
 }

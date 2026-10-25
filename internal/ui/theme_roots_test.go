@@ -29,7 +29,6 @@ func TestThemeLoadRoots(t *testing.T) {
 // silently swap which theme a user has been looking at for a year, so the
 // property under test is not "the config root is searched" but "everything that
 // resolved before still resolves the same way, in the same order, first".
-//
 // The config root therefore has to be LAST in every combination, and a caller
 // that hands the same directory in twice must still get it once.
 func TestThemeLoadRootOrderIsUnchangedForExistingInstalls(t *testing.T) {
@@ -114,10 +113,6 @@ func TestThemeLoadRootOrderIsUnchangedForExistingInstalls(t *testing.T) {
 // test file exists to prevent a second time: themeLoadRoots gained the config
 // root, scanThemes did not, and on every NON-portable install (Flatpak, Program
 // Files, the macOS tarball, and every user carrying an existing OS-config folder)
-// a theme sitting in the write root the Settings screen prints — and that "Open
-// folder" opens — loaded fine by name while being absent from the dropdown and
-// unreachable by the ◀ ▶ arrows.
-//
 // The property is therefore not "three roots are searched" but "the list the user
 // can PICK from covers every root the loader would resolve in".
 func TestThemePickerAndLoaderSearchTheSameRoots(t *testing.T) {

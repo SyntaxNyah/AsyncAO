@@ -1,12 +1,6 @@
 package ui
 
 // THE EDITOR THROUGH THE REAL FRAME (v1.90.0 W7a).
-//
-// frameharness_test.go names "W7's editor pass" as one of its concrete future call
-// sites; this is that call site. Every gate here goes through App.Frame, so the
-// screen's WIRING is what is under test — the skippability arm, the draw dispatch,
-// the Esc ladder and the poll cluster all live inside Frame and are reached by
-// nothing that calls drawThemeEditor directly.
 
 import (
 	"testing"
@@ -197,9 +191,6 @@ func TestEditorOwnsCtrlZThroughTheRealChord(t *testing.T) {
 // TestEditorUndoChordReachesTheEditorThroughAFrameWithNoRoom is the gate the chord's
 // own dispatch was missing, and it is the difference between "the function works" and
 // "the key works".
-// So this one nils the room — the state the Settings entry point is in — and drives
-// the chord through App.Frame. The mutation it answers to is deleting
-// `if a.themeEditorOpen() { a.editorUndoChord() }` from App.Frame.
 func TestEditorUndoChordReachesTheEditorThroughAFrameWithNoRoom(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()

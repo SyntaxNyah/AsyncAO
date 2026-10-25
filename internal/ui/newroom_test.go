@@ -97,10 +97,6 @@ func gateScene() *sceneRecording {
 
 // stagedRoomPath is one production way a *courtroom.Courtroom comes into
 // existence, together with the real call that makes it happen.
-// The list is the POINT of this gate: a mode that is not here is a mode nothing
-// checks. Seven rows, six entry points — a replay appears twice because it is two
-// modes (viewing, and previewing for the maker). What stops a seventh from being
-// (the staging sites are pinned by name).
 type stagedRoomPath struct {
 	name string
 	// drive runs the real entry point and returns the room it produced.
