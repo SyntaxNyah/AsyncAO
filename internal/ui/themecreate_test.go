@@ -1,12 +1,6 @@
 package ui
 
 // THE CREATOR, THE TEMPLATES, THE IMAGE INTAKE AND THE LIVE TOGGLE (v1.90.0 W10).
-// Every gate here DRIVES the seam rather than mirroring it (hard rule 11): the
-// templates go through newThemeSidecarFrom, the folder through the real
-// themepack.CreateFromSidecar, the undo group through applyImageIntakeOps and
-// editorUndo, and the toggle through setEditorLive and editorApply. Deleting any of
-// them fails the suite; re-implementing one in a test would not have caught the
-// defects each was written for.
 
 import (
 	"os"
@@ -97,10 +91,6 @@ func TestEveryTemplateHasALabelAndANote(t *testing.T) {
 
 // TestABlankThemeIsValidFromBirth is the promise the creator makes: what it writes
 // parses back with ZERO notes, validates, and loads as a theme.
-// IT GOES THROUGH THE REAL MACHINERY end to end — newThemeSidecarFrom →
-// themepack.CreateFromSidecar (which is Sidecar.Bytes, i.e. the write guard) →
-// os.ReadFile → theme.ParseSidecar → Validate → theme.Load. No hand-rolled INI text
-// anywhere, which is the whole reason the funnel exists.
 func TestABlankThemeIsValidFromBirth(t *testing.T) {
 	root := t.TempDir()
 	sc, err := newThemeSidecarFrom(templateBlank, "My Theme", theme.PresetPair{})
@@ -132,7 +122,6 @@ func TestABlankThemeIsValidFromBirth(t *testing.T) {
 	// AND IT APPLIES: theme.Load over the root that holds it resolves the folder and
 	// finds the sidecar this client just wrote. A theme that cannot be loaded is not a
 	// theme, however well it parses.
-	// The flat tier is what makes this root work with no themes/ level (theme.Load's
 	// own note on bare-folder imports, #21).
 	tm, err := theme.Load(m.Root, "", []string{root})
 	if err != nil {
@@ -247,10 +236,6 @@ func TestAnImageIntakeIsOneUndoStep(t *testing.T) {
 }
 
 // TestTheMediaRowEncodingRoundTrips pins the pair mediaRowValue / mediaRowOf.
-// A PAIR, for the reason editValueSlotRect / slotRectOf are one: four fields packed
-// in one order and unpacked in another compiles and is silently wrong — and the
-// symptom would be an undo that restored a row with the wrong file or the wrong
-// byte cost, i.e. a budget that drifts from the picture it describes.
 func TestTheMediaRowEncodingRoundTrips(t *testing.T) {
 	for _, m := range []theme.MediaEntry{
 		{ID: "art", File: "images/art.png", Bytes: 123456, Hash: "deadbeefcafe"},

@@ -19,9 +19,6 @@ import (
 // export). It is self-contained: the corpus is read from the frozen golden data files plus a
 // few literal fixtures, so this single file can be dropped into a worktree at any baseline
 // commit and the two outputs diffed to prove the load path is byte-identical.
-//
-//	PREFS_DUMP_OUT=/tmp/out.txt go test ./internal/config -run TestPrefsDump -v
-//
 // The per-input sections are: errclass, exported JSON, unexported flags, dirty flag, Save
 // bytes, and ImportSettings accept/reject (valid + garbage). Only hashes are ever written,
 // never file contents.
@@ -75,8 +72,6 @@ func TestPrefsDump(t *testing.T) {
 
 	// Setter section: for every setter golden scenario, apply the setter and hash the
 	// dirty flag plus the bytes Save would write. The baseline (old inline-field bodies)
-	// and the tip (Update over the snapshot) must hash identically — this is the proof the
-	// new write path marks dirty and marshals exactly like the old setters.
 	shaHex := func(b []byte) string {
 		s := sha256.Sum256(b)
 		return hex.EncodeToString(s[:])
@@ -136,8 +131,6 @@ func TestPrefsDump(t *testing.T) {
 // prefs file named by REAL_PREFS. Only hashes are written, never file contents, and the
 // file is never written back (prefsDumpLine loads a temp copy). Run it at the baseline and
 // at the tip and diff the two lines.
-//
-//	REAL_PREFS=/path/to/prefs.json go test ./internal/config -run TestRealPrefsDump -v
 func TestRealPrefsDump(t *testing.T) {
 	path := os.Getenv("REAL_PREFS")
 	if path == "" {

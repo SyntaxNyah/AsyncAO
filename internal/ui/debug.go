@@ -14,9 +14,6 @@ import (
 // drawDebugOverlay paints the bounded failure log plus a one-line session
 // health readout over whatever screen is active (Settings → "Debug
 // overlay"). It exists to answer two questions without a debugger attached:
-// This is an opt-in diagnostics path: the fmt allocations here are accepted
-// and never run while the toggle is off (the zero-alloc render gates bench
-// with it off).
 func (a *App) drawDebugOverlay(w, h int32) {
 	c := a.ctx
 	const (

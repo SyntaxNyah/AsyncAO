@@ -153,9 +153,6 @@ func guardThemeInk(res *themeApply, tbl *themeFontTable) {
 // site's own colour. canvasInk MUST be the caller's own answer to "am I drawing
 // inside the theme's design canvas": see the file header for why it cannot be
 // derived here.
-// One indexed load into the fixed table — no map, no prefs read, no pointer
-// return — so the zero-alloc whole-screen gates stay green. Never take this as a
-// method VALUE; that allocates a closure.
 func (a *App) elemInk(el themeFontElem, canvasInk bool) (sdl.Color, bool) {
 	if !canvasInk {
 		return sdl.Color{}, false

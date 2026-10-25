@@ -9,8 +9,6 @@ import (
 // TestWitchesIPIDFromPlayerlist pins the witches-akashi-party (WAP) fix: that fork
 // streams a mod's target IPID inside the live PU name field as a trailing "(<hex>)"
 // token, so the ban box can fill straight from the player list with no /getarea.
-// The extraction is gated on the Akashi/WAP family and peels only an IPID-looking
-// token, so an ordinary parenthesised OOC name (and every other server) is untouched.
 // (../witches-akashi-party/src/playerstateobserver.cpp.)
 func TestWitchesIPIDFromPlayerlist(t *testing.T) {
 	newWAP := func() *Session {

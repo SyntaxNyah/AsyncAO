@@ -85,8 +85,6 @@ type voiceEngine struct {
 
 // newVoiceEngine opens the audio devices and the encoder. captureDev is the mic
 // device name ("" = system default); outVol is the initial output volume (0..100).
-// Playback is required; capture is best-effort (no mic ⇒ listen-only). Returns an
-// error only when no audio at all is possible — the caller stays presence-only.
 func newVoiceEngine(send func(b64 string), captureDev string, outVol int) (*voiceEngine, error) {
 	spec := sdl.AudioSpec{
 		Freq:     voice.SampleRate,

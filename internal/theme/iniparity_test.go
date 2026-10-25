@@ -1,13 +1,9 @@
 package theme
 
 // QSettings parity tests for the INI reader.
-//
 // AO2-Client reads every theme INI (and every char.ini —
 // text_file_functions.cpp:411) through QSettings::IniFormat, so anything
 // QSettings silently normalises is data a theme author has already relied on.
-// Two such normalisations were missing here and cost real shipped themes real
-// geometry; the fixtures below are the exact lines that broke, transcribed from
-// the themes rather than invented.
 
 import (
 	"os"
@@ -91,7 +87,6 @@ func TestBOMThemeKeepsItsFontSize(t *testing.T) {
 // TestElementRectTruncatesInlineComment pins the three rects that shipped
 // broken. Each declares a valid four-tuple followed by a ';' comment; without
 // truncation the fourth strconv.Atoi failed, H came back 0, and Rect.Valid()
-// then rejected the whole element.
 func TestElementRectTruncatesInlineComment(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ThemesDirName, "commented")
@@ -179,9 +174,6 @@ func TestINIQtCommentSemantics(t *testing.T) {
 }
 
 // TestAtoiTrimMatchesQtToInt pins the deliberate error-swallowing in atoiTrim.
-// QString::toInt() returns 0 for junk and AO2 uses that unchecked, so a stricter
-// parser here would reject tuples that render fine in the client every theme was
-// authored against.
 func TestAtoiTrimMatchesQtToInt(t *testing.T) {
 	for _, tc := range []struct {
 		in   string

@@ -1,10 +1,6 @@
 // Package network fetches assets over HTTP with aggressive deduplication and
 // negative caching (spec §7), runs the prioritized fetch worker pool,
 // and talks to the AO master server. Every request must earn its RTT:
-// duplicate in-flight fetches collapse via singleflight, cached 404s never
-// touch the wire inside their TTL, and failing hosts back off exponentially.
-// The game connection itself is WebSocket-only (see internal/protocol);
-// legacy raw-TCP servers are intentionally unsupported.
 package network
 
 import (
@@ -32,11 +28,6 @@ const (
 	// Transport tuning (spec §7). Most AO asset hosts speak plain
 	// http://, where ForceAttemptHTTP2 is inert and tuned HTTP/1.1
 	// keep-alive does the work; HTTP/2 kicks in automatically on https.
-	// Idle-per-host matches the worker pool: at 8 every 16-wide fetch
-	// burst closed half its connections and the NEXT burst re-dialed
-	// (plus TLS handshake on https) — cold-load bursts are back-to-back,
-	// so all lanes stay warm now. The total covers maxTabs concurrent
-	// servers' asset hosts at full width plus master-list/manifest slack.
 	defaultMaxConnsPerHost     = 16
 	defaultMaxIdleConnsPerHost = 16
 	defaultMaxIdleConnsTotal   = 96
@@ -181,8 +172,6 @@ func (c *Client) SetAdaptiveLatencyMultiple(n int) {
 }
 
 // SetAssetOrigin sets the Origin (and Referer) header sent on every asset fetch.
-// Empty clears it (the default — no header). Safe to call from any goroutine. The
-// power-user escape hatch for servers that only serve their base to a specific web
 // origin (a "join only via https://webao.example" setup).
 func (c *Client) SetAssetOrigin(origin string) {
 	if origin == "" {
@@ -247,8 +236,6 @@ func newClient(timeout, notFoundTTL time.Duration) *Client {
 
 // PreResolve warms the DNS cache for host so the first asset probe never
 // blocks on a lookup. Call it at server connect with the asset host.
-// It is also useless work in that case: DialContext's cached-IP substitution
-// applies to the address the transport asks for, which is the proxy's.
 func (c *Client) PreResolve(ctx context.Context, host string) {
 	if proxiedHost(host) {
 		return
@@ -377,9 +364,6 @@ const (
 
 // fetchOnce performs the upstream request behind singleflight — one bounded
 // transient retry included, so every collapsed waiter shares the recovery.
-// It runs detached from any one caller's context, bounded per attempt by the
-// host's adaptive deadline, so one impatient caller cannot kill the fetch
-// for everyone and one slow host cannot pin workers for the global timeout.
 func (c *Client) fetchOnce(url string) ([]byte, error) {
 	var lastErr error
 	for attempt := 0; attempt < transientFetchAttempts; attempt++ {
@@ -478,10 +462,6 @@ func (c *Client) fetchAttempt(url string) ([]byte, error) {
 // destination is allocated exactly once at final size and filled with
 // io.ReadFull — no growth, no copies. Unknown lengths accumulate in a pooled
 // scratch buffer and are copied out once.
-// Deliberate deviation from spec §7's "pooled []byte" for the known-
-// length path: the returned payload is retained indefinitely by the T2/T3
-// caches, so a pooled buffer could never be returned to the pool — pooling
-// would add a copy and zero reuse. See docs/ARCHITECTURE.md.
 func (c *Client) readBody(resp *http.Response) ([]byte, error) {
 	if n := resp.ContentLength; n > 0 {
 		data := make([]byte, n)

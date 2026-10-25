@@ -50,8 +50,6 @@ func TestShoutRidesTheNextMessage(t *testing.T) {
 
 // TestShoutDisarmsAfterTheSend is courtroom.cpp:2327 (reset_ui clears
 // objection_state UNCONDITIONALLY — it is not one of the three sticky options).
-// A stuck arm shouts on every following line, which is the failure everybody
-// notices.
 func TestShoutDisarmsAfterTheSend(t *testing.T) {
 	a, sent := flipSendApp(t)
 	a.toggleShout(protocol.ShoutTakeThat)

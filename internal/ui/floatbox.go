@@ -117,8 +117,6 @@ var panelSlotTable = []panelSlot{
 	// Hide UI pieces. It was pinned to the bottom-right corner with no way to move
 	// it — not by dragging, and not in the layout editor either — so a panel that
 	// landed somewhere awkward, or under something else, could not be shifted.
-	// Joining this table gives it the drag, the position persistence and the
-	// de-overlap cascade every other floating panel already has.
 	{slotPanelPieces, func(a *App) *floatWin { return &a.wins.piecesWin }, toolboxPiecesW, toolboxPiecesMaxH, toolboxPiecesMinW, toolboxPiecesMinH, func(a *App) bool { return a.toolbox.toolboxPinned && a.toolbox.toolboxPieces }},
 	// The three ex-modals (#31). They were centred blocks that took the screen; as
 	// floatWins they get the same drag, position persistence and de-overlap cascade
@@ -180,9 +178,6 @@ func (a *App) extrasWidgets() []extrasWidget {
 // toggleExtrasBox shows/hides the AsyncAO Extras box. ONE implementation, because
 // two keys reach it now: the configurable Ctrl chord (hotkeyExtras) and — since
 // GH #51 — Esc in the bare courtroom, which used to leave the server outright.
-// Theater is stage-only (setTheater's invariant): summoning the box from there
-// means "give me the UI back", so it exits theater and shows the box rather than
-// drawing floating chrome over the bare stage.
 func (a *App) toggleExtrasBox() {
 	if a.theaterOn {
 		a.setTheater(false)
@@ -480,8 +475,6 @@ func (a *App) extrasSurfaceLive() bool {
 
 // extrasBoxRect is the main box's screen rect: the (possibly user-resized) size
 // at the dragged position once placed, else a centered-near-the-top default.
-// Size clamps to [min, window] and the position clamps fully on-screen, so a
-// resize or a moved-then-shrunk window can't strand it off-edge or oversize it.
 func (a *App) extrasBoxRect(w, h int32) sdl.Rect {
 	// Seed from the persisted slot HERE (not in drawExtrasMainBox) so boxFencesPointer
 	// — which calls this rect fn — and the draw agree on frame one: the fence used to
@@ -889,9 +882,6 @@ func (a *App) extrasTearDetect(id int, cell sdl.Rect, pressed *bool) bool {
 }
 
 // drawFloatingExtras paints the Extras surface (main box + every torn-off box)
-// on top of the live courtroom. Picking a widget runs its action but LEAVES the
-// box open (non-invasive); a widget that opens its own blocking panel hides the
-// surface until that panel closes, then it returns.
 func (a *App) drawFloatingPanels(w, h int32) {
 	if !a.extrasSurfaceLive() { // live courtroom, no blocking modal
 		return
@@ -1184,10 +1174,6 @@ const (
 
 // extrasGridLayout resolves that geometry from the box rect, the Y the volume
 // sliders finished at, and the number of cells that will actually draw.
-// The viewport stops extrasHintH short of the box's bottom edge so the "drag a
-// widget out…" line keeps its row, and it is floored at zero height: a box
-// squeezed by a small window must produce an empty viewport, never a negative one
-// that would invert every containment check downstream.
 func extrasGridLayout(box sdl.Rect, volY, shown int32) extrasGrid {
 	g := extrasGrid{view: sdl.Rect{
 		X: box.X + 10,

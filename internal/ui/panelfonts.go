@@ -28,9 +28,6 @@ type panelFontRow struct {
 
 // panelFontRows is what the Settings screen offers, in the order a user thinks
 // about them rather than theme.FontElements' wire order.
-//
-// showname and message are FIRST because they are the chatbox — the text
-// everyone reads most — and debug_log is last because almost nobody wants it.
 var panelFontRows = [...]panelFontRow{
 	{id: "message", el: elemMessage, label: "Chat message", hint: "what characters say, in the chatbox"},
 	{id: "showname", el: elemShowname, label: "Character name", hint: "the name above the chatbox"},
@@ -77,8 +74,6 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 	// The theme's OWN missing fonts, before the override rows — because if this is
 	// showing, it is almost certainly why the user came to this screen, and the
 	// answer is to install the fonts rather than to override every panel by hand.
-	// Persistent here, unlike the toast on apply, which is gone by the time anyone
-	// goes looking.
 	if a.font.themeFontWarn != "" {
 		y = a.settingsSection(y, w, "This theme's fonts are missing")
 		y = a.settingsDesc(pad, y, a.font.themeFontWarn, ColDanger)
@@ -125,9 +120,6 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 
 		// The size box shows the size actually in use when nothing is set, so the
 		// starting point is what the user is looking at rather than a blank.
-		// WHILE THE FIELD HAS FOCUS ITS OWN TEXT IS AUTHORITATIVE, and that is the
-		// whole fix rather than a nicety. This used to clamp on every keystroke and
-		// feed the clamped number straight back in, so typing the "1" of "18" became
 		sizeID := "panelsize-" + row.id
 		sizeRect := sdl.Rect{X: pad + panelFontLabelW + panelFontFamilyW + 8, Y: y, W: panelFontSizeW, H: fieldH}
 		shown := a.panelSizeText(sizeID, row.id, cur.SizePx)
@@ -162,11 +154,6 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 
 // panelSizeText is what the size box should display this frame: the text the
 // user is typing while the box has focus, and the SAVED value otherwise.
-// The two differ on purpose, and only while typing. A half-typed number is not a
-// size — "1" on the way to "18" is below the minimum, and "1" on the way to "120"
-// is below it too — so it is held as text and never round-tripped through the
-// clamp. The moment focus leaves, the saved value is the truth again, which is
-// also what discards a box left holding something unusable.
 func (a *App) panelSizeText(fieldID, rowID string, saved int) string {
 	if a.ctx.focusID == fieldID {
 		if s, editing := a.font.panelSizeEdit[rowID]; editing {
@@ -181,10 +168,6 @@ func (a *App) panelSizeText(fieldID, rowID string, saved int) string {
 
 // commitPanelSize takes one keystroke's worth of typing: it always remembers the
 // raw text, and saves a size only when the text actually is one.
-// Emptying the box CLEARS the override — that is how a panel is put back — so an
-// empty string commits immediately. Anything below the minimum is treated as
-// incomplete rather than wrong: it is almost always a number mid-typing, and
-// rejecting it outright is the same trap as clamping it.
 func (a *App) commitPanelSize(fieldID, rowID string, cur config.PanelFont, text string) {
 	if a.font.panelSizeEdit == nil {
 		a.font.panelSizeEdit = make(map[string]string, len(panelFontRows))

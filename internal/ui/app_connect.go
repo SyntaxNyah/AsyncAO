@@ -134,8 +134,6 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 		a.conn.connErr = friendlyConnError(wsURL, err) // #9: human guidance, not a raw Go error
 		a.debug.push("connect failed: " + err.Error())
 		// A refusal the server EXPLAINED gets the notice box, same as a BD reason:
-		// the explanation is how you get in (a Discord invite to ask for a whitelist
-		// entry, an access code), and the lobby line is one row that cannot hold it.
 		// Snapshot the name before the teardown below — serverName is on sessionState.
 		noticeServer := a.srvMeta.serverName
 		var de *protocol.DialError
@@ -1012,9 +1010,6 @@ func icSpeakerName(m *protocol.ChatMessage, forceChar bool, ini courtroom.IniSho
 }
 
 // icPos is an IC message's normalized courtroom position (the wire Side field):
-// lowercased and trimmed, so the pos filter and the stored icEntry.pos always
-// agree regardless of how a server or a custom SD list spells it. "" for a
-// system line (no speaker).
 func icPos(m *protocol.ChatMessage) string {
 	if m == nil {
 		return ""
@@ -1040,8 +1035,6 @@ func (a *App) friendNick(m *protocol.ChatMessage) string {
 
 // installAssetOrigin points this session's URL builder at origin — the ONE
 // place rebuildAssetOrigin mints one, mounts branch and server branch alike.
-// Both jobs live here so they cannot drift apart: an origin installed without
-// the flush would silently serve a previous visit's verdict.
 func (a *App) installAssetOrigin(origin string) {
 	a.link.urls = courtroom.NewURLBuilder(origin).WithCharCase(a.charCasingFor(origin))
 	a.d.Manager.ForgetConclusiveMissesUnder(origin) // nil-safe: a headless App has no Manager and nothing to forget
@@ -1147,9 +1140,6 @@ func (a *App) startRehearsal(name, key string, info config.ServerWarmInfo) {
 // ever arrive offline.
 func (a *App) pickCharacter(idx int) {
 	// Diagnostic for the "player list shows the wrong character" report (#88):
-	// log the exact char_id we put on the wire in CC, named from our own list, so
-	// a playtest with the Debug overlay on shows whether the index we SEND matches
-	// the character picked (vs the server-assigned id logged at EventCharPicked).
 	if idx >= 0 && idx < len(a.link.sess.Chars) {
 		a.debug.push(fmt.Sprintf("char pick → CC char_id=%d (%s)", idx, a.link.sess.Chars[idx].Name))
 	}
@@ -1319,9 +1309,6 @@ func (a *App) fetchManifestAsync() {
 	a.markOriginSeeded(origin)
 	host := hostOfURL(origin)
 	// A per-host format profile (user-set, or the built-in official-vanilla example)
-	// applies even when auto-detect is OFF — it's an explicit per-server override, not
-	// the autodetect fetch. It seeds INSTANTLY (no network race) so the very first probe
-	// already uses the right formats; it wins over the global default for THIS host only.
 	if profile := a.extProfileFor(host); profile != "" {
 		if m, err := assets.ParseManifest([]byte(profile)); err == nil {
 			n := m.SeedLearned(a.d.Prefs, host)
@@ -1458,8 +1445,6 @@ func (a *App) pollManifest() {
 // noteManifestStatus records whether a host published a usable extensions.json,
 // so Settings → Formats can state the fact instead of leaving the player to
 // guess. Render thread only (same as manifestSeeded, and for the same reason:
-// the map is not synchronized). Bounded by the number of DISTINCT asset hosts
-// visited in one session — a handful in practice (rule §17.4).
 func (a *App) noteManifestStatus(host string, st seedStatus) {
 	if host == "" {
 		return
@@ -1484,9 +1469,6 @@ const fontFileMaxBytes = 64 << 20
 
 // applyFontConfig installs the IC/OOC override font chain from prefs through one
 // resolver, so the launch path and the live Settings toggles can never disagree:
-// the dyslexia toggle wins (embedded OpenDyslexic, set synchronously — no disk),
-// else the manual font-path chain (read off-thread), else the built-in font.
-// Called at launch and on every change to either source.
 func (a *App) applyFontConfig() {
 	// The themed layout bakes each AO2 toggle's label truncated against the CHROME
 	// face (themeLayoutCache.toggleLabel), and the cache key knows nothing about

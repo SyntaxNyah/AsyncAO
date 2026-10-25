@@ -28,9 +28,6 @@ func roots() []string {
 }
 
 // machineGUID reads HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid via reg.exe.
-// The standard library has no registry access and we deliberately avoid adding a
-// dependency for one value; reg.exe is a signed in-box tool, run once per connect
-// (cold path). A missing or blocked reg.exe simply drops this root.
 func machineGUID() string {
 	cmd := exec.Command("reg", "query",
 		`HKLM\SOFTWARE\Microsoft\Cryptography`, "/v", "MachineGuid")

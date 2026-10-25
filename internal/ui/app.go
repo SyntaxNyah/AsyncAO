@@ -203,7 +203,6 @@ type env struct {
 	// CLIENT-GLOBAL, unlike the per-tab IC transcripts: most of what lands in it
 	// has no tab at all (theme apply, extensions seeding, casing detection, the
 	// updater), and triaging the client wants every tab's failures in one stream.
-	// Memory-only (debugLogCap ring, never a file).
 	debug debugSink
 
 	// h is the narrow set of App capabilities a component needs beyond env's
@@ -213,10 +212,6 @@ type env struct {
 }
 
 // host is the deliberately tiny capability surface *App hands to components:
-// reading the top chrome band (which positions top-of-window affordances such
-// as the update chip). Anything bigger belongs in env as shared state, not in a
-// component reaching back into App — the dirty flag already moved into env
-// (uiDirty above, set by env.dirty), which is why this is one method, not two.
 type host interface {
 	chromeBandH() int32 // height of the menu bar + tab strip
 }
@@ -330,9 +325,6 @@ type App struct {
 	icWrapStamp    bool // ICTimestamps state baked into the wrap (toggling rewraps)
 	// OOC wrapped-lines cache: long entries (MOTDs) wrap instead of
 	// truncating; rebuilt only when the log, width, or font scale moved.
-	// (App-global like the IC caches above, but keyed by logViewEpoch too so a
-	// tab switch — where both tabs' oocSeq can be equal — is a guaranteed miss,
-	// never a cross-tab false hit; see the logViewEpoch field doc.)
 	oocWrap     []string
 	oocWrapName []string // parallel to oocWrap: speaker to tint on each entry's FIRST display line ("" otherwise)
 	oocWrapCont []bool   // parallel to oocWrap: true = a wrap continuation row (hanging indent); a paragraph's own newline starts a fresh row, not a continuation
@@ -434,9 +426,6 @@ type App struct {
 	// pumpTabRestore so the blocking dials never pile into a single boot freeze.
 	restoreQueue []config.OpenTab
 	// translogs are the detailed-transcript writers (opt-in), ONE PER TAB SESSION:
-	// logs/<server>/<session>.log, opened lazily on that session's first logged
-	// message. Keyed by (server, sessionState.logSession) — keyed by server ALONE,
-	// two tabs on one server shared a writer and interleaved into a single file.
 	translogs map[translogKey]*transcriptWriter
 	// nextLogSession mints sessionState.logSession. Monotonic for the process, so an
 	// id is never reused even after a tab closes — a reused id would let a new tab
@@ -533,13 +522,11 @@ type App struct {
 	// alignGuides/alignScratch are the editor's per-drag-frame alignment
 	// results and its reusable other-slots buffer (classicalign.go). Editor
 	// path only; reused so a long drag allocates nothing after warm-up.
-	// alignGuides is ALSO reused by the live piece-to-piece magnet (magnet.go)
 	alignGuides  []alignGuide
 	alignScratch []sdl.Rect
 	// panelMagnetRects is the live-magnet candidate buffer (magnet.go): every
 	// OTHER open floating surface's rect, rebuilt once per frame at the top of
 	// drawFloatingPanels ONLY while a drag is active (empty on settled frames).
-	// Reused so a long drag allocates nothing; bounded by panelMagnetCap.
 	panelMagnetRects  []sdl.Rect
 	themeAlignScratch []sdl.Rect
 	// layoutPresetName is the Settings name field for saving the current layout as a
@@ -1203,9 +1190,6 @@ func (a *App) Background(dt time.Duration) {
 
 // noteOverlayStart rings the render doorbell the instant a screen effect is TRIGGERED
 // while nothing is being drawn.
-// Scene.Overlay.Gen is exactly that announcement and costs one uint32 compare per
-// Background pass: the courtroom bumps it on EVERY trigger (overlayfx.go), including a
-// repeat of the same effect, which is the case a Base comparison would miss.
 func (a *App) noteOverlayStart() {
 	if gen := a.link.room.Scene.Overlay.Gen; gen != a.frame.drawnOverlayGen {
 		a.frame.drawnOverlayGen = gen

@@ -128,8 +128,6 @@ func TestDrawCurrentAreaStatusStripShowsARUPStatus(t *testing.T) {
 // joins or leaves) must still change what drawAreaHeaderRow paints — it can
 // only do that by reading a.sess.AreaInfo LIVE, every call, never from a
 // value baked into the cached rosterRow.
-// Driven through the REAL production calls (playerRosterRows,
-// drawAreaHeaderRow) with pixels read back, not a re-derivation of either.
 func TestDrawAreaHeaderRowReadsARUPStatusLive(t *testing.T) {
 	a, ct, rect, cleanup := arupPixelFixture(t, 400, 30)
 	defer cleanup()

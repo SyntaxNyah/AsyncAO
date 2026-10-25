@@ -47,7 +47,6 @@ func dribbleBody(w http.ResponseWriter, total, chunkSize int, pause time.Duratio
 // that dribbles for far longer than that deadline (as a ~10MB music track does
 // on a slow link) must still complete, because the body read gets its own
 // larger bodyBudget once headers arrive.
-//
 // Under the OLD behaviour (a single context.WithTimeout(adaptiveTimeout) that
 // governed the whole request), this exact handler cut the read mid-stream with
 // context.DeadlineExceeded — the "big music silently doesn't play" bug.

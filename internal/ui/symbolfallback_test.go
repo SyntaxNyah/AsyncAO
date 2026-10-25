@@ -2,10 +2,6 @@ package ui
 
 // F5, the ROUTING half — see internal/render/pictograph_test.go for the eligibility
 // table.
-// The rule: a BMP pictograph is handed the colour-emoji face ONLY when no face in
-// the text chain covers it. That gate is what keeps ★, →, ▪ and ™ drawing in the
-// row's own family at the row's own weight on the (many) machines whose text fonts
-// have them, while ♥ and ✨ stop being boxes on the machines whose fonts do not.
 
 import (
 	"strings"
@@ -45,9 +41,6 @@ var symbolCorpus = []struct {
 }
 
 // symbolCensusUnroutable is a codepoint deep in a supplementary Private Use Area:
-// no font ships it, and it is outside every pictograph block, so NO route can claim
-// it. It exists to prove the census's own predicate can still say "no" — the defect
-// this test was rewritten for was a gate whose answer was structurally always "yes".
 const symbolCensusUnroutable = rune(0x0F0000)
 
 // TestUncoveredSymbolsRouteToTheEmojiFace drives the real coverage gate against the
@@ -233,11 +226,6 @@ func TestSymbolCensusCoversTheSymbolBlocks(t *testing.T) {
 	// are covered by neither tier here — but on a real desktop the broad-Unicode
 	// fallback tier loads a system face that has them, and this fixture never triggers
 	// that load. Failing on it would be asserting a property of the TEST MACHINE.
-	// DEFERRED, named so it is not mistaken for coverage: the eligibility table admits
-	// these ornaments by block, so on a machine whose chain also lacks them the gate
-	// promotes them to the colour face, which has no glyph either — a box for a box,
-	// with the last-resort census skipped on the way. Narrowing the table or gating
-	// promotion on the colour face's own cmap is the fix; neither is in this change.
 	if len(ornaments) > 0 {
 		t.Logf("ornaments with no route on THIS machine's chain (deferred class — see the note above):\n  %s",
 			strings.Join(ornaments, "\n  "))

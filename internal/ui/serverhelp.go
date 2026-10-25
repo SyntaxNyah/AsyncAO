@@ -395,9 +395,6 @@ func (a *App) drawForkConnector(x0, cardX, y int32) {
 var serverCapBox = sdl.Color{R: 78, G: 82, B: 96, A: 255}
 
 // drawServerCaps draws the WS / WSS / Players capability chips for one project:
-// WS is always a yellow ✓ (every catalog server speaks WS); WSS is a green ✓
-// (native) or red ✕; Players is a green ✓ (native live list), a yellow ✓ marked
-// "plugin", or a red ✕.
 func (a *App) drawServerCaps(x, y int32, p *serverProject) {
 	c := a.ctx
 	const icon = 13

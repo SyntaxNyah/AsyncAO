@@ -5,7 +5,6 @@ import "testing"
 // TestEvidenceEscapedPath pins #127: an evidence image may crawl OUT of the
 // evidence folder with ".." (AO asset reuse — e.g. "../characters/Ridelle/
 // char_icon.png"), resolving to the real asset path clamped to the origin.
-// Flat and nested names are unchanged.
 func TestEvidenceEscapedPath(t *testing.T) {
 	const origin = "http://x/base/"
 	u := NewURLBuilder(origin)

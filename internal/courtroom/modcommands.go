@@ -10,7 +10,6 @@ import (
 // commands, and the syntax DIFFERS per server software (read from the server sources — see the
 // server-mod-commands research). This file builds the right command string for the detected
 // software, so the dashboard's Ban / Kick buttons can't send wrong-syntax-that-silently-fails.
-// Pure data + string building, SDL-free, unit-tested against every family's exact format.
 
 // ServerSoftware identifies the AO2 server-software family, which determines the command syntax.
 type ServerSoftware uint8
@@ -35,8 +34,6 @@ const (
 	// the live PU name field ("web71 (eea20f10)") to authenticated mods, so the ban
 	// box fills straight from the player list with NO /getarea (see
 	// courtroom.splitTrailingIPID; ../witches-akashi-party/src/playerstateobserver.cpp).
-	// Detected from an ID string carrying "wap"/"witches"; kept last so the earlier
-	// enum values stay stable.
 	SoftwareWitches
 	ServerSoftwareCount
 )
@@ -161,9 +158,6 @@ func BanDurationLabel(d BanDuration) string {
 // --- custom durations (savable duration chips) --------------------------------------------------
 
 // banDurationUnits maps a duration-unit spelling to its canonical single letter.
-// Every server family's parser (str2duration, Akashi parseTime, pytimeparse) takes
-// minutes/hours/days/weeks; months/years are deliberately excluded — the presets
-// already cover "1 month", and "1mo vs 1m" ambiguity isn't worth it.
 var banDurationUnits = map[string]byte{
 	"m": 'm', "min": 'm', "mins": 'm', "minute": 'm', "minutes": 'm',
 	"h": 'h', "hr": 'h', "hrs": 'h', "hour": 'h', "hours": 'h',
@@ -303,9 +297,6 @@ func banCommandWith(sw ServerSoftware, ipid, uid, d, reason string) string {
 // KickCommand builds the OOC /kick for sw. A blank reason is allowed on the families that default
 // it (KFO/Akashi/Whisker); the Athena/Nyathena family REQUIRES a reason — its server-side
 // validation rejects a bare "/kick -u <uid>", which read as "kick does nothing".
-// NOTE: kick is NOT the same as ban — it disconnects a CONNECTED client, so the Athena/Nyathena
-// family targets the live client UID (-u), never the IPID. "/kick -i <ipid>" is silently a no-op
-// there (the IPID is the offline-capable BAN identifier).
 func KickCommand(sw ServerSoftware, ipid, uid, reason string) string {
 	reason = sanitizeReason(reason)
 	switch sw {

@@ -25,16 +25,11 @@ const (
 	regValueMaxBytes = 32 << 10
 
 	// autoProbeURL is the destination WPAD / a PAC script is evaluated against.
-	// A script CAN return different proxies for different destinations, and one
-	// probe cannot capture that; https is chosen because it is what the game
-	// socket and every asset actually use, so the one answer we get is the one
-	// that matters. See autoProxyPolicy for why this is resolved once.
 	autoProbeURL = "https://www.example.com/"
 
 	// winhttpConfigURL is WINHTTP_AUTOPROXY_CONFIG_URL — the flag that asks
 	// WinHTTP to evaluate an explicit auto-config script (PAC URL). The WPAD
 	// auto-detect flag (WINHTTP_AUTOPROXY_AUTO_DETECT) is deliberately NOT used:
-	// see discoverWindows for why.
 	winhttpConfigURL = 0x00000002
 
 	// errAutodetectionFailed is ERROR_WINHTTP_AUTODETECTION_FAILED. It is NOT an

@@ -2,9 +2,6 @@ package ui
 
 // The PUBLISHED-VOCABULARY gates for the free-element vocabulary (v1.90.0 W3),
 // plus the two shout-condition gates that ride the same tables.
-// A vocabulary is only as real as the content written in it. The themes/ corpus has
-// since been retired from the repository, so the content half went with it and what
-// remains is the part that needs no corpus: the format document against the live
 
 import (
 	"fmt"
@@ -44,8 +41,6 @@ const publishedShapeHeading = "**`shape` names a silhouette.**"
 
 // TestPublishedShapeVocabularyMatchesTheConstants census-pins the shape names the
 // FORMAT DOCUMENT publishes against elemShapeNames + elemShapeAliases.
-// The vocabulary lives in internal/ui rather than internal/theme, which is why the
-// census cannot ride the theme package's own doc gate.
 func TestPublishedShapeVocabularyMatchesTheConstants(t *testing.T) {
 	doc := readFormatDoc(t)
 	head := strings.Index(doc, publishedShapeHeading)
@@ -267,9 +262,6 @@ func TestShoutConditionTableMatchesCourtroom(t *testing.T) {
 }
 
 // TestShoutConditionInternsAsTheLiveStem is the pipeline end to end, minus the room:
-// a sidecar written in the DESIGN-KEY spelling interns the stem, and the per-axis
-// resolver — handed exactly what refreshElementConditions hands it — lights the
-// element up.
 func TestShoutConditionInternsAsTheLiveStem(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()

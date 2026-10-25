@@ -42,8 +42,6 @@ func TestValidBlipNameRejectsSentinels(t *testing.T) {
 
 // TestSentinelBlipnameNeverBecomesAURL is the end-to-end half: a message carrying
 // the sentinel must fall through to the char.ini set (and then the AO default)
-// instead of minting sounds/blips/-1 and walking the whole audio ladder on a
-// guaranteed miss, once per message, forever.
 func TestSentinelBlipnameNeverBecomesAURL(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
 	room.Blips = blipFake{name: func(char string) (string, bool) {
@@ -115,7 +113,6 @@ func TestEffectiveBlipRateMatchesAO2SpamPrevention(t *testing.T) {
 // either `++blip_ticker` (:4546, :4554). Only the message's last character escapes the
 // clause. So AO2 sounds exactly ONE blip for an all-instant message, and a `}}}` span in
 // the middle of a line is silent AND phase-neutral.
-//
 // Both halves are asserted, because the count alone is satisfiable by accident: a
 // per-delivery budget of one also yields "one blip" for the all-instant fixture while
 // ticking on every instant rune, which moves every blip after an odd-length span.

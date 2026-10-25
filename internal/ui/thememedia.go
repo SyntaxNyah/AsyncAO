@@ -306,9 +306,6 @@ func themeSanitizeID(name string) string {
 
 // loadThemeMedia reads and decodes one planned entry, downscaling it when its long
 // edge is past themeMediaMaxEdgePx. Theme-apply goroutine only (hard rule 2).
-// The downscale is x/image/draw's CatmullRom, which is already a DIRECT dependency
-// doing exactly this in assets/thumbcache.go — no new dependency, no
-// docs/ARCHITECTURE.md justification, and emphatically not a hand-rolled box filter.
 func loadThemeMedia(path string, anims bool) (*assets.Decoded, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -325,7 +322,6 @@ func loadThemeMedia(path string, anims bool) (*assets.Decoded, error) {
 }
 
 // downscaleThemeMedia resamples every frame when the long edge is over the cap.
-//
 // It returns the SAME Decoded when nothing needs resizing, which is the ordinary
 // case and costs one comparison — the v1.89.0 "0 base = 0 cost" habit applied one
 // tier down.
@@ -385,7 +381,6 @@ func themeDecimationNote(d *assets.Decoded) string {
 
 // themeArtBarLabel is the editor's permanent budget line: what is spent, out of
 // what, and how many of each cap is in use.
-//
 // PERMANENT rather than shown-at-the-cap, because the whole point is that the user
 // can always see who to blame before they hit it.
 func themeArtBarLabel(bytes int64, images, gens int, budget int64) string {
@@ -439,9 +434,6 @@ func (res *themeApply) loadThemeMediaSet(anims bool) {
 
 // releaseDecoded hands every pixel buffer this apply is still holding back to the
 // decoder's pool, for an apply that will never land.
-// Release is idempotent (it nils both Frames and the pooled list), so this is safe
-// against a future caller that releases twice, and it is pure memory bookkeeping —
-// no I/O, nothing that could not run on either side of the hand-off.
 func (res *themeApply) releaseDecoded() {
 	for _, d := range res.images {
 		if d != nil {
@@ -495,7 +487,6 @@ func (a *App) landThemeMedia(res *themeApply) {
 // theme apply behind it.
 // It exists for the editor (W7), where changing one image must not restage the whole
 // theme — and the two things it deliberately does NOT do are the whole point:
-// Gated by TestIncrementalMediaLandDoesNotRestartTheThemeClock. Render thread only.
 func (a *App) landThemeMediaPage(key string, d *assets.Decoded) error {
 	if d == nil {
 		return fmt.Errorf("theme media %s: nothing to land", key)

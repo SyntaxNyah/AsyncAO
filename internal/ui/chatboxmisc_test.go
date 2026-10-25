@@ -38,9 +38,6 @@ func TestChatboxLadderOrderIsUnchangedWithMisc(t *testing.T) {
 // TestTheMiscChatboxResolverStaysAvailableWhileItIsDeferred is the deferral's own
 // gate. It fails if theme.FindAssetMisc stops resolving, which is the one way a
 // deferred plan quietly becomes an abandoned one.
-// It deliberately does NOT assert that the chatbox ladder calls it: it does not,
-// on purpose, and a test that demanded the call would be a test of the thing that
-// was declined rather than of the thing that was kept.
 func TestTheMiscChatboxResolverStaysAvailableWhileItIsDeferred(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "themes", "packless")

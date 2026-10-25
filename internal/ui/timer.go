@@ -237,9 +237,6 @@ func (a *App) drawTimerPanel(w, h int32, pressed *bool) {
 		}
 	} else {
 		// Idle: pick a duration via sliders + presets, then Start.
-		// The tracks follow the panel width now that it is resizable — a fixed 200 px
-		// track with its value label pinned 278 px in would have run straight out of a
-		// panel dragged down to timerPanelMinW.
 		mins := int32(a.timer.timerSetSec / 60)
 		secs := int32(a.timer.timerSetSec % 60)
 		trackX := panel.X + pad + 70

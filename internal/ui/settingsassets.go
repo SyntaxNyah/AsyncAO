@@ -117,11 +117,6 @@ func only(n int) string {
 
 // drawAssetSourceAdvanced is the original panel, kept whole and moved below the
 // button.
-// NOT HIDDEN BEHIND A DISCLOSURE, deliberately: a collapsed row is invisible to
-// the settings search, which only indexes rows that actually draw (noteSearchRow
-// runs at draw time), and "the setting exists but you cannot find it" is a worse
-// failure than a long page. Demoting it under a heading gets the clutter out of
-// the way of the common case without taking anything away from the uncommon one.
 func (a *App) drawAssetSourceAdvanced(pad, y int32, mounts []string) int32 {
 	c := a.ctx
 	mode := a.assetSourceMode()

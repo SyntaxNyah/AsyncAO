@@ -17,10 +17,6 @@ import (
 )
 
 // drawDownloaderSettings renders the opt-in single-asset downloader section:
-// the master toggle (OFF by default), the benefit explainer, the downloads
-// folder with open / add-to-mounts actions, and the live job status + Cancel.
-// Returns the next y. (Folds into its own tab when the settings screen is
-// tabbed.)
 func (a *App) drawDownloaderSettings(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -298,7 +294,6 @@ const themeDropNote = "drop a theme folder in here (or anywhere on this screen) 
 
 // themeGetNote is the discovery row's one line. A const, so the row costs no
 // allocation to draw (the settings-text doctrine — see themeRowText).
-//
 // The source repository still carries the theme format reference
 // (docs/THEME-FORMAT.md) for theme authors, which is what this row points at.
 const themeGetNote = "themes are not bundled with the client — the source repository carries the theme format reference (docs/THEME-FORMAT.md) if you want to write one"
@@ -632,9 +627,6 @@ func (r *themeArtBarText) refresh(bytes, budget int64, images, gens int) {
 
 // drawThemeArtBudgetRow is design §Q2's budget bar: what the active theme's own art
 // is spending, out of what, permanently visible.
-// Both numbers come from internal/render by CALL — the store's live ledger and
-// ThemeMediaByteCap — never from a copy on this side, so the bar cannot quote a
-// budget the admission gate is not using.
 func (a *App) drawThemeArtBudgetRow(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // the settings-origin shadow rule (see drawThemeCatalogRows)

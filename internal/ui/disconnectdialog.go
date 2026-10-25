@@ -9,9 +9,6 @@ import (
 )
 
 // Involuntary-disconnect dialog.
-// This is one more member of the confirm-modal family (drawDisconnectConfirm /
-// drawCloseTabConfirm / drawQuitConfirm): same dimmed backdrop, same fence
-// discipline (fenced with the family in app.go's frame tail, pointer restored
 
 // disconnectDialog is the modal's state. The zero value is closed/inert (open ==
 // false), so an App with no drop showing costs a single bool check per frame.
@@ -90,9 +87,6 @@ func friendlyDisconnectReason(raw string) disconnectReason {
 
 // serverRemovalMessage pulls the SERVER'S OWN words out of a drop reason, which is
 // the only thing the notice box is for.
-// A removal with no reason attached returns false too. "The server banned you."
-// is already on screen; a modal whose body is "no reason given" adds a click and
-// no information.
 func serverRemovalMessage(raw string) (string, bool) {
 	rest, cut := strings.CutPrefix(raw, "Kicked: ")
 	if !cut {
@@ -263,8 +257,6 @@ func (a *App) reconnectFromDisconnectDialog() {
 	if url != "" {
 		// Clicking Reconnect IS "we're coming back": snapshot today's log before
 		// the teardown below wipes it, so the redial to this SAME server (below)
-		// can restore it — applySessionCarryIfPending checks the key match, so
-		// this is a no-op harvest if url somehow changes before the dial lands.
 		a.snapshotSessionCarry()
 	}
 	a.Disconnect() // full teardown of the frozen session → lobby

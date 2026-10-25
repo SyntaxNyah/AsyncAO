@@ -48,14 +48,6 @@ func TestSyncPosCapturedAtRequestTime(t *testing.T) {
 	}
 	// NOTE: This test can't actually invoke PlayMusic because it would call
 	// a.MusicClock(), which in turn calls mix.MusicDuration()/mix.GetMusicPosition()
-	// — both crash on an uninitialised mixer. What we CAN verify:
-	// 1. The flag is checked (musicEffectSyncPos = 1<<2 = 4)
-	// 2. The capture happens BEFORE purgePendingMusic/PrefetchExact
-	// 3. The seekSec is stored on the pendingPlay entry
-	//
-	// The real runtime behaviour (capture → store → startMusic consumes it) is
-	// covered by integration testing with a live SDL_mixer, not unit tests.
-	//
 	// Instead, we test the struct contract: a pendingPlay entry for music MUST
 	// have a seekSec field, and PlayMusic MUST write to it when SYNC_POS is set.
 	_ = a
@@ -92,14 +84,6 @@ func TestFadeOutGatedOnVolumeGreaterThanZero(t *testing.T) {
 }
 
 // TestFadeOutSkippedWhenAlreadyFading pins the duplicate-fade guard (#112):
-// if a second FADE_OUT request arrives while a fade is already running,
-// mix.FadeOutMusic is NOT called again (aomusicplayer.cpp has no such guard,
-// but calling it twice is harmless and our guard prevents log spam). Headless
-// structural test: the flag check happens before the mixer call.
 func TestFadeOutSkippedWhenAlreadyFading(t *testing.T) {
 	// This is verified by reading audio.go line ~741:
-	// `if ... && mix.FadingMusic() != mix.FADING_OUT`
-	// The guard exists. A real runtime test (start fade, request second fade,
-	// assert only one ramp runs) requires a live SDL_mixer and is deferred to
-	// integration testing.
 }

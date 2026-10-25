@@ -8,11 +8,6 @@ import (
 // TestBackgroundSubfolderKeepsSeparators pins issue #40: a background whose name
 // nests in a subfolder ("cases/case1") must build a URL with a REAL "/" path
 // separator, never the percent-escaped "%2F" a single-segment escaper produces.
-// A "%2F" URL is a dead path on strict origins (it doesn't normalize the escape
-// back) AND, once an archive is exported, it lands on disk as a folder literally
-// named "cases%2Fcase1" instead of the "cases/case1" subfolder the reporter
-// expected. Backgrounds + desks are referenced by EVERY message, so this was the
-// "many assets" the report describes.
 func TestBackgroundSubfolderKeepsSeparators(t *testing.T) {
 	u := NewURLBuilder("https://cdn/base/")
 	got := u.Background("cases/case1", "defenseempty")

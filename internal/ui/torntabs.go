@@ -226,9 +226,6 @@ func (classic1 *classicState) tornTabOrder() [len(tornTabTable)]int {
 
 // bringTornToFront promotes the topmost torn panel under a fresh left-click to
 // the front of the z-order, so clicking a floating panel (anywhere in its rect)
-// raises it above the others — the standard window behaviour the old fixed
-// table order lacked (the Players tab always drew over Music/Areas no matter
-// how the panels were arranged).
 func (classic1 *classicState) bringTornToFront(e *env, w, h int32) {
 	c := e.ctx
 	if !c.clicked {
@@ -296,7 +293,6 @@ func (a *App) drawTornTabs(w, h int32) {
 		// Redock: RIGHT-CLICK the header — a deliberate gesture. The old one-click "x"
 		// sat in the corner and was far too easy to hit by accident during normal play
 		// (playtest: it was hit by accident in normal play), so it's gone.
-		// In edit mode the tray chip / right-click-reset handle redocking instead.
 		if !a.classic.classicEdit {
 			c.TooltipAfter("redock:"+t.key, hdr, "Right-click to redock this panel")
 			if c.rightClicked && c.hovering(hdr) {

@@ -1,7 +1,6 @@
 package ui
 
 // Procedural generators — the RASTERISER half (v1.90.0 W4).
-// docs/wip/THEME-EDITOR-DESIGN.md §6.3, docs/THEME-FORMAT.md §5.
 // The SPEC (name, params, content-address hash) is internal/theme/generator.go, and
 // WIRE NAMES ARE THE FORMAT: append-only, never renamed, never repurposed. An
 // unknown name degrades to a flat fill and the element still draws (format rule 3).
@@ -267,7 +266,6 @@ func RasterGenerator(g theme.GeneratorSpec) *image.RGBA {
 
 // genParseParams resolves the spec's ordered k=v list into the typed view. Cold
 // path: it parses strings, which is exactly what the generators must never do.
-//
 // LATER WINS on a repeated key, which is the same rule the INI reader applies to a
 // repeated key in a section — one file, one convention.
 func genParseParams(g theme.GeneratorSpec) GenParams {
@@ -329,7 +327,6 @@ func genAtoi(v string) int {
 // integer avalanche over (x, y, seed). Chosen over math/rand for the reason clause 1
 // gives — a generator seeded from a stream would depend on the ORDER its pixels were
 // visited, so a future loop reorder would silently change every seeded tile.
-// Splitmix64's finalizer, which is the standard well-mixed 64-bit avalanche.
 func genHash(x, y, seed int32) uint64 {
 	v := uint64(uint32(x))*0x9E3779B97F4A7C15 ^ uint64(uint32(y))*0xC2B2AE3D27D4EB4F ^ uint64(uint32(seed))*0x165667B19E3779F9
 	v ^= v >> 30
@@ -514,10 +511,6 @@ func genDisc(img *image.RGBA, cx, cy, r float64, c color.RGBA) {
 }
 
 // grid — Vaporwave floor, Cyberpunk wireframe, perfboard.
-// pitch: cell px (default 16). size: line width px (default 1).
-// Pcts[0] (`pct`): perspective strength — rows bunch toward the top (design §6.6 R6:
-// perspective FOLDS INTO grid; `pgrid` does not exist).
-// Pcts[1] (`dots`): 0..100; above 50 only the intersections are drawn.
 func tileGrid(p GenParams) (int32, int32) { c := p.pitchOr(16); return c, c }
 
 func drawGrid(w, h int32, p GenParams) *image.RGBA {
@@ -624,9 +617,6 @@ func genLine(img *image.RGBA, x0, y0, x1, y1, width float64, c color.RGBA) {
 }
 
 // noise — VHS grain, Higurashi.
-// size: speck px (default 1). seed: REQUIRED for a stable look across runs.
-// Pcts[0] (`density`): 0..100 percent of specks lit (default 20).
-// Pcts[1] (`amp`): 0..100 luma swing applied to the speck's alpha (default 100).
 func tileNoise(p GenParams) (int32, int32) { return theme.GenTileMaxPx, theme.GenTileMaxPx }
 
 func drawNoise(w, h int32, p GenParams) *image.RGBA {
@@ -691,10 +681,6 @@ func drawWoodgrain(w, h int32, p GenParams) *image.RGBA {
 }
 
 // gradient — everything.
-// A two-stop ramp from tint to accent across the tile at Angle. Unlike the ELEMENT's
-// own two-stop plate (paintElementGradient), this one is a genuine arbitrary angle:
-// it is rasterised once, off the frame path, so there is no zero-allocation budget
-// to respect and no rotated geometry to submit.
 func tileGradient(p GenParams) (int32, int32) { return theme.GenTileMaxPx, theme.GenTileMaxPx }
 
 func drawGradient(w, h int32, p GenParams) *image.RGBA {
@@ -759,10 +745,6 @@ func drawGlow(w, h int32, p GenParams) *image.RGBA {
 }
 
 // stripes — Persona 5, warning tape, hairlines, phosphor rules.
-// pitch: period px (default 12). size: stripe width px (default 4).
-// Angle: stripe direction. count/`bloom`: halo width px, painted in `accent`.
-// Pcts[0] (`fade`): 0..100, ends ramp to transparent.
-// Pcts[1] (`phase`): 0..100 of one period, so two stripe elements can interleave.
 func tileStripes(p GenParams) (int32, int32) {
 	period := p.pitchOr(12)
 	// The tile has to be a whole number of periods on BOTH axes for a diagonal
@@ -846,9 +828,6 @@ func drawHatch(w, h int32, p GenParams) *image.RGBA {
 }
 
 // plate — the merge of bevelplate / slabcut / capsule / notchband.
-// A filled rectangle tile with a decorated edge, drawn 9-sliced so the edge keeps a
-// fixed device size at any anchor size.
-// pitch: groove period px (0 = flat face). size: edge extent px (default 6).
 func tilePlate(p GenParams) (int32, int32) {
 	e := 2 * (p.sizeOr(6) + p.pitchOr(0))
 	return clampTilePx(e), clampTilePx(e)
@@ -996,8 +975,6 @@ func frameAlong(x, y, w, h int32, dx, dy float64) float64 {
 
 // radial — the merge of starburst / spikeburst / spokes / ellipsering / speedlines /
 // sundisc. One polar function with six presets' worth of knobs.
-// pitch: ray count (default 12). size: outer radius px (0 = fill the tile).
-// count: repeats packed into the tile (default 1). seed: jitter.
 func tileRadial(p GenParams) (int32, int32) {
 	r := p.sizeOr(64)
 	n := int32(clampInt(int(p.countOr(1)), 1, int(genRepeatCap)))
@@ -1067,7 +1044,6 @@ func genRing(img *image.RGBA, cx, cy, r, width float64, c color.RGBA) {
 // mottle — the merge of cork / paper / clouds. Smooth low-frequency value noise,
 // which is genuinely a different function from `noise` (per-pixel) and not a
 // parameterisation of it — all three authors said so independently.
-// pitch: base feature size px (16 = newsprint, 96 = cloud, 2 = cork granule).
 func tileMottle(p GenParams) (int32, int32) { return theme.GenTileMaxPx, theme.GenTileMaxPx }
 
 func drawMottle(w, h int32, p GenParams) *image.RGBA {
@@ -1109,9 +1085,6 @@ func drawMottle(w, h int32, p GenParams) *image.RGBA {
 
 // checkerdisc — a checkered disc inlay in perspective. Proposed independently and
 // identically by two presets, both of which call it a signature.
-// pitch/`cells`: cells across the diameter (default 6). size/`ring`: ring band px
-// (default 8). Angle: rotation. Pcts[1] (`squash`): 100 circle, 45 the graded
-// perspective value (default 100).
 func tileCheckerdisc(p GenParams) (int32, int32) {
 	return theme.GenTileMaxPx, theme.GenTileMaxPx
 }
@@ -1161,7 +1134,6 @@ func drawCheckerdisc(w, h int32, p GenParams) *image.RGBA {
 // skyline — mirrored ridge silhouettes / column bars. One consumer, but it carries
 // two of that preset's roles (mountain ranges and equalizer columns) with one
 // algorithm, and nothing else in the set draws a horizon.
-// pitch: ridge segment width px (default 16). size: peak height px (default 48).
 func tileSkyline(p GenParams) (int32, int32) {
 	return theme.GenTileMaxPx, clampTilePx(p.sizeOr(48) * 2)
 }
@@ -1214,7 +1186,6 @@ func drawSkyline(w, h int32, p GenParams) *image.RGBA {
 // wingmark — a two-lobe wing / arc mark, scattered. One consumer, kept because it
 // is the design document's own worked example: §2.2's `[element.butterflies]` IS
 // this element, so cutting it would mean the spec's headline example does not ship.
-// size: mark size px (default 12). count: marks per tile (default 6).
 func tileWingmark(p GenParams) (int32, int32) {
 	return theme.GenTileMaxPx, theme.GenTileMaxPx
 }

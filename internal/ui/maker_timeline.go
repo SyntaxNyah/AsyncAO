@@ -41,10 +41,6 @@ func abs32(v int32) int32 {
 }
 
 // makerTLDurations fills durs (reused) with each event's display duration in ms:
-// the recorded OffsetMs gap to the next event, clamped [min,max]. When the
-// offsets carry no pacing signal at all (a hand-built scene, or an archive that
-// didn't capture wall-clock — every gap <= 0), it falls back to equal widths
-// rather than a degenerate fused bar. By array order.
 func makerTLDurations(evs []recEvent, durs []float64) []float64 {
 	durs = durs[:0]
 	if len(evs) == 0 {

@@ -14,9 +14,6 @@ import (
 
 // themesFixtureDir holds the hand-authored theme fixtures. They were written
 // AGAINST docs/THEME-FORMAT.md BY HAND, never exported by our own writer:
-// hand-writing the format is what exposes its mistakes while they are still
-// cheap, and a fixture the writer produced would only prove the writer agrees
-// with itself.
 const themesFixtureDir = "testdata/themes"
 
 func readThemeFixture(t *testing.T, theme, file string) []byte {
@@ -681,7 +678,6 @@ func onlyElement(t *testing.T, s *Sidecar) *Element {
 // (sidecar_write.go's header, and §7's "emit a key only when the file does not
 // already mean what you are writing"): a number the reader had to NARROW still
 // means what the file says, so an untouched save must not touch it.
-// A NEW numeric key that clamps, wraps or truncates needs a row here.
 func TestOutOfRangeNumbersClampAndAreLeftInTheFile(t *testing.T) {
 	cases := []struct {
 		what  string
@@ -764,10 +760,6 @@ func TestOutOfRangeNumbersClampAndAreLeftInTheFile(t *testing.T) {
 
 // TestALegalClockSpellingIsNeverDuplicated pins the other half of "an untouched
 // save changes nothing": the SECTION NAME is the author's too.
-// "01" matches the format's id grammar and reads as clock 1. A writer that
-// rebuilt the name from the array index would not find [clock.01], would append
-// a [clock.1] beside it, and the file would then say the same thing twice — a
-// mutation of a theme nobody edited.
 func TestALegalClockSpellingIsNeverDuplicated(t *testing.T) {
 	for _, spelling := range []string{"1", "01", "0000001"} {
 		head := "[theme]\nformat = 1\n\n[clock." + spelling + "]\n"
@@ -906,11 +898,6 @@ func repeatPairs(n int) string {
 
 // TestUnknownKindsPastNoteCapStillLoad is the OTHER half of the cap rule, and
 // it points the opposite way: NoteCap bounds the import REPORT, never the load.
-// The file below is a perfectly legal format-2 theme. ElementCap elements of a
-// kind this build does not draw is EXACTLY what §7.4's forward-compatibility
-// path looks like from an older client — and each one costs a note. A reader
-// that let the 65th note refuse the parse would reject a legal file for being
-// too new, which is the one thing §7.1 says a reader never does.
 func TestUnknownKindsPastNoteCapStillLoad(t *testing.T) {
 	if ElementCap <= NoteCap {
 		t.Fatalf("this gate needs more elements (%d) than notes (%d) to reach the cap at all",
@@ -1009,9 +996,6 @@ func TestInvalidIdsPastNoteCapStillLoad(t *testing.T) {
 }
 
 // TestZeroValueElementIsInert pins the property every fixed-array design needs:
-// a slot nobody filled in cannot paint. Element{} is an ElemImage with no
-// media, so a cleared row, a zeroed array entry or a struct built by a future
-// caller is silently harmless instead of silently drawing.
 func TestZeroValueElementIsInert(t *testing.T) {
 	var zero Element
 	if !zero.Inert() {
@@ -1083,9 +1067,6 @@ func TestPaneHostsAreDisjoint(t *testing.T) {
 	}
 	// A save persists the sanitation, on exactly one line. This is the one place
 	// loading changes a value rather than preserving it, and it is deliberate:
-	// the conflicting claim can never be honoured (the widget draws once), so
-	// carrying it in the file would keep the theme in a state it never renders
-	// in. The author is told, in Notes, before they ever press save.
 	out, err := s.Bytes()
 	if err != nil {
 		t.Fatal(err)
@@ -1193,10 +1174,6 @@ func TestHandAuthoredFixturesRoundTripByteIdentical(t *testing.T) {
 // courtroom_design.ini is not written in the normal path at all — and in the one
 // export mode that does write it, it goes through INIDoc, whose behaviour on any
 // line it did not deliberately change is "emit the original bytes".
-// The AO2 half of the umineko fixture is checked in claiming exactly that in its
-// own header. This is the assertion that makes the header true instead of
-// decorative — and the second half proves the fixture is not vacuous: the
-// override next door really does move the keys this file declares.
 func TestTheAO2HalfOfAThemeIsNeverRewritten(t *testing.T) {
 	src := readThemeFixture(t, "umineko-meta-world", DesignFileName)
 	d, err := ParseINIDoc(src)
@@ -1515,9 +1492,6 @@ func TestLoadSidecarTreatsAMissingFileAsAStockTheme(t *testing.T) {
 
 // TestSidecarColoursAcceptEitherHexCase pins the colour grammar's case-blindness.
 // It exists because it was NOT case-blind and nobody could see the difference.
-// Both the '#rrggbb' and '#rrggbbaa' widths are covered, and a genuinely invalid
-// digit must still fail — a parser that accepted everything would pass the first
-// half of this test and mean nothing.
 func TestSidecarColoursAcceptEitherHexCase(t *testing.T) {
 	for _, tc := range []struct {
 		in   string

@@ -135,9 +135,6 @@ func TestIncrementalMediaLandDoesNotRestartTheThemeClock(t *testing.T) {
 	defer cleanup()
 
 	// A theme that has been on screen for a while, with a message already rastered.
-	// Anchored to a.now() rather than to time.Now(): themeElapsed reads the FRAME's
-	// clock snapshot, and a fixture that never drew a frame would otherwise measure
-	// the gap between the snapshot and the wall clock.
 	before := a.now().Add(-5 * time.Second)
 	a.toolbox.themeAt = before
 	a.raster.rasterText = "an already-rastered IC line"
@@ -187,12 +184,6 @@ func TestIncrementalMediaLandDoesNotRestartTheThemeClock(t *testing.T) {
 }
 
 // TestThemeArtBudgetBarMemoizesItsLabel is the settings row's own gate.
-// TWO properties, and the second is why the memo exists at all. The label has to
-// quote the numbers the ADMISSION GATE uses — a bar that formatted its own idea of
-// the budget would reassure a user about an allowance nothing enforces — and it has
-// to cost nothing on the frames where those numbers have not moved, which is all of
-// them: drawThemeCatalogRows next door went to some length to build no strings per
-// frame, and a bar formatting "%.1f MiB" beside it would put the cost straight back.
 func TestThemeArtBudgetBarMemoizesItsLabel(t *testing.T) {
 	budget := render.ThemeMediaByteCap(config.TexBudgetDefaultMiB)
 	var memo themeArtBarText

@@ -14,8 +14,6 @@ func TestVideoMaxFrames(t *testing.T) {
 	}
 	// The true maximum-length case is the CONFIG clamp's ceiling (maxExportFPS=30 —
 	// the UI presets top out at 24, but the stored pref may be anything in [6,30]):
-	// 24*3600*30 = 2,592,000 frames. Pin both it and the top preset, and confirm
-	// both dwarf the old flat 18000 brake so hours-long exports aren't cut short.
 	if got := videoMaxFrames(30); got != 2_592_000 {
 		t.Errorf("videoMaxFrames(30) = %d, want 2592000 (24h @ the 30fps config ceiling)", got)
 	}

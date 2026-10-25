@@ -41,8 +41,6 @@ type emojiKey struct {
 	emoji *ttf.Font // the colour-emoji face — DISTINCT per size, so the same emoji at two
 	// sizes (picker vs IC-bar button vs reaction float) can't share one cached raster and
 	// render at the wrong size. Omitting it was a cross-size cache collision (#36).
-	// bold is the raster's WEIGHT (F1b): the spans are built bold or plain, so the same
-	// showname drawn bold in the chatbox and plain elsewhere must not share one raster.
 	bold bool
 }
 
@@ -60,7 +58,6 @@ func (a *App) labelEmoji(primary, emoji *ttf.Font, x, y, maxW int32, text string
 // one texture on the plain path, a bold span on the raster path — replacing the
 // 1 px-offset second pass the showname surfaces used to make, which smeared into a
 // visible double at a fractional UI scale (F1b; see Ctx.textTextureBold).
-// bold==false is byte-identical to the old labelEmoji on both branches.
 func (a *App) labelEmojiWeight(primary, emoji *ttf.Font, x, y, maxW int32, text string, col sdl.Color, bold bool) {
 	c := a.ctx
 	needEmoji := render.NeedsEmojiFallback(text)
@@ -282,9 +279,6 @@ func (c *Ctx) emojiRasterWeight(text string, col sdl.Color, primary, emoji *ttf.
 	dev := c.textDevPct
 	textFonts := c.coverRunes(primary, runes) // per-rune covering face (mixed-script) — logical set
 	// F5: the runes NO text face covers that the colour face can draw (♥ ✨ ⭐ …).
-	// coverRunes left those on `primary`, i.e. pointed at a .notdef box; the mask says
-	// which ones to hand the emoji face instead. nil — no such rune — on every ordinary
-	// label, so this costs one cheap compare per rune and no allocation.
 	picto := c.uncoveredPictographMask(primary, runes)
 	// No emoji face AND every rune covered by primary → nothing this raster can add;
 	// degrade to the single-font path (the caller tofus the emoji until the face lands),
@@ -344,9 +338,6 @@ func (c *Ctx) cacheEmojiRaster(key emojiKey, m *render.MessageRaster) *render.Me
 }
 
 // purgeEmojiCache destroys every cached raster's textures and empties the cache.
-// Render thread only (the textures are render-thread-owned). Called from
-// purgeTextCache (a primary-font rebuild leaves the keys' pointers dead) and from
-// SetEmojiFont (an emoji-face swap leaves the cached glyphs stale).
 func (c *Ctx) purgeEmojiCache() {
 	for k, m := range c.emojiCache {
 		if m != nil {

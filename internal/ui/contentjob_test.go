@@ -398,8 +398,6 @@ func TestContentProbeFoundMissing(t *testing.T) {
 // TestPackageBundleLayout pins the package's on-disk shape against the EXISTING
 // bundle format: the found asset lands at its origin-relative path, the bundled
 // .aorec is present + marked Bundled, and the plain-text gap list is written in.
-// It also round-trips the sprite bytes to prove packaging reuses the probed
-// bytes verbatim.
 func TestPackageBundleLayout(t *testing.T) {
 	withExeDataRoot(t)
 	sprite := pngBytes()

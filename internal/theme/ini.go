@@ -13,8 +13,6 @@ import (
 
 // INI is a minimal QSettings-compatible INI reader: optional [sections],
 // key=value pairs, a leading UTF-8 BOM, ';' comments (whole-line OR inline)
-// and '#' comment lines, whitespace-insensitive keys. Section-less keys live
-// under the root section "".
 type INI struct {
 	values map[string]string // "section/key" (lowercased) → raw value
 }
@@ -22,14 +20,6 @@ type INI struct {
 const iniSectionSep = "/"
 
 // utf8BOM is the byte-order mark Windows text editors prepend to a UTF-8 file.
-// Qt's QSettings::IniFormat strips it, so a BOM'd theme's FIRST key parses
-// normally under AO2 (verified against Qt 6.5.3: a file starting
-// EF BB BF "showname = 16" reads back under the key "showname"). Without this
-// the U+FEFF becomes part of the key — "\ufeffshowname" — and the entire first
-// entry of the file silently disappears, which is exactly how the Uminek2x and
-// Uminek3x themes lost their showname font size.
-// Written as an escape on purpose: a literal BOM in the source is invisible in
-// every editor and diff, which is what makes this class of bug so quiet.
 const utf8BOM = "\ufeff"
 
 // iniCommentStart is the character QSettings::IniFormat treats as the start of
@@ -38,7 +28,6 @@ const utf8BOM = "\ufeff"
 // too (AO2-Client text_file_functions.cpp:411) — and it was measured against the
 // 74-theme reference corpus (517 INI files, 7335 lines containing a ';') before
 // being turned on.
-// Implementing either means carrying quote state (and Qt's whole escape table)
 const iniCommentStart = ';'
 
 // LoadINI reads path; a missing file yields an empty (usable) INI.

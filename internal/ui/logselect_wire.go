@@ -120,7 +120,6 @@ func (a *App) highlightFill() sdl.Color {
 // logLineCount / logLineText give the shared selection code random access to a
 // log's CURRENT wrapped display lines. Selection only needs the displayed text
 // and its row index, so IC (rows with a source entry) and OOC (flat strings)
-// feed it the same way.
 func (a *App) logLineCount(which int) int {
 	if which == logSelIC {
 		return len(a.icWrap)
@@ -190,7 +189,6 @@ func (a *App) logRowFont(which int, text string) *ttf.Font {
 // logRowEmojiFont is logRowFont's emoji-fallback twin: the colour-emoji face at
 // the SAME resolved scale the row's text draws at, so logRowSplit's "does this
 // line need the per-glyph raster" gate matches drawLogLineNamed's exactly (#39:
-// an emoji baseline that didn't match the row's own scale was label 16's bug).
 func (a *App) logRowEmojiFont(which int) *ttf.Font {
 	if which == logSelIC {
 		return a.elemEmoji(elemICChatlog, a.logPct)
@@ -365,10 +363,6 @@ func (a *App) selectLogLine(which int, list sdl.Rect, scroll, lineH int32) {
 }
 
 // selectLogWord selects the word under the cursor (the double-click gesture):
-// the maximal non-space run around the hit boundary, within the one wrapped
-// display line (a word split by the wrap selects its visible half — clicks
-// land on what's drawn). Shares wordBoundsAt with the text fields and the
-// chatbox so the three gestures can never disagree.
 func (a *App) selectLogWord(which int, list sdl.Rect, scroll, lineH int32) {
 	c := a.ctx
 	p := a.logPointAt(which, list.X, list.Y, scroll, lineH, c.mouseX, c.mouseY)

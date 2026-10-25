@@ -277,9 +277,6 @@ func TestCharListTabsShowWhichRosterIsActive(t *testing.T) {
 }
 
 // TestCharSelectControlsAtTheWindowFloor is C3, both ends.
-// DOWN: only `microsoft surface 4k webao` exercises the downscale path. Its 22 px
-// design controls land on 5 px at 640x480, below the layout's own minThemedElementPx,
-// so the themed row must FALL BACK to AsyncAO's header rather than leave the user
 func TestCharSelectControlsAtTheWindowFloor(t *testing.T) {
 	const w, h = config.MinWindowW, config.MinWindowH
 

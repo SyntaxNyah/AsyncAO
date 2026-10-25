@@ -36,7 +36,6 @@ func TestContainsWord(t *testing.T) {
 // word (so "tif" no longer self-pings on "motif"), while a trailing '*' opts into
 // a looser prefix match that only requires a WORD START (so "obj*" still catches
 // "objection" but "tif*" still won't hit "motif"). A lone "*" must never match.
-// Inputs arrive already lowercased from checkCallwords.
 func TestCallwordHit(t *testing.T) {
 	cases := []struct {
 		text, word string
@@ -69,9 +68,6 @@ func TestCallwordHit(t *testing.T) {
 }
 
 // TestContainsWordPrefix pins the word-START matcher backing the '*' escape hatch:
-// the needle must begin a word (bounded left by a non-word rune or the string
-// start) but is free on its right edge, and the scan keeps going past an interior
-// reject so a later real word-start still lands. Both args arrive lowercased.
 func TestContainsWordPrefix(t *testing.T) {
 	cases := []struct {
 		hay, needle string

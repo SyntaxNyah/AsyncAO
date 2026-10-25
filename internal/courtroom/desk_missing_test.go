@@ -134,9 +134,6 @@ func TestMissingDesksBounded(t *testing.T) {
 
 // TestBackgroundChangeReDerivesDesk pins the reported "the background is missing
 // its desk on purpose, but the default desk appears anyway".
-// It also pins the hazard: applyDeskMods recomputes PairActive and the speaker
-// offsets from c.current too, so re-deriving at the WRONG phase would flip pair
-// state mid-preanim. Passing the current phase must leave both untouched.
 func TestBackgroundChangeReDerivesDesk(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
 

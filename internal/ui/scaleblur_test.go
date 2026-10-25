@@ -2,8 +2,6 @@ package ui
 
 // F1 / F1b — the "everything above 1345x840 goes blurry" report, and the smeared
 // speaker names inside it.
-//     (TestAutoScaleStepRerastersTextAtDeviceScale). This is #77 Part A's wiring —
-//   - Floating reaction badges (#2) rasterize at the device scale and blit
 
 import (
 	"bytes"
@@ -19,8 +17,6 @@ import (
 // autoScaleStepW / autoScaleStepH are the FIRST window size that leaves 100%,
 // derived from the production constants rather than typed as 1344x840 — a test that
 // hardcoded the tester's numbers would go quiet the day the reference size moved.
-// (config.MinAutoUIScalePercent is the auto floor, 100 — NOT MinUIScalePercent,
-// which is the 75% floor of the MANUAL slider and never governs this path.)
 var (
 	autoScaleStepW = int32(autoScaleRefWidth) * (config.MinAutoUIScalePercent + config.UIScaleStepPercent) / config.MinAutoUIScalePercent
 	autoScaleStepH = int32(autoScaleRefHeight) * (config.MinAutoUIScalePercent + config.UIScaleStepPercent) / config.MinAutoUIScalePercent
@@ -331,9 +327,6 @@ func TestLabelDeviceExactAtFractionalScale(t *testing.T) {
 			}
 
 			// Find the glyph's own first ink row in the CORRECT (device-exact)
-			// render, scanning top-down over the whole canvas. Every row strictly
-			// above it is background BY CONSTRUCTION in a correct render — this
-			// is a property of how `top` was found, not an assumption.
 			top := int32(-1)
 		scanTop:
 			for y := int32(0); y < canvasH; y++ {
@@ -433,9 +426,6 @@ func BenchmarkLabelAtFractionalScale(b *testing.B) {
 }
 
 // BenchmarkLabelAtIdentityScale is BenchmarkLabelAtFractionalScale's control:
-// uiDeviceExactAt is false at 100% by construction, so this must show no added
-// cost from the fix — the whole point of keeping the identity-scale short
-// circuit.
 func BenchmarkLabelAtIdentityScale(b *testing.B) {
 	ren, cleanup := newCaptureHarness(b)
 	defer cleanup()

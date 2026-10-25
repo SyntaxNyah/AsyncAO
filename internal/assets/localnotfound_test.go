@@ -22,7 +22,6 @@ import (
 // TestLocalMissIsProbedOncePerTTL is the pin: after a conclusive miss the mount
 // is not consulted again inside the window, and IS consulted again once the
 // window closes.
-//
 // The discriminator is stronger than a probe counter: the file MATERIALISES
 // between the two fetches. A re-probe would necessarily find it, so a second
 // miss can only mean the disk was never touched — and the third fetch, past the
@@ -55,10 +54,6 @@ func TestLocalMissIsProbedOncePerTTL(t *testing.T) {
 }
 
 // TestLocalMissMemoNeverShadowsAHit guards the obvious way this could go wrong:
-// the memo must only ever answer for URLs that genuinely missed. A present file
-// resolves on every fetch, and a miss recorded for one URL says nothing about
-// its siblings (the memo is keyed by the FULL URL, the client-wide cache-key
-// convention).
 func TestLocalMissMemoNeverShadowsAHit(t *testing.T) {
 	mount := t.TempDir()
 	seedOverlayMount(t, mount, "characters/phoenix/(a)normal.png", []byte("HIT"))
@@ -106,7 +101,6 @@ func TestLocalMissMemoIsScopedToItsMountGeneration(t *testing.T) {
 // report exercised — Manager.Prefetch → resolveChain → walkCandidates →
 // netFetch → LocalFetcher — and pins that the second per-message re-demand of a
 // missing desk overlay reaches the mount zero times.
-//
 // Same discriminator, applied end to end: every candidate format is written to
 // the mount between the two prefetches. Without the memo the second pass would
 // deliver a decoded asset; with it, the pass is still a conclusive miss.

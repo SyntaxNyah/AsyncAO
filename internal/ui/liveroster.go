@@ -345,8 +345,6 @@ func (a *App) rosterStamp() time.Time {
 
 // setRosterLegacy switches the player list between the live roster and the
 // /getarea snapshot. The active roster (its length and index→player mapping)
-// changes, so the index-keyed icon cache is dropped; switching back to live
-// rebuilds at once.
 func (a *App) setRosterLegacy(legacy bool) {
 	if a.roster.rosterLegacy == legacy {
 		return

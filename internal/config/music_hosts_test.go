@@ -60,10 +60,6 @@ func TestMusicURLAllowed(t *testing.T) {
 }
 
 // TestMusicURLAllowedPathEntry pins the OPTIONAL path-scoped allowlist entry:
-// nothing server-specific is hardcoded, but a user can ADD "miku.pizza/base/youtube"
-// so only actual song files under that folder record (the rest of the host —
-// including its own music library — still never saves), subdomains count, the
-// grouping label is the folder, and it's removable like any other entry.
 func TestMusicURLAllowedPathEntry(t *testing.T) {
 	p, _ := newTestPrefs(t)
 	// Nothing hardcoded: without the entry, the server path does NOT record.

@@ -168,9 +168,6 @@ func stagedRoomPaths() []stagedRoomPath {
 		authoring: true,
 	}, {
 		// The theme editor's canned Preview. A VIEWING room, not an authoring one:
-		// its whole job is to show the author what a PLAYER sees, so the viewer's
-		// effect prefs must reach it (and requirement 6 — reduce motion freezes the
-		// demo — is that same pref arriving, not an exemption from it).
 		name: "the theme editor's canned preview (enterEditorPreview)",
 		drive: func(t *testing.T, a *App) *courtroom.Courtroom {
 			if a.elemBake.themeSidecar == nil {

@@ -18,8 +18,6 @@ const blipTestOrigin = "http://cdn.example.com/base/"
 // and — as an UNCHECKED return — the AO1 legacy file "sfx-blip" + name under
 // sounds/general/ — one token, a DASH, and no separator, which is why
 // gender=male means sfx-blipmale, not sfx-blip_male or sfx-blip/male.
-// Each rung splits by casing on a case-sensitive mirror, lowercase first (the
-// client-wide identity convention; MiscChatboxCandidates is the precedent).
 func TestBlipCandidatesWalkGetBlipsLadder(t *testing.T) {
 	u := NewURLBuilder(blipTestOrigin)
 	for _, tc := range []struct {

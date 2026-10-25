@@ -23,9 +23,6 @@ import (
 // to drop the row selection and its cached description (the list is re-filtered, so
 // every index moves), reset the scroll, and abandon any half-finished row edit —
 // four things a second copy of the toggle would eventually forget one of.
-// Idempotent on purpose: the menu's "Direct connect…" row leaves the Phone Book page
-// unconditionally, and doing that from the all-servers page must not clear a
-// selection the user is reading.
 func (a *App) setPhoneBookPage(on bool) {
 	if a.conn.lobby.phoneBookPage == on {
 		return
@@ -129,7 +126,6 @@ func (a *App) cancelPhoneBookEdit() {
 // commits the rename/re-address through UpdateFavorite, and — because a
 // successful address change alters the row's identity key — clears the edit
 // state and re-merges in the same commit so the row list stays consistent.
-// desc is passed through unchanged (the entry keeps its description).
 func (a *App) savePhoneBookEdit(oldURL, desc string) {
 	in := strings.TrimSpace(a.conn.pbEditAddr)
 	if in == "" {

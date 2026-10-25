@@ -28,10 +28,6 @@ var (
 
 // RenameElement changes an element's id, in the model and in the lossless
 // carrier, or changes nothing at all.
-// A document that has never seen this element — one the editor authored this
-// session — has no header to move, and that is a success rather than a failure:
-// the writer creates the section under the new name on the next save, which is
-// what it would have done anyway.
 func (s *Sidecar) RenameElement(old, next string) error {
 	idx, from, to, err := s.renamePlan(old, next)
 	if err != nil || idx < 0 {
@@ -49,12 +45,6 @@ func (s *Sidecar) RenameElement(old, next string) error {
 
 // CanRenameElement reports the reason RenameElement would refuse, without moving
 // anything.
-// IT IS NOT A SECOND COPY OF THE RULES — both entry points are renamePlan — and
-// that is the whole reason it exists rather than the caller re-deriving "is this
-// id free?" for itself. The editor needs the answer BEFORE it records an undo
-// entry: a setter cannot say no (it has no return value and the op is already on
-// the ring by the time it runs), so a refusal discovered there would be either a
-// silent no-op or an undo step that undoes nothing.
 func (s *Sidecar) CanRenameElement(old, next string) error {
 	_, _, _, err := s.renamePlan(old, next)
 	return err

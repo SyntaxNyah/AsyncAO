@@ -560,10 +560,6 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		}
 		y += 4
 		// Hue: one slider that drives R/G/B together (a full-vividness hue).
-		// With Hue paint on this IS the painted hue ("set all the colors to the
-		// same hue, then edit that hue"); as a plain tint it's a pure-hue tint.
-		// Derived from the stored RGB, so the swatches and RGB sliders move it.
-		// The wheel helpers work in h ∈ [0,1]; the slider shows degrees.
 		hue, _, _ := rgbToHSV(p.R, p.G, p.B)
 		huePos := clampI32(int32(hue*360+0.5), 0, 359)
 		c.Label(x, y, "Hue", ColTextDim)

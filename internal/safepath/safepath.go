@@ -3,9 +3,6 @@
 // root it was mounted at: ".." / absolute-path refusal (zip-slip), the refusal of
 // everything that is neither a plain directory nor a regular file (symlinks first,
 // but FIFOs, sockets and device nodes too), and a recursion depth bound.
-// SDL-free and stdlib-only by construction (CLAUDE.md rule 1): nothing here may
-// grow a dependency that would keep it out of a worker goroutine. WalkFiles
-// blocks on the disk and is goroutine-only (rule 2).
 package safepath
 
 import (
@@ -76,9 +73,6 @@ func Join(root, rel string) (string, error) {
 // WalkFiles visits every regular file under root, passing the root-relative path
 // with forward slashes. Returning false from fn stops the walk (that is how a
 // caller enforces its own entry/byte cap). BLOCKING — goroutine only (rule 2).
-// UnsafePath states the same refusal for a caller that holds a PATH rather than a
-// DirEntry — the mount fetcher's case fold, which enumerates directories of its own
-// (assets.foldJoin). Two mechanisms, one policy, one package.
 func WalkFiles(root string, maxDepth int, fn func(rel string) bool) error {
 	stopped := false
 	err := filepath.WalkDir(root, func(p string, e fs.DirEntry, err error) error {
@@ -130,10 +124,6 @@ func WalkFiles(root string, maxDepth int, fn func(rel string) bool) error {
 // os.Stat-based answer reports the link's TARGET (a link to a directory looks like a
 // directory, and a dangling link looks like nothing at all), which is precisely the
 // blindness the guard exists to remove. BLOCKING (one lstat) — goroutine only, rule 2.
-// A path that cannot be lstat'd is not refused. It cannot be traversed or read either
-// — the caller's own open fails with the same error — so an unreadable candidate needs
-// no refusal of its own, and refusing it would turn a permissions problem into a
-// security-looking one.
 func UnsafePath(path string) bool {
 	fi, err := os.Lstat(path)
 	if err != nil {

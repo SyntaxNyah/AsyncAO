@@ -53,8 +53,6 @@ func editorCanvasElement(id string, r theme.Rect) theme.Element {
 // stageEditorCanvas opens the editor over the themed fixture with one element per
 // offset, each a editorGateBoxPx box placed at the canvas centre plus that offset in
 // DESIGN px.
-// The elements are authored BEFORE the open, so the document's baseline contains
-// them — which is what makes the exit-without-saving gate measure the right thing.
 func stageEditorCanvas(t *testing.T, offsets ...[2]int) (*App, func(), []editTarget) {
 	t.Helper()
 	a, cleanup := stageFrameDrivenApp(t)
@@ -375,9 +373,6 @@ func TestDragHoldsOneUndoGroupForTheWholeGesture(t *testing.T) {
 
 // TestEveryHandleResizesItsOwnEdges is W6's first named consumer: eight grips, each
 // moving exactly the edges its mask names and nothing else.
-// The fixture box is sized past editHandleRoomPx precisely so the full set is
-// offered (see editorGateBoxPx) — on a cramped box the design keeps one grip, and a
-// gate that used one would be measuring the fallback.
 func TestEveryHandleResizesItsOwnEdges(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()
@@ -601,8 +596,6 @@ func TestHoldingAWidgetStillNeverCriesRefused(t *testing.T) {
 	// …and the rule itself, asked straight through the funnel. The loop above holds a
 	// real gesture still, which is the reported symptom, but where the box lands
 	// depends on the grid and the magnet; this cannot be flaky and cannot be vacuous.
-	// A request for the rect the widget already holds is precisely what every
-	// motionless frame of a drag produces.
 	cur, ok := a.te.doc.slotRect(widget.designKey())
 	if !ok {
 		t.Fatalf("the document does not own %s", widget.designKey())

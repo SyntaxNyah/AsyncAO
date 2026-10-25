@@ -351,8 +351,6 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 	}
 	// Show EVERYONE in the room (no AsyncAO-detection filter — that needed people to
 	// send a marked IC message, so it usually showed nobody). Inviting rides /pm:
-	// AsyncAO clients get the rich invite, others get a readable PM they can ignore.
-	// "(AO)" tags players we've already confirmed are on AsyncAO.
 	roster := a.rosterView()
 	me := a.myUID()
 	shown := 0

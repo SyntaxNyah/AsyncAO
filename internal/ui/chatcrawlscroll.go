@@ -14,9 +14,6 @@ import (
 
 // crawlRow is the display row holding the LAST revealed rune, i.e. where AO2
 // puts its cursor before calling ensureCursorVisible (chat_tick's real_tick_pos).
-// The row itself comes off the raster's own line table (RowOfRune), the same one
-// the selection geometry reads, so the answer can never drift from where the
-// glyphs are.
 func crawlRow(m *render.MessageRaster, visible int) int {
 	if m == nil || visible <= 1 {
 		return 0

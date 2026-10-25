@@ -61,7 +61,6 @@ const iniDragThreshold = 6
 // handleIniFolderMenu resolves a click on the open move-to-folder menu BEFORE
 // the grid draws (so the click never leaks through to a cell). A click on a
 // row files the character; a click anywhere else closes it; Esc closes it.
-// Either way the click is consumed.
 func (a *App) handleIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
 	c := a.ctx
 	if c.escPressed {
@@ -463,7 +462,6 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 // drawWardrobeIniswapsBody is the Iniswaps section: a flat browse of every
 // character folder this client knows exists on the base, from TWO sources the
 // chip row switches between.
-// No folders in either — organizing lives in Characters.
 func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	c := a.ctx
 	a.pollIniswap()               // drain the server list (fetched on open)
@@ -971,7 +969,6 @@ type musicRow struct {
 // musicGroupKey memoizes the grouped/collapsed row layout, mirroring
 // musicFilterKey: the query plus a cheap list identity, PLUS
 // musicCollapseGen so toggling a category (or Expand/Collapse All)
-// invalidates it without re-keying on the whole collapse map every frame.
 type musicGroupKey struct {
 	q           string
 	n           int
@@ -1137,7 +1134,6 @@ func (a *App) drawMusicVolume(r sdl.Rect) {
 // the theme declares its own music_slider / sfx_slider / blip_slider rects and those
 // win (issue #21, owner decision). The Volume toggle is AsyncAO's own affordance for
 // the same job, so offering both would put two sets of volume controls on one screen.
-// Master volume and blip rate have no AO2 rect and stay reachable in Settings.
 func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExternal bool) {
 	c := a.ctx
 	if a.musicPct < config.MinLogScalePercent { // uninit / stale → match the log
@@ -1173,10 +1169,6 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 		nowLabel = a.musicTab.musicNowLabel.text(now)
 	}
 	// The search row is dropped WHOLE — draw and reserved height — in two cases:
-	// the theme declared its own music_search rect (searchExternal, below), and the
-	// volume view has replaced the track list. Filtering a list that is not on
-	// screen is nothing but ~26 px stolen from the sliders, which is what the old
-	// code's early return used to prevent.
 	hideSearchRow := searchExternal || volMode
 	total := len(a.link.sess.Music)
 	// planMusicHeader needs the count's WIDTH to size the search field, so a label

@@ -48,8 +48,6 @@ func listHasFold(list []string, want string) bool {
 // — deliberately not a scan over choices[1:] with a re-offset, because that
 // re-offset is the off-by-one that would make iniswap_remove delete the wrong
 // wardrobe entry.
-// 0 (the player's own folder) when nothing matches, which is also the
-// "not wearing anything" answer.
 func iniswapCurrentIndex(choices []string, active string) int {
 	if active == "" {
 		return 0
@@ -64,9 +62,6 @@ func iniswapCurrentIndex(choices []string, active string) int {
 
 // ensureIniswapChoices rebuilds the option list when the character or the saved
 // wardrobe changes.
-// The guard is two plain comparisons — a string and an atomic counter load —
-// because WardrobeList CLONES the slice on every call, so an unguarded rebuild
-// would allocate on the settled render path once per frame.
 func (a *App) ensureIniswapChoices() {
 	own := a.myCharName()
 	gen := a.d.Prefs.WardrobeGeneration()
@@ -101,10 +96,6 @@ func (a *App) defaultSide() string {
 // posRemoveVisible reports whether the revert-position button should be offered:
 // only when the current side differs from the character's own default. AO2:
 // `p_side.isEmpty() || p_side == default_side()` hides it (courtroom.cpp:5285-5292).
-// The isEmpty arm is kept even though AsyncAO's mySide() never returns "" (it
-// falls back to "wit"). It mirrors AO2's guard for a combobox that genuinely can
-// be empty, and costs nothing; dropping it would make this a different predicate
-// from the one being cited.
 func posRemoveVisible(side, def string) bool {
 	return side != "" && side != def
 }

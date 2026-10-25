@@ -48,10 +48,6 @@ func assertNoOverlap(t *testing.T, what string, block sdl.Rect, p *chromeRowPlan
 }
 
 // TestChromeRowNeverOverlapsAtAnySize is the totality claim, swept.
-// Every width from "narrower than one control" to "roomier than the natural row" and
-// every height from "no room for a line at all" to "room for three": for ALL of them
-// the plan is either empty or non-overlapping. There is no size at which the planner
-// is allowed to stack.
 func TestChromeRowNeverOverlapsAtAnySize(t *testing.T) {
 	want := chromeProbeCtls()
 	for w := int32(0); w <= 420; w += 3 {
@@ -129,9 +125,6 @@ func planRect(p chromeRowPlan, id int) (sdl.Rect, bool) {
 }
 
 // TestSqueezedMusicPanelNeverStacksItsHeader is the REPORTED DEFECT, end to end.
-// The two are placed by SEPARATE calls in theme_layout.go, reconciled by
-// themedStripBody, and that reconciliation is exactly what a short panel can falsify;
-// so the gate asserts across BOTH, not inside either.
 func TestSqueezedMusicPanelNeverStacksItsHeader(t *testing.T) {
 	measure := func(s string) int32 { return int32(len(s)) * 7 } // a plausible chrome face
 

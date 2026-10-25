@@ -19,14 +19,10 @@ import (
 const (
 	// themedMessageInsetPx is the inset AO2's chatbox message gets for free, on
 	// ALL FOUR sides.
-	// This is deliberately NOT the chatlog's asymmetric inset: that one leaves the
-	// RIGHT edge alone because a scrollbar track lives there, and the message has
-	// no scrollbar at all.
 	themedMessageInsetPx int32 = 4
 
 	// themedShownameInsetPx is ZERO, and that is a finding rather than an
 	// oversight — giving the showname the message's 4 px would be a divergence.
-	// AOChatboxLabel does own an indent, but exclusively inside its OUTLINED
 	// paintEvent (aotextboxwidgets.cpp:83), a mode AsyncAO does not implement.
 	themedShownameInsetPx int32 = 0
 )
@@ -111,10 +107,6 @@ func chatboxTextRects(box sdl.Rect, lay *themeLayoutCache, fallbackMsgY int32) (
 // ---------------------------------------------------------------------------
 
 // shownameExtraWidthKey is the courtroom_design.ini key that drives the ladder:
-// how many DESIGN pixels the showname box grows by at each rung. Declared by 65
-// of the 74 reference themes (32 of them 24, 14 of them 10, four 48, and one —
-// P5Theme — 225); the other nine declare 0 or omit it, which switches the whole
-// mechanism off exactly as it does in AO2.
 const shownameExtraWidthKey = "showname_extra_width"
 
 // parseShownameExtraWidth reads that key the way AO2 reads it: as a bare
@@ -130,9 +122,6 @@ func parseShownameExtraWidth(raw string) int {
 
 // chatboxRung names one step of AO2's widen-and-swap ladder — which chatbox
 // skin is showing, and therefore how much room the showname has.
-// The ladder is AO2's ONLY answer to a showname too wide for the box the theme
-// drew. There is no font shrinking and no eliding: the box widens, the chatbox
-// art swaps to a variant the theme author drew with a wider name plate, and past
 type chatboxRung uint8
 
 const (
@@ -176,7 +165,6 @@ func (r chatboxRung) texStem() string {
 
 // fileStem is the rung's file stem on disk, given the base skin stem the theme
 // actually shipped.
-// The base is NOT a constant: AsyncAO probes chat → chatbox → chatblank
 // (AO2-Client courtroom.cpp:3327-3331), 64 of the 74 reference themes ship
 // `chat`, P5Theme ships `chatbox`, and two ship only `chatblank`. AO2 sidesteps
 func (r chatboxRung) fileStem(base string) string {
@@ -208,9 +196,6 @@ var chatboxLadderRungs = [...]chatboxRung{chatboxRungMed, chatboxRungBig, chatbo
 
 // chatboxSkinForShowname is AO2's per-MESSAGE chatbox choice: a post with a blank
 // showname gets the plate-less skin, everything else gets the ordinary one.
-// Returns the page to blit and whether the blank variant was chosen. A theme that
-// ships no separate blank skin — most of them — returns its base page and false,
-// which is byte-identical to the pre-fix draw.
 func (a *App) chatboxSkinForShowname(showname string, base *render.TexturePage) (*render.TexturePage, bool) {
 	if strings.TrimSpace(showname) != "" {
 		return base, false
@@ -226,7 +211,6 @@ func (a *App) chatboxSkinForShowname(showname string, base *render.TexturePage) 
 // theme declared, how wide the name actually measures, the per-rung extra, and
 // which variant skins the theme shipped, it answers which skin to draw and how
 // wide the showname box becomes.
-// The med rung is checked before big and big only from inside it, which matters:
 func shownameLadder(boxW, textW, extra int32, hasMed, hasBig bool) (chatboxRung, int32) {
 	if extra <= 0 || textW <= boxW || !hasMed {
 		return chatboxRungBase, boxW
@@ -240,9 +224,6 @@ func shownameLadder(boxW, textW, extra int32, hasMed, hasBig bool) (chatboxRung,
 
 // chatboxSkinLadder runs the ladder against the ACTIVE theme's resident art and
 // returns the showname box to place text in plus the chatbox page to blit.
-// The gates are ordered by cost on purpose: an integer test on the theme's
-// extra_width, then a map probe for the med skin, and only then the text
-// measure. Left-aligned shownames still skip measuring entirely unless the
 func (a *App) chatboxSkinLadder(nameBox sdl.Rect, lay *themeLayoutCache, base *render.TexturePage,
 	primary, emoji *ttf.Font, text string, col sdl.Color,
 ) (sdl.Rect, *render.TexturePage) {
@@ -374,9 +355,6 @@ func (a *App) themedChatFace(el themeFontElem, userPct int, lay *themeLayoutCach
 
 // shownameSpanFor is shownameSpan bound to the active theme's alignment and to
 // the face the name will actually be drawn in.
-// The LEFT short-circuit is load-bearing, not an optimisation flourish: it is
-// what keeps the default and every `left` theme on a per-frame path that never
-// measures text at all, byte-identical to the code before alignment existed.
 func (a *App) shownameSpanFor(box sdl.Rect, primary, emoji *ttf.Font, text string, col sdl.Color) (x, maxW int32) {
 	if a.skin.themeShownameAlign == shownameAlignLeft {
 		return box.X, box.W

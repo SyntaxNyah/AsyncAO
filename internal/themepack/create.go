@@ -20,11 +20,6 @@ var ErrCreateNoModel = errors.New("themepack: no sidecar to create a theme from"
 // The name is sanitized and collision-suffixed exactly as an import is, so
 // building the same pair twice gives "Neon Netrunner" and "Neon Netrunner (2)"
 // rather than one overwriting the other.
-// THE BYTES GO THROUGH Sidecar.Bytes, which is the write guard: a model that
-// would not load back cannot reach the disk, and the refusal happens before the
-// folder is created rather than after (design §3.3 — every refusal names the
-// offender). The folder is built under a .part suffix and renamed, so a crash
-// mid-write leaves no half-theme in the picker.
 func CreateFromSidecar(themesRoot, name string, sc *theme.Sidecar) (*Manifest, error) {
 	if sc == nil {
 		return nil, ErrCreateNoModel

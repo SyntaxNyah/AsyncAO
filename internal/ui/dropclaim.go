@@ -1,9 +1,6 @@
 package ui
 
 // Who owns a dropped file.
-// The classification therefore lives HERE, once, and both owners call it. Each
-// keeps its own fallback — that part is genuinely per-screen — but neither can
-// claim something the other already owns.
 
 import (
 	"path/filepath"

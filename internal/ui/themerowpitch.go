@@ -29,7 +29,6 @@ func faceEmPx(pct, devPct int) int32 {
 // themeFaceRowPitch is the Qt baseline-to-baseline step for interned face slot
 // `face` at emPx pixels, or 0 when the slot names no theme face (face < 0, the
 // undressed element) or the face carried no usable OS/2 metrics.
-// A bounds-checked slice read and integer arithmetic — no lock, no map, no file.
 func (c *Ctx) themeFaceRowPitch(face int, emPx int32) int32 {
 	if face < 0 || face >= len(c.themeFaceQt) {
 		return 0

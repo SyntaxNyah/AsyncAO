@@ -12,10 +12,6 @@ import (
 type overlayState struct {
 	env *env
 	// AO2 screen-effect overlays (effectspicker.go): the per-(origin, misc folder)
-	// roster cache and its async resolve results, the theme-tier art loads, and the
-	// dropdown's icon page cache. All bounded, all keyed so a server switch cannot
-	// hand one origin's rosters to another; overlayRosterGen drops the lot when the
-	// theme changes.
 	overlayRosters map[string]*overlayRoster
 	// overlayRosterInFlight is the in-flight marker set, kept SEPARATE from the
 	// settled cache above. Two reasons, both structural: the cap-reset that keeps

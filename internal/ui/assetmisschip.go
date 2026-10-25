@@ -19,8 +19,6 @@ const (
 	assetMissDedupCap = 16
 	// assetMissRepeatCooldown is how long one base stays "already reported": a
 	// repeat inside the window still reaches the debug log (with its ×N collapse)
-	// but does not re-arm the chip. Comfortably longer than the heal cadence
-	// (charIconRetryInterval) that produced the observed ×5..×9 runs.
 	assetMissRepeatCooldown = 60 * time.Second
 	// assetMissChipShowDuration is how long the chip lingers after the most
 	// recent NEW miss. Long enough to notice on the way past, short enough that a
@@ -128,8 +126,6 @@ func (a *App) assetMissChipRect(w int32) (sdl.Rect, bool) {
 	}
 	// The clearance is measured against everything LEFT-anchored in the band, not
 	// against the menu titles alone: the Iniswap chip sits after them (iniswapchip.go)
-	// and is a permanent control, so a transient badge must give way to it rather than
-	// paint over it.
 	if r.X < a.menuBarLeftContentRight(w)+assetMissChipMinGapX {
 		return sdl.Rect{}, false
 	}

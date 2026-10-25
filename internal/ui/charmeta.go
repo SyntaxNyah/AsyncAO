@@ -70,7 +70,6 @@ type charMeta struct {
 	// stamp is when an IN-FLIGHT marker (done=false) was armed. A dropped async
 	// result leaves done=false forever; charMetaFor re-arms a fetch once the
 	// marker goes stale so a dropped char.ini heals on the next message (#69).
-	// Zero for settled entries, where `done` already decides.
 	stamp time.Time
 }
 
@@ -101,8 +100,6 @@ func (a *App) charMetaFor(char string) charMeta {
 	if m, ok := a.overlays.charMetaCache[url]; ok {
 		// A settled entry (hit or miss) is final. An in-flight marker that has
 		// gone stale means its result was dropped on channel overflow (#69):
-		// fall through and re-arm the fetch instead of returning a marker that
-		// would hold the character's blips/skin/effects forever.
 		if m.done || time.Since(m.stamp) < charMetaRefetchAfter {
 			return m
 		}
@@ -214,8 +211,6 @@ func (overlay *overlayState) pollCharMeta() {
 
 // remoteBlipFor is the courtroom's BlipNameFor callback: the speaker's char.ini
 // blip set, plus whether the fetch has settled. known=false (still in flight)
-// makes the courtroom hold the blip rather than default to "male", so the
-// first message a character sends already blips with their own set.
 func (a *App) remoteBlipFor(char string) (string, bool) {
 	m := a.charMetaFor(char)
 	return m.blips, m.done
@@ -324,9 +319,6 @@ func (a *App) wireRoomCharMeta(room *courtroom.Courtroom) {
 }
 
 // iniIdleAnimFor is THE seam for "what pose does this character stand in".
-// The answer is a NAME, not a URL, deliberately: the caller mints it through
-// urls.Emote + urls.EmoteAlts and PrefetchChain, i.e. the real sprite chain with
-// AO2-Client's two spellings ((a)X and bare X, CharLayer::load_image) and the
 func (a *App) iniIdleAnimFor(char, fallback string) string {
 	if idle := a.charMetaFor(char).idle; idle != "" {
 		return idle

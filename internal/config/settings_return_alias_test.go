@@ -9,7 +9,6 @@ import (
 // slice or a struct holding them must hand back a DEEP copy, so a caller mutating the
 // result never races a reader of the shared snapshot. Four readers Load() the snapshot
 // while the main goroutine mutates the copies returned by Macros() and ServerWarmInfoFor().
-//
 // Mutation line: revert Macros() to a shallow `copy(out, snap.UserMacros)` (drop the
 // snapCloneMacroSpec per-element deep copy) and this test FAILS under -race — the caller's
 // `m[0].Lines[0] = "mutated"` writes the snapshot's slice the readers are ranging.

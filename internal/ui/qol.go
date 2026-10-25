@@ -661,9 +661,6 @@ func (a *App) applyAudioVolumes() {
 	master := a.d.Prefs.Load().MasterVol
 	// Per-server audio (sandboxed tab sound): the ACTIVE server's override, when
 	// enabled, replaces the global mixer levels — so each tab carries its own volumes.
-	// ServerAudio falls back to the global per channel for any level this server never
-	// set, so a profile can't silently mute a channel (e.g. SFX) just by existing — only
-	// an explicit 0 mutes. Re-applied on courtroom entry + every tab switch (buildRoom).
 	if on, m, mu, s, b := a.d.Prefs.ServerAudio(a.srvMeta.serverKey); on {
 		master, music, sfx, blip = m, mu, s, b
 	}
@@ -1198,8 +1195,6 @@ func (a *App) checkCallwords(text string, selfNames []string, mine bool) {
 	// #203 name mentions: your own showname / character name, matched as a WHOLE
 	// word (so "Max" doesn't fire on "maximum") and NEVER on your own message —
 	// the server echoes your IC back and RP lines routinely contain your name.
-	// The names are session-scoped: the caller passes THIS message's session's
-	// identity, so multi-server play pings the right name per tab.
 	if mine || !a.d.Prefs.Load().MentionSelf {
 		return
 	}
@@ -1604,10 +1599,6 @@ func (a *App) oocRowLinks(li int) []oocLinkSpan {
 }
 
 // oocWrapped returns the OOC log as display lines: long entries (MOTDs)
-// word-wrap to the list width and embedded newlines split, instead of the
-// old 120-char truncation. Streamer mode masks sender names and IPs here
-// (display only). Cached against (log seq, width, font scale, mask) —
-// rebuilds happen on new messages or resizes, never per frame.
 func (a *App) oocWrapped(width int32) []string {
 	streamer := a.d.Prefs.Load().StreamerModeOn
 	// #39: key on the RESOLVED scale (theme "server_chatlog" size × the OOC zoom),
@@ -1897,9 +1888,6 @@ func constFont(f *ttf.Font) func(string) *ttf.Font {
 const wrapFallbackCharPx = 8
 
 // fontWidth measures s in font, falling back to wrapFallbackCharPx per byte.
-// The wrap AND the OOC link-span measure both go through it so a span's pixel
-// range is derived exactly the way the row's break points were — one measuring
-// rule, no drift between where a link is drawn and where it is clickable.
 func fontWidth(font *ttf.Font, s string) int32 {
 	if font == nil {
 		return int32(len(s) * wrapFallbackCharPx)
@@ -2037,8 +2025,6 @@ func wrapParagraphs(measure func(string) int32, s string, maxW int32, maxLines i
 		// The "+1 probe": wrapToWidthMeasured caps SILENTLY (it never reports that it
 		// truncated), so asking for one row more than the budget is how we tell a
 		// paragraph that exactly filled the budget from one that overflowed it.
-		// remaining >= 1 is guaranteed above, so probe >= 2 and the maxLines <= 0
-		// disagreement documented above can never be reached from here.
 		got := wrapToWidthMeasured(measure, para, maxW, remaining+1)
 		if len(got) > remaining {
 			got = got[:remaining]

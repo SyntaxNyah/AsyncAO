@@ -91,10 +91,6 @@ func TestBaseScanCountsWhatIsActuallyThere(t *testing.T) {
 }
 
 // TestBaseScanWarnsWhenNoCharacterShipsAnINI is issue #72 stated before the fact.
-// This is the state that reads as "it worked": the sprites load out of the
-// folder, so the setup looks correct, while every emote list, showname, blip set
-// and chatbox skin still comes from the server's copy of that character. Nothing
-// on screen explains the difference, so the report has to say it up front.
 func TestBaseScanWarnsWhenNoCharacterShipsAnINI(t *testing.T) {
 	dir := writeBaseTree(t, t.TempDir(), map[string]string{
 		"characters/witch/(a)idle.png": "x",

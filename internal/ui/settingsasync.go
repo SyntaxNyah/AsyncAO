@@ -102,10 +102,6 @@ func exportLearnedAsync(d Deps) {
 }
 
 // makePortableAsync copies the active config set (settings + notebooks + jukebox)
-// Themes are the one half that can fail on its own, and MigrateToPortable says so
-// with ErrThemesNotMigrated rather than an opaque error. That case is reported as
-// what it is — the settings DID move — because "Make portable failed" would send
-// the user hunting for settings that are already in place.
 func makePortableAsync(d Deps) {
 	go func() {
 		dest, err := d.Prefs.MigrateToPortable()

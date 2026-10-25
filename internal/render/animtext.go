@@ -107,8 +107,6 @@ func (at *AnimatedText) ChainGen() int { return at.chainGen }
 // Animates reports whether drawing this message again with a later clock produces a
 // DIFFERENT picture — the UI's frame-pacing census hook: while an animating message is on
 // screen the draw must keep marking frames (NoteAnimating), or the FX freeze at idle=0.
-// False for gradient-only / effect-free layouts and under reduce-motion (Draw renders
-// those identical every frame), so a static chatbox still parks at zero redraws.
 func (at *AnimatedText) Animates(reduceMotion bool) bool {
 	return !reduceMotion && at.timeAnimated
 }
@@ -469,7 +467,6 @@ func (at *AnimatedText) Draw(ren *sdl.Renderer, gc *GlyphCache, font *ttf.Font, 
 // colour-emoji glyph (which can't be recoloured): the effect scaled base→eff on the darkest
 // channel, applied as alpha so pulse/blink dim the emoji instead of tinting it. Rainbow/
 // gradient don't dim (their eff is a full-brightness hue) → 255, the emoji stays solid.
-// Pure + 0-alloc (Draw is on the per-frame path).
 func colorBrightnessAlpha(base, eff sdl.Color) uint8 {
 	// Use the brightest base channel as the reference so a pure-red base still yields a ratio.
 	ref := base.R

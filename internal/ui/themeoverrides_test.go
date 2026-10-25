@@ -43,8 +43,6 @@ var ovLiveCanvas = theme.Rect{X: 0, Y: 0, W: 714, H: 579}
 
 // ovWriteLiveTheme writes the fixture to a fresh root and returns the root to hand
 // to SetTheme. Two files and nothing else:
-//   - a courtroom_design.ini with `courtroom` + `viewport` and NO widget keys.
-//     assertions below can name AO2's stock rects as the not-applied answer.
 func ovWriteLiveTheme(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -67,9 +65,6 @@ func ovWriteLiveTheme(t *testing.T) string {
 
 // TestThemeApplyRunsTheOverridesTier is the gate on the CALL SITE, and it is the
 // one gate in this file that a mirror cannot fake.
-// THE MUTATION IT ANSWERS TO: replace the fold's call in app.go with
-// `_ = res.sidecar` and this test must fail on ovLiveMovedKey. If it does not, the
-// gate is measuring the mirror again.
 func TestThemeApplyRunsTheOverridesTier(t *testing.T) {
 	a := testTabApp(t)
 	a.d.Prefs.SetTheme(ovLiveThemeName, ovWriteLiveTheme(t))
@@ -146,17 +141,11 @@ func ovSidecar(t *testing.T, body string) *theme.Sidecar {
 }
 
 // TestSidecarOverridesRewriteExistingKeysOnly pins the applier's whole contract.
-// The "never adds" arm is the load-bearing one. A key absent from the resolved
-// design is a widget this build does not place — themeSlots' inert rows, and the
-// keys AO2's own default file is silent about — so writing one in would put a rect
-// in the map with no draw site behind it: the ghost box the registry was built to
 // end (themeslots.go:12-14), and, for an inert key, a box the layout editor would
 // then refuse to move.
 func TestSidecarOverridesRewriteExistingKeysOnly(t *testing.T) {
 	// The map deliberately carries ONE editable key and one inert one, so "present
 	// but not editable" and "editable but not present" are both measured.
-	// mute_button is the inert specimen. It used to be player_list, which stopped
-	// being inert when the roster ruling gave the player list AO2's own rect
 	// (theme_layout.go, courtroom.cpp:879) — the contract under test is unchanged.
 	layout := map[string]theme.Rect{
 		"emote_dropdown": ovTestOther,

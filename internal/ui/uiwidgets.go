@@ -398,7 +398,6 @@ func truncateChopFor(marker string) int {
 // fitLabelToFont is truncateLabelTo measured in a SPECIFIC face — for the themed
 // surfaces that draw in a theme-declared font rather than the chrome one, where
 // c.TextWidth (the chrome face's memo) would ellipsize against the wrong metrics.
-// Callers on a per-frame path should test the fits case with fontTextWidth first:
 func (c *Ctx) fitLabelToFont(f *ttf.Font, label string, avail int32) string {
 	return c.fitLabelToFontWeight(f, label, avail, false)
 }
@@ -438,9 +437,6 @@ func checkboxBoxY(r sdl.Rect) int32 {
 }
 
 // CheckboxIn is Checkbox fitted to a RECT rather than anchored at an (x, y).
-// AO2 places every toggle by design rect (set_size_and_pos), and several are far
-// narrower than their label — aceattorney2x gives `flip` 51x19 — so a checkbox
-// that grows to its text cannot honour a theme.
 func (c *Ctx) CheckboxIn(r sdl.Rect, label string, value bool) bool {
 	if c.onRow != nil {
 		c.onRow(label, r.Y) // settings-search collect pass, as Checkbox does
@@ -782,7 +778,6 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 	// The interior the VALUE may use. A caller-declared tail reservation
 	// (ReserveFieldTail — the IC message counter) shrinks it from the right, so
 	// typed text clips before the counter instead of running underneath it.
-	// Consumed here so exactly one field can honour it per frame.
 	avail := r.W - 2*padX - c.takeFieldTail(id)
 	if avail < 0 {
 		avail = 0
@@ -993,10 +988,6 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 
 	display := maskOf(value)
 	// The fallback raster the value will DRAW with (nil = single-font path).
-	// Resolved ONCE here so every measurement below — caret x, full width, the
-	// keep-caret-visible scroll — reads the same glyph advances the draw blits.
-	// Measuring with the chrome font while drawing with a fallback face put the
-	// caret several letters off in Cyrillic (the playtest report).
 	fbRaster := c.fieldRaster(fb, mask, display)
 	show := display
 	col := ColText
@@ -1088,8 +1079,6 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 	}
 	// The PLACEHOLDER (shown empty + unfocused) also tofus on the chrome font for
 	// non-ASCII — e.g. a saved Japanese showname greyed in the empty showname box.
-	// Route it through the same per-glyph raster on an opted-in field (fb.primary !=
-	// nil), keyed by the dim colour so the value/placeholder rasters never collide.
 	if !drawn && show == placeholder && show != "" && fb.primary != nil && !isASCII(show) {
 		if m := c.emojiRaster(show, col, fb.primary, fb.emoji); m != nil {
 			cp, ch := c.pushClip(sdl.Rect{X: r.X + padX, Y: r.Y, W: avail, H: r.H})
@@ -1592,9 +1581,6 @@ func (c *Ctx) DropdownRowRightClicked(id string) (int, bool) {
 
 // FinishFrame paints deferred overlays (open dropdown lists). Call after
 // every screen draw of the frame.
-// Tooltip arms a one-line hover hint for rect r; drawTooltip paints it near
-// the cursor at end-of-frame so it sits above the grid cells it describes.
-// Skipped while a dropdown owns the pointer (modal fence).
 func (c *Ctx) Tooltip(r sdl.Rect, text string) {
 	if text != "" && !c.modalOn && c.hovering(r) {
 		c.tipText = text
@@ -1604,9 +1590,6 @@ func (c *Ctx) Tooltip(r sdl.Rect, text string) {
 
 // TooltipGroup declares the SURFACE a run of child tooltips belongs to, so the
 // hint stays clear of the whole thing rather than just the one chip it describes.
-// Set it before the children, clear it (TooltipGroup(sdl.Rect{})) after — the
-// compact toolbox wraps its chip loop this way, because a hint that covers the
-// four chips beside the hovered one is as useless as one covering the chip itself.
 func (c *Ctx) TooltipGroup(r sdl.Rect) { c.tipGroup = r }
 
 // tooltipDwell is how long the pointer must rest on a TooltipAfter target
@@ -1623,8 +1606,6 @@ func (c *Ctx) TooltipAfter(id string, r sdl.Rect, text string) {
 // TooltipAfterDelay is TooltipAfter with a caller-chosen dwell instead of the
 // fixed tooltipDwell — for hints whose delay is user-configurable (the emote-name
 // hover tooltip's slider). A single shared dwell timer (tipHoverID/tipHoverSince)
-// backs both: moving off r, or to a different id, resets the timer, so two
-// TooltipAfterDelay targets can't fire each other early.
 func (c *Ctx) TooltipAfterDelay(id string, r sdl.Rect, text string, delay time.Duration) {
 	if text == "" || c.modalOn || !c.hovering(r) {
 		if c.tipHoverID == id {
@@ -1928,9 +1909,6 @@ func (c *Ctx) Slider(id string, track sdl.Rect, value, maxVal int32) int32 {
 		}
 	}
 	// Wheel over the track nudges the value (playtest ask: every slider scrolls).
-	// One tick = 1/sliderWheelDivisor of the range, floored at 1 so a percent
-	// slider steps by exactly 1. Claiming the wheel keeps the page beneath from
-	// scrolling on the same tick (the hovered-control-owns-the-wheel contract).
 	if !c.wheelTaken && c.wheelY != 0 && c.hovering(grab) {
 		c.wheelTaken = true
 		step := maxVal / sliderWheelDivisor

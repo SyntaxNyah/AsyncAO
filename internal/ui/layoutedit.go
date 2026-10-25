@@ -52,17 +52,11 @@ func snapTabStripScreen(r theme.Rect, lay *themeLayoutCache) theme.Rect {
 }
 
 // themedKeyResizable reports whether a themed key honours the corner-grip resize.
-// The server-tab strip does not: it has no authored size to change (its W/H come from
-// the chips), so a grip would either do nothing or smear it. The classic layout system
-// already registers the SAME widget move-only — slotResizeEdges(slotTabBar) == 0,
-// pinned by TestTabBarSlotIsMoveOnlyAndRegisters — and the two editors must agree, or
-// the same strip would be resizable in one and not the other.
 func themedKeyResizable(key string) bool { return key != themeTabBarKey }
 
 // resizeDesignRect applies a resize drag's delta to the GRIPPED EDGES, in design px —
 // the design-space twin of drawClassicEditor's own per-edge arithmetic, which is where
 // this shape (and the anchored-edge floor below it) comes from.
-// Pure, so the arithmetic is unit-testable without a renderer.
 func resizeDesignRect(base theme.Rect, edges uint8, dx, dy int) theme.Rect {
 	r := base
 	if edges&edgeR != 0 {
@@ -143,11 +137,6 @@ type layoutSnapshot struct {
 }
 
 // layoutSnapshotNow captures the current editable state.
-// The strip's flag comes from tabStripPlacementRecorded, NOT tabStripThemeParked: the
-// two differ exactly while a drag is in flight, and the press site pushes its snapshot
-// AFTER arming the drag, so the live predicate would record "parked" for a strip that
-// was still docked when the press landed — and restoreLayout's parked arm writes the
-// override, which IS the placement flag. See tabStripPlacementRecorded (tabs.go).
 func (a *App) layoutSnapshotNow() layoutSnapshot {
 	return layoutSnapshot{rects: cloneRects(a.skin.themeRects), parked: a.tabStripPlacementRecorded()}
 }
@@ -265,15 +254,8 @@ func (a *App) stopLayoutEdit() {
 }
 
 // openLayoutEditor launches the live layout editor from a menu entry (the discoverable front door).
-// On a themed courtroom (a theme that ships courtroom_design.ini, with the theme-layout option on)
-// it edits the theme's design rects; on the default/Legacy layout it arms the classic SLOT editor,
-// so the stage, log column and OOC box are draggable there too.
 func (a *App) openLayoutEditor() {
 	// start{Layout,Classic}Edit close the pinned toolbox panel themselves (A1).
-	// Editors are full-chrome surfaces: leave stage-only theater first (Ctrl+F2
-	// and the palette action fire there too), or the editor arms behind a view
-	// that never draws it — the same class as the hotkey-resummoned toolbox
-	// panel, surfaces setTheater's stage-only invariant must suppress.
 	if a.theaterOn {
 		a.setTheater(false)
 	}
@@ -363,7 +345,6 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		// A4: "Reset all" wipes the tilt overrides too — the classic editor's
 		// Reset-all clears classicRot the same way, and a piece that snapped
 		// home but stayed rotated would contradict the reset message below.
-		// themeLay.valid=false re-bakes lay.ang empty on the next rebuild.
 		a.d.Prefs.ClearThemeRectRotation(themeName, "")
 		for k, r := range a.skin.themeRectsOrig {
 			a.skin.themeRects[k] = r
@@ -568,10 +549,6 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		}
 		// Keep it on the stage (the engine's clamp would rescue it, but
 		// editing should feel solid, not rubber-bandy).
-		// The server-tab strip is CLIENT chrome, not a stage widget: its home is the
-		// band ABOVE the canvas, so the design courtroom is the wrong cage — this clamp
-		// would shove it onto the stage on the first pixel of every drag. It clamps to
-		// the WINDOW instead, through the same transform the cache paints with.
 		if screenDrag {
 			r = clampTabStripScreen(r, lay, w, h)
 		} else if court, ok := a.skin.themeRectsOrig["courtroom"]; ok {
@@ -703,9 +680,6 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 
 // editBaseFor is the rect a drag starts from, in whatever space that key's drag is
 // tracked in.
-// The base's Y is legitimately NEGATIVE while the strip is docked — the chrome band
-// lives above the canvas — which is why clampTabStripScreen has to tolerate it, and why
-// the grid rounds the PAINTED coordinate instead of this one (snapTabStripScreen).
 func (a *App) editBaseFor(key string, lay *themeLayoutCache) theme.Rect {
 	if key != themeTabBarKey {
 		return a.skin.themeRects[key]
@@ -739,12 +713,6 @@ func (a *App) magnetSiblingRect(key string, stored theme.Rect, lay *themeLayoutC
 }
 
 // clampTabStripScreen keeps the tab strip's stored origin inside the window.
-// The cache paints the strip at offX + X (and the Y twin) and clamps THAT into the
-// window; clamping the stored value to the same range here — the same subtraction, no
-// scale, no rounding — is what keeps the two in lockstep, so dragging past an edge and
-// back does not open a dead zone where the cursor moves and the strip does not. The
-// painted size is the chips' — never r.W/r.H, which are inert for this key — so the
-// right/bottom stops come from lay.tabStripW and tabBarH.
 func clampTabStripScreen(r theme.Rect, lay *themeLayoutCache, w, h int32) theme.Rect {
 	clamp := func(v, lo, hi int) int {
 		if hi < lo {

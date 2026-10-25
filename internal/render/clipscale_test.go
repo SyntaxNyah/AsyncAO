@@ -12,8 +12,6 @@ import (
 // device-exact message blit rests on: that SDL_RenderSetClipRect bakes the clip
 // into device pixels at SET time, so bracketing a SetScale(1,1) around the blit
 // leaves the clip covering the same physical rows.
-// It renders white into a wide rect under the bracket and reports the LAST row
-// that actually received ink.
 func TestClipRectSurvivesScaleChange(t *testing.T) {
 	if err := sdl.Init(sdl.INIT_VIDEO); err != nil {
 		t.Skipf("SDL video unavailable: %v", err)

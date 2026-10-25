@@ -2,8 +2,6 @@ package ui
 
 // Element clocks and element effects (v1.90.0 W5) — docs/wip/THEME-EDITOR-DESIGN.md
 // §Q3 and §6.6 R2, docs/THEME-FORMAT.md §3.
-// It is also on THIS file that TestElementDrawUsesNoStringBuilding runs (it is listed
-// in elementDrawFiles beside themeelements.go): everything here is frame path.
 
 import (
 	"math"
@@ -116,10 +114,6 @@ func (a *App) applyThemeClocks(sc *theme.Sidecar) {
 }
 
 // clampClockSpeed bounds a group's speed to the format's own range.
-// DEFENCE IN DEPTH, not duplication: the reader already clamps what it parses, but
-// the editor writes this field directly (W7) and elementElapsed divides by it. A
-// speed of zero here would be an absent marker in the FILE and a divide-by-nothing in
-// the pool, so the two readings are reconciled once, here.
 func clampClockSpeed(pct int16) int16 {
 	switch {
 	case pct <= 0:
@@ -140,9 +134,6 @@ func (a *App) reduceMotionNow() bool { return a.d.Prefs != nil && a.d.Prefs.Load
 
 // elementElapsed is the element's own animation position: the shared anchor, scaled
 // by its clock group's speed, offset by its own free phase.
-// The wave plan calls this "elapsed-for" (TestElapsedForIsAllocFree); the function
-// keeps design §Q3's own spelling. ALLOC-FREE and pointer-free: two array indexes,
-// one subtraction and at most one multiply-divide.
 func (a *App) elementElapsed(e *bakedElement) time.Duration {
 	return a.clockElapsed(e.clock) + e.phase
 }
@@ -169,9 +160,6 @@ func (a *App) clockElapsed(i uint8) time.Duration {
 
 // clockPaused reports that a clock group is HELD — the editor's scrub, and
 // "hold to inspect a frame".
-// Same out-of-range fallback as clockElapsed, and for the same reason: the pair
-// must answer for the SAME group, or a bad index would read time from clock 0 and
-// pausedness from nothing.
 func (a *App) clockPaused(i uint8) bool {
 	if int(i) >= len(a.fxPool.themeClocks) {
 		i = 0
@@ -182,8 +170,6 @@ func (a *App) clockPaused(i uint8) bool {
 // noteElementAnimating is the ONE census call on the element path — the funnel
 // that makes "a paused clock never pins the frame rate" one line instead of a
 // rule every future draw site has to remember.
-// One bounds-checked array read, no allocation, no prefs probe: it is inside both
-// AllocsPerRun gates over the element path.
 func (a *App) noteElementAnimating(clock uint8) {
 	if a.clockPaused(clock) {
 		return
@@ -221,10 +207,6 @@ func (a *App) elementFrame(e *bakedElement) *sdl.Texture {
 }
 
 // elementFrameIndex is elementFrame's PURE core: elapsed in, (frame, still-moving)
-// out, with no App and no clock behind it.
-// `live` means "this page will look different next frame", which is exactly the
-// question NoteAnimating answers. A finished one-shot is NOT live even though it is
-// still showing its last frame.
 func elementFrameIndex(page *render.TexturePage, el time.Duration, loop bool) (idx int, live bool) {
 	if page == nil || len(page.Frames) < 2 {
 		return 0, false
@@ -258,9 +240,6 @@ const fxOwnerNone = int16(0)
 
 // fxState is one STATEFUL effect's hysteresis: where its one-shot began, and whether
 // anybody is still asking for it.
-// Only the three DECAYING kinds (fade / shake / slam) take a slot. The five periodic
-// ones are pure functions of elapsed and would gain nothing from state — which is the
-// whole reason the pool can be 24 entries for a format that allows 96 elements.
 type fxState struct {
 	// startedAt is the element's OWN elapsed at the moment this effect began, so its
 	// one-shot plays from when the element appeared rather than from when the theme
@@ -381,9 +360,6 @@ var fxAlwaysOrigin = &fxState{}
 
 // effectIsStateful reports whether a kind needs a pool slot: the three DECAYING
 // one-shots do (they need an origin), the five periodic ones do not.
-// A table rather than a switch, and indexed by the enum, so a kind appended to
-// theme.EffectKind gets a considered answer here instead of falling into whichever
-// half the switch's default happened to be.
 var effectIsStateful = [theme.EffectKindCount]bool{
 	theme.FXFade:  true,
 	theme.FXShake: true,
@@ -406,9 +382,6 @@ func resolveElementEffect(fx bakedEffect, el time.Duration, st *fxState) elemFX 
 		return resolvePeriodicEffect(fx.kind, amp, elapsedMs(el)/period)
 	}
 	// The decaying family. local is elapsed since THIS one-shot began.
-	//
-	// st == nil is POOL EXHAUSTION: local stays 0 and frozen stays true, so the effect
-	// shows its first frame and reports static — the named graceful degrade.
 	local, frozen := 0.0, true
 	if st != nil {
 		local, frozen = elapsedMs(el)-elapsedMs(st.startedAt), false
@@ -512,10 +485,6 @@ func resolveDecayEffect(kind theme.EffectKind, amp, t, local float64) elemFX {
 }
 
 // shakeNoise is a deterministic [-1, 1] sample for one quantised shake step.
-// An integer hash, not math/rand and not a per-frame value: the shake has to be a
-// pure function of elapsed or an exported GIF stops matching the screen it was
-// exported from. Two multipliers give the X and Y streams different sequences without
-// a second table.
 func shakeNoise(step int64, mul int64) float64 {
 	h := uint32(step*mul) ^ uint32(step>>16)
 	h ^= h >> 13

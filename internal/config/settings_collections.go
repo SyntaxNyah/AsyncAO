@@ -235,7 +235,6 @@ func (s *Settings) ClearFontWarnThemes() {
 // SetPanelFont stores one element's override (an empty override removes the entry rather
 // than storing a zero value, so a later default change still reaches the user). The
 // caller normalizes id and clamps pf.
-// Mutation: change the "empty removes" branch to always-store and TestPanelFontResetRemoves fails.
 func (s *Settings) SetPanelFont(id string, pf PanelFont) {
 	if pf.Family == "" && pf.SizePx == 0 {
 		delete(s.PanelFontsVal, id)
@@ -333,7 +332,6 @@ func (s *Settings) SetBlipVolume(char string, pct int) bool {
 // NEW state (true = now favourited). Bounded by the per-char and char-count caps; removing
 // the last favourite drops the character's entry. The caller lowercases/trims char and
 // pre-checks idx >= 0.
-// Mutation: drop the emoteFavPerCharCap guard and TestEmoteFavPerCharCap fails.
 func (s *Settings) ToggleEmoteFav(char string, idx int) bool {
 	list := s.EmoteFavs[char]
 	if !containsInt(list, idx) {

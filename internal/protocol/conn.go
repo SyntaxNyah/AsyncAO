@@ -36,22 +36,9 @@ const (
 	incomingQueueCap = 256
 	// readBacklogCap bounds the read-loop → deliver-loop parking channel that sits
 	// in FRONT of Incoming. It exists so readLoop NEVER blocks on a full Incoming:
-	// coder/websocket answers the server's WS PING control frames only while some
-	// goroutine is inside ws.Read (read.go handleControl), so a reader parked on a
-	// channel send stops ponging — and once Incoming filled (hours at idle-room
-	// packet rates, ~256 × 60 s) the server's ping-timeout dropped a perfectly
-	// healthy minimized client. Windows provably stalls the render loop that drains
-	// Incoming while the app is occluded (the v1.81.5 finding), so the socket must
-	// stay alive without it — for the WHOLE occlusion, which the reporting users
-	// measure in workdays. Sized for a BUSY room's full occluded stretch, not just
-	// an idle one (~0.5 packets/s of active courtroom chatter → ~18 h; idle rooms →
-	// days), because an occluded-but-healthy client is indistinguishable from a
-	// wedged one down here and must not be torn down inside any plausible stall.
 	readBacklogCap = 32768
 	// readBacklogMaxBytes bounds the WIRE bytes parked in the backlog channel, so a
 	// hostile/buggy server spraying maximum-size frames (maxIncomingBytes each)
-	// can't turn the packet-count bound into gigabytes of buffered strings. Idle
-	// traffic is tens of bytes per packet, so real stalls never approach this.
 	readBacklogMaxBytes = 32 << 20
 	// maxIncomingBytes bounds one server packet defensively (character
 	// lists on 200-char servers fit comfortably).
@@ -174,9 +161,6 @@ type DialOptions struct {
 
 // registerCodecsOnce serialises codec registration so the packet registry maps
 // are written exactly once, before any session's read loop can read them (§17.8:
-// aolib.RegisterPacket and packetutil.customCodecs are plain maps; a second Dial
-// re-writing them while an existing session's receiveCustom reads is a concurrent
-// map read/write fatal — the two-tab connect crash).
 var registerCodecsOnce sync.Once
 
 func registerCodecs() {
@@ -234,8 +218,6 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 
 	// Install the both-wire codecs for the non-canonical headers (voice VS_*,
 	// the JSON-only GP roster). Registered EXACTLY ONCE via the package Once:
-	// re-writing the registry maps on a second Dial races a live session's
-	// readLoop (receiveCustom) — see registerCodecsOnce's doc.
 	registerCodecsOnce.Do(registerCodecs)
 
 	backlogCap := readBacklogCap

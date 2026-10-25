@@ -234,7 +234,6 @@ func TestTimerStopsOnANonPositiveValue(t *testing.T) {
 // TestTimerIDsPastTheClockCapAreIgnored pins the bound canon shares
 // (`id >= 0 && id < max_clocks`) against a server that offers more: KFO-Server's
 // /timer accepts ids up to 20 (../KFO-Server/server/commands/roleplay.py:783)
-// and sends TI for every one of them.
 func TestTimerIDsPastTheClockCapAreIgnored(t *testing.T) {
 	s := newTimerSession(t)
 	for _, id := range []int{-1, TimerCount, TimerCount + 15} {

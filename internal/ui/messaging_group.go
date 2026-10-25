@@ -110,9 +110,6 @@ func (msg *msgState) applyGroupJoin(id uint32, uid int, name string) {
 }
 
 // applyGroupText files a received group message (the sender is implicitly a member).
-// Ignored when we don't know the group (no invite seen). The sender's character
-// (for the bubble icon) resolves from the live roster at receipt; a group that
-// isn't on screen counts the line as unread (the chat-list badge).
 func (a *App) applyGroupText(id uint32, fromUID int, fromName, text string) {
 	g := a.msgs.msgGroups[id]
 	if g == nil {

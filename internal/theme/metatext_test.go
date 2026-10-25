@@ -1,10 +1,6 @@
 package theme
 
 // THE METADATA-CAP RULING's gates (v1.90.0 W8).
-// Every gate here DRIVES the shipped path (ParseSidecar / Sidecar.Bytes /
-// Sidecar.Validate) rather than restating truncMetaRunes, because a mirror-test
-// of a truncation is a second implementation of it and would stay green with the
-// reader wired back to a refusal.
 
 import (
 	"regexp"
@@ -102,7 +98,6 @@ func TestMetadataCapsDegradeAndStructuralCapsRefuse(t *testing.T) {
 
 // TestMetadataDegradeNeverRewritesTheAuthorsLine is the half that keeps this from
 // being the truncate-then-save data loss §7's caps block was written to prevent.
-//
 // The reader shortens the MODEL. The file must come back byte-identical, so a
 // build with a larger cap reads the author's whole sentence.
 func TestMetadataDegradeNeverRewritesTheAuthorsLine(t *testing.T) {
@@ -141,9 +136,6 @@ func TestMetadataDegradeNeverRewritesTheAuthorsLine(t *testing.T) {
 // TestEveryMetadataFieldDegradesThroughTheOneTable drives ALL of metaTextFields
 // at once: a file with every metadata key over the cap must load, shorten every
 // one of them, and report each by name.
-// It is the seam's encapsulation gate. A field dropped from metaTextFields, or a
-// reader assignment that quietly goes back to the refusing helper, fails here and
-// cannot be argued away as an oversight in one key.
 func TestEveryMetadataFieldDegradesThroughTheOneTable(t *testing.T) {
 	long := overCap(3)
 	var b strings.Builder
@@ -177,10 +169,6 @@ func TestEveryMetadataFieldDegradesThroughTheOneTable(t *testing.T) {
 
 // TestTheDocumentPublishesExactlyTheMetadataClass pins docs/THEME-FORMAT.md's
 // metadata row against metaTextFields, in BOTH directions.
-// The spec is written so a third party can implement a reader without this
-// source, so "which keys degrade" is a promise; a promise nothing checks drifts,
-// and a third-party writer would then emit a file we refuse for a key our own
-// document says is safe.
 func TestTheDocumentPublishesExactlyTheMetadataClass(t *testing.T) {
 	doc := readFormatDoc(t)
 	var row string

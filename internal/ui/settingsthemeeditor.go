@@ -1,9 +1,6 @@
 package ui
 
 // SETTINGS ▸ THEME EDITOR (v1.90.0 W10) — the authoring tab.
-// Every draw helper here shadows `pad := a.formX` (the settings-origin rule — a
-// missing shadow renders the row silently under the sidebar) and registers its rows
-// with c.onRow so the gather-search finds them by label.
 
 import (
 	"github.com/veandco/go-sdl2/sdl"
@@ -76,9 +73,6 @@ func (a *App) drawSettingsThemeEditor(y, _ int32) int32 {
 
 // drawThemeMakeRows is the CREATOR: a name, a starting point, and the button that
 // makes the folder and opens the editor over it.
-// A CYCLER, NOT THE GALLERY'S TWO-AXIS GRID. The gallery is 21 × 14 miniatures and
-// wants a panel; a settings row is one line tall, and the axes here are the same
-// two lists in the same order, so a user who picks a pair here and then opens the
 func (a *App) drawThemeMakeRows(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // the settings-origin shadow rule
@@ -149,10 +143,6 @@ func (a *App) drawThemeMakeRows(y, w int32) int32 {
 }
 
 // drawThemePresetAxes is the two-cycler pick for templatePreset.
-// THE LIBRARY LOAD IS ONE sync.Once OVER EMBEDDED BYTES (theme.ShippedPresets), not
-// a disk read — the fragments ship inside the executable — so it is safe on a
-// frame. A failure draws a line and no cyclers rather than refusing the tab: an
-// empty axis that says why beats a control that does nothing.
 func (a *App) drawThemePresetAxes(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // the settings-origin shadow rule
@@ -186,9 +176,6 @@ func (a *App) drawThemePresetAxes(y, w int32) int32 {
 
 // drawThemeEditorOpenRow is the row that MOVED here from the Theme tab, unchanged in
 // behaviour: open what can be opened, copy what cannot.
-// The two strings and the branch are themecopy.go's (themeEditorRow /
-// copyAppliedThemeForEditing) and are untouched by the move — the row is in a
-// different place, not a different row.
 func (a *App) drawThemeEditorOpenRow(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // the settings-origin shadow rule
@@ -247,9 +234,6 @@ func (a *App) drawThemeImportRow(y, w int32) int32 {
 
 // drawThemeAuthoringHint is the pointer the Theme tab keeps where the editor and
 // import rows used to be.
-// A MOVED ROW LEAVES A HOLE where the user's memory is, and the hint machinery is
-// the tool for it — the keyword fallback already draws exactly this sentence for a
-// search that resolves to another tab, so this is the same line in the same words,
 func (a *App) drawThemeAuthoringHint(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // the settings-origin shadow rule
@@ -311,11 +295,6 @@ func presetAxisLabels(list []*theme.Preset) []string {
 }
 
 // presetPair is the pair the two dropdowns currently name.
-// It resolves through theme.ShippedPresets rather than through the cached label
-// slices, because a NAME is not an identity — MergePresets needs the *Preset, and
-// re-deriving it from a label would be a second lookup table to keep in step with
-// the first. An unreadable library yields the empty pair, which the funnel refuses
-// with its own sentence (errThemeCreateNoPair).
 func (s *settingsState) presetPair() theme.PresetPair {
 	lib, err := theme.ShippedPresets()
 	if err != nil || lib == nil {

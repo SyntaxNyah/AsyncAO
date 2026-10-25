@@ -1,9 +1,6 @@
 package ui
 
 // THE THEME EDITOR (v1.90.0 W7a) — docs/wip/THEME-EDITOR-DESIGN.md §Q7 and §3.
-// ZERO COST WHEN CLOSED. App carries ONE pointer, a.te, nil while the editor is
-// shut. Nothing on the courtroom's frame path reads it, no goroutine, no timer, no
-// allocation — the v1.89.0 "0 base = 0 cost" rule, benchmarked rather than asserted
 
 import (
 	"strconv"
@@ -299,9 +296,6 @@ func (a *App) themeEditorOpen() bool {
 
 // editorApply performs one op and records it. It is the ONLY place the screen
 // mutates the document.
-// PREVIEW REFUSES HERE, at the funnel, and not only at the input paths that feed
-// it. The demo hides every rail and neutralizes every click inside its own pass
-// (themeeditorpreview.go), so nothing SHOULD reach this — which is exactly why the
 func (a *App) editorApply(op themeEditOp) bool {
 	if a.te == nil || op.kind == opNone || a.editorPreviewOn() {
 		return false
@@ -345,9 +339,6 @@ func (a *App) editorInvalidateLive() {
 
 // setEditorLive flips the toggle and, on the way back ON, pays the one reconcile
 // the frozen frames skipped.
-// THE RESUME IS UNCONDITIONAL, not "if anything changed": the plan's signature is
-// exactly what says whether anything changed (editorSyncArt compares it), and this
-// is the one moment the answer has to be re-asked rather than trusted.
 func (a *App) setEditorLive(on bool) {
 	if a.te == nil {
 		return
@@ -364,9 +355,6 @@ func (a *App) setEditorLive(on bool) {
 
 // editorUndo steps the timeline back by one op — or by one whole GROUP, which is
 // what makes "try a preset, hate it, Ctrl+Z" one keypress.
-// IT REFUSES WHILE PREVIEW IS UP, and so does editorRedo below. The two are the
-// only document mutators that do NOT go through editorApply, and the Ctrl+Z chord
-// is claimed PRE-SCREEN (app.go, gated on themeEditorOpen) — so without this a
 func (a *App) editorUndo() bool {
 	if a.te == nil || a.editorPreviewOn() {
 		return false
@@ -625,9 +613,6 @@ func (a *App) drawThemeEditor(w, h int32) {
 }
 
 // editorPanelUp reports that an editor PANEL is on screen.
-// OPEN to the panels design §3.1 still owes (budget details, export sheet): each joins
-// the OR here and is fenced on both sides for free — the preset gallery and the import
-// report took exactly that route in W9.
 func (a *App) editorPanelUp() bool {
 	return a.te != nil && (a.te.fontsOpen || a.te.gallery != nil || a.te.report != nil)
 }
@@ -656,10 +641,6 @@ func (a *App) closeEditorPanels() {
 func (a *App) drawEditorCanvas(w, h int32) {
 	if a.link.room != nil && a.link.sess != nil && !a.theaterOn {
 		// THE COURTROOM'S OWN WIDGETS GO INERT while it is being used as a canvas.
-		// This is layoutEditFence's trick — modalOn blanks hovering() everywhere and
-		// the editor hit-tests with raw pointIn — and it is needed for the same
-		// reason: the kit is single-pass, so a press that selects a themed widget
-		// would ALSO press whatever real button is painted there.
 		saved := a.ctx.modalOn
 		a.ctx.modalOn = true
 		a.drawCourtroom(w, h)
@@ -798,9 +779,6 @@ func clampLabelColumn(want, x, edge int32) int32 {
 }
 
 // editorHeaderBtn is one header-band button whose action may be unavailable.
-// THE CLICK IS SWALLOWED HERE, at the button, not at the action. An action that
-// quietly no-ops is indistinguishable on screen from one that ran and did nothing
-// visible, which is exactly how a redo tail that stopped being reachable would go
 func (a *App) editorHeaderBtn(r sdl.Rect, label string, enabled bool) bool {
 	c := a.ctx
 	if enabled {
@@ -870,10 +848,6 @@ func (te *themeEditor) editorPlate(base sdl.Color) sdl.Color {
 }
 
 // drawEditorElementRail is the LEFT rail: the z-order list.
-// Clipped with pushClip/popClip and NEVER with a raw Ren.SetClipRect — the raw call
-// clips DRAW only and lets clicks and hovers leak past the edge, which is the class
-// of bug the char-select grid shipped in v1.55.8. hovering() honours the kit's clip
-// stack; the renderer's does not.
 func (a *App) drawEditorElementRail(w, h int32) {
 	c := a.ctx
 	rail := sdl.Rect{X: 0, Y: editBannerH, W: editRailW, H: h - editBannerH}
@@ -931,9 +905,6 @@ func (a *App) drawEditorElementRail(w, h int32) {
 
 // drawEditorRailActions draws the element rail's header buttons: ADD AN IMAGE, and
 // the LIVE PREVIEW toggle.
-// "+ IMAGE" IS THE FIRST ADD-AN-ELEMENT AFFORDANCE IN THE EDITOR. Until this wave
-// opElemAdd had no UI caller at all — it existed only as the inverse of a delete —
-// so an element could be deleted, hidden, locked and re-typed but never created. It
 func (a *App) drawEditorRailActions(rail sdl.Rect) {
 	c := a.ctx
 	// Laid out from the RIGHT edge so the "Elements" label keeps the left and the
@@ -1259,7 +1230,6 @@ func (a *App) editorWriteStringField(f *inspectorField, t editTarget, s string) 
 func editFieldID(f editField) string { return "themeedit.f." + f.String() }
 
 // editorSpinner is a − value + control. Returns the (possibly changed) value.
-//
 // Shift takes the coarse step, so the keyboard rule (arrow = 1 px, Shift = a grid
 // line) and the mouse rule are the same rule.
 func (a *App) editorSpinner(r sdl.Rect, v, lo, hi int32) int32 {
@@ -1376,9 +1346,6 @@ func (a *App) handleEditorKeys() {
 
 // editorNudgeSelection moves the whole selection by one step, as ONE grouped op.
 // Clamping here would forbid values the format defines.
-// A BURST IS ONE UNDO STEP, and it costs nothing to arrange: consecutive nudges hit
-// the ring's coalescing window on the same (kind, target, field), so twenty taps
-// merge into one op whose `before` is where the element started.
 func (a *App) editorNudgeSelection(dx, dy int, coarse bool) {
 	if a.te == nil || a.te.selN == 0 {
 		return
@@ -1442,10 +1409,6 @@ func (a *App) editorToggleField(f editField) {
 }
 
 // editorDeleteSelection removes every selected element as one grouped op.
-// HIGHEST INDEX FIRST. Identity is the INDEX (theme.Element), so removing element 3
-// renumbers everything after it — deleting in ascending order would delete the
-// wrong rows from the second one on. Descending is the only order in which the
-// remaining targets stay valid.
 func (a *App) editorDeleteSelection() {
 	if a.te == nil || a.te.selN == 0 {
 		return
@@ -1498,7 +1461,6 @@ func (a *App) editorDeleteSelection() {
 
 // editorDeleteRefusal is the chip a partly-refused delete posts, or "" when
 // everything the user asked for happened.
-//
 // A PURE FUNCTION so the wording is gate-able without a renderer: the sentence is the
 // feature here, not the arithmetic that reaches it.
 func editorDeleteRefusal(locked, full int) string {
@@ -1535,9 +1497,6 @@ func itoa(n int) string { return strconv.Itoa(n) }
 // ---------------------------------------------------------------------------
 
 // reclaimThemeDoc re-installs the editor's model after a theme apply.
-// ONE NAMED CALL SITE: pollThemeApply, immediately after that assignment. It is
-// deliberately not a general "the editor owns the sidecar" rule — it is a single
-// re-install, guarded on the theme NAME, so switching themes mid-session correctly
 func (a *App) reclaimThemeDoc() {
 	if a.te == nil || a.te.doc == nil || a.te.doc.side == nil {
 		return

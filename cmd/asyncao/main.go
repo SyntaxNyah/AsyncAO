@@ -228,10 +228,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		winW, winH = int32(sw), int32(sh)
 	}
 	// sdl.WINDOWPOS_CENTERED is literally SDL_WINDOWPOS_CENTERED_DISPLAY(0), i.e.
-	// the PRIMARY display — and that is correct here and only here: there is no
-	// window yet, so there is no "current display" to prefer, and we persist a
-	// window size but never a position. Everywhere a window already exists we go
-	// through ui.CenteredWindowPos instead, which keeps it on the display it is on.
 	window, err := sdl.CreateWindow(windowTitle,
 		sdl.WINDOWPOS_CENTERED, sdl.WINDOWPOS_CENTERED,
 		winW, winH, sdl.WINDOW_SHOWN|sdl.WINDOW_RESIZABLE|highDPIFlags())
@@ -432,10 +428,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	defer uiCtx.Destroy()
 	uiCtx.SetWindow(window) // modcall/case-alert taskbar flashing
 	// preview is the detachable emote-preview window: closed (nil sdl.Window)
-	// until the user's own pop-out toggle opens it (internal/ui's
-	// toggleDetachPreview, wired below via Deps.Preview) — see
-	// render.PreviewWindow's doc for the "closed = free" contract
-	// dispatchEvent and the render loop's Present call below both rely on.
 	preview := render.NewPreviewWindow()
 	defer preview.Close()
 	ui.SetWindowIcon(window) // window / taskbar icon = the Mayo mascot (mascot.go)
@@ -472,10 +464,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	uiCtx.SetDeviceScaleFactor(retinaScale) // macOS Retina: device pixel scale for text raster only (no-op off macOS)
 
 	// Auto UI scale has two inputs, combined per frame in SetAutoScaleFromWindow:
-	// the display DPI (HiDPI laptops) and the WINDOW SIZE (a maximized window on a
-	// big display would otherwise show a tiny island of fixed-pixel widgets — the
-	// "text is too small" reports; it's also why shrinking the window already
-	// looked right). Both are floored at 100% so we never auto-SHRINK: an
 	// unreliable / low DPI reading must not shrink the whole UI below native (#6).
 	// SeedDisplayDPIScale (#77 Part B) records the DPI component using the reliable
 	// per-monitor query (Windows GetDpiForWindow; sdl.GetDisplayDPI reports a flat
@@ -550,8 +538,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 				// The window moved to a different monitor (#77 Part B): re-query the
 				// DPI so a HiDPI display re-detects. NoteDisplayChanged gates on the
 				// display index actually changing, so a same-monitor move is a no-op.
-				// DISPLAY_CHANGED is the exact signal; MOVED is the fallback for SDL
-				// builds that don't surface it (both are cheap after the index gate).
 				if e.Event == sdl.WINDOWEVENT_DISPLAY_CHANGED || e.Event == sdl.WINDOWEVENT_MOVED {
 					app.NoteDisplayChanged()
 				}
@@ -639,9 +625,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			if prefs.Load().EventDrivenLoop {
 				// EXPERIMENTAL event-driven wait. The Background pumps above may
 				// have produced redraw-worthy work (packets, texture uploads):
-				// loop straight around and render it — the next pass's SkipFrame
-				// refuses on RenderNeeded. Otherwise park on the OS event wait
-				// until input, a wake doorbell, or the nearest scheduled deadline.
 				if app.RenderNeeded() && !app.RenderSuppressed(focused) {
 					continue
 				}
@@ -703,11 +686,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		}
 
 		// Frame pacing (the GPU-burn fix): sleep the frame's remaining budget.
-		// vsync stays on for tear-free presents, but it CANNOT be the throttle —
-		// it ties the loop to the panel (165 Hz laptops burned GPU while idle)
-		// and some windowed present paths don't block at all (the "54% GPU in a
-		// tiny window" report). Two nested budgets:
-		// With vsync off both fall back to the old fixed ~60 fps sleep.
 		pace := app.FramePace(focused)
 		hardCap := app.HardCapBudget(focused)
 		if limiterOff {

@@ -138,8 +138,6 @@ func decodeWebPAnim(data []byte, playAnimations bool, maxH int) (*Decoded, error
 
 	// Per-frame delays from the demuxer's ANMF duration — independent of the
 	// cumulative-timestamp convention GetNext uses (see the comment above).
-	// Default every frame to the zero-delay fallback, then overwrite with the
-	// authored duration where the demuxer reports it.
 	durations := make([]time.Duration, frameTotal)
 	for i := range durations {
 		durations[i] = defaultZeroFrameDelay
@@ -226,10 +224,6 @@ func decodeWebPAnim(data []byte, playAnimations bool, maxH int) (*Decoded, error
 // decodeWebPAnimStream is decodeWebPAnim's incremental form: it walks the same
 // WebPAnimDecoder and emits each frame from kept index 1 (frame 0 was already
 // delivered by the progressive first frame) as a single-frame chunk via emit.
-// It streams only when the clip needs no decimation (the common case —
-// downscale-to-fit keeps every frame in budget); otherwise it returns
-// streamed=false so the caller falls back to the classic full decode, which
-// keeps spreadLoopDelays correct. total is the source frame count.
 func decodeWebPAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed bool, total int, err error) {
 	var pinner runtime.Pinner
 	pinner.Pin(&data[0])

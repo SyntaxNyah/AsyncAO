@@ -48,9 +48,6 @@ type Job struct {
 }
 
 // Pool is the prioritized fetch worker pool with epoch cancellation:
-// room/server changes bump the epoch and all queued jobs from earlier epochs
-// no-op (their Run gets stale=true) without spawning goroutines or losing
-// anybody's results.
 type Pool struct {
 	high chan Job
 	low  chan Job
@@ -103,13 +100,6 @@ func (p *Pool) BumpEpoch() int64 {
 }
 
 // Submit queues job on the given lane.
-//
-//   - PriorityHigh: blocks briefly if the lane is full (live-message work is
-//     never shed).
-//   - PriorityLow: never blocks; when the lane is full the OLDEST queued low
-//     job is shed — cancelled via Run(stale=true) — to make room, because
-//     the newest speculation tends to be the best-informed one.
-//
 // Returns false only when the pool is closed (the job is then cancelled via
 // Run(stale=true) on the caller's goroutine).
 func (p *Pool) Submit(prio Priority, job Job) bool {

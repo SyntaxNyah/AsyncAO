@@ -33,7 +33,6 @@ const (
 	elemMusicName
 	elemAreaList
 	// elemDebugLog dresses the themed debug panel drawn at the ms_chatlog rect.
-	// AO2 gives that widget its OWN identifier, not server_chatlog's
 	// (courtroom.cpp:1198). APPENDED, never inserted: the slot index is the
 	// position in theme.FontElements.
 	elemDebugLog
@@ -62,8 +61,6 @@ type themeElemFont struct {
 	bold bool
 	// color / colorSet are "<id>_color" — the element's foreground ink. AO2 stamps
 	// it as `<class> { color: rgba(...) }` on the widget (courtroom.cpp:1300), i.e.
-	// one FOREGROUND per element and never a background. colorSet false = the theme
-	// named no colour for this element and the draw site keeps the kit's own.
 	color    sdl.Color
 	colorSet bool
 	// userFont marks that the USER — not the theme — gave this element a font or a
@@ -423,7 +420,6 @@ func facesIfReferenced(tbl *themeFontTable, data [][]byte) [][]byte {
 // mergePanelFonts stamps the user's per-panel picks onto a table, AFTER whatever
 // the theme contributed to it has been decided. Separate from the resolution
 // above so the whole precedence ladder is readable in one place (landThemeFonts)
-// instead of being split across a thread boundary.
 func (res *themeApply) mergePanelFonts(tbl *themeFontTable, faces bool) {
 	for i := range tbl.e {
 		if res.panelPct[i] != 0 {

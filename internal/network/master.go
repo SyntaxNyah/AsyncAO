@@ -137,11 +137,6 @@ func (e ServerEntry) WebSocketURL() string {
 const UnsupportedReason = "Legacy TCP servers are not supported. Server owners should upgrade their software to WebSockets if they want people to join."
 
 // ParseDirectAddress normalizes direct-connect input for private servers:
-//
-//	"wss://host:port" → unchanged
-//	"ws://host:port"  → unchanged
-//	"host:port"       → "ws://host:port" (or wss:// when secure is set)
-//
 // The port is required — AO servers have no conventional default.
 func ParseDirectAddress(input string, secure bool) (string, error) {
 	input = strings.TrimSpace(input)
@@ -195,9 +190,6 @@ func splitWSURL(wsURL string) (scheme, host string, port int, err error) {
 }
 
 // FetchServerList downloads and parses the master server list.
-// Master-list ETag revalidation: the lobby Refresh button re-fetches the
-// full list every press; with the validator a no-change refresh costs a
-// 304 and zero payload bytes. One URL in practice — a tiny capped table.
 type cachedMasterList struct {
 	etag string
 	body []byte

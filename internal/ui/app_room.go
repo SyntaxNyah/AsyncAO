@@ -201,10 +201,6 @@ func (client1 *clientState) clientControlClick(e *env, view sdl.Rect) {
 }
 
 // pinToSplit pins a BACKGROUND tab as the floating client window (toggle:
-// re-pinning the same tab closes it). Builds a throwaway room over the tab's OWN
-// session + URL builder with NopAudio, plus a second viewport over the shared
-// store, and seeds the current background + song + last message (settled) so
-// the window isn't blank on pin.
 func (a *App) pinToSplit(t *courtTab) {
 	if t == nil || t.state.link.sess == nil || t.dead {
 		return
@@ -789,9 +785,6 @@ func (a *App) NoteAnimating() { a.frame.frameAnimChrome = true }
 
 // audioFineTick is the cadence the courtroom is advanced — and its blips played —
 // at while a message types, independent of the (possibly much slower) PRESENT rate.
-// ~60 Hz: fine enough that a fast blip stream never audibly quantizes, cheap because
-// it's logic + audio only (no GPU). The playtest ask: blips should sound as if the
-// UI were at 60 fps even with the frame rate capped low (down to 1 fps).
 const audioFineTick = time.Second / 60
 
 // AudioActive reports whether the LIVE courtroom is streaming audio-timed events
@@ -916,8 +909,6 @@ func (a *App) HardCapBudget(focused bool) time.Duration {
 	if off {
 		// Unfocused "off" means "don't redraw while tabbed out" — the static skip
 		// handles the idle case. A frame that renders anyway (an audible ceremony)
-		// still obeys SOMETHING: fall back to the active cap as the backstop
-		// ceiling, mirroring FramePace's unfocused-off branch (unf = full).
 		return paceBudget(a.d.Prefs.Load().FPSCap())
 	}
 	return unf // ∞ → 0 (uncapped); N → 1s/N
@@ -1030,9 +1021,6 @@ func (a *App) FramePace(focused bool) time.Duration {
 			unf = full
 		}
 		// A message playing while tabbed out is still AUDIBLE: hold the blip cadence.
-		// Stamp the tightening tier as each deadline actually wins (the focus state
-		// shows separately via the F8 focusSuffix), so the readout names WHY the
-		// budget moved off trickle — a bare pacerUnfocused hid an audible ceremony
 		// / live stage anim while claiming "trickle" (#50 diagnostic precision).
 		if a.roomBusy() {
 			if tb := a.talkBudget(full); tb < unf {
@@ -1091,10 +1079,6 @@ func (a *App) FramePace(focused bool) time.Duration {
 		return clampDur(due, full, idle) // content cadence, never slower than the idle rate
 	}
 	// Rendered but nothing is animating — see the "active cap" tier note above.
-	// Backstopped: a frame NOTHING demanded (no input, no transition, no anim)
-	// must never leave the pacer with a zero budget — under the ∞ default cap
-	// the classic loop's lobby/caret renders became a zero-sleep spin here, and
-	// ∞ idle ("as fast as the active cap", the Settings tooltip's own words)
 	if a.d.Prefs.Load().EventDrivenLoop || idleOff || idleUnlimited {
 		a.frame.lastPacerTier = pacerIdleActiveCap
 		return backstopBudget(full)
@@ -1463,9 +1447,6 @@ func (a *App) applySpriteCap() {
 }
 
 // vpSpriteLoadMode maps the 4-way loading-mode pref onto the renderer's 2-way switch:
-// Wait and Default are MESSAGE-lifecycle gates (courtroom), so for the renderer they
-// fall back to hold-previous — if a hold times out (404 / dead link) the stage keeps
-// the previous sprite instead of flashing blank, composing the two mitigations.
 func (a *App) vpSpriteLoadMode() int {
 	mode := a.d.Prefs.Load().SpriteLoadModeVal
 	if mode == config.SpriteLoadWait || mode == config.SpriteLoadDefault {
@@ -1605,9 +1586,6 @@ func resumeSeek(snapPos, snapDur, elapsedSec float64, loop bool) (seekSec float6
 
 // resumeActiveTabMusic re-seeds the newly-active tab's area song into the single
 // music stream on a room (re)build. It's the cross-tab continuity core:
-// StreamMusic OFF means nothing is fetched or played (§1.3): we only track
-// Now-Playing then, and leave the (nonexistent) stream's duck alone. Render thread
-// only (buildRoom runs there); no new goroutines.
 func (a *App) resumeActiveTabMusic() {
 	track := a.link.sess.MusicTrack
 	if track == "" {
@@ -1763,7 +1741,6 @@ func (a *App) charSlotByName(name string) int {
 // character (claim its slot — the same CC → PV → enterCourtroom flow as the
 // "Character" button) by default, or iniswap it when iniswap mode is ticked. A
 // switch we can't perform (taken slot, or a name that isn't a server character)
-// falls back to an iniswap — with a toast, so a favourite never silently swaps.
 func (a *App) wardrobeClick(name string) {
 	a.inibrowse.showIni = false
 	if a.link.room == nil {
@@ -2262,8 +2239,6 @@ func (a *App) pollPreviewEmotes() {
 // previewPortraitAnim returns the emote the char-select grid should show for
 // name: the conventional "normal" idle pose, or — once the char.ini has been
 // parsed and turns out NOT to name one — the pack's FIRST real emote.
-// Until the parse lands it answers the convention, so the common pack still
-// fills the box from ONE optimistic probe and never pays for a second.
 func (a *App) previewPortraitAnim(name string) string {
 	if name != a.budget.previewChar || len(a.budget.previewAnims) == 0 {
 		return previewIdleAnim // not parsed (yet): the optimistic convention
@@ -2417,8 +2392,6 @@ func (a *App) pollCharINI() {
 		// Preserve the per-tab emote selection across a REACTIVATION reload: snap
 		// to the first emote only when the restored index no longer fits the
 		// freshly loaded list. A real character change (enterCourtroom / setIniswap)
-		// zeroes these synchronously before the fetch, so a fresh pick still starts
-		// at emote 0 — see clampEmoteSel.
 		a.emotepick.emoteIdx, a.emotepick.emoteRow = clampEmoteSel(a.emotepick.emoteIdx, a.emotepick.emoteRow, len(a.emotepick.emotes))
 		a.emotepick.emoteAsk = nil // fresh char: re-demand its button art from scratch
 		// Speculatively prefetch emote sprites at LOW priority (sheds under load, never blocks
@@ -2441,8 +2414,6 @@ func (a *App) pollCharINI() {
 				// Bare-spelling fallback like the bundle path above: a mixed-naming
 				// pack ships this emote only under the unprefixed name, and a single-
 				// spelling prefetch would 404 the prefixed base and (once displayed)
-				// false-flag it missing → a missingno flash over a sprite that exists.
-				// The full chain makes "chain exhausted" mean "truly absent."
 				a.d.Manager.PrefetchChain(a.link.urls.Emote(me, e.Anim, courtroom.EmoteIdle), a.link.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite
 			}
 		}

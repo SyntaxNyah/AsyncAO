@@ -7,9 +7,6 @@ import (
 )
 
 // TestLogMusicChange pins the IC "has played a song" line (webAO/AO2 parity):
-// the packet showname names the player, an absent showname falls back to the
-// character, system/area changes (no valid charID) and area-name transfers log
-// nothing, and ~stop reads as "has stopped the music".
 func TestLogMusicChange(t *testing.T) {
 	a := testTabApp(t)
 	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix", "Maya"})

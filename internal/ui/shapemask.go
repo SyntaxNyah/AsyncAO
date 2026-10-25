@@ -59,10 +59,6 @@ const shapeLabelInset = int32(3)
 const shapeHealPeriod = 2 * time.Second
 
 // shapeTexKey builds the pinned-tier key for one shape mask: shape://<kind>/<role>/<tier>.
-// The scheme prefix can't collide with asset URLs (http/https/local) or theme://
-// keys. role is "fill" or "stroke"; tier indexes shapeTierRadii. Called only on
-// (rare) build/heal + the once-per-frame refresh, never per widget, so the small
-// strconv/concat cost is off the hot path.
 func shapeTexKey(kind, role string, tier int) string {
 	return "shape://" + kind + "/" + role + "/" + strconv.Itoa(tier)
 }

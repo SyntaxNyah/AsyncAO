@@ -214,9 +214,6 @@ func TestLoadBrowseDirError(t *testing.T) {
 // (v1.90.0 W8). The browser now serves five purposes and a listing that showed
 // recordings to somebody importing a theme would be a picker with nothing in it —
 // the "button does nothing" report the in-app browser was built to end.
-// It drives browseKeepRule rather than restating the extensions, so a purpose
-// added without a rule fails here instead of silently listing recordings, and the
-// bundle rule is checked against themePackExt (the drop router's own constant)
 func TestEveryBrowsePurposeHasItsOwnFileFilter(t *testing.T) {
 	if browseKeepRule(purposeThemeBundle)("umineko.aorec") {
 		t.Error("the theme-bundle browser lists recordings")

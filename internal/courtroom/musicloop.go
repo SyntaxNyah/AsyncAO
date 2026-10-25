@@ -170,8 +170,6 @@ func parseFloat(s string) (float64, bool) {
 }
 
 // ParseAOLoopSidecar parses an AO music-loop sidecar (webAO/AO2-Client convention:
-// "<track-url>.txt" alongside the track itself) into a resolved loop window in
-// SECONDS.
 // The legacy grammar below replicates ../AO2-Client/src/aomusicplayer.cpp:71-123
 // LINE FOR LINE, IN FILE ORDER, CASE-SENSITIVELY: it is a SINGLE FORWARD PASS, not a
 // two-pass scan. `seconds=true` is a running flag that affects ONLY the lines below
@@ -286,9 +284,6 @@ func unquoteDROValue(v string) string {
 
 // parseDROManifest tokenizes a DRO audiotrack manifest: QSettings::IniFormat [N]
 // groups of key=value pairs, values optionally wrapped in double quotes.
-// A key appearing before any [section] header is skipped (not a shape DRO ever
-// writes); a section with no readable filename can never match a track and needs no
-// warning (hard rule 6 — a missing/unusable sidecar stays silent).
 func parseDROManifest(data []byte) []droSection {
 	var sections []droSection
 	var cur *droSection
@@ -429,17 +424,6 @@ func IsDirectMusicURL(url string) bool {
 // hasRawQueryOrFragment reports whether s contains a literal, unescaped '?' or
 // '#'. This is the ONE signal a fully RESOLVED musicURL string can still carry
 // that distinguishes "a direct link, kept verbatim by MusicURL's own http(s)
-// passthrough" from "a URL this package built" — a bare scheme check
-// (IsDirectMusicURL) cannot do this, because it is equally true of a legitimate
-// origin-built URL once the origin itself is http(s) (virtually always: an asset
-// origin IS a network URL). URLBuilder's own output can never contain either
-// character raw: segPath/escapePreservingSlashes route every segment through
-// url.PathEscape, which percent-encodes both as structurally significant
-// ("%3F"/"%23"). A genuinely direct link that happens to sign itself with a
-// query string — precisely how a Discord CDN /play link is shaped
-// ("...song.mp3?ex=&is=&hm=", already documented on MusicDisplayName) — keeps
-// that '?' raw, because MusicURL returns such a track completely unchanged.
-// This cannot, on its own, catch a direct link that carries NEITHER a query
 // string nor a fragment (a plain "https://host/sounds/music/x.opus" masquerading
 // as a resolved track) — a caller that still has the ORIGINAL wire text available
 // should prefer IsDirectMusicURL on that instead, before ever building a resolved

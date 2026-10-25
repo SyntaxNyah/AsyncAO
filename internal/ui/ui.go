@@ -210,9 +210,6 @@ type Ctx struct {
 	chatSet fontSet
 	logSet  fontSet
 	// Device-scaled siblings of chatSet/logSet (#77): built at pct×(textDevPct/100)
-	// so the message-raster/emoji paths rasterize crisp at final device size.
-	// The LOGICAL sets above stay the wrap/measure baseline (unchanged callers);
-	// deviceFontFor maps a logical set face to its device sibling by set+index.
 	chatSetDev fontSet
 	logSetDev  fontSet
 	// The CHROME set: the same chain again, but headed by the chrome face and at the
@@ -254,9 +251,6 @@ type Ctx struct {
 	coverHintOK   bool
 	// Color-emoji fallback face (e.g. Segoe UI Emoji), kept SEPARATE from the
 	// chain so the common single-font fast path (pickSet len==1) is unchanged.
-	// emojiData is the font file bytes (read off-thread by the App; nil = none/not
-	// loaded); emojiFonts builds faces per size lazily. RWFromMem aliases the bytes,
-	// so emojiData must outlive the faces.
 	emojiData  []byte
 	emojiFonts map[int]*ttf.Font
 	// Broad-Unicode TEXT fallback faces (Segoe UI, Ebrima, Nirmala, Segoe UI Symbol),
@@ -282,9 +276,6 @@ type Ctx struct {
 	wantCJK  bool
 	// Census tier: faces the system-font census supplied on demand, because a rune
 	// reached the draw that NOTHING in the curated chain covered (fontcensus.go).
-	// Appended last, so it never outranks a curated pick — the census answers "some
-	// font here has this glyph", the tiers answer "this is the right face for this
-	// script", and the second question is the better one when both can.
 	censusData  [][]byte
 	censusCover []*sfnt.Font
 	// missingRunes is the render thread's fixed-size record of runes nothing could
@@ -297,9 +288,6 @@ type Ctx struct {
 	missingN     int
 	// Per-element theme faces (#39): the font FILES the active theme's
 	// courtroom_fonts.ini named, read off-thread on theme apply (≤ themeFaceCap)
-	// and installed via SetThemeFaces. RWFromMem aliases the bytes, so they must
-	// outlive their faces — SetThemeFaces closes the element sets BEFORE dropping
-	// them. themeFaceCover holds the index-aligned sfnt cmap face for the PICK.
 	themeFaceData  [][]byte
 	themeFaceCover []*sfnt.Font
 	// themeFaceQt is the index-aligned Qt ROW PITCH of each of those faces —
@@ -614,7 +602,6 @@ func loadEmbeddedFont(size int) (*ttf.Font, error) {
 }
 
 // Font exposes the chrome font (typewriter rasterizer reuse).
-//
 // Deliberately NOT panel-scoped: the typewriter rasterizer and the other callers
 // of this want the client's own face regardless of which panel is mid-draw.
 func (c *Ctx) Font() *ttf.Font { return c.font }
@@ -644,9 +631,6 @@ func (c *Ctx) chromeFace() *ttf.Font {
 
 // chromeFaceFor is chromeFace for a KNOWN string: the same face when it can draw
 // the text, otherwise the first face in the fallback chain that can.
-// Pure ASCII short-circuits before anything is built, so the common case is a
-// one-pass byte scan and nothing else. A panel-dressed face is left alone: its
-// whole point is that the user chose that family for that panel.
 func (c *Ctx) chromeFaceFor(text string) *ttf.Font {
 	face := c.chromeFace()
 	if c.panelFont != nil || !hasNonASCII(text) {
@@ -674,7 +658,6 @@ func hasNonASCII(s string) bool {
 
 // pushPanelFont arms f as the chrome face and RETURNS THE PREVIOUS ONE, which
 // the caller hands straight back to popPanelFont:
-// A nil face (the overwhelmingly common case — no override set) writes nothing.
 // So is a face that IS the chrome face: arming it would only add a pointless
 // non-nil panelFont for every later branch to test.
 func (c *Ctx) pushPanelFont(f *ttf.Font) *ttf.Font {
@@ -896,9 +879,6 @@ func (c *Ctx) pickIn(s *fontSet, fonts []*ttf.Font, pct int, text string) *ttf.F
 	if !covered {
 		// The picked face can't draw the whole string, so some of it may be about to
 		// come out as .notdef — offer those runes to the census.
-		// Without it the chrome path could never feed the census at all, so a Thai or
-		// Cherokee character name in the picker drew boxes forever and only ever came
-		// right by accident — if some MESSAGE elsewhere in the session happened to
 		c.noteUncoveredIn(s, text)
 	}
 	if c.pickMemo == nil {
@@ -935,7 +915,6 @@ func (c *Ctx) noteUncoveredIn(s *fontSet, text string) {
 // noteCoverHint records the pick just made so the covers() gate every caller runs
 // IMMEDIATELY afterwards — with the face it just received — is a pointer + string
 // compare instead of a set scan plus a map probe. Purely an accelerator:
-// coversFace stays correct when the hint misses.
 func (c *Ctx) noteCoverHint(f *ttf.Font, text string, covered bool) {
 	c.coverHintFont, c.coverHintText, c.coverHintOK = f, text, covered
 }
@@ -964,9 +943,6 @@ const setPairCount = 3 + int(themeFontElemCount)
 
 // setPairs returns every (logical, device) pair in ONE place, so setOf /
 // setIndexOf / Destroy / SetChromeFont can never miss a set as sets are added.
-// Returned BY VALUE as a fixed-size array — stack, no allocation — and walked
-// only on raster-BUILD paths (coverRunes / deviceTextFont / a font swap), never
-// per frame: ≤ setPairCount pairs × ≤ 8 faces is a bounded pointer scan.
 func (c *Ctx) setPairs() [setPairCount][2]*fontSet {
 	var out [setPairCount][2]*fontSet
 	out[0] = [2]*fontSet{&c.chatSet, &c.chatSetDev}
@@ -1426,7 +1402,6 @@ func (c *Ctx) buildSet(s *fontSet, chain [][]byte, chainCover []*sfnt.Font, pct,
 // noteUncovered records a rune that no face in the chain could draw, so the App
 // can ask the census whether anything installed on this machine can. Called from
 // the raster BUILD path only (coverRunes), never per frame, and allocation-free:
-// the queue is a fixed array that stops accepting once full.
 func (c *Ctx) noteUncovered(r rune) {
 	if c.missingN >= len(c.missingRunes) {
 		return
@@ -1622,9 +1597,6 @@ func coverHasRune(f *sfnt.Font, buf *sfnt.Buffer, r rune) bool {
 }
 
 // coverScan answers the pick's two different questions in ONE pass over text:
-// The two answers differ only for the runes isInvisibleRune names, which is exactly
-// the point. A nil face covers nothing. Allocation-free: the reused sfnt buffer, and
-// an early return the moment a VISIBLE rune is missing (the common rejection).
 func coverScan(f *sfnt.Font, buf *sfnt.Buffer, text string) (visible, all bool) {
 	if f == nil {
 		return false, false
@@ -1796,8 +1768,6 @@ func (c *Ctx) CaretVisible() (on, focused bool) {
 // NextHoverDue reports the nearest PENDING hover deadline — a tooltip dwell
 // (TooltipAfter) or a sprite hover-preview — so the experimental loop can wake
 // and render the reveal even though a resting pointer generates no events.
-// Deadlines already reached report ok=false: the reveal drew on the frame the
-// dwell crossed, and a shown tooltip/preview needs no further wakes from here.
 func (c *Ctx) NextHoverDue() (time.Duration, bool) {
 	due, ok := time.Duration(0), false
 	consider := func(d time.Duration) {

@@ -1,7 +1,6 @@
 package themepack
 
 // PROVENANCE — the four values a copy carries about where it came from.
-//
 // ONE concern: turning a folder into the three [import] strings, and nothing
 // else. It is split from copy.go because copying bytes and answering "who wrote
 // this originally?" are two jobs that change for different reasons — the first
@@ -20,9 +19,6 @@ import (
 )
 
 // designHashBytesCap bounds what is read to fingerprint an upstream design INI.
-// It is the format's own file bound, reused rather than restated: a
-// courtroom_design.ini larger than the reader would accept is not a file whose
-// hash means anything.
 const designHashBytesCap = theme.IniDocByteCap
 
 // provenanceTimeFormat is RFC 3339 in UTC — sortable, unambiguous across time
@@ -43,11 +39,6 @@ func nowStamp() string { return time.Now().UTC().Format(provenanceTimeFormat) }
 // designHash fingerprints the theme's courtroom_design.ini — the file the
 // UPSTREAM author maintains, and therefore the one whose change means "upstream
 // moved" rather than "I edited my copy".
-//
-// xxhash because that is the hasher this client already uses for the disk cache's
-// keys; it is not a trust boundary and is never compared against anything but
-// another run of itself. A theme with no design INI hashes to "", which reads as
-// "nothing to compare" rather than as a hash of nothing.
 func designHash(dir string) string {
 	f, err := os.Open(filepath.Join(dir, theme.DesignFileName))
 	if err != nil {

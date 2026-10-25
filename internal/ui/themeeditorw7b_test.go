@@ -1,10 +1,6 @@
 package ui
 
 // W7b — THE INSPECTORS (v1.90.0).
-// Every gate here DRIVES the shipping seam: the real inspector table, the real
-// document funnel, the real pick lists, the real type tables. Nothing below
-// re-implements a rule it is checking (rule 11's mirror-test clause), and the
-// mutation-reverts evidence is the SERIALISED document's hash, exactly as W7a's is.
 
 import (
 	"os"
@@ -436,8 +432,6 @@ func TestOnlyPickerRowsNameAPickSource(t *testing.T) {
 
 // TestPickValueRoundTripsThroughTheNoneEntry pins the one mapping an fkPick row makes
 // that is not the identity: "" is displayed as "(none)" and "(none)" is written as "".
-// Two functions, each other's inverse, beside each other — the rgbaValue/valueRGBA
-// discipline.
 func TestPickValueRoundTripsThroughTheNoneEntry(t *testing.T) {
 	names := []string{pickAnchorNone, "emotes", "sidebar"}
 	if i := pickIndexOf(names, ""); i != 0 {
@@ -595,8 +589,6 @@ func drainThemeApply(t *testing.T, a *App, gen uint64) {
 // TestSavingGeometryDoesNotRestartTheTheme is design §"Live preview, no Apply button"
 // made mechanical: applyThemeAsync runs for media/font import and theme switch, and for
 // nothing else.
-// The evidence is a.themeGen, which applyThemeAsync bumps SYNCHRONOUSLY before it starts
-// its goroutine — so the gate cannot pass by racing it.
 func TestSavingGeometryDoesNotRestartTheTheme(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()
@@ -662,9 +654,6 @@ func TestSavingATypeEditAppliesTheThemeOnce(t *testing.T) {
 
 // TestDiscardAfterASaveGoesBackToTheSave is the W8 exit-contract change, stated as
 // the thing that used to be wrong.
-// A DELIBERATE SEMANTICS CHANGE, and this is its evidence: "discard" now means
-// "back to my last save". The gate that pins the OTHER meaning
-// (TestExitWithoutSavingThrowsAwayTypeEditsToo) is unchanged and still passes,
 func TestDiscardAfterASaveGoesBackToTheSave(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()
@@ -925,7 +914,6 @@ func TestFontFamilyFromFileIsInsideTheFormatsBounds(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestDeleteRefusalNamesTheOffenderAndTheFix splits W7a's one-sentence chip.
-//
 // "some elements were locked or the undo graveyard is full" named neither offender and
 // offered no fix, and the two have OPPOSITE remedies — a locked element wants L, a full
 // graveyard wants a save or a reopen.

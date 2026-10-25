@@ -2,10 +2,6 @@ package theme
 
 // AO2 screen-effect overlays (`effects.ini`) — the parse, the two-pass merge and
 // the theme-local art ladder. Canon is ../AO2-Client; it wins every conflict.
-// This file deliberately does NOT touch ini.go: INI has no section enumerator
-// (GetSection needs the name up front), so the group scan below walks indices
-// 0…OverlayFXIndexScanCap. That is rule-4/rule-9 clean and immune to whatever
-// Sections() helper a later wave adds.
 
 import (
 	"bufio"
@@ -233,7 +229,6 @@ func parseOverlayLayer(raw string) OverlayLayer {
 // groups with no `name`, an empty `name` or an over-long one are skipped
 // (:814-829). A v1 file (no [version] major, or major < 2) is migrated IN MEMORY
 // first; unlike AO2 this never writes a .old file back to the user's theme.
-// Pure: no disk access, no SDL, bounded by OverlayFXCap / OverlayFXIndexScanCap.
 func ParseOverlayFX(r io.Reader) ([]OverlayFX, error) {
 	ini, err := ParseINI(r)
 	if err != nil {
@@ -364,7 +359,6 @@ type OverlayFXSet struct {
 // property pass).
 // get_effect_property (text_file_functions.cpp:860-888) walks paths + misc_paths
 // and never breaks the OUTER file loop, only the inner group loop (:883).
-// Never use loadFirstINI for effects.ini.
 func MergeOverlayFX(list []string, files ...[]OverlayFX) *OverlayFXSet {
 	set := &OverlayFXSet{byName: make(map[string]OverlayFX, OverlayFXCap)}
 	for _, name := range list {
@@ -533,8 +527,6 @@ func (t *Theme) contentRoots() []string {
 }
 
 // FindAssetMisc locates a per-character MISC asset in the theme's own folders:
-// themes/<theme>/<subtheme>/misc/<misc>/<stem>.<ext> then
-// themes/<theme>/misc/<misc>/<stem>.<ext> — AO2's get_asset_paths tiers 2 and 3
 // (path_functions.cpp:181-189).
 // a "../../.." folder must be a refusal, not a read of somebody's private files.
 func (t *Theme) FindAssetMisc(misc, stem string, exts []string) (string, bool) {
@@ -597,9 +589,6 @@ func (t *Theme) FindOverlayMisc(misc, name string) (string, bool) {
 
 // FindOverlayElement walks the WHOLE local ladder for one element, in AO2's
 // order (path_functions.cpp:175-216 through get_effect's two get_image calls):
-// Rung 8 is the only rung a streaming client may also have to ask the ORIGIN for;
-// on disk it is an ordinary probe, so it stays in this walk and the network chain
-// is only reached when the whole local ladder misses. Off-thread only.
 func (t *Theme) FindOverlayElement(misc, element string) (string, bool) {
 	if element == "" {
 		return "", false

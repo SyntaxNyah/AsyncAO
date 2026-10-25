@@ -115,10 +115,6 @@ func (a *App) deliverErrorSprite(res errorSpriteLoad) {
 }
 
 // pollErrorSprite installs a landed custom-placeholder load on the render thread:
-// on success it UploadPinned's over render.MissingKey (replacing the embedded
-// default or a prior custom); on failure it records the inline Settings error,
-// pushes one debug line, and leaves whatever page is currently pinned (the
-// embedded default at worst). Drained once per frame beside the font polls.
 func (a *App) pollErrorSprite() {
 	select {
 	case res := <-a.font.errorSpriteRes:

@@ -607,9 +607,6 @@ func driveKeyFrame(a *App, key sdl.Keycode) {
 
 // TestPreviewRefusesTheMutationFunnelItself drives editorApply — the ONE place the
 // screen mutates the document — while the demo is up.
-// The second half is what makes the first half mean something: the very same op
-// lands once the demo is left, so what is being pinned is the STATE's refusal and
-// not an op the document would have rejected anyway.
 func TestPreviewRefusesTheMutationFunnelItself(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()
@@ -835,8 +832,6 @@ func TestLeavingPreviewFreesTheDemosChatTextures(t *testing.T) {
 
 // funcsContainingInPackage names every PRODUCTION function in this package whose
 // body contains lit, sorted. The twin of funcBodyInPackage (theme_roots_test.go):
-// that one asks "does this function still call X", this one asks "who else does",
-// which is the question a one-construction-site gate is made of.
 func funcsContainingInPackage(t *testing.T, lit string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(".")

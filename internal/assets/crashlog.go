@@ -11,7 +11,6 @@ import (
 // asyncao-crash.log next to the executable. A panic on a background decode
 // goroutine is invisible to the render thread's frameCrashLog (which only
 // guards the frame loop), so without this the crash leaves no trace behind.
-// It does NOT mask the bug: the caller re-panics so the process still dies.
 func writeDecodeCrash(r any) {
 	exe, err := os.Executable()
 	if err != nil {

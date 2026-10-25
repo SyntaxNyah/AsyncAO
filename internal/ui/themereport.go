@@ -26,9 +26,6 @@ const themeReportExtras = 5
 // imports: recorded by the reader, applied by nothing, and — until the report
 // existed — invisible to the author whose theme was quietly missing half of what
 // they shipped.
-// A TABLE over the sidecar's own flags, so a third inherited gap is a row rather
-// than a branch, and TestImportReportNamesEveryDeclaredGap walks it: the gate
-// cannot pass while a declared gap has no line.
 var themeReportGaps = [...]struct {
 	// on reads the flag off the parsed sidecar.
 	on func(*theme.Sidecar) bool
@@ -84,8 +81,6 @@ func buildThemeReport(sc *theme.Sidecar, fontsMissing []string, unbound string) 
 	if n := len(sc.Unknown()); n > 0 {
 		// A COUNT, not the list: these are `[x.*]` vendor sections and keys from a
 		// newer build, they are carried through byte-for-byte, and nothing is wrong.
-		// The line exists so "my custom section survived" is a thing the author can
-		// SEE rather than a thing they have to unzip a save to check.
 		what, verb := "entries", "were"
 		if n == 1 {
 			what, verb = "entry", "was"
@@ -98,9 +93,6 @@ func buildThemeReport(sc *theme.Sidecar, fontsMissing []string, unbound string) 
 
 // themeReportLine is the one sentence the client says about a report, or "" when
 // there is nothing to say.
-// IT NAMES THE FIRST NOTE, not just the count. "4 notes" with no way to see them
-// is the invisible state this file exists to remove, one indirection later; the
-// first note is the one most likely to be the reason the theme looks wrong.
 func themeReportLine(name string, report []string) string {
 	if len(report) == 0 {
 		return ""
@@ -118,9 +110,6 @@ func themeReportLine(name string, report []string) string {
 
 // noteThemeReport lands a report on the render thread: kept for the editor, and
 // said out loud once per DISTINCT report.
-// NOT ONCE PER APPLY, which is the trap. An apply is not a user action: healTheme
-// re-kicks one on any T1 eviction of a theme texture, the texture-filter row kicks
-// one, boot kicks two — so "say it on every apply" would re-post the same four
 func (a *App) noteThemeReport(name string, report []string) {
 	same := sameReport(a.skin.themeReport, report)
 	a.skin.themeReport = report

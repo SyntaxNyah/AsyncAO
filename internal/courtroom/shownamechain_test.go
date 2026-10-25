@@ -1,16 +1,10 @@
 package courtroom
 
 // REGRESSION: the char.ini showname stopped reaching the name plate.
-//
-// Live report, 2026-08-10: "char.ini showname no longer displays — the folder
-// name shows". The plate read `DR2/Nekomaru Nidai`, a nested character FOLDER,
-// for a character whose char.ini names it `Nekomaru Nidai`.
-//
 // Canon is AOApplication::get_showname (text_file_functions.cpp:446-473), called
 // from Courtroom::initialize_chatbox (courtroom.cpp:3283-3292) for the plate and
 // from log_chatmessage (:2528-2538) for the log. AsyncAO implemented rungs 1 and
 // 3 of that three-rung chain and never rung 2.
-//
 // These gates DRIVE the resolution — real ParseCharINI bytes through
 // ShownameOrFolder into a real Courtroom's begin() — rather than restating the
 // rule, because a mirror of the rule is exactly what would have kept passing

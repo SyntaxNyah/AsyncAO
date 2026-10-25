@@ -87,9 +87,6 @@ func TestLivePanelDragPersistsSnappedRect(t *testing.T) {
 }
 
 // TestPanelMagnetCensusExcludesDraggedAndClosed pins the two behavioural fixes:
-// the census skips the surface currently being dragged (by identity, via its drag
-// flag) and any panel that isn't open, so a dragged panel never snaps to itself
-// or to an invisible sibling. It also stays within panelMagnetCap.
 func TestPanelMagnetCensusExcludesDraggedAndClosed(t *testing.T) {
 	a := testTabApp(t)
 	const w, h = int32(1000), int32(800)

@@ -57,11 +57,6 @@ func TestProjIsIdentityWhenExact(t *testing.T) {
 
 // TestLinePitchMatchesLineH pins the invariant that made the device-exact path
 // dangerous: Height() documents that it MUST equal Draw's per-line step, LineH()
-// is the same number, and the selection highlight steps rows by LineH(). So the
-// device-exact vertical step has to be the DEVICE PROJECTION of that logical
-// pitch, never the raw device lineH — the two differ by up to a pixel per line and
-// the error accumulates down a message, which a one-off origin rounding does not.
-//
 // It sweeps every reachable UI scale (75..200 in steps of 5) against odd and even
 // line heights, since the disagreement only shows on some parities.
 func TestLinePitchMatchesLineH(t *testing.T) {
@@ -87,9 +82,6 @@ func TestLinePitchMatchesLineH(t *testing.T) {
 }
 
 // TestCrawlPrefixIsPixelStable is the regression test for the reported artifact:
-// at a scaled UI, letters ALREADY on screen shifted by a pixel or two every few
-// letters while the message typed out.
-//
 // It renders the same message at every reveal count and asserts the pixels of the
 // common prefix never move. The pre-fix path fails this: dst.W was rounded to a
 // whole logical pixel independently of the device-px src, so whenever the revealed

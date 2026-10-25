@@ -1,9 +1,6 @@
 package ui
 
 // THE AREA LIST'S OVERFLOW ("kebab") MENU — one concern, one file.
-// NO DUPLICATE CONTROLS. Lock / unlock / area-kick already exist, together, in the
-// CM panel, so the menu ROUTES to that panel instead of growing its own copies —
-// the same rule the themed chip strip follows when a theme places AO2's own switch.
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -109,9 +106,6 @@ func (a *App) areaMenuAct(k musicMenuKind) {
 const areaRefreshCommand = "/getareas"
 
 // areaMenuButtonW is the ⋮ control's square side on the area list's header row.
-// Matches the Music header's icon buttons so the two panels' headers line up.
-// areaMenuButtonGap is the clearance between it and whatever the row lays out to its
-// left.
 const (
 	areaMenuButtonW   = int32(22)
 	areaMenuButtonGap = int32(4)
@@ -129,11 +123,6 @@ const (
 
 // areaHeaderLayout is the area list's header row split into the three things that
 // draw on it, left to right: the search field, the "shown / total" counter and the ⋮.
-// Rects, not widths. The caller used to get a width back from drawAreaMenuButton and
-// re-derive the other two from it with its own arithmetic, which meant the rule this
-// type exists to hold — nothing on this row may reach under the button — lived in
-// three expressions that no test could drive, and one of them could drift back to the
-// full panel width while the suite stayed green.
 type areaHeaderLayout struct {
 	field  sdl.Rect // the "Search areas…" box (only drawn when the theme has no music_search)
 	count  sdl.Rect // the counter's label origin and the room it may use
@@ -165,10 +154,6 @@ func splitAreaHeaderRow(row sdl.Rect) areaHeaderLayout {
 
 // drawAreaMenuButton draws the Areas view's ⋮ in the rect splitAreaHeaderRow reserved
 // for it.
-// It opens the SAME popup the Music header and the roster toolbar open — including
-// openMusicMenuFromButton's click consumption, without which the menu's own
-// click-away test closes it on the frame it opened (musicheader.go documents that
-// trap, and it has bitten both the other two triggers).
 func (a *App) drawAreaMenuButton(btn sdl.Rect, themed bool) {
 	if a.musicIconButton(btn, iconKebab, "Area options — background, refresh the list, per-area chat log, CM controls") {
 		a.openMusicMenuFromButton(sdl.Point{X: btn.X, Y: btn.Y + btn.H}, themed)

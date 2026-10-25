@@ -109,9 +109,6 @@ func (a *App) cancelAutoReconnect() {
 
 // pollAutoReconnect fires a due retry from the frame loop. No-op unless a retry is
 // scheduled and its time has come — so connected or idle it costs one comparison.
-// The dial blocks the frame (like the manual button); on failure it backs off and
-// reschedules, on success it clears. It calls connectWith directly (not Connect) so
-// the backoff counter survives.
 func (a *App) pollAutoReconnect() {
 	if a.conn.autoReconnectAt.IsZero() || a.now().Before(a.conn.autoReconnectAt) || a.screen != ScreenLobby {
 		return

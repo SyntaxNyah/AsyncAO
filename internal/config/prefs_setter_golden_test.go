@@ -17,7 +17,6 @@ import (
 // reproduce this byte-for-byte through the Settings snapshot, so it is the proof
 // that "reimplemented over update/clone/normalize" is behaviour-identical to the
 // load() the client ships today.
-//
 // Regenerate: GOLDEN_REGEN=1 go test ./internal/config -run TestSetterGoldenRegenerate
 const setterGoldenPath = "testdata/prefs_setters_golden.txt"
 

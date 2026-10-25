@@ -10,10 +10,6 @@ import (
 )
 
 // Auto-status (#M1): flip your presence status from trigger words you type in IC (e.g.
-// "brb" → AFK). Configurable per status in Settings; OFF by default. The match runs on
-// the SEND path (not the render loop), so its small ToLower/Fields cost is fine — and a
-// trigger word rides the same message, so others see the change immediately (it fixes
-// the "status only updates when you next speak" gap for announced changes).
 
 // matchAutoStatus scans an outgoing IC message for a configured trigger word and returns
 // the status to switch to. Whole-word, case-insensitive; the last matching word wins (so

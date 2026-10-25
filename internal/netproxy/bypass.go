@@ -33,9 +33,6 @@ type bypassList struct {
 	nets  []netip.Prefix
 	ips   []netip.Addr
 	// dropped counts entries we understood the shape of but cannot represent.
-	// Surfaced in the readout: a user whose rule was ignored should be told,
-	// because the consequence is their traffic going somewhere they did not
-	// expect.
 	dropped int
 }
 
@@ -152,10 +149,6 @@ func octetWildcard(prefix string) (netip.Prefix, bool) {
 
 // match reports whether host goes DIRECT. host is a bare hostname or IP literal
 // with no port and no brackets.
-// Loopback is always direct, ahead of every configured rule. That mirrors what
-// the standard library does unconditionally, so AsyncAO can never contradict the
-// rest of the Go ecosystem about localhost — and a proxy carrying 127.0.0.1
-// would break the loopback test servers this client is developed against.
 func (b *bypassList) match(host string) bool {
 	if host == "" {
 		return false

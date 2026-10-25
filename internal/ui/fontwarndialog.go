@@ -31,7 +31,6 @@ type fontWarnDialog struct {
 
 // maybeWarnMissingFonts opens the modal for a theme whose fonts did not resolve,
 // unless this theme has already been warned about.
-//
 // Called on theme apply. Deliberately NOT called for a theme that resolved
 // everything: this must never be the reason someone sees a dialog.
 func (a *App) maybeWarnMissingFonts(themeName string, families []string, body, dir string) bool {

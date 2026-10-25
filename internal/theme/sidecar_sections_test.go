@@ -3,12 +3,6 @@ package theme
 // EVERY SECTION EMITTER, DRIVEN FROM THE MODEL (ledger L2).
 // W7's editor save path is the caller. A section that silently emits nothing is a
 // user's work discarded at the moment they hit save, with no error anywhere.
-// THE SHAPE. One table row per section: build the model, Bytes(), and then read the
-// bytes back through the REAL parser and compare the model that comes out. Byte
-// comparison alone would not do — the section header is what an empty emitter fails
-// to produce, but a HALF-written section produces a header too — so each row also
-// carries a probe that extracts its own slice of the model, and the round-tripped
-// probe must equal the seeded one.
 
 import (
 	"reflect"

@@ -1,9 +1,6 @@
 package ui
 
 // The UI half of the conclusive-miss brake.
-// Both halves matter and they failed together in the field: a character roster
-// where most entries ship no char_icon and no emotions/button<N>_off art sent a
-// 404 every couple of seconds per visible cell, indefinitely, and the client sank
 
 import (
 	"path/filepath"
@@ -31,11 +28,6 @@ const (
 
 // wireEmptyPackManager installs a streaming-shaped Manager over an EMPTY local
 // pack, leaving a.d.Store and a.ctx alone.
-// Deliberately not wireLocalManager: that helper stands up its own renderer and
-// replaces a.d.Store, so an App staged with a live Ctx would end up drawing
-// textures created on a different renderer. Everything else matches it —
-// LocalMode, so resolution is synchronous file I/O and the pipeline settles
-// deterministically.
 func wireEmptyPackManager(t *testing.T, a *App) *assets.LocalFetcher {
 	t.Helper()
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)

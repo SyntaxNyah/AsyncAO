@@ -1,10 +1,6 @@
 package ui
 
 // themeFrame's half of the animation contract (L22).
-// The suite RECORDED that divergence instead of failing on it: two gates in
-// themeclock_test.go t.Skip when the fixture's own chrome notes the census under
-// ReduceMotion, which is exactly the symptom. These gates drive themeFrame
-// itself, so there is nothing to skip.
 
 import (
 	"image"

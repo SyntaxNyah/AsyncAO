@@ -60,9 +60,6 @@ func TestTopChromeHDropsTheMenuBarOnFullWindowOverlays(t *testing.T) {
 }
 
 // TestHidingTheMenuBarGivesTheBandBack pins the Hide-UI entry for the menu strip:
-// hiding it must not merely stop the paint, it must surrender the reserved band, or
-// every screen would keep offsetting its content past a strip that is not there. The
-// tab strip is unaffected — it docks under the bar and reads topChromeH itself.
 func TestHidingTheMenuBarGivesTheBandBack(t *testing.T) {
 	a := testTabApp(t)
 	a.classic.seedHiddenFromPrefs(&a.env) // the production path that builds a.hidden
@@ -763,10 +760,6 @@ func TestTabStripIgnoresExportSpaceGeometry(t *testing.T) {
 }
 
 // parkTabStripForTest records a strip placement the way the editor's drag release does:
-// the live design rect AND the persisted override, which is the placement flag itself
-// (tabStripThemeParked). Writing only the design rect used to be enough because
-// parked-ness was inferred from geometry — the inference a drag landing on the pristine
-// seed silently defeated, which is why it is gone.
 func parkTabStripForTest(a *App, themeName string, r theme.Rect) {
 	a.skin.themeRects[themeTabBarKey] = r
 	a.d.Prefs.SetThemeRectOverride(themeName, themeTabBarKey, [4]int{r.X, r.Y, r.W, r.H})

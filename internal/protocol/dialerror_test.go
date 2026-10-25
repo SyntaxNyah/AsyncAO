@@ -1,7 +1,6 @@
 package protocol
 
 // The gates for a REFUSED handshake — a server that answered and said no.
-//
 // Every one of them drives the real Dial against a real httptest server, because the
 // whole seam is a contract with coder/websocket about what survives a failed
 // handshake (the library drains the body, closes the real one and replaces it with an
@@ -51,7 +50,6 @@ func dialRefused(t *testing.T, srv *httptest.Server) *DialError {
 
 // TestARefusedDialCarriesTheServersOwnWords is the gate for the reported case: a
 // Russian server that whitelists by IP, refusing with the instructions for getting in.
-//
 // The body is what the user needs and what was being thrown away. Newlines and
 // Cyrillic both have to survive — the Discord invite and the access code are on their
 // own lines, and a mangled or truncated URL is a URL people mistype.

@@ -2,14 +2,6 @@
 // AsyncAO. It is a drop-in replacement for go-sdl2's `mix` package with the
 // added runtime loop-point setters (Mix_SetMusicLoopStartTime/EndTime) that
 // AsyncAO's custom music loop points (#48) depend on.
-//
-// The cgo preamble links SDL Mixer X (AsyncAO's fork of WohlSoft/SDL-Mixer-X),
-// which provides the multi-music stream API and the runtime loop-point setters
-// that AsyncAO's crossfade and gapless-loop support depend on. Only the library
-// NAME is pinned here; the include and library search paths are supplied by the
-// build environment (CGO_CFLAGS / CGO_LDFLAGS — see scripts/build.ps1,
-// scripts/setup-deps.*, and the CI workflows, which build the fork and point
-// cgo at its install prefix). See docs/SDL_MIXER_X-MIGRATION-PLAN.md.
 package mixerx
 
 /*

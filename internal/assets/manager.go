@@ -37,9 +37,6 @@ const (
 	localOriginHistoryCap = 4
 	// conclusiveMissCap bounds the session's exhausted-chain set (rule §17.4 —
 	// see missSet for what it is and why the 404 cache could not be it).
-	// Overflow is a safety valve, not a design point: it drops the oldest eighth,
-	// and each dropped key costs at most one more pipeline pass before it is
-	// recorded again.
 	conclusiveMissCap = 8192
 )
 
@@ -52,12 +49,6 @@ type DecodedAsset struct {
 	Asset *Decoded
 	Err   error
 	// Transient marks a NETWORK-stage failure (5xx, timeout, host backoff):
-	// the bytes were never seen, so nothing is known about the asset itself
-	// and it must stay re-demandable. Only non-transient errors (the bytes
-	// arrived and failed to DECODE) may enter the texture store's negative
-	// cache — conflating the two pinned every asset touched during a flaky
-	// origin's backoff window as "failed" for decodeFailTTL (the
-	// "whole server's files go missing in waves" report).
 	Transient bool
 	// FromPack marks bytes that came from the user's LOCAL MOUNT FOLDERS rather
 	// than the server. Base is still the SERVER's URL either way — that is the
@@ -172,8 +163,6 @@ type Manager struct {
 	// recording against the user's configured mounts WITHOUT rebuilding the
 	// Manager, which is mode-locked at construction (see LocalMode). Nil = no
 	// mounts configured. Consulted in BOTH modes, by ORIGIN (see localSourceFor).
-	// atomic: the render thread swaps it on every mounts/pref change while pool
-	// workers read it.
 	localOverlay atomic.Pointer[LocalFetcher]
 
 	// localRetired holds the mount sets the overlay has been swapped OFF, newest
@@ -204,7 +193,6 @@ func (m *Manager) SetOffline(on bool) { m.offline.Store(on) }
 
 // Offline reports the network gate's current state, so a caller that closes it
 // TEMPORARILY can put back what it found rather than assuming "open".
-//
 // It exists for the theme editor's offline preview (ui/themeeditorpreview.go),
 // which brackets the gate for the length of a canned demo. Without a reader, a
 // preview taken from inside a rehearsal session would re-open the network on the
@@ -230,8 +218,6 @@ var ErrLocalOverlayUnavailable = errors.New("assets: no local mount overlay conf
 func (m *Manager) netFetch(ctx context.Context, url string) ([]byte, error) {
 	// Bundled-archive replay: serve the archive folder first; a miss falls
 	// through so concurrent non-archive fetches (theme/UI) still hit the network.
-	// This sits ABOVE the offline gate on purpose: archive/local reads are disk,
-	// not network egress, so rehearsal (offline) must not block them.
 	if ov := m.archiveSrc.Load(); ov != nil {
 		if data, err := (*ov).Fetch(ctx, url); err == nil && len(data) > 0 {
 			return data, nil
@@ -240,9 +226,6 @@ func (m *Manager) netFetch(ctx context.Context, url string) ([]byte, error) {
 	// A local:// URL names the mount set it was minted under (LocalFetcher's
 	// origin embeds a hash of the mount list), so route it to whichever local
 	// source OWNS that origin — see localSourceFor. Rides ABOVE the offline gate:
-	// local mount reads are disk, not network egress, so they are legal in
-	// rehearsal mode. Placed AFTER archiveSrc so a replay archive's own local://
-	// origin still wins.
 	if strings.HasPrefix(url, LocalScheme) {
 		if src := m.localSourceFor(url); src != nil {
 			// A missing mount file returns ErrAssetNotFound here (conclusive miss),
@@ -265,9 +248,6 @@ func (m *Manager) netFetch(ctx context.Context, url string) ([]byte, error) {
 
 // localSourceFor picks the mount fetcher a local:// URL was MINTED under, or nil
 // when no configured source claims that origin.
-// Overlay first: it is the newest mount set, and when nothing changed every
-// origin here is equal so the order cannot matter. Cheap (two atomic loads and a
-// handful of prefix compares against a cap-bounded slice) and only ever reached
 func (m *Manager) localSourceFor(url string) Fetcher {
 	if ov := m.localOverlay.Load(); ov != nil && strings.HasPrefix(url, ov.BaseURL()) {
 		return ov
@@ -295,9 +275,6 @@ func (m *Manager) localSourceFor(url string) Fetcher {
 // empty mount set should be passed as nil, not an empty LocalFetcher (an empty
 // LocalFetcher answers every URL with a conclusive 404, which is wrong for
 // "cannot serve").
-// Render thread only for the write (it is the mounts/pref change path); the
-// published slice is never mutated afterwards, so readers on pool workers need
-// no lock.
 func (m *Manager) SetLocalOverlay(f *LocalFetcher) {
 	prev := m.localOverlay.Swap(f)
 	if sameMountSet(prev, f) {
@@ -332,9 +309,6 @@ func (m *Manager) SetLocalOverlay(f *LocalFetcher) {
 }
 
 // sameMountSet reports whether two overlays name the same mount configuration.
-// Identity is the ORIGIN, not the pointer: rebuildAssetOrigin mints a fresh
-// LocalFetcher on every call, and a LocalFetcher's BaseURL hashes the whole
-// mount list (NewLocalFetcher), so equal origins mean equal mounts.
 func sameMountSet(a, b *LocalFetcher) bool {
 	if a == nil || b == nil {
 		return a == b // nil→nil is the no-mounts steady state; nil↔set is a real change
@@ -361,10 +335,6 @@ func (m *Manager) ClearArchiveSource() { m.archiveSrc.Store(nil) }
 
 // LocalMode reports whether this Manager was built to read assets from local
 // mounts (a single LocalFetcher source) rather than stream from the network.
-// It is FIXED at construction (NewManager reads deps.LocalMode) — toggling the
-// local-assets pref mid-session only rebuilds the URL builder, never the
-// Manager's source — so callers that must know which URL scheme the single
-// source can actually serve (e.g. the content picker deciding whether an
 // https:// vs local:// origin is reachable at all) MUST key off this, NOT the
 // live pref: the pref can invert while the source stays put.
 func (m *Manager) LocalMode() bool { return m.localMode }
@@ -539,13 +509,6 @@ func (m *Manager) PrefetchChain(base string, alts []string, t AssetType, prio ne
 }
 
 // PrefetchChainSpeculative is PrefetchChain for a PREDICTED (not yet demanded)
-// asset: identical probing, but a total miss does NOT surface the §4
-// missing-asset warning. The Markov prefetcher warms guesses that may 404 in
-// every format on bare-named packs — reporting those would spam the debug log
-// and the on-screen banner with warnings for assets no one asked for, and feed
-// NotifyAssetMissing for a base that isn't on screen. The 404 cache and
-// singleflight are untouched, so rule §17.6 (no re-probe inside the TTL) still
-// holds. Callers pass PriorityLow so the speculation sheds under backpressure.
 func (m *Manager) PrefetchChainSpeculative(base string, alts []string, t AssetType, prio network.Priority) {
 	m.prefetchChain(base, alts, t, prio, true)
 }
@@ -613,9 +576,6 @@ func (m *Manager) probeListGen() uint64 {
 
 // ForgetConclusiveMisses empties the session's exhausted-chain memory, so every
 // asset that 404'd anywhere becomes probeable again.
-// This is the explicit half of the deal missSet makes: it never expires on a
-// timer, so something has to say when the answer might have changed. The
-// blanket form is for the changes that are not confined to one server — the
 func (m *Manager) ForgetConclusiveMisses() {
 	if m == nil {
 		return
@@ -661,9 +621,6 @@ func (m *Manager) ConclusiveMissCount() int {
 // skipExhausted is what a prefetch does INSTEAD of a pipeline pass once the
 // chain is known exhausted: nothing on the wire, but the §4 warning still
 // fires.
-// Tried is empty here on purpose rather than remembered per key: the extension
-// list was already logged in full when the miss was discovered, and the lane
-// already carries nil from resolveExact, so consumers handle it.
 func (m *Manager) skipExhausted(base string, t AssetType, suppressMissing bool) {
 	if suppressMissing {
 		return // speculative: no one asked for this, so no one hears about it (PrefetchChainSpeculative)
@@ -982,8 +939,6 @@ func (m *Manager) PrefetchSticky(base string, t AssetType, prio network.Priority
 // resolveChain runs the pipeline for primary, then — only while every
 // format of each earlier name is missing — for each alt in order,
 // delivering under primary so the asset's identity never changes.
-// suppressMissing skips the final §4 warning for a total miss (speculative
-// prefetches only — see PrefetchChainSpeculative).
 func (m *Manager) resolveChain(primary string, alts []string, t AssetType, suppressMissing bool) {
 	key := primary + config.LearnedKeySeparator + t.Name()
 	if _, loaded := m.inflight.LoadOrStore(key, struct{}{}); loaded {
@@ -1011,10 +966,6 @@ func (m *Manager) resolveChain(primary string, alts []string, t AssetType, suppr
 	host := hostOf(primary)
 	// Pack-first WITHIN each spelling, in the ladder's own order — NOT the pack
 	// swept across every spelling first. EmoteBare takes no EmoteKind, so the (a)
-	// and (b) chains share a byte-identical bare alt; sweeping provider-major
-	// would let a legacy bare-named pack serve ONE file as both idle and talk,
-	// shadowing a server that ships proper (a)/(b) art. This ordering keeps AO's
-	// specificity ladder intact and leaves the network probe budget unchanged.
 	if layer != nil && m.serveFromMount(layer, primary, primary, t) {
 		return
 	}
@@ -1155,9 +1106,6 @@ func (m *Manager) walkCandidates(urls []string, base, deliverBase string, t Asse
 
 // deliver routes payload bytes onward: audio types skip the decode pool
 // entirely; images are decoded off-thread and land on the decoded channel.
-// fromPack marks bytes that came from the user's local mounts rather than the
-// server. It rides all the way to the render side because Base stays the
-// SERVER's URL either way — see DecodedAsset.FromPack.
 func (m *Manager) deliver(url, base string, t AssetType, data []byte, fromPack bool) {
 	if t.IsAudio() {
 		m.audioCh <- AudioAsset{URL: url, Base: base, Type: t, Data: data, FromPack: fromPack}
@@ -1173,9 +1121,6 @@ func (m *Manager) deliver(url, base string, t AssetType, data []byte, fromPack b
 			// Opt-in thumbnail store: every character sprite that decodes leaves a
 			// tiny low-q stand-in behind (ThumbCache gates on its own enable and
 			// Store is a non-blocking enqueue, so this is free when off).
-			// NEVER for pack bytes. ThumbCache is a PERSISTENT disk cache keyed by
-			// BASE — the server's URL — so storing here would write the user's own
-			// art to disk under the server's identity, where it outlives the pack and
 			if m.thumbs != nil && err == nil && t == AssetTypeCharSprite && !fromPack &&
 				d != nil && len(d.Frames) > 0 && d.FrameOffset == 0 {
 				// Store once, from the frame-0 delivery (the progressive partial
@@ -1226,9 +1171,6 @@ func (m *Manager) activeMountLayer() *MountLayer {
 
 // serveFromMount answers base from the user's local mounts, delivering under
 // deliverBase, and reports whether it did.
-// A read error deliberately does NOT quarantine: it is environmental and usually
-// transient, and stickily disabling a pack that recovers would be worse than
-// re-reading it. Only a DECODE failure quarantines, because that is a
 func (m *Manager) serveFromMount(l *MountLayer, base, deliverBase string, t AssetType) bool {
 	key, data, ok := m.packBytes(l, base, t)
 	if !ok {
@@ -1287,10 +1229,6 @@ func (m *Manager) packBytes(l *MountLayer, base string, t AssetType) (key string
 // because a char.ini is not a format family — its URL is already exact, so
 // walking PackFormatList over it would only manufacture nonsense keys
 // (char.ini.webp).
-// Same four things and nothing else — resolve the rel, skip quarantined entries,
-// read, return — so both the synchronous reader (FetchRawLayered) and the warm
-// path (PrefetchRaw's early-out) share one implementation without either
-// inheriting side effects.
 func (m *Manager) packExactBytes(l *MountLayer, url string) ([]byte, bool) {
 	idx := l.Index()
 	if idx == nil || !idx.acquire() {
@@ -1352,9 +1290,6 @@ func (m *Manager) PackCovers(base string) bool {
 // QuarantinePack marks a pack entry whose bytes failed to DECODE, so the next
 // demand skips it and the server's copy is fetched instead. url is the pack
 // transport URL from DecodedAsset.URL / AudioAsset.URL.
-// Returns false for a URL that is not this layer's — the layer was swapped, or
-// the URL belongs to an archive replay or a mount overlay whose origin carries a
-// different mount-set hash. A false return means the caller must record NOTHING:
 func (m *Manager) QuarantinePack(url string) bool {
 	l := m.activeMountLayer()
 	if l == nil {

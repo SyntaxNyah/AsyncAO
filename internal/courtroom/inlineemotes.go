@@ -5,7 +5,6 @@ import "strings"
 // Inline emotes (#18): Discord-style :shortcode: tokens render as a colour emoji. The
 // shortcode text travels LITERALLY on the wire (no marker, no expansion before send), so
 // AO2 / webAO show the readable ":joy:" while AsyncAO substitutes the emoji at display time.
-//
 // This is just the SDL-free PARSER. The shortcode→emoji REGISTRY lives in the ui package
 // (the user-facing vocabulary); the parser takes a resolver so both the IC log (ui) and the
 // live chatbox (courtroom begin) share one implementation — ui imports courtroom, not the

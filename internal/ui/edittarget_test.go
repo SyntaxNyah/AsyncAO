@@ -16,10 +16,6 @@ import (
 
 // TestEditTargetSpaceIsExplicitNotInferred is the design's emphatic requirement: a
 // target says which space it is in, and it is impossible to build one that does not.
-// The failure this forbids is not hypothetical arithmetic — it is a reader looking at
-// {key: "", elem: 0} and having to GUESS whether that is "no selection" or "element
-// zero". Both payloads have legitimate zero values, so the guess is unanswerable, and
-// two readers would answer it differently.
 func TestEditTargetSpaceIsExplicitNotInferred(t *testing.T) {
 	// The zero value is unarmed and answers nothing for any space.
 	var zero editTarget
@@ -175,7 +171,6 @@ func TestCrampedBoxOffersNoLyingHandle(t *testing.T) {
 // level: a theme's own widget offers the same four corners and four edge midpoints the
 // classic editor has had since v1.52.0, each gripping exactly the edges its
 // handleEdgeMask row names.
-// It also pins the two rules that keep the generalization from taking anything away:
 func TestThemedEditorHasAllEightHandles(t *testing.T) {
 	const editable = "emotes" // a painted, non-fixed themeSlots row
 	if !themeKeyEditable(editable) {
@@ -333,8 +328,6 @@ func stageDesignResize(t *testing.T) (*App, *Ctx, *themeLayoutCache, sdl.Rect, f
 // TestThemedEditorResizesFromTheTopLeftHandle is the wave's one capability, driven
 // through the real editor: press a handle that did not exist before W6 and the widget
 // grows from THAT corner, with the opposite one nailed down.
-// Before this wave the same press was a MOVE — there was no grip anywhere but the
-// bottom-right corner — so a theme's widget could only ever be resized down and right.
 func TestThemedEditorResizesFromTheTopLeftHandle(t *testing.T) {
 	a, ctx, lay, box, cleanup := stageDesignResize(t)
 	defer cleanup()

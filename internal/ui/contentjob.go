@@ -126,7 +126,6 @@ func (s AssetStatus) String() string {
 // AssetItem is one enumerated asset: a friendly Name (the bare AO reference the
 // recording carried, e.g. "Phoenix/normal" or "Objection.opus"), the resolved
 // or candidate URL, its probe Status, and the enumeration ref used to fetch it.
-// Cat groups it into a category for the report.
 type AssetItem struct {
 	Name   string
 	URL    string // resolved URL once found; the primary candidate before probing
@@ -393,7 +392,6 @@ func FormatReport(r *ContentReport) []string {
 		// One honest word on how formats were resolved: an absent manifest means
 		// unlearned types were probed with the FULL format chain, so a .png/.gif
 		// server still resolved. Silent when the manifest applied (the normal case)
-		// or wasn't attempted (skipped) — no noise for the common path.
 		if note := seedStatusLine(r.Seed); note != "" {
 			out = append(out, note)
 		}
@@ -697,9 +695,6 @@ func (a *App) startContentSeed(j *contentJob) {
 
 // startProbePhase spins up the bounded probe fan-out (a feeder + contentProbeWorkers
 // workers) from the job's snapshotted seedItems, transitioning it into phaseProbing.
-// Called either directly (seeding skipped) or from tickContentSeed once the seed
-// lands and the resolver table is republished — so by the time a worker builds a
-// candidate, a seeded host's learned format is already live. Render thread only.
 func (a *App) startProbePhase(j *contentJob) {
 	j.phase = phaseProbing
 	// Bounded fan-out: a small feeder plus contentProbeWorkers workers. The
@@ -789,7 +784,6 @@ func probeRef(mgr *assets.Manager, ref courtroom.AssetRef) (string, AssetStatus,
 		// Bounded, timeout-guarded fetch (a dead host must not stall a worker past
 		// the phase hard cap). A clean not-found is Missing; any other error is a
 		// transport fault → Unreachable (we never claim absence we didn't confirm).
-		// Empty-but-no-error is Missing.
 		ctx, cancel := context.WithTimeout(context.Background(), musicHTTPTimeout)
 		defer cancel()
 		data, err := mgr.FetchRaw(ctx, ref.Base)
@@ -891,9 +885,6 @@ func (a *App) tickContentSeed(j *contentJob) {
 	select {
 	case res := <-j.seedDone:
 		// WarmFromPrefs on the RENDER thread (matches pollManifest discipline):
-		// SeedLearned wrote prefs off-thread; this publishes them into the resolver's
-		// atomic table before any candidate is built. The channel receive happens-
-		// before this, so the table is fully seeded when probing starts.
 		if res.status == seedApplied {
 			a.d.Resolver.WarmFromPrefs()
 		}
@@ -1094,9 +1085,6 @@ func (a *App) tickContentPackage(j *contentJob) {
 		a.sel.contentBusy = false
 		// The SINGLE toast for the whole auto-build (steps 3+4): on a clean success name
 		// the bundle folder in the recordings-relative form the other Studio toasts use.
-		// The size-cap abort returns dir != "" (a PARTIAL write) — don't claim a clean
-		// "packaged with its assets" for it; fall through to the writer's honest
-		// "Package stopped at the … cap" line instead. Any hard failure (dir == "")
 		if auto {
 			if res.dir != "" && !strings.Contains(res.msg, "size cap") {
 				a.warnLine = "Recording packaged with its assets — recordings\\" + filepath.Base(res.dir)
@@ -1132,9 +1120,6 @@ func writeContentBundle(mgr *assets.Manager, destDir, stem string, rec *sceneRec
 		}
 		rel = strings.TrimPrefix(rel, "/")
 		// Re-drain the bytes from the cache tiers the probe already filled (T2/T3):
-		// this is a cache hit, not a second network probe (one-probe-per-asset holds).
-		// A cache/transport miss here (a rare T2+T3 eviction on a huge scene) is a
-		// per-file error, not fatal — the rest of the bundle still writes.
 		data, err := fetchBundleBytes(mgr, url)
 		if err != nil {
 			writeErr++
@@ -1238,8 +1223,6 @@ func writeBundleFile(destDir, rel string, data []byte) error {
 // assetTypeFromBundlePath infers the AssetType of a bundled file from its
 // origin-relative directory (characters/ → CharSprite, background/ →
 // Background), so the Formats manifest can seed a bundled replay's resolver.
-// Audio dirs return false (audio carries its own extension; the resolver
-// doesn't format-probe it). Best-effort — an unknown path just omits a hint.
 func assetTypeFromBundlePath(rel string) (assets.AssetType, bool) {
 	switch {
 	case strings.HasPrefix(rel, "characters/"):

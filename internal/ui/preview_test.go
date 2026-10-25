@@ -30,9 +30,6 @@ func TestUnionRect(t *testing.T) {
 }
 
 // TestSpritePreviewTravelCorridor pins the hover-preview close logic the beta surfaced:
-// the box must survive the cursor travelling from the trigger cell to the bottom-right
-// box, vanish if the cursor strays off that path, and close promptly once the cursor has
-// reached the box and then left it.
 func TestSpritePreviewTravelCorridor(t *testing.T) {
 	a := testTabApp(t)
 	c := a.ctx

@@ -11,11 +11,9 @@ const (
 // prefs) means "unset — follow the default". It is the single shared helper behind
 // the sentinel getters (item 2), so the default constants stay in one place and the
 // read path is uniform.
-//
 // The sentinel is deliberately NEVER resolved at load (strict or not): writing the
 // resolved default into the file would pin today's default into every user's file on
 // the next Save and stop a future default change from ever reaching existing users.
-// The getter resolves it on read instead, so "unset" always tracks the current default.
 func orDefault[T comparable](v, def T) T {
 	var zero T
 	if v == zero {

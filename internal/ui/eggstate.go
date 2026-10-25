@@ -4,9 +4,6 @@ package ui
 // scan ran for and the egg kind it resolved. It is per session — it parks with
 // the tab — because the text it caches comes from that session's displayed
 // message, so a settled frame is one string compare and never a rescan.
-// It carries no env pointer: it needs no shared state, and its two draw call
-// sites reach it through kindOf rather than reading the fields (the component
-// owns its state; App methods never touch it directly).
 type eggs struct {
 	msg  string
 	kind uint8

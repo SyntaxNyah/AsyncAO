@@ -10,9 +10,6 @@ import (
 
 // The #38 suite: "clickable OOC links highlight the entire message rather than
 // just the link" / "only 1 link outta this link dump being clickable".
-// All of it runs headless, where a nil font measures wrapFallbackCharPx per
-// BYTE — so every expected pixel offset below is just (byte offset × 8), which
-// is also exactly how the wrap chose its break points.
 
 // spanText is the drawn text a span covers — the assertion that matters most,
 // since a span's whole job is to point at the characters the user sees.

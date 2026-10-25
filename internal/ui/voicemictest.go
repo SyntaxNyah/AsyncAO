@@ -14,8 +14,6 @@ import (
 // and optionally loops the mic back to the speakers so you can HEAR yourself
 // (sidetone). Main-thread only (SDL queue API), driven by pump() from the frame loop
 // exactly like the live engine; nil/inactive ⇒ ~free.
-// It deliberately reuses voiceFrameBytes / voiceDeviceSamples / voicePlayTargetFrames
-// from voiceaudio.go so the test path matches the real engine's framing.
 
 const (
 	// micMeterRelease is the per-frame decay the meter eases toward a lower level with,

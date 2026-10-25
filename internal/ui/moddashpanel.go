@@ -24,9 +24,6 @@ const (
 )
 
 // rosterIdentityLines composes the rich two-line identity for one roster row (pure, no draw):
-// line 1 "[uid] showname · character", line 2 "OOC: … · IPID: …" (dimmer, may be ""). Shared by
-// the chrome-font CM/mod path (drawModRosterIdentity) and the zoom-scaled mod-dash row
-// (drawModRosterRow), so the two can never drift on what the strings say.
 func rosterIdentityLines(p areaPlayer) (ic, sub string) {
 	display := rosterDisplayName(p)
 	ic = "[" + p.uid + "] " + display

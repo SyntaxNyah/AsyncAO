@@ -44,8 +44,6 @@ func TestFontEverywhereRoundTrip(t *testing.T) {
 
 // TestRecordingsKeepAssetsRoundTrip pins the H2 "recordings keep their assets"
 // pref: ON by default (an in-app recording auto-packages its warm assets on stop)
-// and — because it's a default-ON *bool — an explicit OFF must survive save→load
-// (the WordDelete/ScreenEffects absent-vs-explicit-false shape). Both directions.
 func TestRecordingsKeepAssetsRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), PrefsFileName)
 	p, err := newWithDebounce(path, testDebounce)
@@ -2238,7 +2236,6 @@ func TestShownamePresets(t *testing.T) {
 
 // TestThemeFitDefaultsAndClamp pins the theme-fit prefs: Native (1:1) is the
 // default, and the mode/zoom/pan all clamp to their bounds.
-//
 // The default expectation CHANGED here (it was Stretch, the zero value) because
 // the shipped default deliberately moved: stock AO2 never scales a theme, so 1:1
 // is what an imported theme must look like with no settings tweaking. The clamp

@@ -23,9 +23,6 @@ const (
 	// average advance of the 14 px UI face for Latin text.
 	toolbarTestGlyphPx = int32(7)
 	// toolbarThemeWidthPx is the usable width a theme really hands this panel:
-	// aceattorney2x declares music_list = 0,323,216,277 and insetThemedBody takes
-	// themedLogInsetPx off the left, leaving 212. This is the width the bug was
-	// reported at.
 	toolbarThemeWidthPx = int32(212)
 	// toolbarThemeHeightPx is that same rect's usable height: 277 less
 	// insetThemedBody's two margins, less the Music/Areas/Player List chip strip.

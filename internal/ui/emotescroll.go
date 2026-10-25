@@ -1,9 +1,6 @@
 package ui
 
 // The emote grid's SCROLL POSITION — one concern, one file.
-// Both grids (the classic row in screens.go and the themed one in
-// theme_layout.go) drive the same seam, so the two can no longer disagree about
-// where the grid is scrolled to; App.emoteRow / emoteCols / emoteRowsPerPage are
 
 // emoteWheelRows is how many grid rows one wheel notch moves. 1 = "smooth per
 // row", which is the point of the change; named rather than inlined so a future
@@ -55,9 +52,6 @@ func (a *App) lastEmoteRow() int {
 func (a *App) emoteFirstSlot() int { return a.emotepick.emoteRow * a.emotepick.emoteCols }
 
 // scrollEmoteRows moves the grid by n rows (positive = further down the list)
-// and clamps. The wheel calls it with -delta*emoteWheelRows; the page arrows
-// call it with ±rows-per-page, which is how they stay a full page while the
-// wheel is a single row.
 func (a *App) scrollEmoteRows(n int) {
 	a.emotepick.emoteRow += n
 	a.clampEmoteRow()
@@ -100,9 +94,6 @@ func (a *App) emoteGridScrolls() bool {
 }
 
 // revealEmoteSlot scrolls the MINIMUM distance that brings a slot on screen.
-// Replaces the old `emotePage = slot / perPage` snap, which yanked the grid to a
-// page boundary even when the target was already visible — a random pick or a
-// Ctrl+emote-cycle step one cell down used to repaint the whole grid.
 func (a *App) revealEmoteSlot(slot int) {
 	if slot < 0 || a.emotepick.emoteCols < 1 || a.emotepick.emoteRowsPerPage < 1 {
 		return

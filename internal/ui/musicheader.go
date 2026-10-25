@@ -170,11 +170,6 @@ func musicHeaderItemLabel(id int, now, count string) string {
 // --- the overflow ("kebab") menu ------------------------------------------------
 
 // musicMenuKind enumerates the rows of the LIST PANEL's overflow menu.
-// It is named for the Music header it started on, but the menu belongs to the whole
-// right-hand list panel — Music, Areas and the roster share one rect, one ⋮ and one
-// pane. The roster rows below are the four controls the Players toolbar debloated out
-// of its three header rows (playerlisttoolbar.go); they have no other home in the UI,
-// so they moved here rather than being deleted.
 type musicMenuKind int
 
 const (

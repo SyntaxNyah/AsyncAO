@@ -134,7 +134,6 @@ func (v *Viewport) ensureScanlines(ren *sdl.Renderer, w, h int32) *sdl.Texture {
 // stripes), rebuilding it only when the stage size changed. Its blend mode is MOD
 // so blitting MULTIPLIES the stage: the "lit" channel of each stripe stays 255
 // (×1) while the other two scale to phosphorDim/255 — a subtle colour shimmer.
-// 0-alloc after the one-time (per size) build, like the scanline texture.
 func (v *Viewport) ensureCRTMask(ren *sdl.Renderer, w, h int32) *sdl.Texture {
 	if w <= 0 || h <= 0 {
 		return nil

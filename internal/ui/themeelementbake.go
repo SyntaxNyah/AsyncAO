@@ -74,8 +74,6 @@ const elemZSortCap = theme.ElementCap
 // bakeElement is one element mid-bake: the baked row plus the two SORT KEYS the
 // draw path has no use for. It is a return VALUE, never an array — the keys live in
 // two small parallel arrays on App (elemBakeBand / elemBakeZ, 288 bytes together)
-// rather than in a second 11 KiB copy of the baked array, and the sort permutes all
-// three in lockstep.
 type bakeElement struct {
 	el   bakedElement
 	band theme.ElementBand
@@ -84,9 +82,6 @@ type bakeElement struct {
 
 // bakeThemeElements fills lay.el / lay.elN / lay.band / lay.condVal from the active
 // theme's sidecar, and REPARENTS every pane host into lay.r before it does.
-// A theme with no sidecar (every stock AO2 theme) leaves the array zeroed, elN 0 and
-// all three band ranges {0, 0}: the three band loops become three `for i := 0; i < 0`
-// and the feature costs nothing. That is the v1.89.0 "0 base = 0 cost" rule, and it
 func (a *App) bakeThemeElements(lay *themeLayoutCache) {
 	// Every rebuild gets a fresh generation, so App's per-axis condition memo cannot
 	// carry an index resolved against the PREVIOUS intern table (a.condGen).
@@ -282,8 +277,6 @@ func (a *App) bakeElementLabel(text string, availW int32) string {
 
 // elemShoutConditions is the `visible_when = shout:<name>` vocabulary, and it exists
 // because AO2 SPELLS A SHOUT TWO WAYS.
-// The stems are taken from courtroom.ShoutName rather than written out again, so
-// this table cannot drift from the one function that decides what a shout is called.
 var elemShoutConditions = [...]struct {
 	key       string // the courtroom_design.ini / themeslots.go design key
 	objection int    // the MS objection modifier ShoutName maps to the asset stem
@@ -324,8 +317,6 @@ func elemShoutStem(v string) string {
 // internCondition maps a VisibleWhen value to an index into lay.condVal, adding it
 // on first sight. The table is bounded by theme.ElementCap because at most one new
 // value can arrive per element.
-// The VALUE-LESS axes (always, speaking) intern nothing: elementVisible switches on
-// the axis before it ever looks at the index.
 func (a *App) internCondition(lay *themeLayoutCache, cond theme.Condition) int16 {
 	val := elemConditionValue(cond)
 	if cond.Axis == theme.CondAlways || cond.Axis == theme.CondSpeaking || val == "" {
@@ -394,7 +385,6 @@ func (a *App) resolveElementRect(lay *themeLayoutCache, sc *theme.Sidecar, src *
 
 // elementAnchorRect resolves an element's anchor to an ABSOLUTE box: a pane id when
 // the element declared `space = pane`, otherwise a themeSlots key.
-//
 // ANCHORS MAY NOT CHAIN (docs/THEME-FORMAT.md §3), which is what makes one bake pass
 // enough: no cycle detection, no depth cap, no ordering constraint between elements.
 func (a *App) elementAnchorRect(lay *themeLayoutCache, sc *theme.Sidecar, src *theme.Element) (sdl.Rect, bool) {
@@ -510,9 +500,6 @@ func (a *App) bakePanes(lay *themeLayoutCache, sc *theme.Sidecar) {
 			}
 			// COURTROOM-RELATIVE WIDGETS ONLY. showname/message ride the chatbox,
 			// music_name rides the plate and the two evidence icons ride the stage:
-			// their entries in lay.r are PARENT-relative and their draw sites re-base
-			// them, so re-homing one would compose the pane offset on top of a
-			// re-basing that still happens — the widget would land at pane + parent.
 			if themeSlotRel(key) != relCourtroom {
 				continue
 			}
@@ -521,10 +508,6 @@ func (a *App) bakePanes(lay *themeLayoutCache, sc *theme.Sidecar) {
 				continue // the theme does not place this widget; there is nothing to re-home
 			}
 			// §6.6 R8: a host KEEPS its [overrides] rect, interpreted PANE-RELATIVE.
-			// Without one it keeps its own design rect, re-based onto the pane's
-			// origin instead of the canvas's — which is the definition of a
-			// reparent, and what makes a toggle pair share a sub-rect by overriding
-			// both to the same box.
 			rel := cur
 			rel.X -= lay.area.X
 			rel.Y -= lay.area.Y

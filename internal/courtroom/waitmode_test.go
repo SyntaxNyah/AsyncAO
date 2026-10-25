@@ -168,7 +168,6 @@ func TestSpriteWaitGate(t *testing.T) {
 // the IDLE sprite landed — and then enterAfterShout parked Active on a preanim
 // that had not arrived. The gate now covers whatever the first frame actually
 // uses, so the message waits for the preanim it is about to play.
-//
 // The predicate is preanimWillPlay (courtroom.go), the same one enterAfterShout
 // uses, so the gate can never disagree with the play path about what will be
 // shown.
@@ -248,12 +247,6 @@ func TestWaitGateCoversThePreanimItWillPlay(t *testing.T) {
 // TestWaitGateCoversTheTalkSpriteItOpensOn is the other half of the
 // pre-message-stall audit. For a message with NO preanim — the overwhelming
 // majority — the first sprite on screen is the TALK one, not the idle one:
-// enterAfterShout falls straight through to startTalking, which parks Active on
-// TalkBase in the very tick begin() runs, and the idle base is only what the
-// message settles onto a second later. The gate waited on idle alone, so on a
-// pack whose (a)/(b) spellings resolve at different times it opened onto a cold
-// talk sprite and flashed the placeholder — a message that "starts early".
-//
 // The warm was never the problem: the arm has always prefetched talk beside idle
 // (see waitHolds). Only the WAIT was missing.
 func TestWaitGateCoversTheTalkSpriteItOpensOn(t *testing.T) {

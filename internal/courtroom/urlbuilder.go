@@ -90,7 +90,6 @@ func (u URLBuilder) Origin() string { return u.origin }
 // extension ("knife.png" — AO2-Client get_evidence_path serves them
 // verbatim from base/evidence/); bare legacy names default to .png. Use
 // Manager.PrefetchExact: no format probing, exactly one fetch.
-// AssetType: Misc (exact URL)
 func (u URLBuilder) Evidence(image string) string {
 	if !strings.Contains(image, ".") {
 		image += ".png"
@@ -168,8 +167,6 @@ func segPathRaw(name string) string {
 // exactly this spelling ("characters/drio%2Fbyakuya%20togami"), which is the same defect #40 fixed
 // for backgrounds, evidence and sfx and missed here. Split first, then escape (and case) each
 // segment, exactly as segPath does everywhere else.
-// FLAT identities — virtually every character on virtually every server — take the ContainsRune
-// fast path and come out BYTE-IDENTICAL, so no cache key, learned format or T1 texture key moves.
 func (u URLBuilder) charSeg(name string) string {
 	if !strings.ContainsRune(name, '/') {
 		return u.charSegOne(name) // the 99% case: one segment, unchanged output, no allocation
@@ -234,17 +231,12 @@ func (u URLBuilder) CharIcon(character string) string {
 // Emote returns a character sprite base for the given kind — the glued
 // spelling "(a)<emote>", AO2-Client's FIRST candidate and the asset's
 // identity everywhere. Nested emotes keep their slashes (segPath).
-// AssetType: CharSprite
 func (u URLBuilder) Emote(character, emote string, kind EmoteKind) string {
 	return u.origin + charactersDir + u.charSeg(character) + "/" + segPath(emotePrefix(kind)+emote)
 }
 
 // EmoteFolder returns the prefix-as-FOLDER spelling — "(a)/<emote>" — the
 // SECOND candidate AO2-Client probes (animationlayer.cpp:422 pathlist:
-// "(a)X", "(a)/X", bare X): packs that group idle/talk art in literal
-// "(a)"/"(b)" directories need it. A leading '/' on the emote doubles the
-// slash exactly like AO2's string concatenation does. Chain it between
-// Emote and EmoteBare. // AssetType: CharSprite
 func (u URLBuilder) EmoteFolder(character, emote string, kind EmoteKind) string {
 	return u.origin + charactersDir + u.charSeg(character) + "/" + segPath(emotePrefix(kind)) + "/" + segPath(emote)
 }
@@ -252,7 +244,6 @@ func (u URLBuilder) EmoteFolder(character, emote string, kind EmoteKind) string 
 // EmoteBare returns the unprefixed sprite base — the LAST spelling
 // AO2-Client probes for idle/talk sprites (many packs ship only bare
 // files like "1.webp"). Chain after Emote + EmoteFolder.
-// AssetType: CharSprite
 func (u URLBuilder) EmoteBare(character, emote string) string {
 	return u.origin + charactersDir + u.charSeg(character) + "/" + segPath(emote)
 }
@@ -329,7 +320,6 @@ func folderSpriteBase(active string) string {
 // EmoteButton returns the emote-picker button art base for the 1-based
 // emote number n; on selects the pressed (_on) variant. Convention shared
 // by AO2-Client (emotion_button "emotions/button%1_off") and webAO.
-// AssetType: EmoteButton
 func (u URLBuilder) EmoteButton(character string, n int, on bool) string {
 	state := "_off"
 	if on {
@@ -352,7 +342,6 @@ func (u URLBuilder) ShoutBubble(character, shoutName string, custom bool) string
 // (characters/<char>/custom_objections/<stem>). Wire names from other
 // clients may carry a file extension (their dir scan keeps it) — strip it,
 // the resolver owns format probing.
-// AssetType: ShoutBubble
 func (u URLBuilder) NamedCustomShout(character, name string) string {
 	if dot := strings.LastIndexByte(name, '.'); dot > 0 {
 		name = name[:dot]
@@ -387,7 +376,6 @@ func (u URLBuilder) Background(bg, part string) string {
 
 // cleanRel lexically collapses "." and ".." in a slash-separated asset path,
 // rooted so leading ".." can never escape the origin (a path-traversal guard):
-// it matches how AO2-Client's QFile/OS normalizes a "background/<bg>/overlays/
 // ../background/x" path. Operates on RAW (unescaped) names, before segPath.
 func cleanRel(p string) string {
 	if p == "" {
@@ -407,7 +395,6 @@ func (u URLBuilder) BackgroundsRoot() string {
 // EvidenceRoot returns the evidence/ directory URL (with trailing slash). On
 // hosts that serve an autoindex it lists every evidence image — the stream-mode
 // discovery source for the evidence image picker (Issue #119). Not an asset:
-// fetch its bytes, don't format-probe it.
 func (u URLBuilder) EvidenceRoot() string {
 	return u.origin + evidenceDir
 }
@@ -454,9 +441,6 @@ func (u URLBuilder) BlipAuthored(name string) string {
 
 // MiscChatboxCandidates returns the ordered spellings of a per-character
 // chatbox skin (char.ini chat=<misc>), first entry = the asset's identity.
-// Two axes multiply, both real in the wild:
-// Slashes survive as path separators (nested values like "VA-11/Jill" are
-// common; PathEscape's %2F was a dead URL), spaces still escape per segment.
 func (u URLBuilder) MiscChatboxCandidates(misc string) []string {
 	misc = strings.TrimSpace(misc)
 	lower := escapePreservingSlashes(strings.ToLower(misc))
@@ -489,8 +473,6 @@ const overlayIconsDir = "icons/"
 // in a character's effects folder — rung 8 of the ladder and the ONLY rung a
 // streaming client has to ask the network for (every other rung is a theme-local
 // directory probe, theme.FindOverlayElement).
-// Effect names carry SPACES in the wild ("fade to black", "tv black-trans") and
-// may nest, so every segment is escaped individually and slashes survive as
 // separators — a whole-value PathEscape would mint a dead "%2F" URL (#40).
 func (u URLBuilder) OverlayEffectMisc(folder, name string) []string {
 	return u.overlayEffectCandidates(folder, name)
@@ -587,7 +569,6 @@ func (u URLBuilder) overlayEffectCandidates(folder, element string) []string {
 // MusicURL returns the FULL music URL: AO music lists carry the extension in
 // the track name, and tracks starting with http(s):// are direct URLs
 // (AO2-Client get_music_path). Use Manager.PrefetchExact with this.
-// AssetType: Music
 func (u URLBuilder) MusicURL(track string) string {
 	if isMusicURL(track) {
 		return track
@@ -663,9 +644,6 @@ func BackgroundFallbacks(bgPart string) []string {
 // PositionScene maps an AO side/pos code to its background and desk part
 // stems (AO2-Client path_functions get_pos_path table). Unknown positions
 // use the 2.8 unique-position convention: <pos> / <pos>_overlay.
-// This is get_pos_path's table with its file-existence tests removed — those
-// become the probe chain BackgroundFallbacks returns, because a streaming client
-// cannot stat the origin.
 func PositionScene(pos string) (bgPart, deskPart string) {
 	switch pos {
 	case "def":
@@ -721,12 +699,6 @@ func ZoomSide(pos string) string {
 // follows ZoomSide, so a pro whose pack ships nothing gets the PROSECUTION burst,
 // never the defense one. AO2 never hands a pro position defense_speedlines (its
 // hardcoded filename has no such branch), and neither do we.
-// The <pos> arm is the extension AO2's hardcoded filename never allowed: a judge,
-// jury or seance speaker can now ship jud_speedlines / jur_speedlines /
-// sea_speedlines in their own character folder and have it used. For the six
-// standard positions that first candidate is a name no real pack ships (packs
-// ship the side stems), so it costs one 404-cached probe per character per
-// session before the side stem wins.
 func (u URLBuilder) SpeedlinesCandidates(character, pos string) []string {
 	// ZoomSide is never "" — defense is the catch-all, matching AO2's else branch —
 	// so the slice always ends with a real candidate and is never empty.

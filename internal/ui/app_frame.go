@@ -133,7 +133,6 @@ func (a *App) reselectServer(url string) {
 // merged list. This is the boundedness (rule §17.4) the old wipe-at-fetch-start
 // in RefreshServers provided, moved to the result landing so a refresh no
 // longer stomps the user's ping sort with zero user action. Off the hot path:
-// runs once per fetch landing, never per frame.
 func (lobby1 *lobbyState) pruneStalePings() {
 	if len(lobby1.pings) == 0 {
 		return
@@ -285,9 +284,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			case ScreenThemeEditor:
 				// The editor's own ladder, in the order the design specifies: drop a focused
 				// field, then close the top panel, then clear the selection, then leave.
-				// Leaving goes through closeThemeEditor so the return target is the screen the
-				// editor was opened FROM — a.prevScreen belongs to the menu screens and would
-				// send a courtroom-opened editor to whatever menu was last visited.
 				switch {
 				case a.editorPreviewOn():
 					a.exitEditorPreview()
@@ -369,9 +365,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	}
 	// The THEME EDITOR (a SCREEN, not an overlay) claims its own Ctrl+Z /
 	// Ctrl+Y here, and the site is the fix rather than a tidy-up.
-	// Gated on themeEditorOpen() rather than called bare, so the two LEGACY overlay
-	// editors keep claiming their chord exactly where they always have — inside their
-	// own courtroom pass, via handleHotkeys — and nothing about their dispatch moves.
 	if a.themeEditorOpen() {
 		a.editorUndoChord()
 	}
@@ -710,8 +703,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	if a.courtkeys.showHotkeys {
 		// Restore the pointer for the sheet's own pass — it was fenced above
 		// while hovered/dragged so the screens beneath drew pointer-blind.
-		// Skipped while a confirm modal is up: that fence belongs to the modal
-		// (drawn after), and the sheet must stay inert under it.
 		if !a.dialogs.confirmDisconnect && a.dialogs.pendingCloseTab == nil && a.dialogs.hidePrompt == "" && !a.showQuitConfirm && a.makerExportPack == 0 && !a.dialogs.disconnectDlg.open && !a.font.serverNoticeDlg.open && !a.font.fontWarnDlg.open && !a.evid.evidDiscardConfirm && !a.evid.evidServerPickerOpen && !demoBrowser.open {
 			a.ctx.unfencePointer()
 		}

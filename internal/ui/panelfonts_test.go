@@ -57,9 +57,6 @@ func TestPanelFontRowsMatchTheElementList(t *testing.T) {
 }
 
 // TestPxToScalePctRoundTrips: the size a user types has to be the size they get.
-// The percent is applied to UIFontSize with integer division when the face is
-// opened, so rounding DOWN here reopens one pixel small — the same round-trip
-// bug themeFontPct was written to avoid for a theme's point sizes.
 func TestPxToScalePctRoundTrips(t *testing.T) {
 	for px := config.PanelFontMinPx; px <= config.PanelFontMaxPx; px++ {
 		pct := pxToScalePct(px)
@@ -351,7 +348,6 @@ func TestThemeFontsOffKeepsTheUsersOwnPicks(t *testing.T) {
 // TestDyslexiaFontBeatsAPerPanelPick: the accessibility switch is not an
 // ordinary preference. Someone who turns it on and still cannot read one panel,
 // because of an override they set weeks ago, would be right to call that broken.
-// Their SIZES still apply — the switch is about the letterforms.
 func TestDyslexiaFontBeatsAPerPanelPick(t *testing.T) {
 	a := landWithPanel(t, func(a *App) {
 		a.d.Prefs.Update(func(

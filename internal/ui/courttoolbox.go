@@ -269,9 +269,6 @@ func toolboxChipTipID(i int) string {
 }
 
 // compactToolboxChips is the fixed chip set, right-to-left from the grip (A1):
-// Pin (latch the flyout open), Theater, Edit layout, Hide-UI (the per-piece
-// panel). Each chip draws a vector icon and carries a Tooltip with the full
-// word. The slice is package-level with method values, so it never re-allocates.
 var compactToolboxChips = []compactChip{
 	{iconPin, "Pin the toolbox open (press again or the grip to unpin)", func(a *App) { a.toolbox.compactTogglePin() }},
 	{iconTheater, "Theater mode — stage only, Esc exits", (*App).compactTheater},
@@ -625,7 +622,6 @@ func (a *App) compactToolboxStripRect(w, h int32) sdl.Rect {
 	// Register with the editor while editing (so it hands the toolbox move handles),
 	// exactly as slotRect does — but with the NORMALIZED rect, so the editor's drag
 	// base and this draw agree on the strip's true W/H. Done inline (not via slotRect)
-	// precisely because slotRect can't apply the move-only W/H normalization above.
 	if a.classic.classicEdit {
 		a.classic.regSlot(slotToolbox, cur, def)
 	}
@@ -767,9 +763,6 @@ func (a *App) toolboxPiecesContentH() int32 {
 
 // mouseLifelines are the chrome routes a pure-mouse user has back to the client's
 // own controls. Hiding the LAST surviving one is refused (A6, #21).
-// The set is three, not two, and the third is why: ctrlSettingsSlot is drawn only
-// by drawICControls, which runs on the CLASSIC path — a themed courtroom returns
-// long before it. So for a themed user that lifeline never exists to be hidden,
 var mouseLifelines = [...]string{panelToolbox, ctrlSettingsSlot, panelMenuBar}
 
 // toggleChromePanel flips one chrome piece from the keyboard and says which way
@@ -793,7 +786,6 @@ func (a *App) toggleChromePanel(id, label string) {
 // guard: hiding the last mouse lifeline is refused with a toast explaining why,
 // instead of applied-then-silently-undone. Every other toggle passes straight
 // through. Wholesale hidden-set writes (profile apply, prefs import/reset)
-// normalize the same invariant in seedHiddenFromPrefs instead.
 func (classic1 *classicState) setPanelHiddenGuarded(e *env, id string, hide bool) {
 	if hide && classic1.lastMouseLifeline(id) {
 		e.warnLine = "Kept: that's the last mouse route back to the client's controls. (Ctrl+F reopens this panel.)"
@@ -856,8 +848,6 @@ func (a *App) drawToolboxPieces(w, h int32) {
 	// The TITLE strip is the drag handle — the band above the filter box, not the
 	// whole header, so grabbing it can never swallow a click meant for the filter
 	// field. (The Close button lives in the footer, so it is clear either way.)
-	// piecesPressed is this panel's OWN press edge: it draws over other surfaces
-	// and so cannot share the frame's click.
 	piecesPressed := c.mouseDown && !a.toolbox.piecesPrevDown
 	a.toolbox.piecesPrevDown = c.mouseDown
 	wasManip := a.wins.piecesWin.dragging

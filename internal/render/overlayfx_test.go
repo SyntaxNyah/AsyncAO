@@ -409,7 +409,6 @@ func opaqueDecoded(w, h int) *assets.Decoded {
 // default: the classic stage is 4:3 while effect packs ship ~16:9 art (fit-to-
 // height is then ~32% too wide), and respect_offset moves the whole layer by the
 // speaker's own offset. Unclipped, that painted over the IC log and the chatbox.
-//
 // This is the observation the spec's §4.4 "recording renderer" line was asking
 // for, done against real pixels: nothing in the suite had ever looked at where an
 // overlay actually landed, which is why the spill was invisible. Each case first

@@ -2,10 +2,6 @@ package theme
 
 // THE PRESET LIBRARY'S GATES (v1.90.0 W9) — design §6.5 acceptance clauses 1-3
 // and 7, plus the encapsulation gates hard rule 11 asks of every new seam.
-// The 294-combination COHERENCE matrix is not here: it needs the real anchor
-// resolver, which lives in internal/ui, and re-deriving the resolve in this
-// package would be exactly the mirror-test hard rule 11 rejects. See
-// internal/ui/themepresetmatrix_test.go.
 
 import (
 	"crypto/sha256"
@@ -37,10 +33,6 @@ func shippedLibraryFor(t testing.TB) *PresetLibrary {
 // TestEveryEmbeddedPresetParses is acceptance clause 1, and it is deliberately
 // the loudest test in the file: everything else in this wave is downstream of
 // the fragments being readable at all.
-// It asserts the SHAPE of the library, not just the absence of an error. A
-// loader that silently skipped a file it could not classify would return a
-// perfectly valid library with 13 styles in it, and the gallery would render a
-// grid with a hole nobody could explain.
 func TestEveryEmbeddedPresetParses(t *testing.T) {
 	lib := shippedLibraryFor(t)
 
@@ -220,9 +212,6 @@ func fragmentSections(t testing.TB, p *Preset) []string {
 // TestPresetTierViolationIsRefusedNotIgnored is the ENCAPSULATION half of the
 // disjointness rule: the partition cannot be bypassed by writing a fragment that
 // ignores it. Both directions, and the element-kind rule with them.
-// It drives ParsePreset — the sanctioned path — with hand-built fragments rather
-// than asserting over the table a second time, because a test that re-derived
-// the rule would pass even if nothing enforced it.
 func TestPresetTierViolationIsRefusedNotIgnored(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -320,9 +309,6 @@ func TestFullCanvasIsADeclarationNotAnInference(t *testing.T) {
 // data. The parser refuses a violation (above), so this cannot fail while that
 // passes — which is the point: it is the gate that proves the rule was applied
 // to the 461 elements that actually ship, not only to the two in a fixture.
-// It also asserts the converse, which the parser does NOT check: every id in a
-// `full_canvas` list must name an element that exists. A stale entry there is an
-// anchor rule quietly switched off for an element that was renamed.
 func TestStylePresetElementsAlwaysAnchor(t *testing.T) {
 	var anchored, full int
 	for _, p := range shippedLibraryFor(t).Styles() {
@@ -360,7 +346,6 @@ func TestStylePresetElementsAlwaysAnchor(t *testing.T) {
 	// THE EXEMPTION IS SMALL AND IT HAS TO STAY SMALL. It is the one way a style
 	// element escapes the orthogonality rule, and W9 moved elements in BOTH
 	// directions across it, for opposite reasons:
-	// Anchor first, always; declare only what genuinely references no widget.
 	const shippedFullCanvasReviewCap = 24
 	if full > shippedFullCanvasReviewCap {
 		t.Errorf("%d shipped style elements take the full_canvas exemption (review threshold %d) — "+
@@ -376,9 +361,6 @@ func TestStylePresetElementsAlwaysAnchor(t *testing.T) {
 // TestEveryShippedPresetShipsZeroBytesOfArt is acceptance clause 7, and it is an
 // AGPLv3 gate before it is an engineering one: "everything is arithmetic, so
 // everything is original by construction" is only true while it stays true.
-// It checks the FS as well as the model. A preset cannot reference art without a
-// [media] entry, but it could still smuggle a .png into the axis directory and a
-// later wave could start reading it.
 func TestEveryShippedPresetShipsZeroBytesOfArt(t *testing.T) {
 	for _, p := range append(append([]*Preset(nil), shippedLibraryFor(t).Layouts()...), shippedLibraryFor(t).Styles()...) {
 		if n := len(p.Side.Media); n != 0 {
@@ -624,10 +606,6 @@ func sidecarFingerprint(t testing.TB, s *Sidecar) string {
 // TestMergePresetsNeverMutatesItsBase is the property the gallery's live preview
 // rests on: scrubbing a row merges 294 candidate themes and throws every one of
 // them away, and not one of them may leave a mark on the theme the user has open.
-// It hashes the base BEFORE and AFTER, which is the same shape
-// TestCopyForEditingLeavesTheOriginalUntouched uses for the folder on disk. The
-// aliasing bug this catches is the plausible one: a struct copy shares every
-// slice header, so the merge's first append into Elements writes through.
 func TestMergePresetsNeverMutatesItsBase(t *testing.T) {
 	lib := shippedLibraryFor(t)
 	base := NewSidecar()
@@ -813,7 +791,6 @@ func TestEveryCombinationMergesAndValidates(t *testing.T) {
 			// ZERO NOTES. Every note is a degrade the reader had to apply, and a
 			// SHIPPED combination that degrades is a fragment we got wrong: the whole
 			// asymmetry in ParsePreset's doc comment (refuse where the reader degrades)
-			// is worth nothing if the merge then quietly shortens something.
 			if notes := merged.Notes(); len(notes) != 0 {
 				t.Fatalf("%s x %s merged with %d note(s), want none — the first is: %s",
 					l.ID, s.ID, len(notes), notes[0])
@@ -896,9 +873,6 @@ func TestACreatedThemeCarriesItsStylesAttribution(t *testing.T) {
 
 // TestPresetLibraryIsImmutableAcrossCallers is the encapsulation gate for the
 // shared library: two independent applies of one preset must be independent.
-// The library is a package-level singleton, so a merge that handed out the
-// library's own Element values would let the first theme edited in a session
-// rewrite what every later theme gets.
 func TestPresetLibraryIsImmutableAcrossCallers(t *testing.T) {
 	lib := shippedLibraryFor(t)
 	style := lib.Styles()[0]

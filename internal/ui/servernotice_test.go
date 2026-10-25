@@ -33,9 +33,6 @@ const (
 
 // TestAPreCourtroomBanRaisesTheNoticeBoxWithTheTail is the regression gate for the
 // reported defect, driven through the real drop path.
-// handleInvoluntaryDrop with no room to freeze is the arm a refused handshake lands on
-// (the server answers our join with BD and closes, so there is no courtroom yet). It
-// must now raise the box, attribute it to the server we dialled, and keep the WHOLE
 func TestAPreCourtroomBanRaisesTheNoticeBoxWithTheTail(t *testing.T) {
 	a := froomApp(t)
 	a.link.room = nil // a drop before the courtroom: char-select, or a refused join
@@ -374,8 +371,6 @@ func TestTheOneLineDropDialogKeepsItsOldShape(t *testing.T) {
 // TestTheWrappedBodyIsBakedNotRewrappedEveryFrame is the alloc gate for the seam, and
 // it measures the SEAM rather than the frame for the reason the report panel's gate
 // spells out: a whole-frame budget is large enough to swallow a per-frame rewrap.
-// The modals redraw sixty times a second while they are up, and the text cannot change
-// while they are open, so the wrap must run on change only.
 func TestTheWrappedBodyIsBakedNotRewrappedEveryFrame(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()
@@ -608,9 +603,6 @@ func TestTheNoticeBoxFreezesTheTabStrip(t *testing.T) {
 
 // TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou drives the first of the two
 // holes the pointer fence structurally cannot cover.
-// The second half is not decoration, it is the only thing standing between this gate
-// and vacuity — the arm being fenced shipped DEAD. It read c.keyPressed, which
-// HandleEvent can never set to Return (Return is answered with c.enter in an earlier
 func TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()
@@ -694,7 +686,6 @@ func TestEnterInTheICFieldIsFencedWithoutEatingTheDraft(t *testing.T) {
 			// FATAL, not an error: with the fence gone the draft is already spent, and the
 			// non-vacuity press below then sends a REAL IC line — which on a fixture with no
 			// socket panics inside Session.reply and buries this failure in a stack trace.
-			// Stopping here keeps a broken fence reading as a broken fence.
 			if a.compose.icInput != draft {
 				t.Fatalf("icInput = %q, want %q — either the send went through under the box or the "+
 					"keystroke was swallowed somewhere that took the draft with it", a.compose.icInput, draft)

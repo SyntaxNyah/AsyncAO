@@ -147,9 +147,6 @@ func TestExtrasMinHeightFitsItsFurniture(t *testing.T) {
 }
 
 // TestExtrasTearHitRectFollowsTheClip pins what the tear-off hit test is handed:
-// it hit-tests with a raw pointIn that pushClip does not reach, so a cell scrolled
-// half under the volume sliders must only be grabbable where it is actually drawn,
-// and one scrolled away entirely must not be grabbable at all.
 func TestExtrasTearHitRectFollowsTheClip(t *testing.T) {
 	view := sdl.Rect{X: 100, Y: 100, W: 200, H: 200}
 	for _, tc := range []struct {

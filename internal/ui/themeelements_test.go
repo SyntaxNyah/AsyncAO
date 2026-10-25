@@ -1,9 +1,6 @@
 package ui
 
 // The free-element render model's gates (v1.90.0 W3).
-// So these tests pass against a table of no-op painters, and they are expected to
-// keep passing, unchanged, as each real painter lands. If one of them has to be
-// loosened to make a painter fit, the painter is wrong.
 
 import (
 	"image"
@@ -237,10 +234,6 @@ func TestDrawElementBandsZeroAllocWithNoElements(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestDrawElementBandsZeroAllocWith96Elements is the same gate at theme.ElementCap:
-// This is the constitution every future painter is bound by. A painter that
-// formats a string, clones a slice, probes a map with a built key, takes &localRect
-// into cgo (the classic themed-frame leak — see the cgoRect contract in ui.go) or
-// reads prefs per element fails HERE, at 96x amplification, instead of shipping.
 func TestDrawElementBandsZeroAllocWith96Elements(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
@@ -399,11 +392,6 @@ func TestEveryElementKindHasAPainter(t *testing.T) {
 const bakedElementByteCeil = 128
 
 // TestBakedElementStaysSmall pins the memory the model costs every install.
-// The baked array is INLINE in themeLayoutCache, which is a field on App, so its
-// size is paid once at startup by every user whether they own a themed install or
-// not — and it is re-zeroed on every cold rebuild. bakedElementByteCeil is what
-// keeps "a fixed array that never grows" an actual bound instead of a slogan (hard
-// rule 4: everything has a named cap).
 func TestBakedElementStaysSmall(t *testing.T) {
 	got := unsafe.Sizeof(bakedElement{})
 	if got > bakedElementByteCeil {

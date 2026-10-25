@@ -109,8 +109,6 @@ const layoutEditorBannerText = "LAYOUT EDIT — drag = move, arrows = nudge 1 px
 
 // TestThemedEditorSurvivesAnOpenCourtroomModal is the BLOCKING regression: the themed
 // courtroom could hard-lock.
-// Nothing on screen answered. This test arms the editor with each of the three open
-// and asserts the editor draws, Done is present, and Esc exits — by both routes.
 func TestThemedEditorSurvivesAnOpenCourtroomModal(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -341,8 +339,6 @@ func TestTabStripDragIsExactAtEveryScale(t *testing.T) {
 
 // TestTabStripBoxSurvivesADiscardedDrag is MAJOR 2 in isolation: the gesture whose
 // RELEASE flips parked-ness back off.
-// Both halves of the fix are exercised here: parked-ness is part of the cache key (so
-// it is CORRECT) and the release invalidates (so it is IMMEDIATE).
 func TestTabStripBoxSurvivesADiscardedDrag(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
@@ -401,9 +397,6 @@ func TestTabStripBoxSurvivesADiscardedDrag(t *testing.T) {
 
 // TestTabStripParkedNessIsPartOfTheLayoutCacheKey pins the CORRECTNESS half of MAJOR
 // 2 directly, without leaning on a gesture.
-// Parked-ness selects between two completely different placements — the docked chrome
-// band and a spot on the theme canvas — and its only source is a persisted per-key
-// override, which nothing about the window, the band, the fit, the theme or the chip
 func TestTabStripParkedNessIsPartOfTheLayoutCacheKey(t *testing.T) {
 	a := stageTabbarlessCourtroom(t, stripEditTheme)
 	const w, h = int32(1000), int32(900)
