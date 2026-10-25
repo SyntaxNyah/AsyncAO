@@ -476,6 +476,21 @@ func TestPackageBundleLayout(t *testing.T) {
 	}
 }
 
+// TestWriteContentBundleCancelRemovesPartial pins the cancel contract directly: a
+// closed cancel channel leaves no folder at all and reports that nothing was kept.
+func TestWriteContentBundleCancelRemovesPartial(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "bundle")
+	cancel := make(chan struct{})
+	close(cancel)
+	res := writeContentBundleCancel(nil, dest, "scene", &sceneRecording{}, nil, nil, cancel)
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Errorf("cancelled write must leave no folder; Stat err=%v", err)
+	}
+	if !strings.Contains(res.msg, "cancelled") {
+		t.Errorf("result should say cancelled; got %q", res.msg)
+	}
+}
+
 // TestWriteContentBundleDirect exercises the writer without the App/probe
 // plumbing (layout + gap-list + never-overwrite + external-skip + byte round-
 // trip). It re-drains bytes from a LocalFetcher-backed Manager, mirroring how
@@ -672,6 +687,14 @@ func TestCancelMidPackageLeakFree(t *testing.T) {
 	const pkgSlack = 4
 	if !waitGoroutines(base+pkgSlack, 3*time.Second) {
 		t.Errorf("package goroutine leaked: base=%d now=%d", base, runtime.NumGoroutine())
+	}
+	// A cancel must not leave half a bundle behind. Either the writer finished before
+	// the cancel landed (a COMPLETE folder, .aorec present) or it removed what it had;
+	// a folder without its descriptor can never replay and must not exist.
+	if _, err := os.Stat(cancelBundle); err == nil {
+		if _, err := os.Stat(filepath.Join(cancelBundle, "cancelpkg"+recordingExt)); err != nil {
+			t.Errorf("cancel left a partial bundle without its .aorec: %v", err)
+		}
 	}
 }
 
