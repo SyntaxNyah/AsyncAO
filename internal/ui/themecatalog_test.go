@@ -103,6 +103,9 @@ func TestThemeCatalogIsBoundedAndPublishedAtomically(t *testing.T) {
 
 	// The snapshot is published whole. Nothing mutates a live one: swapping
 	// the pointer is the only way it changes.
+	// The count to compare against is CAPTURED, not hardcoded: this scan also
+	// walks this machine's real theme roots (exe dir, config base), so the
+	// number of entries depends on what the developer happens to have in
 	cat2Len := len(cat2.Entries)
 	a := &App{env: env{}}
 	a.skin.themeCat.Store(cat2)
@@ -124,6 +127,12 @@ func TestThemeCatalogIsBoundedAndPublishedAtomically(t *testing.T) {
 
 // TestThemeBadgeAgreesWithWhatTheClientAcceptsAsATheme pins the badge against
 // the app's OWN definition of a theme folder. themeINIFiles is that definition:
+// normalizeThemeRoot uses it to decide a dropped folder is a theme, and
+// theme.Load merges the design, fonts and sounds INIs independently, so a folder
+// holding any ONE of them loads and does something. Telling the user such a
+// folder holds no theme files would have the browser contradict the client that
+// had just accepted it on drop — which is what this test exists to stop coming
+// back (it did once: the badge read only the design INI and the sidecar).
 func TestThemeBadgeAgreesWithWhatTheClientAcceptsAsATheme(t *testing.T) {
 	for _, ini := range themeINIFiles {
 		dir := writeCatalogTheme(t, t.TempDir(), "solo", ini)
@@ -246,6 +255,9 @@ func TestSubthemeScanBoundsItsWorkNotJustItsOutput(t *testing.T) {
 }
 
 // TestThemeCatalogFocusStatOnlyRescansWhenTheRootMoved pins the cheap trigger:
+// focus-gain must cost one os.Stat and nothing else unless the write root's
+// mtime actually changed. A rescan on every alt-tab is exactly the polling the
+// no-watcher decision exists to avoid.
 func TestThemeCatalogFocusStatOnlyRescansWhenTheRootMoved(t *testing.T) {
 	root := t.TempDir()
 	writeCatalogTheme(t, root, "one", theme.DesignFileName)

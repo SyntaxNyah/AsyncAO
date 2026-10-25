@@ -51,6 +51,9 @@ func shoutChapterLabel(m *protocol.ChatMessage) string {
 }
 
 // buildReplayChapters derives the chapter list from a recording's events:
+// every background change ("Scene: …"), every music change ("♪ …"), and every
+// shouted message. The very first background/music (the recording's opening
+// state) are chapters too — they mark "the start". Bounded by maxReplayChapters.
 func buildReplayChapters(events []recEvent) []replayChapter {
 	var out []replayChapter
 	for i, e := range events {

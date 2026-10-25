@@ -1,6 +1,12 @@
 package ui
 
 // THE PAUSED-CLOCK CENSUS GUARD (v1.90.0 W7a).
+// W5 shipped themeClock.paused with NO WRITER and left the whole failure written
+// down at drawElement's census line as a TODO. W7's scrub is the first writer, so
+// the guard lands with it — and these gates land BEFORE the scrub UI does, which is
+// the point: the defect is invisible on screen (the client simply never falls to
+// the idle cadence, with a still picture in front of you), so it has to be caught by
+// a test or it is not caught at all.
 
 import (
 	"testing"

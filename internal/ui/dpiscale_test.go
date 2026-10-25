@@ -24,6 +24,12 @@ func TestUILogicalFromDeviceMatchesRender(t *testing.T) {
 // TestUIDeviceFromLogicalMatchesRender is the FORWARD-direction twin of
 // TestUILogicalFromDeviceMatchesRender. render.deviceFromLogicalAt is what
 // MessageRaster.draw / Badge.Draw project a text or badge origin (and their clips)
+// through, while every kit label and the focused text field project through
+// uiDeviceFromLogical — so the two must land on the same device pixel, or the text
+// sits a pixel off the chrome laid out around it at the fractional scales a
+// maximized window's auto UI scale picks (the reported text offset). render rounds
+// half up; it used to truncate. render.DeviceFromLogicalAt is exported for this
+// check only.
 func TestUIDeviceFromLogicalMatchesRender(t *testing.T) {
 	for _, dev := range []int32{0, 100, 125, 150, 175, 200} {
 		for _, v := range []int32{0, 1, 2, 3, 5, 7, 37, 100, 149, 151, 201, 333} {
@@ -143,6 +149,8 @@ func TestDevWidthCachePurgeContract(t *testing.T) {
 }
 
 // TestDevTextWidthDivergesAtFractionalScale is the premise-of-the-fix regression:
+// at a fractional scale the device-face measure (folded back to logical) can differ
+// from the logical-face TextWidth over a long string, because SDL_ttf re-quantizes
 // each glyph advance at the larger device point size (#77 S1b, the length-growing
 // caret drift). If the embedded font happens NOT to diverge at 150% we surface that
 // as a skip rather than forcing a false !=: the fix is then a no-op for THIS font

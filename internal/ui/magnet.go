@@ -15,6 +15,7 @@ const (
 	// rule §17.4). Excess candidates past the cap are simply not considered as
 	// magnet targets — a benign degradation, but a silent one, so the cap is sized
 	// to keep real headroom rather than to sit exactly on the live count.
+	// The fixed surfaces are 19: the 14 table-driven floatWin panels (the three
 	// ex-modals joined them in #31), msgWin, the Extras box, the fav-emote box, the
 	// sprite-style box and the compact toolbox strip. Five torn-off TAB panels take
 	panelMagnetCap = 32
@@ -250,6 +251,9 @@ func (a *App) anyPanelDragging() bool {
 // this frame: Shift held (the editor's precise-placement modifier). Screen-edge
 // snapping (snapToEdges) is NOT bypassed — that is the pre-existing #21 behaviour
 // and stays independent, so Shift only turns off the new sibling magnet.
+// The layoutedit.go grid gate (`layoutSnap && !magnetBypassed()`) reads THIS
+// (Shift-only) form deliberately: the persistent "Magnet: off" chip must not
+// disable grid snapping, only sibling snapping — so the chip is folded into
 func magnetBypassed() bool {
 	return sdl.GetModState()&sdl.KMOD_SHIFT != 0
 }

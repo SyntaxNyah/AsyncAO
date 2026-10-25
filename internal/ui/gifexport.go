@@ -139,6 +139,15 @@ const (
 	// gifWarmHardCap is the ABSOLUTE wall-clock ceiling on the whole warm phase,
 	// measured from job creation (not from warmSubmitDone like gifWarmMax). It is
 	// the backstop the incremental submitter needs: outstanding = len(warmInFlight)
+	// = submitted bases not yet resident, and a submitted ref that 404s (or resolves
+	// to a base other than r.Base) NEVER becomes T1-resident, so it never leaves the
+	// in-flight set. If ≥warmInFlightWindow such refs pile up, room stays 0,
+	// pendingWarm never drains, warmSubmitDone never latches, and the gifWarmMax
+	// clock (which only starts at warmSubmitDone) would never run — the phase would
+	// hang forever on a missing-origin imported .demo (exactly the 404-heavy scene
+	// this async path exists to serve). This anchor guarantees the phase ends and
+	// the export proceeds regardless of pending/submit state. Generous headroom
+	// over gifWarmMax so a large, still-progressing warm isn't guillotined early.
 	gifWarmHardCap = 20 * time.Second
 
 	// Incremental warm submission (the freeze fix). startSceneExport MUST NOT loop
@@ -474,6 +483,11 @@ type gifExportJob struct {
 
 	// Async load phase: the disk read + parse runs on ONE goroutine off the render
 	// thread (a 30–60 MB .aorec or an all-day .demo froze the window otherwise).
+	// loadCh (gifLoadBuf-buffered) delivers the parsed recording; the render thread
+	// finishes the export on delivery. loadName is the file base for the overlay;
+	// loadKind is the requested format. The channel is per-job identity: on Cancel
+	// the job (and its channel) is dropped, so a late goroutine send lands in a
+	// buffer nobody polls (never blocks — the goroutine finishes and dies).
 	loading  bool
 	loadCh   chan gifLoadResult
 	loadName string
@@ -719,6 +733,11 @@ func (a *App) startExportSeed(j *gifExportJob, origin string) {
 }
 
 // tickGifSeed polls the format-seed goroutine without blocking (render thread).
+// On delivery it republishes the resolver table (so the warm's first candidate
+// sees the seeded formats — WarmFromPrefs on the render thread, matching
+// pollManifest discipline) and drops into the warm phase. Nothing to do until the
+// goroutine sends. A Cancel that nils a.gif never reaches here (tickGifExport's
+// j==nil guard fires and the buffered send is GC'd with the job).
 func (a *App) tickGifSeed(j *gifExportJob) {
 	select {
 	case res := <-j.seedDone:
@@ -862,6 +881,9 @@ func (a *App) tickGifExport() {
 // tickGifLoad polls the off-thread disk-load result without blocking (render
 // thread). Nothing to do until the loader sends; on an error the export exits
 // cleanly, and on success finishLoadedExport runs the render-thread export tail.
+// The loading shell job holds no capture target or encoder yet, so an error
+// teardown here can't leak either — it just clears the export flags (no
+// endExportScaleBracket needed: loading never set the bracket).
 func (a *App) tickGifLoad(j *gifExportJob) {
 	select {
 	case res := <-j.loadCh:
@@ -972,6 +994,7 @@ func (a *App) tickGifWarm(j *gifExportJob) {
 	// Incremental submission: bound the OUTSTANDING (= len(warmInFlight)) high-lane
 	// occupancy to warmInFlightWindow so a Submit can never find a full lane and
 	// block, and cap the per-tick burst at warmPrefetchPerTick. The set self-bounds:
+	// room hits 0 at the window, so len(warmInFlight) never exceeds that named cap.
 	if len(j.pendingWarm) > 0 {
 		room := warmRoom(len(j.warmInFlight))
 		submit, rest := nextWarmBatch(j.pendingWarm, room, a.warmSettled)
@@ -1118,6 +1141,8 @@ func (a *App) drawGifThemedFrame(j *gifExportJob, sc *courtroom.Scene, dst sdl.R
 	c := a.ctx
 	// Stage frame: the theme's window art over the centered design area (black
 	// letterbox bars are the capture's own clear). Mirrors drawCourtroomThemed.
+	// lay.area is the cached canvas — the same rect drawCourtroomThemed paints into.
+	// (It used to be re-derived from symmetric bars here too; see theme_layout.go.)
 	court := lay.area
 	if page, ok := a.themePage("courtroombackground"); ok {
 		c.cgoRect = court
@@ -1166,6 +1191,10 @@ func (a *App) exportCondSource(j *gifExportJob) elemCondSource {
 }
 
 // drawGifThemedChatbox draws the export chatbox at the theme's ao2_chatbox rect:
+// the theme's chatbox skin (or a flat panel), the showname and message at their
+// chatbox-relative design rects, clipped to the box. It mirrors drawThemedChatBox
+// but reads the EXPORT room's scene + its own cached raster (j.chatRaster), not
+// the live courtroom state.
 func (a *App) drawGifThemedChatbox(j *gifExportJob, sc *courtroom.Scene, box sdl.Rect, lay *themeLayoutCache) {
 	if sc.IsBlankPost || (sc.MessageText == "" && sc.ShownameText == "") {
 		return
@@ -1227,6 +1256,9 @@ func (a *App) drawGifThemedChatbox(j *gifExportJob, sc *courtroom.Scene, box sdl
 	// Rasterize once per line, wrapped to the design message width and shrunk to
 	// fit the box height (keyed by text like the default path — only one of the two
 	// chatbox paths runs across a whole export, so the shared cache never drifts).
+	// The MESSAGE deliberately does NOT take the canvas fold the showname above
+	// takes. j.chatPct is exportChatPct, already derived from the capture height,
+	// and fitChatRaster then shrinks it until the block fits the box — so this text
 	if j.chatRaster == nil || j.chatText != sc.MessageText {
 		if j.chatRaster != nil {
 			j.chatRaster.Destroy()
@@ -1292,6 +1324,8 @@ func (a *App) drawGifChatbox(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect) 
 
 // exportStamp resolves the #74 watermark text once per export: the user's custom
 // text, or — blank — the recording's asset host + its recorded date. "" = off.
+// A bundled archive's rewritten local origin (loopback) is skipped: stamping
+// "127.0.0.1" credits nobody, so those fall back to the date alone.
 func exportStamp(opts config.ExportOptions, rec *sceneRecording) string {
 	if !opts.Watermark {
 		return ""
@@ -1315,6 +1349,8 @@ func exportStamp(opts config.ExportOptions, rec *sceneRecording) string {
 
 // drawExportStamp paints the watermark in the capture's top-right (the chatbox
 // owns the bottom band): a 1-px shadow pass keeps it readable over any scene.
+// The stamp string is constant per export, so the label texture is cached after
+// the first frame. Render thread only (inside the capture callback).
 func (a *App) drawExportStamp(j *gifExportJob, vp sdl.Rect) {
 	if j.stamp == "" {
 		return
@@ -1605,6 +1641,9 @@ func (a *App) drawGifProgress(winW, winH int32) {
 
 	// Loading phase: the disk read + parse runs off-thread. An always-alive overlay
 	// (this is the whole point of the fix — no more frozen window with no screen)
+	// with a Cancel that abandons the pending result. Cancelling drops the job: the
+	// loader goroutine's send lands in a buffer nobody polls, so it finishes and
+	// dies (never leaks blocked on send — gifLoadBuf guarantees the buffer accepts).
 	if j != nil && j.loading {
 		verb := "demo"
 		if strings.EqualFold(filepath.Ext(j.loadPath), recordingExt) {

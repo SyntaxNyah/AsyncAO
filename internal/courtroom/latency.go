@@ -35,6 +35,14 @@ import "time"
 
 const (
 	// maxLatencySample rejects an absurd CH → CHECK round trip as a measurement.
+	// A DELIBERATE divergence from canon, which clamps nothing: our CH can be
+	// stamped on the game thread and the CHECK read on the next drained frame, so
+	// a stalled/minimized client, a laptop resuming from sleep, or a debugger
+	// breakpoint can manufacture a "round trip" of minutes. Subtracting half of
+	// that would zero every clock the server then sets. Two seconds is far above
+	// any real AO server RTT (the lobby's own "poor" ping tier is a small
+	// fraction of it) and far below anything a stall produces, so a real
+	// measurement always lands and a fabricated one never does.
 	maxLatencySample = 2 * time.Second
 )
 

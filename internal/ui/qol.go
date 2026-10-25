@@ -661,6 +661,9 @@ func (a *App) applyAudioVolumes() {
 	master := a.d.Prefs.Load().MasterVol
 	// Per-server audio (sandboxed tab sound): the ACTIVE server's override, when
 	// enabled, replaces the global mixer levels — so each tab carries its own volumes.
+	// ServerAudio falls back to the global per channel for any level this server never
+	// set, so a profile can't silently mute a channel (e.g. SFX) just by existing — only
+	// an explicit 0 mutes. Re-applied on courtroom entry + every tab switch (buildRoom).
 	if on, m, mu, s, b := a.d.Prefs.ServerAudio(a.srvMeta.serverKey); on {
 		master, music, sfx, blip = m, mu, s, b
 	}
@@ -1028,6 +1031,8 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 				// where people actually go to find out what a key does, so it is also
 				// where they want to change it — sending them to Settings to act on
 				// what they are already looking at is the long way round.
+				// Same capture the Settings rows arm (a.hkCapture), so there is one
+				// rebinding path and not two that can disagree.
 				row := sdl.Rect{X: x, Y: y, W: labelW + hkKeyGap, H: hkRowH}
 				if e.action != "" {
 					if c.hovering(row) {
@@ -1195,6 +1200,8 @@ func (a *App) checkCallwords(text string, selfNames []string, mine bool) {
 	// #203 name mentions: your own showname / character name, matched as a WHOLE
 	// word (so "Max" doesn't fire on "maximum") and NEVER on your own message —
 	// the server echoes your IC back and RP lines routinely contain your name.
+	// The names are session-scoped: the caller passes THIS message's session's
+	// identity, so multi-server play pings the right name per tab.
 	if mine || !a.d.Prefs.Load().MentionSelf {
 		return
 	}
@@ -1277,6 +1284,10 @@ func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) 
 
 // callwordHit reports whether a single configured callword fires in lower (which
 // must already be lowercased). A bare word matches as a WHOLE word (containsWord)
+// so it can't self-ping on a coincidental substring. A trailing '*' opts into a
+// looser prefix match (containsWordPrefix): the stem must begin a word but need
+// not end one, so "obj*" catches "objection". A lone "*" (empty stem) never
+// matches — it would otherwise fire on every message, defeating the whole point.
 func callwordHit(lower, word string) bool {
 	if stem, ok := strings.CutSuffix(word, "*"); ok {
 		return stem != "" && containsWordPrefix(lower, stem)
@@ -1566,6 +1577,9 @@ func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw
 // measureLinkSpans fills in the pixel range of the spans dst[start:], in the
 // exact face each row DRAWS in (LogFontFor per row, like drawOOCLogList) — so
 // the tint and the hit test land on the glyphs the user sees.
+// A row the per-glyph raster draws (emoji, or a mixed-script row no single face
+// covers) has no advance we can trust here: labelEmoji composes per-rune faces,
+// so a plain SizeUTF8 prefix would put the highlight in the wrong place. Such a
 // row degrades to the pre-#38 behaviour — its FIRST link covers the whole row —
 func (a *App) measureLinkSpans(dst []oocLinkSpan, start int, rows []string, rowBase int) []oocLinkSpan {
 	w := start
@@ -1599,6 +1613,10 @@ func (a *App) oocRowLinks(li int) []oocLinkSpan {
 }
 
 // oocWrapped returns the OOC log as display lines: long entries (MOTDs)
+// word-wrap to the list width and embedded newlines split, instead of the
+// old 120-char truncation. Streamer mode masks sender names and IPs here
+// (display only). Cached against (log seq, width, font scale, mask) —
+// rebuilds happen on new messages or resizes, never per frame.
 func (a *App) oocWrapped(width int32) []string {
 	streamer := a.d.Prefs.Load().StreamerModeOn
 	// #39: key on the RESOLVED scale (theme "server_chatlog" size × the OOC zoom),
@@ -1888,6 +1906,9 @@ func constFont(f *ttf.Font) func(string) *ttf.Font {
 const wrapFallbackCharPx = 8
 
 // fontWidth measures s in font, falling back to wrapFallbackCharPx per byte.
+// The wrap AND the OOC link-span measure both go through it so a span's pixel
+// range is derived exactly the way the row's break points were — one measuring
+// rule, no drift between where a link is drawn and where it is clickable.
 func fontWidth(font *ttf.Font, s string) int32 {
 	if font == nil {
 		return int32(len(s) * wrapFallbackCharPx)
@@ -2025,6 +2046,8 @@ func wrapParagraphs(measure func(string) int32, s string, maxW int32, maxLines i
 		// The "+1 probe": wrapToWidthMeasured caps SILENTLY (it never reports that it
 		// truncated), so asking for one row more than the budget is how we tell a
 		// paragraph that exactly filled the budget from one that overflowed it.
+		// remaining >= 1 is guaranteed above, so probe >= 2 and the maxLines <= 0
+		// disagreement documented above can never be reached from here.
 		got := wrapToWidthMeasured(measure, para, maxW, remaining+1)
 		if len(got) > remaining {
 			got = got[:remaining]

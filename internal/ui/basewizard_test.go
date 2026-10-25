@@ -2,6 +2,10 @@ package ui
 
 // Gates on the guided base-folder setup (issue #72) and the folder report behind
 // it.
+// The class of bug this whole surface exists to remove is the SILENT one: a
+// setup that looks applied and is not, a folder one level off, a base whose
+// characters carry no char.ini. So most of what is pinned here is what the user
+// gets TOLD, and the rest is that nothing is written until they say so.
 
 import (
 	"archive/zip"
@@ -91,6 +95,10 @@ func TestBaseScanCountsWhatIsActuallyThere(t *testing.T) {
 }
 
 // TestBaseScanWarnsWhenNoCharacterShipsAnINI is issue #72 stated before the fact.
+// This is the state that reads as "it worked": the sprites load out of the
+// folder, so the setup looks correct, while every emote list, showname, blip set
+// and chatbox skin still comes from the server's copy of that character. Nothing
+// on screen explains the difference, so the report has to say it up front.
 func TestBaseScanWarnsWhenNoCharacterShipsAnINI(t *testing.T) {
 	dir := writeBaseTree(t, t.TempDir(), map[string]string{
 		"characters/witch/(a)idle.png": "x",

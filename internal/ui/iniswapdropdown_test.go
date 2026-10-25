@@ -6,6 +6,11 @@ import (
 
 // TestIniswapCurrentIndexIsAbsolute pins the index mapping, which is the one
 // destructive thing in this feature: it feeds RemoveWardrobe, which PERSISTS.
+//
+// The tempting implementation is to scan choices[1:] (skipping the own-folder row)
+// and use the loop variable, because index 0 is special. That silently returns
+// i-1, so clicking the X deletes the wardrobe entry ABOVE the one displayed —
+// a saved favourite the user never selected. AO2 scans the whole list from 0 and
 // uses the index directly (courtroom.cpp:5340-5347).
 func TestIniswapCurrentIndexIsAbsolute(t *testing.T) {
 	choices := []string{"Phoenix", "Edgeworth", "Godot", "Franziska"}
@@ -34,6 +39,9 @@ func TestIniswapCurrentIndexIsAbsolute(t *testing.T) {
 // TestBuildIniswapChoicesKeepsTheWornFolder is the hole review found: a.iniChar
 // can hold a folder that is NOT in the saved wardrobe, because wearFromMenu takes
 // entries from the SERVER's iniswap.txt and never calls AddWardrobe.
+// Without the trailing entry, iniswapCurrentIndex finds no match and falls back
+// to 0 — so the dropdown would display the player's OWN character while they were
+// visibly wearing something else, and iniswap_remove (gated on cur != 0) would
 func TestBuildIniswapChoicesKeepsTheWornFolder(t *testing.T) {
 	// Worn folder absent from the wardrobe → appended, and findable.
 	got := buildIniswapChoices(nil, "Phoenix", []string{"Edgeworth"}, "ServerOnlyChar")

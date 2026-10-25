@@ -18,6 +18,9 @@ func newPitchCtx() *Ctx {
 // TestThemeFaceRowPitchReadsTheInstalledFace holds the index contract: the Qt
 // pitch table is filled in SetThemeFaces's own loop, index-aligned with the cover
 // table, so slot N's pitch always belongs to slot N's bytes.
+//
+// OpenDyslexic is the bundled face internal/theme's own gate measured against Qt
+// 6.5.3: 43 px at a 24 px em, 73 at 40.
 func TestThemeFaceRowPitchReadsTheInstalledFace(t *testing.T) {
 	c := newPitchCtx()
 	c.SetThemeFaces([][]byte{openDyslexicOTF})

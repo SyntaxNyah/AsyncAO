@@ -329,6 +329,11 @@ const (
 )
 
 // drawMayoPortrait draws the About Mayo portrait and runs the #234 easter egg:
+// clicking her "pets" her — bumping a session counter, wiggling the art and
+// floating a caption. It ONLY hit-tests while the portrait is actually on screen
+// in the scroll viewport (the same guard the About link buttons use), so a click
+// where she WOULD be while scrolled off never pets invisibly. About is off the
+// hot path, so the fmt/label allocations here are fine.
 func (a *App) drawMayoPortrait(c *Ctx, tex *sdl.Texture, dst sdl.Rect) {
 	if tex == nil {
 		return

@@ -1,6 +1,9 @@
 package ui
 
 // Shared source-structure helpers for the wiring gates in this package.
+// These are deletion-catchers, never mirrors: they assert that PRODUCTION code calls
+// production functions in a required relationship. They contain no copy of the logic
+// under test, so they cannot go green against a re-implementation.
 
 import (
 	"go/ast"
@@ -53,6 +56,9 @@ var (
 // ignores build tags when associating files with packages (SA1019); the explicit walk +
 // parser.ParseFile keeps the census exact. An empty result is a failure, not a pass: a
 // census that read nothing passes everything.
+// The parse is memoized per test binary and per parser.Mode (see parseKey): this package
+// has 200+ files and these gates used to re-read and re-parse all of them once per call
+// (~26k parses a run, slower still under -race). The on-disk sources are immutable during
 func parseNonTestSources(t testing.TB, mode parser.Mode) (*token.FileSet, map[string]*ast.File) {
 	t.Helper()
 	wd, err := os.Getwd()

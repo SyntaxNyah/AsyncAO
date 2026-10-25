@@ -14,6 +14,11 @@ import (
 // against a ColPanel track, and every built-in chrome preset put those two
 // within 28 luma units of each other — under the kit's own 48-unit
 // minInkSkinContrast readability floor (see sliderIdleThumbColor, ui.go).
+// These tests drive the REAL draw path (an actual Ctx.Slider/VScrollbar call
+// into an offscreen render target, with the painted pixel read back) rather
+// than re-checking sliderIdleThumbColor's arithmetic in isolation — a test
+// that only re-derived the math would stay green even if a callsite reverted
+// to the raw `col := ColPanelHi` this fix replaces.
 
 const (
 	// sliderThumbFixtureW/H size the offscreen target the tests paint into —
@@ -99,6 +104,10 @@ func sampleVScrollbarIdleThumb(t *testing.T, a *App, ct *render.CaptureTarget) s
 	c.dragID = ""
 	track := sdl.Rect{X: 40, Y: 20, W: 16, H: 120}
 	// content/visible/scroll are chosen so the thumb (thumbH=120*100/300=40px)
+	// lands centered in the track: span=track.H-thumbH=80, and scroll=maxScroll/2
+	// (maxScroll=content-visible=200) puts thumbY at track.Y+track.H/2-thumbH/2 —
+	// i.e. the track's own center point below is inside the thumb rect, not past
+	// its bottom edge.
 	const content, visible, scroll = int32(300), int32(100), int32(100)
 	frame, err := ct.Capture(c.Ren, func(sdl.Rect) {
 		c.VScrollbar("scrollbar-contrast-test", track, scroll, content, visible)

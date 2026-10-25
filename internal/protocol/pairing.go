@@ -7,6 +7,12 @@ import (
 
 // Pair z-order, from the 2.8 "<id>^<order>" extension. Semantics mirror
 // AO2-Client display_pair_character exactly:
+//
+//	^0 → the SPEAKER renders in front (pair behind) — also the default
+//	^1 → the speaker renders behind (pair in front)
+//
+// (spec §11's table had these inverted; AO2-Client wins on protocol
+// behavior per its own ground rule.)
 const (
 	PairSpeakerInFront = 0
 	PairSpeakerBehind  = 1

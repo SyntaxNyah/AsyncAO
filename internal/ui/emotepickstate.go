@@ -13,6 +13,9 @@ type emotePickState struct {
 	// Emote-grid scroll position (emotescroll.go owns every derived answer). The
 	// stored value is the first visible ROW, not a page: the wheel scrolls one row
 	// per notch while the arrows and the "page x/y" readout stay page-shaped.
+	// cols / rowsPerPage / totalRows are stamped by whichever grid drew last
+	// (classic or themed), so the number-key row and the page label always
+	// describe the grid actually on screen.
 	emoteRow         int
 	emoteCols        int
 	emoteRowsPerPage int
@@ -22,11 +25,17 @@ type emotePickState struct {
 	// emote sound on every send until set back to "auto". sfxChoices[0]="SFX: auto"
 	// (the emote's own sound), then the character's distinct emote sounds; idx 0 = auto.
 	// Rebuilt by ensureSFXChoices when the character (or its emote count)
+	// changes — tracked as two plain fields, NOT a concatenated key string:
+	// the guard runs every frame in drawICInputRow, and building a key just to
+	// compare it allocated on the settled path (whole-screen gate catch).
 	sfxChoiceIdx       int
 	sfxChoices         []string
 	sfxChoicesForName  string
 	sfxChoicesForCount int
 	// effects_dropdown selection for the next message (AO2 ui_effects_dropdown).
+	// Index 0 is the prepended "None" row, which sends "" — so the zero value is
+	// correct for a fresh session and resetSessionState needs no seeding, exactly
+	// like sfxChoiceIdx. It SURVIVES the send: AO2's `stickyeffects` option
 	// defaults true, so courtroom.cpp:2348's reset never fires out of the box (see
 	// clearEffectsAfterSend, which owns the whole rule).
 	overlayChoiceIdx int

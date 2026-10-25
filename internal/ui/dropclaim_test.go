@@ -8,6 +8,9 @@ import (
 
 // TestDroppedThemeBundleNeverRepointsTheThemeRoot is the W2 gate on drop
 // routing, and it is written from the failure rather than from the feature.
+// The fix is one shared classifier, so the gate is: the bundle is claimed by
+// HandleFileDrop, the Settings screen's arm therefore never reaches its
+// theme-folder default, and the theme root is untouched by the drop.
 func TestDroppedThemeBundleNeverRepointsTheThemeRoot(t *testing.T) {
 	const bundle = `C:\Users\x\Downloads\umineko-meta-world.aotheme`
 
@@ -79,6 +82,9 @@ const dropClaimCensusMin = 3
 // joins this gate the moment it exists. The bound is the SENTINEL
 // (c < dropClaimCount), not the last named member: the walk once ended at
 // dropClaimThemeFont and W10's dropClaimThemeImage slipped past it.
+// The sentinel itself is guarded by the compiler (dropClaimNames' fixed array),
+// by the empty-name loop at the foot of this test (sentinel too large, or a
+// claim added with no name) and by dropClaimCensusMin. Do not remove the loop:
 func TestEveryDropClaimHasASettingsAnswer(t *testing.T) {
 	// The Settings screen may only repoint the theme root for the UNCLAIMED case.
 	// Every other claim names an owner, and an owner means "not this screen".
@@ -128,6 +134,9 @@ func TestEveryDropClaimHasASettingsAnswer(t *testing.T) {
 }
 
 // TestThemeBundleDropSaysWhereToPutIt pins the other half of the parked import:
+// the drop must not be silent. A drop that does nothing and says nothing is
+// indistinguishable from a broken client, which is how the .aotheme routing
+// would be read if it only stopped doing the wrong thing.
 func TestThemeBundleDropSaysWhereToPutIt(t *testing.T) {
 	a := &App{env: env{}}
 	before := a.warnAt
@@ -157,6 +166,10 @@ func TestThemeBundleDropSaysWhereToPutIt(t *testing.T) {
 // it exists for the same reason: the claim alone only stops the WRONG thing (the
 // theme root no longer gets repointed at the font's folder). Without a line, the
 // drop would become silent, which reads as a broken client.
+//
+// It also pins that the message names both INI sections. `[fonts]` alone installs
+// nothing — a family with no `[fontbind]` row binds to no element — and that pair
+// is the single most common way this feature is got wrong.
 func TestThemeFontDropSaysWhereToPutIt(t *testing.T) {
 	a := &App{env: env{}}
 	a.handleThemeFontDrop(filepath.FromSlash("C:/Users/x/Downloads/CourtSerif.ttf"))

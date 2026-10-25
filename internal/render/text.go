@@ -94,6 +94,12 @@ func TextColorNames() []string { return textColorNames }
 
 // Extended AsyncAO chat colors (#98). These are NOT wire text_color values —
 // the AO MS text_color field MUST stay 0..8 or strict clients (LemmyAO-style)
+// drop the whole message. They travel ONLY as inline \c<Code> markup, exactly
+// like the \cr rainbow: another AsyncAO client renders Color precisely, while a
+// standard AO2 client drops the unknown escape and falls back to Wire (the
+// nearest standard palette index we ship in the MS text_color field). Codes
+// avoid the reserved markup letters r/b/i and the \c lead-in 'c', plus digits
+// 0..8 — the gate set is mirrored by courtroom.ExtColorCodes (a test pins it).
 type ExtColor struct {
 	Name  string
 	Code  byte      // inline letter: \c<Code>
@@ -189,6 +195,9 @@ type MessageRaster struct {
 	// devScale is the device font scale (#77): the textures were rasterized at
 	// font pt×(devScale/100), so Draw divides every device-px dst dimension back
 	// to logical px (logicalFromDevice). 100 = 1:1 (the pre-#77 path / exports).
+	// The selection metrics also map through devScale — PrefixWidth / LineSpanX /
+	// Height / LineH return LOGICAL px, and RuneAt scales an incoming LOGICAL
+	// point up to device — so caret/highlight geometry stays aligned at any scale.
 	devScale int32
 	srcGet   sdl.Rect // scratch
 	dstGet   sdl.Rect // scratch
@@ -237,6 +246,12 @@ func (m *MessageRaster) lineOffset(i int) int32 {
 }
 
 // Rasterize renders text wrapped to wrapW pixels in the given font/color.
+// Call once per message (render thread). Wrapping goes through wrapStyled's
+// position-preserving ranges (not the old strings.Fields wrapText, which
+// collapsed whitespace runs and lost rune positions): identical visuals for
+// normal text, faithful spacing for the rest, and — the point — every line
+// knows its source-rune range, so the chatbox selection can map pixels to
+// text (RuneAt / LineSpanX / LineRange).
 // wrapW is LOGICAL px and devScale (#77) the device font scale the caller
 // opened font at (100 = 1:1); the wrap column is measured against the DEVICE
 // glyphs, so wrapW scales up here, and Draw divides the device dst back to
@@ -468,6 +483,10 @@ func buildSpan(ren *sdl.Renderer, font *ttf.Font, runes []rune, st spanStyle, xO
 // Draw blits the first visibleRunes runes at (x, y). Full lines blit whole;
 // the partial line reveals via src-rect width — O(lines) per frame, zero
 // allocations, zero texture churn.
+// Callers that know the scale the renderer is CURRENTLY at should prefer
+// DrawScaled: it unlocks the device-exact blit that keeps a typing-out message
+// pixel-stable (see deviceExact). Draw keeps the scaled projection, which is what
+// the offscreen/export passes want — they render at a scale of their own.
 func (m *MessageRaster) Draw(ren *sdl.Renderer, visibleRunes int, x, y int32) {
 	m.draw(ren, visibleRunes, x, y, false, nil) // scaled path never brackets the scale, so no clip to re-assert
 }
@@ -482,6 +501,7 @@ func (m *MessageRaster) DrawScaled(ren *sdl.Renderer, visibleRunes int, x, y, re
 
 // deviceExact reports whether the 1:1 device blit is both SAFE and WORTH IT for a
 // renderer currently scaled to renderPct.
+// Under the device-exact blit dst.W IS src.W, so no resample is even possible.
 // Gated on the renderer scale MATCHING the raster's font device scale, because
 // that equality is what makes a 1:1 device blit reproduce the intended on-screen
 // size. The offscreen passes that bracket their own SetScale (the pinned-tab
@@ -717,6 +737,7 @@ func (m *MessageRaster) Text() string { return m.text }
 // All coordinates are relative to the Draw origin and use the SAME per-line
 // advances / span offsets / centering the blits use, so a highlight can never
 // drift from the pixels. Everything here is measurement over prebuilt slices:
+// zero allocations, safe in the per-frame highlight loop.
 
 // LineH is the wrapped-line pitch Draw advances by — LOGICAL px (#77), matching
 // Draw's per-line logical step so a selection highlight lines up with the glyphs.
@@ -810,6 +831,10 @@ func (m *MessageRaster) RuneAt(relX, relY int32) int {
 	// walk below stays in the raster's native units.
 	relX, relY = m.deviceFromLogical(relX), m.deviceFromLogical(relY)
 	// Divide by the pitch Draw actually STACKS lines at, not the raw device lineH.
+	// Those differ by up to a pixel per line at a scaled UI (the folded logical
+	// pitch is what Height()/LineH()/the highlight all use), and the error
+	// accumulates — so on a tall message a drag near the bottom used to pick the
+	// neighbouring line. Falls back to lineH if the pitch degenerates to 0.
 	pitch := m.linePitch(true)
 	if pitch <= 0 {
 		pitch = m.lineH

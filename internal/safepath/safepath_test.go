@@ -122,6 +122,15 @@ func TestWalkFilesSkipsSymlinks(t *testing.T) {
 
 // TestUnsafePathAsksLstatNotStat drives the by-path refusal over the answers that
 // separate it from a stat-based lookalike. THE STAT VERSION PASSES A NAIVE TEST:
+// os.Stat on a link to a regular file says "regular file", so a gate that only checked
+// "link to a file is refused, plain file is not" would stay green on an implementation
+// that follows the link and can never refuse anything.
+//
+// The link-to-a-DIRECTORY case is the one the mount fetcher's fold depends on (a
+// stat-based answer calls it a directory and descends straight out of the mount), and
+// the DANGLING case is the one that must not be reported as absent — foldLookup finds
+// it by name, so "not refused" there is a refusal that never fires.
+//
 // The two ALLOWED answers carry as much weight as the refusals: a directory must stay
 // traversable or foldJoin cannot descend at all, and a regular file must stay readable
 // or the fold serves nothing. A predicate that refuses everything is the other way to

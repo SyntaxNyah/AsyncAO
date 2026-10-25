@@ -4,6 +4,9 @@ package ui
 // detailed logging writes under logs/<server>/<session>.log. A streaming client
 // can't index a server's history, but YOUR OWN logs are right here on disk, so
 // this is a "look through any log, any server, filter by text" view.
+// Disk work is OFF the render thread (rule §2) and HARD-bounded (rule §4): a
+// scope load reads at most maxLogScopeFiles files / maxLogScopeLines lines into
+// memory once, and the live text filter then runs over that in-memory slice
 
 import (
 	"fmt"

@@ -16,6 +16,7 @@ import (
 // music contract: a music track — a server-relative name or a DJ /play link —
 // carries its own extension, so it is fetched EXACTLY and is never re-probed
 // into another format.
+//
 // This is not a property of the URL builder alone: it is a property of the
 // pipeline pass PrefetchExact runs (resolveExact, which has no candidate ladder
 // at all). The test proves it at the wire, by counting what the origin actually
@@ -65,6 +66,7 @@ func TestMP3MusicFetchesExactlyTheURLItWasGiven(t *testing.T) {
 // TestMusicFallbackChainReachesMP3 pins the second half: when a music asset DOES
 // walk a chain — the diagnostic/export pass, the only music caller that ever
 // does — mp3 is in it, after opus and ogg.
+//
 // The order is the contract, not just the membership: opus is the modern AO
 // default and the zero-fallback single probe, ogg is the legacy bulk of live
 // mirrors, and mp3 is the long tail. Putting mp3 earlier would spend a probe per
@@ -84,6 +86,11 @@ func TestMusicFallbackChainReachesMP3(t *testing.T) {
 	}
 
 	// The three chain formats must all be ones the mixer can actually decode.
+	// A chain entry the audio backend never initialised is the v1.71 INIT_FLAC
+	// ghost: the fetch succeeds, the decode silently fails, and the track is
+	// "just broken". internal/render asks Mix_Init for OGG|MP3|OPUS|FLAC
+	// (render/audio.go), so opus/ogg/mp3 are all covered — this pin fails the day
+	// someone adds a fourth format here without checking that.
 	for _, ext := range got {
 		switch ext {
 		case config.ExtOpus, config.ExtOgg, config.ExtMP3, config.ExtWAV:

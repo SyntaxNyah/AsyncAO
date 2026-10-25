@@ -17,6 +17,7 @@ const (
 // ao2DefaultCanvas is the canvas the table's coordinates were authored in —
 // line 3 of AO2's own base/themes/default/courtroom_design.ini. Every rect below
 // is a position ON THIS CANVAS, and that is the fact the placement rule turns on:
+// carried onto a canvas of another size they are not a layout, just numbers.
 var ao2DefaultCanvas = theme.Rect{X: 0, Y: 0, W: 714, H: 579}
 
 // applyAO2DefaultRects fills AO2's per-key default for every courtroom key the
@@ -27,6 +28,9 @@ var ao2DefaultCanvas = theme.Rect{X: 0, Y: 0, W: 714, H: 579}
 // SECOND GATE: a default is refused when it would land on a widget the theme's
 // author placed themselves, unless the theme is working on AO2's own canvas.
 // courtroom.cpp:1334-1338) and what #21's rule (e) demands.
+// On AO2's OWN canvas the defaults go in verbatim, overlaps included — the stock
+// file overlaps itself (slide_enable 200,464 against casing 200,470; pre 5,400
+// against flip 64,400), so a theme that adopts that canvas is asking for exactly
 func applyAO2DefaultRects(layout map[string]theme.Rect) {
 	canvas, ok := layout[ao2CanvasKey]
 	if !ok {

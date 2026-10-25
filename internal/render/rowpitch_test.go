@@ -1,6 +1,7 @@
 package render
 
 // The Qt row-pitch override, driven rather than mirrored.
+//
 // These build the two raster shapes directly (same package) instead of going
 // through Rasterize / RasterizeAnimated, because the override is pure geometry
 // and a real raster would drag SDL, a renderer and a face in to prove arithmetic

@@ -9,6 +9,11 @@ import "strings"
 // codec below), and every AsyncAO viewer renders it on that speaker's sprite —
 // while AO2/webAO see a normal, unstyled character (the marker is zero-width, so
 // their chat text is unaffected too).
+// It is plain data (no pointers, SDL-free): the renderer reads it off the
+// SpriteLayer and feeds it into the existing SetColorMod/SetBlendMode bracket, so
+// applying a style costs nothing on the render hot path. Slice 1 carries only the
+// "free" draw-time effects; per-pixel effects (invert/grayscale) are a planned
+// follow-up that builds cached variant textures.
 type SpriteStyle struct {
 	Tint    bool  // multiply the sprite by (R,G,B) — recolour
 	R, G, B uint8 // the multiply colour (only meaningful when Tint)
@@ -112,6 +117,7 @@ const (
 // maxPathPoints caps a custom drawn motion path (#34). Each point is one byte (packed
 // 4-bit X/Y), so the whole path is a short, send-on-change tail — kept modest on purpose
 // (the zero-width run is otherwise blip-spam to webAO). A path needs at least 2 points.
+// The wire is length-prefixed ([len][len bytes]), so raising this stays backward-compatible:
 const maxPathPoints = 16
 
 // minVisibleOpacity floors a received opacity so nobody can post a fully (or
@@ -235,6 +241,8 @@ func resolvePct(v uint8, lo, hi int) int {
 // --- zero-width wire codec --------------------------------------------------
 //
 // The style travels as a run of INVISIBLE characters appended to the message text:
+// The codec runes are written as hex code points (NOT literal glyphs) so the source
+// stays visible and can't be mangled by an editor or a codepage pipe.
 const (
 	zwStart rune = 0x2060 // WORD JOINER — payload sentinel (proven to pass the wire)
 
@@ -259,6 +267,8 @@ const (
 
 	// spriteStyleVersion tags the payload so a later field change is detectable —
 	// a decoder that doesn't recognise the version yields no style (benign). It stays 1:
+	// flags2 is a backward-compatible APPEND, not a format change (an old decoder reads
+	// the first spriteStyleBytes and ignores the extra byte).
 	spriteStyleVersion = 1
 	spriteStyleBytes   = 9  // version, flags, R, G, B, opacity, brightness, scale, rotation
 	spriteStyleBytesV2 = 10 // …+ flags2 (only present when an outline/shadow is set)
@@ -563,6 +573,7 @@ func hasMarker(text string) bool {
 // DecodeSpriteStyle pulls the style out of a message's text and returns the style
 // plus the text with ALL of the codec's zero-width runes removed (so the
 // typewriter, blankpost test, IC log, and callword matcher all see clean text).
+// No marker → the zero-value style and the original text (no allocation).
 func DecodeSpriteStyle(text string) (SpriteStyle, string) {
 	if !hasMarker(text) {
 		return SpriteStyle{}, text

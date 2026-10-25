@@ -1,5 +1,6 @@
 // Package debuglog is the bounded failure log behind the debug overlay: a ring of
 // stamped rows, folded by a time window.
+//
 // It is deliberately state-only — no SDL, no Ctx, no App, no env — which is what
 // makes the boundary real: package ui imports this and can reach the ring only
 // through Push/PushAt/Lines/Len. The fold policy is the bug fix pinned by the

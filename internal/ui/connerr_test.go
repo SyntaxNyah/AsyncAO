@@ -36,6 +36,7 @@ func TestFriendlyConnError(t *testing.T) {
 
 // TestFriendlyConnErrorNamesTheProxy pins the ORDER of the switch, which is the
 // whole reason the proxy cases sit at the top of it.
+//
 // The websocket library wraps every dial failure with its own name, so a proxy
 // error arrives carrying the word "websocket" and lands in the "not a WebSocket
 // server" arm — telling the user to blame a server that is working perfectly,

@@ -28,6 +28,8 @@ type serverMetaState struct {
 	// manifestFor is a RE-SEED SIGNAL for the CURRENT session origin: Settings
 	// writes "" to it to force fetchManifestAsync to re-fetch the connected
 	// server's extensions.json right after a profile / auto-detect toggle change.
+	// (It no longer serves as the dedupe key — manifestSeeded does — but keeping
+	// the field lets the Settings re-seed hooks stay a plain field write.)
 	manifestFor string
 	// manifestSeeded records every origin whose extensions.json has already been
 	// fetched + seeded this session, so the session connect path AND the two

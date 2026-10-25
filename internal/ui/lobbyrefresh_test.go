@@ -29,6 +29,11 @@ func TestLobbyAutoRefreshDue(t *testing.T) {
 }
 
 // TestLobbyEntryAutoRefresh pins the edge trigger end to end on a headless App:
+// entering the lobby refreshes (stamping the cap), sitting on it never re-fires
+// (edge, not polling), re-entry inside the cap suppresses, leaving never fires,
+// and re-entry past the cap refreshes again. No request leaves the process: the
+// staged master URL has no scheme, so the fetch goroutine fails at request
+// build and only delivers an error through the (test-allocated) result channel.
 func TestLobbyEntryAutoRefresh(t *testing.T) {
 	a := testTabApp(t)
 	base := time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
@@ -248,6 +253,11 @@ func TestErrorLandingKeepsList(t *testing.T) {
 }
 
 // TestLeaveLobbyClearsPingLatch pins the leave-edge heal for a wedged sweep:
+// the done sentinel is sent non-blocking (a full pingRes drops it) and pollPing
+// stops running off-lobby, so leaving with a.pinging latched must clear it AND
+// supersede the sweep (gen bump) — or the Ping button and the idle-skip census
+// stay dead for the session, and a late done sentinel could re-sort the list
+// out of nowhere on re-entry.
 func TestLeaveLobbyClearsPingLatch(t *testing.T) {
 	a := testTabApp(t)
 	a.conn.lobby.pinging = true

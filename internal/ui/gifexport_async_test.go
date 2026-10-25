@@ -569,6 +569,11 @@ func TestTickGifWarmHardCapDoesNotFireEarly(t *testing.T) {
 // ref is marked conclusively missing (as drainWarnings' Store.MarkMissing relay does
 // live on chain exhaustion), and the warm must then latch warmSubmitDone and fire
 // allReady within a bounded number of ticks — no sleep, no shrunk cap.
+// This FAILS on the unfixed code: with only Store.Contains counting, a never-resident
+// ref never prunes from warmInFlight, room pins at 0, pendingWarm never drains,
+// warmSubmitDone never latches, and warming stays true until the hard cap (which this
+// fresh job hasn't reached) — so the loop below exhausts its ticks with warming still
+// true and the test fails. That is the point: the armor reproduces the stall.
 func TestTickGifWarmConclusiveMissEndsWarmPromptly(t *testing.T) {
 	a, store := newWarmHarness(t)
 

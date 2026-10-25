@@ -9,6 +9,13 @@ import (
 // TestIsLiveStageBase pins item #9's widening: the held-frame bridge's steal
 // gate (render/textures.go onEvict -> SetLiveScenery(a.IsLiveStageBase)) now
 // covers the DRAWN speaker/pair sprite bases, not just scenery (bg + desk).
+// This is the production change the render-package store test structurally
+// CANNOT reach (render can't import ui), so it must be pinned here. The
+// load-bearing case is the speaker/pair base returning true while Visible:
+// under the pre-widening scenery-only logic those returned FALSE, so this test
+// genuinely fails on the old behaviour. Every case uses a DISTINCT non-empty
+// base — the function switches on base and BackgroundBase is the first case, so
+// shared values would let the wrong case win and pin nothing.
 func TestIsLiveStageBase(t *testing.T) {
 	const (
 		bg      = "live://background/court/defenseempty"

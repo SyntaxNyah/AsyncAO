@@ -7,6 +7,7 @@ import (
 )
 
 // prune's budget arithmetic, driven through the remove hook.
+//
 // TestThumbPruneBudget above stages real files and calls tc.prune(), so it can
 // only ever see the interleavings the encode worker's open sweep happens to
 // produce — which is exactly how the one that matters reached CI as a flake

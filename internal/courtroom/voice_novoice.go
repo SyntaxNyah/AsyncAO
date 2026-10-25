@@ -9,6 +9,7 @@ import "github.com/SyntaxNyah/AsyncAO/internal/protocol"
 // and the UI's single VoiceAvailable() gate compiling. handleVoicePacket
 // produces no events, so an incoming VS_* packet is silently ignored;
 // VoiceAvailable() is always false, so the UI never offers any voice surface.
+//
 // Opus MUSIC is unaffected — it decodes through SDL_mixer (internal/render),
 // not this package. See internal/render/audio.go.
 

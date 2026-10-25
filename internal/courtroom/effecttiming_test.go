@@ -10,12 +10,14 @@ import (
 )
 
 // WHEN the 2.8 EFFECTS field fires.
+//
 // AO2 runs do_effect from start_chat_ticking (courtroom.cpp:4154-4172) — the function
 // that begins the TEXT — and a blocking preanim only reaches start_chat_ticking through
 // preanim_done → handle_ic_speaking (:4108-4118 → :3506). So on a preanim message the
 // overlay, its sound and the legacy realization flash all land when the crawl begins,
 // one whole preanim later than AsyncAO used to put them (fireMessageEffects was called
 // from enterAfterShout, before the preanim phase).
+//
 // The emote SFX is the OPPOSITE case and stays where it was: AO2 arms sfx_delay_timer
 // inside play_preanim (:4054), i.e. at preanim START. Both halves are pinned here so a
 // future tidy-up cannot "simplify" them back into one call site.

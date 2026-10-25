@@ -16,6 +16,9 @@ import (
 // now and silently arms a view the user never asked for in their next un-themed
 // layout. That is the ghost/inert-control class this package pins by name, and it is
 // what musicMenuRowLive's `!themed` guard exists to prevent.
+//
+// These tests pin the derived answer (rosterMenuThemed) and the fact that the draw
+// site still uses it.
 
 // newRosterMenuRig is the minimal App this predicate needs: prefs on a temp file and
 // nothing else. rosterMenuThemed reads only the layout cache, the panel-hidden set

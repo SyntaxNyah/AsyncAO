@@ -1,6 +1,7 @@
 package theme
 
 // theme.Load's sidecar tier (v1.90.0 W3).
+//
 // The three AO2 design INIs merge per key across the ladder because AO2 merges
 // them. The AsyncAO extension tier does NOT, on two independent grounds, and both
 // of them are tested here because they fail differently.
@@ -34,6 +35,7 @@ func writeThemeWithSidecar(t *testing.T, root, name, elementID string) {
 
 // TestElementsDoNotInheritFromDefault is the AO2-parity rule the whole free-element
 // model rests on: a theme's decoration is ITS OWN.
+//
 // The failure it prevents is not hypothetical. loadFirstINI merges the three design
 // INIs per key across the ladder, and the ladder ends at the DEFAULT theme — so a
 // sidecar read the same way would materialise the default theme's elements onto
@@ -68,6 +70,7 @@ func TestElementsDoNotInheritFromDefault(t *testing.T) {
 // TestSidecarIsReadAtomicallyFromTheFirstOwnDirectory pins the second half: within
 // ONE theme, the sidecar comes from the first of its own directories that has one —
 // whole, never merged per id with a lower tier's.
+//
 // Merging per id is the tempting bug, because that is exactly what the design INIs
 // do one directory down. It would mean a subtheme could not REMOVE an element, only
 // add to one — and "night mode has fewer decorations" is the first thing anybody

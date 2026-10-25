@@ -1,6 +1,9 @@
 package ui
 
 // COPY FOR EDITING (v1.90.0 W8) — docs/wip/THEME-EDITOR-DESIGN.md §Q5.
+// OFF THE RENDER THREAD (hard rule 2) and single-flight (hard rule 4): the job
+// pointer IS the flag, the channel is buffered so the goroutine never blocks on an
+// app that moved on, and the shape is editExportJob's exactly.
 
 import (
 	"path/filepath"
@@ -95,6 +98,11 @@ const (
 
 // themeEditReasonFor is the whole rule, PURE over its three facts so the row's
 // wording and the action's refusal are testable without a window or a theme.
+//
+// AN UNKNOWN THEME (no catalog entry yet) with a native tier is treated as
+// editable, which is deliberate: that is the state during the first frames after
+// the editor opens, and downgrading it to "copy first" would flip the button under
+// the user's cursor when the scan lands. Save resolves the origin for real.
 func themeEditReasonFor(hasNativeTier bool, entry themeCatalogEntry, known bool) themeEditReason {
 	switch {
 	case !hasNativeTier:
@@ -122,6 +130,8 @@ func (a *App) appliedThemeEditReason() themeEditReason {
 
 // copyThemeForEditing is every decision a copy makes, and the ONE entry point
 // both surfaces use.
+// Every refusal is a visible line naming the offender and the fix (design §3.3) —
+// a button that sometimes does nothing is worse than one that says why it cannot.
 func (a *App) copyThemeForEditing(name string, intent themeCopyIntent) {
 	if a.skin.themeCopy != nil {
 		a.noteThemeCopy("a theme is already being copied — let it finish first")
@@ -181,6 +191,7 @@ func (a *App) copyThemeForEditing(name string, intent themeCopyIntent) {
 
 // noteThemeCopy posts one line where the user is actually looking: the editor's
 // rail chip when the editor is open, the client's shared warn line otherwise.
+//
 // ONE function rather than a parameter at every call site, because the action has
 // two entry points and a refusal delivered to the surface the user is NOT on is a
 // silent refusal.
@@ -246,12 +257,18 @@ func (a *App) landThemeCopy(res themeCopyResult) {
 		a.retargetEditorDoc(m.Root, res.provenance)
 	}
 	// 4. THE COPY BECOMES THE APPLIED THEME. You can only edit what is applied.
+	// The CUSTOM root is left exactly as it was — a copy lands under the write root
+	// themeLoadRoots already walks, so repointing anything here would be the W2 bug
+	// arriving by the front door.
 	if a.d.Prefs != nil {
 		_, customRoot := a.d.Prefs.Load().Theme()
 		a.d.Prefs.SetTheme(m.Root, customRoot)
 	}
 	settings.themeName = m.Root
 	// NO #35 WINDOW SNAP is armed, and that is a decision rather than an omission:
+	// a copy has the source's canvas, so the target size cannot have changed, and
+	// ResizeWindow also RECENTERS — it would yank a window the user had positioned
+	// for a geometry that did not move. Same rule the Refresh button follows.
 	gen := a.applyThemeAsync()
 
 	line := "Copied " + job.from + " to \"" + m.Root + "\" — it is yours now, the original is untouched"
@@ -274,6 +291,11 @@ func (a *App) landThemeCopy(res themeCopyResult) {
 }
 
 // retargetEditorDoc points the open session at the copy.
+//
+// THE UNSAVED WORK IS THE POINT. The copy is made from the FILES ON DISK, so a
+// path that closed the document and reopened it over the copy would charge a
+// session's work for the privilege of being allowed to save — which is exactly the
+// failure the refusal chip existed to describe.
 func (a *App) retargetEditorDoc(name string, prov theme.ImportInfo) {
 	a.te.doc.name = name
 	if prov.DerivedFrom == "" {
@@ -290,6 +312,10 @@ func (a *App) retargetEditorDoc(name string, prov theme.ImportInfo) {
 
 // carryThemeRectOverrides copies the layout editor's per-theme tweaks onto the
 // copy's name (design §Q5 step 5).
+//
+// Bounded by preferences' own caps: SetThemeRectOverride refuses past
+// themeOvThemesCap / themeOvRectsCap, so this cannot grow the file without limit
+// however many copies a user makes.
 func (a *App) carryThemeRectOverrides(from, to string) {
 	if a.d.Prefs == nil || from == "" || to == "" {
 		return
@@ -301,6 +327,9 @@ func (a *App) carryThemeRectOverrides(from, to string) {
 
 // noteCopiedTheme publishes a catalog snapshot that includes the folder this
 // client has just written.
+// COPY-ON-WRITE + CAS, never a mutation: a snapshot is immutable and the draw path
+// reads it with no lock at all. A losing CAS means a real scan published first,
+// and its answer is the better one by definition.
 func (a *App) noteCopiedTheme(from string, m *themepack.Manifest) {
 	prev := a.skin.themeCat.Load()
 	if prev == nil {
@@ -335,6 +364,7 @@ func (a *App) noteCopiedTheme(from string, m *themepack.Manifest) {
 }
 
 // themeKindAfterCopy is the copy's badge, derived from the source's.
+//
 // A COPY ALWAYS HAS A NATIVE TIER, because stampProvenance writes one even when
 // the source had none — that is what makes copying a plain AO2 theme the act that
 // creates its AsyncAO tier. So the AO2 half is all that carries over.
@@ -346,6 +376,13 @@ func themeKindAfterCopy(src themeKind) themeKind {
 }
 
 // maybeOpenEditorAfterCopy opens the editor over a copy once ITS apply lands.
+//
+// Called from pollThemeApply beside maybeResizeToThemeDesign, and armed exactly as
+// that one is — by a single generation, so it cannot leak onto healTheme's
+// eviction re-kick, the texture-filter apply or a boot apply. The guard rails are
+// the same too: consume the arming unconditionally once its own apply lands, and
+// disarm when a later apply has outraced it (generations only increase, so an
+// arming left set could never match again).
 func (a *App) maybeOpenEditorAfterCopy(gen uint64) {
 	if a.skin.themeEditArmGen == 0 {
 		return
@@ -395,6 +432,11 @@ type themeEditorRowText struct {
 }
 
 // buildThemeEditorRow is the row's wording. PURE over its two inputs.
+//
+// THE BUTTON IS NEVER ABSENT, which is the defect this closes: the row used to
+// draw the "copy it for editing first" sentence with no button beside it, so an
+// AO2 theme — the state every AO2 user is in on first run — offered advice and no
+// way to act on it.
 func buildThemeEditorRow(reason themeEditReason, busy bool) themeEditorRowText {
 	if busy {
 		return themeEditorRowText{note: themeEditNoteBusy, button: "Copying…", copies: true}
@@ -415,6 +457,12 @@ func (a *App) themeEditorRow() themeEditorRowText {
 }
 
 // copyAppliedThemeForEditing is the row's other act: copy what cannot be opened.
+//
+// It resolves the NAME (the applied theme is the only thing the editor can open,
+// so it is the only thing worth copying) and hands off. The draw site keeps the
+// branch itself — Settings is the design's headline entry point and
+// TestEveryThemeEditorSettingIsFindable pins that the row opens the editor from
+// there in so many words.
 func (a *App) copyAppliedThemeForEditing(intent themeCopyIntent) {
 	name := ""
 	if a.d.Prefs != nil {

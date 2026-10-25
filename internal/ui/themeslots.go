@@ -10,6 +10,10 @@ package ui
 import "github.com/veandco/go-sdl2/sdl"
 
 // themeSlotRelSpace is the coordinate system a design rect is expressed in.
+// AO2's own courtroom_design.ini says this out loud in its section banners
+// ("**COORDINATE SYSTEM RELATIVE TO ...**"). AsyncAO hard-coded exactly one case
+// of it — `key != "showname" && key != "message"` — and had no way to say the
+// other two.
 type themeSlotRelSpace uint8
 
 const (
@@ -140,6 +144,10 @@ var themeSlots = [...]themeSlot{
 	{key: "guard", phase: phasePanels, state: slotStateHandDrawn},        // courtroom.cpp:1092
 	{key: "slide_enable", phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:1096
 	// showname_enable and casing are NOT placed by upstream AO2-Client:
+	// ui_showname_enable is a bare declaration (courtroom.h) and there is no
+	// set_size_and_pos for it or for "casing" anywhere in src/. They are
+	// KFO-Client / 2.9-era elements, so the only citation we can honestly give is
+	// the theme itself (aceattorney2x courtroom_design.ini:162 and :213).
 	{key: "showname_enable", phase: phasePanels, state: slotStateHandDrawn},
 	{key: "casing", phase: phasePanels, state: slotStateInert},
 
@@ -201,6 +209,8 @@ var themeSlots = [...]themeSlot{
 // does not ingest, with the reason. It is not a to-do list — it is the other half
 // of the totality oracle: a rect key a real theme declares must be in exactly one
 // of themeSlots, this map, or charSelectDefaultRects, or the fixture test fails.
+// (Non-rect keys — colours, pairs, scalars — are filtered by ElementRect before
+// the classification runs, so they need no set of their own.) Adding a key to a
 // theme corpus without deciding about it is what made issue #21 possible.
 var themeSlotDeferred = map[string]string{
 	"chatbox":                  "legacy spelling: AO2 places the chatbox from ao2_chatbox unconditionally (courtroom.cpp:3301). Reading it too would double-place.",

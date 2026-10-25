@@ -263,6 +263,11 @@ type Event struct {
 	MusicEffects int
 	// Wipe is AO2's set_background(bg, display) second parameter
 	// (../AO2-Client/src/packet_distribution.cpp:352, body at courtroom.cpp:1427):
+	// a BN carrying a pos field means "re-stage the viewport too", so the previous
+	// area's sprite, chatbox, shout and message queue are torn down. Only
+	// EventBackground populates it, and ONLY when the reducer saw a real server BN
+	// — the client's own EventBackground constructors (buildRoom's re-seed, the bg
+	// picker, replay, scene maker) must leave it false or they would erase the
 	// stage they are re-seeding (#23).
 	Wipe bool
 }
@@ -333,6 +338,12 @@ const (
 
 // embedsIPIDInName reports whether the connected server's family streams the
 // mod-only IPID inside the PU name field. ONLY the witches-akashi-party (WAP)
+// fork does (SoftwareWitches, announced as "WAP-Akashi") — the fork author draws
+// exactly this line: stock Akashi has no PlayerStateObserver and never puts IPIDs
+// in the player list, so it's deliberately kept out. This also excludes
+// Athena/Nyathena/KFO/Whisker — they push PU packets too, so gating stops a
+// parenthesised OOC name on those servers being mis-read as an IPID (which, via
+// BanCommand's -i flag, could otherwise build a wrong-target ban).
 func (s *Session) embedsIPIDInName() bool {
 	return DetectSoftware(s.Software) == SoftwareWitches
 }
@@ -379,6 +390,7 @@ func looksLikeIPID(tok string) bool {
 // Players returns the live roster (PR/PU) as a slice sorted by UID for a stable
 // display order. Empty when the server doesn't push the player-list packets (an
 // older tsuserver) — the UI then falls back to its CharsCheck-derived roster.
+// Allocates a fresh slice; call it on EventPlayersUpdated, not per frame.
 func (s *Session) Players() []LivePlayer {
 	if len(s.players) == 0 {
 		return nil
@@ -457,6 +469,10 @@ type Session struct {
 
 	// Muted is set by a server MU packet targeting our char id (or -1 = mute-all)
 	// and cleared by UM, mirroring AO2-Client set_mute (courtroom.cpp:4689-4711).
+	// The UI reads it to disable IC sends + show a notice. It resets on a char
+	// change (PV): the mute is keyed to a cid (set_mute compares p_cid to m_cid),
+	// so a mute for the OLD cid is void for the NEW one — AO2 relies on the server
+	// re-sending MU/UM; this reset is the defensive client-side equivalent.
 	Muted bool
 
 	// Live court state (AO2-Client parity; all mutated only by HandlePacket
@@ -810,6 +826,9 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 
 	case "PN":
 		// Population marker, the tail of every server family's greeting.
+		// Joining is client-initiated from here: webAO sends askchaa on PN
+		// (handshake.ts applyServerInfo), AO2-Client at join time
+		// (networkmanager.cpp join_to_server); the server answers with SI.
 		// Phase guard: population re-broadcasts must not reload the lists.
 		if s.phase == PhaseGreeting {
 			s.reply(protocol.NewTypedPacket(&aolib.Askchaa{}))
@@ -972,12 +991,19 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 	case "MC":
 		// Field 2 (showname) and field 1 (charID) name who played it for the IC
 		// log line; both are optional on the wire (short legacy MC packets).
+		// Field 0 is the track. Trim whitespace: a DJ /play link can arrive as
 		// " https://files.catbox.moe/x.mp3" and, left untrimmed, isMusicURL misses
 		// the http(s):// prefix so the direct URL is misread as a server-relative
 		// name and rebuilt as origin + "%20https://…" (a 404). One trim fixes the
 		// URL, Now-Playing/IC-log display and ~stop/area-transfer classification.
 		track := strings.TrimSpace(p.Field(0))
 		// Field 4 is the 2.9+ CHANNEL (AO2-Client courtroom.cpp handle_song:
+		// "Channel 0 is 'master music', other for ambient"; absent = 0). An
+		// ambience MC must never reach the music path: WAP-family servers
+		// stream area ambience on channel 1 — including one on EVERY join —
+		// and playing it as the song stopped/replaced the area's real music
+		// (playtest: rejoining a server stayed silent). We don't render
+		// ambience channels (yet), so a non-zero channel is a no-op.
 		if atoiOr(p.Field(4), 0) != 0 {
 			return nil
 		}
@@ -1082,6 +1108,9 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 
 	case "checkconnection":
 		// Keepalive: AO2-Client answers CH with our char id.
+		// COMPATIBILITY ONLY — no server in the maintained fleet sends this
+		// header (zero occurrences across KFO-Server, Nyathena, Athena, akashi
+		// and Whisker; AO2-Client names it only to exclude it from a debug log,
 		// inside #ifdef DEBUG_NETWORK at packet_distribution.cpp:40). So the
 		// stamp below is not the production latency source. See latency.go.
 		s.reply(protocol.NewTypedPacket(&aolib.CH{CharID: s.MyCharID}))
@@ -1182,6 +1211,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 				// eats the whole remainder still starts the clock — it just
 				// anchors in the past and reads 00:00, which is what AO2's
 				// AOClockLabel does with a target already behind it. Remaining()
+				// clamps to zero for the same display.
 				t.Running = true
 				t.Deadline = time.Now().Add(time.Duration(ms)*time.Millisecond - s.clockLead())
 			} else {
@@ -1344,6 +1374,9 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 
 	case "CASEA":
 		// Case announcement: CASEA#<msg>#<def>#<pro>#<judge>#<jury>#<steno>.
+		// Legacy 2.6–2.9 casing_alerts — removed upstream ("No longer
+		// used", serverdata.h) but tsuserver-family servers still send it;
+		// role gating happens UI-side against the user's SETCASE prefs.
 		if len(p.Fields) < 6 {
 			return nil
 		}

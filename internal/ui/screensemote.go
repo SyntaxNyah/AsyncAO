@@ -247,6 +247,9 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 }
 
 // emoteHasPreanim reports whether an emote defines a usable pre-animation.
+// "-"/"" is AO's "no preanim" convention. This is the single source of truth
+// for both the "Pre" auto-follow (selectEmote) and the send-path hasPre echo,
+// so the toggle's default can never drift from what actually rides the wire.
 func emoteHasPreanim(e *courtroom.Emote) bool {
 	return e.Preanim != "" && e.Preanim != "-"
 }
@@ -254,6 +257,7 @@ func emoteHasPreanim(e *courtroom.Emote) bool {
 // selectEmote picks emote i (shared by click, the Random button, and the
 // number-key shortcut): warms its pressed button art + the sprites the next
 // message will need, and refocuses the IC input (AO2 focus_ic_input).
+// Out-of-range indices are ignored.
 func (a *App) selectEmote(i int) {
 	if i < 0 || i >= len(a.emotepick.emotes) {
 		return
@@ -422,6 +426,11 @@ const (
 
 // drawMsgCounter draws the live IC character count INSIDE the input box's right
 // edge (M5; ON by default, Settings-toggleable), mirroring the muted-chip idiom:
+// it draws only when the count fits inside the field, is dimmed, and yields to
+// the muted chip — when both would show, the count stacks to the LEFT of the chip
+// instead of overlapping it, and drops entirely if that no longer fits. The count
+// string is cached and reformatted only when the length changes, so the courtroom
+// frame stays 0-alloc; past the typical server cap it turns red.
 func (a *App) drawMsgCounter(input sdl.Rect, on bool) {
 	if !on {
 		return
@@ -442,6 +451,9 @@ func (a *App) drawMsgCounter(input sdl.Rect, on bool) {
 
 // refreshICCount refreshes the cached count string when the typed length changed
 // and returns the length. Split out because the RESERVATION (icFieldTailReserve)
+// has to measure the very same string one step BEFORE the field draws, and the
+// two must never disagree about the width — a reservation that is narrower than
+// the drawn count is exactly the overlap this whole band exists to stop.
 func (a *App) refreshICCount() int {
 	n := utf8.RuneCountInString(a.compose.icInput)
 	if n != a.compose.icCountN {
@@ -608,6 +620,10 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 			c.Border(btn, ColPanelHi)
 			if pending {
 				// Blank cell, art still possible: keep the demand pump alive at idle.
+				// Gated on the demand rather than on the blankness — a character with
+				// no button art AND no icon is a permanently grey cell, and flagging it
+				// pinned the client at the demand cadence forever, awake and
+				// re-rendering for something that could never arrive.
 				a.frame.frameDemandPending = true
 			}
 		}
@@ -626,6 +642,7 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 // drawPairPanel: partner picking is a searchable click-to-pick list (the
 // old one-by-one </> cycle was unusable on 4000-char servers); offsets,
 // flip and z-order live in the right column.
+// sendPairOrder issues a /pairorder command to reorder the active group roster.
 func (a *App) sendPairOrder(uid int, op string) {
 	if a.link.sess == nil {
 		return
@@ -822,6 +839,9 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 
 	// Offset ghost editor: drag your sprite live; partner shows as a
 	// translucent ghost at their last-known placement.
+	//
+	// grip is handed down so a press the panel's RESIZE corner already consumed
+	// cannot also start a sprite drag — see drawPairGhost.
 	pv := sdl.Rect{X: rx, Y: ry, W: r.W/2 - 2*pad, H: r.Y + r.H - pad - ry}
 	if pv.H >= ghostMinHeightPx {
 		a.drawPairGhost(pv, grip)
@@ -1007,6 +1027,9 @@ func (a *App) drawGhostSprite(pv sdl.Rect, name, base string, alts []string, off
 // ghostSpriteRect is where one ghost lands on the miniature stage: the sprite
 // scaled to the stage HEIGHT with its own aspect ratio, centred, then slid by
 // the pair offsets as a percentage of the stage.
+// The returned rect CAN be wider than pv — that is correct, and it is why the
+// caller clips. A sprite authored 16:9 at a 3:4 preview column overhangs by
+// design; cropping it here instead would make the preview lie about what the
 func ghostSpriteRect(pv sdl.Rect, srcW, srcH int32, offX, offY int) sdl.Rect {
 	if srcH <= 0 {
 		return sdl.Rect{X: pv.X, Y: pv.Y}
@@ -1057,6 +1080,7 @@ func (a *App) offsetControl(id string, x, y int32, label string, val int, buf *s
 	// displays the edit buffer, not val, so refresh it — wheeling never blurs,
 	// and the row froze at its old number until a click-off (playtest: the rows
 	// answered the buttons and the wheel but displayed 0 until clicked away from).
+	// Typing keeps its partial-input buffer: this only fires on mouse edits.
 	if val != typed && c.focusID == id {
 		*buf = strconv.Itoa(val) // textField clamps the caret to the new length
 	}
@@ -1094,6 +1118,13 @@ func (a *App) pairLabel() string {
 
 // sendIC builds and sends the outgoing MS message (chat commands handled
 // first: /pair, /unpair, /offset — AO2-Client parity).
+// funColor applies the optional outgoing message-colour modes (M61, both off by
+// default): rainbow wraps the text in the \cr inline-colour markup (per-rune
+// palette cycle), else random swaps the message's palette colour. customRGB ≥ 0
+// is the free hex pick (Tifera): the exact colour rides as `\c#RRGGBB`
+// markup for AsyncAO clients, the wire text_color falls back to the nearest
+// standard index. Pure (the random index is supplied) so the rule is testable;
+// blank/space sends are left alone, and rainbow wins if several are set.
 func funColor(text string, color, ext, customRGB int, rainbow, random bool, randIdx int) (string, int) {
 	if text == "" || text == " " {
 		return text, color
@@ -1137,6 +1168,7 @@ func (a *App) midEmoteResolver(stem string) (courtroom.MidEmote, bool) {
 // sendIC takes no shout argument any more. The interjection is ARMED state
 // (a.icShout = AO2's objection_state) and the packet reads it here, which is
 // where canon reads it too — on_chat_return_pressed, courtroom.cpp:2136-2147.
+// Passing a shout in was what made a shout BUTTON a send button.
 func (a *App) sendIC() {
 	shout := a.compose.icShout
 	text := strings.TrimSpace(a.compose.icInput)
@@ -1205,6 +1237,10 @@ func (a *App) sendIC() {
 	// #M5 animated text: the sticky FX button wraps the whole message first (no-op when off
 	// / blankpost / you already typed inline markup), then ParseTextEffects pulls all the
 	// [shake]/[wave]/[rainbow] markup out into the wire text (tags removed, \cN colour kept)
+	// plus the display-indexed effect spans. The spans ride an invisible frame appended
+	// below, so AO2/webAO render the plain message; the spans align with the receiver's
+	// MessageText because the two strips commute. 0-alloc when the input has no '['. A
+	// markup-only message (no visible text left) falls back to a blankpost.
 	text = a.applyStickyEffect(text)
 	text, effectSpans := courtroom.ParseTextEffects(text)
 	if strings.TrimSpace(text) == "" && shout == 0 {
@@ -1346,11 +1382,19 @@ func (a *App) sendIC() {
 	a.srvMeta.lastICSend = time.Now()
 	a.recordSentIC(a.compose.icInput) // #8: remember the raw typed line for Up-arrow recall
 	// Keep-until-echo (AO2-Client parity, courtroom.cpp handle_chatmessage):
+	// the input is NOT cleared here — noteOwnICEcho clears it when the server
+	// echoes our message back. tsuserver-family servers silently swallow an MS
+	// that lands inside another message's area-wide delay window
+	// (area.set_next_msg_delay), so an optimistic clear cost the whole typed
+	// line whenever two people sent at once and the other side won the race.
 	// The echo handler is prefix-aware (issue #56): if the box still starts
 	a.compose.icPendingSent = a.compose.icInput
 	// The ONE-SHOT arms clear here, exactly where AO2 clears them — beside
 	// objection_state the moment the packet is built (courtroom.cpp:2327-2329,
 	// and :2362 for the slide, "Slides can't be sticky for nausea reasons").
+	// Unlike the input above, these are cleared OPTIMISTICALLY rather than on the
+	// server's echo. A swallowed send costs one flash nobody notices; a stuck arm
+	// fires on every following line, which is the failure everyone notices.
 	a.compose.icSlide, a.compose.icRealize, a.compose.icShake = false, false, false
 	a.compose.icShout = 0 // objection_state, courtroom.cpp:2327 — the line it literally sits on
 	// The three STICKY picks get their reset here, in the same place AO2's
@@ -1523,6 +1567,7 @@ const defaultSide = "wit"
 // the last speaker's position. Inheriting Scene.Position teleported us
 // to whoever spoke last AND leaked custom side strings that strict
 // receivers (LemmyAO's MS schema enumerates the eight standard sides)
+// reject wholesale.
 func (a *App) mySide() string {
 	if a.compose.sidePref != "" {
 		return a.compose.sidePref
@@ -1593,6 +1638,8 @@ func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct in
 	// Per-glyph fallback raster when the message has emoji OR mixes scripts no single
 	// face covers (covers() reads the pick just made above — no rescan): each rune
 	// routes to the color-emoji face or its covering text face, baseline-aligned.
+	// Gated cheaply so PLAIN single-script messages (the overwhelming common case)
+	// never reach here and stay on the untouched fast paths below — zero change.
 	needEmoji := render.NeedsEmojiFallback(sc.MessageText)
 	if needEmoji || !a.ctx.coversFace(logFont, sc.MessageText) {
 		if needEmoji {
@@ -1673,6 +1720,11 @@ const glyphCacheCap = 512
 func renderAnimated(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct int) (*render.AnimatedText, *ttf.Font) {
 	col := chatBaseColor(a, sc, skinned, false)
 	// #77 Part A PUNT: the animated per-glyph path (AnimatedText.Draw + GlyphCache)
+	// stays on the LOGICAL face — its per-glyph pen positions and pixel-amplitude
+	// effect offsets aren't scale-folded yet, so it keeps drawing 1:1 and the
+	// renderer's SetScale bilinearly stretches it (correctly-sized, still soft at
+	// >100%). Static / emoji / plain messages ARE crisp; an EFFECTS message stays
+	// soft until the follow-up. Clean seam: msAnim XOR msRaster, one per message.
 	font := a.messageFontFor(pct, sc.MessageText) // #39: the theme's "message" family, if it names one
 	// Per-rune fallback resolver (Task E): an effects line resolves each rune's face the
 	// SAME way a plain message does — the covering CJK/broad face for scripts the chat font
@@ -1883,6 +1935,9 @@ func (a *App) captureICColorSel() {
 // applyICColorPick is Courtroom::on_text_color_changed, transcribed whole
 // (src/courtroom.cpp:6364-6403) — the IC colour dropdown's handler for BOTH IC
 // bars. Three halves, in canon's order:
+// Only standard palette entries (dropdown index 0..extColorFirst) map to an AO2
+// colour; the AsyncAO-native extras (extended/rainbow/random/custom hex) have no
+// AO2 wire markup, so they always fall through to applyICColorChoice — the
 func (a *App) applyICColorPick(next int) {
 	sel := a.compose.icColorSel
 	a.compose.icColorSel.active = false // consume the snapshot: the next open re-captures
@@ -1984,6 +2039,9 @@ const emoteDropdownLabelSep = ": "
 // ensureEmoteChoices rebuilds the emote_dropdown option list when the character
 // or its emote count changes (AO2-Client emotes.cpp:176 —
 // `addItem(QString::number(n + 1) + ": " + get_emote_comment(current_char, n))`).
+// It walks a.emotes, NOT the favourites-filtered a.emoteVisible — the dropdown's
+// index is the emote index that selectEmote takes, so filtering here would make
+// picking row N select a different emote.
 func (a *App) ensureEmoteChoices() {
 	name := a.activeCharName()
 	if a.emotepick.emoteChoicesForName == name && a.emotepick.emoteChoicesForCount == len(a.emotepick.emotes) {

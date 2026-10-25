@@ -127,6 +127,12 @@ func TestSidecarFontBindRefusesAPathOutsideTheTheme(t *testing.T) {
 
 // TestElementFontAndSizeAreCarriedNotDrawn pins the OTHER half of W4's font
 // decision, in both places it is stated.
+// An element's own `font`/`size` are parsed and preserved and are NOT read by the
+// format-1 renderer (paintElementText carries the measurement). That is a
+// deliberate ruling, and the danger with a deliberate ruling is that it decays into
+// a forgotten bug: fourteen shipped themes write those keys, so "nothing happens"
+// has to be a documented answer rather than a discovery. This fails if the
+// behaviour changes without the doc, or the doc without the behaviour.
 func TestElementFontAndSizeAreCarriedNotDrawn(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()

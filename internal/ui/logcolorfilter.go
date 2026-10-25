@@ -16,6 +16,8 @@ const logColorFilterAny = 0
 
 // logColorFilterStdFirst is the FIRST standard-palette entry's selection index;
 // a selection in [logColorFilterStdFirst, logColorFilterStdFirst+TextColorCount)
+// filters to standard palette index sel-logColorFilterStdFirst. The leading
+// "Any color" entry is why the standard block starts at 1, not 0.
 const logColorFilterStdFirst = 1
 
 // logColorFilterExtFirst / logColorFilterRainbow are the block boundaries, all

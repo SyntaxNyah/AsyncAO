@@ -2,6 +2,9 @@ package ui
 
 // THE IMPORT REPORT PANEL (v1.90.0 W9) — design §3.1's "Import report … rail
 // footer chip; a panel", and §Q5's "expanding to an in-canvas panel".
+// A PANEL, NOT A MODAL (design §3.1, and the editor is allowed exactly two modals,
+// neither of which is this): it joins editorPanelUp so the rails behind it go
+// click-dead, and closeEditorPanels so Esc does not walk past it.
 
 import (
 	"strconv"
@@ -45,6 +48,7 @@ const (
 )
 
 // themeReportPanel is the baked, wrapped view of one report.
+//
 // BORN ON OPEN, and the pointer IS the open flag — the same shape themeGallery
 // uses, and for the same reason: it carries a 224-entry line array that a session
 // which never opens the panel should not be paying for.
@@ -112,6 +116,7 @@ func (p *themeReportPanel) bake(c *Ctx, report []string, w int32) {
 // ---------------------------------------------------------------------------
 
 // openThemeReport arms the panel over the applied theme's report.
+//
 // A REPORT WITH NO NOTES DOES NOT OPEN, and the chip that would have opened it is
 // not drawn either: "nothing was wrong with this theme" is best said by there
 // being nothing to click, not by a panel that says "0 notes".

@@ -3,6 +3,9 @@ package ui
 // IMPORTING A THEME BUNDLE (v1.90.0 W8) — docs/wip/THEME-EDITOR-DESIGN.md §Q4/§Q6.
 // The user learns exactly what the design's sheet would have told them, at the
 // moment the sheet would have told them, and the confirming act is deliberate.
+// SINGLE-FLIGHT AND OFF-THREAD (hard rules 2 and 4). Both stages are disk work on
+// a goroutine; the job pointer IS the flag, so exactly one bundle can be in
+// flight; the result channel is buffered so the goroutine never blocks on an app
 
 import (
 	"path/filepath"
@@ -88,6 +91,10 @@ type themeImport struct {
 
 // armed reports whether path is the bundle the user has already been shown, and
 // still inside its consent window.
+//
+// THE PATH IS PART OF THE TEST, not just the timer: dropping bundle A and then
+// bundle B must describe B rather than importing A, or the confirmation would
+// mean "the last thing you dropped" instead of "this thing".
 func (ti *themeImport) armedFor(path string) bool {
 	return ti.armedPath != "" && samePath(ti.armedPath, path) &&
 		time.Since(ti.armedAt) < themeImportConsentWindow
@@ -117,6 +124,11 @@ type themeImportRowText struct {
 
 // themeImportRow returns the row's current strings, rebuilding them only when the
 // state they describe has moved.
+//
+// The EFFECTIVE armed path is used as the key, not the stored one: the consent
+// window expires on a clock, so keying on themeImport.armedPath alone would leave
+// the row offering to import a bundle whose consent had lapsed — a button that
+// promises something the funnel would refuse.
 func (a *App) themeImportRow() themeImportRowText {
 	ti := &a.skin.themeImp
 	armed := ""
@@ -152,6 +164,11 @@ func buildThemeImportRow(armed string, busy bool) themeImportRowText {
 
 // themeImportRowAction is the button. It is deliberately the SAME two acts the
 // drop path has: browse-and-describe, then confirm.
+//
+// The confirm goes through handleThemeBundleDrop — the drop's own entry point —
+// rather than starting an extract itself, so there is exactly one place that
+// decides what a bundle does, and the browse and drag paths cannot drift apart
+// about consent, caps or where the theme lands.
 func (a *App) themeImportRowAction() {
 	if p := a.skin.themeImp.armedPath; p != "" && a.skin.themeImp.armedFor(p) {
 		a.handleThemeBundleDrop(p)
@@ -166,6 +183,9 @@ func (a *App) themeImportRowAction() {
 
 // handleThemeBundleDrop is HandleFileDrop's .aotheme arm (dropclaim.go names it
 // the single owner). It is the only way a bundle enters the client.
+// It is TWO functions, and the split is a seam rather than a style choice: "where
+// may I write themes?" is a question about portability and preferences that only
+// internal/config can answer, and a gate that had to answer it would either write
 func (a *App) handleThemeBundleDrop(path string) {
 	a.bundleDrop(path, config.UserThemesDir())
 }
@@ -192,6 +212,7 @@ func (a *App) bundleDrop(path, root string) {
 }
 
 // startThemeBundleJob runs one stage off the render thread.
+//
 // THE WRITE ROOT IS RESOLVED HERE, on the render thread, and handed in: config
 // reads preferences, and the goroutine must not take the preferences lock. It is
 // the same discipline requestThemeCatalog uses for the custom root.
@@ -264,6 +285,10 @@ func (a *App) landThemeBundle(res themeBundleResult) {
 
 // applyImportedTheme is the landing of a successful extraction: the theme is on
 // disk, so select it, apply it live, and rescan the catalog.
+//
+// LIVE, NOT NEXT LAUNCH. This is deliberately NOT ImportSettings' freeze-and-
+// apply-next-launch semantics (design §Q4): the whole experience is "your friend
+// sends you a theme and two drops later you are looking at it".
 func (a *App) applyImportedTheme(m *themepack.Manifest) {
 	if m == nil || m.Root == "" {
 		a.warnBundle("The bundle imported but named no theme — open Settings → Theme and pick it.")
@@ -366,6 +391,10 @@ func themeBundleTitle(m *themepack.Manifest) string {
 
 // fontsMissingLicense names the bundled faces with no licence file beside them,
 // bounded by themeImportFontsNamed.
+//
+// OFL specifically requires the licence to travel with the font, so the person
+// re-sharing this bundle is the one who would be breaking the terms. Naming the
+// files is what turns that from a legal abstraction into something fixable.
 func fontsMissingLicense(m *themepack.Manifest) string {
 	var named []string
 	extra := 0
@@ -390,6 +419,7 @@ func fontsMissingLicense(m *themepack.Manifest) string {
 }
 
 // humanBytes formats a byte count for a human.
+//
 // MB with one decimal place, because "6.4 MB" is the number that decides whether a
 // theme is shareable and "6 MB" is not — but KB BELOW A MEGABYTE, because a
 // two-file theme rendered as "0.0 MB packed / 0.0 MB on disk", which reads as a

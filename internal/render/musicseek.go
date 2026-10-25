@@ -2,6 +2,9 @@ package render
 
 // Direct cgo binding for SDL_mixer's Mix_SetMusicPosition, kept separate from
 // musicclock.go's runtime-resolved (dlsym/GetProcAddress) shim ON PURPOSE.
+// The only thing go-sdl2's wrapper gets wrong for our purposes is the
+// signature: it takes an int64 and truncates to whole seconds, which is fine
+// for a song resume (audio.go's existing cross-tab seek, §1 decision 31) but
 // useless for a sub-second custom loop point (issue #48). The underlying C
 // function has taken a double since 2.0.0, so this file just calls it
 // directly with the fractional value go-sdl2's own wrapper throws away.

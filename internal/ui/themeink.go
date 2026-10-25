@@ -23,6 +23,7 @@ import (
 // themeInkRect names the courtroom_design.ini rect each font element's text is
 // drawn OVER, for sampling the theme art behind it. "" = there is nothing on the
 // background to measure and the guard falls back to ColPanel.
+//
 // Indices are themeFontElem, i.e. theme.FontElements order — the same order
 // TestThemeFontElemOrder pins.
 var themeInkRect = [themeFontElemCount]string{
@@ -121,6 +122,9 @@ func designRectToArt(r, court theme.Rect, art image.Rectangle) image.Rectangle {
 // guardThemeInk drops per-element ink that has no contrast against what it will
 // actually be drawn on, and appends a line to the theme's debug-log report
 // naming every element it dropped and the luma it measured.
+// On failure the element DROPS to the kit colour rather than being hue-lifted
+// into readability: lifting 0,0,0 yields a hue-free grey that is neither the
+// theme's intent nor the client's, and both existing guards (the chatbox skin's
 func guardThemeInk(res *themeApply, tbl *themeFontTable) {
 	var dropped []string
 	for el := range tbl.e {
@@ -153,6 +157,10 @@ func guardThemeInk(res *themeApply, tbl *themeFontTable) {
 // site's own colour. canvasInk MUST be the caller's own answer to "am I drawing
 // inside the theme's design canvas": see the file header for why it cannot be
 // derived here.
+//
+// One indexed load into the fixed table — no map, no prefs read, no pointer
+// return — so the zero-alloc whole-screen gates stay green. Never take this as a
+// method VALUE; that allocates a closure.
 func (a *App) elemInk(el themeFontElem, canvasInk bool) (sdl.Color, bool) {
 	if !canvasInk {
 		return sdl.Color{}, false

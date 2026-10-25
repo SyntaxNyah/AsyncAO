@@ -45,6 +45,8 @@ func buildQuantPalette() color.Palette {
 // inter-frame diff then collapses to nothing. Floyd–Steinberg scatters per-pixel
 // error, destroying both the intra-frame runs and the frame-to-frame equality;
 // that (plus storing every frame whole) is what made the v1 export enormous.
+// The caller can free the source RGBA immediately after — only the small paletted
+// frame (1 byte/px) is retained while frames accumulate for EncodeGIF.
 func Quantize(src *image.RGBA) *image.Paletted {
 	dst := image.NewPaletted(src.Bounds(), quantPalette)
 	draw.Draw(dst, dst.Bounds(), src, src.Bounds().Min, draw.Src)
@@ -52,6 +54,14 @@ func Quantize(src *image.RGBA) *image.Paletted {
 }
 
 // EncodeGIF encodes paletted frames into an animated GIF that loops forever.
+// Every frame after the first is inter-frame diffed: reduced to the sub-rectangle
+// that changed, with unchanged pixels set transparent and disposal left as "do
+// not dispose" so the previous pixels show through. A frame identical to its
+// predecessor emits nothing — its delay folds into the previously emitted frame,
+// preserving total duration with fewer frames. delayCs is the per-emitted-frame
+// delay in centiseconds (derive it from the capture cadence — 12 fps → 8 cs).
+// loop forever when loop is true, else play the animation once.
+//
 // Diffing only runs when the frames' palette reserves a transparent slot (an
 // alpha-0 entry, as Quantize's does). A palette without one falls back to whole
 // frames, so EncodeGIF stays correct for any caller.
@@ -118,6 +128,7 @@ func transparentIdx(p color.Palette) (int, bool) {
 // diffFrame reduces cur to the sub-rectangle that differs from prev, with
 // unchanged pixels set to the transparent index ti; changed reports whether
 // anything differed at all (false → fold this frame into the previous delay).
+// prev and cur must share bounds and palette (they do — same capture pipeline).
 func diffFrame(prev, cur *image.Paletted, ti int) (sub *image.Paletted, changed bool) {
 	b := cur.Bounds()
 	minX, minY := b.Max.X, b.Max.Y

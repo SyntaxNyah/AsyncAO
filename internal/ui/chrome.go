@@ -13,6 +13,8 @@ import (
 // independent of AO2 courtroom themes. The chosen preset becomes the BASE palette
 // (activeKitColors) that applyThemePalette restores to; a server theme's stylesheet
 // colours still overlay it (with none — the common case — the preset IS the chrome).
+// 100% local; the kit colours are package vars read as values, so the render loop stays
+// 0-alloc — only a theme/preset change reassigns them.
 
 // chromePreset is one named palette: the 7 base kit colours in defaultKitColors order
 // (Background, Panel, PanelHi, Accent, Text, TextDim, Danger).
@@ -23,6 +25,9 @@ type chromePreset struct {
 }
 
 // chromePresets are the built-in chrome palettes. "dark" mirrors the stock look.
+// "soft"/"warm" are the eye-friendly pair (lower contrast, a single calm accent, dim
+// but readable secondary text) — added so the default look can be made gentler without
+// a global recolour: pick one in Settings → Theme, it applies live and persists.
 var chromePresets = []chromePreset{
 	{"dark", "Dark", defaultKitColors},
 	{"soft", "Soft Dark", [7]sdl.Color{ // gentle contrast, one calm blue accent, warm-neutral dark
@@ -79,6 +84,8 @@ func (a *App) customChromeColors() [7]sdl.Color {
 	}
 	// Readability floor: a custom scheme gets no AO2-theme overlay, so the kit-wide
 	// guard in applyThemePalette never runs for it. Re-derive Text (and dim text)
+	// from the Panel's lightness when the chosen Text would vanish into the Panel, so
+	// a user can't accidentally paint the Settings text invisible and get stuck.
 	if absInt(colLuma(out[4])-colLuma(out[1])) < minInkSkinContrast {
 		if colLuma(out[1]) < paletteLightPanelLuma {
 			out[4] = defaultKitColors[4] // light ink on a dark panel
@@ -253,6 +260,10 @@ func (a *App) drawShapeSettings(y int32) int32 {
 }
 
 // drawCustomChromeEditor edits the 7 kit colours with a colour WHEEL (playtest:
+// "improve custom colours to like a wheel"): a row of swatches picks which kit
+// colour to edit, then a hue/saturation disc + a brightness slider + a hex field
+// set it. A blank/untouched slot uses the stock dark colour. Edits apply live
+// (recolour + cache purge) and persist. Reuses the highlight picker's wheel.
 func (a *App) drawCustomChromeEditor(y int32) int32 {
 	c := a.ctx
 	pad := a.formX

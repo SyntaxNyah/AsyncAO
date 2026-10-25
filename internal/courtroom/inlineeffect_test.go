@@ -302,6 +302,10 @@ func TestTypewriterEffectsPending(t *testing.T) {
 	}
 
 	// The 2.8 additive case: a continuation whose whole tail is an effect code.
+	// The prefix is pre-revealed so Done() is true immediately, and the mark sits
+	// exactly AT the join — StartAppend only drops marks strictly INSIDE the
+	// prefix (those already fired on the original line), so the tail's effect
+	// must survive and still be reported pending.
 	tw.StartAppend("prior line", `\f`)
 	if !tw.Done() {
 		t.Fatal("an additive tail of pure markup reveals nothing new")

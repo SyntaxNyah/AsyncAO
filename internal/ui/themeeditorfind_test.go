@@ -50,6 +50,10 @@ func TestEveryThemeEditorSettingIsFindable(t *testing.T) {
 
 // TestThemeEditorKeywordsDoNotShadowLaterTabs is the whole-keyword shadow gate,
 // aimed at this wave's additions specifically.
+//
+// The package-wide TestSettingsSearchKeywordsDoNotShadowLaterTabs already runs over
+// the whole table; this one exists so a failure introduced HERE names this wave,
+// rather than being reported as a mystery about a table with 300 entries in it.
 func TestThemeEditorKeywordsDoNotShadowLaterTabs(t *testing.T) {
 	for _, kw := range settingsSearchKeywords[tabThemeEditor] {
 		got := settingsSearchMatch(kw)
@@ -62,6 +66,8 @@ func TestThemeEditorKeywordsDoNotShadowLaterTabs(t *testing.T) {
 
 // themeEditorReservedWords are short queries a LATER tab owns outright. A term on
 // the Theme editor tab may not contain any of them.
+// This tab sits at index 2, ahead of every tab from Assets on, so it is the one that
+// can do the stealing. The list is the prose made executable.
 var themeEditorReservedWords = []string{
 	"custom", "maker", "scan", "order", "list", "export", "import", "layer",
 	"download", "source", "grid", "glow", "webp", "gif", "new", "json", "stream",

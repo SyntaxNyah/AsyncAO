@@ -21,6 +21,9 @@ const icSilentSFX = "1"
 
 // outgoingSFXName is the SFX_NAME this message ships, transcribed from
 // courtroom.cpp:2044-2116:
+// The emote_mod → PREANIM promotion at :2107-2115 is NOT part of this rule: it changes
+// the EMOTE MOD, the pre name and the sfx delay, not the sound's name. It lives in
+// sfxIdlePromotion below, gated on the matching preference.
 func outgoingSFXName(emote *courtroom.Emote, pre bool, pickIdx int, picks []string) string {
 	name := icSilentSFX
 	if pre {

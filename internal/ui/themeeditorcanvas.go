@@ -230,6 +230,10 @@ func (a *App) editorProbeSlots(lay *themeLayoutCache, mx, my int32) (editTarget,
 }
 
 // slotPickBeats is the widget population's ordering.
+// THE KEY IS THE FINAL TIE-BREAK, and it is not decoration: lay.r is a MAP, so a
+// theme with two identical editable rects under the cursor would otherwise resolve
+// to whichever one Go's randomised iteration happened to reach first — a different
+// widget on different frames, which reads as the editor picking at random.
 func slotPickBeats(key string, r sdl.Rect, grip bool, bestKey string, best sdl.Rect, bestGrip bool) bool {
 	if grip != bestGrip {
 		return grip
@@ -251,6 +255,11 @@ func area64(r sdl.Rect) int64 { return int64(r.W) * int64(r.H) }
 
 // editorCanvasRect is the region of the window the canvas owns for INPUT: the frame
 // minus the header band and the two rails.
+// PUBLISH THE RECT THAT IS ACTUALLY PAINTED (overlayfence.go's rule, applied by
+// arithmetic rather than by a fence): the rails are opaque chrome drawn over the
+// canvas, so a press on them belongs to them even when a theme's element extends
+// underneath. Without this the same click would both select an element and press an
+// inspector button.
 func editorCanvasRect(w, h int32) sdl.Rect {
 	r := sdl.Rect{X: editRailW, Y: editBannerH, W: w - editRailW*2, H: h - editBannerH}
 	if r.W < 0 { // a window narrower than both rails: no canvas to press on at all
@@ -260,6 +269,7 @@ func editorCanvasRect(w, h int32) sdl.Rect {
 }
 
 // editorCanvasInput resolves this frame's pointer over the canvas.
+//
 // Order: finish or advance a live gesture FIRST (a drag that left the canvas rect,
 // or crossed a rail, must keep running — the button is still down), then take a new
 // press.
@@ -287,6 +297,9 @@ func (a *App) editorCanvasInput(w, h int32, lay *themeLayoutCache) {
 	// A PANEL IS UP, so the canvas behind it is CLICK-DEAD (design §3.1). The rails go
 	// dead through c.modalOn, which hovering() honours — but this probe hit-tests with
 	// raw pointIn and would see straight through that, so it refuses the press itself.
+	// The shape it closes: editorFontPanelRect centres the panel INSIDE the canvas rect,
+	// so every `<` / `>` / `x` on a font row also ran editorProbe + editorBeginGesture
+	// on whatever element or AO2 widget sat beneath it — the art moved while a face was
 	if a.editorPanelUp() {
 		return
 	}
@@ -329,6 +342,11 @@ func (a *App) editorCanvasInput(w, h int32, lay *themeLayoutCache) {
 }
 
 // editorBeginGesture captures the press.
+// It records the authored rect of the WHOLE selection, not just the pressed target,
+// because a multi-target move recomputes every frame from these origins (see
+// editGesture). A locked target records its rect too and is simply never written —
+// that keeps the indices of base[] and sel[] the same array position, which is what
+// lets the drag loop be a single indexed walk.
 func (a *App) editorBeginGesture(lay *themeLayoutCache, t editTarget, edges uint8) {
 	e := a.te
 	g := &e.drag
@@ -426,6 +444,9 @@ func editorRescale(d int, from, to float64) int {
 
 // editorMagnet snaps the candidate flush to its siblings, in PAINTED space, and
 // folds the correction back into authored units (see the file header).
+// CANVAS-LOCAL, not window-absolute: alignRect's extent argument is a width and a
+// height measured from the origin, so feeding it painted window coordinates with the
+// canvas's own W/H would put the "right edge" magnet at x = canvas width instead of
 func (a *App) editorMagnet(lay *themeLayoutCache, primary editTargetGeom, r theme.Rect, kind, edges uint8) theme.Rect {
 	self := a.te.primary()
 	ox, oy := lay.area.X, lay.area.Y
@@ -469,6 +490,12 @@ func (a *App) editorMagnet(lay *themeLayoutCache, primary editTargetGeom, r them
 }
 
 // editorClampGeometry keeps a WIDGET on the stage and leaves an ELEMENT alone.
+// The asymmetry is the format's, not a shortcut: themeLayoutIn clamps every
+// courtroom-relative widget into the canvas because Qt amputated overhanging
+// children and themes rely on it, whereas an element's rect is a signed delta on its
+// anchor (§6.6 R1) and the inflate idiom `-6, -6, 12, 12` is decoration deliberately
+// reaching outside its widget. Clamping an element would forbid values the format
+// defines — layoutnudge.go's nudge arm carries the same rule for the keyboard.
 func (a *App) editorClampGeometry(t editTarget, r theme.Rect) theme.Rect {
 	if t.space != spaceDesign {
 		return r
@@ -496,6 +523,10 @@ func (a *App) editorWriteGeometry(t editTarget, r theme.Rect) {
 }
 
 // editorEndGesture closes the gesture and its undo group.
+// Nothing is "committed" here and nothing needs to be: every frame already wrote
+// through editorApply, so the document has been correct the whole way down. What the
+// release does is close the group, which is what makes the NEXT edit a separate undo
+// step instead of merging into this drag.
 func (a *App) editorEndGesture() {
 	if a.te == nil {
 		return
@@ -512,6 +543,7 @@ func (a *App) editorEndGesture() {
 
 // drawEditorCanvasOverlay outlines what can be edited, draws the handles the box
 // under the pointer offers, and prints the geometry readout.
+//
 // It draws AFTER the canvas and BEFORE the rails, so the rails cover it exactly
 // where they cover the frame — the same agreement editorCanvasRect makes for input.
 func (a *App) drawEditorCanvasOverlay(w, h int32, lay *themeLayoutCache) {
@@ -550,8 +582,10 @@ func (a *App) drawEditorCanvasOverlay(w, h int32, lay *themeLayoutCache) {
 }
 
 // drawEditorBox outlines ONE box and paints the handles it offers.
+//
 // The full handle set goes on the box being WORKED (selected or hovered) and the
 // single bottom-right grip on every other, which is the classic editor's doctrine:
+// a quiet outline at rest, the full treatment under the cursor.
 func (a *App) drawEditorBox(lay *themeLayoutCache, t, hover editTarget) {
 	g, ok := a.editorTargetGeom(lay, t)
 	if !ok {
@@ -586,6 +620,10 @@ func (a *App) drawEditorBox(lay *themeLayoutCache, t, hover editTarget) {
 }
 
 // drawEditorReadout prints the primary selection's numbers, in ITS OWN UNITS.
+// Naming the unit is not decoration: a widget's rect is design px, a `space = window`
+// element's is window px, and an anchored element's is a signed DELTA on its anchor
+// (§6.6 R1) — three different meanings for four numbers, and a readout that implied
+// one of them would teach the user the wrong model of the format.
 func (a *App) drawEditorReadout(w, h int32, lay *themeLayoutCache) {
 	t := a.te.primary()
 	if !t.armed() {

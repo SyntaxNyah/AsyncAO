@@ -27,6 +27,8 @@ func stripSpaces(s string) string {
 // TestLogHangingIndent pins the wrap-continuation presentation (playtest: a
 // wrapped message read as a run of new paragraphs): rows the WRAP created
 // indent by logWrapIndentPx, rows a paragraph's own newline created do not.
+// IC rows key off entry adjacency, OOC rows off the cont flags built at wrap
+// time. Nil fonts take the 8 px/char fallback measure, so 160 px ≈ 20 chars.
 func TestLogHangingIndent(t *testing.T) {
 	a := testTabApp(t)
 	a.logPct = DefaultScalePct
@@ -76,6 +78,10 @@ func TestLogHangingIndent(t *testing.T) {
 }
 
 // TestOOCHoverSpan pins the link hit test on a hand-built span table (#38):
+// the cursor resolves to the ONE link under it — horizontally as well as
+// vertically — so plain text beside a link, a DIFFERENT link on the same row and
+// the scrollbar gutter all miss. Rows 1..3 hold one hard-split link (id 0, the
+// wrapped-across-rows case), row 5 holds two distinct links side by side.
 func TestOOCHoverSpan(t *testing.T) {
 	a := testTabApp(t)
 	a.oocWrapLink = []oocLinkSpan{

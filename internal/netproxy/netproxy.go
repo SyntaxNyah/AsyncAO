@@ -25,6 +25,10 @@ type ProxyFunc func(*http.Request) (*url.URL, error)
 
 // SetResolver installs f as the process-wide proxy resolver, replacing whatever
 // was there. Pass nil to fall back to the environment.
+// Deliberately process-wide and not per-client: a proxy is a property of the
+// machine's network, not of one connection, and threading it through every
+// constructor is exactly how one transport gets missed. Callers that need a
+// per-request decision make it inside f, which receives the request.
 func SetResolver(f ProxyFunc) {
 	if f == nil {
 		resolver.Store(nil)
@@ -46,6 +50,11 @@ func Proxy(req *http.Request) (*url.URL, error) {
 }
 
 // ForURL reports the proxy that would carry a request to u, or nil for direct.
+// The caller it exists for is DNS pre-resolution: when a proxy carries the
+// request, the ORIGIN hostname must never be resolved locally — the proxy
+// resolves it, and a local lookup would publish to the machine's resolver
+// exactly the server name the user routed through a proxy to keep private. The
+// proxy's OWN hostname still resolves locally, which is unavoidable and correct.
 func ForURL(u *url.URL) *url.URL {
 	if u == nil {
 		return nil
@@ -66,6 +75,9 @@ func ForURL(u *url.URL) *url.URL {
 // Transport returns an http.Transport with the client's proxy resolver already
 // installed, cloned from http.DefaultTransport so it also carries the stdlib's
 // dial, TLS-handshake and idle-connection timeouts.
+// Cloning matters more than it looks: the bug this package was written for was a
+// hand-built `&http.Transport{TLSClientConfig: ...}` that silently dropped not
+// just Proxy but every one of those timeouts along with it.
 func Transport() *http.Transport {
 	t, ok := http.DefaultTransport.(*http.Transport)
 	if !ok { // only reachable if something replaced http.DefaultTransport

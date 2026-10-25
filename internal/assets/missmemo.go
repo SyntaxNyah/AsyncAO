@@ -13,6 +13,8 @@ import (
 // COMMENTED OUT in that release with the note "done channel is never closed, so
 // deleteExpired() goroutine will never exit". It also allocates 100 bucket maps
 // per instance.
+// Expiry is therefore LAZY: a read drops its own stale entry, and an insert
+// sweeps when the memo is full. Correctness does not depend on any timer.
 type missMemo struct {
 	mu       sync.Mutex
 	entries  map[string]missEntry
@@ -34,6 +36,9 @@ type missEntry struct {
 // missMemoOverflowEvictShift sizes the batch dropped when the memo is full and
 // nothing in it has expired yet: capacity>>shift entries, i.e. an eighth
 // (256 of localNotFoundCacheSize's 2048). Batching amortizes the O(n log n)
+// overflow scan over that many inserts instead of paying it on every insert past
+// the cap, and dropping an eighth costs at most that many extra disk walks —
+// a negative memo has no correctness stake in what it forgets.
 const missMemoOverflowEvictShift = 3
 
 // newMissMemo returns a memo holding at most capacity keys for ttl each.

@@ -34,6 +34,7 @@ func installMigrationProbe(t *testing.T) *int {
 }
 
 // TestParseSidecarRunsTheMigrationChain is the call-site gate.
+//
 // THE MUTATION IT ANSWERS TO: replace `migrateSidecar(s.Format, doc)` in
 // sidecar_read.go with `_ = s.Format`. The probe then never runs, the marker never
 // appears, and this fails — where every other migration test still passes.

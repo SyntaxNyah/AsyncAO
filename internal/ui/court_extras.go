@@ -64,6 +64,14 @@ const (
 	// only make it unnameable. Nothing may hide behind it again.
 	panelExtras = "extras"
 	// panelMenuBar hides the top menu strip (#14). Same spirit as panelToolbox:
+	// client furniture a user may not want, and on a themed courtroom it is the
+	// one band that sits ABOVE the theme's design canvas, so hiding it hands the
+	// canvas the whole window. menuBarHeight() already reports 0 whenever the bar
+	// is not shown and every screen offsets by topChromeH(), so nothing else has
+	// to learn about this.
+	// It is a MOUSE LIFELINE (mouseLifelines, courttoolbox.go) — under a theme it
+	// is the only one of the three that draws at all, because ctrlSettingsSlot
+	// belongs to the classic IC row and the themed ★ Extras chip row was deleted
 	// in #21. Hiding the last surviving lifeline is refused.
 	panelMenuBar = "menubar"
 	// panelToolbox hides the compact hover toolbox (#27) — the slim bottom-right
@@ -80,6 +88,9 @@ const (
 	panelTabFriends = "tab.friends"
 	// Players-list per-row actions. These once gated inline row BUTTONS; the
 	// actions now live in the per-row "…" / right-click menu (rostermenu.go)
+	// and each id hides its menu ENTRY instead — same prefs, same popup grid.
+	// The Friend action keeps its own Settings toggle (FriendButtonShown) —
+	// no duplicate id here.
 	rosterBtnPair    = "roster.pair"
 	rosterBtnUID     = "roster.uid"
 	rosterBtnIPID    = "roster.ipid"
@@ -128,6 +139,9 @@ const ctrlSettingsSlot = "ctrl.settings"
 // hideableButtons drives the "Control buttons" grid in the UI popup — the
 // customizable courtroom toolbar (screens.go ctrlSlot). Each id is a ctrl.*
 // slot key; ticking one hides that button and the row compacts with no gap.
+// "UI…" itself is deliberately absent (it's the way back to this popup) and so
+// are the contextual buttons (Mod/CM/Pos/Group/Voice/Disconnect) that already
+// appear and disappear on their own.
 var hideableButtons = []struct{ id, label string }{
 	{"ctrl.character", "Character"},
 	{"ctrl.wardrobe", "Wardrobe"},
@@ -201,6 +215,8 @@ func (classic1 *classicState) seedHiddenFromPrefs(e *env) {
 	// Every mouse lifeline hidden at once — a saved set that predates the guard, a
 	// layout profile, or a prefs import — un-hides the toolbox, which is the one
 	// that works in BOTH layouts. See mouseLifelines for why the set is three:
+	// ctrlSettingsSlot only ever draws on the classic path, so a themed user who
+	// hid the toolbox and the menu bar had no mouse chrome left.
 	stranded := true
 	for _, l := range mouseLifelines {
 		if !classic1.hidden[l] {
@@ -225,6 +241,8 @@ func (classic1 *classicState) seedHiddenFromPrefs(e *env) {
 // playThemeSFX streams the theme-configured sound for key (picked up at
 // theme apply from courtroom_sounds.ini / penalty.ini, with stock AO2
 // fallbacks). Missing keys stay silent (AO2 with a sparse INI does too).
+// Callword/friend alerts deliberately don't go through here — they use the
+// built-in ping so a sparse theme can never silence them.
 func (a *App) playThemeSFX(key string) {
 	if a.link.room == nil {
 		return
@@ -816,6 +834,9 @@ func (a *App) drawPosSelect(x, y, h int32) int32 {
 
 // posThumbDraw paints the i-th position's background thumbnail into tr — used by
 // both the open dropdown rows and the closed control's "currently selected" chip.
+// Stored once as a.posThumbFn (not a per-frame closure), and reads the live
+// bg/choices so it's always current. On the render thread (FinishFrame or the
+// closed-control draw), so the on-demand cachedPage / paced fetch is safe.
 func (a *App) posThumbDraw(i int, tr sdl.Rect) {
 	c := a.ctx
 	choices := a.posChoices()
@@ -969,6 +990,10 @@ const (
 // evidDescViewH is the pure height arithmetic behind the Issue #15
 // description viewport: whatever's left between descTop (just under the
 // item's name heading) and panelBottom (the panel's inner bottom edge)
+// after reserving the fixed trailing block (image line + present button +
+// edit/delete row + pin button), floored at evidDescMinViewH so a tiny or
+// mid-resize panel still shows a usable, scrollable region rather than a
+// zero/negative-height rect.
 func evidDescViewH(panelBottom, descTop int32) int32 {
 	trailH := int32(evidInspectorImageLineH + evidInspectorBtnRowH*2 + evidInspectorLastBtnH)
 	viewH := panelBottom - descTop - trailH

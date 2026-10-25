@@ -10,6 +10,7 @@ import (
 // config.AssetCharCaseMax has to be spelled out as a literal, because
 // internal/config sits BELOW internal/courtroom and cannot import the enum it
 // bounds. internal/ui imports both, so the pin lives here.
+//
 // It matters because both ends CLAMP against it: the preference setter and the
 // load overlay reject anything above it, so a max that lagged behind a new casing
 // mode would make that mode unselectable and silently unloadable — while the

@@ -4,6 +4,8 @@ package courtroom
 // AO2 resolves "what name goes next to this message" three times, in three
 // widgets, and gets the same answer every time because all three call
 // get_showname:
+// This is the chain, exported so the log can drive the same one the plate does
+// rather than keep a second opinion about it.
 
 import "github.com/SyntaxNyah/AsyncAO/internal/protocol"
 

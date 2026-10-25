@@ -11,6 +11,10 @@ import (
 
 // The chatbox row pitch. Two wrapped IC lines were drawn almost touching because
 // every raster here stacked rows by TTF_FontHeight (ascent+descent, the glyph box)
+// while AO2's QTextEdit chatbox steps by the font's LINE SPACING — Qt's
+// QFontMetrics::lineSpacing() == leading() + height() (qfontmetrics.html), i.e. the
+// glyph box PLUS the designer's inter-line gap. FontLineSpacing (linespacing.go) is
+// the one place that decision is made now.
 
 // gapUnitsPerEmSample is the hhea lineGap, in the font's own design units, that
 // leadingFace authors into its copy of Go Regular. Go Regular's unitsPerEm is 2048, so
@@ -24,6 +28,7 @@ const gapUnitsPerEmSample = 500
 // was about: FreeType derives FT_Face.height (what TTF_FontLineSkip reports) as
 // ascender - descender + lineGap, while TTF_FontHeight is ascender - descender alone, so
 // authoring a lineGap is the minimal, honest way to produce LineSkip > Height.
+// It is built here rather than borrowed from internal/ui/fonts (Twemoji does have +2 px)
 func leadingFace(t testing.TB, size int) *ttf.Font {
 	t.Helper()
 	data := append([]byte(nil), goregular.TTF...)

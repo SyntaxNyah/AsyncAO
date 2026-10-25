@@ -8,6 +8,13 @@ package config
 // counts when the link is an actual audio file, since most Discord CDN links are
 // images/attachments. The whole list is editable in Settings — NOTHING is
 // hardcoded to a specific server.
+//
+// An entry is either a bare host ("catbox.moe" — records any /play link on it) or
+// a host/folder ("miku.pizza/base/youtube" — records only audio files under that
+// path, so a server's user-rip folder can be saved while the rest of its library
+// isn't). Folder rules are opt-in: a player who wants their server's rips saved
+// adds that one path themselves.
+//
 // All of this runs once per song (at capture) and once per Save click — never on
 // a per-frame path, so it costs nothing on the render/UI hot loop.
 
@@ -245,6 +252,9 @@ func (s *Settings) MusicURLAllowed(rawURL string) bool {
 }
 
 // MusicURLDomain returns the normalized label of a /play link for grouping (e.g.
+// "files.catbox.moe" -> "catbox.moe", or a folder entry -> "miku.pizza/base/youtube"
+// so those rips group apart from the rest of the host), else the bare host. "" when
+// it isn't a URL.
 func (s *Settings) MusicURLDomain(rawURL string) string {
 
 	host, path := urlHostPath(rawURL)

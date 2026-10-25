@@ -108,6 +108,7 @@ func inspectElemField(a *App, t editTarget, f editField) editValue {
 }
 
 // mutateElemField is the ONE mutator. It returns an op; it writes nothing.
+//
 // A target that is not an element yields opNone, which themeEditRing.push drops —
 // so a row wired to the wrong space is inert rather than corrupting.
 func mutateElemField(t editTarget, f editField, v editValue) themeEditOp {
@@ -121,6 +122,8 @@ func mutateElemField(t editTarget, f editField, v editValue) themeEditOp {
 // It lives beside mutateElemField because they are the same kind of thing (a
 // top-level func that returns an op and writes nothing) and because W7b's inspector
 // gains a Transform section for slot selections that will wire this exact function:
+// The field is editFieldRect so the coalescing key reads honestly — a widget drag
+// and an element drag are the same gesture on the same kind of value.
 func mutateSlotRect(t editTarget, r theme.Rect) themeEditOp {
 	if t.space != spaceDesign {
 		return themeEditOp{}
@@ -138,9 +141,12 @@ func mutateSlotRect(t editTarget, r theme.Rect) themeEditOp {
 var inspectorFields = buildInspectorFields()
 
 // buildInspectorFields assembles the per-kind rows out of the shared sections.
+//
 // Assembled rather than written out six times because the SHARED sections really are
 // shared: every kind has a transform, a motion block and a behaviour block, and six
 // hand-copied transcriptions of them is six places for the seventh to be forgotten.
+// Only the FILL section differs per kind, which is the format's own shape (Element's
+// comment: "exactly one is meaningful per Kind").
 func buildInspectorFields() [theme.ElementKindCount][]inspectorField {
 	var out [theme.ElementKindCount][]inspectorField
 	for k := theme.ElementKind(0); k < theme.ElementKindCount; k++ {
@@ -178,6 +184,10 @@ func pickRow(label string, sec inspectorSection, f editField, src pickSource) in
 }
 
 // editRectSpanPx bounds the inspector's four rect spinners. Generous on purpose:
+// an anchored element's rect is a signed DELTA (design §6.6 R1), so negative values
+// are the NORMAL case for decoration that overhangs its widget, and a
+// SpaceWindow element is measured against no canvas at all. The number is a
+// sanity rail on a typed digit, not a layout rule.
 const editRectSpanPx = 8192
 
 // identityFields open every rail: WHAT this box is and what it is called.
@@ -250,6 +260,10 @@ var strokeRows = []inspectorField{
 
 // fillFieldsFor is the per-kind arm — the format's "exactly one is meaningful per
 // Kind", made visible in the UI.
+//
+// A SWITCH WITH NO DEFAULT ARM THAT INVENTS ROWS: an unknown kind gets the shared
+// opacity row only, so a future kind shows a working (if minimal) inspector rather
+// than a blank rail, and the totality gate still fails to remind us to fill it in.
 func fillFieldsFor(k theme.ElementKind) []inspectorField {
 	switch k {
 	case theme.ElemImage:
@@ -312,6 +326,10 @@ func fillFieldsFor(k theme.ElementKind) []inspectorField {
 
 // inspectSlotField / mutateSlotField are the widget arm's getter and mutator, the
 // same shape (and under the same census) as the element pair above.
+//
+// ONE FIELD, and that is the AO2 full-parity ruling made structural rather than
+// remembered: `[overrides]` is a rect table, so a widget's geometry is the only thing
+// a theme may restate about an AO2 widget, and the only thing this table can address.
 // A future AsyncAO-side extra for a widget cannot be smuggled in as a row here,
 // because there is no field for it and editFieldSet would refuse one.
 func inspectSlotField(a *App, t editTarget, f editField) editValue {
@@ -340,6 +358,7 @@ func mutateSlotField(t editTarget, f editField, v editValue) themeEditOp {
 // mutateSlotReset is "put this widget back where the theme's own
 // courtroom_design.ini put it": DROP the [overrides] row rather than write the
 // baseline into it.
+//
 // Dropping is the whole point. Writing the resolved rect back would leave a row in
 // the author's file restating exactly what the AO2 tier already says — a diff for an
 // edit the user just took back, which is the same defect editSlotRowPresent exists to

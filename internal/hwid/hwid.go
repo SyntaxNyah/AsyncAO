@@ -44,6 +44,9 @@ var (
 // this client dialled). It is stable for that server and unrelated to the id
 // every other server sees, so a value harvested on one server cannot be worn on
 // another.
+// It hashes on each call rather than memoising per server: connecting is a cold
+// path (once per join), and a keyed cache would be an unbounded map of every
+// address a long session ever touched.
 func For(address string) string {
 	sum := sha256.Sum256([]byte(salt + serverLabel + serverKey(address) + fieldSep + deviceLabel + device()))
 	return idPrefix + hex.EncodeToString(sum[:])
@@ -54,6 +57,12 @@ func For(address string) string {
 // have to stick: without this, joining through wss:// after a ws:// ban — or
 // through a differently-cased hostname — would hand the server a fresh id and
 // evade the ban by accident.
+// AO WebSocket URLs are scheme + host + port with no path (network.splitWSURL
+// enforces that), so lowercasing the whole remainder is safe: hostnames are
+// case-insensitive and a port is digits. A host that resolves to the same server
+// under two DIFFERENT names still yields two ids — an inherent limit of keying on
+// the address, and the address is the only server identity a hostile server
+// cannot choose for itself (a name it advertises, it can).
 func serverKey(address string) string {
 	s := strings.ToLower(strings.TrimSpace(address))
 	if rest, ok := strings.CutPrefix(s, wssScheme); ok {

@@ -95,6 +95,8 @@ func TestThemeFontPxIsQtsConversion(t *testing.T) {
 // resolved back to a face at UIFontSize×pct/100, which rounds DOWN — so a percent
 // that is merely close reopens a pixel short, and the two truncations compounded
 // into a 7 px face for a declared 8 pt.
+// It asserts the ROUND TRIP rather than a magic percent: whatever the scale is,
+// asking for P points must reopen at exactly themeFontPx(P).
 func TestThemeFontPctRoundTripsToThePixelSize(t *testing.T) {
 	for points := 6; points <= 32; points++ {
 		pct := themeFontPct(points)
@@ -239,6 +241,10 @@ func TestBuildThemeFontTableFaceCap(t *testing.T) {
 	fonts := ""
 	files := map[string]string{}
 	// Families are DERIVED from the element list, not a literal sized to match it.
+	// A hand-written slice indexed by element position panics the moment an
+	// identifier is appended to theme.FontElements — which is what adding
+	// debug_log did — and the panic reads like a production bug rather than a
+	// stale fixture.
 	for i, id := range theme.FontElements {
 		fonts += id + " = 12\n" + id + "_font = Fam " + string(rune('A'+i)) + "\n"
 		files["fonts/fam"+string(rune('a'+i))+".ttf"] = "x"
@@ -416,6 +422,8 @@ func TestThemeFontsPrefRoundTrips(t *testing.T) {
 // TestChatboxInkNeedsAnActualColourKey pins the gate on the chatbox ink, which
 // used to be Theme.HasFont and had to become FontSpec.ColorSet.
 // colour from its own key and the size key implies nothing (courtroom.cpp:1223-1225).
+// Goes red if either gate drifts back to HasFont, or if some later refactor
+// starts trusting FontSpec.Color without consulting ColorSet.
 func TestChatboxInkNeedsAnActualColourKey(t *testing.T) {
 	// Size only. HasFont says yes, ColorSet says no — and no is correct.
 	sized, _ := writeThemeFonts(t, "SizeOnly", "message = 20\nshowname = 14\n", nil)
@@ -453,6 +461,9 @@ func TestChatboxInkNeedsAnActualColourKey(t *testing.T) {
 // TestDeclaredFontInkIgnoresTheParserDefault asserts the GATE directly, which the
 // test above cannot: that one pins the parser behaviour that makes the gate
 // correct, but would stay green if the gate itself reverted to Theme.HasFont.
+// Goes red the moment declaredFontInk trusts spec.Color without consulting
+// spec.ColorSet — which is precisely the bug, since the parser's default colour is
+// opaque white and would be reported as the theme's deliberate choice.
 func TestDeclaredFontInkIgnoresTheParserDefault(t *testing.T) {
 	// The exact shape a size-only theme produces: the WHITE parser default, unset.
 	sizeOnly := theme.FontSpec{Size: 20, SizeSet: true, Color: theme.RGB{R: 255, G: 255, B: 255}}

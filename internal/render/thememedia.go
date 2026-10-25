@@ -1,6 +1,7 @@
 package render
 
 // Theme media — the bounded user-art tier (v1.90.0 W4).
+// docs/wip/THEME-EDITOR-DESIGN.md §Q2.
 // TWO ENFORCEMENT POINTS, because a bug in one is a budget breach and the budget IS
 // the product: internal/ui plans the whole media set against ThemeMediaByteCap
 // BEFORE it decodes anything, and UploadThemeMedia refuses at the store.
@@ -34,11 +35,17 @@ const (
 	themeMediaByteCeil  = 48 << 20
 	// themeMediaItemDiv bounds ONE page at budget/8 — exactly half the per-asset T1
 	// decode cap (cache/memory.go's decodeCapBudgetDiv = 4). 8 MiB at the default.
+	// Sitting at exactly half the decode cap is what makes decimation PREDICTABLE
+	// rather than emergent: an animation the decoder was willing to hand over can
+	// still be refused here, and it is refused for a reason with a number attached.
 	themeMediaItemDiv = 8
 
 	// ThemeMediaCap / ThemeGenCap bound the COUNTS (hard rule 4). Bytes alone are
 	// not a bound: 24 tiny pages and 24 000 tiny pages have the same byte cost and
 	// very different map, prune and upload costs.
+	// 24 covers every one of the fourteen shipped style presets with headroom (the
+	// densest declares none at all — they are generator-only by design). 12 tiles at
+	// GenTileMaxPx² ARGB is 3 MiB, inside the media budget at every T1 size.
 	ThemeMediaCap = 24
 	ThemeGenCap   = 12
 )
@@ -105,6 +112,7 @@ var ErrThemeMediaBudget = fmt.Errorf("render: theme media exceeds its budget")
 // The Decoded is released on every path including the refusals, because the caller
 // handed ownership over: a refusal that leaked the decode buffer would make the
 // budget check itself the leak.
+// Render thread only.
 func (s *TextureStore) UploadThemeMedia(key string, d *assets.Decoded, texBudgetMiB int) error {
 	if !IsThemeMediaKey(key) {
 		d.Release()

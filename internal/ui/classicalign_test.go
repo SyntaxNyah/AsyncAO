@@ -63,6 +63,11 @@ func TestAlignRectResizeMovesOnlyGrippedEdge(t *testing.T) {
 }
 
 // TestSnapRectToSiblings pins the live piece-to-piece magnet primitive (M3):
+// a move whose left edge is within alignSnapPx of a sibling's left edge returns
+// a translated top-left flush to it (W/H unchanged — this is move-mode), and it
+// reports a vertical guide there. It is a thin move-mode wrapper over alignRect,
+// so this covers both the window-space (live panels) and design-space (themed
+// editor) callers, which differ only in the extent/coordinates they pass.
 func TestSnapRectToSiblings(t *testing.T) {
 	other := sdl.Rect{X: 200, Y: 300, W: 160, H: 90}
 	r := sdl.Rect{X: 196, Y: 40, W: 80, H: 60} // 4 px off other's left edge

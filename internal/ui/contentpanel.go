@@ -173,6 +173,11 @@ type contentPanelState struct {
 var contentPanel contentPanelState
 
 // openContentReportFor is the pick tail for the check/package browser purposes:
+// load the recording (fills Origin from the live session via demoDefaultOrigin,
+// like every other loader), start the single-flight probe, and open the panel. A
+// bad load or a refused start (a job already running, empty recording) leaves the
+// panel closed and the engine's warnLine explaining why. pkg latches the package
+// build to fire once the probe is ready.
 func (a *App) openContentReportFor(path string, pkg bool) {
 	rec, err := a.loadRecordingAny(path) // .aorec, or an AO2 .demo converted on the fly
 	if err != nil {
@@ -189,6 +194,10 @@ func (a *App) openContentReportFor(path string, pkg bool) {
 	// Choice: an explicit prior pick sticks for the session; otherwise follow the
 	// default policy — which the loaded rec.Origin's SCHEME already encodes, since
 	// loadRecordingAny ran demoDefaultOrigin for a .demo (→ local:// under mounts)
+	// and used the stamped Origin for a .aorec (→ its recorded server origin,
+	// unchanged even under mounts). Reading the scheme keeps the policy in ONE place
+	// (demoDefaultOrigin) instead of re-deciding it by extension here — an .aorec
+	// therefore correctly defaults to its stamped server origin, not the mount.
 	if !s.pickerChosen {
 		s.useLocal = strings.HasPrefix(rec.Origin, assets.LocalScheme)
 	}
@@ -543,6 +552,8 @@ func (a *App) useLocalSetupPath() {
 // drawContentPanel draws the modal content-report panel LAST in drawSettings
 // (topmost), with the page's modal fence already released by the caller so its
 // c.Button / c.VScrollbar / c.hovering widgets work normally. No-op when closed.
+// Purely reads the engine's report (cached across the post-package clear); it
+// never mutates the report or touches the filesystem/network.
 func (a *App) drawContentPanel(w, h int32) {
 	s := &contentPanel
 	if !s.open {
@@ -559,6 +570,7 @@ func (a *App) drawContentPanel(w, h int32) {
 		// The job just cleared (packaging finished, or a report-only end): the engine
 		// exposes the "Packaged N… into <folder>" summary + bundle path ONLY via
 		// warnLine, so snapshot it once here to keep showing it after the toast fades.
+		// A close/Cancel can't reach this (it clears sawJob + closes the panel).
 		s.doneMsg = a.warnLine
 	}
 	// Package-when-ready latch: fire the build the first frame the probe is ready.

@@ -12,6 +12,14 @@ import (
 // The NON-LINK half of UnsafePath's refusal, in the one place it can be built: a FIFO
 // and a socket need a syscall Windows has no equivalent of, so this file is unix-only
 // while the link cases stay in the portable gate.
+//
+// It is not a curiosity. A symlink-only predicate was the first draft of this guard and
+// it claimed WalkFiles' shape while refusing a strict subset of it; the FIFO is the
+// cheapest name that proves the difference, and it is also the one that HURTS — opening
+// a FIFO for reading blocks until a writer appears, and the mount fetcher's Fetch runs
+// on a pool worker and documents local reads as uncancellable, so the worker never comes
+// back. TestWalkFilesSkipsANonRegularEntry is the other source's half of the same claim:
+// the two must skip the same names or "the two byte sources agree" is only a sentence.
 
 // mustFifo makes a FIFO at p, skipping the test if the filesystem cannot hold one
 // (some CI sandboxes and network mounts refuse mknod) — the same accommodation the
@@ -25,6 +33,8 @@ func mustFifo(t *testing.T, p string) {
 
 // TestUnsafePathRefusesNonRegularNonLinks pins the widening: everything that is
 // neither a plain directory nor a regular file is refused, whether or not it is a link.
+// /dev/null is a real character device on every unix, so the device case costs nothing
+// to set up and needs no privileges.
 func TestUnsafePathRefusesNonRegularNonLinks(t *testing.T) {
 	root := t.TempDir()
 	fifo := filepath.Join(root, "(a)Normal.png")

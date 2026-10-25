@@ -57,6 +57,9 @@ func TestPanelFontRowsMatchTheElementList(t *testing.T) {
 }
 
 // TestPxToScalePctRoundTrips: the size a user types has to be the size they get.
+// The percent is applied to UIFontSize with integer division when the face is
+// opened, so rounding DOWN here reopens one pixel small — the same round-trip
+// bug themeFontPct was written to avoid for a theme's point sizes.
 func TestPxToScalePctRoundTrips(t *testing.T) {
 	for px := config.PanelFontMinPx; px <= config.PanelFontMaxPx; px++ {
 		pct := pxToScalePct(px)
@@ -155,6 +158,10 @@ func awaitThemeApply(t *testing.T, a *App) {
 
 // TestPanelSizeAcceptsATwoDigitNumber is the regression pin for the reported
 // fault: the size box "defaults to weird numbers, you can't set it correctly".
+// It clamped on EVERY keystroke and fed the clamped number straight back into the
+// box, so typing the "1" of "18" became a 6 — the minimum — before the "8" could
+// be typed. Every size below ten was unreachable, and every one above it had to
+// be arrived at through a number the box had already rewritten.
 func TestPanelSizeAcceptsATwoDigitNumber(t *testing.T) {
 	a := testTabApp(t)
 	shown := typePanelSize(t, a, "ic_chatlog", "18")
@@ -348,6 +355,7 @@ func TestThemeFontsOffKeepsTheUsersOwnPicks(t *testing.T) {
 // TestDyslexiaFontBeatsAPerPanelPick: the accessibility switch is not an
 // ordinary preference. Someone who turns it on and still cannot read one panel,
 // because of an override they set weeks ago, would be right to call that broken.
+// Their SIZES still apply — the switch is about the letterforms.
 func TestDyslexiaFontBeatsAPerPanelPick(t *testing.T) {
 	a := landWithPanel(t, func(a *App) {
 		a.d.Prefs.Update(func(

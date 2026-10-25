@@ -22,6 +22,10 @@ const specName = "Spectator"
 
 // buildLiveRoster assembles the in-area roster from the real-time signals: one
 // row per taken character, then Spectator rows for the head-count beyond them.
+// The `snapshot` (the last /getarea — i.e. areaPlayers) enriches each row with
+// the data CharsCheck can't carry — UID, IPID, OOC name (matched by character;
+// spectators handed out in snapshot order) — so a live row offers the same
+// Pair/Copy actions as the legacy snapshot. Pure + table-tested.
 func buildLiveRoster(chars []courtroom.CharacterSlot, headCount int, haveCount bool, area string, shownameFor map[string]string, snapshot []areaPlayer) []areaPlayer {
 	// Split the snapshot: characters key by name; spectators are anonymous to
 	// CharsCheck, so queue them in order to hand out up to the live head-count.
@@ -345,6 +349,8 @@ func (a *App) rosterStamp() time.Time {
 
 // setRosterLegacy switches the player list between the live roster and the
 // /getarea snapshot. The active roster (its length and index→player mapping)
+// changes, so the index-keyed icon cache is dropped; switching back to live
+// rebuilds at once.
 func (a *App) setRosterLegacy(legacy bool) {
 	if a.roster.rosterLegacy == legacy {
 		return

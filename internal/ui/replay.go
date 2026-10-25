@@ -224,6 +224,7 @@ func (a *App) linearizeReplayBuf() []replayBufEntry {
 // entry and carrying the scene context (the last background — and music — change
 // BEFORE the window) so a mid-conversation clip isn't blank or silent. Pure: no
 // ring, clock, or SDL, so it's tested directly. entries must be oldest-first.
+// Returns nil when nothing falls in the window.
 func buildClip(entries []replayBufEntry, cutoff time.Time, origin, sessBg string) *sceneRecording {
 	start := -1
 	for i := range entries {
@@ -324,6 +325,9 @@ func formatReplayWindow(d time.Duration) string {
 
 // stopRecording ends capture and writes the .aorec next to the exe under
 // recordings\ off the render thread (§17.2: file I/O never blocks rendering).
+// It returns a done channel closed when the deferred .aorec write finishes (or
+// gives up), so a caller can wait for the file instead of polling the filesystem;
+// nil when nothing was written.
 func (a *App) stopRecording() <-chan struct{} {
 	if !a.sel.recActive {
 		return nil
@@ -367,6 +371,8 @@ func (a *App) stopRecording() <-chan struct{} {
 // caller; only the WriteFile is deferred. Returns the filename it will land as and
 // a done channel closed when the write goroutine finishes (or gives up), so a
 // caller can wait for the file instead of polling the filesystem.
+// Shared by recording (stopRecording) and the scene maker's Save so both produce
+// identical, reopenable .aorec files.
 func saveSceneRecording(rec *sceneRecording, stem string) (string, <-chan struct{}, error) {
 	data, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
@@ -584,6 +590,10 @@ func (a *App) toggleReplay() {
 // replayTiming maps the ReplaySpeed pref (percent, 100 = base) to the replay
 // typewriter crawl + linger. 100% is the readable base; lower percent slows
 // both (so the whole message plays out and can be read), higher speeds it up.
+// Re-applied every frame in driveReplay so the Studio "Playback speed" slider
+// is live — the new crawl takes the NEXT typed message, the new linger the next
+// settle (Typewriter precomputes per-rune delays at Start; TextStay is read at
+// linger), which is exactly when a mid-replay speed change should bite.
 func (a *App) replayTiming() (crawl, stay time.Duration) {
 	spd := a.d.Prefs.Load().ReplayPlaybackSpeed
 	if spd < 1 {
@@ -615,6 +625,8 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 	// screen-effects and sprite-style choices. The master off-switch rides along
 	// with the individual prefs, under the same makerOpen exemption: authoring a
 	// scene must still SHOW what is being authored, or the maker previews a lie.
+	// The three gates come from newroom.go so this mode cannot answer differently
+	// from the export it is previewing. Everything else newRoom seeded stands.
 	if a.sel.makerOpen {
 		a.applyAuthoringVisualsToRoom(a.sel.replayRoom)
 	}
@@ -692,6 +704,7 @@ func (a *App) replayMessagePos() (cur, total int) {
 // advanceReplay feeds the next recorded event whenever the replay room returns
 // to idle, so the courtroom's own pacing (typewriter / preanim / linger) times
 // the playback — NOT the recorded wall-clock deltas, which would double-drag.
+// When the stream is exhausted and the room settles, the replay ends.
 func (a *App) advanceReplay(dt time.Duration) {
 	if !a.sel.replaying || a.sel.replayRoom == nil {
 		return
@@ -780,6 +793,9 @@ func (a *App) driveReplay(dt time.Duration) {
 	a.sel.replayRoom.Typewriter.Interval, a.sel.replayRoom.TextStay = a.replayTiming() // live Playback-speed slider
 	// H5 pre-warm: while the FLAT recording's sprites + music load, hold the first
 	// event off-stage (advanceReplay is skipped) so playback starts warm, not popping.
+	// The room + viewport still Update so the stage (StartBg, once resident) draws
+	// under the loading overlay. The phase self-ends (all-ready / quiesce / hard cap)
+	// or the Skip button clears it; either way the next frame feeds the first event.
 	if a.replayWarming() {
 		a.tickReplayWarm()
 		a.sel.replayRoom.Update(dt)

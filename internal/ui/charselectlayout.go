@@ -90,6 +90,9 @@ type charSelectDesign struct {
 // readCharSelectDesign resolves the twelve keys for a loaded theme. Called from
 // the theme-apply GOROUTINE (hard rules 1 and 2: it reads INIs, never SDL, never
 // App state), and landed on the render thread by pollThemeApply.
+// A theme value wins only when the INI parses it as a rect at all; theme.ElementRect
+// already rejects a short tuple, matching AO2's get_element_dimensions, which
+// leaves width/height at -1 when the split yields fewer than four components
 func readCharSelectDesign(t *theme.Theme) charSelectDesign {
 	d := charSelectDesign{
 		r:       make(map[string]theme.Rect, len(charSelectDefaultRects)),
@@ -151,6 +154,8 @@ type charSelectLayoutCache struct {
 	// themeScalingFactor() — see cellScale.
 	scaleX, scaleY float64
 	// area is the whole scaled canvas. The backdrop blits into precisely this rect:
+	// AO2 resizes ui_char_select_background to the char_select rect and
+	// AOImage::setImage then scales the art into it with Qt::IgnoreAspectRatio
 	// (aoimage.cpp:29-31), so the art's own native size is irrelevant. That is what
 	// makes `alter ego (mobi)` — 576×639 art on a 537×1080 canvas — look right.
 	area sdl.Rect
@@ -169,6 +174,7 @@ type charSelectLayoutCache struct {
 	// scaled ones without drifting off the artwork (see the header comment).
 	designW, designH int32
 	// spacingDesignX/Y are char_button_spacing AS DECLARED, before any scaling.
+	// AO2 computes its column and row COUNTS from the design rect and the design
 	// spacing (charselect.cpp:160-162 runs on unscaled widget geometry at scale 1,
 	// and on values multiplied by one INTEGER themeScalingFactor above it), so the
 	// count is scale-invariant there. Deriving it from three independently truncated
@@ -205,6 +211,9 @@ func (l *charSelectLayoutCache) cellScale() float64 {
 }
 
 // charSelectThemed reports whether char select draws on the theme's canvas.
+// Every corpus theme that ships any geometry at all declares both keys (courtroom
+// and viewport are the only two rects present in 100% of the corpus), so this
+// costs no real theme its canvas.
 func (a *App) charSelectThemed() bool {
 	if len(a.charSelDesign.r) == 0 || !a.d.Prefs.Load().ThemeLayoutOn {
 		return false
@@ -332,6 +341,10 @@ func (a *App) drawCharSelectBackdrop(w, h int32, lay *charSelectLayoutCache) {
 	// &lay.area into cgo would heap-allocate per frame even on the branches above
 	// (escape analysis is static) — the shared scratch is the house idiom, and SDL
 	// copies the rect during the call without retaining the pointer.
+	// Plain Copy, no CopyEx rotation branch (unlike drawScreenBackdrop): A4's
+	// per-key angles are baked into the COURTROOM layout cache from the themed
+	// editor's key set, and char select is deliberately outside both — there is no
+	// key here that can ever carry a nonzero angle.
 	c.cgoRect = lay.area
 	_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
 }

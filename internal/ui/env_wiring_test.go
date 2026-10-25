@@ -10,6 +10,7 @@ import (
 // always reaches the shared deps/ctx/notice/navigation through &a.env. It is
 // reflection-driven over App's fields, so a new component is covered the moment
 // it gains an env field — whether it is embedded or (as the end state requires)
+// a named field like App.updates.
 func TestComponentEnvWiring(t *testing.T) {
 	a := &App{env: env{ctx: &Ctx{}}}
 	a.wireComponents()
@@ -46,6 +47,9 @@ func TestComponentEnvWiring(t *testing.T) {
 	}
 
 	// walkBlob visits a state blob (App, or an embedded blob such as sessionState):
+	// its EMBEDDED fields are blobs to descend into, its NAMED struct fields are
+	// components to check. That is what covers a component parked inside
+	// sessionState without re-promoting anything.
 	var walkBlob func(v reflect.Value, path string)
 	walkBlob = func(v reflect.Value, path string) {
 		for v.Kind() == reflect.Ptr {

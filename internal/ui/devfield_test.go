@@ -6,6 +6,8 @@ import "testing"
 // focused text field's moving parts (value texture, selection, caret) draw under
 // SetScale(1,1) with rects projected here, so the rule MUST be the exact inverse
 // of uiLogicalFromDevice's "round half up" (add half the divisor before dividing)
+// and identity at 100%/unset — otherwise the caret and value drift apart at
+// fractional scales, the very artifact this path fixes.
 func TestUIDeviceFromLogical(t *testing.T) {
 	cases := []struct {
 		logical, devPct, want int32

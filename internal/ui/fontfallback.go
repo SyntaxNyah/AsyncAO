@@ -57,6 +57,10 @@ func hasCJKLetter(s string) bool {
 }
 
 // parseCover parses font bytes for the cmap-based coverage check used by the PICK.
+// SDL_ttf's GlyphMetrics returns .notdef metrics WITHOUT error for missing glyphs in
+// this build, so it can't tell coverage — sfnt's cmap lookup (GlyphIndex != 0) can.
+// Handles both single fonts (.ttf) and collections (.ttc, e.g. Nirmala) by trying the
+// first face. nil on parse failure → that face is simply never chosen by coverage.
 func parseCover(data []byte) *sfnt.Font {
 	if f, err := sfnt.Parse(data); err == nil {
 		return f
@@ -85,11 +89,17 @@ func parseCover(data []byte) *sfnt.Font {
 // (fontcensus.go) supplies anything else on demand, from whatever is actually
 // installed. Absent files are skipped, so an unusual install just leans on the
 // census sooner.
+// Every OS gets a list. Returning nil off Windows — which this used to do — left
+// macOS and Linux with nothing but the embedded 744-glyph Latin face, so Cyrillic,
+// Greek, Hebrew, Arabic, every Indic script and all of CJK were permanently tofu
 func fallbackFontCandidates() []string {
 	switch runtime.GOOS {
 	case "windows":
 		return []string{
 			// Broad Latin / Cyrillic / Greek / Armenian / Georgian / Hebrew / Arabic.
+			// NOT Thai, despite what this comment used to claim: segoeui.ttf has no
+			// U+0E01. Thai, Lao and Khmer live in Leelawadee UI / Khmer UI, and the
+			// census finds them.
 			`C:\Windows\Fonts\segoeui.ttf`,
 			`C:\Windows\Fonts\seguisym.ttf`, // Segoe UI Symbol — arrows / math / technical / dingbats / Braille
 			`C:\Windows\Fonts\ebrima.ttf`,   // Ebrima — African scripts incl. Tifinagh and Ethiopic
@@ -188,6 +198,11 @@ var cjkHanCandidates = []string{
 // cjkHanChineseBackstop is the ORDERED Chinese Han face preference, loaded AFTER the
 // JP-first pick as a coverage backstop. Yu Gothic's cmap is JIS/Adobe-Japan1 — a SUBSET of
 // the GB18030 Han that YaHei covers — so Simplified-Chinese-only characters (讲/说/边, …)
+// that the old YaHei-first pick rendered would tofu if only Yu Gothic loaded. Appending a
+// Chinese face keeps those covered: coverRunes gives Yu Gothic the win for the shared Han a
+// Japanese showname uses (the pretty proportional glyphs), and this face catches the CN-only
+// runes it lacks. Residual: shared Han in a Chinese sentence shows JP glyph *shapes* — fixing
+// that needs per-run script detection (out of scope); this only kills the tofu.
 var cjkHanChineseBackstop = []string{
 	`C:\Windows\Fonts\msyh.ttc`,     // Microsoft YaHei — Simplified Chinese (GB18030)
 	`C:\Windows\Fonts\msjh.ttc`,     // Microsoft JhengHei — Traditional Chinese

@@ -11,6 +11,8 @@ package render
 // (src/animationlayer.cpp:229-260) takes the non-stretch arm:
 // was constructed with `setAlignment(Qt::AlignCenter)` (animationlayer.cpp:16),
 // which is what centres it horizontally in the viewport.
+// The desk and the background are NOT changed here, deliberately. Their layer
+// (BackgroundLayer) reads `stretch` out of the background's own design.ini
 // (animationlayer.cpp:616), so their correct behaviour is per-background theme
 // data rather than a constant, and it is a different asset's INI in a different
 // package. Recorded, not half-done.
@@ -20,6 +22,7 @@ import "github.com/veandco/go-sdl2/sdl"
 // splashFitRect is AO2's non-stretch AnimationLayer geometry: scale the frame by
 // the viewport's HEIGHT over the frame's own height, keep the aspect, centre the
 // result in the viewport.
+// Integer arithmetic only, and it runs once per shout frame on the render thread:
 func splashFitRect(vp sdl.Rect, srcW, srcH int32) sdl.Rect {
 	if srcW <= 0 || srcH <= 0 || vp.H <= 0 {
 		return vp

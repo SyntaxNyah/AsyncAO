@@ -11,6 +11,9 @@ type framePaceState struct {
 	// through the InputGraceFrames hold after any interaction).
 	lastInputAt time.Time
 	// lastMotionAt is the most recent BARE pointer motion (experimental loop):
+	// it holds full rate only through motionInputGrace, so circling the mouse
+	// over dead space stops costing frames the moment it stops — clicks, keys
+	// and the wheel still get the full input grace via lastInputAt.
 	lastMotionAt time.Time
 	// lastFrameDrawn is when Frame last actually rendered — the idle-cadence
 	// anchor both loops measure from: the classic loop re-renders a static
@@ -36,6 +39,7 @@ type framePaceState struct {
 	// compares against it to tear down hover-preview state that would otherwise
 	// ride across a screen switch with no draw site left to close it (the
 	// orphaned-preview cap latch; distinct from prevScreen, the back-nav memory).
+	// The same edge detects lobby entry for the capped master-list auto-refresh.
 	drawnScreen Screen
 	// frameAnimChrome is set (via NoteAnimating) during a draw pass whenever it
 	// renders a self-driven, TIME-STEPPED UI animation outside the viewport's
@@ -56,6 +60,7 @@ type framePaceState struct {
 	// plays its blips) at the fine audio cadence via Background between presents, so
 	// audio never batches to the frame rate. When set, the next Frame skips its own
 	// room.Update (the room is already current) but still advances the UI + draws.
+	// Consumed (cleared) by that Frame. See AudioPaceActive / MarkRoomPreAdvanced.
 	roomPreAdvanced bool
 	// lastSpeakerDiagBase is the speaker sprite base last logged to the debug
 	// log (pushDebug) — the #110 animation diagnostic logs once per base change,

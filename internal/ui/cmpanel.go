@@ -7,6 +7,9 @@ import (
 )
 
 // #130 — the CM (area control) tools live in their OWN panel, separate from the mod (ban/kick)
+// dashboard, and surface only while you actually hold CM. In the CLASSIC layout both are
+// launched from compact "Mod" / "CM" buttons in the courtroom's button row (drawICControls),
+// shown only when you hold the role — in the row, so they never float over the emote sprites.
 // Under a THEME they are rows in the Extras menu instead, because the chip row that used to
 // carry them painted over the theme's own canvas (#21, rule (c)); those rows stay visible but
 // greyed until the server grants the role. Claiming CM is via /cm; this panel is the room

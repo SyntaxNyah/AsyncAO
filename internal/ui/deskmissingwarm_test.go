@@ -16,6 +16,11 @@ import (
 // the same heal, on the drawn AND the minimized path — had no such gate. That is
 // half the 2026-08-09 field cadence: one background that ships no <pos>_overlay
 // re-demanded on every tick of every message.
+//
+// The nil-in-test Manager is the tripwire: a re-demand panics. The second arm is
+// the load-bearing half of the proof — the SAME scene, un-marked, must still
+// reach the Manager, so the gate is scoped to conclusive misses and has not
+// quietly become a blanket "never heal the desk".
 func TestWarmKeeperSkipsAConclusivelyMissingDesk(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()

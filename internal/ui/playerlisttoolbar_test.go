@@ -23,6 +23,9 @@ const (
 	// average advance of the 14 px UI face for Latin text.
 	toolbarTestGlyphPx = int32(7)
 	// toolbarThemeWidthPx is the usable width a theme really hands this panel:
+	// aceattorney2x declares music_list = 0,323,216,277 and insetThemedBody takes
+	// themedLogInsetPx off the left, leaving 212. This is the width the bug was
+	// reported at.
 	toolbarThemeWidthPx = int32(212)
 	// toolbarThemeHeightPx is that same rect's usable height: 277 less
 	// insetThemedBody's two margins, less the Music/Areas/Player List chip strip.
@@ -344,6 +347,9 @@ func TestRosterDetailCmdIsNeverInert(t *testing.T) {
 		// Whisker's command dispatcher maps players onto its own cmd_ga
 		// (Whisker/src/commands.c3:78) and has NO getarea case whatsoever (:77-79),
 		// so the long spelling falls through to "Unknown command: /getarea".
+		// Whisker is also one of the families with no built-in 2.11 player list
+		// (serverhelp.go, plistPlugin), i.e. exactly a family this row is the last
+		// roster control for.
 		{"Whisker", rosterCmdPlayers},
 		// Akashi (and the WAP fork) register getarea/getareas and neither /players
 		// nor a short alias (../akashi/src/aoclient.cpp:28-29) — the same asymmetry
@@ -377,6 +383,10 @@ func TestRosterDetailCmdIsNeverInert(t *testing.T) {
 // TestPlayerToolbarPlanIsAllocFree is a hard-rule gate: drawPlayerList builds a plan
 // on EVERY frame the Players tab is up, and internal/ui is held to a zero-allocation
 // render loop. The plan is a fixed-size value for exactly this reason.
+// The second half passes the real Ctx.TextWidth METHOD VALUE, which is what
+// drawPlayerList hands the planner. A method value is a closure over the receiver;
+// if the planner ever let its measure func escape, that closure would be heap
+// allocated once per frame and only this half would catch it.
 func TestPlayerToolbarPlanIsAllocFree(t *testing.T) {
 	panel := sdl.Rect{X: 0, Y: 0, W: toolbarThemeWidthPx, H: toolbarThemeHeightPx}
 	labels := toolbarTestLabels() // built once: the caller owns the label strings

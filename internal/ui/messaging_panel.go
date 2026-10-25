@@ -37,6 +37,7 @@ func (msg *msgState) toggleMessages() { msg.showMessages = !msg.showMessages }
 // (zero, false) and the caller keeps its OWN default first-open position (each
 // panel's historical tuck / centre) — this helper only owns the slot-seed path,
 // never a panel's default, so wiring it in can't move an un-persisted panel.
+// panelSlotTable is the canonical enumeration of the panels this drives.
 func (classic1 *classicState) seedPanelFromSlot(fw *floatWin, slot string, defW, defH, minW, minH, w, h int32) (sdl.Rect, bool) {
 	if fw.placed {
 		return sdl.Rect{}, false
@@ -351,6 +352,8 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 	}
 	// Show EVERYONE in the room (no AsyncAO-detection filter — that needed people to
 	// send a marked IC message, so it usually showed nobody). Inviting rides /pm:
+	// AsyncAO clients get the rich invite, others get a readable PM they can ignore.
+	// "(AO)" tags players we've already confirmed are on AsyncAO.
 	roster := a.rosterView()
 	me := a.myUID()
 	shown := 0

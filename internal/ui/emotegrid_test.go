@@ -49,6 +49,9 @@ func TestGridRowsHonoursGap(t *testing.T) {
 }
 
 // aspectSkew is the cross-multiplied aspect error of a cell against its design.
+// Exact equality is impossible after int truncation: cellW = floor(s*dw) and
+// cellH = floor(s*dh) each lose < 1 px, which bounds
+// cellW*dh - cellH*dw to (-dh, +dw]. Anything outside that is real distortion.
 func aspectSkew(cellW, cellH int32, designW, designH int) int64 {
 	return int64(cellW)*int64(designH) - int64(cellH)*int64(designW)
 }

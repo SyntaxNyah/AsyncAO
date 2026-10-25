@@ -14,6 +14,10 @@ import (
 )
 
 // drawChatOverlay paints the message box (showname + spoken text) over the stage.
+// movableBox (classic layout only) routes the box rect through slotRect so it can
+// be dragged off the sprites / out of the stage in the layout editor; w,h give the
+// override its window-fraction frame. The themed and replay paths pass false (the
+// theme owns its chatbox geometry there).
 func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	c := a.ctx
 	sc := a.renderScene() // live room, slideshow override, OR the replay scene (M16)
@@ -38,6 +42,8 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	}
 	// Per-character chatbox skin (char.ini chat=<misc>, playtest ask): the
 	// SPEAKER's own box art wins over the theme skin — AO2's get_chat priority.
+	// Drawn only once the misc texture is resident; until then the theme/flat
+	// box covers the fetch gap, so nothing ever flashes empty.
 	var charSkin *sdl.Texture
 	if sc.ChatSkinBase != "" {
 		if page, ok := a.d.Store.Get(sc.ChatSkinBase); ok && len(page.Frames) > 0 {
@@ -46,9 +52,15 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	}
 	// Grow the FLAT fallback panel to fit the whole wrapped message so long text isn't cut off
 	// at the bottom — notably after a viewport/box resize wraps it to more lines (reported bug).
+	// Authored skin art (theme OR per-character) keeps its box (stretching looks wrong). Grows
+	// UPWARD from the current bottom edge, capped inside grownChatBoxH.
 	if _, hasSkin := a.themePage(themeStemChatbox); !hasSkin && charSkin == nil {
 		// #39: the theme's "message" point size decides the line height, so a
 		// theme-sized message grows the flat panel by the right amount.
+		// render.FontLineSpacing, NOT font.Height(): the raster stacks its wrapped rows
+		// by the font's LINE SPACING (leading included — linespacing.go), so sizing the
+		// grow with the shorter glyph box under-grows the panel by one leading per row
+		// and clips the tail of a long message.
 		msgPct := a.messagePct()
 		lineH := a.messageRowPitchLogical(msgPct, a.messageFontFor(msgPct, sc.MessageText))
 		if g := grownChatBoxH(box.H, vp.H, int32(a.chatMsgLines(box.W-2*chatOverlayPadX, sc)), lineH); g > box.H {
@@ -196,6 +208,12 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 			// DrawScaled, not Draw: at a scaled UI the revealed prefix must blit
 			// device-exact or the crawl re-stretches the whole run by a pixel every
 			// time its width changes parity, and the settled text wobbles as it types.
+			// msgClip, not textRect and not box: it is the clip actually set above,
+			// and the device-exact path must re-assert THAT one inside its 1:1
+			// bracket or the backend may read it against the wrong scale (see
+			// draw()). Handing it `box` here would restore the name band as a paint
+			// target for every scaled UI — the exact defect, on the exact machines
+			// hardest to reproduce it on.
 			a.raster.msRaster.DrawScaled(c.Ren, sc.VisibleRunes, textRect.X, msgY, c.RenderScalePct(), &msgClip)
 		}
 		_ = c.Ren.SetClipRect(nil)
@@ -526,6 +544,11 @@ func clampF64(v, min, max float64) float64 {
 }
 
 // volStripRowsH is the height of the quick volume popover's two slider rows:
+// "label NN%" (click = mute) over a full-width slider. Named (rule 9) and
+// shared with drawLogPanel's box height so the two can't drift apart. (The
+// the "stream custom music" checkbox row was removed —
+// playtest: it cluttered the popover; the toggle lives ONLY in Settings →
+// Audio now.)
 const volStripRowsH = int32(44)
 
 // persistChannelMute saves one channel's click-to-mute toggle so it survives a
@@ -690,6 +713,8 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// Ctrl+wheel (fine) or wheel-button-held (fast) anywhere on the panel
 	// resizes the log/OOC/list text; plain wheel keeps scrolling the active
 	// list. Taking the wheel here stops the inner lists' zoom from double-stepping.
+	// The Music tab tunes its OWN scale (musicPct) so you can shrink long track
+	// titles without shrinking the IC log.
 	scale := &a.logPct
 	switch a.chatlog.logTab {
 	case logTabMusic:
@@ -925,6 +950,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// lives in the OOC box/tab now; it used to be duplicated here, which is the redundancy
 	// a tester flagged). Shown whenever OOC is a tab (Legacy theme, or the opt-in "OOC in the
 	// log tab" toggle), as a SECOND always-visible input alongside the tab's own — the hybrid.
+	// In the new-default OOC BOX the input lives inside the box, so this bar is dropped.
 	oocY := h - fH - 4
 	// …and it comes BACK as the fallback when the right column is hidden, because
 	// the OOC box lives inside that column (drawCleanRightColumn, guarded by
@@ -960,6 +986,8 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// The shared single-line toast (warnLine) + the DND badge share this row.
 	// Missing-asset reports left this channel in #27 (they own a menu-bar chip
 	// now — assetmisschip.go); what remains here is ordinary transient feedback.
+	// When DND is on, clip the (left-aligned) toast so it can't run under the
+	// right-aligned badge — both stay readable. DND off draws as before.
 	toastW := w - 2*pad
 	dndMsg := ""
 	var dndW int32
@@ -1348,6 +1376,9 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 		}
 	}
 	// Group Chat / DMs launcher — a MAIN button (default ON; Settings → Chat to hide).
+	// APPENDED at the end of the functional buttons so it can never shift the ones
+	// before it; when off it's skipped entirely (no x advance), so the row is
+	// byte-identical to before. A movable slot, so Edit Layout can reposition it.
 	if a.d.Prefs.Load().GroupChatButton && !a.classic.panelHidden("ctrl.groupchat") {
 		const gcW = int32(96)
 		if x+gcW > clusterRight {
@@ -1545,6 +1576,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// Immediate (AO non-interrupting preanim): the preanim plays without
 	// holding back the text. Session toggle; rides the next message via
 	// OutgoingMS.Immediate. Vertically centered against the fH-tall inputs.
+	// (immedW is a package-level const, shared with the layout tests.)
 	immedX := nameX + shownameBoxW + 6
 	// Slice 1 of the movable IC bar: the Immediate toggle can be pulled out into its
 	// own spot in the classic editor. Its default rides the bar (un-edited / whole-bar
@@ -1557,9 +1589,15 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	c.Tooltip(immedBox, "Immediate: the preanim plays without holding back the text (non-interrupting preanim)")
 	icX := immedX + immedW + 6 // downstream flows from the DEFAULT position, not the override
 	// Additive (#14, 2.8): the next message APPENDS to your last one (narration RP).
+	// Shown only when the server advertises additive AND the master pref is on (AO2
 	// shows ui_additive whenever the server advertises it, courtroom.cpp:1638-1644).
+	// When hidden the toggle is forced off so a stale check can't ride a message.
 	if a.link.sess != nil && a.link.sess.Features.Has(protocol.FeatureAdditive) && a.d.Prefs.Load().AdditiveText {
 		// icAddW ("Additive") is a package-level const, shared with the layout tests.
+		// Movable slot (#4a), same wrap-not-extract rule as Immediate above: draws through
+		// slotRect so the editor can pull it out into its own spot, but the row cursor still
+		// advances by the DEFAULT width below — so an un-edited bar is pixel-identical and
+		// moving Additive never cascades the rest. slotRect is alloc-free off the edit path.
 		addDef := sdl.Rect{X: icX, Y: rowY, W: icAddW, H: fH}
 		addBox := a.classic.slotRect(slotICAdditive, addDef, w, h)
 		// bounceOnToggle: ui_additive → on_additive_clicked → focus_ic_input
@@ -1600,6 +1638,12 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 		icX += preW + 6 // downstream flows from the DEFAULT position, not the override
 	}
 	// #M5: dedicated Text FX cycle button (Off → Shake → Wave → Rainbow) — movable (#4a).
+	// A CORE button like Pre (redesign): drawn BEFORE the SFX dropdown and the emoji
+	// button so it outranks them under the drop discipline — on a narrow bar SFX/emoji yield
+	// first and FX survives (the reverse of the pre-redesign order, where FX dropped so SFX
+	// could stay). Its guard prices in only its own fxBtnW+4 plus the input floor. Override /
+	// editor win over the drop (same rule as Pre); FX has no panelHidden gate in the classic
+	// row, so pass hidden=false to keep it a pure width/override/edit call.
 	_, fxOv := a.classic.classicOv[slotICFx]
 	fxGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, fxBtnW+4, tailReserve)
 	if icOptionalDraws(fxGuardOK, fxOv, a.classic.classicEdit, false) {

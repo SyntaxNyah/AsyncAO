@@ -17,6 +17,8 @@ const (
 	// themeEditUndoCap bounds the editor's single timeline. 2x layoutUndoCap (64),
 	// because one stack now carries geometry AND colour AND motion AND element
 	// add/delete where the legacy editors' two carried rects alone. A fixed array:
+	// past the cap the OLDEST op is dropped, never the newest — losing the thing you
+	// just did is the one failure an undo stack must not have.
 	themeEditUndoCap = 128
 
 	// editStrCap bounds the per-session string interning table that keeps editValue
@@ -46,6 +48,9 @@ type editStrID int16
 const editStrNone editStrID = 0
 
 // editValue is one field's value, in a FIXED SIZE, for every field kind.
+// Which lanes a field uses is the FIELD's business, not this type's — editFieldGet
+// and editFieldSet are the only two places that know, and they are each other's
+// inverse by construction (TestEveryInspectorFieldIsUndoable pins the round trip).
 type editValue struct {
 	i [4]int32
 	b [4]uint8
@@ -73,6 +78,7 @@ func boolToInt32(on bool) int32 {
 // ---------------------------------------------------------------------------
 
 // editOpKind is WHAT a mutation did, which decides how the document applies it.
+//
 // The zero value is opNone — "not a mutation" — so a table row that forgot to fill
 // its op, or a refused construction (an unknown field, a full interning table),
 // pushes nothing instead of pushing a mutation with an arbitrary meaning.
@@ -103,11 +109,20 @@ const (
 	// again rather than write the baseline into one.
 	opSlotReset
 	// opFontFamily: one [fonts] row — a family name and the file under <theme>/fonts.
+	// The target is a spaceFont target whose index is the row's position in
+	// Sidecar.Fonts; an index equal to len(Fonts) APPENDS. before/after carry
+	// "family<sep>file" as one interned string (fontRowValue), and an EMPTY after
+	// removes the row — which is what makes "delete a family" and "undo an add" the
+	// same code path.
 	opFontFamily
 	// opFontBind: one [fontbind] row — a FontElements class id bound to a [fonts]
 	// family. The target's index is the class's index in theme.FontElements, which is
 	// append-only and therefore a stable identity (TestFontElementsIsAppendOnly);
 	// before/after carry the family, "" meaning "no binding".
+	//
+	// THIS IS THE TIER THAT RENDERS. An element's own `font`/`size` are carried and
+	// not drawn in format 1 (paintElementText's measurement); a class binding is
+	// resolved by applySidecarFonts on every theme apply and changes the real face.
 	opFontBind
 	// opMediaRow: one [media] row — an image id, the file under the theme folder,
 	// its decoded byte cost and its content hash. The target is a spaceMedia target
@@ -134,6 +149,10 @@ func (k editOpKind) String() string {
 }
 
 // themeEditOp is one undoable mutation.
+//
+// group ties ops that must undo TOGETHER: a preset apply writes everything and is
+// one Ctrl+Z, a duplicate is an add plus a selection change, a multi-drag is one
+// delta over N elements. 0 means "alone".
 type themeEditOp struct {
 	kind   editOpKind
 	target editTarget
@@ -145,6 +164,12 @@ type themeEditOp struct {
 
 // coalesceKey is the identity two ops must share to merge into one undo step: the
 // same kind, on the same target, in the same field, inside the same group.
+//
+// The TARGET is part of it and that is the load-bearing half: without it, dragging
+// element 3 and then element 7 inside the same 400 ms would merge into one op whose
+// `before` belonged to element 3 and whose `after` belonged to element 7 — an undo
+// that writes one element's old value onto another. A drag cannot produce that, a
+// nudge burst across a Tab-cycled selection can.
 type coalesceKey struct {
 	kind   editOpKind
 	target editTarget
@@ -161,6 +186,12 @@ func (op themeEditOp) coalesceKey() coalesceKey {
 // ---------------------------------------------------------------------------
 
 // themeEditRing is the editor's single timeline.
+//
+// A FIXED ARRAY WITH TWO CURSORS, not a slice: `n` is how many ops the timeline
+// holds and `applied` is how many of them are currently in effect, so redo is
+// simply applied < n. A new push after an undo TRUNCATES the redo tail (n =
+// applied), which is what every editor of this shape does and what stops a redo
+// from replaying a mutation against a document that has since diverged.
 type themeEditRing struct {
 	ops     [themeEditUndoCap]themeEditOp
 	n       int
@@ -196,6 +227,10 @@ func (r *themeEditRing) end() { r.group = 0 }
 
 // push records an applied op. Returns false for an op that was merged into its
 // predecessor or was never a mutation, so a caller can tell "nothing new happened".
+//
+// ZERO ALLOCATION. The full-ring case shifts the array down by one with copy(),
+// which moves 127 values on the stack-free array that already lives on App. Growing
+// a slice instead would allocate on a drag.
 func (r *themeEditRing) push(op themeEditOp, now time.Time) bool {
 	if op.kind == opNone {
 		return false
@@ -224,6 +259,13 @@ func (r *themeEditRing) push(op themeEditOp, now time.Time) bool {
 }
 
 // coalescableKind reports whether two adjacent ops of this kind may merge.
+//
+// STRUCTURAL ops never merge, and the reason is that merging them is meaningless
+// rather than merely unwanted: two adds are two different elements, and an add
+// followed by a delete inside the window is two facts about the document, not one
+// value that moved twice. Only a VALUE carries a "same thing, new value" reading —
+// an element field, or an AO2 widget's rect, both of which a drag rewrites every
+// frame for as long as the button is down.
 func coalescableKind(k editOpKind) bool { return k == opElemField || k == opSlotRect }
 
 // canUndo / canRedo drive the header band's two buttons.

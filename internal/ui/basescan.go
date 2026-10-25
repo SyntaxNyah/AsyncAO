@@ -17,6 +17,9 @@ import (
 // The AO on-disk layout, as folder names. The AUTHORITY is
 // courtroom/urlbuilder.go's path constants — these are the same names seen from
 // the filesystem side rather than the URL side, and they are unexported there.
+// TestBaseScanFolderNamesMatchTheURLBuilder pins the pair together, so a layout
+// change in the builder fails here instead of silently making every scan report
+// an empty base.
 const (
 	baseDirCharacters = "characters"
 	baseDirBackground = "background"
@@ -82,6 +85,11 @@ type baseScan struct {
 	// the counts are a floor rather than a total and the report says "or more".
 	capped bool
 	// suggest is a DIFFERENT path that looks more like a base than the picked one:
+	// the sub-folder that holds characters/ when the user picked one level too
+	// high, or the parent when they picked characters/ itself. "" when the pick
+	// looks right, or when nothing better was found. The wizard offers it as a
+	// one-click correction — the two mistakes it names are the ones that otherwise
+	// end in "I set the folder and nothing happened".
 	suggest string
 	// err is why the folder could not be read at all ("" = it was read).
 	err string
@@ -210,6 +218,12 @@ func scanBaseZip(path string, s baseScan) baseScan {
 
 // listSubdirs counts a directory's sub-folders and returns the first `sample` of
 // their names (sample 0 = count only). A missing directory is not an error here:
+// "there is no characters/ folder" is the answer, and it is one the report has to
+// be able to state.
+//
+// It reads in batches against baseScanEntryCap rather than calling ReadDir(-1),
+// so a directory with a hundred thousand entries costs a bounded slice instead of
+// materialising all of them (rule 4).
 func listSubdirs(dir string, sample int) (names []string, n int, capped bool) {
 	f, err := os.Open(dir)
 	if err != nil {
@@ -242,6 +256,10 @@ func listSubdirs(dir string, sample int) (names []string, n int, capped bool) {
 // baseSuggestion finds a better path than the one picked, for the two mistakes
 // that actually happen. Only called when the pick itself does not look like a
 // base, so it never second-guesses a correct answer.
+//
+// ONE LEVEL TOO DEEP is the folder literally named characters/ (or one of its
+// siblings): its parent is the base. ONE LEVEL TOO HIGH is the install root that
+// CONTAINS the base, which is the shape every AO2 client install has.
 func baseSuggestion(path string) string {
 	if isBaseSubdirName(filepath.Base(path)) {
 		if parent := filepath.Dir(path); parent != path {

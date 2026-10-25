@@ -5,6 +5,7 @@ import "testing"
 // RowOfRune is the vertical sibling of RuneAt: it answers "which display row is
 // the crawl on", which is what the chatbox needs in order to follow its own
 // typewriter the way AO2's ensureCursorVisible does (courtroom.cpp:4514-4521).
+//
 // It reads the SAME lineRanges table RuneAt and LineSpanX read, so these gates
 // drive the real accessor against real line data rather than a stub.
 

@@ -40,6 +40,10 @@ func TestSpriteHealAltsMatchesEmoteAlts(t *testing.T) {
 }
 
 // TestSpriteHealAltsNoOpsOnUnprefixedBase pins the preanim/already-bare case:
+// a base with no leading "(a)"/"(b)" on its final segment (a preanim, or a sprite
+// already resolved to its bare spelling) reconstructs to itself for BOTH links, so
+// PrefetchChain just retries the same URL twice — harmless given the per-alt 404
+// cache, and matches bareSpriteBase's pre-existing no-op behavior exactly.
 func TestSpriteHealAltsNoOpsOnUnprefixedBase(t *testing.T) {
 	cases := []string{
 		"https://h/base/characters/phoenix/cross_preanim", // preanim, no prefix

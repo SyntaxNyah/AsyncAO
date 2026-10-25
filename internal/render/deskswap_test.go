@@ -51,6 +51,9 @@ func deskSwapRig(t *testing.T) (*sdl.Renderer, *TextureStore, *Viewport) {
 // drawFill DIRECTLY, so it deliberately bypasses the `if scene.ShowDesk` gate at
 // the real desk draw site (viewport.go). What it proves is the RESIDENCY half —
 // that the store binds, releases and re-binds the desk layer correctly.
+// The STATE half — whether Scene.ShowDesk says yes at all — lives in the
+// courtroom and is pinned there (TestBackgroundChangeReDerivesDesk,
+// TestLateDeskUploadHealsTheMissingSet). Both halves had to be wrong together to
 // produce issue #21's "the default desk appears anyway": the store healed on
 // upload while the courtroom's own missing set stayed insert-only, so the two
 // disagreed and the texture was resident while ShowDesk still said no.
@@ -64,6 +67,7 @@ func deskDraws(t *testing.T, ren *sdl.Renderer, v *Viewport, deskBase string) bo
 
 // TestDeskNeverHoldsPreviousRoom is #44 itself: a background that ships no desk
 // image for the current position must draw NO desk — not the previous scene's.
+// AO2-Client's set_scene file_exists-checks the desk and hides the layer when it is
 // absent, with no fallback (../AO2-Client/src/courtroom.cpp:4628-4634, :4656-4663).
 func TestDeskNeverHoldsPreviousRoom(t *testing.T) {
 	ren, store, v := deskSwapRig(t)
@@ -90,6 +94,9 @@ func TestDeskNeverHoldsPreviousRoom(t *testing.T) {
 }
 
 // TestDeskStickyStillHoldsWhileStreaming is the anti-flash guard on the #44 fix:
+// a desk that genuinely exists and is merely still streaming must keep the current
+// scenery on screen, exactly as before. This is the test that fails if someone
+// "simplifies" the fix into unconditional non-stickiness.
 func TestDeskStickyStillHoldsWhileStreaming(t *testing.T) {
 	ren, _, v := deskSwapRig(t)
 

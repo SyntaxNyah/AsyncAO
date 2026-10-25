@@ -8,6 +8,9 @@ type classicState struct {
 	// --- classic-layout slot editor (the default/non-themed courtroom) ---
 	// Mirrors the themed editor's feel, but edits SCREEN-space "slots" persisted
 	// as window FRACTIONS (config.ClassicLayout) so they survive window resizes.
+	// classicOv is an App-local lock-free snapshot read by slotRect on the render
+	// path (the editor is the sole writer); slotReg is this frame's registered
+	// slots, populated ONLY while editing so the common frame stays alloc-free.
 	classicEdit     bool
 	classicOv       map[string][4]float64
 	classicOvLoaded bool
@@ -48,6 +51,8 @@ type classicState struct {
 	classicChromeBot int32
 	// tornZ is the session-scoped tear-off panel z-order (torntabs.go), a
 	// permutation of tornTabTable indices back-to-front. Empty = table order.
+	// It exists so clicking a floating panel brings it to the front instead of
+	// the fixed order always drawing Players over Music/Areas.
 	tornZ  []int
 	hidden map[string]bool
 }

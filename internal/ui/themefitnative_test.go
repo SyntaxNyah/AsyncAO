@@ -12,6 +12,13 @@ import (
 // set_courtroom_size() for the courtroom), so a theme's pixels land on screen
 // pixels untouched. Our window is resizable, so Native reproduces that by
 // pinning the scale at exactly 1.0 and only ever scaling DOWN.
+//
+// Both ends of that clamp are real, and the reference corpus proves it: 640×480
+// (config.MinWindowW/H) is BELOW the canvas of the largest shipped themes and
+// ABOVE the canvas of the smallest, so a plain min(sx, sy) would silently
+// upscale the small ones and a plain 1.0 would clip the big ones. The FLOOR
+// cases below pin "canvas smaller than the window stays 1:1 with bars"; the
+// CEILING cases pin "canvas bigger than the window shrinks uniformly and fits".
 
 // Which axis is expected to bind the Native scale. Naming it (instead of storing
 // a float literal) keeps the expectation about BEHAVIOUR — "the tighter axis
@@ -54,6 +61,8 @@ func TestThemeFitNativeFloorAndCeiling(t *testing.T) {
 			// FLOOR — the corpus's `Viewport` theme (256×256) at the smallest window
 			// AsyncAO allows. AO2 would have made the window 256×256; we cannot go
 			// below 640×480, so the canvas stays 1:1 and letterboxes permanently.
+			// That is the CORRECT reproduction, not a defect: upscaling is the one
+			// thing stock AO2 never does.
 			name:    "tiny canvas at the minimum window stays 1:1",
 			designW: 256, designH: 256,
 			winW: config.MinWindowW, winH: config.MinWindowH,
@@ -79,6 +88,8 @@ func TestThemeFitNativeFloorAndCeiling(t *testing.T) {
 		{
 			// CEILING — `microsoft surface 4k webao` (3240×2014), the only corpus
 			// theme whose canvas exceeds a normal window, at the minimum window.
+			// Width is the tighter axis here (640/3240 = 0.198 < 480/2014 = 0.238),
+			// so it binds and the height gets the bars.
 			name:    "4k canvas at the minimum window shrinks uniformly",
 			designW: 3240, designH: 2014,
 			winW: config.MinWindowW, winH: config.MinWindowH,

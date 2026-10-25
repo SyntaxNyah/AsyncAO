@@ -1,6 +1,9 @@
 package ui
 
 // The pane bake's [overrides] reading (L18).
+// The fix deletes the second reading outright: lay.r already carries the tier's
+// answer, so the pane re-bases what it is given and never learns that
+// [overrides] exists. Both gates below fail the moment that raw read comes back.
 
 import (
 	"testing"
@@ -47,6 +50,8 @@ func paneHostFixture(t *testing.T, host, rowKey string, row theme.Rect, seed map
 
 // TestPaneRefusesTheOverrideTheLayoutTierRefused: an [overrides] row addressing a
 // key the client will not move must not move it inside a pane either.
+// The specimen used to be player_list. That key stopped being inert when the
+// roster ruling gave the player list AO2's own rect (theme_layout.go,
 // courtroom.cpp:879), so the fixture moved to a key that is STILL inert — the
 func TestPaneRefusesTheOverrideTheLayoutTierRefused(t *testing.T) {
 	const host = "mute_button"
@@ -73,6 +78,8 @@ func TestPaneRefusesTheOverrideTheLayoutTierRefused(t *testing.T) {
 
 // TestPaneHonoursAO2sOtherSpellingForAPaneHost is the same seam from the other
 // side: a row written with the identifier AO2 reads FIRST must reach the widget.
+//
+// AO2 probes "immediate" then "pre_no_interrupt" for one button
 // (courtroom.cpp:1072), and its stock file spells the second — so the backstop
 // only ever fills that one. The layout tier folds the alias; the pane's raw read
 // did not, so an author who wrote `immediate` moved the button everywhere except

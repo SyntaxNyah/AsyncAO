@@ -21,6 +21,8 @@ import (
 // would let them in if they read its message (Nyathena's server.go answers a
 // firewall block with 403 Forbidden, a connection-rate trip with 429, and a lockdown
 // whose socket accept failed with 503 and the join message as the body).
+// Errors are values, so this stays in the package that PRODUCES the failure and
+// internal/ui reads it with errors.As. Nothing new points the wrong way.
 type DialError struct {
 	// URL is the ws:// or wss:// URL that was dialled.
 	URL string
@@ -50,6 +52,9 @@ const dialBodyMaxBytes = 1024
 
 // dialBody pulls the server's explanation out of a refusal response, or returns ""
 // when there is nothing worth showing a human.
+// The body is safe to read here and needs no Close: on a handshake failure the
+// library has already drained it, closed the real one, and replaced resp.Body with
+// an in-memory reader over what it kept.
 func dialBody(resp *http.Response) string {
 	if resp == nil || resp.Body == nil {
 		return ""

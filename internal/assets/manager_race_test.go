@@ -36,6 +36,7 @@ func (cs *countingServer) requestCount(path string) int {
 // blanked the shared per-(host, AssetType) learned slot before re-probing, so a
 // concurrent reader fell back to the type default (.webp), spuriously 404'd the
 // real .png and reported the asset missing without ever fetching it.
+//
 // The invariant: no reader may observe an empty entry while another valid asset
 // of that type is being re-validated. The fix never blanks the slot. The test
 // forces wall-clock overlap with distinct bases per iteration (the inflight map
@@ -54,6 +55,10 @@ func TestManagerConcurrentInvalidateWindowDoesNotStrandExistingAssets(t *testing
 	// others miss it.
 	const readersPerIteration = 4
 	// staggerStep spaces successive reader starts across the invalidate window.
+	// The window opens only after the missing button's first 404 completes
+	// (~0.1-1ms on loopback), so a same-instant start alone usually MISSES it;
+	// sweeping reader delays across ~0..2.25ms ((readers-1) steps) makes a hit
+	// near-certain without depending on scheduler luck.
 	const staggerStep = 750 * time.Microsecond
 
 	art := encodePNG(t, 8, 8, color.RGBA{G: 180, A: 255})
@@ -212,6 +217,12 @@ func TestManagerConcurrentInvalidateWindowDoesNotStrandExistingAssets(t *testing
 
 	// Assertion 3 (sharpest, immune to warning drops): interrogate the server's
 	// request map directly.
+	//   (a) No existing .png button was EVER probed with the .webp type default
+	//       — pre-fix, a reader that read the blanked slot probed exactly
+	//       existing-base + .webp. Post-fix the slot never blanks, so every
+	//       existing base resolves learned-first as .png only.
+	//   (b) Each existing .png path was requested exactly once (learned-first
+	//       single probe; T2 never re-fetches a distinct base).
 	for i := 0; i < raceIterations; i++ {
 		for k := 0; k < readersPerIteration; k++ {
 			p := existingPath(i, k)

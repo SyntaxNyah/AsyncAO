@@ -8,6 +8,8 @@ import (
 // TestMusicDisplayName pins the music-list DISPLAY transform (issue #43: the
 // list showed the whole wire entry, e.g. "999/songs/that/slap/[999]
 // Tranquility.ogg"). It is AO2-Client Courtroom::list_music (courtroom.cpp:
+// 1738-1782) — cut at the LAST '.', THEN take everything after the LAST '/' —
+// with the QUrl::fileName() ordering for direct http(s) links (handle_song).
 func TestMusicDisplayName(t *testing.T) {
 	cases := []struct{ track, want string }{
 		// The reporter's entry: deep nesting, spaces and brackets kept.

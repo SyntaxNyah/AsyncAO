@@ -120,6 +120,9 @@ func copyOneFile(from, to, rel string) error {
 // "" when it had none. Case-folded, because that is the question: on a
 // case-sensitive filesystem `ASYNCAO_THEME.INI` is a different file from
 // `asyncao_theme.ini`, and the copy has whichever one the source had.
+// It is readFolderSidecar's own probe, factored out rather than repeated: the two
+// callers must agree about which entry IS the sidecar, or one of them reads the
+// author's metadata while the other writes beside it.
 func foundSidecarRel(entries []srcEntry) string {
 	for _, e := range entries {
 		if strings.EqualFold(e.rel, sidecarName) {

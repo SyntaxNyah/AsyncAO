@@ -65,11 +65,17 @@ type charMeta struct {
 	// the name chain whether rung 2 has one.
 	showname string
 	// idle is courtroom.CharINI.IdleAnim: the FIRST [Emotions] entry's anim, i.e.
+	// the pose AO2 has selected the instant this character is picked. It is what a
+	// PREVIEW of somebody else must mint their sprite from, because "normal" is a
+	// convention plenty of packs do not keep. Empty until the fetch lands and for
+	// an ini with no emotes — an absent answer, so the reader keeps its optimistic
+	// convention for that window rather than drawing nothing.
 	idle string
 	done bool // fetch settled (hit or miss) — misses cache too (no refetch loop)
 	// stamp is when an IN-FLIGHT marker (done=false) was armed. A dropped async
 	// result leaves done=false forever; charMetaFor re-arms a fetch once the
 	// marker goes stale so a dropped char.ini heals on the next message (#69).
+	// Zero for settled entries, where `done` already decides.
 	stamp time.Time
 }
 
@@ -100,6 +106,8 @@ func (a *App) charMetaFor(char string) charMeta {
 	if m, ok := a.overlays.charMetaCache[url]; ok {
 		// A settled entry (hit or miss) is final. An in-flight marker that has
 		// gone stale means its result was dropped on channel overflow (#69):
+		// fall through and re-arm the fetch instead of returning a marker that
+		// would hold the character's blips/skin/effects forever.
 		if m.done || time.Since(m.stamp) < charMetaRefetchAfter {
 			return m
 		}
@@ -211,6 +219,8 @@ func (overlay *overlayState) pollCharMeta() {
 
 // remoteBlipFor is the courtroom's BlipNameFor callback: the speaker's char.ini
 // blip set, plus whether the fetch has settled. known=false (still in flight)
+// makes the courtroom hold the blip rather than default to "male", so the
+// first message a character sends already blips with their own set.
 func (a *App) remoteBlipFor(char string) (string, bool) {
 	m := a.charMetaFor(char)
 	return m.blips, m.done
@@ -308,6 +318,9 @@ func (r envResolver) OnPreanimEnd(courtroom.PreanimEndReason) {}
 // char.ini lookups (blips, chatbox skin/ink/showname/realization, scaling), the
 // asset/overlay engine, and the local env (side, inline emotes, preanim-end) — so
 // a room behaves identically in every mode.
+// ONE production caller: App.newRoom (newroom.go). Construction and wiring are
+// the same step on purpose — this used to be several call sites, and two of the
+// five forgot it.
 func (a *App) wireRoomCharMeta(room *courtroom.Courtroom) {
 	if room == nil {
 		return
@@ -319,6 +332,9 @@ func (a *App) wireRoomCharMeta(room *courtroom.Courtroom) {
 }
 
 // iniIdleAnimFor is THE seam for "what pose does this character stand in".
+// The answer is a NAME, not a URL, deliberately: the caller mints it through
+// urls.Emote + urls.EmoteAlts and PrefetchChain, i.e. the real sprite chain with
+// AO2-Client's two spellings ((a)X and bare X, CharLayer::load_image) and the
 func (a *App) iniIdleAnimFor(char, fallback string) string {
 	if idle := a.charMetaFor(char).idle; idle != "" {
 		return idle
@@ -330,6 +346,9 @@ func (a *App) iniIdleAnimFor(char, fallback string) string {
 // char.ini [Options] scaling= request (issue #21 label 15). It rides the SAME
 // cache and the SAME single fetch as blips and chat skins, so honouring every
 // character's declared filter costs no extra network probe.
+// Auto until the fetch lands — the speaker's NEXT message picks it up, and the
+// renderer's geometry rule covers the gap meanwhile, so a first message is never
+// wrong, only potentially less specific than the author asked for.
 func (a *App) remoteScalingFor(char string) courtroom.ScalingMode {
 	return a.charMetaFor(char).scaling
 }

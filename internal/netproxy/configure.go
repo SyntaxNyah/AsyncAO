@@ -8,6 +8,14 @@ import (
 // Configure is how the app tells this package what the user chose. It is the
 // only entry point that reads the operating system, and it is called at boot and
 // again when the setting changes — never per request.
+//
+// THREADING. Discovery is a registry read or a subprocess depending on the
+// platform, so it must not sit on a hot path (hard rule 2). It does not need its
+// own goroutine either: the caller is `main` before sdl.Init, where a stall
+// costs boot latency rather than frames. Note the justification is "before
+// sdl.Init", NOT "before the render loop exists" — runtime.LockOSThread is the
+// first statement of main, so by the time this runs the main goroutine is
+// already pinned to the render thread.
 
 // currentPolicy is the published snapshot. atomic.Pointer because it is read
 // from every transport goroutine while Configure may replace it, and the read
@@ -21,9 +29,12 @@ var discoverSystem = func() *Policy { return nil }
 
 // Configure resolves mode into a policy, installs it, and returns it so the
 // caller can show the user what happened.
+//
 // ModeSystem consults the environment FIRST and the operating system second.
 // That order is deliberate: an environment variable is an explicit, per-launch
 // instruction from whoever started the program, while the OS setting is ambient.
+// Someone who runs AsyncAO with HTTPS_PROXY set has said something more specific
+// than their control panel has.
 func Configure(mode Mode, manualURL string) *Policy {
 	p := resolvePolicy(mode, manualURL)
 	SetPolicy(p)

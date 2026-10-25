@@ -3,6 +3,9 @@ package ui
 // The system-font CENSUS: the backstop that ends the hardcoded-fallback-list
 // treadmill, and the reason a rune the client cannot draw should now be a
 // genuinely unassigned codepoint rather than "nobody added that font path yet".
+// EVERYTHING HERE IS OFF THE RENDER THREAD. Parsing is done through
+// sfnt.ParseReaderAt, so a face is never slurped into the heap — but that also
+// means every GlyphIndex call is a disk read, which is exactly the synchronous
 
 import (
 	"os"
@@ -158,6 +161,11 @@ func isStyledCut(path string) bool {
 	// Windows' terse convention: a style letter tacked onto the family stem —
 	// segoeuib (bold), segoeuii (italic), segoeuiz (bold italic), LeelaUIb,
 	// LeelUIsl (semilight), mmrtextb.
+	//
+	// A BARE trailing "i" is deliberately not in this list: plenty of regular faces
+	// legitimately end in one (segoeui, LeelaUI, gadugi), and demoting those ranked
+	// every family's bold cut above its regular. Windows spells italic as a DOUBLED
+	// i on a stem that already ends in one, which is what "ii" catches.
 	for _, suf := range []string{"bi", "bd", "sl", "z", "ii"} {
 		if strings.HasSuffix(stem, suf) {
 			return true

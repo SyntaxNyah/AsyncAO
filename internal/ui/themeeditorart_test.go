@@ -1,6 +1,11 @@
 package ui
 
 // THE EDITOR'S ART SYNC, DRIVEN (v1.90.0 W7b) — themeeditorart.go.
+//
+// Every behavioural gate here goes through App.Frame and asserts on the page the BAKE
+// resolved, never on the plan alone: the defect these close was a plan that was correct
+// the moment it was built and stale for the rest of the session, so a gate that read
+// back what it had just written would have passed against the broken build.
 
 import (
 	"strings"
@@ -26,6 +31,7 @@ const (
 
 // stageEditorArt opens the editor over the canvas fixture with ONE extra element: a
 // generator box, authored before the first editor frame exactly as the shape boxes are.
+//
 // It returns the shape's target (index 0 of the pair) and the generator's index.
 func stageEditorArt(t *testing.T) (a *App, cleanup func(), shape editTarget, genIdx int) {
 	t.Helper()
@@ -130,6 +136,11 @@ func TestAGeneratorEditMovesTheDrawnPage(t *testing.T) {
 
 // TestDeletingAnElementKeepsItsNeighboursArt covers the OTHER half of the same defect,
 // and it is the half no field edit can reach.
+//
+// An element's identity is its INDEX (theme.Element), and the plan's ElemKeys are
+// indexed by it. So deleting element 3 renumbers every element after it, and a stale
+// plan hands each survivor its PREDECESSOR's art — here, the deleted shape's "no art at
+// all", which reads as the generator box going blank for no reason.
 func TestDeletingAnElementKeepsItsNeighboursArt(t *testing.T) {
 	a, cleanup, shape, genIdx := stageEditorArt(t)
 	defer cleanup()
@@ -164,6 +175,7 @@ func TestDeletingAnElementKeepsItsNeighboursArt(t *testing.T) {
 }
 
 // TestEditingParamsDoesNotLeakTiles is the cap (hard rule 4) rather than the picture.
+//
 // A generator's key is the content address of its params, so every keystroke in the
 // Params row mints a NEW key. Without the prune, typing a three-digit number would
 // upload three 256 KiB tiles and release none, for as long as the editor stays open.
@@ -201,6 +213,11 @@ func TestEditingParamsDoesNotLeakTiles(t *testing.T) {
 
 // reopenEditorAtBaseline closes and re-opens the editor so the CURRENT model becomes the
 // document's baseline.
+//
+// The art fixture authors its generator after stageEditorCanvas has already opened the
+// editor (which is what makes it an element the gates can edit), so it is not in that
+// document's baseline — and a discard gate over an element the baseline never had would
+// be measuring a DELETE, not a revert. Two production doors, no second construction path.
 func reopenEditorAtBaseline(t *testing.T, a *App) {
 	t.Helper()
 	from := a.te.editorReturn
@@ -213,6 +230,8 @@ func reopenEditorAtBaseline(t *testing.T, a *App) {
 
 // TestDiscardingOnExitPutsTheBaselineArtBack is the exit direction of the wave's defect,
 // and it is the one site themeeditorart.go's header named as covered and was not.
+// It asserts through the BAKE after real frames, not on the plan alone: the plan is what
+// was wrong, so a gate that only read the plan back would be arguing with itself.
 func TestDiscardingOnExitPutsTheBaselineArtBack(t *testing.T) {
 	a, cleanup, _, genIdx := stageEditorArt(t)
 	defer cleanup()
@@ -274,6 +293,12 @@ func TestDiscardingOnExitPutsTheBaselineArtBack(t *testing.T) {
 
 // TestDiscardingADeleteOnExitPutsTheNeighboursArtBack is the same exit through the
 // index-shift half of the defect, which no field edit can reach.
+//
+// An element's identity is its INDEX, so deleting the shape in front of the generator
+// renumbers it — and undoing that by discarding renumbers it BACK. A plan left over from
+// the deleted state hands the restored shape the generator's tile and the generator
+// nothing, which is two elements drawing each other's art after an exit that promised to
+// change nothing.
 func TestDiscardingADeleteOnExitPutsTheNeighboursArtBack(t *testing.T) {
 	a, cleanup, shape, genIdx := stageEditorArt(t)
 	defer cleanup()
@@ -327,6 +352,9 @@ func TestDiscardingADeleteOnExitPutsTheNeighboursArtBack(t *testing.T) {
 // TestTheArtSignatureCoversWhatThePlannerReads drives themeArtSig against every field
 // planElements actually reads. A signature that misses one is a field whose edit is
 // invisible until something else moves — the original defect, wearing a hash.
+//
+// It MUTATES and compares rather than restating the fold, so it fails when a field is
+// dropped from the signature and stays green when the hash's parameters change.
 func TestTheArtSignatureCoversWhatThePlannerReads(t *testing.T) {
 	base := func() *theme.Sidecar {
 		sc := theme.NewSidecar()

@@ -11,6 +11,10 @@ import (
 // the find): the ×N collapse only ever folded CONSECUTIVE duplicates, which two
 // interleaved chatty sources defeat completely. The panel showed the KFO packet
 // family this client deliberately does not implement (TT / TIN / TF / CHECK)
+// alternating with one absent desk overlay re-reported per IC message, so
+// neither was ever the immediately previous line: 25 of the ring's rows carried
+// two distinct messages and every genuine one-off failure aged out behind them.
+//
 // The deferred-packet DECISION is untouched — this is presentation only.
 
 // icPacketLine / assetMissLine are the two field classes, verbatim in shape.

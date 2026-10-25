@@ -25,6 +25,10 @@ func seedOverlayMount(t *testing.T, mount, rel string, data []byte) {
 }
 
 // TestStreamingManagerLocalOverlayServes is the load-bearing proof for Part 1:
+// a STREAMING manager (network client source, localMode=false) with a mount
+// overlay installed resolves a local:// URL END TO END from the seeded mount —
+// exactly the "Local base" source working while connected. Without the overlay
+// the network client would transport-error on a local:// URL.
 func TestStreamingManagerLocalOverlayServes(t *testing.T) {
 	mount := t.TempDir()
 	seedOverlayMount(t, mount, "characters/phoenix/(a)normal.png", []byte("PNGDATA"))
@@ -207,6 +211,11 @@ func TestLocalOverlaySwapDuringFetchesRaceClean(t *testing.T) {
 // change behavior. We install an overlay pointing at a DIFFERENT mount that does
 // NOT contain the asset; the local-mode manager must still resolve from its own
 // source (never the overlay).
+// The routing is by ORIGIN, not by mode (netFetch → localSourceFor): the decoy
+// overlay was built over a different mount set, so it owns a different
+// local://m-<hash>/ origin and cannot claim this URL. That is what keeps this
+// expectation green — and what makes it the open–closed evidence for the
+// mount-rescan fix below, which had to change the routing WITHOUT changing this.
 func TestLocalModeManagerIgnoresOverlay(t *testing.T) {
 	realMount := t.TempDir()
 	seedOverlayMount(t, realMount, "characters/phoenix/(a)normal.png", []byte("REAL"))
@@ -232,6 +241,8 @@ func TestLocalModeManagerIgnoresOverlay(t *testing.T) {
 
 // TestLocalModeServesTheNewMountSetAfterARescan is the load-bearing proof for
 // the reported "is not under local origin" failure.
+// Here the NEW mount holds the only copy of the asset, so nothing but correct
+// origin routing can make this pass.
 func TestLocalModeServesTheNewMountSetAfterARescan(t *testing.T) {
 	oldMount := t.TempDir()
 	seedOverlayMount(t, oldMount, "characters/phoenix/(a)normal.png", []byte("OLD"))
@@ -259,6 +270,11 @@ func TestLocalModeServesTheNewMountSetAfterARescan(t *testing.T) {
 
 // TestStaleLocalOriginStillServesFromTheSetItWasMintedUnder is the other half of
 // the fix, and the reason it is routing-by-origin rather than origin-aliasing:
+// URLs the session is ALREADY holding (a staged scene, an in-flight prefetch)
+// were minted under the previous mount set and must keep resolving against THAT
+// set. Serving them from the current mounts instead would cache foreign bytes
+// under the old origin's keys, which is exactly the per-mount-set cache
+// separation the origin hash exists to guarantee.
 func TestStaleLocalOriginStillServesFromTheSetItWasMintedUnder(t *testing.T) {
 	oldMount := t.TempDir()
 	seedOverlayMount(t, oldMount, "background/court/defenseempty.png", []byte("OLDBG"))
@@ -287,6 +303,9 @@ func TestStaleLocalOriginStillServesFromTheSetItWasMintedUnder(t *testing.T) {
 // claim the origin reports "cannot serve" — never a 404, which would let the
 // diagnostic walk mark the asset [missing] (the contract
 // TestStreamingManagerNilOverlayCannotServe pins for the nil case).
+// If someone "simplified" localSourceFor to just return the overlay whenever one
+// is installed, this fails: the overlay would answer with its own conclusive
+// ErrAssetNotFound for a mount set it never scanned.
 func TestUnknownLocalOriginIsNotServedByAMismatchedOverlay(t *testing.T) {
 	mount := t.TempDir()
 	seedOverlayMount(t, mount, "characters/phoenix/(a)normal.png", []byte("MINE"))

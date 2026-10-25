@@ -109,6 +109,11 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 
 	// Packed-room catch-up vs. the OG-client queue. ON (default) = webAO pacing:
+	// when 20 people talk at once, backlog messages skip their animations so the
+	// stage tracks real-time. OFF = the original AO2 client's queue — every line
+	// plays in full and in order, nothing cut off, but a room full of webAO users
+	// (who skip the queue) can leave you behind. The log keeps every line either
+	// way. (This is the "message queue" toggle — it was a setting, not removed.)
 	cuOn, cuThresh := a.d.Prefs.Load().CatchUp()
 	const cuLabel = "Catch up in packed rooms — uncheck for the OG-client queue (every line plays in full, nothing cut off)"
 	if next := c.Checkbox(pad, y, cuLabel, cuOn); next != cuOn {
@@ -281,6 +286,8 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y += 26
 	// Detailed transcript logging (opt-OUT since the flip — every other
 	// AO client saves the log, and people only discover they wanted it afterwards).
+	// Existing configs are moved once by DetailedLogDefaultMigrated; turning it back
+	// off here sticks forever.
 	detLog := a.d.Prefs.Load().DetailedLog
 	if next := c.Checkbox(pad, y, "Save the chat log to disk (ON by default): append every IC line to logs/transcript.log with timestamp, server, area, character + showname", detLog); next != detLog {
 		a.d.Prefs.Update(func(

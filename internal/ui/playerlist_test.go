@@ -132,6 +132,10 @@ func TestPlayerRosterRowsAreaSort(t *testing.T) {
 }
 
 // TestPlayerRosterRowsLiveUsesGasOrder pins the bug fix: on the LIVE (PR/PU)
+// roster — which is UID-ordered — the grouped area headers must NOT follow the
+// lowest-UID player's area. They follow OUR area first, then the server's /gas
+// order (from the areaPlayers snapshot). Reproduces the report: UID 0 (Marty) in
+// "Pizza Room 1" must not sit above the "Lobby" we're standing in.
 func TestPlayerRosterRowsLiveUsesGasOrder(t *testing.T) {
 	a := &App{env: env{}}
 	a.roster.livePlayersOn = true // rosterView() == liveRoster (UID order)
@@ -251,6 +255,8 @@ func TestCurAreaPlayers(t *testing.T) {
 // optimistic local selection (curArea) AND sends the MC area transfer, so every
 // jump entry point (header click, cards, chips, auto-follow) updates the
 // current-area highlight — the reported "click to jump doesn't select" bug.
+// Per-area scrollback is OFF here (the default), so switchAreaScrollback no-ops
+// and exactly one MC packet goes out.
 func TestJumpToAreaSelectsAndSends(t *testing.T) {
 	a := testTabApp(t)
 	var sent []protocol.Packet
@@ -497,6 +503,8 @@ func TestApplyAreaJumpFollowLifecycle(t *testing.T) {
 
 // TestJumpToAreaArmsFollow pins that jumping arms the scroll-follow latch with the
 // target area and a deadline one window out — the state the per-frame nudge reads.
+// Driven through jumpToArea (with a live session, or the guard returns early) so the
+// arming site, not just the field, is covered.
 func TestJumpToAreaArmsFollow(t *testing.T) {
 	a := testTabApp(t)
 	base := time.Unix(2_000, 0)

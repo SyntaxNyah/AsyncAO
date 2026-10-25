@@ -90,6 +90,9 @@ func fxTestStore(t *testing.T) *render.TextureStore {
 const fxTestPageSide = 8
 
 // fxTestPage is an ANIMATED page with n distinct frames and a uniform delay.
+// The frames differ from each other so the page is genuinely an animation rather
+// than n copies of one picture — a page whose frames were identical would make every
+// "the frame advanced" assertion below pass without the index ever moving.
 func fxTestPage(t testing.TB, store *render.TextureStore, n int, delay time.Duration) *render.TexturePage {
 	t.Helper()
 	d := &assets.Decoded{Width: fxTestPageSide, Height: fxTestPageSide, Animated: n > 1}
@@ -126,6 +129,9 @@ func fxNeutralTerms(fx elemFX) bool {
 
 // TestEveryEffectKindIsResolvable pins the resolver TOTAL over theme.EffectKind, the
 // way TestEveryElementKindHasAPainter pins the painter table.
+// The second half is the design's own rule that every effect returns static at
+// amplitude 0. That is what makes `amp_pct = 0` a supported way to author a
+// still element that still NAMES its effect (so the editor can turn it back on),
 func TestEveryEffectKindIsResolvable(t *testing.T) {
 	for k := theme.EffectKind(0); k < theme.EffectKindCount; k++ {
 		if k.String() == "" {
@@ -176,6 +182,10 @@ func TestEveryEffectKindIsResolvable(t *testing.T) {
 
 // TestPeriodicEffectsNeverGoIdleMidCycle is the other half of the doctrine, and the
 // one a naive implementation gets wrong.
+// A sine crosses zero twice per period. A static test written on the INSTANTANEOUS
+// term would therefore report "nothing moved" at every crossing, the pacer would drop
+// to the idle rate for that frame, and a running animation would stutter twice a
+// cycle — on a machine fast enough to sample the crossing, which is every machine.
 func TestPeriodicEffectsNeverGoIdleMidCycle(t *testing.T) {
 	for k := theme.EffectKind(0); k < theme.EffectKindCount; k++ {
 		if k == theme.FXNone || effectIsStateful[k] {
@@ -362,6 +372,10 @@ func TestElementFrameIsAFunctionOfElapsed(t *testing.T) {
 		t.Error("a looping page reported not-live — a looping backdrop would freeze the moment the pacer idled")
 	}
 	// A page whose clock has not reached it yet is a STILL PICTURE, both ways round.
+	// pageFrameAt reads a negative elapsed as "before the first delay", so without the
+	// guard a one-shot page reports frame 0 with done=false on every frame — noting the
+	// census forever while never advancing, which is the same idle-CPU-burn defect the
+	// effect resolver's negative-elapsed arm exists to prevent.
 	for _, loop := range []bool{false, true} {
 		if i, live := elementFrameIndex(page, -time.Second, loop); i != 0 || live {
 			t.Errorf("a page at a NEGATIVE elapsed (loop=%v) reported frame %d live=%v, want frame 0 and "+
@@ -385,6 +399,9 @@ func TestElementFrameIsAFunctionOfElapsed(t *testing.T) {
 
 // TestElapsedForIsAllocFree measures elementElapsed — the wave plan calls it
 // "elapsed-for"; design §Q3's own code sketch spells it elementElapsed.
+// It runs once per element per frame, at up to theme.ElementCap elements, inside the
+// one frame gated at exactly zero allocations. An allocation here is 96 of them a
+// frame, on every themed install that uses the feature at all.
 func TestElapsedForIsAllocFree(t *testing.T) {
 	a := &App{env: env{}, toolbox: toolboxState{themeAt: time.Now().Add(-time.Second)}}
 	a.fxPool.themeClocks[1] = themeClock{speedPct: 250}
@@ -427,6 +444,7 @@ func fxDrawRig(t *testing.T) (*App, *themeLayoutCache, *[]*bakedElement, func())
 // TestStaticElementNeverCallsNoteAnimating is the idle half of the doctrine at the
 // per-element level: an element with no effect, an amplitude-zero effect, a finished
 // one-shot or a static page must leave the census untouched.
+// This is the v1.56.0 idle-CPU-burn arc's rule applied to a brand-new draw surface.
 // A themed client sitting on a settled courtroom must fall to the idle rate, and one
 // element quietly noting every frame is enough to stop that happening — with nothing
 // on screen to explain why the fans are on.
@@ -577,6 +595,9 @@ func TestIdleElementsDoNotPinTheFrameRate(t *testing.T) {
 // TestElementEffectsAreAllocFreeAtCap extends W3's cap-full alloc gate over the code
 // this wave added: theme.ElementCap elements, every effect kind in rotation, all of
 // them LIVE, drawn on every frame.
+// It is also the gate that catches the subtle one: an alpha effect on an ElemText
+// that folded its alpha into the ink colour would miss the label cache and rasterise
+// a texture EVERY FRAME (ui.go textKey includes the colour). That is invisible to
 func TestElementEffectsAreAllocFreeAtCap(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
@@ -742,6 +763,10 @@ func TestFXPoolIsFixedAndSelfClears(t *testing.T) {
 // TestOneShotEffectReleasesItsFXSlot is the pool's whole reason for existing, seen
 // from the element's side: a slam fires, finishes, the element goes away, and the
 // slot comes back on its own.
+// The slot is deliberately NOT released the instant the one-shot finishes. Releasing
+// it there would let the very next pass re-acquire a fresh slot, restart the effect
+// and note the census again — an infinite replay that pins the pacer forever, which
+// is precisely the failure themeFXIdleFrames is named for.
 func TestOneShotEffectReleasesItsFXSlot(t *testing.T) {
 	a, lay, _, restore := fxDrawRig(t)
 	defer restore()
@@ -879,6 +904,9 @@ func absDuration(d time.Duration) time.Duration {
 // ---------------------------------------------------------------------------
 
 // TestEffectBindNeverBuriesItsWidget is the gate the shipped corpus asked for.
+// So the rule this pins: a bind's plate IS its effect. `amp_pct` is the peak the wash
+// reaches, and the effect's envelope scales it from there — which means it is never
+// stronger than the author asked for, and a decayed one-shot is GONE.
 func TestEffectBindNeverBuriesItsWidget(t *testing.T) {
 	a, lay, _, restore := fxDrawRig(t)
 	defer restore()
@@ -1033,6 +1061,11 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 
 	// A WASH is the one element whose frozen form is not its baked form, and it is
 	// the case that makes ReduceMotion dangerous rather than merely disappointing.
+	// `[effect.viewport] effect = fade, amp_pct = 100` bakes a plate at FULL opacity
+	// over the whole stage and lets the effect's envelope decide how much of it
+	// shows. Painting it under the frozen branch draws the peak — a solid sheet over
+	// the courtroom, put there by the accessibility option. Freezing resolves amp 0,
+	// and amp 0 on a wash is nothing at all.
 	seen = seen[:0]
 	prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true }) // already on; restated so the block reads on its own
 	a.beginThemeFXPass()
@@ -1134,6 +1167,8 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 
 	// The bindings. Every one whose widget this layout PLACES must bake as a wash;
 	// the one that names no widget at all must be inert (§6.6 R10, skip-if-absent).
+	// The expectation is derived from the layout rather than written down, so the
+	// gate cannot fail for the uninteresting reason that a default rect moved.
 	want := 0
 	for i := range sc.Effects {
 		b := &sc.Effects[i]
@@ -1170,6 +1205,10 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 	}
 	// ReduceMotion stills the same frame. Measured HERE rather than on a synthetic
 	// element because this is the shape a user actually has: a real theme, applied.
+	// A SUB-TEST so its skip is its own. The census is a whole-frame signal, so the
+	// fixture's own chrome can drown the element model out — the same limitation
+	// TestIdleElementsDoNotPinTheFrameRate names — and a skip there must not hide
+	// the assertions above, which have already run.
 	t.Run("reduce motion stills the whole frame", func(t *testing.T) {
 		prefs := a.d.Prefs
 		if prefs == nil {

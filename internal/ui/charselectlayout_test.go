@@ -177,6 +177,8 @@ char_select_right = 691, 325, 20, 20
 }
 
 // TestCharSelectSpacingHonoursALegitimateZero pins designPair's contract on THIS key.
+// No corpus theme ships `char_button_spacing = 0, 0` today, but twelve ship
+// `emote_button_spacing = 0, 0` and mean flush buttons — AO2 applies no positivity
 // test to either (get_button_spacing, text_file_functions.cpp:193-216). Substituting
 // the stock 7 for a declared 0 would walk the grid a pixel further off the artwork
 // with every column, which is the bug class issue #20 is about.
@@ -243,6 +245,8 @@ func TestCharSelectStaysClassicWithoutATheme(t *testing.T) {
 	}
 	// Themed geometry, but the user turned the theme layout off: same answer, because
 	// "use the theme's layout" is one concept and one preference for both canvases.
+	// Deliberately WITHOUT a manual invalidation — the toggle changes no window, band,
+	// fit or theme, so if it is not in the cache key the screen stays letterboxed.
 	a = stageCharSelect(t, stockCharSelectDesign())
 	if !a.charSelectLayout(1152, 864).valid {
 		t.Fatal("fixture did not build a canvas to begin with")
@@ -384,6 +388,9 @@ func TestCharSelectCanvasNeverPaintsIntoTheChromeBand(t *testing.T) {
 }
 
 // TestCharSelectRectsRideTheCanvasTransform is the structural half of the #20 fix:
+// every widget rect is the canvas rect's own transform applied to the design
+// position, so the backdrop and everything on it move together in every mode —
+// Stretch included, where the axes scale differently.
 func TestCharSelectRectsRideTheCanvasTransform(t *testing.T) {
 	const w, h int32 = 1400, 900
 	for _, mode := range []int{config.ThemeFitNative, config.ThemeFitLetterbox, config.ThemeFitStretch, config.ThemeFitCrop} {

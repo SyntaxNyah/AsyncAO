@@ -26,6 +26,10 @@ const (
 	blipChannel = 0
 	// alertChannel is reserved for callword/friend pings. A callword fires on
 	// message ARRIVAL, when the blip channel is momentarily free — so Play(-1)
+	// used to land the ping on channel 0, and the typewriter's very first blip
+	// then HaltChannel(0)'d it, cutting the ping the instant blips started
+	// ("can't hear the callword when blips are on"). A dedicated reserved
+	// channel keeps blips and a burst of emote SFX from ever stealing it.
 	alertChannel = 1
 	// reservedChannels holds channels [0,N) (blip + alert) back from the
 	// Play(-1) SFX pool so only their explicit owners use them.
@@ -61,6 +65,9 @@ const (
 	musicFadeOutMs = 4000
 
 	// Music effect bit flags (MUSIC_EFFECT, ../AO2-Client/src/datatypes.h:95-101).
+	// Pinned against config.MusicFlag* to catch config drift at compile time.
+	// The looping field / NO_REPEAT are applied by the courtroom before we ever
+	// see them (they arrive as the loop bool).
 	musicEffectFadeIn  = 1 << 0 // ramp the NEW track up (config.MusicFlagFadeIn)
 	musicEffectFadeOut = 1 << 1 // ramp the PREVIOUS track down (config.MusicFlagFadeOut)
 	musicEffectSyncPos = 1 << 2 // start new track at previous track's position (config.MusicFlagSyncPos)
@@ -114,6 +121,8 @@ type Audio struct {
 
 	// alert is the built-in notification ping — the guaranteed-audible default
 	// for callword/friend alerts whenever the user set no custom sound file.
+	// Synthesized once at open, freed at close; never enters the asset chunk
+	// cache.
 	alert *mix.Chunk
 
 	// modBan/modKick/modMute are the built-in defaults for the optional
@@ -519,6 +528,10 @@ func (a *Audio) Frame() {
 // finishes — there is no natural-end observer otherwise (no HookMusicFinished callback,
 // which would fire on a C thread and can't touch this state under rule #1). Stale
 // a.music != nil then lies to two guards: PlayMusic's idempotency check (audio.go:687)
+// Only reaps a loaded, non-looping stream that has stopped: a looping track never
+// stops on its own, and music is never paused in this client (no Mix_PauseMusic path),
+// so !PlayingStream() with a.music != nil is unambiguously a finished one-shot — never
+// a pause or a load gap (startMusic's Play() begins synchronously before this runs).
 func (a *Audio) reapFinishedMusic() {
 	if !a.enabled || a.music == nil {
 		return // nothing loaded or disabled
@@ -669,6 +682,9 @@ func (a *Audio) playChunk(chunk *mix.Chunk, kind pendingKind) {
 }
 
 // PlayFile plays a sound from a local file PATH (an opt-in user alert sound:
+// callword / friend), loaded + cached by path — OFF the courtroom asset
+// pipeline. A missing/bad path just no-ops. Render thread only; the file loads
+// once (first play), then it's a cached pointer pass like any other chunk.
 func (a *Audio) PlayFile(path string) {
 	if path == "" || !a.enabled {
 		return
@@ -690,6 +706,8 @@ func (a *Audio) PlayFile(path string) {
 
 // request plays the chunk for base now if cached, else marks it pending and —
 // for SFX/shout, which nothing else prefetches — fetches the bytes itself.
+// Blips are prefetched by the courtroom (resolveBlip); music self-fetches in
+// PlayMusic.
 func (a *Audio) request(base string, kind pendingKind) {
 	if base == "" || !a.enabled {
 		return
@@ -739,6 +757,9 @@ func (a *Audio) PlayShout(base string) { a.request(base, pendingShout) }
 
 // PlaySFX plays an emote sound effect immediately. The SFX_DELAY is applied
 // UPSTREAM by the courtroom's Update tick (armSFXDelay / fireSFXDelay, #12):
+// the courtroom holds the play until the deadline, so by the time this is
+// called the delay has already elapsed — the duration arg is vestigial (the
+// AudioSink signature keeps it) and intentionally ignored here. // AssetType: SFX
 func (a *Audio) PlaySFX(base string, _ time.Duration) { a.request(base, pendingSFX) }
 
 // PlayBlip fires one chat blip. // AssetType: Blip
@@ -776,6 +797,7 @@ func (a *Audio) PlayMusic(url string, loop bool, effects int) {
 		// SYNC_POS: capture the PREVIOUS track's position NOW, before the new one
 		// overwrites it (#112). AO2: ../AO2-Client/src/aomusicplayer.cpp:132-136
 		// reads the old stream's pos, then plays the new one at that exact spot.
+		// We record it on the pendingPlay entry; startMusic consumes it as seekSec.
 		if effects&musicEffectSyncPos != 0 {
 			if pos, _, ok := a.MusicClock(); ok {
 				syncPosSec = pos
@@ -818,6 +840,9 @@ func (a *Audio) StopMusic() {
 
 // CurrentMusicURL is the URL of the track the single music stream is currently
 // playing ("" = nothing). Multi-tab music continuity (see internal/ui parkActive)
+// reads it to decide whether the active tab OWNS the live stream: if the tab's
+// resumed track equals this, PlayMusic is a no-op and the stream (and its
+// position) survives the switch untouched; if it differs, the stream must swap.
 func (a *Audio) CurrentMusicURL() string { return a.musicURL }
 
 // MusicPlaying reports whether the single music stream is live (a track is
@@ -986,6 +1011,9 @@ func (a *Audio) startMusic(url string, data []byte, loop bool, effects int, seek
 	}
 	if crossfade {
 		// Start the old track's native fade-out now that the new track is live.
+		// Mix_FadeOutMusicStream is linear (SDL Mixer X has no log fade), which is
+		// close enough to AO2's BASS_SLIDE_LOG for a 4s music fade; it fades in the
+		// audio callback and halts the stream when done (stepFadeOutOld reaps it).
 		a.musicOld.FadeOutStream(musicFadeOutMs)
 	}
 	// Cross-tab resume + SYNC_POS seek (best-effort): jump to where the track

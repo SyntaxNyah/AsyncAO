@@ -14,6 +14,9 @@ import (
 
 // crawlRow is the display row holding the LAST revealed rune, i.e. where AO2
 // puts its cursor before calling ensureCursorVisible (chat_tick's real_tick_pos).
+// The row itself comes off the raster's own line table (RowOfRune), the same one
+// the selection geometry reads, so the answer can never drift from where the
+// glyphs are.
 func crawlRow(m *render.MessageRaster, visible int) int {
 	if m == nil || visible <= 1 {
 		return 0
@@ -24,6 +27,9 @@ func crawlRow(m *render.MessageRaster, visible int) int {
 // chatCrawlScrollPx is ensureCursorVisible as a Y offset to SUBTRACT from the
 // message origin: 0 while the revealing row is already inside availH, otherwise
 // exactly far enough to bring that row's bottom to the box's bottom edge.
+// It is deliberately derived from the row the CRAWL is on rather than from the
+// message's total height. Anchoring to the end instead would jump a six-line post
+// to its bottom before a single character of it had been revealed, which is the
 func chatCrawlScrollPx(row int, lineH, availH int32) int32 {
 	if row <= 0 || lineH <= 0 || availH <= 0 {
 		return 0
@@ -38,6 +44,10 @@ func chatCrawlScrollPx(row int, lineH, availH int32) int32 {
 // chatCrawlOffset is the two above composed for a draw site: the LOGICAL pixels
 // the message (and its selection highlight, which must move with it) shifts up so
 // the currently-revealing row stays in the box.
+//
+// availH is the room the text actually has — the clip the caller is about to set,
+// measured from the text origin, NOT the chatbox rect: the two differ by the
+// name-plate strip, and AO2's message widget is likewise positioned inside its
 // chatbox rather than over it (courtroom.cpp:3310).
 func chatCrawlOffset(m *render.MessageRaster, visible int, availH int32) int32 {
 	if m == nil {

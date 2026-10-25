@@ -3,6 +3,11 @@ package themepack
 // INSPECT — read a bundle's CENTRAL DIRECTORY and nothing else.
 // ONE concern: "what is in this file, and would I accept it?", answered without
 // decompressing a byte.
+// The one exception is deliberate and bounded: when the bundle carries an
+// asyncao_theme.ini, exactly THAT entry is decompressed (bounded by the format's
+// own theme.IniDocByteCap) so the sheet can show a name, an author and a licence
+// instead of a folder name. One small entry, chosen by name, after every cap has
+// already been checked.
 
 import (
 	"archive/zip"
@@ -32,6 +37,7 @@ type packEntry struct {
 }
 
 // Inspect reads path's central directory and reports what a bundle holds.
+//
 // BLOCKING — goroutine only (hard rule 2). It opens the file read-only, reads
 // metadata, and closes it before returning.
 func Inspect(name string) (*Manifest, error) {
@@ -46,6 +52,8 @@ func Inspect(name string) (*Manifest, error) {
 
 // packReader is an open bundle plus its on-disk size, which is the number a user
 // actually cares about ("will this fit on a chat message?").
+// A POINTER to the zip.Reader, never an embedded value: zip.Reader carries a
+// sync.Once, so copying one is a vet failure and a latent double-initialisation.
 type packReader struct {
 	r        *zip.Reader
 	f        *os.File
@@ -55,6 +63,9 @@ type packReader struct {
 func (p *packReader) Close() error { return p.f.Close() }
 
 // openPack opens a bundle and refuses anything that is not a zip BY ITS BYTES.
+// The extension is never the test: a friend who re-zipped the folder sends a
+// .zip, and a .aotheme that is really a screenshot must not be trusted because
+// of its name (the assets.Sniff doctrine, applied to archives).
 func openPack(name string) (*packReader, error) {
 	f, err := os.Open(name)
 	if err != nil {
@@ -269,6 +280,9 @@ func normalizeEntryName(name string) string {
 
 // describeContents fills the two lists the consent sheet shows: what art comes
 // with the theme, and what typefaces — with whether their licence travels along.
+// BOTH BOUNDED (hard rule 4): theme.MediaCap and theme.FontCap are the format's
+// own manifest bounds, reused rather than restated so the sheet cannot claim more
+// entries than a sidecar could ever declare.
 func describeContents(m *Manifest, entries []packEntry) {
 	licenses := make(map[string]string, theme.FontCap)
 	for _, e := range entries {

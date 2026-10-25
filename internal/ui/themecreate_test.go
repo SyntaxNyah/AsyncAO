@@ -1,6 +1,13 @@
 package ui
 
 // THE CREATOR, THE TEMPLATES, THE IMAGE INTAKE AND THE LIVE TOGGLE (v1.90.0 W10).
+//
+// Every gate here DRIVES the seam rather than mirroring it (hard rule 11): the
+// templates go through newThemeSidecarFrom, the folder through the real
+// themepack.CreateFromSidecar, the undo group through applyImageIntakeOps and
+// editorUndo, and the toggle through setEditorLive and editorApply. Deleting any of
+// them fails the suite; re-implementing one in a test would not have caught the
+// defects each was written for.
 
 import (
 	"os"
@@ -30,6 +37,7 @@ func decodedFixtureFor(w, h int) *assets.Decoded {
 
 // TestEveryTemplateEitherBuildsAModelOrRefusesByName drives newThemeSidecarFrom
 // over the whole enum.
+//
 // TOTAL OVER THE ENUM, deliberately: a template added without a model builder would
 // otherwise fall through to the "does not build a theme on its own" arm and silently
 // create nothing. templateCopyCurrent is the one that legitimately answers that way,
@@ -91,6 +99,11 @@ func TestEveryTemplateHasALabelAndANote(t *testing.T) {
 
 // TestABlankThemeIsValidFromBirth is the promise the creator makes: what it writes
 // parses back with ZERO notes, validates, and loads as a theme.
+//
+// IT GOES THROUGH THE REAL MACHINERY end to end — newThemeSidecarFrom →
+// themepack.CreateFromSidecar (which is Sidecar.Bytes, i.e. the write guard) →
+// os.ReadFile → theme.ParseSidecar → Validate → theme.Load. No hand-rolled INI text
+// anywhere, which is the whole reason the funnel exists.
 func TestABlankThemeIsValidFromBirth(t *testing.T) {
 	root := t.TempDir()
 	sc, err := newThemeSidecarFrom(templateBlank, "My Theme", theme.PresetPair{})
@@ -122,6 +135,8 @@ func TestABlankThemeIsValidFromBirth(t *testing.T) {
 	// AND IT APPLIES: theme.Load over the root that holds it resolves the folder and
 	// finds the sidecar this client just wrote. A theme that cannot be loaded is not a
 	// theme, however well it parses.
+	//
+	// The flat tier is what makes this root work with no themes/ level (theme.Load's
 	// own note on bare-folder imports, #21).
 	tm, err := theme.Load(m.Root, "", []string{root})
 	if err != nil {
@@ -154,6 +169,7 @@ func TestABlankThemeIsValidFromBirth(t *testing.T) {
 
 // TestDroppedPicturesAreClaimedBeforeTheThemeRootArm is the W2 bug's own shape,
 // asked about pictures.
+//
 // A dropped FILE must never reach the Settings screen's theme-folder arm: that arm
 // turns a file into "its parent folder" and stores that as the user's theme root —
 // typically Downloads. Fonts closed this in W4 and bundles in W2; a picture is the
@@ -187,6 +203,8 @@ func TestDroppedPicturesAreClaimedBeforeTheThemeRootArm(t *testing.T) {
 }
 
 // TestAnImageIntakeIsOneUndoStep drives the undoable half of the intake for real:
+// the [media] declaration and the element go in together and come out together.
+//
 // THE DEFECT IT FORBIDS: an undo that took back only the element would leave the
 // declaration behind, and a declared image nothing points at still costs the
 // theme's art budget — the budget bar would go on counting a picture nobody can see
@@ -236,6 +254,11 @@ func TestAnImageIntakeIsOneUndoStep(t *testing.T) {
 }
 
 // TestTheMediaRowEncodingRoundTrips pins the pair mediaRowValue / mediaRowOf.
+//
+// A PAIR, for the reason editValueSlotRect / slotRectOf are one: four fields packed
+// in one order and unpacked in another compiles and is silently wrong — and the
+// symptom would be an undo that restored a row with the wrong file or the wrong
+// byte cost, i.e. a budget that drifts from the picture it describes.
 func TestTheMediaRowEncodingRoundTrips(t *testing.T) {
 	for _, m := range []theme.MediaEntry{
 		{ID: "art", File: "images/art.png", Bytes: 123456, Hash: "deadbeefcafe"},

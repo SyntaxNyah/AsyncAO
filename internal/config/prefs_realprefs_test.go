@@ -14,6 +14,9 @@ import (
 
 // TestRealPrefsIdentical is the one-machine check for the user's own prefs file. Set
 // REAL_PREFS=/path/to/prefs.json and run:
+//
+//	REAL_PREFS=/path/to/prefs.json go test ./internal/config -run TestRealPrefsIdentical -v
+//
 // The old load() is deleted, so it can no longer compare against it directly; instead it
 // prints ONLY the per-section SHA-256 (error class, exported JSON, unexported dump, dirty
 // flag, Save bytes, ImportSettings accept/reject) — never file contents. Build prefsdump

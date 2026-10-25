@@ -49,6 +49,7 @@ type rasterCacheState struct {
 	// recolour). msAnimFont is the face it was laid out with (the glyph cache keys
 	// on it); glyphCache holds the white glyph textures, shared + bounded. A plain
 	// message never builds msAnim, so its draw path is byte-identical to before.
+	// rasterEffSig folds the effect spans into the raster cache key.
 	msAnim       *render.AnimatedText
 	msAnimFont   *ttf.Font
 	glyphCache   *render.GlyphCache

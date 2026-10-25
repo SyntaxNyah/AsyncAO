@@ -117,6 +117,14 @@ func TestPumpConnectionReconnectsOnTransportDrop(t *testing.T) {
 }
 
 // TestPumpConnectionFreezesAnInCourtDrop is the INTEGRATION twin of the test above:
+// the same real transport drop, but with a courtroom on screen. It pins the whole
+// user-facing path — socket dies → pumpConnection → handleInvoluntaryDrop → freeze —
+// rather than the tail in isolation, because the tests either side of it run on a
+// roomless app and so can never reach the freeze branch at all.
+//
+// This is the behaviour two playtesters reported missing: a background tab showed
+// the disconnect box while the tab they were looking at was slammed to the server
+// list.
 func TestPumpConnectionFreezesAnInCourtDrop(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ws, err := websocket.Accept(w, r, nil)

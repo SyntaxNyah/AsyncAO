@@ -17,6 +17,7 @@ import "github.com/SyntaxNyah/AsyncAO/internal/theme"
 // courtroom_design.ini (`courtroom` + `viewport`) plus a sidecar a whole layout.
 // (layoutedit.go:832). A key absent from the map is a widget this build does not
 // end (themeslots.go:12-14).
+// A DEGENERATE RECT IS NOT REFUSED HERE, deliberately. parseRectValue swallows a
 // bad component on purpose (AO2 parity, sidecar_read.go:922-924), and a
 // declared-but-degenerate rect hides its widget in AO2 too; themeLayoutIn already
 // drops anything under minThemedElementPx (theme_layout.go:346). Refusing it here

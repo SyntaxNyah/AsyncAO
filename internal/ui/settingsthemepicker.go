@@ -17,6 +17,10 @@ import (
 )
 
 // drawDownloaderSettings renders the opt-in single-asset downloader section:
+// the master toggle (OFF by default), the benefit explainer, the downloads
+// folder with open / add-to-mounts actions, and the live job status + Cancel.
+// Returns the next y. (Folds into its own tab when the settings screen is
+// tabbed.)
 func (a *App) drawDownloaderSettings(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -294,6 +298,7 @@ const themeDropNote = "drop a theme folder in here (or anywhere on this screen) 
 
 // themeGetNote is the discovery row's one line. A const, so the row costs no
 // allocation to draw (the settings-text doctrine — see themeRowText).
+//
 // The source repository still carries the theme format reference
 // (docs/THEME-FORMAT.md) for theme authors, which is what this row points at.
 const themeGetNote = "themes are not bundled with the client — the source repository carries the theme format reference (docs/THEME-FORMAT.md) if you want to write one"
@@ -452,6 +457,13 @@ func (r *themeRowText) rebuild(cat *themeCatalog, name, sub string) {
 }
 
 // drawThemeCatalogRows draws everything the off-thread theme catalog answers:
+// what the selected theme actually IS (its badge), which AO2 subtheme variant
+// to prefer, and — the single most support-load-reducing line in the feature —
+// WHERE the folder is that this client writes themes into, with a button that
+// opens it.
+// Every value here comes from an atomic snapshot (themecatalog.go). Nothing in
+// this function touches the disk: "Open folder" and the scans are the only disk
+// work and both are goroutines (hard rule 2). Nothing here builds a string
 func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // the settings-origin shadow rule: without this the row draws under the sidebar
@@ -604,6 +616,7 @@ const themeArtNote = "images and generator tiles an AsyncAO theme declares; they
 // themeArtBarText memoizes the budget bar's label on the four numbers it is built
 // from. Without it, drawing the Theme tab would format a string every frame — the
 // exact cost the catalog rows above went to some length to avoid.
+//
 // Keyed on the VALUES rather than on a generation, because all four are already
 // integers the store and the plan publish: the label is a pure function of them, so
 // equality IS the validity test and there is no third thing to keep in step.
@@ -627,6 +640,9 @@ func (r *themeArtBarText) refresh(bytes, budget int64, images, gens int) {
 
 // drawThemeArtBudgetRow is design §Q2's budget bar: what the active theme's own art
 // is spending, out of what, permanently visible.
+// Both numbers come from internal/render by CALL — the store's live ledger and
+// ThemeMediaByteCap — never from a copy on this side, so the bar cannot quote a
+// budget the admission gate is not using.
 func (a *App) drawThemeArtBudgetRow(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // the settings-origin shadow rule (see drawThemeCatalogRows)
@@ -710,6 +726,9 @@ func (a *App) pollThemeScan() {
 		// root would be written back over the folder the user just picked (below),
 		// and the latched intent would then arm a window snap for a theme root they
 		// never chose — while the folder they did choose is never scanned at all.
+		// It cannot spin: the re-issue is made with the CURRENT folder, so its own
+		// result matches unless the folder changed again, and every change is a fresh
+		// user action; the single-flight also guarantees only one scan is ever in
 		if settings.themeScanUserWant && res.in != strings.TrimSpace(settings.themeDir) {
 			a.scanThemes(true)
 			return

@@ -20,6 +20,9 @@ import (
 // descends on click, and PICKS a recording straight into the shared Studio
 // import tail (importDroppedRecording → importRecordingToVideo) — the exact
 // same logic the drag-and-drop path uses, so there is one owner of the import.
+// Perf/hard-rule discipline (spec §17): the entry list is read by ONE bounded
+// loader goroutine per navigation (never per-frame ReadDir on the render thread
+// — a network drive would freeze the UI), cached in the state, and every
 
 const (
 	// browseResCap bounds the loader→render result channel: exactly one result
@@ -65,6 +68,12 @@ const (
 	// dragged onto without going and finding it again.
 	purposeThemeImage
 	// purposeBaseFolder: pick → the base-folder wizard's setBasePath (issue #72).
+	// The FIRST purpose whose answer is a DIRECTORY rather than a file, which is
+	// why browsePicksDir exists — the rows are still files and folders, but the
+	// pick is "the folder I am standing in".
+	// It is in-app for the reason the .demo picker moved in-app: the native folder
+	// dialog is a PowerShell shell-out that exists only on Windows and has failed
+	// to win foreground live before. browseForFolder's own comment names extending
 	purposeBaseFolder
 	// purposeEvidenceImage (issue #6): pick → the evidence editor's Image-file
 	// field. This is the ONE purpose whose browser navigates the MERGED LOCAL ASSET
@@ -112,6 +121,11 @@ type demoBrowserState struct {
 	// existing volume); off Windows there is no drives view and ".." stops at "/".
 	dir string
 	// merged marks the EVIDENCE browse's VIRTUAL navigation (issue #6 follow-up):
+	// dir is then a mount-relative ASSET path — "" is the merged root, "evidence",
+	// "characters/foo" — inside the union of the local mounts, never a filesystem
+	// path, so the seed / parent / child walks all route through the merged model
+	// (mergebrowse.go) instead of filepath. Every other purpose leaves this false
+	// and navigates the real disk.
 	merged bool
 	// entries is the loaded+cached listing for dir (NO per-frame ReadDir). more is
 	// the overflow count when the directory exceeded maxBrowseEntries (0 = none).
@@ -144,6 +158,11 @@ var demoBrowser = demoBrowserState{res: make(chan browseResult, browseResCap)}
 
 // isDrivesView reports the sentinel dir ("" = the Windows drives list). Off
 // Windows this is never entered (openDemoBrowser/parentBrowseDir never yield "").
+// isDrivesView reports the sentinel dir ("" = the Windows drives list). In the
+// MERGED browse "" is not a sentinel at all — it is the merged ROOT, a real place
+// with real rows — so that browser is never in the drives view, and never offers
+// one: a volume list would be exactly the escape hatch the sandbox exists to
+// remove.
 func (s *demoBrowserState) isDrivesView() bool { return !s.merged && s.dir == "" }
 
 // openDemoBrowser opens the browser for the ORIGINAL .demo → video flow (the
@@ -236,6 +255,9 @@ func (a *App) navBrowseTo(dir string) {
 
 // loadBrowseDir reads one directory OFF the render thread: the Windows drives
 // view when dir=="", else os.ReadDir filtered to sub-directories + recordings.
+// Returns the capped, sorted entries and the overflow count. Any I/O error
+// (an unreadable/rights-denied dir) comes back so the draw can show it while
+// leaving ".." and the quick-jumps navigable.
 func loadBrowseDir(dir string, keep func(string) bool) (entries []browseEntry, more int, err error) {
 	if dir == "" { // Windows drives view (never reached off Windows)
 		return listDrives(), 0, nil
@@ -249,6 +271,7 @@ func loadBrowseDir(dir string, keep func(string) bool) (entries []browseEntry, m
 
 // browseKeepRule is the FILE FILTER for a pick purpose — the one place a purpose
 // decides what a listing shows.
+//
 // A FUNCTION OF THE PURPOSE rather than a branch inside the filter, because the
 // filter is pure and generic over its entries (that is what makes it unit-testable
 // without a filesystem) and the purpose is state. The default is deliberately the
@@ -515,6 +538,7 @@ func (a *App) drawDemoBrowser(w, h int32) {
 	// puts its commit button here, on the same row as the path it commits, so what
 	// the button means is the line next to it. It is hidden in the drives view,
 	// where there is no directory to pick.
+	//
 	// The MERGED browse labels the same row with its own root, because "" there is
 	// the merged root and not a sentinel: "asset sources ▸ evidence" is what the row
 	// is telling you.
@@ -545,6 +569,12 @@ func (a *App) drawDemoBrowser(w, h int32) {
 
 	// Quick-jump row: Home / Downloads / Desktop / recordings\ (+ Drives on
 	// Windows). Each is a no-op when its path didn't resolve at open (empty).
+	//
+	// THE MERGED BROWSE HAS NO QUICK JUMPS, and that is the point: every one of them
+	// leaves the mounts, which is exactly what this browser must never do. Their row
+	// carries the one thing a user needs to know about this listing instead — that it
+	// is the LOCAL asset sources, merged, and nothing else (ChocomintCake: "have a
+	// highlight that tells u its local only like a tip").
 	if s.merged {
 		c.LabelClipped(inX, y+4, inW, mergedBrowseTip, ColAccent)
 		y += btnH + 8
@@ -709,6 +739,9 @@ func browseMoreLabel(more int) string {
 }
 
 // pickBrowsedFile is the browser's PICK action, routed by the browser's purpose.
+// Close the browser first (every branch does), then:
+// The video branch is deliberately untouched from the original single-purpose
+// browser so that flow can't regress (pinned by a test).
 func (a *App) pickBrowsedFile(path string) {
 	purpose := demoBrowser.purpose
 	demoBrowser.open = false

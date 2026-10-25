@@ -13,6 +13,7 @@ import (
 // this height, and re-reading it from whichever page was drawing let a
 // talk/preanim page that decoded at a different size flip the filter
 // mid-animation — the reported "swaps to smooth scaling for animations".
+//
 // The latch must still re-arm for a DIFFERENT character (a speaker swap), and a
 // message that opens on a preanim (no idle drawn yet) still decides from that
 // page, exactly as it did before the latch existed.
@@ -54,6 +55,8 @@ func TestSpriteNativeHLatchesToTheIdle(t *testing.T) {
 }
 
 // TestSpriteScaleModeFollowsAO2 pins the full resolution chain at the draw site:
+// user mode, then char.ini, then AO2's geometry rule.
+//
 // The geometry rows are the ones that matter for issue #21 label 15. Nobody edits
 // a char.ini to fix a character they downloaded, so the reported "smoothie" has to
 // be fixed by the last rule alone: art SHORTER than the stage is being enlarged and

@@ -14,6 +14,13 @@ import (
 // drawDebugOverlay paints the bounded failure log plus a one-line session
 // health readout over whatever screen is active (Settings → "Debug
 // overlay"). It exists to answer two questions without a debugger attached:
+// "what failed?" (the ring: missing assets, theme misses, dropped/unknown
+// packets, disconnect reasons) and "is the server itself misbehaving?"
+// (phase stuck before ready + a rising last-packet age = server-side hang).
+//
+// This is an opt-in diagnostics path: the fmt allocations here are accepted
+// and never run while the toggle is off (the zero-alloc render gates bench
+// with it off).
 func (a *App) drawDebugOverlay(w, h int32) {
 	c := a.ctx
 	const (

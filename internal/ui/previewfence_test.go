@@ -9,12 +9,14 @@ import (
 )
 
 // Issues #37 and #36, both reported against the sprite-preview box.
+//
 // #37 "Buttons over other ui elements do not block mouse input behind them —
 // I keep accidentally playing a song": the hover-preview box floats over the
 // right-hand column, so the music row it covers took the same click that
 // dismissed the box, and the track started playing. The kit is immediate-mode
 // and single-pass, so the row (drawn far earlier) had no way to know the box
 // was coming — that is what the overlay-fence registry is for.
+//
 // #36 "Window Dragging does not prevent other mouse inputs": dragging the box
 // across the IC log ALSO drag-selected the log text underneath, because
 // handleLogSelect keeps a live selection alive on a bare c.mouseDown that

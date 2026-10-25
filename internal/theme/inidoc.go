@@ -11,6 +11,10 @@ import (
 // into them. ParseINI's map stays the fast READ path (theme.Load, char.ini);
 // INIDoc is the WRITE path and is COLD ONLY — it is never touched from a draw,
 // decode or resolver path (rule 2).
+// CLASSIFICATION IS PARITY-BOUND. Every line is read here EXACTLY as ParseINI
+// reads it — same BOM strip, same whole-line ';' truncation, same '#' rule, same
+// last-declaration-wins on a repeated key. If the two ever disagreed, INIDoc
+// would rewrite a line the reader does not read, which is a silent no-op edit.
 type INIDoc struct {
 	lines   []iniLine      // cap IniDocLineCap
 	index   map[string]int // "section/key" (lowercased) -> line
@@ -116,6 +120,10 @@ type iniLine struct {
 	// line, and the section NAME INSIDE THE BRACKETS for a header line. Both
 	// exclude the surrounding whitespace and any ';' comment that follows, which
 	// is what makes an edit preserve a trailing comment on either kind of line.
+	// ONE SPAN, ONE SPLICER. Bytes replaces raw[valStart:valEnd] with whatever
+	// `touched` holds for the line and re-emits the rest verbatim, so a header
+	// rename and a value edit are the same three writes rather than two
+	// near-identical ones that could drift about whitespace.
 	valStart, valEnd int
 }
 
@@ -174,12 +182,18 @@ func ParseINIDoc(src []byte) (*INIDoc, error) {
 // There is no LoadINIDoc. One existed — an exported open + LimitReader dance
 // with zero callers anywhere, tests included — and it was a SECOND, untested
 // copy of what LoadSidecar already does on the way to a model (ledger L32).
+// Reading a document off the disk means reading a SIDECAR: LoadSidecar owns the
+// cap, the migration and the degrade notes, and a path that skipped it would
+// hand back a document nobody had validated.
 
 // classifyINILine fills l's section/key/value fields and returns the section in
 // effect AFTER it. A leading BOM was taken off the source ahead of the line split
 // (see INIDoc.bom), so l.raw is pure line content here — which is also why a
 // U+FEFF that reaches this function is ordinary key text, exactly as the reader
 // treats a mid-file one (iniparity_test.go's mid-file case).
+// This is ParseINI's body, expressed in OFFSETS instead of trimmed copies. Any
+// change to one must be mirrored in the other; FuzzINIDocRoundTrip fails
+// loudly when they drift.
 func classifyINILine(l *iniLine, section string) string {
 	l.section = section
 	body := l.raw
@@ -241,6 +255,10 @@ func (d *INIDoc) Get(section, key string) (string, bool) {
 
 // Set records a new value for key under section, adding the key — and the
 // section header, if that is missing too — when it is not already declared.
+// It refuses a value it could not read back as itself (rule: never emit a value
+// that reads as something else). A ';' would truncate the line at the reader,
+// and a newline would split it in two, so free text is percent-encoded by the
+// caller before it arrives here.
 func (d *INIDoc) Set(section, key, value string) error {
 	sec, k := strings.ToLower(strings.TrimSpace(section)), strings.ToLower(strings.TrimSpace(key))
 	if k == "" || badINIToken(sec) || badINIToken(k) {
@@ -267,6 +285,7 @@ func (d *INIDoc) Set(section, key, value string) error {
 // whatever the section described (sidecar_write.go's stated limit, and the exact
 // duplication TestElementIdIsNotAnInspectorField was written to forbid until this
 // function existed).
+// COLD PATH (hard rule 2), like every other mutator here.
 func (d *INIDoc) RenameSection(from, to string) error {
 	f := strings.ToLower(strings.TrimSpace(from))
 	t := strings.ToLower(strings.TrimSpace(to))
@@ -494,6 +513,9 @@ func (d *INIDoc) insertLine(at int, raw, section, key string, isKey bool) int {
 	if at > 0 && d.lines[at-1].term == "" {
 		// The source did not end with a newline. Keep that property by moving
 		// the missing terminator onto the new last line instead of inventing one.
+		// The line ABOVE gains one it never had, so those bytes are counted here:
+		// the new line's own term is now "", and charging only len(raw) would leave
+		// size short of what Bytes emits and under-Grow its builder.
 		d.lines[at-1].term = d.eol
 		l.term = ""
 		moved = len(d.eol)
@@ -517,6 +539,12 @@ func (d *INIDoc) insertLine(at int, raw, section, key string, isKey bool) int {
 
 // sectionEnd returns the index one past the last line of section, and whether a
 // header for it has to be created.
+// That placement is accepted, not overlooked. Deciding that a trailing comment
+// "really" belongs to the section below means guessing at prose, and a wrong
+// guess moves the author's own words, which is the one thing this type exists to
+// never do. Where a key SITS never changes which key it is: the reader binds it
+// to the section header above it, and that is the property the placement
+// preserves.
 func (d *INIDoc) sectionEnd(section string) (at int, needHeader bool) {
 	end, found := -1, false
 	for i, l := range d.lines {

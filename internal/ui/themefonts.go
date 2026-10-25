@@ -3,6 +3,10 @@ package ui
 // Per-element theme fonts (#39) — AO2-Client Courtroom::set_fonts /
 // Courtroom::set_font (courtroom.cpp:1188 / :1212) read courtroom_fonts.ini and
 // give EACH courtroom element its own family ("<id>_font"), point size ("<id>")
+// and weight ("<id>_bold"). AsyncAO used to consume exactly two things out of
+// that file — the "message" family, applied GLOBALLY to every surface in the
+// client, and the message/showname colours — so a theme that sized its IC log at
+// 11 pt and its music list at 6 pt rendered both at the client's own scale.
 // returns exactly what the pre-#39 code returned — so a client with no theme, or
 
 import (
@@ -33,6 +37,7 @@ const (
 	elemMusicName
 	elemAreaList
 	// elemDebugLog dresses the themed debug panel drawn at the ms_chatlog rect.
+	// AO2 gives that widget its OWN identifier, not server_chatlog's
 	// (courtroom.cpp:1198). APPENDED, never inserted: the slot index is the
 	// position in theme.FontElements.
 	elemDebugLog
@@ -61,6 +66,8 @@ type themeElemFont struct {
 	bold bool
 	// color / colorSet are "<id>_color" — the element's foreground ink. AO2 stamps
 	// it as `<class> { color: rgba(...) }` on the widget (courtroom.cpp:1300), i.e.
+	// one FOREGROUND per element and never a background. colorSet false = the theme
+	// named no colour for this element and the draw site keeps the kit's own.
 	color    sdl.Color
 	colorSet bool
 	// userFont marks that the USER — not the theme — gave this element a font or a
@@ -84,6 +91,11 @@ type themeFontTable struct {
 }
 
 // themeFaceCap bounds the DISTINCT theme-declared face files held at once.
+// courtroom_fonts.ini names one family per element and real themes reuse one or
+// two across all of them (DRRetribution: 1 — Arial everywhere; 3DS Widescreen: 2
+// — Igiari Cyrillic + Ace Name; Lymantriina: 2 — IBM Plex Serif + Mono), so 4 —
+// matching fontChainCap — covers every shipped theme with headroom. Past it an
+// element keeps the client font rather than growing the cache (hard rule 4).
 const themeFaceCap = 4
 
 // qtLogicalDPI / qtPointsPerInch are Qt's own point-to-pixel conversion. A POINT
@@ -193,6 +205,7 @@ func (a *App) elemLabelFont(el themeFontElem, userPct int) *ttf.Font {
 // elemLabelFontAtPct is elemLabelFont with the scale ALREADY resolved, the split
 // elemFontAtPct makes for the themed chatbox — a surface that folds the theme
 // canvas's scale into the percent before asking for a face.
+// The undressed arm deliberately still returns the fixed chrome face, ignoring
 // pct: that is the #39 contract (a theme that declares nothing for this element
 // must draw byte-identically to a client with no theme at all), and it is the
 func (a *App) elemLabelFontAtPct(el themeFontElem, pct int) *ttf.Font {
@@ -420,6 +433,7 @@ func facesIfReferenced(tbl *themeFontTable, data [][]byte) [][]byte {
 // mergePanelFonts stamps the user's per-panel picks onto a table, AFTER whatever
 // the theme contributed to it has been decided. Separate from the resolution
 // above so the whole precedence ladder is readable in one place (landThemeFonts)
+// instead of being split across a thread boundary.
 func (res *themeApply) mergePanelFonts(tbl *themeFontTable, faces bool) {
 	for i := range tbl.e {
 		if res.panelPct[i] != 0 {
@@ -429,6 +443,11 @@ func (res *themeApply) mergePanelFonts(tbl *themeFontTable, faces bool) {
 			tbl.e[i].face = res.panelFace[i]
 		}
 		// Stamped OUTSIDE the faces gate, and that placement is the whole point.
+		// Under the dyslexia switch landThemeFonts passes faces=false, so a user
+		// who picked only a FAMILY for a panel would otherwise get no scope at all
+		// and see that panel render half in the accessibility font and half in the
+		// chrome one. The user asked for that panel to be their own; the switch
+		// only decides WHICH face it gets.
 		if res.panelPct[i] != 0 || res.panelFace[i] != 0 {
 			tbl.e[i].userFont = true
 		}
@@ -438,6 +457,9 @@ func (res *themeApply) mergePanelFonts(tbl *themeFontTable, faces bool) {
 // pxToScalePct converts a pixel size the user typed into the percent scale the
 // table stores, the same conversion themeFontPct does for a theme's points —
 // minus the point-to-pixel step, because a user picks the pixels directly.
+// Rounds UP for the same reason themeFontPct does: the percent is applied to
+// UIFontSize with integer division when the face is opened, so rounding down
+// here reopens one pixel small and the round trip is not exact.
 func pxToScalePct(px int) int {
 	if px <= 0 {
 		return 0

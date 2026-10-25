@@ -41,6 +41,9 @@ func EncodeStatusChangeMarker(s, prev Status) string {
 }
 
 // DecodeStatusMarker pulls a Status from a message's text if a status frame is present.
+// It scans every zero-width frame for the status magic (so it coexists with a style /
+// profile frame). ok=false means no status frame; ok=true with StatusNone is a CLEAR
+// (drop the badge). A frame from a newer peer carrying an unknown status reads None.
 func DecodeStatusMarker(text string) (Status, bool) {
 	if !hasMarker(text) {
 		return StatusNone, false

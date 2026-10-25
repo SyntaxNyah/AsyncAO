@@ -153,6 +153,10 @@ func TestThemeFindAssetProbesExtensionsAndDirs(t *testing.T) {
 
 // TestFindAssetInRefusesAnEmptyStem is the guard FindAssetIn opens with, driven
 // against the file it exists to refuse.
+// The fixture ships exactly that dotfile in both entry points' path, so the test
+// fails the moment the guard is deleted rather than passing vacuously — and the
+// last block proves the directory is probeable at all, so "found nothing" above
+// cannot be an accident of the fixture.
 func TestFindAssetInRefusesAnEmptyStem(t *testing.T) {
 	root := t.TempDir()
 	writeTheme(t, root, DefaultThemeName, aoDefaultDesign, "")

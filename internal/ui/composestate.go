@@ -40,6 +40,9 @@ type composeState struct {
 	pmInput  string
 	// pmThreads is the per-conversation PM history (keyed by the partner's
 	// canonical name via pmThreadKey) the Friends tab shows as a little DM thread.
+	// Outgoing lines append on send; incoming ones are best-effort parsed out of
+	// OOC (detectIncomingPM — server formats vary, a miss just stays in the OOC
+	// log). Session-scoped (PMs are per-server) and bounded.
 	pmThreads map[string][]pmLine
 	// shownameOverride is the in-courtroom showname box: when non-blank
 	// it wins over the persisted Settings showname for outgoing messages
@@ -89,12 +92,20 @@ type composeState struct {
 	// (courtroom.cpp:2362) — which the send site does, not this field.
 	icSlide bool
 	// icRealize / icShake are AO2's realization_state / screenshake_state (#21):
+	// ONE-SHOT arms that ride the next message — the white flash and the camera
+	// shake. AO2 clears both the instant the packet is built, next to
 	// objection_state (courtroom.cpp:2327-2329), which is what stops a stuck arm
 	// firing on every following line.
 	icRealize bool
 	icShake   bool
 	// icShout is AO2's objection_state (courtroom.cpp:6048-6127) — the ARMED
 	// interjection, riding the NEXT message exactly like icRealize and icShake:
+	// 0 none, 1 Hold It!, 2 Objection!, 3 Take That!, 4 the custom shout
+	// (protocol.Shout*). ONE int, so the four buttons are mutually exclusive by
+	// construction, which is what canon's four "reset the other three sprites"
+	// arms add up to. Cleared beside them the instant the packet is built
+	// (:2327). The shout buttons used to call sendIC directly, which fired the
+	// interjection on the click instead of arming it.
 	icShout int
 	// modcallGuard is AO2's ui_guard (#21): silence the modcall ALERT for this
 	// session. sessionState rather than a preference because AO2's ui_guard is a

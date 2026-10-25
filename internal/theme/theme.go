@@ -55,6 +55,8 @@ type FontSpec struct {
 	Sharp bool
 	// SizeSet reports that the theme actually declared "<id>" — Size otherwise
 	// carries the parser's default and must NOT override the client's own scale.
+	// ColorSet is the same signal for "<id>_color". HasFont conflates the two,
+	// so it cannot answer either question on its own.
 	SizeSet  bool
 	ColorSet bool
 }
@@ -64,6 +66,8 @@ type FontSpec struct {
 // Order is load-bearing but is NOT AO2's call order: internal/ui indexes its
 // resolved per-element table by position in this list, so the pairing that must
 // hold is with the themeFontElem enum there (pinned by TestThemeFontElemOrder).
+// Still unhonoured, each for its own reason: "clock_N" has no themed clock
+// widget, and "evidence_name" / "evidence_image_name" / "evidence_description"
 // are set from a different translation unit (evidence.cpp:94-96) onto a surface
 // AsyncAO does not dress yet.
 var FontElements = [...]string{
@@ -92,6 +96,8 @@ var FontElements = [...]string{
 	// the Settings rows — is identical whether an element came from AO2 or from
 	// us, and a second parallel table would have to duplicate all of it to say
 	// nothing new.
+	// A theme MAY set them ("player_list = 12", "notes_font = Arial") and nothing
+	// stops it, which is deliberate — AsyncAO's own theme format will want to.
 	"player_list",
 	"notes",
 	"friends",
@@ -123,6 +129,7 @@ type Theme struct {
 	// subtheme tier, its own folder and the flat-folder tier). Everything past it
 	// is the DEFAULT-theme fallback, which exists because AO2 falls back per key
 	// in the three design INIs.
+	// The sidecar deliberately does NOT: see sidecar below.
 	ownDirN int
 	// sidecar is the AsyncAO extension tier (asyncao_theme.ini), read ATOMICALLY
 	// from the first of THIS theme's own directories that has one — never merged
@@ -155,6 +162,9 @@ const SubthemeNameLen = 48
 // path_functions.cpp:192), so anything with a separator, a drive letter, a ".."
 // segment or a leading dot is refused outright rather than cleaned into
 // something plausible — cleaning is how a guard becomes a suggestion.
+// Refusal is silent by design: the value comes from a preferences file, and the
+// only sane reading of an impossible subtheme is "no subtheme", which resolves
+// exactly like AO2 with the option unset.
 func SanitizeSubtheme(sub string) string {
 	sub = strings.TrimSpace(sub)
 	if sub == "" || safepath.UnsafeRel(sub) {
@@ -225,6 +235,7 @@ func Load(name, sub string, roots []string) (*Theme, error) {
 	// supplies exactly one theme, and synthesising <root>/default would let a
 	// stray folder named "default" sitting beside the drop hijack every key the
 	// real theme leaves unresolved.
+	// No SUBTHEME tier here either, and that is AO2's call, not a shortcut:
 	// (path_functions.cpp:202-205) while every earlier tier takes one, so
 	// "night" inside your theme must not reach into the bundled default's
 	// "night". Adding it would resolve files AO2 would not.
@@ -363,6 +374,8 @@ func (t *Theme) HasFont(name string) bool {
 // FontFile returns the path to the font file (.ttf/.otf) the ACTIVE theme wants
 // its courtroom text drawn in, so a streaming client can honour a theme's font
 // (#6/#39, Crystalwarrior). Resolution order:
+// The default-theme fallback dirs are skipped — only the active theme may impose
+// a font. "" = none found (keep the client font). FontFileFor / FontFiles resolve
 // the OTHER elements the same way (#39).
 func (t *Theme) NamesAnyFontFamily() bool {
 	for _, id := range FontElements {
@@ -375,6 +388,12 @@ func (t *Theme) NamesAnyFontFamily() bool {
 
 func (t *Theme) FontFile() string {
 	// A theme that NAMES families dresses its elements one by one (FontFiles, #39)
+	// and must not also impose a face on the whole client. This used to return the
+	// declared MESSAGE family first, which predates per-element fonts: it meant
+	// aceattorney2x's chatbox family became the app font — menus, lobby, settings
+	// and all — while the per-element table was separately applying the same face
+	// to the message anyway. The client-wide install is now only for the case that
+	// motivated it: a theme that ships one .ttf and declares nothing.
 	if t.NamesAnyFontFamily() {
 		return ""
 	}
@@ -404,6 +423,8 @@ const fontScanMaxFiles = 4096
 
 // systemFontAliases maps a declared family to its Windows font FILE stem where
 // normalizeFontKey can't bridge the two ("Times New Roman" ships as times.ttf).
+// Families whose stem already normalizes to the family (Arial, Verdana, Tahoma,
+// Georgia, Impact, Calibri, Segoe UI, Consolas) need no entry. AO2 gets these for
 // free from Qt's system font database (get_qfont, courtroom.cpp:1263); a
 // streaming client has to name them.
 var systemFontAliases = map[string]string{
@@ -421,6 +442,8 @@ var systemFontAliases = map[string]string{
 
 // HasAnyFontFile reports whether ANY font file is reachable through this theme's
 // ladder — its own directory tree, or a fonts/ folder beside the content roots.
+// Off-thread only: it walks the disk. Stops at the FIRST hit, so the common
+// healthy case is cheap.
 func (t *Theme) HasAnyFontFile() bool {
 	idx := &fontIndex{budget: fontScanMaxFiles}
 	for _, dir := range t.ownDirs() { // the active theme's own tree only, as FontFiles does
@@ -447,6 +470,8 @@ func (t *Theme) HasAnyFontFile() bool {
 // ResolveFamilies resolves arbitrary family NAMES to font files, for callers
 // choosing a font that no theme declared — the per-panel font a USER picks in
 // Settings, rather than one courtroom_fonts.ini asked for.
+// Off-thread only (hard rule 2): this walks the disk. Returns a map from the
+// requested name to its resolved path, omitting whatever did not resolve.
 func ResolveFamilies(families []string, contentDirs, sysDirs []string) map[string]string {
 	out := make(map[string]string, len(families))
 	want := make(map[string]struct{}, len(families))
@@ -511,6 +536,7 @@ func looksLikeFontPath(s string) bool {
 // from Qt — main.cpp:44-55 registers <base>/fonts RECURSIVELY into the
 // application font database, and QFont(family) then resolves against that plus
 // the system fonts:
+// "" when the element declares no family or nothing matches.
 func (t *Theme) FontFileFor(element string, sysDirs []string) string {
 	return t.FontFiles(sysDirs)[element]
 }
@@ -762,6 +788,7 @@ func (t *Theme) DesignKeys() map[string]string { return t.design.SectionKeys("")
 // atoiTrim discards the parse error ON PURPOSE — that is AO2 parity, not
 // sloppiness. Every design/font tuple in AO2 is read with QString::toInt(),
 // which returns 0 for anything it cannot parse (verified against Qt 6.5.3:
+// "8SS" → 0) and which AO2 then uses unchecked
 // (AO2-Client text_file_functions.cpp:236-239 for rects, :212-213 for pairs).
 // Reporting the error here and rejecting the whole tuple would make AsyncAO
 // STRICTER than the client every theme was authored against, silently dropping

@@ -17,6 +17,8 @@ import (
 
 // TestPumpConnectionSurvivesServerKick pins two coupled fixes around a server
 // kick/ban packet (KK/KB/BD → courtroom.EventDisconnect):
+// The trigger is the kick packet, NOT the BB "popup" the user happened to see
+// first (that's EventNotice and never disconnects).
 func TestPumpConnectionSurvivesServerKick(t *testing.T) {
 	// A minimal AO server: accept, immediately kick, then hold the socket open
 	// (so the KK frame — not a socket close — is what drives the disconnect).
@@ -64,6 +66,7 @@ func TestPumpConnectionSurvivesServerKick(t *testing.T) {
 	// Drain until the kick lands. The first pumps may see an empty queue (the
 	// read loop hasn't delivered KK yet) and return via the select default with
 	// conn still live; once KK arrives the drain disconnects and nils a.conn.
+	// Without the loop guard, that very drain panics on the re-check iteration.
 	deadline := time.Now().Add(5 * time.Second)
 	for a.link.conn != nil && time.Now().Before(deadline) {
 		a.pumpConnection() // must not panic when the session is freed mid-drain

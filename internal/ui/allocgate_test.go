@@ -13,6 +13,9 @@ import (
 )
 
 // The measurement every zero-alloc draw gate runs on.
+// WHY THIS IS NOT LOOSENING THE GATE. A per-frame allocation is in EVERY window by
+// definition, so it can never produce a clean one: allocsPerFrame below still
+// fails it on the first reading. Only an event that is over by the next window can
 
 const (
 	// allocGateFrames is the window a whole-screen gate measures. Named so the
@@ -35,6 +38,9 @@ const (
 // allocsPerFrame reports what one settled frame of draw allocates. It measures
 // windows of frames frames until one comes in at or under budget, and returns the
 // LOWEST reading it saw.
+// BLIND SPOT: AllocsPerRun truncates its integer division, so any leak under one
+// allocation per frame reads 0 — an every-4th-frame alloc (0.25/op) or a
+// race-mode sync.Pool drop at ~25% passes forever. Only a constant ≥1-alloc/frame
 func allocsPerFrame(frames int, budget float64, draw func()) float64 {
 	var lowest float64
 	for i := 0; i < allocGateWindows; i++ {
@@ -152,6 +158,9 @@ var wholeScreenDraws = []string{"drawCourtroom", "drawLobby", "driveFrame"}
 // measured; a new gate written the old way — settle-and-assert, or just a bare
 // window — brings the flake straight back with every test here still green,
 // because they would be exercising a helper that gate does not call.
+// It resolves each bare window's SECOND argument, following a local closure
+// (draw := func() { a.drawCourtroom(w, h) }) to its body, and only complains when
+// a whole-screen draw is what that window actually measures. Judging the enclosing
 func TestWholeScreenGatesGoThroughAllocsPerFrame(t *testing.T) {
 	files, err := filepath.Glob("*_test.go")
 	if err != nil {

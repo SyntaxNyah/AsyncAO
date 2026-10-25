@@ -159,6 +159,12 @@ func (s *plStrip) place(w int32) (sdl.Rect, bool) { return s.placeFlex(w, w) }
 
 // placeFlex reserves the next control's rect, wrapping to a new line first when it
 // will not fit on the current one. min is the narrowest the control may be drawn:
+// for a fixed control it equals want, and for a clipped label it is smaller, letting
+// the label shrink into the tail of the current line instead of costing a whole one.
+//
+// ok=false means DRAW NOTHING for this control — the panel cannot hold it. That is
+// the degradation contract: a missing control is recoverable (the panel is wider in
+// the classic dock and in a torn-off tab), a control drawn over its neighbour is not.
 func (s *plStrip) placeFlex(want, min int32) (sdl.Rect, bool) {
 	if s.full || min <= 0 {
 		return sdl.Rect{}, false

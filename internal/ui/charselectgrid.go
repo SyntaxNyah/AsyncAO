@@ -25,6 +25,9 @@ const (
 
 	// charCellCaptionH is the strip UNDER a CLASSIC char-select cell that carries the
 	// character's name. It is part of the classic row pitch (cell + gutter + caption)
+	// and has always been there; it is named now because the themed grid has no such
+	// strip and the difference has to be legible (hard rule 9). AO2 has no caption
+	// either: AOCharButton is a bare 60x60 icon whose name is a TOOLTIP
 	// (charselect.cpp:304 setToolTip), which is what the themed cell does instead —
 	// a caption would spill into the next row's slot frame at spacing 7.
 	charCellCaptionH int32 = 14
@@ -91,6 +94,7 @@ const (
 // with it before this existed. Two independently-derived grids on one screen desync
 // on the first resize, so there is exactly one builder and exactly one placement
 // method, and both tabs go through them.
+//
 // A plain value, no pointer: it is passed per cell and must never reach the heap.
 type charGridPlan struct {
 	// view is the scrolling viewport in window-absolute pixels — the region the grid
@@ -130,6 +134,8 @@ type charGridPlan struct {
 	// --- THE DESIGN LATTICE (themed only). Every themed cell position is
 	// `canvas.<origin> + scaleToCanvas(design coordinate)`, which is where the
 	// stretched backdrop puts the slot frame painted for that cell.
+	//
+	// canvas is lay.area: the rectangle SDL blits the backdrop into.
 	canvas sdl.Rect
 	// designW/designH are the canvas in design pixels (char_select's w/h).
 	designW, designH int32
@@ -145,6 +151,9 @@ type charGridPlan struct {
 // scaleToCanvas maps a DESIGN-space coordinate onto the canvas rect the backdrop art
 // is actually blitted into — the one mapping that keeps a cell on the slot frame
 // behind it.
+// Exact integer arithmetic, in int64 so a hostile theme's 100000-px canvas cannot
+// overflow the multiply. It is deliberately NOT `float64(design) * scale`: the canvas
+// rect is itself a truncation of design*scale, so the art's real ratio is
 func scaleToCanvas(design, canvasExtent, designExtent int32) int32 {
 	if designExtent < 1 {
 		return design
@@ -179,6 +188,11 @@ func (g charGridPlan) cellAt(n, scroll int32) sdl.Rect {
 
 // rowOffset is how far row `row` sits below row 0 on this plan's lattice — the ONE
 // scroll distance that steps the grid by whole rows.
+//
+// Themed, consecutive rows are NOT a constant number of device pixels apart: the
+// artwork's own frames alternate between floor and ceil of the fractional row pitch,
+// and the cells follow them. So a scroll offset that is a multiple of some rounded
+// pitch drifts off the lattice as it accumulates; an offset taken from here does not.
 func (g charGridPlan) rowOffset(row int32) int32 {
 	if !g.themed {
 		return row * g.pitchY
@@ -221,6 +235,9 @@ func (g charGridPlan) rows(n int32) int32 {
 // charSelectGridPlan resolves the cell metrics for a char-select frame: the classic
 // full-window grid, or — under a theme canvas that declares a usable char_buttons —
 // AO2's grid inside it.
+// Any themed condition it cannot satisfy falls back to the classic plan rather than
+// drawing a broken grid: no canvas, no char_buttons rect, a cell scaled below
+// charCellMinPx, or a viewport with no room for one cell.
 func (a *App) charSelectGridPlan(w, h, gridTop int32, lay *charSelectLayoutCache) charGridPlan {
 	// The classic grid, byte-identical to the pre-#20 screen: cells of iconCell on an
 	// iconCell+iconGap pitch from x=pad, rows additionally spaced by the caption
@@ -288,6 +305,10 @@ func (a *App) charSelectGridPlan(w, h, gridTop int32, lay *charSelectLayoutCache
 	// Paint/hit region: char_buttons (Qt clips AOCharButtons to their ui_char_buttons
 	// parent) intersected with the canvas clip (Qt clips the canvas at the fixed
 	// window edge, which is what keeps the stock table's 30 px overhang honest).
+	//
+	// Derived from the DESIGN rect through the canvas, not from the pre-scaled twin in
+	// lay.r, so the viewport's edges sit on the same lattice the cells do — a viewport
+	// a pixel off its own first column would clip that column's edge away.
 	grid := sdl.Rect{
 		X: lay.area.X + scaleToCanvas(bd.X, lay.area.W, lay.designW),
 		Y: lay.area.Y + scaleToCanvas(bd.Y, lay.area.H, lay.designH),
@@ -430,6 +451,12 @@ func (a *App) charGridScroll(w int32, id string, g charGridPlan, scroll, matches
 
 // snapScroll quantises a scroll offset onto this plan's row lattice. The classic
 // plan scrolls by pixels and is returned untouched; the themed one snaps.
+//
+// The snap runs in DESIGN pixels, where the lattice is exactly uniform, and the
+// chosen ROW is then mapped back through the canvas — so the offset lands on the
+// artwork rather than on a multiple of a rounded device pitch, which would walk off
+// it again as it accumulated. A theme whose lattice is degenerate (hostile spacing
+// that floors the design pitch away) falls back to the uniform arithmetic.
 func (g charGridPlan) snapScroll(scroll, contentH int32) int32 {
 	if !g.themed {
 		return scroll
@@ -497,6 +524,8 @@ func (a *App) drawCharOverlayArt(stem string, dst sdl.Rect) bool {
 }
 
 // drawCharSelectorHalo paints the theme's char_selector around the hovered cell.
+//
+// AO2 makes the selector a SIBLING of the buttons, not a child, and raise()s it on
 // enterEvent (aocharbutton.cpp:20, :68-71) so it draws above every button including
 // its neighbours. Immediate mode has no z-order, so the equivalent is to paint it
 // after the whole cell loop — which is where this is called from. A theme that ships

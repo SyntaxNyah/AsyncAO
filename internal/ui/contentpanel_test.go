@@ -243,6 +243,8 @@ func TestBrowserPurposeCheckOpensPanel(t *testing.T) {
 // around: the engine nils a.content the instant packaging finishes, but the panel
 // caches the last non-nil report so its final summary still renders. This drives
 // the cache-retain logic directly (drawContentPanel stashes a.ContentJobReport()
+// while non-nil), then simulates the post-package clear and confirms the panel
+// still holds the report.
 func TestContentPanelReportRetainedAfterClear(t *testing.T) {
 	resetContentPanel(t)
 	a := headlessProbeApp(t, nil, false)
@@ -431,6 +433,9 @@ func TestContentPickerSwitchRestarts(t *testing.T) {
 // TestContentPickerSwitchNoMountsNoOp pins the no-mounts behavior: clicking
 // "Local base" with no base configured must NOT re-run the report — instead it
 // expands the inline setup row, and nothing resolves until a path is used.
+// switchContentSource(true) with an empty originLocal stays a no-op (no restart,
+// no generation bump); the picker's click toggles localSetupOpen rather than
+// switching to a dead origin.
 func TestContentPickerSwitchNoMountsNoOp(t *testing.T) {
 	resetContentPanel(t)
 	a := headlessProbeApp(t, nil, false)

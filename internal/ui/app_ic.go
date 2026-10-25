@@ -190,6 +190,8 @@ func (a *App) applyThemeAsync() uint64 {
 			}
 			// Then AO2's own per-key fallback (#21). It must run AFTER the loop
 			// above so a theme's own rect always wins over the stock default.
+			// Its position relative to the unbound report below is immaterial —
+			// unboundDesignKeys reads the *theme.Theme, not this map.
 			applyAO2DefaultRects(res.layout)
 			// Then the AsyncAO tier's own [overrides], which are the author's edits
 			// laid OVER that result (docs/THEME-FORMAT.md:176-190). AFTER the backstop
@@ -268,6 +270,9 @@ func (a *App) applyThemeAsync() uint64 {
 		}
 		// The USER's own per-panel fonts, OUTSIDE the theme-loaded branch — which is
 		// the whole point of it living here.
+		// The theme's directories are used when there IS one, so a font it ships can
+		// still be picked; with no theme, the user's own font folder and the system
+		// folders are the search path, and both work on their own.
 		var themeDirs []string
 		if t != nil {
 			themeDirs = t.Dirs()
@@ -286,6 +291,10 @@ func (a *App) applyThemeAsync() uint64 {
 		// THE IMPORT REPORT (themereport.go). Built HERE — after the fonts, which
 		// are one of its three inputs — because every input is already on this
 		// goroutine and the render thread must never walk the notes (hard rule 2).
+		// It is the surface that stops Sidecar.Notes() being collected and read by
+		// nothing but tests, its own metadata degrade included: a
+		// degrade-with-a-note whose note reaches nobody is a silent truncation with
+		// extra steps.
 		res.report = buildThemeReport(res.sidecar, res.themeFontsMissing, res.unbound)
 		// Newest-wins publish: never overwrite a higher-gen result (this
 		// load may have been outraced by a later pick).
@@ -341,6 +350,11 @@ func (a *App) pollThemeApply() {
 	}
 	// Geometry: pristine design rects kept aside, the user's layout-editor
 	// overrides applied on a copy, scaled cache invalidated.
+	// The server-tab strip's synthesized key was seeded on the apply goroutine,
+	// into this same pristine map, before the [overrides] fold (see there). It is
+	// in themeRectsOrig for reset/undo to restore from, and in the copy below for
+	// applyRectOverrides — which only rewrites keys that already exist — to
+	// re-apply a drag after a reload. Only the FLAG crosses here.
 	a.tabBarSeeded = res.tabBarSeeded
 	a.skin.themeRectsOrig = res.layout
 	rects := make(map[string]theme.Rect, len(res.layout))
@@ -511,6 +525,11 @@ const themeUnboundReportCap = 12
 
 // unboundDesignKeys lists the theme's rect-shaped design keys that reach no
 // widget: not a themeSlots row, not a deliberate deferral, not a char-select key.
+// "" when the theme is fully covered.
+// This is the observability that makes "a missing rect draws nothing" supportable
+// — a player who loses a control can be told which key their theme declares that
+// AsyncAO does not read. Allocates, and walks every design key: apply goroutine
+// only (hard rule 2).
 func unboundDesignKeys(t *theme.Theme) string {
 	var names []string
 	for key := range t.DesignKeys() {
@@ -611,6 +630,8 @@ func (a *App) now() time.Time {
 
 // themeElapsed is the animation clock for looping theme art: time since
 // the theme applied, so every animated stem (chatbox, buttons, backdrops)
+// steps with pageFrameLoop instead of freezing on Frames[0]. Reads the
+// frame snapshot — themed frames step this at ~10 draw sites.
 func (a *App) themeElapsed() time.Duration {
 	if a.toolbox.themeAt.IsZero() {
 		return 0
@@ -923,6 +944,8 @@ func (a *App) postFX() render.PostFX {
 // applySpriteOverrides lets the user's drag positions win over the
 // message's offsets every frame (one map probe per visible layer; free
 // while no overrides exist).
+// applySpriteOverrides applies them to the ACTIVE room. Every other live room
+// goes through applySpriteOverridesTo — see there for why they must.
 func (a *App) applySpriteOverrides() { a.applySpriteOverridesTo(a.link.room) }
 
 // applySpriteOverridesTo applies the session's hide/move overrides to ONE room.
@@ -975,6 +998,9 @@ func (a *App) healScenery() {
 	sc := &a.link.room.Scene
 	now := time.Now()
 	// Each heal consults the shared per-scene futility budget (sceneHealAllowed):
+	// when the settled working set exceeds the T1 main tier, every heal evicts
+	// another live base and this loop — paced or not — churned decode→upload→
+	// evict→re-demand forever (the focused half of the idle-CPU-burn report).
 	if sc.BackgroundBase != "" && !(sc.BackgroundBase == a.demand.bgAskBase && now.Sub(a.demand.bgAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.BackgroundBase) && a.sceneWarm.healAllowed(sc.BackgroundBase) {
 		a.demand.bgAskBase, a.demand.bgAskAt = sc.BackgroundBase, now
 		a.d.Manager.Prefetch(sc.BackgroundBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
@@ -1093,6 +1119,9 @@ func (a *App) friendMessage(serverKey string, m *protocol.ChatMessage) (bool, in
 // signalFriend fires the opt-in alert signals when a friend speaks: an in-app
 // toast + window flash (FriendNotify) and a sound (FriendSound — a custom file,
 // else the built-in ping). Streamer mode suppresses them (same as callwords).
+// Called at the message seam when friendMessage is true (active OR background
+// tab, so you're alerted even while looking at another server). The glow is
+// drawn separately in the log.
 func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 	if a.d.Prefs.Load().StreamerModeOn || a.dndOn {
 		return
@@ -1138,6 +1167,9 @@ func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 
 // signalModcall pops a desktop toast when a modcall arrives, if the option is on
 // (OFF by default) — a "you're being called" ping for mods who alt-tabbed away.
+// Streamer mode suppresses it (modcall lines can carry IPs) and it shares the
+// friend toast's rate limit so a modcall storm can't flood the desktop. Called
+// at both seams (active + background tab).
 func (a *App) signalModcall(serverName, notice string) {
 	if !a.d.Prefs.Load().ModcallToast || a.d.Prefs.Load().StreamerModeOn || a.ctx.WindowFocused() {
 		return // #M4: only toast when tabbed away (the in-app OOC + flash cover the focused case)
@@ -1276,6 +1308,8 @@ func (a *App) transcriptOwned(k translogKey) bool {
 
 // reapTranscripts retires and forgets every transcript writer no session owns any
 // more — one open file and one goroutine released per ended session.
+// Retire, never close: the goroutine drains and closes the file on its own so the
+// render thread never waits on a disk flush (hard rule §2).
 func (a *App) reapTranscripts() {
 	for k, w := range a.translogs {
 		if a.transcriptOwned(k) {
@@ -1356,6 +1390,9 @@ const oocLineCap = 16384
 func (a *App) pushOOC(line, speaker string) {
 	// Drop the zero-width sidechannel from the BODY before anything reads the line. OOC
 	// is the channel AsyncAO's own DMs and group chat ride on (/pm, courtroom/msgwire.go)
+	// and the caller composes us ev.Name + ": " + a RAW ev.Text, so this is the lane
+	// where a marker actually arrives; the control frame itself was already decoded
+	// upstream (routeIncomingPM runs before this call), so by here it is display text.
 	line = stripDisplayTail(line, speaker)
 	// Harvest /getarea "[uid] name" rows for click-to-pair, from the RAW text:
 	// strip the "speaker: " prefix first, else when a server sends /getarea line

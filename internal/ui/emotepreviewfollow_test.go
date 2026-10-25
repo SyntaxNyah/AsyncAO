@@ -20,6 +20,9 @@ import (
 )
 
 // emotePreviewFollowTestApp is a headless App wired with a real (local-mount)
+// Manager and URLBuilder — the two dependencies selectEmote's prefetch calls
+// need — plus a small fixed emote list. No SDL: the seam under test is pure
+// App state, not a draw.
 func emotePreviewFollowTestApp(t *testing.T) *App {
 	t.Helper()
 	a := testTabApp(t)
@@ -109,6 +112,10 @@ func TestSelectEmoteLeavesUnpinnedPreviewAlone(t *testing.T) {
 }
 
 // TestSelectEmoteNeverOpensAClosedPreview is the other half of the requirement:
+// a pick must never pop the box open for someone who never used the feature,
+// even when the STICKY PREFERENCE alone would count as "pinned" the moment a
+// preview did open. previewIsPinned() ORs the latch with the pref, so this
+// pins the pref-only branch specifically.
 func TestSelectEmoteNeverOpensAClosedPreview(t *testing.T) {
 	a := emotePreviewFollowTestApp(t)
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewPinned = true }) // sticky "always pinned" — nothing hovered yet

@@ -16,6 +16,11 @@ import (
 
 // TestEditTargetSpaceIsExplicitNotInferred is the design's emphatic requirement: a
 // target says which space it is in, and it is impossible to build one that does not.
+//
+// The failure this forbids is not hypothetical arithmetic — it is a reader looking at
+// {key: "", elem: 0} and having to GUESS whether that is "no selection" or "element
+// zero". Both payloads have legitimate zero values, so the guess is unanswerable, and
+// two readers would answer it differently.
 func TestEditTargetSpaceIsExplicitNotInferred(t *testing.T) {
 	// The zero value is unarmed and answers nothing for any space.
 	var zero editTarget
@@ -146,6 +151,9 @@ func TestHandleEdgeMaskIsTheDocumentedTable(t *testing.T) {
 // fallback, so a target that does not honour edgeR|edgeB gets no grip at all once it
 // is too small for the full set — rather than being offered a bottom-right corner
 // whose drag would move an edge it refuses.
+// No production call site reaches this combination today (both design spaces answer
+// all-four-or-none), which is exactly why it needs a test: the next caller is where
+// it would ship.
 func TestCrampedBoxOffersNoLyingHandle(t *testing.T) {
 	cramped := sdl.Rect{X: 10, Y: 10, W: editHandleRoomPx - 1, H: 24}
 	// A width-only target — slotResizeEdges' shape for the classic control block.
@@ -171,6 +179,10 @@ func TestCrampedBoxOffersNoLyingHandle(t *testing.T) {
 // level: a theme's own widget offers the same four corners and four edge midpoints the
 // classic editor has had since v1.52.0, each gripping exactly the edges its
 // handleEdgeMask row names.
+//
+// It also pins the two rules that keep the generalization from taking anything away:
+// a move-only key still offers nothing, and a box too small to hold the full set keeps
+// exactly the bottom-right corner it had before this wave.
 func TestThemedEditorHasAllEightHandles(t *testing.T) {
 	const editable = "emotes" // a painted, non-fixed themeSlots row
 	if !themeKeyEditable(editable) {
@@ -188,6 +200,9 @@ func TestThemedEditorHasAllEightHandles(t *testing.T) {
 	// Every handle grips its own edges, and the eight between them cover all four
 	// sides — the property that makes "resize from any side" true rather than "resize
 	// from four corners that happen to add up".
+	// Against the LITERAL table, never against handleEdgeMask itself: reading the
+	// expectation out of the production table made this loop a tautology that survived
+	// any permutation of it (see wantHandleEdges).
 	var covered uint8
 	for i, hnd := range classicHandles(designHandleRect) {
 		mx, my := hnd.X+hnd.W/2, hnd.Y+hnd.H/2
@@ -328,6 +343,9 @@ func stageDesignResize(t *testing.T) (*App, *Ctx, *themeLayoutCache, sdl.Rect, f
 // TestThemedEditorResizesFromTheTopLeftHandle is the wave's one capability, driven
 // through the real editor: press a handle that did not exist before W6 and the widget
 // grows from THAT corner, with the opposite one nailed down.
+//
+// Before this wave the same press was a MOVE — there was no grip anywhere but the
+// bottom-right corner — so a theme's widget could only ever be resized down and right.
 func TestThemedEditorResizesFromTheTopLeftHandle(t *testing.T) {
 	a, ctx, lay, box, cleanup := stageDesignResize(t)
 	defer cleanup()

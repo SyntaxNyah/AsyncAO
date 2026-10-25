@@ -349,6 +349,8 @@ func TestAdditiveText(t *testing.T) {
 	// A DIFFERENT speaker with ADDITIVE=1 STILL appends — AO2 has no char-id gate on
 	// the accumulator. Here the accumulated "Hello world" ends with a non-space rune
 	// and "Objection" starts with one, so the auto-joiner inserts a single space:
+	// the prefix becomes "Hello world " (12 runes, pre-revealed) and the display reads
+	// "Hello world Objection", not the glued "Hello worldObjection".
 	room.begin(&protocol.ChatMessage{CharName: "Edgeworth", Emote: "normal", CharID: 4, Additive: true, Message: "Objection"})
 	if room.additivePrefix != "Hello world " {
 		t.Errorf("cross-speaker additive must append + auto-join: prefix=%q, want 'Hello world '", room.additivePrefix)
@@ -464,6 +466,10 @@ func TestAdditiveJoiner(t *testing.T) {
 }
 
 // TestAdditiveOutgoingLeadingSpace pins Part 2: the sender-side AO2 parity space.
+// We prepend it at packet build (not in the input field, so a.icInput stays clean)
+// whenever the visible text lacks a leading space; a blankpost (already " ") and a
+// colourised blankpost ("\cr ") are left untouched, and colour markup at the head
+// doesn't fool the check because it runs on StripChatMarkup.
 func TestAdditiveOutgoingLeadingSpace(t *testing.T) {
 	cases := []struct {
 		name, in, want string
@@ -1736,6 +1742,8 @@ func TestCatchUpDrainsBacklog(t *testing.T) {
 // TestCatchUpDefaultEngagesAtOneBehind pins the default catch-up trigger
 // (threshold 1, the floor): a message catches up the moment ONE message waits
 // behind it, so only the newest line (nothing behind it) ever plays in full.
+// This is the boundary the >= comparison sets — under the old > it engaged only
+// at two-behind, leaving the textbox a message behind real-time.
 func TestCatchUpDefaultEngagesAtOneBehind(t *testing.T) {
 	room, sess, _, _ := newCourtroomRig(t)
 	setupReadySession(t, sess)
@@ -1892,6 +1900,10 @@ func TestKnownMissingPreanimNeverStagesPlaceholder(t *testing.T) {
 }
 
 // TestKnownMissingImmediatePreanimNeverStages is the immediate-mode (non-blocking)
+// equivalent: an immediate message's preanim plays OVER the text crawl, so a
+// known-missing one would park Active on the missing base while the text types —
+// the same placeholder-flash window on the play-once branch. The entry skip must
+// cover it too: Active goes straight to the talk base and PlayOnce never arms.
 func TestKnownMissingImmediatePreanimNeverStages(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
 	msg := immediatePreanimMsg("hi") // Phoenix / preanim "intro"
@@ -2090,6 +2102,9 @@ func TestImmediatePreanimTransitions(t *testing.T) {
 // TestImmediateDoesNotHoldTheQueueForThePreanim is the field report itself: with
 // a LONG immediate preanim still playing, the next message must take the stage
 // at TEXT completion + TextStay, not at preanim completion.
+// The room is given a decoded 5 s preanim (NotifyPreanimStarted) and a zero
+// TextStay, so the only thing that could delay the second message is the
+// animation. AO2 arms text_queue_timer from chat_tick regardless of anim_state
 // (../AO2-Client/src/courtroom.cpp:4332-4338).
 func TestImmediateDoesNotHoldTheQueueForThePreanim(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
@@ -2178,6 +2193,10 @@ func TestImmediatePreanimBounded(t *testing.T) {
 }
 
 // TestMissingImmediatePreanimRestoresTalkLoop covers the non-blocking flavour:
+// IMMEDIATE plays the preanim ALONGSIDE the text by parking Active on the
+// preanim base with PlayOnce. A conclusively-missing preanim would leave the
+// speaker invisible for the whole message (no one-shot ever completes, so
+// OnPreanimDone never fires) — the miss must restore the talk loop instead.
 func TestMissingImmediatePreanimRestoresTalkLoop(t *testing.T) {
 	room, sess, _, _ := newCourtroomRig(t)
 	setupReadySession(t, sess)
@@ -2685,6 +2704,8 @@ func TestHexColorRun(t *testing.T) {
 }
 
 // TestExtColorCodesStripped directly pins that every extended-colour code (#98)
+// is CONSUMED from the visible text — the literal "\c<letter>" never shows in the
+// chatbox or IC log on a current build. (A playtester seeing a literal "\cg" is
 // on a stale pre-#98 exe, which doesn't know the code and emits it verbatim.)
 func TestExtColorCodesStripped(t *testing.T) {
 	for _, code := range ExtColorCodes {

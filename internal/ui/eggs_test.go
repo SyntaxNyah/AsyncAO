@@ -25,6 +25,11 @@ import (
 
 // eggOracleW / eggOracleH size the offscreen frame those gates paint into, and
 // eggOracleInset how far inside it the stand-in chatbox sits. Small on purpose:
+// these gates COUNT painted pixels rather than look at them, and every egg's
+// field scales with the rect it is handed, so a postage stamp runs the same loops
+// a 4K stage would. The inset has to clear the OUTSET rings
+// (eggRingCount*eggRingGap px of them) or ringVisible would legitimately skip
+// them and the motion-allowed control arm would read a truthful zero.
 const (
 	eggOracleW     = int32(240)
 	eggOracleH     = int32(180)
@@ -103,6 +108,7 @@ func eggOracleRig(t *testing.T) (*App, *render.CaptureTarget, sdl.Rect, sdl.Rect
 
 // TestReduceMotionFreezesEveryEgg is the accessibility gate for the whole egg
 // roster, in the shape TestReduceMotionFreezesEveryElement (themeclock_test.go)
+// uses for the theme clock.
 // Reduce motion is not "most of the motion": somebody who ticks that box because
 // movement makes them ill is not served by a chatbox that still breathes at them
 // because a stranger typed a name. Both entry points read the preference, and
@@ -484,6 +490,17 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 	draw := func() { a.drawCourtroom(w, h) }
 
 	// Each egg has a DISTINCT draw path and every one of the SEVEN is a row here:
+	// FanatSors' rainbow rings; OmniTroid's blue<->gold pulse plus the perimeter
+	// sweep; Crystalwarrior's split-hue ring PLUS its stage shard field;
+	// SyntaxNyah's pink heartbeat; Scatterflower's palette-drift ring PLUS its
+	// stage petal field; Northgate's ramp ring PLUS its stage curtain field; and
+	// Mint's banded ring PLUS its stage frost-and-fleck field. All eleven draw
+	// bodies have to be gated — the sweep's per-edge fill loop and the five nested
+	// stage loops are the alloc-prone ones. drawCourtroom covers both halves of the
+	// four two-part eggs: renderViewportZoomed reaches drawStageEgg,
+	// drawChatOverlay reaches drawChatEgg. Re-drive the SAME speaker (char 0
+	// "Witch", whose stage bases the staging already made resident) with each
+	// creator-name message, settle the typewriter, and assert zero allocs.
 	for _, tc := range []struct {
 		text string
 		want uint8
@@ -511,6 +528,11 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 
 // TestEggWordPresentIsABoundaryMatch pins the one trigger that is not a plain
 // Contains, from both sides.
+// "mint" is ordinary English, so a substring match fires on peppermint, minted,
+// spearmint and mintage — the exact false-positive class the full-handle rule
+// keeps out for the other five, applied to a handle that cannot buy specificity
+// from length. The negative rows are the point; the positive ones stop a
+// too-clever boundary rule from making the egg unreachable.
 func TestEggWordPresentIsABoundaryMatch(t *testing.T) {
 	for _, s := range []string{
 		"mint", "Mint is here" /* callers lower-case first — see below */, "a mint",

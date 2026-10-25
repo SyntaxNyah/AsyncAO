@@ -2,6 +2,12 @@ package ui
 
 // The App half of the char.ini showname chain (see
 // internal/courtroom/shownamechain_test.go for the chain itself).
+//
+// The rung exists in internal/courtroom, but a client that never WIRES it is
+// exactly as broken as one that never had it — and the wiring is invisible: the
+// plate falls back to the folder name, which is a legitimate answer, so nothing
+// errors and nothing looks obviously wrong. That is the parsed-but-never-applied
+// shape CLAUDE.md names, and it is why these gates are here.
 
 import (
 	"testing"

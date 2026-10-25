@@ -1,6 +1,9 @@
 package ui
 
 // THE EDITOR'S DOCUMENT (v1.90.0 W7a) — docs/wip/THEME-EDITOR-DESIGN.md §Q7.
+// SDL-FREE BY SHAPE. Nothing here draws, measures text or touches a texture; the
+// screen (themeeditor.go) does all of that. The split is what lets every gate in
+// this file run without a renderer.
 
 import (
 	"strconv"
@@ -23,6 +26,9 @@ const (
 
 	// editSlotRowPresent is the opSlotRect payload's "an [overrides] row for this
 	// key already existed" flag, carried in the b[0] lane.
+	// ONE BIT, AND IT IS LOAD-BEARING. Without it an undo can only put the NUMBERS
+	// back, not the row: a drag that created the theme's first override on a widget
+	// and was then undone would leave behind a row restating what the AO2 tier
 	editSlotRowPresent uint8 = 1
 )
 
@@ -48,6 +54,9 @@ func slotRectOf(v editValue) (theme.Rect, bool) {
 
 // editField names ONE addressable field. It is the third coordinate of an edit
 // (space, target, field) and the index into the get/set tables below.
+// APPEND-ONLY, at the END. Ops are never persisted, so a reorder cannot corrupt a
+// saved theme — but the inspector table is indexed by these and a reorder would
+// silently re-point every row in it.
 type editField uint8
 
 const (
@@ -150,6 +159,11 @@ func (f editField) String() string {
 }
 
 // editFieldGet reads one field out of an element into the fixed-size payload.
+// A TABLE, NOT A SWITCH, and indexed by the enum: a field appended to editField
+// without a reader here is a nil entry that
+// TestEveryEditFieldHasAGetterAndASetter names, where a switch's default would
+// have silently returned the zero value and made the field look like it was
+// always empty.
 var editFieldGet = [editFieldCount]func(*themeDoc, *theme.Element) editValue{
 	editFieldRect: func(_ *themeDoc, e *theme.Element) editValue {
 		return editValueRect(int32(e.Rect.X), int32(e.Rect.Y), int32(e.Rect.W), int32(e.Rect.H))
@@ -327,6 +341,11 @@ var editFieldSet = [editFieldCount]func(*themeDoc, *theme.Element, editValue){
 	editFieldNoDecimate: func(_ *themeDoc, e *theme.Element, v editValue) { e.NoDecimate = v.i[0] == 0 },
 
 	// THE ID GOES THROUGH THE FORMAT'S OWN FUNNEL and never through e.ID directly.
+	// An element's id lives in two places — this struct field and the
+	// `[element.<id>]` header in the lossless carrier — and theme.RenameElement is
+	// the only thing that can move both as one act. Assigning e.ID here would leave
+	// the carrier's header on the old name, and the next save would APPEND a second
+	// section: a file that reads back as two elements (see editFieldElemID).
 	editFieldElemID: func(d *themeDoc, e *theme.Element, v editValue) {
 		_ = d.side.RenameElement(e.ID, d.str(v.s))
 	},
@@ -387,6 +406,9 @@ type themeDoc struct {
 	live map[string]theme.Rect
 	// baseLive is the resolved geometry as it stood when the editor OPENED, and
 	// baseElems / baseOv are the model as it stood then.
+	// They are what "exit without saving puts it back" is made of, and they are a
+	// snapshot rather than a replay of the undo ring on purpose: the ring is capped
+	// (themeEditUndoCap), so past 128 ops a replay would restore MOST of the
 	baseLive  map[string]theme.Rect
 	baseElems []theme.Element
 	baseOv    []theme.KeyRect
@@ -406,6 +428,10 @@ type themeDoc struct {
 	// apply in the same breath). It is never set anywhere an apply did not happen.
 	typeSigApplied uint64
 	// dirty is "there are unsaved edits". Set by apply, cleared by a save.
+	//
+	// (There is no savedMtime yet. The external-edit guard belongs with the AUTOSAVE
+	// that needs it — W7b — and a field carried in advance of its only reader is
+	// state nothing keeps honest.)
 	dirty bool
 
 	// grave holds the BODIES of deleted elements so an undo can resurrect them
@@ -440,6 +466,8 @@ func newThemeDoc(name string, sc *theme.Sidecar) *themeDoc {
 	d.baseBind = append([]theme.KV(nil), sc.FontBind...)
 	// The faces on screen were resolved from THESE tables: the editor opens over the
 	// APPLIED theme, so the document starts in step with the last apply by definition.
+	// Seeding it here rather than at the first save is what makes a session that never
+	// touches the type kick no applies at all.
 	d.typeSigApplied = d.typeSig()
 	return d
 }
@@ -461,6 +489,8 @@ func (d *themeDoc) bindLive(rects map[string]theme.Rect) {
 // intern returns the id of s, adding it if there is room. A FULL TABLE returns
 // editStrNone — i.e. "", which the op layer treats as a refused construction rather
 // than as a silent edit to the empty string (mutateElemField checks the round trip).
+// A linear scan of at most editStrCap: this runs on an inspector edit, never per
+// frame, and a map would allocate on every miss.
 func (d *themeDoc) intern(s string) editStrID {
 	if s == "" {
 		return editStrNone
@@ -573,6 +603,8 @@ func (d *themeDoc) apply(op themeEditOp) (themeEditOp, editApplyResult) {
 // mediaRowValue / mediaRowOf are the ONE encoding of a [media] row, a pair for the
 // same reason fontRowValue / fontRowOf are: four fields packed in one order and
 // unpacked in another compiles and is silently wrong.
+// AN EMPTY ID ENCODES TO "", which is the table's own "no row" value: it is what a
+// removal writes and what an append undoes to, so the two need no extra flag.
 func mediaRowValue(m theme.MediaEntry) string {
 	if m.ID == "" {
 		return ""
@@ -626,6 +658,9 @@ func (d *themeDoc) mediaRowAt(idx int) string {
 
 // writeMediaRow is the ONE writer of the [media] table. An empty value REMOVES the
 // row; an index at the end APPENDS.
+// THE CAP REFUSES, IT DOES NOT EVICT, exactly as writeFontRow, setOverrideRow and
+// insertAt do: a document that dropped somebody else's picture to make room for this
+// one would save a theme whose elements point at nothing.
 func (d *themeDoc) writeMediaRow(idx int, v string) bool {
 	m := mediaRowOf(v)
 	switch {
@@ -677,6 +712,10 @@ func fontRowOf(s string) (family, file string) {
 }
 
 // typeSigOffset64 / typeSigPrime64 are FNV-1a's published parameters (hard rule 9:
+// named, because nobody may tune them). A 64-bit non-cryptographic hash is the right
+// tool here and the choice is bounded by its use: the value is compared only against
+// another run of this same function inside one editing session, it is never stored,
+// never written to a theme and never a trust boundary.
 const (
 	typeSigOffset64 uint64 = 14695981039346656037
 	typeSigPrime64  uint64 = 1099511628211
@@ -771,6 +810,9 @@ func (d *themeDoc) fontRowAt(kind editOpKind, idx int) string {
 // writeFontRow is the ONE writer of both tables. An empty value REMOVES the row; an
 // index at the end APPENDS. Returns false for a refusal — a cap, or an index that is
 // neither an existing row nor the append slot.
+// THE CAP REFUSES, IT DOES NOT EVICT, exactly as setOverrideRow and insertAt do: a
+// document that dropped somebody else's family to make room for this one would save a
+// theme whose bindings point at nothing.
 func (d *themeDoc) writeFontRow(kind editOpKind, idx int, v string) bool {
 	if kind == opFontBind {
 		if idx < 0 || idx >= len(theme.FontElements) {
@@ -834,6 +876,11 @@ func (d *themeDoc) writeFontBind(class, family string) bool {
 // how a theme behaves for somebody who only uses it.
 
 // slotEditable reports that a design key is one this document may author.
+// It is sidecarOverrideTarget's first two gates (themeoverrides.go), asked of the
+// LIVE map rather than the apply goroutine's: editable, and actually placed by this
+// build. The tab strip is refused on top of them — see editorSlotKeyEditable
+// (themeeditorcanvas.go) for that argument, which is about ownership rather than
+// about geometry and therefore lives with the probe that enforces it.
 func (d *themeDoc) slotEditable(key string) bool {
 	if d == nil || d.live == nil || key == "" || !themeKeyEditable(key) {
 		return false
@@ -881,6 +928,10 @@ func (d *themeDoc) applySlotRect(op themeEditOp) (themeEditOp, editApplyResult) 
 
 // applySlotReset removes this document's [overrides] row for a widget, putting the
 // geometry back to what the tiers below resolved when the editor opened.
+// A ROW THAT WAS NEVER THERE IS NOT A RESET, and answering applyNoChange for it is
+// the same ruling applySlotRect's equal-rect arm makes: pressing Reset on an
+// untouched widget must not mark the theme edited, and must not chip a refusal for a
+// limit that is not there.
 func (d *themeDoc) applySlotReset(op themeEditOp) (themeEditOp, editApplyResult) {
 	key := op.target.designKey()
 	if !d.slotEditable(key) {
@@ -1118,6 +1169,10 @@ func (d *themeDoc) removeAt(t editTarget, v editValue) (theme.Element, bool) {
 }
 
 // insertAt puts a parked body back at the target's index.
+// THE CAP REFUSES, IT DOES NOT TRUNCATE — the same ruling the reader follows
+// (design §3.3, TestSidecarCapsRefuseNotTruncate): an insert past theme.ElementCap
+// fails loudly here so the UI can name the cap, rather than succeeding into a model
+// that Sidecar.Bytes() would then refuse to save.
 func (d *themeDoc) insertAt(t editTarget, v editValue) bool {
 	idx, ok := t.elemIdx()
 	if !ok || d.side == nil || idx < 0 || idx > len(d.side.Elements) {
@@ -1144,6 +1199,8 @@ func (d *themeDoc) insertAt(t editTarget, v editValue) bool {
 // rebaseline re-takes the snapshot restoreBaseline restores to. ONE CALLER, and it
 // is the only event that may move the baseline: landEditorSave, after a write landed
 // (themeeditorsave.go).
+// ALL OF IT OR NONE OF IT, exactly like restoreBaseline: a baseline where the
+// elements had moved on but the type tables had not is a discard that half-works.
 func (d *themeDoc) rebaseline() {
 	if d == nil || d.side == nil {
 		return

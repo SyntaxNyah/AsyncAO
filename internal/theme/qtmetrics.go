@@ -16,6 +16,9 @@ import "encoding/binary"
 // QtRowPitch is one face's Qt vertical metrics, in FONT UNITS, plus the em they
 // are expressed against. Font units rather than pixels because a single face is
 // opened at several sizes (the chatbox zoom, the canvas fold, the device scale)
+// and the conversion has to happen per size.
+// The zero value is deliberately inert: Pitch returns 0 for it, and 0 is what
+// every consumer treats as "no Qt opinion, keep the SDL_ttf metric".
 type QtRowPitch struct {
 	// UnitsPerEm is head.unitsPerEm. Zero means the face carried no usable
 	// metrics and the whole value is inert.
@@ -103,6 +106,9 @@ const (
 	sfntHeaderMinLen = sfntDirOff
 
 	// A TrueType Collection puts its member offsets at byte 12, one uint32 each.
+	// Only the FIRST member is read: a theme names ONE family per element and the
+	// loader hands us the bytes of the file that family resolved to, so there is
+	// no second face here to pick between.
 	ttcTag       = "ttcf"
 	ttcFirstOff  = 12
 	ttcMinLength = ttcFirstOff + 4

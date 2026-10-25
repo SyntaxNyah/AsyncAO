@@ -16,6 +16,9 @@ import (
 )
 
 // editExportSubdir is the folder exports land in, beside the themes themselves.
+// A SIBLING of the theme folders rather than inside one: a .aotheme dropped into
+// themes/<name>/ would be bundled by the NEXT export of that theme, and the
+// bundle would grow by its own previous size every time.
 const editExportSubdir = "shared"
 
 // editExportJob is one in-flight bundle write.
@@ -58,6 +61,9 @@ func (a *App) editorExport() {
 	// words, at the moment the author can still fix it. Without this the sheet would
 	// happily bundle a theme whose model has since drifted past a cap, and the
 	// recipient would be the one who found out.
+	// IT IS SIDE-EFFECT FREE, which is why it is Validate rather than a throwaway
+	// bytes(): a "check" that rewrote the lossless carrier on its way past would be a
+	// save nobody asked for.
 	if err := a.te.doc.side.Validate(); err != nil {
 		a.te.note("this theme would not save, so it cannot be shared: " + err.Error())
 		return
@@ -91,6 +97,9 @@ func (a *App) editorExport() {
 
 // editorExportExtras builds the AO2-compat mode's three replacement files, or
 // nothing at all for a native export.
+// Render thread: it is two small file reads and a serialise, and it has to be
+// able to refuse BEFORE the goroutine starts so the refusal can be a chip. The
+// bound is the format's own (theme.IniDocByteCap, applied by ParseINIDoc).
 func (a *App) editorExportExtras(dir string, ao2 bool) ([]themepack.Extra, error) {
 	if !ao2 {
 		return nil, nil
@@ -156,6 +165,9 @@ func editorExportReceipt(job *editExportJob, m *themepack.Manifest) string {
 }
 
 // readFileBounded reads at most max bytes of a file, or nothing at all.
+// Render thread, and the one place in this file that touches the disk there. It
+// is bounded by the format's own cap and it has to be synchronous, because the
+// refusal it can produce is a chip the user must see on the click that caused it.
 func readFileBounded(path string, max int) []byte {
 	f, err := os.Open(path)
 	if err != nil {

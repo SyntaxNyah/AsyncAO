@@ -36,6 +36,12 @@ type toolboxState struct {
 	toolboxThemeRect   sdl.Rect
 	toolboxThemeRectOn bool
 	// toolboxFence is THIS FRAME's single toolbox decision (courttoolbox.go):
+	// fenceCompactToolbox latches it at the top of the courtroom pass and the draw
+	// at the bottom of the pass replays it, so the published overlay fence and the
+	// painted pixels are the same answer even though handleHotkeys and the modal
+	// return sit between them. Cleared at the top of every drawCourtroom, so a
+	// theater / lobby / dropped-session frame can never replay a stale one. Value
+	// type, App-level (the toolbox is client chrome, not per-tab state).
 	toolboxFence compactToolboxLatch
 	// pathStroke is the in-progress freehand stroke for the Sprite Style "draw a path" box
 	// (#34 B2): raw box-relative points captured while dragging, sampled to <=6 waypoints on

@@ -17,11 +17,15 @@ import (
 )
 
 // volumeWheelStep is how many percent one wheel tick nudges a volume row (#52):
+// fine enough for precise tuning, coarse enough that a flick crosses the 0–100
+// range in a handful of ticks. It's the volume analog of sliderRow's per-call
+// step; a value row without an explicit step needs a named one here.
 const volumeWheelStep = 2
 
 // volumeRow draws one "<name>  [====slider====] NN%" control and returns the
 // value. A draggable slider (click/drag anywhere on the track) instead of
 // +/- buttons — far nicer to set than stepping a button. Continuous 0–100.
+// Mousewheel over the row steps by volumeWheelStep (numberRow/sliderRow parity,
 // #52) and the row joins the settings gather-search index like every other row.
 func (a *App) volumeRow(y int32, name string, value int) int {
 	c := a.ctx
@@ -202,6 +206,7 @@ func (a *App) applyManualUIScale(pct int) {
 // exact px width for power users; 0 px = "Fit" (size by the View % knob / edge
 // drag, the prior behaviour). The entry buffer is written only on edit / commit
 // / chip / slider — never reseeded per frame — so it stays freely editable.
+// Settings screen only; off the courtroom hot path.
 func (a *App) drawViewportSizeRow(y int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -284,6 +289,8 @@ func (a *App) drawViewportSizeRow(y int32) int32 {
 
 // delayRow draws a hover-dwell slider with a seconds readout and returns the
 // picked ms, clamped to [minMs, maxMs] and snapped to the half-second grid.
+// Shared by previewDelayRow and emoteNameDelayRow, which differ only in the row
+// label, widget id and upper bound (the config setters are authoritative).
 func (a *App) delayRow(y int32, ms int, label, id string, maxMs int) int {
 	c := a.ctx
 	pad := a.formX
@@ -331,6 +338,10 @@ func (a *App) emoteNameDelayRow(y int32, ms int) int {
 // gap in LOGICAL px. Same shape as emoteNameDelayRow (slider + wheel-over-the-row
 // nudge + a live readout), and it shadows pad from a.formX like every settings
 // draw helper must — without that shadow the row renders under the sidebar.
+//
+// The range starts at 0 on purpose (icons flush against each other) and the value
+// is NOT snapped to a step, unlike the half-second grid on the delay row above:
+// this setting is specified in pixels, so every pixel in range must be reachable.
 func (a *App) emoteGridGapRow(y int32, gap int) int {
 	c := a.ctx
 	pad := a.formX

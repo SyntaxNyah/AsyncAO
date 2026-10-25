@@ -106,6 +106,9 @@ func buildAudioFallbackLabels() []string {
 // this host's learned table instantly — no network round-trip, so the very
 // first probe after it is already right — and it overrides both the server's
 // own manifest and the global default, for that host only.
+// It is deliberately a manifest rather than a new preference: the per-server
+// profile mechanism already exists, already persists, and already re-applies on
+// every reconnect (fetchManifestAsync). A second mechanism would be a second
 func pinnedProfileJSON(ext string) string {
 	return `{"charicon_extensions":["` + ext + `"],` +
 		`"emote_extensions":["` + ext + `"],` +
@@ -124,6 +127,8 @@ func (a *App) noteSearchRow(label string, y int32) {
 
 // formatsTabPointer draws the "the format controls live on their own tab now"
 // jump button used by the Assets and Power user tabs. A pointer, never a copy:
+// duplicating a control is how the two tabs ended up disagreeing about where
+// formats belong. Returns the next y.
 func (a *App) formatsTabPointer(y int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -215,6 +220,9 @@ func (a *App) drawFormatsThisServer(y, w int32) int32 {
 	// What is deciding this host's formats, most specific wins first: a profile
 	// pinned here, the built-in official-vanilla example, then the server's own
 	// format list, then nothing (the per-type defaults, learned as art loads).
+	// The "not checked yet" case is stated as such rather than folded into "no
+	// list" — claiming a server publishes nothing when we simply haven't asked
+	// would send a player straight to a fix they don't need.
 	hasCustom := a.d.Prefs.Load().ExtProfile(host) != ""
 	st, known := a.srvMeta.manifestStatus[host]
 	source, col := "", ColTextDim
@@ -321,6 +329,10 @@ func (a *App) applyServerFormatPin(host, ext, label string) {
 // AsyncAO, per asset class, beside what would be probed without it. This is the
 // fastest way to see WHY an asset is missing: a class showing a type the server
 // doesn't serve is the whole diagnosis.
+// Zero allocation per frame by construction: Resolver.LearnedList is one atomic
+// load plus a map lookup and returns interned extension strings, drawn as
+// separate labels rather than joined (joining would allocate every frame), and
+// the probe-order column comes from the generation-cached formatOrderText.
 func (a *App) drawLearnedTable(y int32, host string) int32 {
 	c := a.ctx
 	pad := a.formX

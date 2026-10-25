@@ -1,6 +1,10 @@
 package theme
 
 // THE PRESET LIBRARY: the shipped 21 x 14 gallery, parsed once.
+// PARSED ONCE, LAZILY. sync.Once, not an init(): a client that never opens the
+// gallery should not pay 35 INI parses at start-up, and hard rule 2 forbids
+// doing them on a draw path — Library() is called from the theme-apply
+// goroutine and from the gallery's own open, both cold.
 
 import (
 	"errors"
@@ -37,6 +41,8 @@ const (
 	// half again of headroom for the class to grow, and an order of magnitude short
 	// of the inherited bound, so a fragment that ballooned is a review question
 	// rather than a silent binary-size change.
+	// REFUSED, not truncated, for the same reason the axis caps are: half a
+	// fragment is a gallery card nobody can explain.
 	PresetFragmentByteCap = 64 << 10
 )
 
@@ -61,6 +67,7 @@ var (
 )
 
 // PresetLibrary is the parsed, ordered, immutable fragment set.
+//
 // Order is BY ID, ascending, and it is the gallery's row/column order. Sorted
 // rather than left in fs.ReadDir order because a directory listing is the
 // filesystem's opinion and the gallery's layout must not be.
@@ -86,6 +93,10 @@ func ShippedPresets() (*PresetLibrary, error) {
 }
 
 // LoadPresetLibrary parses an axis tree out of any fs.FS.
+// CONSUMER-DEFINED INTERFACE (hard rule 11, interface segregation): it takes
+// fs.FS rather than *embed.FS so the gates can drive it from a hand-built
+// fstest.MapFS — which is the only way to test what happens to a DUPLICATE id or
+// an OVER-CAP directory, neither of which the shipped tree may ever contain.
 func LoadPresetLibrary(src fs.FS) (*PresetLibrary, error) {
 	lib := &PresetLibrary{}
 	for i := range lib.byID {
@@ -172,12 +183,23 @@ func loadOnePreset(src fs.FS, dir, name string) (*Preset, error) {
 }
 
 // Layouts / Styles return the ordered fragments of one axis.
+// THE SLICE IS SHARED, NOT COPIED, and the type is what keeps that safe: a
+// caller can reorder its own copy of the header but cannot reach a *Preset's
+// contents without going through the merge, which deep-copies. Copying here
+// would allocate 35 pointers on every gallery frame for no property the caller
+// does not already have. Nil-safe, so a library that failed to load renders an
+// empty gallery instead of crashing one.
 func (l *PresetLibrary) Layouts() []*Preset { return l.axis(PresetLayout) }
 
 // Styles is Layouts' twin for the other axis.
 func (l *PresetLibrary) Styles() []*Preset { return l.axis(PresetStyle) }
 
 // axis resolves ONE axis by kind, and every other accessor here goes through it.
+// Layouts, Styles and Count used to answer "which slice is this axis" three
+// times; a by-kind caller — the corpus gates walk `k < PresetKindCount` rather
+// than naming the two axes, so that an axis cannot be dropped by editing a list
+// — would have been a fourth. Nil-safe and out-of-range-safe for the same reason
+// Layouts is: a library that failed to load renders an empty gallery.
 func (l *PresetLibrary) axis(k PresetKind) []*Preset {
 	if l == nil {
 		return nil
@@ -203,6 +225,9 @@ func (l *PresetLibrary) Combinations() int {
 // returns (nil, nil): a theme that names only a style is a legal theme, and
 // forcing the caller to distinguish "" from a typo at every site is how a
 // missing tier turns into an error dialog.
+// An UNKNOWN id returns ErrPresetUnknown, which callers surface as a note and
+// never as a refusal — it is exactly what a theme authored on a newer build
+// looks like here (format rule 1).
 func (l *PresetLibrary) Find(k PresetKind, id string) (*Preset, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {

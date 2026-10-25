@@ -22,6 +22,8 @@ const bundleGateWait = 10 * time.Second
 
 // dropRig is an App a drop can be delivered to, plus a themes root that is a
 // temp directory rather than the developer's real AppData.
+// THE ROOT IS A PARAMETER, which is the whole reason bundleDrop is split out of
+// handleThemeBundleDrop: a gate that had to go through config.UserThemesDir()
 func dropRig(t *testing.T) (*App, string) {
 	t.Helper()
 	return &App{env: env{}}, filepath.Join(t.TempDir(), "themes")
@@ -271,6 +273,8 @@ func TestAnImportNeverRepointsTheThemeRoot(t *testing.T) {
 
 // TestEveryDegradeReachesASurface is the gate that had to exist before the
 // metadata ruling could.
+// It drives buildThemeReport and noteThemeReport, which is the shipped pair, and
+// then asserts on a.warnLine — the surface a human actually reads.
 func TestEveryDegradeReachesASurface(t *testing.T) {
 	// A sidecar carrying one of each input class: a metadata degrade (W8), and an
 	// element the reader skipped (the forward-compat path, W1).
@@ -332,6 +336,9 @@ func TestEveryDegradeReachesASurface(t *testing.T) {
 // TestImportReportNamesEveryDeclaredGap is design §Q5's own requirement, stated as
 // a gate: an AO2 feature this client INHERITS rather than imports must be named,
 // with its reason, on the theme that ships one.
+// The two gaps are `[import] lobby_design` and `per_misc`. `_sharp` is the one
+// declared gap deliberately absent, for the reason themereport.go states: it is not
+// on the sidecar and there is no census to ask.
 func TestImportReportNamesEveryDeclaredGap(t *testing.T) {
 	if len(themeReportGaps) == 0 {
 		t.Fatal("the declared-gap table is empty — §Q5 names two inherited gaps that the reader " +
@@ -430,6 +437,7 @@ func TestTheDropRouterAndTheExtractorAgreeOnWhatABundleIs(t *testing.T) {
 
 // stageExportable opens the editor over a real theme FOLDER, saves once so the
 // folder holds the document that is about to be bundled, and returns the folder.
+//
 // The save is not scaffolding: Share bundles the FILES ON DISK, so a gate that
 // exported an unsaved document would be measuring an empty folder.
 func stageExportable(t *testing.T, a *App) string {
@@ -456,6 +464,10 @@ func stageExportable(t *testing.T, a *App) string {
 // TestSharingAThemeWritesABundleThatImportsBack is the export half's end-to-end
 // gate, and it is the one that makes editorAwaitExport a shipped path rather than
 // a function with no callers.
+// It asserts on the FILE — the bundle exists, it is outside the theme folder, and
+// the tree that comes back out of it is the tree that went in. Round-tripping is
+// not a feature that had to be built; it is a consequence of "a theme IS a folder",
+// and this is where that claim is measured through the client's own buttons.
 func TestSharingAThemeWritesABundleThatImportsBack(t *testing.T) {
 	a, cleanup, _ := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()
