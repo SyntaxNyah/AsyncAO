@@ -519,6 +519,11 @@ type contentJob struct {
 
 	// Package phase (one goroutine → render thread).
 	pkgDone chan contentPackageResult
+	// pkgCancel is closed by CancelContentJob so the writer stops early and deletes
+	// what it had written. Without it a cancelled job still finished the whole
+	// folder, and the user found a bundle they never asked to keep.
+	pkgCancel    chan struct{}
+	pkgCancelled bool // render thread only, guards the single close
 
 	// Auto-bundle (H2): set when this job was started by stopRecording's
 	// "recordings keep their assets" auto-build, NOT by a Studio panel. It changes
@@ -1082,6 +1087,10 @@ func (a *App) CancelContentJob() {
 	}
 	a.contentGen++           // invalidate the dropped job's generation
 	a.content.releaseProbe() // unblock any probe goroutines so they die (no leak)
+	if c := a.content.pkgCancel; c != nil && !a.content.pkgCancelled {
+		a.content.pkgCancelled = true
+		close(c) // the package writer removes its partial folder and returns
+	}
 	a.content = nil
 	a.contentBusy = false
 }
@@ -1131,15 +1140,16 @@ func (a *App) PackageContentBundle(rec *sceneRecording) bool {
 
 	j.phase = phasePackaging
 	j.pkgDone = make(chan contentPackageResult, contentDoneBuf)
+	j.pkgCancel = make(chan struct{})
 	done := j.pkgDone
+	cancel := j.pkgCancel
 	stem := j.stem
-	// ONE bounded goroutine. Generation isn't threaded through it: a Cancel nils
-	// a.content, so tickContentPackage never reads pkgDone again, and this send
-	// lands in the 1-slot buffer nobody polls — the goroutine finishes and dies
-	// (no leak). Disk work (fetch-from-cache + write) happens HERE, never on the
-	// render thread.
+	// ONE bounded goroutine. Disk work (fetch-from-cache + write) happens HERE,
+	// never on the render thread. A Cancel closes cancel, so the writer stops at a
+	// file boundary and removes the partial folder: a dropped job must not leave a
+	// bundle behind, and its send still lands in the 1-slot buffer (no leak).
 	go func() {
-		done <- writeContentBundle(mgr, destDir, stem, &recCopy, urls, reportLines) // 1-buffered: always accepts
+		done <- writeContentBundleCancel(mgr, destDir, stem, &recCopy, urls, reportLines, cancel) // 1-buffered: always accepts
 	}()
 
 	if !j.auto { // an auto-build stays silent until its single completion toast
@@ -1202,6 +1212,31 @@ func (a *App) tickContentPackage(j *contentJob) {
 // contentPackageMaxBytes with an honest abort; per-file write errors are
 // collected (not fatal) so one bad path doesn't sink the whole bundle.
 func writeContentBundle(mgr *assets.Manager, destDir, stem string, rec *sceneRecording, foundURLs, reportLines []string) contentPackageResult {
+	return writeContentBundleCancel(mgr, destDir, stem, rec, foundURLs, reportLines, nil)
+}
+
+// packageCancelled reports whether the job's cancel channel has been closed. A nil
+// channel (the direct-writer path the tests use) never cancels.
+func packageCancelled(cancel <-chan struct{}) bool {
+	if cancel == nil {
+		return false
+	}
+	select {
+	case <-cancel:
+		return true
+	default:
+		return false
+	}
+}
+
+// writeContentBundleCancel is writeContentBundle with a cancel signal: on cancel it
+// deletes the partial folder and says so, because a dropped job must not leave a
+// bundle behind for the user to find.
+func writeContentBundleCancel(mgr *assets.Manager, destDir, stem string, rec *sceneRecording, foundURLs, reportLines []string, cancel <-chan struct{}) contentPackageResult {
+	if packageCancelled(cancel) {
+		_ = os.RemoveAll(destDir)
+		return contentPackageResult{msg: "Packaging cancelled."}
+	}
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return contentPackageResult{msg: "Package failed: " + err.Error()}
 	}
@@ -1214,6 +1249,9 @@ func writeContentBundle(mgr *assets.Manager, destDir, stem string, rec *sceneRec
 		formats  = make(map[string]string)
 	)
 	for _, url := range foundURLs {
+		if packageCancelled(cancel) {
+			break
+		}
 		rel, under := strings.CutPrefix(url, origin)
 		if !under {
 			skipped++ // external host (a direct http music link) — not part of THIS origin
@@ -1261,6 +1299,10 @@ func writeContentBundle(mgr *assets.Manager, destDir, stem string, rec *sceneRec
 	// landed. A failure here is therefore a HARD failure (dir:"" per the field doc),
 	// not a soft per-file writeErr like a stray asset: reporting "Packaged N assets…"
 	// for a folder that can never replay would be a lie.
+	if packageCancelled(cancel) {
+		_ = os.RemoveAll(destDir)
+		return contentPackageResult{msg: "Packaging cancelled."}
+	}
 	out := *rec
 	out.Bundled = true
 	out.Formats = formats
