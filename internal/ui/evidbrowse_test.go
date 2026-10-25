@@ -10,7 +10,6 @@ import (
 // TestIsEvidenceImageName pins the evidence browse's file filter to the decode
 // pipeline's image list (PNG/WebP/GIF/APNG/AVIF, case-insensitive), so the browser
 // never offers a file the thumbnailer can't sniff.
-//
 // This is also the rule that keeps credit.txt out of the listing: the old "Choose"
 // grid applied NO extension filter at all and showed it, which is one of the three
 // things the playtest killed that grid for.
@@ -34,7 +33,6 @@ func TestIsEvidenceImageName(t *testing.T) {
 // subfolder keeps its subfolder, and a file ANYWHERE ELSE in the merged tree climbs
 // out with a single "../" — the shape Evidence() resolves since #127, and exactly
 // how AO spells cross-folder reuse ("../characters/Ridelle/char_icon.png").
-//
 // The "../" can never STACK, which is the property the field depends on: the browser
 // clamps at the merged root, so nothing it can produce has more than one level to
 // climb. That is what makes an escaped value always resolve INSIDE the origin —
@@ -101,12 +99,6 @@ func TestIsZipMount(t *testing.T) {
 }
 
 // TestListMergedMountDirMergesFirstMountWins pins the core of the merged listing:
-// one virtual directory listed across several mounts is the UNION of what they hold,
-// de-duplicated case-insensitively with the EARLIER mount's spelling and kind
-// winning — "the complete form of a hypothetical fully merged base folder", where
-// "one folder has an updated image over the other, it will only show the updated
-// image" (Crystalwarrior).
-//
 // The keep rule is the real evidence-image filter, so the same call also pins that
 // non-images (a credit.txt beside the art) never reach the list — the second half of
 // what the retired "Choose" grid got wrong.

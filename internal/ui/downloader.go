@@ -6,9 +6,6 @@ package ui
 // file. It rides the autoindex listing (same discovery as the background
 // picker) to walk a folder, and uses network.Client.Fetch directly — NOT the
 // asset cache — so a bulk grab never evicts live T2/T3 entries.
-// Scope is deliberately offline/local: downloads write a structured base
-// (downloads/{characters,background,sounds}/...) usable via the "Read assets
-// from local folders" mode (or rehearsal). Using a downloaded asset LIVE
 
 import (
 	"context"

@@ -261,7 +261,6 @@ func TestMenuWindowRowsExist(t *testing.T) {
 // floating chip strip offers is reachable from the menu, so the strip is no longer
 // the only way to reach Theater / Edit layout / the per-piece panel — which is what
 // made the reporter keep pressing the theme's "Call Mod" button underneath it.
-//
 // The Pin chip is deliberately NOT mirrored: it latches the FLOATING strip open, a
 // property of a surface the menu replaces rather than a command.
 func TestMenuExtrasCarriesEveryToolboxCommand(t *testing.T) {
@@ -440,7 +439,6 @@ func TestModAndCMRowsGreyOutRatherThanVanish(t *testing.T) {
 // LOBBY header beside Privacy and Glossary, because notes are read between sessions
 // rather than mid-trial, and the unread badge the Help row carried sat on the Help
 // TITLE where it overlapped the last glyph and read as a rendering defect.
-//
 // Hotkeys and About AsyncAO deliberately STAY in the menu: they are useful from any
 // screen, which release notes are not.
 func TestWhatsNewLeftTheHelpMenu(t *testing.T) {

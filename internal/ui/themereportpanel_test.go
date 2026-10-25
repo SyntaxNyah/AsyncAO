@@ -1,11 +1,6 @@
 package ui
 
 // THE IMPORT REPORT PANEL'S GATES (v1.90.0 W9).
-// The property that matters is the one hard rule 11 names: App.themeReport was a
-// bounded slice written on every theme apply, kept "for the editor", and read by
-// nothing but a test — the sidecar-[overrides] shape exactly. These gates fail if
-// it goes back to that, and they do it by driving the REAL rail chip and the REAL
-// panel rather than by asserting over the slice a second time.
 
 import (
 	"strings"
@@ -50,9 +45,6 @@ func reportChipCentre() (x, y int32) {
 // new seam, and it is driven through App.Frame rather than by calling the panel's
 // own predicate — a gate that asserted on themeReportPanelUp() would be a mirror
 // of the fix and would stay green with the rail's call site deleted.
-// It looks for a note's OWN WORDS in what the panel bakes: text the panel has no
-// way to invent, because it came out of the sidecar reader. A surface that had
-// re-implemented "say something about the theme" (a count, a canned sentence)
 func TestTheImportReportReachesAUserSurface(t *testing.T) {
 	a, cleanup := stageReportEditor(t)
 	defer cleanup()

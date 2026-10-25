@@ -1,12 +1,6 @@
 package ui
 
 // THE EDITOR'S CANVAS, DRIVEN (v1.90.0 W7a).
-// Every gate here goes through the REAL frame (frameharness_test.go) and the real
-// pointer path: a press is a press, a drag is a run of frames with the button down,
-// and a release is a frame with it up. Nothing calls editorDragFrame with a
-// hand-built gesture, because the wiring — the screen dispatch, the canvas rect, the
-// probe's space priority, the undo group's lifetime — is exactly what a gate that
-// skipped the frame would stop covering.
 
 import (
 	"os"
@@ -150,11 +144,6 @@ func driveDrag(a *App, x0, y0, x1, y1 int32) {
 }
 
 // drivePreciseDrag is the same gesture with Shift held for the MOVES only.
-// The split is the interaction's own: at PRESS time Shift means "add to the
-// selection" (§3.2), and during the drag it means "pixel-precise — bypass the grid
-// and the magnet". A gate that held Shift over the press would never start a drag at
-// all. magnetBypassed reads SDL's own modifier state rather than the kit's snapshot,
-// which is why the modifier is set here and not on a.ctx.
 func drivePreciseDrag(t *testing.T, a *App, x0, y0, x1, y1 int32) {
 	t.Helper()
 	driveMouse(a, x0, y0, true)
@@ -172,10 +161,6 @@ func drivePreciseDrag(t *testing.T, a *App, x0, y0, x1, y1 int32) {
 
 // editorFixtureCatalog publishes a catalog snapshot that puts the fixture theme in
 // dir with the given origin — i.e. it answers the ONE question the save path asks.
-// It waits for the real scan first. openThemeEditor kicks one so Save has an answer
-// on hand, and that goroutine stores its own snapshot when it finishes; without the
-// wait it would land over the fixture's a moment later and the gate would fail on a
-// timing accident rather than on anything about the editor.
 func editorFixtureCatalog(t *testing.T, a *App, dir string, origin themeOrigin) {
 	t.Helper()
 	deadline := time.Now().Add(editorGateSaveWait)
@@ -493,10 +478,6 @@ func TestAnUnmodifiedDragSnapsWhereAPreciseOneDoesNot(t *testing.T) {
 
 // TestArrowNudgeMovesTheSelectionOnTheEditorScreen drives the keyboard through the
 // screen's own handler.
-// The keys are claimed BEFORE the canvas draws, which is the point: the courtroom is
-// this screen's canvas, and its own arrow consumers (the IC/OOC recall rings, the
-// emote-preview cycler) draw first and would otherwise have spent the key — the same
-// trap layoutnudge.go hoisted the legacy nudge out of a draw body for.
 func TestArrowNudgeMovesTheSelectionOnTheEditorScreen(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()
@@ -638,8 +619,6 @@ func TestHoldingAWidgetStillNeverCriesRefused(t *testing.T) {
 
 // TestAGenuineCapRefusalStillChips is the other half of the same seam, and it is what
 // keeps the fix above from becoming "the editor never complains".
-// A widget with no [overrides] row needs an APPEND, and theme.OverrideCap refuses one
-// past its bound (setOverrideRow refuses, it never evicts — the reader's own ruling).
 // That is a real limit with a name, so the rail must say so: silence here is an edit
 // the user makes, does not get, and is told nothing about.
 func TestAGenuineCapRefusalStillChips(t *testing.T) {

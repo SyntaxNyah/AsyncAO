@@ -173,11 +173,6 @@ type contentPanelState struct {
 var contentPanel contentPanelState
 
 // openContentReportFor is the pick tail for the check/package browser purposes:
-// load the recording (fills Origin from the live session via demoDefaultOrigin,
-// like every other loader), start the single-flight probe, and open the panel. A
-// bad load or a refused start (a job already running, empty recording) leaves the
-// panel closed and the engine's warnLine explaining why. pkg latches the package
-// build to fire once the probe is ready.
 func (a *App) openContentReportFor(path string, pkg bool) {
 	rec, err := a.loadRecordingAny(path) // .aorec, or an AO2 .demo converted on the fly
 	if err != nil {
@@ -194,10 +189,6 @@ func (a *App) openContentReportFor(path string, pkg bool) {
 	// Choice: an explicit prior pick sticks for the session; otherwise follow the
 	// default policy — which the loaded rec.Origin's SCHEME already encodes, since
 	// loadRecordingAny ran demoDefaultOrigin for a .demo (→ local:// under mounts)
-	// and used the stamped Origin for a .aorec (→ its recorded server origin,
-	// unchanged even under mounts). Reading the scheme keeps the policy in ONE place
-	// (demoDefaultOrigin) instead of re-deciding it by extension here — an .aorec
-	// therefore correctly defaults to its stamped server origin, not the mount.
 	if !s.pickerChosen {
 		s.useLocal = strings.HasPrefix(rec.Origin, assets.LocalScheme)
 	}

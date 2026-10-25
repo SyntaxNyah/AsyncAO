@@ -27,8 +27,6 @@ func openBrowserOverEditor(t *testing.T) {
 
 // driveEditorKey runs ONE real frame carrying a plain key press, seeded where
 // HandleEvent seeds it: after BeginFrame (which clears the per-frame input snapshot)
-// and before App.Frame.
-//
 // ON c.keyPressed, never c.hotkey, which is the opposite of driveHotkey and is the
 // distinction handleEditorKeys itself is built on — its Ctrl chords are claimed
 // pre-screen, and everything it reads in-draw is a PLAIN key.

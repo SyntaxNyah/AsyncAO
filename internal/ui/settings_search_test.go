@@ -103,8 +103,6 @@ var preexistingSearchShadows = map[string]bool{
 // a term on an EARLY tab silently swallows every query a LATER tab claims as its
 // own — including queries buried inside a longer term, which is the part that is
 // easy to miss ("gif format" answers "gif"; "extensions.json" answers "json").
-// Adding Formats at index 3 put a block of new terms in front of nine tabs, so
-// the invariant is checked across the whole table, not just that one.
 func TestSettingsSearchKeywordsDoNotShadowLaterTabs(t *testing.T) {
 	for tab, kws := range settingsSearchKeywords {
 		for _, kw := range kws {

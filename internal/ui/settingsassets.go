@@ -70,9 +70,6 @@ func (a *App) drawAssetSourceSettings(y, w int32) int32 {
 // drawAssetSourceHeadline is what a user who has never set this up sees: one
 // sentence saying what is happening now, and one button that starts the guided
 // setup (basewizard.go).
-// It is the whole panel for that user, and that is the point. The controls below
-// it are not wrong, but they are not actionable either — three radio labels to
-// choose between before knowing what any of them does, a text field wanting an
 // their own character should not have to read a settings page to do it (#72).
 func (a *App) drawAssetSourceHeadline(pad, y int32, mounts []string) int32 {
 	c := a.ctx
@@ -120,7 +117,6 @@ func only(n int) string {
 
 // drawAssetSourceAdvanced is the original panel, kept whole and moved below the
 // button.
-//
 // NOT HIDDEN BEHIND A DISCLOSURE, deliberately: a collapsed row is invisible to
 // the settings search, which only indexes rows that actually draw (noteSearchRow
 // runs at draw time), and "the setting exists but you cannot find it" is a worse

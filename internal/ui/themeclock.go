@@ -150,10 +150,6 @@ func (a *App) elementElapsed(e *bakedElement) time.Duration {
 // clockElapsed is one clock group's position. Split from elementElapsed because the
 // [effect.*] binds and the editor's scrub want the group's own time without an
 // element to read it through.
-// AN OUT-OF-RANGE INDEX FALLS BACK TO CLOCK 0 rather than panicking. The reader
-// already clamps `clock = 99` to 0 (parseClockIndex), so this can only fire on a bug
-// — but it would fire on the render thread, and one predictable compare is cheaper
-// than that risk. TestClockPoolIsFixed pins both halves.
 func (a *App) clockElapsed(i uint8) time.Duration {
 	if int(i) >= len(a.fxPool.themeClocks) {
 		i = 0
@@ -200,11 +196,6 @@ func (a *App) noteElementAnimating(clock uint8) {
 // ---------------------------------------------------------------------------
 
 // elementFrame picks an element's current animation frame.
-// It honours themeFrame's contract exactly (app.go): a STATIC page costs one len
-// check and never notes the census, an animated one notes it so the pacer keeps
-// stepping. The two differences are the element's own clock (elementElapsed rather
-// than themeElapsed) and `loop`, which themeFrame has no spelling for — a one-shot
-// stops noting the moment pageFrameAt reports done, which is self-clear path 1.
 func (a *App) elementFrame(e *bakedElement) *sdl.Texture {
 	if e.page == nil || len(e.page.Frames) == 0 {
 		return nil
@@ -312,12 +303,6 @@ func (a *App) beginThemeFXPass() {
 }
 
 // acquireElementFX finds (or claims) the pool slot for one baked element.
-// A LINEAR SCAN OF 24 — cheaper than a map probe, allocation-free, and bounded by a
-// constant rather than by the theme. ok=false is POOL EXHAUSTION, which is graceful
-// and named: the caller then resolves the effect at its FIRST FRAME, statically. That
-// is the design's own ruling, and it is the right one — a frozen-at-frame-0 effect is
-// visible, so an author (and W7's editor chip) can SEE that the pool ran out, where a
-// silently-neutral element would look like the effect simply did not work.
 func (a *App) acquireElementFX(idx int16, gen uint64, el time.Duration) (*fxState, bool) {
 	want := idx + 1 // see fxOwnerNone
 	free := -1
@@ -377,9 +362,6 @@ type elemFX struct {
 	// env is the effect's STRENGTH this frame, in [0, 1]: the scalar every arm above
 	// computes on its way to its own terms (a decay for the one-shots, the wave for
 	// the periodic ones, a constant for the two that only move geometry).
-	// A SIXTH TERM BESIDE R2's FIVE, and it earns its place: an [effect.<widget key>]
-	// bind paints a plate that EXISTS ONLY BECAUSE OF THE EFFECT, so its alpha is the
-	// effect's strength itself rather than a modulation of an alpha it was authored
 	env float64
 	// static reports that this effect produced no visible change this frame AND will
 	// not produce one later without something else happening. It is the pacing
@@ -395,9 +377,6 @@ var elemFXNeutral = elemFX{scale: 1, alpha: 1, static: true}
 // fxAlwaysOrigin is the slot-free origin for a one-shot on an element that is ALWAYS
 // visible: its effect began when the theme applied, so its origin is elapsed zero and
 // there is nothing to remember.
-// It is what keeps the pool for the case it was designed for — a CONDITIONAL element
-// whose one-shot has to replay each time its condition opens (a stamp that lands with
-// a shout). Every [effect.*] bind and every unconditional element resolves through
 var fxAlwaysOrigin = &fxState{}
 
 // effectIsStateful reports whether a kind needs a pool slot: the three DECAYING

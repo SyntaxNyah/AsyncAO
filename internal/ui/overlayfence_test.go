@@ -76,7 +76,6 @@ func TestOverlayFenceBlocksWidgetsBeneath(t *testing.T) {
 // everyone else's — otherwise a piece of chrome that brackets its own draw (the
 // compact toolbox) keeps hit-testing its chips normally UNDERNEATH an app-wide menu
 // bar's open dropdown, which is the same click-through bug one level up.
-//
 // Registry order is paint order (a fence is published immediately before the
 // widgets it covers are drawn), so "published earlier" means "painted under me".
 func TestOverlayFenceOwnerSuspendComposes(t *testing.T) {

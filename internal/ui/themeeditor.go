@@ -239,9 +239,6 @@ func (a *App) armThemeEditor(from Screen) bool {
 // requestEditorExit is what Back and the Esc ladder call. It is the ONE place the
 // editor can be left, so "unsaved edits cannot vanish silently" is a property of the
 // exit rather than a rule every caller has to remember.
-// A CLEAN DOCUMENT LEAVES IMMEDIATELY. A dirty one arms: the first press posts the
-// chip, a second press inside its window discards. That is a confirmation without a
-// modal — the design allows exactly two in the whole editor and spends both
 func (a *App) requestEditorExit() {
 	if a.te == nil {
 		return
@@ -602,9 +599,6 @@ func (a *App) drawThemeEditor(w, h int32) {
 	// THE PANEL FENCE, RAISED HERE AND RELEASED BELOW (design §3.1: every editor
 	// surface but the two modals is a panel under the demoBrowser release-and-restore
 	// fence, so what is behind it goes click-dead without stranding modalOn).
-	// The HEADER is deliberately outside the fence and drew above: the panel's own rect
-	// starts below editBannerH by construction, so nothing behind it is at risk there —
-	// and fencing it would kill the Fonts button that closes the panel.
 	savedModal := c.modalOn
 	if a.editorPanelUp() {
 		c.modalOn = true
@@ -1106,12 +1100,6 @@ func (a *App) drawInspectorTail(t editTarget, rail sdl.Rect, y int32) int32 {
 		}
 		// THE DOCUMENTED DEFERRAL, SAID OUT LOUD. `font` and `size` are carried and not
 		// drawn in format 1 (docs/THEME-FORMAT.md §3, paintElementText's measurement:
-		// giving each element its own point size means a fontSet rebuild per frame for
-		// every element that shares a panel's face). W4 wrote that down in the format doc
-		// and in the painter; nothing said it where the author sets the value, so setting
-		// `size = 27` and seeing nothing was a discovery rather than an answer. The
-		// [fontbind] rail below the element list is the tier that DOES render, and this
-		// line points at it.
 		if el.Font != "" || el.Size != 0 {
 			c.LabelClipped(rail.X+editRowPad, y+4, rail.W-editRowPad*2,
 				"font/size are saved, not drawn yet —", ColTierYellow)
@@ -1190,11 +1178,6 @@ func (a *App) drawInspectorRow(f *inspectorField, t editTarget, r sdl.Rect) {
 
 // drawInspectorPick is an fkPick row: two step buttons that walk the LIVE list, then
 // the value itself as free text.
-// THE TEXT FIELD IS NOT A FALLBACK, it is the row's contract. Every fkPick field is
-// read as free text by the format (see fieldKind's own comment), so a build that has
-// never heard of `generator = ripples` must still be able to hold and re-save that
-// line — and an author must be able to type it. The list is an affordance over the
-// same value, never a gate on it.
 func (a *App) drawInspectorPick(f *inspectorField, t editTarget, ctl sdl.Rect, old string) {
 	c := a.ctx
 	names := a.te.editorPickNames(f.pick)
@@ -1565,11 +1548,6 @@ func (a *App) reclaimThemeDoc() {
 	}
 	a.elemBake.themeSidecar = a.te.doc.side
 	// THE GEOMETRY TIER NEEDS THE SAME TREATMENT, and it needs it in this order.
-	// pollThemeApply has just replaced a.themeRects wholesale with a map built from
-	// the sidecar ON DISK, so every unsaved [overrides] edit is missing from it and
-	// the document is pointed at a map nobody draws from any more. Re-binding alone
-	// would leave the pixels wrong; re-folding alone would leave the document holding
-	// a dead map.
 	a.te.doc.bindLive(a.skin.themeRects)
 	foldSidecarOverrides(a.skin.themeRects, a.te.doc.side)
 }

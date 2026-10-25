@@ -10,7 +10,6 @@ import (
 // always reaches the shared deps/ctx/notice/navigation through &a.env. It is
 // reflection-driven over App's fields, so a new component is covered the moment
 // it gains an env field — whether it is embedded or (as the end state requires)
-// a named field like App.updates.
 func TestComponentEnvWiring(t *testing.T) {
 	a := &App{env: env{ctx: &Ctx{}}}
 	a.wireComponents()

@@ -20,11 +20,6 @@ func sfntCovers(t *testing.T, f *sfnt.Font, r rune) bool {
 
 // TestFontCoverageMatrix is the empirical ground truth the broad-Unicode fix rests on,
 // using the SAME sfnt cmap check the renderer's pick uses:
-//   - the embedded goregular face covers Latin/Greek/Cyrillic but NOT Tifinagh/CJK
-//     (so a covering fallback is genuinely required, and the cheap load-trigger gate
-//     is reasoned about correctly), and
-//   - Ebrima really covers the user's Tifinagh sample, Segoe UI covers Cyrillic.
-//
 // Each system font is skipped if not installed (CI / non-Windows), but the embedded
 // assertions always run.
 func TestFontCoverageMatrix(t *testing.T) {

@@ -389,9 +389,6 @@ func genFill(img *image.RGBA, c color.RGBA) {
 // genBlend composites src OVER the pixel at (x, y) with an extra coverage factor in
 // [0, 1]. Straight (non-premultiplied) alpha, because that is what
 // render.TextureStore.buildPage uploads and what SDL's BLENDMODE_BLEND expects.
-// Out of bounds is a no-op rather than a panic: the shape generators below walk
-// analytic curves whose rounding can step one pixel past an edge, and clamping at
-// the writer is one check instead of one at every caller.
 func genBlend(img *image.RGBA, x, y int32, src color.RGBA, cover float64) {
 	b := img.Bounds()
 	if x < int32(b.Min.X) || y < int32(b.Min.Y) || x >= int32(b.Max.X) || y >= int32(b.Max.Y) {
@@ -460,10 +457,6 @@ func drawScanlines(w, h int32, p GenParams) *image.RGBA {
 }
 
 // halftone — Newspaper, Manga screentone.
-// pitch/`dot`: cell size px (default 6). Angle staggers the lattice.
-// Pcts[0] (`pct`): DOT DIAMETER as a percent of the cell (default
-// genHalftoneDotPct). Coverage is pi/4 * (pct/100)^2, which is the number every
-// screentone reference is quoted in.
 // THE SECOND KNOB EXISTS BECAUSE FIVE SHIPPED ELEMENTS NEED IT. `pitch` and `dot`
 // are aliases for ONE slot, so `pitch = 6, dot = 2` resolved to pitch 2 and the
 // authored lattice was silently thrown away — in three presets whose comments
@@ -918,9 +911,6 @@ func drawPlate(w, h int32, p GenParams) *image.RGBA {
 }
 
 // frame — the merge of bracket / boxframe / deckframe / bezel.
-// A hollow frame tile whose band keeps a fixed device size under `fit = nine`.
-// pitch: band thickness px (default 2). size: corner extent px (default 12).
-// count: mode — 0 corner brackets, 1 continuous box, 2 rail, 3 bezel.
 // It is mode-3-only because that is the only mode with a case to bow: the other
 // three are hollow rules and a rule that changed thickness along its length would
 // read as a mistake. The reservation is the preset fragment's own (terminal's
@@ -961,16 +951,6 @@ func drawFrame(w, h int32, p GenParams) *image.RGBA {
 			// The gap opens each edge from its MIDDLE outward, and `open` is the
 			// fraction of the WHOLE half-edge it eats: gap = 100 eats all of it and
 			// leaves the band empty — it is not "corners only" (see the header).
-			// Modes 1-3 leave their band unbroken at gap = 0 (mode 2 then keeps only
-			// its horizontal rails — the dy >= dx continue below drops the vertical
-			// edges; six shipped steinsgate elements draw exactly that); mode 0 never
-			// does, because with no gap it falls through to the `size`-derived leg
-			// default in the branch below, and that default is what makes mode 0
-			// corner brackets. (The one exception is corpus-unreachable: from
-			// `size` = GenTileMaxPx/2 = 128 up, clampTilePx pins the tile at 256 while
-			// the leg keeps growing, so the default `open` = 1 - size/128 reaches <= 0
-			// and the brackets close into a continuous box. The widest frame the corpus
-			// ships is size = 32.)
 			if mode == 0 || gap > 0 {
 				along := frameAlong(x, y, w, h, dx, dy)
 				open := gap

@@ -336,9 +336,6 @@ func TestEveryDegradeReachesASurface(t *testing.T) {
 // TestImportReportNamesEveryDeclaredGap is design §Q5's own requirement, stated as
 // a gate: an AO2 feature this client INHERITS rather than imports must be named,
 // with its reason, on the theme that ships one.
-// The two gaps are `[import] lobby_design` and `per_misc`. `_sharp` is the one
-// declared gap deliberately absent, for the reason themereport.go states: it is not
-// on the sidecar and there is no census to ask.
 func TestImportReportNamesEveryDeclaredGap(t *testing.T) {
 	if len(themeReportGaps) == 0 {
 		t.Fatal("the declared-gap table is empty — §Q5 names two inherited gaps that the reader " +
@@ -464,10 +461,6 @@ func stageExportable(t *testing.T, a *App) string {
 // TestSharingAThemeWritesABundleThatImportsBack is the export half's end-to-end
 // gate, and it is the one that makes editorAwaitExport a shipped path rather than
 // a function with no callers.
-// It asserts on the FILE — the bundle exists, it is outside the theme folder, and
-// the tree that comes back out of it is the tree that went in. Round-tripping is
-// not a feature that had to be built; it is a consequence of "a theme IS a folder",
-// and this is where that claim is measured through the client's own buttons.
 func TestSharingAThemeWritesABundleThatImportsBack(t *testing.T) {
 	a, cleanup, _ := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()

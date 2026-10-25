@@ -19,7 +19,6 @@ import (
 // server's voice relay (courtroom/voice.go); the option appears ONLY when the
 // server advertises voice (VS_CAPS — i.e. Nyathena), per the "show the voice
 // option only for Nyathena, like a server wire" requirement.
-//
 // Live MIC AUDIO (capture + playback) is the next slice — the Opus codec
 // (internal/voice) and this signaling are already in place, so it's purely
 // additive. Until then this shares presence + speaking state (which the server

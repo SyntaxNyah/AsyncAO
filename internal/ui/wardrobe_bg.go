@@ -3,11 +3,6 @@ package ui
 // The wardrobe's Backgrounds section: your favourite backgrounds (the ★ set
 // from the Background picker) organized into the same navigable folders as
 // characters. Clicking a favourite asks the server to change the room to it.
-// Favourites live in config.FavBackgrounds; folders are a per-server
-// background→folder map (config.FavBackgroundFolder). bgFavList is the
-// favourites in ONE stable order so the index-keyed bgFavPages thumbnail cache
-// survives folder navigation (navigation filters via a predicate; see the
-// cachedPage reorder invariant).
 
 import (
 	"fmt"

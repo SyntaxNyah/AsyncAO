@@ -367,9 +367,6 @@ func TestCanvasTextScalePctTakesTheTighterAxis(t *testing.T) {
 }
 
 // TestFoldIsIdentityAtOneToOne is the "the default case does not move" guard.
-// ThemeFitNative is the shipped default and pins the scale at exactly 1.0 for
-// any window at least as large as the theme's canvas — the majority of the
-// reference corpus, since the import auto-resize snaps the window to the canvas.
 // The fold must be the IDENTITY there, not arithmetic that happens to round back
 // to the same number, so that an out-of-the-box themed chatbox is byte-identical
 // to the one before this existed.
@@ -573,12 +570,6 @@ func TestThemeLayoutBakesTheCanvasTextScale(t *testing.T) {
 }
 
 // TestThemedChatboxRectsResolvedInOnePlace is the mirror-site guard.
-// The live themed chatbox (theme_layout.go) and the export's themed chatbox
-// (gifexport.go) each used to resolve the showname / message child rects with
-// their own copy of the arithmetic, so a fix to one silently left the other
-// behind — which is exactly how the export would have kept drawing an un-inset,
-// hard-left showname after the live box was fixed. Both now call
-// chatboxTextRects, and this test fails the moment either grows a second copy.
 func TestThemedChatboxRectsResolvedInOnePlace(t *testing.T) {
 	for _, file := range []string{"theme_layout.go", "gifexport.go"} {
 		src, err := os.ReadFile(filepath.Join(".", file))

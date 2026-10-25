@@ -103,11 +103,6 @@ func chatboxTextRects(box sdl.Rect, lay *themeLayoutCache, fallbackMsgY int32) (
 		msg = sdl.Rect{X: box.X + r.X, Y: box.Y + r.Y, W: r.W, H: r.H}
 	}
 	// The inset is applied to the FALLBACK rects too. That is not an accident:
-	// the fallback stands in for a widget AO2 would still have drawn through a
-	// QTextEdit / QLabel, so it should carry the same Qt defaults. In practice it
-	// is unreachable for the message — every one of the 74 corpus themes declares
-	// both `ao2_chatbox` and `message` — so this only ever matters for hand-written
-	// or truncated theme data.
 	return insetChatRect(name, themedShownameInsetPx), insetChatRect(msg, themedMessageInsetPx)
 }
 
@@ -125,9 +120,6 @@ const shownameExtraWidthKey = "showname_extra_width"
 // parseShownameExtraWidth reads that key the way AO2 reads it: as a bare
 // QString::toInt(), which yields 0 for a blank, absent or unparseable value and
 // is then tested with `extra_width > 0` (AO2-Client courtroom.cpp:3357, :3374).
-// So garbage disables the ladder rather than aborting the chatbox — the same
-// tolerance internal/theme's atoiTrim documents for every other design number.
-// Runs on the theme-apply goroutine, once per theme (hard rule 2).
 func parseShownameExtraWidth(raw string) int {
 	v, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil {
@@ -375,9 +367,6 @@ func (a *App) themedChatPct(el themeFontElem, userPct int, lay *themeLayoutCache
 // themedChatFace resolves one themed-chatbox text child's pair of faces at the
 // folded scale: the covering face for the text itself and the colour-emoji face
 // that draws alongside it.
-// BOTH, from ONE call, on purpose. The emoji face has to be opened at the same
-// percent as the text it shares a row with or the two baselines part company,
-// and the two used to be resolved by two separate calls that each recomputed the
 func (a *App) themedChatFace(el themeFontElem, userPct int, lay *themeLayoutCache, text string) (primary, emoji *ttf.Font) {
 	pct := a.themedChatPct(el, userPct, lay)
 	return a.elemFontAtPct(el, pct, text), a.ctx.EmojiFont(pct)

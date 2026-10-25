@@ -1,11 +1,6 @@
 package ui
 
 // Gates for the PRODUCER side of the theme-media tier (v1.90.0 W4 — design §Q2).
-//
-// internal/render's own gates prove the store's ceiling holds. These two prove the
-// things only the producer can get wrong: that hitting the ceiling leaves the user
-// with something to fix rather than a hole, and that landing one page incrementally
-// does not restage the whole theme.
 
 import (
 	"image"
@@ -192,7 +187,6 @@ func TestIncrementalMediaLandDoesNotRestartTheThemeClock(t *testing.T) {
 }
 
 // TestThemeArtBudgetBarMemoizesItsLabel is the settings row's own gate.
-//
 // TWO properties, and the second is why the memo exists at all. The label has to
 // quote the numbers the ADMISSION GATE uses — a bar that formatted its own idea of
 // the budget would reassure a user about an allowance nothing enforces — and it has

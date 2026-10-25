@@ -43,9 +43,6 @@ func flipSendApp(t *testing.T) (*App, *[]protocol.Packet) {
 // limit) so back-to-back sends both land, but resetting lastICSend keeps the test correct
 // even if a non-zero default were ever introduced (sendIC drops sends inside the window,
 // screens.go:6138-6140, and stamps lastICSend on each accepted send).
-// It takes no shout: an interjection is ARMED state now (a.icShout, AO2's
-// objection_state), so a test that wants one on the wire arms it the way the
-// button does — toggleShout — and this just sends.
 func (a *App) sendICFresh() {
 	a.srvMeta.lastICSend = time.Time{}
 	a.sendIC()

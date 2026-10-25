@@ -73,10 +73,6 @@ func (a *App) labelEmojiWeight(primary, emoji *ttf.Font, x, y, maxW int32, text 
 	}
 	// F5. We are on the raster branch because the whole-line pick failed, which for a
 	// bare BMP pictograph (♥ ✨ ⭐ ⌛) means no TEXT face on this machine has the glyph.
-	// NeedsEmojiFallback only sees supplementary-plane runes and VS16, so it said no,
-	// the colour face was never requested, and the character drew as a box forever —
-	// beside CJK and Greek that the text tiers answer correctly. Ask for the colour
-	// face now: it is the only one that has these.
 	if !needEmoji && c.uncoveredPictograph(primary, text) {
 		needEmoji = true
 		if emoji == nil {
@@ -227,7 +223,6 @@ func (a *App) labelName(x, y, maxW int32, text string, col sdl.Color) {
 
 // labelNameElem is labelName dressed by ONE per-element font — the user's
 // per-panel override, or a theme's if it set one.
-//
 // A separate entry point rather than a parameter on labelName, because that
 // helper has a dozen callers across the log browser, the messaging panels and
 // settings: surfaces with no element of their own, which must keep the shared log
@@ -249,9 +244,6 @@ func (a *App) labelNameElem(el themeFontElem, x, y, maxW int32, text string, col
 // ASCII — so a normal message keeps the field's exact single-font fast path with no per-frame
 // font work. For non-ASCII it kicks the colour-emoji load (NeedsEmojiFallback) and returns a
 // log-set covering face (LogFontFor also latches the broad / CJK unicode load via noteScript)
-// SIZE: always the CHROME size (DefaultScalePct) — the same size the field's
-// single-font path draws (c.font) — so typing one non-Latin rune never changes
-// the rendered text size. These used to come back at the LOG zoom (a.logPct),
 func (a *App) icFieldFonts(text string) (primary, emoji *ttf.Font) {
 	if isASCII(text) {
 		return nil, nil
@@ -297,9 +289,6 @@ func (c *Ctx) emojiRasterWeight(text string, col sdl.Color, primary, emoji *ttf.
 	// No emoji face AND every rune covered by primary → nothing this raster can add;
 	// degrade to the single-font path (the caller tofus the emoji until the face lands),
 	// exactly as before. A mixed-script run (textFonts differ) still builds.
-	// The nil is CACHED: uncached, every visible emoji label re-ran []rune +
-	// coverRunes per frame while the colour-emoji face wasn't loaded — the IC
-	// bar's 🙂 button leaked exactly 1 alloc/frame into the whole-screen gate.
 	if emoji == nil && allSameFont(textFonts, primary) {
 		return c.cacheEmojiRaster(key, nil)
 	}

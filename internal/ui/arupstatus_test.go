@@ -1,12 +1,6 @@
 package ui
 
 // Tests for the Players tab's ARUP status/lock/CM display (the user's ask:
-// "Add Area statuses into player tab so stuff like casing, spectator, RP,
-// Locked, gaming etc."). The data (courtroom.AreaInfo) and the text/colour
-// formatting (arupStatusText, areaStatusColor) already existed for the Areas
-// tab — these gates pin that the Players tab READS them, reads them LIVE
-// (never from a value baked into the roster memo), and shares the one
-// formatter/vocabulary rather than forking a second copy of it.
 
 import (
 	"bytes"
@@ -134,7 +128,6 @@ func TestDrawCurrentAreaStatusStripShowsARUPStatus(t *testing.T) {
 // joins or leaves) must still change what drawAreaHeaderRow paints — it can
 // only do that by reading a.sess.AreaInfo LIVE, every call, never from a
 // value baked into the cached rosterRow.
-//
 // Driven through the REAL production calls (playerRosterRows,
 // drawAreaHeaderRow) with pixels read back, not a re-derivation of either.
 func TestDrawAreaHeaderRowReadsARUPStatusLive(t *testing.T) {

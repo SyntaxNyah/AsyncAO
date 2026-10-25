@@ -1,11 +1,6 @@
 package ui
 
 // THE CHROME-ROW REFLOW GUARD (v1.90.0 W7b).
-// The headline is TestSqueezedMusicPanelNeverStacksItsHeader: the reported defect was
-// a screenshot of an imported AO2 theme whose music panel drew Expand all and
-// Collapse all on top of each other, so the gate is the same arithmetic — a squeezed
-// design rect, through the real chip strip and the real header planner, asserting that
-// no two boxes intersect.
 
 import (
 	"testing"

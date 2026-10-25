@@ -2,10 +2,6 @@ package ui
 
 // Gates on the guided base-folder setup (issue #72) and the folder report behind
 // it.
-// The class of bug this whole surface exists to remove is the SILENT one: a
-// setup that looks applied and is not, a folder one level off, a base whose
-// characters carry no char.ini. So most of what is pinned here is what the user
-// gets TOLD, and the rest is that nothing is written until they say so.
 
 import (
 	"archive/zip"

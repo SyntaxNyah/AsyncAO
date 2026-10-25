@@ -174,7 +174,6 @@ func serverNoticeChromeH() int32 {
 
 // serverNoticeBody returns the wrapped body, whether it all fit, and rebakes the
 // cache only when the text, the width, the row budget or the font chain changed.
-//
 // Measured through chromeFaceFor — the face LabelClipped will actually draw each
 // row in — not through the bare ctx font. Measuring in a face that does not cover
 // the script and drawing in one that does is the #42 bug class, and it is not

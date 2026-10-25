@@ -73,10 +73,6 @@ func (a *App) applyMountLayer() {
 
 	// ENTER / REBUILD: compare what we WANT against what the live index was
 	// actually BUILT from — never against a key stamped when a walk was kicked.
-	// Stamping on kick opens a re-kick hole: rapid mount edits advance the stamp,
-	// the in-flight walk lands stale and is dropped, and the reconcile then sees
-	// "stamp already matches" and never kicks again, so the pack silently never
-	// appears. Deriving the identity from the index itself cannot drift.
 	want := mountSetKey(mounts)
 	have := ""
 	if a.mountIndex != nil {
@@ -169,12 +165,7 @@ func (a *App) pollMountIndex() {
 
 // publishMountLayer wraps the current index with every live asset origin and
 // installs it. Returns the published layer.
-//
 // Origins come from each tab's URL BUILDER, never from a session's raw asset URL:
-// the server's ASS field is stored verbatim and often omits its trailing slash,
-// and only the builder normalizes it. An unnormalized origin yields a rel with a
-// leading slash that can never match an index key, so the pack would go silently
-// inert while Settings cheerfully reported thousands of indexed files.
 func (a *App) publishMountLayer(mounts []string) *assets.MountLayer {
 	origins := make([]string, 0, len(a.tabs)+1)
 	if o := a.link.urls.Origin(); o != "" {

@@ -5,9 +5,6 @@ package ui
 // per-player packet (only ARUP area COUNTS), so it's refresh-driven and stamped
 // "as of HH:MM", not live. IPIDs are mod-only data shown in-session — never
 // persisted. The foundation for future mod/user tools.
-// On top of the bare roster this draws: a char-icon per row (the char grid's
-// demand/cache pipeline), role highlights (you / current speaker / friends),
-// Spectator + CM chips, a sort toggle, and — before any /ga — a live ARUP count
 
 import (
 	"sort"
@@ -243,9 +240,6 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 			// The panel's overflow, opened from the SAME helper the Music header uses —
 			// including its click consumption, without which the menu's own click-away
 			// test closes it on the frame it opened (musicheader.go documents the trap).
-			// `themed` is DERIVED, never hardcoded: this panel is drawn inside the
-			// theme's own music_list rect, so a hardcoded false would offer the
-			// Volume-sliders row where drawMusicList discards it — see rosterMenuThemed.
 			if a.musicIconButton(it.r, iconKebab, "Roster & playback options — refresh details, legacy snapshot, pair status, follow") {
 				a.openMusicMenuFromButton(sdl.Point{X: it.r.X, Y: it.r.Y + it.r.H}, a.rosterMenuThemed())
 			}
@@ -397,11 +391,6 @@ func (a *App) scrollAreaIntoView(area string, rows []rosterRow, viewH int32) {
 // applyAreaJumpFollow is the per-frame lifecycle for the "click to jump →" scroll
 // follow: while the latch is armed (and unexpired) it re-nudges the target area
 // header into view every frame. Re-nudging (rather than a one-shot at click time)
-// is what makes the POST-reorder position win — the frame after the roster memo
-// rebuilds floats the jumped-to area to the top, and the next nudge follows the
-// row there. Disarmed (empty target) it costs one string compare; past its
-// deadline it disarms and leaves playerScroll untouched. Kept off the draw path
-// and SDL-free so it's unit-testable.
 func (a *App) applyAreaJumpFollow(rows []rosterRow, viewH int32) {
 	if a.roster.areaJumpFollow == "" {
 		return
@@ -889,11 +878,6 @@ func (a *App) drawAreaHeaderRow(hr rosterRow, r sdl.Rect) {
 
 	// ARUP status/lock/CM (the user's ask: surface "casing, spectator, RP,
 	// Locked, gaming" in the Players tab, not just the separate Areas tab).
-	// Looked up LIVE here, every frame, via areaInfoByName — NEVER folded into
-	// rosterRow or memoized alongside playerRosterRows, whose cache key is
-	// rosterStamp()/areaListAt, not areaInfoSeq: an ARUP-only change (a mod
-	// locks this area, nobody joins or leaves) would not invalidate that memo
-	// and a baked-in string would go stale silently.
 	if info, ok := a.areaInfoByName(hr.area); ok {
 		if extra := arupStatusText(info); extra != "" {
 			extraCol := ColTextDim

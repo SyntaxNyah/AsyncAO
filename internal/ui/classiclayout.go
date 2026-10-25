@@ -28,11 +28,6 @@ const (
 	slotOOC      = "ooc"      // the new-default OOC box (independent of the log)
 	slotEmotes   = "emotes"   // the emote grid (pages within its rect; both themes)
 	// The whole-bar "icbar" slot was REMOVED in v1.50.5 (requested by Nightingale:
-	// drop the panel and make every element independent) — the pieces below are the
-	// only IC-bar slots now. A stale "icbar" override in old prefs is ignored.
-	// Individually-movable pieces pulled OUT of the IC bar (the "build your own
-	// layout" work). Each defaults to its spot in the bar — so an un-edited or
-	// whole-bar-moved layout is pixel-identical — and only goes free once dragged.
 	slotICImmediate = "icbar.immediate" // the Immediate (non-interrupting preanim) toggle
 	slotICPre       = "icbar.pre"       // the "Pre" toggle — send the emote's preanim (auto-follows each pick), same wrap-not-extract rule as Immediate
 	slotICAdditive  = "icbar.additive"  // the Additive (2.8 append-to-last) toggle — shown only on additive servers, same wrap-not-extract rule as Immediate
@@ -90,13 +85,6 @@ const (
 	// mechanism for cross-session position persistence.
 	slotExtras = "panel:extras"
 	// tornWidgetSlotPrefix keys a torn-off Extras widget's persisted box rect:
-	// "torn:widget:<id>" where <id> indexes extrasWidgets(). Torn widgets survive
-	// relaunch by riding the same classic-slot mechanism as slotExtras — the frac
-	// rect persists on gesture-end and re-tears at that spot on the next courtroom
-	// entry (floatbox.go: persistTornWidgetSlot / reconstructTornWidgets). Unlike
-	// the panel/extras slots these keys are FORMATTED (id appended) — but only on
-	// the cold gesture-end / reconstruction paths, never on a settled draw frame, so
-	// the no-per-frame-alloc rule holds.
 	tornWidgetSlotPrefix = "torn:widget:"
 )
 
@@ -435,7 +423,6 @@ func pickResizeSlot(reg map[string]slotInfo, keys []string, hoverKey string, mx,
 // classicHandles returns the 8 resize handles (4 corners + 4 edge midpoints) of r
 // so the editor can paint them — making "drag an edge to resize one dimension"
 // discoverable.
-//
 // SHARED WITH THE DESIGN PATH since W6: the themed editor probes and paints these same
 // squares (edittarget.go handleGripAt / handleGripMask), which is what closed the
 // recon's PARTIAL — index handleBottomRight is bit-identical to the single corner grip
@@ -770,8 +757,6 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// MOVE. pickResizeSlot targets the HOVERED box (so resize hits the box you're
 	// pointing at, like move does) and skips move-only slots so the little control
 	// block can't steal a neighbour's edge grip.
-	// A drag can begin ANYWHERE except over the editor's own chips (so the top strip
-	// is grabbable instead of a blanket no-drag banner row) or the pop-out tray.
 	overChip := pointIn(c.mouseX, c.mouseY, doneBtn) || pointIn(c.mouseX, c.mouseY, resetBtn) ||
 		pointIn(c.mouseX, c.mouseY, snapBtn) || pointIn(c.mouseX, c.mouseY, aspectBtn) ||
 		pointIn(c.mouseX, c.mouseY, gridBtn)

@@ -69,9 +69,6 @@ func (r *assetMissRing) seen(base string, now time.Time, cooldown time.Duration)
 // noteAssetMiss is the asset-warning half of drainWarnings: it counts the miss,
 // dedups it against the recent ring and arms the chip. It never touches warnLine
 // — ordinary toasts keep that channel to themselves.
-//
-// deskOnlyMiss is reported but never counted toward the chip: a background that
-// ships no desk image for a position is EXPECTED AO2 behaviour (set_scene simply
 // hides the desk layer, ../AO2-Client/src/courtroom.cpp:4628-4634), so it is not
 // a fault and must not raise a user-facing error.
 func (a *App) noteAssetMiss(base string, deskOnly bool, now time.Time) {
@@ -113,25 +110,8 @@ func (a *App) assetMissChipLabel() string {
 }
 
 // assetMissChipRect is the chip's rect inside the menu-bar band, right-aligned.
-// ok is false when the bar is not painting its band this frame (a layout editor
-// owns the top band whole), or when the menu titles have grown far enough right
-// that the chip would sit on one of them.
-// Input and draw call this at two different points of one frame (pre-screen vs
-// drawMenuBar phase 2), so the two answers can differ by a frame in both
-// directions — a miss that arrives after the input pass draws before it is
 func (a *App) assetMissChipRect(w int32) (sdl.Rect, bool) {
 	// ACTIVE FIRST, and this is a correctness gate rather than an optimisation.
-	// The band's geometry is a chain — menuBarLeftContentRight asks the Iniswap
-	// chip, the Iniswap chip asks menuBarRightContentLeft, that asks the refusal
-	// chip — and every link is expected to answer "no rect" for a chip that is not
-	// on screen. Without this, an invisible missing-asset chip still reported a
-	// plate roughly 16 px wider than its (cached, possibly stale) label, which any
-	// sibling that consults it would then keep clear of: reserved pixels for
-	// nothing. The two call sites below already check Active() themselves, so this
-	// changes no painted frame; it makes the helper honest for the third caller,
-	// which is what a SHARED geometry helper is for.
-	// It does NOT change the two-answers-per-frame skew between the input pass and
-	// drawMenuBar's phase 2 — that is ruled deliberate and documented below.
 	if !a.assetMissChipActive() || !a.menuBarPaints() {
 		return sdl.Rect{}, false
 	}

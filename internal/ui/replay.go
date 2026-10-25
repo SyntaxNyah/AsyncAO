@@ -224,7 +224,6 @@ func (a *App) linearizeReplayBuf() []replayBufEntry {
 // entry and carrying the scene context (the last background — and music — change
 // BEFORE the window) so a mid-conversation clip isn't blank or silent. Pure: no
 // ring, clock, or SDL, so it's tested directly. entries must be oldest-first.
-// Returns nil when nothing falls in the window.
 func buildClip(entries []replayBufEntry, cutoff time.Time, origin, sessBg string) *sceneRecording {
 	start := -1
 	for i := range entries {
@@ -371,8 +370,6 @@ func (a *App) stopRecording() <-chan struct{} {
 // caller; only the WriteFile is deferred. Returns the filename it will land as and
 // a done channel closed when the write goroutine finishes (or gives up), so a
 // caller can wait for the file instead of polling the filesystem.
-// Shared by recording (stopRecording) and the scene maker's Save so both produce
-// identical, reopenable .aorec files.
 func saveSceneRecording(rec *sceneRecording, stem string) (string, <-chan struct{}, error) {
 	data, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
@@ -590,10 +587,6 @@ func (a *App) toggleReplay() {
 // replayTiming maps the ReplaySpeed pref (percent, 100 = base) to the replay
 // typewriter crawl + linger. 100% is the readable base; lower percent slows
 // both (so the whole message plays out and can be read), higher speeds it up.
-// Re-applied every frame in driveReplay so the Studio "Playback speed" slider
-// is live — the new crawl takes the NEXT typed message, the new linger the next
-// settle (Typewriter precomputes per-rune delays at Start; TextStay is read at
-// linger), which is exactly when a mid-replay speed change should bite.
 func (a *App) replayTiming() (crawl, stay time.Duration) {
 	spd := a.d.Prefs.Load().ReplayPlaybackSpeed
 	if spd < 1 {
@@ -625,8 +618,6 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 	// screen-effects and sprite-style choices. The master off-switch rides along
 	// with the individual prefs, under the same makerOpen exemption: authoring a
 	// scene must still SHOW what is being authored, or the maker previews a lie.
-	// The three gates come from newroom.go so this mode cannot answer differently
-	// from the export it is previewing. Everything else newRoom seeded stands.
 	if a.sel.makerOpen {
 		a.applyAuthoringVisualsToRoom(a.sel.replayRoom)
 	}

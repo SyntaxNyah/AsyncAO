@@ -20,9 +20,6 @@ import (
 // wireLocalManager builds a real streaming-shaped Manager over a LocalFetcher
 // rooted at dir, plus a headless TextureStore, and installs both on the App —
 // enough to drive keepSceneAssetsWarm + drainWarnings against on-disk fixtures.
-// LocalMode is true (assets already on disk); resolution is synchronous file I/O
-// so the pipeline settles deterministically (poll with a deadline like the
-// manager tests). Returns the LocalFetcher for building bases and a settle helper.
 func wireLocalManager(t *testing.T, a *App, dir string) (*assets.LocalFetcher, func()) {
 	t.Helper()
 	ren, cleanup := newCaptureHarness(t)

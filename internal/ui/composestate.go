@@ -100,12 +100,6 @@ type composeState struct {
 	icShake   bool
 	// icShout is AO2's objection_state (courtroom.cpp:6048-6127) — the ARMED
 	// interjection, riding the NEXT message exactly like icRealize and icShake:
-	// 0 none, 1 Hold It!, 2 Objection!, 3 Take That!, 4 the custom shout
-	// (protocol.Shout*). ONE int, so the four buttons are mutually exclusive by
-	// construction, which is what canon's four "reset the other three sprites"
-	// arms add up to. Cleared beside them the instant the packet is built
-	// (:2327). The shout buttons used to call sendIC directly, which fired the
-	// interjection on the click instead of arming it.
 	icShout int
 	// modcallGuard is AO2's ui_guard (#21): silence the modcall ALERT for this
 	// session. sessionState rather than a preference because AO2's ui_guard is a

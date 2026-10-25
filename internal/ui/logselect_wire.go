@@ -47,9 +47,6 @@ func (c *Ctx) logRowSplit(font, emojiFont *ttf.Font, line, speaker string, nameO
 	// for every named row of both logs on every frame, and a raw SizeUTF8
 	// heap-allocates through cgo (go-sdl2 hands the out-params' addresses
 	// across the boundary — the same escape the cgoRect idiom exists for).
-	// Measured raw, it cost the whole-screen zero-alloc gates two allocations
-	// per named row per frame — invisible until the OOC box became default and
-	// the gate fixture finally had OOC lines in it.
 	if pre := line[:idx]; pre != "" {
 		if _, ok := c.fontTextWidthWeight(font, pre, bold); !ok {
 			return 0, 0, false

@@ -37,7 +37,6 @@ func (msg *msgState) toggleMessages() { msg.showMessages = !msg.showMessages }
 // (zero, false) and the caller keeps its OWN default first-open position (each
 // panel's historical tuck / centre) — this helper only owns the slot-seed path,
 // never a panel's default, so wiring it in can't move an un-persisted panel.
-// panelSlotTable is the canonical enumeration of the panels this drives.
 func (classic1 *classicState) seedPanelFromSlot(fw *floatWin, slot string, defW, defH, minW, minH, w, h int32) (sdl.Rect, bool) {
 	if fw.placed {
 		return sdl.Rect{}, false

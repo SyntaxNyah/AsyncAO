@@ -82,9 +82,6 @@ const dropClaimCensusMin = 3
 // joins this gate the moment it exists. The bound is the SENTINEL
 // (c < dropClaimCount), not the last named member: the walk once ended at
 // dropClaimThemeFont and W10's dropClaimThemeImage slipped past it.
-// The sentinel itself is guarded by the compiler (dropClaimNames' fixed array),
-// by the empty-name loop at the foot of this test (sentinel too large, or a
-// claim added with no name) and by dropClaimCensusMin. Do not remove the loop:
 func TestEveryDropClaimHasASettingsAnswer(t *testing.T) {
 	// The Settings screen may only repoint the theme root for the UNCLAIMED case.
 	// Every other claim names an owner, and an owner means "not this screen".
@@ -166,7 +163,6 @@ func TestThemeBundleDropSaysWhereToPutIt(t *testing.T) {
 // it exists for the same reason: the claim alone only stops the WRONG thing (the
 // theme root no longer gets repointed at the font's folder). Without a line, the
 // drop would become silent, which reads as a broken client.
-//
 // It also pins that the message names both INI sections. `[fonts]` alone installs
 // nothing — a family with no `[fontbind]` row binds to no element — and that pair
 // is the single most common way this feature is got wrong.

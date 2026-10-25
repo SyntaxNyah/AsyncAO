@@ -246,7 +246,6 @@ func editorSeamFiles(t *testing.T) []string {
 
 // editorSeamCallees names every function one source actually CALLS, by the callee's
 // final identifier (so `c.Ren.SetClipRect(&r)` reports "SetClipRect").
-//
 // It exists so a "never call X" census cannot be tripped by the comment that explains
 // why X is never called — the failure mode the first draft of the peek gate had, and
 // the one that makes source censuses get deleted instead of fixed.

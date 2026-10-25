@@ -10,7 +10,6 @@ import "github.com/veandco/go-sdl2/sdl"
 
 // editSpace names WHICH editing model a target belongs to — the coordinate system its
 // geometry lives in, the store its edits persist to, and the rules its resize obeys.
-//
 // The zero value is deliberately NOT a real space. "Nothing is selected" is a state
 // both editors spend most of their time in, and it has to be distinguishable from
 // every payload space without looking at the payload.
@@ -93,7 +92,6 @@ func newEditTarget(space editSpace, key string, elem int) editTarget {
 }
 
 // noTarget is the empty selection.
-//
 // It is EXACTLY the zero value, which is what lets an App field that nobody has
 // assigned yet mean "nothing selected" without an initializer — and what lets a
 // cleared selection compare equal to a fresh one. It exists as a function so no caller

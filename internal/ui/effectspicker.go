@@ -30,10 +30,6 @@ const (
 	// overlayRosterFetchCap bounds CONCURRENT roster resolves (hard rule 4). Each
 	// one holds an 8 s network timeout and a bounded disk walk; four is past every
 	// realistic burst (the speaker's folder, our own, and a couple of tab switches)
-	// and, unlike the old shape, it is a bound BY CONSTRUCTION rather than an
-	// assumption about how often the cap-reset runs. At the cap a new folder simply
-	// resolves a frame later — overlayResolve reports Pending and the courtroom
-	// re-asks.
 	overlayRosterFetchCap = 4
 	// overlayManifestResCap sizes the async result channel. Deliberately EQUAL to
 	// overlayRosterFetchCap: at most that many resolves exist at once, so every
@@ -56,9 +52,6 @@ const (
 	// overlayThemeKeyPrefix namespaces theme-tier overlay art in T1. It rides the
 	// existing theme:// scheme (which cannot collide with an asset URL) with its
 	// own sub-namespace so an effect called "chat" cannot shadow the chatbox skin.
-	// These pages are uploaded EVICTABLE, never UploadPinned: a theme's effects
-	// folder is ~18 animated WebPs and at 256x192x4 x 30 frames that is ~6 MiB
-	// each — pinning them would put ~100 MiB on TOP of the 256 MiB budget
 	overlayThemeKeyPrefix = "theme://fx/"
 	// overlayFetchTimeout bounds the misc-manifest fetch.
 	overlayFetchTimeout = 8 * time.Second
@@ -87,11 +80,6 @@ var overlayIconChipColor = sdl.Color{R: 10, G: 10, B: 14, A: 255}
 
 // overlayRoster is one resolved effects roster: the display order, the merged
 // property table and the LOCAL art/icon paths for every name in it.
-// A resolve that MISSED still produces a roster (empty maps, empty set), so the
-// map entry itself is the "settled" marker and a pack without an effects.ini is
-// asked exactly once — the charMeta `done` idiom, expressed as presence rather
-// than a flag. "In flight" is a separate set (overlayRosterInFlight) so the
-// settled cache's cap-reset can never wipe a marker and spawn a duplicate.
 type overlayRoster struct {
 	set *theme.OverlayFXSet
 	// art / icon map a lowercased effect name to a resolved LOCAL file path.
@@ -193,10 +181,6 @@ func (a *App) overlayRosterFetchOne(key, folder string) {
 	// Snapshot everything the goroutine needs on the RENDER thread: reading prefs
 	// off-thread while the debounced saver marshals is the interleaving -race
 	// exists to catch (the applyThemeAsync precedent).
-	// The THEME is snapshotted as the already-loaded object pollThemeApply
-	// published, not re-loaded here (spec §2.4 — the theme-tier parse belongs to the
-	// theme apply). It also removes the last two preference reads this goroutine
-	// used to need: the theme name/dir/subtheme are baked into the loaded object,
 	t := a.overlays.overlayTheme
 	// The apply generation this resolve belongs to. Compared again when the result
 	// lands: a theme applied in the meantime moved every path this walk resolved.
@@ -456,8 +440,6 @@ func (a *App) overlayEffectsFolderFor(char string) string {
 // speaker's char.ini [Options] realization as a full SFX url, "" when the
 // character declares none (the courtroom then falls back to the theme's
 // courtroom_sounds.ini value, exactly as canon does).
-// Same origin guard every other origin-dependent path in this package carries —
-// an origin-less URLBuilder would hand back a relative "sounds/general/<name>".
 func (a *App) overlayCustomRealizationFor(char string) string {
 	name := a.charMetaFor(char).realization
 	if name == "" || a.link.urls.Origin() == "" {
@@ -468,7 +450,6 @@ func (a *App) overlayCustomRealizationFor(char string) string {
 
 // overlayEffectSound is get_effect_property(fx, char, folder, "sound") — the
 // merged effects.ini value, with canon's ONE special case applied:
-// fx == "realization" has its sound replaced wholesale by get_custom_realization
 // (text_file_functions.cpp:889-892), i.e. by char.ini [Options] realization,
 // falling back to the theme's courtroom_sounds.ini "realization".
 // then puts that path straight on the wire (courtroom.cpp:2299-2307). A local
@@ -538,7 +519,6 @@ func (a *App) overlayChoices() []string {
 // bakeOverlayIconKeys precomputes every row's icon page KEY, and for the theme
 // tier the LOCAL file that key is decoded from, at roster-build time — spec §3,
 // "icon page keys are precomputed when the list is built, not per frame".
-// Row 0 ("None") deliberately gets an EMPTY key: AO2 asks for an icon for it too
 // (courtroom.cpp:5606-5610) but no theme in the corpus ships one, so it draws the
 // empty chip rather than burning a probe per open.
 func (a *App) bakeOverlayIconKeys(folder string, roster *overlayRoster) {
@@ -576,9 +556,6 @@ func (a *App) overlayEffectsVisible() bool {
 // drawEffectsPicker draws ui_effects_dropdown at rect. Shared by the classic IC
 // row and the themed layout so the two can never drift, exactly like
 // drawThemedSFXPicker.
-// The visibility gate lives HERE, not at the call sites: the classic row also
-// consults overlayEffectsVisible to decide whether to advance its cursor, but the
-// themed layout draws straight into a design.ini rect and had no gate at all,
 func (a *App) drawEffectsPicker(rect sdl.Rect) {
 	c := a.ctx
 	if !a.overlayEffectsVisible() {
@@ -611,9 +588,6 @@ func (a *App) drawEffectsPicker(rect sdl.Rect) {
 		// on_effects_dropdown_changed's other half (courtroom.cpp:5653-5657): it sets
 		// `effect` and calls focus_ic_input(). Picking a screen effect is a step in
 		// composing the line, so the keyboard goes back to the line (chatfocus.go).
-		// Here rather than in the arm helpers: toggleRealization drives the pick
-		// THROUGH selectOverlayEffectByName, not through this dropdown, and it already
-		// bounces on its own (:6178) — a bounce on the field write would double it.
 		a.bounceFocusToIC()
 	}
 	// Right-click a row → PREVIEW it (idiom A, the HoverPreview shape): the

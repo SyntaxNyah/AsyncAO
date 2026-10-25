@@ -1,11 +1,6 @@
 package ui
 
 // COPY-FOR-EDITING GATES (v1.90.0 W8) — docs/wip/THEME-EDITOR-DESIGN.md §Q5.
-// The class they close is named in CLAUDE.md rule 11: a primitive whose only
-// caller is a test. themepack.CopyForEditing shipped with 223 lines of production
-// code and one driver, and that driver was TestCopyForEditingLeavesTheOriginal-
-// Untouched. TestTheCopyPrimitiveHasAProductionDriver is the census that makes the
-// wiring undeletable.
 
 import (
 	"os"
@@ -25,9 +20,6 @@ const copyGateWait = 10 * time.Second
 // copyRig stages an App over an AO2-only theme that lives somewhere this client
 // may NOT write — the state every AO2 user is in on first run — and returns the
 // source folder and the write root.
-// The catalog is built by hand rather than scanned: the scan reads the developer's
-// real theme roots, and a gate that depended on those would pass or fail on what
-// happens to be installed.
 func copyRig(t *testing.T, origin themeOrigin) (*App, string, string) {
 	t.Helper()
 	base := t.TempDir()

@@ -4,9 +4,6 @@ package ui
 // (issue #6 follow-up; Crystalwarrior's design).
 // "../../UPDATES/minimal/base/evidence/empty.png" into the field), and it lists
 // "../../UPDATES/…" leak structurally impossible rather than merely fixed.
-// There is deliberately NO notion of a "base folder": AsyncAO's mounts are uniform
-// asset sources in the user's own order, so this file never singles one out as
-// special (Crystalwarrior: AO2's "folder 1 is always the default base" is a design
 
 import (
 	"errors"
@@ -95,7 +92,6 @@ func (a *App) mergedBrowseMounts() []string {
 }
 
 // startMergedBrowseLoad kicks the off-thread listing of one virtual directory.
-//
 // The mount set is resolved HERE, on the render thread, and captured by the
 // goroutine — prefs are render-thread state and the loader may not touch them
 // (§17.4: off-thread work captures its inputs before it starts). Single-flight is
@@ -122,9 +118,6 @@ func (a *App) startMergedBrowseLoad(dir string, keep func(string) bool) {
 // listMergedMountDir lists ONE virtual directory across the local mount FOLDERS and
 // merges them the way the asset layer resolves a fetch: mounts in order, the FIRST
 // spelling of a name winning, every later mount's copy hiding behind it.
-// THE MANIFEST SOLUTION that closes it, documented here for the later design pass
-// (Crystalwarrior's proposal): an evidence/ folder could ship a manifest listing the
-// evidence images it holds, the way the character list works, so a client can
 func listMergedMountDir(mounts []string, relDir string, keep func(string) bool) (entries []browseEntry, more int, errStr string) {
 	var all []mergedEntry
 	seen := make(map[string]bool, 64)

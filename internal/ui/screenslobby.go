@@ -178,10 +178,6 @@ func (a *App) drawLobby(w, h int32) {
 	utilLeft := lobbyUtilStop(w, lobbyUtilBtnCount-1)
 	// Privacy + Glossary + What's New: the three things worth reading before you play —
 	// what the server can see, what the AO jargon means, and what changed in this build.
-	// They sit CENTRE STAGE in the header (larger + accent-styled) instead of buried in
-	// the right-hand utility cluster. Centred in the gap between the title and that
-	// cluster; the width shrinks and anchors after the title on a narrow window so the
-	// row never overlaps either side.
 	// What's New is here rather than in the menu bar because release notes are a LOBBY
 	// concern: you read them between sessions, not mid-trial. It previously lived in the
 	// Help menu with a green unread dot riding the Help title, which overlapped the
@@ -404,9 +400,6 @@ func (a *App) drawLobby(w, h int32) {
 
 	// Keyboard navigation (#18): arrows move the selection through joinable servers, Enter joins —
 	// when no text field is focused. The selection drives the same expand + scroll as a click.
-	// NOT while the server-notice box is up. A refused dial lands here with the box open
-	// and a.selServer still pointing at the server that just refused us, and the pointer
-	// fence (App.Frame) only blanks the MOUSE — fencePointer leaves the keyboard alone.
 	// Enter would redial the server whose ban message is the reason the box is on screen,
 	// which is the same hazard the quick-connect key is gated for.
 	if c.focusID == "" && !a.font.serverNoticeDlg.open {
@@ -1050,13 +1043,6 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 		c.Label(cell.X+4, cell.Y+4, downloadGlyph+"…", ColText)
 	}
 	// FIXED-SIZE CORNER CHROME, all of it behind one gate (cellFitsCornerChrome).
-	// The download badge and the ★ are both AsyncAO affordances drawn at a constant
-	// pixel size, so on a downscaled theme cell they stop being corner badges and
-	// become most of the character art — and, because each one arms its own
-	// hover+click, a click aimed at the character starts a download or favourites it
-	// instead. Below the floor they BOTH go: a partial set is how the two ended up
-	// disagreeing in the first place. The cell still names itself (the tooltip
-	// registered above), and both are one click away at any usable cell size.
 	if cellFitsCornerChrome(cell) {
 		// Download badge (only with the opt-in downloader on): grabs this
 		// character's folder + the sfx/blips its char.ini names, for offline use.
@@ -1258,13 +1244,6 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 		c.LabelClipped(dst.X+4, dst.Y+dst.H/2-8, dst.W-8, "loading…", ColTextDim)
 	}
 	// The top-right chrome is painted AFTER the sprite blit, not before it.
-	// The blit covers `dst` — the frame inset by 4 — which swallows all but a
-	// 2 px sliver of both 18 px buttons, and the surfaces that show FULL-BLEED
-	// opaque art (the background pickers, bgpicker.go / wardrobe_bg.go) are
-	// exactly the ones where a preview is hardest to get rid of. Chrome that is
-	// invisible but still clickable is the lie assetmisschip.go's rule forbids,
-	// so draw order follows hit order here. Hit-testing lives in
-	// handlePreviewInput off previewFrameRect and is unaffected by this move.
 	// Emote-name caption (ARM 2): the emote-grid / fav-box preview box names the
 	// emote it's showing, so the preview surface reports it too — not just the
 	if name != "" && !cycle {

@@ -62,8 +62,6 @@ type rosterState struct {
 	// automatic poll they served; see liveroster.go. The latch could only do harm
 	// now: with every surviving fetch coming from a button, silently disabling one
 	// for the rest of the session would turn a press into nothing at all.
-	// Follow-a-player (M3): followUID is the player we trail across areas ("" =
-	// off); we auto-jump to their area on each PR/PU update, debounced.
 	followUID      string
 	lastFollowJump time.Time
 	followShow     bool // FollowEnabled pref, read once per player-list frame (no per-row lock)

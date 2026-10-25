@@ -234,9 +234,6 @@ func TestHandAuthoredMediaSidecarRendersEndToEnd(t *testing.T) {
 // TestThemeMediaSwapPrunesTheOutgoingThemesArt is the producer half of the leak the
 // store-side gate pins from below: applying a theme with no art after one with art
 // must leave nothing resident.
-// The prune is keyed on what the OUTGOING apply DECLARED (a.themeMediaKeys), not on
-// what the store happens to hold, and that is the only reason it can be right — the
-// store cannot tell a page the new theme also declares from one only the old one did.
 func TestThemeMediaSwapPrunesTheOutgoingThemesArt(t *testing.T) {
 	a, _, _, cleanup := stageW4MediaTheme(t)
 	defer cleanup()
@@ -333,11 +330,6 @@ func TestExportDrawsTheSameElementBandsAsTheScreen(t *testing.T) {
 
 // TestExportConditionsFollowTheExportedRoom pins WHICH room a visible_when resolves
 // against in an export.
-// The live courtroom is still behind the progress overlay with its last message on
-// it, so reading a.room would decorate a recording with whatever the session
-// happened to be doing — an objection glow over a line nobody objected to. The two
-// CLIENT-state axes (the local pos dropdown and character) have no recorded
-// counterpart and deliberately still come from the client.
 func TestExportConditionsFollowTheExportedRoom(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
@@ -371,10 +363,6 @@ func TestExportConditionsFollowTheExportedRoom(t *testing.T) {
 // different `top` than the window does, so the only thing standing between that and
 // a cold rebuild (a 12 KiB clear plus the rect map plus the element bake) every
 // frame is that the two never run in the same frame.
-// That property lives two files away — App.Frame's full-window precedence, written
-// down as chrometop.go's screenDispatchPreempted — so it is pinned here rather than
-// left as a comment somebody could invalidate from screens.go without ever opening
-// this file.
 func TestExportBorrowsTheThemeLayoutCacheWithoutThrashing(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()

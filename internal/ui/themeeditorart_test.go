@@ -1,7 +1,6 @@
 package ui
 
 // THE EDITOR'S ART SYNC, DRIVEN (v1.90.0 W7b) — themeeditorart.go.
-//
 // Every behavioural gate here goes through App.Frame and asserts on the page the BAKE
 // resolved, never on the plan alone: the defect these close was a plan that was correct
 // the moment it was built and stale for the rest of the session, so a gate that read
@@ -136,7 +135,6 @@ func TestAGeneratorEditMovesTheDrawnPage(t *testing.T) {
 
 // TestDeletingAnElementKeepsItsNeighboursArt covers the OTHER half of the same defect,
 // and it is the half no field edit can reach.
-//
 // An element's identity is its INDEX (theme.Element), and the plan's ElemKeys are
 // indexed by it. So deleting element 3 renumbers every element after it, and a stale
 // plan hands each survivor its PREDECESSOR's art — here, the deleted shape's "no art at
@@ -213,7 +211,6 @@ func TestEditingParamsDoesNotLeakTiles(t *testing.T) {
 
 // reopenEditorAtBaseline closes and re-opens the editor so the CURRENT model becomes the
 // document's baseline.
-//
 // The art fixture authors its generator after stageEditorCanvas has already opened the
 // editor (which is what makes it an element the gates can edit), so it is not in that
 // document's baseline — and a discard gate over an element the baseline never had would
@@ -293,7 +290,6 @@ func TestDiscardingOnExitPutsTheBaselineArtBack(t *testing.T) {
 
 // TestDiscardingADeleteOnExitPutsTheNeighboursArtBack is the same exit through the
 // index-shift half of the defect, which no field edit can reach.
-//
 // An element's identity is its INDEX, so deleting the shape in front of the generator
 // renumbers it — and undoing that by discarding renumbers it BACK. A plan left over from
 // the deleted state hands the restored shape the generator's tile and the generator
@@ -352,7 +348,6 @@ func TestDiscardingADeleteOnExitPutsTheNeighboursArtBack(t *testing.T) {
 // TestTheArtSignatureCoversWhatThePlannerReads drives themeArtSig against every field
 // planElements actually reads. A signature that misses one is a field whose edit is
 // invisible until something else moves — the original defect, wearing a hash.
-//
 // It MUTATES and compares rather than restating the fold, so it fails when a field is
 // dropped from the signature and stays green when the hash's parameters change.
 func TestTheArtSignatureCoversWhatThePlannerReads(t *testing.T) {

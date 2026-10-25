@@ -143,12 +143,6 @@ func driveFrames(a *App, n int) {
 }
 
 // driveClickAt runs one real frame carrying a committed left-click at (x, y).
-// The input is seeded BETWEEN BeginFrame and App.Frame, which is exactly where
-// HandleEvent puts it in the live loop: BeginFrame clears the snapshot (and
-// re-reads the cursor from SDL, which is (0,0) under the dummy driver), so anything
-// stamped before it is erased. downX/downY are seeded too, because the kit's
-// committed-click test (ClickedIn) requires the press to have STARTED on the rect —
-// a release that drifted in does not count.
 func driveClickAt(a *App, x, y int32) {
 	a.ctx.BeginFrame(frameHarnessDt)
 	a.ctx.mouseX, a.ctx.mouseY = x, y
@@ -159,10 +153,6 @@ func driveClickAt(a *App, x, y int32) {
 
 // driveTypedText runs one real frame carrying TEXT INPUT — one SDL_TEXTINPUT
 // event's worth, which is what a printable keystroke actually delivers.
-// Seeded between BeginFrame (which clears c.typed, ui.go) and App.Frame, exactly
-// where HandleEvent appends it in the live loop. c.keyPressed is deliberately left
-// alone: a letter arrives as text, not as a keycode, which is the whole reason the
-// bare-key bind namespaces had to move to Alt chords.
 func driveTypedText(a *App, s string) {
 	a.ctx.BeginFrame(frameHarnessDt)
 	a.ctx.typed = s
@@ -187,10 +177,6 @@ func driveEnter(a *App) {
 
 // driveUntilThemeApplied kicks a theme apply and drives REAL FRAMES until
 // pollThemeApply — App.Frame's own call, not a hand call — has landed it.
-// This is what makes every apply-tier gate below a call-site gate: awaitThemeApply
-// (panelfonts_test.go) calls a.pollThemeApply() itself, so deleting the call from
-// App.Frame leaves it green. Here the only thing that can land the result is the
-// frame.
 func driveUntilThemeApplied(t *testing.T, a *App) {
 	t.Helper()
 	gen := a.applyThemeAsync()

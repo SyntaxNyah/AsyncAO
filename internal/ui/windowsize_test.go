@@ -58,11 +58,6 @@ func landThemeApply(a *App, layout map[string]theme.Rect) uint64 {
 // TestCenteredWindowPosTargetsTheGivenDisplay pins the SDL magic value the
 // recentring fix depends on. SDL_SetWindowPosition reads the target display out
 // of the LOW 16 BITS of the position (SDL 2.32.10 src/video/SDL_video.c:
-// `int displayIndex = (x & 0xFFFF);`), and SDL_video.h defines the bare
-// SDL_WINDOWPOS_CENTERED as SDL_WINDOWPOS_CENTERED_DISPLAY(0). So "centered"
-// literally means "on the primary monitor" unless the index is encoded — which
-// is the bug: WindowDisplayUsable clamps the size against the display the window
-// is ON, and the old recenter then dropped it on display 0 anyway.
 func TestCenteredWindowPosTargetsTheGivenDisplay(t *testing.T) {
 	if got := CenteredWindowPos(0); got != int32(sdl.WINDOWPOS_CENTERED) {
 		t.Errorf("CenteredWindowPos(0) = %#x, want the bare sdl.WINDOWPOS_CENTERED %#x", got, int32(sdl.WINDOWPOS_CENTERED))
@@ -582,8 +577,6 @@ func TestThemeDesignSizeNeedsAViewportToo(t *testing.T) {
 // the SAME one-shot. Without it an existing user's first launch after updating
 // swaps an edge-to-edge courtroom for a small centred canvas ringed by bars, and
 // the only way out is a settings hunt — the outcome the product rule forbids.
-// The trigger is the STAMP being newly written, never "is this boot", so it can
-// fire exactly once ever.
 func TestThemeFitUpgradeSnapIsArmedOnceAtBoot(t *testing.T) {
 	// A file that predates the move: no stamp, still on the old Stretch default.
 	dir := t.TempDir()

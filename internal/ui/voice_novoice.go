@@ -10,7 +10,6 @@ import "github.com/veandco/go-sdl2/sdl"
 // affordance is inert: voiceOfferable() is always false, so the Voice button,
 // the Extras "Voice" entry, and the floating voice panel never appear, and the
 // Settings sidebar omits the Voice tab (voiceBuilt == false).
-//
 // Opus MUSIC is unaffected — it plays through SDL_mixer (internal/render),
 // independent of voice chat. See internal/render/audio.go.
 

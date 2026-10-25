@@ -292,8 +292,6 @@ const defaultPaintSplit = 30
 // without leaving the chat — the scene, IC input and logs stay live underneath
 // (it shares the Extras surface's pointer fence + single press edge). Opened from
 // the Extras "Sprite Style" entry; drawn only while open, so it's free when shut.
-// Every control writes the sticky pref immediately, so a change shows on your very
-// next message. Session-only open + position (a quick tool, not persisted chrome).
 
 const (
 	styleBoxW       = int32(268)
@@ -508,8 +506,6 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	// a colourful sprite — the ask was a recolour that only affects hue). Hue
 	// paint = the tint applied over the sprite's GRAYSCALE variant: every pixel
 	// takes the chosen hue while keeping its own light and shadow (luma × hue).
-	// It's a composition of two EXISTING wire fields (Tint + Grayscale), so any
-	// AsyncAO build — old or new — renders it identically; no wire change.
 	if next := c.Checkbox(x, y, "Recolour (tint)", p.Tint); next != p.Tint {
 		p.Tint = next
 		a.d.Prefs.SetSpriteStyle(p)

@@ -480,9 +480,6 @@ func (a *App) linkLabel(x, y, maxW int32, url string) {
 // can't flood the box. Both scheme-prefixed (http/https) and bare "www." links
 // are recognised — a bare "www.x" keeps its bare display text everywhere and is
 // promoted to https:// only at OPEN time (schemeForOpen).
-// Detection is token-based: strings.Fields splits on whitespace, so a candidate
-// must be a WHOLE token that starts with the prefix after the wrapper/trailing
-// trim. That gives the boundary rule for free: "foo.www.bar" is one token that
 func extractURLs(s string, max int) []string {
 	var out []string
 	for _, tok := range strings.Fields(s) {

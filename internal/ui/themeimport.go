@@ -3,9 +3,6 @@ package ui
 // IMPORTING A THEME BUNDLE (v1.90.0 W8) — docs/wip/THEME-EDITOR-DESIGN.md §Q4/§Q6.
 // The user learns exactly what the design's sheet would have told them, at the
 // moment the sheet would have told them, and the confirming act is deliberate.
-// SINGLE-FLIGHT AND OFF-THREAD (hard rules 2 and 4). Both stages are disk work on
-// a goroutine; the job pointer IS the flag, so exactly one bundle can be in
-// flight; the result channel is buffered so the goroutine never blocks on an app
 
 import (
 	"path/filepath"
@@ -91,7 +88,6 @@ type themeImport struct {
 
 // armed reports whether path is the bundle the user has already been shown, and
 // still inside its consent window.
-//
 // THE PATH IS PART OF THE TEST, not just the timer: dropping bundle A and then
 // bundle B must describe B rather than importing A, or the confirmation would
 // mean "the last thing you dropped" instead of "this thing".
@@ -124,7 +120,6 @@ type themeImportRowText struct {
 
 // themeImportRow returns the row's current strings, rebuilding them only when the
 // state they describe has moved.
-//
 // The EFFECTIVE armed path is used as the key, not the stored one: the consent
 // window expires on a clock, so keying on themeImport.armedPath alone would leave
 // the row offering to import a bundle whose consent had lapsed — a button that
@@ -164,7 +159,6 @@ func buildThemeImportRow(armed string, busy bool) themeImportRowText {
 
 // themeImportRowAction is the button. It is deliberately the SAME two acts the
 // drop path has: browse-and-describe, then confirm.
-//
 // The confirm goes through handleThemeBundleDrop — the drop's own entry point —
 // rather than starting an extract itself, so there is exactly one place that
 // decides what a bundle does, and the browse and drag paths cannot drift apart
@@ -285,7 +279,6 @@ func (a *App) landThemeBundle(res themeBundleResult) {
 
 // applyImportedTheme is the landing of a successful extraction: the theme is on
 // disk, so select it, apply it live, and rescan the catalog.
-//
 // LIVE, NOT NEXT LAUNCH. This is deliberately NOT ImportSettings' freeze-and-
 // apply-next-launch semantics (design §Q4): the whole experience is "your friend
 // sends you a theme and two drops later you are looking at it".
@@ -391,7 +384,6 @@ func themeBundleTitle(m *themepack.Manifest) string {
 
 // fontsMissingLicense names the bundled faces with no licence file beside them,
 // bounded by themeImportFontsNamed.
-//
 // OFL specifically requires the licence to travel with the font, so the person
 // re-sharing this bundle is the one who would be breaking the terms. Naming the
 // files is what turns that from a legal abstraction into something fixable.
@@ -419,7 +411,6 @@ func fontsMissingLicense(m *themepack.Manifest) string {
 }
 
 // humanBytes formats a byte count for a human.
-//
 // MB with one decimal place, because "6.4 MB" is the number that decides whether a
 // theme is shareable and "6 MB" is not — but KB BELOW A MEGABYTE, because a
 // two-file theme rendered as "0.0 MB packed / 0.0 MB on disk", which reads as a

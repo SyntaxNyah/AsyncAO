@@ -13,8 +13,6 @@ import (
 // independent of AO2 courtroom themes. The chosen preset becomes the BASE palette
 // (activeKitColors) that applyThemePalette restores to; a server theme's stylesheet
 // colours still overlay it (with none — the common case — the preset IS the chrome).
-// 100% local; the kit colours are package vars read as values, so the render loop stays
-// 0-alloc — only a theme/preset change reassigns them.
 
 // chromePreset is one named palette: the 7 base kit colours in defaultKitColors order
 // (Background, Panel, PanelHi, Accent, Text, TextDim, Danger).

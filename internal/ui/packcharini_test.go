@@ -1,12 +1,6 @@
 package ui
 
 // The UI half of "a mounted base answers char.ini too" (issue #72).
-//
-// internal/assets proves FetchRawLayered reads the pack. These prove the two
-// things only this package can answer: that the ini readers actually CALL it —
-// the whole defect was a working pack layer nothing on this side reached — and
-// that a source change drops the PARSED copies, which no texture invalidation
-// touches.
 
 import (
 	"os"

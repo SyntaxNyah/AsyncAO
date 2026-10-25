@@ -45,11 +45,6 @@ func editSlotRig(t *testing.T) (*App, *themeDoc, editTarget) {
 
 // TestSlotInspectorOffersGeometryAndNothingElse is the AO2 full-parity rule, made
 // structural.
-// W7a stated the rule in a label and offered no control at all, so a widget could be
-// dragged but its rect could not be TYPED. W7b gives the arm a real row — and the gate
-// is that it is the ONLY row, addressing the ONLY field [overrides] can carry. A
-// future AsyncAO-side extra for an AO2 widget cannot be smuggled in as a second row
-// without failing here.
 func TestSlotInspectorOffersGeometryAndNothingElse(t *testing.T) {
 	a, _, tgt := editSlotRig(t)
 	rows := a.te.inspectorRowsFor(tgt)
@@ -392,9 +387,6 @@ func TestPickListsComeFromTheLiveDocument(t *testing.T) {
 // TestOnlyPickerRowsNameAPickSource pins pickRow's own claim: the ~30 rows that are
 // not pickers carry pickNone because they never write one, and every row that IS a
 // picker names a live list.
-// Both halves are silent failures. An fkPick row left at pickNone draws a picker with
-// nothing to pick — two step buttons the author can press forever — and a non-picker
-// row that acquired a source would be asking the cache to build a list nothing draws.
 func TestOnlyPickerRowsNameAPickSource(t *testing.T) {
 	a, _ := editDocRig(t, 1)
 	// THE NO-SOURCE ANSWER IS PINNED BY THE CACHE SLOT, NOT BY THE RETURN VALUE. A nil
@@ -629,11 +621,6 @@ func TestSavingGeometryDoesNotRestartTheTheme(t *testing.T) {
 
 // TestSavingATypeEditAppliesTheThemeOnce is the other half, and it is what stops the fix
 // above from being "delete the call".
-// A [fontbind] row is resolved into real SDL_ttf faces by applySidecarFonts, on the
-// theme-apply goroutine, against the sidecar ON DISK — so without an apply after the
-// write the binding is saved and still drawn in the old face. The second save proves the
-// comparison is against the last APPLY rather than against "the tables were ever
-// touched": nothing new to resolve, no second restart.
 func TestSavingATypeEditAppliesTheThemeOnce(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()

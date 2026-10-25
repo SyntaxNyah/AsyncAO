@@ -4,9 +4,6 @@ package ui
 // Friends) can be popped OUT of the docked tab strip into their own movable,
 // resizable floating panels — each rendering the tab's real content. A torn tab
 // is just a classic-layout SLOT (classiclayout.go) under a "tab:<name>" key:
-// Reset-all (the editor's "Reset all") clears the whole map, so every tab redocks
-// and the default is plain buttons again — exactly the user's "by default it's
-// buttons" ask. Log and OOC are deliberately NOT tear-offable: Log is the home /
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -320,13 +317,6 @@ func (a *App) drawTornTabs(w, h int32) {
 }
 
 // drawClassicTabTray is the editor's tray strip (just under the banner, at the TOP):
-// one chip per tear-offable tab, clicked to pop it out (or redock it), plus the OOC
-// box/tab chip. Returns whether the cursor is over the tray, so the editor suppresses a
-// slot-move when you press a chip. It lives at the top, not the bottom, so it doesn't
-// cover bottom-anchored bars (the OOC bar / emote grid) — a tester couldn't drag the OOC
-// bar to the bottom because the old bottom tray hid it and blocked the grab. Big boxes
-// (stage / right column) are grabbed by their bodies, so a top strip costs them nothing.
-// Edit-only.
 func (a *App) drawClassicTabTray(w, h int32) bool {
 	c := a.ctx
 	trayY := int32(classicBannerH + 8)

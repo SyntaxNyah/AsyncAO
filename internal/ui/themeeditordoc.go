@@ -159,11 +159,6 @@ func (f editField) String() string {
 }
 
 // editFieldGet reads one field out of an element into the fixed-size payload.
-// A TABLE, NOT A SWITCH, and indexed by the enum: a field appended to editField
-// without a reader here is a nil entry that
-// TestEveryEditFieldHasAGetterAndASetter names, where a switch's default would
-// have silently returned the zero value and made the field look like it was
-// always empty.
 var editFieldGet = [editFieldCount]func(*themeDoc, *theme.Element) editValue{
 	editFieldRect: func(_ *themeDoc, e *theme.Element) editValue {
 		return editValueRect(int32(e.Rect.X), int32(e.Rect.Y), int32(e.Rect.W), int32(e.Rect.H))
@@ -341,11 +336,6 @@ var editFieldSet = [editFieldCount]func(*themeDoc, *theme.Element, editValue){
 	editFieldNoDecimate: func(_ *themeDoc, e *theme.Element, v editValue) { e.NoDecimate = v.i[0] == 0 },
 
 	// THE ID GOES THROUGH THE FORMAT'S OWN FUNNEL and never through e.ID directly.
-	// An element's id lives in two places — this struct field and the
-	// `[element.<id>]` header in the lossless carrier — and theme.RenameElement is
-	// the only thing that can move both as one act. Assigning e.ID here would leave
-	// the carrier's header on the old name, and the next save would APPEND a second
-	// section: a file that reads back as two elements (see editFieldElemID).
 	editFieldElemID: func(d *themeDoc, e *theme.Element, v editValue) {
 		_ = d.side.RenameElement(e.ID, d.str(v.s))
 	},
@@ -810,9 +800,6 @@ func (d *themeDoc) fontRowAt(kind editOpKind, idx int) string {
 // writeFontRow is the ONE writer of both tables. An empty value REMOVES the row; an
 // index at the end APPENDS. Returns false for a refusal — a cap, or an index that is
 // neither an existing row nor the append slot.
-// THE CAP REFUSES, IT DOES NOT EVICT, exactly as setOverrideRow and insertAt do: a
-// document that dropped somebody else's family to make room for this one would save a
-// theme whose bindings point at nothing.
 func (d *themeDoc) writeFontRow(kind editOpKind, idx int, v string) bool {
 	if kind == opFontBind {
 		if idx < 0 || idx >= len(theme.FontElements) {
@@ -876,11 +863,6 @@ func (d *themeDoc) writeFontBind(class, family string) bool {
 // how a theme behaves for somebody who only uses it.
 
 // slotEditable reports that a design key is one this document may author.
-// It is sidecarOverrideTarget's first two gates (themeoverrides.go), asked of the
-// LIVE map rather than the apply goroutine's: editable, and actually placed by this
-// build. The tab strip is refused on top of them — see editorSlotKeyEditable
-// (themeeditorcanvas.go) for that argument, which is about ownership rather than
-// about geometry and therefore lives with the probe that enforces it.
 func (d *themeDoc) slotEditable(key string) bool {
 	if d == nil || d.live == nil || key == "" || !themeKeyEditable(key) {
 		return false
@@ -928,10 +910,6 @@ func (d *themeDoc) applySlotRect(op themeEditOp) (themeEditOp, editApplyResult) 
 
 // applySlotReset removes this document's [overrides] row for a widget, putting the
 // geometry back to what the tiers below resolved when the editor opened.
-// A ROW THAT WAS NEVER THERE IS NOT A RESET, and answering applyNoChange for it is
-// the same ruling applySlotRect's equal-rect arm makes: pressing Reset on an
-// untouched widget must not mark the theme edited, and must not chip a refusal for a
-// limit that is not there.
 func (d *themeDoc) applySlotReset(op themeEditOp) (themeEditOp, editApplyResult) {
 	key := op.target.designKey()
 	if !d.slotEditable(key) {

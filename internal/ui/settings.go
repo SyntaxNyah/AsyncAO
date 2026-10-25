@@ -351,14 +351,6 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 	tabFormats: {
 		// sections: How formats work, This server, Automatic detection, Formats per
 		// asset type, Fallbacks, Learned formats.
-		// NOTE the table is scanned in TAB ORDER and matches forward (the query is a
-		// SUBSTRING of a term), so a term here silently steals every query a LATER
-		// tab answers better — including queries hidden inside a longer term. Absent
-		// on purpose, each because a later tab owns the word: "blip"/"volume"
-		// (Audio); "ignore"/"callword" (Chat); "password" (Account); "webp"/"gif"
-		// (Studio's video export — so no "webp format" either, which would still
-		// contain "webp"); "export"/"import" (Studio, Data); "extensions.json"
-		// (its ".json" tail would swallow Data's "json").
 		"image format", "file type", "file types", "extension", "extensions", "manifest",
 		"format profile", "server format profile", "per-server format", "pin format",
 		"probe", "probing", "one probe", "probe order", "format order", "which format",
@@ -652,11 +644,6 @@ func (a *App) drawSettings(w, h int32) {
 
 	// #26 gather-search: with a query typed, the card region becomes a RESULTS
 	// list of every matching setting across every tab (click → jump + flash).
-	// Skipped while the .demo browser is open (!demoBrowser.open): this branch
-	// returns EARLY, which would jump over the end-of-function fence release +
-	// browser draw — stranding c.modalOn=true and freezing the whole UI (the
-	// un-released-fence failure the emoji picker documents). Falling through draws
-	// the fenced (click-dead, covered) tab body instead, so the release always runs.
 	if q := strings.ToLower(strings.TrimSpace(settings.search)); q != "" && !demoBrowser.open {
 		if !settings.indexBuilt {
 			a.buildSettingsIndex(w, contentTop)
@@ -1897,10 +1884,6 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// Dyslexia-friendly font: a persisted one-click toggle backed by the bundled
 	// OpenDyslexic (no install needed). Drives the IC/OOC chat + log text and
 	// takes precedence over the manual override below.
-	// The census reads the machine's OWN fonts, so it is the only text path whose
-	// behaviour differs per operating system. Exposed so a player seeing wrong or
-	// missing text can take the whole subsystem out of the picture in one click
-	// instead of waiting for a build.
 	census := a.d.Prefs.Load().FontCensus
 	if next := c.Checkbox(pad, y, "Use fonts installed on this computer (ON by default): lets text in scripts the bundled fonts don't cover borrow a font from your system. Turn off if text renders wrongly or goes missing — the client then uses only the fonts it ships with.", census); next != census {
 		a.d.Prefs.Update(func(

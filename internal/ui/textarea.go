@@ -12,7 +12,6 @@ import (
 // caret/selection/scroll (see the Ctx ta* fields) so it never entangles with
 // the single-line field's math, but shares c.focusID so HandleEvent captures
 // clipboard chords and select-all for it exactly as it does for TextField.
-//
 // This widget only ever draws while the evidence editor is in EDIT mode (an
 // off-the-hot-path modal state), so unlike the courtroom chrome it is allowed
 // to allocate (layout + wrap rebuild per frame).

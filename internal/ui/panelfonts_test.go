@@ -158,10 +158,6 @@ func awaitThemeApply(t *testing.T, a *App) {
 
 // TestPanelSizeAcceptsATwoDigitNumber is the regression pin for the reported
 // fault: the size box "defaults to weird numbers, you can't set it correctly".
-// It clamped on EVERY keystroke and fed the clamped number straight back into the
-// box, so typing the "1" of "18" became a 6 — the minimum — before the "8" could
-// be typed. Every size below ten was unreachable, and every one above it had to
-// be arrived at through a number the box had already rewritten.
 func TestPanelSizeAcceptsATwoDigitNumber(t *testing.T) {
 	a := testTabApp(t)
 	shown := typePanelSize(t, a, "ic_chatlog", "18")

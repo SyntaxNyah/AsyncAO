@@ -17,8 +17,6 @@ import (
 // presets and orthogonal to it. Where chrome.go recolours the flat kit chrome,
 // this reshapes it: buttons/chips/panel frames gain rounded or pill corners while
 // hit-testing stays the SAME rectangle everywhere (no polygon picking).
-// The mask keys mirror the config package's persisted vocabulary. shapeSharp is
-// never rastered (it has no mask — it IS the fall-through).
 const (
 	shapeSharp   = "sharp"   // flat rect — the byte-identical default (no mask)
 	shapeRounded = "rounded" // rounded-rectangle corners (radius by tier)
@@ -156,10 +154,6 @@ func (a *App) buildShapeMasks() {
 	if a.d.Store != nil {
 		// A preset switch abandons the departing shape's masks: sweep every
 		// OTHER kind's pages out of the pinned tier (sharp sweeps them all)
-		// rather than letting dead eviction-exempt bytes ride until a Purge.
-		// Bounded by the enumerated key set; Remove on an absent key is a
-		// no-op. Callers re-resolve the Ctx mask pointers immediately after
-		// (refreshShapeMasks), so nothing dangles on the queued destroys.
 		for _, kind := range shapeMaskKinds {
 			if kind == shape {
 				continue
@@ -370,9 +364,6 @@ func (c *Ctx) borderShaped(r sdl.Rect, col sdl.Color) {
 // mask radius, or min(w,h)/2 for pill) so the curve size is correct at any widget
 // size. Everything uses the two persistent scratch rects (set-then-Copy) so no
 // &local escapes through cgo — the hot path is 0-alloc once masks are resident.
-// SetColorMod + SetAlphaMod tint the mask to col before the passes. NO restore
-// to 255 afterwards — a DELIBERATE divergence from the shared-texture rule
-// (viewport.go restores because sprite textures are drawn by many sites): these
 func (c *Ctx) draw9Slice(tex *sdl.Texture, dst sdl.Rect, col sdl.Color) {
 	if dst.W <= 0 || dst.H <= 0 {
 		return

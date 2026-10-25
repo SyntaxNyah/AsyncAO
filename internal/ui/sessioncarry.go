@@ -22,9 +22,6 @@ type sessionCarry struct {
 // the one-shot carry slot, stamped with the server it came from
 // (a.serverKey — the dialled address, matching the v1.91.0 per-server-
 // identity convention, not the display name).
-// A second call before the first is consumed simply overwrites the slot —
-// never accumulates — so this is a single named slot, not an unbounded
-// history (rule 4). Its contents are already bounded by icLogCap/oocLineCap
 func (a *App) snapshotSessionCarry() {
 	a.conn.pendingSessionCarry = &sessionCarry{
 		icLog:        a.chatlog.icLog,
@@ -43,9 +40,6 @@ func (a *App) snapshotSessionCarry() {
 // session if, and only if, wsURL matches the server it was captured from —
 // the encapsulation guarantee that a carried log can never resurrect one
 // server's content under a different one. ALWAYS clears the slot (one-shot):
-// Called from connectWith AFTER a successful dial (a.conn = conn), never
-// right after resetSessionState — so a FAILED auto-reconnect attempt never
-// burns the one-shot slot; the next retry still has it
 func (a *App) applySessionCarryIfPending(wsURL string) {
 	carry, key := a.conn.pendingSessionCarry, a.conn.pendingSessionCarryKey
 	a.conn.pendingSessionCarry, a.conn.pendingSessionCarryKey = nil, "" // one-shot: consumed either way

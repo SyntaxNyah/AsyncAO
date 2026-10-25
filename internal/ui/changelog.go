@@ -16,9 +16,6 @@ import (
 // "installed". This complements the post-self-update modal (update_ui.go), which
 // fetches only the LATEST release's notes from GitHub — this screen is the
 // always-available history, opened on demand from the lobby top bar.
-// Rendering mirrors drawAbout: the markdown is reflowed to the column width and
-// cached by width (a.changelogFlat / a.changelogFlatW), so the wrap runs only on
-// a resize, never per frame — the page is off the hot path, but this repo keeps
 
 //go:embed assets/CHANGELOG.md
 var changelogMD string

@@ -255,11 +255,6 @@ func area64(r sdl.Rect) int64 { return int64(r.W) * int64(r.H) }
 
 // editorCanvasRect is the region of the window the canvas owns for INPUT: the frame
 // minus the header band and the two rails.
-// PUBLISH THE RECT THAT IS ACTUALLY PAINTED (overlayfence.go's rule, applied by
-// arithmetic rather than by a fence): the rails are opaque chrome drawn over the
-// canvas, so a press on them belongs to them even when a theme's element extends
-// underneath. Without this the same click would both select an element and press an
-// inspector button.
 func editorCanvasRect(w, h int32) sdl.Rect {
 	r := sdl.Rect{X: editRailW, Y: editBannerH, W: w - editRailW*2, H: h - editBannerH}
 	if r.W < 0 { // a window narrower than both rails: no canvas to press on at all
@@ -297,9 +292,6 @@ func (a *App) editorCanvasInput(w, h int32, lay *themeLayoutCache) {
 	// A PANEL IS UP, so the canvas behind it is CLICK-DEAD (design §3.1). The rails go
 	// dead through c.modalOn, which hovering() honours — but this probe hit-tests with
 	// raw pointIn and would see straight through that, so it refuses the press itself.
-	// The shape it closes: editorFontPanelRect centres the panel INSIDE the canvas rect,
-	// so every `<` / `>` / `x` on a font row also ran editorProbe + editorBeginGesture
-	// on whatever element or AO2 widget sat beneath it — the art moved while a face was
 	if a.editorPanelUp() {
 		return
 	}
@@ -342,11 +334,6 @@ func (a *App) editorCanvasInput(w, h int32, lay *themeLayoutCache) {
 }
 
 // editorBeginGesture captures the press.
-// It records the authored rect of the WHOLE selection, not just the pressed target,
-// because a multi-target move recomputes every frame from these origins (see
-// editGesture). A locked target records its rect too and is simply never written —
-// that keeps the indices of base[] and sel[] the same array position, which is what
-// lets the drag loop be a single indexed walk.
 func (a *App) editorBeginGesture(lay *themeLayoutCache, t editTarget, edges uint8) {
 	e := a.te
 	g := &e.drag
@@ -490,12 +477,6 @@ func (a *App) editorMagnet(lay *themeLayoutCache, primary editTargetGeom, r them
 }
 
 // editorClampGeometry keeps a WIDGET on the stage and leaves an ELEMENT alone.
-// The asymmetry is the format's, not a shortcut: themeLayoutIn clamps every
-// courtroom-relative widget into the canvas because Qt amputated overhanging
-// children and themes rely on it, whereas an element's rect is a signed delta on its
-// anchor (§6.6 R1) and the inflate idiom `-6, -6, 12, 12` is decoration deliberately
-// reaching outside its widget. Clamping an element would forbid values the format
-// defines — layoutnudge.go's nudge arm carries the same rule for the keyboard.
 func (a *App) editorClampGeometry(t editTarget, r theme.Rect) theme.Rect {
 	if t.space != spaceDesign {
 		return r

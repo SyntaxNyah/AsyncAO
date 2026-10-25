@@ -89,9 +89,6 @@ func TestThemeChromeGoesStillUnderReduceMotion(t *testing.T) {
 // TestThemeFrameAndElementFrameShareOneIndexer keeps the two from drifting apart
 // again. They differ in WHOSE CLOCK they read and in nothing else, so given the
 // same elapsed and a looping page they must select the same frame.
-// Stated as an identity over the shared pure core rather than as two hardcoded
-// numbers: elementFrameIndex is what both call, and the day one of them stops
-// calling it this is what says so.
 func TestThemeFrameAndElementFrameShareOneIndexer(t *testing.T) {
 	a, cleanup := stageSettledCourtroom(t)
 	defer cleanup()

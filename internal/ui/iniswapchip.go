@@ -32,9 +32,6 @@ const (
 	// its own minimum gap. On a window too narrow to hold the menu titles, this
 	// reserve AND the chip, the chip is what drops — the width-drop contract, the
 	// same rule the IC bar's Flip segment follows at 720p.
-	// It is belt to assetMissChipRect's braces: that chip already yields to
-	// menuBarLeftContentRight, so a collision is impossible either way. Preferring to
-	// drop the Iniswap chip here keeps the yielding one-directional, which is what
 	iniswapChipRightReservePx = int32(200)
 )
 

@@ -3,9 +3,6 @@ package ui
 // Encapsulation tests for the text-seam fix (v1.93.0): a named log row's
 // selection/highlight math now shares drawLogLineNamed's logRowSplit gate
 // instead of re-deriving (and, before this, mismeasuring) it.
-// Every test below drives a REAL production entry point (logPointAt,
-// drawLogSelHighlight, logPrefixWidth itself, or drawLogLineNamed's own
-// source) — none re-implements the split/measure logic to check itself.
 
 import (
 	"testing"
@@ -243,9 +240,6 @@ func drawnPrefixWidth(t *testing.T, c *Ctx, font *ttf.Font, runes []rune, n int)
 // scale) the two measurements collapse to the identical call; this test is what
 // forces them apart by setting a real fractional UI scale and comparing against
 // the production draw as ground truth.
-// Deleting the fix (routing logPrefixWidth's width lookups back through
-// fontTextWidthWeight instead of devTextWidthWeight) reproduces the drift this
-// asserts against — confirmed by running this test against the unfixed tree
 func TestLogPrefixWidthMatchesTheActualDrawAtFractionalScale(t *testing.T) {
 	a, _ := oocRowSelectionFixture(t, motdSelectionFixtureLine, "") // no speaker: the MOTD continuation-row shape
 	c := a.ctx

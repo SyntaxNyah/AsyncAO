@@ -171,7 +171,6 @@ func TestEveryFXTermReachesThePixel(t *testing.T) {
 
 // TestReduceMotionPaintsTheAuthoredFormNotTheFrozenPeak is the accessibility half of
 // the same reading, and it is the one an "obvious" implementation gets backwards.
-//
 // Under ReduceMotion every effect resolves neutral — so a FREE element paints its
 // authored form (still), and a WASH paints NOTHING (env 0). Freezing a wash at its
 // baked peak instead would make the accessibility option the thing that put an opaque

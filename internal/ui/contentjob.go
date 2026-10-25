@@ -438,9 +438,6 @@ const (
 // contentProbeResult is one worker's finding for one enumerated asset, keyed by
 // (category, item index) so the render thread updates the exact report slot. Only
 // the URL + status travel back: the probe's bytes stay in the cache tiers (T2/T3)
-// it just filled, and packaging re-drains them from there — so the report never
-// holds every found asset in RAM (a big scene could be tens of MB), yet still
-// costs exactly one network probe per asset (the redrain is a cache hit).
 type contentProbeResult struct {
 	cat      ContentCategory
 	idx      int
@@ -530,11 +527,6 @@ type contentPackageResult struct {
 // ---------------------------------------------------------------------------
 
 // StartContentReport begins the enumerate→probe pass over a loaded recording.
-// Render thread only (reads a.d.Manager, spawns the probe goroutines). Single-
-// flight: a second request while one runs is refused politely via warnLine,
-// returning false so the caller can keep its button disabled. rec must be
-// non-nil; the origin comes from rec.Origin (the caller filled it via
-// demoDefaultOrigin on load), so this touches no other App fields.
 func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 	if a.sel.contentBusy {
 		a.warnLine = "A content report / package is already running — let it finish first."
@@ -619,16 +611,6 @@ func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 
 // startAutoBundle begins the automatic "recordings keep their assets" build for
 // a just-saved in-app recording: enumerate → seed → probe → (on probe settle)
-// package, reusing the EXACT Studio content-job machinery — the only differences
-// are the j.auto flag (which silences the pipeline's intermediate toasts and lets
-// tickContentJob's phaseReport case fire the package headlessly) and j.autoRec
-// (the recording's Events/StartBg for the bundled .aorec). Single-flight with the
-// Studio jobs: if one is already running this quietly skips (a debug note only —
-// never a toast, never a queue) so the auto-build can't stomp a manual report or
-// pile up unboundedly. Empty origin (an offline recording) skips silently: there
-// is nothing to package, and the flat .aorec already landed. Render thread only
-// (reads a.d.Manager/Prefs, spawns the seed/probe goroutines) — called AFTER
-// stopRecording's async .aorec write, so it never blocks or slows the stop.
 func (a *App) startAutoBundle(rec *sceneRecording, stem string) {
 	if a.sel.contentBusy {
 		// A Studio report/package (or a prior auto-build) is mid-flight: skip quietly.
@@ -766,11 +748,6 @@ func (a *App) startProbePhase(j *contentJob) {
 }
 
 // contentProbeWorker resolves each work item exactly once and sends the finding.
-// One of contentProbeWorkers bounded goroutines; it exits when workCh closes OR
-// stop closes (the phase ended / was cancelled and the render thread no longer
-// drains resultCh). The send selects on stop so a worker never wedges on a full
-// resultCh after the render thread walks away — it dies instead of leaking. Off
-// the render thread only.
 func contentProbeWorker(mgr *assets.Manager, workCh <-chan contentProbeItem, resultCh chan<- contentProbeResult, stop <-chan struct{}) {
 	for item := range workCh {
 		url, status, fromPack := probeRef(mgr, item.ref)
@@ -1135,11 +1112,6 @@ func (a *App) tickContentPackage(j *contentJob) {
 }
 
 // writeContentBundle writes the self-contained folder OFF the render thread:
-// every found asset at its origin-relative path (archive layout), a bundled
-// .aorec, and the plain-text gap list. Byte-compatible with archive.ExportAssets
-// / beginBundledReplay. A running total-bytes counter enforces
-// contentPackageMaxBytes with an honest abort; per-file write errors are
-// collected (not fatal) so one bad path doesn't sink the whole bundle.
 func writeContentBundle(mgr *assets.Manager, destDir, stem string, rec *sceneRecording, foundURLs, reportLines []string) contentPackageResult {
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return contentPackageResult{msg: "Package failed: " + err.Error()}
@@ -1228,13 +1200,6 @@ func writeContentBundle(mgr *assets.Manager, destDir, stem string, rec *sceneRec
 		msg += fmt.Sprintf(" %d files couldn't be written.", writeErr)
 	}
 	// The bundle is byte-compatible with archive.ExportAssets' output on purpose:
-	// beginBundledReplay / archive.SeedFormats read the SAME Bundled+Formats .aorec
-	// and the SAME origin-relative asset layout, so this folder replays offline
-	// exactly like a maker-exported archive. The write path is its own (not a call
-	// into archive) because it must re-drain the ALREADY-probed bytes from the cache
-	// tiers by their resolved URL (so no asset is format-probed twice), enforce the
-	// running byte cap, and collect per-file errors — none of which the synchronous
-	// exporter does.
 	return contentPackageResult{dir: destDir, msg: msg}
 }
 

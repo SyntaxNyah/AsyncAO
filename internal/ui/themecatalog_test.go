@@ -127,12 +127,6 @@ func TestThemeCatalogIsBoundedAndPublishedAtomically(t *testing.T) {
 
 // TestThemeBadgeAgreesWithWhatTheClientAcceptsAsATheme pins the badge against
 // the app's OWN definition of a theme folder. themeINIFiles is that definition:
-// normalizeThemeRoot uses it to decide a dropped folder is a theme, and
-// theme.Load merges the design, fonts and sounds INIs independently, so a folder
-// holding any ONE of them loads and does something. Telling the user such a
-// folder holds no theme files would have the browser contradict the client that
-// had just accepted it on drop — which is what this test exists to stop coming
-// back (it did once: the badge read only the design INI and the sidecar).
 func TestThemeBadgeAgreesWithWhatTheClientAcceptsAsATheme(t *testing.T) {
 	for _, ini := range themeINIFiles {
 		dir := writeCatalogTheme(t, t.TempDir(), "solo", ini)

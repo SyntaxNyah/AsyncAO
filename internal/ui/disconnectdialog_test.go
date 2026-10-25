@@ -72,7 +72,6 @@ func TestFriendlyDisconnectReason(t *testing.T) {
 // state a PARKED tab reaches via activateTab. Playtesters reported the two arms
 // disagreeing: a background tab showed the box while the tab they were looking at
 // was slammed to the server list.
-//
 // Auto-reconnect is deliberately NOT armed while frozen: pollAutoReconnect returns
 // early off the lobby, so a countdown here would tick to zero and never fire, and a
 // background retry is exactly the v1.81.4 regression that dumped users at

@@ -33,8 +33,6 @@ const (
 	// (hard rule 4). internFace already refuses an oversized face at APPLY time; this
 	// is the same limit applied at INTAKE, so a 400 MB file dropped on the editor is
 	// refused by name before anything is read rather than copied and then ignored.
-	// 16 MiB is far past any real TTF/OTF — the largest CJK faces this client ships
-	// fallbacks for are single-digit megabytes.
 	editFontFileMaxBytes = 16 << 20
 
 	// editFontDirName is the folder inside a theme that carries its faces. It is the
@@ -107,10 +105,6 @@ func (a *App) drawEditorFontPanel(w, h int32) {
 
 // drawEditorFontBinds is the CLASS LADDER: every AO2 element this client dresses, and
 // the family (if any) the theme binds it to.
-//
-// theme.FontElements' own order, never sorted: it is append-only and meaningful
-// (TestFontElementsIsAppendOnly), and it is the order the classes appear in AO2's
-// courtroom_fonts.ini.
 func (a *App) drawEditorFontBinds(r sdl.Rect, y int32) int32 {
 	c := a.ctx
 	c.Label(r.X+editRowPad, y+3, "Bind a face to an AO2 element", ColAccent)
@@ -350,7 +344,6 @@ func (a *App) editorThemeDir() (string, error) {
 
 // fontFamilyFromFile derives a family name from a file name: the stem, with separators
 // folded to spaces and the common weight suffix left alone.
-//
 // A DERIVED name rather than a typed one, because the alternative at drop time is a
 // modal asking for a string, and the design allows two modals in the whole editor and
 // spends both elsewhere. The name is editable afterwards only by removing and

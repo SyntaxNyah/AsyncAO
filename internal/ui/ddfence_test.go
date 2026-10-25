@@ -10,10 +10,6 @@ import (
 
 // TestOpenDropdownPunchesThroughPanelFence pins the custom-layout playtest bug
 // ("the popup is layered beneath some elements — can't select higher than Gray"):
-// an OPEN dropdown's list paints ABOVE the floating panels, so while the cursor is
-// over that list the courtroom pass must NOT be pointer-fenced — even when the
-// cursor is simultaneously inside a floating panel's rect. Closed (or cursor off
-// the list), the panel fence behaves exactly as before.
 func TestOpenDropdownPunchesThroughPanelFence(t *testing.T) {
 	a := testTabApp(t)
 	a.link.sess = courtroom.NewRehearsalSession("", nil)

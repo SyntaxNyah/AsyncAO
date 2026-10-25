@@ -91,11 +91,6 @@ func TestStartReplayWarmEnumeratesAndSplits(t *testing.T) {
 }
 
 // TestTickReplayWarmConclusiveMissEndsPromptly is the H5 companion to the H3 armor:
-// a FLAT replay whose every asset conclusively 404s (dead/empty CDN) must END the
-// pre-warm phase promptly via the shared conclusive-miss release — NOT freeze for
-// the full hard cap — so playback of a never-resolving recording still begins. Uses
-// the same fresh-created + MarkMissing drive as the export armor: only the settled-
-// includes-missing path can end this within the tick budget.
 func TestTickReplayWarmConclusiveMissEndsPromptly(t *testing.T) {
 	a, store := newWarmHarness(t)
 	a.d.Prefs.Update(func(

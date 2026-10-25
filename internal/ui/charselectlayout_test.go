@@ -177,8 +177,6 @@ char_select_right = 691, 325, 20, 20
 }
 
 // TestCharSelectSpacingHonoursALegitimateZero pins designPair's contract on THIS key.
-// No corpus theme ships `char_button_spacing = 0, 0` today, but twelve ship
-// `emote_button_spacing = 0, 0` and mean flush buttons — AO2 applies no positivity
 // test to either (get_button_spacing, text_file_functions.cpp:193-216). Substituting
 // the stock 7 for a declared 0 would walk the grid a pixel further off the artwork
 // with every column, which is the bug class issue #20 is about.

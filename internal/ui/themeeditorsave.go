@@ -138,7 +138,6 @@ func (a *App) applyThemeAfterSaveIfTypeChanged() {
 
 // editorSidecarPath resolves where this theme's asyncao_theme.ini belongs, or the
 // reason there is nowhere to put it.
-//
 // THE CATALOG IS THE AUTHORITY, not config.UserThemesDir directly: the catalog is
 // what already answers "where did this theme come from and is it ours" for the
 // settings list, and asking it here is what makes "the editor never writes outside

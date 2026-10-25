@@ -1031,8 +1031,6 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 				// where people actually go to find out what a key does, so it is also
 				// where they want to change it — sending them to Settings to act on
 				// what they are already looking at is the long way round.
-				// Same capture the Settings rows arm (a.hkCapture), so there is one
-				// rebinding path and not two that can disagree.
 				row := sdl.Rect{X: x, Y: y, W: labelW + hkKeyGap, H: hkRowH}
 				if e.action != "" {
 					if c.hovering(row) {
@@ -1284,10 +1282,6 @@ func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) 
 
 // callwordHit reports whether a single configured callword fires in lower (which
 // must already be lowercased). A bare word matches as a WHOLE word (containsWord)
-// so it can't self-ping on a coincidental substring. A trailing '*' opts into a
-// looser prefix match (containsWordPrefix): the stem must begin a word but need
-// not end one, so "obj*" catches "objection". A lone "*" (empty stem) never
-// matches — it would otherwise fire on every message, defeating the whole point.
 func callwordHit(lower, word string) bool {
 	if stem, ok := strings.CutSuffix(word, "*"); ok {
 		return stem != "" && containsWordPrefix(lower, stem)
@@ -1577,9 +1571,6 @@ func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw
 // measureLinkSpans fills in the pixel range of the spans dst[start:], in the
 // exact face each row DRAWS in (LogFontFor per row, like drawOOCLogList) — so
 // the tint and the hit test land on the glyphs the user sees.
-// A row the per-glyph raster draws (emoji, or a mixed-script row no single face
-// covers) has no advance we can trust here: labelEmoji composes per-rune faces,
-// so a plain SizeUTF8 prefix would put the highlight in the wrong place. Such a
 // row degrades to the pre-#38 behaviour — its FIRST link covers the whole row —
 func (a *App) measureLinkSpans(dst []oocLinkSpan, start int, rows []string, rowBase int) []oocLinkSpan {
 	w := start

@@ -84,7 +84,6 @@ func (a *App) queueOOCLines(lines []string) {
 // BOTH Frame and Background (App.Background), so the queue drains at the same
 // rate whether the window is focused, unfocused or minimized — the drain must
 // never be coupled to the render loop (see oocSendMinGap for why).
-//
 // The one-at-a-time walk is the point: the old loop sent every due entry in a
 // single pass, so a queue that accumulated while the drain was stalled left as
 // one burst and the server kicked us for OOC flooding.
@@ -268,7 +267,6 @@ func (a *App) loginPanelRect(w, h int32) sdl.Rect {
 
 // drawLoginDialog edits this server's credentials (plaintext storage —
 // the dialog says so) and fires the flow.
-//
 // A non-blocking floatWin rather than a return-to-top modal (#31): typing a
 // username should not blank the courtroom behind it, and the flow-preview line
 // describes what the server will be sent — which is easier to trust while you can

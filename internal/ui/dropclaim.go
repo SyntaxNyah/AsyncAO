@@ -25,9 +25,6 @@ const settingsImportExt = ".json"
 // font's parent directory — typically Downloads — while the global handler was
 // meanwhile warning them the file "isn't a recording". A .ttf is not a theme
 // folder; it belongs INSIDE one.
-// The two extensions SDL_ttf opens, and only those. .ttc / .otc (collections) and
-// .woff are deliberately absent: internFace reads a single face out of a file, so
-// claiming a container we cannot open would trade a wrong action for a wrong
 var themeFontExts = [...]string{".ttf", ".otf"}
 
 // dropClaim names the owner of a dropped path.

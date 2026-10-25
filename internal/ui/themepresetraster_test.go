@@ -88,7 +88,6 @@ func TestNoShippedPresetGeneratorElementRasterisesAnEmptyTile(t *testing.T) {
 // proves the measurement is real rather than vacuously green, by taking a
 // shipped element that DOES paint and blanking the one parameter its raster
 // inks with.
-//
 // Without this arm, tileMaxAlpha could return 255 for everything (say, because
 // a future genNewTile pre-filled its tile opaque) and the census above would
 // stay green for ever while the class it guards came straight back.

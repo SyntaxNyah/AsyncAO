@@ -135,9 +135,6 @@ func TestOwnerClearedOnStop(t *testing.T) {
 // TestBackgroundMusicFollow pins ARM 2's pure decision: a backgrounded tab's DJ /play
 // should switch the single AUDIBLE stream to the new track ONLY when MusicAcrossTabs is
 // ON, a device exists, the stream's owner IS this tab, and the tab has a real track.
-// Under OFF (silent-isolated) or when another tab owns the stream, it's bookkeeping only
-// — no audible change. Uses a disabled render.Audio (the a.d.Audio != nil guard) and
-// inspects the pure return, so no live mixer is needed.
 func TestBackgroundMusicFollow(t *testing.T) {
 	const bgKey = "wss://bg:2096"
 	newSession := func(track string) *sessionState {

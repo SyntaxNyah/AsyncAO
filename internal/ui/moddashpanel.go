@@ -49,8 +49,6 @@ func rosterIdentityLines(p areaPlayer) (ic, sub string) {
 // dashboard and the CM panel: line 1 "[uid] showname · character", line 2 "OOC: … · IPID: …"
 // (dimmer). nameCol recolours line 1 (e.g. a selected row); textW caps the width so a caller can
 // leave room for a per-row button. Off the hot path (opt-in panels), so the string building is fine.
-// Chrome font at fixed offsets — the CM panel keeps this stable-target look; the mod-dash row draws
-// its own zoom-scaled variant inline (drawModRosterRow) so ctrl+wheel resizes it.
 func (a *App) drawModRosterIdentity(p areaPlayer, x, rowY, textW int32, nameCol sdl.Color) {
 	c := a.ctx
 	ic, sub := rosterIdentityLines(p)
@@ -61,13 +59,6 @@ func (a *App) drawModRosterIdentity(p areaPlayer, x, rowY, textW int32, nameCol 
 }
 
 // #130 CM / mod dashboard — a STANDALONE panel (its own thing; it never bloats the player list)
-// for server-software-aware moderation + area (CM) control. Opened from the Extras "Mod / CM"
-// entry or its hotkey (Ctrl+/). Closed by default, so it costs nothing until you open it;
-// detection + command building run only while it draws (never per frame). The OOC slash-command
-// syntax differs per server software, so every Ban / Kick goes through a box with a LIVE PREVIEW
-// of the exact command before it sends — a wrong-syntax ban silently fails on the server, so the
-// user sees precisely what will go out. The per-software command builders live in
-// internal/courtroom/modcommands.go (unit-tested); this file is only their UI.
 
 const (
 	modDashW    = int32(680)
@@ -697,7 +688,6 @@ func (a *App) drawModDashActions(x, y, w int32) {
 // memoized row layout (playerRosterRows), so a /gas spanning areas shows the SAME area-grouped
 // headers the player list does — organised by the server software's own area order — and shares
 // the player list's index-keyed icon cache (same rosterView indices), so faces stay warm in both.
-// Selecting a row sets modDashTargetUID (by UID, never index, so a roster rebuild can't repoint it).
 func (a *App) drawModDashRoster(r sdl.Rect) {
 	c := a.ctx
 	c.Border(r, ColPanelHi)

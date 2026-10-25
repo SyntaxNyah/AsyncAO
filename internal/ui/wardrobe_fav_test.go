@@ -8,12 +8,6 @@ import (
 )
 
 // TestApplyPendingFavKeepsSlicesConsistent pins the wardrobe ★ crash fix. The bug:
-// toggling a ★ inside the grid cell rebuilt (and SHRANK) the parallel iniList /
-// iniWardrobe / iniFolders / iniLower slices the loop was ranging, so a REMOVE walked
-// off the end of the now-shorter slices and panicked. The toggle is now DEFERRED to
-// applyPendingFav (run after the loop, in drawIniswapPanel); this verifies that path
-// keeps the four parallel slices the same length through a remove, an add, and a
-// no-op.
 func TestApplyPendingFavKeepsSlicesConsistent(t *testing.T) {
 	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
 	if err != nil {

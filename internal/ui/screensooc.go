@@ -98,10 +98,6 @@ func (a *App) easeICScroll(maxScroll int32, snap bool) int32 {
 // drawICLogList renders the colored IC scrollback (search-filtered,
 // word-wrapped to the list width) into rect — used by the classic Log tab
 // and the themed ic_chatlog element.
-//
-// canvasInk is true only when this IS the themed ic_chatlog element, i.e. drawn
-// inside the theme's design canvas; see themeink.go for why the flag travels as
-// a parameter rather than being read off App.
 func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	c := a.ctx
 	// See drawPlayerList: the user's pick dresses this panel's chrome too — its
@@ -702,12 +698,6 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 const areaWrapMaxLines = 3
 
 // The area list can be drawn TWICE in one frame, under two different queries:
-// the themed canvas copy is filtered by AO2's own music_search field (the
-// duplicate-box rule in drawAreaList) while a torn-off Areas panel keeps its own
-// "Search areas…" box. Both memos below are therefore indexed by which box the
-// query came from. One shared slot would be worse than none: each drawer would
-// evict the other's entry every frame, so the O(N) filter scan AND the whole-list
-// re-wrap would run twice per frame forever, and the re-wrap allocates.
 const (
 	areaQuerySlotOwn    = iota // the panel's own field (a.areaSearch)
 	areaQuerySlotThemed        // AO2's music_search driving the canvas copy (a.musicSearch)
@@ -875,9 +865,6 @@ func areaRowLineHN(fontH, lines int32) int32 {
 // swap. AO area transfers ride the MC packet with the area name in place
 // of a track (AO2-Client sends areas from the same list — the courtroom's
 // isAreaTransfer filter keeps them out of the audio path client-side).
-// canvasInk is true only inside the design canvas — the Areas view of the themed
-// music_list panel (theme_layout.go), the one call site that draws on the theme's
-// own art. The classic panel and a torn-off Areas tab pass false (themeink.go).
 func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 	c := a.ctx
 	if a.areaPct < config.MinLogScalePercent { // uninit / stale → match the log

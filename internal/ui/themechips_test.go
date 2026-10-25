@@ -10,7 +10,6 @@ import (
 // than reads, so nothing in the theme data can stop them overflowing: the widths
 // were constants and the panel is whatever the theme declared. That is how
 // "Player List" came to hang out over the right edge of a 216 px music_list.
-//
 // These tests pin the total contract instead of the one width that was reported.
 
 // themedStripCases is every strip the courtroom draws, by the (want, views) pair
@@ -178,7 +177,6 @@ func TestThemedListViewsAlwaysReachable(t *testing.T) {
 // and — because the strip is showing fewer chips than the panel has views — switches
 // it back again. Wearing "Player List" in BOTH states made the pressed chip read as
 // an inert button, so it names where it goes instead: "Music List".
-//
 // It goes red if the toggle label is dropped, if it leaks into the un-pressed state,
 // or if it is ever wider than the width the chip was measured for (which would put
 // the strip back over the edge of a 212 px music_list — the whole reason this file

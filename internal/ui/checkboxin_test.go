@@ -66,7 +66,6 @@ func TestTruncateLabelToAlwaysFitsOrGivesUp(t *testing.T) {
 // TestTruncateLabelToTerminatesOnAPathologicalMeasure guards the loop. AO2 shipped
 // an explicit infinite-loop safeguard here, which means it hit one: a measure func
 // that never reports a narrower string would chop forever.
-//
 // The rune-count guard is what stops it — the label is chopped down to
 // truncateChopRunes and then handed back untouched — so this returns rather than
 // hanging the suite.
@@ -100,7 +99,6 @@ func TestCheckboxLabelAvailSubtractsTheBox(t *testing.T) {
 // downscaled canvas can hand CheckboxIn a rect SHORTER than the 16 px tick box, and
 // an un-floored (r.H-box)/2 would lift the box out of its own row and into whatever
 // is drawn above it.
-//
 // It calls the REAL checkboxBoxY. An earlier version recomputed the formula in the
 // test body and asserted on its own copy, which would have passed with the floor
 // deleted from production — the arithmetic was extracted precisely so this test has

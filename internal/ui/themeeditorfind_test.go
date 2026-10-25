@@ -50,7 +50,6 @@ func TestEveryThemeEditorSettingIsFindable(t *testing.T) {
 
 // TestThemeEditorKeywordsDoNotShadowLaterTabs is the whole-keyword shadow gate,
 // aimed at this wave's additions specifically.
-//
 // The package-wide TestSettingsSearchKeywordsDoNotShadowLaterTabs already runs over
 // the whole table; this one exists so a failure introduced HERE names this wave,
 // rather than being reported as a mystery about a table with 300 entries in it.

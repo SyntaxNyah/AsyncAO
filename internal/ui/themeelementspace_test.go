@@ -20,7 +20,6 @@ var (
 )
 
 // TestAnchorOnAChatboxRelativeKeyIsRebasedOntoItsParent is the anchor half.
-//
 // It measures against the CHATBOX's box plus the stored showname rect plus the
 // authored delta — i.e. it states the whole re-basing chain rather than asserting
 // "somewhere sensible". With the re-basing deleted the badge lands at
@@ -74,7 +73,6 @@ func TestAnchorOnAChatboxRelativeKeyIsRebasedOntoItsParent(t *testing.T) {
 // TestUnanchoredElementResolvesAgainstItsSpaceOrigin is the space half: an element
 // that declares `space = chatbox` and NO anchor is absolute inside the chatbox, and
 // its origin is the chatbox's own box.
-//
 // The mutation it answers to: make elementSpaceRect's SpaceChatbox / SpaceViewport /
 // SpaceMusicDisplay arms return false. The element then bakes nothing at all, which
 // is exactly what 79 shipped elements would do.

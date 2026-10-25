@@ -262,4 +262,3 @@ func TestLooksLikeAreaList(t *testing.T) {
 // roster poll could latch itself off (rosterCmdUnsupported) instead of asking forever. The
 // poll is gone (liveroster.go, 2026-08-08), so the refusal now belongs in the OOC log where
 // the person who pressed the button can read it, and there is nothing left to classify.
-// TestNoSessionEverFiresATimedRosterPoll (rosterpoll_test.go) is what guards the new rule.

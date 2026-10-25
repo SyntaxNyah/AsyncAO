@@ -31,7 +31,6 @@ const (
 
 // wireEmptyPackManager installs a streaming-shaped Manager over an EMPTY local
 // pack, leaving a.d.Store and a.ctx alone.
-//
 // Deliberately not wireLocalManager: that helper stands up its own renderer and
 // replaces a.d.Store, so an App staged with a live Ctx would end up drawing
 // textures created on a different renderer. Everything else matches it —
@@ -107,12 +106,6 @@ func settleMissUI(t *testing.T, a *App, base string, typ assets.AssetType) {
 
 // TestDemandAssetStopsAskingForAConclusiveMiss is the cadence gate, and it is the
 // user-visible half of the field report: "every 2 seconds I see a 404".
-//
-// demandAsset's retry loop only ever terminated on T1 RESIDENCY, and an asset the
-// server does not have can never become resident, so a visible cell re-asked for
-// it every charIconRetryInterval for as long as it was on screen. The budget
-// decrement is the observable: one ask spends one slot, and a gated cell must
-// spend none.
 func TestDemandAssetStopsAskingForAConclusiveMiss(t *testing.T) {
 	a := testTabApp(t)
 	local := wireEmptyPackManager(t, a)

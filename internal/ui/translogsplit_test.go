@@ -1,7 +1,6 @@
 package ui
 
 // F4 — multiple tabs writing ONE transcript.
-//
 // The writers were keyed by server NAME. Two tabs on the same server therefore
 // resolved to the same writer and interleaved into a single file, with nothing in
 // the file to tell the two sessions apart afterwards. The key is now (server, tab

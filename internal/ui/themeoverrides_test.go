@@ -146,7 +146,6 @@ func ovSidecar(t *testing.T, body string) *theme.Sidecar {
 }
 
 // TestSidecarOverridesRewriteExistingKeysOnly pins the applier's whole contract.
-//
 // The "never adds" arm is the load-bearing one. A key absent from the resolved
 // design is a widget this build does not place — themeSlots' inert rows, and the
 // keys AO2's own default file is silent about — so writing one in would put a rect

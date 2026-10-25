@@ -27,7 +27,6 @@ import (
 // recording model + the replay renderer, so there is no second renderer and no
 // new asset path — and because it's a full-window overlay drawn only while
 // makerOpen, it costs nothing on the live render hot path.
-//
 // A scene is just a list of recEvents, and .aorec is pretty-printed JSON, so a
 // scene built here is hand-editable in any text editor too (and vice-versa).
 
@@ -771,7 +770,6 @@ func (a *App) pollMakerExport() {
 }
 
 // eventSummary returns a short tag + one-line description for the event list.
-//
 // It is a DISPLAY string, so the zero-width sidechannel comes off, the same rule
 // icMessageBody follows. The event itself keeps its literal Message: makerSave and
 // makerExportDemo serialise that field verbatim, because a replay has to re-decode
@@ -1092,8 +1090,6 @@ func (a *App) drawMakerList(x, y, w, h int32) {
 // contains the typed text, as click-to-fill chips under the Character field —
 // the searchable picker (a flat dropdown can't list a 4000-char server). Hidden
 // when offline or when the field is empty. Returns the new y (== y when hidden).
-// The scan stops after makerCharSuggest hits and uses an alloc-free fold match,
-// so it costs almost nothing even with the field open on a huge roster.
 func (a *App) drawCharSuggestions(x, y, leftX, availW int32, m *protocol.ChatMessage) int32 {
 	typed := strings.TrimSpace(m.CharName)
 	if a.link.sess == nil || typed == "" {
@@ -1361,7 +1357,6 @@ func (a *App) packContribution(scene *sceneRecording) int {
 }
 
 // drawExportPackConfirm asks before a bundle carries the user's private art.
-//
 // It states the consequence rather than the mechanism: the point is not that
 // files are copied, it is that a file they are about to hand to someone else
 // will contain art only they have. Declining exports NOTHING — a partial,

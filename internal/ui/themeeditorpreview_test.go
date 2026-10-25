@@ -127,9 +127,6 @@ func TestTheHeaderRowKeepsItsExistingSlots(t *testing.T) {
 // TestPreviewDemoDrivesTheRealCourtroomPainters pins requirement 3: the demo is
 // the real typewriter, the real showname plate, the real music banner and the real
 // IC log, not a mock renderer.
-// The typewriter assertion is the load-bearing one: VisibleRunes is what the
-// chatbox painter reveals, it is strictly between "nothing" and "everything" while
-// the line crawls, and it only moves because App.Frame advanced the demo room.
 func TestPreviewDemoDrivesTheRealCourtroomPainters(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()
@@ -246,10 +243,6 @@ func (f *countingFetcher) Fetch(_ context.Context, _ string) ([]byte, error) {
 // TestEditorPreviewProbesNothing pins requirement 4: a driven demo must not put a
 // single probe on the fetch path. No character art, no background, no desk, no
 // blip file, no music stream — nothing.
-// The manager is rebuilt around the canary so the count is the WHOLE truth for
-// this App, and the demo is driven long enough to rest and play its line a second
-// time, because a loop that re-staged the message would re-run the prefetch fan-out
-// on every pass.
 func TestEditorPreviewProbesNothing(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()
@@ -546,10 +539,6 @@ func themeDocFingerprint(t *testing.T, a *App) string {
 // TestPreviewIgnoresAKeyAndClickStorm pins requirement 9 through the REAL event
 // path: SDL keys and Ctrl chords folded in by Ctx.HandleEvent, text input, and
 // clicks all over the window, every one of them delivered to App.Frame.
-// The chords matter most. Ctrl+Z / Ctrl+Y are claimed PRE-SCREEN (app.go, gated on
-// themeEditorOpen), so they are the one input that reaches the document without
-// passing through any surface the demo hides — a preview that only hid the rails
-// would silently rewind the author's work while they watched a demo.
 func TestPreviewIgnoresAKeyAndClickStorm(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{0, 0}, [2]int{200, 0})
 	defer cleanup()
@@ -906,11 +895,6 @@ func decodedPixelForTest() *assets.Decoded {
 
 // TestEditorPreviewHasExactlyOneConstructionSite is the seam's first gate: the
 // preview state may be born in exactly one function.
-// Same shape and same reason as TestRoomConstructionHasExactlyOneCallSite: a state
-// that can be constructed two ways will one day be constructed half-wired — this
-// one owns an offline session, a room, the viewport's callbacks, a saved selection
-// and the manager's network gate, and a second birth site that forgot any of them
-// would leak that thing for the rest of the session.
 func TestEditorPreviewHasExactlyOneConstructionSite(t *testing.T) {
 	const wantFunc = "enterEditorPreview"
 	sites := funcsContainingInPackage(t, "&editorPreview{")
