@@ -17,8 +17,8 @@ import (
 const (
 	loadGoldenSHA256     = "1210e3c764e08261007c721a61898a7a39db9d3d4f6cd1654f8ee32e00e3d14a"
 	loadGoldenCompactSHA = "d0c6f6b3776220f2b82ba598019af2b387d26065f795f8fbf6429c119193d91b"
-	malformedGoldenSHA   = "8211cdc9008e4e5da754d54de3590c50a6e7dfab7c4cef353ab6cfafc14fec67"
-	malformedCompactSHA  = "2280ef31818a2e4123f6febb1f93107d37760255e24faf4d2734f57f4568821f"
+	malformedGoldenSHA   = "ffe5903de79a78be7a0b51434033d811b23c6461ff74416a0efc67b6ac7c5de9"
+	malformedCompactSHA  = "a20792b6c36e1dc8730f83d8949d47d84f3dad3d3ea9d608beda113a3f8a1715"
 	defaultPrefsSHA      = "a279d6b85a783121c6aa8238569fd532918652a7a15ad58d492e44f7a3919105"
 	prefsGoldenSHA256    = "687acf079b173ad68c82f0f66322bef5572d78aa78804568552a607499ff42be"
 	settersGoldenSHA     = "e55d1fea40fe72ca84796e0c964a3d5f2fc0bda27865c6b7c9fc24d3dd792f8b"
