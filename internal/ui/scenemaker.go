@@ -342,7 +342,7 @@ func (a *App) driveMakerPreview(dt time.Duration) {
 // teardown + debug line, never an app crash (the pane is optional).
 func (a *App) recoverMakerPreview() {
 	if r := recover(); r != nil {
-		a.debug.push("maker preview panic: " + fmt.Sprint(r))
+		a.debug.Push("maker preview panic: " + fmt.Sprint(r))
 		a.teardownMakerPreview()
 	}
 }
@@ -368,7 +368,7 @@ func (a *App) recoverMaker() {
 // unrecovered, path).
 func (a *App) logMakerCrash(r any) string {
 	msg := fmt.Sprint(r)
-	a.debug.push("scene maker panic: " + msg)
+	a.debug.Push("scene maker panic: " + msg)
 	writeCrashLog("scene maker panic: ", r)
 	return "Scene Maker error: " + msg + " — details saved to recordings\\scene-maker-crash.log"
 }

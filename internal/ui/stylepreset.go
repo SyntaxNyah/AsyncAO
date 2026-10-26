@@ -113,7 +113,7 @@ func (a *App) pollStylePresetBind() {
 	for i, pr := range a.d.Prefs.Load().StylePresets() {
 		if pr.Name == a.courtkeys.stylePresetBindFor {
 			a.d.Prefs.SetStylePresetKey(i, key)
-			a.debug.push(fmt.Sprintf("key %q now applies style %q", key, pr.Name))
+			a.debug.Push(fmt.Sprintf("key %q now applies style %q", key, pr.Name))
 			break
 		}
 	}

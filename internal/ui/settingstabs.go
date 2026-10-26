@@ -413,14 +413,14 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 		bw := c.TextWidth(pm.label) + 16
 		if c.Button(sdl.Rect{X: bx, Y: y, W: bw, H: btnH}, pm.label) {
 			a.classic.applyStagePreset(pm.vp)
-			a.debug.push("layout: stage preset applied")
+			a.debug.Push("layout: stage preset applied")
 		}
 		bx += bw + 6
 	}
 	y += btnH + 8
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 150, H: btnH}, "Reset to stock") {
 		a.classic.applyLayoutPreset(nil)
-		a.debug.push("layout: reset to stock")
+		a.debug.Push("layout: reset to stock")
 	}
 	// Mouse-reachable chrome recovery (A6 no-strand): un-hides every piece at
 	// once. The pieces panel refuses to hide BOTH the toolbox and the Settings
@@ -431,7 +431,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 		if c.Button(sdl.Rect{X: pad + 158, Y: y, W: c.TextWidth(lbl) + 16, H: btnH}, lbl) {
 			a.classic.hidden = map[string]bool{}
 			a.d.Prefs.SetHiddenPanels(nil)
-			a.debug.push("layout: all hidden UI pieces restored")
+			a.debug.Push("layout: all hidden UI pieces restored")
 		}
 	}
 	y += btnH + 12
@@ -471,7 +471,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 		for _, name := range names {
 			if c.Button(sdl.Rect{X: pad, Y: y, W: 60, H: btnH}, "Load") {
 				a.applyProfile(a.d.Prefs.Load().LayoutProfile(name))
-				a.debug.push("layout: profile loaded")
+				a.debug.Push("layout: profile loaded")
 			}
 			if c.Button(sdl.Rect{X: pad + 66, Y: y, W: 64, H: btnH}, "Delete") {
 				a.d.Prefs.DeleteLayoutProfile(name)

@@ -74,7 +74,7 @@ func (a *App) pollICPhraseBind() {
 	}
 	key := strings.ToLower(sdl.GetKeyName(c.keyPressed))
 	a.d.Prefs.SetICPhraseKey(key, a.courtkeys.icPhraseBindFor)
-	a.debug.push(fmt.Sprintf("key %q now sends IC: %q", key, a.courtkeys.icPhraseBindFor))
+	a.debug.Push(fmt.Sprintf("key %q now sends IC: %q", key, a.courtkeys.icPhraseBindFor))
 	a.courtkeys.icPhraseBindFor = ""
 	a.refreshICPhraseKeys()
 }

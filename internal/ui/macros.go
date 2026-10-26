@@ -70,7 +70,7 @@ func (a *App) queueOOCLines(lines []string) {
 	now := a.now()
 	for i, line := range lines {
 		if len(a.oocQueue) >= macroQueueCap {
-			a.debug.push("automation queue full — dropping the rest")
+			a.debug.Push("automation queue full — dropping the rest")
 			return
 		}
 		a.oocQueue = append(a.oocQueue, oocSend{
@@ -122,7 +122,7 @@ func (a *App) oocQueuePending(line string) bool {
 // hold credentials — never echo their content).
 func (a *App) runMacro(m config.MacroSpec) {
 	a.queueOOCLines(m.Lines)
-	a.debug.push(fmt.Sprintf("macro %q: %d line(s) queued", m.Name, len(m.Lines)))
+	a.debug.Push(fmt.Sprintf("macro %q: %d line(s) queued", m.Name, len(m.Lines)))
 }
 
 // handleMacroKeys fires key-bound macros on Alt+<bound key> — the shared
@@ -172,12 +172,12 @@ func (a *App) loginLines(user, pass string) []string {
 func (a *App) loginNow() {
 	info := a.d.Prefs.Load().ServerWarmInfoFor(a.srvMeta.serverKey)
 	if info.LoginUser == "" {
-		a.debug.push("login: no saved credentials for this server (Login... dialog)")
+		a.debug.Push("login: no saved credentials for this server (Login... dialog)")
 		return
 	}
 	a.queueOOCLines(a.loginLines(info.LoginUser, info.LoginPass))
 	a.loginAt = a.now() // open the callword grace: login replies routinely echo your handle/name
-	a.debug.push("login: flow queued as " + a.oocNameOrDefault())
+	a.debug.Push("login: flow queued as " + a.oocNameOrDefault())
 }
 
 // loginFlowPreview names the exact wire flow the dialog will use, so the

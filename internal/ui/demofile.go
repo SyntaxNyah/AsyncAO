@@ -355,7 +355,7 @@ func loadRecordingForExport(path, origin string) gifLoadResult {
 // warning. Render thread only (touches the debug ring + warnLine).
 func (a *App) emitLoadNotes(res gifLoadResult) {
 	for _, line := range res.debug {
-		a.debug.push(line)
+		a.debug.Push(line)
 	}
 	if res.warnMsg != "" {
 		a.warnLine = res.warnMsg

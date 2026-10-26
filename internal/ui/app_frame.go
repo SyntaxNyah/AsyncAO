@@ -174,7 +174,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// Drain debug logs from render package (loop points diagnostics, etc.)
 	if a.d.Audio != nil {
 		for _, line := range render.PollDebugLogs() {
-			a.debug.push(line)
+			a.debug.Push(line)
 		}
 	}
 

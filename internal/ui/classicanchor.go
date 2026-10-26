@@ -218,7 +218,7 @@ func (classic1 *classicState) cycleSlotAnchor(e *env, name string, w, h int32) {
 	if next == "" {
 		delete(classic1.classicAnchor, name)
 		e.d.Prefs.ClearClassicAnchor(name)
-		e.debug.push("layout: " + classicSlotLabel(name) + " unpinned")
+		e.debug.Push("layout: " + classicSlotLabel(name) + " unpinned")
 		return
 	}
 	hm, vm, _ := parseAnchorMode(next)
@@ -227,7 +227,7 @@ func (classic1 *classicState) cycleSlotAnchor(e *env, name string, w, h int32) {
 	}
 	classic1.classicAnchor[name] = anchorRef{h: hm, v: vm, winW: w, winH: h}
 	e.d.Prefs.SetClassicAnchor(name, config.ClassicAnchor{Mode: next, WinW: int(w), WinH: int(h)})
-	e.debug.push("layout: " + classicSlotLabel(name) + " pinned to the " + anchorModeLabel(next))
+	e.debug.Push("layout: " + classicSlotLabel(name) + " pinned to the " + anchorModeLabel(next))
 }
 
 // syncAnchorWindow re-bases a slot's LOCAL anchor to the current window —
