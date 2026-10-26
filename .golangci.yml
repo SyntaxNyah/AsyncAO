@@ -1,0 +1,26 @@
+# golangci-lint runs ONE linter here: mnd (magic numbers, CLAUDE.md hard rule 9).
+# staticcheck keeps its own pinned CI step, so it is not duplicated here.
+#
+# The rule applies per package: CI lints only the packages listed in
+# MND_PACKAGES (.github/workflows/ci.yml). A package is added once it is clean
+# and is never removed.
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - mnd
+  settings:
+    mnd:
+      # The structural exemptions from rule 9. "2" is allowed by the linter
+      # because it cannot tell halving/doubling in geometry from other uses;
+      # review enforces that restriction. Values inside composite literals
+      # (named data tables) are not checked by mnd at all.
+      ignored-numbers:
+        - "0"
+        - "1"
+        - "2"
+
+run:
+  # Test files are covered too: rule 9 has no exemption for test expectations.
+  tests: true
