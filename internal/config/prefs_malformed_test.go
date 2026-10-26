@@ -42,7 +42,9 @@ func malformedErrClass(err error) string {
 	for err != nil {
 		switch e := err.(type) {
 		case *json.SyntaxError:
-			return "syntax: " + e.Error()
+			// The kind only: encoding/json's message wording and offsets change
+			// between Go releases (Go 1.27 reworded the BOM and truncation errors).
+			return "syntax"
 		case *json.UnmarshalTypeError:
 			if e.Field == "" {
 				// top-level "cannot unmarshal <value> into Go value of type <struct>";

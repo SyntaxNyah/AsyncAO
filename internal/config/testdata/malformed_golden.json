@@ -2,7 +2,7 @@
   {
     "name": "empty",
     "data": "",
-    "error": "syntax: unexpected end of JSON input",
+    "error": "syntax",
     "quarantined": true,
     "output_delta": {
       "__themeFitMovedToNative": false,
@@ -12,7 +12,7 @@
   {
     "name": "truncated",
     "data": "{\"smoothScaling\": tru",
-    "error": "syntax: invalid character ' ' in literal true (expecting 'e')",
+    "error": "syntax",
     "quarantined": true,
     "output_delta": {
       "__themeFitMovedToNative": false,
@@ -22,7 +22,7 @@
   {
     "name": "bom",
     "data": "﻿{\"smoothScaling\": true}",
-    "error": "syntax: invalid character 'ï' looking for beginning of value",
+    "error": "syntax",
     "quarantined": true,
     "output_delta": {
       "__themeFitMovedToNative": false,

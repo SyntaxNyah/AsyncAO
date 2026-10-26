@@ -19,6 +19,9 @@ internal/ui/testdata/** -text
 # checked in — TestASidecarWithWindowsLineEndingsRoundTrips builds it in Go, for
 # exactly that reason.)
 internal/theme/testdata/** -text
+# The config goldens are frozen bytes whose SHA-256 is pinned; the setter golden is
+# compared line-by-line, so a CRLF checkout would fail every row on Windows.
+internal/config/testdata/** -text
 
 # Generated files (settings_clone.go is emitted by genclone; the compacted golden
 # data files are emitted by the expansion test) are excluded from GitHub's
