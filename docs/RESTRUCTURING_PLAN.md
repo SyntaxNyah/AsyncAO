@@ -10,7 +10,8 @@ in **Status**. Update Status in the same commit that completes a step.
       golangci-lint `mnd` in CI (9 already-clean packages enforced from the start)
 - [ ] 1. `internal/helper/{value,text,parse}` + duplicate removal + config double-clamp removal
 - [ ] 2. Bug fixes 1–3, 5–7 (one commit each, with tests) → **merge checkpoint** (maintainer pushes)
-- [ ] 2a. UI spike: RmlUi 6.3 on SDL_GPU (Vulkan, software Vulkan fallback) (Part 5e); throwaway code outside the module
+- [x] 2a. UI spike: RmlUi 6.3 on SDL_GPU (Vulkan, software Vulkan fallback) (Part 5e); throwaway code outside the module
+      — see the Result in Part 5e
 - [ ] 2b. SDL facade (`internal/sdl`, `ttf`, `mix`) over go-sdl2; switch all importers
 - [ ] 2c. SDL3 switch: hardware renderer or software fallback, device-reset re-upload; drop the
       SDL Mixer X fork; replace platform code
@@ -769,7 +770,49 @@ with an aspect-fit icon, buttons, and wrapped text with coloured spans.
    (target < 600 lines total); anything bigger means Clay is not making layout easy.
 6. Software renderer: the same screen runs with the software renderer forced.
 
-**Result:** _pending_ (fill in: numbers per criterion, line counts, problems found, decision).
+**Result (2026-10-26, `codebuster-take2`): PASS on all six criteria — keep RmlUi 6.3 on
+SDL_GPU.** Spike (throwaway, outside the module): the sibling folder
+`AsyncAO-rmlui-spike`; build/run/test in its `README.md`, numbers and the feature matrix
+in `RESULTS.md`.
+
+1. Scaling: UI 125/150/200% → title 36→45/54/72 px (×1.25/×1.50/×2.00); display 150% →
+   ×1.50; only `Context::SetDensityIndependentPixelRatio` is used. Nine-slice edges hold.
+2. Resizing: 1024×700→620×460 → list 418→249 px, details 564→329 px, panel stays inside
+   the surface, list scroll 4.0→4.0 px; flexbox plus one media query, no rectangle code.
+3. Input: press 0 clicks / release 1; scrollbar drag (list scrolled to 89 px) released over
+   Refresh → no click; wheel over the list 4 px / details 0, wheel over details 12 px /
+   list unchanged.
+4. Allocation: `AllocsPerRun(200, Frame)` = 0.00; the full suite passes under `-race`.
+5. Effort: 663 lines RML+RCSS (583 non-blank). The C++ side is 1,890 lines of SDL_GPU
+   platform layer (window/device/pipelines, viewport and post passes, screenshot readback,
+   headless mode, metrics, input hooks, hot reload, 3D-card input), not layout — the Clay
+   line target no longer compares like for like, because RmlUi removes the per-screen
+   layout code.
+6. Software Vulkan: lavapipe renders 12 frames at 1280×760; hardware Vulkan (RTX 3060 Ti,
+   driver 595.79) renders the same screen.
+
+Also verified: MinGW build with no RmlUi source patches, a Go-owned list through
+`RegisterArray`/`data-for`, dp scaling, hot reload (400 ms mtime watch), a live
+`SDL_GPUTexture` viewport shared with RmlUi, a SPIR-V post pass around RmlUi (RmlUi
+cannot host the shader itself), and 3D UI manipulation — a card with
+`perspective`/`rotateX`/`rotateY` renders correctly and is dragged at runtime through
+`Element::SetProperty("transform", …)` (a Go-owned data path drives the headless test; a
+scripted drag was verified on both lavapipe and the RTX 3060 Ti).
+
+Problems found: the SDL_GPU backend implements no `CompileShader`/`RenderShader`/
+`CompileFilter`, so `linear-gradient` logs `Could not generate decorator element data` and
+draws nothing, and `box-shadow` corrupts the frame with a garbage quad (evidence in the
+spike's `shots/box-shadow-artifact.png`); the backend requires SDL3_image; its sources need
+`<algorithm>`/`<cstring>` when built without the samples' PCH; SDL's default D3D12 device
+rejects SPIR-V-only custom shaders (`-driver auto` asserts), so Vulkan must be forced;
+RmlUi defaults to `display: inline`, so block rules must say so explicitly;
+`Context::Update()` takes no delta time in 6.3; SDL window/GPU calls must stay on one OS
+thread (the opt-in render test locks its goroutine or it can block in swapchain wait).
+
+Decision: keep RmlUi on SDL_GPU/Vulkan. Before themes rely on gradients, shadows, blur or
+masks, either port those `RenderInterface` methods (from the GL3/Vulkan backends) or ban
+them in the theme format and use geometry/nine-slice equivalents. Nothing here reopens the
+toolkit choice.
 
 ## Part 6 — Adversarial review (verified against the code; amendments applied above)
 
