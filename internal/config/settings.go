@@ -362,7 +362,6 @@ func (p *AssetPreferences) Update(f func(*Settings)) {
 	s := cur.Clone()
 	f(s)
 	normalizeSettings(s)
-	clampSettingsStrict(s)
 	if s.equal(cur) {
 		return
 	}
@@ -371,11 +370,9 @@ func (p *AssetPreferences) Update(f func(*Settings)) {
 	p.markDirty()
 }
 
-// clampSettingsStrict applies the write-only clamps the setters enforce but the lenient file
-// load deliberately skips (the frozen load + malformed goldens). Every clamp is
-// sentinel-guarded (0 stays 0 so the getter resolves the default), so a setter that touches
-// one field never stomps the sentinels of the others.
-func clampSettingsStrict(s *Settings) {
+// clampSettingsStrictPhase is the tail of normalizeSettings: the write-path clamps
+// whose sentinel is 0, so a setter touching one field never stomps another's sentinel.
+func clampSettingsStrictPhase(s *Settings) {
 	if s.BreathAmount != 0 {
 		s.BreathAmount = clampPercent(s.BreathAmount, 1, 100)
 	}
@@ -553,4 +550,7 @@ func normalizeSettings(s *Settings) {
 	} else if s.ICLogDepthVal != 0 {
 		s.ICLogDepthVal = clampPercent(s.ICLogDepthVal, ICLogDepthMin, ICLogDepthMax)
 	}
+	// The strict phase runs last: it holds the write-path clamps whose sentinel is 0
+	// (0 stays 0 so the getter resolves the default). Load reaches it through here.
+	clampSettingsStrictPhase(s)
 }
