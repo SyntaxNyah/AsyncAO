@@ -6,8 +6,8 @@ in **Status**. Update Status in the same commit that completes a step.
 
 ## Status
 
-- [ ] 0. Prep: delete `internal/debuglog`; CLAUDE.md facts + new rules; plan in repo;
-      golangci-lint `mnd` in CI (enabled for no packages yet)
+- [x] 0. Prep: delete `internal/debuglog`; CLAUDE.md facts + new rules; plan in repo;
+      golangci-lint `mnd` in CI (9 already-clean packages enforced from the start)
 - [ ] 1. `internal/helper/{value,text,parse}` + duplicate removal + config double-clamp removal
 - [ ] 2. Bug fixes 1–3, 5–7 (one commit each, with tests) → **merge checkpoint** (maintainer pushes)
 - [ ] 2b. SDL facade (`internal/sdl`, `ttf`, `mix`) over go-sdl2; switch all importers
@@ -441,7 +441,7 @@ call it are owned or moved, so moved code is touched once:
      the new rules there: magic numbers with exemptions, KISS/DRY/DI, the helper library scope,
      the feature boundary rule;
    - (no SDL Mixer X in `setup-deps.ps1`: the fork is removed by the SDL3 move, Part 5d);
-   - add golangci-lint with `mnd` to CI, enabled on no packages yet (enabled for no packages yet).
+   - add golangci-lint with `mnd` to CI, enforcing only the packages that are already clean.
 1. **`internal/helper/{value,text,parse}`** (2–4 commits): packages + tests; convert clamps;
    truncation/atoi/hex; config double-clamp removal.
 2. **Bug fixes 1–3, 5–7**, one commit each with a behavioural test.
