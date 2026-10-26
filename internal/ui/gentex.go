@@ -2,9 +2,39 @@ package ui
 
 // Procedural generators — the RASTERISER half (v1.90.0 W4).
 // docs/wip/THEME-EDITOR-DESIGN.md §6.3, docs/THEME-FORMAT.md §5.
+//
+// A `kind = gen` element names one of these and hands it an ordered `k = v` list.
 // The SPEC (name, params, content-address hash) is internal/theme/generator.go, and
+// it is SDL-free by hard rule 1; this file is the arithmetic that turns it into
+// pixels. Nothing here touches SDL either — the output is a plain *image.RGBA that
+// pollThemeApply uploads exactly like a decoded asset.
+//
+// THE CONTRACT, all four clauses gated:
+//
+//  1. PURE AND DETERMINISTIC. The same (w, h, params) produce a BYTE-IDENTICAL
+//     image. This is not a nicety: the param hash IS the cache key, so a
+//     non-deterministic generator has the cache serve whichever raster happened to
+//     land first, forever, and the theme looks different depending on which element
+//     the apply reached first. No time.Now, no math/rand without an explicit seed
+//     param, no package-level mutable state, no map iteration inside a raster.
+//     (TestEveryGeneratorIsDeterministic.)
+//  2. A TILE, NEVER A FIELD. w and h are at most theme.GenTileMaxPx. The ELEMENT
+//     tiles, stretches or 9-slices it. That single decision is what makes generators
+//     affordable: a full-screen scanline field is 3.7 MiB and re-rasters on every
+//     resize; the same look as a 256² tile is 256 KiB and survives every resize
+//     untouched. (TestGeneratorTileNeverExceedsMaxPx.)
+//  3. IT RUNS ON THE THEME-APPLY GOROUTINE, never the render thread. Contrast
+//     shapemask.go, whose masks are tiny and chrome-preset-driven; a generator tile
+//     is up to 256² and parameterised, so it is cold-path work by construction —
+//     which is also why frame-path allocation is impossible here rather than merely
+//     avoided.
+//  4. IT ALLOCATES EXACTLY ONE *image.RGBA. No scratch buffers, no per-column
+//     slices: every generator below computes each pixel from its coordinates, its
+//     params and a seeded integer hash, so the only allocation is the tile.
+//
 // WIRE NAMES ARE THE FORMAT: append-only, never renamed, never repurposed. An
 // unknown name degrades to a flat fill and the element still draws (format rule 3).
+// TestEveryGeneratorKindRasterizes is the totality gate.
 
 import (
 	"image"
@@ -29,6 +59,12 @@ const genPctMax = int32(100)
 // a stranger wrote, and a tile is at most theme.GenTileMaxPx on a side — so
 // `pitch = 100000` is not a big pattern, it is a denial of service on the
 // theme-apply goroutine.
+//
+// It was exactly that, and the hostile row of TestGeneratorTileNeverExceedsMaxPx is
+// what found it: halftone's dot radius reached 34 000 px and genDisc walked a
+// 68 000² coordinate box clipping every pixel, to paint at most 65 536 of them. The
+// TILE cap does not bound the work, because the work is a function of the PARAMS
+// rather than of the output size. These four are what bound it.
 const (
 	// genIntParamMax clamps pitch / size / count at parse time. Four tiles' worth:
 	// past it a measurement cannot describe anything inside a 256 px tile, and every
@@ -54,9 +90,13 @@ const (
 // GenParams is the fixed, TYPED view over a generator's `k = v` list. A generator
 // never parses a string: the whole list is resolved once, at bake, into these
 // eleven slots, and a key nobody wrote keeps the generator's documented default.
+//
 // ELEVEN SLOTS FOR TWENTY-FIVE WIRE KEYS, because the keys are per-generator names
 // for the same few roles — `cells` and `pitch` are both "how often", `radius` and
 // `size` are both "how big". genParamSlots is the whole mapping and it is GLOBAL
+// rather than per-generator, which is checkable (TestGeneratorParamKeysDoNotCollide
+// proves no generator's own vocabulary lands two keys in one slot) where a
+// per-generator table would be twenty-five more things to keep in step.
 type GenParams struct {
 	// Colors are tint, bg, accent, shadow — in that order, always. A generator that
 	// wants "the ink" reads Colors[0] whatever the preset called it.
@@ -128,7 +168,12 @@ const (
 )
 
 // genParamSlots maps every wire key any generator accepts onto its slot.
+//
 // APPEND-ONLY, like every other wire-name table in this format: a key that once
+// resolved has to keep resolving, or a theme authored against that build loses the
+// parameter silently (an unknown key is ignored — there is no note, because a
+// generator "ignores what it does not use" by design).
+//
 // The aliases are not synonyms invented here; every one of them is a spelling the
 // fourteen shipped themes and the preset drafts already write, and the merge that
 // produced them is docs/wip/preset-drafts/GENERATOR-AND-EFFECT-PROPOSALS.md §1.
@@ -174,6 +219,7 @@ type genEntry struct {
 // `radial`, `mottle`, `checkerdisc`, `skyline`, `wingmark`) — each of which
 // replaces between two and six independently-invented names, so the count is a
 // merge result rather than a wish list.
+//
 // A map rather than an array because the key is a string from a file; it is read
 // once per element per theme apply, on the apply goroutine, never on a frame.
 var genRegistry = map[string]genEntry{
@@ -208,9 +254,13 @@ func GeneratorNames() []string {
 
 // genLookup is THE registry probe: one spelling of "does this wire name rasterise,
 // and with what". Every one of the three public entry points goes through it.
+//
 // It exists because they did not, and the divergence was live: GeneratorKnown and
 // GenTileSize normalised the name while RasterGenerator indexed the map RAW. A spec
 // named "Scanlines" was therefore known, sized, planned and given one of the twelve
+// ThemeGenCap slots — and then rasterised nil, so the element drew blank with
+// nothing anywhere to say why. Latent only because theme.GeneratorSpecOf (which
+// lower-cases) is today's sole spec producer; W7's editor picker is the second.
 func genLookup(name string) (genEntry, bool) {
 	e, ok := genRegistry[theme.NormalizeGenName(name)]
 	return e, ok
@@ -228,6 +278,7 @@ func GeneratorKnown(name string) bool {
 // genTileSizeOf is the tile ONE SPEC would rasterise to, already clamped into
 // [genTileMinPx, theme.GenTileMaxPx]. The admission planner budgets a generator
 // with it without rasterising anything.
+//
 // It takes the SPEC, not (name, params), because the two-argument form permitted
 // GenTileSize(nameA, paramsOfB) — budget one tile, raster another — and the budget
 // is the only thing standing between a stranger's theme and the texture store. The
@@ -389,6 +440,7 @@ func genFill(img *image.RGBA, c color.RGBA) {
 // genBlend composites src OVER the pixel at (x, y) with an extra coverage factor in
 // [0, 1]. Straight (non-premultiplied) alpha, because that is what
 // render.TextureStore.buildPage uploads and what SDL's BLENDMODE_BLEND expects.
+//
 // Out of bounds is a no-op rather than a panic: the shape generators below walk
 // analytic curves whose rounding can step one pixel past an edge, and clamping at
 // the writer is one check instead of one at every caller.
@@ -464,12 +516,19 @@ func drawScanlines(w, h int32, p GenParams) *image.RGBA {
 // Pcts[0] (`pct`): DOT DIAMETER as a percent of the cell (default
 // genHalftoneDotPct). Coverage is pi/4 * (pct/100)^2, which is the number every
 // screentone reference is quoted in.
+//
 // THE SECOND KNOB EXISTS BECAUSE FIVE SHIPPED ELEMENTS NEED IT. `pitch` and `dot`
 // are aliases for ONE slot, so `pitch = 6, dot = 2` resolved to pitch 2 and the
 // authored lattice was silently thrown away — in three presets whose comments
+// derive their measured coverage from the RATIO of the two. The ratio is what
+// they were actually specifying, so it gets a slot of its own rather than a
+// second integer; the default is the 0.34 radius the generator always drew, so
+// an element that says nothing renders byte-identically to before.
+//
 // The angle STAGGERS rather than rotates, and that is a deliberate limit rather than
 // an approximation: a rotated dot lattice cannot repeat seamlessly inside an
 // axis-aligned tile, so a true rotation would need a field, which is the one thing
+// clause 2 forbids. A staggered lattice is what a screentone reads as at tile size.
 func tileHalftone(p GenParams) (int32, int32) { c := p.pitchOr(6); return c * 2, c * 2 }
 
 func drawHalftone(w, h int32, p GenParams) *image.RGBA {
@@ -856,6 +915,8 @@ func drawHatch(w, h int32, p GenParams) *image.RGBA {
 // A filled rectangle tile with a decorated edge, drawn 9-sliced so the edge keeps a
 // fixed device size at any anchor size.
 // pitch: groove period px (0 = flat face). size: edge extent px (default 6).
+// count: edge mode — 0 bevel, 1 chamfer, 2 capsule, 3 notch. Angle: light direction.
+// Pcts[0] (`pct`): bevel/keyline strength (default 60).
 func tilePlate(p GenParams) (int32, int32) {
 	e := 2 * (p.sizeOr(6) + p.pitchOr(0))
 	return clampTilePx(e), clampTilePx(e)
@@ -921,9 +982,37 @@ func drawPlate(w, h int32, p GenParams) *image.RGBA {
 // A hollow frame tile whose band keeps a fixed device size under `fit = nine`.
 // pitch: band thickness px (default 2). size: corner extent px (default 12).
 // count: mode — 0 corner brackets, 1 continuous box, 2 rail, 3 bezel.
+// Pcts[0] (`gap`): percent of each edge left OPEN, measured over the whole
+// half-edge from its middle out to the corner.
+// Pcts[1] (`bow`): MODE 3 ONLY — how much the bezel's opening barrels, as the
+// percent by which the moulding thins at the middle of each edge relative to its
+// corners. 0 is a straight-sided bezel, which is what every other mode draws.
+//
+// `gap = 100` OPENS EVERYTHING, and the doc line above used to say it meant
+// "corners only". It does not and cannot: the fraction is measured over the
+// whole half-edge, so at 100 there is no corner left over and the band comes out
+// EMPTY. Ten shipped preset elements were authored against the old sentence and
+// rasterised nothing (see the W9 INK notes in presets/style/cyberpunk.ini and
+// vhs_crt.ini). Corner brackets are what MODE 0 draws with no gap at all — its
+// default open fraction is derived from `size`, the leg length, three lines
+// down. The wording is corrected rather than the arithmetic because four other
+// shipped elements (all in terminal.ini, two distinct param strings) write
+// `gap = 22` and get exactly the caption-sized hole they ask for; re-scaling the
+// fraction to make 100 mean something else would move all four to rescue ten
+// that had a working spelling available already.
+//
+// THE COUNT WAS FIRST WRITTEN AS SIX AND IS FOUR, so the true ratio is four to
+// ten and the trade no longer reads as a majority — but it never rested on one.
+// It rests on refusing to move working elements to rescue broken ones, and on
+// the broken ones having a spelling that already worked; W9 moved all ten onto
+// it, so no fragment writes `gap = 100` any more.
+// TestNoShippedPresetGeneratorElementRasterisesAnEmptyTile is what catches the
+// next author who reaches for it.
+//
 // It is mode-3-only because that is the only mode with a case to bow: the other
 // three are hollow rules and a rule that changed thickness along its length would
 // read as a mistake. The reservation is the preset fragment's own (terminal's
+// `crt_bezel`), and until W9 the key resolved to nothing at all.
 func tileFrame(p GenParams) (int32, int32) {
 	e := 2 * (p.pitchOr(2) + p.sizeOr(12))
 	return clampTilePx(e), clampTilePx(e)
@@ -1007,6 +1096,30 @@ func drawFrame(w, h int32, p GenParams) *image.RGBA {
 // that edge, 1 at a corner. The gap and the bezel's barrel both measure it, and
 // one spelling is what keeps the two from disagreeing about which edge is
 // nearest.
+//
+// THE AXES WERE SWAPPED, and `gap` did not work at all. dy is the distance to the
+// nearest HORIZONTAL edge, so `dy < dx` means the top or the bottom is nearest —
+// and the position along a horizontal edge is the COLUMN. The expression this was
+// factored out of read the ROW there and the column on a vertical edge, which
+// measures distance from the centre PERPENDICULAR to the edge: ~1 everywhere
+// inside the band, on every edge. Measured on a 40 px mode-1 tile: gap = 25 and
+// gap = 50 both painted all 816 band pixels (no gap at all), gap = 100 painted 0
+// (it must leave the corners), and mode 0 — "corner brackets" — drew a
+// continuous box. Four shipped preset elements write `gap = 22` (all in
+// terminal.ini, two distinct param strings) and ten wrote `gap = 100` with mode
+// 0 (three distinct param strings, so three blank TILES shared between them — an
+// earlier revision of this paragraph counted the tiles and called them ELEMENTS,
+// which is the unit the header counts and the unit used here now). The corpus
+// was therefore carrying ten blank elements and four frames that quietly ignored
+// their own signature. The axis fix cured the four; the ten were fixed in W9 and
+// zero remain — see the next paragraph.
+//
+// THE `gap = 100` HALF OF THAT WAS NOT A BUG IN THIS FUNCTION, and the fix above
+// did not cure it: with the axes correct, 100 still opens the whole half-edge and
+// still paints nothing, because the fraction has no corner left over to keep —
+// see the `gap` note on drawFrame. The ten shipped elements that wrote it (three
+// distinct param strings) have dropped the key and use mode 0's own leg-derived
+// default instead; no fragment writes `gap = 100` any more.
 func frameAlong(x, y, w, h int32, dx, dy float64) float64 {
 	if dy < dx {
 		return math.Abs(float64(x)+0.5-float64(w)/2) / (float64(w) / 2)
@@ -1018,6 +1131,9 @@ func frameAlong(x, y, w, h int32, dx, dy float64) float64 {
 // sundisc. One polar function with six presets' worth of knobs.
 // pitch: ray count (default 12). size: outer radius px (0 = fill the tile).
 // count: repeats packed into the tile (default 1). seed: jitter.
+// Pcts[0] (`inner`): inner radius as a percent of outer — 100 is hairlines,
+// 0 is full wedges (default 0). Pcts[1] (`squash`): 100 is a circle, 45 the
+// perspective ellipse (default 100).
 func tileRadial(p GenParams) (int32, int32) {
 	r := p.sizeOr(64)
 	n := int32(clampInt(int(p.countOr(1)), 1, int(genRepeatCap)))
@@ -1088,6 +1204,9 @@ func genRing(img *image.RGBA, cx, cy, r, width float64, c color.RGBA) {
 // which is genuinely a different function from `noise` (per-pixel) and not a
 // parameterisation of it — all three authors said so independently.
 // pitch: base feature size px (16 = newsprint, 96 = cloud, 2 = cork granule).
+// size: octaves 1..4 (default 2). count: speck density 0..100 (0 = smooth).
+// seed: REQUIRED. Pcts[0] (`fade`): vertical ramp to transparent.
+// Pcts[1] (`amp`): luma swing (default 100).
 func tileMottle(p GenParams) (int32, int32) { return theme.GenTileMaxPx, theme.GenTileMaxPx }
 
 func drawMottle(w, h int32, p GenParams) *image.RGBA {
@@ -1132,6 +1251,12 @@ func drawMottle(w, h int32, p GenParams) *image.RGBA {
 // pitch/`cells`: cells across the diameter (default 6). size/`ring`: ring band px
 // (default 8). Angle: rotation. Pcts[1] (`squash`): 100 circle, 45 the graded
 // perspective value (default 100).
+//
+// THE ADOPTED CLAUSE (thh_courtroom ESC-2): `bg` is the DARK CHECKER CELL, and the
+// tile OUTSIDE the disc is transparent by construction. One consumer draws its disc
+// over a near-black void and cannot tell the difference; the other draws it over a
+// gold floor, where an opaque square would erase the floor. Gated by
+// TestCheckerdiscCornersAreTransparent.
 func tileCheckerdisc(p GenParams) (int32, int32) {
 	return theme.GenTileMaxPx, theme.GenTileMaxPx
 }
@@ -1182,6 +1307,12 @@ func drawCheckerdisc(w, h int32, p GenParams) *image.RGBA {
 // two of that preset's roles (mountain ranges and equalizer columns) with one
 // algorithm, and nothing else in the set draws a horizon.
 // pitch: ridge segment width px (default 16). size: peak height px (default 48).
+// count: ranges 1..3 (default 1). seed: REQUIRED.
+// Pcts[0] (`base`): baseline height as a percent of the tile — 100 makes columns
+// rather than peaks (default 0).
+//
+// HORIZONTALLY WRAPPING and bilaterally symmetric about the tile centre, so a
+// tiled range has no seam and no repeated silhouette.
 func tileSkyline(p GenParams) (int32, int32) {
 	return theme.GenTileMaxPx, clampTilePx(p.sizeOr(48) * 2)
 }
@@ -1235,6 +1366,12 @@ func drawSkyline(w, h int32, p GenParams) *image.RGBA {
 // is the design document's own worked example: §2.2's `[element.butterflies]` IS
 // this element, so cutting it would mean the spec's headline example does not ship.
 // size: mark size px (default 12). count: marks per tile (default 6).
+// seed: REQUIRED. Angle: base heading.
+// Pcts[0] (`fade`): unused. Pcts[1] (`amp` / the proposal's `full`): 100 = two full
+// lobes (a butterfly), 0 = thin arcs (a gull). Default 100.
+//
+// TORUS-WRAPPED: every mark is stamped nine times, once per neighbouring tile, so a
+// mark crossing an edge appears on both sides and `fit = tile` has no seam.
 func tileWingmark(p GenParams) (int32, int32) {
 	return theme.GenTileMaxPx, theme.GenTileMaxPx
 }

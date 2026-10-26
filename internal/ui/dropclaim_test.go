@@ -8,6 +8,15 @@ import (
 
 // TestDroppedThemeBundleNeverRepointsTheThemeRoot is the W2 gate on drop
 // routing, and it is written from the failure rather than from the feature.
+//
+// The bug: SDL hands every drop to HandleFileDrop AND to the visible screen in
+// the same frame. The Settings screen's default arm calls resolveDroppedFolder,
+// which turns a dropped FILE into "its parent folder" and stores that as the
+// user's theme root. So dropping a .aotheme on the settings page repointed the
+// theme root at (typically) the Downloads folder — silently, while the global
+// handler was warning that the file "isn't a recording". Every theme the user
+// had resolved through the old root stopped resolving.
+//
 // The fix is one shared classifier, so the gate is: the bundle is claimed by
 // HandleFileDrop, the Settings screen's arm therefore never reaches its
 // theme-folder default, and the theme root is untouched by the drop.
@@ -29,6 +38,14 @@ func TestDroppedThemeBundleNeverRepointsTheThemeRoot(t *testing.T) {
 
 	// The Settings screen's routing: anything CLAIMED is a no-op there, and only
 	// the unclaimed default reaches resolveDroppedFolder.
+	//
+	// It DRIVES settingsDropAction (dropclaim.go) rather than restating the
+	// switch. That distinction is the whole gate: the arm used to live inline in
+	// drawSettings, which zero tests call, and the check here used to be
+	// `got == dropClaimNone` — a re-implementation. Deleting the
+	// `case dropClaimRecording, dropClaimThemeBundle, dropClaimThemeFont:` line
+	// therefore left the suite green while a dropped .aotheme or .ttf silently
+	// repointed the user's theme root at their Downloads folder.
 	for _, tc := range []struct {
 		path       string
 		armed      bool
@@ -75,16 +92,71 @@ func TestDroppedThemeBundleNeverRepointsTheThemeRoot(t *testing.T) {
 // itself vacuous. The enum carries six claims today; the floor is deliberately well
 // under that, because the point is to catch a walk that stopped walking, not to restate
 // the count — the same bargain settingsTabBodyCensusMin strikes in settingscardwidth_test.go.
+//
+// IT IS A LITERAL, INDEPENDENT OF dropClaimCount, and that is the whole point of it
+// having a name: a floor derived from the bound cannot audit the bound.
+//
+// IT DOES NOT REPLACE `seen != int(dropClaimCount)`, and an earlier draft of this
+// comment said it did, on the reasoning that the clause is "tautologically false" and
+// "can never fire". That is true only WHILE the loop bound IS dropClaimCount, and the
+// conditionality is the tripwire, not a defect in it. Proven by mutation on this
+// package: rewrite the walk to the pre-W10 shape
+// `for c := dropClaimNone; c <= dropClaimThemeFont; c++` — verbatim the W10 defect,
+// the one that left dropClaimThemeImage outside the census — and this floor of 3 stays
+// green while the clause fires with "the census walked 5 of 6 claims". Deleting it
+// therefore removed the only check that speaks to the exact bug class this file exists
+// to prevent, and the aphorism above, though true, was being aimed at a clause that
+// never audited the bound in the first place.
+//
+// THE THREE QUESTIONS ARE SEPARATE, and the split is exact:
+//   - the SENTINEL is audited by the COMPILER, via the dropClaimNames array literal
+//     (and, in the too-large direction, by the empty-name loop at the foot of the test);
+//   - the WALK is audited by `seen != int(dropClaimCount)` — it asks whether the loop is
+//     still bounded by the sentinel, and it fires the day someone reverts that bound to a
+//     named member or hand-lists the roster, which is a realistic refactor;
+//   - this FLOOR audits neither. It only refuses a roster too small to be worth walking —
+//     an enum shrunk to a claim or two would satisfy both of the above and prove nothing.
 const dropClaimCensusMin = 3
 
-// TestEveryDropClaimHasASettingsAnswer keeps settingsDropAction total over
-// dropClaim, walking the enum by VALUE so a claim appended to the iota block
-// joins this gate the moment it exists. The bound is the SENTINEL
-// (c < dropClaimCount), not the last named member: the walk once ended at
-// dropClaimThemeFont and W10's dropClaimThemeImage slipped past it.
-// The sentinel itself is guarded by the compiler (dropClaimNames' fixed array),
-// by the empty-name loop at the foot of this test (sentinel too large, or a
-// claim added with no name) and by dropClaimCensusMin. Do not remove the loop:
+// TestEveryDropClaimHasASettingsAnswer keeps settingsDropAction TOTAL over
+// dropClaim, so a claim added later cannot fall through to the theme-folder arm
+// by omission — which is precisely how a dropped file came to repoint the user's
+// theme root in the first place.
+//
+// It walks the enum by VALUE rather than listing the constants: a new claim
+// appended to the iota block joins this gate the moment it exists.
+//
+// THE BOUND IS THE SENTINEL, not the last named member, and that correction is the
+// whole reason this comment can be believed. The walk used to end at
+// `c <= dropClaimThemeFont`, so W10's dropClaimThemeImage was appended to the block
+// and landed OUTSIDE the census that promised to catch it — the gate went one short
+// in exactly the wave that added the member. `c < dropClaimCount` cannot go short:
+// the sentinel moves with the enum.
+//
+// WHAT GUARDS THE SENTINEL ITSELF, since the walk trusts it completely. Three
+// mechanisms, and this comment names the one that actually fires in each case,
+// because an earlier draft credited THIS TEST with all three and was wrong about two:
+//
+//   - Sentinel too SMALL — restated as a low literal, or moved above a live member:
+//     the COMPILER, via dropClaimNames. That table is [dropClaimCount]string with one
+//     entry per claim, so shrinking the bound overflows the literal; moving
+//     dropClaimCount above dropClaimThemeImage yields `index 5 is out of bounds (>= 5)`.
+//     NOTHING IN THIS TEST CATCHES THAT CASE and nothing here should claim to — a
+//     census whose bound went short is exactly as quiet as the unguarded claim it
+//     hides. Verified by mutation: with dropClaimNames decoupled to a slice so the
+//     compile error could not mask the runtime question, that reorder leaves
+//     dropClaimThemeImage unwalked and this test still PASSES.
+//   - Sentinel too LARGE: the empty-name loop at the foot of this test. A short
+//     fixed-size array literal is legal Go and leaves the extra slots "", so the
+//     compiler is silent here and the loop is the entire guarantee.
+//   - A claim added with no name: the same empty-name loop, for the same reason. It
+//     is one deletion away from silence. Do not remove it.
+//
+// TWO MORE CLAUSES GUARD THE WALK, and they are not the same check twice:
+// `seen != int(dropClaimCount)` asks whether the loop is still bounded by the sentinel
+// (it fires the moment the bound reverts to a named member — the W10 shape), and
+// dropClaimCensusMin asks whether the roster is big enough to be worth walking at all.
+// Neither audits the sentinel; see dropClaimCensusMin's declaration for the split.
 func TestEveryDropClaimHasASettingsAnswer(t *testing.T) {
 	// The Settings screen may only repoint the theme root for the UNCLAIMED case.
 	// Every other claim names an owner, and an owner means "not this screen".
@@ -138,7 +210,7 @@ func TestEveryDropClaimHasASettingsAnswer(t *testing.T) {
 // indistinguishable from a broken client, which is how the .aotheme routing
 // would be read if it only stopped doing the wrong thing.
 func TestThemeBundleDropSaysWhereToPutIt(t *testing.T) {
-	a := &App{env: env{}}
+	a := &App{}
 	before := a.warnAt
 	a.handleThemeBundleDrop(filepath.FromSlash("C:/Users/x/Downloads/umineko-meta-world.aotheme"))
 	if a.warnLine == "" {
@@ -171,7 +243,7 @@ func TestThemeBundleDropSaysWhereToPutIt(t *testing.T) {
 // nothing — a family with no `[fontbind]` row binds to no element — and that pair
 // is the single most common way this feature is got wrong.
 func TestThemeFontDropSaysWhereToPutIt(t *testing.T) {
-	a := &App{env: env{}}
+	a := &App{}
 	a.handleThemeFontDrop(filepath.FromSlash("C:/Users/x/Downloads/CourtSerif.ttf"))
 	if a.warnLine == "" {
 		t.Fatal("a dropped font produced no message at all")

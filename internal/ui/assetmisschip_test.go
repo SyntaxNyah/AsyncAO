@@ -81,6 +81,16 @@ func TestDebugLogTabIsResolvedByName(t *testing.T) {
 
 // TestInvisibleAssetMissChipReportsNoRect pins the shared-geometry helper's honesty
 // (ledger L64, under L20).
+//
+// assetMissChipRect gated on menuBarPaints() ALONE, so a chip that was not on screen
+// — no misses, the preference off, or the 30 s badge expired — still reported a plate
+// roughly its label's width. The band's geometry resolves as a CHAIN
+// (menuBarLeftContentRight → the Iniswap chip → menuBarRightContentLeft → the refusal
+// chip) and every link expects "no rect" from a chip that is not drawing; a phantom
+// answer reserves pixels for nothing. The two shipped callers check Active()
+// themselves, so this changes no painted frame — it makes the helper answerable by a
+// third caller, which is the whole point of a SHARED geometry helper.
+//
 // It does NOT touch the ruled two-answers-per-frame skew between the input pass and
 // drawMenuBar's phase 2; that is a different, deliberate property.
 func TestInvisibleAssetMissChipReportsNoRect(t *testing.T) {

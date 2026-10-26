@@ -6,6 +6,12 @@ package ui
 // z-aware input, so instead of fencing the whole screen (a modal) the courtroom
 // pass runs pointer-blind only while the cursor sits over a box footprint
 // (boxFencesPointer + fencePointer), then the boxes draw last with real input.
+// Opened by the Extras button or the 'x' hotkey (toggles a.showWidgets).
+//
+// Widgets live in the main grid but TEAR OUT: drag one past a small threshold
+// and it pops into its own little floating box you move and close independently
+// (closing returns it to the grid). Every box shares one per-frame mouse-press
+// edge so exactly one of them grabs a given press.
 
 import (
 	"strconv"
@@ -84,9 +90,25 @@ type panelSlot struct {
 // panelSlotTable is the CANONICAL enumeration of the persistable floatWin panels
 // (every floatWin except msgWin, which keeps its historical slotMessages key and
 // its own seed/persist wrappers). It is the single source of truth for:
+//   - applyProfile's .placed reset (so open panels re-seed from an applied profile),
+//   - the live-magnetism panel census (rebuildPanelMagnetRects derives its candidate
+//     set here — the "future magnetism" this comment used to name).
+//
+// It is iterated ONLY on cold paths (applyProfile) and while a live drag is active
+// (the magnet census, which is drag-gated so it never runs on a settled frame).
+// Each panel's draw path calls seedPanelFromSlot / persistPanelSlot directly with
+// &a.<panel>Win, so no table iteration and no App-capturing closure ever touches a
+// settled frame; the census fn's accessors are non-capturing package-level funcs,
+// so iterating it during a drag is also alloc-free. Adding a floatWin panel? Add
+// its slot const (classiclayout.go), a row here (with its OPEN predicate), and the
+// two-line seed/persist wiring in its draw/rect fns. NOTE: this is a 4th independent
+// panel list — do NOT try to unify it with floatbox.go's three deliberately-non-
+// identical fence/suppression lists.
+//
 // Nominal heights for the panels whose real default height is computed at draw
 // time (ban box: by kind; hotkey sheet + pairing: window-height responsive). Only
 // the census below uses these — the live seed still passes each panel's own
+// dynamic default — so they need only be representative, not exact.
 const (
 	panelNomBanH    = int32(600) // banBoxDims default (ban kind) height
 	panelNomBanMinH = int32(556) // banBoxDims default (ban kind) minimum height
@@ -107,31 +129,31 @@ const (
 )
 
 var panelSlotTable = []panelSlot{
-	{slotPanelPair, func(a *App) *floatWin { return &a.wins.pairWin }, pairPanelDefW, panelNomPairH, pairPanelMinW, pairPanelMinH, func(a *App) bool { return a.pairbox.showPair }},
+	{slotPanelPair, func(a *App) *floatWin { return &a.pairWin }, pairPanelDefW, panelNomPairH, pairPanelMinW, pairPanelMinH, func(a *App) bool { return a.showPair }},
 	// The mod dashboard hides while its own ban box is open (they share the modWin
 	// draw slot in drawFloatingPanels) — match that so the census never carries a
 	// panel that isn't on screen.
-	{slotPanelMod, func(a *App) *floatWin { return &a.wins.modWin }, modDashW, modDashH, modDashMinW, modDashMinH, func(a *App) bool { return a.modUI.showModDash && a.banBox.kind == 0 }},
-	{slotPanelCM, func(a *App) *floatWin { return &a.wins.cmWin }, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, func(a *App) bool { return a.modUI.showCMPanel }},
-	{slotPanelHK, func(a *App) *floatWin { return &a.wins.hkWin }, hkSheetDefW, panelNomHKH, hkSheetMinW, hkSheetMinH, func(a *App) bool { return a.courtkeys.showHotkeys }},
-	{slotPanelEvid, func(a *App) *floatWin { return &a.wins.evidWin }, evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, func(a *App) bool { return a.evid.showEvid }},
-	{slotPanelModcall, func(a *App) *floatWin { return &a.wins.modcallWin }, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, func(a *App) bool { return a.courtxtra.showModcall }},
-	{slotPanelVoice, func(a *App) *floatWin { return &a.wins.voiceWin }, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, func(a *App) bool { return a.showVoice }},
-	{slotPanelBan, func(a *App) *floatWin { return &a.wins.banWin }, banBoxDefW, panelNomBanH, banBoxMinW, panelNomBanMinH, func(a *App) bool { return a.banBox.kind != 0 }},
-	{slotPanelDebug, func(a *App) *floatWin { return &a.wins.debugWin }, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, func(a *App) bool { return a.debugPanel.open }},
-	{slotPanelClient, func(a *App) *floatWin { return &a.wins.clientWin }, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, func(a *App) bool { return a.splitActive() }},
+	{slotPanelMod, func(a *App) *floatWin { return &a.modWin }, modDashW, modDashH, modDashMinW, modDashMinH, func(a *App) bool { return a.showModDash && a.banBoxKind == 0 }},
+	{slotPanelCM, func(a *App) *floatWin { return &a.cmWin }, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, func(a *App) bool { return a.showCMPanel }},
+	{slotPanelHK, func(a *App) *floatWin { return &a.hkWin }, hkSheetDefW, panelNomHKH, hkSheetMinW, hkSheetMinH, func(a *App) bool { return a.showHotkeys }},
+	{slotPanelEvid, func(a *App) *floatWin { return &a.evidWin }, evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, func(a *App) bool { return a.showEvid }},
+	{slotPanelModcall, func(a *App) *floatWin { return &a.modcallWin }, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, func(a *App) bool { return a.showModcall }},
+	{slotPanelVoice, func(a *App) *floatWin { return &a.voiceWin }, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, func(a *App) bool { return a.showVoice }},
+	{slotPanelBan, func(a *App) *floatWin { return &a.banWin }, banBoxDefW, panelNomBanH, banBoxMinW, panelNomBanMinH, func(a *App) bool { return a.banBoxKind != 0 }},
+	{slotPanelDebug, func(a *App) *floatWin { return &a.debugWin }, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, func(a *App) bool { return a.showDebugPanel }},
+	{slotPanelClient, func(a *App) *floatWin { return &a.clientWin }, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, func(a *App) bool { return a.splitActive() }},
 	// Hide UI pieces. It was pinned to the bottom-right corner with no way to move
 	// it — not by dragging, and not in the layout editor either — so a panel that
 	// landed somewhere awkward, or under something else, could not be shifted.
 	// Joining this table gives it the drag, the position persistence and the
 	// de-overlap cascade every other floating panel already has.
-	{slotPanelPieces, func(a *App) *floatWin { return &a.wins.piecesWin }, toolboxPiecesW, toolboxPiecesMaxH, toolboxPiecesMinW, toolboxPiecesMinH, func(a *App) bool { return a.toolbox.toolboxPinned && a.toolbox.toolboxPieces }},
+	{slotPanelPieces, func(a *App) *floatWin { return &a.piecesWin }, toolboxPiecesW, toolboxPiecesMaxH, toolboxPiecesMinW, toolboxPiecesMinH, func(a *App) bool { return a.toolboxPinned && a.toolboxPieces }},
 	// The three ex-modals (#31). They were centred blocks that took the screen; as
 	// floatWins they get the same drag, position persistence and de-overlap cascade
 	// every sibling panel has.
-	{slotPanelTimer, func(a *App) *floatWin { return &a.wins.timerWin }, timerPanelDefW, timerPanelDefH, timerPanelMinW, timerPanelMinH, func(a *App) bool { return a.timer.showTimer }},
-	{slotPanelLogin, func(a *App) *floatWin { return &a.wins.loginWin }, loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, func(a *App) bool { return a.showLogin }},
-	{slotPanelPairPop, func(a *App) *floatWin { return &a.wins.pairPopWin }, pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, func(a *App) bool { return a.pairbox.pairPopupOpen }},
+	{slotPanelTimer, func(a *App) *floatWin { return &a.timerWin }, timerPanelDefW, timerPanelDefH, timerPanelMinW, timerPanelMinH, func(a *App) bool { return a.showTimer }},
+	{slotPanelLogin, func(a *App) *floatWin { return &a.loginWin }, loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, func(a *App) bool { return a.showLogin }},
+	{slotPanelPairPop, func(a *App) *floatWin { return &a.pairPopWin }, pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, func(a *App) bool { return a.pairPopupOpen }},
 }
 
 // extrasWidgets returns the canonical widget table, built once and cached. The
@@ -143,12 +165,12 @@ func (a *App) extrasWidgets() []extrasWidget {
 			{"Character", "Open character select", hotkeyCharMenu, func() { a.screen = ScreenCharSelect }},
 			{"Random char", "Swap to a random free character", hotkeyRandomChar, func() { a.randomChar() }},
 			{"Wardrobe", "Iniswap — borrow another character's look", hotkeyWardrobe, func() { a.openIniswap() }},
-			{"Jukebox", "Your saved music playlists", hotkeyJukebox, func() { a.openIniswap(); a.wardrobe.wardSection = wardSectionJukebox }},
+			{"Jukebox", "Your saved music playlists", hotkeyJukebox, func() { a.openIniswap(); a.wardSection = wardSectionJukebox }},
 			{"Background", "Change the courtroom background", hotkeyBackground, func() { a.openBgPicker() }},
 			{"Evidence", "Add / view case evidence", hotkeyEvidence, func() { a.toggleEvidence() }},
-			{"Call Mod", "Call a moderator to this room", hotkeyModcall, func() { a.courtxtra.showModcall = true }},
+			{"Call Mod", "Call a moderator to this room", hotkeyModcall, func() { a.showModcall = true }},
 			{"Mod / CM", "Server-aware moderation + room (CM) controls — ban/kick with a live command preview", hotkeyModDash, func() { a.toggleModDash() }},
-			{"Pair", "Pair up — share the stage with another character", hotkeyPairMenu, func() { a.pairbox.showPair = true }},
+			{"Pair", "Pair up — share the stage with another character", hotkeyPairMenu, func() { a.showPair = true }},
 			{"Login", "Log in with saved credentials", hotkeyLogin, func() { a.openLoginDialog() }},
 			{"★ Fav Emotes", "Floating box of just your starred emotes (Ctrl+A)", hotkeyFavEmotes, func() {
 				a.d.Prefs.Update(func(
@@ -164,14 +186,14 @@ func (a *App) extrasWidgets() []extrasWidget {
 
 			}},
 			{"Hotkeys", "Show every keyboard shortcut, including your custom ones (F1)", "", func() { a.openHotkeyCheatSheet() }},
-			{"Debug", "Diagnostics: server software, live packet inspector, performance + asset/prefetch stats, and the failure log (F8, or Settings → Power user)", "", func() { a.debugPanel.toggleDebugPanel() }},
+			{"Debug", "Diagnostics: server software, live packet inspector, performance + asset/prefetch stats, and the failure log (F8, or Settings → Power user)", "", func() { a.toggleDebugPanel() }},
 			{"Timer", "A personal countdown timer + alarm (for RP / casing pace)", "", func() { a.openTimer() }},
 			{"Sprite Style", "Recolour / glow / warp your character — other AsyncAO players see it", "", func() { a.openSpriteStyle() }},
 			{"SFX Browser", "Browse, preview (▶) and favourite (★) sounds for your next IC message — incl. any sound by name", "", func() { a.toggleSfxBrowser() }},
 			{"Screenshot", "Save a PNG of the current frame to the screenshots\\ folder next to AsyncAO — for sharing a moment (Ctrl+S)", hotkeyScreenshot, func() { a.captureScreenshot() }},
 			{"Logs", "Search your saved chat transcripts — any server, any session, filter by text", "", func() { a.prevScreen = ScreenCourtroom; a.openLogBrowser(); a.screen = ScreenLogs }},
-			{"Help", "Glossary of AO terms + a privacy explainer — what IC / OOC / CM / WTCE / HDID mean, and what a server can see", "", func() { a.prevScreen = ScreenCourtroom; a.docs.openHelp(0) }},
-			{"Group Chat", "Private DMs & group chats with other AsyncAO players — over the server's /pm, never the room", "", func() { a.msgs.toggleMessages() }},
+			{"Help", "Glossary of AO terms + a privacy explainer — what IC / OOC / CM / WTCE / HDID mean, and what a server can see", "", func() { a.prevScreen = ScreenCourtroom; a.openHelp(0) }},
+			{"Group Chat", "Private DMs & group chats with other AsyncAO players — over the server's /pm, never the room", "", func() { a.toggleMessages() }},
 			{voiceExtraLabel, "Voice chat (Nyathena): join the voice channel, see who's talking. Live mic audio is coming; for now it shares presence + speaking state", "", func() { a.toggleVoice() }},
 			// "Hide chrome" + "Theater" retired here (A1): both live on the
 			// bottom-right toolbox now (Hide-UI chip / Theater chip), plus their
@@ -193,10 +215,10 @@ func (a *App) extrasWidgets() []extrasWidget {
 func (a *App) toggleExtrasBox() {
 	if a.theaterOn {
 		a.setTheater(false)
-		a.toolbox.showWidgets = true
+		a.showWidgets = true
 		return
 	}
-	a.toolbox.showWidgets = !a.toolbox.showWidgets
+	a.showWidgets = !a.showWidgets
 }
 
 // extrasPalette is the resolved Extras-box theme for a frame. Empty prefs leave
@@ -270,9 +292,24 @@ func (a *App) blockingCourtPopup() bool {
 	// stays live behind them (you can keep chatting / follow the log while one is open). The
 	// ban/kick box used to be a blocking modal; it's a draggable floating box now too, with
 	// the live preview + the explicit Send button keeping the destructive-action safety.
+	// The pinned toolbox pieces panel is deliberately NOT here: it's a non-blocking
+	// floating surface that fences via boxFencesPointer (which early-returns on
+	// !extrasSurfaceLive == a blocking popup). Adding it to a blocking predicate
+	// would make extrasSurfaceLive false while it's open, disabling its own fence.
+	// NOT the same set as courtroomModalUp (screens.go), and deliberately so: this
+	// list adds classicEdit (an editor is not a popup, but panels must still yield to
+	// it) and omits showSfxBrowser. The omission is PRE-EXISTING and left alone here
+	// on purpose — adding the SFX browser would also flip extrasSurfaceLive, which
+	// gates the pinned toolbox-pieces panel and the torn-off tabs, i.e. a visible
+	// behaviour change well beyond a fence question. Anything that needs "will
+	// drawCourtroomModals take the screen?" must ask courtroomModalUp, which is
+	// derived from that draw's own table.
 	// showTimer / showLogin / pairPopupOpen left this set in #31 along with their rows
-	return a.inibrowse.showIni || a.bgPick.show ||
-		a.classic.classicEdit
+	// in courtroomModals: they are non-blocking floatWin panels now, so the Extras box
+	// and the torn-off tabs must NOT hide for them — that is the whole point of the
+	// change. They fence by footprint through boxFencesPointer like every other panel.
+	return a.showIni || a.bgPick.show ||
+		a.classicEdit
 }
 
 // courtModalOpen reports whether ANY pointer-fencing courtroom popup is up —
@@ -283,16 +320,16 @@ func (a *App) blockingCourtPopup() bool {
 // torn-off tab for it read as "the emoji button makes all the areas disappear"
 // in the playtest.
 func (a *App) courtModalOpen() bool {
-	return a.blockingCourtPopup() || a.emoji.showEmojiPicker
+	return a.blockingCourtPopup() || a.showEmojiPicker
 }
 
 // capturingKey reports whether ANY key-bind capture is armed (hotkey, showname,
 // jukebox, macro, IC-phrase, style-preset, hold-to-clear). Those use Esc to
 // CANCEL, so the global Esc handler must stand down while one is active.
 func (a *App) capturingKey() bool {
-	return a.courtkeys.bindingFor != "" || a.courtkeys.shownameBindFor != "" || a.jukebox.jukeBindFor != "" ||
-		a.courtkeys.icPhraseBindFor != "" || a.courtkeys.stylePresetBindFor != "" || a.budget.holdKeyArmed ||
-		a.budget.voicePTTBindArmed || a.budget.macroBind >= 0
+	return a.bindingFor != "" || a.shownameBindFor != "" || a.jukeBindFor != "" ||
+		a.icPhraseBindFor != "" || a.stylePresetBindFor != "" || a.holdKeyArmed ||
+		a.voicePTTBindArmed || a.macroBind >= 0
 }
 
 // pollVoicePTT handles the push-to-talk key: captures it when the Voice-settings
@@ -301,9 +338,9 @@ func (a *App) capturingKey() bool {
 // no other capture).
 func (a *App) pollVoicePTT() {
 	c := a.ctx
-	if a.budget.voicePTTBindArmed {
+	if a.voicePTTBindArmed {
 		if c.escPressed {
-			a.budget.voicePTTBindArmed = false // Esc cancels the capture
+			a.voicePTTBindArmed = false // Esc cancels the capture
 			return
 		}
 		if c.keyPressed != 0 {
@@ -313,17 +350,17 @@ func (a *App) pollVoicePTT() {
 					sn.VoicePTTKey = pv1
 				})
 			}
-			a.budget.voicePTTBindArmed = false
+			a.voicePTTBindArmed = false
 			c.keyPressed = 0
 		}
 		return
 	}
 	k := a.bareBindKey() // Alt+<bound key>, like every other plain-key namespace (qol.go)
-	if !a.link.voiceJoined || k == 0 {
+	if !a.voiceJoined || k == 0 {
 		return
 	}
 	if key := a.d.Prefs.Load().VoicePTTKey; key != "" && sdl.GetKeyName(k) == key {
-		a.voiceSetMic(!a.link.voiceMicOn)
+		a.voiceSetMic(!a.voiceMicOn)
 		c.keyPressed = 0
 	}
 }
@@ -348,8 +385,8 @@ func (a *App) closeTopOverlay() bool {
 		a.closeMenuBar()
 	case c.ddOpen != "":
 		c.ddOpen = "" // an open dropdown first
-	case a.palette.paletteOpen: // #39: the palette sits above everything it launches
-		a.palette.paletteOpen = false
+	case a.paletteOpen: // #39: the palette sits above everything it launches
+		a.paletteOpen = false
 		if c.focusID == paletteInputID {
 			c.focusID = ""
 		}
@@ -380,7 +417,7 @@ func (a *App) closeTopOverlay() bool {
 	// and no way out. Esc == Back to lobby, which runs the real teardown → lobby (and
 	// releases the dialog's fence LAST, so it's freed this frame — the emoji-picker
 	// freeze class).
-	case a.dialogs.disconnectDlg.open:
+	case a.disconnectDlg.open:
 		a.closeDisconnectDialogToLobby()
 	// The server-notice box, immediately below the disconnect dialog: it MUST answer
 	// Esc like every sibling, or Esc falls through to the screen arm underneath and
@@ -388,99 +425,106 @@ func (a *App) closeTopOverlay() bool {
 	// top of a still-fenced box. Unlike the dialog above this one CAN just close —
 	// there is no dead-but-drawn session under it; the teardown or the live session,
 	// whichever applies, was already settled before the box opened.
-	case a.font.serverNoticeDlg.open:
+	case a.serverNoticeDlg.open:
 		a.closeServerNotice()
-	case a.dialogs.pendingCloseTab != nil:
+	case a.pendingCloseTab != nil:
 		// The tab-close confirm CAN be open on the lobby (park a server via "+",
 		// then click a background chip's ✕): without this, Esc falls through
 		// closeTopOverlay to ScreenLobby's requestQuit(), stacking a Quit modal over
 		// this one. The pointer fence doesn't cover Esc (keyboard, handled before the
 		// fence) — the modal must answer Esc itself (floatbox.go doctrine: Esc can't
 		// fall through while a popup is open). Cancel == drop the pending target.
-		a.dialogs.pendingCloseTab = nil
+		a.pendingCloseTab = nil
 	case a.showQuitConfirm:
 		a.showQuitConfirm = false
-	case a.banBox.kind != 0:
-		a.banBox.kind = 0
-	case a.inibrowse.showReset:
-		a.inibrowse.showReset = false
+	case a.banBoxKind != 0:
+		a.banBoxKind = 0
+	case a.showReset:
+		a.showReset = false
 	// The two LAYOUT EDITORS, immediately below the blocking window modals above and
 	// above everything else. That is exactly where their pixels sit: the six modals
 	// above are painted by App.Frame AFTER the screen dispatch, so they cover an
 	// editor's banner, while every popup and floating panel below is painted by (or
 	// under) the courtroom pass that the editor's own overlay closes on top of.
+	//
 	// They MUST be answered here rather than by a guard around this whole function.
+	// Esc is the editor's documented exit; a guard consumed the key and left the exit
+	// to a draw-time handler, which is dead on any frame the editor's draw does not
+	// run — and if nothing here answers, Esc falls into the ScreenCourtroom arm below
+	// and pops the LEAVE-THE-SERVER confirm over a screen the user was arranging.
+	// Each editor gets its own case so each runs its own teardown (both release the
+	// kit's modal fence, which app.go warns freezes the UI if it is ever stranded).
 	case a.layoutEdit:
 		a.stopLayoutEdit()
-	case a.classic.classicEdit:
-		a.classic.stopClassicEdit()
-	case a.updates.visible():
-		a.updates.closeModal()
+	case a.classicEdit:
+		a.stopClassicEdit()
+	case a.updateShow:
+		a.updateShow = false
 	case a.showLogin:
 		a.showLogin = false
-	case a.roster.rosterMenuOpen:
-		a.roster.rosterMenuOpen = false // the player-row … menu (anchored popup, like the pickers)
-	case a.roster.musicMenuOpen:
-		a.roster.musicMenuOpen = false // the music panel's ⋮ menu (same anchored-popup contract)
-	case a.emoji.showEmojiPicker:
-		a.emoji.showEmojiPicker = false
-	case a.reactUI.showReactPicker:
-		a.reactUI.showReactPicker = false
+	case a.rosterMenuOpen:
+		a.rosterMenuOpen = false // the player-row … menu (anchored popup, like the pickers)
+	case a.musicMenuOpen:
+		a.musicMenuOpen = false // the music panel's ⋮ menu (same anchored-popup contract)
+	case a.showEmojiPicker:
+		a.showEmojiPicker = false
+	case a.showReactPicker:
+		a.showReactPicker = false
 	case a.bgPick.show:
 		a.bgPick.show = false
-	case a.inibrowse.showIni:
-		a.inibrowse.showIni = false
-	case a.timer.showTimer:
-		a.timer.showTimer = false
-	case a.toolbox.toolboxPinned && a.toolbox.toolboxPieces:
-		a.toolbox.toolboxPieces = false // A1: Esc closes the pinned per-piece panel first
-	case a.pairbox.pairPopupOpen:
-		a.pairbox.pairPopupOpen = false
-	case a.courtkeys.showHotkeys:
-		a.courtkeys.showHotkeys, a.courtkeys.hkCache = false, nil
+	case a.showIni:
+		a.showIni = false
+	case a.showTimer:
+		a.showTimer = false
+	case a.toolboxPinned && a.toolboxPieces:
+		a.toolboxPieces = false // A1: Esc closes the pinned per-piece panel first
+	case a.pairPopupOpen:
+		a.pairPopupOpen = false
+	case a.showHotkeys:
+		a.showHotkeys, a.hkCache = false, nil
 	// Non-blocking floating panels.
 	case a.showVoice:
 		a.showVoice = false
-	case a.msgs.showMessages:
-		a.msgs.showMessages = false
-	case a.evid.showEvid:
-		a.evid.showEvid = false
-	case a.courtxtra.showModcall:
-		a.courtxtra.showModcall = false
-	case a.modUI.showModDash:
-		a.modUI.showModDash = false
-	case a.debugPanel.open:
-		a.debugPanel.open = false
-	case a.lookUI.showICColorWheel:
-		a.lookUI.showICColorWheel = false
-	case a.lookUI.showFxPicker:
-		a.lookUI.showFxPicker = false
-	case a.modUI.showCMPanel:
-		a.modUI.showCMPanel = false
-	case a.pairbox.showPair:
-		a.pairbox.showPair = false
-	case a.emotepick.showSfxBrowser:
-		a.emotepick.showSfxBrowser = false
-	case a.favstyle.showStyleBox:
-		a.favstyle.showStyleBox = false
+	case a.showMessages:
+		a.showMessages = false
+	case a.showEvid:
+		a.showEvid = false
+	case a.showModcall:
+		a.showModcall = false
+	case a.showModDash:
+		a.showModDash = false
+	case a.showDebugPanel:
+		a.showDebugPanel = false
+	case a.showICColorWheel:
+		a.showICColorWheel = false
+	case a.showFxPicker:
+		a.showFxPicker = false
+	case a.showCMPanel:
+		a.showCMPanel = false
+	case a.showPair:
+		a.showPair = false
+	case a.showSfxBrowser:
+		a.showSfxBrowser = false
+	case a.showStyleBox:
+		a.showStyleBox = false
 	// The Extras box LAST of the panels: a picker opened from it (SFX / style) closes
 	// first, then the box itself. (#28: every courtroom popup answers Esc — and so Esc
 	// can't fall through to the courtroom's leave-the-server shortcut while one is open.)
-	case a.toolbox.showWidgets:
-		a.toolbox.showWidgets = false
+	case a.showWidgets:
+		a.showWidgets = false
 	// A PINNED sprite preview: it paints INSIDE the courtroom pass, i.e. under
 	// every floating panel above, so its case sits here — below them, above
 	// theater mode. Unpinned boxes need no case: they close on their own leave.
-	case a.budget.previewBase != "" && a.previewIsPinned():
+	case a.previewBase != "" && a.previewIsPinned():
 		a.closeSpritePreview()
 	case a.theaterOn: // theater mode's "Esc exits" — handled here so it beats the leave-server shortcut
 		a.setTheater(false)
 	// Char-select wardrobe popups: close them on Esc before the char-select screen's own
 	// Esc (back / leave) can fire (#28).
-	case a.wardrobe.wardDelFolder != "":
-		a.wardrobe.wardDelFolder = ""
-	case a.inibrowse.iniMenuChar != "":
-		a.inibrowse.iniMenuChar = ""
+	case a.wardDelFolder != "":
+		a.wardDelFolder = ""
+	case a.iniMenuChar != "":
+		a.iniMenuChar = ""
 	default:
 		return false
 	}
@@ -493,7 +537,7 @@ func (a *App) closeTopOverlay() bool {
 // ride on this alone, so they persist when the main box is closed — closing the
 // main box must not yank the widgets you dragged out.
 func (a *App) extrasSurfaceLive() bool {
-	return a.link.room != nil && a.link.sess != nil && !a.blockingCourtPopup()
+	return a.room != nil && a.sess != nil && !a.blockingCourtPopup()
 }
 
 // extrasBoxRect is the main box's screen rect: the (possibly user-resized) size
@@ -547,11 +591,11 @@ func (a *App) seedExtrasFromSlot(w, h int32) {
 	if a.extrasPlaced {
 		return
 	}
-	ov, ok := a.classic.classicOv[slotExtras]
+	ov, ok := a.classicOv[slotExtras]
 	if !ok {
 		return
 	}
-	r := a.classic.anchoredRect(slotExtras, ov, w, h)
+	r := a.anchoredRect(slotExtras, ov, w, h)
 	a.extrasBoxX, a.extrasBoxY = r.X, r.Y
 	if r.W > 0 && r.H > 0 {
 		a.extrasUserW, a.extrasUserH = clampI32(r.W, extrasMinW, w), clampI32(r.H, extrasMinH, h)
@@ -563,7 +607,7 @@ func (a *App) seedExtrasFromSlot(w, h int32) {
 // on a drag/resize-END frame (never per-frame) so its position + size survive a
 // relaunch. Mirrors persistPanelSlot for the non-floatWin Extras box.
 func (a *App) persistExtrasSlot(w, h int32) {
-	a.classic.persistPanelSlot(&a.env, slotExtras, a.extrasBoxRect(w, h), w, h)
+	a.persistPanelSlot(slotExtras, a.extrasBoxRect(w, h), w, h)
 }
 
 // detachedBoxRect is the i-th torn-off widget's screen rect: its (possibly
@@ -637,72 +681,72 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.previewDrag || a.previewResize {
 		return true
 	}
-	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favstyle.favBoxDragging || a.favstyle.styleBoxDragging || a.favstyle.styleBoxResizing ||
-		a.wins.pairWin.dragging || a.wins.pairWin.resizing || a.wins.modWin.dragging || a.wins.modWin.resizing || a.wins.cmWin.dragging || a.wins.cmWin.resizing ||
-		a.wins.evidWin.dragging || a.wins.evidWin.resizing || a.wins.modcallWin.dragging || a.wins.modcallWin.resizing || a.wins.msgWin.dragging || a.wins.msgWin.resizing ||
-		a.wins.voiceWin.dragging || a.wins.voiceWin.resizing || a.wins.banWin.dragging || a.wins.banWin.resizing || a.wins.debugWin.dragging || a.wins.debugWin.resizing ||
-		a.wins.hkWin.dragging || a.wins.hkWin.resizing ||
-		a.wins.timerWin.dragging || a.wins.timerWin.resizing || a.wins.loginWin.dragging || a.wins.loginWin.resizing ||
-		a.wins.pairPopWin.dragging || a.wins.pairPopWin.resizing ||
-		a.wins.clientWin.dragging || a.wins.clientWin.resizing || a.client.clientPanning {
+	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
+		a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
+		a.evidWin.dragging || a.evidWin.resizing || a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||
+		a.voiceWin.dragging || a.voiceWin.resizing || a.banWin.dragging || a.banWin.resizing || a.debugWin.dragging || a.debugWin.resizing ||
+		a.hkWin.dragging || a.hkWin.resizing ||
+		a.timerWin.dragging || a.timerWin.resizing || a.loginWin.dragging || a.loginWin.resizing ||
+		a.pairPopWin.dragging || a.pairPopWin.resizing ||
+		a.clientWin.dragging || a.clientWin.resizing || a.clientPanning {
 		return true
 	}
 	mx, my := a.ctx.mouseX, a.ctx.mouseY
-	if a.splitActive() && pointIn(mx, my, a.classic.clientWinRect(&a.env, w, h)) { // the floating client window fences too
+	if a.splitActive() && pointIn(mx, my, a.clientWinRect(w, h)) { // the floating client window fences too
 		return true
 	}
-	if a.toolbox.showWidgets && pointIn(mx, my, a.extrasBoxRect(w, h)) {
+	if a.showWidgets && pointIn(mx, my, a.extrasBoxRect(w, h)) {
 		return true
 	}
-	if a.pairbox.showPair && pointIn(mx, my, a.classic.pairPanelRect(&a.env, w, h)) { // the Pair / Mod / CM boxes fence too
+	if a.showPair && pointIn(mx, my, a.pairPanelRect(w, h)) { // the Pair / Mod / CM boxes fence too
 		return true
 	}
-	if a.modUI.showModDash && a.banBox.kind == 0 && pointIn(mx, my, a.classic.modDashRect(&a.env, w, h)) { // dashboard hides while its ban box is open
+	if a.showModDash && a.banBoxKind == 0 && pointIn(mx, my, a.modDashRect(w, h)) { // dashboard hides while its ban box is open
 		return true
 	}
-	if a.debugPanel.open && pointIn(mx, my, a.classic.debugPanelRect(&a.env, w, h)) { // the Debug panel fences too
+	if a.showDebugPanel && pointIn(mx, my, a.debugPanelRect(w, h)) { // the Debug panel fences too
 		return true
 	}
-	if a.lookUI.showFxPicker && pointIn(mx, my, a.fxPickerRect(w, h)) { // the Text FX picker fences too
+	if a.showFxPicker && pointIn(mx, my, a.fxPickerRect(w, h)) { // the Text FX picker fences too
 		return true
 	}
-	if a.lookUI.showICColorWheel && pointIn(mx, my, a.icColorWheelRect(w, h)) { // the free-hex colour wheel fences too (v1.52.0)
+	if a.showICColorWheel && pointIn(mx, my, a.icColorWheelRect(w, h)) { // the free-hex colour wheel fences too (v1.52.0)
 		return true
 	}
-	if a.banBox.kind != 0 && pointIn(mx, my, a.banBoxRect(w, h)) { // the ban/kick box fences too
+	if a.banBoxKind != 0 && pointIn(mx, my, a.banBoxRect(w, h)) { // the ban/kick box fences too
 		return true
 	}
-	if a.modUI.showCMPanel && pointIn(mx, my, a.classic.cmPanelRect(&a.env, w, h)) {
+	if a.showCMPanel && pointIn(mx, my, a.cmPanelRect(w, h)) {
 		return true
 	}
-	if a.evid.showEvid && pointIn(mx, my, a.classic.evidPanelRect(&a.env, w, h)) { // the floating evidence box fences too (#5)
+	if a.showEvid && pointIn(mx, my, a.evidPanelRect(w, h)) { // the floating evidence box fences too (#5)
 		return true
 	}
-	if a.evid.showEvid && a.evid.evidInspectorDetached && pointIn(mx, my, a.evidInspectorRect(w, h)) { // popped-out inspector
+	if a.showEvid && a.evidInspectorDetached && pointIn(mx, my, a.evidInspectorRect(w, h)) { // popped-out inspector
 		return true
 	}
-	if a.courtxtra.showModcall && pointIn(mx, my, a.classic.modcallPanelRect(&a.env, w, h)) { // Call Mod box
+	if a.showModcall && pointIn(mx, my, a.modcallPanelRect(w, h)) { // Call Mod box
 		return true
 	}
-	if a.msgs.showMessages && pointIn(mx, my, a.classic.msgPanelRect(&a.env, w, h)) { // Group Chat / DMs box
+	if a.showMessages && pointIn(mx, my, a.msgPanelRect(w, h)) { // Group Chat / DMs box
 		return true
 	}
-	if a.showVoice && pointIn(mx, my, a.classic.voicePanelRect(&a.env, w, h)) { // Voice box — clicks must not fall through to the area list (was swapping rooms)
+	if a.showVoice && pointIn(mx, my, a.voicePanelRect(w, h)) { // Voice box — clicks must not fall through to the area list (was swapping rooms)
 		return true
 	}
-	if a.courtkeys.showHotkeys && pointIn(mx, my, a.hkSheetRect(w, h)) { // the floating hotkey sheet fences too
+	if a.showHotkeys && pointIn(mx, my, a.hkSheetRect(w, h)) { // the floating hotkey sheet fences too
 		return true
 	}
 	// The three ex-modals (#31). They fence by footprint now instead of by taking the
 	// whole pass — the courtroom behind stays live, but a click on one must still not
 	// also land on the scene, the music list or the IC bar underneath.
-	if a.timer.showTimer && pointIn(mx, my, a.timerPanelRect(w, h)) {
+	if a.showTimer && pointIn(mx, my, a.timerPanelRect(w, h)) {
 		return true
 	}
 	if a.showLogin && pointIn(mx, my, a.loginPanelRect(w, h)) {
 		return true
 	}
-	if a.pairbox.pairPopupOpen && pointIn(mx, my, a.pairPopPanelRect(w, h)) {
+	if a.pairPopupOpen && pointIn(mx, my, a.pairPopPanelRect(w, h)) {
 		return true
 	}
 	// The pinned per-piece toolbox panel (A1) fences too — its checkboxes must not
@@ -711,7 +755,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	// agree on frame one (the click-leak class). !paletteOpen matches the draw's
 	// stand-down while the palette overlays it (drawToolboxPieces) — a fence with
 	// no visible panel would be a dead pointer zone.
-	if a.toolbox.toolboxPinned && a.toolbox.toolboxPieces && !a.palette.paletteOpen && pointIn(mx, my, a.toolboxPiecesRect(w, h)) {
+	if a.toolboxPinned && a.toolboxPieces && !a.paletteOpen && pointIn(mx, my, a.toolboxPiecesRect(w, h)) {
 		return true
 	}
 	for i := range a.extrasDetached {
@@ -722,16 +766,16 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.d.Prefs.Load().FavEmoteBox && pointIn(mx, my, a.favBoxRect(w, h)) {
 		return true
 	}
-	if a.favstyle.showStyleBox {
+	if a.showStyleBox {
 		if sr, _ := a.styleBoxRect(w, h); pointIn(mx, my, sr) {
 			return true
 		}
 	}
 	// Torn-off tab panels (torntabs.go) fence the scene too — their list content is
 	// clickable, so a click in one must not also land on the stage behind it.
-	if len(a.classic.classicOv) > 0 {
+	if len(a.classicOv) > 0 {
 		for i := range tornTabTable {
-			if r, ok := a.classic.tornTabRect(tornTabTable[i].key, w, h); ok && pointIn(mx, my, r) {
+			if r, ok := a.tornTabRect(tornTabTable[i].key, w, h); ok && pointIn(mx, my, r) {
 				return true
 			}
 		}
@@ -833,10 +877,10 @@ func (a *App) persistTornWidgetSlot(i int, w, h int32) {
 	}
 	key := tornWidgetSlotKey(a.extrasDetached[i].id)
 	frac := rectToFrac(a.detachedBoxRect(i, w, h), w, h)
-	if a.classic.classicOv == nil {
-		a.classic.classicOv = make(map[string][4]float64, classicSlotRegCap)
+	if a.classicOv == nil {
+		a.classicOv = make(map[string][4]float64, classicSlotRegCap)
 	}
-	a.classic.classicOv[key] = frac
+	a.classicOv[key] = frac
 	a.d.Prefs.SetClassicSlot(key, frac)
 }
 
@@ -847,7 +891,7 @@ func (a *App) reattachWidget(i int) {
 	if i < 0 || i >= len(a.extrasDetached) {
 		return
 	}
-	a.classic.clearClassicSlot(tornWidgetSlotKey(a.extrasDetached[i].id)) // capture id BEFORE the splice
+	a.clearClassicSlot(tornWidgetSlotKey(a.extrasDetached[i].id)) // capture id BEFORE the splice
 	a.extrasDetached = append(a.extrasDetached[:i], a.extrasDetached[i+1:]...)
 	a.extrasDetachDragging = false
 }
@@ -859,16 +903,26 @@ func (a *App) reattachWidget(i int) {
 // applyProfile). Called from drawCourtroom right after ensureClassicOv and BEFORE
 // boxFencesPointer, so the fence sees the reconstructed boxes on frame one — never
 // adds per-frame work.
+//
+// Why here (not App init): a detachedWidget stores PIXELS, so reconstruction needs
+// the live window size; App init has none. drawCourtroom is the first spot that has
+// both the loaded classicOv AND a real w/h, and ensureClassicOv has just run above
+// it — so this is the natural one-shot home (ensureClassicOv itself takes no w/h).
+//
+// Unknown ids (from a newer build) are IGNORED, not deleted — their slots stay
+// persisted so a downgrade/upgrade round-trips. The result is structurally bounded:
+// ids must match an extrasWidgets() entry and are deduped, so at most one box per
+// widget.
 func (a *App) reconstructTornWidgets(w, h int32) {
 	if a.extrasTornRebuilt {
 		return
 	}
 	a.extrasTornRebuilt = true
-	if len(a.classic.classicOv) == 0 {
+	if len(a.classicOv) == 0 {
 		return
 	}
 	widgets := a.extrasWidgets()
-	for key, frac := range a.classic.classicOv {
+	for key, frac := range a.classicOv {
 		rest, ok := strings.CutPrefix(key, tornWidgetSlotPrefix)
 		if !ok {
 			continue
@@ -911,6 +965,12 @@ func (a *App) extrasTearDetect(id int, cell sdl.Rect, pressed *bool) bool {
 // on top of the live courtroom. Picking a widget runs its action but LEAVES the
 // box open (non-invasive); a widget that opens its own blocking panel hides the
 // surface until that panel closes, then it returns.
+// drawFloatingPanels draws every non-blocking floating panel on the live
+// courtroom — the Extras boxes AND the Pair menu — sharing ONE mouse-press edge
+// per frame so exactly one panel grabs a given press (no double-grab where two
+// overlap). Called after drawCourtroom with input restored, so they draw on top
+// with real input while the courtroom behind stays interactive everywhere the
+// cursor isn't over a panel (you can still chat with one open).
 func (a *App) drawFloatingPanels(w, h int32) {
 	if !a.extrasSurfaceLive() { // live courtroom, no blocking modal
 		return
@@ -954,13 +1014,13 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	if !c.mouseDown {
 		a.extrasPressing = false // a cell press can't outlive the button
 		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing ||
-			a.favstyle.favBoxDragging || a.favstyle.styleBoxDragging || a.favstyle.styleBoxResizing ||
-			a.wins.pairWin.dragging || a.wins.pairWin.resizing || a.wins.modWin.dragging || a.wins.modWin.resizing || a.wins.cmWin.dragging || a.wins.cmWin.resizing ||
-			a.wins.evidWin.dragging || a.wins.evidWin.resizing || a.wins.modcallWin.dragging || a.wins.modcallWin.resizing || a.wins.msgWin.dragging || a.wins.msgWin.resizing ||
-			a.wins.voiceWin.dragging || a.wins.voiceWin.resizing || a.wins.banWin.dragging || a.wins.banWin.resizing || a.wins.debugWin.dragging || a.wins.debugWin.resizing ||
-			a.wins.timerWin.dragging || a.wins.timerWin.resizing || a.wins.loginWin.dragging || a.wins.loginWin.resizing ||
-			a.wins.pairPopWin.dragging || a.wins.pairPopWin.resizing ||
-			a.wins.clientWin.dragging || a.wins.clientWin.resizing || a.client.clientPanning {
+			a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
+			a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
+			a.evidWin.dragging || a.evidWin.resizing || a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||
+			a.voiceWin.dragging || a.voiceWin.resizing || a.banWin.dragging || a.banWin.resizing || a.debugWin.dragging || a.debugWin.resizing ||
+			a.timerWin.dragging || a.timerWin.resizing || a.loginWin.dragging || a.loginWin.resizing ||
+			a.pairPopWin.dragging || a.pairPopWin.resizing ||
+			a.clientWin.dragging || a.clientWin.resizing || a.clientPanning {
 			c.clicked = false // a finished drag/resize isn't a click on whatever's now underneath
 		}
 	}
@@ -972,44 +1032,44 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	}
 	a.drawFloatingExtras(w, h, &pressed)
 	// Pair / Mod / CM are floating boxes now (drawn last = on top, real input).
-	if a.pairbox.showPair {
+	if a.showPair {
 		a.drawPairPanel(w, h, &pressed)
 	}
-	if a.modUI.showModDash && a.banBox.kind == 0 { // the dashboard hides while its ban/kick box is open (below)
+	if a.showModDash && a.banBoxKind == 0 { // the dashboard hides while its ban/kick box is open (below)
 		a.drawModDashPanel(w, h, &pressed)
 	}
-	if a.debugPanel.open {
+	if a.showDebugPanel {
 		a.drawDebugPanel(w, h, &pressed)
 	}
-	if a.lookUI.showFxPicker {
+	if a.showFxPicker {
 		a.drawFxPicker(w, h)
 	}
-	if a.lookUI.showICColorWheel {
+	if a.showICColorWheel {
 		a.drawICColorWheel(w, h)
 	}
-	if a.modUI.showCMPanel {
+	if a.showCMPanel {
 		a.drawCMPanel(w, h, &pressed)
 	}
-	if a.evid.showEvid { // evidence is a floating box now (#5) — chat stays live behind it
+	if a.showEvid { // evidence is a floating box now (#5) — chat stays live behind it
 		a.drawEvidencePanel(w, h, &pressed)
-		if a.evid.evidInspectorDetached { // the inspector popped out into its own window
+		if a.evidInspectorDetached { // the inspector popped out into its own window
 			a.drawEvidenceInspectorWindow(w, h, &pressed)
 		}
 	}
 	// The three ex-modals (#31), drawn like every other floating panel.
-	if a.timer.showTimer {
+	if a.showTimer {
 		a.drawTimerPanel(w, h, &pressed)
 	}
 	if a.showLogin {
 		a.drawLoginDialog(w, h, &pressed)
 	}
-	if a.pairbox.pairPopupOpen {
+	if a.pairPopupOpen {
 		a.drawPairPopup(w, h, &pressed)
 	}
-	if a.courtxtra.showModcall { // call-mod is a floating box now — chat stays live behind it
+	if a.showModcall { // call-mod is a floating box now — chat stays live behind it
 		a.drawModcallPanel(w, h, &pressed)
 	}
-	if a.msgs.showMessages { // Group Chat / DMs — non-blocking floating panel
+	if a.showMessages { // Group Chat / DMs — non-blocking floating panel
 		a.drawMessagesPanel(w, h, &pressed)
 	}
 	if a.showVoice { // Voice (Nyathena) — non-blocking floating panel
@@ -1018,7 +1078,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	// The ban/kick box draws last = topmost (it's the focused destructive action). It's drawn
 	// INSTEAD of the dashboard (above), which mirrors the old blocking modal that hid the dashboard
 	// — only now the courtroom behind stays live, so the mod can drag it aside and keep chatting.
-	if a.banBox.kind != 0 {
+	if a.banBoxKind != 0 {
 		a.drawModDashBanBox(w, h, &pressed)
 	}
 	// Live-magnet alignment guides LAST — the full-length green hairlines drawn
@@ -1031,17 +1091,17 @@ func (a *App) drawFloatingPanels(w, h int32) {
 // Sprite Style), sharing the press edge from drawFloatingPanels.
 func (a *App) drawFloatingExtras(w, h int32, pressed *bool) {
 	favOpen := a.d.Prefs.Load().FavEmoteBox
-	if !a.toolbox.showWidgets && len(a.extrasDetached) == 0 && !favOpen && !a.favstyle.showStyleBox {
+	if !a.showWidgets && len(a.extrasDetached) == 0 && !favOpen && !a.showStyleBox {
 		return // every Extras box closed — nothing to draw
 	}
-	if a.toolbox.showWidgets {
+	if a.showWidgets {
 		a.drawExtrasMainBox(w, h, pressed)
 	}
 	a.drawExtrasDetached(w, h, pressed) // torn-off widgets persist even with the main box closed
 	if favOpen {
 		a.drawFavEmoteBox(w, h, pressed)
 	}
-	if a.favstyle.showStyleBox {
+	if a.showStyleBox {
 		a.drawSpriteStyleBox(w, h, pressed)
 	}
 }
@@ -1062,7 +1122,7 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: extrasTitleH}, pal.title)
 	c.Label(r.X+10, r.Y+6, "AsyncAO Extras", pal.text)
 	if c.ButtonCol(sdl.Rect{X: r.X + r.W - 26, Y: r.Y + 4, W: 20, H: extrasTitleH - 8}, "x", pal.bg, pal.title, pal.border, pal.text) {
-		a.toolbox.showWidgets = false
+		a.showWidgets = false
 		if !a.extrasCloseHintShown { // tell them how to get it back — once per session
 			a.extrasCloseHintShown = true
 			a.warnLine = clampLine("Extras hidden — press Ctrl+" + strings.ToUpper(a.hotkeyFor(hotkeyExtras)) + " or Extras → AsyncAO Extras box to reopen")

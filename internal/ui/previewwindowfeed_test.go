@@ -28,6 +28,8 @@ const previewFeedFixtureBase = "preview-fixture://sprite"
 // renderer) with ONE resident fixture texture under previewFeedFixtureBase,
 // a real (closed) render.PreviewWindow, and real temp-file preferences —
 // everything feedDetachedPreviewFrame/syncPreviewWindow actually touch.
+// previewBase starts pointed at the fixture, as if a hover had already
+// opened the in-app box before the user detached it.
 func newPreviewFeedApp(t testing.TB) *App {
 	t.Helper()
 	ren, cleanup := newCaptureHarness(t)
@@ -54,13 +56,13 @@ func newPreviewFeedApp(t testing.TB) *App {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 
-	a := &App{env: env{ctx: ctx}, activeTab: -1}
+	a := &App{ctx: ctx, activeTab: -1}
 	a.d.Prefs = prefs
 	a.d.Store = store
 	a.d.Preview = render.NewPreviewWindow()
 	t.Cleanup(a.d.Preview.Close)
 	a.resetSessionState()
-	a.budget.previewBase = previewFeedFixtureBase
+	a.previewBase = previewFeedFixtureBase
 	return a
 }
 
@@ -128,7 +130,7 @@ func TestToggleDetachPreviewOpensAndReattaches(t *testing.T) {
 // on previewBase, ever calls SetFrame).
 func TestToggleDetachPreviewWithNoEmoteSelectedIsANoOp(t *testing.T) {
 	a := newPreviewFeedApp(t)
-	a.budget.previewBase = ""
+	a.previewBase = ""
 	a.toggleDetachPreview()
 	if a.previewIsDetached() {
 		t.Fatal("toggling with nothing previewed opened a window anyway")
@@ -191,7 +193,7 @@ func TestFeedDetachedPreviewFrameUploadsOnce(t *testing.T) {
 	}
 
 	// A NEW pick re-feeds.
-	a.budget.previewBase = "preview-fixture://sprite-2" // not resident: feed must retry, not crash
+	a.previewBase = "preview-fixture://sprite-2" // not resident: feed must retry, not crash
 	a.feedDetachedPreviewFrame()
 	if a.previewWinFedBase == "preview-fixture://sprite-2" {
 		t.Fatal("feedDetachedPreviewFrame marked a NON-resident base as fed")
@@ -204,12 +206,15 @@ func TestFeedDetachedPreviewFrameUploadsOnce(t *testing.T) {
 // counterpart of TestFeedDetachedPreviewFrameUploadsOnce: a multi-frame
 // animated pick must advance previewWinFedFrame exactly when the wall clock
 // crosses a frame boundary.
+//
 // This test covers the POSITIVE direction only: it would still pass if the
 // gate degraded to "feed on every call", because ShowAnimFrame's own cache
 // absorbs the redundant calls invisibly. The gate itself is pinned by
+// TestPreviewFeedNeeded below, which drives the real predicate
+// feedDetachedPreviewFrame asks.
 func TestFeedDetachedPreviewFrameAdvancesOnIndexChangeOnly(t *testing.T) {
 	a := newAnimatedPreviewFeedApp(t)
-	a.budget.previewBase = previewAnimFeedFixtureBase
+	a.previewBase = previewAnimFeedFixtureBase
 
 	a.toggleDetachPreview() // real OS window creation — measurably slow, so the clock is set up AFTER this, not before
 	if !a.previewIsDetached() {
@@ -223,29 +228,29 @@ func TestFeedDetachedPreviewFrameAdvancesOnIndexChangeOnly(t *testing.T) {
 	// real elapsed time — a.now() returns a.frameNow verbatim whenever it is
 	// non-zero (app.go), so setting both directly makes this deterministic.
 	base := time.Now()
-	a.budget.previewAt = base
-	a.budget.frameNow = base
+	a.previewAt = base
+	a.frameNow = base
 	a.feedDetachedPreviewFrame()
 	if a.previewWinFedFrame != 0 {
 		t.Fatalf("previewWinFedFrame = %d at elapsed=0, want 0 (the first frame)", a.previewWinFedFrame)
 	}
 
 	// Still inside frame 0's window: a repeat call must not change anything.
-	a.budget.frameNow = base.Add(previewAnimFrameDelay / 2)
+	a.frameNow = base.Add(previewAnimFrameDelay / 2)
 	a.feedDetachedPreviewFrame()
 	if a.previewWinFedFrame != 0 {
 		t.Fatalf("previewWinFedFrame = %d before the first frame boundary, want 0", a.previewWinFedFrame)
 	}
 
 	// Crossed into frame 1.
-	a.budget.frameNow = base.Add(previewAnimFrameDelay + previewAnimFrameDelay/2)
+	a.frameNow = base.Add(previewAnimFrameDelay + previewAnimFrameDelay/2)
 	a.feedDetachedPreviewFrame()
 	if a.previewWinFedFrame != 1 {
 		t.Fatalf("previewWinFedFrame = %d after crossing into frame 1's window, want 1", a.previewWinFedFrame)
 	}
 
 	// Crossed into frame 2.
-	a.budget.frameNow = base.Add(2*previewAnimFrameDelay + previewAnimFrameDelay/2)
+	a.frameNow = base.Add(2*previewAnimFrameDelay + previewAnimFrameDelay/2)
 	a.feedDetachedPreviewFrame()
 	if a.previewWinFedFrame != 2 {
 		t.Fatalf("previewWinFedFrame = %d after crossing into frame 2's window, want 2", a.previewWinFedFrame)
@@ -253,7 +258,7 @@ func TestFeedDetachedPreviewFrameAdvancesOnIndexChangeOnly(t *testing.T) {
 
 	// The loop wraps: 3*delay + delay/2 modulo the 3*delay total lands back
 	// in frame 0's window.
-	a.budget.frameNow = base.Add(3*previewAnimFrameDelay + previewAnimFrameDelay/2)
+	a.frameNow = base.Add(3*previewAnimFrameDelay + previewAnimFrameDelay/2)
 	a.feedDetachedPreviewFrame()
 	if a.previewWinFedFrame != 0 {
 		t.Fatalf("previewWinFedFrame = %d after the loop wrapped back to frame 0, want 0", a.previewWinFedFrame)
@@ -266,6 +271,11 @@ func TestFeedDetachedPreviewFrameAdvancesOnIndexChangeOnly(t *testing.T) {
 // stops being cosmetic the moment a pick overflows the animation cache
 // budget, where an uncached ordinal calls fill on EVERY visit and losing the
 // gate turns one readback per animation tick into one per rendered frame.
+//
+// Weaken any arm of previewFeedNeeded and a named case here fails: return
+// true unconditionally and both "nothing changed" cases fail; drop the page
+// comparison and the re-decode case fails; drop the `animated &&` and the
+// static case fails.
 func TestPreviewFeedNeeded(t *testing.T) {
 	pageA, pageB := &render.TexturePage{}, &render.TexturePage{}
 	const baseA, baseB = "char://a", "char://b"
@@ -318,7 +328,7 @@ func TestPreviewFeedNeeded(t *testing.T) {
 // at 0 through every iteration below — this test would fail loudly.
 func TestAdvanceDetachedPreviewAnimatesWithoutFrame(t *testing.T) {
 	a := newAnimatedPreviewFeedApp(t)
-	a.budget.previewBase = previewAnimFeedFixtureBase
+	a.previewBase = previewAnimFeedFixtureBase
 
 	a.toggleDetachPreview() // real OS window creation — the clock is pinned AFTER this, not before
 	if !a.previewIsDetached() {
@@ -328,15 +338,15 @@ func TestAdvanceDetachedPreviewAnimatesWithoutFrame(t *testing.T) {
 	// Pin the loop anchor and frame clock together (see the sibling test's
 	// comment for why: a.now() prefers a.frameNow whenever it's non-zero).
 	base := time.Now()
-	a.budget.previewAt = base
-	a.budget.frameNow = base
+	a.previewAt = base
+	a.frameNow = base
 
 	seenFrames := map[int]bool{a.previewWinFedFrame: true}
 	// Walk the clock across two full loops purely through AdvanceDetachedPreview
 	// — the same call cmd/asyncao's run() makes from its minimized/SkipFrame
 	// branches, never app.Frame().
 	for step := 1; step <= 12; step++ {
-		a.budget.frameNow = base.Add(time.Duration(step) * (previewAnimFrameDelay / 2))
+		a.frameNow = base.Add(time.Duration(step) * (previewAnimFrameDelay / 2))
 		a.AdvanceDetachedPreview()
 		seenFrames[a.previewWinFedFrame] = true
 	}
@@ -372,7 +382,7 @@ func TestPreviewAnimWakeCapZeroWhenClosedOrStatic(t *testing.T) {
 // wrong reason (a gate that always returns 0).
 func TestPreviewAnimWakeCapPositiveWhenAnimating(t *testing.T) {
 	a := newAnimatedPreviewFeedApp(t)
-	a.budget.previewBase = previewAnimFeedFixtureBase
+	a.previewBase = previewAnimFeedFixtureBase
 	a.toggleDetachPreview()
 	if !a.previewIsDetached() {
 		t.Fatal("setup: toggle did not detach")
@@ -388,7 +398,7 @@ func TestPreviewAnimWakeCapPositiveWhenAnimating(t *testing.T) {
 // (minimized and SkipFrame branches), so its closed-path cost must stay a
 // no-alloc nil check, the same as every other preview touch point.
 func TestAdvanceDetachedPreviewClosedIsZeroAlloc(t *testing.T) {
-	a := &App{env: env{ctx: &Ctx{}}, activeTab: -1}
+	a := &App{ctx: &Ctx{}, activeTab: -1}
 	prefs, err := config.New(filepath.Join(t.TempDir(), "prefs.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -410,7 +420,7 @@ func TestAdvanceDetachedPreviewClosedIsZeroAlloc(t *testing.T) {
 //
 //	go test ./internal/ui/... -run NONE -bench AdvanceDetachedPreview -benchmem
 func BenchmarkAdvanceDetachedPreviewClosed(b *testing.B) {
-	a := &App{env: env{ctx: &Ctx{}}, activeTab: -1}
+	a := &App{ctx: &Ctx{}, activeTab: -1}
 	prefs, err := config.New(filepath.Join(b.TempDir(), "prefs.json"))
 	if err != nil {
 		b.Fatal(err)
@@ -429,12 +439,12 @@ func BenchmarkAdvanceDetachedPreviewClosed(b *testing.B) {
 
 func BenchmarkAdvanceDetachedPreviewOpenAnimating(b *testing.B) {
 	a := newAnimatedPreviewFeedApp(b)
-	a.budget.previewBase = previewAnimFeedFixtureBase
+	a.previewBase = previewAnimFeedFixtureBase
 	a.toggleDetachPreview()
 	if !a.previewIsDetached() {
 		b.Skip("preview window unavailable")
 	}
-	base := a.budget.previewAt
+	base := a.previewAt
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -443,7 +453,7 @@ func BenchmarkAdvanceDetachedPreviewOpenAnimating(b *testing.B) {
 		// boundary — the steady-state "open and actually animating" cost the
 		// task's benchmark requirement asks for, not a best-case all-cache-hit
 		// single index.
-		a.budget.frameNow = base.Add(time.Duration(i%3) * previewAnimFrameDelay)
+		a.frameNow = base.Add(time.Duration(i%3) * previewAnimFrameDelay)
 		a.AdvanceDetachedPreview()
 	}
 }
@@ -482,6 +492,12 @@ func TestSyncPreviewWindowPersistsOnReattach(t *testing.T) {
 // "boring but fatal" case #4 verbatim: closing the OS window via its own
 // titlebar X (simulated the same way cmd/asyncao's dispatchEvent would —
 // calling Close() DIRECTLY, never through toggleDetachPreview) must both (a)
+// make previewIsDetached() — the pop-out button's ENTIRE truth — report
+// false again, and (b) get its final position persisted, exactly like an
+// explicit re-attach does. There is no separate "detached" bool that could
+// disagree with reality here; this proves that by driving the real
+// discrepancy path (Close() called out of band) and checking the single
+// source of truth.
 func TestClosingTheDetachedWindowWithItsOwnXReconciles(t *testing.T) {
 	a := newPreviewFeedApp(t)
 	a.toggleDetachPreview()
@@ -544,6 +560,9 @@ func TestDetachedPreviewSurvivesDisconnect(t *testing.T) {
 // App-global — matching the PRE-EXISTING precedent for previewPinned/
 // previewOffX/areaPct/musicPct, all of which already survive a session swap
 // by design — so resetSessionState must leave every one of them untouched:
+// if the preview ever leaked INTO sessionState, switching tabs would
+// silently close or blank it, exactly the class of bug "per-session state
+// on App, not sessionState" guards against in the OTHER direction too.
 func TestDetachedPreviewSurvivesSessionReset(t *testing.T) {
 	a := newPreviewFeedApp(t)
 	a.toggleDetachPreview()
@@ -551,15 +570,15 @@ func TestDetachedPreviewSurvivesSessionReset(t *testing.T) {
 		t.Fatal("setup: toggle did not detach")
 	}
 	fedBefore := a.previewWinFedBase
-	baseBefore := a.budget.previewBase
+	baseBefore := a.previewBase
 
 	a.resetSessionState() // the primitive every tab switch / disconnect / new-tab path calls
 
 	if !a.previewIsDetached() {
 		t.Error("resetSessionState closed the detached preview window")
 	}
-	if a.budget.previewBase != baseBefore {
-		t.Errorf("previewBase changed across resetSessionState: %q -> %q", baseBefore, a.budget.previewBase)
+	if a.previewBase != baseBefore {
+		t.Errorf("previewBase changed across resetSessionState: %q -> %q", baseBefore, a.previewBase)
 	}
 	if a.previewWinFedBase != fedBefore {
 		t.Errorf("previewWinFedBase changed across resetSessionState: %q -> %q", fedBefore, a.previewWinFedBase)
@@ -577,7 +596,7 @@ func TestDetachedPreviewSurvivesSessionReset(t *testing.T) {
 // (never-opened) PreviewWindow, needing no SDL init at all: a closed preview
 // never touches SDL, on either side of this seam.
 func TestSyncPreviewWindowClosedIsZeroAlloc(t *testing.T) {
-	a := &App{env: env{ctx: &Ctx{}}, activeTab: -1}
+	a := &App{ctx: &Ctx{}, activeTab: -1}
 	prefs, err := config.New(filepath.Join(t.TempDir(), "prefs.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -598,8 +617,10 @@ func TestSyncPreviewWindowClosedIsZeroAlloc(t *testing.T) {
 // on internal/assets/mountserve_test.go's BenchmarkActiveMountLayerNoMounts /
 // BenchmarkActiveMountLayerConfigured — run together so the RATIO is the
 // meaningful number:
+//
+//	go test ./internal/ui/... -run NONE -bench SyncPreviewWindow -benchmem
 func BenchmarkSyncPreviewWindowClosed(b *testing.B) {
-	a := &App{env: env{ctx: &Ctx{}}, activeTab: -1}
+	a := &App{ctx: &Ctx{}, activeTab: -1}
 	prefs, err := config.New(filepath.Join(b.TempDir(), "prefs.json"))
 	if err != nil {
 		b.Fatal(err)

@@ -119,8 +119,8 @@ func (a *App) recordPacket(p protocol.Packet, out bool) {
 // ring + counts always describe one server. Called on the inbound pump (which
 // runs for the active conn) and on connect.
 func (a *App) notePktConn() {
-	if a.link.conn != a.pktConn {
+	if a.conn != a.pktConn {
 		a.pkts.reset()
-		a.pktConn = a.link.conn
+		a.pktConn = a.conn
 	}
 }

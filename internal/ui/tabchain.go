@@ -2,13 +2,28 @@ package ui
 
 // Tab focus order for the CHAT fields (playtest: Tab out of the IC box landed on
 // the showname field instead of the OOC box).
+//
 // AO2-Client never calls setTabOrder (0 hits across ../AO2-Client/src), so its
 // Tab chain is Qt's implicit one: widget CONSTRUCTION order. courtroom.cpp
+// builds ui_ic_chat_name (187) -> ui_ic_chat_message (193) ->
+// ui_ooc_chat_message (205) -> ui_ooc_chat_name (210) -> ui_music_search (219),
+// i.e. Tab out of the IC box lands on the OOC box. AO2-Client wins, so that is
+// the chain we reproduce.
+//
 // Our fieldSeq is pure DRAW order (Ctx.textField, ui.go) and NO layout draws in
 // that order: the default classic layout draws the whole right column — OOC box
+// included — BEFORE the IC bar (drawCourtroom, screens.go), and the themed
+// layout draws the OOC input FIRST and the showname LAST (drawCourtroomThemed,
+// theme_layout.go). Result: Tab from "ic" wrapped to the log search (classic)
+// or landed on the showname (themed).
+//
 // Ranking is by ROLE, never by a fixed id list, because the same role has
 // different ids per layout: the OOC input is "oocmsg" in the default box
 // (drawOOCPanel), "ooc" on the Legacy bottom bar (drawICControls) and "ooc"
+// again in the themed layout — and each box may or may not draw on a given
+// frame. A role with nothing drawn simply owns no slot, so a layout that hides
+// the OOC box keeps Tab inside what is actually on screen (focusing an undrawn
+// field would swallow keystrokes with no caret and no visible box).
 const (
 	tabRankShowname = iota // AO2 ui_ic_chat_name
 	tabRankIC              // AO2 ui_ic_chat_message
@@ -52,7 +67,18 @@ func tabRank(id string) int {
 // contiguous block in AO2 role order, starting at the slot the FIRST chat field
 // already occupied; any non-chat field that happened to be interleaved between
 // them slides to just after the block, keeping its own relative order.
+// Everything outside that window is untouched, so a search box or a floating
+// panel's field never jumps around.
+//
 // Stable within a role (draw order breaks ties), which is what the Legacy hybrid
+// needs: with "OOC in the log tab" selected AND the OOC tab open, the tab's own
+// input and the always-visible bottom bar are both tabRankOOC and both edit
+// a.oocInput — the one drawn first wins the slot.
+//
+// Idempotent (a second pass sees an already-contiguous, already-sorted window),
+// which matters because BeginFrame may cycle several times against the same
+// fieldSeq across draw-less frames.
+//
 // Pure and allocation-free: the scratch is a fixed [tabChainSpanCap]string on
 // the stack and the write-back is one copy. Called ONLY on a Tab press, never on
 // a render frame, so the whole-screen 0-alloc gates never even reach it.

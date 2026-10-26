@@ -1,6 +1,7 @@
 package ui
 
 // W7b — THE INSPECTORS (v1.90.0).
+//
 // Every gate here DRIVES the shipping seam: the real inspector table, the real
 // document funnel, the real pick lists, the real type tables. Nothing below
 // re-implements a rule it is checking (rule 11's mirror-test clause), and the
@@ -45,6 +46,7 @@ func editSlotRig(t *testing.T) (*App, *themeDoc, editTarget) {
 
 // TestSlotInspectorOffersGeometryAndNothingElse is the AO2 full-parity rule, made
 // structural.
+//
 // W7a stated the rule in a label and offered no control at all, so a widget could be
 // dragged but its rect could not be TYPED. W7b gives the arm a real row — and the gate
 // is that it is the ONLY row, addressing the ONLY field [overrides] can carry. A
@@ -83,6 +85,7 @@ func TestSlotInspectorOffersGeometryAndNothingElse(t *testing.T) {
 // TestResetToThemeDropsTheRowAndUndoRestoresIt pins the one ACTION the widget rail
 // carries, in the half that matters: a reset must REMOVE the [overrides] row, not
 // write the resolved rect back into it.
+//
 // Writing it back would leave a row in the author's file restating exactly what the
 // AO2 tier already says — a diff for an edit the user just took back, which is the
 // same defect editSlotRowPresent exists to keep an undo from causing.
@@ -168,6 +171,16 @@ func TestNewInspectorFieldsAreAddressableAndNamed(t *testing.T) {
 
 // TestElementIdRowRenamesTheSectionRatherThanDuplicatingIt is the W7b negative gate
 // turned into its post-condition (v1.90.0 W8).
+//
+// THE PRECONDITION IT GUARDED IS GONE, and the property it protected is not. Through
+// W7b the gate said "there must be no Id row", because an element's id is its SECTION
+// SUFFIX — the writer emits `[element.<id>]` and no key carries it (sidecar_write.go's
+// elementFieldKeys names ID as "never a key") — and INIDoc had no way to move a
+// section, so a rename would have APPENDED a second one and left the first: a saved
+// theme carrying the element twice. W8 landed theme.INIDoc.RenameSection and the one
+// funnel that drives it, so the row exists — and the duplication this test was written
+// about is now checked DIRECTLY, by saving and re-reading, which is a stronger claim
+// than the absence of a row ever was.
 func TestElementIdRowRenamesTheSectionRatherThanDuplicatingIt(t *testing.T) {
 	// The row exists and is reachable for every element kind: an id you cannot see is
 	// an id you cannot fix when two themes' elements collide.
@@ -260,6 +273,7 @@ func elementIDsIn(s *theme.Sidecar) []string {
 }
 
 // TestGenParamsRowUsesTheFormatsOwnParser is the anti-second-grammar gate.
+//
 // The row's validation must be theme.ParseGenParams — the very function the READER
 // uses (genParamsOf) — so a string the editor accepts is a string the file means. A
 // hand-rolled comma split in internal/ui would pass a happy-path test and diverge the
@@ -392,9 +406,12 @@ func TestPickListsComeFromTheLiveDocument(t *testing.T) {
 // TestOnlyPickerRowsNameAPickSource pins pickRow's own claim: the ~30 rows that are
 // not pickers carry pickNone because they never write one, and every row that IS a
 // picker names a live list.
+//
 // Both halves are silent failures. An fkPick row left at pickNone draws a picker with
 // nothing to pick — two step buttons the author can press forever — and a non-picker
 // row that acquired a source would be asking the cache to build a list nothing draws.
+// The zero value is the one the table relies on and the one nobody writes down, which
+// is exactly the kind that drifts.
 func TestOnlyPickerRowsNameAPickSource(t *testing.T) {
 	a, _ := editDocRig(t, 1)
 	// THE NO-SOURCE ANSWER IS PINNED BY THE CACHE SLOT, NOT BY THE RETURN VALUE. A nil
@@ -557,6 +574,11 @@ func TestFontFamilyAddRemoveAndCapRefusal(t *testing.T) {
 // the wave. restoreBaseline is "all or nothing"; a snapshot that covered elements and
 // overrides but not the type tables would let "Back, Back" discard a session's
 // geometry and silently KEEP its font bindings.
+//
+// UNCHANGED BY W8's re-baselining, deliberately: this session never saves, so the
+// baseline never moves and "discard" still means "back to when I opened it". That it
+// still passes verbatim is the open–closed evidence for rebaseline — the semantics
+// change only where a SAVE happened, which is TestDiscardAfterASaveGoesBackToTheSave.
 func TestExitWithoutSavingThrowsAwayTypeEditsToo(t *testing.T) {
 	a, doc := editDocRig(t, 1)
 	doc.side.Fonts = []theme.FontFamily{{Family: "Original", File: "o.otf"}}
@@ -592,7 +614,7 @@ func drainThemeApply(t *testing.T, a *App, gen uint64) {
 	t.Helper()
 	deadline := time.Now().Add(editorGateApplyWait)
 	for time.Now().Before(deadline) {
-		if res := a.skin.themeRes.Load(); res != nil && res.gen >= gen {
+		if res := a.themeRes.Load(); res != nil && res.gen >= gen {
 			return
 		}
 		time.Sleep(time.Millisecond)
@@ -603,6 +625,13 @@ func drainThemeApply(t *testing.T, a *App, gen uint64) {
 // TestSavingGeometryDoesNotRestartTheTheme is design §"Live preview, no Apply button"
 // made mechanical: applyThemeAsync runs for media/font import and theme switch, and for
 // nothing else.
+//
+// THE DEFECT IT CLOSES. landEditorSave kicked an apply on EVERY successful save. An
+// apply re-anchors a.themeAt and re-runs applyThemeClocks, so every clock group in the
+// theme restarts from zero, and it calls purgeTextCache() — meaning saving a one-pixel
+// rect nudge visibly restarted all motion and hitched the text cache. With the design's
+// 2 s debounced autosave that is a motion restart every two seconds while authoring.
+//
 // The evidence is a.themeGen, which applyThemeAsync bumps SYNCHRONOUSLY before it starts
 // its goroutine — so the gate cannot pass by racing it.
 func TestSavingGeometryDoesNotRestartTheTheme(t *testing.T) {
@@ -615,12 +644,12 @@ func TestSavingGeometryDoesNotRestartTheTheme(t *testing.T) {
 		t.Fatal("the fixture nudge did not dirty the document; the save below would prove nothing")
 	}
 
-	before := a.skin.themeGen.Load()
+	before := a.themeGen.Load()
 	a.editorSave()
 	if !a.editorAwaitSave(editorGateSaveWait) {
 		t.Fatalf("the save did not land: %s", a.te.status)
 	}
-	if got := a.skin.themeGen.Load(); got != before {
+	if got := a.themeGen.Load(); got != before {
 		t.Errorf("saving a rect nudge kicked %d theme apply(s) — pollThemeApply re-anchors a.themeAt "+
 			"and purges the text cache, so every animated element in the theme restarts and the text "+
 			"cache hitches, once per save", got-before)
@@ -629,6 +658,7 @@ func TestSavingGeometryDoesNotRestartTheTheme(t *testing.T) {
 
 // TestSavingATypeEditAppliesTheThemeOnce is the other half, and it is what stops the fix
 // above from being "delete the call".
+//
 // A [fontbind] row is resolved into real SDL_ttf faces by applySidecarFonts, on the
 // theme-apply goroutine, against the sidecar ON DISK — so without an apply after the
 // write the binding is saved and still drawn in the old face. The second save proves the
@@ -646,12 +676,12 @@ func TestSavingATypeEditAppliesTheThemeOnce(t *testing.T) {
 		t.Fatal("the fixture binding was refused")
 	}
 
-	before := a.skin.themeGen.Load()
+	before := a.themeGen.Load()
 	a.editorSave()
 	if !a.editorAwaitSave(editorGateSaveWait) {
 		t.Fatalf("the save did not land: %s", a.te.status)
 	}
-	kicked := a.skin.themeGen.Load()
+	kicked := a.themeGen.Load()
 	if kicked <= before {
 		t.Fatalf("saving a [fontbind] edit kicked no apply (gen %d → %d) — the row would be on disk and "+
 			"the courtroom would still be drawn in the old face until the user switched themes and back",
@@ -666,7 +696,7 @@ func TestSavingATypeEditAppliesTheThemeOnce(t *testing.T) {
 	if !a.editorAwaitSave(editorGateSaveWait) {
 		t.Fatalf("the second save did not land: %s", a.te.status)
 	}
-	if got := a.skin.themeGen.Load(); got != kicked {
+	if got := a.themeGen.Load(); got != kicked {
 		t.Errorf("a second save re-applied unchanged type tables (gen %d → %d) — the gate must compare "+
 			"against the last APPLY, not against whether the tables were ever edited", kicked, got)
 	}
@@ -675,9 +705,17 @@ func TestSavingATypeEditAppliesTheThemeOnce(t *testing.T) {
 
 // TestDiscardAfterASaveGoesBackToTheSave is the W8 exit-contract change, stated as
 // the thing that used to be wrong.
+//
+// THE DEFECT. The baseline was taken once, at open, and nothing moved it. So
+// edit → Save → edit → Back → Back left the MODEL at the pre-save document while
+// DISK held the save — and closeThemeEditor drops the document, not the model, so
+// the courtroom went on drawing a theme that no longer existed anywhere. The two
+// states only reconciled the next time something happened to re-read the file.
+//
 // A DELIBERATE SEMANTICS CHANGE, and this is its evidence: "discard" now means
 // "back to my last save". The gate that pins the OTHER meaning
 // (TestExitWithoutSavingThrowsAwayTypeEditsToo) is unchanged and still passes,
+// because a session with no save has no second meaning to choose between.
 func TestDiscardAfterASaveGoesBackToTheSave(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()
@@ -735,7 +773,7 @@ func TestASaveDoesNotStaleTheTypeSignature(t *testing.T) {
 	if !a.editorAwaitSave(editorGateSaveWait) {
 		t.Fatalf("the save did not land: %s", a.te.status)
 	}
-	kicked := a.skin.themeGen.Load()
+	kicked := a.themeGen.Load()
 	if doc.typeSigApplied != doc.typeSig() {
 		t.Fatal("typeSigApplied does not match the tables that were just saved and applied")
 	}
@@ -812,6 +850,11 @@ func TestEditTargetFontSpaceIsExplicit(t *testing.T) {
 // TestOnlyTheDocumentWritesTheTypeTables is the anti-second-writer census for the
 // [fonts] / [fontbind] tier — the twin of TestOnlyTheDocumentWritesTheOverridesTier,
 // and the seam gate rule 11 requires for every new abstraction.
+//
+// themeDoc.writeFontRow is the ONE function that may change a type table in a document
+// under edit. Anything else assigning to Sidecar.Fonts or Sidecar.FontBind is a writer
+// with no undo entry: an edit the user cannot take back and the baseline snapshot
+// cannot restore — half an edit, silently.
 func TestOnlyTheDocumentWritesTheTypeTables(t *testing.T) {
 	const owner = "themeeditordoc.go"
 	needles := []string{
@@ -856,6 +899,7 @@ func TestOnlyTheDocumentWritesTheTypeTables(t *testing.T) {
 
 // TestDroppedFaceInstallsThroughTheFunnel lands W4's written deferral: with the editor
 // open, a dropped .ttf is copied into the theme and becomes ONE undoable [fonts] row.
+//
 // It drives HandleFileDrop, not editorTakeFontDrop, because the routing is half the
 // feature — W4's own dropclaim.go gate exists because a missing arm there let a
 // dropped font repoint the user's theme root.
@@ -1019,6 +1063,7 @@ func TestEditorRedoRidesCtrlShiftZ(t *testing.T) {
 
 // TestOfflinePackMirrorsTheLiveBlipLadder is the downloader gap, stated as the
 // property that was broken: the pack must be able to hold what the live ladder PLAYS.
+//
 // The download used to fetch rung 1 of six (sounds/blips/<lowercased name>), so a
 // legacy base that serves only sounds/general/sfx-blip<name> produced a pack whose
 // blips are silent while the same base blips fine online — an offline pack that works

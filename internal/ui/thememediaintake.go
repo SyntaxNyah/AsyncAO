@@ -1,10 +1,41 @@
 package ui
 
 // IMAGE INTAKE (v1.90.0 W10) — "an easy way to upload images and animated webps".
+//
+// ONE concern: turning a picture the user points at into a [media] row and an
+// ElemImage element inside the theme being edited.
+//
+// ONE FUNNEL, TWO DOORS. A drop lands in editorTakeImage; the in-app browser's
+// purposeThemeImage pick lands in editorTakeImage. There is no second copy of the
+// caps, the destination or the budget verdict, so browsing and dropping cannot
+// diverge — the same property W8 built the bundle import on, and
+// TestOneThemeImageIntakeFunnel is the census that keeps a third door from
+// appearing.
+//
+// ANIMATED WEBP NEEDS NO SPECIAL CASE, and that is not an oversight to be fixed
+// later: `.webp.animated` does not exist (CLAUDE.md), animation is the VP8X ANIM
+// flag and the decode pipeline sniffs it. An animated WebP, an APNG and a GIF all
+// arrive here as an assets.Decoded with more than one frame, and every one of them
+// is already handled by the same downscale, decimation and budget arithmetic the
+// theme apply runs (loadThemeMedia).
+//
+// EVERY EDIT IS AN OP, and both of them are ONE op group: the [media] row
+// (opMediaRow) and the element that draws it (opElemAdd) go in together and come
+// out together on one Ctrl+Z. A declared image nothing points at still costs the
+// theme's art budget, so an undo that took back only the element would leave the
+// budget bar counting a picture nobody can see.
+//
+// THE FILE COPY IS NOT AN OP, exactly as the font intake's is not, and for the
+// stated reason: undo restores the DOCUMENT, and an undo that deleted a file the
+// user dropped would be an undo that destroys data outside the document it owns.
+// The copy is inert once its row is gone — nothing reads a file the [media] table
+// does not name.
+//
 // BUDGET-AWARE AT INTAKE. The W4 plan already refuses an over-cap image at APPLY
 // time with a self-describing placeholder; refusing it HERE as well means the user
 // finds out while they can still pick a smaller file, and the refusal is the chip
 // (design §3.3: name the offender, name the limit, offer the fix) rather than an
+// element that silently draws a grey box.
 
 import (
 	"errors"
@@ -66,9 +97,17 @@ const (
 )
 
 // themeImageExts are the picture files the editor will take in.
+//
+// EXACTLY ElemImage's own list ("imported PNG/WebP/GIF/APNG/AVIF, static or
+// animated" — theme.ElementKind), and nothing else: claiming a format the decode
+// pipeline cannot sniff would trade a wrong action for a wrong promise, which is
+// the same ruling themeFontExts made about .ttc and .woff.
+//
 // NAMED editIntakeImageExts, not themeImageExts: that name is already taken by
 // app.go's per-stem PROBE ORDER (webp → apng → gif → png, AO2-Client's
 // get_image_suffix). Two lists, two questions — "which suffix do we try for a
+// theme's own chrome stem" and "which files will the editor take in" — and giving
+// them one name would be the drift the distinction exists to prevent.
 var editIntakeImageExts = [...]string{".png", ".webp", ".gif", ".apng", ".avif"}
 
 // isThemeImageExt reports whether an already-lowered extension is theme art.
@@ -104,6 +143,22 @@ type editImageJob struct {
 }
 
 // editImageResult is what the goroutine hands back.
+//
+// THE DECODED PAGE RIDES HOME. It was decoded off the render thread to measure it,
+// and throwing it away would mean the picture does not appear until the next whole
+// theme apply — which is the hitch the incremental land path (landThemeMediaPage)
+// exists to avoid. The landing either uploads it or releases it; both arms are
+// covered, because a Decoded that reaches neither is a pooled buffer that never
+// goes back.
+//
+// THE ONE ARM THAT IS NOT COVERED IS AN EDITOR CLOSED MID-FLIGHT, and it is a
+// deliberate non-fix rather than an oversight: pollEditorImage is the only reader
+// and it dies with a.te, so a result that lands after the editor closed reaches the
+// GC as ordinary garbage instead of the decoder pool. That is exactly what
+// releaseDecoded describes as the acceptable outcome for a dropped apply — one
+// frame set, once, on a path a user reaches by closing the editor inside the second
+// it takes to copy a file. Draining it properly means blocking the render thread on
+// a goroutine, which is the trade this codebase refuses everywhere else.
 type editImageResult struct {
 	dec   *assets.Decoded
 	bytes int64  // the DECODED payload, which is what the budget is denominated in
@@ -301,9 +356,18 @@ func (a *App) landEditorImage(job *editImageJob, res editImageResult) {
 // applyImageIntakeOps is the UNDOABLE half of an intake: the [media] declaration
 // and the element that draws it, as ONE op group. Returns "" on success, or the
 // tail of a refusal sentence naming the cap that stopped it.
+//
+// SPLIT OUT OF THE LANDING so a gate can drive the real ops without a decoder, a
+// texture store or a file on disk (TestAnImageIntakeIsOneUndoStep). It is the
+// production path, not a copy of it — landEditorImage calls exactly this — which is
+// what rule 11 means by driving the seam rather than mirroring it.
+//
 // ONE GROUP, so Ctrl+Z takes back the declaration and the element together. A
 // declared image nothing points at still costs the theme's art budget, so an undo
 // that took back only the element would leave the budget bar counting a picture
+// nobody can see. The ring stamps the group onto every op it pushes
+// (themeEditRing.push), so the ops below carry no group field of their own — one
+// writer, no second copy to disagree with it.
 func (a *App) applyImageIntakeOps(row theme.MediaEntry, el theme.Element) string {
 	if a.te == nil || a.te.doc == nil || a.te.doc.side == nil {
 		return "could not be added — the editor closed while it was being read"
@@ -391,7 +455,14 @@ func (a *App) themeMediaKeyFor(id string) string {
 
 // uniqueMediaID derives a [media] id from a file name and makes it unique inside
 // the table.
+//
+// THE FOLD IS themeSanitizeID's, not a second one: that function is already the
+// one spelling of "this string, reduced to the format's id grammar", and a media
+// id and a theme id answer to the same grammar ([a-z0-9_-]{1,24}).
+//
 // A DERIVED name rather than a typed one, for the reason fontFamilyFromFile gives:
+// the alternative at drop time is a modal asking for a string, and the design
+// allows two modals in the whole editor and spends both elsewhere.
 func uniqueMediaID(sc *theme.Sidecar, base string) (string, bool) {
 	stem := strings.TrimSuffix(base, filepath.Ext(base))
 	id := themeSanitizeID(stem)
@@ -445,8 +516,16 @@ func mediaIDTaken(sc *theme.Sidecar, id string) bool {
 }
 
 // newImageElement is the element a fresh intake creates.
+//
+// PLACED, NOT ZEROED. A zero Element is deliberately unable to paint
+// (theme.Element's own note on Opacity), so an intake that appended one would add a
+// row to the rail and nothing to the screen — the "it did not work" shape. It lands
+// visible, at a cascaded offset, at a size derived from the picture's own aspect.
+//
 // BandOverlay, deliberately: it is above everything except the editor's own chrome,
 // so the user SEES what they just added instead of hunting for it behind the stage.
+// Moving it down a band is one inspector row away, and a picture you cannot find is
+// not.
 func newImageElement(id string, dec *assets.Decoded, ordinal int) theme.Element {
 	w, h := placedImageSize(dec.Width, dec.Height)
 	step := (ordinal % editImagePlaceCascade) * editImagePlaceStep

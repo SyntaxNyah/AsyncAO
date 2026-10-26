@@ -7,6 +7,17 @@ package ui
 // floatWin panel, the Extras box + its torn-off widgets, the favourite-emotes
 // box and the Sprite-Style box — and to the THEMED layout editor's design-space
 // drags, WITHOUT rewriting any of the four bespoke drag models.
+//
+// One shared primitive (snapRectToSiblings) wraps alignRect in move-mode and is
+// SDL-type-light so it unit-tests without SDL, exactly like classicalign_test.go.
+// The candidate set is a per-frame-rebuilt, capped App buffer (panelMagnetRects)
+// assembled once at the top of drawFloatingPanels from every OTHER currently-open
+// floating surface; screen edges + centre come free from alignRect's window
+// targets (they overlap snapToEdges' floatSnapPx=12 branches, which stay exactly
+// as they were — the sibling pass is purely additive). Reuses alignSnapPx=6: 6px
+// is already tuned in the classic editor, so a distinct live threshold would be
+// unjustified magic. Always-on, Shift-bypass (matching the editor's KMOD_SHIFT
+// check) — no new pref.
 
 import "github.com/veandco/go-sdl2/sdl"
 
@@ -15,9 +26,13 @@ const (
 	// rule §17.4). Excess candidates past the cap are simply not considered as
 	// magnet targets — a benign degradation, but a silent one, so the cap is sized
 	// to keep real headroom rather than to sit exactly on the live count.
+	//
 	// The fixed surfaces are 19: the 14 table-driven floatWin panels (the three
 	// ex-modals joined them in #31), msgWin, the Extras box, the fav-emote box, the
 	// sprite-style box and the compact toolbox strip. Five torn-off TAB panels take
+	// that to 24 — which is where the cap used to sit, i.e. with nothing left for the
+	// torn-off Extras WIDGETS, of which there can be one per entry in the widget
+	// table. 32 restores a working margin.
 	panelMagnetCap = 32
 )
 
@@ -41,6 +56,11 @@ func snapRectToSiblings(r sdl.Rect, others []sdl.Rect, w, h int32, guides []alig
 // this-frame mouse-grab positions). The buffer is always truncated to length 0
 // first, so a settled frame (nothing dragging) leaves it empty and this does no
 // work beyond the reslice — the alloc gate never sees a populate or a guide draw.
+//
+// Only ONE surface drags at a time (they share one press edge), so skipping the
+// active-drag surface cleanly yields "all other open surfaces". Bounded by
+// panelMagnetCap. Runs only while a live drag is active (anyPanelDragging), off
+// every settled frame.
 func (a *App) rebuildPanelMagnetRects(w, h int32) {
 	a.panelMagnetRects = a.panelMagnetRects[:0]
 	if !a.anyPanelDragging() {
@@ -76,11 +96,11 @@ func (a *App) collectOpenPanelRects(w, h int32) {
 		add(fw.rect(row.defW, row.defH, row.minW, row.minH, w, h))
 	}
 	// msgWin keeps its historical slot + wrappers, so it isn't in the table.
-	if a.msgs.showMessages && !a.wins.msgWin.dragging {
-		add(a.classic.msgPanelRect(&a.env, w, h))
+	if a.showMessages && !a.msgWin.dragging {
+		add(a.msgPanelRect(w, h))
 	}
 	// The bespoke (non-floatWin) boxes share the same shared helper.
-	if a.toolbox.showWidgets && !a.extrasDragging {
+	if a.showWidgets && !a.extrasDragging {
 		add(a.extrasBoxRect(w, h))
 	}
 	for i := range a.extrasDetached {
@@ -89,10 +109,10 @@ func (a *App) collectOpenPanelRects(w, h int32) {
 		}
 		add(a.detachedBoxRect(i, w, h))
 	}
-	if a.d.Prefs.Load().FavEmoteBox && !a.favstyle.favBoxDragging {
+	if a.d.Prefs.Load().FavEmoteBox && !a.favBoxDragging {
 		add(a.favBoxRect(w, h))
 	}
-	if a.favstyle.showStyleBox && !a.favstyle.styleBoxDragging {
+	if a.showStyleBox && !a.styleBoxDragging {
 		sr, _ := a.styleBoxRect(w, h)
 		add(sr)
 	}
@@ -101,12 +121,12 @@ func (a *App) collectOpenPanelRects(w, h int32) {
 	// drawTornTabs' visibility rules: a torn tab that the user ALSO fully hid
 	// (tabHidden) or whose rect degenerated below classicMinPx is not drawn, so it
 	// must not be an invisible magnet target either.
-	if len(a.classic.classicOv) > 0 {
+	if len(a.classicOv) > 0 {
 		for i := range tornTabTable {
-			if a.classic.tabHidden(tornTabTable[i].id) {
+			if a.tabHidden(tornTabTable[i].id) {
 				continue
 			}
-			if r, ok := a.classic.tornTabRect(tornTabTable[i].key, w, h); ok && r.W >= classicMinPx && r.H >= classicMinPx {
+			if r, ok := a.tornTabRect(tornTabTable[i].key, w, h); ok && r.W >= classicMinPx && r.H >= classicMinPx {
 				add(r)
 			}
 		}
@@ -115,7 +135,7 @@ func (a *App) collectOpenPanelRects(w, h int32) {
 	// absent from the census before): panels can now snap flush to it. It's never the
 	// surface dragged in this file, and it's always present in normal play unless the
 	// user hid it (panelToolbox).
-	if !a.classic.panelHidden(panelToolbox) {
+	if !a.panelHidden(panelToolbox) {
 		add(a.compactToolboxStripRect(w, h))
 	}
 }
@@ -236,24 +256,26 @@ func (a *App) panelDeOverlapCensus(exclude sdl.Rect, w, h int32) []sdl.Rect {
 // leaves the census populated but fires no snapToSiblings call, which is harmless.
 func (a *App) anyPanelDragging() bool {
 	return a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing ||
-		a.favstyle.favBoxDragging || a.favstyle.styleBoxDragging || a.favstyle.styleBoxResizing ||
-		a.wins.pairWin.dragging || a.wins.pairWin.resizing || a.wins.modWin.dragging || a.wins.modWin.resizing ||
-		a.wins.cmWin.dragging || a.wins.cmWin.resizing || a.wins.evidWin.dragging || a.wins.evidWin.resizing ||
-		a.wins.modcallWin.dragging || a.wins.modcallWin.resizing || a.wins.msgWin.dragging || a.wins.msgWin.resizing ||
-		a.wins.voiceWin.dragging || a.wins.voiceWin.resizing || a.wins.banWin.dragging || a.wins.banWin.resizing ||
-		a.wins.debugWin.dragging || a.wins.debugWin.resizing || a.wins.hkWin.dragging || a.wins.hkWin.resizing ||
-		a.wins.timerWin.dragging || a.wins.timerWin.resizing || a.wins.loginWin.dragging || a.wins.loginWin.resizing ||
-		a.wins.pairPopWin.dragging || a.wins.pairPopWin.resizing ||
-		a.wins.clientWin.dragging || a.wins.clientWin.resizing || a.client.clientPanning
+		a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
+		a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing ||
+		a.cmWin.dragging || a.cmWin.resizing || a.evidWin.dragging || a.evidWin.resizing ||
+		a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||
+		a.voiceWin.dragging || a.voiceWin.resizing || a.banWin.dragging || a.banWin.resizing ||
+		a.debugWin.dragging || a.debugWin.resizing || a.hkWin.dragging || a.hkWin.resizing ||
+		a.timerWin.dragging || a.timerWin.resizing || a.loginWin.dragging || a.loginWin.resizing ||
+		a.pairPopWin.dragging || a.pairPopWin.resizing ||
+		a.clientWin.dragging || a.clientWin.resizing || a.clientPanning
 }
 
 // magnetBypassed reports whether the live piece-to-piece magnet is suppressed
 // this frame: Shift held (the editor's precise-placement modifier). Screen-edge
 // snapping (snapToEdges) is NOT bypassed — that is the pre-existing #21 behaviour
 // and stays independent, so Shift only turns off the new sibling magnet.
+//
 // The layoutedit.go grid gate (`layoutSnap && !magnetBypassed()`) reads THIS
 // (Shift-only) form deliberately: the persistent "Magnet: off" chip must not
 // disable grid snapping, only sibling snapping — so the chip is folded into
+// siblingMagnetOff below, NOT into magnetBypassed.
 func magnetBypassed() bool {
 	return sdl.GetModState()&sdl.KMOD_SHIFT != 0
 }

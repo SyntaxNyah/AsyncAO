@@ -3,9 +3,27 @@ package ui
 // The IC bar's ONE-SHOT ARMS — realization and screenshake. They ride the NEXT
 // message and clear when it is built (courtroom.cpp:2327-2329), which is why they
 // are toggles rather than fire buttons.
+//
 // This file exists because the realization toggle is NOT just a boolean, and
 // treating it as one is exactly why "the Realization button does nothing" was
 // reported. AO2's Courtroom::on_realization_clicked (courtroom.cpp:6158-6179)
+// does FOUR things on arm:
+//
+//	:6162       realization_state = 1                      — the wire flag
+//	:6163-6166  effects_dropdown_find_and_set("realization")
+//	            + on_effects_dropdown_changed(...)         — THE VISIBLE HALF
+//	:6168       ui_realization->setImage("realization_pressed")
+//	:6178       focus_ic_input()
+//
+// and on disarm zeroes the flag, puts the effects dropdown back to index 0 and
+// restores the art (:6172-6175).
+//
+// AsyncAO shipped only the first of those. The flag went out on the wire, but the
+// thing a viewer actually SEES — the white flash overlay — is driven by the
+// effects field, which the button never touched, so on any modern server the
+// button looked inert. The effects-dropdown rework is what moved that half out
+// from under it; this puts it back, at the one place both call sites share.
+//
 // Render thread; no allocation beyond the effects-choice slice the picker already
 // caches.
 
@@ -24,11 +42,11 @@ import (
 // two states have to be exact inverses of each other or the arm/disarm pair stops
 // round-tripping, which is a worse bug than the one it would paper over.
 func (a *App) toggleRealization() {
-	a.compose.icRealize = !a.compose.icRealize
-	if a.compose.icRealize {
+	a.icRealize = !a.icRealize
+	if a.icRealize {
 		a.selectOverlayEffectByName(courtroomRealizationEffectName)
 	} else {
-		a.emotepick.overlayChoiceIdx = 0
+		a.overlayChoiceIdx = 0
 	}
 	a.bounceFocusToIC() // :6178 focus_ic_input
 }
@@ -36,15 +54,27 @@ func (a *App) toggleRealization() {
 // toggleShout is on_hold_it_clicked / on_objection_clicked /
 // on_take_that_clicked / on_custom_objection_clicked (courtroom.cpp:6048-6127),
 // which are four transcriptions of ONE handler:
+//
+//	if (objection_state == N) { restore this button's art; objection_state = 0 }
+//	else                      { restore the OTHER three; select this one;
+//	                            objection_state = N }
+//	focus_ic_input()
+//
+// A shout BUTTON DOES NOT SEND. It arms; the interjection rides the next
+// message's MS objection field, which is built from objection_state at
 // courtroom.cpp:2136-2147 and cleared at :2327. AsyncAO's three shout buttons
+// (and the four shout hotkeys) called sendIC(mod) instead, so a click fired the
+// interjection immediately — on an EMPTY line, because sendIC's blankpost guard
+// deliberately lets `shout != 0` through with no text.
+//
 // The "reset the other three" arms need no code here: one int cannot hold two
 // states, which is the same reason canon's four handlers are equivalent to a
 // single assignment.
 func (a *App) toggleShout(mod int) {
-	if a.compose.icShout == mod {
-		a.compose.icShout = 0 // clicking the armed shout disarms it (:6050-6054)
+	if a.icShout == mod {
+		a.icShout = 0 // clicking the armed shout disarms it (:6050-6054)
 	} else {
-		a.compose.icShout = mod
+		a.icShout = mod
 	}
 	a.bounceFocusToIC() // :6065 / :6085 / :6105 / :6125 focus_ic_input
 }
@@ -54,7 +84,7 @@ func (a *App) toggleShout(mod int) {
 // motion the receiver derives from the wire flag alone — so this really is just
 // the boolean, plus the same focus bounce its sibling does.
 func (a *App) toggleScreenshake() {
-	a.compose.icShake = !a.compose.icShake
+	a.icShake = !a.icShake
 	a.bounceFocusToIC()
 }
 
@@ -92,13 +122,16 @@ func (a *App) drawArmedOverlay(r sdl.Rect, armed bool) {
 // leave it alone when the character's effects pack has no such row — AO2 checks
 // the bool for exactly that reason, and a theme/pack without a realization effect
 // must still be able to arm the wire flag.
+//
 // Case-insensitive where AO2 compares exactly. Deliberate, and it follows the
 // precedent already in this codebase: effectspicker.go's own realization
 // special-case (:577) uses EqualFold because effects.ini capitalisation varies in
+// the wild, and one comparison in the pair being stricter than the other would
+// mean the button armed a row the sound lookup then failed to recognise.
 func (a *App) selectOverlayEffectByName(name string) {
 	for i, choice := range a.overlayChoices() {
 		if strings.EqualFold(strings.TrimSpace(choice), name) {
-			a.emotepick.overlayChoiceIdx = i
+			a.overlayChoiceIdx = i
 			return
 		}
 	}

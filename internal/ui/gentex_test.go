@@ -1,6 +1,7 @@
 package ui
 
 // Gates for the procedural generators (v1.90.0 W4 — design §6.3).
+//
 // The generator contract has four clauses and three of them are only checkable by a
 // test: purity is invisible until two runs disagree, the tile cap is invisible until
 // a theme eats the media budget with one element, and resize-invariance is invisible
@@ -46,6 +47,7 @@ func genExerciseParams(name string) theme.GeneratorSpec {
 
 // TestEveryGeneratorKindRasterizes is the totality gate: every registry name
 // produces a tile, and a name outside it produces nothing rather than a panic.
+//
 // Totality matters here for the same reason it matters for the element painter
 // table — the name comes out of a file a stranger wrote, so "we never tested that
 // one" is the same as "that one crashes on somebody else's machine".
@@ -98,10 +100,17 @@ func TestEveryGeneratorKindRasterizes(t *testing.T) {
 
 // TestOneRegistryProbeAnswersKnownSizedAndRastered pins the ledger's L23: the three
 // public entry points must agree about a name, whatever its case.
+//
 // They did not. GeneratorKnown and GenTileSize normalised the wire name while
+// RasterGenerator indexed the registry RAW, so a spec named "Scanlines" was known,
+// sized, planned, and booked one of the twelve ThemeGenCap slots — then rasterised
+// nil. The element drew blank with nothing anywhere to say why, and the whole
+// admission arm above it had spent a slot on it.
+//
 // Latent only because theme.GeneratorSpecOf (which lower-cases) is today's sole spec
 // producer, which is precisely why no existing gate could see it: not one test in the
 // tree builds a mixed-case spec, and no theme in the shipped corpus spells one.
+// W7's editor picker is the second producer.
 func TestOneRegistryProbeAnswersKnownSizedAndRastered(t *testing.T) {
 	for _, name := range GeneratorNames() {
 		// The name as a HAND-WRITTEN spec might spell it, bypassing NormalizeGenName —
@@ -131,6 +140,7 @@ func TestOneRegistryProbeAnswersKnownSizedAndRastered(t *testing.T) {
 
 // TestEveryGeneratorIsDeterministic is clause 1, and it is the one that makes the
 // content-addressed cache key VALID.
+//
 // The key is the hash of the params. If the same params could produce two different
 // rasters, the cache would serve whichever one happened to land first — so the tile
 // a theme gets would depend on which element the apply reached first, which is not a
@@ -169,6 +179,7 @@ func TestEveryGeneratorIsDeterministic(t *testing.T) {
 }
 
 // TestGeneratorTileNeverExceedsMaxPx is clause 2 — the affordability decision.
+//
 // It is driven with HOSTILE parameters, because the cap has to hold against a file a
 // stranger wrote: a generator whose tile size is a function of `pitch` would, without
 // the shared clamp, turn `pitch = 100000` into a 40 GB allocation on the theme-apply
@@ -222,6 +233,7 @@ func TestGeneratorTileNeverExceedsMaxPx(t *testing.T) {
 }
 
 // TestGeneratorKeyIsResizeInvariant pins the property that makes a window drag free.
+//
 // The tile carries no width, no height and no theme in its key, so the SAME
 // generator at any canvas size is the same cache entry: nothing re-rasters, nothing
 // re-pins, nothing re-uploads. The element stretches or repeats it. A key that
@@ -268,9 +280,12 @@ func TestGeneratorKeyIsResizeInvariant(t *testing.T) {
 // assertGenParamsAllResolve is the whole rule, applied to one element list:
 // every `gen_params` key must resolve to a slot, and no two keys in one element
 // may land on the same one.
+//
 // It is a function taking a corpus because there are TWO of them, and the second
 // one arrived with the gate pointed at the first. An unrecognised key is ignored
 // with no note anywhere ("a generator ignores what it does not use"), and aliases
+// like `pitch`/`dot` or `pct`/`fade` share a slot under a later-wins rule, so a
+// dead parameter is invisible from every direction except this one.
 func assertGenParamsAllResolve(t *testing.T, where string, elements []theme.Element) int {
 	t.Helper()
 	checked := 0
@@ -307,6 +322,7 @@ func assertGenParamsAllResolve(t *testing.T, where string, elements []theme.Elem
 // genInkedPixels counts the pixels a tile actually paints. Coverage rather than a
 // pixel-by-pixel expectation: what these knobs claim is "more ink" or "less ink",
 // and a hand-written bitmap would pin the anti-aliasing instead of the parameter.
+//
 // EVERY FIXTURE BELOW USES A TRANSPARENT `bg`, and that is not cosmetic: a tile
 // with an opaque background inks every pixel it has, so this counter reads the
 // tile SIZE and no parameter can move it. Both of the first two arms passed
@@ -332,6 +348,11 @@ func genInkedPixels(t *testing.T, g theme.GeneratorSpec) int {
 // half a fix, because a key that resolves to a slot NO RASTER READS is dead in
 // exactly the same way and looks identical from
 // TestEveryShippedGenParamResolvesToASlot.
+//
+// So each one is driven to two values and the tile has to differ. That is also
+// what makes the halftone default claim checkable: the knob's default is stated
+// to be the constant the raster used before it existed, so an element that says
+// nothing must rasterise byte-identically.
 func TestTheThreeReWiredGenParamsActuallyChangeTheirTile(t *testing.T) {
 	// wingmark `full`: 0 is a thin gull arc, 100 two full lobes. umineko's `gulls`
 	// asked for 0 and got the default, so it was drawing butterflies.
@@ -377,6 +398,13 @@ func TestTheThreeReWiredGenParamsActuallyChangeTheirTile(t *testing.T) {
 
 // TestFrameGapOpensTheMiddleOfEachEdge pins the axis the bezel's barrel and the
 // frame's gap both measure, and it is here because that axis was SWAPPED.
+//
+// `gap` is "percent of each edge left open", and it measured the distance from
+// the tile centre PERPENDICULAR to the nearest edge — which is ~1 everywhere
+// inside the band, so nothing ever opened: gap = 25 and gap = 50 painted the
+// whole band, and mode 0's "corner brackets" drew a continuous box. Four shipped
+// preset elements write `gap = 22` (all in terminal.ini).
+//
 // The orientation is pinned by two PIXELS rather than by a count, because a
 // count is what let the swap through: a tile can ink the right number of pixels
 // in the wrong places.
@@ -417,6 +445,16 @@ func TestFrameGapOpensTheMiddleOfEachEdge(t *testing.T) {
 
 // TestEveryShippedGenParamResolvesToASlot is the same rule over the OTHER shipped
 // corpus — the embedded preset fragments — and it is the gate that was missing.
+//
+// The rule was already written and already enforced; it was pointed at
+// `themes/`, and W9 shipped a second body of generator data that nothing checked.
+// The census the day it was written: 13 keys in no slot (`bow`, `full`, `glow`,
+// `ratio`, `rough`, `width`, `rgb`) and 8 collisions where the EARLIER value was
+// the dead one (`pitch` under `dot` on seven halftones, `pct` under `fade` on the
+// one element the file calls THE preset for ruling R6 — so the perspective it
+// documents at 100 was rendering at 45). Twenty-one parameters, five presets,
+// none of them visible from anywhere: an unknown key is dropped in silence and an
+// aliased one is overwritten in silence.
 func TestEveryShippedGenParamResolvesToASlot(t *testing.T) {
 	lib, err := theme.ShippedPresets()
 	if err != nil {
@@ -436,6 +474,7 @@ func TestEveryShippedGenParamResolvesToASlot(t *testing.T) {
 
 // TestCheckerdiscCornersAreTransparent pins the ADOPTED CLAUSE from the preset
 // workflow's escalation ESC-2.
+//
 // `bg` is the dark checker CELL; the tile outside the disc is transparent by
 // construction. One consumer draws its medallion over a near-black void and cannot
 // tell the difference; the other draws it over a gold floor, where an opaque

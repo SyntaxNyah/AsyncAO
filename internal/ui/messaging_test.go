@@ -17,12 +17,12 @@ func TestRouteIncomingPM(t *testing.T) {
 		t.Fatalf("config.New: %v", err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{env: env{d: Deps{Prefs: prefs}}}
-	a.srvMeta.serverKey = "s"
+	a := &App{d: Deps{Prefs: prefs}}
+	a.serverKey = "s"
 
 	body := "hey there" + courtroom.WireMessage{Kind: courtroom.MsgDM}.EncodeMarker()
 	a.routeIncomingPM(0, "Phoenix", body)
-	got := a.compose.pmThreads["phoenix"]
+	got := a.pmThreads["phoenix"]
 	if len(got) != 1 || got[0].fromMe || got[0].text != "hey there" {
 		t.Errorf("routeIncomingPM recorded wrong: %+v", got)
 	}

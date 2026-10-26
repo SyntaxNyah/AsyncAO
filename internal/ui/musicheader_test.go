@@ -14,6 +14,7 @@ import (
 // since Ctx.Button ends in `hover && c.clicked` with no click consumption, ONE
 // click fired BOTH: expanding the categories also stopped the music. With only the
 // plate external, the search TextField landed on the button instead.
+//
 // These drive the REAL planner across the whole flag matrix, so the property the
 // bug violated is the thing asserted.
 
@@ -174,6 +175,13 @@ func TestMusicMenuCoversEveryDebloatedControl(t *testing.T) {
 // ⋮ control, and it is the half TestMusicMenuCoversEveryDebloatedControl cannot
 // see: that one proves every function HAS a row, this one proves the rows can be
 // reached at all.
+//
+// musicIconButton reports `hover && c.clicked` and consumes nothing (Ctx.Button
+// is the same), while drawMusicMenu runs its click-away test LATER IN THE SAME
+// FRAME. The panel hangs off the button's bottom edge, so the cursor that just
+// pressed the button sits ABOVE panel.Y — outside it. An unconsumed press
+// therefore closed the menu on the frame it opened and the ⋮ read as inert.
+// Only driving both halves of one frame catches that.
 func TestMusicKebabSurvivesItsOwnOpeningClick(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
@@ -207,7 +215,7 @@ func TestMusicKebabSurvivesItsOwnOpeningClick(t *testing.T) {
 		return a
 	}
 
-	if a := frame(func(a *App, at sdl.Point) { a.openMusicMenuFromButton(at, false) }); !a.roster.musicMenuOpen {
+	if a := frame(func(a *App, at sdl.Point) { a.openMusicMenuFromButton(at, false) }); !a.musicMenuOpen {
 		t.Error("the ⋮ menu closed on the frame it opened — every row it hosts (volume " +
 			"view, the four MC playback flags, stop, random) is then reachable only by " +
 			"right-clicking the track list")
@@ -216,7 +224,7 @@ func TestMusicKebabSurvivesItsOwnOpeningClick(t *testing.T) {
 	// the assertion above is load-bearing rather than vacuously true. If this one
 	// goes red, the click-away rule changed — re-derive whether the consumption is
 	// still what keeps the button alive.
-	if a := frame(func(a *App, at sdl.Point) { a.openMusicMenu(at, false) }); a.roster.musicMenuOpen {
+	if a := frame(func(a *App, at sdl.Point) { a.openMusicMenu(at, false) }); a.musicMenuOpen {
 		t.Error("an unconsumed opening click no longer closes the menu, so this test can " +
 			"no longer prove openMusicMenuFromButton's consumption is what fixes the ⋮")
 	}

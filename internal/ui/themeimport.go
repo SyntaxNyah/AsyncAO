@@ -1,11 +1,39 @@
 package ui
 
 // IMPORTING A THEME BUNDLE (v1.90.0 W8) — docs/wip/THEME-EDITOR-DESIGN.md §Q4/§Q6.
+//
+// ONE concern: turning a dropped .aotheme into an applied theme, with the user
+// told what is inside it BEFORE a byte is written.
+//
+// WHAT W2 PARKED AND THIS LANDS. W2 fixed the half that was actively wrong — a
+// dropped bundle used to fall through the Settings screen's default arm and
+// silently repoint the user's THEME ROOT at their Downloads folder — and left the
+// extraction for the wave that could do it safely, with a note telling the user to
+// unzip by hand. themes/README.md made the same promise ("one-step bundle import
+// arrives with the theme editor"). This is that step.
+//
+// CONSENT WITHOUT A SHEET, AND WHY. The design specifies a consent panel rendered
+// before extraction. A drop can land on ANY screen — lobby, courtroom, settings,
+// the editor — so a panel would need a draw site on every one of them, and the
+// editor's own budget of exactly two modals is already spent (design §3.1). The
+// consent is therefore a TWO-DROP confirmation on the client's existing warn
+// line, which is the same press-again-to-confirm idiom requestEditorExit already
+// uses in this feature:
+//
+//	drop  → Inspect (central directory ONLY; nothing is written, nothing is
+//	        decompressed but the sidecar) → a line naming the theme, the file
+//	        count, both sizes, the fonts and every licence warning
+//	drop again inside themeImportConsentWindow → Extract → apply
+//
 // The user learns exactly what the design's sheet would have told them, at the
 // moment the sheet would have told them, and the confirming act is deliberate.
+// The one thing it gives up is a Cancel BUTTON — cancelling is walking away, and
+// the window expires on its own.
+//
 // SINGLE-FLIGHT AND OFF-THREAD (hard rules 2 and 4). Both stages are disk work on
 // a goroutine; the job pointer IS the flag, so exactly one bundle can be in
 // flight; the result channel is buffered so the goroutine never blocks on an app
+// that moved on.
 
 import (
 	"path/filepath"
@@ -35,6 +63,10 @@ const (
 	// themeBundleConsentLine below — call to action second, detail last — is
 	// correct precisely because clampLine's bound, not this file's, is the one that
 	// decides what falls off the end.)
+	//
+	// themeImportFontsNamed bounds how many fonts the summary names before it
+	// switches to a count. Two is what fits beside everything else the line has
+	// to say, and the export sheet names them all.
 	themeImportFontsNamed = 2
 	// bytesPerMiB / bytesPerKiB are the divisors behind every size in this file.
 	bytesPerMiB = 1 << 20
@@ -130,7 +162,7 @@ type themeImportRowText struct {
 // the row offering to import a bundle whose consent had lapsed — a button that
 // promises something the funnel would refuse.
 func (a *App) themeImportRow() themeImportRowText {
-	ti := &a.skin.themeImp
+	ti := &a.themeImp
 	armed := ""
 	if ti.armedPath != "" && ti.armedFor(ti.armedPath) {
 		armed = ti.armedPath
@@ -170,7 +202,7 @@ func buildThemeImportRow(armed string, busy bool) themeImportRowText {
 // decides what a bundle does, and the browse and drag paths cannot drift apart
 // about consent, caps or where the theme lands.
 func (a *App) themeImportRowAction() {
-	if p := a.skin.themeImp.armedPath; p != "" && a.skin.themeImp.armedFor(p) {
+	if p := a.themeImp.armedPath; p != "" && a.themeImp.armedFor(p) {
 		a.handleThemeBundleDrop(p)
 		return
 	}
@@ -183,9 +215,13 @@ func (a *App) themeImportRowAction() {
 
 // handleThemeBundleDrop is HandleFileDrop's .aotheme arm (dropclaim.go names it
 // the single owner). It is the only way a bundle enters the client.
+//
 // It is TWO functions, and the split is a seam rather than a style choice: "where
 // may I write themes?" is a question about portability and preferences that only
 // internal/config can answer, and a gate that had to answer it would either write
+// into the developer's real AppData or re-implement the policy. So the resolution
+// lives here, in one line, and every decision the import makes lives in
+// bundleDrop, which takes the root as an argument.
 func (a *App) handleThemeBundleDrop(path string) {
 	a.bundleDrop(path, config.UserThemesDir())
 }
@@ -193,8 +229,8 @@ func (a *App) handleThemeBundleDrop(path string) {
 // bundleDrop is the whole of what a dropped bundle does, against a write root the
 // caller resolved.
 func (a *App) bundleDrop(path, root string) {
-	if a.skin.themeImp.job != nil {
-		a.warnBundle("A theme bundle is already being " + a.skin.themeImp.job.stageWord() + " — let it finish first.")
+	if a.themeImp.job != nil {
+		a.warnBundle("A theme bundle is already being " + a.themeImp.job.stageWord() + " — let it finish first.")
 		return
 	}
 	if root == "" {
@@ -204,9 +240,9 @@ func (a *App) bundleDrop(path, root string) {
 		return
 	}
 	stage := themeImportInspect
-	if a.skin.themeImp.armedFor(path) {
+	if a.themeImp.armedFor(path) {
 		stage = themeImportExtract
-		a.skin.themeImp.armedPath = "" // consent is spent by the act it authorises
+		a.themeImp.armedPath = "" // consent is spent by the act it authorises
 	}
 	a.startThemeBundleJob(stage, path, root)
 }
@@ -218,7 +254,7 @@ func (a *App) bundleDrop(path, root string) {
 // the same discipline requestThemeCatalog uses for the custom root.
 func (a *App) startThemeBundleJob(stage themeImportStage, path, root string) {
 	job := &themeBundleJob{stage: stage, path: path, done: make(chan themeBundleResult, 1)}
-	a.skin.themeImp.job = job
+	a.themeImp.job = job
 	go func() {
 		var m *themepack.Manifest
 		var err error
@@ -252,11 +288,11 @@ func (j *themeBundleJob) stageWord() string {
 // beside pollThemeApply and for the same reason: a result that arrives between
 // frames must not touch UI state from another goroutine.
 func (a *App) pollThemeBundle() {
-	if a.skin.themeImp.job == nil {
+	if a.themeImp.job == nil {
 		return
 	}
 	select {
-	case res := <-a.skin.themeImp.job.done:
+	case res := <-a.themeImp.job.done:
 		a.landThemeBundle(res)
 	default:
 	}
@@ -265,8 +301,8 @@ func (a *App) pollThemeBundle() {
 // landThemeBundle is the ONE place a finished stage changes app state, so the
 // polled path and any awaited one cannot drift.
 func (a *App) landThemeBundle(res themeBundleResult) {
-	job := a.skin.themeImp.job
-	a.skin.themeImp.job = nil
+	job := a.themeImp.job
+	a.themeImp.job = nil
 	if res.err != nil {
 		// EVERY REFUSAL SAYS WHY. themepack's errors already name the cap, the
 		// number and the offending entry; the file name is prefixed so a user with
@@ -275,8 +311,8 @@ func (a *App) landThemeBundle(res themeBundleResult) {
 		return
 	}
 	if job.stage == themeImportInspect {
-		a.skin.themeImp.armedPath = job.path
-		a.skin.themeImp.armedAt = time.Now()
+		a.themeImp.armedPath = job.path
+		a.themeImp.armedAt = time.Now()
 		a.warnBundle(themeBundleConsentLine(res.manifest, filepath.Base(job.path)))
 		return
 	}

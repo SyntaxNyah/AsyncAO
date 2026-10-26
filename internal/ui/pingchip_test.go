@@ -39,10 +39,10 @@ func TestUpdatePingLoopOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{env: env{d: Deps{Prefs: prefs}}} // chip off (default), no conn
+	a := &App{d: Deps{Prefs: prefs}} // chip off (default), no conn
 
 	a.updatePingLoop()
-	if a.conn.lobby.pingConn != nil || a.conn.lobby.pingCancel != nil {
+	if a.pingConn != nil || a.pingCancel != nil {
 		t.Fatal("chip off started a ping loop")
 	}
 	// Even with the chip ON, no connection means no loop.
@@ -57,7 +57,7 @@ func TestUpdatePingLoopOff(t *testing.T) {
 
 	})
 	a.updatePingLoop()
-	if a.conn.lobby.pingConn != nil {
+	if a.pingConn != nil {
 		t.Error("chip on with no connection started a ping loop")
 	}
 }

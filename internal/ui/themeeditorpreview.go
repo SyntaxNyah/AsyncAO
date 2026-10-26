@@ -1,9 +1,51 @@
 package ui
 
 // THE THEME EDITOR'S PREVIEW — the canned offline demo (v1.90.0, field batch 9).
+//
+// ONE CONCERN: the editor's PREVIEW VIEW STATE. Entering it, driving it, drawing
+// it, leaving it. The document it previews lives in themeeditordoc.go, the screen
+// around it in themeeditor.go; nothing here mutates a theme.
+//
+// WHY A VIEW STATE AND NOT A TOGGLE. The editor already has a Live/Frozen toggle
+// (themeEditor.livePaused), and it is a FREEZE SWITCH for canvas re-baking — its
+// whole value is that the off state does LESS work (editorLiveOn's own note). A
+// demo player is the opposite thing: it does MORE work, it owns the whole screen,
+// and it has to be leavable with Esc. Folding a player into a freeze switch would
+// give one control two meanings and leave "frozen" ambiguous between "stop
+// re-baking" and "stop the demo". So the toggle is untouched and Preview is a
+// distinct state, the pointer IS the flag (the shape `gallery` and `report`
+// already use), and a session that never presses it pays one nil pointer.
+//
+// WHAT IT PLAYS, AND WHY THAT IS THE REAL THING. The demo is not a mock renderer.
+// It builds its OWN offline courtroom through App.newRoom — the one sanctioned
+// construction site (newroom.go) — feeds it synthetic courtroom.Event values, and
+// then draws the REAL drawCourtroom pass over it with the demo session temporarily
+// installed in the App's embedded slots. That is renderFullClientTexture's own
+// pattern (app.go), for the same reason: the kit is single-instance and the
+// courtroom reads a.room / a.sess / a.icLog through promoted fields, so the only
+// honest way to render a second session is to be that session for the duration and
+// put everything back. What the author sees is therefore the real typewriter, the
+// real chatbox painter, the real blip cadence, the real showname plate, the real
+// music marquee and the real IC log — with their real theme applied.
+//
+// FULLY OFFLINE, BY TWO INDEPENDENT MEANS. First, the scene carries no fetchable
+// content: no character, no background, no desk art, no music playback, and a nil
+// audio sink (NewCourtroom substitutes NopAudio). Second — because
+// courtroom.stageMessage's prefetch fan-out is unconditional and URLBuilder always
+// mints a URL — the demo brackets the manager's own single structural egress point
+// (assets.Manager.SetOffline, netFetch's gate, the same one rehearsal mode uses)
+// for exactly the demo's lifetime, saving and restoring whatever it found. The
+// live courtroom is not drawing while the demo is up, so nothing else is demanding
+// assets, and TestEditorPreviewProbesNothing counts source-level probes at zero
+// across a driven demo.
+//
 // THE CHARACTER IS PROCEDURAL. A demo that shipped bundled sprite art would be a
 // licence problem and a byte problem both; a demo with an empty stage would not
 // show an author where their chatbox sits relative to a body. So the stage draws a
+// silhouette out of rectangles, beside drawStageEgg in the one place both the
+// classic and the themed courtroom render the viewport (vpzoom.go) — which is how
+// it gets the stage rect for free in both layouts.
+//
 // Render thread only, like every other App method here.
 
 import (
@@ -71,9 +113,11 @@ const (
 	// (marqueeScrolls, AO2's scrollEnabled), so a short title would show the
 	// author a marquee that never moves. This one is wider than the stock 224 px
 	// music_name at every sane face size.
+	//
 	// IT CARRIES ITS EXTENSION because AO music track names do: a name with no
 	// audio extension is an AREA TRANSFER on the unified music/area list, not a
 	// song (isAreaTransfer, courtroom.go:830), and the room would drop it. The
+	// banner strips it again for display (MusicDisplayName).
 	editorPreviewTrack = "Pursuit ~ Cornered (Theme Preview Extended Orchestral Arrangement).opus"
 
 	// editorPreviewRest is how long a settled message rests before the demo plays
@@ -184,17 +228,21 @@ func (a *App) enterEditorPreview() {
 	// OFFLINE session (session.go) and it is exactly the right shape here: phase
 	// Ready, no transport, an empty character list, a send func that discards.
 	// Origin "" so nothing it mints can name a real host.
-	p.state.link.sess = courtroom.NewRehearsalSession("", nil)
-	p.state.srvMeta.rehearsal = true
-	p.state.link.urls = courtroom.NewURLBuilder("")
-	p.state.srvMeta.serverName = editorPreviewShowname
+	p.state.sess = courtroom.NewRehearsalSession("", nil)
+	p.state.rehearsal = true
+	p.state.urls = courtroom.NewURLBuilder("")
+	p.state.serverName = editorPreviewShowname
 	// Construction IS wiring (newroom.go): the demo speaker blips, skins and flashes
 	// exactly like a live one, and the room starts under the AUTHOR'S OWN viewing
 	// preferences — which is the whole point. This is a VIEWING room, not an
 	// authoring one: a theme is judged as a player will see it, so reduce-motion and
 	// the effect gates must reach it (requirement 6 is that ReduceMotion freezes the
 	// demo, not that the demo overrides it).
-	p.state.link.room = a.newRoom(p.state.link.urls, nil, nil)
+	//
+	// A NIL AUDIO SINK: NewCourtroom substitutes NopAudio, so the blip CADENCE
+	// (Typewriter.tickBlip) runs exactly as it does live while nothing resolves a
+	// sound over the wire. An offline demo cannot make noise; it can keep time.
+	p.state.room = a.newRoom(p.state.urls, nil, nil)
 	a.te.preview = p
 
 	// The scrollback and the first beats go through the REAL append and the REAL
@@ -232,13 +280,13 @@ func (a *App) exitEditorPreview() {
 	// against a 256 MiB budget. clearSplit does exactly this for the pinned tab's
 	// parked state and for exactly this reason; the swap was copied from there, and
 	// the release belongs with it.
-	if p.state.raster.msRaster != nil {
-		p.state.raster.msRaster.Destroy()
-		p.state.raster.msRaster = nil
+	if p.state.msRaster != nil {
+		p.state.msRaster.Destroy()
+		p.state.msRaster = nil
 	}
-	if p.state.raster.glyphCache != nil {
-		p.state.raster.glyphCache.Purge() // the white-glyph textures the effects path uploads
-		p.state.raster.glyphCache = nil
+	if p.state.glyphCache != nil {
+		p.state.glyphCache.Purge() // the white-glyph textures the effects path uploads
+		p.state.glyphCache = nil
 	}
 	a.te.sel, a.te.selN = p.sel, p.selN
 	a.te.preview = nil
@@ -247,9 +295,9 @@ func (a *App) exitEditorPreview() {
 	// viewport still pointed at a room nobody holds delivers a preanim-done to a
 	// dead scene.
 	if a.d.Viewport != nil {
-		if a.link.room != nil {
-			a.d.Viewport.OnPreanimDone = a.link.room.NotifyPreanimDone
-			a.d.Viewport.OnFrameShown = a.link.room.NotifyFrameShown
+		if a.room != nil {
+			a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
+			a.d.Viewport.OnFrameShown = a.room.NotifyFrameShown
 		} else {
 			a.d.Viewport.OnPreanimDone = nil
 			a.d.Viewport.OnFrameShown = nil
@@ -276,7 +324,7 @@ func (a *App) bindViewportToPreview() {
 	if a.d.Viewport == nil || !a.editorPreviewOn() {
 		return
 	}
-	room := a.te.preview.state.link.room
+	room := a.te.preview.state.room
 	a.d.Viewport.OnPreanimDone = room.NotifyPreanimDone
 	a.d.Viewport.OnFrameShown = room.NotifyFrameShown // #17: frame effects follow the demo's sprite
 }
@@ -295,7 +343,7 @@ func (a *App) startEditorPreviewBeat() {
 	if !a.editorPreviewOn() {
 		return
 	}
-	room := a.te.preview.state.link.room
+	room := a.te.preview.state.room
 	room.HandleEvent(courtroom.Event{Kind: courtroom.EventMusic, Text: editorPreviewTrack, Int: -1})
 	a.replayEditorPreviewLine()
 }
@@ -308,7 +356,7 @@ func (a *App) replayEditorPreviewLine() {
 		return
 	}
 	a.te.preview.rest = editorPreviewRest
-	a.te.preview.state.link.room.HandleEvent(courtroom.Event{
+	a.te.preview.state.room.HandleEvent(courtroom.Event{
 		Kind: courtroom.EventMessage,
 		Message: &protocol.ChatMessage{
 			CharName: editorPreviewChar,
@@ -324,15 +372,26 @@ func (a *App) replayEditorPreviewLine() {
 // driveEditorPreview advances the demo one frame. Called from App.Frame's scene
 // switch, beside driveMakerPreview and for the same reason: the shared viewport
 // must track the room that is on screen, not the live one behind it.
+//
+// REDUCE MOTION FREEZES IT. Not "plays it slower" — the whole point of the setting
+// is that nothing moves on its own, and this is a self-driven animation the user
+// did not ask for. The frozen frame still shows the staged message, the filled
+// plate and the banner, so the theme is still previewable; it simply holds still.
+// reduceMotionNow is the app's ONE spelling of that answer (themeclock.go), which
+// is what keeps the demo frozen by the same switch the themed chrome freezes on.
+//
 // IT RIDES THE PACING CENSUS. While it animates it calls NoteAnimating every
 // frame, exactly like the marquee and the theme clock, so FramePace holds the
 // active cap and the crawl is smooth on a screen the pacer otherwise parks
+// (expScreenSkippable returns true for the editor). The census is RETROSPECTIVE
+// and self-clearing, so leaving the demo releases it with no second call — which
+// is precisely what TestEditorPreviewReleasesThePacingCensusOnExit pins.
 func (a *App) driveEditorPreview(dt time.Duration) {
 	if !a.editorPreviewOn() {
 		return
 	}
 	p := a.te.preview
-	room := p.state.link.room
+	room := p.state.room
 	if a.reduceMotionNow() {
 		return // frozen: no clock, no loop, no census
 	}
@@ -378,6 +437,22 @@ type editorPreviewSaved struct {
 // beginEditorPreviewPass installs the demo session in the App's embedded slots and
 // neutralizes input. ALWAYS paired with endEditorPreviewPass, normally by a defer
 // on the next line.
+//
+// It is renderFullClientTexture's swap (app.go), minus the render target, and the
+// list of what it borrows is the same list for the same reasons: the session state
+// (which promotes a.room / a.sess / a.icLog / the chat raster), the screen (a
+// view-only pass must not navigate — drawCourtroom sends a session-less app to the
+// lobby), the tooltip, the Tab-focus order, and every input signal.
+//
+// INPUT IS NEUTRALIZED, and that is a FEATURE and not only a safety rail: the brief
+// asks for "buttons at rest", and a demo whose widgets lit up under the pointer
+// would be inviting clicks that cannot mean anything. It is also what makes
+// requirement 9 structural rather than careful — nothing inside this pass can see a
+// key or a click, so nothing inside it can mutate the theme document.
+//
+// pinnedPass is raised for the same reason the pinned client raises it: drawCourtroom
+// drains single-consumer App channels (pollCharINI), and a view-only pass must not
+// eat a result the primary session asked for.
 func (a *App) beginEditorPreviewPass() editorPreviewSaved {
 	c := a.ctx
 	saved := editorPreviewSaved{
@@ -385,11 +460,11 @@ func (a *App) beginEditorPreviewPass() editorPreviewSaved {
 		screen:    a.screen,
 		tip:       c.tipText,
 		seqLen:    len(c.fieldSeq),
-		prevPinne: a.client.pinnedPass,
+		prevPinne: a.pinnedPass,
 	}
 	saved.in = a.snapshotInput()
 	a.sessionState = a.te.preview.state
-	a.client.pinnedPass = true
+	a.pinnedPass = true
 	return saved
 }
 
@@ -400,7 +475,7 @@ func (a *App) endEditorPreviewPass(saved editorPreviewSaved) {
 	if a.te != nil && a.te.preview != nil {
 		a.te.preview.state = a.sessionState
 	}
-	a.client.pinnedPass = saved.prevPinne
+	a.pinnedPass = saved.prevPinne
 	a.sessionState = saved.state
 	a.screen = saved.screen
 	c.tipText = saved.tip
@@ -443,7 +518,7 @@ func (a *App) drawEditorPreviewCanvas(w, h int32) {
 // then the only way out is the keyboard.
 func (a *App) drawEditorPreviewExit(w int32) {
 	c := a.ctx
-	a.toolbox.noteEditorBanner()
+	a.noteEditorBanner()
 	r := editorPreviewBtnRect(w)
 	// Its own plate, because there is no header band behind it any more: the button
 	// floats over whatever the theme painted there and has to stay legible on a
@@ -474,6 +549,13 @@ func editorPreviewBtnRect(w int32) sdl.Rect {
 
 // drawEditorPreviewFigure paints the procedural stand-in on the stage: a head, a
 // neck and a tapering torso, built from rectangles.
+//
+// RECTANGLES AND NOTHING ELSE, deliberately. It draws inside the courtroom frame,
+// which every whole-screen alloc gate covers at ZERO allocations per frame, so a
+// texture, a surface or a per-frame slice here would be a regression in the one
+// place this package measures hardest. A bounded band count (rule 4) taper is the
+// most body-shaped thing a fixed number of Fill calls can be.
+//
 // Called from renderViewportZoomed beside drawStageEgg — the one place both the
 // classic and the themed courtroom hand over the stage rect.
 func (a *App) drawEditorPreviewFigure(vp sdl.Rect) {

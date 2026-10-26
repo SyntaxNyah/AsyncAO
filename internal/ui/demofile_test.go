@@ -405,7 +405,7 @@ func TestDemoDefaultOriginPolicy(t *testing.T) {
 				a.d.Prefs.SetLocalAssets(true, []string{mount})
 			}
 			if tc.connected {
-				a.link.urls = courtroom.NewURLBuilder(sessionOrigin)
+				a.urls = courtroom.NewURLBuilder(sessionOrigin)
 			}
 			got := a.demoDefaultOrigin()
 			// The connected non-local case normalizes the trailing slash via NewURLBuilder;
@@ -452,7 +452,7 @@ func TestMountOriginIgnoresEnabledFlag(t *testing.T) {
 			a := testTabApp(t)
 			a.d.Prefs.SetLocalAssets(false, []string{mount})
 			if connected {
-				a.link.urls = courtroom.NewURLBuilder(sessionOrigin)
+				a.urls = courtroom.NewURLBuilder(sessionOrigin)
 			}
 			if got := a.mountOrigin(); got != wantMount {
 				t.Errorf("mountOrigin with enabled=false must return the local base %q, got %q", wantMount, got)

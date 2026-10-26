@@ -30,21 +30,21 @@ type voiceEngine struct{}
 // a type but stays nil in this build (the whole Voice settings tab is compiled out).
 type micTester struct{}
 
-func (*App) voiceOfferable() bool                                { return false }
-func (*App) voiceButtonState() (string, sdl.Color)               { return "", sdl.Color{} }
-func (*App) toggleVoice()                                        {}
-func (*classicState) voicePanelRect(_ *env, _, _ int32) sdl.Rect { return sdl.Rect{} }
-func (*App) drawVoicePanel(_, _ int32, _ *bool)                  {}
-func (*App) voiceSetMic(bool)                                    {}
-func (*App) voicePump()                                          {}
-func (*App) voiceOnAudio(int, string)                            {}
-func (*App) voiceReconcilePeers()                                {}
-func (*App) drawSettingsVoice(y, _ int32) int32                  { return y }
+func (*App) voiceOfferable() bool                  { return false }
+func (*App) voiceButtonState() (string, sdl.Color) { return "", sdl.Color{} }
+func (*App) toggleVoice()                          {}
+func (*App) voicePanelRect(_, _ int32) sdl.Rect    { return sdl.Rect{} }
+func (*App) drawVoicePanel(_, _ int32, _ *bool)    {}
+func (*App) voiceSetMic(bool)                      {}
+func (*App) voicePump()                            {}
+func (*App) voiceOnAudio(int, string)              {}
+func (*App) voiceReconcilePeers()                  {}
+func (*App) drawSettingsVoice(y, _ int32) int32    { return y }
 
 // stopVoiceAudio has nothing to tear down here. It reads the inert App voice
 // fields (and thus the voiceEngine stub type) so they don't register as unused
 // in the voice-free build; they back the live engine in voiceaudio.go for the
 // voice-enabled build.
 func (a *App) stopVoiceAudio() {
-	_, _, _, _ = a.voiceAudio, a.roster.voiceIconAsk, a.micTest, a.micTestSidetone
+	_, _, _, _ = a.voiceAudio, a.voiceIconAsk, a.micTest, a.micTestSidetone
 }

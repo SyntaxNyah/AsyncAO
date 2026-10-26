@@ -2,8 +2,45 @@ package ui
 
 // F1 / F1b — the "everything above 1345x840 goes blurry" report, and the smeared
 // speaker names inside it.
+//
+// The report named a threshold to the pixel, and the arithmetic matches it exactly:
+// autoScaleRefWidth/Height are 1280x800 and the auto scale snaps to
+// config.UIScaleStepPercent, so 1280x1.05 = 1344 and 800x1.05 = 840 are the first
+// window sizes that leave 100%. Everything the frame then draws is multiplied by
+// 1.05 by the renderer, and any surface still rasterized at 100% is stretched.
+//
+// WHAT THESE GATES PIN.
+//
+//   - The text pipeline re-rasterizes AT the new scale when that step is crossed
 //     (TestAutoScaleStepRerastersTextAtDeviceScale). This is #77 Part A's wiring —
+//     SetAutoScaleFromWindow → Ctx.SetUIScale → Ctx.SetTextDevScale — and deleting
+//     any link in it turns every glyph in the client into an upscaled 100% raster.
+//     Nothing tested it at the threshold before.
+//   - Weight is rasterized into the glyphs, not painted twice
+//     (TestBoldLabelIsOneRasterNotTwoDraws + TestNoFauxBoldSecondPassRemains). The
+//     faux-bold idiom drew the same texture again one LOGICAL pixel to the right;
+//     at 105% the renderer put the copies 1.05 device px apart on different
+//     sub-pixel phases, which is why names read DOUBLED beside message text on the
+//     same row that stayed crisp.
+//   - The device-exact blit (DrawScaled) reaches EVERY live emoji/mixed-script text
+//     surface, not just the chatbox body it started on
+//     (TestMessageRasterDrawIsExportOnly, TestLabelCoveringCenteredDeviceExactAtFractionalScale).
+//     labelEmojiWeight/labelCoveringCentered and the text field's emoji-fallback
+//     branch used to call the plain, non-device-exact Draw — the raster's spans were
+//     already built from device-sibling fonts (emojiRasterWeight/fieldRaster fold
+//     textDevPct), but blitting them through Draw threw that precision away by
+//     projecting back to logical BEFORE ren.SetScale multiplied it up again, the
+//     exact rounding mismatch deviceExact's own doc measures for the chatbox crawl.
 //   - Floating reaction badges (#2) rasterize at the device scale and blit
+//     device-exact too (TestEnsureReactBadgeBuildsFromDeviceFont,
+//     TestReactionBadgeCachePurgesOnDeviceScaleChange,
+//     TestBadgeDeviceExactDiffersFromResampleAtFractionalScale in
+//     internal/render/badge_test.go). ensureReactBadge used to build from EmojiFont
+//     (a fixed logical pixel size) and Badge.Draw had no SetScale bracket at all, so
+//     every float softened at any UI scale other than 100% — and the badge cache
+//     never invalidated on a scale change, so ensureReactBadge now purges it on a
+//     textDevPct mismatch (the same idiom SetTextDevScale uses for the label/emoji
+//     caches).
 
 import (
 	"bytes"
@@ -173,9 +210,14 @@ func TestWeightedLabelMatchesPlainWhenNotBold(t *testing.T) {
 // REAL production draw path (labelCoveringCentered), not a reimplementation of
 // DrawScaled's contract. It compares the production call's painted pixels against the
 // SAME underlying raster (same emojiRaster cache key, so literally the same texture)
+// drawn through the plain Draw it used to call.
+//
 //   - At 100% deviceExact is false for BOTH calls by design (the identity scale has
 //     nothing to fold), so they must be byte-identical — a regression here would be a
 //     DIFFERENT bug, and this test correctly does not claim to catch one.
+//   - At 105% the production call takes the device-exact branch and the comparison
+//     call does not, so they must differ. If labelCoveringCentered ever reverts to
+//     calling Draw again, this assertion goes back to passing where it must fail.
 func TestLabelCoveringCenteredDeviceExactAtFractionalScale(t *testing.T) {
 	const canvasW, canvasH = 400, 200
 	const text = "React \U0001F600 label" // U+1F600 is supplementary-plane → NeedsEmojiFallback is unconditionally true
@@ -277,15 +319,48 @@ func TestReactionBadgeCachePurgesOnDeviceScaleChange(t *testing.T) {
 // carries the same device-exact bracket (blitLabelExact), gated the same way
 // MessageRaster/Badge already are (uiDeviceExactAt).
 
-// TestLabelDeviceExactAtFractionalScale is the Ctx.Label counterpart to the
-// labelCoveringCentered and badge device-exact tests: it drives the real
-// Ctx.Label twice against one cached glyph texture, then lies to blitLabel's
-// device-exact gate through beginRenderScaleOverride — the same knob an export
-// bracket uses — to force the old blitLabelScaled path at 115%. That path bleeds
-// real pixels into the margin above the glyph's first ink row; the margin is
-// found from the correct render, never hardcoded. Deletion catcher: removing the
-// uiDeviceExactAt branch collapses both calls onto one path and the assertion
-// fails where it must.
+// TestLabelDeviceExactAtFractionalScale is the Ctx.Label counterpart to
+// TestLabelCoveringCenteredDeviceExactAtFractionalScale (labelCoveringCentered)
+// and TestBadgeDeviceExactDiffersFromResampleAtFractionalScale
+// (internal/render/badge_test.go) for the surface neither of those closes: the
+// plain, non-emoji, non-focused-field label path.
+//
+// It drives the REAL production entry point (Ctx.Label) twice against the SAME
+// cached glyph texture: once with blitLabel's device-exact gate telling the
+// truth, once with it LIED to via beginRenderScaleOverride — the exact
+// production knob an offscreen export bracket already uses to decouple
+// Ctx.RenderScalePct from the live ambient ren.SetScale — forcing blitLabel down
+// the pre-generalization blitLabelScaled branch while the renderer's ACTUAL
+// scale (ren.SetScale, set once before either call, exactly as main.go sets it
+// per frame) never changes. This is not a reimplementation of blitLabel's gate:
+// it is the same knob RenderScalePct-based export brackets use for real.
+//
+//   - At 100% uiDeviceExactAt excludes the identity scale unconditionally for
+//     BOTH calls (same exclusion MessageRaster.deviceExact/Badge.Draw use), so
+//     the two paints must be byte-identical — a difference here would be a
+//     DIFFERENT bug than the one this test targets.
+//   - At 115%, "M" is a minimal reproducer of blitLabelScaled's src/dst
+//     rounding mismatch (blitLabel's own doc): the OLD path's independently
+//     re-derived width/height land the SAME device-sized glyph texture at a
+//     measurably different device row than its own device-exact 1:1 copy. The
+//     margin strip strictly ABOVE the glyph's own first ink row — found
+//     dynamically from the device-exact (correct) render, not a hardcoded row,
+//     so this does not silently stop testing anything if the embedded font
+//     ever changes — is pure background by construction in a correct render;
+//     the OLD path bleeds real (non-pure-white) pixels into it.
+//
+// Pure black-on-white text makes "not background" unambiguous, and the margin
+// sits entirely outside the glyph's own ink (not "inside a glyph"), so the
+// font's own antialiasing at the glyph's real edges cannot contaminate the
+// signal — the strip is either untouched background or it is evidence of the
+// mismatch, nothing else.
+//
+// DELETION CATCHER: reverting blitLabel to call blitLabelScaled unconditionally
+// (deleting the uiDeviceExactAt branch, or blitLabelExact itself) collapses the
+// "truth" and "lied" calls onto the identical code path — production and
+// reference become the same function call on the same inputs — and the 115%
+// subtest's "old path bleeds into the margin, the fixed path does not" assertion
+// goes back to failing exactly where it must.
 func TestLabelDeviceExactAtFractionalScale(t *testing.T) {
 	const canvasW, canvasH = 60, 40
 	const text = "M"

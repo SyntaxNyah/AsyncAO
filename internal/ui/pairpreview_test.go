@@ -1,6 +1,26 @@
 package ui
 
 // REGRESSION: the Pairing dialog's sprite preview drew outside its own box.
+//
+// Live report, 2026-08-10 (screenshot): the ghost sprite rendered enormous and
+// spilled off the panel onto the courtroom, the music list and the IC bar. The
+// decisive field observation was that setting Offset X to 0 fixed the render —
+// and that Offset X was sitting at 53% without the user having typed it.
+//
+// Two defects, and the second is what supplied the 53:
+//
+//  1. NO CLIP. The ghost is fitted to the stage HEIGHT with its own aspect ratio
+//     (AO2's non-stretch arm, animationlayer.cpp:229-260 — the same rule the
+//     live viewport uses), so a wide sprite is legitimately wider than the narrow
+//     preview column, and the offset slides it further. AO2 survives that because
+//     ui_vp_player_char is a CHILD WIDGET and Qt clips children; nothing clipped
+//     here.
+//  2. THE RESIZE GRIP DRAGGED THE SPRITE. floatGripSz is 16 and the stage runs to
+//     pad (8) short of the panel edge, so the grip's top-left 8x8 quadrant is
+//     inside the stage. floatWinResize consumed the press through the shared
+//     `pressed` flag, but the ghost editor armed its own drag off raw
+//     c.mouseDown — so resizing the Pairing window silently rewrote the pair
+//     offsets to wherever the corner had been dragged.
 
 import (
 	"testing"
@@ -19,9 +39,23 @@ func containedIn(inner, outer sdl.Rect) bool {
 // TestTheGhostOverhangsItsStageAndTheClipCatchesIt is the report, put as the two
 // facts that make the fix load-bearing — and only those two, because an earlier
 // draft of this sweep asserted neither.
+//
+//  1. THE PREMISE. The raw sprite rect really does escape the preview column: a
+//     wide sprite fitted to the stage HEIGHT is legitimately wider than a narrow
+//     column, and the offset slides it further still. That is why a clip is
+//     required rather than tidy. Cropping the GEOMETRY instead is refused
+//     deliberately — the preview would then lie about what the real viewport is
+//     going to show, which is the one job this box has.
+//  2. THE CLIP HOLDS. Driven through clipIntersect, which IS pushClip's own
+//     arithmetic (ui.go), not a copy of it written here: a nested clip may only
+//     ever narrow the region in force, and a disjoint result is clipNowhere.
+//     Replace that rule with a plain "the inner rect wins" and this reddens.
+//
 // What it deliberately does NOT do is assert containment of an intersection with
 // the stage, which is true for every input by construction and cannot fail. The
 // sprite GEOMETRY is pinned next door (TestPairPreviewFitIsHeightBoundAndCentred)
+// and the two brackets by the AST census at the bottom of this file; between the
+// three, each part of the fix has a gate that a mutation actually reddens.
 func TestTheGhostOverhangsItsStageAndTheClipCatchesIt(t *testing.T) {
 	// Stages the pair panel produces at the window sizes the client runs at
 	// (pv = the right column below the numeric rows; pairPanelMinW 440 upward).
@@ -130,12 +164,12 @@ func TestPairPreviewFitIsHeightBoundAndCentred(t *testing.T) {
 // session's pair placement is dead centre, and anything else came from a WRITE.
 func TestPairOffsetsDefaultToZero(t *testing.T) {
 	a := testTabApp(t)
-	if a.pairbox.pairOffX != 0 || a.pairbox.pairOffY != 0 {
-		t.Fatalf("fresh pair offsets = %d,%d, want 0,0", a.pairbox.pairOffX, a.pairbox.pairOffY)
+	if a.pairOffX != 0 || a.pairOffY != 0 {
+		t.Fatalf("fresh pair offsets = %d,%d, want 0,0", a.pairOffX, a.pairOffY)
 	}
 	a.resetSessionState()
-	if a.pairbox.pairOffX != 0 || a.pairbox.pairOffY != 0 {
-		t.Fatalf("pair offsets after a session reset = %d,%d, want 0,0", a.pairbox.pairOffX, a.pairbox.pairOffY)
+	if a.pairOffX != 0 || a.pairOffY != 0 {
+		t.Fatalf("pair offsets after a session reset = %d,%d, want 0,0", a.pairOffX, a.pairOffY)
 	}
 }
 
@@ -144,14 +178,16 @@ func TestPairOffsetsDefaultToZero(t *testing.T) {
 // the OUTGOING MS back the way a receiving client would rather than assuming the
 // send path was fine. Partner, both offsets and the order all have to survive,
 // unchanged.
+//
 // The order values are the repo's documented gotcha — ^0 is the speaker IN
 // FRONT — and the sibling gates in icbar_flip_test.go pin order and flip; this
 // one exists because the OFFSETS, the field the defect was about, had nothing
+// holding them to the wire at all.
 func TestPairPlacementStillReachesTheWire(t *testing.T) {
 	a, sent := flipSendApp(t)
-	a.pairbox.pairWith = 1
-	a.pairbox.pairOffX, a.pairbox.pairOffY = -37, 21
-	a.pairbox.pairOrder = protocol.PairSpeakerInFront
+	a.pairWith = 1
+	a.pairOffX, a.pairOffY = -37, 21
+	a.pairOrder = protocol.PairSpeakerInFront
 	a.sendICFresh()
 
 	msg := lastSentMS(t, a, sent)
@@ -174,8 +210,8 @@ func TestPairPlacementStillReachesTheWire(t *testing.T) {
 	// …and on a 2.9 server the VERTICAL half rides with it, in canon's "x&y"
 	// spelling. Without y_offset only X is representable, which is why the arm
 	// above asserts the bare number.
-	a.link.sess.Features[protocol.FeatureYOffset] = struct{}{}
-	a.compose.icInput = "and vertically"
+	a.sess.Features[protocol.FeatureYOffset] = struct{}{}
+	a.icInput = "and vertically"
 	a.sendICFresh()
 	if got := (*sent)[len(*sent)-1].Field(outgoingSelfOffsetField); got != "-37&21" {
 		t.Errorf("wire self offset field = %q, want %q (2.9 y_offset)", got, "-37&21")
@@ -183,14 +219,14 @@ func TestPairPlacementStillReachesTheWire(t *testing.T) {
 	// Unpairing clears the partner and leaves the offsets alone — they are YOUR
 	// placement, not a property of the pair (AO2 keeps ui_pair_offset_spinbox
 	// across an unpair too).
-	a.pairbox.pairWith = protocol.UnpairedCharID
-	a.compose.icInput = "solo now"
+	a.pairWith = protocol.UnpairedCharID
+	a.icInput = "solo now"
 	a.sendICFresh()
 	if msg := lastSentMS(t, a, sent); msg.Pair.Active() {
 		t.Errorf("unpaired send still carries a pair block: %+v", msg.Pair)
 	}
-	if a.pairbox.pairOffX != -37 || a.pairbox.pairOffY != 21 {
-		t.Errorf("unpairing moved the offsets to %d,%d", a.pairbox.pairOffX, a.pairbox.pairOffY)
+	if a.pairOffX != -37 || a.pairOffY != 21 {
+		t.Errorf("unpairing moved the offsets to %d,%d", a.pairOffX, a.pairOffY)
 	}
 }
 

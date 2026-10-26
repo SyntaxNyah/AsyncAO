@@ -27,23 +27,23 @@ func (a *App) queueGroupInvite(gid uint32, name string, ownerUID int, ownerName 
 	if gid == 0 {
 		return
 	}
-	if _, joined := a.msgs.msgGroups[gid]; joined {
+	if _, joined := a.msgGroups[gid]; joined {
 		return
 	}
-	for _, inv := range a.msgs.pendingInvites {
+	for _, inv := range a.pendingInvites {
 		if inv.gid == gid {
 			return // already pending
 		}
 	}
-	if len(a.msgs.pendingInvites) >= maxPendingInvites {
+	if len(a.pendingInvites) >= maxPendingInvites {
 		return
 	}
-	a.msgs.pendingInvites = append(a.msgs.pendingInvites, groupInvite{gid: gid, name: name, ownerUID: ownerUID, ownerName: ownerName})
+	a.pendingInvites = append(a.pendingInvites, groupInvite{gid: gid, name: name, ownerUID: ownerUID, ownerName: ownerName})
 	a.warnLine = clampLine(ownerName + " invited you to the group \"" + name + "\"")
 	a.warnAt = a.now()
 	a.ctx.FlashWindow()
-	if !a.ctx.WindowFocused() && time.Since(a.sel.lastOSToast) >= osToastMinInterval {
-		a.sel.lastOSToast = time.Now()
+	if !a.ctx.WindowFocused() && time.Since(a.lastOSToast) >= osToastMinInterval {
+		a.lastOSToast = time.Now()
 		showOSToast("AsyncAO — group invite", ownerName+" invited you to \""+name+"\"")
 	}
 }
@@ -51,33 +51,33 @@ func (a *App) queueGroupInvite(gid uint32, name string, ownerUID int, ownerName 
 // acceptInvite joins the group and tells the owner; opens the new group.
 func (a *App) acceptInvite(inv groupInvite) {
 	a.applyGroupInvite(inv.gid, inv.name, inv.ownerUID, inv.ownerName)
-	if a.link.sess != nil {
+	if a.sess != nil {
 		body := "[AsyncAO joined the group]" +
 			courtroom.WireMessage{Kind: courtroom.MsgJoin, GroupID: inv.gid}.EncodeMarker()
-		a.link.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{inv.ownerUID}, body))
+		a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{inv.ownerUID}, body))
 	}
-	a.msgs.removePendingInvite(inv.gid)
-	a.msgs.showMessages, a.msgs.msgSelGroup, a.msgs.msgSel = true, inv.gid, ""
+	a.removePendingInvite(inv.gid)
+	a.showMessages, a.msgSelGroup, a.msgSel = true, inv.gid, ""
 }
 
 // declineInvite drops the invite and tells the owner to remove us.
 func (a *App) declineInvite(inv groupInvite) {
-	if a.link.sess != nil {
+	if a.sess != nil {
 		body := "[AsyncAO declined the invite]" +
 			courtroom.WireMessage{Kind: courtroom.MsgLeave, GroupID: inv.gid}.EncodeMarker()
-		a.link.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{inv.ownerUID}, body))
+		a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{inv.ownerUID}, body))
 	}
-	a.msgs.removePendingInvite(inv.gid)
+	a.removePendingInvite(inv.gid)
 }
 
-func (msg *msgState) removePendingInvite(gid uint32) {
-	out := msg.pendingInvites[:0]
-	for _, inv := range msg.pendingInvites {
+func (a *App) removePendingInvite(gid uint32) {
+	out := a.pendingInvites[:0]
+	for _, inv := range a.pendingInvites {
 		if inv.gid != gid {
 			out = append(out, inv)
 		}
 	}
-	msg.pendingInvites = out
+	a.pendingInvites = out
 }
 
 // inviteToastGapY is the breathing room between the app-chrome band and the invite
@@ -92,11 +92,11 @@ const inviteToastGapY = int32(8)
 // chrome band, with Accept / Decline. Non-blocking; drawn over the courtroom only,
 // and only when an invite is pending (zero cost otherwise).
 func (a *App) drawGroupInviteToast(w, h int32) {
-	if len(a.msgs.pendingInvites) == 0 {
+	if len(a.pendingInvites) == 0 {
 		return
 	}
 	c := a.ctx
-	inv := a.msgs.pendingInvites[len(a.msgs.pendingInvites)-1]
+	inv := a.pendingInvites[len(a.pendingInvites)-1]
 	const bw, bh = int32(430), int32(58)
 	r := sdl.Rect{X: (w - bw) / 2, Y: a.topChromeH() + inviteToastGapY, W: bw, H: bh}
 	c.Fill(r, ColPanel)

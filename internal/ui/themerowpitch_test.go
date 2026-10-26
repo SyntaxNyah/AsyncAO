@@ -52,16 +52,16 @@ func TestThemeFaceRowPitchReadsTheInstalledFace(t *testing.T) {
 func TestThemeRowPitchNeedsTheElementToBeDressed(t *testing.T) {
 	c := newPitchCtx()
 	c.SetThemeFaces([][]byte{openDyslexicOTF})
-	a := &App{env: env{ctx: c}}
+	a := &App{ctx: c}
 	if got := a.themeRowPitchLogical(elemMessage, DefaultScalePct); got != 0 {
 		t.Errorf("an undressed message element = %d, want 0", got)
 	}
 	// face is 1-BASED (0 = undressed), so slot 0 is spelled 1 here.
-	a.skin.themeFonts.e[elemShowname].face = 1
+	a.themeFonts.e[elemShowname].face = 1
 	if got := a.themeRowPitchLogical(elemMessage, DefaultScalePct); got != 0 {
 		t.Errorf("dressing the SHOWNAME moved the message pitch to %d", got)
 	}
-	a.skin.themeFonts.e[elemMessage].face = 1
+	a.themeFonts.e[elemMessage].face = 1
 	want := c.themeFaceRowPitch(0, faceEmPx(DefaultScalePct, DefaultScalePct))
 	if got := a.themeRowPitchLogical(elemMessage, DefaultScalePct); got != want {
 		t.Errorf("a dressed message element = %d, want %d", got, want)
@@ -78,8 +78,8 @@ func TestThemeRowPitchNeedsTheElementToBeDressed(t *testing.T) {
 func TestThemeRowPitchDeviceFollowsTheDeviceScale(t *testing.T) {
 	c := newPitchCtx()
 	c.SetThemeFaces([][]byte{openDyslexicOTF})
-	a := &App{env: env{ctx: c}}
-	a.skin.themeFonts.e[elemMessage].face = 1
+	a := &App{ctx: c}
+	a.themeFonts.e[elemMessage].face = 1
 
 	c.textDevPct = DefaultScalePct
 	at100 := a.themeRowPitchDevice(elemMessage, DefaultScalePct)
@@ -135,7 +135,7 @@ func TestFaceEmPxMatchesCanonFontPct(t *testing.T) {
 func TestMessageRowPitchNeverTightensTheFaceMetric(t *testing.T) {
 	c := newFaceCtx(t) // skips without SDL_ttf
 	defer c.Destroy()
-	a := &App{env: env{ctx: c}}
+	a := &App{ctx: c}
 	face := render.FontLineSpacing(c.font)
 	if face <= 0 {
 		t.Skip("the embedded face reported no line spacing")
@@ -146,7 +146,7 @@ func TestMessageRowPitchNeverTightensTheFaceMetric(t *testing.T) {
 	// Install a face whose Qt pitch is far larger than the chrome face's metric
 	// and bind it to the message: the answer must move to the larger number.
 	c.SetThemeFaces([][]byte{openDyslexicOTF})
-	a.skin.themeFonts.e[elemMessage].face = 1
+	a.themeFonts.e[elemMessage].face = 1
 	qt := a.themeRowPitchLogical(elemMessage, DefaultScalePct)
 	if qt <= face {
 		t.Skipf("fixture pitch %d does not exceed the face metric %d", qt, face)

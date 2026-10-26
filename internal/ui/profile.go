@@ -79,8 +79,8 @@ func (a *App) profileFor(p *areaPlayer, isMe bool) (config.ProfilePref, bool) {
 		}
 		return config.ProfilePref{}, false
 	}
-	if a.link.room != nil && p != nil && p.name != "" {
-		if wp, ok := a.link.room.RemoteProfile(p.name); ok {
+	if a.room != nil && p != nil && p.name != "" {
+		if wp, ok := a.room.RemoteProfile(p.name); ok {
 			return config.ProfilePref{Enabled: true, ShowOnList: true, Pronouns: wp.Pronouns, Tag: wp.Tag}, true
 		}
 	}
@@ -101,9 +101,9 @@ func (a *App) myWireProfile() courtroom.WireProfile {
 
 // openProfileCard opens the player-list profile popover for pr/name.
 func (a *App) openProfileCard(pr config.ProfilePref, name string) {
-	a.roster.profileCardShow = true
-	a.roster.profileCardPr = pr
-	a.roster.profileCardName = name
+	a.profileCardShow = true
+	a.profileCardPr = pr
+	a.profileCardName = name
 }
 
 // profileCardTitleH is the popover's title band above the card body.
@@ -121,19 +121,19 @@ func profileCardRect(area sdl.Rect) sdl.Rect {
 // list), if open. Closed by its X. Called last in drawPlayerList so it sits on
 // top — the rows beneath it are pointer-fenced while it's hovered.
 func (a *App) drawProfileCardOverlay(area sdl.Rect) {
-	if !a.roster.profileCardShow {
+	if !a.profileCardShow {
 		return
 	}
 	c := a.ctx
 	panel := profileCardRect(area)
 	c.Fill(panel, ColBackground)
 	c.Border(panel, ColAccent)
-	c.Label(panel.X+10, panel.Y+8, a.roster.profileCardName+" — profile", ColText)
+	c.Label(panel.X+10, panel.Y+8, a.profileCardName+" — profile", ColText)
 	if c.Button(sdl.Rect{X: panel.X + panel.W - 26, Y: panel.Y + 5, W: 20, H: 20}, "x") {
-		a.roster.profileCardShow = false
+		a.profileCardShow = false
 		return
 	}
-	a.drawProfileCard(panel.X+10, panel.Y+profileCardTitleH+4, a.roster.profileCardPr, a.roster.profileCardName)
+	a.drawProfileCard(panel.X+10, panel.Y+profileCardTitleH+4, a.profileCardPr, a.profileCardName)
 }
 
 // profileCardW / profileCardH size the profile card; the bio clips inside it.

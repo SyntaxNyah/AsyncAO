@@ -156,11 +156,11 @@ func TestEmoteGridCellsTileWithoutOverlap(t *testing.T) {
 	for _, r := range rects {
 		for _, s := range scales {
 			g := emoteGridLayout(r, [2]int{40, 40}, [2]int{1, 1}, s)
-			if g.cols < 1 || g.rows < 1 || gridPerPage(g) < 1 {
+			if g.cols < 1 || g.rows < 1 || g.perPage() < 1 {
 				t.Fatalf("rect %+v scale %g: empty grid %+v", r, s, g)
 			}
-			cells := make([]sdl.Rect, 0, gridPerPage(g))
-			for n := int32(0); n < int32(gridPerPage(g)); n++ {
+			cells := make([]sdl.Rect, 0, g.perPage())
+			for n := int32(0); n < int32(g.perPage()); n++ {
 				cells = append(cells, g.cellRect(r, n))
 			}
 			for i, ci := range cells {

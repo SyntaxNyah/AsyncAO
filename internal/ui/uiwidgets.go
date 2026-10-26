@@ -14,6 +14,20 @@ import (
 
 // LabelClippedFontAlpha is LabelClippedFont with a per-draw alpha, applied with
 // SetAlphaMod on the cached texture rather than by changing the ink colour.
+//
+// THE DISTINCTION IS LOAD-BEARING ON THE FRAME PATH. textKey includes the COLOUR, so
+// a caller that faded a label by darkening its ink would miss the cache and rasterise
+// a brand-new texture on EVERY frame the fade moved — a TTF render, an atlas insert
+// and an eviction, inside a frame gated at exactly zero allocations. That is precisely
+// what a themed element carrying `effect = pulse` on a text element does 60 times a
+// second. The alpha mod costs two cgo calls and hits the same cached glyphs.
+//
+// It is the glyphcache idiom shapemask.go and the splash draw already use, and the
+// restore is inline for the same reason: the texture is a SHARED atlas page, so the
+// next label must not inherit this one's alpha.
+//
+// alpha 255 takes the ordinary path and skips both calls, so a caller may hand this
+// a neutral alpha without paying for it.
 func (c *Ctx) LabelClippedFontAlpha(font *ttf.Font, x, y, maxW int32, text string, col sdl.Color, alpha uint8) {
 	if alpha == 255 {
 		c.LabelClippedFont(font, x, y, maxW, text, col)
@@ -35,7 +49,18 @@ func (c *Ctx) LabelClippedFontAlpha(font *ttf.Font, x, y, maxW int32, text strin
 // TextWidth measures a label in the chrome font, memoized — screens call
 // it per frame for fixed labels and each miss is a CGO TTF measure. The
 // memo shares the text cache's lifecycle (purged together, same bound).
+//
 // #77: measures the LOGICAL chrome face (c.font), NOT the device sibling — so
+// the width is already in logical layout units (no ÷scale rounding needed here;
+// the rounding rule lives only in the blit dst). This is exact for LAYOUT: the
+// width is scale-invariant, which every chrome layout site (and
+// TestTextWidthScaleInvariant) requires. It is NOT the device glyph seam: the
+// device face carries the SAME advances scaled up, but SDL_ttf re-quantizes each
+// glyph independently at the larger point size, so the folded logical width can
+// drift from a device measurement over a long prefix. Text-field caret /
+// selection / click metrics therefore measure the DEVICE face instead (see
+// devTextWidth + fieldPrefixW; sibling contract render/text.go:568-570). Callers
+// that lay out chrome stay on this logical face untouched.
 func (c *Ctx) TextWidth(text string) int32 {
 	if c.font == nil {
 		return 0 // headless tests; real Ctx always has the chrome font
@@ -86,9 +111,12 @@ func (c *Ctx) panelTextWidth(text string) int32 {
 // arbitrary font can share it safely — a rebuilt face is a new pointer and so a
 // new key, never a stale width for a live one). ok is false when the face is nil
 // or SDL_ttf refused, so a caller can keep its measurement-failed branch.
+//
 // This exists because ttf.Font.SizeUTF8 is NOT free to call per frame: go-sdl2
 // hands the out-params' addresses to cgo, so each call heap-allocates — the same
 // escape the cgoRect idiom exists for. Any draw path that measures the same
+// string every frame must come through here, or it shows up as a per-frame
+// allocation in the whole-screen zero-alloc gates.
 func (c *Ctx) fontTextWidth(f *ttf.Font, text string) (int32, bool) {
 	return c.fontTextWidthWeight(f, text, false)
 }
@@ -130,6 +158,13 @@ func (c *Ctx) fontTextWidthWeight(f *ttf.Font, text string, bold bool) (int32, b
 // device measure lands the caret on the actual glyph seam (kills the
 // length-growing caret-to-glyph drift, #77 S1b). Mirrors render/text.go:568-570,
 // where the non-ASCII field path already measures device advances and folds back.
+//
+// Memoized in its own map (raw device px), CAPPED by textCacheMax like widthCache
+// and PURGED wherever widthCache is (SetTextDevScale, SetChromeFont) — so a
+// stale-size entry after a scale change is impossible. Callers at 100% must NOT
+// reach here: deviceTextFont is the identity there, so the widthCache path is
+// used unchanged (see fieldPrefixW). One map probe per prefix; the map is
+// lazily created (a nil-map write would panic on test-built Ctx literals).
 func (c *Ctx) devTextWidth(text string) int32 {
 	if c.font == nil {
 		return 0 // headless tests; real Ctx always has the chrome font
@@ -157,6 +192,20 @@ func (c *Ctx) devTextWidth(text string) int32 {
 // unfolded, exactly like devTextWidth: callers fold with uiLogicalFromDevice
 // at the read site (logPrefixWidth), the same two steps textTextureBold /
 // cachedText.logicalW() perform for the actual draw.
+//
+// Without this, logPrefixWidth measured font.SizeUTF8 directly on the LOGICAL
+// face while the row is drawn on deviceTextFont(font) and folded back — two
+// independently-hinted FreeType rasterizations that agree only at
+// textDevPct==100 and drift apart (growing with prefix length) at every other
+// scale, so a wrapped row's highlight rect and the runes actually copied to
+// the clipboard could disagree by several characters (the MOTD-selection
+// offset). Routing selection through this instead makes it read the SAME
+// number the draw produced, not a second, independently-rounded estimate.
+//
+// Memoized in its own map (logDevWidth), same key shape and cap as
+// fontTextWidthWeight's panelWidth; see logDevWidth's field doc for why
+// sharing panelWidth's purge site (purgeTextCache) is sufficient even though
+// the value depends on the DEVICE sibling.
 func (c *Ctx) devTextWidthWeight(f *ttf.Font, text string, bold bool) (int32, bool) {
 	if f == nil {
 		return 0, false
@@ -274,9 +323,17 @@ type rowLabelKey struct {
 // widget's label must not draw, and returns the previous limit for popRowLabelLimit.
 // 0 disarms — the pre-existing "labels grow to their text" behaviour, which every
 // caller outside the bracket keeps.
+//
+// It exists for the settings form (F2). Those rows carry real help text — several
+// are 200+ characters — and Checkbox drew the label at its natural width with
+// nothing to stop it, so on any window narrower than the sentence the line simply
+// ran off the card and out of the window. The FONTS section was the reported case;
+// the census test shows it was one of about forty.
+//
 // A bracket rather than a parameter because Checkbox has hundreds of call sites and
 // the limit is a property of the CONTAINER, not of any one row: the settings card
 // knows its own right edge, and a row inside it should not have to be told twice.
+// Same shape (and same restore-with-defer discipline) as pushPanelFont.
 func (c *Ctx) pushRowLabelLimit(rightX int32) int32 {
 	prev := c.rowLabelRight
 	c.rowLabelRight = rightX
@@ -289,6 +346,10 @@ func (c *Ctx) popRowLabelLimit(prev int32) { c.rowLabelRight = prev }
 // armed limit: the label itself when it fits (and always when no limit is armed),
 // otherwise AO2's own chop-two-append-ellipsis truncation. Returns fit=false when it
 // had to shorten, so the caller can offer the full text some other way.
+//
+// The ellipsis matters: a hard clip is indistinguishable from a rendering fault —
+// which is precisely how the overflowing settings text was reported ("cut off at the
+// right border"). A trailing "…" says the sentence continues.
 func (c *Ctx) fitRowLabel(x int32, label string) (string, bool) {
 	if c.rowLabelRight <= 0 || label == "" {
 		return label, true
@@ -365,6 +426,17 @@ const (
 // truncate_label_text, called for guard/pre/flip/slide at :1167-1170 and for
 // immediate at :1078). A theme is free to give a toggle a 51x19 rect, and AO2
 // sizes the widget to the rect and shortens the LABEL rather than overflowing it.
+//
+// Two AO2 behaviours worth keeping verbatim. A label that measures EXACTLY avail
+// is left alone — AO2's loop condition is `> label_theme_width`, so equality never
+// enters it. And if chopping would collapse the label to nothing but the ellipsis,
+// AO2 abandons the truncation and keeps the ORIGINAL text: a lone "…" reads as a
+// broken widget, and the guard also stops an infinite loop when the ellipsis is
+// itself wider than the rect.
+//
+// Pure, and measure is injected, so it is testable without a renderer. Called at
+// layout-build time rather than per frame; the happy path returns before the loop
+// allocates anything.
 func truncateLabelTo(label string, avail int32, measure func(string) int32) string {
 	return truncateLabelToMarker(label, avail, truncateEllipsis, measure)
 }
@@ -372,9 +444,18 @@ func truncateLabelTo(label string, avail int32, measure func(string) int32) stri
 // truncateLabelToMarker is truncateLabelTo with the trailing marker chosen by the
 // caller — for the surfaces that draw in a THEME-declared face, where U+2026 may
 // have no glyph and renders as a .notdef box (labelellipsis.go).
+//
+// AO2's arithmetic is GENERALISED, not abandoned. Its loop chops two runes and
+// appends a one-rune ellipsis, so each pass nets exactly one original character
+// narrower; the rule that produces that is "chop one more rune than the marker
+// costs", which is what truncateChopFor computes. With AO2's own marker it chops
+// two and the behaviour is byte-identical.
+//
 // Both AO2 behaviours the single-marker version documented survive verbatim: a
 // label measuring EXACTLY avail is left alone (AO2's condition is `>`), and a chop
 // that would leave nothing but the marker abandons the truncation and keeps the
+// ORIGINAL text rather than drawing a lone "…" — which also stops the loop when the
+// marker is itself wider than the rect.
 func truncateLabelToMarker(label string, avail int32, marker string, measure func(string) int32) string {
 	if avail <= 0 || measure(label) <= avail {
 		return label
@@ -401,6 +482,7 @@ func truncateLabelToMarker(label string, avail int32, marker string, measure fun
 // truncateChopFor is how many runes one pass removes so the net loss is exactly one
 // original character: the marker's own runes (which the previous pass appended and
 // this one must take back) plus one.
+//
 // For AO2's single-rune ellipsis this is 2 — courtroom.cpp:6750-6754's literal
 // chop of two — which is what truncateChopRunes names and what
 // TestTruncateChopMatchesAO2ForTheEllipsis (labelellipsis_test.go) pins.
@@ -412,6 +494,14 @@ func truncateChopFor(marker string) int {
 // surfaces that draw in a theme-declared font rather than the chrome one, where
 // c.TextWidth (the chrome face's memo) would ellipsize against the wrong metrics.
 // Callers on a per-frame path should test the fits case with fontTextWidth first:
+// the measure closure here is what would allocate, and only an overlong label
+// needs it.
+//
+// The MARKER is chosen against the same face (ellipsisFor): a theme-declared
+// display font that has no U+2026 gets "..." instead of the .notdef box that was
+// showing up at the end of every shortened music-banner title. Resolved here rather
+// than at the call sites so no themed surface can be given the coverage-checked
+// truncation and another one left with the box.
 func (c *Ctx) fitLabelToFont(f *ttf.Font, label string, avail int32) string {
 	return c.fitLabelToFontWeight(f, label, avail, false)
 }
@@ -422,6 +512,9 @@ func (c *Ctx) fitLabelToFont(f *ttf.Font, label string, avail int32) string {
 // occupy. SDL_ttf's emboldening widens every glyph, so a string fitted on plain
 // advances still overflows when it is drawn bold, and the ellipsis that was supposed
 // to say "there is more" gets clipped off along with the tail it marks.
+//
+// bold==false routes through the identical measure and the identical memo key as
+// before, so every existing caller is byte-for-byte unchanged.
 func (c *Ctx) fitLabelToFontWeight(f *ttf.Font, label string, avail int32, bold bool) string {
 	return truncateLabelToMarker(label, avail, c.ellipsisFor(f), func(s string) int32 {
 		w, ok := c.fontTextWidthWeight(f, s, bold)
@@ -443,6 +536,10 @@ func (c *Ctx) CheckboxLabelAvail(r sdl.Rect) int32 {
 // the rect's own top. ThemeFitNative can downscale a canvas until the rect is
 // shorter than the 16 px box, and a negative offset would lift the box out of its
 // own row and into whatever is drawn above it.
+//
+// Extracted so a test can drive the real arithmetic: the first version of that
+// test recomputed the formula in its own body and would have passed with the floor
+// deleted from production.
 func checkboxBoxY(r sdl.Rect) int32 {
 	if off := (r.H - checkboxBoxPx) / 2; off > 0 {
 		return r.Y + off
@@ -454,6 +551,14 @@ func checkboxBoxY(r sdl.Rect) int32 {
 // AO2 places every toggle by design rect (set_size_and_pos), and several are far
 // narrower than their label — aceattorney2x gives `flip` 51x19 — so a checkbox
 // that grows to its text cannot honour a theme.
+//
+// The box is vertically centred in the rect and the label is clipped to what is
+// left. The centring offset is FLOORED AT ZERO: under ThemeFitNative a downscaled
+// canvas can hand this a rect shorter than the 16 px box, and a negative offset
+// would lift the box out of its own row.
+//
+// No id parameter: Checkbox has none either, c.onRow collects by label, and an
+// unused parameter is a staticcheck finding.
 func (c *Ctx) CheckboxIn(r sdl.Rect, label string, value bool) bool {
 	if c.onRow != nil {
 		c.onRow(label, r.Y) // settings-search collect pass, as Checkbox does
@@ -474,11 +579,13 @@ func (c *Ctx) CheckboxIn(r sdl.Rect, label string, value bool) bool {
 	}
 	// The hit area is the THEME'S rect, not the ink: AO2's widget is the rect, and
 	// a truncated label would otherwise shrink the click target below its box.
+	//
 	// The click is CONSUMED, unlike Checkbox's. AO2 design rects legitimately
 	// overlap — aceattorney2x puts guard at 425,473,61x19 and additive at
 	// 428,473,80x19, 58 px of overlap, and AO2's own stock default overlaps pre and
 	// flip by 21 px. Qt resolves that by delivering the press to one widget;
 	// immediate mode would fire BOTH, so one click would flip two toggles. Same
+	// idiom the phone-book rows use.
 	if c.hovering(r) && c.clicked {
 		c.clicked = false
 		return !value
@@ -495,9 +602,14 @@ func (c *Ctx) FocusField(id string) { c.focusNext = id }
 // it — the IC character counter, the muted chip. The field shrinks its text
 // interior by that much, so the value clips (and the keep-caret-visible scroll
 // turns over) BEFORE the reserved band instead of typing straight through it.
+//
 // Declared by the caller rather than sniffed by the field because only the
 // caller knows what it is about to paint, and the width is usually a measured
 // string. One slot: the reservation is keyed to an id and consumed by the first
+// field that matches, and BeginFrame clears it, so a caller that reserves for a
+// field which then does not draw cannot mis-size an unrelated one next frame.
+// px <= 0 is a no-op, so a caller whose overlay is currently hidden simply
+// skips the call.
 func (c *Ctx) ReserveFieldTail(id string, px int32) {
 	if id == "" || px <= 0 {
 		return
@@ -537,6 +649,14 @@ func (c *Ctx) WheelIn(r sdl.Rect) int32 {
 // fieldDrewLastFrame reports whether a TextField with this id was painted on the
 // last frame that actually drew — the one honest answer to "is that box on screen
 // right now?" available before this frame's draw pass has run.
+//
+// It reads drawnFieldSeq, NOT fieldSeq, and the difference is the whole
+// correctness of it: fieldSeq is the list THIS pass is building, and every
+// pre-screen caller runs after BeginDraw emptied it. Reading fieldSeq here made
+// claimTypingForIC refuse every keystroke in the shipped app while the unit gate
+// stayed green on a hand-seeded list. drawnFieldSeq survives skipped frames for
+// free (BeginDraw is what swaps, and a skipped pass never calls it), which is the
+// property the Tab cycle needs too. Linear over a handful of ids, no allocation.
 func (c *Ctx) fieldDrewLastFrame(id string) bool {
 	for _, f := range c.drawnFieldSeq {
 		if f == id {
@@ -670,6 +790,10 @@ func wordForwardBoundary(runes []rune, pos int) int {
 // the new value and caret. Pure and rune-aware (multibyte shownames — Häschen,
 // fünfzehn, 🍅 — so the caret is by rune, never by byte), so it carries all the
 // edit logic that the draw path (which needs a renderer) can't unit-test.
+// Native selection semantics: insert/backspace/delete replace the range;
+// plain Left/Right collapse to the range's edge; Home/End collapse to the
+// text's ends. (Shift-extension keeps the anchor OUT of the input — the
+// caller moves only the caret.)
 func editStep(value string, caret int, in editInput) (string, int) {
 	runes := []rune(value)
 	if caret < 0 {
@@ -1108,6 +1232,8 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 	// non-ASCII — e.g. a saved Japanese showname greyed in the empty showname box.
 	// Route it through the same per-glyph raster on an opted-in field (fb.primary !=
 	// nil), keyed by the dim colour so the value/placeholder rasters never collide.
+	// Cached + self-invalidating like the value raster (one map hit/frame, no
+	// per-frame alloc); plain-ASCII placeholders stay on the single-font path.
 	if !drawn && show == placeholder && show != "" && fb.primary != nil && !isASCII(show) {
 		if m := c.emojiRaster(show, col, fb.primary, fb.emoji); m != nil {
 			cp, ch := c.pushClip(sdl.Rect{X: r.X + padX, Y: r.Y, W: avail, H: r.H})
@@ -1142,6 +1268,11 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 // constant integer device width (no 2↔3 flicker). Render thread; allocation-free
 // (sdl.Rect VALUES + the Ctx scratch rects — a &stackRect into a Ren call would
 // heap-escape through cgo every frame, the cgoRect lesson).
+//
+// selX0/selX1 are the selection's interior-relative logical offsets (0..avail,
+// already clamped); the caller passes hasSel/caretOn already ANDed with focus.
+// caretXDev is the caret's prefix width in RAW DEVICE px (measured on the same
+// device face as the value texture) — NOT logical: the caret adds it to the value
 // texture's device origin so it lands on the exact device glyph seam (#77 S1b).
 func (c *Ctx) devFieldValue(r sdl.Rect, padX, avail, scroll, caretXDev, textY int32, show string, col sdl.Color, selX0, selX1 int32, hasSel, caretOn bool) {
 	dev := c.textDevPct
@@ -1179,9 +1310,12 @@ func (c *Ctx) devFieldValue(r sdl.Rect, padX, avail, scroll, caretXDev, textY in
 	// after scroll). The caret shares this exact anchor below: the value texture and
 	// the caret metric are both measured on the device face, so caretXDev device px
 	// into the texture IS the glyph seam. Hoisted so that shared anchor is visible.
+	//
 	// UNIT SPLIT (deliberate, #77 S1b): the caret consumes RAW DEVICE caretXDev
 	// (ox+caretXDev) with no logical round-trip, so it lands on the true device
 	// seam. scroll and the selection edges stay on folded-LOGICAL widths — a
+	// sub-pixel error there only shifts which texture column the 1:1 blit starts
+	// at (it cannot resample), so the cheaper folded path is exact enough for them.
 	ox := uiDeviceFromLogical(r.X+padX-scroll, dev)
 
 	// Value texture, blitted 1:1 from its DEVICE-sized cache entry at the projected
@@ -1296,6 +1430,13 @@ const fieldCaretMarginPx = int32(16)
 // otherwise moves the view the SMALLEST distance that brings the caret back in
 // (plus fieldCaretMarginPx of lead). Always clamped to [0, fullW-avail], so a
 // value that shrank underneath the field can never leave a gap on the right.
+//
+// It replaces the old stateless "centre the caret" rule. That rule recomputed
+// the view from the caret every frame, which meant clicking into a long line —
+// or dragging a selection through one — re-centred the text under the pointer
+// mid-gesture: the glyph you pressed on moved before the button came up. Native
+// fields do not move the view on a click at all, which is exactly what returning
+// `cur` for an already-visible caret gives.
 func scrollKeep(cur, fullW, caretX, avail int32) int32 {
 	if fullW <= avail || avail <= 0 {
 		return 0 // it all fits: head-aligned, no scroll state to keep
@@ -1454,6 +1595,8 @@ func (c *Ctx) Dropdown(id string, r sdl.Rect, options []string, cur int) (int, b
 // row: rowHWant sets the (taller) open-row height, thumbW the strip width, and
 // thumb paints the idx-th row's image at end-of-frame (it shares the deferred
 // overlay paint, so the thumbnails sit above everything like the list itself).
+// The closed control is unchanged. thumb runs on the render thread in
+// FinishFrame, so an on-demand cachedPage/Prefetch from it is safe.
 func (c *Ctx) DropdownThumbs(id string, r sdl.Rect, options []string, cur int, rowHWant, thumbW int32, thumb func(idx int, r sdl.Rect)) (int, bool) {
 	return c.dropdownEx(id, r, options, cur, rowHWant, thumbW, thumb)
 }
@@ -1584,12 +1727,17 @@ func (c *Ctx) dropdownEx(id string, r sdl.Rect, options []string, cur int, rowHW
 
 // DropdownRowRightClicked reports the row index under the pointer when the OPEN
 // list belonging to id was right-clicked, and CONSUMES the click.
+//
 // It exists because the dropdown owns row hit-testing inside dropdownEx, not
 // inside the thumb painter — so a caller that wants a per-row secondary action
 // (audition this effect / this sound without selecting it) has no other way to
+// ask. Additive by construction: Dropdown and DropdownThumbs keep their
+// signatures, and a caller that never asks pays nothing.
+//
 // Consuming the click is the fence discipline (app.go's floating-pointer
 // save/restore): an unconsumed right-click would leak through to whatever widget
 // sits under the list, which is exactly what the modal capture exists to stop.
+// Call it in the SAME frame, right after the Dropdown/DropdownThumbs call.
 func (c *Ctx) DropdownRowRightClicked(id string) (int, bool) {
 	if !c.rightClicked || id == "" || c.ddHitID != id || c.ddOpen != id {
 		return 0, false
@@ -1675,6 +1823,14 @@ const (
 // and then clamps so the WHOLE box stays inside the w×h window — even when the box
 // is wider/taller than the room on either side (a long server description). Pure, so
 // the "never off-screen" rule (the reported bug) is unit-tested.
+//
+// avoid is the armed tip's anchor (Ctx.tipAnchor): the control it describes, plus
+// any container group. tipBox tries the four cursor-relative corners and then two
+// flush placements clear of avoid, taking the first that is fully on-screen AND
+// clear of it. If none qualifies — avoid covering most of the window, a box too
+// big to dodge — it returns the ORIGINAL cursor-relative result unchanged, so the
+// on-screen invariant can never regress in the name of the new one. A zero avoid
+// short-circuits to exactly the old behaviour.
 func tipBox(mx, my, boxW, boxH, w, h int32, avoid sdl.Rect) sdl.Rect {
 	base := tipBoxDefault(mx, my, boxW, boxH, w, h)
 	if avoid.W <= 0 || avoid.H <= 0 {
@@ -1861,6 +2017,8 @@ func (c *Ctx) VScrollbar(id string, track sdl.Rect, scroll, content, visible int
 	// non-positive height) hands us visible <= 0. With an empty list content is
 	// 0 too, so maxScroll = content - visible is POSITIVE and slips past the
 	// guard below, then thumbH = track.H*visible/content divides by content=0.
+	// Guard both: nothing scrolls (and nothing draws) when there's no content or
+	// no visible viewport — the same "everything fits" outcome as maxScroll<=0.
 	if content <= 0 || visible <= 0 {
 		return 0
 	}
@@ -1914,6 +2072,8 @@ func (c *Ctx) VScrollbar(id string, track sdl.Rect, scroll, content, visible int
 // by id, hover-gated, and mouse-down anywhere on the track jumps the thumb —
 // so it's grabbable rather than a fiddly +/- button press. Continuous (any
 // int in range).
+// sliderWheelDivisor sets the wheel step to 1/100 of a slider's range (≥1), so
+// the ubiquitous percent sliders step by exactly 1 per tick.
 const sliderWheelDivisor = 100
 
 func (c *Ctx) Slider(id string, track sdl.Rect, value, maxVal int32) int32 {

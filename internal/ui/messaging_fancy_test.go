@@ -6,19 +6,19 @@ import "testing"
 // isn't on screen counts as unread; one landing while it's selected AND the
 // panel is open doesn't; opening the group clears the count (drawGroupView).
 func TestGroupUnreadFlow(t *testing.T) {
-	a := &App{env: env{}}
-	g := a.msgs.ensureGroup(7)
+	a := &App{}
+	g := a.ensureGroup(7)
 	g.name = "case prep"
 	g.ownerUID = 1
 
-	a.msgs.showMessages = false
+	a.showMessages = false
 	a.applyGroupText(7, 2, "Edgeworth", "hello")
 	a.applyGroupText(7, 2, "Edgeworth", "anyone?")
 	if g.unread != 2 {
 		t.Fatalf("unread = %d, want 2 (panel closed)", g.unread)
 	}
-	a.msgs.showMessages = true
-	a.msgs.msgSelGroup = 7
+	a.showMessages = true
+	a.msgSelGroup = 7
 	a.applyGroupText(7, 2, "Edgeworth", "oh hi")
 	if g.unread != 2 {
 		t.Fatalf("a line landing while the group is on screen must not bump unread (got %d)", g.unread)

@@ -106,11 +106,11 @@ func banBoxDims(kind int) (defH, minH int32) {
 // banBoxRect is the ban/kick box's floating-window rect (floatwin.go), sized for
 // the open kind. Shared banWin geometry: a position/size the mod set carries over.
 func (a *App) banBoxRect(w, h int32) sdl.Rect {
-	defH, minH := banBoxDims(a.banBox.kind)
-	if r, ok := a.classic.seedPanelFromSlot(&a.wins.banWin, slotPanelBan, banBoxDefW, defH, banBoxMinW, minH, w, h); ok {
+	defH, minH := banBoxDims(a.banBoxKind)
+	if r, ok := a.seedPanelFromSlot(&a.banWin, slotPanelBan, banBoxDefW, defH, banBoxMinW, minH, w, h); ok {
 		return r
 	}
-	return a.wins.banWin.rect(banBoxDefW, defH, banBoxMinW, minH, w, h)
+	return a.banWin.rect(banBoxDefW, defH, banBoxMinW, minH, w, h)
 }
 
 // modDashChipOn is the "active" status-chip colour (green; matches the ping chip's "good").
@@ -124,7 +124,7 @@ var modDashChipOn = sdl.Color{R: 70, G: 200, B: 90, A: 255}
 func (a *App) drawReasonTemplateChips(x, y, maxW int32, manage bool) int32 {
 	c := a.ctx
 	tpls := a.d.Prefs.Load().ModReasonTemplatesList()
-	editing := manage && a.modUI.modTemplatesEdit
+	editing := manage && a.modTemplatesEdit
 	tx := x
 	for _, tpl := range tpls {
 		label := tpl
@@ -141,19 +141,19 @@ func (a *App) drawReasonTemplateChips(x, y, maxW int32, manage bool) int32 {
 			if editing {
 				a.d.Prefs.RemoveModReasonTemplate(tpl)
 			} else {
-				a.banBox.reason = tpl
+				a.banBoxReason = tpl
 			}
 		}
-		if !editing && a.banBox.reason == tpl {
+		if !editing && a.banBoxReason == tpl {
 			c.Border(tr, ColAccent) // outline the active template
 		}
 		tx += tw + 6
 	}
 	y += btnH + 6
 	if manage {
-		if !editing && strings.TrimSpace(a.banBox.reason) != "" {
+		if !editing && strings.TrimSpace(a.banBoxReason) != "" {
 			if c.Button(sdl.Rect{X: x, Y: y, W: 150, H: btnH}, "+ Save reason") {
-				a.d.Prefs.AddModReasonTemplate(a.banBox.reason)
+				a.d.Prefs.AddModReasonTemplate(a.banBoxReason)
 			}
 		}
 		editLabel := "Edit"
@@ -161,7 +161,7 @@ func (a *App) drawReasonTemplateChips(x, y, maxW int32, manage bool) int32 {
 			editLabel = "Done"
 		}
 		if c.Button(sdl.Rect{X: x + maxW - 64, Y: y, W: 64, H: btnH}, editLabel) {
-			a.modUI.modTemplatesEdit = !a.modUI.modTemplatesEdit
+			a.modTemplatesEdit = !a.modTemplatesEdit
 		}
 		y += btnH + 6
 	}
@@ -195,48 +195,48 @@ func (a *App) drawDurationChips(x, y, maxW int32, manage bool) int32 {
 	}
 	for d := courtroom.BanPerma; d < courtroom.BanDurationCount; d++ {
 		d := d
-		chip(courtroom.BanDurationLabel(d), a.banBox.customDur == "" && d == a.banBox.dur, func() {
-			a.banBox.dur, a.banBox.customDur = d, ""
+		chip(courtroom.BanDurationLabel(d), a.banBoxCustomDur == "" && d == a.banBoxDur, func() {
+			a.banBoxDur, a.banBoxCustomDur = d, ""
 		})
 	}
-	editing := manage && a.modUI.modDurEdit
+	editing := manage && a.modDurEdit
 	for _, token := range a.d.Prefs.Load().ModDurationsList() {
 		token := token
 		label := courtroom.BanDurationTokenLabel(token)
 		if editing {
 			label = "× " + label
 		}
-		chip(label, !editing && a.banBox.customDur == token, func() {
+		chip(label, !editing && a.banBoxCustomDur == token, func() {
 			if editing {
 				a.d.Prefs.RemoveModDuration(token)
-				if a.banBox.customDur == token {
-					a.banBox.customDur = "" // removing the active chip falls back to the enum preset
+				if a.banBoxCustomDur == token {
+					a.banBoxCustomDur = "" // removing the active chip falls back to the enum preset
 				}
 			} else {
-				a.banBox.customDur = token
+				a.banBoxCustomDur = token
 			}
 		})
 	}
 	y += btnH + 6
 	if manage {
-		a.modUI.modDurInput, _ = c.TextField("moddashdur", sdl.Rect{X: x, Y: y, W: 150, H: fieldH}, a.modUI.modDurInput, "e.g. 45m, 2 days")
+		a.modDurInput, _ = c.TextField("moddashdur", sdl.Rect{X: x, Y: y, W: 150, H: fieldH}, a.modDurInput, "e.g. 45m, 2 days")
 		if c.Button(sdl.Rect{X: x + 156, Y: y, W: 130, H: btnH}, "+ Save duration") {
-			if token, ok := courtroom.CanonicalBanDuration(a.modUI.modDurInput); ok {
+			if token, ok := courtroom.CanonicalBanDuration(a.modDurInput); ok {
 				if a.d.Prefs.AddModDuration(token) {
-					a.banBox.customDur = token // a fresh chip becomes the pick — what you just typed is what you meant
+					a.banBoxCustomDur = token // a fresh chip becomes the pick — what you just typed is what you meant
 				}
-				a.modUI.modDurInput = ""
+				a.modDurInput = ""
 			} else {
 				a.warnLine = "Custom duration not understood — try 45m, 12h, 2 days, 1w or perma"
 				a.warnAt = a.now()
 			}
 		}
 		editLabel := "Edit"
-		if a.modUI.modDurEdit {
+		if a.modDurEdit {
 			editLabel = "Done"
 		}
 		if c.Button(sdl.Rect{X: x + maxW - 64, Y: y, W: 64, H: btnH}, editLabel) {
-			a.modUI.modDurEdit = !a.modUI.modDurEdit
+			a.modDurEdit = !a.modDurEdit
 		}
 		y += btnH + 6
 	}
@@ -248,11 +248,11 @@ func (a *App) drawDurationChips(x, y, maxW int32, manage bool) int32 {
 func (a *App) formatModAudit() string {
 	var b strings.Builder
 	b.WriteString("AsyncAO mod audit")
-	if a.srvMeta.serverName != "" {
-		b.WriteString(" — " + a.srvMeta.serverName)
+	if a.serverName != "" {
+		b.WriteString(" — " + a.serverName)
 	}
 	b.WriteByte('\n')
-	for _, e := range a.modDash.audit {
+	for _, e := range a.modAudit {
 		b.WriteString(e.at.Format("2006-01-02 15:04:05"))
 		b.WriteByte('\t')
 		b.WriteString(e.action)
@@ -268,11 +268,11 @@ func (a *App) formatModAudit() string {
 // copyModAudit puts the audit log on the clipboard — the "export" path. Clipboard, not a file, so
 // there's no disk I/O on the render thread (the phone book / jukebox share the same way, §17.2).
 func (a *App) copyModAudit() {
-	if len(a.modDash.audit) == 0 {
+	if len(a.modAudit) == 0 {
 		return
 	}
 	_ = sdl.SetClipboardText(a.formatModAudit())
-	a.warnLine = clampLine("Copied " + strconv.Itoa(len(a.modDash.audit)) + " audit entries to the clipboard.")
+	a.warnLine = clampLine("Copied " + strconv.Itoa(len(a.modAudit)) + " audit entries to the clipboard.")
 	a.warnAt = a.now()
 }
 
@@ -296,9 +296,9 @@ func (a *App) recordModAudit(action, target, cmd string) {
 	if cmd == "" {
 		return
 	}
-	a.modDash.audit = append(a.modDash.audit, modAuditEntry{at: a.now(), action: action, target: target, cmd: cmd})
-	if len(a.modDash.audit) > modAuditCap {
-		a.modDash.audit = a.modDash.audit[len(a.modDash.audit)-modAuditCap:] // keep the newest modAuditCap entries
+	a.modAudit = append(a.modAudit, modAuditEntry{at: a.now(), action: action, target: target, cmd: cmd})
+	if len(a.modAudit) > modAuditCap {
+		a.modAudit = a.modAudit[len(a.modAudit)-modAuditCap:] // keep the newest modAuditCap entries
 	}
 }
 
@@ -312,26 +312,26 @@ func (a *App) toggleModSelected(uid string) {
 	if uid == "" {
 		return
 	}
-	if a.modDash.selected[uid] {
-		delete(a.modDash.selected, uid)
+	if a.modDashSelected[uid] {
+		delete(a.modDashSelected, uid)
 		return
 	}
-	if len(a.modDash.selected) >= modBulkCap {
+	if len(a.modDashSelected) >= modBulkCap {
 		a.warnLine = clampLine("Bulk selection is capped at " + strconv.Itoa(modBulkCap) + " players.")
 		a.warnAt = a.now()
 		return
 	}
-	if a.modDash.selected == nil {
-		a.modDash.selected = make(map[string]bool)
+	if a.modDashSelected == nil {
+		a.modDashSelected = make(map[string]bool)
 	}
-	a.modDash.selected[uid] = true
+	a.modDashSelected[uid] = true
 }
 
 // clearModSelected drops the whole bulk selection (the "Clear" button) — also the escape hatch for
 // ticked players who have since left, since their rows are gone and can't be unticked individually.
-func (moddash *modDashState) clearModSelected() {
-	for k := range moddash.selected {
-		delete(moddash.selected, k)
+func (a *App) clearModSelected() {
+	for k := range a.modDashSelected {
+		delete(a.modDashSelected, k)
 	}
 }
 
@@ -339,13 +339,13 @@ func (moddash *modDashState) clearModSelected() {
 // player who left is silently dropped, so a bulk command never targets a stale slot. Order matches
 // the roster so the bulk box lists people the way the mod sees them.
 func (a *App) selectedPresentUIDs() []string {
-	if len(a.modDash.selected) == 0 {
+	if len(a.modDashSelected) == 0 {
 		return nil
 	}
 	roster := a.rosterView()
-	out := make([]string, 0, len(a.modDash.selected))
+	out := make([]string, 0, len(a.modDashSelected))
 	for i := range roster {
-		if uid := roster[i].uid; uid != "" && a.modDash.selected[uid] {
+		if uid := roster[i].uid; uid != "" && a.modDashSelected[uid] {
 			out = append(out, uid)
 		}
 	}
@@ -355,13 +355,13 @@ func (a *App) selectedPresentUIDs() []string {
 // countSelectedPresent is the allocation-free count of ticked-and-still-present players, for the
 // per-frame button labels (selectedPresentUIDs allocates, so it's reserved for the one-shot freeze).
 func (a *App) countSelectedPresent() int {
-	if len(a.modDash.selected) == 0 {
+	if len(a.modDashSelected) == 0 {
 		return 0
 	}
 	roster := a.rosterView()
 	n := 0
 	for i := range roster {
-		if uid := roster[i].uid; uid != "" && a.modDash.selected[uid] {
+		if uid := roster[i].uid; uid != "" && a.modDashSelected[uid] {
 			n++
 		}
 	}
@@ -377,11 +377,11 @@ func (a *App) openModBulkBox(kind int) {
 	if len(uids) == 0 {
 		return
 	}
-	a.banBox.kind = kind
-	a.modUI.bulkBoxUIDs = uids
-	a.banBox.reason = ""
-	a.banBox.dur = courtroom.Ban1Day
-	a.banBox.customDur = "" // a fresh box starts on the sane preset, never a stale custom chip
+	a.banBoxKind = kind
+	a.bulkBoxUIDs = uids
+	a.banBoxReason = ""
+	a.banBoxDur = courtroom.Ban1Day
+	a.banBoxCustomDur = "" // a fresh box starts on the sane preset, never a stale custom chip
 }
 
 // bulkCommandFor builds the exact OOC command for one bulk target UID, re-resolving its IPID by UID
@@ -397,24 +397,24 @@ func (a *App) bulkCommandFor(uid string, isBan bool) string {
 	}
 	sw := a.detectedSoftware()
 	if isBan {
-		return a.banBox.banCmdFor(sw, ipid, uid) // custom-duration-aware, same builder as the single box
+		return a.banCmdFor(sw, ipid, uid) // custom-duration-aware, same builder as the single box
 	}
-	return courtroom.KickCommand(sw, ipid, uid, a.banBox.reason)
+	return courtroom.KickCommand(sw, ipid, uid, a.banBoxReason)
 }
 
 // toggleModDash opens / closes the dashboard (the Extras entry + the hotkey). Closing it also
 // drops any half-filled ban/kick box, so it can't reappear out of context next open.
 func (a *App) toggleModDash() {
-	a.modUI.showModDash = !a.modUI.showModDash
-	if !a.modUI.showModDash {
-		a.banBox.kind = 0
+	a.showModDash = !a.showModDash
+	if !a.showModDash {
+		a.banBoxKind = 0
 	}
 }
 
 // cycleModDashSoftware advances the manual software override one step (… → KFO → Athena → Akashi
 // → Whisker → Nyathena → auto). SoftwareUnknown means "auto-detect from the ID packet".
 func (a *App) cycleModDashSoftware() {
-	a.link.cmSoftwareOverride = (a.link.cmSoftwareOverride + 1) % courtroom.ServerSoftwareCount
+	a.cmSoftwareOverride = (a.cmSoftwareOverride + 1) % courtroom.ServerSoftwareCount
 }
 
 // rosterByUID resolves a live-roster row by UID — the STABLE identity key. The roster slice is
@@ -424,9 +424,9 @@ func (a *App) rosterByUID(uid string) (areaPlayer, bool) {
 	if uid == "" {
 		return areaPlayer{}, false
 	}
-	for i := range a.roster.liveRoster {
-		if a.roster.liveRoster[i].uid == uid {
-			return a.roster.liveRoster[i], true
+	for i := range a.liveRoster {
+		if a.liveRoster[i].uid == uid {
+			return a.liveRoster[i], true
 		}
 	}
 	return areaPlayer{}, false
@@ -446,10 +446,10 @@ func rosterDisplayName(p areaPlayer) string {
 // sendModCommand fires one already-built OOC command (the only send path for the dashboard) and
 // flashes a confirming toast of exactly what went out. Refuses an empty command defensively.
 func (a *App) sendModCommand(cmd string) {
-	if cmd == "" || a.link.sess == nil {
+	if cmd == "" || a.sess == nil {
 		return
 	}
-	a.link.sess.SendOOC(a.oocNameOrDefault(), cmd)
+	a.sess.SendOOC(a.oocNameOrDefault(), cmd)
 	a.warnLine = clampLine("Sent: " + cmd)
 	a.warnAt = a.now()
 }
@@ -459,18 +459,18 @@ func (a *App) sendModCommand(cmd string) {
 // can't repoint the command at whoever shifted into that slot — only the IPID is allowed to fill
 // in later (re-resolved by the frozen UID, i.e. the same person).
 func (a *App) openModDashBox(kind int) {
-	row, ok := a.rosterByUID(a.modDash.targetUID)
+	row, ok := a.rosterByUID(a.modDashTargetUID)
 	if !ok {
 		return
 	}
-	a.banBox.kind = kind
-	a.banBox.uid = row.uid
-	a.banBox.ipid = row.ipid
-	a.banBox.name = rosterDisplayName(row)
-	a.banBox.reason = ""
-	a.banBox.dur = courtroom.Ban1Day // a sane default duration
-	a.banBox.customDur = ""          // never a stale custom chip from the last box
-	a.modUI.modTemplatesEdit = false // start in normal (fill) mode, not the template editor
+	a.banBoxKind = kind
+	a.banBoxUID = row.uid
+	a.banBoxIPID = row.ipid
+	a.banBoxName = rosterDisplayName(row)
+	a.banBoxReason = ""
+	a.banBoxDur = courtroom.Ban1Day // a sane default duration
+	a.banBoxCustomDur = ""          // never a stale custom chip from the last box
+	a.modTemplatesEdit = false      // start in normal (fill) mode, not the template editor
 }
 
 // fetchAreaForBan asks the server for the area roster — the mod-only reply that carries IPIDs — so
@@ -480,11 +480,11 @@ func (a *App) openModDashBox(kind int) {
 // clean roster (Akashi's "=== area ===" blocks carry no "----" reset marker), and the reply burst is
 // kept out of OOC like the other roster pulls. (WAP doesn't reach here — its IPID arrives live.)
 func (a *App) fetchAreaForBan() {
-	if a.link.sess == nil {
+	if a.sess == nil {
 		return
 	}
-	a.roster.pairAreaReset = true
-	a.roster.suppressAreaEchoUntil = a.now().Add(areaEchoSuppressWindow)
+	a.pairAreaReset = true
+	a.suppressAreaEchoUntil = a.now().Add(areaEchoSuppressWindow)
 	a.queueOOCLines([]string{"/getareas"})
 	a.warnLine = "Fetching area info (/getareas) — IPID fills in when the server replies."
 	a.warnAt = a.now()
@@ -492,37 +492,37 @@ func (a *App) fetchAreaForBan() {
 
 // drawModDashPanel paints the dashboard (or the ban/kick box on top of it) and handles its input.
 // modDashRect is the Mod dashboard's floating-window rect (floatwin.go).
-func (classic1 *classicState) modDashRect(e *env, w, h int32) sdl.Rect {
-	if r, ok := classic1.seedPanelFromSlot(&e.wins.modWin, slotPanelMod, modDashW, modDashH, modDashMinW, modDashMinH, w, h); ok {
+func (a *App) modDashRect(w, h int32) sdl.Rect {
+	if r, ok := a.seedPanelFromSlot(&a.modWin, slotPanelMod, modDashW, modDashH, modDashMinW, modDashMinH, w, h); ok {
 		return r
 	}
-	return e.wins.modWin.rect(modDashW, modDashH, modDashMinW, modDashMinH, w, h)
+	return a.modWin.rect(modDashW, modDashH, modDashMinW, modDashMinH, w, h)
 }
 
 func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	if c.escPressed {
-		a.modUI.showModDash = false
+		a.showModDash = false
 		return
 	}
-	wasActive := a.wins.modWin.dragging || a.wins.modWin.resizing // detect the drag/resize-end frame for slot persistence
-	panel := a.classic.modDashRect(&a.env, w, h)                  // floating box: movable / resizable, non-blocking
+	wasActive := a.modWin.dragging || a.modWin.resizing // detect the drag/resize-end frame for slot persistence
+	panel := a.modDashRect(w, h)                        // floating box: movable / resizable, non-blocking
 	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
 	c.Fill(sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W, H: floatTitleH}, ColPanelHi) // title bar / drag handle
-	a.floatWinDrag(&a.wins.modWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.modWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
 	mgrip := sdl.Rect{X: panel.X + panel.W - floatGripSz, Y: panel.Y + panel.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.wins.modWin, mgrip, panel, modDashMinW, modDashMinH, pressed)
+	a.floatWinResize(&a.modWin, mgrip, panel, modDashMinW, modDashMinH, pressed)
 	a.drawResizeGrip(mgrip)
-	if wasActive && !a.wins.modWin.dragging && !a.wins.modWin.resizing { // drag/resize just ended → remember where
-		a.classic.persistPanelSlot(&a.env, slotPanelMod, panel, w, h)
+	if wasActive && !a.modWin.dragging && !a.modWin.resizing { // drag/resize just ended → remember where
+		a.persistPanelSlot(slotPanelMod, panel, w, h)
 	}
 	x := panel.X + modDashIn
 
 	c.Heading(x, panel.Y+12, "Moderation — Ban / Kick", ColText)
 	if c.Button(sdl.Rect{X: panel.X + pw - modDashIn - 74, Y: panel.Y + 12, W: 74, H: btnH}, "Close") {
-		a.modUI.showModDash = false
+		a.showModDash = false
 		return
 	}
 
@@ -533,7 +533,7 @@ func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
 	vx := x + c.TextWidth("Server:") + 8
 	c.Label(vx, sy+5, sw.String(), ColText)
 	mode := "auto-detected"
-	if a.link.cmSoftwareOverride != courtroom.SoftwareUnknown {
+	if a.cmSoftwareOverride != courtroom.SoftwareUnknown {
 		mode = "manual override"
 	}
 	c.Label(vx+c.TextWidth(sw.String())+10, sy+5, "("+mode+")", ColTextDim)
@@ -563,27 +563,27 @@ func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
 	rightW := panel.X + pw - modDashIn - rightX
 	// Left column: the roster picker OR the session audit log (#13), switched by a two-button toggle.
 	rosterLabel := "Players (" + strconv.Itoa(len(a.rosterView())) + ")"
-	auditLabel := "Audit (" + strconv.Itoa(len(a.modDash.audit)) + ")"
+	auditLabel := "Audit (" + strconv.Itoa(len(a.modAudit)) + ")"
 	rosterBtn := sdl.Rect{X: x, Y: bodyTop, W: c.TextWidth(rosterLabel) + 22, H: btnH}
 	auditBtn := sdl.Rect{X: rosterBtn.X + rosterBtn.W + 8, Y: bodyTop, W: c.TextWidth(auditLabel) + 22, H: btnH}
 	if c.Button(rosterBtn, rosterLabel) {
-		a.modDash.showAudit = false
+		a.modDashShowAudit = false
 	}
 	if c.Button(auditBtn, auditLabel) {
-		a.modDash.showAudit = true
+		a.modDashShowAudit = true
 	}
-	if a.modDash.showAudit {
+	if a.modDashShowAudit {
 		c.Border(auditBtn, ColAccent)
 	} else {
 		c.Border(rosterBtn, ColAccent)
 	}
-	if a.modDash.showAudit && len(a.modDash.audit) > 0 { // export the audit log to the clipboard
+	if a.modDashShowAudit && len(a.modAudit) > 0 { // export the audit log to the clipboard
 		if c.Button(sdl.Rect{X: auditBtn.X + auditBtn.W + 8, Y: bodyTop, W: 60, H: btnH}, "Copy") {
 			a.copyModAudit()
 		}
 	}
 	leftRect := sdl.Rect{X: x, Y: bodyTop + btnH + 6, W: leftW, H: bodyBottom - (bodyTop + btnH + 6)}
-	if a.modDash.showAudit {
+	if a.modDashShowAudit {
 		a.drawModDashAudit(leftRect)
 	} else {
 		a.drawModDashRoster(leftRect)
@@ -618,7 +618,7 @@ func (a *App) drawModDashChip(x, y int32, label string, on bool) int32 {
 // yet when you claim it); the uncm / area-kick / lock controls are gated on actually being CM.
 func (a *App) drawModDashActions(x, y, w int32) {
 	c := a.ctx
-	row, hasTarget := a.rosterByUID(a.modDash.targetUID)
+	row, hasTarget := a.rosterByUID(a.modDashTargetUID)
 
 	if hasTarget {
 		c.LabelClipped(x, y, w, "Target: ["+row.uid+"] "+rosterDisplayName(row), ColText)
@@ -664,7 +664,7 @@ func (a *App) drawModDashActions(x, y, w int32) {
 		nStr := strconv.Itoa(n)
 		c.Label(x, y, "Bulk — "+nStr+" ticked", modDashChipOn)
 		if c.Button(sdl.Rect{X: x + w - 64, Y: y - 4, W: 64, H: btnH}, "Clear") {
-			a.modDash.clearModSelected()
+			a.clearModSelected()
 		}
 		y += 22
 		if a.amIMod() && a.dashSoftwareKnown() {
@@ -685,7 +685,7 @@ func (a *App) drawModDashActions(x, y, w int32) {
 	y += 6
 	c.Label(x, y, "Room (CM)", ColAccent)
 	y += 20
-	if a.srvMeta.amICMNow {
+	if a.amICMNow {
 		c.LabelClipped(x, y, w, "You hold CM — open the CM panel from the corner chip.", ColTextDim)
 	} else {
 		c.LabelClipped(x, y, w, "Type /cm to claim CM; its controls open from the corner chip.", ColTextDim)
@@ -716,18 +716,18 @@ func (a *App) drawModDashRoster(r sdl.Rect) {
 	// Ctrl+wheel (or wheel-button) resizes the dashboard list text (modDashPct); plain wheel scrolls.
 	a.zoomWheel(r, &a.modDashPct, config.MinLogScalePercent, config.MaxLogScalePercent)
 	if !c.ctrlHeld {
-		a.modDash.scroll -= c.WheelIn(r) * scrollStepPx
+		a.modDashScroll -= c.WheelIn(r) * scrollStepPx
 	}
 	contentH := int32(0)
 	for i := range rows {
 		contentH += modRowHeight(rows[i], a.modDashPct)
 	}
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
-	a.modDash.scroll = c.VScrollbar("moddashroster", track, a.modDash.scroll, contentH, r.H)
+	a.modDashScroll = c.VScrollbar("moddashroster", track, a.modDashScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r)
 	defer c.popClip(clipPrev, clipHad)
 	rowW := r.W - scrollBarW - 4
-	rowY := r.Y - a.modDash.scroll
+	rowY := r.Y - a.modDashScroll
 	for i := range rows {
 		rh := modRowHeight(rows[i], a.modDashPct)
 		if rowY > r.Y+r.H {
@@ -764,8 +764,8 @@ func modRowHeight(row rosterRow, pct int) int32 {
 func (a *App) drawModRosterRow(idx int, rrow sdl.Rect) {
 	c := a.ctx
 	p := &a.rosterView()[idx]
-	selected := p.uid != "" && p.uid == a.modDash.targetUID // single ban/kick target (accent row)
-	checked := p.uid != "" && a.modDash.selected[p.uid]     // ticked for the bulk batch (green box)
+	selected := p.uid != "" && p.uid == a.modDashTargetUID // single ban/kick target (accent row)
+	checked := p.uid != "" && a.modDashSelected[p.uid]     // ticked for the bulk batch (green box)
 	switch {
 	case selected:
 		c.Fill(rrow, ColAccent)
@@ -791,7 +791,7 @@ func (a *App) drawModRosterRow(idx int, rrow sdl.Rect) {
 		}
 	}
 	if !clickedCB && c.hovering(rrow) && c.clicked && p.uid != "" {
-		a.modDash.targetUID = p.uid
+		a.modDashTargetUID = p.uid
 	}
 
 	isSpec := strings.EqualFold(p.name, "Spectator")
@@ -827,31 +827,31 @@ func (a *App) drawModDashAudit(r sdl.Rect) {
 	if a.modDashPct < config.MinLogScalePercent { // uninit / stale → match the log
 		a.modDashPct = a.logPct
 	}
-	if len(a.modDash.audit) == 0 {
+	if len(a.modAudit) == 0 {
 		c.LabelClipped(r.X+6, r.Y+6, r.W-12, "No ban / kick actions sent yet this session.", ColTextDim)
 		return
 	}
 	// Ctrl+wheel (or wheel-button) resizes the audit text (modDashPct); plain wheel scrolls.
 	a.zoomWheel(r, &a.modDashPct, config.MinLogScalePercent, config.MaxLogScalePercent)
 	if !c.ctrlHeld {
-		a.modDash.auditScroll -= c.WheelIn(r) * scrollStepPx
+		a.modAuditScroll -= c.WheelIn(r) * scrollStepPx
 	}
 	font := c.LogFont(a.modDashPct)
 	auditRowH := auditRowHeight(int32(font.Height())) // two-line row, scales with the zoom
-	contentH := int32(len(a.modDash.audit)) * auditRowH
+	contentH := int32(len(a.modAudit)) * auditRowH
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
-	a.modDash.auditScroll = c.VScrollbar("moddashaudit", track, a.modDash.auditScroll, contentH, r.H)
+	a.modAuditScroll = c.VScrollbar("moddashaudit", track, a.modAuditScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r)
 	defer c.popClip(clipPrev, clipHad)
 	rowW := r.W - scrollBarW - 8
 	subLineY := int32(font.Height()) + modAuditSubLinePad // second line sits one scaled line + slack below the first
-	rowY := r.Y - a.modDash.auditScroll
-	for i := len(a.modDash.audit) - 1; i >= 0; i-- { // newest first
+	rowY := r.Y - a.modAuditScroll
+	for i := len(a.modAudit) - 1; i >= 0; i-- { // newest first
 		if rowY > r.Y+r.H {
 			break
 		}
 		if rowY >= r.Y-auditRowH {
-			e := a.modDash.audit[i]
+			e := a.modAudit[i]
 			c.LabelClippedFont(font, r.X+6, rowY+3, rowW, e.at.Format("15:04:05")+"   ·   "+e.action+"   ·   "+e.target, ColText)
 			c.LabelClippedFont(font, r.X+6, rowY+subLineY, rowW, e.cmd, ColTextDim)
 		}
@@ -877,21 +877,21 @@ const modAuditRowBottomPad = int32(4)
 
 // banBoxDurLabel is the friendly label of the CURRENTLY chosen duration — the custom
 // chip's when one is active, else the enum preset's.
-func (banbox *banBoxState) banBoxDurLabel() string {
-	if banbox.customDur != "" {
-		return courtroom.BanDurationTokenLabel(banbox.customDur)
+func (a *App) banBoxDurLabel() string {
+	if a.banBoxCustomDur != "" {
+		return courtroom.BanDurationTokenLabel(a.banBoxCustomDur)
 	}
-	return courtroom.BanDurationLabel(banbox.dur)
+	return courtroom.BanDurationLabel(a.banBoxDur)
 }
 
 // banCmdFor builds the /ban for the chosen duration — the custom token when a custom
 // chip is active, else the enum preset. One spot so the preview, the single Send and
 // the bulk builder can never disagree.
-func (banbox *banBoxState) banCmdFor(sw courtroom.ServerSoftware, ipid, uid string) string {
-	if banbox.customDur != "" {
-		return courtroom.BanCommandToken(sw, ipid, uid, banbox.customDur, banbox.reason)
+func (a *App) banCmdFor(sw courtroom.ServerSoftware, ipid, uid string) string {
+	if a.banBoxCustomDur != "" {
+		return courtroom.BanCommandToken(sw, ipid, uid, a.banBoxCustomDur, a.banBoxReason)
 	}
-	return courtroom.BanCommand(sw, ipid, uid, banbox.dur, banbox.reason)
+	return courtroom.BanCommand(sw, ipid, uid, a.banBoxDur, a.banBoxReason)
 }
 
 // banActionSummary is the plain-English "who · how long · why" line shown in the ban/kick box, so a
@@ -917,38 +917,38 @@ func banActionSummary(isBan bool, who string, durLabel string, reason string) st
 // mod can drag it aside and keep chatting — the live preview + the explicit Send keep the
 // don't-accidentally-ban safety the old blocking confirm had.
 func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
-	if a.banBox.kind >= 3 { // kinds 3/4 are the BULK ban/kick — a different (frozen-list) box
+	if a.banBoxKind >= 3 { // kinds 3/4 are the BULK ban/kick — a different (frozen-list) box
 		a.drawModBulkBox(w, h, pressed)
 		return
 	}
 	c := a.ctx
 	// Lazy IPID fill: re-resolve the FROZEN uid's IPID (same person — safe) from the enriched
 	// roster, else from the raw /getarea snapshot, so a fetch populates the preview live.
-	if a.banBox.ipid == "" {
-		if row, ok := a.rosterByUID(a.banBox.uid); ok && row.ipid != "" {
-			a.banBox.ipid = row.ipid
-		} else if ip := a.ipidByUID()[a.banBox.uid]; ip != "" {
-			a.banBox.ipid = ip
+	if a.banBoxIPID == "" {
+		if row, ok := a.rosterByUID(a.banBoxUID); ok && row.ipid != "" {
+			a.banBoxIPID = row.ipid
+		} else if ip := a.ipidByUID()[a.banBoxUID]; ip != "" {
+			a.banBoxIPID = ip
 		}
 	}
 	if c.escPressed {
-		a.banBox.kind = 0
+		a.banBoxKind = 0
 		return
 	}
-	isBan := a.banBox.kind == 1
-	_, minH := banBoxDims(a.banBox.kind)
-	wasActive := a.wins.banWin.dragging || a.wins.banWin.resizing // detect the drag/resize-end frame for slot persistence
-	panel := a.banBoxRect(w, h)                                   // floating box: movable / resizable, non-blocking
+	isBan := a.banBoxKind == 1
+	_, minH := banBoxDims(a.banBoxKind)
+	wasActive := a.banWin.dragging || a.banWin.resizing // detect the drag/resize-end frame for slot persistence
+	panel := a.banBoxRect(w, h)                         // floating box: movable / resizable, non-blocking
 	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColDanger)
 	c.Fill(sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W, H: floatTitleH}, ColPanelHi) // title bar / drag handle
-	a.floatWinDrag(&a.wins.banWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.banWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
 	bgrip := sdl.Rect{X: panel.X + pw - floatGripSz, Y: panel.Y + ph - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.wins.banWin, bgrip, panel, banBoxMinW, minH, pressed)
+	a.floatWinResize(&a.banWin, bgrip, panel, banBoxMinW, minH, pressed)
 	a.drawResizeGrip(bgrip)
-	if wasActive && !a.wins.banWin.dragging && !a.wins.banWin.resizing { // drag/resize just ended → remember where
-		a.classic.persistPanelSlot(&a.env, slotPanelBan, panel, w, h)
+	if wasActive && !a.banWin.dragging && !a.banWin.resizing { // drag/resize just ended → remember where
+		a.persistPanelSlot(slotPanelBan, panel, w, h)
 	}
 	x := panel.X + modDashIn
 	maxW := pw - 2*modDashIn
@@ -957,17 +957,17 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 	if isBan {
 		title = "Ban"
 	}
-	c.Heading(x, panel.Y+12, title+"  ["+a.banBox.uid+"] "+a.banBox.name, ColText)
+	c.Heading(x, panel.Y+12, title+"  ["+a.banBoxUID+"] "+a.banBoxName, ColText)
 	if c.Button(sdl.Rect{X: panel.X + pw - modDashIn - 74, Y: panel.Y + 12, W: 74, H: btnH}, "Close") {
-		a.banBox.kind = 0
+		a.banBoxKind = 0
 		return
 	}
 	y := panel.Y + 44
-	ipShown := a.banBox.ipid
+	ipShown := a.banBoxIPID
 	if ipShown == "" {
 		ipShown = "not fetched yet"
 	}
-	c.LabelClipped(x, y, maxW, "UID "+a.banBox.uid+"    IPID "+ipShown, ColTextDim)
+	c.LabelClipped(x, y, maxW, "UID "+a.banBoxUID+"    IPID "+ipShown, ColTextDim)
 	y += 24
 
 	sw := a.detectedSoftware()
@@ -985,7 +985,7 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 	if !isBan && courtroom.KickRequiresReason(sw) {
 		reasonHint = "reason (required on this server)"
 	}
-	a.banBox.reason, _ = c.TextField("moddashreason", sdl.Rect{X: x, Y: y, W: maxW, H: fieldH}, a.banBox.reason, reasonHint)
+	a.banBoxReason, _ = c.TextField("moddashreason", sdl.Rect{X: x, Y: y, W: maxW, H: fieldH}, a.banBoxReason, reasonHint)
 	y += fieldH + 8
 
 	// Quick-reason templates: editable chips fill the field; the single box gets the manage row.
@@ -993,22 +993,22 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 
 	// At-a-glance summary of the action (always shown, even before the exact command below can be
 	// built) so the mod sees who, how long and why — the "ban someone 6 hours for disrespect" feedback.
-	c.LabelClipped(x, y, maxW, banActionSummary(isBan, "["+a.banBox.uid+"] "+a.banBox.name, a.banBox.banBoxDurLabel(), a.banBox.reason), ColText)
+	c.LabelClipped(x, y, maxW, banActionSummary(isBan, "["+a.banBoxUID+"] "+a.banBoxName, a.banBoxDurLabel(), a.banBoxReason), ColText)
 	y += 24
 
 	// Live preview of the exact command.
 	var cmd string
 	if isBan {
-		cmd = a.banBox.banCmdFor(sw, a.banBox.ipid, a.banBox.uid)
+		cmd = a.banCmdFor(sw, a.banBoxIPID, a.banBoxUID)
 	} else {
-		cmd = courtroom.KickCommand(sw, a.banBox.ipid, a.banBox.uid, a.banBox.reason)
+		cmd = courtroom.KickCommand(sw, a.banBoxIPID, a.banBoxUID, a.banBoxReason)
 	}
 	c.Label(x, y, "Will send:", ColTextDim)
 	y += 20
 	if cmd != "" {
 		c.LabelClipped(x, y, maxW, cmd, ColAccent)
 	} else {
-		needIPID := a.banBox.ipid == "" && (sw == courtroom.SoftwareTsuserver || sw == courtroom.SoftwareAkashi || sw == courtroom.SoftwareWitches)
+		needIPID := a.banBoxIPID == "" && (sw == courtroom.SoftwareTsuserver || sw == courtroom.SoftwareAkashi || sw == courtroom.SoftwareWitches)
 		switch {
 		case !a.dashSoftwareKnown():
 			c.LabelClipped(x, y, maxW, "Pick the server software first (Close, then Change).", ColDanger)
@@ -1021,7 +1021,7 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 			if c.Button(sdl.Rect{X: x, Y: y + 22, W: 240, H: btnH}, "Fetch area info (/getareas)") {
 				a.fetchAreaForBan()
 			}
-		case !isBan && courtroom.KickRequiresReason(sw) && strings.TrimSpace(a.banBox.reason) == "":
+		case !isBan && courtroom.KickRequiresReason(sw) && strings.TrimSpace(a.banBoxReason) == "":
 			c.LabelClipped(x, y, maxW, "A reason is required to kick on this server.", ColDanger)
 		default:
 			c.LabelClipped(x, y, maxW, "Missing the identifier this server needs to "+title+".", ColDanger)
@@ -1033,14 +1033,14 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 	if cmd != "" {
 		send := title + " (send)"
 		if c.Button(sdl.Rect{X: x, Y: by, W: 160, H: btnH}, send) {
-			a.recordModAudit(title, "["+a.banBox.uid+"] "+a.banBox.name, cmd) // #13 audit log: record before it goes out
+			a.recordModAudit(title, "["+a.banBoxUID+"] "+a.banBoxName, cmd) // #13 audit log: record before it goes out
 			a.sendModCommand(cmd)
-			a.banBox.kind = 0
+			a.banBoxKind = 0
 			return
 		}
 	}
 	if c.Button(sdl.Rect{X: x + 172, Y: by, W: 100, H: btnH}, "Cancel") {
-		a.banBox.kind = 0
+		a.banBoxKind = 0
 	}
 }
 
@@ -1053,23 +1053,23 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	c := a.ctx
 	if c.escPressed {
-		a.banBox.kind = 0
+		a.banBoxKind = 0
 		return
 	}
-	isBan := a.banBox.kind == 3
-	_, minH := banBoxDims(a.banBox.kind)
-	wasActive := a.wins.banWin.dragging || a.wins.banWin.resizing // detect the drag/resize-end frame for slot persistence
-	panel := a.banBoxRect(w, h)                                   // floating box: movable / resizable, non-blocking
+	isBan := a.banBoxKind == 3
+	_, minH := banBoxDims(a.banBoxKind)
+	wasActive := a.banWin.dragging || a.banWin.resizing // detect the drag/resize-end frame for slot persistence
+	panel := a.banBoxRect(w, h)                         // floating box: movable / resizable, non-blocking
 	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColDanger)
 	c.Fill(sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W, H: floatTitleH}, ColPanelHi) // title bar / drag handle
-	a.floatWinDrag(&a.wins.banWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.banWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
 	bgrip := sdl.Rect{X: panel.X + pw - floatGripSz, Y: panel.Y + ph - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.wins.banWin, bgrip, panel, banBoxMinW, minH, pressed)
+	a.floatWinResize(&a.banWin, bgrip, panel, banBoxMinW, minH, pressed)
 	a.drawResizeGrip(bgrip)
-	if wasActive && !a.wins.banWin.dragging && !a.wins.banWin.resizing { // drag/resize just ended → remember where
-		a.classic.persistPanelSlot(&a.env, slotPanelBan, panel, w, h)
+	if wasActive && !a.banWin.dragging && !a.banWin.resizing { // drag/resize just ended → remember where
+		a.persistPanelSlot(slotPanelBan, panel, w, h)
 	}
 	x := panel.X + modDashIn
 	maxW := pw - 2*modDashIn
@@ -1078,10 +1078,10 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	if isBan {
 		title = "Bulk Ban"
 	}
-	n := len(a.modUI.bulkBoxUIDs)
+	n := len(a.bulkBoxUIDs)
 	c.Heading(x, panel.Y+12, title+"  —  "+strconv.Itoa(n)+" player(s)", ColText)
 	if c.Button(sdl.Rect{X: panel.X + pw - modDashIn - 74, Y: panel.Y + 12, W: 74, H: btnH}, "Close") {
-		a.banBox.kind = 0
+		a.banBoxKind = 0
 		return
 	}
 	y := panel.Y + 44
@@ -1094,7 +1094,7 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	c.Border(listR, ColPanelHi)
 	clipPrev, clipHad := c.pushClip(listR)
 	ly := listR.Y + 4
-	shown, more := a.modUI.bulkBoxUIDs, 0
+	shown, more := a.bulkBoxUIDs, 0
 	if int32(len(shown)) > maxListRows {
 		more = len(shown) - int(maxListRows-1)
 		shown = shown[:maxListRows-1]
@@ -1126,18 +1126,18 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	if !isBan && courtroom.KickRequiresReason(sw) {
 		reasonHint = "reason (required on this server)"
 	}
-	a.banBox.reason, _ = c.TextField("modbulkreason", sdl.Rect{X: x, Y: y, W: maxW, H: fieldH}, a.banBox.reason, reasonHint)
+	a.banBoxReason, _ = c.TextField("modbulkreason", sdl.Rect{X: x, Y: y, W: maxW, H: fieldH}, a.banBoxReason, reasonHint)
 	y += fieldH + 8
 	y = a.drawReasonTemplateChips(x, y, maxW, false) // compact (no manage row) in the busy bulk box
 
 	// At-a-glance summary of the bulk action (always shown), so the mod sees how long and why.
-	c.LabelClipped(x, y, maxW, banActionSummary(isBan, strconv.Itoa(n)+" player(s)", a.banBox.banBoxDurLabel(), a.banBox.reason), ColText)
+	c.LabelClipped(x, y, maxW, banActionSummary(isBan, strconv.Itoa(n)+" player(s)", a.banBoxDurLabel(), a.banBoxReason), ColText)
 	y += 22
 
 	// Readiness: how many frozen targets have a buildable command right now (the rest need an IPID
 	// this server hasn't surfaced yet). Ground truth — we just try to build each command.
 	ready := 0
-	for _, uid := range a.modUI.bulkBoxUIDs {
+	for _, uid := range a.bulkBoxUIDs {
 		if a.bulkCommandFor(uid, isBan) != "" {
 			ready++
 		}
@@ -1145,7 +1145,7 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	switch {
 	case !a.dashSoftwareKnown():
 		c.LabelClipped(x, y, maxW, "Pick the server software first (Cancel, then Change).", ColDanger)
-	case !isBan && courtroom.KickRequiresReason(sw) && strings.TrimSpace(a.banBox.reason) == "":
+	case !isBan && courtroom.KickRequiresReason(sw) && strings.TrimSpace(a.banBoxReason) == "":
 		c.LabelClipped(x, y, maxW, "A reason is required to kick on this server.", ColDanger)
 	case ready == 0:
 		c.LabelClipped(x, y, maxW, "No targets are ready — this server needs IPIDs (mod-only). Fetch them:", ColDanger)
@@ -1164,12 +1164,12 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	if ready > 0 {
 		if c.Button(sdl.Rect{X: x, Y: by, W: 200, H: btnH}, title+" (send "+strconv.Itoa(ready)+")") {
 			a.sendBulk(isBan)
-			a.banBox.kind = 0
+			a.banBoxKind = 0
 			return
 		}
 	}
 	if c.Button(sdl.Rect{X: x + 212, Y: by, W: 100, H: btnH}, "Cancel") {
-		a.banBox.kind = 0
+		a.banBoxKind = 0
 	}
 }
 
@@ -1182,8 +1182,8 @@ func (a *App) sendBulk(isBan bool) int {
 	if isBan {
 		action = "Ban"
 	}
-	cmds := make([]string, 0, len(a.modUI.bulkBoxUIDs))
-	for _, uid := range a.modUI.bulkBoxUIDs {
+	cmds := make([]string, 0, len(a.bulkBoxUIDs))
+	for _, uid := range a.bulkBoxUIDs {
 		cmd := a.bulkCommandFor(uid, isBan)
 		if cmd == "" {
 			continue // not ready (no identifier yet) — never send a broken command
@@ -1199,8 +1199,8 @@ func (a *App) sendBulk(isBan bool) int {
 		return 0
 	}
 	a.queueOOCLines(cmds) // paced + capped (macroQueueCap)
-	a.modDash.clearModSelected()
-	a.modUI.bulkBoxUIDs = nil
+	a.clearModSelected()
+	a.bulkBoxUIDs = nil
 	a.warnLine = clampLine("Queued " + strconv.Itoa(len(cmds)) + " " + action + " command(s).")
 	a.warnAt = a.now()
 	return len(cmds)

@@ -3,6 +3,15 @@ package ui
 // The "the emote preview must follow each click" gates (screens.go's
 // followPinnedPreview, wired into selectEmote and drawEmoteGridThemed's inline
 // duplicate of it).
+//
+// Three behavior tests pin the contract from the App's point of view:
+// pinned+open follows, unpinned+open is left for the draw-site close contract,
+// and closed never spontaneously opens. A fourth, source-level gate closes the
+// hole that caused the bug in the first place — the themed grid keeps its own
+// copy of "an emote was picked" instead of calling selectEmote — by demanding
+// every such copy, present or future, also calls followPinnedPreview. It reads
+// production source and contains none of followPinnedPreview's own logic, so
+// it cannot go green against a re-implementation (CLAUDE.md rule 11).
 
 import (
 	"os"
@@ -51,9 +60,9 @@ func emotePreviewFollowTestApp(t *testing.T) *App {
 		Pool:      pool,
 		Decoder:   decoder,
 	})
-	a.link.urls = courtroom.NewURLBuilder(assets.LocalOriginFor([]string{mount}))
-	a.inibrowse.iniChar = "TestChar" // activeCharName() returns this with no session/iniswap
-	a.emotepick.emotes = []courtroom.Emote{
+	a.urls = courtroom.NewURLBuilder(assets.LocalOriginFor([]string{mount}))
+	a.iniChar = "TestChar" // activeCharName() returns this with no session/iniswap
+	a.emotes = []courtroom.Emote{
 		{Anim: "happy", Comment: "happy"},
 		{Anim: "sad", Comment: "sad"},
 		{Anim: "angry", Comment: "angry"},
@@ -67,21 +76,21 @@ func emotePreviewFollowTestApp(t *testing.T) *App {
 // whatever's picked", not "freeze on whatever opened it".
 func TestSelectEmoteUpdatesPinnedPreview(t *testing.T) {
 	a := emotePreviewFollowTestApp(t)
-	a.previewEmote("TestChar", &a.emotepick.emotes[0]) // as if emote 0's hover/right-click opened the box
-	a.previewPinned = true                             // …and the right-click pinned it
-	openedOn := a.budget.previewBase
+	a.previewEmote("TestChar", &a.emotes[0]) // as if emote 0's hover/right-click opened the box
+	a.previewPinned = true                   // …and the right-click pinned it
+	openedOn := a.previewBase
 	if openedOn == "" {
 		t.Fatal("fixture did not open a preview — nothing below is measuring the follow")
 	}
 
 	a.selectEmote(1)
 
-	if a.budget.previewBase == openedOn {
+	if a.previewBase == openedOn {
 		t.Fatal("selectEmote(1) left the pinned preview on emote 0 — it must follow the click")
 	}
-	want := a.link.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
-	if a.budget.previewBase != want {
-		t.Fatalf("previewBase = %q, want %q (emote 1's talk sprite)", a.budget.previewBase, want)
+	want := a.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
+	if a.previewBase != want {
+		t.Fatalf("previewBase = %q, want %q (emote 1's talk sprite)", a.previewBase, want)
 	}
 	if got := a.previewedEmoteName(); got != "sad" {
 		t.Fatalf("previewedEmoteName() = %q, want %q — the caption must move with the box", got, "sad")
@@ -97,17 +106,17 @@ func TestSelectEmoteUpdatesPinnedPreview(t *testing.T) {
 // test would not exist to catch if followPinnedPreview's pin guard were removed.
 func TestSelectEmoteLeavesUnpinnedPreviewAlone(t *testing.T) {
 	a := emotePreviewFollowTestApp(t)
-	a.previewEmote("TestChar", &a.emotepick.emotes[0]) // hover only — no right-click, no sticky pref
-	openedOn := a.budget.previewBase
+	a.previewEmote("TestChar", &a.emotes[0]) // hover only — no right-click, no sticky pref
+	openedOn := a.previewBase
 	if openedOn == "" || a.previewIsPinned() {
 		t.Fatal("fixture must open an UNPINNED preview")
 	}
 
 	a.selectEmote(1)
 
-	if a.budget.previewBase != openedOn {
+	if a.previewBase != openedOn {
 		t.Fatalf("previewBase changed to %q — selectEmote must leave an unpinned preview alone "+
-			"(closing it is the draw site's job)", a.budget.previewBase)
+			"(closing it is the draw site's job)", a.previewBase)
 	}
 }
 
@@ -119,15 +128,15 @@ func TestSelectEmoteLeavesUnpinnedPreviewAlone(t *testing.T) {
 func TestSelectEmoteNeverOpensAClosedPreview(t *testing.T) {
 	a := emotePreviewFollowTestApp(t)
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewPinned = true }) // sticky "always pinned" — nothing hovered yet
-	if a.budget.previewBase != "" {
+	if a.previewBase != "" {
 		t.Fatal("fixture must start with the box closed")
 	}
 
 	a.selectEmote(0)
 
-	if a.budget.previewBase != "" {
+	if a.previewBase != "" {
 		t.Fatalf("previewBase = %q after a pick with no preview open — a selection must never "+
-			"spontaneously open the box", a.budget.previewBase)
+			"spontaneously open the box", a.previewBase)
 	}
 }
 
@@ -139,25 +148,25 @@ func TestFollowPinnedPreviewIsAPureGuard(t *testing.T) {
 	a := emotePreviewFollowTestApp(t)
 
 	// Closed: must not open.
-	a.followPinnedPreview("TestChar", &a.emotepick.emotes[0])
-	if a.budget.previewBase != "" {
+	a.followPinnedPreview("TestChar", &a.emotes[0])
+	if a.previewBase != "" {
 		t.Fatal("followPinnedPreview opened a closed box")
 	}
 
 	// Open + unpinned: must not move.
-	a.previewEmote("TestChar", &a.emotepick.emotes[0])
-	before := a.budget.previewBase
-	a.followPinnedPreview("TestChar", &a.emotepick.emotes[1])
-	if a.budget.previewBase != before {
+	a.previewEmote("TestChar", &a.emotes[0])
+	before := a.previewBase
+	a.followPinnedPreview("TestChar", &a.emotes[1])
+	if a.previewBase != before {
 		t.Fatal("followPinnedPreview moved an unpinned box")
 	}
 
 	// Open + pinned: must follow.
 	a.previewPinned = true
-	a.followPinnedPreview("TestChar", &a.emotepick.emotes[1])
-	want := a.link.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
-	if a.budget.previewBase != want {
-		t.Fatalf("followPinnedPreview left previewBase = %q, want %q", a.budget.previewBase, want)
+	a.followPinnedPreview("TestChar", &a.emotes[1])
+	want := a.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
+	if a.previewBase != want {
+		t.Fatalf("followPinnedPreview left previewBase = %q, want %q", a.previewBase, want)
 	}
 }
 
@@ -168,6 +177,8 @@ func TestFollowPinnedPreviewIsAPureGuard(t *testing.T) {
 // followPinnedPreview seam wave 1 shipped, not a new one. If detaching ever
 // grew its own separate "keep it open" bookkeeping instead of feeding
 // previewIsPinned(), this test — not just the census above — would catch it:
+// the census only proves every pick call site invokes followPinnedPreview,
+// it says nothing about whether a DETACHED preview counts as pinned to it.
 func TestFollowPinnedPreviewFollowsWhileDetached(t *testing.T) {
 	a := emotePreviewFollowTestApp(t)
 	os.Setenv("SDL_VIDEODRIVER", "dummy")
@@ -181,7 +192,7 @@ func TestFollowPinnedPreviewFollowsWhileDetached(t *testing.T) {
 	}
 	defer a.d.Preview.Close()
 
-	a.previewEmote("TestChar", &a.emotepick.emotes[0]) // as if a hover opened it, THEN the user detached
+	a.previewEmote("TestChar", &a.emotes[0]) // as if a hover opened it, THEN the user detached
 	if !a.previewIsDetached() {
 		t.Fatal("fixture: a.d.Preview.Open succeeded but previewIsDetached() reports false")
 	}
@@ -191,8 +202,8 @@ func TestFollowPinnedPreviewFollowsWhileDetached(t *testing.T) {
 
 	a.selectEmote(1)
 
-	want := a.link.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
-	if a.budget.previewBase != want {
-		t.Fatalf("previewBase = %q, want %q — a detached preview must follow the click", a.budget.previewBase, want)
+	want := a.urls.Emote("TestChar", "sad", courtroom.EmoteTalk)
+	if a.previewBase != want {
+		t.Fatalf("previewBase = %q, want %q — a detached preview must follow the click", a.previewBase, want)
 	}
 }

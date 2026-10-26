@@ -6,8 +6,104 @@ package ui
 // discipline and the chrome colours — AND the model: the package-level tables that
 // say which rows exist and what each one runs. Reserving the strip's height at the
 // top of every screen is chrometop.go's job (topChromeH).
+//
+// The tables are pure ENTRY POINTS. Every handler calls the function the on-screen
+// affordance it replaces already called, so the two surfaces cannot drift: the
 // migrated lobby buttons (#14), the theme-fit modes (#29), the window sizes (#35) and
 // the compact toolbox's chips (#26) are all one implementation each, reached from
+// two places.
+//
+// ============================ FENCE ORDERING PRECONDITION ============================
+// The two halves of this widget run at DIFFERENT points of App.Frame, and the split is
+// load-bearing — do not collapse it:
+//
+//   menuBarFrame(w, h)  MUST run ABOVE the screen dispatch (before drawLobby /
+//                       drawCharSelect / drawCourtroom / drawSettings / …).
+//   drawMenuBar(w, h)   runs AFTER the screens, because the kit is single-pass and
+//                       whatever paints last is on top.
+//
+// The reason menuBarFrame cannot be moved below the dispatch: drawCourtroom takes
+// c.overlayFenceMark() at the TOP of its pass and releases back to that mark on the
+// way out (screens.go), and the compact toolbox's owner-suspend is MARK-SCOPED —
+// pushOverlayOwner(mark) only ignores fences published at index >= mark
+// (overlayfence.go). Registry order IS paint order. So:
+//
+//   - A fence published AFTER a pass cannot occlude anything that pass drew: the
+//     widgets already hit-tested.
+//   - A fence published INSIDE the courtroom pass is released when the pass returns,
+//     so it would not survive to the post-courtroom overlays either.
+//   - A menu pane published LATE would land at a registry index >= the toolbox's own
+//     mark, so the toolbox would suspend it along with its own strip and keep
+//     hit-testing its chips straight through an open pane — the exact click-through
+//     bug #26 fixed, reproduced one level up with the roles swapped.
+//
+// Publishing App-level, before the dispatch, puts the strip (always) and the open
+// pane (when open) at registry indices BELOW every in-pass publisher, which is
+// precisely "painted above everything the screen draws".
+//
+// The corollary: painting last means painting over ANYTHING a screen put in the top
+// band, so the one surface that legitimately owns that band — either layout editor,
+// whose banner and Done button live at Y=0..26 — makes the strip stand down for the
+// frame. menuBarPaints is that rule as phase 1 can see it; because the screens run
+// BETWEEN the two halves and can arm or dismiss an editor either way, the rule is
+// re-taken once after menuBarInput and settled at the paint site by menuBarPaintsNow.
+// menuBarHeight deliberately follows none of it.
+// =====================================================================================
+//
+// INPUT DISCIPLINE (all four are non-negotiable — see the sibling popups):
+//   - While a pane is open the bar holds the kit's modal fence (c.modalOn) and
+//     RELEASES it the frame it closes, the rostermenu.go shape. app.go warns
+//     explicitly that an un-released modalOn FREEZES the whole UI. That flag is
+//     SHARED with four sibling popups that all run earlier in App.Frame, so the
+//     release also stands down while one of them is holding it — see
+//     menuBarModalFence for the concrete one-frame leak that costs.
+//   - The bar hit-tests ITSELF with raw pointIn(), exactly like the open dropdown's
+//     list rows (ui.go) and the roster menu: its own modal fence would otherwise
+//     blank its own titles and items.
+//   - A click outside the strip and the open pane closes it, and the dismissing
+//     click is SWALLOWED — modalOn has already made every hovering()-based widget
+//     inert for the frame, so leaving c.clicked set would only feed the raw-pointIn
+//     sites (the layout editors, an open dropdown list) a click the user meant as
+//     "put the menu away". A click the bar did NOT consume is never touched.
+//   - Escape closes the pane through closeTopOverlay (floatbox.go), whose header
+//     documents what happens to a popup that skips it: Esc falls through to the
+//     screen arm, leaves the screen, and the popup silently reappears — still
+//     fenced — the next time that screen opens.
+//
+// CHROME COLOURS. applyThemePalette (ui.go) overwrites the PACKAGE-GLOBAL Col* vars
+// the whole kit draws from, so an AO2 theme's stylesheet bleeds into every widget.
+// The menu bar is CLIENT furniture, not theme furniture, and it has to stay readable
+// over an arbitrary lobbybackground / courtroombackground, so it resolves its palette
+// from activeKitColors — the user's own chrome preset (applyChromePreset, chrome.go)
+// — instead of the theme-overwritten globals. Same idea as extrasPalette (floatbox.go)
+// resolving the Extras box's own colours. No new preference.
+//
+// PERF. The bar draws on every screen, under TestDrawLobbyZeroAlloc and the
+// courtroom gates, so nothing here may allocate per frame: the menu model is a set of
+// package-level tables with plain (non-capturing) function values — the courtroomModals
+// precedent (screens.go) — geometry is integer arithmetic over memoized c.TextWidth
+// probes, and the latch is a value struct on App.
+//
+// API (exact signatures):
+//
+//	const menuBarH int32                       // the strip's height when shown
+//	func (a *App) menuBarHeight() int32        // menuBarH, or 0 when the bar is not shown
+//	func (a *App) menuBarShows() bool          // does the strip RESERVE its band at all
+//	func (a *App) menuBarPaints() bool         // phase 1's paint answer (band reserved either way)
+//	func (a *App) menuBarPaintsNow() bool      // the paint site's FINAL answer
+//	func (a *App) noteEditorBanner()           // a layout editor painted its banner this frame
+//	func (a *App) menuBarOpen() bool           // is a pane open right now
+//	func (a *App) menuBarSuppressed() bool     // paints, but inert (blocking modal)
+//	func (a *App) closeMenuBar()               // close the pane + any submenu (fence released next frame)
+//	func (a *App) menuBarFrame(w, h int32)     // phase 1: fences + input. ABOVE the screen dispatch.
+//	func (a *App) drawMenuBar(w, h int32)      // phase 2a: paint the STRIP + its chips. AFTER the screens.
+//	func (a *App) drawMenuPanes()              // phase 2b: paint the OPEN pane(s). AFTER the diagnostics overlays.
+//	func (a *App) menuGoto(s Screen)           // enter a full-screen menu, remembering prevScreen
+//	func (a *App) fireMenuItem(it *menuItem)   // run one row (disabled/separator no-op)
+//	var menuBarMenus []menu                    // the model, in left-to-right order
+//	type menu struct{ title string; items []menuItem }
+//	type menuItem struct{ kind menuItemKind; label, shortcut string; arg int;
+//	                      checked, enabled func(*App, int) bool; act func(*App, int); sub []menuItem }
 
 import (
 	"github.com/veandco/go-sdl2/sdl"
@@ -122,6 +218,21 @@ const (
 )
 
 // menuItem is one row of a menu.
+//
+// checked / enabled / act take the item's own `arg` so every table entry can stay a
+// NON-CAPTURING package-level function value: a closure per row would be built at
+// package init and — more importantly — would tempt future rows into capturing
+// per-frame state. arg is whatever the handlers agree on (a mode constant, a slot
+// index); it is ignored by handlers that do not need it.
+//
+//	kind      which of the four shapes this row is
+//	label     the row text (and, for a submenu, the key menuSub is remembered by)
+//	shortcut  right-aligned hint text, e.g. "F11"; "" draws nothing
+//	arg       handler payload (see above)
+//	checked   menuItemCheck only; nil = never checked
+//	enabled   nil = always enabled; a false result dims the row and refuses the click
+//	act       nil = inert; fired on click, after which the menu closes
+//	sub       menuItemSubmenu only: the child pane's rows
 type menuItem struct {
 	kind     menuItemKind
 	label    string
@@ -140,6 +251,23 @@ type menu struct {
 }
 
 // menuBarMenus is the bar's model, in left-to-right order.
+//
+// EVERY ROW IS AN ENTRY POINT ONTO SHIPPED MACHINERY. Nothing here implements
+// behaviour: each handler calls the exact function the on-screen affordance it
+// replaces already called (RefreshServers, applyWindowSize, SetThemeFit,
+// openLayoutEditor, openHelp …), so the two surfaces cannot drift and a fix in one
+// place fixes both. Where a shipped affordance did more than one thing on a press,
+// that sequence was factored into a named App method (setPhoneBookPage,
+// toggleConnectTimeSort) rather than copied.
+//
+// DISABLED RATHER THAN ABSENT. A row whose action cannot do anything right now —
+// Disconnect with no session, Edit layout off the courtroom, "Theme's design size"
+// under a theme that declares no canvas — is drawn DIMMED and refuses the click. The
+// alternative (dropping the row) makes a menu whose shape changes under the cursor
+// and hides the fact that the feature exists at all. This rule is applied to every
+// menu; the only rows without an `enabled` predicate are the ones that genuinely
+// always work.
+//
 // Package level with plain function values (the courtroomModals precedent,
 // screens.go), so walking the model costs nothing per frame.
 var menuBarMenus = []menu{
@@ -164,6 +292,8 @@ const (
 // USED to be buttons in drawLobby's right-hand utility cluster; that cluster ran seven
 // buttons deep and pushed "Logs" clean off the left edge of a 640 px window, so
 // everything that is not a lobby *page* affordance moved in here (screens.go).
+// "Direct connect…" is new only as a row — it focuses the field the lobby has always
+// drawn, which is otherwise a mouse-only target you have to find first.
 var menuServersItems = []menuItem{
 	{kind: menuItemAction, label: "Refresh server list", enabled: menuCanRefreshServers, act: menuActRefreshServers},
 	{kind: menuItemCheck, label: "Sort by connect time", checked: menuPingSortOn, enabled: menuCanPingSort, act: menuTogglePingSort},
@@ -198,11 +328,25 @@ var menuWindowItems = []menuItem{
 }
 
 // menuExtrasItems is issue #26: the compact bottom-right toolbox's chips, migrated.
+//
+// THE FLOATING TOOLBOX SURVIVES AS A SECONDARY SURFACE, and this menu is its primary
+// home. It is not deleted because it is also a MOVABLE, theme-placeable box (the
+// slotToolbox classic override and the asyncao_toolbox theme rect), it is the layout
+// editor's own drag handle while editing, and it carries the overlay fence that
 // stopped the reported click-through. What #26 actually needed was a way to get those
+// three commands WITHOUT a strip parked on top of an AO2 theme's control buttons —
+// which is exactly what the rows below are, plus the "Floating toolbox" row that
+// turns the strip off from a surface that is reachable on every screen. Before this
+// menu existed the only ways to hide it were the very chips it was covering, a
+// hotkey, or the Settings screen.
 // menuExtrasItems is the chrome home for AsyncAO's own controls (#21, rule (c)).
+//
 // The first three rows replace a chip row that used to be pinned at the raw
 // window's bottom-left in themed mode (drawThemedExtrasButton, deleted). Under a
 // real AO2 theme that row painted and clicked straight through the theme's own
+// music_list rect, and no design key existed for a theme author to move it — so
+// the commands moved out of the canvas instead. They are reachable from every
+// screen here, which the pinned row never was.
 var menuExtrasItems = []menuItem{
 	// The Wardrobe's written path from EVERY screen. The band's own Iniswap chip is
 	// the fast route (iniswapchip.go), but that chip is dropped whenever the band gets
@@ -290,21 +434,21 @@ func buildThemeFitMenu() []menuItem {
 // neither would be a silent no-op — the failure mode the disabled-not-absent rule
 // above exists to avoid.
 
-func menuCanRefreshServers(a *App, _ int) bool { return !a.conn.lobby.lobbyFetching }
+func menuCanRefreshServers(a *App, _ int) bool { return !a.lobbyFetching }
 func menuActRefreshServers(a *App, _ int)      { a.RefreshServers() }
 
-func menuPhoneBookOn(a *App, _ int) bool { return a.conn.lobby.phoneBookPage }
+func menuPhoneBookOn(a *App, _ int) bool { return a.phoneBookPage }
 func menuTogglePhoneBook(a *App, _ int) {
 	a.menuGoto(ScreenLobby)
-	a.setPhoneBookPage(!a.conn.lobby.phoneBookPage)
+	a.setPhoneBookPage(!a.phoneBookPage)
 }
 
 // menuCanPingSort dims the row while a sweep is in flight: startPinging refuses a
 // second one (it would race its own results), so a live row there would do nothing.
 // Dimming is also the only progress feedback the menu can give — the on-screen button
 // this replaced said "Pinging…" in its label, which a static menu row cannot.
-func menuCanPingSort(a *App, _ int) bool { return !a.conn.lobby.pinging }
-func menuPingSortOn(a *App, _ int) bool  { return a.conn.lobby.pingMode }
+func menuCanPingSort(a *App, _ int) bool { return !a.pinging }
+func menuPingSortOn(a *App, _ int) bool  { return a.pingMode }
 func menuTogglePingSort(a *App, _ int) {
 	a.menuGoto(ScreenLobby)
 	a.toggleConnectTimeSort()
@@ -319,7 +463,7 @@ func menuActDirectConnect(a *App, _ int) {
 	a.ctx.FocusField(directConnectFieldID)
 }
 
-func menuInSession(a *App, _ int) bool { return a.link.sess != nil }
+func menuInSession(a *App, _ int) bool { return a.sess != nil }
 
 func menuActDisconnect(a *App, _ int) { a.requestDisconnect() } // routed through the confirm, like every other exit
 func menuActQuit(a *App, _ int)       { a.requestQuit() }
@@ -355,8 +499,8 @@ func menuTogglePlainBackdrops(a *App, _ int) {
 	}
 }
 
-func menuPerfHUDOn(a *App, _ int) bool { return a.budget.perfHUD }
-func menuTogglePerfHUD(a *App, _ int)  { a.budget.perfHUD = !a.budget.perfHUD }
+func menuPerfHUDOn(a *App, _ int) bool { return a.perfHUD }
+func menuTogglePerfHUD(a *App, _ int)  { a.perfHUD = !a.perfHUD }
 
 // --- Window (#35) ---
 
@@ -394,11 +538,9 @@ func menuInCourtroom(a *App, _ int) bool { return a.screen == ScreenCourtroom }
 // command palette and the hotkeys are one implementation each.
 func menuActTheater(a *App, _ int)      { a.compactTheater() }
 func menuActEditLayout(a *App, _ int)   { a.compactEditLayout() }
-func menuActHideUIPieces(a *App, _ int) { a.toolbox.compactHideUI() }
+func menuActHideUIPieces(a *App, _ int) { a.compactHideUI() }
 
-func menuToolboxPiecesOpen(a *App, _ int) bool {
-	return a.toolbox.toolboxPinned && a.toolbox.toolboxPieces
-}
+func menuToolboxPiecesOpen(a *App, _ int) bool { return a.toolboxPinned && a.toolboxPieces }
 
 // menuToolboxShown / menuToggleToolbox drive the floating strip's visibility through
 // the SAME hidden-chrome entry the per-piece panel's own checkbox uses, guard
@@ -408,38 +550,42 @@ func menuToolboxPiecesOpen(a *App, _ int) bool {
 // in force rather than relaxed here, where relaxing it could not be tested against
 // every profile/import path that also writes the hidden set.)
 // The chrome home for AsyncAO's own controls (#21 rule (c)) — each reaches the
-func menuExtrasBoxOpen(a *App, _ int) bool { return a.toolbox.showWidgets }
-func menuToggleExtrasBox(a *App, _ int)    { a.toolbox.showWidgets = !a.toolbox.showWidgets }
+// SAME code the deleted bottom-left chip row did, so nothing about the commands
+// themselves changed, only where you find them. Package-level funcs, never method
+// values: a method value in the menu table would allocate a closure the first time
+// the table is read, and the themed frame is gated at zero allocations.
+func menuExtrasBoxOpen(a *App, _ int) bool { return a.showWidgets }
+func menuToggleExtrasBox(a *App, _ int)    { a.showWidgets = !a.showWidgets }
 
 // menuActWardrobe opens the Wardrobe on its browse tab — the same entry point the
 // band's Iniswap chip uses (iniswapchip.go), so the two can never drift.
 func menuActWardrobe(a *App, _ int) { a.openIniswapBrowse() }
 
-func menuSpriteStyleOpen(a *App, _ int) bool { return a.favstyle.showStyleBox }
+func menuSpriteStyleOpen(a *App, _ int) bool { return a.showStyleBox }
 func menuToggleSpriteStyle(a *App, _ int)    { a.openSpriteStyle() }
 
 // Text FX and the emoji picker: the two IC controls with no AO2 design key, so
 // this menu is the only place a themed player can reach them (#21 rule (c)).
-func menuFxPickerOpen(a *App, _ int) bool { return a.lookUI.showFxPicker }
-func menuToggleFxPicker(a *App, _ int)    { a.lookUI.showFxPicker = !a.lookUI.showFxPicker }
+func menuFxPickerOpen(a *App, _ int) bool { return a.showFxPicker }
+func menuToggleFxPicker(a *App, _ int)    { a.showFxPicker = !a.showFxPicker }
 
-func menuEmojiPickerOpen(a *App, _ int) bool { return a.emoji.showEmojiPicker }
-func menuToggleEmojiPicker(a *App, _ int)    { a.emoji.showEmojiPicker = !a.emoji.showEmojiPicker }
+func menuEmojiPickerOpen(a *App, _ int) bool { return a.showEmojiPicker }
+func menuToggleEmojiPicker(a *App, _ int)    { a.showEmojiPicker = !a.showEmojiPicker }
 
 // Mod / CM are ENABLED-gated rather than hidden, so the row still says the
 // command exists and simply greys out until the server grants it — the chips
 // they replace vanished entirely, which read as the feature being missing.
 func menuAmIMod(a *App, _ int) bool      { return a.amIMod() }
-func menuModDashOpen(a *App, _ int) bool { return a.modUI.showModDash }
+func menuModDashOpen(a *App, _ int) bool { return a.showModDash }
 func menuActModDash(a *App, _ int)       { a.toggleModDash() }
 
-func menuAmICM(a *App, _ int) bool       { return a.srvMeta.amICMNow }
-func menuCMPanelOpen(a *App, _ int) bool { return a.modUI.showCMPanel }
+func menuAmICM(a *App, _ int) bool       { return a.amICMNow }
+func menuCMPanelOpen(a *App, _ int) bool { return a.showCMPanel }
 func menuActCMPanel(a *App, _ int)       { a.toggleCMPanel() }
 
-func menuToolboxShown(a *App, _ int) bool { return !a.classic.panelHidden(panelToolbox) }
+func menuToolboxShown(a *App, _ int) bool { return !a.panelHidden(panelToolbox) }
 func menuToggleToolbox(a *App, _ int) {
-	a.classic.setPanelHiddenGuarded(&a.env, panelToolbox, !a.classic.panelHidden(panelToolbox))
+	a.setPanelHiddenGuarded(panelToolbox, !a.panelHidden(panelToolbox))
 }
 
 func menuOpenSettings(a *App, _ int) { a.menuGoto(ScreenSettings) }
@@ -459,7 +605,7 @@ func menuOpenHelpTab(a *App, tab int) {
 	if a.screen != ScreenHelp {
 		a.prevScreen = a.screen
 	}
-	a.docs.openHelp(tab)
+	a.openHelp(tab)
 }
 
 func menuOpenLogs(a *App, _ int) {
@@ -476,9 +622,9 @@ func menuOpenServerHelp(a *App, _ int) { a.menuGoto(ScreenServerHelp) }
 // menuToggleHotkeys mirrors App.Frame's F1 arm exactly (including dropping the
 // cached rows, which are rebuilt per open).
 func menuToggleHotkeys(a *App, _ int) {
-	if a.courtkeys.showHotkeys {
-		a.courtkeys.showHotkeys = false
-		a.courtkeys.hkCache = nil
+	if a.showHotkeys {
+		a.showHotkeys = false
+		a.hkCache = nil
 		return
 	}
 	a.openHotkeyCheatSheet()
@@ -561,22 +707,68 @@ func newMenuBarLatch(mark int) menuBarLatch {
 // menuBarPaints because a user who turned the band off wants the pixels back — the
 // layout-editor exception below is about not MOVING a band that is still reserved.
 func (a *App) menuBarShows() bool {
-	return !a.screenDispatchPreempted() && !a.theaterOn && !a.classic.panelHidden(panelMenuBar)
+	return !a.screenDispatchPreempted() && !a.theaterOn && !a.panelHidden(panelMenuBar)
 }
 
 // menuBarPaints is PHASE 1's answer to whether the strip paints. It is menuBarShows
 // minus one case the RESERVED HEIGHT must not lose:
+//
+// While either layout editor is armed the editor owns the top band outright. Both
+// draw a 26 px banner at Y=0 whose entire control row — Done / Reset all / Snap /
+// Grid / Aspect / Magnet / Profile — sits at Y=2..24, and drawMenuBar runs AFTER the
+// screen dispatch, so an opaque 22 px strip painted there buries ~20 of those 22 px.
+// The chips still answer the mouse (both editors hit-test with raw pointIn, which no
+// fence covers) but they are INVISIBLE, and Done is the editor's primary exit — one
+// that the Extras menu's own "Edit layout…" row leads straight into.
+//
 // Only the PAINT stands down. menuBarHeight still reports menuBarH, because the band
 // is what every screen — and the themed layout cache — offsets its content by: giving
 // it up while editing would shift the entire courtroom up 22 px on entry and back down
+// on exit, i.e. the editor would move the very widgets you are placing.
+//
+// IT IS NOT THE LAST WORD, and it cannot be: it reads a flag that a screen drawn later
+// in the same frame can flip in either direction, and phase 1 has to run above the
+// screen dispatch (the fence-ordering precondition at the top of this file). The route
+// named two paragraphs up is itself one of them — the Extras row fires inside
+// menuBarInput, i.e. after this predicate has already been consulted. menuBarFrame
+// therefore RE-TAKES it once its own input is resolved, and menuBarPaintsNow settles it
+// for good at the paint site.
+//
+// THE THEME EDITOR IS THE THIRD CASE (v1.90.0 W7a), and it needs the whole stand-down
+// rather than just the paint. Its header band carries Undo / Redo / Save / Back at
+// Y=2..24 and it is built from KIT BUTTONS, not from the legacy editors' raw pointIn
+// chips — so a strip that kept phase 1's input would not merely bury those buttons,
+// it would publish a fence over them and they would hit-test dead. The reserved
+// height is untouched for the same reason as above: the editor's whole promise is
+// that the canvas is 1:1 with what will play, and reclaiming 22 px would move every
+// widget the moment you opened it.
 func (a *App) menuBarPaints() bool {
 	return a.menuBarShows() && !a.layoutEditorArmed() && a.screen != ScreenThemeEditor
 }
 
 // menuBarPaintsNow is the FINAL word on the strip's paint, taken at the paint site
 // because that is the only point in a frame where the answer can no longer change.
+//
+// The question is not "is an editor armed" — it is "did an editor's banner reach the
+// screen this frame", and the two differ in BOTH directions. Measured at 1280x720:
+//
+//   - ARM. The Extras → "Edit layout…" row, a hotkey and the compact toolbox's Edit
+//     chip all arm an editor AFTER phase 1 has latched draws=true, and all three do it
+//     early enough that the editor's own draw site still runs — so the banner is up and
+//     the strip painted straight over it. (menuBar.draws=true, menuBarPaints=false, and
+//     a published fence for pixels that were never ours.) The command palette also arms
+//     an editor mid-frame, but from AFTER the courtroom pass, so no banner is painted
+//     that frame and the strip is still the right thing to draw — which is exactly why
+//     the armed flag is the wrong signal and a re-derived menuBarPaints() here would
+//     open a fresh one-frame gap where it closes the other.
+//   - DISMISS. drawClassicEditor lays out its chips, handles their clicks, and paints
+//     its banner LAST, so the frame Done is pressed returns before painting anything —
+//     as do the mid-pass force-stops (session dropped, theater, the theme went away).
+//     Phase 1 had already stood the bar down, so that frame showed an EMPTY 22 px band.
+//     editorHeld is what lets the paint site put the bar back, inert (no fence and no
+//     input were taken for it), instead of losing it for a frame.
 func (a *App) menuBarPaintsNow() bool {
-	if a.toolbox.editorBannerPainted {
+	if a.editorBannerPainted {
 		return false
 	}
 	return a.menuBar.draws || a.menuBar.editorHeld
@@ -586,12 +778,12 @@ func (a *App) menuBarPaintsNow() bool {
 // Called from the exact statement that fills the banner, never from the arm path, so
 // the flag means what menuBarPaintsNow needs it to mean: painted, not merely armed.
 // App.Frame clears it every frame, next to the tab strip's paint latch.
-func (toolbox1 *toolboxState) noteEditorBanner() { toolbox1.editorBannerPainted = true }
+func (a *App) noteEditorBanner() { a.editorBannerPainted = true }
 
 // layoutEditorArmed is "one of the two layout editors owns the screen": the classic
 // slot editor (classiclayout.go) or the themed rect editor (layoutedit.go). Named
 // because three separate rules key off the pair.
-func (a *App) layoutEditorArmed() bool { return a.classic.classicEdit || a.layoutEdit }
+func (a *App) layoutEditorArmed() bool { return a.classicEdit || a.layoutEdit }
 
 // menuBarHeight is the vertical space the bar occupies — the ONE number the layout
 // stage offsets screen content by, so no caller ever hardcodes menuBarH. Reports
@@ -618,10 +810,15 @@ func (a *App) closeMenuBar() { a.menuOpen, a.menuSub = "", "" }
 // it still paints: a blocking window modal owns the frame (the same set App.Frame
 // fences the pointer for). Leaving the bar live under a modal would let its own
 // modalOn blank the modal's buttons.
+//
+// The layout editors are in here too, but they never reach the inert path — they
+// stand the whole widget down one step earlier, at menuBarPaints, because they own
+// the pixels as well as the input. Keeping them in this predicate means every
+// "is the bar usable right now" caller gets one honest answer.
 func (a *App) menuBarSuppressed() bool {
 	return a.layoutEditorArmed() ||
-		a.dialogs.confirmDisconnect || a.dialogs.pendingCloseTab != nil || a.dialogs.hidePrompt != "" ||
-		a.showQuitConfirm || a.dialogs.disconnectDlg.open || a.font.serverNoticeDlg.open
+		a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" ||
+		a.showQuitConfirm || a.disconnectDlg.open || a.serverNoticeDlg.open
 }
 
 // menuBarIndexOf maps a stored menu title to its index in menuBarMenus, or -1.
@@ -771,9 +968,13 @@ func menuPaneRowRect(pane sdl.Rect, items []menuItem, idx int) sdl.Rect {
 
 // menuPaneRowFits reports whether a row is WHOLLY inside a clamped pane (menuPaneRect
 // shortens a pane that would run off the bottom of the window).
+//
 // It is THE rule for "does this row exist this frame", consulted by the draw and by
 // the hit test alike. They used to disagree: the draw stopped at the first row whose
 // bottom passed the clamp, while the hit test accepted any point inside both the pane
+// and the row — so the last, undrawn row was still clickable through the few pixels
+// of it that lay above the pane's bottom edge. A menu that fires a command nothing
+// painted is the worst version of the input-vs-pixels drift this file exists to avoid.
 func menuPaneRowFits(pane, row sdl.Rect) bool { return row.Y+row.H <= pane.Y+pane.H }
 
 // menuPaneRowAt returns the index of the row under (x, y) inside pane, or -1 (also
@@ -848,6 +1049,12 @@ func (a *App) menuBarFrame(w, h int32) {
 	}
 	// The FENCE follows the PIXELS, the INPUT follows ownership — two different
 	// questions, deliberately answered separately:
+	//   - c.ptrFenced means a LATER overlay (a blocking modal, the hotkey sheet)
+	//     already owns the pointer for this frame and will unfence for its own pass.
+	//     A fence left in the registry would then blank ITS widgets over pixels we
+	//     never painted, so publish nothing at all.
+	//   - Otherwise publish: the strip really is painted over the top band of every
+	//     screen dispatched below, so those screens must not hit-test underneath it.
 	a.menuBar.live = !c.ptrFenced
 	// The Iniswap chip shares this band, so its click must be claimed BEFORE the
 	// strip's fence covers its rect — the same ordering the missing-asset chip gets
@@ -920,6 +1127,17 @@ func (a *App) menuBarStandDown(w int32) {
 // across frames and an un-released one freezes the whole UI (app.go says so).
 // menuFenceOn records that WE set it, so a bar that never took the fence never
 // touches it.
+//
+// c.modalOn is a single SHARED flag, not a per-owner one, so "I set it" is not by
+// itself enough to make clearing it safe. Four siblings drive the same flag and ALL
+// of them run EARLIER in App.Frame — the emoji picker, the reaction picker, the
+// roster menu and the What's New modal. The concrete leak: the roster menu is open,
+// the user opens a menu pane (the bar hit-tests with raw pointIn, so modalOn does not
+// stop it) and then dismisses it — on that frame the roster's fence sets modalOn and
+// ours would clear it, leaving the courtroom under the open roster menu live for one
+// frame (hover, wheel, scrollbar drags). So the release ALSO asks whether a sibling
+// is holding it, and stands down if so; the sibling's own release then runs on the
+// frame IT closes, exactly as before.
 func (a *App) menuBarModalFence(c *Ctx) {
 	if a.menuBarOpen() {
 		c.modalOn = true
@@ -941,7 +1159,7 @@ func (a *App) menuBarModalFence(c *Ctx) {
 // the same discipline, and every one of them runs above the menu bar in App.Frame, so
 // their flags are already this frame's answer by the time the bar releases.
 func (a *App) otherModalFenceHeld() bool {
-	return a.emoji.emojiFenceOn || a.reactUI.reactFenceOn || a.roster.rosterMenuFenceOn || a.roster.musicMenuFenceOn || a.updates.fenceHeld()
+	return a.emojiFenceOn || a.reactFenceOn || a.rosterMenuFenceOn || a.musicMenuFenceOn || a.updateFenceOn
 }
 
 // menuBarInput resolves the bar's own interaction. Every hit test is raw pointIn:
@@ -1043,9 +1261,12 @@ func (a *App) fireMenuItem(it *menuItem) {
 // drawMenuBar paints the strip and any open pane, REPLAYING the latch phase 1
 // computed rather than re-deriving it. Call it after the screen dispatch: the kit is
 // single-pass, so the last thing painted is the thing on top.
+//
 // The one thing it does not replay is whether to paint at all: that is the frame's last
 // undecided bit, and menuBarPaintsNow settles it here. Everything the paint uses —
 // geometry, the open pane, hover eligibility — is still the latch, so a bar recovered
+// on a dismiss frame paints exactly what phase 1 would have (a bare, inert strip: no
+// pane, no highlight) rather than a second opinion.
 func (a *App) drawMenuBar(w, _ int32) {
 	if !a.menuBarPaintsNow() {
 		return
@@ -1078,12 +1299,20 @@ func (a *App) drawMenuBar(w, _ int32) {
 
 // drawMenuPanes is phase 2b: the OPEN dropdown pane (and its submenu), painted as
 // its own z-layer AFTER the diagnostics overlays.
+//
 // It is split from drawMenuBar because the two paint at different DEPTHS, not
 // because they are two features. The strip is flat client chrome and belongs
 // under the F3 performance overlay and the debug overlay, which are meant to sit
+// on top of the client; an open pane is a POPUP and belongs above them, next to
+// the kit's own deferred dropdown lists (Ctx.FinishFrame), which have always
+// painted last. Merged into one call, the single-pass kit painted the pane before
+// the overlays and the performance graph landed on top of whatever menu the user
+// had just opened — the reported defect.
+//
 // Nothing here re-decides anything: menuBarPaintsNow, the open index and both pane
 // rects are the same phase-1 latch drawMenuBar replays, so the strip and the pane
 // can never disagree about whether the bar is up. Safe to call unconditionally —
+// a closed bar returns before it touches the renderer.
 func (a *App) drawMenuPanes() {
 	if !a.menuBarPaintsNow() || a.menuBar.open < 0 {
 		return
@@ -1098,6 +1327,7 @@ func (a *App) drawMenuPanes() {
 
 // menuBarHot is THE hover-feedback rule, shared by the strip's titles and the panes'
 // rows so the two can never gate differently.
+//
 // Both halves of the gate replay the LATCH, never live state: `live` is "phase 1
 // published our fences and may take input", `inert` is "a blocking window modal owned
 // the frame when phase 1 ran". Highlighting under a cursor whose click the bar has

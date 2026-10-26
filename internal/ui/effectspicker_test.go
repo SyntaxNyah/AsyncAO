@@ -116,10 +116,10 @@ func TestOverlayThemeKeysCannotCollideWithAssetURLs(t *testing.T) {
 // TestOverlayRosterKeyIsPerOrigin — cache keys carry the host, so per-server
 // separation is structural (the repo's cache-key convention).
 func TestOverlayRosterKeyIsPerOrigin(t *testing.T) {
-	a := &App{env: env{}}
-	a.link.urls = courtroom.NewURLBuilder("https://one.test/base")
+	a := &App{}
+	a.urls = courtroom.NewURLBuilder("https://one.test/base")
 	first := a.overlayRosterKey("Transitions")
-	a.link.urls = courtroom.NewURLBuilder("https://two.test/base")
+	a.urls = courtroom.NewURLBuilder("https://two.test/base")
 	if second := a.overlayRosterKey("Transitions"); second == first {
 		t.Error("two origins produced the same roster key — one server's pack could answer for another's")
 	}
@@ -132,9 +132,9 @@ func TestOverlayRosterKeyIsPerOrigin(t *testing.T) {
 // list is theme-file ++ misc-file, duplicates preserved and never re-sorted,
 // with AO2's "None" row prepended at index 0 (courtroom.cpp:5600-5604).
 func TestOverlayChoicesPrependNoneAndPreserveDuplicates(t *testing.T) {
-	a := &App{env: env{}}
-	a.link.urls = courtroom.NewURLBuilder("https://one.test/base")
-	a.overlays.overlayRosters = map[string]*overlayRoster{
+	a := &App{}
+	a.urls = courtroom.NewURLBuilder("https://one.test/base")
+	a.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {
 			set: theme.MergeOverlayFX([]string{"flash", "realization", "realization", "tv on"})},
 	}
@@ -150,8 +150,8 @@ func TestOverlayChoicesPrependNoneAndPreserveDuplicates(t *testing.T) {
 	}
 	// An empty roster yields nothing at all, so the control never draws (AO2 hides
 	// ui_effects_dropdown when the list is empty, courtroom.cpp:5586-5598).
-	a.overlays.overlayRosters[a.overlayRosterKey("")] = &overlayRoster{set: theme.MergeOverlayFX(nil)}
-	a.overlays.overlayInvalidateMemos() // the poll does this for real; here we mutate the map directly
+	a.overlayRosters[a.overlayRosterKey("")] = &overlayRoster{set: theme.MergeOverlayFX(nil)}
+	a.overlayInvalidateMemos() // the poll does this for real; here we mutate the map directly
 	if got := a.overlayChoices(); len(got) != 0 {
 		t.Errorf("an empty roster must yield no choices, got %v", got)
 	}
@@ -170,69 +170,69 @@ func TestOutgoingEffectsFieldShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{env: env{d: Deps{Prefs: prefs}}}
-	a.link.urls = courtroom.NewURLBuilder("https://one.test/base")
+	a := &App{d: Deps{Prefs: prefs}}
+	a.urls = courtroom.NewURLBuilder("https://one.test/base")
 	fx := []theme.OverlayFX{{Name: "tv on", Sound: "switch tv"}, {Name: "sticky one", Sound: "s", Sticky: true}}
-	a.overlays.overlayRosters = map[string]*overlayRoster{
+	a.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {
 			set: theme.MergeOverlayFX([]string{"tv on", "sticky one"}, fx)},
 	}
-	a.compose.icPreanim = true
+	a.icPreanim = true
 
-	a.emotepick.overlayChoiceIdx = 0
+	a.overlayChoiceIdx = 0
 	if got := a.outgoingEffectsField(); got != "" {
 		t.Errorf("the None row must send %q, got %q", "", got)
 	}
-	a.emotepick.overlayChoiceIdx = 1
+	a.overlayChoiceIdx = 1
 	if got := a.outgoingEffectsField(); got != "tv on||switch tv" {
 		t.Errorf("field = %q, want \"tv on||switch tv\"", got)
 	}
 	// Pre unchecked AND an explicit SFX override: the effect's own sound is
 	// muted so the two do not overlap.
-	a.compose.icPreanim, a.emotepick.sfxChoiceIdx = false, 3
+	a.icPreanim, a.sfxChoiceIdx = false, 3
 	if got := a.outgoingEffectsField(); got != "tv on||0" {
 		t.Errorf("field = %q, want the anti-overlap \"0\" sound", got)
 	}
-	a.compose.icPreanim, a.emotepick.sfxChoiceIdx = true, 0
+	a.icPreanim, a.sfxChoiceIdx = true, 0
 
 	// AO2 ships `stickyeffects = true` (options.cpp:430-433), but AsyncAO ships it
 	// OFF: courtroom.cpp:2348 resets when false, so a stock AsyncAO client clears a
 	// plain effect to None after a send.
-	a.emotepick.overlayChoiceIdx = 1
+	a.overlayChoiceIdx = 1
 	a.clearEffectsAfterSend()
-	if a.emotepick.overlayChoiceIdx != 0 {
+	if a.overlayChoiceIdx != 0 {
 		t.Error("the shipped default is non-sticky: a plain effect must clear to None")
 	}
 	// With the (OWED) global turned off, the per-effect `sticky` override is what
 	// decides — the other half of courtroom.cpp:2348-2354.
-	a.emotepick.overlayChoiceIdx = 2
+	a.overlayChoiceIdx = 2
 	a.overlayPostSendReset(false)
-	if a.emotepick.overlayChoiceIdx != 2 {
+	if a.overlayChoiceIdx != 2 {
 		t.Error("a sticky effect must survive the send (courtroom.cpp:2348-2354)")
 	}
-	a.emotepick.overlayChoiceIdx = 1
+	a.overlayChoiceIdx = 1
 	a.overlayPostSendReset(false)
-	if a.emotepick.overlayChoiceIdx != 0 {
+	if a.overlayChoiceIdx != 0 {
 		t.Error("a non-sticky effect must clear to None once the global is off")
 	}
 }
 
 // TestEffectsDropdownHiddenWhenSpectating (courtroom.cpp:5586-5598: m_cid == -1).
 func TestEffectsDropdownHiddenWhenSpectating(t *testing.T) {
-	a := &App{env: env{}}
-	a.link.urls = courtroom.NewURLBuilder("https://one.test/base")
-	a.overlays.overlayRosters = map[string]*overlayRoster{
+	a := &App{}
+	a.urls = courtroom.NewURLBuilder("https://one.test/base")
+	a.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {set: theme.MergeOverlayFX([]string{"flash"})},
 	}
 	if a.overlayEffectsVisible() {
 		t.Error("with no session there is nothing to send an effect on")
 	}
-	a.link.sess = &courtroom.Session{}
-	a.link.sess.MyCharID = -1
+	a.sess = &courtroom.Session{}
+	a.sess.MyCharID = -1
 	if a.overlayEffectsVisible() {
 		t.Error("a SPECTATOR must not see the effects dropdown")
 	}
-	a.link.sess.MyCharID = 3
+	a.sess.MyCharID = 3
 	if !a.overlayEffectsVisible() {
 		t.Error("a seated player with a non-empty roster must see it")
 	}
@@ -243,10 +243,16 @@ func TestEffectsDropdownHiddenWhenSpectating(t *testing.T) {
 // with, the guard every other origin-dependent path in this package carries
 // (charMetaFor charmeta.go:58, previewSFX sfxbrowser.go:56, warmCharINI
 // app.go:7510, overlayRosterFetchOne above).
+//
+// Without it, an origin-less URLBuilder hands back the RELATIVE
+// "misc/<folder>/<name>": that would be submitted to the worker pool (the manager
+// rejects only an EMPTY base) and stored as Scene.Overlay.Base — a permanent junk
+// T1 key that can never resolve. It is reachable today, not theoretical: App.urls
 // is the ZERO value until a connect assigns one (app.go:4757), so a .demo replayed
+// from the LOBBY resolves effects through an origin-less builder.
 func TestOverlayResolveNeedsAnOriginAndAManager(t *testing.T) {
 	landed := func(a *App) {
-		a.overlays.overlayRosters = map[string]*overlayRoster{
+		a.overlayRosters = map[string]*overlayRoster{
 			a.overlayRosterKey("transitions"): {
 				// Properties but NO local art: rung 8 is the only one left, which is
 				// exactly the shape that leaked.
@@ -257,16 +263,16 @@ func TestOverlayResolveNeedsAnOriginAndAManager(t *testing.T) {
 		}
 	}
 
-	lobby := &App{env: env{}} // no connect yet: urls is the zero value
+	lobby := &App{} // no connect yet: urls is the zero value
 	landed(lobby)
-	if lobby.link.urls.Origin() != "" {
+	if lobby.urls.Origin() != "" {
 		t.Fatal("fixture: a lobby App must have no origin")
 	}
 	// The space is escaped per SEGMENT (segPath, urlbuilder.go:134) — the sibling
 	// TestOverlayEffectMiscCandidates pins the same %20 form for a real origin. The
 	// fixture name KEEPS its space precisely so this guards the escaping too: a
 	// whole-value PathEscape would mint "misc%2Ftransitions%2Ftv%20on" (#40).
-	if got := lobby.link.urls.OverlayEffectMisc("transitions", "tv on"); len(got) == 0 || got[0] != "misc/transitions/tv%20on" {
+	if got := lobby.urls.OverlayEffectMisc("transitions", "tv on"); len(got) == 0 || got[0] != "misc/transitions/tv%20on" {
 		t.Fatalf("candidates = %v — this test exists BECAUSE an origin-less builder yields a relative url", got)
 	}
 	res, ok := lobby.overlayResolve("tv on", "transitions")
@@ -280,8 +286,8 @@ func TestOverlayResolveNeedsAnOriginAndAManager(t *testing.T) {
 	// An origin but no Manager: nil-checked everywhere else in this package
 	// (mountlayer.go:37,75; scenemaker.go:276) and a nil-Manager PrefetchChain would
 	// panic on the render thread.
-	noMgr := &App{env: env{}}
-	noMgr.link.urls = courtroom.NewURLBuilder("https://one.test/base")
+	noMgr := &App{}
+	noMgr.urls = courtroom.NewURLBuilder("https://one.test/base")
 	landed(noMgr)
 	if res, ok = noMgr.overlayResolve("tv on", "transitions"); ok || res.Base != "" {
 		t.Errorf("resolve with no Manager: ok = %v base = %q, want a clear", ok, res.Base)
@@ -295,6 +301,10 @@ func TestOverlayResolveNeedsAnOriginAndAManager(t *testing.T) {
 // would arm as a T1 page key and submit to the worker pool. That key can never
 // resolve, and it is baked ONCE per roster and read on every frame the picker
 // draws, so it would sit there for the life of the session.
+//
+// Reachable, not theoretical, in exactly the way the resolve's guard is:
+// App.urls is the ZERO value until a connect assigns one, so a .demo replayed
+// from the LOBBY bakes its icon keys through an origin-less builder.
 func TestOverlayIconBakeNeedsAnOrigin(t *testing.T) {
 	// Properties but NO local icon, so the origin rung is the only one left —
 	// exactly the shape the guard is about.
@@ -306,9 +316,9 @@ func TestOverlayIconBakeNeedsAnOrigin(t *testing.T) {
 	const folder = "transitions"
 	rows := []string{overlayNoneRow, "tv on"}
 
-	lobby := &App{env: env{}} // no connect yet: urls is the zero value
-	lobby.overlays.overlayRosters = map[string]*overlayRoster{lobby.overlayRosterKey(""): roster}
-	if lobby.link.urls.Origin() != "" {
+	lobby := &App{} // no connect yet: urls is the zero value
+	lobby.overlayRosters = map[string]*overlayRoster{lobby.overlayRosterKey(""): roster}
+	if lobby.urls.Origin() != "" {
 		t.Fatal("fixture: a lobby App must have no origin")
 	}
 	// The roster really does reach the dropdown — the rows the bake is indexed by
@@ -319,12 +329,12 @@ func TestOverlayIconBakeNeedsAnOrigin(t *testing.T) {
 	// Driven with an effects FOLDER, because a lobby App's character has none and
 	// an empty folder yields no candidates for any origin — that would test the
 	// wrong thing.
-	lobby.overlays.overlayChoicesCache = rows
+	lobby.overlayChoicesCache = rows
 	lobby.bakeOverlayIconKeys(folder, roster)
-	if len(lobby.overlays.overlayIconKeys) != len(rows) {
-		t.Fatalf("baked %d icon keys for %d rows — the keys are indexed BY ROW", len(lobby.overlays.overlayIconKeys), len(rows))
+	if len(lobby.overlayIconKeys) != len(rows) {
+		t.Fatalf("baked %d icon keys for %d rows — the keys are indexed BY ROW", len(lobby.overlayIconKeys), len(rows))
 	}
-	for i, k := range lobby.overlays.overlayIconKeys {
+	for i, k := range lobby.overlayIconKeys {
 		if k != "" {
 			t.Errorf("row %d baked %q with no origin — a relative url is a permanent junk T1 key and a probe that can never resolve", i, k)
 		}
@@ -332,15 +342,15 @@ func TestOverlayIconBakeNeedsAnOrigin(t *testing.T) {
 
 	// The same call WITH an origin proves the fixture would otherwise bake
 	// something: the guard has to skip the key, not the feature.
-	live := &App{env: env{}}
-	live.link.urls = courtroom.NewURLBuilder("https://one.test/base")
-	live.overlays.overlayChoicesCache = rows
+	live := &App{}
+	live.urls = courtroom.NewURLBuilder("https://one.test/base")
+	live.overlayChoicesCache = rows
 	live.bakeOverlayIconKeys(folder, roster)
-	if live.overlays.overlayIconKeys[0] != "" {
-		t.Errorf("the None row baked %q — AO2 asks for its icon too, but no theme in the corpus ships one, so it must not burn a probe per open", live.overlays.overlayIconKeys[0])
+	if live.overlayIconKeys[0] != "" {
+		t.Errorf("the None row baked %q — AO2 asks for its icon too, but no theme in the corpus ships one, so it must not burn a probe per open", live.overlayIconKeys[0])
 	}
-	if !strings.HasPrefix(live.overlays.overlayIconKeys[1], "https://one.test/base") {
-		t.Errorf("row 1 key = %q, want an absolute url built off the origin", live.overlays.overlayIconKeys[1])
+	if !strings.HasPrefix(live.overlayIconKeys[1], "https://one.test/base") {
+		t.Errorf("row 1 key = %q, want an absolute url built off the origin", live.overlayIconKeys[1])
 	}
 }
 
@@ -349,9 +359,9 @@ func TestOverlayIconBakeNeedsAnOrigin(t *testing.T) {
 // KFO's `sound = 0` no-sound idiom.
 func effectPreviewApp(t *testing.T) (*App, []string) {
 	t.Helper()
-	a := &App{env: env{ctx: &Ctx{}}}
-	a.link.urls = courtroom.NewURLBuilder("https://one.test/base")
-	a.overlays.overlayRosters = map[string]*overlayRoster{
+	a := &App{ctx: &Ctx{}}
+	a.urls = courtroom.NewURLBuilder("https://one.test/base")
+	a.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {
 			set:  theme.MergeOverlayFX([]string{"tv on"}, []theme.OverlayFX{{Name: "tv on", Sound: "0"}}),
 			art:  map[string]string{"tv on": "/themes/t/effects/tv on.webp"},
@@ -370,6 +380,7 @@ func effectPreviewApp(t *testing.T) (*App, []string) {
 // and the empty origin, so an unfiltered preview mints urls.SFX("0") — a real
 // probe plus a 404-cache entry per format in the SFX fallback chain, per row
 // right-clicked. That is the exact probe spec §1.b told this wave to guard.
+//
 // The fixture has NO audio engine, so a regression panics here rather than
 // silently costing probes (the nil-Manager idiom of the resolve test above).
 func TestEffectPreviewFiltersTheSoundSentinels(t *testing.T) {
@@ -380,12 +391,12 @@ func TestEffectPreviewFiltersTheSoundSentinels(t *testing.T) {
 		}
 	}()
 	a.previewOverlayRow(choices, 1)
-	if want := overlayThemeKey("/themes/t/effects/tv on.webp"); a.budget.previewBase != want {
-		t.Errorf("previewBase = %q, want the effect's own art %q", a.budget.previewBase, want)
+	if want := overlayThemeKey("/themes/t/effects/tv on.webp"); a.previewBase != want {
+		t.Errorf("previewBase = %q, want the effect's own art %q", a.previewBase, want)
 	}
 	// A preview is an audition: it commits nothing.
-	if a.emotepick.overlayChoiceIdx != 0 || a.emotepick.sfxChoiceIdx != 0 {
-		t.Errorf("the preview changed a selection: effect = %d sfx = %d", a.emotepick.overlayChoiceIdx, a.emotepick.sfxChoiceIdx)
+	if a.overlayChoiceIdx != 0 || a.sfxChoiceIdx != 0 {
+		t.Errorf("the preview changed a selection: effect = %d sfx = %d", a.overlayChoiceIdx, a.sfxChoiceIdx)
 	}
 }
 
@@ -399,37 +410,37 @@ func TestPreviewClearsWhenTheDropdownCloses(t *testing.T) {
 	a, choices := effectPreviewApp(t)
 	a.ctx.ddOpen = overlayEffectsDDID
 	a.previewOverlayRow(choices, 1)
-	if a.budget.previewBase == "" || !a.previewPinned {
-		t.Fatalf("fixture: the preview must open pinned, base = %q pinned = %v", a.budget.previewBase, a.previewPinned)
+	if a.previewBase == "" || !a.previewPinned {
+		t.Fatalf("fixture: the preview must open pinned, base = %q pinned = %v", a.previewBase, a.previewPinned)
 	}
 
 	a.pollOverlayRosters() // the per-frame home of the close edge
-	if a.budget.previewBase == "" {
+	if a.previewBase == "" {
 		t.Fatal("the box must survive while the list is OPEN — auditioning a second row re-points it")
 	}
 
 	a.ctx.ddOpen = "" // click-away / pick / toggle shut: dropdownEx clears it
 	a.pollOverlayRosters()
-	if a.budget.previewBase != "" {
-		t.Errorf("previewBase = %q — the preview must clear when the dropdown closes (spec 1.d)", a.budget.previewBase)
+	if a.previewBase != "" {
+		t.Errorf("previewBase = %q — the preview must clear when the dropdown closes (spec 1.d)", a.previewBase)
 	}
 	if a.previewPinned {
 		t.Error("the pin must go with the box, or the next hover preview can never leave-close")
 	}
-	if a.overlays.overlayPreviewBase != "" {
+	if a.overlayPreviewBase != "" {
 		t.Error("the ownership record must be dropped with the box")
 	}
 
 	// Ownership: a box some OTHER trigger re-pointed since is not ours to close.
 	a.ctx.ddOpen = overlayEffectsDDID
 	a.previewOverlayRow(choices, 1)
-	a.budget.previewBase = "characters/phoenix/(a)normal" // an emote-grid hover took the shared slot
+	a.previewBase = "characters/phoenix/(a)normal" // an emote-grid hover took the shared slot
 	a.ctx.ddOpen = ""
 	a.pollOverlayRosters()
-	if a.budget.previewBase != "characters/phoenix/(a)normal" {
+	if a.previewBase != "characters/phoenix/(a)normal" {
 		t.Error("the close edge closed a box it does not own (previewBase is one shared slot)")
 	}
-	if a.overlays.overlayPreviewBase != "" {
+	if a.overlayPreviewBase != "" {
 		t.Error("the claim must still be dropped even when the box moved on")
 	}
 }
@@ -442,15 +453,16 @@ func TestPreviewClearsWhenTheDropdownCloses(t *testing.T) {
 // OverlayFX nothing would ever correct. That is not a rare path: a 3-part wire
 // field carries the folder, so it is the FIRST message from any character
 // shipping its own misc effects pack.
+//
 // The App here has no Manager at all, so a regression that falls through to
 // PrefetchChain fails loudly rather than silently costing two probes.
 func TestOverlayResolveDefersWhileTheRosterIsInFlight(t *testing.T) {
-	a := &App{env: env{}}
-	a.link.urls = courtroom.NewURLBuilder("https://one.test/base")
+	a := &App{}
+	a.urls = courtroom.NewURLBuilder("https://one.test/base")
 	// "Resolving": a nil answer from overlayRosterFor. Staged as an unsettled cache
 	// entry rather than through overlayRosterInFlight so this pins the ANSWER the
 	// resolver gives the courtroom, whichever way the marker happens to be stored.
-	a.overlays.overlayRosters = map[string]*overlayRoster{a.overlayRosterKey("transitions"): nil}
+	a.overlayRosters = map[string]*overlayRoster{a.overlayRosterKey("transitions"): nil}
 	res, ok := a.overlayResolve("tv on", "transitions")
 	if !ok {
 		t.Fatal("an in-flight roster must not report a MISS — that clears the overlay and loses the effect outright")
@@ -465,12 +477,12 @@ func TestOverlayResolveDefersWhileTheRosterIsInFlight(t *testing.T) {
 		t.Error("a deferred resolve must not hand back properties it has not read")
 	}
 	// Once it lands, the LOCAL art wins with no network rung at all.
-	a.overlays.overlayRosters[a.overlayRosterKey("transitions")] = &overlayRoster{
+	a.overlayRosters[a.overlayRosterKey("transitions")] = &overlayRoster{
 		set:  theme.MergeOverlayFX([]string{"tv on"}, []theme.OverlayFX{{Name: "tv on", Loop: true}}),
 		art:  map[string]string{"tv on": "/themes/t/effects/tv on.webp"},
 		icon: map[string]string{},
 	}
-	a.overlays.overlayInvalidateMemos() // the poll does this for real
+	a.overlayInvalidateMemos() // the poll does this for real
 	res, ok = a.overlayResolve("tv on", "transitions")
 	if !ok || res.Pending {
 		t.Fatal("a landed roster must answer, not defer")
@@ -500,10 +512,10 @@ func drawableEffectsApp(t *testing.T, iconPath string) *App {
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}
-	a := &App{env: env{ctx: ctx}}
+	a := &App{ctx: ctx}
 	a.d.Store = store
-	a.link.urls = courtroom.NewURLBuilder("https://one.test/base")
-	a.overlays.overlayRosters = map[string]*overlayRoster{
+	a.urls = courtroom.NewURLBuilder("https://one.test/base")
+	a.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {
 			set:  theme.MergeOverlayFX([]string{"tv on"}, []theme.OverlayFX{{Name: "tv on"}}),
 			art:  map[string]string{},
@@ -523,7 +535,15 @@ func drawableEffectsApp(t *testing.T, iconPath string) *App {
 
 // TestEffectsDropdownClosedIsZeroAlloc is spec §3's "closed dropdown and
 // no-effect frames must be byte-identical to today", measured where it bites.
+//
+// dropdownEx paints the CLOSED control's current pick through the SAME thumb
 // painter on every frame (ui.go:3938-3942) — the open list is the exceptional
+// case, the closed chip is the steady state. So from the moment a user picks an
+// effect, overlayIconDraw runs once per courtroom frame forever, and the version
+// that built its page key inside the painter (overlayThemeKey's concatenation, or
+// URLBuilder.OverlayEffectMiscIcon's candidate SLICE, or &tr into cgo) allocated
+// on every one of them — under the whole-screen courtroom alloc gate.
+//
 // The measured surface is the two calls dropdownEx makes per frame for a closed
 // thumbnail control: the option list and the current row's thumb. Drawing the
 // whole picker would drag in the kit's text path, which has its own gates.
@@ -537,21 +557,21 @@ func TestEffectsDropdownClosedIsZeroAlloc(t *testing.T) {
 	}
 	// The keys must be BAKED, not built in the painter — that is the fix, and
 	// allocation counts alone would not say which half moved.
-	if got, want := a.overlays.overlayIconKeys[1], overlayThemeKey(iconPath); got != want {
+	if got, want := a.overlayIconKeys[1], overlayThemeKey(iconPath); got != want {
 		t.Fatalf("row 1 icon key = %q, want the precomputed %q", got, want)
 	}
-	if a.overlays.overlayIconPaths[1] != iconPath {
-		t.Fatalf("row 1 icon path = %q, want the local file the key decodes from", a.overlays.overlayIconPaths[1])
+	if a.overlayIconPaths[1] != iconPath {
+		t.Fatalf("row 1 icon path = %q, want the local file the key decodes from", a.overlayIconPaths[1])
 	}
-	if a.overlays.overlayIconKeys[0] != "" {
-		t.Errorf("the None row must carry NO key (courtroom.cpp:5606-5610 asks, no theme ships one) — got %q", a.overlays.overlayIconKeys[0])
+	if a.overlayIconKeys[0] != "" {
+		t.Errorf("the None row must carry NO key (courtroom.cpp:5606-5610 asks, no theme ships one) — got %q", a.overlayIconKeys[0])
 	}
 
-	a.emotepick.overlayChoiceIdx = 1 // an effect is PICKED: the state that regressed
+	a.overlayChoiceIdx = 1 // an effect is PICKED: the state that regressed
 	tr := sdl.Rect{X: 4, Y: 4, W: 24, H: 20}
 	draw := func() {
 		_ = a.overlayChoices()
-		a.overlayIconDraw(a.emotepick.overlayChoiceIdx, tr)
+		a.overlayIconDraw(a.overlayChoiceIdx, tr)
 	}
 	draw() // warm the cached page pointer and any lazy renderer state
 	if n := testing.AllocsPerRun(200, draw); n != 0 {
@@ -566,9 +586,9 @@ func TestEffectsDropdownClosedIsZeroAlloc(t *testing.T) {
 // change, so two packs of equal size would otherwise wear each other's icons.
 func TestOverlayIconKeysFollowTheRoster(t *testing.T) {
 	const localIcon = "/themes/t/misc/packb/icons/tv on.png"
-	a := &App{env: env{ctx: &Ctx{}}}
-	a.link.urls = courtroom.NewURLBuilder("https://one.test/base")
-	a.overlays.overlayRosters = map[string]*overlayRoster{
+	a := &App{ctx: &Ctx{}}
+	a.urls = courtroom.NewURLBuilder("https://one.test/base")
+	a.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey("packa"): {
 			set:  theme.MergeOverlayFX([]string{"flash"}),
 			art:  map[string]string{},
@@ -582,34 +602,34 @@ func TestOverlayIconKeysFollowTheRoster(t *testing.T) {
 	}
 	// Drive the folder through the memo the picker itself uses (char "" so the
 	// memo hits without a char.ini fetch).
-	a.overlays.overlayMyFolderValid, a.overlays.overlayMyFolderChar, a.overlays.overlayMyFolder = true, "", "packa"
+	a.overlayMyFolderValid, a.overlayMyFolderChar, a.overlayMyFolder = true, "", "packa"
 
 	if got := a.overlayChoices(); len(got) != 2 || got[1] != "flash" {
 		t.Fatalf("fixture: choices = %v", got)
 	}
 	// No local icon but an origin: the row falls to the misc-tier URL (rung 8).
-	if want := "https://one.test/base/misc/packa/icons/flash"; a.overlays.overlayIconKeys[1] != want {
-		t.Errorf("origin icon key = %q, want %q", a.overlays.overlayIconKeys[1], want)
+	if want := "https://one.test/base/misc/packa/icons/flash"; a.overlayIconKeys[1] != want {
+		t.Errorf("origin icon key = %q, want %q", a.overlayIconKeys[1], want)
 	}
-	if a.overlays.overlayIconPaths[1] != "" {
-		t.Errorf("an origin-tier row must carry no LOCAL path, got %q", a.overlays.overlayIconPaths[1])
+	if a.overlayIconPaths[1] != "" {
+		t.Errorf("an origin-tier row must carry no LOCAL path, got %q", a.overlayIconPaths[1])
 	}
-	a.overlays.overlayIconPages = make([]*render.TexturePage, 2) // pretend a frame cached both rows
+	a.overlayIconPages = make([]*render.TexturePage, 2) // pretend a frame cached both rows
 
 	// Swap to a character declaring its own pack — the SAME row count, so
 	// cachedPage would happily keep the old pages under the new names.
-	a.overlays.overlayMyFolder = "packb"
+	a.overlayMyFolder = "packb"
 	if got := a.overlayChoices(); len(got) != 2 || got[1] != "tv on" {
 		t.Fatalf("after the swap: choices = %v", got)
 	}
-	if a.overlays.overlayIconPages != nil {
+	if a.overlayIconPages != nil {
 		t.Error("the index-keyed icon pages survived a pack swap of the same size — that is a stale icon under the wrong row")
 	}
-	if want := overlayThemeKey(localIcon); a.overlays.overlayIconKeys[1] != want {
-		t.Errorf("icon key = %q, want the new pack's local art %q", a.overlays.overlayIconKeys[1], want)
+	if want := overlayThemeKey(localIcon); a.overlayIconKeys[1] != want {
+		t.Errorf("icon key = %q, want the new pack's local art %q", a.overlayIconKeys[1], want)
 	}
-	if a.overlays.overlayIconPaths[1] != localIcon {
-		t.Errorf("icon path = %q, want %q", a.overlays.overlayIconPaths[1], localIcon)
+	if a.overlayIconPaths[1] != localIcon {
+		t.Errorf("icon path = %q, want %q", a.overlayIconPaths[1], localIcon)
 	}
 }
 
@@ -620,24 +640,24 @@ func TestOverlayIconKeysFollowTheRoster(t *testing.T) {
 // old theme's effects until something else invalidates the cache. Same class as
 // the v1.81 theme-font stale-gen fix, and the same shape of guard.
 func TestStaleRosterResultIsDropped(t *testing.T) {
-	a := &App{env: env{ctx: &Ctx{}}}
-	a.link.urls = courtroom.NewURLBuilder("https://one.test/base")
-	a.skin.themeAppliedGen = 7
+	a := &App{ctx: &Ctx{}}
+	a.urls = courtroom.NewURLBuilder("https://one.test/base")
+	a.themeAppliedGen = 7
 	key := a.overlayRosterKey("transitions")
-	a.overlays.overlayRosterRes = make(chan overlayRosterFetch, overlayManifestResCap)
-	a.overlays.overlayRosterInFlight = map[string]bool{key: true}
+	a.overlayRosterRes = make(chan overlayRosterFetch, overlayManifestResCap)
+	a.overlayRosterInFlight = map[string]bool{key: true}
 
 	stale := &overlayRoster{
 		set:  theme.MergeOverlayFX([]string{"old theme fx"}),
 		art:  map[string]string{"old theme fx": "/themes/OLD/effects/x.webp"},
 		icon: map[string]string{},
 	}
-	a.overlays.overlayRosterRes <- overlayRosterFetch{key: key, gen: 6, roster: stale} // started a theme ago
+	a.overlayRosterRes <- overlayRosterFetch{key: key, gen: 6, roster: stale} // started a theme ago
 	a.pollOverlayRosters()
-	if got, ok := a.overlays.overlayRosters[key]; ok {
+	if got, ok := a.overlayRosters[key]; ok {
 		t.Fatalf("a resolve from theme gen 6 landed under gen 7: %+v", got)
 	}
-	if a.overlays.overlayRosterInFlight[key] {
+	if a.overlayRosterInFlight[key] {
 		t.Error("the fetch slot must be freed even when the result is dropped, or the folder can never resolve again")
 	}
 
@@ -647,13 +667,13 @@ func TestStaleRosterResultIsDropped(t *testing.T) {
 		art:  map[string]string{},
 		icon: map[string]string{},
 	}
-	a.overlays.overlayRosterInFlight[key] = true
-	a.overlays.overlayRosterRes <- overlayRosterFetch{key: key, gen: 7, roster: fresh}
+	a.overlayRosterInFlight[key] = true
+	a.overlayRosterRes <- overlayRosterFetch{key: key, gen: 7, roster: fresh}
 	a.pollOverlayRosters()
-	if a.overlays.overlayRosters[key] != fresh {
-		t.Fatalf("the current-gen resolve did not land: %+v", a.overlays.overlayRosters[key])
+	if a.overlayRosters[key] != fresh {
+		t.Fatalf("the current-gen resolve did not land: %+v", a.overlayRosters[key])
 	}
-	if a.overlays.overlayRosterInFlight[key] {
+	if a.overlayRosterInFlight[key] {
 		t.Error("a landed resolve must free its fetch slot")
 	}
 }
@@ -664,45 +684,45 @@ func TestStaleRosterResultIsDropped(t *testing.T) {
 // the real resolver goroutine with no Manager and therefore no network rung, so
 // the only thing under test is the marker discipline.
 func TestOverlayManifestFetchedOncePerFolderAndMissesAreCached(t *testing.T) {
-	a := &App{env: env{ctx: &Ctx{}}}
-	a.link.urls = courtroom.NewURLBuilder("https://one.test/base")
+	a := &App{ctx: &Ctx{}}
+	a.urls = courtroom.NewURLBuilder("https://one.test/base")
 	key := a.overlayRosterKey("transitions")
 
 	if r := a.overlayRosterFor("transitions"); r != nil {
 		t.Fatalf("a cold folder must answer nil while it resolves, got %+v", r)
 	}
-	if !a.overlays.overlayRosterInFlight[key] {
+	if !a.overlayRosterInFlight[key] {
 		t.Fatal("no resolve was started for a cold folder")
 	}
 	// Ask again (memo dropped, as a landed char.ini or a new speaker would do):
 	// the marker must suppress a second goroutine.
 	for i := 0; i < 3; i++ {
-		a.overlays.overlayInvalidateMemos()
+		a.overlayInvalidateMemos()
 		if r := a.overlayRosterFor("transitions"); r != nil {
 			t.Fatalf("ask %d answered %+v before the resolve landed", i, r)
 		}
 	}
 
 	deadline := time.Now().Add(5 * time.Second)
-	for a.overlays.overlayRosters[key] == nil && time.Now().Before(deadline) {
+	for a.overlayRosters[key] == nil && time.Now().Before(deadline) {
 		a.pollOverlayRosters()
 		time.Sleep(time.Millisecond)
 	}
-	if a.overlays.overlayRosters[key] == nil {
+	if a.overlayRosters[key] == nil {
 		t.Fatal("the resolve never landed")
 	}
 	// Exactly ONE goroutine ran: a second would have queued a second result.
 	select {
-	case extra := <-a.overlays.overlayRosterRes:
+	case extra := <-a.overlayRosterRes:
 		t.Fatalf("a second resolve ran for the same folder: %+v", extra)
 	default:
 	}
 	// A MISS caches: the settled (empty) roster answers, and nothing re-resolves.
-	a.overlays.overlayInvalidateMemos()
+	a.overlayInvalidateMemos()
 	if r := a.overlayRosterFor("transitions"); r == nil {
 		t.Fatal("a settled miss must answer from the cache, not re-resolve")
 	}
-	if a.overlays.overlayRosterInFlight[key] {
+	if a.overlayRosterInFlight[key] {
 		t.Error("a settled folder must hold no fetch slot")
 	}
 }
@@ -720,15 +740,15 @@ func effectsPickerRoster(t *testing.T, n int) (*App, *int) {
 	if err != nil {
 		t.Skipf("Ctx unavailable: %v", err)
 	}
-	a := &App{env: env{ctx: ctx}}
-	a.link.urls = courtroom.NewURLBuilder("https://one.test/base")
-	a.link.sess = &courtroom.Session{} // no Chars: myCharName is "", so no char.ini fetch
-	a.link.sess.MyCharID = 0
+	a := &App{ctx: ctx}
+	a.urls = courtroom.NewURLBuilder("https://one.test/base")
+	a.sess = &courtroom.Session{} // no Chars: myCharName is "", so no char.ini fetch
+	a.sess.MyCharID = 0
 	names := make([]string, n)
 	for i := range names {
 		names[i] = "fx" + strconv.Itoa(i)
 	}
-	a.overlays.overlayRosters = map[string]*overlayRoster{
+	a.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {
 			set:  theme.MergeOverlayFX(names),
 			art:  map[string]string{},
@@ -736,7 +756,7 @@ func effectsPickerRoster(t *testing.T, n int) (*App, *int) {
 		},
 	}
 	painted := 0
-	a.overlays.overlayThumbFn = func(int, sdl.Rect) { painted++ }
+	a.overlayThumbFn = func(int, sdl.Rect) { painted++ }
 	return a, &painted
 }
 
@@ -752,10 +772,10 @@ func TestEffectIconsAreNotFetchedUntilTheDropdownOpens(t *testing.T) {
 	}
 	// And that one is row 0, "None", which carries no key at all — so a client that
 	// never picks an effect and never opens the list asks the origin for nothing.
-	if a.emotepick.overlayChoiceIdx != 0 {
-		t.Fatalf("fixture: the picker starts on None, got %d", a.emotepick.overlayChoiceIdx)
+	if a.overlayChoiceIdx != 0 {
+		t.Fatalf("fixture: the picker starts on None, got %d", a.overlayChoiceIdx)
 	}
-	if len(a.overlays.overlayIconKeys) == 0 || a.overlays.overlayIconKeys[0] != "" {
+	if len(a.overlayIconKeys) == 0 || a.overlayIconKeys[0] != "" {
 		t.Error("the None row carries an icon key, want none")
 	}
 }
@@ -792,15 +812,15 @@ func TestEffectIconRowsDemandOnlyVisibleRows(t *testing.T) {
 // (courtroom.cpp:2299 calls that very accessor), so the wire must carry the
 // character's own sound rather than the pack's default.
 func TestCharINIRealizationOverridesTheEffectSound(t *testing.T) {
-	a := &App{env: env{ctx: &Ctx{}}}
-	a.link.urls = courtroom.NewURLBuilder("https://one.test/base")
-	a.link.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Phoenix"}}}
-	a.link.sess.MyCharID = 0
-	a.skin.themeSounds = map[string]string{"realization": "themerealize"}
+	a := &App{ctx: &Ctx{}}
+	a.urls = courtroom.NewURLBuilder("https://one.test/base")
+	a.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Phoenix"}}}
+	a.sess.MyCharID = 0
+	a.themeSounds = map[string]string{"realization": "themerealize"}
 	// Pre-seeded (settled, nothing declared): charMetaFor would otherwise fire a
 	// fetch through the nil Manager.
-	a.overlays.charMetaCache = map[string]charMeta{a.charINIURL("Phoenix"): {done: true}}
-	a.overlays.overlayRosters = map[string]*overlayRoster{
+	a.charMetaCache = map[string]charMeta{a.charINIURL("Phoenix"): {done: true}}
+	a.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {
 			set: theme.MergeOverlayFX(
 				[]string{"realization", "tv on"},
@@ -809,7 +829,7 @@ func TestCharINIRealizationOverridesTheEffectSound(t *testing.T) {
 			icon: map[string]string{},
 		},
 	}
-	a.compose.icPreanim = true
+	a.icPreanim = true
 
 	// Nothing in char.ini: the THEME's courtroom_sounds.ini realization wins over
 	// the pack's, which is get_custom_realization's own fallback (:900).
@@ -823,7 +843,7 @@ func TestCharINIRealizationOverridesTheEffectSound(t *testing.T) {
 	}
 
 	// The character declares one: it wins outright.
-	a.overlays.charMetaCache[a.charINIURL("Phoenix")] = charMeta{realization: "mine", done: true}
+	a.charMetaCache[a.charINIURL("Phoenix")] = charMeta{realization: "mine", done: true}
 	if got := a.overlayEffectSound("", "realization"); got != "mine" {
 		t.Errorf("sound = %q, want char.ini [Options] realization", got)
 	}
@@ -832,13 +852,13 @@ func TestCharINIRealizationOverridesTheEffectSound(t *testing.T) {
 	if len(choices) != 3 || choices[1] != "realization" {
 		t.Fatalf("fixture: choices = %v", choices)
 	}
-	a.emotepick.overlayChoiceIdx = 1
+	a.overlayChoiceIdx = 1
 	if got := a.outgoingEffectsField(); got != "realization||mine" {
 		t.Errorf("outgoing field = %q, want \"realization||mine\"", got)
 	}
 	// The anti-overlap rule still runs LAST, exactly as in canon
 	// (courtroom.cpp:2302-2305 mutates fx_sound after get_effect_property).
-	a.compose.icPreanim, a.emotepick.sfxChoiceIdx = false, 3
+	a.icPreanim, a.sfxChoiceIdx = false, 3
 	if got := a.outgoingEffectsField(); got != "realization||0" {
 		t.Errorf("outgoing field = %q, want the anti-overlap \"0\"", got)
 	}
@@ -848,6 +868,7 @@ func TestCharINIRealizationOverridesTheEffectSound(t *testing.T) {
 // IC-bar sfxdd row and the SFX-BROWSER row audition on right-click and commit
 // nothing. Left-click is what picks; before this there was no way to hear a sound
 // without putting it on your next message.
+//
 // No origin, so previewSFX is its documented lobby no-op — this half pins the
 // non-effects (selection, consumption, modal state). The positive half is the
 // test below.
@@ -859,8 +880,8 @@ func TestRightClickSFXRowPreviewsWithoutSelecting(t *testing.T) {
 		t.Skipf("Ctx unavailable: %v", err)
 	}
 	newApp := func(c *Ctx) *App {
-		a := &App{env: env{ctx: c}}
-		a.emotepick.sfxChoices = []string{"SFX: auto", "sfx-one", "sfx-two"}
+		a := &App{ctx: c}
+		a.sfxChoices = []string{"SFX: auto", "sfx-one", "sfx-two"}
 		return a
 	}
 
@@ -869,17 +890,19 @@ func TestRightClickSFXRowPreviewsWithoutSelecting(t *testing.T) {
 	// consumed. The consume is the OPEN LIST's fence, decided once in
 	// DropdownRowRightClicked — every in-range row belongs to the list; only the
 	// dead tail past the last row is left for others (TestDropdownRowRightClicked).
+	// previewOverlayRow's row-0 "None" arm has the identical shape, and the proof
+	// that row 0 does nothing is the negative case in TestRightClickSFXRowActuallyPreviews.
 	a := newApp(&Ctx{})
 	list := sdl.Rect{X: 100, Y: 200, W: 120, H: 90}
-	stampOpenDropdown(a.ctx, "sfxdd", list, 30, len(a.emotepick.sfxChoices), 0)
+	stampOpenDropdown(a.ctx, "sfxdd", list, 30, len(a.sfxChoices), 0)
 	a.ctx.mouseX, a.ctx.mouseY = 150, 265 // 65 px in → row 2
 	a.ctx.rightClicked = true
 	a.sfxRowRightClickPreview()
 	if a.ctx.rightClicked {
 		t.Error("the right-click must be CONSUMED — an unconsumed one leaks past the modal capture")
 	}
-	if a.emotepick.sfxChoiceIdx != 0 {
-		t.Errorf("the audition selected row %d — right-click previews, left-click picks", a.emotepick.sfxChoiceIdx)
+	if a.sfxChoiceIdx != 0 {
+		t.Errorf("the audition selected row %d — right-click previews, left-click picks", a.sfxChoiceIdx)
 	}
 	a.ctx.mouseY = 205 // row 0
 	a.ctx.rightClicked = true
@@ -888,14 +911,14 @@ func TestRightClickSFXRowPreviewsWithoutSelecting(t *testing.T) {
 		t.Error("row 0 is still a row of the OPEN list: in-range rows are consumed whether or not " +
 			"the caller has anything to do with them, or the click leaks past the modal capture")
 	}
-	if a.emotepick.sfxChoiceIdx != 0 {
-		t.Errorf("row 0 (\"SFX: auto\") set the override to %d", a.emotepick.sfxChoiceIdx)
+	if a.sfxChoiceIdx != 0 {
+		t.Errorf("row 0 (\"SFX: auto\") set the override to %d", a.sfxChoiceIdx)
 	}
 
 	// Half 2 — an SFX-BROWSER row. Same gesture, same result: no override, no
 	// toast, and the browser stays open (a left-click on the body would close it).
 	b := newApp(ctx)
-	b.emotepick.showSfxBrowser = true
+	b.showSfxBrowser = true
 	row := sdl.Rect{X: 0, Y: 0, W: 300, H: sfxBrowserRowH}
 	b.ctx.mouseX, b.ctx.mouseY = 200, sfxBrowserRowH/2 // over the LABEL, past ★ and ▶
 	b.ctx.rightClicked = true
@@ -903,10 +926,10 @@ func TestRightClickSFXRowPreviewsWithoutSelecting(t *testing.T) {
 	if b.ctx.rightClicked {
 		t.Error("the browser row must consume its right-click (the modal backdrop is underneath)")
 	}
-	if b.emotepick.sfxChoiceIdx != 0 {
-		t.Errorf("the browser audition set the override to %d", b.emotepick.sfxChoiceIdx)
+	if b.sfxChoiceIdx != 0 {
+		t.Errorf("the browser audition set the override to %d", b.sfxChoiceIdx)
 	}
-	if !b.emotepick.showSfxBrowser {
+	if !b.showSfxBrowser {
 		t.Error("auditioning closed the browser — that is what USING a sound does")
 	}
 	if b.warnLine != "" {
@@ -927,9 +950,9 @@ func TestRightClickSFXRowActuallyPreviews(t *testing.T) {
 		t.Skipf("Ctx unavailable: %v", err)
 	}
 	reached := func(c *Ctx, hit func(*App)) (fired bool) {
-		a := &App{env: env{ctx: c}}
-		a.link.urls = courtroom.NewURLBuilder("https://one.test/base") // an origin: previewSFX proceeds
-		a.emotepick.sfxChoices = []string{"SFX: auto", "sfx-one", "sfx-two"}
+		a := &App{ctx: c}
+		a.urls = courtroom.NewURLBuilder("https://one.test/base") // an origin: previewSFX proceeds
+		a.sfxChoices = []string{"SFX: auto", "sfx-one", "sfx-two"}
 		defer func() { fired = recover() != nil }()
 		hit(a)
 		return false

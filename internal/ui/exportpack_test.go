@@ -40,7 +40,7 @@ func TestExportPackConfirmFiresOnlyWhenThePackContributes(t *testing.T) {
 	writeUIPack(t, dir, "characters/witch/(a)normal.png")
 	a.d.Prefs.SetLocalAssets(false, []string{dir})
 	a.setAssetSourceMode(assetSrcLayered, []string{dir})
-	a.link.urls = courtroom.NewURLBuilder(origin)
+	a.urls = courtroom.NewURLBuilder(origin)
 	waitForIndex(t, a)
 
 	// A scene using the packed character must be flagged...
@@ -64,7 +64,7 @@ func TestExportPackConfirmBlocksUntilAnswered(t *testing.T) {
 	a := headlessProbeApp(t, assets.NewLocalFetcher([]string{t.TempDir()}), false)
 	a.d.Prefs.SetLocalAssets(false, []string{dir})
 	a.setAssetSourceMode(assetSrcLayered, []string{dir})
-	a.link.urls = courtroom.NewURLBuilder(origin)
+	a.urls = courtroom.NewURLBuilder(origin)
 	waitForIndex(t, a)
 
 	scene := packScene(origin, "witch")
@@ -73,7 +73,7 @@ func TestExportPackConfirmBlocksUntilAnswered(t *testing.T) {
 	if a.makerExportPack == 0 {
 		t.Fatal("the export did not ask before bundling the user's own art")
 	}
-	if a.sel.makerExporting {
+	if a.makerExporting {
 		t.Error("the export started while the confirmation was still open")
 	}
 	if a.makerExportScene == nil {

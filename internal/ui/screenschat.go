@@ -38,7 +38,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// layout-editor override lifts it anywhere — off the sprites or out of the stage
 	// entirely. Everything below lays out relative to box, so move + resize follow.
 	if movableBox {
-		box = a.classic.slotRect(slotChatbox, box, w, h)
+		box = a.slotRect(slotChatbox, box, w, h)
 	}
 	// Per-character chatbox skin (char.ini chat=<misc>, playtest ask): the
 	// SPEAKER's own box art wins over the theme skin — AO2's get_chat priority.
@@ -66,9 +66,9 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		if g := grownChatBoxH(box.H, vp.H, int32(a.chatMsgLines(box.W-2*chatOverlayPadX, sc)), lineH); g > box.H {
 			box.Y -= g - box.H
 			box.H = g
-			a.raster.chatDiag.grew = true
+			a.chatDiag.grew = true
 		} else {
-			a.raster.chatDiag.grew = false
+			a.chatDiag.grew = false
 		}
 	}
 	// Skin priority: the speaker's own art, else the theme's, else the flat
@@ -124,8 +124,8 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	nameCol := ColAccent
 	if skinned && sc.ChatSkinNameHas {
 		nameCol = sdl.Color{R: sc.ChatSkinNameColor.R, G: sc.ChatSkinNameColor.G, B: sc.ChatSkinNameColor.B, A: 255}
-	} else if skinned && a.skin.themeHasName {
-		nameCol = a.skin.themeNameCol
+	} else if skinned && a.themeHasName {
+		nameCol = a.themeNameCol
 	}
 	if a.d.Prefs.Load().NameColors { // per-speaker name colour wins over accent/theme
 		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.Load().NameSat)/100, float64(a.d.Prefs.Load().NameVal)/100)
@@ -140,6 +140,10 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// themes that declare no ao2_chatbox rect, so there is no theme-authored
 	// showname box for a theme-authored alignment to place text across. The themed
 	// chatbox honours it (chatboxfit.go).
+	// Bold the showname for readability (default on, plus the theme's showname_bold).
+	// The weight is rasterized into the glyphs — ONE device-exact draw — not a second
+	// pass a logical pixel to the right: that offset multiplied by the UI scale and
+	// read as a doubled, smeared name at 105%+ (F1b).
 	snBold := a.d.Prefs.Load().BoldNamesOn() || a.elemBold(elemShowname)
 	a.labelEmojiWeight(snFont, snEmoji, box.X+chatOverlayPadX, box.Y+chatOverlayNameY, box.W-2*chatOverlayPadX, sc.ShownameText, nameCol, snBold)
 
@@ -153,7 +157,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// The box follows its own crawl (chatcrawlscroll.go = AO2's ensureCursorVisible,
 	// courtroom.cpp:4514-4521). Exactly 0 for a message that fits, so the ordinary
 	// post draws from the same origin it always did.
-	msgScroll := chatCrawlOffset(a.raster.msRaster, sc.VisibleRunes, textRect.H)
+	msgScroll := chatCrawlOffset(a.msRaster, sc.VisibleRunes, textRect.H)
 	msgY := textRect.Y - msgScroll
 	// …and the clip that contains it starts at the TEXT origin, not at the top of
 	// the box: a scrolled message draws from above textRect.Y, and the showname
@@ -161,39 +165,39 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// scrolled-off rows on the name band. chatcrawlscroll.go explains why the other
 	// three edges stay the box's — and why the #M5 animated painter, which cannot
 	// scroll but DOES lift glyphs off their row, keeps the whole box instead.
-	msgClip := chatCrawlClip(box, textRect.Y, a.raster.msAnim)
+	msgClip := chatCrawlClip(box, textRect.Y, a.msAnim)
 	a.handleChatSelect(textRect, msgScroll, sc)
 	// Snapshot the geometry for Debug → Session. Plain field stores, no allocation,
 	// so it costs the draw nothing; it is the only way to see these numbers on a
 	// machine we can't run.
-	a.raster.chatDiag.vpH, a.raster.chatDiag.boxY, a.raster.chatDiag.boxH = vp.H, box.Y, box.H
-	a.raster.chatDiag.textY, a.raster.chatDiag.wrapW = textRect.Y, wrapW
-	a.raster.chatDiag.renderPct, a.raster.chatDiag.devScale = c.RenderScalePct(), a.ctx.textDevPct
-	a.raster.chatDiag.visible = int32(sc.VisibleRunes)
-	if a.raster.msRaster != nil {
-		a.raster.chatDiag.lines = int32(a.raster.msRaster.Lines())
-		a.raster.chatDiag.lineH = a.raster.msRaster.LineH()
-		a.raster.chatDiag.total = int32(a.raster.msRaster.TotalRunes())
+	a.chatDiag.vpH, a.chatDiag.boxY, a.chatDiag.boxH = vp.H, box.Y, box.H
+	a.chatDiag.textY, a.chatDiag.wrapW = textRect.Y, wrapW
+	a.chatDiag.renderPct, a.chatDiag.devScale = c.RenderScalePct(), a.ctx.textDevPct
+	a.chatDiag.visible = int32(sc.VisibleRunes)
+	if a.msRaster != nil {
+		a.chatDiag.lines = int32(a.msRaster.Lines())
+		a.chatDiag.lineH = a.msRaster.LineH()
+		a.chatDiag.total = int32(a.msRaster.TotalRunes())
 	} else {
-		a.raster.chatDiag.lines, a.raster.chatDiag.lineH, a.raster.chatDiag.total = 0, 0, 0
+		a.chatDiag.lines, a.chatDiag.lineH, a.chatDiag.total = 0, 0, 0
 	}
-	if a.raster.msAnim != nil || a.raster.msRaster != nil {
+	if a.msAnim != nil || a.msRaster != nil {
 		// Clip to the box below the name plate: oversized Text settings stay INSIDE
 		// it, and the crawl's scrolled-off rows stay OUT of the showname strip. Via
 		// the Ctx scratch rect — &msgClip into cgo would heap-allocate it at its
 		// creation every frame (SDL copies the rect, so later scratch reuse is safe).
 		c.cgoRect = msgClip
 		_ = c.Ren.SetClipRect(&c.cgoRect)
-		if a.sel.chatSelActive { // selection highlight, UNDER the text so it reads through
+		if a.chatSelActive { // selection highlight, UNDER the text so it reads through
 			a.drawChatSelHighlight(textRect.X, msgY, wrapW, sc) // scrolled with the text it marks
 		}
-		if a.raster.msAnim != nil { // #M5 animated message (shake/wave/rainbow spans)
+		if a.msAnim != nil { // #M5 animated message (shake/wave/rainbow spans)
 			// The master off-switch implies reduce-motion for text too: the glyphs
 			// still lay out and read normally, they just stop moving (animtext.go
 			// pins everything static under this flag), which is exactly what the
 			// toggle promises — no spinning, no waving, text still legible.
 			reduce := a.d.Prefs.Load().ReduceMotionOn || a.d.Prefs.Load().DisableEffects
-			if a.raster.msAnim.Animates(reduce) {
+			if a.msAnim.Animates(reduce) {
 				// Clock-driven text FX on screen: keep frames coming through the
 				// static skip (idle=0 froze/stuttered them — the FX-at-idle
 				// report). Draw-site census, so it self-clears the moment the
@@ -203,7 +207,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 				// background cap off still parks (that gate outranks this).
 				a.NoteAnimating()
 			}
-			a.raster.msAnim.Draw(c.Ren, a.raster.glyphCache, a.raster.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, textRect.X, msgY, reduce)
+			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, textRect.X, msgY, reduce)
 		} else {
 			// DrawScaled, not Draw: at a scaled UI the revealed prefix must blit
 			// device-exact or the crawl re-stretches the whole run by a pixel every
@@ -214,10 +218,10 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 			// draw()). Handing it `box` here would restore the name band as a paint
 			// target for every scaled UI — the exact defect, on the exact machines
 			// hardest to reproduce it on.
-			a.raster.msRaster.DrawScaled(c.Ren, sc.VisibleRunes, textRect.X, msgY, c.RenderScalePct(), &msgClip)
+			a.msRaster.DrawScaled(c.Ren, sc.VisibleRunes, textRect.X, msgY, c.RenderScalePct(), &msgClip)
 		}
 		_ = c.Ren.SetClipRect(nil)
-	} else if a.raster.rasterFailedText != "" && sc.MessageText != "" {
+	} else if a.rasterFailedText != "" && sc.MessageText != "" {
 		// Last resort: the raster could not be built at all. Draw the words with the
 		// ordinary wrapped label path so the player still reads the message. It gets
 		// no typewriter and no per-glyph effects — but a chatbox that silently shows
@@ -252,40 +256,44 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 // selection's; activating either clears the other so they never fight over a
 // Ctrl+C. Shared by the classic overlay and the themed chatbox.
 // scrollY is the crawl-follow offset the text is DRAWN with
+// (chatcrawlscroll.go): the hit REGION stays the box, but the rune lookup has to
+// be measured from where the glyphs actually are, or a click inside a scrolled
+// message picks the rune that used to be under the cursor. Zero for every message
+// that fits, which is the overwhelming majority of them.
 func (a *App) handleChatSelect(textRect sdl.Rect, scrollY int32, sc *courtroom.Scene) {
 	c := a.ctx
-	pressed := c.mouseDown && !a.sel.chatSelPrevDown
-	a.sel.chatSelPrevDown = c.mouseDown
+	pressed := c.mouseDown && !a.chatSelPrevDown
+	a.chatSelPrevDown = c.mouseDown
 	inText := c.hovering(textRect)
 	if pressed {
 		if inText {
-			a.sel.chatSelDragging = true
-			a.sel.chatSelDownX, a.sel.chatSelDownY = c.mouseX, c.mouseY
-			if a.raster.msRaster != nil { // anchor the range at the pressed boundary
-				a.sel.chatSelA = a.raster.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
-				a.sel.chatSelB = a.sel.chatSelA
+			a.chatSelDragging = true
+			a.chatSelDownX, a.chatSelDownY = c.mouseX, c.mouseY
+			if a.msRaster != nil { // anchor the range at the pressed boundary
+				a.chatSelA = a.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
+				a.chatSelB = a.chatSelA
 			}
 		} else {
-			a.sel.chatSelActive = false // a press elsewhere clears the highlight
+			a.chatSelActive = false // a press elsewhere clears the highlight
 		}
 	}
-	if a.sel.chatSelDragging {
+	if a.chatSelDragging {
 		if c.mouseDown {
-			if a.raster.msRaster != nil { // the held drag moves the range's head
-				a.sel.chatSelB = a.raster.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
+			if a.msRaster != nil { // the held drag moves the range's head
+				a.chatSelB = a.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
 			}
-			if absInt(int(c.mouseX-a.sel.chatSelDownX))+absInt(int(c.mouseY-a.sel.chatSelDownY)) > 3 {
-				if !a.sel.chatSelActive {
-					a.sel.chatSelActive = true // moved enough → a selection, not a click
-					a.sel.logSelActive = false // …and it owns the highlight now
+			if absInt(int(c.mouseX-a.chatSelDownX))+absInt(int(c.mouseY-a.chatSelDownY)) > 3 {
+				if !a.chatSelActive {
+					a.chatSelActive = true // moved enough → a selection, not a click
+					a.logSelActive = false // …and it owns the highlight now
 				}
 			}
 		} else {
-			a.sel.chatSelDragging = false
+			a.chatSelDragging = false
 			switch {
-			case a.sel.chatSelActive && a.raster.msRaster != nil && a.sel.chatSelA == a.sel.chatSelB:
-				a.sel.chatSelActive = false // wobbled past the slop but landed on one boundary — not a selection
-			case a.sel.chatSelActive:
+			case a.chatSelActive && a.msRaster != nil && a.chatSelA == a.chatSelB:
+				a.chatSelActive = false // wobbled past the slop but landed on one boundary — not a selection
+			case a.chatSelActive:
 				c.clicked = false // a real drag isn't a click on whatever's under it
 				c.focusID = ""    // unfocus so Ctrl+C copies the selection, not a still-focused field
 			}
@@ -293,24 +301,24 @@ func (a *App) handleChatSelect(textRect sdl.Rect, scrollY int32, sc *courtroom.S
 	}
 	// Double-click: the word under the cursor; triple-click: the whole
 	// message (native text gestures — mirrors the fields and the logs).
-	if a.raster.msRaster != nil && inText && (c.dblClick || c.tripleClick) && sc.MessageText != "" {
+	if a.msRaster != nil && inText && (c.dblClick || c.tripleClick) && sc.MessageText != "" {
 		runes := []rune(sc.MessageText)
 		if c.tripleClick {
-			a.sel.chatSelA, a.sel.chatSelB = 0, len(runes)
+			a.chatSelA, a.chatSelB = 0, len(runes)
 			c.tripleClick = false
 		} else {
-			idx := a.raster.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
-			a.sel.chatSelA, a.sel.chatSelB = wordBoundsAt(runes, idx)
+			idx := a.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y+scrollY)
+			a.chatSelA, a.chatSelB = wordBoundsAt(runes, idx)
 			c.dblClick = false
 		}
-		if a.sel.chatSelB > a.sel.chatSelA {
-			a.sel.chatSelActive = true
-			a.sel.logSelActive = false
+		if a.chatSelB > a.chatSelA {
+			a.chatSelActive = true
+			a.logSelActive = false
 			c.clicked = false
 			c.focusID = ""
 		}
 	}
-	if a.sel.chatSelActive && sc.MessageText != "" {
+	if a.chatSelActive && sc.MessageText != "" {
 		if (c.copyReq && c.focusID == "") || (c.rightClicked && inText) {
 			_ = sdl.SetClipboardText(a.chatSelText(sc))
 			a.warnLine = "Copied selection to clipboard"
@@ -326,11 +334,11 @@ func (a *App) handleChatSelect(textRect sdl.Rect, scrollY int32, sc *courtroom.S
 // chatSelText is the text the chatbox selection copies: the selected rune
 // range, or the whole message on the animated path / a degenerate range.
 func (a *App) chatSelText(sc *courtroom.Scene) string {
-	if a.raster.msRaster == nil {
+	if a.msRaster == nil {
 		return sc.MessageText
 	}
 	runes := []rune(sc.MessageText)
-	lo, hi := a.sel.chatSelA, a.sel.chatSelB
+	lo, hi := a.chatSelA, a.chatSelB
 	if lo > hi {
 		lo, hi = hi, lo
 	}
@@ -355,7 +363,7 @@ func (a *App) chatSelText(sc *courtroom.Scene) string {
 // while a selection is up.
 func (a *App) drawChatSelHighlight(x, y, wrapW int32, sc *courtroom.Scene) {
 	c := a.ctx
-	m := a.raster.msRaster
+	m := a.msRaster
 	if m == nil { // animated message (msAnim): whole-block highlight
 		// a.rasterScale, not a fresh messagePct(): it is the percent ensureChatRaster
 		// actually built msAnim at, and the two now differ inside a themed chatbox,
@@ -365,11 +373,11 @@ func (a *App) drawChatSelHighlight(x, y, wrapW int32, sc *courtroom.Scene) {
 		// #39: theme "message" size, stepped by the raster's own row pitch
 		// (render.FontLineSpacing) — a highlight built on the shorter glyph box would
 		// leave an unpainted stripe between every pair of wrapped rows.
-		lineH := a.raster.msAnim.RowPitch() // the step Draw will actually use, override included
+		lineH := a.msAnim.RowPitch() // the step Draw will actually use, override included
 		c.Fill(sdl.Rect{X: x, Y: y, W: wrapW, H: int32(a.chatMsgLines(wrapW, sc)) * lineH}, a.highlightFill())
 		return
 	}
-	lo, hi := a.sel.chatSelA, a.sel.chatSelB
+	lo, hi := a.chatSelA, a.chatSelB
 	if lo > hi {
 		lo, hi = hi, lo
 	}
@@ -399,37 +407,37 @@ func (a *App) ensureSFXChoices() {
 	// Plain-field guard, not a concatenated key: this runs every frame, and
 	// building a "<char>:<n>" string just to compare it allocated per frame.
 	name := a.activeCharName()
-	if a.emotepick.sfxChoicesForName == name && a.emotepick.sfxChoicesForCount == len(a.emotepick.emotes) {
+	if a.sfxChoicesForName == name && a.sfxChoicesForCount == len(a.emotes) {
 		return
 	}
-	a.emotepick.sfxChoicesForName, a.emotepick.sfxChoicesForCount = name, len(a.emotepick.emotes)
-	a.emotepick.sfxChoices = append(a.emotepick.sfxChoices[:0], sfxAutoLabel)
-	for i := range a.emotepick.emotes {
-		s := a.emotepick.emotes[i].SFXName
+	a.sfxChoicesForName, a.sfxChoicesForCount = name, len(a.emotes)
+	a.sfxChoices = append(a.sfxChoices[:0], sfxAutoLabel)
+	for i := range a.emotes {
+		s := a.emotes[i].SFXName
 		if s == "" || s == "0" || s == "1" {
 			continue
 		}
 		dup := false
-		for _, ex := range a.emotepick.sfxChoices {
+		for _, ex := range a.sfxChoices {
 			if ex == s {
 				dup = true
 				break
 			}
 		}
 		if !dup {
-			a.emotepick.sfxChoices = append(a.emotepick.sfxChoices, s)
+			a.sfxChoices = append(a.sfxChoices, s)
 		}
 	}
-	if a.emotepick.sfxChoiceIdx >= len(a.emotepick.sfxChoices) {
-		a.emotepick.sfxChoiceIdx = 0
+	if a.sfxChoiceIdx >= len(a.sfxChoices) {
+		a.sfxChoiceIdx = 0
 	}
 }
 
 // chatMsgLines is the chatbox message's wrapped-line count (the raster's own count when
 // present, else an approximate re-wrap) — sizes the whole-message selection block.
 func (a *App) chatMsgLines(wrapW int32, sc *courtroom.Scene) int {
-	if a.raster.msRaster != nil {
-		if n := a.raster.msRaster.Lines(); n > 0 {
+	if a.msRaster != nil {
+		if n := a.msRaster.Lines(); n > 0 {
 			return n
 		}
 	}
@@ -442,7 +450,14 @@ func (a *App) chatMsgLines(wrapW int32, sc *courtroom.Scene) int {
 // ensureChatRaster (re)rasterizes the current message when the text,
 // color, zoom, wrap width, or skin presence changed — shared by the
 // classic overlay and the themed chatbox.
+//
+// pct is the RESOLVED message scale, passed in rather than computed here because
+// the two callers no longer agree on it: the classic overlay uses messagePct
 // (the theme's declared point size folded with the Text zoom knob, #39), while
+// the themed chatbox folds the theme canvas's scale in on top so the text keeps
+// the ratio to its box that the theme author drew (chatboxfit.go). It is what
+// the raster is built at AND what rasterScale remembers, so a theme swap, a zoom
+// notch or a window resize that moves it re-rasters exactly once.
 func (a *App) ensureChatRaster(wrapW int32, skinned bool, pct int) {
 	sc := a.renderScene() // matches drawChatOverlay (live / slideshow / replay scene)
 	effSig := effectsSig(sc.MessageEffects)
@@ -450,35 +465,35 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool, pct int) {
 	// carries the old font-chain generation; its glyphs are still tofu/uniform-advance until
 	// it re-rasters against the new chain. Keyed on fontChainGen the same way the log wrap
 	// caches are (qol.go) — Task E. Cheap field compare; only the effects path builds msAnim.
-	staleAnimChain := a.raster.msAnim != nil && a.raster.msAnim.ChainGen() != a.ctx.fontChainGen
-	if !staleAnimChain && (a.raster.msRaster != nil || a.raster.msAnim != nil) && a.raster.rasterRaw == sc.MessageRaw && a.raster.rasterText == sc.MessageText && a.raster.rasterColor == sc.TextColor &&
-		a.raster.rasterScale == pct && a.raster.rasterW == wrapW && a.raster.rasterSkinned == skinned && a.raster.rasterEffSig == effSig && a.raster.rasterCentered == sc.Centered &&
-		a.raster.rasterChatMsg == sc.ChatSkinMsgColor && a.raster.rasterChatMsgHas == sc.ChatSkinMsgHas &&
-		a.raster.rasterDevPct == a.ctx.textDevPct { // #77: a UI-scale change re-rasterizes at the new device size
+	staleAnimChain := a.msAnim != nil && a.msAnim.ChainGen() != a.ctx.fontChainGen
+	if !staleAnimChain && (a.msRaster != nil || a.msAnim != nil) && a.rasterRaw == sc.MessageRaw && a.rasterText == sc.MessageText && a.rasterColor == sc.TextColor &&
+		a.rasterScale == pct && a.rasterW == wrapW && a.rasterSkinned == skinned && a.rasterEffSig == effSig && a.rasterCentered == sc.Centered &&
+		a.rasterChatMsg == sc.ChatSkinMsgColor && a.rasterChatMsgHas == sc.ChatSkinMsgHas &&
+		a.rasterDevPct == a.ctx.textDevPct { // #77: a UI-scale change re-rasterizes at the new device size
 		return
 	}
-	if a.raster.rasterRaw != sc.MessageRaw {
-		a.sel.chatSelActive = false // a new message — drop the stale chatbox highlight/selection
+	if a.rasterRaw != sc.MessageRaw {
+		a.chatSelActive = false // a new message — drop the stale chatbox highlight/selection
 	}
-	if a.raster.msRaster != nil {
-		a.raster.msRaster.Destroy()
-		a.raster.msRaster = nil
+	if a.msRaster != nil {
+		a.msRaster.Destroy()
+		a.msRaster = nil
 	}
-	a.raster.msAnim = nil // AnimatedText owns no textures (the glyph cache does); just drop it
-	a.raster.msAnimFont = nil
+	a.msAnim = nil // AnimatedText owns no textures (the glyph cache does); just drop it
+	a.msAnimFont = nil
 	if sc.MessageText == "" {
 		return
 	}
 	// #M5: a message with effect spans takes the per-glyph animated path; every other
 	// message keeps the untouched MessageRaster fast paths (zero change for the common case).
 	if len(sc.MessageEffects) > 0 {
-		if a.raster.glyphCache == nil {
-			a.raster.glyphCache = render.NewGlyphCache(glyphCacheCap)
+		if a.glyphCache == nil {
+			a.glyphCache = render.NewGlyphCache(glyphCacheCap)
 		}
 		anim, font := renderAnimated(a, sc, wrapW, skinned, pct)
-		anim.Warm(a.ctx.Ren, a.raster.glyphCache, font) // render all glyphs up front → 0-alloc draws
-		a.raster.msAnim = anim
-		a.raster.msAnimFont = font
+		anim.Warm(a.ctx.Ren, a.glyphCache, font) // render all glyphs up front → 0-alloc draws
+		a.msAnim = anim
+		a.msAnimFont = font
 	} else {
 		raster, err := renderRaster(a, sc, wrapW, skinned, pct, false)
 		if err != nil {
@@ -486,24 +501,31 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool, pct int) {
 			// without recording rasterText, so every later frame re-entered, failed
 			// identically, and drew NOTHING — a permanently blank chatbox under a
 			// showname that still painted, with no message anywhere and no diagnostic.
-			a.debug.Push("chatbox raster failed: " + err.Error() + " — drawing the message unrasterized")
-			a.raster.rasterFailedText = sc.MessageText
+			// Whatever makes one face fail on one machine (a system face the census
+			// found that SDL_ttf can't size, a texture the backend refuses), losing
+			// the player's text silently is never the right answer.
+			//
+			// Arm the plain-label fallback so drawChatOverlay still puts the words on
+			// screen, and say so in the debug log so the next report carries the
+			// actual SDL error instead of "the text is invisible".
+			a.pushDebug("chatbox raster failed: " + err.Error() + " — drawing the message unrasterized")
+			a.rasterFailedText = sc.MessageText
 			return
 		}
-		a.raster.msRaster = raster
-		a.raster.rasterFailedText = ""
+		a.msRaster = raster
+		a.rasterFailedText = ""
 	}
-	a.raster.rasterText = sc.MessageText
-	a.raster.rasterRaw = sc.MessageRaw
-	a.raster.rasterColor = sc.TextColor
-	a.raster.rasterScale = pct
-	a.raster.rasterW = wrapW
-	a.raster.rasterSkinned = skinned
-	a.raster.rasterChatMsg = sc.ChatSkinMsgColor
-	a.raster.rasterChatMsgHas = sc.ChatSkinMsgHas
-	a.raster.rasterEffSig = effSig
-	a.raster.rasterCentered = sc.Centered
-	a.raster.rasterDevPct = a.ctx.textDevPct // #77
+	a.rasterText = sc.MessageText
+	a.rasterRaw = sc.MessageRaw
+	a.rasterColor = sc.TextColor
+	a.rasterScale = pct
+	a.rasterW = wrapW
+	a.rasterSkinned = skinned
+	a.rasterChatMsg = sc.ChatSkinMsgColor
+	a.rasterChatMsgHas = sc.ChatSkinMsgHas
+	a.rasterEffSig = effSig
+	a.rasterCentered = sc.Centered
+	a.rasterDevPct = a.ctx.textDevPct // #77
 }
 
 // chatZoomWheel: Ctrl+wheel over the chatbox zooms the chat text
@@ -641,16 +663,16 @@ func (a *App) drawVolumeStrip(r sdl.Rect) {
 		}
 		return v
 	}
-	if nv := cell(0, "master", "Master", fmt.Sprintf("%d%%", master), "", int32(master), 0, 100, &a.audio.masterMuted); int(nv) != master {
+	if nv := cell(0, "master", "Master", fmt.Sprintf("%d%%", master), "", int32(master), 0, 100, &a.masterMuted); int(nv) != master {
 		a.setEffectiveVolumes(int(nv), music, sfx, blip)
 	}
-	if nv := cell(1, "music", "Music", fmt.Sprintf("%d%%", music), "", int32(music), 0, 100, &a.audio.musicMuted); int(nv) != music {
+	if nv := cell(1, "music", "Music", fmt.Sprintf("%d%%", music), "", int32(music), 0, 100, &a.musicMuted); int(nv) != music {
 		a.setEffectiveVolumes(master, int(nv), sfx, blip)
 	}
-	if nv := cell(2, "sfx", "SFX", fmt.Sprintf("%d%%", sfx), "", int32(sfx), 0, 100, &a.audio.sfxMuted); int(nv) != sfx {
+	if nv := cell(2, "sfx", "SFX", fmt.Sprintf("%d%%", sfx), "", int32(sfx), 0, 100, &a.sfxMuted); int(nv) != sfx {
 		a.setEffectiveVolumes(master, music, int(nv), blip)
 	}
-	if nv := cell(3, "blip", "Blips", fmt.Sprintf("%d%%", blip), "", int32(blip), 0, 100, &a.audio.blipMuted); int(nv) != blip {
+	if nv := cell(3, "blip", "Blips", fmt.Sprintf("%d%%", blip), "", int32(blip), 0, 100, &a.blipMuted); int(nv) != blip {
 		a.setEffectiveVolumes(master, music, sfx, int(nv))
 	}
 	// Blip cadence (1 blip / N letters; left = faster). Mirrors Settings → Blips. No mute.
@@ -673,11 +695,11 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// was OOC while OOC is a box, or it has been torn into its own floating panel (torntabs.go), fall
 	// back to the IC log so the docked area still shows something.
 	oocAsTab := a.d.Prefs.Load().LegacyDevTheme || a.d.Prefs.Load().OOCInLogTab
-	if (!oocAsTab && a.chatlog.logTab == logTabOOC) || a.classic.tabTorn(a.chatlog.logTab) || a.classic.tabHidden(a.chatlog.logTab) {
-		a.chatlog.logTab = logTabLog
+	if (!oocAsTab && a.logTab == logTabOOC) || a.tabTorn(a.logTab) || a.tabHidden(a.logTab) {
+		a.logTab = logTabLog
 	}
 	// The docked strip skips any torn-off tab and compacts the rest (0-alloc stack array).
-	docked, numLogTabs := a.classic.dockedLogTabs(oocAsTab)
+	docked, numLogTabs := a.dockedLogTabs(oocAsTab)
 	tab := (r.W - volBtnW) / numLogTabs
 	for i := int32(0); i < numLogTabs; i++ {
 		bw := tab
@@ -685,25 +707,25 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 			bw = (r.W - volBtnW) - (numLogTabs-1)*tab // last tab takes the remainder before the Vol toggle
 		}
 		if c.Button(sdl.Rect{X: r.X + i*tab, Y: r.Y, W: bw, H: btnH}, docked[i].label) {
-			a.chatlog.logTab = docked[i].id
+			a.logTab = docked[i].id
 		}
 	}
 	volBtn := sdl.Rect{X: r.X + r.W - volBtnW, Y: r.Y, W: volBtnW, H: btnH}
 	if c.Button(volBtn, "Vol") {
-		a.musicTab.volStripOn = !a.musicTab.volStripOn
+		a.volStripOn = !a.volStripOn
 		{
-			pv1 := a.musicTab.volStripOn
+			pv1 := a.volStripOn
 			a.d.Prefs.Update(func(sn *config.Settings) { // persist so it survives a restart
 				sn.VolStripOn = pv1
 			})
 		}
 	}
-	if a.musicTab.volStripOn {
+	if a.volStripOn {
 		c.Border(volBtn, ColAccent) // active cue
 	}
 	c.Tooltip(volBtn, "Show/hide volume sliders on screen (chat stays usable)")
 	innerY := r.Y + btnH + logPanelRowGapPx
-	if a.musicTab.volStripOn {
+	if a.volStripOn {
 		// Just the two slider rows — the streaming checkbox moved to Settings →
 		// Audio only (the popover was getting cluttered).
 		a.drawVolumeStrip(sdl.Rect{X: r.X + logPanelInsetPx, Y: innerY, W: r.W - 2*logPanelInsetPx, H: volStripRowsH})
@@ -716,7 +738,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// The Music tab tunes its OWN scale (musicPct) so you can shrink long track
 	// titles without shrinking the IC log.
 	scale := &a.logPct
-	switch a.chatlog.logTab {
+	switch a.logTab {
 	case logTabMusic:
 		scale = &a.musicPct // the Music tab tunes its own scale
 	case logTabAreas:
@@ -727,7 +749,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 		scale = &a.oocPct // the OOC tab resizes OOC text, independent of the IC log
 	}
 	a.zoomWheel(r, scale, config.MinLogScalePercent, config.MaxLogScalePercent)
-	switch a.chatlog.logTab {
+	switch a.logTab {
 	case logTabMusic:
 		a.drawMusicList(inner, false, false, false)
 		return
@@ -765,9 +787,9 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	const filterBtnW = int32(48)
 	filterBtn := sdl.Rect{X: inner.X, Y: rowY, W: filterBtnW, H: rowH}
 	if c.Button(filterBtn, "Filter") {
-		a.chatlog.logFilterOpen = !a.chatlog.logFilterOpen
+		a.logFilterOpen = !a.logFilterOpen
 	}
-	if a.chatlog.logFilterOpen {
+	if a.logFilterOpen {
 		c.Border(filterBtn, ColAccent) // active cue, matching the Vol toggle
 	}
 	c.Tooltip(filterBtn, "Show/hide advanced filters (only showname / position)")
@@ -780,7 +802,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	if !showExports {
 		searchW = inner.W - (filterBtnW + 4)
 	}
-	a.chatlog.logSearch, _ = c.TextField("logsearch", sdl.Rect{X: searchX, Y: rowY, W: searchW, H: rowH}, a.chatlog.logSearch, "Search log...")
+	a.logSearch, _ = c.TextField("logsearch", sdl.Rect{X: searchX, Y: rowY, W: searchW, H: rowH}, a.logSearch, "Search log...")
 	if showExports {
 		bx := searchX + searchW + 4
 		if c.Button(sdl.Rect{X: bx, Y: rowY, W: logExportBtnW, H: rowH}, "Copy") {
@@ -797,14 +819,14 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// Advanced filters (#129): a second row of two fields — "Showname" (only that
 	// speaker) and "Pos" (only that position) — shown when Filter is expanded.
 	// Both are inclusive and stack on top of the text search above.
-	if a.chatlog.logFilterOpen {
+	if a.logFilterOpen {
 		frH := rowH
 		half := (inner.W - 4) / 2
-		a.chatlog.logFilterShowname, _ = c.TextField("logfilter_showname", sdl.Rect{X: inner.X, Y: listY, W: half, H: frH}, a.chatlog.logFilterShowname, "Showname…")
-		a.chatlog.logFilterPos, _ = c.TextField("logfilter_pos", sdl.Rect{X: inner.X + half + 4, Y: listY, W: inner.W - half - 4, H: frH}, a.chatlog.logFilterPos, "Pos (e.g. wit)…")
+		a.logFilterShowname, _ = c.TextField("logfilter_showname", sdl.Rect{X: inner.X, Y: listY, W: half, H: frH}, a.logFilterShowname, "Showname…")
+		a.logFilterPos, _ = c.TextField("logfilter_pos", sdl.Rect{X: inner.X + half + 4, Y: listY, W: inner.W - half - 4, H: frH}, a.logFilterPos, "Pos (e.g. wit)…")
 		// Colour filter (#49): a second row narrowing to entries that use the
 		// picked colour (message-level or any inline span). "Any color" = off.
-		a.chatlog.logFilterColor, _ = c.Dropdown("logfilter_color", sdl.Rect{X: inner.X, Y: listY + frH + logSearchRowGap, W: inner.W, H: frH}, logColorFilterChoices, a.chatlog.logFilterColor)
+		a.logFilterColor, _ = c.Dropdown("logfilter_color", sdl.Rect{X: inner.X, Y: listY + frH + logSearchRowGap, W: inner.W, H: frH}, logColorFilterChoices, a.logFilterColor)
 		listY += 2*frH + 2*logSearchRowGap
 	}
 	// false: this is the classic docked Log tab, AsyncAO chrome outside any theme's
@@ -862,10 +884,16 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// block. Un-edited, the content width is w-2*pad, so the wrap structure — and
 	// therefore the block's row count and height — matches the classic layout exactly
 	// (clusterX == pad, y == defY, dy == 0 ⇒ every rect, every wrap edge identical:
-	ctrlOv, ctrlEdited := a.classic.classicOv[slotControls]
+	// the un-edited courtroom stays pixel-identical). An override translates the block
+	// and (Tifera) its WIDTH drives the wrap edge — narrowing re-wraps
+	// the buttons into a taller stack, and the judge strip / emote grid below anchor to
+	// the re-wrapped bottom (y2 - dy) so they keep clear of it. Height is always
+	// content-driven. The override is read lock-free; off the edit path this is one map
+	// lookup, no alloc. controlsBlockOrigin is the pure core.
+	ctrlOv, ctrlEdited := a.classicOv[slotControls]
 	var ctrlRect sdl.Rect
 	if ctrlEdited {
-		ctrlRect = a.classic.anchoredRect(slotControls, ctrlOv, w, h) // window pin honoured
+		ctrlRect = a.anchoredRect(slotControls, ctrlOv, w, h) // window pin honoured
 	}
 	clusterX, y, dy, clusterRight := controlsBlockOrigin(ctrlRect, ctrlEdited, w, defY)
 
@@ -896,8 +924,8 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// buttons end after a width resize. def keeps the default full width; its height
 	// reflects the live row count (recomputing the default wrap would mean laying the
 	// rows out twice — reset just recomputes for real next frame).
-	if a.classic.classicEdit {
-		a.classic.regSlot(slotControls,
+	if a.classicEdit {
+		a.regSlot(slotControls,
 			sdl.Rect{X: clusterX, Y: y, W: clusterRight - clusterX, H: y2 + btnH - y},
 			sdl.Rect{X: pad, Y: defY, W: w - 2*pad, H: y2 - dy + btnH - defY})
 	}
@@ -915,7 +943,18 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// color selector: a swatch previews the active wire color (MS
 	// text_color 0–9), the dropdown names it (AO2's color dropdown). The
 	// showname box OVERRIDES the Settings showname for the session.
+	// The whole IC bar is a movable + resizable slot ("icbar"). Its default now spans the
 	// stage width (vp.W) DIRECTLY under the stage (icBarTop, #8) — the first thing below
+	// the viewport. Everything inside lays out relative to the slot (icBar.X / .W) and the
+	// fH-tall row is centred within the slot height, so a drag moves the bar and a width
+	// resize widens / narrows the text input (still floored at minICInputW). The emoji /
+	// FX / React buttons store their live rects as they draw, so their pop-ups follow the
+	// bar wherever it lands. slotRect is alloc-free off the edit path. (fH is computed at
+	// the top now, to place the control block below this bar.)
+	// (Nightingale): the whole-bar "IC input bar" PANEL slot is gone —
+	// every element below is its own independent movable+resizable slot, so the
+	// bar is just the DEFAULT row geometry they lay out from. (An old "icbar"
+	// override in prefs is simply ignored; Reset all clears it.)
 	icBar := sdl.Rect{X: pad, Y: icBarTop, W: vp.W, H: fH}
 	rowY := icBar.Y
 	// Colour swatch + dropdown — an individually movable slot (#4a). The selector also
@@ -923,15 +962,27 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// sit after the palette so they're picked like any colour instead of being buried in
 	// Settings. icColorSelected drives the active row + swatch; applyICColorPick routes
 	// the pick — both shared with the themed row so the two layouts can't drift.
-	colorBox := a.classic.slotRect(slotICColor, sdl.Rect{X: icBar.X, Y: rowY, W: 32 + colorSelectW, H: fH}, w, h)
+	colorBox := a.slotRect(slotICColor, sdl.Rect{X: icBar.X, Y: rowY, W: 32 + colorSelectW, H: fH}, w, h)
 	a.drawICColorStrip(colorBox) // swatch + colour dropdown (rect by value — alloc-free)
 	// The rest of the IC bar (showname → Immediate → Additive → SFX → emoji → FX →
 	// text input → muted chip) is one sequential cursor chain, kept together in
 	// drawICInputRow. It returns whether Enter was pressed. icBar is passed by
 	// value (alloc-free); the chain flows from the DEFAULT positions, never an
 	// override, so freeing one slot never cascades the rest (unchanged behaviour).
+	//
 	// ENTER is the only sender. The shout row ARMS (courtroom.cpp:6048-6127) and
-	if a.drawICInputRow(icBar, rowY, w, h, fH) && !a.font.serverNoticeDlg.open {
+	// the armed state rides sendIC's own read of a.icShout — it no longer feeds a
+	// modifier straight into a send.
+	//
+	// The send is ALSO gated on the notice box, and this is the one keyboard path the
+	// handleHotkeys guard cannot cover: the field reads Ctx.enter directly, which is
+	// neither a hotkey chord nor pointer state, so neither that early return nor
+	// fencePointer touches it. A BB notice arrives while the session is fully live, so
+	// it can land with the IC field focused mid-sentence — and pressing Enter under a
+	// modal the user is still reading would transmit a real message they did not see
+	// themselves send. The field still takes the keystroke (the draft is not lost); only
+	// the send waits.
+	if a.drawICInputRow(icBar, rowY, w, h, fH) && !a.serverNoticeDlg.open {
 		a.sendIC()
 	}
 
@@ -940,9 +991,9 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// editor never registers a handle for a grid that isn't drawn. The default is
 	// byte-identical to before, so an un-edited courtroom is pixel-identical.
 	emoteY := postY // #8: the emote grid follows the control block + judge strip, below the IC bar
-	if !a.classic.panelHidden(panelEmotes) {
+	if !a.panelHidden(panelEmotes) {
 		emoteDef := sdl.Rect{X: pad, Y: emoteY, W: w - 2*pad, H: h - emoteY - 30}
-		a.drawEmoteRow(a.classic.slotRect(slotEmotes, emoteDef, w, h), vp)
+		a.drawEmoteRow(a.slotRect(slotEmotes, emoteDef, w, h), vp)
 	}
 	a.drawSpritePreviewFallback(false)
 
@@ -958,20 +1009,20 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// user who hides the right column with NO OOC input anywhere — no OOC chat and
 	// no way to run a slash command. The invariant is one live OOC input in every
 	// state, and only an explicit "hide OOC chat" may take it away.
-	oocBoxUnreachable := a.classic.panelHidden(panelLog)
-	if !a.classic.panelHidden(panelOOC) && (a.d.Prefs.Load().LegacyDevTheme || a.d.Prefs.Load().OOCInLogTab || oocBoxUnreachable) {
+	oocBoxUnreachable := a.panelHidden(panelLog)
+	if !a.panelHidden(panelOOC) && (a.d.Prefs.Load().LegacyDevTheme || a.d.Prefs.Load().OOCInLogTab || oocBoxUnreachable) {
 		// The bottom OOC bar is its own movable + resizable slot ("oocbar"): its default spans
 		// the bottom row, the row centred within the slot height. Registered only while it
 		// actually draws, so the editor offers a handle for it only when OOC is a tab.
 		oocBarDef := sdl.Rect{X: pad, Y: oocY, W: w - 3*pad, H: fH}
-		oocBar := a.classic.slotRect(slotOOCBar, oocBarDef, w, h)
+		oocBar := a.slotRect(slotOOCBar, oocBarDef, w, h)
 		oocRowY := oocBar.Y
 		if oocBar.H > fH {
 			oocRowY = oocBar.Y + (oocBar.H-fH)/2
 		}
-		oocPrimary, oocEmoji := a.icFieldFonts(a.compose.oocInput) // #M5: emoji/unicode in the OOC bar too
+		oocPrimary, oocEmoji := a.icFieldFonts(a.oocInput) // #M5: emoji/unicode in the OOC bar too
 		var sendOOC bool
-		a.compose.oocInput, sendOOC = c.TextFieldEmoji("ooc", sdl.Rect{X: oocBar.X, Y: oocRowY, W: oocBar.W, H: fH}, a.compose.oocInput, "OOC chat…  (set your OOC name in the OOC tab)", oocPrimary, oocEmoji)
+		a.oocInput, sendOOC = c.TextFieldEmoji("ooc", sdl.Rect{X: oocBar.X, Y: oocRowY, W: oocBar.W, H: fH}, a.oocInput, "OOC chat…  (set your OOC name in the OOC tab)", oocPrimary, oocEmoji)
 		if sendOOC {
 			a.submitOOC() // shared OOC send: uses your OOC name (or the server default) + clears
 		}
@@ -1023,12 +1074,15 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 // knobs — from the block origin (clusterX, y). clusterX / y arrive by value and the
 // local x cursor never escapes, so the row stays allocation-free (moved verbatim
 // from drawICControls).
+//
+// The buttons ARM (toggleShout, icarms.go); the armed one wears drawArmedOverlay,
 // standing in for AO2's "*_selected" sprite swap (courtroom.cpp:6062 etc.). It used
 // to return a modifier the caller fed straight into sendIC, which is why a click
+// fired the interjection on the spot.
 func (a *App) drawICShoutRow(clusterX, y, w, h int32) {
 	c := a.ctx
 	x := clusterX
-	if !a.classic.panelHidden(panelShouts) {
+	if !a.panelHidden(panelShouts) {
 		shoutW := int32(96)
 		// Each shout is individually movable in the layout editor (literal slot keys
 		// keep the row alloc-free; the struct is range-only so it stays on the stack).
@@ -1042,51 +1096,51 @@ func (a *App) drawICShoutRow(clusterX, y, w, h int32) {
 			{"ctrl.takethat", "Take That!", protocol.ShoutTakeThat},
 		}
 		for _, s := range shouts {
-			if a.classic.panelHidden(s.key) {
+			if a.panelHidden(s.key) {
 				continue // individually hideable (the row compacts); the group toggle still hides all
 			}
 			// slotRect ONCE and reuse it, rather than movableButton plus a second
 			// lookup: the armed overlay has to land on the rect the button actually
 			// DREW at (the layout editor can have moved it), and asking twice repeats
 			// the editor's slot bookkeeping for nothing. This is movableButton inlined.
-			shoutRect := a.classic.slotRect(s.key, sdl.Rect{X: x, Y: y, W: shoutW, H: btnH}, w, h)
+			shoutRect := a.slotRect(s.key, sdl.Rect{X: x, Y: y, W: shoutW, H: btnH}, w, h)
 			if c.Button(shoutRect, s.label) {
 				a.toggleShout(s.mod)
 			}
-			a.drawArmedOverlay(shoutRect, a.compose.icShout == s.mod)
+			a.drawArmedOverlay(shoutRect, a.icShout == s.mod)
 			x += shoutW + 6
 		}
 		// Custom interjection (2.10): the button ARMS the active pick;
 		// the ▾ cycler steps base custom → each named [Shouts] entry.
 		// Only for characters that actually ship one (hasCustomShout).
-		if a.link.sess.Features.Has(protocol.FeatureCustomObjections) && a.hasCustomShout() {
+		if a.sess.Features.Has(protocol.FeatureCustomObjections) && a.hasCustomShout() {
 			label := a.customShoutLabel()
 			bw := c.TextWidth(label) + 16
 			customRect := sdl.Rect{X: x, Y: y, W: bw, H: btnH}
 			if c.Button(customRect, label) {
 				a.toggleShout(protocol.ShoutCustom)
 			}
-			a.drawArmedOverlay(customRect, a.compose.icShout == protocol.ShoutCustom)
+			a.drawArmedOverlay(customRect, a.icShout == protocol.ShoutCustom)
 			x += bw + 4
-			if len(a.compose.customShouts) > 0 {
+			if len(a.customShouts) > 0 {
 				if c.Button(sdl.Rect{X: x, Y: y, W: 26, H: btnH}, "▾") {
 					// −1 (base) → 0 → … → len−1 → −1
-					a.compose.customIdx++
-					if a.compose.customIdx >= len(a.compose.customShouts) {
-						a.compose.customIdx = -1
+					a.customIdx++
+					if a.customIdx >= len(a.customShouts) {
+						a.customIdx = -1
 					}
 				}
 				x += 32
 			}
 		}
 	}
-	if !a.classic.panelHidden("ctrl.pair") { // hideable: hiding compacts, like ctrlSlot
-		if a.classic.movableButton(&a.env, "ctrl.pair", sdl.Rect{X: x, Y: y, W: 70, H: btnH}, "Pair...", w, h) {
-			a.pairbox.showPair = !a.pairbox.showPair
+	if !a.panelHidden("ctrl.pair") { // hideable: hiding compacts, like ctrlSlot
+		if a.movableButton("ctrl.pair", sdl.Rect{X: x, Y: y, W: 70, H: btnH}, "Pair...", w, h) {
+			a.showPair = !a.showPair
 		}
 		x += 80
 	}
-	if !a.classic.panelHidden(panelKnobs) && !a.d.Prefs.Load().DragLayout { // drag-resize mode hides the +/− knobs
+	if !a.panelHidden(panelKnobs) && !a.d.Prefs.Load().DragLayout { // drag-resize mode hides the +/− knobs
 		if a.d.Prefs.Load().ViewportExactW == 0 { // exact-px sizing shadows vpPct, so the View knob would no-op — hide it (set the size in Settings instead)
 			x = a.scaleControl(x, y, "View", &a.vpPct, config.ViewportStepPercent, config.MinViewportPercent, config.MaxViewportPercent)
 		}
@@ -1139,7 +1193,7 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 	}
 	x += 116
 	evLabel := "Evidence"
-	if a.evid.evidPresent {
+	if a.evidPresent {
 		evLabel = "Evidence ●" // armed: next IC message presents it
 	}
 	if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, evLabel) {
@@ -1147,7 +1201,7 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 	}
 	x += 106
 	if c.Button(sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "Mods...") {
-		a.courtxtra.showModcall = true
+		a.showModcall = true
 	}
 	x += 86
 	if c.Button(sdl.Rect{X: x, Y: y2, W: 70, H: btnH}, "Login...") {
@@ -1162,6 +1216,7 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 	// long Row 2 would push the PAIR off the right edge, so wrap them down to a
 	// fresh row when they wouldn't fit. Everything below keys off y2 (icY = y2 +
 	// btnH + …), so bumping it in place drops the IC area and judge strip with it.
+	// Constant widths keep this alloc-free.
 	const keysW, styleW, btnGap int32 = 90, 84, 6
 	if x+keysW+btnGap+styleW > clusterRight {
 		y2 += btnH + 4
@@ -1187,7 +1242,7 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 	if a.amIMod() {
 		modW = 54
 	}
-	if a.srvMeta.amICMNow {
+	if a.amICMNow {
 		cmW = 46
 	}
 	// Only wrap when the group actually draws something (else an empty Mod/CM row
@@ -1216,7 +1271,7 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 	}
 	// Group Chat / DMs launcher — a MAIN button (default ON; Settings → Chat to hide).
 	// Appended last so it can't shift the buttons before it; skipped (no x advance) off.
-	if a.d.Prefs.Load().GroupChatButton && !a.classic.panelHidden("ctrl.groupchat") {
+	if a.d.Prefs.Load().GroupChatButton && !a.panelHidden("ctrl.groupchat") {
 		const gcW = int32(96)
 		if x+gcW > clusterRight {
 			y2 += btnH + 4
@@ -1224,7 +1279,7 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 		}
 		gcR := sdl.Rect{X: x, Y: y2, W: gcW, H: btnH}
 		if c.Button(gcR, "Group Chat") {
-			a.msgs.toggleMessages()
+			a.toggleMessages()
 		}
 		c.Border(gcR, ColAccent)
 		c.Tooltip(gcR, "Private DMs & group chats with other AsyncAO players (also Extras → Group Chat)")
@@ -1232,7 +1287,7 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 	}
 	// Voice button — only in a voice-enabled area (VS_CAPS / Nyathena); appears
 	// when you enter a VC room, hidden otherwise. Appended; no x advance when off.
-	if a.voiceOfferable() && !a.classic.panelHidden("ctrl.voice") {
+	if a.voiceOfferable() && !a.panelHidden("ctrl.voice") {
 		const vcW = int32(80)
 		if x+vcW > clusterRight {
 			y2 += btnH + 4
@@ -1264,35 +1319,35 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 	// the row stays alloc-free.
 	const gGap = int32(16) // gap between groups
 	evLabel := "Evidence"
-	if a.evid.evidPresent {
+	if a.evidPresent {
 		evLabel = "Evidence ●"
 	}
 	// — Character — (each button hideable via UI… → Buttons; hidden ones compact away)
-	if r, ok := a.classic.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.character"); ok {
+	if r, ok := a.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.character"); ok {
 		if c.Button(r, "Character") {
 			a.screen = ScreenCharSelect
 		}
 	}
-	if r, ok := a.classic.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.wardrobe"); ok {
+	if r, ok := a.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.wardrobe"); ok {
 		if c.Button(r, "Wardrobe") {
 			a.openIniswap()
 		}
 		c.Border(r, ColAccent)
 		c.Tooltip(r, "Wardrobe / iniswap — swap your character's sprites & emotes")
 	}
-	if r, ok := a.classic.ctrlSlot(&x, y2, 84, 84+gGap, w, h, "ctrl.restyle"); ok {
+	if r, ok := a.ctrlSlot(&x, y2, 84, 84+gGap, w, h, "ctrl.restyle"); ok {
 		if c.Button(r, "Restyle") {
 			a.openSpriteStyle()
 		}
 		c.Tooltip(r, "Recolour / glow your character on the fly — other AsyncAO players see it")
 	}
 	// — Scene —
-	if r, ok := a.classic.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.background"); ok {
+	if r, ok := a.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.background"); ok {
 		if c.Button(r, "Background") {
 			a.openBgPicker()
 		}
 	}
-	if r, ok := a.classic.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.evidence"); ok {
+	if r, ok := a.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.evidence"); ok {
 		if c.Button(r, evLabel) {
 			a.toggleEvidence()
 		}
@@ -1300,13 +1355,13 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 	x = a.drawPosSelect(x, y2, btnH)
 	x += gGap
 	// — Moderation —
-	if r, ok := a.classic.ctrlSlot(&x, y2, 80, 86, w, h, "ctrl.mods"); ok {
+	if r, ok := a.ctrlSlot(&x, y2, 80, 86, w, h, "ctrl.mods"); ok {
 		if c.Button(r, "Mods...") {
-			a.courtxtra.showModcall = true
+			a.showModcall = true
 		}
 	}
 	if a.amIMod() {
-		mR := a.classic.slotRect("ctrl.mod", sdl.Rect{X: x, Y: y2, W: 54, H: btnH}, w, h)
+		mR := a.slotRect("ctrl.mod", sdl.Rect{X: x, Y: y2, W: 54, H: btnH}, w, h)
 		if c.Button(mR, "Mod") {
 			a.toggleModDash()
 		}
@@ -1314,8 +1369,8 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 		c.Tooltip(mR, "Moderation tools — server-aware ban / kick")
 		x += 60
 	}
-	if a.srvMeta.amICMNow {
-		cR := a.classic.slotRect("ctrl.cm", sdl.Rect{X: x, Y: y2, W: 46, H: btnH}, w, h)
+	if a.amICMNow {
+		cR := a.slotRect("ctrl.cm", sdl.Rect{X: x, Y: y2, W: 46, H: btnH}, w, h)
 		if c.Button(cR, "CM") {
 			a.toggleCMPanel()
 		}
@@ -1331,19 +1386,19 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 		y2 += btnH + 4
 		x = clusterX
 	}
-	if r, ok := a.classic.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.settings"); ok {
+	if r, ok := a.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.settings"); ok {
 		if c.Button(r, "Settings") {
 			a.prevScreen = ScreenCourtroom
 			a.screen = ScreenSettings
 		}
 	}
-	if r, ok := a.classic.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.hotkeys"); ok {
+	if r, ok := a.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.hotkeys"); ok {
 		if c.Button(r, "Hotkeys") {
 			a.openHotkeyCheatSheet()
 		}
 		c.Tooltip(r, "Show all your hotkeys & custom binds (also F1)")
 	}
-	if r, ok := a.classic.ctrlSlot(&x, y2, 80, 86, w, h, "ctrl.about"); ok {
+	if r, ok := a.ctrlSlot(&x, y2, 80, 86, w, h, "ctrl.about"); ok {
 		if c.Button(r, "About") {
 			a.prevScreen = ScreenCourtroom
 			a.screen = ScreenAbout
@@ -1354,15 +1409,15 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 	// plain "Login..." that opens the dialog. Right-click always opens the dialog (log
 	// in / switch / re-login). Account name is per-server (a.serverKey), so it's
 	// correct across multi-server tabs.
-	acct := strings.TrimSpace(a.d.Prefs.Load().ServerWarmInfoFor(a.srvMeta.serverKey).LoginUser)
+	acct := strings.TrimSpace(a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey).LoginUser)
 	loginLabel, loginW := "Login...", int32(70)
 	if acct != "" {
 		loginLabel, loginW = acct, c.TextWidth(acct)+18
 	}
-	if loginR, ok := a.classic.ctrlSlot(&x, y2, loginW, loginW+6, w, h, "ctrl.login"); ok {
+	if loginR, ok := a.ctrlSlot(&x, y2, loginW, loginW+6, w, h, "ctrl.login"); ok {
 		if c.Button(loginR, loginLabel) {
 			if acct != "" {
-				a.link.sess.SendOOC(a.oocNameOrDefault(), "/account") // view your profile
+				a.sess.SendOOC(a.oocNameOrDefault(), "/account") // view your profile
 			} else {
 				a.openLoginDialog()
 			}
@@ -1379,15 +1434,15 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 	// APPENDED at the end of the functional buttons so it can never shift the ones
 	// before it; when off it's skipped entirely (no x advance), so the row is
 	// byte-identical to before. A movable slot, so Edit Layout can reposition it.
-	if a.d.Prefs.Load().GroupChatButton && !a.classic.panelHidden("ctrl.groupchat") {
+	if a.d.Prefs.Load().GroupChatButton && !a.panelHidden("ctrl.groupchat") {
 		const gcW = int32(96)
 		if x+gcW > clusterRight {
 			y2 += btnH + 4
 			x = clusterX
 		}
-		gcR := a.classic.slotRect("ctrl.groupchat", sdl.Rect{X: x, Y: y2, W: gcW, H: btnH}, w, h)
+		gcR := a.slotRect("ctrl.groupchat", sdl.Rect{X: x, Y: y2, W: gcW, H: btnH}, w, h)
 		if c.Button(gcR, "Group Chat") {
-			a.msgs.toggleMessages()
+			a.toggleMessages()
 		}
 		c.Border(gcR, ColAccent)
 		c.Tooltip(gcR, "Private DMs & group chats with other AsyncAO players (also Extras → Group Chat)")
@@ -1396,14 +1451,14 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 	// Voice button — appears ONLY in an area that advertises voice (VS_CAPS, i.e.
 	// Nyathena), so it shows up when you move into a VC-supported room and hides
 	// elsewhere. Appended like the others; skipped (no x advance) when unavailable.
-	if a.voiceOfferable() && !a.classic.panelHidden("ctrl.voice") {
+	if a.voiceOfferable() && !a.panelHidden("ctrl.voice") {
 		const vcW = int32(80)
 		if x+vcW > clusterRight {
 			y2 += btnH + 4
 			x = clusterX
 		}
 		vcLabel, vcBord := a.voiceButtonState()
-		vcR := a.classic.slotRect("ctrl.voice", sdl.Rect{X: x, Y: y2, W: vcW, H: btnH}, w, h)
+		vcR := a.slotRect("ctrl.voice", sdl.Rect{X: x, Y: y2, W: vcW, H: btnH}, w, h)
 		if c.Button(vcR, vcLabel) {
 			a.toggleVoice()
 		}
@@ -1417,8 +1472,8 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 		y2 += btnH + 4
 		x = clusterX
 	}
-	if !a.classic.panelHidden("ctrl.disconnect") { // hideable: Esc still leaves the server
-		if a.classic.movableButton(&a.env, "ctrl.disconnect", sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect", w, h) {
+	if !a.panelHidden("ctrl.disconnect") { // hideable: Esc still leaves the server
+		if a.movableButton("ctrl.disconnect", sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect", w, h) {
 			a.requestDisconnect()
 			return y2, true
 		}
@@ -1440,9 +1495,9 @@ func (a *App) drawICColorStrip(colorBox sdl.Rect) {
 	icSel, sw := a.icColorSelected()
 	c.Fill(swatch, sw)
 	c.Border(swatch, ColPanelHi)
-	a.lookUI.icSwatchRect = swatch // the free-hex wheel anchors here
-	if a.compose.icCustomOn && c.clicked && c.hovering(swatch) {
-		a.lookUI.showICColorWheel = !a.lookUI.showICColorWheel // re-open to adjust (re-picking "Custom…" in the dropdown doesn't fire changed)
+	a.icSwatchRect = swatch // the free-hex wheel anchors here
+	if a.icCustomOn && c.clicked && c.hovering(swatch) {
+		a.showICColorWheel = !a.showICColorWheel // re-open to adjust (re-picking "Custom…" in the dropdown doesn't fire changed)
 	}
 	colorDDW := colorBox.W - 32
 	if colorDDW < 60 {
@@ -1481,6 +1536,7 @@ func icOptionalDraws(guardOK, hasOverride, editing, hidden bool) bool {
 // the SFX dropdown, then emoji) and each button advances the cursor only when it fits,
 // the LATER buttons (SFX, emoji) are the first to fail this guard on a narrow bar —
 // which is exactly the intended sacrifice order. Factored out (value params, no closure)
+// so the survival math is unit-testable off the SDL path, like icOptionalDraws.
 func icBarButtonFits(barW, used, demand, tailReserve int32) bool {
 	return barW-used-demand >= tailReserve
 }
@@ -1548,12 +1604,12 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// Showname box (+ saved-name picker) — an individually movable slot (#4a). Draws at
 	// the slot; the row cursor below flows from the DEFAULT nameX so moving it never
 	// cascades the rest.
-	nameBox := a.classic.slotRect(slotICShowname, sdl.Rect{X: nameX, Y: rowY, W: shownameBoxW, H: fH}, w, h)
+	nameBox := a.slotRect(slotICShowname, sdl.Rect{X: nameX, Y: rowY, W: shownameBoxW, H: fH}, w, h)
 	// fix ("the showname box is not resizable — it has the ui for it but
 	// it does nothing"): the field fills the SLOT'S live width/height, not the
 	// fixed default, so the editor's resize handles actually take effect.
 	snW, snDD := nameBox.W, int32(0)
-	if len(a.budget.nameOpts) > 1 { // a tiny ▾ saved-name picker, fitted INSIDE the box width so nothing downstream shifts
+	if len(a.nameOpts) > 1 { // a tiny ▾ saved-name picker, fitted INSIDE the box width so nothing downstream shifts
 		snDD = 22
 		snW -= snDD + 2
 	}
@@ -1565,13 +1621,13 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// TextFieldEmoji + icFieldFonts treatment the IC input below uses. Plain-ASCII
 	// names keep the byte-identical single-font fast path (icFieldFonts is nil for
 	// ASCII). The placeholder is a saved showname, which can itself be CJK.
-	snPrimary, snEmoji := a.icFieldFonts(a.compose.shownameOverride)
-	if a.compose.shownameOverride == "" {
+	snPrimary, snEmoji := a.icFieldFonts(a.shownameOverride)
+	if a.shownameOverride == "" {
 		snPrimary, snEmoji = a.icFieldFonts(namePlaceholder) // route a CJK placeholder too
 	}
-	a.compose.shownameOverride, _ = c.TextFieldEmoji("icshownameov", sdl.Rect{X: nameBox.X, Y: nameBox.Y, W: snW, H: nameBox.H}, a.compose.shownameOverride, namePlaceholder, snPrimary, snEmoji)
+	a.shownameOverride, _ = c.TextFieldEmoji("icshownameov", sdl.Rect{X: nameBox.X, Y: nameBox.Y, W: snW, H: nameBox.H}, a.shownameOverride, namePlaceholder, snPrimary, snEmoji)
 	if name := a.pickNameDropdown("snpick", sdl.Rect{X: nameBox.X + snW + 2, Y: nameBox.Y, W: snDD, H: nameBox.H}); name != "" {
-		a.compose.shownameOverride = name
+		a.shownameOverride = name
 	}
 	// Immediate (AO non-interrupting preanim): the preanim plays without
 	// holding back the text. Session toggle; rides the next message via
@@ -1584,30 +1640,30 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// DEFAULT immedX below — never the override — so freeing Immediate doesn't cascade
 	// the rest of the row. slotRect is alloc-free off the edit path.
 	immedDef := sdl.Rect{X: immedX, Y: rowY, W: immedW, H: fH}
-	immedBox := a.classic.slotRect(slotICImmediate, immedDef, w, h)
-	a.compose.icImmediate = c.Checkbox(immedBox.X, immedBox.Y+(immedBox.H-16)/2, "Immediate", a.compose.icImmediate)
+	immedBox := a.slotRect(slotICImmediate, immedDef, w, h)
+	a.icImmediate = c.Checkbox(immedBox.X, immedBox.Y+(immedBox.H-16)/2, "Immediate", a.icImmediate)
 	c.Tooltip(immedBox, "Immediate: the preanim plays without holding back the text (non-interrupting preanim)")
 	icX := immedX + immedW + 6 // downstream flows from the DEFAULT position, not the override
 	// Additive (#14, 2.8): the next message APPENDS to your last one (narration RP).
 	// Shown only when the server advertises additive AND the master pref is on (AO2
 	// shows ui_additive whenever the server advertises it, courtroom.cpp:1638-1644).
 	// When hidden the toggle is forced off so a stale check can't ride a message.
-	if a.link.sess != nil && a.link.sess.Features.Has(protocol.FeatureAdditive) && a.d.Prefs.Load().AdditiveText {
+	if a.sess != nil && a.sess.Features.Has(protocol.FeatureAdditive) && a.d.Prefs.Load().AdditiveText {
 		// icAddW ("Additive") is a package-level const, shared with the layout tests.
 		// Movable slot (#4a), same wrap-not-extract rule as Immediate above: draws through
 		// slotRect so the editor can pull it out into its own spot, but the row cursor still
 		// advances by the DEFAULT width below — so an un-edited bar is pixel-identical and
 		// moving Additive never cascades the rest. slotRect is alloc-free off the edit path.
 		addDef := sdl.Rect{X: icX, Y: rowY, W: icAddW, H: fH}
-		addBox := a.classic.slotRect(slotICAdditive, addDef, w, h)
+		addBox := a.slotRect(slotICAdditive, addDef, w, h)
 		// bounceOnToggle: ui_additive → on_additive_clicked → focus_ic_input
 		// (courtroom.cpp:504, :6572). The leading-space half of that handler lives at
 		// the send site (AdditiveWantsLeadingSpace), not here.
-		a.compose.icAdditive = a.bounceOnToggle(c.Checkbox(addBox.X, addBox.Y+(addBox.H-16)/2, "Additive", a.compose.icAdditive), a.compose.icAdditive)
+		a.icAdditive = a.bounceOnToggle(c.Checkbox(addBox.X, addBox.Y+(addBox.H-16)/2, "Additive", a.icAdditive), a.icAdditive)
 		c.Tooltip(addBox, "Additive: this message adds to your last one instead of replacing it (2.8 narration-style RP).")
 		icX += icAddW + 6 // downstream flows from the DEFAULT position, not the override
 	} else {
-		a.compose.icAdditive = false
+		a.icAdditive = false
 	}
 	icCounterOn := a.d.Prefs.Load().MessageCounter
 	// The IC input must always keep at least minICInputW. Each optional IC-bar button is
@@ -1617,6 +1673,19 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// width for users with a narrower stage ("the IC bar disappeared"). Widths key off the
 	// slot (icBar.W), so the same guard holds after the bar is moved/resized. Inlined (no
 	// closure) to keep this per-frame row allocation-free.
+	//
+	// DRAW / DROP ORDER (redesign): Pre, FX, SFX-dropdown, emoji. Pre sits beside
+	// Immediate (AO2-canonical) and FX draws right after it; because row order == survival
+	// order under this drop discipline, drawing Pre and FX EARLY makes them outrank the SFX
+	// dropdown and the emoji button — those two now yield first on a tight bar, so the
+	// default-visible Pre + Text-FX pair survives the 720p bar. On 2.8/additive servers the
+	// +90px Additive toggle can push everything past the bar at 720p (accepted): the sacrifice
+	// order is then emoji → SFX → FX → Pre, and the classic editor override (below) is the
+	// escape hatch to force any dropped button back.
+	//
+	// The message counter no longer reserves any tail width — it draws INSIDE the input's
+	// right edge now (drawMsgCounter), so tailReserve is just the input floor (minICInputW,
+	// a package-level const shared with the layout tests). sfxDDW / preW are package-level too.
 	tailReserve := int32(minICInputW)
 	// "Pre" toggle (AO2-Client ui_pre): send the selected emote's preanimation.
 	// AUTO-FOLLOWS each emote pick (selectEmote), and the user can override until
@@ -1628,12 +1697,29 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// would have regressed that guard. Movable slot (#4a), same wrap-not-extract
 	// rule: draws through slotRect, the row cursor advances by the DEFAULT width so
 	// an un-edited bar is pixel-identical and moving it never cascades the rest.
-	_, preOv := a.classic.classicOv[slotICPre]
+	// slotRect is alloc-free off the edit path.
+	//
+	// Pre is now a CORE button (redesign): drawing it FIRST (before SFX/emoji)
+	// makes it outrank them, so its guard prices in only its OWN width + the input floor —
+	// SFX and emoji, drawn later, drop first on a narrow bar. This inverts the old
+	// self-sacrifice lookahead (which made Pre yield to the whole SFX+emoji+FX tail); that
+	// was needed only while Pre drew AFTER them. preW (package-level, trimmed from 60) keeps
+	// the Pre+FX pair inside the 720p default bar with margin — see the width table on the
+	// const. Inlined arithmetic (no closure) — this row is inside the whole-screen 0-alloc gate.
+	// OVERRIDE / EDITOR win over the width drop: a dropped button never
+	// reached slotRect, so it never registered a slot and could not be grabbed in the
+	// editor — nor did a saved override force it back. Draw when the width guard passes
+	// OR the user has a saved slot override OR the editor is armed (hidden still hides).
+	// The row cursor still advances by the DEFAULT width (icX += preW+6), exactly as
+	// overridden-Immediate does, so an overridden Pre never cascades the rest and an
+	// un-edited narrow bar stays byte-identical. Comma-ok map read is nil-safe + alloc-
+	// free (the same read slotRect does).
+	_, preOv := a.classicOv[slotICPre]
 	preGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, preW+6, tailReserve)
-	if icOptionalDraws(preGuardOK, preOv, a.classic.classicEdit, a.classic.panelHidden(slotICPre)) {
-		preBox := a.classic.slotRect(slotICPre, sdl.Rect{X: icX, Y: rowY, W: preW, H: fH}, w, h)
+	if icOptionalDraws(preGuardOK, preOv, a.classicEdit, a.panelHidden(slotICPre)) {
+		preBox := a.slotRect(slotICPre, sdl.Rect{X: icX, Y: rowY, W: preW, H: fH}, w, h)
 		// bounceOnToggle: ui_pre is wired straight to focus_ic_input (courtroom.cpp:502).
-		a.compose.icPreanim = a.bounceOnToggle(c.Checkbox(preBox.X, preBox.Y+(preBox.H-16)/2, "Pre", a.compose.icPreanim), a.compose.icPreanim)
+		a.icPreanim = a.bounceOnToggle(c.Checkbox(preBox.X, preBox.Y+(preBox.H-16)/2, "Pre", a.icPreanim), a.icPreanim)
 		c.Tooltip(preBox, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
 		icX += preW + 6 // downstream flows from the DEFAULT position, not the override
 	}
@@ -1644,10 +1730,10 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// could stay). Its guard prices in only its own fxBtnW+4 plus the input floor. Override /
 	// editor win over the drop (same rule as Pre); FX has no panelHidden gate in the classic
 	// row, so pass hidden=false to keep it a pure width/override/edit call.
-	_, fxOv := a.classic.classicOv[slotICFx]
+	_, fxOv := a.classicOv[slotICFx]
 	fxGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, fxBtnW+4, tailReserve)
-	if icOptionalDraws(fxGuardOK, fxOv, a.classic.classicEdit, false) {
-		a.fxButton(a.classic.slotRect(slotICFx, sdl.Rect{X: icX, Y: rowY, W: fxBtnW, H: fH}, w, h))
+	if icOptionalDraws(fxGuardOK, fxOv, a.classicEdit, false) {
+		a.fxButton(a.slotRect(slotICFx, sdl.Rect{X: icX, Y: rowY, W: fxBtnW, H: fH}, w, h))
 		icX += fxBtnW + 4
 	}
 	// "Flip" toggle (AO2-Client ui_flip): mirror your character's emotes for this and
@@ -1662,14 +1748,22 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// (#4a). pairFlip is SESSION state that already parks/resets per tab,
 	// so — unlike icAdditive in the themed row — it needs NO forced-off reset when the feature
 	// vanishes: the field is real pair state, and a stale flip simply stops being SHOWN.
-	flipInChain := a.link.sess != nil && a.link.sess.Features.Has(protocol.FeatureFlipping)
-	if flipInChain && !a.classic.panelHidden(slotICFlip) {
-		flipBox := a.classic.slotRect(slotICFlip, sdl.Rect{X: icX, Y: rowY, W: icFlipW, H: fH}, w, h)
+	//
+	// Flip is UNCONDITIONAL on flipping servers: no width guard. AO2-Client shows
+	// ui_flip whenever the server feature is present regardless of bar width, and the prior
+	// width-guarded form meant Flip could vanish at any window size, which users found
+	// indistinguishable from the feature being removed. At narrow bars (720p additive) the
+	// IC text input shrinks slightly past the ideal floor; that is the accepted tradeoff for
+	// guaranteed discoverability. SFX/emoji still carry their own width guards; since Flip
+	// now always draws first, the flipDrewOrAbsent priority-latch is no longer needed.
+	flipInChain := a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping)
+	if flipInChain && !a.panelHidden(slotICFlip) {
+		flipBox := a.slotRect(slotICFlip, sdl.Rect{X: icX, Y: rowY, W: icFlipW, H: fH}, w, h)
 		// bounceOnToggle: ui_flip → focus_ic_input (courtroom.cpp:503). Only the IC-bar
 		// view bounces; the Pair panel's mirror of the same bool is not an IC-bar
 		// control, and a redraw carrying the value the other view just wrote compares
 		// equal here, so the two views cannot bounce each other.
-		a.pairbox.pairFlip = a.bounceOnToggle(c.Checkbox(flipBox.X, flipBox.Y+(flipBox.H-16)/2, "Flip", a.pairbox.pairFlip), a.pairbox.pairFlip)
+		a.pairFlip = a.bounceOnToggle(c.Checkbox(flipBox.X, flipBox.Y+(flipBox.H-16)/2, "Flip", a.pairFlip), a.pairFlip)
 		c.Tooltip(flipBox, "Flip: mirror your character's emotes. Same setting as the Pair panel's flip toggle.")
 		icX += icFlipW + 6 // downstream flows from the DEFAULT position, not the override
 	}
@@ -1681,13 +1775,21 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// Override / editor win over the drop (same rule as Pre above). SFX has no
 	// panelHidden gate in the classic row (it never had one) — keep it that way: pass
 	// hidden=false so this stays a pure width/override/edit decision.
-	_, sfxOv := a.classic.classicOv[slotICSFX]
+	//
+	// Two-form drop discipline (fixes "the SFX picker vanished, feature removed?"):
+	// the FULL sfxDDW dropdown draws when it fits (or an override/editor forces it);
+	// where it no longer fits, a COMPACT fixed-width "SFX" button draws instead —
+	// same slot, opening the same choice list (the SFX Browser). Only at truly
+	// minuscule widths, where even the compact form can't clear the input floor,
+	// does SFX drop entirely — and the layout-editor override (sfxOv) still forces
+	// it back (the documented escape hatch).
+	_, sfxOv := a.classicOv[slotICSFX]
 	sfxGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, sfxDDW+4, tailReserve)
 	sfxCompactGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, sfxCompactW+4, tailReserve)
 	switch {
-	case icOptionalDraws(sfxGuardOK, sfxOv, a.classic.classicEdit, false):
-		sfxRect := a.classic.slotRect(slotICSFX, sdl.Rect{X: icX, Y: rowY, W: sfxDDW, H: fH}, w, h) // movable (#4a)
-		if next, changed := c.Dropdown("sfxdd", sfxRect, a.emotepick.sfxChoices, a.emotepick.sfxChoiceIdx); changed {
+	case icOptionalDraws(sfxGuardOK, sfxOv, a.classicEdit, false):
+		sfxRect := a.slotRect(slotICSFX, sdl.Rect{X: icX, Y: rowY, W: sfxDDW, H: fH}, w, h) // movable (#4a)
+		if next, changed := c.Dropdown("sfxdd", sfxRect, a.sfxChoices, a.sfxChoiceIdx); changed {
 			a.applySFXPick(next) // pick + audition + focus bounce (icsfx.go; courtroom.cpp:5498-5502)
 		}
 		a.sfxRowRightClickPreview() // right-click auditions a row without picking it
@@ -1699,7 +1801,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 		// dot marks an active override so the collapsed control still signals "not auto".
 		compactRect := sdl.Rect{X: icX, Y: rowY, W: sfxCompactW, H: fH}
 		label := "SFX"
-		if a.emotepick.sfxChoiceIdx > 0 {
+		if a.sfxChoiceIdx > 0 {
 			label = "SFX•" // an override is active (not the "auto" default)
 		}
 		if c.Button(compactRect, label) {
@@ -1723,11 +1825,11 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// hideable (playtest: some players don't want it at all). Drawn LAST of the optional
 	// buttons (redesign), so it's the FIRST to yield on a narrow bar. Override /
 	// editor win over the drop (same rule as Pre); hidden still hides.
-	_, emojiOv := a.classic.classicOv[slotICEmoji]
+	_, emojiOv := a.classicOv[slotICEmoji]
 	emojiGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, fH+4, tailReserve)
-	if icOptionalDraws(emojiGuardOK, emojiOv, a.classic.classicEdit, a.classic.panelHidden(slotICEmoji)) {
-		if a.drawEmojiBarButton(a.classic.slotRect(slotICEmoji, sdl.Rect{X: icX, Y: rowY, W: fH, H: fH}, w, h)) {
-			a.emoji.showEmojiPicker = !a.emoji.showEmojiPicker
+	if icOptionalDraws(emojiGuardOK, emojiOv, a.classicEdit, a.panelHidden(slotICEmoji)) {
+		if a.drawEmojiBarButton(a.slotRect(slotICEmoji, sdl.Rect{X: icX, Y: rowY, W: fH, H: fH}, w, h)) {
+			a.showEmojiPicker = !a.showEmojiPicker
 		}
 		icX += fH + 4
 	}
@@ -1743,19 +1845,19 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// of the bar; the message counter now draws INSIDE this box's right edge (drawMsgCounter),
 	// so it needs no tail reserve; an override repositions/resizes the field and the counter
 	// rides along inside it.
-	icBox := a.classic.slotRect(slotICInput, sdl.Rect{X: icX, Y: rowY, W: icW, H: fH}, w, h)
-	icPrimary, icEmoji := a.icFieldFonts(a.compose.icInput) // #M5: show typed emoji/unicode, not tofu
+	icBox := a.slotRect(slotICInput, sdl.Rect{X: icX, Y: rowY, W: icW, H: fH}, w, h)
+	icPrimary, icEmoji := a.icFieldFonts(a.icInput) // #M5: show typed emoji/unicode, not tofu
 	// Reserve the counter + muted-chip band BEFORE the field draws, so the typed
 	// line clips short of them instead of running underneath (the overdrawn-counter
 	// report). No-op when both are off/absent.
 	c.ReserveFieldTail(icFieldID, a.icFieldTailReserve(icCounterOn))
-	a.compose.icInput, send = c.TextFieldEmoji(icFieldID, icBox, a.compose.icInput, "Talk in-character here…  (/pair <id>, /unpair, /offset <x> [y], /pos <side>)", icPrimary, icEmoji)
+	a.icInput, send = c.TextFieldEmoji(icFieldID, icBox, a.icInput, "Talk in-character here…  (/pair <id>, /unpair, /offset <x> [y], /pos <side>)", icPrimary, icEmoji)
 	a.recallIC() // #8: Up/Down recall recently-sent lines when the IC field is focused
 	a.drawMsgCounter(icBox, icCounterOn)
 	// Muted (#13): the server disabled our IC speech (MU). Draw a persistent chip
 	// over the input's right edge so a muted player sees WHY their sends do
 	// nothing; sendIC refuses the send and keeps the typed line intact.
-	if a.link.sess != nil && a.link.sess.Muted {
+	if a.sess != nil && a.sess.Muted {
 		chipW := a.mutedChipW() // the ONE metric; icMutedBandW reserves off the same number
 		if chipW < icBox.W {    // only when it fits inside the field
 			chip := sdl.Rect{X: icBox.X + icBox.W - chipW - 2, Y: icBox.Y + 2, W: chipW, H: icBox.H - 4}

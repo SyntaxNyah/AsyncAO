@@ -38,14 +38,14 @@ type pingResult struct {
 // here (render thread) so the goroutines touch no shared App state except the
 // bounded result channel. A re-probe bumps pingGen so a prior sweep's late
 // results are ignored.
-func (lobby1 *lobbyState) startPinging() {
-	if lobby1.pinging {
+func (a *App) startPinging() {
+	if a.pinging {
 		return
 	}
 	type target struct{ url, addr string }
 	var targets []target
-	for i := range lobby1.servers {
-		e := &lobby1.servers[i]
+	for i := range a.servers {
+		e := &a.servers[i]
 		if !e.Joinable() {
 			continue
 		}
@@ -56,10 +56,10 @@ func (lobby1 *lobbyState) startPinging() {
 	if len(targets) == 0 {
 		return
 	}
-	lobby1.pinging = true
-	lobby1.pingMode = true
-	lobby1.pingGen++
-	gen, res := lobby1.pingGen, lobby1.pingRes
+	a.pinging = true
+	a.pingMode = true
+	a.pingGen++
+	gen, res := a.pingGen, a.pingRes
 	go func() {
 		jobs := make(chan target)
 		var wg sync.WaitGroup
@@ -100,12 +100,12 @@ func (lobby1 *lobbyState) startPinging() {
 // Turning it ON goes through startPinging, which refuses a second in-flight sweep, so
 // this is safe to call repeatedly.
 func (a *App) toggleConnectTimeSort() {
-	if a.conn.lobby.pingMode {
-		a.conn.lobby.pingMode = false
+	if a.pingMode {
+		a.pingMode = false
 		a.applyServerSort()
 		return
 	}
-	a.conn.lobby.startPinging()
+	a.startPinging()
 }
 
 // pollPing drains probe results into a.pings on the render thread — a
@@ -113,22 +113,22 @@ func (a *App) toggleConnectTimeSort() {
 func (a *App) pollPing() {
 	for {
 		select {
-		case r := <-a.conn.lobby.pingRes:
-			if r.gen != a.conn.lobby.pingGen {
+		case r := <-a.pingRes:
+			if r.gen != a.pingGen {
 				continue // a superseded sweep
 			}
 			if r.url == "" { // done
-				a.conn.lobby.pinging = false
+				a.pinging = false
 				a.applyServerSort()
 				continue
 			}
-			if a.conn.lobby.pings == nil {
-				a.conn.lobby.pings = map[string]time.Duration{}
+			if a.pings == nil {
+				a.pings = map[string]time.Duration{}
 			}
 			if r.ok {
-				a.conn.lobby.pings[r.url] = r.rtt
+				a.pings[r.url] = r.rtt
 			} else {
-				a.conn.lobby.pings[r.url] = -1 // unreachable
+				a.pings[r.url] = -1 // unreachable
 			}
 		default:
 			return
@@ -139,10 +139,10 @@ func (a *App) pollPing() {
 // applyServerSort rebuilds the lobby list (ping-aware when pingMode) and resets
 // the index-based selection — mirroring the refresh / favourite re-sorts.
 func (a *App) applyServerSort() {
-	a.conn.lobby.servers = a.conn.lobby.mergedFavorites(&a.env)
+	a.servers = a.mergedFavorites()
 	// Clear all three selection caches together (descLinks included — a stale
 	// link slice is a latent trap for any draw path that consults it alone).
-	a.conn.lobby.selServer, a.conn.lobby.descLines, a.conn.lobby.descLinks = -1, nil, nil // row indices changed with the sort
+	a.selServer, a.descLines, a.descLinks = -1, nil, nil // row indices changed with the sort
 }
 
 // sortByPing orders joinable servers by connect RTT — favorites pinned, probed

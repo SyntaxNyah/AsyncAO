@@ -116,9 +116,9 @@ var privacySections = []privacySection{
 // buildHelpFlat reflows the active Help section to colW (cached by width via
 // a.helpFlat / a.helpFlatW). The aboutFlatLine model + the draw loop mirror
 // drawChangelog, so the wrap runs only on a resize, never per frame.
-func (docs1 *docsState) buildHelpFlat(c *Ctx, colW int32) []aboutFlatLine {
+func (a *App) buildHelpFlat(c *Ctx, colW int32) []aboutFlatLine {
 	out := make([]aboutFlatLine, 0, 128)
-	switch docs1.helpTab {
+	switch a.helpTab {
 	case 1: // Privacy — what a server can see
 		for si, s := range privacySections {
 			gap := int32(16)
@@ -153,9 +153,9 @@ func (docs1 *docsState) buildHelpFlat(c *Ctx, colW int32) []aboutFlatLine {
 
 // openHelp switches to the Help screen on a given section tab (0 = Glossary,
 // 1 = Privacy), re-reflowing for that section. Callers set prevScreen first.
-func (docs1 *docsState) openHelp(tab int) {
-	docs1.helpTab, docs1.helpFlat, docs1.helpDocScroll = tab, nil, 0
-	docs1.env.screen = ScreenHelp
+func (a *App) openHelp(tab int) {
+	a.helpTab, a.helpFlat, a.helpDocScroll = tab, nil, 0
+	a.screen = ScreenHelp
 }
 
 func (a *App) drawHelp(w, h int32) {
@@ -177,10 +177,10 @@ func (a *App) drawHelp(w, h int32) {
 		for i, name := range helpSectionNames {
 			bw := c.TextWidth(name) + 24
 			r := sdl.Rect{X: tx, Y: top, W: bw, H: btnH}
-			if c.Button(r, name) && a.docs.helpTab != i {
-				a.docs.helpTab, a.docs.helpFlat, a.docs.helpDocScroll = i, nil, 0
+			if c.Button(r, name) && a.helpTab != i {
+				a.helpTab, a.helpFlat, a.helpDocScroll = i, nil, 0
 			}
-			if a.docs.helpTab == i {
+			if a.helpTab == i {
 				c.Border(r, ColAccent)
 			}
 			tx += bw + 6
@@ -202,27 +202,27 @@ func (a *App) drawHelp(w, h int32) {
 	if x0 < pad {
 		x0 = pad
 	}
-	if a.docs.helpFlat == nil || a.docs.helpFlatW != colW {
-		a.docs.helpFlat = a.docs.buildHelpFlat(c, colW)
-		a.docs.helpFlatW = colW
+	if a.helpFlat == nil || a.helpFlatW != colW {
+		a.helpFlat = a.buildHelpFlat(c, colW)
+		a.helpFlatW = colW
 	}
 
 	lineH := int32(c.font.Height()) + 4
 	contentH := int32(0)
-	for _, fl := range a.docs.helpFlat {
+	for _, fl := range a.helpFlat {
 		contentH += fl.gap + lineH
 	}
 	contentH += pad
-	a.docs.helpDocScroll -= c.WheelIn(sdl.Rect{X: 0, Y: top, W: w, H: viewH}) * scrollStepPx
+	a.helpDocScroll -= c.WheelIn(sdl.Rect{X: 0, Y: top, W: w, H: viewH}) * scrollStepPx
 	// A draggable scrollbar on the right for fast up/down navigation.
 	track := sdl.Rect{X: w - scrollBarW - pad, Y: top, W: scrollBarW, H: viewH}
-	a.docs.helpDocScroll = c.VScrollbar("helpdocbar", track, a.docs.helpDocScroll, contentH, viewH)
+	a.helpDocScroll = c.VScrollbar("helpdocbar", track, a.helpDocScroll, contentH, viewH)
 
 	clip := sdl.Rect{X: 0, Y: top, W: w, H: viewH}
 	_ = c.Ren.SetClipRect(&clip)
 	defer func() { _ = c.Ren.SetClipRect(nil) }()
-	y := top - a.docs.helpDocScroll
-	for _, fl := range a.docs.helpFlat {
+	y := top - a.helpDocScroll
+	for _, fl := range a.helpFlat {
 		y += fl.gap
 		if y+lineH > top && y < top+viewH {
 			c.Label(x0+fl.indent, y, fl.text, fl.col)

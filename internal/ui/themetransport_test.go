@@ -1,6 +1,11 @@
 package ui
 
 // THE TRANSPORT'S UI GATES (v1.90.0 W8).
+//
+// internal/themepack's own suite proves the archive is safe. These prove the
+// CLIENT drives it: that a dropped bundle is described before it is written, that
+// the second drop is what writes, that the import applies live, and that the
+// pieces cannot be deleted while the suite stays green.
 
 import (
 	"archive/zip"
@@ -22,11 +27,14 @@ const bundleGateWait = 10 * time.Second
 
 // dropRig is an App a drop can be delivered to, plus a themes root that is a
 // temp directory rather than the developer's real AppData.
+//
 // THE ROOT IS A PARAMETER, which is the whole reason bundleDrop is split out of
 // handleThemeBundleDrop: a gate that had to go through config.UserThemesDir()
+// would either write into the developer's own AppData or re-implement the
+// portability policy it is not testing.
 func dropRig(t *testing.T) (*App, string) {
 	t.Helper()
-	return &App{env: env{}}, filepath.Join(t.TempDir(), "themes")
+	return &App{}, filepath.Join(t.TempDir(), "themes")
 }
 
 // newTestPrefs is a preferences value the gates may write to. A bare struct, as
@@ -82,11 +90,11 @@ func fixtureBundle(t *testing.T, folder string) string {
 // been started.
 func awaitBundle(t *testing.T, a *App) {
 	t.Helper()
-	if a.skin.themeImp.job == nil {
+	if a.themeImp.job == nil {
 		t.Fatal("no bundle job is in flight — the drop started nothing")
 	}
 	select {
-	case res := <-a.skin.themeImp.job.done:
+	case res := <-a.themeImp.job.done:
 		a.landThemeBundle(res)
 	case <-time.After(bundleGateWait):
 		t.Fatal("the bundle job never finished")
@@ -159,16 +167,16 @@ func TestTheSecondDropImports(t *testing.T) {
 	}
 	// LIVE, NOT NEXT LAUNCH (design §Q4): the import kicks an apply itself, which
 	// is the whole "two drops later you are looking at it" experience.
-	if a.skin.themeGen.Load() == 0 {
+	if a.themeGen.Load() == 0 {
 		t.Error("the import applied no theme — this is deliberately not ImportSettings' " +
 			"freeze-and-apply-next-launch semantics")
 	}
-	drainThemeApply(t, a, a.skin.themeGen.Load())
+	drainThemeApply(t, a, a.themeGen.Load())
 	// AND THE CONSENT IS SPENT. A third drop must describe again rather than
 	// import again — otherwise "drop it twice" quietly becomes "every drop from
 	// now on imports".
 	a.bundleDrop(pack, root)
-	if a.skin.themeImp.job == nil || a.skin.themeImp.job.stage != themeImportInspect {
+	if a.themeImp.job == nil || a.themeImp.job.stage != themeImportInspect {
 		t.Error("a third drop went straight to extraction — consent must be spent by the act it authorises")
 	}
 }
@@ -183,7 +191,7 @@ func TestAnotherBundleDoesNotInheritTheFirstsConsent(t *testing.T) {
 	a.bundleDrop(first, root)
 	awaitBundle(t, a)
 	a.bundleDrop(second, root)
-	if a.skin.themeImp.job == nil || a.skin.themeImp.job.stage != themeImportInspect {
+	if a.themeImp.job == nil || a.themeImp.job.stage != themeImportInspect {
 		t.Fatal("dropping a DIFFERENT bundle imported it on the strength of the previous one's consent")
 	}
 	awaitBundle(t, a)
@@ -199,9 +207,9 @@ func TestAnExpiredConsentDoesNotImport(t *testing.T) {
 	pack := fixtureBundle(t, "paper")
 	a.bundleDrop(pack, root)
 	awaitBundle(t, a)
-	a.skin.themeImp.armedAt = time.Now().Add(-themeImportConsentWindow - time.Second)
+	a.themeImp.armedAt = time.Now().Add(-themeImportConsentWindow - time.Second)
 	a.bundleDrop(pack, root)
-	if a.skin.themeImp.job == nil || a.skin.themeImp.job.stage != themeImportInspect {
+	if a.themeImp.job == nil || a.themeImp.job.stage != themeImportInspect {
 		t.Fatal("an expired consent still authorised an import")
 	}
 }
@@ -235,12 +243,12 @@ func TestOnlyOneBundleJobRunsAtATime(t *testing.T) {
 	a, root := dropRig(t)
 	pack := fixtureBundle(t, "paper")
 	a.bundleDrop(pack, root)
-	first := a.skin.themeImp.job
+	first := a.themeImp.job
 	if first == nil {
 		t.Fatal("the drop started nothing")
 	}
 	a.bundleDrop(fixtureBundle(t, "ink"), root)
-	if a.skin.themeImp.job != first {
+	if a.themeImp.job != first {
 		t.Fatal("a second drop replaced the job in flight — the first goroutine's result would land " +
 			"on a job nobody is holding")
 	}
@@ -252,6 +260,11 @@ func TestOnlyOneBundleJobRunsAtATime(t *testing.T) {
 
 // TestAnImportNeverRepointsTheThemeRoot is the W2 defect, gated at the LANDING
 // rather than at the claim.
+//
+// dropclaim_test.go already pins that a bundle never reaches the Settings screen's
+// theme-folder arm. This is the other door: the import itself must not "helpfully"
+// point the custom root at wherever the theme landed, which would make every
+// unrelated theme in that folder appear and the user's own choice disappear.
 func TestAnImportNeverRepointsTheThemeRoot(t *testing.T) {
 	a, root := dropRig(t)
 	a.d.Prefs = newTestPrefs(t)
@@ -264,7 +277,7 @@ func TestAnImportNeverRepointsTheThemeRoot(t *testing.T) {
 	if _, customRoot := a.d.Prefs.Load().Theme(); customRoot != `C:\somewhere\the\user\chose` {
 		t.Errorf("the import repointed the theme root to %q — that is the W2 bug arriving by the front door", customRoot)
 	}
-	drainThemeApply(t, a, a.skin.themeGen.Load())
+	drainThemeApply(t, a, a.themeGen.Load())
 }
 
 // ---------------------------------------------------------------------------
@@ -273,6 +286,13 @@ func TestAnImportNeverRepointsTheThemeRoot(t *testing.T) {
 
 // TestEveryDegradeReachesASurface is the gate that had to exist before the
 // metadata ruling could.
+//
+// Sidecar.Notes() had collected degrade reports since W1 and a census across the
+// tree found its only readers were TESTS — the format promised "degrade with a
+// note" and the note reached nobody. W8's metadata truncation would have inherited
+// exactly that, so the truncation would have been silent in practice however
+// loudly the format described it.
+//
 // It drives buildThemeReport and noteThemeReport, which is the shipped pair, and
 // then asserts on a.warnLine — the surface a human actually reads.
 func TestEveryDegradeReachesASurface(t *testing.T) {
@@ -303,7 +323,7 @@ func TestEveryDegradeReachesASurface(t *testing.T) {
 		t.Errorf("an input this report claims to carry is missing: %v", report)
 	}
 
-	a := &App{env: env{}}
+	a := &App{}
 	a.noteThemeReport("paper", report)
 	if a.warnLine == "" {
 		t.Fatal("the report reached no surface — this is the defect the file exists to close")
@@ -311,8 +331,8 @@ func TestEveryDegradeReachesASurface(t *testing.T) {
 	if !strings.Contains(a.warnLine, "paper") || !strings.Contains(a.warnLine, "note") {
 		t.Errorf("the line does not say which theme or how many notes:\n  %s", a.warnLine)
 	}
-	if len(a.skin.themeReport) != len(report) {
-		t.Errorf("the editor kept %d of %d notes", len(a.skin.themeReport), len(report))
+	if len(a.themeReport) != len(report) {
+		t.Errorf("the editor kept %d of %d notes", len(a.themeReport), len(report))
 	}
 
 	// AND IT DOES NOT NAG. An apply is not a user action — healTheme re-kicks one
@@ -326,7 +346,7 @@ func TestEveryDegradeReachesASurface(t *testing.T) {
 
 	// A CLEAN THEME SAYS NOTHING. A report that fires on every install is one
 	// everybody learns to ignore, which is the same as not having one.
-	b := &App{env: env{}}
+	b := &App{}
 	b.noteThemeReport("clean", nil)
 	if b.warnLine != "" {
 		t.Errorf("a theme with nothing to report still posted %q", b.warnLine)
@@ -336,6 +356,14 @@ func TestEveryDegradeReachesASurface(t *testing.T) {
 // TestImportReportNamesEveryDeclaredGap is design §Q5's own requirement, stated as
 // a gate: an AO2 feature this client INHERITS rather than imports must be named,
 // with its reason, on the theme that ships one.
+//
+// WHY IT IS A CENSUS OVER themeReportGaps AND NOT THREE HAND-WRITTEN CASES. The
+// gaps are a table precisely so a third one is a row; a gate that listed the two
+// that exist today would go green the day somebody added the third and reported
+// nothing. So it walks the table, builds a sidecar that trips exactly that row, and
+// demands a line — which is a claim about the mechanism rather than about its
+// current contents.
+//
 // The two gaps are `[import] lobby_design` and `per_misc`. `_sharp` is the one
 // declared gap deliberately absent, for the reason themereport.go states: it is not
 // on the sidecar and there is no census to ask.
@@ -464,6 +492,7 @@ func stageExportable(t *testing.T, a *App) string {
 // TestSharingAThemeWritesABundleThatImportsBack is the export half's end-to-end
 // gate, and it is the one that makes editorAwaitExport a shipped path rather than
 // a function with no callers.
+//
 // It asserts on the FILE — the bundle exists, it is outside the theme folder, and
 // the tree that comes back out of it is the tree that went in. Round-tripping is
 // not a feature that had to be built; it is a consequence of "a theme IS a folder",
@@ -675,13 +704,13 @@ func TestTheImportRowSaysWhatWillHappenNext(t *testing.T) {
 // stored path would leave an Import button offering something the funnel would
 // refuse.
 func TestAnExpiredConsentTakesTheImportButtonAway(t *testing.T) {
-	a := &App{env: env{}}
+	a := &App{}
 	pack := fixtureBundle(t, "paper")
-	a.skin.themeImp.armedPath, a.skin.themeImp.armedAt = pack, time.Now()
+	a.themeImp.armedPath, a.themeImp.armedAt = pack, time.Now()
 	if got := a.themeImportRow(); got.button != "Import" {
 		t.Fatalf("a live consent shows %q", got.button)
 	}
-	a.skin.themeImp.armedAt = time.Now().Add(-2 * themeImportConsentWindow)
+	a.themeImp.armedAt = time.Now().Add(-2 * themeImportConsentWindow)
 	if got := a.themeImportRow(); got.button != "Browse…" {
 		t.Errorf("an EXPIRED consent still offers %q — the memo is keyed on the stored path "+
 			"rather than the live one", got.button)

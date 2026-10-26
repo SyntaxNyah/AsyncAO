@@ -16,6 +16,22 @@ import (
 // added AFTER a per-frame allocation shipped; these two gates instead catch a
 // whole class up front by asserting a SETTLED drawCourtroom / drawLobby frame
 // allocates nothing.
+//
+// SCOPE (stated honestly, not "whole screen"): the courtroom gate stages a
+// settled &courtroom.Session{} at the app's real default layout scales, so it
+// exercises the ALWAYS-DRAWN composite — the viewport/scene at real size, the IC
+// input row / drawICControls decomposition, the log-panel chrome and its pushClip
+// conversions — AND the IC-log raster: 2–3 settled lines are appended through the
+// live pushIC path so drawICLogList's per-line loop (drawLogLineNamed → labelEmoji
+// → the text-texture cache), the most alloc-prone whole-screen path, is measured
+// rather than skipped on an empty log. It does NOT cover the data-dependent
+// branches that only render with populated live state: the areas filter, the
+// players/mute chip, the additive checkbox, or the name-colour/bold name-split
+// branch of drawLogLineNamed (off by default). Those are left out because their
+// setup would inject per-frame-varying text (clocks, timers, live rosters) that
+// isn't a settled frame; gating them needs its own fixture. The lobby gate
+// covers the phone-book screen. A genuine leak in what IS covered surfaces as a
+// non-zero count to FIX, not to loosen.
 
 // stageSettledCourtroom builds a headless App whose courtroom is fully settled:
 // a real font-loaded Ctx over a software renderer, a session + room with an
@@ -33,7 +49,7 @@ func stageSettledCourtroom(t testing.TB) (*App, func()) {
 	a.ctx = ctx
 	a.uiScalePct = 100
 	a.screen = ScreenCourtroom
-	a.srvMeta.serverName = "AllocGate"
+	a.serverName = "AllocGate"
 	// Seed the layout scales exactly as the live app does (app.go: loadPrefs).
 	// testTabApp never runs that path, so vpPct/logPct/... default to Go's zero
 	// — a 0% viewport is 0×0, which collapses the whole right column (rcol.H=0)
@@ -52,7 +68,7 @@ func stageSettledCourtroom(t testing.TB) (*App, func()) {
 	a.musicPct, a.playerPct, a.areaPct, a.modDashPct = a.logPct, a.logPct, a.logPct, a.logPct
 	// Pin a fixed frame clock so the append-time IC stamps (and anything else
 	// that reads a.now()) are deterministic across the measured frames.
-	a.budget.frameNow = time.Date(2026, 7, 12, 16, 11, 0, 0, time.UTC)
+	a.frameNow = time.Date(2026, 7, 12, 16, 11, 0, 0, time.UTC)
 
 	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
@@ -64,8 +80,8 @@ func stageSettledCourtroom(t testing.TB) (*App, func()) {
 
 	// A minimal, quiescent session: no visible timers/clocks (they'd change text
 	// every frame), no players/areas panels that vary.
-	a.link.sess = &courtroom.Session{}
-	a.link.room = newRoomForTest(t)
+	a.sess = &courtroom.Session{}
+	a.room = newRoomForTest(t)
 
 	// Resident stage bases: upload a tiny texture for each so the draw is a pure
 	// touch — a miss would fire healScenery / keepSceneAssetsWarm, whose map
@@ -85,9 +101,9 @@ func stageSettledCourtroom(t testing.TB) (*App, func()) {
 	}
 	// Drive a message and settle it so the stage has a real speaker, then make
 	// every base it references resident.
-	a.link.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(0, "Witch", "settled line")})
-	a.link.room.SkipToIdle()
-	sc := &a.link.room.Scene
+	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(0, "Witch", "settled line")})
+	a.room.SkipToIdle()
+	sc := &a.room.Scene
 	upload(sc.BackgroundBase)
 	upload(sc.DeskBase)
 	upload(sc.Speaker.Active)
@@ -107,8 +123,8 @@ func stageSettledCourtroom(t testing.TB) (*App, func()) {
 	// Caught-up-at-bottom is the faithful settled state — and it skips BOTH the
 	// "↓ N new" and "↓ Latest" pills, whose fmt.Sprintf / TextWidth would
 	// otherwise allocate every frame (that's a scrolled-up frame, not settled).
-	a.compose.icStick = true
-	a.compose.icReadMark = len(a.chatlog.icLog)
+	a.icStick = true
+	a.icReadMark = len(a.icLog)
 	// The OOC scrollback too. Since v1.87.0 the OOC BOX is the default layout, so
 	// drawCleanRightColumn → drawOOCPanel is on the settled frame's critical path
 	// for a fresh install — but with an empty OOC log its per-line raster loop
@@ -154,13 +170,13 @@ func TestDrawCourtroomThemeFontsZeroAlloc(t *testing.T) {
 
 	// Sizes deliberately DIFFER per element: one shared fontSet would rebuild —
 	// and purgeTextCache — every frame, which would read as a huge alloc count.
-	a.skin.themeFonts.e[elemShowname] = themeElemFont{pct: themeFontPct(14), bold: true}
-	a.skin.themeFonts.e[elemMessage] = themeElemFont{pct: themeFontPct(13)}
-	a.skin.themeFonts.e[elemICChatlog] = themeElemFont{pct: themeFontPct(11)}
-	a.skin.themeFonts.e[elemServerChatlog] = themeElemFont{pct: themeFontPct(9)}
-	a.skin.themeFonts.e[elemMusicList] = themeElemFont{pct: themeFontPct(8), bold: true}
-	a.skin.themeFonts.e[elemMusicName] = themeElemFont{pct: themeFontPct(10)}
-	a.skin.themeFonts.e[elemAreaList] = themeElemFont{pct: themeFontPct(9)}
+	a.themeFonts.e[elemShowname] = themeElemFont{pct: themeFontPct(14), bold: true}
+	a.themeFonts.e[elemMessage] = themeElemFont{pct: themeFontPct(13)}
+	a.themeFonts.e[elemICChatlog] = themeElemFont{pct: themeFontPct(11)}
+	a.themeFonts.e[elemServerChatlog] = themeElemFont{pct: themeFontPct(9)}
+	a.themeFonts.e[elemMusicList] = themeElemFont{pct: themeFontPct(8), bold: true}
+	a.themeFonts.e[elemMusicName] = themeElemFont{pct: themeFontPct(10)}
+	a.themeFonts.e[elemAreaList] = themeElemFont{pct: themeFontPct(9)}
 
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
@@ -175,12 +191,17 @@ func TestDrawCourtroomThemeFontsZeroAlloc(t *testing.T) {
 // The classic gates never reach that function: their fixture leaves themeRects
 // empty, so themeLayout() returns lay.valid=false and drawCourtroom takes the
 // classic branch — which is exactly how the themed composite shipped ungated.
+//
+// asyncao_toolbox is added on TOP of the stock table (AsyncAO's own optional key,
+// consumed in drawCourtroomThemed) so the compact-toolbox region is anchored at a
+// theme rect rather than the classic slot default — that arm is only reachable
+// under a theme, so the classic gates cannot cover it either.
 func stageThemedCourtroom(t testing.TB) (*App, func()) {
 	t.Helper()
 	a, cleanup := stageSettledCourtroom(t)
-	a.skin.themeRects = make(map[string]theme.Rect, len(ao2DefaultDesignRects)+1)
+	a.themeRects = make(map[string]theme.Rect, len(ao2DefaultDesignRects)+1)
 	for k, r := range ao2DefaultDesignRects {
-		a.skin.themeRects[k] = r
+		a.themeRects[k] = r
 	}
 	// toolboxDesignRect: the compact toolbox strip parked in the one genuinely EMPTY
 	// band of the stock 714×579 design space — x 5…125, y 354…378, between the emote
@@ -192,13 +213,13 @@ func stageThemedCourtroom(t testing.TB) (*App, func()) {
 	// `emotes`.) What the gate measures is that the themed arm of the toolbox
 	// (a.toolboxThemeRectOn) draws without allocating.
 	toolboxDesignRect := theme.Rect{X: 5, Y: 354, W: 120, H: 24}
-	a.skin.themeRects["asyncao_toolbox"] = toolboxDesignRect
+	a.themeRects["asyncao_toolbox"] = toolboxDesignRect
 	// A SEPARATE copy, exactly like the live theme apply (app.go): the layout
 	// editor's Reset writes themeRectsOrig back into themeRects, so aliasing one
 	// map would silently make Reset a no-op for anyone who extends this fixture.
-	a.skin.themeRectsOrig = cloneRects(a.skin.themeRects)
+	a.themeRectsOrig = cloneRects(a.themeRects)
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true }) // default-ON today; pinned here so a default flip can't silently un-gate this
-	a.skin.themeLay.valid = false                                           // force the first frame to build the cache from the rects above
+	a.themeLay.valid = false                                                // force the first frame to build the cache from the rects above
 	return a, cleanup
 }
 
@@ -219,10 +240,10 @@ func TestDrawCourtroomThemedZeroAlloc(t *testing.T) {
 	// a silently-classic frame would make this a duplicate of the gate above and
 	// leave the themed path uncovered again.
 	draw()
-	if !a.skin.themeLay.valid {
+	if !a.themeLay.valid {
 		t.Fatal("themeLayout did not validate — the fixture's rects never reached the themed branch")
 	}
-	if !a.toolbox.toolboxThemeRectOn {
+	if !a.toolboxThemeRectOn {
 		t.Fatal("drawCourtroom took the CLASSIC branch — only drawCourtroomThemed arms toolboxThemeRectOn")
 	}
 
@@ -235,9 +256,13 @@ func TestDrawCourtroomThemedZeroAlloc(t *testing.T) {
 // panel zooms DIVERGED — one Ctrl+wheel over the OOC log and one over the music
 // list, both landing inside [MinLogScalePercent, MaxLogScalePercent], i.e. a
 // perfectly ordinary saved state.
+//
 // It exists because equal zooms hid a whole class of bug. The themed frame draws
 // the IC log, the OOC log AND the music list at once; while all three asked for the
 // same percent, one shared fontSet answered all three and never rebuilt. Diverge
+// any of them and that set was rebuilt — with a full purgeTextCache and text-atlas
+// teardown — on EVERY FRAME. The zoom knobs are per panel by design, so "they
+// happen to match" is not an invariant anything may rely on.
 func TestDrawCourtroomThemedDivergentZoomZeroAlloc(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
@@ -255,7 +280,7 @@ func TestDrawCourtroomThemedDivergentZoomZeroAlloc(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 	draw()
-	if !a.skin.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
+	if !a.themeLay.valid || !a.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
 
@@ -268,25 +293,29 @@ func TestDrawCourtroomThemedDivergentZoomZeroAlloc(t *testing.T) {
 // TestDrawCourtroomThemedCentredShownameZeroAlloc is the themed gate with the
 // showname CENTRED — the state 50 of the 97 design files in the reference corpus
 // ask for, and the one that costs something.
+//
 // Left alignment short-circuits before measuring anything (shownameSpanFor), so
 // the gates above never touch the measuring path at all. Centre and right have to
 // know how wide the name is, and the only honest way to get that is through the
+// same caches the draw uses — labelEmojiWidth re-probes textCache / emojiCache
+// rather than re-rendering or measuring the wrong face. A rendered measure, or a
+// c.TextWidth call on the chrome face, would show up here immediately.
 func TestDrawCourtroomThemedCentredShownameZeroAlloc(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
 
-	a.skin.themeShownameAlign = shownameAlignCenter
+	a.themeShownameAlign = shownameAlignCenter
 	// A theme-declared showname size too, so the measure runs on the ELEMENT face
 	// (#39) and not on the chrome font that a lazier implementation would reach for.
-	a.skin.themeFonts.e[elemShowname] = themeElemFont{pct: themeFontPct(14), bold: true}
+	a.themeFonts.e[elemShowname] = themeElemFont{pct: themeFontPct(14), bold: true}
 
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 	draw()
-	if !a.skin.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
+	if !a.themeLay.valid || !a.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
-	name := a.link.room.Scene.ShownameText
+	name := a.room.Scene.ShownameText
 	if name == "" {
 		t.Fatal("the fixture has no showname on screen — the alignment path would not run")
 	}
@@ -322,7 +351,7 @@ func TestDrawLobbyZeroAlloc(t *testing.T) {
 	a.ctx = ctx
 	a.uiScalePct = 100
 	a.screen = ScreenLobby
-	a.conn.lobby.lobbyStatus = "Servers loaded."
+	a.lobbyStatus = "Servers loaded."
 
 	const w, h = 1280, 720
 	// noteScreenTransition rides inside the gated closure: its settled-frame

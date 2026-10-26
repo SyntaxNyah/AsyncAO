@@ -37,9 +37,9 @@ var (
 func previewFenceApp(t *testing.T) *App {
 	t.Helper()
 	a := testTabApp(t)
-	a.link.sess = courtroom.NewRehearsalSession("", nil)
-	a.link.room = &courtroom.Courtroom{}
-	a.budget.previewBase = "characters/Phoenix/(a)normal"
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
+	a.previewBase = "characters/Phoenix/(a)normal"
 	a.previewFrameRect = previewTestBox
 	return a
 }
@@ -100,7 +100,7 @@ func TestPreviewFencePublishesNothingWhenNoBox(t *testing.T) {
 		// mutate the wrong one and every case would silently pass.
 		apply func(*App)
 	}{
-		{"no preview up", func(a *App) { a.budget.previewBase = "" }},
+		{"no preview up", func(a *App) { a.previewBase = "" }},
 		{"nothing drawn last frame", func(a *App) { a.previewFrameRect = sdl.Rect{} }},
 		{"zero-height rect", func(a *App) { a.previewFrameRect = sdl.Rect{X: 900, Y: 300, W: 260} }},
 	} {
@@ -122,7 +122,7 @@ func TestPreviewFencePublishesNothingWhenNoBox(t *testing.T) {
 	// The unpublished mark must not suspend an EARLIER publisher's fence.
 	a := previewFenceApp(t)
 	c := a.ctx
-	a.budget.previewBase = ""
+	a.previewBase = ""
 	someoneElse := sdl.Rect{X: 0, Y: 0, W: 1280, H: 22} // stand-in for the menu bar strip
 	c.fenceOverlay(someoneElse)
 	a.fenceSpritePreview()
@@ -155,7 +155,7 @@ func TestPreviewClickIsConsumed(t *testing.T) {
 	if c.clicked {
 		t.Error("a press-release on the preview box must be consumed — unconsumed it played the track underneath (#37)")
 	}
-	if a.budget.previewBase != "" {
+	if a.previewBase != "" {
 		t.Error("a plain click on the box must still dismiss it (the pre-fix behaviour the consume replaces)")
 	}
 	if a.previewDrag {
@@ -181,7 +181,7 @@ func TestPreviewPinnedClickIsConsumedButKeepsBox(t *testing.T) {
 	if c.clicked {
 		t.Error("a pinned box must consume its own body click too")
 	}
-	if a.budget.previewBase == "" {
+	if a.previewBase == "" {
 		t.Error("a pinned box closes on its × only, not on a body click")
 	}
 }
@@ -222,7 +222,7 @@ func TestPreviewSurvivesItsOwnDrag(t *testing.T) {
 	c.hoverID = ""
 
 	a.closeSpritePreviewOnLeave()
-	if a.budget.previewBase == "" {
+	if a.previewBase == "" {
 		t.Fatal("a box being dragged must not close under its own pointer fence (#36)")
 	}
 }

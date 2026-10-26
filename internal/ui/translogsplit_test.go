@@ -23,33 +23,32 @@ import (
 // rather than re-minting it (a backgrounded tab that came back must keep appending
 // to its own file, not start a third).
 func TestTwoTabsOnOneServerGetTwoLogSessions(t *testing.T) {
-	withExeDataRoot(t)
 	a := testTabApp(t)
 	const server = "Skrapegropen"
 
-	first := a.srvMeta.logSession
+	first := a.logSession
 	if first == 0 {
 		t.Fatal("resetSessionState left logSession at the zero value — every tab would share writer key 0")
 	}
-	a.srvMeta.serverName = server
+	a.serverName = server
 	// A live session on the slot, the headless pattern the other tab-lifecycle tests
 	// use. Without it activateTab takes its "died while backgrounded" arm (a.sess ==
 	// nil) and Disconnects instead of restoring — which would make the id assertion
 	// below measure the teardown path rather than the park/activate hand-off.
-	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 
 	// Park tab one and open tab two on the SAME server.
 	a.tabs = append(a.tabs, &courtTab{})
 	a.activeTab = 0
 	a.parkActive()
-	second := a.srvMeta.logSession
+	second := a.logSession
 	if second == first {
 		t.Fatalf("a fresh live slot reused log session %d — two tabs on one server would share a transcript file (F4)", first)
 	}
-	if got := a.tabs[0].state.srvMeta.logSession; got != first {
+	if got := a.tabs[0].state.logSession; got != first {
 		t.Errorf("the parked tab's log session is %d, want %d — the id must ride the session state into the tab", got, first)
 	}
-	a.srvMeta.serverName = server
+	a.serverName = server
 
 	// Both sessions log; each must get its OWN writer.
 	a.d.Prefs.Update(func(
@@ -82,8 +81,8 @@ func TestTwoTabsOnOneServerGetTwoLogSessions(t *testing.T) {
 
 	// Bringing tab one back must NOT mint a third id.
 	a.activateTab(0)
-	if a.srvMeta.logSession != first {
-		t.Errorf("activating a parked tab changed its log session to %d, want %d — it would abandon its own file mid-session", a.srvMeta.logSession, first)
+	if a.logSession != first {
+		t.Errorf("activating a parked tab changed its log session to %d, want %d — it would abandon its own file mid-session", a.logSession, first)
 	}
 }
 

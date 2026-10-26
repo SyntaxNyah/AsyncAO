@@ -2,9 +2,21 @@ package ui
 
 // The free-element BAKE (v1.90.0 W3) — docs/wip/THEME-EDITOR-DESIGN.md §2,
 // docs/THEME-FORMAT.md §3-4.
+//
+// Everything expensive about an element happens HERE, exactly once per cold
+// rebuild of themeLayoutCache: the pane reparenting, the anchor resolution, the
+// space transform, the canvas fit, the clamp, the label truncation, the condition
+// interning and the band sort. The draw path (themeelements.go) then reads values.
+//
+// SEPARATE FILE FROM THE PAINTERS, on purpose. TestElementDrawUsesNoStringBuilding
+// scans themeelements.go for fmt/strconv/strings/bytes; this file is the cold path
+// where a string operation is not merely allowed but correct, and keeping it out of
+// the scanned file means the scan never has to be weakened with an exemption list.
+//
 // COLD PATH, NOT A FREE PATH. themeLayoutIn's rebuild runs on the render thread
 // during a frame (a window resize, a fit change, a theme apply), so the bake is
 // bounded rather than merely "not per frame": fixed arrays throughout, one pass per
+// element, an insertion sort over at most 96 entries, no map growth, no disk.
 // BenchmarkElementBandBake pins its allocation ceiling — a preset swap must not
 // hitch.
 
@@ -24,6 +36,15 @@ import (
 // the author still gets their fill, stroke, colour and position, which is the
 // difference between a theme that looks slightly plainer on an older client and one
 // with a hole in it.
+//
+// THE FIRST THREE ARE shapemask.go's SHIPPED VOCABULARY (shapemask.go:38-40, and
+// the same three names in internal/config), because design §2 says ElemShape is
+// "the shapemask.go family, EXTENDED" and because every `shape =` line in the 14
+// themes shipped at HEAD is one of them. Renaming sharp→rect (W3's first spelling)
+// would have degraded ~180 authored lines to the fall-through and dropped `pill`
+// entirely — SILENTLY, since `shape` is read as free text rather than as an enum,
+// so no degrade note reaches the import report. TestShippedThemeShapesAllResolve
+// is what keeps that from happening again.
 var elemShapeNames = [elemShapeCount]string{"sharp", "rounded", "hex", "ribbon", "tape", "pill"}
 
 // elemShapeAliases are ADDITIONAL accepted spellings of an id that already has a
@@ -46,9 +67,19 @@ func elemShapeID(name string) uint8 {
 // elemShapeIDOK resolves a wire name and reports whether it is in the vocabulary at
 // all. ok=false means the caller is holding the DEGRADE value, not a match — which
 // is the distinction a census needs and a draw path does not.
+//
 // Forgiving about case, because `shape` is read as free text rather than as an
 // enum (sidecar_read.go): a theme spelling it "Rounded" reaches us verbatim, and
 // degrading that to a plain box would be a silent downgrade of a file that says
+// exactly what it means.
+//
+// FOLDED PER COMPARE, not lowered once. strings.ToLower ALLOCATES whenever the
+// input has an upper-case rune, and this runs once per element per rebuild —
+// theme.ElementCap of them behind BenchmarkElementBandBake's ceiling, which is the
+// bake's whole allocation budget for a theme of any size. strings.EqualFold does
+// the same fold with no string to allocate, and strings.TrimSpace only ever
+// reslices, so the whole resolve is allocation-free. elemShoutStem is the model,
+// for the same reason and against the same ceiling.
 func elemShapeIDOK(name string) (uint8, bool) {
 	want := strings.TrimSpace(name)
 	for i, n := range elemShapeNames {
@@ -67,9 +98,13 @@ func elemShapeIDOK(name string) (uint8, bool) {
 // elemFullCanvasPct is design §6.6 R7: an empty-anchor courtroom-space element that
 // covers at least this percentage of the ACTIVE canvas AFTER the uniform fit is a
 // FULL-CANVAS element, and is snapped flush to the canvas.
+//
 // The snap is what makes the rule mean something at render time rather than only in
 // W9's coherence matrix. A wallpaper authored against a 714x579 canvas and applied
 // on a 1512x648 one lands a pixel or two short on one axis after the fit rounds;
+// judged post-fit against the active canvas it is still ≥ 90% covering, so it is
+// what the author said it was — the whole backdrop — and a seam of client colour
+// down one edge is a defect, not fidelity.
 const elemFullCanvasPct = 90
 
 // elemZSortCap is the insertion sort's bound. It is theme.ElementCap by
@@ -92,16 +127,22 @@ type bakeElement struct {
 
 // bakeThemeElements fills lay.el / lay.elN / lay.band / lay.condVal from the active
 // theme's sidecar, and REPARENTS every pane host into lay.r before it does.
+//
+// Order is load-bearing: panes rewrite the slot rects, and design §6.6 R8 says an
+// anchored element resolves against the REPARENTED (final) rect — decoration follows
+// its widget wherever it lives.
+//
 // A theme with no sidecar (every stock AO2 theme) leaves the array zeroed, elN 0 and
 // all three band ranges {0, 0}: the three band loops become three `for i := 0; i < 0`
 // and the feature costs nothing. That is the v1.89.0 "0 base = 0 cost" rule, and it
+// is why this returns immediately rather than walking an empty slice.
 func (a *App) bakeThemeElements(lay *themeLayoutCache) {
 	// Every rebuild gets a fresh generation, so App's per-axis condition memo cannot
 	// carry an index resolved against the PREVIOUS intern table (a.condGen).
-	a.elemBake.themeElemGen++
-	lay.condGen = a.elemBake.themeElemGen
+	a.themeElemGen++
+	lay.condGen = a.themeElemGen
 
-	sc := a.elemBake.themeSidecar
+	sc := a.themeSidecar
 	if sc == nil {
 		return
 	}
@@ -125,8 +166,8 @@ func (a *App) bakeThemeElements(lay *themeLayoutCache) {
 			continue // an absent anchor is INERT, not an error (design §6.6 R10)
 		}
 		lay.el[n] = be.el
-		a.elemBake.elemBakeBand[n] = be.band
-		a.elemBake.elemBakeZ[n] = be.z
+		a.elemBakeBand[n] = be.band
+		a.elemBakeZ[n] = be.z
 		n++
 	}
 	// [effect.<widget key>] LAST, so a theme that filled the array with its own
@@ -141,8 +182,8 @@ func (a *App) bakeThemeElements(lay *themeLayoutCache) {
 			continue
 		}
 		lay.el[n] = be.el
-		a.elemBake.elemBakeBand[n] = be.band
-		a.elemBake.elemBakeZ[n] = be.z
+		a.elemBakeBand[n] = be.band
+		a.elemBakeZ[n] = be.z
 		n++
 	}
 	a.sortBakedElements(lay, n)
@@ -154,7 +195,7 @@ func (a *App) bakeThemeElements(lay *themeLayoutCache) {
 	}
 	var started [theme.ElementBandCount]bool
 	for i := 0; i < n; i++ {
-		b := a.elemBake.elemBakeBand[i]
+		b := a.elemBakeBand[i]
 		if int(b) >= len(lay.band) {
 			continue // a band the reader could not produce; paints nowhere
 		}
@@ -223,6 +264,10 @@ func (a *App) bakeOneElement(lay *themeLayoutCache, sc *theme.Sidecar, src *them
 		// being re-derived here: deriving a generator key means lowercasing a name and
 		// hashing a param list, and the bake's allocation ceiling is a constant rather
 		// than a per-element budget so that a preset swap cannot hitch its frame.
+		//
+		// nil is the ordinary answer for art that has not landed, was evicted by a
+		// window recreate, or was refused by the budget — the painter draws nothing
+		// rather than probing, and themeMediaPage has already kicked the paced heal.
 		be.el.page, _ = a.themeMediaPage(a.themeMediaPlan.ElemKey(idx))
 	case theme.ElemText:
 		// The ink is `color`, not `fill` — and it is the ONE colour an absent value
@@ -243,6 +288,7 @@ func (a *App) bakeOneElement(lay *themeLayoutCache, sc *theme.Sidecar, src *them
 }
 
 // elemBindZ is the z every [effect.*] bind bakes at: the top of the overlay band.
+//
 // A bind is a HIGHLIGHT ON a widget, so it belongs above the free elements an author
 // placed in the same band — a glow that a decorative plate covered would be a glow
 // nobody can see. int16's maximum rather than a chosen number, because "on top of
@@ -252,6 +298,34 @@ func (a *App) bakeOneElement(lay *themeLayoutCache, sc *theme.Sidecar, src *them
 const elemBindZ = int16(32767)
 
 // bakeEffectBind turns one [effect.<widget key>] section into a baked element.
+//
+// A BIND IS ADDITIVE PAINT, exactly like every other element, and the format says so
+// in as many words: "Elements are additive paint only. They cannot move, hide or
+// restyle an AO2 widget" (docs/THEME-FORMAT.md §3). So a bind bakes into a plate over
+// the widget's own rect, driven by the bind's effect — a pulsing highlight on the
+// objection button, a fading wash over the chatbox — and NOT into a transform on the
+// widget itself.
+//
+// That is a correctness decision, not a shortcut. lay.r is the geometry the widget
+// DRAWS at and the geometry it HIT-TESTS at, both: an effect that offset or scaled
+// the entry would slide a button's pixels away from its own click target, which is
+// the draw-versus-hit-test divergence class this client has been bitten by before.
+// The only sanctioned ways to move an AO2 widget stay [overrides] and [pane.*], both
+// explicit and both static.
+//
+// `amp_pct` IS THE WASH'S PEAK OPACITY, folded into the plate's alpha here — and the
+// shipped corpus is what settles that reading. Every `[effect.*]` colour in the
+// fourteen native themes is a bare `#rrggbb`, i.e. fully opaque, at amplitudes from 12
+// to 100; taken literally that is an opaque rectangle over the objection button. What
+// those authors wrote, and say they wrote in their own comments, is "this widget glows
+// at 45%" and "the stage comes up once when the theme applies". Peak opacity × the
+// effect's envelope (bakedElement.wash) is that sentence, and it is the only reading
+// under which a bind can never permanently bury the widget it decorates.
+//
+// ok=false is INERT, for the four reasons a bind cannot paint: it names no effect, it
+// has no amplitude (the wash would be invisible), it names no colour (the format lists
+// `color` as the bind's own key for exactly this), or its target is absent from this
+// layout (design §6.6 R10, skip-if-absent).
 func (a *App) bakeEffectBind(lay *themeLayoutCache, b *theme.EffectBind) (bakeElement, bool) {
 	if b.Effect == theme.FXNone || b.AmpPct <= 0 || !b.Color.Opaque() {
 		return bakeElement{}, false
@@ -263,6 +337,13 @@ func (a *App) bakeEffectBind(lay *themeLayoutCache, b *theme.EffectBind) (bakeEl
 	peak := sdlColorOf(b.Color)
 	peak.A = uint8(int(peak.A) * int(b.AmpPct) / theme.AmpMaxPct)
 	// The baked row, in one piece:
+	//   kind/shape — a flat plate, the silhouette family's most neutral member,
+	//     because a bind's shape is the WIDGET's and not one the author chose;
+	//   col        — the authored hue at its peak opacity (see above);
+	//   wash       — the alpha rule that makes the plate the effect (themeelements.go);
+	//   tint       — opaque white, the neutral value every baked row carries;
+	//   cond       — always visible, so the one-shot resolves off the theme clock's
+	//     own zero and needs no pool slot (fxAlwaysOrigin).
 	return bakeElement{
 		band: theme.BandOverlay,
 		z:    elemBindZ,
@@ -302,6 +383,19 @@ func (a *App) bakeElementLabel(text string, availW int32) string {
 
 // elemShoutConditions is the `visible_when = shout:<name>` vocabulary, and it exists
 // because AO2 SPELLS A SHOUT TWO WAYS.
+//
+// The DESIGN KEY is what a theme author types everywhere else — `anchor = hold_it`,
+// and the courtroom_design.ini row itself (themeslots.go:177-180, courtroom.cpp:995
+// / :1001 / :1007 / :1100). The ASSET STEM is what the wire and the art use, and it
+// is what courtroom.ShoutName returns off the message's objection modifier: holdit,
+// objection, takethat, custom (urlbuilder.go:543).
+//
+// Three of the four differ, so a condition written in the spelling the rest of the
+// file uses could never match the live value — `shout:hold_it`, `shout:take_that`
+// and `shout:custom_objection` were dead, and only `shout:objection` worked, by the
+// coincidence of the two spellings agreeing on exactly one member. Every one of the
+// 14 shipped themes writes the design key.
+//
 // The stems are taken from courtroom.ShoutName rather than written out again, so
 // this table cannot drift from the one function that decides what a shout is called.
 var elemShoutConditions = [...]struct {
@@ -330,6 +424,7 @@ func elemConditionValue(cond theme.Condition) string {
 // Courtroom.CurrentShout reports. An unrecognised value is returned verbatim: it
 // simply never matches, which is the format's rule for a condition naming something
 // this build has no idea about.
+//
 // Allocation-free by construction (EqualFold compares, ShoutName returns constants),
 // which matters because the bake's whole allocation budget is elemBakeAllocCeil for
 // a theme of any size.
@@ -347,6 +442,7 @@ func elemShoutStem(v string) string {
 // internCondition maps a VisibleWhen value to an index into lay.condVal, adding it
 // on first sight. The table is bounded by theme.ElementCap because at most one new
 // value can arrive per element.
+//
 // The VALUE-LESS axes (always, speaking) intern nothing: elementVisible switches on
 // the axis before it ever looks at the index.
 func (a *App) internCondition(lay *themeLayoutCache, cond theme.Condition) int16 {
@@ -368,6 +464,20 @@ func (a *App) internCondition(lay *themeLayoutCache, cond theme.Condition) int16
 }
 
 // resolveElementRect is the whole of §6.6 R1 plus the space table (§4).
+//
+// With a NON-EMPTY anchor the authored rect is a SIGNED DELTA on the anchor's
+// resolved box, component by component — and the delta is in DESIGN pixels for every
+// space except `window`, so `-6, -6, 12, 12` inflates a frame by six DESIGN px and
+// keeps its proportion at any window size. With an EMPTY anchor the rect is absolute
+// in its declared space.
+//
+// ELEMENTS ARE NOT CLAMPED INTO THE CANVAS, and that is the difference between them
+// and a widget. themeLayoutIn clamps every courtroom-relative WIDGET into the stage
+// because Qt amputated overhanging children at the window edge and themes rely on
+// it — but the inflate idiom (`-6, -6, 12, 12`) is an element deliberately reaching
+// OUTSIDE its anchor, and clamping it would collapse the very thing the anchor delta
+// exists for. Decoration that runs off the canvas is clipped by SDL and costs
+// nothing; decoration silently pulled back inside is a frame that no longer frames.
 func (a *App) resolveElementRect(lay *themeLayoutCache, sc *theme.Sidecar, src *theme.Element) (sdl.Rect, bool) {
 	// SpaceWindow is the one space outside the design canvas entirely: window
 	// pixels, no scale, no offset, no canvas clamp. It is the AO2-full-parity rule
@@ -456,6 +566,14 @@ func (a *App) elementSpaceRect(lay *themeLayoutCache, space theme.Space) (sdl.Re
 }
 
 // absSlotRect is a themeSlots key's ABSOLUTE window box.
+//
+// lay.r does NOT hold absolutes for every key: AO2 declares four coordinate systems
+// in courtroom_design.ini and only the courtroom-relative ones are made
+// window-absolute at rebuild time — showname/message stay chatbox-relative,
+// music_name stays plate-relative and the two evidence icons stay viewport-relative,
+// because the widgets that own those parents re-base them at draw. An element
+// anchored to one of them has to do the same re-basing, or a badge pinned to the
+// showname would land at the top-left of the screen.
 func absSlotRect(lay *themeLayoutCache, key string) (sdl.Rect, bool) {
 	r, ok := lay.rect(key)
 	if !ok {
@@ -465,6 +583,11 @@ func absSlotRect(lay *themeLayoutCache, key string) (sdl.Rect, bool) {
 		// anchors decoration to `immediate` on a layout the backstop filled as
 		// `pre_no_interrupt` would resolve to nothing and go inert, silently, the
 		// same way an override on that spelling used to.
+		//
+		// Latent when this landed: no shipped theme anchors either spelling. That is
+		// the reason to fold it here rather than to note the asymmetry — the two
+		// tiers reading one design vocabulary differently is a trap that costs
+		// nothing to close now and a bug report to find later.
 		alt, hasAlt := themeSlotOtherSpelling(key)
 		if !hasAlt {
 			return sdl.Rect{}, false
@@ -516,10 +639,17 @@ func snapFullCanvas(r, canvas sdl.Rect) sdl.Rect {
 // bakePanes REPARENTS every pane host: the host's entry in lay.r is rewritten to a
 // box inside the pane, and the widget's own draw site — unchanged, called once —
 // then paints there.
+//
+// NOT "call the host's draw site twice with two rects" (design §Q1): the
+// immediate-mode kit has ONE drag owner (c.dragID) and a documented single wheel
+// consumer (c.WheelIn), and hovering() would register twice. A widget cannot be in
+// two places.
+//
 // EXACTLY ONCE per host per rebuild. Host sets are disjoint by construction (the
 // reader drops a duplicate claim), and this walks each pane's hosts in order, so no
 // key can be rewritten twice — TestPaneReparentsExactlyOnce pins it, because a
 // second reparent would compose the pane offset onto an already-reparented rect and
+// walk the widget off the screen one rebuild at a time.
 func (a *App) bakePanes(lay *themeLayoutCache, sc *theme.Sidecar) {
 	if len(sc.Panes) == 0 {
 		return
@@ -540,6 +670,8 @@ func (a *App) bakePanes(lay *themeLayoutCache, sc *theme.Sidecar) {
 			// their entries in lay.r are PARENT-relative and their draw sites re-base
 			// them, so re-homing one would compose the pane offset on top of a
 			// re-basing that still happens — the widget would land at pane + parent.
+			// A child moves by moving its parent, which is what a pane hosting
+			// ao2_chatbox already does.
 			if themeSlotRel(key) != relCourtroom {
 				continue
 			}
@@ -552,6 +684,23 @@ func (a *App) bakePanes(lay *themeLayoutCache, sc *theme.Sidecar) {
 			// origin instead of the canvas's — which is the definition of a
 			// reparent, and what makes a toggle pair share a sub-rect by overriding
 			// both to the same box.
+			//
+			// READ FROM lay.r, NEVER FROM sc.Overrides. lay.r already carries the
+			// tier's answer: foldSidecarOverrides laid the author's rows over the
+			// resolved design map (app.go), applyRectOverrides laid the player's own
+			// drags over that, and themeLayoutIn scaled the result into here. Asking
+			// the sidecar again was a SECOND SPELLING of the [overrides] policy, and
+			// it disagreed with the first in three ways for one file: `player_list`
+			// is inert, so themeKeyEditable refuses the row and the pane applied it
+			// anyway; `immediate` gets AO2's alias fold in the layout tier and got
+			// none here; and a player's layout-editor drag on a pane host was
+			// silently overruled by the theme author, inverting the documented
+			// precedence (rung 4 beats rung 3, themeoverrides.go:28-34). One source,
+			// three defects gone, and a fourth prevented — the pane no longer needs
+			// to know the [overrides] tier exists at all.
+			//
+			// A courtroom-relative rect in lay.r is window-absolute; take its
+			// design-space offset back off before re-basing it onto the pane.
 			rel := cur
 			rel.X -= lay.area.X
 			rel.Y -= lay.area.Y
@@ -599,18 +748,24 @@ func (a *App) paneRect(lay *themeLayoutCache, p *theme.Pane) (sdl.Rect, bool) {
 // INSERTION SORT, which is stable, allocation-free and, over at most elemZSortCap
 // entries on a cold path, faster than the machinery sort.SliceStable would set up
 // (a closure and a reflect swapper, both allocations).
+//
+// STABILITY IS THE FORMAT. docs/THEME-FORMAT.md §4: "within a band, elements paint
+// in ascending z, ties broken by declaration order". The input is already in
+// declaration order, so stability is the whole of that second clause — and it is
+// what TestElementDrawOrderIsBakedNotSorted checks stays true without the draw path
+// ever sorting anything.
 func (a *App) sortBakedElements(lay *themeLayoutCache, n int) {
 	if n > elemZSortCap {
 		n = elemZSortCap
 	}
 	for i := 1; i < n; i++ {
-		el, band, z := lay.el[i], a.elemBake.elemBakeBand[i], a.elemBake.elemBakeZ[i]
+		el, band, z := lay.el[i], a.elemBakeBand[i], a.elemBakeZ[i]
 		j := i - 1
-		for j >= 0 && bakedAfter(a.elemBake.elemBakeBand[j], a.elemBake.elemBakeZ[j], band, z) {
-			lay.el[j+1], a.elemBake.elemBakeBand[j+1], a.elemBake.elemBakeZ[j+1] = lay.el[j], a.elemBake.elemBakeBand[j], a.elemBake.elemBakeZ[j]
+		for j >= 0 && bakedAfter(a.elemBakeBand[j], a.elemBakeZ[j], band, z) {
+			lay.el[j+1], a.elemBakeBand[j+1], a.elemBakeZ[j+1] = lay.el[j], a.elemBakeBand[j], a.elemBakeZ[j]
 			j--
 		}
-		lay.el[j+1], a.elemBake.elemBakeBand[j+1], a.elemBake.elemBakeZ[j+1] = el, band, z
+		lay.el[j+1], a.elemBakeBand[j+1], a.elemBakeZ[j+1] = el, band, z
 	}
 }
 

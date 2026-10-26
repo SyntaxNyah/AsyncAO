@@ -11,7 +11,7 @@ import (
 // keeps the menu open, and the two server rows grey out with no session rather than
 // vanishing.
 func TestAreaMenuRowsAreAllReachableActions(t *testing.T) {
-	a := &App{env: env{ctx: &Ctx{}}}
+	a := &App{ctx: &Ctx{}}
 	for _, row := range areaMenuRows {
 		if row.kind == musicMenuSeparator {
 			continue
@@ -42,14 +42,14 @@ func TestAreaMenuRowsAreAllReachableActions(t *testing.T) {
 	if a.areaMenuRowEnabled(areaMenuCMPanel) {
 		t.Error("the CM row is offered without CM — the panel it opens self-closes, so the click does nothing and explains nothing")
 	}
-	a.srvMeta.amICMNow = true
+	a.amICMNow = true
 	if !a.areaMenuRowEnabled(areaMenuCMPanel) {
 		t.Error("the CM row stays grey while we DO hold CM — greyed rather than hidden means it must come back when the server grants it")
 	}
 	// The CM route is not a duplicate control: it opens the panel that already owns
 	// lock / unlock / area-kick.
 	a.areaMenuAct(areaMenuCMPanel)
-	if !a.modUI.showCMPanel {
+	if !a.showCMPanel {
 		t.Error("the CM row must open the CM panel rather than growing its own lock/kick copies")
 	}
 }
@@ -157,8 +157,8 @@ func TestMusicViewMenuCarriesNoAreaRow(t *testing.T) {
 	// in an App literal — onView builds the whole view state one way for all five
 	// cases below.
 	onView := func(tab int) *App {
-		a := &App{env: env{}}
-		a.chatlog.logTab = tab
+		a := &App{}
+		a.logTab = tab
 		return a
 	}
 
@@ -193,13 +193,13 @@ func TestMusicViewMenuCarriesNoAreaRow(t *testing.T) {
 	// A TORN Areas panel draws whatever logTab says and carries its own ⋮
 	// (torntabs.go), so the rows have to be live there too or that button is inert.
 	torn := onView(logTabMusic)
-	torn.classic.classicOv = map[string][4]float64{tornKeyFor(logTabAreas): {}}
+	torn.classicOv = map[string][4]float64{tornKeyFor(logTabAreas): {}}
 	if n, _ := drawn(torn); n != wantRows {
 		t.Errorf("a torn-off Areas panel offers %d of its %d rows — its ⋮ opens a menu with nothing in it", n, wantRows)
 	}
 	// …and a fully hidden Areas tab draws in none of the three places, torn or not.
 	hidden := onView(logTabAreas)
-	hidden.classic.hidden = map[string]bool{panelTabAreas: true}
+	hidden.hidden = map[string]bool{panelTabAreas: true}
 	if n, _ := drawn(hidden); n != 0 {
 		t.Errorf("a hidden Areas tab still offers %d area row(s)", n)
 	}

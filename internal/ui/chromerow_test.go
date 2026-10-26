@@ -1,6 +1,11 @@
 package ui
 
 // THE CHROME-ROW REFLOW GUARD (v1.90.0 W7b).
+//
+// These gates DRIVE the shipping planner and the shipping Music header — no
+// re-implementation of the placement anywhere below, because a mirror of the cursor
+// would pass while the real one overlapped (rule 11).
+//
 // The headline is TestSqueezedMusicPanelNeverStacksItsHeader: the reported defect was
 // a screenshot of an imported AO2 theme whose music panel drew Expand all and
 // Collapse all on top of each other, so the gate is the same arithmetic — a squeezed
@@ -53,6 +58,7 @@ func assertNoOverlap(t *testing.T, what string, block sdl.Rect, p *chromeRowPlan
 }
 
 // TestChromeRowNeverOverlapsAtAnySize is the totality claim, swept.
+//
 // Every width from "narrower than one control" to "roomier than the natural row" and
 // every height from "no room for a line at all" to "room for three": for ALL of them
 // the plan is either empty or non-overlapping. There is no size at which the planner
@@ -85,7 +91,7 @@ func TestChromeRowDegradesInTheStatedOrder(t *testing.T) {
 	if p.placed() != len(want) {
 		t.Fatalf("a 600 px row placed %d of %d controls", p.placed(), len(want))
 	}
-	if r, _ := planRect(p, 6); r.W != 180 {
+	if r, _ := p.rect(6); r.W != 180 {
 		t.Errorf("the readout was placed at %d px, want its natural 180 — a row that fits must not be segmented", r.W)
 	}
 
@@ -93,12 +99,12 @@ func TestChromeRowDegradesInTheStatedOrder(t *testing.T) {
 	// shortcuts (1, 2) go before the two controls with no other route (3, 4).
 	for w := int32(200); w >= 40; w -= 10 {
 		p := planChromeRow(sdl.Rect{X: 0, Y: 0, W: w, H: tall}, want, musicHeaderMaxLines)
-		if _, ok := planRect(p, 5); !ok && p.placed() > 0 {
+		if _, ok := p.rect(5); !ok && p.placed() > 0 {
 			t.Fatalf("width %d dropped the ⋮ overflow menu while keeping %d other controls — every row "+
 				"it hosts is reachable only through it", w, p.placed())
 		}
-		_, keptOnly3 := planRect(p, 3)
-		_, keptShortcut1 := planRect(p, 1)
+		_, keptOnly3 := p.rect(3)
+		_, keptShortcut1 := p.rect(1)
 		if keptShortcut1 && !keptOnly3 {
 			t.Errorf("width %d kept a ⋮-menu shortcut (Stop) and dropped a control with no other route "+
 				"(Expand all) — the drop order is a reachability argument, not a taste ranking", w)
@@ -115,25 +121,20 @@ func TestChromeRowPlanNeverAllocates(t *testing.T) {
 	block := sdl.Rect{X: 0, Y: 0, W: 212, H: 240}
 	if n := testing.AllocsPerRun(200, func() {
 		p := planChromeRow(block, want, musicHeaderMaxLines)
-		_, _ = planRect(p, 5)
+		_, _ = p.rect(5)
 	}); n != 0 {
 		t.Errorf("planChromeRow allocated %.0f times per call, want 0 — the plan is a stack value by "+
 			"construction (fixed arrays, no slices, no closures)", n)
 	}
 }
 
-// planRect finds a placed control. Test-only: the accessor left the production
-// planner, which exposes placed() alone.
-func planRect(p chromeRowPlan, id int) (sdl.Rect, bool) {
-	for i := 0; i < p.n; i++ {
-		if p.slot[i].id == id {
-			return p.slot[i].r, true
-		}
-	}
-	return sdl.Rect{}, false
-}
-
 // TestSqueezedMusicPanelNeverStacksItsHeader is the REPORTED DEFECT, end to end.
+//
+// It drives the two real placers the themed music panel uses — fitThemedChips for the
+// roster/Music/Areas chip strip and planMusicHeader for the action row — over the same
+// squeezed shape an imported AO2 theme produces, and requires that nothing the panel
+// draws lands on anything else it draws.
+//
 // The two are placed by SEPARATE calls in theme_layout.go, reconciled by
 // themedStripBody, and that reconciliation is exactly what a short panel can falsify;
 // so the gate asserts across BOTH, not inside either.

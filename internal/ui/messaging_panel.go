@@ -27,7 +27,7 @@ const (
 	msgPanelMinH = 240
 )
 
-func (msg *msgState) toggleMessages() { msg.showMessages = !msg.showMessages }
+func (a *App) toggleMessages() { a.showMessages = !a.showMessages }
 
 // seedPanelFromSlot is the generic first-open seed shared by every persistable
 // floatWin panel (extracted from msgPanelRect). If the layout editor positioned
@@ -38,15 +38,15 @@ func (msg *msgState) toggleMessages() { msg.showMessages = !msg.showMessages }
 // panel's historical tuck / centre) — this helper only owns the slot-seed path,
 // never a panel's default, so wiring it in can't move an un-persisted panel.
 // panelSlotTable is the canonical enumeration of the panels this drives.
-func (classic1 *classicState) seedPanelFromSlot(fw *floatWin, slot string, defW, defH, minW, minH, w, h int32) (sdl.Rect, bool) {
+func (a *App) seedPanelFromSlot(fw *floatWin, slot string, defW, defH, minW, minH, w, h int32) (sdl.Rect, bool) {
 	if fw.placed {
 		return sdl.Rect{}, false
 	}
-	ov, ok := classic1.classicOv[slot]
+	ov, ok := a.classicOv[slot]
 	if !ok {
 		return sdl.Rect{}, false
 	}
-	r := classic1.anchoredRect(slot, ov, w, h) // positioned via Edit Layout → start there
+	r := a.anchoredRect(slot, ov, w, h) // positioned via Edit Layout → start there
 	fw.x, fw.y, fw.w, fw.h, fw.placed = r.X, r.Y, r.W, r.H, true
 	return fw.rect(defW, defH, minW, minH, w, h), true
 }
@@ -59,32 +59,32 @@ func (classic1 *classicState) seedPanelFromSlot(fw *floatWin, slot string, defW,
 // re-deriving it from def/min sizes) keeps panels with a dynamic default height in
 // sync automatically. Callers must invoke it only on the drag/resize-END frame
 // (the wasActive guard) — never per-frame.
-func (classic1 *classicState) persistPanelSlot(e *env, slot string, r sdl.Rect, w, h int32) {
+func (a *App) persistPanelSlot(slot string, r sdl.Rect, w, h int32) {
 	frac := rectToFrac(r, w, h)
-	if classic1.classicOv == nil {
-		classic1.classicOv = make(map[string][4]float64, classicSlotRegCap)
+	if a.classicOv == nil {
+		a.classicOv = make(map[string][4]float64, classicSlotRegCap)
 	}
-	classic1.classicOv[slot] = frac
-	classic1.syncAnchorWindow(slot, w, h) // a pinned slot's override now describes THIS window
-	e.d.Prefs.SetClassicSlot(slot, frac)
-	if m := classic1.slotAnchorMode(slot); m != "" {
-		e.d.Prefs.SetClassicAnchor(slot, config.ClassicAnchor{Mode: m, WinW: int(w), WinH: int(h)})
+	a.classicOv[slot] = frac
+	a.syncAnchorWindow(slot, w, h) // a pinned slot's override now describes THIS window
+	a.d.Prefs.SetClassicSlot(slot, frac)
+	if m := a.slotAnchorMode(slot); m != "" {
+		a.d.Prefs.SetClassicAnchor(slot, config.ClassicAnchor{Mode: m, WinW: int(w), WinH: int(h)})
 	}
 }
 
 // msgPanelRect is the panel's screen rect. First open this session seeds from the
 // persisted layout slot (if you positioned it in Edit Layout), else tucks it
 // top-left; thereafter the live floatWin geometry (drag / resize) wins.
-func (classic1 *classicState) msgPanelRect(e *env, w, h int32) sdl.Rect {
-	if r, ok := classic1.seedPanelFromSlot(&e.wins.msgWin, slotMessages, msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h); ok {
+func (a *App) msgPanelRect(w, h int32) sdl.Rect {
+	if r, ok := a.seedPanelFromSlot(&a.msgWin, slotMessages, msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h); ok {
 		return r
 	}
-	if !e.wins.msgWin.placed { // historical default: tuck top-left (not centred)
+	if !a.msgWin.placed { // historical default: tuck top-left (not centred)
 		dw := clampI32(msgPanelDefW, msgPanelMinW, w-2*floatWinMargin)
 		dh := clampI32(msgPanelDefH, msgPanelMinH, h-2*floatWinMargin)
 		return sdl.Rect{X: floatWinMargin, Y: floatTitleH, W: dw, H: dh}
 	}
-	return e.wins.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h)
+	return a.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h)
 }
 
 // msgSlotDefaultRect is where the Group Chat slot lands when first added from the
@@ -98,8 +98,8 @@ func (a *App) msgSlotDefaultRect(w, h int32) sdl.Rect {
 // persistMsgSlot writes the Group Chat panel's rect back to its layout slot on the
 // drag/resize-END frame (never per-frame). Thin wrapper over the generic
 // persistPanelSlot now that every panel shares that path.
-func (classic1 *classicState) persistMsgSlot(e *env, w, h int32) {
-	classic1.persistPanelSlot(e, slotMessages, e.wins.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h), w, h)
+func (a *App) persistMsgSlot(w, h int32) {
+	a.persistPanelSlot(slotMessages, a.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h), w, h)
 }
 
 // drawMessagesSlotGhost draws an inert titled placeholder for the Group Chat panel
@@ -107,11 +107,11 @@ func (classic1 *classicState) persistMsgSlot(e *env, w, h int32) {
 // editor hands it move/resize handles. Edit-only and only when the slot exists
 // (added via the tray chip); the real interactive panel draws in normal mode.
 func (a *App) drawMessagesSlotGhost(w, h int32) {
-	if _, ok := a.classic.classicOv[slotMessages]; !ok {
+	if _, ok := a.classicOv[slotMessages]; !ok {
 		return
 	}
 	c := a.ctx
-	r := a.classic.slotRect(slotMessages, a.msgSlotDefaultRect(w, h), w, h)
+	r := a.slotRect(slotMessages, a.msgSlotDefaultRect(w, h), w, h)
 	if r.W < classicMinPx || r.H < classicMinPx {
 		return
 	}
@@ -133,9 +133,9 @@ type msgEntry struct {
 // threads, then AsyncAO-detected players in the room without a thread yet ("+ name").
 func (a *App) msgEntries() []msgEntry {
 	var out []msgEntry
-	if len(a.msgs.msgGroups) > 0 {
-		gs := make([]*msgGroup, 0, len(a.msgs.msgGroups))
-		for _, g := range a.msgs.msgGroups {
+	if len(a.msgGroups) > 0 {
+		gs := make([]*msgGroup, 0, len(a.msgGroups))
+		for _, g := range a.msgGroups {
 			gs = append(gs, g)
 		}
 		sort.Slice(gs, func(i, j int) bool { return strings.ToLower(gs[i].name) < strings.ToLower(gs[j].name) })
@@ -144,8 +144,8 @@ func (a *App) msgEntries() []msgEntry {
 		}
 	}
 	seen := map[string]bool{}
-	threads := make([]string, 0, len(a.compose.pmThreads))
-	for k := range a.compose.pmThreads {
+	threads := make([]string, 0, len(a.pmThreads))
+	for k := range a.pmThreads {
 		threads = append(threads, k)
 	}
 	sort.Strings(threads)
@@ -153,12 +153,12 @@ func (a *App) msgEntries() []msgEntry {
 		seen[k] = true
 		out = append(out, msgEntry{label: k, name: k})
 	}
-	if a.link.room != nil {
+	if a.room != nil {
 		roster := a.rosterView()
 		for i := range roster {
 			name := strings.TrimSpace(roster[i].name)
 			lk := strings.ToLower(name)
-			if name == "" || seen[lk] || !a.link.room.RemoteIsAsyncAO(name) {
+			if name == "" || seen[lk] || !a.room.RemoteIsAsyncAO(name) {
 				continue
 			}
 			seen[lk] = true
@@ -172,23 +172,23 @@ func (a *App) msgEntries() []msgEntry {
 // floatWin press edge from drawFloatingPanels.
 func (a *App) drawMessagesPanel(w, h int32, pressed *bool) {
 	c := a.ctx
-	wasActive := a.wins.msgWin.dragging || a.wins.msgWin.resizing // detect the drag/resize-end frame for slot persistence
-	r := a.classic.msgPanelRect(&a.env, w, h)
+	wasActive := a.msgWin.dragging || a.msgWin.resizing // detect the drag/resize-end frame for slot persistence
+	r := a.msgPanelRect(w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)
 	c.Heading(r.X+pad, r.Y+6, "Group Chat", ColText)
 	closeB := sdl.Rect{X: r.X + r.W - 70 - pad, Y: r.Y + 3, W: 70, H: btnH}
 	if c.Button(closeB, "Close") {
-		a.msgs.showMessages = false
+		a.showMessages = false
 		return
 	}
-	a.floatWinDrag(&a.wins.msgWin, sdl.Rect{X: r.X, Y: r.Y, W: closeB.X - r.X - 4, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.msgWin, sdl.Rect{X: r.X, Y: r.Y, W: closeB.X - r.X - 4, H: floatTitleH}, pressed)
 	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.wins.msgWin, grip, r, msgPanelMinW, msgPanelMinH, pressed)
+	a.floatWinResize(&a.msgWin, grip, r, msgPanelMinW, msgPanelMinH, pressed)
 	a.drawResizeGrip(grip)
-	if wasActive && !a.wins.msgWin.dragging && !a.wins.msgWin.resizing { // drag/resize just ended → remember where
-		a.classic.persistMsgSlot(&a.env, w, h)
+	if wasActive && !a.msgWin.dragging && !a.msgWin.resizing { // drag/resize just ended → remember where
+		a.persistMsgSlot(w, h)
 	}
 
 	top := r.Y + floatTitleH + 8
@@ -204,26 +204,26 @@ func (a *App) drawMessagesPanel(w, h int32, pressed *bool) {
 	for i, e := range entries {
 		labels[i] = e.label
 		if e.gid != 0 {
-			if e.gid == a.msgs.msgSelGroup {
+			if e.gid == a.msgSelGroup {
 				sel = i
 			}
-		} else if a.msgs.msgSelGroup == 0 && strings.EqualFold(e.name, a.msgs.msgSel) {
+		} else if a.msgSelGroup == 0 && strings.EqualFold(e.name, a.msgSel) {
 			sel = i
 		}
 	}
-	if clicked := a.drawLogList("msgchats", listR, labels, sel, &a.msgs.msgListScroll); clicked >= 0 && clicked < len(entries) {
+	if clicked := a.drawLogList("msgchats", listR, labels, sel, &a.msgListScroll); clicked >= 0 && clicked < len(entries) {
 		if e := entries[clicked]; e.gid != 0 {
-			a.msgs.msgSelGroup, a.msgs.msgSel, a.msgs.msgGroupManage = e.gid, "", false
-			if g := a.msgs.msgGroups[e.gid]; g != nil {
+			a.msgSelGroup, a.msgSel, a.msgGroupManage = e.gid, "", false
+			if g := a.msgGroups[e.gid]; g != nil {
 				g.unread = 0 // opening the group reads it
 			}
 		} else {
-			a.msgs.msgSel, a.msgs.msgSelGroup = e.name, 0
+			a.msgSel, a.msgSelGroup = e.name, 0
 		}
 	}
 	if c.Button(sdl.Rect{X: listR.X, Y: bottom - btnH, W: leftW, H: btnH}, "+ New Group") {
 		a.createGroup("New group")
-		a.msgs.msgGroupManage = true // jump straight to the members / invite picker
+		a.msgGroupManage = true // jump straight to the members / invite picker
 	}
 
 	// Right column: group view, DM view, or a hint.
@@ -233,9 +233,9 @@ func (a *App) drawMessagesPanel(w, h int32, pressed *bool) {
 		rw = 140
 	}
 	switch {
-	case a.msgs.msgSelGroup != 0:
+	case a.msgSelGroup != 0:
 		a.drawGroupView(rx, top, rw, bottom)
-	case a.msgs.msgSel != "":
+	case a.msgSel != "":
 		a.drawDMView(rx, top, rw, bottom)
 	default:
 		c.LabelClipped(rx, top, rw, "Pick an AsyncAO player (AO badge) to DM, or + New Group to start a group chat.", ColTextDim)
@@ -247,12 +247,12 @@ func (a *App) drawDMView(rx, top, rw, bottom int32) {
 	c := a.ctx
 	hy := top
 	// Partner's character icon (resolved from the live roster) beside the name.
-	partnerChar := a.rosterCharByName(a.msgs.msgSel)
-	a.drawMsgCharIcon(partnerChar, a.msgs.msgSel, sdl.Rect{X: rx, Y: hy - 2, W: 22, H: 22})
-	a.labelName(rx+28, hy, rw-28, a.msgs.msgSel, nameColor(a.msgs.msgSel, msgNameSat, msgNameVal)) // CJK-safe DM peer
+	partnerChar := a.rosterCharByName(a.msgSel)
+	a.drawMsgCharIcon(partnerChar, a.msgSel, sdl.Rect{X: rx, Y: hy - 2, W: 22, H: 22})
+	a.labelName(rx+28, hy, rw-28, a.msgSel, nameColor(a.msgSel, msgNameSat, msgNameVal)) // CJK-safe DM peer
 	hy += 22
-	if a.link.room != nil {
-		if p, ok := a.link.room.RemoteProfile(a.msgs.msgSel); ok {
+	if a.room != nil {
+		if p, ok := a.room.RemoteProfile(a.msgSel); ok {
 			if line := strings.TrimSpace(p.Pronouns + "   " + p.Tag); line != "" {
 				c.LabelClipped(rx, hy, rw, line, ColTextDim)
 				hy += 16
@@ -262,10 +262,10 @@ func (a *App) drawDMView(rx, top, rw, bottom int32) {
 	composeY := bottom - fieldH
 	sendW := c.TextWidth("Send") + 16
 	var send bool
-	a.msgs.msgInput, send = c.TextField("msgcompose", sdl.Rect{X: rx, Y: composeY, W: rw - sendW - 6, H: fieldH}, a.msgs.msgInput, "message…")
+	a.msgInput, send = c.TextField("msgcompose", sdl.Rect{X: rx, Y: composeY, W: rw - sendW - 6, H: fieldH}, a.msgInput, "message…")
 	if c.Button(sdl.Rect{X: rx + rw - sendW, Y: composeY, W: sendW, H: fieldH}, "Send") || send {
-		a.sendDirectMessage(a.msgs.msgSel, a.msgs.msgInput)
-		a.msgs.msgInput = ""
+		a.sendDirectMessage(a.msgSel, a.msgInput)
+		a.msgInput = ""
 	}
 	a.drawMsgThreadBody(sdl.Rect{X: rx, Y: hy + 2, W: rw, H: composeY - (hy + 2) - 6})
 }
@@ -274,9 +274,9 @@ func (a *App) drawDMView(rx, top, rw, bottom int32) {
 // members/invite manager or the chat (thread + compose).
 func (a *App) drawGroupView(rx, top, rw, bottom int32) {
 	c := a.ctx
-	g := a.msgs.msgGroups[a.msgs.msgSelGroup]
+	g := a.msgGroups[a.msgSelGroup]
 	if g == nil {
-		a.msgs.msgSelGroup = 0
+		a.msgSelGroup = 0
 		return
 	}
 	g.unread = 0 // on screen = read (the chat-list badge clears)
@@ -289,24 +289,24 @@ func (a *App) drawGroupView(rx, top, rw, bottom int32) {
 	}
 	c.LabelClipped(rx+14, top, rw-184, head, ColAccent)
 	if c.Button(sdl.Rect{X: rx + rw - 162, Y: top - 2, W: 86, H: btnH}, "Members") {
-		a.msgs.msgGroupManage = !a.msgs.msgGroupManage
+		a.msgGroupManage = !a.msgGroupManage
 	}
 	if c.Button(sdl.Rect{X: rx + rw - 70, Y: top - 2, W: 70, H: btnH}, "Leave") {
 		a.leaveGroup(g)
 		return
 	}
 	hy := top + 22
-	if a.msgs.msgGroupManage {
+	if a.msgGroupManage {
 		a.drawGroupManage(g, sdl.Rect{X: rx, Y: hy, W: rw, H: bottom - hy})
 		return
 	}
 	composeY := bottom - fieldH
 	sendW := c.TextWidth("Send") + 16
 	var send bool
-	a.msgs.msgInput, send = c.TextField("msgcompose", sdl.Rect{X: rx, Y: composeY, W: rw - sendW - 6, H: fieldH}, a.msgs.msgInput, "message the group…")
+	a.msgInput, send = c.TextField("msgcompose", sdl.Rect{X: rx, Y: composeY, W: rw - sendW - 6, H: fieldH}, a.msgInput, "message the group…")
 	if c.Button(sdl.Rect{X: rx + rw - sendW, Y: composeY, W: sendW, H: fieldH}, "Send") || send {
-		a.sendGroupText(g, a.msgs.msgInput)
-		a.msgs.msgInput = ""
+		a.sendGroupText(g, a.msgInput)
+		a.msgInput = ""
 	}
 	a.drawGroupThread(g, sdl.Rect{X: rx, Y: hy, W: rw, H: composeY - hy - 6})
 }
@@ -347,7 +347,7 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 	y += 16
 	c.LabelClipped(box.X, y, box.W-8, "Green = on AsyncAO (gets the full group chat). Others can still be invited — they get a one-off PM.", ColTierYellow)
 	y += 18
-	if a.link.room == nil {
+	if a.room == nil {
 		return
 	}
 	// Show EVERYONE in the room (no AsyncAO-detection filter — that needed people to
@@ -367,7 +367,7 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 		if name == "" || p.uid == "" || uid == me || g.hasMember(uid) {
 			continue
 		}
-		isAO := a.link.room.RemoteIsAsyncAO(name)
+		isAO := a.room.RemoteIsAsyncAO(name)
 		// AsyncAO users get the FULL group chat, so highlight their row green ("compatible");
 		// everyone else can still be invited (they just get a one-off PM).
 		if isAO {
@@ -424,14 +424,14 @@ func (a *App) drawMsgThreadBody(box sdl.Rect) {
 	}
 	c := a.ctx
 	c.Border(box, ColPanelHi)
-	lines := a.compose.pmThreads[strings.ToLower(strings.TrimSpace(a.msgs.msgSel))]
-	partnerChar := a.rosterCharByName(a.msgs.msgSel)
+	lines := a.pmThreads[strings.ToLower(strings.TrimSpace(a.msgSel))]
+	partnerChar := a.rosterCharByName(a.msgSel)
 	a.drawChatBubbles(box, len(lines), func(i int) (string, string, bool, string, time.Time) {
 		ln := &lines[i]
 		if ln.fromMe {
 			return "You", ln.text, true, "", ln.at
 		}
-		return a.msgs.msgSel, ln.text, false, partnerChar, ln.at
+		return a.msgSel, ln.text, false, partnerChar, ln.at
 	})
 }
 
@@ -441,7 +441,7 @@ func (a *App) drawMsgThreadBody(box sdl.Rect) {
 // to the name when there's no live id (some servers accept it).
 func (a *App) sendDirectMessage(target, text string) {
 	text = strings.TrimSpace(text)
-	if text == "" || target == "" || a.link.sess == nil {
+	if text == "" || target == "" || a.sess == nil {
 		return
 	}
 	id := a.friendUID(target)
@@ -450,9 +450,9 @@ func (a *App) sendDirectMessage(target, text string) {
 	}
 	body := text + courtroom.WireMessage{Kind: courtroom.MsgDM}.EncodeMarker()
 	if uid, err := strconv.Atoi(id); err == nil {
-		a.link.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{uid}, body))
+		a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{uid}, body))
 	} else {
-		a.link.sess.SendOOC(a.oocNameOrDefault(), "/pm "+id+" "+body)
+		a.sess.SendOOC(a.oocNameOrDefault(), "/pm "+id+" "+body)
 	}
 	a.pmAppend(target, true, text)
 }

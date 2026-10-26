@@ -1,6 +1,25 @@
 package ui
 
 // F2 — settings help text running past the card's right border.
+//
+// The report named the FONTS section (the system-fonts line and the font-chain
+// line). The census below shows it was never two rows: Ctx.Checkbox drew its label
+// at whatever the string measured, with nothing bounding it, and the settings form
+// carries dozens of sentence-long help labels. On any window narrower than the
+// sentence they all ran off the card — the two the tester happened to be looking at
+// were simply the ones on screen.
+//
+// The corpus is the PRODUCTION source: every label literal handed to a chrome draw
+// call in settings.go, harvested by parsing the file. A hand-written list of "long
+// labels" would be a snapshot that goes stale the first time someone adds a row.
+//
+// The corpus deliberately covers BOTH shapes the form uses. Checkbox rows grew past
+// the card and out of the window; the bare help lines under them (c.Label, and the
+// FONTS chain line's c.LabelClipped, whose own maxW is the window) stayed inside the
+// window but were cut dead at the card's clip edge with no ellipsis. A census that
+// harvested only the checkboxes could not see the second class at all — which is
+// how a hundred-odd 100-to-190-character help lines went on hard-clipping after the
+// first fix.
 
 import (
 	"testing"

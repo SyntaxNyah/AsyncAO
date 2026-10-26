@@ -31,18 +31,24 @@ type hkEntry struct {
 // consumeHotkeyCapture binds the next keypress to whichever action armed the
 // capture; Esc cancels. The key is consumed so it cannot also fire something
 // else on its way past.
+//
+// Shared by BOTH rebinding surfaces — the Settings rows and the F1 sheet — and
+// that sharing is the point rather than tidiness: it used to live inside the
+// Settings draw, so a capture armed anywhere else would simply never complete,
+// leaving a row stuck on "press a key…" until the user opened Settings.
+//
 // Invalidates the sheet's cached rows on a real change, since one of them now
 // shows a key that just moved.
 func (a *App) consumeHotkeyCapture() {
 	c := a.ctx
-	if a.courtkeys.hkCapture == "" || c.keyPressed == 0 {
+	if a.hkCapture == "" || c.keyPressed == 0 {
 		return
 	}
 	if c.keyPressed != sdl.K_ESCAPE {
-		a.d.Prefs.SetHotkey(a.courtkeys.hkCapture, strings.ToLower(sdl.GetKeyName(c.keyPressed)))
-		a.courtkeys.hkCache = nil
+		a.d.Prefs.SetHotkey(a.hkCapture, strings.ToLower(sdl.GetKeyName(c.keyPressed)))
+		a.hkCache = nil
 	}
-	a.courtkeys.hkCapture = ""
+	a.hkCapture = ""
 	c.keyPressed = 0
 }
 
@@ -106,9 +112,9 @@ func (a *App) hotkeyCheatEntries() []hkEntry {
 	// bare letter (bareBindKey, qol.go — the Discord focus model gave every plain
 	// letter to the IC input), so the rows say so: a sheet that still printed a
 	// bare "M" would be advertising a key that no longer does anything.
-	out = appendKeyMapSection(out, "Character keys", a.courtkeys.charKeys, "Wear: ")
-	out = appendKeyMapSection(out, "Showname keys", a.courtkeys.shownameKeys, "Showname: ")
-	out = appendKeyMapSection(out, "IC phrases", a.courtkeys.icPhraseKeys, "IC: ")
+	out = appendKeyMapSection(out, "Character keys", a.charKeys, "Wear: ")
+	out = appendKeyMapSection(out, "Showname keys", a.shownameKeys, "Showname: ")
+	out = appendKeyMapSection(out, "IC phrases", a.icPhraseKeys, "IC: ")
 	return out
 }
 
@@ -139,6 +145,6 @@ func appendKeyMapSection(out []hkEntry, header string, binds map[string]string, 
 // opened sheet reflects the current bindings. Used by the Extras menu entry; the
 // F1 toggle rebuilds the same way on its on-transition.
 func (a *App) openHotkeyCheatSheet() {
-	a.courtkeys.showHotkeys = true
-	a.courtkeys.hkCache = a.hotkeyCheatEntries()
+	a.showHotkeys = true
+	a.hkCache = a.hotkeyCheatEntries()
 }

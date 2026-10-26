@@ -13,14 +13,14 @@ import (
 func TestMessagesSlotSeedsPanel(t *testing.T) {
 	a := testTabApp(t)
 	const w, h = int32(1000), int32(800)
-	a.classic.classicOv = map[string][4]float64{slotMessages: {0.1, 0.1, 0.5, 0.5}}
+	a.classicOv = map[string][4]float64{slotMessages: {0.1, 0.1, 0.5, 0.5}}
 
-	got := a.classic.msgPanelRect(&a.env, w, h)
+	got := a.msgPanelRect(w, h)
 	want := sdl.Rect{X: 100, Y: 80, W: 500, H: 400}
 	if got != want {
 		t.Errorf("seeded rect = %+v, want %+v", got, want)
 	}
-	if !a.wins.msgWin.placed {
+	if !a.msgWin.placed {
 		t.Error("seeding from the slot must mark the floatWin placed so the panel stays put")
 	}
 }
@@ -31,18 +31,18 @@ func TestMessagesSlotSeedsPanel(t *testing.T) {
 func TestMessagesSlotPersistsOnMove(t *testing.T) {
 	a := testTabApp(t)
 	const w, h = int32(1000), int32(800)
-	a.wins.msgWin.x, a.wins.msgWin.y, a.wins.msgWin.w, a.wins.msgWin.h, a.wins.msgWin.placed = 200, 100, 480, 360, true
+	a.msgWin.x, a.msgWin.y, a.msgWin.w, a.msgWin.h, a.msgWin.placed = 200, 100, 480, 360, true
 
-	a.classic.persistMsgSlot(&a.env, w, h)
+	a.persistMsgSlot(w, h)
 
 	want := [4]float64{0.2, 0.125, 0.48, 0.45}
-	if got := a.classic.classicOv[slotMessages]; got != want {
+	if got := a.classicOv[slotMessages]; got != want {
 		t.Errorf("live override = %v, want %v", got, want)
 	}
 	if got := a.d.Prefs.Load().ClassicLayoutOverrides()[slotMessages]; got != want {
 		t.Errorf("persisted override = %v, want %v", got, want)
 	}
-	if a.msgs.showMessages {
+	if a.showMessages {
 		t.Error("persisting geometry must not change visibility (showMessages)")
 	}
 }

@@ -1,6 +1,13 @@
 package ui
 
 // Shared source-structure helpers for the wiring gates in this package.
+//
+// WHY SOURCE AND NOT BEHAVIOUR. Some of what these bugs turned on is ORDER and
+// PLACEMENT inside a single-pass draw — which layer paints after which, whether a
+// bracket is released with defer — and neither is observable from a function's
+// return value. The precedent is TestFrameGatesDriveTheRealFrame in
+// frameharness_test.go, which parses this package's own sources for the same reason.
+//
 // These are deletion-catchers, never mirrors: they assert that PRODUCTION code calls
 // production functions in a required relationship. They contain no copy of the logic
 // under test, so they cannot go green against a re-implementation.
@@ -56,9 +63,11 @@ var (
 // ignores build tags when associating files with packages (SA1019); the explicit walk +
 // parser.ParseFile keeps the census exact. An empty result is a failure, not a pass: a
 // census that read nothing passes everything.
+//
 // The parse is memoized per test binary and per parser.Mode (see parseKey): this package
 // has 200+ files and these gates used to re-read and re-parse all of them once per call
 // (~26k parses a run, slower still under -race). The on-disk sources are immutable during
+// a run, so one parse per (directory, mode) is behaviour-identical.
 func parseNonTestSources(t testing.TB, mode parser.Mode) (*token.FileSet, map[string]*ast.File) {
 	t.Helper()
 	wd, err := os.Getwd()
@@ -138,6 +147,14 @@ func mentionsIdent(e ast.Expr, name string) bool {
 // packageFuncs visits every function and method declared in this package's
 // non-test sources, handing the visitor the file it lives in, its name and its
 // body.
+//
+// WHY WHOLE-PACKAGE AND NOT A NAMED LIST. A census over three remembered function
+// names answers "did these three break the rule", which is not the question a
+// "only one place may do X" gate is asking — a NEW call site is precisely the
+// thing that has not been remembered. Walking the package makes the gate's subject
+// the rule rather than the roster, so a fourth preview surface is covered by
+// existing at all. It fails loudly on an unparseable or unreadable file rather
+// than skipping it, so the census can never silently shrink.
 func packageFuncs(t *testing.T, visit func(file, fn string, body *ast.BlockStmt)) {
 	t.Helper()
 	names, err := filepath.Glob("*.go")

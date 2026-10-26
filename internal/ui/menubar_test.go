@@ -43,6 +43,7 @@ func menuBarFrameFor(a *App, w, h int32) {
 // chips still answer the mouse (both editors hit-test with raw pointIn, which no fence
 // covers) but they are invisible, and Done is the editor's primary exit — reachable in
 // one click from the Extras menu's own "Edit layout…" row.
+//
 // The RESERVED BAND must not move with the paint: it is what every screen and the
 // themed layout cache offset content by, so dropping it on entry would shift the very
 // widgets the editor exists to place.
@@ -51,7 +52,7 @@ func TestMenuBarStandsDownUnderALayoutEditor(t *testing.T) {
 		name string
 		set  func(*App)
 	}{
-		{"classic slot editor", func(a *App) { a.classic.classicEdit = true }},
+		{"classic slot editor", func(a *App) { a.classicEdit = true }},
 		{"themed rect editor", func(a *App) { a.layoutEdit = true }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -81,7 +82,7 @@ func TestMenuBarStandsDownUnderALayoutEditor(t *testing.T) {
 			}
 
 			// Leaving the editor brings the strip straight back.
-			a.classic.classicEdit, a.layoutEdit = false, false
+			a.classicEdit, a.layoutEdit = false, false
 			menuBarFrameFor(a, w, h)
 			if !a.menuBar.draws {
 				t.Error("leaving the editor must bring the strip back")
@@ -95,6 +96,14 @@ func TestMenuBarStandsDownUnderALayoutEditor(t *testing.T) {
 // dispatch, so an editor can be armed or dismissed between them and phase 1's answer
 // goes stale in BOTH directions — the reason the decision is re-taken after
 // menuBarInput and settled again at the paint site (menuBarPaintsNow).
+//
+// Measured at 1280x720 before the fix: the Extras → "Edit layout…" row fires INSIDE
+// menuBarInput, so the frame it arms an editor ended with menuBar.draws=true,
+// menuBarPaints=false and one published fence — the strip painted straight over the
+// banner the courtroom pass then drew. The mirror: the classic editor lays out its
+// chips, handles their clicks and paints its banner LAST, so the frame Done is pressed
+// returned before painting anything, and phase 1's stand-down left the 22 px band EMPTY
+// for that frame.
 func TestMenuBarPaintDecisionSurvivesAMidFrameEditor(t *testing.T) {
 	const w, h = int32(1280), int32(720)
 
@@ -126,7 +135,7 @@ func TestMenuBarPaintDecisionSurvivesAMidFrameEditor(t *testing.T) {
 			t.Error("the pane must be closed and the modal fence released on the arm frame")
 		}
 		// And the editor's banner, painted by the pass below, keeps it down.
-		a.toolbox.editorBannerPainted = true
+		a.editorBannerPainted = true
 		if a.menuBarPaintsNow() {
 			t.Error("the strip paints over a banner that reached the screen this frame")
 		}
@@ -142,8 +151,8 @@ func TestMenuBarPaintDecisionSurvivesAMidFrameEditor(t *testing.T) {
 		if !a.menuBar.draws {
 			t.Fatal("fixture: the bar must be painting before the editor arms")
 		}
-		a.classic.classicEdit = true
-		a.toolbox.editorBannerPainted = true // what drawClassicEditor publishes when it paints
+		a.classicEdit = true
+		a.editorBannerPainted = true // what drawClassicEditor publishes when it paints
 		if a.menuBarPaintsNow() {
 			t.Error("an editor armed after phase 1 still had the strip painted over its banner")
 		}
@@ -167,18 +176,18 @@ func TestMenuBarPaintDecisionSurvivesAMidFrameEditor(t *testing.T) {
 			name string
 			stop func(*App)
 		}{
-			{"classic Done", func(a *App) { a.classic.stopClassicEdit() }},
+			{"classic Done", func(a *App) { a.stopClassicEdit() }},
 			{"themed force-stop", func(a *App) { a.stopLayoutEdit() }},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				a := stageMenuBarApp(t)
 				a.screen = ScreenCourtroom
-				a.classic.classicEdit, a.layoutEdit = true, true
+				a.classicEdit, a.layoutEdit = true, true
 				menuBarFrameFor(a, w, h)
 				if a.menuBar.draws {
 					t.Fatal("fixture: phase 1 must have stood the bar down")
 				}
-				a.classic.classicEdit, a.layoutEdit = false, false
+				a.classicEdit, a.layoutEdit = false, false
 				tc.stop(a)
 				if !a.menuBarPaintsNow() {
 					t.Error("the editor stopped without painting anything, and the top band was left empty for the frame")
@@ -200,12 +209,12 @@ func TestMenuBarPaintDecisionSurvivesAMidFrameEditor(t *testing.T) {
 		// A full-window mode takes the band away outright, so there is nothing to
 		// recover — editorHeld must stay clear or the bar would paint over an export.
 		for name, set := range map[string]func(*App){
-			"gif export":  func(a *App) { a.sel.gifExporting = true },
+			"gif export":  func(a *App) { a.gifExporting = true },
 			"theater":     func(a *App) { a.theaterOn = true },
-			"scene maker": func(a *App) { a.sel.makerOpen = true },
+			"scene maker": func(a *App) { a.makerOpen = true },
 		} {
 			a := stageMenuBarApp(t)
-			a.classic.classicEdit = true
+			a.classicEdit = true
 			set(a)
 			menuBarFrameFor(a, w, h)
 			if a.menuBar.editorHeld || a.menuBarPaintsNow() {
@@ -227,7 +236,7 @@ func TestMenuBarReleaseDoesNotStealASiblingFence(t *testing.T) {
 	const w, h = int32(1280), int32(720)
 
 	// The roster menu is open and holding the shared flag.
-	a.roster.rosterMenuOpen, a.roster.rosterMenuFenceOn = true, true
+	a.rosterMenuOpen, a.rosterMenuFenceOn = true, true
 	c.modalOn = true
 
 	a.menuOpen = menuBarMenus[0].title
@@ -246,7 +255,7 @@ func TestMenuBarReleaseDoesNotStealASiblingFence(t *testing.T) {
 	}
 
 	// With no sibling holding it, the ordinary release still happens.
-	a.roster.rosterMenuOpen, a.roster.rosterMenuFenceOn = false, false
+	a.rosterMenuOpen, a.rosterMenuFenceOn = false, false
 	c.modalOn = false
 	a.menuOpen = menuBarMenus[0].title
 	menuBarFrameFor(a, w, h)
@@ -358,6 +367,10 @@ func TestMenuBarFrameFitsInTheFenceRegistry(t *testing.T) {
 // TestMenuBarFenceOutlivesTheScreenPass is THE ordering precondition (menubar.go's
 // header). App-level publication has to sit BELOW every in-pass publisher in the
 // fence registry, because registry order is paint order:
+//
+//   - a widget a screen draws under the strip must be inert, and
+//   - drawCourtroom's `defer c.overlayFenceRelease(mark)` must not take the bar's
+//     fence down with the pass, or the post-courtroom overlays would draw through it.
 func TestMenuBarFenceOutlivesTheScreenPass(t *testing.T) {
 	a := stageMenuBarApp(t)
 	c := a.ctx
@@ -636,9 +649,9 @@ func TestMenuBarItemActionFiresAndCloses(t *testing.T) {
 	viewTitle := menuBarMenus[menuBarIndexOf("View")].title
 	perf := menuRow(t, "View", "Performance overlay")
 	a.menuOpen = viewTitle
-	before := a.budget.perfHUD
+	before := a.perfHUD
 	a.fireMenuItem(perf)
-	if a.budget.perfHUD == before {
+	if a.perfHUD == before {
 		t.Error("an enabled item's action must fire")
 	}
 	if a.menuBarOpen() {
@@ -665,7 +678,7 @@ func TestMenuBarItemActionFiresAndCloses(t *testing.T) {
 
 	// Disabled: Servers → Disconnect with no session.
 	disc := menuRow(t, menuServersTitle, "Disconnect")
-	a.link.sess = nil
+	a.sess = nil
 	if a.menuItemEnabled(disc) {
 		t.Fatal("Disconnect must be disabled with no session (the enabled-predicate fixture)")
 	}
@@ -690,8 +703,8 @@ func TestMenuBarHeightIsZeroWhenHidden(t *testing.T) {
 		undo func()
 	}{
 		{"theater", func() { a.theaterOn = true }, func() { a.theaterOn = false }},
-		{"gif export", func() { a.sel.gifExporting = true }, func() { a.sel.gifExporting = false }},
-		{"scene maker", func() { a.sel.makerOpen = true }, func() { a.sel.makerOpen = false }},
+		{"gif export", func() { a.gifExporting = true }, func() { a.gifExporting = false }},
+		{"scene maker", func() { a.makerOpen = true }, func() { a.makerOpen = false }},
 	} {
 		tc.set()
 		if got := a.menuBarHeight(); got != 0 {
@@ -806,12 +819,12 @@ func TestMenuBarThemeFitSubmenuMirrorsSettings(t *testing.T) {
 			t.Fatalf("row %d diverged from themeFitOptions: %q/%d vs %q/%d",
 				i, it.label, it.arg, themeFitOptions[i].label, themeFitOptions[i].mode)
 		}
-		a.skin.themeLay.valid = true
+		a.themeLay.valid = true
 		a.fireMenuItem(it)
 		if got := a.d.Prefs.Load().ThemeFit; got != it.arg {
 			t.Fatalf("row %d must apply mode %d through SetThemeFit, got %d", i, it.arg, got)
 		}
-		if a.skin.themeLay.valid {
+		if a.themeLay.valid {
 			t.Fatalf("row %d must invalidate the layout cache, like every other fit mutation", i)
 		}
 		if !it.checked(a, it.arg) {
@@ -835,7 +848,7 @@ func stageMenuBarDrawApp(t *testing.T) (*App, func()) {
 	a.ctx = ctx
 	a.uiScalePct = 100
 	a.screen = ScreenLobby
-	a.conn.lobby.lobbyStatus = "Servers loaded."
+	a.lobbyStatus = "Servers loaded."
 	return a, cleanup
 }
 

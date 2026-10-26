@@ -35,11 +35,11 @@ func TestBanActionSummary(t *testing.T) {
 // TestEvidencePanelNonBlocking (#5) for the moderation box.
 func TestBanBoxNonBlocking(t *testing.T) {
 	a := testTabApp(t)
-	a.link.sess = courtroom.NewRehearsalSession("", nil)
-	a.link.room = &courtroom.Courtroom{}
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
 	const w, h = int32(1000), int32(800)
 
-	a.banBox.kind = 1 // a single ban box is open
+	a.banBoxKind = 1 // a single ban box is open
 	if a.courtModalOpen() {
 		t.Error("the ban/kick box must NOT be a blocking modal — the courtroom stays live behind it")
 	}
@@ -52,7 +52,7 @@ func TestBanBoxNonBlocking(t *testing.T) {
 	if a.boxFencesPointer(w, h) {
 		t.Error("cursor clear of the ban box must NOT fence — the courtroom stays live")
 	}
-	a.banBox.kind = 0
+	a.banBoxKind = 0
 	a.ctx.mouseX, a.ctx.mouseY = r.X+5, r.Y+5
 	if a.boxFencesPointer(w, h) {
 		t.Error("a closed ban box must never fence")
@@ -65,15 +65,15 @@ func TestBanBoxNonBlocking(t *testing.T) {
 // dashboard fence from silently fencing an invisible panel.
 func TestBanBoxHidesDashboard(t *testing.T) {
 	a := testTabApp(t)
-	a.link.sess = courtroom.NewRehearsalSession("", nil)
-	a.link.room = &courtroom.Courtroom{}
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
 	const w, h = int32(1000), int32(800)
 
-	a.modUI.showModDash = true
-	a.banBox.kind = 2 // a kick box is open over the dashboard
+	a.showModDash = true
+	a.banBoxKind = 2 // a kick box is open over the dashboard
 	// A point inside the dashboard rect but clear of the (smaller/elsewhere) ban box must not be
 	// fenced by the now-hidden dashboard.
-	dr := a.classic.modDashRect(&a.env, w, h)
+	dr := a.modDashRect(w, h)
 	br := a.banBoxRect(w, h)
 	mx, my := dr.X+4, dr.Y+4
 	if pointIn(mx, my, br) {

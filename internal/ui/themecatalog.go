@@ -2,10 +2,20 @@ package ui
 
 // The theme catalog: what themes exist, where they came from, and what shape
 // they are in — scanned OFF-THREAD and published as an immutable snapshot.
+//
 // It exists because the theme picker is about to stop being a list of names.
+// A user drops a folder in, exports an edited copy, or has a locked-down
+// install where the client writes themes somewhere the drop convention never
+// looked; every one of those questions is answered by reading directories, and
+// reading directories is exactly what a draw helper may never do (hard rule 2).
+// So the scan runs on a goroutine, the answer lands in an atomic.Pointer, and
+// the settings screen only ever reads the pointer (hard rule 5).
+//
 // There is deliberately NO filesystem watcher. A cross-platform watcher is a
 // dependency, a goroutine and an unbounded event stream bought to save one
 // second over four triggers that cost nothing: drag-and-drop (which knows what
+// it just imported), opening the picker (floored at themeScanMinInterval), a
+// single os.Stat on focus-gain, and an explicit Refresh.
 
 import (
 	"os"
@@ -58,6 +68,15 @@ const (
 	// to a dropped folder.
 	themeKindAO2
 	// themeKindNative: asyncao_theme.ini only — native, with no AO2 base.
+	//
+	// TODO(W3/W7): this badge is currently AHEAD of the loader. theme.Load still
+	// needs one of the three AO2 courtroom INIs to consider a folder a theme, and
+	// normalizeThemeRoot (settings.go, themeINIFiles) refuses a sidecar-only folder
+	// on drop — so a folder the catalog badges "native" browses but does not yet
+	// apply. The sidecar becomes a standalone source in the element render model
+	// (W3) and the editor's save path (W7); the badge is deliberately left telling
+	// the truth about the FILES so it does not need changing then.
+	// TestNativeOnlyFolderIsBadgedNativeEvenThoughItCannotLoadYet pins both halves.
 	themeKindNative
 	// themeKindBoth: an AO2 theme carrying the native sidecar. The shape every
 	// theme edited in AsyncAO ends up in, since the sidecar is additive.
@@ -176,7 +195,7 @@ const (
 )
 
 // themeCatalogSnapshot is the ONLY read a draw path may do.
-func (a *App) themeCatalogSnapshot() *themeCatalog { return a.skin.themeCat.Load() }
+func (a *App) themeCatalogSnapshot() *themeCatalog { return a.themeCat.Load() }
 
 // requestThemeCatalog kicks a scan if this reason allows one. Render thread;
 // everything expensive happens on the goroutine it starts.
@@ -185,12 +204,12 @@ func (a *App) themeCatalogSnapshot() *themeCatalog { return a.skin.themeCat.Load
 // cleared by the scanner goroutine when it publishes, so both ends touch it and
 // -race would (rightly) fail on anything less.
 func (a *App) requestThemeCatalog(reason themeScanReason) {
-	if !a.skin.themeCatBusy.CompareAndSwap(false, true) {
+	if !a.themeCatBusy.CompareAndSwap(false, true) {
 		return // a scan is already in flight; its result is the fresher one anyway
 	}
-	prev := a.skin.themeCat.Load()
+	prev := a.themeCat.Load()
 	if reason == themeScanOnOpen && prev != nil && time.Since(prev.ScannedAt) < themeScanMinInterval {
-		a.skin.themeCatBusy.Store(false)
+		a.themeCatBusy.Store(false)
 		return
 	}
 	// Everything the scan needs, snapshotted on this thread: the custom root is
@@ -198,12 +217,12 @@ func (a *App) requestThemeCatalog(reason themeScanReason) {
 	_, customRoot := a.d.Prefs.Load().Theme()
 	statOnly := reason == themeScanOnFocus
 	go func() {
-		defer a.skin.themeCatBusy.Store(false)
+		defer a.themeCatBusy.Store(false)
 		next := scanThemeCatalog(customRoot, prev, statOnly)
 		if next == nil {
 			return // focus-gain stat found nothing new: keep the snapshot we have
 		}
-		a.skin.themeCat.Store(next)
+		a.themeCat.Store(next)
 	}()
 }
 
@@ -331,7 +350,17 @@ func themeOriginOf(dir, exeDir, configBase string) themeOrigin {
 
 // themeKindOf badges a folder by what it holds. A handful of os.Stat calls,
 // off-thread.
+//
+// The AO2 arm reads themeINIFiles — ALL THREE courtroom INIs — and not just the
+// design one, because that list is the app's own definition of a theme folder:
+// normalizeThemeRoot uses it to decide a dropped folder IS a theme, and
+// theme.Load merges the fonts and sounds INIs independently of the design one
 // (theme.go:254-256), so a fonts-or-sounds-only theme is a theme that loads and
+// does something. Badging one of those "no theme files" would have the browser
+// contradict the client that had just accepted it on drop. The zero-value badge
+// therefore says exactly one testable thing: not one of the four files this
+// client reads out of a theme folder is present.
+// TestThemeBadgeAgreesWithWhatTheClientAcceptsAsATheme.
 func themeKindOf(dir string) themeKind {
 	ao2 := false
 	for _, ini := range themeINIFiles {
@@ -356,6 +385,20 @@ func themeKindOf(dir string) themeKind {
 // themeEntryKind is themeKindOf for a TOP-LEVEL catalog entry: the same file
 // census, plus one parse of the sidecar so the badge cannot claim a native tier
 // that the loader is going to refuse.
+//
+// It is a separate function from themeKindOf, and that split is a bound rather
+// than a style choice. themeKindOf is also the subtheme filter, called up to
+// themeSubthemeScanCap (64) times per theme — folding a file READ into it would
+// turn a 128-theme scan's handful of stats into up to 8192 parses. Here it runs
+// exactly once per listed theme, off-thread, against a file INIDoc already caps.
+//
+// The downgrade is deliberate and it is the whole point: a refused sidecar
+// contributes NOTHING (theme.Load records the error and carries on with the AO2
+// half — format rule 1), so a folder badged "AO2 + native" on the strength of a
+// file the client will never use is the browser lying about what will happen.
+// Sidecar-only + refused therefore lands on themeKindBroken, which is the honest
+// answer: not one thing in that folder loads. The reason travels beside the badge
+// in themeCatalogEntry.SidecarErr rather than being thrown away.
 func themeEntryKind(dir string) (themeKind, string) {
 	kind := themeKindOf(dir)
 	if kind != themeKindNative && kind != themeKindBoth {
@@ -374,9 +417,12 @@ func themeEntryKind(dir string) (themeKind, string) {
 // that is itself a theme folder by this client's own definition (themeKindOf) is
 // what AO2 resolves as a subtheme, and it is the only shape we can honestly offer
 // as a variant. Bounded by themeSubthemeCap.
+//
 // The test is themeKindOf and not "has courtroom_design.ini" because AO2 probes
 // the subtheme tier per ELEMENT, not per theme (path_functions.cpp
 // get_asset_paths: "Subtheme path" is tried for whatever file is being resolved),
+// so a variant that only overrides courtroom_fonts.ini is a real one — and our
+// own Load tiers the three INIs the same way.
 func scanSubthemes(themeDir string) []string {
 	entries, err := os.ReadDir(themeDir)
 	if err != nil {
@@ -430,14 +476,14 @@ func fileExists(path string) bool {
 // focus. It only LATCHES: the actual stat happens off-thread, and only while
 // the screen that cares is the visible one — the user story is "I dropped a
 // theme in Explorer and came back", not "poll the disk forever".
-func (a *App) NoteFocusGained() { a.skin.themeCatFocusStat = true }
+func (a *App) NoteFocusGained() { a.themeCatFocusStat = true }
 
 // consumeThemeFocusStat is the settings screen's end of that latch.
 func (a *App) consumeThemeFocusStat() bool {
-	if !a.skin.themeCatFocusStat {
+	if !a.themeCatFocusStat {
 		return false
 	}
-	a.skin.themeCatFocusStat = false
+	a.themeCatFocusStat = false
 	return true
 }
 

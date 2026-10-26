@@ -26,33 +26,33 @@ func TestUIDLess(t *testing.T) {
 // TestPlayerRosterOrder pins the three roster sorts: UID (numeric), Name
 // (case-insensitive IC name), and Speaking (the current speaker floats up).
 func TestPlayerRosterOrder(t *testing.T) {
-	a := &App{env: env{}}
-	a.roster.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
-	a.roster.areaPlayers = []areaPlayer{
+	a := &App{}
+	a.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
+	a.areaPlayers = []areaPlayer{
 		{uid: "10", name: "zeta", showname: "Zed"},
 		{uid: "2", name: "alpha"},
 		{uid: "7", name: "mike", showname: "Mike"},
 	}
-	a.roster.areaListAt = time.Now()
+	a.areaListAt = time.Now()
 
-	a.roster.playerSort = playerSortUID
+	a.playerSort = playerSortUID
 	ord := a.playerRosterOrder("")
-	if a.roster.areaPlayers[ord[0]].uid != "2" || a.roster.areaPlayers[ord[1]].uid != "7" || a.roster.areaPlayers[ord[2]].uid != "10" {
+	if a.areaPlayers[ord[0]].uid != "2" || a.areaPlayers[ord[1]].uid != "7" || a.areaPlayers[ord[2]].uid != "10" {
 		t.Errorf("UID order = [%s %s %s], want [2 7 10]",
-			a.roster.areaPlayers[ord[0]].uid, a.roster.areaPlayers[ord[1]].uid, a.roster.areaPlayers[ord[2]].uid)
+			a.areaPlayers[ord[0]].uid, a.areaPlayers[ord[1]].uid, a.areaPlayers[ord[2]].uid)
 	}
 
-	a.roster.playerSort = playerSortName
+	a.playerSort = playerSortName
 	ord = a.playerRosterOrder("")
-	if a.roster.areaPlayers[ord[0]].name != "alpha" || a.roster.areaPlayers[ord[2]].showname != "Zed" {
+	if a.areaPlayers[ord[0]].name != "alpha" || a.areaPlayers[ord[2]].showname != "Zed" {
 		t.Errorf("Name order first=%q last=%q, want alpha…Zed",
-			a.roster.areaPlayers[ord[0]].name, a.roster.areaPlayers[ord[2]].showname)
+			a.areaPlayers[ord[0]].name, a.areaPlayers[ord[2]].showname)
 	}
 
-	a.roster.playerSort = playerSortSpeaking
+	a.playerSort = playerSortSpeaking
 	ord = a.playerRosterOrder("mike") // Mike's char name == the speaker
-	if a.roster.areaPlayers[ord[0]].name != "mike" {
-		t.Errorf("Speaking order first=%q, want mike (the speaker)", a.roster.areaPlayers[ord[0]].name)
+	if a.areaPlayers[ord[0]].name != "mike" {
+		t.Errorf("Speaking order first=%q, want mike (the speaker)", a.areaPlayers[ord[0]].name)
 	}
 }
 
@@ -60,15 +60,15 @@ func TestPlayerRosterOrder(t *testing.T) {
 // in parse order, that area's players under it (sorted by the active mode), and
 // the player rows still index into areaPlayers (the icon-cache key).
 func TestPlayerRosterRowsGrouped(t *testing.T) {
-	a := &App{env: env{}}
-	a.roster.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
-	a.roster.areaPlayers = []areaPlayer{
+	a := &App{}
+	a.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
+	a.areaPlayers = []areaPlayer{
 		{uid: "0", name: "phoenix", area: "Lobby"},
 		{uid: "5", name: "maya", area: "Lobby"},
 		{uid: "3", name: "kanade", area: "Pizza Room 3"},
 	}
-	a.roster.areaListAt = time.Now()
-	a.roster.playerSort = playerSortUID
+	a.areaListAt = time.Now()
+	a.playerSort = playerSortUID
 
 	rows := a.playerRosterRows("") // [hdr Lobby(2)] [0] [5] [hdr Pizza(1)] [3]
 	if len(rows) != 5 {
@@ -77,13 +77,13 @@ func TestPlayerRosterRowsGrouped(t *testing.T) {
 	if !rows[0].header || rows[0].area != "Lobby" || rows[0].count != 2 {
 		t.Errorf("row0 = %+v, want Lobby header count 2", rows[0])
 	}
-	if rows[1].header || a.roster.areaPlayers[rows[1].idx].uid != "0" {
+	if rows[1].header || a.areaPlayers[rows[1].idx].uid != "0" {
 		t.Errorf("row1 = %+v, want player uid 0", rows[1])
 	}
 	if !rows[3].header || rows[3].area != "Pizza Room 3" || rows[3].count != 1 {
 		t.Errorf("row3 = %+v, want Pizza Room 3 header count 1", rows[3])
 	}
-	if rows[4].header || a.roster.areaPlayers[rows[4].idx].uid != "3" {
+	if rows[4].header || a.areaPlayers[rows[4].idx].uid != "3" {
 		t.Errorf("row4 = %+v, want player uid 3", rows[4])
 	}
 }
@@ -93,10 +93,10 @@ func TestPlayerRosterRowsGrouped(t *testing.T) {
 // "Most" puts the fullest room first. Flipping the mode between calls also proves
 // the grouped-rows memo invalidates on playerAreaSort (else the cached order leaks).
 func TestPlayerRosterRowsAreaSort(t *testing.T) {
-	a := &App{env: env{}}
-	a.roster.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
+	a := &App{}
+	a.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
 	// /gas parse order: Courtroom 2 (3 players), Basement (1), Courtroom 1 (2).
-	a.roster.areaPlayers = []areaPlayer{
+	a.areaPlayers = []areaPlayer{
 		{uid: "0", name: "a", area: "Courtroom 2"},
 		{uid: "1", name: "b", area: "Courtroom 2"},
 		{uid: "2", name: "c", area: "Courtroom 2"},
@@ -104,8 +104,8 @@ func TestPlayerRosterRowsAreaSort(t *testing.T) {
 		{uid: "4", name: "e", area: "Courtroom 1"},
 		{uid: "5", name: "f", area: "Courtroom 1"},
 	}
-	a.roster.areaListAt = time.Now()
-	a.roster.playerSort = playerSortUID
+	a.areaListAt = time.Now()
+	a.playerSort = playerSortUID
 
 	headerAreas := func() []string {
 		var out []string
@@ -117,15 +117,15 @@ func TestPlayerRosterRowsAreaSort(t *testing.T) {
 		return out
 	}
 
-	a.roster.playerAreaSort = areaSortGas
+	a.playerAreaSort = areaSortGas
 	if got := headerAreas(); !equalStrings(got, []string{"Courtroom 2", "Basement", "Courtroom 1"}) {
 		t.Errorf("/gas order = %v, want [Courtroom 2 Basement Courtroom 1]", got)
 	}
-	a.roster.playerAreaSort = areaSortName
+	a.playerAreaSort = areaSortName
 	if got := headerAreas(); !equalStrings(got, []string{"Basement", "Courtroom 1", "Courtroom 2"}) {
 		t.Errorf("A→Z order = %v, want [Basement Courtroom 1 Courtroom 2]", got)
 	}
-	a.roster.playerAreaSort = areaSortPop
+	a.playerAreaSort = areaSortPop
 	if got := headerAreas(); !equalStrings(got, []string{"Courtroom 2", "Courtroom 1", "Basement"}) {
 		t.Errorf("most-populated = %v, want [Courtroom 2(3) Courtroom 1(2) Basement(1)]", got)
 	}
@@ -137,24 +137,24 @@ func TestPlayerRosterRowsAreaSort(t *testing.T) {
 // order (from the areaPlayers snapshot). Reproduces the report: UID 0 (Marty) in
 // "Pizza Room 1" must not sit above the "Lobby" we're standing in.
 func TestPlayerRosterRowsLiveUsesGasOrder(t *testing.T) {
-	a := &App{env: env{}}
-	a.roster.livePlayersOn = true // rosterView() == liveRoster (UID order)
-	a.roster.liveRoster = []areaPlayer{
+	a := &App{}
+	a.livePlayersOn = true // rosterView() == liveRoster (UID order)
+	a.liveRoster = []areaPlayer{
 		{uid: "0", name: "marty", area: "Pizza Room 1"}, // lowest UID, different area
 		{uid: "1", name: "miles", area: "Lobby"},
 		{uid: "2", name: "pam", area: "Movie Studio 1"},
 	}
-	a.roster.liveRosterAt = time.Now()
+	a.liveRosterAt = time.Now()
 	// The /gas snapshot (areaPlayers) lists areas in the server's own order.
-	a.roster.areaPlayers = []areaPlayer{
+	a.areaPlayers = []areaPlayer{
 		{uid: "1", area: "Lobby"},
 		{uid: "2", area: "Movie Studio 1"},
 		{uid: "0", area: "Pizza Room 1"},
 	}
-	a.roster.areaListAt = time.Now()
-	a.srvMeta.curArea = "Lobby" // sess is nil here, so myAreaName falls back to curArea
-	a.roster.playerSort = playerSortUID
-	a.roster.playerAreaSort = areaSortGas
+	a.areaListAt = time.Now()
+	a.curArea = "Lobby" // sess is nil here, so myAreaName falls back to curArea
+	a.playerSort = playerSortUID
+	a.playerAreaSort = areaSortGas
 
 	var headers []string
 	for _, rw := range a.playerRosterRows("") {
@@ -170,14 +170,14 @@ func TestPlayerRosterRowsLiveUsesGasOrder(t *testing.T) {
 // TestPlayerRosterRowsFlat pins that a single-area roster (/ga) yields no
 // headers — just the flat sorted player rows.
 func TestPlayerRosterRowsFlat(t *testing.T) {
-	a := &App{env: env{}}
-	a.roster.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
-	a.roster.areaPlayers = []areaPlayer{
+	a := &App{}
+	a.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
+	a.areaPlayers = []areaPlayer{
 		{uid: "5", name: "maya", area: "Lobby"},
 		{uid: "0", name: "phoenix", area: "Lobby"},
 	}
-	a.roster.areaListAt = time.Now()
-	a.roster.playerSort = playerSortUID
+	a.areaListAt = time.Now()
+	a.playerSort = playerSortUID
 	rows := a.playerRosterRows("")
 	if len(rows) != 2 {
 		t.Fatalf("rows = %d, want 2 (no headers for one area)", len(rows))
@@ -187,8 +187,8 @@ func TestPlayerRosterRowsFlat(t *testing.T) {
 			t.Fatal("a single-area roster must have no group headers")
 		}
 	}
-	if a.roster.areaPlayers[rows[0].idx].uid != "0" { // UID sort
-		t.Errorf("first row uid = %q, want 0", a.roster.areaPlayers[rows[0].idx].uid)
+	if a.areaPlayers[rows[0].idx].uid != "0" { // UID sort
+		t.Errorf("first row uid = %q, want 0", a.areaPlayers[rows[0].idx].uid)
 	}
 }
 
@@ -213,8 +213,8 @@ func TestRosterNameOOCFallback(t *testing.T) {
 // TestCMNameSet pins that the CM marker source excludes ""/FREE and splits a
 // multi-CM list into individual names.
 func TestCMNameSet(t *testing.T) {
-	a := &App{env: env{}}
-	a.link.sess = &courtroom.Session{AreaInfo: []courtroom.AreaInfo{
+	a := &App{}
+	a.sess = &courtroom.Session{AreaInfo: []courtroom.AreaInfo{
 		{CM: "FREE"},
 		{CM: "Phoenix, Edgeworth"},
 		{CM: ""},
@@ -232,20 +232,20 @@ func TestCMNameSet(t *testing.T) {
 // area-0 fallback on a fresh join, and ok=false when the server hasn't reported
 // the count (-1).
 func TestCurAreaPlayers(t *testing.T) {
-	a := &App{env: env{}}
-	a.link.sess = &courtroom.Session{
+	a := &App{}
+	a.sess = &courtroom.Session{
 		Areas:    []string{"Lobby", "Courtroom"},
 		AreaInfo: []courtroom.AreaInfo{{Players: 5}, {Players: 2}},
 	}
-	a.srvMeta.curArea = "Courtroom"
+	a.curArea = "Courtroom"
 	if n, ok := a.curAreaPlayers(); !ok || n != 2 {
 		t.Errorf("Courtroom = %d,%v, want 2,true", n, ok)
 	}
-	a.srvMeta.curArea = "" // fresh join → assume the spawn area (index 0)
+	a.curArea = "" // fresh join → assume the spawn area (index 0)
 	if n, ok := a.curAreaPlayers(); !ok || n != 5 {
 		t.Errorf("fresh join = %d,%v, want 5,true (area 0)", n, ok)
 	}
-	a.link.sess.AreaInfo[0].Players = -1 // server hasn't reported it
+	a.sess.AreaInfo[0].Players = -1 // server hasn't reported it
 	if _, ok := a.curAreaPlayers(); ok {
 		t.Error("Players=-1 must give ok=false")
 	}
@@ -260,12 +260,12 @@ func TestCurAreaPlayers(t *testing.T) {
 func TestJumpToAreaSelectsAndSends(t *testing.T) {
 	a := testTabApp(t)
 	var sent []protocol.Packet
-	a.link.sess = courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
+	a.sess = courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
 
 	a.jumpToArea("Courtroom 2")
 
-	if a.srvMeta.curArea != "Courtroom 2" {
-		t.Errorf("jump must set the optimistic selection, curArea = %q", a.srvMeta.curArea)
+	if a.curArea != "Courtroom 2" {
+		t.Errorf("jump must set the optimistic selection, curArea = %q", a.curArea)
 	}
 	if len(sent) != 1 || sent[0].Header != "MC" {
 		t.Fatalf("want exactly one MC transfer out, got %+v", sent)
@@ -293,21 +293,21 @@ func TestJumpToAreaDrivesScrollback(t *testing.T) {
 
 	})
 
-	a.link.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
-	a.srvMeta.curArea = "C1"
-	a.chatlog.icLog = []icEntry{{text: "c1 line"}}
+	a.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
+	a.curArea = "C1"
+	a.icLog = []icEntry{{text: "c1 line"}}
 
 	a.jumpToArea("C2") // saves "c1 line" under the OLD curArea (C1), loads empty C2
-	if len(a.chatlog.icLog) != 0 {
-		t.Fatalf("entering a fresh area must start empty, got %d", len(a.chatlog.icLog))
+	if len(a.icLog) != 0 {
+		t.Fatalf("entering a fresh area must start empty, got %d", len(a.icLog))
 	}
-	if a.srvMeta.curArea != "C2" {
-		t.Fatalf("jump must advance curArea, got %q", a.srvMeta.curArea)
+	if a.curArea != "C2" {
+		t.Fatalf("jump must advance curArea, got %q", a.curArea)
 	}
 
 	a.jumpToArea("C1") // back to C1 → its saved line returns
-	if len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "c1 line" {
-		t.Fatalf("returning to an area must restore its log, got %v", a.chatlog.icLog)
+	if len(a.icLog) != 1 || a.icLog[0].text != "c1 line" {
+		t.Fatalf("returning to an area must restore its log, got %v", a.icLog)
 	}
 }
 
@@ -327,18 +327,18 @@ func TestJumpToAreaGuards(t *testing.T) {
 
 	})
 
-	a.srvMeta.curArea = "orig"
-	a.chatlog.icLog = []icEntry{{text: "keep me"}}
+	a.curArea = "orig"
+	a.icLog = []icEntry{{text: "keep me"}}
 	a.jumpToArea("Elsewhere")
-	if a.srvMeta.curArea != "orig" || len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "keep me" {
-		t.Errorf("nil sess must no-op, got curArea=%q log=%v", a.srvMeta.curArea, a.chatlog.icLog)
+	if a.curArea != "orig" || len(a.icLog) != 1 || a.icLog[0].text != "keep me" {
+		t.Errorf("nil sess must no-op, got curArea=%q log=%v", a.curArea, a.icLog)
 	}
 
 	// Live session but empty area name (the guard's other half).
-	a.link.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
+	a.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
 	a.jumpToArea("")
-	if a.srvMeta.curArea != "orig" || len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "keep me" {
-		t.Errorf("empty area must no-op, got curArea=%q log=%v", a.srvMeta.curArea, a.chatlog.icLog)
+	if a.curArea != "orig" || len(a.icLog) != 1 || a.icLog[0].text != "keep me" {
+		t.Errorf("empty area must no-op, got curArea=%q log=%v", a.curArea, a.icLog)
 	}
 }
 
@@ -355,16 +355,16 @@ func TestJumpToAreaGuards(t *testing.T) {
 // so "Lobby" is the above-the-viewport header (top 0) and "Pizza Room 3" the
 // below-it header (top 114) — the two nudge directions.
 func scrollFollowTestApp() *App {
-	a := &App{env: env{}}
-	a.roster.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
-	a.playerPct = 100            // zero value would make player rows 0-high and collapse the geometry
-	a.roster.areaPlayers = []areaPlayer{
+	a := &App{}
+	a.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
+	a.playerPct = 100     // zero value would make player rows 0-high and collapse the geometry
+	a.areaPlayers = []areaPlayer{
 		{uid: "0", name: "phoenix", area: "Lobby"},
 		{uid: "5", name: "maya", area: "Lobby"},
 		{uid: "3", name: "kanade", area: "Pizza Room 3"},
 	}
-	a.roster.areaListAt = time.Now()
-	a.roster.playerSort = playerSortUID
+	a.areaListAt = time.Now()
+	a.playerSort = playerSortUID
 	return a
 }
 
@@ -421,10 +421,10 @@ func TestScrollAreaIntoView(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			a := scrollFollowTestApp()
 			rows := a.playerRosterRows("")
-			a.roster.playerScroll = tc.start
+			a.playerScroll = tc.start
 			a.scrollAreaIntoView(tc.area, rows, tc.viewH)
-			if a.roster.playerScroll != tc.want {
-				t.Errorf("%s: playerScroll = %d, want %d", tc.wantMsg, a.roster.playerScroll, tc.want)
+			if a.playerScroll != tc.want {
+				t.Errorf("%s: playerScroll = %d, want %d", tc.wantMsg, a.playerScroll, tc.want)
 			}
 		})
 	}
@@ -433,19 +433,19 @@ func TestScrollAreaIntoView(t *testing.T) {
 // TestScrollAreaIntoViewFlatRoster pins that a flat /ga roster (no area headers)
 // is a no-op: there's no header to scroll to, so the follow leaves the scroll put.
 func TestScrollAreaIntoViewFlatRoster(t *testing.T) {
-	a := &App{env: env{}}
-	a.roster.rosterLegacy = true
+	a := &App{}
+	a.rosterLegacy = true
 	a.playerPct = 100
-	a.roster.areaPlayers = []areaPlayer{ // single area → flat rows, no headers
+	a.areaPlayers = []areaPlayer{ // single area → flat rows, no headers
 		{uid: "0", name: "phoenix", area: "Lobby"},
 		{uid: "1", name: "maya", area: "Lobby"},
 	}
-	a.roster.areaListAt = time.Now()
+	a.areaListAt = time.Now()
 	rows := a.playerRosterRows("")
-	a.roster.playerScroll = 42
+	a.playerScroll = 42
 	a.scrollAreaIntoView("Lobby", rows, 100)
-	if a.roster.playerScroll != 42 {
-		t.Errorf("flat roster must not scroll (no headers), playerScroll = %d, want 42", a.roster.playerScroll)
+	if a.playerScroll != 42 {
+		t.Errorf("flat roster must not scroll (no headers), playerScroll = %d, want 42", a.playerScroll)
 	}
 }
 
@@ -458,45 +458,45 @@ func TestApplyAreaJumpFollowLifecycle(t *testing.T) {
 
 	t.Run("armed and live nudges", func(t *testing.T) {
 		a := scrollFollowTestApp()
-		a.budget.frameNow = base
+		a.frameNow = base
 		rows := a.playerRosterRows("")
-		a.roster.areaJumpFollow = "Pizza Room 3"
-		a.roster.areaJumpFollowUntil = base.Add(time.Second) // still in the window
-		a.roster.playerScroll = 0
+		a.areaJumpFollow = "Pizza Room 3"
+		a.areaJumpFollowUntil = base.Add(time.Second) // still in the window
+		a.playerScroll = 0
 		a.applyAreaJumpFollow(rows, 100)
-		if want := int32(114) + playerHeaderH - 100; a.roster.playerScroll != want {
-			t.Errorf("armed+live must nudge, playerScroll = %d, want %d", a.roster.playerScroll, want)
+		if want := int32(114) + playerHeaderH - 100; a.playerScroll != want {
+			t.Errorf("armed+live must nudge, playerScroll = %d, want %d", a.playerScroll, want)
 		}
-		if a.roster.areaJumpFollow != "Pizza Room 3" {
-			t.Errorf("still-live latch must stay armed, got %q", a.roster.areaJumpFollow)
+		if a.areaJumpFollow != "Pizza Room 3" {
+			t.Errorf("still-live latch must stay armed, got %q", a.areaJumpFollow)
 		}
 	})
 
 	t.Run("past deadline disarms and holds scroll", func(t *testing.T) {
 		a := scrollFollowTestApp()
-		a.budget.frameNow = base
+		a.frameNow = base
 		rows := a.playerRosterRows("")
-		a.roster.areaJumpFollow = "Pizza Room 3"
-		a.roster.areaJumpFollowUntil = base // now is NOT before the deadline → expired
-		a.roster.playerScroll = 5
+		a.areaJumpFollow = "Pizza Room 3"
+		a.areaJumpFollowUntil = base // now is NOT before the deadline → expired
+		a.playerScroll = 5
 		a.applyAreaJumpFollow(rows, 100)
-		if a.roster.playerScroll != 5 {
-			t.Errorf("expired latch must not move the scroll, playerScroll = %d, want 5", a.roster.playerScroll)
+		if a.playerScroll != 5 {
+			t.Errorf("expired latch must not move the scroll, playerScroll = %d, want 5", a.playerScroll)
 		}
-		if a.roster.areaJumpFollow != "" || !a.roster.areaJumpFollowUntil.IsZero() {
-			t.Errorf("expiry must clear the latch, got %q / %v", a.roster.areaJumpFollow, a.roster.areaJumpFollowUntil)
+		if a.areaJumpFollow != "" || !a.areaJumpFollowUntil.IsZero() {
+			t.Errorf("expiry must clear the latch, got %q / %v", a.areaJumpFollow, a.areaJumpFollowUntil)
 		}
 	})
 
 	t.Run("disarmed is a no-op", func(t *testing.T) {
 		a := scrollFollowTestApp()
-		a.budget.frameNow = base
+		a.frameNow = base
 		rows := a.playerRosterRows("")
-		a.roster.areaJumpFollow = "" // disarmed
-		a.roster.playerScroll = 9
+		a.areaJumpFollow = "" // disarmed
+		a.playerScroll = 9
 		a.applyAreaJumpFollow(rows, 100)
-		if a.roster.playerScroll != 9 {
-			t.Errorf("disarmed latch must be a no-op, playerScroll = %d, want 9", a.roster.playerScroll)
+		if a.playerScroll != 9 {
+			t.Errorf("disarmed latch must be a no-op, playerScroll = %d, want 9", a.playerScroll)
 		}
 	})
 }
@@ -508,15 +508,15 @@ func TestApplyAreaJumpFollowLifecycle(t *testing.T) {
 func TestJumpToAreaArmsFollow(t *testing.T) {
 	a := testTabApp(t)
 	base := time.Unix(2_000, 0)
-	a.budget.frameNow = base
-	a.link.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
+	a.frameNow = base
+	a.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
 
 	a.jumpToArea("Courtroom 2")
 
-	if a.roster.areaJumpFollow != "Courtroom 2" {
-		t.Errorf("jump must arm the follow with the target, got %q", a.roster.areaJumpFollow)
+	if a.areaJumpFollow != "Courtroom 2" {
+		t.Errorf("jump must arm the follow with the target, got %q", a.areaJumpFollow)
 	}
-	if want := base.Add(areaJumpFollowWindow); !a.roster.areaJumpFollowUntil.Equal(want) {
-		t.Errorf("follow deadline = %v, want now+window %v", a.roster.areaJumpFollowUntil, want)
+	if want := base.Add(areaJumpFollowWindow); !a.areaJumpFollowUntil.Equal(want) {
+		t.Errorf("follow deadline = %v, want now+window %v", a.areaJumpFollowUntil, want)
 	}
 }

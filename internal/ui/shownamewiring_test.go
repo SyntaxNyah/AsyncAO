@@ -47,12 +47,12 @@ func TestShownameRungIsUnknownUntilTheFetchLands(t *testing.T) {
 	// A real origin, because charMetaFor keys by the full char.ini URL and answers
 	// nothing at all without one — the same per-server separation every cache in
 	// this client is built on.
-	a.link.urls = courtroom.NewURLBuilder("http://assets.example.test/base/")
+	a.urls = courtroom.NewURLBuilder("http://assets.example.test/base/")
 	url := a.charINIURL("Phoenix")
 	// The IN-FLIGHT marker charMetaFor plants on a miss: the entry exists, the
 	// fetch has not settled. Seeded rather than provoked so this gate measures the
 	// contract instead of starting a network goroutine.
-	a.overlays.charMetaCache = map[string]charMeta{url: {}}
+	a.charMetaCache = map[string]charMeta{url: {}}
 
 	if name, known := a.remoteIniShownameFor("Phoenix"); known {
 		t.Fatalf("an unfetched character answered %q as KNOWN", name)
@@ -62,13 +62,13 @@ func TestShownameRungIsUnknownUntilTheFetchLands(t *testing.T) {
 	}
 
 	// A settled fetch that resolved to a real name.
-	a.overlays.charMetaCache[url] = charMeta{showname: "Nick", done: true}
+	a.charMetaCache[url] = charMeta{showname: "Nick", done: true}
 	if name, known := a.remoteIniShownameFor("Phoenix"); !known || name != "Nick" {
 		t.Fatalf("resolved rung = (%q, %v), want (\"Nick\", true)", name, known)
 	}
 
 	// A settled fetch whose answer is a deliberate BLANK (needs_showname=false).
-	a.overlays.charMetaCache[a.charINIURL("Narration")] = charMeta{showname: "", done: true}
+	a.charMetaCache[a.charINIURL("Narration")] = charMeta{showname: "", done: true}
 	name, known := a.remoteIniShownameFor("Narration")
 	if !known {
 		t.Fatal("a needs_showname=false character reads as UNKNOWN — `known` is testing the " +

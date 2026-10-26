@@ -3,6 +3,14 @@ package ui
 // The W4 END-TO-END gate: a hand-authored sidecar that declares FILES and
 // GENERATORS goes all the way from testdata to a resolved texture page on a baked
 // element, headlessly.
+//
+// The unit gates around it each prove one link — the store's ceiling
+// (render/thememedia_test.go), the planner's refusals (thememedia_test.go), the
+// rasterisers' determinism (gentex_test.go). None of them proves the CHAIN, and the
+// chain is where this feature actually lives: a key spelled one way by the planner
+// and another by the bake, a plan landed after the canvases were invalidated, a
+// generator deduplicated into a tile nobody uploaded — every one of those passes
+// every unit gate and ships a theme that renders nothing.
 
 import (
 	"bytes"
@@ -71,11 +79,11 @@ func stageW4MediaTheme(t *testing.T) (*App, *theme.Sidecar, themeMediaPlan, func
 	res.loadThemeMediaSet(false)
 
 	a, cleanup := stageThemedCourtroom(t)
-	a.elemBake.themeSidecar = sc
+	a.themeSidecar = sc
 	a.landThemeMedia(&res)
-	a.skin.themeLay.valid = false
+	a.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
-	if !a.skin.themeLay.valid {
+	if !a.themeLay.valid {
 		cleanup()
 		t.Fatal("the media fixture never reached the themed branch — nothing was baked")
 	}
@@ -103,7 +111,7 @@ func bakedByID(t *testing.T, a *App, sc *theme.Sidecar, id string) *bakedElement
 		t.Fatalf("%q is not in the fixture", id)
 	}
 	src := &sc.Elements[di]
-	lay := &a.skin.themeLay
+	lay := &a.themeLay
 	want, ok := a.resolveElementRect(lay, sc, src)
 	if !ok {
 		t.Fatalf("element %q resolved to no rect — it is inert, so nothing below can be measured", id)
@@ -144,6 +152,8 @@ func TestHandAuthoredMediaSidecarRendersEndToEnd(t *testing.T) {
 	// Four `kind = gen` elements are declared. `discbadge` and `disctwin` carry
 	// byte-identical params, so they ARE one tile — that is what the hash is for and
 	// it is the difference between 12 tiles of budget and 12 elements of budget.
+	// `futuretile` names a generator this build has never heard of, which costs no
+	// tile at all.
 	if len(plan.Gens) != 3 {
 		var names []string
 		for _, g := range plan.Gens {
@@ -177,9 +187,9 @@ func TestHandAuthoredMediaSidecarRendersEndToEnd(t *testing.T) {
 	}
 
 	// --- the bake: every declared element exists, art or no art -------------
-	if a.skin.themeLay.elN != len(sc.Elements) {
+	if a.themeLay.elN != len(sc.Elements) {
 		t.Fatalf("the bake produced %d elements for %d declared — an over-budget or missing one was lost, "+
-			"and design §Q2 says the author's work survives a refused file", a.skin.themeLay.elN, len(sc.Elements))
+			"and design §Q2 says the author's work survives a refused file", a.themeLay.elN, len(sc.Elements))
 	}
 	for _, id := range []string{"wallpaper", "paperfield", "scanwash", "chatframe", "sealcontain", "sealcover", "discbadge", "disctwin", "platewash"} {
 		if e := bakedByID(t, a, sc, id); e.page == nil {
@@ -220,7 +230,7 @@ func TestHandAuthoredMediaSidecarRendersEndToEnd(t *testing.T) {
 	// --- the draw: every element is dispatched, and the frame is clean ------
 	var seen []*bakedElement
 	restore := captureElementPaints(t, &seen)
-	a.skin.themeLay.valid = false
+	a.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
 	restore()
 	if len(seen) != len(sc.Elements) {
@@ -234,6 +244,7 @@ func TestHandAuthoredMediaSidecarRendersEndToEnd(t *testing.T) {
 // TestThemeMediaSwapPrunesTheOutgoingThemesArt is the producer half of the leak the
 // store-side gate pins from below: applying a theme with no art after one with art
 // must leave nothing resident.
+//
 // The prune is keyed on what the OUTGOING apply DECLARED (a.themeMediaKeys), not on
 // what the store happens to hold, and that is the only reason it can be right — the
 // store cannot tell a page the new theme also declares from one only the old one did.
@@ -247,7 +258,7 @@ func TestThemeMediaSwapPrunesTheOutgoingThemesArt(t *testing.T) {
 	// A stock AO2 theme: no sidecar, no plan, no media.
 	var stock themeApply
 	stock.loadThemeMediaSet(false)
-	a.elemBake.themeSidecar = nil
+	a.themeSidecar = nil
 	a.landThemeMedia(&stock)
 
 	if got := a.d.Store.ThemeMediaBytes(); got != 0 {
@@ -267,6 +278,7 @@ func TestThemeMediaSwapPrunesTheOutgoingThemesArt(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestExportDrawsTheSameElementBandsAsTheScreen is the GIF/video parity gate.
+//
 // It exists because the export composes its own frame (drawGifThemedFrame) rather
 // than calling drawCourtroomThemed, so every band the themed pass gained had to be
 // wired in by hand — and until W4 none of them were. The symptom is not subtle and
@@ -300,7 +312,7 @@ func TestExportDrawsTheSameElementBandsAsTheScreen(t *testing.T) {
 	// (docs/THEME-FORMAT.md §4) and the baked array is band-sorted, so a correct pass
 	// walks it in strictly increasing index order. A single band call in the wrong
 	// place — or two of them transposed — shows up here and nowhere else.
-	lay := &a.skin.themeLay
+	lay := &a.themeLay
 	prev := -1
 	for _, e := range exported {
 		i := indexOfBaked(lay, e)
@@ -333,6 +345,7 @@ func TestExportDrawsTheSameElementBandsAsTheScreen(t *testing.T) {
 
 // TestExportConditionsFollowTheExportedRoom pins WHICH room a visible_when resolves
 // against in an export.
+//
 // The live courtroom is still behind the progress overlay with its last message on
 // it, so reading a.room would decorate a recording with whatever the session
 // happened to be doing — an objection glow over a line nobody objected to. The two
@@ -342,8 +355,8 @@ func TestExportConditionsFollowTheExportedRoom(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
 
-	a.link.room.Scene.Position = "wit"
-	a.compose.sidePref = "pro"
+	a.room.Scene.Position = "wit"
+	a.sidePref = "pro"
 	j := &gifExportJob{room: newRoomForTest(t)}
 	j.room.Scene.Position = "def"
 
@@ -371,6 +384,7 @@ func TestExportConditionsFollowTheExportedRoom(t *testing.T) {
 // different `top` than the window does, so the only thing standing between that and
 // a cold rebuild (a 12 KiB clear plus the rect map plus the element bake) every
 // frame is that the two never run in the same frame.
+//
 // That property lives two files away — App.Frame's full-window precedence, written
 // down as chrometop.go's screenDispatchPreempted — so it is pinned here rather than
 // left as a comment somebody could invalidate from screens.go without ever opening
@@ -379,20 +393,20 @@ func TestExportBorrowsTheThemeLayoutCacheWithoutThrashing(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
 
-	a.sel.gifExporting = true
+	a.gifExporting = true
 	if !a.screenDispatchPreempted() {
 		t.Fatal("an export does not preempt the screen dispatch — the courtroom would rebuild the shared " +
 			"layout cache every frame the export borrowed it")
 	}
-	a.sel.gifExporting = false
+	a.gifExporting = false
 
 	const w, h int32 = 640, 480
 	j := &gifExportJob{room: newRoomForTest(t), chatPct: DefaultScalePct}
 	dst := sdl.Rect{X: 0, Y: 0, W: w, H: h}
 	a.drawExportScene(j, &j.room.Scene, dst) // the one cold rebuild per job
-	if !a.skin.themeLay.valid || a.skin.themeLay.topOff != 0 {
+	if !a.themeLay.valid || a.themeLay.topOff != 0 {
 		t.Fatalf("the export's layout is valid=%v topOff=%d — an export frame reserves no chrome band",
-			a.skin.themeLay.valid, a.skin.themeLay.topOff)
+			a.themeLay.valid, a.themeLay.topOff)
 	}
 	// Every capture after the first is a cache HIT: gifFramesPerTick captures a tick,
 	// all at the same dst.

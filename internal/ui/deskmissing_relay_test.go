@@ -55,7 +55,7 @@ func TestDrainWarningsRelaysDeskMissing(t *testing.T) {
 	sess := courtroom.NewSession(func(protocol.Packet) error { return nil }, "test-hdid")
 	sess.Background = "gs4"
 	room := courtroom.NewCourtroom(courtroom.NewURLBuilder(local.BaseURL()), a.d.Manager, sess, nil)
-	a.link.room = room
+	a.room = room
 	room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: &protocol.ChatMessage{
 		CharName: "Phoenix", Emote: "normal", Side: "def", DeskMod: protocol.DeskShow,
 	}})
@@ -128,7 +128,7 @@ func TestDrainWarningsRelaysBackgroundMissToGate(t *testing.T) {
 	sess := courtroom.NewSession(func(protocol.Packet) error { return nil }, "test-hdid")
 	sess.Background = "gs4"
 	room := courtroom.NewCourtroom(urls, a.d.Manager, sess, nil)
-	a.link.room = room
+	a.room = room
 	room.SequentialWait = true
 	// Everything but the position background resolves as "settled", so the gate
 	// parks on the background and nothing else (DeskHide, no chatbox, no audio).

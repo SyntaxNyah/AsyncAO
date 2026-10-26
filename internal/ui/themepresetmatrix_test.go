@@ -3,6 +3,35 @@ package ui
 // THE 294-COMBINATION COHERENCE MATRIX (v1.90.0 W9) — design §6.5 acceptance
 // clause 4, risk R6's mitigation, and the only gate in the wave that can tell
 // whether the two preset axes are actually orthogonal.
+//
+// WHY IT LIVES IN internal/ui AND NOT BESIDE THE PRESET DATA. The question it
+// asks is "where does this decoration LAND", and the answer is produced by
+// resolveElementRect / absSlotRect / bakePanes — three functions in this
+// package, whose behaviour includes the anchor delta (R1), the pane reparent
+// (R8), AO2's four coordinate systems, the second spelling fold, the canvas fit
+// and the widget clamp. A version of this test in internal/theme would have to
+// re-derive all of that, and hard rule 11 says in as many words that a
+// mirror-test which re-implements the seam instead of driving it does not count.
+// So it drives the real bake, through the real layout cache, on a real App.
+//
+// WHAT COHERENT MEANS, stated once:
+//
+//   1. A style element whose anchor is PRESENT in the resolved layout lands ON
+//      its anchor — at least anchorMinOverlapPct of the element's own area is
+//      inside the widget it decorates. Frames outset a few pixels, badges tuck
+//      into corners, and both stay well over half; a decoration that has drifted
+//      off its widget after a layout swap does not.
+//   2. A style element whose anchor is ABSENT is INERT, not a failure (ruling
+//      R10). It is counted, so a preset that has quietly gone all-inert shows up.
+//   3. Every element that resolves has a POSITIVE rect. A delta that inverts its
+//      anchor's width produces a box SDL silently declines to draw, which is the
+//      one failure mode that looks exactly like success.
+//   4. A DECLARED canvas-space ornament lands in the same box under every layout
+//      that declares the same design canvas. That is what "layout-independent"
+//      means, and it is the clause that replaced the published ">= 90% of its
+//      space" rule the whole shipped corpus broke (THEME-FORMAT.md section 9's
+//      recorded deviation, 2026-08-08).
+//
 // It runs at both canvas extremes (R7): a 1512x648 window and a 640x480 one.
 
 import (
@@ -15,20 +44,50 @@ import (
 
 // anchorMinOverlapPct is design §4's own number: at least half of an anchored
 // element's area must sit within reach of the widget it anchors to.
+//
 // OF THE ELEMENT'S AREA, not of the anchor's — the two differ and only one of
 // them is the question. An element much SMALLER than its anchor (a corner badge
 // on the viewport) covers a fraction of the anchor and is perfectly placed; an
+// element much LARGER than its anchor has drifted into the client at large. The
+// denominator is therefore the element, which is the thing that either is or is
+// not attached to its widget.
 const anchorMinOverlapPct = 50
 
 // anchorHaloPct is what "within reach" means, and it is the correction the first
 // run of this matrix forced.
+//
+// Measured against the anchor's own box, the rule failed 260 times on decoration
+// that is doing exactly what it was written to do: `higurashi`'s red mark BLEEDS
+// DOWN OFF the nameplate (that is the preset's whole signature), `cyberpunk`'s
+// `ooc_head` is a caption bar tucked ABOVE the OOC field, `danganronpa`'s badge
+// sits above the showname, `investigation`'s medallion rings its evidence button.
+// A tab above a panel and a drip below a plate are the two most ordinary
+// decoration idioms there are, and a gate that calls them drift is a gate that
+// would have forced fourteen presets to be redrawn to satisfy it.
+//
 // So the anchor is inflated by this percentage of its OWN extent on every side
+// before the overlap is measured. It is proportional rather than a pixel figure
+// because the anchors range from 640 x 480 (a stage) to 23 x 19 (an area-swap
+// button) across the shipped layouts, and a fixed halo would be invisible on one
+// and enormous on the other.
+//
+// 100 makes the halo 3x3 = nine times the anchor's area.
+//
+// THE HALO IS THE WHOLE GATE'S SENSITIVITY, so it is pinned rather than trusted.
 // TestPresetMatrixWouldCatchADriftedElement drives THIS expression — measured
 // against the raw anchor instead, as it was, the constant could be dialled to
 // 2000 (a 41x41 = 1681x-area halo) with all 588 runs and both drift arms still
+// green: the arm proved a metric the matrix does not use, which is the mirror
+// shape hard rule 11 forbids, applied to the wave's headline gate. Its arms are
+// now expressed in units of the anchor's OWN extent, which is what makes them
+// absolute against this number: a zero-delta element stops overlapping half of
+// itself at 1.5 anchor-widths of shove, so the near-miss arm at 1.6 reddens the
+// moment the halo grows past ~110, and the growth arm reddens past ~180.
+//
 // For scale, of the 19,188 anchored placements the matrix measures, 84 have ZERO
 // raw overlap with their anchor and 218 more are between 1% and 49% — mostly the
 // tab-above and drip-below idioms above. That is the reason to inflate; it is not
+// a reason to leave the inflation ungated.
 const anchorHaloPct = 100
 
 // anchorDriftProofTenths and anchorGrowthProofTimes are the drift arm's two
@@ -85,12 +144,12 @@ func stagePresetCombination(t testing.TB, a *App, l, s *theme.Preset, w, h int32
 		rects[k] = r
 	}
 	rects["courtroom"] = theme.Rect{W: l.DesignW, H: l.DesignH}
-	a.skin.themeRects = rects
-	a.elemBake.themeSidecar = merged
-	foldSidecarOverrides(a.skin.themeRects, merged)
-	a.skin.themeRectsOrig = cloneRects(a.skin.themeRects)
+	a.themeRects = rects
+	a.themeSidecar = merged
+	foldSidecarOverrides(a.themeRects, merged)
+	a.themeRectsOrig = cloneRects(a.themeRects)
 
-	a.skin.themeLay.valid = false
+	a.themeLay.valid = false
 	lay := a.themeLayout(w, h)
 	if !lay.valid {
 		t.Fatalf("%s x %s at %dx%d: the layout cache did not validate", l.ID, s.ID, w, h)
@@ -164,11 +223,19 @@ func TestEveryLayoutTimesEveryStyleIsCoherent(t *testing.T) {
 		for _, s := range lib.Styles() {
 			// THE INVARIANCE LEDGER, per style and per canvas: where each declared
 			// canvas-space ornament landed, keyed by the LAYOUT'S DESIGN CANVAS.
+			//
+			// It is what "layout-independent" actually means, and until W9 nothing
+			// measured it — the published rule asked for >= 90% coverage instead, which
+			// every one of the twelve shipped ornaments breaks and which was a proxy for
+			// this in the first place (THEME-FORMAT.md section 9's recorded deviation).
+			// An ornament may depend on the canvas it is fitted into and on NOTHING
+			// else, so two layouts that declare the same design canvas must put it in
+			// exactly the same box.
 			seen := map[ornamentKey]ornamentSite{}
 			for _, l := range lib.Layouts() {
 				combos++
 				lay := stagePresetCombination(t, a, l, s, canvas.w, canvas.h)
-				sc := a.elemBake.themeSidecar
+				sc := a.themeSidecar
 				for i := range sc.Elements {
 					el := &sc.Elements[i]
 					box, ok := a.resolveElementRect(lay, sc, el)
@@ -257,13 +324,36 @@ func TestEveryLayoutTimesEveryStyleIsCoherent(t *testing.T) {
 		"%d inert (anchor absent from the layout)", combos, resolved, ornaments, invariants, inert)
 }
 
-// TestPresetMatrixWouldCatchADriftedElement is the matrix's own gate: the same
-// arithmetic driven with elements the shipped set does not contain. It measures
-// anchorHalo(anchor) — what the matrix measures — because an earlier arm
-// measured the raw anchor and stayed green with anchorHaloPct mutated to 2000.
-// The arms are the three failures the matrix claims to detect (drift, growth,
-// inversion), sized in units of the anchor's own extent so they pin the halo
-// constant, plus the metric run the other way on a correctly placed element.
+// TestPresetMatrixWouldCatchADriftedElement is the matrix's own gate: it proves
+// the assertion has teeth, by driving the same arithmetic with elements the
+// shipped set does not contain.
+//
+// IT MEASURES anchorHalo(anchor), WHICH IS WHAT THE MATRIX MEASURES. It used to
+// measure the raw anchor, and the difference is the whole value of the test: with
+// `anchorHaloPct` mutated from 100 to 2000 — a 41x41 halo, 1681 times the
+// anchor's area, which is not a gate at all — the matrix's 588 runs and this
+// test both stayed green, because a badge shoved 4000 design px off its anchor
+// has 0% raw overlap whatever the halo is. The arm proved a metric nothing uses.
+//
+// The three arms are the three failures the matrix claims to detect, and the
+// first two are sized in units of the ANCHOR'S OWN extent so that they pin the
+// halo constant rather than moving with it:
+//
+//   - DRIFT. The halo reaches anchorHaloPct% of the anchor's width past each
+//     edge, so a zero-delta element (a box exactly the anchor's size) loses half
+//     of itself at 1 + (1 - anchorMinOverlapPct/100) = 1.5 anchor-widths of
+//     shove. anchorDriftProofTenths is 1.6 of them: it must FAIL now, and it
+//     starts passing the moment the halo grows past about 110.
+//   - GROWTH. A decoration grown to anchorGrowthProofTimes the anchor from its
+//     own origin covers 3/N of the 3x halo per axis. At N = 4 that is 56% of
+//     the halo per axis, 32% of its area — a failure now, and a pass once the
+//     halo reaches about 5x, i.e. anchorHaloPct 200.
+//   - INVERSION. A delta that subtracts more width than its anchor has, which
+//     SDL declines to draw: the one failure that looks exactly like success.
+//
+// A fourth arm runs the metric the other way, on a correctly placed element, so
+// a threshold that had been dialled the OTHER way — into a gate nothing can pass
+// — is a failure here rather than 294 silent skips.
 func TestPresetMatrixWouldCatchADriftedElement(t *testing.T) {
 	lib, err := theme.ShippedPresets()
 	if err != nil {
@@ -274,7 +364,7 @@ func TestPresetMatrixWouldCatchADriftedElement(t *testing.T) {
 
 	l, s := lib.Layouts()[0], lib.Styles()[0]
 	lay := stagePresetCombination(t, a, l, s, 1512, 648)
-	sc := a.elemBake.themeSidecar
+	sc := a.themeSidecar
 
 	const anchorKey = "emotes"
 	base, ok := absSlotRect(lay, anchorKey)
@@ -284,7 +374,7 @@ func TestPresetMatrixWouldCatchADriftedElement(t *testing.T) {
 	// The shoves are DESIGN-space, like every fragment rect, so they are derived
 	// from the anchor's design rect; the device rects then scale together and the
 	// ratios above hold exactly.
-	design, placed := a.skin.themeRects[anchorKey]
+	design, placed := a.themeRects[anchorKey]
 	if !placed || design.W <= 0 || design.H <= 0 {
 		t.Skipf("%q has no design rect to size the arms against", anchorKey)
 	}
@@ -360,7 +450,7 @@ func TestAnAbsentAnchorIsInertRatherThanMisplaced(t *testing.T) {
 		ID: "ghost", Kind: theme.ElemShape, Shape: "sharp", Anchor: "no_such_slot_key",
 		Fill: theme.RGBA{R: 255, A: 255},
 	}
-	if r, ok := a.resolveElementRect(lay, a.elemBake.themeSidecar, &ghost); ok {
+	if r, ok := a.resolveElementRect(lay, a.themeSidecar, &ghost); ok {
 		t.Fatalf("an element anchored to a key nothing places resolved to %v — R10 says it is inert", r)
 	}
 }

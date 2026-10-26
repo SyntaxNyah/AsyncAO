@@ -1,10 +1,25 @@
 package ui
 
 // THE INSPECTOR'S LIVE LISTS (v1.90.0 W7b).
+//
+// ONE concern: what an fkPick row may offer, for THIS theme, on THIS build.
+//
 // WHY THEY ARE NOT `enum` ON THE ROW. inspectorField.enum is the FORMAT's own name
+// table — appended-only, never renamed, handed over by internal/theme so the editor
+// cannot hold a second copy of it. These four lists are a different kind of thing
+// entirely: they are facts about the CURRENT document (which widgets this theme
+// places, which families it declares) and about the CURRENT build (which generators
+// rasterise, which silhouettes draw). They change while the editor is open, they are
+// not the format, and a value outside them is legal — so they are offered, never
+// enforced.
+//
 // CACHED, BECAUSE THE RAIL DRAWS EVERY FRAME. Building a sorted key list per frame is
 // tens of allocations on a surface gated at editorChromeAllocBudget, so each dynamic
 // list is rebuilt only when its own cheap validity key moves (the number of placed
+// keys, the number of declared families). The two STATIC lists are built once at
+// package init and shared — a build's generator registry and shape vocabulary cannot
+// change at runtime.
+//
 // SORTED, ALWAYS. Both dynamic sources are maps or author-ordered slices; an unsorted
 // picker would offer the same theme's anchors in a different order on different runs,
 // which reads as the control shuffling itself.
@@ -44,6 +59,15 @@ func sortedStrings(in []string) []string {
 }
 
 // pickCache is the editor's cache of the two DYNAMIC lists.
+//
+// A validity KEY rather than an invalidation call, and that is deliberate: an explicit
+// invalidate is a call somebody has to remember at every site that changes the
+// document, and W7a already has three of those (an op, a reclaim, a baseline restore).
+// A key that is a cheap function of the thing being cached cannot be forgotten — it is
+// re-read every frame, costs two len() calls, and is wrong only if a change leaves the
+// count identical, which for both of these lists means the picker offers the same
+// number of differently-named entries: recoverable (the value is still typeable) and
+// self-healing on the next add or remove.
 type pickCache struct {
 	names [pickSourceCount][]string
 	key   [pickSourceCount]int
@@ -51,9 +75,17 @@ type pickCache struct {
 }
 
 // editorPickNames returns the live list for one source, or nil.
+//
+// pickNone — the zero value every non-picker row carries, which is what lets pickRow
+// stay a separate constructor instead of thirty rows spelling out "no list" — is
+// answered HERE rather than at the draw site. A row that names no source is asking
+// for nothing, whoever asks and however the caller reached this table, and it must
+// not take a cache slot to be told so.
+//
 // That last clause is the guard's ONLY observable — without it the slow path still
 // returns an empty list, it just caches one first — so it is what
 // TestOnlyPickerRowsNameAPickSource asserts. Deleting the pickNone disjunct fails
+// that test; a test on the return value alone would not notice.
 func (te *themeEditor) editorPickNames(src pickSource) []string {
 	if src == pickNone || int(src) >= int(pickSourceCount) {
 		return nil

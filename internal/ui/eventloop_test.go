@@ -14,7 +14,7 @@ import (
 func expApp(t *testing.T) *App {
 	t.Helper()
 	a := testTabApp(t)
-	a.frame.lastFrameDrawn = time.Now()
+	a.lastFrameDrawn = time.Now()
 	return a
 }
 
@@ -27,16 +27,16 @@ func TestSkipFrameExpExtendsToMenus(t *testing.T) {
 	if !a.SkipFrame(true, false) {
 		t.Error("exp: a static lobby must skip")
 	}
-	a.conn.lobby.lobbyFetching = true
+	a.lobbyFetching = true
 	if a.SkipFrame(true, false) {
 		t.Error("exp: a lobby refresh in flight must keep rendering (spinner + row repaints)")
 	}
-	a.conn.lobby.lobbyFetching = false
-	a.conn.lobby.pinging = true
+	a.lobbyFetching = false
+	a.pinging = true
 	if a.SkipFrame(true, false) {
 		t.Error("exp: a ping sweep must keep rendering")
 	}
-	a.conn.lobby.pinging = false
+	a.pinging = false
 
 	// Settings now skips when static (the user's ask: a still screen must not redraw).
 	a.screen = ScreenSettings
@@ -49,16 +49,16 @@ func TestSkipFrameExpExtendsToMenus(t *testing.T) {
 	// previews orphaned by a screen switch have no draw tail left to close
 	// them, and the old state check held the event-driven loop at the ACTIVE
 	// cap until restart (the stuck-at-active-cap report).
-	a.budget.previewBase = "srv/characters/witch/(a)normal"
+	a.previewBase = "srv/characters/witch/(a)normal"
 	if !a.SkipFrame(true, false) {
 		t.Error("exp: a bare previewBase (no drawn box) must skip — the orphan cap latch")
 	}
-	a.frame.drawnAnimChrome = true // what an actually-DRAWN animated preview reports
+	a.drawnAnimChrome = true // what an actually-DRAWN animated preview reports
 	if a.SkipFrame(true, false) {
 		t.Error("exp: a drawn animated preview must keep rendering (census)")
 	}
-	a.frame.drawnAnimChrome = false
-	a.budget.previewBase = ""
+	a.drawnAnimChrome = false
+	a.previewBase = ""
 	a.screen = ScreenAbout
 	if !a.SkipFrame(true, false) {
 		t.Error("exp: a static About screen must skip")
@@ -93,7 +93,7 @@ func TestSkipFrameCaretScheduled(t *testing.T) {
 	a := expApp(t)
 	a.ctx.focusID = "field"
 	a.ctx.caretOn = true
-	a.frame.drawnCaretOn = true
+	a.drawnCaretOn = true
 
 	if !a.SkipFrame(true, false) {
 		t.Error("exp: a focused field with an un-flipped caret must skip (the flip wake is scheduled)")
@@ -118,8 +118,8 @@ func TestSkipFrameCaretScheduled(t *testing.T) {
 
 	})
 
-	a.link.room = &courtroom.Courtroom{}
-	a.link.sess = &courtroom.Session{}
+	a.room = &courtroom.Courtroom{}
+	a.sess = &courtroom.Session{}
 	if !a.SkipFrame(true, false) {
 		t.Error("classic: a focused field with an un-flipped caret must skip (the blanket refusal was the render spin)")
 	}
@@ -163,8 +163,8 @@ func TestSkipFrameSharedRefusals(t *testing.T) {
 
 		})
 
-		a.link.room = &courtroom.Courtroom{}
-		a.link.sess = &courtroom.Session{}
+		a.room = &courtroom.Courtroom{}
+		a.sess = &courtroom.Session{}
 
 		if a.SkipFrame(true, true) {
 			t.Errorf("exp=%v: input this pass must render", exp)
@@ -172,24 +172,24 @@ func TestSkipFrameSharedRefusals(t *testing.T) {
 		if !a.SkipFrame(true, false) {
 			t.Fatalf("exp=%v: precondition — static courtroom should skip", exp)
 		}
-		a.link.voiceJoined = true
+		a.voiceJoined = true
 		if a.SkipFrame(true, false) {
 			t.Errorf("exp=%v: a live voice session must keep frames coming (voicePump)", exp)
 		}
-		a.link.voiceJoined = false
+		a.voiceJoined = false
 		// A bare previewBase must NOT hold frames in either mode: an orphaned
 		// preview (screen switched under it) has no draw tail left to close it,
 		// and keying the skip on the state latched the pace at the active cap.
-		a.budget.previewBase = "srv/characters/witch/(a)normal"
+		a.previewBase = "srv/characters/witch/(a)normal"
 		if !a.SkipFrame(true, false) {
 			t.Errorf("exp=%v: a bare previewBase (no drawn box) must skip — the orphan cap latch", exp)
 		}
-		a.budget.previewBase = ""
-		a.frame.drawnAnimChrome = true
+		a.previewBase = ""
+		a.drawnAnimChrome = true
 		if a.SkipFrame(true, false) {
 			t.Errorf("exp=%v: animated chrome on screen (theme art, splash, badge, a DRAWN animated preview) must keep frames coming", exp)
 		}
-		a.frame.drawnAnimChrome = false
+		a.drawnAnimChrome = false
 	}
 }
 
@@ -200,11 +200,11 @@ func TestSkipFrameSharedRefusals(t *testing.T) {
 // idle budget instead, and idle=off makes it skip indefinitely too.
 func TestSkipFrameIdleCadence(t *testing.T) {
 	a := expApp(t)
-	a.link.room = &courtroom.Courtroom{}
-	a.link.sess = &courtroom.Session{}
+	a.room = &courtroom.Courtroom{}
+	a.sess = &courtroom.Session{}
 
 	// Event-driven: however stale, a static courtroom keeps skipping.
-	a.frame.lastFrameDrawn = time.Now().Add(-time.Hour)
+	a.lastFrameDrawn = time.Now().Add(-time.Hour)
 	if !a.SkipFrame(true, false) {
 		t.Error("exp: a stale static courtroom still skips (NextWakeDelay owns the idle re-render, not a heartbeat)")
 	}
@@ -233,11 +233,11 @@ func TestSkipFrameIdleCadence(t *testing.T) {
 	})
 
 	// 250 ms budget
-	a.frame.lastFrameDrawn = time.Now()
+	a.lastFrameDrawn = time.Now()
 	if !a.SkipFrame(true, false) {
 		t.Error("classic: a just-drawn static courtroom skips within the idle budget")
 	}
-	a.frame.lastFrameDrawn = time.Now().Add(-time.Second) // well past 250 ms
+	a.lastFrameDrawn = time.Now().Add(-time.Second) // well past 250 ms
 	if a.SkipFrame(true, false) {
 		t.Error("classic: past the idle budget the static courtroom re-renders")
 	}
@@ -255,7 +255,7 @@ func TestSkipFrameIdleCadence(t *testing.T) {
 
 	})
 
-	a.frame.lastFrameDrawn = time.Now().Add(-time.Hour)
+	a.lastFrameDrawn = time.Now().Add(-time.Hour)
 	if !a.SkipFrame(true, false) {
 		t.Error("classic idle=off: no heartbeat — a static courtroom skips indefinitely")
 	}
@@ -287,11 +287,11 @@ func TestSkipFrameBackgroundOff(t *testing.T) {
 	if a.SkipFrame(false, true) {
 		t.Error("a live event must render even when unfocused + bg-off")
 	}
-	a.link.voiceJoined = true
+	a.voiceJoined = true
 	if a.SkipFrame(false, false) {
 		t.Error("a live voice session must keep rendering when unfocused + bg-off")
 	}
-	a.link.voiceJoined = false
+	a.voiceJoined = false
 }
 
 // TestNextWakeDelay pins the park math and the render-vs-housekeeping flag: the
@@ -342,26 +342,26 @@ func TestNextWakeDelay(t *testing.T) {
 	a.ctx.focusID = ""
 
 	// A running server clock with 2.4 s left: wake just past the 0.4 s boundary (render).
-	a.link.sess = &courtroom.Session{}
-	a.link.sess.Timers[0] = courtroom.TimerState{Visible: true, Running: true, Deadline: time.Now().Add(2400 * time.Millisecond)}
+	a.sess = &courtroom.Session{}
+	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Running: true, Deadline: time.Now().Add(2400 * time.Millisecond)}
 	if d, render := a.NextWakeDelay(true); d < 300*time.Millisecond || d > 400*time.Millisecond+2*timerTickSlack || !render {
 		t.Errorf("running clock at x.4s: wake = %v render=%v, want ≈ 400ms+slack + render", d, render)
 	}
 	// Paused: frozen readout, nothing scheduled — the housekeeping floor, no render.
-	a.link.sess.Timers[0] = courtroom.TimerState{Visible: true, Left: 90 * time.Second}
+	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Left: 90 * time.Second}
 	if d, render := a.NextWakeDelay(true); d != maxHousekeepingGap || render {
 		t.Errorf("paused clock (idle=off): wake = %v render=%v, want the %v floor + no render", d, maxHousekeepingGap, render)
 	}
-	a.link.sess = nil
+	a.sess = nil
 
 	// A demand-streamed grid with blank cells keeps the pump alive at idle=off:
 	// wake at the demand cadence and MARK render (so the re-run draw re-demands).
 	// The interval must beat the housekeeping floor or considerRender won't draw.
-	a.frame.drawnDemandPending = true
+	a.drawnDemandPending = true
 	if d, render := a.NextWakeDelay(true); d != assetDemandWakeInterval || !render {
 		t.Errorf("demand pending (idle=off): wake = %v render=%v, want %v + render", d, render, assetDemandWakeInterval)
 	}
-	a.frame.drawnDemandPending = false
+	a.drawnDemandPending = false
 	if d, render := a.NextWakeDelay(true); d != maxHousekeepingGap || render {
 		t.Errorf("demand cleared (idle=off): wake = %v render=%v, want the %v floor + no render", d, render, maxHousekeepingGap)
 	}
@@ -378,7 +378,7 @@ func TestNextWakeDelay(t *testing.T) {
 
 	})
 
-	a.frame.lastFrameDrawn = time.Now().Add(-time.Hour)
+	a.lastFrameDrawn = time.Now().Add(-time.Hour)
 	if d, render := a.NextWakeDelay(true); d != minWakeDelay || !render {
 		t.Errorf("overdue: wake = %v render=%v, want the %v floor + render", d, minWakeDelay, render)
 	}
@@ -412,11 +412,11 @@ func TestPollCharINIForcesRedraw(t *testing.T) {
 	if a.charINIres == nil {
 		a.charINIres = make(chan charINIFetch, 1)
 	}
-	a.compose.charINIBusy = true
+	a.charINIBusy = true
 	a.uiDirty = false
-	a.charINIres <- charINIFetch{key: a.srvMeta.serverKey}
+	a.charINIres <- charINIFetch{key: a.serverKey}
 	a.pollCharINI()
-	if a.compose.charINIBusy {
+	if a.charINIBusy {
 		t.Error("pollCharINI must clear charINIBusy on a matching result")
 	}
 	if !a.uiDirty {
@@ -430,16 +430,16 @@ func TestPollCharINIForcesRedraw(t *testing.T) {
 // idle=0 instead of waiting for cursor motion.
 func TestPollUpdateForcesRedraw(t *testing.T) {
 	a := testTabApp(t)
-	if a.updates.applyRes == nil {
-		a.updates.applyRes = make(chan error, 1)
+	if a.updateApplyRes == nil {
+		a.updateApplyRes = make(chan error, 1)
 	}
-	a.updates.busy = true
-	a.updates.staged = false
+	a.updateBusy = true
+	a.updateStaged = false
 	a.uiDirty = false
-	a.updates.applyRes <- nil // download + stage succeeded
-	a.updates.pollUpdate()
-	if a.updates.busy || !a.updates.staged {
-		t.Errorf("pollUpdate must clear busy and stage on success: busy=%v staged=%v", a.updates.busy, a.updates.staged)
+	a.updateApplyRes <- nil // download + stage succeeded
+	a.pollUpdate()
+	if a.updateBusy || !a.updateStaged {
+		t.Errorf("pollUpdate must clear busy and stage on success: busy=%v staged=%v", a.updateBusy, a.updateStaged)
 	}
 	if !a.uiDirty {
 		t.Error("pollUpdate must mark uiDirty so the modal flips to Restart-to-apply at idle=0")

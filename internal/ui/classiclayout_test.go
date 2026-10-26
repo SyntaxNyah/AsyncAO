@@ -14,16 +14,16 @@ func TestSlotRectOverrideAndDefault(t *testing.T) {
 	const w, h = 1000, 500
 
 	// No override → the exact computed default (the safety invariant).
-	if got := a.classic.slotRect(slotOOC, def, w, h); got != def {
+	if got := a.slotRect(slotOOC, def, w, h); got != def {
 		t.Fatalf("no-override slotRect = %+v, want default %+v", got, def)
 	}
 
 	// Override stored as window fractions → frac→px.
-	a.classic.classicOv = map[string][4]float64{
+	a.classicOv = map[string][4]float64{
 		slotOOC: {0.5, 0.25, 0.2, 0.4}, // x=500 y=125 w=200 h=200
 	}
 	want := sdl.Rect{X: 500, Y: 125, W: 200, H: 200}
-	if got := a.classic.slotRect(slotOOC, def, w, h); got != want {
+	if got := a.slotRect(slotOOC, def, w, h); got != want {
 		t.Fatalf("override slotRect = %+v, want %+v", got, want)
 	}
 }
@@ -34,13 +34,13 @@ func TestSlotNoAlloc(t *testing.T) {
 	var a App
 	def := sdl.Rect{X: 1, Y: 2, W: 300, H: 200}
 	const w, h = 800, 600
-	a.classic.classicOv = map[string][4]float64{
+	a.classicOv = map[string][4]float64{
 		slotOOC:      {0.1, 0.1, 0.3, 0.3},
 		slotViewport: {0.2, 0.2, 0.5, 0.5},
 	}
 	if n := testing.AllocsPerRun(200, func() {
-		_ = a.classic.slotRect(slotOOC, def, w, h)
-		_ = a.classic.slotRect(slotViewport, def, w, h)
+		_ = a.slotRect(slotOOC, def, w, h)
+		_ = a.slotRect(slotViewport, def, w, h)
 	}); n != 0 {
 		t.Fatalf("slotRect allocates %v/op on the render path; want 0", n)
 	}
@@ -183,10 +183,10 @@ func TestCloneClassicOvNoAlias(t *testing.T) {
 func TestPushClassicUndoCap(t *testing.T) {
 	var a App
 	for i := 0; i < layoutUndoCap+10; i++ {
-		a.classic.pushClassicUndo()
+		a.pushClassicUndo()
 	}
-	if len(a.classic.classicUndo) != layoutUndoCap {
-		t.Fatalf("undo stack = %d, want capped at %d", len(a.classic.classicUndo), layoutUndoCap)
+	if len(a.classicUndo) != layoutUndoCap {
+		t.Fatalf("undo stack = %d, want capped at %d", len(a.classicUndo), layoutUndoCap)
 	}
 }
 
@@ -195,22 +195,22 @@ func TestPushClassicUndoCap(t *testing.T) {
 func TestClassicEditUndoReSyncsPref(t *testing.T) {
 	a := testTabApp(t)
 	undo := func() { // mirror the editor's Ctrl+Z
-		a.classic.classicRedo = append(a.classic.classicRedo, cloneClassicOv(a.classic.classicOv))
-		snap := a.classic.classicUndo[len(a.classic.classicUndo)-1]
-		a.classic.classicUndo = a.classic.classicUndo[:len(a.classic.classicUndo)-1]
-		a.classic.restoreClassicOv(snap)
+		a.classicRedo = append(a.classicRedo, cloneClassicOv(a.classicOv))
+		snap := a.classicUndo[len(a.classicUndo)-1]
+		a.classicUndo = a.classicUndo[:len(a.classicUndo)-1]
+		a.restoreClassicOv(snap)
 	}
 
-	a.classic.pushClassicUndo() // snapshot the empty state
-	a.classic.classicOv = map[string][4]float64{slotOOC: {0.1, 0.1, 0.2, 0.2}}
-	a.d.Prefs.SetClassicSlot(slotOOC, a.classic.classicOv[slotOOC])
+	a.pushClassicUndo() // snapshot the empty state
+	a.classicOv = map[string][4]float64{slotOOC: {0.1, 0.1, 0.2, 0.2}}
+	a.d.Prefs.SetClassicSlot(slotOOC, a.classicOv[slotOOC])
 
-	a.classic.pushClassicUndo() // snapshot OOC-at-0.1
-	a.classic.classicOv[slotOOC] = [4]float64{0.5, 0.5, 0.2, 0.2}
-	a.d.Prefs.SetClassicSlot(slotOOC, a.classic.classicOv[slotOOC])
+	a.pushClassicUndo() // snapshot OOC-at-0.1
+	a.classicOv[slotOOC] = [4]float64{0.5, 0.5, 0.2, 0.2}
+	a.d.Prefs.SetClassicSlot(slotOOC, a.classicOv[slotOOC])
 
 	undo() // back to OOC-at-0.1
-	if got := a.classic.classicOv[slotOOC]; got != ([4]float64{0.1, 0.1, 0.2, 0.2}) {
+	if got := a.classicOv[slotOOC]; got != ([4]float64{0.1, 0.1, 0.2, 0.2}) {
 		t.Fatalf("after undo, live OOC = %v, want the 0.1 spot", got)
 	}
 	if got := a.d.Prefs.Load().ClassicLayoutOverrides()[slotOOC]; got != ([4]float64{0.1, 0.1, 0.2, 0.2}) {
@@ -218,8 +218,8 @@ func TestClassicEditUndoReSyncsPref(t *testing.T) {
 	}
 
 	undo() // back to empty
-	if len(a.classic.classicOv) != 0 {
-		t.Fatalf("after undoing the first edit, live overrides = %v, want none", a.classic.classicOv)
+	if len(a.classicOv) != 0 {
+		t.Fatalf("after undoing the first edit, live overrides = %v, want none", a.classicOv)
 	}
 	if len(a.d.Prefs.Load().ClassicLayoutOverrides()) != 0 {
 		t.Fatal("after undoing the first edit, the durable pref must be empty too")

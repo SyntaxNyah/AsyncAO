@@ -50,9 +50,9 @@ func TestUpdateModalFence(t *testing.T) {
 	a := testTabApp(t)
 	c := a.ctx
 
-	a.updates.rel = &update.Release{Version: "9.9.9"}
-	a.updates.show = true
-	a.updates.updateModalFence(c)
+	a.updateRel = &update.Release{Version: "9.9.9"}
+	a.updateShow = true
+	a.updateModalFence(c)
 	if !c.modalOn {
 		t.Fatal("open modal must hold the modal fence")
 	}
@@ -60,13 +60,13 @@ func TestUpdateModalFence(t *testing.T) {
 		t.Fatal("hovering() must be false everywhere under the modal fence")
 	}
 
-	a.updates.show = false // Close / click-away / Esc
-	a.updates.updateModalFence(c)
+	a.updateShow = false // Close / click-away / Esc
+	a.updateModalFence(c)
 	if c.modalOn {
 		t.Fatal("closing the modal must release the fence")
 	}
 	// And a second pass stays released (no flip-flop).
-	a.updates.updateModalFence(c)
+	a.updateModalFence(c)
 	if c.modalOn {
 		t.Fatal("fence must stay released while the modal is closed")
 	}
@@ -78,7 +78,7 @@ func TestHkSheetFencesPointer(t *testing.T) {
 	a := testTabApp(t)
 	const w, h = int32(1280), int32(720)
 
-	a.courtkeys.showHotkeys = true
+	a.showHotkeys = true
 	r := a.hkSheetRect(w, h)
 	a.ctx.mouseX, a.ctx.mouseY = r.X+r.W/2, r.Y+r.H/2
 	if !a.hkSheetFencesPointer(w, h) {
@@ -90,13 +90,13 @@ func TestHkSheetFencesPointer(t *testing.T) {
 		t.Fatal("cursor off the sheet must not fence")
 	}
 
-	a.wins.hkWin.dragging = true // a drag in flight keeps the fence even off-rect
+	a.hkWin.dragging = true // a drag in flight keeps the fence even off-rect
 	if !a.hkSheetFencesPointer(w, h) {
 		t.Fatal("an in-flight sheet drag must keep the fence")
 	}
-	a.wins.hkWin.dragging = false
+	a.hkWin.dragging = false
 
-	a.courtkeys.showHotkeys = false
+	a.showHotkeys = false
 	a.ctx.mouseX, a.ctx.mouseY = r.X+r.W/2, r.Y+r.H/2
 	if a.hkSheetFencesPointer(w, h) {
 		t.Fatal("a closed sheet must never fence")

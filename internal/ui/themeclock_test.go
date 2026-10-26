@@ -2,6 +2,15 @@ package ui
 
 // The element clock + effect gates (v1.90.0 W5) — the nine the wave plan names
 // (docs/wip/THEME-EDITOR-DESIGN.md §4 W5).
+//
+// Two of them are the whole reason this wave is risky, and they are opposites:
+//
+//	TestIdleElementsDoNotPinTheFrameRate  — a still element that holds the frame
+//	  rate up is the idle-CPU-burn defect (the v1.56.0 arc).
+//	TestStaticElementNeverCallsNoteAnimating and its live siblings — an element
+//	  that MOVES and fails to note the census freezes mid-animation, which is the
+//	  worse defect, because the pacer will happily sleep through it.
+//
 // The rest pin determinism (an exported GIF and a preset thumbnail must reproduce
 // any frame from elapsed alone), the two fixed pools, and the one accessibility gate
 // the feature has.
@@ -58,10 +67,13 @@ func fxTestElement(k theme.EffectKind) bakedElement {
 // only shape of element that takes a pool slot, because it is the only one whose
 // one-shot has to replay when its condition re-opens. An unconditional element's
 // one-shot began when the theme applied, so it needs no state (fxAlwaysOrigin).
+//
+// cond/condLive are wired to agree so the element is VISIBLE: a gate that closed
+// would make every assertion below pass for the wrong reason.
 func fxTestConditional(a *App, k theme.EffectKind) bakedElement {
 	e := fxTestElement(k)
 	e.condAxis, e.cond = theme.CondPos, 0
-	a.elemBake.condLive[theme.CondPos] = 0
+	a.condLive[theme.CondPos] = 0
 	return e
 }
 
@@ -69,6 +81,9 @@ func fxTestConditional(a *App, k theme.EffectKind) bakedElement {
 // software renderer over the dummy video driver, the same one every other
 // page-building test in this package runs on. SKIPPED rather than failed where SDL
 // is unavailable, which is the package's standing rule for its SDL-backed gates.
+//
+// Only the four tests that need a real page ask for one, so the effect-only gates
+// (the pool, the binds) still run with no renderer at all.
 func fxTestStore(t *testing.T) *render.TextureStore {
 	t.Helper()
 	ren, cleanup := newCaptureHarness(t)
@@ -90,6 +105,13 @@ func fxTestStore(t *testing.T) *render.TextureStore {
 const fxTestPageSide = 8
 
 // fxTestPage is an ANIMATED page with n distinct frames and a uniform delay.
+//
+// It uploads a real assets.Decoded through the REAL theme-media tier, which is the
+// pattern seedElementArt (themeelements_test.go) and the render package's own media
+// gates already use. There is no lighter stand-in available: sdl.Texture is an
+// INCOMPLETE cgo type, so `new(sdl.Texture)` does not compile, and elementFrame
+// hands whatever it returns to a painter that blits it.
+//
 // The frames differ from each other so the page is genuinely an animation rather
 // than n copies of one picture — a page whose frames were identical would make every
 // "the frame advanced" assertion below pass without the index ever moving.
@@ -129,9 +151,15 @@ func fxNeutralTerms(fx elemFX) bool {
 
 // TestEveryEffectKindIsResolvable pins the resolver TOTAL over theme.EffectKind, the
 // way TestEveryElementKindHasAPainter pins the painter table.
+//
+// Totality matters for the same reason: the kind comes out of a file a stranger
+// wrote, and a kind the resolver has no arm for would be an effect that silently does
+// nothing — the failure nobody reports because the theme "just looks a bit plain".
+//
 // The second half is the design's own rule that every effect returns static at
 // amplitude 0. That is what makes `amp_pct = 0` a supported way to author a
 // still element that still NAMES its effect (so the editor can turn it back on),
+// rather than a way to pin the frame rate for no pixels.
 func TestEveryEffectKindIsResolvable(t *testing.T) {
 	for k := theme.EffectKind(0); k < theme.EffectKindCount; k++ {
 		if k.String() == "" {
@@ -182,10 +210,12 @@ func TestEveryEffectKindIsResolvable(t *testing.T) {
 
 // TestPeriodicEffectsNeverGoIdleMidCycle is the other half of the doctrine, and the
 // one a naive implementation gets wrong.
+//
 // A sine crosses zero twice per period. A static test written on the INSTANTANEOUS
 // term would therefore report "nothing moved" at every crossing, the pacer would drop
 // to the idle rate for that frame, and a running animation would stutter twice a
 // cycle — on a machine fast enough to sample the crossing, which is every machine.
+// The envelope, not the value, is what decides.
 func TestPeriodicEffectsNeverGoIdleMidCycle(t *testing.T) {
 	for k := theme.EffectKind(0); k < theme.EffectKindCount; k++ {
 		if k == theme.FXNone || effectIsStateful[k] {
@@ -264,7 +294,29 @@ const (
 
 // TestSpinIsTheOnlyEffectThatRotates is the R2 rot gate: design §6.6's ratified
 // escalation had ZERO coverage after W5 shipped it.
+//
+// That is the dangerous shape of untested code, not the harmless one. The rot term
+// is FOUR LINES in two places — resolvePeriodicEffect's FXSpin arm and the one `if
+// fx.rot != 0` block in applyElementFX — with no assertion anywhere pointing at
+// either. A refactor that dropped the apply block would leave every other effect
+// gate green, every shipped theme loading, the resolver still returning a correct
+// rot, and spinning elements simply not spinning: the failure nobody reports because
+// the theme "just looks a bit plain". Proved by mutation before it was written —
+// disabling the branch at themeclock.go's `if fx.rot != 0` must fail this test and
+// nothing else in the package.
+//
 // Three claims, because the term is only honoured if all three hold:
+//
+//  1. FXSpin ADVANCES e.ang, by the resolved amount, added to the baked angle and
+//     wrapped into the byte.
+//  2. restoreElementFX PUTS IT BACK. The baked array is a cache the next frame
+//     re-reads, so an angle left applied would integrate: a spin would accelerate
+//     every frame until it was a strobe. elemFXSave carries `ang` for this reason
+//     alone, and nothing else asserts that it does.
+//  3. The other seven motion kinds LEAVE IT ALONE, across a whole period. Rotation
+//     is spin's identity; a pulse that also turned would be a second, undeclared
+//     effect, and the enum is the theme author's only contract about what a kind
+//     does.
 func TestSpinIsTheOnlyEffectThatRotates(t *testing.T) {
 	period := time.Duration(fxTestPeriodMs) * time.Millisecond
 
@@ -345,9 +397,14 @@ func TestSpinIsTheOnlyEffectThatRotates(t *testing.T) {
 
 // TestElementFrameIsAFunctionOfElapsed is the reason phase arithmetic beat
 // independent per-element wall clocks (design §Q3).
+//
+// The offscreen export (gifexport.go, through themeLayout) and the editor's live
+// preset miniatures must be able to reproduce ANY frame from elapsed alone.
 // Independent wall clocks would make an exported GIF non-reproducible and a preset
 // thumbnail non-deterministic — you could not diff two exports of the same recording,
 // and a gallery would shimmer.
+//
+// Both halves are pinned: the page index AND the effect terms.
 func TestElementFrameIsAFunctionOfElapsed(t *testing.T) {
 	page := fxTestPage(t, fxTestStore(t), 5, 40*time.Millisecond)
 	for _, loop := range []bool{false, true} {
@@ -399,13 +456,14 @@ func TestElementFrameIsAFunctionOfElapsed(t *testing.T) {
 
 // TestElapsedForIsAllocFree measures elementElapsed — the wave plan calls it
 // "elapsed-for"; design §Q3's own code sketch spells it elementElapsed.
+//
 // It runs once per element per frame, at up to theme.ElementCap elements, inside the
 // one frame gated at exactly zero allocations. An allocation here is 96 of them a
 // frame, on every themed install that uses the feature at all.
 func TestElapsedForIsAllocFree(t *testing.T) {
-	a := &App{env: env{}, toolbox: toolboxState{themeAt: time.Now().Add(-time.Second)}}
-	a.fxPool.themeClocks[1] = themeClock{speedPct: 250}
-	a.fxPool.themeClocks[2] = themeClock{paused: true, frozen: 400 * time.Millisecond}
+	a := &App{themeAt: time.Now().Add(-time.Second)}
+	a.themeClocks[1] = themeClock{speedPct: 250}
+	a.themeClocks[2] = themeClock{paused: true, frozen: 400 * time.Millisecond}
 	// Every arm of clockElapsed in one fixture: the shared anchor, a scaled group, a
 	// paused group and an out-of-range index that falls back to clock 0.
 	els := [...]bakedElement{
@@ -444,6 +502,7 @@ func fxDrawRig(t *testing.T) (*App, *themeLayoutCache, *[]*bakedElement, func())
 // TestStaticElementNeverCallsNoteAnimating is the idle half of the doctrine at the
 // per-element level: an element with no effect, an amplitude-zero effect, a finished
 // one-shot or a static page must leave the census untouched.
+//
 // This is the v1.56.0 idle-CPU-burn arc's rule applied to a brand-new draw surface.
 // A themed client sitting on a settled courtroom must fall to the idle rate, and one
 // element quietly noting every frame is enough to stop that happening — with nothing
@@ -452,7 +511,7 @@ func TestStaticElementNeverCallsNoteAnimating(t *testing.T) {
 	a, lay, seen, restore := fxDrawRig(t)
 	defer restore()
 	store := fxTestStore(t)
-	a.toolbox.themeAt = time.Now().Add(-time.Hour) // long past every one-shot's period
+	a.themeAt = time.Now().Add(-time.Hour) // long past every one-shot's period
 	a.beginThemeFXPass()
 
 	type stillCase struct {
@@ -485,9 +544,9 @@ func TestStaticElementNeverCallsNoteAnimating(t *testing.T) {
 	for i, c := range cases {
 		el := c.el
 		before := el
-		a.frame.frameAnimChrome = false
+		a.frameAnimChrome = false
 		a.drawElement(lay, &el, int16(i))
-		if a.frame.frameAnimChrome {
+		if a.frameAnimChrome {
 			t.Errorf("%s noted the animation census — a still element that pins the frame rate is the "+
 				"idle-CPU-burn defect (NoteAnimating is for a draw site that produced a DIFFERENT pixel "+
 				"this frame, never for state)", c.what)
@@ -515,7 +574,7 @@ func TestStaticElementNeverCallsNoteAnimating(t *testing.T) {
 func TestLiveElementAlwaysNotesTheCensus(t *testing.T) {
 	a, lay, _, restore := fxDrawRig(t)
 	defer restore()
-	a.toolbox.themeAt = time.Now()
+	a.themeAt = time.Now()
 	a.beginThemeFXPass()
 
 	for k := theme.EffectKind(0); k < theme.EffectKindCount; k++ {
@@ -523,12 +582,12 @@ func TestLiveElementAlwaysNotesTheCensus(t *testing.T) {
 			continue
 		}
 		el := fxTestElement(k)
-		a.frame.frameAnimChrome = false
+		a.frameAnimChrome = false
 		// A quarter of the way into the period: every kind, periodic or decaying, is
 		// unambiguously live there.
-		a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
+		a.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
 		a.drawElement(lay, &el, int16(k))
-		if !a.frame.frameAnimChrome {
+		if !a.frameAnimChrome {
 			t.Errorf("%s did not note the animation census a quarter into its period — the pacer may "+
 				"sleep, and the effect freezes mid-animation", k)
 		}
@@ -537,11 +596,11 @@ func TestLiveElementAlwaysNotesTheCensus(t *testing.T) {
 	// with no effect attached.
 	el := fxTestElement(theme.FXNone)
 	el.kind, el.page, el.loop = theme.ElemImage, fxTestPage(t, fxTestStore(t), 4, 50*time.Millisecond), true
-	a.frame.frameAnimChrome = false
+	a.frameAnimChrome = false
 	if got := a.elementFrame(&el); got == nil {
 		t.Fatal("elementFrame returned nil for a four-frame page")
 	}
-	if !a.frame.frameAnimChrome {
+	if !a.frameAnimChrome {
 		t.Error("a looping animated page did not note the census — it would freeze on whatever frame the pacer idled at")
 	}
 }
@@ -555,18 +614,18 @@ func TestIdleElementsDoNotPinTheFrameRate(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 	draw()
-	if !a.skin.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
+	if !a.themeLay.valid || !a.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
 	// The baseline: this fixture's own chrome must already be settled, or the
 	// assertion below would be measuring something else entirely.
-	a.frame.frameAnimChrome = false
+	a.frameAnimChrome = false
 	draw()
-	if a.frame.frameAnimChrome {
+	if a.frameAnimChrome {
 		t.Skip("the fixture's own chrome notes the census — this gate cannot isolate the element model here")
 	}
 	// Now fill it with elements that are all, in one way or another, STILL.
-	lay := &a.skin.themeLay
+	lay := &a.themeLay
 	seedBakedElements(a, lay, theme.ElementCap, nil)
 	for i := 0; i < lay.elN; i++ {
 		switch i % 3 {
@@ -580,13 +639,13 @@ func TestIdleElementsDoNotPinTheFrameRate(t *testing.T) {
 	// An hour on the theme clock puts every one-shot far past its own period. Two
 	// passes before the measured one so that anything which DOES take a pool slot (the
 	// seeded conditional rows) has claimed and finished it as well.
-	a.toolbox.themeAt = time.Now().Add(-time.Hour)
+	a.themeAt = time.Now().Add(-time.Hour)
 	draw()
-	a.toolbox.themeAt = time.Now().Add(-time.Hour - 10*time.Second)
+	a.themeAt = time.Now().Add(-time.Hour - 10*time.Second)
 	draw()
-	a.frame.frameAnimChrome = false
+	a.frameAnimChrome = false
 	draw()
-	if a.frame.frameAnimChrome {
+	if a.frameAnimChrome {
 		t.Fatalf("a themed frame carrying %d STILL elements pinned the frame rate — the client would "+
 			"never fall to the idle cadence, and there is nothing on screen to explain why", lay.elN)
 	}
@@ -595,9 +654,16 @@ func TestIdleElementsDoNotPinTheFrameRate(t *testing.T) {
 // TestElementEffectsAreAllocFreeAtCap extends W3's cap-full alloc gate over the code
 // this wave added: theme.ElementCap elements, every effect kind in rotation, all of
 // them LIVE, drawn on every frame.
+//
+// The W3 gate cannot reach any of it — its fixture leaves every fx zero, so it
+// measures drawElement's fast path and nothing else. This one measures the resolver,
+// the pool scan, the transform and the restore, at 96x amplification, which is where
+// a per-frame allocation on the motion path would actually show up.
+//
 // It is also the gate that catches the subtle one: an alpha effect on an ElemText
 // that folded its alpha into the ink colour would miss the label cache and rasterise
 // a texture EVERY FRAME (ui.go textKey includes the colour). That is invisible to
+// every other gate in the package.
 func TestElementEffectsAreAllocFreeAtCap(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
@@ -605,10 +671,10 @@ func TestElementEffectsAreAllocFreeAtCap(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 	draw() // themeLayoutIn rebuilds on its cold path; seed AFTER it
-	if !a.skin.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
+	if !a.themeLay.valid || !a.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
-	lay := &a.skin.themeLay
+	lay := &a.themeLay
 	seedBakedElements(a, lay, theme.ElementCap, seedElementArt(t, a))
 	// Every kind in rotation, at full amplitude, on a mix of clock groups so the
 	// scaled and the shared-anchor arms of clockElapsed are both inside the gate.
@@ -619,8 +685,8 @@ func TestElementEffectsAreAllocFreeAtCap(t *testing.T) {
 		lay.el[i].clock = uint8(i % 3)
 		live++
 	}
-	a.fxPool.themeClocks[1] = themeClock{speedPct: 250}
-	a.fxPool.themeClocks[2] = themeClock{speedPct: theme.SpeedMinPct}
+	a.themeClocks[1] = themeClock{speedPct: 250}
+	a.themeClocks[2] = themeClock{speedPct: theme.SpeedMinPct}
 	if live != theme.ElementCap {
 		t.Fatalf("seeded %d live effects, want %d", live, theme.ElementCap)
 	}
@@ -635,9 +701,9 @@ func TestElementEffectsAreAllocFreeAtCap(t *testing.T) {
 	}
 	// Non-vacuity: with 96 live effects the frame MUST have been noting the census
 	// throughout, or the gate above measured a screen where nothing moved.
-	a.frame.frameAnimChrome = false
+	a.frameAnimChrome = false
 	draw()
-	if !a.frame.frameAnimChrome {
+	if !a.frameAnimChrome {
 		t.Fatal("no element noted the animation census during the measured frames — the gate was " +
 			"measuring the static path, not the motion path it is named for")
 	}
@@ -657,8 +723,8 @@ func TestElementEffectsAreAllocFreeAtCap(t *testing.T) {
 // needs nobody to remember to call it.
 func TestFXPoolIsFixedAndSelfClears(t *testing.T) {
 	a, _ := newEffectsRig(t)
-	if len(a.fxPool.themeFX) != themeFXCap {
-		t.Fatalf("the FX pool holds %d slots, want themeFXCap (%d)", len(a.fxPool.themeFX), themeFXCap)
+	if len(a.themeFX) != themeFXCap {
+		t.Fatalf("the FX pool holds %d slots, want themeFXCap (%d)", len(a.themeFX), themeFXCap)
 	}
 	if themeFXCap != theme.EffectBindCap {
 		t.Errorf("themeFXCap is %d but theme.EffectBindCap is %d — the format's own constant says internal/ui "+
@@ -705,7 +771,7 @@ func TestFXPoolIsFixedAndSelfClears(t *testing.T) {
 	if granted != themeFXCap {
 		t.Errorf("the pool granted %d slots, want exactly %d", granted, themeFXCap)
 	}
-	if !a.fxPool.themeFXOver {
+	if !a.themeFXOver {
 		t.Error("the pool ran out and did not record it — the F8 line and the editor chip are how a user " +
 			"finds out an effect froze at frame 0 instead of being broken")
 	}
@@ -730,7 +796,7 @@ func TestFXPoolIsFixedAndSelfClears(t *testing.T) {
 		t.Errorf("%d slots still held %d passes after the last request — without the sweep a fired "+
 			"one-shot holds its slot forever", got, themeFXIdleFrames+1)
 	}
-	if a.fxPool.themeFXOver {
+	if a.themeFXOver {
 		t.Error("themeFXOver survived the sweep — it describes the LAST pass, not the session")
 	}
 
@@ -745,16 +811,16 @@ func TestFXPoolIsFixedAndSelfClears(t *testing.T) {
 		for i := 0; i < themeFXCap+1; i++ { // +1 so the exhaustion flag is set too
 			b.acquireElementFX(int16(i), 1, 0)
 		}
-		if got := b.themeFXInUse(); got != themeFXCap || !b.fxPool.themeFXOver {
+		if got := b.themeFXInUse(); got != themeFXCap || !b.themeFXOver {
 			t.Fatalf("the pre-apply state is %d slots / over=%v, want a full pool that recorded its "+
-				"exhaustion", got, b.fxPool.themeFXOver)
+				"exhaustion", got, b.themeFXOver)
 		}
 		b.applyThemeClocks(nil)
 		if got := b.themeFXInUse(); got != 0 {
 			t.Errorf("%d slots survived a theme apply — the incoming theme would be refused its own "+
 				"one-shots until the sweep caught up", got)
 		}
-		if b.fxPool.themeFXOver {
+		if b.themeFXOver {
 			t.Error("themeFXOver survived a theme apply — it describes the pass, not the install")
 		}
 	}
@@ -763,6 +829,7 @@ func TestFXPoolIsFixedAndSelfClears(t *testing.T) {
 // TestOneShotEffectReleasesItsFXSlot is the pool's whole reason for existing, seen
 // from the element's side: a slam fires, finishes, the element goes away, and the
 // slot comes back on its own.
+//
 // The slot is deliberately NOT released the instant the one-shot finishes. Releasing
 // it there would let the very next pass re-acquire a fresh slot, restart the effect
 // and note the census again — an infinite replay that pins the pacer forever, which
@@ -775,11 +842,11 @@ func TestOneShotEffectReleasesItsFXSlot(t *testing.T) {
 	// CONDITIONAL: that is the element shape the pool exists for. An unconditional
 	// one-shot resolves through fxAlwaysOrigin and takes no slot at all.
 	el := fxTestConditional(a, theme.FXSlam)
-	a.toolbox.themeAt = time.Now()
+	a.themeAt = time.Now()
 	a.beginThemeFXPass()
-	a.frame.frameAnimChrome = false
+	a.frameAnimChrome = false
 	a.drawElement(lay, &el, 0)
-	if !a.frame.frameAnimChrome {
+	if !a.frameAnimChrome {
 		t.Fatal("a slam that has just started did not note the census")
 	}
 	if got := a.themeFXInUse(); got != 1 {
@@ -788,11 +855,11 @@ func TestOneShotEffectReleasesItsFXSlot(t *testing.T) {
 
 	// Past its period, still on screen: finished, still holding its slot, no longer
 	// noting. Holding is correct — this is what stops the replay loop.
-	a.toolbox.themeAt = time.Now().Add(-period * 3)
+	a.themeAt = time.Now().Add(-period * 3)
 	a.beginThemeFXPass()
-	a.frame.frameAnimChrome = false
+	a.frameAnimChrome = false
 	a.drawElement(lay, &el, 0)
-	if a.frame.frameAnimChrome {
+	if a.frameAnimChrome {
 		t.Error("a finished one-shot is still noting the census")
 	}
 	if got := a.themeFXInUse(); got != 1 {
@@ -811,11 +878,11 @@ func TestOneShotEffectReleasesItsFXSlot(t *testing.T) {
 	// And it plays again when the element comes back — which is what makes
 	// `visible_when = shout:objection` + `effect = slam` a stamp that lands with the
 	// shout, using no trigger syntax at all (design §6.6 R5 cut triggers for v1.90.0).
-	a.toolbox.themeAt = time.Now()
+	a.themeAt = time.Now()
 	a.beginThemeFXPass()
-	a.frame.frameAnimChrome = false
+	a.frameAnimChrome = false
 	a.drawElement(lay, &el, 0)
-	if !a.frame.frameAnimChrome {
+	if !a.frameAnimChrome {
 		t.Error("a one-shot did not replay after its slot was swept — a shout stamp would fire once per session")
 	}
 }
@@ -824,9 +891,9 @@ func TestOneShotEffectReleasesItsFXSlot(t *testing.T) {
 // that falls back to the shared anchor rather than panicking on the render thread,
 // and a speed clamped into the format's own range.
 func TestClockPoolIsFixed(t *testing.T) {
-	a := &App{env: env{}, toolbox: toolboxState{themeAt: time.Now().Add(-2 * time.Second)}}
-	if len(a.fxPool.themeClocks) != theme.ClockCap {
-		t.Fatalf("the clock pool holds %d groups, want theme.ClockCap (%d)", len(a.fxPool.themeClocks), theme.ClockCap)
+	a := &App{themeAt: time.Now().Add(-2 * time.Second)}
+	if len(a.themeClocks) != theme.ClockCap {
+		t.Fatalf("the clock pool holds %d groups, want theme.ClockCap (%d)", len(a.themeClocks), theme.ClockCap)
 	}
 	// Clock 99 clamps to 0. The reader already refuses it (parseClockIndex), so this
 	// is the belt — and the failure it prevents is an index panic on the render
@@ -863,10 +930,10 @@ func TestClockPoolIsFixed(t *testing.T) {
 	sc.Clocks[1] = theme.ClockSpec{SpeedPct: 9999, Declared: true}
 	sc.Clocks[2] = theme.ClockSpec{SpeedPct: 200, Declared: true}
 	a.applyThemeClocks(sc)
-	if got := a.fxPool.themeClocks[1].speedPct; got != theme.SpeedMaxPct {
+	if got := a.themeClocks[1].speedPct; got != theme.SpeedMaxPct {
 		t.Errorf("an out-of-range group loaded at %d, want %d", got, theme.SpeedMaxPct)
 	}
-	if got := a.fxPool.themeClocks[2].speedPct; got != 200 {
+	if got := a.themeClocks[2].speedPct; got != 200 {
 		t.Errorf("group 2 loaded at %d, want 200", got)
 	}
 	// A double-speed group must actually run twice as fast as the shared anchor.
@@ -877,14 +944,14 @@ func TestClockPoolIsFixed(t *testing.T) {
 	// Applying a STOCK theme (no sidecar) must put every group back to nominal, or
 	// the outgoing theme's speeds would leak into the incoming one.
 	a.applyThemeClocks(nil)
-	for i := range a.fxPool.themeClocks {
-		if got := a.fxPool.themeClocks[i].speedPct; got != theme.SpeedNominalPct {
+	for i := range a.themeClocks {
+		if got := a.themeClocks[i].speedPct; got != theme.SpeedNominalPct {
 			t.Fatalf("group %d survived a stock-theme apply at %d, want %d", i, got, theme.SpeedNominalPct)
 		}
 	}
 	// Paused groups hold their frozen elapsed — the editor's scrub, and the reason
 	// `paused`/`frozen` are designed in rather than retrofitted.
-	a.fxPool.themeClocks[3] = themeClock{speedPct: theme.SpeedNominalPct, paused: true, frozen: 750 * time.Millisecond}
+	a.themeClocks[3] = themeClock{speedPct: theme.SpeedNominalPct, paused: true, frozen: 750 * time.Millisecond}
 	if got := a.clockElapsed(3); got != 750*time.Millisecond {
 		t.Errorf("a paused group resolved to %v, want its frozen 750ms", got)
 	}
@@ -904,6 +971,15 @@ func absDuration(d time.Duration) time.Duration {
 // ---------------------------------------------------------------------------
 
 // TestEffectBindNeverBuriesItsWidget is the gate the shipped corpus asked for.
+//
+// Every `[effect.*]` colour in the fourteen native themes is a bare `#rrggbb` — i.e.
+// FULLY OPAQUE — at amplitudes from 12 to 100, and every one of them is bound to a
+// widget somebody has to be able to read or click: the objection button, the chat
+// message, the whole viewport. Under a naive reading ("paint the colour, modulate its
+// alpha with the effect") the first frame of `[effect.viewport] effect = fade,
+// amp_pct = 100` is an opaque sheet over the entire stage that never clears, and
+// `[effect.objection]` is a solid red rectangle where the button was.
+//
 // So the rule this pins: a bind's plate IS its effect. `amp_pct` is the peak the wash
 // reaches, and the effect's envelope scales it from there — which means it is never
 // stronger than the author asked for, and a decayed one-shot is GONE.
@@ -933,11 +1009,11 @@ func TestEffectBindNeverBuriesItsWidget(t *testing.T) {
 
 	el := be.el
 	// Mid-fade: visible, and no stronger than the authored peak.
-	a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 2)
+	a.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 2)
 	a.beginThemeFXPass()
-	a.frame.frameAnimChrome = false
+	a.frameAnimChrome = false
 	a.drawElement(lay, &el, 0)
-	if !a.frame.frameAnimChrome {
+	if !a.frameAnimChrome {
 		t.Error("a running fade bind did not note the census")
 	}
 	fx := resolveElementEffect(el.fx, a.elementElapsed(&el), fxAlwaysOrigin)
@@ -948,11 +1024,11 @@ func TestEffectBindNeverBuriesItsWidget(t *testing.T) {
 
 	// Finished: the curtain is GONE, and the pacer is free again. This is the whole
 	// test — a wash that settles opaque is a theme that has covered the stage.
-	a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond * 5)
+	a.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond * 5)
 	a.beginThemeFXPass()
-	a.frame.frameAnimChrome = false
+	a.frameAnimChrome = false
 	a.drawElement(lay, &el, 0)
-	if a.frame.frameAnimChrome {
+	if a.frameAnimChrome {
 		t.Error("a finished fade bind is still noting the census")
 	}
 	done := resolveElementEffect(el.fx, a.elementElapsed(&el), fxAlwaysOrigin)
@@ -1009,6 +1085,7 @@ func TestEffectBindNeverBuriesItsWidget(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestReduceMotionFreezesEveryElement pins the accessibility branch.
+//
 // Reduce motion is not "most effects": a person who turns it on because motion makes
 // them ill is not helped by a theme whose backdrop still breathes. Every effect
 // resolves neutral, every animated page holds frame 0, and nothing is noted — so the
@@ -1021,9 +1098,9 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 	defer restore()
 
 	prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true })
-	a.toolbox.themeAt = time.Now()
+	a.themeAt = time.Now()
 	a.beginThemeFXPass()
-	if !a.fxPool.themeFXFrozen {
+	if !a.themeFXFrozen {
 		t.Fatal("ReduceMotion did not latch on the pass — the branch is read once per pass, not per element")
 	}
 
@@ -1031,11 +1108,11 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 	for k := theme.EffectKind(0); k < theme.EffectKindCount; k++ {
 		el := fxTestElement(k)
 		before := el
-		a.frame.frameAnimChrome = false
+		a.frameAnimChrome = false
 		// A quarter into the period — every kind is live there when motion is allowed.
-		a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
+		a.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
 		a.drawElement(lay, &el, int16(k))
-		if a.frame.frameAnimChrome {
+		if a.frameAnimChrome {
 			t.Errorf("%s noted the animation census under ReduceMotion — the screen would keep the client "+
 				"at the animation cadence for motion the user asked not to see", k)
 		}
@@ -1046,12 +1123,12 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 	// Every animated page holds frame 0, and does not note.
 	art := fxTestElement(theme.FXNone)
 	art.kind, art.page, art.loop = theme.ElemImage, page, true
-	a.toolbox.themeAt = time.Now().Add(-time.Second)
-	a.frame.frameAnimChrome = false
+	a.themeAt = time.Now().Add(-time.Second)
+	a.frameAnimChrome = false
 	if got := a.elementFrame(&art); got != page.Frames[0] {
 		t.Error("an animated page did not hold frame 0 under ReduceMotion")
 	}
-	if a.frame.frameAnimChrome {
+	if a.frameAnimChrome {
 		t.Error("an animated page noted the census under ReduceMotion")
 	}
 	// No slot is taken either: a frozen effect has no state to keep.
@@ -1071,13 +1148,13 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 	a.beginThemeFXPass()
 	plate := fxTestElement(theme.FXFade)
 	plate.wash = true
-	a.frame.frameAnimChrome = false
+	a.frameAnimChrome = false
 	a.drawElement(lay, &plate, 0)
 	if len(seen) != 0 {
 		t.Error("a wash painted under ReduceMotion — its plate exists only because of its effect, so a " +
 			"frozen one draws its full authored PEAK over the widget it decorates, forever")
 	}
-	if a.frame.frameAnimChrome {
+	if a.frameAnimChrome {
 		t.Error("a frozen wash noted the animation census")
 	}
 
@@ -1086,10 +1163,10 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 	prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 	a.beginThemeFXPass()
 	el := fxTestElement(theme.FXPulse)
-	a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
-	a.frame.frameAnimChrome = false
+	a.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
+	a.frameAnimChrome = false
 	a.drawElement(lay, &el, 0)
-	if !a.frame.frameAnimChrome {
+	if !a.frameAnimChrome {
 		t.Error("unticking ReduceMotion did not bring the motion back")
 	}
 }
@@ -1102,10 +1179,15 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 // render" claim carried forward to the half W5 added: a hand-authored sidecar
 // MOVES, and every moving part of it survives the whole pipeline rather than only
 // the unit test each part has of its own.
+//
+// The fixture (testdata/sidecars/w5_clocks.ini) is written the way an author
+// writes, so this gate reads a FILE through the real reader, the real bake, the
+// real clock pool and the real resolver — which is the only place the four of them
+// are ever in the same sentence.
 func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 	a, lay, cleanup := stageThemedWithSidecar(t, "w5_clocks.ini")
 	defer cleanup()
-	sc := a.elemBake.themeSidecar
+	sc := a.themeSidecar
 
 	// Our own file: a degrade note here means the fixture is writing something this
 	// build cannot read, and every assertion below would be measuring the survivors.
@@ -1136,16 +1218,16 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 	// author wrote rather than the nominal anchor.
 	a.applyThemeClocks(sc)
 	for _, tc := range []struct{ group, want int }{{1, 250}, {2, 40}, {15, 400}} {
-		if got := a.fxPool.themeClocks[tc.group].speedPct; int(got) != tc.want {
+		if got := a.themeClocks[tc.group].speedPct; int(got) != tc.want {
 			t.Errorf("[clock.%d] loaded at %d%%, want %d%% — group 15 is the LAST one, and an off-by-one "+
 				"in the pool drops exactly that group and nothing else", tc.group, got, tc.want)
 		}
 	}
 	// A fixed frame snapshot: the ratios below are exact facts about the arithmetic,
 	// not a race between two time.Now() calls.
-	a.toolbox.themeAt = time.Now()
-	a.budget.frameNow = a.toolbox.themeAt.Add(time.Second)
-	defer func() { a.budget.frameNow = time.Time{} }()
+	a.themeAt = time.Now()
+	a.frameNow = a.themeAt.Add(time.Second)
+	defer func() { a.frameNow = time.Time{} }()
 	if got := a.clockElapsed(15); got != 4*time.Second {
 		t.Errorf("a 400%% group resolved %v at one second on the shared anchor, want 4s", got)
 	}
@@ -1195,16 +1277,17 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 	// And the whole frame moves. Non-vacuity for everything above: a fixture that
 	// parsed, baked and then sat still would pass every assertion so far.
 	draw := func() { a.drawCourtroom(1280, 720) }
-	a.budget.frameNow = time.Time{}
-	a.toolbox.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
-	a.frame.frameAnimChrome = false
+	a.frameNow = time.Time{}
+	a.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
+	a.frameAnimChrome = false
 	draw()
-	if !a.frame.frameAnimChrome {
+	if !a.frameAnimChrome {
 		t.Fatal("a themed frame carrying the whole W5 fixture noted nothing — the file parsed and baked " +
 			"and does not animate")
 	}
 	// ReduceMotion stills the same frame. Measured HERE rather than on a synthetic
 	// element because this is the shape a user actually has: a real theme, applied.
+	//
 	// A SUB-TEST so its skip is its own. The census is a whole-frame signal, so the
 	// fixture's own chrome can drown the element model out — the same limitation
 	// TestIdleElementsDoNotPinTheFrameRate names — and a skip there must not hide
@@ -1223,18 +1306,18 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 		elN := lay.elN
 		lay.elN = 0
 		draw()
-		a.frame.frameAnimChrome = false
+		a.frameAnimChrome = false
 		draw()
-		quiet := !a.frame.frameAnimChrome
+		quiet := !a.frameAnimChrome
 		lay.elN = elN
 		if !quiet {
 			t.Skip("the fixture's own chrome notes the census under ReduceMotion — this gate cannot " +
 				"isolate the element model here")
 		}
 		draw() // one pass to latch the branch, since it is read at the TOP of a pass
-		a.frame.frameAnimChrome = false
+		a.frameAnimChrome = false
 		draw()
-		if a.frame.frameAnimChrome {
+		if a.frameAnimChrome {
 			t.Error("the W5 fixture kept noting the animation census under ReduceMotion — a person who " +
 				"turns it on because motion makes them ill is not helped by a theme that keeps moving")
 		}
@@ -1242,6 +1325,7 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 }
 
 // findBakedElement locates one authored element in the SORTED baked array.
+//
 // The bake sorts by band and z, so a fixture's declaration order is not the array's
 // order and an index would be a guess. The authored id is not carried on the baked
 // row (it is bake-time-only, by design — a string on the frame path is exactly what

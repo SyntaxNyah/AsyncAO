@@ -24,6 +24,16 @@ import (
 // SHAPE of the real defect: the reader refuses the whole file on a named cap
 // (theme.ErrSidecarCap, never a truncation — a truncated theme that then got saved
 // would be data loss), so one long line costs a theme its entire AsyncAO tier.
+//
+// CHANGED FIXTURE (v1.90.0 W8, the metadata-cap ruling). It used to be `credit`,
+// and `credit` no longer refuses: metadata degrades with a note, precisely so that
+// a stranger's attribution line cannot cost them their whole theme (see
+// internal/theme/metatext.go and THEME-FORMAT §7). The PROPERTY these gates pin —
+// "a refused sidecar reaches a surface the user can see" — is unchanged, so the
+// fixture moves to a [theme] key that is still structural: `base` names the
+// terminal AO2 fallback FOLDER, and a shortened one resolves a different theme or
+// none at all. Everything else about the file, and every assertion below, is
+// untouched.
 func overCapBase() string { return strings.Repeat("x", theme.NameRuneCap+1) }
 
 // refusedSidecarSource is a minimal but otherwise perfectly good sidecar whose
@@ -109,16 +119,16 @@ func TestSidecarRefusalIsVisibleOnScreen(t *testing.T) {
 	}
 
 	// The chip arms on the landed state, and a click acknowledges it.
-	a.fxPool.themeSidecarErr, a.fxPool.themeSidecarTip = line, tip
+	a.themeSidecarErr, a.themeSidecarTip = line, tip
 	if !a.themeErrChipActive() {
 		t.Fatal("with a refusal landed the chip is not active — nothing on screen reports it")
 	}
-	a.fxPool.themeSidecarErrAck = true
+	a.themeSidecarErrAck = true
 	if a.themeErrChipActive() {
 		t.Error("an acknowledged refusal keeps drawing — the chip cannot be dismissed")
 	}
 	// Fixing the file clears it outright, which is what makes the fix visible.
-	a.fxPool.themeSidecarErr, a.fxPool.themeSidecarErrAck = "", false
+	a.themeSidecarErr, a.themeSidecarErrAck = "", false
 	if a.themeErrChipActive() {
 		t.Error("the chip stayed armed after the refusal cleared")
 	}
@@ -126,9 +136,13 @@ func TestSidecarRefusalIsVisibleOnScreen(t *testing.T) {
 
 // TestSidecarRefusalChipDoesNotOverlapItsNeighbours pins the band's geometry with
 // three chips in it.
+//
 // Two right-anchored chips both measured from the window edge would have drawn on
 // top of each other — the exact failure the band's "drop rather than overlap" rule
 // exists to prevent, and one a single anchor cannot express. It also pins the
+// no-error case as byte-identical: menuBarRightContentLeft must be the window width
+// when nothing is right-anchored, or every install without a theme error pays a
+// layout change for a feature it is not using.
 func TestSidecarRefusalChipDoesNotOverlapItsNeighbours(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
@@ -140,8 +154,8 @@ func TestSidecarRefusalChipDoesNotOverlapItsNeighbours(t *testing.T) {
 			"the other two chips' rects must be unchanged for every install without one", got, w)
 	}
 
-	a.fxPool.themeSidecarErr = "theme \"x\": refused"
-	a.fxPool.themeSidecarTip = "refused"
+	a.themeSidecarErr = "theme \"x\": refused"
+	a.themeSidecarTip = "refused"
 	errRect, ok := a.themeErrChipRect(w)
 	if !ok {
 		t.Skip("the menu bar is not painting in this fixture — the geometry cannot be measured here")

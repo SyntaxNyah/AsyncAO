@@ -21,11 +21,11 @@ func (a *App) drawFriendsTab(r sdl.Rect) {
 	// size stands alone at the client's base scale.
 	defer a.ctx.popPanelFont(a.ctx.pushPanelFont(a.elemChromeFont(elemFriends, DefaultScalePct)))
 	c := a.ctx
-	if a.srvMeta.serverKey == "" {
+	if a.serverKey == "" {
 		c.Label(r.X+4, r.Y+6, "Connect to a server to see its friends.", ColTextDim)
 		return
 	}
-	names := a.d.Prefs.Load().ServerFriends(a.srvMeta.serverKey)
+	names := a.d.Prefs.Load().ServerFriends(a.serverKey)
 	c.Label(r.X+4, r.Y+4, fmt.Sprintf("Friends here (%d) — add with \"+ Friend\" on a player:", len(names)), ColTextDim)
 	// Start a group chat right from the friends list — the natural place to gather
 	// friends. Opens the Group Chat panel on a fresh group's invite view.
@@ -33,14 +33,14 @@ func (a *App) drawFriendsTab(r sdl.Rect) {
 	ngW := c.TextWidth(ngLabel) + 16
 	ngR := sdl.Rect{X: r.X + r.W - ngW - 4, Y: r.Y, W: ngW, H: 22}
 	if c.Button(ngR, ngLabel) {
-		a.msgs.showMessages = true
+		a.showMessages = true
 		a.createGroup("New group")
-		a.msgs.msgGroupManage = true // open straight on the members / invite view
+		a.msgGroupManage = true // open straight on the members / invite view
 	}
 	c.Tooltip(ngR, "Start a group chat with other AsyncAO players, then invite them in the Group Chat panel")
 
 	// No friend picked: the list owns the whole tab.
-	if a.compose.pmTarget == "" {
+	if a.pmTarget == "" {
 		if len(names) == 0 {
 			c.Label(r.X+4, r.Y+30, "No friends yet.", ColTextDim)
 		} else {
@@ -82,7 +82,7 @@ func (a *App) drawFriendRows(r sdl.Rect, listH int32, names []string) {
 		if c.hovering(row) {
 			c.Fill(row, ColPanel)
 		}
-		_, fcol, nick := a.d.Prefs.Load().ServerFriendInfo(a.srvMeta.serverKey, name)
+		_, fcol, nick := a.d.Prefs.Load().ServerFriendInfo(a.serverKey, name)
 		nameCol := ColText
 		if fcol >= 0 {
 			nameCol = readableOnPanel(fcol)
@@ -99,21 +99,21 @@ func (a *App) drawFriendRows(r sdl.Rect, listH int32, names []string) {
 		bx -= rmW
 		if c.Button(sdl.Rect{X: bx, Y: y + 1, W: rmW, H: rowH - 6}, "Remove") {
 			a.toggleServerFriend(name) // a friended name toggles OFF = removed
-			if strings.EqualFold(a.compose.pmTarget, name) {
-				a.compose.pmTarget, a.compose.pmInput = "", ""
+			if strings.EqualFold(a.pmTarget, name) {
+				a.pmTarget, a.pmInput = "", ""
 			}
 		}
 		pmW := c.TextWidth("PM") + 16
 		bx -= pmW + 4
 		pmR := sdl.Rect{X: bx, Y: y + 1, W: pmW, H: rowH - 6}
 		if c.Button(pmR, "PM") {
-			if !strings.EqualFold(a.compose.pmTarget, name) {
-				a.compose.pmInput = "" // new conversation, fresh box
+			if !strings.EqualFold(a.pmTarget, name) {
+				a.pmInput = "" // new conversation, fresh box
 			}
-			a.compose.pmTarget = name
+			a.pmTarget = name
 			c.focusID = "pmmsg"
 		}
-		if strings.EqualFold(a.compose.pmTarget, name) {
+		if strings.EqualFold(a.pmTarget, name) {
 			c.Border(pmR, ColAccent) // active-conversation cue
 		}
 		a.labelNameElem(elemFriends, r.X+6, y+5, bx-r.X-12, disp, nameCol) // CJK-safe friend name, in the Friends font
@@ -127,15 +127,15 @@ func (a *App) drawFriendRows(r sdl.Rect, listH int32, names []string) {
 func (a *App) drawPMComposer(box sdl.Rect) {
 	c := a.ctx
 	c.Fill(box, ColPanelHi)
-	a.labelName(box.X+4, box.Y+3, box.W-30, "PM "+a.compose.pmTarget+":", ColAccent) // CJK-safe PM target
+	a.labelName(box.X+4, box.Y+3, box.W-30, "PM "+a.pmTarget+":", ColAccent) // CJK-safe PM target
 	if c.Button(sdl.Rect{X: box.X + box.W - 22, Y: box.Y + 2, W: 18, H: 16}, "x") {
-		a.compose.pmTarget, a.compose.pmInput = "", ""
+		a.pmTarget, a.pmInput = "", ""
 		return
 	}
 	fy := box.Y + 20
 	sendW := c.TextWidth("Send") + 16
 	var send bool
-	a.compose.pmInput, send = c.TextField("pmmsg", sdl.Rect{X: box.X + 4, Y: fy, W: box.W - sendW - 14, H: fieldH}, a.compose.pmInput, "private message…")
+	a.pmInput, send = c.TextField("pmmsg", sdl.Rect{X: box.X + 4, Y: fy, W: box.W - sendW - 14, H: fieldH}, a.pmInput, "private message…")
 	if c.Button(sdl.Rect{X: box.X + box.W - sendW - 4, Y: fy, W: sendW, H: fieldH}, "Send") || send {
 		a.sendPM()
 	}
@@ -145,17 +145,17 @@ func (a *App) drawPMComposer(box sdl.Rect) {
 // the friend's current client id from the roster (server /pm wants the id; falls
 // back to the name when we don't have a live id). The reply lands in the OOC log.
 func (a *App) sendPM() {
-	msg := strings.TrimSpace(a.compose.pmInput)
-	if msg == "" || a.compose.pmTarget == "" || a.link.sess == nil {
+	msg := strings.TrimSpace(a.pmInput)
+	if msg == "" || a.pmTarget == "" || a.sess == nil {
 		return
 	}
-	target := a.friendUID(a.compose.pmTarget)
+	target := a.friendUID(a.pmTarget)
 	if target == "" {
-		target = a.compose.pmTarget // no live id — try the name (some servers accept it)
+		target = a.pmTarget // no live id — try the name (some servers accept it)
 	}
-	a.link.sess.SendOOC(a.oocNameOrDefault(), "/pm "+target+" "+msg)
-	a.pmAppend(a.compose.pmTarget, true, msg) // mirror into the DM thread (it also shows in OOC)
-	a.compose.pmInput = ""
+	a.sess.SendOOC(a.oocNameOrDefault(), "/pm "+target+" "+msg)
+	a.pmAppend(a.pmTarget, true, msg) // mirror into the DM thread (it also shows in OOC)
+	a.pmInput = ""
 }
 
 // friendUID looks up a friend's current client UID by matching their saved name
@@ -190,22 +190,32 @@ func (a *App) pmAppend(partner string, fromMe bool, text string) {
 	// The DM channel is the one place the zero-width codec rides by DESIGN: a group
 	// invite / join / kick / DM tag travels as a control frame inside an otherwise
 	// ordinary PM body (courtroom/msgwire.go, magic 0x74).
+	//
+	// None of the four callers hands us a marked string TODAY — routeIncomingPM passes
+	// DecodeMessageFrame's already-clean text, detectIncomingPM is reached from inside
+	// pushOOC which strips before it parses, and the two send paths pass the composed
+	// text rather than the wire body. This strip is the seam's own guarantee, not a
+	// patch for a live defect, and the send paths are why it is worth having:
+	// sendDirectMessage builds `body := text + ...EncodeMarker()` on the line above its
+	// pmAppend(target, true, text), so mirroring the WIRE string into the thread is a
+	// one-word slip. Stating the rule at the seam means the slip is invisible instead
+	// of being a bug report about a DM that ate its own font. Zero-alloc when absent.
 	text = strings.TrimSpace(courtroom.StripSpriteStyle(text))
 	key := a.pmThreadKey(partner)
 	if key == "" || text == "" {
 		return
 	}
-	if a.compose.pmThreads == nil {
-		a.compose.pmThreads = map[string][]pmLine{}
+	if a.pmThreads == nil {
+		a.pmThreads = map[string][]pmLine{}
 	}
-	if _, ok := a.compose.pmThreads[key]; !ok && len(a.compose.pmThreads) >= pmThreadCap {
+	if _, ok := a.pmThreads[key]; !ok && len(a.pmThreads) >= pmThreadCap {
 		return // already at the conversation cap — drop the new partner, stay bounded
 	}
-	cur := append(a.compose.pmThreads[key], pmLine{fromMe: fromMe, text: text, at: time.Now()})
+	cur := append(a.pmThreads[key], pmLine{fromMe: fromMe, text: text, at: time.Now()})
 	if len(cur) > pmThreadLineCap { // keep the newest; fresh backing so the old head frees
 		cur = append([]pmLine(nil), cur[len(cur)-pmThreadLineCap:]...)
 	}
-	a.compose.pmThreads[key] = cur
+	a.pmThreads[key] = cur
 }
 
 // pmThreadKey canonicalises a PM partner name to a thread key so incoming and
@@ -218,7 +228,7 @@ func (a *App) pmThreadKey(name string) string {
 	if want == "" {
 		return ""
 	}
-	friends := a.d.Prefs.Load().ServerFriends(a.srvMeta.serverKey)
+	friends := a.d.Prefs.Load().ServerFriends(a.serverKey)
 	for _, f := range friends {
 		if strings.ToLower(f) == want {
 			return want
@@ -269,10 +279,10 @@ func (a *App) routeIncomingPM(uid int, sender, body string) {
 			a.applyGroupText(m.GroupID, uid, sender, clean)
 			return
 		case courtroom.MsgJoin:
-			a.msgs.applyGroupJoin(m.GroupID, uid, sender)
+			a.applyGroupJoin(m.GroupID, uid, sender)
 			return
 		case courtroom.MsgLeave:
-			a.msgs.applyGroupLeave(m.GroupID, uid)
+			a.applyGroupLeave(m.GroupID, uid)
 			return
 		case courtroom.MsgKick:
 			a.applyGroupKick(m.GroupID, uid, m.TargetUID)
@@ -315,7 +325,7 @@ func (a *App) drawPMThread(box sdl.Rect) {
 	c := a.ctx
 	c.Fill(box, ColPanel)
 	c.Border(box, ColPanelHi)
-	lines := a.compose.pmThreads[strings.ToLower(strings.TrimSpace(a.compose.pmTarget))]
+	lines := a.pmThreads[strings.ToLower(strings.TrimSpace(a.pmTarget))]
 	if len(lines) == 0 {
 		c.Label(box.X+6, box.Y+6, "No messages yet — type below to start.", ColTextDim)
 		return
@@ -331,7 +341,7 @@ func (a *App) drawPMThread(box sdl.Rect) {
 	}
 	y := box.Y + 4
 	for _, ln := range lines[start:] {
-		who, col := a.compose.pmTarget, ColText
+		who, col := a.pmTarget, ColText
 		if ln.fromMe {
 			who, col = "You", ColAccent
 		}

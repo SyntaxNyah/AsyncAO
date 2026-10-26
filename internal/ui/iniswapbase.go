@@ -1,9 +1,37 @@
 package ui
 
 // "Swap from your base" — the Iniswaps tab's second source.
+//
+// THE GAP THIS CLOSES. The wardrobe's browse tab only ever listed the server's
+// `iniswap.txt`, a file most servers do not publish; on those servers the tab was a
+// paragraph explaining that you could type a folder name if you happened to know
+// one. But the client already KNOWS two complete lists of folders that exist on the
+// base:
+//
+//   - the server's character ROSTER (the SC packet — every character folder the
+//     server offers, taken or not), and
+//   - the character folders inside the user's own LOCAL MOUNTS, which is the whole
+//     point of having mounted a content pack.
+//
+// Both are now browsable and wearable. What CANNOT be listed is a plain remote HTTP
+// base: there is no directory listing over HTTP, and probing for names is exactly
+// the fallback-storm this client is built to avoid — so the type-a-name field stays,
+// and now carries a visible line saying why.
+//
+// WHY A SEPARATE BROWSER, not more entries in a.iniList. iniList is the wardrobe's
+// backing store: it is index-keyed (a.iniPages / a.iniAsk are parallel slices, and
+// cachedPage does not re-check the URL behind an index), and char select's Wardrobe
+// tab ranges it WHOLE. Merging a 4000-character roster into it would flood that tab
+// with the entire server and invalidate every cached icon page on each rebuild. This
+// browser keeps its own list AND its own icon page cache (a.iniBase.pages / .ask),
+// so it can draw the same 64 px char-icon cells without aliasing the wardrobe's, and
+// touches nothing the wardrobe owns.
+//
 // THREADING. The local scan is os.ReadDir on the user's disk, so it runs on a
 // goroutine and lands through a buffered channel that the draw drains — hard rule 2
 // (no synchronous disk I/O on a draw path). It is bounded twice: at most
+// config.LocalMountCap mounts are walked, and at most iniBaseLocalFolderCap names
+// come back (hard rule 4).
 
 import (
 	"fmt"
@@ -168,9 +196,14 @@ func scanLocalCharFolders(mounts []string) iniBaseScan {
 // mode is actually ON. Both accessors hand back the stored paths whatever their
 // mode flag says, so the flag is what must be tested: offering folders from mounts
 // the asset pipeline is not reading would list characters that then fail to load.
+// LayeredAssets normalizes the reachable both-set state, so asking it second is
+// enough (config.LayeredAssets).
+//
 // This COPIES (both accessors do), so it is for callers that keep the list. The
 // staleness check does not: it asks config.BaseMountsEqual, which answers the same
 // question against the stored slice under the read lock. The two must agree on
+// which mode yields which list — TestBaseMountsEqualMatchesBaseMounts walks the
+// mode matrix to keep them from drifting apart.
 func (a *App) baseMounts() []string {
 	if on, mounts := a.d.Prefs.LocalAssets(); on {
 		return mounts
@@ -184,8 +217,17 @@ func (a *App) baseMounts() []string {
 // ensureLocalCharFolders starts a scan when the mount list has changed since the
 // last one. Cheap and allocation-free when nothing changed (a slice compare), which
 // is what lets a draw path call it every frame.
+//
+// That "allocation-free" is why the unchanged path asks config.BaseMountsEqual
+// instead of comparing against baseMounts(): baseMounts routes through
+// LocalAssets/LayeredAssets, and BOTH of those take a make+copy of the stored
+// paths under the lock. Fetching the list only to throw it away would have cost a
+// user with mounts — the exact user this feature exists for — one or two heap
+// allocations EVERY frame the Iniswaps tab was open. The copy is now taken only
+// on the changed path, which runs once per mount edit and hands the slice to a
+// goroutine that must own it anyway.
 func (a *App) ensureLocalCharFolders() {
-	b := &a.inibrowse.iniBase
+	b := &a.iniBase
 	if b.scanning {
 		return
 	}
@@ -216,7 +258,7 @@ func (a *App) ensureLocalCharFolders() {
 
 // pollLocalCharFolders lands a finished scan. Non-blocking, like pollIniswap.
 func (a *App) pollLocalCharFolders() {
-	b := &a.inibrowse.iniBase
+	b := &a.iniBase
 	if b.res == nil {
 		return
 	}
@@ -237,12 +279,12 @@ func (a *App) pollLocalCharFolders() {
 // for what the SERVER will accept), then any local folder the roster did not name.
 // Memoized — see iniBaseBrowser.names.
 func (a *App) baseNames() ([]string, []string) {
-	b := &a.inibrowse.iniBase
+	b := &a.iniBase
 	chars := 0
-	if a.link.sess != nil {
-		chars = len(a.link.sess.Chars)
+	if a.sess != nil {
+		chars = len(a.sess.Chars)
 	}
-	if b.names != nil && b.namesKey == a.srvMeta.serverKey && b.namesChars == chars && b.namesLocal == len(b.local) {
+	if b.names != nil && b.namesKey == a.serverKey && b.namesChars == chars && b.namesLocal == len(b.local) {
 		return b.names, b.lower
 	}
 	names := make([]string, 0, chars+len(b.local))
@@ -266,16 +308,16 @@ func (a *App) baseNames() ([]string, []string) {
 		names = append(names, n)
 		lower = append(lower, key)
 	}
-	if a.link.sess != nil {
-		for i := range a.link.sess.Chars {
-			add(a.link.sess.Chars[i].Name)
+	if a.sess != nil {
+		for i := range a.sess.Chars {
+			add(a.sess.Chars[i].Name)
 		}
 	}
 	for _, n := range b.local {
 		add(n)
 	}
 	b.names, b.lower = names, lower
-	b.namesKey, b.namesChars, b.namesLocal = a.srvMeta.serverKey, chars, len(b.local)
+	b.namesKey, b.namesChars, b.namesLocal = a.serverKey, chars, len(b.local)
 	b.pages, b.pagesGen, b.ask = nil, 0, nil // the list changed: drop the index-keyed icon cache
 	return b.names, b.lower
 }
@@ -283,7 +325,7 @@ func (a *App) baseNames() ([]string, []string) {
 // baseSourceCounts is what the two source chips advertise.
 func (a *App) baseSourceCounts() (serverList, base int) {
 	n := 0
-	for _, in := range a.inibrowse.iniServerMem {
+	for _, in := range a.iniServerMem {
 		if in {
 			n++
 		}
@@ -307,7 +349,7 @@ func (a *App) drawIniswapBaseBody(panel sdl.Rect, y int32, query string) {
 
 	if len(names) == 0 {
 		msg := "Nothing to list yet — this server sent no character roster and you have no local mounts."
-		if a.inibrowse.iniBase.scanning {
+		if a.iniBase.scanning {
 			msg = "Reading your local mounts…"
 		}
 		c.LabelClipped(panel.X+pad, y+4, panel.W-2*pad, msg, ColTextDim)
@@ -319,10 +361,10 @@ func (a *App) drawIniswapBaseBody(panel sdl.Rect, y int32, query string) {
 		"A plain web asset base can't be listed — type any folder name above and press Enter to wear it. "+
 			"The names below come from this server's character roster and from your local mounts.", ColTextDim)
 	y += 20
-	if a.inibrowse.iniBase.scanErr != "" {
-		c.LabelClipped(panel.X+pad, y, panel.W-2*pad, a.inibrowse.iniBase.scanErr, ColTextDim)
+	if a.iniBase.scanErr != "" {
+		c.LabelClipped(panel.X+pad, y, panel.W-2*pad, a.iniBase.scanErr, ColTextDim)
 		y += 18
-	} else if a.inibrowse.iniBase.truncatedN {
+	} else if a.iniBase.truncatedN {
 		c.LabelClipped(panel.X+pad, y, panel.W-2*pad,
 			"Showing the first names found — this base has more than the browser lists.", ColTextDim)
 		y += 18
@@ -346,9 +388,9 @@ func (a *App) drawIniswapBaseBody(panel sdl.Rect, y int32, query string) {
 	if visibleH <= 0 {
 		return
 	}
-	a.inibrowse.iniBase.scroll -= c.WheelIn(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH}) * scrollStepPx
+	a.iniBase.scroll -= c.WheelIn(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH}) * scrollStepPx
 	track := sdl.Rect{X: panel.X + panel.W - pad - scrollBarW, Y: gridTop, W: scrollBarW, H: visibleH}
-	a.inibrowse.iniBase.scroll = c.VScrollbar("inibasescroll", track, a.inibrowse.iniBase.scroll, contentH, visibleH)
+	a.iniBase.scroll = c.VScrollbar("inibasescroll", track, a.iniBase.scroll, contentH, visibleH)
 
 	clipPrev, clipHad := c.pushClip(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH})
 	slot := int32(0)
@@ -357,7 +399,7 @@ func (a *App) drawIniswapBaseBody(panel sdl.Rect, y int32, query string) {
 			continue
 		}
 		x := panel.X + pad + (slot%cols)*(iconCell+iconGap)
-		yy := gridTop + (slot/cols)*rowPitch - a.inibrowse.iniBase.scroll
+		yy := gridTop + (slot/cols)*rowPitch - a.iniBase.scroll
 		slot++
 		if yy <= gridTop-iconCell || yy >= panel.Y+panel.H-charCellCaptionH {
 			continue
@@ -365,12 +407,12 @@ func (a *App) drawIniswapBaseBody(panel sdl.Rect, y int32, query string) {
 		cell := sdl.Rect{X: x, Y: yy, W: iconCell, H: iconCell}
 		c.Tooltip(cell, names[i])
 		c.Fill(cell, ColBackground)
-		base := a.link.urls.CharIcon(names[i])
-		if page, ok := a.cachedPage(&a.inibrowse.iniBase.pages, &a.inibrowse.iniBase.pagesGen, len(names), i, base); ok && len(page.Frames) > 0 {
+		base := a.urls.CharIcon(names[i])
+		if page, ok := a.cachedPage(&a.iniBase.pages, &a.iniBase.pagesGen, len(names), i, base); ok && len(page.Frames) > 0 {
 			c.cgoRect = cell
 			_ = c.Ren.Copy(page.Frames[0], nil, &c.cgoRect)
 		} else {
-			a.demandAsset(&a.inibrowse.iniBase.ask, len(names), i, base, assets.AssetTypeCharIcon) // AssetType: CharIcon (base browser)
+			a.demandAsset(&a.iniBase.ask, len(names), i, base, assets.AssetTypeCharIcon) // AssetType: CharIcon (base browser)
 			initial := names[i]
 			if len(initial) > 2 {
 				initial = initial[:2]

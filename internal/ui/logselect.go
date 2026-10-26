@@ -1,6 +1,14 @@
 package ui
 
 // Mouse text selection for the IC/OOC logs (drag to highlight, Ctrl+C to copy).
+//
+// The hard parts live here as PURE functions so they're unit-tested without
+// SDL: the selection is anchored to CONTENT (source entry + rune offset within
+// that entry), never to a screen row, so a scroll or a freshly appended/capped
+// line can't corrupt it. Hit-testing binary-searches prefix widths via an
+// injected measure func, so the cursor's line costs ~log2(len) width measures —
+// never the per-rune-per-row metrics the kit warns against (ui.go pickMemo).
+//
 // The render + input wiring (which feeds these from the live logs) lives with
 // the IC/OOC draw paths; all of it is gated on an active selection so a log
 // with no selection draws exactly as before.

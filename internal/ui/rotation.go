@@ -6,6 +6,20 @@ package ui
 // the classic HP bar) through the layout editor's R-key; the angle persists per
 // element (config.ThemeRectRotations / config.ClassicRotations) and the draw
 // path blits it with SDL's CopyEx.
+//
+// INVARIANT (architect ruling 1): angle 0 takes the ORIGINAL Copy path, so the
+// unedited courtroom stays byte-identical and the settled zero-alloc gate — which
+// runs entirely unrotated — is unaffected. Only a nonzero persisted angle routes
+// through CopyEx(angle, center=nil, FLIP_NONE). Every swap site is structured as
+//
+//	angle := <O(1) resolve>
+//	if angle == 0 { existing Copy } else { CopyEx }
+//
+// The EXPENSIVE tier (interactive rotated panels — inverse-rotated hit-testing,
+// per-panel render-to-texture, a fenced inverse-cursor stash) is a ruled NO-GO
+// this milestone. The persistence is already per-key, so a later slice can read
+// the same side-maps, add per-panel render-to-texture + a fenced inverse cursor,
+// and reuse the R-key UX without touching this file's format.
 
 import (
 	"strconv"
@@ -18,8 +32,8 @@ import (
 // in ensureClassicOv) — O(1), no prefs read — and returns 0 (the plain-Copy
 // fast path) when the slot has no rotation, which is every slot on a settled,
 // unedited frame. Kept tiny and SDL-free so the angle==0 routing is unit-testable.
-func (classic1 *classicState) classicSlotRotation(slot string) float64 {
-	b, ok := classic1.classicRot[slot]
+func (a *App) classicSlotRotation(slot string) float64 {
+	b, ok := a.classicRot[slot]
 	if !ok || b == 0 {
 		return 0
 	}
@@ -44,6 +58,9 @@ const (
 // chatbox skin is deliberately out of scope (ruling 5 scopes chatbox rotation to
 // the themed skin). So this returns false for every slot and the classic R-key
 // reports "n/a" — an honest, ruling-6-compliant result, not a silent no-op.
+// a.classicRot is fed only by an applied LayoutProfile. Kept as a function (not a
+// bare false) so a future slice that adds a texture-backed classic slot has one
+// place to register it.
 func classicSlotRotatable(slot string) bool {
 	_ = slot
 	return false
@@ -96,10 +113,10 @@ func badgeAngle(lay *themeLayoutCache, key string) float64 {
 // this is a plain map probe — never a prefs read on the draw path). 0 (absent or
 // explicit) routes through the plain Copy path.
 func (a *App) themedRotationDeg(key string) float64 {
-	if a.skin.themeLay.ang == nil {
+	if a.themeLay.ang == nil {
 		return 0
 	}
-	b, ok := a.skin.themeLay.ang[key]
+	b, ok := a.themeLay.ang[key]
 	if !ok || b == 0 {
 		return 0
 	}
@@ -136,32 +153,32 @@ func rotationChipLabel(b uint8) string {
 // the anchor pin (classiclayout.go:598 — pins aren't in the undo history either);
 // persistence rides the SetClassicRotation setter directly (user-initiated, no
 // SaveNow), matching cycleSlotAnchor.
-func (classic1 *classicState) cycleSlotRotation(name string, fine bool) {
+func (a *App) cycleSlotRotation(name string, fine bool) {
 	if name == "" {
 		return
 	}
 	if !classicSlotRotatable(name) {
-		classic1.env.debug.Push("layout: " + classicSlotLabel(name) + " can't be rotated (not texture-backed chrome)")
+		a.pushDebug("layout: " + classicSlotLabel(name) + " can't be rotated (not texture-backed chrome)")
 		return
 	}
 	// Rotation re-bases like the anchor: it needs an override to hang off, so mint
 	// one from the current rect if the slot has none (unreachable while no classic
 	// slot is rotatable, but kept correct for the forward-compat path).
-	if _, ok := classic1.classicOv[name]; !ok {
+	if _, ok := a.classicOv[name]; !ok {
 		return
 	}
-	next := nextRotationByte(classic1.classicRot[name], fine)
-	if classic1.classicRot == nil {
-		classic1.classicRot = make(map[string]uint8, classicSlotRegCap)
+	next := nextRotationByte(a.classicRot[name], fine)
+	if a.classicRot == nil {
+		a.classicRot = make(map[string]uint8, classicSlotRegCap)
 	}
 	if next == 0 {
-		delete(classic1.classicRot, name)
-		classic1.env.d.Prefs.ClearClassicRotation(name)
+		delete(a.classicRot, name)
+		a.d.Prefs.ClearClassicRotation(name)
 	} else {
-		classic1.classicRot[name] = next
-		classic1.env.d.Prefs.SetClassicRotation(name, next)
+		a.classicRot[name] = next
+		a.d.Prefs.SetClassicRotation(name, next)
 	}
-	classic1.env.debug.Push("layout: " + classicSlotLabel(name) + " rotated to " + strconv.Itoa(int(config.RotationByteToDeg(next)+0.5)) + "°")
+	a.pushDebug("layout: " + classicSlotLabel(name) + " rotated to " + strconv.Itoa(int(config.RotationByteToDeg(next)+0.5)) + "°")
 }
 
 // cycleThemeRotation advances the hovered THEMED key's rotation (R-key). Offered
@@ -175,12 +192,12 @@ func (a *App) cycleThemeRotation(themeName, key string, fine bool) {
 		return
 	}
 	if !a.themedKeyRotatable(key) {
-		a.debug.Push("layout edit: " + key + " can't be rotated (no theme art — draws flat)")
+		a.pushDebug("layout edit: " + key + " can't be rotated (no theme art — draws flat)")
 		return
 	}
 	cur := uint8(0)
-	if a.skin.themeLay.ang != nil {
-		cur = a.skin.themeLay.ang[key]
+	if a.themeLay.ang != nil {
+		cur = a.themeLay.ang[key]
 	}
 	next := nextRotationByte(cur, fine)
 	if next == 0 {
@@ -189,5 +206,5 @@ func (a *App) cycleThemeRotation(themeName, key string, fine bool) {
 		a.d.Prefs.SetThemeRectRotation(themeName, key, next)
 	}
 	a.invalidateThemeCanvases() // re-bake ang so the new angle reaches the draw path
-	a.debug.Push("layout edit: " + key + " rotated to " + strconv.Itoa(int(config.RotationByteToDeg(next)+0.5)) + "°")
+	a.pushDebug("layout edit: " + key + " rotated to " + strconv.Itoa(int(config.RotationByteToDeg(next)+0.5)) + "°")
 }

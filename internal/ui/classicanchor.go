@@ -180,16 +180,16 @@ func applyAnchor(ov [4]float64, ar anchorRef, w, h int32) sdl.Rect {
 // anchoredRect resolves one slot's override honouring its window pin, if any.
 // The no-anchor path is the historical fracToRect — anchored resolution costs
 // one extra map lookup, only for slots that HAVE an override.
-func (classic1 *classicState) anchoredRect(name string, ov [4]float64, w, h int32) sdl.Rect {
-	if ar, ok := classic1.classicAnchor[name]; ok {
+func (a *App) anchoredRect(name string, ov [4]float64, w, h int32) sdl.Rect {
+	if ar, ok := a.classicAnchor[name]; ok {
 		return applyAnchor(ov, ar, w, h)
 	}
 	return fracToRect(ov, w, h)
 }
 
 // slotAnchorMode reports a slot's current pin mode string ("" = unpinned).
-func (classic1 *classicState) slotAnchorMode(name string) string {
-	ar, ok := classic1.classicAnchor[name]
+func (a *App) slotAnchorMode(name string) string {
+	ar, ok := a.classicAnchor[name]
 	if !ok {
 		return ""
 	}
@@ -199,45 +199,45 @@ func (classic1 *classicState) slotAnchorMode(name string) string {
 // cycleSlotAnchor advances the hovered slot through the A-key pin cycle. A
 // slot with no override yet gets one minted from its current on-screen rect
 // (pin-in-place without a drag); clearing the pin keeps the override.
-func (classic1 *classicState) cycleSlotAnchor(e *env, name string, w, h int32) {
-	next := nextAnchorMode(classic1.slotAnchorMode(name))
-	if _, ok := classic1.classicOv[name]; !ok {
+func (a *App) cycleSlotAnchor(name string, w, h int32) {
+	next := nextAnchorMode(a.slotAnchorMode(name))
+	if _, ok := a.classicOv[name]; !ok {
 		// Pin-in-place: the anchor re-bases an override, so mint one from the
 		// rect the slot drew at this frame.
-		info, reg := classic1.slotReg[name]
+		info, reg := a.slotReg[name]
 		if !reg {
 			return
 		}
 		ov := rectToFrac(info.cur, w, h)
-		if classic1.classicOv == nil {
-			classic1.classicOv = make(map[string][4]float64, classicSlotRegCap)
+		if a.classicOv == nil {
+			a.classicOv = make(map[string][4]float64, classicSlotRegCap)
 		}
-		classic1.classicOv[name] = ov
-		e.d.Prefs.SetClassicSlot(name, ov)
+		a.classicOv[name] = ov
+		a.d.Prefs.SetClassicSlot(name, ov)
 	}
 	if next == "" {
-		delete(classic1.classicAnchor, name)
-		e.d.Prefs.ClearClassicAnchor(name)
-		e.debug.Push("layout: " + classicSlotLabel(name) + " unpinned")
+		delete(a.classicAnchor, name)
+		a.d.Prefs.ClearClassicAnchor(name)
+		a.pushDebug("layout: " + classicSlotLabel(name) + " unpinned")
 		return
 	}
 	hm, vm, _ := parseAnchorMode(next)
-	if classic1.classicAnchor == nil {
-		classic1.classicAnchor = make(map[string]anchorRef, classicSlotRegCap)
+	if a.classicAnchor == nil {
+		a.classicAnchor = make(map[string]anchorRef, classicSlotRegCap)
 	}
-	classic1.classicAnchor[name] = anchorRef{h: hm, v: vm, winW: w, winH: h}
-	e.d.Prefs.SetClassicAnchor(name, config.ClassicAnchor{Mode: next, WinW: int(w), WinH: int(h)})
-	e.debug.Push("layout: " + classicSlotLabel(name) + " pinned to the " + anchorModeLabel(next))
+	a.classicAnchor[name] = anchorRef{h: hm, v: vm, winW: w, winH: h}
+	a.d.Prefs.SetClassicAnchor(name, config.ClassicAnchor{Mode: next, WinW: int(w), WinH: int(h)})
+	a.pushDebug("layout: " + classicSlotLabel(name) + " pinned to the " + anchorModeLabel(next))
 }
 
 // syncAnchorWindow re-bases a slot's LOCAL anchor to the current window —
 // called whenever the editor rewrites the slot's fraction override (the
 // override now describes the rect at THIS window size). Persisted at
 // drag-release alongside the override.
-func (classic1 *classicState) syncAnchorWindow(name string, w, h int32) {
-	if ar, ok := classic1.classicAnchor[name]; ok {
+func (a *App) syncAnchorWindow(name string, w, h int32) {
+	if ar, ok := a.classicAnchor[name]; ok {
 		ar.winW, ar.winH = w, h
-		classic1.classicAnchor[name] = ar
+		a.classicAnchor[name] = ar
 	}
 }
 
@@ -247,8 +247,8 @@ const anchorPinDot = int32(7)
 // drawAnchorPin marks an anchored box's pinned reference in the editor: a
 // small filled dot at the pinned corner (or centre; edge-midpoints for
 // single-axis pins from hand-edited prefs).
-func (classic1 *classicState) drawAnchorPin(r sdl.Rect, name string) {
-	ar, ok := classic1.classicAnchor[name]
+func (a *App) drawAnchorPin(r sdl.Rect, name string) {
+	ar, ok := a.classicAnchor[name]
 	if !ok {
 		return
 	}
@@ -267,6 +267,6 @@ func (classic1 *classicState) drawAnchorPin(r sdl.Rect, name string) {
 		py = r.Y + r.H - anchorPinDot - 1
 	}
 	dot := sdl.Rect{X: px, Y: py, W: anchorPinDot, H: anchorPinDot}
-	classic1.env.ctx.Fill(dot, ColTierGreen)
-	classic1.env.ctx.Border(dot, ColBackground)
+	a.ctx.Fill(dot, ColTierGreen)
+	a.ctx.Border(dot, ColBackground)
 }

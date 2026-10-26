@@ -26,9 +26,9 @@ var exModalPanels = []struct {
 	open func(*App)
 	rect func(*App, int32, int32) sdl.Rect
 }{
-	{"timer", func(a *App) { a.timer.showTimer = true }, (*App).timerPanelRect},
+	{"timer", func(a *App) { a.showTimer = true }, (*App).timerPanelRect},
 	{"login", func(a *App) { a.showLogin = true }, (*App).loginPanelRect},
-	{"pair popup", func(a *App) { a.pairbox.pairPopupOpen = true }, (*App).pairPopPanelRect},
+	{"pair popup", func(a *App) { a.pairPopupOpen = true }, (*App).pairPopPanelRect},
 }
 
 // TestExModalsNoLongerTakeTheScreen is the issue as reported: with one of them open
@@ -37,9 +37,9 @@ func TestExModalsNoLongerTakeTheScreen(t *testing.T) {
 	for _, p := range exModalPanels {
 		t.Run(p.name, func(t *testing.T) {
 			a := testTabApp(t)
-			a.link.sess = courtroom.NewRehearsalSession("", nil)
-			a.link.room = &courtroom.Courtroom{}
-			a.toolbox.showWidgets = true
+			a.sess = courtroom.NewRehearsalSession("", nil)
+			a.room = &courtroom.Courtroom{}
+			a.showWidgets = true
 			p.open(a)
 
 			if a.courtroomModalUp() {
@@ -51,7 +51,7 @@ func TestExModalsNoLongerTakeTheScreen(t *testing.T) {
 			if !a.extrasSurfaceLive() {
 				t.Error("the Extras surface must stay live behind it")
 			}
-			if !(a.toolbox.showWidgets && a.extrasSurfaceLive()) {
+			if !(a.showWidgets && a.extrasSurfaceLive()) {
 				t.Error("the Extras box must stay visible — you open the Timer FROM it")
 			}
 		})
@@ -66,8 +66,8 @@ func TestExModalsFenceTheirFootprint(t *testing.T) {
 	for _, p := range exModalPanels {
 		t.Run(p.name, func(t *testing.T) {
 			a := testTabApp(t)
-			a.link.sess = courtroom.NewRehearsalSession("", nil)
-			a.link.room = &courtroom.Courtroom{}
+			a.sess = courtroom.NewRehearsalSession("", nil)
+			a.room = &courtroom.Courtroom{}
 			p.open(a)
 			r := p.rect(a, w, h)
 
@@ -94,7 +94,7 @@ func TestExModalsAreClosedByEsc(t *testing.T) {
 			if !a.closeTopOverlay() {
 				t.Fatal("Esc must resolve this panel, not fall through to the leave-the-server shortcut")
 			}
-			if a.timer.showTimer || a.showLogin || a.pairbox.pairPopupOpen {
+			if a.showTimer || a.showLogin || a.pairPopupOpen {
 				t.Error("Esc left the panel open")
 			}
 		})

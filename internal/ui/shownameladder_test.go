@@ -151,11 +151,20 @@ func TestChatboxRungStems(t *testing.T) {
 // TestChatboxBlankRungIsDistinctAndDeclinesADuplicate covers the fourth rung —
 // AO2's plate-less `chatblank` skin — which rides the same enum as the two
 // widening variants but answers both halves of a rung's identity differently.
+//
+// Its T1 stem is fixed like the others, but its FILE stem is not derived from the
+// base skin: AO2 names it outright, `setImage("chatblank", p_misc)`
 // (AO2-Client courtroom.cpp:3322), where med/big are string-appended to the
 // resolved base's own path (courtroom.cpp:3358/:3362). The consequence is the case
+// the other rungs cannot have: for the two reference themes whose BASE skin
+// already resolved to chatblank, the blank rung is the base, so it declines with
+// an empty stem rather than pinning the same art under a second key.
+//
 // The decline is driven through the loader's own lookup expression
 // (app.go: theme.FindAssetIn(res.chatboxDir, rung.fileStem(res.chatboxStem), …)),
 // not re-implemented here, and the fixture ships the `.png` dotfile that the empty
+// stem would otherwise adopt — theme.TestFindAssetInRefusesAnEmptyStem is the same
+// guard from the other side.
 func TestChatboxBlankRungIsDistinctAndDeclinesADuplicate(t *testing.T) {
 	// (1) Identity: four rungs, four distinct T1 keys. A collision would have one
 	// rung's art overwrite another's in themeTex.
@@ -212,6 +221,11 @@ func TestChatboxBlankRungIsDistinctAndDeclinesADuplicate(t *testing.T) {
 // skin decision, the one the widen-and-swap ladder is not: a post whose showname
 // trims to nothing wears the plate-less box (AO2-Client courtroom.cpp:3320-3331,
 // `if (ui_vp_showname->text().trimmed().isEmpty())`).
+//
+// Both arms of AO2's branch are here, and so are the two states a streaming client
+// adds: a theme that ships no blank art at all (most of them) must be byte-identical
+// to the pre-fix draw, and the decision must stay free per frame — it runs on every
+// themed chatbox frame, not once per message.
 func TestChatboxSkinForShownameFollowsTheTrimmedName(t *testing.T) {
 	a, cleanup := ladderHarness(t)
 	defer cleanup()
@@ -276,9 +290,17 @@ func TestChatboxSkinForShownameFollowsTheTrimmedName(t *testing.T) {
 
 // TestChatboxLadderArtComesFromTheBaseSkinsOwnDirectory pins the lookup rule that
 // keeps the ladder honest across a theme that inherits from another.
+//
+// AO2 never looks the variants up by NAME: it appends to the resolved base
 // image's own path (AO2-Client courtroom.cpp:3358, over AOImage's remembered
+// m_file_name), so a variant can only ever come out of the directory the base
+// came out of. FindAsset — which falls through to the bundled default theme —
+// would happily pair one theme's base with another theme's variant and stretch
+// mismatched art into the same box.
+//
 // The fixture is the shape that actually occurs: a theme with its own chat.png
 // and chatmed.png, inheriting from a default theme that also ships a chatbig.png.
+// AO2 shows that theme its med skin and never its parent's big.
 func TestChatboxLadderArtComesFromTheBaseSkinsOwnDirectory(t *testing.T) {
 	root := t.TempDir()
 	themeDir := filepath.Join(root, theme.ThemesDirName, "inheritor")
@@ -362,6 +384,7 @@ func TestChatboxLadderArtSkippedWithoutABaseSkin(t *testing.T) {
 // TestThemeLayoutBakesShownameExtra pins that the rung height is scaled with the
 // rect it widens and baked on the cold rebuild, so the draw path stays integer
 // only.
+//
 // AO2 does not scale it — get_element_dimensions applies themeScalingFactor to
 // the showname rect while get_design_element hands extra_width back raw — but AO2
 // also ships that factor at 1, so the two agree everywhere AO2 runs. Ours is 1
@@ -372,7 +395,7 @@ func TestThemeLayoutBakesShownameExtra(t *testing.T) {
 	// Native fit on a window at least as large as the canvas: scale 1, so the
 	// baked value is the theme's own number and a stock theme is unchanged.
 	a := stageNativeFit(t, designW, designH)
-	a.skin.themeShownameExtra = 24
+	a.themeShownameExtra = 24
 	lay := a.themeLayout(1152, 864)
 	if !lay.valid {
 		t.Fatal("themeLayout did not validate")
@@ -384,7 +407,7 @@ func TestThemeLayoutBakesShownameExtra(t *testing.T) {
 	// A canvas scaled DOWN scales the rung with it. Native takes the tighter axis,
 	// so a full-height window half the canvas's width is exactly a half scale.
 	b := stageNativeFit(t, designW, designH)
-	b.skin.themeShownameExtra = 24
+	b.themeShownameExtra = 24
 	half := b.themeLayout(designW/2, designH)
 	if got, want := half.shownameExtraPx(), int32(12); got != want {
 		t.Fatalf("on a half-size canvas the baked rung is %d px, want %d", got, want)
@@ -393,7 +416,7 @@ func TestThemeLayoutBakesShownameExtra(t *testing.T) {
 	// ...but never to nothing: a rung that rounded away would take the SKIN SWAP
 	// with it, dropping a long name back onto the narrow art mid-message.
 	c := stageNativeFit(t, designW, designH)
-	c.skin.themeShownameExtra = 1
+	c.themeShownameExtra = 1
 	tiny := c.themeLayout(designW/40, designH/40)
 	if got := tiny.shownameExtraPx(); got < 1 {
 		t.Fatalf("a heavily downscaled canvas baked a %d px rung — the ladder would silently vanish", got)
@@ -401,7 +424,7 @@ func TestThemeLayoutBakesShownameExtra(t *testing.T) {
 
 	// A theme that declares no ladder bakes zero, and so does a hand-built cache.
 	d := stageNativeFit(t, designW, designH)
-	d.skin.themeShownameExtra = 0
+	d.themeShownameExtra = 0
 	if got := d.themeLayout(1152, 864).shownameExtraPx(); got != 0 {
 		t.Fatalf("a theme with no showname_extra_width baked %d px, want 0", got)
 	}
@@ -435,7 +458,7 @@ func ladderHarness(t *testing.T) (*App, func()) {
 	a.d.Store = store
 	// The two theme-texture maps the real constructor always creates together
 	// (themePage writes into themePages on the first resident lookup).
-	a.skin.themeTex = map[string]bool{}
+	a.themeTex = map[string]bool{}
 	a.themePages = map[string]*render.TexturePage{}
 	return a, func() {
 		store.Purge()
@@ -454,7 +477,7 @@ func pinFlatThemeArt(t *testing.T, a *App, stem string) *render.TexturePage {
 	if err := a.d.Store.UploadPinned(themeTexKey(stem), dec); err != nil {
 		t.Skipf("theme upload unavailable: %v", err)
 	}
-	a.skin.themeTex[stem] = true
+	a.themeTex[stem] = true
 	page, ok := a.themePage(stem)
 	if !ok {
 		t.Fatalf("pinned %q did not become resident", stem)
@@ -466,6 +489,7 @@ func pinFlatThemeArt(t *testing.T, a *App, stem string) *render.TexturePage {
 // message lands on is decided by what the ACTIVE THEME already has pinned in T1,
 // and by nothing else. No probe, no fetch, no disk touch per message — a theme
 // that ships no variants answers from a map read, forever.
+//
 // It walks the four cases the corpus actually contains: both variants (60 of 74
 // themes), med only, neither (14, P5Theme among them), and a theme that declares
 // no extra_width at all (nine).
@@ -540,6 +564,7 @@ func TestChatboxSkinLadderRidesResidency(t *testing.T) {
 
 // TestChatboxSkinLadderProbesNothingPerMessage is the streaming-client contract,
 // stated as a test rather than as a comment.
+//
 // The negative — "this theme has no med skin" — must be answered from state the
 // theme apply already landed, with no lookup that could ever reach the disk or
 // the network. themePage's first line is the themeTex map probe, so a stem that
@@ -575,20 +600,25 @@ func TestChatboxSkinLadderProbesNothingPerMessage(t *testing.T) {
 // FIRING — the state a stock-theme player is in the moment somebody with a long
 // showname speaks, and the only one of the themed gates that reaches the measure,
 // the two variant probes and the skin swap on every frame.
+//
+// The other themed gates leave themeTex empty, so their chatbox is the flat panel
+// and the ladder short-circuits on the first integer test. This one pins all three
+// skins and gives the theme the stock 24 px rung, so the frame really does measure
+// the name and blit a swapped page 200 times.
 func TestDrawCourtroomThemedLadderZeroAlloc(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
 
 	// The two maps the real constructor creates together; stageThemedCourtroom's
 	// chatbox is deliberately unskinned, so it never needed them.
-	a.skin.themeTex = map[string]bool{}
+	a.themeTex = map[string]bool{}
 	a.themePages = map[string]*render.TexturePage{}
 	for _, stem := range []string{themeStemChatbox, chatboxRungMed.texStem(), chatboxRungBig.texStem()} {
 		pinFlatThemeArt(t, a, stem)
 	}
-	a.skin.themeShownameExtra = 24 // the stock AO2 theme's own value
-	a.skin.themeShownameAlign = shownameAlignCenter
-	a.skin.themeLay.valid = false // rebake the rung height into the layout cache
+	a.themeShownameExtra = 24 // the stock AO2 theme's own value
+	a.themeShownameAlign = shownameAlignCenter
+	a.themeLay.valid = false // rebake the rung height into the layout cache
 
 	// The fixture's speaker has a five-letter showname, which fits the stock
 	// theme's 46 px name box with room to spare — the ladder would never run. Give
@@ -596,21 +626,21 @@ func TestDrawCourtroomThemedLadderZeroAlloc(t *testing.T) {
 	// fixture made resident stays exactly as it was) and settle it again.
 	long := msgFor(0, "Witch", "settled line")
 	long.Showname = "Beatrice the Golden Endless Witch"
-	a.link.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: long})
-	a.link.room.SkipToIdle()
+	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: long})
+	a.room.SkipToIdle()
 
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 	draw()
-	if !a.skin.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
+	if !a.themeLay.valid || !a.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
 	// Prove the ladder actually fires on this frame, or the gate passes vacuously.
-	lay := &a.skin.themeLay
+	lay := &a.themeLay
 	if lay.shownameExtraPx() <= 0 {
 		t.Fatalf("the layout baked a %d px rung — the ladder is off", lay.shownameExtraPx())
 	}
-	name := a.link.room.Scene.ShownameText
+	name := a.room.Scene.ShownameText
 	nameBox, _ := chatboxTextRects(mustRect(t, lay, "ao2_chatbox"), lay, 0)
 	snFont, snEmoji := a.themedChatFace(elemShowname, DefaultScalePct, lay, name)
 	if px := a.labelEmojiWidth(snFont, snEmoji, name, ColAccent); px <= nameBox.W {
@@ -646,6 +676,7 @@ func mustPage(t *testing.T, a *App, stem string) *render.TexturePage {
 }
 
 // TestShownameLadderReachesBothDrawSites is the mirror-site guard (4.7e).
+//
 // The live themed chatbox and the video / comic export's themed chatbox draw the
 // same theme's chatbox. If only one of them runs the ladder, a long showname
 // renders on the wide plate on screen and spills off the narrow one in the

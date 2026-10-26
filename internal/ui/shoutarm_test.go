@@ -1,10 +1,19 @@
 package ui
 
 // REGRESSION: HOLD IT / OBJECTION / TAKE THAT fired on the CLICK.
+//
+// Live report, 2026-08-10: "clicking a shout button now plays the interjection
+// immediately". Canon does not: on_hold_it_clicked and its three siblings
 // (courtroom.cpp:6048-6127) only toggle objection_state and bounce the keyboard
 // back to the message. The interjection rides the NEXT message — the MS
 // objection field is assembled from objection_state at :2136-2147 and cleared in
 // reset_ui at :2327.
+//
+// AsyncAO's three surfaces (the classic bar, the themed bar, the four hotkeys)
+// each called sendIC(mod) instead, and sendIC's blankpost guard deliberately
+// lets a shout through with NO text — so one click sent a whole empty message
+// and played the shout on every client in the room.
+//
 // These gates drive the real state and the real packet builder.
 
 import (
@@ -18,13 +27,13 @@ import (
 func TestShoutClickArmsAndSendsNothing(t *testing.T) {
 	a, sent := flipSendApp(t)
 	for _, mod := range []int{protocol.ShoutHoldIt, protocol.ShoutObjection, protocol.ShoutTakeThat, protocol.ShoutCustom} {
-		a.compose.icShout = 0
+		a.icShout = 0
 		a.toggleShout(mod)
 		if len(*sent) != 0 {
 			t.Fatalf("shout %d put %d packet(s) on the wire — clicking a shout must not SEND", mod, len(*sent))
 		}
-		if a.compose.icShout != mod {
-			t.Fatalf("shout %d did not arm: objection_state = %d", mod, a.compose.icShout)
+		if a.icShout != mod {
+			t.Fatalf("shout %d did not arm: objection_state = %d", mod, a.icShout)
 		}
 	}
 }
@@ -57,10 +66,10 @@ func TestShoutDisarmsAfterTheSend(t *testing.T) {
 	a, sent := flipSendApp(t)
 	a.toggleShout(protocol.ShoutTakeThat)
 	a.sendICFresh()
-	if a.compose.icShout != 0 {
-		t.Fatalf("objection_state = %d after the send, want 0 (courtroom.cpp:2327)", a.compose.icShout)
+	if a.icShout != 0 {
+		t.Fatalf("objection_state = %d after the send, want 0 (courtroom.cpp:2327)", a.icShout)
 	}
-	a.compose.icInput = "a second line"
+	a.icInput = "a second line"
 	a.sendICFresh()
 	if msg := lastSentMS(t, a, sent); msg.Objection != 0 {
 		t.Fatalf("the NEXT message still carries shout %d — the arm is stuck", msg.Objection)
@@ -76,12 +85,12 @@ func TestShoutsAreMutuallyExclusiveAndToggleOff(t *testing.T) {
 	a, _ := flipSendApp(t)
 	a.toggleShout(protocol.ShoutHoldIt)
 	a.toggleShout(protocol.ShoutObjection)
-	if a.compose.icShout != protocol.ShoutObjection {
-		t.Fatalf("objection_state = %d, want the newly clicked shout to replace the old one", a.compose.icShout)
+	if a.icShout != protocol.ShoutObjection {
+		t.Fatalf("objection_state = %d, want the newly clicked shout to replace the old one", a.icShout)
 	}
 	a.toggleShout(protocol.ShoutObjection)
-	if a.compose.icShout != 0 {
-		t.Fatalf("clicking the ARMED shout must disarm it, got %d", a.compose.icShout)
+	if a.icShout != 0 {
+		t.Fatalf("clicking the ARMED shout must disarm it, got %d", a.icShout)
 	}
 }
 
@@ -89,13 +98,14 @@ func TestShoutsAreMutuallyExclusiveAndToggleOff(t *testing.T) {
 // same lane as this defect (the realization button, 0fc8f38 item 8): it must
 // keep arming — and now that its neighbour in the same bar arms too, the two
 // have to ride ONE message and clear together.
+//
 // The effects-row half of the realization arm keeps its own gate
 // (TestRealizationArmsTheEffectsRowNotJustTheFlag, icarms_test.go, which owns
 // the roster fixture); this one is about the wire and the reset.
 func TestRealizationStillArmsAlongsideTheShout(t *testing.T) {
 	a, sent := flipSendApp(t)
 	a.toggleRealization()
-	if !a.compose.icRealize {
+	if !a.icRealize {
 		t.Fatal("realization no longer sets its wire flag")
 	}
 	if len(*sent) != 0 {
@@ -109,8 +119,8 @@ func TestRealizationStillArmsAlongsideTheShout(t *testing.T) {
 		t.Fatalf("realization=%v objection=%d — the two arms must ride one message together",
 			msg.Realization, msg.Objection)
 	}
-	if a.compose.icRealize || a.compose.icShout != 0 {
+	if a.icRealize || a.icShout != 0 {
 		t.Fatalf("post-send arms: realize=%v shout=%d, want both cleared (courtroom.cpp:2327-2329)",
-			a.compose.icRealize, a.compose.icShout)
+			a.icRealize, a.icShout)
 	}
 }

@@ -125,12 +125,12 @@ func TestSceneWarmNoMissingnoForFolderOnlySprite(t *testing.T) {
 	glued := local.BaseURL() + "characters/hobo/(a)normal"
 	seedPNGFormat(t, a)
 
-	a.link.room = &courtroom.Courtroom{}
-	a.link.room.Scene.Speaker.Visible = true
-	a.link.room.Scene.Speaker.Active = glued
-	a.link.room.Scene.Speaker.IdleBase = glued
+	a.room = &courtroom.Courtroom{}
+	a.room.Scene.Speaker.Visible = true
+	a.room.Scene.Speaker.Active = glued
+	a.room.Scene.Speaker.IdleBase = glued
 
-	a.sceneWarm.lastDemand = time.Time{}
+	a.sceneWarmLastDemand = time.Time{}
 	a.keepSceneAssetsWarm()
 
 	settleDeadline := time.Now().Add(5 * time.Second)
@@ -176,7 +176,7 @@ func TestHealSpriteLayerFolderOnlySprite(t *testing.T) {
 	layer := &courtroom.SpriteLayer{Visible: true, Active: glued}
 	var askBase string
 	var askAt time.Time
-	a.sceneWarm.healSpriteLayer(&a.env, layer, &askBase, &askAt, time.Now())
+	a.healSpriteLayer(layer, &askBase, &askAt, time.Now())
 
 	settleDeadline := time.Now().Add(5 * time.Second)
 	gotDecode := false
@@ -229,13 +229,13 @@ func TestSceneWarmNoMissingnoForBareOnlySprite(t *testing.T) {
 	// the manifest seeded it — see TestResolveRawFromLocalArchive).
 	seedPNGFormat(t, a)
 
-	a.link.room = &courtroom.Courtroom{}
-	a.link.room.Scene.Speaker.Visible = true
-	a.link.room.Scene.Speaker.Active = prefixed
-	a.link.room.Scene.Speaker.IdleBase = prefixed
+	a.room = &courtroom.Courtroom{}
+	a.room.Scene.Speaker.Visible = true
+	a.room.Scene.Speaker.Active = prefixed
+	a.room.Scene.Speaker.IdleBase = prefixed
 
 	// Throttle open so the warm re-demand actually fires this pass.
-	a.sceneWarm.lastDemand = time.Time{}
+	a.sceneWarmLastDemand = time.Time{}
 	a.keepSceneAssetsWarm()
 
 	// Let the synchronous LocalFetcher pipeline settle: the decode of the resolved
@@ -283,12 +283,12 @@ func TestSceneWarmMarksTrulyMissingSprite(t *testing.T) {
 	prefixed := local.BaseURL() + "characters/ghost/(a)normal"
 	seedPNGFormat(t, a)
 
-	a.link.room = &courtroom.Courtroom{}
-	a.link.room.Scene.Speaker.Visible = true
-	a.link.room.Scene.Speaker.Active = prefixed
-	a.link.room.Scene.Speaker.IdleBase = prefixed
+	a.room = &courtroom.Courtroom{}
+	a.room.Scene.Speaker.Visible = true
+	a.room.Scene.Speaker.Active = prefixed
+	a.room.Scene.Speaker.IdleBase = prefixed
 
-	a.sceneWarm.lastDemand = time.Time{}
+	a.sceneWarmLastDemand = time.Time{}
 	a.keepSceneAssetsWarm()
 
 	// Wait for the Warning (whole chain 404'd) to land, then relay it.

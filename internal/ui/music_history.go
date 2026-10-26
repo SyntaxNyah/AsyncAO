@@ -53,8 +53,8 @@ func (a *App) noteMusicHistory(ev courtroom.Event) {
 		return // server/non-allowlisted song: it still plays, it's just not recorded
 	}
 	by := ev.Name // the MC showname (field 2); may be empty
-	if by == "" && a.link.sess != nil && ev.Int >= 0 && ev.Int < len(a.link.sess.Chars) {
-		by = a.link.sess.Chars[ev.Int].Name // fall back to the character — bounds-checked
+	if by == "" && a.sess != nil && ev.Int >= 0 && ev.Int < len(a.sess.Chars) {
+		by = a.sess.Chars[ev.Int].Name // fall back to the character — bounds-checked
 	}
 	display := song
 	if by != "" {
@@ -67,26 +67,26 @@ func (a *App) noteMusicHistory(ev courtroom.Event) {
 		isURL:   strings.Contains(ev.Text, "://"),
 	}
 	// MRU by raw track: drop a prior copy of the same link, then prepend.
-	for i := range a.jukebox.musicHist {
-		if a.jukebox.musicHist[i].track == ev.Text {
-			a.jukebox.musicHist = append(a.jukebox.musicHist[:i], a.jukebox.musicHist[i+1:]...)
+	for i := range a.musicHist {
+		if a.musicHist[i].track == ev.Text {
+			a.musicHist = append(a.musicHist[:i], a.musicHist[i+1:]...)
 			break
 		}
 	}
-	a.jukebox.musicHist = append(a.jukebox.musicHist, musicHistEntry{})
-	copy(a.jukebox.musicHist[1:], a.jukebox.musicHist) // shift down; newest at index 0
-	a.jukebox.musicHist[0] = e
-	if len(a.jukebox.musicHist) > musicHistoryCap {
-		a.jukebox.musicHist = a.jukebox.musicHist[:musicHistoryCap]
+	a.musicHist = append(a.musicHist, musicHistEntry{})
+	copy(a.musicHist[1:], a.musicHist) // shift down; newest at index 0
+	a.musicHist[0] = e
+	if len(a.musicHist) > musicHistoryCap {
+		a.musicHist = a.musicHist[:musicHistoryCap]
 	}
-	a.jukebox.refreshRecentLabel()
+	a.refreshRecentLabel()
 }
 
 // refreshRecentLabel rebuilds the cached toggle label. Called only when the ring
 // size changes (capture / clear) — never per frame — so the jukebox draw reads a
 // ready string instead of formatting one every frame.
-func (jukebox1 *jukeboxState) refreshRecentLabel() {
-	jukebox1.jukeRecentLbl = fmt.Sprintf("Recently played (%d)", len(jukebox1.musicHist))
+func (a *App) refreshRecentLabel() {
+	a.jukeRecentLbl = fmt.Sprintf("Recently played (%d)", len(a.musicHist))
 }
 
 // drawJukeHistory is the jukebox's "Recently played" top-level view: a back
@@ -94,16 +94,16 @@ func (jukebox1 *jukeboxState) refreshRecentLabel() {
 func (a *App) drawJukeHistory(x, y, wide, bottom int32) {
 	c := a.ctx
 	if c.Button(sdl.Rect{X: x, Y: y, W: 140, H: btnH}, "‹ Playlists") {
-		a.jukebox.jukeShowRecent = false
-		a.jukebox.jukeHistScroll = 0
+		a.jukeShowRecent = false
+		a.jukeHistScroll = 0
 		return
 	}
 	c.Label(x+150, y+5, "Songs played here this session — Save a link to keep it in your library.", ColTextDim)
-	if len(a.jukebox.musicHist) > 0 {
+	if len(a.musicHist) > 0 {
 		if c.Button(sdl.Rect{X: x + wide - 100, Y: y, W: 100, H: btnH}, "Clear list") {
-			a.jukebox.musicHist = a.jukebox.musicHist[:0]
-			a.jukebox.jukeHistScroll = 0
-			a.jukebox.refreshRecentLabel()
+			a.musicHist = a.musicHist[:0]
+			a.jukeHistScroll = 0
+			a.refreshRecentLabel()
 			return
 		}
 	}
@@ -113,22 +113,22 @@ func (a *App) drawJukeHistory(x, y, wide, bottom int32) {
 	listTop := y
 	listH := bottom - listTop
 	if c.hovering(sdl.Rect{X: x, Y: listTop, W: wide, H: listH}) {
-		a.jukebox.jukeHistScroll -= c.wheelY * scrollStepPx
+		a.jukeHistScroll -= c.wheelY * scrollStepPx
 	}
 	track := sdl.Rect{X: x + wide - scrollBarW, Y: listTop, W: scrollBarW, H: listH}
-	a.jukebox.jukeHistScroll = c.VScrollbar("jukehistscroll", track, a.jukebox.jukeHistScroll, int32(len(a.jukebox.musicHist))*lineH, listH)
-	rowY := listTop - a.jukebox.jukeHistScroll
+	a.jukeHistScroll = c.VScrollbar("jukehistscroll", track, a.jukeHistScroll, int32(len(a.musicHist))*lineH, listH)
+	rowY := listTop - a.jukeHistScroll
 	rowW := wide - scrollBarW - 6
-	for i := range a.jukebox.musicHist {
+	for i := range a.musicHist {
 		if rowY > listTop+listH-lineH {
 			break
 		}
 		if rowY >= listTop-lineH {
-			a.drawJukeHistRow(a.jukebox.musicHist[i], sdl.Rect{X: x, Y: rowY, W: rowW, H: lineH - 3})
+			a.drawJukeHistRow(a.musicHist[i], sdl.Rect{X: x, Y: rowY, W: rowW, H: lineH - 3})
 		}
 		rowY += lineH
 	}
-	if len(a.jukebox.musicHist) == 0 {
+	if len(a.musicHist) == 0 {
 		c.Label(x, listTop+6, "Nothing yet — when someone plays a song here, it shows up so you can save the link.", ColTextDim)
 	}
 }
@@ -149,7 +149,7 @@ func (a *App) drawJukeHistRow(e musicHistEntry, r sdl.Rect) {
 		}
 		bx -= 58
 		if c.Button(sdl.Rect{X: bx, Y: r.Y, W: 54, H: r.H}, "Save") {
-			if a.jukebox.juke != nil && a.jukebox.juke.QuickAdd(jukeboxHistoryPlaylist, e.name, e.track) {
+			if a.juke != nil && a.juke.QuickAdd(jukeboxHistoryPlaylist, e.name, e.track) {
 				a.jukeWarn(fmt.Sprintf("Saved to %q: %s", jukeboxHistoryPlaylist, e.name))
 			} else {
 				a.jukeWarn("Already saved (or at the link cap).")
@@ -181,13 +181,13 @@ const jukeHistoryDomainOther = "other"
 // history" playlist: entries bucketed under a header per domain, domains sorted.
 // Memoized against (playlist, revision); the per-frame draw just walks the
 // cached slice, so the grouping costs nothing on the render loop.
-func (jukebox1 *jukeboxState) refreshJukeGroups(pl int, entries []config.JukeboxEntry) {
-	key := jukeGroupCacheKey{pl: pl, rev: jukebox1.jukeCacheRev}
-	if key == jukebox1.jukeGroupKey && jukebox1.jukeGroupRows != nil {
+func (a *App) refreshJukeGroups(pl int, entries []config.JukeboxEntry) {
+	key := jukeGroupCacheKey{pl: pl, rev: a.jukeCacheRev}
+	if key == a.jukeGroupKey && a.jukeGroupRows != nil {
 		return
 	}
-	jukebox1.jukeGroupKey = key
-	jukebox1.jukeGroupRows = jukebox1.jukeGroupRows[:0]
+	a.jukeGroupKey = key
+	a.jukeGroupRows = a.jukeGroupRows[:0]
 
 	type de struct {
 		domain string
@@ -195,7 +195,7 @@ func (jukebox1 *jukeboxState) refreshJukeGroups(pl int, entries []config.Jukebox
 	}
 	pairs := make([]de, len(entries))
 	for i, e := range entries {
-		d := jukebox1.env.d.Prefs.Load().MusicURLDomain(e.URL)
+		d := a.d.Prefs.Load().MusicURLDomain(e.URL)
 		if d == "" {
 			d = jukeHistoryDomainOther
 		}
@@ -208,9 +208,9 @@ func (jukebox1 *jukeboxState) refreshJukeGroups(pl int, entries []config.Jukebox
 	for i, p := range pairs {
 		if i == 0 || p.domain != cur {
 			cur = p.domain
-			jukebox1.jukeGroupRows = append(jukebox1.jukeGroupRows, jukeGroupRow{domain: cur})
+			a.jukeGroupRows = append(a.jukeGroupRows, jukeGroupRow{domain: cur})
 		}
-		jukebox1.jukeGroupRows = append(jukebox1.jukeGroupRows, jukeGroupRow{entry: p.idx})
+		a.jukeGroupRows = append(a.jukeGroupRows, jukeGroupRow{entry: p.idx})
 	}
 }
 

@@ -3,9 +3,23 @@ package ui
 // Per-field undo/redo for the kit's text fields (playtest: the fields did not
 // behave like native ones — no Ctrl+Z among other gaps).
 // Every field gets a bounded history keyed by its id. Two things feed it:
+//
+//   1. the field's own edits (typing, backspace, paste, selection replace),
+//      coalesced so one Ctrl+Z undoes a burst, not a keystroke;
+//   2. OUT-OF-BAND rewrites — the own-echo IC clear, a chat command clearing
+//      the box, a palette command template, a macro eating the draft — which
+//      textField detects as "the value changed since my last draw". That
+//      detection runs even while the field is unfocused (the next draw
+//      records whatever changed in between), which is what makes the eaten
+//      IC line recoverable: press Ctrl+Z and the send comes back.
+//
+// This replaces the old one-slot stashICUndo/stashOOCUndo swap: same
+// recovery, native semantics (a real history + redo), every field covered.
+//
 // Bounds (hard rule 4): fieldHistFieldsCap histories × fieldUndoDepth
 // snapshots each, LRU-evicted; histories are wiped on tab switch / fresh
 // session so a draft can never resurface across sessions (the multi-tab
+// isolation rule).
 
 import (
 	"time"

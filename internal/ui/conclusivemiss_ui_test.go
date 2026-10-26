@@ -1,9 +1,16 @@
 package ui
 
 // The UI half of the conclusive-miss brake.
+//
+// The manager's own suite (assets/conclusivemiss_test.go) proves the memory is
+// recorded and that every Prefetch entry point consults it. These prove the two
+// things only this package can answer: that the DEMAND CADENCE stops, and that a
+// cell which can never fill stops holding the frame pump awake.
+//
 // Both halves matter and they failed together in the field: a character roster
 // where most entries ship no char_icon and no emotions/button<N>_off art sent a
 // 404 every couple of seconds per visible cell, indefinitely, and the client sank
+// under the pool jobs and disk probes behind them.
 
 import (
 	"path/filepath"
@@ -118,18 +125,18 @@ func TestDemandAssetStopsAskingForAConclusiveMiss(t *testing.T) {
 	local := wireEmptyPackManager(t, a)
 	a.installAssetOrigin(local.BaseURL())
 
-	base := a.link.urls.CharIcon("gold_ship")
+	base := a.urls.CharIcon("gold_ship")
 	var stamps []time.Time
-	a.budget.iconAskBudget = charIconAskPerFrame
+	a.iconAskBudget = charIconAskPerFrame
 
 	// The FIRST pass must really ask — otherwise the "stopped asking" assertion
 	// below is measuring a demand that never started.
 	if !a.demandAsset(&stamps, 1, 0, base, assets.AssetTypeCharIcon) {
 		t.Fatal("the first demand for an unprobed base reported the art can never arrive — nothing has been probed yet")
 	}
-	if a.budget.iconAskBudget != charIconAskPerFrame-1 {
+	if a.iconAskBudget != charIconAskPerFrame-1 {
 		t.Fatalf("the first demand spent %d budget slots, want 1 — it never reached Prefetch, so this gate is vacuous",
-			charIconAskPerFrame-a.budget.iconAskBudget)
+			charIconAskPerFrame-a.iconAskBudget)
 	}
 
 	settleMissUI(t, a, base, assets.AssetTypeCharIcon)
@@ -137,14 +144,14 @@ func TestDemandAssetStopsAskingForAConclusiveMiss(t *testing.T) {
 	// Open the retry window and refill the budget: neither may be what stops the
 	// next ask. Only the miss gate may.
 	stamps[0] = time.Time{}
-	a.budget.iconAskBudget = charIconAskPerFrame
+	a.iconAskBudget = charIconAskPerFrame
 	if a.demandAsset(&stamps, 1, 0, base, assets.AssetTypeCharIcon) {
 		t.Error("demandAsset reported a conclusively-absent icon as still arriving — callers use that answer to keep " +
 			"the frame pump awake for art that is never coming")
 	}
-	if a.budget.iconAskBudget != charIconAskPerFrame {
+	if a.iconAskBudget != charIconAskPerFrame {
 		t.Errorf("a conclusively-absent icon still spent %d budget slot(s) — the 2 s re-ask cadence is still running",
-			charIconAskPerFrame-a.budget.iconAskBudget)
+			charIconAskPerFrame-a.iconAskBudget)
 	}
 	// And it stays stopped: the field symptom was the REPEAT, so one silent pass
 	// proves nothing.
@@ -152,21 +159,21 @@ func TestDemandAssetStopsAskingForAConclusiveMiss(t *testing.T) {
 		stamps[0] = time.Time{}
 		a.demandAsset(&stamps, 1, 0, base, assets.AssetTypeCharIcon)
 	}
-	if a.budget.iconAskBudget != charIconAskPerFrame {
+	if a.iconAskBudget != charIconAskPerFrame {
 		t.Errorf("20 further passes over an absent icon spent %d budget slot(s), want 0",
-			charIconAskPerFrame-a.budget.iconAskBudget)
+			charIconAskPerFrame-a.iconAskBudget)
 	}
 
 	// The negative control: the gate keys on the BASE, so a sibling asset of the
 	// same character is untouched by its neighbour's verdict. Without this, a gate
 	// that simply stopped demanding everything would pass.
-	sibling := a.link.urls.EmoteButton("gold_ship", 1, false)
-	a.budget.iconAskBudget = charIconAskPerFrame
+	sibling := a.urls.EmoteButton("gold_ship", 1, false)
+	a.iconAskBudget = charIconAskPerFrame
 	var siblingStamps []time.Time
 	if !a.demandAsset(&siblingStamps, 1, 0, sibling, assets.AssetTypeEmoteButton) {
 		t.Fatal("an unprobed sibling base was reported absent — one asset's verdict is being applied to another")
 	}
-	if a.budget.iconAskBudget != charIconAskPerFrame-1 {
+	if a.iconAskBudget != charIconAskPerFrame-1 {
 		t.Error("an unprobed sibling base was never asked for — the gate is suppressing demand it has no verdict on")
 	}
 }
@@ -181,9 +188,9 @@ func TestRetryMissingAssetsResumesTheDemand(t *testing.T) {
 	local := wireEmptyPackManager(t, a)
 	a.installAssetOrigin(local.BaseURL())
 
-	base := a.link.urls.CharIcon("mejiro_mcqueen")
+	base := a.urls.CharIcon("mejiro_mcqueen")
 	var stamps []time.Time
-	a.budget.iconAskBudget = charIconAskPerFrame
+	a.iconAskBudget = charIconAskPerFrame
 	a.demandAsset(&stamps, 1, 0, base, assets.AssetTypeCharIcon)
 	settleMissUI(t, a, base, assets.AssetTypeCharIcon)
 
@@ -196,16 +203,23 @@ func TestRetryMissingAssetsResumesTheDemand(t *testing.T) {
 	}
 
 	stamps[0] = time.Time{}
-	a.budget.iconAskBudget = charIconAskPerFrame
+	a.iconAskBudget = charIconAskPerFrame
 	if !a.demandAsset(&stamps, 1, 0, base, assets.AssetTypeCharIcon) {
 		t.Error("after the flush the icon is still reported as never arriving")
 	}
-	if a.budget.iconAskBudget != charIconAskPerFrame-1 {
+	if a.iconAskBudget != charIconAskPerFrame-1 {
 		t.Error("after the flush the icon was still not asked for — the button cannot recover a repacked server")
 	}
 }
 
 // TestBlankEmoteCellDoesNotHoldTheFramePumpAwake is the "sub 10fps" half.
+//
+// A cell with neither emotions/button<N> art nor a char_icon draws a permanently
+// grey box. It used to set frameDemandPending unconditionally on blankness, which
+// tells NextWakeDelay to keep re-rendering at the demand cadence — so an idle
+// client with such a grid on screen never settled, forever, for art that could not
+// arrive. Now the flag rides demandAsset's answer.
+//
 // Drives the real drawEmoteImageButton rather than reasoning about the flag,
 // because the bug was in the RELATIONSHIP between the two.
 func TestBlankEmoteCellDoesNotHoldTheFramePumpAwake(t *testing.T) {
@@ -215,18 +229,18 @@ func TestBlankEmoteCellDoesNotHoldTheFramePumpAwake(t *testing.T) {
 	a.installAssetOrigin(local.BaseURL())
 
 	const me = "silence_suzuka"
-	a.emotepick.emotes = make([]courtroom.Emote, 1)
+	a.emotes = make([]courtroom.Emote, 1)
 	btn := sdl.Rect{X: 0, Y: 0, W: 48, H: 48}
-	buttonBase := a.link.urls.EmoteButton(me, 1, false)
-	iconBase := a.link.urls.CharIcon(me)
+	buttonBase := a.urls.EmoteButton(me, 1, false)
+	iconBase := a.urls.CharIcon(me)
 
 	// Frame 1 must FLAG: nothing has been probed, so the art may still arrive and
 	// the pump has to stay awake to receive it. Without this the gate would pass
 	// against a draw that never flagged anything.
-	a.budget.iconAskBudget = charIconAskPerFrame
-	a.frame.frameDemandPending = false
+	a.iconAskBudget = charIconAskPerFrame
+	a.frameDemandPending = false
 	a.drawEmoteImageButton(btn, me, 0, false, "normal")
-	if !a.frame.frameDemandPending {
+	if !a.frameDemandPending {
 		t.Fatal("a blank cell whose art is still unprobed did not hold the pump awake — it would sleep through " +
 			"the arriving texture, and the gate below would be vacuous")
 	}
@@ -240,8 +254,8 @@ func TestBlankEmoteCellDoesNotHoldTheFramePumpAwake(t *testing.T) {
 	settled := false
 	deadline := time.Now().Add(missGateSettle)
 	for time.Now().Before(deadline) && !settled {
-		a.budget.iconAskBudget = charIconAskPerFrame
-		a.emotepick.emoteAsk, a.rcache.emoteIconAsk = nil, nil // reopen the retry window
+		a.iconAskBudget = charIconAskPerFrame
+		a.emoteAsk, a.emoteIconAsk = nil, nil // reopen the retry window
 		a.drawEmoteImageButton(btn, me, 0, false, "normal")
 		drainManager(a)
 		if a.d.Manager.IsConclusiveMiss(buttonBase, assets.AssetTypeEmoteButton) &&
@@ -258,11 +272,11 @@ func TestBlankEmoteCellDoesNotHoldTheFramePumpAwake(t *testing.T) {
 
 	// The permanently-grey frame: still blank, but nothing can change that, so the
 	// pump is free to sleep.
-	a.budget.iconAskBudget = charIconAskPerFrame
-	a.emotepick.emoteAsk, a.rcache.emoteIconAsk = nil, nil
-	a.frame.frameDemandPending = false
+	a.iconAskBudget = charIconAskPerFrame
+	a.emoteAsk, a.emoteIconAsk = nil, nil
+	a.frameDemandPending = false
 	a.drawEmoteImageButton(btn, me, 0, false, "normal")
-	if a.frame.frameDemandPending {
+	if a.frameDemandPending {
 		t.Error("a permanently-blank emote cell still held the frame pump awake — the client stays pinned at the " +
 			"demand cadence, re-rendering for art that can never arrive")
 	}

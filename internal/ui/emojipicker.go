@@ -11,6 +11,13 @@ import "github.com/veandco/go-sdl2/sdl"
 
 // icEmojiSet is a curated set of common reaction/chat emojis (emojiPickerCols per row).
 // Two coverage rules so none render as tofu boxes:
+//  1. BMP symbol emoji (U+2xxx: ✨ ⭐ ❓ ❗ ✅ ❌ …) carry a trailing VARIATION SELECTOR-16
+//     (U+FE0F). Without it they're text-presentation code points and never reach the
+//     colour-emoji font (isEmojiBase only auto-promotes the supplementary plane) — they'd
+//     box. The selector is invisible; ❤️ ✌️ ⚖️ already have it.
+//  2. No bleeding-edge code points: the very newest faces (e.g. 🫡 🫠, Unicode 14/2021) are
+//     absent from emoji fonts that predate them, and a streaming client can't ship its own
+//     coloured glyphs, so the set stays within widely-shipped (≤ Unicode 11) pictographs.
 var icEmojiSet = []string{
 	"😀", "😂", "🙂", "😉", "😍", "😎", "😭", "😡",
 	"👍", "👎", "👏", "🙏", "💪", "🤝", "✌️", "👋",
@@ -32,10 +39,10 @@ const (
 // picker is open). Stores its rect so the overlay can anchor above it.
 func (a *App) drawEmojiBarButton(btn sdl.Rect) bool {
 	c := a.ctx
-	a.emoji.emojiBtnRect = btn
+	a.emojiBtnRect = btn
 	c.Fill(btn, ColPanel)
 	hover := pointIn(c.mouseX, c.mouseY, btn)
-	if a.emoji.showEmojiPicker || hover {
+	if a.showEmojiPicker || hover {
 		c.Border(btn, ColAccent)
 	} else {
 		c.Border(btn, ColTextDim)
@@ -55,7 +62,7 @@ func (a *App) drawEmojiBarButton(btn sdl.Rect) bool {
 // inserts the clicked emoji. Called once per frame after the courtroom (covers both
 // layouts). No-op when closed. A click outside the panel and the button closes it.
 func (a *App) drawEmojiPicker(w, h int32) {
-	if !a.emoji.showEmojiPicker {
+	if !a.showEmojiPicker {
 		return
 	}
 	c := a.ctx
@@ -63,16 +70,16 @@ func (a *App) drawEmojiPicker(w, h int32) {
 	rows := int32((len(icEmojiSet) + emojiPickerCols - 1) / emojiPickerCols)
 	pw := int32(emojiPickerCols*emojiCellPx) + 8
 	ph := rows*emojiCellPx + 8
-	px := a.emoji.emojiBtnRect.X
+	px := a.emojiBtnRect.X
 	if px+pw > w-pad {
 		px = w - pad - pw
 	}
 	if px < pad {
 		px = pad
 	}
-	py := a.emoji.emojiBtnRect.Y - ph - 4
+	py := a.emojiBtnRect.Y - ph - 4
 	if py < pad {
-		py = a.emoji.emojiBtnRect.Y + a.emoji.emojiBtnRect.H + 4 // no room above → drop below the bar
+		py = a.emojiBtnRect.Y + a.emojiBtnRect.H + 4 // no room above → drop below the bar
 	}
 	panel := sdl.Rect{X: px, Y: py, W: pw, H: ph}
 	c.Fill(panel, ColBackground)
@@ -89,15 +96,15 @@ func (a *App) drawEmojiPicker(w, h int32) {
 		}
 		a.labelEmoji(c.font, c.EmojiFont(emojiPickerPct), cx+5, cy+4, emojiCellPx, e, ColText)
 	}
-	if c.clicked && !pointIn(c.mouseX, c.mouseY, panel) && !pointIn(c.mouseX, c.mouseY, a.emoji.emojiBtnRect) {
-		a.emoji.showEmojiPicker = false
+	if c.clicked && !pointIn(c.mouseX, c.mouseY, panel) && !pointIn(c.mouseX, c.mouseY, a.emojiBtnRect) {
+		a.showEmojiPicker = false
 	}
 }
 
 // insertICEmoji appends an emoji to the IC input and re-focuses it; on the focus change
 // the kit puts the caret at the end, right after the inserted emoji.
 func (a *App) insertICEmoji(emoji string) {
-	a.compose.icInput += emoji
+	a.icInput += emoji
 	a.ctx.FocusField("ic")
 }
 
@@ -107,15 +114,15 @@ func (a *App) insertICEmoji(emoji string) {
 // open-then-close bug). The picker is courtroom-only, so it's force-closed if any other
 // screen / overlay is up, to never strand the fence elsewhere.
 func (a *App) emojiPickerFence(c *Ctx) {
-	courtroomActive := a.screen == ScreenCourtroom && !a.sel.gifExporting && !a.sel.replaying && !a.sel.makerOpen
-	if a.emoji.showEmojiPicker && !courtroomActive {
-		a.emoji.showEmojiPicker = false
+	courtroomActive := a.screen == ScreenCourtroom && !a.gifExporting && !a.replaying && !a.makerOpen
+	if a.showEmojiPicker && !courtroomActive {
+		a.showEmojiPicker = false
 	}
-	if a.emoji.showEmojiPicker {
+	if a.showEmojiPicker {
 		c.modalOn = true
-		a.emoji.emojiFenceOn = true
-	} else if a.emoji.emojiFenceOn {
+		a.emojiFenceOn = true
+	} else if a.emojiFenceOn {
 		c.modalOn = false // picker just closed → release the persistent fence
-		a.emoji.emojiFenceOn = false
+		a.emojiFenceOn = false
 	}
 }

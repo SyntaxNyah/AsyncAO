@@ -5,9 +5,13 @@ package ui
 // at higher text zoom it landed ON the OOC/IPID line — so every single-player
 // action now lives in one anchored popup, opened by the row's "…" button or by
 // right-clicking the row (the shortcut; the button keeps it discoverable).
+// Rows go back to clean two-lane height. The item list is data-driven so
+// future single-target actions (mod/CM commands) slot in as new kinds.
+//
 // Input discipline: while open the menu holds the kit's modal fence (modalOn),
 // so everything underneath — rows, lists, wheel — is pointer-blind on the
 // whole screen; the menu itself hit-tests with raw pointIn, exactly like the
+// emoji picker and the open-dropdown list. Esc closes via closeTopOverlay.
 
 import (
 	"github.com/veandco/go-sdl2/sdl"
@@ -56,7 +60,7 @@ func hasRosterMenu(p *areaPlayer) bool {
 // roster can refresh/reorder while the menu is open, so acting through a live
 // index could hit the wrong player.
 func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
-	items := a.roster.rosterMenuItems[:0]
+	items := a.rosterMenuItems[:0]
 	fk := p.showname
 	if fk == "" {
 		fk = p.name
@@ -64,10 +68,10 @@ func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
 	// Message (PM): anything that targets one player belongs here (playtest) —
 	// no friending required. Spectators are excluded: DM threads key on the
 	// character name, and "Spectator" is ambiguous across clients.
-	if !isSpec && p.name != "" && a.link.sess != nil {
+	if !isSpec && p.name != "" && a.sess != nil {
 		items = append(items, rosterMenuItem{rosterActMessage, "Message (PM)"})
 	}
-	if !a.classic.panelHidden(rosterBtnPair) {
+	if !a.panelHidden(rosterBtnPair) {
 		switch {
 		case p.uid != "":
 			items = append(items, rosterMenuItem{rosterActPair, "Pair"})
@@ -77,46 +81,46 @@ func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
 	}
 	// Follow rides the header's Follow toggle exactly like the old per-row
 	// button (OFF default: no follow affordances anywhere).
-	if a.roster.followShow && p.uid != "" {
+	if a.followShow && p.uid != "" {
 		fl := "Follow"
-		if a.roster.followUID == p.uid {
+		if a.followUID == p.uid {
 			fl = "Unfollow"
 		}
 		items = append(items, rosterMenuItem{rosterActFollow, fl})
 	}
-	if p.uid != "" && !a.classic.panelHidden(rosterBtnUID) {
+	if p.uid != "" && !a.panelHidden(rosterBtnUID) {
 		items = append(items, rosterMenuItem{rosterActCopyUID, "Copy UID"})
 	}
 	// IPID is mod-only server data — its presence IS the authorization.
-	if p.ipid != "" && !a.classic.panelHidden(rosterBtnIPID) {
+	if p.ipid != "" && !a.panelHidden(rosterBtnIPID) {
 		items = append(items, rosterMenuItem{rosterActCopyIPID, "Copy IPID"})
 	}
-	if fk != "" && a.srvMeta.serverKey != "" && a.d.Prefs.Load().ShowFriendButton {
+	if fk != "" && a.serverKey != "" && a.d.Prefs.Load().ShowFriendButton {
 		fl := "+ Friend"
-		if isF, _, _ := a.d.Prefs.Load().ServerFriendInfo(a.srvMeta.serverKey, fk); isF {
+		if isF, _, _ := a.d.Prefs.Load().ServerFriendInfo(a.serverKey, fk); isF {
 			fl = "Unfriend"
 		}
 		items = append(items, rosterMenuItem{rosterActFriend, fl})
 	}
-	if fk != "" && a.srvMeta.serverKey != "" && !a.classic.panelHidden(rosterBtnIgnore) {
+	if fk != "" && a.serverKey != "" && !a.panelHidden(rosterBtnIgnore) {
 		il := "Ignore"
-		if a.d.Prefs.Load().ServerIgnoreMatch(a.srvMeta.serverKey, fk) {
+		if a.d.Prefs.Load().ServerIgnoreMatch(a.serverKey, fk) {
 			il = "Unignore"
 		}
 		items = append(items, rosterMenuItem{rosterActIgnore, il})
 	}
-	if _, ok := a.profileFor(p, isMe); ok && !a.classic.panelHidden(rosterBtnProfile) {
+	if _, ok := a.profileFor(p, isMe); ok && !a.panelHidden(rosterBtnProfile) {
 		items = append(items, rosterMenuItem{rosterActProfile, "Profile"})
 	}
-	a.roster.rosterMenuItems = items
+	a.rosterMenuItems = items
 	if len(items) == 0 {
 		return // nothing applicable (every action hidden in the UI… popup)
 	}
-	a.roster.rosterMenuP = *p
-	a.roster.rosterMenuMe = isMe
-	a.roster.rosterMenuAt = at
-	a.roster.rosterMenuTab = a.activeTab
-	a.roster.rosterMenuOpen = true
+	a.rosterMenuP = *p
+	a.rosterMenuMe = isMe
+	a.rosterMenuAt = at
+	a.rosterMenuTab = a.activeTab
+	a.rosterMenuOpen = true
 }
 
 // rosterMenuFence holds/releases the kit's modal fence for the open menu, and
@@ -124,17 +128,17 @@ func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
 // — the snapshot must never act on another session). Same set/RELEASE
 // discipline as emojiPickerFence: an un-released modalOn freezes the UI.
 func (a *App) rosterMenuFence(c *Ctx) {
-	live := a.screen == ScreenCourtroom && !a.sel.gifExporting && !a.sel.replaying &&
-		!a.sel.makerOpen && a.activeTab == a.roster.rosterMenuTab
-	if a.roster.rosterMenuOpen && !live {
-		a.roster.rosterMenuOpen = false
+	live := a.screen == ScreenCourtroom && !a.gifExporting && !a.replaying &&
+		!a.makerOpen && a.activeTab == a.rosterMenuTab
+	if a.rosterMenuOpen && !live {
+		a.rosterMenuOpen = false
 	}
-	if a.roster.rosterMenuOpen {
+	if a.rosterMenuOpen {
 		c.modalOn = true
-		a.roster.rosterMenuFenceOn = true
-	} else if a.roster.rosterMenuFenceOn {
+		a.rosterMenuFenceOn = true
+	} else if a.rosterMenuFenceOn {
 		c.modalOn = false // menu just closed → release the persistent fence
-		a.roster.rosterMenuFenceOn = false
+		a.rosterMenuFenceOn = false
 	}
 }
 
@@ -142,14 +146,14 @@ func (a *App) rosterMenuFence(c *Ctx) {
 func (a *App) rosterMenuRect(w, h int32) sdl.Rect {
 	c := a.ctx
 	mw := rosterMenuMinW
-	for _, it := range a.roster.rosterMenuItems {
+	for _, it := range a.rosterMenuItems {
 		if lw := c.TextWidth(it.label) + 2*rosterMenuPadX; lw > mw {
 			mw = lw
 		}
 	}
-	mh := int32(len(a.roster.rosterMenuItems))*rosterMenuItemH + 8
-	x := clampI32(a.roster.rosterMenuAt.X, pad, maxI32(pad, w-mw-pad))
-	y := clampI32(a.roster.rosterMenuAt.Y, pad, maxI32(pad, h-mh-pad))
+	mh := int32(len(a.rosterMenuItems))*rosterMenuItemH + 8
+	x := clampI32(a.rosterMenuAt.X, pad, maxI32(pad, w-mw-pad))
+	y := clampI32(a.rosterMenuAt.Y, pad, maxI32(pad, h-mh-pad))
 	return sdl.Rect{X: x, Y: y, W: mw, H: mh}
 }
 
@@ -157,7 +161,7 @@ func (a *App) rosterMenuRect(w, h int32) sdl.Rect {
 // pointIn — the modal fence blanks hovering() everywhere, including here).
 // Any item click acts on the snapshot and closes; a click elsewhere closes.
 func (a *App) drawRosterMenu(w, h int32) {
-	if !a.roster.rosterMenuOpen {
+	if !a.rosterMenuOpen {
 		return
 	}
 	c := a.ctx
@@ -165,14 +169,14 @@ func (a *App) drawRosterMenu(w, h int32) {
 	c.Fill(panel, ColBackground)
 	c.Border(panel, ColAccent)
 	y := panel.Y + 4
-	for i := range a.roster.rosterMenuItems {
-		it := &a.roster.rosterMenuItems[i]
+	for i := range a.rosterMenuItems {
+		it := &a.rosterMenuItems[i]
 		row := sdl.Rect{X: panel.X + 2, Y: y, W: panel.W - 4, H: rosterMenuItemH - 2}
 		if pointIn(c.mouseX, c.mouseY, row) {
 			c.Fill(row, ColPanelHi)
 			if c.clicked {
 				a.rosterMenuAct(it.kind)
-				a.roster.rosterMenuOpen = false
+				a.rosterMenuOpen = false
 				c.clicked = false
 				return
 			}
@@ -183,7 +187,7 @@ func (a *App) drawRosterMenu(w, h int32) {
 	// Click-away (or a fresh right-click) closes; the fence already kept the
 	// press from reaching anything underneath.
 	if (c.clicked || c.rightClicked) && !pointIn(c.mouseX, c.mouseY, panel) {
-		a.roster.rosterMenuOpen = false
+		a.rosterMenuOpen = false
 		c.clicked = false
 		c.rightClicked = false
 	}
@@ -191,7 +195,7 @@ func (a *App) drawRosterMenu(w, h int32) {
 
 // rosterMenuAct performs one menu action against the opened row's snapshot.
 func (a *App) rosterMenuAct(kind rosterMenuKind) {
-	p := &a.roster.rosterMenuP
+	p := &a.rosterMenuP
 	fk := p.showname
 	if fk == "" {
 		fk = p.name
@@ -203,10 +207,10 @@ func (a *App) rosterMenuAct(kind rosterMenuKind) {
 		// (threads key by character name; sendDirectMessage resolves the live
 		// UID per send). Works for non-AsyncAO players too — it rides the
 		// server's /pm, they just reply through OOC.
-		a.msgs.showMessages = true
-		a.msgs.msgSel = p.name
-		a.msgs.msgSelGroup = 0
-		a.msgs.msgGroupManage = false
+		a.showMessages = true
+		a.msgSel = p.name
+		a.msgSelGroup = 0
+		a.msgGroupManage = false
 		a.ctx.FocusField("msgcompose")
 	case rosterActPair:
 		a.queueOOCLines([]string{"/pair " + p.uid}) // we have the UID — no popup needed
@@ -229,7 +233,7 @@ func (a *App) rosterMenuAct(kind rosterMenuKind) {
 	case rosterActIgnore:
 		a.toggleServerIgnore(fk)
 	case rosterActProfile:
-		if prof, ok := a.profileFor(p, a.roster.rosterMenuMe); ok {
+		if prof, ok := a.profileFor(p, a.rosterMenuMe); ok {
 			a.openProfileCard(prof, display)
 		}
 	}

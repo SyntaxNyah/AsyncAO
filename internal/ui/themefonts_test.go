@@ -95,6 +95,7 @@ func TestThemeFontPxIsQtsConversion(t *testing.T) {
 // resolved back to a face at UIFontSize×pct/100, which rounds DOWN — so a percent
 // that is merely close reopens a pixel short, and the two truncations compounded
 // into a 7 px face for a declared 8 pt.
+//
 // It asserts the ROUND TRIP rather than a magic percent: whatever the scale is,
 // asking for P points must reopen at exactly themeFontPx(P).
 func TestThemeFontPctRoundTripsToThePixelSize(t *testing.T) {
@@ -124,16 +125,16 @@ func TestElemPctFolds(t *testing.T) {
 		{"clamped at the ceiling", 400, 250, themeFontMaxPct},
 		{"clamped at the floor", 25, 50, themeFontMinPct},
 	} {
-		a.skin.themeFonts = themeFontTable{}
-		a.skin.themeFonts.e[elemMusicList].pct = tc.themePct
+		a.themeFonts = themeFontTable{}
+		a.themeFonts.e[elemMusicList].pct = tc.themePct
 		if got := a.elemPct(elemMusicList, tc.userPct); got != tc.want {
 			t.Errorf("%s: elemPct(theme=%d, user=%d) = %d, want %d",
 				tc.name, tc.themePct, tc.userPct, got, tc.want)
 		}
 	}
 	// A dressed element must NOT leak into its neighbours.
-	a.skin.themeFonts = themeFontTable{}
-	a.skin.themeFonts.e[elemICChatlog].pct = 200
+	a.themeFonts = themeFontTable{}
+	a.themeFonts.e[elemICChatlog].pct = 200
 	if got := a.elemPct(elemServerChatlog, 100); got != 100 {
 		t.Errorf("server_chatlog picked up ic_chatlog's size: %d", got)
 	}
@@ -144,11 +145,12 @@ func TestElemPctFolds(t *testing.T) {
 // build time, but its FACE was resolved at the theme's declared point size with no
 // canvas factor at all — so on any fit that is not exactly 1:1 (Letterbox /
 // Stretch / Crop / Custom, or Native in a window narrower than the design canvas)
+// the box shrank and the glyphs did not. It was the only themed text surface that
 // never got the fold the chatbox children have had since #21.
 func TestMusicNamePctFoldsTheCanvas(t *testing.T) {
 	a := testTabApp(t)
-	a.skin.themeFonts = themeFontTable{}
-	a.skin.themeFonts.e[elemMusicName].pct = 100
+	a.themeFonts = themeFontTable{}
+	a.themeFonts.e[elemMusicName].pct = 100
 
 	full := &themeLayoutCache{textPct: DefaultScalePct} // 1:1 canvas
 	half := &themeLayoutCache{textPct: 50}              // the canvas at half size
@@ -170,7 +172,7 @@ func TestMusicNamePctFoldsTheCanvas(t *testing.T) {
 // deliberate, not an oversight.
 func TestElemLabelFontAtPctKeepsTheUndressedContract(t *testing.T) {
 	a := testTabApp(t)
-	a.skin.themeFonts = themeFontTable{}
+	a.themeFonts = themeFontTable{}
 	for _, pct := range []int{50, 100, 200} {
 		if got := a.elemLabelFontAtPct(elemMusicName, pct); got != a.ctx.font {
 			t.Errorf("undressed at %d%%: got %p, want the chrome face %p", pct, got, a.ctx.font)
@@ -315,7 +317,7 @@ func TestThemeFontsSuppressedByUserOverride(t *testing.T) {
 			res.fontTable.e[elemICChatlog] = themeElemFont{pct: 150, face: 1, bold: true}
 			res.faceData = [][]byte{{0x00}}
 			a.landThemeFonts(res)
-			got := a.skin.themeFonts.e[elemICChatlog]
+			got := a.themeFonts.e[elemICChatlog]
 			if got.face != 0 {
 				t.Errorf("face = %d, want 0 (the user's font wins the FAMILY)", got.face)
 			}
@@ -343,8 +345,8 @@ func TestThemeFontsOffRestoresDefaults(t *testing.T) {
 	}
 	a.landThemeFonts(res)
 	for el := themeFontElem(0); el < themeFontElemCount; el++ {
-		if a.skin.themeFonts.e[el].dressed() {
-			t.Errorf("element %d still dressed with the setting off: %+v", el, a.skin.themeFonts.e[el])
+		if a.themeFonts.e[el].dressed() {
+			t.Errorf("element %d still dressed with the setting off: %+v", el, a.themeFonts.e[el])
 		}
 		if got := a.elemPct(el, 123); got != 123 {
 			t.Errorf("element %d elemPct = %d, want the user zoom 123 unchanged", el, got)
@@ -366,28 +368,28 @@ func TestThemeFontsOffRestoresDefaults(t *testing.T) {
 func TestWrapCachesKeyOnResolvedPct(t *testing.T) {
 	a := testTabApp(t)
 	a.logPct, a.oocPct, a.areaPct = DefaultScalePct, DefaultScalePct, DefaultScalePct
-	a.chatlog.icLog = append(a.chatlog.icLog, icEntry{text: "Objection! That contradicts the autopsy report."})
-	a.chatlog.icLogSeq++
-	a.chatlog.oocLog = append(a.chatlog.oocLog, "Welcome to the server, please read the rules.")
-	a.chatlog.oocSpeakers = append(a.chatlog.oocSpeakers, "MOTD")
-	a.chatlog.oocSeq++
-	a.link.sess = &courtroom.Session{Areas: []string{"Courtroom 1", "Courtroom 2"}}
-	a.areaTab.areaInfoSeq++
+	a.icLog = append(a.icLog, icEntry{text: "Objection! That contradicts the autopsy report."})
+	a.icLogSeq++
+	a.oocLog = append(a.oocLog, "Welcome to the server, please read the rules.")
+	a.oocSpeakers = append(a.oocSpeakers, "MOTD")
+	a.oocSeq++
+	a.sess = &courtroom.Session{Areas: []string{"Courtroom 1", "Courtroom 2"}}
+	a.areaInfoSeq++
 
 	const colW = 240
 	a.icWrapped(colW, false)
 	a.oocWrapped(colW)
 	a.areaWrapped(nil, colW, "", areaQuerySlotOwn)
 	if a.icWrapPct != DefaultScalePct || a.oocWrapPct != DefaultScalePct ||
-		a.chatlog.areaWrap[areaQuerySlotOwn].pct != DefaultScalePct {
+		a.areaWrap[areaQuerySlotOwn].pct != DefaultScalePct {
 		t.Fatalf("undressed wrap keys must be the user zoom: ic=%d ooc=%d area=%d",
-			a.icWrapPct, a.oocWrapPct, a.chatlog.areaWrap[areaQuerySlotOwn].pct)
+			a.icWrapPct, a.oocWrapPct, a.areaWrap[areaQuerySlotOwn].pct)
 	}
 	// A theme lands with its own sizes — nothing else changes (same log seq, same
 	// width, same font generation), so ONLY the resolved pct can invalidate.
-	a.skin.themeFonts.e[elemICChatlog].pct = themeFontPct(18)
-	a.skin.themeFonts.e[elemServerChatlog].pct = themeFontPct(9)
-	a.skin.themeFonts.e[elemAreaList].pct = themeFontPct(6)
+	a.themeFonts.e[elemICChatlog].pct = themeFontPct(18)
+	a.themeFonts.e[elemServerChatlog].pct = themeFontPct(9)
+	a.themeFonts.e[elemAreaList].pct = themeFontPct(6)
 	a.icWrapped(colW, false)
 	a.oocWrapped(colW)
 	a.areaWrapped(nil, colW, "", areaQuerySlotOwn)
@@ -397,7 +399,7 @@ func TestWrapCachesKeyOnResolvedPct(t *testing.T) {
 	if a.oocWrapPct != themeFontPct(9) {
 		t.Errorf("OOC wrap kept the stale key %d, want %d", a.oocWrapPct, themeFontPct(9))
 	}
-	if got := a.chatlog.areaWrap[areaQuerySlotOwn].pct; got != themeFontPct(6) {
+	if got := a.areaWrap[areaQuerySlotOwn].pct; got != themeFontPct(6) {
 		t.Errorf("area wrap kept the stale key %d, want %d", got, themeFontPct(6))
 	}
 }
@@ -421,7 +423,14 @@ func TestThemeFontsPrefRoundTrips(t *testing.T) {
 
 // TestChatboxInkNeedsAnActualColourKey pins the gate on the chatbox ink, which
 // used to be Theme.HasFont and had to become FontSpec.ColorSet.
+//
+// HasFont answers "did the theme mention this element AT ALL — size or colour",
+// and FontSpec.Color carries the parser's WHITE default whenever no colour was
+// declared. Together those meant a theme that only SIZED its chatbox — a very
+// ordinary thing to write — silently forced white message and showname ink,
+// discarding whatever the client had. AO2 cannot make this mistake: it reads the
 // colour from its own key and the size key implies nothing (courtroom.cpp:1223-1225).
+//
 // Goes red if either gate drifts back to HasFont, or if some later refactor
 // starts trusting FontSpec.Color without consulting ColorSet.
 func TestChatboxInkNeedsAnActualColourKey(t *testing.T) {
@@ -461,6 +470,7 @@ func TestChatboxInkNeedsAnActualColourKey(t *testing.T) {
 // TestDeclaredFontInkIgnoresTheParserDefault asserts the GATE directly, which the
 // test above cannot: that one pins the parser behaviour that makes the gate
 // correct, but would stay green if the gate itself reverted to Theme.HasFont.
+//
 // Goes red the moment declaredFontInk trusts spec.Color without consulting
 // spec.ColorSet — which is precisely the bug, since the parser's default colour is
 // opaque white and would be reported as the theme's deliberate choice.

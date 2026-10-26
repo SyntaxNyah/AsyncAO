@@ -1,6 +1,14 @@
 package ui
 
 // themeFrame's half of the animation contract (L22).
+//
+// themeFrame and elementFrame were documented as twins and had already stopped
+// being twins: elementFrame honoured the ReduceMotion latch and themeFrame did
+// not. On a themed install with the accessibility option ON, the free elements
+// went still while the theme's own chrome — chatbox, buttons, backdrops — kept
+// animating, and themeFrame's census kept the pacer at the animation cadence.
+// The person who turned it on got neither the stillness nor the idle frame rate.
+//
 // The suite RECORDED that divergence instead of failing on it: two gates in
 // themeclock_test.go t.Skip when the fixture's own chrome notes the census under
 // ReduceMotion, which is exactly the symptom. These gates drive themeFrame
@@ -54,33 +62,33 @@ func TestThemeChromeGoesStillUnderReduceMotion(t *testing.T) {
 	page := animatedThemePage(t, a, themeTexKey("gatechatbox"))
 
 	// The theme clock well past frame 0, so a moving page would be somewhere else.
-	a.toolbox.themeAt = a.now().Add(-time.Second)
+	a.themeAt = a.now().Add(-time.Second)
 
 	// Motion ALLOWED: the page steps and the census fires. This half is the
 	// non-vacuity check — without it a themeFrame hardwired to frame 0 would pass
 	// the accessibility half perfectly.
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
-	a.fxPool.themeFXFrozen = a.reduceMotionNow()
-	a.frame.frameAnimChrome = false
+	a.themeFXFrozen = a.reduceMotionNow()
+	a.frameAnimChrome = false
 	moving := a.themeFrame(page)
 	if moving == page.Frames[0] {
 		t.Error("an animated theme page held frame 0 a whole second in — the chrome never steps")
 	}
-	if !a.frame.frameAnimChrome {
+	if !a.frameAnimChrome {
 		t.Error("an animated theme page did not note the census — the pacer would idle and freeze it")
 	}
 
 	// Motion SUPPRESSED.
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true })
 	defer a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
-	a.fxPool.themeFXFrozen = a.reduceMotionNow()
-	a.frame.frameAnimChrome = false
+	a.themeFXFrozen = a.reduceMotionNow()
+	a.frameAnimChrome = false
 	still := a.themeFrame(page)
 	if still != page.Frames[0] {
 		t.Error("theme chrome kept animating under ReduceMotion — a person who turns it on because motion " +
 			"makes them ill is not helped by a client that stills the elements and not the chatbox")
 	}
-	if a.frame.frameAnimChrome {
+	if a.frameAnimChrome {
 		t.Error("theme chrome noted the animation census under ReduceMotion — the client holds the animation " +
 			"frame rate for a picture that is not moving, so the option delivers neither stillness nor the idle rate")
 	}
@@ -89,6 +97,7 @@ func TestThemeChromeGoesStillUnderReduceMotion(t *testing.T) {
 // TestThemeFrameAndElementFrameShareOneIndexer keeps the two from drifting apart
 // again. They differ in WHOSE CLOCK they read and in nothing else, so given the
 // same elapsed and a looping page they must select the same frame.
+//
 // Stated as an identity over the shared pure core rather than as two hardcoded
 // numbers: elementFrameIndex is what both call, and the day one of them stops
 // calling it this is what says so.
@@ -97,10 +106,10 @@ func TestThemeFrameAndElementFrameShareOneIndexer(t *testing.T) {
 	defer cleanup()
 	page := animatedThemePage(t, a, themeTexKey("gatebutton"))
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
-	a.fxPool.themeFXFrozen = false
+	a.themeFXFrozen = false
 
 	for _, el := range []time.Duration{0, 45 * time.Millisecond, 130 * time.Millisecond, time.Second} {
-		a.toolbox.themeAt = a.now().Add(-el)
+		a.themeAt = a.now().Add(-el)
 		want, _ := elementFrameIndex(page, a.themeElapsed(), true)
 		got := a.themeFrame(page)
 		if got != page.Frames[want] {

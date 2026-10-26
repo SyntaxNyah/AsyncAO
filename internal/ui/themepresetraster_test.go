@@ -1,9 +1,26 @@
 package ui
 
 // THE SHIPPED PRESETS' GENERATOR CENSUS (v1.90.0 W9).
+//
 // ONE concern: every `kind = gen` element in the shipped preset library must
 // rasterise SOMETHING. It is deliberately not part of the coherence matrix —
 // that gate answers "where does this decoration land", this one answers "is
+// there any decoration at all", and an element can pass one while failing the
+// other. A fully transparent tile lands perfectly, every time, in exactly the
+// right place, and is invisible.
+//
+// WHY IT HAS TO DRIVE THE REAL RASTER. The tile a generator produces is a
+// function of gen_params AFTER the whole resolution chain: the wire-key alias
+// table (`cells` is a pitch, `full` is Pcts[1]), the absent-vs-zero percent
+// marker, the int clamp, the tile-size clamp and each raster's own documented
+// defaults. Nothing short of calling RasterGenerator knows what a fragment's
+// parameter list actually paints, which is precisely how seventeen elements of
+// one style shipped invisible through a static audit that read every line of
+// them: `frame` mode 0 inks with `tint`, and a fragment that names its colour
+// in the element's own `tint =` colour-mod rather than inside `gen_params` has
+// a generator whose ink is the zero colour — transparent — with an element-level
+// multiply over it that cannot rescue a texture with no pixels.
+//
 // It is a census over the LIBRARY rather than over a list of known offenders,
 // so a fragment authored next wave is covered the day it is added.
 
@@ -54,6 +71,20 @@ func tileMaxAlpha(img *image.RGBA) uint8 {
 }
 
 // TestNoShippedPresetGeneratorElementRasterisesAnEmptyTile is the gate.
+//
+// THE DEFECT IT CLOSES, measured before the fix: 20 of the 183 shipped preset
+// generator elements produced a fully transparent tile, 17 of them in
+// `cyberpunk` — its entire bracket-and-chip vocabulary, invisible in all 21
+// layouts. Two causes, one per generator:
+//
+//   - `frame` in mode 0/1/2 inks with GenParams.tint(), and seven of cyberpunk's
+//     bracket elements (plus three of vhs_crt's) named their colour ONLY in the
+//     element's `tint =` colour-mod. An element-level tint MULTIPLIES the
+//     texture; there was no texture.
+//   - `plate` in mode 1 (chamfer) paints only GenParams.accent(), and ten of
+//     cyberpunk's chips wrote `accent=#00000000` with the colour they meant in
+//     `tint`/`shadow` — which mode 1 never reads.
+//
 // Both fixes are in the FRAGMENTS (the drafts were audited statically; this is
 // the first wave that runs them through real code), and both use the colour the
 // author had already written elsewhere in the same element rather than a new one.

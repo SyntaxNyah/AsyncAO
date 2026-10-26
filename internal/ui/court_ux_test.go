@@ -252,13 +252,13 @@ func TestApplyThemePaletteReadabilityFloor(t *testing.T) {
 // their entry index (color source), and the cache returns the same backing
 // until log/width/query move.
 func TestICWrapped(t *testing.T) {
-	a := &App{env: env{ctx: &Ctx{}}}
+	a := &App{ctx: &Ctx{}}
 	a.logPct = DefaultScalePct // share the (nil) chrome font: 8 px/char path
-	a.chatlog.icLog = []icEntry{
+	a.icLog = []icEntry{
 		{text: strings.Repeat("word ", 40), color: 2},
 		{text: "short", color: 0},
 	}
-	a.chatlog.icLogSeq = 1
+	a.icLogSeq = 1
 
 	rows := a.icWrapped(160, false) // 20 chars per row at the 8 px fallback
 	if len(rows) < 3 {
@@ -287,10 +287,10 @@ func TestICWrapped(t *testing.T) {
 // first wrapped row of an entry carries its stamp; toggling rewraps (the stamp
 // is part of the memo key). The stamp is formatted once on append, never here.
 func TestICWrappedTimestamps(t *testing.T) {
-	a := &App{env: env{ctx: &Ctx{}}}
+	a := &App{ctx: &Ctx{}}
 	a.logPct = DefaultScalePct
-	a.chatlog.icLog = []icEntry{{text: "Phoenix: hold it", color: 2, stamp: "14:32"}}
-	a.chatlog.icLogSeq = 1
+	a.icLog = []icEntry{{text: "Phoenix: hold it", color: 2, stamp: "14:32"}}
+	a.icLogSeq = 1
 
 	off := a.icWrapped(800, false)
 	if len(off) != 1 || off[0].text != "Phoenix: hold it" {
@@ -338,7 +338,7 @@ func TestNextRandomEmote(t *testing.T) {
 // text, ZERO allocations while the page is stable (the gate), and a rebuild the
 // moment any input changes (the invalidation correctness check).
 func TestEmotePageCounterMemoized(t *testing.T) {
-	a := &App{env: env{}}
+	a := &App{}
 	got := a.emotePageCounter(1, 3, 24)
 	if got != "page 1/3 · 24 emotes" {
 		t.Fatalf("label = %q, want %q", got, "page 1/3 · 24 emotes")
@@ -361,7 +361,7 @@ func TestEmotePageCounterMemoized(t *testing.T) {
 // ZERO allocations (the precomputed table replaced a string concat that ran up
 // to 4×/frame in the default courtroom view).
 func TestHPBarStemNoAlloc(t *testing.T) {
-	a := &App{env: env{}}
+	a := &App{}
 	if s := a.hpBarStem(true, 5); s != "defensebar5" {
 		t.Fatalf("defense stem = %q, want defensebar5", s)
 	}
@@ -383,12 +383,13 @@ func TestHPBarStemNoAlloc(t *testing.T) {
 // state, ZERO allocations while a tab is stable (the strip asks ~3×/tab/frame),
 // and a rebuild when unread changes.
 func TestTabChipLabelMemoized(t *testing.T) {
-	a := &App{env: env{}, sessionState: sessionState{srvMeta: serverMetaState{serverName: "ActiveServer"}},
-		activeTab: 0,
+	a := &App{
+		sessionState: sessionState{serverName: "ActiveServer"},
+		activeTab:    0,
 		tabs: []*courtTab{
 			{}, // 0: active
-			{state: sessionState{srvMeta: serverMetaState{serverName: "Other"}}, unread: 3}, // 1: backgrounded, unread
-			{state: sessionState{srvMeta: serverMetaState{serverName: "Gone"}}, dead: true}, // 2: backgrounded, dead
+			{state: sessionState{serverName: "Other"}, unread: 3}, // 1: backgrounded, unread
+			{state: sessionState{serverName: "Gone"}, dead: true}, // 2: backgrounded, dead
 		},
 	}
 	if got := a.tabChipLabel(0); got != "ActiveServer" {
@@ -415,17 +416,17 @@ func TestTabChipLabelMemoized(t *testing.T) {
 // live structural counts (tabs, area, queue, log sizes, goroutines) so a leak or
 // stuck queue is visible at a glance.
 func TestDebugDiagLine(t *testing.T) {
-	a := &App{env: env{}}
+	a := &App{}
 	a.tabs = []*courtTab{{}, {}}
-	a.chatlog.icLog = make([]icEntry, 3)
-	a.chatlog.oocLog = make([]string, 1)
+	a.icLog = make([]icEntry, 3)
+	a.oocLog = make([]string, 1)
 	got := a.debugDiagLine()
 	for _, want := range []string{"tabs 2", "area —", "queue 0", "ic 3", "ooc 1", "goroutines "} {
 		if !strings.Contains(got, want) {
 			t.Errorf("diag line %q missing %q", got, want)
 		}
 	}
-	a.srvMeta.curArea = "Courtroom 1"
+	a.curArea = "Courtroom 1"
 	if got := a.debugDiagLine(); !strings.Contains(got, "area Courtroom 1") {
 		t.Errorf("area not shown in %q", got)
 	}
@@ -435,9 +436,9 @@ func TestDebugDiagLine(t *testing.T) {
 // labels and ZERO allocations for a stable (paused) clock — the always-on draw
 // asks every frame, so only a ticking second should rebuild.
 func TestTimerChipLabelsMemoized(t *testing.T) {
-	a := &App{env: env{}, sessionState: sessionState{link: linkState{sess: &courtroom.Session{}}}}
-	a.link.sess.Timers[0] = courtroom.TimerState{Visible: true, Left: 90 * time.Second} // paused 01:30
-	a.link.sess.Timers[2] = courtroom.TimerState{Visible: true, Left: 5 * time.Second}  // paused 00:05
+	a := &App{sessionState: sessionState{sess: &courtroom.Session{}}}
+	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Left: 90 * time.Second} // paused 01:30
+	a.sess.Timers[2] = courtroom.TimerState{Visible: true, Left: 5 * time.Second}  // paused 00:05
 
 	now := time.Now()
 	chips := a.timerChipLabels(now)
@@ -449,7 +450,7 @@ func TestTimerChipLabelsMemoized(t *testing.T) {
 		t.Errorf("steady-state allocs = %v, want 0", n)
 	}
 	// A changed second rebuilds that timer's label.
-	a.link.sess.Timers[0] = courtroom.TimerState{Visible: true, Left: 91 * time.Second}
+	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Left: 91 * time.Second}
 	if got := a.timerChipLabels(now); got[0] != "T1 01:31" {
 		t.Errorf("rebuilt label = %q, want T1 01:31", got[0])
 	}

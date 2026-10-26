@@ -72,11 +72,11 @@ func measureDiskCacheAsync(root string) {
 const learnedExportFileName = "learned-formats.json"
 
 func learnedExportPath() (string, error) {
-	dir, err := exeDataDir()
+	exe, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, learnedExportFileName), nil
+	return filepath.Join(filepath.Dir(exe), learnedExportFileName), nil
 }
 
 // exportLearnedAsync writes the learned table off-thread (§17.2: no sync

@@ -1,14 +1,49 @@
 //go:build themecensus
 
 // OPT-IN: run with `go test -tags themecensus ./internal/ui/`.
+//
+// This census is a DIAGNOSTIC, not a gate, and it is held out of the default run
+// for two concrete reasons rather than as a matter of taste:
+//
+//  1. It currently reports about a dozen overlaps, and most are long-standing
+//     chrome-over-theme layering that predates issue #21 — a transient warning
+//     toast crossing the panels beneath it, the toolbox grip sitting over
+//     call_mod. Each needs a judgement call ("intentional" or "defect") before
+//     any of it can fail a build, and until that triage is done a red suite
+//     teaches people to ignore it.
+//  2. It measurably perturbs TestDrawCourtroomEggZeroAlloc: with this file
+//     present that gate fails in a full-package run and passes in isolation,
+//     and with it removed the whole package is green. An allocation gate that
+//     another test can flip is worse than no gate, and the courtroom draw path
+//     is exactly where that gate matters.
+//
+// It has already paid for itself — it is how the AO2 backstop defect was
+// root-caused rather than guessed at — so it is kept, tagged, and its triage is
+// tracked separately.
 
 package ui
 
 // The themed-courtroom WIDGET CENSUS (#21 close-out).
+//
+// themefixture_test.go's totality oracle asks "is every rect the theme declares
+// accounted for?". That is a question about the REGISTRY. This file asks the
+// question about the SCREEN: given the rects the theme actually declares, where
+// does every widget drawCourtroomThemed paints end up, and do any two of them
+// land on top of each other, run out of the panel that owns them, or get placed
+// by arithmetic no theme author can see or move?
+//
+// Two defects were found by eye before this existed (a Slide checkbox buried in
 // the emote block, and a "Player List" chip hanging 12 px past its panel). Both
+// are pure geometry over the checked-in fixture, so both are findable by a test —
+// and so is everything else of that shape. Finding them by eye once per release
+// is not a process.
+//
 // SCOPE. Rects only, at ThemeFitNative 1:1 on a 944x600 window, which makes the
 // window coordinates identical to the fixture's design coordinates and the
 // failure messages readable against courtroom_design.ini. Scale-dependent
+// defects (a rect that only collides after rounding at some other window size)
+// are out of scope here; the 1:1 case is the one the theme author drew and the
+// one every collision below is already present in.
 
 import (
 	"fmt"
@@ -147,6 +182,7 @@ const (
 )
 
 // buildAceCensus resolves every box the themed courtroom draws for the fixture.
+//
 // It drives the REAL themeLayoutIn over the REAL ingest pipeline (themeLayoutKeys
 // → ElementRect → applyAO2DefaultRects), so the rects are the ones a player gets,
 // including the off-design filter, the canvas clamp and the minThemedElementPx
@@ -682,6 +718,8 @@ func TestAceAttorney2xCensusChipStripFits(t *testing.T) {
 // stacked its two logs on one rect (the merged branch, theme_layout.go:787). This
 // theme puts them at 0,0,216x300 and 728,0,216x346 — no overlap, no strip — so
 // under aceattorney2x the Notes tab has no entry point in the courtroom at all.
+//
+// Reported, not asserted away: whether Notes deserves a home in a themed canvas
 // is a product call (#21 rule (c) says AsyncAO extras belong in the chrome). The
 // test exists so the answer is a decision instead of an accident.
 func TestAceAttorney2xCensusNotesTabIsReachable(t *testing.T) {
@@ -698,15 +736,53 @@ func TestAceAttorney2xCensusNotesTabIsReachable(t *testing.T) {
 	}
 }
 
+// TestAceAttorney2xCensusInertDeclaredRects reports the other half of the
+// picture: rects this theme DECLARES, that reach a themeSlots row, and that
+// still paint nothing — holes in the theme's own canvas. Informational (the
+// registry already says slotStateInert on purpose), but it is the list a release
+// check wants beside the overlap report.
+func TestAceAttorney2xCensusInertDeclaredRects(t *testing.T) {
+	th := loadAceAttorney2x(t)
+	var inert []string
+	for i := range themeSlots {
+		s := &themeSlots[i]
+		if s.state != slotStateInert {
+			continue
+		}
+		if r, ok := th.ElementRect(s.key); ok {
+			inert = append(inert, fmt.Sprintf("%s %+v", s.key, r))
+		}
+	}
+	sort.Strings(inert)
+	for _, s := range inert {
+		t.Logf("declared but painted by nothing (slotStateInert): %s", s)
+	}
+}
+
 // censusShippedOmissions are the layout keys that real, in-the-wild copies of
 // AO2 themes DO NOT declare, so the AO2 stock backstop has to supply them.
+//
 // Measured, not guessed: both themes in the user's Skrapegropen pack —
 // `AceAttorney 2x` (944x600) and `CCBig VA-11 HALL-A` (1262x700) — declare 73 of
 // the 74 courtroom layout keys, and the single key each omits is this one. It is
+// a 2.10-era key, which is exactly why an older theme copy has never heard of it.
+// The checked-in fixture is a NEWER copy of AceAttorney 2x that DOES declare it,
+// which is why the fixture on its own cannot reproduce the reported defect.
 var censusShippedOmissions = []string{"slide_enable"}
 
 // TestAO2BackstopNeverLandsOnAnAuthoredRect is the root-cause gate for the
 // reported "the Slide checkbox is in the wrong place" defect.
+//
+// ao2DefaultDesignRects is transcribed from AO2's bundled default theme, whose
+// canvas is 714x579. applyAO2DefaultRects (ao2defaultrects.go:49-61) copies those
+// coordinates into the active theme's layout VERBATIM — no scale, no collision
+// test — and the only thing it checks is that the theme declared a canvas at all.
+// Drop a key into a 944x600 canvas and the stock coordinate is a position from a
+// DIFFERENT layout: AO2 puts slide_enable at 200,464 because that is empty space
+// in ITS 714-wide courtroom; in aceattorney2x 200,464 is on top of the author's
+// own `pre` (224,473), `text_color` (225,450) and `music_list` (0,323) — which is
+// precisely "it appears up beside the Pre/Flip/Immediate row and collides with it".
+//
 // This drives the fixture with each shipped omission deleted BEFORE the backstop
 // runs, which is the same code path an older theme copy takes.
 func TestAO2BackstopNeverLandsOnAnAuthoredRect(t *testing.T) {
@@ -730,9 +806,20 @@ func TestAO2BackstopNeverLandsOnAnAuthoredRect(t *testing.T) {
 		filled, ok := layout[omit]
 		if !ok {
 			// DECLINING to place it is the shipped answer, and the right one.
+			//
+			// The alternative was to find the widget some other home, and there is
+			// no honest one: the stock coordinate is a position on AO2's 714x579
+			// canvas, and scaled or nudged onto a 944x600 or 1262x700 canvas it is
+			// still a guess, just a less obviously wrong one. AO2's own rule for a
+			// rect a theme is silent about is to HIDE the widget
 			// (set_size_and_pos, courtroom.cpp:1334-1338), which is also #21's
+			// rule (e), so drawing nothing is both the parity answer and the one
+			// that cannot deface an author's layout.
+			//
 			// The cost is real and worth naming: on a theme authored before this
 			// widget existed, the feature is unreachable inside the design canvas.
+			// The place for it is the Extras box — AsyncAO's designated home for
+			// things an AO2 theme has no rect for — which is tracked separately.
 			continue
 		}
 		var hits []string
@@ -760,10 +847,14 @@ func TestAO2BackstopNeverLandsOnAnAuthoredRect(t *testing.T) {
 // `themes/`, which is what theme.Load takes). Env-gated rather than checked in:
 // the corpus is ~80 third-party theme packs and hundreds of megabytes of art, and
 // nobody's machine has it at the same path. Set it before a release audit:
+//
+//	$env:ASYNCAO_THEME_CORPUS = "C:\...\Skrapegropen AO THEMES"
+//	go test -run TestAO2BackstopAcrossTheThemeCorpus -v ./internal/ui/
 const themeCorpusEnv = "ASYNCAO_THEME_CORPUS"
 
 // TestAO2BackstopAcrossTheThemeCorpus is the blast-radius measurement for the
 // backstop defect, taken over REAL themes rather than the one fixture.
+//
 // It walks every theme in the corpus, ingests it exactly as pollThemeApply does,
 // and reports each key the stock backstop had to supply that then lands on a rect
 // the AUTHOR declared. A theme is only affected when it omits a key AND its canvas
@@ -827,4 +918,46 @@ func TestAO2BackstopAcrossTheThemeCorpus(t *testing.T) {
 	}
 	t.Logf("corpus audit: %d of %d themes with a design INI get a stock backstop rect on top of an authored widget",
 		affected, scanned)
+}
+
+// TestAO2BackstopCollisionSurface reports the SIZE of the class the gate above
+// pins one instance of: how many of the stock rects would land on an
+// author-declared widget if this theme had omitted them. Informational — it is
+// the argument for fixing the backstop generally rather than special-casing one
+// key, and the number to re-read after any change to ao2DefaultDesignRects.
+func TestAO2BackstopCollisionSurface(t *testing.T) {
+	th := loadAceAttorney2x(t)
+	authored := make(map[string]theme.Rect, len(themeLayoutKeys))
+	for _, k := range themeLayoutKeys {
+		if r, ok := th.ElementRect(k); ok {
+			authored[k] = r
+		}
+	}
+	colliding, total := 0, 0
+	var worst []string
+	for k, def := range ao2DefaultDesignRects {
+		if k == ao2CanvasKey || k == ao2ViewportKey {
+			continue
+		}
+		total++
+		var hits int
+		for ak, r := range authored {
+			if ak == k || ak == ao2CanvasKey || ak == ao2ViewportKey {
+				continue
+			}
+			if r.X < def.X+def.W && r.X+r.W > def.X && r.Y < def.Y+def.H && r.Y+r.H > def.Y {
+				hits++
+			}
+		}
+		if hits > 0 {
+			colliding++
+			worst = append(worst, fmt.Sprintf("%s→%+v hits %d", k, def, hits))
+		}
+	}
+	sort.Strings(worst)
+	t.Logf("if this 944x600 theme omitted a key, %d of %d stock backstop rects would land on an author-declared widget",
+		colliding, total)
+	for _, s := range worst {
+		t.Logf("  %s", s)
+	}
 }

@@ -19,18 +19,18 @@ func TestCloseTopOverlay(t *testing.T) {
 	}
 
 	// Priority: a confirm modal closes before a floating panel.
-	a.msgs.showMessages = true
-	a.banBox.kind = 1
+	a.showMessages = true
+	a.banBoxKind = 1
 	if !a.closeTopOverlay() {
 		t.Fatal("should close the modal")
 	}
-	if a.banBox.kind != 0 {
+	if a.banBoxKind != 0 {
 		t.Error("ban confirm should close before the panel")
 	}
-	if !a.msgs.showMessages {
+	if !a.showMessages {
 		t.Error("the panel must survive until the modal is gone")
 	}
-	if !a.closeTopOverlay() || a.msgs.showMessages {
+	if !a.closeTopOverlay() || a.showMessages {
 		t.Error("the next press should close the panel")
 	}
 
@@ -50,16 +50,16 @@ func TestCloseTopOverlay(t *testing.T) {
 // is armed (those use Esc to cancel).
 func TestCapturingKey(t *testing.T) {
 	a := testTabApp(t)
-	a.budget.macroBind = -1 // mirror the real App default (NewApp sets -1 = no macro armed)
+	a.macroBind = -1 // mirror the real App default (NewApp sets -1 = no macro armed)
 	if a.capturingKey() {
 		t.Fatal("fresh app should not be capturing a key (macroBind must default to -1)")
 	}
-	a.courtkeys.bindingFor = "modcall"
+	a.bindingFor = "modcall"
 	if !a.capturingKey() {
 		t.Error("an armed hotkey capture should report capturingKey")
 	}
-	a.courtkeys.bindingFor = ""
-	a.budget.macroBind = 0 // 0 = armed (slot 0)
+	a.bindingFor = ""
+	a.macroBind = 0 // 0 = armed (slot 0)
 	if !a.capturingKey() {
 		t.Error("an armed macro capture should report capturingKey")
 	}

@@ -22,7 +22,7 @@ func TestRebuildBgListOffline(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{env: env{d: Deps{Prefs: prefs}}} // a.sess == nil (offline)
+	a := &App{d: Deps{Prefs: prefs}} // a.sess == nil (offline)
 	a.bgPick.server = []string{"court", "gs4", "lobby"}
 	a.rebuildBgList() // would nil-deref a.sess.Background before the guard
 	if len(a.bgPick.list) == 0 {
@@ -39,15 +39,15 @@ func TestHideSpriteSuppression(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{env: env{}} // field assignment, not a keyed literal (known phantom "unknown field" glitch)
+	a := &App{} // field assignment, not a keyed literal (known phantom "unknown field" glitch)
 	a.d.Prefs = prefs
-	a.link.room = &courtroom.Courtroom{}
-	a.link.room.Scene.Speaker = courtroom.SpriteLayer{Name: "Booba", Visible: true}
-	a.link.room.Scene.Pair = courtroom.SpriteLayer{Name: "Phoenix", Visible: true}
-	a.link.room.Scene.ShowDesk = true
+	a.room = &courtroom.Courtroom{}
+	a.room.Scene.Speaker = courtroom.SpriteLayer{Name: "Booba", Visible: true}
+	a.room.Scene.Pair = courtroom.SpriteLayer{Name: "Phoenix", Visible: true}
+	a.room.Scene.ShowDesk = true
 
 	a.applySpriteOverrides() // empty hidden-set + no overrides + desk shown: a no-op
-	if !a.link.room.Scene.Speaker.Visible || !a.link.room.Scene.Pair.Visible || !a.link.room.Scene.ShowDesk {
+	if !a.room.Scene.Speaker.Visible || !a.room.Scene.Pair.Visible || !a.room.Scene.ShowDesk {
 		t.Fatal("empty hidden-set / hide-desk-off must not change anything")
 	}
 
@@ -64,7 +64,7 @@ func TestHideSpriteSuppression(t *testing.T) {
 	})
 
 	a.applySpriteOverrides()
-	if a.link.room.Scene.ShowDesk {
+	if a.room.Scene.ShowDesk {
 		t.Error("hide-desk did not suppress ShowDesk")
 	}
 	prefs.Update(func(
@@ -78,28 +78,28 @@ func TestHideSpriteSuppression(t *testing.T) {
 
 	})
 
-	a.link.room.Scene.ShowDesk = true // the courtroom re-sets it each frame
+	a.room.Scene.ShowDesk = true // the courtroom re-sets it each frame
 	a.applySpriteOverrides()
-	if !a.link.room.Scene.ShowDesk {
+	if !a.room.Scene.ShowDesk {
 		t.Error("desk should render again when hide-desk is off")
 	}
 
-	a.dialogs.hiddenSprites = map[string]struct{}{"booba": {}}
+	a.hiddenSprites = map[string]struct{}{"booba": {}}
 	a.applySpriteOverrides()
-	if a.link.room.Scene.Speaker.Visible {
+	if a.room.Scene.Speaker.Visible {
 		t.Error("hidden sprite still visible")
 	}
-	if !a.link.room.Scene.Pair.Visible {
+	if !a.room.Scene.Pair.Visible {
 		t.Error("non-hidden pair wrongly hidden")
 	}
 
 	a.reshowSprites()
-	if a.dialogs.hiddenSprites != nil {
+	if a.hiddenSprites != nil {
 		t.Error("reshow must clear the hidden-set")
 	}
-	a.link.room.Scene.Speaker.Visible = true // the courtroom re-sets Visible each frame
+	a.room.Scene.Speaker.Visible = true // the courtroom re-sets Visible each frame
 	a.applySpriteOverrides()
-	if !a.link.room.Scene.Speaker.Visible {
+	if !a.room.Scene.Speaker.Visible {
 		t.Error("after reshow the sprite must render again")
 	}
 }
@@ -112,9 +112,9 @@ func TestRequestDisconnectConfirms(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{env: env{d: Deps{Prefs: prefs}}}
+	a := &App{d: Deps{Prefs: prefs}}
 	a.requestDisconnect()
-	if !a.dialogs.confirmDisconnect {
+	if !a.confirmDisconnect {
 		t.Error("with instant-disconnect off, requestDisconnect must open the confirm modal, not disconnect")
 	}
 }
@@ -138,12 +138,12 @@ func TestMakerDrawNoPanic(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 
-	a := &App{env: env{ctx: ctx, d: Deps{Prefs: prefs}}, sel: selState{makerName: "test", makerTrimStart: -1, makerTrimEnd: -1}}
+	a := &App{ctx: ctx, d: Deps{Prefs: prefs}, makerName: "test", makerTrimStart: -1, makerTrimEnd: -1}
 	// A real session + bg list enables the char/background autocompletes — the
 	// draw paths a nil-session test would skip.
-	a.link.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Sekai"}, {Name: "Phoenix"}, {Name: "Häschen"}}}
+	a.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Sekai"}, {Name: "Phoenix"}, {Name: "Häschen"}}}
 	a.bgPick.server = []string{"court", "gs4", "lobby"}
-	a.sel.makerScene = &sceneRecording{
+	a.makerScene = &sceneRecording{
 		Version: recordingVersion,
 		Origin:  "https://example.test/base/",
 		StartBg: "court",
@@ -170,10 +170,10 @@ func TestMakerDrawNoPanic(t *testing.T) {
 	// No crop, then a crop range — both exercise the list visuals + toolbar.
 	for _, crop := range []bool{false, true} {
 		if crop {
-			a.sel.makerTrimStart, a.sel.makerTrimEnd = 1, 3
+			a.makerTrimStart, a.makerTrimEnd = 1, 3
 		}
-		for sel := range a.sel.makerScene.Events {
-			a.sel.makerSel = sel
+		for sel := range a.makerScene.Events {
+			a.makerSel = sel
 			a.drawMakerList(8, 40, 360, 600)
 			a.drawMakerEditor(380, 40, 600)
 		}
@@ -185,11 +185,11 @@ func TestMakerDrawNoPanic(t *testing.T) {
 	// assertion that the whole draw — including the parts not covered above —
 	// survived (this is what would catch the reported edit crash).
 	for _, exp := range []bool{false, true} {
-		a.sel.makerOpen = true
-		a.sel.makerExportOpen = exp
-		a.sel.makerSel = 0
+		a.makerOpen = true
+		a.makerExportOpen = exp
+		a.makerSel = 0
 		a.drawSceneMaker(1280, 720)
-		if !a.sel.makerOpen {
+		if !a.makerOpen {
 			t.Fatalf("drawSceneMaker (exportPanel=%v) panicked — recoverMaker closed the maker; edit crash reproduced", exp)
 		}
 	}

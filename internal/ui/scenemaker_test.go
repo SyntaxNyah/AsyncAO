@@ -85,26 +85,26 @@ func TestSceneRoundTrip(t *testing.T) {
 
 // TestMakerInsertDeleteMove exercises the event-list CRUD on a bare App (no SDL).
 func TestMakerInsertDeleteMove(t *testing.T) {
-	a := &App{env: env{}}
-	a.sel.makerScene = &sceneRecording{Events: []recEvent{newMessageEvent("A", "n", "1")}}
-	a.sel.makerSel = 0
+	a := &App{}
+	a.makerScene = &sceneRecording{Events: []recEvent{newMessageEvent("A", "n", "1")}}
+	a.makerSel = 0
 
 	a.makerInsert(newMessageEvent("B", "n", "2")) // inserts AFTER selection, selects it
-	if len(a.sel.makerScene.Events) != 2 || a.sel.makerSel != 1 {
-		t.Fatalf("insert: len=%d sel=%d", len(a.sel.makerScene.Events), a.sel.makerSel)
+	if len(a.makerScene.Events) != 2 || a.makerSel != 1 {
+		t.Fatalf("insert: len=%d sel=%d", len(a.makerScene.Events), a.makerSel)
 	}
-	if a.sel.makerScene.Events[1].Message.Message != "2" {
-		t.Errorf("inserted at wrong spot: %+v", a.sel.makerScene.Events)
+	if a.makerScene.Events[1].Message.Message != "2" {
+		t.Errorf("inserted at wrong spot: %+v", a.makerScene.Events)
 	}
 
 	a.makerMoveSel(-1) // move "2" up to index 0
-	if a.sel.makerSel != 0 || a.sel.makerScene.Events[0].Message.Message != "2" {
-		t.Errorf("move up failed: sel=%d ev=%+v", a.sel.makerSel, a.sel.makerScene.Events)
+	if a.makerSel != 0 || a.makerScene.Events[0].Message.Message != "2" {
+		t.Errorf("move up failed: sel=%d ev=%+v", a.makerSel, a.makerScene.Events)
 	}
 
 	a.makerDeleteSel() // delete "2", leaving "1"
-	if len(a.sel.makerScene.Events) != 1 || a.sel.makerScene.Events[0].Message.Message != "1" {
-		t.Errorf("delete failed: %+v", a.sel.makerScene.Events)
+	if len(a.makerScene.Events) != 1 || a.makerScene.Events[0].Message.Message != "1" {
+		t.Errorf("delete failed: %+v", a.makerScene.Events)
 	}
 }
 
@@ -130,15 +130,15 @@ func TestBundledSceneRoundTrip(t *testing.T) {
 }
 
 func TestMakerDuplicateSel(t *testing.T) {
-	a := &App{env: env{}}
-	a.sel.makerScene = &sceneRecording{Events: []recEvent{newMessageEvent("A", "n", "orig")}}
-	a.sel.makerSel = 0
+	a := &App{}
+	a.makerScene = &sceneRecording{Events: []recEvent{newMessageEvent("A", "n", "orig")}}
+	a.makerSel = 0
 	a.makerDuplicateSel()
-	if len(a.sel.makerScene.Events) != 2 || a.sel.makerSel != 1 {
-		t.Fatalf("dup: len=%d sel=%d", len(a.sel.makerScene.Events), a.sel.makerSel)
+	if len(a.makerScene.Events) != 2 || a.makerSel != 1 {
+		t.Fatalf("dup: len=%d sel=%d", len(a.makerScene.Events), a.makerSel)
 	}
-	a.sel.makerScene.Events[1].Message.Message = "changed" // editing the dup must not touch the original
-	if a.sel.makerScene.Events[0].Message.Message != "orig" {
+	a.makerScene.Events[1].Message.Message = "changed" // editing the dup must not touch the original
+	if a.makerScene.Events[0].Message.Message != "orig" {
 		t.Error("duplicate shares the Message pointer with the original")
 	}
 }
@@ -154,7 +154,11 @@ func TestMakerCropRange(t *testing.T) {
 		return recEvent{Kind: int(courtroom.EventMessage), Message: &protocol.ChatMessage{Message: text}}
 	}
 	newApp := func() *App {
-		return &App{env: env{}, sel: selState{makerScene: &sceneRecording{StartBg: "lobby", Events: []recEvent{bg("court"), msg("a"), msg("b"), msg("c"), msg("d")}}, makerTrimStart: -1, makerTrimEnd: -1}}
+		return &App{
+			makerScene:     &sceneRecording{StartBg: "lobby", Events: []recEvent{bg("court"), msg("a"), msg("b"), msg("c"), msg("d")}},
+			makerTrimStart: -1,
+			makerTrimEnd:   -1,
+		}
 	}
 
 	// No crop: whole scene, a fresh clone.
@@ -168,7 +172,7 @@ func TestMakerCropRange(t *testing.T) {
 
 	// In at index 2 (msg "b"): range [2,4], StartBg carried from the bg before it.
 	a = newApp()
-	a.sel.makerTrimStart = 2
+	a.makerTrimStart = 2
 	if s, e := a.trimRange(); s != 2 || e != 4 {
 		t.Fatalf("In-only range = %d..%d, want 2..4", s, e)
 	}
@@ -179,20 +183,20 @@ func TestMakerCropRange(t *testing.T) {
 	if sub.Events[0].Message == nil || sub.Events[0].Message.Message != "b" {
 		t.Fatalf("crop should start at msg b, got %+v", sub.Events[0])
 	}
-	if len(a.sel.makerScene.Events) != 5 || a.sel.makerScene.StartBg != "lobby" {
+	if len(a.makerScene.Events) != 5 || a.makerScene.StartBg != "lobby" {
 		t.Error("trimmedScene mutated the edit buffer (must clone)")
 	}
 
 	// Out at index 2: range [0,2].
 	a = newApp()
-	a.sel.makerTrimEnd = 2
+	a.makerTrimEnd = 2
 	if s, e := a.trimRange(); s != 0 || e != 2 {
 		t.Fatalf("Out-only range = %d..%d, want 0..2", s, e)
 	}
 
 	// Inverted (In after Out) degrades to the whole scene, never empty.
 	a = newApp()
-	a.sel.makerTrimStart, a.sel.makerTrimEnd = 4, 1
+	a.makerTrimStart, a.makerTrimEnd = 4, 1
 	if s, e := a.trimRange(); s != 0 || e != 4 {
 		t.Fatalf("inverted range = %d..%d, want full 0..4", s, e)
 	}
@@ -202,7 +206,7 @@ func TestMakerCropRange(t *testing.T) {
 
 	// Out-of-range Out (e.g. after deletes) clamps to the last event.
 	a = newApp()
-	a.sel.makerTrimStart, a.sel.makerTrimEnd = 2, 99
+	a.makerTrimStart, a.makerTrimEnd = 2, 99
 	if s, e := a.trimRange(); s != 2 || e != 4 {
 		t.Fatalf("clamped range = %d..%d, want 2..4", s, e)
 	}
@@ -213,7 +217,7 @@ func TestMakerCropRange(t *testing.T) {
 // and replays the effect instead of showing a stale frame.
 func TestMakerPreviewKeyReflectsEffects(t *testing.T) {
 	base := &protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", Side: "wit"}
-	a := &App{env: env{}, sel: selState{makerScene: &sceneRecording{Events: []recEvent{{Kind: int(courtroom.EventMessage), Message: base}}}}}
+	a := &App{makerScene: &sceneRecording{Events: []recEvent{{Kind: int(courtroom.EventMessage), Message: base}}}}
 	k0 := a.makerPreviewKeyFor(0)
 
 	for _, mut := range []func(m *protocol.ChatMessage){
@@ -224,21 +228,21 @@ func TestMakerPreviewKeyReflectsEffects(t *testing.T) {
 	} {
 		msg := *base
 		mut(&msg)
-		a.sel.makerScene.Events[0].Message = &msg
+		a.makerScene.Events[0].Message = &msg
 		if a.makerPreviewKeyFor(0) == k0 {
 			t.Errorf("preview key unchanged after mutating %+v — the pane wouldn't rebuild to show it", msg)
 		}
-		a.sel.makerScene.Events[0].Message = base
+		a.makerScene.Events[0].Message = base
 	}
 }
 
 func TestMakerNewLineSeedInherits(t *testing.T) {
-	a := &App{env: env{}}
-	a.sel.makerScene = &sceneRecording{Events: []recEvent{{
+	a := &App{}
+	a.makerScene = &sceneRecording{Events: []recEvent{{
 		Kind:    int(courtroom.EventMessage),
 		Message: &protocol.ChatMessage{CharName: "Edgeworth", Emote: "deskslam", Side: "pro", TextColor: 3, Flip: true, DeskMod: protocol.DeskShow},
 	}}}
-	a.sel.makerSel = 0
+	a.makerSel = 0
 	m := a.makerNewLineSeed().Message
 	if m == nil {
 		t.Fatal("nil seed message")
@@ -270,8 +274,8 @@ func TestSanitizeStem(t *testing.T) {
 }
 
 func TestMakerPreviewKeyForBackgroundContext(t *testing.T) {
-	a := &App{env: env{}}
-	a.sel.makerScene = &sceneRecording{
+	a := &App{}
+	a.makerScene = &sceneRecording{
 		StartBg: "courtroom",
 		Events: []recEvent{
 			newMessageEvent("A", "n", "1"),     // 0: bg = StartBg (courtroom)
@@ -293,7 +297,7 @@ func TestMakerPreviewKeyForBackgroundContext(t *testing.T) {
 		t.Errorf("line 2 key missing visual fields: %+v", k)
 	}
 	// text is NOT part of the key (so typing doesn't rebuild the preview)
-	a.sel.makerScene.Events[2].Message.Message = "edited"
+	a.makerScene.Events[2].Message.Message = "edited"
 	if a.makerPreviewKeyFor(2) != k {
 		t.Error("editing message text must not change the preview key")
 	}

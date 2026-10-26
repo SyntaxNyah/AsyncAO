@@ -11,17 +11,6 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
-// fontElemIndex is the position of id in theme.FontElements, or -1. Test-only:
-// the production rows resolve by identifier, never by index.
-func fontElemIndex(id string) int {
-	for i, e := range theme.FontElements {
-		if e == id {
-			return i
-		}
-	}
-	return -1
-}
-
 // TestPanelFontRowsMatchTheElementList is the pin that makes the persisted keys
 // safe. The overrides are stored by AO2 IDENTIFIER, not by index, precisely
 // because theme.FontElements is APPEND-ONLY and its indices are load-bearing —
@@ -32,7 +21,7 @@ func TestPanelFontRowsMatchTheElementList(t *testing.T) {
 	seen := map[string]bool{}
 	for i := range panelFontRows {
 		row := &panelFontRows[i]
-		idx := fontElemIndex(row.id)
+		idx := panelFontElementIndex(row.id)
 		if idx < 0 {
 			t.Errorf("row %q is not an entry in theme.FontElements — a saved override under that key would never apply", row.id)
 			continue
@@ -93,6 +82,14 @@ func typePanelSize(t *testing.T, a *App, rowID, typed string) []string {
 
 // TestPanelFontsApplyWithNoThemeLoaded is the regression pin for the report that
 // the per-panel fonts "just don't work".
+//
+// They were resolved inside the branch that runs only when a theme LOADS, next to
+// the theme's own font table. Anyone whose theme failed to load — none configured,
+// a folder since moved, the stock default with no tree on disk — had the setting
+// save perfectly and do nothing at all, with nothing on screen to say why. The
+// user's fonts are the USER's, not the theme's, and must not need one to be
+// present.
+//
 // Driven through applyThemeAsync + pollThemeApply, the real path, because the
 // defect was entirely in WHERE the call sat rather than in what it did.
 func TestPanelFontsApplyWithNoThemeLoaded(t *testing.T) {
@@ -105,11 +102,11 @@ func TestPanelFontsApplyWithNoThemeLoaded(t *testing.T) {
 
 	awaitThemeApply(t, a)
 
-	if got := a.skin.themeFonts.e[elemPlayerList].pct; got != pxToScalePct(40) {
+	if got := a.themeFonts.e[elemPlayerList].pct; got != pxToScalePct(40) {
 		t.Errorf("player_list pct = %d, want %d — a user's own font must not need a theme to load",
 			got, pxToScalePct(40))
 	}
-	if got := a.skin.themeFonts.e[elemICChatlog].pct; got != pxToScalePct(30) {
+	if got := a.themeFonts.e[elemICChatlog].pct; got != pxToScalePct(30) {
 		t.Errorf("ic_chatlog pct = %d, want %d", got, pxToScalePct(30))
 	}
 	// And it reaches the accessor every draw site actually calls.
@@ -131,7 +128,7 @@ func TestPanelFontsCoverEveryPanelRow(t *testing.T) {
 	awaitThemeApply(t, a)
 	for i := range panelFontRows {
 		row := &panelFontRows[i]
-		if got := a.skin.themeFonts.e[row.el].pct; got != pxToScalePct(40) {
+		if got := a.themeFonts.e[row.el].pct; got != pxToScalePct(40) {
 			t.Errorf("row %q (element %d) resolved to pct %d, want %d — the Settings row does nothing",
 				row.id, row.el, got, pxToScalePct(40))
 		}
@@ -145,7 +142,7 @@ func awaitThemeApply(t *testing.T, a *App) {
 	gen := a.applyThemeAsync()
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		if res := a.skin.themeRes.Load(); res != nil && res.gen >= gen {
+		if res := a.themeRes.Load(); res != nil && res.gen >= gen {
 			a.pollThemeApply()
 			return
 		}
@@ -158,6 +155,7 @@ func awaitThemeApply(t *testing.T, a *App) {
 
 // TestPanelSizeAcceptsATwoDigitNumber is the regression pin for the reported
 // fault: the size box "defaults to weird numbers, you can't set it correctly".
+//
 // It clamped on EVERY keystroke and fed the clamped number straight back into the
 // box, so typing the "1" of "18" became a 6 — the minimum — before the "8" could
 // be typed. Every size below ten was unreachable, and every one above it had to
@@ -337,17 +335,17 @@ func landWithPanel(t *testing.T, tune func(a *App)) *App {
 // entirely, and they would have no way to tell which control had done it.
 func TestThemeFontsOffKeepsTheUsersOwnPicks(t *testing.T) {
 	a := landWithPanel(t, func(a *App) { a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFonts = false }) })
-	if got := a.skin.themeFonts.e[elemICChatlog]; got.pct != 250 || got.face != 2 {
+	if got := a.themeFonts.e[elemICChatlog]; got.pct != 250 || got.face != 2 {
 		t.Errorf("ic_chatlog = %+v, want the USER's pct 250 and face 2 to survive the theme-fonts opt-out", got)
 	}
-	if got := a.skin.themeFonts.e[elemMusicList]; got.pct != 300 {
+	if got := a.themeFonts.e[elemMusicList]; got.pct != 300 {
 		t.Errorf("music_list pct = %d, want the user's 300", got.pct)
 	}
 	// ...but the THEME's own contribution is gone, which is what the box means.
-	if a.skin.themeFonts.e[elemICChatlog].bold {
+	if a.themeFonts.e[elemICChatlog].bold {
 		t.Error("the theme's bold survived the opt-out")
 	}
-	if got := a.skin.themeFonts.e[elemMusicList].face; got != 0 {
+	if got := a.themeFonts.e[elemMusicList].face; got != 0 {
 		t.Errorf("music_list face = %d, want 0 — the user overrode only its SIZE, so the theme's face must go", got)
 	}
 }
@@ -370,10 +368,10 @@ func TestDyslexiaFontBeatsAPerPanelPick(t *testing.T) {
 		})
 
 	})
-	if got := a.skin.themeFonts.e[elemICChatlog].face; got != 0 {
+	if got := a.themeFonts.e[elemICChatlog].face; got != 0 {
 		t.Errorf("ic_chatlog face = %d, want 0 — the dyslexia font must claim every family", got)
 	}
-	if got := a.skin.themeFonts.e[elemICChatlog].pct; got != 250 {
+	if got := a.themeFonts.e[elemICChatlog].pct; got != 250 {
 		t.Errorf("ic_chatlog pct = %d, want the user's 250 — the switch claims families, not sizes", got)
 	}
 }
@@ -385,11 +383,11 @@ func TestPerPanelPickBeatsAGlobalFontPath(t *testing.T) {
 	a := landWithPanel(t, func(a *App) {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.FontOverridePaths = `C:\some\font.ttf` })
 	})
-	if got := a.skin.themeFonts.e[elemICChatlog].face; got != 2 {
+	if got := a.themeFonts.e[elemICChatlog].face; got != 2 {
 		t.Errorf("ic_chatlog face = %d, want the user's per-panel face 2 to beat their global font path", got)
 	}
 	// The element they did NOT name still loses its family to the global override.
-	if got := a.skin.themeFonts.e[elemMusicList].face; got != 0 {
+	if got := a.themeFonts.e[elemMusicList].face; got != 0 {
 		t.Errorf("music_list face = %d, want 0 — no per-panel pick, so the global path claims it", got)
 	}
 }

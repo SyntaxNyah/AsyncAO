@@ -31,7 +31,7 @@ func TestOOCLogRespectsDetailedLogPref(t *testing.T) {
 			false
 
 	})
-	a.srvMeta.serverName = "Skrapegropen-ooc-pref-off"
+	a.serverName = "Skrapegropen-ooc-pref-off"
 
 	a.pushOOC("Nyah: should not be logged", "Nyah")
 
@@ -45,11 +45,11 @@ func TestOOCLogRespectsDetailedLogPref(t *testing.T) {
 // exposes no path of its own to ask for directly.
 func transcriptLogFiles(t *testing.T, server string) map[string]bool {
 	t.Helper()
-	root, err := exeDataDir()
+	exe, err := os.Executable()
 	if err != nil {
-		t.Fatalf("exeDataDir: %v", err)
+		t.Fatalf("os.Executable: %v", err)
 	}
-	dir := filepath.Join(root, "logs", sanitizeLogFolder(server))
+	dir := filepath.Join(filepath.Dir(exe), "logs", sanitizeLogFolder(server))
 	names, _ := filepath.Glob(filepath.Join(dir, "*.log"))
 	out := make(map[string]bool, len(names))
 	for _, n := range names {
@@ -75,7 +75,6 @@ func transcriptNewFile(t *testing.T, server string, before map[string]bool) (str
 // writer's channel length — the background goroutine can drain a wrongly-queued
 // line before an in-process check ever observes it, which would hide the bug.
 func TestPushOOCSuppressedRosterBurstNeverReachesDisk(t *testing.T) {
-	withExeDataRoot(t)
 	const server = "Skrapegropen-ooc-suppressed"
 	a := testTabApp(t)
 	a.d.Prefs.Update(func(
@@ -89,13 +88,13 @@ func TestPushOOCSuppressedRosterBurstNeverReachesDisk(t *testing.T) {
 
 	})
 
-	a.srvMeta.serverName = server
+	a.serverName = server
 	t.Cleanup(a.CloseTranscript)
-	a.budget.frameNow = time.Now()
-	a.roster.suppressAreaEchoUntil = a.budget.frameNow.Add(time.Minute) // arm the /gas suppression window
+	a.frameNow = time.Now()
+	a.suppressAreaEchoUntil = a.frameNow.Add(time.Minute) // arm the /gas suppression window
 
 	before := transcriptLogFiles(t, server)
-	if a.transcriptFor(server, a.srvMeta.logSession) == nil {
+	if a.transcriptFor(server, a.logSession) == nil {
 		t.Skip("transcript writers unavailable in this environment (no writable exe dir)")
 	}
 	file, ok := transcriptNewFile(t, server, before)
@@ -103,9 +102,9 @@ func TestPushOOCSuppressedRosterBurstNeverReachesDisk(t *testing.T) {
 		t.Fatal("opening the transcript writer created no new file")
 	}
 
-	beforeOOC := len(a.chatlog.oocLog)
+	beforeOOC := len(a.oocLog)
 	a.pushOOC("5 players online", "") // looksLikeAreaList == true
-	if len(a.chatlog.oocLog) != beforeOOC {
+	if len(a.oocLog) != beforeOOC {
 		t.Fatal("setup broken: the roster burst reached the on-screen OOC log, so it wasn't actually suppressed")
 	}
 
@@ -127,7 +126,6 @@ func TestPushOOCSuppressedRosterBurstNeverReachesDisk(t *testing.T) {
 // so this is the encapsulation test: OOC cannot land in a writer belonging to a
 // different session, driven through the production call path rather than reimplemented.
 func TestTwoTabsOOCLogsGoToSeparateFiles(t *testing.T) {
-	withExeDataRoot(t)
 	const server = "Skrapegropen-ooc-split"
 	a := testTabApp(t)
 	a.d.Prefs.Update(func(
@@ -141,7 +139,7 @@ func TestTwoTabsOOCLogsGoToSeparateFiles(t *testing.T) {
 
 	})
 
-	a.srvMeta.serverName = server
+	a.serverName = server
 	t.Cleanup(a.CloseTranscript)
 
 	// Open each tab's writer EXPLICITLY, independent of the OOC seam under test:
@@ -150,7 +148,7 @@ func TestTwoTabsOOCLogsGoToSeparateFiles(t *testing.T) {
 	// cleanly here and a BROKEN OOC seam instead shows up as a content mismatch
 	// below — never a false skip that would hide the regression.
 	before := transcriptLogFiles(t, server)
-	if a.transcriptFor(server, a.srvMeta.logSession) == nil {
+	if a.transcriptFor(server, a.logSession) == nil {
 		t.Skip("transcript writers unavailable in this environment (no writable exe dir)")
 	}
 	tab1File, ok := transcriptNewFile(t, server, before)
@@ -164,10 +162,10 @@ func TestTwoTabsOOCLogsGoToSeparateFiles(t *testing.T) {
 	a.tabs = append(a.tabs, &courtTab{})
 	a.activeTab = 0
 	a.parkActive()
-	a.srvMeta.serverName = server
+	a.serverName = server
 
 	before = transcriptLogFiles(t, server)
-	if a.transcriptFor(server, a.srvMeta.logSession) == nil {
+	if a.transcriptFor(server, a.logSession) == nil {
 		t.Fatal("tab two's transcript writer failed to open")
 	}
 	tab2File, ok := transcriptNewFile(t, server, before)

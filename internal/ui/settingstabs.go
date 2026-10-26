@@ -171,6 +171,14 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 
 // themeFitOption pairs one row of the "Theme fit:" dropdown with the mode
 // constant it selects.
+//
+// The kit's Dropdown speaks LIST INDEXES, and the old code fed the index
+// straight to SetThemeFit — correct only for as long as the rows happened to sit
+// in constant order. They no longer do: the mode constants are persisted on disk
+// and therefore append-only (config.ThemeFitNative is 4), while Native has to be
+// listed FIRST because it is the shipped default. This table keeps the two
+// orders independent, so reordering or inserting a row can never silently
+// reinterpret somebody's saved mode.
 type themeFitOption struct {
 	mode  int
 	label string
@@ -412,26 +420,26 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	} {
 		bw := c.TextWidth(pm.label) + 16
 		if c.Button(sdl.Rect{X: bx, Y: y, W: bw, H: btnH}, pm.label) {
-			a.classic.applyStagePreset(pm.vp)
-			a.debug.Push("layout: stage preset applied")
+			a.applyStagePreset(pm.vp)
+			a.pushDebug("layout: stage preset applied")
 		}
 		bx += bw + 6
 	}
 	y += btnH + 8
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 150, H: btnH}, "Reset to stock") {
-		a.classic.applyLayoutPreset(nil)
-		a.debug.Push("layout: reset to stock")
+		a.applyLayoutPreset(nil)
+		a.pushDebug("layout: reset to stock")
 	}
 	// Mouse-reachable chrome recovery (A6 no-strand): un-hides every piece at
 	// once. The pieces panel refuses to hide BOTH the toolbox and the Settings
 	// button precisely so this button stays reachable by mouse. Drawn only
 	// while something is actually hidden.
-	if len(a.classic.hidden) > 0 {
+	if len(a.hidden) > 0 {
 		lbl := "Show all hidden UI pieces"
 		if c.Button(sdl.Rect{X: pad + 158, Y: y, W: c.TextWidth(lbl) + 16, H: btnH}, lbl) {
-			a.classic.hidden = map[string]bool{}
+			a.hidden = map[string]bool{}
 			a.d.Prefs.SetHiddenPanels(nil)
-			a.debug.Push("layout: all hidden UI pieces restored")
+			a.pushDebug("layout: all hidden UI pieces restored")
 		}
 	}
 	y += btnH + 12
@@ -471,7 +479,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 		for _, name := range names {
 			if c.Button(sdl.Rect{X: pad, Y: y, W: 60, H: btnH}, "Load") {
 				a.applyProfile(a.d.Prefs.Load().LayoutProfile(name))
-				a.debug.Push("layout: profile loaded")
+				a.pushDebug("layout: profile loaded")
 			}
 			if c.Button(sdl.Rect{X: pad + 66, Y: y, W: 64, H: btnH}, "Delete") {
 				a.d.Prefs.DeleteLayoutProfile(name)
@@ -529,10 +537,10 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		})
 
 		noFX = next
-		if a.link.room != nil { // apply to the live room immediately, like the rows below do
-			a.link.room.ReduceMotion = a.d.Prefs.Load().ReduceMotionOn || noFX
-			a.link.room.ScreenEffects = a.d.Prefs.Load().ScreenEffects && !noFX
-			a.link.room.HideSpriteStyles = a.d.Prefs.Load().HideSpriteStyles || noFX
+		if a.room != nil { // apply to the live room immediately, like the rows below do
+			a.room.ReduceMotion = a.d.Prefs.Load().ReduceMotionOn || noFX
+			a.room.ScreenEffects = a.d.Prefs.Load().ScreenEffects && !noFX
+			a.room.HideSpriteStyles = a.d.Prefs.Load().HideSpriteStyles || noFX
 		}
 	}
 	y += 26
@@ -546,8 +554,8 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	seff := a.d.Prefs.Load().ScreenEffects
 	if next := c.Checkbox(pad, y, "Enable screen effects (ON by default): screenshake (\\s) and flash (\\f) typed into messages, plus authored shake / realization. Turn off to keep your screen still.", seff); next != seff {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.ScreenEffects = next })
-		if a.link.room != nil {
-			a.link.room.ScreenEffects = next // apply to the live room immediately
+		if a.room != nil {
+			a.room.ScreenEffects = next // apply to the live room immediately
 		}
 	}
 	y += 26
@@ -599,10 +607,10 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		c.Fill(sw, sdl.Color{R: uint8(cur >> 16 & 0xFF), G: uint8(cur >> 8 & 0xFF), B: uint8(cur & 0xFF), A: 255})
 		c.Border(sw, ColPanelHi)
 		if c.focusID != "spritetinthex" {
-			a.sel.spriteTintHex = fmt.Sprintf("%06x", cur) // reflect the pref when not typing
+			a.spriteTintHex = fmt.Sprintf("%06x", cur) // reflect the pref when not typing
 		}
-		if next, _ := c.TextField("spritetinthex", sdl.Rect{X: pad + 166, Y: y, W: 100, H: fieldH}, a.sel.spriteTintHex, "RRGGBB"); next != a.sel.spriteTintHex {
-			a.sel.spriteTintHex = next
+		if next, _ := c.TextField("spritetinthex", sdl.Rect{X: pad + 166, Y: y, W: 100, H: fieldH}, a.spriteTintHex, "RRGGBB"); next != a.spriteTintHex {
+			a.spriteTintHex = next
 			if rgb, ok := parseHex6(next); ok {
 				a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteTintColor = rgb })
 			}
@@ -821,7 +829,7 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 func (a *App) drawThemeFitPreview(box sdl.Rect) {
 	c := a.ctx
 	c.Fill(box, sdl.Color{R: 0, G: 0, B: 0, A: 255})
-	court, ok := a.skin.themeRects["courtroom"]
+	court, ok := a.themeRects["courtroom"]
 	if ok && court.W > 0 && court.H > 0 {
 		base := float64(box.W) / float64(court.W) // min-fit within the box
 		if by := float64(box.H) / float64(court.H); by < base {
@@ -862,19 +870,19 @@ func (a *App) drawThemeFitPreview(box sdl.Rect) {
 		}
 		a.invalidateThemeCanvases()
 	}
-	if c.hovering(box) && c.mouseDown && !a.client.themeFitDrag {
-		a.client.themeFitDrag = true
-		a.client.themeFitDragStart = [2]int32{c.mouseX, c.mouseY}
+	if c.hovering(box) && c.mouseDown && !a.themeFitDrag {
+		a.themeFitDrag = true
+		a.themeFitDragStart = [2]int32{c.mouseX, c.mouseY}
 		px, py := a.d.Prefs.Load().ThemePan()
-		a.client.themeFitDragBase = [2]int{px, py}
+		a.themeFitDragBase = [2]int{px, py}
 	}
-	if a.client.themeFitDrag {
+	if a.themeFitDrag {
 		if !c.mouseDown {
-			a.client.themeFitDrag = false
+			a.themeFitDrag = false
 		} else if box.W > 0 && box.H > 0 {
-			dx := int(c.mouseX-a.client.themeFitDragStart[0]) * 100 / int(box.W)
-			dy := int(c.mouseY-a.client.themeFitDragStart[1]) * 100 / int(box.H)
-			a.d.Prefs.SetThemeFitPan(a.client.themeFitDragBase[0]+dx, a.client.themeFitDragBase[1]+dy)
+			dx := int(c.mouseX-a.themeFitDragStart[0]) * 100 / int(box.W)
+			dy := int(c.mouseY-a.themeFitDragStart[1]) * 100 / int(box.H)
+			a.d.Prefs.SetThemeFitPan(a.themeFitDragBase[0]+dx, a.themeFitDragBase[1]+dy)
 			a.invalidateThemeCanvases()
 		}
 	}
@@ -921,8 +929,8 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 			nv = 1
 		}
 		a.d.Prefs.SetPrefetchAggressiveness(int(nv))
-		if a.link.room != nil && a.link.room.Predictor != nil {
-			a.link.room.Predictor.SetAggressiveness(int(nv)) // apply live to the running predictor
+		if a.room != nil && a.room.Predictor != nil {
+			a.room.Predictor.SetAggressiveness(int(nv)) // apply live to the running predictor
 		}
 	}
 	c.Label(pad+285, y+4, prefetchAggroLabel(a.d.Prefs.Load().PrefetchAggressiveness()), ColAccent)
@@ -1030,8 +1038,8 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Apply") || esCommit {
 		raw := strings.TrimSpace(settings.errorSpriteInput)
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.ErrorSpriteFile = raw })
-		a.font.errorSpriteErr = "" // clear a stale error; the load reports fresh via pollErrorSprite
-		a.applyErrorSprite(raw)    // "" restores the embedded default synchronously
+		a.errorSpriteErr = ""   // clear a stale error; the load reports fresh via pollErrorSprite
+		a.applyErrorSprite(raw) // "" restores the embedded default synchronously
 		if raw == "" {
 			settings.statusLine = "Custom missing-sprite image cleared — using the built-in placeholder."
 		} else {
@@ -1039,8 +1047,8 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 		}
 	}
 	y += 30
-	if a.font.errorSpriteErr != "" {
-		c.LabelClipped(pad+130, y, w-pad-130-scrollBarW, "Couldn't load that image: "+a.font.errorSpriteErr+" — using the built-in placeholder.", ColDanger)
+	if a.errorSpriteErr != "" {
+		c.LabelClipped(pad+130, y, w-pad-130-scrollBarW, "Couldn't load that image: "+a.errorSpriteErr+" — using the built-in placeholder.", ColDanger)
 		y += 22
 	}
 	y = a.settingsDesc(pad, y, "Optional: replace the built-in glitch placeholder with your own image (a PNG, WebP, GIF, APNG or JPG). Loaded in the background; if the file can't be read or decoded it's ignored and the built-in one stays. Leave blank for the default.", ColTextDim)
@@ -1182,7 +1190,7 @@ func (a *App) drawSettingsReset(y, _ int32) int32 {
 	y += 26
 	// Factory reset: opens a pop-up offering settings-only or a full wipe.
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 220, H: btnH}, "Reset to defaults…") {
-		a.inibrowse.showReset = true
+		a.showReset = true
 	}
 	y += 34
 	return y
@@ -1195,7 +1203,7 @@ func (a *App) drawSettingsReset(y, _ int32) int32 {
 func (a *App) drawResetConfirm(w, h int32) {
 	c := a.ctx
 	if c.escPressed { // ESC cancels the confirm (the safe default), like Cancel
-		a.inibrowse.showReset = false
+		a.showReset = false
 		return
 	}
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 235})
@@ -1227,7 +1235,7 @@ func (a *App) drawResetConfirm(w, h int32) {
 	}
 	y += 42
 	if c.Button(sdl.Rect{X: x, Y: y, W: 120, H: btnH}, "Cancel") {
-		a.inibrowse.showReset = false
+		a.showReset = false
 	}
 }
 
@@ -1239,8 +1247,8 @@ func (a *App) applyFactoryReset(wipeAll bool) {
 		a.d.Prefs.ResetAll()
 		_ = a.d.Manager.ClearDisk()
 		a.d.Resolver.InvalidateAll()
-		if a.jukebox.juke != nil {
-			a.jukebox.juke.Clear() // the jukebox library lives in its own file — wipe it too
+		if a.juke != nil {
+			a.juke.Clear() // the jukebox library lives in its own file — wipe it too
 		}
 		if a.notebook != nil {
 			a.notebook.Clear() // empty + stop its flush before deleting the files
@@ -1256,10 +1264,10 @@ func (a *App) applyFactoryReset(wipeAll bool) {
 	// auto-refresh funnels through it), so a factory reset clears it here
 	// explicitly — an ephemeral sort mode + RTT cache must not outlive
 	// "fresh-install state". The gen bump discards an in-flight sweep.
-	a.conn.lobby.pings, a.conn.lobby.pingMode, a.conn.lobby.pinging = nil, false, false
-	a.conn.lobby.pingGen++
+	a.pings, a.pingMode, a.pinging = nil, false, false
+	a.pingGen++
 	a.RefreshServers() // favourites/master re-merge
-	a.inibrowse.showReset = false
+	a.showReset = false
 	a.warnAt = time.Now()
 }
 
@@ -1267,20 +1275,20 @@ func (a *App) applyFactoryReset(wipeAll bool) {
 // the subset NewApp seeds — so a reset (or import) takes effect without a
 // restart. Not a hot path.
 func (a *App) applyPrefsToState() {
-	a.classic.seedHiddenFromPrefs(&a.env) // hidden-chrome set + the A6 no-strand normalization
+	a.seedHiddenFromPrefs() // hidden-chrome set + the A6 no-strand normalization
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = a.d.Prefs.Load().LayoutScales()
 	a.oocPct = a.d.Prefs.Load().OOCScalePct
 	a.uiScalePct = a.d.Prefs.Load().UIScalePct
 	a.ctx.SetUIScale(a.UIScale())
-	a.compose.oocName = a.defaultOOCName() // the active tab re-seeds; parked tabs keep theirs
+	a.oocName = a.defaultOOCName() // the active tab re-seeds; parked tabs keep theirs
 	a.refreshCharKeys()
 	a.applyThemeAsync()
 	a.applyAudioVolumes()
-	if a.link.room != nil {
+	if a.room != nil {
 		a.applyTimingToRoom()
-		a.link.room.ForceCharNames = a.d.Prefs.Load().ForceCharNames
-		a.link.room.ReduceMotion = a.d.Prefs.Load().ReduceMotionOn
-		a.link.room.ScreenEffects = a.d.Prefs.Load().ScreenEffects
+		a.room.ForceCharNames = a.d.Prefs.Load().ForceCharNames
+		a.room.ReduceMotion = a.d.Prefs.Load().ReduceMotionOn
+		a.room.ScreenEffects = a.d.Prefs.Load().ScreenEffects
 	}
 }
 
@@ -1295,8 +1303,8 @@ func (a *App) drawSettingsAudio(y, _ int32) int32 {
 	// Volumes save PER SERVER while you're connected to one, so muting blips (or
 	// anything) on one server leaves the others untouched — each tab keeps its own.
 	// Edited from the lobby they set the global default new servers start from.
-	if a.srvMeta.serverName != "" {
-		c.Label(pad, y, "Saved for this server ("+a.srvMeta.serverName+") — each tab keeps its own volumes; a channel you never touch follows the global default.", ColTextDim)
+	if a.serverName != "" {
+		c.Label(pad, y, "Saved for this server ("+a.serverName+") — each tab keeps its own volumes; a channel you never touch follows the global default.", ColTextDim)
 		y += 22
 	}
 	em, emu, es, eb := a.effectiveVolumes()

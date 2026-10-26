@@ -1,6 +1,7 @@
 package ui
 
 // THE PAUSED-CLOCK CENSUS GUARD (v1.90.0 W7a).
+//
 // W5 shipped themeClock.paused with NO WRITER and left the whole failure written
 // down at drawElement's census line as a TODO. W7's scrub is the first writer, so
 // the guard lands with it — and these gates land BEFORE the scrub UI does, which is
@@ -17,17 +18,27 @@ import (
 
 // TestPausedClockNeverPinsTheFrameRate is the idle-CPU-burn gate for a scrubbed
 // clock, over BOTH sites that can note the census on the element path.
+//
+// The three ways a paused clock reports motion forever, each correct in isolation:
+//
+//   - the five PERIODIC effect kinds return static=false unconditionally (design
+//     §Q3: "they note forever, which is correct and is what the author asked for");
+//   - a CONDITIONAL one-shot acquires its pool slot at the frozen elapsed, so
+//     startedAt == el permanently and its envelope sits at full amplitude;
+//   - a LOOPING page's elementFrameIndex returns live=true unconditionally, because
+//     a loop never ends.
+//
 // Every one of them is a still picture once the clock stops.
 func TestPausedClockNeverPinsTheFrameRate(t *testing.T) {
 	a, lay, _, restore := fxDrawRig(t)
 	defer restore()
-	a.toolbox.themeAt = time.Now()
+	a.themeAt = time.Now()
 	a.beginThemeFXPass()
 
 	// Clock 1 is HELD at a point a quarter into the period — the position
 	// TestLiveElementAlwaysNotesTheCensus proves every kind is unambiguously live at.
 	const held = time.Duration(fxTestPeriodMs) * time.Millisecond / 4
-	a.fxPool.themeClocks[1] = themeClock{paused: true, frozen: held}
+	a.themeClocks[1] = themeClock{paused: true, frozen: held}
 
 	for k := theme.EffectKind(0); k < theme.EffectKindCount; k++ {
 		if k == theme.FXNone {
@@ -35,9 +46,9 @@ func TestPausedClockNeverPinsTheFrameRate(t *testing.T) {
 		}
 		el := fxTestElement(k)
 		el.clock = 1
-		a.frame.frameAnimChrome = false
+		a.frameAnimChrome = false
 		a.drawElement(lay, &el, int16(k))
-		if a.frame.frameAnimChrome {
+		if a.frameAnimChrome {
 			t.Errorf("%s on a PAUSED clock noted the animation census — the client would sit at the "+
 				"animation cadence on a frame the user deliberately froze, and there is nothing on "+
 				"screen to explain why the fans are on", k)
@@ -48,11 +59,11 @@ func TestPausedClockNeverPinsTheFrameRate(t *testing.T) {
 	page := fxTestElement(theme.FXNone)
 	page.kind, page.page, page.loop = theme.ElemImage, fxTestPage(t, fxTestStore(t), 4, 50*time.Millisecond), true
 	page.clock = 1
-	a.frame.frameAnimChrome = false
+	a.frameAnimChrome = false
 	if got := a.elementFrame(&page); got == nil {
 		t.Fatal("elementFrame returned nil for a four-frame page")
 	}
-	if a.frame.frameAnimChrome {
+	if a.frameAnimChrome {
 		t.Error("a LOOPING page on a paused clock noted the census — elementFrameIndex reports live=true " +
 			"for a loop unconditionally, so this is the second site the scrub pins the pacer from")
 	}
@@ -61,10 +72,10 @@ func TestPausedClockNeverPinsTheFrameRate(t *testing.T) {
 	// clock still notes, or the gate above would pass with the census deleted.
 	live := fxTestElement(theme.FXPulse)
 	live.clock = 0
-	a.toolbox.themeAt = time.Now().Add(-held)
-	a.frame.frameAnimChrome = false
+	a.themeAt = time.Now().Add(-held)
+	a.frameAnimChrome = false
 	a.drawElement(lay, &live, 0)
-	if !a.frame.frameAnimChrome {
+	if !a.frameAnimChrome {
 		t.Fatal("the same effect on a RUNNING clock did not note the census — this gate would pass with " +
 			"NoteAnimating deleted outright")
 	}
@@ -77,12 +88,12 @@ func TestPausedClockNeverPinsTheFrameRate(t *testing.T) {
 func TestPausedClockStillAppliesItsTerms(t *testing.T) {
 	a, lay, seen, restore := fxDrawRig(t)
 	defer restore()
-	a.toolbox.themeAt = time.Now()
+	a.themeAt = time.Now()
 	a.beginThemeFXPass()
 
 	// A drift is pure geometry, so its held terms are visible as a moved rect.
 	const held = time.Duration(fxTestPeriodMs) * time.Millisecond / 4
-	a.fxPool.themeClocks[1] = themeClock{paused: true, frozen: held}
+	a.themeClocks[1] = themeClock{paused: true, frozen: held}
 
 	el := fxTestElement(theme.FXDrift)
 	el.clock = 1
@@ -97,8 +108,8 @@ func TestPausedClockStillAppliesItsTerms(t *testing.T) {
 	}
 	// The same clock, unpaused, is at exactly the same position: a scrub holds a real
 	// frame of the animation rather than a neutral one.
-	a.fxPool.themeClocks[1] = themeClock{}
-	a.toolbox.themeAt = time.Now().Add(-held)
+	a.themeClocks[1] = themeClock{}
+	a.themeAt = time.Now().Add(-held)
 	free := fxTestElement(theme.FXDrift)
 	free.clock = 1
 	a.drawElement(lay, &free, 4)

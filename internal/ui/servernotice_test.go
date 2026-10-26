@@ -2,7 +2,22 @@ package ui
 
 // The gates for the server-notice box (servernotice.go) and for the wrapped body the
 // involuntary-disconnect dialog now shares with it.
+//
+// WHAT THESE ARE FOR. A server that refuses or ends a connection says why, and the
+// message carries the thing you have to act on: a whitelist code, a Discord invite, an
+// appeal link. AO2 puts it in a modal. We put a BD reason on the lobby as ONE clipped
+// label, so the tail of the message — where the code lives — was unreachable, and past
+// some length the label drew nothing at all. Three shapes of gate below:
+//
+//   - ROUTING: a pre-courtroom removal raises the box, with the tail intact.
+//   - LAYOUT: the body never ends silently, and never draws outside the panel.
+//   - FENCING: while the box is up, nothing behind it takes input — and the box's own
+//     buttons still do, which is the same coin's other face (the frame tail has to
+//     fence for the modal and then unfence for it).
+//
 // Where a gate can be driven through App.Frame it is, because the wiring is what broke:
+// a modal that draws but is never reached, or is reached but never fenced for, passes
+// every unit test of its own functions.
 
 import (
 	"strings"
@@ -33,17 +48,21 @@ const (
 
 // TestAPreCourtroomBanRaisesTheNoticeBoxWithTheTail is the regression gate for the
 // reported defect, driven through the real drop path.
+//
 // handleInvoluntaryDrop with no room to freeze is the arm a refused handshake lands on
 // (the server answers our join with BD and closes, so there is no courtroom yet). It
 // must now raise the box, attribute it to the server we dialled, and keep the WHOLE
+// reason — the last line especially. The disconnect dialog must NOT open: the two
+// surfaces are mutually exclusive branches, and `disconnectDlg.open ⇒ screen ==
+// Courtroom` is an invariant the frame tail relies on.
 func TestAPreCourtroomBanRaisesTheNoticeBoxWithTheTail(t *testing.T) {
 	a := froomApp(t)
-	a.link.room = nil // a drop before the courtroom: char-select, or a refused join
-	server := a.srvMeta.serverName
+	a.room = nil // a drop before the courtroom: char-select, or a refused join
+	server := a.serverName
 
 	a.handleInvoluntaryDrop("Banned: " + noticeLockdownReason)
 
-	d := &a.font.serverNoticeDlg
+	d := &a.serverNoticeDlg
 	if !d.open {
 		t.Fatal("a pre-courtroom ban raised no box — the reason is back to one lobby label, " +
 			"which is the bug this exists to fix")
@@ -68,7 +87,7 @@ func TestAPreCourtroomBanRaisesTheNoticeBoxWithTheTail(t *testing.T) {
 	if d.title == "" {
 		t.Error("no title: the box would draw a blank heading band")
 	}
-	if a.dialogs.disconnectDlg.open {
+	if a.disconnectDlg.open {
 		t.Error("the disconnect dialog opened too — it must never be up off the courtroom screen")
 	}
 	if a.screen != ScreenLobby {
@@ -98,9 +117,9 @@ func TestOnlyAServersOwnWordsRaiseTheBox(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := froomApp(t)
-			a.link.room = nil
+			a.room = nil
 			a.handleInvoluntaryDrop(tc.reason)
-			if got := a.font.serverNoticeDlg.open; got != tc.want {
+			if got := a.serverNoticeDlg.open; got != tc.want {
 				t.Errorf("box open = %v, want %v for %q", got, tc.want, tc.reason)
 			}
 		})
@@ -113,10 +132,10 @@ func TestOnlyAServersOwnWordsRaiseTheBox(t *testing.T) {
 // user asked for is noise.
 func TestADeliberateDisconnectIsSilent(t *testing.T) {
 	a := froomApp(t)
-	a.link.room = nil
-	a.conn.deliberateClose = true
+	a.room = nil
+	a.deliberateClose = true
 	a.handleInvoluntaryDrop("Kicked: you left")
-	if a.font.serverNoticeDlg.open {
+	if a.serverNoticeDlg.open {
 		t.Error("a deliberate close raised a modal")
 	}
 }
@@ -130,14 +149,14 @@ func TestARemovalNoticeCannotBeBuriedByAnythingElse(t *testing.T) {
 	a.openServerNotice(serverNoticeRemoved, "The server banned you.", "S", noticeLockdownReason)
 
 	a.openServerNotice(serverNoticeInfo, serverNoticeInfoTitle, "S", "read the rules")
-	if a.font.serverNoticeDlg.kind != serverNoticeRemoved || !strings.Contains(a.font.serverNoticeDlg.body, noticeLockdownCode) {
+	if a.serverNoticeDlg.kind != serverNoticeRemoved || !strings.Contains(a.serverNoticeDlg.body, noticeLockdownCode) {
 		t.Fatal("an info notice buried a removal notice")
 	}
 
 	// The disconnect dialog is the other blocking modal: it dismisses a live INFO
 	// notice (moot the instant the session is gone) and must leave a removal alone.
 	a.openDisconnectDialog("S", "ws://s", "connection lost", a.now())
-	if !a.font.serverNoticeDlg.open || a.font.serverNoticeDlg.kind != serverNoticeRemoved {
+	if !a.serverNoticeDlg.open || a.serverNoticeDlg.kind != serverNoticeRemoved {
 		t.Error("the disconnect dialog destroyed a removal notice")
 	}
 
@@ -145,13 +164,13 @@ func TestARemovalNoticeCannotBeBuriedByAnythingElse(t *testing.T) {
 	b := froomApp(t)
 	b.openServerNotice(serverNoticeInfo, serverNoticeInfoTitle, "S", "motd")
 	b.openDisconnectDialog("S", "ws://s", "connection lost", b.now())
-	if b.font.serverNoticeDlg.open {
+	if b.serverNoticeDlg.open {
 		t.Error("an info notice stayed up under the disconnect dialog — two blocking modals stacked")
 	}
 
 	// A removal always replaces whatever is showing, including another removal.
 	a.openServerNotice(serverNoticeRemoved, "Kicked", "S2", "second")
-	if a.font.serverNoticeDlg.body != "second" || a.font.serverNoticeDlg.server != "S2" {
+	if a.serverNoticeDlg.body != "second" || a.serverNoticeDlg.server != "S2" {
 		t.Error("a second removal did not replace the first")
 	}
 }
@@ -162,16 +181,16 @@ func TestARemovalNoticeCannotBeBuriedByAnythingElse(t *testing.T) {
 func TestOpeningANoticeDropsEveryFieldOfThePreviousOne(t *testing.T) {
 	a := froomApp(t)
 	a.openServerNotice(serverNoticeInfo, "first", "S1", "first body")
-	a.font.serverNoticeDlg.wrap.get(func(string) int32 { return 1 }, 0, "first body", 100, 4, "")
-	if a.font.serverNoticeDlg.wrap.lines == nil {
+	a.serverNoticeDlg.wrap.get(func(string) int32 { return 1 }, 0, "first body", 100, 4, "")
+	if a.serverNoticeDlg.wrap.lines == nil {
 		t.Fatal("the fixture never baked a wrap, so nothing below is proving it gets dropped")
 	}
 	a.openServerNotice(serverNoticeInfo, "second", "S2", "second body")
-	if a.font.serverNoticeDlg.wrap.lines != nil {
+	if a.serverNoticeDlg.wrap.lines != nil {
 		t.Error("the previous notice's laid-out body survived into the new one")
 	}
 	a.closeServerNotice()
-	d := &a.font.serverNoticeDlg
+	d := &a.serverNoticeDlg
 	if d.open || d.kind != serverNoticeNone || d.title != "" || d.server != "" || d.body != "" ||
 		d.wrap.lines != nil {
 		t.Errorf("closing left state behind (%+v) — the zero value is the closed state", *d)
@@ -186,7 +205,7 @@ func TestAnOversizedTitleCannotOverflowTheHeading(t *testing.T) {
 	a := froomApp(t)
 	long := strings.Repeat("б", serverNoticeTitleRuneCap*2)
 	a.openServerNotice(serverNoticeInfo, long, "S", "body")
-	title := a.font.serverNoticeDlg.title
+	title := a.serverNoticeDlg.title
 	if n := len([]rune(title)); n > serverNoticeTitleRuneCap+1 {
 		t.Errorf("title kept %d runes, past the %d cap", n, serverNoticeTitleRuneCap)
 	}
@@ -196,7 +215,7 @@ func TestAnOversizedTitleCannotOverflowTheHeading(t *testing.T) {
 
 	exact := strings.Repeat("б", serverNoticeTitleRuneCap)
 	a.openServerNotice(serverNoticeInfo, exact, "S", "body")
-	if a.font.serverNoticeDlg.title != exact {
+	if a.serverNoticeDlg.title != exact {
 		t.Error("a title of exactly the cap was truncated — the clamp is counting bytes, " +
 			"and Cyrillic is two bytes a rune")
 	}
@@ -208,9 +227,11 @@ func TestAnOversizedTitleCannotOverflowTheHeading(t *testing.T) {
 
 // TestTheNoticeBodyNeverEndsSilently is the layout half of the reported bug, measured
 // with the REAL font chain.
+//
 // A body that overflows its row budget must spend its last row SAYING so and pointing
 // at Copy. Silence is the actual defect: the tail of these payloads is the part you
 // need, so a body that just stops looks like the whole message.
+//
 // It runs on the frame harness because Ctx.TextWidth returns 0 with no font loaded —
 // a wrap gate written against a fontless Ctx passes vacuously, every row measuring
 // zero and everything "fitting".
@@ -274,6 +295,12 @@ func TestANoticeWithNoWordsStillSaysSomething(t *testing.T) {
 
 // TestEveryNoticeRowFitsInsideThePanel is the arithmetic gate on the two sizing
 // helpers, across the window sizes the client can actually be.
+//
+// serverNoticeRows and drawServerNotice derive their geometry from the same constants
+// on purpose — the trap is that they drift, so the wrap is told a budget the draw then
+// refuses to paint, and rows vanish with no marker (the draw's own break guard would
+// silently eat them). config.MinWindowH is the smallest window the client allows, so
+// it is the size that has to work, not 720.
 func TestEveryNoticeRowFitsInsideThePanel(t *testing.T) {
 	for _, h := range []int32{config.MinWindowH, 600, frameHarnessH, 1080, 2160} {
 		rows := serverNoticeRows(h)
@@ -374,6 +401,7 @@ func TestTheOneLineDropDialogKeepsItsOldShape(t *testing.T) {
 // TestTheWrappedBodyIsBakedNotRewrappedEveryFrame is the alloc gate for the seam, and
 // it measures the SEAM rather than the frame for the reason the report panel's gate
 // spells out: a whole-frame budget is large enough to swallow a per-frame rewrap.
+//
 // The modals redraw sixty times a second while they are up, and the text cannot change
 // while they are open, so the wrap must run on change only.
 func TestTheWrappedBodyIsBakedNotRewrappedEveryFrame(t *testing.T) {
@@ -431,7 +459,7 @@ func TestAStaleFontChainCannotFreezeTheWrap(t *testing.T) {
 // frame.
 func TestTheLobbyLineStaysOneLineAndIsMemoised(t *testing.T) {
 	a := froomApp(t)
-	a.conn.connErr = "Banned: " + noticeLockdownReason
+	a.connErr = "Banned: " + noticeLockdownReason
 
 	line := a.connErrLabel()
 	if strings.Contains(line, "\n") {
@@ -446,8 +474,8 @@ func TestTheLobbyLineStaysOneLineAndIsMemoised(t *testing.T) {
 	if n := testing.AllocsPerRun(50, func() { a.connErrLabel() }); n > 0 {
 		t.Errorf("connErrLabel allocates %.0f/op on an unchanged reason", n)
 	}
-	a.conn.connErr = "connection lost: EOF"
-	if got := a.connErrLabel(); got != a.conn.connErr {
+	a.connErr = "connection lost: EOF"
+	if got := a.connErrLabel(); got != a.connErr {
 		t.Errorf("a changed reason was not recomputed: %q", got)
 	}
 }
@@ -477,6 +505,7 @@ func serverNoticeCloseCentre(a *App, w, h int32) (x, y int32) {
 
 // TestTheNoticeBoxDrawsThroughTheFrameAndTakesItsClicks is the wiring gate: the box has
 // to be reached by App.Frame's tail, and its buttons have to work there.
+//
 // Those are two halves of one thing. The tail fences the pointer for the whole modal
 // family and then unfences just before the box draws; delete the draw call and nothing
 // appears, delete the unfence and the box appears but is dead. Both mutations pass
@@ -500,12 +529,12 @@ func TestTheNoticeBoxDrawsThroughTheFrameAndTakesItsClicks(t *testing.T) {
 	// makes the arm below meaningful rather than "any click closes it".
 	x, y := serverNoticeCloseCentre(a, frameHarnessW, frameHarnessH)
 	driveClickAt(a, frameHarnessW/2, y-serverNoticeLineH*3)
-	if !a.font.serverNoticeDlg.open {
+	if !a.serverNoticeDlg.open {
 		t.Fatal("a click on the panel body closed the box")
 	}
 
 	driveClickAt(a, x, y)
-	if a.font.serverNoticeDlg.open {
+	if a.serverNoticeDlg.open {
 		t.Error("the box's own dismiss button did nothing — the frame tail is not restoring the " +
 			"pointer for it, so the modal is unclosable by mouse")
 	}
@@ -514,6 +543,7 @@ func TestTheNoticeBoxDrawsThroughTheFrameAndTakesItsClicks(t *testing.T) {
 // TestTheNoticeBoxLeavesTheChromeBehindItDead is the fence, driven as a user would hit
 // it: the menu bar is painted on every screen and sits nowhere near the box, so a click
 // on it is the cleanest proof that input does not reach past the modal.
+//
 // Both directions are asserted. The same click with the box closed MUST open the menu,
 // or this gate would pass against a menu bar that is broken for unrelated reasons.
 func TestTheNoticeBoxLeavesTheChromeBehindItDead(t *testing.T) {
@@ -540,7 +570,7 @@ func TestTheNoticeBoxLeavesTheChromeBehindItDead(t *testing.T) {
 		t.Error("the menu bar took a click through the notice box — the strip must be inert " +
 			"(menuBarSuppressed) and the pointer fenced while a blocking modal is up")
 	}
-	if !a.font.serverNoticeDlg.open {
+	if !a.serverNoticeDlg.open {
 		t.Error("the click dismissed the box from outside the panel")
 	}
 }
@@ -559,14 +589,14 @@ func TestTheNoticeBoxKeepsCourtroomHotkeysOffTheWire(t *testing.T) {
 		t.Skip("no key is bound to the evidence action in this build")
 	}
 	driveHotkey(a, key)
-	if !a.evid.showEvid {
+	if !a.showEvid {
 		t.Skip("the evidence chord does not fire in this fixture, so the gate below proves nothing")
 	}
 
-	a.evid.showEvid = false
+	a.showEvid = false
 	a.openServerNotice(serverNoticeInfo, serverNoticeInfoTitle, "S", "read the rules")
 	driveHotkey(a, key)
-	if a.evid.showEvid {
+	if a.showEvid {
 		t.Error("a courtroom chord fired under the notice box — handleHotkeys must stand down " +
 			"for it, exactly as it does for the disconnect dialog")
 	}
@@ -575,6 +605,7 @@ func TestTheNoticeBoxKeepsCourtroomHotkeysOffTheWire(t *testing.T) {
 // TestEscClosesTheNoticeBoxFirst pins the Esc rung. Esc arrives as ctx.escPressed (NOT
 // keyPressed) and is answered by closeTopOverlay, which is also the reason the box is
 // still dismissable from the keyboard while handleHotkeys is standing down.
+//
 // Priority matters: a floating panel open behind the box must survive the press that
 // closes the box, or one keystroke would tear down two layers.
 func TestEscClosesTheNoticeBoxFirst(t *testing.T) {
@@ -585,7 +616,7 @@ func TestEscClosesTheNoticeBoxFirst(t *testing.T) {
 	if !a.closeTopOverlay() {
 		t.Fatal("Esc did not close anything with the box up")
 	}
-	if a.font.serverNoticeDlg.open {
+	if a.serverNoticeDlg.open {
 		t.Error("Esc closed something else and left the box up")
 	}
 	if !a.showVoice {
@@ -612,9 +643,19 @@ func TestTheNoticeBoxFreezesTheTabStrip(t *testing.T) {
 
 // TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou drives the first of the two
 // holes the pointer fence structurally cannot cover.
+//
+// fencePointer blanks the MOUSE — clicked, mouseDown, the wheel, and the cursor itself
+// (ui.go) — and leaves the keyboard exactly as it was, so every site that reads a key
+// without going through handleHotkeys needs its own guard. The lobby's arrow-key
+// selection is the worst of them: the box is on screen precisely BECAUSE the selected
+// server refused us, and for a rate-limit refusal (429) redialling is the one action
+// that makes the situation worse.
+//
 // The second half is not decoration, it is the only thing standing between this gate
 // and vacuity — the arm being fenced shipped DEAD. It read c.keyPressed, which
 // HandleEvent can never set to Return (Return is answered with c.enter in an earlier
+// arm of the same switch), so "Enter joins the selected server" has done nothing since
+// it shipped. A fence around dead code passes no matter which way it is written.
 func TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()
@@ -626,45 +667,53 @@ func TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou(t *testing.T) {
 	// refused by the OS in microseconds instead of waiting out a handshake.
 	const wantURL = "ws://127.0.0.1:1"
 	a.screen = ScreenLobby
-	a.conn.lobby.servers = []network.ServerEntry{{Name: "Refuser", IP: "127.0.0.1", WSPort: 1}}
-	a.conn.lobby.selServer = 0
+	a.servers = []network.ServerEntry{{Name: "Refuser", IP: "127.0.0.1", WSPort: 1}}
+	a.selServer = 0
 	a.ctx.focusID = "" // the arrow/Enter block only runs when no field holds the caret
 	// Arm the on-open auto-refresh's cap. lastLobbyRefreshAt is zero in a fresh fixture,
 	// which lobbyAutoRefreshDue reads as "maximally due", and a real master-list fetch
 	// would replace a.servers from a goroutine mid-test.
-	a.conn.lobby.lastLobbyRefreshAt = a.now()
+	a.lastLobbyRefreshAt = a.now()
 
 	a.openServerNotice(serverNoticeRemoved, "The server banned you.", "Refuser", noticeLockdownReason)
-	a.conn.lastConnURL = ""
+	a.lastConnURL = ""
 	driveEnter(a)
-	if a.conn.lastConnURL != "" {
+	if a.lastConnURL != "" {
 		t.Errorf("Enter under the notice box dialled %q — the box's own text is the reason that "+
-			"server is unreachable", a.conn.lastConnURL)
+			"server is unreachable", a.lastConnURL)
 	}
-	if !a.font.serverNoticeDlg.open {
+	if !a.serverNoticeDlg.open {
 		t.Error("Enter dismissed the box; only Esc and its own button do that, and a ban reason " +
 			"must not vanish on the keystroke that was trying to rejoin")
 	}
 
 	a.closeServerNotice()
-	a.conn.lobby.selServer = 0
+	a.selServer = 0
 	a.ctx.focusID = ""
 	driveEnter(a)
-	if a.conn.lastConnURL != wantURL {
+	if a.lastConnURL != wantURL {
 		t.Fatalf("Enter with nothing in the way left lastConnURL = %q, want %q — the lobby's "+
 			"Enter-to-join is not reached at all, so the arm above is a fence around dead code",
-			a.conn.lastConnURL, wantURL)
+			a.lastConnURL, wantURL)
 	}
 }
 
 // TestEnterInTheICFieldIsFencedWithoutEatingTheDraft drives the second hole, on BOTH
 // courtroom layouts, and pins the half that is easy to get wrong while fixing it.
+//
 // BOTH, because the courtroom has two IC fields and only one of them was fenced when
 // this gate was first written. drawCourtroomThemed draws its own field at the theme's
 // ao2_ic_chat_message rect and shares only the send helper with the classic bar, so a
+// guard on one is not a guard on the other — and this was found by mutation, not by
+// reading: the frame fixture is THEMED, so the first version of this gate stayed green
+// with the classic fence deleted because the classic field never drew. The classic arm
+// therefore has to turn the theme layout off to reach the row at all.
+//
 // The fence must sit on the SEND, not on the field. Swallow the keystroke earlier and
 // the line the user typed is gone, which for a wall of IC text is a worse bug than the
 // one being fixed — so the draft has to survive the fenced press and still send on the
+// next one.
+//
 // "/unpair" is the draft on purpose. It is a LOCAL chat command (handleChatCommand), so
 // a send that gets through proves itself by clearing the field and moving pairWith, with
 // no live socket, no wire packet, and no MyCharID deref on a zero-value Session.
@@ -689,8 +738,8 @@ func TestEnterInTheICFieldIsFencedWithoutEatingTheDraft(t *testing.T) {
 
 			const draft = "/unpair"
 			const pairedWith = 7
-			a.compose.icInput = draft
-			a.pairbox.pairWith = pairedWith
+			a.icInput = draft
+			a.pairWith = pairedWith
 			a.ctx.focusID = icFieldID // the field only returns its Enter while it holds focus
 			a.openServerNotice(serverNoticeRemoved, "The server banned you.", "S", noticeLockdownReason)
 
@@ -699,22 +748,22 @@ func TestEnterInTheICFieldIsFencedWithoutEatingTheDraft(t *testing.T) {
 			// non-vacuity press below then sends a REAL IC line — which on a fixture with no
 			// socket panics inside Session.reply and buries this failure in a stack trace.
 			// Stopping here keeps a broken fence reading as a broken fence.
-			if a.compose.icInput != draft {
+			if a.icInput != draft {
 				t.Fatalf("icInput = %q, want %q — either the send went through under the box or the "+
-					"keystroke was swallowed somewhere that took the draft with it", a.compose.icInput, draft)
+					"keystroke was swallowed somewhere that took the draft with it", a.icInput, draft)
 			}
-			if a.pairbox.pairWith != pairedWith {
+			if a.pairWith != pairedWith {
 				t.Errorf("pairWith = %d, want %d — the line was sent into a room the server has "+
-					"already removed us from", a.pairbox.pairWith, pairedWith)
+					"already removed us from", a.pairWith, pairedWith)
 			}
 
 			a.closeServerNotice()
 			a.ctx.focusID = icFieldID
 			driveEnter(a)
-			if a.compose.icInput != "" || a.pairbox.pairWith != protocol.UnpairedCharID {
+			if a.icInput != "" || a.pairWith != protocol.UnpairedCharID {
 				t.Fatalf("Enter with nothing in the way left icInput=%q pairWith=%d — this layout's "+
 					"IC field never reaches sendIC in the fixture, so the arm above proves nothing "+
-					"about it", a.compose.icInput, a.pairbox.pairWith)
+					"about it", a.icInput, a.pairWith)
 			}
 		})
 	}
@@ -724,6 +773,17 @@ func TestEnterInTheICFieldIsFencedWithoutEatingTheDraft(t *testing.T) {
 // and it covers the two of its six inputs the other wrap gates leave untested: the ROW
 // BUDGET and the truncation MARK. (Width is pinned by the alloc gate above, the font
 // generation by the stale-chain gate.)
+//
+// Rows is the one with a live failure mode. Both modals derive their budget from the
+// window height, so a key that ignored it would keep a fourteen-row layout after a
+// resize into a three-row window, and the draw's own limit would then eat the extra rows
+// SILENTLY — the exact way of losing the tail of a message that this whole feature
+// exists to end.
+//
+// The mark is one step further out, and the type's own comment says why it is a key
+// rather than an argument: today both callers pass the same constant, so it reads as
+// invariant from inside either one, and the day a second marker appears a cache that
+// ignored it would serve one modal's marker from the other's cut.
 func TestEveryWrapInputIsPartOfTheCacheKey(t *testing.T) {
 	var shared paraWrapCache
 	measure := func(s string) int32 { return int32(len(s)) * 4 }
@@ -762,34 +822,50 @@ func TestEveryWrapInputIsPartOfTheCacheKey(t *testing.T) {
 
 // TestAnOversizedAttributionCannotOverflowTheHeading is the title clamp's twin, on the
 // field that is NOT client-authored.
+//
+// server comes from a.serverName, which for a lobby entry came out of the master list's
+// JSON with no per-field length of its own, so a server can choose it. It draws through
+// LabelClipped, which rasterizes the whole string before clipping the blit — the exact
+// mechanism that made a long BD reason draw NOTHING, reproduced on the attribution row
+// of the box built to end it.
 func TestAnOversizedAttributionCannotOverflowTheHeading(t *testing.T) {
 	a := froomApp(t)
 
 	a.openServerNotice(serverNoticeRemoved, "The server banned you.",
 		strings.Repeat("server-name ", 400), noticeLockdownReason)
-	if n := len([]rune(a.font.serverNoticeDlg.server)); n > serverNoticeTitleRuneCap+1 {
+	if n := len([]rune(a.serverNoticeDlg.server)); n > serverNoticeTitleRuneCap+1 {
 		t.Errorf("the attribution row kept %d runes, past the %d cap (+1 for the marker)",
 			n, serverNoticeTitleRuneCap)
 	}
-	if !strings.HasSuffix(a.font.serverNoticeDlg.server, "…") {
-		t.Errorf("a clamped attribution was cut with no marker: %q", a.font.serverNoticeDlg.server)
+	if !strings.HasSuffix(a.serverNoticeDlg.server, "…") {
+		t.Errorf("a clamped attribution was cut with no marker: %q", a.serverNoticeDlg.server)
 	}
 	// RUNES, not bytes, and Cyrillic is the case that catches a byte cap: exactly at the
 	// cap it must pass through untouched, where a byte cap would cut it in half.
 	atCap := strings.Repeat("я", serverNoticeTitleRuneCap)
 	a.openServerNotice(serverNoticeRemoved, "T", atCap, "b")
-	if a.font.serverNoticeDlg.server != atCap {
+	if a.serverNoticeDlg.server != atCap {
 		t.Errorf("a Cyrillic attribution exactly at the %d-rune cap was cut to %d runes — the "+
-			"clamp is counting bytes", serverNoticeTitleRuneCap, len([]rune(a.font.serverNoticeDlg.server)))
+			"clamp is counting bytes", serverNoticeTitleRuneCap, len([]rune(a.serverNoticeDlg.server)))
 	}
 }
 
 // TestTheNoticeBoxStaysClickableInAWindowSmallerThanItself is the gate on the two
 // degradation clamps, and it is behavioural on purpose: both of them are arithmetic that
 // looks harmless and fails as "the button is not there".
+//
+// The logical window is the physical one divided by the UI scale, so config.MinWindowH
+// does NOT bound the height this code sees — 150% scale on a short window gets here.
+// Without the absolute floor the window clamp hands back a height smaller than the
+// chrome, and the buttons' y is measured from the panel's BOTTOM, so they climb off the
+// top of the panel. Without the X pin a 560 px panel centred in a 400 px viewport starts
+// at a NEGATIVE x, dragging left-anchored Copy — the button that exists to rescue an
+// access code — off the left edge.
+//
 // One click proves both: it lands on Copy under the clamps and misses it (into the gap
 // between the buttons, or off the row entirely) under either failure. Driven on the real
 // Ctx rather than through driveFrame because the harness drives a fixed 1280x720, and
+// the window size IS the variable under test.
 func TestTheNoticeBoxStaysClickableInAWindowSmallerThanItself(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()
@@ -820,7 +896,7 @@ func TestTheNoticeBoxStaysClickableInAWindowSmallerThanItself(t *testing.T) {
 			"panel is off the left edge or its buttons are above their own heading, which is "+
 			"exactly the state where a whitelist code cannot be copied", cx, cy, tinyW, tinyH)
 	}
-	if !a.font.serverNoticeDlg.open {
+	if !a.serverNoticeDlg.open {
 		t.Error("Copy dismissed the box")
 	}
 }

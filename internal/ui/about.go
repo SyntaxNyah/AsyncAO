@@ -196,7 +196,7 @@ func (a *App) drawAbout(w, h int32) {
 	hdrY := a.topChromeH() + pad
 	c.Heading(pad, hdrY, "About AsyncAO", ColText)
 	if c.Button(sdl.Rect{X: w - 90 - pad, Y: hdrY, W: 90, H: btnH}, "Back") {
-		a.sel.mayoRoamers = a.sel.mayoRoamers[:0] // #234: leave the loose Mayos behind
+		a.mayoRoamers = a.mayoRoamers[:0] // #234: leave the loose Mayos behind
 		a.screen = a.prevScreen
 		return
 	}
@@ -219,9 +219,9 @@ func (a *App) drawAbout(w, h int32) {
 
 	// Reflow only when the column width changes (off the hot path, but kept
 	// alloc-free per frame per this repo's UI bar).
-	if a.docs.aboutFlat == nil || a.docs.aboutFlatW != colW {
-		a.docs.aboutFlat = a.buildAboutFlat(c, colW)
-		a.docs.aboutFlatW = colW
+	if a.aboutFlat == nil || a.aboutFlatW != colW {
+		a.aboutFlat = a.buildAboutFlat(c, colW)
+		a.aboutFlatW = colW
 	}
 
 	lineH := int32(c.font.Height()) + 4
@@ -234,7 +234,7 @@ func (a *App) drawAbout(w, h int32) {
 
 	// --- total content height (prose + portrait + link cards) ---------------
 	contentH := int32(0)
-	for _, fl := range a.docs.aboutFlat {
+	for _, fl := range a.aboutFlat {
 		contentH += fl.gap + lineH
 		if fl.mayo && hasMayo {
 			contentH += mayoBlock
@@ -250,12 +250,12 @@ func (a *App) drawAbout(w, h int32) {
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
-	a.docs.aboutScroll -= c.WheelIn(sdl.Rect{X: 0, Y: top, W: w, H: viewH}) * scrollStepPx
-	if a.docs.aboutScroll < 0 {
-		a.docs.aboutScroll = 0
+	a.aboutScroll -= c.WheelIn(sdl.Rect{X: 0, Y: top, W: w, H: viewH}) * scrollStepPx
+	if a.aboutScroll < 0 {
+		a.aboutScroll = 0
 	}
-	if a.docs.aboutScroll > maxScroll {
-		a.docs.aboutScroll = maxScroll
+	if a.aboutScroll > maxScroll {
+		a.aboutScroll = maxScroll
 	}
 
 	// #31: pushClip (not a raw SetClipRect) so hovering() honours the clip —
@@ -266,8 +266,8 @@ func (a *App) drawAbout(w, h int32) {
 	clipPrev, clipHad := c.pushClip(clip)
 	defer c.popClip(clipPrev, clipHad)
 
-	y := top - a.docs.aboutScroll
-	for _, fl := range a.docs.aboutFlat {
+	y := top - a.aboutScroll
+	for _, fl := range a.aboutFlat {
 		y += fl.gap
 		if fl.mayo && hasMayo {
 			dst := sdl.Rect{X: x0 + (colW-mayoLogW)/2, Y: y, W: mayoLogW, H: mayoLogH}
@@ -340,8 +340,8 @@ func (a *App) drawMayoPortrait(c *Ctx, tex *sdl.Texture, dst sdl.Rect) {
 	}
 	// Wiggle: a decaying oscillation for a short window after the last pet.
 	angle := 0.0
-	if !a.sel.mayoPetAt.IsZero() {
-		if el := a.now().Sub(a.sel.mayoPetAt); el >= 0 && el < mayoWiggleDur {
+	if !a.mayoPetAt.IsZero() {
+		if el := a.now().Sub(a.mayoPetAt); el >= 0 && el < mayoWiggleDur {
 			p := float64(el) / float64(mayoWiggleDur)
 			angle = mayoWiggleDeg * (1 - p) * math.Sin(p*2*math.Pi*1.5)
 			a.NoteAnimating() // the wiggle decays on the wall clock: keep frames coming so it plays out at idle=0
@@ -357,22 +357,22 @@ func (a *App) drawMayoPortrait(c *Ctx, tex *sdl.Texture, dst sdl.Rect) {
 	// hits in the portrait's scrolled-out half, so a raw hit-test is correct.
 	if c.hovering(dst) {
 		tip := "Pet Mayo!"
-		if a.sel.mayoPets > 0 {
-			tip = fmt.Sprintf("Pet Mayo!  (petted %d)", a.sel.mayoPets)
+		if a.mayoPets > 0 {
+			tip = fmt.Sprintf("Pet Mayo!  (petted %d)", a.mayoPets)
 		}
 		c.Tooltip(dst, tip)
 		if c.clicked {
-			a.sel.mayoPets++
-			a.sel.mayoPetAt = a.now()
+			a.mayoPets++
+			a.mayoPetAt = a.now()
 			a.spawnMayoRoamer(dst)
 		}
 	}
 	// Floating caption drifting up above the portrait for a moment after each pet.
-	if !a.sel.mayoPetAt.IsZero() {
-		if el := a.now().Sub(a.sel.mayoPetAt); el >= 0 && el < mayoCaptionDur {
+	if !a.mayoPetAt.IsZero() {
+		if el := a.now().Sub(a.mayoPetAt); el >= 0 && el < mayoCaptionDur {
 			a.NoteAnimating()                             // the caption drifts + fades on the wall clock: keep frames coming at idle=0
 			frac := float64(el) / float64(mayoCaptionDur) // 0 → 1
-			msg := mayoPetFlavor(a.sel.mayoPets)
+			msg := mayoPetFlavor(a.mayoPets)
 			cx := dst.X + (dst.W-c.TextWidth(msg))/2
 			cy := dst.Y + 4 - int32(float64(mayoCaptionRise)*frac)
 			col := ColAccent
@@ -470,34 +470,34 @@ func (a *App) spawnMayoRoamer(from sdl.Rect) {
 		spin: (rand.Float64()*2 - 1) * roamerMaxSpin,
 		size: roamerSize,
 	}
-	if len(a.sel.mayoRoamers) >= maxRoamingMayos {
-		copy(a.sel.mayoRoamers, a.sel.mayoRoamers[1:]) // drop the oldest
-		a.sel.mayoRoamers[len(a.sel.mayoRoamers)-1] = r
+	if len(a.mayoRoamers) >= maxRoamingMayos {
+		copy(a.mayoRoamers, a.mayoRoamers[1:]) // drop the oldest
+		a.mayoRoamers[len(a.mayoRoamers)-1] = r
 		return
 	}
-	a.sel.mayoRoamers = append(a.sel.mayoRoamers, r)
+	a.mayoRoamers = append(a.mayoRoamers, r)
 }
 
 // updateAndDrawRoamers advances every loose Mayo (bouncing off box, spinning) and
 // draws it, confined to box (the About scroll viewport). dt is clamped so a
 // tab-away doesn't fling them; when none are loose it just re-stamps the clock.
 func (a *App) updateAndDrawRoamers(c *Ctx, tex *sdl.Texture, box sdl.Rect) {
-	if len(a.sel.mayoRoamers) == 0 || tex == nil {
-		a.sel.mayoRoamAt = a.now()
+	if len(a.mayoRoamers) == 0 || tex == nil {
+		a.mayoRoamAt = a.now()
 		return
 	}
 	a.NoteAnimating() // the loose Mayos bounce + spin on the wall clock: keep frames coming so they fly at idle=0
 	now := a.now()
-	dt := now.Sub(a.sel.mayoRoamAt)
-	a.sel.mayoRoamAt = now
+	dt := now.Sub(a.mayoRoamAt)
+	a.mayoRoamAt = now
 	if dt < 0 {
 		dt = 0
 	} else if dt > roamerDtCap {
 		dt = roamerDtCap
 	}
 	secs := dt.Seconds()
-	for i := range a.sel.mayoRoamers {
-		r := &a.sel.mayoRoamers[i]
+	for i := range a.mayoRoamers {
+		r := &a.mayoRoamers[i]
 		r.x += r.vx * secs
 		r.y += r.vy * secs
 		r.angle += r.spin * secs

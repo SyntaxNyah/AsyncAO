@@ -1,7 +1,25 @@
 package ui
 
 // EVERY EFFECT TERM MUST REACH THE PIXEL (ledger L9 + L10).
+//
+// applyElementFX writes five terms onto the baked element, the painter draws, and
+// restoreElementFX puts the row back — so the only moment the terms EXIST is the
+// instant the painter is called. Every gate in this package read the element AFTER
+// that, through a recorded *bakedElement, and therefore saw the restored row. The
+// consequence was total: the wash arm, the offset arm, the scale arm, the alpha arm
+// and elemFXSave's restore were all deletable with the suite green, and the one gate
+// that looked relevant recomputed its own expected alpha with fxAlpha(...) three
+// times instead of reading what the painter actually got.
+//
+// captureElementPaintValues (themeelements_test.go) is the five-character fix: it
+// snapshots the element BY VALUE at the call. Everything here drives the real
+// drawElement and reads that snapshot, so each arm is pinned by the picture rather
+// than by a second copy of the arithmetic.
+//
 // The other half of the same contract is here too: a painter MUST NOT MUTATE its
+// *bakedElement (ledger L37). On the no-effect fast path drawElement does no
+// save/restore at all, so a mutating painter corrupts the shared cache permanently
+// and compounds every frame.
 
 import (
 	"testing"
@@ -22,7 +40,7 @@ func fxTermsAt(t *testing.T, a *App, lay *themeLayoutCache, e bakedElement, elap
 	t.Helper()
 	var seen []bakedElement
 	restore := captureElementPaintValues(t, &seen)
-	a.toolbox.themeAt = time.Now().Add(-elapsed)
+	a.themeAt = time.Now().Add(-elapsed)
 	a.beginThemeFXPass()
 	a.drawElement(lay, &e, 0)
 	restore()
@@ -196,7 +214,7 @@ func TestReduceMotionPaintsTheAuthoredFormNotTheFrozenPeak(t *testing.T) {
 	wash.wash = true
 	var seen []bakedElement
 	restore := captureElementPaintValues(t, &seen)
-	a.toolbox.themeAt = time.Now()
+	a.themeAt = time.Now()
 	a.beginThemeFXPass()
 	a.drawElement(lay, &wash, 0)
 	restore()
@@ -209,6 +227,13 @@ func TestReduceMotionPaintsTheAuthoredFormNotTheFrozenPeak(t *testing.T) {
 
 // TestNoPainterMutatesItsBakedElement is ledger L37: the painter contract's
 // undocumented, untested clause.
+//
+// On the no-effect fast path — which every stock element takes — drawElement does NO
+// save/restore, so a painter that writes through its *bakedElement corrupts the cache
+// permanently and compounds every frame. Two shipped painters already mutate SHARED
+// state (paintElementArt's colour/alpha mod on a page texture) and it is only the
+// row itself that must come back untouched.
+//
 // It runs the REAL painter table, unlike every other element gate in the package —
 // which is precisely why the clause had no coverage: the one gate that looked
 // relevant runs with the recorder swapped in, so it pins drawElement and no painter.
@@ -218,7 +243,7 @@ func TestNoPainterMutatesItsBakedElement(t *testing.T) {
 
 	const w, h = 1280, 720
 	a.drawCourtroom(w, h) // cold rebuild first: themeLayoutIn replaces the whole cache
-	lay := &a.skin.themeLay
+	lay := &a.themeLay
 	seedBakedElements(a, lay, theme.ElementCap, seedElementArt(t, a))
 	if lay.elN != theme.ElementCap {
 		t.Fatalf("seeded %d elements, want %d", lay.elN, theme.ElementCap)

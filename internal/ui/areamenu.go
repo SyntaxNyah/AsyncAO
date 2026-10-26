@@ -1,6 +1,21 @@
 package ui
 
 // THE AREA LIST'S OVERFLOW ("kebab") MENU — one concern, one file.
+//
+// The right-hand list panel has three views and, until now, two ⋮ buttons: the
+// Music header's and the roster toolbar's. The Areas view had none, so every
+// area-scoped action lived somewhere else entirely — the background picker behind
+// a hotkey and an Extras-box row, the per-area log behind a Settings checkbox, the
+// lock/kick controls behind the CM panel — and none of them was reachable from the
+// list of areas they act on.
+//
+// PRECEDENT, NOT A SECOND MENU. The three views share one rect, one popup and one
+// pane (musicheader.go says so in as many words), so this adds ROWS to that menu
+// rather than a rival implementation of it: same fence, same click-away, same
+// clamped panel, same check-mark gutter. Everything area-specific — the kinds, the
+// labels, when a row is live, what it does — lives here; musicheader.go only
+// forwards.
+//
 // NO DUPLICATE CONTROLS. Lock / unlock / area-kick already exist, together, in the
 // CM panel, so the menu ROUTES to that panel instead of growing its own copies —
 // the same rule the themed chip strip follows when a theme places AO2's own switch.
@@ -27,8 +42,13 @@ const (
 // draws: the action people came for first, the list-maintenance row next, then the
 // panel-level setting, then the route out to CM. Package-level so opening the menu
 // allocates nothing.
+//
 // The leading divider carries the SHARED musicMenuSeparator kind on purpose, so the
 // menu's every-row invariants (a separator is the one row allowed an empty label)
+// hold for this block too. It goes dark with the block via the pane's
+// trailing-separator rule rather than via areaMenuRowLive — see
+// musicMenuRowDrawn (musicheader.go), which is what no per-KIND predicate could do
+// for a row whose kind is shared with the music block's own dividers.
 var areaMenuRows = [...]musicMenuRow{
 	{musicMenuSeparator, ""},
 	{areaMenuBackground, "Change the background…"},
@@ -43,17 +63,36 @@ func isAreaMenuKind(k musicMenuKind) bool { return k >= areaMenuKindBase }
 
 // areaMenuRowLive answers the single question the shared pane must ask before it
 // offers an area row at all: is the list pane showing its Areas view?
+//
 // The ROSTER block next door is deliberately live in every branch, because its rows
 // are panel-level settings for a list that merely shares this rect. The AREA block is
 // the opposite case and must not copy that choice: every row here acts on THE AREA
+// LIST in front of you — this area's background, a re-ask for the area table, a
+// per-area chat log, the CM controls for the area — while the same popup is opened
+// from three triggers, only one of which is the Areas view. Ungated, the Music
+// header's ⋮ and the roster toolbar's ⋮ would each grow five rows about a list
+// neither of them is showing.
+//
+// It RE-DERIVES the answer from the screen's own dispatch rather than being handed
+// one, exactly as rosterMenuThemed does (playerlist.go) and for the same reason: the
+// menu paints at the frame tail, long after the panel that knows the answer has
+// returned, and drawAreaList is reached from three places that would each have to
+// thread a parameter through. The clauses are those three call sites verbatim:
+//   - logTab == logTabAreas is the gate on the classic docked tab (screens.go) and on
+//     the themed music_list rect (theme_layout.go).
+//   - a TORN Areas panel draws whatever logTab says (torntabs.go) and carries its own
+//     ⋮, so its rows have to be live or that button is inert.
+//   - a fully hidden Areas tab draws in none of the three (tabHidden), torn or not.
+//
 // The kind is taken and ignored: every row in the block shares one answer, and the
 // parameter is what keeps the forward in musicMenuRowLive the same shape as the other
 // four — a per-row predicate, so a future row that needs a narrower condition has
+// somewhere to put it.
 func (a *App) areaMenuRowLive(_ musicMenuKind) bool {
-	if a.classic.tabHidden(logTabAreas) {
+	if a.tabHidden(logTabAreas) {
 		return false
 	}
-	return a.chatlog.logTab == logTabAreas || a.classic.tabTorn(logTabAreas)
+	return a.logTab == logTabAreas || a.tabTorn(logTabAreas)
 }
 
 // areaMenuRowEnabled greys the rows that cannot act. Greyed rather than hidden, on
@@ -62,7 +101,7 @@ func (a *App) areaMenuRowLive(_ musicMenuKind) bool {
 func (a *App) areaMenuRowEnabled(k musicMenuKind) bool {
 	switch k {
 	case areaMenuBackground, areaMenuRefresh:
-		return a.link.sess != nil // both talk to the server (a /bg, a /getareas)
+		return a.sess != nil // both talk to the server (a /bg, a /getareas)
 	case areaMenuCMPanel:
 		// The panel does NOT say it for us. drawCMPanel opens with
 		// `if c.escPressed || !a.amICMNow { a.showCMPanel = false; return }`
@@ -72,7 +111,7 @@ func (a *App) areaMenuRowEnabled(k musicMenuKind) bool {
 		// uses (`enabled: menuAmICM`, menubar.go), which is the mod/CM doctrine spelled
 		// out beside it. The words a greyed row cannot carry are in the mod dashboard
 		// ("Type /cm to claim CM", moddashpanel.go).
-		return a.srvMeta.amICMNow
+		return a.amICMNow
 	}
 	return true
 }
@@ -126,6 +165,18 @@ const (
 // The rest of the area list's header row, in named parts. All three were bare
 // arithmetic inside drawAreaList until the ⋮ arrived and made the row a SPLIT rather
 // than a list of independent offsets — see splitAreaHeaderRow.
+//
+//   - areaHeaderFieldInsetX insets the search field to the area cards' left edge
+//     (the cards draw at r.X+2). The box was ported verbatim from drawMusicList,
+//     whose rows start at r.X with no inset, so it used to sit 2 px left of its own
+//     column and clip out.
+//   - areaHeaderCountW is the room the "shown / total" counter reserves at the right
+//     end of the row. It is the counter's WIDTH, not a margin: the label is drawn
+//     left-aligned from its X, and this is how much of the row it may use.
+//   - areaHeaderCountGap is the clearance between the field's right edge and that
+//     counter, so a full search string never runs into the numbers.
+//   - areaHeaderCountOffY drops the counter's baseline to sit optically centred
+//     against the field beside it, which is taller than the text.
 const (
 	areaHeaderFieldInsetX = int32(2)
 	areaHeaderCountW      = int32(142)
@@ -151,9 +202,12 @@ type areaHeaderLayout struct {
 // the ⋮ so that each takes its room OUT OF THE ROW instead of drawing over its
 // neighbour — the overlap class the roster toolbar was rebuilt to stop, on a theme's
 // 212 px music_list, which has no slack.
+//
 // Pure, and the ONLY place the row's arithmetic exists: the button is placed here
 // rather than by the drawer, and the field and counter are measured back from the
 // button's left edge, so shrinking-to-fit is structural rather than a convention the
+// caller has to remember. The row it is handed is the header row alone — the cards and
+// the scrollbar below keep the whole panel.
 func splitAreaHeaderRow(row sdl.Rect) areaHeaderLayout {
 	button := sdl.Rect{X: row.X + row.W - areaMenuButtonW, Y: row.Y, W: areaMenuButtonW, H: row.H}
 	// Everything else shares what is left of the row once the button and its clearance

@@ -19,31 +19,31 @@ func TestSnapViewportTo43(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{env: env{d: Deps{Prefs: prefs}}}
+	a := &App{d: Deps{Prefs: prefs}}
 	const w, h = 1000, 800
 
 	// A stretched stage: 400×150 at (100,100) → snapping makes it 400×300.
-	a.classic.regSlot(slotViewport, sdl.Rect{X: 100, Y: 100, W: 400, H: 150}, sdl.Rect{})
-	a.classic.snapViewportTo43(&a.env, w, h)
-	got := fracToRect(a.classic.classicOv[slotViewport], w, h)
+	a.regSlot(slotViewport, sdl.Rect{X: 100, Y: 100, W: 400, H: 150}, sdl.Rect{})
+	a.snapViewportTo43(w, h)
+	got := fracToRect(a.classicOv[slotViewport], w, h)
 	if got.W != 400 || got.H != 300 {
 		t.Fatalf("snapped stage = %+v, want 400×300", got)
 	}
-	if len(a.classic.classicUndo) != 1 {
-		t.Fatalf("snap must push exactly one undo entry, got %d", len(a.classic.classicUndo))
+	if len(a.classicUndo) != 1 {
+		t.Fatalf("snap must push exactly one undo entry, got %d", len(a.classicUndo))
 	}
 
 	// Already 4:3 → nothing changes, no extra undo entry.
-	a.classic.regSlot(slotViewport, got, sdl.Rect{})
-	a.classic.snapViewportTo43(&a.env, w, h)
-	if len(a.classic.classicUndo) != 1 {
-		t.Fatalf("a no-op snap must not push undo, got %d entries", len(a.classic.classicUndo))
+	a.regSlot(slotViewport, got, sdl.Rect{})
+	a.snapViewportTo43(w, h)
+	if len(a.classicUndo) != 1 {
+		t.Fatalf("a no-op snap must not push undo, got %d entries", len(a.classicUndo))
 	}
 
 	// A stage whose derived height would leave the window shrinks to fit instead.
-	a.classic.regSlot(slotViewport, sdl.Rect{X: 0, Y: 700, W: 800, H: 50}, sdl.Rect{})
-	a.classic.snapViewportTo43(&a.env, w, h)
-	got = fracToRect(a.classic.classicOv[slotViewport], w, h)
+	a.regSlot(slotViewport, sdl.Rect{X: 0, Y: 700, W: 800, H: 50}, sdl.Rect{})
+	a.snapViewportTo43(w, h)
+	got = fracToRect(a.classicOv[slotViewport], w, h)
 	if got.Y+got.H > h {
 		t.Fatalf("snapped stage %+v leaves the %dx%d window", got, w, h)
 	}

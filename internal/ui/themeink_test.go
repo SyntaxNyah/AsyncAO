@@ -333,7 +333,7 @@ func TestElemInkSurvivesAUserFontOverride(t *testing.T) {
 	if _, ok := a.elemInk(elemServerChatlog, true); !ok {
 		t.Error("a user FONT override must not drop the theme's COLOURS")
 	}
-	if a.skin.themeFonts.e[elemServerChatlog].face != 0 {
+	if a.themeFonts.e[elemServerChatlog].face != 0 {
 		t.Error("...but it must still drop the theme's face")
 	}
 }

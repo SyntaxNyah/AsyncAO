@@ -1,6 +1,15 @@
 package ui
 
 // Who owns a dropped file.
+//
+// TWO consumers see every drop, and they used to disagree. SDL hands the path
+// to HandleFileDrop (the global owner, demofile.go) AND the visible screen sees
+// it as c.dropped in the same frame — and the Settings screen's default arm
+// pointed the THEME FOLDER at whatever it was handed. So a theme bundle dropped
+// on the settings page silently repointed the user's theme root at, typically,
+// their Downloads folder, while the global handler was busy warning them the
+// file "isn't a recording". Two owners, two wrong answers, one drop.
+//
 // The classification therefore lives HERE, once, and both owners call it. Each
 // keeps its own fallback — that part is genuinely per-screen — but neither can
 // claim something the other already owns.
@@ -14,6 +23,14 @@ import (
 
 // themePackExt is the AsyncAO theme bundle: a zip whose single root entry is
 // the theme folder (docs/THEME-FORMAT.md §1).
+//
+// AN ALIAS OF themepack.PackExt (v1.90.0 W8), exactly as this comment promised
+// when W2 shipped the routing ahead of the extractor. The router and the
+// extractor cannot now disagree about what a bundle is called — and note that
+// the extension is only ever the ROUTING question: themepack sniffs the zip's
+// own magic bytes, so a .aotheme that is really a screenshot is refused by the
+// importer and a friend's plain re-zipped .zip imports identically once it
+// reaches one.
 const themePackExt = themepack.PackExt
 
 // settingsImportExt is the whole-settings bundle the Data tab exports.
@@ -25,9 +42,11 @@ const settingsImportExt = ".json"
 // font's parent directory — typically Downloads — while the global handler was
 // meanwhile warning them the file "isn't a recording". A .ttf is not a theme
 // folder; it belongs INSIDE one.
+//
 // The two extensions SDL_ttf opens, and only those. .ttc / .otc (collections) and
 // .woff are deliberately absent: internFace reads a single face out of a file, so
 // claiming a container we cannot open would trade a wrong action for a wrong
+// promise. They fall through to the folder arm exactly as they do today.
 var themeFontExts = [...]string{".ttf", ".otf"}
 
 // dropClaim names the owner of a dropped path.
@@ -75,11 +94,24 @@ const (
 
 // dropClaimNames is what each claim is called in a failure line. It is sized against
 // dropClaimCount, the same shape themeCreateTemplateNames and editOpKindNames use.
+//
 // WHAT THAT SIZING ACTUALLY BUYS, stated exactly, because the opposite was written here
 // first and a false safety promise in this file is worse than none: a claim appended to
 // the block above is NOT a compile error. A short fixed-size array literal is legal Go —
+// `[dropClaimCount]string{...}` one entry short compiles and leaves the last slot "".
 // The compiler catches only the REVERSE, a name with no claim behind it, which is how a
+// stale table reports that the enum shrank. Its diagnostic is an INDEX error pointing at
+// the surplus element, not a count one: a seventh name added below is rejected as
+// `index 6 is out of bounds (>= 6)`. (An earlier draft of this comment quoted it as
+// "too many values in array literal". Go never says that about an explicit-length
+// array — that wording is the STRUCT literal's, `too many values in struct literal of
+// type s` — and a reader who tested the old quote got a different message and had every
+// reason to start doubting the rest of a correct paragraph.)
 // The claim-with-no-name direction is caught loudly at run time, by the empty-name loop
+// at the foot of TestEveryDropClaimHasASettingsAnswer (dropclaim_test.go). THAT LOOP IS
+// THE GUARANTEE — the sentinel cannot fall behind the enum it bounds only for as long as
+// the loop is there to say so, and deleting it re-opens exactly the erosion this file
+// was hardened against.
 var dropClaimNames = [dropClaimCount]string{
 	"none", "recording", "theme bundle", "settings import", "theme font", "theme image",
 }
@@ -117,9 +149,14 @@ func claimDroppedFile(path string, importArmed bool) dropClaim {
 
 // settingsDropAct is what the SETTINGS SCREEN does with a dropped path, once
 // claimDroppedFile has said who owns it.
+//
 // It is a type rather than three lines inside drawSettings because those three
 // lines are a ship-blocker with no test on them: drawSettings is called by zero
 // tests, so deleting the `case dropClaimRecording, dropClaimThemeBundle,
+// dropClaimThemeFont:` arm left the whole suite green while a dropped .aotheme
+// or .ttf silently repointed the user's theme root at their Downloads folder —
+// the W2 bug, returning unnoticed. The gate beside claimDroppedFile now drives
+// THIS function instead of restating its switch, so the arm cannot go missing.
 type settingsDropAct uint8
 
 const (

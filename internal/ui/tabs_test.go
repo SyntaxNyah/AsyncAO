@@ -25,8 +25,7 @@ func testTabApp(t testing.TB) *App {
 	if err != nil {
 		t.Fatalf("prefs: %v", err)
 	}
-	a := &App{env: env{ctx: &Ctx{}}, activeTab: -1}
-	a.wireComponents() // components + host capabilities, as NewApp does
+	a := &App{ctx: &Ctx{}, activeTab: -1}
 	a.d.Prefs = prefs
 	// Hotkeys are opt-in in production, but the test fixtures exercise the
 	// dispatcher directly — enable them so those tests keep their old, on-by-default
@@ -48,8 +47,8 @@ func testTabApp(t testing.TB) *App {
 	// dials (connectWith) leaves a live protocol Conn — close it so its
 	// read/deliver/keepalive loops and the peer's websocket/handler all stop.
 	t.Cleanup(func() {
-		if a.link.conn != nil {
-			a.link.conn.Close()
+		if a.conn != nil {
+			a.conn.Close()
 		}
 		a.CloseTranscript()
 		_ = prefs.Close()
@@ -85,7 +84,7 @@ func TestDoNotDisturbSilencesCallword(t *testing.T) {
 // to "seed once in NewApp".
 func TestMuteStateSurvivesResetSessionState(t *testing.T) {
 	a := testTabApp(t) // already ran resetSessionState() once, with mutes off in prefs
-	if a.audio.masterMuted || a.audio.musicMuted || a.audio.sfxMuted || a.audio.blipMuted {
+	if a.masterMuted || a.musicMuted || a.sfxMuted || a.blipMuted {
 		t.Fatal("a fresh session must default unmuted")
 	}
 	a.d.Prefs.Update(func(
@@ -102,22 +101,22 @@ func TestMuteStateSurvivesResetSessionState(t *testing.T) {
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.SFXVolMuted = true })
 	// Simulates the seam every Connect/Disconnect actually calls.
 	a.resetSessionState()
-	if !a.audio.masterMuted {
+	if !a.masterMuted {
 		t.Error("resetSessionState did not seed the persisted master mute")
 	}
-	if a.audio.sfxMuted {
+	if a.sfxMuted {
 		t.Error("SFX mute must be session-only — never reseeded from prefs")
 	}
-	if a.audio.musicMuted || a.audio.blipMuted {
+	if a.musicMuted || a.blipMuted {
 		t.Error("channels that were never muted must not come back muted")
 	}
 	// The regression this test exists for: reset a SECOND time (a park→Connect
 	// or a Disconnect after this one) and confirm the mute survives again.
 	a.resetSessionState()
-	if !a.audio.masterMuted {
+	if !a.masterMuted {
 		t.Error("master mute was wiped on a second session reset — the connect/disconnect trap")
 	}
-	if a.audio.sfxMuted {
+	if a.sfxMuted {
 		t.Error("SFX mute must stay session-only across a second reset")
 	}
 }
@@ -143,13 +142,13 @@ func TestHotkeyConflictKeys(t *testing.T) {
 // name, case-insensitive, ignoring any =colour suffix).
 func TestToggleServerFriend(t *testing.T) {
 	a := testTabApp(t)
-	a.srvMeta.serverKey = "wss://srv:2096"
+	a.serverKey = "wss://srv:2096"
 	a.toggleServerFriend("Alice")
-	if ok, _ := a.d.Prefs.Load().ServerFriendMatch(a.srvMeta.serverKey, "alice"); !ok {
+	if ok, _ := a.d.Prefs.Load().ServerFriendMatch(a.serverKey, "alice"); !ok {
 		t.Fatal("first toggle should add Alice as a friend")
 	}
 	a.toggleServerFriend("ALICE") // case-insensitive remove
-	if ok, _ := a.d.Prefs.Load().ServerFriendMatch(a.srvMeta.serverKey, "Alice"); ok {
+	if ok, _ := a.d.Prefs.Load().ServerFriendMatch(a.serverKey, "Alice"); ok {
 		t.Error("second toggle should remove Alice")
 	}
 }
@@ -224,59 +223,59 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 	if !a.allocateTab() {
 		t.Fatal("first allocate must succeed")
 	}
-	a.srvMeta.serverName = "Skrapegropen"
-	a.srvMeta.serverKey = "wss://skra.example:2096"
+	a.serverName = "Skrapegropen"
+	a.serverKey = "wss://skra.example:2096"
 	// A session must exist or activation treats the tab as dead. The
 	// rehearsal constructor gives a real offline session without a conn.
-	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
-	a.compose.icInput = "half-typed message"
-	a.chatlog.icLog = append(a.chatlog.icLog, icEntry{text: "Phoenix: hold it", color: 2})
-	a.chatlog.icLogSeq = 7
-	a.chatlog.oocLog = append(a.chatlog.oocLog, "mod: welcome")
-	a.chatlog.oocSeq = 3
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.icInput = "half-typed message"
+	a.icLog = append(a.icLog, icEntry{text: "Phoenix: hold it", color: 2})
+	a.icLogSeq = 7
+	a.oocLog = append(a.oocLog, "mod: welcome")
+	a.oocSeq = 3
 	// The three settings that used to LEAK across tabs (playtest reports): the
 	// pair placement (was App-global), the iniswap override, and the /pos side.
-	a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip = 30, -20, true
-	a.inibrowse.iniChar = "SwappedChar"
-	a.compose.sidePref = "wit"
-	a.sel.logSelActive = true // a stale log-text highlight must not survive the switch
+	a.pairOffX, a.pairOffY, a.pairFlip = 30, -20, true
+	a.iniChar = "SwappedChar"
+	a.sidePref = "wit"
+	a.logSelActive = true // a stale log-text highlight must not survive the switch
 
 	a.parkActive()
-	if a.activeTab != -1 || a.srvMeta.serverName != "" || len(a.chatlog.icLog) != 0 || a.compose.icInput != "" {
+	if a.activeTab != -1 || a.serverName != "" || len(a.icLog) != 0 || a.icInput != "" {
 		t.Fatalf("park must leave a pristine live session: name=%q log=%d input=%q",
-			a.srvMeta.serverName, len(a.chatlog.icLog), a.compose.icInput)
+			a.serverName, len(a.icLog), a.icInput)
 	}
-	if a.roster.spriteOv == nil || a.pairbox.pairWith == 0 {
+	if a.spriteOv == nil || a.pairWith == 0 {
 		t.Fatal("reset state must re-init maps and sentinels")
 	}
 	// Park must hand the live session a PRISTINE pair/iniswap/pos — not the parked
 	// tab's values (that shared-live-field bleed was the bug). Pair placement reseeds
 	// from prefs (default 0/0/false in this fresh test config).
-	if a.inibrowse.iniChar != "" || a.compose.sidePref != "" || a.pairbox.pairOffX != 0 || a.pairbox.pairOffY != 0 || a.pairbox.pairFlip {
+	if a.iniChar != "" || a.sidePref != "" || a.pairOffX != 0 || a.pairOffY != 0 || a.pairFlip {
 		t.Fatalf("park must reset per-session pair/iniswap/pos: ini=%q side=%q off=%d/%d flip=%v",
-			a.inibrowse.iniChar, a.compose.sidePref, a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip)
+			a.iniChar, a.sidePref, a.pairOffX, a.pairOffY, a.pairFlip)
 	}
-	if a.sel.logSelActive {
+	if a.logSelActive {
 		t.Error("park must clear the log text selection (its anchors point into the old log)")
 	}
 	parked := &a.tabs[0].state
-	if parked.srvMeta.serverName != "Skrapegropen" || parked.chatlog.icLogSeq != 7 || len(parked.chatlog.oocLog) != 1 {
-		t.Fatalf("parked state lost data: %+v", parked.srvMeta.serverName)
+	if parked.serverName != "Skrapegropen" || parked.icLogSeq != 7 || len(parked.oocLog) != 1 {
+		t.Fatalf("parked state lost data: %+v", parked.serverName)
 	}
 
 	a.activateTab(0)
-	if a.activeTab != 0 || a.srvMeta.serverName != "Skrapegropen" || a.compose.icInput != "half-typed message" {
-		t.Fatalf("activate must restore the session: name=%q input=%q", a.srvMeta.serverName, a.compose.icInput)
+	if a.activeTab != 0 || a.serverName != "Skrapegropen" || a.icInput != "half-typed message" {
+		t.Fatalf("activate must restore the session: name=%q input=%q", a.serverName, a.icInput)
 	}
-	if a.chatlog.icLogSeq != 7 || len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].color != 2 {
+	if a.icLogSeq != 7 || len(a.icLog) != 1 || a.icLog[0].color != 2 {
 		t.Fatal("activate must restore logs and seqs bit-for-bit")
 	}
 	// The previously-leaking settings come back with THIS tab's session.
-	if a.inibrowse.iniChar != "SwappedChar" || a.compose.sidePref != "wit" || a.pairbox.pairOffX != 30 || a.pairbox.pairOffY != -20 || !a.pairbox.pairFlip {
+	if a.iniChar != "SwappedChar" || a.sidePref != "wit" || a.pairOffX != 30 || a.pairOffY != -20 || !a.pairFlip {
 		t.Fatalf("activate must restore per-session pair/iniswap/pos: ini=%q side=%q off=%d/%d flip=%v",
-			a.inibrowse.iniChar, a.compose.sidePref, a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip)
+			a.iniChar, a.sidePref, a.pairOffX, a.pairOffY, a.pairFlip)
 	}
-	if a.tabs[0].state.srvMeta.serverName != "" {
+	if a.tabs[0].state.serverName != "" {
 		t.Fatal("the active tab's parked slot must be zeroed")
 	}
 }
@@ -293,19 +292,19 @@ func TestMusicTabDuckOnPark(t *testing.T) {
 	if !a.allocateTab() {
 		t.Fatal("allocate")
 	}
-	a.srvMeta.serverName, a.srvMeta.serverKey = "Srv", "wss://srv:2096"
-	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.serverName, a.serverKey = "Srv", "wss://srv:2096"
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 
 	// Default (pref OFF): parking ducks the backgrounded stream to silence.
 	a.parkActive()
-	if !a.budget.musicTabDucked {
+	if !a.musicTabDucked {
 		t.Fatal("default: parking a tab must duck the still-rolling stream to silence")
 	}
 
 	// Re-activate the tab (it has no music, so the duck still stands — a backgrounded
 	// tab's stream is being kept alive under it).
 	a.activateTab(0)
-	if !a.budget.musicTabDucked {
+	if !a.musicTabDucked {
 		t.Fatal("setup: after re-activating a tab with no music, the duck should still stand")
 	}
 	// A DJ /play on the ACTIVE tab while the stream is still ducked-foreign: the
@@ -313,14 +312,14 @@ func TestMusicTabDuckOnPark(t *testing.T) {
 	// audible during the new track's download) — it KEEPS the duck and records the
 	// awaited URL, so the delivery-time settle can lift it once the right track lands.
 	// HandlePacket normally sets MusicTrack; set it directly so the handler's gate sees it.
-	a.link.sess.MusicTrack = "Trial.opus"
+	a.sess.MusicTrack = "Trial.opus"
 	a.handleSessionEvents([]courtroom.Event{{Kind: courtroom.EventMusic, Text: "Trial.opus"}})
-	if !a.budget.musicTabDucked {
+	if !a.musicTabDucked {
 		t.Error("a DJ /play while ducked-foreign must KEEP the duck until the requested track is delivered")
 	}
-	wantAwait := a.link.urls.MusicURL("Trial.opus")
-	if a.budget.musicAwaitURL != wantAwait {
-		t.Errorf("EventMusic while ducked must record the awaited URL: got %q, want %q", a.budget.musicAwaitURL, wantAwait)
+	wantAwait := a.urls.MusicURL("Trial.opus")
+	if a.musicAwaitURL != wantAwait {
+		t.Errorf("EventMusic while ducked must record the awaited URL: got %q, want %q", a.musicAwaitURL, wantAwait)
 	}
 
 	// Pref ON: parking keeps the backgrounded stream AUDIBLE (no duck).
@@ -336,7 +335,7 @@ func TestMusicTabDuckOnPark(t *testing.T) {
 	})
 
 	a.parkActive()
-	if a.budget.musicTabDucked {
+	if a.musicTabDucked {
 		t.Error("with MusicAcrossTabs ON, parking must NOT duck the backgrounded stream")
 	}
 }
@@ -351,15 +350,15 @@ func TestMusicAwaitDeliverySettles(t *testing.T) {
 	a := testTabApp(t)
 
 	// Ducked, awaiting a specific track.
-	a.budget.musicTabDucked = true
-	a.budget.musicAwaitURL = "http://cdn/trial.opus"
+	a.musicTabDucked = true
+	a.musicAwaitURL = "http://cdn/trial.opus"
 
 	// A DIFFERENT track is what's currently playing (the still-loading-away foreign
 	// stream): the duck must HOLD and the await must survive — this is the whole bug.
 	if a.settleAwaitedDuck("http://cdn/foreign.opus") {
 		t.Fatal("settle must NOT un-duck while a foreign track is current")
 	}
-	if !a.budget.musicTabDucked || a.budget.musicAwaitURL == "" {
+	if !a.musicTabDucked || a.musicAwaitURL == "" {
 		t.Fatal("a foreign current track must leave both the duck and the await intact")
 	}
 
@@ -368,10 +367,10 @@ func TestMusicAwaitDeliverySettles(t *testing.T) {
 	if !a.settleAwaitedDuck("http://cdn/trial.opus") {
 		t.Fatal("settle must un-duck once the awaited track is current")
 	}
-	if a.budget.musicTabDucked {
+	if a.musicTabDucked {
 		t.Error("the duck must lift when the awaited track is delivered")
 	}
-	if a.budget.musicAwaitURL != "" {
+	if a.musicAwaitURL != "" {
 		t.Error("the await must clear once satisfied")
 	}
 
@@ -385,30 +384,37 @@ func TestMusicAwaitDeliverySettles(t *testing.T) {
 // (applyResumeDuck), split out so it needs no audio device (the branch selection
 // reads CurrentMusicURL, but the FLAG mutation — the part with the bug history — is
 // pure and unit-pinnable like mixChannels):
+//
+//   - sameTrack=true (PRESERVE clause): the stream is already this exact track,
+//     kept rolling across the switch. Un-duck IMMEDIATELY (no delivery is coming)
+//     and clear any stale await.
+//   - sameTrack=false (swap path): a foreign/other-tab track is live. HOLD the duck
+//     (un-ducking now would make the foreign track audible during the fetch) and
+//     AWAIT this tab's url — the same delivery-time guard as the DJ /play path.
 func TestMusicResumeDuckDecision(t *testing.T) {
 	const url = "http://cdn/trial.opus"
 
 	// Same track already live, but ducked with a stale await from an earlier swap.
 	a := testTabApp(t)
-	a.budget.musicTabDucked = true
-	a.budget.musicAwaitURL = "http://cdn/stale.opus"
+	a.musicTabDucked = true
+	a.musicAwaitURL = "http://cdn/stale.opus"
 	a.applyResumeDuck(true, url)
-	if a.budget.musicTabDucked {
+	if a.musicTabDucked {
 		t.Error("same-track resume must un-duck immediately (the right song is already rolling)")
 	}
-	if a.budget.musicAwaitURL != "" {
+	if a.musicAwaitURL != "" {
 		t.Error("same-track resume must clear any stale await (nothing is being awaited)")
 	}
 
 	// Different track live: hold the duck, await this url.
 	b := testTabApp(t)
-	b.budget.musicTabDucked = true
+	b.musicTabDucked = true
 	b.applyResumeDuck(false, url)
-	if !b.budget.musicTabDucked {
+	if !b.musicTabDucked {
 		t.Error("different-track resume must HOLD the duck until this tab's track is delivered")
 	}
-	if b.budget.musicAwaitURL != url {
-		t.Errorf("different-track resume must await this tab's url: got %q, want %q", b.budget.musicAwaitURL, url)
+	if b.musicAwaitURL != url {
+		t.Errorf("different-track resume must await this tab's url: got %q, want %q", b.musicAwaitURL, url)
 	}
 }
 
@@ -422,11 +428,11 @@ func TestMusicAwaitClearedOnParkAndStop(t *testing.T) {
 	if !a.allocateTab() {
 		t.Fatal("allocate")
 	}
-	a.srvMeta.serverName, a.srvMeta.serverKey = "Srv", "wss://srv:2096"
-	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
-	a.budget.musicAwaitURL = "http://cdn/stale.opus"
+	a.serverName, a.serverKey = "Srv", "wss://srv:2096"
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.musicAwaitURL = "http://cdn/stale.opus"
 	a.parkActive()
-	if a.budget.musicAwaitURL != "" {
+	if a.musicAwaitURL != "" {
 		t.Error("parkActive must clear a stale await (switch-back-mid-await guard)")
 	}
 
@@ -435,10 +441,10 @@ func TestMusicAwaitClearedOnParkAndStop(t *testing.T) {
 	// guard without touching SDL — the headless stand-in the render tests use too.
 	b := testTabApp(t)
 	b.d.Audio = &render.Audio{}
-	b.budget.musicTabDucked = true
-	b.budget.musicAwaitURL = "http://cdn/stale.opus"
+	b.musicTabDucked = true
+	b.musicAwaitURL = "http://cdn/stale.opus"
 	b.applyMusicStreaming(false)
-	if b.budget.musicTabDucked || b.budget.musicAwaitURL != "" {
+	if b.musicTabDucked || b.musicAwaitURL != "" {
 		t.Error("streaming OFF must clear both the tab-duck and the await (stopped ⇒ not ducked, no await)")
 	}
 }
@@ -449,19 +455,20 @@ func TestMusicAwaitClearedOnParkAndStop(t *testing.T) {
 // plain-ducked case the old inline `if next && a.musicTabDucked` handled. The wedge
 // the old code missed: a stream stuck behind an await that never became current
 // (a fetch that 404'd/failed silently), where the toggle appeared to "do nothing".
+// nil Audio — pure flag inspection (applyAudioVolumes no-ops without a device).
 func TestMusicAcrossTabsToggleUnwedges(t *testing.T) {
 	// The discriminating wedge: duck HELD and the await latch ARMED (a track that
 	// never arrived). The old gated code cleared the duck but NOT the latch here; the
 	// unconditional action must clear both so the stream is truly un-wedged.
 	a := testTabApp(t)
-	a.budget.musicTabDucked = true
-	a.budget.musicAwaitURL = "http://cdn/never-arrives.opus"
-	a.budget.musicAwaitSince = a.now()
+	a.musicTabDucked = true
+	a.musicAwaitURL = "http://cdn/never-arrives.opus"
+	a.musicAwaitSince = a.now()
 	a.applyMusicAcrossTabs(true)
-	if a.budget.musicTabDucked {
+	if a.musicTabDucked {
 		t.Error("toggle ON must lift the duck on a wedged background stream")
 	}
-	if a.budget.musicAwaitURL != "" {
+	if a.musicAwaitURL != "" {
 		t.Error("toggle ON must clear the never-arriving await latch (the second silencer)")
 	}
 	if !a.d.Prefs.Load().MusicAcrossTabs {
@@ -472,7 +479,7 @@ func TestMusicAcrossTabsToggleUnwedges(t *testing.T) {
 	// must not manufacture a duck or an await out of a clean stream.
 	b := testTabApp(t)
 	b.applyMusicAcrossTabs(true)
-	if b.budget.musicTabDucked || b.budget.musicAwaitURL != "" {
+	if b.musicTabDucked || b.musicAwaitURL != "" {
 		t.Error("toggle ON with nothing ducked must stay clean (no-op)")
 	}
 
@@ -482,9 +489,9 @@ func TestMusicAcrossTabsToggleUnwedges(t *testing.T) {
 	// defer-to-next-tab-switch design, which read as the checkbox doing nothing.)
 	// The stream is ducked, not stopped: position keeps advancing.
 	d := testTabApp(t)
-	d.budget.musicTabDucked = false
+	d.musicTabDucked = false
 	d.applyMusicAcrossTabs(false)
-	if !d.budget.musicTabDucked {
+	if !d.musicTabDucked {
 		t.Error("toggle OFF must re-duck live audio immediately — the label promises silent-now")
 	}
 	if d.d.Prefs.Load().MusicAcrossTabs {
@@ -497,34 +504,36 @@ func TestMusicAcrossTabsToggleUnwedges(t *testing.T) {
 // stalled download) must not wedge the stream silent forever. Before the timeout the
 // duck HOLDS (a slow-but-real download is still coming); at/after musicAwaitTimeout
 // settleAwaitedMusic releases the await and lifts the duck so the stream self-heals.
+// Uses a real (disabled) render.Audio so CurrentMusicURL is a safe empty string, and
+// drives a.now() via frameNow (the reconnect.go fake-clock idiom).
 func TestMusicAwaitTimeoutReleases(t *testing.T) {
 	a := testTabApp(t)
 	a.d.Audio = &render.Audio{} // disabled: Frame/CurrentMusicURL are safe no-ops
 	base := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
-	a.budget.frameNow = base
-	a.budget.musicTabDucked = true
-	a.budget.musicAwaitURL = "http://cdn/never-arrives.opus" // CurrentMusicURL ("") never equals this
-	a.budget.musicAwaitSince = base
+	a.frameNow = base
+	a.musicTabDucked = true
+	a.musicAwaitURL = "http://cdn/never-arrives.opus" // CurrentMusicURL ("") never equals this
+	a.musicAwaitSince = base
 
 	// Just before the deadline: the awaited track still hasn't landed, but a real
 	// download could still be in flight — the duck must HOLD.
-	a.budget.frameNow = base.Add(musicAwaitTimeout - time.Millisecond)
+	a.frameNow = base.Add(musicAwaitTimeout - time.Millisecond)
 	a.settleAwaitedMusic()
-	if !a.budget.musicTabDucked || a.budget.musicAwaitURL == "" {
+	if !a.musicTabDucked || a.musicAwaitURL == "" {
 		t.Fatal("before the timeout the duck and await must hold (a slow download may still arrive)")
 	}
 
 	// At/after the deadline: nothing will ever arrive on this await, so release it and
 	// lift the duck — permanent silence is the worse outcome.
-	a.budget.frameNow = base.Add(musicAwaitTimeout)
+	a.frameNow = base.Add(musicAwaitTimeout)
 	a.settleAwaitedMusic()
-	if a.budget.musicTabDucked {
+	if a.musicTabDucked {
 		t.Error("past musicAwaitTimeout the duck must release (never-arrives self-heal)")
 	}
-	if a.budget.musicAwaitURL != "" {
+	if a.musicAwaitURL != "" {
 		t.Error("past musicAwaitTimeout the await latch must clear")
 	}
-	if !a.budget.musicAwaitSince.IsZero() {
+	if !a.musicAwaitSince.IsZero() {
 		t.Error("releasing the await must drop its timeout stamp")
 	}
 }
@@ -538,21 +547,21 @@ func TestStageRestoreMsg(t *testing.T) {
 	if a.stageRestoreMsg() != nil {
 		t.Fatal("no session: want nil")
 	}
-	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	if a.stageRestoreMsg() != nil {
 		t.Fatal("no LastIC: want nil")
 	}
 	msg := &protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", Message: "Hello!"}
-	a.link.sess.LastIC = msg
+	a.sess.LastIC = msg
 	if a.stageRestoreMsg() != msg {
 		t.Fatal("want the session's LastIC back")
 	}
-	a.srvMeta.serverKey = "wss://test.example/ws"
-	a.d.Prefs.SetServerIgnored(a.srvMeta.serverKey, []string{"Phoenix"})
+	a.serverKey = "wss://test.example/ws"
+	a.d.Prefs.SetServerIgnored(a.serverKey, []string{"Phoenix"})
 	if a.stageRestoreMsg() != nil {
 		t.Fatal("an ignored speaker must not be re-staged")
 	}
-	a.d.Prefs.SetServerIgnored(a.srvMeta.serverKey, nil)
+	a.d.Prefs.SetServerIgnored(a.serverKey, nil)
 	if a.stageRestoreMsg() != msg {
 		t.Fatal("clearing the ignore list must restore the seed")
 	}
@@ -576,12 +585,12 @@ func TestTabSwitchNoLogCrossover(t *testing.T) {
 	if !a.allocateTab() {
 		t.Fatal("allocate tab A")
 	}
-	a.srvMeta.serverName, a.srvMeta.serverKey = "Alpha", "wss://alpha:2096"
-	a.link.sess = courtroom.NewRehearsalSession("", []string{"Apollo"})
-	a.chatlog.icLog = []icEntry{{text: "ALPHA-IC-only line", color: 2}}
-	a.chatlog.icLogSeq = 1
-	a.chatlog.oocLog, a.chatlog.oocSpeakers = []string{"ALPHA-OOC-only line"}, []string{"amod"}
-	a.chatlog.oocSeq = 1
+	a.serverName, a.serverKey = "Alpha", "wss://alpha:2096"
+	a.sess = courtroom.NewRehearsalSession("", []string{"Apollo"})
+	a.icLog = []icEntry{{text: "ALPHA-IC-only line", color: 2}}
+	a.icLogSeq = 1
+	a.oocLog, a.oocSpeakers = []string{"ALPHA-OOC-only line"}, []string{"amod"}
+	a.oocSeq = 1
 	// Prime the caches under tab A.
 	aICseen := a.icWrapped(800, false)
 	aOOCseen := a.oocWrapped(800)
@@ -595,12 +604,12 @@ func TestTabSwitchNoLogCrossover(t *testing.T) {
 	if !a.allocateTab() {
 		t.Fatal("allocate tab B")
 	}
-	a.srvMeta.serverName, a.srvMeta.serverKey = "Beta", "wss://beta:2096"
-	a.link.sess = courtroom.NewRehearsalSession("", []string{"Klavier"})
-	a.chatlog.icLog = []icEntry{{text: "BETA-IC-only line", color: 4}}
-	a.chatlog.icLogSeq = 1
-	a.chatlog.oocLog, a.chatlog.oocSpeakers = []string{"BETA-OOC-only line"}, []string{"bmod"}
-	a.chatlog.oocSeq = 1
+	a.serverName, a.serverKey = "Beta", "wss://beta:2096"
+	a.sess = courtroom.NewRehearsalSession("", []string{"Klavier"})
+	a.icLog = []icEntry{{text: "BETA-IC-only line", color: 4}}
+	a.icLogSeq = 1
+	a.oocLog, a.oocSpeakers = []string{"BETA-OOC-only line"}, []string{"bmod"}
+	a.oocSeq = 1
 
 	bIC := a.icWrapped(800, false)
 	bOOC := a.oocWrapped(800)
@@ -616,8 +625,8 @@ func TestTabSwitchNoLogCrossover(t *testing.T) {
 
 	// Switch BACK to tab A (index 0) and assert its own lines return, not tab B's.
 	a.activateTab(0)
-	if a.srvMeta.serverName != "Alpha" {
-		t.Fatalf("switch back must restore tab A, got %q", a.srvMeta.serverName)
+	if a.serverName != "Alpha" {
+		t.Fatalf("switch back must restore tab A, got %q", a.serverName)
 	}
 	aIC := a.icWrapped(800, false)
 	aOOC := a.oocWrapped(800)
@@ -629,8 +638,8 @@ func TestTabSwitchNoLogCrossover(t *testing.T) {
 	}
 	// The colour rides the entry, so a crossover would also mis-tint: pin the source
 	// entry's colour is tab A's (2), never tab B's (4).
-	if len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].color != 2 {
-		t.Fatalf("tab A log colour must be its own (2), got %v", a.chatlog.icLog)
+	if len(a.icLog) != 1 || a.icLog[0].color != 2 {
+		t.Fatalf("tab A log colour must be its own (2), got %v", a.icLog)
 	}
 }
 
@@ -682,8 +691,8 @@ func TestBuildRoomRebindsSceneryPerTab(t *testing.T) {
 // ("0"/"1"/empty) and duplicates are dropped, and an out-of-range pick clamps to auto.
 func TestEnsureSFXChoices(t *testing.T) {
 	a := testTabApp(t)
-	a.inibrowse.iniChar = "TestChar" // activeCharName() → this, no session needed
-	a.emotepick.emotes = []courtroom.Emote{
+	a.iniChar = "TestChar" // activeCharName() → this, no session needed
+	a.emotes = []courtroom.Emote{
 		{Anim: "normal", SFXName: "0"},       // silence → skipped
 		{Anim: "slam", SFXName: "deskslam"},  // sound
 		{Anim: "point", SFXName: "deskslam"}, // duplicate → skipped
@@ -693,18 +702,18 @@ func TestEnsureSFXChoices(t *testing.T) {
 	}
 	a.ensureSFXChoices()
 	want := []string{sfxAutoLabel, "deskslam", "gavel"}
-	if len(a.emotepick.sfxChoices) != len(want) {
-		t.Fatalf("choices = %v, want %v", a.emotepick.sfxChoices, want)
+	if len(a.sfxChoices) != len(want) {
+		t.Fatalf("choices = %v, want %v", a.sfxChoices, want)
 	}
 	for i, w := range want {
-		if a.emotepick.sfxChoices[i] != w {
-			t.Errorf("choice %d = %q, want %q", i, a.emotepick.sfxChoices[i], w)
+		if a.sfxChoices[i] != w {
+			t.Errorf("choice %d = %q, want %q", i, a.sfxChoices[i], w)
 		}
 	}
-	a.emotepick.sfxChoiceIdx, a.emotepick.sfxChoicesForName = 5, "\x00stale" // out-of-range pick + a never-matching name forces a rebuild
+	a.sfxChoiceIdx, a.sfxChoicesForName = 5, "\x00stale" // out-of-range pick + a never-matching name forces a rebuild
 	a.ensureSFXChoices()
-	if a.emotepick.sfxChoiceIdx != 0 {
-		t.Errorf("out-of-range pick must clamp to auto (0), got %d", a.emotepick.sfxChoiceIdx)
+	if a.sfxChoiceIdx != 0 {
+		t.Errorf("out-of-range pick must clamp to auto (0), got %d", a.sfxChoiceIdx)
 	}
 }
 
@@ -716,9 +725,12 @@ func TestControlPinnedClientSwaps(t *testing.T) {
 	if !a.allocateTab() {
 		t.Fatal("allocate primary tab")
 	}
-	a.srvMeta.serverName, a.srvMeta.serverKey = "Primary", "wss://primary"
-	a.link.sess = courtroom.NewRehearsalSession("", []string{"P"})
-	a.tabs = append(a.tabs, &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Pinned", serverKey: "wss://pinned"}, link: linkState{sess: courtroom.NewRehearsalSession("", []string{"Q"})}}})
+	a.serverName, a.serverKey = "Primary", "wss://primary"
+	a.sess = courtroom.NewRehearsalSession("", []string{"P"})
+	a.tabs = append(a.tabs, &courtTab{state: sessionState{
+		serverName: "Pinned", serverKey: "wss://pinned",
+		sess: courtroom.NewRehearsalSession("", []string{"Q"}),
+	}})
 	a.activeTab, a.tabDragFrom = 0, -1
 	a.pinToSplit(a.tabs[1])
 	if !a.splitActive() || a.splitTab != a.tabs[1] {
@@ -727,8 +739,8 @@ func TestControlPinnedClientSwaps(t *testing.T) {
 
 	a.controlPinnedClient()
 
-	if a.activeTab != 1 || a.srvMeta.serverName != "Pinned" {
-		t.Fatalf("the pinned server must become the live primary: activeTab=%d name=%q", a.activeTab, a.srvMeta.serverName)
+	if a.activeTab != 1 || a.serverName != "Pinned" {
+		t.Fatalf("the pinned server must become the live primary: activeTab=%d name=%q", a.activeTab, a.serverName)
 	}
 	if !a.splitActive() || a.splitTab != a.tabs[0] {
 		t.Fatal("the old primary must become the new float")
@@ -742,18 +754,18 @@ func TestClientControlClick(t *testing.T) {
 	c := a.ctx
 	view := sdl.Rect{X: 0, Y: 0, W: 200, H: 200}
 
-	a.client.pendingControlSwap, a.client.clientPanning = false, false
+	a.pendingControlSwap, a.clientPanning = false, false
 	c.clicked = true
 	c.mouseX, c.mouseY, c.downX, c.downY = 50, 50, 50, 50 // released where pressed → a click
-	a.client.clientControlClick(&a.env, view)
-	if !a.client.pendingControlSwap {
+	a.clientControlClick(view)
+	if !a.pendingControlSwap {
 		t.Error("a click in the view must request control")
 	}
 
-	a.client.pendingControlSwap = false
+	a.pendingControlSwap = false
 	c.mouseX, c.mouseY, c.downX, c.downY = 150, 150, 50, 50 // travelled far → a drag, not a click
-	a.client.clientControlClick(&a.env, view)
-	if a.client.pendingControlSwap {
+	a.clientControlClick(view)
+	if a.pendingControlSwap {
 		t.Error("a drag must not request control (it pans)")
 	}
 }
@@ -763,12 +775,12 @@ func TestClientControlClick(t *testing.T) {
 // window never leaves the texture.
 func TestClientViewSrcZoom(t *testing.T) {
 	a := testTabApp(t)
-	a.client.clientTexW, a.client.clientTexH = 1000, 800
-	a.client.clientZoom, a.clientPanX, a.clientPanY = 1, 0.5, 0.5
+	a.clientTexW, a.clientTexH = 1000, 800
+	a.clientZoom, a.clientPanX, a.clientPanY = 1, 0.5, 0.5
 	if s := a.clientViewSrc(); s.X != 0 || s.Y != 0 || s.W != 1000 || s.H != 800 {
 		t.Fatalf("zoom 1 must show the whole texture, got %+v", s)
 	}
-	a.client.clientZoom = 2 // centred: middle 500×400 at (250,200)
+	a.clientZoom = 2 // centred: middle 500×400 at (250,200)
 	if s := a.clientViewSrc(); s.W != 500 || s.H != 400 || s.X != 250 || s.Y != 200 {
 		t.Fatalf("zoom 2 centred = 500x400 at (250,200), got %+v", s)
 	}
@@ -788,15 +800,15 @@ func TestClientViewSrcZoom(t *testing.T) {
 // the wheel; scrolling all the way out clamps back to the fit floor.
 func TestClientZoomWheel(t *testing.T) {
 	a := testTabApp(t)
-	a.client.clientTexW, a.client.clientTexH = 1000, 800
-	a.client.clientZoom, a.clientPanX, a.clientPanY = 1, 0.5, 0.5
+	a.clientTexW, a.clientTexH = 1000, 800
+	a.clientZoom, a.clientPanX, a.clientPanY = 1, 0.5, 0.5
 	c := a.ctx
 	view := sdl.Rect{X: 0, Y: 0, W: 400, H: 300}
 	pressed := false
 	c.mouseX, c.mouseY, c.wheelY = 200, 150, 1
 	a.handleClientZoomPan(view, &pressed)
-	if a.client.clientZoom <= 1 {
-		t.Fatalf("wheel up must zoom in, got %v", a.client.clientZoom)
+	if a.clientZoom <= 1 {
+		t.Fatalf("wheel up must zoom in, got %v", a.clientZoom)
 	}
 	if c.wheelY != 0 {
 		t.Error("zoom must consume the wheel so panels behind don't also scroll")
@@ -805,8 +817,8 @@ func TestClientZoomWheel(t *testing.T) {
 		c.mouseX, c.mouseY, c.wheelY = 200, 150, -1
 		a.handleClientZoomPan(view, &pressed)
 	}
-	if a.client.clientZoom != clientZoomMin {
-		t.Fatalf("zoom out must clamp to the fit floor %v, got %v", clientZoomMin, a.client.clientZoom)
+	if a.clientZoom != clientZoomMin {
+		t.Fatalf("zoom out must clamp to the fit floor %v, got %v", clientZoomMin, a.clientZoom)
 	}
 }
 
@@ -823,7 +835,7 @@ func TestRenderFullClientTextureRestores(t *testing.T) {
 	a.ctx.Ren = ren
 	a.uiScalePct = 100
 	// Distinctive primary state that must survive the pinned pass untouched.
-	a.srvMeta.serverName = "PrimaryServer"
+	a.serverName = "PrimaryServer"
 	a.screen = ScreenCourtroom
 	primaryVP := render.NewViewport(nil)
 	a.d.Viewport = primaryVP
@@ -831,12 +843,12 @@ func TestRenderFullClientTextureRestores(t *testing.T) {
 	// early-returns (and sets a.screen=lobby, which the snapshot must undo).
 	a.splitVP = render.NewViewport(nil)
 	a.splitRoom = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, nil, courtroom.NopAudio{})
-	a.splitTab = &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "PinnedServer"}}} // sess stays nil
+	a.splitTab = &courtTab{state: sessionState{serverName: "PinnedServer"}} // sess stays nil
 
 	a.renderFullClientTexture(640, 480)
 
-	if a.srvMeta.serverName != "PrimaryServer" {
-		t.Errorf("primary sessionState not restored: serverName=%q", a.srvMeta.serverName)
+	if a.serverName != "PrimaryServer" {
+		t.Errorf("primary sessionState not restored: serverName=%q", a.serverName)
 	}
 	if a.d.Viewport != primaryVP {
 		t.Error("primary viewport (a.d.Viewport) not restored")
@@ -844,16 +856,16 @@ func TestRenderFullClientTextureRestores(t *testing.T) {
 	if a.screen != ScreenCourtroom {
 		t.Errorf("primary screen not restored: got %v (the pinned pass set it to lobby)", a.screen)
 	}
-	if a.link.room != nil {
+	if a.room != nil {
 		t.Error("primary room not restored (must stay nil here, not the splitRoom)")
 	}
-	if a.client.pinnedPass {
+	if a.pinnedPass {
 		t.Error("pinnedPass left set — primary polls would stay suppressed")
 	}
 	if a.ctx.Ren.GetRenderTarget() != nil {
 		t.Error("render target left bound to the texture — the screen would render into it")
 	}
-	if a.client.clientTex == nil {
+	if a.clientTex == nil {
 		t.Error("clientTex should have been created")
 	}
 }
@@ -865,7 +877,7 @@ func TestRenderFullClientTextureRestores(t *testing.T) {
 // we add no per-frame GARBAGE on top of it (the avoidable sin). The default/compact
 // path never runs any of this (gated on clientFull && splitActive).
 func BenchmarkClientInputSnapshot(b *testing.B) {
-	a := &App{env: env{ctx: &Ctx{}}}
+	a := &App{ctx: &Ctx{}}
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		in := a.snapshotInput()
@@ -883,7 +895,7 @@ func TestTabTearOffToSplit(t *testing.T) {
 	c := a.ctx
 	a.tabs = []*courtTab{
 		{}, // index 0: the active (left) tab — its live session lives in a.sessionState
-		{state: sessionState{srvMeta: serverMetaState{serverName: "Pinned"}, link: linkState{sess: courtroom.NewRehearsalSession("", []string{"X"})}}},
+		{state: sessionState{serverName: "Pinned", sess: courtroom.NewRehearsalSession("", []string{"X"})}},
 	}
 	a.activeTab = 0
 	a.tabDragFrom = -1 // NewApp seeds this idle sentinel; the raw test App needs it too
@@ -908,7 +920,7 @@ func TestTabTearOffToSplit(t *testing.T) {
 	if a.splitTab != a.tabs[1] || !a.splitActive() {
 		t.Fatalf("tear-off release must pop the background tab out as a floating client")
 	}
-	if !a.wins.clientWin.placed {
+	if !a.clientWin.placed {
 		t.Error("tear-off drop must place the floating client window at the cursor")
 	}
 
@@ -950,10 +962,10 @@ func TestTabTearOffToSplit(t *testing.T) {
 func TestSendICSplitTargetsPinnedSession(t *testing.T) {
 	a := testTabApp(t)
 	// Primary (left) session: a distinct identity that must survive the send.
-	a.srvMeta.serverName = "PrimaryServer"
-	a.compose.icInput = "primary draft"
-	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
-	a.link.sess.MyCharID = 1
+	a.serverName = "PrimaryServer"
+	a.icInput = "primary draft"
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.sess.MyCharID = 1
 
 	// Pinned (right) session on a send-capturing conn, with a distinctive char id
 	// (4242) so "the pinned identity was used" is unambiguous against MS's many
@@ -962,11 +974,12 @@ func TestSendICSplitTargetsPinnedSession(t *testing.T) {
 	pinnedSess := courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
 	pinnedSess.MyCharID = 4242
 	pin := &courtTab{state: sessionState{
-		srvMeta: serverMetaState{serverName: "PinnedServer"},
-		link:    linkState{sess: pinnedSess},
-		compose: composeState{sidePref: "wit", icInput: "hello from the right pane"},
-		evid:    evidenceState{evidIdx: -1},
-		pairbox: pairBoxState{pairWith: protocol.UnpairedCharID},
+		serverName: "PinnedServer",
+		sess:       pinnedSess,
+		sidePref:   "wit",
+		evidIdx:    -1,
+		pairWith:   protocol.UnpairedCharID,
+		icInput:    "hello from the right pane",
 	}}
 	a.tabs = append(a.tabs, pin)
 	a.splitTab = pin
@@ -988,21 +1001,21 @@ func TestSendICSplitTargetsPinnedSession(t *testing.T) {
 	// 2. The pinned input is KEPT until the pinned server echoes it back
 	//    (keep-until-echo: a send the server swallows must not cost the typed
 	//    line) — the send only snapshots it as pending, in the PINNED state.
-	if pin.state.compose.icInput != "hello from the right pane" {
-		t.Errorf("pinned input must be kept until the echo, got %q", pin.state.compose.icInput)
+	if pin.state.icInput != "hello from the right pane" {
+		t.Errorf("pinned input must be kept until the echo, got %q", pin.state.icInput)
 	}
-	if pin.state.compose.icPendingSent != "hello from the right pane" {
-		t.Errorf("pinned pending snapshot = %q, want the sent line", pin.state.compose.icPendingSent)
+	if pin.state.icPendingSent != "hello from the right pane" {
+		t.Errorf("pinned pending snapshot = %q, want the sent line", pin.state.icPendingSent)
 	}
-	if a.compose.icPendingSent != "" {
-		t.Errorf("the PRIMARY session must not inherit the pinned pending, got %q", a.compose.icPendingSent)
+	if a.icPendingSent != "" {
+		t.Errorf("the PRIMARY session must not inherit the pinned pending, got %q", a.icPendingSent)
 	}
 	// 3. The primary session is fully restored — name and its own draft intact.
-	if a.srvMeta.serverName != "PrimaryServer" || a.compose.icInput != "primary draft" {
-		t.Errorf("primary must be untouched: name=%q input=%q", a.srvMeta.serverName, a.compose.icInput)
+	if a.serverName != "PrimaryServer" || a.icInput != "primary draft" {
+		t.Errorf("primary must be untouched: name=%q input=%q", a.serverName, a.icInput)
 	}
-	if a.link.sess.MyCharID != 1 {
-		t.Errorf("primary session pointer must be restored (MyCharID 1), got %d", a.link.sess.MyCharID)
+	if a.sess.MyCharID != 1 {
+		t.Errorf("primary session pointer must be restored (MyCharID 1), got %d", a.sess.MyCharID)
 	}
 	// 4. Focus stays in the right pane so you can keep typing there.
 	if a.ctx.focusNext != "ic-split" {
@@ -1016,10 +1029,10 @@ func TestSendICSplitTargetsPinnedSession(t *testing.T) {
 // one tab's live placement never seeds another's.
 func TestResetSessionStatePairIsSessionOnly(t *testing.T) {
 	a := testTabApp(t)
-	a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip = 15, 25, true // a live tab's placement
-	a.resetSessionState()                                                     // new tab / disconnect / park path
-	if a.pairbox.pairOffX != 0 || a.pairbox.pairOffY != 0 || a.pairbox.pairFlip {
-		t.Errorf("fresh session pair = %d/%d/%v, want 0/0/false (session-only)", a.pairbox.pairOffX, a.pairbox.pairOffY, a.pairbox.pairFlip)
+	a.pairOffX, a.pairOffY, a.pairFlip = 15, 25, true // a live tab's placement
+	a.resetSessionState()                             // new tab / disconnect / park path
+	if a.pairOffX != 0 || a.pairOffY != 0 || a.pairFlip {
+		t.Errorf("fresh session pair = %d/%d/%v, want 0/0/false (session-only)", a.pairOffX, a.pairOffY, a.pairFlip)
 	}
 }
 
@@ -1035,22 +1048,22 @@ func TestOOCNamePerTab(t *testing.T) {
 		t.Fatal("allocateTab must succeed")
 	}
 	a.resetSessionState()
-	if a.compose.oocName != "DefaultName" {
-		t.Fatalf("fresh tab must seed the saved default, got %q", a.compose.oocName)
+	if a.oocName != "DefaultName" {
+		t.Fatalf("fresh tab must seed the saved default, got %q", a.oocName)
 	}
-	a.compose.oocName = "TabOnlyName" // typed into the courtroom field (tab-local)
+	a.oocName = "TabOnlyName" // typed into the courtroom field (tab-local)
 	a.parkActive()
 	if !a.allocateTab() {
 		t.Fatal("second allocateTab must succeed")
 	}
 	a.resetSessionState()
-	if a.compose.oocName != "DefaultName" {
-		t.Errorf("a new tab must NOT inherit another tab's typed name, got %q", a.compose.oocName)
+	if a.oocName != "DefaultName" {
+		t.Errorf("a new tab must NOT inherit another tab's typed name, got %q", a.oocName)
 	}
 	if got := a.d.Prefs.Load().OOCName; got != "DefaultName" {
 		t.Errorf("typing in the courtroom field must not rewrite the saved default, got %q", got)
 	}
-	if got := a.tabs[0].state.compose.oocName; got != "TabOnlyName" {
+	if got := a.tabs[0].state.oocName; got != "TabOnlyName" {
 		t.Errorf("the parked tab must keep its own typed name, got %q", got)
 	}
 }
@@ -1062,13 +1075,13 @@ func TestResetSessionStateSeedsPlayerSort(t *testing.T) {
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.PlayerListSort = playerSortName })
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.PlayerListAreaSort = areaSortPop })
 	a.resetSessionState()
-	if a.roster.playerSort != playerSortName || a.roster.playerAreaSort != areaSortPop {
-		t.Errorf("seed = %d/%d, want %d/%d", a.roster.playerSort, a.roster.playerAreaSort, playerSortName, areaSortPop)
+	if a.playerSort != playerSortName || a.playerAreaSort != areaSortPop {
+		t.Errorf("seed = %d/%d, want %d/%d", a.playerSort, a.playerAreaSort, playerSortName, areaSortPop)
 	}
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.PlayerListSort = 99 }) // a stale/out-of-range value clamps to 0
 	a.resetSessionState()
-	if a.roster.playerSort != 0 {
-		t.Errorf("out-of-range sort must clamp to 0, got %d", a.roster.playerSort)
+	if a.playerSort != 0 {
+		t.Errorf("out-of-range sort must clamp to 0, got %d", a.playerSort)
 	}
 }
 
@@ -1080,13 +1093,13 @@ func TestTabCap(t *testing.T) {
 		if !a.allocateTab() {
 			t.Fatalf("allocate %d must succeed", i)
 		}
-		a.srvMeta.serverName = "srv"
+		a.serverName = "srv"
 		a.parkActive()
 	}
 	if a.allocateTab() {
 		t.Fatalf("allocate beyond the multi-tab cap=%d must refuse", config.DefaultMultiTabCap)
 	}
-	if a.conn.connErr == "" {
+	if a.connErr == "" {
 		t.Fatal("the refusal must explain itself on connErr")
 	}
 }
@@ -1099,22 +1112,22 @@ func TestTabBackgroundRouting(t *testing.T) {
 	if !a.allocateTab() {
 		t.Fatal("allocate")
 	}
-	a.srvMeta.serverName = "bg"
-	a.srvMeta.serverKey = "wss://bg.example"
+	a.serverName = "bg"
+	a.serverKey = "wss://bg.example"
 	a.parkActive()
 
 	tab := a.tabs[0]
 	// OOC by default LOGS but does NOT bump the unread badge: server auto-messages
 	// (hourly reminders, etc.) shouldn't light up a "(1)" when nobody chatted.
 	a.routeBackgroundEvent(tab, courtroom.Event{Kind: courtroom.EventOOC, Name: "mod", Text: "hi"})
-	if tab.unread != 0 || len(tab.state.chatlog.oocLog) != 1 {
-		t.Fatalf("OOC must log but not badge by default: unread=%d ooc=%d", tab.unread, len(tab.state.chatlog.oocLog))
+	if tab.unread != 0 || len(tab.state.oocLog) != 1 {
+		t.Fatalf("OOC must log but not badge by default: unread=%d ooc=%d", tab.unread, len(tab.state.oocLog))
 	}
 	// IC chat always bumps the badge.
 	msg := &protocol.ChatMessage{Message: "objection!", TextColor: 2}
 	a.routeBackgroundEvent(tab, courtroom.Event{Kind: courtroom.EventMessage, Message: msg})
-	if tab.unread != 1 || len(tab.state.chatlog.icLog) != 1 {
-		t.Fatalf("IC chat must badge: unread=%d ic=%d", tab.unread, len(tab.state.chatlog.icLog))
+	if tab.unread != 1 || len(tab.state.icLog) != 1 {
+		t.Fatalf("IC chat must badge: unread=%d ic=%d", tab.unread, len(tab.state.icLog))
 	}
 	// With the opt-in pref ON, OOC counts toward the badge too.
 	a.d.Prefs.Update(func(
@@ -1132,7 +1145,7 @@ func TestTabBackgroundRouting(t *testing.T) {
 	if tab.unread != 2 {
 		t.Fatalf("with NotifyOnOOC on, OOC must badge: unread=%d", tab.unread)
 	}
-	if tab.state.chatlog.icLogSeq == 0 || tab.state.chatlog.oocSeq == 0 {
+	if tab.state.icLogSeq == 0 || tab.state.oocSeq == 0 {
 		t.Fatal("background appends must bump the cache-key seqs")
 	}
 
@@ -1153,16 +1166,16 @@ func TestTabBackgroundRouting(t *testing.T) {
 // tab comes from the session fields, parked tabs from their stored state, in
 // order, and dead / rehearsal / blank-URL / duplicate-URL slots are skipped.
 func TestCollectOpenTabs(t *testing.T) {
-	a := &App{env: env{}, activeTab: 1}
-	a.srvMeta.serverName = "Active"
-	a.srvMeta.serverKey = "wss://active:2096"
+	a := &App{activeTab: 1}
+	a.serverName = "Active"
+	a.serverKey = "wss://active:2096"
 	a.tabs = []*courtTab{
-		{state: sessionState{srvMeta: serverMetaState{serverName: "Parked", serverKey: "wss://parked:2096"}}},
+		{state: sessionState{serverName: "Parked", serverKey: "wss://parked:2096"}},
 		{}, // index 1 = the active tab (its session lives in a.sessionState)
-		{state: sessionState{srvMeta: serverMetaState{serverName: "Dead", serverKey: "wss://dead:2096"}}, dead: true},
-		{state: sessionState{srvMeta: serverMetaState{serverName: "Reh", serverKey: "wss://reh:2096", rehearsal: true}}},
-		{state: sessionState{srvMeta: serverMetaState{serverName: "NoURL"}}},                               // blank URL → skipped
-		{state: sessionState{srvMeta: serverMetaState{serverName: "Dup", serverKey: "wss://active:2096"}}}, // dup of active
+		{state: sessionState{serverName: "Dead", serverKey: "wss://dead:2096"}, dead: true},
+		{state: sessionState{serverName: "Reh", serverKey: "wss://reh:2096", rehearsal: true}},
+		{state: sessionState{serverName: "NoURL"}},                               // blank URL → skipped
+		{state: sessionState{serverName: "Dup", serverKey: "wss://active:2096"}}, // dup of active
 	}
 	got := a.collectOpenTabs()
 	want := []config.OpenTab{
@@ -1195,37 +1208,37 @@ func TestPerAreaScrollback(t *testing.T) {
 
 	})
 
-	a.chatlog.icLog = []icEntry{{text: "lobby line"}} // default area (curArea "")
+	a.icLog = []icEntry{{text: "lobby line"}} // default area (curArea "")
 
 	a.switchAreaScrollback("C1")
-	if len(a.chatlog.icLog) != 0 {
-		t.Fatalf("entering a fresh area must start empty, got %d", len(a.chatlog.icLog))
+	if len(a.icLog) != 0 {
+		t.Fatalf("entering a fresh area must start empty, got %d", len(a.icLog))
 	}
-	a.srvMeta.curArea = "C1"
-	a.chatlog.icLog = append(a.chatlog.icLog, icEntry{text: "c1 line"})
+	a.curArea = "C1"
+	a.icLog = append(a.icLog, icEntry{text: "c1 line"})
 
 	a.switchAreaScrollback("C2")
-	if len(a.chatlog.icLog) != 0 {
-		t.Fatalf("second fresh area must start empty, got %d", len(a.chatlog.icLog))
+	if len(a.icLog) != 0 {
+		t.Fatalf("second fresh area must start empty, got %d", len(a.icLog))
 	}
-	a.srvMeta.curArea = "C2"
+	a.curArea = "C2"
 
 	a.switchAreaScrollback("C1") // back to C1 → its line returns
-	if len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "c1 line" {
-		t.Fatalf("returning to an area must restore its log, got %v", a.chatlog.icLog)
+	if len(a.icLog) != 1 || a.icLog[0].text != "c1 line" {
+		t.Fatalf("returning to an area must restore its log, got %v", a.icLog)
 	}
-	a.srvMeta.curArea = "C1"
+	a.curArea = "C1"
 
 	a.switchAreaScrollback("") // back to the default area
-	if len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "lobby line" {
-		t.Fatalf("default area log lost: %v", a.chatlog.icLog)
+	if len(a.icLog) != 1 || a.icLog[0].text != "lobby line" {
+		t.Fatalf("default area log lost: %v", a.icLog)
 	}
 
 	// OFF (default): switching areas must not touch the log.
 	b := testTabApp(t)
-	b.chatlog.icLog = []icEntry{{text: "x"}}
+	b.icLog = []icEntry{{text: "x"}}
 	b.switchAreaScrollback("Other")
-	if len(b.chatlog.icLog) != 1 {
+	if len(b.icLog) != 1 {
 		t.Error("with per-area scrollback off, switching areas must leave the log alone")
 	}
 }
@@ -1255,20 +1268,20 @@ func TestRequestCloseTabConfirms(t *testing.T) {
 	// Instant OFF, a live background tab: the ✕ opens the confirm, tab survives.
 	a := testTabApp(t)
 	a.tabs = []*courtTab{
-		{}, // index 0: the active (left) tab — live session in a.sessionState
-		{state: sessionState{srvMeta: serverMetaState{serverName: "Bg"}}}, // index 1: live background tab (dead == false)
+		{},                                      // index 0: the active (left) tab — live session in a.sessionState
+		{state: sessionState{serverName: "Bg"}}, // index 1: live background tab (dead == false)
 	}
 	a.activeTab = 0
 	a.requestCloseTab(1)
-	if a.dialogs.pendingCloseTab != a.tabs[1] {
-		t.Fatalf("Instant OFF must stash the pending target, got %v", a.dialogs.pendingCloseTab)
+	if a.pendingCloseTab != a.tabs[1] {
+		t.Fatalf("Instant OFF must stash the pending target, got %v", a.pendingCloseTab)
 	}
 	if len(a.tabs) != 2 {
 		t.Fatalf("the tab must NOT close before confirm, have %d tabs", len(a.tabs))
 	}
 	// "Yes" closes it and clears the pending state.
 	a.confirmPendingCloseTab()
-	if a.dialogs.pendingCloseTab != nil {
+	if a.pendingCloseTab != nil {
 		t.Error("confirm must clear the pending target")
 	}
 	if len(a.tabs) != 1 {
@@ -1277,16 +1290,16 @@ func TestRequestCloseTabConfirms(t *testing.T) {
 	// A manually-closed BACKGROUND tab must never arm the ACTIVE session's
 	// auto-reconnect (that logic is App-level, scoped to pumpConnection; closing a
 	// parked tab closes its own conn directly and touches neither field).
-	if !a.conn.autoReconnectAt.IsZero() {
+	if !a.autoReconnectAt.IsZero() {
 		t.Error("closing a background tab must not arm auto-reconnect (that's active-session logic)")
 	}
-	if a.conn.deliberateClose {
+	if a.deliberateClose {
 		t.Error("closing a background tab must not flip the active session's deliberateClose flag")
 	}
 
 	// Instant ON: the ✕ closes immediately, no modal.
 	b := testTabApp(t)
-	b.tabs = []*courtTab{{}, {state: sessionState{srvMeta: serverMetaState{serverName: "Bg"}}}}
+	b.tabs = []*courtTab{{}, {state: sessionState{serverName: "Bg"}}}
 	b.activeTab = 0
 	b.d.Prefs.Update(func(
 		sn *config.
@@ -1300,7 +1313,7 @@ func TestRequestCloseTabConfirms(t *testing.T) {
 	})
 
 	b.requestCloseTab(1)
-	if b.dialogs.pendingCloseTab != nil {
+	if b.pendingCloseTab != nil {
 		t.Error("Instant ON must not open a confirm")
 	}
 	if len(b.tabs) != 1 {
@@ -1309,10 +1322,10 @@ func TestRequestCloseTabConfirms(t *testing.T) {
 
 	// A DEAD tab always closes immediately, even with Instant OFF.
 	d := testTabApp(t)
-	d.tabs = []*courtTab{{}, {state: sessionState{srvMeta: serverMetaState{serverName: "Bg"}}, dead: true}}
+	d.tabs = []*courtTab{{}, {state: sessionState{serverName: "Bg"}, dead: true}}
 	d.activeTab = 0
 	d.requestCloseTab(1)
-	if d.dialogs.pendingCloseTab != nil {
+	if d.pendingCloseTab != nil {
 		t.Error("a dead tab must not open a confirm (nothing live to lose)")
 	}
 	if len(d.tabs) != 1 {
@@ -1327,15 +1340,15 @@ func TestRequestCloseTabConfirms(t *testing.T) {
 // confirm, and assert the right tab died and activeTab bookkeeping stayed correct.
 func TestConfirmPendingCloseTabByPointer(t *testing.T) {
 	a := testTabApp(t)
-	keep := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Keep"}}}
-	target := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Target"}}}
-	other := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Other"}}}
+	keep := &courtTab{state: sessionState{serverName: "Keep"}}
+	target := &courtTab{state: sessionState{serverName: "Target"}}
+	other := &courtTab{state: sessionState{serverName: "Other"}}
 	a.tabs = []*courtTab{{}, keep, target, other} // index 0 active
 	a.activeTab = 0
 
 	a.requestCloseTab(2) // arm a close on `target` (index 2 at click time)
-	if a.dialogs.pendingCloseTab != target {
-		t.Fatalf("pending target must be the pointer at index 2, got %v", a.dialogs.pendingCloseTab)
+	if a.pendingCloseTab != target {
+		t.Fatalf("pending target must be the pointer at index 2, got %v", a.pendingCloseTab)
 	}
 	// The strip reorders under the open modal: `keep` moves to the end. `target`
 	// is now at a DIFFERENT index than when the ✕ was clicked.
@@ -1353,7 +1366,7 @@ func TestConfirmPendingCloseTabByPointer(t *testing.T) {
 	if !slices.Contains(a.tabs, keep) || !slices.Contains(a.tabs, other) {
 		t.Error("confirm must not close the wrong (reordered) tabs")
 	}
-	if a.activeTab != 0 || a.tabs[0].state.srvMeta.serverName != "" {
+	if a.activeTab != 0 || a.tabs[0].state.serverName != "" {
 		t.Errorf("the active tab bookkeeping must survive the reorder+close, activeTab=%d", a.activeTab)
 	}
 }
@@ -1364,14 +1377,14 @@ func TestConfirmPendingCloseTabByPointer(t *testing.T) {
 // on a dangling pointer — no panic, no wrong tab closed.
 func TestConfirmPendingCloseTabDropsStale(t *testing.T) {
 	a := testTabApp(t)
-	gone := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Gone"}}}
-	survivor := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Survivor"}}}
+	gone := &courtTab{state: sessionState{serverName: "Gone"}}
+	survivor := &courtTab{state: sessionState{serverName: "Survivor"}}
 	a.tabs = []*courtTab{{}, survivor}
 	a.activeTab = 0
-	a.dialogs.pendingCloseTab = gone // a pointer no longer in a.tabs
+	a.pendingCloseTab = gone // a pointer no longer in a.tabs
 
 	a.confirmPendingCloseTab()
-	if a.dialogs.pendingCloseTab != nil {
+	if a.pendingCloseTab != nil {
 		t.Error("confirm must clear the pending target even when it's stale")
 	}
 	if len(a.tabs) != 2 || !slices.Contains(a.tabs, survivor) {
@@ -1386,8 +1399,8 @@ func TestConfirmPendingCloseTabDropsStale(t *testing.T) {
 func TestConfirmPendingCloseTabRunsClearSplit(t *testing.T) {
 	a := testTabApp(t)
 	pinned := &courtTab{state: sessionState{
-		srvMeta: serverMetaState{serverName: "Pinned"},
-		link:    linkState{sess: courtroom.NewRehearsalSession("", []string{"X"})},
+		serverName: "Pinned",
+		sess:       courtroom.NewRehearsalSession("", []string{"X"}),
 	}}
 	a.tabs = []*courtTab{{}, pinned}
 	a.activeTab = 0
@@ -1397,8 +1410,8 @@ func TestConfirmPendingCloseTabRunsClearSplit(t *testing.T) {
 	}
 
 	a.requestCloseTab(1) // Instant OFF (default) → deferred confirm
-	if a.dialogs.pendingCloseTab != pinned {
-		t.Fatalf("pending target must be the pinned tab, got %v", a.dialogs.pendingCloseTab)
+	if a.pendingCloseTab != pinned {
+		t.Fatalf("pending target must be the pinned tab, got %v", a.pendingCloseTab)
 	}
 	a.confirmPendingCloseTab()
 	if a.splitTab != nil || a.splitActive() {
@@ -1430,7 +1443,7 @@ func TestMoveTab(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			orig := []*courtTab{{}, {}, {}, {}}
-			a := &App{env: env{}, tabs: append([]*courtTab(nil), orig...), activeTab: tc.active}
+			a := &App{tabs: append([]*courtTab(nil), orig...), activeTab: tc.active}
 			a.moveTab(tc.from, tc.to)
 			if a.activeTab != tc.wantActive {
 				t.Errorf("activeTab = %d, want %d", a.activeTab, tc.wantActive)
@@ -1450,11 +1463,20 @@ func TestMoveTab(t *testing.T) {
 // TestSettleAwaitTimeoutDecision pins settleAwaitTimeout, the pure never-arrives
 // release decision (split out like settleAwaitedDuck / mixChannels so it needs no
 // Audio device). It encodes two fixes at once:
+//
+//   - the FROZEN-CLOCK fix: the decision is a function of the clock passed in, so a
+//     live clock (advanced past the deadline) releases while a frozen one (Background
+//     never restamping frameNow, the minimized wedge) returns None and holds. The bug
+//     was that the ONLY clock feeding this was a.now(), frozen while minimized.
+//   - the FOREIGN-STREAM fix: past the deadline the action depends on what's loaded —
+//     a foreign track still rolling under the duck (cur != "") heals to SILENCE
+//     (awaitTimeoutStop), never un-ducks onto the wrong song; an empty stream
+//     (cur == "") just lifts the duck (awaitTimeoutUnduck).
 func TestSettleAwaitTimeoutDecision(t *testing.T) {
 	a := testTabApp(t)
 	base := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
-	a.budget.musicAwaitURL = "http://cdn/awaited.opus"
-	a.budget.musicAwaitSince = base
+	a.musicAwaitURL = "http://cdn/awaited.opus"
+	a.musicAwaitSince = base
 
 	// Frozen clock (minimized: frameNow never advanced) — the deadline can't pass,
 	// so the decision is None and the duck would hold. This is the wedge.
@@ -1475,7 +1497,7 @@ func TestSettleAwaitTimeoutDecision(t *testing.T) {
 	}
 	// No stamp (await armed without a since) never times out — can't wedge on a
 	// missing deadline.
-	a.budget.musicAwaitSince = time.Time{}
+	a.musicAwaitSince = time.Time{}
 	if got := a.settleAwaitTimeout("http://cdn/foreign.opus", base.Add(time.Hour)); got != awaitTimeoutNone {
 		t.Errorf("a zero since must never time out, got %v", got)
 	}
@@ -1494,24 +1516,24 @@ func TestCloseParkedTabPreservesActiveAwait(t *testing.T) {
 	a.d.Audio = &render.Audio{} // disabled stand-in; StopMusic is a guarded no-op
 	// Two tabs: index 0 a background chip, index 1 the active tab mid-resume.
 	a.tabs = []*courtTab{
-		{state: sessionState{srvMeta: serverMetaState{serverName: "Background", serverKey: "wss://bg:2096"}}},
+		{state: sessionState{serverName: "Background", serverKey: "wss://bg:2096"}},
 		{},
 	}
 	a.activeTab = 1
 	// The active tab is mid-cross-tab-resume: ducked, awaiting its OWN track's bytes.
-	a.budget.musicTabDucked = true
-	a.budget.musicAwaitURL = "http://cdn/active-tab.opus"
-	a.budget.musicAwaitSince = a.now()
+	a.musicTabDucked = true
+	a.musicAwaitURL = "http://cdn/active-tab.opus"
+	a.musicAwaitSince = a.now()
 
 	a.closeParkedTab(0) // ✕ on the background chip
 
-	if a.budget.musicAwaitURL != "http://cdn/active-tab.opus" {
+	if a.musicAwaitURL != "http://cdn/active-tab.opus" {
 		t.Error("closing a background chip must NOT cancel the active tab's in-flight fetch (await must survive)")
 	}
-	if !a.budget.musicTabDucked {
+	if !a.musicTabDucked {
 		t.Error("the active tab's resume duck must survive the background-chip close (settle will lift it on delivery)")
 	}
-	if len(a.tabs) != 1 || a.tabs[0].state.srvMeta.serverName != "" {
+	if len(a.tabs) != 1 || a.tabs[0].state.serverName != "" {
 		t.Fatalf("the background tab must be removed and the active tab (index 0 now) kept, tabs=%d", len(a.tabs))
 	}
 }
@@ -1524,16 +1546,16 @@ func TestCloseParkedTabStopsOrphanStream(t *testing.T) {
 	a := testTabApp(t)
 	a.d.Audio = &render.Audio{}
 	a.tabs = []*courtTab{
-		{state: sessionState{srvMeta: serverMetaState{serverName: "Background", serverKey: "wss://bg:2096"}}},
+		{state: sessionState{serverName: "Background", serverKey: "wss://bg:2096"}},
 		{},
 	}
 	a.activeTab = 1
-	a.budget.musicTabDucked = true // ducked orphan, but NO await armed
-	a.budget.musicAwaitURL = ""
+	a.musicTabDucked = true // ducked orphan, but NO await armed
+	a.musicAwaitURL = ""
 
 	a.closeParkedTab(0)
 
-	if a.budget.musicTabDucked {
+	if a.musicTabDucked {
 		t.Error("with no await armed, closing a chip must stop the orphaned ducked stream (leak guard)")
 	}
 }
@@ -1558,7 +1580,7 @@ func TestRederiveMessageDuckClearsStale(t *testing.T) {
 	})
 
 	// ducking enabled, so the phase is what decides
-	a.link.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, nil, courtroom.NopAudio{})
+	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, nil, courtroom.NopAudio{})
 	// A message finished (phase is Idle) but the duck flag is stale-true.
 	a.musicDucked = true
 	a.rederiveMessageDuck()
@@ -1573,17 +1595,17 @@ func TestRederiveMessageDuckClearsStale(t *testing.T) {
 // the fix only the 10s timeout (frozen while minimized) released it, orphaning the duck.
 func TestEventMusicStopClearsAwait(t *testing.T) {
 	a := testTabApp(t)
-	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	// Mid-resume: an await is armed for a prior track.
-	a.budget.musicTabDucked = true
-	a.budget.musicAwaitURL = "http://cdn/prior.opus"
-	a.budget.musicAwaitSince = a.now()
+	a.musicTabDucked = true
+	a.musicAwaitURL = "http://cdn/prior.opus"
+	a.musicAwaitSince = a.now()
 	// A ~stop lands: HandlePacket would clear MusicTrack; set it empty directly so the
 	// handler's gate sees the ~stop shape (like TestMusicTabDuckOnPark sets it).
-	a.link.sess.MusicTrack = ""
+	a.sess.MusicTrack = ""
 	a.handleSessionEvents([]courtroom.Event{{Kind: courtroom.EventMusic, Text: "~stop.mp3"}})
-	if a.budget.musicAwaitURL != "" || !a.budget.musicAwaitSince.IsZero() {
-		t.Errorf("a ~stop must clear the orphaned await, got url=%q since=%v", a.budget.musicAwaitURL, a.budget.musicAwaitSince)
+	if a.musicAwaitURL != "" || !a.musicAwaitSince.IsZero() {
+		t.Errorf("a ~stop must clear the orphaned await, got url=%q since=%v", a.musicAwaitURL, a.musicAwaitSince)
 	}
 }
 
@@ -1609,8 +1631,8 @@ func TestParkClearsMessageDuckBeforeVolumes(t *testing.T) {
 	if !a.allocateTab() {
 		t.Fatal("allocate")
 	}
-	a.srvMeta.serverName, a.srvMeta.serverKey = "Srv", "wss://srv:2096"
-	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.serverName, a.serverKey = "Srv", "wss://srv:2096"
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	a.musicDucked = true // a message was on stage when the user switched away
 
 	a.parkActive()

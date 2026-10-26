@@ -25,7 +25,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	// floating panel draws. Also on F8 anywhere, and Extras → Debug.
 	y = a.settingsSection(y, w, "Diagnostics")
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 260, H: btnH}, "Open Debug panel (F8)") {
-		a.debugPanel.open = true
+		a.showDebugPanel = true
 		a.screen = a.prevScreen // back to the courtroom, where the panel is drawn
 	}
 	y += btnH + 6
@@ -35,12 +35,12 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Power user (advanced)")
 	y = a.settingsDesc(pad, y, "⚠ Everything here is for people who KNOW what their server needs. The wrong value can make characters fetch 0 assets or stop you connecting. If unsure, leave it all at the defaults.", ColDanger)
 	y += 4
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 270, H: btnH}, powerUserToggleLabel(a.lookUI.showPowerUser)) {
-		a.lookUI.showPowerUser = !a.lookUI.showPowerUser
-		a.lookUI.powerNukeArm = false // never carry an armed nuke across a hide/reveal
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 270, H: btnH}, powerUserToggleLabel(a.showPowerUser)) {
+		a.showPowerUser = !a.showPowerUser
+		a.powerNukeArm = false // never carry an armed nuke across a hide/reveal
 	}
 	y += btnH + 8
-	if !a.lookUI.showPowerUser {
+	if !a.showPowerUser {
 		return y
 	}
 
@@ -48,11 +48,11 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	// confirm — arming flips the label). Scoped to this tab; the image-format block
 	// keeps its own controls (its learned state is per-server, not a "knob").
 	nukeLabel := "⟲ Reset ALL power-user options to defaults"
-	if a.lookUI.powerNukeArm {
+	if a.powerNukeArm {
 		nukeLabel = "⚠ Click again to confirm the reset"
 	}
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 340, H: btnH}, nukeLabel) {
-		if a.lookUI.powerNukeArm {
+		if a.powerNukeArm {
 			a.d.Prefs.ResetPowerUser()
 			a.d.Manager.SetAssetOrigin("") // the live network override too, not just the pref
 			a.rebuildAssetOrigin()         // re-derive the URL builder (character casing reset)
@@ -67,7 +67,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			a.warnLine = "Power-user options reset to defaults."
 			a.warnAt = a.now()
 		}
-		a.lookUI.powerNukeArm = !a.lookUI.powerNukeArm
+		a.powerNukeArm = !a.powerNukeArm
 	}
 	y += btnH + 6
 	y = a.settingsDesc(pad, y, "Puts every option on this tab back to its default. Image-format probing keeps its own controls below; saved presets and mod chips are untouched.", ColTextDim)
@@ -84,7 +84,9 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		// Re-arm the one-shot launch check so the swap takes effect NOW (next
 		// frame), not on the next restart — and drop a stale offer from the
 		// other channel so its modal can't push the wrong build.
-		a.updates.resetForChannel()
+		a.updateChecked = false
+		a.updateRel = nil
+		a.updateShow = false
 	}
 	y += 26
 	y = a.settingsDesc(pad, y, "OFF (default): the launch check follows stable releases and only ever moves forward. ON: it follows the newest published build INCLUDING prereleases cut from the test branch — riskier, less tested, and it may offer a lower version than you run (that's also how you get back: turn this off and take the next stable offer). Toggling re-checks immediately.", ColTextDim)
@@ -786,24 +788,24 @@ func (a *App) drawSettingsHotkeys(y, _ int32) int32 {
 		key := a.hotkeyFor(def.id)
 		lbl := "Ctrl+" + strings.ToUpper(key)
 		switch {
-		case a.courtkeys.hkCapture == def.id:
+		case a.hkCapture == def.id:
 			lbl = "press a key…"
 		case key == "":
 			lbl = "(unset)"
 		}
 		br := sdl.Rect{X: hx + 198, Y: y, W: 110, H: btnH}
 		if c.Button(br, lbl) {
-			a.courtkeys.hkCapture = def.id // arm capture for this action
-			a.courtkeys.bindingFor = ""    // don't also arm a character keybind
-			c.focusID = ""                 // the capture owns the next keypress
+			a.hkCapture = def.id // arm capture for this action
+			a.bindingFor = ""    // don't also arm a character keybind
+			c.focusID = ""       // the capture owns the next keypress
 		}
 		if c.rightClicked && c.hovering(br) {
 			a.d.Prefs.SetHotkey(def.id, "") // reset to the built-in default
-			if a.courtkeys.hkCapture == def.id {
-				a.courtkeys.hkCapture = ""
+			if a.hkCapture == def.id {
+				a.hkCapture = ""
 			}
 		}
-		if a.courtkeys.hkCapture != def.id && hkConflicts[key] {
+		if a.hkCapture != def.id && hkConflicts[key] {
 			c.Border(br, ColDanger) // clash: another action shares this key
 			c.Tooltip(br, "Ctrl+"+strings.ToUpper(key)+" is bound to more than one action — only the first fires. Rebind one.")
 		}

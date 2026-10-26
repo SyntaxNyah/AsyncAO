@@ -68,21 +68,21 @@ func (a *App) rosterCharByName(name string) string {
 // demandMsgIcon paces a char-icon fetch for the messaging surfaces: one ask per
 // base per charIconRetryInterval, bounded map (reset past the cap — the stamps
 // only pace retries, so a reset is harmless).
-func (msg *msgState) demandMsgIcon(base string) {
+func (a *App) demandMsgIcon(base string) {
 	if base == "" {
 		return
 	}
-	if msg.msgIconAsk == nil {
-		msg.msgIconAsk = make(map[string]time.Time, msgIconAskCap)
+	if a.msgIconAsk == nil {
+		a.msgIconAsk = make(map[string]time.Time, msgIconAskCap)
 	}
-	if time.Since(msg.msgIconAsk[base]) < charIconRetryInterval {
+	if time.Since(a.msgIconAsk[base]) < charIconRetryInterval {
 		return
 	}
-	if len(msg.msgIconAsk) >= msgIconAskCap {
-		msg.msgIconAsk = make(map[string]time.Time, msgIconAskCap)
+	if len(a.msgIconAsk) >= msgIconAskCap {
+		a.msgIconAsk = make(map[string]time.Time, msgIconAskCap)
 	}
-	msg.msgIconAsk[base] = time.Now()
-	msg.env.d.Manager.Prefetch(base, assets.AssetTypeCharIcon, network.PriorityLow) // AssetType: CharIcon
+	a.msgIconAsk[base] = time.Now()
+	a.d.Manager.Prefetch(base, assets.AssetTypeCharIcon, network.PriorityLow) // AssetType: CharIcon
 }
 
 // drawMsgCharIcon paints a small char icon for char (resolved folder) into cell,
@@ -91,13 +91,13 @@ func (msg *msgState) demandMsgIcon(base string) {
 func (a *App) drawMsgCharIcon(char, displayName string, cell sdl.Rect) {
 	c := a.ctx
 	if char != "" {
-		base := a.link.urls.CharIcon(char)
+		base := a.urls.CharIcon(char)
 		if page, ok := a.d.Store.Get(base); ok && len(page.Frames) > 0 {
 			_ = c.Ren.Copy(page.Frames[0], nil, &cell)
 			c.Border(cell, ColPanelHi)
 			return
 		}
-		a.msgs.demandMsgIcon(base)
+		a.demandMsgIcon(base)
 	}
 	// Fallback: a coloured disc with the display initial (offline / spectator).
 	col := nameColor(displayName, msgNameSat, 0.55)

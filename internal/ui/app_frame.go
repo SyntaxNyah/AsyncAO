@@ -17,17 +17,17 @@ import (
 )
 
 func (a *App) RefreshServers() {
-	if a.conn.lobby.lobbyFetching {
+	if a.lobbyFetching {
 		return
 	}
-	a.conn.lobby.lobbyFetching = true
+	a.lobbyFetching = true
 	// Arm the on-open auto-refresh cap. Stamped here — not at the auto-trigger —
 	// so EVERY fetch start (boot, the manual Refresh button, a master-URL change,
 	// the on-open auto) pushes the cap out: entering the lobby right after a
 	// manual refresh must not fire a second request. Below the dedup gate above
 	// because a coalesced call started nothing and must not extend the cap.
-	a.conn.lobby.lastLobbyRefreshAt = a.now()
-	a.conn.lobby.lobbyStatus = "Fetching server list..."
+	a.lastLobbyRefreshAt = a.now()
+	a.lobbyStatus = "Fetching server list..."
 	// Ping state deliberately survives a refresh: the on-open auto-refresh
 	// funnels through here too, and the old wipe (pings/pingMode/pinging reset
 	// at fetch START) snapped a ping-sorted lobby back to player order the
@@ -38,8 +38,10 @@ func (a *App) RefreshServers() {
 	// wipe used to provide. Ping mode itself only exits via its toggle button
 	// (explicit user intent), and an in-flight sweep's URL-keyed results stay
 	// correct for whichever list is showing, so neither needs abandoning.
+	// An explicit --master flag (anything non-default in Deps) wins over the
+	// Settings override, which wins over the built-in defaults.
 	urls := a.masterListURLs()
-	ch := a.conn.lobby.lobbyResult
+	ch := a.lobbyResult
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), lobbyRefreshTimeout)
 		defer cancel()
@@ -73,8 +75,8 @@ func lobbyAutoRefreshDue(last, now time.Time) bool {
 
 func (a *App) pollLobbyFetch() {
 	select {
-	case res := <-a.conn.lobby.lobbyResult:
-		a.conn.lobby.lobbyFetching = false
+	case res := <-a.lobbyResult:
+		a.lobbyFetching = false
 		if res.err != nil {
 			// A failed fetch KEEPS the list on screen. Refreshes now fire with
 			// zero user action (the on-open auto-refresh), so a transient master
@@ -84,9 +86,9 @@ func (a *App) pollLobbyFetch() {
 			// stay un-pruned too: pruning against a degraded list would throw
 			// away every connect time over a hiccup. Only a boot-time failure
 			// (nothing merged yet) rebuilds, so phone-book favorites still show.
-			a.conn.lobby.lobbyStatus = "Master list error: " + res.err.Error()
-			if len(a.conn.lobby.servers) == 0 {
-				a.conn.lobby.servers = a.conn.lobby.mergedFavorites(&a.env)
+			a.lobbyStatus = "Master list error: " + res.err.Error()
+			if len(a.servers) == 0 {
+				a.servers = a.mergedFavorites()
 			}
 			return
 		}
@@ -97,15 +99,15 @@ func (a *App) pollLobbyFetch() {
 		// before the swap, re-match after — so a background auto-refresh landing
 		// mid-glance no longer deselects the row the user is about to join.
 		prevSel := ""
-		if a.conn.lobby.selServer >= 0 && a.conn.lobby.selServer < len(a.conn.lobby.servers) {
-			prevSel = a.conn.lobby.servers[a.conn.lobby.selServer].WebSocketURL()
+		if a.selServer >= 0 && a.selServer < len(a.servers) {
+			prevSel = a.servers[a.selServer].WebSocketURL()
 		}
-		a.conn.lobby.lobbyStatus = fmt.Sprintf("%d servers", len(res.entries))
-		a.conn.lobby.masterEntries = res.entries
-		a.conn.lobby.servers = a.conn.lobby.mergedFavorites(&a.env)
+		a.lobbyStatus = fmt.Sprintf("%d servers", len(res.entries))
+		a.masterEntries = res.entries
+		a.servers = a.mergedFavorites()
 		// Prune on the successful land: the map was sized by the last good list
 		// and each land re-prunes to the current one (boundedness, rule §17.4).
-		a.conn.lobby.pruneStalePings()
+		a.pruneStalePings()
 		a.reselectServer(prevSel)
 	default:
 	}
@@ -117,13 +119,13 @@ func (a *App) pollLobbyFetch() {
 // rebuilds the cached description lines/links against the NEW entry — the
 // master list may have changed the description text the cache was built from.
 func (a *App) reselectServer(url string) {
-	a.conn.lobby.selServer, a.conn.lobby.descLines, a.conn.lobby.descLinks = -1, nil, nil
+	a.selServer, a.descLines, a.descLinks = -1, nil, nil
 	if url == "" {
 		return
 	}
-	for i := range a.conn.lobby.servers {
-		if a.conn.lobby.servers[i].WebSocketURL() == url {
-			a.conn.lobby.selectServerRow(&a.env, i, a.frame.winW)
+	for i := range a.servers {
+		if a.servers[i].WebSocketURL() == url {
+			a.selectServerRow(i, a.winW)
 			return
 		}
 	}
@@ -134,29 +136,29 @@ func (a *App) reselectServer(url string) {
 // in RefreshServers provided, moved to the result landing so a refresh no
 // longer stomps the user's ping sort with zero user action. Off the hot path:
 // runs once per fetch landing, never per frame.
-func (lobby1 *lobbyState) pruneStalePings() {
-	if len(lobby1.pings) == 0 {
+func (a *App) pruneStalePings() {
+	if len(a.pings) == 0 {
 		return
 	}
-	live := make(map[string]struct{}, len(lobby1.servers))
-	for i := range lobby1.servers {
-		live[lobby1.servers[i].WebSocketURL()] = struct{}{}
+	live := make(map[string]struct{}, len(a.servers))
+	for i := range a.servers {
+		live[a.servers[i].WebSocketURL()] = struct{}{}
 	}
-	for url := range lobby1.pings {
+	for url := range a.pings {
 		if _, ok := live[url]; !ok {
-			delete(lobby1.pings, url)
+			delete(a.pings, url)
 		}
 	}
 }
 
 // mergedFavorites merges the phone book into a fresh copy of the master
 // list and sorts for display (favorites pinned top, legacy pinned bottom).
-func (lobby1 *lobbyState) mergedFavorites(e *env) []network.ServerEntry {
-	entries := make([]network.ServerEntry, len(lobby1.masterEntries))
-	copy(entries, lobby1.masterEntries)
-	entries = network.MergeFavorites(entries, e.d.Prefs.Load().FavoriteServers())
-	if lobby1.pingMode {
-		sortByPing(entries, lobby1.pings) // lobby "Ping" sort: connect-time ascending
+func (a *App) mergedFavorites() []network.ServerEntry {
+	entries := make([]network.ServerEntry, len(a.masterEntries))
+	copy(entries, a.masterEntries)
+	entries = network.MergeFavorites(entries, a.d.Prefs.Load().FavoriteServers())
+	if a.pingMode {
+		sortByPing(entries, a.pings) // lobby "Ping" sort: connect-time ascending
 	} else {
 		network.SortServers(entries)
 	}
@@ -168,13 +170,13 @@ func (lobby1 *lobbyState) mergedFavorites(e *env) []network.ServerEntry {
 // Frame runs one UI frame: connection pump, screen logic, drawing.
 func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	defer a.frameCrashLog() // last-resort: capture the stack of any unrecovered panic before it kills the app
-	a.budget.frameNow = time.Now()
-	a.frame.lastFrameDrawn = a.budget.frameNow // SkipFrame's heartbeat: a real frame was drawn
+	a.frameNow = time.Now()
+	a.lastFrameDrawn = a.frameNow // SkipFrame's heartbeat: a real frame was drawn
 
 	// Drain debug logs from render package (loop points diagnostics, etc.)
 	if a.d.Audio != nil {
 		for _, line := range render.PollDebugLogs() {
-			a.debug.Push(line)
+			a.pushDebug(line)
 		}
 	}
 
@@ -184,7 +186,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// frame, whose own snapshot then matches (self-limiting, never misses).
 	a.uiDirty = false
 	if a.d.Store != nil {
-		a.frame.drawnGen = a.d.Store.Generation()
+		a.drawnGen = a.d.Store.Generation()
 	}
 	// Chrome SHAPE (A5): resolve the active shape + its mask textures into the
 	// Ctx once per frame so every shaped widget draw is a plain field read. On
@@ -198,29 +200,29 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// alone would have left them reading a stale answer — or, before this, no
 	// answer at all: animated chrome kept moving under the accessibility option
 	// AND kept the pacer at the animation cadence.
-	a.fxPool.themeFXFrozen = a.reduceMotionNow()
-	a.frame.drawnCaretOn = a.ctx.caretOn
+	a.themeFXFrozen = a.reduceMotionNow()
+	a.drawnCaretOn = a.ctx.caretOn
 	// Animated-chrome census: the draw sites below mark the flag; promote it
 	// at frame end so SkipFrame reads what THIS frame actually put on screen.
-	a.frame.frameAnimChrome = false
+	a.frameAnimChrome = false
 	// Demand-pump census (experimental loop): a draw that leaves a streaming grid
 	// cell blank marks frameDemandPending so NextWakeDelay keeps re-rendering at
 	// the demand cadence until the cell fills. Promoted at frame end beside the
 	// anim-chrome flag.
-	a.frame.frameDemandPending = false
+	a.frameDemandPending = false
 	defer func() {
-		a.frame.drawnAnimChrome = a.frame.frameAnimChrome
-		a.frame.drawnDemandPending = a.frame.frameDemandPending
+		a.drawnAnimChrome = a.frameAnimChrome
+		a.drawnDemandPending = a.frameDemandPending
 	}()
-	a.ctx.BeginDraw()                       // the visible-field order rebuilds as this frame's TextFields register
-	a.frame.winW, a.frame.winH = winW, winH // cached for deep draw helpers (preview clamp)
-	a.chatlog.frameDtMs = float32(dt.Seconds() * 1000)
-	a.recordFrameDt(a.chatlog.frameDtMs)
+	a.ctx.BeginDraw()           // the visible-field order rebuilds as this frame's TextFields register
+	a.winW, a.winH = winW, winH // cached for deep draw helpers (preview clamp)
+	a.frameDtMs = float32(dt.Seconds() * 1000)
+	a.recordFrameDt(a.frameDtMs)
 	// One-time: push the initial Discord presence once the app is up, so "Playing
 	// AsyncAO — In the lobby" appears immediately on launch (not only after you join
 	// a room). updatePresence no-ops when presence is unset or the toggle is off.
-	if !a.srvMeta.presenceInit {
-		a.srvMeta.presenceInit = true
+	if !a.presenceInit {
+		a.presenceInit = true
 		a.updatePresence()
 	}
 	// Stamp the sprite-preview config onto the context once per frame so every
@@ -239,15 +241,15 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// F3 toggles the perf HUD on any screen; consumed so plain-key
 	// macro/character binds named "f3" can't double-fire.
 	if a.ctx.keyPressed == sdl.K_F3 {
-		a.budget.perfHUD = !a.budget.perfHUD
+		a.perfHUD = !a.perfHUD
 		a.ctx.keyPressed = 0
 	}
 	// F1 toggles the hotkey cheat-sheet on any screen (consumed so a plain-key
 	// macro/char bind named "f1" can't double-fire).
 	if a.ctx.keyPressed == sdl.K_F1 {
-		if a.courtkeys.showHotkeys {
-			a.courtkeys.showHotkeys = false
-			a.courtkeys.hkCache = nil
+		if a.showHotkeys {
+			a.showHotkeys = false
+			a.hkCache = nil
 		} else {
 			a.openHotkeyCheatSheet() // (re)builds the rows so it reflects current bindings
 		}
@@ -257,7 +259,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// perf HUD, also reachable from Extras → Debug and Settings → Power user.
 	// Consumed so a plain-key macro/char bind named "f8" can't double-fire.
 	if a.ctx.keyPressed == sdl.K_F8 {
-		a.debugPanel.toggleDebugPanel()
+		a.toggleDebugPanel()
 		a.ctx.keyPressed = 0
 	}
 	// ESC leaves a full-screen menu back to where it opened — the instinctive
@@ -265,9 +267,26 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// progress out: a focused text field (a search / callword box, the common
 	// case) releases on the first ESC, then the second ESC leaves — instead of
 	// the field silently swallowing the key ("ESC did nothing in Settings").
+	// Scoped to the menu screens so the courtroom's own ESC behaviour is
+	// untouched; skipped while a key-bind capture or an ESC-owning overlay
+	// (hotkey sheet / update modal) is up so it never steals their key.
+	// Esc backs out of whatever's open — one layer per press. On a full-screen MENU
+	// it closes a dropdown / field then leaves; on the courtroom or lobby it closes
+	// the topmost popup or floating panel (Group Chat, Voice, Evidence, Pair, Mod,
+	// CM, Call Mod, Timer, …) via closeTopOverlay. Skipped while a key-bind capture
+	// owns Esc — and ONLY that; the layout editors are handled by closeTopOverlay,
+	// never by a guard here (see the NOTE below, which is load-bearing).
+	// NOTE: Esc arrives as ctx.escPressed (HandleEvent maps K_ESCAPE there, NOT to
+	// keyPressed) — the old keyPressed==K_ESCAPE test never fired, which is why "Esc
+	// did nothing". Gate on escPressed.
 	// NO EDITOR GUARD HERE. Esc must ALWAYS have somewhere to go, and a bare guard is
 	// the one shape that cannot promise that: it swallows the key on the assumption
 	// that a draw-time handler will answer, which is false on any frame the editor's
+	// draw does not run (a return-to-top modal used to end the themed pass before it —
+	// a hard lock with no Done chip, no banner and every kit widget fenced dead).
+	// closeTopOverlay owns the editors instead, at the priority their pixels sit at,
+	// so the key is consumed by whoever is actually on top and the editors' own
+	// draw-time escPressed checks become a second guarantee rather than the only one.
 	if a.ctx.escPressed && !a.capturingKey() {
 		// Close the topmost popup / panel first (works on any screen — e.g. the
 		// reset-confirm or a dropdown over Settings); only if nothing was open do we
@@ -288,6 +307,25 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 				// Leaving goes through closeThemeEditor so the return target is the screen the
 				// editor was opened FROM — a.prevScreen belongs to the menu screens and would
 				// send a courtroom-opened editor to whatever menu was last visited.
+				//
+				// THE PANEL IS A RUNG (design §Q7's Esc row, "close top panel → deselect →
+				// leave"). It was missing while the Fonts panel was cosmetic and became a real
+				// hole the moment it became an input mode that fences BOTH rails: Esc walked
+				// straight past the thing on top of the screen and armed the discard chip
+				// instead. It sits above the selection because while a panel is up the
+				// selection cannot be changed at all (editorPanelUp fences the canvas and the
+				// rails), so the topmost surface is the only one Esc can honestly be about.
+				// (The keyboard map at design line 1891 writes "clear, then close panel"; its
+				// "clear" is this ladder's FOCUS rung, which is the reading that leaves both
+				// lines true.)
+				//
+				// PREVIEW IS THE TOP RUNG (field batch 9), above the focused field and
+				// above the panels. While the demo plays there IS no focused field and
+				// there ARE no panels — enterEditorPreview closes them — so a rung placed
+				// any lower would still be reached today; it sits here because "Esc leaves
+				// the thing that is covering the screen" must not depend on that staying
+				// true. It CONSUMES the press: an Esc that fell through would arm the
+				// discard chip on a document the user is not even looking at.
 				switch {
 				case a.editorPreviewOn():
 					a.exitEditorPreview()
@@ -317,6 +355,10 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 				// own Disconnect entry (extrasWidgets, floatbox.go), which goes through
 				// the same confirm. So the action did not disappear, it stopped being a
 				// keystroke.
+				//
+				// A focused field (the IC input) still eats the FIRST Esc, exactly like
+				// every menu screen — and under the Discord focus model (chatfocus.go)
+				// that rung is what lets you step out of the chat box at all.
 				if a.ctx.focusID != "" {
 					a.ctx.focusID = ""
 				} else {
@@ -329,7 +371,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 				// char-select's only exit is leaving the server, through the confirm.
 				if a.ctx.focusID != "" {
 					a.ctx.focusID = ""
-				} else if a.link.room != nil {
+				} else if a.room != nil {
 					a.screen = ScreenCourtroom
 				} else {
 					a.requestDisconnect()
@@ -348,15 +390,15 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	}
 	// Log-selection press edge, computed once so both logs (which may both be
 	// on screen) read the same value — whichever draws first can't steal it.
-	a.sel.logSelPressed = a.ctx.mouseDown && !a.sel.logSelPrevDown
-	a.sel.logSelPrevDown = a.ctx.mouseDown
+	a.logSelPressed = a.ctx.mouseDown && !a.logSelPrevDown
+	a.logSelPrevDown = a.ctx.mouseDown
 	// Ctrl+Z / Ctrl+Y with a text field focused become the FIELD's undo/redo
 	// (fieldhistory.go): consumed here, pre-screen, so no later chord consumer
 	// — the courtroom dispatcher, quick-connect, a user hotkey bound to z/y —
 	// can double-fire while typing. Ctrl+Shift+Z is redo too. The armed layout
 	// editors keep their own Ctrl+Z (editorUndoChord); they never run with a
 	// focused field, but the gate makes that explicit.
-	if a.ctx.focusID != "" && !a.classic.classicEdit && !a.layoutEdit {
+	if a.ctx.focusID != "" && !a.classicEdit && !a.layoutEdit {
 		switch a.ctx.hotkey {
 		case sdl.K_z:
 			a.ctx.undoReq = !a.ctx.shiftHeld
@@ -369,6 +411,21 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	}
 	// The THEME EDITOR (a SCREEN, not an overlay) claims its own Ctrl+Z /
 	// Ctrl+Y here, and the site is the fix rather than a tidy-up.
+	//
+	// editorUndoChord's only other caller is handleHotkeys, which runs from the three
+	// COURTROOM draw passes — so the chord reached the editor only while a live room
+	// was painting behind its canvas. The editor's headline entry point is the
+	// Settings row, which is reachable with NO SERVER ATTACHED (design §3): there
+	// drawEditorGeometryCanvas draws instead, no courtroom pass runs, and the chord
+	// sat in c.hotkey untouched for the whole frame. Present but unreachable, on the
+	// one screen whose entire contract is that every edit is one Ctrl+Z away.
+	//
+	// AFTER the focused-field arm above, deliberately: a focused inspector row (a hex
+	// value, an id) keeps the FIELD's own undo, which is the house rule every other
+	// editor already follows. BEFORE quick-connect and every other pre-screen chord
+	// consumer, because editorUndoChord's promise is that a key an armed editor owns
+	// can never also fire whatever else it happens to be bound to.
+	//
 	// Gated on themeEditorOpen() rather than called bare, so the two LEGACY overlay
 	// editors keep claiming their chord exactly where they always have — inside their
 	// own courtroom pass, via handleHotkeys — and nothing about their dispatch moves.
@@ -384,16 +441,18 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// whole reason for being there is that the server just removed us, so letting a
 	// keypress redial past it would be the client arguing with the ban. (The sibling
 	// confirms are NOT gated here; that gap is pre-existing and untouched.)
-	if a.link.sess == nil && !a.font.serverNoticeDlg.open && a.ctx.hotkey != 0 && strings.ToLower(sdl.GetKeyName(a.ctx.hotkey)) == a.hotkeyFor(hotkeyQuickConnect) {
+	if a.sess == nil && !a.serverNoticeDlg.open && a.ctx.hotkey != 0 && strings.ToLower(sdl.GetKeyName(a.ctx.hotkey)) == a.hotkeyFor(hotkeyQuickConnect) {
 		a.quickConnect()
 	}
-	a.updates.pumpInput(winW, winH) // self-update: one-shot check, drain, chip/modal click before screens
+	a.maybeKickUpdateCheck()        // one-shot, off the boot path (fires on frame 1)
+	a.pollUpdate()                  // drain a found release
+	a.handleUpdateInput(winW, winH) // modal/chip clicks resolve before screens
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
-	a.voicePump()                    // live voice: drain mic→encode→send + decode→mix→play (no-op unless joined)
-	a.handleTabBar(winW, winH)       // chip clicks resolve BEFORE screens see them
-	if a.client.pendingControlSwap { // a click on the floating client last frame → take control now (before any draw)
-		a.client.pendingControlSwap = false
+	a.voicePump()              // live voice: drain mic→encode→send + decode→mix→play (no-op unless joined)
+	a.handleTabBar(winW, winH) // chip clicks resolve BEFORE screens see them
+	if a.pendingControlSwap {  // a click on the floating client last frame → take control now (before any draw)
+		a.pendingControlSwap = false
 		// controlPinnedClient → activateTab → parkActive is a PRIMARY-session switch,
 		// the one park surface handleTabBar's guard (tabs.go) doesn't cover. It must be
 		// inert while the involuntary-disconnect dialog owns the frame, for the same
@@ -404,7 +463,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// unconditionally (never leave it armed to fire once the dialog closes), gating
 		// only the action. Resolve the dialog (Reconnect / Back to lobby / Esc) first,
 		// THEN the swap works.
-		if !a.dialogs.disconnectDlg.open {
+		if !a.disconnectDlg.open {
 			a.controlPinnedClient()
 		}
 	}
@@ -439,7 +498,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollNotebook()
 	a.pollJukebox()
 	a.pollCharBind()
-	a.jukebox.pollJukeBind(&a.env)
+	a.pollJukeBind()
 	a.pollMacroBind()
 	a.pollShownameBind()
 	a.pollICPhraseBind()
@@ -453,24 +512,24 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollAutoReconnect() // M2: due auto-retry fires from the lobby; a single time-compare otherwise
 	a.pollTimer()         // #97 local alarm: one compare while running, zero cost when idle
 	a.pollDownload()
-	a.pollMakerExport()       // M16: deliver the self-contained archive export result
-	a.tickContentJob()        // content report / package: drain probe results + poll the package goroutine (no-op when idle)
-	a.pollGifExport()         // M16: deliver the off-thread GIF encode result
-	a.overlays.pollCharMeta() // land remote char.ini fetches (per-character blips + chatbox skins)
-	a.pollBgList()            // drain bg discovery even when the picker is closed (slideshow)
+	a.pollMakerExport() // M16: deliver the self-contained archive export result
+	a.tickContentJob()  // content report / package: drain probe results + poll the package goroutine (no-op when idle)
+	a.pollGifExport()   // M16: deliver the off-thread GIF encode result
+	a.pollCharMeta()    // land remote char.ini fetches (per-character blips + chatbox skins)
+	a.pollBgList()      // drain bg discovery even when the picker is closed (slideshow)
 	a.processOOCQueue()
-	a.budget.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
+	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	switch {
-	case a.sel.gifExporting:
+	case a.gifExporting:
 		// M16 GIF export drives the viewport itself in the draw-phase tick — skip
 		// the normal scene driving so they don't fight over the shared viewport.
-	case a.sel.replaying && a.sel.replayRoom != nil:
+	case a.replaying && a.replayRoom != nil:
 		// M16 replay: drive the recorded scene instead of the live one (feed the
 		// next event when the room goes idle so the courtroom's own pacing times
 		// it; the viewport reads the replay scene via renderScene too). Wrapped
 		// so a panic in a bad/edge recording stops the replay, not the app.
 		a.driveReplay(dt)
-	case a.sel.makerOpen:
+	case a.makerOpen:
 		// M16 scene maker: drive the preview-pane room (NOT the live room) so the
 		// shared viewport's anim state tracks the previewed line, not whatever the
 		// live courtroom is doing behind the overlay.
@@ -482,12 +541,12 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// — it is not being drawn, and a preview that let a live message play out
 		// behind it would drop the frames that message needed.
 		a.driveEditorPreview(dt)
-	case a.link.room != nil:
+	case a.room != nil:
 		a.healScenery()
-		if a.frame.roomPreAdvanced {
-			a.frame.roomPreAdvanced = false // the audio-paced loop already advanced the room this present cycle; just draw it
+		if a.roomPreAdvanced {
+			a.roomPreAdvanced = false // the audio-paced loop already advanced the room this present cycle; just draw it
 		} else {
-			a.link.room.Update(dt)
+			a.room.Update(dt)
 		}
 		a.applySpriteOverrides()
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
@@ -501,12 +560,12 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.d.Viewport.SetPreanimLoop(a.d.Prefs.Load().LoopPreanim)                                             // opt-in: keep preanims wrapping (default OFF; AO2 plays them once)
 		a.d.Viewport.SetPostFX(a.postFX())                                                                    // #10 retro overlays
 		a.d.Viewport.SetWeather(render.Weather(a.d.Prefs.WeatherType()), a.d.Prefs.Load().WeatherIntensity()) // #124 ambient weather
-		a.d.Viewport.Update(&a.link.room.Scene, dt)
+		a.d.Viewport.Update(&a.room.Scene, dt)
 		a.logSpeakerAnimDiag() // #110: log the speaker sprite's frame/delay stats once per base change
 		// This frame IS the draw the doorbell exists to force, and the viewport is
 		// now bound to the new overlay, so the draw-site censuses take over from
 		// here — sync the latch instead of ringing (noteOverlayStart).
-		a.frame.drawnOverlayGen = a.link.room.Scene.Overlay.Gen
+		a.drawnOverlayGen = a.room.Scene.Overlay.Gen
 		if a.splitActive() { // drive the pinned right-pane stage on its OWN viewport
 			a.splitRoom.Update(dt)
 			a.applySpriteOverridesTo(a.splitRoom) // Hide-desk / Missingno / offsets are user choices, not per-room ones
@@ -526,7 +585,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// touched only when the duck state flips, and the prefs read is
 		// short-circuited so it costs nothing between messages.
 		a.rederiveMessageDuck()
-		a.updateSlideshow(a.link.room.Phase())
+		a.updateSlideshow(a.room.Phase())
 	}
 	a.d.Audio.Frame()
 	a.settleAwaitedMusic() // delivery-time cross-tab un-duck: lift once the awaited track is what's playing
@@ -554,7 +613,17 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// behind draw click-proof (no fat-finger underneath — for the disconnect dialog,
 	// no stray IC send can reach the dead socket in the frozen courtroom). Restored
 	// just before the modal draws, below.
-	if a.dialogs.confirmDisconnect || a.dialogs.pendingCloseTab != nil || a.dialogs.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.dialogs.disconnectDlg.open || a.font.serverNoticeDlg.open || a.font.fontWarnDlg.open || a.evid.evidDiscardConfirm || a.evid.evidServerPickerOpen || demoBrowser.open {
+	//
+	// serverNoticeDlg joins them: it is blocking, and unlike the rest it can be up
+	// with NO session at all (a server that refuses during the handshake), so the
+	// screen underneath is the lobby — where an unfenced click lands on Reconnect and
+	// redials the server that just banned you.
+	//
+	// fontWarnDlg was MISSING from this list and was therefore click-through: it
+	// drew its own modal at the frame tail and unfenced for its buttons, but nothing
+	// ever fenced the screen for it, so a click that looked like it hit the dialog
+	// also hit whatever was behind. Pre-existing, same family, one term.
+	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.disconnectDlg.open || a.serverNoticeDlg.open || a.fontWarnDlg.open || a.evidDiscardConfirm || a.evidServerPickerOpen || demoBrowser.open {
 		a.ctx.fencePointer()
 	} else if a.hkSheetFencesPointer(winW, winH) {
 		// The hotkey sheet floats over EVERY screen and draws at the frame tail:
@@ -571,14 +640,15 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// persists across frames, so an un-released fence freezes the whole UI (the reported
 	// open-then-close bug).
 	a.emojiPickerFence(a.ctx)
-	a.reactPickerFence(a.ctx)         // #2: same modal-fence discipline as the emoji picker
-	a.rosterMenuFence(a.ctx)          // player-row … menu: same discipline (rostermenu.go)
-	a.musicMenuFence(a.ctx)           // music panel ⋮ menu: same discipline (musicheader.go)
-	a.updates.updateModalFence(a.ctx) // What's New modal: modal fence on ANY screen (raw pointIn hit tests inside)
+	a.reactPickerFence(a.ctx) // #2: same modal-fence discipline as the emoji picker
+	a.rosterMenuFence(a.ctx)  // player-row … menu: same discipline (rostermenu.go)
+	a.musicMenuFence(a.ctx)   // music panel ⋮ menu: same discipline (musicheader.go)
+	a.updateModalFence(a.ctx) // What's New modal: modal fence on ANY screen (raw pointIn hit tests inside)
 
 	// The band's two right-anchored chips: claimed just BEFORE the bar publishes its
 	// strip fence, because that fence covers their rects (they share the band) and
 	// would blank hovering() for them. Same pre-screen discipline as the update chip.
+	//
 	// OUTERMOST FIRST. The theme-sidecar refusal chip is right-anchored at the window
 	// edge and the missing-asset chip is anchored to ITS left edge, so claiming them
 	// in this order is claiming them right-to-left, which is the order their rects
@@ -601,12 +671,12 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// full-window modes below — leaves it clear, which reads as "the over-everything
 	// site owns the paint". Same reset discipline as the toolbox latch, one level up,
 	// because this one is decided inside a pass that does not always run.
-	a.toolbox.tabStripPaint = tabStripPaintLatch{}
+	a.tabStripPaint = tabStripPaintLatch{}
 	// Same discipline for "a layout editor's banner reached the screen this frame"
 	// (menubar.go). It is published by the editors' own banner paints, below, and read
 	// once by drawMenuBar to settle who owns the top band — so it must be cleared AFTER
 	// phase 1 and BEFORE the dispatch, or the bar would replay a stale answer.
-	a.toolbox.editorBannerPainted = false
+	a.editorBannerPainted = false
 	// Arrow-key nudging for an armed layout editor (layoutnudge.go). PRE-SCREEN, and
 	// for the same reason the editors' Ctrl+Z lives in editorUndoChord rather than in
 	// their draw bodies: both editors draw LAST in their pass, by which point a focused
@@ -615,13 +685,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// nothing at all unless an editor's own draw actually reaches the screen.
 	a.editorNudgeKeys(winW, winH)
 
-	if a.sel.gifExporting {
+	if a.gifExporting {
 		// M16 GIF export: owns the viewport (renders the scene offscreen) — tick a
 		// batch of frames on the render thread, behind a progress overlay, instead
 		// of any screen. Highest precedence: gif > replay > maker > screen.
 		a.tickGifExport()
 		a.drawGifProgress(winW, winH)
-	} else if a.sel.replaying && a.sel.replayRoom != nil {
+	} else if a.replaying && a.replayRoom != nil {
 		// M16: a replay takes over the whole window via the guarded overlay,
 		// drawn INSTEAD of any screen — so its controls own the input AND every
 		// replay render path is the recover-wrapped one (a themed courtroom or a
@@ -629,7 +699,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// replaying > makerOpen > screen: a Preview launched from the maker shows
 		// the replay; on ■ Stop the maker (still makerOpen) reappears intact.
 		a.drawReplayOverlay(winW, winH)
-	} else if a.sel.makerOpen {
+	} else if a.makerOpen {
 		// M16 scene maker: a full-window editor overlay (scenemaker.go), drawn
 		// instead of any screen so it owns input.
 		a.drawSceneMaker(winW, winH)
@@ -648,7 +718,24 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			// so drawing it inside that pass left it dead (the recon BLOCKER). Post-court
 			// the fence is already lifted (drawCourtroom's deferred unfencePointer ran on
 			// return). Drawn AFTER drawFloatingPanels = above the other floating panels:
-			editingLayout := a.classic.classicEdit || a.layoutEdit
+			// it's a small utility popover the user just opened, so it should sit on top.
+			// It draws in BOTH layouts (this site is layout-agnostic) and self-gates on
+			// toolboxPinned && toolboxPieces (+ extrasSurfaceLive, matching its fence), so
+			// theater — which clears both flags in setTheater — and blocking modals both
+			// suppress it without a special case here.
+			//
+			// A1 Phase 1: the compact toolbox (grip + chips) and the pieces panel now
+			// survive INTO edit mode too — but the classic/themed editor fence sets
+			// c.modalOn for the whole courtroom pass (classicEditFence/layoutEditFence),
+			// and modalOn (unlike ptrFenced) is NOT cleared by the deferred unfence, so
+			// hovering() would read false here and the toolbox/panel would draw click-dead.
+			// The editor itself uses raw pointIn (it doesn't need modalOn), so release
+			// modalOn just for this toolbox draw, then restore it so downstream
+			// fence assumptions (FinishFrame, palette, tooltips) are undisturbed. Draw
+			// the compact grip/chips HERE while editing (its in-pass draw at
+			// screens.go/theme_layout.go is gated off during edit for the same
+			// fence reason).
+			editingLayout := a.classicEdit || a.layoutEdit
 			if editingLayout {
 				savedModal := a.ctx.modalOn
 				a.ctx.modalOn = false
@@ -706,7 +793,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// courtroom: there it paints inside the courtroom pass, under the editor overlay,
 	// so its chips can't cover the editor's banner and controls (the "layering mess"
 	// playtest shot: a server chip parked top-right sat on the Snap/Done buttons).
-	if a.toolbox.tabStripPaintsOverEverything() {
+	// It REPLAYS the per-frame latch the courtroom pass took (chrometop.go) rather
+	// than re-deriving the predicate here: this site runs after the whole screen
+	// dispatch, so a re-test saw an editor that the pass had already dismissed (Done,
+	// Esc, a lost theme) and painted the strip a SECOND time over the banner that was
+	// still up. The two sites are exact complements of one latched bool, so exactly
+	// one of them paints per frame.
+	if a.tabStripPaintsOverEverything() {
 		a.drawTabBar(winW, winH)
 	}
 	// Download progress chip floats under the strip while a grab runs.
@@ -721,7 +814,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.drawMenuBar(winW, winH)
 	// Perf HUD (F3) and the debug overlay paint over every screen
 	// (allocs acceptable: opt-in diagnostics paths, never on by default).
-	if a.budget.perfHUD {
+	if a.perfHUD {
 		a.drawPerfHUD(winW, winH)
 	}
 	if a.d.Prefs.Load().DebugOverlay {
@@ -734,37 +827,37 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// menu the user had just opened. Nothing is re-decided here — drawMenuPanes
 	// replays the same phase-1 latch drawMenuBar does.
 	a.drawMenuPanes()
-	if a.courtkeys.showHotkeys {
+	if a.showHotkeys {
 		// Restore the pointer for the sheet's own pass — it was fenced above
 		// while hovered/dragged so the screens beneath drew pointer-blind.
 		// Skipped while a confirm modal is up: that fence belongs to the modal
 		// (drawn after), and the sheet must stay inert under it.
-		if !a.dialogs.confirmDisconnect && a.dialogs.pendingCloseTab == nil && a.dialogs.hidePrompt == "" && !a.showQuitConfirm && a.makerExportPack == 0 && !a.dialogs.disconnectDlg.open && !a.font.serverNoticeDlg.open && !a.font.fontWarnDlg.open && !a.evid.evidDiscardConfirm && !a.evid.evidServerPickerOpen && !demoBrowser.open {
+		if !a.confirmDisconnect && a.pendingCloseTab == nil && a.hidePrompt == "" && !a.showQuitConfirm && a.makerExportPack == 0 && !a.disconnectDlg.open && !a.serverNoticeDlg.open && !a.fontWarnDlg.open && !a.evidDiscardConfirm && !a.evidServerPickerOpen && !demoBrowser.open {
 			a.ctx.unfencePointer()
 		}
 		a.drawHotkeyCheatSheet(winW, winH)
 	}
 	// M13: a found update shows a persistent chip (reopen) and, the first time,
 	// the What's New patch-notes modal. Both no-op when no update was found.
-	a.updates.drawUpdateAvailable(winW, winH)
+	a.drawUpdateAvailable(winW, winH)
 	// Confirm modals: restore the pointer (fenced above) for the modal's own
 	// buttons, then paint it over everything. One at a time.
-	if a.dialogs.confirmDisconnect || a.dialogs.pendingCloseTab != nil || a.dialogs.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.evid.evidDiscardConfirm || a.evid.evidServerPickerOpen {
+	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.makerExportPack > 0 || a.evidDiscardConfirm || a.evidServerPickerOpen {
 		a.ctx.unfencePointer()
 		switch {
 		case a.makerExportPack > 0:
 			a.drawExportPackConfirm(winW, winH)
 		case a.showQuitConfirm:
 			a.drawQuitConfirm(winW, winH)
-		case a.dialogs.confirmDisconnect:
+		case a.confirmDisconnect:
 			a.drawDisconnectConfirm(winW, winH)
-		case a.dialogs.pendingCloseTab != nil:
+		case a.pendingCloseTab != nil:
 			// Explicit case BEFORE default: a lone pending close must not fall into
 			// the hide-sprite branch below (it would draw the wrong modal).
 			a.drawCloseTabConfirm(winW, winH)
-		case a.evid.evidDiscardConfirm:
+		case a.evidDiscardConfirm:
 			a.drawEvidenceDiscardConfirm(winW, winH)
-		case a.evid.evidServerPickerOpen:
+		case a.evidServerPickerOpen:
 			a.drawServerEvidencePicker(winW, winH)
 		default:
 			a.drawHideSpriteConfirm(winW, winH)
@@ -777,7 +870,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// guarantees the fence set for it (7068) is always released here — never a
 	// fenced-but-invisible dialog (the emoji-picker freeze class). Restore the pointer
 	// for its own buttons first.
-	if a.dialogs.disconnectDlg.open {
+	if a.disconnectDlg.open {
 		a.ctx.unfencePointer()
 		a.drawDisconnectDialog(winW, winH)
 	}
@@ -787,7 +880,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// when both are somehow up — though they cannot be: a removal notice and the
 	// dialog are mutually exclusive branches of handleInvoluntaryDrop, and
 	// openDisconnectDialog dismisses a live INFO notice for exactly this reason.
-	if a.font.serverNoticeDlg.open {
+	if a.serverNoticeDlg.open {
 		a.ctx.unfencePointer()
 		a.drawServerNotice(winW, winH)
 	}
@@ -795,7 +888,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// unconditionally-while-open so its fence is always released here. Last of the
 	// modals because it is the least urgent — a disconnect dialog up at the same
 	// time is about the session, and must be the one in front.
-	if a.font.fontWarnDlg.open {
+	if a.fontWarnDlg.open {
 		a.ctx.unfencePointer()
 		a.drawFontWarnDialog(winW, winH)
 	}
@@ -820,6 +913,10 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 // since the custom root wins, that custom default would otherwise SHADOW the
 // built-in one, making the stock default unreachable once you've set a folder
 // (#87). The app directory is always the built-in fallback. Pure, for testing.
+//
+// Everything else about the ordering lives in themeSearchRoots, which the theme
+// PICKER and the catalog build from too: what the loader resolves and what the
+// user can SEE in the dropdown must never disagree about which directories exist.
 func themeLoadRoots(name, customRoot, exeDir, configBase string) []string {
 	if name == theme.DefaultThemeName {
 		// #87, above: the stock default is the one theme a custom root may not answer.
@@ -840,7 +937,25 @@ const themeSearchRootCap = 3
 // three can drift into searching a root the others don't — the bug where a
 // theme resolved by name, appeared in the catalog, sat in the folder "Open
 // folder" opens, and was still absent from the dropdown.
+//
 // First hit per theme NAME wins downstream, so this order is the precedence.
+//
+// configBase goes LAST on purpose. It is the portable-aware config root
+// (config.UserThemesDir's parent), where a locked-down install (Program Files, an
+// unwritable exe dir) puts the themes the client itself writes — imports,
+// editable copies — so it must be searched; but inserting it any earlier would
+// silently flip which theme wins for anyone holding the same name in two places,
+// which is a live regression traded for nothing. Appended, never inserted.
+//
+// The samePath skip is DEFENSIVE — it is not a state production reaches.
+// config.ConfigBaseDir never returns the executable's directory: it resolves to
+// <exeDir>/config when portable and <osConfigDir>/AsyncAO otherwise
+// (config/location.go, resolveConfigBase). In a portable install the WRITE root
+// is <exeDir>/themes, which the exe root above already covers, and this third
+// root then probes <exeDir>/config/themes — a sibling nothing writes to, normally
+// absent, and harmless to miss. Do NOT "align" config.UserThemesDir to
+// <configBase>/themes for portable to make the skip meaningful: that would move
+// every portable user's write root into config/ and strand the themes they have.
 func themeSearchRoots(customRoot, exeDir, configBase string) []string {
 	roots := make([]string, 0, themeSearchRootCap)
 	if customRoot != "" {
@@ -860,6 +975,13 @@ func themeSearchRoots(customRoot, exeDir, configBase string) []string {
 // (config.ExecutableDir's first resolve, and whichever config memo is still
 // empty) — goroutine only, never a draw path (hard rule 2). customRoot is the
 // already-normalized custom folder, "" when there is none.
+//
+// config.ExecutableDir, never a local os.Executable + filepath.Dir: that raw
+// spelling skips EvalSymlinks, so on a symlinked or junctioned install it names
+// the same directory with a DIFFERENT string than config.UserThemesDir and the
+// catalog scan (themecatalog.go) do — and every "is this the same place?" check
+// downstream (samePath, the write-root backstop, the origin badge) is a string
+// comparison by design. One memoized answer, shared by every caller.
 func themeSearchRootsNow(customRoot string) []string {
 	exeDir := config.ExecutableDir()
 	configBase, _ := config.ConfigBaseDir()
@@ -885,6 +1007,7 @@ func samePath(a, b string) bool {
 // chatbox skin (chatbox.webp/png in the theme dir, AO2 convention) and the
 // message/showname font colors — and publishes them to the render thread via
 // themeRes. Settings re-triggers it on every theme change.
+//
 // It returns the themeGen it allocated for this load, so a caller that means to
 // act on THIS apply's landing (the #35 window snap) can name it. Every other
 // caller ignores it.

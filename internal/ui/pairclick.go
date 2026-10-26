@@ -32,25 +32,25 @@ func (a *App) notePairPartner(m *protocol.ChatMessage) {
 		return
 	}
 	if m.Pair.Active() {
-		if a.roster.pairPartners == nil {
-			a.roster.pairPartners = make(map[string]string)
+		if a.pairPartners == nil {
+			a.pairPartners = make(map[string]string)
 		}
-		if _, ok := a.roster.pairPartners[char]; !ok && len(a.roster.pairPartners) >= pairPartnersCap {
+		if _, ok := a.pairPartners[char]; !ok && len(a.pairPartners) >= pairPartnersCap {
 			return // bounded: don't grow past the cap with new speakers
 		}
-		a.roster.pairPartners[char] = strings.TrimSpace(m.Pair.Name)
-	} else if a.roster.pairPartners != nil {
-		delete(a.roster.pairPartners, char) // a solo line clears their pairing
+		a.pairPartners[char] = strings.TrimSpace(m.Pair.Name)
+	} else if a.pairPartners != nil {
+		delete(a.pairPartners, char) // a solo line clears their pairing
 	}
 }
 
 // pairPartnerOf returns the partner a roster player is currently paired with ("" = none), for the
 // opt-in player-list chip. Matched by lowercased character.
 func (a *App) pairPartnerOf(p *areaPlayer) string {
-	if len(a.roster.pairPartners) == 0 || p.name == "" {
+	if len(a.pairPartners) == 0 || p.name == "" {
 		return ""
 	}
-	return a.roster.pairPartners[strings.ToLower(p.name)]
+	return a.pairPartners[strings.ToLower(p.name)]
 }
 
 // areaPlayer is one parsed /getarea player. One row per UID (never deduped by
@@ -89,7 +89,7 @@ func (a *App) parseAreaLine(line string) {
 		if name == "" {
 			return
 		}
-		a.roster.areaLastUID = uid // a following "Showname:" line aliases to this player
+		a.areaLastUID = uid // a following "Showname:" line aliases to this player
 		a.addAreaPlayer(name, uid)
 		return
 	}
@@ -123,23 +123,23 @@ func (a *App) addAreaPlayer(name, uid string) {
 	if name == "" {
 		return
 	}
-	if a.roster.pairAreaReset { // a fresh /getarea: start the roster over (replace, never accumulate)
-		a.roster.areaUIDs = nil
-		a.roster.areaPlayers = a.roster.areaPlayers[:0]
-		a.roster.playerIconPages = nil // re-resolve icons: a same-length new roster reuses indices (cachedPage reorder invariant)
-		a.roster.playerIconAsk = nil   // and re-arm the demand timers so the new faces fetch immediately
-		a.roster.pairAreaReset = false
-		a.roster.areaListAt = a.now()
+	if a.pairAreaReset { // a fresh /getarea: start the roster over (replace, never accumulate)
+		a.areaUIDs = nil
+		a.areaPlayers = a.areaPlayers[:0]
+		a.playerIconPages = nil // re-resolve icons: a same-length new roster reuses indices (cachedPage reorder invariant)
+		a.playerIconAsk = nil   // and re-arm the demand timers so the new faces fetch immediately
+		a.pairAreaReset = false
+		a.areaListAt = a.now()
 	}
-	if a.roster.areaUIDs == nil {
-		a.roster.areaUIDs = map[string]string{}
+	if a.areaUIDs == nil {
+		a.areaUIDs = map[string]string{}
 	}
-	a.roster.areaUIDs[strings.ToLower(name)] = uid
+	a.areaUIDs[strings.ToLower(name)] = uid
 	if showname != "" {
-		a.roster.areaUIDs[strings.ToLower(showname)] = uid // IC name → UID for the pair auto-fill
+		a.areaUIDs[strings.ToLower(showname)] = uid // IC name → UID for the pair auto-fill
 	}
-	if len(a.roster.areaPlayers) < areaPlayersCap {
-		a.roster.areaPlayers = append(a.roster.areaPlayers, areaPlayer{uid: uid, name: name, showname: showname, ooc: ooc, ipid: ipid, area: a.roster.areaCurName})
+	if len(a.areaPlayers) < areaPlayersCap {
+		a.areaPlayers = append(a.areaPlayers, areaPlayer{uid: uid, name: name, showname: showname, ooc: ooc, ipid: ipid, area: a.areaCurName})
 	}
 }
 
@@ -147,18 +147,18 @@ func (a *App) addAreaPlayer(name, uid string) {
 // (the one whose "[uid]" line preceded it).
 func (a *App) setAreaField(field, val string) {
 	val = strings.TrimSpace(val)
-	n := len(a.roster.areaPlayers)
-	if val == "" || n == 0 || a.roster.areaPlayers[n-1].uid != a.roster.areaLastUID {
+	n := len(a.areaPlayers)
+	if val == "" || n == 0 || a.areaPlayers[n-1].uid != a.areaLastUID {
 		return
 	}
 	switch field {
 	case "showname":
-		a.roster.areaPlayers[n-1].showname = val
-		a.roster.areaUIDs[strings.ToLower(val)] = a.roster.areaLastUID // the IC name → UID, for auto-fill
+		a.areaPlayers[n-1].showname = val
+		a.areaUIDs[strings.ToLower(val)] = a.areaLastUID // the IC name → UID, for auto-fill
 	case "ooc":
-		a.roster.areaPlayers[n-1].ooc = val
+		a.areaPlayers[n-1].ooc = val
 	case "ipid":
-		a.roster.areaPlayers[n-1].ipid = val
+		a.areaPlayers[n-1].ipid = val
 	}
 }
 
@@ -181,10 +181,10 @@ func (a *App) parseAreaBlock(text string) {
 		t := strings.TrimSpace(line)
 		if strings.HasPrefix(t, "----") { // area divider (/ga: one; /gas: one per non-empty area)
 			if firstArea {
-				a.roster.pairAreaReset = true // the next "[uid]" starts a clean roster + stamps the time
+				a.pairAreaReset = true // the next "[uid]" starts a clean roster + stamps the time
 				firstArea = false
 			}
-			a.roster.areaCurName = "" // the name line below sets it ("" = a nameless block)
+			a.areaCurName = "" // the name line below sets it ("" = a nameless block)
 			expectAreaName = true
 			wantShowname = false
 			continue
@@ -192,7 +192,7 @@ func (a *App) parseAreaBlock(text string) {
 		if expectAreaName {
 			expectAreaName = false
 			if isAreaNameLine(t) { // "Lobby:" / "Pizza Room 3:" — tags the players that follow
-				a.roster.areaCurName = strings.TrimSpace(strings.TrimSuffix(t, ":"))
+				a.areaCurName = strings.TrimSpace(strings.TrimSuffix(t, ":"))
 				continue
 			}
 			// else fall through: a nameless block, or the "N empty area(s) hidden." footer
@@ -266,10 +266,10 @@ func looksLikeAreaList(text string) bool {
 // openPairPopup opens the click-to-pair popup targeting char, pre-filling the
 // UID only when /getarea gave a confident name match (else blank — never a guess).
 func (a *App) openPairPopup(char string) {
-	a.pairbox.pairPopupOpen = true
-	a.pairbox.pairPopupChar = char
-	a.pairbox.pairPopupUID = a.roster.areaUIDs[strings.ToLower(strings.TrimSpace(char))]
-	a.roster.pairListScroll = 0
+	a.pairPopupOpen = true
+	a.pairPopupChar = char
+	a.pairPopupUID = a.areaUIDs[strings.ToLower(strings.TrimSpace(char))]
+	a.pairListScroll = 0
 }
 
 // Pair-popup geometry — the old modal's fixed block, kept as the floatWin default.
@@ -283,25 +283,28 @@ const (
 // pairPopPanelRect is the panel's screen rect, seeded from its persisted layout
 // slot on first open and clamped on-screen thereafter (the modcallPanelRect idiom).
 func (a *App) pairPopPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.classic.seedPanelFromSlot(&a.wins.pairPopWin, slotPanelPairPop, pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, w, h); ok {
+	if r, ok := a.seedPanelFromSlot(&a.pairPopWin, slotPanelPairPop, pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, w, h); ok {
 		return r
 	}
-	return a.wins.pairPopWin.rect(pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, w, h)
+	return a.pairPopWin.rect(pairPopPanelDefW, pairPopPanelDefH, pairPopPanelMinW, pairPopPanelMinH, w, h)
 }
 
 // drawPairPopup is the click-to-pair surface: the clicked target, an editable UID
 // box (the reliable core) + Send, a Refresh that runs /getarea, and a clickable
 // roster of parsed players (real UID per row — picking one needs no name match).
+//
 // A non-blocking floatWin rather than a return-to-top modal (#31). Pairing is a
 // thing you do WITH the room: the roster fills from a /ga reply that arrives in the
 // OOC log, and the whole-screen dim used to hide both that log and the player you
+// were trying to pair with. The dim is gone with it — nothing is being blocked, so
+// nothing should look blocked.
 func (a *App) drawPairPopup(w, h int32, pressed *bool) {
 	c := a.ctx
 	if c.escPressed {
-		a.pairbox.pairPopupOpen = false
+		a.pairPopupOpen = false
 		return
 	}
-	wasActive := a.wins.pairPopWin.dragging || a.wins.pairPopWin.resizing // detect the drag/resize-end frame for slot persistence
+	wasActive := a.pairPopWin.dragging || a.pairPopWin.resizing // detect the drag/resize-end frame for slot persistence
 	panel := a.pairPopPanelRect(w, h)
 	pw := panel.W
 	c.Fill(panel, ColPanel)
@@ -310,31 +313,31 @@ func (a *App) drawPairPopup(w, h int32, pressed *bool) {
 	c.Heading(panel.X+pad, panel.Y+6, "Pair via /pair <UID>", ColText)
 	closeB := sdl.Rect{X: panel.X + pw - 74 - pad, Y: panel.Y + 4, W: 74, H: btnH}
 	if c.Button(closeB, "Close") {
-		a.pairbox.pairPopupOpen = false
+		a.pairPopupOpen = false
 		return
 	}
-	a.floatWinDrag(&a.wins.pairPopWin, sdl.Rect{X: panel.X, Y: panel.Y, W: closeB.X - panel.X - 4, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.pairPopWin, sdl.Rect{X: panel.X, Y: panel.Y, W: closeB.X - panel.X - 4, H: floatTitleH}, pressed)
 	grip := sdl.Rect{X: panel.X + panel.W - floatGripSz, Y: panel.Y + panel.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.wins.pairPopWin, grip, panel, pairPopPanelMinW, pairPopPanelMinH, pressed)
+	a.floatWinResize(&a.pairPopWin, grip, panel, pairPopPanelMinW, pairPopPanelMinH, pressed)
 	a.drawResizeGrip(grip)
-	if wasActive && !a.wins.pairPopWin.dragging && !a.wins.pairPopWin.resizing { // drag/resize just ended → remember where
-		a.classic.persistPanelSlot(&a.env, slotPanelPairPop, panel, w, h)
+	if wasActive && !a.pairPopWin.dragging && !a.pairPopWin.resizing { // drag/resize just ended → remember where
+		a.persistPanelSlot(slotPanelPairPop, panel, w, h)
 	}
 	x := panel.X + 18
 	y := panel.Y + floatTitleH + 10
-	if a.pairbox.pairPopupChar != "" {
-		c.LabelClipped(x, y, pw-36, "Clicked: "+a.pairbox.pairPopupChar, ColTextDim)
+	if a.pairPopupChar != "" {
+		c.LabelClipped(x, y, pw-36, "Clicked: "+a.pairPopupChar, ColTextDim)
 		y += 22
 	}
 	// Reliable core: an editable UID + Send. Only pre-filled on a confident match.
 	c.Label(x, y+5, "UID:", ColTextDim)
-	a.pairbox.pairPopupUID, _ = c.TextField("pairuid", sdl.Rect{X: x + 40, Y: y, W: 150, H: fieldH}, a.pairbox.pairPopupUID, "client id")
-	uid := strings.TrimSpace(a.pairbox.pairPopupUID)
+	a.pairPopupUID, _ = c.TextField("pairuid", sdl.Rect{X: x + 40, Y: y, W: 150, H: fieldH}, a.pairPopupUID, "client id")
+	uid := strings.TrimSpace(a.pairPopupUID)
 	if c.Button(sdl.Rect{X: x + 200, Y: y, W: 120, H: btnH}, "Send /pair") && uid != "" {
 		a.queueOOCLines([]string{"/pair " + uid})
 		a.warnLine = clampLine("Sent /pair " + uid + " (pairs on servers that support it).")
 		a.warnAt = a.now()
-		a.pairbox.pairPopupOpen = false
+		a.pairPopupOpen = false
 		return
 	}
 	y += fieldH + 10
@@ -346,7 +349,7 @@ func (a *App) drawPairPopup(w, h int32, pressed *bool) {
 	for _, cmd := range []string{"/ga", "/gas", "/getarea"} {
 		bw := c.TextWidth(cmd) + 16
 		if c.Button(sdl.Rect{X: bx, Y: y, W: bw, H: btnH}, cmd) {
-			a.roster.pairAreaReset = true
+			a.pairAreaReset = true
 			a.queueOOCLines([]string{cmd})
 			a.warnLine = clampLine("Sent " + cmd + " — the roster fills from the reply.")
 			a.warnAt = a.now()
@@ -354,7 +357,7 @@ func (a *App) drawPairPopup(w, h int32, pressed *bool) {
 		bx += bw + 6
 	}
 	y += btnH + 10
-	c.LabelClipped(x, y, pw-36, "Players parsed from the area list: "+strconv.Itoa(len(a.roster.areaPlayers)), ColTextDim)
+	c.LabelClipped(x, y, pw-36, "Players parsed from the area list: "+strconv.Itoa(len(a.areaPlayers)), ColTextDim)
 	y += 20
 	// The roster takes whatever height is left, stopping clear of the resize grip.
 	a.drawPairPlayerList(sdl.Rect{X: x, Y: y, W: pw - 36, H: panel.Y + panel.H - y - 20})
@@ -365,7 +368,7 @@ func (a *App) drawPairPopup(w, h int32, pressed *bool) {
 // entirely (the reliable path for a quiet scene partner you can't click on stage).
 func (a *App) drawPairPlayerList(r sdl.Rect) {
 	c := a.ctx
-	if len(a.roster.areaPlayers) == 0 {
+	if len(a.areaPlayers) == 0 {
 		c.LabelClipped(r.X+2, r.Y+4, r.W-4, "No area data yet — run /ga, /gas, or hit Refresh; or type the UID above.", ColTextDim)
 		return
 	}
@@ -375,16 +378,16 @@ func (a *App) drawPairPlayerList(r sdl.Rect) {
 	lineH := int32(24) * int32(a.playerPct) / 100
 	a.zoomWheel(r, &a.playerPct, config.MinLogScalePercent, config.MaxLogScalePercent) // Ctrl+wheel zooms text
 	if !c.ctrlHeld {
-		a.roster.pairListScroll -= c.WheelIn(r) * scrollStepPx
+		a.pairListScroll -= c.WheelIn(r) * scrollStepPx
 	}
-	contentH := int32(len(a.roster.areaPlayers)) * lineH
+	contentH := int32(len(a.areaPlayers)) * lineH
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
-	a.roster.pairListScroll = c.VScrollbar("pairlist", track, a.roster.pairListScroll, contentH, r.H)
+	a.pairListScroll = c.VScrollbar("pairlist", track, a.pairListScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r)
 	defer c.popClip(clipPrev, clipHad)
-	rowY := r.Y - a.roster.pairListScroll
+	rowY := r.Y - a.pairListScroll
 	rowW := r.W - scrollBarW - 6
-	for _, p := range a.roster.areaPlayers {
+	for _, p := range a.areaPlayers {
 		if rowY > r.Y+r.H {
 			break
 		}
@@ -393,10 +396,10 @@ func (a *App) drawPairPlayerList(r sdl.Rect) {
 			if c.hovering(row) {
 				c.Fill(row, ColPanelHi)
 				if c.clicked {
-					a.pairbox.pairPopupUID = p.uid
-					a.pairbox.pairPopupChar = p.name
+					a.pairPopupUID = p.uid
+					a.pairPopupChar = p.name
 					if p.showname != "" {
-						a.pairbox.pairPopupChar = p.showname // recognise them by the IC name
+						a.pairPopupChar = p.showname // recognise them by the IC name
 					}
 				}
 			}

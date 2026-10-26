@@ -11,6 +11,7 @@ import (
 )
 
 // The server-tab strip inside the THEMED layout editor (#14).
+//
 // The strip is intrinsically sized — its width comes from the chips, so it changes as
 // tabs open, close and get renamed — but it was wired into the theme-rect system as if
 // it carried an authored W/H. Everything below drives the REAL editor rather than its
@@ -147,7 +148,7 @@ func TestThemedEditorBoxIsAlwaysThePaintedTabStrip(t *testing.T) {
 
 	// A SECOND session: the strip's intrinsic width changes with no window, band, fit
 	// or theme change to invalidate the layout cache on.
-	a.tabs = append(a.tabs, &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "second server"}}})
+	a.tabs = append(a.tabs, &courtTab{state: sessionState{serverName: "second server"}})
 	wider := check("docked, after a tab was added")
 	if wider.W == docked.W {
 		t.Fatalf("fixture: adding a tab must change the strip's intrinsic width (still %d)", wider.W)
@@ -164,7 +165,7 @@ func TestThemedEditorBoxIsAlwaysThePaintedTabStrip(t *testing.T) {
 	}
 
 	// A THIRD session, now that it is parked: same invariant, other branch.
-	a.tabs = append(a.tabs, &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "third server"}}})
+	a.tabs = append(a.tabs, &courtTab{state: sessionState{serverName: "third server"}})
 	check("parked, after another tab was added")
 }
 
@@ -183,8 +184,8 @@ func TestThemedEditorBoxFollowsAClassicSlotOverride(t *testing.T) {
 	}
 	// Persisted and reloaded the way the classic editor's drag-end does it.
 	a.d.Prefs.SetClassicSlot(slotTabBar, [4]float64{0.6, 0.7, 0.2, 0.05})
-	a.classic.classicOvLoaded = false
-	a.skin.themeLay.valid = false
+	a.classicOvLoaded = false
+	a.themeLay.valid = false
 
 	box, ok := a.themeWindowLayout(stripEditW, stripEditH).rect(themeTabBarKey)
 	if !ok {
@@ -205,6 +206,7 @@ func TestThemedEditorBoxFollowsAClassicSlotOverride(t *testing.T) {
 // seed, so a drag that happened to land on the seed's own coordinates wrote its
 // override and was then read back as "never moved": the strip snapped straight back
 // into the chrome band, silently discarding the placement.
+//
 // The fixture moves the PRISTINE seed to where the drag will land, which is the same
 // coincidence with fewer moving parts than hunting for a chip width that reproduces it.
 func TestThemedEditorHonoursADragOntoThePristineSeedPosition(t *testing.T) {
@@ -219,10 +221,10 @@ func TestThemedEditorHonoursADragOntoThePristineSeedPosition(t *testing.T) {
 		Y: int(box.Y+300) - int(lay.offY),
 		W: int(box.W), H: int(box.H),
 	}
-	a.skin.themeRectsOrig[themeTabBarKey] = landing
+	a.themeRectsOrig[themeTabBarKey] = landing
 
 	_, after := dragStrip(t, a, ctx, 40, 300)
-	if got := a.skin.themeRects[themeTabBarKey]; got != landing {
+	if got := a.themeRects[themeTabBarKey]; got != landing {
 		t.Fatalf("fixture: the drag landed at %+v, want the pristine %+v — the coincidence is not being tested", got, landing)
 	}
 	if !a.tabStripThemeParked() {
@@ -336,7 +338,7 @@ func TestTabStripPlacementSurvivesAnUnrelatedUndo(t *testing.T) {
 
 	lay := a.themeWindowLayout(stripEditW, stripEditH)
 	box, _ := lay.rect(themeTabBarKey)
-	a.skin.themeRectsOrig[themeTabBarKey] = theme.Rect{
+	a.themeRectsOrig[themeTabBarKey] = theme.Rect{
 		X: int(box.X+40) - int(lay.offX),
 		Y: int(box.Y+300) - int(lay.offY),
 		W: int(box.W), H: int(box.H),
@@ -345,27 +347,37 @@ func TestTabStripPlacementSurvivesAnUnrelatedUndo(t *testing.T) {
 	if !a.tabStripThemeParked() {
 		t.Fatal("fixture: the placement did not take")
 	}
-	placed := a.skin.themeRects[themeTabBarKey]
+	placed := a.themeRects[themeTabBarKey]
 
 	// An unrelated edit, then undo it. restoreLayout walks every key, so the strip
 	// passes through its rect-equals-original branch on the way.
 	a.pushLayoutUndo()
-	a.skin.themeRects["viewport"] = theme.Rect{X: 10, Y: 10, W: 200, H: 150}
+	a.themeRects["viewport"] = theme.Rect{X: 10, Y: 10, W: 200, H: 150}
 	a.layoutEditUndo()
 
 	if !a.tabStripThemeParked() {
 		t.Fatal("undoing an unrelated edit un-parked the server-tab strip")
 	}
-	if got := a.skin.themeRects[themeTabBarKey]; got != placed {
+	if got := a.themeRects[themeTabBarKey]; got != placed {
 		t.Fatalf("the strip's design rect drifted through the undo: %+v, want %+v", got, placed)
 	}
 }
 
 // TestTabStripUndoOfTheFirstDragSendsItHome is the OTHER half of the parked-flag
 // contract, and the half the path that actually produces snapshots gets wrong.
+//
+// TestTabStripPlacementSurvivesAnUnrelatedUndo above pushes its snapshot by hand, with
+// no drag in flight, and asserts a placed strip STAYS placed. It therefore cannot see
+// the press site's ordering: drawLayoutEditor assigns editTgt/editDrag and only THEN
+// calls pushLayoutUndo, so the snapshot of the PRE-PRESS state is taken while
+// tabStripThemeParked's "a placement is happening right now" arm is already true. An
+// un-parked, docked strip is recorded as parked=true, and restoreLayout's parked arm
+// then WRITES the override — which is the placement flag — instead of clearing it.
+//
 // Measured at Native 714x760 with snap off before the fix: docked {317 22 79 22},
 // drag (+40,+300) → {357 322 79 22}, one undo step with parked=TRUE, and after
 // layoutEditUndo the strip read parked with its box back at the pristine SEED's canvas
+// spot {237 112 79 22} — not the docked box the press started from.
 func TestTabStripUndoOfTheFirstDragSendsItHome(t *testing.T) {
 	a, ctx, cleanup := stripEditFixture(t)
 	defer cleanup()
@@ -409,10 +421,17 @@ func TestTabStripUndoOfTheFirstDragSendsItHome(t *testing.T) {
 // strip's two draw sites: App.Frame's over-everything paint (after the screen dispatch)
 // and the in-pass one under a layout editor's overlay. Exactly one may run per frame —
 // running both paints the strip twice, running neither loses it.
+//
+// The over-everything site used to be gated on classicEdit alone, so with the THEMED
+// editor armed the strip painted AFTER drawLayoutEditor and buried its banner. The
+// predicate must not simply be "an editor is armed" either: an editor flag outlives
+// the frames where its draw site actually runs (drawCourtroom bails to the lobby with
+// no room, returns early in theater, and gif export / replay / the scene maker preempt
+// the whole screen dispatch), and the strip would then vanish on those frames.
 func TestTabStripPaintSiteIsExclusiveWhileEditing(t *testing.T) {
 	arm := map[string]func(*App){
 		"themed editor":  func(a *App) { a.layoutEdit = true },
-		"classic editor": func(a *App) { a.classic.classicEdit = true },
+		"classic editor": func(a *App) { a.classicEdit = true },
 	}
 	for editor, armEditor := range arm {
 		t.Run(editor, func(t *testing.T) {
@@ -421,8 +440,8 @@ func TestTabStripPaintSiteIsExclusiveWhileEditing(t *testing.T) {
 				a.tabs = []*courtTab{{}}
 				a.activeTab = 0
 				a.screen = ScreenCourtroom
-				a.link.room = newRoomForTest(t)
-				a.link.sess = &courtroom.Session{}
+				a.room = newRoomForTest(t)
+				a.sess = &courtroom.Session{}
 				armEditor(a)
 				return a
 			}
@@ -431,12 +450,12 @@ func TestTabStripPaintSiteIsExclusiveWhileEditing(t *testing.T) {
 			}
 			for name, break_ := range map[string]func(*App){
 				"lobby":       func(a *App) { a.screen = ScreenLobby },
-				"no room":     func(a *App) { a.link.room = nil },
-				"no session":  func(a *App) { a.link.sess = nil },
+				"no room":     func(a *App) { a.room = nil },
+				"no session":  func(a *App) { a.sess = nil },
 				"theater":     func(a *App) { a.theaterOn = true },
-				"gif export":  func(a *App) { a.sel.gifExporting = true },
-				"replay":      func(a *App) { a.sel.replaying, a.sel.replayRoom = true, a.link.room },
-				"scene maker": func(a *App) { a.sel.makerOpen = true },
+				"gif export":  func(a *App) { a.gifExporting = true },
+				"replay":      func(a *App) { a.replaying, a.replayRoom = true, a.room },
+				"scene maker": func(a *App) { a.makerOpen = true },
 			} {
 				a := base()
 				break_(a)
@@ -449,8 +468,8 @@ func TestTabStripPaintSiteIsExclusiveWhileEditing(t *testing.T) {
 			a.tabs = []*courtTab{{}}
 			a.activeTab = 0
 			a.screen = ScreenCourtroom
-			a.link.room = newRoomForTest(t)
-			a.link.sess = &courtroom.Session{}
+			a.room = newRoomForTest(t)
+			a.sess = &courtroom.Session{}
 			if a.tabStripPaintsUnderEditor() {
 				t.Error("with no editor armed the strip belongs to App.Frame's over-everything paint")
 			}
@@ -505,6 +524,11 @@ func textCacheHasLabel(c *Ctx, text string) bool {
 // measured at 1152x864 with one session, a chip at {545,22,28,22} buried 4 px of banner
 // and the bottom 2 px of every chip, and a strip wide enough marches into the Done
 // cluster itself.
+//
+// Rendering the SAME frame twice, differing only in whether the strip is painted after
+// the editor, is what makes this exact: if the two agree, the strip's chips never reach
+// those pixels and the test is vacuous, so the assertion is that they DIFFER — the
+// strip does land there, and production is not the order that puts it on top.
 func TestLayoutEditorBannerSurvivesTheTabStrip(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -524,7 +548,7 @@ func TestLayoutEditorBannerSurvivesTheTabStrip(t *testing.T) {
 			name: "classic editor",
 			arm: func(a *App) {
 				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = false }) // send drawCourtroom down the classic branch
-				a.classic.classicEdit = true
+				a.classicEdit = true
 			},
 			// Mirrors drawClassicEditor's own banner geometry.
 			done: func(w int32) sdl.Rect {
@@ -541,11 +565,11 @@ func TestLayoutEditorBannerSurvivesTheTabStrip(t *testing.T) {
 				t.Skipf("output size unavailable: %v", err)
 			}
 			// Enough sessions that the centred strip reaches the Done chip.
-			a.srvMeta.serverName = "first session"
+			a.serverName = "first session"
 			a.tabs = []*courtTab{
 				{},
-				{state: sessionState{srvMeta: serverMetaState{serverName: "second session"}}},
-				{state: sessionState{srvMeta: serverMetaState{serverName: "third session"}}},
+				{state: sessionState{serverName: "second session"}},
+				{state: sessionState{serverName: "third session"}},
 			}
 			a.activeTab = 0
 			tc.arm(a)

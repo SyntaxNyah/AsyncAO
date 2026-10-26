@@ -11,7 +11,7 @@ import "testing"
 // compacts with no gap, no overlap.
 func TestCtrlSlotCompaction(t *testing.T) {
 	a := testTabApp(t)
-	a.classic.hidden = map[string]bool{}
+	a.hidden = map[string]bool{}
 
 	// A miniature of the real toolbar row: (key, width, advance) in draw order.
 	// The advances mirror screens.go (restyle's is 84+gGap = 100).
@@ -32,7 +32,7 @@ func TestCtrlSlotCompaction(t *testing.T) {
 		x := startX
 		at := map[string]int32{}
 		for _, b := range row {
-			if r, ok := a.classic.ctrlSlot(&x, y2, b.wdt, b.adv, 1000, 800, b.key); ok {
+			if r, ok := a.ctrlSlot(&x, y2, b.wdt, b.adv, 1000, 800, b.key); ok {
 				at[b.key] = r.X
 			}
 		}
@@ -60,7 +60,7 @@ func TestCtrlSlotCompaction(t *testing.T) {
 	//    exactly that button's advance (96) — no gap, and the button before it
 	//    is untouched.
 	const wardrobeAdv int32 = 96
-	a.classic.setPanelHidden("ctrl.wardrobe", true)
+	a.setPanelHidden("ctrl.wardrobe", true)
 	at2, end2 := run()
 	if _, shown := at2["ctrl.wardrobe"]; shown {
 		t.Error("a hidden button must not be drawn")

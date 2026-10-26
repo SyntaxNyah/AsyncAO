@@ -33,15 +33,15 @@ func TestWarmKeeperSkipsAConclusivelyMissingDesk(t *testing.T) {
 		}
 		a := testTabApp(t)
 		a.d.Store = store
-		a.link.room = &courtroom.Courtroom{}
-		a.link.room.Scene.ShowDesk = true
-		a.link.room.Scene.DeskBase = "warm://botc-townsquare/evening_overlay"
-		a.sceneWarm.lastDemand = time.Time{} // throttle wide open
+		a.room = &courtroom.Courtroom{}
+		a.room.Scene.ShowDesk = true
+		a.room.Scene.DeskBase = "warm://botc-townsquare/evening_overlay"
+		a.sceneWarmLastDemand = time.Time{} // throttle wide open
 		return a, store
 	}
 
 	marked, store := newRoom(t)
-	store.MarkMissing(marked.link.room.Scene.DeskBase)
+	store.MarkMissing(marked.room.Scene.DeskBase)
 	marked.keepSceneAssetsWarm() // gated: must not touch the nil Manager
 
 	func() {
@@ -66,7 +66,7 @@ func TestCharINIURLGoesThroughTheCharacterFolderSeam(t *testing.T) {
 	const origin = "https://cdn/base/"
 	a := testTabApp(t)
 
-	a.link.urls = courtroom.NewURLBuilder(origin)
+	a.urls = courtroom.NewURLBuilder(origin)
 	if got, want := a.charINIURL("SG/Faris NyanNyan"), origin+"characters/sg/faris%20nyannyan/char.ini"; got != want {
 		t.Errorf("nested identity: charINIURL = %q, want %q", got, want)
 	}
@@ -76,12 +76,12 @@ func TestCharINIURLGoesThroughTheCharacterFolderSeam(t *testing.T) {
 	// Always under the same folder the character's art is fetched from — the
 	// property that makes "one minting seam" mean anything.
 	for _, name := range []string{"Phoenix Wright", "SG/Faris NyanNyan", "phoenix"} {
-		if folder := a.link.urls.CharFolder(name); !strings.HasPrefix(a.charINIURL(name), folder) {
+		if folder := a.urls.CharFolder(name); !strings.HasPrefix(a.charINIURL(name), folder) {
 			t.Errorf("%q: char.ini %q is not under the character folder %q", name, a.charINIURL(name), folder)
 		}
 	}
 
-	a.link.urls = courtroom.NewURLBuilder(origin).WithCharCase(courtroom.CharCaseTitle)
+	a.urls = courtroom.NewURLBuilder(origin).WithCharCase(courtroom.CharCaseTitle)
 	if got, want := a.charINIURL("phoenix wright"), origin+"characters/Phoenix%20Wright/char.ini"; got != want {
 		t.Errorf("title-case server: charINIURL = %q, want %q", got, want)
 	}

@@ -64,8 +64,8 @@ func packApp(t *testing.T, files map[string]string) *App {
 	t.Cleanup(idx.Retire)
 	a.d.Manager.SetMountLayer(assets.NewMountLayer(idx, []string{dir}, []string{packAppOrigin}))
 
-	a.link.urls = courtroom.NewURLBuilder(packAppOrigin)
-	a.link.sess = &courtroom.Session{}
+	a.urls = courtroom.NewURLBuilder(packAppOrigin)
+	a.sess = &courtroom.Session{}
 	a.charINIres = make(chan charINIFetch, 1)
 	return a
 }
@@ -92,7 +92,7 @@ func writePackFiles(t *testing.T, root string, files map[string]string) {
 func awaitCharINI(t *testing.T, a *App) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
-	for a.compose.charINIBusy {
+	for a.charINIBusy {
 		a.pollCharINI()
 		if time.Now().After(deadline) {
 			t.Fatal("the char.ini load never settled — it is not reading the mount")
@@ -110,16 +110,16 @@ func TestMountedPackSuppliesTheEmoteList(t *testing.T) {
 		"characters/witch/char.ini": "[Emotions]\nnumber = 2\n" +
 			"1 = Grin#-#grin#0#\n2 = Glare#-#glare#0#\n",
 	})
-	a.inibrowse.iniChar = "witch" // activeCharName's override rung — a worn local folder
+	a.iniChar = "witch" // activeCharName's override rung — a worn local folder
 
 	a.loadCharINI()
 	awaitCharINI(t, a)
 
-	if len(a.emotepick.emotes) != 2 {
-		t.Fatalf("emote list = %d entries (%v), want the PACK's 2 — the ini was read off the server", len(a.emotepick.emotes), a.emotepick.emotes)
+	if len(a.emotes) != 2 {
+		t.Fatalf("emote list = %d entries (%v), want the PACK's 2 — the ini was read off the server", len(a.emotes), a.emotes)
 	}
-	if a.emotepick.emotes[0].Anim != "grin" || a.emotepick.emotes[1].Anim != "glare" {
-		t.Errorf("emotes = %q/%q, want grin/glare", a.emotepick.emotes[0].Anim, a.emotepick.emotes[1].Anim)
+	if a.emotes[0].Anim != "grin" || a.emotes[1].Anim != "glare" {
+		t.Errorf("emotes = %q/%q, want grin/glare", a.emotes[0].Anim, a.emotes[1].Anim)
 	}
 	if a.warnLine != "" {
 		t.Errorf("warned %q about a char.ini it successfully read", a.warnLine)
@@ -139,7 +139,7 @@ func TestPackCharMetaComesFromTheMount(t *testing.T) {
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		a.overlays.pollCharMeta()
+		a.pollCharMeta()
 		if m := a.charMetaFor("witch"); m.done {
 			if m.showname != "The Witch" {
 				t.Errorf("showname = %q, want the PACK's %q", m.showname, "The Witch")
@@ -162,23 +162,23 @@ func TestPackCharMetaComesFromTheMount(t *testing.T) {
 // session — the feature reads as broken even though the fetch is now correct.
 func TestRescanForgetsEveryParsedINI(t *testing.T) {
 	a := packApp(t, map[string]string{"characters/witch/char.ini": "[Options]\nshowname = X\n"})
-	a.overlays.charMetaCache = map[string]charMeta{a.charINIURL("witch"): {showname: "STALE", done: true}}
-	a.budget.previewChar = "witch"
-	a.budget.previewAnims = []string{"stale"}
-	a.budget.previewLabels = []string{"Stale"}
-	a.budget.previewEmoteIdx = 3
-	a.compose.iniWarmed = "witch"
+	a.charMetaCache = map[string]charMeta{a.charINIURL("witch"): {showname: "STALE", done: true}}
+	a.previewChar = "witch"
+	a.previewAnims = []string{"stale"}
+	a.previewLabels = []string{"Stale"}
+	a.previewEmoteIdx = 3
+	a.iniWarmed = "witch"
 
 	a.rescanLocalPacks(nil)
 
-	if len(a.overlays.charMetaCache) != 0 {
-		t.Errorf("charMetaCache survived a source change (%v) — every speaker keeps their pre-edit ini", a.overlays.charMetaCache)
+	if len(a.charMetaCache) != 0 {
+		t.Errorf("charMetaCache survived a source change (%v) — every speaker keeps their pre-edit ini", a.charMetaCache)
 	}
-	if a.budget.previewChar != "" || a.budget.previewAnims != nil || a.budget.previewLabels != nil || a.budget.previewEmoteIdx != 0 {
+	if a.previewChar != "" || a.previewAnims != nil || a.previewLabels != nil || a.previewEmoteIdx != 0 {
 		t.Errorf("the preview kept its latch (%q/%v) — re-hovering the same character redraws the pre-edit emotes",
-			a.budget.previewChar, a.budget.previewAnims)
+			a.previewChar, a.previewAnims)
 	}
-	if a.compose.iniWarmed != "" {
+	if a.iniWarmed != "" {
 		t.Error("the hover-warm latch survived — the next hover skips the refetch")
 	}
 }

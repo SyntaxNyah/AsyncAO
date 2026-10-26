@@ -52,7 +52,7 @@ func addAutoStatusWords(m map[string]courtroom.Status, csv string, s courtroom.S
 // applyAutoStatus flips myStatus from a trigger word in the outgoing message (#M1).
 func (a *App) applyAutoStatus(text string) {
 	if s, ok := matchAutoStatus(text, a.d.Prefs.Load().MyAutoStatus); ok {
-		a.compose.myStatus = s
+		a.myStatus = s
 	}
 }
 

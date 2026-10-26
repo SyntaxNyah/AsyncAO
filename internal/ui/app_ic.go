@@ -24,8 +24,8 @@ func (a *App) applyThemeAsync() uint64 {
 	// Per-server theme binding: while this session declares one, it wins
 	// over the global pick (set on connect from ServerWarmInfo.Theme;
 	// Disconnect/resetSessionState clears it and re-applies the global).
-	if a.srvMeta.themeBound != "" {
-		name = a.srvMeta.themeBound
+	if a.themeBound != "" {
+		name = a.themeBound
 	}
 	anims := a.d.Prefs.Load().PreferAnimated
 	// The AO2 subtheme folder to prefer inside that theme. Read HERE, on the
@@ -42,8 +42,8 @@ func (a *App) applyThemeAsync() uint64 {
 	// theme-media allowance is a function of it (render.ThemeMediaByteCap) and the
 	// goroutine below must not take the preferences lock.
 	texBudgetMiB := a.d.Prefs.Load().TexBudgetMiB()
-	gen := a.skin.themeGen.Add(1)
-	themeRes := &a.skin.themeRes
+	gen := a.themeGen.Add(1)
+	themeRes := &a.themeRes
 	go func() {
 		res := themeApply{
 			gen:    gen,
@@ -151,9 +151,25 @@ func (a *App) applyThemeAsync() uint64 {
 			// (courtroom.cpp:3358/:3362), so they are looked up here — after the base
 			// has resolved and in the base's own directory — rather than from the
 			// static candidate table above.
+			//
+			// This is where the ladder's cost lives, and it is the reason it can exist
+			// at all in a zero-fallback streaming client: two os.Stat calls per THEME
+			// APPLY, on this goroutine, beside the two dozen the theme already pays.
+			// Not one per message, and not one on the network — theme chrome is local
+			// content, unlike the character / background / evidence art the one-probe
+			// rule governs. A theme that ships neither variant simply leaves both stems
+			// out of res.images, pollThemeApply drops them from themeTex, and every
+			// draw-time probe for the rest of that theme's life is a map read that
+			// answers false. The negative is cached by construction; nothing re-probes
+			// it until the user picks another theme.
+			//
 			// MEMORY, because pinned theme pages sit on top of the T1 budget rather
 			// than inside it (render.TextureStore.UploadPinned): this is bounded by
 			// construction at exactly two files, and they are the same class and — on
+			// every theme measured — the same dimensions as the base chatbox skin
+			// already pinned. The reference corpus's largest is the AOHDUltra family's
+			// 1024x187, i.e. 748 KiB decoded apiece, so the worst case in 74 real
+			// themes is ~1.5 MiB more pinned art for as long as that theme is applied.
 			if res.chatboxStem != "" {
 				for _, rung := range chatboxLadderRungs {
 					if path, ok := theme.FindAssetIn(res.chatboxDir, rung.fileStem(res.chatboxStem), themeImageExts); ok {
@@ -202,6 +218,12 @@ func (a *App) applyThemeAsync() uint64 {
 			// to bind to. See foldSidecarOverrides (themeoverrides.go) for why this
 			// tier existed unapplied until now, and what it was doing to the elements
 			// anchored on top of it.
+			//
+			// The server-tab strip's synthesized key rides WITH the fold, in the one
+			// order that answers an `asyncao_tabbar` row exactly once — see
+			// seedTabBarThroughOverrides (tabs.go). This used to be two statements
+			// with a goroutine boundary between them, seed LAST, and a theme author's
+			// row got four different answers on its way through.
 			res.tabBarSeeded = seedTabBarThroughOverrides(res.layout, res.sidecar)
 			// #21 label 16: measure the theme's own art behind each font element, so
 			// the render thread can guard the per-element ink without touching a
@@ -270,6 +292,14 @@ func (a *App) applyThemeAsync() uint64 {
 		}
 		// The USER's own per-panel fonts, OUTSIDE the theme-loaded branch — which is
 		// the whole point of it living here.
+		//
+		// These belong to the user, not to the theme, and until now they were
+		// resolved inside `if err == nil` alongside the theme's own table. Anyone
+		// whose theme failed to load — no theme configured, a moved folder, the
+		// stock default with no tree on disk — therefore had the setting save
+		// perfectly and do absolutely nothing, with no way to tell why. Reported as
+		// the font simply not changing.
+		//
 		// The theme's directories are used when there IS one, so a font it ships can
 		// still be picked; with no theme, the user's own font folder and the system
 		// folders are the search path, and both work on their own.
@@ -298,6 +328,21 @@ func (a *App) applyThemeAsync() uint64 {
 		res.report = buildThemeReport(res.sidecar, res.themeFontsMissing, res.unbound)
 		// Newest-wins publish: never overwrite a higher-gen result (this
 		// load may have been outraced by a later pick).
+		//
+		// BOTH ARMS DROP AN APPLY, and both hand its pixel buffers back to the
+		// decoder's pool for the same reason pollThemeApply's consume-side arm does
+		// (see releaseDecoded): an apply that never lands is holding the chrome
+		// stems PLUS up to render.ThemeMediaCap media pages and render.ThemeGenCap
+		// generator tiles, each a full-size RGBA frame set, and without this they
+		// reach the GC as ordinary garbage instead of the pool they came from.
+		//
+		// OWNERSHIP IS EXCLUSIVE ON BOTH PATHS, which is what makes the release
+		// safe rather than a use-after-free: `res` was never published, so nobody
+		// else can have seen it; and a SUCCESSFUL CAS proves `old` was still in the
+		// slot at the moment of the swap, so the render thread's Swap did not take
+		// it (a Swap would have made the CAS fail). Still on the load goroutine —
+		// this is memory bookkeeping, not I/O, and the render thread never touches
+		// either value again.
 		for {
 			old := themeRes.Load()
 			if old != nil && old.gen > gen {
@@ -319,7 +364,7 @@ func (a *App) applyThemeAsync() uint64 {
 // drop) the chatbox skin, adopt the colors, force a chat re-raster, and
 // report what happened (settings status line + debug log).
 func (a *App) pollThemeApply() {
-	res := a.skin.themeRes.Swap(nil)
+	res := a.themeRes.Swap(nil)
 	if res == nil {
 		return
 	}
@@ -328,53 +373,54 @@ func (a *App) pollThemeApply() {
 	// result). Landing it would revert to the stale theme and — because an older
 	// boot/global "default" apply carries an empty fontPath — clear the chat font
 	// (the "applies then reverts" bug). Drop anything older than what's applied.
-	if res.gen < a.skin.themeAppliedGen {
+	if res.gen < a.themeAppliedGen {
 		res.releaseDecoded()
 		return
 	}
-	a.skin.themeAppliedGen = res.gen
+	a.themeAppliedGen = res.gen
 	// Upload every loaded stem into the PINNED tier — theme chrome must
 	// never lose an eviction fight against streaming sprites (the cause
 	// of the black-flashing backdrop / glitching buttons) — and drop
 	// residents the new theme doesn't ship (plain stems and btn/ art).
 	for stem, d := range res.images {
 		if err := a.d.Store.UploadPinned(themeTexKey(stem), d); err == nil {
-			a.skin.themeTex[stem] = true
+			a.themeTex[stem] = true
 		}
 	}
-	for stem := range a.skin.themeTex {
+	for stem := range a.themeTex {
 		if res.images[stem] == nil {
 			a.d.Store.Remove(themeTexKey(stem))
-			delete(a.skin.themeTex, stem)
+			delete(a.themeTex, stem)
 		}
 	}
 	// Geometry: pristine design rects kept aside, the user's layout-editor
 	// overrides applied on a copy, scaled cache invalidated.
+	//
 	// The server-tab strip's synthesized key was seeded on the apply goroutine,
 	// into this same pristine map, before the [overrides] fold (see there). It is
 	// in themeRectsOrig for reset/undo to restore from, and in the copy below for
 	// applyRectOverrides — which only rewrites keys that already exist — to
 	// re-apply a drag after a reload. Only the FLAG crosses here.
 	a.tabBarSeeded = res.tabBarSeeded
-	a.skin.themeRectsOrig = res.layout
+	a.themeRectsOrig = res.layout
 	rects := make(map[string]theme.Rect, len(res.layout))
 	for k, v := range res.layout {
 		rects[k] = v
 	}
-	a.skin.themeRects = a.applyRectOverrides(rects)
-	a.skin.themeEmoteCell, a.skin.themeEmoteGap = res.emoteCell, res.emoteGap
+	a.themeRects = a.applyRectOverrides(rects)
+	a.themeEmoteCell, a.themeEmoteGap = res.emoteCell, res.emoteGap
 	// The effects picker's per-row icon size, and a roster/icon-cache drop: the new
 	// theme contributes different names, properties AND art paths, so a cached
 	// roster (or an icon page keyed by row index) from the old one would be wrong.
-	a.overlays.overlayIconSize = res.effectsIcon
-	a.overlays.overlayTheme = res.themeObj
-	a.overlays.overlayRosters = nil
-	a.overlays.overlayIconPagesReset()
+	a.overlayIconSize = res.effectsIcon
+	a.overlayTheme = res.themeObj
+	a.overlayRosters = nil
+	a.overlayIconPagesReset()
 	// Lands beside the geometry it belongs to. A themeless apply carries the zero
 	// value, which is Left — so dropping a theme restores AO2's own default rather
 	// than leaving the previous theme's alignment behind.
-	a.skin.themeShownameAlign = res.shownameAlign
-	a.skin.themeShownameExtra = res.shownameExtra
+	a.themeShownameAlign = res.shownameAlign
+	a.themeShownameExtra = res.shownameExtra
 	// Char select's own geometry lands beside the courtroom's (#20). No
 	// applyRectOverrides pass: these keys are deliberately not editable — they are not
 	// in a.themeRects, so the layout editor never sees them and there is nothing to
@@ -385,7 +431,7 @@ func (a *App) pollThemeApply() {
 	// a sidecar landing after the invalidation would not be baked until something
 	// else happened to invalidate again. nil (a stock AO2 theme) clears the previous
 	// theme's elements, which is the whole of the theme-swap prune for this tier.
-	a.elemBake.themeSidecar = res.sidecar
+	a.themeSidecar = res.sidecar
 	// …and immediately back again if the EDITOR owns this theme's model. Applies are
 	// not user-initiated — healTheme re-kicks one on any T1 eviction of a theme
 	// texture, the texture-filter row kicks one, boot kicks two — so without this line
@@ -401,13 +447,23 @@ func (a *App) pollThemeApply() {
 	a.landThemeMedia(res)
 	// The refusal surface lands with it, and the acknowledgement is keyed on the
 	// REASON rather than re-armed unconditionally.
-	if a.fxPool.themeSidecarErr != res.sidecarErr {
-		a.fxPool.themeSidecarErrAck = false
+	//
+	// Unconditional re-arming was the obvious spelling and it is wrong: applies are
+	// not user-initiated events. healTheme re-kicks one on any T1 eviction of a theme
+	// texture (paced, but ongoing), the texture-filter change kicks one, and boot
+	// kicks two — so a chip re-armed per apply would come back minutes after the user
+	// dismissed it, for a fact they had already read. Keyed on the string, a dismissal
+	// silences exactly the refusal it acknowledged: a DIFFERENT failure re-arms
+	// (fixing one cap and tripping another is new information), and a successful load
+	// clears the fields outright, which is what makes fixing the file visibly fix the
+	// chip. The debug log gets the line on every apply regardless.
+	if a.themeSidecarErr != res.sidecarErr {
+		a.themeSidecarErrAck = false
 	}
-	a.fxPool.themeSidecarErr, a.fxPool.themeSidecarTip = res.sidecarErr, res.sidecarTip
+	a.themeSidecarErr, a.themeSidecarTip = res.sidecarErr, res.sidecarTip
 	a.invalidateThemeCanvases()
-	a.skin.themeSounds = res.sounds
-	a.toolbox.themeAt = time.Now() // restart the theme-art animation clock
+	a.themeSounds = res.sounds
+	a.themeAt = time.Now() // restart the theme-art animation clock
 	// The element clock groups re-anchor WITH it (design §Q3), so a theme reload
 	// restarts every phase together instead of leaving the incoming theme's motion
 	// mid-cycle. A nil sidecar zeroes the pool, which is what makes a swap back to a
@@ -415,53 +471,53 @@ func (a *App) pollThemeApply() {
 	a.applyThemeClocks(res.sidecar)
 	// Apply (or restore) the stylesheet palette; label textures are
 	// color-keyed, so purge the text cache to re-rasterize in new colors.
-	a.skin.themePalette = res.palette // remember it so a chrome-preset change can re-overlay it (#M3)
+	a.themePalette = res.palette // remember it so a chrome-preset change can re-overlay it (#M3)
 	applyThemePalette(res.palette)
 	a.ctx.purgeTextCache()
 	a.pushRealizationToRoom()
-	a.skin.themeMsgCol, a.skin.themeHasMsg = res.msgCol, res.hasMsg
-	a.skin.themeNameCol, a.skin.themeHasName = res.nameCol, res.hasName
-	a.raster.rasterText = "" // re-raster the current message with theme colors
-	a.toolbox.themeAppliedName = res.name
+	a.themeMsgCol, a.themeHasMsg = res.msgCol, res.hasMsg
+	a.themeNameCol, a.themeHasName = res.nameCol, res.hasName
+	a.rasterText = "" // re-raster the current message with theme colors
+	a.themeAppliedName = res.name
 	// Theme font (#6): an AO theme that ships its own .ttf now applies it (below a
 	// manual font / the dyslexia toggle). Re-resolve only when it actually changed,
 	// so a same-font theme switch doesn't re-kick the off-thread font read.
-	if a.font.themeFontFile != res.fontPath {
-		a.font.themeFontFile = res.fontPath
+	if a.themeFontFile != res.fontPath {
+		a.themeFontFile = res.fontPath
 		a.applyFontConfig()
 	}
 	// Per-panel font diagnostics, for the Settings screen: the file names each
 	// element resolved to (so an empty box can say what it is already using) and
 	// the families that resolved to nothing (so a typo is visible where it was
 	// typed, not only in the debug log).
-	a.font.themeFaceNames = res.faceNames
-	a.font.panelFontMissing = res.panelFontsMissing
+	a.themeFaceNames = res.faceNames
+	a.panelFontMissing = res.panelFontsMissing
 	a.landThemeFonts(res)
 	// A theme whose fonts are missing renders in the client's own face and says
 	// nothing about it — from the user's side that reads as "the client got the
 	// font wrong", which is exactly how it was reported. Say so, once per apply,
 	// on screen AND in the debug log, and name the fix rather than the fault.
-	a.font.themeFontWarn = res.themeFontWarn
+	a.themeFontWarn = res.themeFontWarn
 	if res.themeFontWarn != "" {
 		// The debug log ALWAYS, the modal at most once per theme. A theme with
 		// missing fonts has them missing on every apply, so warning every time
 		// would make the client unusable for anyone not intending to fix it — and
 		// the second showing is what teaches people to dismiss without reading.
-		a.debug.Push(res.themeFontWarn)
+		a.pushDebug(res.themeFontWarn)
 		a.maybeWarnMissingFonts(res.name, res.themeFontsMissing, res.themeFontWarn, res.userFontsDir)
 	}
 	line := themeApplySummary(res)
 	settings.statusLine = clampLine(line)
-	a.debug.Push(line)
+	a.pushDebug(line)
 	if res.inkGuard != "" {
-		a.debug.Push(res.inkGuard)
+		a.pushDebug(res.inkGuard)
 	}
 	// A refused sidecar goes to the debug log on EVERY apply (pushDebug's ×N collapse
 	// keeps a re-kicked heal from flooding it) and takes over the Settings status
 	// line, which is the surface the user is looking at when they pick a theme. The
 	// chip is the third surface and the only one that survives leaving that screen.
 	if res.sidecarErr != "" {
-		a.debug.Push(res.sidecarErr)
+		a.pushDebug(res.sidecarErr)
 		settings.statusLine = clampLine(res.sidecarErr)
 	}
 	// THE IMPORT REPORT (themereport.go). It SUBSUMES the #21 unbound-key
@@ -481,7 +537,7 @@ func (a *App) pollThemeApply() {
 	// probe is one map read per theme apply.
 	if res.name != "" && a.d.Prefs.Load().HasThemeRectOverride(res.name, "ms_chatlog") {
 		a.d.Prefs.ClearThemeRectOverride(res.name, "ms_chatlog")
-		a.debug.Push("cleared a stale ms_chatlog layout override (it now means AO2's debug log)")
+		a.pushDebug("cleared a stale ms_chatlog layout override (it now means AO2's debug log)")
 	}
 	// Theme chrome uploads PINNED (above), so applying a theme can evict
 	// emote-button art from T1. The gen-keyed page cache re-Gets on the
@@ -489,8 +545,8 @@ func (a *App) pollThemeApply() {
 	// until demandAsset's per-slot retry window elapses. Force a fresh
 	// re-demand so the emote grid heals immediately after a theme switch
 	// (the same invariant pollCharINI applies on a character change).
-	a.rcache.emoteBtnOff, a.rcache.emoteBtnOn, a.rcache.emoteIconPages = nil, nil, nil
-	a.emotepick.emoteAsk, a.rcache.emoteIconAsk = nil, nil
+	a.emoteBtnOff, a.emoteBtnOn, a.emoteIconPages = nil, nil, nil
+	a.emoteAsk, a.emoteIconAsk = nil, nil
 	// #35: last, because it needs the geometry landed above (themeRectsOrig) and
 	// because a resize is the most disruptive thing this function can do. No-op
 	// unless THIS apply's generation is the one a user-initiated pick armed —
@@ -508,11 +564,11 @@ func (a *App) pollThemeApply() {
 // tab switches, and disconnect funnel through here. No-op when the
 // right theme is already applied (loads are async but not free).
 func (a *App) ensureThemeForSession() {
-	want := a.srvMeta.themeBound
+	want := a.themeBound
 	if want == "" {
 		want, _ = a.d.Prefs.Load().Theme()
 	}
-	if want != "" && want != a.toolbox.themeAppliedName {
+	if want != "" && want != a.themeAppliedName {
 		a.applyThemeAsync()
 	}
 }
@@ -526,6 +582,7 @@ const themeUnboundReportCap = 12
 // unboundDesignKeys lists the theme's rect-shaped design keys that reach no
 // widget: not a themeSlots row, not a deliberate deferral, not a char-select key.
 // "" when the theme is fully covered.
+//
 // This is the observability that makes "a missing rect draws nothing" supportable
 // — a player who loses a control can be told which key their theme declares that
 // AsyncAO does not read. Allocates, and walks every design key: apply goroutine
@@ -598,7 +655,7 @@ func themeApplySummary(res *themeApply) string {
 // from overlay draws that run every frame. Misses heal (paced) and cache
 // negatively until the next upload/eviction bumps the generation.
 func (a *App) themePage(stem string) (*render.TexturePage, bool) {
-	if !a.skin.themeTex[stem] {
+	if !a.themeTex[stem] {
 		return nil, false
 	}
 	gen := a.d.Store.Generation()
@@ -622,10 +679,10 @@ func (a *App) themePage(stem string) (*render.TexturePage, bool) {
 // now is the frame's clock snapshot (real time for callers outside a
 // frame, e.g. headless tests).
 func (a *App) now() time.Time {
-	if a.budget.frameNow.IsZero() {
+	if a.frameNow.IsZero() {
 		return time.Now()
 	}
-	return a.budget.frameNow
+	return a.frameNow
 }
 
 // themeElapsed is the animation clock for looping theme art: time since
@@ -633,15 +690,26 @@ func (a *App) now() time.Time {
 // steps with pageFrameLoop instead of freezing on Frames[0]. Reads the
 // frame snapshot — themed frames step this at ~10 draw sites.
 func (a *App) themeElapsed() time.Duration {
-	if a.toolbox.themeAt.IsZero() {
+	if a.themeAt.IsZero() {
 		return 0
 	}
-	return a.now().Sub(a.toolbox.themeAt)
+	return a.now().Sub(a.themeAt)
 }
 
 // themeFrame picks the current animation frame for a theme page — static pages
 // cost one len check, animated ones loop on the theme clock (and mark the
 // frame's animated-chrome census so the static skip keeps stepping them).
+//
+// ONE BODY WITH elementFrame, not a twin. The two were documented as honouring
+// the same contract and had already stopped: elementFrame respects the
+// ReduceMotion latch and this one did not, so a themed install with the
+// accessibility option ON showed STILL elements over ANIMATING chrome — and,
+// because the census here kept holding the pacer at the animation cadence, the
+// person who turned it on got neither the stillness nor the idle frame rate.
+// Both now share elementFrameIndex (themeclock.go) and both read
+// themeFXFrozen; the only remaining difference is whose clock they read, which
+// is the difference that was always meant to be there.
+//
 // `loop` is true because theme chrome loops by definition — a chatbox skin has
 // no "finished" state. That is what themeFrame always did (pageFrameLoop); it
 // is now said in the shared function's own vocabulary.
@@ -652,7 +720,7 @@ func (a *App) themeFrame(page *render.TexturePage) *sdl.Texture {
 	if len(page.Frames) == 1 {
 		return page.Frames[0]
 	}
-	if a.fxPool.themeFXFrozen {
+	if a.themeFXFrozen {
 		return page.Frames[0] // ReduceMotion, latched once per frame (reduceMotionNow)
 	}
 	idx, live := elementFrameIndex(page, a.themeElapsed(), true)
@@ -666,24 +734,71 @@ func (a *App) themeFrame(page *render.TexturePage) *sdl.Texture {
 // URL (the state machine plays it at message-display time, where AO2's
 // handle_ic_message does — the theme INI itself lives UI-side).
 func (a *App) pushRealizationToRoom() {
-	if a.link.room == nil {
+	if a.room == nil {
 		return
 	}
-	if name := a.skin.themeSounds["realization"]; name != "" {
-		a.link.room.RealizationSFX = a.link.urls.SFX(name) // AssetType: SFX (realization)
+	if name := a.themeSounds["realization"]; name != "" {
+		a.room.RealizationSFX = a.urls.SFX(name) // AssetType: SFX (realization)
 	} else {
-		a.link.room.RealizationSFX = ""
+		a.room.RealizationSFX = ""
 	}
 }
 
 // healTheme re-runs the theme load when T1 evicted a theme texture the UI
 // still needs — paced to one ask per themeHealPeriod (healScenery pattern).
 func (a *App) healTheme() {
-	if time.Since(a.skin.themeHealAt) > themeHealPeriod {
-		a.skin.themeHealAt = time.Now()
+	if time.Since(a.themeHealAt) > themeHealPeriod {
+		a.themeHealAt = time.Now()
 		a.applyThemeAsync()
 	}
 }
+
+// debugStampLayout prefixes every ring row with the wall clock of its LATEST
+// sighting (the ring is diagnostics, so absolute time beats elapsed).
+const debugStampLayout = "15:04:05 "
+
+// debugFoldWindow is how long a message stays foldable: seen again within this
+// of its last sighting, it collapses into the existing row's ×N counter instead
+// of appending another.
+//
+// The collapse used to be CONSECUTIVE-ONLY, which any real flood defeats: the
+// field report's panel interleaved two chatty sources — the KFO packet family
+// this client deliberately does not implement (TT/TIN/TF/CHECK) and one absent
+// desk overlay re-reported per IC message — so neither was ever the immediately
+// previous line, and 25 of the ring's 120 rows said the same two things while
+// genuine one-off failures aged out. Folding by TIME instead means one row per
+// distinct message for as long as it keeps repeating. 90 s is comfortably wider
+// than the gap between IC messages (the cadence that produced the flood) and
+// still narrow enough that the same failure recurring much later reads as a new
+// event rather than silently bumping a stale counter.
+//
+// This is presentation ONLY. Nothing here changes which packets are handled or
+// which assets are probed; the deferred-packet decision stands.
+const debugFoldWindow = 90 * time.Second
+
+// debugEntry is one row of the bounded failure ring. text is derived from the
+// other three and cached, so the fold costs one re-render per PUSH rather than
+// per draw (the panel redraws at frame rate while it is open).
+type debugEntry struct {
+	raw   string    // the caller's message — the fold key
+	at    time.Time // latest sighting; the fold window is measured from it
+	count int       // sightings folded into this row
+	text  string    // rendered row: stamp + raw (+ "  ×N")
+}
+
+// render rebuilds the displayed row from the entry's state.
+func (e debugEntry) render() string {
+	if e.count > 1 {
+		return e.at.Format(debugStampLayout) + e.raw + fmt.Sprintf("  ×%d", e.count)
+	}
+	return e.at.Format(debugStampLayout) + e.raw
+}
+
+// pushDebug appends one line to the bounded failure log (debug overlay),
+// folding a repeat of a message already seen inside debugFoldWindow into that
+// row's ×N counter so a chatty source can't flush real failures out of the
+// ring. Render thread only.
+func (a *App) pushDebug(line string) { a.pushDebugAt(line, time.Now()) }
 
 // logSpeakerAnimDiag logs the active speaker sprite's animation stats to the
 // debug log once per base change (#110 frame-rate diagnostic). The debug panel
@@ -696,13 +811,45 @@ func (a *App) logSpeakerAnimDiag() {
 	if !ok {
 		return
 	}
-	if si.Base == a.frame.lastSpeakerDiagBase {
+	if si.Base == a.lastSpeakerDiagBase {
 		return // same base already logged — don't flood the ring
 	}
-	a.frame.lastSpeakerDiagBase = si.Base
-	a.debug.Push(fmt.Sprintf("speaker anim: %s · %d/%d frames · delays %d/%d/%d ms (min/avg/max)",
+	a.lastSpeakerDiagBase = si.Base
+	a.pushDebug(fmt.Sprintf("speaker anim: %s · %d/%d frames · delays %d/%d/%d ms (min/avg/max)",
 		si.Base, si.Kept, si.Source,
 		si.MinDelay/time.Millisecond, si.AvgDelay/time.Millisecond, si.MaxDelay/time.Millisecond))
+}
+
+// pushDebugAt is pushDebug with the clock injected — the fold is a TIME window,
+// so the tests drive the window from here rather than by sleeping.
+func (a *App) pushDebugAt(line string, now time.Time) {
+	// The ring is ordered by latest sighting (a fold moves its row to the tail),
+	// so scanning backwards can stop at the first row outside the window: every
+	// row before it is older still. That bounds the scan without a second cap.
+	for i := len(a.debugLog) - 1; i >= 0; i-- {
+		e := a.debugLog[i]
+		if now.Sub(e.at) > debugFoldWindow {
+			break
+		}
+		if e.raw != line {
+			continue
+		}
+		e.count++
+		e.at = now
+		e.text = e.render()
+		// Move to the tail: keeps the ordering the early exit above relies on,
+		// and keeps a repeating source where the reader is looking (newest end)
+		// instead of pinned at the position of its first sighting.
+		copy(a.debugLog[i:], a.debugLog[i+1:])
+		a.debugLog[len(a.debugLog)-1] = e
+		return
+	}
+	e := debugEntry{raw: line, at: now, count: 1}
+	e.text = e.render()
+	a.debugLog = append(a.debugLog, e)
+	if len(a.debugLog) > debugLogCap {
+		a.debugLog = a.debugLog[len(a.debugLog)-debugLogCap:]
+	}
 }
 
 // drainThumbs uploads loaded low-q sprite thumbnails into T1 under their
@@ -745,17 +892,17 @@ func (a *App) drainWarnings() {
 			// compares the base against its own current message, so wrong-room
 			// bases are a string-compare no-op.
 			if w.Type == assets.AssetTypeCharSprite {
-				if a.link.room != nil {
-					a.link.room.NotifyAssetMissing(w.Base)
+				if a.room != nil {
+					a.room.NotifyAssetMissing(w.Base)
 				}
 				if a.splitRoom != nil {
 					a.splitRoom.NotifyAssetMissing(w.Base)
 				}
-				if a.sel.replayRoom != nil {
-					a.sel.replayRoom.NotifyAssetMissing(w.Base)
+				if a.replayRoom != nil {
+					a.replayRoom.NotifyAssetMissing(w.Base)
 				}
-				if a.sel.makerPreviewRoom != nil {
-					a.sel.makerPreviewRoom.NotifyAssetMissing(w.Base)
+				if a.makerPreviewRoom != nil {
+					a.makerPreviewRoom.NotifyAssetMissing(w.Base)
 				}
 				// missingno: relay the render-side confirmed-missing signal so the
 				// viewport draws the AO2 placeholder for this base instead of a stale
@@ -765,6 +912,8 @@ func (a *App) drainWarnings() {
 				// every spelling 404'd), and speculative Markov prefetches suppress it,
 				// so a predicted-but-absent base is never marked. Both this and the
 				// viewport read run on the render thread — the set carries no mutex.
+				// nil-guarded like the room relays above (Store is always set with
+				// Manager in production; the guard just keeps a Manager-only test safe).
 				if a.d.Store != nil {
 					a.d.Store.MarkMissing(w.Base)
 				}
@@ -779,17 +928,17 @@ func (a *App) drainWarnings() {
 			// droppable Warning lane, no new channel/goroutine (§17.4); each room
 			// string-compares against its own scene, so wrong-room bases are a no-op.
 			if w.Type == assets.AssetTypeDeskOverlay {
-				if a.link.room != nil {
-					a.link.room.NotifyDeskMissing(w.Base)
+				if a.room != nil {
+					a.room.NotifyDeskMissing(w.Base)
 				}
 				if a.splitRoom != nil {
 					a.splitRoom.NotifyDeskMissing(w.Base)
 				}
-				if a.sel.replayRoom != nil {
-					a.sel.replayRoom.NotifyDeskMissing(w.Base)
+				if a.replayRoom != nil {
+					a.replayRoom.NotifyDeskMissing(w.Base)
 				}
-				if a.sel.makerPreviewRoom != nil {
-					a.sel.makerPreviewRoom.NotifyDeskMissing(w.Base)
+				if a.makerPreviewRoom != nil {
+					a.makerPreviewRoom.NotifyDeskMissing(w.Base)
 				}
 				// The render-side half: syncAnimDesk releases the held desk layer on
 				// this flag, so nothing is blitted (AO2's ui_vp_desk->hide()). The set
@@ -807,26 +956,29 @@ func (a *App) drainWarnings() {
 			// (missingno) or a desk (hide the layer), a missing background / chatbox
 			// / sound has no render-side placeholder to swap in — the renderer's own
 			// fallback (black bg / normal chatbox / silent) already covers it.
+			// Each room string-compares against its own scene, so wrong-room bases
+			// are a no-op; the preanim side effect in NotifyAssetMissing is guarded
+			// by base == Scene.Speaker.PreanimBase, which these types never equal.
 			switch w.Type {
 			case assets.AssetTypeBackground, assets.AssetTypeMisc, assets.AssetTypeSFX, assets.AssetTypeBlip, assets.AssetTypeShoutBubble:
-				if a.link.room != nil {
-					a.link.room.NotifyAssetMissing(w.Base)
+				if a.room != nil {
+					a.room.NotifyAssetMissing(w.Base)
 				}
 				if a.splitRoom != nil {
 					a.splitRoom.NotifyAssetMissing(w.Base)
 				}
-				if a.sel.replayRoom != nil {
-					a.sel.replayRoom.NotifyAssetMissing(w.Base)
+				if a.replayRoom != nil {
+					a.replayRoom.NotifyAssetMissing(w.Base)
 				}
-				if a.sel.makerPreviewRoom != nil {
-					a.sel.makerPreviewRoom.NotifyAssetMissing(w.Base)
+				if a.makerPreviewRoom != nil {
+					a.makerPreviewRoom.NotifyAssetMissing(w.Base)
 				}
 			}
 			line := "Missing asset: " + w.Base
 			if len(w.Tried) > 0 {
 				line += " (tried " + strings.Join(w.Tried, " ") + " — see Settings → formats)"
 			}
-			a.debug.Push(line) // unconditional: the Debug ▸ Log tab is the detail view
+			a.pushDebug(line) // unconditional: the Debug ▸ Log tab is the detail view
 			if show {
 				// #27: the chip, NOT warnLine. See assetmisschip.go for why the
 				// shared toast channel was the wrong surface for this class.
@@ -850,7 +1002,7 @@ func (a *App) drainMusicFailures() {
 		select {
 		case f := <-a.d.Manager.MusicFailures():
 			line := "Music didn't load (network) — " + shortMusicName(f.URL)
-			a.debug.Push(line + ": " + f.Err.Error())
+			a.pushDebug(line + ": " + f.Err.Error())
 			a.jukeWarn(line)
 		default:
 			return
@@ -946,9 +1098,10 @@ func (a *App) postFX() render.PostFX {
 // while no overrides exist).
 // applySpriteOverrides applies them to the ACTIVE room. Every other live room
 // goes through applySpriteOverridesTo — see there for why they must.
-func (a *App) applySpriteOverrides() { a.applySpriteOverridesTo(a.link.room) }
+func (a *App) applySpriteOverrides() { a.applySpriteOverridesTo(a.room) }
 
 // applySpriteOverridesTo applies the session's hide/move overrides to ONE room.
+//
 // Parameterised because these are USER-level choices — the Hide-desk toggle, the
 // per-character Missingno hides, the per-character offsets — and a
 // user who hides the desk means everywhere, not "in whichever room happens to be
@@ -960,7 +1113,7 @@ func (a *App) applySpriteOverridesTo(room *courtroom.Courtroom) {
 		return
 	}
 	hideDesk := a.d.Prefs.Load().HideDesk
-	if !hideDesk && len(a.roster.spriteOv) == 0 && len(a.dialogs.hiddenSprites) == 0 {
+	if !hideDesk && len(a.spriteOv) == 0 && len(a.hiddenSprites) == 0 {
 		return // nothing hidden/moved (the common case): one pref read, then out
 	}
 	sc := &room.Scene
@@ -974,14 +1127,14 @@ func (a *App) applySpriteOverridesTo(room *courtroom.Courtroom) {
 		key := strings.ToLower(layer.Name)
 		// Hidden sprites ("Missingno"): drop the layer entirely this session. The
 		// check is before the !Visible skip — a hidden sprite is otherwise visible.
-		if _, hidden := a.dialogs.hiddenSprites[key]; hidden {
+		if _, hidden := a.hiddenSprites[key]; hidden {
 			layer.Visible = false
 			continue
 		}
 		if !layer.Visible {
 			continue
 		}
-		if ov, ok := a.roster.spriteOv[key]; ok {
+		if ov, ok := a.spriteOv[key]; ok {
 			layer.OffsetX, layer.OffsetY = ov[0], ov[1]
 		}
 	}
@@ -995,26 +1148,32 @@ func (a *App) applySpriteOverridesTo(room *courtroom.Courtroom) {
 // nothing else re-demands it, so it vanishes mid-message. Paced one ask per
 // base per charIconRetryInterval; HIGH because this is the live scene.
 func (a *App) healScenery() {
-	sc := &a.link.room.Scene
+	sc := &a.room.Scene
 	now := time.Now()
 	// Each heal consults the shared per-scene futility budget (sceneHealAllowed):
 	// when the settled working set exceeds the T1 main tier, every heal evicts
 	// another live base and this loop — paced or not — churned decode→upload→
 	// evict→re-demand forever (the focused half of the idle-CPU-burn report).
-	if sc.BackgroundBase != "" && !(sc.BackgroundBase == a.demand.bgAskBase && now.Sub(a.demand.bgAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.BackgroundBase) && a.sceneWarm.healAllowed(sc.BackgroundBase) {
-		a.demand.bgAskBase, a.demand.bgAskAt = sc.BackgroundBase, now
+	if sc.BackgroundBase != "" && !(sc.BackgroundBase == a.bgAskBase && now.Sub(a.bgAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.BackgroundBase) && a.sceneHealAllowed(sc.BackgroundBase) {
+		a.bgAskBase, a.bgAskAt = sc.BackgroundBase, now
 		a.d.Manager.Prefetch(sc.BackgroundBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
 	}
 	// IsMissing is checked alongside Contains because a base that 404'd
 	// conclusively can never become Contains: without this the desk arm re-demanded
 	// a known-absent desk every charIconRetryInterval for the whole heal budget,
 	// which is what produced the ×5..×9 runs of the same missing-asset line (#27).
-	if sc.DeskBase != "" && !(sc.DeskBase == a.demand.deskAskBase && now.Sub(a.demand.deskAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.DeskBase) && !a.d.Store.IsMissing(sc.DeskBase) && a.sceneWarm.healAllowed(sc.DeskBase) {
-		a.demand.deskAskBase, a.demand.deskAskAt = sc.DeskBase, now
+	// drainWarnings MarkMissing'd that exact base, and the set self-heals
+	// (clearMissing on upload), so a desk that later appears still recovers — the
+	// per-message Prefetch in the courtroom is the re-try, not this loop.
+	// The background arm above deliberately does NOT get the same gate: Background
+	// is never MarkMissing'd (that would change the viewport's hold-previous
+	// semantics), so IsMissing is always false for it anyway.
+	if sc.DeskBase != "" && !(sc.DeskBase == a.deskAskBase && now.Sub(a.deskAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.DeskBase) && !a.d.Store.IsMissing(sc.DeskBase) && a.sceneHealAllowed(sc.DeskBase) {
+		a.deskAskBase, a.deskAskAt = sc.DeskBase, now
 		a.d.Manager.Prefetch(sc.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
 	}
-	a.sceneWarm.healSpriteLayer(&a.env, &sc.Speaker, &a.demand.spkAskBase, &a.demand.spkAskAt, now)
-	a.sceneWarm.healSpriteLayer(&a.env, &sc.Pair, &a.demand.pairAskBase, &a.demand.pairAskAt, now)
+	a.healSpriteLayer(&sc.Speaker, &a.spkAskBase, &a.spkAskAt, now)
+	a.healSpriteLayer(&sc.Pair, &a.pairAskBase, &a.pairAskAt, now)
 }
 
 // healSpriteLayer re-demands one visible character sprite layer if its active
@@ -1022,25 +1181,25 @@ func (a *App) healScenery() {
 // bare-then-folder chain EmoteAlts feeds the primary per-message demand —
 // paced per layer like the scenery above. No-op while the sprite is resident
 // or recently asked.
-func (scenewarm *sceneWarmState) healSpriteLayer(e *env, layer *courtroom.SpriteLayer, askBase *string, askAt *time.Time, now time.Time) {
+func (a *App) healSpriteLayer(layer *courtroom.SpriteLayer, askBase *string, askAt *time.Time, now time.Time) {
 	if !layer.Visible || layer.Active == "" {
 		return
 	}
 	if *askBase == layer.Active && now.Sub(*askAt) < charIconRetryInterval {
 		return // recently asked for this exact base; let it land
 	}
-	if e.d.Store.Contains(layer.Active) {
+	if a.d.Store.Contains(layer.Active) {
 		return // resident — nothing to heal
 	}
-	if !scenewarm.healAllowed(layer.Active) {
+	if !a.sceneHealAllowed(layer.Active) {
 		return // per-scene futility budget spent (over-tier churn / permanent 404) — quiet until the scene changes
 	}
 	*askBase, *askAt = layer.Active, now
-	e.d.Manager.PrefetchChain(layer.Active, courtroom.SpriteHealAlts(layer.Active), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (heal evicted live sprite: bare + folder)
+	a.d.Manager.PrefetchChain(layer.Active, courtroom.SpriteHealAlts(layer.Active), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (heal evicted live sprite: bare + folder)
 	// Cold sprite + thumbnails on: also ask for the low-q stand-in (paced by the
 	// same retry window above; the loader reads + decodes off-thread and
 	// drainThumbs uploads under the thumb:// key the renderer probes).
-	if th := e.d.Manager.Thumbs(); th != nil && th.Enabled() && !e.d.Store.Contains(render.ThumbKeyPrefix+layer.Active) {
+	if th := a.d.Manager.Thumbs(); th != nil && th.Enabled() && !a.d.Store.Contains(render.ThumbKeyPrefix+layer.Active) {
 		th.RequestLoad(layer.Active)
 	}
 }
@@ -1085,15 +1244,18 @@ func (a *App) icStamp() string { return a.now().Format(icStampLayout) }
 // no-op when the feature is off (the default) — and the membership scan
 // allocates nothing, so it's safe per message even in a catch-up burst.
 // ignoreSpeaker reports whether an IC message is from an ignored player (#81),
+// matched by showname-else-character — the only identity the MS wire carries (no
+// UID). Called once per incoming IC message (not per frame); the empty-list
+// default is one RLock and zero iterations, so an un-used ignore list is free.
 func (a *App) ignoreSpeaker(m *protocol.ChatMessage) bool {
-	if m == nil || a.srvMeta.serverKey == "" {
+	if m == nil || a.serverKey == "" {
 		return false
 	}
 	name := strings.TrimSpace(m.Showname)
 	if name == "" {
 		name = strings.TrimSpace(m.CharName)
 	}
-	return a.d.Prefs.Load().ServerIgnoreMatch(a.srvMeta.serverKey, name)
+	return a.d.Prefs.Load().ServerIgnoreMatch(a.serverKey, name)
 }
 
 func (a *App) friendMessage(serverKey string, m *protocol.ChatMessage) (bool, int32) {
@@ -1151,8 +1313,8 @@ func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 	}
 	// Desktop (OS) toast — only while you're tabbed away (#M4), rate-limited so a chatty
 	// friend can't storm it.
-	if a.d.Prefs.Load().FriendOSToast && !a.ctx.WindowFocused() && time.Since(a.sel.lastOSToast) >= osToastMinInterval {
-		a.sel.lastOSToast = time.Now()
+	if a.d.Prefs.Load().FriendOSToast && !a.ctx.WindowFocused() && time.Since(a.lastOSToast) >= osToastMinInterval {
+		a.lastOSToast = time.Now()
 		name := strings.TrimSpace(m.Showname)
 		if name == "" {
 			name = strings.TrimSpace(m.CharName)
@@ -1174,10 +1336,10 @@ func (a *App) signalModcall(serverName, notice string) {
 	if !a.d.Prefs.Load().ModcallToast || a.d.Prefs.Load().StreamerModeOn || a.ctx.WindowFocused() {
 		return // #M4: only toast when tabbed away (the in-app OOC + flash cover the focused case)
 	}
-	if time.Since(a.sel.lastOSToast) < osToastMinInterval {
+	if time.Since(a.lastOSToast) < osToastMinInterval {
 		return
 	}
-	a.sel.lastOSToast = time.Now()
+	a.lastOSToast = time.Now()
 	body := strings.TrimSpace(notice)
 	if serverName != "" {
 		body = serverName + ": " + body
@@ -1190,30 +1352,31 @@ func (a *App) signalModcall(serverName, notice string) {
 // explicit area click (curArea), so server-initiated moves keep the current log
 // — same as the default continuous behavior. Runs only on an area click, never
 // per frame, and no-ops entirely when off, so it costs the default path nothing.
+// Bounded FIFO over visited areas (rule §17.4). Both maps park per tab.
 func (a *App) switchAreaScrollback(toArea string) {
-	if !a.d.Prefs.Load().PerAreaScroll || toArea == a.srvMeta.curArea {
+	if !a.d.Prefs.Load().PerAreaScroll || toArea == a.curArea {
 		return
 	}
-	if a.srvMeta.areaLogs == nil {
-		a.srvMeta.areaLogs = map[string][]icEntry{}
+	if a.areaLogs == nil {
+		a.areaLogs = map[string][]icEntry{}
 	}
 	// Save the area we're leaving (curArea); track its key order for eviction.
-	if _, seen := a.srvMeta.areaLogs[a.srvMeta.curArea]; !seen {
-		a.srvMeta.areaLogOrder = append(a.srvMeta.areaLogOrder, a.srvMeta.curArea)
+	if _, seen := a.areaLogs[a.curArea]; !seen {
+		a.areaLogOrder = append(a.areaLogOrder, a.curArea)
 	}
-	a.srvMeta.areaLogs[a.srvMeta.curArea] = a.chatlog.icLog
-	for len(a.srvMeta.areaLogOrder) > areaLogCacheMax {
-		oldest := a.srvMeta.areaLogOrder[0]
-		a.srvMeta.areaLogOrder = a.srvMeta.areaLogOrder[1:]
+	a.areaLogs[a.curArea] = a.icLog
+	for len(a.areaLogOrder) > areaLogCacheMax {
+		oldest := a.areaLogOrder[0]
+		a.areaLogOrder = a.areaLogOrder[1:]
 		if oldest != toArea { // never evict the log we're about to load
-			delete(a.srvMeta.areaLogs, oldest)
+			delete(a.areaLogs, oldest)
 		}
 	}
 	// Load the target area's saved log (nil = unvisited = a fresh empty log).
-	a.chatlog.icLog = a.srvMeta.areaLogs[toArea]
-	a.chatlog.icLogSeq++ // invalidate the wrap + filter caches
-	a.chatlog.icScroll, a.compose.icStick = 0, true
-	a.compose.icReadMark = len(a.chatlog.icLog)
+	a.icLog = a.areaLogs[toArea]
+	a.icLogSeq++ // invalidate the wrap + filter caches
+	a.icScroll, a.icStick = 0, true
+	a.icReadMark = len(a.icLog)
 }
 
 // logDetailed appends an IC message to the transcript when detailed logging is
@@ -1221,6 +1384,11 @@ func (a *App) switchAreaScrollback(toArea string) {
 // goroutine, so the message seam never blocks. A no-op (one pref read) when off,
 // so the default path is unaffected. Called at both message seams (active +
 // background tab), so the transcript captures every server you're connected to.
+//
+// session is the CALLING TAB's sessionState.logSession. It is a parameter rather
+// than read off a.sessionState here because the background seam (tabs.go) routes a
+// parked tab's message while a DIFFERENT tab is live: reading the live session
+// would have filed every backgrounded tab's lines under the foreground tab's log.
 func (a *App) logDetailed(server string, session int, m *protocol.ChatMessage) {
 	if m == nil || !a.d.Prefs.Load().DetailedLog {
 		return
@@ -1280,6 +1448,20 @@ func (a *App) transcriptFor(server string, session int) *transcriptWriter {
 // disambiguates the file NAME, which is a timestamp to the second: two tabs joining
 // one server in the same second would otherwise resolve to the same path and both
 // append to it, which is the very interleaving the per-tab key exists to end.
+//
+// Deliberately NOT sessionState.logSession: that id is process-global, so using it
+// in the name would produce logs/x/…-7.log for a server's first file merely because
+// six other tabs opened first. The ordinal is per server and starts at 1, so the
+// common single-tab case keeps the historical bare-timestamp name.
+//
+// It counts LIVE writers, which is exactly what the collision it guards against
+// needs: two tabs joining one server in the same second are both live, so the second
+// gets ordinal 2. SEQUENTIAL sessions are a different case — a reconnect inside the
+// same second as the session it replaced resolves to that session's name again and
+// APPENDS. That is deliberate and harmless (the first session is over, so the lines
+// are consecutive rather than interleaved) and it is the price of retiring writers
+// at all: a per-run high-water mark per server would be an unbounded map, which
+// hard rule §4 does not allow for a cosmetic file name.
 func (a *App) transcriptSeqFor(server string) int {
 	n := 1
 	for k := range a.translogs {
@@ -1294,12 +1476,17 @@ func (a *App) transcriptSeqFor(server string) int {
 // exists: the live one, or a parked tab's. It is the single definition of "this
 // writer still has an owner", so the reap below and any future caller cannot form
 // two different opinions about which files are alive.
+//
+// The live session is checked off App (a.serverName / a.logSession) and the parked
+// ones off their own tab state, which is exactly how the two message seams file
+// their lines (see logDetailed) — so a writer is owned precisely when some seam
+// could still write to it.
 func (a *App) transcriptOwned(k translogKey) bool {
-	if k.server == a.srvMeta.serverName && k.session == a.srvMeta.logSession {
+	if k.server == a.serverName && k.session == a.logSession {
 		return true
 	}
 	for _, t := range a.tabs {
-		if t != nil && t.state.srvMeta.serverName == k.server && t.state.srvMeta.logSession == k.session {
+		if t != nil && t.state.serverName == k.server && t.state.logSession == k.session {
 			return true
 		}
 	}
@@ -1308,6 +1495,16 @@ func (a *App) transcriptOwned(k translogKey) bool {
 
 // reapTranscripts retires and forgets every transcript writer no session owns any
 // more — one open file and one goroutine released per ended session.
+//
+// BY LIVENESS, not by call site. resetSessionState mints a fresh session on every
+// park, Disconnect and reconnect, and three separate places drop a tab slot; a
+// "close it here" call in each is a list that goes stale the first time a fourth
+// appears, and the failure mode is silent (the log just stops after 64 cycles).
+// Asking "does anything still own this key?" cannot go stale: a session that is
+// neither live nor parked is over by definition. Cheap enough to call from every
+// lifecycle edge — the map is capped at transcriptWriterCap and the tab list at
+// the tab cap, and these are user-scale events, not frame work.
+//
 // Retire, never close: the goroutine drains and closes the file on its own so the
 // render thread never waits on a disk flush (hard rule §2).
 func (a *App) reapTranscripts() {
@@ -1350,12 +1547,12 @@ func (a *App) pushICStyled(line string, color int, friend bool, friendColor int3
 	if urls := extractURLs(line, 1); len(urls) > 0 {
 		url = urls[0]
 	}
-	a.chatlog.icLog = append(a.chatlog.icLog, icEntry{text: line, color: color, url: url, friend: friend, friendColor: friendColor, speaker: speaker, stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart})
-	if cap := a.icLogCapFor(); cap > 0 && len(a.chatlog.icLog) > cap {
-		copy(a.chatlog.icLog, a.chatlog.icLog[len(a.chatlog.icLog)-cap:])
-		a.chatlog.icLog = a.chatlog.icLog[:cap]
+	a.icLog = append(a.icLog, icEntry{text: line, color: color, url: url, friend: friend, friendColor: friendColor, speaker: speaker, stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart})
+	if cap := a.icLogCapFor(); cap > 0 && len(a.icLog) > cap {
+		copy(a.icLog, a.icLog[len(a.icLog)-cap:])
+		a.icLog = a.icLog[:cap]
 	}
-	a.chatlog.icLogSeq++ // invalidate the filter cache (len alone lies at the cap)
+	a.icLogSeq++ // invalidate the filter cache (len alone lies at the cap)
 }
 
 // icLogCapFor returns the effective IC scrollback cap: 0 = don't cap at all,
@@ -1381,6 +1578,9 @@ func (a *App) icLogCapFor() int {
 // chars, which is why they arrived truncated; they now wrap at draw time
 // instead. 4096 still cut real /help dumps (a single-paragraph /help runs well
 // past 4 KiB), so it's 16 KiB: the OOC log holds at most icLogCap (1024)
+// entries (appendCapped caps it), so even a hostile server that fills every
+// slot to the brim stores 1024 × 16384 B = 16 MiB — bounded and comfortably
+// inside the 256 MiB envelope, while real /help and MOTD texts sit far below.
 const oocLineCap = 16384
 
 // pushOOC appends an OOC log line. speaker is the sender's name for a real OOC
@@ -1393,6 +1593,10 @@ func (a *App) pushOOC(line, speaker string) {
 	// and the caller composes us ev.Name + ": " + a RAW ev.Text, so this is the lane
 	// where a marker actually arrives; the control frame itself was already decoded
 	// upstream (routeIncomingPM runs before this call), so by here it is display text.
+	//
+	// The head is preserved, which is what keeps the "speaker: " trim below working and
+	// keeps oocSpeakers a substring of oocLog — see stripDisplayTail for why stripping
+	// the whole composed line was wrong. Zero-alloc when absent.
 	line = stripDisplayTail(line, speaker)
 	// Harvest /getarea "[uid] name" rows for click-to-pair, from the RAW text:
 	// strip the "speaker: " prefix first, else when a server sends /getarea line
@@ -1414,7 +1618,7 @@ func (a *App) pushOOC(line, speaker string) {
 	// log — a multi-area /gas is a wall of text nobody asked to read in chat. Only a
 	// fetch WE sent arms the window (fetchRoster / fetchAreaForBan / the menu row), so
 	// somebody else's /getarea still shows.
-	if isAreaList && a.now().Before(a.roster.suppressAreaEchoUntil) {
+	if isAreaList && a.now().Before(a.suppressAreaEchoUntil) {
 		return // the entire /gas reply burst stays out of OOC, not just its first line
 	}
 	// A REFUSAL is deliberately NOT swallowed any more. It used to be — swallowed and
@@ -1424,19 +1628,22 @@ func (a *App) pushOOC(line, speaker string) {
 	// screen: "Invalid command." or an old KFO hub's "You cannot see players in all
 	// areas in this hub!" is the reason the press did nothing, and hiding it is worse
 	// than printing it once. It cannot spam: nothing sends the command on its own.
+	// Best-effort: mirror a received PM into the Friends-tab DM thread too (it also
+	// stays in the OOC log). On the real-OOC path only — AFTER the /gas suppression
+	// returns above — so a suppressed area burst can't double-fire it.
 	a.detectIncomingPM(text)
 	if len(line) > oocLineCap {
 		line = line[:oocLineCap] + "…"
 	}
-	a.chatlog.oocLog = appendCapped(a.chatlog.oocLog, line, icLogCap)
-	a.chatlog.oocSpeakers = appendCapped(a.chatlog.oocSpeakers, speaker, icLogCap)
-	a.chatlog.oocSeq++ // invalidate the wrapped-lines cache
+	a.oocLog = appendCapped(a.oocLog, line, icLogCap)
+	a.oocSpeakers = appendCapped(a.oocSpeakers, speaker, icLogCap)
+	a.oocSeq++ // invalidate the wrapped-lines cache
 	// Every active-tab OOC-ish event (real chat, [MOD CALL], CLIENT auth lines,
 	// [CASE], [SERVER] notices/mute) already funnels through this one function,
 	// same as AO2's single append_server_chatmessage entry point — so this one
 	// call site is the transcript's for the whole channel, "log only what's
 	// shown" (the truncated, post-suppression `line` above, not the raw input).
-	a.logDetailedOOC(a.srvMeta.serverName, a.srvMeta.logSession, line) // detailed transcript (opt-in), this tab's own file
+	a.logDetailedOOC(a.serverName, a.logSession, line) // detailed transcript (opt-in), this tab's own file
 }
 
 func appendCapped(list []string, line string, cap int) []string {
@@ -1470,6 +1677,34 @@ func speakerHeadLen(line, speaker string) int {
 
 // stripDisplayTail drops the zero-width sidechannel from a composed log line's BODY
 // and leaves the speaker head byte-identical.
+//
+// NOT the whole line, and that is the entire point. StripSpriteStyle is GATED on the
+// U+2060 sentinel but then deletes the whole nine-rune alphabet, and three of those —
+// U+200B/200C/200D — are ordinary text: a ZWJ is what holds an emoji cluster together
+// and a ZWNJ is mandatory in Persian orthography. The gate and the deletion therefore
+// do not distribute over concatenation:
+//
+//	StripSpriteStyle(name + ": " + body) != name + ": " + StripSpriteStyle(body)
+//
+// whenever the sentinel is in the BODY and alphabet runes are in the NAME. Every
+// marker is appended to the end of an outgoing body (the IC send, messaging_panel's
+// DM), while the name is its own wire field — so stripping the composed line let one
+// speaker's body marker authorise deleting runes out of another player's name. On the
+// OOC lane that is not theoretical: pushOOC composes ev.Name + ": " + a RAW ev.Text,
+// so every AsyncAO DM sets the gate for the whole line, and a rainbow-flag showname
+// came apart into two glyphs on every row that player sent.
+//
+// It also kept icEntry.speaker / oocSpeakers from being a substring of the line they
+// are stored parallel to, so Ctx.logRowSplit's strings.Index missed and the bold +
+// tinted name span silently vanished, draw and selection alike.
+//
+// "Strip the speaker the same way" does NOT repair either: the sentinel gate is a
+// whole-string test, so StripSpriteStyle(speaker) is a no-op on exactly the names that
+// break. A speaker cleaned some other way then stops matching the roster —
+// currentSpeakerName is EqualFold'd against the RAW p.showname (playerlist.go), so the
+// speaking-row highlight and the speakers-first sort would go dead for that player.
+// Leaving the head alone is what keeps both contracts at once, and it is the same rule
+// subtitleLine already follows (subtitles.go: strip Message, keep Showname).
 func stripDisplayTail(line, speaker string) string {
 	head := speakerHeadLen(line, speaker)
 	if head == 0 {
@@ -1482,9 +1717,21 @@ func stripDisplayTail(line, speaker string) string {
 // sidechannel comes off the BODY (stripDisplayTail), then the result is bounded
 // (hostile-server guard) WITHOUT the old 120-char "…" truncation — the IC log
 // word-wraps long lines at draw time (icWrapped). Real IC messages (≤256 on the wire)
+// are never cut. Byte-length fast path; the rune conversion only runs on a genuinely
+// huge line.
+//
 // The two steps live together because their ORDER is the point: the cap has to be
 // measured on the text a human sees, so an invisible marker can neither eat the
 // budget nor be cut in half and left as a partial run.
+//
+// Stripping HERE and not only at the formatters is what makes the guarantee
+// structural. Every icEntry the client stores gets its text through this one
+// function — pushIC for the active tab, routeBackgroundEvent for a parked one — so a
+// future log write site is covered by using the same chokepoint rather than by
+// remembering a rule. speaker is a parameter and not an afterthought for the same
+// reason: a caller cannot store an entry without telling this function which part of
+// the line is a name, so it cannot accidentally get the whole-line strip.
+// Zero-alloc when absent (one ContainsRune).
 func capLogLine(s, speaker string) string {
 	s = stripDisplayTail(s, speaker)
 	if len(s) <= icLineCap {

@@ -1,6 +1,7 @@
 package ui
 
 // The free-element BAKE's gates (v1.90.0 W3).
+//
 // The draw path's gates live in themeelements_test.go and were written first,
 // against a stub painter table, because that is what the wave plan asked for. These
 // are the other half: what the bake must PRODUCE for those loops to be drawing the
@@ -55,21 +56,30 @@ func stageThemedWithSidecar(t testing.TB, name string) (*App, *themeLayoutCache,
 		cleanup()
 		t.Fatal(err)
 	}
-	return a, &a.skin.themeLay, cleanup
+	return a, &a.themeLay, cleanup
 }
 
 // applyFixtureSidecar lands a sidecar the way pollThemeApply does, in the SAME
 // order, and bakes one frame.
+//
+// The [overrides] fold is not decoration here. In the live client the author's
+// rows are laid over the resolved design map BEFORE the layout cache is built
+// (app.go, foldSidecarOverrides), so by the time anything bakes, a.themeRects
+// already carries the tier's answer — refusals, AO2's second spelling and all.
+// A fixture that skipped the fold left every consumer downstream of it reading a
+// map the client never has, which is how the pane bake came to ask the sidecar a
+// second time and get a different answer.
+//
 // Both maps take it, because both do in the client: the pristine one is what
 // reset/undo restore from, the live one is what the editor's own rung is applied
 // over.
 func applyFixtureSidecar(a *App, sc *theme.Sidecar) error {
-	a.elemBake.themeSidecar = sc
-	foldSidecarOverrides(a.skin.themeRectsOrig, sc)
-	foldSidecarOverrides(a.skin.themeRects, sc)
-	a.skin.themeLay.valid = false
+	a.themeSidecar = sc
+	foldSidecarOverrides(a.themeRectsOrig, sc)
+	foldSidecarOverrides(a.themeRects, sc)
+	a.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
-	if !a.skin.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
+	if !a.themeLay.valid || !a.toolboxThemeRectOn {
 		return errFixtureNotThemed
 	}
 	return nil
@@ -87,6 +97,7 @@ var errFixtureNotThemed = errors.New("the fixture did not reach the themed branc
 // TestStockAO2ThemeGetsZeroElements is the property every install that never opens
 // the theme editor depends on: an AO2 theme has no sidecar, so it declares no
 // elements, so the three band loops are three empty loops.
+//
 // It asserts the BAND RANGES too, not just the count, because a count of zero with
 // a stale non-empty range would still walk the array — and the array is not cleared
 // between rebuilds, so those entries are a previous theme's.
@@ -95,8 +106,8 @@ func TestStockAO2ThemeGetsZeroElements(t *testing.T) {
 	defer cleanup()
 
 	a.drawCourtroom(1280, 720)
-	lay := &a.skin.themeLay
-	if a.elemBake.themeSidecar != nil {
+	lay := &a.themeLay
+	if a.themeSidecar != nil {
 		t.Fatal("the stock fixture carries a sidecar — it is meant to be a plain AO2 theme")
 	}
 	if lay.elN != 0 {
@@ -115,6 +126,15 @@ func TestStockAO2ThemeGetsZeroElements(t *testing.T) {
 // TestSidecarSwapClearsThePreviousThemesElements pins the theme-swap prune for this
 // tier: applying a theme with no sidecar after one with elements must leave nothing
 // behind.
+//
+// themeLayoutIn's cold path DOES zero the baked array — `*lay = themeLayoutCache{…}`
+// (theme_layout.go:274) replaces the whole struct, fixed array included — so the
+// stale rows cannot survive a rebuild. The gate is still exactly as load-bearing:
+// what it pins is that the SWAP reaches that rebuild at all and that elN and the
+// three band ranges come back zero, which is the state the draw loop reads. Nothing
+// here relies on the array's contents, so a future cache that recycled its rows
+// (to skip re-baking unchanged elements, say) would keep passing for the right
+// reason rather than by accident.
 func TestSidecarSwapClearsThePreviousThemesElements(t *testing.T) {
 	a, lay, cleanup := stageThemedWithSidecar(t, "w3_order.ini")
 	defer cleanup()
@@ -122,8 +142,8 @@ func TestSidecarSwapClearsThePreviousThemesElements(t *testing.T) {
 		t.Fatal("the ordering fixture baked nothing — the rest of this test proves nothing")
 	}
 
-	a.elemBake.themeSidecar = nil
-	a.skin.themeLay.valid = false
+	a.themeSidecar = nil
+	a.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
 	if lay.elN != 0 {
 		t.Fatalf("after swapping to a theme with no sidecar, elN is %d — the previous theme's elements survived", lay.elN)
@@ -137,13 +157,21 @@ func TestSidecarSwapClearsThePreviousThemesElements(t *testing.T) {
 
 // TestElementsAreNotInThemeLayoutKeys is the AO2-parity gate stated as a namespace
 // rule: an element id is NEVER a design key.
+//
+// That is what makes parity structural rather than careful. The census oracle over
+// courtroom_design.ini's root keys (themecensus_test.go) walks themeSlots,
+// themeSlotDeferred and charSelectDefaultRects; applyRectOverrides and
+// themeKeyEditable walk a.themeRects. If an element id could reach any of them it
+// would become a draggable, persistable, override-able box — and the whole "free
+// elements cannot move an AO2 widget" contract would be a convention instead of a
+// consequence.
 func TestElementsAreNotInThemeLayoutKeys(t *testing.T) {
 	a, lay, cleanup := stageThemedWithSidecar(t, "w3_render.ini")
 	defer cleanup()
 	if lay.elN == 0 {
 		t.Fatal("the render fixture baked no elements — this gate would be vacuous")
 	}
-	sc := a.elemBake.themeSidecar
+	sc := a.themeSidecar
 	for i := range sc.Elements {
 		id := sc.Elements[i].ID
 		if id == "" {
@@ -152,7 +180,7 @@ func TestElementsAreNotInThemeLayoutKeys(t *testing.T) {
 		if _, present := lay.r[id]; present {
 			t.Errorf("element id %q reached the SCALED rect cache — elements must never enter the slot-key namespace", id)
 		}
-		if _, present := a.skin.themeRects[id]; present {
+		if _, present := a.themeRects[id]; present {
 			t.Errorf("element id %q reached a.themeRects — it would become a draggable, persistable box", id)
 		}
 		if themeSlotFor(id) != nil {
@@ -187,6 +215,7 @@ func bakedByFill(lay *themeLayoutCache, col sdl.Color) (*bakedElement, int) {
 
 // TestAnchoredRectIsASignedDelta is design §6.6 R1, measured: an anchored element's
 // rect is the ANCHOR'S box plus the rect, component by component, in DESIGN pixels.
+//
 // The delta scales with the canvas, which is the half that is easy to get wrong: a
 // six-pixel inflate authored against a 714-wide canvas must still be six DESIGN
 // pixels at 1280x720, or a frame that hugs its chatbox at one window size stands off
@@ -218,6 +247,7 @@ func TestAnchoredRectIsASignedDelta(t *testing.T) {
 
 // TestElementWithAnAbsentAnchorIsInert is design §6.6 R10: an element whose anchor
 // key no layout declares is INERT — no widget, no decoration — and is NOT an error.
+//
 // Skip-if-absent rather than "fall back to the canvas": a decoration placed
 // relative to a widget that is not there has no defined position, and putting it
 // somewhere anyway is how a theme ends up with a badge floating in the middle of
@@ -299,11 +329,15 @@ func TestElementOpacityFoldsIntoTheBakedColours(t *testing.T) {
 // prevents is cumulative: a second reparent composes the pane's origin onto a rect
 // that already carries it, so the widget walks further off screen at every rebuild
 // — a window resize away from a bug nobody can reproduce from a screenshot.
+//
+// "Exactly once" is checked as an ARITHMETIC identity rather than a call count: the
+// host lands at pane origin + its pane-relative override, and a second application
+// could not produce that rect.
 func TestPaneReparentsExactlyOnce(t *testing.T) {
 	a, lay, cleanup := stageThemedWithSidecar(t, "w3_panes.ini")
 	defer cleanup()
 
-	pane, ok := a.paneRect(lay, &a.elemBake.themeSidecar.Panes[0])
+	pane, ok := a.paneRect(lay, &a.themeSidecar.Panes[0])
 	if !ok {
 		t.Fatal("the pane did not resolve — its space is missing from the fixture layout")
 	}
@@ -333,7 +367,7 @@ func TestPaneReparentsExactlyOnce(t *testing.T) {
 	// Idempotence over rebuilds: the same theme, re-baked, must land in the same
 	// place. This is the cumulative-drift failure stated directly.
 	before := lay.r["ic_chatlog"]
-	a.skin.themeLay.valid = false
+	a.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
 	if after := lay.r["ic_chatlog"]; after != before {
 		t.Fatalf("a second bake moved the host from %+v to %+v — the reparent is compounding", before, after)
@@ -348,7 +382,7 @@ func TestPaneHostKeepsExactlyOneDrawSite(t *testing.T) {
 	a, _, cleanup := stageThemedWithSidecar(t, "w3_panes.ini")
 	defer cleanup()
 
-	p := &a.elemBake.themeSidecar.Panes[0]
+	p := &a.themeSidecar.Panes[0]
 	for h := 0; h < p.NHosts; h++ {
 		key := p.Hosts[h]
 		slot := themeSlotFor(key)
@@ -379,17 +413,17 @@ func TestPaneDoesNotRehomeAParentRelativeChild(t *testing.T) {
 		Hosts:  [theme.PaneHostCap]string{"showname"},
 		NHosts: 1,
 	}}
-	a.elemBake.themeSidecar = sc
-	a.skin.themeLay.valid = false
+	a.themeSidecar = sc
+	a.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
 
 	// showname's design rect is chatbox-relative and small; if it had been
 	// re-homed it would now carry the pane's absolute origin.
-	got, ok := a.skin.themeLay.r["showname"]
+	got, ok := a.themeLay.r["showname"]
 	if !ok {
 		t.Skip("this fixture layout does not place showname")
 	}
-	if got.X >= a.skin.themeLay.area.X+int32(300*a.skin.themeLay.scaleX) {
+	if got.X >= a.themeLay.area.X+int32(300*a.themeLay.scaleX) {
 		t.Fatalf("showname baked at %+v — a chatbox child was re-homed into a pane, so its draw site "+
 			"will add the chatbox origin on top of the pane's", got)
 	}
@@ -401,6 +435,12 @@ func TestPaneDoesNotRehomeAParentRelativeChild(t *testing.T) {
 
 // TestElementDrawOrderIsBakedNotSorted pins BOTH halves of the design's
 // "bake, don't sort":
+//
+//  1. the ORDER is (band, then z, then declaration) — including the tie, which is
+//     what an unstable sort silently gets wrong;
+//  2. it is produced ONCE, at bake, and the draw path re-derives nothing — proved
+//     by dispatching the bands and comparing what the painters received against the
+//     baked array, index for index.
 func TestElementDrawOrderIsBakedNotSorted(t *testing.T) {
 	a, lay, cleanup := stageThemedWithSidecar(t, "w3_order.ini")
 	defer cleanup()
@@ -419,6 +459,15 @@ func TestElementDrawOrderIsBakedNotSorted(t *testing.T) {
 		}
 	}
 	// Bands are contiguous and cover exactly [0, elN).
+	//
+	// EMPTY BANDS ARE SKIPPED, and that is not a loosening. bakeThemeElements leaves
+	// a band nothing sorted into at its zero value {0, 0} (it only ever writes lo/hi
+	// for a band it actually saw), which is correct — the draw loop runs `for i := 0;
+	// i < 0` and paints nothing. Compared against `next` it would read as a band
+	// starting back at 0, so a fixture whose middle band happened to be empty would
+	// fail this assertion for a theme that renders perfectly. The property that
+	// actually matters is that the NON-EMPTY bands tile [0, elN) in band order, and
+	// that is what this now says.
 	next := int16(0)
 	for b, rg := range lay.band {
 		if rg.lo == 0 && rg.hi == 0 {
@@ -459,6 +508,7 @@ func TestElementDrawOrderIsBakedNotSorted(t *testing.T) {
 // TestVisibleWhenIsInternedAndGatesTheDraw pins the condition pipeline end to end:
 // the bake interns each distinct value once, and the draw path gates on an integer
 // compare against the index the frame resolved.
+//
 // The gate must be able to say NO. A condition that is always true is not a
 // condition, and "the element drew" is not evidence that anything was evaluated —
 // so this drives the live state both ways and demands the dispatch count move.
@@ -488,15 +538,15 @@ func TestVisibleWhenIsInternedAndGatesTheDraw(t *testing.T) {
 		restore()
 		return len(seen)
 	}
-	a.compose.sidePref = "pro"
+	a.sidePref = "pro"
 	base := count()
-	a.compose.sidePref = "def" // the fixture's defencebadge is gated on pos:def
+	a.sidePref = "def" // the fixture's defencebadge is gated on pos:def
 	withDef := count()
 	if withDef <= base {
 		t.Fatalf("switching pos to def dispatched %d painters, was %d at pos:pro — a visible_when gate "+
 			"that never changes the frame is not being evaluated", withDef, base)
 	}
-	a.compose.sidePref = "pro"
+	a.sidePref = "pro"
 	if again := count(); again != base {
 		t.Fatalf("switching pos back dispatched %d painters, want %d — the per-axis memo is not "+
 			"re-resolving on a change", again, base)
@@ -511,31 +561,32 @@ func TestVisibleWhenSurvivesARebake(t *testing.T) {
 	a, lay, cleanup := stageThemedWithSidecar(t, "w3_render.ini")
 	defer cleanup()
 
-	a.compose.sidePref = "def"
+	a.sidePref = "def"
 	a.drawCourtroom(1280, 720)
 	genBefore := lay.condGen
-	liveBefore := a.elemBake.condLive[theme.CondPos]
+	liveBefore := a.condLive[theme.CondPos]
 	if liveBefore < 0 {
 		t.Fatalf("pos:def did not resolve to an interned index (condN=%d)", lay.condN)
 	}
 
-	a.skin.themeLay.valid = false // a window resize, a fit change, a theme apply
+	a.themeLay.valid = false // a window resize, a fit change, a theme apply
 	a.drawCourtroom(1280, 720)
 	if lay.condGen == genBefore {
 		t.Fatal("a rebuild did not bump the intern generation — the memo cannot know its indices are stale")
 	}
-	if a.elemBake.condLive[theme.CondPos] < 0 {
+	if a.condLive[theme.CondPos] < 0 {
 		t.Fatal("pos:def stopped resolving after a rebuild — the memo did not re-resolve against the new table")
 	}
-	if lay.condVal[a.elemBake.condLive[theme.CondPos]] != "def" {
+	if lay.condVal[a.condLive[theme.CondPos]] != "def" {
 		t.Fatalf("pos resolved to slot %d, which holds %q, want \"def\"",
-			a.elemBake.condLive[theme.CondPos], lay.condVal[a.elemBake.condLive[theme.CondPos]])
+			a.condLive[theme.CondPos], lay.condVal[a.condLive[theme.CondPos]])
 	}
 }
 
 // TestUnknownConditionAxisLeavesTheElementVisible is the format's own rule
 // (docs/THEME-FORMAT.md §3): "an unknown axis leaves the element visible — an
 // element a future condition would have hidden is better shown than lost".
+//
 // It is checked against an axis OUT of the enum, which is exactly what a theme from
 // a newer client produces, and it is the one case where the safe default is to
 // paint rather than to skip.
@@ -557,6 +608,10 @@ func TestUnknownConditionAxisLeavesTheElementVisible(t *testing.T) {
 // arrays and copies strings the sidecar already owns, so its allocation count must
 // not be a function of how many elements a theme declares. A preset swap re-bakes,
 // and a swap that allocated per element would hitch the frame it landed on.
+//
+// The headroom that is here covers label truncation (truncateLabelTo allocates when
+// it actually shortens a string, which is the one legitimate allocator on this path)
+// and the font-width memo behind it.
 const elemBakeAllocCeil = 8
 
 // TestElementBandBakeAllocationCeiling is BenchmarkElementBandBake's assertion half:
@@ -610,6 +665,7 @@ func BenchmarkElementBandBake(b *testing.B) {
 // TestHandAuthoredSidecarRendersEveryW3Painter is the wave's ship criterion stated
 // as a test: the hand-authored fixture reaches shape, gradient, text AND pane, on a
 // real themed frame, through the real band loops.
+//
 // It counts dispatches per KIND rather than inspecting pixels: the software
 // renderer these tests run on is not a pixel oracle, and what W3 owes is that the
 // model resolves and dispatches — the pixels are what a human verifies on a screen.
@@ -626,7 +682,7 @@ func TestHandAuthoredSidecarRendersEveryW3Painter(t *testing.T) {
 		}
 	}
 	// pos:def so the conditional element is on screen too.
-	a.compose.sidePref = "def"
+	a.sidePref = "def"
 	collect(a)
 	cleanupA()
 

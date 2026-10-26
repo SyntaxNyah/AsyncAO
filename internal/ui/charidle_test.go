@@ -1,7 +1,20 @@
 package ui
 
 // THE PARTNER PREVIEW MINTED A LITERAL: characters/<them>/(a)normal.
+//
+// Report (user + Crystalwarrior, 2026-08-11): the Pairing dialog's partner ghost
+// assumes a "normal" emote exists. It does not, for a large slice of the fleet —
+// packs whose poses are spelled SNormal / HSmug / 1-idle ship no normal.* sprite
+// at all — and those partners previewed as an empty box with a name label in the
+// middle of it. Your OWN ghost has been the selected emote's idle since v1.53.0;
+// the partner had no such signal and kept the literal.
+//
 // The answer is the character's own char.ini: emote 1's anim
+// (courtroom.CharINI.IdleAnim), which is the pose AO2 has selected for them the
+// instant they are picked. It rides the char.ini fetch that was ALREADY happening
+// for their blips, chat skin, effects, scaling and showname, so an honest preview
+// costs no extra network probe.
+//
 // The gates below drive the real cache seam (charMetaFor / iniIdleAnimFor) and the
 // real parser, and pin the call site by census — a missing seam has no return
 // value, the box simply stays empty.
@@ -66,9 +79,11 @@ func TestIdleAnimIsTheFirstEmotesAnim(t *testing.T) {
 // cache seam rather than a mirror of it: charMetaFor answers, iniIdleAnimFor
 // applies the convention-until-the-ini-disagrees rule, and the pair ghost mints
 // from that.
+//
 // Both halves are asserted because either alone is passable by a wrong fix. A
 // character whose first emote is NOT "normal" must preview on their own pose; a
 // character who DOES have "normal" must be byte-identical to before, so the
+// change cannot have moved the common pack's single probe.
 func TestPartnerIdleComesFromTheirCharINI(t *testing.T) {
 	// roomFactoryApp, not the bare settled courtroom: the "never seen" arm below
 	// reaches charMetaFor's MISS path, which fires a real fetch, and that needs a
@@ -78,16 +93,16 @@ func TestPartnerIdleComesFromTheirCharINI(t *testing.T) {
 
 	// An ORIGIN, because charMetaFor refuses to answer without one (a cache keyed
 	// by full char.ini URL is what makes per-server separation structural).
-	a.link.urls = courtroom.NewURLBuilder(gateOrigin)
+	a.urls = courtroom.NewURLBuilder(gateOrigin)
 	// Seed the cache through pollCharMeta — the one production door into it — so
 	// this drives the same store the live courtroom fills. Writing the map here
 	// would be the mirror-test shape rule 11 forbids.
-	a.overlays.charMetaRes = make(chan charMetaFetch, charMetaResCap)
+	a.charMetaRes = make(chan charMetaFetch, charMetaResCap)
 	oddURL := a.charINIURL("Beatrice")
 	convURL := a.charINIURL("Phoenix")
-	a.overlays.charMetaRes <- charMetaFetch{url: oddURL, showname: "Beatrice", idle: "HSmug"}
-	a.overlays.charMetaRes <- charMetaFetch{url: convURL, showname: "Phoenix", idle: "normal"}
-	a.overlays.pollCharMeta()
+	a.charMetaRes <- charMetaFetch{url: oddURL, showname: "Beatrice", idle: "HSmug"}
+	a.charMetaRes <- charMetaFetch{url: convURL, showname: "Phoenix", idle: "normal"}
+	a.pollCharMeta()
 
 	if got := a.iniIdleAnimFor("Beatrice", ghostFallbackEmote); got != "HSmug" {
 		t.Errorf("the partner's idle = %q, want %q — the preview is still minting the "+
@@ -99,8 +114,8 @@ func TestPartnerIdleComesFromTheirCharINI(t *testing.T) {
 
 	// The BASE the ghost actually mints, through the real URL builder: a different
 	// pose has to reach the URL, or the fix stops at a string nobody uses.
-	oddBase := a.link.urls.Emote("Beatrice", a.iniIdleAnimFor("Beatrice", ghostFallbackEmote), courtroom.EmoteIdle)
-	litBase := a.link.urls.Emote("Beatrice", ghostFallbackEmote, courtroom.EmoteIdle)
+	oddBase := a.urls.Emote("Beatrice", a.iniIdleAnimFor("Beatrice", ghostFallbackEmote), courtroom.EmoteIdle)
+	litBase := a.urls.Emote("Beatrice", ghostFallbackEmote, courtroom.EmoteIdle)
 	if oddBase == litBase {
 		t.Errorf("the partner ghost still resolves %q — the char.ini answer never reached the URL", oddBase)
 	}
@@ -112,8 +127,8 @@ func TestPartnerIdleComesFromTheirCharINI(t *testing.T) {
 	// the whole repo. The prefixed base stays the asset's identity (CLAUDE.md) and
 	// the bare spelling is an ALTERNATE, so the two must both be present and must
 	// not be the same URL.
-	alts := a.link.urls.EmoteAlts("Beatrice", "HSmug", courtroom.EmoteIdle)
-	bare := a.link.urls.EmoteBare("Beatrice", "HSmug")
+	alts := a.urls.EmoteAlts("Beatrice", "HSmug", courtroom.EmoteIdle)
+	bare := a.urls.EmoteBare("Beatrice", "HSmug")
 	if bare == oddBase {
 		t.Fatalf("stale premise: the bare spelling and the prefixed identity are both %q, so this "+
 			"gate could not tell a one-spelling chain from a two-spelling one", bare)
@@ -154,6 +169,15 @@ const (
 
 // TestACharINIOnTheWireReachesTheIdleCache is the END-TO-END gate for the fetch,
 // and it exists because every other gate in this file starts downstream of it.
+//
+// charMetaFetchOne parses a char.ini and copies the fields it wants into a
+// charMetaFetch; pollCharMeta copies THAT into the cache record. Both of the
+// pins above seed the channel by hand, so neither ever runs the parse→result
+// mapping — and an audit proved the consequence: deleting `res.idle =
+// ini.IdleAnim()` (charmeta.go), the single line joining the parser to the
+// feature, left the entire internal/ui suite green. That is the
+// parsed-but-never-applied shape CLAUDE.md rule 11 names by precedent.
+//
 // So this one writes a REAL char.ini into the Manager's mount folder, lets the
 // real fetch goroutine read it, pumps the real poll, and asks the real seam. It
 // closes `showname` in the same pass, which had the identical hole.
@@ -173,7 +197,7 @@ func TestACharINIOnTheWireReachesTheIdleCache(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, charINIFileName), []byte(ini), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	a.link.urls = courtroom.NewURLBuilder(assets.LocalOriginFor([]string{mount}))
+	a.urls = courtroom.NewURLBuilder(assets.LocalOriginFor([]string{mount}))
 
 	// The MISS is the trigger: charMetaFor plants the in-flight marker and fires
 	// exactly one fetch. Nothing is known yet, which is the window the seam's
@@ -191,7 +215,7 @@ func TestACharINIOnTheWireReachesTheIdleCache(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("the char.ini fetch never landed in %v — nothing downstream of this can be trusted", charINIGateTimeout)
 		}
-		a.overlays.pollCharMeta()
+		a.pollCharMeta()
 		time.Sleep(charINIGatePoll)
 	}
 
