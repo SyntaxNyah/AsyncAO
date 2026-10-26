@@ -10,13 +10,23 @@ in **Status**. Update Status in the same commit that completes a step.
       golangci-lint `mnd` in CI (9 already-clean packages enforced from the start)
 - [ ] 1. `internal/helper/{value,text,parse}` + duplicate removal + config double-clamp removal
 - [ ] 2. Bug fixes 1–3, 5–7 (one commit each, with tests) → **merge checkpoint** (maintainer pushes)
+- [ ] 2a. UI spike: SDL3 + Clay + our kit (Part 5e); throwaway code outside the module
 - [ ] 2b. SDL facade (`internal/sdl`, `ttf`, `mix`) over go-sdl2; switch all importers
-- [ ] 2c. SDL3 switch; drop the SDL Mixer X fork; replace platform code
-- [ ] 3. Lifetime audit (+ bug 4)
-- [ ] 4. Shared services in package + boundary check script
-- [ ] 5. Config `Set*` forwarder removal
-- [ ] 6. Feature loop (jukebox → notebook → … → courtroom screen); first move to a sub-package also extracts uikit + shell
-- [ ] 7. Remaining lower-layer work (Settings grouping, Manager `Source`, render debug sink)
+- [ ] 2c. SDL3 switch: hardware renderer or software fallback, device-reset re-upload; drop the
+      SDL Mixer X fork; replace platform code
+- [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
+      pointer, no park/activate copies; fixes bug 4, #115, #141, #84)
+- [ ] 4. `internal/uikit`: extract the kit, then the input model (press/release + capture,
+      wheel routing, layer stack)
+- [ ] 5. uikit scaling, layout and text (logical units, Clay layout, nine-slice, scroll
+      container) + shared widgets; one text-colour palette in the engine
+- [ ] 6. Config API: `Set*` forwarder removal; engine option structs; engine stops importing config
+- [ ] 7. Feature loop (jukebox → notebook → … → courtroom screen), extract then move
+- [ ] 8. Remaining lower-layer work (Settings grouping, Manager `Source`, render debug sink)
+
+Diagrams live in the shared diagram page, not in this file:
+https://claude.ai/artifact/APmF2gN8QTGfPyB13mAhQv. The open-issue review behind the
+three-layer revision (2026-10-26): https://claude.ai/artifact/W6eEze4MnLmdLKXoyGYXRn.
 
 ## Context
 
@@ -176,91 +186,12 @@ config 618 (+`Prefs.Load()` 779 / `Prefs.Update` 238), render 237, assets 155.
 
 **Granularity rule** (prevents both god and micro types):
 - A feature package exists only if it is a noun the UI already uses (Jukebox, Notes, Evidence,
-  Mod dashboard), its code mostly touches its own state + `shell`, it imports no sibling
+  Mod dashboard), its code mostly touches its own state + uikit + the engine, it imports no sibling
   feature, and it exports ≤ ~20 identifiers.
-- Inside a feature: at most two exported types — `Panel` (global UI, holds `*shell.Services`)
-  and `Tab` (per-tab state, pure transitions, no services, callable on a parked tab).
+- Inside a feature: at most two exported types — `Panel` (global UI, constructor-injected
+  dependencies) and `Tab` (per-tab UI state, callable on a parked tab).
 - Merge two packages when they need each other's state, one is only driven by the other, or
   one needs a back-pointer to App. Never group unrelated features to reach a size.
-
----
-
-## Part 2b — Architecture diagrams (how things move)
-
-Rule: every step that changes structure updates the matching diagram here in the same commit,
-and adds a "now" diagram under its Status line when the picture differs from the plan.
-Arrows point from importer to imported package, or from caller to callee inside a package.
-
-**D1 — Today (step 0).** One package, one object that owns everything.
-```
-cmd/asyncao ──► internal/ui ───────────────────────────────────────────────┐
-                 │ App (560 fields + sessionState 521 fields, 1,714 methods) │
-                 │   jukebox, lobby, studio, settings, theme editor, logs,   │
-                 │   roster, evidence, … all as App methods over ~230 files  │
-                 │ Ctx widget kit (private fields poked by App)              │
-                 └───────────────────────────┬───────────────────────────────┘
-                                             ▼
-        render ─► courtroom ─► assets ─► network ─► cache      (go-sdl2 + SDL Mixer X fork)
-                      └► protocol, theme, config
-```
-
-**D2 — After steps 2b/2c (SDL facade, then SDL3).** Same shape; every SDL call goes through
-our own binding. The fork is gone.
-```
-ui ───────┐
-render ───┼──► internal/sdl, ttf, mix ──► SDL3, SDL3_ttf, SDL3_mixer (system libraries)
-cmd ──────┘        (before 2c: same API implemented over go-sdl2)
-```
-
-**D3 — After step 4 (shared services, still one package).** App stops being the place every
-feature reaches into for shared state.
-```
-internal/ui
-  App ──holds──► services { Deps, Ctx, Toast, Nav, KeyCapture, FrameState, Debug,
-   │                        Conn*, OOC*, Viewports, Dock }
-   │                 ▲
-   └──calls──► feature code (still App methods) ──uses──┘
-```
-
-**D4 — During step 6 (feature loop).** Features become types that own their state and methods;
-App only calls them in a fixed order. Some are already in their own packages.
-```
-internal/ui
-  App.Frame ──► a.juke.Poll() ──► a.notes.Poll() ──► … ──► a.screens[s].Draw()
-     │              │                  │
-     │       jukebox.Panel        notebook.Panel ──► &a.live.notes (notebook.Tab)
-     │      (own package)        (own package)
-     └── features not yet extracted: still App methods (shrinking every commit)
-
-internal/ui/jukebox ─┐
-internal/ui/notebook ┼──► internal/ui/shell ──► internal/uikit ──► internal/sdl …
-internal/ui/…        ┘      (no feature imports internal/ui or another feature)
-```
-
-**D5 — Per-tab state (from step 3 on).** Park/activate copy values; features keep a pointer to
-the fixed live slot, so a tab switch needs no re-wiring.
-```
-tabs[0].state ─┐  copy in on activate        ┌──► notebook.Panel holds &live.notes
-tabs[1].state ─┼────────────────────► live sessionState (fixed address in App)
-tabs[2].state ─┘  copy out on park           └──► evidence.Panel holds &live.evid
-       ▲
-       └── App.pumpBackgroundTabs calls Tab methods on parked tabs directly
-```
-
-**D6 — End state (step 7 done).**
-```
-cmd/asyncao (composition root: builds everything, injects dependencies)
-   │
-internal/ui  App: Frame order, tabs, connect, wiring (≤ 60 fields, ≤ 250 methods)
-   ├──► internal/ui/<feature>…  (Panel + Tab per feature, Screen per screen)
-   ├──► internal/ui/themeruntime
-   └──► internal/ui/shell ──► internal/uikit ──► internal/sdl, ttf, mix ──► SDL3
-            │
-            ▼
-   render ─► courtroom ─► assets ─► network ─► cache
-   (Viewport.Configure, Courtroom options, Manager Source chain, no forwarders)
-   all layers ──► internal/helper/{value,text,parse}
-```
 
 ---
 
@@ -273,12 +204,11 @@ is renamed in the same commit; no sweep commits just for renaming.
 | Use | Instead of |
 |---|---|
 | `AsyncResult[T]` | Pending, slot, mailbox |
-| `Connection` (live conn/session/room) | Link |
-| `OOCQueue` | Outbox |
+| `client.Session` (one server connection) | Link, Connection service |
+| `SendOOC` on `client.Session` | Outbox |
 | `FrameState` (frame clock + redraw flags) | Pace, damage latches |
-| `Viewports` (binding the viewport to a room) | Stage |
 | `KeyCapture` | Keys, armed bind |
-| `themeruntime` | themert |
+| theme styling (in uikit) | themert |
 | extract into a type / move into a sub-package | own / lift |
 | boundary check script | lint gate |
 | per-package opt-in (lint) | ratchet |
@@ -289,103 +219,146 @@ is renamed in the same commit; no sweep commits just for renaming.
 
 ---
 
-## Part 3 — Target architecture
+## Part 3 — Target architecture (three layers, adopted 2026-10-26)
 
-End state below. Path to it: each feature is first extracted into a type inside
-`internal/ui`, then moved into its own sub-package (C1). `shell` and `uikit` are moved out
-when the first feature move needs them; until then they are in-package types (`services`,
-the existing `Ctx`).
+The first draft put a `shell` package (a shared `Services` struct) and a `themeruntime`
+package between features and the kit. The review of all 60 open issues showed that no issue
+needs either, while the two largest issue groups (input, layout/text) live in the kit itself and
+a third (per-tab state, blocking connect) lives in the session. The structure is therefore three
+layers, each with one job, and nothing in between.
 
 ```
-internal/helper/<cat>     stdlib-only helper library split by category (value, text, parse)
-internal/sdl, ttf, mix    our thin cgo binding to SDL3 / SDL3_ttf / SDL3_mixer           [SDL]
-internal/uikit            Ctx widget kit, FloatWin, colours/metrics, FontRole            [SDL]
-internal/ui/shell         Services + contracts: Toast, Nav, KeyCapture, FrameState, Debug,
-                          AsyncResult[T], Connection, OOCQueue, Viewports, Dock/Panel,
-                          Screen                                                         [SDL]
-internal/ui/themeruntime  theme runtime + font pipeline (read by many features)          [SDL]
-internal/ui/<feature>     jukebox, notebook, update, timer, lobby, evidence, roster,
-                          wardrobe, mod, logs, composer, studio, split, layoutedit, …    [SDL]
-internal/ui               App: Frame/Background ordering, tabs park/activate,
-                          connect lifecycle, wiring
+App layer     internal/ui            App: Frame order, tabs, screens, connect/disconnect, wiring.
+                                     The ONLY layer that reads config.
+              internal/ui/<feature>  jukebox, notebook, lobby, evidence, roster, wardrobe, mod,
+                                     logs, composer, studio, split, layout editors, settings, …
+     │  features draw through uikit and read/act on a *client.Session; nothing else
+     ▼
+UI platform   internal/uikit         Ctx; input model; logical-unit scaling; Clay layout; text
+                                     measure/wrap; nine-slice; scroll container; widgets
+                                     (combobox+autocomplete, reorderable list, menu, …);
+                                     Dock/Panel/Screen; Toast; KeyCapture; FrameState;
+                                     AsyncResult[T]; theme styling (reads theme data)    [SDL]
+     ▼
+Engine        internal/client        Session per tab: async connect, conn, courtroom, logs,
+                                     roster, evidence, area/music state; command methods
+              internal/scene         Scene data shared by courtroom and render
+              render, courtroom, protocol, packetutil, assets, network, cache, theme
+                                     (no engine package imports config)        [render: SDL]
+Platform      internal/sdl, ttf, mix our thin cgo binding to SDL3 / SDL3_ttf / SDL3_mixer
+all layers ──► internal/helper/{value,text,parse}
 ```
 
-Import rule: uikit → render/lower; shell → uikit; themeruntime → shell; feature → shell, uikit,
-themeruntime, lower. **No feature imports `internal/ui` or a sibling feature.** Cross-feature needs
-use small consumer-side interfaces wired by App.
+**Import rule.** App layer → uikit, engine, config. Feature → uikit, engine (never
+`internal/ui`, never a sibling feature, never config). uikit → render, theme, sdl. Engine →
+engine and helper only. Cross-feature needs (#114: OOC log → jukebox) use a small
+consumer-side interface wired by App.
 
-**App afterwards**: embedded `*shell.Services`, the live `sessionState` value + `tabs`, one
-pointer per feature, a `[ScreenN]shell.Screen` table, frame-ordering latches, and cross-feature
-orchestration (Esc fallback, palette, connect/disconnect, park/activate). Budget ≤ 60 fields,
-≤ 250 methods (today 560 + 521 fields, 1,714 methods).
+### Dependencies are passed, not looked up
+No `Services` bag. A feature's constructor takes exactly what it uses
+(`jukebox.New(ctx *uikit.Ctx, audio *render.Audio, opts jukebox.Options)`). Per-tab work gets
+the session as an argument on each call: `Draw(s *client.Session, t *Tab)`. Because the
+session is passed in every frame, nothing caches a room, session or viewport, so the old
+swap-safety rule disappears.
+
+### client.Session — one per tab
+- Owns everything about one server connection: `protocol.Conn`, the handshake data
+  (`courtroom.Session` today), the `courtroom.Courtroom`, IC/OOC logs, roster, evidence, area
+  and music lists, `sidePref`, timers. Read through fields/methods; mutated only by its
+  own methods (`SendIC`, `SendOOC`, `SetPos`, `Resync`, …).
+- `Connect` runs on a goroutine and reports through an `AsyncResult`; the render thread never
+  dials (#115).
+- One log append rule for every view (#64).
+- Takes plain option structs (`client.Options`, `courtroom.Visuals/Timing`), built by App from
+  prefs. No config import.
+- App keeps `tabs []*courtTab{sess *client.Session; ui tabUI}`. `tabUI` holds only UI state
+  (drafts, scroll positions, open panels) as feature `Tab` values. Tabs are held **by
+  pointer**: park/activate copy nothing, the pinned pass and the editor preview just draw a
+  different tab. This removes bugs 1–4 as a class.
+- HDID: derived in `internal/ui` at the dial call and handed to `client.Connect`, so
+  `hdidgate_test.go` keeps seeing it (CLAUDE.md rule 11).
+
+### internal/scene
+The `Scene` value (what the courtroom shows: sprites, positions, chatbox state, effects) moves
+out of courtroom into its own package. render imports scene instead of courtroom, so the
+compositor no longer depends on the message state machine. KFO/DRO scene rules (#54, #63,
+#111) are tested here without SDL.
+
+### uikit — input model (step 4)
+Fixes #86, #113, #87, #34, #32, #103, #60/#100, #105.
+- **Click** = press and release on the same widget. The widget under the press owns the
+  pointer until release (capture); dragging a scrollbar and releasing over a button does
+  nothing.
+- A widget can opt into **act-on-press** (emote buttons, #87).
+- **Wheel** goes to the topmost hovered scrollable or adjustable widget and is consumed there;
+  it never falls through to what is underneath.
+- **Layer stack**: base screen < docked panels < floating panels < popovers < modals. Hit
+  testing walks top-down, and drawing goes bottom-up from the same list. This replaces the
+  four hand-kept lists (`drawFloatingPanels`, `boxFencesPointer`, `closeTopOverlay`,
+  `drawTabContent`) and the fence/overlay calls.
+
+### uikit — scaling, layout and text (step 5)
+Fixes #62, #76, #77, #90, #116, #53, #67, #97.
+- **One unit system.** All layout is in logical units; uikit converts to device pixels at draw
+  time using `SDL_GetWindowDisplayScale` × the user's UI scale. Glyphs and nine-slice edges are
+  rasterised at device size. The renderer is never scaled, so `SetScale` and
+  `beginRenderScaleOverride` are deleted. A display-scale-changed event re-rasterises fonts.
+- **Clay** (C layout library, single header, no allocation per frame) lays out every screen we
+  own. Resizing becomes reflowing, not per-screen rectangle code. Text measuring is our callback
+  into SDL3_ttf.
+- **AO themes** keep their absolute element rectangles for the theme's design size, scaled
+  uniformly to fit with letterboxing. Per-element anchors in the sidecar are a later option.
+- Primitives: nine-slice draw, aspect-fit image draw, scroll container (culling by measured
+  rows), text layout with tab expansion and coloured spans.
+- Shared widgets, built once: combobox with autocomplete and row icons (#71, #79, #96, #104),
+  reorderable list (#18, #16), menu (#85), slider styled from the theme (#94, #107).
+- **Text colours**: one palette table in the engine (data only), read by render, the logs and
+  the colour pickers (#89, #91, #93, #68).
 
 ### uikit export surface
-Accessors + explicit consume methods instead of ~40 exported fields:
-`Mouse()`, `Clicked()`/`TakeClick()`, `Wheel()`/`TakeWheel()`, `Key()`/`TakeKey()`,
-`Hotkey()`/`TakeHotkey()`, `Esc()`/`TakeEsc()`, `Mods()`, `TakeEditRequest()`, `Focused()`/`Blur()`/
-`FocusNext()`, `Modal()`/`SuspendModal() ModalToken`+`RestoreModal(t)` (value token, no closure — draw-path
-zero-allocation tests; replaces the save/restore pairs),
-`FencePointer`/`UnfencePointer`, `OverlayMark`/`FenceOverlay`/`ReleaseOverlay`,
-`SnapshotInput`/`RestoreInput` (pinned pass), `PushClip`/`PopClip`, `PushPanelFont`/`PopPanelFont`,
-`FontRole` enum. Budget ≈ 45 new exports on top of 81 existing. Tests drive input through the
-public `HandleEvent`/`BeginFrame` with synthetic SDL events.
+Accessors and explicit consume methods instead of ~40 exported fields: `Mouse()`, `Clicked()`,
+`Wheel()`/`TakeWheel()`, `Key()`/`TakeKey()`, `Hotkey()`/`TakeHotkey()`, `Esc()`/`TakeEsc()`,
+`Mods()`, `Focused()`/`Blur()`/`FocusNext()`, `SuspendModal() ModalToken` + `RestoreModal(t)` (a value
+token: no returned closures on draw paths), `PushClip`/`PopClip`, `PushPanelFont`/`PopPanelFont`,
+`FontRole` enum, `Layer` enum. The fence/overlay calls go away with the layer stack. Tests drive
+input through the public `HandleEvent`/`BeginFrame` with synthetic SDL events.
 
-### shell.Services (hard cap 12 members; new member only if ≥10 files need it)
-`Deps` (embedded), `Ctx *uikit.Ctx`, `Toast` (`Show/Active/Text/Clear`, replaces 178 hand-written
-`warnLine/warnAt`), `Nav` (`Open/Back/Set/Is`), `KeyCapture` (single armed key capture; replaces 8
-`*BindFor/armed` fields with hand-kept mutual exclusion), `FrameState` (`Now/Dt/MarkDirty/
-NoteAnimating/NoteDemandPending` + pacer/damage fields moved out of `sessionState`), `Debug`
-(`Push`), `Conn *Connection` (live slot: Conn/Sess/Room/URLs/ServerKey/ServerName), `OOC *OOCQueue`
-(`SendOOC`), `Viewports` (`Bind(room)`/`BindLive()` replaces viewport hook triples in 7 files;
-`Viewport()`), `Dock`, `DataDir`.
-
-**Swap-safety rule**: features read `sv.Conn`, `sv.Viewports.Viewport()` etc. through the pointer
-every time and never cache a room/session/viewport, because the pinned pass and editor preview
-swap the live slot by value mid-frame.
-
-### AsyncResult[T] — one async primitive (replaces 5 of the 7 patterns)
+### AsyncResult[T] — one async primitive (replaces 5 of the 7 patterns), in uikit
 ```go
-func NewAsyncResult[T any]() *AsyncResult[T] // pointer-backed: copies of a Tab alias one slot
-func (p *AsyncResult[T]) Start(what string, fn func(context.Context) (T, error)) bool // one goroutine, recover → crash log, PushWake on done; false if busy
+func NewAsyncResult[T any](wake func()) *AsyncResult[T]
+func (p *AsyncResult[T]) Start(what string, fn func(context.Context) (T, error)) bool // one goroutine, recover → crash log, wake on done; false if busy
 func (p *AsyncResult[T]) Busy() bool
 func (p *AsyncResult[T]) Take() (T, error, bool) // non-blocking, once
 func (p *AsyncResult[T]) Cancel()                // supersede (replaces gen counters)
 ```
-Lives as a value inside the owning `Panel`/`Tab`, so per-tab results follow the tab through
-park/swap (fixes bug 3 by construction). Long-lived workers (voice, ping loop, downloader,
-transcripts) keep named bounded channels.
+Owned by the `Panel`, `Tab` or `client.Session` that started the work, so a per-tab result
+follows its tab (fixes bug 3 by construction). Long-lived workers (voice, ping loop,
+downloader, transcripts) keep named bounded channels.
 
-### Per-tab state
-`sessionState` stays in `internal/ui` (only App parks/swaps/resets it) and becomes a
-composition of feature `Tab` values (`link`, `out`, `dock`, `notes notebook.Tab`, `evid
-evidence.Tab`, …). Features get a pointer into the fixed live slot at construction
-(`notebook.New(sv, &a.live.notes)`); park/activate copy values into that slot, so no re-wiring.
-Each feature `Tab` has a `NewTab(...)` constructor (allocates its `AsyncResult`s, seeds prefs-backed
-defaults) called from `resetSessionState`.
-App calls pure `Tab` methods on parked tabs in `pumpBackgroundTabs`. Global-lifetime fields
-(pacer/damage, `spriteCapBase`, `partColors`, warm keepers) leave `sessionState` first.
-
-### Panels and screens (user's "common capability interface" end shape)
+### Panels and screens
 ```go
-type Panel interface { Title() string; Draw(r sdl.Rect) }   // content only; host draws chrome
-type PanelOpts struct{ DefW, DefH, MinW, MinH int32; Font uikit.FontRole; Tearable bool }
+type Panel interface { Title() string; Draw(r Rect) }   // content only; the host draws chrome
+type PanelOpts struct{ DefW, DefH, MinW, MinH float32; Font FontRole; Tearable bool }
 func (d *Dock) Register(id string, p Panel, o PanelOpts)
 func (d *Dock) Open/Close/Toggle(id string); IsOpen(id string) bool
-func (d *Dock) DrawDocked(id string, r sdl.Rect)   // classic slot / themed element / docked tab strip
-func (d *Dock) DrawFloating(w, h int32)            // floating + torn, z-ordered
-func (d *Dock) FencesPointer(mx, my int32) bool
-func (d *Dock) CloseTop() bool                     // one Esc rung
-type Screen interface { Draw(w, h int32); Escape() bool }
+func (d *Dock) DrawDocked(id string, r Rect)   // classic slot / themed element / docked tab strip
+func (d *Dock) DrawFloating()                  // floating + torn panels on the floating layer
+func (d *Dock) CloseTop() bool                 // one Esc step
+type Screen interface { Draw(w, h float32); Escape() bool }
 ```
-Justified by today's four hand-kept lists that must agree: `drawFloatingPanels`
-(floatbox.go:974), `boxFencesPointer` (floatbox.go:658), `closeTopOverlay` (floatbox.go:374),
-`drawTabContent` (torntabs.go:148). Per-tab open set lives in `shell.DockState` (in the tab);
-floating geometry is global. Anchored popovers and blocking modals stay explicit fences in
-Frame. No detached-OS-window capability until a second real user exists. The courtroom screen
-lays out stage + slots and calls `Dock.DrawDocked` per slot — it imports no feature.
+Per-tab open sets live in `tabUI`; floating geometry is global. The courtroom screen lays out
+stage + slots and calls `Dock.DrawDocked` per slot; it imports no feature.
 
-**Frame orchestration stays an explicit ordered list in `App.Frame`** (`a.pollJukebox()` →
-`a.juke.Poll()`); no hook registry, because the order is load-bearing.
+**Frame orchestration stays an explicit ordered list in `App.Frame`** (`a.juke.Poll()`,
+`a.notes.Poll()`, …); no hook registry, because the order is load-bearing.
+
+**App afterwards**: `tabs`, the active tab pointer, one pointer per feature, a
+`[ScreenN]uikit.Screen` table, and cross-feature orchestration (Esc fallback, palette,
+connect/disconnect). Budget ≤ 60 fields, ≤ 250 methods (today 560 + 521 fields, 1,714 methods).
+
+**Granularity rule** (unchanged in spirit): a feature package exists only if it is a noun the UI
+already uses, mostly touches its own state, imports no sibling feature and exports ≤ ~20
+identifiers; at most two exported types, `Panel` (global UI) and `Tab` (per-tab UI state).
 
 ### internal/helper — a library split by category (lands first; decided C6)
 Stdlib-only leaf packages, importable from every layer. A category package exists only when it
@@ -424,7 +397,7 @@ call it are owned or moved, so moved code is touched once:
   package (otherwise prefs→setter mapping duplicated; today Frame pushes ~10 setters twice,
   app_frame.go:552-581).
 - `courtroom.Visuals` + `courtroom.Timing` with `SetVisuals/SetTiming` — forced because room
-  modes get built from several packages; the room factory is exposed via `Viewports`, wired by App.
+  modes get built from several packages; the room factory is built by App and handed to them.
 - config: remove the `normalizeSnapshot` clamp block duplicated by `normalizeSettings` and the 22
   setter pre-clamps (in the helper series). Delete pure single-caller `Set*` forwarders, keep
   setters that carry logic or have ≥3 callers (C5), before the first feature move.
@@ -446,48 +419,66 @@ call it are owned or moved, so moved code is touched once:
    truncation/atoi/hex; config double-clamp removal.
 2. **Bug fixes 1–3, 5–7**, one commit each with a behavioural test.
    → **Merge checkpoint**: phases 0–2 end green and mergeable; user pushes/merges before step 3.
+2a. **UI spike (Part 5e):** throwaway code in a separate module outside the repo; the result
+    and the decision are recorded in Part 5e. No production code.
 2b. **SDL facade (Part 5d steps 1–2):** own cgo binding packages `internal/sdl`, `internal/ttf`,
     `internal/mix`, first implemented over go-sdl2 with identical names. Switch the 187 importing
     files package by package (import-path swap). Still SDL2, always green.
 2c. **SDL3 switch (Part 5d steps 3–5):** re-implement the binding over SDL3, SDL3_ttf and
     SDL3_mixer; rewrite audio onto `MIX_Track`; delete `render/mixerx`, the fork build script
-    and the CI fork steps. Pin the loop-end behaviour with a test. Replace the platform code
+    and the CI fork steps. Pin the loop-end behaviour with a test. Renderer: SDL's default
+    hardware driver, else software (Part 5d "Renderer"). Replace the platform code
     (file/folder dialogs, DPI seeding, URL/file manager opening, preview window ownership,
-    clipboard), one commit each. `setup-deps.ps1` and CI install SDL3 packages. Must land before
-    the first uikit move (decided).
-3. **Lifetime audit**: write bug 4's failing test, then move global-lifetime fields out of
-   `sessionState` (damage/pacer → fixes bug 4; explicit reset calls where `resetSessionState`
-   zeroed something on purpose).
-4. **Shared services, in package** (one service per commit, converting App code in place):
-   a `services` struct embedded in App (the `a.d` rename is its own purely mechanical
-   `gopls rename` commit), Toast sweep, Nav, KeyCapture, FrameState, Debug, `AsyncResult`, Connection/OOCQueue, Viewports,
-   Dock. Plus the boundary check script (`scripts/check-boundaries`), which fails when a feature's
-   fields are touched outside its files. It is temporary: each feature drops out of it once moved to its own package.
-5. **Config API first** (C2): delete pure single-caller `Set*` forwarders (C5 keeps the rest).
-6. **Feature loop.** For each feature, in this order: jukebox (proves a global feature),
-   notebook (proves a per-tab `Tab` + `AsyncResult` in a parked tab + the first `Dock` panel),
-   update, timer, themeruntime (+fonts), lobby (first `Screen`), effects picker, messaging/voice,
-   evidence, roster, wardrobe, mod/CM, logs, composer, studio, split, layout editors, settings,
-   courtroom screen composition. Each feature goes through:
+    clipboard), one commit each. `setup-deps.ps1` and CI install SDL3 packages.
+3. **Engine.** In order, one commit series each:
+   - `internal/scene`: move `Scene` out of courtroom; render imports scene.
+   - write bug 4's failing test; move global-lifetime fields (pacer/damage, `spriteCapBase`,
+     `partColors`, warm keepers) out of `sessionState`.
+   - `internal/client`: `Session` takes the connection, handshake data, courtroom, logs,
+     roster, evidence, area/music state and `sidePref` out of `sessionState`; async `Connect`
+     (#115); one log append rule (#64).
+   - tabs held by pointer (`[]*courtTab`); park/activate, the pinned pass and the editor
+     preview stop copying `sessionState` (fixes bug 4, #141, #84).
+4. **uikit, input model.** Extract the kit: kit files lose their App methods, Ctx gets its
+   exported API, `git mv` to `internal/uikit`, `newTestApp` replaces the 169 `&App{…}`
+   literals, CLAUDE.md rule 1 + package map updated. Then, one commit each with behavioural
+   tests driven by synthetic SDL events: press/release + capture (#86, #113 first), act-on-press
+   opt-in, wheel routing, the layer stack replacing the four hand-kept panel lists.
+5. **uikit, scaling, layout and text.** Logical units + device rasterisation (delete
+   `SetScale` and the scale overrides); Clay layout; nine-slice, aspect-fit, scroll container,
+   text layout; shared widgets; the single text-colour palette in the engine. Each screen is
+   moved onto Clay in its own commit.
+6. **Config API first** (C2): delete pure single-caller `Set*` forwarders (C5 keeps the rest);
+   engine option structs (`client.Options`, `courtroom.Visuals/Timing`, `ViewportOptions`) built
+   by App; engine packages stop importing config (`network` → `config.FavoriteServer` moves).
+7. **Feature loop.** For each feature, in this order: jukebox (proves a global feature),
+   notebook (proves a per-tab `Tab` + `AsyncResult` + the first `Dock` panel), update, timer,
+   lobby (first `Screen`), effects picker, messaging/voice, evidence, roster, wardrobe, mod/CM,
+   logs, composer, studio, split, layout editors, settings, courtroom screen composition.
+   Theme runtime and the font pipeline go into uikit styling, not a package of their own.
+   Each feature goes through:
    - **a. API first:** reshape any lower API the feature calls (Manager forwarders before
      studio/settings; `courtroom.Options` + injected resolvers before composer/split;
      `Viewport.Configure` before split/studio).
    - **b. Extract:** test inventory, then the feature type takes its state *and* methods; App keeps
      only the ordered calls in Frame. Package globals (`settings`, `contentPanel`,
-     `demoBrowser`, `baseWizard`) become fields of their feature's type. Boundary check passes.
+     `demoBrowser`, `baseWizard`) become fields of their feature's type. Boundary check passes
+     (`scripts/check-boundaries`: fails when a feature's fields are touched outside its files;
+     temporary, each feature drops out once moved).
    - **c. Move:** when the feature has no unexported dependencies left, `git mv` it into
-     `internal/ui/<feature>`. The **first** move triggers the uikit extraction (kit files lose
-     their App methods; exported Ctx API; `git mv` to `internal/uikit`; `newTestApp` replaces the
-     169 `&App{…}` literals; CLAUDE.md rule 1 + package map updated) and the move of
-     `services` → `internal/ui/shell`.
+     `internal/ui/<feature>`.
 
    Jukebox concretely: takes ~28 fields and three `AsyncResult`s; API `Poll, PollBind, HandleKeys,
    Draw, NoteMusic, SaveFromChat, Clear, Close`; call sites app.go, app_frame.go:499/501,
    qol.go:420, app_connect.go:746, screensooc.go:572, screenswardrobe.go:168/191,
    settingstabs.go:1250; files jukebox.go, jukebox_fav.go, music_history.go + their tests.
-7. **Remaining lower-layer work** (Part 5b) that doesn't touch ui call sites: `Settings` domain
+8. **Remaining lower-layer work** (Part 5b) that doesn't touch ui call sites: `Settings` domain
    grouping via embedding (JSON unchanged, proven by the goldens), the internal `Source` chain in
    `assets.Manager`, render debug sink injection.
+
+The small shared UI pieces that were planned as `shell` services (Toast, Nav, KeyCapture,
+FrameState) land in uikit during step 4, each replacing its hand-written copies in one commit
+(Toast: the 178 `warnLine/warnAt` assignments).
 
 **Source-scan tests**: before the move that breaks each (srcgate, allocgate census,
 themeeditorseam, themeeditorpreview, zerowidthlanes), convert to a behavioural test or delete
@@ -495,8 +486,7 @@ under rule 11. HDID derivation stays in `internal/ui` so `hdidgate_test.go` keep
 
 **Commit hygiene**: move commits stay mechanical (`git mv` + minimal edits) so rename detection
 holds; receivers 1–2 letters, consistent per type; no comment sweeps; no push (user pushes).
-New names follow Part 2c (common names only). A step that changes structure updates the
-diagrams in Part 2b in the same commit.
+New names follow Part 2c (common names only).
 
 ---
 
@@ -510,7 +500,8 @@ diagrams in Part 2b in the same commit.
   `warnLine` refs (→ 0 after Toast), private Ctx members used outside kit (→ 0 after 4b),
   `go list -f '{{.ImportPath}}: {{join .Imports " "}}' ./internal/ui/... ./internal/uikit`
   (no feature → `internal/ui` or sibling), exports per feature ≤ ~20 (`go doc -short`),
-  Services members ≤ 12, hand-listed panels in floatbox.go → 0.
+  no feature constructor takes more than ~6 dependencies, hand-listed panels in floatbox.go → 0,
+  no engine package imports config, `SetScale` calls → 0.
 - `golangci-lint run` with `mnd` green for every package already marked clean. The set of
   clean packages only grows (a package never leaves the enforced set).
 - Boundary check script (`scripts/check-boundaries`) passes while features live as types inside `internal/ui`:
@@ -541,7 +532,7 @@ diagrams in Part 2b in the same commit.
   - Dependencies are concrete types, or small consumer-defined interfaces when there are two
     or more implementations (real plus test fake counts) or a boundary to cross.
   - No mutable package globals. `sync.Once` registries and constant tables are allowed.
-  - No service locator. `shell.Services` is a fixed parameter object with at most 12 named
+  - No service locator and no shared services bag: each constructor names what it uses.
     members, not a lookup registry.
   - `cmd/asyncao/main.go` stays the single composition root. Tests inject fakes through the
     same constructors.
@@ -572,12 +563,12 @@ diagrams in Part 2b in the same commit.
 |---|---|---|---|
 | `assets.Manager` (69 methods, one file) | god type: fetch core + 3 source kinds (mount/archive/local) + miss memo + decoder knob forwarders (`SetSpriteCap`, `SetAnimated*`, `SetTextureCompression`, `SetAdaptiveLatencyMultiple`) + disk admin forwarders (`ClearDisk`, `PurgeCorrupt`, `DiskRoot`, `SetDiskBudget`, `SetDiskCompression`, `DiskStats`) | delete the forwarders; ui gets `*DecoderPool`, `*DiskCache` and `*Client` injected (Deps) and calls them directly. The three byte sources become one injected `Source` interface (mount layer, archive, network) walked in order, which removes `serveFromMount`/`packBytes`/`FetchRawLayered`/`ResolveRawLayered` duplication. Manager keeps the prefetch/resolve/deliver core. | after the App split (needs ui call sites moved first) |
 | `config.AssetPreferences` + `Settings` (179 + 144 methods, 312 fields) | 87 `Set*` wrappers around `Update`; clamps applied in three layers | Clamps live in `normalizeSettings` only. Pure single-caller `Set*` forwarders are deleted; setters that carry logic or have ≥3 callers stay (C5). `Settings` is grouped into embedded domain structs that mirror the Settings tabs (Audio, Chat, Theme, Network, Export, Layout, …). Embedding keeps both the JSON and `s.Field` access flat, so the load/setter goldens prove nothing changed. `genclone` is taught embedded structs. | helper phase (clamp layering) + after the settings feature moves (grouping) |
-| `courtroom.Courtroom` (63 fields, ~29 exported knobs) | knob soup set field by field; resolvers assigned after construction | `NewCourtroom(Deps{URLs, Manager, Session, Audio, Blips, Chars, Assets, Env}, Options{Visuals, Timing, Waits})` plus `SetVisuals/SetTiming`. Resolvers injected through the constructor. Exported knob fields become unexported. | with studio/split (room factory via `Viewports`) |
-| ui resolver adapters (`roomAssetResolver`, `roomCharResolver`, `roomBlipResolver`, `envResolver`, each wrapping `*App`) | micro types that exist only to reach App | deleted. The char-meta cache object implements `CharResolver` + `BlipResolver`, `Viewports` implements `AssetResolver`, and the room factory injects them. | with the charmeta/composer moves |
+| `courtroom.Courtroom` (63 fields, ~29 exported knobs) | knob soup set field by field; resolvers assigned after construction | `NewCourtroom(Deps{URLs, Manager, Session, Audio, Blips, Chars, Assets, Env}, Options{Visuals, Timing, Waits})` plus `SetVisuals/SetTiming`. Resolvers injected through the constructor. Exported knob fields become unexported. | with studio/split (room factory built by App) |
+| ui resolver adapters (`roomAssetResolver`, `roomCharResolver`, `roomBlipResolver`, `envResolver`, each wrapping `*App`) | micro types that exist only to reach App | deleted. The char-meta cache object implements `CharResolver` + `BlipResolver`, the viewport binding in App implements `AssetResolver`, and the room factory injects them. | with the charmeta/composer moves |
 | `courtroom.Session` (exported data bag, 313 reads, 4 writes) | writes from outside | the 4 ui write sites become methods. Reads stay as fields: it is plain data, and KISS says no getter wall. | with the features that write them |
-| `render.Viewport` (56 fields, 11 `Set*` knobs; ~10 setters pushed twice per frame for `d.Viewport` and `splitVP`) | duplicated configuration; hooks re-bound in 7 files | `ViewportOptions` + `Configure(opts)` (one prefs→options mapping); hooks bound only through `shell.Viewports`. | with split/studio |
-| `render.Pump` (built after App via `SetPump`, callback into App) | setter injection to break a cycle | ui builds the Pump from injected Store + Manager + a `func(string) bool` live-check owned by `Viewports`. No post-construction setter. | shell/Viewports step |
-| `render` debug log (package-global `debugLogChan`, `PollDebugLogs`) | mutable global | a debug sink (`func(string)`) injected into the render constructors; the global is removed | shell/Debug step |
+| `render.Viewport` (56 fields, 11 `Set*` knobs; ~10 setters pushed twice per frame for `d.Viewport` and `splitVP`) | duplicated configuration; hooks re-bound in 7 files | `ViewportOptions` + `Configure(opts)` (one prefs→options mapping); hooks bound in one place in App. | with split/studio |
+| `render.Pump` (built after App via `SetPump`, callback into App) | setter injection to break a cycle | ui builds the Pump from injected Store + Manager + a `func(string) bool` live-check from App. No post-construction setter. | step 3 (engine) |
+| `render` debug log (package-global `debugLogChan`, `PollDebugLogs`) | mutable global | a debug sink (`func(string)`) injected into the render constructors; the global is removed | step 8 |
 | `assets.maxAnimatedDecodedAssetBytes` (global atomic) | mutable global | becomes a `DecoderPool` field | helper phase (assets touch-up) |
 | `netproxy` policy (`currentPolicy`, `resolver` globals) | process-global state read by network + protocol | **keep (C3):** genuinely one proxy setting per process, set once by main, and tests can already call `Configure`; injecting it would only add plumbing | — |
 | ui package globals (`settings`, `contentPanel`, `demoBrowser`, `baseWizard`) | hidden state | fields of their feature `Panel` | at each feature's move |
@@ -634,7 +625,7 @@ Decided: **C1 accepted** (extract into types first, then move into sub-packages)
 - *`network → update` version string.* Keep the import. It reads a constant from a leaf
   package. Injecting a User-Agent string is noise.
 - *Where DI is worth it.* Courtroom resolvers, the Manager `Source` chain, the render debug
-  sink (removes a mutable global), and the feature/Services boundaries. Each has a real second
+  sink (removes a mutable global), and the feature boundaries. Each has a real second
   implementation (test fakes, split pane, export) or a real boundary.
 
 **C4. Settings domain grouping → propose: drop it unless it brings real ownership.**
@@ -658,7 +649,7 @@ Decided: **C1 accepted** (extract into types first, then move into sub-packages)
 - Anything domain-specific (AO wire parsing, theme INI semantics) stays in its domain
   package. A function goes in only if it has callers in ≥2 packages.
 
-**C7. Embedding `*shell.Services` into App → propose: keep embedding, but no service may share a name with an App method.**
+**C7 (superseded 2026-10-26: no Services bag, Part 3). Embedding `*shell.Services` into App → propose: keep embedding, but no service may share a name with an App method.**
 - The `Frame` collision is already resolved by naming the service `FrameState`.
 - A named field such as `a.services.Prefs` would add ~2,000 longer references for no clarity
   gain, so embedding is the simpler choice once names are kept distinct.
@@ -725,7 +716,52 @@ before the first uikit move, so the exported uikit API is designed on SDL3 types
 redesigned later. The prep commit no longer adds SDL Mixer X to `setup-deps.ps1`; that fork
 is going away.
 
+**Renderer (decided 2026-10-26: SDL3 hardware or software, nothing more).**
+- Create the renderer with SDL's default driver choice (SDL picks the best hardware backend
+  per OS). If that fails, create the software renderer. No per-OS driver lists, no Vulkan
+  renderer of our own, no runtime switching between backends.
+- One setting / command-line flag forces software, for broken GPU drivers.
+- Handle `SDL_EVENT_RENDER_DEVICE_RESET` / `RENDER_TARGETS_RESET`: drop the GPU texture tier
+  (T1) and re-upload from the decoded tier, the way theme textures already heal on eviction.
+  Today nothing handles these events, so a device reset (driver update, sleep/resume, Remote
+  Desktop) would likely leave textures black until restart.
+- The active backend name is shown in the debug overlay and the About screen.
+- Custom shaders are out of scope. If a feature ever needs one, SDL_GPU is the route, decided
+  then.
+
+## Part 5e — UI spike and toolkit decision
+
+**Decided (2026-10-26):** SDL3 stays the platform. The UI is our own kit on SDL3, with Clay for
+layout, *if* the spike shows it is easy. Dear ImGui was dropped: it fixes input but not scaling,
+layout or skinning, cimgui-go has no SDL_Renderer or SDL3 backend (v1.6.1), and its string
+wrappers are suspected to allocate per call. Full toolkits (Gio, Qt, RmlUi, Ebiten, web) were
+rejected because each rewrites the compositor or the whole UI. Gio is the fallback candidate
+only if the spike fails.
+
+**Spike scope.** A separate Go module outside the repo (scratch or a sibling folder), throwaway.
+It links SDL3 + SDL3_ttf + Clay through a minimal cgo shim and draws a lobby-like screen: a
+header, a resizable server list with a scrollbar, a details pane, a themed nine-slice panel
+with an aspect-fit icon, buttons, and wrapped text with coloured spans.
+
+**Pass criteria** (all must hold, or the decision is reopened):
+1. Scaling: moving between 100% and 150% displays and changing the UI scale (125/150/200%)
+   re-lays out with crisp text and nine-slice edges, and no `SetScale` anywhere.
+2. Resizing: dragging the window down to a minimum size reflows without per-screen
+   rectangle code; the list keeps its scroll position.
+3. Input: dragging the scrollbar and releasing over a button does not click it (#113); wheel
+   over the list scrolls only the list.
+4. Allocation: 0 Go allocations per frame in steady state (`testing.AllocsPerRun`).
+5. Effort: the Clay shim + layout code for the screen stays small enough to read in one sitting
+   (target < 600 lines total); anything bigger means Clay is not making layout easy.
+6. Software renderer: the same screen runs with the software renderer forced.
+
+**Result:** _pending_ (fill in: numbers per criterion, line counts, problems found, decision).
+
 ## Part 6 — Adversarial review (verified against the code; amendments applied above)
+
+> Reviewed against the first draft. Since the three-layer revision (Part 3): items 1 and 5 no
+> longer apply (no Services bag), and item 3 plus the last "claims checked" entry are moot because
+> tabs are held by pointer and nothing copies `sessionState`. `AsyncResult` stays pointer-backed.
 
 **Design flaws found and fixed in this plan:**
 
@@ -735,7 +771,7 @@ is going away.
 2. **`SuspendModal() (restore func())` would allocate.** A returned closure capturing state
    escapes to the heap; it would be called on draw paths covered by 110 zero-allocation tests,
    and `modalOn` is touched at 105 sites. → Value token instead:
-   `m := c.SuspendModal(); …; c.RestoreModal(m)`. Same rule for every uikit/shell API on a draw
+   `m := c.SuspendModal(); …; c.RestoreModal(m)`. Same rule for every uikit API on a draw
    path: no returned closures, no per-frame interface boxing of non-pointer values.
 3. **`AsyncResult[T]` copy semantics.** The live session is copied by value in four places
    (tabs.go:302/326 park/activate, app_room.go:581-606 and 710-714 pinned pass,
