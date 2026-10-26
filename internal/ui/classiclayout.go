@@ -215,7 +215,7 @@ func (classic1 *classicState) snapViewportTo43(e *env, w, h int32) {
 	ov := rectToFrac(r, w, h)
 	classic1.classicOv[slotViewport] = ov
 	e.d.Prefs.SetClassicSlot(slotViewport, ov)
-	e.debug.push("edit layout: stage snapped to 4:3")
+	e.debug.Push("edit layout: stage snapped to 4:3")
 }
 
 // regSlot records a slot's drawn/default rects for the editor (edit-only path).
@@ -478,7 +478,7 @@ func (a *App) startClassicEdit() {
 	// layoutMagnetOff is NOT reset here: the sibling magnet applies in normal play
 	// too, so its zero value (magnet on) must persist across editor sessions — the
 	// chip is the only thing that flips it.
-	a.debug.push("edit layout (default courtroom): drag to move, edges/corners to resize, Ctrl+Z to undo, Esc to finish")
+	a.debug.Push("edit layout (default courtroom): drag to move, edges/corners to resize, Ctrl+Z to undo, Esc to finish")
 }
 
 // stopClassicEdit disarms and releases the input fence.
@@ -655,7 +655,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 		a.classic.classicOv = nil
 		a.classic.classicAnchor = nil // pins die with their overrides
 		a.classic.classicRot = nil    // rotations too (A4)
-		a.debug.push("edit layout: all boxes reset to default")
+		a.debug.Push("edit layout: all boxes reset to default")
 		return
 	}
 	if c.clicked && pointIn(c.mouseX, c.mouseY, snapBtn) {

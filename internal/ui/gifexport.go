@@ -848,7 +848,7 @@ func (a *App) tickGifExport() {
 			a.drawExportStamp(j, dst)                // #74 opt-in watermark, top-right
 		})
 		if err != nil {
-			a.debug.push("scene export capture: " + err.Error())
+			a.debug.Push("scene export capture: " + err.Error())
 			a.finishGifExport()
 			return
 		}
@@ -857,7 +857,7 @@ func (a *App) tickGifExport() {
 			// Stream into the WebP encoder (it compresses + drops the RGBA now, so
 			// memory stays flat); GIF keeps the quantized frame for the final encode.
 			if err := j.webp.AddFrame(img); err != nil {
-				a.debug.push("webp add: " + err.Error())
+				a.debug.Push("webp add: " + err.Error())
 				a.finishGifExport()
 				return
 			}
@@ -866,7 +866,7 @@ func (a *App) tickGifExport() {
 			// window). A broken pipe means ffmpeg died — stop; finishVideoExport
 			// reaps the process and surfaces the stderr tail as the result.
 			if err := j.vid.AddFrame(img); err != nil {
-				a.debug.push("video add: " + err.Error())
+				a.debug.Push("video add: " + err.Error())
 				a.finishGifExport()
 				return
 			}

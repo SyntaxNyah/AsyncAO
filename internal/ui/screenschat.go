@@ -486,7 +486,7 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool, pct int) {
 			// without recording rasterText, so every later frame re-entered, failed
 			// identically, and drew NOTHING — a permanently blank chatbox under a
 			// showname that still painted, with no message anywhere and no diagnostic.
-			a.debug.push("chatbox raster failed: " + err.Error() + " — drawing the message unrasterized")
+			a.debug.Push("chatbox raster failed: " + err.Error() + " — drawing the message unrasterized")
 			a.raster.rasterFailedText = sc.MessageText
 			return
 		}

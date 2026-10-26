@@ -498,7 +498,7 @@ func (a *App) pumpBackgroundTabs() {
 					// single countdown, and arming them for a parked tab would FIGHT a
 					// live primary's own countdown. The recovery gap is known; recovery
 					// for parked tabs needs per-tab retry state (designed elsewhere).
-					a.debug.push("tab " + s.srvMeta.serverName + ": connection closed in background")
+					a.debug.Push("tab " + s.srvMeta.serverName + ": connection closed in background")
 					break
 				}
 				for _, ev := range s.link.sess.HandlePacket(p) {

@@ -339,7 +339,7 @@ func (a *App) pollOverlayRosters() {
 			// Upload, NOT UploadPinned — see overlayThemeKeyPrefix. An eviction
 			// simply means the next play re-reads the file.
 			if err := a.d.Store.Upload(res.key, res.dec); err != nil {
-				a.debug.push("effect overlay upload failed: " + err.Error())
+				a.debug.Push("effect overlay upload failed: " + err.Error())
 			}
 		default:
 			return

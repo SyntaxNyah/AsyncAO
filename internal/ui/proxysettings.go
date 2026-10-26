@@ -26,7 +26,7 @@ func proxyModeLabel(mode int) string {
 // every change and by the re-check button — never per request.
 func (a *App) applyProxyPrefs() {
 	p := netproxy.Configure(netproxy.Mode(a.d.Prefs.Load().ProxyModeVal), a.d.Prefs.Load().ProxyURL)
-	a.debug.push("proxy: " + p.Describe())
+	a.debug.Push("proxy: " + p.Describe())
 }
 
 func (a *App) drawProxySettings(y, w int32) int32 {

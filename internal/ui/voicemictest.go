@@ -50,7 +50,7 @@ func (a *App) startMicTest(sidetone bool) {
 	}
 	cap, err := sdl.OpenAudioDevice(a.d.Prefs.Load().VoiceInputDevice, true, &spec, nil, 0)
 	if err != nil {
-		a.debug.push("mic test: no capture device available")
+		a.debug.Push("mic test: no capture device available")
 		return
 	}
 	mt := &micTester{capture: cap, buf: make([]byte, voiceFrameBytes), sidetone: sidetone}

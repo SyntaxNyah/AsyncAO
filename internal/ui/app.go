@@ -11,6 +11,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/debuglog"
 	"github.com/SyntaxNyah/AsyncAO/internal/logbrowser"
 	"github.com/SyntaxNyah/AsyncAO/internal/metrics"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
@@ -204,7 +205,7 @@ type env struct {
 	// has no tab at all (theme apply, extensions seeding, casing detection, the
 	// updater), and triaging the client wants every tab's failures in one stream.
 	// Memory-only (debugLogCap ring, never a file).
-	debug debugSink
+	debug debuglog.Sink
 
 	// h is the narrow set of App capabilities a component needs beyond env's
 	// own shared state. Set once in wireComponents; nil in a bare or

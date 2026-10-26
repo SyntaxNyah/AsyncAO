@@ -246,7 +246,7 @@ func (a *App) pollCharBind() {
 	}
 	key := strings.ToLower(sdl.GetKeyName(c.keyPressed))
 	a.d.Prefs.SetCharKeyBind(a.srvMeta.serverKey, key, a.courtkeys.bindingFor)
-	a.debug.push(fmt.Sprintf("key %q now wears %s (this server only)", key, a.courtkeys.bindingFor))
+	a.debug.Push(fmt.Sprintf("key %q now wears %s (this server only)", key, a.courtkeys.bindingFor))
 	a.courtkeys.bindingFor = ""
 	a.refreshCharKeys()
 }
@@ -1369,17 +1369,17 @@ func isSelfName(name string, selfNames []string) bool {
 func (a *App) captureScreenshot() {
 	w, h, err := a.ctx.Ren.GetOutputSize()
 	if err != nil {
-		a.debug.push("screenshot: " + err.Error())
+		a.debug.Push("screenshot: " + err.Error())
 		return
 	}
 	surf, err := sdl.CreateRGBSurfaceWithFormat(0, w, h, 32, uint32(sdl.PIXELFORMAT_ABGR8888))
 	if err != nil {
-		a.debug.push("screenshot: " + err.Error())
+		a.debug.Push("screenshot: " + err.Error())
 		return
 	}
 	if err := a.ctx.Ren.ReadPixels(nil, surf.Format.Format, surf.Data(), int(surf.Pitch)); err != nil {
 		surf.Free()
-		a.debug.push("screenshot: " + err.Error())
+		a.debug.Push("screenshot: " + err.Error())
 		return
 	}
 	stamp := time.Now().Format("20060102-150405")
@@ -1403,7 +1403,7 @@ func (a *App) captureScreenshot() {
 	}()
 	a.warnLine = "Screenshot saved: " + rel
 	a.warnAt = time.Now()
-	a.debug.push("screenshot saved: " + rel)
+	a.debug.Push("screenshot saved: " + rel)
 }
 
 // writeScreenshotPNG encodes ABGR8888 back-buffer bytes (already in image.RGBA
@@ -2164,7 +2164,7 @@ func (a *App) copyICLog() {
 		b.WriteString("\r\n")
 	}
 	_ = sdl.SetClipboardText(b.String())
-	a.debug.push(fmt.Sprintf("copied %d log lines to clipboard", len(idx)))
+	a.debug.Push(fmt.Sprintf("copied %d log lines to clipboard", len(idx)))
 }
 
 // exportICLog writes the full log next to the exe as TXT or HTML (colors
@@ -2214,7 +2214,7 @@ func (a *App) exportICLog(asHTML bool) {
 			}
 		}
 	}()
-	a.debug.push("exporting IC log (" + stamp + ")")
+	a.debug.Push("exporting IC log (" + stamp + ")")
 }
 
 // icHTMLColor maps an AO text color index onto a CSS color matching the

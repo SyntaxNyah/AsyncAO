@@ -162,7 +162,7 @@ func (a *App) pollMountIndex() {
 		// next frame instead of whenever it happens to evict.
 		a.rescanLocalPacks(layer)
 		files, _ := res.idx.Stats()
-		a.debug.push("local packs indexed: " + strconv.Itoa(files) + " file(s)")
+		a.debug.Push("local packs indexed: " + strconv.Itoa(files) + " file(s)")
 	default:
 	}
 }
@@ -216,7 +216,7 @@ func (a *App) rescanLocalPacks(layer *assets.MountLayer) {
 		return
 	}
 	if n := a.d.Store.RemoveWhere(layer.Covers); n > 0 {
-		a.debug.push("local packs: dropped " + strconv.Itoa(n) + " resident texture(s) to re-resolve")
+		a.debug.Push("local packs: dropped " + strconv.Itoa(n) + " resident texture(s) to re-resolve")
 	}
 }
 

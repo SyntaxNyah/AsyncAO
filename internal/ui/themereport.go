@@ -137,7 +137,7 @@ func (a *App) noteThemeReport(name string, report []string) {
 	// rather than either: the log is where an author reads the whole list, the
 	// line is what a player who just imported a stranger's theme actually sees.
 	for _, n := range report {
-		a.debug.push(n)
+		a.debug.Push(n)
 	}
 	a.warnBundle(themeReportLine(name, report))
 }

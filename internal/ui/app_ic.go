@@ -447,21 +447,21 @@ func (a *App) pollThemeApply() {
 		// missing fonts has them missing on every apply, so warning every time
 		// would make the client unusable for anyone not intending to fix it — and
 		// the second showing is what teaches people to dismiss without reading.
-		a.debug.push(res.themeFontWarn)
+		a.debug.Push(res.themeFontWarn)
 		a.maybeWarnMissingFonts(res.name, res.themeFontsMissing, res.themeFontWarn, res.userFontsDir)
 	}
 	line := themeApplySummary(res)
 	settings.statusLine = clampLine(line)
-	a.debug.push(line)
+	a.debug.Push(line)
 	if res.inkGuard != "" {
-		a.debug.push(res.inkGuard)
+		a.debug.Push(res.inkGuard)
 	}
 	// A refused sidecar goes to the debug log on EVERY apply (pushDebug's ×N collapse
 	// keeps a re-kicked heal from flooding it) and takes over the Settings status
 	// line, which is the surface the user is looking at when they pick a theme. The
 	// chip is the third surface and the only one that survives leaving that screen.
 	if res.sidecarErr != "" {
-		a.debug.push(res.sidecarErr)
+		a.debug.Push(res.sidecarErr)
 		settings.statusLine = clampLine(res.sidecarErr)
 	}
 	// THE IMPORT REPORT (themereport.go). It SUBSUMES the #21 unbound-key
@@ -481,7 +481,7 @@ func (a *App) pollThemeApply() {
 	// probe is one map read per theme apply.
 	if res.name != "" && a.d.Prefs.Load().HasThemeRectOverride(res.name, "ms_chatlog") {
 		a.d.Prefs.ClearThemeRectOverride(res.name, "ms_chatlog")
-		a.debug.push("cleared a stale ms_chatlog layout override (it now means AO2's debug log)")
+		a.debug.Push("cleared a stale ms_chatlog layout override (it now means AO2's debug log)")
 	}
 	// Theme chrome uploads PINNED (above), so applying a theme can evict
 	// emote-button art from T1. The gen-keyed page cache re-Gets on the
@@ -700,7 +700,7 @@ func (a *App) logSpeakerAnimDiag() {
 		return // same base already logged — don't flood the ring
 	}
 	a.frame.lastSpeakerDiagBase = si.Base
-	a.debug.push(fmt.Sprintf("speaker anim: %s · %d/%d frames · delays %d/%d/%d ms (min/avg/max)",
+	a.debug.Push(fmt.Sprintf("speaker anim: %s · %d/%d frames · delays %d/%d/%d ms (min/avg/max)",
 		si.Base, si.Kept, si.Source,
 		si.MinDelay/time.Millisecond, si.AvgDelay/time.Millisecond, si.MaxDelay/time.Millisecond))
 }
@@ -826,7 +826,7 @@ func (a *App) drainWarnings() {
 			if len(w.Tried) > 0 {
 				line += " (tried " + strings.Join(w.Tried, " ") + " — see Settings → formats)"
 			}
-			a.debug.push(line) // unconditional: the Debug ▸ Log tab is the detail view
+			a.debug.Push(line) // unconditional: the Debug ▸ Log tab is the detail view
 			if show {
 				// #27: the chip, NOT warnLine. See assetmisschip.go for why the
 				// shared toast channel was the wrong surface for this class.
@@ -850,7 +850,7 @@ func (a *App) drainMusicFailures() {
 		select {
 		case f := <-a.d.Manager.MusicFailures():
 			line := "Music didn't load (network) — " + shortMusicName(f.URL)
-			a.debug.push(line + ": " + f.Err.Error())
+			a.debug.Push(line + ": " + f.Err.Error())
 			a.jukeWarn(line)
 		default:
 			return

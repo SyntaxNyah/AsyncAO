@@ -136,7 +136,7 @@ func (a *App) captureComicPanel(j *gifExportJob, ev recEvent) {
 			a.drawComicBubble(j, &j.room.Scene, dst) // a paper speech bubble, not the dark GIF box
 		})
 		if err != nil {
-			a.debug.push("comic capture: " + err.Error())
+			a.debug.Push("comic capture: " + err.Error())
 		} else {
 			j.panels = append(j.panels, img)
 			j.captured++

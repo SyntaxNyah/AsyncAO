@@ -637,7 +637,7 @@ func (a *App) startAutoBundle(rec *sceneRecording, stem string) {
 		// A Studio report/package (or a prior auto-build) is mid-flight: skip quietly.
 		// Queuing would violate the single-flight/no-unbounded rule and stomping a
 		// user's manual report would be worse than silently declining the freebie.
-		a.debug.push("recording auto-bundle: a content job is already running — skipped")
+		a.debug.Push("recording auto-bundle: a content job is already running — skipped")
 		return
 	}
 	if rec == nil || len(rec.Events) == 0 || strings.TrimSpace(rec.Origin) == "" {
@@ -892,7 +892,7 @@ func (a *App) tickContentJob() {
 				// phaseReport by construction). It set its own honest warnLine; clear the
 				// job so contentBusy can't stick and wedge every future content job. The
 				// flat .aorec already landed, so nothing is lost.
-				a.debug.push("recording auto-bundle: package could not start — " + a.warnLine)
+				a.debug.Push("recording auto-bundle: package could not start — " + a.warnLine)
 				a.sel.content = nil
 				a.sel.contentBusy = false
 			}
