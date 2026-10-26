@@ -10,7 +10,7 @@ in **Status**. Update Status in the same commit that completes a step.
       golangci-lint `mnd` in CI (9 already-clean packages enforced from the start)
 - [ ] 1. `internal/helper/{value,text,parse}` + duplicate removal + config double-clamp removal
 - [ ] 2. Bug fixes 1–3, 5–7 (one commit each, with tests) → **merge checkpoint** (maintainer pushes)
-- [ ] 2a. UI spike: SDL3 + Clay + our kit (Part 5e); throwaway code outside the module
+- [ ] 2a. UI spike: RmlUi 6.3 on SDL_GPU (Vulkan, software Vulkan fallback) (Part 5e); throwaway code outside the module
 - [ ] 2b. SDL facade (`internal/sdl`, `ttf`, `mix`) over go-sdl2; switch all importers
 - [ ] 2c. SDL3 switch: hardware renderer or software fallback, device-reset re-upload; drop the
       SDL Mixer X fork; replace platform code
@@ -731,12 +731,26 @@ is going away.
 
 ## Part 5e — UI spike and toolkit decision
 
-**Decided (2026-10-26):** SDL3 stays the platform. The UI is our own kit on SDL3, with Clay for
-layout, *if* the spike shows it is easy. Dear ImGui was dropped: it fixes input but not scaling,
+**Decided (2026-10-26, revised the same day):** SDL3 stays the platform and **RmlUi** is the UI
+library (customer decision: web-style authoring with RML/RCSS for themes and widgets). Clay was
+dropped with it. Rendering is SDL_GPU: Vulkan (Metal on macOS) on hardware, and a bundled
+CPU Vulkan driver (lavapipe or SwiftShader) as the software tier, so RmlUi, our compositor
+(SDL_Renderer's "gpu" backend on the same device) and viewport shaders share one path. Earlier
+in the day the choice was our own kit with Clay. Dear ImGui was dropped: it fixes input but not scaling,
 layout or skinning, cimgui-go has no SDL_Renderer or SDL3 backend (v1.6.1), and its string
 wrappers are suspected to allocate per call. Full toolkits (Gio, Qt, RmlUi, Ebiten, web) were
 rejected because each rewrites the compositor or the whole UI. Gio is the fallback candidate
 only if the spike fails.
+
+**RmlUi facts found so far (6.3 source):** the SDL_Renderer backend is deprecated in 6.3 and
+removed on master (2026-08-29), so SDL_GPU is the only maintained SDL3 path. The SDL_GPU renderer
+implements only basic drawing (630 lines vs 2,171 for GL3): no clip masks, gradients,
+box-shadow, filters or custom shaders until we port them. Its shaders ship as SPIR-V only. Its
+texture handle is a plain `SDL_GPUTexture*`, so the courtroom viewport can be shown as an image.
+The RmlUi spike checks: build with MinGW, hardware Vulkan, software Vulkan (lavapipe), data
+binding of a list from Go, click semantics on release (#113), dp scaling, hot reload of RML/RCSS,
+the viewport texture with a SPIR-V post-effect, and which RCSS features render. The Clay criteria
+below are kept for reference.
 
 **Spike scope.** A separate Go module outside the repo (scratch or a sibling folder), throwaway.
 It links SDL3 + SDL3_ttf + Clay through a minimal cgo shim and draws a lobby-like screen: a
