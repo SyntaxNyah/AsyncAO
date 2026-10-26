@@ -7,6 +7,10 @@ touching anything.
 > spec (PROMPT.md), removed from the working tree at project completion.
 > Read it any time with: `git show fab9392:PROMPT.md`
 
+> **Restructuring in progress.** The App split / SDL3 move follows the approved
+> plan in `docs/RESTRUCTURING_PLAN.md`. Read its **Status** section before any
+> structural change and continue at the first unchecked step.
+
 ## What this is
 
 AsyncAO is a **maximum-performance Attorney Online 2 client in Go** (CGO for
@@ -37,7 +41,15 @@ add TCP framing back.
    jobs* (oldest low-priority), and every accepted job's `Run(stale)` is
    invoked exactly once.
 8. **Race-detector clean.** `go test -race ./...` must pass before any commit.
-9. **No magic numbers.** Every constant is named and commented.
+9. **No magic numbers, ever** — production and test code alike. Every number
+   is a named `const` (or an `iota` enum when the values form a set), never a
+   variable; local `const` when one function uses it. Exemptions, and only
+   these: `0`, `1`, `-1` as structural values (empty, start, offset, sentinel);
+   `2` for halving/doubling in geometry (`(w-tw)/2`); values inside a named
+   data table or struct literal whose table and field names already say what
+   they mean (theme preset RGB rows, AO-spec index tables). Enforced by
+   golangci-lint's `mnd` linter, opted in per package: a package joins the
+   enforced set once clean and never leaves it.
 10. **No push, no PRs from automation.** Local commits only; the user pushes.
 11. **Tests prove behaviour through the public API.** No `go/ast` or
     source-scanning tests: a test that parses this package's own files to
@@ -48,12 +60,36 @@ add TCP framing back.
     source. No comment cites a test file by name; such a citation rots and is
     deleted with the test it points at.
 
-    **Sole exception — the HDID privacy gate** (`internal/ui/hdidgate_test.go`):
+    **Permanent exception — the HDID privacy gate** (`internal/ui/hdidgate_test.go`):
     the per-server HDID is derived from the address being dialled, at the call;
     every wrong answer is a well-shaped id, so no behavioural test can distinguish
-    it. It is the one surviving source-scan test, keyed by function name for any
-    receiver, and is removed the day the id becomes a value the session constructor
-    is handed.
+    it. It is keyed by function name for any receiver, and is removed the day the
+    id becomes a value the session constructor is handed. Keep the HDID derivation
+    inside `internal/ui` so this gate keeps seeing it.
+
+    **Legacy, being retired:** five more source-scan tests still exist
+    (`srcgate_test.go`, the `allocgate_test.go` census, `themeeditorseam_test.go`,
+    `themeeditorpreview_test.go`, `zerowidthlanes_test.go`). Each is converted to a
+    behavioural test or deleted before the restructuring step that would break it;
+    no new ones may be added.
+
+12. **KISS, DRY, dependency injection** — for every type in every package.
+    A type exists only if it owns behaviour or is plain data with one meaning;
+    no forwarding methods; no interface with a single implementation unless it
+    crosses a package boundary or breaks a cycle. One implementation per concept:
+    shared value coercion and parsing live in `internal/helper/<category>`
+    (`value`, `text`, `parse`); Go `slices`/`maps` replace hand-rolled loops; a
+    config range is clamped in `normalizeSettings` only. DI is constructor
+    injection where an object has ≥2 implementations (test fakes count) or
+    crosses a boundary; no setters after construction except documented cycle
+    breaks; no mutable package globals (`sync.Once` registries and constant
+    tables excepted); `cmd/asyncao/main.go` is the single composition root.
+13. **Common names only.** Identifiers, comments, commit messages and docs use
+    the plain words a developer new to the project would expect — no invented
+    jargon or metaphors (not "seam", "lift", "ratchet", "latch", "census",
+    "teeth", "oracle", "slot", "mailbox"). The preferred-term table lives in
+    `docs/RESTRUCTURING_PLAN.md` (Part 2c). Existing jargon is renamed when its
+    code is touched anyway, never in a rename-only sweep.
 
 ## Build & test commands (Windows dev box)
 
@@ -80,8 +116,16 @@ go test -run=NONE -bench=. -benchmem ./...         # alloc gates (see docs/BENCH
 gofmt -w . && go vet ./...                         # before every commit
 ```
 
-Pure-Go packages test with `CGO_ENABLED=0`; SDL packages use the dummy video
-driver headlessly (they skip if SDL is unavailable).
+Pure-Go leaf packages (cache, config, network, protocol, theme, …) test with
+`CGO_ENABLED=0`, but `assets` (libwebp/libavif decode) and everything that
+imports it — `courtroom`, `logbrowser`, `archive`, `render`, `ui` — needs cgo.
+SDL packages use the dummy video driver headlessly (`SDL_VIDEODRIVER=dummy`;
+they skip if SDL is unavailable).
+
+`render/mixerx` links SDL Mixer X (our fork), which `setup-deps.ps1` does not
+install. Until the SDL3 move removes it, build it once from an MSYS2 UCRT64
+shell, with Git for Windows on PATH (the login shell does not inherit it):
+`MSYSTEM=UCRT64 /c/msys64/usr/bin/bash.exe -lc 'export PATH="$PATH:/c/Program Files/Git/cmd"; pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-{opus,opusfile,cmake,ninja} && bash <repo>/scripts/build-sdl-mixer-x.sh /ucrt64'`
 
 ## Package map
 
@@ -159,8 +203,9 @@ Protocol gotchas already encoded in code/tests — don't "fix" them:
   CGO linking then fails with `collect2: cannot find 'ld'`. Fix:
   `pacman -S mingw-w64-ucrt-x86_64-binutils`. On any sudden CGO link
   failure, check ld.exe exists before debugging anything else.
-- `go.mod` pins `go 1.24` and `golang.org/x/sync v0.17.0`; **don't let
-  `go get` bump x/sync** to a version requiring Go 1.25.
+- `go.mod` pins `go 1.25.0` and `golang.org/x/sync v0.20.0`, and CI's
+  `GO_VERSION` must match the `go` directive; don't let `go get` bump either
+  without bumping the other.
 - devkitPro's MSYS2 at `C:\devkitPro\msys2` belongs to other projects — never
   touch it; AsyncAO uses `C:\msys64`.
 - WebP test fixtures were generated with msys2's `cwebp`/`img2webp`,
