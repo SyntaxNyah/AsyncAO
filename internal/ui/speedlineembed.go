@@ -36,10 +36,10 @@ func (a *App) uploadEmbeddedSpeedlines() {
 func (a *App) uploadOneSpeedline(key string, b []byte) {
 	dec, err := assets.DecodeImage(b, false) // static: the fallback is a single frame
 	if err != nil {
-		a.debug.Push("speedlines: embedded fallback failed to decode: " + err.Error())
+		a.pushDebug("speedlines: embedded fallback failed to decode: " + err.Error())
 		return
 	}
 	if err := a.d.Store.UploadPinned(key, dec); err != nil { // UploadPinned releases dec
-		a.debug.Push("speedlines: embedded fallback failed to upload: " + err.Error())
+		a.pushDebug("speedlines: embedded fallback failed to upload: " + err.Error())
 	}
 }

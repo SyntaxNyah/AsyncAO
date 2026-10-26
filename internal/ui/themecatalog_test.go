@@ -29,6 +29,15 @@ func writeCatalogTheme(t *testing.T, root, name string, kindFiles ...string) str
 
 // TestThemeCatalogIsBoundedAndPublishedAtomically is the W2 gate on the scan.
 // Three properties, all of them rules rather than preferences:
+//
+//   - BOUNDED (hard rule 4): a user who points the theme folder at a directory
+//     holding a thousand entries gets themeCatalogCap of them and a flag saying
+//     so — never an unbounded slice behind a pointer the draw path reads.
+//   - PUBLISHED, not mutated: the snapshot the UI holds is immutable, so a scan
+//     landing mid-frame swaps a pointer instead of growing a slice under it.
+//   - BADGED: the kind comes from the files actually present, which is what
+//     makes "this folder holds no theme files" a visible state instead of a
+//     theme that silently does nothing.
 func TestThemeCatalogIsBoundedAndPublishedAtomically(t *testing.T) {
 	root := t.TempDir()
 
@@ -103,16 +112,20 @@ func TestThemeCatalogIsBoundedAndPublishedAtomically(t *testing.T) {
 
 	// The snapshot is published whole. Nothing mutates a live one: swapping
 	// the pointer is the only way it changes.
+	//
 	// The count to compare against is CAPTURED, not hardcoded: this scan also
 	// walks this machine's real theme roots (exe dir, config base), so the
 	// number of entries depends on what the developer happens to have in
+	// <config>/themes. The property under test is "publishing cat left cat2
+	// alone", and a baseline taken before the publish tests exactly that
+	// without going red the day someone uses the folder this wave ships.
 	cat2Len := len(cat2.Entries)
-	a := &App{env: env{}}
-	a.skin.themeCat.Store(cat2)
+	a := &App{}
+	a.themeCat.Store(cat2)
 	if got := a.themeCatalogSnapshot(); got != cat2 {
 		t.Errorf("snapshot read back a different pointer")
 	}
-	a.skin.themeCat.Store(cat)
+	a.themeCat.Store(cat)
 	if got := a.themeCatalogSnapshot(); got != cat || len(cat2.Entries) != cat2Len {
 		t.Errorf("publishing a new catalog disturbed the old one (cat2 held %d entries, now %d)",
 			cat2Len, len(cat2.Entries))
@@ -295,13 +308,13 @@ func TestThemeCatalogTriggerFloorIsOnlyForTheAutomaticOnes(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 
-	a := &App{env: env{d: Deps{Prefs: prefs}}}
-	a.skin.themeCat.Store(&themeCatalog{ScannedAt: time.Now()}) // "just scanned"
+	a := &App{d: Deps{Prefs: prefs}}
+	a.themeCat.Store(&themeCatalog{ScannedAt: time.Now()}) // "just scanned"
 
 	// On-open is floored: it must bail without starting anything.
 	a.requestThemeCatalog(themeScanOnOpen)
 	waitForCatalogScan(t, a)
-	if a.skin.themeCatBusy.Load() {
+	if a.themeCatBusy.Load() {
 		t.Errorf("floored request left the single-flight latched")
 	}
 
@@ -310,7 +323,7 @@ func TestThemeCatalogTriggerFloorIsOnlyForTheAutomaticOnes(t *testing.T) {
 	waitForCatalogScan(t, a)
 
 	// And an aged snapshot lets the automatic trigger through again.
-	a.skin.themeCat.Store(&themeCatalog{ScannedAt: time.Now().Add(-2 * themeScanMinInterval)})
+	a.themeCat.Store(&themeCatalog{ScannedAt: time.Now().Add(-2 * themeScanMinInterval)})
 	a.requestThemeCatalog(themeScanOnOpen)
 	waitForCatalogScan(t, a)
 
@@ -329,7 +342,7 @@ func TestThemeCatalogTriggerFloorIsOnlyForTheAutomaticOnes(t *testing.T) {
 func waitForCatalogScan(t *testing.T, a *App) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
-	for a.skin.themeCatBusy.Load() {
+	for a.themeCatBusy.Load() {
 		if time.Now().After(deadline) {
 			t.Fatal("theme catalog scan never finished")
 		}

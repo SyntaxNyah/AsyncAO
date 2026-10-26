@@ -254,6 +254,12 @@ func writeTempBytes(data []byte) (string, error) {
 // clips and muxes them into the finished silent video at silentPath, writing the
 // result beside it as "<name>-audio.<ext>" and removing the silent original on
 // success. Returns the final path + true, or ("", false) to keep the silent video.
+// Degrades in steps: full mix (all songs + SFX) → first-song bed → silent, so the
+// most important audio survives. Music tracks download once per UNIQUE url (a song
+// reused in two windows shares the file); SFX bases resolve to bytes via
+// mgr.ResolveRaw (the render path's candidate logic; off-thread-safe — the archive
+// exporter resolves the same way). Touches no App state, so it's race-free on the
+// finish goroutine.
 func muxSceneAudio(mgr *assets.Manager, silentPath string, songs []songSegment, sfx []sfxPlacement, format videoenc.Format) (string, bool) {
 	var temps []string
 	defer func() {

@@ -18,14 +18,14 @@ func froomApp(t *testing.T) *App {
 	t.Helper()
 	a := testTabApp(t)
 	name, _ := a.d.Prefs.Load().Theme()
-	a.toolbox.themeAppliedName = name
+	a.themeAppliedName = name
 	a.d.Viewport = render.NewViewport(nil)
-	a.srvMeta.serverName, a.srvMeta.serverKey = "Test Server", "ws://test.example"
-	a.conn.lastConnName, a.conn.lastConnURL = "Test Server", "ws://test.example"
+	a.serverName, a.serverKey = "Test Server", "ws://test.example"
+	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
 	a.tabs = []*courtTab{{}}
 	a.activeTab = 0
-	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
-	a.link.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, a.link.sess, courtroom.NopAudio{})
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, a.sess, courtroom.NopAudio{})
 	a.screen = ScreenCourtroom
 	return a
 }
@@ -100,7 +100,7 @@ func TestHandleInvoluntaryDropFreezesALiveCourtroom(t *testing.T) {
 
 		a.handleInvoluntaryDrop(tc.reason)
 
-		if !a.dialogs.disconnectDlg.open {
+		if !a.disconnectDlg.open {
 			t.Errorf("%s: a live courtroom must freeze under the dialog, not vanish", tc.name)
 		}
 		if a.screen != ScreenCourtroom {
@@ -108,16 +108,16 @@ func TestHandleInvoluntaryDropFreezesALiveCourtroom(t *testing.T) {
 		}
 		// The whole point: the session and room survive so the logs and the last
 		// rendered frame are still there to read.
-		if a.link.sess == nil || a.link.room == nil {
+		if a.sess == nil || a.room == nil {
 			t.Errorf("%s: sess/room were torn down — the logs and last frame are gone", tc.name)
 		}
-		if a.link.conn != nil {
+		if a.conn != nil {
 			t.Errorf("%s: the conn must be nilled so the pump stops and the room freezes", tc.name)
 		}
-		if a.conn.connErr != tc.reason {
-			t.Errorf("%s: connErr=%q, want %q", tc.name, a.conn.connErr, tc.reason)
+		if a.connErr != tc.reason {
+			t.Errorf("%s: connErr=%q, want %q", tc.name, a.connErr, tc.reason)
 		}
-		if !a.conn.autoReconnectAt.IsZero() {
+		if !a.autoReconnectAt.IsZero() {
 			t.Errorf("%s: armed a countdown pollAutoReconnect can never fire off the lobby", tc.name)
 		}
 	}
@@ -153,22 +153,22 @@ func TestHandleInvoluntaryDropWithNoRoomGoesToLobby(t *testing.T) {
 
 		})
 
-		a.conn.deliberateClose = tc.deliberate
+		a.deliberateClose = tc.deliberate
 		if tc.roomless {
-			a.link.room = nil // char-select, or a session that never reached a courtroom
+			a.room = nil // char-select, or a session that never reached a courtroom
 		}
 		a.handleInvoluntaryDrop(tc.reason)
 
-		if a.dialogs.disconnectDlg.open {
+		if a.disconnectDlg.open {
 			t.Errorf("%s: nothing to freeze, so no dialog", tc.name)
 		}
 		if a.screen != ScreenLobby {
 			t.Errorf("%s: must land on the lobby, got %v", tc.name, a.screen)
 		}
-		if a.conn.connErr != tc.reason {
-			t.Errorf("%s: the lobby must show the reason, connErr=%q want %q", tc.name, a.conn.connErr, tc.reason)
+		if a.connErr != tc.reason {
+			t.Errorf("%s: the lobby must show the reason, connErr=%q want %q", tc.name, a.connErr, tc.reason)
 		}
-		if gotArm := !a.conn.autoReconnectAt.IsZero(); gotArm != tc.wantAutoArm {
+		if gotArm := !a.autoReconnectAt.IsZero(); gotArm != tc.wantAutoArm {
 			t.Errorf("%s: auto-reconnect armed=%v, want %v", tc.name, gotArm, tc.wantAutoArm)
 		}
 	}
@@ -179,11 +179,11 @@ func TestHandleInvoluntaryDropWithNoRoomGoesToLobby(t *testing.T) {
 // drop path stand-in every deliberate caller shares (they all set deliberateClose).
 func TestVoluntaryDisconnectGoesToLobby(t *testing.T) {
 	a := froomApp(t)
-	a.link.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
-	a.link.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, a.link.sess, courtroom.NopAudio{})
-	a.conn.deliberateClose = true // the user chose to leave
+	a.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
+	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, a.sess, courtroom.NopAudio{})
+	a.deliberateClose = true // the user chose to leave
 	a.handleInvoluntaryDrop("connection closed")
-	if a.dialogs.disconnectDlg.open {
+	if a.disconnectDlg.open {
 		t.Error("a deliberate close must NEVER open the dialog")
 	}
 	if a.screen != ScreenLobby {
@@ -210,20 +210,20 @@ func TestAutoReconnectRetriesFromLobbyNeverGivesUp(t *testing.T) {
 	})
 
 	a.screen = ScreenLobby // a drop already tore down to the lobby
-	a.conn.connErr = "connection closed"
-	a.conn.autoReconnectTries = 0
-	a.conn.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
+	a.connErr = "connection closed"
+	a.autoReconnectTries = 0
+	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 
 	const attempts = 10 // well past the 8-try cutoff a prior version enforced
 	for i := 1; i <= attempts; i++ {
 		a.pollAutoReconnect()
-		if a.conn.autoReconnectAt.IsZero() {
+		if a.autoReconnectAt.IsZero() {
 			t.Fatalf("attempt %d: auto-reconnect stopped retrying — it must never give up", i)
 		}
-		a.conn.autoReconnectAt = a.now().Add(-1 * time.Second) // force the next retry due now
+		a.autoReconnectAt = a.now().Add(-1 * time.Second) // force the next retry due now
 	}
-	if a.conn.autoReconnectTries != attempts {
-		t.Errorf("expected %d attempts to have run, got %d", attempts, a.conn.autoReconnectTries)
+	if a.autoReconnectTries != attempts {
+		t.Errorf("expected %d attempts to have run, got %d", attempts, a.autoReconnectTries)
 	}
 }
 
@@ -232,13 +232,13 @@ func TestAutoReconnectRetriesFromLobbyNeverGivesUp(t *testing.T) {
 // retry does NOT fire — the restored Frame-only-from-lobby contract.
 func TestAutoReconnectSuppressedOffLobby(t *testing.T) {
 	a := froomApp(t) // screen == Courtroom
-	a.conn.autoReconnectTries = 0
-	a.conn.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
+	a.autoReconnectTries = 0
+	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 	a.pollAutoReconnect()
-	if a.conn.autoReconnectTries != 0 {
+	if a.autoReconnectTries != 0 {
 		t.Error("a retry must NOT fire off the lobby (courtroom): it stays armed until the user returns")
 	}
-	if a.conn.autoReconnectAt.IsZero() {
+	if a.autoReconnectAt.IsZero() {
 		t.Error("the armed retry must remain armed while off the lobby")
 	}
 }
@@ -249,19 +249,19 @@ func TestAutoReconnectSuppressedOffLobby(t *testing.T) {
 func TestBackToLobbyLandsInPostDisconnectState(t *testing.T) {
 	a := froomApp(t)
 	a.openDisconnectDialog("Test Server", "ws://test.example", "connection closed", time.Time{})
-	a.conn.autoReconnectAt = a.now().Add(2 * time.Second) // a countdown was running
+	a.autoReconnectAt = a.now().Add(2 * time.Second) // a countdown was running
 	a.closeDisconnectDialogToLobby()
 
-	if a.dialogs.disconnectDlg.open {
+	if a.disconnectDlg.open {
 		t.Error("Back to lobby must clear the dialog (release its fence)")
 	}
 	if a.screen != ScreenLobby {
 		t.Errorf("Back to lobby must land on the lobby, got %v", a.screen)
 	}
-	if a.link.sess != nil || a.link.room != nil || a.link.conn != nil {
+	if a.sess != nil || a.room != nil || a.conn != nil {
 		t.Error("Back to lobby runs the full teardown — session/room/conn must all be gone")
 	}
-	if !a.conn.autoReconnectAt.IsZero() {
+	if !a.autoReconnectAt.IsZero() {
 		t.Error("Back to lobby cancels any pending auto-reconnect (the user opted out)")
 	}
 }
@@ -274,17 +274,17 @@ func TestReconnectFromDialogRedials(t *testing.T) {
 	a.openDisconnectDialog("Test Server", "ws://test.example", "connection closed", time.Time{})
 	// A DIFFERENT server later became the global lastConn* (a second tab): Reconnect
 	// must still target the server captured in the dialog, not this one.
-	a.conn.lastConnName, a.conn.lastConnURL = "Other", "ws://other.example"
+	a.lastConnName, a.lastConnURL = "Other", "ws://other.example"
 
 	a.reconnectFromDisconnectDialog()
 
-	if a.dialogs.disconnectDlg.open {
+	if a.disconnectDlg.open {
 		t.Error("Reconnect must clear the dialog first (fence release)")
 	}
 	// Connect seeds lastConn* to the redial target; with no reachable server the dial
 	// fails and lands on the lobby, but lastConn* proves which server was dialed.
-	if a.conn.lastConnURL != "ws://test.example" {
-		t.Errorf("Reconnect must redial the dialog's server, got lastConnURL=%q", a.conn.lastConnURL)
+	if a.lastConnURL != "ws://test.example" {
+		t.Errorf("Reconnect must redial the dialog's server, got lastConnURL=%q", a.lastConnURL)
 	}
 	if a.screen != ScreenLobby {
 		t.Errorf("a failed redial lands on the lobby, got %v", a.screen)
@@ -301,7 +301,7 @@ func TestEscClosesDisconnectDialogToLobby(t *testing.T) {
 	if !a.closeTopOverlay() {
 		t.Fatal("Esc must be handled by closeTopOverlay while the dialog is up")
 	}
-	if a.dialogs.disconnectDlg.open {
+	if a.disconnectDlg.open {
 		t.Error("Esc must clear the dialog")
 	}
 	if a.screen != ScreenLobby {
@@ -323,7 +323,7 @@ func TestDialogCloseAlwaysReleasesFence(t *testing.T) {
 		a.openDisconnectDialog("Test Server", "ws://test.example", "connection closed", time.Time{})
 		a.ctx.fencePointer() // stand in for the frame-tail fence set while the dialog is up
 		close(a)
-		if a.dialogs.disconnectDlg.open {
+		if a.disconnectDlg.open {
 			t.Errorf("%s: the dialog must be closed so its fence releases (else a stuck freeze)", name)
 		}
 	}
@@ -334,7 +334,7 @@ func TestDialogCloseAlwaysReleasesFence(t *testing.T) {
 // pop the dialog over whatever ACTIVE tab the user is looking at.
 func TestParkedTabDeathArmsWithoutActiveModal(t *testing.T) {
 	a := testTabApp(t)
-	bg := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Background", serverKey: "ws://bg"}}, inCourt: true}
+	bg := &courtTab{state: sessionState{serverName: "Background", serverKey: "ws://bg"}, inCourt: true}
 	a.tabs = []*courtTab{bg, {}}
 	a.activeTab = 1
 	a.routeBackgroundEvent(bg, courtroom.Event{Kind: courtroom.EventDisconnect, Text: "Kicked: afk"})
@@ -344,7 +344,7 @@ func TestParkedTabDeathArmsWithoutActiveModal(t *testing.T) {
 	if bg.deadReason != "Kicked: afk" {
 		t.Errorf("the reason must latch on the tab, got %q", bg.deadReason)
 	}
-	if a.dialogs.disconnectDlg.open {
+	if a.disconnectDlg.open {
 		t.Error("a PARKED tab's death must NOT open a modal over the active tab")
 	}
 }
@@ -355,24 +355,24 @@ func TestParkedTabDeathArmsWithoutActiveModal(t *testing.T) {
 func TestActivateDeadInCourtTabOpensDialog(t *testing.T) {
 	a := froomApp(t) // active tab 0 is a live courtroom
 	dead := &courtTab{
-		state:   sessionState{srvMeta: serverMetaState{serverName: "Dropped", serverKey: "ws://dropped"}},
+		state:   sessionState{serverName: "Dropped", serverKey: "ws://dropped"},
 		dead:    true,
 		inCourt: true,
 	}
-	dead.state.link.sess = courtroom.NewRehearsalSession("", []string{"Edgeworth"})
+	dead.state.sess = courtroom.NewRehearsalSession("", []string{"Edgeworth"})
 	dead.deadReason = "Banned: naughty"
 	a.tabs = append(a.tabs, dead) // index 1
 
 	a.activateTab(1)
 
-	if !a.dialogs.disconnectDlg.open {
+	if !a.disconnectDlg.open {
 		t.Fatal("activating a dead-in-court tab must open the disconnect dialog")
 	}
 	if a.screen != ScreenCourtroom {
 		t.Errorf("the dialog sits over the tab's restored courtroom, screen=%v", a.screen)
 	}
-	if a.dialogs.disconnectDlg.reason.raw != "Banned: naughty" {
-		t.Errorf("the dialog must show the latched reason, got %q", a.dialogs.disconnectDlg.reason.raw)
+	if a.disconnectDlg.reason.raw != "Banned: naughty" {
+		t.Errorf("the dialog must show the latched reason, got %q", a.disconnectDlg.reason.raw)
 	}
 	if a.tabs[a.activeTab].dead {
 		t.Error("the dead flag must be consumed — the dialog now owns this drop")
@@ -385,7 +385,7 @@ func TestActivateDeadInCourtTabOpensDialog(t *testing.T) {
 // up over the wrong server. The active tab must be unchanged after a simulated click.
 func TestTabBarInertUnderDialog(t *testing.T) {
 	a := froomApp(t)
-	a.tabs = append(a.tabs, &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Other", serverKey: "ws://other"}}})
+	a.tabs = append(a.tabs, &courtTab{state: sessionState{serverName: "Other", serverKey: "ws://other"}})
 	a.openDisconnectDialog("Test Server", "ws://test.example", "connection closed", time.Time{})
 	before := a.activeTab
 	a.ctx.mouseDown = true // a press this frame, as a chip click would present
@@ -393,7 +393,7 @@ func TestTabBarInertUnderDialog(t *testing.T) {
 	if a.activeTab != before {
 		t.Errorf("the strip must be inert under the dialog (active tab changed %d→%d)", before, a.activeTab)
 	}
-	if !a.dialogs.disconnectDlg.open {
+	if !a.disconnectDlg.open {
 		t.Error("the dialog must still be up (the click must not have resolved it)")
 	}
 }

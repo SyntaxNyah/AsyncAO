@@ -16,13 +16,13 @@ import (
 // the list), the panel fence behaves exactly as before.
 func TestOpenDropdownPunchesThroughPanelFence(t *testing.T) {
 	a := testTabApp(t)
-	a.link.sess = courtroom.NewRehearsalSession("", nil)
-	a.link.room = &courtroom.Courtroom{}
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
 	const w, h = int32(1000), int32(800)
 
 	// A floating panel is open and the cursor sits inside it: fenced (baseline).
-	a.evid.showEvid = true
-	r := a.classic.evidPanelRect(&a.env, w, h)
+	a.showEvid = true
+	r := a.evidPanelRect(w, h)
 	a.ctx.mouseX, a.ctx.mouseY = r.X+5, r.Y+5
 	if !a.boxFencesPointer(w, h) {
 		t.Fatal("baseline: cursor over the evidence panel must fence the courtroom")

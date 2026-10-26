@@ -155,29 +155,29 @@ func (a *App) openSceneMaker(rec *sceneRecording, name string) {
 		if r := recover(); r != nil {
 			a.warnLine = a.logMakerCrash(r)
 			a.warnAt = time.Now()
-			a.sel.makerOpen = false
-			a.sel.makerScene = nil
+			a.makerOpen = false
+			a.makerScene = nil
 		}
 	}()
-	if a.sel.recActive {
+	if a.recActive {
 		a.warnLine = "Stop recording first, then open the Scene Maker."
 		a.warnAt = time.Now()
 		return
 	}
-	if a.sel.replaying {
+	if a.replaying {
 		a.stopReplay()
 	}
-	a.sel.makerScene = cloneScene(rec)
-	a.sel.makerName = sanitizeStem(name)
-	a.sel.makerSel = 0
-	a.sel.makerScroll = 0
-	a.sel.makerPickerOpen = false
-	a.sel.makerExportOpen = false
-	a.sel.makerTrimStart = -1 // no crop until the user sets In/Out
-	a.sel.makerTrimEnd = -1
-	a.sel.makerDragSeg = -1    // no reorder drag in progress
-	a.sel.makerPreviewIdx = -1 // force the preview pane to rebuild for the new scene
-	a.sel.makerOpen = true
+	a.makerScene = cloneScene(rec)
+	a.makerName = sanitizeStem(name)
+	a.makerSel = 0
+	a.makerScroll = 0
+	a.makerPickerOpen = false
+	a.makerExportOpen = false
+	a.makerTrimStart = -1 // no crop until the user sets In/Out
+	a.makerTrimEnd = -1
+	a.makerDragSeg = -1    // no reorder drag in progress
+	a.makerPreviewIdx = -1 // force the preview pane to rebuild for the new scene
+	a.makerOpen = true
 	a.ensureBgList() // warm the background list once so the BG picker has suggestions
 }
 
@@ -185,10 +185,10 @@ func (a *App) openSceneMaker(rec *sceneRecording, name string) {
 // origin of the connected server (if any) and the player's current character —
 // so "New scene → Preview" shows a real sprite out of the box where possible.
 func (a *App) newScene() {
-	origin := a.link.urls.Origin() // the connected server's asset base, "" when offline
+	origin := a.urls.Origin() // the connected server's asset base, "" when offline
 	bg := ""
-	if a.link.sess != nil {
-		bg = a.link.sess.Background // seed the live background so Preview lands on a real scene (with a desk), not a character floating on black
+	if a.sess != nil {
+		bg = a.sess.Background // seed the live background so Preview lands on a real scene (with a desk), not a character floating on black
 	}
 	rec := &sceneRecording{
 		Version: recordingVersion,
@@ -217,16 +217,16 @@ func (a *App) editRecordingInMaker(path string) {
 // room (restoring the viewport's preanim callback to the live room). The
 // dispatch then falls back to whatever screen was underneath.
 func (a *App) closeSceneMaker() {
-	a.sel.makerOpen = false
-	a.sel.makerScene = nil
-	a.sel.makerSel = 0
-	a.sel.makerScroll = 0
-	a.sel.makerPickerOpen = false
-	a.sel.makerExportOpen = false
-	a.sel.makerTrimStart = -1
-	a.sel.makerTrimEnd = -1
-	a.sel.makerDragSeg = -1
-	a.sel.makerDragMoved = false
+	a.makerOpen = false
+	a.makerScene = nil
+	a.makerSel = 0
+	a.makerScroll = 0
+	a.makerPickerOpen = false
+	a.makerExportOpen = false
+	a.makerTrimStart = -1
+	a.makerTrimEnd = -1
+	a.makerDragSeg = -1
+	a.makerDragMoved = false
 	a.teardownMakerPreview()
 }
 
@@ -245,7 +245,7 @@ type makerPreviewKey struct {
 // effective background (the selected BG itself, else the most recent BG before
 // it, else StartBg) plus the message's visual fields.
 func (a *App) makerPreviewKeyFor(sel int) makerPreviewKey {
-	rec := a.sel.makerScene
+	rec := a.makerScene
 	e := rec.Events[sel]
 	k := makerPreviewKey{kind: e.Kind}
 	if courtroom.EventKind(e.Kind) == courtroom.EventBackground {
@@ -273,22 +273,22 @@ func (a *App) makerPreviewKeyFor(sel int) makerPreviewKey {
 // (so it's idle most frames). Feeds the background context then the selected
 // message, so the pane shows that line type out and settle, like the real stage.
 func (a *App) ensureMakerPreview() {
-	if a.sel.makerScene == nil || a.d.Manager == nil {
+	if a.makerScene == nil || a.d.Manager == nil {
 		return
 	}
-	sel := a.sel.makerSel
-	if sel < 0 || sel >= len(a.sel.makerScene.Events) {
+	sel := a.makerSel
+	if sel < 0 || sel >= len(a.makerScene.Events) {
 		return
 	}
 	key := a.makerPreviewKeyFor(sel)
-	if a.sel.makerPreviewRoom != nil && a.sel.makerPreviewOrig == a.sel.makerScene.Origin &&
-		a.sel.makerPreviewIdx == sel && a.sel.makerPreviewKey == key {
+	if a.makerPreviewRoom != nil && a.makerPreviewOrig == a.makerScene.Origin &&
+		a.makerPreviewIdx == sel && a.makerPreviewKey == key {
 		return // unchanged — keep playing the current preview
 	}
 	// Construction IS wiring (newroom.go): preview speakers blip, skin and flash
 	// like live, and the pane starts under the author's own visual prefs — minus
 	// the three effect gates it takes back four lines down.
-	room := a.newRoom(courtroom.NewURLBuilder(a.sel.makerScene.Origin), nil, a.d.Audio)
+	room := a.newRoom(courtroom.NewURLBuilder(a.makerScene.Origin), nil, a.d.Audio)
 	room.Typewriter.Interval, room.TextStay = a.replayTiming()
 	room.CatchUp = false
 	// POST-CONSTRUCTION override (newroom.go): authored WYSIWYG. The pane shows
@@ -303,38 +303,38 @@ func (a *App) ensureMakerPreview() {
 	if key.bg != "" {
 		room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: key.bg})
 	}
-	if e := a.sel.makerScene.Events[sel]; courtroom.EventKind(e.Kind) == courtroom.EventMessage && e.Message != nil {
+	if e := a.makerScene.Events[sel]; courtroom.EventKind(e.Kind) == courtroom.EventMessage && e.Message != nil {
 		room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: cloneEvent(e).Message}) // copy: the room must not alias the edit buffer
 	}
-	a.sel.makerPreviewRoom = room
-	a.sel.makerPreviewOrig = a.sel.makerScene.Origin
-	a.sel.makerPreviewIdx = sel
-	a.sel.makerPreviewKey = key
+	a.makerPreviewRoom = room
+	a.makerPreviewOrig = a.makerScene.Origin
+	a.makerPreviewIdx = sel
+	a.makerPreviewKey = key
 }
 
 // driveMakerPreview advances the preview-pane room each frame (build-on-change +
 // Update + viewport sync), wrapped so a bad scene/asset can't crash the maker.
 func (a *App) driveMakerPreview(dt time.Duration) {
 	defer a.recoverMakerPreview()
-	if a.sel.makerPickerOpen { // the picker covers the body — no pane to drive
+	if a.makerPickerOpen { // the picker covers the body — no pane to drive
 		return
 	}
 	a.ensureMakerPreview()
-	if a.sel.makerPreviewRoom == nil {
+	if a.makerPreviewRoom == nil {
 		return
 	}
 	if a.d.Viewport != nil {
 		// Re-assert each frame: a full ▶ Preview (replay) rebinds this to the
 		// replay room and stopReplay points it at the live room — neither is right
 		// once we're back in the pane.
-		a.d.Viewport.OnPreanimDone = a.sel.makerPreviewRoom.NotifyPreanimDone
-		a.d.Viewport.OnFrameShown = a.sel.makerPreviewRoom.NotifyFrameShown // #17: same rebind for frame effects
+		a.d.Viewport.OnPreanimDone = a.makerPreviewRoom.NotifyPreanimDone
+		a.d.Viewport.OnFrameShown = a.makerPreviewRoom.NotifyFrameShown // #17: same rebind for frame effects
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
 	}
-	a.sel.makerPreviewRoom.Update(dt)
-	a.applySpriteOverridesTo(a.sel.makerPreviewRoom) // the preview must match what a real room would draw
+	a.makerPreviewRoom.Update(dt)
+	a.applySpriteOverridesTo(a.makerPreviewRoom) // the preview must match what a real room would draw
 	if a.d.Viewport != nil {
-		a.d.Viewport.Update(&a.sel.makerPreviewRoom.Scene, dt)
+		a.d.Viewport.Update(&a.makerPreviewRoom.Scene, dt)
 	}
 }
 
@@ -342,7 +342,7 @@ func (a *App) driveMakerPreview(dt time.Duration) {
 // teardown + debug line, never an app crash (the pane is optional).
 func (a *App) recoverMakerPreview() {
 	if r := recover(); r != nil {
-		a.debug.Push("maker preview panic: " + fmt.Sprint(r))
+		a.pushDebug("maker preview panic: " + fmt.Sprint(r))
 		a.teardownMakerPreview()
 	}
 }
@@ -368,7 +368,7 @@ func (a *App) recoverMaker() {
 // unrecovered, path).
 func (a *App) logMakerCrash(r any) string {
 	msg := fmt.Sprint(r)
-	a.debug.Push("scene maker panic: " + msg)
+	a.pushDebug("scene maker panic: " + msg)
 	writeCrashLog("scene maker panic: ", r)
 	return "Scene Maker error: " + msg + " — details saved to recordings\\scene-maker-crash.log"
 }
@@ -404,12 +404,12 @@ func (a *App) drawMakerPreviewPane(x, y, w, h int32) {
 	}
 	stage := sdl.Rect{X: x + (w-stageW)/2, Y: y, W: stageW, H: stageH}
 	c.Fill(stage, sdl.Color{R: 0, G: 0, B: 0, A: 255})
-	if a.sel.makerPreviewRoom == nil || a.d.Viewport == nil {
+	if a.makerPreviewRoom == nil || a.d.Viewport == nil {
 		c.Label(stage.X+10, stage.Y+10, "Set an Origin/CDN above to preview.", ColTextDim)
 		return
 	}
-	a.d.Viewport.Render(c.Ren, &a.sel.makerPreviewRoom.Scene, stage)
-	sc := &a.sel.makerPreviewRoom.Scene
+	a.d.Viewport.Render(c.Ren, &a.makerPreviewRoom.Scene, stage)
+	sc := &a.makerPreviewRoom.Scene
 	if sc.ShownameText != "" || sc.MessageText != "" {
 		line := strings.TrimSpace(sc.ShownameText + ": " + sc.MessageText)
 		c.LabelClippedFont(c.LogFontFor(DefaultScalePct, line), stage.X, stage.Y+stage.H+4, stage.W, line, ColText) // covering face for non-Latin previews
@@ -419,13 +419,13 @@ func (a *App) drawMakerPreviewPane(x, y, w, h int32) {
 // teardownMakerPreview disposes the preview-pane room and restores the
 // viewport's one-shot preanim callback to the live room (or clears it).
 func (a *App) teardownMakerPreview() {
-	a.sel.makerPreviewRoom = nil
-	a.sel.makerPreviewOrig = ""
-	a.sel.makerPreviewIdx = -1
+	a.makerPreviewRoom = nil
+	a.makerPreviewOrig = ""
+	a.makerPreviewIdx = -1
 	if a.d.Viewport != nil {
-		if a.link.room != nil {
-			a.d.Viewport.OnPreanimDone = a.link.room.NotifyPreanimDone
-			a.d.Viewport.OnFrameShown = a.link.room.NotifyFrameShown // #17: frame effects back to the live room
+		if a.room != nil {
+			a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
+			a.d.Viewport.OnFrameShown = a.room.NotifyFrameShown // #17: frame effects back to the live room
 		} else {
 			a.d.Viewport.OnPreanimDone = nil
 			a.d.Viewport.OnFrameShown = nil
@@ -436,36 +436,36 @@ func (a *App) teardownMakerPreview() {
 // makerInsert adds an event just after the selection (bounded by the recording
 // cap) and selects it.
 func (a *App) makerInsert(ev recEvent) {
-	if a.sel.makerScene == nil {
+	if a.makerScene == nil {
 		return
 	}
-	if len(a.sel.makerScene.Events) >= maxRecordedEvents {
+	if len(a.makerScene.Events) >= maxRecordedEvents {
 		a.warnLine = "Scene is at the event cap (" + fmt.Sprint(maxRecordedEvents) + ")."
 		a.warnAt = time.Now()
 		return
 	}
-	at := a.sel.makerSel + 1
-	if at < 0 || at > len(a.sel.makerScene.Events) {
-		at = len(a.sel.makerScene.Events)
+	at := a.makerSel + 1
+	if at < 0 || at > len(a.makerScene.Events) {
+		at = len(a.makerScene.Events)
 	}
-	evs := append(a.sel.makerScene.Events, recEvent{})
+	evs := append(a.makerScene.Events, recEvent{})
 	copy(evs[at+1:], evs[at:])
 	evs[at] = ev
-	a.sel.makerScene.Events = evs
-	a.sel.makerSel = at
+	a.makerScene.Events = evs
+	a.makerSel = at
 }
 
 // makerDuplicateSel clones the selected event right after it (the fastest way to
 // build a back-and-forth: dup, then tweak the copy).
 func (a *App) makerDuplicateSel() {
-	if a.sel.makerScene == nil {
+	if a.makerScene == nil {
 		return
 	}
-	i := a.sel.makerSel
-	if i < 0 || i >= len(a.sel.makerScene.Events) {
+	i := a.makerSel
+	if i < 0 || i >= len(a.makerScene.Events) {
 		return
 	}
-	a.makerInsert(cloneEvent(a.sel.makerScene.Events[i]))
+	a.makerInsert(cloneEvent(a.makerScene.Events[i]))
 }
 
 // makerNewLineSeed builds the event a fresh "+ Line" inserts. It INHERITS the
@@ -474,10 +474,10 @@ func (a *App) makerDuplicateSel() {
 // just edit the text (and swap the character when the speaker changes). Falls
 // back to your current character for the very first line.
 func (a *App) makerNewLineSeed() recEvent {
-	if a.sel.makerScene != nil {
-		i := a.sel.makerSel
-		if i >= 0 && i < len(a.sel.makerScene.Events) {
-			if m := a.sel.makerScene.Events[i].Message; m != nil {
+	if a.makerScene != nil {
+		i := a.makerSel
+		if i >= 0 && i < len(a.makerScene.Events) {
+			if m := a.makerScene.Events[i].Message; m != nil {
 				return recEvent{Kind: int(courtroom.EventMessage), Message: &protocol.ChatMessage{
 					CharName:  m.CharName,
 					Emote:     m.Emote,
@@ -497,10 +497,10 @@ func (a *App) makerNewLineSeed() recEvent {
 // late line without watching the whole thing. It carries the most recent
 // background before idx so the partial replay isn't blank.
 func (a *App) makerPreviewFrom(idx int) {
-	if a.sel.makerScene == nil || idx < 0 || idx >= len(a.sel.makerScene.Events) {
+	if a.makerScene == nil || idx < 0 || idx >= len(a.makerScene.Events) {
 		return
 	}
-	sub := cloneScene(a.sel.makerScene)
+	sub := cloneScene(a.makerScene)
 	for j := idx - 1; j >= 0; j-- { // last background change before idx becomes the start scene
 		if courtroom.EventKind(sub.Events[j].Kind) == courtroom.EventBackground {
 			sub.StartBg = sub.Events[j].Text
@@ -508,13 +508,13 @@ func (a *App) makerPreviewFrom(idx int) {
 		}
 	}
 	sub.Events = sub.Events[idx:]
-	a.startReplay(sub, a.sel.makerName+" (from line "+strconv.Itoa(idx+1)+")")
+	a.startReplay(sub, a.makerName+" (from line "+strconv.Itoa(idx+1)+")")
 }
 
 // trimActive reports whether a crop In or Out point is set (so the export /
 // preview should use a sub-range, not the whole scene).
 func (a *App) trimActive() bool {
-	return a.sel.makerTrimStart >= 0 || a.sel.makerTrimEnd >= 0
+	return a.makerTrimStart >= 0 || a.makerTrimEnd >= 0
 }
 
 // trimRange resolves the In/Out points to a concrete, in-bounds [start, end]
@@ -523,13 +523,13 @@ func (a *App) trimActive() bool {
 // scene rather than producing an empty export.
 func (a *App) trimRange() (int, int) {
 	n := 0
-	if a.sel.makerScene != nil {
-		n = len(a.sel.makerScene.Events)
+	if a.makerScene != nil {
+		n = len(a.makerScene.Events)
 	}
 	if n == 0 {
 		return 0, -1
 	}
-	s, e := a.sel.makerTrimStart, a.sel.makerTrimEnd
+	s, e := a.makerTrimStart, a.makerTrimEnd
 	if s < 0 || s >= n {
 		s = 0
 	}
@@ -558,7 +558,7 @@ func (a *App) inTrim(i int) bool {
 // background in effect at the crop start so a mid-scene crop isn't blank (same as
 // "Preview from this line"). Music before the crop is not carried (visual crop).
 func (a *App) trimmedScene() *sceneRecording {
-	sub := cloneScene(a.sel.makerScene)
+	sub := cloneScene(a.makerScene)
 	if !a.trimActive() || len(sub.Events) == 0 {
 		return sub
 	}
@@ -575,19 +575,19 @@ func (a *App) trimmedScene() *sceneRecording {
 
 // makerDeleteSel removes the selected event.
 func (a *App) makerDeleteSel() {
-	if a.sel.makerScene == nil {
+	if a.makerScene == nil {
 		return
 	}
-	i := a.sel.makerSel
-	if i < 0 || i >= len(a.sel.makerScene.Events) {
+	i := a.makerSel
+	if i < 0 || i >= len(a.makerScene.Events) {
 		return
 	}
-	a.sel.makerScene.Events = append(a.sel.makerScene.Events[:i], a.sel.makerScene.Events[i+1:]...)
-	if a.sel.makerSel >= len(a.sel.makerScene.Events) {
-		a.sel.makerSel = len(a.sel.makerScene.Events) - 1
+	a.makerScene.Events = append(a.makerScene.Events[:i], a.makerScene.Events[i+1:]...)
+	if a.makerSel >= len(a.makerScene.Events) {
+		a.makerSel = len(a.makerScene.Events) - 1
 	}
-	if a.sel.makerSel < 0 {
-		a.sel.makerSel = 0
+	if a.makerSel < 0 {
+		a.makerSel = 0
 	}
 }
 
@@ -595,10 +595,10 @@ func (a *App) makerDeleteSel() {
 // to the shared reorder path so the crop endpoints follow the move too. An
 // out-of-range neighbour is a no-op (makerMoveEvent bounds-checks dst).
 func (a *App) makerMoveSel(dir int) {
-	if a.sel.makerScene == nil {
+	if a.makerScene == nil {
 		return
 	}
-	a.makerMoveEvent(a.sel.makerSel, a.sel.makerSel+dir)
+	a.makerMoveEvent(a.makerSel, a.makerSel+dir)
 }
 
 // reindexAfterMove maps an index p to where it lands after the event at src is
@@ -623,10 +623,10 @@ func reindexAfterMove(p, src, dst int) int {
 // keep pointing at the SAME events. The single reorder path: the ▲/▼ buttons and
 // the timeline drag both go through it.
 func (a *App) makerMoveEvent(src, dst int) {
-	if a.sel.makerScene == nil {
+	if a.makerScene == nil {
 		return
 	}
-	evs := a.sel.makerScene.Events
+	evs := a.makerScene.Events
 	n := len(evs)
 	if src < 0 || src >= n || dst < 0 || dst >= n || src == dst {
 		return
@@ -638,12 +638,12 @@ func (a *App) makerMoveEvent(src, dst int) {
 		copy(evs[dst+1:src+1], evs[dst:src]) // shift [dst,src) right one
 	}
 	evs[dst] = ev
-	a.sel.makerSel = reindexAfterMove(a.sel.makerSel, src, dst)
-	if a.sel.makerTrimStart >= 0 {
-		a.sel.makerTrimStart = reindexAfterMove(a.sel.makerTrimStart, src, dst)
+	a.makerSel = reindexAfterMove(a.makerSel, src, dst)
+	if a.makerTrimStart >= 0 {
+		a.makerTrimStart = reindexAfterMove(a.makerTrimStart, src, dst)
 	}
-	if a.sel.makerTrimEnd >= 0 {
-		a.sel.makerTrimEnd = reindexAfterMove(a.sel.makerTrimEnd, src, dst)
+	if a.makerTrimEnd >= 0 {
+		a.makerTrimEnd = reindexAfterMove(a.makerTrimEnd, src, dst)
 	}
 }
 
@@ -651,15 +651,15 @@ func (a *App) makerMoveEvent(src, dst int) {
 // can't mutate the edit buffer; on ■ Stop the maker (still makerOpen) reappears
 // with the edit intact.
 func (a *App) makerPreview() {
-	if a.sel.makerScene == nil || len(a.sel.makerScene.Events) == 0 {
+	if a.makerScene == nil || len(a.makerScene.Events) == 0 {
 		a.warnLine = "Nothing to preview yet — add a line first."
 		a.warnAt = time.Now()
 		return
 	}
-	name := a.sel.makerName + " (preview)"
+	name := a.makerName + " (preview)"
 	if a.trimActive() {
 		s, e := a.trimRange()
-		name = fmt.Sprintf("%s (crop %d–%d)", a.sel.makerName, s+1, e+1)
+		name = fmt.Sprintf("%s (crop %d–%d)", a.makerName, s+1, e+1)
 	}
 	a.startReplay(a.trimmedScene(), name) // honours the crop range
 }
@@ -668,17 +668,17 @@ func (a *App) makerPreview() {
 // file you loaded (the user's recordings aren't ours to clobber). The write is
 // off the render thread (saveSceneRecording, §17.2).
 func (a *App) makerSave() {
-	if a.sel.makerScene == nil || len(a.sel.makerScene.Events) == 0 {
+	if a.makerScene == nil || len(a.makerScene.Events) == 0 {
 		a.warnLine = "Nothing to save yet — add a line first."
 		a.warnAt = time.Now()
 		return
 	}
-	a.sel.makerScene.Version = recordingVersion
-	if a.sel.makerScene.RecordedAt == "" {
-		a.sel.makerScene.RecordedAt = time.Now().Format(time.RFC3339)
+	a.makerScene.Version = recordingVersion
+	if a.makerScene.RecordedAt == "" {
+		a.makerScene.RecordedAt = time.Now().Format(time.RFC3339)
 	}
-	stem := sanitizeStem(a.sel.makerName) + "-" + time.Now().Format("20060102-150405")
-	name, _, err := saveSceneRecording(a.sel.makerScene, stem)
+	stem := sanitizeStem(a.makerName) + "-" + time.Now().Format("20060102-150405")
+	name, _, err := saveSceneRecording(a.makerScene, stem)
 	if err != nil {
 		a.warnLine = "Save failed: " + err.Error()
 		a.warnAt = time.Now()
@@ -693,7 +693,7 @@ func (a *App) makerSave() {
 // live Manager (the same one streaming the session), so it must run connected to
 // the origin — off the UI thread, since it fetches many assets.
 func (a *App) exportSceneArchive(scene *sceneRecording, name string) {
-	if a.sel.makerExporting {
+	if a.makerExporting {
 		return
 	}
 	if scene == nil || len(scene.Events) == 0 || strings.TrimSpace(scene.Origin) == "" {
@@ -713,14 +713,14 @@ func (a *App) exportSceneArchive(scene *sceneRecording, name string) {
 	a.makerExportPackOK = false // one confirmation covers one export
 	snap := cloneScene(scene)   // the goroutine must not race the edit buffer
 	stem := sanitizeStem(name) + "-archive-" + time.Now().Format("20060102-150405")
-	if a.sel.makerExportCh == nil {
-		a.sel.makerExportCh = make(chan string, 1)
+	if a.makerExportCh == nil {
+		a.makerExportCh = make(chan string, 1)
 	}
-	a.sel.makerExporting = true
+	a.makerExporting = true
 	a.warnLine = "Exporting self-contained archive… downloading assets (this can take a moment)."
 	a.warnAt = time.Now()
 	mgr := a.d.Manager
-	ch := a.sel.makerExportCh
+	ch := a.makerExportCh
 	go func() { ch <- runArchiveExport(mgr, snap, stem) }()
 }
 
@@ -758,12 +758,12 @@ func runArchiveExport(mgr *assets.Manager, scene *sceneRecording, stem string) s
 // pollMakerExport delivers the archive-export result back to the UI (called each
 // frame from Update).
 func (a *App) pollMakerExport() {
-	if !a.sel.makerExporting || a.sel.makerExportCh == nil {
+	if !a.makerExporting || a.makerExportCh == nil {
 		return
 	}
 	select {
-	case msg := <-a.sel.makerExportCh:
-		a.sel.makerExporting = false
+	case msg := <-a.makerExportCh:
+		a.makerExporting = false
 		a.warnLine = msg
 		a.warnAt = time.Now()
 	default:
@@ -804,13 +804,13 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 	defer a.recoverMaker() // a draw panic closes the maker + names itself, never kills the app
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: winW, H: winH}, ColBackground)
-	if a.sel.makerScene == nil { // defensive: never draw an open maker with no scene
+	if a.makerScene == nil { // defensive: never draw an open maker with no scene
 		a.newScene()
 	}
 	// Mouse-press edge for the timeline crop-handle grab (computed once per frame
 	// so a handle is grabbed on press, not when a drag from elsewhere drifts in).
-	press := c.mouseDown && !a.sel.makerPrevDown
-	a.sel.makerPrevDown = c.mouseDown
+	press := c.mouseDown && !a.makerPrevDown
+	a.makerPrevDown = c.mouseDown
 
 	// The maker is a full-window overlay: menuBarShows() is false for it, so the
 	// band below is just the server-tab strip's — which still paints over the maker
@@ -825,14 +825,14 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 
 	// Name + Origin/CDN.
 	c.Label(pad, y+5, "Name:", ColText)
-	a.sel.makerName, _ = c.TextField("mk_name", sdl.Rect{X: pad + 52, Y: y, W: 200, H: fieldH}, a.sel.makerName, "scene name")
+	a.makerName, _ = c.TextField("mk_name", sdl.Rect{X: pad + 52, Y: y, W: 200, H: fieldH}, a.makerName, "scene name")
 	c.Label(pad+266, y+5, "Origin/CDN:", ColText)
 	originX := pad + 352
 	originW := winW - originX - pad
 	if originW < 160 {
 		originW = 160
 	}
-	a.sel.makerScene.Origin, _ = c.TextField("mk_origin", sdl.Rect{X: originX, Y: y, W: originW, H: fieldH}, a.sel.makerScene.Origin, "https://your-cdn/base  — where characters/ and background/ live")
+	a.makerScene.Origin, _ = c.TextField("mk_origin", sdl.Rect{X: originX, Y: y, W: originW, H: fieldH}, a.makerScene.Origin, "https://your-cdn/base  — where characters/ and background/ live")
 	y += 34
 
 	// Actions.
@@ -843,8 +843,8 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 	}
 	bx += 112
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 88, H: btnH}, "📂 Open") {
-		a.sel.makerPickerOpen = !a.sel.makerPickerOpen
-		a.sel.makerExportOpen = false
+		a.makerPickerOpen = !a.makerPickerOpen
+		a.makerExportOpen = false
 	}
 	bx += 96
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 120, H: btnH}, "💾 Save .aorec") {
@@ -856,30 +856,30 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 	}
 	c.Tooltip(sdl.Rect{X: bx, Y: y, W: 96, H: btnH}, "Export as an AO2 .demo — watchable in vanilla AO2 (backwards compatibility). AO2 demos also OPEN here (📂 Open / Settings → Studio).")
 	bx += 104
-	if a.sel.makerExporting {
+	if a.makerExporting {
 		c.Label(bx, y+6, "📦 exporting…", ColAccent)
 	} else if c.Button(sdl.Rect{X: bx, Y: y, W: 136, H: btnH}, "📦 Export archive") {
-		a.exportSceneArchive(a.sel.makerScene, a.sel.makerName) // CDN-proof: bundles the assets
+		a.exportSceneArchive(a.makerScene, a.makerName) // CDN-proof: bundles the assets
 	}
 	bx += 144
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 120, H: btnH}, "🎞 Export GIF") {
-		a.startSceneExport(a.trimmedScene(), a.sel.makerName, exportGIF) // honours the crop range
+		a.startSceneExport(a.trimmedScene(), a.makerName, exportGIF) // honours the crop range
 	}
 	bx += 128
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 104, H: btnH}, "🎬 WebP") {
-		a.startSceneExport(a.trimmedScene(), a.sel.makerName, exportWebP) // higher-quality animated WebP, cropped
+		a.startSceneExport(a.trimmedScene(), a.makerName, exportWebP) // higher-quality animated WebP, cropped
 	}
 	bx += 112
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 104, H: btnH}, "🎥 Video") {
-		a.startSceneExport(a.trimmedScene(), a.sel.makerName, exportVideo) // MP4/WebM via ffmpeg (format in ⚙ Export)
+		a.startSceneExport(a.trimmedScene(), a.makerName, exportVideo) // MP4/WebM via ffmpeg (format in ⚙ Export)
 	}
 	bx += 112
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 110, H: btnH}, "🖼 Comic") {
-		a.startSceneExport(a.trimmedScene(), a.sel.makerName, exportComic) // PNG storyboard page (pure Go), cropped
+		a.startSceneExport(a.trimmedScene(), a.makerName, exportComic) // PNG storyboard page (pure Go), cropped
 	}
 	bx += 118
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 104, H: btnH}, "⚙ Export") {
-		a.sel.makerExportOpen = !a.sel.makerExportOpen // size / fps / quality / loop / speed
+		a.makerExportOpen = !a.makerExportOpen // size / fps / quality / loop / speed
 	}
 	bx += 112
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 108, H: btnH}, "🆕 New scene") {
@@ -894,11 +894,11 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 	y += 8
 
 	bodyY := y
-	if a.sel.makerPickerOpen { // the in-maker "Open a recording" list replaces the body
+	if a.makerPickerOpen { // the in-maker "Open a recording" list replaces the body
 		a.drawMakerOpenPicker(pad, bodyY, winW-2*pad, winH-bodyY-pad)
 		return
 	}
-	if a.sel.makerExportOpen { // the in-maker export-options panel replaces the body
+	if a.makerExportOpen { // the in-maker export-options panel replaces the body
 		a.drawMakerExportPanel(pad, bodyY)
 		return
 	}
@@ -944,7 +944,7 @@ func (a *App) drawMakerOpenPicker(x, y, w, h int32) {
 	recs := listRecordings()
 	c.Label(x, y, fmt.Sprintf("Open a recording to edit (%d found) — click one, or Cancel:", len(recs)), ColText)
 	if c.Button(sdl.Rect{X: x + w - 90, Y: y - 4, W: 90, H: btnH}, "Cancel") {
-		a.sel.makerPickerOpen = false
+		a.makerPickerOpen = false
 		return
 	}
 	y += 28
@@ -976,7 +976,7 @@ func (a *App) drawMakerOpenPicker(x, y, w, h int32) {
 // toolbar.
 func (a *App) drawMakerList(x, y, w, h int32) {
 	c := a.ctx
-	evs := a.sel.makerScene.Events
+	evs := a.makerScene.Events
 	c.Label(x, y, fmt.Sprintf("Events (%d) — click to edit:", len(evs)), ColText)
 	y += 24
 
@@ -995,26 +995,26 @@ func (a *App) drawMakerList(x, y, w, h int32) {
 	}
 	if c.hovering(listRect) && c.wheelY != 0 {
 		c.wheelTaken = true
-		a.sel.makerScroll -= int32(c.wheelY) * makerRowH
+		a.makerScroll -= int32(c.wheelY) * makerRowH
 	}
-	if a.sel.makerScroll > maxScroll {
-		a.sel.makerScroll = maxScroll
+	if a.makerScroll > maxScroll {
+		a.makerScroll = maxScroll
 	}
-	if a.sel.makerScroll < 0 {
-		a.sel.makerScroll = 0
+	if a.makerScroll < 0 {
+		a.makerScroll = 0
 	}
 
 	for i := range evs {
-		ry := y + int32(i)*makerRowH - a.sel.makerScroll
+		ry := y + int32(i)*makerRowH - a.makerScroll
 		if ry+makerRowH < y || ry > y+listH { // cull rows outside the list window
 			continue
 		}
 		rowRect := sdl.Rect{X: x, Y: ry, W: w, H: makerRowH - 2}
-		if i == a.sel.makerSel {
+		if i == a.makerSel {
 			c.Fill(rowRect, ColPanelHi)
 		}
 		if c.hovering(rowRect) && c.clicked {
-			a.sel.makerSel = i
+			a.makerSel = i
 		}
 		// Crop visuals: in-range rows get an accent stripe; excluded rows dim.
 		tag, text := eventSummary(evs[i])
@@ -1057,26 +1057,26 @@ func (a *App) drawMakerList(x, y, w, h int32) {
 	}
 	ty += btnH + 6
 	if c.Button(sdl.Rect{X: x, Y: ty, W: 184, H: btnH}, "▶ Preview from this line") {
-		a.makerPreviewFrom(a.sel.makerSel)
+		a.makerPreviewFrom(a.makerSel)
 	}
 	// Crop / trim: set In/Out around the funny moment; Preview + Export use the
 	// range, and the excluded lines dim above (delete with ✖ Del to cut for good).
 	ty += btnH + 6
 	if c.Button(sdl.Rect{X: x, Y: ty, W: 76, H: btnH}, "⏮ Set In") {
-		a.sel.makerTrimStart = a.sel.makerSel
-		if a.sel.makerTrimEnd >= 0 && a.sel.makerTrimEnd < a.sel.makerTrimStart {
-			a.sel.makerTrimEnd = -1 // Out before In is meaningless — clear it
+		a.makerTrimStart = a.makerSel
+		if a.makerTrimEnd >= 0 && a.makerTrimEnd < a.makerTrimStart {
+			a.makerTrimEnd = -1 // Out before In is meaningless — clear it
 		}
 	}
 	if c.Button(sdl.Rect{X: x + 82, Y: ty, W: 84, H: btnH}, "⏭ Set Out") {
-		a.sel.makerTrimEnd = a.sel.makerSel
-		if a.sel.makerTrimStart > a.sel.makerTrimEnd {
-			a.sel.makerTrimStart = -1
+		a.makerTrimEnd = a.makerSel
+		if a.makerTrimStart > a.makerTrimEnd {
+			a.makerTrimStart = -1
 		}
 	}
 	if a.trimActive() {
 		if c.Button(sdl.Rect{X: x + 172, Y: ty, W: 64, H: btnH}, "✕ Crop") {
-			a.sel.makerTrimStart, a.sel.makerTrimEnd = -1, -1
+			a.makerTrimStart, a.makerTrimEnd = -1, -1
 		}
 	}
 	ty += btnH + 4
@@ -1096,13 +1096,13 @@ func (a *App) drawMakerList(x, y, w, h int32) {
 // so it costs almost nothing even with the field open on a huge roster.
 func (a *App) drawCharSuggestions(x, y, leftX, availW int32, m *protocol.ChatMessage) int32 {
 	typed := strings.TrimSpace(m.CharName)
-	if a.link.sess == nil || typed == "" {
+	if a.sess == nil || typed == "" {
 		return y
 	}
 	var buf [makerCharSuggest]string
 	n := 0
-	for i := 0; i < len(a.link.sess.Chars) && n < makerCharSuggest; i++ {
-		name := a.link.sess.Chars[i].Name
+	for i := 0; i < len(a.sess.Chars) && n < makerCharSuggest; i++ {
+		name := a.sess.Chars[i].Name
 		if strings.EqualFold(name, typed) {
 			continue // don't suggest the exact thing already typed
 		}
@@ -1208,14 +1208,14 @@ func makerOffsetSlider(c *Ctx, id string, fx, y int32, v int) int {
 
 func (a *App) drawMakerEditor(x, y, w int32) {
 	c := a.ctx
-	if a.sel.makerScene == nil || a.sel.makerSel < 0 || a.sel.makerSel >= len(a.sel.makerScene.Events) {
+	if a.makerScene == nil || a.makerSel < 0 || a.makerSel >= len(a.makerScene.Events) {
 		c.Label(x, y, "No line selected — use + Line / + BG / + Music to add one.", ColTextDim)
 		return
 	}
 	if w < 200 {
 		w = 200
 	}
-	e := &a.sel.makerScene.Events[a.sel.makerSel]
+	e := &a.makerScene.Events[a.makerSel]
 	const labelW = 96
 	fx := x + labelW
 	fw := w - labelW

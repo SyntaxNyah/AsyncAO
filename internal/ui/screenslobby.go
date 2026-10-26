@@ -120,20 +120,29 @@ func lobbyListTop(topChrome int32) int32 {
 // reason is never truncated in connErr itself, and a server-authored one now also
 // goes to the notice box (servernotice.go), which is where the whole thing —
 // newlines, access code, appeal link — is readable and copyable.
+//
+// Two things are wrong with drawing connErr raw, and both are invisible failures:
+//
+//   - a reason with newlines is one Label call, and SDL_ttf does not break lines,
+//     so the second line either vanishes or lands as a tofu box mid-sentence;
+//   - a long enough reason draws NOTHING AT ALL. LabelClipped would not have saved
+//     it either — it rasterizes the whole string and clips only the blit width, so
+//     past some length the texture is the thing that fails, not the layout.
+//
 // Memoized against connErrSrc because the clamp allocates and this is called from
 // the per-frame lobby draw.
 func (a *App) connErrLabel() string {
-	if a.conn.connErrSrc != a.conn.connErr {
-		a.conn.connErrSrc = a.conn.connErr
-		s := a.conn.connErr
+	if a.connErrSrc != a.connErr {
+		a.connErrSrc = a.connErr
+		s := a.connErr
 		if i := strings.IndexByte(s, '\n'); i >= 0 {
 			// Mark the cut: a reason that silently stops at its first line reads as
 			// the whole message, and the part that matters is usually below it.
 			s = strings.TrimRight(s[:i], " \t\r") + " …"
 		}
-		a.conn.connErrLine = clampLine(s) // logLineMax runes, the shared single-line UI cap
+		a.connErrLine = clampLine(s) // logLineMax runes, the shared single-line UI cap
 	}
-	return a.conn.connErrLine
+	return a.connErrLine
 }
 
 func (a *App) drawLobby(w, h int32) {
@@ -145,23 +154,23 @@ func (a *App) drawLobby(w, h int32) {
 	// hdrY is this screen's header row, and every offset below is relative to it.
 	hdrY := a.topChromeH() + pad
 	c.Heading(pad, hdrY, "AsyncAO", ColText)
-	c.Label(pad, hdrY+30, a.conn.lobby.lobbyStatus, ColTextDim)
-	if a.conn.connErr != "" {
+	c.Label(pad, hdrY+30, a.lobbyStatus, ColTextDim)
+	if a.connErr != "" {
 		c.Label(pad+220, hdrY+30, a.connErrLabel(), ColDanger)
-		if a.conn.lastConnURL != "" { // one-click Reconnect to the server we dropped from
-			label := "Reconnect to " + a.conn.lastConnName
+		if a.lastConnURL != "" { // one-click Reconnect to the server we dropped from
+			label := "Reconnect to " + a.lastConnName
 			bw := c.TextWidth(label) + 20
 			if c.Button(sdl.Rect{X: pad + 220, Y: hdrY + 50, W: bw, H: btnH}, label) {
-				a.conn.connErr = ""
-				a.Connect(a.conn.lastConnName, a.conn.lastConnURL)
+				a.connErr = ""
+				a.Connect(a.lastConnName, a.lastConnURL)
 			}
 		}
 	}
 	// M2 auto-reconnect status (when a retry is pending): the cached message
 	// (rebuilt per attempt, not per frame) + a Stop button to bail out.
-	if !a.conn.autoReconnectAt.IsZero() {
-		c.Label(pad+220, hdrY+78, a.conn.autoReconnectMsg, ColAccent)
-		sx := pad + 220 + c.TextWidth(a.conn.autoReconnectMsg) + 12
+	if !a.autoReconnectAt.IsZero() {
+		c.Label(pad+220, hdrY+78, a.autoReconnectMsg, ColAccent)
+		sx := pad + 220 + c.TextWidth(a.autoReconnectMsg) + 12
 		if c.Button(sdl.Rect{X: sx, Y: hdrY + 74, W: c.TextWidth("Stop") + 20, H: btnH}, "Stop") {
 			a.cancelAutoReconnect()
 		}
@@ -171,6 +180,9 @@ func (a *App) drawLobby(w, h int32) {
 	// They used to be pinned by raw `w - <literal> - pad` rects
 	// (110/230/350/470/590/710/830); at config.MinWindowW those literals put "What's
 	// New" at x=-78 and "Logs" at x=-198, i.e. clean off the left edge of the window.
+	// Six of the seven now live in the menu bar (see the constants above); the Phone
+	// Book page toggle takes its rect here, in cursor order, but draws further down
+	// where its dynamic label and tooltip live.
 	utilW := lobbyUtilWidth(w)
 	pbBtn := sdl.Rect{X: lobbyUtilStop(w, 0), Y: hdrY, W: utilW, H: btnH}
 	// The leftmost of the cluster: its X is what the centred Privacy/Glossary pair
@@ -182,9 +194,11 @@ func (a *App) drawLobby(w, h int32) {
 	// the right-hand utility cluster. Centred in the gap between the title and that
 	// cluster; the width shrinks and anchors after the title on a narrow window so the
 	// row never overlaps either side.
+	//
 	// What's New is here rather than in the menu bar because release notes are a LOBBY
 	// concern: you read them between sessions, not mid-trial. It previously lived in the
 	// Help menu with a green unread dot riding the Help title, which overlapped the
+	// title's last glyph and read as a rendering defect rather than a notification.
 	const (
 		helpBtnWMax     = int32(132) // prominent width when there's room (fullscreen)
 		helpBtnWMin     = int32(96)  // floor so "What's New" stays readable when squeezed
@@ -229,11 +243,11 @@ func (a *App) drawLobby(w, h int32) {
 	}
 	if r, ok := helpSlot(0); ok && c.ButtonCol(r, "Privacy", ColPanel, ColPanelHi, ColAccent, ColAccent) {
 		a.prevScreen = ScreenLobby
-		a.docs.openHelp(1)
+		a.openHelp(1)
 	}
 	if r, ok := helpSlot(1); ok && c.ButtonCol(r, "Glossary", ColPanel, ColPanelHi, ColAccent, ColAccent) {
 		a.prevScreen = ScreenLobby
-		a.docs.openHelp(0)
+		a.openHelp(0)
 	}
 	// What's New sheds FIRST: Privacy and Glossary are what a newcomer needs before
 	// they play, and the release notes are also reachable from the changelog the
@@ -247,16 +261,16 @@ func (a *App) drawLobby(w, h int32) {
 	// screen (see the cluster comment) because "← All servers" is this page's only
 	// way back; the Servers menu carries the same toggle through the same setter.
 	pbLabel := "★ Phone Book"
-	if a.conn.lobby.phoneBookPage {
+	if a.phoneBookPage {
 		pbLabel = "← All servers"
 	}
 	if c.Button(pbBtn, pbLabel) {
-		a.setPhoneBookPage(!a.conn.lobby.phoneBookPage)
+		a.setPhoneBookPage(!a.phoneBookPage)
 	}
 	c.Tooltip(pbBtn, "Your manually-added servers — kept forever (until Wipe everything), exportable")
 
 	dcY := lobbyDirectRowY(a.topChromeH())
-	if a.conn.lobby.phoneBookPage {
+	if a.phoneBookPage {
 		a.drawPhoneBookBar(w, dcY)
 	} else {
 		// Direct connect row, laid out by lobbyDirectRow so nothing walks off the right
@@ -268,9 +282,9 @@ func (a *App) drawLobby(w, h int32) {
 		if row.label != "" {
 			c.Label(row.labelX, dcY+4, row.label, ColText)
 		}
-		a.conn.lobby.directInput, _ = c.TextField(directConnectFieldID, sdl.Rect{X: row.fieldX, Y: dcY, W: row.fieldW, H: fieldH}, a.conn.lobby.directInput, "127.0.0.1:50001")
-		a.conn.lobby.directSecure = c.Checkbox(row.tlsX, dcY+4, tlsLabel, a.conn.lobby.directSecure)
-		a.conn.lobby.directSave = c.Checkbox(row.saveX, dcY+4, saveLabel, a.conn.lobby.directSave)
+		a.directInput, _ = c.TextField(directConnectFieldID, sdl.Rect{X: row.fieldX, Y: dcY, W: row.fieldW, H: fieldH}, a.directInput, "127.0.0.1:50001")
+		a.directSecure = c.Checkbox(row.tlsX, dcY+4, tlsLabel, a.directSecure)
+		a.directSave = c.Checkbox(row.saveX, dcY+4, saveLabel, a.directSave)
 		if c.Button(sdl.Rect{X: row.connX, Y: dcY, W: dcConnectW, H: btnH}, "Connect") {
 			a.directConnect()
 		}
@@ -280,29 +294,37 @@ func (a *App) drawLobby(w, h int32) {
 	// back out of the Servers menu by request: they act on the LIST, so a menu
 	// carrying them is dead weight the moment you are in a server, and a refresh
 	// button belongs beside the thing it refreshes.
+	//
 	// They sit HERE rather than in the header's utility cluster because that
 	// cluster shares its row with the Privacy/Glossary/What's New trio; three
 	// buttons there squeezed the trio to nothing at config.MinWindowW, and What's
+	// New has no other home. This strip has the full window width to itself.
+	//
+	// Both still exist as Servers-menu rows and call the same setters, so the two
+	// surfaces cannot drift. The LABEL carries the in-flight state rather than the
+	// button grey­ing or vanishing: a control that disappears under the cursor
+	// mid-click is worse than one that says what it is doing, and the click is
+	// guarded on the same predicate the menu row's `enabled` uses.
 	listActY := dcY + lobbyListActionsDropY
 	refreshLabel := "Refresh"
-	if a.conn.lobby.lobbyFetching {
+	if a.lobbyFetching {
 		refreshLabel = "Refreshing…"
 	}
 	refreshBtn := sdl.Rect{X: pad, Y: listActY, W: lobbyListActionW, H: btnH}
-	if c.Button(refreshBtn, refreshLabel) && !a.conn.lobby.lobbyFetching {
+	if c.Button(refreshBtn, refreshLabel) && !a.lobbyFetching {
 		a.RefreshServers()
 	}
 	c.Tooltip(refreshBtn, "Re-fetch the master server list")
 
 	sortLabel := "Sort: name"
-	if a.conn.lobby.pingMode {
+	if a.pingMode {
 		sortLabel = "Sort: speed"
 	}
-	if a.conn.lobby.pinging {
+	if a.pinging {
 		sortLabel = "Pinging…"
 	}
 	sortBtn := sdl.Rect{X: pad + lobbyListActionW + lobbyUtilBtnGap, Y: listActY, W: lobbyListActionW, H: btnH}
-	if c.Button(sortBtn, sortLabel) && !a.conn.lobby.pinging {
+	if c.Button(sortBtn, sortLabel) && !a.pinging {
 		a.toggleConnectTimeSort()
 	}
 	c.Tooltip(sortBtn, "Order the list by how fast each server answers, instead of by name")
@@ -311,19 +333,19 @@ func (a *App) drawLobby(w, h int32) {
 	// row; click the selected row again: join (Join button still works).
 	// Wheel scrolls only over the list itself (never the connect row).
 	listTop := lobbyListTop(a.topChromeH())
-	a.conn.lobby.lobbyScroll -= c.WheelIn(sdl.Rect{X: 0, Y: listTop, W: w, H: h - listTop}) * scrollStepPx
-	if a.conn.lobby.lobbyScroll < 0 {
-		a.conn.lobby.lobbyScroll = 0
+	a.lobbyScroll -= c.WheelIn(sdl.Rect{X: 0, Y: listTop, W: w, H: h - listTop}) * scrollStepPx
+	if a.lobbyScroll < 0 {
+		a.lobbyScroll = 0
 	}
 	lineH := int32(c.font.Height()) + 3
-	y := listTop - a.conn.lobby.lobbyScroll
+	y := listTop - a.lobbyScroll
 	legacyHeaderDrawn := false
 	// "Phone Fanat" chip (Phone Book page only): claim its click BEFORE the rows
 	// draw — the chip sits over the bottom-right corner where a server row can be,
 	// and rows act on c.clicked immediately, so consuming the click here (like
 	// classicEditFence) stops an accidental select/connect from a chip press. The
 	// chip's visual draws later, on top, in drawPhoneFanatChip.
-	if a.conn.lobby.phoneBookPage {
+	if a.phoneBookPage {
 		a.claimPhoneFanatClick(w, h)
 	}
 	// Snapshot the slice for the whole loop: a ★-click removal (drawServerRow →
@@ -333,10 +355,10 @@ func (a *App) drawLobby(w, h int32) {
 	// length and panic. Ranging the snapshot keeps i valid against the old
 	// backing array for the rest of this frame; the stale rows draw once more
 	// (standard immediate-mode) and the next frame ranges the fresh list.
-	servers := a.conn.lobby.servers
+	servers := a.servers
 	for i := range servers {
 		e := &servers[i]
-		if a.conn.lobby.phoneBookPage && !e.Favorite {
+		if a.phoneBookPage && !e.Favorite {
 			continue // Phone Book shows only your saved servers
 		}
 		if !e.Joinable() && !legacyHeaderDrawn {
@@ -365,19 +387,19 @@ func (a *App) drawLobby(w, h int32) {
 			a.drawServerRow(e, i, y, w)
 		}
 		y += rowH
-		if i == a.conn.lobby.selServer && len(a.conn.lobby.descLines) > 0 {
-			boxH := int32(len(a.conn.lobby.descLines)+len(a.conn.lobby.descLinks))*lineH + btnH + 16
+		if i == a.selServer && len(a.descLines) > 0 {
+			boxH := int32(len(a.descLines)+len(a.descLinks))*lineH + btnH + 16
 			if y > listTop-boxH && y < h {
 				box := sdl.Rect{X: pad + 16, Y: y, W: w - 2*pad - 16, H: boxH - 4}
 				c.Fill(box, ColPanelHi)
 				c.Border(box, ColAccent)
 				ly := y + 3
-				for _, line := range a.conn.lobby.descLines {
+				for _, line := range a.descLines {
 					c.LabelClipped(box.X+6, ly, box.W-12, line, ColText)
 					ly += lineH
 				}
 				// URLs from the description: clickable, opens the browser.
-				for _, link := range a.conn.lobby.descLinks {
+				for _, link := range a.descLinks {
 					a.linkLabel(box.X+6, ly, box.W-12, link)
 					ly += lineH
 				}
@@ -393,7 +415,7 @@ func (a *App) drawLobby(w, h int32) {
 							a.startRehearsal(e.Name, e.WebSocketURL(), info)
 							return
 						}
-						a.conn.connErr = "Rehearsal needs one visit first: join " + e.Name +
+						a.connErr = "Rehearsal needs one visit first: join " + e.Name +
 							" once (this build) so its roster gets remembered."
 					}
 				}
@@ -404,36 +426,38 @@ func (a *App) drawLobby(w, h int32) {
 
 	// Keyboard navigation (#18): arrows move the selection through joinable servers, Enter joins —
 	// when no text field is focused. The selection drives the same expand + scroll as a click.
+	//
 	// NOT while the server-notice box is up. A refused dial lands here with the box open
 	// and a.selServer still pointing at the server that just refused us, and the pointer
 	// fence (App.Frame) only blanks the MOUSE — fencePointer leaves the keyboard alone.
 	// Enter would redial the server whose ban message is the reason the box is on screen,
 	// which is the same hazard the quick-connect key is gated for.
-	if c.focusID == "" && !a.font.serverNoticeDlg.open {
+	if c.focusID == "" && !a.serverNoticeDlg.open {
 		// Enter reads c.enter, NOT c.keyPressed, and that is a fix rather than a style
 		// choice: HandleEvent answers K_RETURN/K_KP_ENTER with `c.enter = true` and only
 		// reaches `c.keyPressed = e.Keysym.Sym` in its DEFAULT arm (ui.go), so keyPressed
 		// can never hold Return and the `case sdl.K_RETURN` this replaces was unreachable
 		// from a real keystroke. #18's "Enter joins" has been dead since it shipped.
+		// Consumed on use so one press joins once and nothing downstream sees it twice.
 		if c.enter {
 			c.enter = false
-			if a.conn.lobby.selServer >= 0 && a.conn.lobby.selServer < len(a.conn.lobby.servers) && a.conn.lobby.servers[a.conn.lobby.selServer].Joinable() {
-				e := &a.conn.lobby.servers[a.conn.lobby.selServer]
+			if a.selServer >= 0 && a.selServer < len(a.servers) && a.servers[a.selServer].Joinable() {
+				e := &a.servers[a.selServer]
 				a.Connect(e.Name, e.WebSocketURL())
 				return
 			}
 		}
 		switch c.keyPressed {
 		case sdl.K_DOWN:
-			if nx := a.conn.lobby.nextJoinableServer(a.conn.lobby.selServer, 1); nx >= 0 {
-				a.conn.lobby.selectServerRow(&a.env, nx, w)
-				a.conn.lobby.scrollServerIntoView(nx, listTop, h)
+			if nx := a.nextJoinableServer(a.selServer, 1); nx >= 0 {
+				a.selectServerRow(nx, w)
+				a.scrollServerIntoView(nx, listTop, h)
 			}
 			c.keyPressed = 0
 		case sdl.K_UP:
-			if nx := a.conn.lobby.nextJoinableServer(a.conn.lobby.selServer, -1); nx >= 0 {
-				a.conn.lobby.selectServerRow(&a.env, nx, w)
-				a.conn.lobby.scrollServerIntoView(nx, listTop, h)
+			if nx := a.nextJoinableServer(a.selServer, -1); nx >= 0 {
+				a.selectServerRow(nx, w)
+				a.scrollServerIntoView(nx, listTop, h)
 			}
 			c.keyPressed = 0
 		}
@@ -442,7 +466,7 @@ func (a *App) drawLobby(w, h int32) {
 	// "Phone Fanat" chip: a small, dim, always-visible click-to-quip button in the
 	// bottom-right of the Phone Book page only. Drawing strictly inside this branch
 	// keeps it off the plain all-servers lobby and out of the rest of the app.
-	if a.conn.lobby.phoneBookPage {
+	if a.phoneBookPage {
 		a.drawPhoneFanatChip(w, h)
 	}
 
@@ -459,7 +483,7 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 	row := sdl.Rect{X: pad, Y: y, W: w - 2*pad, H: rowH - 2}
 	hover := c.hovering(row)
 	bg := ColPanel
-	if idx == a.conn.lobby.selServer {
+	if idx == a.selServer {
 		bg = ColPanelHi
 	} else if hover {
 		bg = ColPanelHi
@@ -472,11 +496,11 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 	// and the tooltip for the row under edit. Identity is the stored Favorites
 	// URL (== WebSocketURL()); guarded by phoneBookPage && Favorite so it can
 	// never trigger on a plain master-list row.
-	editing := a.conn.lobby.phoneBookPage && e.Favorite && a.conn.pbEditURL != "" && a.conn.pbEditURL == e.WebSocketURL()
+	editing := a.phoneBookPage && e.Favorite && a.pbEditURL != "" && a.pbEditURL == e.WebSocketURL()
 	if editing {
 		fy := y + (rowH-2-fieldH)/2
-		a.conn.pbEditName, _ = c.TextField("pbedit_name", sdl.Rect{X: row.X + 6, Y: fy, W: 150, H: fieldH}, a.conn.pbEditName, "name")
-		a.conn.pbEditAddr, _ = c.TextField("pbedit_url", sdl.Rect{X: row.X + 164, Y: fy, W: 250, H: fieldH}, a.conn.pbEditAddr, "host:port, ws:// or wss://")
+		a.pbEditName, _ = c.TextField("pbedit_name", sdl.Rect{X: row.X + 6, Y: fy, W: 150, H: fieldH}, a.pbEditName, "name")
+		a.pbEditAddr, _ = c.TextField("pbedit_url", sdl.Rect{X: row.X + 164, Y: fy, W: 250, H: fieldH}, a.pbEditAddr, "host:port, ws:// or wss://")
 		if c.Button(sdl.Rect{X: row.X + 422, Y: fy, W: 64, H: btnH}, "Save") {
 			a.savePhoneBookEdit(e.WebSocketURL(), e.Description)
 		}
@@ -510,7 +534,7 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 	// rows). It sits between the star and the name, so the name's start-x shifts
 	// right in this branch only — the normal lobby row is byte-for-byte unchanged.
 	nameX := row.X + 52
-	if a.conn.lobby.phoneBookPage && e.Favorite {
+	if a.phoneBookPage && e.Favorite {
 		const editBtnW = 40
 		editBtn := sdl.Rect{X: starRect.X + 22, Y: y + 1, W: editBtnW, H: rowH - 4}
 		if c.Button(editBtn, "Edit") {
@@ -534,9 +558,9 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 	// time takes this slot instead (the verbose tier text would run under the
 	// number — the tier COLOUR still reads off the left swatch). "…" probing,
 	// "unreachable" on a failed dial.
-	if a.conn.lobby.pingMode && e.Joinable() {
+	if a.pingMode && e.Joinable() {
 		label, col := "…", ColTextDim
-		if d, ok := a.conn.lobby.pings[e.WebSocketURL()]; ok {
+		if d, ok := a.pings[e.WebSocketURL()]; ok {
 			if d < 0 {
 				label, col = "unreachable", ColDanger
 			} else {
@@ -560,7 +584,7 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 		// assets. Always visible so the feature is discoverable — without
 		// a remembered roster (recorded on each join) it explains itself
 		// instead of silently not existing.
-		if idx == a.conn.lobby.selServer {
+		if idx == a.selServer {
 			info := a.d.Prefs.Load().ServerWarmInfoFor(e.WebSocketURL())
 			rehBtn := sdl.Rect{X: joinBtn.X - 92, Y: y + 1, W: 86, H: rowH - 4}
 			if c.hovering(rehBtn) {
@@ -571,7 +595,7 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 					a.startRehearsal(e.Name, e.WebSocketURL(), info)
 					return
 				}
-				a.conn.connErr = "Rehearsal needs one visit first: join " + e.Name +
+				a.connErr = "Rehearsal needs one visit first: join " + e.Name +
 					" once (this build) so its roster gets remembered, then Rehearse works offline."
 			}
 		}
@@ -579,11 +603,11 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 
 	// Row body click: select-and-expand first, join on the second click.
 	if hover && !joinHover && c.clicked {
-		if idx == a.conn.lobby.selServer && e.Joinable() {
+		if idx == a.selServer && e.Joinable() {
 			a.Connect(e.Name, e.WebSocketURL())
 			return
 		}
-		a.conn.lobby.selectServerRow(&a.env, idx, w) // select + (re)build the cached description lines/links
+		a.selectServerRow(idx, w) // select + (re)build the cached description lines/links
 	}
 }
 
@@ -592,17 +616,17 @@ const maxDescLinks = 4
 
 // selectServerRow selects a lobby row and (re)builds its cached description lines + links — shared
 // by a row click and keyboard navigation (#18) so both show the same expanded detail.
-func (lobby1 *lobbyState) selectServerRow(e *env, idx int, w int32) {
-	if idx < 0 || idx >= len(lobby1.servers) {
+func (a *App) selectServerRow(idx int, w int32) {
+	if idx < 0 || idx >= len(a.servers) {
 		return
 	}
-	lobby1.selServer = idx
-	desc := lobby1.servers[idx].Description
+	a.selServer = idx
+	desc := a.servers[idx].Description
 	if desc == "" {
 		desc = "(no description)"
 	}
-	lobby1.descLines = e.ctx.WrapText(desc, w-2*pad-40, maxDescLines)
-	lobby1.descLinks = extractURLs(desc, maxDescLinks)
+	a.descLines = a.ctx.WrapText(desc, w-2*pad-40, maxDescLines)
+	a.descLinks = extractURLs(desc, maxDescLinks)
 }
 
 // serverRowTooltip shows a lobby row's details on hover (#17): the connect URL and the server's
@@ -618,11 +642,11 @@ func (a *App) serverRowTooltip(row sdl.Rect, e *network.ServerEntry) {
 
 // nextJoinableServer returns the index of the next joinable server from `from` in direction dir
 // (+1 down / -1 up), respecting the Phone Book filter; -1 when there's none that way (no wrap).
-func (lobby1 *lobbyState) nextJoinableServer(from, dir int) int {
-	n := len(lobby1.servers)
+func (a *App) nextJoinableServer(from, dir int) int {
+	n := len(a.servers)
 	for i := from + dir; i >= 0 && i < n; i += dir {
-		e := &lobby1.servers[i]
-		if lobby1.phoneBookPage && !e.Favorite {
+		e := &a.servers[i]
+		if a.phoneBookPage && !e.Favorite {
 			continue
 		}
 		if e.Joinable() {
@@ -634,12 +658,12 @@ func (lobby1 *lobbyState) nextJoinableServer(from, dir int) int {
 
 // scrollServerIntoView adjusts lobbyScroll so the row at idx is fully visible — accounting for the
 // "NOT SUPPORTED" legacy header and the Phone Book filter, so keyboard nav never selects off-screen.
-func (lobby1 *lobbyState) scrollServerIntoView(idx int, listTop, h int32) {
+func (a *App) scrollServerIntoView(idx int, listTop, h int32) {
 	top := int32(0) // content-space offset (pre-scroll) of row idx's top
 	legacyDrawn := false
-	for i := range lobby1.servers {
-		e := &lobby1.servers[i]
-		if lobby1.phoneBookPage && !e.Favorite {
+	for i := range a.servers {
+		e := &a.servers[i]
+		if a.phoneBookPage && !e.Favorite {
 			continue
 		}
 		if !e.Joinable() && !legacyDrawn {
@@ -652,38 +676,51 @@ func (lobby1 *lobbyState) scrollServerIntoView(idx int, listTop, h int32) {
 		top += rowH
 	}
 	view := h - listTop
-	if top < lobby1.lobbyScroll {
-		lobby1.lobbyScroll = top
-	} else if top+rowH > lobby1.lobbyScroll+view {
-		lobby1.lobbyScroll = top + rowH - view
+	if top < a.lobbyScroll {
+		a.lobbyScroll = top
+	} else if top+rowH > a.lobbyScroll+view {
+		a.lobbyScroll = top + rowH - view
 	}
-	if lobby1.lobbyScroll < 0 {
-		lobby1.lobbyScroll = 0
+	if a.lobbyScroll < 0 {
+		a.lobbyScroll = 0
 	}
 }
 
 // drawWardrobeGrid is the char-select grid over the wardrobe menu: same
 // cells, same demand pipeline, same search box. Picking claims the first
 // free slot and wears the custom on PV (wearFromMenu).
+//
 // It takes the SAME charGridPlan the Characters tab lays out on (#20). The two tabs
+// are one screen and shared iconCell/iconGap before the theme canvas existed; letting
+// only one of them become theme-driven would have desynced them on the first resize.
 // It also takes the same charListRows, so the wardrobe's cell order matches the name
 // column's row order exactly — that is what lets a clicked name reveal the right cell.
+//
+// THIS FUNCTION IS A HOST, not just a loop. drawIniswapCell DEFERS two of its actions
+// rather than performing them inline, because both rebuild the iniList / iniWardrobe /
+// iniFolders slices the loop is ranging (toggling mid-loop panicked on a remove — the
+// reported crash): the ★ parks its toggle in iniFavPending, and a right-click parks a
+// move-to-folder menu in iniMenuChar. Only drawIniswapPanel ever serviced them, so on
+// THIS screen the ★ silently did nothing and the right-click armed a menu that was
+// drawn nowhere — and both then fired later, out of context, the next time the
+// wardrobe modal opened. The wrapper below runs the same before/after bookkeeping the
+// modal does, so a cell behaves identically wherever it is drawn.
 func (a *App) drawWardrobeGrid(w, h int32, g charGridPlan, rows charListRows, query string) {
 	// The open move-to-folder menu resolves its clicks BEFORE the grid draws, so a
 	// click on it can never leak through to a cell underneath (drawWardrobeCharsBody's
 	// own ordering rule; the menu is painted last, on top).
-	if a.inibrowse.iniMenuChar != "" {
+	if a.iniMenuChar != "" {
 		opts := a.iniFolderMenuOpts()
-		a.handleIniFolderMenu(iniFolderMenuRect(a.inibrowse.iniMenuAt, len(opts), w, h), opts)
+		a.handleIniFolderMenu(iniFolderMenuRect(a.iniMenuAt, len(opts), w, h), opts)
 	}
 	a.drawWardrobeGridCells(w, h, g, rows, query)
 	// A ★ toggle a cell deferred: it rebuilds the slices the loop just ranged, so it
 	// runs after the loop, never during it.
 	a.applyPendingFav()
 	// ...and the menu paints last, above the grid and any sprite preview.
-	if a.inibrowse.iniMenuChar != "" {
+	if a.iniMenuChar != "" {
 		opts := a.iniFolderMenuOpts()
-		a.drawIniFolderMenu(iniFolderMenuRect(a.inibrowse.iniMenuAt, len(opts), w, h), opts)
+		a.drawIniFolderMenu(iniFolderMenuRect(a.iniMenuAt, len(opts), w, h), opts)
 	}
 }
 
@@ -693,7 +730,7 @@ func (a *App) drawWardrobeGrid(w, h int32, g charGridPlan, rows charListRows, qu
 // the list has to be applied on exactly that frame.
 func (a *App) drawWardrobeGridCells(w, h int32, g charGridPlan, rows charListRows, query string) {
 	c := a.ctx
-	if len(a.inibrowse.iniList) == 0 {
+	if len(a.iniList) == 0 {
 		// Anchored on the GRID's viewport, not on the window: under a theme the grid
 		// starts wherever char_buttons is (x=353 at 1:1 on the stock table), so an
 		// empty-state line drawn from x=pad landed out in the left-hand name column.
@@ -704,10 +741,10 @@ func (a *App) drawWardrobeGridCells(w, h int32, g charGridPlan, rows charListRow
 			msgX, msgW = pad, w-2*pad
 		}
 		switch {
-		case a.inibrowse.iniBusy:
+		case a.iniBusy:
 			c.LabelClipped(msgX, g.view.Y+8, msgW, "Fetching "+iniswapFileName+"...", ColTextDim)
-		case a.inibrowse.iniListErr != "":
-			c.LabelClipped(msgX, g.view.Y+8, msgW, a.inibrowse.iniListErr, ColTextDim)
+		case a.iniListErr != "":
+			c.LabelClipped(msgX, g.view.Y+8, msgW, a.iniListErr, ColTextDim)
 		default:
 			c.LabelClipped(msgX, g.view.Y+8, msgW,
 				"Wardrobe empty — tap the ★ on any character in the Characters tab to save it here (it stays per server).", ColTextDim)
@@ -717,7 +754,7 @@ func (a *App) drawWardrobeGridCells(w, h int32, g charGridPlan, rows charListRow
 
 	// The wardrobe has no taken slots (a folder cannot be occupied by another
 	// player), so the shared filter runs with the taken arm permanently open.
-	a.inibrowse.iniScroll = a.charGridScroll(w, "iniscroll", g, a.inibrowse.iniScroll, rows.matches(query, true))
+	a.iniScroll = a.charGridScroll(w, "iniscroll", g, a.iniScroll, rows.matches(query, true))
 
 	n := int32(0)
 	// The theme's hover selector, remembered here and painted after the loop for the
@@ -734,11 +771,11 @@ func (a *App) drawWardrobeGridCells(w, h int32, g charGridPlan, rows charListRow
 	// cell scrolled half under the bar isn't clickable up there (hovering() honours
 	// clipRect) — else clicking the search/tabs picks the hidden character.
 	prev, had := c.pushClip(g.view)
-	for i := range a.inibrowse.iniList {
+	for i := range a.iniList {
 		if rows.hidden(i, query, true) {
 			continue
 		}
-		cell := g.cellAt(n, a.inibrowse.iniScroll)
+		cell := g.cellAt(n, a.iniScroll)
 		n++
 		if g.visible(cell) {
 			if c.hovering(cell) {
@@ -747,7 +784,7 @@ func (a *App) drawWardrobeGridCells(w, h int32, g charGridPlan, rows charListRow
 			// Char-select Wardrobe tab: a favourite SWITCHES to the real character
 			// (wardrobeClick picks its free slot), not a blind iniswap.
 			a.drawIniswapCell(i, cell, cellClickChar, g.caption)
-			if i == a.charsel.charListSel {
+			if i == a.charListSel {
 				c.Border(cell, ColStar) // the name column's selection (charselectwidgets.go)
 			}
 		}
@@ -756,7 +793,7 @@ func (a *App) drawWardrobeGridCells(w, h int32, g charGridPlan, rows charListRow
 		a.drawCharSelectorHalo(hoverCell, g.haloPx)
 	}
 	c.popClip(prev, had)
-	if a.budget.previewBase != "" {
+	if a.previewBase != "" {
 		a.drawSpritePreview(w, h, false, "") // character preview: no emote-name caption
 		a.closeSpritePreviewOnLeave()
 	}
@@ -772,20 +809,20 @@ func (a *App) toggleFavorite(e *network.ServerEntry) {
 	} else {
 		a.d.Prefs.AddFavorite(e.Name, url, e.Description)
 	}
-	a.conn.lobby.servers = a.conn.lobby.mergedFavorites(&a.env)
-	a.conn.lobby.selServer, a.conn.lobby.descLines = -1, nil // the list just reordered
+	a.servers = a.mergedFavorites()
+	a.selServer, a.descLines = -1, nil // the list just reordered
 }
 
 func (a *App) directConnect() {
-	url, err := network.ParseDirectAddress(a.conn.lobby.directInput, a.conn.lobby.directSecure)
+	url, err := network.ParseDirectAddress(a.directInput, a.directSecure)
 	if err != nil {
-		a.conn.connErr = err.Error()
+		a.connErr = err.Error()
 		return
 	}
-	if a.conn.lobby.directSave {
-		a.d.Prefs.AddFavorite(a.conn.lobby.directInput, url, "")
+	if a.directSave {
+		a.d.Prefs.AddFavorite(a.directInput, url, "")
 	}
-	a.Connect(a.conn.lobby.directInput, url)
+	a.Connect(a.directInput, url)
 }
 
 // --- CHARACTER SELECT ---------------------------------------------------------------
@@ -813,6 +850,11 @@ func (a *App) drawCharSelect(w, h int32) {
 	// (no themed grid, or the rects scaled below a usable size, or the theme gives the
 	// whole area to char_buttons and leaves nowhere for the name column), the screen
 	// keeps the header row it has always had, on top of the theme's backdrop.
+	//
+	// The predicate needs the grid plan and the plan needs to know whether a header
+	// row is in its way, so the themed candidate is built first and the classic plan
+	// rebuilt underneath it when the answer is no. charSelectGridPlan is alloc-free
+	// and pure, so building it twice on that frame costs nothing.
 	themedTop := a.topChromeH()
 	themedUI := csLay.valid && a.charSelectWidgetsThemed(csLay, a.charSelectGridPlan(w, h, themedTop, csLay))
 	gridTop := themedTop
@@ -847,7 +889,7 @@ func (a *App) drawCharSelect(w, h int32) {
 		// character from the courtroom puts a safe Back there; Disconnect is ALWAYS danger-
 		// tinted (red outline + label) and kept out of that spot. Buttons lay out R→L.
 		rightX := w - pad
-		if a.link.room != nil {
+		if a.room != nil {
 			backW := int32(90)
 			rightX -= backW
 			if c.Button(sdl.Rect{X: rightX, Y: hdrY, W: backW, H: btnH}, "Back") {
@@ -869,20 +911,20 @@ func (a *App) drawCharSelect(w, h int32) {
 		rightX -= privW
 		if c.Button(sdl.Rect{X: rightX, Y: hdrY, W: privW, H: btnH}, "Privacy") {
 			a.prevScreen = ScreenCharSelect
-			a.docs.openHelp(1)
+			a.openHelp(1)
 		}
 	}
-	if a.link.sess == nil {
+	if a.sess == nil {
 		c.Label(statusX, statusY, "Loading...", ColTextDim)
 		return
 	}
-	if a.link.sess.Phase() != courtroom.PhaseReady {
+	if a.sess.Phase() != courtroom.PhaseReady {
 		c.Label(statusX, statusY, "Handshaking with server...", ColTextDim)
 		return
 	}
 
 	if !themedUI {
-		a.charsel.charSearch, _ = c.TextField("charsearch", sdl.Rect{X: pad, Y: hdrY + 36, W: 230, H: fieldH}, a.charsel.charSearch, "Search...")
+		a.charSearch, _ = c.TextField("charsearch", sdl.Rect{X: pad, Y: hdrY + 36, W: 230, H: fieldH}, a.charSearch, "Search...")
 
 		// Grid tabs right of the search: the same grid swaps between the
 		// server's list and your wardrobe (favourites + server customs), so
@@ -890,7 +932,7 @@ func (a *App) drawCharSelect(w, h int32) {
 		tabX := pad + 240
 		for _, tb := range charSelectTabs {
 			bw := c.TextWidth(tb.label) + 20
-			if a.charsel.charTab == tb.id {
+			if a.charTab == tb.id {
 				c.Fill(sdl.Rect{X: tabX - 2, Y: hdrY + 34, W: bw + 4, H: btnH + 4}, ColAccent)
 			}
 			if c.Button(sdl.Rect{X: tabX, Y: hdrY + 36, W: bw, H: btnH}, tb.label) {
@@ -900,8 +942,8 @@ func (a *App) drawCharSelect(w, h int32) {
 		}
 		specX := tabX + 8
 		if c.Button(sdl.Rect{X: specX, Y: hdrY + 36, W: 90, H: btnH}, "Spectate") {
-			if !a.link.sess.Rehearsal {
-				a.link.sess.PickCharacter(protocol.UnpairedCharID)
+			if !a.sess.Rehearsal {
+				a.sess.PickCharacter(protocol.UnpairedCharID)
 			}
 			a.enterCourtroom()
 			return
@@ -920,11 +962,11 @@ func (a *App) drawCharSelect(w, h int32) {
 			csLay.clip.W-2*pad, a.warnLine, ColDanger)
 	}
 
-	query := a.charsel.charQ.get(a.charsel.charSearch)
+	query := a.charQ.get(a.charSearch)
 	showTaken := a.charSelectShowTaken(themedUI, csLay)
 
-	if a.charsel.charTab == charTabWardrobe {
-		rows := charListRows{n: len(a.inibrowse.iniList), names: a.inibrowse.iniList, lower: a.inibrowse.iniLower}
+	if a.charTab == charTabWardrobe {
+		rows := charListRows{n: len(a.iniList), names: a.iniList, lower: a.iniLower}
 		if themedUI {
 			a.drawCharNameList(csLay, rows, query, showTaken, g)
 		}
@@ -934,7 +976,7 @@ func (a *App) drawCharSelect(w, h int32) {
 
 	a.ensureCharLower()
 	a.ensureWardrobeMembers() // star state for the grid; rebuilt only on change
-	rows := charListRows{n: len(a.link.sess.Chars), chars: a.link.sess.Chars, lower: a.charsel.charLower}
+	rows := charListRows{n: len(a.sess.Chars), chars: a.sess.Chars, lower: a.charLower}
 	// The name column draws BEFORE the grid: the two never overlap (the widget gate
 	// rejects a theme where they would), so this is purely about the selection being
 	// settled before the cells are painted with it.
@@ -946,7 +988,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	// that bites on servers with thousands of characters); the draw loop below
 	// still culls to the visible rows either way. Mirrors the bg picker.
 	matches := rows.matches(query, showTaken)
-	a.charsel.charScroll = a.charGridScroll(w, "charscroll", g, a.charsel.charScroll, matches)
+	a.charScroll = a.charGridScroll(w, "charscroll", g, a.charScroll, matches)
 
 	dlOn := a.d.Prefs.Load().CharDownloaderOn // read once per frame, not per cell
 	n := int32(0)
@@ -959,20 +1001,24 @@ func (a *App) drawCharSelect(w, h int32) {
 	// slide UNDER the fixed search/tabs/buttons instead of painting over them: the
 	// bar is drawn first, so without this the later cell draws covered it as you
 	// scrolled down, and search became unreachable. Keeps the bar always usable.
+	// pushClip (not raw SetClipRect) also sets the INPUT clip, so a cell scrolled
+	// half under the bar can't be clicked/hovered up there — hovering() honours
+	// clipRect, so the pick (drawCharCell), the ★ star, and the hover-preview all
+	// stop at the viewport edge instead of firing under the search/tabs bar.
 	prev, had := c.pushClip(g.view)
-	for i := range a.link.sess.Chars {
-		slot := &a.link.sess.Chars[i]
+	for i := range a.sess.Chars {
+		slot := &a.sess.Chars[i]
 		if rows.hidden(i, query, showTaken) {
 			continue
 		}
-		cell := g.cellAt(n, a.charsel.charScroll)
+		cell := g.cellAt(n, a.charScroll)
 		n++
 		if g.visible(cell) { // only rows touching the viewport (no draw/hover through the bar)
 			if c.hovering(cell) {
 				hoverCell = cell
 			}
 			a.drawCharCell(slot, cell, i, dlOn, g)
-			if i == a.charsel.charListSel {
+			if i == a.charListSel {
 				// The name column's selection, shown where the user is looking. One
 				// selection, two views (charselectwidgets.go).
 				c.Border(cell, ColStar)
@@ -992,7 +1038,7 @@ func (a *App) drawCharSelect(w, h int32) {
 		a.drawCharSelectorHalo(hoverCell, g.haloPx)
 	}
 	c.popClip(prev, had)
-	if a.budget.previewBase != "" {
+	if a.previewBase != "" {
 		a.drawSpritePreview(w, h, false, "") // character preview: no emote-name caption
 		a.closeSpritePreviewOnLeave()
 	}
@@ -1001,8 +1047,8 @@ func (a *App) drawCharSelect(w, h int32) {
 func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int, downloaderOn bool, g charGridPlan) {
 	c := a.ctx
 	c.Fill(cell, ColPanel)
-	base := a.link.urls.CharIcon(slot.Name)
-	if page, ok := a.cachedPage(&a.rcache.iconPages, &a.rcache.iconPagesGen, len(a.link.sess.Chars), idx, base); ok && len(page.Frames) > 0 {
+	base := a.urls.CharIcon(slot.Name)
+	if page, ok := a.cachedPage(&a.iconPages, &a.iconPagesGen, len(a.sess.Chars), idx, base); ok && len(page.Frames) > 0 {
 		// &cell into cgo would heap-allocate the PARAMETER once per VISIBLE CELL per
 		// frame — a 7×9 themed grid is 63 of them, and escape analysis is static so
 		// the placeholder branch pays it too. Shared scratch (ui.go cgoRect contract:
@@ -1013,7 +1059,7 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 	} else {
 		// Not resident: demand it (visible = not speculation) and draw the
 		// initials placeholder; the texture pops in live.
-		a.demandAsset(&a.rcache.iconAsk, len(a.link.sess.Chars), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon
+		a.demandAsset(&a.iconAsk, len(a.sess.Chars), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon
 		// AO2 does the same thing when a character ships no char_icon: it clears the
 		// stylesheet's border-image and setText()s the character's name into the button
 		// (AO2-Client aocharbutton.cpp:55-58). Centred off the CELL, not off iconCell,
@@ -1045,7 +1091,7 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 		c.Tooltip(cell, slot.Name)
 	}
 	// While this character is the active download, mark the cell.
-	if a.audio.dl.active && a.audio.dl.target == slot.Name {
+	if a.dl.active && a.dl.target == slot.Name {
 		c.Fill(cell, sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 70})
 		c.Label(cell.X+4, cell.Y+4, downloadGlyph+"…", ColText)
 	}
@@ -1069,7 +1115,7 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 		// Wardrobe (LemmyAO-style), so it appears in the Wardrobe tab on every
 		// connect. The click is consumed so it can't also pick the character; works
 		// on taken slots too. Membership is the lock-free cached set.
-		starred := idx >= 0 && idx < len(a.charsel.charLower) && a.charsel.wardrobeMembers[a.charsel.charLower[idx]]
+		starred := idx >= 0 && idx < len(a.charLower) && a.wardrobeMembers[a.charLower[idx]]
 		starR := sdl.Rect{X: cell.X + cell.W - charCellStarPx - charCellStarInsetPx,
 			Y: cell.Y + charCellStarInsetPx, W: charCellStarPx, H: charCellStarPx}
 		c.Fill(starR, sdl.Color{R: 0, G: 0, B: 0, A: 130})
@@ -1082,9 +1128,9 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 			c.Tooltip(starR, "Star → save to your Wardrobe (favourites)")
 			if c.clicked {
 				if starred {
-					a.d.Prefs.RemoveWardrobe(a.srvMeta.serverKey, slot.Name)
+					a.d.Prefs.RemoveWardrobe(a.serverKey, slot.Name)
 				} else {
-					a.d.Prefs.AddWardrobe(a.srvMeta.serverKey, slot.Name)
+					a.d.Prefs.AddWardrobe(a.serverKey, slot.Name)
 				}
 				c.clicked = false // consumed: don't also pick the character
 				return
@@ -1103,13 +1149,13 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 // uniformly-random untaken slot other than the current one, chosen by reservoir
 // sampling so it never allocates. No-op with no free slot. Render thread only.
 func (a *App) randomChar() {
-	if a.link.sess == nil || len(a.link.sess.Chars) == 0 {
+	if a.sess == nil || len(a.sess.Chars) == 0 {
 		return
 	}
-	cur := a.link.sess.MyCharID
+	cur := a.sess.MyCharID
 	chosen, seen := -1, 0
-	for i := range a.link.sess.Chars {
-		if i == cur || a.link.sess.Chars[i].Taken {
+	for i := range a.sess.Chars {
+		if i == cur || a.sess.Chars[i].Taken {
 			continue
 		}
 		seen++
@@ -1123,7 +1169,7 @@ func (a *App) randomChar() {
 		return
 	}
 	a.pickCharacter(chosen)
-	a.warnLine = clampLine("Random character: " + a.link.sess.Chars[chosen].Name)
+	a.warnLine = clampLine("Random character: " + a.sess.Chars[chosen].Name)
 	a.warnAt = time.Now()
 }
 
@@ -1140,6 +1186,7 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	// clamp-to-window math (baseX/hiX/baseY/hiY below) is exactly the thing
 	// the detached path must never inherit. previewFrameRect is zeroed so
 	// handlePreviewInput's wheel/drag hit-testing (which gates on box.W==0)
+	// also stands down for free.
 	if a.previewIsDetached() {
 		a.previewFrameRect = sdl.Rect{}
 		return
@@ -1151,9 +1198,9 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	// box — still occludes us (overlayfence.go).
 	prevOwner := c.pushOverlayOwner(a.previewOwnerMark())
 	defer c.popOverlayOwner(prevOwner)
-	page, ok := a.d.Store.Get(a.budget.previewBase)
+	page, ok := a.d.Store.Get(a.previewBase)
 	ready := ok && len(page.Frames) > 0
-	cycling := cycle && len(a.budget.previewAnims) > 1
+	cycling := cycle && len(a.previewAnims) > 1
 	if !ready && !cycling {
 		a.previewFrameRect = sdl.Rect{} // no box this frame — no phantom wheel/drag target
 		return
@@ -1180,10 +1227,10 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	if ready {
 		// The preview exists to show the sprite — restart its loop per pick so
 		// animated idles play instead of freezing on frame 0.
-		if a.budget.previewBase != a.budget.previewFor {
-			a.budget.previewFor = a.budget.previewBase
-			a.budget.previewAt = time.Now()
-			a.budget.previewZoom = 1 // a new sprite starts unzoomed
+		if a.previewBase != a.previewFor {
+			a.previewFor = a.previewBase
+			a.previewAt = time.Now()
+			a.previewZoom = 1 // a new sprite starts unzoomed
 		}
 		srcW, srcH := page.W, page.H
 		if srcW < 1 {
@@ -1225,11 +1272,11 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	c.Fill(frame, ColPanel)
 	c.Border(frame, ColAccent)
 	if ready {
-		tex := page.Frames[pageFrameLoop(page, a.now().Sub(a.budget.previewAt))]
-		if a.budget.previewZoom > 1 {
+		tex := page.Frames[pageFrameLoop(page, a.now().Sub(a.previewAt))]
+		if a.previewZoom > 1 {
 			// Magnifier: blit a window of the sprite centered on where the
 			// cursor sits over the box — move the mouse to pan around it.
-			zw, zh := page.W/int32(a.budget.previewZoom), page.H/int32(a.budget.previewZoom)
+			zw, zh := page.W/int32(a.previewZoom), page.H/int32(a.previewZoom)
 			if zw < 1 {
 				zw = 1
 			}
@@ -1265,8 +1312,12 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	// invisible but still clickable is the lie assetmisschip.go's rule forbids,
 	// so draw order follows hit order here. Hit-testing lives in
 	// handlePreviewInput off previewFrameRect and is unaffected by this move.
+	//
 	// Emote-name caption (ARM 2): the emote-grid / fav-box preview box names the
 	// emote it's showing, so the preview surface reports it too — not just the
+	// resolution/scale strip at the bottom. Skipped when cycling (the try-before-wear
+	// nav bar already captions the name) or when no name is supplied (character
+	// previews). A translucent strip across the box top, clipped to the box width.
 	if name != "" && !cycle {
 		strip := sdl.Rect{X: frame.X, Y: frame.Y, W: frame.W, H: previewNameStripH}
 		c.Fill(strip, sdl.Color{R: 0, G: 0, B: 0, A: 205})
@@ -1354,6 +1405,15 @@ func previewDetachRect(frame sdl.Rect) sdl.Rect {
 // previewIsPinned is the box's "stays open" state: the per-session latch (set by
 // a right-click open, or by this box's own pin button), the sticky preference,
 // OR the sprite currently being detached into its own OS window.
+//
+// The detached arm (preview-window-wire, requirement 3) is the ENTIRE
+// wiring the detached window needs to keep following emote picks: it is what
+// makes followPinnedPreview's own `!a.previewIsPinned()` guard pass while
+// detached, so all three of its existing call sites (selectEmote,
+// drawEmoteGridThemed, applyStylePreset) retarget the window for free through
+// the exact same seam shipped — no fourth pick implementation, and the
+// the pinned-preview census never
+// has to know detaching exists at all.
 func (a *App) previewIsPinned() bool {
 	return a.previewPinned || a.d.Prefs.Load().PreviewPinned || a.previewIsDetached()
 }
@@ -1436,7 +1496,7 @@ func (a *App) closeSpritePreviewOnLeave() {
 
 // closeSpritePreview tears down the hover-preview box and resets its travel state.
 func (a *App) closeSpritePreview() {
-	a.budget.previewBase = ""
+	a.previewBase = ""
 	a.previewEntered = false
 	a.previewPinned = false
 	// Disarm the dwell too: closing with the pointer still resting on the
@@ -1444,6 +1504,8 @@ func (a *App) closeSpritePreview() {
 	// hoverSince satisfies the dwell instantly. That silent re-arm is how a
 	// char pick carried a "closed" preview into the courtroom (PV lands a few
 	// frames after the click) and latched the frame pacer at the active cap.
+	// A fresh hover restarts the full dwell, which is also the right feel:
+	// a selection commits, the pop-up shouldn't bounce straight back.
 	a.ctx.hoverID = ""
 }
 
@@ -1460,11 +1522,11 @@ func (a *App) closeSpritePreview() {
 // lobby-entry master-list auto-refresh: this is the one place every screen
 // switch funnels through, so the edge fires below.
 func (a *App) noteScreenTransition() {
-	if a.screen == a.frame.drawnScreen {
+	if a.screen == a.drawnScreen {
 		return // settled frame: one int compare, nothing below runs (the lobby draw is 0-alloc-gated)
 	}
-	prev := a.frame.drawnScreen
-	a.frame.drawnScreen = a.screen
+	prev := a.drawnScreen
+	a.drawnScreen = a.screen
 	a.closeSpritePreview() // also clears the trigger id — no cross-screen dwell carry-over
 	a.previewFrameRect = sdl.Rect{}
 	a.previewTriggerRect = sdl.Rect{}
@@ -1472,9 +1534,13 @@ func (a *App) noteScreenTransition() {
 	// full pingRes drops it) and pollPing only runs from drawLobby — so an
 	// undrained sweep would leave a.pinging latched true for the session (dead
 	// Ping button, expScreenSkippable stuck false = idle lobby at full rate).
-	if prev == ScreenLobby && a.conn.lobby.pinging {
-		a.conn.lobby.pinging = false
-		a.conn.lobby.pingGen++
+	// Clear the latch on the one funnel every exit passes through, and bump the
+	// generation so the moot sweep's stragglers — including a late done
+	// sentinel's surprise re-sort — are discarded. Same idiom as the join path
+	// (connectWith).
+	if prev == ScreenLobby && a.pinging {
+		a.pinging = false
+		a.pingGen++
 	}
 	// Lobby-entry auto-refresh: past the early-return we KNOW this frame is a
 	// screen switch, so landing on ScreenLobby is the entry edge. Detecting it
@@ -1496,7 +1562,7 @@ func (a *App) noteScreenTransition() {
 		// comment's "past the cap the refresh fires immediately on entry"
 		// promise. One empty-channel select when nothing is parked.
 		a.pollLobbyFetch()
-		if lobbyAutoRefreshDue(a.conn.lobby.lastLobbyRefreshAt, a.now()) {
+		if lobbyAutoRefreshDue(a.lastLobbyRefreshAt, a.now()) {
 			a.RefreshServers()
 		}
 	}
@@ -1525,6 +1591,12 @@ const previewDragBottomReserve = 22
 // the registry depth taken just BEFORE its footprint was published, handed to
 // pushOverlayOwner so the box's own − / + zoom buttons and pinned × stay live
 // while everything painted UNDER the box goes inert (overlayfence.go).
+//
+// A latch rather than a re-derived predicate for the reason compactToolboxLatch
+// documents: the fence is published at the TOP of the courtroom pass (a fence is
+// only consulted at hit-test time, and a single-pass kit hit-tests as it draws)
+// while the box itself paints near the BOTTOM, and a fence that disagrees with
+// the draw eats clicks over pixels nothing painted.
 type previewFenceLatch struct {
 	mark int  // registry depth before our publication (0 when nothing was published)
 	on   bool // we published — so the draw must suspend it for its own widgets
@@ -1535,13 +1607,25 @@ type previewFenceLatch struct {
 // no fence a click on it ALSO fired the music row underneath: the box won the
 // pixels, the row won the click, and a song started playing. The row draws far
 // earlier in the same single pass and has no way to know the box is coming.
+//
+// Called from both courtroom passes immediately AFTER fenceCompactToolbox, and
+// that order is load-bearing in both directions: the toolbox paints ABOVE the
+// preview (it draws at the very bottom of the pass), so its own owner-suspend —
+// which is mark-scoped to "mine and everything after mine" — must cover this
+// fence, while ours must not cover the toolbox's.
+//
+// The footprint is last frame's rect. That is the same one-frame latch
+// handlePreviewInput has always hit-tested against (previewFrameRect is cached
+// for exactly this reason), and it cannot leak in practice: the box only appears
+// after a hover dwell, many frames before any press, and while it is being
+// DRAGGED the whole pointer is fenced instead (boxFencesPointer).
 func (a *App) fenceSpritePreview() {
 	c := a.ctx
 	a.previewFence = previewFenceLatch{mark: c.overlayFenceMark()}
 	// No preview up, or none drawn last frame (drawSpritePreview zeroes the rect
 	// when the sprite isn't ready) — nothing is painted there, and fencing pixels
 	// nothing painted is the mirror image of the leak this fixes.
-	if a.budget.previewBase == "" || a.previewFrameRect.W <= 0 || a.previewFrameRect.H <= 0 {
+	if a.previewBase == "" || a.previewFrameRect.W <= 0 || a.previewFrameRect.H <= 0 {
 		return
 	}
 	c.fenceOverlay(a.previewFrameRect)

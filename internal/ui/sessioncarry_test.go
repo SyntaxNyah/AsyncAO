@@ -42,18 +42,18 @@ func wsTestServer(t *testing.T) string {
 // IC/OOC/area-log content so a test can tell "restored" from "started blank"
 // at a glance.
 func seedCarryableLog(a *App, tag string) {
-	a.chatlog.icLog = []icEntry{{text: tag + "-ic-line", color: 2}}
-	a.chatlog.icLogSeq = 3
-	a.compose.icReadMark = 1
-	a.chatlog.oocLog = []string{tag + "-ooc-line"}
-	a.chatlog.oocSpeakers = []string{tag + "-mod"}
-	a.chatlog.oocSeq = 5
-	a.srvMeta.areaLogs = map[string][]icEntry{"Basement": {{text: tag + "-area-line"}}}
-	a.srvMeta.areaLogOrder = []string{"Basement"}
+	a.icLog = []icEntry{{text: tag + "-ic-line", color: 2}}
+	a.icLogSeq = 3
+	a.icReadMark = 1
+	a.oocLog = []string{tag + "-ooc-line"}
+	a.oocSpeakers = []string{tag + "-mod"}
+	a.oocSeq = 5
+	a.areaLogs = map[string][]icEntry{"Basement": {{text: tag + "-area-line"}}}
+	a.areaLogOrder = []string{"Basement"}
 }
 
 func logIsEmpty(a *App) bool {
-	return len(a.chatlog.icLog) == 0 && len(a.chatlog.oocLog) == 0 && len(a.chatlog.oocSpeakers) == 0 && len(a.srvMeta.areaLogs) == 0 && len(a.srvMeta.areaLogOrder) == 0
+	return len(a.icLog) == 0 && len(a.oocLog) == 0 && len(a.oocSpeakers) == 0 && len(a.areaLogs) == 0 && len(a.areaLogOrder) == 0
 }
 
 // TestReconnectFromDialogRestoresLogOnSameServer pins the user-facing ask: a
@@ -62,37 +62,37 @@ func logIsEmpty(a *App) bool {
 func TestReconnectFromDialogRestoresLogOnSameServer(t *testing.T) {
 	a := froomApp(t)
 	url := wsTestServer(t)
-	a.srvMeta.serverName, a.srvMeta.serverKey = "Test Server", url
-	a.conn.lastConnName, a.conn.lastConnURL = "Test Server", url
+	a.serverName, a.serverKey = "Test Server", url
+	a.lastConnName, a.lastConnURL = "Test Server", url
 	seedCarryableLog(a, "before")
 
 	a.handleInvoluntaryDrop("connection closed") // freezes: sess/room/logs all survive
-	if !a.dialogs.disconnectDlg.open {
+	if !a.disconnectDlg.open {
 		t.Fatal("test setup: expected the dialog to freeze open")
 	}
-	if a.dialogs.disconnectDlg.url != url {
-		t.Fatalf("test setup: dialog url = %q, want %q", a.dialogs.disconnectDlg.url, url)
+	if a.disconnectDlg.url != url {
+		t.Fatalf("test setup: dialog url = %q, want %q", a.disconnectDlg.url, url)
 	}
 
 	a.reconnectFromDisconnectDialog()
 
-	if a.link.conn == nil {
+	if a.conn == nil {
 		t.Fatal("the redial to a real, reachable server must have succeeded")
 	}
 	if a.screen != ScreenCharSelect {
 		t.Fatalf("a successful redial lands on char select, got %v", a.screen)
 	}
-	if len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "before-ic-line" {
-		t.Errorf("icLog not restored, got %+v", a.chatlog.icLog)
+	if len(a.icLog) != 1 || a.icLog[0].text != "before-ic-line" {
+		t.Errorf("icLog not restored, got %+v", a.icLog)
 	}
-	if len(a.chatlog.oocLog) != 1 || a.chatlog.oocLog[0] != "before-ooc-line" || a.chatlog.oocSpeakers[0] != "before-mod" {
-		t.Errorf("oocLog/oocSpeakers not restored, got %v / %v", a.chatlog.oocLog, a.chatlog.oocSpeakers)
+	if len(a.oocLog) != 1 || a.oocLog[0] != "before-ooc-line" || a.oocSpeakers[0] != "before-mod" {
+		t.Errorf("oocLog/oocSpeakers not restored, got %v / %v", a.oocLog, a.oocSpeakers)
 	}
-	if got := a.srvMeta.areaLogs["Basement"]; len(got) != 1 || got[0].text != "before-area-line" {
-		t.Errorf("areaLogs not restored, got %v", a.srvMeta.areaLogs)
+	if got := a.areaLogs["Basement"]; len(got) != 1 || got[0].text != "before-area-line" {
+		t.Errorf("areaLogs not restored, got %v", a.areaLogs)
 	}
-	if len(a.srvMeta.areaLogOrder) != 1 || a.srvMeta.areaLogOrder[0] != "Basement" {
-		t.Errorf("areaLogOrder not restored, got %v", a.srvMeta.areaLogOrder)
+	if len(a.areaLogOrder) != 1 || a.areaLogOrder[0] != "Basement" {
+		t.Errorf("areaLogOrder not restored, got %v", a.areaLogOrder)
 	}
 }
 
@@ -106,39 +106,39 @@ func TestDeliberateLeavePathsNeverCarryTheLog(t *testing.T) {
 
 	t.Run("Disconnect button", func(t *testing.T) {
 		a := froomApp(t)
-		a.srvMeta.serverName, a.srvMeta.serverKey = "Test Server", url
-		a.conn.lastConnName, a.conn.lastConnURL = "Test Server", url
+		a.serverName, a.serverKey = "Test Server", url
+		a.lastConnName, a.lastConnURL = "Test Server", url
 		seedCarryableLog(a, "stale")
 
 		a.Disconnect()
 		a.Connect("Test Server", url)
 
-		if a.link.conn == nil {
+		if a.conn == nil {
 			t.Fatal("the redial to a real, reachable server must have succeeded")
 		}
 		if !logIsEmpty(a) {
-			t.Errorf("a deliberate Disconnect must never carry a log, got icLog=%v oocLog=%v", a.chatlog.icLog, a.chatlog.oocLog)
+			t.Errorf("a deliberate Disconnect must never carry a log, got icLog=%v oocLog=%v", a.icLog, a.oocLog)
 		}
 	})
 
 	t.Run("Back to lobby", func(t *testing.T) {
 		a := froomApp(t)
-		a.srvMeta.serverName, a.srvMeta.serverKey = "Test Server", url
-		a.conn.lastConnName, a.conn.lastConnURL = "Test Server", url
+		a.serverName, a.serverKey = "Test Server", url
+		a.lastConnName, a.lastConnURL = "Test Server", url
 		seedCarryableLog(a, "stale")
 		a.handleInvoluntaryDrop("connection closed") // freeze first, as the real path requires
-		if !a.dialogs.disconnectDlg.open {
+		if !a.disconnectDlg.open {
 			t.Fatal("test setup: expected the dialog to freeze open")
 		}
 
 		a.closeDisconnectDialogToLobby()
 		a.Connect("Test Server", url)
 
-		if a.link.conn == nil {
+		if a.conn == nil {
 			t.Fatal("the redial to a real, reachable server must have succeeded")
 		}
 		if !logIsEmpty(a) {
-			t.Errorf("Back to lobby must never carry a log, got icLog=%v oocLog=%v", a.chatlog.icLog, a.chatlog.oocLog)
+			t.Errorf("Back to lobby must never carry a log, got icLog=%v oocLog=%v", a.icLog, a.oocLog)
 		}
 	})
 }
@@ -152,10 +152,10 @@ func TestKickAndBanNeverCarryTheLog(t *testing.T) {
 		t.Run(reason, func(t *testing.T) {
 			a := froomApp(t)
 			url := wsTestServer(t)
-			a.srvMeta.serverName, a.srvMeta.serverKey = "Test Server", url
-			a.conn.lastConnName, a.conn.lastConnURL = "Test Server", url
+			a.serverName, a.serverKey = "Test Server", url
+			a.lastConnName, a.lastConnURL = "Test Server", url
 			seedCarryableLog(a, "stale")
-			a.link.room = nil // no courtroom to freeze — the plain-teardown branch
+			a.room = nil // no courtroom to freeze — the plain-teardown branch
 
 			a.handleInvoluntaryDrop(reason)
 			if a.screen != ScreenLobby {
@@ -163,11 +163,11 @@ func TestKickAndBanNeverCarryTheLog(t *testing.T) {
 			}
 
 			a.Connect("Test Server", url)
-			if a.link.conn == nil {
+			if a.conn == nil {
 				t.Fatal("the redial to a real, reachable server must have succeeded")
 			}
 			if !logIsEmpty(a) {
-				t.Errorf("%s must never carry a log, got icLog=%v oocLog=%v", reason, a.chatlog.icLog, a.chatlog.oocLog)
+				t.Errorf("%s must never carry a log, got icLog=%v oocLog=%v", reason, a.icLog, a.oocLog)
 			}
 		})
 	}
@@ -183,10 +183,10 @@ func TestAutoReconnectCarriesLogAcrossAFailedThenSuccessfulRetry(t *testing.T) {
 	a := froomApp(t)
 	goodURL := wsTestServer(t)
 	badURL := "ws://127.0.0.1:1" // nothing listens here: an immediate refused-connection failure
-	a.srvMeta.serverName, a.srvMeta.serverKey = "Test Server", goodURL
-	a.conn.lastConnName, a.conn.lastConnURL = "Test Server", goodURL
+	a.serverName, a.serverKey = "Test Server", goodURL
+	a.lastConnName, a.lastConnURL = "Test Server", goodURL
 	seedCarryableLog(a, "before")
-	a.link.room = nil // roomless drop: takes handleInvoluntaryDrop's plain-teardown branch
+	a.room = nil // roomless drop: takes handleInvoluntaryDrop's plain-teardown branch
 	a.d.Prefs.Update(func(
 		sn *config.
 			Settings) {
@@ -202,44 +202,44 @@ func TestAutoReconnectCarriesLogAcrossAFailedThenSuccessfulRetry(t *testing.T) {
 	if a.screen != ScreenLobby {
 		t.Fatalf("test setup: expected the plain teardown to lobby, got %v", a.screen)
 	}
-	if a.conn.autoReconnectAt.IsZero() {
+	if a.autoReconnectAt.IsZero() {
 		t.Fatal("test setup: a genuine transport drop must arm auto-reconnect")
 	}
 	if !logIsEmpty(a) {
 		t.Fatal("test setup: Disconnect must have wiped the live log before the retry")
 	}
-	if a.conn.pendingSessionCarry == nil {
+	if a.pendingSessionCarry == nil {
 		t.Fatal("a roomless transport drop about to auto-retry must snapshot a carry")
 	}
 
 	// First retry: point it at an unreachable address so the dial fails. The
 	// pending carry must survive this — it's the mistake test (d) in this
 	// class of fix is built to catch.
-	a.conn.lastConnURL = badURL
-	a.conn.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
+	a.lastConnURL = badURL
+	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 	a.pollAutoReconnect()
-	if a.link.conn != nil {
+	if a.conn != nil {
 		t.Fatal("test setup: the bad address must fail to dial")
 	}
-	if a.conn.pendingSessionCarry == nil {
+	if a.pendingSessionCarry == nil {
 		t.Fatal("a failed dial attempt must NOT consume the pending carry")
 	}
 
 	// Second retry: back to the real server. The carry must land now.
-	a.conn.lastConnURL = goodURL
-	a.conn.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
+	a.lastConnURL = goodURL
+	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 	a.pollAutoReconnect()
 
-	if a.link.conn == nil {
+	if a.conn == nil {
 		t.Fatal("the retry against a real, reachable server must have succeeded")
 	}
-	if len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "before-ic-line" {
-		t.Errorf("icLog not restored on the successful retry, got %+v", a.chatlog.icLog)
+	if len(a.icLog) != 1 || a.icLog[0].text != "before-ic-line" {
+		t.Errorf("icLog not restored on the successful retry, got %+v", a.icLog)
 	}
-	if len(a.chatlog.oocLog) != 1 || a.chatlog.oocLog[0] != "before-ooc-line" {
-		t.Errorf("oocLog not restored on the successful retry, got %v", a.chatlog.oocLog)
+	if len(a.oocLog) != 1 || a.oocLog[0] != "before-ooc-line" {
+		t.Errorf("oocLog not restored on the successful retry, got %v", a.oocLog)
 	}
-	if a.conn.pendingSessionCarry != nil {
+	if a.pendingSessionCarry != nil {
 		t.Error("the carry must be consumed (one-shot) after a successful apply")
 	}
 }
@@ -256,10 +256,10 @@ func TestReconnectToADifferentServerNeverCarriesTheLog(t *testing.T) {
 	a := froomApp(t)
 	urlA := wsTestServer(t)
 	urlB := wsTestServer(t)
-	a.srvMeta.serverName, a.srvMeta.serverKey = "Server A", urlA
-	a.conn.lastConnName, a.conn.lastConnURL = "Server A", urlA
+	a.serverName, a.serverKey = "Server A", urlA
+	a.lastConnName, a.lastConnURL = "Server A", urlA
 	seedCarryableLog(a, "server-a")
-	a.link.room = nil // roomless drop: takes the plain-teardown+carry branch
+	a.room = nil // roomless drop: takes the plain-teardown+carry branch
 	a.d.Prefs.Update(func(
 		sn *config.
 			Settings) {
@@ -272,7 +272,7 @@ func TestReconnectToADifferentServerNeverCarriesTheLog(t *testing.T) {
 	})
 
 	a.handleInvoluntaryDrop("connection closed")
-	if a.conn.pendingSessionCarry == nil {
+	if a.pendingSessionCarry == nil {
 		t.Fatal("test setup: expected server A's drop to snapshot a carry")
 	}
 
@@ -280,13 +280,13 @@ func TestReconnectToADifferentServerNeverCarriesTheLog(t *testing.T) {
 	// DIFFERENT server (Connect cancels the pending auto-retry but must NOT
 	// let A's stale carry follow them onto B).
 	a.Connect("Server B", urlB)
-	if a.link.conn == nil {
+	if a.conn == nil {
 		t.Fatal("the join to server B must have succeeded")
 	}
 	if !logIsEmpty(a) {
-		t.Errorf("server B's fresh session must start blank, not carry A's log, got icLog=%v oocLog=%v", a.chatlog.icLog, a.chatlog.oocLog)
+		t.Errorf("server B's fresh session must start blank, not carry A's log, got icLog=%v oocLog=%v", a.icLog, a.oocLog)
 	}
-	if a.conn.pendingSessionCarry != nil {
+	if a.pendingSessionCarry != nil {
 		t.Error("the mismatched carry must be discarded (one-shot), not left pending")
 	}
 
@@ -295,11 +295,11 @@ func TestReconnectToADifferentServerNeverCarriesTheLog(t *testing.T) {
 	// it back up under the wrong session entirely.
 	a.Disconnect()
 	a.Connect("Server A", urlA)
-	if a.link.conn == nil {
+	if a.conn == nil {
 		t.Fatal("the rejoin to server A must have succeeded")
 	}
 	if !logIsEmpty(a) {
-		t.Errorf("A's discarded carry must not resurface on a later rejoin, got icLog=%v oocLog=%v", a.chatlog.icLog, a.chatlog.oocLog)
+		t.Errorf("A's discarded carry must not resurface on a later rejoin, got icLog=%v oocLog=%v", a.icLog, a.oocLog)
 	}
 }
 
@@ -310,32 +310,37 @@ func TestReconnectToADifferentServerNeverCarriesTheLog(t *testing.T) {
 func TestSessionCarryDoesNotLeakIntoAParkedTab(t *testing.T) {
 	a := froomApp(t) // tab 0: active, in court
 	urlA := wsTestServer(t)
-	a.srvMeta.serverName, a.srvMeta.serverKey = "Server A", urlA
-	a.conn.lastConnName, a.conn.lastConnURL = "Server A", urlA
+	a.serverName, a.serverKey = "Server A", urlA
+	a.lastConnName, a.lastConnURL = "Server A", urlA
 	seedCarryableLog(a, "server-a")
 
 	// Tab 1: a different, parked server with its OWN distinct log.
-	parked := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "Server B", serverKey: "ws://parked.example"}, chatlog: chatLogState{icLog: []icEntry{{text: "server-b-ic-line"}}, oocLog: []string{"server-b-ooc-line"}}}}
+	parked := &courtTab{state: sessionState{
+		serverName: "Server B",
+		serverKey:  "ws://parked.example",
+		icLog:      []icEntry{{text: "server-b-ic-line"}},
+		oocLog:     []string{"server-b-ooc-line"},
+	}}
 	a.tabs = append(a.tabs, parked)
 
 	a.handleInvoluntaryDrop("connection closed") // freezes tab 0 in place
-	if !a.dialogs.disconnectDlg.open {
+	if !a.disconnectDlg.open {
 		t.Fatal("test setup: expected the dialog to freeze open")
 	}
 	a.reconnectFromDisconnectDialog()
 
-	if a.link.conn == nil {
+	if a.conn == nil {
 		t.Fatal("the redial to a real, reachable server must have succeeded")
 	}
-	if len(a.chatlog.icLog) != 1 || a.chatlog.icLog[0].text != "server-a-ic-line" {
-		t.Errorf("tab A's own log must be restored, got %+v", a.chatlog.icLog)
+	if len(a.icLog) != 1 || a.icLog[0].text != "server-a-ic-line" {
+		t.Errorf("tab A's own log must be restored, got %+v", a.icLog)
 	}
 	// The parked tab must be byte-for-byte what it was — never overwritten by
 	// tab A's carry, and never itself donated into tab A's restored session.
-	if len(parked.state.chatlog.icLog) != 1 || parked.state.chatlog.icLog[0].text != "server-b-ic-line" {
-		t.Errorf("parked tab B's log was disturbed, got %+v", parked.state.chatlog.icLog)
+	if len(parked.state.icLog) != 1 || parked.state.icLog[0].text != "server-b-ic-line" {
+		t.Errorf("parked tab B's log was disturbed, got %+v", parked.state.icLog)
 	}
-	if len(parked.state.chatlog.oocLog) != 1 || parked.state.chatlog.oocLog[0] != "server-b-ooc-line" {
-		t.Errorf("parked tab B's OOC log was disturbed, got %v", parked.state.chatlog.oocLog)
+	if len(parked.state.oocLog) != 1 || parked.state.oocLog[0] != "server-b-ooc-line" {
+		t.Errorf("parked tab B's OOC log was disturbed, got %v", parked.state.oocLog)
 	}
 }

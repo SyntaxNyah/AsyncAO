@@ -1,7 +1,45 @@
 package ui
 
 // THE CHAR-SELECT WIDGETS, AND THE NAME COLUMN THAT IS NOT DECORATION (#20).
+//
+// charselectlayout.go built the canvas and charselectgrid.go put AO2's grid on it.
+// This file is the rest of AO2's char-select screen: the controls that surround the
+// grid, each mapped onto the AsyncAO control that already does its job, at the rect
+// the theme declares for it.
+//
+// WHY THE NAME COLUMN IS LOAD-BEARING. It looks like decoration — AsyncAO has a
+// perfectly good grid, why draw the names twice? Because six themes in the 74-theme
+// reference corpus (P5Theme, HDF-Standard, MOS 2xDark, MOSDefaultDark2.8,
+// MOSDefaultLight2.8 and DR Theme) ship 714x668 charselect art whose PAINTED grid is
+// ten slot columns starting at x=25, while their INI restricts char_buttons to seven
+// columns from x=226. Their char_list rect covers exactly the three extra columns
+// (25,36,190,596 spans x 25..215; the art's first three columns end at 218). AO2 fills
+// that space with its QTreeWidget of character names. Skip it and every user of those
+// six themes sees three orphan empty slot frames down the left of the screen — the
 // same "the art and the client disagree" complaint issue #20 opened with, just moved
+// 200 px left. AAI is the mirror case and the reason for the overlap guard below: it
+// declares no char_list and gives the whole area to char_buttons = 25,36,663,596,
+// using all ten painted columns itself.
+//
+// AO2 source for the semantics, all in AO2-Client src/charselect.cpp:
+//   - char_taken is a FILTER CHECKBOX, default CHECKED (:99), and unchecking it hides
+//     taken characters (filter_character_list, :360-364). It is not an indicator.
+//   - char_passworded is a DEAD checkbox: its filter branch is commented out at
+//     :355-358 with the note "It seems passwording characters is unimplemented yet?".
+//   - char_list rows are DISABLED (not hidden) while they are taken (:381-384), and a
+//     DOUBLE click on a row picks that character (:55, :168-183).
+//   - char_select_left / char_select_right step whole PAGES (:116-117, courtroom.cpp
+//     :6523-6533).
+//   - back_to_lobby leaves the server entirely (courtroom.cpp:6517-6521).
+//
+// WHAT IS DELIBERATELY NOT DRAWN, and why (both recorded in the final report):
+//   - char_password. AO2 sends its contents in a PW packet before CC (:203). AsyncAO
+//     has no PW anywhere in internal/protocol, so a password box here would collect a
+//     secret and silently drop it. A field that does nothing is worse than no field.
+//   - char_passworded. Dead in AO2 itself. Shipping a checkbox that cannot filter
+//     anything fails the "works out of the box, no tweaking" rule the batch is held
+//     to: the first thing a user does with an unexplained checkbox is click it.
+//     Omitted rather than drawn inert, and no semantics were invented for it.
 
 import (
 	"strings"
@@ -36,9 +74,12 @@ const (
 
 // charListRows is the roster the name column shows this frame — and, just as
 // importantly, the ONE filter both the column and the grid run.
+//
 // The two must agree exactly: the column's row order is the grid's cell order, so
 // clicking a name has to be able to say "this is the n-th cell" without re-deriving
 // anything. Two filters would desync the moment one of them learned about the taken
+// checkbox and the other did not.
+//
 // A value type holding only slice headers: it is built per frame on both tabs and
 // must never reach the heap.
 type charListRows struct {
@@ -122,9 +163,44 @@ func (a *App) fontLineH() int32 {
 
 // charSelectWidgetsThemed reports whether the theme's canvas can host AsyncAO's
 // char-select controls, i.e. whether this screen may drop its own header row.
+//
+// It is an ALL-OR-NOTHING test on purpose. Half a themed header — the theme's search
+// box but AsyncAO's Spectate button floating over the art — is worse than either
+// alternative, and it cannot be laid out sanely because the two coordinate systems
+// have nothing to do with each other. So the screen either hands the whole control row
+// to the theme or keeps its own, and the fallback is a screen we already ship.
+//
+// The requirements are deliberately only two:
+//   - a themed grid. With the grid on its classic full-window plan there is no canvas
+//     layout to be consistent with.
+//   - char_search, spectator and back_to_lobby all resolved AND ON SCREEN. Those are
+//     the three controls that make the screen finishable: filter, join without a
+//     character, leave.
+//
+// "AND ON SCREEN" is not belt-and-braces, it is the second half of the test.
+// Resolving only carries the SIZE floor: charSelectLayoutIn drops any rect that
+// scaled below minThemedElementPx, which is what catches the 2592x1719 corpus theme
+// at the 640x480 window floor (its 22 px design controls land on 5 px there). It says
+// nothing about POSITION, and char-select rects are deliberately unclamped — correct
+// for char_buttons, which overhangs its canvas by 30 px by design, but it means a
+// rect can resolve at a perfectly good size somewhere the user cannot reach it. Under
+// ThemeFitCrop at 1920x1080 the stock table scales by 2.69 and the canvas becomes
+// {0,-336,1920,1796}: char_search lands at y=-318, back_to_lobby at y=-323 and
+// spectator at y=1385 on a 1080 px window. All three "resolve", the themed row was
+// therefore taken, the client header was suppressed, and the screen shipped with no
+// search, no Spectate and no way out. The draw pushes lay.clip, so those controls
+// were painted nowhere and hovering() rejected them.
+//
 // So each essential rect must keep at least minThemedElementPx of itself inside
 // lay.clip — the same floor the size test uses, now applied to the part of the
 // control that is actually visible and clickable. Crop and Custom then fall back to
+// AsyncAO's own header, which is a screen we already ship.
+//
+// char_list is NOT required. It is the one AO2 widget a real theme legitimately does
+// without — CCWidescreen declares it 0x0 and Mobile parks it at x=99999, both meaning
+// "no name column" — and AAI-shaped themes hand the whole canvas to char_buttons, so
+// an inherited default column would land under their grid. Those themes still get the
+// theme's own control row; see charSelectNameListRect and charSelectTabStripRect.
 func (a *App) charSelectWidgetsThemed(lay *charSelectLayoutCache, g charGridPlan) bool {
 	if !lay.valid || !g.themed {
 		return false
@@ -147,7 +223,17 @@ var charSelectEssentialKeys = [...]string{charSelectSearchKey, charSelectSpectat
 
 // charSelectShowTaken is AO2's char_taken FILTER for this frame — and, crucially, it
 // is only ever the session's own value where the CHECKBOX that controls it is drawn.
+//
+// "A filter with no control is a trap" is the rule the classic screen already followed:
 // it has no checkbox, so it passes true and behaves exactly as it did before #20. The
+// themed screen needs the same test and did not have it. char_taken is deliberately NOT
+// one of charSelectEssentialKeys — a theme without it must still get the themed control
+// row — so the row can be taken on a frame where the box does not resolve at all: the
+// theme hid the key (AO2's 11037 convention, which Mobile and CCWidescreen use on other
+// char-select keys) or the canvas scaled it under minThemedElementPx. A session that
+// cleared the box on one theme and then switched to such a theme would go on hiding
+// every taken character with nothing on screen able to bring them back.
+//
 // The predicate reads the SAME rect drawCharSelectControlsIn draws the box at, so the
 // filter and its control can never disagree about whether they exist.
 func (a *App) charSelectShowTaken(themedUI bool, lay *charSelectLayoutCache) bool {
@@ -157,11 +243,25 @@ func (a *App) charSelectShowTaken(themedUI bool, lay *charSelectLayoutCache) boo
 	if _, ok := lay.rect(charSelectTakenKey); !ok {
 		return true
 	}
-	return a.charsel.charShowTaken
+	return a.charShowTaken
 }
 
 // charSelectNameListRect resolves where AO2's char_list column goes this frame, or
 // reports false when this theme has no room for one.
+//
+// Three ways to have no room, each a real corpus case:
+//   - the theme hides the key (Mobile parks it at x=99999) or declares it degenerate
+//     (CCWidescreen ships char_list = 0x0). Both mean "no name column"; the layout
+//     stage has already dropped the rect.
+//   - the scaled column cannot hold its header plus one name, or is narrower than one
+//     glyph of text beside its own scrollbar. A column that can only show a scrollbar
+//     is not a column.
+//   - it OVERLAPS char_buttons. AAI declares char_buttons = 25,36,663,596 and no
+//     char_list, so the inherited default column (25,36,190,596) lands under its grid;
+//     `alter ego (mobi)` declares one that overlaps outright. Stock AO2 draws both —
+//     ui_char_list is a sibling created BEFORE ui_char_buttons, so the tree widget
+//     shows through the 7 px gutters between buttons — and that is a stacking
+//     artefact, not a design worth reproducing.
 func (a *App) charSelectNameListRect(lay *charSelectLayoutCache) (sdl.Rect, bool) {
 	r, ok := lay.rect(charSelectListKey)
 	if !ok {
@@ -189,7 +289,14 @@ func (a *App) charSelectNameListRect(lay *charSelectLayoutCache) (sdl.Rect, bool
 // charSelectTabStripRect is the fallback home for the Characters/Wardrobe switch: the
 // row directly under char_search, sized to the chips' own labels and kept inside the
 // canvas.
+//
 // It is only reached when there is no name column to host the switch. The Wardrobe is
+// AsyncAO's own tab, so no theme rect describes it, and it has to stay reachable —
+// under the search box is the one place every themed frame is guaranteed to have,
+// since char_search is one of the three keys the themed row requires at all. On the
+// handful of corpus themes that get here the strip lands over the first cell or two of
+// a grid that already covers the whole canvas; that is the cost of those themes
+// leaving no room, and it beats losing the tab.
 func (a *App) charSelectTabStripRect(lay *charSelectLayoutCache) (sdl.Rect, bool) {
 	search, ok := lay.rect(charSelectSearchKey)
 	if !ok {
@@ -257,7 +364,7 @@ func (a *App) drawCharSelectControls(lay *charSelectLayoutCache, g charGridPlan)
 func (a *App) drawCharSelectControlsIn(lay *charSelectLayoutCache, g charGridPlan) bool {
 	c := a.ctx
 	if r, ok := lay.rect(charSelectSearchKey); ok {
-		a.charsel.charSearch, _ = c.TextField("charsearch", r, a.charsel.charSearch, "Search...")
+		a.charSearch, _ = c.TextField("charsearch", r, a.charSearch, "Search...")
 	}
 	// char_taken: AO2's filter checkbox, default CHECKED = show taken characters
 	// (charselect.cpp:99). The kit's checkbox is a fixed 16 px box plus a label, so it
@@ -272,12 +379,12 @@ func (a *App) drawCharSelectControlsIn(lay *charSelectLayoutCache, g charGridPla
 		if gap := (r.H - checkboxBoxPx) / 2; gap > 0 {
 			y += gap
 		}
-		was := a.charsel.charShowTaken
-		a.charsel.charShowTaken = c.Checkbox(r.X, y, "Taken", a.charsel.charShowTaken)
-		if a.charsel.charShowTaken != was {
+		was := a.charShowTaken
+		a.charShowTaken = c.Checkbox(r.X, y, "Taken", a.charShowTaken)
+		if a.charShowTaken != was {
 			// The filter changed under both views: a scroll offset measured against
 			// the old content height would leave either view parked past its end.
-			a.charsel.charScroll, a.charsel.charListScroll = 0, 0
+			a.charScroll, a.charListScroll = 0, 0
 		}
 		c.Tooltip(sdl.Rect{X: r.X, Y: y, W: r.W, H: checkboxBoxPx},
 			"Show characters other players are already using")
@@ -285,10 +392,10 @@ func (a *App) drawCharSelectControlsIn(lay *charSelectLayoutCache, g charGridPla
 	// Spectate needs a session to join without a character; this row draws before the
 	// handshake completes (so "leave" stays reachable while a join hangs), so the
 	// button is simply absent until there is something to spectate.
-	if r, ok := lay.rect(charSelectSpectatorKey); ok && a.link.sess != nil {
+	if r, ok := lay.rect(charSelectSpectatorKey); ok && a.sess != nil {
 		if c.Button(r, "Spectate") {
-			if !a.link.sess.Rehearsal {
-				a.link.sess.PickCharacter(protocol.UnpairedCharID)
+			if !a.sess.Rehearsal {
+				a.sess.PickCharacter(protocol.UnpairedCharID)
 			}
 			a.enterCourtroom()
 			return true
@@ -301,7 +408,7 @@ func (a *App) drawCharSelectControlsIn(lay *charSelectLayoutCache, g charGridPla
 	// the slot muscle memory aims at. Disconnect stays one click away in the menu bar
 	// either way, so nothing is lost when Back occupies the rect.
 	if r, ok := lay.rect(charSelectBackKey); ok {
-		if a.link.room != nil {
+		if a.room != nil {
 			if c.Button(r, "Back") {
 				a.screen = ScreenCourtroom
 				return true
@@ -352,15 +459,22 @@ func (a *App) drawCharSelectPageArrows(lay *charSelectLayoutCache, g charGridPla
 // gridScroll is the active tab's grid scroll offset. Both tabs share one plan and one
 // set of page arrows, so the arrows need to know which offset they are stepping.
 func (a *App) gridScroll() *int32 {
-	if a.charsel.charTab == charTabWardrobe {
-		return &a.inibrowse.iniScroll
+	if a.charTab == charTabWardrobe {
+		return &a.iniScroll
 	}
-	return &a.charsel.charScroll
+	return &a.charScroll
 }
 
 // drawCharNameList is AO2's char_list: a scrolling column of character names beside
 // the grid, filtered by the same predicate, selecting into the same cells.
+//
 // ONE SELECTION, TWO VIEWS. Clicking a name selects it, outlines its cell in the grid
+// and scrolls the grid to it; a double click picks it, which is exactly AO2's
+// itemDoubleClicked wiring. AO2 gets the sync for free because both views are Qt
+// widgets over one model — immediate mode has to be told, and being told once
+// (charListSel) is why the column is drawn BEFORE the grid: no ordering hazard, no
+// frame of lag, and the two never disagree about which character is chosen.
+//
 // Categories are deliberately absent — see docs/ROADMAP.md. AO2 groups this list by
 // each character's char.ini [Options] category, which a streaming client can only
 // learn with one fetch per character.
@@ -380,11 +494,11 @@ func (a *App) drawCharNameList(lay *charSelectLayoutCache, rows charListRows, qu
 	body := sdl.Rect{X: r.X, Y: r.Y + rowH, W: r.W, H: r.H - rowH}
 	matches := rows.matches(query, showTaken)
 	contentH := matches * rowH
-	scroll := a.charsel.charListScroll
+	scroll := a.charListScroll
 	scroll -= c.WheelIn(body) * scrollStepPx
 	track := sdl.Rect{X: body.X + body.W - scrollBarW, Y: body.Y, W: scrollBarW, H: body.H}
 	scroll = c.VScrollbar("charlist", track, scroll, contentH, body.H)
-	a.charsel.charListScroll = scroll
+	a.charListScroll = scroll
 	textW := body.W - scrollBarW - scrollBarGap - charListTextInsetPx
 	if textW < 1 {
 		return
@@ -405,7 +519,7 @@ func (a *App) drawCharNameList(lay *charSelectLayoutCache, rows charListRows, qu
 		}
 		row := sdl.Rect{X: body.X, Y: y, W: body.W - scrollBarW, H: rowH}
 		switch {
-		case i == a.charsel.charListSel:
+		case i == a.charListSel:
 			c.Fill(row, ColAccent) // the same character the grid outlines
 		case c.hovering(row):
 			c.Fill(row, ColPanelHi)
@@ -429,7 +543,7 @@ func (a *App) drawCharNameList(lay *charSelectLayoutCache, rows charListRows, qu
 			return
 		}
 		if c.clicked {
-			a.charsel.charListSel = i
+			a.charListSel = i
 			*a.gridScroll() = revealRowInGrid(g, ord, *a.gridScroll())
 		}
 	}
@@ -440,9 +554,23 @@ func (a *App) drawCharNameList(lay *charSelectLayoutCache, rows charListRows, qu
 // header. The Wardrobe is AsyncAO's own addition with no AO2 counterpart, so it needs
 // a home on the canvas that no theme rect describes; the column header is that home,
 // because the column is the thing whose CONTENTS the switch changes.
+//
+// WHICH CHIP IS ACTIVE HAS TO BE VISIBLE. The first version filled the active chip
+// with ColAccent and then drew a Button on the IDENTICAL rect — and Button fills
+// again, with an opaque ColPanel/ColPanelHi, so the accent was completely overpainted.
+// Both chips also take Button's ColAccent border, so Characters and Wardrobe were
+// pixel-identical whichever one you were on. The classic header gets away with the
+// fill-then-button pattern only because it fills a LARGER rect, leaving a ring; here
+// the chips sit in a tight row inside a theme-declared column, so the active one is
+// drawn as an accent-BODIED button instead — the same segmented-control idiom the
+// content panel's source switch uses (ButtonCol with bg == hoverBg == accent, so it
+// reads selected rather than hoverable).
+//
 // The width fallback matters too: charSelectNameListRect admits columns narrow enough
 // that two natural-width chips do not fit, and clipping the second one to whatever was
 // left could leave it a pixel wide — an unreachable Wardrobe tab. When the natural
+// widths do not fit, the row splits the space evenly instead, so both chips are always
+// clickable.
 func (a *App) drawCharListTabs(r sdl.Rect) {
 	c := a.ctx
 	n := int32(len(charSelectTabs))
@@ -461,7 +589,7 @@ func (a *App) drawCharListTabs(r sdl.Rect) {
 		}
 		chip := sdl.Rect{X: x, Y: r.Y, W: w, H: r.H}
 		clicked := false
-		if a.charsel.charTab == tb.id {
+		if a.charTab == tb.id {
 			clicked = c.ButtonCol(chip, tb.label, ColAccent, ColAccent, ColAccent, ColBackground)
 		} else {
 			clicked = c.Button(chip, tb.label)
@@ -484,11 +612,11 @@ var charSelectTabs = [...]struct {
 // own slice, so a selection carried across would point at a different character (or
 // past the end of a shorter list) — it is dropped, along with the column's scroll.
 func (a *App) selectCharTab(id int) {
-	if a.charsel.charTab == id {
+	if a.charTab == id {
 		return
 	}
-	a.charsel.charTab = id
-	a.charsel.charListSel, a.charsel.charListScroll = -1, 0
+	a.charTab = id
+	a.charListSel, a.charListScroll = -1, 0
 	if id == charTabWardrobe {
 		a.ensureIniList()
 	}

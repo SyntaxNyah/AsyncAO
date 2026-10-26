@@ -38,22 +38,22 @@ func TestLobbyStarRemoveNoPanic(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 
-	a := &App{env: env{ctx: ctx, d: Deps{Prefs: prefs}}}
+	a := &App{ctx: ctx, d: Deps{Prefs: prefs}}
 	// Favorites-only list: neither URL is in the (empty) master list, so removing
 	// one genuinely SHRINKS mergedFavorites() — the length-preserving master-list
 	// case is exactly why only the saved-only removal used to crash. ws:// keeps
 	// both rows Joinable (no legacy-header branch to shift the row geometry).
 	a.d.Prefs.AddFavorite("Alpha", "ws://a.example:1001", "")
 	a.d.Prefs.AddFavorite("Beta", "ws://b.example:1002", "")
-	a.conn.lobby.servers = a.conn.lobby.mergedFavorites(&a.env)
-	if len(a.conn.lobby.servers) != 2 {
-		t.Fatalf("setup: want 2 favorites, got %d", len(a.conn.lobby.servers))
+	a.servers = a.mergedFavorites()
+	if len(a.servers) != 2 {
+		t.Fatalf("setup: want 2 favorites, got %d", len(a.servers))
 	}
-	before := len(a.conn.lobby.servers)
+	before := len(a.servers)
 
 	// Phone Book page (faithful to the bug report) with no selection/desc box.
-	a.conn.lobby.phoneBookPage = true
-	a.conn.lobby.selServer = -1
+	a.phoneBookPage = true
+	a.selServer = -1
 
 	// Point the mouse at row 0's ★ and arm a left-click release. The ★ handler is
 	// a plain `hovering(star) && c.clicked` (not ClickedIn), so setting the
@@ -77,7 +77,7 @@ func TestLobbyStarRemoveNoPanic(t *testing.T) {
 		a.drawLobby(1280, 720)
 	}()
 
-	if len(a.conn.lobby.servers) != before-1 {
-		t.Fatalf("★-remove must shrink the saved list by one: got %d, want %d", len(a.conn.lobby.servers), before-1)
+	if len(a.servers) != before-1 {
+		t.Fatalf("★-remove must shrink the saved list by one: got %d, want %d", len(a.servers), before-1)
 	}
 }

@@ -7,10 +7,16 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 // Per-panel font and size, chosen by the USER rather than by a theme.
+//
+// A theme already sets a family and a point size for each courtroom element, and
 // #39 made AsyncAO honour them. But a theme author picked those for their own
+// design; only the person reading knows whether they can actually read it. This
+// is the override — same table, same off-thread resolution, applied last.
+//
 // Size and family are INDEPENDENT on purpose. The common request is "the same
 // look, but bigger", and forcing someone to also name a font to get that would
 // make the feature useless to exactly the people who need it most.
@@ -79,9 +85,9 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 	// answer is to install the fonts rather than to override every panel by hand.
 	// Persistent here, unlike the toast on apply, which is gone by the time anyone
 	// goes looking.
-	if a.font.themeFontWarn != "" {
+	if a.themeFontWarn != "" {
 		y = a.settingsSection(y, w, "This theme's fonts are missing")
-		y = a.settingsDesc(pad, y, a.font.themeFontWarn, ColDanger)
+		y = a.settingsDesc(pad, y, a.themeFontWarn, ColDanger)
 		y += 6
 	} else {
 		y = a.settingsSection(y, w, "Your font folder")
@@ -125,9 +131,13 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 
 		// The size box shows the size actually in use when nothing is set, so the
 		// starting point is what the user is looking at rather than a blank.
+		//
 		// WHILE THE FIELD HAS FOCUS ITS OWN TEXT IS AUTHORITATIVE, and that is the
 		// whole fix rather than a nicety. This used to clamp on every keystroke and
 		// feed the clamped number straight back in, so typing the "1" of "18" became
+		// a 6 (the minimum) before the "8" could be typed, and no size below ten was
+		// reachable at all. A field must never rewrite what someone is in the middle
+		// of typing.
 		sizeID := "panelsize-" + row.id
 		sizeRect := sdl.Rect{X: pad + panelFontLabelW + panelFontFamilyW + 8, Y: y, W: panelFontSizeW, H: fieldH}
 		shown := a.panelSizeText(sizeID, row.id, cur.SizePx)
@@ -149,8 +159,8 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 	// A family that resolved to nothing is the single most likely way this
 	// confuses someone, so it is reported HERE, beside the box they typed it in,
 	// and not only in the debug log.
-	if len(a.font.panelFontMissing) > 0 {
-		y = a.settingsDesc(pad, y, "Not found, so the theme's font is still being used for: "+strings.Join(a.font.panelFontMissing, ", ")+
+	if len(a.panelFontMissing) > 0 {
+		y = a.settingsDesc(pad, y, "Not found, so the theme's font is still being used for: "+strings.Join(a.panelFontMissing, ", ")+
 			". On Windows a family name like \"Arial\" or \"Comic Sans MS\" works; elsewhere give the full path to a .ttf or .otf file.", ColDanger)
 		y += 6
 	}
@@ -170,7 +180,7 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 // also what discards a box left holding something unusable.
 func (a *App) panelSizeText(fieldID, rowID string, saved int) string {
 	if a.ctx.focusID == fieldID {
-		if s, editing := a.font.panelSizeEdit[rowID]; editing {
+		if s, editing := a.panelSizeEdit[rowID]; editing {
 			return s
 		}
 	}
@@ -188,10 +198,10 @@ func (a *App) panelSizeText(fieldID, rowID string, saved int) string {
 // incomplete rather than wrong: it is almost always a number mid-typing, and
 // rejecting it outright is the same trap as clamping it.
 func (a *App) commitPanelSize(fieldID, rowID string, cur config.PanelFont, text string) {
-	if a.font.panelSizeEdit == nil {
-		a.font.panelSizeEdit = make(map[string]string, len(panelFontRows))
+	if a.panelSizeEdit == nil {
+		a.panelSizeEdit = make(map[string]string, len(panelFontRows))
 	}
-	a.font.panelSizeEdit[rowID] = text
+	a.panelSizeEdit[rowID] = text
 
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
@@ -228,4 +238,12 @@ func (a *App) panelFontPlaceholder(el themeFontElem) string {
 	return "the client's own font"
 }
 
-// panelFontRows is the Settings → Fonts row table.
+// panelFontElementIndex is the position of id in theme.FontElements, or -1.
+func panelFontElementIndex(id string) int {
+	for i, e := range theme.FontElements {
+		if e == id {
+			return i
+		}
+	}
+	return -1
+}

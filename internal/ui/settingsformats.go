@@ -12,9 +12,15 @@ import (
 
 // Settings → Formats. Everything that decides WHICH file type AsyncAO asks a
 // server for lives here, and nowhere else.
+//
 // It exists because those controls were previously split three ways — the
 // per-server profile and the audio fallbacks on Assets, the probe order,
 // per-type fallbacks, autodetect and desk policy on Power user, the
+// learned-format tools on Assets → Cache — so a player whose emotes rendered as
+// nothing had to already know the answer in order to find it. The zero-fallback
+// default (exactly one network probe per asset) is deliberate and unchanged;
+// what changes is that its consequence is now explained, its per-server escape
+// hatch is one click, and the state it learned is visible.
 
 // imageTypeNames are the asset classes whose image format is user-tunable, in
 // the order they're listed on this tab (icons first — that's the wall of art a
@@ -106,9 +112,11 @@ func buildAudioFallbackLabels() []string {
 // this host's learned table instantly — no network round-trip, so the very
 // first probe after it is already right — and it overrides both the server's
 // own manifest and the global default, for that host only.
+//
 // It is deliberately a manifest rather than a new preference: the per-server
 // profile mechanism already exists, already persists, and already re-applies on
 // every reconnect (fetchManifestAsync). A second mechanism would be a second
+// place to look, which is the bug this tab is fixing.
 func pinnedProfileJSON(ext string) string {
 	return `{"charicon_extensions":["` + ext + `"],` +
 		`"emote_extensions":["` + ext + `"],` +
@@ -206,7 +214,7 @@ func (a *App) drawFormatsThisServer(y, w int32) int32 {
 	pad := a.formX
 	y = a.settingsSection(y, w, "This server")
 
-	host := hostOfURL(a.link.urls.Origin())
+	host := hostOfURL(a.urls.Origin())
 	if host == "" {
 		y = a.settingsDesc(pad, y, "Not connected to a server yet. Join one and this section shows what it serves, what AsyncAO learned there, and the one-click fixes for it.", ColTextDim)
 		y += 10
@@ -224,7 +232,7 @@ func (a *App) drawFormatsThisServer(y, w int32) int32 {
 	// list" — claiming a server publishes nothing when we simply haven't asked
 	// would send a player straight to a fix they don't need.
 	hasCustom := a.d.Prefs.Load().ExtProfile(host) != ""
-	st, known := a.srvMeta.manifestStatus[host]
+	st, known := a.manifestStatus[host]
 	source, col := "", ColTextDim
 	switch {
 	case hasCustom:
@@ -276,14 +284,14 @@ func (a *App) drawFormatsThisServer(y, w int32) int32 {
 	a.noteSearchRow(vanillaLabel, y)
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 300, H: btnH}, vanillaLabel) {
 		a.d.Prefs.SetExtProfile(host, assets.BundledVanillaManifestJSON)
-		a.srvMeta.manifestFor = "" // allow a re-seed of the connected origin
-		a.fetchManifestAsync()     // apply instantly
+		a.manifestFor = ""     // allow a re-seed of the connected origin
+		a.fetchManifestAsync() // apply instantly
 		settings.statusLine = "Applied the official-vanilla format list to " + host + "."
 	}
 	if hasCustom {
 		if c.Button(sdl.Rect{X: pad + 310, Y: y, W: 200, H: btnH}, "Unpin (back to automatic)") {
 			a.d.Prefs.SetExtProfile(host, "")
-			a.srvMeta.manifestFor = ""
+			a.manifestFor = ""
 			a.fetchManifestAsync()
 			settings.statusLine = "Unpinned " + host + " — back to this server's own format list."
 		}
@@ -300,7 +308,7 @@ func (a *App) drawFormatsThisServer(y, w int32) int32 {
 		for t := assets.AssetType(0); t < assets.AssetTypeCount; t++ {
 			a.d.Resolver.Invalidate(host, t)
 		}
-		a.srvMeta.manifestFor = ""
+		a.manifestFor = ""
 		a.fetchManifestAsync()
 		settings.statusLine = fmt.Sprintf("Forgot %d remembered format(s) for %s — they re-derive on the next request.", n, host)
 	}
@@ -320,8 +328,8 @@ func (a *App) applyServerFormatPin(host, ext, label string) {
 	for t := assets.AssetType(0); t < assets.AssetTypeCount; t++ {
 		a.d.Resolver.Invalidate(host, t)
 	}
-	a.srvMeta.manifestFor = "" // allow a re-seed of the connected origin
-	a.fetchManifestAsync()     // seeds from the pinned profile, no network round-trip
+	a.manifestFor = ""     // allow a re-seed of the connected origin
+	a.fetchManifestAsync() // seeds from the pinned profile, no network round-trip
 	settings.statusLine = "Pinned " + label + " for " + host + " — art re-requests in that format."
 }
 
@@ -329,6 +337,13 @@ func (a *App) applyServerFormatPin(host, ext, label string) {
 // AsyncAO, per asset class, beside what would be probed without it. This is the
 // fastest way to see WHY an asset is missing: a class showing a type the server
 // doesn't serve is the whole diagnosis.
+//
+// A class can have learned MORE than one type — a server whose extensions.json
+// declares two formats for a class really does serve both, and the whole point
+// of keeping the list is that the second is reachable when the first 404s. The
+// preferred one (probed first) is drawn in the accent colour, the rest of the
+// ladder dimmed behind it.
+//
 // Zero allocation per frame by construction: Resolver.LearnedList is one atomic
 // load plus a map lookup and returns interned extension strings, drawn as
 // separate labels rather than joined (joining would allocate every frame), and
@@ -386,7 +401,7 @@ func (a *App) drawFormatsAutoDetect(y, w int32) int32 {
 		})
 
 		if next {
-			a.srvMeta.manifestFor = "" // re-check the current server right away
+			a.manifestFor = "" // re-check the current server right away
 			a.fetchManifestAsync()
 		}
 	}
@@ -411,7 +426,7 @@ func (a *App) drawFormatsAutoDetect(y, w int32) int32 {
 		a.d.Resolver.InvalidateAll()
 		a.d.Resolver.WarmFromPrefs()
 		if !next { // now following the list: re-seed from the current server
-			a.srvMeta.manifestFor = ""
+			a.manifestFor = ""
 			a.fetchManifestAsync()
 		}
 	}

@@ -13,9 +13,23 @@ import (
 )
 
 // #35 — window restore + auto-resize to the theme's design size.
+//
+// Two independent halves are pinned here:
+//
+//  1. CenteredWindowPos, the multi-monitor recentring fix. The bare
+//     sdl.WINDOWPOS_CENTERED is SDL_WINDOWPOS_CENTERED_DISPLAY(0), so every
+//     recenter used to teleport the window onto the primary display.
+//  2. The one-shot that arms the automatic snap-to-canvas. The same theme-apply
+//     pipeline is re-entered at boot, by healTheme's eviction repair, by the
+//     texture-filter Purge recovery and whenever a server binds a theme; none of
+//     those may move the window, so an explicit arming — not a name comparison —
+//     is the contract, it NAMES the generation of the apply it belongs to, and it
+//     must be consumed exactly once.
+//
 // The un-maximize half of the fix is NOT covered here: SDL's dummy video driver
 // implements no MaximizeWindow, so SDL_WINDOW_MAXIMIZED can never be raised
 // headlessly. It rests on the SDL sources quoted at Ctx.UnmaximizeWindow and
+// needs a human at a real display.
 
 // designCanvas is one theme's declared courtroom_design.ini geometry, in the
 // shape pollThemeApply receives it. viewport is a quarter-size stage purely so
@@ -30,21 +44,21 @@ func designCanvas(w, h int) map[string]theme.Rect {
 // stageThemeCanvas gives a headless App an already-applied theme canvas.
 func stageThemeCanvas(a *App, w, h int) {
 	rects := designCanvas(w, h)
-	a.skin.themeRectsOrig = rects
-	a.skin.themeRects = rects
-	a.skin.themeLay.valid = false
+	a.themeRectsOrig = rects
+	a.themeRects = rects
+	a.themeLay.valid = false
 }
 
 // startThemeApply allocates a generation the way applyThemeAsync does, WITHOUT
 // running the off-thread load. Tests use it to model an apply that is in flight.
-func startThemeApply(a *App) uint64 { return a.skin.themeGen.Add(1) }
+func startThemeApply(a *App) uint64 { return a.themeGen.Add(1) }
 
 // landThemeApplyGen drives ONE real pollThemeApply landing for an already
 // allocated generation, so the one-shot is pinned where it actually runs.
 // Everything else on themeApply is left zero: with no images and no sounds the
 // landing touches neither the (nil) TextureStore nor the (nil) room.
 func landThemeApplyGen(a *App, gen uint64, layout map[string]theme.Rect) {
-	a.skin.themeRes.Store(&themeApply{gen: gen, name: "fixture", layout: layout})
+	a.themeRes.Store(&themeApply{gen: gen, name: "fixture", layout: layout})
 	a.pollThemeApply()
 }
 
@@ -123,7 +137,7 @@ func TestThemeDesignWindowSizeReadsTheCourtroomRect(t *testing.T) {
 	}
 	// A theme declaring a degenerate canvas must not be offered: resizing to 0
 	// would only be clamped back up to the minimum window and confuse the user.
-	a.skin.themeRectsOrig = map[string]theme.Rect{"courtroom": {X: 0, Y: 0, W: 0, H: 579}}
+	a.themeRectsOrig = map[string]theme.Rect{"courtroom": {X: 0, Y: 0, W: 0, H: 579}}
 	if _, _, ok := a.themeDesignWindowSize(); ok {
 		t.Error("a zero-width courtroom rect must report no design size")
 	}
@@ -132,7 +146,15 @@ func TestThemeDesignWindowSizeReadsTheCourtroomRect(t *testing.T) {
 // TestThemeDesignResizeDeliversOneToOne is the product-level assertion behind
 // the whole feature: after the snap the layout engine draws the theme at scale
 // exactly 1.0 with no leftover bars — pixel-for-pixel stock AO2, no settings touched.
+//
 // CHANGED BY #14. The snap target is now the canvas PLUS themeDesignWindowInset (the
+// menu bar + docked server-tab strip band that sits above it), and the canvas is
+// centred in the room under that band. The old expectations — persisted window ==
+// 714x579 and offY == 0 — would now mean the courtroom got only 579-band px for a
+// 579px canvas and had to scale DOWN, i.e. the affordance would no longer deliver
+// the 1:1 it promises. The assertion below is the same promise re-stated against the
+// band: scale exactly 1, no horizontal bars, and the vertical origin sitting exactly
+// on the band with nothing left over.
 func TestThemeDesignResizeDeliversOneToOne(t *testing.T) {
 	a := testTabApp(t)
 	// One session, strip undragged: the live band then equals themeDesignWindowInset,
@@ -211,6 +233,15 @@ func TestThemeResizeOneShotFiresOnceThenClears(t *testing.T) {
 
 // TestThemeResizeArmingIsNotSpentByAnOlderApply is the race the generation
 // exists for, and the reason the arming cannot be a bare bool.
+//
+// themePage heals the theme from ANY theme-art draw — including the Settings
+// screen's own live preview — so a heal apply carrying the PREVIOUS theme can be
+// in flight at the exact moment the user opens the theme dropdown. With a bare
+// flag whichever apply landed first spent it: the stale one won, the window
+// snapped to the old theme's canvas, and the theme the user actually picked
+// landed already-consumed and never snapped at all. The same window let an
+// ensureThemeForSession server bind spend it, which is the one thing the feature
+// promises never to do.
 func TestThemeResizeArmingIsNotSpentByAnOlderApply(t *testing.T) {
 	a := testTabApp(t)
 	// A heal (or a server bind) starts first, carrying the OLD theme's canvas.
@@ -276,8 +307,8 @@ func TestThemeResizeNeverFiresUnarmed(t *testing.T) {
 	if w, h := a.d.Prefs.Load().WindowSize(); w != 0 || h != 0 {
 		t.Errorf("boot apply persisted window %dx%d, want it untouched (0x0 = never set)", w, h)
 	}
-	if a.toolbox.themeAppliedName != "fixture" {
-		t.Fatalf("the landing did not actually run (themeAppliedName = %q)", a.toolbox.themeAppliedName)
+	if a.themeAppliedName != "fixture" {
+		t.Fatalf("the landing did not actually run (themeAppliedName = %q)", a.themeAppliedName)
 	}
 }
 
@@ -553,8 +584,8 @@ func TestThemeResizeArmingDisarmsWhenOutraced(t *testing.T) {
 func TestThemeDesignSizeNeedsAViewportToo(t *testing.T) {
 	a := testTabApp(t)
 	courtOnly := map[string]theme.Rect{"courtroom": {X: 0, Y: 0, W: 714, H: 579}}
-	a.skin.themeRectsOrig, a.skin.themeRects = courtOnly, courtOnly
-	a.skin.themeLay.valid = false
+	a.themeRectsOrig, a.themeRects = courtOnly, courtOnly
+	a.themeLay.valid = false
 	if lay := a.themeLayout(714, 579); lay.valid {
 		t.Fatal("fixture is wrong: themeLayout validated a theme with no viewport")
 	}
@@ -582,6 +613,7 @@ func TestThemeDesignSizeNeedsAViewportToo(t *testing.T) {
 // the SAME one-shot. Without it an existing user's first launch after updating
 // swaps an edge-to-edge courtroom for a small centred canvas ringed by bars, and
 // the only way out is a settings hunt — the outcome the product rule forbids.
+//
 // The trigger is the STAMP being newly written, never "is this boot", so it can
 // fire exactly once ever.
 func TestThemeFitUpgradeSnapIsArmedOnceAtBoot(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 // clamp at the ends (no wrap), and the Phone Book filter restricts movement to favourites.
 func TestNextJoinableServer(t *testing.T) {
 	a := testTabApp(t)
-	a.conn.lobby.servers = []network.ServerEntry{
+	a.servers = []network.ServerEntry{
 		{Name: "A", WSPort: 1},                  // 0 joinable
 		{Name: "Legacy"},                        // 1 legacy (no ports) — skipped
 		{Name: "B", WSPort: 1, Favorite: true},  // 2 joinable + favourite
@@ -18,31 +18,31 @@ func TestNextJoinableServer(t *testing.T) {
 	}
 
 	// All servers: skip the legacy row, clamp at the ends.
-	if got := a.conn.lobby.nextJoinableServer(-1, 1); got != 0 {
+	if got := a.nextJoinableServer(-1, 1); got != 0 {
 		t.Errorf("down from none = %d, want 0", got)
 	}
-	if got := a.conn.lobby.nextJoinableServer(0, 1); got != 2 {
+	if got := a.nextJoinableServer(0, 1); got != 2 {
 		t.Errorf("down from 0 = %d, want 2 (skips legacy)", got)
 	}
-	if got := a.conn.lobby.nextJoinableServer(3, 1); got != -1 {
+	if got := a.nextJoinableServer(3, 1); got != -1 {
 		t.Errorf("down from last = %d, want -1 (no wrap)", got)
 	}
-	if got := a.conn.lobby.nextJoinableServer(2, -1); got != 0 {
+	if got := a.nextJoinableServer(2, -1); got != 0 {
 		t.Errorf("up from 2 = %d, want 0 (skips legacy)", got)
 	}
-	if got := a.conn.lobby.nextJoinableServer(0, -1); got != -1 {
+	if got := a.nextJoinableServer(0, -1); got != -1 {
 		t.Errorf("up from first = %d, want -1", got)
 	}
 
 	// Phone Book page: only favourites (idx 2, 3) are reachable.
-	a.conn.lobby.phoneBookPage = true
-	if got := a.conn.lobby.nextJoinableServer(-1, 1); got != 2 {
+	a.phoneBookPage = true
+	if got := a.nextJoinableServer(-1, 1); got != 2 {
 		t.Errorf("phonebook down from none = %d, want 2", got)
 	}
-	if got := a.conn.lobby.nextJoinableServer(2, 1); got != 3 {
+	if got := a.nextJoinableServer(2, 1); got != 3 {
 		t.Errorf("phonebook down from 2 = %d, want 3", got)
 	}
-	if got := a.conn.lobby.nextJoinableServer(3, 1); got != -1 {
+	if got := a.nextJoinableServer(3, 1); got != -1 {
 		t.Errorf("phonebook down from last fav = %d, want -1", got)
 	}
 }
@@ -51,17 +51,17 @@ func TestNextJoinableServer(t *testing.T) {
 // the [listTop, h] viewport (so keyboard nav never parks the selection off-screen).
 func TestScrollServerIntoView(t *testing.T) {
 	a := testTabApp(t)
-	a.conn.lobby.servers = []network.ServerEntry{
+	a.servers = []network.ServerEntry{
 		{Name: "A", WSPort: 1}, {Name: "Legacy"}, {Name: "B", WSPort: 1},
 		{Name: "C", WSPort: 1}, {Name: "D", WSPort: 1}, {Name: "E", WSPort: 1},
 	}
 	const listTop, h = int32(100), int32(220) // a short viewport so most rows are off-screen
 	for _, idx := range []int{5, 0, 3} {      // jump around
-		a.conn.lobby.scrollServerIntoView(idx, listTop, h)
+		a.scrollServerIntoView(idx, listTop, h)
 		// Recompute the row's content-space top the same way the helper does.
 		top, legacy := int32(0), false
-		for i := range a.conn.lobby.servers {
-			if e := &a.conn.lobby.servers[i]; !e.Joinable() && !legacy {
+		for i := range a.servers {
+			if e := &a.servers[i]; !e.Joinable() && !legacy {
 				top += rowH
 				legacy = true
 			}
@@ -70,9 +70,9 @@ func TestScrollServerIntoView(t *testing.T) {
 			}
 			top += rowH
 		}
-		onScreen := listTop + top - a.conn.lobby.lobbyScroll
+		onScreen := listTop + top - a.lobbyScroll
 		if onScreen < listTop || onScreen+rowH > h {
-			t.Errorf("row %d at on-screen y=%d not within [%d,%d] (scroll=%d)", idx, onScreen, listTop, h, a.conn.lobby.lobbyScroll)
+			t.Errorf("row %d at on-screen y=%d not within [%d,%d] (scroll=%d)", idx, onScreen, listTop, h, a.lobbyScroll)
 		}
 	}
 }

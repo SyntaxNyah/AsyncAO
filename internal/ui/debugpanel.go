@@ -44,45 +44,45 @@ const (
 	debugSectionGap = int32(22)
 )
 
-// debugSections are the panel's tabs, indexed by a.debugPanel.section.
+// debugSections are the panel's tabs, indexed by a.debugSection.
 var debugSections = []string{"Session", "Packets", "Perf", "Cache", "Log", "Fonts"}
 
 // toggleDebugPanel opens / closes the Debug panel (Extras → Debug, the F8 key,
 // or Settings → Power user → Diagnostics).
-func (debugpanel *debugPanelState) toggleDebugPanel() { debugpanel.open = !debugpanel.open }
+func (a *App) toggleDebugPanel() { a.showDebugPanel = !a.showDebugPanel }
 
 // debugPanelRect is the Debug panel's floating-window rect (floatwin.go).
-func (classic1 *classicState) debugPanelRect(e *env, w, h int32) sdl.Rect {
-	if r, ok := classic1.seedPanelFromSlot(&e.wins.debugWin, slotPanelDebug, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, w, h); ok {
+func (a *App) debugPanelRect(w, h int32) sdl.Rect {
+	if r, ok := a.seedPanelFromSlot(&a.debugWin, slotPanelDebug, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, w, h); ok {
 		return r
 	}
-	return e.wins.debugWin.rect(debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, w, h)
+	return a.debugWin.rect(debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, w, h)
 }
 
 func (a *App) drawDebugPanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	if c.escPressed {
-		a.debugPanel.open = false
+		a.showDebugPanel = false
 		return
 	}
-	wasActive := a.wins.debugWin.dragging || a.wins.debugWin.resizing // detect the drag/resize-end frame for slot persistence
-	panel := a.classic.debugPanelRect(&a.env, w, h)
+	wasActive := a.debugWin.dragging || a.debugWin.resizing // detect the drag/resize-end frame for slot persistence
+	panel := a.debugPanelRect(w, h)
 	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
 	c.Fill(sdl.Rect{X: panel.X, Y: panel.Y, W: pw, H: floatTitleH}, ColPanelHi) // title bar / drag handle
-	a.floatWinDrag(&a.wins.debugWin, sdl.Rect{X: panel.X, Y: panel.Y, W: pw - 84 - debugPanelIn, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.debugWin, sdl.Rect{X: panel.X, Y: panel.Y, W: pw - 84 - debugPanelIn, H: floatTitleH}, pressed)
 	grip := sdl.Rect{X: panel.X + pw - floatGripSz, Y: panel.Y + ph - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.wins.debugWin, grip, panel, debugPanelMinW, debugPanelMinH, pressed)
+	a.floatWinResize(&a.debugWin, grip, panel, debugPanelMinW, debugPanelMinH, pressed)
 	a.drawResizeGrip(grip)
-	if wasActive && !a.wins.debugWin.dragging && !a.wins.debugWin.resizing { // drag/resize just ended → remember where
-		a.classic.persistPanelSlot(&a.env, slotPanelDebug, panel, w, h)
+	if wasActive && !a.debugWin.dragging && !a.debugWin.resizing { // drag/resize just ended → remember where
+		a.persistPanelSlot(slotPanelDebug, panel, w, h)
 	}
 	x := panel.X + debugPanelIn
 
 	c.Heading(x, panel.Y+12, "Debug", ColText)
 	if c.Button(sdl.Rect{X: panel.X + pw - debugPanelIn - 74, Y: panel.Y + 12, W: 74, H: btnH}, "Close") {
-		a.debugPanel.open = false
+		a.showDebugPanel = false
 		return
 	}
 
@@ -93,9 +93,9 @@ func (a *App) drawDebugPanel(w, h int32, pressed *bool) {
 		bw := c.TextWidth(name) + 22
 		r := sdl.Rect{X: bx, Y: sy, W: bw, H: btnH}
 		if c.Button(r, name) {
-			a.debugPanel.section = i
+			a.debugSection = i
 		}
-		if a.debugPanel.section == i {
+		if a.debugSection == i {
 			c.Border(r, ColAccent)
 		}
 		bx += bw + 8
@@ -103,7 +103,7 @@ func (a *App) drawDebugPanel(w, h int32, pressed *bool) {
 
 	top := sy + btnH + 10
 	body := sdl.Rect{X: x, Y: top, W: pw - 2*debugPanelIn, H: panel.Y + ph - top - debugPanelIn}
-	switch a.debugPanel.section {
+	switch a.debugSection {
 	case 1:
 		a.drawDebugPackets(body)
 	case 2:
@@ -129,12 +129,12 @@ func (a *App) drawDebugSession(r sdl.Rect) {
 		c.LabelClipped(r.X, y, r.W, s, col)
 		y += debugLineH
 	}
-	if a.link.sess == nil {
+	if a.sess == nil {
 		line("No session — you're in the lobby.", ColTextDim)
 		return
 	}
 	sw := a.detectedSoftware()
-	raw := a.link.sess.Software
+	raw := a.sess.Software
 	if raw == "" {
 		raw = "(unannounced)"
 	}
@@ -142,7 +142,7 @@ func (a *App) drawDebugSession(r sdl.Rect) {
 	line(a.debugHealthLine(), ColText) // phase · server · wire · last pkt · log fill
 	line(a.debugDiagLine(), ColText)   // tabs · area · queue · ic · ooc · goroutines
 
-	rtt := a.conn.lobby.pingRTT.Load()
+	rtt := a.pingRTT.Load()
 	switch {
 	case rtt > 0:
 		line(fmt.Sprintf("Ping (WS round-trip): %d ms", rtt/int64(time.Millisecond)), ColText)
@@ -151,8 +151,8 @@ func (a *App) drawDebugSession(r sdl.Rect) {
 	default:
 		line("Ping: off (enable the connection chip in Settings to measure it)", ColTextDim)
 	}
-	if a.link.conn != nil {
-		st := a.link.conn.Stats()
+	if a.conn != nil {
+		st := a.conn.Stats()
 		line(fmt.Sprintf("Conn packets: %d sent · %d received", st.Sent, st.Received), ColTextDim)
 	}
 	// Chatbox geometry. Every candidate for the "message text is cut off at a
@@ -161,7 +161,7 @@ func (a *App) drawDebugSession(r sdl.Rect) {
 	// question: the room under the showname strip versus what the wrapped message
 	// actually needs. A CUT verdict here says the box is too short; "fits" with
 	// text still missing says the fault is in the drawing, not the layout.
-	d := &a.raster.chatDiag
+	d := &a.chatDiag
 	need := d.lines * d.lineH
 	room := d.boxY + d.boxH - d.textY
 	grew := ""
@@ -190,28 +190,28 @@ func (a *App) drawDebugPackets(r sdl.Rect) {
 	listR := sdl.Rect{X: r.X, Y: r.Y + 22, W: r.W, H: r.Y + r.H - (r.Y + 22)}
 	c.Border(listR, ColPanelHi)
 
-	a.debugPanel.pktBuf = a.pkts.recent(a.debugPanel.pktBuf, pktLogCap) // reused slice → alloc-free after warmup
-	if len(a.debugPanel.pktBuf) == 0 {
+	a.debugPktBuf = a.pkts.recent(a.debugPktBuf, pktLogCap) // reused slice → alloc-free after warmup
+	if len(a.debugPktBuf) == 0 {
 		c.LabelClipped(listR.X+6, listR.Y+6, listR.W-12, "No packets recorded yet on this connection.", ColTextDim)
 		return
 	}
 	if !c.ctrlHeld {
-		a.debugPanel.pktScroll -= c.WheelIn(listR) * scrollStepPx
+		a.debugPktScroll -= c.WheelIn(listR) * scrollStepPx
 	}
-	contentH := int32(len(a.debugPanel.pktBuf)) * debugRowH
+	contentH := int32(len(a.debugPktBuf)) * debugRowH
 	track := sdl.Rect{X: listR.X + listR.W - scrollBarW, Y: listR.Y, W: scrollBarW, H: listR.H}
-	a.debugPanel.pktScroll = c.VScrollbar("debugpkts", track, a.debugPanel.pktScroll, contentH, listR.H)
+	a.debugPktScroll = c.VScrollbar("debugpkts", track, a.debugPktScroll, contentH, listR.H)
 	clipPrev, clipHad := c.pushClip(listR)
 	defer c.popClip(clipPrev, clipHad)
 	rowW := listR.W - scrollBarW - 12
-	rowY := listR.Y - a.debugPanel.pktScroll
+	rowY := listR.Y - a.debugPktScroll
 	now := a.now()
-	for i := range a.debugPanel.pktBuf {
+	for i := range a.debugPktBuf {
 		if rowY > listR.Y+listR.H {
 			break
 		}
 		if rowY >= listR.Y-debugRowH {
-			rec := a.debugPanel.pktBuf[i]
+			rec := a.debugPktBuf[i]
 			dir, col := "IN ", ColText
 			if rec.out {
 				dir, col = "OUT", ColAccent
@@ -266,7 +266,7 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 	// focusSuffix reads focus at panel-draw time while the tier was stamped at the
 	// previous FramePace call, so a focus flip between them can momentarily show a
 	// mismatched pair; diagnostic-only, self-corrects next frame.
-	c.LabelClipped(r.X, y, r.W, "Pacer: "+pacerTierLabel(a.frame.lastPacerTier)+focusSuffix(a.ctx.WindowFocused()), ColTextDim)
+	c.LabelClipped(r.X, y, r.W, "Pacer: "+pacerTierLabel(a.lastPacerTier)+focusSuffix(a.ctx.WindowFocused()), ColTextDim)
 	y += debugLineH
 
 	// Pump (#50): GPU upload + transient network errors that reached the upload
@@ -311,7 +311,7 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 	// own chip exists — past themeFXCap a stateful effect freezes at its first frame,
 	// which is easy to mistake for "the effect is broken".
 	fxCol := ColTextDim
-	if a.fxPool.themeFXOver {
+	if a.themeFXOver {
 		fxCol = ColTierYellow
 	}
 	c.LabelClipped(r.X, y, r.W, a.themeFXDebugLine(), fxCol)
@@ -321,15 +321,15 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 // open (the diagnostics-path allocation policy at the top of this file).
 func (a *App) themeFXDebugLine() string {
 	state := "live"
-	if a.fxPool.themeFXFrozen {
+	if a.themeFXFrozen {
 		state = "frozen (reduce motion)"
 	}
 	over := ""
-	if a.fxPool.themeFXOver {
+	if a.themeFXOver {
 		over = " · POOL FULL (further stateful effects freeze at frame 0)"
 	}
 	return fmt.Sprintf("theme fx %d / %d slots · %d elements · %s%s",
-		a.themeFXInUse(), themeFXCap, a.skin.themeLay.elN, state, over)
+		a.themeFXInUse(), themeFXCap, a.themeLay.elN, state, over)
 }
 
 // focusSuffix annotates the pacer line with the window's focus state (the
@@ -432,7 +432,7 @@ func (a *App) drawFrameBars(r sdl.Rect) {
 		barW = 1
 	}
 	for i := 0; i < perfHUDFrames; i++ {
-		dt := a.budget.frameDts[(a.budget.frameDtIdx+i)%perfHUDFrames]
+		dt := a.frameDts[(a.frameDtIdx+i)%perfHUDFrames]
 		hPx := int32(float32(r.H) * dt / perfHUDScaleMs)
 		if hPx > r.H {
 			hPx = r.H
@@ -456,7 +456,7 @@ func (a *App) drawFrameBars(r sdl.Rect) {
 func (a *App) frameStats() (avg, worst, fps float32) {
 	var sum float32
 	for i := 0; i < perfHUDFrames; i++ {
-		dt := a.budget.frameDts[i]
+		dt := a.frameDts[i]
 		sum += dt
 		if dt > worst {
 			worst = dt
@@ -481,26 +481,26 @@ func (a *App) drawDebugLogSection(r sdl.Rect) {
 	}
 	logR := sdl.Rect{X: r.X, Y: r.Y + btnH + 4, W: r.W, H: r.H - btnH - 4}
 	c.Border(logR, ColPanelHi)
-	if a.debug.Len() == 0 {
+	if len(a.debugLog) == 0 {
 		c.LabelClipped(logR.X+6, logR.Y+6, logR.W-12, "No failures logged this session.", ColTextDim)
 		return
 	}
 	if !c.ctrlHeld {
-		a.debugPanel.logScroll -= c.WheelIn(logR) * scrollStepPx
+		a.debugLogScroll -= c.WheelIn(logR) * scrollStepPx
 	}
-	contentH := int32(a.debug.Len()) * debugRowH
+	contentH := int32(len(a.debugLog)) * debugRowH
 	track := sdl.Rect{X: logR.X + logR.W - scrollBarW, Y: logR.Y, W: scrollBarW, H: logR.H}
-	a.debugPanel.logScroll = c.VScrollbar("debuglog", track, a.debugPanel.logScroll, contentH, logR.H)
+	a.debugLogScroll = c.VScrollbar("debuglog", track, a.debugLogScroll, contentH, logR.H)
 	clipPrev, clipHad := c.pushClip(logR)
 	defer c.popClip(clipPrev, clipHad)
 	rowW := logR.W - scrollBarW - 12
-	rowY := logR.Y - a.debugPanel.logScroll
-	for i := a.debug.Len() - 1; i >= 0; i-- { // newest first
+	rowY := logR.Y - a.debugLogScroll
+	for i := len(a.debugLog) - 1; i >= 0; i-- { // newest first
 		if rowY > logR.Y+logR.H {
 			break
 		}
 		if rowY >= logR.Y-debugRowH {
-			c.LabelClipped(logR.X+6, rowY+1, rowW, a.debug.Lines()[i].Text, ColTextDim)
+			c.LabelClipped(logR.X+6, rowY+1, rowW, a.debugLog[i].text, ColTextDim)
 		}
 		rowY += debugRowH
 	}
@@ -508,7 +508,7 @@ func (a *App) drawDebugLogSection(r sdl.Rect) {
 
 // exportDebugLog writes the debug log to a timestamped .txt file on the desktop.
 func (a *App) exportDebugLog() {
-	if a.debug.Len() == 0 {
+	if len(a.debugLog) == 0 {
 		return
 	}
 
@@ -527,20 +527,20 @@ func (a *App) exportDebugLog() {
 	var content string
 	content += "AsyncAO Debug Log Export\n"
 	content += fmt.Sprintf("Generated: %s\n", now.Format("2006-01-02 15:04:05"))
-	content += fmt.Sprintf("Entries: %d\n", a.debug.Len())
+	content += fmt.Sprintf("Entries: %d\n", len(a.debugLog))
 	content += fmt.Sprintf("\n%s\n\n", "============================================================")
 
 	// Add all log entries (oldest first for readability)
-	for i := 0; i < a.debug.Len(); i++ {
-		e := a.debug.Lines()[i]
-		content += fmt.Sprintf("[%s] %s\n", e.At.Format("15:04:05"), e.Text)
+	for i := 0; i < len(a.debugLog); i++ {
+		e := a.debugLog[i]
+		content += fmt.Sprintf("[%s] %s\n", e.at.Format("15:04:05"), e.text)
 	}
 
 	// Write file
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		a.debug.Push("Failed to export debug log: " + err.Error())
+		a.pushDebug("Failed to export debug log: " + err.Error())
 	} else {
-		a.debug.Push("Debug log exported to: " + path)
+		a.pushDebug("Debug log exported to: " + path)
 	}
 }
 
@@ -559,12 +559,12 @@ func (a *App) drawDebugFonts(r sdl.Rect) {
 		y += debugLineH
 	}
 
-	themeName := a.toolbox.themeAppliedName
+	themeName := a.themeAppliedName
 	if themeName == "" {
 		themeName = "(none - default AO2 look)"
 	}
 	line("Theme: "+themeName, ColAccent)
-	f := a.skin.themeFonts.e[elemICChatlog]
+	f := a.themeFonts.e[elemICChatlog]
 	switch {
 	case !f.dressed():
 		line("ic_chatlog: undressed - draws in the client's own font chain", ColTextDim)
@@ -572,8 +572,8 @@ func (a *App) drawDebugFonts(r sdl.Rect) {
 		line("ic_chatlog: theme sizes it but names no family - client's chain, theme's point size", ColTextDim)
 	default:
 		name := "(unresolved)"
-		if idx := f.faceIdx(); idx >= 0 && idx < len(a.font.themeFaceNames) {
-			name = a.font.themeFaceNames[idx]
+		if idx := f.faceIdx(); idx >= 0 && idx < len(a.themeFaceNames) {
+			name = a.themeFaceNames[idx]
 		}
 		line("ic_chatlog font file: "+name, ColText)
 	}
@@ -582,27 +582,27 @@ func (a *App) drawDebugFonts(r sdl.Rect) {
 	listR := sdl.Rect{X: r.X, Y: y, W: r.W, H: r.Y + r.H - y}
 	c.Border(listR, ColPanelHi)
 
-	a.debugPanel.fontBuf = a.icFontPickRows(a.debugPanel.fontBuf)
-	if len(a.debugPanel.fontBuf) == 0 {
+	a.debugFontBuf = a.icFontPickRows(a.debugFontBuf)
+	if len(a.debugFontBuf) == 0 {
 		c.LabelClipped(listR.X+6, listR.Y+6, listR.W-12, "No IC log rows yet.", ColTextDim)
 		return
 	}
 	if !c.ctrlHeld {
-		a.debugPanel.fontScroll -= c.WheelIn(listR) * scrollStepPx
+		a.debugFontScroll -= c.WheelIn(listR) * scrollStepPx
 	}
-	contentH := int32(len(a.debugPanel.fontBuf)) * debugRowH
+	contentH := int32(len(a.debugFontBuf)) * debugRowH
 	track := sdl.Rect{X: listR.X + listR.W - scrollBarW, Y: listR.Y, W: scrollBarW, H: listR.H}
-	a.debugPanel.fontScroll = c.VScrollbar("debugfonts", track, a.debugPanel.fontScroll, contentH, listR.H)
+	a.debugFontScroll = c.VScrollbar("debugfonts", track, a.debugFontScroll, contentH, listR.H)
 	clipPrev, clipHad := c.pushClip(listR)
 	defer c.popClip(clipPrev, clipHad)
 	rowW := listR.W - scrollBarW - 12
-	rowY := listR.Y - a.debugPanel.fontScroll
-	for i := range a.debugPanel.fontBuf {
+	rowY := listR.Y - a.debugFontScroll
+	for i := range a.debugFontBuf {
 		if rowY > listR.Y+listR.H {
 			break
 		}
 		if rowY >= listR.Y-debugRowH {
-			rec := a.debugPanel.fontBuf[i]
+			rec := a.debugFontBuf[i]
 			col, flag := ColText, ""
 			switch {
 			case rec.shared && !rec.covered:

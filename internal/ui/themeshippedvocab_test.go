@@ -2,9 +2,28 @@ package ui
 
 // The PUBLISHED-VOCABULARY gates for the free-element vocabulary (v1.90.0 W3),
 // plus the two shout-condition gates that ride the same tables.
+//
+// These began as a pair: the document census here, and a SHIPPED-CONTENT census
+// over the fourteen themes the repository carried in themes/. The content half was
+// the half that mattered, because both defects it existed to catch were invisible
+// to a self-consistent test:
+//
+//   - `shape` is read as FREE TEXT (sidecar_read.go), not as an enum, so a name the
+//     bake does not know degrades to the flat box with no note, no report line and
+//     no log. TestEveryShapeNameResolves only ever checked W3's table against
+//     itself, so renaming sharp→rect and dropping pill passed it while silently
+//     flattening ~200 authored lines across 8 themes.
+//   - `visible_when = shout:<name>` compares an authored string against a live one.
+//     Three of AO2's four shouts are spelled one way in a theme file (the design
+//     key, `hold_it`) and another on the wire (the asset stem, `holdit`), so seven
+//     conditions in the shipped themes could never fire — and the one spelling that
+//     did work, `shout:objection`, was the one the fixture happened to use.
+//
 // A vocabulary is only as real as the content written in it. The themes/ corpus has
 // since been retired from the repository, so the content half went with it and what
 // remains is the part that needs no corpus: the format document against the live
+// tables. Re-derive a census over content you actually ship before trusting a
+// vocabulary change again — this file can no longer see that class of defect.
 
 import (
 	"fmt"
@@ -44,6 +63,14 @@ const publishedShapeHeading = "**`shape` names a silhouette.**"
 
 // TestPublishedShapeVocabularyMatchesTheConstants census-pins the shape names the
 // FORMAT DOCUMENT publishes against elemShapeNames + elemShapeAliases.
+//
+// It is the internal/ui sibling of theme.TestPublishedCapsMatchTheConstants, and it
+// exists for the same reason that one does: docs/THEME-FORMAT.md is the contract a
+// third-party writer implements against, so a name in the code and not the document
+// is undiscoverable, and a name in the document and not the code degrades a
+// conforming file to a flat box with no note (shape is free text — sidecar_read.go
+// never sees it as an enum, so nothing reports the mismatch at runtime).
+//
 // The vocabulary lives in internal/ui rather than internal/theme, which is why the
 // census cannot ride the theme package's own doc gate.
 func TestPublishedShapeVocabularyMatchesTheConstants(t *testing.T) {
@@ -131,9 +158,20 @@ var docBacktickedWord = regexp.MustCompile("`([a-z0-9_]+)`")
 // TestPublishedGeneratorVocabularyMatchesTheTables is the generator sibling of the
 // shape census above, and it exists because the generator surface is the ONE place
 // in this format where the same slot has several legal spellings.
+//
+// The aliases are not a convenience: `cells` is what a checkerdisc author calls its
+// pitch and `radius` is what a glow author calls its size, and every one of them is
+// a word the shipped themes and the preset drafts already write. That makes them a
+// PERMANENT obligation — an unrecognised parameter key is *ignored*, silently, so
+// removing a spelling deletes the parameter from every theme that used it with
+// nothing anywhere to say so. A permanent obligation nobody wrote down is the worst
+// kind, so the document has to carry the whole list, and this is what keeps it
+// carrying the whole list.
+//
 // Both directions, and both tables: a key in the code and not the document is
 // undiscoverable, a key in the document and not the code degrades a conforming
 // theme silently, and a generator NAME missing from the document is a feature
+// nobody can reach.
 func TestPublishedGeneratorVocabularyMatchesTheTables(t *testing.T) {
 	doc := readFormatDoc(t)
 	head := strings.Index(doc, publishedGenParamHeading)
@@ -289,11 +327,11 @@ func TestShoutConditionInternsAsTheLiveStem(t *testing.T) {
 			VisibleWhen: theme.Condition{Axis: theme.CondShout, Value: s.key},
 		})
 	}
-	a.elemBake.themeSidecar = sc
-	a.skin.themeLay.valid = false
+	a.themeSidecar = sc
+	a.themeLay.valid = false
 	a.drawCourtroom(1280, 720)
-	lay := &a.skin.themeLay
-	if !lay.valid || !a.toolbox.toolboxThemeRectOn {
+	lay := &a.themeLay
+	if !lay.valid || !a.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch — nothing was baked")
 	}
 	if lay.elN != len(elemShoutConditions) {

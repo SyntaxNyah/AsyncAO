@@ -210,20 +210,20 @@ func (a *App) hotkeyConflictKeys() map[string]bool {
 // refreshCharKeys re-reads this server's character keybinds into the
 // per-frame lookup caches (connect + bind edits only — never per frame).
 func (a *App) refreshCharKeys() {
-	a.courtkeys.charKeys = a.d.Prefs.Load().CharKeyBinds(a.srvMeta.serverKey)
-	if len(a.courtkeys.charKeys) == 0 {
-		a.courtkeys.charKeysRev = nil
+	a.charKeys = a.d.Prefs.Load().CharKeyBinds(a.serverKey)
+	if len(a.charKeys) == 0 {
+		a.charKeysRev = nil
 		return
 	}
-	a.courtkeys.charKeysRev = make(map[string]string, len(a.courtkeys.charKeys))
-	for k, ch := range a.courtkeys.charKeys {
-		a.courtkeys.charKeysRev[ch] = k
+	a.charKeysRev = make(map[string]string, len(a.charKeys))
+	for k, ch := range a.charKeys {
+		a.charKeysRev[ch] = k
 	}
 }
 
 // charKeyFor reports the key bound to a character on this server ("" =
 // none) — the wardrobe badge lookup.
-func (a *App) charKeyFor(char string) string { return a.courtkeys.charKeysRev[char] }
+func (a *App) charKeyFor(char string) string { return a.charKeysRev[char] }
 
 // pollCharBind completes an armed wardrobe key-capture: the next plain
 // keypress binds key → character on this server. Esc OR any mouse click cancels
@@ -233,21 +233,21 @@ func (a *App) charKeyFor(char string) string { return a.courtkeys.charKeysRev[ch
 // itself can't self-cancel: pollCharBind runs in the update phase BEFORE the
 // wardrobe arms bindingFor in the render phase, and c.clicked is a one-frame edge.
 func (a *App) pollCharBind() {
-	if a.courtkeys.bindingFor == "" {
+	if a.bindingFor == "" {
 		return
 	}
 	c := a.ctx
 	if c.escPressed || c.clicked {
-		a.courtkeys.bindingFor = ""
+		a.bindingFor = ""
 		return
 	}
 	if c.keyPressed == 0 {
 		return
 	}
 	key := strings.ToLower(sdl.GetKeyName(c.keyPressed))
-	a.d.Prefs.SetCharKeyBind(a.srvMeta.serverKey, key, a.courtkeys.bindingFor)
-	a.debug.Push(fmt.Sprintf("key %q now wears %s (this server only)", key, a.courtkeys.bindingFor))
-	a.courtkeys.bindingFor = ""
+	a.d.Prefs.SetCharKeyBind(a.serverKey, key, a.bindingFor)
+	a.pushDebug(fmt.Sprintf("key %q now wears %s (this server only)", key, a.bindingFor))
+	a.bindingFor = ""
 	a.refreshCharKeys()
 }
 
@@ -255,11 +255,32 @@ func (a *App) pollCharBind() {
 // character keys, showname keys, IC quick-phrases, jukebox keys, the emote number
 // row and the voice push-to-talk key. It returns the keycode those namespaces may
 // act on this frame, or 0.
-// The gate itself lives on the key registry (keys.go); this method is the App-side
-// entry that supplies the capture arbitration, which stays on App because four of
-// the eight capture flags are global.
+//
+// They used to fire on a BARE key, fenced only by "no text field is focused". The
+// Discord focus model (chatfocus.go) retires that fence: typing now claims the IC
+// input on the very first character, so a bare-key namespace either never fires
+// again or — worse — races the claim for the same letter. The user's order was to
+// remove the bare-letter space and move the survivors onto chords, so all six
+// namespaces moved together onto ALT+<key>, in this one function, rather than six
+// copies of a slightly different guard.
+//
+// ALT specifically: Ctrl is fully occupied (hotkeyDefs' collision sweep documents
+// that every Ctrl+letter, Ctrl+digit and Ctrl+symbol is already claimed), Shift is
+// text, and Alt was unused as a key chord — the layout editor's Alt+DRAG is a
+// mouse gesture in a different namespace.
+//
+// !ctrlHeld is load-bearing, not tidiness: AltGr on Windows reports as Ctrl+Alt
+// and produces real text, so a bare altHeld test would swallow every accented
+// character a European layout types into the IC box.
+//
+// The BIND-CAPTURE paths (bindingFor, jukeBindFor, …) deliberately keep reading
+// the plain key: you still press "m" to bind m — it simply fires as Alt+M.
 func (a *App) bareBindKey() sdl.Keycode {
-	return a.keys.bareBindKey(a.ctx, a.capturingKey())
+	c := a.ctx
+	if c.keyPressed == 0 || !c.altHeld || c.ctrlHeld || a.capturingKey() {
+		return 0
+	}
+	return c.keyPressed
 }
 
 // handleCharKeys wears a bound character on Alt+<bound key> (see bareBindKey for
@@ -270,7 +291,7 @@ func (a *App) handleCharKeys() {
 	if key == 0 {
 		return
 	}
-	if name := a.courtkeys.charKeys[strings.ToLower(sdl.GetKeyName(key))]; name != "" {
+	if name := a.charKeys[strings.ToLower(sdl.GetKeyName(key))]; name != "" {
 		a.wearFromMenu(name)
 	}
 }
@@ -284,18 +305,18 @@ func (a *App) handleEmoteKeys() {
 		return // the user removed the Alt+1..9 number row; the digits are plain text again
 	}
 	key := a.bareBindKey()
-	if key < sdl.K_1 || key > sdl.K_9 || a.emotepick.emotePerPage <= 0 {
+	if key < sdl.K_1 || key > sdl.K_9 || a.emotePerPage <= 0 {
 		return
 	}
-	if a.courtkeys.charKeys[strings.ToLower(sdl.GetKeyName(key))] != "" {
+	if a.charKeys[strings.ToLower(sdl.GetKeyName(key))] != "" {
 		return // a character keybind owns this digit
 	}
 	// Map the on-screen slot through the visible list (favs-only filters it),
 	// so the number keys pick exactly what that grid cell shows.
 	a.refreshEmoteView()
 	slot := a.emoteFirstSlot() + int(key-sdl.K_1)
-	if slot >= 0 && slot < len(a.favstyle.emoteVisible) {
-		a.selectEmote(a.favstyle.emoteVisible[slot])
+	if slot >= 0 && slot < len(a.emoteVisible) {
+		a.selectEmote(a.emoteVisible[slot])
 	}
 }
 
@@ -306,6 +327,16 @@ func (a *App) handleEmoteKeys() {
 // hotkeys), so editor undo was silently dead AND Ctrl+Y fell through to its
 // default bind ("Reshow hidden sprites") mid-edit. Consumes the chord whether
 // or not history exists, so a bound action can never fire while editing.
+//
+// TWO CALL SITES, one per claimant, and the split is not redundancy:
+//
+//   - handleHotkeys, inside the courtroom pass, for the two LEGACY overlay editors —
+//     they only exist while that pass runs, so their chord belongs where their pixels
+//     are;
+//   - App.Frame, pre-screen, gated on themeEditorOpen(), for the v1.90.0 theme
+//     EDITOR SCREEN. It has no courtroom pass to ride when it is opened from Settings
+//     with no server attached, which is the design's headline entry point — dispatching
+//     it only from the courtroom left Ctrl+Z dead in exactly that case.
 func (a *App) editorUndoChord() bool {
 	c := a.ctx
 	// The v1.90.0 theme editor is the THIRD claimant, and it is checked FIRST because
@@ -323,9 +354,11 @@ func (a *App) editorUndoChord() bool {
 		// c.redoReq for exactly the same reason. An editor that answered Ctrl+Z and
 		// Ctrl+Y but not Ctrl+Shift+Z would be the only surface in the app that does
 		// not, and the user finds out by losing the thing they just undid.
+		//
 		// The shift test rides c.shiftHeld rather than a second hotkey value because
 		// HandleEvent folds every non-clipboard Ctrl combination into ONE c.hotkey
 		// keysym and keeps the modifier flags beside it (#96) — there is no
+		// "Ctrl+Shift+Z" keysym to compare against.
 		if c.hotkey == sdl.K_z && !c.shiftHeld {
 			a.editorUndo()
 		} else {
@@ -334,17 +367,17 @@ func (a *App) editorUndoChord() bool {
 		c.hotkey = 0
 		return true
 	}
-	if !a.classic.classicEdit && !a.layoutEdit {
+	if !a.classicEdit && !a.layoutEdit {
 		return false
 	}
 	if c.hotkey != sdl.K_z && c.hotkey != sdl.K_y {
 		return false
 	}
 	switch {
-	case a.classic.classicEdit && c.hotkey == sdl.K_z:
-		a.classic.classicEditUndo()
-	case a.classic.classicEdit:
-		a.classic.classicEditRedo()
+	case a.classicEdit && c.hotkey == sdl.K_z:
+		a.classicEditUndo()
+	case a.classicEdit:
+		a.classicEditRedo()
 	case c.hotkey == sdl.K_z:
 		a.layoutEditUndo()
 	default:
@@ -363,7 +396,7 @@ func (a *App) editorUndoChord() bool {
 // (and dispatches macro keybinds, then character keybinds — macros win
 // a key conflict since they were bound deliberately).
 func (a *App) handleHotkeys() {
-	if a.font.serverNoticeDlg.open {
+	if a.serverNoticeDlg.open {
 		// A BB notice can land while the courtroom is fully LIVE, so this one is not
 		// about a dead socket: it is that the box owns the frame, and a shout or a
 		// pos-cycle fired blind underneath it is an action the user did not see
@@ -371,7 +404,7 @@ func (a *App) handleHotkeys() {
 		// still dismissable from the keyboard.
 		return
 	}
-	if a.dialogs.disconnectDlg.open {
+	if a.disconnectDlg.open {
 		// The courtroom is FROZEN under the involuntary-disconnect dialog: its
 		// scene still draws (so this runs, called from drawCourtroom), but the
 		// session's socket is gone. The pointer fence stops mouse actions, but
@@ -389,7 +422,7 @@ func (a *App) handleHotkeys() {
 		a.handleEmoteKeys()
 	}
 	key := a.ctx.hotkey
-	if key == 0 || a.link.sess == nil {
+	if key == 0 || a.sess == nil {
 		return
 	}
 	// Hotkeys are opt-in: every Ctrl+key chord below is OFF until the user ticks
@@ -430,7 +463,7 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeyClipReplay):
 		a.clipInstantReplay()
 	case a.hotkeyFor(hotkeyPalette):
-		a.palette.togglePalette(&a.env)
+		a.togglePalette()
 	case a.hotkeyFor(hotkeyTheater):
 		a.setTheater(!a.theaterOn)
 	case a.hotkeyFor(hotkeyLogin):
@@ -467,15 +500,15 @@ func (a *App) handleHotkeys() {
 		a.openIniswap()
 	case a.hotkeyFor(hotkeyJukebox):
 		a.openIniswap()
-		a.wardrobe.wardSection = wardSectionJukebox
+		a.wardSection = wardSectionJukebox
 	case a.hotkeyFor(hotkeyBackground):
 		a.openBgPicker()
 	case a.hotkeyFor(hotkeyEvidence):
 		a.toggleEvidence()
 	case a.hotkeyFor(hotkeyPairMenu):
-		a.pairbox.showPair = true
+		a.showPair = true
 	case a.hotkeyFor(hotkeyModcall):
-		a.courtxtra.showModcall = true
+		a.showModcall = true
 	case a.hotkeyFor(hotkeyUIChrome):
 		// A1: open the pinned per-piece hide/show panel directly. This works even
 		// when panelHidden(panelToolbox) hides the grip — drawToolboxPieces gates
@@ -486,7 +519,7 @@ func (a *App) handleHotkeys() {
 		if a.theaterOn {
 			a.setTheater(false)
 		}
-		a.toolbox.toolboxPinned, a.toolbox.toolboxPieces = true, true
+		a.toolboxPinned, a.toolboxPieces = true, true
 	case a.hotkeyFor(hotkeyToggleMenuBar):
 		a.toggleChromePanel(panelMenuBar, "Menu bar")
 	case a.hotkeyFor(hotkeyToggleToolbox):
@@ -584,7 +617,7 @@ func (a *App) toggleFavEmoteBox() {
 // a manual pick — and wraps. Empty wardrobe = a hint, no swap. The wardrobe is
 // per server, so the ring is too.
 func (a *App) quickSwapNext() {
-	ring, _, _ := mergeWardrobe(a.d.Prefs.Load().WardrobeList(a.srvMeta.serverKey), nil)
+	ring, _, _ := mergeWardrobe(a.d.Prefs.Load().WardrobeList(a.serverKey), nil)
 	if len(ring) == 0 {
 		a.warnLine = "Quick-swap: no wardrobe characters yet — star some with ★ in the Wardrobe"
 		a.warnAt = time.Now()
@@ -592,7 +625,7 @@ func (a *App) quickSwapNext() {
 	}
 	next := 0 // current char not in the ring (or nothing worn) → start at the first
 	for i, n := range ring {
-		if strings.EqualFold(n, a.inibrowse.iniChar) {
+		if strings.EqualFold(n, a.iniChar) {
 			next = (i + 1) % len(ring)
 			break
 		}
@@ -610,10 +643,10 @@ func (a *App) quickSwapNext() {
 // false every session). The volume strip's SFX cell shares this same in-memory
 // flag, so the hotkey and the strip still never disagree within a session.
 func (a *App) toggleSFXMute() {
-	a.audio.sfxMuted = !a.audio.sfxMuted
+	a.sfxMuted = !a.sfxMuted
 	a.applyAudioVolumes()
 	a.warnLine = "SFX unmuted"
-	if a.audio.sfxMuted {
+	if a.sfxMuted {
 		a.warnLine = "SFX muted (press the Mute SFX hotkey again to restore)"
 	}
 	a.warnAt = time.Now()
@@ -664,7 +697,7 @@ func (a *App) applyAudioVolumes() {
 	// ServerAudio falls back to the global per channel for any level this server never
 	// set, so a profile can't silently mute a channel (e.g. SFX) just by existing — only
 	// an explicit 0 mutes. Re-applied on courtroom entry + every tab switch (buildRoom).
-	if on, m, mu, s, b := a.d.Prefs.ServerAudio(a.srvMeta.serverKey); on {
+	if on, m, mu, s, b := a.d.Prefs.ServerAudio(a.serverKey); on {
 		master, music, sfx, blip = m, mu, s, b
 	}
 	// The single music stream may belong to a BACKGROUNDED owner tab (MusicAcrossTabs
@@ -686,9 +719,9 @@ func (a *App) applyAudioVolumes() {
 	// == the active tab, ownerMusicInputs returns the active (master, music) and the two
 	// calls are identical — behaviour is unchanged for the common single-tab case.
 	mMusic, _, _, _ := mixChannels(musicMaster, musicVol, sfx, blip, alert,
-		a.audio.masterMuted, a.audio.musicMuted, a.audio.sfxMuted, a.audio.blipMuted, a.musicDucked, a.budget.musicTabDucked)
+		a.masterMuted, a.musicMuted, a.sfxMuted, a.blipMuted, a.musicDucked, a.musicTabDucked)
 	_, mSFX, mBlip, mAlert := mixChannels(master, music, sfx, blip, alert,
-		a.audio.masterMuted, a.audio.musicMuted, a.audio.sfxMuted, a.audio.blipMuted, a.musicDucked, a.budget.musicTabDucked)
+		a.masterMuted, a.musicMuted, a.sfxMuted, a.blipMuted, a.musicDucked, a.musicTabDucked)
 	a.d.Audio.SetVolumes(mMusic, mSFX, mBlip)
 	a.d.Audio.SetAlertVolume(mAlert)
 }
@@ -703,10 +736,10 @@ func (a *App) applyAudioVolumes() {
 // makes no extra prefs call. A method with no mixer dependency, so the volume math
 // stays testable without a device (the codebase's settleAwaitTimeout idiom).
 func (a *App) ownerMusicInputs(activeMaster, activeMusic int) (master, music int) {
-	if a.budget.musicOwnerKey == "" || a.budget.musicOwnerKey == a.srvMeta.serverKey {
+	if a.musicOwnerKey == "" || a.musicOwnerKey == a.serverKey {
 		return activeMaster, activeMusic
 	}
-	if on, m, mu, _, _ := a.d.Prefs.ServerAudio(a.budget.musicOwnerKey); on {
+	if on, m, mu, _, _ := a.d.Prefs.ServerAudio(a.musicOwnerKey); on {
 		return m, mu
 	}
 	return activeMaster, activeMusic
@@ -761,7 +794,7 @@ func (a *App) settleAwaitedMusic() {
 	// Idle short-circuit: the overwhelmingly common per-frame case is "nothing
 	// awaited" — one field read, no Audio call, no allocation. Only when a track is
 	// actually pending do we poll the mixer's current URL.
-	if a.budget.musicAwaitURL == "" || a.d.Audio == nil {
+	if a.musicAwaitURL == "" || a.d.Audio == nil {
 		return
 	}
 	cur := a.d.Audio.CurrentMusicURL()
@@ -787,11 +820,11 @@ func (a *App) settleAwaitedMusic() {
 	case awaitTimeoutStop:
 		a.d.Audio.StopMusic() // foreign stream loaded: silence it rather than reveal the wrong song
 		a.clearMusicAwait()
-		a.budget.musicTabDucked = false
+		a.musicTabDucked = false
 		a.applyAudioVolumes()
 	case awaitTimeoutUnduck:
 		a.clearMusicAwait()
-		a.budget.musicTabDucked = false
+		a.musicTabDucked = false
 		a.applyAudioVolumes()
 	}
 }
@@ -814,8 +847,22 @@ const (
 // never-arrives branch (split from the Audio calls like settleAwaitedDuck / mixChannels
 // / resumeSeek). Given the mixer's current URL and the clock, it decides how to release
 // a wedged await once the deadline passes:
+//
+//   - deadline not yet reached (or no stamp): awaitTimeoutNone — a slow-but-real
+//     download may still arrive, keep the duck.
+//   - past the deadline, cur == "": awaitTimeoutUnduck — nothing foreign is loaded
+//     (the awaited fetch delivered nothing, or delivered bytes that failed to decode,
+//     which startMusic already stopped to silence). Just lift the duck; the stream is
+//     already quiet, so this can't reveal a wrong track.
+//   - past the deadline, cur != "" (and, by construction here, cur != musicAwaitURL —
+//     settleAwaitedDuck already returned for a match): awaitTimeoutStop. A FOREIGN
+//     stream (the previous tab/server's still-rolling, ducked track) is loaded. Lifting
+//     the duck would make that wrong song audible — the cross-server "wrong music after
+//     switching" bug — so heal to SILENCE instead (the caller's StopMusic also purges the
+//     still-pending fetch, so it won't land late over the silence). A WRONG audible track
+//     is worse than silence; that's the sanctioned tradeoff here.
 func (a *App) settleAwaitTimeout(cur string, now time.Time) awaitTimeoutAction {
-	if a.budget.musicAwaitSince.IsZero() || now.Sub(a.budget.musicAwaitSince) < musicAwaitTimeout {
+	if a.musicAwaitSince.IsZero() || now.Sub(a.musicAwaitSince) < musicAwaitTimeout {
 		return awaitTimeoutNone
 	}
 	if cur == "" {
@@ -829,8 +876,8 @@ func (a *App) settleAwaitTimeout(cur string, now time.Time) awaitTimeoutAction {
 // stamp with no await is dead weight). The duck flag is cleared separately by callers
 // because some (streaming-off, disconnect) also stop the stream in the same breath.
 func (a *App) clearMusicAwait() {
-	a.budget.musicAwaitURL = ""
-	a.budget.musicAwaitSince = time.Time{}
+	a.musicAwaitURL = ""
+	a.musicAwaitSince = time.Time{}
 }
 
 // musicAwaitTimeout bounds how long the cross-tab music duck may wait for an
@@ -850,12 +897,12 @@ const musicAwaitTimeout = 10 * time.Second
 // whether it un-ducked (the applyAudioVolumes side effect happens here so callers
 // don't have to). A "" await is the idle no-op.
 func (a *App) settleAwaitedDuck(cur string) bool {
-	if a.budget.musicAwaitURL == "" || cur != a.budget.musicAwaitURL {
+	if a.musicAwaitURL == "" || cur != a.musicAwaitURL {
 		return false // nothing awaited, or the awaited track hasn't landed yet — keep the duck
 	}
-	a.budget.musicAwaitURL = ""
-	a.budget.musicAwaitSince = time.Time{} // await satisfied: drop the timeout stamp with it
-	a.budget.musicTabDucked = false
+	a.musicAwaitURL = ""
+	a.musicAwaitSince = time.Time{} // await satisfied: drop the timeout stamp with it
+	a.musicTabDucked = false
 	a.applyAudioVolumes()
 	return true
 }
@@ -865,8 +912,8 @@ func (a *App) settleAwaitedDuck(cur string) bool {
 func (a *App) effectiveVolumes() (master, music, sfx, blip int) {
 	master = a.d.Prefs.Load().MasterVol
 	music, sfx, blip = a.d.Prefs.Load().AudioVolumes()
-	if a.srvMeta.serverKey != "" {
-		if on, m, mu, s, b := a.d.Prefs.ServerAudio(a.srvMeta.serverKey); on {
+	if a.serverKey != "" {
+		if on, m, mu, s, b := a.d.Prefs.ServerAudio(a.serverKey); on {
 			master, music, sfx, blip = m, mu, s, b // each falls back to global if this server never set it
 		}
 	}
@@ -877,8 +924,8 @@ func (a *App) effectiveVolumes() (master, music, sfx, blip int) {
 // when connected — so muting blips on one server leaves another untouched (each
 // tab keeps its own) — else to the global defaults. Applies it live.
 func (a *App) setEffectiveVolumes(master, music, sfx, blip int) {
-	if a.srvMeta.serverKey != "" {
-		a.d.Prefs.SetServerAudioVolumes(a.srvMeta.serverKey, master, music, sfx, blip)
+	if a.serverKey != "" {
+		a.d.Prefs.SetServerAudioVolumes(a.serverKey, master, music, sfx, blip)
 	} else {
 		a.d.Prefs.Update(func(
 			sn *config.
@@ -935,19 +982,19 @@ const (
 // hkSheetRect is the hotkey cheat sheet's floating-window rect (floatwin.go):
 // movable + resizable, default-sized to fit its two columns of shortcuts.
 func (a *App) hkSheetRect(w, h int32) sdl.Rect {
-	if a.courtkeys.hkCache == nil {
-		a.courtkeys.hkCache = a.hotkeyCheatEntries()
+	if a.hkCache == nil {
+		a.hkCache = a.hotkeyCheatEntries()
 	}
 	// Default tall enough to show a good chunk; the list scrolls, so the exact fit
 	// doesn't matter and resizing smaller never drops rows.
-	defH := int32(len(a.courtkeys.hkCache))*hkRowH + floatTitleH + 14
+	defH := int32(len(a.hkCache))*hkRowH + floatTitleH + 14
 	if defH > 540 {
 		defH = 540
 	}
-	if r, ok := a.classic.seedPanelFromSlot(&a.wins.hkWin, slotPanelHK, hkSheetDefW, defH, hkSheetMinW, hkSheetMinH, w, h); ok {
+	if r, ok := a.seedPanelFromSlot(&a.hkWin, slotPanelHK, hkSheetDefW, defH, hkSheetMinW, hkSheetMinH, w, h); ok {
 		return r
 	}
-	return a.wins.hkWin.rect(hkSheetDefW, defH, hkSheetMinW, hkSheetMinH, w, h)
+	return a.hkWin.rect(hkSheetDefW, defH, hkSheetMinW, hkSheetMinH, w, h)
 }
 
 // hkSheetFencesPointer reports whether the SCREEN pass should run pointer-blind
@@ -958,10 +1005,10 @@ func (a *App) hkSheetRect(w, h int32) sdl.Rect {
 // (lobby / settings / char-select / menus), where the sheet previously let
 // the wheel, hover and drags fall straight through to the list below it.
 func (a *App) hkSheetFencesPointer(w, h int32) bool {
-	if !a.courtkeys.showHotkeys {
+	if !a.showHotkeys {
 		return false
 	}
-	return a.wins.hkWin.dragging || a.wins.hkWin.resizing ||
+	return a.hkWin.dragging || a.hkWin.resizing ||
 		pointIn(a.ctx.mouseX, a.ctx.mouseY, a.hkSheetRect(w, h))
 }
 
@@ -969,10 +1016,10 @@ func (a *App) hkSheetFencesPointer(w, h int32) bool {
 // drag the title to park it out of the way and keep it open while you play.
 func (a *App) drawHotkeyCheatSheet(w, h int32) {
 	c := a.ctx
-	if a.courtkeys.hkCache == nil { // opened without openHotkeyCheatSheet (defensive)
-		a.courtkeys.hkCache = a.hotkeyCheatEntries()
+	if a.hkCache == nil { // opened without openHotkeyCheatSheet (defensive)
+		a.hkCache = a.hotkeyCheatEntries()
 	}
-	entries := a.courtkeys.hkCache
+	entries := a.hkCache
 	pressed := c.mouseDown && !a.hkPrevDown // own press edge (drawn over every screen)
 	a.hkPrevDown = c.mouseDown
 	r := a.hkSheetRect(w, h)
@@ -981,21 +1028,21 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi) // title bar / drag handle
 	c.Heading(r.X+pad, r.Y+6, "Hotkeys — your shortcuts", ColText)
 	if c.Button(sdl.Rect{X: r.X + r.W - 28, Y: r.Y + 5, W: 20, H: 20}, "x") {
-		a.courtkeys.showHotkeys = false
-		a.courtkeys.hkCache = nil
+		a.showHotkeys = false
+		a.hkCache = nil
 		return
 	}
 	c.Label(r.X+r.W-150, r.Y+10, "F1 to close", ColTextDim)
 	// The sheet does its own capture, so a rebind started HERE completes here —
 	// without this the row would sit on "press a key…" until Settings was opened.
 	a.consumeHotkeyCapture()
-	wasManip := a.wins.hkWin.dragging || a.wins.hkWin.resizing
-	a.floatWinDrag(&a.wins.hkWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 160, H: floatTitleH}, &pressed)
+	wasManip := a.hkWin.dragging || a.hkWin.resizing
+	a.floatWinDrag(&a.hkWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 160, H: floatTitleH}, &pressed)
 	hgrip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.wins.hkWin, hgrip, r, hkSheetMinW, hkSheetMinH, &pressed)
+	a.floatWinResize(&a.hkWin, hgrip, r, hkSheetMinW, hkSheetMinH, &pressed)
 	a.drawResizeGrip(hgrip)
-	if wasManip && !a.wins.hkWin.dragging && !a.wins.hkWin.resizing { // drag/resize just ended → remember where
-		a.classic.persistPanelSlot(&a.env, slotPanelHK, r, w, h)
+	if wasManip && !a.hkWin.dragging && !a.hkWin.resizing { // drag/resize just ended → remember where
+		a.persistPanelSlot(slotPanelHK, r, w, h)
 	}
 	if !c.mouseDown && wasManip {
 		c.clicked = false // a finished drag/resize isn't a click underneath
@@ -1031,6 +1078,7 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 				// where people actually go to find out what a key does, so it is also
 				// where they want to change it — sending them to Settings to act on
 				// what they are already looking at is the long way round.
+				//
 				// Same capture the Settings rows arm (a.hkCapture), so there is one
 				// rebinding path and not two that can disagree.
 				row := sdl.Rect{X: x, Y: y, W: labelW + hkKeyGap, H: hkRowH}
@@ -1040,20 +1088,20 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 						c.Tooltip(row, "Click to rebind · right-click to reset to the default")
 					}
 					if c.ClickedIn(row) {
-						a.courtkeys.hkCapture = e.action // the next keypress binds this action
-						a.courtkeys.bindingFor = ""      // don't also arm a character keybind
-						c.focusID = ""                   // the capture owns that keypress
+						a.hkCapture = e.action // the next keypress binds this action
+						a.bindingFor = ""      // don't also arm a character keybind
+						c.focusID = ""         // the capture owns that keypress
 					}
 					if c.rightClicked && c.hovering(row) {
 						a.d.Prefs.SetHotkey(e.action, "")
-						if a.courtkeys.hkCapture == e.action {
-							a.courtkeys.hkCapture = ""
+						if a.hkCapture == e.action {
+							a.hkCapture = ""
 						}
-						a.courtkeys.hkCache = nil // the row's key changed; rebuild on the next frame
+						a.hkCache = nil // the row's key changed; rebuild on the next frame
 					}
 				}
 				shown := e.key
-				if e.action != "" && a.courtkeys.hkCapture == e.action {
+				if e.action != "" && a.hkCapture == e.action {
 					shown = "press a key…"
 					keyCol = ColStar
 				}
@@ -1083,7 +1131,7 @@ func (a *App) drawTheater(w, h int32) {
 	a.renderViewportZoomed(vp)
 	chatBandH := vp.H / 4 * int32(a.boxPct) / DefaultScalePct
 	a.handleViewportZoom(vp, c.mouseY >= vp.Y+vp.H-chatBandH)
-	if a.cam.vpZoom <= 1 {
+	if a.vpZoom <= 1 {
 		a.handleSpriteDrag(vp)
 		a.handleSpriteHide(vp) // right-click → hide-sprite confirm (default ON)
 	}
@@ -1119,41 +1167,41 @@ func (a *App) cyclePos() {
 // own client regardless of DJ rights.
 func (a *App) stopMusic() {
 	a.d.Audio.StopMusic()
-	a.budget.musicTabDucked = false        // stream stopped: a later track must start audible (invariant: stopped ⇒ not ducked)
-	a.budget.musicAwaitURL = ""            // and no pending un-duck can survive the stop (invariant: stopped ⇒ no await)
-	a.budget.musicAwaitSince = time.Time{} // and no dangling timeout stamp
-	if a.link.room != nil {
-		a.link.room.Scene.MusicTrack = "" // clear the Now-Playing display
+	a.musicTabDucked = false        // stream stopped: a later track must start audible (invariant: stopped ⇒ not ducked)
+	a.musicAwaitURL = ""            // and no pending un-duck can survive the stop (invariant: stopped ⇒ no await)
+	a.musicAwaitSince = time.Time{} // and no dangling timeout stamp
+	if a.room != nil {
+		a.room.Scene.MusicTrack = "" // clear the Now-Playing display
 	}
-	if a.link.sess == nil {
+	if a.sess == nil {
 		return
 	}
 	const fakeStopSong = "~stop.mp3"
 	track := fakeStopSong
 	found := false
-	for _, song := range a.link.sess.Music {
+	for _, song := range a.sess.Music {
 		if song == fakeStopSong {
 			found = true
 			break
 		}
 	}
 	if !found {
-		for _, song := range a.link.sess.Music {
+		for _, song := range a.sess.Music {
 			if !strings.Contains(song, ".") {
 				track = song
 				break
 			}
 		}
 	}
-	a.link.sess.RequestMusic(track)
+	a.sess.RequestMusic(track)
 }
 
 // jumpLogs snaps every scrollback to its newest line.
 func (a *App) jumpLogs() {
 	const snapToTail = 1 << 30 // clamped by each scrollbar
-	a.chatlog.icScroll = snapToTail
-	a.chatlog.oocScroll = snapToTail
-	a.compose.icStick, a.compose.oocStick = true, true // jumping to newest re-arms follow
+	a.icScroll = snapToTail
+	a.oocScroll = snapToTail
+	a.icStick, a.oocStick = true, true // jumping to newest re-arms follow
 }
 
 // --- callwords ----------------------------------------------------------------------
@@ -1232,8 +1280,8 @@ func (a *App) callwordAlert(osTitle, body string) {
 		a.warnLine = clampLine(body)
 		a.warnAt = time.Now()
 	}
-	if a.d.Prefs.Load().CallwordOSToast && !a.ctx.WindowFocused() && time.Since(a.sel.lastOSToast) >= osToastMinInterval {
-		a.sel.lastOSToast = time.Now()
+	if a.d.Prefs.Load().CallwordOSToast && !a.ctx.WindowFocused() && time.Since(a.lastOSToast) >= osToastMinInterval {
+		a.lastOSToast = time.Now()
 		showOSToast(osTitle, body)
 	}
 	a.ctx.FlashWindow()
@@ -1288,6 +1336,8 @@ func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) 
 // looser prefix match (containsWordPrefix): the stem must begin a word but need
 // not end one, so "obj*" catches "objection". A lone "*" (empty stem) never
 // matches — it would otherwise fire on every message, defeating the whole point.
+// Extracted from checkCallwords so the pure matching logic is unit-testable
+// without the SDL/audio side effects of callwordAlert.
 func callwordHit(lower, word string) bool {
 	if stem, ok := strings.CutSuffix(word, "*"); ok {
 		return stem != "" && containsWordPrefix(lower, stem)
@@ -1339,10 +1389,10 @@ func (a *App) mentionNamesFor(s *sessionState) []string {
 // sessionCharName is the character a session is playing (its wire identity), or
 // "" if none is selected yet.
 func sessionCharName(s *sessionState) string {
-	if s.link.sess == nil || s.link.sess.MyCharID < 0 || s.link.sess.MyCharID >= len(s.link.sess.Chars) {
+	if s.sess == nil || s.sess.MyCharID < 0 || s.sess.MyCharID >= len(s.sess.Chars) {
 		return ""
 	}
-	return s.link.sess.Chars[s.link.sess.MyCharID].Name
+	return s.sess.Chars[s.sess.MyCharID].Name
 }
 
 // isSelfName reports whether name is (case-insensitively) one of selfNames — the
@@ -1369,17 +1419,17 @@ func isSelfName(name string, selfNames []string) bool {
 func (a *App) captureScreenshot() {
 	w, h, err := a.ctx.Ren.GetOutputSize()
 	if err != nil {
-		a.debug.Push("screenshot: " + err.Error())
+		a.pushDebug("screenshot: " + err.Error())
 		return
 	}
 	surf, err := sdl.CreateRGBSurfaceWithFormat(0, w, h, 32, uint32(sdl.PIXELFORMAT_ABGR8888))
 	if err != nil {
-		a.debug.Push("screenshot: " + err.Error())
+		a.pushDebug("screenshot: " + err.Error())
 		return
 	}
 	if err := a.ctx.Ren.ReadPixels(nil, surf.Format.Format, surf.Data(), int(surf.Pitch)); err != nil {
 		surf.Free()
-		a.debug.Push("screenshot: " + err.Error())
+		a.pushDebug("screenshot: " + err.Error())
 		return
 	}
 	stamp := time.Now().Format("20060102-150405")
@@ -1391,11 +1441,11 @@ func (a *App) captureScreenshot() {
 		// the SDL surface's lifetime (ABGR8888 == image.RGBA byte order).
 		pix := make([]byte, len(surf.Pixels()))
 		copy(pix, surf.Pixels())
-		root, err := exeDataDir()
+		exe, err := os.Executable()
 		if err != nil {
 			return
 		}
-		dir := filepath.Join(root, "screenshots")
+		dir := filepath.Join(filepath.Dir(exe), "screenshots")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return
 		}
@@ -1403,7 +1453,7 @@ func (a *App) captureScreenshot() {
 	}()
 	a.warnLine = "Screenshot saved: " + rel
 	a.warnAt = time.Now()
-	a.debug.Push("screenshot saved: " + rel)
+	a.pushDebug("screenshot saved: " + rel)
 }
 
 // writeScreenshotPNG encodes ABGR8888 back-buffer bytes (already in image.RGBA
@@ -1469,7 +1519,14 @@ const oocWrapMaxLinesPerEntry = oocLineCap / oocWrapMinCharsPerRow
 // byte range the link occupies inside that row's DISPLAYED text, the pixel range
 // it covers (measured at wrap time in the very face the row draws in), and the
 // URL to open.
+//
 // #38: the old model was one URL string per row — a paragraph's FIRST link, on
+// every one of its rows. That made the hover tint swallow the whole message and
+// left every link after the first unclickable ("only 1 link outta this link dump
+// being clickable"). Spans replace it: each link in a paragraph gets its own id,
+// and a link the wrap HARD-SPLIT across rows contributes one span per row all
+// sharing that id — so the highlight still covers the whole link (the deliberate
+// earlier fix) while stopping at its edges.
 type oocLinkSpan struct {
 	row    int32  // display-row index into a.oocWrap
 	lo, hi int32  // byte range inside a.oocWrap[row] (the drawn text)
@@ -1483,9 +1540,20 @@ type oocLinkSpan struct {
 // this is already far past anything legitimate; it exists so a hostile MOTD line
 // of thousands of "www.x.y" tokens cannot grow the span table without bound
 // (hard rule 4). Links past the cap still DISPLAY — they just aren't clickable.
+// Total spans stay bounded too: a link adds one span per row it touches, so a
+// paragraph contributes at most (links + its row count) spans.
 const oocLinksPerParagraphMax = 64
 
 // appendLinkSpans records the clickable link regions of ONE wrapped paragraph.
+//
+// rows are the display rows the wrap just produced for it, already appended to
+// the wrap at index rowBase. raw is the paragraph as it ARRIVED; masked is what
+// is actually DRAWN — streamer mode redacts the sender prefix and IP-like tokens
+// (streamerMaskLine), which shifts every byte offset after them. So positions
+// come from the MASKED text (the pixels the user sees and clicks) while the URL
+// to OPEN comes from the RAW one (masking is display-only; the log keeps the
+// real link, and that is the pre-existing contract).
+//
 // Runs only inside oocWrapped's cached rebuild — never per frame.
 func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw, masked string, nextID int32) ([]oocLinkSpan, int32) {
 	rawLinks := extractURLs(raw, oocLinksPerParagraphMax)
@@ -1577,10 +1645,13 @@ func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw
 // measureLinkSpans fills in the pixel range of the spans dst[start:], in the
 // exact face each row DRAWS in (LogFontFor per row, like drawOOCLogList) — so
 // the tint and the hit test land on the glyphs the user sees.
+//
 // A row the per-glyph raster draws (emoji, or a mixed-script row no single face
 // covers) has no advance we can trust here: labelEmoji composes per-rune faces,
 // so a plain SizeUTF8 prefix would put the highlight in the wrong place. Such a
 // row degrades to the pre-#38 behaviour — its FIRST link covers the whole row —
+// which is honest instead of drawing a lie, and keeps the row's spans
+// non-overlapping.
 func (a *App) measureLinkSpans(dst []oocLinkSpan, start int, rows []string, rowBase int) []oocLinkSpan {
 	w := start
 	for k := start; k < len(dst); k++ {
@@ -1623,7 +1694,7 @@ func (a *App) oocWrapped(width int32) []string {
 	// so a theme swap that only changes the point size re-wraps instead of leaving
 	// rows measured at the old size.
 	pct := a.elemPct(elemServerChatlog, a.oocPct)
-	if a.oocWrap != nil && a.oocWrapSeq == a.chatlog.oocSeq && a.oocWrapEpoch == a.logViewEpoch &&
+	if a.oocWrap != nil && a.oocWrapSeq == a.oocSeq && a.oocWrapEpoch == a.logViewEpoch &&
 		a.oocWrapGen == a.ctx.fontChainGen &&
 		a.oocWrapW == width && a.oocWrapPct == pct && a.oocWrapMask == streamer {
 		return a.oocWrap
@@ -1642,10 +1713,10 @@ func (a *App) oocWrapped(width int32) []string {
 	// speaker.
 	nameOn := a.d.Prefs.Load().NameColors
 	boldNames := a.logRowBoldPref(logSelOOC)
-	for i, entry := range a.chatlog.oocLog {
+	for i, entry := range a.oocLog {
 		sp := ""
-		if i < len(a.chatlog.oocSpeakers) {
-			sp = a.chatlog.oocSpeakers[i]
+		if i < len(a.oocSpeakers) {
+			sp = a.oocSpeakers[i]
 		}
 		measure := func(s string) int32 {
 			return a.logDrawnWidthNamed(elemServerChatlog, a.oocPct, s, sp, nameOn, boldNames)
@@ -1680,6 +1751,13 @@ func (a *App) oocWrapped(width int32) []string {
 			// colour emoji as narrow tofu and hard-split it mid-rune); plain lines keep
 			// the cheap word-wrap. BOTH break against the same per-candidate drawn
 			// width, so neither can measure a row in a face the draw won't use (#42).
+			//
+			// Ask for remaining+1 rows (the "+1 probe"): the wrap functions cap
+			// SILENTLY (they don't report truncation), so an extra row lets us tell a
+			// paragraph that exactly filled the budget from one that overflowed it. We
+			// only ever pass ≥ 2 here (remaining ≥ 1 is guaranteed above), which also
+			// dodges the two wrappers' disagreement on maxLines ≤ 0 (wrapToWidth cuts
+			// to nothing, WrapMeasured treats it as unbounded).
 			probe := remaining + 1
 			var lines []string
 			if ef := a.ctx.EmojiFont(pct); ef != nil && render.NeedsEmojiFallback(trimmed) {
@@ -1746,7 +1824,7 @@ func (a *App) oocWrapped(width int32) []string {
 	}
 	a.oocWrap, a.oocWrapName, a.oocWrapCont, a.oocWrapSrc = out, name, cont, src
 	a.oocWrapLink, a.oocWrapLinkAt = links, linkAt
-	a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = a.chatlog.oocSeq, width, pct, streamer
+	a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = a.oocSeq, width, pct, streamer
 	a.oocWrapEpoch = a.logViewEpoch
 	a.oocWrapGen = a.ctx.fontChainGen
 	return out
@@ -1812,9 +1890,9 @@ const icWrapMaxLinesPerEntry = 16
 func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 	// #39: key on the RESOLVED scale (theme "ic_chatlog" size × the log zoom).
 	pct := a.elemPct(elemICChatlog, a.logPct)
-	if a.icWrap != nil && a.icWrapSeq == a.chatlog.icLogSeq && a.icWrapEpoch == a.logViewEpoch &&
-		a.icWrapQuery == a.chatlog.logSearch && a.icWrapShowname == a.chatlog.logFilterShowname && a.icWrapPos == a.chatlog.logFilterPos &&
-		a.icWrapColor == a.chatlog.logFilterColor &&
+	if a.icWrap != nil && a.icWrapSeq == a.icLogSeq && a.icWrapEpoch == a.logViewEpoch &&
+		a.icWrapQuery == a.logSearch && a.icWrapShowname == a.logFilterShowname && a.icWrapPos == a.logFilterPos &&
+		a.icWrapColor == a.logFilterColor &&
 		a.icWrapW == width && a.icWrapPct == pct && a.icWrapGen == a.ctx.fontChainGen &&
 		a.icWrapStamp == showStamps {
 		return a.icWrap
@@ -1825,6 +1903,7 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 	// the bold speaker/prefix split drawLogLineNamed draws. Read once here; the
 	// per-entry closure below binds the speaker. Prefs are nil in the bare-App
 	// headless fixtures, so guard them (the bold split is unreachable there anyway:
+	// a nil font measures through the 8 px/char fallback).
 	nameOn := false
 	boldNames := false
 	if a.d.Prefs != nil {
@@ -1832,7 +1911,7 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 		boldNames = a.logRowBoldPref(logSelIC)
 	}
 	for _, i := range a.icLogFiltered() {
-		entry := &a.chatlog.icLog[i]
+		entry := &a.icLog[i]
 		measure := func(s string) int32 {
 			return a.logDrawnWidthNamed(elemICChatlog, a.logPct, s, entry.speaker, nameOn, boldNames)
 		}
@@ -1884,8 +1963,8 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 		out = []icWrapLine{} // non-nil marks the cache as populated
 	}
 	a.icWrap, a.icWrapSeq, a.icWrapQuery, a.icWrapW, a.icWrapPct, a.icWrapGen, a.icWrapStamp =
-		out, a.chatlog.icLogSeq, a.chatlog.logSearch, width, pct, a.ctx.fontChainGen, showStamps
-	a.icWrapShowname, a.icWrapPos, a.icWrapColor = a.chatlog.logFilterShowname, a.chatlog.logFilterPos, a.chatlog.logFilterColor
+		out, a.icLogSeq, a.logSearch, width, pct, a.ctx.fontChainGen, showStamps
+	a.icWrapShowname, a.icWrapPos, a.icWrapColor = a.logFilterShowname, a.logFilterPos, a.logFilterColor
 	a.icWrapEpoch = a.logViewEpoch
 	return out
 }
@@ -1895,7 +1974,17 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 // font, and only runs on cache rebuilds). Words wider than the column
 // hard-split so a long URL can't force a 1-line overflow. A nil font
 // (headless tests) measures at a rough 8 px/char.
+// wrapToWidth breaks text to maxW, measuring each candidate string with the font
+// pick returns FOR THAT STRING — the same per-line covering face the log DRAW
+// picks (LogFontFor). This keeps wrap and draw in agreement even when the active
+// chain is multi-face (a custom font + the embedded last resort): a wrapped line
+// the custom font covers is measured AND drawn in the custom face, so it neither
+// overflows (the wrap measured the whole paragraph in the narrower fallback the
+// custom font couldn't fully cover) nor silently drops to the embedded face
 // (#42). A single-font chain makes pick constant, so this is a no-op there.
+// constFont adapts a single fixed face to wrapToWidth's per-string picker — for
+// callers (the area list, tests) whose text all draws in one font, where the
+// per-line pick can't diverge.
 func constFont(f *ttf.Font) func(string) *ttf.Font {
 	return func(string) *ttf.Font { return f }
 }
@@ -1979,6 +2068,14 @@ func wrapToWidthMeasured(measure func(string) int32, text string, maxW int32, ma
 	width := measure
 	for _, word := range strings.Fields(text) {
 		// Hard-split single words wider than the column, bisecting on RUNE indices.
+		//
+		// This bisected on BYTE indices, which is fine for the Latin text it was
+		// written against and corrupts everything else. Japanese, Chinese and Thai do
+		// not put spaces between words, so strings.Fields hands a whole sentence over
+		// as one "word" and this split ALWAYS runs on them; halving a 3-bytes-per-rune
+		// run lands off a rune boundary most of the time, and the invalid UTF-8 that
+		// produced was then measured and drawn — mojibake at the wrap point of every
+		// long CJK/Thai line in the IC log, the OOC log and the area list.
 		rw := []rune(word)
 		for width(word) > maxW && len(rw) > 1 {
 			cut := len(rw) / 2
@@ -2020,7 +2117,20 @@ func wrapToWidthMeasured(measure func(string) int32, text string, maxW int32, ma
 // reason, a BB popup notice, a lockdown message with its access code alone on the
 // last line (../Nyathena/internal/athena/lockdown_passkey.go), a KFO removal
 // formatted "<reason>\nUntil: <when>\nID: <n>".
+//
 // It exists because the wrapper underneath it CANNOT do this itself:
+// wrapToWidthMeasured loops strings.Fields, which discards newlines outright, so
+// handing it a multi-paragraph reason reflows the whole payload into one run and
+// the Until/ID/code lines stop being lines at all. This is oocWrapped's proven
+// split-then-wrap shape lifted out for the modal surfaces, same "+1 probe" and
+// same shared-budget rule, so the two stay consistent.
+//
+// maxLines is a budget shared across ALL paragraphs rather than per paragraph, so
+// the total row count stays bounded however the server chooses to split its text.
+// ok reports whether everything fit: false means the caller MUST show a truncation
+// marker, because these payloads put the part you actually need (the code, the
+// appeal link) at the tail, and silently dropping it is the whole bug.
+//
 // Callers must pass maxLines >= 1. The two wrappers in this package disagree on
 // maxLines <= 0 — wrapToWidthMeasured cuts to nothing, Ctx.WrapText treats it as
 // unbounded — so this refuses to guess rather than inheriting either reading.
@@ -2061,9 +2171,14 @@ func wrapParagraphs(measure func(string) int32, s string, maxW int32, maxLines i
 
 // paraWrapCache memoizes ONE wrapParagraphs result for a modal that redraws every
 // frame while it is up.
+//
 // It exists because the wrap is not cheap and the modals are not transient. Each
 // row is measured through chromeFaceFor, which for non-ASCII text builds a face set
 // and runs a per-candidate coverage pick; the wrap itself allocates (a []string, and
+// the rune slices behind the measure). Doing that 60 times a second for text that
+// CANNOT change while the box is open would put allocations on a drawn screen, which
+// is what the alloc gates exist to catch.
+//
 // Embedded by value in the two modal states that show server-authored prose — the
 // notice box and the involuntary-disconnect dialog — so there is one cache rule and
 // one place to get it wrong, and both are invalidated on the same keys.
@@ -2084,6 +2199,18 @@ type paraWrapCache struct {
 
 // get returns the wrapped lines and whether everything fit, rewrapping only when
 // the text, the width, the row budget or the font generation changed.
+//
+// gen must be ctx.fontChainGen. It is load-bearing rather than paranoia: a Cyrillic
+// or CJK notice is first measured in the embedded face, which does NOT cover it, and
+// the covering fallback lands ASYNC a few frames later and bumps that counter
+// (ui.go, "wrap caches invalidate"). Without this key the rows would keep the widths
+// we guessed before the face we draw them in existed.
+//
+// mark, when non-empty, is spent on the LAST row whenever the text overflowed the
+// budget. wrapParagraphs reports the overflow but wrapToWidthMeasured underneath it
+// truncates silently, and silence is the actual bug being fixed here: the tail of a
+// server's removal notice is where the access code and the appeal link live, so a
+// body that just stops has to say so.
 func (p *paraWrapCache) get(measure func(string) int32, gen int, s string, width int32, rows int, mark string) ([]string, bool) {
 	if p.lines != nil && p.src == s && p.width == width && p.rows == rows && p.gen == gen &&
 		p.mark == mark {
@@ -2121,17 +2248,17 @@ func (p *paraWrapCache) get(measure func(string) int32, gen int, s string, width
 // per-frame cost is a handful of comparisons instead of a 1024-line scan plus a
 // slice allocation.
 func (a *App) icLogFiltered() []int {
-	if a.icFilter != nil && a.icFilterSeq == a.chatlog.icLogSeq && a.icFilterEpoch == a.logViewEpoch &&
-		a.icFilterQuery == a.chatlog.logSearch && a.icFilterShowname == a.chatlog.logFilterShowname && a.icFilterPos == a.chatlog.logFilterPos &&
-		a.icFilterColor == a.chatlog.logFilterColor {
+	if a.icFilter != nil && a.icFilterSeq == a.icLogSeq && a.icFilterEpoch == a.logViewEpoch &&
+		a.icFilterQuery == a.logSearch && a.icFilterShowname == a.logFilterShowname && a.icFilterPos == a.logFilterPos &&
+		a.icFilterColor == a.logFilterColor {
 		return a.icFilter
 	}
 	out := a.icFilter[:0]
-	q := strings.ToLower(strings.TrimSpace(a.chatlog.logSearch))
-	showname := strings.ToLower(strings.TrimSpace(a.chatlog.logFilterShowname))
-	pos := strings.ToLower(strings.TrimSpace(a.chatlog.logFilterPos))
-	for i := range a.chatlog.icLog {
-		e := &a.chatlog.icLog[i]
+	q := strings.ToLower(strings.TrimSpace(a.logSearch))
+	showname := strings.ToLower(strings.TrimSpace(a.logFilterShowname))
+	pos := strings.ToLower(strings.TrimSpace(a.logFilterPos))
+	for i := range a.icLog {
+		e := &a.icLog[i]
 		if q != "" && !strings.Contains(strings.ToLower(e.text), q) {
 			continue
 		}
@@ -2141,7 +2268,7 @@ func (a *App) icLogFiltered() []int {
 		if pos != "" && !strings.EqualFold(e.pos, pos) {
 			continue
 		}
-		if !icEntryUsesColor(e, a.chatlog.logFilterColor) {
+		if !icEntryUsesColor(e, a.logFilterColor) {
 			continue
 		}
 		out = append(out, i)
@@ -2149,8 +2276,8 @@ func (a *App) icLogFiltered() []int {
 	if out == nil {
 		out = []int{} // non-nil marks the cache as populated
 	}
-	a.icFilter, a.icFilterSeq, a.icFilterQuery = out, a.chatlog.icLogSeq, a.chatlog.logSearch
-	a.icFilterShowname, a.icFilterPos, a.icFilterColor = a.chatlog.logFilterShowname, a.chatlog.logFilterPos, a.chatlog.logFilterColor
+	a.icFilter, a.icFilterSeq, a.icFilterQuery = out, a.icLogSeq, a.logSearch
+	a.icFilterShowname, a.icFilterPos, a.icFilterColor = a.logFilterShowname, a.logFilterPos, a.logFilterColor
 	a.icFilterEpoch = a.logViewEpoch
 	return out
 }
@@ -2160,32 +2287,32 @@ func (a *App) copyICLog() {
 	idx := a.icLogFiltered()
 	var b strings.Builder
 	for _, i := range idx {
-		b.WriteString(a.chatlog.icLog[i].text)
+		b.WriteString(a.icLog[i].text)
 		b.WriteString("\r\n")
 	}
 	_ = sdl.SetClipboardText(b.String())
-	a.debug.Push(fmt.Sprintf("copied %d log lines to clipboard", len(idx)))
+	a.pushDebug(fmt.Sprintf("copied %d log lines to clipboard", len(idx)))
 }
 
 // exportICLog writes the full log next to the exe as TXT or HTML (colors
 // preserved in HTML via the AO palette). Snapshot on the render thread,
 // file I/O off it.
 func (a *App) exportICLog(asHTML bool) {
-	entries := make([]icEntry, len(a.chatlog.icLog))
-	copy(entries, a.chatlog.icLog)
+	entries := make([]icEntry, len(a.icLog))
+	copy(entries, a.icLog)
 	server := strings.Map(func(r rune) rune {
 		if strings.ContainsRune(`\/:*?"<>| `, r) {
 			return '-'
 		}
 		return r
-	}, a.srvMeta.serverName)
+	}, a.serverName)
 	stamp := time.Now().Format("20060102-150405")
 	go func() {
-		root, err := exeDataDir()
+		exe, err := os.Executable()
 		if err != nil {
 			return
 		}
-		dir := filepath.Join(root, "logs")
+		dir := filepath.Join(filepath.Dir(exe), "logs")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return
 		}
@@ -2214,7 +2341,7 @@ func (a *App) exportICLog(asHTML bool) {
 			}
 		}
 	}()
-	a.debug.Push("exporting IC log (" + stamp + ")")
+	a.pushDebug("exporting IC log (" + stamp + ")")
 }
 
 // icHTMLColor maps an AO text color index onto a CSS color matching the

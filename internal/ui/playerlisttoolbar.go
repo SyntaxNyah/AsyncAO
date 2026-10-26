@@ -1,6 +1,90 @@
 package ui
 
 // The Players tab's toolbar layout.
+//
+// WHY this is a planner and not inline arithmetic in drawPlayerList.
+//
+// The strip used to be two fixed rows of hardcoded offsets, and half of the
+// controls were anchored to r.X (growing rightwards) while the other half were
+// anchored to r.X+r.W (growing leftwards). Two opposed anchors only stay apart
+// while the panel is wide enough for both, and NOTHING checked that:
+//
+//   - The classic docked panel and a torn-off tab are wide, so it looked fine.
+//   - A theme's music_list rect is not. aceattorney2x declares
+//     music_list = 0,323,216,277 and insetThemedBody leaves 212 usable px, at which
+//     point "Refresh details" (left-anchored, 116 px at r.X+52) and the "Legacy
+//     snapshot" tick box (right-anchored) drew straight through each other.
+//   - Worse, the Status button was anchored on the FOLLOW checkbox instead of on
+//     the Pairs checkbox beside it, so it covered Pairs at EVERY width — even on a
+//     1920 px window. That is the stray "s" in the bug report: the tail of "Pairs"
+//     sticking out from under "Status: none".
+//
+// The replacement is a single left-to-right cursor (plStrip). One cursor cannot
+// overlap itself by construction: it wraps to a new line when the next control will
+// not fit, clamps a control wider than a whole line (Button and CheckboxIn both clip
+// their own labels, AO2's truncate_label_text behaviour), and places nothing at all
+// once the panel is too small to paint legibly — the same "too small, leave it
+// alone" rule insetThemedBody follows.
+//
+// The plan is a pure value built from injected measurements (the truncateLabelTo
+// idiom), so the whole strip is testable without a renderer, and it is a fixed-size
+// stack value so the per-frame draw can build one without allocating.
+//
+// WHAT THE STRIP CARRIES (the roster debloat).
+//
+// It used to carry THREE header rows above the roster: a mode row (a "● LIVE" dot,
+// "Refresh details" and a "Legacy snapshot" tick box — or, in legacy mode, a "Fetch:"
+// label and three raw command buttons), a Pairs/Follow row, and a passive
+// "12 here · live" readout. On a theme's 212 px music_list that is most of the panel,
+// spent on chrome for a list that has none of it in AO2 at all.
+//
+// It now carries ONE row: Sort, Rooms (only when the roster spans areas), Status and
+// the ⋮ overflow. NOTHING was deleted:
+//
+//   - "● LIVE" and the head-count readout were pure READOUTS and are gone. The roster
+//     itself is the readout — it is one row per player, live, and the empty-state hint
+//     under it already says which source is filling it.
+//   - Refresh, Legacy, Pairs and Follow are FUNCTIONS with no other home in the UI, so
+//     they moved into the panel's existing ⋮ overflow menu (musicheader.go) rather than
+//     being dropped. That is the same menu the Music header debloated into, and the
+//     roster shares its panel.
+//   - The legacy /ga · /gas · /getarea button trio is the one capability that did not
+//     survive verbatim: three buttons that each typed one OOC command became one menu
+//     row, "Refresh roster details" (musicheader.go). It does NOT inherit the Refresh
+//     button's hardcoded /getarea — it sends rosterDetailCmd (liveroster.go), which
+//     picks the spelling THIS server family registers, because a fixed string is inert
+//     on half the fleet: Athena/Nyathena/Whisker answer /players (Athena answers ONLY
+//     that — no ga/gas/getarea at all), Akashi and KFO only the long /getarea. Losing
+//     the choice of three buttons is acceptable; replacing them with a row that answers
+//     "unknown command" would not be.
+//
+//     That was NOT justified by "the automatic pull already sends /gas" even while such
+//     a pull existed: it ran neither always nor everywhere, and the trio's own mode was
+//     the gap — its call sites were gated on `!a.rosterLegacy`, so in the LEGACY snapshot
+//     mode these three buttons actually lived in, the automatic pull never ran at all.
+//     The automatic tier has since been deleted outright (liveroster.go), which only
+//     sharpens the point: every /gas is now a press, a server that does not register it
+//     answers that press with a command error, and serverhelp.go flags five server
+//     entries with no 2.11 player list at all, whose roster it describes as entirely
+//     /getarea-driven.
+//
+//     What actually leaves such a server with a filled list is all of:
+//       · the roster's DEFAULT source, which asks for no command whatsoever — rows are
+//         built from the server-PUSHED CharsCheck and ARUP packets (liveroster.go), so
+//         a server with neither a 2.11 list nor a working /gas still shows one row per
+//         player;
+//       · "Refresh roster details" for the fields those packets cannot carry
+//         (UID / IPID / OOC name / pair), on every family whose spelling
+//         rosterDetailCmd knows — which is every family the client can name;
+//       · and the parse itself, which is bound to the REPLY rather than to our send:
+//         pushOOC hands EVERY incoming OOC line to parseAreaBlock (app.go), so an area
+//         list the user types by hand is harvested exactly like one we asked for. That
+//         is the floor under the whole thing, and it is signposted — the roster's own
+//         empty state still reads "Run /ga (or /gas, /getarea) to list who's in this
+//         area." It is the backstop for a server whose ID string names no family we
+//         recognise, where rosterDetailCmd can only fall back to the canonical
+//         spelling; the toast names whichever command it sent, so the other one is one
+//         keystroke away.
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
@@ -211,8 +295,12 @@ func plBtnW(label string, measure func(string) int32) int32 {
 }
 
 // planPlayerToolbar lays every Players-tab toolbar control out for one frame.
+//
 // ONE line, in reading order: how the roster is ORDERED (Sort, then Rooms when there
 // are area groups to order), what YOU are broadcasting (Status), and everything else
+// behind the ⋮. The ⋮ is placed last so it lands at the right end of the row on any
+// panel wide enough to hold the lot — the corner every overflow menu lives in.
+//
 // A panel too narrow for one line wraps rather than clips (plStrip.placeFlex), and a
 // panel too SHORT stops opening lines before the roster falls under plStripMinBodyPx.
 func planPlayerToolbar(r sdl.Rect, lb plToolbarLabels, multiArea bool, measure func(string) int32) plToolbarPlan {

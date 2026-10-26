@@ -3,6 +3,17 @@ package ui
 // Encapsulation tests for the text-seam fix (v1.93.0): a named log row's
 // selection/highlight math now shares drawLogLineNamed's logRowSplit gate
 // instead of re-deriving (and, before this, mismeasuring) it.
+//
+// Two user reports landed here:
+//   - OOC "you have to select empty space past the text to select it all" —
+//     logPrefixWidth always measured a row at PLAIN weight while
+//     drawLogLineNamed drew its speaker BOLD, so the true drawn width was
+//     under-measured by the bold/plain advance delta on every named row.
+//   - the funky-fonts report's one CONFIRMED defect: drawLogLineNamed could
+//     draw a row's timestamp prefix, then fall through to redraw the WHOLE
+//     line on top of it if the speaker's own width lookup ever failed — a
+//     partial draw committed before the split was known to succeed.
+//
 // Every test below drives a REAL production entry point (logPointAt,
 // drawLogSelHighlight, logPrefixWidth itself, or drawLogLineNamed's own
 // source) — none re-implements the split/measure logic to check itself.
@@ -26,9 +37,9 @@ func oocRowSelectionFixture(t *testing.T, text, speaker string) (a *App, wide in
 	t.Helper()
 	a = scaleTestApp(t)
 	a.oocPct = DefaultScalePct
-	a.chatlog.oocLog = []string{text}
-	a.chatlog.oocSpeakers = []string{speaker}
-	a.chatlog.oocSeq++
+	a.oocLog = []string{text}
+	a.oocSpeakers = []string{speaker}
+	a.oocSeq++
 	const fixtureWidth = 4000 // wider than any fixture string can wrap
 	lines := a.oocWrapped(fixtureWidth - logWrapIndentPx)
 	if len(lines) != 1 || lines[0] != text {
@@ -116,6 +127,7 @@ func TestLogPrefixWidthCoversTheRowsTrueDrawnWidthAtFullSelection(t *testing.T) 
 // are still visibly over the row's bold-widened glyphs but which the plain
 // measurement already (wrongly) considered "past the end of the line" — so the
 // old code reported the whole row selected there, capping off at len(runes)
+// with visible text still to its right, and no further drag could ever move it.
 // The fix must not report the row fully selected until x actually reaches the
 // true right edge.
 func TestLogPointAtDoesNotReportFullSelectionBeforeTheRowsTrueRightEdge(t *testing.T) {
@@ -176,8 +188,8 @@ func TestLogPrefixWidthUsesBoldWeightForNamedICRow(t *testing.T) {
 
 	// IC's split additionally requires this (OOC's doesn't — see logRowNameStyle)
 	const speaker = "Wright"
-	a.chatlog.icLog = []icEntry{{text: "Wright: hold it, that's not how it happened", speaker: speaker}}
-	a.chatlog.icLogSeq++
+	a.icLog = []icEntry{{text: "Wright: hold it, that's not how it happened", speaker: speaker}}
+	a.icLogSeq++
 	const fixtureWidth = 4000
 	rows := a.icWrapped(fixtureWidth-logWrapIndentPx, false)
 	if len(rows) != 1 {
@@ -214,6 +226,18 @@ func TestLogPrefixWidthUsesBoldWeightForNamedICRow(t *testing.T) {
 // most users (UIScaleAuto ships ON). It is not MOTD-specific machinery: IC and
 // OOC share logPrefixWidth verbatim: MOTD is simply the longest text most logs
 // ever contain, so it's the first place the drift crosses a whole character.
+//
+// The fix routes logPrefixWidth through devTextWidthWeight — the SAME two steps
+// (device-face SizeUTF8, uiLogicalFromDevice fold) the draw performs — instead of
+// fontTextWidthWeight's logical-only SizeUTF8. At textDevPct==100 the two are
+// provably identical (deviceTextFont(font)==font, uiLogicalFromDevice is the
+// identity), which is why every existing test above this comment — none of which
+// sets a fractional UI scale — is untouched evidence that the fix changes
+// NOTHING at the default scale.
+//
+// fractionalScalePct is 105%: config.MinAutoUIScalePercent + UIScaleStepPercent,
+// the FIRST step UIScaleAuto's own detection leaves 100% at (scaleblur_test.go's
+// autoScaleStepW/H), not an arbitrary probe value.
 const fractionalScalePct = config.MinAutoUIScalePercent + config.UIScaleStepPercent
 
 // motdSelectionFixtureLine is long enough (over 100 runes) that a per-glyph
@@ -243,9 +267,11 @@ func drawnPrefixWidth(t *testing.T, c *Ctx, font *ttf.Font, runes []rune, n int)
 // scale) the two measurements collapse to the identical call; this test is what
 // forces them apart by setting a real fractional UI scale and comparing against
 // the production draw as ground truth.
+//
 // Deleting the fix (routing logPrefixWidth's width lookups back through
 // fontTextWidthWeight instead of devTextWidthWeight) reproduces the drift this
 // asserts against — confirmed by running this test against the unfixed tree
+// before adding the fix (see the implementer's report).
 func TestLogPrefixWidthMatchesTheActualDrawAtFractionalScale(t *testing.T) {
 	a, _ := oocRowSelectionFixture(t, motdSelectionFixtureLine, "") // no speaker: the MOTD continuation-row shape
 	c := a.ctx
@@ -284,8 +310,8 @@ func TestLogPrefixWidthMatchesTheActualDrawAtFractionalScale(t *testing.T) {
 func TestLogPrefixWidthMatchesTheActualDrawAtFractionalScaleIC(t *testing.T) {
 	a := scaleTestApp(t)
 	a.logPct = DefaultScalePct
-	a.chatlog.icLog = []icEntry{{text: motdSelectionFixtureLine, speaker: "Wright"}}
-	a.chatlog.icLogSeq++
+	a.icLog = []icEntry{{text: motdSelectionFixtureLine, speaker: "Wright"}}
+	a.icLogSeq++
 	const fixtureWidth = 4000
 	rows := a.icWrapped(fixtureWidth-logWrapIndentPx, false)
 	if len(rows) != 1 {

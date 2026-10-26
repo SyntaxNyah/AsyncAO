@@ -19,7 +19,7 @@ func newEffectsRig(t *testing.T) (*App, *config.AssetPreferences) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	return &App{env: env{d: Deps{Prefs: prefs}}}, prefs
+	return &App{d: Deps{Prefs: prefs}}, prefs
 }
 
 // TestDisableEffectsSuppressesEveryLocalFX pins the master off-switch at the two
@@ -121,14 +121,14 @@ func TestDisableEffectsSuppressesEveryLocalFX(t *testing.T) {
 // though the dedicated HideReactions opt-out is untouched.
 func TestDisableEffectsSuppressesIncomingReactions(t *testing.T) {
 	a, prefs := newEffectsRig(t)
-	a.chatlog.icLog = []icEntry{{speaker: "Phoenix", ref: 4242}}
+	a.icLog = []icEntry{{speaker: "Phoenix", ref: 4242}}
 
 	a.onIncomingReaction(courtroom.WireReaction{Ref: 4242, Index: 2})
-	if len(a.reactUI.reactionFloats) != 1 {
-		t.Fatalf("baseline reaction didn't float (got %d)", len(a.reactUI.reactionFloats))
+	if len(a.reactionFloats) != 1 {
+		t.Fatalf("baseline reaction didn't float (got %d)", len(a.reactionFloats))
 	}
 
-	a.reactUI.reactionFloats = a.reactUI.reactionFloats[:0]
+	a.reactionFloats = a.reactionFloats[:0]
 	prefs.Update(func(
 		sn *config.
 			Settings) {
@@ -141,7 +141,7 @@ func TestDisableEffectsSuppressesIncomingReactions(t *testing.T) {
 	})
 
 	a.onIncomingReaction(courtroom.WireReaction{Ref: 4242, Index: 2})
-	if len(a.reactUI.reactionFloats) != 0 {
+	if len(a.reactionFloats) != 0 {
 		t.Error("the master off-switch didn't suppress an incoming reaction float")
 	}
 	if prefs.Load().HideReactions {

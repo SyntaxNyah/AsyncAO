@@ -25,6 +25,25 @@ import (
 // independently, which is how the two drifted apart in the first place (a
 // selection that always measured the row at plain weight while the draw put
 // a BOLD speaker on it — "select empty space past the text").
+//
+// ok=false covers every case drawLogLineNamed's old inline gate fell through
+// on: no speaker, name colours and bold both off, the speaker not found in
+// the line, a line no single face covers (or that needs the emoji/mixed-
+// script raster), or either segment's width lookup itself failing — every one
+// of those draws (and must measure) the WHOLE line at plain weight via
+// a.labelEmoji, never a partial bold span.
+//
+// boldEnd is a BYTE offset into line (nameStart+len(speaker), matching
+// strings.Index's own unit) so callers slice line directly; a caller that
+// needs a rune offset converts once with utf8.RuneCountInString, same as the
+// rest of this file already does for wrap indices.
+//
+// Both width lookups are proven to succeed HERE, before either drawLogLineNamed
+// or logPrefixWidth commits to anything — the old code drew the "pre" segment
+// and only THEN checked whether the speaker segment would measure, so a rare
+// SizeUTF8 failure on the speaker left "pre" painted once and the whole line
+// painted again on top of it via the plain-weight fallback (a real double
+// draw, not merely a mis-measurement).
 func (c *Ctx) logRowSplit(font, emojiFont *ttf.Font, line, speaker string, nameOn, bold bool) (nameStart, boldEnd int, ok bool) {
 	if speaker == "" || !(nameOn || bold) {
 		return 0, 0, false
@@ -150,7 +169,29 @@ func (a *App) logLineText(which, i int) string {
 // the two can never disagree about where a row's bold speaker span ends. Used
 // only for the two partial-end lines of a selection (interior lines fill the
 // whole column, so they need no measurement).
+//
 // Before the bold-aware split (see git history), the selection side always
+// measured at plain weight regardless of what drew — a named row's true
+// on-screen width (bold speaker + plain message) was systematically
+// under-measured by the bold/plain advance delta, so the mouse had to travel
+// past the last glyph into empty space before hitTestRune's binary search
+// would conclude the line was fully covered ("you have to select empty space
+// past the text to select it all").
+//
+// Every partial-row width here goes through devTextWidthWeight, NOT
+// fontTextWidthWeight (the plain c.font.SizeUTF8 measure) — the same two
+// steps (device-face SizeUTF8, uiLogicalFromDevice fold) the row's actual
+// draw performs in textTextureBold/cachedText.logicalW(). The two faces are
+// independently-hinted FreeType rasterizations at different point sizes and
+// agree exactly only at textDevPct==100; at any fractional UI scale a
+// logical-only measure drifts from the real glyph advances, growing with how
+// far into the row the offset reaches, until a long wrapped row's highlight
+// and clipboard copy land on visibly different runes than the ones drawn
+// (measured on the MOTD, the longest text in a typical log, but the row-
+// relative mechanism is identical for IC and OOC and for any long row of
+// either). Both branches below fold with the SAME c.textDevPct, so an
+// interrupted bold+plain split still sums to one consistent device-exact
+// prefix width.
 func (a *App) logPrefixWidth(which, li int, text string, font *ttf.Font, runes []rune, off int) int32 {
 	c := a.ctx
 	if font == nil || off <= 0 {
@@ -238,7 +279,7 @@ func (a *App) logRowNameStyle(which, li int) (speaker string, nameOn, bold bool)
 	if a.ghostLogSpan(a.icWrap).ghosted(li, entry) {
 		return "", nameOn, bold // not spoken yet: drawn ghostInk-only, the name tint drops with it
 	}
-	return a.chatlog.icLog[entry].speaker, nameOn, bold
+	return a.icLog[entry].speaker, nameOn, bold
 }
 
 // logPointAt maps a pixel position to a selection point: the wrapped-line index
@@ -275,25 +316,25 @@ func (a *App) logPointAt(which int, listX, listY, scroll, lineH, mx, my int32) s
 func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int32) {
 	c := a.ctx
 	n := a.logLineCount(which)
-	if a.sel.logSelActive {
-		a.sel.logSelFill = a.highlightFill() // cache once/frame; the per-line draw won't lock
+	if a.logSelActive {
+		a.logSelFill = a.highlightFill() // cache once/frame; the per-line draw won't lock
 	}
 	inText := c.mouseX >= list.X && c.mouseX <= list.X+wrapW // exclude the scrollbar
-	if a.sel.logSelPressed && n > 0 && c.hovering(list) && inText {
+	if a.logSelPressed && n > 0 && c.hovering(list) && inText {
 		p := a.logPointAt(which, list.X, list.Y, scroll, lineH, c.mouseX, c.mouseY)
-		a.sel.logSelWhich = which
-		a.sel.logSelAnchor, a.sel.logSelHead = p, p
-		a.sel.logSelActive = true
-		a.sel.logSelDragging = true
-		a.sel.chatSelActive = false // the log owns the highlight now (don't double-select with the chatbox)
+		a.logSelWhich = which
+		a.logSelAnchor, a.logSelHead = p, p
+		a.logSelActive = true
+		a.logSelDragging = true
+		a.chatSelActive = false // the log owns the highlight now (don't double-select with the chatbox)
 	}
-	if a.sel.logSelDragging && a.sel.logSelWhich == which {
+	if a.logSelDragging && a.logSelWhich == which {
 		if c.mouseDown {
-			a.sel.logSelHead = a.logPointAt(which, list.X, list.Y, scroll, lineH, c.mouseX, c.mouseY)
+			a.logSelHead = a.logPointAt(which, list.X, list.Y, scroll, lineH, c.mouseX, c.mouseY)
 		} else {
-			a.sel.logSelDragging = false
-			if a.sel.logSelAnchor.equal(a.sel.logSelHead) {
-				a.sel.logSelActive = false // a plain click clears the selection
+			a.logSelDragging = false
+			if a.logSelAnchor.equal(a.logSelHead) {
+				a.logSelActive = false // a plain click clears the selection
 			} else {
 				c.clicked = false // a real drag must not also open a link / pin
 				c.focusID = ""    // ...and it unfocuses the IC/OOC input, so Ctrl+C copies the SELECTION, not the (still-focused) field
@@ -302,8 +343,8 @@ func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int
 	}
 	// Ctrl+C copies the active selection when no text field is focused (a
 	// focused field's own copy wins). Consume copyReq so it fires once.
-	if c.copyReq && c.focusID == "" && a.sel.logSelActive && a.sel.logSelWhich == which {
-		lo, hi := orderSel(a.sel.logSelAnchor, a.sel.logSelHead)
+	if c.copyReq && c.focusID == "" && a.logSelActive && a.logSelWhich == which {
+		lo, hi := orderSel(a.logSelAnchor, a.logSelHead)
 		if !lo.equal(hi) {
 			_ = sdl.SetClipboardText(selectedText(func(i int) string { return a.logLineText(which, i) }, lo, hi))
 			a.warnLine = "Copied selection to clipboard"
@@ -334,8 +375,8 @@ func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int
 	// copies its URL (it runs after; last write wins) and the pill keeps its
 	// gesture. Pin-to-notes moved to its chord (default Ctrl+N).
 	if c.rightClicked && n > 0 && c.hovering(list) && inText {
-		if a.sel.logSelActive && a.sel.logSelWhich == which {
-			lo, hi := orderSel(a.sel.logSelAnchor, a.sel.logSelHead)
+		if a.logSelActive && a.logSelWhich == which {
+			lo, hi := orderSel(a.logSelAnchor, a.logSelHead)
 			if !lo.equal(hi) {
 				_ = sdl.SetClipboardText(selectedText(func(i int) string { return a.logLineText(which, i) }, lo, hi))
 				a.warnLine = "Copied selection to clipboard"
@@ -360,11 +401,11 @@ func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int
 func (a *App) selectLogLine(which int, list sdl.Rect, scroll, lineH int32) {
 	c := a.ctx
 	li := a.logPointAt(which, list.X, list.Y, scroll, lineH, c.mouseX, c.mouseY).entry
-	a.sel.logSelWhich = which
-	a.sel.logSelAnchor = selPoint{entry: li, off: 0}
-	a.sel.logSelHead = selPoint{entry: li, off: len([]rune(a.logLineText(which, li)))}
-	a.sel.logSelActive = true
-	a.sel.logSelDragging = false
+	a.logSelWhich = which
+	a.logSelAnchor = selPoint{entry: li, off: 0}
+	a.logSelHead = selPoint{entry: li, off: len([]rune(a.logLineText(which, li)))}
+	a.logSelActive = true
+	a.logSelDragging = false
 }
 
 // selectLogWord selects the word under the cursor (the double-click gesture):
@@ -380,21 +421,21 @@ func (a *App) selectLogWord(which int, list sdl.Rect, scroll, lineH int32) {
 	if hi <= lo {
 		return // empty line — nothing to select
 	}
-	a.sel.logSelWhich = which
-	a.sel.logSelAnchor = selPoint{entry: p.entry, off: lo}
-	a.sel.logSelHead = selPoint{entry: p.entry, off: hi}
-	a.sel.logSelActive = true
-	a.sel.logSelDragging = false
+	a.logSelWhich = which
+	a.logSelAnchor = selPoint{entry: p.entry, off: lo}
+	a.logSelHead = selPoint{entry: p.entry, off: hi}
+	a.logSelActive = true
+	a.logSelDragging = false
 }
 
 // drawLogSelHighlight fills the selection background behind one display line
 // (called inside the line loop, before the text). Interior lines fill the whole
 // column; only the first/last partial lines measure an offset.
 func (a *App) drawLogSelHighlight(which, li int, listX, y, wrapW, lineH int32, text string, font *ttf.Font) {
-	if !a.sel.logSelActive || a.sel.logSelWhich != which {
+	if !a.logSelActive || a.logSelWhich != which {
 		return
 	}
-	lo, hi := orderSel(a.sel.logSelAnchor, a.sel.logSelHead)
+	lo, hi := orderSel(a.logSelAnchor, a.logSelHead)
 	if lo.equal(hi) || li < lo.entry || li > hi.entry {
 		return
 	}
@@ -409,6 +450,6 @@ func (a *App) drawLogSelHighlight(which, li int, listX, y, wrapW, lineH int32, t
 		x1 = listX + a.logRowIndent(which, li) + a.logPrefixWidth(which, li, text, font, runes, hi.off)
 	}
 	if x1 > x0 {
-		a.ctx.Fill(sdl.Rect{X: x0, Y: y, W: x1 - x0, H: lineH}, a.sel.logSelFill)
+		a.ctx.Fill(sdl.Rect{X: x0, Y: y, W: x1 - x0, H: lineH}, a.logSelFill)
 	}
 }

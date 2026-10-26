@@ -136,7 +136,7 @@ func (a *App) captureComicPanel(j *gifExportJob, ev recEvent) {
 			a.drawComicBubble(j, &j.room.Scene, dst) // a paper speech bubble, not the dark GIF box
 		})
 		if err != nil {
-			a.debug.Push("comic capture: " + err.Error())
+			a.pushDebug("comic capture: " + err.Error())
 		} else {
 			j.panels = append(j.panels, img)
 			j.captured++
@@ -160,7 +160,7 @@ func (a *App) finishComicExport(j *gifExportJob) {
 	stem := j.name + "-comic-" + time.Now().Format("20060102-150405")
 	a.warnLine = fmt.Sprintf("Encoding comic (%d panels)…", len(panels))
 	a.warnAt = time.Now()
-	ch := a.sel.gifResultCh
+	ch := a.gifResultCh
 	go func() { ch <- composeAndWriteComic(panels, stem, capped) }()
 }
 

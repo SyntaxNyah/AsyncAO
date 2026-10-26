@@ -48,8 +48,17 @@ func exportChatPct(vpH int32, textScale int) int {
 // "🎞 GIF" button), an animated WebP ("🎬 WebP"), or an MP4/WebM video ("🎥
 // Video") — no trip through the maker. A bundled archive renders from its own
 // folder (the archive source is dropped when the export finishes).
+//
+// The disk read + parse (ReadFile + demoToRecording / JSON unmarshal) is
+// deferred to ONE goroutine off the render thread — a 30–60 MB .aorec or an
+// all-day .demo froze the whole window otherwise. This function only VALIDATES,
+// creates the job shell in its "loading" phase, sets a.gifExporting=true (so the
+// progress overlay draws a "Reading demo…" screen immediately), and spawns that
+// loader. tickGifExport's loading branch polls the result and finishes the
+// export on the render thread. Single-flight: the a.gifExporting guard refuses a
+// second attempt exactly as before.
 func (a *App) sceneExportFromPath(path string, kind exportKind) {
-	if a.sel.gifExporting || a.sel.replaying || a.sel.recActive {
+	if a.gifExporting || a.replaying || a.recActive {
 		a.warnLine = "Finish the current replay / recording first."
 		a.warnAt = time.Now()
 		return
@@ -59,14 +68,14 @@ func (a *App) sceneExportFromPath(path string, kind exportKind) {
 	origin := a.demoDefaultOrigin()
 	base := filepath.Base(path)
 	loadCh := make(chan gifLoadResult, gifLoadBuf)
-	a.sel.gif = &gifExportJob{
+	a.gif = &gifExportJob{
 		loading:  true,
 		loadCh:   loadCh,
 		loadName: base,
 		loadPath: path,
 		loadKind: kind,
 	}
-	a.sel.gifExporting = true
+	a.gifExporting = true
 	// The overlay draws while the disk work runs; without a bracket the loading
 	// screen renders at the live UI scale, which is fine — the export scale bracket
 	// is set later, when capture is set up (startSceneExport, after the load lands).
@@ -87,16 +96,16 @@ func (a *App) sceneExportFromPath(path string, kind exportKind) {
 // capture target, spawns the encoder/ffmpeg, enumerates the scene's assets, and
 // begins the incremental warm). Render thread only.
 func (a *App) finishLoadedExport(res gifLoadResult) {
-	kind := a.sel.gif.loadKind
-	path := a.sel.gif.loadPath
+	kind := a.gif.loadKind
+	path := a.gif.loadPath
 	// The shell job is replaced wholesale by startSceneExport's real job; clear the
 	// flags first so startSceneExport's `if a.gifExporting { return }` guard reads a
 	// clean slate. This all runs inside ONE tickGifExport call before this frame's
 	// draw, so the brief a.gifExporting=false window is never observed — and if
 	// startSceneExport refuses (empty scene / no ffmpeg), the flags correctly stay
 	// cleared and its warnLine shows on the normal screen.
-	a.sel.gif = nil
-	a.sel.gifExporting = false
+	a.gif = nil
+	a.gifExporting = false
 	a.emitLoadNotes(res)
 	rec := res.rec
 	if rec.Bundled {
@@ -158,6 +167,12 @@ const (
 	// thread — for the whole storm — BEFORE the progress overlay ever draws (the
 	// reported "whole window freezes with no loading screen"). Instead the refs
 	// are stored on the job and submitted a bounded batch per warm tick.
+	//
+	// warmInFlightWindow is the OUTSTANDING (submitted-but-not-yet-resident) bound:
+	// kept well under highLaneCap so a Submit can never find a full high lane and
+	// block. warmPrefetchPerTick is the per-tick burst cap (= the pool's worker
+	// count, DefaultWorkers), a small batch that drains within a frame. The two
+	// together mean one warm tick's submissions cost microseconds, never a stall.
 	warmInFlightWindow  = 32 // < highLaneCap(64): outstanding high-lane jobs stay below the cap
 	warmPrefetchPerTick = 16 // = network.DefaultWorkers: a frame's-worth of submissions
 
@@ -458,6 +473,10 @@ type gifExportJob struct {
 	// room is 0 and submission stops, so the set never exceeds that named cap. It
 	// counts ONLY real submits (a pre-resident, never-submitted ref is never in it),
 	// which is why pre-resident refs can't deflate the window and re-open the block.
+	// warmSubmitted is a cumulative count of real submits (observability + the
+	// overlay). warmSubmitDone latches once every ref has been submitted — only then
+	// does the quiescence/timeout clock start (a huge ref list mustn't be
+	// guillotined by gifWarmMax while it's still being fed to the pool).
 	pendingWarm    []courtroom.AssetRef
 	warmInFlight   map[string]struct{}
 	warmSubmitted  int
@@ -509,7 +528,7 @@ type gifLoadResult struct {
 // (exportGIF), an animated WebP (exportWebP), or an MP4/WebM video (exportVideo).
 // Must be called on the render thread (it creates the capture target).
 func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKind) {
-	if a.sel.gifExporting {
+	if a.gifExporting {
 		return
 	}
 	if scene == nil || len(scene.Events) == 0 {
@@ -613,8 +632,8 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 		audio = courtroom.NopAudio{}
 	case exportVideo:
 		audioCap = &audioCapture{frameRef: func() int {
-			if a.sel.gif != nil {
-				return a.sel.gif.captured
+			if a.gif != nil {
+				return a.gif.captured
 			}
 			return 0
 		}}
@@ -640,8 +659,8 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 	if scene.StartBg != "" {
 		room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: scene.StartBg})
 	}
-	if a.sel.gifResultCh == nil {
-		a.sel.gifResultCh = make(chan exportResult, gifResultBuf)
+	if a.gifResultCh == nil {
+		a.gifResultCh = make(chan exportResult, gifResultBuf)
 	}
 
 	// Pre-warm: enumerate every sprite / background / desk the scene needs; the
@@ -665,7 +684,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 	}
 
 	now := time.Now()
-	a.sel.gif = &gifExportJob{
+	a.gif = &gifExportJob{
 		room:        room,
 		ct:          ct,
 		events:      append([]recEvent(nil), scene.Events...),
@@ -696,7 +715,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 		// it is still being fed to the pool.
 		pendingWarm: warmRefs,
 	}
-	a.sel.gifExporting = true
+	a.gifExporting = true
 	a.beginExportScaleBracket() // #77: exports render at native (100%) scale, not the live UI scale
 
 	// Seed the recording's origin formats BEFORE the warm, so the warm probes the
@@ -707,7 +726,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 	// the first warm tick on the result.
 	if strings.HasPrefix(scene.Origin, "http") && a.d.Prefs.Load().AutoDetectFormats && !a.originSeeded(scene.Origin) {
 		a.markOriginSeeded(scene.Origin)
-		a.startExportSeed(a.sel.gif, scene.Origin)
+		a.startExportSeed(a.gif, scene.Origin)
 		a.warnLine = "Checking the server's format manifest…"
 	} else {
 		a.warnLine = "Loading scene assets…"
@@ -758,10 +777,10 @@ func (a *App) tickGifSeed(j *gifExportJob) {
 // chrome underneath, and no scale-change event fires while it runs, so a single
 // bracket holds. Idempotent (a second begin keeps the first saved value).
 func (a *App) beginExportScaleBracket() {
-	if a.sel.exportSavedDevScale != 0 {
+	if a.exportSavedDevScale != 0 {
 		return // already bracketed
 	}
-	a.sel.exportSavedDevScale = int(a.ctx.textDevPct)
+	a.exportSavedDevScale = int(a.ctx.textDevPct)
 	a.ctx.SetTextDevScale(DefaultScalePct)
 }
 
@@ -769,11 +788,11 @@ func (a *App) beginExportScaleBracket() {
 // beginExportScaleBracket. No-op when not bracketed, so finishers can call it
 // unconditionally.
 func (a *App) endExportScaleBracket() {
-	if a.sel.exportSavedDevScale == 0 {
+	if a.exportSavedDevScale == 0 {
 		return
 	}
-	a.ctx.SetTextDevScale(a.sel.exportSavedDevScale)
-	a.sel.exportSavedDevScale = 0
+	a.ctx.SetTextDevScale(a.exportSavedDevScale)
+	a.exportSavedDevScale = 0
 }
 
 // tickGifExport captures a bounded batch of frames (render thread). Feeds the
@@ -781,9 +800,9 @@ func (a *App) endExportScaleBracket() {
 // FIXED dt (faster than real-time), renders into the offscreen target, and
 // quantizes — dropping the RGBA at once so only paletted frames are retained.
 func (a *App) tickGifExport() {
-	j := a.sel.gif
+	j := a.gif
 	if j == nil {
-		a.sel.gifExporting = false
+		a.gifExporting = false
 		// Unreachable today (a.gif is set before a.gifExporting), but this abort path
 		// must restore the live text scale like every other export exit or a future
 		// refactor that makes it reachable strands the UI on 100% device fonts. end
@@ -810,8 +829,8 @@ func (a *App) tickGifExport() {
 		// No viewport to render into: end the (already past-loading) export cleanly,
 		// restoring the text scale like every other exit. startSceneExport set the
 		// bracket when it built this job, so it must be released here.
-		a.sel.gif = nil
-		a.sel.gifExporting = false
+		a.gif = nil
+		a.gifExporting = false
 		a.endExportScaleBracket()
 		return
 	}
@@ -848,7 +867,7 @@ func (a *App) tickGifExport() {
 			a.drawExportStamp(j, dst)                // #74 opt-in watermark, top-right
 		})
 		if err != nil {
-			a.debug.Push("scene export capture: " + err.Error())
+			a.pushDebug("scene export capture: " + err.Error())
 			a.finishGifExport()
 			return
 		}
@@ -857,7 +876,7 @@ func (a *App) tickGifExport() {
 			// Stream into the WebP encoder (it compresses + drops the RGBA now, so
 			// memory stays flat); GIF keeps the quantized frame for the final encode.
 			if err := j.webp.AddFrame(img); err != nil {
-				a.debug.Push("webp add: " + err.Error())
+				a.pushDebug("webp add: " + err.Error())
 				a.finishGifExport()
 				return
 			}
@@ -866,7 +885,7 @@ func (a *App) tickGifExport() {
 			// window). A broken pipe means ffmpeg died — stop; finishVideoExport
 			// reaps the process and surfaces the stderr tail as the result.
 			if err := j.vid.AddFrame(img); err != nil {
-				a.debug.Push("video add: " + err.Error())
+				a.pushDebug("video add: " + err.Error())
 				a.finishGifExport()
 				return
 			}
@@ -888,8 +907,8 @@ func (a *App) tickGifLoad(j *gifExportJob) {
 	select {
 	case res := <-j.loadCh:
 		if res.err != nil {
-			a.sel.gif = nil
-			a.sel.gifExporting = false
+			a.gif = nil
+			a.gifExporting = false
 			a.warnLine = "Couldn't load recording: " + res.err.Error()
 			a.warnAt = time.Now()
 			return
@@ -952,6 +971,33 @@ func warmRoom(outstanding int) int {
 // for: waiting only burns the clock while the stage will show the placeholder
 // either way. Treating "missing" as settled is what wires the conclusive-404
 // signal into the warm's end conditions.
+//
+// SCOPE — this releases only a REACHABLE host that returns clean 404s. IsMissing
+// is set by drainWarnings, which fires only when the Manager's walkCandidates
+// exhausts EVERY candidate with a clean 404 (manager.go reportMissing). A
+// TRANSPORT error — an empty/schemeless origin, an unreachable host (DNS failure /
+// connection refused — a .demo whose CDN is gone), or a 5xx — is NOT a clean 404:
+// walkCandidates returns "done" on the first transport error WITHOUT reportMissing
+// (manager.go delivers a Transient error instead), so the base never becomes
+// IsMissing and warmSettled stays false for it. Such a wholly-dead origin
+// therefore does NOT release here; it exits via the wall-clock ceiling below
+// (gifWarmMax once submission finishes, up to gifWarmHardCap for a large ref list)
+// and captures a BLANK stage (missingno draws only for IsMissing bases). WITHOUT
+// this release even a reachable all-404 scene would pin the settled count at 0
+// (warmInFlight never prunes, warmSubmitDone never latches) and sit frozen at
+// "0 / N" for the full hard cap — the reported "export that never converts"; WITH
+// it a reachable-404 scene ends promptly and still exports a COMPLETE video with
+// placeholder art (H3, covered end-to-end by exportstall_test.go over a 404 server).
+//
+// Note the production exit for a REAL mixed-type scene is quiescence, not all-ready:
+// drainWarnings MarkMissing's AssetTypeCharSprite and AssetTypeDeskOverlay bases
+// only (app.go), so a 404'd BACKGROUND never reads IsMissing here and can hold the
+// settled count below len(warmRefs). That's fine when at least one sprite or desk
+// settles — the quiesce window (gifWarmQuiet) then closes in well under a second. A
+// scene with NO conclusively-missing sprite/desk (e.g. a background-only all-404
+// recording) keeps settled at 0, so the settled>0 quiesce guard never fires and it
+// too waits out the wall-clock ceiling — bounded (never the 20 s hard cap for a
+// small ref set), but not sub-second. Render thread only (IsMissing is render-thread).
 func (a *App) warmSettled(base string) bool {
 	return a.d.Store.Contains(base) || a.d.Store.IsMissing(base)
 }
@@ -1062,6 +1108,7 @@ func (a *App) tickGifWarm(j *gifExportJob) {
 // job, never touching the live a.msRaster or the render hot path. Render thread
 // only (called inside the capture's draw callback).
 // gifChatNameRowH is the speaker-name row above the message text in the export
+// chatbox; the message is drawn this far below the box top.
 const gifChatNameRowH = 24
 
 // gifChatboxHeight sizes the export chatbox to FIT the rasterized message (height
@@ -1120,6 +1167,31 @@ func (a *App) fitChatRaster(sc *courtroom.Scene, wrapW, vpH int32, pct int, skin
 // Otherwise it keeps the full-frame default (viewport fills the frame, chatbox
 // pinned to the bottom). Fixes #41: the recorder used to ALWAYS take the default
 // path, so a themed session that "played" with its layout exported to a video
+// that looked like the stock layout. The layout is computed for the EXPORT
+// frame's size (dst is origin-anchored at 0,0), not the window's.
+// An export frame is NOT the window: it deliberately goes through themeLayout (no
+// app-chrome band reserved) rather than themeWindowLayout, so the menu bar / tab
+// strip band can never appear as a black stripe across an exported video or comic.
+//
+// THE SHARED LAYOUT CACHE IS BORROWED, NOT THRASHED — measured, because the two
+// entry points differ in `top` and there is exactly one cache (a.themeLay), so the
+// obvious worry is a cold rebuild (a 12 KiB struct clear, the rect map and, since
+// W3, the element bake) every time the two alternate. They never alternate:
+//
+//   - an export is a FULL-WINDOW MODE. App.Frame's gif > replay > maker > screen
+//     precedence draws tickGifExport + drawGifProgress INSTEAD of any screen, so
+//     drawCourtroomThemed — the only non-test caller of themeWindowLayout that
+//     builds this cache — does not run for the whole job. chrometop.go's
+//     screenDispatchPreempted is that rule written down, and the tab strip already
+//     depends on it for the same reason.
+//   - within a tick, gifFramesPerTick captures all pass the SAME dst, so the key is
+//     unchanged and every capture after the first is a cache hit.
+//
+// The cost is therefore two cold rebuilds PER JOB (one entering the export, one on
+// the first courtroom frame after it), not two per frame — which is the same price
+// any window resize pays and is not worth a second resident 12 KiB cache to avoid.
+// TestExportBorrowsTheThemeLayoutCacheWithoutThrashing pins it, because the
+// property depends on a precedence rule two files away.
 func (a *App) drawExportScene(j *gifExportJob, sc *courtroom.Scene, dst sdl.Rect) {
 	if lay := a.themeLayout(dst.W, dst.H); lay.valid && a.d.Prefs.Load().ThemeLayoutOn {
 		if _, ok := lay.rect("viewport"); ok {
@@ -1137,6 +1209,25 @@ func (a *App) drawExportScene(j *gifExportJob, sc *courtroom.Scene, dst sdl.Rect
 // (falling back to a bottom overlay over the viewport when the theme omits a
 // chatbox rect). Geometry comes from the SAME themeLayout the live themed
 // courtroom uses, so the video matches what Studio playback shows.
+//
+// FREE ELEMENTS PAINT HERE TOO (v1.90.0 W4). The three band calls are the same
+// three drawCourtroomThemed makes, at the analogous points — and they are the whole
+// of export parity for the extension tier. Without them a native theme's wallpaper,
+// its chatbox frame and its masthead are on screen and missing from every GIF, video
+// and Studio render of the same session, which reads as the exporter being broken
+// rather than as a feature boundary.
+//
+// The mapping between the two passes is exact where an export HAS the same surface
+// and collapses where it does not: the export draws no logs, no panels and no
+// modals, so the mid band's "between the stage and the panels" and the overlay
+// band's "above every AO2 widget" both land after the chatbox, in that order. Band
+// ORDER is what the format promises (docs/THEME-FORMAT.md §4); the widgets between
+// the bands are the client's, and an export legitimately has fewer of them.
+//
+// The COMIC exporter is deliberately NOT wired: it composes paper panels with its
+// own speech bubble and never takes the themed path at all (comicexport.go —
+// captureComicPanel renders the bare viewport), so there is no themed frame to be
+// at parity with.
 func (a *App) drawGifThemedFrame(j *gifExportJob, sc *courtroom.Scene, dst sdl.Rect, lay *themeLayoutCache) {
 	c := a.ctx
 	// Stage frame: the theme's window art over the centered design area (black
@@ -1179,6 +1270,11 @@ func (a *App) drawGifThemedFrame(j *gifExportJob, sc *courtroom.Scene, dst sdl.R
 
 // exportCondSource is elemCondSource for an export frame: the STAGE axes come from
 // the job's own room, the two CLIENT-state axes from the live client.
+//
+// pos and char are the local player's pos dropdown and character folder. Neither is
+// recorded — a .aorec carries the stage, not the reader's UI state — so there is
+// nothing else they could resolve to, and taking them from the live client is at
+// least the same answer the session that made the recording would have given.
 func (a *App) exportCondSource(j *gifExportJob) elemCondSource {
 	src := elemCondSource{pos: a.mySide(), char: a.myCharName()}
 	if j == nil || j.room == nil {
@@ -1214,15 +1310,23 @@ func (a *App) drawGifThemedChatbox(j *gifExportJob, sc *courtroom.Scene, box sdl
 
 	// showname/message sit at their chatbox-relative design rects (AO2 child
 	// semantics), falling back to the classic offsets when the theme omits them.
+	//
+	// SHARED with the live chatbox, deliberately: this used to be its own copy of
+	// the same arithmetic, so the Qt message inset and showname_align would have
+	// landed on screen and not in the exported video. The one difference the export
+	// keeps is its taller fallback name row (gifChatNameRowH), which only applies to
+	// a theme that declares no `message` rect.
+	//
 	// Resolved before the skin is painted for the same reason as the live chatbox:
+	// the widen-and-swap ladder below decides WHICH skin is painted.
 	nameBox, msgBox := chatboxTextRects(box, lay, box.Y+gifChatNameRowH)
 	msgX, msgY, wrapW := msgBox.X, msgBox.Y, msgBox.W
 
 	nameCol := ColAccent
 	if skinned && sc.ChatSkinNameHas {
 		nameCol = sdl.Color{R: sc.ChatSkinNameColor.R, G: sc.ChatSkinNameColor.G, B: sc.ChatSkinNameColor.B, A: 255}
-	} else if skinned && a.skin.themeHasName {
-		nameCol = a.skin.themeNameCol
+	} else if skinned && a.themeHasName {
+		nameCol = a.themeNameCol
 	}
 	if a.d.Prefs.Load().NameColors { // per-speaker name colour wins over accent/theme
 		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.Load().NameSat)/100, float64(a.d.Prefs.Load().NameVal)/100)
@@ -1256,9 +1360,12 @@ func (a *App) drawGifThemedChatbox(j *gifExportJob, sc *courtroom.Scene, box sdl
 	// Rasterize once per line, wrapped to the design message width and shrunk to
 	// fit the box height (keyed by text like the default path — only one of the two
 	// chatbox paths runs across a whole export, so the shared cache never drifts).
+	//
 	// The MESSAGE deliberately does NOT take the canvas fold the showname above
 	// takes. j.chatPct is exportChatPct, already derived from the capture height,
 	// and fitChatRaster then shrinks it until the block fits the box — so this text
+	// is sized against the export frame twice over already, and folding a third
+	// factor in would only fight the fit loop.
 	if j.chatRaster == nil || j.chatText != sc.MessageText {
 		if j.chatRaster != nil {
 			j.chatRaster.Destroy()
@@ -1366,9 +1473,9 @@ func (a *App) drawExportStamp(j *gifExportJob, vp sdl.Rect) {
 // finishGifExport tears down the capture, restores the viewport's preanim
 // callback, and hands the frames to an off-thread encode+write.
 func (a *App) finishGifExport() {
-	j := a.sel.gif
-	a.sel.gif = nil
-	a.sel.gifExporting = false
+	j := a.gif
+	a.gif = nil
+	a.gifExporting = false
 	a.endExportScaleBracket() // #77: restore the live UI scale for the message raster
 	if j == nil {
 		return
@@ -1382,7 +1489,7 @@ func (a *App) finishGifExport() {
 	}
 	a.endBundledReplay() // drop the archive source if the export was from a bundled archive
 	a.restoreViewportPreanim()
-	a.sel.makerPreviewIdx = -1 // the export drove the shared viewport — force the preview pane to rebuild
+	a.makerPreviewIdx = -1 // the export drove the shared viewport — force the preview pane to rebuild
 
 	if j.kind == exportVideo {
 		a.finishVideoExport(j) // ffmpeg has been writing vidPath all along — just flush + wait
@@ -1411,7 +1518,7 @@ func (a *App) finishGifExport() {
 	delayCs, loop := j.delayCs, j.loop
 	a.warnLine = fmt.Sprintf("Encoding GIF (%d frames)…", len(frames))
 	a.warnAt = time.Now()
-	ch := a.sel.gifResultCh
+	ch := a.gifResultCh
 	go func() { ch <- encodeAndWriteGIF(frames, stem, delayCs, loop) }()
 }
 
@@ -1432,7 +1539,7 @@ func (a *App) finishWebpExport(j *gifExportJob, stem string) {
 	enc := j.webp
 	a.warnLine = fmt.Sprintf("Encoding WebP (%d frames)…", j.captured)
 	a.warnAt = time.Now()
-	ch := a.sel.gifResultCh
+	ch := a.gifResultCh
 	go func() {
 		data, err := enc.Assemble()
 		enc.Close()
@@ -1493,7 +1600,7 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 	subFps := j.fps
 	a.warnLine = fmt.Sprintf("Finishing video (%d frames)…", j.captured)
 	a.warnAt = time.Now()
-	ch := a.sel.gifResultCh
+	ch := a.gifResultCh
 	go func() {
 		if err := enc.Finish(); err != nil {
 			_ = os.Remove(path) // a failed encode leaves a corrupt file — don't keep it
@@ -1514,6 +1621,9 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 				// isn't silently missing most of its sound with no word to the user. Only
 				// on the success branch — the silent-fallback message below already says
 				// there's no sound, so a "N cues left out" tail there would just confuse.
+				// "left out", not "past the cap": failed downloads don't consume cap
+				// slots, so this count can include resolve failures — keep the wording
+				// directional rather than claiming a precise cause (review nit).
 				if audioDropped > 0 {
 					soundNote += fmt.Sprintf(" (%d sound cue(s) left out)", audioDropped)
 				}
@@ -1560,12 +1670,12 @@ func (a *App) restoreViewportPreanim() {
 		return
 	}
 	switch {
-	case a.sel.makerOpen && a.sel.makerPreviewRoom != nil:
-		a.d.Viewport.OnPreanimDone = a.sel.makerPreviewRoom.NotifyPreanimDone
-		a.d.Viewport.OnFrameShown = a.sel.makerPreviewRoom.NotifyFrameShown // #17: frame effects follow the same room
-	case a.link.room != nil:
-		a.d.Viewport.OnPreanimDone = a.link.room.NotifyPreanimDone
-		a.d.Viewport.OnFrameShown = a.link.room.NotifyFrameShown
+	case a.makerOpen && a.makerPreviewRoom != nil:
+		a.d.Viewport.OnPreanimDone = a.makerPreviewRoom.NotifyPreanimDone
+		a.d.Viewport.OnFrameShown = a.makerPreviewRoom.NotifyFrameShown // #17: frame effects follow the same room
+	case a.room != nil:
+		a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
+		a.d.Viewport.OnFrameShown = a.room.NotifyFrameShown
 	default:
 		a.d.Viewport.OnPreanimDone = nil
 		a.d.Viewport.OnFrameShown = nil
@@ -1614,11 +1724,11 @@ func writeWebp(data []byte, stem string) exportResult {
 // #71 opt-in is on and the export succeeded, puts the finished FILE on the OS
 // clipboard so it pastes straight into Discord/Explorer.
 func (a *App) pollGifExport() {
-	if a.sel.gifResultCh == nil {
+	if a.gifResultCh == nil {
 		return
 	}
 	select {
-	case res := <-a.sel.gifResultCh:
+	case res := <-a.gifResultCh:
 		a.warnLine = res.msg
 		if res.path != "" && a.d.Prefs.Load().Export.CopyToClipboard {
 			if copyFileToClipboard(res.path) {
@@ -1635,7 +1745,7 @@ func (a *App) pollGifExport() {
 func (a *App) drawGifProgress(winW, winH int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: winW, H: winH}, sdl.Color{R: 10, G: 10, B: 14, A: 255})
-	j := a.sel.gif
+	j := a.gif
 	cx := winW / 2
 	cy := winH / 2
 
@@ -1652,8 +1762,8 @@ func (a *App) drawGifProgress(winW, winH int32) {
 		c.Label(cx-120, cy-30, "📖  Reading "+verb+"…", ColText)
 		c.LabelClipped(cx-160, cy, 320, j.loadName, ColTextDim)
 		if c.Button(sdl.Rect{X: cx - 60, Y: cy + 54, W: 120, H: btnH}, "✕ Cancel") {
-			a.sel.gif = nil // abandon the pending result; the goroutine finishes and dies
-			a.sel.gifExporting = false
+			a.gif = nil // abandon the pending result; the goroutine finishes and dies
+			a.gifExporting = false
 		}
 		return
 	}
@@ -1665,8 +1775,8 @@ func (a *App) drawGifProgress(winW, winH int32) {
 		c.Label(cx-120, cy-30, "🔎  Checking server formats…", ColText)
 		c.LabelClipped(cx-160, cy, 320, j.seedOriginTo, ColTextDim)
 		if c.Button(sdl.Rect{X: cx - 60, Y: cy + 54, W: 120, H: btnH}, "✕ Cancel") {
-			a.sel.gif = nil // abandon the pending seed; the goroutine finishes and dies
-			a.sel.gifExporting = false
+			a.gif = nil // abandon the pending seed; the goroutine finishes and dies
+			a.gifExporting = false
 			a.endExportScaleBracket() // startSceneExport set the bracket before seeding
 		}
 		return

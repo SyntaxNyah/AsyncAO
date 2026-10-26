@@ -14,13 +14,13 @@ import (
 func TestApplySide(t *testing.T) {
 	var sent []protocol.Packet
 	s := courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
-	a := &App{env: env{}}
-	a.link.sess = s
+	a := &App{}
+	a.sess = s
 
 	// A real change lowercases, stores, and fires exactly one /pos over OOC (CT).
 	a.applySide("  Def ")
-	if a.compose.sidePref != "def" {
-		t.Fatalf("sidePref = %q, want %q", a.compose.sidePref, "def")
+	if a.sidePref != "def" {
+		t.Fatalf("sidePref = %q, want %q", a.sidePref, "def")
 	}
 	if len(sent) != 1 || sent[0].Header != "CT" || len(sent[0].Fields) < 2 || sent[0].Fields[1] != "/pos def" {
 		t.Fatalf("sent = %+v, want one CT carrying \"/pos def\"", sent)
@@ -34,23 +34,23 @@ func TestApplySide(t *testing.T) {
 
 	// Empty / whitespace-only is a no-op and never sends.
 	a.applySide("   ")
-	if a.compose.sidePref != "def" || len(sent) != 1 {
-		t.Fatalf("empty pick changed state: sidePref=%q sent=%+v", a.compose.sidePref, sent)
+	if a.sidePref != "def" || len(sent) != 1 {
+		t.Fatalf("empty pick changed state: sidePref=%q sent=%+v", a.sidePref, sent)
 	}
 
 	// A different side sends again.
 	a.applySide("pro")
-	if a.compose.sidePref != "pro" || len(sent) != 2 || sent[1].Fields[1] != "/pos pro" {
-		t.Fatalf("second change wrong: sidePref=%q sent=%+v", a.compose.sidePref, sent)
+	if a.sidePref != "pro" || len(sent) != 2 || sent[1].Fields[1] != "/pos pro" {
+		t.Fatalf("second change wrong: sidePref=%q sent=%+v", a.sidePref, sent)
 	}
 }
 
 // TestApplySideNilSession ensures a pos change with no live session just sets the
 // local side (and never panics) — the offline / lobby path.
 func TestApplySideNilSession(t *testing.T) {
-	a := &App{env: env{}}
+	a := &App{}
 	a.applySide("wit")
-	if a.compose.sidePref != "wit" {
-		t.Fatalf("sidePref = %q, want wit", a.compose.sidePref)
+	if a.sidePref != "wit" {
+		t.Fatalf("sidePref = %q, want wit", a.sidePref)
 	}
 }

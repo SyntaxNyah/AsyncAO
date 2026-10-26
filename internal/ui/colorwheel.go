@@ -198,8 +198,8 @@ func parseHex6(s string) (int, bool) {
 // hue around the ring, saturation along the radius, at full value. Pixels
 // outside the disc are transparent. Cached for the App's lifetime.
 func (a *App) ensureColorWheel() *sdl.Texture {
-	if a.sel.colorWheel != nil {
-		return a.sel.colorWheel
+	if a.colorWheel != nil {
+		return a.colorWheel
 	}
 	const d = colorWheelDiam
 	pix := make([]byte, d*d*4) // ABGR8888 == [R,G,B,A] bytes (render/textures.go)
@@ -224,7 +224,7 @@ func (a *App) ensureColorWheel() *sdl.Texture {
 	}
 	_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
 	_ = tex.Update(nil, unsafe.Pointer(&pix[0]), d*4)
-	a.sel.colorWheel = tex
+	a.colorWheel = tex
 	return tex
 }
 
@@ -239,14 +239,14 @@ func (a *App) icColorWheelRect(w, h int32) sdl.Rect {
 		pw = 12 + colorWheelDiam + 18 + 26 + 20 + 110 + 12 // wheel · brightness bar · swatch/hex column
 		ph = colorWheelDiam + 40                           // + heading row and padding
 	)
-	x := a.lookUI.icSwatchRect.X
+	x := a.icSwatchRect.X
 	if x+pw > w-4 {
 		x = w - 4 - pw
 	}
 	if x < 4 {
 		x = 4
 	}
-	y := a.lookUI.icSwatchRect.Y - ph - 6 // above the swatch
+	y := a.icSwatchRect.Y - ph - 6 // above the swatch
 	if y < 4 {
 		y = 4 // tiny window: clamp to the top rather than run off-screen
 	}
@@ -257,8 +257,8 @@ func (a *App) icColorWheelRect(w, h int32) sdl.Rect {
 // live (the swatch + the next send use it) and the pick persists as the
 // default a fresh tab seeds from.
 func (a *App) setICCustomRGB(rgb int) {
-	a.compose.icCustomRGB = rgb & 0xFFFFFF
-	icRGB := a.compose.icCustomRGB
+	a.icCustomRGB = rgb & 0xFFFFFF
+	icRGB := a.icCustomRGB
 	a.d.Prefs.Update(func(sn *config.Settings) {
 		sn.ICCustomColor = icRGB
 	})
@@ -281,7 +281,7 @@ func (a *App) drawICColorWheel(w, h int32) {
 	// allocation change.
 	c.LabelClipped(r.X+8, r.Y+5, r.W-16, icColorWheelCaption, ColTextDim)
 
-	cur := a.compose.icCustomRGB
+	cur := a.icCustomRGB
 	r8, g8, b8 := uint8(cur>>16), uint8(cur>>8), uint8(cur)
 	hh, ss, vv := rgbToHSV(r8, g8, b8)
 
@@ -329,10 +329,10 @@ func (a *App) drawICColorWheel(w, h int32) {
 	c.Fill(sdl.Rect{X: hx, Y: wheel.Y, W: 90, H: 34}, sdl.Color{R: r8, G: g8, B: b8, A: 255})
 	c.Border(sdl.Rect{X: hx, Y: wheel.Y, W: 90, H: 34}, ColPanelHi)
 	if c.focusID != "iccustomhex" {
-		a.lookUI.icColorHexBuf = fmt.Sprintf("%06x", cur) // reflect wheel/slider edits when not typing
+		a.icColorHexBuf = fmt.Sprintf("%06x", cur) // reflect wheel/slider edits when not typing
 	}
-	if next, _ := c.TextField("iccustomhex", sdl.Rect{X: hx, Y: wheel.Y + 42, W: 100, H: fieldH}, a.lookUI.icColorHexBuf, "RRGGBB"); next != a.lookUI.icColorHexBuf {
-		a.lookUI.icColorHexBuf = next
+	if next, _ := c.TextField("iccustomhex", sdl.Rect{X: hx, Y: wheel.Y + 42, W: 100, H: fieldH}, a.icColorHexBuf, "RRGGBB"); next != a.icColorHexBuf {
+		a.icColorHexBuf = next
 		if rgb, ok := parseHex6(next); ok {
 			a.setICCustomRGB(rgb)
 		}
@@ -341,7 +341,7 @@ func (a *App) drawICColorWheel(w, h int32) {
 	done := sdl.Rect{X: hx, Y: wheel.Y + diam - btnH, W: 90, H: btnH}
 	a.rawChip(done, "Done")
 	if c.clicked && pointIn(c.mouseX, c.mouseY, done) {
-		a.lookUI.showICColorWheel = false
+		a.showICColorWheel = false
 	}
 }
 
@@ -429,10 +429,10 @@ func (a *App) drawHighlightPicker(y, w int32) int32 {
 
 	})
 	if c.focusID != "highlighthex" {
-		a.sel.colorHex = fmt.Sprintf("%06x", cur) // reflect wheel/slider edits when not typing
+		a.colorHex = fmt.Sprintf("%06x", cur) // reflect wheel/slider edits when not typing
 	}
-	if next, _ := c.TextField("highlighthex", sdl.Rect{X: hx, Y: wy + 42, W: 100, H: fieldH}, a.sel.colorHex, "RRGGBB"); next != a.sel.colorHex {
-		a.sel.colorHex = next
+	if next, _ := c.TextField("highlighthex", sdl.Rect{X: hx, Y: wy + 42, W: 100, H: fieldH}, a.colorHex, "RRGGBB"); next != a.colorHex {
+		a.colorHex = next
 		if rgb, ok := parseHex6(next); ok {
 			a.d.Prefs.Update(func(
 				sn *config.

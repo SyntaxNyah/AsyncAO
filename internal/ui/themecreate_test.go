@@ -212,7 +212,7 @@ func TestDroppedPicturesAreClaimedBeforeTheThemeRootArm(t *testing.T) {
 func TestAnImageIntakeIsOneUndoStep(t *testing.T) {
 	a, prefs := newEffectsRig(t)
 	prefs.SetTheme("fixture", "")
-	a.elemBake.themeSidecar = theme.NewSidecar()
+	a.themeSidecar = theme.NewSidecar()
 	if !a.openThemeEditorForTest(ScreenSettings) {
 		t.Fatal("the editor refused to open over a sidecar")
 	}

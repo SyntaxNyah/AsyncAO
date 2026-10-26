@@ -1,6 +1,7 @@
 package ui
 
 // THE DOCUMENT AND THE TIMELINE (v1.90.0 W7a).
+//
 // These gates DRIVE the seam rather than mirroring it: every one of them goes
 // through themeDoc.apply / revert and the real inspector table, so deleting the
 // funnel, the inverse or a table row fails the suite. Rule 11's own words: a
@@ -21,6 +22,15 @@ import (
 
 // editProbeElement is an element with EVERY addressable field set to a
 // non-default value.
+//
+// Non-default everywhere on purpose, and it is what makes the hash round-trip
+// meaningful. The writer's setKey has no DELETE (sidecar_write.go says so): a key
+// the model no longer has anything to say about keeps its existing line. So a field
+// that started ABSENT, was edited to a value and then reverted would leave the line
+// behind and the bytes would not return — a false failure that says nothing about
+// the inverse. Starting with every key PRESENT means a revert rewrites the same
+// line back to the same text, and byte equality really does mean "the document is
+// where it was".
 func editProbeElement() theme.Element {
 	return theme.Element{
 		ID:    "probe",
@@ -89,7 +99,7 @@ func editDocRig(t *testing.T, n int) (*App, *themeDoc) {
 	if doc == nil {
 		t.Fatal("newThemeDoc returned nil for a non-nil sidecar")
 	}
-	a := &App{env: env{}, te: &themeEditor{doc: doc}}
+	a := &App{te: &themeEditor{doc: doc}}
 	// The document must serialise cleanly BEFORE anything is edited, or every hash
 	// comparison below is comparing two error returns.
 	if _, err := doc.bytes(); err != nil {
@@ -105,6 +115,7 @@ func editDocRig(t *testing.T, n int) (*App, *themeDoc) {
 const editNonDefaultKind = theme.ElementKind(1)
 
 // editUnlockAll clears the probe element's authored lock.
+//
 // The probe is LOCKED by construction (every field non-default, see
 // editProbeElement), and the lock is a real refusal: the nudge and the delete both
 // honour it. A gate about coalescing or about the graveyard must therefore say out
@@ -221,9 +232,15 @@ func TestEveryEditFieldHasAGetterAndASetter(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestEveryInspectorFieldIsUndoable is the wave's headline gate, in both halves.
+//
 // STRUCTURALLY: a row's `mut` must RETURN an op and must not mutate — so a field
 // physically cannot bypass the undo stack, and every field added in v1.9x is
 // automatically undoable.
+//
+// BEHAVIOURALLY, hash-verified: apply the op through the document, prove the model
+// really changed, revert it, and prove the SERIALISED DOCUMENT is byte-identical to
+// what it was. An inverse that is merely "the setter run again" would pass a
+// value-equality check and fail this one the moment a setter clamped asymmetrically.
 func TestEveryInspectorFieldIsUndoable(t *testing.T) {
 	for k := theme.ElementKind(0); k < theme.ElementKindCount; k++ {
 		for i := range inspectorFields[k] {
@@ -558,9 +575,13 @@ func TestGraveyardIsBoundedAndRefusesRatherThanLosingABody(t *testing.T) {
 
 // TestDeletingAnElementPersistsThroughTheSave closes the gap the preset wave's
 // own carrier bug pointed at: NO element deletion had ever reached the file.
+//
 // The writer edits the lossless document the reader kept, so an element taken out
 // of `side.Elements` and nowhere else is re-emitted from its own surviving
 // [element.<id>] section on the next save and read straight back in — a delete
+// that looks like it worked for the whole session and is undone by reopening the
+// theme. Every existing delete gate stops at the MODEL, which is exactly why this
+// survived: the model is right in all of them.
 func TestDeletingAnElementPersistsThroughTheSave(t *testing.T) {
 	_, doc := editDocRig(t, 2)
 	editUnlockAll(doc)
@@ -602,9 +623,23 @@ func TestDeletingAnElementPersistsThroughTheSave(t *testing.T) {
 
 // TestDiscardingADeleteLeavesTheFileByteIdentical is the retire seam's OTHER exit,
 // and the only gate in the wave that measures the discard against BYTES.
+//
+// A delete has two halves: the model's, and the lossless carrier's. The second is
+// DEFERRED to the next write (theme.Sidecar.RetireElementSection's own note),
+// because the file has to come back byte-identical when the user changes their
+// mind. insertAt cancels the retirement, so the per-element undo was covered; the
+// EDITOR'S DISCARD — "Back, Back", restoreBaseline — restored the model and left
+// the retirement standing, so the very next save still stripped the author's
+// [element.<id>] lines from where they were written and re-emitted the section
+// canonically at the end of the file.
+//
+// WHY BYTES AND NOT THE MODEL. Every model-level assertion passes either way: the
+// element is present, its fields are right, the count is right, and it reads back.
 // What changes is the section's POSITION, and element declaration order is reload
 // order — so the silent damage is a reordered theme plus the loss of that one
 // section's authored key order and comments. Nothing but a byte comparison can see
+// it, which is how it survived the wave that introduced the seam.
+//
 // It also outlives the editor: d.side and a.themeSidecar are the same object and
 // closeThemeEditor drops only the editor, so the stale retirement reaches disk
 // through internal/themepack's copy and create as readily as through a save.
@@ -710,23 +745,23 @@ func TestEditsSurviveAThemeReapply(t *testing.T) {
 	prefs.SetTheme("fixture", "")
 	sc := theme.NewSidecar()
 	sc.Elements = append(sc.Elements, editProbeElement())
-	a.elemBake.themeSidecar = sc
+	a.themeSidecar = sc
 	if !a.openThemeEditorForTest(ScreenSettings) {
 		t.Fatal("the editor refused to open over a sidecar")
 	}
 	editUnlockAll(a.te.doc)
 	a.te.selectOnly(elementTarget(0))
 	a.editorNudgeSelection(1, 0, false)
-	edited := a.elemBake.themeSidecar.Elements[0].Rect
+	edited := a.themeSidecar.Elements[0].Rect
 
 	// The apply, exactly as pollThemeApply does it: a freshly parsed sidecar lands
 	// over the live one…
-	a.elemBake.themeSidecar = theme.NewSidecar()
-	a.elemBake.themeSidecar.Elements = append(a.elemBake.themeSidecar.Elements, editProbeElement())
+	a.themeSidecar = theme.NewSidecar()
+	a.themeSidecar.Elements = append(a.themeSidecar.Elements, editProbeElement())
 	// …and the reclaim puts the edited document back.
 	a.reclaimThemeDoc()
 
-	if got := a.elemBake.themeSidecar.Elements[0].Rect; got != edited {
+	if got := a.themeSidecar.Elements[0].Rect; got != edited {
 		t.Fatalf("a background theme apply discarded the unsaved edit (%+v, want %+v) — applies are not "+
 			"user-initiated, so this is work vanishing with nothing on screen to say why", got, edited)
 	}
@@ -734,21 +769,22 @@ func TestEditsSurviveAThemeReapply(t *testing.T) {
 	// …and a DIFFERENT theme correctly loses it: the document is about one theme.
 	prefs.SetTheme("somethingelse", "")
 	fresh := theme.NewSidecar()
-	a.elemBake.themeSidecar = fresh
+	a.themeSidecar = fresh
 	a.reclaimThemeDoc()
-	if a.elemBake.themeSidecar != fresh {
+	if a.themeSidecar != fresh {
 		t.Error("the reclaim pasted the old theme's document over a DIFFERENT theme")
 	}
 }
 
 // openThemeEditorForTest is openThemeEditor without the overlay teardown, which
 // needs a renderer. It exists so this file's gates run headlessly.
+//
 // It calls the PRODUCTION arm (armThemeEditor) rather than restating it: a helper
 // that built the editor its own way would be a second construction path, and the
 // half it forgot — the document's binding to the applied design map — is exactly
 // the kind of thing that then only fails on a real screen.
 func (a *App) openThemeEditorForTest(from Screen) bool {
-	if a.elemBake.themeSidecar == nil {
+	if a.themeSidecar == nil {
 		return false
 	}
 	return a.armThemeEditor(from)
@@ -758,7 +794,7 @@ func (a *App) openThemeEditorForTest(from Screen) bool {
 // this wave: with the editor shut, the client carries ONE nil pointer and nothing
 // else — no allocation, no goroutine, no per-frame work. Benchmarked, not asserted.
 func TestClosedThemeEditorCostsNothing(t *testing.T) {
-	a := &App{env: env{}}
+	a := &App{}
 	probe := func() {
 		_ = a.themeEditorOpen()
 		a.reclaimThemeDoc()

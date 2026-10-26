@@ -16,9 +16,11 @@ import (
 // "installed". This complements the post-self-update modal (update_ui.go), which
 // fetches only the LATEST release's notes from GitHub — this screen is the
 // always-available history, opened on demand from the lobby top bar.
+//
 // Rendering mirrors drawAbout: the markdown is reflowed to the column width and
 // cached by width (a.changelogFlat / a.changelogFlatW), so the wrap runs only on
 // a resize, never per frame — the page is off the hot path, but this repo keeps
+// every UI draw allocation-free.
 
 //go:embed assets/CHANGELOG.md
 var changelogMD string
@@ -113,9 +115,13 @@ func changelogHeaderMatches(title, cur string) bool {
 
 // markChangelogSeen records the current build version as seen — called when the
 // user opens the What's New screen.
+//
 // Nothing displays "unread" any more. The green dot this stamp used to drive rode
 // the Help title in the menu bar, where it read as a defect in the strip rather
 // than as a notification (it overlapped the title's last glyph) and nagged about
+// something the user had not asked to be told. The stamp is kept because it is
+// the only record of which release notes a user has actually seen, and a future
+// notification would need it; it costs one preference write per changelog open.
 func (a *App) markChangelogSeen() {
 	{
 		pv1 := strings.TrimSpace(update.Version)
@@ -161,29 +167,29 @@ func (a *App) drawChangelog(w, h int32) {
 
 	// Reflow only when the column width changes (kept alloc-free per frame per
 	// this repo's UI bar, exactly like drawAbout).
-	if a.docs.changelogFlat == nil || a.docs.changelogFlatW != colW {
-		a.docs.changelogFlat = a.buildChangelogFlat(c, colW)
-		a.docs.changelogFlatW = colW
+	if a.changelogFlat == nil || a.changelogFlatW != colW {
+		a.changelogFlat = a.buildChangelogFlat(c, colW)
+		a.changelogFlatW = colW
 	}
 
 	lineH := int32(c.font.Height()) + 4
 	contentH := int32(0)
-	for _, fl := range a.docs.changelogFlat {
+	for _, fl := range a.changelogFlat {
 		contentH += fl.gap + lineH
 	}
 	contentH += pad
 
-	a.docs.changelogScroll -= c.WheelIn(sdl.Rect{X: 0, Y: top, W: w, H: viewH}) * scrollStepPx
+	a.changelogScroll -= c.WheelIn(sdl.Rect{X: 0, Y: top, W: w, H: viewH}) * scrollStepPx
 	// A draggable scrollbar on the right for fast up/down navigation of a long history.
 	track := sdl.Rect{X: w - scrollBarW - pad, Y: top, W: scrollBarW, H: viewH}
-	a.docs.changelogScroll = c.VScrollbar("changelogbar", track, a.docs.changelogScroll, contentH, viewH)
+	a.changelogScroll = c.VScrollbar("changelogbar", track, a.changelogScroll, contentH, viewH)
 
 	clip := sdl.Rect{X: 0, Y: top, W: w, H: viewH}
 	_ = c.Ren.SetClipRect(&clip)
 	defer func() { _ = c.Ren.SetClipRect(nil) }()
 
-	y := top - a.docs.changelogScroll
-	for _, fl := range a.docs.changelogFlat {
+	y := top - a.changelogScroll
+	for _, fl := range a.changelogFlat {
 		y += fl.gap
 		if y+lineH > top && y < top+viewH { // skip lines scrolled out of view
 			c.Label(x0+fl.indent, y, fl.text, fl.col)

@@ -10,11 +10,11 @@ import (
 // members, a group message implicitly adds its sender, only the OWNER can kick, and
 // being kicked drops the group locally.
 func TestGroupStateMachine(t *testing.T) {
-	a := &App{env: env{}}
-	a.link.sess = &courtroom.Session{PlayerID: 7} // me = uid 7
+	a := &App{}
+	a.sess = &courtroom.Session{PlayerID: 7} // me = uid 7
 
 	a.applyGroupInvite(100, "Squad", 3, "Owner")
-	g := a.msgs.msgGroups[100]
+	g := a.msgGroups[100]
 	if g == nil || g.ownerUID != 3 || !g.hasMember(3) || !g.hasMember(7) {
 		t.Fatalf("invite didn't set up the group: %+v", g)
 	}
@@ -35,7 +35,7 @@ func TestGroupStateMachine(t *testing.T) {
 	}
 
 	a.applyGroupKick(100, 3, 7) // the owner kicks ME → group dropped locally
-	if _, ok := a.msgs.msgGroups[100]; ok {
+	if _, ok := a.msgGroups[100]; ok {
 		t.Error("being kicked should drop the group locally")
 	}
 }
@@ -43,10 +43,10 @@ func TestGroupStateMachine(t *testing.T) {
 // TestGroupTextUnknownIgnored: a group message for a group we never got an invite to
 // is ignored (no phantom group created).
 func TestGroupTextUnknownIgnored(t *testing.T) {
-	a := &App{env: env{}}
-	a.link.sess = &courtroom.Session{PlayerID: 7}
+	a := &App{}
+	a.sess = &courtroom.Session{PlayerID: 7}
 	a.applyGroupText(999, 3, "X", "ghost")
-	if len(a.msgs.msgGroups) != 0 {
+	if len(a.msgGroups) != 0 {
 		t.Error("group text for an unknown group must not create one")
 	}
 }

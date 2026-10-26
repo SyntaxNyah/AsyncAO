@@ -215,9 +215,9 @@ func (a *App) drawViewportSizeRow(y int32) int32 {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.ViewportExactW = px })
 		cur = a.d.Prefs.Load().ViewportExactW
 		if cur == 0 {
-			a.client.vpExactBuf = ""
+			a.vpExactBuf = ""
 		} else {
-			a.client.vpExactBuf = strconv.Itoa(cur)
+			a.vpExactBuf = strconv.Itoa(cur)
 		}
 	}
 
@@ -263,10 +263,10 @@ func (a *App) drawViewportSizeRow(y int32) int32 {
 	// Exact-px entry for "specific numbers" (commit on Enter; mirrors the
 	// window-size inputs — no live filtering, Atoi just ignores junk on submit).
 	box := sdl.Rect{X: track.X + track.W + 14, Y: y, W: 64, H: fieldH}
-	next, submitted := c.TextField("vpexactpx", box, a.client.vpExactBuf, "px")
-	a.client.vpExactBuf = next
+	next, submitted := c.TextField("vpexactpx", box, a.vpExactBuf, "px")
+	a.vpExactBuf = next
 	if submitted {
-		if v, err := strconv.Atoi(strings.TrimSpace(a.client.vpExactBuf)); err == nil {
+		if v, err := strconv.Atoi(strings.TrimSpace(a.vpExactBuf)); err == nil {
 			set(v)
 		}
 	}
@@ -460,14 +460,42 @@ const pickFailed = "\x00"
 // from themeCatalogCap, not a second number: the picker and the browser answer
 // the same question about the same directories, and a name in one but not the
 // other is the class of bug where a theme resolves yet cannot be picked.
+// Past it the list stops and the row says so — the themes are still on disk and
+// still load by name, which is what the truncation note tells the user.
+//
+// The +1 is the seed, and it is what makes "same question" true. scanThemeDirs
+// starts the list with the built-in "default" NAME before it reads a single
+// directory (theme.Load falls back to it even when no themes/ folder exists),
+// while the catalog counts directories only. At a plain themeCatalogCap the seed
+// would spend a directory's slot: a machine with exactly themeCatalogCap real
+// themes got 128 catalog entries and 127 picker rows — one theme the browser
+// lists and the dropdown cannot reach, i.e. precisely the bug above.
 const themePickerCap = themeCatalogCap + 1 // +1: the "default" seed is a name, not a directory
 
 // scanThemeDirs collects theme names across roots, "default" always first
 // (the built-in fallback theme.Load uses even when no folder exists). BLOCKING
 // (os.ReadDir per root) — goroutine only, never a draw path.
+//
 // pick is the bare-folder import normalizeThemeRoot just resolved (#21). It has
+// no themes/ parent, so the ReadDir below can never find it; without appending
+// it the theme applies once and then vanishes from the dropdown, and stepping
+// the ◀ ▶ arrows would walk off it with no way back. It is appended even at the
+// cap — a theme the user just picked must never be the one entry the bound drops,
+// or the pick becomes unreachable the moment it is made.
+//
 // Dedup keys on the FOLDED name, matching the catalog scan: on Windows and macOS
+// "Nocturne" and "nocturne" are one directory, and keying case-sensitively listed
+// it twice in the dropdown while the catalog held one entry for it. The name kept
+// is the first spelling seen, which is the one the first root actually holds.
+//
+// On a case-SENSITIVE filesystem (Linux) those are two real directories, and
+// folding costs the second SPELLING ENCOUNTERED its dropdown row (root order,
+// then directory order, decides which). That is deliberate, not an oversight:
+// the catalog scan folds too
+// (themecatalog.go), so the picker and the browser stay one list, and the price
+// is paid by a collection that keeps two themes whose names differ only in case.
 // The hidden one is not lost — theme.Load takes the name as spelled, so a
+// preferences file or a drag-and-drop import still resolves it.
 func scanThemeDirs(roots []string, pick string) []string {
 	names := []string{theme.DefaultThemeName}
 	seen := map[string]bool{strings.ToLower(theme.DefaultThemeName): true}

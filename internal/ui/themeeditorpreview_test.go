@@ -1,6 +1,16 @@
 package ui
 
 // THE THEME EDITOR'S PREVIEW, DRIVEN (field batch 9).
+//
+// Every gate here goes through the REAL frame (frameharness_test.go) and the real
+// input path: the button is pressed at the pixels drawEditorHeader publishes, Esc
+// arrives as a key on Ctx, and the demo is advanced by App.Frame rather than by
+// calling driveEditorPreview. That is deliberate — the wiring is what this feature
+// IS. A preview whose drive case were deleted from App.Frame's scene switch, whose
+// Esc rung were deleted from app.go's ladder, or whose draw arm were deleted from
+// drawThemeEditor would still have a perfectly working editorPreview type, and a
+// gate that called those functions itself would never notice.
+//
 // Rule 11's encapsulation gates are at the bottom: one construction site, one door
 // out, and a call-site census that fails if the seam is unwired anywhere.
 
@@ -64,6 +74,7 @@ func pressEscFrame(a *App) {
 
 // TestPreviewButtonIsWideLabelledAndBesideShare pins requirement 1: a PROMINENT
 // control, not a small toggle, in the band that already carries Save and Share.
+//
 // The three properties are pinned together because each one alone is satisfiable
 // by the thing the brief refused: a wide button somewhere else, a narrow button
 // beside Share, or a labelled control that is not a button at all.
@@ -127,6 +138,7 @@ func TestTheHeaderRowKeepsItsExistingSlots(t *testing.T) {
 // TestPreviewDemoDrivesTheRealCourtroomPainters pins requirement 3: the demo is
 // the real typewriter, the real showname plate, the real music banner and the real
 // IC log, not a mock renderer.
+//
 // The typewriter assertion is the load-bearing one: VisibleRunes is what the
 // chatbox painter reveals, it is strictly between "nothing" and "everything" while
 // the line crawls, and it only moves because App.Frame advanced the demo room.
@@ -136,7 +148,7 @@ func TestPreviewDemoDrivesTheRealCourtroomPainters(t *testing.T) {
 	driveFrame(a)
 	enterPreviewByButton(t, a)
 
-	sc := &a.te.preview.state.link.room.Scene
+	sc := &a.te.preview.state.room.Scene
 	if sc.VisibleRunes != 0 {
 		t.Fatalf("the demo revealed %d runes before a single frame was driven — the crawl is not the typewriter's",
 			sc.VisibleRunes)
@@ -159,12 +171,12 @@ func TestPreviewDemoDrivesTheRealCourtroomPainters(t *testing.T) {
 	if sc.MusicTrack != editorPreviewTrack {
 		t.Errorf("the music banner is playing %q, want the canned title %q", sc.MusicTrack, editorPreviewTrack)
 	}
-	if got := len(a.te.preview.state.chatlog.icLog); got != len(editorPreviewLog) {
+	if got := len(a.te.preview.state.icLog); got != len(editorPreviewLog) {
 		t.Errorf("the demo's IC scrollback holds %d rows, want the canned %d", got, len(editorPreviewLog))
 	}
 	// The LIVE session's own log is untouched: the demo appended into its own
 	// sessionState, which is the whole point of the swap.
-	if strings.Contains(strings.Join(icLogTexts(a.chatlog.icLog), "\n"), editorPreviewLog[0].line) {
+	if strings.Contains(strings.Join(icLogTexts(a.icLog), "\n"), editorPreviewLog[0].line) {
 		t.Error("a canned demo line landed in the LIVE session's IC log — the pass leaked out of the demo state")
 	}
 }
@@ -216,15 +228,15 @@ func stageThemePageForTest(t *testing.T, a *App, stem string) {
 	if err := a.d.Store.Upload(themeTexKey(stem), dec); err != nil {
 		t.Fatalf("upload theme://%s: %v", stem, err)
 	}
-	if a.skin.themeTex == nil {
-		a.skin.themeTex = map[string]bool{}
+	if a.themeTex == nil {
+		a.themeTex = map[string]bool{}
 	}
 	if a.themePages == nil {
 		// The per-stem page cache the apply mints; a hand-built fixture never runs
 		// that path, and themePage writes into it unconditionally.
 		a.themePages = map[string]*render.TexturePage{}
 	}
-	a.skin.themeTex[stem] = true
+	a.themeTex[stem] = true
 }
 
 // ---------------------------------------------------------------------------
@@ -233,6 +245,7 @@ func stageThemePageForTest(t *testing.T, a *App, stem string) {
 
 // countingFetcher is the canary: an assets.Fetcher that records every probe the
 // manager makes of its byte source and forwards nothing.
+//
 // A COUNTER AND NOT A LOG, because what is being asserted is a zero. It answers
 // every URL with a conclusive miss so a demo that DID probe would be counted once
 // per URL rather than blocking.
@@ -246,6 +259,7 @@ func (f *countingFetcher) Fetch(_ context.Context, _ string) ([]byte, error) {
 // TestEditorPreviewProbesNothing pins requirement 4: a driven demo must not put a
 // single probe on the fetch path. No character art, no background, no desk, no
 // blip file, no music stream — nothing.
+//
 // The manager is rebuilt around the canary so the count is the WHOLE truth for
 // this App, and the demo is driven long enough to rest and play its line a second
 // time, because a loop that re-staged the message would re-run the prefetch fan-out
@@ -263,7 +277,7 @@ func TestEditorPreviewProbesNothing(t *testing.T) {
 		t.Fatal("the demo left on its own — the gate measured the wrong thing")
 	}
 	// It really did loop, so the prefetch fan-out really did run more than once.
-	if a.te.preview.state.link.room.Scene.VisibleRunes == 0 {
+	if a.te.preview.state.room.Scene.VisibleRunes == 0 {
 		t.Fatal("the demo never revealed a rune — nothing was driven, so zero probes proves nothing")
 	}
 	if got := canary.n.Load() - before; got != 0 {
@@ -349,13 +363,13 @@ func TestEditorPreviewRidesAndReleasesThePacingCensus(t *testing.T) {
 	driveFrame(a)
 	enterPreviewByButton(t, a)
 	driveFrames(a, 3)
-	if !a.frame.drawnAnimChrome {
+	if !a.drawnAnimChrome {
 		t.Fatal("a driven demo does not mark the pacing census — the crawl would be paced at the idle rate")
 	}
 	pressEscFrame(a)
 	// One more frame so the exit's own frame cannot be the one being read.
 	driveFrames(a, 2)
-	if a.frame.drawnAnimChrome {
+	if a.drawnAnimChrome {
 		t.Error("the census is still marked after leaving the demo — the editor would hold the active cap " +
 			"forever on a screen where a still theme is a still picture")
 	}
@@ -378,7 +392,7 @@ func TestReduceMotionFreezesTheEditorPreview(t *testing.T) {
 	defer a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 
 	enterPreviewByButton(t, a)
-	sc := &a.te.preview.state.link.room.Scene
+	sc := &a.te.preview.state.room.Scene
 	if sc.ShownameText != editorPreviewShowname || sc.MusicTrack != editorPreviewTrack {
 		t.Fatal("the frozen demo staged nothing — reduce motion must still show the theme, just still")
 	}
@@ -387,7 +401,7 @@ func TestReduceMotionFreezesTheEditorPreview(t *testing.T) {
 		t.Errorf("the typewriter advanced to %d runes under reduce motion — the demo is a self-driven "+
 			"animation the user asked not to have", sc.VisibleRunes)
 	}
-	if a.frame.drawnAnimChrome {
+	if a.drawnAnimChrome {
 		t.Error("a frozen demo still marks the pacing census — nothing is moving for it to pace")
 	}
 }
@@ -400,6 +414,7 @@ func TestReduceMotionFreezesTheEditorPreview(t *testing.T) {
 // the button are the same door (exitEditorPreview), and both must put the
 // selection back — a preview that silently deselected your work would be an
 // expensive button to press.
+//
 // The Esc half also pins the RUNG ORDER: the press must be eaten by the preview
 // and must not fall through to the editor's own ladder, which would arm the
 // discard chip (or leave the editor) on a document the user cannot even see.
@@ -418,7 +433,7 @@ func TestBothDoorsLeavePreviewWithTheSelectionRestored(t *testing.T) {
 			a, cleanup := stageEditorApp(t)
 			defer cleanup()
 			driveFrame(a)
-			tgt := elementTarget(len(a.elemBake.themeSidecar.Elements) - 1)
+			tgt := elementTarget(len(a.themeSidecar.Elements) - 1)
 			a.te.selectOnly(tgt)
 			enterPreviewByButton(t, a)
 			if a.te.selN != 0 {
@@ -456,6 +471,7 @@ func TestBothDoorsLeavePreviewWithTheSelectionRestored(t *testing.T) {
 // with nothing faked: startThemeCreateFromTemplate(templateBlank, …) is the
 // Settings row's own call, pollThemeCreate lands it from inside App.Frame, and the
 // editor arms itself over the applied theme. Only then is Preview pressed.
+//
 // It is the case most likely to break, because a blank theme has NO
 // courtroom_design.ini: the courtroom falls to the classic layout, and a demo that
 // only worked over themed geometry would look perfect in every other gate here.
@@ -473,10 +489,10 @@ func TestBlankThemeFromTheRealNewFlowCanPreview(t *testing.T) {
 		t.Fatal("startThemeCreate refused the blank theme — the real New-theme flow is unreachable from this fixture")
 	}
 	// REAL FRAMES land it: pollThemeCreate is App.Frame's own call.
-	for i := 0; i < frameHarnessApplyFrames && a.skin.themeCreate != nil; i++ {
+	for i := 0; i < frameHarnessApplyFrames && a.themeCreate != nil; i++ {
 		driveFrame(a)
 	}
-	if a.skin.themeCreate != nil {
+	if a.themeCreate != nil {
 		t.Fatal("the create never landed")
 	}
 	// The landing applies the theme and arms the editor; drive until it is open.
@@ -486,9 +502,9 @@ func TestBlankThemeFromTheRealNewFlowCanPreview(t *testing.T) {
 	if a.te == nil {
 		t.Fatal("the real New-theme flow did not open the editor over the theme it just created")
 	}
-	if len(a.elemBake.themeSidecar.Elements) != 0 {
+	if len(a.themeSidecar.Elements) != 0 {
 		t.Fatalf("the created theme carries %d elements — this is meant to be the BLANK template",
-			len(a.elemBake.themeSidecar.Elements))
+			len(a.themeSidecar.Elements))
 	}
 
 	enterPreviewByButton(t, a)
@@ -496,7 +512,7 @@ func TestBlankThemeFromTheRealNewFlowCanPreview(t *testing.T) {
 	if !a.editorPreviewOn() {
 		t.Fatal("the demo left on its own over a blank theme")
 	}
-	sceneNow := &a.te.preview.state.link.room.Scene
+	sceneNow := &a.te.preview.state.room.Scene
 	if sceneNow.VisibleRunes <= 0 {
 		t.Error("the demo never crawled a rune over a brand-new blank theme — the scene is not playing")
 	}
@@ -512,16 +528,21 @@ func TestBlankThemeFromTheRealNewFlowCanPreview(t *testing.T) {
 // temp folder: the catalog snapshot startThemeCreate reads to decide where this
 // install may write, and the preferences' custom theme root the subsequent apply
 // resolves the new folder under.
+//
+// Nothing about the create is faked — the funnel, the goroutine, themepack's own
+// CreateFromSidecar, the landing and the apply all run. What is substituted is a
+// machine fact (where this install's themes live), exactly as editorFixtureCatalog
+// substitutes it for the save gates.
 func seedWritableThemeRootForTest(t *testing.T, a *App) string {
 	t.Helper()
 	root := t.TempDir()
 	name, _ := a.d.Prefs.Load().Theme()
 	a.d.Prefs.SetTheme(name, root)
 	deadline := time.Now().Add(editorGateSaveWait)
-	for a.skin.themeCatBusy.Load() && time.Now().Before(deadline) {
+	for a.themeCatBusy.Load() && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	a.skin.themeCat.Store(&themeCatalog{WriteRoot: root})
+	a.themeCat.Store(&themeCatalog{WriteRoot: root})
 	return root
 }
 
@@ -546,6 +567,7 @@ func themeDocFingerprint(t *testing.T, a *App) string {
 // TestPreviewIgnoresAKeyAndClickStorm pins requirement 9 through the REAL event
 // path: SDL keys and Ctrl chords folded in by Ctx.HandleEvent, text input, and
 // clicks all over the window, every one of them delivered to App.Frame.
+//
 // The chords matter most. Ctrl+Z / Ctrl+Y are claimed PRE-SCREEN (app.go, gated on
 // themeEditorOpen), so they are the one input that reaches the document without
 // passing through any surface the demo hides — a preview that only hid the rails
@@ -618,6 +640,13 @@ func driveKeyFrame(a *App, key sdl.Keycode) {
 
 // TestPreviewRefusesTheMutationFunnelItself drives editorApply — the ONE place the
 // screen mutates the document — while the demo is up.
+//
+// The storm gate above cannot cover this: every input it fires is already stopped
+// at a surface the demo does not draw, so it stays green with the funnel's refusal
+// deleted. The refusal is reachable all the same, by anything that lands from OFF
+// the input path (the intake polls below are exactly that), and it is the last line
+// between "a view state" and "a mode".
+//
 // The second half is what makes the first half mean something: the very same op
 // lands once the demo is left, so what is being pinned is the STATE's refusal and
 // not an op the document would have rejected anyway.
@@ -655,6 +684,13 @@ func TestPreviewRefusesTheMutationFunnelItself(t *testing.T) {
 
 // TestPreviewHoldsAFinishedFontLandingInsteadOfLosingIt is the other side of that
 // refusal, and it is a defect the refusal CREATED.
+//
+// drawThemeEditor runs the poll cluster ABOVE the preview arm on purpose (a save
+// started before Preview must still land), so a face whose copy finishes during the
+// demo was drained by pollEditorFont, refused by the funnel, and chipped as "the
+// [fonts] table is full" — a lost file, a false reason, and a chip drawn nowhere
+// the author could see it. A finished result is deferred, never dropped (hard rule
+// 7's shape): the job waits and the first editing frame after the demo lands it.
 func TestPreviewHoldsAFinishedFontLandingInsteadOfLosingIt(t *testing.T) {
 	a, cleanup, _ := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()
@@ -752,11 +788,18 @@ func TestPreviewHoldsAFinishedImageIntakeInsteadOfLosingIt(t *testing.T) {
 // TestThePreviewPassDoesNotEatThePrimarysCharINI pins beginEditorPreviewPass's
 // pinnedPass, which has nothing to do with drawing and everything to do with a
 // channel.
+//
+// drawCourtroom drains App-WIDE single-consumer channels (pollCharINI), and the
+// pass swaps the SESSION state under it — serverKey included. So a demo pass with
+// pinnedPass down receives the live session's char.ini, finds res.key != a.serverKey
+// (the demo's is empty), and returns: the result is consumed and thrown away, for
+// good, leaving the real courtroom on "Loading emotes…" forever. Hard rule 7's own
+// sentence — results are never dropped or stolen.
 func TestThePreviewPassDoesNotEatThePrimarysCharINI(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()
 	driveFrame(a)
-	if a.link.room == nil || a.link.sess == nil {
+	if a.room == nil || a.sess == nil {
 		t.Skip("the fixture has no live session — there is no primary result for the demo to eat")
 	}
 	if a.charINIres == nil {
@@ -767,14 +810,14 @@ func TestThePreviewPassDoesNotEatThePrimarysCharINI(t *testing.T) {
 	}
 	// A serverKey the demo cannot possibly match, and a result fetched FOR it.
 	const primaryKey = "wss://preview.gate.invalid/ws"
-	a.srvMeta.serverKey = primaryKey
-	a.compose.charINIBusy = true
+	a.serverKey = primaryKey
+	a.charINIBusy = true
 
 	// THE RESULT ARRIVES WHILE THE DEMO IS UP, which is the whole case: the frame
 	// that ENTERS the demo still draws the live courtroom under it (the press lands
 	// mid-frame), and that pass is entitled to the result.
 	enterPreviewByButton(t, a)
-	a.emotepick.emotes = nil
+	a.emotes = nil
 	a.charINIres <- charINIFetch{key: primaryKey, ini: &courtroom.CharINI{
 		Emotes: []courtroom.Emote{{Comment: "pinnedpass", Anim: "pinnedpass", Preanim: "-"}},
 	}}
@@ -784,17 +827,17 @@ func TestThePreviewPassDoesNotEatThePrimarysCharINI(t *testing.T) {
 			"must raise pinnedPass, or every poll drawCourtroom makes on an App-wide channel steals a " +
 			"result that belongs to the live courtroom")
 	}
-	if len(a.emotepick.emotes) != 0 {
-		t.Errorf("the demo pass applied the primary's emote list (%d emotes) to the App", len(a.emotepick.emotes))
+	if len(a.emotes) != 0 {
+		t.Errorf("the demo pass applied the primary's emote list (%d emotes) to the App", len(a.emotes))
 	}
 
 	pressEscFrame(a)
 	driveFrames(a, 3)
-	if len(a.emotepick.emotes) != 1 || a.emotepick.emotes[0].Anim != "pinnedpass" {
+	if len(a.emotes) != 1 || a.emotes[0].Anim != "pinnedpass" {
 		t.Errorf("after the demo the live session holds %d emote(s) (%v), want the char.ini result it was "+
-			"waiting for — a dropped result never comes back", len(a.emotepick.emotes), a.emotepick.emotes)
+			"waiting for — a dropped result never comes back", len(a.emotes), a.emotes)
 	}
-	if a.compose.charINIBusy {
+	if a.charINIBusy {
 		t.Error("the live session is still waiting for a char.ini that has already landed")
 	}
 }
@@ -804,15 +847,23 @@ func TestThePreviewPassDoesNotEatThePrimarysCharINI(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestLeavingPreviewFreesTheDemosChatTextures pins the release half of the swap.
+//
+// The demo draws through the real chatbox painter, so it builds its OWN
+// render.MessageRaster into its own sessionState; endEditorPreviewPass parks it back
+// into the preview, and exitEditorPreview then drops the pointer. Without a Destroy
+// there, every sdl.Texture that raster holds leaks — one raster's worth per Preview
+// press, unbounded across a session, on a 256 MiB budget (hard rule 4). clearSplit
+// already does exactly this for the pinned tab's parked state; the swap was copied
+// from there and the release has to come with it.
 func TestLeavingPreviewFreesTheDemosChatTextures(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()
 	driveFrame(a)
-	live := a.raster.msRaster
+	live := a.msRaster
 
 	enterPreviewByButton(t, a)
 	driveFrames(a, previewDriveFrames)
-	demo := a.te.preview.state.raster.msRaster
+	demo := a.te.preview.state.msRaster
 	if demo == nil {
 		t.Skip("this build's demo pass rasterised no chat text — there is nothing to leak, so the gate " +
 			"would pass for the wrong reason")
@@ -906,6 +957,7 @@ func decodedPixelForTest() *assets.Decoded {
 
 // TestEditorPreviewHasExactlyOneConstructionSite is the seam's first gate: the
 // preview state may be born in exactly one function.
+//
 // Same shape and same reason as TestRoomConstructionHasExactlyOneCallSite: a state
 // that can be constructed two ways will one day be constructed half-wired — this
 // one owns an offline session, a room, the viewport's callbacks, a saved selection

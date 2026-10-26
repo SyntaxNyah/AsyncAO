@@ -4,6 +4,17 @@ package ui
 // is never the session origin, so its host is never format-seeded, and the
 // zero-fallback probe walks the single default format against a server whose
 // sprites are e.g. .gif/.png → "everything missing" + an empty exported stage.
+//
+// These tests pin the two-part fix:
+//   1. ORIGIN SEEDING: the content report seeds <origin>/extensions.json before
+//      probing, so a manifest-declared format resolves in one probe.
+//   2. FULL-CHAIN PROBE FALLBACK: a host with NO manifest (no learned entry even
+//      after seeding) is probed with the FULL configured chain, so a .png/.gif
+//      server still resolves — and RecordSuccess learns it so a repeat pass is
+//      single-probe. A genuinely absent asset stays missing after the full walk
+//      (honesty preserved).
+//   4. LOCAL MOUNTS: a recording whose origin is a mounted local base resolves
+//      through the mounts in the probe path (AO2-parity).
 
 import (
 	"net/http"
@@ -295,22 +306,22 @@ func TestExportSeedBeforeWarm(t *testing.T) {
 	// Build a seeding-phase export job and fire the seed, exactly as startSceneExport
 	// does after the load lands (no viewport / capture target needed — seeding runs
 	// ahead of both).
-	a.sel.gif = &gifExportJob{}
-	a.sel.gifExporting = true
-	a.startExportSeed(a.sel.gif, origin)
-	if !a.sel.gif.seeding {
+	a.gif = &gifExportJob{}
+	a.gifExporting = true
+	a.startExportSeed(a.gif, origin)
+	if !a.gif.seeding {
 		t.Fatal("startExportSeed did not enter the seeding phase")
 	}
 
 	// Drive the render-thread tick until the seed lands and the phase clears.
-	for i := 0; i < 2000 && a.sel.gif != nil && a.sel.gif.seeding; i++ {
+	for i := 0; i < 2000 && a.gif != nil && a.gif.seeding; i++ {
 		a.tickGifExport()
 		time.Sleep(time.Millisecond)
 	}
-	if a.sel.gif == nil {
+	if a.gif == nil {
 		t.Fatal("export job vanished during seeding")
 	}
-	if a.sel.gif.seeding {
+	if a.gif.seeding {
 		t.Fatal("seeding phase never completed")
 	}
 

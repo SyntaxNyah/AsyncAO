@@ -264,7 +264,7 @@ func (a *App) drawServerHelp(w, h int32) {
 	// Two passes: measure (for the scrollbar), then draw. WrapText is width-memoized,
 	// so the doubled calls are cheap; the catalog is a dozen entries.
 	draw := func(measure bool) int32 {
-		y := top - a.conn.lobby.helpScroll
+		y := top - a.helpScroll
 		para := func(text string, col sdl.Color, x, wrapW int32, maxLines int) {
 			for _, ln := range c.WrapText(text, wrapW, maxLines) {
 				if !measure && y+lineH > top && y < top+view.H {
@@ -344,15 +344,15 @@ func (a *App) drawServerHelp(w, h int32) {
 		}
 		y += lineH / 2
 		para(serverHelpOutro, ColTextDim, x0, colW, 8)
-		return (y + a.conn.lobby.helpScroll) - top // content height
+		return (y + a.helpScroll) - top // content height
 	}
 
 	contentH := draw(true)
 	if !c.ctrlHeld && c.hovering(view) {
-		a.conn.lobby.helpScroll -= c.wheelY * scrollStepPx
+		a.helpScroll -= c.wheelY * scrollStepPx
 	}
 	track := sdl.Rect{X: w - scrollBarW - 4, Y: view.Y, W: scrollBarW, H: view.H}
-	a.conn.lobby.helpScroll = c.VScrollbar("helpscroll", track, a.conn.lobby.helpScroll, contentH, view.H)
+	a.helpScroll = c.VScrollbar("helpscroll", track, a.helpScroll, contentH, view.H)
 	draw(false)
 }
 
@@ -480,9 +480,13 @@ func (a *App) linkLabel(x, y, maxW int32, url string) {
 // can't flood the box. Both scheme-prefixed (http/https) and bare "www." links
 // are recognised — a bare "www.x" keeps its bare display text everywhere and is
 // promoted to https:// only at OPEN time (schemeForOpen).
+//
 // Detection is token-based: strings.Fields splits on whitespace, so a candidate
 // must be a WHOLE token that starts with the prefix after the wrapper/trailing
 // trim. That gives the boundary rule for free: "foo.www.bar" is one token that
+// doesn't START with "www." (no match), "wwwill" has no dot so it isn't the
+// "www." prefix (no match), and a bare "www." trims its trailing "." to "www"
+// (also no match) — only a real "www.<host>…" token matches.
 func extractURLs(s string, max int) []string {
 	var out []string
 	for _, tok := range strings.Fields(s) {
@@ -511,9 +515,13 @@ const (
 // punctuation tails can alternate, so the two trims loop to a fixpoint: that
 // example needs a wrapper pass, a punct pass, then the wrapper pass AGAIN for
 // the ')' the '.' was shielding.
+//
 // It returns the RANGE, not the string, because the OOC link spans need to know
 // WHERE inside the token the link sits (so the highlight covers the link and not
 // its brackets — #38). extractURLs uses it too, so detector and span builder can
+// never disagree about what a link's text is. All four trim sets are ASCII, so
+// byte-wise scanning is exact on valid UTF-8 (a multi-byte rune's bytes are all
+// ≥ 0x80 and appear in neither set).
 func urlTokenRange(tok string) (lo, hi int) {
 	lo, hi = 0, len(tok)
 	for {

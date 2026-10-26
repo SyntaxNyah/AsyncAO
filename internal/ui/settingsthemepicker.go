@@ -90,8 +90,8 @@ func (a *App) drawDownloaderSettings(y, _ int32) int32 {
 			}
 		}
 		y += 30
-		if a.audio.dl.active || len(a.audio.dl.queue) > 0 {
-			status := a.audio.dl.status
+		if a.dl.active || len(a.dl.queue) > 0 {
+			status := a.dl.status
 			pauseLabel := "Pause"
 			if a.dlPaused.Load() {
 				pauseLabel = "Resume"
@@ -105,8 +105,8 @@ func (a *App) drawDownloaderSettings(y, _ int32) int32 {
 				a.cancelDownload()
 			}
 			y += 30
-		} else if a.audio.dl.status != "" {
-			c.LabelClipped(pad+20, y+4, w-pad-40-scrollBarW, a.audio.dl.status, ColTextDim)
+		} else if a.dl.status != "" {
+			c.LabelClipped(pad+20, y+4, w-pad-40-scrollBarW, a.dl.status, ColTextDim)
 			y += 26
 		}
 	}
@@ -177,12 +177,12 @@ func (a *App) drawThemePreview(y int32) int32 {
 	}
 	// Same skin-gated color rule as the live chatbox (readability).
 	nameCol := ColAccent
-	if skinned && a.skin.themeHasName {
-		nameCol = a.skin.themeNameCol
+	if skinned && a.themeHasName {
+		nameCol = a.themeNameCol
 	}
 	msgCol := ColText
-	if skinned && a.skin.themeHasMsg {
-		msgCol = a.skin.themeMsgCol
+	if skinned && a.themeHasMsg {
+		msgCol = a.themeMsgCol
 	}
 	c.Label(prev.X+8, prev.Y+6, "Showname", nameCol)
 	c.Label(prev.X+8, prev.Y+30, "Message text preview.", msgCol)
@@ -206,8 +206,8 @@ func (a *App) drawThemeBindRow(y, _ int32) int32 {
 		return y
 	}
 	cur := 0
-	if settings.themeBindKey == "" && a.srvMeta.serverKey != "" {
-		settings.themeBindKey = a.srvMeta.serverKey
+	if settings.themeBindKey == "" && a.serverKey != "" {
+		settings.themeBindKey = a.serverKey
 	}
 	for i, k := range keys {
 		if k == settings.themeBindKey {
@@ -223,8 +223,8 @@ func (a *App) drawThemeBindRow(y, _ int32) int32 {
 	bound := a.d.Prefs.Load().ServerWarmInfoFor(settings.themeBindKey).Theme
 	if c.Button(sdl.Rect{X: pad + 440, Y: y, W: 150, H: btnH}, "Bind "+clampLine(settings.themeName)) {
 		a.d.Prefs.SetServerTheme(settings.themeBindKey, settings.themeName)
-		if settings.themeBindKey == a.srvMeta.serverKey && a.link.sess != nil {
-			a.srvMeta.themeBound = settings.themeName
+		if settings.themeBindKey == a.serverKey && a.sess != nil {
+			a.themeBound = settings.themeName
 			a.ensureThemeForSession()
 		}
 		settings.statusLine = "Theme " + settings.themeName + " bound — that server always uses it now."
@@ -232,8 +232,8 @@ func (a *App) drawThemeBindRow(y, _ int32) int32 {
 	if bound != "" {
 		if c.Button(sdl.Rect{X: pad + 600, Y: y, W: 90, H: btnH}, "Unbind") {
 			a.d.Prefs.SetServerTheme(settings.themeBindKey, "")
-			if settings.themeBindKey == a.srvMeta.serverKey && a.link.sess != nil {
-				a.srvMeta.themeBound = ""
+			if settings.themeBindKey == a.serverKey && a.sess != nil {
+				a.themeBound = ""
 				a.ensureThemeForSession()
 			}
 			settings.statusLine = "Theme binding removed."
@@ -370,6 +370,12 @@ const (
 // building them concatenates two labels, allocates an options slice and formats
 // the truncation note. Uncached that is four allocations on every frame the Theme
 // tab is up, which is exactly what the settings-text doctrine (see fmtOrderText)
+// exists to keep out.
+//
+// The validity key holds the catalog POINTER: the snapshot is immutable and
+// republished by pointer swap (themecatalog.go), so pointer identity is a
+// complete "did the answer change?" test — nil, the pre-first-scan state,
+// included. Render thread only, like the rest of settingsState.
 type themeRowText struct {
 	valid bool
 	cat   *themeCatalog
@@ -461,9 +467,11 @@ func (r *themeRowText) rebuild(cat *themeCatalog, name, sub string) {
 // to prefer, and — the single most support-load-reducing line in the feature —
 // WHERE the folder is that this client writes themes into, with a button that
 // opens it.
+//
 // Every value here comes from an atomic snapshot (themecatalog.go). Nothing in
 // this function touches the disk: "Open folder" and the scans are the only disk
 // work and both are goroutines (hard rule 2). Nothing here builds a string
+// either — every one of them comes from the themeRowText memo.
 func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // the settings-origin shadow rule: without this the row draws under the sidebar
@@ -538,9 +546,15 @@ func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 	// folder to drop. That corpus has been retired, so the row now answers the
 	// same dead end with the one thing the repository can still give a theme
 	// author: the format reference.
+	//
 	// It STAYS rather than being deleted along with the corpus, because the
 	// question it exists for — "I have none, where do these come from?" — is
 	// exactly as real when the answer is "you write one". There is deliberately no
+	// count and no download instruction left in it.
+	//
+	// ABOVE the write root deliberately: this row draws even on the arm where the
+	// write root could not be resolved at all — the case where a user needs to
+	// know where themes come from MOST.
 	if c.onRow != nil {
 		c.onRow("Get themes", y)
 	}
@@ -640,6 +654,17 @@ func (r *themeArtBarText) refresh(bytes, budget int64, images, gens int) {
 
 // drawThemeArtBudgetRow is design §Q2's budget bar: what the active theme's own art
 // is spending, out of what, permanently visible.
+//
+// PERMANENT, not shown-at-the-cap, and that is the whole design of it. A pinned
+// tier has no eviction — by construction, because eviction is the black-flash defect
+// UploadPinned exists to prevent — so the ONLY thing standing between a heavy theme
+// and a starved streaming cache is the user being able to see the number before
+// they hit it. A bar that appeared only once the budget was gone would name the
+// problem at the exact moment it was too late to avoid.
+//
+// Zero art draws it too: with no native theme applied the row reads
+// "0.0 MiB / 24.0 MiB", which is also where somebody finds out the feature exists.
+//
 // Both numbers come from internal/render by CALL — the store's live ledger and
 // ThemeMediaByteCap — never from a copy on this side, so the bar cannot quote a
 // budget the admission gate is not using.
@@ -696,7 +721,17 @@ func (a *App) drawThemeArtBudgetRow(y, w int32) int32 {
 // theme dropdown and for cycleTheme's ◀ ▶, so a root the loader searches and this
 // one does not is a theme that resolves by name yet cannot be picked (the bug
 // on every non-portable install). TestThemePickerAndLoaderSearchTheSameRoots.
+//
+// fromUser distinguishes a scan the user asked for from the Settings screen's
+// automatic first-open scan — see themeScan.fromUser.
+//
+// The intent is latched BEFORE the single-flight bail, so a request that arrives
+// while a scan is already running is not lost. Otherwise the in-flight scan
+// (typically the automatic first-open one) re-applies the theme with fromUser
 // false and the user's #35 auto-snap goes with no trace — see
+// settingsState.themeScanUserWant. The latch alone is not enough when the
+// dropped request also changed the theme FOLDER: that scan's answer is about the
+// old folder, so pollThemeScan re-issues it rather than re-labelling it.
 func (a *App) scanThemes(fromUser bool) {
 	if fromUser {
 		settings.themeScanUserWant = true
@@ -726,9 +761,14 @@ func (a *App) pollThemeScan() {
 		// root would be written back over the folder the user just picked (below),
 		// and the latched intent would then arm a window snap for a theme root they
 		// never chose — while the folder they did choose is never scanned at all.
+		// Re-issue the request instead, keeping the latch for the landing that really
+		// answers it.
+		//
 		// It cannot spin: the re-issue is made with the CURRENT folder, so its own
 		// result matches unless the folder changed again, and every change is a fresh
 		// user action; the single-flight also guarantees only one scan is ever in
+		// flight, so no two landings can chase each other. themeBusy is already false
+		// above, so scanThemes issues rather than bailing.
 		if settings.themeScanUserWant && res.in != strings.TrimSpace(settings.themeDir) {
 			a.scanThemes(true)
 			return

@@ -98,8 +98,8 @@ func TestFilterServerIniswaps(t *testing.T) {
 	a.iniRes = make(chan iniswapFetch, 1)
 	a.iniRes <- iniswapFetch{names: names(), bgs: []string{"uminekobeach", "higurashischoolday"}}
 	a.pollIniswap()
-	if len(a.inibrowse.iniServer) != 2 || a.inibrowse.iniServer[0] != "Aigis" || a.inibrowse.iniServer[1] != "Zeta" {
-		t.Fatalf("pollIniswap must drop background names, iniServer = %v", a.inibrowse.iniServer)
+	if len(a.iniServer) != 2 || a.iniServer[0] != "Aigis" || a.iniServer[1] != "Zeta" {
+		t.Fatalf("pollIniswap must drop background names, iniServer = %v", a.iniServer)
 	}
 }
 
@@ -786,12 +786,12 @@ func TestCapLogLine(t *testing.T) {
 // TestICLogStoresLongLine pins that pushIC keeps a long message intact (it now
 // wraps at draw time) instead of truncating at 120 chars.
 func TestICLogStoresLongLine(t *testing.T) {
-	a := &App{env: env{}}
+	a := &App{}
 	msg := "Phoenix: " + strings.Repeat("b", 200) // 209 chars, over the old cap
 	a.pushIC(msg, 0, false, -1, "Phoenix")
-	if a.chatlog.icLog[0].text != msg {
+	if a.icLog[0].text != msg {
 		t.Errorf("IC log cut a %d-rune line to %d (must wrap, not truncate)",
-			len([]rune(msg)), len([]rune(a.chatlog.icLog[0].text)))
+			len([]rune(msg)), len([]rune(a.icLog[0].text)))
 	}
 }
 
@@ -828,7 +828,7 @@ func TestParseHexColor(t *testing.T) {
 // TestICLogFilterCache pins the per-frame filter cache: stable while
 // nothing changed, invalidated by pushes and query edits.
 func TestICLogFilterCache(t *testing.T) {
-	a := &App{env: env{}}
+	a := &App{}
 	a.pushIC("Phoenix: hello court", 0, false, -1, "Phoenix")
 	a.pushIC("Edgeworth: OBJECTION", 2, false, -1, "Edgeworth")
 
@@ -839,7 +839,7 @@ func TestICLogFilterCache(t *testing.T) {
 	if again := a.icLogFiltered(); &again[0] != &first[0] {
 		t.Error("cache not reused on unchanged input")
 	}
-	a.chatlog.logSearch = "objection"
+	a.logSearch = "objection"
 	if got := a.icLogFiltered(); len(got) != 1 || got[0] != 1 {
 		t.Errorf("query filter = %v, want [1]", got)
 	}
@@ -853,33 +853,33 @@ func TestICLogFilterCache(t *testing.T) {
 // a showname filter keeps only that speaker and a pos filter keeps only that
 // position, both inclusive and stackable on top of the text search.
 func TestICLogFilterShownamePos(t *testing.T) {
-	a := &App{env: env{}}
+	a := &App{}
 	a.pushIC("Phoenix: hello court", 0, false, -1, "Phoenix")
 	a.pushIC("Edgeworth: OBJECTION", 2, false, -1, "Edgeworth")
 	a.pushIC("Judge: order in the court", 3, false, -1, "Judge")
-	a.chatlog.icLog[0].pos = "def"
-	a.chatlog.icLog[1].pos = "pro"
-	a.chatlog.icLog[2].pos = "jud"
+	a.icLog[0].pos = "def"
+	a.icLog[1].pos = "pro"
+	a.icLog[2].pos = "jud"
 
 	// No filter: all three.
 	if got := a.icLogFiltered(); len(got) != 3 {
 		t.Fatalf("unfiltered = %d, want 3", len(got))
 	}
 	// Showname only: Edgeworth.
-	a.chatlog.logFilterShowname = "edgeworth"
+	a.logFilterShowname = "edgeworth"
 	if got := a.icLogFiltered(); len(got) != 1 || got[0] != 1 {
 		t.Errorf("showname filter = %v, want [1]", got)
 	}
 	// Pos only: the judge.
-	a.chatlog.logFilterShowname = ""
-	a.chatlog.logFilterPos = "jud"
+	a.logFilterShowname = ""
+	a.logFilterPos = "jud"
 	if got := a.icLogFiltered(); len(got) != 1 || got[0] != 2 {
 		t.Errorf("pos filter = %v, want [2]", got)
 	}
 	// Showname + pos + text stack: Edgeworth's OBJECTION from the pro position.
-	a.chatlog.logFilterShowname = "edgeworth"
-	a.chatlog.logFilterPos = "pro"
-	a.chatlog.logSearch = "objection"
+	a.logFilterShowname = "edgeworth"
+	a.logFilterPos = "pro"
+	a.logSearch = "objection"
 	if got := a.icLogFiltered(); len(got) != 1 || got[0] != 1 {
 		t.Errorf("stacked filter = %v, want [1]", got)
 	}

@@ -113,18 +113,18 @@ func TestChromeToggleDefaultsAvoidTheTakenSpace(t *testing.T) {
 // be useless if it gave no feedback about which way it went.
 func TestChromeToggleFlipsAndReports(t *testing.T) {
 	a := testTabApp(t)
-	if a.classic.panelHidden(panelToolbox) {
+	if a.panelHidden(panelToolbox) {
 		t.Fatal("the toolbox starts hidden in this fixture; the test assumes shown")
 	}
 	a.toggleChromePanel(panelToolbox, "Toolbox")
-	if !a.classic.panelHidden(panelToolbox) {
+	if !a.panelHidden(panelToolbox) {
 		t.Fatal("the toggle did not hide the toolbox")
 	}
 	if !strings.Contains(a.warnLine, "hidden") {
 		t.Errorf("no feedback after hiding: %q", a.warnLine)
 	}
 	a.toggleChromePanel(panelToolbox, "Toolbox")
-	if a.classic.panelHidden(panelToolbox) {
+	if a.panelHidden(panelToolbox) {
 		t.Fatal("the toggle did not bring the toolbox back")
 	}
 	if !strings.Contains(a.warnLine, "shown") {
@@ -171,13 +171,13 @@ func TestEveryBuiltInRowIsRebindableFromTheSheet(t *testing.T) {
 // sheet-side rebinding was added to remove.
 func TestHotkeyCaptureCompletesOutsideSettings(t *testing.T) {
 	a := testTabApp(t)
-	a.courtkeys.hkCapture = hotkeyToggleToolbox
-	a.courtkeys.hkCache = a.hotkeyCheatEntries()
+	a.hkCapture = hotkeyToggleToolbox
+	a.hkCache = a.hotkeyCheatEntries()
 	a.ctx.keyPressed = sdl.K_F9
 
 	a.consumeHotkeyCapture()
 
-	if a.courtkeys.hkCapture != "" {
+	if a.hkCapture != "" {
 		t.Error("the capture never completed — the row would stay armed forever")
 	}
 	if got := a.hotkeyFor(hotkeyToggleToolbox); got != "f9" {
@@ -186,16 +186,16 @@ func TestHotkeyCaptureCompletesOutsideSettings(t *testing.T) {
 	if a.ctx.keyPressed != 0 {
 		t.Error("the captured key was not consumed; it would also fire whatever else it is bound to")
 	}
-	if a.courtkeys.hkCache != nil {
+	if a.hkCache != nil {
 		t.Error("the sheet's cached rows survived a rebind — it would keep showing the old key")
 	}
 
 	// Esc cancels without binding anything.
-	a.courtkeys.hkCapture = hotkeyToggleMenuBar
+	a.hkCapture = hotkeyToggleMenuBar
 	before := a.hotkeyFor(hotkeyToggleMenuBar)
 	a.ctx.keyPressed = sdl.K_ESCAPE
 	a.consumeHotkeyCapture()
-	if a.courtkeys.hkCapture != "" {
+	if a.hkCapture != "" {
 		t.Error("Esc did not disarm the capture")
 	}
 	if got := a.hotkeyFor(hotkeyToggleMenuBar); got != before {
@@ -210,12 +210,12 @@ func TestHotkeyCaptureCompletesOutsideSettings(t *testing.T) {
 func TestChromeToggleCannotStrandYou(t *testing.T) {
 	a := testTabApp(t)
 	// Hide every lifeline but the last, the way a determined user would.
-	a.classic.setPanelHiddenGuarded(&a.env, ctrlSettingsSlot, true)
-	a.classic.setPanelHiddenGuarded(&a.env, panelToolbox, true)
+	a.setPanelHiddenGuarded(ctrlSettingsSlot, true)
+	a.setPanelHiddenGuarded(panelToolbox, true)
 	a.warnLine = ""
 
 	a.toggleChromePanel(panelMenuBar, "Menu bar")
-	if a.classic.panelHidden(panelMenuBar) {
+	if a.panelHidden(panelMenuBar) {
 		t.Error("the hotkey hid the LAST mouse lifeline — there would be no way back to the controls")
 	}
 	if a.warnLine == "" {

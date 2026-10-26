@@ -3,7 +3,21 @@ package ui
 // Macro engine + built-in server account login. The login is for ANY
 // /login account system — member perks, donator ranks, mod powers alike
 // — not just staff auth.
+//
 // A macro is a sequence of OOC lines sent in order with a fixed pace
+// (macroLineDelay) — enough for prompt-style flows like Akashi's
+// two-step login ("/login" → server prompts → "user pass"). Lines go
+// out through the normal OOC send with the user's OOC name, falling
+// back to a sticky random "AsyncAO<1-200>" when none is set (servers
+// reject empty OOC names; commands and macros must always be sendable).
+//
+// The built-in login knows the two wire shapes in the wild:
+//   - Akashi:                       "/login" then "<user> <pass>"
+//     (the credential line answers Akashi's prompt and is NOT echoed
+//     into OOC by the server, so nothing leaks)
+//   - Nyathena/KFO/Athena/Whisker:  "/login <user> <pass>"
+// The flow picks itself from the server software announced in the ID
+// handshake; unknown servers get the one-line form (the common wire).
 
 import (
 	"fmt"
@@ -25,6 +39,17 @@ const (
 	macroQueueCap = 32
 	// oocSendMinGap is the HARD floor between two automated OOC sends, enforced
 	// at drain time so a backlog can never leave as a burst.
+	//
+	// Servers flood-guard OOC per IP and KICK on breach, and the kick arrives as
+	// a bare close with no reason: Nyathena's pktOOC calls checkIPOOCRateLimit
+	// (ooc_rate_limit, commonly 4 per second) and CheckRateLimit
+	// (message_rate_limit, commonly 10 per 7 s ≈ 1.4/s) and on either breach runs
+	// KickForRateLimit, which queues its explanation ASYNCHRONOUSLY but closes
+	// SYNCHRONOUSLY — so the reason races off the wire and the client only sees
+	// the socket shut. One second keeps us under the tighter message_rate_limit
+	// even while draining a full queue back-to-back, and still lets a login macro
+	// finish quickly. Deliberately slower than macroLineDelay: being kicked is far
+	// worse than a macro taking an extra beat.
 	oocSendMinGap = time.Second
 	// defaultOOCNameRange is the N in the "AsyncAO<N>" fallback name.
 	defaultOOCNameRange = 200
@@ -52,25 +77,25 @@ func (a *App) defaultOOCName() string {
 // the user's name when set, else a sticky random AsyncAO<1-200> minted
 // once per run (so one session keeps one identity).
 func (a *App) oocNameOrDefault() string {
-	if n := strings.TrimSpace(a.compose.oocName); n != "" {
+	if n := strings.TrimSpace(a.oocName); n != "" {
 		return n
 	}
-	if a.budget.defaultOOC == "" {
-		a.budget.defaultOOC = fmt.Sprintf("AsyncAO%d", 1+rand.IntN(defaultOOCNameRange))
+	if a.defaultOOC == "" {
+		a.defaultOOC = fmt.Sprintf("AsyncAO%d", 1+rand.IntN(defaultOOCNameRange))
 	}
-	return a.budget.defaultOOC
+	return a.defaultOOC
 }
 
 // queueOOCLines schedules lines for paced automated OOC sending (the
 // shared pipeline under the login automation and user macros).
 func (a *App) queueOOCLines(lines []string) {
-	if a.link.sess == nil {
+	if a.sess == nil {
 		return
 	}
 	now := a.now()
 	for i, line := range lines {
 		if len(a.oocQueue) >= macroQueueCap {
-			a.debug.Push("automation queue full — dropping the rest")
+			a.pushDebug("automation queue full — dropping the rest")
 			return
 		}
 		a.oocQueue = append(a.oocQueue, oocSend{
@@ -89,7 +114,7 @@ func (a *App) queueOOCLines(lines []string) {
 // single pass, so a queue that accumulated while the drain was stalled left as
 // one burst and the server kicked us for OOC flooding.
 func (a *App) processOOCQueue() {
-	if len(a.oocQueue) == 0 || a.link.sess == nil {
+	if len(a.oocQueue) == 0 || a.sess == nil {
 		return
 	}
 	now := a.now()
@@ -101,7 +126,7 @@ func (a *App) processOOCQueue() {
 	if a.oocQueue[0].due.After(now) {
 		return // the entry's own schedule hasn't come round yet
 	}
-	a.link.sess.SendOOC(a.oocNameOrDefault(), a.oocQueue[0].line)
+	a.sess.SendOOC(a.oocNameOrDefault(), a.oocQueue[0].line)
 	a.lastAutoOOC = now
 	a.oocQueue = a.oocQueue[:copy(a.oocQueue, a.oocQueue[1:])]
 }
@@ -122,7 +147,7 @@ func (a *App) oocQueuePending(line string) bool {
 // hold credentials — never echo their content).
 func (a *App) runMacro(m config.MacroSpec) {
 	a.queueOOCLines(m.Lines)
-	a.debug.Push(fmt.Sprintf("macro %q: %d line(s) queued", m.Name, len(m.Lines)))
+	a.pushDebug(fmt.Sprintf("macro %q: %d line(s) queued", m.Name, len(m.Lines)))
 }
 
 // handleMacroKeys fires key-bound macros on Alt+<bound key> — the shared
@@ -154,8 +179,8 @@ func (a *App) handleMacroKeys() bool {
 //   - Athena/Nyathena/Whisker/unknown: "/login <user> <pass>"
 func (a *App) loginLines(user, pass string) []string {
 	soft := ""
-	if a.link.sess != nil {
-		soft = strings.ToLower(a.link.sess.Software)
+	if a.sess != nil {
+		soft = strings.ToLower(a.sess.Software)
 	}
 	switch {
 	case strings.Contains(soft, "akashi"):
@@ -170,26 +195,26 @@ func (a *App) loginLines(user, pass string) []string {
 
 // loginNow queues the login flow from the saved credentials.
 func (a *App) loginNow() {
-	info := a.d.Prefs.Load().ServerWarmInfoFor(a.srvMeta.serverKey)
+	info := a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey)
 	if info.LoginUser == "" {
-		a.debug.Push("login: no saved credentials for this server (Login... dialog)")
+		a.pushDebug("login: no saved credentials for this server (Login... dialog)")
 		return
 	}
 	a.queueOOCLines(a.loginLines(info.LoginUser, info.LoginPass))
 	a.loginAt = a.now() // open the callword grace: login replies routinely echo your handle/name
-	a.debug.Push("login: flow queued as " + a.oocNameOrDefault())
+	a.pushDebug("login: flow queued as " + a.oocNameOrDefault())
 }
 
 // loginFlowPreview names the exact wire flow the dialog will use, so the
 // automation explains itself before you trust it with credentials.
 func (a *App) loginFlowPreview() string {
 	soft := "unknown software"
-	if a.link.sess != nil && a.link.sess.Software != "" {
-		soft = a.link.sess.Software
+	if a.sess != nil && a.sess.Software != "" {
+		soft = a.sess.Software
 	}
 	lower := ""
-	if a.link.sess != nil {
-		lower = strings.ToLower(a.link.sess.Software)
+	if a.sess != nil {
+		lower = strings.ToLower(a.sess.Software)
 	}
 	switch {
 	case strings.Contains(lower, "akashi"):
@@ -210,11 +235,11 @@ func (a *App) autoLoginOnReady() {
 	// area changes) — each one re-ran this and re-queued the login, spamming OOC.
 	// The latch clears on a fresh connection (resetSessionState), so a real
 	// reconnect logs in again; a manual loginNow is unaffected (it's not gated).
-	if a.link.autoLoginTried {
+	if a.autoLoginTried {
 		return
 	}
-	a.link.autoLoginTried = true
-	info := a.d.Prefs.Load().ServerWarmInfoFor(a.srvMeta.serverKey)
+	a.autoLoginTried = true
+	info := a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey)
 	if !info.AutoLogin || info.LoginUser == "" {
 		return
 	}
@@ -233,16 +258,16 @@ func (a *App) autoLoginOnReady() {
 	if !a.d.Prefs.Load().StreamerModeOn {
 		line += " as " + info.LoginUser
 	}
-	if a.srvMeta.serverName != "" {
-		line += " on " + a.srvMeta.serverName
+	if a.serverName != "" {
+		line += " on " + a.serverName
 	}
 	a.warnLine = clampLine(line)
 	a.warnAt = time.Now()
 	// A desktop notification too, so a minimized mod still sees it — rate-limited
 	// (shares the friend-toast throttle) so a multi-tab restore-on-launch can't
 	// burst the notification centre with one popup per reconnecting server.
-	if time.Since(a.sel.lastOSToast) >= osToastMinInterval {
-		a.sel.lastOSToast = time.Now()
+	if time.Since(a.lastOSToast) >= osToastMinInterval {
+		a.lastOSToast = time.Now()
 		showOSToast("AsyncAO — auto-login", line)
 	}
 }
@@ -260,10 +285,10 @@ const (
 // loginPanelRect is the panel's screen rect, seeded from its persisted layout slot
 // on first open and clamped on-screen thereafter (the modcallPanelRect idiom).
 func (a *App) loginPanelRect(w, h int32) sdl.Rect {
-	if r, ok := a.classic.seedPanelFromSlot(&a.wins.loginWin, slotPanelLogin, loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, w, h); ok {
+	if r, ok := a.seedPanelFromSlot(&a.loginWin, slotPanelLogin, loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, w, h); ok {
 		return r
 	}
-	return a.wins.loginWin.rect(loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, w, h)
+	return a.loginWin.rect(loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, w, h)
 }
 
 // drawLoginDialog edits this server's credentials (plaintext storage —
@@ -275,7 +300,7 @@ func (a *App) loginPanelRect(w, h int32) sdl.Rect {
 // still see the room you are sending it to.
 func (a *App) drawLoginDialog(w, h int32, pressed *bool) {
 	c := a.ctx
-	wasActive := a.wins.loginWin.dragging || a.wins.loginWin.resizing // detect the drag/resize-end frame for slot persistence
+	wasActive := a.loginWin.dragging || a.loginWin.resizing // detect the drag/resize-end frame for slot persistence
 	panel := a.loginPanelRect(w, h)
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
@@ -286,15 +311,15 @@ func (a *App) drawLoginDialog(w, h int32, pressed *bool) {
 		a.showLogin = false
 		return
 	}
-	a.floatWinDrag(&a.wins.loginWin, sdl.Rect{X: panel.X, Y: panel.Y, W: closeB.X - panel.X - 4, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.loginWin, sdl.Rect{X: panel.X, Y: panel.Y, W: closeB.X - panel.X - 4, H: floatTitleH}, pressed)
 	grip := sdl.Rect{X: panel.X + panel.W - floatGripSz, Y: panel.Y + panel.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.wins.loginWin, grip, panel, loginPanelMinW, loginPanelMinH, pressed)
+	a.floatWinResize(&a.loginWin, grip, panel, loginPanelMinW, loginPanelMinH, pressed)
 	a.drawResizeGrip(grip)
-	if wasActive && !a.wins.loginWin.dragging && !a.wins.loginWin.resizing { // drag/resize just ended → remember where
-		a.classic.persistPanelSlot(&a.env, slotPanelLogin, panel, w, h)
+	if wasActive && !a.loginWin.dragging && !a.loginWin.resizing { // drag/resize just ended → remember where
+		a.persistPanelSlot(slotPanelLogin, panel, w, h)
 	}
 	y := panel.Y + floatTitleH + 8
-	c.LabelClipped(panel.X+pad, y, panel.W-2*pad, a.srvMeta.serverName, ColText)
+	c.LabelClipped(panel.X+pad, y, panel.W-2*pad, a.serverName, ColText)
 	y += 20
 	// The dialog names the exact flow it will run for THIS server's
 	// software — the automation explains itself.
@@ -314,12 +339,12 @@ func (a *App) drawLoginDialog(w, h int32, pressed *bool) {
 	// Clear of the resize grip in the corner (it would otherwise sit on Cancel).
 	by := panel.Y + panel.H - btnH - 18
 	if c.Button(sdl.Rect{X: panel.X + pad, Y: by, W: 130, H: btnH}, "Save & login") {
-		a.d.Prefs.SetServerLogin(a.srvMeta.serverKey, strings.TrimSpace(a.loginUser), a.loginPass, a.loginAuto)
+		a.d.Prefs.SetServerLogin(a.serverKey, strings.TrimSpace(a.loginUser), a.loginPass, a.loginAuto)
 		a.loginNow()
 		a.showLogin = false
 	}
 	if c.Button(sdl.Rect{X: panel.X + pad + 140, Y: by, W: 90, H: btnH}, "Save") {
-		a.d.Prefs.SetServerLogin(a.srvMeta.serverKey, strings.TrimSpace(a.loginUser), a.loginPass, a.loginAuto)
+		a.d.Prefs.SetServerLogin(a.serverKey, strings.TrimSpace(a.loginUser), a.loginPass, a.loginAuto)
 		a.showLogin = false
 	}
 	if c.Button(sdl.Rect{X: panel.X + panel.W - 90 - pad, Y: by, W: 90, H: btnH}, "Cancel") {
@@ -329,7 +354,7 @@ func (a *App) drawLoginDialog(w, h int32, pressed *bool) {
 
 // openLoginDialog loads the saved credentials into the edit buffers.
 func (a *App) openLoginDialog() {
-	info := a.d.Prefs.Load().ServerWarmInfoFor(a.srvMeta.serverKey)
+	info := a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey)
 	a.loginUser, a.loginPass, a.loginAuto = info.LoginUser, info.LoginPass, info.AutoLogin
 	a.showLogin = true
 }
@@ -370,9 +395,9 @@ func (a *App) drawMacroSettings(y int32, w int32) int32 {
 
 	// Editor row: name, key capture, lines, add.
 	settings.macroName, _ = c.TextField("macroname", sdl.Rect{X: pad, Y: y, W: 130, H: fieldH}, settings.macroName, "name")
-	keyLabel := bindChipLabel(settings.macroKey, a.budget.macroBind >= 0, "press...", "set key")
+	keyLabel := bindChipLabel(settings.macroKey, a.macroBind >= 0, "press...", "set key")
 	if c.Button(sdl.Rect{X: pad + 136, Y: y, W: 86, H: btnH}, keyLabel) {
-		a.budget.macroBind = 0 // arm capture (Esc cancels)
+		a.macroBind = 0 // arm capture (Esc cancels)
 		a.ctx.focusID = ""
 	}
 	settings.macroLines, _ = c.TextField("macrolines", sdl.Rect{X: pad + 228, Y: y, W: a.formW - 358, H: fieldH},
@@ -419,8 +444,8 @@ func (a *App) drawLoginSettings(y, _ int32) int32 {
 		return y + 26
 	}
 	cur := 0
-	if settings.loginKey == "" && a.srvMeta.serverKey != "" {
-		settings.loginKey = a.srvMeta.serverKey
+	if settings.loginKey == "" && a.serverKey != "" {
+		settings.loginKey = a.serverKey
 	}
 	for i, k := range keys {
 		if k == settings.loginKey {
@@ -435,7 +460,7 @@ func (a *App) drawLoginSettings(y, _ int32) int32 {
 	if next, changed := c.Dropdown("loginsrv", sdl.Rect{X: pad + 80, Y: y, W: 280, H: btnH}, names, cur); changed {
 		settings.loginKey, settings.loginLoaded = keys[next], false
 	}
-	if settings.loginKey == a.srvMeta.serverKey && a.link.sess != nil {
+	if settings.loginKey == a.serverKey && a.sess != nil {
 		c.LabelClipped(pad+372, y+4, w-pad-372-scrollBarW, a.loginFlowPreview(), ColAccent)
 	} else {
 		c.LabelClipped(pad+372, y+4, w-pad-372-scrollBarW, "flow auto-detects from the server software when you join", ColTextDim)
@@ -451,7 +476,7 @@ func (a *App) drawLoginSettings(y, _ int32) int32 {
 
 	saveTarget := func() {
 		a.d.Prefs.SetServerLogin(settings.loginKey, strings.TrimSpace(settings.loginUser), settings.loginPass, settings.loginAuto)
-		if settings.loginKey == a.srvMeta.serverKey {
+		if settings.loginKey == a.serverKey {
 			a.syncLoginBuffers() // the courtroom Login... dialog shows the same
 		}
 	}
@@ -470,7 +495,7 @@ func (a *App) drawLoginSettings(y, _ int32) int32 {
 		settings.statusLine = "Login saved (plain text in the prefs file) — it fires on your next join."
 	}
 	// Login now only makes sense against the live session.
-	if settings.loginKey == a.srvMeta.serverKey && a.link.sess != nil {
+	if settings.loginKey == a.serverKey && a.sess != nil {
 		if c.Button(sdl.Rect{X: pad + 648, Y: y, W: 100, H: btnH}, "Login now") {
 			saveTarget()
 			a.loginNow()
@@ -489,51 +514,51 @@ func (a *App) drawLoginSettings(y, _ int32) int32 {
 // first, then every joinable lobby/favorite entry. Cached against the
 // (server count, active key) pair — WebSocketURL allocates per entry.
 func (a *App) loginTargets() ([]string, []string) {
-	if settings.loginSrvCount == len(a.conn.lobby.servers) && settings.loginSrvFor == a.srvMeta.serverKey && settings.loginNames != nil {
+	if settings.loginSrvCount == len(a.servers) && settings.loginSrvFor == a.serverKey && settings.loginNames != nil {
 		return settings.loginNames, settings.loginKeys
 	}
 	var names, keys []string
-	if a.link.sess != nil && a.srvMeta.serverKey != "" {
-		names = append(names, a.srvMeta.serverName+" (connected)")
-		keys = append(keys, a.srvMeta.serverKey)
+	if a.sess != nil && a.serverKey != "" {
+		names = append(names, a.serverName+" (connected)")
+		keys = append(keys, a.serverKey)
 	}
-	for i := range a.conn.lobby.servers {
-		e := &a.conn.lobby.servers[i]
+	for i := range a.servers {
+		e := &a.servers[i]
 		if !e.Joinable() {
 			continue
 		}
 		url := e.WebSocketURL()
-		if url == a.srvMeta.serverKey {
+		if url == a.serverKey {
 			continue
 		}
 		names = append(names, e.Name)
 		keys = append(keys, url)
 	}
 	settings.loginNames, settings.loginKeys = names, keys
-	settings.loginSrvCount, settings.loginSrvFor = len(a.conn.lobby.servers), a.srvMeta.serverKey
+	settings.loginSrvCount, settings.loginSrvFor = len(a.servers), a.serverKey
 	return names, keys
 }
 
 // syncLoginBuffers loads this server's saved credentials into the edit
 // buffers (connect time, so the settings boxes show the truth).
 func (a *App) syncLoginBuffers() {
-	info := a.d.Prefs.Load().ServerWarmInfoFor(a.srvMeta.serverKey)
+	info := a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey)
 	a.loginUser, a.loginPass, a.loginAuto = info.LoginUser, info.LoginPass, info.AutoLogin
 }
 
 // pollMacroBind completes an armed macro key capture.
 func (a *App) pollMacroBind() {
-	if a.budget.macroBind < 0 {
+	if a.macroBind < 0 {
 		return
 	}
 	c := a.ctx
 	if c.escPressed {
-		a.budget.macroBind = -1
+		a.macroBind = -1
 		return
 	}
 	if c.keyPressed == 0 {
 		return
 	}
 	settings.macroKey = strings.ToLower(sdl.GetKeyName(c.keyPressed))
-	a.budget.macroBind = -1
+	a.macroBind = -1
 }

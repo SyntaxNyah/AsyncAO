@@ -36,14 +36,14 @@ var (
 // ACTIVE conn while the chip is on, and runs no goroutine when it's off. Cheap: a pointer
 // compare + one pref read in steady state.
 func (a *App) updatePingLoop() {
-	want := a.link.conn
+	want := a.conn
 	if !a.d.Prefs.Load().PingChip {
 		want = nil
 	}
-	if want == a.conn.lobby.pingConn {
+	if want == a.pingConn {
 		return // already pinging the right conn (or both nil)
 	}
-	a.conn.lobby.stopPingLoop()
+	a.stopPingLoop()
 	if want != nil {
 		a.startPingLoop(want)
 	}
@@ -51,21 +51,21 @@ func (a *App) updatePingLoop() {
 
 func (a *App) startPingLoop(conn *protocol.Conn) {
 	ctx, cancel := context.WithCancel(context.Background())
-	a.conn.lobby.pingCancel = cancel
-	a.conn.lobby.pingConn = conn
-	a.conn.lobby.pingRTT.Store(0)
+	a.pingCancel = cancel
+	a.pingConn = conn
+	a.pingRTT.Store(0)
 	go a.pingLoop(ctx, conn)
 }
 
 // stopPingLoop cancels the live loop (idempotent). Also clears the RTT so the chip doesn't show
 // a stale ping for a connection that's gone.
-func (lobby1 *lobbyState) stopPingLoop() {
-	if lobby1.pingCancel != nil {
-		lobby1.pingCancel()
-		lobby1.pingCancel = nil
+func (a *App) stopPingLoop() {
+	if a.pingCancel != nil {
+		a.pingCancel()
+		a.pingCancel = nil
 	}
-	lobby1.pingConn = nil
-	lobby1.pingRTT.Store(0)
+	a.pingConn = nil
+	a.pingRTT.Store(0)
 }
 
 // pingLoop pings conn every pingInterval until ctx is cancelled, storing the round-trip time
@@ -73,26 +73,26 @@ func (lobby1 *lobbyState) stopPingLoop() {
 func (a *App) pingLoop(ctx context.Context, conn *protocol.Conn) {
 	t := time.NewTicker(pingChipInterval)
 	defer t.Stop()
-	a.conn.lobby.pingOnce(ctx, conn) // one immediate ping so the chip fills in fast
+	a.pingOnce(ctx, conn) // one immediate ping so the chip fills in fast
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			a.conn.lobby.pingOnce(ctx, conn)
+			a.pingOnce(ctx, conn)
 		}
 	}
 }
 
-func (lobby1 *lobbyState) pingOnce(ctx context.Context, conn *protocol.Conn) {
+func (a *App) pingOnce(ctx context.Context, conn *protocol.Conn) {
 	pctx, cancel := context.WithTimeout(ctx, pingChipTimeout)
 	rtt, err := conn.Ping(pctx)
 	cancel()
 	if err != nil {
-		lobby1.pingRTT.Store(0) // unknown
+		a.pingRTT.Store(0) // unknown
 		return
 	}
-	lobby1.pingRTT.Store(int64(rtt))
+	a.pingRTT.Store(int64(rtt))
 }
 
 // pingQuality maps a round-trip ms to a filled-bar count + colour (0 bars / dim when unknown).
@@ -116,11 +116,11 @@ func pingQuality(ms int, unknown bool) (bars int32, col sdl.Color) {
 // atomic RTT; the bars are Fill rects and the tooltip text is cached (rebuilt only when the ms
 // changes), so steady-state draw is 0-alloc.
 func (a *App) drawPingChip(x, y int32) {
-	if !a.d.Prefs.Load().PingChip || a.link.conn == nil {
+	if !a.d.Prefs.Load().PingChip || a.conn == nil {
 		return
 	}
 	c := a.ctx
-	rtt := a.conn.lobby.pingRTT.Load()
+	rtt := a.pingRTT.Load()
 	unknown := rtt == 0
 	ms := int(rtt / int64(time.Millisecond))
 	bars, col := pingQuality(ms, unknown)
@@ -137,13 +137,13 @@ func (a *App) drawPingChip(x, y int32) {
 		c.Fill(sdl.Rect{X: x + i*(barW+gap), Y: y + (chipH - bh), W: barW, H: bh}, bc)
 	}
 
-	if a.conn.lobby.pingLabelMs != ms || a.conn.lobby.pingLabel == "" { // rebuild the tooltip only when the ms moves
+	if a.pingLabelMs != ms || a.pingLabel == "" { // rebuild the tooltip only when the ms moves
 		if unknown {
-			a.conn.lobby.pingLabel = "Ping: — (measuring…)"
+			a.pingLabel = "Ping: — (measuring…)"
 		} else {
-			a.conn.lobby.pingLabel = fmt.Sprintf("Ping: %d ms", ms)
+			a.pingLabel = fmt.Sprintf("Ping: %d ms", ms)
 		}
-		a.conn.lobby.pingLabelMs = ms
+		a.pingLabelMs = ms
 	}
-	c.Tooltip(sdl.Rect{X: x, Y: y, W: chipW, H: chipH}, a.conn.lobby.pingLabel)
+	c.Tooltip(sdl.Rect{X: x, Y: y, W: chipW, H: chipH}, a.pingLabel)
 }

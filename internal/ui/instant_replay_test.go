@@ -78,12 +78,12 @@ func TestBuildClip(t *testing.T) {
 // off the cap). This is the index math buildClip's test can't reach.
 func TestLinearizeReplayBuf(t *testing.T) {
 	const ringCap = 4
-	a := &App{env: env{}, sel: selState{replayBuf: make([]replayBufEntry, ringCap)}}
+	a := &App{replayBuf: make([]replayBufEntry, ringCap)}
 	write := func(text string) { // mirrors bufferReplayEvent's ring advance
-		a.sel.replayBuf[a.sel.replayBufW] = replayBufEntry{ev: recEvent{Text: text}}
-		a.sel.replayBufW = (a.sel.replayBufW + 1) % ringCap
-		if a.sel.replayBufN < ringCap {
-			a.sel.replayBufN++
+		a.replayBuf[a.replayBufW] = replayBufEntry{ev: recEvent{Text: text}}
+		a.replayBufW = (a.replayBufW + 1) % ringCap
+		if a.replayBufN < ringCap {
+			a.replayBufN++
 		}
 	}
 	texts := func() []string {

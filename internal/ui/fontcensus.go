@@ -3,9 +3,23 @@ package ui
 // The system-font CENSUS: the backstop that ends the hardcoded-fallback-list
 // treadmill, and the reason a rune the client cannot draw should now be a
 // genuinely unassigned codepoint rather than "nobody added that font path yet".
+//
+// The curated tiers (fontfallback.go) stay: they are ranked, they pick the RIGHT
+// face for a script rather than merely a covering one — Japanese before Chinese
+// for shared Han, a modern proportional Gothic before a bitmap-era legacy face —
+// and for the overwhelming majority of sessions they answer everything with two
+// or three faces. The census only runs when something reaches the draw that none
+// of them covers. Then it asks a much simpler question: of every font actually
+// installed on this machine, which one has this rune? That is self-maintaining
+// (a user who installs a Tibetan font gets Tibetan), OS-agnostic (it is the only
+// reason macOS and Linux are not permanently stuck on the embedded Latin face),
+// and it needs no new font bytes shipped in the binary.
+//
 // EVERYTHING HERE IS OFF THE RENDER THREAD. Parsing is done through
 // sfnt.ParseReaderAt, so a face is never slurped into the heap — but that also
 // means every GlyphIndex call is a disk read, which is exactly the synchronous
+// I/O the render path forbids (CLAUDE.md rule 2). The render thread only ever
+// hands over runes and receives font BYTES; it never touches a census face.
 
 import (
 	"os"
@@ -134,9 +148,14 @@ func (fc *fontCensus) index() {
 		fc.walk(dir, fontCensusMaxDepth, &budget)
 	}
 	// Regular faces first, then smallest first.
+	//
 	// Size is the primary signal because a rune covered by both a 0.4 MB Leelawadee
 	// and a 35 MB PMingLiU should resolve to Leelawadee: it opens faster, costs less
 	// in every per-size set, and a font that small is almost always the one actually
+	// designed for that script rather than a pan-Unicode catch-all that happens to
+	// include it. But bold and italic cuts are usually SMALLER than their regular
+	// sibling, so size alone picked "Leelawadee UI Bold" for Thai — correct glyphs,
+	// wrong weight, next to text drawn in a regular face. Weight outranks size.
 	sort.SliceStable(fc.files, func(i, j int) bool {
 		bi, bj := isStyledCut(fc.files[i].path), isStyledCut(fc.files[j].path)
 		if bi != bj {
@@ -275,13 +294,13 @@ func (fc *fontCensus) close() {
 // startCensus launches the census goroutine on first need. It serves requests
 // forever (one per uncovered rune) and answers with the font's bytes. Idempotent.
 func (a *App) startCensus() {
-	if a.font.censusStarted {
+	if a.censusStarted {
 		return
 	}
-	a.font.censusStarted = true
-	a.font.censusReq = make(chan rune, censusQueueCap)
-	a.font.censusRes = make(chan []byte, 2)
-	req, res := a.font.censusReq, a.font.censusRes
+	a.censusStarted = true
+	a.censusReq = make(chan rune, censusQueueCap)
+	a.censusRes = make(chan []byte, 2)
+	req, res := a.censusReq, a.censusRes
 	go func() {
 		fc := &fontCensus{}
 		defer fc.close()
@@ -321,8 +340,8 @@ func (a *App) startCensus() {
 // goroutine is deferred to the first miss, so a session that never draws an
 // uncoverable rune — nearly all of them — never scans the font directories at all.
 func (a *App) drainMissingRunes() {
-	a.font.missingBuf = a.ctx.TakeMissingRunes(a.font.missingBuf)
-	if len(a.font.missingBuf) == 0 {
+	a.missingBuf = a.ctx.TakeMissingRunes(a.missingBuf)
+	if len(a.missingBuf) == 0 {
 		return
 	}
 	// The census reads whatever fonts the MACHINE has, so it is the one subsystem
@@ -338,9 +357,9 @@ func (a *App) drainMissingRunes() {
 		return // the chain is already at its cap; more faces would be evicted anyway
 	}
 	a.startCensus()
-	for _, r := range a.font.missingBuf {
+	for _, r := range a.missingBuf {
 		select {
-		case a.font.censusReq <- r:
+		case a.censusReq <- r:
 		default: // queue full — the rune is still uncovered next frame
 		}
 	}
@@ -349,13 +368,13 @@ func (a *App) drainMissingRunes() {
 // pollCensusFont installs a face the census found, on the render thread, and
 // forces a re-raster so the text that was drawing tofu repaints with real glyphs.
 func (a *App) pollCensusFont() {
-	if !a.font.censusStarted {
+	if !a.censusStarted {
 		return
 	}
 	select {
-	case data := <-a.font.censusRes:
+	case data := <-a.censusRes:
 		a.ctx.AddCensusFace(data)
-		a.raster.rasterText = "" // re-raster the visible message with the wider coverage
+		a.rasterText = "" // re-raster the visible message with the wider coverage
 	default:
 	}
 }

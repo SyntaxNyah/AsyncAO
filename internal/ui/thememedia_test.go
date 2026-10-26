@@ -38,6 +38,18 @@ func writeThemeMediaFile(t *testing.T, dir, name string) {
 
 // TestOverBudgetElementIsCreatedNotDropped is design §Q2's "the UX never
 // dead-ends", as a gate.
+//
+// Three behaviours, and every one of them is a decision that could plausibly have
+// gone the other way:
+//
+//   - the over-budget entry STAYS IN THE PLAN. Dropping it would make the theme
+//     render differently depending on the order its author added elements, which is
+//     a property nobody can reason about and no bug report can describe.
+//   - it carries its own REASON, naming the file, its size and the cap it broke.
+//     "Something did not fit" is not actionable; "18.2 MiB, over the 8.0 MiB
+//     per-image cap" is.
+//   - the ELEMENT still exists and still bakes. The theme saves, the element is
+//     dormant until it is fixed, and nothing the author wrote is lost.
 func TestOverBudgetElementIsCreatedNotDropped(t *testing.T) {
 	dir := t.TempDir()
 	writeThemeMediaFile(t, dir, "huge.png")
@@ -108,24 +120,24 @@ func TestOverBudgetElementIsCreatedNotDropped(t *testing.T) {
 
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
-	a.elemBake.themeSidecar = sc
+	a.themeSidecar = sc
 	a.themeMediaPlan = plan
-	a.skin.themeLay.valid = false
+	a.themeLay.valid = false
 	var seen []*bakedElement
 	restore := captureElementPaints(t, &seen)
 	a.drawCourtroom(1280, 720)
 	restore()
-	if a.skin.themeLay.elN != len(sc.Elements) {
+	if a.themeLay.elN != len(sc.Elements) {
 		t.Fatalf("the bake produced %d elements for %d declared — an over-budget element must still exist",
-			a.skin.themeLay.elN, len(sc.Elements))
+			a.themeLay.elN, len(sc.Elements))
 	}
 	if len(seen) != len(sc.Elements) {
 		t.Fatalf("%d painter calls for %d elements — a placeholder element must still be dispatched", len(seen), len(sc.Elements))
 	}
 	// Its page is nil (nothing landed), which is what makes the painter draw nothing
 	// rather than probe — the state the editor decorates with the hatch placeholder.
-	for i := 0; i < a.skin.themeLay.elN; i++ {
-		if a.skin.themeLay.el[i].page != nil {
+	for i := 0; i < a.themeLay.elN; i++ {
+		if a.themeLay.el[i].page != nil {
 			t.Errorf("baked element %d resolved a page, but nothing was uploaded in this fixture", i)
 		}
 	}
@@ -133,8 +145,17 @@ func TestOverBudgetElementIsCreatedNotDropped(t *testing.T) {
 
 // TestIncrementalMediaLandDoesNotRestartTheThemeClock pins the two things the
 // incremental land path must NOT do.
+//
 // It exists for the editor: changing one image must not restage the theme. The two
 // omissions are the whole feature —
+//
+//   - a.themeAt is the animation clock every looping generator, animated skin and
+//     phased element reads through themeElapsed(). Re-anchoring it makes everything
+//     on screen jump back to frame 0, which reads as the client glitching every time
+//     the author nudges a value.
+//   - the text-cache purge exists for a PALETTE change (label textures are
+//     colour-keyed). A media page has no colour anyone cached, and purging would
+//     re-raster every string in the client for one image.
 func TestIncrementalMediaLandDoesNotRestartTheThemeClock(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
@@ -144,8 +165,8 @@ func TestIncrementalMediaLandDoesNotRestartTheThemeClock(t *testing.T) {
 	// clock snapshot, and a fixture that never drew a frame would otherwise measure
 	// the gap between the snapshot and the wall clock.
 	before := a.now().Add(-5 * time.Second)
-	a.toolbox.themeAt = before
-	a.raster.rasterText = "an already-rastered IC line"
+	a.themeAt = before
+	a.rasterText = "an already-rastered IC line"
 	elapsedBefore := a.themeElapsed()
 	if elapsedBefore < 4*time.Second {
 		t.Fatalf("the fixture's theme clock reads %v — the gate cannot tell a restart from a fresh apply", elapsedBefore)
@@ -163,11 +184,11 @@ func TestIncrementalMediaLandDoesNotRestartTheThemeClock(t *testing.T) {
 		t.Fatalf("landThemeMediaPage: %v", err)
 	}
 
-	if !a.toolbox.themeAt.Equal(before) {
+	if !a.themeAt.Equal(before) {
 		t.Errorf("the theme clock moved from %v to %v — every animated element on screen just jumped back "+
-			"to frame 0 because one image changed", before, a.toolbox.themeAt)
+			"to frame 0 because one image changed", before, a.themeAt)
 	}
-	if a.raster.rasterText == "" {
+	if a.rasterText == "" {
 		t.Error("the message raster was invalidated — a media page has no colour anyone cached, and " +
 			"re-rastering every string in the client for one image is what the incremental path exists to avoid")
 	}

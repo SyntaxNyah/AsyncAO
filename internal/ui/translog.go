@@ -32,6 +32,13 @@ const transcriptBufSize = 256
 
 // transcriptWriter appends lines to a file on a single background goroutine fed
 // by a bounded channel.
+//
+// ended is the one-shot latch that makes retire/close idempotent and write inert
+// afterwards. Both a mid-run retirement (the session that owned this file ended)
+// and the shutdown drain can reach the same writer, and closing an already-closed
+// channel — or sending on one — panics. Plain bool, no mutex: every one of these
+// calls is on the render thread (the message seams, the tab lifecycle, the exit
+// path), which is the same single-goroutine discipline the App state itself has.
 type transcriptWriter struct {
 	lines chan string
 	wg    sync.WaitGroup
@@ -77,9 +84,15 @@ func (w *transcriptWriter) write(line string) {
 // retire ends the writer WITHOUT waiting for it: closing the channel is the signal
 // for the goroutine to drain what is already queued, flush, close the file and
 // exit on its own. Idempotent and nil-safe.
+//
 // It exists because a session can end mid-run — a tab closes, a reconnect mints a
 // new session — and the file + goroutine that session opened must go with it, or
 // every reconnect leaks one of each until transcriptWriterCap is reached and
+// transcription silently stops for the rest of the run. Deliberately NOT close():
+// waiting means blocking the render thread on a disk flush, which hard rule §2
+// forbids. Nothing is lost — the queued lines are written by the goroutine that
+// outlives this call, and the process-exit drain (App.CloseTranscript) is the one
+// place that legitimately waits.
 func (w *transcriptWriter) retire() {
 	if w == nil || w.ended {
 		return
@@ -136,6 +149,11 @@ func detailedLogLine(now time.Time, m *protocol.ChatMessage) string {
 // bare "[MOD CALL] …" / "SERVER: …" / "CLIENT: …" line for a system one), so
 // the file always matches what the screen showed rather than a second,
 // independently-derived rendering of it. Pure — unit-tested.
+//
+// Still readable by logbrowser.ParseWho: the literal "[OOC]" tag has
+// no "] " substring of its own (its "]" is immediately followed by "[", never
+// a space), so the first "] " in the result is still the one right after the
+// timestamp, exactly as detailedLogLine's callers expect.
 func oocLogLine(now time.Time, line string) string {
 	var b strings.Builder
 	b.WriteString("[OOC][")
@@ -147,9 +165,18 @@ func oocLogLine(now time.Time, line string) string {
 
 // transcriptWriterCap bounds how many live transcript writers ONE RUN may hold open (hard rule
 // #4: no unbounded goroutines / open files). One writer = one open file + one goroutine.
+//
+// It counts LIVE (server, tab session) pairs, not servers: a tab is a session, and two tabs on
+// one server are two logs. A pair is retired the moment nothing owns it any more (App.reapTranscripts
+// on every tab close / session reset), so the number here is bounded by the TAB CAP, not by how
+// many times you reconnect — 64 is far above any reachable tab count and exists purely as the
+// named ceiling rule §4 requires.
+//
 // The reap is what makes that true. Without it every reconnect minted a session, opened a file and
 // a goroutine, and abandoned both still-open; the 64th cycle hit this cap and transcription stopped
 // for the rest of the run with nothing on screen to say so. Past the cap a new session still simply
+// isn't transcribed (the on-screen logs are unaffected) — the same shedding rule the per-writer line
+// queue uses — but reaching it now means 64 tabs open at once.
 const transcriptWriterCap = 64
 
 // translogKey identifies ONE transcript writer: a server AND the tab session writing to it.
@@ -191,11 +218,11 @@ func sanitizeLogFolder(server string) string {
 // joining one server in the same second would otherwise be handed the identical path and append
 // into each other, defeating the split. See transcriptFilename for the name rule (pure, tested).
 func transcriptPathFor(server string, now time.Time, seq int) (string, error) {
-	root, err := exeDataDir()
+	exe, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(root, "logs", sanitizeLogFolder(server))
+	dir := filepath.Join(filepath.Dir(exe), "logs", sanitizeLogFolder(server))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}

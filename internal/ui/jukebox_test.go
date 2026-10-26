@@ -25,15 +25,15 @@ func TestJukeBindCaptureConsumesKey(t *testing.T) {
 
 	// macroBind:-1 mirrors NewApp so the macro guard doesn't mask the keypress
 	// guard we're actually testing.
-	a := &App{env: env{ctx: &Ctx{}}, jukebox: jukeboxState{juke: j}, budget: budgetState{macroBind: -1}}
-	a.jukebox.jukeBindFor = "e:0:0"
+	a := &App{ctx: &Ctx{}, juke: j, macroBind: -1}
+	a.jukeBindFor = "e:0:0"
 	a.ctx.keyPressed = sdl.K_a
-	a.jukebox.pollJukeBind(&a.env)
+	a.pollJukeBind()
 
 	if a.ctx.keyPressed != 0 {
 		t.Error("pollJukeBind must consume the keypress so it can't also fire this frame")
 	}
-	if a.jukebox.jukeBindFor != "" {
+	if a.jukeBindFor != "" {
 		t.Error("capture should clear after binding")
 	}
 	if got := j.Playlists()[0].Entries[0].Key; got != want {

@@ -36,7 +36,7 @@ func TestUnfocusedFullRateShipsOff(t *testing.T) {
 // untouched, an unfocused window stays unfocused by default, and only the
 // preference lifts it.
 func TestPacingFocusedOverridesOnlyWhenAsked(t *testing.T) {
-	a := &App{env: env{d: Deps{Prefs: pacerPrefs(t)}}}
+	a := &App{d: Deps{Prefs: pacerPrefs(t)}}
 	if !a.pacingFocused(true) {
 		t.Error("a focused window must stay focused")
 	}
@@ -49,7 +49,7 @@ func TestPacingFocusedOverridesOnlyWhenAsked(t *testing.T) {
 	}
 	// A nil Prefs must not panic and must not silently enable the override — the
 	// headless harnesses in this package construct App values without preferences.
-	if (&App{env: env{}}).pacingFocused(false) {
+	if (&App{}).pacingFocused(false) {
 		t.Error("a nil Prefs must answer 'unfocused', never 'full rate'")
 	}
 }
@@ -68,7 +68,7 @@ func TestUnfocusedFullRateLiftsEveryPacerTier(t *testing.T) {
 			sn.UnfocusedFPSVal = pv1
 		})
 	}
-	a := &App{env: env{d: Deps{Prefs: prefs}}}
+	a := &App{d: Deps{Prefs: prefs}}
 
 	if !a.SkipFrame(false, false) {
 		t.Fatal("baseline: an unfocused window with the background cap OFF must park")

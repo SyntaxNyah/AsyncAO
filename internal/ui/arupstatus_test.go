@@ -101,8 +101,8 @@ func arupPixelFixture(t *testing.T, w, h int32) (*App, *render.CaptureTarget, sd
 func TestDrawCurrentAreaStatusStripShowsARUPStatus(t *testing.T) {
 	a, ct, rect, cleanup := arupPixelFixture(t, 300, 24)
 	defer cleanup()
-	a.srvMeta.curArea = "Lobby"
-	a.link.sess = &courtroom.Session{
+	a.curArea = "Lobby"
+	a.sess = &courtroom.Session{
 		Areas:    []string{"Lobby"},
 		AreaInfo: []courtroom.AreaInfo{{Players: -1}},
 	}
@@ -116,7 +116,7 @@ func TestDrawCurrentAreaStatusStripShowsARUPStatus(t *testing.T) {
 			"it must degrade to a blank strip, matching the Areas tab's own empty-detail degrade")
 	}
 
-	a.link.sess.AreaInfo[0].Status = "LOOKING-FOR-PLAYERS"
+	a.sess.AreaInfo[0].Status = "LOOKING-FOR-PLAYERS"
 	lit, err := ct.Capture(a.ctx.Ren, func(sdl.Rect) { a.drawCurrentAreaStatusStrip(rect) })
 	if err != nil {
 		t.Skipf("offscreen capture unavailable headlessly: %v", err)
@@ -140,14 +140,14 @@ func TestDrawCurrentAreaStatusStripShowsARUPStatus(t *testing.T) {
 func TestDrawAreaHeaderRowReadsARUPStatusLive(t *testing.T) {
 	a, ct, rect, cleanup := arupPixelFixture(t, 400, 30)
 	defer cleanup()
-	a.roster.rosterLegacy = true
-	a.roster.areaPlayers = []areaPlayer{
+	a.rosterLegacy = true
+	a.areaPlayers = []areaPlayer{
 		{uid: "0", name: "phoenix", area: "Lobby"},
 		{uid: "1", name: "maya", area: "Courtroom"},
 	}
-	a.roster.areaListAt = time.Now()
-	a.roster.playerSort = playerSortUID
-	a.link.sess = &courtroom.Session{
+	a.areaListAt = time.Now()
+	a.playerSort = playerSortUID
+	a.sess = &courtroom.Session{
 		Areas:    []string{"Lobby", "Courtroom"},
 		AreaInfo: []courtroom.AreaInfo{{Players: 1}, {Players: 1}},
 	}
@@ -186,7 +186,7 @@ func TestDrawAreaHeaderRowReadsARUPStatusLive(t *testing.T) {
 	// The ARUP-only update: mutate AreaInfo in place exactly as session.go's
 	// ARUP handler does. Deliberately does NOT touch a.areaListAt or add/remove
 	// a player — the roster snapshot the memo keys on is untouched.
-	a.link.sess.AreaInfo[0].Status = "CASING"
+	a.sess.AreaInfo[0].Status = "CASING"
 
 	rows2 := a.playerRosterRows("")
 	hr2, ok := lobbyHeader(rows2)

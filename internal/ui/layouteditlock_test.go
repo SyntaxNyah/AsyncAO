@@ -2,6 +2,7 @@ package ui
 
 // The layout editors' UNRECOVERABLE states, and the one frame-level decision that
 // keeps the server-tab strip painted exactly once.
+//
 // Everything here drives the REAL courtroom pass. The lock these pin was not visible
 // in any arithmetic: every predicate involved was individually correct, and the app
 // died from the COMBINATION — an editor armed, a modal holding the pass, and four
@@ -24,12 +25,12 @@ var courtroomModalOpeners = []struct {
 	name string
 	open func(*App)
 }{
-	{"iniswap", func(a *App) { a.inibrowse.showIni = true }},
+	{"iniswap", func(a *App) { a.showIni = true }},
 	{"background picker", func(a *App) { a.bgPick.show = true }},
 	// The timer, the login dialog and the pair popup left this table in #31 — they are
 	// non-blocking floatWin panels now, so they cannot end the pass and cannot strand
 	// an editor. What remains is the set that genuinely takes the screen.
-	{"SFX browser", func(a *App) { a.emotepick.showSfxBrowser = true }},
+	{"SFX browser", func(a *App) { a.showSfxBrowser = true }},
 }
 
 // TestEveryCourtroomModalCloseUndoesItsOpen pins the modal table's internal
@@ -58,6 +59,7 @@ func TestEveryCourtroomModalCloseUndoesItsOpen(t *testing.T) {
 // TestArmingALayoutEditorClosesEveryCourtroomModal is the second of the three
 // belt-and-braces guarantees against the hard lock: with every return-to-top modal
 // open at once, arming either editor must leave none of them up.
+//
 // The arm paths used to close a HAND-WRITTEN list of nine popups that had drifted
 // three entries behind this table — showTimer, pairPopupOpen and showSfxBrowser were
 // all missing — and any one of those three open when the editor armed took the
@@ -103,8 +105,8 @@ func stageThemedEditorFixture(t *testing.T) (*App, int32, int32, func()) {
 		t.Skipf("output size unavailable: %v", err)
 	}
 	a.d.Prefs.SetTheme(stripEditTheme, "") // drawLayoutEditor disarms itself with no theme name
-	a.srvMeta.serverName = "first session"
-	a.tabs = []*courtTab{{}, {state: sessionState{srvMeta: serverMetaState{serverName: "second session"}}}}
+	a.serverName = "first session"
+	a.tabs = []*courtTab{{}, {state: sessionState{serverName: "second session"}}}
 	a.activeTab = 0
 	a.layoutEdit, a.layoutSnap = true, false
 	return a, w, h, cleanup
@@ -117,6 +119,21 @@ const layoutEditorBannerText = "LAYOUT EDIT — drag = move, arrows = nudge 1 px
 
 // TestThemedEditorSurvivesAnOpenCourtroomModal is the BLOCKING regression: the themed
 // courtroom could hard-lock.
+//
+// Three return-to-top modals — the timer, the pair popup and the SFX browser — were in
+// the courtroom modal table but NOT in the list the editors closed as they armed. With
+// one of them up, drawCourtroomThemed returned at its modal check, which (unlike the
+// classic twin) carried no editor guard. The consequences compounded:
+//
+//   - drawLayoutEditor never ran: no banner, no Done chip, and its own Esc handler
+//     never fired;
+//   - layoutEditFence had already set c.modalOn, so the modal's own kit buttons were
+//     hovering()-dead;
+//   - the server-tab strip stood down for an editor that was not drawing, and so did
+//     the menu bar;
+//   - and the app-level Esc guard had just been widened to swallow Esc whenever an
+//     editor was armed, closing the last exit.
+//
 // Nothing on screen answered. This test arms the editor with each of the three open
 // and asserts the editor draws, Done is present, and Esc exits — by both routes.
 func TestThemedEditorSurvivesAnOpenCourtroomModal(t *testing.T) {
@@ -124,9 +141,9 @@ func TestThemedEditorSurvivesAnOpenCourtroomModal(t *testing.T) {
 		name string
 		open func(*App)
 	}{
-		{"iniswap", func(a *App) { a.inibrowse.showIni = true }},
+		{"iniswap", func(a *App) { a.showIni = true }},
 		{"background picker", func(a *App) { a.bgPick.show = true }},
-		{"SFX browser", func(a *App) { a.emotepick.showSfxBrowser = true }},
+		{"SFX browser", func(a *App) { a.showSfxBrowser = true }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a, w, h, cleanup := stageThemedEditorFixture(t)
@@ -138,7 +155,7 @@ func TestThemedEditorSurvivesAnOpenCourtroomModal(t *testing.T) {
 
 			a.ctx.purgeTextCache()
 			a.drawCourtroom(w, h)
-			if !a.skin.themeLay.valid {
+			if !a.themeLay.valid {
 				t.Fatal("fixture: the courtroom did not take the THEMED branch")
 			}
 			if !textCacheHasLabel(a.ctx, layoutEditorBannerText) {
@@ -191,7 +208,7 @@ func TestThemedEditorSurvivesAnOpenCourtroomModal(t *testing.T) {
 // whether the in-pass site painted and whether App.Frame's site still wants to.
 func exactlyOneStripPaint(t *testing.T, a *App, w, h int32, beforePass, afterPass func(*App)) (inPass, overEverything bool) {
 	t.Helper()
-	a.toolbox.tabStripPaint = tabStripPaintLatch{} // App.Frame's per-frame reset
+	a.tabStripPaint = tabStripPaintLatch{} // App.Frame's per-frame reset
 	if beforePass != nil {
 		beforePass(a)
 	}
@@ -200,10 +217,24 @@ func exactlyOneStripPaint(t *testing.T, a *App, w, h int32, beforePass, afterPas
 	if afterPass != nil {
 		afterPass(a) // e.g. the command palette, which draws AFTER the in-pass site
 	}
-	return textCacheHasLabel(a.ctx, a.tabChipLabel(1)), a.toolbox.tabStripPaintsOverEverything()
+	return textCacheHasLabel(a.ctx, a.tabChipLabel(1)), a.tabStripPaintsOverEverything()
 }
 
 // TestTabStripPaintSiteIsLatchedOncePerFrame pins the frame-level decision.
+//
+// The strip has two draw sites — the courtroom pass (under a layout editor's overlay)
+// and App.Frame's over-everything paint — and exactly one may run per frame. They used
+// to answer INDEPENDENTLY, the in-pass site off the editor flag and App.Frame's off a
+// predicate re-evaluated after the whole screen dispatch, so any mid-frame change made
+// them disagree:
+//
+//   - DISMISS frame (Done, Esc, or a theme lost mid-pass): the in-pass site painted,
+//     the editor then disarmed itself, and App.Frame's gate re-opened and painted the
+//     same strip a SECOND time — over the banner that was still on screen.
+//   - ARM frame from the command palette (which draws inside the courtroom case, AFTER
+//     the in-pass site): the pass had already gone by, and App.Frame's re-test now said
+//     the editor owned it. Nobody painted the strip at all.
+//
 // One latch, taken at the top of the pass and replayed by both sites, makes the two
 // exact complements.
 func TestTabStripPaintSiteIsLatchedOncePerFrame(t *testing.T) {
@@ -274,13 +305,13 @@ func TestTabStripPaintSiteIsLatchedOncePerFrame(t *testing.T) {
 func TestTabStripPaintLatchIsClearOffTheCourtroom(t *testing.T) {
 	a, w, h, cleanup := stageThemedEditorFixture(t)
 	defer cleanup()
-	a.toolbox.tabStripPaint = tabStripPaintLatch{}
+	a.tabStripPaint = tabStripPaintLatch{}
 	a.drawCourtroom(w, h)
-	if !a.toolbox.tabStripPaint.inPass {
+	if !a.tabStripPaint.inPass {
 		t.Fatal("fixture: the editor's pass did not claim the strip, so the stale-latch case is not being tested")
 	}
-	a.toolbox.tabStripPaint = tabStripPaintLatch{} // App.Frame's reset, on a lobby frame
-	if !a.toolbox.tabStripPaintsOverEverything() {
+	a.tabStripPaint = tabStripPaintLatch{} // App.Frame's reset, on a lobby frame
+	if !a.tabStripPaintsOverEverything() {
 		t.Error("a frame with no courtroom pass must fall back to App.Frame's site, or the strip vanishes off the courtroom")
 	}
 }
@@ -292,6 +323,13 @@ func TestTabStripPaintLatchIsClearOffTheCourtroom(t *testing.T) {
 // addition, so editBaseFor's subtraction is an EXACT inverse — and a one-pixel drag is
 // a one-pixel move at every scale, not only where the two rounding rules happened to
 // agree.
+//
+// While the map was scaled, the preimage rounded and the forward transform truncated,
+// so the base was not a fixed point: measured at Letterbox 1000x900 (scale 1.4006) a
+// +1,+1 cursor move took the box {460,22,79,22} → {459,23,79,22} — BACKWARDS on X —
+// and +40,+40 landed at +38,+40, a constant −2 px error riding the whole gesture. Crop
+// 900x700 (scale 1.2605) went {410,22} → {409,21}. Native and Stretch round-tripped
+// only at scale 1 and 2, which is why the first fixture could not see any of it.
 func TestTabStripDragIsExactAtEveryScale(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
@@ -307,7 +345,7 @@ func TestTabStripDragIsExactAtEveryScale(t *testing.T) {
 				a.uiScalePct = 100
 				a.layoutEdit, a.layoutSnap = true, false
 				tc.apply(a)
-				a.skin.themeLay.valid = false
+				a.themeLay.valid = false
 
 				lay := a.themeWindowLayout(tc.w, tc.h)
 				before, ok := lay.rect(themeTabBarKey)
@@ -349,6 +387,16 @@ func TestTabStripDragIsExactAtEveryScale(t *testing.T) {
 
 // TestTabStripBoxSurvivesADiscardedDrag is MAJOR 2 in isolation: the gesture whose
 // RELEASE flips parked-ness back off.
+//
+// Parked-ness has an in-flight arm — a drag that has grabbed the strip is a placement
+// in progress — so the layout cache is rebuilt with the parked (canvas) placement the
+// moment the press lands. A gesture that is then DISCARDED at release (a press with no
+// movement, or a move that comes back to where it started) writes no override, so
+// parked-ness goes back to false — and the cache kept the parked box. Measured at
+// Letterbox 1000x900: the editor's box sat at a canvas position while the strip
+// painted in the chrome band, and three further idle editor frames never healed it;
+// only a window, fit, theme or chip-width change did.
+//
 // Both halves of the fix are exercised here: parked-ness is part of the cache key (so
 // it is CORRECT) and the release invalidates (so it is IMMEDIATE).
 func TestTabStripBoxSurvivesADiscardedDrag(t *testing.T) {
@@ -372,7 +420,7 @@ func TestTabStripBoxSurvivesADiscardedDrag(t *testing.T) {
 				a.uiScalePct = 100
 				a.layoutEdit, a.layoutSnap = true, false
 				tc.apply(a)
-				a.skin.themeLay.valid = false
+				a.themeLay.valid = false
 
 				lay := a.themeWindowLayout(tc.w, tc.h)
 				before, ok := lay.rect(themeTabBarKey)
@@ -409,9 +457,13 @@ func TestTabStripBoxSurvivesADiscardedDrag(t *testing.T) {
 
 // TestTabStripParkedNessIsPartOfTheLayoutCacheKey pins the CORRECTNESS half of MAJOR
 // 2 directly, without leaning on a gesture.
+//
 // Parked-ness selects between two completely different placements — the docked chrome
 // band and a spot on the theme canvas — and its only source is a persisted per-key
 // override, which nothing about the window, the band, the fit, the theme or the chip
+// width reflects. It was NOT in the cache key, so every writer had to remember to
+// invalidate by hand; the two reset paths and restoreLayout did, and the editor's drag
+// release did not. In the key it cannot be forgotten again.
 func TestTabStripParkedNessIsPartOfTheLayoutCacheKey(t *testing.T) {
 	a := stageTabbarlessCourtroom(t, stripEditTheme)
 	const w, h = int32(1000), int32(900)
@@ -423,7 +475,7 @@ func TestTabStripParkedNessIsPartOfTheLayoutCacheKey(t *testing.T) {
 	// Park it by writing ONLY what parked-ness is made of, and deliberately NOT
 	// touching themeLay.valid — the whole point is that the cache notices by itself.
 	placed := stripDesignRect(int(docked.X)-100, int(docked.Y)+220)
-	a.skin.themeRects[themeTabBarKey] = placed
+	a.themeRects[themeTabBarKey] = placed
 	a.d.Prefs.SetThemeRectOverride(stripEditTheme, themeTabBarKey,
 		[4]int{placed.X, placed.Y, placed.W, placed.H})
 	parked, ok := a.themeWindowLayout(w, h).rect(themeTabBarKey)
@@ -451,6 +503,11 @@ func TestTabStripParkedNessIsPartOfTheLayoutCacheKey(t *testing.T) {
 // parked-ness in the key. The flag is resolved BEFORE the validity test — it has to
 // be, it is part of the test — so it now runs on every themeLayoutIn call, i.e. every
 // courtroom frame, on the cache-HIT path that the whole design exists to keep cheap.
+//
+// The existing themed whole-screen gate cannot cover this: its fixture's theme has no
+// asyncao_tabbar entry at all, so tabStripThemeParked returns on its first map probe
+// and never reaches the prefs read. This one seeds the key and parks the strip, which
+// is the branch that actually asks the preference layer.
 func TestThemeLayoutCacheHitIsAllocFreeWithASeededTabStrip(t *testing.T) {
 	a := stageTabbarlessCourtroom(t, stripEditTheme)
 	const w, h = int32(1000), int32(900)
@@ -490,11 +547,11 @@ func TestTabStripDragReleaseInvalidatesTheLayoutCache(t *testing.T) {
 
 	ctx.mouseDown = false
 	a.themeWindowLayout(stripEditW, stripEditH) // the frame's rebuild, before the release is seen
-	if !a.skin.themeLay.valid {
+	if !a.themeLay.valid {
 		t.Fatal("fixture: the cache must be valid going into the release, or nothing is being tested")
 	}
-	a.drawLayoutEditor(stripEditW, stripEditH, &a.skin.themeLay)
-	if a.skin.themeLay.valid {
+	a.drawLayoutEditor(stripEditW, stripEditH, &a.themeLay)
+	if a.themeLay.valid {
 		t.Error("the drag release left the layout cache valid: the strip's box heals only when something else in the key moves")
 	}
 }
@@ -545,6 +602,7 @@ func assertStripBoxIsOnTheStrip(t *testing.T, a *App, w, h int32, stage string) 
 }
 
 // TestMagnetSeesTheLiveTabStripNotTheInertSeed pins the sibling-list fix.
+//
 // While the strip is unparked its stored entry is the SYNTHESIZED SEED — a
 // tabBarDesignSeedW-wide box centred on the canvas that nothing paints and nothing
 // hit-tests — so every OTHER widget's snapped drag was magnetting to a phantom while
@@ -558,7 +616,7 @@ func TestMagnetSeesTheLiveTabStripNotTheInertSeed(t *testing.T) {
 	if !ok {
 		t.Fatal("the strip has no live rect")
 	}
-	seed := a.skin.themeRects[themeTabBarKey]
+	seed := a.themeRects[themeTabBarKey]
 	seedRect := sdl.Rect{X: int32(seed.X), Y: int32(seed.Y), W: int32(seed.W), H: int32(seed.H)}
 
 	got := a.magnetSiblingRect(themeTabBarKey, seed, lay)
@@ -576,7 +634,7 @@ func TestMagnetSeesTheLiveTabStripNotTheInertSeed(t *testing.T) {
 		t.Errorf("the magnet sees %+v, want the painted strip in design units %+v", got, want)
 	}
 	// Every other key still reports its stored design rect, unchanged.
-	vp := a.skin.themeRects["viewport"]
+	vp := a.themeRects["viewport"]
 	if got := a.magnetSiblingRect("viewport", vp, lay); got != (sdl.Rect{X: int32(vp.X), Y: int32(vp.Y), W: int32(vp.W), H: int32(vp.H)}) {
 		t.Errorf("a theme's own widget must still magnet to its stored design rect, got %+v", got)
 	}
@@ -601,7 +659,7 @@ func TestSnappedTabStripDragStaysOnTheStrip(t *testing.T) {
 			a.uiScalePct = 100
 			a.layoutEdit, a.layoutSnap = true, true
 			tc.apply(a)
-			a.skin.themeLay.valid = false
+			a.themeLay.valid = false
 
 			lay := a.themeWindowLayout(tc.w, tc.h)
 			before, ok := lay.rect(themeTabBarKey)
@@ -649,9 +707,19 @@ func TestSnappedTabStripDragStaysOnTheStrip(t *testing.T) {
 const stripGridDragDY = int32(143)
 
 // TestSnappedTabStripLandsOnTheWindowGrid pins the strip's grid PHASE.
+//
+// Its stored value is canvas-relative, so rounding it rounds against the canvas origin
+// and the grid the user sees moves with the fit mode and the window size. Measured, one
+// pixel of travel from the docked box at screen Y=22: Native 714x760 → 24, Native
+// 1152x864 → 20, Letterbox 1000x900 → 19. One gesture, one widget, three answers, none
+// of them on a line the window has anywhere. Every other step of this key's gesture —
+// base, delta, magnet, clamp — is already in window space, so the grid is now too
+// (snapTabStripScreen), and the landing is a window-grid line in every mode.
+//
 // A magnet flush BEATS the grid, deliberately and unchanged: the two run in that order
 // for every key, and the magnet was already a window-space rule for this one. A run the
 // magnet decided emits a horizontal guide, which is exactly how this test tells the two
+// apart instead of assuming.
 func TestSnappedTabStripLandsOnTheWindowGrid(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
@@ -667,7 +735,7 @@ func TestSnappedTabStripLandsOnTheWindowGrid(t *testing.T) {
 			a.uiScalePct = 100
 			a.layoutEdit, a.layoutSnap = true, true
 			tc.apply(a)
-			a.skin.themeLay.valid = false
+			a.themeLay.valid = false
 
 			lay := a.themeWindowLayout(tc.w, tc.h)
 			before, ok := lay.rect(themeTabBarKey)
@@ -713,7 +781,7 @@ func TestTabStripRoundTripIsStableAcrossScales(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			a := stageTabbarlessCourtroom(t, stripEditTheme)
 			tc.apply(a)
-			a.skin.themeLay.valid = false
+			a.themeLay.valid = false
 			lay := a.themeWindowLayout(tc.w, tc.h)
 			if !lay.valid {
 				t.Fatal("themeWindowLayout did not validate")

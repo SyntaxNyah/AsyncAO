@@ -8,6 +8,13 @@ package ui
 // local theme dir to read, so we embed the art and upload it once under the
 // reserved render.MissingKey; render/viewport.go probes store.IsMissing(base) in
 // the miss branch and blits this page.
+//
+// Art origin: internal/ui/assets/missingno.webp is AO2-Client's canonical default
+// theme placeholder (bin/base/themes/default/placeholder.webp) copied verbatim —
+// the scrambled purple/white glitch sprite AO players recognise. Kept as its
+// native .webp and decoded ONCE at startup through the SDL-free assets decoder
+// (magic-byte sniffing), so no PNG re-encode ceremony is needed. Glitch content
+// is not authored expression; this comment records provenance for maintainers.
 
 import (
 	_ "embed"
@@ -47,11 +54,11 @@ func (a *App) uploadEmbeddedMissingno() {
 	}
 	dec, err := assets.DecodeImage(missingnoWebP, false) // static: first frame only (the canonical placeholder is single-frame)
 	if err != nil {
-		a.debug.Push("missingno: embedded placeholder failed to decode: " + err.Error())
+		a.pushDebug("missingno: embedded placeholder failed to decode: " + err.Error())
 		return
 	}
 	if err := a.d.Store.UploadPinned(render.MissingKey, dec); err != nil { // UploadPinned releases dec
-		a.debug.Push("missingno: embedded placeholder failed to upload: " + err.Error())
+		a.pushDebug("missingno: embedded placeholder failed to upload: " + err.Error())
 	}
 }
 
@@ -64,7 +71,7 @@ func (a *App) uploadEmbeddedMissingno() {
 func (a *App) applyErrorSprite(path string) {
 	if path == "" {
 		// Cleared: restore the embedded default immediately (render thread, no I/O).
-		a.font.errorSpriteErr = ""
+		a.errorSpriteErr = ""
 		a.uploadEmbeddedMissingno()
 		return
 	}
@@ -100,11 +107,11 @@ func (a *App) applyErrorSprite(path string) {
 func (a *App) deliverErrorSprite(res errorSpriteLoad) {
 	for {
 		select {
-		case a.font.errorSpriteRes <- res:
+		case a.errorSpriteRes <- res:
 			return
 		default:
 			select {
-			case old := <-a.font.errorSpriteRes:
+			case old := <-a.errorSpriteRes:
 				if old.dec != nil {
 					old.dec.Release()
 				}
@@ -121,20 +128,20 @@ func (a *App) deliverErrorSprite(res errorSpriteLoad) {
 // embedded default at worst). Drained once per frame beside the font polls.
 func (a *App) pollErrorSprite() {
 	select {
-	case res := <-a.font.errorSpriteRes:
+	case res := <-a.errorSpriteRes:
 		if res.err != nil {
-			a.font.errorSpriteErr = res.err.Error()
-			a.debug.Push("Custom missing-sprite image failed to load: " + res.err.Error())
+			a.errorSpriteErr = res.err.Error()
+			a.pushDebug("Custom missing-sprite image failed to load: " + res.err.Error())
 			if res.dec != nil {
 				res.dec.Release()
 			}
 			return
 		}
-		a.font.errorSpriteErr = ""
+		a.errorSpriteErr = ""
 		if a.d.Store != nil && res.dec != nil {
 			if err := a.d.Store.UploadPinned(render.MissingKey, res.dec); err != nil { // releases res.dec
-				a.font.errorSpriteErr = err.Error()
-				a.debug.Push("Custom missing-sprite image failed to upload: " + err.Error())
+				a.errorSpriteErr = err.Error()
+				a.pushDebug("Custom missing-sprite image failed to upload: " + err.Error())
 			}
 		} else if res.dec != nil {
 			res.dec.Release()

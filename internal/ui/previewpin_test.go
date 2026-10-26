@@ -91,19 +91,19 @@ func TestTogglePreviewPinClearsBoth(t *testing.T) {
 // frame (the trap closeSpritePreview documents).
 func TestDismissPreviewOnClickRespectsThePinAndDisarmsTheDwell(t *testing.T) {
 	a := testTabApp(t)
-	a.budget.previewBase = "char/x/(a)normal"
+	a.previewBase = "char/x/(a)normal"
 	a.ctx.hoverID = "emote:normal"
 	a.ctx.clicked = true
 
 	a.previewPinned = true
 	a.dismissPreviewOnClick()
-	if a.budget.previewBase == "" {
+	if a.previewBase == "" {
 		t.Fatal("a PINNED box must survive a click elsewhere — its x is the only way out")
 	}
 
 	a.previewPinned = false
 	a.dismissPreviewOnClick()
-	if a.budget.previewBase != "" {
+	if a.previewBase != "" {
 		t.Fatal("an unpinned box must dismiss on a click")
 	}
 	if a.ctx.hoverID != "" {
@@ -117,7 +117,7 @@ func TestDismissPreviewOnClickRespectsThePinAndDisarmsTheDwell(t *testing.T) {
 func TestClosePreviewClearsTheLatchNotThePreference(t *testing.T) {
 	a := testTabApp(t)
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewPinned = true })
-	a.budget.previewBase, a.previewPinned = "x", true
+	a.previewBase, a.previewPinned = "x", true
 	a.closeSpritePreview()
 	if a.previewPinned {
 		t.Error("closing must clear the session latch")

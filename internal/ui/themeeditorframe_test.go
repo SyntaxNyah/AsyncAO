@@ -26,12 +26,12 @@ const editorChromeAllocBudget = 512
 func stageEditorApp(t *testing.T) (*App, func()) {
 	t.Helper()
 	a, cleanup := stageFrameDrivenApp(t)
-	if a.elemBake.themeSidecar == nil {
-		a.elemBake.themeSidecar = theme.NewSidecar()
+	if a.themeSidecar == nil {
+		a.themeSidecar = theme.NewSidecar()
 	}
 	el := editProbeElement()
 	el.Locked, el.Hidden = false, false
-	a.elemBake.themeSidecar.Elements = append(a.elemBake.themeSidecar.Elements, el)
+	a.themeSidecar.Elements = append(a.themeSidecar.Elements, el)
 	if !a.openThemeEditor(ScreenCourtroom) {
 		cleanup()
 		t.Fatal("openThemeEditor refused a theme that has a sidecar")
@@ -57,10 +57,10 @@ func TestThemeEditorScreenSurvivesRealFrames(t *testing.T) {
 	// The two legacy overlay editors are DISARMED: two tools, two scopes, never armed
 	// simultaneously (layouteditlock_test.go enforces the exclusion from the other
 	// side).
-	if a.layoutEdit || a.classic.classicEdit {
+	if a.layoutEdit || a.classicEdit {
 		t.Errorf("a legacy overlay editor is still armed under the theme editor "+
 			"(layoutEdit=%v classicEdit=%v) — the courtroom would be fenced by an editor nobody can see",
-			a.layoutEdit, a.classic.classicEdit)
+			a.layoutEdit, a.classicEdit)
 	}
 }
 
@@ -70,7 +70,7 @@ func TestThemeEditorScreenSurvivesRealFrames(t *testing.T) {
 func TestThemeEditorFrameStaysInsideItsChromeBudget(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()
-	a.te.selectOnly(elementTarget(len(a.elemBake.themeSidecar.Elements) - 1))
+	a.te.selectOnly(elementTarget(len(a.themeSidecar.Elements) - 1))
 
 	if n := allocsPerFrame(editorAllocFrames, editorChromeAllocBudget, func() { driveFrame(a) }); n > editorChromeAllocBudget {
 		t.Fatalf("one editor frame allocates %.0f/op, past the named budget of %d — the usual cause is a "+
@@ -84,6 +84,12 @@ func TestThemeEditorFrameStaysInsideItsChromeBudget(t *testing.T) {
 
 // TestBackDoesNotOutliveTheRailsThatDrawAfterIt is a crash gate, and it is one a
 // function-level test could not have found.
+//
+// drawThemeEditor's order is header, then both rails. The header's own Back button calls
+// requestEditorExit, which on a CLEAN document releases a.te on the spot — and every
+// rail below dereferences a.te.doc. Pressing Back was therefore a nil dereference on the
+// render thread, i.e. a client crash, on the most ordinary exit there is.
+//
 // It drives the real button through the real frame, so it also fails if the band is
 // re-spaced out from under it (a miss leaves the editor open, which is the assertion).
 func TestBackDoesNotOutliveTheRailsThatDrawAfterIt(t *testing.T) {
@@ -113,7 +119,7 @@ func TestEditorEscLadderClearsThenLeaves(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()
 	driveFrame(a)
-	a.te.selectOnly(elementTarget(len(a.elemBake.themeSidecar.Elements) - 1))
+	a.te.selectOnly(elementTarget(len(a.themeSidecar.Elements) - 1))
 
 	pressEsc := func() {
 		a.ctx.BeginFrame(frameHarnessDt)
@@ -165,12 +171,12 @@ func TestEditorOwnsCtrlZThroughTheRealChord(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()
 	driveFrame(a)
-	idx := len(a.elemBake.themeSidecar.Elements) - 1
+	idx := len(a.themeSidecar.Elements) - 1
 	a.te.selectOnly(elementTarget(idx))
-	before := a.elemBake.themeSidecar.Elements[idx].Rect
+	before := a.themeSidecar.Elements[idx].Rect
 
 	a.editorNudgeSelection(1, 0, false)
-	if a.elemBake.themeSidecar.Elements[idx].Rect == before {
+	if a.themeSidecar.Elements[idx].Rect == before {
 		t.Fatal("the nudge did not move the element")
 	}
 
@@ -181,7 +187,7 @@ func TestEditorOwnsCtrlZThroughTheRealChord(t *testing.T) {
 	if a.ctx.hotkey != 0 {
 		t.Error("a consumed chord must zero c.hotkey, or it also fires whatever it is bound to")
 	}
-	if got := a.elemBake.themeSidecar.Elements[idx].Rect; got != before {
+	if got := a.themeSidecar.Elements[idx].Rect; got != before {
 		t.Errorf("Ctrl+Z left the rect at %+v, want %+v", got, before)
 	}
 
@@ -189,7 +195,7 @@ func TestEditorOwnsCtrlZThroughTheRealChord(t *testing.T) {
 	if !a.editorUndoChord() {
 		t.Fatal("Ctrl+Y on the editor screen must be consumed by the editor")
 	}
-	if got := a.elemBake.themeSidecar.Elements[idx].Rect; got == before {
+	if got := a.themeSidecar.Elements[idx].Rect; got == before {
 		t.Error("Ctrl+Y did not redo the nudge")
 	}
 }
@@ -197,6 +203,18 @@ func TestEditorOwnsCtrlZThroughTheRealChord(t *testing.T) {
 // TestEditorUndoChordReachesTheEditorThroughAFrameWithNoRoom is the gate the chord's
 // own dispatch was missing, and it is the difference between "the function works" and
 // "the key works".
+//
+// THE DEFECT IT CLOSES. editorUndoChord had exactly one caller — handleHotkeys — and
+// handleHotkeys is called from the three COURTROOM draw passes. drawEditorCanvas
+// reaches drawCourtroom only with a live room, so on the editor's HEADLINE entry point
+// (the Settings row, reachable with no server attached) the offline arm
+// drawEditorGeometryCanvas drew instead, no dispatcher ran, and Ctrl+Z did nothing at
+// all while c.hotkey survived the frame to fire whatever it was bound to. Every gate
+// that covered the chord called a.editorUndoChord() by hand, so the suite could not
+// see it: the same "present but unreachable" shape
+// TestUnsavedEditsSurviveARealBackgroundThemeApply was written to close for the
+// reclaim.
+//
 // So this one nils the room — the state the Settings entry point is in — and drives
 // the chord through App.Frame. The mutation it answers to is deleting
 // `if a.themeEditorOpen() { a.editorUndoChord() }` from App.Frame.
@@ -204,27 +222,27 @@ func TestEditorUndoChordReachesTheEditorThroughAFrameWithNoRoom(t *testing.T) {
 	a, cleanup := stageEditorApp(t)
 	defer cleanup()
 	driveFrame(a)
-	idx := len(a.elemBake.themeSidecar.Elements) - 1
+	idx := len(a.themeSidecar.Elements) - 1
 	a.te.selectOnly(elementTarget(idx))
 
 	// NO ROOM: drawEditorCanvas takes its offline arm, which is the arm that reaches no
 	// courtroom pass and therefore no handleHotkeys.
-	a.link.room = nil
+	a.room = nil
 	driveFrame(a)
 	if a.screen != ScreenThemeEditor || a.te == nil {
 		t.Fatalf("the editor did not survive a frame with no room (screen %d, te %v) — the session-free "+
 			"arm is the one the Settings entry point uses", a.screen, a.te != nil)
 	}
 
-	before := a.elemBake.themeSidecar.Elements[idx].Rect
+	before := a.themeSidecar.Elements[idx].Rect
 	a.editorNudgeSelection(1, 0, false)
-	edited := a.elemBake.themeSidecar.Elements[idx].Rect
+	edited := a.themeSidecar.Elements[idx].Rect
 	if edited == before {
 		t.Fatal("the nudge did not move the element; there is nothing for the chord to undo")
 	}
 
 	driveHotkey(a, sdl.K_z)
-	if got := a.elemBake.themeSidecar.Elements[idx].Rect; got != before {
+	if got := a.themeSidecar.Elements[idx].Rect; got != before {
 		t.Fatalf("Ctrl+Z driven through a REAL frame with no room left the rect at %+v, want %+v — the "+
 			"chord is dispatched only from the courtroom passes, so the editor's own screen never "+
 			"claims it when it is opened from Settings with no server attached", got, before)
@@ -235,7 +253,7 @@ func TestEditorUndoChordReachesTheEditorThroughAFrameWithNoRoom(t *testing.T) {
 	}
 
 	driveHotkey(a, sdl.K_y)
-	if got := a.elemBake.themeSidecar.Elements[idx].Rect; got != edited {
+	if got := a.themeSidecar.Elements[idx].Rect; got != edited {
 		t.Errorf("Ctrl+Y through a real frame left the rect at %+v, want the redone %+v", got, edited)
 	}
 }
@@ -245,13 +263,13 @@ func TestEditorUndoChordReachesTheEditorThroughAFrameWithNoRoom(t *testing.T) {
 // tempting join (onto the courtroom pair) would make the editor non-skippable in
 // exactly the Settings-with-no-server case it is most often opened in.
 func TestEditorScreenIsFrameRateSkippable(t *testing.T) {
-	a := &App{env: env{screen: ScreenThemeEditor}}
+	a := &App{screen: ScreenThemeEditor}
 	if !a.expScreenSkippable() {
 		t.Fatal("ScreenThemeEditor is not frame-rate skippable — it would render at full rate forever, " +
 			"with a still theme on screen and nothing to explain why the fans are on")
 	}
 	// …and with no session, which is the case the courtroom pair would have failed.
-	a.link.sess = nil
+	a.sess = nil
 	if !a.expScreenSkippable() {
 		t.Fatal("the editor stopped being skippable with no session — that is the Settings entry point, " +
 			"i.e. the common case")

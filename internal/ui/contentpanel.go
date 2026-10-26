@@ -8,6 +8,21 @@ package ui
 // scrollable list, kit VScrollbar, and Esc routed through closeTopOverlay so one
 // press peels it off (floatbox.go doctrine — a fenced popup MUST answer Esc or it
 // silently reappears on the next Settings open).
+//
+// Data comes entirely from the engine's exported model: ContentReport /
+// CategoryReport / AssetItem + the shared FormatReport (used verbatim for the
+// Copy button, so the panel text and the bundle's MISSING-CONTENT.txt never
+// drift). This file owns NO probing/packaging logic — it only starts, queries,
+// packages, and cancels the job through the engine's API.
+//
+// Perf/hard-rule discipline (spec §17): the draw is alloc-free. The item list is
+// a CACHED "visible rows" slice rebuilt only when the filter toggles or the
+// report mutates (a probe result landing changes the Totals signature) — never a
+// fresh filtered slice per frame. Rows draw as separate cached labels (status
+// tag + name), never a per-frame fmt.Sprintf (that both allocates and misses the
+// label texture cache — the demobrowser lesson). No filesystem/network touch on
+// the render thread: the pick loads the rec once (event-loop one-off, like
+// importDroppedRecording), and the probe is the async single-flight job.
 
 import (
 	"path/filepath"
@@ -119,6 +134,13 @@ type contentPanelState struct {
 	// SAME string drives enumeration AND packaging (writeContentBundle's per-asset
 	// CutPrefix(url, rec.Origin) must match the origin the probe resolved against —
 	// a mismatch would count every asset "external" and write an empty bundle).
+	//   originServer: the recording's server origin (a .aorec's stamped Origin, or a
+	//     .demo's live session AssetURL) — "" when offline / none recorded.
+	//   originLocal:  the configured mounts' local:// origin — "" when local-asset
+	//     mode is off / no mounts.
+	// useLocal is the current choice; it is NOT cleared on a fresh open, so the last
+	// pick sticks for the session (a per-session preference, no saved pref needed —
+	// the panel singleton holds it like showAll's transient state).
 	originServer string
 	originLocal  string
 	useLocal     bool
@@ -178,6 +200,10 @@ var contentPanel contentPanelState
 // bad load or a refused start (a job already running, empty recording) leaves the
 // panel closed and the engine's warnLine explaining why. pkg latches the package
 // build to fire once the probe is ready.
+//
+// Render thread only: loadRecordingAny emits its import notes on this thread, and
+// StartContentReport spawns the probe goroutines here. The load is a one-off
+// event-loop read (the importDroppedRecording precedent), never a render-path I/O.
 func (a *App) openContentReportFor(path string, pkg bool) {
 	rec, err := a.loadRecordingAny(path) // .aorec, or an AO2 .demo converted on the fly
 	if err != nil {
@@ -189,6 +215,13 @@ func (a *App) openContentReportFor(path string, pkg bool) {
 
 	s := &contentPanel
 	// Capture BOTH source candidates for the picker before the probe starts:
+	//   - originServer: the recording's server origin. loadRecordingAny already set
+	//     rec.Origin via demoDefaultOrigin, which is the local:// mount when mounts
+	//     are configured — so we recover the SERVER candidate as the non-local
+	//     origin (a .aorec's stamped Origin is already the server one; a .demo's
+	//     server candidate is the live session AssetURL). contentServerOrigin picks
+	//     it out.
+	//   - originLocal: the configured mounts' local:// origin ("" when off).
 	s.originServer = a.contentServerOrigin(rec)
 	s.originLocal = a.mountOrigin()
 	// Choice: an explicit prior pick sticks for the session; otherwise follow the
@@ -249,8 +282,8 @@ func (a *App) contentServerOrigin(rec *sceneRecording) string {
 	if rec != nil && !strings.HasPrefix(rec.Origin, assets.LocalScheme) {
 		return rec.Origin // already the server origin (stamped .aorec, or mounts-off .demo)
 	}
-	if a.link.sess != nil {
-		return a.link.sess.AssetURL // a .demo under local mounts: the live session is the server candidate
+	if a.sess != nil {
+		return a.sess.AssetURL // a .demo under local mounts: the live session is the server candidate
 	}
 	return ""
 }
@@ -438,6 +471,25 @@ func cpStatusTag(st AssetStatus) string {
 // segmented control and returns the y past it. The active source is accent-filled;
 // clicking the inactive source calls switchContentSource (cancel + re-run against
 // the other origin).
+//
+// Servability follows what the Manager can actually query, in the overlay world:
+//   - "Local base" is servable whenever mounts are configured (originLocal!="").
+//     ANY Manager can now serve local:// URLs: a streaming Manager routes them
+//     through its local:// mount OVERLAY (SetLocalOverlay), and a local-mode
+//     Manager's source already IS the LocalFetcher. So the local half is no longer
+//     tied to the Manager's mode — only to a base being configured.
+//   - "This server" (https://) still needs a streaming Manager: a local-mode
+//     Manager holds a LocalFetcher with NO network source, so an https:// origin is
+//     structurally unreachable there. That half of the matrix is UNCHANGED this
+//     wave. probeRef reports a transport-error base as [missing]/[unreachable], so
+//     leaving "This server" enabled in local mode would yield false rows.
+//
+// When "Local base" is servable but NO base is configured (originLocal==""), the
+// segment is still CLICKABLE: clicking expands an inline setup row (a folder-path
+// field + "Use") so the user can set a base right here — see drawLocalSetupRow.
+// The disabled segment stays visible (the mode indicator) but draws dim and
+// no-ops. All labels/buttons are cached strings/consts — the panel's alloc-free
+// budget (the setup row's field draws only while expanded).
 func (a *App) drawContentSourcePicker(s *contentPanelState, inX, y int32) int32 {
 	c := a.ctx
 	// The Manager's fixed mode still decides whether the SERVER (https://) source is
@@ -636,7 +688,7 @@ func (a *App) drawContentPanel(w, h int32) {
 		// concat runs once per probe result, never once per frame. "probing" is the
 		// ACTUAL phase — NOT !ContentReportReady(): that reads false during packaging
 		// AND after the post-package clear, which would stick "(checking…)" on forever.
-		probing := a.sel.content != nil && a.sel.content.phase == phaseProbing
+		probing := a.content != nil && a.content.phase == phaseProbing
 		c.LabelClipped(inX, y, inW, s.contentStatusLine(rep, probing), ColText)
 		y += 20
 	}
@@ -813,5 +865,5 @@ func contentHeaderLabel(c *CategoryReport) string {
 // is still cancellable via the ✕/Esc close, but the Cancel BUTTON only shows
 // while work is actually in flight.
 func (a *App) contentJobRunning() bool {
-	return a.sel.content != nil && (a.sel.content.phase == phaseProbing || a.sel.content.phase == phasePackaging)
+	return a.content != nil && (a.content.phase == phaseProbing || a.content.phase == phasePackaging)
 }

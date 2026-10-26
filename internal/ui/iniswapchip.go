@@ -1,10 +1,31 @@
 package ui
 
 // The dedicated Iniswap button.
+//
+// THE PROBLEM. Iniswapping is one of AO's most-used features and, until now, one of
+// the hardest to find in AsyncAO: the Wardrobe modal was reachable from the floating
+// Extras box (which the user may have closed), from a hotkey (which they have to
+// know), and — in the CLASSIC layout only — from a "Wardrobe" button buried in a row
+// of fifteen. Under an AO2 THEME the classic control rows are not drawn at all, so
+// there was no button anywhere on screen.
+//
 // WHERE IT LIVES, AND WHY. The menu-bar band (#14, chrometop.go). That band is the
+// one surface which is:
+//
+//   - always on screen, on both layouts, at a fixed place;
+//   - ABOVE every theme's design canvas by construction — themeLayoutIn lays no
+//     widget out inside it — so a button here can never sit on an AO2 control, which
+//     is #21's parity rule (AsyncAO's own extras go in chrome OUTSIDE the canvas);
+//   - already the home for AsyncAO controls AO2 has no rect for (the Extras menu's
+//     own doc says so), and already carries one chip of exactly this shape (#27's
+//     missing-asset chip, assetmisschip.go — this file follows its geometry, its
+//     two-phase input/paint split and its "drop rather than overlap" rule).
+//
 // WIDTH-DROP CONTRACT. Chrome must never lie about what is clickable, so the chip is
 // dropped whole for the frame the moment it cannot sit clear of both the menu titles
 // on its left and the band's right-hand reserve. Its function is not lost when it
+// drops: Extras ▸ "Wardrobe / iniswap…" reaches the same modal from every screen, at
+// every width, and the classic layout keeps its own Wardrobe button.
 
 import "github.com/veandco/go-sdl2/sdl"
 
@@ -32,9 +53,11 @@ const (
 	// its own minimum gap. On a window too narrow to hold the menu titles, this
 	// reserve AND the chip, the chip is what drops — the width-drop contract, the
 	// same rule the IC bar's Flip segment follows at 720p.
+	//
 	// It is belt to assetMissChipRect's braces: that chip already yields to
 	// menuBarLeftContentRight, so a collision is impossible either way. Preferring to
 	// drop the Iniswap chip here keeps the yielding one-directional, which is what
+	// stops the two from flickering against each other as a count changes width.
 	iniswapChipRightReservePx = int32(200)
 )
 
@@ -43,8 +66,8 @@ const (
 // is a courtroom modal. Suppressed while the Wardrobe is already open, so the chip
 // never sits on top of the thing it opens.
 func (a *App) iniswapChipActive() bool {
-	return a.screen == ScreenCourtroom && a.link.sess != nil && !a.inibrowse.showIni &&
-		!a.sel.gifExporting && !a.sel.replaying && !a.sel.makerOpen
+	return a.screen == ScreenCourtroom && a.sess != nil && !a.showIni &&
+		!a.gifExporting && !a.replaying && !a.makerOpen
 }
 
 // iniswapChipRect is the chip's rect in the menu-bar band, left-anchored after the
@@ -92,7 +115,19 @@ func (a *App) menuBarLeftContentRight(w int32) int32 {
 }
 
 // handleIniswapChipInput claims a click on the chip. Called from menuBarFrame (phase
+// 1) BEFORE the strip publishes its overlay fence — that fence covers the chip's own
+// rect, and the screens dispatched below must not see a press that belongs here.
 // Exactly the ordering handleAssetMissChipInput gets one call site earlier.
+//
+// An OPEN menu pane cannot reach here: the bar holds c.modalOn from the frame the
+// pane opened (menuBarModalFence runs last, and modalOn persists across frames), and
+// hovering() reads false for every widget while it is set — this chip included, since
+// unlike the bar's own titles it does not hit-test with raw pointIn. The
+// closeMenuBar below is therefore belt to that brace, not a second mechanism: it
+// costs nothing when nothing is open, and it means the pane cannot outlive the modal
+// this click opens even if a future call site claims the chip somewhere the fence is
+// not up. The fence itself is released on this same frame — menuBarFrame calls
+// menuBarModalFence after this, and it sees no pane open.
 func (a *App) handleIniswapChipInput(w int32) {
 	r, ok := a.iniswapChipRect(w)
 	if !ok {
@@ -132,6 +167,6 @@ func (a *App) drawIniswapChip(w int32) {
 // finds empty. Everything else (the list fetch, the local-mount scan) is openIniswap's
 // and the tab's own.
 func (a *App) openIniswapBrowse() {
-	a.wardrobe.wardSection = wardSectionIniswaps
+	a.wardSection = wardSectionIniswaps
 	a.openIniswap()
 }

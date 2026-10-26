@@ -58,7 +58,7 @@ type paletteExtra struct {
 var paletteExtraActions = []paletteExtra{
 	{"Edit Layout", "Rearrange the courtroom — drag & resize every box", (*App).compactEditLayout},
 	{"Theater", "Theater mode — stage only, Esc exits", (*App).compactTheater},
-	{"Hide UI pieces", "Per-piece show/hide list for the courtroom chrome", func(a *App) { a.toolbox.compactHideUI() }},
+	{"Hide UI pieces", "Per-piece show/hide list for the courtroom chrome", (*App).compactHideUI},
 }
 
 // fuzzyMatch reports whether every rune of query appears in s in order
@@ -111,7 +111,7 @@ func (a *App) paletteMatches(query string) []paletteMatch {
 			out = append(out, paletteMatch{label: e.label, hint: e.desc, widget: -1, run: e.run})
 		}
 	}
-	if a.link.sess != nil {
+	if a.sess != nil {
 		for _, line := range courtroom.CommandReference(a.detectedSoftware()) {
 			if len(out) >= paletteMaxN {
 				return out
@@ -127,14 +127,14 @@ func (a *App) paletteMatches(query string) []paletteMatch {
 }
 
 // togglePalette opens/closes the palette (the Ctrl+Space hotkey).
-func (palette1 *paletteState) togglePalette(e *env) {
-	palette1.paletteOpen = !palette1.paletteOpen
-	if palette1.paletteOpen {
-		palette1.paletteQuery = ""
-		palette1.paletteSel = 0
-		e.ctx.focusID = paletteInputID // type immediately, and binds stand down
-	} else if e.ctx.focusID == paletteInputID {
-		e.ctx.focusID = ""
+func (a *App) togglePalette() {
+	a.paletteOpen = !a.paletteOpen
+	if a.paletteOpen {
+		a.paletteQuery = ""
+		a.paletteSel = 0
+		a.ctx.focusID = paletteInputID // type immediately, and binds stand down
+	} else if a.ctx.focusID == paletteInputID {
+		a.ctx.focusID = ""
 	}
 }
 
@@ -142,7 +142,7 @@ func (palette1 *paletteState) togglePalette(e *env) {
 // first, so an action that opens a screen isn't covered), a command form
 // lands in the OOC input ready to fill in.
 func (a *App) runPaletteMatch(m paletteMatch) {
-	a.palette.paletteOpen = false
+	a.paletteOpen = false
 	if a.ctx.focusID == paletteInputID {
 		a.ctx.focusID = ""
 	}
@@ -160,24 +160,24 @@ func (a *App) runPaletteMatch(m paletteMatch) {
 	if m.cmd != "" {
 		// Overwriting the OOC draft is recoverable: the field's undo history
 		// records the rewrite at its next draw (fieldhistory.go) — Ctrl+Z.
-		a.compose.oocInput = m.cmd // both layouts' OOC fields read this
-		a.ctx.focusID = "oocmsg"   // caret into the default layout's OOC box
+		a.oocInput = m.cmd       // both layouts' OOC fields read this
+		a.ctx.focusID = "oocmsg" // caret into the default layout's OOC box
 	}
 }
 
 // drawPalette renders the overlay: a centred search field + the filtered rows.
 // ↑/↓ move, Enter runs, Esc closes (closeTopOverlay), click-outside closes.
 func (a *App) drawPalette(w, h int32) {
-	if !a.palette.paletteOpen {
+	if !a.paletteOpen {
 		return
 	}
 	c := a.ctx
-	matches := a.paletteMatches(a.palette.paletteQuery)
-	if a.palette.paletteSel >= len(matches) {
-		a.palette.paletteSel = len(matches) - 1
+	matches := a.paletteMatches(a.paletteQuery)
+	if a.paletteSel >= len(matches) {
+		a.paletteSel = len(matches) - 1
 	}
-	if a.palette.paletteSel < 0 {
-		a.palette.paletteSel = 0
+	if a.paletteSel < 0 {
+		a.paletteSel = 0
 	}
 	pw := paletteW
 	if pw > w-2*pad {
@@ -190,29 +190,29 @@ func (a *App) drawPalette(w, h int32) {
 	c.Fill(panel, ColBackground)
 	c.Border(panel, ColAccent)
 
-	prev := a.palette.paletteQuery
+	prev := a.paletteQuery
 	var submit bool
-	a.palette.paletteQuery, submit = c.TextField(paletteInputID, sdl.Rect{X: px + 6, Y: py + 6, W: pw - 12, H: fieldH}, a.palette.paletteQuery, "type a command… (↑↓ pick · Enter run · Esc close)")
-	if a.palette.paletteQuery != prev {
-		a.palette.paletteSel = 0 // a new query restarts the selection at the best match
+	a.paletteQuery, submit = c.TextField(paletteInputID, sdl.Rect{X: px + 6, Y: py + 6, W: pw - 12, H: fieldH}, a.paletteQuery, "type a command… (↑↓ pick · Enter run · Esc close)")
+	if a.paletteQuery != prev {
+		a.paletteSel = 0 // a new query restarts the selection at the best match
 	}
 	// Keyboard: ↑/↓ steer even while the field has focus (arrows don't type).
 	switch c.keyPressed {
 	case sdl.K_DOWN:
-		if a.palette.paletteSel < len(matches)-1 {
-			a.palette.paletteSel++
+		if a.paletteSel < len(matches)-1 {
+			a.paletteSel++
 		}
 		c.keyPressed = 0
 	case sdl.K_UP:
-		if a.palette.paletteSel > 0 {
-			a.palette.paletteSel--
+		if a.paletteSel > 0 {
+			a.paletteSel--
 		}
 		c.keyPressed = 0
 	}
 	ry := py + 6 + fieldH + 4
 	for i, m := range matches {
 		r := sdl.Rect{X: px + 4, Y: ry, W: pw - 8, H: paletteRowH - 2}
-		if i == a.palette.paletteSel {
+		if i == a.paletteSel {
 			c.Fill(r, ColPanelHi)
 			c.Border(r, ColAccent)
 		} else if c.hovering(r) {
@@ -234,12 +234,12 @@ func (a *App) drawPalette(w, h int32) {
 		c.LabelClipped(px+8, ry+2, pw-16, "no matches — try fewer letters", ColTextDim)
 	}
 	if submit && len(matches) > 0 {
-		a.runPaletteMatch(matches[a.palette.paletteSel])
+		a.runPaletteMatch(matches[a.paletteSel])
 		return
 	}
 	// A click outside the panel closes it (and doesn't leak underneath).
 	if c.clicked && !pointIn(c.mouseX, c.mouseY, panel) {
-		a.palette.paletteOpen = false
+		a.paletteOpen = false
 		if c.focusID == paletteInputID {
 			c.focusID = ""
 		}

@@ -21,25 +21,25 @@ func TestEchoClearRecoverableViaHistory(t *testing.T) {
 	a := testTabApp(t)
 	c := a.ctx
 
-	a.compose.icInput, a.compose.icPendingSent = "the eaten line", "the eaten line"
-	c.fieldTrack("ic", a.compose.icInput) // the field drew once with the line (first sight seeds)
+	a.icInput, a.icPendingSent = "the eaten line", "the eaten line"
+	c.fieldTrack("ic", a.icInput) // the field drew once with the line (first sight seeds)
 
 	a.noteOwnICEcho()
-	if a.compose.icInput != "" {
-		t.Fatalf("echo must clear the input, got %q", a.compose.icInput)
+	if a.icInput != "" {
+		t.Fatalf("echo must clear the input, got %q", a.icInput)
 	}
-	h := c.fieldTrack("ic", a.compose.icInput) // next draw: records the out-of-band clear
+	h := c.fieldTrack("ic", a.icInput) // next draw: records the out-of-band clear
 	if n := len(h.undo); n != 1 {
 		t.Fatalf("the clear must land one undo step, got %d", n)
 	}
 
-	snap, ok := h.step(a.compose.icInput, 0, false) // Ctrl+Z
+	snap, ok := h.step(a.icInput, 0, false) // Ctrl+Z
 	if !ok || snap.value != "the eaten line" {
 		t.Fatalf("undo must restore the eaten line, got %q ok=%v", snap.value, ok)
 	}
-	a.compose.icInput = snap.value
+	a.icInput = snap.value
 
-	snap, ok = h.step(a.compose.icInput, 0, true) // Ctrl+Y
+	snap, ok = h.step(a.icInput, 0, true) // Ctrl+Y
 	if !ok || snap.value != "" {
 		t.Fatalf("redo must re-apply the clear, got %q ok=%v", snap.value, ok)
 	}
@@ -56,8 +56,8 @@ func TestAO2ColorSpliceAndUndo(t *testing.T) {
 	a := testTabApp(t)
 	c := a.ctx
 
-	a.compose.icInput = "hello world"
-	c.fieldTrack("ic", a.compose.icInput) // first sight seeds the detector
+	a.icInput = "hello world"
+	c.fieldTrack("ic", a.icInput) // first sight seeds the detector
 
 	// Focus the IC field and select "world" ([6,11)).
 	c.focusID = icFieldID
@@ -66,8 +66,8 @@ func TestAO2ColorSpliceAndUndo(t *testing.T) {
 
 	// The colour strip captures the live selection BEFORE the dropdown draws.
 	a.captureICColorSel()
-	if !a.compose.icColorSel.active || a.compose.icColorSel.lo != 6 || a.compose.icColorSel.hi != 11 {
-		t.Fatalf("capture = %+v, want {lo:6 hi:11 active:true}", a.compose.icColorSel)
+	if !a.icColorSel.active || a.icColorSel.lo != 6 || a.icColorSel.hi != 11 {
+		t.Fatalf("capture = %+v, want {lo:6 hi:11 active:true}", a.icColorSel)
 	}
 	// The dropdown's open-click unfocuses the field a frame later — the live
 	// selection is gone, but the frozen snapshot must still drive the wrap.
@@ -76,21 +76,21 @@ func TestAO2ColorSpliceAndUndo(t *testing.T) {
 	// Green (palette index 1 in the dropdown) → wraps the selection in the AO2
 	// backtick pair. Routed through applyICColorPick (the dropdown-pick path).
 	a.applyICColorPick(1)
-	if a.compose.icInput != "hello `world`" {
-		t.Fatalf("splice = %q, want \"hello `world`\" (selection wrapped)", a.compose.icInput)
+	if a.icInput != "hello `world`" {
+		t.Fatalf("splice = %q, want \"hello `world`\" (selection wrapped)", a.icInput)
 	}
 	// A wrap must NOT change the whole-message colour (AO2 leaves text_color).
-	if a.compose.icColor != 0 {
-		t.Fatalf("wrap must leave the whole-message colour at default, icColor=%d", a.compose.icColor)
+	if a.icColor != 0 {
+		t.Fatalf("wrap must leave the whole-message colour at default, icColor=%d", a.icColor)
 	}
 
 	// The next fieldTrack sees the out-of-band change and records the prior value,
 	// so Ctrl+Z restores the un-wrapped line.
-	h := c.fieldTrack("ic", a.compose.icInput)
+	h := c.fieldTrack("ic", a.icInput)
 	if n := len(h.undo); n != 1 {
 		t.Fatalf("the splice must land one undo step, got %d", n)
 	}
-	snap, ok := h.step(a.compose.icInput, 0, false) // Ctrl+Z
+	snap, ok := h.step(a.icInput, 0, false) // Ctrl+Z
 	if !ok || snap.value != "hello world" {
 		t.Fatalf("undo must restore the pre-splice line, got %q ok=%v", snap.value, ok)
 	}
@@ -100,37 +100,37 @@ func TestAO2ColorSpliceAndUndo(t *testing.T) {
 	c.focusID = icFieldID
 	c.caretField = icFieldID
 	c.selAnchor = -1
-	a.compose.icInput = "plain"
+	a.icInput = "plain"
 	a.captureICColorSel() // focused but no selection → the snapshot clears
-	if a.compose.icColorSel.active {
-		t.Fatalf("no selection must clear the frozen snapshot, got %+v", a.compose.icColorSel)
+	if a.icColorSel.active {
+		t.Fatalf("no selection must clear the frozen snapshot, got %+v", a.icColorSel)
 	}
 	a.applyICColorPick(2) // red
-	if a.compose.icInput != "plain" {
-		t.Fatalf("no-selection pick must not alter the text, got %q", a.compose.icInput)
+	if a.icInput != "plain" {
+		t.Fatalf("no-selection pick must not alter the text, got %q", a.icInput)
 	}
-	if a.compose.icColor != 2 {
-		t.Fatalf("no-selection pick must set the whole-message colour, icColor=%d want 2", a.compose.icColor)
+	if a.icColor != 2 {
+		t.Fatalf("no-selection pick must set the whole-message colour, icColor=%d want 2", a.icColor)
 	}
 
 	// Palette 0 (Default/white — no AO2 markup) WITH a selection: AO2 warns and
 	// does nothing (courtroom.cpp:6370-6375); the text and colour stay untouched.
-	a.compose.icInput = "keep me"
+	a.icInput = "keep me"
 	c.selAnchor, c.caret = 0, 4
 	a.captureICColorSel()
 	a.applyICColorPick(0)
-	if a.compose.icInput != "keep me" {
-		t.Fatalf("palette-0 wrap must be a no-op on the text, got %q", a.compose.icInput)
+	if a.icInput != "keep me" {
+		t.Fatalf("palette-0 wrap must be a no-op on the text, got %q", a.icInput)
 	}
-	if a.compose.icColor != 2 {
-		t.Fatalf("palette-0 pick with a selection must not touch the whole-message colour, icColor=%d", a.compose.icColor)
+	if a.icColor != 2 {
+		t.Fatalf("palette-0 pick with a selection must not touch the whole-message colour, icColor=%d", a.icColor)
 	}
 
 	// Review-caught hazard: a snapshot armed on the way to clicking some OTHER
 	// widget must NOT survive to wrap on a much-later dropdown pick. Unfocused
 	// while the colour dropdown is NOT the open widget = stale → the very next
 	// capture clears it, and the pick falls back to whole-message behaviour.
-	a.compose.icInput = "stale text"
+	a.icInput = "stale text"
 	c.focusID = icFieldID
 	c.caretField = icFieldID
 	c.selAnchor, c.caret = 0, 5
@@ -138,12 +138,12 @@ func TestAO2ColorSpliceAndUndo(t *testing.T) {
 	c.focusID = ""        // that click unfocused the field...
 	c.ddOpen = ""         // ...and the colour dropdown is not open
 	a.captureICColorSel() // the next frame's capture must invalidate
-	if a.compose.icColorSel.active {
-		t.Fatalf("stale snapshot must clear when unfocused without the colour dropdown open, got %+v", a.compose.icColorSel)
+	if a.icColorSel.active {
+		t.Fatalf("stale snapshot must clear when unfocused without the colour dropdown open, got %+v", a.icColorSel)
 	}
 	a.applyICColorPick(1)
-	if a.compose.icInput != "stale text" {
-		t.Fatalf("stale-snapshot pick must not splice, got %q", a.compose.icInput)
+	if a.icInput != "stale text" {
+		t.Fatalf("stale-snapshot pick must not splice, got %q", a.icInput)
 	}
 
 	// And the intended survival window: unfocused BECAUSE the colour dropdown is
@@ -154,7 +154,7 @@ func TestAO2ColorSpliceAndUndo(t *testing.T) {
 	c.focusID = ""
 	c.ddOpen = icColorDDID
 	a.captureICColorSel() // the pick-frame capture runs with the dropdown open → keep
-	if !a.compose.icColorSel.active {
+	if !a.icColorSel.active {
 		t.Fatal("the frozen snapshot must survive while the colour dropdown is open")
 	}
 	c.ddOpen = ""
@@ -240,7 +240,7 @@ func TestUndoChordRouting(t *testing.T) {
 	c := a.ctx
 
 	route := func() { // the App.Frame conversion, verbatim gate
-		if c.focusID != "" && !a.classic.classicEdit && !a.layoutEdit {
+		if c.focusID != "" && !a.classicEdit && !a.layoutEdit {
 			switch c.hotkey {
 			case sdl.K_z:
 				c.undoReq = !c.shiftHeld

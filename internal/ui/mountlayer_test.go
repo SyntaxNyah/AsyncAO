@@ -138,7 +138,7 @@ func TestPublishMountLayerUsesNormalizedOrigins(t *testing.T) {
 
 	// A server whose ASS field omits the trailing slash — the case that silently
 	// breaks everything if the raw value is registered.
-	a.link.urls = courtroom.NewURLBuilder("http://h/base")
+	a.urls = courtroom.NewURLBuilder("http://h/base")
 
 	a.applyMountLayer()
 	layer := waitForIndex(t, a)

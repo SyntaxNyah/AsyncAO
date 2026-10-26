@@ -12,20 +12,20 @@ import (
 // live courtroom, and not shadowed by a blocking popup.
 func TestExtrasBoxVisibility(t *testing.T) {
 	a := testTabApp(t)
-	a.link.sess = courtroom.NewRehearsalSession("", nil)
-	a.link.room = &courtroom.Courtroom{}
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
 
-	a.toolbox.showWidgets = true
-	if !(a.toolbox.showWidgets && a.extrasSurfaceLive()) {
+	a.showWidgets = true
+	if !(a.showWidgets && a.extrasSurfaceLive()) {
 		t.Fatal("open box in a live courtroom must be visible")
 	}
-	a.inibrowse.showIni = true // a blocking courtroom popup (showEvid is non-blocking now, #5)
-	if a.toolbox.showWidgets && a.extrasSurfaceLive() {
+	a.showIni = true // a blocking courtroom popup (showEvid is non-blocking now, #5)
+	if a.showWidgets && a.extrasSurfaceLive() {
 		t.Error("a blocking popup must hide the box (it reappears when that closes)")
 	}
-	a.inibrowse.showIni = false
-	a.toolbox.showWidgets = false
-	if a.toolbox.showWidgets && a.extrasSurfaceLive() {
+	a.showIni = false
+	a.showWidgets = false
+	if a.showWidgets && a.extrasSurfaceLive() {
 		t.Error("a closed box must not be visible")
 	}
 }
@@ -35,9 +35,9 @@ func TestExtrasBoxVisibility(t *testing.T) {
 // don't leak through, but the courtroom stays live everywhere else.
 func TestBoxFencesPointer(t *testing.T) {
 	a := testTabApp(t)
-	a.link.sess = courtroom.NewRehearsalSession("", nil)
-	a.link.room = &courtroom.Courtroom{}
-	a.toolbox.showWidgets = true
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
+	a.showWidgets = true
 	const w, h = int32(1280), int32(720)
 	r := a.extrasBoxRect(w, h)
 
@@ -49,7 +49,7 @@ func TestBoxFencesPointer(t *testing.T) {
 	if a.boxFencesPointer(w, h) {
 		t.Error("pointer off the box must NOT fence (courtroom stays live)")
 	}
-	a.toolbox.showWidgets = false // closed
+	a.showWidgets = false // closed
 	a.ctx.mouseX, a.ctx.mouseY = r.X+5, r.Y+5
 	if a.boxFencesPointer(w, h) {
 		t.Error("a closed box must never fence")
@@ -61,9 +61,9 @@ func TestBoxFencesPointer(t *testing.T) {
 // and release ends the drag.
 func TestExtrasDrag(t *testing.T) {
 	a := testTabApp(t)
-	a.link.sess = courtroom.NewRehearsalSession("", nil)
-	a.link.room = &courtroom.Courtroom{}
-	a.toolbox.showWidgets = true
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
+	a.showWidgets = true
 	const w, h = int32(1280), int32(720)
 	r0 := a.extrasBoxRect(w, h)
 	handle := sdl.Rect{X: r0.X, Y: r0.Y, W: r0.W - 30, H: extrasTitleH}
@@ -169,9 +169,9 @@ func TestExtrasReattach(t *testing.T) {
 // regardless of position, and the cursor clear of every box does not.
 func TestBoxFencesPointerDetached(t *testing.T) {
 	a := testTabApp(t)
-	a.link.sess = courtroom.NewRehearsalSession("", nil)
-	a.link.room = &courtroom.Courtroom{}
-	a.toolbox.showWidgets = true
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
+	a.showWidgets = true
 	const w, h = int32(1280), int32(720)
 	a.extrasDetached = []detachedWidget{{id: 1, x: 900, y: 600}}
 	dr := a.detachedBoxRect(0, w, h)
@@ -199,11 +199,11 @@ func TestBoxFencesPointerDetached(t *testing.T) {
 // the closed main box does not.
 func TestExtrasDetachedPersistsClosed(t *testing.T) {
 	a := testTabApp(t)
-	a.link.sess = courtroom.NewRehearsalSession("", nil)
-	a.link.room = &courtroom.Courtroom{}
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
 	const w, h = int32(1280), int32(720)
 	a.extrasDetached = []detachedWidget{{id: 1, x: 900, y: 600}}
-	a.toolbox.showWidgets = false // main box CLOSED
+	a.showWidgets = false // main box CLOSED
 	dr := a.detachedBoxRect(0, w, h)
 
 	a.ctx.mouseX, a.ctx.mouseY = dr.X+5, dr.Y+5
@@ -226,9 +226,9 @@ func TestExtrasDetachedPersistsClosed(t *testing.T) {
 // and a release ends it.
 func TestExtrasResize(t *testing.T) {
 	a := testTabApp(t)
-	a.link.sess = courtroom.NewRehearsalSession("", nil)
-	a.link.room = &courtroom.Courtroom{}
-	a.toolbox.showWidgets = true
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
+	a.showWidgets = true
 	const w, h = int32(1280), int32(720)
 	r := a.extrasBoxRect(w, h)
 	grip := sdl.Rect{X: r.X + r.W - extrasGripSz, Y: r.Y + r.H - extrasGripSz, W: extrasGripSz, H: extrasGripSz}
@@ -267,8 +267,8 @@ func TestExtrasResize(t *testing.T) {
 // minimum, and release ends it.
 func TestDetachedResize(t *testing.T) {
 	a := testTabApp(t)
-	a.link.sess = courtroom.NewRehearsalSession("", nil)
-	a.link.room = &courtroom.Courtroom{}
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
 	const w, h = int32(1280), int32(720)
 	a.extrasDetached = []detachedWidget{{id: 1, x: 500, y: 300}}
 	r := a.detachedBoxRect(0, w, h)
@@ -339,7 +339,7 @@ func TestTornWidgetPersistence(t *testing.T) {
 	a.extrasDetached = []detachedWidget{{id: id, x: 600, y: 400}}
 	want := a.detachedBoxRect(0, w, h)
 	a.persistTornWidgetSlot(0, w, h)
-	if _, ok := a.classic.classicOv[tornWidgetSlotKey(id)]; !ok {
+	if _, ok := a.classicOv[tornWidgetSlotKey(id)]; !ok {
 		t.Fatalf("persist did not write the torn slot into classicOv")
 	}
 	if _, ok := a.d.Prefs.Load().ClassicLayoutOverrides()[tornWidgetSlotKey(id)]; !ok {
@@ -370,7 +370,7 @@ func TestTornWidgetPersistence(t *testing.T) {
 
 	// Reattach clears the slot everywhere (pref + live map) so it won't re-tear.
 	a.reattachWidget(0)
-	if _, ok := a.classic.classicOv[tornWidgetSlotKey(id)]; ok {
+	if _, ok := a.classicOv[tornWidgetSlotKey(id)]; ok {
 		t.Fatalf("reattach left the slot in classicOv")
 	}
 	if _, ok := a.d.Prefs.Load().ClassicLayoutOverrides()[tornWidgetSlotKey(id)]; ok {
@@ -384,8 +384,8 @@ func TestTornWidgetPersistence(t *testing.T) {
 
 	// Unknown / malformed ids are IGNORED (a newer build's widget), not re-torn and
 	// not deleted — the set stays bounded to known widgets.
-	a.classic.classicOv[tornWidgetSlotKey(9999)] = [4]float64{0.1, 0.1, 0.1, 0.1}
-	a.classic.classicOv[tornWidgetSlotPrefix+"junk"] = [4]float64{0.1, 0.1, 0.1, 0.1}
+	a.classicOv[tornWidgetSlotKey(9999)] = [4]float64{0.1, 0.1, 0.1, 0.1}
+	a.classicOv[tornWidgetSlotPrefix+"junk"] = [4]float64{0.1, 0.1, 0.1, 0.1}
 	a.extrasTornRebuilt = false
 	a.reconstructTornWidgets(w, h)
 	if len(a.extrasDetached) != 0 {

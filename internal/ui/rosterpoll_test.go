@@ -26,7 +26,7 @@ func TestNoSessionEverFiresATimedRosterPoll(t *testing.T) {
 		setup func(a *App)
 	}{
 		{"no PR/PU (the old KFO hub), plain user", func(*App) {}},
-		{"no PR/PU (the old KFO hub), logged-in mod", func(a *App) { a.link.sess.ModGranted = true }},
+		{"no PR/PU (the old KFO hub), logged-in mod", func(a *App) { a.sess.ModGranted = true }},
 		{
 			// The nastiest historical case: the mod IPID top-up looked self-limiting
 			// (`ModGranted && liveRosterMissingIPID()`) but never settled on a server
@@ -34,22 +34,22 @@ func TestNoSessionEverFiresATimedRosterPoll(t *testing.T) {
 			// whole session.
 			"live roster whose rows never carry an IPID, logged-in mod",
 			func(a *App) {
-				a.link.sess.ModGranted = true
-				a.roster.livePlayersOn = true
-				a.roster.liveRoster = []areaPlayer{{uid: "1", name: "Phoenix", area: "Courtroom"}}
+				a.sess.ModGranted = true
+				a.livePlayersOn = true
+				a.liveRoster = []areaPlayer{{uid: "1", name: "Phoenix", area: "Courtroom"}}
 			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := testTabApp(t)
-			a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix", "Edgeworth"})
-			a.link.sess.Areas = []string{"Courtroom"}
+			a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix", "Edgeworth"})
+			a.sess.Areas = []string{"Courtroom"}
 			tc.setup(a)
 			t0 := time.Now()
 
 			const step = 250 * time.Millisecond
 			for elapsed := time.Duration(0); elapsed < rosterPollProbeWindow; elapsed += step {
-				a.budget.frameNow = t0.Add(elapsed)
+				a.frameNow = t0.Add(elapsed)
 				a.handleSessionEvents([]courtroom.Event{
 					{Kind: courtroom.EventCharsUpdated},
 					{Kind: courtroom.EventAreasUpdated},
@@ -71,8 +71,8 @@ func TestNoSessionEverFiresATimedRosterPoll(t *testing.T) {
 // presses still collapse to one command.
 func TestAManualRosterFetchStillWorksAndShowsItsReply(t *testing.T) {
 	a := testTabApp(t)
-	a.link.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
-	a.budget.frameNow = time.Now()
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.frameNow = time.Now()
 
 	a.fetchRoster()
 	if len(a.oocQueue) != 1 || a.oocQueue[0].line != rosterCmd {
@@ -80,17 +80,17 @@ func TestAManualRosterFetchStillWorksAndShowsItsReply(t *testing.T) {
 	}
 
 	// The reply burst it asked for is parsed but suppressed (areaEchoSuppressWindow).
-	before := len(a.chatlog.oocLog)
+	before := len(a.oocLog)
 	a.pushOOC("Server: [0] Phoenix Wright (1001) [Def]", "Server") // a real roster row (looksLikeAreaList)
-	if len(a.chatlog.oocLog) != before {
+	if len(a.oocLog) != before {
 		t.Error("the roster body we asked for must stay out of the OOC log")
 	}
 
 	// A refusal is NOT suppressed any more: it is the answer to a press, it can only
 	// appear once per press, and hiding it makes the control look broken.
-	before = len(a.chatlog.oocLog)
+	before = len(a.oocLog)
 	a.pushOOC("Server: You cannot see players in all areas in this hub!", "Server")
-	if len(a.chatlog.oocLog) == before {
+	if len(a.oocLog) == before {
 		t.Error("a server's refusal must reach the OOC log now that nothing sends the command on its own")
 	}
 

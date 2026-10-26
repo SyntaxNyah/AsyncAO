@@ -29,7 +29,7 @@ const (
 // when empty), clamped fully on-screen at its dragged position, else a default
 // near the top-right where it's out of the way.
 func (a *App) favBoxRect(w, h int32) sdl.Rect {
-	n := int32(len(a.favstyle.favBoxList))
+	n := int32(len(a.favBoxList))
 	cols := n
 	if cols > favBoxCols {
 		cols = favBoxCols
@@ -55,8 +55,8 @@ func (a *App) favBoxRect(w, h int32) sdl.Rect {
 	if bh > h-16 {
 		bh = h - 16
 	}
-	x, y := a.favstyle.favBoxX, a.favstyle.favBoxY
-	if !a.favstyle.favBoxPlaced {
+	x, y := a.favBoxX, a.favBoxY
+	if !a.favBoxPlaced {
 		x, y = w-bw-24, 96 // default: tucked top-right, clear of the viewport centre
 	}
 	maxX, maxY := w-bw-8, h-bh-8
@@ -99,7 +99,7 @@ func (a *App) drawFavEmoteBox(w, h int32, pressed *bool) {
 	}
 	a.handleFavBoxDrag(sdl.Rect{X: r.X, Y: r.Y, W: r.W - 28, H: extrasTitleH}, w, h, pressed)
 
-	if len(a.favstyle.favBoxList) == 0 {
+	if len(a.favBoxList) == 0 {
 		c.LabelClipped(r.X+favBoxPad, r.Y+extrasTitleH+favBoxPad, r.W-2*favBoxPad,
 			"No favourites yet — click the ★ on emotes.", ColTextDim)
 		return
@@ -110,22 +110,22 @@ func (a *App) drawFavEmoteBox(w, h int32, pressed *bool) {
 	// Emote-name hover tooltip config, read ONCE (RLock off the per-cell loop).
 	hoverNamesOn := a.d.Prefs.Load().EmoteHoverNamesOn
 	hoverNamesDelay := a.d.Prefs.EmoteHoverNamesDelay()
-	cols := int32(len(a.favstyle.favBoxList))
+	cols := int32(len(a.favBoxList))
 	if cols > favBoxCols {
 		cols = favBoxCols
 	}
 	gx, gy := r.X+favBoxPad, r.Y+extrasTitleH+favBoxPad
-	for k, i := range a.favstyle.favBoxList {
+	for k, i := range a.favBoxList {
 		col := int32(k) % cols
 		row := int32(k) / cols
 		btn := sdl.Rect{X: gx + col*(favBoxCell+favBoxGap), Y: gy + row*(favBoxCell+favBoxGap), W: favBoxCell, H: favBoxCell}
-		selected := i == a.emotepick.emoteIdx
+		selected := i == a.emoteIdx
 		if selected {
 			c.Fill(sdl.Rect{X: btn.X - 2, Y: btn.Y - 2, W: btn.W + 4, H: btn.H + 4}, ColAccent)
 		}
-		label := a.emotepick.emotes[i].Comment
+		label := a.emotes[i].Comment
 		if label == "" {
-			label = a.emotepick.emotes[i].Anim
+			label = a.emotes[i].Anim
 		}
 		var picked bool
 		if useImages {
@@ -136,13 +136,13 @@ func (a *App) drawFavEmoteBox(w, h int32, pressed *bool) {
 		if picked {
 			a.selectEmote(i) // same as a grid click: warms art + focuses IC
 		}
-		if c.HoverPreview("favemote:"+a.emotepick.emotes[i].Anim, btn) {
-			a.previewEmote(me, &a.emotepick.emotes[i])
+		if c.HoverPreview("favemote:"+a.emotes[i].Anim, btn) {
+			a.previewEmote(me, &a.emotes[i])
 		}
 		// Emote-name tooltip (parity with the grid): hover dwell shows the name.
 		// Gated on hovering(btn) so the id concat runs only for the hovered cell.
 		if hoverNamesOn && c.hovering(btn) {
-			c.TooltipAfterDelay("favemotename:"+a.emotepick.emotes[i].Anim, btn, label, hoverNamesDelay)
+			c.TooltipAfterDelay("favemotename:"+a.emotes[i].Anim, btn, label, hoverNamesDelay)
 		}
 	}
 }
@@ -154,18 +154,18 @@ func (a *App) handleFavBoxDrag(handle sdl.Rect, w, h int32, pressed *bool) {
 	if *pressed && pointIn(c.mouseX, c.mouseY, handle) {
 		*pressed = false
 		r := a.favBoxRect(w, h)
-		a.favstyle.favBoxDragging = true
-		a.favstyle.favBoxGrabDX, a.favstyle.favBoxGrabDY = c.mouseX-r.X, c.mouseY-r.Y
+		a.favBoxDragging = true
+		a.favBoxGrabDX, a.favBoxGrabDY = c.mouseX-r.X, c.mouseY-r.Y
 	}
 	if !c.mouseDown {
-		a.favstyle.favBoxDragging = false
+		a.favBoxDragging = false
 	}
-	if a.favstyle.favBoxDragging {
-		a.favstyle.favBoxX, a.favstyle.favBoxY = c.mouseX-a.favstyle.favBoxGrabDX, c.mouseY-a.favstyle.favBoxGrabDY
-		a.favstyle.favBoxPlaced = true
+	if a.favBoxDragging {
+		a.favBoxX, a.favBoxY = c.mouseX-a.favBoxGrabDX, c.mouseY-a.favBoxGrabDY
+		a.favBoxPlaced = true
 		if !a.siblingMagnetOff() && len(a.panelMagnetRects) > 0 { // M3: piece-to-piece magnet
 			r := a.favBoxRect(w, h)
-			a.favstyle.favBoxX, a.favstyle.favBoxY, a.alignGuides = snapRectToSiblings(r, a.panelMagnetRects, w, h, a.alignGuides)
+			a.favBoxX, a.favBoxY, a.alignGuides = snapRectToSiblings(r, a.panelMagnetRects, w, h, a.alignGuides)
 		}
 	}
 }

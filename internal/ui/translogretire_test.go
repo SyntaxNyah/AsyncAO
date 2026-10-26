@@ -1,6 +1,14 @@
 package ui
 
 // F4, the LIFETIME half — see translogsplit_test.go for the identity half.
+//
+// Splitting the transcript per tab session gave every reconnect a brand-new writer
+// key. Nothing retired the old one: the map was drained only by CloseTranscript, at
+// process exit. So each park / Disconnect / reconnect left an open file and a live
+// goroutine behind, and the 64th cycle hit transcriptWriterCap — after which
+// transcriptFor returned nil and the opt-in detailed log silently stopped for the
+// rest of the run, with nothing on screen to say so.
+//
 // The rule now is ownership: a writer lives exactly as long as some session — the
 // live one or a parked tab's — can still write to it. reapTranscripts asks that
 // question rather than trusting a list of teardown sites to stay complete.
@@ -15,7 +23,6 @@ import (
 // test binary), exactly as the split test does.
 func transcriptTestApp(t *testing.T, server string) *App {
 	t.Helper()
-	withExeDataRoot(t)
 	a := testTabApp(t)
 	a.d.Prefs.Update(func(
 		sn *config.
@@ -27,9 +34,9 @@ func transcriptTestApp(t *testing.T, server string) *App {
 			true
 
 	})
-	a.srvMeta.serverName = server
+	a.serverName = server
 	t.Cleanup(a.CloseTranscript)
-	if a.transcriptFor(server, a.srvMeta.logSession) == nil {
+	if a.transcriptFor(server, a.logSession) == nil {
 		t.Skip("transcript writers unavailable in this environment (no writable exe dir)")
 	}
 	return a
@@ -37,6 +44,7 @@ func transcriptTestApp(t *testing.T, server string) *App {
 
 // TestReconnectCyclesDoNotStrandTranscriptWriters is the regression itself. Far more
 // reconnects than the cap, and the log must still be being written at the end.
+//
 // The two assertions are deliberately different in kind. The map size proves the
 // files and goroutines are actually released; the final non-nil writer proves the
 // USER-VISIBLE symptom is gone — before the reap, cycle 65 and every one after it
@@ -46,14 +54,14 @@ func TestReconnectCyclesDoNotStrandTranscriptWriters(t *testing.T) {
 	a := transcriptTestApp(t, server)
 
 	for i := 0; i < transcriptWriterCap*2; i++ {
-		w := a.transcriptFor(server, a.srvMeta.logSession)
+		w := a.transcriptFor(server, a.logSession)
 		if w == nil {
 			t.Fatalf("reconnect %d got no transcript writer — detailed logging has silently stopped for the rest of the run (F4)", i)
 		}
 		w.write("cycle")
 		// A disconnect/reconnect: the live session ends and a fresh one is minted.
 		a.resetSessionState()
-		a.srvMeta.serverName = server
+		a.serverName = server
 	}
 	if n := len(a.translogs); n > 1 {
 		t.Errorf("%d transcript writers still open after %d reconnects, want at most the live one — "+
@@ -70,12 +78,12 @@ func TestAParkedTabKeepsItsTranscriptAndAClosedTabLosesIt(t *testing.T) {
 	a := transcriptTestApp(t, server)
 
 	// Tab one logs, then parks; tab two becomes live and logs too.
-	parked := a.srvMeta.logSession
+	parked := a.logSession
 	a.tabs = append(a.tabs, &courtTab{})
 	a.activeTab = 0
 	a.parkActive() // copies the session into the slot, then resets — and reaps
-	a.srvMeta.serverName = server
-	live := a.srvMeta.logSession
+	a.serverName = server
+	live := a.logSession
 	if a.transcriptFor(server, live) == nil {
 		t.Fatal("the new live session got no writer")
 	}
@@ -107,7 +115,7 @@ func TestAParkedTabKeepsItsTranscriptAndAClosedTabLosesIt(t *testing.T) {
 func TestRetiredWritersCannotBePanickedIntoAShutdown(t *testing.T) {
 	const server = "Skrapegropen"
 	a := transcriptTestApp(t, server)
-	w := a.transcriptFor(server, a.srvMeta.logSession)
+	w := a.transcriptFor(server, a.logSession)
 	if w == nil {
 		t.Fatal("no writer to retire")
 	}

@@ -57,7 +57,7 @@ func (a *App) mySpriteStyle() courtroom.SpriteStyle {
 }
 
 // openSpriteStyle toggles the floating Sprite Style box (the Extras entry).
-func (a *App) openSpriteStyle() { a.favstyle.showStyleBox = !a.favstyle.showStyleBox }
+func (a *App) openSpriteStyle() { a.showStyleBox = !a.showStyleBox }
 
 // spriteStylePresets are quick "fun colour" tints for the picker swatches.
 var spriteStylePresets = []struct {

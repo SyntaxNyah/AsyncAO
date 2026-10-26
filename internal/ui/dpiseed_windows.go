@@ -9,6 +9,22 @@ import (
 )
 
 // #77 Part B — reliable per-monitor DPI on Windows.
+//
+// SDL2's GetDisplayDPI commonly reports a flat 96 under per-monitor-v2 DPI
+// awareness (which we opt into at boot via SDL_WINDOWS_DPI_AWARENESS), so the
+// boot auto-scale detection stayed at 100 and a HiDPI monitor was stuck at the
+// "100% is too small" default. The reliable source is user32!GetDpiForWindow
+// (Windows 10 1607+): it returns the effective DPI for the monitor the given
+// window is on, honoring per-monitor-v2 awareness — exactly what we need.
+//
+// We reach the native window handle through SDL's SysWMInfo (the HWND). This is
+// a plain Win32 syscall, not an SDL render call, but it still must run on the
+// locked main/render thread because it touches the SDL window handle — every
+// caller (boot seed + the display-change event handler) already does.
+//
+// syscall.NewLazyDLL avoids a new external dependency (golang.org/x/sys is not
+// in go.mod, and adding it would need a written justification per CLAUDE.md); a
+// LazyDLL resolves the proc on first use and is safe to keep at package scope.
 
 var (
 	user32              = syscall.NewLazyDLL("user32.dll")

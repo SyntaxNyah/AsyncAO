@@ -51,12 +51,12 @@ func fxPickerRowCount() int { return len(fxEffectOrder) + 1 + len(inlineMarkupBu
 func (a *App) fxButton(r sdl.Rect) {
 	c := a.ctx
 	label, border, txt := "FX", ColTextDim, ColText
-	if a.compose.icEffect != courtroom.TextEffectNone {
-		label, border, txt = icEffectLabel(a.compose.icEffect), ColAccent, ColAccent
+	if a.icEffect != courtroom.TextEffectNone {
+		label, border, txt = icEffectLabel(a.icEffect), ColAccent, ColAccent
 	}
-	a.lookUI.fxBtnRect = r
+	a.fxBtnRect = r
 	if c.ButtonCol(r, label, ColPanel, ColPanelHi, border, txt) {
-		a.lookUI.showFxPicker = !a.lookUI.showFxPicker
+		a.showFxPicker = !a.showFxPicker
 	}
 	c.Tooltip(r, "Text FX: pick an animation (shake, wave, bounce, rainbow, sparkle…). When set, every message you send animates for other AsyncAO players (AO2/webAO see plain text). Or type [shake]…[/shake] inline.")
 }
@@ -142,17 +142,17 @@ func (a *App) fxPickerRect(w, h int32) sdl.Rect {
 	// draws the FX button only where the theme asks for it), fxBtnRect is the zero
 	// value and the clamps below would pin the list to the top-left corner. Anchor
 	// it near the middle instead, which is where a menu-opened popup belongs.
-	if a.lookUI.fxBtnRect.W == 0 && a.lookUI.fxBtnRect.H == 0 {
+	if a.fxBtnRect.W == 0 && a.fxBtnRect.H == 0 {
 		return sdl.Rect{X: (w - pw) / 2, Y: (h - ph) / 2, W: pw, H: ph}
 	}
-	x := a.lookUI.fxBtnRect.X
+	x := a.fxBtnRect.X
 	if x+pw > w-4 {
 		x = w - 4 - pw
 	}
 	if x < 4 {
 		x = 4
 	}
-	y := a.lookUI.fxBtnRect.Y - ph - 4 // above the button
+	y := a.fxBtnRect.Y - ph - 4 // above the button
 	if y < 4 {
 		y = 4 // tiny window: clamp to the top rather than run off-screen
 	}
@@ -164,7 +164,7 @@ func (a *App) fxPickerRect(w, h int32) sdl.Rect {
 func (a *App) drawFxPicker(w, h int32) {
 	c := a.ctx
 	if c.escPressed {
-		a.lookUI.showFxPicker = false
+		a.showFxPicker = false
 		return
 	}
 	r := a.fxPickerRect(w, h)
@@ -176,15 +176,15 @@ func (a *App) drawFxPicker(w, h int32) {
 		if c.hovering(row) {
 			c.Fill(row, ColPanelHi)
 			if c.clicked {
-				a.compose.icEffect = e
-				a.lookUI.showFxPicker = false
+				a.icEffect = e
+				a.showFxPicker = false
 			}
 		}
 		name, col := "Off", ColTextDim
 		if e != courtroom.TextEffectNone {
 			name, col = icEffectLabel(e), ColText
 		}
-		if e == a.compose.icEffect {
+		if e == a.icEffect {
 			col = ColAccent // mark the active effect
 		}
 		c.Label(row.X+4, y+3, name, col)
@@ -203,7 +203,7 @@ func (a *App) drawFxPicker(w, h int32) {
 			c.Fill(row, ColPanelHi)
 			if c.clicked {
 				a.insertICInline(b.code)
-				a.lookUI.showFxPicker = false
+				a.showFxPicker = false
 			}
 		}
 		c.Label(row.X+4, y+3, b.label, ColText)
@@ -218,7 +218,7 @@ func (a *App) drawFxPicker(w, h int32) {
 // and wrapping it would create unsupported nesting). Run BEFORE ParseTextEffects so the wrap is
 // parsed like any markup.
 func (a *App) applyStickyEffect(text string) string {
-	tag := effectTagName(a.compose.icEffect)
+	tag := effectTagName(a.icEffect)
 	if tag == "" || text == "" || text == " " || strings.ContainsRune(text, '[') {
 		return text
 	}

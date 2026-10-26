@@ -14,7 +14,13 @@ import (
 // characters) and the ARUP head-count. We do the same, so the list updates as
 // people join and leave with ZERO extra traffic (no floodguard risk) and zero
 // per-frame cost — it rebuilds on the packet, never in the draw loop.
+//
 // Spectators have no character, so CharsCheck can't see them by name; but
+// spectator_count = ARUP head-count − taken characters, which still drops when
+// one leaves, so anonymous Spectator rows appear and vanish too (parity with
+// webAO, which also can't name live spectators over the AO protocol). The rich
+// roster — names, UIDs, IPIDs — is snapshot-only data: flip the Legacy tick box
+// for the full /getarea list on demand.
 
 // specName is the wire/display name AO uses for a character-less player; the
 // roster row renderer already special-cases it (no icon, a SPEC chip).
@@ -127,10 +133,10 @@ func buildLivePlayers(players []courtroom.LivePlayer, areas []string, ipidByUID 
 // merge is exact (unlike the old by-name match). Nil when no snapshot has IPIDs.
 func (a *App) ipidByUID() map[string]string {
 	var m map[string]string
-	for i := range a.roster.areaPlayers {
-		if p := &a.roster.areaPlayers[i]; p.uid != "" && p.ipid != "" {
+	for i := range a.areaPlayers {
+		if p := &a.areaPlayers[i]; p.uid != "" && p.ipid != "" {
 			if m == nil {
-				m = make(map[string]string, len(a.roster.areaPlayers))
+				m = make(map[string]string, len(a.areaPlayers))
 			}
 			m[p.uid] = p.ipid
 		}
@@ -166,32 +172,32 @@ func rosterEqual(a, b []areaPlayer) bool {
 // reorder invariant — a same-length new roster reuses indices) and restamps the
 // memo time so the grouped-rows cache rebuilds once.
 func (a *App) rebuildLiveRoster() {
-	if a.roster.rosterLegacy || a.link.sess == nil {
+	if a.rosterLegacy || a.sess == nil {
 		return
 	}
 	var next []areaPlayer
-	if live := a.link.sess.Players(); len(live) > 0 {
+	if live := a.sess.Players(); len(live) > 0 {
 		// Primary: the server-pushed PR/PU roster — live UIDs, shownames, OOC
 		// names and areas, plus spectators, with no /getarea polling. IPID is
 		// enriched by UID from the last snapshot (mod-only) when present.
-		a.roster.livePlayersOn = true
-		next = buildLivePlayers(live, a.link.sess.Areas, a.ipidByUID())
+		a.livePlayersOn = true
+		next = buildLivePlayers(live, a.sess.Areas, a.ipidByUID())
 	} else {
-		a.roster.livePlayersOn = false
-		if len(a.roster.areaPlayers) > 0 {
+		a.livePlayersOn = false
+		if len(a.areaPlayers) > 0 {
 			return // no PR/PU on this server; the /getarea snapshot is the roster
 		}
 		// Pre-PR/PU fallback: name-only rows from CharsCheck so the list isn't blank.
 		n, ok := a.curAreaPlayers()
-		next = buildLiveRoster(a.link.sess.Chars, n, ok, a.srvMeta.curArea, a.roster.shownameFor, a.roster.areaPlayers)
+		next = buildLiveRoster(a.sess.Chars, n, ok, a.curArea, a.shownameFor, a.areaPlayers)
 	}
-	if rosterEqual(a.roster.liveRoster, next) {
+	if rosterEqual(a.liveRoster, next) {
 		return
 	}
-	a.roster.liveRoster = next
-	a.roster.playerIconPages = nil // re-resolve icons (same-length new roster reuses indices)
-	a.roster.liveRosterAt = a.now()
-	a.updateJoinFlash(a.roster.liveRosterAt) // new-joiner highlight (#107)
+	a.liveRoster = next
+	a.playerIconPages = nil // re-resolve icons (same-length new roster reuses indices)
+	a.liveRosterAt = a.now()
+	a.updateJoinFlash(a.liveRosterAt) // new-joiner highlight (#107)
 }
 
 // joinFlashWindow is how long a newly-joined player's row stays highlighted.
@@ -204,34 +210,58 @@ const joinFlashWindow = 4 * time.Second
 // only from rebuildLiveRoster on a real roster change, so the per-frame draw just does
 // a 0-alloc map lookup.
 func (a *App) updateJoinFlash(now time.Time) {
-	if a.roster.joinFlash == nil {
-		a.roster.joinFlash = make(map[string]time.Time, len(a.roster.liveRoster)+4)
+	if a.joinFlash == nil {
+		a.joinFlash = make(map[string]time.Time, len(a.liveRoster)+4)
 	}
-	stampNew := a.roster.joinFlashInit // skip flashing the initial population
-	for i := range a.roster.liveRoster {
-		uid := a.roster.liveRoster[i].uid
+	stampNew := a.joinFlashInit // skip flashing the initial population
+	for i := range a.liveRoster {
+		uid := a.liveRoster[i].uid
 		if uid == "" {
 			continue
 		}
-		if _, ok := a.roster.joinFlash[uid]; !ok {
+		if _, ok := a.joinFlash[uid]; !ok {
 			if stampNew {
-				a.roster.joinFlash[uid] = now
+				a.joinFlash[uid] = now
 			} else {
-				a.roster.joinFlash[uid] = time.Time{} // present at first sight — never flashed
+				a.joinFlash[uid] = time.Time{} // present at first sight — never flashed
 			}
 		}
 	}
-	a.roster.joinFlashInit = true
-	for uid := range a.roster.joinFlash {
+	a.joinFlashInit = true
+	for uid := range a.joinFlash {
 		if _, ok := a.rosterByUID(uid); !ok {
-			delete(a.roster.joinFlash, uid)
+			delete(a.joinFlash, uid)
 		}
 	}
 }
 
 // THE AUTOMATIC ROSTER POLL IS GONE (user order, 2026-08-08, after a live session).
+//
+// There used to be a debounced re-pull (rosterRefetchDebounce, 3 s) driven off the
+// server's own CharsCheck / ARUP / PU packets, so a busy hub re-sent rosterCmd
+// indefinitely. On an old KFO hub that answers it with "You cannot see players in all
+// areas in this hub!" — which is neither an area list nor a command error, so neither
+// the echo suppression nor the unsupported-latch caught it — the client pasted that
+// line into OOC every three seconds for the whole session. The instruction was to
+// delete the legacy poll outright rather than teach it another special case: even a
+// server that will never answer must at least not be spammed.
+//
+// This also CLOSES the v1.82 rate-limit class for good. A timed OOC command queued by
+// a producer that runs while the drain does not is the exact shape that got clients
+// flood-kicked ([[minimized-disconnect-root-cause]]: 68 kicks, /gas bursts of five);
+// the drain-side fix bounded the burst, and with no timed producer left there is
+// nothing to burst.
+//
+// WHAT SURVIVES: the server-pushed PR/PU roster (rebuildLiveRoster — unchanged, and it
+// is the roster wherever the server speaks it), plus the four fetches a PERSON asks
+// for — the Players panel's on-open / area-change pull (playerlist.go), the "Refresh
+// roster details" menu row (musicheader.go), the mod ban box's /getareas
+// (moddashpanel.go), and the one-shot after a successful /login (app.go, EventAuth).
+//
 // THE COST, stated plainly: a server with no PR/PU (old KFO, the Athena/tsuserver
 // family) now has NO self-updating player list beyond the pushed CharsCheck/ARUP rows.
+// Its UIDs/IPIDs refresh only when the user asks. That trade is the user's explicit
+// decision from the field, not an oversight.
 
 // rosterCmd is the all-areas roster command. Named so a fetch can check whether one is
 // already queued before adding another (see fetchRoster).
@@ -246,13 +276,45 @@ const areaEchoSuppressWindow = 3 * time.Second
 // fetchRoster pulls the all-areas UID/showname/IPID detail the live list merges
 // over the PR/PU rows, and stamps the debounce. It sends rosterCmd ("/gas"), not
 // /getareas, because the live list spans every area, so its IPID source must too.
+//
+// Every family DOES register some all-areas spelling; they just disagree on which.
 // /gas is Nyathena's (Nyathena/internal/athena/commands_registry.go:318) and
+// Whisker's (Whisker/src/commands.c3:79); Akashi and its WAP fork spell it
 // /getareas (akashi/src/aoclient.cpp:29, witches-akashi-party/src/aoclient.cpp:30),
 // as do tsuserver3/KFO (KFO-Server/server/commands/areas.py:288); and on Athena it
+// is the "-a" flag of its one roster command, /players
 // (Athena/internal/athena/commands.go:282, `Usage: /players [-a]`). So a
+// family-aware poll IS constructible — rosterDetailCmd below is that exact
+// pattern — and it would even survive the Athena/stock-Nyathena detection
+// ambiguity, because "/players -a" means all areas on BOTH (Nyathena's own gas
+// handler is cmdPlayers(client, []string{"-a"}, ""),
 // commands_registry.go:319).
+//
+// What does not exist is a single UNIVERSAL string, and "/players -a" is the
+// dangerous near-miss: Whisker maps players onto its own cmd_ga and passes no
+// arguments at all (Whisker/src/commands.c3:78), so there it would quietly return
+// only the CURRENT area — a silently wrong roster instead of an error. This pull
+// therefore stays one compile-time constant, and the one piece of machinery still
+// keyed to that is oocQueuePending(rosterCmd), which matches an already-queued copy
 // by exact string equality (macros.go:137). Making the pull family-aware means
+// revisiting that match, not just swapping this const.
+//
+// (There used to be a second: a spelling-blind refusal latch that disabled the pull
+// for the session on any command error. It went with the automatic poll — see
+// maybeRefetchRoster's obituary below — because with every fetch now coming from a
+// button, silently disabling one is worse than letting the server's refusal print.)
+//
+// Being wrong here used to be a repeating cost, because the poll re-sent it forever;
+// now every caller is a person, so a server that does not register /gas answers once,
+// to a press, and the user sees the answer. Akashi/WAP, tsuserver3/KFO and Athena all
+// reply with a command error ("Invalid command." —
 // akashi/src/commands/command_helper.cpp:33, Athena/internal/athena/commands.go:392),
+// and an old KFO hub may instead reply "You cannot see players in all areas in this
+// hub!". Either way the fallback for those families is the current-area
+// "Refresh roster details" row, which DOES ask in that server's own spelling
+// (rosterDetailCmd).
+//
+// Shared by the Players-panel pull, the mod IPID refresh, and the on-auth pull.
 func (a *App) fetchRoster() {
 	if a.oocQueuePending(rosterCmd) {
 		// One /gas is already waiting to go out. Stacking another buys nothing (they
@@ -261,8 +323,8 @@ func (a *App) fetchRoster() {
 		// server — so a double-press collapses to one command.
 		return
 	}
-	a.roster.suppressAreaEchoUntil = a.now().Add(areaEchoSuppressWindow) // its whole reply burst is parsed but kept out of OOC
-	a.roster.pairAreaReset = true
+	a.suppressAreaEchoUntil = a.now().Add(areaEchoSuppressWindow) // its whole reply burst is parsed but kept out of OOC
+	a.pairAreaReset = true
 	a.queueOOCLines([]string{rosterCmd})
 }
 
@@ -270,6 +332,27 @@ func (a *App) fetchRoster() {
 // one, so a control that sends a fixed string is inert on half the fleet. The
 // split is by lineage, and each side is named after the spelling it registers —
 // read out of the server sources, not assumed:
+//
+//   - rosterCmdPlayers ("/players") is the one current-area spelling the whole
+//     Go/C3 lineage answers, which is why it is NOT the shorter "/ga": Athena
+//     registers only "players" (Athena/internal/athena/commands.go:282,
+//     `Usage: /players [-a]`) — no ga, no gas, no getarea, and its Command struct
+//     has no alias field to hide one (commands.go:39-45). Nyathena registers
+//     "players" too (Nyathena/internal/athena/commands_registry.go:779) and hangs
+//     "ga" off the same cmdPlayers handler as a documented shortcut (:310), and
+//     Whisker's dispatcher maps players onto its own cmd_ga
+//     (Whisker/src/commands.c3:78) and has no getarea case at all (:77-79). So
+//     "/players" is the only string all three answer; "/ga" would be an unknown
+//     command on Athena.
+//   - rosterCmdGetarea ("/getarea") is the AO2-canonical spelling and the only one
+//     the Python/C++ lineage has: Akashi registers getarea/getareas and NOT
+//     players or the short aliases (akashi/src/aoclient.cpp:28-29), and
+//     tsuserver3/KFO define ooc_cmd_getarea/getareas only
+//     (KFO-Server/server/commands/areas.py:271,288). That is why a /gas on those
+//     answers "Invalid command" — which now simply prints in the OOC log next to the
+//     press that caused it. (It used to latch a session-long refusal flag instead;
+//     docs/KNOWN-ISSUES.md, "Why some servers never showed it", is the incident
+//     write-up for the automatic poll that needed one.)
 const (
 	rosterCmdPlayers = "/players"
 	rosterCmdGetarea = "/getarea"
@@ -281,6 +364,12 @@ const (
 // row is the only roster control the debloated toolbar kept (playerlisttoolbar.go),
 // and a menu row that reliably replies "unknown command" is worse than no row —
 // the degradation contract there is that a control may be absent, never inert.
+//
+// The families with no 2.11 live player list (serverhelp.go) are exactly the ones
+// that depend on this, and Whisker is one of them (plistPlugin) — so each family
+// MUST get a spelling it actually registers, or the one roster control that family
+// has left is the inert row this function exists to prevent. An unrecognised
+// server still gets the canonical /getarea rather than a guess.
 func (a *App) rosterDetailCmd() string {
 	switch a.detectedSoftware() {
 	case courtroom.SoftwareAthena, courtroom.SoftwareNyathena, courtroom.SoftwareWhisker:
@@ -307,19 +396,19 @@ func (a *App) rosterDetailCmd() string {
 // the snapshot (areaPlayers) directly — it needs the UIDs only /getarea carries,
 // so the live roster lives in its own slice rather than swapping areaPlayers out.
 func (a *App) rosterView() []areaPlayer {
-	if a.roster.rosterLegacy {
-		return a.roster.areaPlayers // explicit legacy /getarea snapshot
+	if a.rosterLegacy {
+		return a.areaPlayers // explicit legacy /getarea snapshot
 	}
-	if a.roster.livePlayersOn {
-		return a.roster.liveRoster // server-pushed PR/PU roster (UIDs/shownames live)
+	if a.livePlayersOn {
+		return a.liveRoster // server-pushed PR/PU roster (UIDs/shownames live)
 	}
 	// No PR/PU on this server: show the /getarea snapshot once it has landed,
 	// else the CharsCheck name-only roster so the list isn't blank. (The pair
 	// popup uses areaPlayers directly too.)
-	if len(a.roster.areaPlayers) > 0 {
-		return a.roster.areaPlayers
+	if len(a.areaPlayers) > 0 {
+		return a.areaPlayers
 	}
-	return a.roster.liveRoster
+	return a.liveRoster
 }
 
 // myAreaName is our current area NAME from the PR/PU roster — reliable on spawn
@@ -327,24 +416,24 @@ func (a *App) rosterView() []areaPlayer {
 // on a fresh join). Falls back to curArea for servers that don't report our own
 // area. Used to float our area to the top of the grouped player list.
 func (a *App) myAreaName() string {
-	if a.link.sess != nil {
-		if id, ok := a.link.sess.PlayerArea(a.link.sess.PlayerID); ok && id >= 0 && id < len(a.link.sess.Areas) {
-			return a.link.sess.Areas[id]
+	if a.sess != nil {
+		if id, ok := a.sess.PlayerArea(a.sess.PlayerID); ok && id >= 0 && id < len(a.sess.Areas) {
+			return a.sess.Areas[id]
 		}
 	}
-	return a.srvMeta.curArea
+	return a.curArea
 }
 
 // rosterStamp is the active roster's last-change time — the memo-invalidation
 // key for the grouped rows and sort order.
 func (a *App) rosterStamp() time.Time {
-	if !a.roster.rosterLegacy && a.roster.livePlayersOn {
-		return a.roster.liveRosterAt
+	if !a.rosterLegacy && a.livePlayersOn {
+		return a.liveRosterAt
 	}
-	if a.roster.rosterLegacy || len(a.roster.areaPlayers) > 0 {
-		return a.roster.areaListAt
+	if a.rosterLegacy || len(a.areaPlayers) > 0 {
+		return a.areaListAt
 	}
-	return a.roster.liveRosterAt
+	return a.liveRosterAt
 }
 
 // setRosterLegacy switches the player list between the live roster and the
@@ -352,11 +441,11 @@ func (a *App) rosterStamp() time.Time {
 // changes, so the index-keyed icon cache is dropped; switching back to live
 // rebuilds at once.
 func (a *App) setRosterLegacy(legacy bool) {
-	if a.roster.rosterLegacy == legacy {
+	if a.rosterLegacy == legacy {
 		return
 	}
-	a.roster.rosterLegacy = legacy
-	a.roster.playerIconPages = nil
+	a.rosterLegacy = legacy
+	a.playerIconPages = nil
 	if !legacy {
 		a.rebuildLiveRoster()
 	}
@@ -369,8 +458,8 @@ func (a *App) noteShowname(char, showname string) {
 	if char == "" || showname == "" {
 		return
 	}
-	if a.roster.shownameFor == nil {
-		a.roster.shownameFor = make(map[string]string, 32)
+	if a.shownameFor == nil {
+		a.shownameFor = make(map[string]string, 32)
 	}
-	a.roster.shownameFor[strings.ToLower(char)] = showname
+	a.shownameFor[strings.ToLower(char)] = showname
 }

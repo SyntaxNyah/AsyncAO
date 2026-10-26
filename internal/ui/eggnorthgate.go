@@ -3,9 +3,24 @@ package ui
 // THE NORTHGATE EGG: an aurora hanging over the stage, and a ring that shimmers
 // along the same ramp. One concern, one file (eggs.go owns the trigger table, the
 // enum and the two dispatches; this owns the pixels).
+//
 // WHOLLY PROCEDURAL, like the petals and the shards, because the licensing stance
 // forbids bundling art for a joke. A curtain is a COLUMN of stacked axis-aligned
 // fills hanging from the top of the stage, its foot rippling on a travelling sine
+// and its colour sampled off a green→violet ramp that slides sideways. Every
+// property comes from eggHash(index), so the field is a pure function of (index,
+// clock): no allocation, no seeding, no state to reset when the message changes,
+// and every AsyncAO client in the room draws the identical sky.
+//
+// WHY IT READS AS DIFFERENT FROM THE OTHER FOUR STAGE/RING EGGS. Scatterflower
+// falls, Crystalwarrior rises, and both are fields of DISCRETE objects scattered
+// across the whole stage. This one is CONTIGUOUS and ANCHORED: neighbouring
+// columns share a ripple phase, so the feet form one continuous hem rather than a
+// crowd of independent sprites, and the whole thing hangs from the top edge
+// instead of drifting through the middle. The ring is the same distinction — its
+// three rings hold three points on ONE sliding ramp (Crystalwarrior's hold three
+// points on the hue wheel and flash white together; FanatSors' is one colour
+// chasing round it).
 
 import (
 	"math"

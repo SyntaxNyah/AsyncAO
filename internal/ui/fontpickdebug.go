@@ -13,9 +13,20 @@ package ui
 // "chromeShare" branch); and a single-slot coverage-hint cache
 // (Ctx.coverHintFont/Text) that only stays valid because nothing currently
 // runs between the pick and the read for the SAME text.
+//
+// This file does not fix either candidate — the recon was explicit that a
+// speculative fix here would be worse than nothing, because it could close
+// the report while the real defect stays. It gives the NEXT report a way to
+// be diagnosed from a screenshot: the Debug panel's Fonts tab resolves the
+// SAME font and colour a live IC log row would, through the SAME calls
+// drawICLogList makes (elemFontFor, coversFace, the ghost/colour pipeline),
+// so a user need only open it, reproduce the funky row, and send a
+// screenshot of THIS panel instead of the client.
+//
 // Read only from drawDebugFonts (debugpanel.go), which runs only while the
 // panel is open on its Fonts tab. The normal IC/OOC draw calls nothing in
 // this file — TestICLogDrawAllocationIsUnaffectedByTheFontDebugReadout pins
+// that the real per-frame call site (drawICLogList) is untouched.
 
 import (
 	"github.com/veandco/go-sdl2/sdl"
@@ -72,9 +83,18 @@ type fontPickRow struct {
 // for the most recent debugFontRowCap IC log entries, folding in the same
 // colour pipeline the real draw reads (explicit \cN, friend glow, ghost
 // dimming, off the SAME a.icLog/ghostLogSpan state).
+//
+// It reconstructs the stamp-prefixed row text the same way icWrapped does
+// (qol.go: stamp + "  " + text) — that's a plain string concatenation, not a
+// font or colour decision, so replicating it here isn't re-implementing the
+// seam this exists to catch. It does NOT reproduce icWrapped's word-wrap: a
+// message long enough to wrap into more than one on-screen row is inspected
+// here as the single unwrapped string, not per continuation row. See the
+// phase report's RISKS section for why that's an accepted, documented gap
+// rather than a silent one.
 func (a *App) icFontPickRows(out []fontPickRow) []fontPickRow {
 	out = out[:0]
-	if len(a.chatlog.icLog) == 0 {
+	if len(a.icLog) == 0 {
 		return out
 	}
 	c := a.ctx
@@ -84,14 +104,14 @@ func (a *App) icFontPickRows(out []fontPickRow) []fontPickRow {
 	// case elemInkOr honours a theme's own ic_chatlog_color. a.themeLay.valid
 	// is the same flag drawCourtroom itself reads to choose the themed vs
 	// classic draw path, so this tracks the real dispatch rather than guessing.
-	icInk := a.elemInkOr(elemICChatlog, a.skin.themeLay.valid, ColText)
+	icInk := a.elemInkOr(elemICChatlog, a.themeLay.valid, ColText)
 	ghost := a.ghostLogSpan(nil) // the rows argument is unused (ghosttext.go) — nil is what a real caller passes too
 	lo := 0
-	if len(a.chatlog.icLog) > debugFontRowCap {
-		lo = len(a.chatlog.icLog) - debugFontRowCap
+	if len(a.icLog) > debugFontRowCap {
+		lo = len(a.icLog) - debugFontRowCap
 	}
-	for i := lo; i < len(a.chatlog.icLog); i++ {
-		e := &a.chatlog.icLog[i]
+	for i := lo; i < len(a.icLog); i++ {
+		e := &a.icLog[i]
 		text := e.text
 		if showStamps && e.stamp != "" {
 			text = e.stamp + "  " + text

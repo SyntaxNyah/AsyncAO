@@ -17,18 +17,18 @@ import (
 // override if they set one, else auto-detected from the ID-packet software string captured on
 // join (Session.Software).
 func (a *App) detectedSoftware() courtroom.ServerSoftware {
-	if a.link.cmSoftwareOverride != courtroom.SoftwareUnknown {
-		return a.link.cmSoftwareOverride
+	if a.cmSoftwareOverride != courtroom.SoftwareUnknown {
+		return a.cmSoftwareOverride
 	}
-	if a.link.sess == nil {
+	if a.sess == nil {
 		return courtroom.SoftwareUnknown
 	}
-	return courtroom.DetectSoftware(a.link.sess.Software)
+	return courtroom.DetectSoftware(a.sess.Software)
 }
 
 // amIMod reports whether we're mod-authed — the AUTH wire flag the server sets on /login.
 func (a *App) amIMod() bool {
-	return a.link.sess != nil && a.link.sess.ModGranted
+	return a.sess != nil && a.sess.ModGranted
 }
 
 // myAreaInfo returns the live ARUP state for our current area (ok=false when unknown). AreaInfo
@@ -37,13 +37,13 @@ func (a *App) amIMod() bool {
 // click-driven curArea — NOT curArea directly: a freshly-joined CM hasn't clicked an area, so
 // curArea would be empty/stale and the CM section would never appear.
 func (a *App) myAreaInfo() (courtroom.AreaInfo, bool) {
-	if a.link.sess == nil {
+	if a.sess == nil {
 		return courtroom.AreaInfo{}, false
 	}
 	name := a.myAreaName()
-	for i := range a.link.sess.Areas {
-		if a.link.sess.Areas[i] == name && i < len(a.link.sess.AreaInfo) {
-			return a.link.sess.AreaInfo[i], true
+	for i := range a.sess.Areas {
+		if a.sess.Areas[i] == name && i < len(a.sess.AreaInfo) {
+			return a.sess.AreaInfo[i], true
 		}
 	}
 	return courtroom.AreaInfo{}, false
@@ -67,12 +67,12 @@ func (a *App) amICM() bool {
 	}
 	// Exact: our uid in the Athena/Nyathena "(<uid>)" form (no false positive — the parens fence
 	// it off from other numbers like a longer uid or a name's digits).
-	if a.link.sess != nil && a.link.sess.PlayerID > 0 && strings.Contains(cm, "("+strconv.Itoa(a.link.sess.PlayerID)+")") {
+	if a.sess != nil && a.sess.PlayerID > 0 && strings.Contains(cm, "("+strconv.Itoa(a.sess.PlayerID)+")") {
 		return true
 	}
 	// Looser: our showname / character / OOC name as a substring (covers the servers that name the
 	// CM by one of those instead of the uid).
-	for _, id := range []string{a.effectiveShowname(), a.myCharName(), a.compose.oocName} {
+	for _, id := range []string{a.effectiveShowname(), a.myCharName(), a.oocName} {
 		if id = strings.ToLower(strings.TrimSpace(id)); id != "" && strings.Contains(cm, id) {
 			return true
 		}

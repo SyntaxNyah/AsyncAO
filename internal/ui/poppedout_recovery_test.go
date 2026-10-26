@@ -34,23 +34,23 @@ func TestAutoReconnectIdempotentInDueWindow(t *testing.T) {
 
 	})
 	a.screen = ScreenLobby // the retry fires only from the lobby (v1.70.0 behaviour)
-	a.conn.connErr = "connection closed"
-	a.conn.autoReconnectTries = 0
-	a.conn.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
+	a.connErr = "connection closed"
+	a.autoReconnectTries = 0
+	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 
 	a.pollAutoReconnect()
-	firstTries := a.conn.autoReconnectTries
+	firstTries := a.autoReconnectTries
 	if firstTries == 0 {
 		t.Fatal("the first poll must fire the due retry")
 	}
 	// The dial failed and backed off: autoReconnectAt is now in the future, so an
 	// immediately-following poll (same tick) sees an un-due retry.
-	if a.conn.autoReconnectAt.IsZero() || !a.now().Before(a.conn.autoReconnectAt) {
-		t.Fatalf("after a failed dial the retry must be rescheduled into the future, got %v (now %v)", a.conn.autoReconnectAt, a.now())
+	if a.autoReconnectAt.IsZero() || !a.now().Before(a.autoReconnectAt) {
+		t.Fatalf("after a failed dial the retry must be rescheduled into the future, got %v (now %v)", a.autoReconnectAt, a.now())
 	}
 	a.pollAutoReconnect() // same due window
-	if a.conn.autoReconnectTries != firstTries {
-		t.Errorf("double-polling must not double-dial: tries went %d→%d in one due window", firstTries, a.conn.autoReconnectTries)
+	if a.autoReconnectTries != firstTries {
+		t.Errorf("double-polling must not double-dial: tries went %d→%d in one due window", firstTries, a.autoReconnectTries)
 	}
 }
 
@@ -80,7 +80,12 @@ func TestPinnedPaneDeathSurfacesWarning(t *testing.T) {
 
 	a := testTabApp(t)
 	// A background tab pinned as the float pane, on the live-then-closing conn.
-	pinned := &courtTab{state: sessionState{srvMeta: serverMetaState{serverName: "PinnedServer", serverKey: "ws://pinned"}, link: linkState{conn: conn, sess: courtroom.NewSession(func(protocol.Packet) error { return nil }, "")}}}
+	pinned := &courtTab{state: sessionState{
+		serverName: "PinnedServer",
+		serverKey:  "ws://pinned",
+		conn:       conn,
+		sess:       courtroom.NewSession(func(protocol.Packet) error { return nil }, ""),
+	}}
 	a.tabs = []*courtTab{pinned, {}}
 	a.activeTab = 1 // the user is looking at a DIFFERENT tab
 	a.splitTab = pinned
@@ -102,7 +107,7 @@ func TestPinnedPaneDeathSurfacesWarning(t *testing.T) {
 	if a.splitTab != nil {
 		t.Error("the pinned pane must be cleared when its server dies (existing behavior)")
 	}
-	if a.dialogs.disconnectDlg.open {
+	if a.disconnectDlg.open {
 		t.Error("a parked pinned-tab death must NOT pop a modal over the active tab (unchanged)")
 	}
 	// The vanished pane's death is announced with the server name.

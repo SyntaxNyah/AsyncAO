@@ -19,17 +19,17 @@ import (
 )
 
 func (a *App) buildRoom() {
-	if a.link.sess == nil {
+	if a.sess == nil {
 		return
 	}
-	a.link.room = a.newRoom(a.link.urls, a.link.sess, a.d.Audio) // construction IS wiring (newroom.go): char.ini callbacks, the overlay engine, the visual prefs
+	a.room = a.newRoom(a.urls, a.sess, a.d.Audio) // construction IS wiring (newroom.go): char.ini callbacks, the overlay engine, the visual prefs
 	// Per-server audio: apply THIS server's volume profile (or the global one) now,
 	// so the music re-seeded below plays at the right level and switching between
 	// two in-court tabs carries each server's own volumes / muted blips.
 	a.applyAudioVolumes()
-	urls := a.link.urls
+	urls := a.urls
 	mgr := a.d.Manager
-	a.link.room.Predictor = assets.NewPrefetcher(func(character, emote string) {
+	a.room.Predictor = assets.NewPrefetcher(func(character, emote string) {
 		if emote == "" {
 			emote = "normal" // no chain signal yet: the default loop
 		}
@@ -44,18 +44,18 @@ func (a *App) buildRoom() {
 		mgr.PrefetchChainSpeculative(idle, urls.EmoteAlts(character, emote, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (predicted next speaker, idle)
 		mgr.PrefetchChainSpeculative(talk, urls.EmoteAlts(character, emote, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (predicted next speaker, talk)
 	})
-	a.link.room.Predictor.SetAggressiveness(a.d.Prefs.Load().PrefetchAggressiveness()) // #100 predictive-prefetch level
-	a.d.Viewport.OnPreanimDone = a.link.room.NotifyPreanimDone
-	a.d.Viewport.OnPreanimStart = a.link.room.NotifyPreanimStarted // extend the fallback for long decoded preanims (phase-guarded — safe if a preview later shares this viewport)
+	a.room.Predictor.SetAggressiveness(a.d.Prefs.Load().PrefetchAggressiveness()) // #100 predictive-prefetch level
+	a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
+	a.d.Viewport.OnPreanimStart = a.room.NotifyPreanimStarted // extend the fallback for long decoded preanims (phase-guarded — safe if a preview later shares this viewport)
 	// #17 frame-synced effects: OnFrameShown reports the CURRENTLY-PLAYING sprite's
 	// frame, so it must track the room that OWNS the on-screen sprite — the same
 	// convention as OnPreanimDone (swapped by replay/maker/gifexport), NOT the
 	// phase-guarded OnPreanimStart. NotifyFrameShown has no stale-safe guard, so a
 	// mis-pointed callback would feed a replay sprite's frames into the live room's
 	// trigger table and fire its SFX.
-	a.d.Viewport.OnFrameShown = a.link.room.NotifyFrameShown
-	if a.link.sess.Background != "" {
-		a.link.room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: a.link.sess.Background})
+	a.d.Viewport.OnFrameShown = a.room.NotifyFrameShown
+	if a.sess.Background != "" {
+		a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: a.sess.Background})
 	}
 	// Force the SHARED viewport's scenery layers onto THIS room's background/desk now.
 	// buildRoom runs on a tab switch, and the viewport is App-global: without this the
@@ -66,17 +66,17 @@ func (a *App) buildRoom() {
 	// is the sticky exception, so it needs this explicit rebind at the rebuild seam. A
 	// brief blank of the CORRECT base (the HIGH-priority setBackground prefetch above +
 	// the held:// bridge fill it a frame later) beats the WRONG base persisting.
-	a.d.Viewport.RebindScenery(a.link.room.Scene.BackgroundBase, a.link.room.Scene.DeskBase)
+	a.d.Viewport.RebindScenery(a.room.Scene.BackgroundBase, a.room.Scene.DeskBase)
 	// Resume the area's current song into the fresh room — symmetric with the background
 	// above. The track was announced (MC) before this room existed (the join handshake, or
 	// a tab reactivation), so without this re-seed the music fell silent on (re)entry while
 	// the background came back.
-	if a.link.sess.MusicTrack != "" {
+	if a.sess.MusicTrack != "" {
 		// Sync the streaming toggle BEFORE the resume: applyTimingToRoom (which
 		// normally pushes it) runs below, but this resume event fires first — with
 		// StreamMusic left at NewCourtroom's default ON, a resumed track would play
 		// even when the user disabled streaming. §1.3.
-		a.link.room.StreamMusic = a.d.Prefs.Load().MusicStreaming
+		a.room.StreamMusic = a.d.Prefs.Load().MusicStreaming
 		a.resumeActiveTabMusic()
 	}
 	a.applyTimingToRoom()
@@ -91,24 +91,24 @@ func (a *App) buildRoom() {
 	// (showname vs char name, transmitted styles, motion strip), so the
 	// restore must run under the user's prefs, not NewCourtroom's zero values.
 	if m := a.stageRestoreMsg(); m != nil {
-		a.link.room.RestoreMessage(m)
+		a.room.RestoreMessage(m)
 	}
-	a.d.Prefs.RememberServerChar(a.srvMeta.serverKey, a.myCharName())
+	a.d.Prefs.RememberServerChar(a.serverKey, a.myCharName())
 	// Court-extras state is per-room: splash/badge clear, penalty-sfx
 	// direction tracking re-arms at the session's current bar values.
-	a.courtxtra.wtceName, a.courtxtra.testimonyOn = "", false
-	a.courtxtra.hpPrev = [2]int{a.link.sess.HPDef, a.link.sess.HPPro}
-	a.courtxtra.showModcall, a.modUI.modReason = false, ""
-	a.evid.showEvid, a.evid.evidEditing, a.evid.evidPresent, a.evid.evidIdx = false, false, false, -1
-	a.evid.evidPresentImage = ""
-	a.evid.evidCtxMenu = false
-	a.evid.evidAsk = nil
-	a.evid.evShowImg = ""
+	a.wtceName, a.testimonyOn = "", false
+	a.hpPrev = [2]int{a.sess.HPDef, a.sess.HPPro}
+	a.showModcall, a.modReason = false, ""
+	a.showEvid, a.evidEditing, a.evidPresent, a.evidIdx = false, false, false, -1
+	a.evidPresentImage = ""
+	a.evidCtxMenu = false
+	a.evidAsk = nil
+	a.evShowImg = ""
 	a.screen = ScreenCourtroom
 	a.loadCharINI()
-	a.updatePresence()                // character (and server) just became known
-	a.roster.liveDetailsArea = "\x00" // force a fresh rich-roster pull for the new session
-	a.rebuildLiveRoster()             // seed the live player list from the handshake's CharsCheck
+	a.updatePresence()         // character (and server) just became known
+	a.liveDetailsArea = "\x00" // force a fresh rich-roster pull for the new session
+	a.rebuildLiveRoster()      // seed the live player list from the handshake's CharsCheck
 }
 
 // stageRestoreMsg is the message buildRoom re-stages into a rebuilt room — the
@@ -116,11 +116,15 @@ func (a *App) buildRoom() {
 // speaker (parity with handleSessionEvents, which `continue`s past
 // room.HandleEvent for ignored speakers — #81: no log, no sprite). nil = leave
 // the stage blank. Split out so the gate is unit-pinnable without a room.
+// Single-seed caveat: an ignored LAST speaker shadows the previous non-ignored
+// line (the session can't keep "last non-ignored under the active tab's
+// filter" — the list is per-tab UI state), so that corner restores blank: the
+// pre-restore status quo, never a wrong render.
 func (a *App) stageRestoreMsg() *protocol.ChatMessage {
-	if a.link.sess == nil {
+	if a.sess == nil {
 		return nil
 	}
-	m := a.link.sess.LastIC
+	m := a.sess.LastIC
 	if m == nil || a.ignoreSpeaker(m) {
 		return nil
 	}
@@ -133,6 +137,9 @@ func (a *App) stageRestoreMsg() *protocol.ChatMessage {
 // primary courtroom — drag it ANYWHERE, resize it, overlap the primary however
 // you like (a strict superset of the old fixed split). It carries that server's
 // live stage + chat log + IC input; you type into either client (click to focus).
+// The pinned room runs on courtroom.NopAudio so the single music stream stays
+// with the primary; its second viewport shares the texture store (origin-
+// qualified keys, so two servers' assets never clash).
 
 const splitInputH = 30 // pinned client's IC input row height (pass 2c)
 const (
@@ -154,24 +161,24 @@ const (
 // background tab with a live session + room (and not disconnected).
 func (a *App) splitActive() bool {
 	return a.splitTab != nil && a.splitRoom != nil && a.splitVP != nil &&
-		a.splitTab.state.link.sess != nil && !a.splitTab.dead
+		a.splitTab.state.sess != nil && !a.splitTab.dead
 }
 
 // clearSplit tears the floating client down (keeps the viewport for reuse) and
 // frees the full-theme render target + the pinned tab's chat raster (built by the
 // full-view pass; it lives in the tab's sessionState, so this tab is its sole owner).
 func (a *App) clearSplit() {
-	if a.splitTab != nil && a.splitTab.state.raster.msRaster != nil {
-		a.splitTab.state.raster.msRaster.Destroy()
-		a.splitTab.state.raster.msRaster = nil
+	if a.splitTab != nil && a.splitTab.state.msRaster != nil {
+		a.splitTab.state.msRaster.Destroy()
+		a.splitTab.state.msRaster = nil
 	}
 	a.splitTab, a.splitRoom = nil, nil
 	if a.ctx != nil && a.ctx.focusID == "ic-split" {
 		a.ctx.focusID = "" // the client's field is gone — don't leave focus dangling on it
 	}
-	if a.client.clientTex != nil {
-		_ = a.client.clientTex.Destroy()
-		a.client.clientTex = nil
+	if a.clientTex != nil {
+		_ = a.clientTex.Destroy()
+		a.clientTex = nil
 	}
 }
 
@@ -207,11 +214,11 @@ func (a *App) controlPinnedClient() {
 // a CLICK (press+release with little travel — a drag there pans/zooms instead). The
 // swap is deferred to the next frame top (pendingControlSwap) so we never mutate the
 // active session/room mid-render.
-func (client1 *clientState) clientControlClick(e *env, view sdl.Rect) {
-	c := e.ctx
-	if c.clicked && !client1.clientPanning && pointIn(c.mouseX, c.mouseY, view) &&
+func (a *App) clientControlClick(view sdl.Rect) {
+	c := a.ctx
+	if c.clicked && !a.clientPanning && pointIn(c.mouseX, c.mouseY, view) &&
 		absInt(int(c.mouseX-c.downX))+absInt(int(c.mouseY-c.downY)) <= clientClickSlop {
-		client1.pendingControlSwap = true
+		a.pendingControlSwap = true
 	}
 }
 
@@ -221,7 +228,7 @@ func (client1 *clientState) clientControlClick(e *env, view sdl.Rect) {
 // store, and seeds the current background + song + last message (settled) so
 // the window isn't blank on pin.
 func (a *App) pinToSplit(t *courtTab) {
-	if t == nil || t.state.link.sess == nil || t.dead {
+	if t == nil || t.state.sess == nil || t.dead {
 		return
 	}
 	if a.splitTab == t { // toggle off
@@ -241,58 +248,58 @@ func (a *App) pinToSplit(t *courtTab) {
 	// be built raw, so it was one of the two rooms that never got the overlay
 	// engine: an effect played in the tab you were watching and not in the pane
 	// beside it. NopAudio keeps the pane silent; the visual half is now identical.
-	a.splitRoom = a.newRoom(t.state.link.urls, t.state.link.sess, courtroom.NopAudio{})
+	a.splitRoom = a.newRoom(t.state.urls, t.state.sess, courtroom.NopAudio{})
 	// The pinned pane is a DIFFERENT server's session, so a wiping BN there must
 	// re-scene at THAT tab's side, never the active tab's (#23). Reading through t
 	// keeps it correct for the pane's whole lifetime; a.mySide would be the wrong
 	// tab entirely.
 	a.splitRoom.Env = envResolver{a: a, side: func() string {
-		if t.state.compose.sidePref != "" {
-			return t.state.compose.sidePref
+		if t.state.sidePref != "" {
+			return t.state.sidePref
 		}
 		return defaultSide
 	}}
 	a.splitVP.OnPreanimDone = a.splitRoom.NotifyPreanimDone
 	a.splitVP.OnPreanimStart = a.splitRoom.NotifyPreanimStarted
-	a.splitVP.OnFrameShown = a.splitRoom.NotifyFrameShown                     // #17 (NopAudio here → shake/flash only; sfx is silent for the pinned view)
-	a.client.clientZoom, a.clientPanX, a.clientPanY = clientZoomMin, 0.5, 0.5 // fresh pin starts at fit
-	if t.state.link.sess.Background != "" {
-		a.splitRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: t.state.link.sess.Background})
+	a.splitVP.OnFrameShown = a.splitRoom.NotifyFrameShown              // #17 (NopAudio here → shake/flash only; sfx is silent for the pinned view)
+	a.clientZoom, a.clientPanX, a.clientPanY = clientZoomMin, 0.5, 0.5 // fresh pin starts at fit
+	if t.state.sess.Background != "" {
+		a.splitRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: t.state.sess.Background})
 	}
 	// The split viewport is REUSED across pins (created once above), so force its
 	// scenery onto THIS pinned room's background/desk — otherwise the sticky gate
 	// keeps the previously pinned tab's background under the new one (same cross-view
 	// scenery-hold bug the primary viewport had in buildRoom).
 	a.splitVP.RebindScenery(a.splitRoom.Scene.BackgroundBase, a.splitRoom.Scene.DeskBase)
-	if t.state.link.sess.MusicTrack != "" {
-		a.splitRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventMusic, Text: t.state.link.sess.MusicTrack, Loop: true}) // NopAudio: silent (#15 loop default)
+	if t.state.sess.MusicTrack != "" {
+		a.splitRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventMusic, Text: t.state.sess.MusicTrack, Loop: true}) // NopAudio: silent (#15 loop default)
 	}
 	// Last message too, settled — same blank-until-someone-talks fix as the
 	// bg+song seeds. Deliberately UNfiltered: the live background pump routes
 	// this tab's events to splitRoom without the ignore gate (which keys on the
 	// ACTIVE tab's server anyway), so the pin seed matches what the pane shows.
-	a.splitRoom.RestoreMessage(t.state.link.sess.LastIC)
+	a.splitRoom.RestoreMessage(t.state.sess.LastIC)
 }
 
 // placeClientAt positions the floating client window centred under (mx,my) — used
 // by the drag-tab tear-off so the window lands where you drop it (Chrome-style).
 // Uses the window's current width if it was resized, else the default.
 func (a *App) placeClientAt(mx, my int32) {
-	w := a.wins.clientWin.w
+	w := a.clientWin.w
 	if w <= 0 {
 		w = clientWinDefW
 	}
-	a.wins.clientWin.x = mx - w/2
-	a.wins.clientWin.y = my - floatTitleH/2
-	a.wins.clientWin.placed = true
+	a.clientWin.x = mx - w/2
+	a.clientWin.y = my - floatTitleH/2
+	a.clientWin.placed = true
 }
 
 // clientWinRect is the floating client window's clamped screen rect.
-func (classic1 *classicState) clientWinRect(e *env, w, h int32) sdl.Rect {
-	if r, ok := classic1.seedPanelFromSlot(&e.wins.clientWin, slotPanelClient, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, w, h); ok {
+func (a *App) clientWinRect(w, h int32) sdl.Rect {
+	if r, ok := a.seedPanelFromSlot(&a.clientWin, slotPanelClient, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, w, h); ok {
 		return r
 	}
-	return e.wins.clientWin.rect(clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, w, h)
+	return a.clientWin.rect(clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, w, h)
 }
 
 // drawFloatClient draws the pinned server as a movable + resizable floating
@@ -306,41 +313,41 @@ func (a *App) drawFloatClient(w, h int32, pressed *bool) {
 		return
 	}
 	c := a.ctx
-	wasActive := a.wins.clientWin.dragging || a.wins.clientWin.resizing // detect the drag/resize-end frame for slot persistence
-	r := a.classic.clientWinRect(&a.env, w, h)
+	wasActive := a.clientWin.dragging || a.clientWin.resizing // detect the drag/resize-end frame for slot persistence
+	r := a.clientWinRect(w, h)
 	c.Fill(r, ColBackground)
 	c.Border(r, ColAccent)
 	// Title bar = drag handle + Full/Compact toggle + close.
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)
-	if a.client.clientHdrName != a.splitTab.state.srvMeta.serverName { // memoized: no per-frame concat
-		a.client.clientHdrName = a.splitTab.state.srvMeta.serverName
-		a.client.clientHdr = "▣ " + a.client.clientHdrName
+	if a.clientHdrName != a.splitTab.state.serverName { // memoized: no per-frame concat
+		a.clientHdrName = a.splitTab.state.serverName
+		a.clientHdr = "▣ " + a.clientHdrName
 	}
-	c.LabelClipped(r.X+10, r.Y+8, r.W-102, a.client.clientHdr, ColAccent)
+	c.LabelClipped(r.X+10, r.Y+8, r.W-102, a.clientHdr, ColAccent)
 	// Full ⇄ Compact: show the whole theme (view-only) or just stage+log+input.
 	tgl := sdl.Rect{X: r.X + r.W - 92, Y: r.Y + 5, W: 60, H: floatTitleH - 10}
 	tglLabel := "Full view"
-	if a.client.clientFull {
+	if a.clientFull {
 		tglLabel = "Compact"
 	}
 	if c.Button(tgl, tglLabel) {
-		a.client.clientFull = !a.client.clientFull
+		a.clientFull = !a.clientFull
 	}
 	c.TooltipAfter("cli-full", tgl, "Show the WHOLE theme (emote grid, buttons…) — view-only; chat in the strip below. Roughly doubles render cost while open.")
 	if c.Button(sdl.Rect{X: r.X + r.W - 26, Y: r.Y + 5, W: 20, H: floatTitleH - 10}, "x") {
 		a.clearSplit()
 		return
 	}
-	a.floatWinDrag(&a.wins.clientWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 98, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.clientWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 98, H: floatTitleH}, pressed)
 	// Bottom-right resize grip — handled before the body so a corner press resizes
 	// rather than landing in the log / input beneath it.
 	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.wins.clientWin, grip, r, clientWinMinW, clientWinMinH, pressed)
-	if wasActive && !a.wins.clientWin.dragging && !a.wins.clientWin.resizing { // drag/resize just ended → remember where
-		a.classic.persistPanelSlot(&a.env, slotPanelClient, r, w, h)
+	a.floatWinResize(&a.clientWin, grip, r, clientWinMinW, clientWinMinH, pressed)
+	if wasActive && !a.clientWin.dragging && !a.clientWin.resizing { // drag/resize just ended → remember where
+		a.persistPanelSlot(slotPanelClient, r, w, h)
 	}
 	body := sdl.Rect{X: r.X, Y: r.Y + floatTitleH, W: r.W, H: r.H - floatTitleH}
-	if a.client.clientFull && a.canRenderFullClient() {
+	if a.clientFull && a.canRenderFullClient() {
 		a.drawClientFull(w, h, body, pressed)
 	} else {
 		a.drawClientBody(body)
@@ -352,7 +359,7 @@ func (a *App) drawFloatClient(w, h int32, pressed *bool) {
 // modes (theater / either layout editor): those reskin drawCourtroom globally, so
 // the pinned pass would fight them. Compact view is shown instead while they're on.
 func (a *App) canRenderFullClient() bool {
-	return !a.theaterOn && !a.classic.classicEdit && !a.layoutEdit
+	return !a.theaterOn && !a.classicEdit && !a.layoutEdit
 }
 
 // drawClientBody lays the pinned server's live stage (4:3, capped), chat log, and IC
@@ -368,7 +375,7 @@ func (a *App) drawClientBody(r sdl.Rect) {
 	}
 	stage := sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: sceneH}
 	a.splitVP.Render(c.Ren, &a.splitRoom.Scene, stage)
-	a.client.clientControlClick(&a.env, stage) // click the stage → take control of this server
+	a.clientControlClick(stage) // click the stage → take control of this server
 	logTop := stage.Y + stage.H + 3
 	logRect := sdl.Rect{X: r.X, Y: logTop, W: r.W, H: inputRow.Y - logTop}
 	c.Fill(sdl.Rect{X: logRect.X, Y: logRect.Y - 2, W: logRect.W, H: 1}, ColPanelHi) // rule above the log
@@ -386,15 +393,15 @@ func (a *App) drawClientFull(w, h int32, body sdl.Rect, pressed *bool) {
 	inputRow := sdl.Rect{X: body.X, Y: body.Y + body.H - splitInputH, W: body.W, H: splitInputH}
 	view := sdl.Rect{X: body.X, Y: body.Y, W: body.W, H: body.H - splitInputH}
 	a.renderFullClientTexture(w, h)
-	if a.client.clientTex == nil {
+	if a.clientTex == nil {
 		c.LabelClipped(view.X+10, view.Y+10, view.W-20, "Full-theme view unavailable on this renderer.", ColTextDim)
 		a.drawSplitInput(inputRow)
 		return
 	}
-	a.handleClientZoomPan(view, pressed)      // scroll = zoom (cursor-anchored), drag = pan
-	a.client.clientControlClick(&a.env, view) // a plain click on the client = take control of that server
-	src := a.clientViewSrc()                  // sub-rect of the texture from zoom + pan
-	_ = c.Ren.Copy(a.client.clientTex, &src, &view)
+	a.handleClientZoomPan(view, pressed) // scroll = zoom (cursor-anchored), drag = pan
+	a.clientControlClick(view)           // a plain click on the client = take control of that server
+	src := a.clientViewSrc()             // sub-rect of the texture from zoom + pan
+	_ = c.Ren.Copy(a.clientTex, &src, &view)
 	// "Click to control" hint (top-left pill) — the rendered theme is a live view; a
 	// click makes this server the real, fully-interactive courtroom (swaps with primary).
 	const ctlHint = "▶ Click to control this server (buttons + chat)"
@@ -403,14 +410,14 @@ func (a *App) drawClientFull(w, h int32, body sdl.Rect, pressed *bool) {
 	c.LabelClipped(hintPill.X+6, hintPill.Y+3, view.W-12, ctlHint, ColAccent)
 	// Zoom readout / hint (memoized so the per-frame draw never Sprintfs), on a small
 	// dark pill for legibility over the rendered client.
-	pct := int(a.client.clientZoom*100 + 0.5)
-	if pct != a.client.clientZoomLblPct {
-		a.client.clientZoomLblPct = pct
-		a.client.clientZoomLbl = fmt.Sprintf("Zoom %d%%  ·  scroll to zoom · drag to pan", pct)
+	pct := int(a.clientZoom*100 + 0.5)
+	if pct != a.clientZoomLblPct {
+		a.clientZoomLblPct = pct
+		a.clientZoomLbl = fmt.Sprintf("Zoom %d%%  ·  scroll to zoom · drag to pan", pct)
 	}
-	pill := sdl.Rect{X: view.X, Y: view.Y + view.H - 18, W: c.TextWidth(a.client.clientZoomLbl) + 12, H: 18}
+	pill := sdl.Rect{X: view.X, Y: view.Y + view.H - 18, W: c.TextWidth(a.clientZoomLbl) + 12, H: 18}
 	c.Fill(pill, sdl.Color{R: 0, G: 0, B: 0, A: 150})
-	c.LabelClipped(pill.X+6, pill.Y+3, view.W-12, a.client.clientZoomLbl, ColAccent)
+	c.LabelClipped(pill.X+6, pill.Y+3, view.W-12, a.clientZoomLbl, ColAccent)
 	a.drawSplitInput(inputRow) // quick-chat strip (sendICSplit) — fire a line without taking control
 }
 
@@ -418,11 +425,11 @@ func (a *App) drawClientFull(w, h int32, body sdl.Rect, pressed *bool) {
 // the zoom factor and pan centre. At zoom 1 it's the whole texture (shrunk to fit);
 // zoomed in it's a centred-on-pan window that magnifies.
 func (a *App) clientViewSrc() sdl.Rect {
-	z := a.client.clientZoom
+	z := a.clientZoom
 	if z < clientZoomMin {
 		z = clientZoomMin
 	}
-	tw, th := float64(a.client.clientTexW), float64(a.client.clientTexH)
+	tw, th := float64(a.clientTexW), float64(a.clientTexH)
 	sw, sh := tw/z, th/z
 	sx := a.clientPanX*tw - sw/2
 	sy := a.clientPanY*th - sh/2
@@ -436,12 +443,12 @@ func (a *App) clientViewSrc() sdl.Rect {
 // window never leaves the texture.
 func (a *App) handleClientZoomPan(view sdl.Rect, pressed *bool) {
 	c := a.ctx
-	if a.client.clientZoom < clientZoomMin {
-		a.client.clientZoom = clientZoomMin
+	if a.clientZoom < clientZoomMin {
+		a.clientZoom = clientZoomMin
 	}
 	hover := pointIn(c.mouseX, c.mouseY, view)
 	if hover && c.wheelY != 0 { // zoom around the cursor
-		old := a.client.clientZoom
+		old := a.clientZoom
 		nz := old * clientZoomStep
 		if c.wheelY < 0 {
 			nz = old / clientZoomStep
@@ -453,34 +460,34 @@ func (a *App) handleClientZoomPan(view sdl.Rect, pressed *bool) {
 			fy := float64(c.mouseY-view.Y) / float64(view.H)
 			texX := float64(src.X) + fx*float64(src.W) // texture point under the cursor
 			texY := float64(src.Y) + fy*float64(src.H)
-			tw, th := float64(a.client.clientTexW), float64(a.client.clientTexH)
+			tw, th := float64(a.clientTexW), float64(a.clientTexH)
 			sw, sh := tw/nz, th/nz
-			a.client.clientZoom = nz
+			a.clientZoom = nz
 			a.clientPanX = (texX - fx*sw + sw/2) / tw // keep that point under the cursor
 			a.clientPanY = (texY - fy*sh + sh/2) / th
 			a.clampClientPan()
 		}
 		c.wheelY = 0 // consumed
 	}
-	if a.client.clientZoom > clientZoomMin { // drag to pan (only meaningful when zoomed)
+	if a.clientZoom > clientZoomMin { // drag to pan (only meaningful when zoomed)
 		if *pressed && hover {
 			*pressed = false
-			a.client.clientPanning = true
+			a.clientPanning = true
 			a.clientPanGrabX, a.clientPanGrabY = c.mouseX, c.mouseY
 			a.clientPanBaseX, a.clientPanBaseY = a.clientPanX, a.clientPanY
 		}
 		if !c.mouseDown {
-			a.client.clientPanning = false
+			a.clientPanning = false
 		}
-		if a.client.clientPanning {
-			tw, th := float64(a.client.clientTexW), float64(a.client.clientTexH)
-			sw, sh := tw/a.client.clientZoom, th/a.client.clientZoom
+		if a.clientPanning {
+			tw, th := float64(a.clientTexW), float64(a.clientTexH)
+			sw, sh := tw/a.clientZoom, th/a.clientZoom
 			a.clientPanX = a.clientPanBaseX - float64(c.mouseX-a.clientPanGrabX)/float64(view.W)*sw/tw
 			a.clientPanY = a.clientPanBaseY - float64(c.mouseY-a.clientPanGrabY)/float64(view.H)*sh/th
 			a.clampClientPan()
 		}
 	} else {
-		a.client.clientPanning = false
+		a.clientPanning = false
 		a.clientPanX, a.clientPanY = 0.5, 0.5
 	}
 }
@@ -488,7 +495,7 @@ func (a *App) handleClientZoomPan(view sdl.Rect, pressed *bool) {
 // clampClientPan keeps the pan centre so the zoomed source window stays inside the
 // texture (its half-extent is 0.5/zoom in normalized space).
 func (a *App) clampClientPan() {
-	half := 0.5 / a.client.clientZoom
+	half := 0.5 / a.clientZoom
 	a.clientPanX = clampF(a.clientPanX, half, 1-half)
 	a.clientPanY = clampF(a.clientPanY, half, 1-half)
 }
@@ -522,23 +529,23 @@ func (a *App) renderFullClientTexture(w, h int32) {
 	if w <= 0 || h <= 0 {
 		return
 	}
-	if a.client.clientTex == nil || a.client.clientTexW != w || a.client.clientTexH != h {
-		if a.client.clientTex != nil {
-			_ = a.client.clientTex.Destroy()
-			a.client.clientTex = nil
+	if a.clientTex == nil || a.clientTexW != w || a.clientTexH != h {
+		if a.clientTex != nil {
+			_ = a.clientTex.Destroy()
+			a.clientTex = nil
 		}
 		tex, err := c.Ren.CreateTexture(uint32(sdl.PIXELFORMAT_ABGR8888), sdl.TEXTUREACCESS_TARGET, w, h)
 		if err != nil {
 			return
 		}
-		a.client.clientTex, a.client.clientTexW, a.client.clientTexH = tex, w, h
+		a.clientTex, a.clientTexW, a.clientTexH = tex, w, h
 	}
 
 	// Bind the target and draw at 1:1 logical scale. The render-target + scale restore
 	// is DEFERRED so even a panic inside drawCourtroom can't leave the screen rendering
 	// into the texture (a black primary) — the worst silent failure of this path.
 	prevTarget := c.Ren.GetRenderTarget()
-	if c.Ren.SetRenderTarget(a.client.clientTex) != nil {
+	if c.Ren.SetRenderTarget(a.clientTex) != nil {
 		return
 	}
 	// #77: the pinned pass INHERITS the ambient text device scale (it does NOT
@@ -585,15 +592,15 @@ func (a *App) renderFullClientTexture(w, h int32) {
 	in := a.snapshotInput() // …focus order, or handle any input
 
 	a.sessionState = a.splitTab.state // promotes a.sess / a.icInput / a.emote* / msRaster … to the pinned tab
-	a.link.room = a.splitRoom         // drive the pinned LIVE room (a parked tab's sessionState.room is nil)
+	a.room = a.splitRoom              // drive the pinned LIVE room (a parked tab's sessionState.room is nil)
 	a.d.Viewport = a.splitVP
-	a.client.pinnedPass = true
+	a.pinnedPass = true
 
 	a.drawCourtroom(w, h)
 
 	// --- capture the pinned pass's side effects, then restore the primary ---
-	a.client.pinnedPass = false
-	a.link.room = nil                 // a parked tab keeps no room — don't persist splitRoom into its slot
+	a.pinnedPass = false
+	a.room = nil                      // a parked tab keeps no room — don't persist splitRoom into its slot
 	a.splitTab.state = a.sessionState // capture emote/scroll/raster/etc. side effects of the view-only pass
 	a.sessionState = savedSess        // restores a.room + a.sess + msRaster + everything promoted
 	a.d.Viewport = savedVP
@@ -674,15 +681,15 @@ func (a *App) drawSplitInput(r sdl.Rect) {
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: 1}, ColPanelHi) // rule above the input
 	box := sdl.Rect{X: r.X + 6, Y: r.Y + 5, W: r.W - 12, H: r.H - 10}
 	s := &a.splitTab.state
-	primary, emoji := a.icFieldFonts(s.compose.icInput)
+	primary, emoji := a.icFieldFonts(s.icInput)
 	var send bool
-	s.compose.icInput, send = c.TextFieldEmoji("ic-split", box, s.compose.icInput, "Chat in the pinned server — click to focus", primary, emoji)
+	s.icInput, send = c.TextFieldEmoji("ic-split", box, s.icInput, "Chat in the pinned server — click to focus", primary, emoji)
 	// Fenced under the notice box like both single-pane send sites. The pinned pane is a
 	// DIFFERENT socket, so this one is not about writing to a dead connection: the box is
 	// App-level and pointer-blinds the whole frame, which leaves a still-focused field's
 	// Enter as the one action that can fire while the user is reading a ban. A line the
 	// user did not see themselves send is the same defect whichever server receives it.
-	if send && !a.font.serverNoticeDlg.open {
+	if send && !a.serverNoticeDlg.open {
 		a.sendICSplit()
 	}
 }
@@ -733,13 +740,13 @@ func (a *App) drawSplitLog(r sdl.Rect, s *sessionState) {
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 2
 	wrapW := r.W - 8
-	if wrapW != a.splitWrapW || s.chatlog.icLogSeq != a.splitWrapSeq || a.splitPinEpoch != a.splitWrapEpoch ||
+	if wrapW != a.splitWrapW || s.icLogSeq != a.splitWrapSeq || a.splitPinEpoch != a.splitWrapEpoch ||
 		a.logPct != a.splitWrapPct || c.fontChainGen != a.splitWrapGen {
-		a.splitWrapW, a.splitWrapSeq, a.splitWrapEpoch = wrapW, s.chatlog.icLogSeq, a.splitPinEpoch
+		a.splitWrapW, a.splitWrapSeq, a.splitWrapEpoch = wrapW, s.icLogSeq, a.splitPinEpoch
 		a.splitWrapPct, a.splitWrapGen = a.logPct, c.fontChainGen
 		a.splitWrapRows = a.splitWrapRows[:0]
-		for i := range s.chatlog.icLog {
-			e := &s.chatlog.icLog[i]
+		for i := range s.icLog {
+			e := &s.icLog[i]
 			col := ColText
 			if e.color > 0 {
 				col = render.TextColor(e.color)
@@ -781,6 +788,12 @@ func (a *App) crossfadeDur() time.Duration {
 // The loop used to re-render + present the whole UI every pass: vsync tied it to
 // the monitor (144/165 Hz laptop panels = a full-screen composite 165×/sec while
 // IDLE), and where vsync doesn't block (small windowed presents on some drivers)
+// it spun far past that (high GPU use even in a tiny window). FramePace hands
+// the main loop a per-frame budget instead: the foreground cap while you're
+// interacting or anything is animating, the idle rate when the client is a
+// static image, the unfocused rate when another window has focus. Input snaps it
+// back to full instantly (NoteInput + a grace window), so responsiveness is
+// untouched — a flat low cap would be a band-aid; only wasted redraws go.
 
 // inputGraceFrameDuration is one "frame" of the post-input full-rate hold — the
 // InputGraceFrames pref counts these. A fixed 60 fps reference, so the frame
@@ -792,7 +805,7 @@ const inputGraceFrameDuration = time.Second / 60
 
 // NoteInput marks "the user just interacted" — the main loop calls it whenever
 // an SDL event arrives, and wantsFullRate holds full rate through the grace.
-func (a *App) NoteInput() { a.frame.lastInputAt = time.Now() }
+func (a *App) NoteInput() { a.lastInputAt = time.Now() }
 
 // NoteAnimating marks that THIS draw pass rendered a self-driven, time-stepped
 // UI animation — theme chrome, a splash, a looping badge, the layout editor's
@@ -804,7 +817,7 @@ func (a *App) NoteInput() { a.frame.lastInputAt = time.Now() }
 // (each animating frame re-arms the next). For an INSTANT off-frame change (a
 // packet updated a list, a screen switched) set a.uiDirty instead — that earns
 // exactly one follow-up frame. Alloc-free; call it from the draw pass.
-func (a *App) NoteAnimating() { a.frame.frameAnimChrome = true }
+func (a *App) NoteAnimating() { a.frameAnimChrome = true }
 
 // audioFineTick is the cadence the courtroom is advanced — and its blips played —
 // at while a message types, independent of the (possibly much slower) PRESENT rate.
@@ -819,10 +832,10 @@ const audioFineTick = time.Second / 60
 // stream needs the fine audio cadence. A static-but-open courtroom is NOT active,
 // so it still parks at true idle.
 func (a *App) AudioActive() bool {
-	if a.sel.replaying || a.sel.makerOpen || a.sel.gifExporting || a.link.room == nil {
+	if a.replaying || a.makerOpen || a.gifExporting || a.room == nil {
 		return false
 	}
-	return a.link.room.AudioActive()
+	return a.room.AudioActive()
 }
 
 // AudioPaceActive reports whether this pass's pacing sleep should be spent advancing
@@ -842,7 +855,7 @@ func (a *App) AudioFineTick() time.Duration { return audioFineTick }
 // MarkRoomPreAdvanced records that the loop already advanced the courtroom this
 // present cycle (audio-paced sub-stepping), so the next Frame draws without
 // re-advancing the room (it's current) while still advancing the UI. Render thread.
-func (a *App) MarkRoomPreAdvanced() { a.frame.roomPreAdvanced = true }
+func (a *App) MarkRoomPreAdvanced() { a.roomPreAdvanced = true }
 
 // motionInputGrace holds full rate briefly after BARE pointer motion under the
 // experimental loop: long enough that continuous movement (hover sweeps, drags
@@ -864,10 +877,10 @@ func (a *App) NoteMotion() {
 		if a.d.Prefs.Load().MotionRedrawPerEvent {
 			return
 		}
-		a.frame.lastMotionAt = time.Now()
+		a.lastMotionAt = time.Now()
 		return
 	}
-	a.frame.lastInputAt = time.Now()
+	a.lastInputAt = time.Now()
 }
 
 // staticTalkFPS paces a message whose stage is ALL STATIC art (single-frame
@@ -902,6 +915,10 @@ func paceBudget(fps int) time.Duration {
 // "uncapped", but a knob set to config.FPSOff means "off / never redraw in this
 // state", the exact opposite — so every idle/unfocused consumer asks here and
 // branches on off BEFORE treating a 0 as uncapped:
+//
+//	FPSUnlimited (∞) → (0, false)   // uncapped, same as paceBudget's 0
+//	FPSOff           → (0, true)    // off — the caller decides (park, or the cap)
+//	N                → (1s/N, false)
 func rateBudget(fps int) (budget time.Duration, off bool) {
 	switch fps {
 	case config.FPSOff:
@@ -956,17 +973,17 @@ func clampDur(d, lo, hi time.Duration) time.Duration {
 // roomBusy reports a message mid-ceremony on the ACTIVE room — typewriter,
 // preanim, shout, linger, or anything still queued.
 func (a *App) roomBusy() bool {
-	return a.link.room != nil && (a.link.room.Phase() != courtroom.PhaseIdle || a.link.room.QueueLen() > 0)
+	return a.room != nil && (a.room.Phase() != courtroom.PhaseIdle || a.room.QueueLen() > 0)
 }
 
 // serverTimersLive reports any visible courtroom timer chip (TI packets) — its
 // clock readout changes every second, so a static skip would freeze it.
 func (a *App) serverTimersLive() bool {
-	if a.link.sess == nil {
+	if a.sess == nil {
 		return false
 	}
-	for i := range a.link.sess.Timers {
-		if a.link.sess.Timers[i].Visible {
+	for i := range a.sess.Timers {
+		if a.sess.Timers[i].Visible {
 			return true
 		}
 	}
@@ -982,8 +999,8 @@ func (a *App) serverTimersLive() bool {
 // (the cap's budget) still bounds it.
 func (a *App) talkBudget(full time.Duration) time.Duration {
 	talk := paceBudget(staticTalkFPS)
-	if a.link.room != nil {
-		if iv := a.link.room.Typewriter.Interval; iv > 0 && iv < talk {
+	if a.room != nil {
+		if iv := a.room.Typewriter.Interval; iv > 0 && iv < talk {
 			talk = iv
 		}
 	}
@@ -1039,6 +1056,22 @@ func pacerTierLabel(t pacerTier) string {
 // FramePace returns the frame budget the main loop should pace to (0 = no cap):
 // the sleep between CONSECUTIVE rendered frames. focused is the window's input-
 // focus state. Tiers, fastest first:
+//   - full rate: interaction or effects genuinely in flight (wantsFullRate)
+//   - anim-chrome rate: a self-driven UI animation (NoteAnimating census) —
+//     the cap, backstopped to a finite ~60 fps when the cap is ∞ (perpetual
+//     censuses must never zero the budget — see backstopBudget)
+//   - talk rate: a message is playing → the text crawl's cadence (talkBudget),
+//     which a fast speaker's frame flip may only TIGHTEN (earliest deadline
+//     wins, so a slow sprite loop never drags the typewriter/blips down — the
+//     "text renders at idle fps over animated sprites" report)
+//   - content cadence: only stage animations move → the next frame flip
+//   - active cap: a rendered-but-idle frame. Under the event-driven loop a
+//     genuinely idle screen SKIPS and parks (NextWakeDelay honours the idle
+//     rate there), so reaching this tier means a lone damage frame or a screen
+//     that declares itself non-skippable — pacing it at the active cap keeps the
+//     post-render sleep from injecting a whole idle period of input latency. The
+//     classic loop idle-renders here, so it keeps the idle rate.
+//
 // Rate knobs carry the widened trichotomy (rateBudget): ∞ → 0 (uncapped), off
 // (FPSOff) → the active cap in THIS render path (the "no idle render" behaviour
 // lives in the skip/park path, not here), N → 1s/N.
@@ -1048,13 +1081,13 @@ func (a *App) FramePace(focused bool) time.Duration {
 	// nextAnimDue is the stage's earliest scheduled frame flip (ok=false on a
 	// static stage / no room) — consulted by both focus branches.
 	nextAnimDue := func() (time.Duration, bool) {
-		if a.link.room == nil || a.d.Viewport == nil {
+		if a.room == nil || a.d.Viewport == nil {
 			return 0, false
 		}
 		return a.d.Viewport.NextAnimDue(a.renderScene())
 	}
 	if !focused {
-		a.frame.lastPacerTier = pacerUnfocused
+		a.lastPacerTier = pacerUnfocused
 		unf, unfOff := rateBudget(a.d.Prefs.Load().UnfocusedFPS())
 		if unf == 0 && !unfOff {
 			return 0 // ∞ unfocused: never throttle
@@ -1073,7 +1106,7 @@ func (a *App) FramePace(focused bool) time.Duration {
 		if a.roomBusy() {
 			if tb := a.talkBudget(full); tb < unf {
 				unf = tb
-				a.frame.lastPacerTier = pacerTalk
+				a.lastPacerTier = pacerTalk
 			}
 		}
 		// An unfocused window is still VISIBLE (second monitor): a live stage
@@ -1081,22 +1114,22 @@ func (a *App) FramePace(focused bool) time.Duration {
 		// reported cause of choppy idle animations on an unfocused window.
 		if due, ok := nextAnimDue(); ok && due < unf {
 			unf = clampDur(due, full, unf)
-			a.frame.lastPacerTier = pacerContentAnim // the stage-anim deadline set the budget
+			a.lastPacerTier = pacerContentAnim // the stage-anim deadline set the budget
 		}
 		return unf
 	}
 	if a.wantsFullRate() {
-		a.frame.lastPacerTier = pacerFullInput
+		a.lastPacerTier = pacerFullInput
 		return full // recent input / effects genuinely in flight
 	}
-	if a.frame.drawnAnimChrome {
+	if a.drawnAnimChrome {
 		// A self-driven UI animation (NoteAnimating census) re-arms every frame
 		// it draws — some indefinitely (FX chat text on a settled message, an
 		// animated theme page, the viewport's ambient-FX census). Smooth frames,
 		// but never a ZERO budget: with the ∞ default cap, pace=hardCap=0 skips
 		// every pacing sleep and vsync is the only brake — which main.go's own
 		// GPU-burn note records as non-blocking on some windowed present paths.
-		a.frame.lastPacerTier = pacerAnimChrome
+		a.lastPacerTier = pacerAnimChrome
 		return backstopBudget(full)
 	}
 	idle, idleOff := rateBudget(a.d.Prefs.Load().IdleFPS())
@@ -1116,11 +1149,11 @@ func (a *App) FramePace(focused bool) time.Duration {
 		if due, ok := nextAnimDue(); ok && due < talk {
 			talk = clampDur(due, full, talk) // a fast speaker anim gets its frames
 		}
-		a.frame.lastPacerTier = pacerTalk
+		a.lastPacerTier = pacerTalk
 		return talk
 	}
 	if due, ok := nextAnimDue(); ok {
-		a.frame.lastPacerTier = pacerContentAnim
+		a.lastPacerTier = pacerContentAnim
 		if idleOff || idleUnlimited {
 			return clampDur(due, full, due) // the content's own cadence (never above the cap)
 		}
@@ -1131,11 +1164,12 @@ func (a *App) FramePace(focused bool) time.Duration {
 	// must never leave the pacer with a zero budget — under the ∞ default cap
 	// the classic loop's lobby/caret renders became a zero-sleep spin here, and
 	// ∞ idle ("as fast as the active cap", the Settings tooltip's own words)
+	// resolves through the cap so a finite cap still rules.
 	if a.d.Prefs.Load().EventDrivenLoop || idleOff || idleUnlimited {
-		a.frame.lastPacerTier = pacerIdleActiveCap
+		a.lastPacerTier = pacerIdleActiveCap
 		return backstopBudget(full)
 	}
-	a.frame.lastPacerTier = pacerIdleNap
+	a.lastPacerTier = pacerIdleNap
 	return idle // classic idle nap (N → 1s/N)
 }
 
@@ -1160,6 +1194,15 @@ func backstopBudget(b time.Duration) time.Duration {
 // any scheduled animation, a live toast, a blinking caret, or a ticking timer
 // forces a real frame. Conservative by construction: a wrongly SKIPPED signal
 // heals on the next damage/deadline, never a hang.
+//
+// Under the EXPERIMENTAL event-driven loop the gate widens two ways: static
+// menu screens skip too (not just the courtroom), and the caret/clock refusals
+// become scheduled wakes (NextWakeDelay) — the loop parks on an OS event wait
+// and renders exactly when the blink/tick is due instead of idle-rendering a
+// static screen to animate a cursor. Damage that arrived since the last drawn
+// frame (packets, texture uploads/evictions — RenderNeeded) still refuses. The
+// classic loop instead re-renders at the idle rate (it doesn't track damage);
+// idle=off makes both lean on caret/timer/input for a static courtroom.
 func (a *App) SkipFrame(focused, sawEvent bool) bool {
 	focused = a.pacingFocused(focused) // the "full speed while unfocused" option (pacingfocus.go)
 	if sawEvent {
@@ -1173,7 +1216,7 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 	// full-rate input grace. Voice / mic capture is the sole exception — its audio
 	// engine is frame-driven — and a focus-regain event (sawEvent above) resumes
 	// normal rendering; the park keeps the session pumping meanwhile.
-	if !focused && !a.link.voiceJoined && a.micTest == nil {
+	if !focused && !a.voiceJoined && a.micTest == nil {
 		if _, off := rateBudget(a.d.Prefs.Load().UnfocusedFPS()); off {
 			return true
 		}
@@ -1186,7 +1229,7 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 		// No heartbeat here: the event-driven loop parks on NextWakeDelay, whose
 		// idle-rate tick IS the periodic idle render (idle=off → genuinely none).
 	} else {
-		if a.link.room == nil || a.link.sess == nil {
+		if a.room == nil || a.sess == nil {
 			return false // classic: only the courtroom skips (the lobby keeps its idle render)
 		}
 		// Classic idle heartbeat: the classic loop naps and re-polls rather than
@@ -1195,7 +1238,7 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 		// single cadence now (no separate fixed 500 ms); idle=off opts out and
 		// leans on caret/timer/input, exactly like the event-driven loop's 0.
 		if idleB, idleOff := rateBudget(a.d.Prefs.Load().IdleFPS()); !idleOff && idleB > 0 {
-			if time.Since(a.frame.lastFrameDrawn) >= idleB {
+			if time.Since(a.lastFrameDrawn) >= idleB {
 				return false
 			}
 		}
@@ -1207,10 +1250,10 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 	// Frame: while a voice session or mic test is live, frames must keep
 	// coming at the idle rate or the audio engine starves. (Latent in the old
 	// courtroom-only skip too — the usually-focused IC field masked it.)
-	if a.link.voiceJoined || a.micTest != nil {
+	if a.voiceJoined || a.micTest != nil {
 		return false
 	}
-	if a.frame.drawnAnimChrome {
+	if a.drawnAnimChrome {
 		// The last frame drew time-stepped art outside the viewport scheduler
 		// (animated theme chrome, the testimony badge, a WT/CE splash, the
 		// editor ghost, an ANIMATED sprite-preview box): freezing it between
@@ -1238,7 +1281,7 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 			// the classic loop render every pass forever (with the ∞ default
 			// cap, a zero-sleep spin). The skip nap re-polls well inside a
 			// blink period, so the caret still flips on time.
-			if on, focused := a.ctx.CaretVisible(); focused && on != a.frame.drawnCaretOn {
+			if on, focused := a.ctx.CaretVisible(); focused && on != a.drawnCaretOn {
 				return false // the focused caret's blink phase flipped — draw it
 			}
 		}
@@ -1246,7 +1289,7 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 			return false // countdown readouts change every second
 		}
 	}
-	if a.d.Viewport != nil && a.link.room != nil {
+	if a.d.Viewport != nil && a.room != nil {
 		if _, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
 			return false
 		}
@@ -1260,12 +1303,21 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 // path; the static menu screens join them; the lobby joins while no async
 // sweep is repainting rows. Anything unlisted defaults to classic
 // always-render.
+//
+// Settings skips too (the user's ask: "the one place where virtually nothing
+// moves"). Its self-driven surfaces still force frames through SkipFrame's own
+// later gates — the mic-test meter (micTest), a DRAWN animated sprite preview
+// (the anim-chrome census via drawSpritePreview), input + the caret, and
+// store-generation damage as art streams in. The lone
+// passive live readout is the T2 cache-stat line; it now refreshes at the idle
+// rate / on the next interaction rather than every frame (the perf HUD stays
+// the always-full-rate live-metrics surface for anyone watching numbers move).
 func (a *App) expScreenSkippable() bool {
 	switch a.screen {
 	case ScreenCourtroom, ScreenCharSelect:
-		return a.link.sess != nil
+		return a.sess != nil
 	case ScreenLobby:
-		return !a.conn.lobby.lobbyFetching && !a.conn.lobby.pinging
+		return !a.lobbyFetching && !a.pinging
 	case ScreenSettings, ScreenAbout, ScreenChangelog, ScreenServerHelp, ScreenHelp, ScreenLogs:
 		return true
 	case ScreenThemeEditor:
@@ -1291,11 +1343,11 @@ func (a *App) RenderNeeded() bool {
 	if a.uiDirty {
 		return true
 	}
-	if a.d.Store != nil && a.d.Store.Generation() != a.frame.drawnGen {
+	if a.d.Store != nil && a.d.Store.Generation() != a.drawnGen {
 		return true
 	}
 	if a.ctx != nil {
-		if on, focused := a.ctx.CaretVisible(); focused && on != a.frame.drawnCaretOn {
+		if on, focused := a.ctx.CaretVisible(); focused && on != a.drawnCaretOn {
 			return true
 		}
 	}
@@ -1312,7 +1364,7 @@ func (a *App) RenderNeeded() bool {
 // mic capture never suppress, mirroring SkipFrame's own exception.
 func (a *App) RenderSuppressed(focused bool) bool {
 	focused = a.pacingFocused(focused) // the "full speed while unfocused" option (pacingfocus.go)
-	if focused || a.link.voiceJoined || a.micTest != nil {
+	if focused || a.voiceJoined || a.micTest != nil {
 		return false
 	}
 	_, off := rateBudget(a.d.Prefs.Load().UnfocusedFPS())
@@ -1332,6 +1384,7 @@ func (a *App) NoteDeadline() { a.uiDirty = true }
 // frame so that frame is guaranteed regardless of the input-grace timing, instead
 // of leaving the new state stranded until cursor motion or the idle tick reveals
 // it (the report of a screen that only repaints on the next mouse movement).
+// Idle-safe: no input, no follow-up.
 func (a *App) NoteInteraction() { a.uiDirty = true }
 
 const (
@@ -1383,7 +1436,7 @@ func (a *App) NextWakeDelay(focused bool) (wait time.Duration, render bool) {
 	case idleB == 0:
 		considerRender(0) // ∞ idle
 	default:
-		considerRender(idleB - time.Since(a.frame.lastFrameDrawn))
+		considerRender(idleB - time.Since(a.lastFrameDrawn))
 	}
 	if a.ctx != nil {
 		if due, ok := a.ctx.NextCaretFlip(); ok {
@@ -1399,9 +1452,9 @@ func (a *App) NextWakeDelay(focused bool) (wait time.Duration, render bool) {
 	// remainder — nothing scheduled.) These MUST mark render: with the old fixed
 	// heartbeat gone, a clock tick is the only thing that redraws it, so at
 	// idle=off it would otherwise freeze (the timer-freeze trap).
-	if a.link.sess != nil {
-		for i := range a.link.sess.Timers {
-			t := &a.link.sess.Timers[i]
+	if a.sess != nil {
+		for i := range a.sess.Timers {
+			t := &a.sess.Timers[i]
 			if t.Visible && t.Running {
 				if rem := t.Remaining(now); rem > 0 {
 					considerRender(rem%time.Second + timerTickSlack)
@@ -1427,7 +1480,7 @@ func (a *App) NextWakeDelay(focused bool) (wait time.Duration, render bool) {
 	// content needs a frame" true for the parked loop as well as the running one; it
 	// is the same call FramePace makes, and it answers ok=false on a static stage, so
 	// a still screen still parks to zero.
-	if a.d.Viewport != nil && a.link.room != nil {
+	if a.d.Viewport != nil && a.room != nil {
 		if due, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
 			considerRender(due)
 		}
@@ -1436,7 +1489,7 @@ func (a *App) NextWakeDelay(focused bool) (wait time.Duration, render bool) {
 	// re-render at the demand cadence so demandAsset keeps issuing asks. A batch
 	// that all 404s uploads nothing (no generation bump, no self-wake), so without
 	// this the pump stalls at idle=off until unrelated damage or input arrives.
-	if a.frame.drawnDemandPending {
+	if a.drawnDemandPending {
 		considerRender(assetDemandWakeInterval)
 	}
 	// Content report / package keepalive: while a job probes or packages OFF the
@@ -1467,14 +1520,14 @@ func (a *App) NextWakeDelay(focused bool) (wait time.Duration, render bool) {
 // on every screen — lobby and Settings included — and were the "redraws for no
 // reason" playtest report, back for a second round as the idle-CPU-burn one.
 func (a *App) wantsFullRate() bool {
-	if time.Since(a.frame.lastInputAt) < time.Duration(a.d.Prefs.Load().InputGraceFrames())*inputGraceFrameDuration {
+	if time.Since(a.lastInputAt) < time.Duration(a.d.Prefs.Load().InputGraceFrames())*inputGraceFrameDuration {
 		return true // configurable post-input hold (default 1 frame); 0 would be the input's own frame only
 	}
-	if time.Since(a.frame.lastMotionAt) < motionInputGrace {
+	if time.Since(a.lastMotionAt) < motionInputGrace {
 		return true // a moving pointer renders live; the short grace ends with it
 	}
-	if a.link.room != nil {
-		sc := &a.link.room.Scene
+	if a.room != nil {
+		sc := &a.room.Scene
 		if sc.ShakeLeft > 0 || sc.FlashLeft > 0 {
 			return true // sub-second effect countdowns — self-terminating
 		}
@@ -1483,22 +1536,22 @@ func (a *App) wantsFullRate() bool {
 	// and input like any other chrome; only a live call's audio engine needs
 	// steady frames (SkipFrame's voice exception keeps them coming regardless —
 	// this keeps their PACE at the full rate the engine was tuned for).
-	if a.sel.replaying || a.sel.makerOpen || a.sel.gifExporting || a.link.voiceJoined || a.budget.perfHUD {
+	if a.replaying || a.makerOpen || a.gifExporting || a.voiceJoined || a.perfHUD {
 		return true
 	}
-	return len(a.reactUI.reactionFloats) > 0 || a.splitActive()
+	return len(a.reactionFloats) > 0 || a.splitActive()
 }
 
 // SetSpriteCapBase hands the App the display-derived decode-downscale base
 // (cmd/asyncao computes it once at boot), so the Settings downscale sliders can
 // re-derive the effective cap live via applySpriteCap.
-func (a *App) SetSpriteCapBase(px int) { a.frame.spriteCapBase = px }
+func (a *App) SetSpriteCapBase(px int) { a.spriteCapBase = px }
 
 // applySpriteCap pushes the effective decode-downscale cap (base × the two
 // power-user knobs) to the decoder pool. Called from the Settings rows; new
 // decodes pick it up (already-decoded textures keep their size until eviction).
 func (a *App) applySpriteCap() {
-	a.d.Manager.SetSpriteCap(config.EffectiveSpriteCap(a.frame.spriteCapBase, a.d.Prefs.Load().SpriteDownscaleOff, a.d.Prefs.Load().SpriteDownscalePctVal))
+	a.d.Manager.SetSpriteCap(config.EffectiveSpriteCap(a.spriteCapBase, a.d.Prefs.Load().SpriteDownscaleOff, a.d.Prefs.Load().SpriteDownscalePctVal))
 	a.d.Manager.SetAnimatedSpriteCap(a.d.Prefs.Load().AnimatedSpriteCapPxVal)
 	a.d.Manager.SetAnimatedBudgetMiB(a.d.Prefs.Load().AnimatedBudgetMiB())
 	a.d.Manager.SetAnimatedDecodeConcurrency(a.d.Prefs.Load().AnimDecodeConcurrency())
@@ -1520,41 +1573,41 @@ func (a *App) vpSpriteLoadMode() int {
 // courtroom (the crawl applies from the next message — Start precomputes
 // per-rune delays).
 func (a *App) applyTimingToRoom() {
-	if a.link.room == nil {
+	if a.room == nil {
 		return
 	}
 	crawlMs, stayMs, _ := a.d.Prefs.Load().Timing()
-	a.link.room.Typewriter.Interval = time.Duration(crawlMs) * time.Millisecond
-	a.link.room.TextStay = time.Duration(stayMs) * time.Millisecond
-	a.link.room.Typewriter.BlipRate, a.link.room.Typewriter.BlipOnSpaces = a.d.Prefs.Load().BlipTyping() // #7: blip cadence + skip-whitespace
-	a.link.room.CatchUp, a.link.room.CatchUpThreshold = a.d.Prefs.Load().CatchUp()
-	a.link.room.SpriteWait = a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadWait              // "Hold the message": hold until its speaker sprite decodes
-	a.link.room.SpriteWaitTimeout = time.Duration(a.d.Prefs.Load().SpriteWaitMs()) * time.Millisecond // its user-tunable hold cap
-	a.link.room.SpriteWaitPair = a.d.Prefs.Load().SpriteWaitPair                                      // strictness: gate on the pair partner too
-	a.link.room.SpriteWaitPreanim = a.d.Prefs.Load().SpriteWaitPreanim                                // strictness: gate on the preanim too
-	a.link.room.SequentialWait = a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadDefault       // "Default": wait for every asset a message presents
-	a.link.room.ShoutBypassQueue = a.d.Prefs.Load().ShoutBypassQueue                                  // AO2 parity: shouts skip the queue (toggleable)
-	a.link.room.ShoutDuration = courtroom.DefaultShoutDuration                                        // core-timing knobs: 0 = the canonical defaults
+	a.room.Typewriter.Interval = time.Duration(crawlMs) * time.Millisecond
+	a.room.TextStay = time.Duration(stayMs) * time.Millisecond
+	a.room.Typewriter.BlipRate, a.room.Typewriter.BlipOnSpaces = a.d.Prefs.Load().BlipTyping() // #7: blip cadence + skip-whitespace
+	a.room.CatchUp, a.room.CatchUpThreshold = a.d.Prefs.Load().CatchUp()
+	a.room.SpriteWait = a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadWait              // "Hold the message": hold until its speaker sprite decodes
+	a.room.SpriteWaitTimeout = time.Duration(a.d.Prefs.Load().SpriteWaitMs()) * time.Millisecond // its user-tunable hold cap
+	a.room.SpriteWaitPair = a.d.Prefs.Load().SpriteWaitPair                                      // strictness: gate on the pair partner too
+	a.room.SpriteWaitPreanim = a.d.Prefs.Load().SpriteWaitPreanim                                // strictness: gate on the preanim too
+	a.room.SequentialWait = a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadDefault       // "Default": wait for every asset a message presents
+	a.room.ShoutBypassQueue = a.d.Prefs.Load().ShoutBypassQueue                                  // AO2 parity: shouts skip the queue (toggleable)
+	a.room.ShoutDuration = courtroom.DefaultShoutDuration                                        // core-timing knobs: 0 = the canonical defaults
 	if ms := a.d.Prefs.Load().ShoutDurationMsVal; ms != 0 {
-		a.link.room.ShoutDuration = time.Duration(ms) * time.Millisecond
+		a.room.ShoutDuration = time.Duration(ms) * time.Millisecond
 	}
-	a.link.room.PreanimTimeout = courtroom.DefaultPreanimTimeout
+	a.room.PreanimTimeout = courtroom.DefaultPreanimTimeout
 	if ms := a.d.Prefs.Load().PreanimTimeoutMsVal; ms != 0 {
-		a.link.room.PreanimTimeout = time.Duration(ms) * time.Millisecond
+		a.room.PreanimTimeout = time.Duration(ms) * time.Millisecond
 	}
-	a.link.room.QueueCap = courtroom.DefaultQueueCap // 0-pref = the canonical depth; always assigned so a nuke-reset restores it
+	a.room.QueueCap = courtroom.DefaultQueueCap // 0-pref = the canonical depth; always assigned so a nuke-reset restores it
 	if n := a.d.Prefs.Load().ICQueueCapVal; n != 0 {
-		a.link.room.QueueCap = n
+		a.room.QueueCap = n
 	}
-	a.link.room.CatchUpLinger = time.Duration(a.d.Prefs.Load().CatchUpLingerMsVal) * time.Millisecond
+	a.room.CatchUpLinger = time.Duration(a.d.Prefs.Load().CatchUpLingerMsVal) * time.Millisecond
 	// The four pref-driven VISUAL gates (including the master off-switch's
 	// precedence over both effect knobs) live in applyVisualPrefsToRoom, because
 	// newRoom seeds every OTHER room with them at construction and two spellings
 	// of "what a room shows" is how four of the five ended up on a hardcoded
 	// default. This call is the LIVE room's re-push when a setting changes.
-	a.applyVisualPrefsToRoom(a.link.room)
-	a.link.room.AdditiveText = a.d.Prefs.Load().AdditiveText  // #14 2.8 additive: honor incoming ADDITIVE=1 append (default ON)
-	a.link.room.StreamMusic = a.d.Prefs.Load().MusicStreaming // §1.3: OFF = never fetch a /play track (Now-Playing still tracks it)
+	a.applyVisualPrefsToRoom(a.room)
+	a.room.AdditiveText = a.d.Prefs.Load().AdditiveText  // #14 2.8 additive: honor incoming ADDITIVE=1 append (default ON)
+	a.room.StreamMusic = a.d.Prefs.Load().MusicStreaming // §1.3: OFF = never fetch a /play track (Now-Playing still tracks it)
 }
 
 // applyMusicStreaming persists the custom-/play-music streaming toggle and pushes
@@ -1574,14 +1627,14 @@ func (a *App) applyMusicStreaming(on bool) {
 
 	})
 
-	if a.link.room != nil {
-		a.link.room.StreamMusic = on
+	if a.room != nil {
+		a.room.StreamMusic = on
 	}
 	if !on {
-		a.d.Audio.StopMusic()                  // halt the current track and cancel any pending fetch
-		a.budget.musicTabDucked = false        // stream stopped: not ducked (invariant)
-		a.budget.musicAwaitURL = ""            // and no pending un-duck (nothing will be delivered)
-		a.budget.musicAwaitSince = time.Time{} // clear the timeout stamp with the await it belongs to
+		a.d.Audio.StopMusic()           // halt the current track and cancel any pending fetch
+		a.musicTabDucked = false        // stream stopped: not ducked (invariant)
+		a.musicAwaitURL = ""            // and no pending un-duck (nothing will be delivered)
+		a.musicAwaitSince = time.Time{} // clear the timeout stamp with the await it belongs to
 	}
 }
 
@@ -1589,6 +1642,23 @@ func (a *App) applyMusicStreaming(on bool) {
 // ON transition, un-wedges a backgrounded stream that's currently silenced. It's a
 // method (not inline in the settings row) so a headless test can drive exactly what
 // the checkbox does — the same shape as applyMusicStreaming.
+//
+// ON acts UNCONDITIONALLY: it drops BOTH silencers — the duck (musicTabDucked) and
+// the delivery-await latch (musicAwaitURL) — and re-applies volumes. It's harmless
+// when nothing was ducked (all three are already cleared / no-ops). This is the fix
+// for "the toggle does nothing": the old inline code only un-ducked under
+// `next && a.musicTabDucked`, so a stream stuck behind a never-arriving await (duck
+// held, latch armed) — the wedge the deadline in settleAwaitedMusic also guards —
+// stayed silent when the user flipped this ON. Clearing the latch here means the
+// toggle is a reliable manual escape hatch regardless of how the stream got stuck.
+//
+// OFF acts immediately too: it re-ducks a currently-audible background stream on
+// the spot, because that is what the checkbox label promises ("off = keep it
+// playing but silent while backgrounded" — silent NOW, not at the next tab
+// switch). The earlier build deferred the re-duck to the next parkActive to avoid
+// yanking audio mid-listen, and users read that as the checkbox being dead — the
+// user flipping the box IS the yank request. The stream keeps playing (position
+// advances); only its volume drops, so flipping back ON restores it in place.
 func (a *App) applyMusicAcrossTabs(on bool) {
 	a.d.Prefs.Update(func(
 		sn *config.
@@ -1602,12 +1672,12 @@ func (a *App) applyMusicAcrossTabs(on bool) {
 	})
 
 	if on {
-		a.budget.musicTabDucked = false
-		a.budget.musicAwaitURL = ""
-		a.budget.musicAwaitSince = time.Time{}
+		a.musicTabDucked = false
+		a.musicAwaitURL = ""
+		a.musicAwaitSince = time.Time{}
 		a.applyAudioVolumes()
 	} else {
-		a.budget.musicTabDucked = true
+		a.musicTabDucked = true
 		a.applyAudioVolumes()
 	}
 }
@@ -1628,6 +1698,21 @@ const musicResumeMaxSeekSec = 600 // 10 minutes
 // and total duration snapDur (seconds) captured at swap-out — plus elapsedSec of
 // wall time since, it returns where to seek the resumed stream and whether to
 // play it at all:
+//
+//   - snapDur <= 0 (duration unknown: mod/midi, or the source refused it): return
+//     seekSec 0, play true — an honest restart-from-top. We must NOT clock-seek
+//     into a track whose length we can't know (it could be past the end).
+//   - loop (persistent area track, the only case today): seekSec = (snapPos +
+//     elapsed) mod snapDur, play true. math.Mod handles multi-wrap (a 3-min loop
+//     parked 7 min lands at 1:00), which is the loop-aware exactness promised.
+//   - not looping, and snapPos+elapsed >= snapDur: the track ENDED while parked —
+//     play false (don't restart a finished one-shot). Future-proofing: resumeLoop
+//     is const true today, so this branch is currently unreachable, but it's the
+//     correct non-loop behaviour and is unit-tested.
+//   - not looping, still within the track: seekSec = snapPos + elapsed, play true.
+//
+// A negative elapsedSec (clock skew) clamps to 0 so base can never go below
+// snapPos — a negative math.Mod would fail the seek and silently restart.
 func resumeSeek(snapPos, snapDur, elapsedSec float64, loop bool) (seekSec float64, play bool) {
 	if elapsedSec < 0 {
 		elapsedSec = 0
@@ -1647,17 +1732,28 @@ func resumeSeek(snapPos, snapDur, elapsedSec float64, loop bool) (seekSec float6
 
 // resumeActiveTabMusic re-seeds the newly-active tab's area song into the single
 // music stream on a room (re)build. It's the cross-tab continuity core:
+//
+//   - Same track already live (the common case: the stream was kept rolling,
+//     DUCKED, while this tab was backgrounded — see parkActive): PlayMusic is
+//     idempotent, so this is a no-op on the stream. We just clear the tab-duck and
+//     re-apply volumes, so the track picks up EXACTLY where it was, in sync.
+//   - A different track is live (another tab's song swapped the stream away, or a
+//     fresh entry): fetch this tab's track and SEEK best-effort to elapsed-since-
+//     start (musicStartedAt), so a persistent area track resumes near where it
+//     would be now. Unsupported formats / an overshoot degrade to playing from the
+//     top (PlayMusicAt handles that).
+//
 // StreamMusic OFF means nothing is fetched or played (§1.3): we only track
 // Now-Playing then, and leave the (nonexistent) stream's duck alone. Render thread
 // only (buildRoom runs there); no new goroutines.
 func (a *App) resumeActiveTabMusic() {
-	track := a.link.sess.MusicTrack
+	track := a.sess.MusicTrack
 	if track == "" {
 		return
 	}
 	// Now-Playing reflects the room's intended track even when streaming is off.
-	a.link.room.Scene.MusicTrack = track
-	if !a.link.room.StreamMusic || a.d.Audio == nil {
+	a.room.Scene.MusicTrack = track
+	if !a.room.StreamMusic || a.d.Audio == nil {
 		return // §1.3: OFF fetches/plays nothing; no device = nothing to duck or seek
 	}
 	// Loop: true — a resumed persistent area track keeps AsyncAO's client-side loop
@@ -1666,7 +1762,7 @@ func (a *App) resumeActiveTabMusic() {
 	// track was already "playing" from the listener's view, so it shouldn't ramp in.
 	const resumeLoop = true
 	const resumeEffects = 0
-	url := a.link.urls.MusicURL(track)
+	url := a.urls.MusicURL(track)
 	sameTrack := a.d.Audio.CurrentMusicURL() == url && a.d.Audio.MusicPlaying()
 	if sameTrack {
 		// The stream is already this exact track, still rolling (kept alive, ducked,
@@ -1687,10 +1783,10 @@ func (a *App) resumeActiveTabMusic() {
 		// its real duration. This is the drift-free path the users were promised.
 		elapsed := a.now().Sub(snapAt).Seconds()
 		seekSec, play = resumeSeek(snapPos, snapDur, elapsed, resumeLoop)
-	} else if !a.musicTab.musicStartedAt.IsZero() {
+	} else if !a.musicStartedAt.IsZero() {
 		// No snapshot (old build, resolver miss, mod/midi with unknown length, or a
 		// first play): keep the legacy wall-clock estimate, capped, exactly as before.
-		if el := a.now().Sub(a.musicTab.musicStartedAt).Seconds(); el > 0 && el <= musicResumeMaxSeekSec {
+		if el := a.now().Sub(a.musicStartedAt).Seconds(); el > 0 && el <= musicResumeMaxSeekSec {
 			seekSec = el
 		}
 	}
@@ -1701,9 +1797,9 @@ func (a *App) resumeActiveTabMusic() {
 		// so nothing new will be delivered — clear any await and drop the duck so the
 		// state stays coherent (a held await with no incoming url would silently duck
 		// this stream forever). applyAudioVolumes reflects the un-ducked decision.
-		a.budget.musicAwaitURL = ""
-		a.budget.musicAwaitSince = time.Time{}
-		a.budget.musicTabDucked = false
+		a.musicAwaitURL = ""
+		a.musicAwaitSince = time.Time{}
+		a.musicTabDucked = false
 		a.applyAudioVolumes()
 		return
 	}
@@ -1724,26 +1820,35 @@ func (a *App) resumeActiveTabMusic() {
 // HOLD the duck and AWAIT url — un-ducking now would make the foreign stream audible
 // during the fetch; settleAwaitedMusic lifts the duck when url is delivered. With the
 // MusicAcrossTabs pref ON the duck is already down (no isolation wanted); the await is
+// then harmless (settle just clears it, applyAudioVolumes no-ops). Either way it
+// re-applies volumes so the mixer reflects the decision.
 func (a *App) applyResumeDuck(sameTrack bool, url string) {
 	if sameTrack {
 		// Nothing awaited once we're on our own track; the right song is audible now.
-		a.budget.musicAwaitURL = ""
-		a.budget.musicAwaitSince = time.Time{}
-		a.budget.musicTabDucked = false
-	} else if a.budget.musicTabDucked {
+		a.musicAwaitURL = ""
+		a.musicAwaitSince = time.Time{}
+		a.musicTabDucked = false
+	} else if a.musicTabDucked {
 		// Swap path, and there's a real duck to hold: arm the await so the duck lifts
 		// only once THIS track is the one the mixer is playing (never a foreign track
 		// mid-fetch). GATED on the duck deliberately, mirroring the DJ /play arm (which
 		// arms only `if a.musicTabDucked`). Under MusicAcrossTabs ON the duck is already
 		// down (no acoustic isolation wanted) — arming an await then is pure liability:
-		a.budget.musicAwaitURL = url       // un-duck only once THIS track is the one playing
-		a.budget.musicAwaitSince = a.now() // stamp for the never-arrives timeout release
+		// its ONLY job is to hold a duck until delivery, and with no duck to hold, a
+		// destination track that stalls / 404s / never becomes CurrentMusicURL would trip
+		// settleAwaitedMusic's never-arrives timeout, whose awaitTimeoutStop heals the
+		// deliberately-audible continuity stream to SILENCE — misclassifying the very
+		// input the toggle exists to keep playing. No release-time 404 signal exists
+		// (MusicFailures is transient-only, warningCh is droppable + wrong-granularity),
+		// so the only safe fix is arm-time: don't arm when there's no duck.
+		a.musicAwaitURL = url       // un-duck only once THIS track is the one playing
+		a.musicAwaitSince = a.now() // stamp for the never-arrives timeout release
 	}
 	// The active tab just claimed the single stream with its own track (resume,
 	// either the same track it kept rolling or a freshly-fetched one): it now owns
 	// the stream, so its per-server music volume governs it. a.serverKey is the
 	// active tab's key here — see musicOwnerKey.
-	a.budget.musicOwnerKey = a.srvMeta.serverKey
+	a.musicOwnerKey = a.serverKey
 	a.applyAudioVolumes()
 }
 
@@ -1752,8 +1857,8 @@ func (a *App) applyResumeDuck(sameTrack bool, url string) {
 // list character, the wire carries the custom folder; AO2-Client
 // set_iniswap semantics), else our picked character.
 func (a *App) activeCharName() string {
-	if a.inibrowse.iniChar != "" {
-		return a.inibrowse.iniChar
+	if a.iniChar != "" {
+		return a.iniChar
 	}
 	return a.myCharName()
 }
@@ -1761,10 +1866,10 @@ func (a *App) activeCharName() string {
 // setIniswap applies a custom character override ("" reverts to the picked
 // character) and reloads the emote list for the new active folder.
 func (a *App) setIniswap(name string) {
-	a.inibrowse.iniChar = name
-	a.compose.charDefaultSide = "" // the new folder's char.ini decides the default side; until it lands there is none
-	a.emotepick.emoteAsk = nil
-	a.emotepick.emoteIdx, a.emotepick.emoteRow = 0, 0 // new active folder = new emote list: start at the first
+	a.iniChar = name
+	a.charDefaultSide = "" // the new folder's char.ini decides the default side; until it lands there is none
+	a.emoteAsk = nil
+	a.emoteIdx, a.emoteRow = 0, 0 // new active folder = new emote list: start at the first
 	a.loadCharINI()
 }
 
@@ -1793,8 +1898,8 @@ func wardrobeAction(iniswapMode bool, slot int, taken bool) wardrobeAct {
 // (case-insensitive), or -1. Linear, but only runs on an actual wardrobe click.
 func (a *App) charSlotByName(name string) int {
 	want := strings.ToLower(strings.TrimSpace(name))
-	for i := range a.link.sess.Chars {
-		if strings.ToLower(a.link.sess.Chars[i].Name) == want {
+	for i := range a.sess.Chars {
+		if strings.ToLower(a.sess.Chars[i].Name) == want {
 			return i
 		}
 	}
@@ -1807,8 +1912,8 @@ func (a *App) charSlotByName(name string) int {
 // switch we can't perform (taken slot, or a name that isn't a server character)
 // falls back to an iniswap — with a toast, so a favourite never silently swaps.
 func (a *App) wardrobeClick(name string) {
-	a.inibrowse.showIni = false
-	if a.link.room == nil {
+	a.showIni = false
+	if a.room == nil {
 		// Char-select Wardrobe tab: pick the REAL free character (the switch a
 		// favourite is expected to do) when it's a claimable server slot; only
 		// fall back to an iniswap (free slot + its look) when it's taken or not a
@@ -1817,11 +1922,11 @@ func (a *App) wardrobeClick(name string) {
 		// favourite on reconnect iniswapped instead of switching.
 		slot := -1
 		taken := false
-		if a.link.sess != nil {
+		if a.sess != nil {
 			slot = a.charSlotByName(name)
-			taken = slot >= 0 && a.link.sess.Chars[slot].Taken
+			taken = slot >= 0 && a.sess.Chars[slot].Taken
 		}
-		if wardrobeAction(a.inibrowse.iniSwapMode, slot, taken) == actSwitch {
+		if wardrobeAction(a.iniSwapMode, slot, taken) == actSwitch {
 			a.pickCharacter(slot)
 			return
 		}
@@ -1829,12 +1934,12 @@ func (a *App) wardrobeClick(name string) {
 		return
 	}
 	slot := a.charSlotByName(name)
-	taken := slot >= 0 && a.link.sess.Chars[slot].Taken
-	if wardrobeAction(a.inibrowse.iniSwapMode, slot, taken) == actSwitch {
+	taken := slot >= 0 && a.sess.Chars[slot].Taken
+	if wardrobeAction(a.iniSwapMode, slot, taken) == actSwitch {
 		a.pickCharacter(slot) // CC → PV → EventCharPicked → enterCourtroom (iniswap clears)
 		return
 	}
-	if !a.inibrowse.iniSwapMode { // a switch was wanted but impossible — say why, don't swap silently
+	if !a.iniSwapMode { // a switch was wanted but impossible — say why, don't swap silently
 		switch {
 		case slot < 0:
 			a.warnLine = name + " isn't a character on this server — worn as an iniswap"
@@ -1851,15 +1956,15 @@ func (a *App) wardrobeClick(name string) {
 // still needs a server SLOT, so claim the first free one and wear the
 // custom when PV confirms (enterCourtroom applies pendingIni).
 func (a *App) wearFromMenu(name string) {
-	a.inibrowse.showIni = false
-	if a.link.room != nil {
+	a.showIni = false
+	if a.room != nil {
 		a.setIniswap(name)
 		a.screen = ScreenCourtroom
 		return
 	}
 	free := -1
-	for i := range a.link.sess.Chars {
-		if !a.link.sess.Chars[i].Taken {
+	for i := range a.sess.Chars {
+		if !a.sess.Chars[i].Taken {
 			free = i
 			break
 		}
@@ -1869,15 +1974,15 @@ func (a *App) wearFromMenu(name string) {
 		a.warnAt = time.Now()
 		return
 	}
-	a.inibrowse.pendingIni = name
+	a.pendingIni = name
 	a.pickCharacter(free) // rehearsal resolves locally
 }
 
 // openIniswap shows the wardrobe menu (courtroom modal).
 func (a *App) openIniswap() {
-	a.inibrowse.showIni = true
+	a.showIni = true
 	a.ensureIniList()
-	if a.wardrobe.wardSection == wardSectionBackgrounds {
+	if a.wardSection == wardSectionBackgrounds {
 		a.rebuildBgFav() // favourites may have changed since this section last drew
 	}
 }
@@ -1888,14 +1993,14 @@ func (a *App) openIniswap() {
 // is a memory hit).
 func (a *App) ensureIniList() {
 	a.rebuildIniMenu() // wardrobe is local: usable before (or without) the txt
-	if a.inibrowse.iniServer != nil || a.inibrowse.iniBusy || a.link.urls.Origin() == "" {
+	if a.iniServer != nil || a.iniBusy || a.urls.Origin() == "" {
 		return
 	}
-	a.inibrowse.iniBusy = true
-	a.inibrowse.iniListErr = ""
-	url := a.link.urls.Origin() + iniswapFileName
-	bgURL := a.link.urls.BackgroundsRoot()
-	key := a.srvMeta.serverKey
+	a.iniBusy = true
+	a.iniListErr = ""
+	url := a.urls.Origin() + iniswapFileName
+	bgURL := a.urls.BackgroundsRoot()
+	key := a.serverKey
 	mgr := a.d.Manager
 	ch := a.iniRes
 	go func() {
@@ -1930,16 +2035,16 @@ func (a *App) ensureIniList() {
 func (a *App) pollIniswap() {
 	select {
 	case res := <-a.iniRes:
-		if res.key != a.srvMeta.serverKey {
+		if res.key != a.serverKey {
 			return // landed after a tab switch: not this server's list
 		}
-		a.inibrowse.iniBusy = false
+		a.iniBusy = false
 		if res.err != nil {
-			a.inibrowse.iniListErr = "no server list (" + res.err.Error() + ") — your wardrobe still works"
-			a.inibrowse.iniServer = nil
+			a.iniListErr = "no server list (" + res.err.Error() + ") — your wardrobe still works"
+			a.iniServer = nil
 		} else {
-			a.inibrowse.iniServer = filterServerIniswaps(res.names, res.bgs,
-				a.d.Prefs.Load().ServerWarmInfoFor(a.srvMeta.serverKey).Backgrounds)
+			a.iniServer = filterServerIniswaps(res.names, res.bgs,
+				a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey).Backgrounds)
 		}
 		a.rebuildIniMenu()
 	default:
@@ -1950,26 +2055,26 @@ func (a *App) pollIniswap() {
 // favourites — instant swaps, persisted across sessions and servers),
 // then server-list entries not already in the wardrobe.
 func (a *App) rebuildIniMenu() {
-	names, fromWardrobe, inServer := mergeWardrobe(a.d.Prefs.Load().WardrobeList(a.srvMeta.serverKey), a.inibrowse.iniServer)
-	a.inibrowse.iniList = names
-	a.inibrowse.iniWardrobe = fromWardrobe
-	a.inibrowse.iniServerMem = inServer
-	a.inibrowse.iniLower = make([]string, len(names))
-	folders := a.d.Prefs.Load().WardrobeFolderMap(a.srvMeta.serverKey)
-	a.inibrowse.iniFolders = make([]string, len(names))
-	a.inibrowse.iniHoverIDs = make([]string, len(names))
+	names, fromWardrobe, inServer := mergeWardrobe(a.d.Prefs.Load().WardrobeList(a.serverKey), a.iniServer)
+	a.iniList = names
+	a.iniWardrobe = fromWardrobe
+	a.iniServerMem = inServer
+	a.iniLower = make([]string, len(names))
+	folders := a.d.Prefs.Load().WardrobeFolderMap(a.serverKey)
+	a.iniFolders = make([]string, len(names))
+	a.iniHoverIDs = make([]string, len(names))
 	for i, n := range names {
 		lower := strings.ToLower(n)
-		a.inibrowse.iniLower[i] = lower
-		a.inibrowse.iniFolders[i] = folders[lower] // "" when unsorted / not filed
-		a.inibrowse.iniHoverIDs[i] = iniHoverIDPrefix + n
+		a.iniLower[i] = lower
+		a.iniFolders[i] = folders[lower] // "" when unsorted / not filed
+		a.iniHoverIDs[i] = iniHoverIDPrefix + n
 	}
-	a.inibrowse.iniAsk = nil
+	a.iniAsk = nil
 	// Toggling a star reorders the list at the SAME length (wardrobe entries
 	// float up), and cachedPage keys its icon slice by index without re-checking
 	// the URL — so drop the idx→page cache here or a reorder would paint the
 	// previous name's icon. Icons re-resolve from T1 next frame (a map hit).
-	a.rcache.iniPages = nil
+	a.iniPages = nil
 }
 
 // iniHoverIDPrefix namespaces a wardrobe cell's HoverPreview id, exactly as
@@ -1983,13 +2088,13 @@ const iniHoverIDPrefix = "iniswap:"
 // rebuildIniMenu, but this is a DRAW loop, and paying one allocation on a path that
 // should be unreachable beats panicking the client if it ever is reached.
 func (a *App) iniHoverID(i int) string {
-	if i >= 0 && i < len(a.inibrowse.iniHoverIDs) {
-		return a.inibrowse.iniHoverIDs[i]
+	if i >= 0 && i < len(a.iniHoverIDs) {
+		return a.iniHoverIDs[i]
 	}
-	if i < 0 || i >= len(a.inibrowse.iniList) {
+	if i < 0 || i >= len(a.iniList) {
 		return iniHoverIDPrefix
 	}
-	return iniHoverIDPrefix + a.inibrowse.iniList[i]
+	return iniHoverIDPrefix + a.iniList[i]
 }
 
 // applyPendingFav applies a wardrobe ★ toggle that a cell DEFERRED this frame. It
@@ -1998,15 +2103,15 @@ func (a *App) iniHoverID(i int) string {
 // slices mid-iteration and panicked on a remove (the reported crash). A no-op when
 // nothing was deferred.
 func (a *App) applyPendingFav() {
-	if a.inibrowse.iniFavPending == "" {
+	if a.iniFavPending == "" {
 		return
 	}
-	name := a.inibrowse.iniFavPending
-	a.inibrowse.iniFavPending = ""
-	if a.inibrowse.iniFavPendingAdd {
-		a.d.Prefs.AddWardrobe(a.srvMeta.serverKey, name)
+	name := a.iniFavPending
+	a.iniFavPending = ""
+	if a.iniFavPendingAdd {
+		a.d.Prefs.AddWardrobe(a.serverKey, name)
 	} else {
-		a.d.Prefs.RemoveWardrobe(a.srvMeta.serverKey, name)
+		a.d.Prefs.RemoveWardrobe(a.serverKey, name)
 	}
 	a.rebuildIniMenu()
 }
@@ -2017,19 +2122,19 @@ func (a *App) applyPendingFav() {
 // per-cell star lookup in drawCharCell then reads it lock-free.
 func (a *App) ensureWardrobeMembers() {
 	gen := a.d.Prefs.WardrobeGeneration()
-	if a.charsel.wardrobeMembers != nil && a.charsel.wardrobeMembersFor == a.srvMeta.serverKey && a.charsel.wardrobeMembersGen == gen {
+	if a.wardrobeMembers != nil && a.wardrobeMembersFor == a.serverKey && a.wardrobeMembersGen == gen {
 		return
 	}
-	if a.charsel.wardrobeMembers == nil {
-		a.charsel.wardrobeMembers = make(map[string]bool)
+	if a.wardrobeMembers == nil {
+		a.wardrobeMembers = make(map[string]bool)
 	} else {
-		clear(a.charsel.wardrobeMembers)
+		clear(a.wardrobeMembers)
 	}
-	for _, name := range a.d.Prefs.Load().WardrobeList(a.srvMeta.serverKey) {
-		a.charsel.wardrobeMembers[strings.ToLower(name)] = true
+	for _, name := range a.d.Prefs.Load().WardrobeList(a.serverKey) {
+		a.wardrobeMembers[strings.ToLower(name)] = true
 	}
-	a.charsel.wardrobeMembersFor = a.srvMeta.serverKey
-	a.charsel.wardrobeMembersGen = gen
+	a.wardrobeMembersFor = a.serverKey
+	a.wardrobeMembersGen = gen
 }
 
 // mergeWardrobe combines your wardrobe favourites with the server's iniswap
@@ -2162,9 +2267,22 @@ func (a *App) cachedPage(pages *[]*render.TexturePage, gen *uint64, n, idx int, 
 // demandAsset paces one visible cell's asset demand: shared per-frame
 // budget, one ask per slot per charIconRetryInterval (self-heals shed
 // low-lane jobs). stamps resizes lazily to n; callers tag the asset type.
+//
+// It reports whether the cell's art may still ARRIVE. False means the manager
+// already probed every format of this base to exhaustion this session, so no
+// amount of waiting or re-asking can fill the cell; callers use that to stop
+// holding the frame pump awake for art that is never coming (see
+// frameDemandPending). True is the ordinary answer, INCLUDING the frames where
+// this call asked for nothing because the budget or the retry window said no —
+// "not asked yet" is not "not coming".
+//
 // The conclusive-miss check comes before the pacing, not after, because it is
 // the cadence itself that had to stop. This retry loop only ever terminated on
 // residency, and a 404'd base can never become resident, so a roster whose
+// characters ship no char_icon and no emotions/button<N>_off art re-asked for
+// every one of them every charIconRetryInterval for as long as the grid was on
+// screen — a 404 leaving the client every couple of seconds, forever, with the
+// pool jobs and shed-loop spins behind each one taking the framerate with them.
 func (a *App) demandAsset(stamps *[]time.Time, n, idx int, base string, t assets.AssetType) bool {
 	if idx < 0 || idx >= n {
 		return false
@@ -2172,7 +2290,7 @@ func (a *App) demandAsset(stamps *[]time.Time, n, idx int, base string, t assets
 	if a.d.Manager.IsConclusiveMiss(base, t) {
 		return false
 	}
-	if a.budget.iconAskBudget <= 0 {
+	if a.iconAskBudget <= 0 {
 		return true // budget spent this frame, not a verdict on the asset
 	}
 	if len(*stamps) != n {
@@ -2183,25 +2301,32 @@ func (a *App) demandAsset(stamps *[]time.Time, n, idx int, base string, t assets
 		return true
 	}
 	(*stamps)[idx] = now
-	a.budget.iconAskBudget--
+	a.iconAskBudget--
 	a.d.Manager.Prefetch(base, t, network.PriorityLow)
 	return true
 }
 
 // charINIURL builds a character's char.ini location.
+//
 // Through the URLBuilder's CharFolder, never a hand-rolled origin+"characters/"+name: that is the
+// ONE place the character-folder spelling is decided (casing pref, per-segment escaping, nested
+// identities like "SG/Faris NyanNyan"), and this site used to bypass all three — it hard-lowercased
+// the name, so char.ini 404'd outright on a capitalised-folder server, and it left spaces and
+// separators unescaped, so the char.ini cache key for a spaced name did not match the spelling every
+// other asset of the same character is keyed by. downloader.go builds the same URL the same way
+// (CharFolder + charINIFileName).
 func (a *App) charINIURL(name string) string {
-	return a.link.urls.CharFolder(name) + charINIFileName
+	return a.urls.CharFolder(name) + charINIFileName
 }
 
 // warmCharINI speculatively fetches a hovered character's char.ini so the
 // eventual pick costs a memory hit instead of an RTT. One submit per
 // hovered name; the manager dedupes and the 404 cache absorbs misses.
 func (a *App) warmCharINI(name string) {
-	if name == "" || name == a.compose.iniWarmed || a.link.urls.Origin() == "" {
+	if name == "" || name == a.iniWarmed || a.urls.Origin() == "" {
 		return
 	}
-	a.compose.iniWarmed = name
+	a.iniWarmed = name
 	a.d.Manager.PrefetchRaw(a.charINIURL(name), network.PriorityLow) // raw text: char.ini
 }
 
@@ -2230,16 +2355,16 @@ const (
 // off-thread and lands in previewEmoteRes. previewChar guards it to one parse
 // per character.
 func (a *App) ensurePreviewEmotes(name string, cycle bool) {
-	if name == "" || name == a.budget.previewChar || a.link.urls.Origin() == "" {
+	if name == "" || name == a.previewChar || a.urls.Origin() == "" {
 		return
 	}
-	a.budget.previewChar = name
-	a.budget.previewEmoteCycle = cycle
-	a.budget.previewAnims = nil
-	a.budget.previewLabels = nil
-	a.budget.previewEmoteIdx = 0
+	a.previewChar = name
+	a.previewEmoteCycle = cycle
+	a.previewAnims = nil
+	a.previewLabels = nil
+	a.previewEmoteIdx = 0
 	url := a.charINIURL(name)
-	key := a.srvMeta.serverKey
+	key := a.serverKey
 	mgr := a.d.Manager
 	ch := a.previewEmoteRes
 	go func() {
@@ -2278,23 +2403,23 @@ func (a *App) ensurePreviewEmotes(name string, cycle bool) {
 func (a *App) pollPreviewEmotes() {
 	select {
 	case res := <-a.previewEmoteRes:
-		if res.key != a.srvMeta.serverKey || res.char != a.budget.previewChar {
+		if res.key != a.serverKey || res.char != a.previewChar {
 			return
 		}
-		a.budget.previewAnims = res.anims
-		a.budget.previewLabels = res.labels
-		a.budget.previewEmoteIdx = 0
+		a.previewAnims = res.anims
+		a.previewLabels = res.labels
+		a.previewEmoteIdx = 0
 		if len(res.anims) == 0 {
 			return
 		}
-		if !a.budget.previewEmoteCycle {
+		if !a.previewEmoteCycle {
 			// char-select portrait. The box outlives the trigger cell (the travel
 			// corridor keeps it up once the cursor leaves), so a late parse has to
 			// correct it here instead of waiting for another hover frame.
 			a.correctPortraitPreview(res.char)
 			return
 		}
-		if a.budget.previewBase == a.link.urls.Emote(res.char, previewIdleAnim, courtroom.EmoteIdle) {
+		if a.previewBase == a.urls.Emote(res.char, previewIdleAnim, courtroom.EmoteIdle) {
 			a.setPreviewEmote(0)
 		}
 	default:
@@ -2304,20 +2429,28 @@ func (a *App) pollPreviewEmotes() {
 // previewPortraitAnim returns the emote the char-select grid should show for
 // name: the conventional "normal" idle pose, or — once the char.ini has been
 // parsed and turns out NOT to name one — the pack's FIRST real emote.
+//
+// "normal" is a convention, not a guarantee. A pack whose poses are spelled
+// SNormal/SCry/HSmug had no recovery at all here and previewed as a permanently
+// empty box (its cell icon still loaded — that's char_icon.png — so it read as
+// "the sprite is broken"). Same trap fixed for the pair-menu preview
+// ("always looked for a sprite named 'normal', which plenty of packs simply
+// don't have"); the fix was never carried over to this grid.
+//
 // Until the parse lands it answers the convention, so the common pack still
 // fills the box from ONE optimistic probe and never pays for a second.
 func (a *App) previewPortraitAnim(name string) string {
-	if name != a.budget.previewChar || len(a.budget.previewAnims) == 0 {
+	if name != a.previewChar || len(a.previewAnims) == 0 {
 		return previewIdleAnim // not parsed (yet): the optimistic convention
 	}
-	for _, anim := range a.budget.previewAnims {
+	for _, anim := range a.previewAnims {
 		// Case-insensitive: emote anims are lowercased into the URL (segPath), so
 		// a char.ini "Normal" resolves to the very base already probed.
 		if strings.EqualFold(anim, previewIdleAnim) {
 			return previewIdleAnim
 		}
 	}
-	return a.budget.previewAnims[0]
+	return a.previewAnims[0]
 }
 
 // setCharPortraitPreview points the char-select hover box at name's portrait and
@@ -2327,8 +2460,8 @@ func (a *App) previewPortraitAnim(name string) string {
 // demand per frame and no more.
 func (a *App) setCharPortraitPreview(name string) {
 	anim := a.previewPortraitAnim(name)
-	a.budget.previewBase = a.link.urls.Emote(name, anim, courtroom.EmoteIdle)
-	a.d.Manager.PrefetchChain(a.budget.previewBase, a.link.urls.EmoteAlts(name, anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+	a.previewBase = a.urls.Emote(name, anim, courtroom.EmoteIdle)
+	a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(name, anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
 }
 
 // correctPortraitPreview repoints an ALREADY-OPEN char-select portrait after its
@@ -2337,7 +2470,7 @@ func (a *App) setCharPortraitPreview(name string) {
 // have "normal" costs no second probe, and a box another surface has since
 // claimed is left alone.
 func (a *App) correctPortraitPreview(name string) {
-	if a.budget.previewBase != a.link.urls.Emote(name, previewIdleAnim, courtroom.EmoteIdle) {
+	if a.previewBase != a.urls.Emote(name, previewIdleAnim, courtroom.EmoteIdle) {
 		return
 	}
 	if a.previewPortraitAnim(name) == previewIdleAnim {
@@ -2349,18 +2482,18 @@ func (a *App) correctPortraitPreview(name string) {
 // setPreviewEmote points the preview box at emote i (wrapping) of the previewed
 // character — the talk (b) pose, like the courtroom emote strip's hover.
 func (a *App) setPreviewEmote(i int) {
-	n := len(a.budget.previewAnims)
-	if n == 0 || a.budget.previewChar == "" {
+	n := len(a.previewAnims)
+	if n == 0 || a.previewChar == "" {
 		return
 	}
-	a.budget.previewEmoteIdx = ((i % n) + n) % n
-	anim := a.budget.previewAnims[a.budget.previewEmoteIdx]
-	a.budget.previewBase = a.link.urls.Emote(a.budget.previewChar, anim, courtroom.EmoteTalk)
-	a.d.Manager.PrefetchChain(a.budget.previewBase, a.link.urls.EmoteAlts(a.budget.previewChar, anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview cycle)
+	a.previewEmoteIdx = ((i % n) + n) % n
+	anim := a.previewAnims[a.previewEmoteIdx]
+	a.previewBase = a.urls.Emote(a.previewChar, anim, courtroom.EmoteTalk)
+	a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(a.previewChar, anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview cycle)
 }
 
 // cyclePreviewEmote steps the try-before-wear preview by delta (wrapping).
-func (a *App) cyclePreviewEmote(delta int) { a.setPreviewEmote(a.budget.previewEmoteIdx + delta) }
+func (a *App) cyclePreviewEmote(delta int) { a.setPreviewEmote(a.previewEmoteIdx + delta) }
 
 // clampEmoteSel returns the emote index / grid scroll row to use after an emote
 // list of length n is (re)loaded. A still-valid index is PRESERVED — so a tab
@@ -2370,6 +2503,10 @@ func (a *App) cyclePreviewEmote(delta int) { a.setPreviewEmote(a.budget.previewE
 // first emote at the top of the grid. Index and scroll move together so a kept
 // index can't desync from a stale scroll position. Pure so the session-isolation
 // behaviour is pinned by a unit test, not a manual rebuild.
+//
+// The second value was a PAGE index before the grid learned to scroll by row
+// (emotescroll.go); it is a row now. The contract is unchanged — "keep it, or
+// zero both" — which is why the signature and every caller stayed put.
 func clampEmoteSel(idx, row, n int) (int, int) {
 	if idx < 0 || idx >= n {
 		return 0, 0
@@ -2381,12 +2518,12 @@ func clampEmoteSel(idx, row, n int) (int, int) {
 // (the iniswap override when set).
 func (a *App) loadCharINI() {
 	name := a.activeCharName()
-	if a.link.sess == nil || name == "" {
+	if a.sess == nil || name == "" {
 		return
 	}
 	url := a.charINIURL(name)
-	a.compose.charINIBusy = true
-	key := a.srvMeta.serverKey
+	a.charINIBusy = true
+	key := a.serverKey
 	mgr := a.d.Manager
 	ch := a.charINIres
 	go func() {
@@ -2405,20 +2542,20 @@ func (a *App) loadCharINI() {
 }
 
 func (a *App) pollCharINI() {
-	if a.client.pinnedPass {
+	if a.pinnedPass {
 		return // the full-theme pinned render must not drain the primary's char.ini result
 	}
 	select {
 	case res := <-a.charINIres:
-		if res.key != a.srvMeta.serverKey {
+		if res.key != a.serverKey {
 			return // landed after a tab switch: another server's char.ini
 		}
-		a.compose.charINIBusy = false
+		a.charINIBusy = false
 		a.uiDirty = true // the emote list just changed (and "Loading emotes…" must clear): force one redraw, like the character list does on its packet
 		// New emote list = new button art; the gen-keyed page caches key
 		// by INDEX, so a same-length iniswap would show the old char's
 		// buttons without this.
-		a.rcache.emoteBtnOff, a.rcache.emoteBtnOn, a.rcache.emoteIconPages = nil, nil, nil
+		a.emoteBtnOff, a.emoteBtnOn, a.emoteIconPages = nil, nil, nil
 		if res.err != nil || res.ini == nil {
 			// Surface WHY the emote list is a bare default (better than a
 			// silent single "normal" chip).
@@ -2428,8 +2565,8 @@ func (a *App) pollCharINI() {
 			}
 			a.warnLine = clampLine("char.ini for " + a.activeCharName() + ": " + reason + " — using a default emote")
 			a.warnAt = time.Now()
-			a.emotepick.emotes = []courtroom.Emote{{Comment: "normal", Anim: "normal", Preanim: "-"}}
-			a.emotepick.emoteIdx, a.emotepick.emoteRow = clampEmoteSel(a.emotepick.emoteIdx, a.emotepick.emoteRow, len(a.emotepick.emotes))
+			a.emotes = []courtroom.Emote{{Comment: "normal", Anim: "normal", Preanim: "-"}}
+			a.emoteIdx, a.emoteRow = clampEmoteSel(a.emoteIdx, a.emoteRow, len(a.emotes))
 			// The char.ini never arrived, so this character declares no default side.
 			// CLEARING is the whole point: without it the PREVIOUS character's default
 			// survives, pos_remove paints for a side the user never overrode, and one
@@ -2437,12 +2574,12 @@ func (a *App) pollCharINI() {
 			// get_char_side simply returns "wit" for an unreadable ini
 			// (text_file_functions.cpp:480-483), which is what defaultSide() reports for
 			// an empty value.
-			a.compose.charDefaultSide = ""
+			a.charDefaultSide = ""
 			return
 		}
-		a.emotepick.emotes = res.ini.Emotes
-		if len(a.emotepick.emotes) == 0 {
-			a.emotepick.emotes = []courtroom.Emote{{Comment: "normal", Anim: "normal", Preanim: "-"}}
+		a.emotes = res.ini.Emotes
+		if len(a.emotes) == 0 {
+			a.emotes = []courtroom.Emote{{Comment: "normal", Anim: "normal", Preanim: "-"}}
 		}
 		// OUR side comes from our char.ini (AO2-Client semantics), never
 		// from whoever spoke last; /pos overrides it.
@@ -2451,23 +2588,23 @@ func (a *App) pollCharINI() {
 		// and it must be assigned even when the value is empty so a previous
 		// character's default cannot survive an iniswap.
 		side := strings.ToLower(strings.TrimSpace(res.ini.Side))
-		a.compose.charDefaultSide = side
+		a.charDefaultSide = side
 		if side != "" {
-			a.compose.sidePref = side
+			a.sidePref = side
 		}
-		a.compose.charBlips = res.ini.Blips
+		a.charBlips = res.ini.Blips
 		// Custom shout menu: the base "custom" entry (renamed by
 		// custom_name) plus the named 2.10 interjections.
-		a.compose.customShouts = res.ini.CustomShouts
-		a.compose.customIdx = -1 // base custom
-		a.compose.customName = res.ini.CustomName
+		a.customShouts = res.ini.CustomShouts
+		a.customIdx = -1 // base custom
+		a.customName = res.ini.CustomName
 		// Preserve the per-tab emote selection across a REACTIVATION reload: snap
 		// to the first emote only when the restored index no longer fits the
 		// freshly loaded list. A real character change (enterCourtroom / setIniswap)
 		// zeroes these synchronously before the fetch, so a fresh pick still starts
 		// at emote 0 — see clampEmoteSel.
-		a.emotepick.emoteIdx, a.emotepick.emoteRow = clampEmoteSel(a.emotepick.emoteIdx, a.emotepick.emoteRow, len(a.emotepick.emotes))
-		a.emotepick.emoteAsk = nil // fresh char: re-demand its button art from scratch
+		a.emoteIdx, a.emoteRow = clampEmoteSel(a.emoteIdx, a.emoteRow, len(a.emotes))
+		a.emoteAsk = nil // fresh char: re-demand its button art from scratch
 		// Speculatively prefetch emote sprites at LOW priority (sheds under load, never blocks
 		// live HIGH fetches). #127: with the bundle toggle on, grab this character's FULL set —
 		// every emote's idle AND talk (with the bare-spelling fallback) — so switching emotes is
@@ -2476,12 +2613,12 @@ func (a *App) pollCharINI() {
 		// already cached/in-flight.
 		me := a.myCharName()
 		if a.d.Prefs.Load().CharBundlePrefetch {
-			for _, e := range a.emotepick.emotes {
-				a.d.Manager.PrefetchChain(a.link.urls.Emote(me, e.Anim, courtroom.EmoteIdle), a.link.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (#127 bundle)
-				a.d.Manager.PrefetchChain(a.link.urls.Emote(me, e.Anim, courtroom.EmoteTalk), a.link.urls.EmoteAlts(me, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (#127 bundle)
+			for _, e := range a.emotes {
+				a.d.Manager.PrefetchChain(a.urls.Emote(me, e.Anim, courtroom.EmoteIdle), a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (#127 bundle)
+				a.d.Manager.PrefetchChain(a.urls.Emote(me, e.Anim, courtroom.EmoteTalk), a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (#127 bundle)
 			}
 		} else {
-			for i, e := range a.emotepick.emotes {
+			for i, e := range a.emotes {
 				if i >= 8 {
 					break
 				}
@@ -2490,7 +2627,7 @@ func (a *App) pollCharINI() {
 				// spelling prefetch would 404 the prefixed base and (once displayed)
 				// false-flag it missing → a missingno flash over a sprite that exists.
 				// The full chain makes "chain exhausted" mean "truly absent."
-				a.d.Manager.PrefetchChain(a.link.urls.Emote(me, e.Anim, courtroom.EmoteIdle), a.link.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite
+				a.d.Manager.PrefetchChain(a.urls.Emote(me, e.Anim, courtroom.EmoteIdle), a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite
 			}
 		}
 	default:
@@ -2498,10 +2635,10 @@ func (a *App) pollCharINI() {
 }
 
 func (a *App) myCharName() string {
-	if a.link.sess == nil || a.link.sess.MyCharID < 0 || a.link.sess.MyCharID >= len(a.link.sess.Chars) {
+	if a.sess == nil || a.sess.MyCharID < 0 || a.sess.MyCharID >= len(a.sess.Chars) {
 		return ""
 	}
-	return a.link.sess.Chars[a.link.sess.MyCharID].Name
+	return a.sess.Chars[a.sess.MyCharID].Name
 }
 
 // --- lobby ----------------------------------------------------------------------

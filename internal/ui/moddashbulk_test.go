@@ -13,8 +13,8 @@ import (
 // (left) is dropped, so a bulk command never targets a stale slot.
 func TestModBulkSelection(t *testing.T) {
 	a := testTabApp(t)
-	a.roster.rosterLegacy = true
-	a.roster.areaPlayers = []areaPlayer{
+	a.rosterLegacy = true
+	a.areaPlayers = []areaPlayer{
 		{uid: "1", name: "phoenix"},
 		{uid: "2", name: "edgeworth"},
 		{uid: "3", name: "maya"},
@@ -29,12 +29,12 @@ func TestModBulkSelection(t *testing.T) {
 		t.Errorf("countSelectedPresent = %d, want 2", a.countSelectedPresent())
 	}
 	a.toggleModSelected("1") // untick removes it
-	if a.modDash.selected["1"] {
+	if a.modDashSelected["1"] {
 		t.Error("untick didn't remove the UID")
 	}
-	a.modDash.clearModSelected()
-	if len(a.modDash.selected) != 0 {
-		t.Errorf("clear left %d entries", len(a.modDash.selected))
+	a.clearModSelected()
+	if len(a.modDashSelected) != 0 {
+		t.Errorf("clear left %d entries", len(a.modDashSelected))
 	}
 }
 
@@ -45,8 +45,8 @@ func TestModBulkSelectionCap(t *testing.T) {
 	for i := 0; i < modBulkCap+10; i++ {
 		a.toggleModSelected("u" + strconv.Itoa(i))
 	}
-	if len(a.modDash.selected) != modBulkCap {
-		t.Errorf("selection grew to %d, want capped at %d", len(a.modDash.selected), modBulkCap)
+	if len(a.modDashSelected) != modBulkCap {
+		t.Errorf("selection grew to %d, want capped at %d", len(a.modDashSelected), modBulkCap)
 	}
 }
 
@@ -54,16 +54,16 @@ func TestModBulkSelectionCap(t *testing.T) {
 // selection cleared after. Whisker kicks by UID, so no IPID fetch is needed for the test.
 func TestSendBulk(t *testing.T) {
 	a := testTabApp(t)
-	a.link.sess = courtroom.NewRehearsalSession("", nil) // swallows sends
-	a.budget.frameNow = time.Now()
-	a.link.cmSoftwareOverride = courtroom.SoftwareWhisker // "/kick <uid> <reason>" — builds from UID alone
-	a.roster.rosterLegacy = true
-	a.roster.areaPlayers = []areaPlayer{
+	a.sess = courtroom.NewRehearsalSession("", nil) // swallows sends
+	a.frameNow = time.Now()
+	a.cmSoftwareOverride = courtroom.SoftwareWhisker // "/kick <uid> <reason>" — builds from UID alone
+	a.rosterLegacy = true
+	a.areaPlayers = []areaPlayer{
 		{uid: "1", name: "phoenix"},
 		{uid: "2", name: "edgeworth"},
 	}
-	a.modUI.bulkBoxUIDs = []string{"1", "2"}
-	a.banBox.reason = "spam"
+	a.bulkBoxUIDs = []string{"1", "2"}
+	a.banBoxReason = "spam"
 
 	if n := a.sendBulk(false); n != 2 { // false = kick
 		t.Fatalf("sendBulk queued %d, want 2", n)
@@ -74,10 +74,10 @@ func TestSendBulk(t *testing.T) {
 	if a.oocQueue[0].line != "/kick 1 spam" {
 		t.Errorf("first queued = %q, want /kick 1 spam", a.oocQueue[0].line)
 	}
-	if len(a.modDash.audit) != 2 {
-		t.Errorf("audit has %d entries, want 2", len(a.modDash.audit))
+	if len(a.modAudit) != 2 {
+		t.Errorf("audit has %d entries, want 2", len(a.modAudit))
 	}
-	if len(a.modUI.bulkBoxUIDs) != 0 || len(a.modDash.selected) != 0 {
+	if len(a.bulkBoxUIDs) != 0 || len(a.modDashSelected) != 0 {
 		t.Error("sendBulk must clear both the frozen list and the live selection")
 	}
 }

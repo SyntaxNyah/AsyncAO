@@ -25,9 +25,9 @@ func TestIsLiveStageBase(t *testing.T) {
 		other   = "live://characters/edgeworth/(a)thinking" // a base NOT on stage
 	)
 
-	a := &App{env: env{}}
-	a.link.room = &courtroom.Courtroom{}
-	sc := &a.link.room.Scene
+	a := &App{}
+	a.room = &courtroom.Courtroom{}
+	sc := &a.room.Scene
 	sc.BackgroundBase = bg
 	sc.DeskBase = desk
 	sc.Speaker.Active = speaker
@@ -78,7 +78,7 @@ func TestIsLiveStageBase(t *testing.T) {
 	}
 
 	// A nil room (not in a courtroom, not replaying) is never a live stage base.
-	a.link.room = nil
+	a.room = nil
 	if a.IsLiveStageBase(bg) {
 		t.Error("with no room the bridge gate must be off")
 	}

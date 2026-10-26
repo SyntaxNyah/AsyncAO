@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
-
-	"github.com/SyntaxNyah/AsyncAO/internal/debuglog"
 )
 
 // drawDebugOverlay paints the bounded failure log plus a one-line session
@@ -27,7 +25,7 @@ func (a *App) drawDebugOverlay(w, h int32) {
 		lineH    = 16 // matches the small UI font row height
 		panelPad = 4
 	)
-	lines := a.debug.Lines()
+	lines := a.debugLog
 	if len(lines) > debugOverlayLines {
 		lines = lines[len(lines)-debugOverlayLines:]
 	}
@@ -44,7 +42,7 @@ func (a *App) drawDebugOverlay(w, h int32) {
 	c.LabelClipped(panel.X+6, y, panel.W-12, a.debugColdLoadLine(), ColAccent)
 	y += lineH
 	for _, e := range lines {
-		c.LabelClipped(panel.X+6, y, panel.W-12, e.Text, ColTextDim)
+		c.LabelClipped(panel.X+6, y, panel.W-12, e.text, ColTextDim)
 		y += lineH
 	}
 }
@@ -54,24 +52,24 @@ func (a *App) drawDebugOverlay(w, h int32) {
 // is. A buggy/hung server shows up as the phase stuck before "ready" with
 // the last-packet age climbing.
 func (a *App) debugHealthLine() string {
-	if a.link.sess == nil {
+	if a.sess == nil {
 		return "debug · no session (lobby) · log " +
-			fmt.Sprintf("%d/%d", a.debug.Len(), debuglog.Cap)
+			fmt.Sprintf("%d/%d", len(a.debugLog), debugLogCap)
 	}
 	age := "none yet"
 	if !a.lastPktAt.IsZero() {
 		age = fmt.Sprintf("%q %.0fs ago", a.lastPktHdr, time.Since(a.lastPktAt).Seconds())
 	}
-	software := a.link.sess.Software
+	software := a.sess.Software
 	if software == "" {
 		software = "(unannounced)"
 	}
 	wire := "fanta"
-	if a.link.conn != nil && a.link.conn.JSONMode() {
+	if a.conn != nil && a.conn.JSONMode() {
 		wire = "json"
 	}
 	return fmt.Sprintf("debug · phase %s · server %s · wire %s · last pkt %s · log %d/%d",
-		a.link.sess.Phase(), software, wire, age, a.debug.Len(), debuglog.Cap)
+		a.sess.Phase(), software, wire, age, len(a.debugLog), debugLogCap)
 }
 
 // debugDiagLine is the second readout: live structural counts that catch leaks
@@ -80,16 +78,16 @@ func (a *App) debugHealthLine() string {
 // goroutine count (a steady climb is the classic leak tell). Cheap fields only;
 // computed solely while the opt-in overlay is open.
 func (a *App) debugDiagLine() string {
-	area := a.srvMeta.curArea
+	area := a.curArea
 	if area == "" {
 		area = "—"
 	}
 	queue := 0
-	if a.link.room != nil {
-		queue = a.link.room.QueueLen()
+	if a.room != nil {
+		queue = a.room.QueueLen()
 	}
 	return fmt.Sprintf("diag · tabs %d · area %s · queue %d · ic %d · ooc %d · goroutines %d",
-		len(a.tabs), area, queue, len(a.chatlog.icLog), len(a.chatlog.oocLog), runtime.NumGoroutine())
+		len(a.tabs), area, queue, len(a.icLog), len(a.oocLog), runtime.NumGoroutine())
 }
 
 // debugColdLoadLine is the cold-load profiling readout (the playtest ask for a

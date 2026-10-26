@@ -60,7 +60,7 @@ func (a *App) cycleLayoutProfile() {
 	}
 	a.layoutProfileCursor = (a.layoutProfileCursor + 1) % len(names)
 	a.applyProfile(a.d.Prefs.Load().LayoutProfile(names[a.layoutProfileCursor]))
-	a.debug.Push("layout: profile applied from editor banner")
+	a.pushDebug("layout: profile applied from editor banner")
 }
 
 // Layout premades + full-state profiles (#34 → A6): flip the whole courtroom
@@ -83,21 +83,21 @@ const (
 // durable pref. It takes effect the same frame whether or not the editor is open —
 // slotRect reads a.classicOv, which this replaces and marks loaded. A nil/empty map
 // is the stock reset (every box back to its computed default).
-func (classic1 *classicState) applyLayoutPreset(m map[string][4]float64) {
+func (a *App) applyLayoutPreset(m map[string][4]float64) {
 	// A wholesale swap invalidates the window PIN of every slot whose rect it
 	// changes: the pin's saved-window context described the OLD override (a
 	// preset may have been saved months ago at another resolution — re-basing
 	// its fresh rect against that stale window would misplace it). Untouched
 	// slots keep their pins, so a stage-only premade never unpins the log.
-	for k := range classic1.classicAnchor {
-		if m[k] != classic1.classicOv[k] {
-			delete(classic1.classicAnchor, k)
-			classic1.env.d.Prefs.ClearClassicAnchor(k)
+	for k := range a.classicAnchor {
+		if m[k] != a.classicOv[k] {
+			delete(a.classicAnchor, k)
+			a.d.Prefs.ClearClassicAnchor(k)
 		}
 	}
-	classic1.env.d.Prefs.SetClassicLayout(m)
-	classic1.classicOv = cloneClassicOv(m)
-	classic1.classicOvLoaded = true
+	a.d.Prefs.SetClassicLayout(m)
+	a.classicOv = cloneClassicOv(m)
+	a.classicOvLoaded = true
 }
 
 // applyProfile makes a full-state LayoutProfile (A6) the live layout AND the
@@ -112,15 +112,15 @@ func (classic1 *classicState) applyLayoutPreset(m map[string][4]float64) {
 func (a *App) applyProfile(p config.LayoutProfile) {
 	// Classic slots.
 	a.d.Prefs.SetClassicLayout(p.Classic)
-	a.classic.classicOv = cloneClassicOv(p.Classic)
-	a.classic.classicOvLoaded = true
+	a.classicOv = cloneClassicOv(p.Classic)
+	a.classicOvLoaded = true
 	// Window anchors (wholesale; the profile carries WinW/WinH per anchor).
 	a.d.Prefs.SetClassicAnchors(p.Anchors)
-	a.classic.classicAnchor = parseAnchors(p.Anchors)
+	a.classicAnchor = parseAnchors(p.Anchors)
 	// Rotations (A4, wholesale like the anchors). Seed the live App map from the
 	// durable snapshot so live and persisted read the same sanitized source.
 	a.d.Prefs.SetClassicRotations(p.Rotations)
-	a.classic.classicRot = a.d.Prefs.Load().ClassicRotationSnapshot()
+	a.classicRot = a.d.Prefs.Load().ClassicRotationSnapshot()
 	// Hidden-chrome set — durable + the live map (mirror applyPrefsToState). Rebuild
 	// the live map from HiddenPanels() (NOT the raw p.Hidden slice) so live and
 	// durable read the SAME sanitized source — SetHiddenPanels dedups/caps, and
@@ -128,7 +128,7 @@ func (a *App) applyProfile(p config.LayoutProfile) {
 	// seedHiddenFromPrefs also normalizes a profile that hides BOTH mouse
 	// lifelines (toolbox grip + Settings button) — the A6 no-strand invariant.
 	a.d.Prefs.SetHiddenPanels(p.Hidden)
-	a.classic.seedHiddenFromPrefs(&a.env)
+	a.seedHiddenFromPrefs()
 	// Editor snap grid.
 	gridPx := p.GridPx
 	a.d.Prefs.Update(func(sn *config.Settings) {
@@ -145,7 +145,7 @@ func (a *App) applyProfile(p config.LayoutProfile) {
 	for i := range panelSlotTable {
 		panelSlotTable[i].fw(a).placed = false // cold-path table use (never a draw path)
 	}
-	a.wins.msgWin.placed = false
+	a.msgWin.placed = false
 	a.extrasPlaced = false
 	// Torn-off Extras widgets: a profile may carry its own torn:widget:* slots, so
 	// rebuild the set from the newly-applied classicOv. SetClassicLayout above already
@@ -161,14 +161,14 @@ func (a *App) applyProfile(p config.LayoutProfile) {
 // other box where the user put it — so a premade is a quick stage resize, not a full
 // layout swap. ensureClassicOv first so persisted other-slot overrides aren't dropped
 // when the courtroom hasn't been entered yet this session.
-func (classic1 *classicState) applyStagePreset(vp [4]float64) {
-	classic1.ensureClassicOv()
-	ov := cloneClassicOv(classic1.classicOv)
+func (a *App) applyStagePreset(vp [4]float64) {
+	a.ensureClassicOv()
+	ov := cloneClassicOv(a.classicOv)
 	if ov == nil {
 		ov = map[string][4]float64{}
 	}
 	ov[slotViewport] = vp
-	classic1.applyLayoutPreset(ov)
+	a.applyLayoutPreset(ov)
 }
 
 // theaterStageFrac builds the "Theater" premade's viewport fraction: one big 4:3 stage

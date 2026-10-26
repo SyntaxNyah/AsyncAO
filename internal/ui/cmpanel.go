@@ -16,14 +16,14 @@ import (
 // controls once you're CM.
 
 // toggleCMPanel opens / closes the CM panel (its row button + the mod dashboard's pointer).
-func (a *App) toggleCMPanel() { a.modUI.showCMPanel = !a.modUI.showCMPanel }
+func (a *App) toggleCMPanel() { a.showCMPanel = !a.showCMPanel }
 
 // cmPanelRect is the CM panel's floating-window rect (floatwin.go).
-func (classic1 *classicState) cmPanelRect(e *env, w, h int32) sdl.Rect {
-	if r, ok := classic1.seedPanelFromSlot(&e.wins.cmWin, slotPanelCM, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, w, h); ok {
+func (a *App) cmPanelRect(w, h int32) sdl.Rect {
+	if r, ok := a.seedPanelFromSlot(&a.cmWin, slotPanelCM, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, w, h); ok {
 		return r
 	}
-	return e.wins.cmWin.rect(cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, w, h)
+	return a.cmWin.rect(cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, w, h)
 }
 
 const (
@@ -38,29 +38,29 @@ const (
 // Now a movable/resizable, non-blocking floating box (chat stays live behind it).
 func (a *App) drawCMPanel(w, h int32, pressed *bool) {
 	c := a.ctx
-	if c.escPressed || !a.srvMeta.amICMNow {
-		a.modUI.showCMPanel = false // Esc, or we no longer hold CM
+	if c.escPressed || !a.amICMNow {
+		a.showCMPanel = false // Esc, or we no longer hold CM
 		return
 	}
 	sw := a.detectedSoftware()
-	wasActive := a.wins.cmWin.dragging || a.wins.cmWin.resizing // detect the drag/resize-end frame for slot persistence
-	panel := a.classic.cmPanelRect(&a.env, w, h)                // floating box: movable / resizable, non-blocking
+	wasActive := a.cmWin.dragging || a.cmWin.resizing // detect the drag/resize-end frame for slot persistence
+	panel := a.cmPanelRect(w, h)                      // floating box: movable / resizable, non-blocking
 	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, chipCMColor)                                                     // gold = CM
 	c.Fill(sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W, H: floatTitleH}, ColPanelHi) // title bar / drag handle
-	a.floatWinDrag(&a.wins.cmWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.cmWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
 	cgrip := sdl.Rect{X: panel.X + panel.W - floatGripSz, Y: panel.Y + panel.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.wins.cmWin, cgrip, panel, cmPanelMinW, cmPanelMinH, pressed)
+	a.floatWinResize(&a.cmWin, cgrip, panel, cmPanelMinW, cmPanelMinH, pressed)
 	a.drawResizeGrip(cgrip)
-	if wasActive && !a.wins.cmWin.dragging && !a.wins.cmWin.resizing { // drag/resize just ended → remember where
-		a.classic.persistPanelSlot(&a.env, slotPanelCM, panel, w, h)
+	if wasActive && !a.cmWin.dragging && !a.cmWin.resizing { // drag/resize just ended → remember where
+		a.persistPanelSlot(slotPanelCM, panel, w, h)
 	}
 	x := panel.X + modDashIn
 
 	c.Heading(x, panel.Y+12, "CM — Area Control", ColText)
 	if c.Button(sdl.Rect{X: panel.X + pw - modDashIn - 74, Y: panel.Y + 12, W: 74, H: btnH}, "Close") {
-		a.modUI.showCMPanel = false
+		a.showCMPanel = false
 		return
 	}
 	c.LabelClipped(x, panel.Y+46, pw-2*modDashIn, "Area: "+a.myAreaName(), ColTextDim)
@@ -108,14 +108,14 @@ func (a *App) drawCMRoster(r sdl.Rect, sw courtroom.ServerSoftware) {
 		return
 	}
 	if !c.ctrlHeld {
-		a.modUI.cmRosterScroll -= c.WheelIn(r) * scrollStepPx
+		a.cmRosterScroll -= c.WheelIn(r) * scrollStepPx
 	}
 	contentH := int32(len(roster)) * modRosterRowH
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
-	a.modUI.cmRosterScroll = c.VScrollbar("cmroster", track, a.modUI.cmRosterScroll, contentH, r.H)
+	a.cmRosterScroll = c.VScrollbar("cmroster", track, a.cmRosterScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r)
 	defer c.popClip(clipPrev, clipHad)
-	rowY := r.Y - a.modUI.cmRosterScroll
+	rowY := r.Y - a.cmRosterScroll
 	rowW := r.W - scrollBarW - 4
 	for i := range roster {
 		p := roster[i]

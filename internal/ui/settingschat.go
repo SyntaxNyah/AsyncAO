@@ -57,17 +57,17 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	if hcOn {
 		c.Label(pad+16, y+4, "Clear key:", ColTextDim)
 		keyLabel := hcKey
-		if a.budget.holdKeyArmed {
+		if a.holdKeyArmed {
 			keyLabel = "press a key…  (Esc cancels)"
 		}
 		if c.Button(sdl.Rect{X: pad + 96, Y: y, W: 200, H: btnH}, keyLabel) {
-			a.budget.holdKeyArmed = !a.budget.holdKeyArmed
+			a.holdKeyArmed = !a.holdKeyArmed
 		}
-		if a.budget.holdKeyArmed && c.keyPressed != 0 {
+		if a.holdKeyArmed && c.keyPressed != 0 {
 			if c.keyPressed != sdl.K_ESCAPE {
 				a.d.Prefs.SetHoldClearKey(sdl.GetKeyName(c.keyPressed))
 			}
-			a.budget.holdKeyArmed = false
+			a.holdKeyArmed = false
 			c.keyPressed = 0 // consume — don't let the captured key act elsewhere
 		}
 		y += btnH + 6
@@ -170,8 +170,8 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 
 		})
 
-		if a.link.room != nil {
-			a.link.room.AdditiveText = next // apply live
+		if a.room != nil {
+			a.room.AdditiveText = next // apply live
 		}
 	}
 	y += 26
@@ -370,15 +370,15 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.AreaHighlightHex = next })
 	}
 	wheelLbl := "Wheel…"
-	if a.chipUI.showAreaWheel {
+	if a.showAreaWheel {
 		wheelLbl = "Close"
 	}
 	if c.Button(sdl.Rect{X: pad + 306, Y: y - 1, W: 64, H: 22}, wheelLbl) {
-		a.chipUI.showAreaWheel = !a.chipUI.showAreaWheel
+		a.showAreaWheel = !a.showAreaWheel
 	}
 	c.LabelClipped(pad+378, y+4, w-pad-378-scrollBarW, "hex like 4ac96c — blank = the stock green; marks the area you're in", ColTextDim)
 	y += 32
-	if a.chipUI.showAreaWheel {
+	if a.showAreaWheel {
 		// The shared inline colour wheel (drawWheelPicker), writing back as hex —
 		// the same value the field above edits. The extra button restores the
 		// stock green (the blank-pref default).
@@ -676,17 +676,17 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Sound effects")
 	// M11 per-SFX mute: silence an annoying emote sound effect by name. The
 	// last one you heard gets a one-click toggle; the muted list is below.
-	if a.roster.lastSFXName != "" {
-		on := a.d.Prefs.Load().IsSFXMuted(a.roster.lastSFXName)
-		lbl := "Mute last SFX: " + a.roster.lastSFXName
+	if a.lastSFXName != "" {
+		on := a.d.Prefs.Load().IsSFXMuted(a.lastSFXName)
+		lbl := "Mute last SFX: " + a.lastSFXName
 		if on {
-			lbl = "Unmute last SFX: " + a.roster.lastSFXName
+			lbl = "Unmute last SFX: " + a.lastSFXName
 		}
 		if c.Button(sdl.Rect{X: pad, Y: y, W: c.TextWidth(lbl) + 20, H: btnH}, lbl) {
 			if on {
-				a.d.Prefs.UnmuteSFX(a.roster.lastSFXName)
+				a.d.Prefs.UnmuteSFX(a.lastSFXName)
 			} else {
-				a.d.Prefs.MuteSFX(a.roster.lastSFXName)
+				a.d.Prefs.MuteSFX(a.lastSFXName)
 			}
 		}
 		y += 30
@@ -713,10 +713,10 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	// is listed below with their own slider and a × that resets to 100%.
 	c.Label(pad, y+2, "Per-character blip volume (typing-sound loudness, 100% = unchanged):", ColTextDim)
 	y += 22
-	if a.roster.lastBlipChar != "" {
-		cur := a.d.Prefs.Load().BlipVolumeFor(a.roster.lastBlipChar)
-		if nv := a.volumeRow(y, "Last speaker — "+a.roster.lastBlipChar, cur); nv != cur {
-			a.d.Prefs.SetBlipVolume(a.roster.lastBlipChar, nv)
+	if a.lastBlipChar != "" {
+		cur := a.d.Prefs.Load().BlipVolumeFor(a.lastBlipChar)
+		if nv := a.volumeRow(y, "Last speaker — "+a.lastBlipChar, cur); nv != cur {
+			a.d.Prefs.SetBlipVolume(a.lastBlipChar, nv)
 		}
 		y += 28
 	} else {
@@ -770,10 +770,10 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		y += 18
 		c.Label(pad+16, y, "for a server's user-rip path (e.g. miku.pizza/base/youtube → only songs under it). Discord: audio files only.", ColTextDim)
 		y += 22
-		a.jukebox.musicHostInput, _ = c.TextField("musichost", sdl.Rect{X: pad + 16, Y: y, W: 240, H: fieldH}, a.jukebox.musicHostInput, "Host or host/folder (e.g. catbox.moe)…")
+		a.musicHostInput, _ = c.TextField("musichost", sdl.Rect{X: pad + 16, Y: y, W: 240, H: fieldH}, a.musicHostInput, "Host or host/folder (e.g. catbox.moe)…")
 		if c.Button(sdl.Rect{X: pad + 262, Y: y, W: 80, H: btnH}, "+ Add") {
-			if a.d.Prefs.AddMusicHost(a.jukebox.musicHostInput) {
-				a.jukebox.musicHostInput = ""
+			if a.d.Prefs.AddMusicHost(a.musicHostInput) {
+				a.musicHostInput = ""
 			} else {
 				a.jukeWarn("Enter a host or host/folder (or it's already listed / at the cap).")
 			}
@@ -878,19 +878,19 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		a.d.Prefs.SetFriendSoundPath(next)
 	}
 	y += 32
-	if a.srvMeta.serverKey == "" {
+	if a.serverKey == "" {
 		c.Label(pad, y+4, "Friends: connect to a server to set its highlighted shownames.", ColTextDim)
 		y += 30
 	} else {
 		c.Label(pad, y+4, "Friends:", ColText)
-		if settings.friendKey != a.srvMeta.serverKey { // reload buffer per server
-			settings.friendInput = strings.Join(a.d.Prefs.Load().ServerFriends(a.srvMeta.serverKey), ", ")
-			settings.friendKey = a.srvMeta.serverKey
+		if settings.friendKey != a.serverKey { // reload buffer per server
+			settings.friendInput = strings.Join(a.d.Prefs.Load().ServerFriends(a.serverKey), ", ")
+			settings.friendKey = a.serverKey
 		}
 		var friendCommit bool
 		settings.friendInput, friendCommit = c.TextField("friends", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH}, settings.friendInput, "showname, showname=ffcc00, showname=ffcc00=Nickname, ... (per server)")
 		if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Save") || friendCommit {
-			a.d.Prefs.SetServerFriends(a.srvMeta.serverKey, strings.Split(settings.friendInput, ","))
+			a.d.Prefs.SetServerFriends(a.serverKey, strings.Split(settings.friendInput, ","))
 			settings.statusLine = "Friends saved for this server."
 		}
 		y += 28
@@ -899,19 +899,19 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 
 	y = a.settingsSection(y, w, "Ignored players")
-	if a.srvMeta.serverKey == "" {
+	if a.serverKey == "" {
 		c.Label(pad, y+4, "Ignored: connect to a server to manage its ignore list.", ColTextDim)
 		y += 30
 	} else {
 		c.Label(pad, y+4, "Ignored:", ColText)
-		if settings.ignoreKey != a.srvMeta.serverKey { // reload buffer per server
-			settings.ignoreInput = strings.Join(a.d.Prefs.Load().ServerIgnored(a.srvMeta.serverKey), ", ")
-			settings.ignoreKey = a.srvMeta.serverKey
+		if settings.ignoreKey != a.serverKey { // reload buffer per server
+			settings.ignoreInput = strings.Join(a.d.Prefs.Load().ServerIgnored(a.serverKey), ", ")
+			settings.ignoreKey = a.serverKey
 		}
 		var ignoreCommit bool
 		settings.ignoreInput, ignoreCommit = c.TextField("ignored", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH}, settings.ignoreInput, "showname1, showname2, ... (saved per server)")
 		if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Save") || ignoreCommit {
-			a.d.Prefs.SetServerIgnored(a.srvMeta.serverKey, strings.Split(settings.ignoreInput, ","))
+			a.d.Prefs.SetServerIgnored(a.serverKey, strings.Split(settings.ignoreInput, ","))
 			settings.statusLine = "Ignore list saved for this server."
 		}
 		y += 28

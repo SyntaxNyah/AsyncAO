@@ -26,7 +26,7 @@ func TestSearchMatchesBlankQuery(t *testing.T) {
 
 // TestFocusLogSearch pins that the find hotkey arms the log search field.
 func TestFocusLogSearch(t *testing.T) {
-	a := &App{env: env{ctx: &Ctx{}}}
+	a := &App{ctx: &Ctx{}}
 	a.focusLogSearch()
 	if a.ctx.focusID != "logsearch" {
 		t.Errorf("focusID = %q, want %q", a.ctx.focusID, "logsearch")

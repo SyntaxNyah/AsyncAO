@@ -1,6 +1,7 @@
 package ui
 
 // THE PRESET GALLERY'S GATES (v1.90.0 W9).
+//
 // Three properties, and the third is the one hard rule 11 asks for by name: the
 // panel must DRIVE the merge engine rather than re-implement a corner of it. The
 // sidecar [overrides] tier shipped parsed-but-never-applied through four waves
@@ -50,6 +51,7 @@ func stageGalleryEditor(t testing.TB) (*App, func()) {
 // gallery is 294 cells and hover-scrub walks them, so a cache that grew on demand
 // would hold 294 baked miniatures after a minute of idle mousing — which is the
 // shape of every unbounded cache that has ever shipped by accident.
+//
 // It drives get() with every combination, which is also the only honest way to
 // prove the LRU never corrupts an entry: after the flood, a re-ask must return the
 // right miniature for the pair, not whichever one happened to be in that slot.
@@ -92,6 +94,11 @@ func TestPresetThumbCacheIsBounded(t *testing.T) {
 // claim, and it exists because the boundedness gate above does not imply it: a
 // cache that always evicted slot 0 is just as bounded and just as correct, and it
 // passes that test unchanged (measured — the mutation was run).
+//
+// It matters for the one interaction the panel is built around. Hover-scrub walks
+// a column of 14 or 21 and comes back; under always-evict-slot-0 the entry you
+// started from is the first thing thrown away, so scrubbing back up re-bakes every
+// card. LRU is what makes the second pass free.
 func TestPresetThumbCacheEvictsTheLeastRecentlyUsed(t *testing.T) {
 	lib, err := theme.ShippedPresets()
 	if err != nil {
@@ -119,30 +126,15 @@ func TestPresetThumbCacheEvictsTheLeastRecentlyUsed(t *testing.T) {
 	lN, sN := pairAt(presetThumbCap)
 	c.get(lN, sN)
 
-	if !thumbHolds(&c, l0, s0) {
+	if !c.holds(l0, s0) {
 		t.Fatal("the most recently used entry was evicted — the cache is not an LRU, and scrubbing back up re-bakes")
 	}
-	if thumbHolds(&c, l1, s1) {
+	if c.holds(l1, s1) {
 		t.Fatal("the LEAST recently used entry survived an eviction — something else was thrown away instead")
 	}
 	if c.n != presetThumbCap {
 		t.Fatalf("the cache holds %d entries after an eviction, want %d", c.n, presetThumbCap)
 	}
-}
-
-// thumbHolds reports residency WITHOUT touching the LRU clock. Test-only: it
-// reads the cache's internals directly (it must not call get(), which would bake
-// the miss the eviction gate is measuring).
-func thumbHolds(c *presetThumbCache, l, s *theme.Preset) bool {
-	if l == nil || s == nil {
-		return false
-	}
-	for i := 0; i < c.n; i++ {
-		if c.e[i].layout == l.ID && c.e[i].style == s.ID {
-			return true
-		}
-	}
-	return false
 }
 
 // TestTheThumbnailShowsTheLayoutItIsFor pins that the miniature is derived from
@@ -208,6 +200,10 @@ func TestTheThumbnailShowsTheLayoutItIsFor(t *testing.T) {
 // if the only reader is a test, and this preset library is a redistributable
 // artefact under AGPLv3 whose attribution has to reach the person redistributing
 // it — which is exactly the person standing in front of the gallery.
+//
+// It drives galleryCredit.lines, the one producer the panel draws from, over all
+// fourteen shipped styles at the real panel width, and it looks for the fragment's
+// own opening words in what came back.
 func TestTheGallerySurfacesEveryShippedCredit(t *testing.T) {
 	a, cleanup := stageGalleryEditor(t)
 	defer cleanup()
@@ -318,6 +314,7 @@ func mustFindStyle(t testing.TB, lib *theme.PresetLibrary, id string) *theme.Pre
 // the property it pins is the one that makes a gallery safe to touch: pressing
 // Apply on a theme you have been editing is REVERSIBLE, exactly, including the
 // parts of the model the panel never mentions.
+//
 // It compares the SERIALISED theme before and after, not a field list. A field
 // list is a second place that has to know what a preset can change, and it would
 // have gone stale the first time the merge learned to touch a new section.
@@ -367,6 +364,16 @@ func TestPresetApplyThenUndoRestoresExactly(t *testing.T) {
 
 // TestApplyingAPresetSurvivesTheSaveThatFollowsIt is the arm every other apply
 // gate in this file stops one step short of.
+//
+// The button path is Apply → Save → next session, and the SAVE is where the model
+// and the lossless carrier get to disagree: the writer edits the document the
+// reader kept, so the tier a preset REPLACED stayed in the file as a set of
+// orphan [element.*] sections and came back on the next read. Measured through
+// exactly this fixture before the fix: 35 elements out, 36 back, with
+// `mine_badge` — the element the apply had just dropped — still in the bytes.
+// TestGalleryPickRunsTheMergeEngine asserts it is gone from the MODEL and never
+// serialises, and TestPresetApplyThenUndoRestoresExactly compares two byte
+// strings that both carried it, so it cancelled out of both.
 func TestApplyingAPresetSurvivesTheSaveThatFollowsIt(t *testing.T) {
 	a, cleanup := stageGalleryEditor(t)
 	defer cleanup()
@@ -418,7 +425,7 @@ func TestApplyingAPresetSurvivesTheSaveThatFollowsIt(t *testing.T) {
 	// AND A SECOND RE-STYLE ON TOP, which is where the leak stopped being cosmetic:
 	// the union of two styles was 97 elements against a cap of 96, so the reader
 	// REFUSED the theme its own author had just saved.
-	a.elemBake.themeSidecar = sc
+	a.themeSidecar = sc
 	g.styleIdx = presetIndexOf(g.lib.Styles(), "thh_courtroom")
 	a.applyGalleryPick()
 	raw, err = sc.Bytes()
@@ -439,16 +446,16 @@ func TestGalleryApplyKeepsTheLiveSidecarPointer(t *testing.T) {
 	defer cleanup()
 
 	live := a.editorSidecar()
-	if a.elemBake.themeSidecar != live {
+	if a.themeSidecar != live {
 		t.Fatal("the fixture already has two sidecars — this proves nothing")
 	}
 	a.gallery().styleIdx = presetIndexOf(a.gallery().lib.Styles(), "terminal")
 	a.applyGalleryPick()
-	if a.editorSidecar() != live || a.elemBake.themeSidecar != live {
+	if a.editorSidecar() != live || a.themeSidecar != live {
 		t.Fatal("Apply replaced the live sidecar pointer — the editor and the courtroom now hold different themes")
 	}
 	a.undoGalleryPick()
-	if a.editorSidecar() != live || a.elemBake.themeSidecar != live {
+	if a.editorSidecar() != live || a.themeSidecar != live {
 		t.Fatal("Undo replaced the live sidecar pointer")
 	}
 }
@@ -457,6 +464,11 @@ func TestGalleryApplyKeepsTheLiveSidecarPointer(t *testing.T) {
 // it is written in the shape TestThemeApplyRunsTheOverridesTier established:
 // perform the real act through the real button path, then assert on something only
 // the real engine could have produced.
+//
+// What it looks for is a preset's OWN element, by id, in the live model — a thing
+// the gallery has no way to invent, because the ids come out of the embedded
+// fragment. A panel that had re-implemented "apply a style" as, say, copying the
+// palette across would pass every other test in this file and fail this one.
 func TestGalleryPickRunsTheMergeEngine(t *testing.T) {
 	a, cleanup := stageGalleryEditor(t)
 	defer cleanup()

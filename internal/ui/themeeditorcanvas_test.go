@@ -1,6 +1,7 @@
 package ui
 
 // THE EDITOR'S CANVAS, DRIVEN (v1.90.0 W7a).
+//
 // Every gate here goes through the REAL frame (frameharness_test.go) and the real
 // pointer path: a press is a press, a drag is a run of frames with the button down,
 // and a release is a frame with it up. Nothing calls editorDragFrame with a
@@ -59,26 +60,27 @@ func editorCanvasElement(id string, r theme.Rect) theme.Element {
 // stageEditorCanvas opens the editor over the themed fixture with one element per
 // offset, each a editorGateBoxPx box placed at the canvas centre plus that offset in
 // DESIGN px.
+//
 // The elements are authored BEFORE the open, so the document's baseline contains
 // them — which is what makes the exit-without-saving gate measure the right thing.
 func stageEditorCanvas(t *testing.T, offsets ...[2]int) (*App, func(), []editTarget) {
 	t.Helper()
 	a, cleanup := stageFrameDrivenApp(t)
 	driveFrame(a) // one frame first: the layout cache builds on its cold path
-	if !a.skin.themeLay.valid || a.skin.themeLay.scaleX <= 0 {
+	if !a.themeLay.valid || a.themeLay.scaleX <= 0 {
 		cleanup()
 		t.Fatal("the fixture never built a themed layout — there is no canvas to edit")
 	}
-	if a.elemBake.themeSidecar == nil {
-		a.elemBake.themeSidecar = theme.NewSidecar()
+	if a.themeSidecar == nil {
+		a.themeSidecar = theme.NewSidecar()
 	}
 	_, root := a.d.Prefs.Load().Theme()
 	a.d.Prefs.SetTheme(editorGateThemeName, root) // the save path is derived from the name
 	var targets []editTarget
 	for i, off := range offsets {
-		a.elemBake.themeSidecar.Elements = append(a.elemBake.themeSidecar.Elements,
+		a.themeSidecar.Elements = append(a.themeSidecar.Elements,
 			editorCanvasElement("gate"+string(rune('a'+i)), editorCentreRect(a, off[0], off[1])))
-		targets = append(targets, elementTarget(len(a.elemBake.themeSidecar.Elements)-1))
+		targets = append(targets, elementTarget(len(a.themeSidecar.Elements)-1))
 	}
 	a.invalidateThemeCanvases()
 	if !a.openThemeEditor(ScreenCourtroom) {
@@ -92,7 +94,7 @@ func stageEditorCanvas(t *testing.T, offsets ...[2]int) (*App, func(), []editTar
 // editorCentreRect is a editorGateBoxPx box at the design canvas's centre, offset by
 // (ox, oy) design px so several can be placed apart.
 func editorCentreRect(a *App, ox, oy int) theme.Rect {
-	lay := &a.skin.themeLay
+	lay := &a.themeLay
 	w := int(float64(lay.area.W) / lay.scaleX)
 	h := int(float64(lay.area.H) / lay.scaleY)
 	return theme.Rect{
@@ -105,7 +107,7 @@ func editorCentreRect(a *App, ox, oy int) theme.Rect {
 // editorPainted is a target's box on screen, through the production resolver.
 func editorPainted(t *testing.T, a *App, tgt editTarget) sdl.Rect {
 	t.Helper()
-	g, ok := a.editorTargetGeom(&a.skin.themeLay, tgt)
+	g, ok := a.editorTargetGeom(&a.themeLay, tgt)
 	if !ok {
 		t.Fatalf("%v has no box on the canvas — the gate cannot press it", tgt)
 	}
@@ -115,7 +117,7 @@ func editorPainted(t *testing.T, a *App, tgt editTarget) sdl.Rect {
 // editorAuthored is a target's authored rect, through the document.
 func editorAuthored(t *testing.T, a *App, tgt editTarget) theme.Rect {
 	t.Helper()
-	g, ok := a.editorTargetGeom(&a.skin.themeLay, tgt)
+	g, ok := a.editorTargetGeom(&a.themeLay, tgt)
 	if !ok {
 		t.Fatalf("%v has no geometry", tgt)
 	}
@@ -150,6 +152,7 @@ func driveDrag(a *App, x0, y0, x1, y1 int32) {
 }
 
 // drivePreciseDrag is the same gesture with Shift held for the MOVES only.
+//
 // The split is the interaction's own: at PRESS time Shift means "add to the
 // selection" (§3.2), and during the drag it means "pixel-precise — bypass the grid
 // and the magnet". A gate that held Shift over the press would never start a drag at
@@ -172,6 +175,7 @@ func drivePreciseDrag(t *testing.T, a *App, x0, y0, x1, y1 int32) {
 
 // editorFixtureCatalog publishes a catalog snapshot that puts the fixture theme in
 // dir with the given origin — i.e. it answers the ONE question the save path asks.
+//
 // It waits for the real scan first. openThemeEditor kicks one so Save has an answer
 // on hand, and that goroutine stores its own snapshot when it finishes; without the
 // wait it would land over the fixture's a moment later and the gate would fail on a
@@ -179,10 +183,10 @@ func drivePreciseDrag(t *testing.T, a *App, x0, y0, x1, y1 int32) {
 func editorFixtureCatalog(t *testing.T, a *App, dir string, origin themeOrigin) {
 	t.Helper()
 	deadline := time.Now().Add(editorGateSaveWait)
-	for a.skin.themeCatBusy.Load() && time.Now().Before(deadline) {
+	for a.themeCatBusy.Load() && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	a.skin.themeCat.Store(&themeCatalog{
+	a.themeCat.Store(&themeCatalog{
 		Entries:   []themeCatalogEntry{{Name: a.te.doc.name, Dir: dir, Origin: origin}},
 		WriteRoot: dir,
 	})
@@ -193,7 +197,7 @@ func editorFixtureCatalog(t *testing.T, a *App, dir string, origin themeOrigin) 
 // itself, so a gate can never silently measure a different box.
 func editorWidgetTarget(t *testing.T, a *App) editTarget {
 	t.Helper()
-	lay := &a.skin.themeLay
+	lay := &a.themeLay
 	keys := make([]string, 0, len(lay.r))
 	for k := range lay.r {
 		if editorSlotKeyEditable(k) {
@@ -223,6 +227,10 @@ func editorWidgetTarget(t *testing.T, a *App) editTarget {
 // legacy probe's own site: a flat largest-wins loop hands every press on a small
 // decoration to the big widget underneath it, and the decoration is unselectable by
 // mouse for the whole wave.
+//
+// The fixture is exactly that shape — a 12x12 element parked on a full widget — and
+// the gate asserts BOTH directions, because a priority that made widgets
+// unreachable would be the same bug with the roles swapped.
 func TestCanvasProbePutsElementsAheadOfWidgets(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{0, 0})
 	defer cleanup()
@@ -231,8 +239,8 @@ func TestCanvasProbePutsElementsAheadOfWidgets(t *testing.T) {
 	widget := editorWidgetTarget(t, a)
 	box := editorPainted(t, a, widget)
 	cx, cy := editorCentreOf(box)
-	lay := &a.skin.themeLay
-	a.elemBake.themeSidecar.Elements[el.elem].Rect = theme.Rect{
+	lay := &a.themeLay
+	a.themeSidecar.Elements[el.elem].Rect = theme.Rect{
 		X: int(float64(cx-lay.area.X)/lay.scaleX) - 6,
 		Y: int(float64(cy-lay.area.Y)/lay.scaleY) - 6,
 		W: 12, H: 12,
@@ -240,12 +248,12 @@ func TestCanvasProbePutsElementsAheadOfWidgets(t *testing.T) {
 	a.invalidateThemeCanvases()
 	driveFrame(a)
 
-	if got, _ := a.editorProbe(&a.skin.themeLay, cx, cy); got != el {
+	if got, _ := a.editorProbe(&a.themeLay, cx, cy); got != el {
 		t.Fatalf("a press on a 12x12 element sitting on %s resolved to %v, want the element — "+
 			"largest-wins across the two populations makes every decoration unselectable by mouse",
 			widget.designKey(), got)
 	}
-	if got, _ := a.editorProbe(&a.skin.themeLay, box.X+2, box.Y+2); got != widget {
+	if got, _ := a.editorProbe(&a.themeLay, box.X+2, box.Y+2); got != widget {
 		t.Fatalf("the widget's own pixels resolved to %v, want %v — space priority must not make "+
 			"widgets unreachable either", got, widget)
 	}
@@ -259,14 +267,14 @@ func TestCanvasProbeSkipsHiddenElementsAndTheClientTabStrip(t *testing.T) {
 	defer cleanup()
 	el := tgts[0]
 	cx, cy := editorCentreOf(editorPainted(t, a, el))
-	if got, _ := a.editorProbe(&a.skin.themeLay, cx, cy); got != el {
+	if got, _ := a.editorProbe(&a.themeLay, cx, cy); got != el {
 		t.Fatalf("the visible element did not answer its own pixels (%v)", got)
 	}
 
-	a.elemBake.themeSidecar.Elements[el.elem].Hidden = true
+	a.themeSidecar.Elements[el.elem].Hidden = true
 	a.invalidateThemeCanvases()
 	driveFrame(a)
-	if got, _ := a.editorProbe(&a.skin.themeLay, cx, cy); got == el {
+	if got, _ := a.editorProbe(&a.themeLay, cx, cy); got == el {
 		t.Error("a HIDDEN element still hit-tests — you would be dragging something you cannot see")
 	}
 
@@ -335,6 +343,14 @@ func TestCanvasDragIsOneUndoStepThroughTheRealChord(t *testing.T) {
 
 // TestAnOrdinarySnappedDragIsAlsoOneUndoStep is the same gate for the gesture people
 // actually make, and it exists because the one above cannot cover it.
+//
+// drivePreciseDrag holds SHIFT, which bypasses the grid and the magnet — and it SKIPS
+// outright on an SDL build that does not honour SetModState, taking the only "one
+// gesture, one undo entry" evidence in the suite with it. An unmodified drag writes a
+// SNAPPED value every frame, so it is also the arm where a coalescing key that
+// included the value, or a snap that re-opened the group, would put a hundred entries
+// in the ring for one gesture — and the user finds that out by pressing Ctrl+Z and
+// watching the box crawl back a grid line at a time.
 func TestAnOrdinarySnappedDragIsAlsoOneUndoStep(t *testing.T) {
 	a, cleanup, tgts := stageEditorCanvas(t, [2]int{3, 5}) // off-grid, so the snap really runs
 	defer cleanup()
@@ -390,6 +406,7 @@ func TestDragHoldsOneUndoGroupForTheWholeGesture(t *testing.T) {
 
 // TestEveryHandleResizesItsOwnEdges is W6's first named consumer: eight grips, each
 // moving exactly the edges its mask names and nothing else.
+//
 // The fixture box is sized past editHandleRoomPx precisely so the full set is
 // offered (see editorGateBoxPx) — on a cramped box the design keeps one grip, and a
 // gate that used one would be measuring the fallback.
@@ -401,7 +418,7 @@ func TestEveryHandleResizesItsOwnEdges(t *testing.T) {
 	for i := 0; i < handleCount; i++ {
 		// The fixture box goes back to its authored rect between grips, so each handle
 		// is measured from the same starting geometry.
-		a.elemBake.themeSidecar.Elements[el.elem].Rect = origin
+		a.themeSidecar.Elements[el.elem].Rect = origin
 		a.invalidateThemeCanvases()
 		driveFrame(a)
 		before := editorAuthored(t, a, el)
@@ -493,6 +510,7 @@ func TestAnUnmodifiedDragSnapsWhereAPreciseOneDoesNot(t *testing.T) {
 
 // TestArrowNudgeMovesTheSelectionOnTheEditorScreen drives the keyboard through the
 // screen's own handler.
+//
 // The keys are claimed BEFORE the canvas draws, which is the point: the courtroom is
 // this screen's canvas, and its own arrow consumers (the IC/OOC recall rings, the
 // emote-preview cycler) draw first and would otherwise have spent the key — the same
@@ -537,7 +555,7 @@ func TestDraggingAWidgetWritesAnOverrideRowNotAPreference(t *testing.T) {
 
 	drivePreciseDrag(t, a, cx, cy, cx+40, cy+24)
 
-	row, ok := a.elemBake.themeSidecar.OverrideRect(key)
+	row, ok := a.themeSidecar.OverrideRect(key)
 	if !ok {
 		t.Fatalf("dragging %s wrote no [overrides] row — the author's courtroom_design.ini must stay "+
 			"byte-identical, so the edit has nowhere else to live", key)
@@ -545,7 +563,7 @@ func TestDraggingAWidgetWritesAnOverrideRowNotAPreference(t *testing.T) {
 	if row == before {
 		t.Fatalf("the row still holds the pre-drag rect %+v", before)
 	}
-	if live := a.skin.themeRects[key]; live != row {
+	if live := a.themeRects[key]; live != row {
 		t.Errorf("the resolved geometry is %+v while the row says %+v — an edit that writes only the "+
 			"row does not move a pixel until the theme is switched and back", live, row)
 	}
@@ -564,7 +582,7 @@ func TestUndoOfAWidgetDragRemovesTheRowItCreated(t *testing.T) {
 	widget := editorWidgetTarget(t, a)
 	key := widget.designKey()
 	before := editorAuthored(t, a, widget)
-	if _, had := a.elemBake.themeSidecar.OverrideRect(key); had {
+	if _, had := a.themeSidecar.OverrideRect(key); had {
 		t.Fatalf("%s already carries a row; this gate is about the row a drag CREATES", key)
 	}
 	cx, cy := editorCentreOf(editorPainted(t, a, widget))
@@ -574,10 +592,10 @@ func TestUndoOfAWidgetDragRemovesTheRowItCreated(t *testing.T) {
 	if !a.editorUndoChord() {
 		t.Fatal("the editor did not claim Ctrl+Z")
 	}
-	if _, still := a.elemBake.themeSidecar.OverrideRect(key); still {
+	if _, still := a.themeSidecar.OverrideRect(key); still {
 		t.Errorf("undoing the drag left an [overrides] row for %s behind", key)
 	}
-	if got := a.skin.themeRects[key]; got != before {
+	if got := a.themeRects[key]; got != before {
 		t.Errorf("undo left the resolved rect at %+v, want %+v", got, before)
 	}
 }
@@ -589,6 +607,16 @@ func TestUndoOfAWidgetDragRemovesTheRowItCreated(t *testing.T) {
 const editorHoldFrames = 5
 
 // TestHoldingAWidgetStillNeverCriesRefused is the false-alarm gate.
+//
+// THE DEFECT IT CLOSES: editorApply exempted only opElemField from the refusal chip,
+// while applySlotRect refuses a no-change request by exactly the same rule — so the
+// second and every later frame of a widget gesture that holds still (i.e. every real
+// human drag) and every frame a drag sat against clampDesignRectToCanvas posted
+// "this slot rect was refused — a cap or a lock is in the way", which then stayed on
+// the rail for editStatusMs. That inverts design §3.3's own rule (name the offender,
+// name the limit) into naming a limit that is not there, on the wave's headline
+// interaction.
+//
 // The mutation it answers to: chipping on any result other than applyRefused.
 func TestHoldingAWidgetStillNeverCriesRefused(t *testing.T) {
 	a, cleanup, _ := stageEditorCanvas(t)
@@ -638,6 +666,7 @@ func TestHoldingAWidgetStillNeverCriesRefused(t *testing.T) {
 
 // TestAGenuineCapRefusalStillChips is the other half of the same seam, and it is what
 // keeps the fix above from becoming "the editor never complains".
+//
 // A widget with no [overrides] row needs an APPEND, and theme.OverrideCap refuses one
 // past its bound (setOverrideRow refuses, it never evicts — the reader's own ruling).
 // That is a real limit with a name, so the rail must say so: silence here is an edit
@@ -647,14 +676,14 @@ func TestAGenuineCapRefusalStillChips(t *testing.T) {
 	defer cleanup()
 	widget := editorWidgetTarget(t, a)
 	key := widget.designKey()
-	if _, had := a.elemBake.themeSidecar.OverrideRect(key); had {
+	if _, had := a.themeSidecar.OverrideRect(key); had {
 		t.Fatalf("%s already carries a row; this gate is about the row a first edit must APPEND", key)
 	}
 	// Fill [overrides] to its cap with rows addressing keys no layout carries, so the
 	// fixture's own geometry is untouched (sidecarOverrideTarget refuses them) and the
 	// only thing under test is the append.
-	for i := len(a.elemBake.themeSidecar.Overrides); i < theme.OverrideCap; i++ {
-		a.elemBake.themeSidecar.Overrides = append(a.elemBake.themeSidecar.Overrides,
+	for i := len(a.themeSidecar.Overrides); i < theme.OverrideCap; i++ {
+		a.themeSidecar.Overrides = append(a.themeSidecar.Overrides,
 			theme.KeyRect{Key: "w7acapfill" + itoa32(int32(i)), Rect: theme.Rect{W: 1, H: 1}})
 	}
 	base, ok := a.te.doc.slotRect(key)
@@ -679,7 +708,7 @@ func TestAGenuineCapRefusalStillChips(t *testing.T) {
 
 	if a.editorApply(mutateSlotRect(widget, want)) {
 		t.Fatalf("the funnel accepted a %d'th [overrides] row past the cap of %d",
-			len(a.elemBake.themeSidecar.Overrides)+1, theme.OverrideCap)
+			len(a.themeSidecar.Overrides)+1, theme.OverrideCap)
 	}
 	if a.te.status == "" {
 		t.Fatal("a genuine theme.OverrideCap refusal was silent — the edit did not land and nothing on " +
@@ -698,15 +727,15 @@ func TestWidgetEditsSurviveAThemeReapply(t *testing.T) {
 	key := widget.designKey()
 	cx, cy := editorCentreOf(editorPainted(t, a, widget))
 	drivePreciseDrag(t, a, cx, cy, cx+40, cy+24)
-	edited := a.skin.themeRects[key]
+	edited := a.themeRects[key]
 
 	// The apply, exactly as pollThemeApply does it: a freshly resolved map lands over
 	// the live one carrying only what is on DISK…
-	a.skin.themeRects = cloneRects(a.skin.themeRectsOrig)
+	a.themeRects = cloneRects(a.themeRectsOrig)
 	// …and the reclaim puts the document back on top of it.
 	a.reclaimThemeDoc()
 
-	if got := a.skin.themeRects[key]; got != edited {
+	if got := a.themeRects[key]; got != edited {
 		t.Fatalf("a background theme apply discarded the unsaved widget edit (%+v, want %+v) — applies "+
 			"are not user-initiated, so this is work vanishing with nothing on screen to say why",
 			got, edited)
@@ -746,7 +775,7 @@ func TestBackTwiceDiscardsUnsavedEditsAndOnceDoesNot(t *testing.T) {
 	if a.te != nil {
 		t.Fatal("the second Back press did not leave")
 	}
-	if got := a.elemBake.themeSidecar.Elements[el.elem].Rect; got != baseline {
+	if got := a.themeSidecar.Elements[el.elem].Rect; got != baseline {
 		t.Fatalf("leaving without saving left the theme at %+v, want the state it was opened in %+v — "+
 			"an unsaved edit that survives the exit is an edit the user cannot get rid of", got, baseline)
 	}
@@ -779,7 +808,7 @@ func TestSaveWritesTheSidecarThroughTheGuard(t *testing.T) {
 	editorFixtureCatalog(t, a, dir, themeOriginYours)
 	a.te.selectOnly(el)
 	a.editorNudgeSelection(1, 0, false)
-	want := a.elemBake.themeSidecar.Elements[el.elem].Rect
+	want := a.themeSidecar.Elements[el.elem].Rect
 
 	a.editorSave()
 	if !a.editorAwaitSave(editorGateSaveWait) {
@@ -842,6 +871,10 @@ func TestSaveRefusesAThemeThatIsNotYours(t *testing.T) {
 
 // TestOnlyTheDocumentWritesTheOverridesTier is the anti-second-writer census for the
 // geometry tier — the twin of TestOnlyTheDocumentUsesTheFieldTables for elements.
+//
+// themeDoc.writeSlotRect is the ONE function that may move an AO2 widget in a
+// document under edit. Anything else reaching into Sidecar.Overrides is a writer
+// with no undo entry and no live map update: half an edit, silently.
 func TestOnlyTheDocumentWritesTheOverridesTier(t *testing.T) {
 	const owner = "themeeditordoc.go"
 	needles := []string{".Overrides = append", ".Overrides[i].Rect ="}

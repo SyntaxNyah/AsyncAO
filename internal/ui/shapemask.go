@@ -17,6 +17,21 @@ import (
 // presets and orthogonal to it. Where chrome.go recolours the flat kit chrome,
 // this reshapes it: buttons/chips/panel frames gain rounded or pill corners while
 // hit-testing stays the SAME rectangle everywhere (no polygon picking).
+//
+// Mechanism: procedurally-rastered WHITE-RGB, straight-alpha silhouette MASKS
+// (one "fill" mask + one "stroke ring" mask per shape/tier) uploaded ONCE into
+// the eviction-exempt pinned texture tier under a shape:// key scheme, then drawn
+// 9-slice (corners 1:1, edges/center stretched) and tinted per draw via
+// SetColorMod + SetAlphaMod — the exact glyphcache white-texture idiom. So a
+// button's fill colour and border colour survive, its translucency survives (the
+// toolbox's A:120/A:205), and the whole thing costs zero per-frame allocation
+// once the masks are resident (two persistent scratch rects, set-then-Copy).
+//
+// SHARP IS THE DEFAULT AND IS BYTE-IDENTICAL: when the active preset is "sharp"
+// (or the masks are not yet resident), every shaped draw site early-returns into
+// the verbatim Fill+Border body it had before A5. The settled-frame 0-alloc gate
+// runs at the default prefs, so the default path is untouched by construction.
+//
 // The mask keys mirror the config package's persisted vocabulary. shapeSharp is
 // never rastered (it has no mask — it IS the fall-through).
 const (
@@ -151,8 +166,8 @@ func roundedRectCoverage(x, y, dim, radius int32) float64 {
 // per-frame refresh stops rebuilding.
 func (a *App) buildShapeMasks() {
 	shape := a.d.Prefs.ChromeShape()
-	a.toolbox.shapeMaskShape = shape
-	a.toolbox.shapeMaskAt = a.now()
+	a.shapeMaskShape = shape
+	a.shapeMaskAt = a.now()
 	if a.d.Store != nil {
 		// A preset switch abandons the departing shape's masks: sweep every
 		// OTHER kind's pages out of the pinned tier (sharp sweeps them all)
@@ -173,8 +188,8 @@ func (a *App) buildShapeMasks() {
 	if shape == shapeSharp || a.d.Store == nil {
 		// Nothing to build; the draw sites fall through to sharp. Mark built so
 		// we don't spin (a Settings change to a real shape rebuilds explicitly).
-		a.toolbox.shapeMasksBuilt = true
-		a.toolbox.shapeMasksGen = a.shapeStoreGen()
+		a.shapeMasksBuilt = true
+		a.shapeMasksGen = a.shapeStoreGen()
 		return
 	}
 	ok := true
@@ -197,8 +212,8 @@ func (a *App) buildShapeMasks() {
 			ok = false
 		}
 	}
-	a.toolbox.shapeMasksBuilt = ok
-	a.toolbox.shapeMasksGen = a.shapeStoreGen()
+	a.shapeMasksBuilt = ok
+	a.shapeMasksGen = a.shapeStoreGen()
 }
 
 // shapeStoreGen reads the texture store generation, 0 when the store is absent
@@ -233,7 +248,7 @@ func (a *App) refreshShapeMasks() {
 	if shape == shapeSharp {
 		c.shapeMaskReady = false
 		c.shapeFillTex, c.shapeStrokeTex = nil, nil
-		a.toolbox.shapeResolvedShape = "" // drop the memo; a later non-sharp pick re-resolves
+		a.shapeResolvedShape = "" // drop the memo; a later non-sharp pick re-resolves
 		return
 	}
 	// A shape changed since we built, or the store generation moved past what we
@@ -241,17 +256,17 @@ func (a *App) refreshShapeMasks() {
 	// paced so a burst of streaming generation bumps can't rebuild every frame.
 	if a.d.Store != nil {
 		gen := a.shapeStoreGen()
-		stale := a.toolbox.shapeMaskShape != shape || !a.toolbox.shapeMasksBuilt
-		if stale || gen != a.toolbox.shapeMasksGen {
+		stale := a.shapeMaskShape != shape || !a.shapeMasksBuilt
+		if stale || gen != a.shapeMasksGen {
 			// Verify residency cheaply: if the fill mask for the active tier is
 			// gone, heal (paced); a same-generation shape change rebuilds now.
 			if stale || !a.shapeMaskResident(shape) {
-				if stale || a.now().Sub(a.toolbox.shapeMaskAt) > shapeHealPeriod {
+				if stale || a.now().Sub(a.shapeMaskAt) > shapeHealPeriod {
 					a.buildShapeMasks()
 				}
 			} else {
 				// Masks still resident, only the generation counter moved — adopt it.
-				a.toolbox.shapeMasksGen = gen
+				a.shapeMasksGen = gen
 			}
 		}
 	}
@@ -273,7 +288,7 @@ func (a *App) refreshShapeMasks() {
 	// read AFTER the (possible) rebuild above so a fresh build re-resolves
 	// against its own post-upload generation.
 	gen := a.shapeStoreGen()
-	if c.shapeMaskReady && shape == a.toolbox.shapeResolvedShape && tier == a.toolbox.shapeResolvedTier && gen == a.toolbox.shapeResolvedGen {
+	if c.shapeMaskReady && shape == a.shapeResolvedShape && tier == a.shapeResolvedTier && gen == a.shapeResolvedGen {
 		return
 	}
 	radius := shapeTierRadii[tier]
@@ -284,7 +299,7 @@ func (a *App) refreshShapeMasks() {
 		// sharp this frame — no flash, and the next frame retries.
 		c.shapeMaskReady = false
 		c.shapeFillTex, c.shapeStrokeTex = nil, nil
-		a.toolbox.shapeResolvedShape = "" // no memo — retry the resolve next frame
+		a.shapeResolvedShape = "" // no memo — retry the resolve next frame
 		return
 	}
 	c.shapeFillTex = fillPage.Frames[0]
@@ -292,7 +307,7 @@ func (a *App) refreshShapeMasks() {
 	c.shapeMaskDim = 2*radius + shapeMaskCenter
 	c.shapeMaskR = radius
 	c.shapeMaskReady = true
-	a.toolbox.shapeResolvedShape, a.toolbox.shapeResolvedTier, a.toolbox.shapeResolvedGen = shape, tier, gen
+	a.shapeResolvedShape, a.shapeResolvedTier, a.shapeResolvedGen = shape, tier, gen
 }
 
 // invalidateShapeMasks drops the frame-resolved mask pointers (Ctx) and the
@@ -304,10 +319,10 @@ func (a *App) refreshShapeMasks() {
 // (textures.go Purge → page.destroy()), so a shaped draw later in the same
 // frame would Copy a freed texture (the stale-handle/black-flash class). Any
 // future mid-frame Store.Purge()/invalidation site must make this same call.
-func (toolbox1 *toolboxState) invalidateShapeMasks(e *env) {
-	toolbox1.shapeMasksBuilt = false
-	toolbox1.shapeResolvedShape = "" // drop the resolve memo with the pointers
-	c := e.ctx
+func (a *App) invalidateShapeMasks() {
+	a.shapeMasksBuilt = false
+	a.shapeResolvedShape = "" // drop the resolve memo with the pointers
+	c := a.ctx
 	c.shapeMaskReady = false
 	c.shapeFillTex, c.shapeStrokeTex = nil, nil
 }
@@ -370,9 +385,13 @@ func (c *Ctx) borderShaped(r sdl.Rect, col sdl.Color) {
 // mask radius, or min(w,h)/2 for pill) so the curve size is correct at any widget
 // size. Everything uses the two persistent scratch rects (set-then-Copy) so no
 // &local escapes through cgo — the hot path is 0-alloc once masks are resident.
+//
 // SetColorMod + SetAlphaMod tint the mask to col before the passes. NO restore
 // to 255 afterwards — a DELIBERATE divergence from the shared-texture rule
 // (viewport.go restores because sprite textures are drawn by many sites): these
+// mask textures are shape-dedicated, never blitted by any other code path, and
+// every draw9Slice re-sets both mods first. Do not copy this un-restored
+// pattern onto any texture something else also draws.
 func (c *Ctx) draw9Slice(tex *sdl.Texture, dst sdl.Rect, col sdl.Color) {
 	if dst.W <= 0 || dst.H <= 0 {
 		return

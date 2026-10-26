@@ -28,11 +28,11 @@ import (
 // unconditionally, and doing that from the all-servers page must not clear a
 // selection the user is reading.
 func (a *App) setPhoneBookPage(on bool) {
-	if a.conn.lobby.phoneBookPage == on {
+	if a.phoneBookPage == on {
 		return
 	}
-	a.conn.lobby.phoneBookPage = on
-	a.conn.lobby.selServer, a.conn.lobby.descLines, a.conn.lobby.descLinks, a.conn.lobby.lobbyScroll = -1, nil, nil, 0
+	a.phoneBookPage = on
+	a.selServer, a.descLines, a.descLinks, a.lobbyScroll = -1, nil, nil, 0
 	a.cancelPhoneBookEdit()
 }
 
@@ -42,8 +42,8 @@ func (a *App) drawPhoneBookBar(w, dcY int32) {
 	c := a.ctx
 	c.Label(pad, dcY+4, "Add server:", ColText)
 	x := pad + 92
-	a.conn.pbName, _ = c.TextField("pbname", sdl.Rect{X: x, Y: dcY, W: 150, H: fieldH}, a.conn.pbName, "name (optional)")
-	a.conn.pbURL, _ = c.TextField("pburl", sdl.Rect{X: x + 158, Y: dcY, W: 250, H: fieldH}, a.conn.pbURL, "host:port, ws:// or wss://")
+	a.pbName, _ = c.TextField("pbname", sdl.Rect{X: x, Y: dcY, W: 150, H: fieldH}, a.pbName, "name (optional)")
+	a.pbURL, _ = c.TextField("pburl", sdl.Rect{X: x + 158, Y: dcY, W: 250, H: fieldH}, a.pbURL, "host:port, ws:// or wss://")
 	if c.Button(sdl.Rect{X: x + 416, Y: dcY, W: 80, H: btnH}, "+ Add") {
 		a.addPhoneBookServer()
 	}
@@ -59,24 +59,24 @@ func (a *App) drawPhoneBookBar(w, dcY int32) {
 // and re-merges so it shows immediately. Click the row to connect; the ★ on the
 // row removes it.
 func (a *App) addPhoneBookServer() {
-	in := strings.TrimSpace(a.conn.pbURL)
+	in := strings.TrimSpace(a.pbURL)
 	if in == "" {
-		a.conn.connErr = "Enter a server address (host:port, ws:// or wss://)."
+		a.connErr = "Enter a server address (host:port, ws:// or wss://)."
 		return
 	}
 	url, err := network.ParseDirectAddress(in, strings.Contains(strings.ToLower(in), "wss"))
 	if err != nil {
-		a.conn.connErr = err.Error()
+		a.connErr = err.Error()
 		return
 	}
-	name := strings.TrimSpace(a.conn.pbName)
+	name := strings.TrimSpace(a.pbName)
 	if name == "" {
 		name = in
 	}
 	a.d.Prefs.AddFavorite(name, url, "")
-	a.conn.lobby.servers = a.conn.lobby.mergedFavorites(&a.env)
-	a.conn.pbName, a.conn.pbURL, a.conn.connErr = "", "", ""
-	a.conn.lobby.lobbyStatus = "Added " + name + " to your phone book."
+	a.servers = a.mergedFavorites()
+	a.pbName, a.pbURL, a.connErr = "", "", ""
+	a.lobbyStatus = "Added " + name + " to your phone book."
 }
 
 // exportPhoneBook copies the phone book to the clipboard as JSON — render-thread
@@ -84,15 +84,15 @@ func (a *App) addPhoneBookServer() {
 func (a *App) exportPhoneBook() {
 	data, err := a.d.Prefs.ExportFavoritesJSON()
 	if err != nil {
-		a.conn.connErr = "Export failed: " + err.Error()
+		a.connErr = "Export failed: " + err.Error()
 		return
 	}
 	if err := sdl.SetClipboardText(string(data)); err != nil {
-		a.conn.connErr = "Export failed: " + err.Error()
+		a.connErr = "Export failed: " + err.Error()
 		return
 	}
-	a.conn.connErr = ""
-	a.conn.lobby.lobbyStatus = "Phone book copied to the clipboard — paste it to a friend to share."
+	a.connErr = ""
+	a.lobbyStatus = "Phone book copied to the clipboard — paste it to a friend to share."
 }
 
 // importPhoneBook merges a phone-book export from the clipboard (additive, dedup
@@ -100,30 +100,30 @@ func (a *App) exportPhoneBook() {
 func (a *App) importPhoneBook() {
 	txt, err := sdl.GetClipboardText()
 	if err != nil || strings.TrimSpace(txt) == "" {
-		a.conn.connErr = "Clipboard is empty — copy a phone-book export (JSON) first."
+		a.connErr = "Clipboard is empty — copy a phone-book export (JSON) first."
 		return
 	}
 	n, err := a.d.Prefs.MergeFavoritesJSON([]byte(txt))
 	if err != nil {
-		a.conn.connErr = "Clipboard isn't a valid phone-book export."
+		a.connErr = "Clipboard isn't a valid phone-book export."
 		return
 	}
-	a.conn.lobby.servers = a.conn.lobby.mergedFavorites(&a.env)
-	a.conn.connErr = ""
-	a.conn.lobby.lobbyStatus = fmt.Sprintf("Imported %d new server(s) into your phone book.", n)
+	a.servers = a.mergedFavorites()
+	a.connErr = ""
+	a.lobbyStatus = fmt.Sprintf("Imported %d new server(s) into your phone book.", n)
 }
 
 // beginPhoneBookEdit opens the inline editor for a phone-book row, seeding the
 // working buffers from the current entry. oldURL is the row's identity key
 // (its stored Favorites URL == WebSocketURL()).
 func (a *App) beginPhoneBookEdit(oldURL, name, addr string) {
-	a.conn.pbEditURL, a.conn.pbEditName, a.conn.pbEditAddr = oldURL, name, addr
-	a.conn.connErr = ""
+	a.pbEditURL, a.pbEditName, a.pbEditAddr = oldURL, name, addr
+	a.connErr = ""
 }
 
 // cancelPhoneBookEdit closes the inline editor without saving.
 func (a *App) cancelPhoneBookEdit() {
-	a.conn.pbEditURL, a.conn.pbEditName, a.conn.pbEditAddr = "", "", ""
+	a.pbEditURL, a.pbEditName, a.pbEditAddr = "", "", ""
 }
 
 // savePhoneBookEdit validates the edited address (exactly like the Add form),
@@ -132,17 +132,17 @@ func (a *App) cancelPhoneBookEdit() {
 // state and re-merges in the same commit so the row list stays consistent.
 // desc is passed through unchanged (the entry keeps its description).
 func (a *App) savePhoneBookEdit(oldURL, desc string) {
-	in := strings.TrimSpace(a.conn.pbEditAddr)
+	in := strings.TrimSpace(a.pbEditAddr)
 	if in == "" {
-		a.conn.connErr = "Enter a server address (host:port, ws:// or wss://)."
+		a.connErr = "Enter a server address (host:port, ws:// or wss://)."
 		return
 	}
 	url, err := network.ParseDirectAddress(in, strings.Contains(strings.ToLower(in), "wss"))
 	if err != nil {
-		a.conn.connErr = err.Error()
+		a.connErr = err.Error()
 		return
 	}
-	name := strings.TrimSpace(a.conn.pbEditName)
+	name := strings.TrimSpace(a.pbEditName)
 	if name == "" {
 		name = in
 	}
@@ -150,13 +150,13 @@ func (a *App) savePhoneBookEdit(oldURL, desc string) {
 		// UpdateFavorite returns false only for not-found or an address that
 		// already belongs to ANOTHER saved server — surface the latter (the
 		// common fat-finger case) rather than silently swallowing the Save.
-		a.conn.connErr = "That address is already in your phone book under another entry."
+		a.connErr = "That address is already in your phone book under another entry."
 		return
 	}
-	a.conn.lobby.servers = a.conn.lobby.mergedFavorites(&a.env)
+	a.servers = a.mergedFavorites()
 	a.cancelPhoneBookEdit()
-	a.conn.connErr = ""
-	a.conn.lobby.lobbyStatus = "Updated " + name + " in your phone book."
+	a.connErr = ""
+	a.lobbyStatus = "Updated " + name + " in your phone book."
 }
 
 // --- "Phone Fanat" click-to-quip chip (phone-book page only) ------------------
@@ -184,8 +184,8 @@ func phoneFanatChipRect(w, h int32) sdl.Rect {
 func (a *App) claimPhoneFanatClick(w, h int32) {
 	c := a.ctx
 	if c.hovering(phoneFanatChipRect(w, h)) && c.clicked {
-		a.conn.lobby.phoneFanatLine = fanatLines[rand.IntN(len(fanatLines))]
-		a.conn.lobby.phoneFanatShownAt = a.now()
+		a.phoneFanatLine = fanatLines[rand.IntN(len(fanatLines))]
+		a.phoneFanatShownAt = a.now()
 		c.clicked = false // top-most element wins; the rows below must not also act
 	}
 }
@@ -211,11 +211,11 @@ func (a *App) drawPhoneFanatChip(w, h int32) {
 	// The zero-value phoneFanatShownAt keeps this false until the first click, so
 	// no init flag is needed. The quip draws just ABOVE the chip so it never
 	// overlaps it (right-aligned to the chip's right edge).
-	if a.conn.lobby.phoneFanatLine != "" && a.now().Sub(a.conn.lobby.phoneFanatShownAt) < fanatShowDuration {
-		x := chip.X + fanatChipW - c.TextWidth(a.conn.lobby.phoneFanatLine)
+	if a.phoneFanatLine != "" && a.now().Sub(a.phoneFanatShownAt) < fanatShowDuration {
+		x := chip.X + fanatChipW - c.TextWidth(a.phoneFanatLine)
 		if x < pad {
 			x = pad // a longer line can't run off the left edge
 		}
-		c.Label(x, chip.Y-18, a.conn.lobby.phoneFanatLine, ColTextDim)
+		c.Label(x, chip.Y-18, a.phoneFanatLine, ColTextDim)
 	}
 }

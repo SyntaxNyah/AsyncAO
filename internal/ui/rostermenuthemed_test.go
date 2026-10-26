@@ -30,7 +30,7 @@ func newRosterMenuRig(t *testing.T) (*App, *config.AssetPreferences) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	return &App{env: env{d: Deps{Prefs: prefs}}}, prefs
+	return &App{d: Deps{Prefs: prefs}}, prefs
 }
 
 // themedMusicListRect is aceattorney2x's own music_list declaration — the rect the
@@ -52,8 +52,8 @@ func TestRosterMenuThemedTracksTheCanvasMusicList(t *testing.T) {
 
 	// A cached layout the user has switched OFF is still classic geometry: screens.go
 	// dispatches on lay.valid AND the preference, and so must this.
-	a.skin.themeLay.valid = true
-	a.skin.themeLay.r = map[string]sdl.Rect{"music_list": themedMusicListRect}
+	a.themeLay.valid = true
+	a.themeLay.r = map[string]sdl.Rect{"music_list": themedMusicListRect}
 	prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = false })
 	if a.rosterMenuThemed() {
 		t.Error("theme-driven geometry is switched off, so the CLASSIC courtroom drew — " +
@@ -71,23 +71,23 @@ func TestRosterMenuThemedTracksTheCanvasMusicList(t *testing.T) {
 	// The whole themed list panel is gated on the log region being visible
 	// (theme_layout.go). Hidden, there is no canvas music list on screen and the only
 	// music list left is a torn-off one, which honours the volume view.
-	a.classic.hidden = map[string]bool{panelLog: true}
+	a.hidden = map[string]bool{panelLog: true}
 	if a.rosterMenuThemed() {
 		t.Error("the log region is hidden, so the themed panel that hosts the music list " +
 			"is not drawn at all")
 	}
-	a.classic.hidden = nil
+	a.hidden = nil
 
 	// A theme that declares no music_list has no canvas music list to be inside, the
 	// same gate theme_layout.go opens the shared panel behind.
-	a.skin.themeLay.r = map[string]sdl.Rect{"ic_chatlog": {X: 0, Y: 0, W: 200, H: 100}}
+	a.themeLay.r = map[string]sdl.Rect{"ic_chatlog": {X: 0, Y: 0, W: 200, H: 100}}
 	if a.rosterMenuThemed() {
 		t.Error("this theme declares no music_list rect, so no canvas music list exists")
 	}
 
 	// A declared-but-degenerate rect is not a rect (themeLayoutCache.rect drops
 	// zero-area keys), so it must not read as a canvas either.
-	a.skin.themeLay.r = map[string]sdl.Rect{"music_list": {X: 0, Y: 323, W: 0, H: 277}}
+	a.themeLay.r = map[string]sdl.Rect{"music_list": {X: 0, Y: 323, W: 0, H: 277}}
 	if a.rosterMenuThemed() {
 		t.Error("a zero-width music_list paints nothing — themeLayoutCache.rect already " +
 			"rejects it and this predicate must agree with it")

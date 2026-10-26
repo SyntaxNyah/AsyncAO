@@ -16,10 +16,10 @@ import (
 
 func TestEditorUndoChordRoutesCtrlZY(t *testing.T) {
 	a := testTabApp(t)
-	a.classic.classicEdit = true
-	a.classic.classicOv = map[string][4]float64{slotViewport: {0.1, 0.1, 0.5, 0.5}}
-	a.classic.pushClassicUndo()                                        // snapshot BEFORE the "drag"
-	a.classic.classicOv[slotViewport] = [4]float64{0.2, 0.2, 0.5, 0.5} // the drag
+	a.classicEdit = true
+	a.classicOv = map[string][4]float64{slotViewport: {0.1, 0.1, 0.5, 0.5}}
+	a.pushClassicUndo()                                        // snapshot BEFORE the "drag"
+	a.classicOv[slotViewport] = [4]float64{0.2, 0.2, 0.5, 0.5} // the drag
 
 	a.ctx.hotkey = sdl.K_z
 	if !a.editorUndoChord() {
@@ -28,7 +28,7 @@ func TestEditorUndoChordRoutesCtrlZY(t *testing.T) {
 	if a.ctx.hotkey != 0 {
 		t.Error("consumed chord must zero c.hotkey")
 	}
-	if got := a.classic.classicOv[slotViewport]; got != ([4]float64{0.1, 0.1, 0.5, 0.5}) {
+	if got := a.classicOv[slotViewport]; got != ([4]float64{0.1, 0.1, 0.5, 0.5}) {
 		t.Errorf("undo restored %v, want the pre-drag snapshot", got)
 	}
 
@@ -36,7 +36,7 @@ func TestEditorUndoChordRoutesCtrlZY(t *testing.T) {
 	if !a.editorUndoChord() {
 		t.Fatal("Ctrl+Y while editing must be consumed by the editor")
 	}
-	if got := a.classic.classicOv[slotViewport]; got != ([4]float64{0.2, 0.2, 0.5, 0.5}) {
+	if got := a.classicOv[slotViewport]; got != ([4]float64{0.2, 0.2, 0.5, 0.5}) {
 		t.Errorf("redo restored %v, want the dragged state back", got)
 	}
 }
@@ -55,7 +55,7 @@ func TestEditorUndoChordScope(t *testing.T) {
 
 	// Armed with EMPTY history: still consumed, so the Ctrl+Y default bind
 	// (Reshow hidden sprites) can never fire mid-edit.
-	a.classic.classicEdit = true
+	a.classicEdit = true
 	a.ctx.hotkey = sdl.K_y
 	if !a.editorUndoChord() || a.ctx.hotkey != 0 {
 		t.Fatal("an armed editor owns Ctrl+Y even with empty history")

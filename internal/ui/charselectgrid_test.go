@@ -20,6 +20,8 @@ import (
 // issue #20 is about — the column count, the pitch and the origin the cells land on
 // — plus the three places our scrolling grid has to work harder than AO2's paged one
 // to stay on the artwork's lattice.
+//
+// stageCharSelect / stockCharSelectDesign live in charselectlayout_test.go.
 
 // charSelectGridTop is the header offset drawCharSelect passes the plan builder, for
 // a window with no chrome band. Spelled out so a test that means "the header does not
@@ -88,7 +90,14 @@ func TestCharGridReproducesAO2ColumnMaths(t *testing.T) {
 }
 
 // charGridDriftWindows is the scale sweep every cell placement is measured against.
+//
+// The first six are the sizes an adversarial review computed by hand: 944x644 is not
+// hypothetical — it is exactly what the theme-import auto-snap produces for
 // AceAttorney2x (a 944x600 courtroom plus the 44 px chrome inset), i.e. issue #20's
+// own theme in the shipped default configuration with no setting touched. 800x600,
+// 1024x600 and 640x480 are the low end of the real window range; 1152x864 and
+// 1920x1080 are the 1:1 cases that were already correct and must stay correct. The
+// rest are common desktop sizes and one window sized to the canvas itself.
 var charGridDriftWindows = []struct{ w, h int32 }{
 	{944, 644}, {800, 600}, {1024, 600}, {640, 480}, {1152, 864}, {1920, 1080},
 	{1280, 720}, {1280, 800}, {1366, 768}, {1600, 900}, {1024, 768}, {714, 712},
@@ -103,10 +112,19 @@ func artPos(canvasOrigin, canvasExtent, design, designExtent int32) float64 {
 
 // TestCharGridRidesTheCanvasTransformAtEveryScale is issue #20's real acceptance test,
 // and the one the first version of this screen could not pass.
+//
+// The grid's cells and the slot frames painted behind them are produced by two
+// different pieces of arithmetic: the frames come from SDL stretching a 714x668
+// backdrop into the canvas rect at the fractional ratio area.W/714, the cells from our
+// own layout. They agreed only where that ratio was exactly 1. Measured against the
+// stock table, cells derived from an accumulated integer pitch drifted 7.79 px across
 // and 9.77 px down on a 53 px cell at 944x644 — 15% and 18% of a cell, on issue #20's
+// own theme at its own default window size — and 12.19 / 15.10 px at 800x600.
+//
 // Every column of every row must now land within one pixel of its frame, at every
 // size. The check is deliberately over the WHOLE grid, not just the origin: the old
 // arithmetic was exact at column 0 and wrong by a sixth of a cell at column 6, so an
+// origin-only assertion proves nothing.
 func TestCharGridRidesTheCanvasTransformAtEveryScale(t *testing.T) {
 	const (
 		designW, designH   = 714, 668 // the stock char_select canvas
@@ -331,6 +349,15 @@ func TestCharGridSurvivesHostileSpacing(t *testing.T) {
 // the grid, so in a short window it overlaps char_buttons. The grid must not start
 // mid-cell there — it advances to the first WHOLE row of char_buttons' own lattice,
 // so every row that IS drawn still lands on the slot frame behind it.
+//
+// "A WHOLE ROW" IS MEASURED IN DESIGN PIXELS, and it has to be: the artwork's row
+// pitch on screen is 67 × area.H/668, a fraction, so consecutive frames are NOT a
+// constant number of device pixels apart and no device-pixel divisibility test can
+// express membership of that lattice. (An earlier version of this test asked for
+// `(originY - char_buttons.Y) % pitchY == 0` against the rounded device pitch, which
+// only held while the two happened to coincide — at 1280x620 the rounded pitch is 59
+// px and a real row is 59.98.) The design-space check below is the strictly stronger
+// statement, and cellAt is pinned to agree with it.
 func TestCharGridStartsOnAWholeLatticeRow(t *testing.T) {
 	for _, h := range []int32{620, 700, 720, 800, 900, 1080} {
 		const w int32 = 1280
@@ -369,9 +396,12 @@ func TestCharGridStartsOnAWholeLatticeRow(t *testing.T) {
 // TestCharGridScrolledCellsStayOnTheArtworkLattice is the scrolled half of the drift
 // proof, at a scale where the lattice is genuinely fractional (944x644 puts the stock
 // canvas at ~0.898, so a row is 59.98 device px and no integer pitch can express it).
+//
 // The backdrop does NOT scroll — its slot frames are static — so scrolling by m rows
 // has to put grid row r exactly where frame row r-m is painted. That is what the
 // row-snapped offset is FOR, and it is why the offset is taken from the lattice
+// (rowOffset) rather than from a multiple of the rounded device pitch, which would
+// accumulate its rounding error one row at a time.
 func TestCharGridScrolledCellsStayOnTheArtworkLattice(t *testing.T) {
 	const (
 		w, h               int32 = 944, 644 // the import auto-snap size for AceAttorney2x
@@ -586,17 +616,17 @@ func cellChromeHarness(t *testing.T) (*App, *sdl.Renderer, func()) {
 	// The pointer parked far away: hover chrome (the "+key" badge, every tooltip) must
 	// not be what makes two renders differ.
 	ctx.mouseX, ctx.mouseY = -1000, -1000
-	a.link.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Phoenix"}}}
+	a.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Phoenix"}}}
 	a.ensureCharLower()
-	a.charsel.wardrobeMembers = map[string]bool{}
-	a.inibrowse.iniList = []string{"Phoenix"}
-	a.inibrowse.iniLower = []string{"phoenix"}
-	a.inibrowse.iniFolders = []string{""}
-	a.inibrowse.iniWardrobe = []bool{false}
-	a.inibrowse.iniHoverIDs = []string{iniHoverIDPrefix + "Phoenix"}
+	a.wardrobeMembers = map[string]bool{}
+	a.iniList = []string{"Phoenix"}
+	a.iniLower = []string{"phoenix"}
+	a.iniFolders = []string{""}
+	a.iniWardrobe = []bool{false}
+	a.iniHoverIDs = []string{iniHoverIDPrefix + "Phoenix"}
 	// The two theme-texture maps the real constructor always creates together
 	// (themePage writes into themePages on the first resident lookup).
-	a.skin.themeTex = map[string]bool{}
+	a.themeTex = map[string]bool{}
 	a.themePages = map[string]*render.TexturePage{}
 	return a, ren, func() {
 		store.Purge()
@@ -606,10 +636,21 @@ func cellChromeHarness(t *testing.T) (*App, *sdl.Renderer, func()) {
 
 // TestSmallCellsSuppressCornerChromeOnBothTabs is the shared-plan lockstep applied to
 // what the cells PAINT, not just to the metrics they paint on.
+//
 // Since #20 the Characters grid and the Wardrobe grid are one charGridPlan, so a cell on
+// either tab can be as small as charCellMinPx (20 px). Their fixed-size corner chrome did
+// not follow: drawCharCell gated its 18 px ★ at 48 px but drew its 20x18 download badge
+// at any size, and drawIniswapCell drew a 17 px ★, a 15 px folder tag and a 16 px key
+// badge unconditionally. Measured at the 640x480 window floor with the stock table (a
+// 39 px cell — see the sibling test below), that put a badge over the bottom-right
+// quadrant of a Characters cell and roughly three-quarters of a Wardrobe cell under
+// chrome — each piece with its own hover+click, so a click aimed at the character
+// downloaded it, favourited it or armed a keybind instead.
+//
 // Every piece now goes through cellFitsCornerChrome. The proof is per piece and by
 // PIXELS: render the cell twice with only that piece's own input flipped. If the piece is
 // drawn the two renders differ; if it is suppressed they are byte-identical. Both tabs
+// are measured in one test, at one threshold, so they cannot diverge again.
 func TestSmallCellsSuppressCornerChromeOnBothTabs(t *testing.T) {
 	a, ren, cleanup := cellChromeHarness(t)
 	defer cleanup()
@@ -628,28 +669,28 @@ func TestSmallCellsSuppressCornerChromeOnBothTabs(t *testing.T) {
 		shot func(cell sdl.Rect, on bool) []byte
 	}{
 		{"Characters ★", func(cell sdl.Rect, on bool) []byte {
-			a.charsel.wardrobeMembers = map[string]bool{"phoenix": on}
-			return shot(cell, func() { a.drawCharCell(&a.link.sess.Chars[0], cell, 0, false, plan) })
+			a.wardrobeMembers = map[string]bool{"phoenix": on}
+			return shot(cell, func() { a.drawCharCell(&a.sess.Chars[0], cell, 0, false, plan) })
 		}},
 		{"Characters download badge", func(cell sdl.Rect, on bool) []byte {
-			a.charsel.wardrobeMembers = map[string]bool{}
-			return shot(cell, func() { a.drawCharCell(&a.link.sess.Chars[0], cell, 0, on, plan) })
+			a.wardrobeMembers = map[string]bool{}
+			return shot(cell, func() { a.drawCharCell(&a.sess.Chars[0], cell, 0, on, plan) })
 		}},
 		{"Wardrobe ★", func(cell sdl.Rect, on bool) []byte {
-			a.inibrowse.iniWardrobe = []bool{on}
+			a.iniWardrobe = []bool{on}
 			return shot(cell, func() { a.drawIniswapCell(0, cell, cellClickChar, false) })
 		}},
 		{"Wardrobe folder tag", func(cell sdl.Rect, on bool) []byte {
-			a.inibrowse.iniFolders = []string{""}
+			a.iniFolders = []string{""}
 			if on {
-				a.inibrowse.iniFolders = []string{"Prosecutors"}
+				a.iniFolders = []string{"Prosecutors"}
 			}
 			return shot(cell, func() { a.drawIniswapCell(0, cell, cellClickChar, false) })
 		}},
 		{"Wardrobe key badge", func(cell sdl.Rect, on bool) []byte {
-			a.courtkeys.charKeysRev = nil
+			a.charKeysRev = nil
 			if on {
-				a.courtkeys.charKeysRev = map[string]string{"Phoenix": "q"}
+				a.charKeysRev = map[string]string{"Phoenix": "q"}
 			}
 			return shot(cell, func() { a.drawIniswapCell(0, cell, cellClickChar, false) })
 		}},
@@ -717,13 +758,13 @@ func TestStockTableAtTheWindowFloorSuppressesCornerChrome(t *testing.T) {
 // charLower, and survive an out-of-range index without panicking a draw.
 func TestCharHoverIDsAreCachedNotRebuilt(t *testing.T) {
 	a := testTabApp(t)
-	a.link.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Phoenix"}, {Name: "Edgeworth"}}}
+	a.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Phoenix"}, {Name: "Edgeworth"}}}
 	a.ensureCharLower()
-	if len(a.charsel.charHoverIDs) != len(a.link.sess.Chars) {
-		t.Fatalf("hover ids = %d, want one per character (%d)", len(a.charsel.charHoverIDs), len(a.link.sess.Chars))
+	if len(a.charHoverIDs) != len(a.sess.Chars) {
+		t.Fatalf("hover ids = %d, want one per character (%d)", len(a.charHoverIDs), len(a.sess.Chars))
 	}
-	for i := range a.link.sess.Chars {
-		if want := "char:" + a.link.sess.Chars[i].Name; a.charHoverID(i) != want {
+	for i := range a.sess.Chars {
+		if want := "char:" + a.sess.Chars[i].Name; a.charHoverID(i) != want {
 			t.Errorf("id %d = %q, want %q", i, a.charHoverID(i), want)
 		}
 	}
@@ -731,11 +772,11 @@ func TestCharHoverIDsAreCachedNotRebuilt(t *testing.T) {
 		t.Errorf("charHoverID allocates %v per cell, want 0", n)
 	}
 	// A roster change rebuilds both caches together, never one of them.
-	a.charsel.charLower = nil
-	a.link.sess.Chars = append(a.link.sess.Chars, courtroom.CharacterSlot{Name: "Franziska"})
+	a.charLower = nil
+	a.sess.Chars = append(a.sess.Chars, courtroom.CharacterSlot{Name: "Franziska"})
 	a.ensureCharLower()
-	if len(a.charsel.charHoverIDs) != 3 || a.charHoverID(2) != "char:Franziska" {
-		t.Errorf("after a roster change: ids %v", a.charsel.charHoverIDs)
+	if len(a.charHoverIDs) != 3 || a.charHoverID(2) != "char:Franziska" {
+		t.Errorf("after a roster change: ids %v", a.charHoverIDs)
 	}
 	// Out of range: a fallback string, not a panic in the middle of a frame.
 	if got := a.charHoverID(99); got != "char:" {
@@ -750,18 +791,18 @@ func TestCharHoverIDsAreCachedNotRebuilt(t *testing.T) {
 // AND both wardrobe-panel bodies.
 func TestIniHoverIDsAreCachedNotRebuilt(t *testing.T) {
 	a := testTabApp(t)
-	a.srvMeta.serverKey = "ws://hover.test"
-	a.d.Prefs.AddWardrobe(a.srvMeta.serverKey, "Phoenix")
-	a.d.Prefs.AddWardrobe(a.srvMeta.serverKey, "Edgeworth")
+	a.serverKey = "ws://hover.test"
+	a.d.Prefs.AddWardrobe(a.serverKey, "Phoenix")
+	a.d.Prefs.AddWardrobe(a.serverKey, "Edgeworth")
 	a.rebuildIniMenu()
-	if len(a.inibrowse.iniList) < 2 {
-		t.Fatalf("fixture built a %d-entry wardrobe", len(a.inibrowse.iniList))
+	if len(a.iniList) < 2 {
+		t.Fatalf("fixture built a %d-entry wardrobe", len(a.iniList))
 	}
-	if len(a.inibrowse.iniHoverIDs) != len(a.inibrowse.iniList) {
-		t.Fatalf("hover ids = %d, want one per wardrobe entry (%d)", len(a.inibrowse.iniHoverIDs), len(a.inibrowse.iniList))
+	if len(a.iniHoverIDs) != len(a.iniList) {
+		t.Fatalf("hover ids = %d, want one per wardrobe entry (%d)", len(a.iniHoverIDs), len(a.iniList))
 	}
-	for i := range a.inibrowse.iniList {
-		if want := iniHoverIDPrefix + a.inibrowse.iniList[i]; a.iniHoverID(i) != want {
+	for i := range a.iniList {
+		if want := iniHoverIDPrefix + a.iniList[i]; a.iniHoverID(i) != want {
 			t.Errorf("id %d = %q, want %q", i, a.iniHoverID(i), want)
 		}
 	}
@@ -769,10 +810,10 @@ func TestIniHoverIDsAreCachedNotRebuilt(t *testing.T) {
 		t.Errorf("iniHoverID allocates %v per cell, want 0", n)
 	}
 	// A list change rebuilds the cache with it, never leaves it behind.
-	a.d.Prefs.AddWardrobe(a.srvMeta.serverKey, "Franziska")
+	a.d.Prefs.AddWardrobe(a.serverKey, "Franziska")
 	a.rebuildIniMenu()
-	if len(a.inibrowse.iniHoverIDs) != len(a.inibrowse.iniList) {
-		t.Errorf("after a wardrobe change: %d ids for %d entries", len(a.inibrowse.iniHoverIDs), len(a.inibrowse.iniList))
+	if len(a.iniHoverIDs) != len(a.iniList) {
+		t.Errorf("after a wardrobe change: %d ids for %d entries", len(a.iniHoverIDs), len(a.iniList))
 	}
 	// Out of range: a fallback string, not a panic in the middle of a frame.
 	if got := a.iniHoverID(99); got != iniHoverIDPrefix {
@@ -788,7 +829,7 @@ func TestCharSelectTitleIsCached(t *testing.T) {
 	if got := a.charSelectTitle(); got != charSelectHeading {
 		t.Errorf("no server: title = %q, want %q", got, charSelectHeading)
 	}
-	a.srvMeta.serverName = "Skrapegropen"
+	a.serverName = "Skrapegropen"
 	want := charSelectHeading + " — Skrapegropen"
 	if got := a.charSelectTitle(); got != want {
 		t.Errorf("title = %q, want %q", got, want)
@@ -796,7 +837,7 @@ func TestCharSelectTitleIsCached(t *testing.T) {
 	if n := testing.AllocsPerRun(200, func() { _ = a.charSelectTitle() }); n != 0 {
 		t.Errorf("charSelectTitle allocates %v per frame, want 0", n)
 	}
-	a.srvMeta.serverName = "Somewhere else"
+	a.serverName = "Somewhere else"
 	if got := a.charSelectTitle(); got != charSelectHeading+" — Somewhere else" {
 		t.Errorf("a server change did not rebuild the title: %q", got)
 	}

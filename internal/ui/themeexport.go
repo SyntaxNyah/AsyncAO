@@ -1,6 +1,32 @@
 package ui
 
 // SHARING A THEME (v1.90.0 W8) — docs/wip/THEME-EDITOR-DESIGN.md §2.6.
+//
+// ONE concern: turning the theme the editor is open over into one .aotheme file
+// somebody can attach to a message.
+//
+// EXPORT IS ZIP THE FOLDER, and that is the whole design. There is no
+// transformation step and no lossy intermediate, because an AsyncAO theme IS a
+// theme folder: the sidecar sits beside the author's own courtroom_design.ini
+// and everything else in there travels verbatim. Round-tripping is therefore not
+// a feature that had to be built, it is a consequence of the format — which is
+// what TestExportThenImportIsIdentical actually measures.
+//
+// TWO MODES, ONE BUTTON. Share alternates:
+//
+//	native   — the folder, as it is. What an AsyncAO user wants.
+//	AO2-compat — additionally bakes [overrides] into a COPY of
+//	             courtroom_design.ini, empties the sidecar's [overrides] in a
+//	             COPY of the sidecar, and adds ASYNCAO-LOST.txt naming every
+//	             element AO2 will not show.
+//
+// NOTHING THE AO2 MODE PRODUCES IS EVER WRITTEN INTO THE THEME FOLDER. The baked
+// design INI and the stripped sidecar are bytes handed to themepack.Write as
+// Extras and they exist for the length of one zip. The author's own
+// courtroom_design.ini is the one file the editor must never touch — a
+// re-download would destroy their work and every upstream diff would be noise
+// (design §Q4) — and that promise is kept HERE, by never producing a path for it.
+//
 // OFF THE RENDER THREAD (hard rule 2) and single-flight: the job pointer is the
 // flag, the channel is buffered, and the shape is editSaveJob's exactly.
 
@@ -61,6 +87,7 @@ func (a *App) editorExport() {
 	// words, at the moment the author can still fix it. Without this the sheet would
 	// happily bundle a theme whose model has since drifted past a cap, and the
 	// recipient would be the one who found out.
+	//
 	// IT IS SIDE-EFFECT FREE, which is why it is Validate rather than a throwaway
 	// bytes(): a "check" that rewrote the lossless carrier on its way past would be a
 	// save nobody asked for.
@@ -79,6 +106,17 @@ func (a *App) editorExport() {
 	// the same census itself, before it creates anything — an over-cap theme is
 	// refused with nothing written either way — and the Manifest it returns carries
 	// the font-licence warnings into the receipt below.
+	//
+	// THE OFF-THREAD PRE-FLIGHT STAYS UNBUILT, and W9 ruled it deliberately rather
+	// than running out of wave. It exists to feed design §3.1's export SHEET — "mode
+	// checkbox, consent, font-licence warnings, sizes", the numbers a person wants
+	// BEFORE the click — and that sheet is not built. A producer whose only consumer
+	// is a surface nobody has designed the controls for is speculative generality,
+	// and worse, it is this codebase's own recurring failure: a tier computed, held,
+	// and read by nothing but a test (the sidecar [overrides] tier; App.themeReport
+	// until W9 gave it a panel). The two land together or neither lands. What ships
+	// today is the honest version — Share refuses exactly what Save would refuse, in
+	// the same words, and the receipt names every warning after the write.
 	ao2 := a.ctx != nil && a.ctx.shiftHeld
 	extras, err := a.editorExportExtras(dir, ao2)
 	if err != nil {
@@ -97,6 +135,11 @@ func (a *App) editorExport() {
 
 // editorExportExtras builds the AO2-compat mode's three replacement files, or
 // nothing at all for a native export.
+//
+// IT READS THE FOLDER, NOT THE MODEL, for the design INI: that file belongs to
+// the upstream author and the model never held it. It reads the MODEL for the
+// overrides, because the model is what the editor has been changing.
+//
 // Render thread: it is two small file reads and a serialise, and it has to be
 // able to refuse BEFORE the goroutine starts so the refusal can be a chip. The
 // bound is the format's own (theme.IniDocByteCap, applied by ParseINIDoc).
@@ -165,6 +208,12 @@ func editorExportReceipt(job *editExportJob, m *themepack.Manifest) string {
 }
 
 // readFileBounded reads at most max bytes of a file, or nothing at all.
+//
+// A MISSING FILE IS NOT AN ERROR here and that is deliberate: a theme may ship no
+// courtroom_design.ini (the sidecar is a standalone source since W3), and the
+// AO2-compat bake of such a theme is simply a design INI holding only the baked
+// keys — which is exactly the file an AO2 client needs.
+//
 // Render thread, and the one place in this file that touches the disk there. It
 // is bounded by the format's own cap and it has to be synchronous, because the
 // refusal it can produce is a chip the user must see on the click that caused it.

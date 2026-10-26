@@ -4,7 +4,11 @@ package ui
 // live overlay needs on this side of the fence: the per-(origin, misc folder)
 // roster resolve, the theme-tier art loader, the per-row icons, the right-click
 // preview, and the outgoing "<name>|<folder>|<sound>" field.
+//
 // NAMING FENCE (see docs/wip/EFFECTS-OVERLAY-SPEC.md §"Naming fence"):
+// internal/theme owns EffectBind/EffectKind (widget decoration) and
+// internal/courtroom owns TextEffect*/EffectSpan (animated chat TEXT). Every
+// identifier here is prefixed overlay… / Overlay….
 
 import (
 	"bytes"
@@ -26,6 +30,11 @@ const (
 	// misc folder) pair. A busy server shows a handful of effect packs; past the cap
 	// the map resets, because it is a cache and a re-resolve heals (the charMetaCap
 	// idiom).
+	//
+	// In-flight resolves are NOT in this map (overlayRosterInFlight is its own set),
+	// precisely so this reset cannot wipe one: a wiped marker lets the next ask
+	// spawn a second goroutine for a key already being resolved, and the two
+	// results then race — the loser writing the OLDER walk's paths over the newer.
 	overlayManifestCap = 16
 	// overlayRosterFetchCap bounds CONCURRENT roster resolves (hard rule 4). Each
 	// one holds an 8 s network timeout and a bounded disk walk; four is past every
@@ -56,9 +65,12 @@ const (
 	// overlayThemeKeyPrefix namespaces theme-tier overlay art in T1. It rides the
 	// existing theme:// scheme (which cannot collide with an asset URL) with its
 	// own sub-namespace so an effect called "chat" cannot shadow the chatbox skin.
+	//
 	// These pages are uploaded EVICTABLE, never UploadPinned: a theme's effects
 	// folder is ~18 animated WebPs and at 256x192x4 x 30 frames that is ~6 MiB
 	// each — pinning them would put ~100 MiB on TOP of the 256 MiB budget
+	// (textures.go: pinned bytes are eviction-exempt AND count-uncapped), which is
+	// the third repeat of the "all emote buttons identical" class.
 	overlayThemeKeyPrefix = "theme://fx/"
 	// overlayFetchTimeout bounds the misc-manifest fetch.
 	overlayFetchTimeout = 8 * time.Second
@@ -66,6 +78,8 @@ const (
 	// FOUR call sites must agree on it — the dropdown itself, the row right-click,
 	// the tooltip, and overlayPreviewCloseEdge's "is the list still open" test —
 	// and a typo in the last one would silently strand the preview box open.
+	// Constant, so the tooltip's `+ "-tip"` folds at compile time (no per-frame
+	// concat on the zero-alloc courtroom path).
 	overlayEffectsDDID = "effectsdd"
 	// overlayIconRowH / overlayIconThumbW size the open dropdown's rows when the
 	// theme declares no effects_icon_size. Same shape as the Pos selector's
@@ -123,7 +137,7 @@ type overlayTexLoad struct {
 // separation is structural (the repo's cache-key convention) and two servers'
 // packs of the same name can never be confused.
 func (a *App) overlayRosterKey(folder string) string {
-	return a.link.urls.Origin() + "|" + strings.ToLower(strings.TrimSpace(folder))
+	return a.urls.Origin() + "|" + strings.ToLower(strings.TrimSpace(folder))
 }
 
 // overlayRosterFor answers from the cache and fires ONE async resolve on a miss.
@@ -134,76 +148,98 @@ func (a *App) overlayRosterFor(folder string) *overlayRoster {
 	folder = strings.TrimSpace(folder)
 	// A theme change invalidates every roster: the theme tier contributes both
 	// names and properties, and its art paths move with it.
-	if a.overlays.overlayRosterGen != a.skin.themeAppliedGen {
-		a.overlays.overlayRosterGen = a.skin.themeAppliedGen
-		a.overlays.overlayRosters = nil
-		a.overlays.overlayInvalidateMemos()
+	if a.overlayRosterGen != a.themeAppliedGen {
+		a.overlayRosterGen = a.themeAppliedGen
+		a.overlayRosters = nil
+		a.overlayInvalidateMemos()
 	}
 	// The memo, because this runs on the zero-alloc courtroom frame and the cache
 	// KEY is a concatenation. Plain string compares, no allocation.
-	if a.overlays.overlayMemoValid && a.overlays.overlayMemoFolder == folder && a.overlays.overlayMemoOrigin == a.link.urls.Origin() {
-		return a.overlays.overlayMemoRoster
+	if a.overlayMemoValid && a.overlayMemoFolder == folder && a.overlayMemoOrigin == a.urls.Origin() {
+		return a.overlayMemoRoster
 	}
 	key := a.overlayRosterKey(folder)
-	r, cached := a.overlays.overlayRosters[key]
-	if !cached && !a.overlays.overlayRosterInFlight[key] {
+	r, cached := a.overlayRosters[key]
+	if !cached && !a.overlayRosterInFlight[key] {
 		// The SETTLED cache is a cache: past the cap it resets and a re-resolve heals.
 		// The in-flight SET is not part of it and is never wiped here — see
 		// overlayManifestCap. A reset that dropped a marker would let this very call
 		// spawn a duplicate goroutine for a key already being resolved.
-		if len(a.overlays.overlayRosters) >= overlayManifestCap {
-			a.overlays.overlayRosters = nil
+		if len(a.overlayRosters) >= overlayManifestCap {
+			a.overlayRosters = nil
 		}
-		if len(a.overlays.overlayRosterInFlight) < overlayRosterFetchCap {
-			if a.overlays.overlayRosterInFlight == nil {
-				a.overlays.overlayRosterInFlight = make(map[string]bool, overlayRosterFetchCap)
+		if len(a.overlayRosterInFlight) < overlayRosterFetchCap {
+			if a.overlayRosterInFlight == nil {
+				a.overlayRosterInFlight = make(map[string]bool, overlayRosterFetchCap)
 			}
-			a.overlays.overlayRosterInFlight[key] = true // exactly one resolve per key
+			a.overlayRosterInFlight[key] = true // exactly one resolve per key
 			a.overlayRosterFetchOne(key, folder)
 		}
 		r = nil
 	}
-	a.overlays.overlayMemoOrigin, a.overlays.overlayMemoFolder, a.overlays.overlayMemoValid = a.link.urls.Origin(), folder, true
-	a.overlays.overlayMemoRoster = r
+	a.overlayMemoOrigin, a.overlayMemoFolder, a.overlayMemoValid = a.urls.Origin(), folder, true
+	a.overlayMemoRoster = r
 	return r
 }
 
 // overlayInvalidateMemos drops the per-frame memos. Called whenever one of their
 // inputs changes: a theme apply (new rosters), a landed resolve, and a landed
 // char.ini (the character's own effects folder may have just arrived).
-func (overlay *overlayState) overlayInvalidateMemos() {
-	overlay.overlayMemoValid = false
-	overlay.overlayMemoRoster = nil
-	overlay.overlayMyFolderValid = false
-	overlay.overlayChoicesValid = false
-	overlay.overlayChoicesRoster = nil
-	overlay.overlayChoicesCache = nil
+func (a *App) overlayInvalidateMemos() {
+	a.overlayMemoValid = false
+	a.overlayMemoRoster = nil
+	a.overlayMyFolderValid = false
+	a.overlayChoicesValid = false
+	a.overlayChoicesRoster = nil
+	a.overlayChoicesCache = nil
 	// The baked icon keys belong to that cache — they are indexed by the SAME row
 	// numbers and are only correct for the roster that produced them.
-	overlay.overlayIconKeys, overlay.overlayIconPaths = nil, nil
+	a.overlayIconKeys, a.overlayIconPaths = nil, nil
 }
 
 // overlayRosterFetchOne resolves one roster OFF the render thread: the local
 // effects.ini ladder, the one origin manifest, the merge, and the local art/icon
 // paths. Every step is disk or network work — hard rule 2 keeps all of it here.
+//
+// SPEC §2.4, and the one piece of it that cannot be honoured literally.
+// The spec puts the whole local half on the theme-apply goroutine ("parse the
+// theme-tier effects.ini files … resolve PATHS ONLY for each named effect's art
+// and icon … store name → path in the theme result"). The theme-tier half is
+// exactly that now: applyThemeAsync publishes the loaded *theme.Theme and this
+// goroutine walks it instead of re-running theme.Load, so a resolve no longer
+// re-reads four INIs and rebuilds the directory ladder per (origin, folder).
+//
+// The rest CANNOT move, and it is worth being explicit about why rather than
+// leaving it looking like an oversight: every remaining step is a function of the
+// character's misc FOLDER, which is not known at theme-apply time and never can
+// be. Rungs 5-6 (themes/T/[S/]misc/M/<E>), rung 8's local twin (misc/M/<E>) and
+// the whole misc-tier effects.ini list all take M as an argument, and M arrives
+// from a SPEAKER's char.ini — a per-message, per-server value. Resolving them at
+// theme apply would mean either resolving nothing (the theme knows no folders) or
+// speculatively walking every folder the server might ever name, which is the
+// prefetch-at-theme-load that §2.4 exists to forbid. So the folder-dependent walk
+// stays demand-driven, once per (origin, folder), cached, and off-thread — which
+// is the same shape §2.4 prescribes for the misc manifest one paragraph later.
 func (a *App) overlayRosterFetchOne(key, folder string) {
-	if a.overlays.overlayRosterRes == nil {
-		a.overlays.overlayRosterRes = make(chan overlayRosterFetch, overlayManifestResCap)
+	if a.overlayRosterRes == nil {
+		a.overlayRosterRes = make(chan overlayRosterFetch, overlayManifestResCap)
 	}
 	// Snapshot everything the goroutine needs on the RENDER thread: reading prefs
 	// off-thread while the debounced saver marshals is the interleaving -race
 	// exists to catch (the applyThemeAsync precedent).
+	//
 	// The THEME is snapshotted as the already-loaded object pollThemeApply
 	// published, not re-loaded here (spec §2.4 — the theme-tier parse belongs to the
 	// theme apply). It also removes the last two preference reads this goroutine
 	// used to need: the theme name/dir/subtheme are baked into the loaded object,
-	t := a.overlays.overlayTheme
+	// which is by definition the ladder the rest of the UI is drawing from.
+	t := a.overlayTheme
 	// The apply generation this resolve belongs to. Compared again when the result
 	// lands: a theme applied in the meantime moved every path this walk resolved.
-	gen := a.skin.themeAppliedGen
+	gen := a.themeAppliedGen
 	manifestURL := ""
-	if folder != "" && a.link.urls.Origin() != "" {
-		manifestURL = a.link.urls.OverlayEffectManifest(folder)
+	if folder != "" && a.urls.Origin() != "" {
+		manifestURL = a.urls.OverlayEffectManifest(folder)
 	}
 	mgr := a.d.Manager
 	// The RESULT CHANNEL is captured here, on the render thread, rather than read
@@ -212,7 +248,7 @@ func (a *App) overlayRosterFetchOne(key, folder string) {
 	// that nils it would be an instant -race failure (hard rule 8) on a field a
 	// worker is reading concurrently. A captured local cannot go stale, and it also
 	// says out loud that the goroutine owns nothing on App.
-	res := a.overlays.overlayRosterRes
+	res := a.overlayRosterRes
 	go func() {
 		roster := &overlayRoster{
 			art:  map[string]string{},
@@ -249,6 +285,15 @@ func (a *App) overlayRosterFetchOne(key, folder string) {
 		}
 		// get_effects: the FIRST file of EACH tier, theme first, CONCATENATED with
 		// duplicates preserved and no re-sort (text_file_functions.cpp:770-831).
+		//
+		// DIVERGENCE, small and deliberate: canon's misc tier is one ordered path
+		// list in which the base-misc rung (8) sits between the theme-local misc
+		// rungs (5-6) and the theme-root rungs (9-11). Our local walk cannot
+		// interleave a NETWORK file, so a theme-local misc effects.ini wins the list
+		// outright and the origin manifest supplies it otherwise. The only shape
+		// that diverges is a theme shipping themes/<t>/effects.ini (rung 9) while the
+		// origin also ships misc/<folder>/effects.ini — a file at the theme ROOT
+		// rather than in effects/, which no theme in the reference corpus has.
 		list := append([]string(nil), themeNames...)
 		if len(localMiscNames) > 0 {
 			list = append(list, localMiscNames...)
@@ -283,24 +328,32 @@ func (a *App) overlayRosterFetchOne(key, folder string) {
 // landed resolves and landed theme-tier art, and runs the right-click preview's
 // close edge (one call per frame from the poll cluster, app.go; no-op with
 // nothing pending).
+//
 // The close edge lives HERE rather than in drawEffectsPicker because BOTH call
 // sites of the painter are conditional — the classic row draws it only while
 // overlayEffectsVisible() and the bar has room (screens.go:6614), the themed
+// layout only when the design.ini declares the rect (theme_layout.go:1129) — so a
+// picker that stops drawing (a PV to spectator, a roster emptied by a theme
+// change, a window narrowed past the fit guard) would strand a PINNED preview box
+// with only its own x to close it. The poll cluster runs every frame on every
+// screen, which is exactly the coverage a pin needs.
 func (a *App) pollOverlayRosters() {
 	// One frame, one sprite-preview box. The emote grid owns the box's primary draw
 	// site and drawSpritePreviewFallback stands in for it when the grid did not run
 	// (hidden panel, no themed `emotes` rect, char.ini still loading) — the right-
 	// click effect preview is opened from the IC bar and must appear in all of them.
+	// The latch is set by whichever site draws and cleared here, once per frame,
+	// ahead of every screen draw (app.go's poll cluster).
 	a.emoteGridDrewPreview = false
 	a.overlayPreviewCloseEdge()
-	if a.overlays.overlayRosterRes != nil {
+	if a.overlayRosterRes != nil {
 		for drained := false; !drained; {
 			select {
-			case res := <-a.overlays.overlayRosterRes:
+			case res := <-a.overlayRosterRes:
 				// The fetch slot is freed whatever the verdict — a dropped result must
 				// still let the key be resolved again.
-				delete(a.overlays.overlayRosterInFlight, res.key)
-				if res.gen != a.skin.themeAppliedGen {
+				delete(a.overlayRosterInFlight, res.key)
+				if res.gen != a.themeAppliedGen {
 					// A theme apply landed while this was in flight. Its art/icon paths,
 					// its theme-tier property files and its display order all belong to
 					// the PREVIOUS theme, so filing it under the new one would show the
@@ -309,26 +362,36 @@ func (a *App) pollOverlayRosters() {
 					// fix applied to the same class of async landing. overlayRosterFor
 					// has already dropped the whole map for the new gen, so the next ask
 					// re-resolves against the theme that is actually applied.
+					//
+					// `!=`, where the cited precedent writes `<`, is deliberate and the
+					// two coincide: themeAppliedGen only ever moves FORWARD (pollThemeApply
+					// assigns the landing gen, and applyThemeAsync hands out increasing
+					// ones), so a result can never carry a gen NEWER than the applied one
+					// and `res.gen < applied` and `res.gen != applied` name the same set.
+					// The inequality is the honest spelling of the rule being enforced —
+					// "this result belongs to a different theme than the one on screen" —
+					// and it stays correct if the counter ever wraps or is reset, which
+					// `<` would not.
 					continue
 				}
-				if a.overlays.overlayRosters == nil {
-					a.overlays.overlayRosters = make(map[string]*overlayRoster, overlayManifestCap)
+				if a.overlayRosters == nil {
+					a.overlayRosters = make(map[string]*overlayRoster, overlayManifestCap)
 				}
-				a.overlays.overlayRosters[res.key] = res.roster
-				a.overlays.overlayInvalidateMemos()
-				a.overlays.overlayIconPagesReset() // the row count just changed; cachedPage keys by INDEX
+				a.overlayRosters[res.key] = res.roster
+				a.overlayInvalidateMemos()
+				a.overlayIconPagesReset() // the row count just changed; cachedPage keys by INDEX
 			default:
 				drained = true
 			}
 		}
 	}
-	if a.overlays.overlayTexRes == nil {
+	if a.overlayTexRes == nil {
 		return
 	}
 	for {
 		select {
-		case res := <-a.overlays.overlayTexRes:
-			delete(a.overlays.overlayTexLoading, res.key)
+		case res := <-a.overlayTexRes:
+			delete(a.overlayTexLoading, res.key)
 			if res.dec == nil {
 				continue
 			}
@@ -339,7 +402,7 @@ func (a *App) pollOverlayRosters() {
 			// Upload, NOT UploadPinned — see overlayThemeKeyPrefix. An eviction
 			// simply means the next play re-reads the file.
 			if err := a.d.Store.Upload(res.key, res.dec); err != nil {
-				a.debug.Push("effect overlay upload failed: " + err.Error())
+				a.pushDebug("effect overlay upload failed: " + err.Error())
 			}
 		default:
 			return
@@ -353,27 +416,27 @@ func overlayThemeKey(path string) string { return overlayThemeKeyPrefix + string
 // overlayDemandTheme queues one local overlay file for an off-thread read +
 // decode, bounded by themeOverlayLoadCap in flight. Idempotent: a key already
 // resident or already loading costs a map probe. Render thread only.
-func (overlay *overlayState) overlayDemandTheme(e *env, path, key string) {
-	if path == "" || key == "" || e.d.Store == nil {
+func (a *App) overlayDemandTheme(path, key string) {
+	if path == "" || key == "" || a.d.Store == nil {
 		return
 	}
-	if e.d.Store.Contains(key) {
+	if a.d.Store.Contains(key) {
 		return
 	}
-	if overlay.overlayTexLoading == nil {
-		overlay.overlayTexLoading = make(map[string]bool, themeOverlayLoadCap)
+	if a.overlayTexLoading == nil {
+		a.overlayTexLoading = make(map[string]bool, themeOverlayLoadCap)
 	}
-	if overlay.overlayTexLoading[key] || len(overlay.overlayTexLoading) >= themeOverlayLoadCap {
+	if a.overlayTexLoading[key] || len(a.overlayTexLoading) >= themeOverlayLoadCap {
 		return
 	}
-	if overlay.overlayTexRes == nil {
-		overlay.overlayTexRes = make(chan overlayTexLoad, overlayTexResCap)
+	if a.overlayTexRes == nil {
+		a.overlayTexRes = make(chan overlayTexLoad, overlayTexResCap)
 	}
-	overlay.overlayTexLoading[key] = true
-	anims := e.d.Prefs.Load().PreferAnimated
+	a.overlayTexLoading[key] = true
+	anims := a.d.Prefs.Load().PreferAnimated
 	// Captured on the render thread for the reason overlayRosterFetchOne captures
 	// its own: the worker must read nothing off App (hard rule 8).
-	out := overlay.overlayTexRes
+	out := a.overlayTexRes
 	go func() {
 		res := overlayTexLoad{key: key}
 		if data, err := os.ReadFile(path); err == nil {
@@ -393,9 +456,19 @@ func (overlay *overlayState) overlayDemandTheme(e *env, path, key string) {
 
 // overlayResolve is the courtroom's OverlayFor hook: an effect NAME + misc
 // FOLDER become merged properties and a T1 key / URL.
+//
+// LOCAL FIRST, exactly as canon orders the ladder: a path the roster already
+// resolved (rungs 1-11 on disk, resolved off-thread when the roster was built) is
+// read + decoded off-thread and landed by the poll cluster. Only when nothing is
+// local does the ONE origin chain run — PrefetchChain over the ≤2 spellings of
+// misc/<folder>/<name>, exactly like the shout bubble.
+//
 // It returns ok=false only when there is no art anywhere to point at, which is
 // what makes do_effect's "unknown effect name clears the overlay" reachable — and
 // Pending while the folder's roster is still resolving, because until it lands
+// neither half of the local answer (the rung 1-7 art paths, the merged
+// properties) exists and the ladder cannot be walked in order.
+// Render thread only.
 func (a *App) overlayResolve(name, folder string) (courtroom.OverlayResolved, bool) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -414,6 +487,12 @@ func (a *App) overlayResolve(name, folder string) (courtroom.OverlayResolved, bo
 		// cull, no max_duration) that nothing would ever correct, which is precisely
 		// the marquee case: the first message from any character shipping its own
 		// misc effects pack.
+		//
+		// So report PENDING. The courtroom holds the request and re-asks
+		// (courtroom/overlayfx.go tickOverlayPending) until this resolve lands, then
+		// walks the full ladder with the real properties. Nothing is fetched
+		// speculatively: the resolve was demanded by this very effect firing (§2.4,
+		// "on demand, NEVER at theme load").
 		out.Pending = true
 		return out, true
 	}
@@ -422,7 +501,7 @@ func (a *App) overlayResolve(name, folder string) (courtroom.OverlayResolved, bo
 	}
 	if path, ok := roster.art[strings.ToLower(name)]; ok {
 		key := overlayThemeKey(path)
-		a.overlays.overlayDemandTheme(&a.env, path, key)
+		a.overlayDemandTheme(path, key)
 		out.Base = key
 		return out, true
 	}
@@ -431,10 +510,27 @@ func (a *App) overlayResolve(name, folder string) (courtroom.OverlayResolved, bo
 	// is no asset Manager to ask with: an effect with neither local art nor a
 	// reachable origin simply does not exist, and canon clears for exactly that
 	// (courtroom.cpp:3188-3194).
-	if a.link.urls.Origin() == "" || a.d.Manager == nil {
+	//
+	// The origin guard is the one EVERY origin-dependent path in this package
+	// carries (charMetaFor charmeta.go:58, previewSFX sfxbrowser.go:56, warmCharINI
+	// app.go:7510). Without it URLBuilder concatenates an empty host and hands back
+	// the RELATIVE "misc/<folder>/<name>", which would be submitted to the worker
+	// pool (manager.go only rejects an EMPTY base) and stored as
+	// Scene.Overlay.Base — a permanent junk T1 key. That is reachable today: a
+	// .demo replayed from the LOBBY has no origin at all.
+	//
+	// KNOWN LIMIT, recorded rather than papered over: these hooks close over the
+	// APP's a.urls, while a replay room is built with its own
+	// courtroom.NewURLBuilder(rec.Origin) (replay.go:609-615). So a .demo watched
+	// while connected somewhere else resolves rung 8 against the CONNECTED host
+	// instead of the recording's — a miss on that host, ≤2 404-cached probes, and
+	// the origin-free local ladder (rungs 1-7) is unaffected. Threading the room's
+	// own builder into OverlayFor is OWED: it needs the roster cache keyed by the
+	// ROOM's origin rather than the App's.
+	if a.urls.Origin() == "" || a.d.Manager == nil {
 		return out, false
 	}
-	cands := a.link.urls.OverlayEffectMisc(folder, name)
+	cands := a.urls.OverlayEffectMisc(folder, name)
 	if len(cands) == 0 {
 		return out, false
 	}
@@ -456,14 +552,15 @@ func (a *App) overlayEffectsFolderFor(char string) string {
 // speaker's char.ini [Options] realization as a full SFX url, "" when the
 // character declares none (the courtroom then falls back to the theme's
 // courtroom_sounds.ini value, exactly as canon does).
+//
 // Same origin guard every other origin-dependent path in this package carries —
 // an origin-less URLBuilder would hand back a relative "sounds/general/<name>".
 func (a *App) overlayCustomRealizationFor(char string) string {
 	name := a.charMetaFor(char).realization
-	if name == "" || a.link.urls.Origin() == "" {
+	if name == "" || a.urls.Origin() == "" {
 		return ""
 	}
-	return a.link.urls.SFX(name) // AssetType: SFX (per-character realization)
+	return a.urls.SFX(name) // AssetType: SFX (per-character realization)
 }
 
 // overlayEffectSound is get_effect_property(fx, char, folder, "sound") — the
@@ -471,13 +568,19 @@ func (a *App) overlayCustomRealizationFor(char string) string {
 // fx == "realization" has its sound replaced wholesale by get_custom_realization
 // (text_file_functions.cpp:889-892), i.e. by char.ini [Options] realization,
 // falling back to the theme's courtroom_sounds.ini "realization".
+//
+// DIVERGENCE, deliberate: canon's get_custom_realization returns a RESOLVED LOCAL
+// PATH for the char.ini case (get_sfx_suffix(get_sounds_path(...)), :902) and AO2
 // then puts that path straight on the wire (courtroom.cpp:2299-2307). A local
+// absolute path is meaningless to every other client and to our own URL builder,
+// so we send the bare NAME — which is what the theme branch sends in canon too,
+// and what every receiver can resolve.
 func (a *App) overlayEffectSound(folder, name string) string {
 	if strings.EqualFold(strings.TrimSpace(name), overlayRealizationEffect) {
 		if own := a.charMetaFor(a.activeCharName()).realization; own != "" {
 			return own
 		}
-		return a.skin.themeSounds[overlayRealizationEffect]
+		return a.themeSounds[overlayRealizationEffect]
 	}
 	if fx, ok := a.overlayRosterFXFor(folder, name); ok {
 		return fx.Sound
@@ -487,40 +590,43 @@ func (a *App) overlayEffectSound(folder, name string) string {
 
 // myOverlayFolder is OUR OWN character's effects folder — the value that rides
 // the outgoing field's middle slot (courtroom.cpp:2296-2308).
+//
 // Memoised on the active character name (a plain string compare) because the
 // underlying charMetaFor builds a char.ini URL by concatenation and this is asked
 // on every courtroom frame, which is zero-alloc-gated. pollCharMeta drops the
 // memo when a fetch lands.
 func (a *App) myOverlayFolder() string {
 	char := a.activeCharName()
-	if a.overlays.overlayMyFolderValid && a.overlays.overlayMyFolderChar == char {
-		return a.overlays.overlayMyFolder
+	if a.overlayMyFolderValid && a.overlayMyFolderChar == char {
+		return a.overlayMyFolder
 	}
-	a.overlays.overlayMyFolderChar, a.overlays.overlayMyFolder, a.overlays.overlayMyFolderValid = char, a.overlayEffectsFolderFor(char), true
-	return a.overlays.overlayMyFolder
+	a.overlayMyFolderChar, a.overlayMyFolder, a.overlayMyFolderValid = char, a.overlayEffectsFolderFor(char), true
+	return a.overlayMyFolder
 }
 
 // overlayChoices builds the dropdown's option list: "None" at index 0, then the
 // roster's display order verbatim (theme file ++ misc file, duplicates preserved
 // — the wire carries the NAME, not the index, so a duplicate is harmless and
 // deduping would diverge from every other client's row numbering).
+// Baked once per roster: the copy and the prepend both allocate, and this is
+// asked on every courtroom frame (the zero-alloc gate).
 func (a *App) overlayChoices() []string {
 	folder := a.myOverlayFolder()
-	if a.overlays.overlayIconFolder != folder {
+	if a.overlayIconFolder != folder {
 		// An iniswap or character swap into a DIFFERENT effects pack: the icon pages
 		// are keyed by ROW INDEX (cachedPage), and cachedPage only reallocates when
 		// the row COUNT changes — two packs of the same size would otherwise draw
 		// each other's icons. A plain string compare, so the settled frame pays
 		// nothing.
-		a.overlays.overlayIconFolder = folder
-		a.overlays.overlayIconPagesReset()
+		a.overlayIconFolder = folder
+		a.overlayIconPagesReset()
 	}
 	roster := a.overlayRosterFor(folder)
-	if a.overlays.overlayChoicesValid && a.overlays.overlayChoicesRoster == roster {
-		return a.overlays.overlayChoicesCache
+	if a.overlayChoicesValid && a.overlayChoicesRoster == roster {
+		return a.overlayChoicesCache
 	}
-	a.overlays.overlayChoicesRoster, a.overlays.overlayChoicesValid, a.overlays.overlayChoicesCache = roster, true, nil
-	a.overlays.overlayIconKeys, a.overlays.overlayIconPaths = nil, nil
+	a.overlayChoicesRoster, a.overlayChoicesValid, a.overlayChoicesCache = roster, true, nil
+	a.overlayIconKeys, a.overlayIconPaths = nil, nil
 	if roster == nil || roster.set == nil {
 		return nil
 	}
@@ -530,26 +636,35 @@ func (a *App) overlayChoices() []string {
 	}
 	out := make([]string, 0, len(names)+1)
 	out = append(out, overlayNoneRow)
-	a.overlays.overlayChoicesCache = append(out, names...)
+	a.overlayChoicesCache = append(out, names...)
 	a.bakeOverlayIconKeys(folder, roster)
-	return a.overlays.overlayChoicesCache
+	return a.overlayChoicesCache
 }
 
 // bakeOverlayIconKeys precomputes every row's icon page KEY, and for the theme
 // tier the LOCAL file that key is decoded from, at roster-build time — spec §3,
 // "icon page keys are precomputed when the list is built, not per frame".
+//
+// This is load-bearing rather than tidiness. dropdownEx paints the CLOSED
+// control's current pick through the same thumb painter on EVERY frame
+// (ui.go:3938-3942), so a painter that concatenated overlayThemeKey(path) — or
+// called URLBuilder.OverlayEffectMiscIcon, which mints a candidate SLICE —
+// allocated on every settled courtroom frame from the moment an effect was
+// picked, under the whole-screen AllocsPerRun gate. Baked here it is two slice
+// reads.
+//
 // Row 0 ("None") deliberately gets an EMPTY key: AO2 asks for an icon for it too
 // (courtroom.cpp:5606-5610) but no theme in the corpus ships one, so it draws the
 // empty chip rather than burning a probe per open.
 func (a *App) bakeOverlayIconKeys(folder string, roster *overlayRoster) {
-	choices := a.overlays.overlayChoicesCache
-	a.overlays.overlayIconKeys = make([]string, len(choices))
-	a.overlays.overlayIconPaths = make([]string, len(choices))
-	origin := a.link.urls.Origin()
+	choices := a.overlayChoicesCache
+	a.overlayIconKeys = make([]string, len(choices))
+	a.overlayIconPaths = make([]string, len(choices))
+	origin := a.urls.Origin()
 	for i := 1; i < len(choices); i++ {
 		name := choices[i]
 		if p, ok := roster.icon[strings.ToLower(name)]; ok {
-			a.overlays.overlayIconKeys[i], a.overlays.overlayIconPaths[i] = overlayThemeKey(p), p
+			a.overlayIconKeys[i], a.overlayIconPaths[i] = overlayThemeKey(p), p
 			continue
 		}
 		if origin == "" {
@@ -557,8 +672,8 @@ func (a *App) bakeOverlayIconKeys(folder string, roster *overlayRoster) {
 			// a RELATIVE "misc/<folder>/icons/<name>", and demandAsset would submit it.
 			continue
 		}
-		if cands := a.link.urls.OverlayEffectMiscIcon(folder, name); len(cands) > 0 {
-			a.overlays.overlayIconKeys[i] = cands[0]
+		if cands := a.urls.OverlayEffectMiscIcon(folder, name); len(cands) > 0 {
+			a.overlayIconKeys[i] = cands[0]
 		}
 	}
 }
@@ -567,7 +682,7 @@ func (a *App) bakeOverlayIconKeys(folder string, roster *overlayRoster) {
 // (courtroom.cpp:5582-5613): hidden while SPECTATING (m_cid == -1) and hidden
 // when the roster is empty.
 func (a *App) overlayEffectsVisible() bool {
-	if a.link.sess == nil || a.link.sess.MyCharID < 0 {
+	if a.sess == nil || a.sess.MyCharID < 0 {
 		return false
 	}
 	return len(a.overlayChoices()) > 1 // "None" alone is an empty roster
@@ -576,9 +691,13 @@ func (a *App) overlayEffectsVisible() bool {
 // drawEffectsPicker draws ui_effects_dropdown at rect. Shared by the classic IC
 // row and the themed layout so the two can never drift, exactly like
 // drawThemedSFXPicker.
+//
 // The visibility gate lives HERE, not at the call sites: the classic row also
 // consults overlayEffectsVisible to decide whether to advance its cursor, but the
 // themed layout draws straight into a design.ini rect and had no gate at all,
+// which showed the picker to SPECTATORS (courtroom.cpp:5586-5590 hides it on
+// m_cid == -1). One gate inside the shared painter is the only shape in which the
+// two paths cannot drift again.
 func (a *App) drawEffectsPicker(rect sdl.Rect) {
 	c := a.ctx
 	if !a.overlayEffectsVisible() {
@@ -588,26 +707,26 @@ func (a *App) drawEffectsPicker(rect sdl.Rect) {
 	if len(choices) <= 1 {
 		return
 	}
-	if a.emotepick.overlayChoiceIdx < 0 || a.emotepick.overlayChoiceIdx >= len(choices) {
-		a.emotepick.overlayChoiceIdx = 0
+	if a.overlayChoiceIdx < 0 || a.overlayChoiceIdx >= len(choices) {
+		a.overlayChoiceIdx = 0
 	}
-	if a.overlays.overlayThumbFn == nil {
+	if a.overlayThumbFn == nil {
 		// Bound ONCE (the posThumbFn idiom): a per-frame closure here would
 		// allocate on the settled path, which the whole-screen alloc gate catches.
-		a.overlays.overlayThumbFn = a.overlayIconDraw
+		a.overlayThumbFn = a.overlayIconDraw
 	}
 	rowH, thumbW := overlayIconRowH, overlayIconThumbW
-	if a.overlays.overlayIconSize[0] > 0 && a.overlays.overlayIconSize[1] > 0 {
+	if a.overlayIconSize[0] > 0 && a.overlayIconSize[1] > 0 {
 		// effects_icon_size (courtroom.cpp:979), plus the padding every thumbnail
 		// dropdown row carries.
-		thumbW = int32(a.overlays.overlayIconSize[0]) + 4
-		if h := int32(a.overlays.overlayIconSize[1]) + 6; h > rowH {
+		thumbW = int32(a.overlayIconSize[0]) + 4
+		if h := int32(a.overlayIconSize[1]) + 6; h > rowH {
 			rowH = h
 		}
 	}
-	next, changed := c.DropdownThumbs(overlayEffectsDDID, rect, choices, a.emotepick.overlayChoiceIdx, rowH, thumbW, a.overlays.overlayThumbFn)
+	next, changed := c.DropdownThumbs(overlayEffectsDDID, rect, choices, a.overlayChoiceIdx, rowH, thumbW, a.overlayThumbFn)
 	if changed {
-		a.emotepick.overlayChoiceIdx = next
+		a.overlayChoiceIdx = next
 		// on_effects_dropdown_changed's other half (courtroom.cpp:5653-5657): it sets
 		// `effect` and calls focus_ic_input(). Picking a screen effect is a step in
 		// composing the line, so the keyboard goes back to the line (chatfocus.go).
@@ -633,11 +752,11 @@ func (a *App) drawEffectsPicker(rect sdl.Rect) {
 func (a *App) overlayIconDraw(i int, tr sdl.Rect) {
 	c := a.ctx
 	n := len(a.overlayChoices())
-	if i < 0 || i >= n || i >= len(a.overlays.overlayIconKeys) {
+	if i < 0 || i >= n || i >= len(a.overlayIconKeys) {
 		return
 	}
-	base := a.overlays.overlayIconKeys[i]
-	path := a.overlays.overlayIconPaths[i]
+	base := a.overlayIconKeys[i]
+	path := a.overlayIconPaths[i]
 	if base == "" {
 		// Row 0 ("None") and any row with no art anywhere: the empty chip, never a
 		// probe. See bakeOverlayIconKeys.
@@ -648,9 +767,9 @@ func (a *App) overlayIconDraw(i int, tr sdl.Rect) {
 	if path != "" {
 		// Idempotent (a resident or already-loading key costs a map probe) and it is
 		// what HEALS the page after an eviction — overlay art is uploaded evictable.
-		a.overlays.overlayDemandTheme(&a.env, path, base)
+		a.overlayDemandTheme(path, base)
 	}
-	if page, ok := a.cachedPage(&a.overlays.overlayIconPages, &a.overlays.overlayIconGen, n, i, base); ok && len(page.Frames) > 0 {
+	if page, ok := a.cachedPage(&a.overlayIconPages, &a.overlayIconGen, n, i, base); ok && len(page.Frames) > 0 {
 		// Through the shared cgo scratch, never &tr: taking the address of a
 		// parameter heap-escapes on EVERY cgo call (the ui.go cgoRect contract), and
 		// the closed control paints this on every settled frame.
@@ -660,7 +779,7 @@ func (a *App) overlayIconDraw(i int, tr sdl.Rect) {
 		c.Fill(tr, overlayIconChipColor)
 		if path == "" {
 			// AssetType: Effect (dropdown row icon, visible rows only, LOW priority)
-			a.demandAsset(&a.overlays.overlayIconAsk, n, i, base, assets.AssetTypeEffect)
+			a.demandAsset(&a.overlayIconAsk, n, i, base, assets.AssetTypeEffect)
 		}
 	}
 	c.Border(tr, ColPanelHi)
@@ -669,9 +788,19 @@ func (a *App) overlayIconDraw(i int, tr sdl.Rect) {
 // previewOverlayRow opens the sprite-preview box on one effect's art and plays
 // its sound — the sound IS part of the effect, so auditioning without it would
 // be auditioning half of it.
+//
+// It deliberately does NOT change the dropdown selection (that is left-click's
+// job) and does not touch sfxChoiceIdx. previewBase is a single shared slot, so
+// the box takes the overlay-owner mark through drawSpritePreview's own
+// pushOverlayOwner.
+//
 // The box is PINNED while it is up, because the pointer is parked on a dropdown
 // ROW: the modal capture blanks hovering() for everything else, so both of
 // closeSpritePreviewOnLeave's tests read false and its "strayed off the travel
+// path" arm would kill the box on the very next frame. The pin is undone by
+// overlayPreviewCloseEdge when the list closes (spec §1.d, "must clear on
+// dropdown close") — closeSpritePreview is NOT otherwise on this path, it is
+// reached only from the box's own x or a click on a non-modal surface.
 func (a *App) previewOverlayRow(choices []string, row int) {
 	if row <= 0 || row >= len(choices) {
 		// Row 0 is "None": nothing to preview, and clearing here would fight the
@@ -682,12 +811,12 @@ func (a *App) previewOverlayRow(choices []string, row int) {
 	folder := a.myOverlayFolder()
 	res, ok := a.overlayResolve(name, folder)
 	if ok && res.Base != "" {
-		a.budget.previewBase = res.Base
-		a.budget.previewFor = "" // restart the preview clock on the new pick (screens.go:1331-1335)
+		a.previewBase = res.Base
+		a.previewFor = "" // restart the preview clock on the new pick (screens.go:1331-1335)
 		a.previewPinned = true
-		a.budget.previewNameFor = res.Base
-		a.budget.previewName = name
-		a.overlays.overlayPreviewBase = res.Base // ownership: the close edge takes down only this box
+		a.previewNameFor = res.Base
+		a.previewName = name
+		a.overlayPreviewBase = res.Base // ownership: the close edge takes down only this box
 	}
 	// The SAME sentinel filter the message path uses (courtroom.OverlaySoundPlayable,
 	// spec §1.b). previewSFX rejects only "" and the empty origin, and KFO's stock
@@ -705,20 +834,28 @@ func (a *App) previewOverlayRow(choices []string, row int) {
 
 // overlayPreviewCloseEdge takes the right-click effect preview down when the
 // effects list closes — spec §1.d, "must clear on dropdown close".
+//
+// Called once per frame from pollOverlayRosters (see the coverage note there). It
+// is an EDGE, not a state check: while the list is open the box must survive
+// (auditioning a second row re-points it), and the instant the list is gone the
+// pin that kept it alive has to go with it.
+//
+// previewBase is one shared slot, so ownership is checked before closing: if some
+// other trigger has re-pointed the box since, this only forgets its claim.
 func (a *App) overlayPreviewCloseEdge() {
-	if a.overlays.overlayPreviewBase == "" || a.ctx == nil {
+	if a.overlayPreviewBase == "" || a.ctx == nil {
 		return
 	}
 	if a.ctx.ddOpen == overlayEffectsDDID {
 		return // still open: keep the box up across rows
 	}
-	if a.budget.previewBase == a.overlays.overlayPreviewBase {
+	if a.previewBase == a.overlayPreviewBase {
 		// Routed through closeSpritePreview, never a raw previewBase = "": it also
 		// clears the pin latch and disarms the dwell id (screens.go:1563-1576), the
 		// trap the five earlier dismissal sites fell into.
 		a.closeSpritePreview()
 	}
-	a.overlays.overlayPreviewBase = ""
+	a.overlayPreviewBase = ""
 }
 
 // overlayRosterFXFor is a small accessor so the preview and the send path do not
@@ -733,27 +870,41 @@ func (a *App) overlayRosterFXFor(folder, name string) (theme.OverlayFX, bool) {
 
 // outgoingEffectsField builds the MS EFFECTS value for the message being sent:
 // "<name>|<folder>|<sound>" (courtroom.cpp:2296-2308), or "" for the "None" row.
+//
+// sound is forced to "0" when Pre is UNCHECKED and a custom/dropdown SFX is set —
+// AO2's anti-overlap rule (:2302-2305): the effect's own sound would otherwise
+// play on top of the sound the user explicitly chose for this line.
 func (a *App) outgoingEffectsField() string {
 	choices := a.overlayChoices()
-	if a.emotepick.overlayChoiceIdx <= 0 || a.emotepick.overlayChoiceIdx >= len(choices) {
+	if a.overlayChoiceIdx <= 0 || a.overlayChoiceIdx >= len(choices) {
 		return ""
 	}
-	name := choices[a.emotepick.overlayChoiceIdx]
+	name := choices[a.overlayChoiceIdx]
 	folder := a.myOverlayFolder()
 	// get_effect_property(effect, current_char, folder, "sound") — including its
 	// realization special case (courtroom.cpp:2299 calls the very same accessor).
 	sound := a.overlayEffectSound(folder, name)
-	if !a.compose.icPreanim && a.emotepick.sfxChoiceIdx > 0 {
+	if !a.icPreanim && a.sfxChoiceIdx > 0 {
 		sound = "0"
 	}
 	return courtroom.BuildEffectsField(name, folder, sound)
 }
 
 // clearEffectsAfterSend applies AO2's post-send reset to the effects dropdown.
+//
 // CANON, read carefully because the upstream accessor is misnamed:
+// courtroom.cpp:2348 resets only when clearEffectsDropdownOnPlayEnabled() is
+// FALSE, and options.cpp:430-433 implements it as
+// config.value("stickyeffects", true) — the config KEY is "stickyeffects" and it
+// defaults TRUE. So the guard is false by default and a stock AO2 client NEVER
+// clears the effects pick after a send; the per-effect `sticky` property only
+// starts to matter once the user unticks the Sticky Effects box
+// (aooptionsdialog.cpp:417).
+//
 // AsyncAO answers canon's shipped default, and as of the 2026-08-09 batch the
 // OWED user-facing toggle exists: Prefs.StickyEffectsOn() (defaultStickyEffects =
 // true, the same value options.cpp ships). Turning it OFF is what arms the
+// per-effect `sticky` half of courtroom.cpp:2348-2354 below.
 func (a *App) clearEffectsAfterSend() {
 	a.overlayPostSendReset(a.d.Prefs.Load().StickyEffects)
 }
@@ -767,19 +918,20 @@ func (a *App) overlayPostSendReset(globalSticky bool) {
 		return // canon's default: the pick rides every following line
 	}
 	choices := a.overlayChoices()
-	if a.emotepick.overlayChoiceIdx <= 0 || a.emotepick.overlayChoiceIdx >= len(choices) {
+	if a.overlayChoiceIdx <= 0 || a.overlayChoiceIdx >= len(choices) {
 		return
 	}
-	if fx, ok := a.overlayRosterFXFor(a.myOverlayFolder(), choices[a.emotepick.overlayChoiceIdx]); ok && fx.Sticky {
+	if fx, ok := a.overlayRosterFXFor(a.myOverlayFolder(), choices[a.overlayChoiceIdx]); ok && fx.Sticky {
 		return // the effect declares sticky: the selection survives even then
 	}
-	a.emotepick.overlayChoiceIdx = 0
+	a.overlayChoiceIdx = 0
 }
 
 // drawOverlayChatLayer paints the `chat`-rung overlay. AO2 reparents that one
 // layer OUT of the viewport onto the Courtroom (courtroom.cpp:3234-3237), which
 // is why it cannot ride Viewport.Render like the other three: it must paint after
 // the chatbox. Called immediately after drawChatOverlay in both layouts.
+//
 // Free when nothing is on stage — DrawOverlayChat's first test is the base.
 func (a *App) drawOverlayChatLayer(vp sdl.Rect) {
 	if a.d.Viewport == nil || a.ctx == nil {
@@ -788,7 +940,7 @@ func (a *App) drawOverlayChatLayer(vp sdl.Rect) {
 	// renderScene dereferences a.room unless a replay owns the stage, and this is
 	// called from a draw tail that a themed layout can reach with no chatbox rect
 	// (so drawChatOverlay's own deref did not run first).
-	if a.link.room == nil && !(a.sel.replaying && a.sel.replayRoom != nil) {
+	if a.room == nil && !(a.replaying && a.replayRoom != nil) {
 		return
 	}
 	a.d.Viewport.DrawOverlayChat(a.ctx.Ren, a.renderScene(), vp)
@@ -797,7 +949,7 @@ func (a *App) drawOverlayChatLayer(vp sdl.Rect) {
 // overlayIconPagesReset drops the cached icon pages — called when the roster
 // changes shape so a stale page cannot draw under the wrong row (cachedPage keys
 // by INDEX, not URL, exactly like the pos thumbnails).
-func (overlay *overlayState) overlayIconPagesReset() {
-	overlay.overlayIconPages = nil
-	overlay.overlayIconAsk = nil
+func (a *App) overlayIconPagesReset() {
+	a.overlayIconPages = nil
+	a.overlayIconAsk = nil
 }

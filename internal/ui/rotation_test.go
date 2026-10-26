@@ -15,20 +15,20 @@ import (
 func TestClassicSlotRotationResolve(t *testing.T) {
 	var a App
 	// No rotation map at all → 0 (the plain-Copy path), the settled/unedited case.
-	if got := a.classic.classicSlotRotation(slotViewport); got != 0 {
+	if got := a.classicSlotRotation(slotViewport); got != 0 {
 		t.Fatalf("nil classicRot → %g, want 0 (plain Copy path)", got)
 	}
-	a.classic.classicRot = map[string]uint8{slotViewport: 0, slotOOC: 64}
+	a.classicRot = map[string]uint8{slotViewport: 0, slotOOC: 64}
 	// An explicit 0 byte still resolves 0 (routes to Copy).
-	if got := a.classic.classicSlotRotation(slotViewport); got != 0 {
+	if got := a.classicSlotRotation(slotViewport); got != 0 {
 		t.Fatalf("explicit-0 byte → %g, want 0", got)
 	}
 	// A nonzero byte resolves to its degrees (routes to CopyEx).
-	if got := a.classic.classicSlotRotation(slotOOC); got != 90 {
+	if got := a.classicSlotRotation(slotOOC); got != 90 {
 		t.Fatalf("byte 64 → %g, want 90", got)
 	}
 	// An absent key → 0.
-	if got := a.classic.classicSlotRotation("nope"); got != 0 {
+	if got := a.classicSlotRotation("nope"); got != 0 {
 		t.Fatalf("absent key → %g, want 0", got)
 	}
 }
@@ -38,13 +38,13 @@ func TestClassicSlotRotationResolve(t *testing.T) {
 func TestClassicSlotRotationNoAlloc(t *testing.T) {
 	var a App
 	if n := testing.AllocsPerRun(200, func() {
-		_ = a.classic.classicSlotRotation(slotViewport) // nil map: the settled-gate case
+		_ = a.classicSlotRotation(slotViewport) // nil map: the settled-gate case
 	}); n != 0 {
 		t.Fatalf("classicSlotRotation allocates %v/op on the unrotated path; want 0", n)
 	}
-	a.classic.classicRot = map[string]uint8{slotOOC: 128}
+	a.classicRot = map[string]uint8{slotOOC: 128}
 	if n := testing.AllocsPerRun(200, func() {
-		_ = a.classic.classicSlotRotation(slotOOC) // rotated: a map probe + float mul, still 0-alloc
+		_ = a.classicSlotRotation(slotOOC) // rotated: a map probe + float mul, still 0-alloc
 	}); n != 0 {
 		t.Fatalf("classicSlotRotation allocates %v/op on the rotated path; want 0", n)
 	}
@@ -56,7 +56,7 @@ func TestThemedRotationResolve(t *testing.T) {
 	if got := a.themedRotationDeg("defense_bar"); got != 0 {
 		t.Fatalf("nil ang → %g, want 0", got)
 	}
-	a.skin.themeLay.ang = map[string]uint8{"defense_bar": 0, "call_mod": 192}
+	a.themeLay.ang = map[string]uint8{"defense_bar": 0, "call_mod": 192}
 	if got := a.themedRotationDeg("defense_bar"); got != 0 {
 		t.Fatalf("explicit-0 byte → %g, want 0", got)
 	}
@@ -64,10 +64,10 @@ func TestThemedRotationResolve(t *testing.T) {
 		t.Fatalf("byte 192 → %g, want 270", got)
 	}
 	// The cache accessor agrees with the App helper.
-	if got := a.skin.themeLay.angle("call_mod"); got != 270 {
+	if got := a.themeLay.angle("call_mod"); got != 270 {
 		t.Fatalf("themeLayoutCache.angle = %g, want 270", got)
 	}
-	if got := a.skin.themeLay.angle("absent"); got != 0 {
+	if got := a.themeLay.angle("absent"); got != 0 {
 		t.Fatalf("absent key angle = %g, want 0", got)
 	}
 }

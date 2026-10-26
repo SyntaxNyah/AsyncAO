@@ -79,16 +79,16 @@ func (g *msgGroup) appendLine(from, text string, fromMe bool, char string) {
 
 // myUID is our server-assigned UID, or 0 when not in a session.
 func (a *App) myUID() int {
-	if a.link.sess == nil {
+	if a.sess == nil {
 		return 0
 	}
-	return a.link.sess.PlayerID
+	return a.sess.PlayerID
 }
 
 // applyGroupInvite records a group we were invited to (owner = the inviter), adding
 // the owner and us as the initial members. Idempotent; bounded.
 func (a *App) applyGroupInvite(id uint32, name string, ownerUID int, ownerName string) {
-	g := a.msgs.ensureGroup(id)
+	g := a.ensureGroup(id)
 	if g == nil {
 		return
 	}
@@ -103,8 +103,8 @@ func (a *App) applyGroupInvite(id uint32, name string, ownerUID int, ownerName s
 }
 
 // applyGroupJoin adds a member who announced they joined a group we're in.
-func (msg *msgState) applyGroupJoin(id uint32, uid int, name string) {
-	if g := msg.msgGroups[id]; g != nil {
+func (a *App) applyGroupJoin(id uint32, uid int, name string) {
+	if g := a.msgGroups[id]; g != nil {
 		g.addMember(uid, name)
 	}
 }
@@ -114,13 +114,13 @@ func (msg *msgState) applyGroupJoin(id uint32, uid int, name string) {
 // (for the bubble icon) resolves from the live roster at receipt; a group that
 // isn't on screen counts the line as unread (the chat-list badge).
 func (a *App) applyGroupText(id uint32, fromUID int, fromName, text string) {
-	g := a.msgs.msgGroups[id]
+	g := a.msgGroups[id]
 	if g == nil {
 		return
 	}
 	g.addMember(fromUID, fromName)
 	g.appendLine(fromName, text, false, a.rosterCharByUID(fromUID))
-	if !a.msgs.showMessages || a.msgs.msgSelGroup != id {
+	if !a.showMessages || a.msgSelGroup != id {
 		g.unread++
 	}
 }
@@ -129,37 +129,37 @@ func (a *App) applyGroupText(id uint32, fromUID int, fromName, text string) {
 // owner (byUID == ownerUID); the server-attributed sender makes this unforgeable. If
 // we are the target, the group is dropped locally.
 func (a *App) applyGroupKick(id uint32, byUID, targetUID int) {
-	g := a.msgs.msgGroups[id]
+	g := a.msgGroups[id]
 	if g == nil || byUID != g.ownerUID {
 		return
 	}
 	if targetUID == a.myUID() {
-		delete(a.msgs.msgGroups, id)
+		delete(a.msgGroups, id)
 		return
 	}
 	g.removeMember(targetUID)
 }
 
 // applyGroupLeave removes a member who announced they left.
-func (msg *msgState) applyGroupLeave(id uint32, uid int) {
-	if g := msg.msgGroups[id]; g != nil {
+func (a *App) applyGroupLeave(id uint32, uid int) {
+	if g := a.msgGroups[id]; g != nil {
 		g.removeMember(uid)
 	}
 }
 
 // ensureGroup returns the group for id, creating it (bounded) if absent. nil at the cap.
-func (msg *msgState) ensureGroup(id uint32) *msgGroup {
-	if msg.msgGroups == nil {
-		msg.msgGroups = map[uint32]*msgGroup{}
+func (a *App) ensureGroup(id uint32) *msgGroup {
+	if a.msgGroups == nil {
+		a.msgGroups = map[uint32]*msgGroup{}
 	}
-	if g := msg.msgGroups[id]; g != nil {
+	if g := a.msgGroups[id]; g != nil {
 		return g
 	}
-	if len(msg.msgGroups) >= maxGroups {
+	if len(a.msgGroups) >= maxGroups {
 		return nil
 	}
 	g := &msgGroup{id: id}
-	msg.msgGroups[id] = g
+	a.msgGroups[id] = g
 	return g
 }
 
@@ -189,12 +189,12 @@ func (a *App) createGroup(name string) {
 	// Gate on CONNECTION, not the UID: some servers (Nyathena seen in the wild)
 	// assign player-id 0, so myUID()==0 is a valid connected state — the old guard
 	// wrongly blocked group creation with "needs you fully connected".
-	if a.link.sess == nil || a.link.room == nil {
+	if a.sess == nil || a.room == nil {
 		a.warnLine = clampLine("Group chat needs you connected to a server first.")
 		a.warnAt = a.now()
 		return
 	}
-	g := a.msgs.ensureGroup(randGroupID())
+	g := a.ensureGroup(randGroupID())
 	if g == nil {
 		return
 	}
@@ -203,19 +203,19 @@ func (a *App) createGroup(name string) {
 	}
 	g.ownerUID = a.myUID()
 	g.addMember(a.myUID(), a.oocNameOrDefault())
-	a.msgs.msgSelGroup, a.msgs.msgSel = g.id, ""
+	a.msgSelGroup, a.msgSel = g.id, ""
 }
 
 // sendGroupText fans a message out to every other member over /pm (one command) and
 // mirrors it into the local thread.
 func (a *App) sendGroupText(g *msgGroup, text string) {
 	text = strings.TrimSpace(text)
-	if text == "" || g == nil || a.link.sess == nil {
+	if text == "" || g == nil || a.sess == nil {
 		return
 	}
 	if ids := g.otherUIDs(a.myUID()); len(ids) > 0 {
 		body := text + courtroom.WireMessage{Kind: courtroom.MsgGroupText, GroupID: g.id}.EncodeMarker()
-		a.link.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand(ids, body))
+		a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand(ids, body))
 	}
 	g.appendLine(a.oocNameOrDefault(), text, true, a.activeCharName())
 }
@@ -223,18 +223,18 @@ func (a *App) sendGroupText(g *msgGroup, text string) {
 // inviteToGroup invites one player (uid + name) to a group I'm in; the visible body
 // is human-readable so a non-AsyncAO recipient at least sees the invite.
 func (a *App) inviteToGroup(g *msgGroup, uid int, name string) {
-	if g == nil || a.link.sess == nil || uid == 0 || uid == a.myUID() {
+	if g == nil || a.sess == nil || uid == 0 || uid == a.myUID() {
 		return
 	}
 	g.addMember(uid, name)
 	body := "[AsyncAO group invite: " + g.name + "]" +
 		courtroom.WireMessage{Kind: courtroom.MsgInvite, GroupID: g.id, GroupName: g.name}.EncodeMarker()
-	a.link.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{uid}, body))
+	a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand([]int{uid}, body))
 }
 
 // kickMember (owner only) removes a member and tells every current member.
 func (a *App) kickMember(g *msgGroup, uid int) {
-	if g == nil || a.link.sess == nil || g.ownerUID != a.myUID() || uid == a.myUID() {
+	if g == nil || a.sess == nil || g.ownerUID != a.myUID() || uid == a.myUID() {
 		return
 	}
 	targets := g.otherUIDs(a.myUID()) // notify everyone (incl. the kicked one) before removing
@@ -242,22 +242,22 @@ func (a *App) kickMember(g *msgGroup, uid int) {
 	if len(targets) > 0 {
 		body := "[AsyncAO group update]" +
 			courtroom.WireMessage{Kind: courtroom.MsgKick, GroupID: g.id, TargetUID: uid}.EncodeMarker()
-		a.link.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand(targets, body))
+		a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand(targets, body))
 	}
 }
 
 // leaveGroup notifies the other members, then drops the group locally.
 func (a *App) leaveGroup(g *msgGroup) {
-	if g == nil || a.link.sess == nil {
+	if g == nil || a.sess == nil {
 		return
 	}
 	if ids := g.otherUIDs(a.myUID()); len(ids) > 0 {
 		body := "[AsyncAO left the group]" +
 			courtroom.WireMessage{Kind: courtroom.MsgLeave, GroupID: g.id}.EncodeMarker()
-		a.link.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand(ids, body))
+		a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand(ids, body))
 	}
-	delete(a.msgs.msgGroups, g.id)
-	if a.msgs.msgSelGroup == g.id {
-		a.msgs.msgSelGroup = 0
+	delete(a.msgGroups, g.id)
+	if a.msgSelGroup == g.id {
+		a.msgSelGroup = 0
 	}
 }

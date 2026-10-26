@@ -80,9 +80,9 @@ func TestToolIconAllocFree(t *testing.T) {
 // per-piece list. The old showUICfg field is gone; this is now the only trigger.
 func TestUICfgRetired(t *testing.T) {
 	a := testTabApp(t)
-	a.link.sess = &courtroom.Session{}           // handleHotkeys early-returns without a session
-	a.classic.hidden = map[string]bool{}         // App init seeds this; bare test fixture must too
-	a.classic.setPanelHidden(panelToolbox, true) // hide the grip: the un-strand scenario
+	a.sess = &courtroom.Session{}        // handleHotkeys early-returns without a session
+	a.hidden = map[string]bool{}         // App init seeds this; bare test fixture must too
+	a.setPanelHidden(panelToolbox, true) // hide the grip: the un-strand scenario
 	// Bind the action to whatever name SDL gives Ctrl+F4's keycode (headless
 	// GetKeyName can differ from the "f4" default), so the bind and the dispatch
 	// agree. This proves the wiring, not a key-name quirk. Skip only if key names
@@ -96,12 +96,12 @@ func TestUICfgRetired(t *testing.T) {
 
 	a.handleHotkeys()
 
-	if !a.toolbox.toolboxPinned || !a.toolbox.toolboxPieces {
-		t.Fatalf("hotkeyUIChrome must open the pinned per-piece panel (pinned=%v pieces=%v), even with the toolbox hidden", a.toolbox.toolboxPinned, a.toolbox.toolboxPieces)
+	if !a.toolboxPinned || !a.toolboxPieces {
+		t.Fatalf("hotkeyUIChrome must open the pinned per-piece panel (pinned=%v pieces=%v), even with the toolbox hidden", a.toolboxPinned, a.toolboxPieces)
 	}
 	// The panel draws gated ONLY on pinned+pieces, never on panelHidden(panelToolbox):
 	// prove the grip stays hidden but the panel is armed.
-	if !a.classic.panelHidden(panelToolbox) {
+	if !a.panelHidden(panelToolbox) {
 		t.Fatal("test setup: the toolbox grip should still be hidden")
 	}
 }
@@ -112,7 +112,7 @@ func TestUICfgRetired(t *testing.T) {
 // classic slot editor (classicEdit).
 func TestEditLayoutHotkey(t *testing.T) {
 	a := testTabApp(t)
-	a.link.sess = &courtroom.Session{} // handleHotkeys early-returns without a session
+	a.sess = &courtroom.Session{} // handleHotkeys early-returns without a session
 	// Bind the action to whatever name SDL gives Ctrl+F2's keycode (headless
 	// GetKeyName can differ from the "f2" default the dispatch compares against), so
 	// the bind and the dispatch agree — this proves the WIRING, not the key-name
@@ -126,7 +126,7 @@ func TestEditLayoutHotkey(t *testing.T) {
 
 	a.handleHotkeys()
 
-	if !a.classic.classicEdit {
+	if !a.classicEdit {
 		t.Fatal("hotkeyEditLayout (Ctrl+F2) must open the layout editor (classicEdit) on the default layout")
 	}
 }
@@ -154,10 +154,10 @@ func TestToolboxPiecesPanelClickable(t *testing.T) {
 	// backing hidden map (it lives on App, not sessionState); and the panel's own
 	// draw gate.
 	a.ctx = c
-	a.classic.hidden = map[string]bool{}
-	a.link.sess = courtroom.NewRehearsalSession("", nil)
-	a.link.room = &courtroom.Courtroom{}
-	a.toolbox.toolboxPinned, a.toolbox.toolboxPieces = true, true
+	a.hidden = map[string]bool{}
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
+	a.toolboxPinned, a.toolboxPieces = true, true
 
 	const w, h = int32(1280), int32(720)
 	panel := a.toolboxPiecesRect(w, h)
@@ -166,7 +166,7 @@ func TestToolboxPiecesPanelClickable(t *testing.T) {
 	firstID := hideablePanels[0].id
 	rowX := panel.X + pad + 3
 	rowY := panel.Y + toolboxPiecesHeaderH + 3
-	if a.classic.panelHidden(firstID) {
+	if a.panelHidden(firstID) {
 		t.Fatalf("test setup: %q should start shown", firstID)
 	}
 
@@ -175,7 +175,7 @@ func TestToolboxPiecesPanelClickable(t *testing.T) {
 	c.mouseX, c.mouseY = rowX, rowY
 	c.clicked = true
 	a.drawToolboxPieces(w, h)
-	if !a.classic.panelHidden(firstID) {
+	if !a.panelHidden(firstID) {
 		t.Fatalf("a click on the first pieces-panel checkbox must hide %q — the panel is blind to input", firstID)
 	}
 
@@ -183,8 +183,8 @@ func TestToolboxPiecesPanelClickable(t *testing.T) {
 	// as boxFencesPointer did inside drawCourtroom. Re-show the piece, fence, and
 	// re-click: the fence blanks the pointer, so the checkbox must NOT toggle. This
 	// pins WHY the draw had to move out of the fenced pass.
-	a.classic.setPanelHidden(firstID, false)
-	if a.classic.panelHidden(firstID) {
+	a.setPanelHidden(firstID, false)
+	if a.panelHidden(firstID) {
 		t.Fatal("test setup: piece should be re-shown before the fenced case")
 	}
 	c.mouseX, c.mouseY = rowX, rowY
@@ -192,7 +192,7 @@ func TestToolboxPiecesPanelClickable(t *testing.T) {
 	c.fencePointer() // what the courtroom pass did over the panel
 	a.drawToolboxPieces(w, h)
 	c.unfencePointer()
-	if a.classic.panelHidden(firstID) {
+	if a.panelHidden(firstID) {
 		t.Fatalf("a fenced pass must NOT toggle %q (this is the bug the move fixed)", firstID)
 	}
 }
@@ -213,17 +213,17 @@ func TestToolboxPiecesPanelModalFenced(t *testing.T) {
 	}
 	a := testTabApp(t)
 	a.ctx = c
-	a.classic.hidden = map[string]bool{}
-	a.link.sess = courtroom.NewRehearsalSession("", nil)
-	a.link.room = &courtroom.Courtroom{}
-	a.toolbox.toolboxPinned, a.toolbox.toolboxPieces = true, true
+	a.hidden = map[string]bool{}
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
+	a.toolboxPinned, a.toolboxPieces = true, true
 
 	const w, h = int32(1280), int32(720)
 	panel := a.toolboxPiecesRect(w, h)
 	firstID := hideablePanels[0].id
 	rowX := panel.X + pad + 3
 	rowY := panel.Y + toolboxPiecesHeaderH + 3
-	if a.classic.panelHidden(firstID) {
+	if a.panelHidden(firstID) {
 		t.Fatalf("test setup: %q should start shown", firstID)
 	}
 
@@ -235,7 +235,7 @@ func TestToolboxPiecesPanelModalFenced(t *testing.T) {
 	c.modalOn = true
 	a.drawToolboxPieces(w, h)
 	c.modalOn = false
-	if a.classic.panelHidden(firstID) {
+	if a.panelHidden(firstID) {
 		t.Fatalf("with modalOn set (editor fence), the panel must be click-dead — got %q hidden", firstID)
 	}
 
@@ -245,7 +245,7 @@ func TestToolboxPiecesPanelModalFenced(t *testing.T) {
 	c.clicked = true
 	c.modalOn = false // app.go saves+clears modalOn while editing, then restores
 	a.drawToolboxPieces(w, h)
-	if !a.classic.panelHidden(firstID) {
+	if !a.panelHidden(firstID) {
 		t.Fatalf("with modalOn released (app.go edit path), a click must hide %q", firstID)
 	}
 }

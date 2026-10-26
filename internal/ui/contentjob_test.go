@@ -405,7 +405,6 @@ func TestContentProbeFoundMissing(t *testing.T) {
 // It also round-trips the sprite bytes to prove packaging reuses the probed
 // bytes verbatim.
 func TestPackageBundleLayout(t *testing.T) {
-	withExeDataRoot(t)
 	sprite := pngBytes()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Serve the sprite as .webp — the FIRST candidate in the diagnostic full
@@ -479,79 +478,6 @@ func TestPackageBundleLayout(t *testing.T) {
 	// The gap list.
 	if _, err := os.Stat(filepath.Join(bundle, contentReportFileName)); err != nil {
 		t.Errorf("missing-content text file not written: %v", err)
-	}
-}
-
-// TestWriteContentBundleCancelRemovesPartial pins the cancel contract directly: a
-// closed cancel channel leaves no folder at all and reports that nothing was kept.
-func TestWriteContentBundleCancelRemovesPartial(t *testing.T) {
-	dest := filepath.Join(t.TempDir(), "bundle")
-	cancel := make(chan struct{})
-	close(cancel)
-	res := writeContentBundleCancel(nil, dest, "scene", &sceneRecording{}, nil, nil, cancel)
-	if _, err := os.Stat(dest); !os.IsNotExist(err) {
-		t.Errorf("cancelled write must leave no folder; Stat err=%v", err)
-	}
-	if !strings.Contains(res.msg, "cancelled") {
-		t.Errorf("result should say cancelled; got %q", res.msg)
-	}
-}
-
-// TestRemovePartialSparesUserFolder pins the created-only rule: a folder the writer
-// did not create survives a cancel with everything in it.
-func TestRemovePartialSparesUserFolder(t *testing.T) {
-	dest := filepath.Join(t.TempDir(), "bundle")
-	if err := os.MkdirAll(dest, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	user := filepath.Join(dest, "my-notes.txt")
-	if err := os.WriteFile(user, []byte("keep me"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	removePartial(dest, false) // we did not create it
-	if _, err := os.Stat(user); err != nil {
-		t.Errorf("pre-existing folder must survive: %v", err)
-	}
-	removePartial(dest, true) // we did create it
-	if _, err := os.Stat(dest); !os.IsNotExist(err) {
-		t.Errorf("created folder must be removed; Stat err=%v", err)
-	}
-}
-
-// TestCancelContentJobStopsPackaging drives the whole path: the package goroutine
-// runs a stub writer that waits for the cancel channel, CancelContentJob closes it,
-// and the writer observes the cancel instead of finishing its work.
-func TestCancelContentJobStopsPackaging(t *testing.T) {
-	old := packageWriteBundle
-	started := make(chan struct{})
-	sawCancel := make(chan struct{})
-	packageWriteBundle = func(_ *assets.Manager, _, _ string, _ *sceneRecording, _, _ []string, cancel <-chan struct{}) contentPackageResult {
-		close(started)
-		<-cancel
-		close(sawCancel)
-		return contentPackageResult{msg: "Packaging cancelled."}
-	}
-	t.Cleanup(func() { packageWriteBundle = old })
-
-	dir := recordingsDir()
-	if dir == "" {
-		t.Skip("no recordings dir resolvable in this environment")
-	}
-	a := headlessProbeApp(t, assets.NewLocalFetcher([]string{t.TempDir()}), true)
-	rec := &sceneRecording{Version: recordingVersion, Origin: "http://example.invalid/", StartBg: "courtroom", Events: []recEvent{msgEvent("Phoenix", "normal", "", "", "")}}
-	if !a.StartContentReport(rec, "cancelslow") {
-		t.Fatal("report refused")
-	}
-	drainContentJob(t, a)
-	if !a.PackageContentBundle(rec) {
-		t.Fatal("package refused")
-	}
-	<-started
-	a.CancelContentJob()
-	select {
-	case <-sawCancel:
-	case <-time.After(5 * time.Second):
-		t.Fatal("CancelContentJob did not reach the package writer")
 	}
 }
 
@@ -670,7 +596,7 @@ func TestCancelMidProbeLeakFree(t *testing.T) {
 	// Drive the render-thread tick until the job leaves the seed phase and the
 	// probe workers spin up (StartContentReport returns during phaseSeeding).
 	seedDeadline := time.Now().Add(5 * time.Second)
-	for a.sel.content != nil && a.sel.content.phase == phaseSeeding && time.Now().Before(seedDeadline) {
+	for a.content != nil && a.content.phase == phaseSeeding && time.Now().Before(seedDeadline) {
 		a.tickContentJob()
 		time.Sleep(2 * time.Millisecond)
 	}
@@ -680,7 +606,7 @@ func TestCancelMidProbeLeakFree(t *testing.T) {
 	// just trades that for the client's transport-retry backoff parking the
 	// workers. probeLive counts exactly the feeder + workers the cancel
 	// contract promises to reap, and nothing else.
-	j := a.sel.content
+	j := a.content
 	if j == nil {
 		t.Fatal("no job after start")
 	}
@@ -693,7 +619,7 @@ func TestCancelMidProbeLeakFree(t *testing.T) {
 		t.Fatal("probe goroutines never started")
 	}
 	a.CancelContentJob()
-	if a.sel.content != nil || a.sel.contentBusy {
+	if a.content != nil || a.contentBusy {
 		t.Fatal("cancel must clear the job immediately")
 	}
 	close(gate) // let the held fetches 404 cleanly; workers then observe stop / drained workCh
@@ -713,7 +639,6 @@ func TestCancelMidProbeLeakFree(t *testing.T) {
 // TestCancelMidPackageLeakFree pins that cancelling during packaging is safe:
 // the goroutine's result lands in the 1-slot buffer nobody polls and it dies.
 func TestCancelMidPackageLeakFree(t *testing.T) {
-	withExeDataRoot(t)
 	sprite := pngBytes()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, ".png") {
@@ -748,7 +673,7 @@ func TestCancelMidPackageLeakFree(t *testing.T) {
 		t.Fatal("package refused")
 	}
 	a.CancelContentJob() // drop before the goroutine may have delivered
-	if a.sel.content != nil {
+	if a.content != nil {
 		t.Fatal("cancel must clear the packaging job")
 	}
 	// The lone package goroutine writes a tiny bundle and exits; the count returns
@@ -756,14 +681,6 @@ func TestCancelMidPackageLeakFree(t *testing.T) {
 	const pkgSlack = 4
 	if !waitGoroutines(base+pkgSlack, 3*time.Second) {
 		t.Errorf("package goroutine leaked: base=%d now=%d", base, runtime.NumGoroutine())
-	}
-	// A cancel must not leave half a bundle behind. Either the writer finished before
-	// the cancel landed (a COMPLETE folder, .aorec present) or it removed what it had;
-	// a folder without its descriptor can never replay and must not exist.
-	if _, err := os.Stat(cancelBundle); err == nil {
-		if _, err := os.Stat(filepath.Join(cancelBundle, "cancelpkg"+recordingExt)); err != nil {
-			t.Errorf("cancel left a partial bundle without its .aorec: %v", err)
-		}
 	}
 }
 
@@ -807,14 +724,14 @@ func autoBundleServer(t *testing.T) (*httptest.Server, string) {
 // armRecording puts the app into an active recording with the given origin +
 // events, ready for stopRecording (bypassing startRecording's a.urls dependency).
 func armRecording(a *App, origin string, events []recEvent) {
-	a.sel.rec = &sceneRecording{
+	a.rec = &sceneRecording{
 		Version:    recordingVersion,
 		Origin:     origin,
 		StartBg:    "courtroom",
 		RecordedAt: time.Now().Format(time.RFC3339),
 		Events:     events,
 	}
-	a.sel.recActive = true
+	a.recActive = true
 }
 
 // newestAorec returns the newest .aorec filename under recordingsDir() whose stem
@@ -859,7 +776,7 @@ func driveAutoBundleToDone(t *testing.T, a *App) {
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		a.tickContentJob()
-		if a.sel.content == nil {
+		if a.content == nil {
 			return
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -872,7 +789,6 @@ func driveAutoBundleToDone(t *testing.T, a *App) {
 // the flat .aorec AND, beside it, a self-contained <stem>-bundle\ folder with the
 // found asset at its origin-relative path + the bundled .aorec + the gap list.
 func TestStopRecordingAutoBundlesWithAssets(t *testing.T) {
-	withExeDataRoot(t)
 	dir := recordingsDir()
 	if dir == "" {
 		t.Skip("no recordings dir resolvable in this environment")
@@ -942,7 +858,6 @@ func TestStopRecordingAutoBundlesWithAssets(t *testing.T) {
 // still lands EXACTLY as before and NO bundle folder is created, and no content
 // job is started (zero behavior change for anyone who turns it off).
 func TestStopRecordingPrefOffNoBundle(t *testing.T) {
-	withExeDataRoot(t)
 	dir := recordingsDir()
 	if dir == "" {
 		t.Skip("no recordings dir resolvable in this environment")
@@ -956,7 +871,7 @@ func TestStopRecordingPrefOffNoBundle(t *testing.T) {
 	armRecording(a, origin, []recEvent{msgEvent("Phoenix", "normal", "", "", "")})
 	a.stopRecording()
 
-	if a.sel.content != nil {
+	if a.content != nil {
 		t.Fatal("pref OFF must start NO content job")
 	}
 	name := waitForNewAorec(t, before, 5*time.Second)
@@ -979,7 +894,6 @@ func TestStopRecordingPrefOffNoBundle(t *testing.T) {
 // origin — nothing to package) auto-builds nothing and errors nothing: the flat
 // .aorec lands, no job starts, no toast is stomped.
 func TestStopRecordingEmptyOriginNoBundle(t *testing.T) {
-	withExeDataRoot(t)
 	dir := recordingsDir()
 	if dir == "" {
 		t.Skip("no recordings dir resolvable in this environment")
@@ -989,7 +903,7 @@ func TestStopRecordingEmptyOriginNoBundle(t *testing.T) {
 	armRecording(a, "", []recEvent{msgEvent("Phoenix", "normal", "", "", "")}) // no origin
 	a.stopRecording()
 
-	if a.sel.content != nil {
+	if a.content != nil {
 		t.Fatal("empty-origin recording must start NO content job")
 	}
 	name := waitForNewAorec(t, before, 5*time.Second)
@@ -1010,7 +924,6 @@ func TestStopRecordingEmptyOriginNoBundle(t *testing.T) {
 // already running when a recording stops, the auto-build is skipped cleanly (no
 // second job, no queue) and the busy job is untouched.
 func TestStopRecordingSkipsWhenJobBusy(t *testing.T) {
-	withExeDataRoot(t)
 	dir := recordingsDir()
 	if dir == "" {
 		t.Skip("no recordings dir resolvable in this environment")
@@ -1023,8 +936,8 @@ func TestStopRecordingSkipsWhenJobBusy(t *testing.T) {
 	if !a.StartContentReport(synthRecording(""), "busyholder") {
 		t.Fatal("holder report refused")
 	}
-	held := a.sel.content
-	if held == nil || !a.sel.contentBusy {
+	held := a.content
+	if held == nil || !a.contentBusy {
 		t.Fatal("holder job should be busy")
 	}
 
@@ -1033,10 +946,10 @@ func TestStopRecordingSkipsWhenJobBusy(t *testing.T) {
 	done := a.stopRecording()
 
 	// The busy holder is untouched: no new job replaced it, contentBusy still set.
-	if a.sel.content != held {
+	if a.content != held {
 		t.Error("auto-build must NOT replace the running content job")
 	}
-	if a.sel.content != nil && a.sel.content.auto {
+	if a.content != nil && a.content.auto {
 		t.Error("the running job should still be the manual holder, not an auto-build")
 	}
 	// The flat .aorec still lands (auto-build skip is silent, recording save intact).
@@ -1176,7 +1089,7 @@ func drainContentJob(t *testing.T, a *App) {
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		a.tickContentJob()
-		j := a.sel.content
+		j := a.content
 		if j == nil || j.phase == phaseReport || j.phase == phaseDone {
 			return
 		}

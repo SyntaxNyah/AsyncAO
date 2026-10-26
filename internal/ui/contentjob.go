@@ -2,6 +2,39 @@ package ui
 
 // contentjob.go — the data/engine half of two Studio features over an imported
 // recording (a .demo/.aorec):
+//
+//   1. "Missing-content report": enumerate EVERYTHING the recording references
+//      (character sprites, backgrounds + desks, music, SFX, chat blips), probe
+//      what actually exists at the origin (or a local:// mount), and produce a
+//      structured found/missing/unreachable report per category.
+//   2. "Package this RP": fetch every FOUND asset's raw bytes and write a
+//      self-contained bundle folder in the EXISTING archive format (byte-
+//      compatible with archive.ExportAssets / beginBundledReplay) so the folder
+//      replays offline forever. The report doubles as the package's gap list,
+//      written into the bundle as a plain-text file recipients can read.
+//
+// Design (mirrors the wave-1 gif-export machinery, gifexport.go):
+//   - ONE contentJob at a time (single-flight; a second request is refused
+//     politely). It runs through phases enumerate → probe → [report ready] →
+//     optionally package.
+//   - Probing runs OFF the render thread: Manager.ResolveRaw / FetchRaw are
+//     synchronous blocking calls (hard rule: no sync net/disk on the render
+//     path), so a bounded, NAMED set of probe goroutines drains a bounded work
+//     channel and reports each result on a bounded result channel the render
+//     thread polls once per frame (tickContentJob). This keeps the wave-1
+//     "bounded in-flight window + hard wall-clock ceiling" discipline: the
+//     window is the worker count, and a dead origin still produces a report
+//     because probing stops at contentProbeHardCap.
+//   - One network probe per asset stays the law: ResolveRaw/FetchRaw go through
+//     T2 → T3 → source, and the 404-TTL + singleflight layers below dedupe, so
+//     nothing here re-probes.
+//   - Packaging runs in ONE goroutine (bounded 1-buffered delivery, generation-
+//     checked): it drains the already-probed bytes and writes the folder; disk
+//     writes happen in the goroutine, never on the render thread.
+//   - Cancel is safe at every phase: the job is replaced by generation, buffered
+//     channels always accept, and every spawned goroutine finishes and dies
+//     (never leaks blocked on a send).
+//
 // Everything except the render-thread poll is pure / headless-testable.
 
 import (
@@ -126,6 +159,7 @@ func (s AssetStatus) String() string {
 // AssetItem is one enumerated asset: a friendly Name (the bare AO reference the
 // recording carried, e.g. "Phoenix/normal" or "Objection.opus"), the resolved
 // or candidate URL, its probe Status, and the enumeration ref used to fetch it.
+// Cat groups it into a category for the report.
 type AssetItem struct {
 	Name   string
 	URL    string // resolved URL once found; the primary candidate before probing
@@ -265,6 +299,10 @@ func (cr *CategoryReport) recount() {
 // backgrounds/desks + music), then adds the SFX and chat-blip references
 // SceneAssets deliberately omits (it bundles only the spine) — those ARE part
 // of "everything a recording references", so the report enumerates them too.
+//
+// origin is the asset host resolved on the render thread (demoDefaultOrigin);
+// "" is honest and flagged (OriginMissing) rather than probed as all-missing.
+// Pure over its inputs so enumeration completeness unit-tests without SDL.
 func enumerateContent(origin, startBg string, events []courtroom.Event) *ContentReport {
 	r := &ContentReport{
 		Origin:        origin,
@@ -392,6 +430,7 @@ func FormatReport(r *ContentReport) []string {
 		// One honest word on how formats were resolved: an absent manifest means
 		// unlearned types were probed with the FULL format chain, so a .png/.gif
 		// server still resolved. Silent when the manifest applied (the normal case)
+		// or wasn't attempted (skipped) — no noise for the common path.
 		if note := seedStatusLine(r.Seed); note != "" {
 			out = append(out, note)
 		}
@@ -480,11 +519,6 @@ type contentJob struct {
 
 	// Package phase (one goroutine → render thread).
 	pkgDone chan contentPackageResult
-	// pkgCancel is closed by CancelContentJob so the writer stops early and deletes
-	// what it had written. Without it a cancelled job still finished the whole
-	// folder, and the user found a bundle they never asked to keep.
-	pkgCancel    chan struct{}
-	pkgCancelled bool // render thread only, guards the single close
 
 	// Auto-bundle (H2): set when this job was started by stopRecording's
 	// "recordings keep their assets" auto-build, NOT by a Studio panel. It changes
@@ -538,8 +572,13 @@ type contentPackageResult struct {
 // returning false so the caller can keep its button disabled. rec must be
 // non-nil; the origin comes from rec.Origin (the caller filled it via
 // demoDefaultOrigin on load), so this touches no other App fields.
+//
+// The report is enumerated synchronously here (pure + fast — no I/O), then the
+// probe work is fed to a bounded set of goroutines. If the origin is empty the
+// job short-circuits to phaseReport with everything StatusUnknown flagged
+// OriginMissing (nothing to probe).
 func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
-	if a.sel.contentBusy {
+	if a.contentBusy {
 		a.warnLine = "A content report / package is already running — let it finish first."
 		a.warnAt = time.Now()
 		return false
@@ -555,9 +594,9 @@ func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 	}
 	report := enumerateContent(rec.Origin, rec.StartBg, evs)
 
-	a.sel.contentGen++
+	a.contentGen++
 	j := &contentJob{
-		gen:     a.sel.contentGen,
+		gen:     a.contentGen,
 		stem:    sanitizeStem(stem),
 		report:  report,
 		created: time.Now(),
@@ -568,8 +607,8 @@ func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 		// Nothing to probe: the report is already complete (every item stays
 		// StatusUnknown, and OriginMissing tells the formatter to say so up front).
 		j.phase = phaseReport
-		a.sel.content = j
-		a.sel.contentBusy = true
+		a.content = j
+		a.contentBusy = true
 		a.warnLine = "No server recorded — nothing to check. See the report."
 		a.warnAt = time.Now()
 		return true
@@ -597,8 +636,8 @@ func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 	}
 	j.seedItems = items
 	j.seedMgr = a.d.Manager
-	a.sel.content = j
-	a.sel.contentBusy = true
+	a.content = j
+	a.contentBusy = true
 
 	// SEED FIRST when the origin is a network host and auto-detect is on: fetch
 	// <origin>/extensions.json and seed this host's learned formats BEFORE probing,
@@ -632,12 +671,16 @@ func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 // is nothing to package, and the flat .aorec already landed. Render thread only
 // (reads a.d.Manager/Prefs, spawns the seed/probe goroutines) — called AFTER
 // stopRecording's async .aorec write, so it never blocks or slows the stop.
+//
+// rec.Origin is the SESSION origin stamped at startRecording (a.urls.Origin() at
+// record start) — the right host even if the session later disconnected before
+// stop, so we read rec.Origin, not the live a.urls.
 func (a *App) startAutoBundle(rec *sceneRecording, stem string) {
-	if a.sel.contentBusy {
+	if a.contentBusy {
 		// A Studio report/package (or a prior auto-build) is mid-flight: skip quietly.
 		// Queuing would violate the single-flight/no-unbounded rule and stomping a
 		// user's manual report would be worse than silently declining the freebie.
-		a.debug.Push("recording auto-bundle: a content job is already running — skipped")
+		a.pushDebug("recording auto-bundle: a content job is already running — skipped")
 		return
 	}
 	if rec == nil || len(rec.Events) == 0 || strings.TrimSpace(rec.Origin) == "" {
@@ -653,9 +696,9 @@ func (a *App) startAutoBundle(rec *sceneRecording, stem string) {
 		return // defensive: TrimSpace above already guarded this — nothing to probe
 	}
 
-	a.sel.contentGen++
+	a.contentGen++
 	j := &contentJob{
-		gen:     a.sel.contentGen,
+		gen:     a.contentGen,
 		stem:    sanitizeStem(stem),
 		report:  report,
 		created: time.Now(),
@@ -681,8 +724,8 @@ func (a *App) startAutoBundle(rec *sceneRecording, stem string) {
 	}
 	j.seedItems = items
 	j.seedMgr = a.d.Manager
-	a.sel.content = j
-	a.sel.contentBusy = true
+	a.content = j
+	a.contentBusy = true
 
 	// Seed the recording's origin first when it's a network host with auto-detect
 	// on and not already seeded this session — an in-app recording's origin IS the
@@ -718,6 +761,9 @@ func (a *App) startContentSeed(j *contentJob) {
 
 // startProbePhase spins up the bounded probe fan-out (a feeder + contentProbeWorkers
 // workers) from the job's snapshotted seedItems, transitioning it into phaseProbing.
+// Called either directly (seeding skipped) or from tickContentSeed once the seed
+// lands and the resolver table is republished — so by the time a worker builds a
+// candidate, a seeded host's learned format is already live. Render thread only.
 func (a *App) startProbePhase(j *contentJob) {
 	j.phase = phaseProbing
 	// Bounded fan-out: a small feeder plus contentProbeWorkers workers. The
@@ -738,6 +784,8 @@ func (a *App) startProbePhase(j *contentJob) {
 	// finishContentProbe / CancelContentJob), so once the render thread stops
 	// draining resultCh — the hard-cap end, or a Cancel — the feeder and workers
 	// unblock immediately and die instead of leaking wedged on a full channel.
+	// Without that stop, a hard-cap end with > contentResultBuf un-drained items
+	// would strand every worker on its send forever.
 	j.probeLive.Add(1)
 	go func() {
 		defer j.probeLive.Add(-1)
@@ -799,6 +847,16 @@ func contentProbeWorker(mgr *assets.Manager, workCh <-chan contentProbeItem, res
 // concurrently (contentProbeWorkers), so the format one char's sprite wins via
 // RecordSuccess must NOT lock a sibling char of a different format out — the
 // sibling's learned-miss re-walks the full chain and is found at its own format.
+// A server whose sprites are .gif/.png but publishes no extensions.json is thus
+// found whether its formats are uniform or mixed, which the zero-fallback live
+// path deliberately won't do. It's still one network probe per candidate (404s
+// cached by the 404-TTL layer + collapsed by singleflight through FetchRaw), and
+// the winner is learned (RecordSuccess inside ResolveRawFull) so the export warm
+// right after this — AND any later re-report/re-export of the same demo — resolve
+// learned-first for the common single-format server. A found asset's URL is
+// exactly the origin-relative path a bundle writes. A transport failure (dead
+// host) surfaces as StatusUnreachable via the phase hard cap, distinct from a
+// real all-formats-404 (StatusMissing).
 func probeRef(mgr *assets.Manager, ref courtroom.AssetRef) (string, AssetStatus, bool) {
 	if mgr == nil {
 		return "", StatusUnreachable, false
@@ -812,6 +870,7 @@ func probeRef(mgr *assets.Manager, ref courtroom.AssetRef) (string, AssetStatus,
 		// Bounded, timeout-guarded fetch (a dead host must not stall a worker past
 		// the phase hard cap). A clean not-found is Missing; any other error is a
 		// transport fault → Unreachable (we never claim absence we didn't confirm).
+		// Empty-but-no-error is Missing.
 		ctx, cancel := context.WithTimeout(context.Background(), musicHTTPTimeout)
 		defer cancel()
 		data, err := mgr.FetchRaw(ctx, ref.Base)
@@ -870,7 +929,7 @@ func assetLikelyMissing(err error) bool {
 // no job runs (zero live-path cost). The UI agent calls this each frame while
 // its Studio panel is up; it is also registered in App.Update's poll list.
 func (a *App) tickContentJob() {
-	j := a.sel.content
+	j := a.content
 	if j == nil {
 		return
 	}
@@ -892,9 +951,9 @@ func (a *App) tickContentJob() {
 				// phaseReport by construction). It set its own honest warnLine; clear the
 				// job so contentBusy can't stick and wedge every future content job. The
 				// flat .aorec already landed, so nothing is lost.
-				a.debug.Push("recording auto-bundle: package could not start — " + a.warnLine)
-				a.sel.content = nil
-				a.sel.contentBusy = false
+				a.pushDebug("recording auto-bundle: package could not start — " + a.warnLine)
+				a.content = nil
+				a.contentBusy = false
 			}
 		}
 	case phasePackaging:
@@ -913,6 +972,9 @@ func (a *App) tickContentSeed(j *contentJob) {
 	select {
 	case res := <-j.seedDone:
 		// WarmFromPrefs on the RENDER thread (matches pollManifest discipline):
+		// SeedLearned wrote prefs off-thread; this publishes them into the resolver's
+		// atomic table before any candidate is built. The channel receive happens-
+		// before this, so the table is fully seeded when probing starts.
 		if res.status == seedApplied {
 			a.d.Resolver.WarmFromPrefs()
 		}
@@ -998,16 +1060,16 @@ func (a *App) finishContentProbe(j *contentJob, msg string) {
 // ContentReportReady reports whether a probed report is available to display
 // (probe finished; not yet or not being packaged). For the UI's panel gate.
 func (a *App) ContentReportReady() bool {
-	return a.sel.content != nil && a.sel.content.phase == phaseReport
+	return a.content != nil && a.content.phase == phaseReport
 }
 
 // ContentJobReport returns the current job's report (nil if none). Read-only for
 // the UI panel + the formatter; the render thread owns it.
 func (a *App) ContentJobReport() *ContentReport {
-	if a.sel.content == nil {
+	if a.content == nil {
 		return nil
 	}
-	return a.sel.content.report
+	return a.content.report
 }
 
 // CancelContentJob drops the running job at any phase, leak-free: it bumps the
@@ -1015,17 +1077,13 @@ func (a *App) ContentJobReport() *ContentReport {
 // job, and lets the buffered channels + closed workCh drain the workers to
 // death. Idempotent. Render thread only.
 func (a *App) CancelContentJob() {
-	if a.sel.content == nil {
+	if a.content == nil {
 		return
 	}
-	a.sel.contentGen++           // invalidate the dropped job's generation
-	a.sel.content.releaseProbe() // unblock any probe goroutines so they die (no leak)
-	if c := a.sel.content.pkgCancel; c != nil && !a.sel.content.pkgCancelled {
-		a.sel.content.pkgCancelled = true
-		close(c) // the package writer removes its partial folder and returns
-	}
-	a.sel.content = nil
-	a.sel.contentBusy = false
+	a.contentGen++           // invalidate the dropped job's generation
+	a.content.releaseProbe() // unblock any probe goroutines so they die (no leak)
+	a.content = nil
+	a.contentBusy = false
 }
 
 // ---------------------------------------------------------------------------
@@ -1039,8 +1097,9 @@ func (a *App) CancelContentJob() {
 // is written into the bundle as MISSING-CONTENT.txt (the gap list). Single-flight
 // (the same a.contentBusy job continues into packaging). rec supplies the events
 // + StartBg the bundled .aorec needs. Returns false if no probed report is ready.
+// Render thread only (spawns the goroutine; disk work happens inside it).
 func (a *App) PackageContentBundle(rec *sceneRecording) bool {
-	j := a.sel.content
+	j := a.content
 	if j == nil || j.phase != phaseReport {
 		a.warnLine = "Run the content report first, then package."
 		a.warnAt = time.Now()
@@ -1072,16 +1131,15 @@ func (a *App) PackageContentBundle(rec *sceneRecording) bool {
 
 	j.phase = phasePackaging
 	j.pkgDone = make(chan contentPackageResult, contentDoneBuf)
-	j.pkgCancel = make(chan struct{})
 	done := j.pkgDone
-	cancel := j.pkgCancel
 	stem := j.stem
-	// ONE bounded goroutine. Disk work (fetch-from-cache + write) happens HERE,
-	// never on the render thread. A Cancel closes cancel, so the writer stops at a
-	// file boundary and removes the partial folder: a dropped job must not leave a
-	// bundle behind, and its send still lands in the 1-slot buffer (no leak).
+	// ONE bounded goroutine. Generation isn't threaded through it: a Cancel nils
+	// a.content, so tickContentPackage never reads pkgDone again, and this send
+	// lands in the 1-slot buffer nobody polls — the goroutine finishes and dies
+	// (no leak). Disk work (fetch-from-cache + write) happens HERE, never on the
+	// render thread.
 	go func() {
-		done <- packageWriteBundle(mgr, destDir, stem, &recCopy, urls, reportLines, cancel) // 1-buffered: always accepts
+		done <- writeContentBundle(mgr, destDir, stem, &recCopy, urls, reportLines) // 1-buffered: always accepts
 	}()
 
 	if !j.auto { // an auto-build stays silent until its single completion toast
@@ -1114,10 +1172,15 @@ func (a *App) tickContentPackage(j *contentJob) {
 	select {
 	case res := <-j.pkgDone:
 		auto := j.auto
-		a.sel.content = nil
-		a.sel.contentBusy = false
+		a.content = nil
+		a.contentBusy = false
 		// The SINGLE toast for the whole auto-build (steps 3+4): on a clean success name
 		// the bundle folder in the recordings-relative form the other Studio toasts use.
+		// The size-cap abort returns dir != "" (a PARTIAL write) — don't claim a clean
+		// "packaged with its assets" for it; fall through to the writer's honest
+		// "Package stopped at the … cap" line instead. Any hard failure (dir == "")
+		// surfaces the writer's own message too. A manual Studio job always keeps the
+		// engine's verbose "Packaged N assets…" line as before.
 		if auto {
 			if res.dir != "" && !strings.Contains(res.msg, "size cap") {
 				a.warnLine = "Recording packaged with its assets — recordings\\" + filepath.Base(res.dir)
@@ -1132,51 +1195,16 @@ func (a *App) tickContentPackage(j *contentJob) {
 	}
 }
 
-// writeContentBundle writes the self-contained folder OFF the render thread.
+// writeContentBundle writes the self-contained folder OFF the render thread:
+// every found asset at its origin-relative path (archive layout), a bundled
+// .aorec, and the plain-text gap list. Byte-compatible with archive.ExportAssets
+// / beginBundledReplay. A running total-bytes counter enforces
+// contentPackageMaxBytes with an honest abort; per-file write errors are
+// collected (not fatal) so one bad path doesn't sink the whole bundle.
 func writeContentBundle(mgr *assets.Manager, destDir, stem string, rec *sceneRecording, foundURLs, reportLines []string) contentPackageResult {
-	return writeContentBundleCancel(mgr, destDir, stem, rec, foundURLs, reportLines, nil)
-}
-
-// packageCancelled reports whether the job's cancel channel has been closed. A nil
-// channel (the direct-writer path the tests use) never cancels.
-func packageCancelled(cancel <-chan struct{}) bool {
-	if cancel == nil {
-		return false
-	}
-	select {
-	case <-cancel:
-		return true
-	default:
-		return false
-	}
-}
-
-// removePartial deletes a folder the writer created, and only then: a pre-existing
-// folder may hold the user's files, and a cancel must never take those.
-func removePartial(destDir string, created bool) {
-	if created {
-		_ = os.RemoveAll(destDir)
-	}
-}
-
-// packageWriteBundle is the writer the package goroutine runs. A test swaps it to
-// observe cancellation without depending on disk timing.
-var packageWriteBundle = writeContentBundleCancel
-
-// deletes the partial folder and says so, because a dropped job must not leave a
-// bundle behind for the user to find.
-func writeContentBundleCancel(mgr *assets.Manager, destDir, stem string, rec *sceneRecording, foundURLs, reportLines []string, cancel <-chan struct{}) contentPackageResult {
-	if packageCancelled(cancel) {
-		return contentPackageResult{msg: "Packaging cancelled."}
-	}
-	// A pre-existing folder can hold the user's own files: only a folder THIS writer
-	// created may be removed on cancel.
-	_, statErr := os.Stat(destDir)
-	created := os.IsNotExist(statErr)
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return contentPackageResult{msg: "Package failed: " + err.Error()}
 	}
-	dropPartial := func() { removePartial(destDir, created) }
 	origin := rec.Origin
 	var (
 		written  int
@@ -1186,9 +1214,6 @@ func writeContentBundleCancel(mgr *assets.Manager, destDir, stem string, rec *sc
 		formats  = make(map[string]string)
 	)
 	for _, url := range foundURLs {
-		if packageCancelled(cancel) {
-			break
-		}
 		rel, under := strings.CutPrefix(url, origin)
 		if !under {
 			skipped++ // external host (a direct http music link) — not part of THIS origin
@@ -1196,6 +1221,9 @@ func writeContentBundleCancel(mgr *assets.Manager, destDir, stem string, rec *sc
 		}
 		rel = strings.TrimPrefix(rel, "/")
 		// Re-drain the bytes from the cache tiers the probe already filled (T2/T3):
+		// this is a cache hit, not a second network probe (one-probe-per-asset holds).
+		// A cache/transport miss here (a rare T2+T3 eviction on a huge scene) is a
+		// per-file error, not fatal — the rest of the bundle still writes.
 		data, err := fetchBundleBytes(mgr, url)
 		if err != nil {
 			writeErr++
@@ -1233,10 +1261,6 @@ func writeContentBundleCancel(mgr *assets.Manager, destDir, stem string, rec *sc
 	// landed. A failure here is therefore a HARD failure (dir:"" per the field doc),
 	// not a soft per-file writeErr like a stray asset: reporting "Packaged N assets…"
 	// for a folder that can never replay would be a lie.
-	if packageCancelled(cancel) {
-		dropPartial()
-		return contentPackageResult{msg: "Packaging cancelled."}
-	}
 	out := *rec
 	out.Bundled = true
 	out.Formats = formats
@@ -1310,6 +1334,8 @@ func writeBundleFile(destDir, rel string, data []byte) error {
 // assetTypeFromBundlePath infers the AssetType of a bundled file from its
 // origin-relative directory (characters/ → CharSprite, background/ →
 // Background), so the Formats manifest can seed a bundled replay's resolver.
+// Audio dirs return false (audio carries its own extension; the resolver
+// doesn't format-probe it). Best-effort — an unknown path just omits a hint.
 func assetTypeFromBundlePath(rel string) (assets.AssetType, bool) {
 	switch {
 	case strings.HasPrefix(rel, "characters/"):

@@ -85,15 +85,15 @@ func TestFramePace(t *testing.T) {
 	if got := a.FramePace(true); got != budget(60) {
 		t.Errorf("post-input pace = %v, want the 60 fps active budget", got)
 	}
-	a.frame.lastInputAt = time.Now().Add(-2 * time.Second) // grace expired (max hold is ~1s)
+	a.lastInputAt = time.Now().Add(-2 * time.Second) // grace expired (max hold is ~1s)
 
 	// A live animation surface forces the full cap even with no input (the
 	// replay transport here; the same branch covers maker/export/voice/toasts).
-	a.sel.replaying = true
+	a.replaying = true
 	if got := a.FramePace(true); got != budget(60) {
 		t.Errorf("replaying pace = %v, want the full cap", got)
 	}
-	a.sel.replaying = false
+	a.replaying = false
 
 	// Custom rates flow through: the classic idle tier follows the idle slider,
 	// the active cap follows the active slider.
@@ -150,8 +150,8 @@ func TestFramePace(t *testing.T) {
 	}
 
 	// The perf HUD's scrolling graph keeps full rate.
-	a.frame.lastInputAt = time.Time{}
-	a.budget.perfHUD = true
+	a.lastInputAt = time.Time{}
+	a.perfHUD = true
 	if got := a.FramePace(true); got != budget(120) {
 		t.Errorf("perf-HUD pace = %v, want the full cap", got)
 	}
@@ -164,14 +164,14 @@ func TestFramePace(t *testing.T) {
 // / maker / export drive their own rooms, and a static room stays idle.
 func TestAudioPaceActive(t *testing.T) {
 	a := testTabApp(t)
-	a.link.room = newRoomForTest(t) // a real room: HandleEvent runs the full begin() path
+	a.room = newRoomForTest(t) // a real room: HandleEvent runs the full begin() path
 
 	if a.AudioActive() {
 		t.Fatal("an idle room (no message) must not be audio-active")
 	}
-	a.link.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(3, "Phoenix", "hello there")})
+	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(3, "Phoenix", "hello there")})
 	if !a.AudioActive() {
-		t.Fatalf("a typing room must be audio-active (phase %v)", a.link.room.Phase())
+		t.Fatalf("a typing room must be audio-active (phase %v)", a.room.Phase())
 	}
 
 	// Budget at/under the fine tick: nothing to spread → don't audio-pace.
@@ -184,14 +184,14 @@ func TestAudioPaceActive(t *testing.T) {
 	}
 
 	// Replay drives its own room: the live room is excluded from audio pacing.
-	a.sel.replaying = true
+	a.replaying = true
 	if a.AudioActive() || a.AudioPaceActive(time.Second) {
 		t.Error("replay must exclude the live room from audio pacing")
 	}
-	a.sel.replaying = false
+	a.replaying = false
 
 	// A nil room is never audio-active (lobby).
-	a.link.room = nil
+	a.room = nil
 	if a.AudioActive() || a.AudioPaceActive(time.Second) {
 		t.Error("a nil room (lobby) must not audio-pace")
 	}
@@ -287,30 +287,30 @@ func TestHardCapBudget(t *testing.T) {
 // (the "the chat log jumps then stops" report). A settled offset or a 1:1
 // scrollbar-drag snap marks nothing.
 func TestEaseICScrollAnimates(t *testing.T) {
-	a := &App{env: env{}}
-	a.chatlog.frameDtMs = 16 // frame-rate-independent ease constant (promoted from sessionState)
+	a := &App{}
+	a.frameDtMs = 16 // frame-rate-independent ease constant (promoted from sessionState)
 
 	// Target far from the visual offset → still easing → animates, advancing partway.
-	a.chatlog.icScroll, a.chatlog.icScrollVis, a.frame.frameAnimChrome = 500, 0, false
-	if got := a.easeICScroll(1000, false); got <= 0 || a.chatlog.icScrollVis >= 500 {
-		t.Errorf("ease should advance partway toward the target, got %v (vis=%v)", got, a.chatlog.icScrollVis)
+	a.icScroll, a.icScrollVis, a.frameAnimChrome = 500, 0, false
+	if got := a.easeICScroll(1000, false); got <= 0 || a.icScrollVis >= 500 {
+		t.Errorf("ease should advance partway toward the target, got %v (vis=%v)", got, a.icScrollVis)
 	}
-	if !a.frame.frameAnimChrome {
+	if !a.frameAnimChrome {
 		t.Error("mid-ease must mark frameAnimChrome so the glide keeps rendering at idle=0")
 	}
 
 	// Settled within the deadband → no animation.
-	a.chatlog.icScroll, a.chatlog.icScrollVis, a.frame.frameAnimChrome = 500, 500, false
+	a.icScroll, a.icScrollVis, a.frameAnimChrome = 500, 500, false
 	a.easeICScroll(1000, false)
-	if a.frame.frameAnimChrome {
+	if a.frameAnimChrome {
 		t.Error("a settled scroll must not keep rendering")
 	}
 
 	// A scrollbar drag snaps 1:1 (no ease) → no animation even when far from target.
-	a.chatlog.icScroll, a.chatlog.icScrollVis, a.frame.frameAnimChrome = 0, 500, false
+	a.icScroll, a.icScrollVis, a.frameAnimChrome = 0, 500, false
 	a.easeICScroll(1000, true)
-	if a.frame.frameAnimChrome || a.chatlog.icScrollVis != 0 {
-		t.Errorf("a 1:1 drag snap must pin vis to target and not animate (vis=%v anim=%v)", a.chatlog.icScrollVis, a.frame.frameAnimChrome)
+	if a.frameAnimChrome || a.icScrollVis != 0 {
+		t.Errorf("a 1:1 drag snap must pin vis to target and not animate (vis=%v anim=%v)", a.icScrollVis, a.frameAnimChrome)
 	}
 }
 
@@ -320,7 +320,7 @@ func TestEaseICScrollAnimates(t *testing.T) {
 // per frame keeps every blip boundary on its own frame — and never faster than
 // the user's cap.
 func TestTalkBudget(t *testing.T) {
-	a := &App{env: env{}}
+	a := &App{}
 	full := paceBudget(60)
 
 	// No room: the flat staticTalkFPS cadence.
@@ -329,21 +329,21 @@ func TestTalkBudget(t *testing.T) {
 	}
 
 	// A faster typewriter tightens the budget to its rune interval.
-	a.link.room = &courtroom.Courtroom{}
-	a.link.room.Typewriter.Interval = 20 * time.Millisecond
+	a.room = &courtroom.Courtroom{}
+	a.room.Typewriter.Interval = 20 * time.Millisecond
 	if got := a.talkBudget(full); got != 20*time.Millisecond {
 		t.Fatalf("fast text talk budget = %v, want the 20ms rune interval", got)
 	}
 
 	// …but never past the frame cap.
-	a.link.room.Typewriter.Interval = 5 * time.Millisecond
+	a.room.Typewriter.Interval = 5 * time.Millisecond
 	if got := a.talkBudget(full); got != full {
 		t.Fatalf("talk budget must floor at the cap budget: got %v, want %v", got, full)
 	}
 
 	// A slower typewriter than staticTalkFPS keeps the base cadence (the crawl
 	// doesn't need MORE frames, but motion between runes still reads smoother).
-	a.link.room.Typewriter.Interval = 200 * time.Millisecond
+	a.room.Typewriter.Interval = 200 * time.Millisecond
 	if got, want := a.talkBudget(full), paceBudget(staticTalkFPS); got != want {
 		t.Fatalf("slow text talk budget = %v, want the base %v", got, want)
 	}
@@ -371,7 +371,7 @@ func TestFramePaceUnfocusedFollowsAnim(t *testing.T) {
 		t.Skipf("texture store unavailable: %v", err)
 	}
 	a := testTabApp(t)
-	a.link.room = &courtroom.Courtroom{}
+	a.room = &courtroom.Courtroom{}
 	a.d.Viewport = render.NewViewport(store)
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.UnfocusedFPSVal = 10 }) // pin the unfocused cap (shipped default is now 5)
 	budget := func(fps int) time.Duration { return time.Second / time.Duration(fps) }
@@ -390,9 +390,9 @@ func TestFramePaceUnfocusedFollowsAnim(t *testing.T) {
 	if err := store.Upload("anim://speaker", dec); err != nil {
 		t.Fatalf("upload: %v", err)
 	}
-	a.link.room.Scene.Speaker.Visible = true
-	a.link.room.Scene.Speaker.Active = "anim://speaker"
-	a.d.Viewport.Update(&a.link.room.Scene, 0) // bind the page (fresh frame: full 80 ms due)
+	a.room.Scene.Speaker.Visible = true
+	a.room.Scene.Speaker.Active = "anim://speaker"
+	a.d.Viewport.Update(&a.room.Scene, 0) // bind the page (fresh frame: full 80 ms due)
 
 	if got := a.FramePace(false); got != 80*time.Millisecond {
 		t.Errorf("unfocused pace with a live 80ms loop = %v, want the 80ms flip cadence", got)
@@ -418,9 +418,9 @@ func animSpeaker(t *testing.T, store *render.TextureStore, a *App, base string, 
 	if err := store.Upload(base, dec); err != nil {
 		t.Fatalf("upload %s: %v", base, err)
 	}
-	a.link.room.Scene.Speaker.Visible = true
-	a.link.room.Scene.Speaker.Active = base
-	a.d.Viewport.Update(&a.link.room.Scene, 0) // bind the page (fresh frame: full delay due)
+	a.room.Scene.Speaker.Visible = true
+	a.room.Scene.Speaker.Active = base
+	a.d.Viewport.Update(&a.room.Scene, 0) // bind the page (fresh frame: full delay due)
 }
 
 // TestFramePaceCeremonyBeatsSlowAnim is the regression test for the "text
@@ -437,7 +437,7 @@ func TestFramePaceCeremonyBeatsSlowAnim(t *testing.T) {
 		t.Skipf("texture store unavailable: %v", err)
 	}
 	a := testTabApp(t)
-	a.link.room = newRoomForTest(t) // a real room: enqueue runs the full begin() path
+	a.room = newRoomForTest(t) // a real room: enqueue runs the full begin() path
 	a.d.Viewport = render.NewViewport(store)
 	a.d.Prefs.Update(func(
 		sn *config.
@@ -463,11 +463,11 @@ func TestFramePaceCeremonyBeatsSlowAnim(t *testing.T) {
 	// A message starts. Pin the typewriter to a plain 30 fps-ish crawl (the
 	// default 18 ms interval would tighten the tier below the point) and
 	// re-bind the slow speaker loop (begin() re-drives the scene).
-	a.link.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(1, "Witch", "the text must keep crawling")})
+	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(1, "Witch", "the text must keep crawling")})
 	if !a.roomBusy() {
 		t.Fatal("test setup: the message never started a ceremony")
 	}
-	a.link.room.Typewriter.Interval = 50 * time.Millisecond
+	a.room.Typewriter.Interval = 50 * time.Millisecond
 	animSpeaker(t, store, a, "anim://slowtalk", 200*time.Millisecond)
 	if got, want := a.FramePace(true), paceBudget(staticTalkFPS); got != want {
 		t.Errorf("ceremony over a slow animated speaker paces at %v, want the talk tier %v (the text-at-idle-fps bug)", got, want)
@@ -504,7 +504,7 @@ func TestFramePaceUnlimited(t *testing.T) {
 	if got := a.FramePace(true); got != 0 {
 		t.Errorf("unlimited cap while interacting = %v, want 0 (uncapped)", got)
 	}
-	a.frame.lastInputAt = time.Time{}
+	a.lastInputAt = time.Time{}
 
 	// ∞ idle rate = "as fast as the active cap" (the Settings tooltip's own
 	// words): the tier resolves THROUGH the cap, so a finite cap keeps ruling —
@@ -678,7 +678,7 @@ func TestFramePaceAnimatedChrome(t *testing.T) {
 	})
 
 	// a low idle rate that must NOT throttle the animation
-	a.frame.drawnAnimChrome = true
+	a.drawnAnimChrome = true
 
 	if got := a.FramePace(true); got != paceBudget(60) {
 		t.Errorf("event-driven animated chrome = %v, want the active cap (not the idle rate)", got)
@@ -762,7 +762,7 @@ func TestWantsFullRateStateGated(t *testing.T) {
 	if a.wantsFullRate() {
 		t.Fatal("an open-but-idle voice panel must not hold full rate")
 	}
-	a.link.voiceJoined = true
+	a.voiceJoined = true
 	if !a.wantsFullRate() {
 		t.Fatal("a live voice call needs full rate")
 	}
@@ -800,12 +800,12 @@ func TestSkipFrameClassicCaret(t *testing.T) {
 	})
 
 	// no classic idle heartbeat in this test
-	a.link.room = &courtroom.Courtroom{}
-	a.link.sess = &courtroom.Session{}
-	a.frame.lastInputAt, a.frame.lastMotionAt = time.Time{}, time.Time{}
+	a.room = &courtroom.Courtroom{}
+	a.sess = &courtroom.Session{}
+	a.lastInputAt, a.lastMotionAt = time.Time{}, time.Time{}
 	a.ctx.focusID = "ic-input"
 	a.ctx.caretOn = true
-	a.frame.drawnCaretOn = true // the blink state already on screen
+	a.drawnCaretOn = true // the blink state already on screen
 	if !a.SkipFrame(true, false) {
 		t.Fatal("a focused-but-unflipped caret must skip (the blanket focus refusal was the classic render spin)")
 	}
@@ -844,7 +844,7 @@ func TestMotionGrace(t *testing.T) {
 	if !a.wantsFullRate() {
 		t.Error("per-event redraw off: a moving pointer must render at full rate")
 	}
-	a.frame.lastMotionAt = time.Now().Add(-2 * motionInputGrace)
+	a.lastMotionAt = time.Now().Add(-2 * motionInputGrace)
 	if a.wantsFullRate() {
 		t.Error("a stopped pointer must release full rate after the short motion grace")
 	}
@@ -862,7 +862,7 @@ func TestMotionGrace(t *testing.T) {
 	})
 
 	a.NoteMotion()
-	if time.Since(a.frame.lastInputAt) > time.Second {
+	if time.Since(a.lastInputAt) > time.Second {
 		t.Error("classic mode: NoteMotion must stamp the full input grace")
 	}
 }

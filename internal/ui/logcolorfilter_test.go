@@ -48,34 +48,34 @@ func TestICEntryUsesColor(t *testing.T) {
 // it narrows to the entries that use the selected colour and invalidates the
 // cache on every colour change (back to "Any color" restores the full set).
 func TestICLogFilterColor(t *testing.T) {
-	a := &App{env: env{}}
+	a := &App{}
 	a.pushIC("Phoenix: hello court", 0, false, -1, "Phoenix")   // white, no inline
 	a.pushIC("Edgeworth: OBJECTION", 2, false, -1, "Edgeworth") // red message colour
 	a.pushIC("Maya: green fact", 0, false, -1, "Maya")
-	a.chatlog.icLog[2].styles = []courtroom.StyleRun{{Len: 11, Color: 1}} // inline green span
+	a.icLog[2].styles = []courtroom.StyleRun{{Len: 11, Color: 1}} // inline green span
 	a.pushIC("Gumshoe: rainbow", 0, false, -1, "Gumshoe")
-	a.chatlog.icLog[3].styles = []courtroom.StyleRun{{Len: 7, Color: courtroom.ColorRainbow}}
+	a.icLog[3].styles = []courtroom.StyleRun{{Len: 7, Color: courtroom.ColorRainbow}}
 
 	if got := a.icLogFiltered(); len(got) != 4 {
 		t.Fatalf("unfiltered = %d, want 4", len(got))
 	}
 
-	a.chatlog.logFilterColor = logColorFilterStdFirst + 2 // Red
+	a.logFilterColor = logColorFilterStdFirst + 2 // Red
 	if got := a.icLogFiltered(); len(got) != 1 || got[0] != 1 {
 		t.Errorf("red filter = %v, want [1]", got)
 	}
 
-	a.chatlog.logFilterColor = logColorFilterStdFirst + 1 // Green
+	a.logFilterColor = logColorFilterStdFirst + 1 // Green
 	if got := a.icLogFiltered(); len(got) != 1 || got[0] != 2 {
 		t.Errorf("green filter = %v, want [2]", got)
 	}
 
-	a.chatlog.logFilterColor = logColorFilterRainbow
+	a.logFilterColor = logColorFilterRainbow
 	if got := a.icLogFiltered(); len(got) != 1 || got[0] != 3 {
 		t.Errorf("rainbow filter = %v, want [3]", got)
 	}
 
-	a.chatlog.logFilterColor = logColorFilterAny
+	a.logFilterColor = logColorFilterAny
 	if got := a.icLogFiltered(); len(got) != 4 {
 		t.Errorf("any-color reset = %d, want 4 (cache must invalidate on colour change)", len(got))
 	}

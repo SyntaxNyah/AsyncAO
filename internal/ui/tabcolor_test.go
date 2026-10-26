@@ -8,7 +8,7 @@ import "testing"
 func TestCycleTabColor(t *testing.T) {
 	a := testTabApp(t)
 	a.activeTab = 0
-	a.srvMeta.serverKey = "ws://x:50001" // tabKey(0) == serverKey for the active tab
+	a.serverKey = "ws://x:50001" // tabKey(0) == serverKey for the active tab
 
 	a.cycleTabColor(0)
 	if a.tabColors["ws://x:50001"] != 1 {
@@ -30,7 +30,7 @@ func TestCycleTabColor(t *testing.T) {
 	}
 
 	// Unkeyed tab: no-op (never panics, never colours).
-	a.srvMeta.serverKey = ""
+	a.serverKey = ""
 	a.cycleTabColor(0)
 	if len(a.tabColors) != 0 {
 		t.Error("an unkeyed tab must not get a colour")

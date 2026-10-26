@@ -89,9 +89,12 @@ func parseCover(data []byte) *sfnt.Font {
 // (fontcensus.go) supplies anything else on demand, from whatever is actually
 // installed. Absent files are skipped, so an unusual install just leans on the
 // census sooner.
+//
 // Every OS gets a list. Returning nil off Windows — which this used to do — left
 // macOS and Linux with nothing but the embedded 744-glyph Latin face, so Cyrillic,
 // Greek, Hebrew, Arabic, every Indic script and all of CJK were permanently tofu
+// there. Those paths cannot be verified from a Windows dev box; the census is the
+// safety net that makes a wrong guess harmless rather than fatal.
 func fallbackFontCandidates() []string {
 	switch runtime.GOOS {
 	case "windows":
@@ -136,15 +139,15 @@ func fallbackFontCandidates() []string {
 // called each frame, kicks the read on the first. Eager (not lazy like the emoji
 // face): script gaps are common, so we want coverage from the start.
 func (a *App) ensureFallbackFontLoad() {
-	if a.font.fallbackLoadStarted {
+	if a.fallbackLoadStarted {
 		return
 	}
-	a.font.fallbackLoadStarted = true
+	a.fallbackLoadStarted = true
 	cands := fallbackFontCandidates()
 	if len(cands) == 0 {
 		return
 	}
-	ch := a.font.fallbackFontRes
+	ch := a.fallbackFontRes
 	go func() {
 		var data [][]byte
 		for _, p := range cands {
@@ -167,9 +170,9 @@ func (a *App) ensureFallbackFontLoad() {
 // repaints with coverage.
 func (a *App) pollFallbackFont() {
 	select {
-	case data := <-a.font.fallbackFontRes:
+	case data := <-a.fallbackFontRes:
 		a.ctx.SetFallbackFonts(data)
-		a.raster.rasterText = "" // re-raster the visible message with the broader coverage
+		a.rasterText = "" // re-raster the visible message with the broader coverage
 	default:
 	}
 }
@@ -182,6 +185,12 @@ func (a *App) pollFallbackFont() {
 // YaHei's heavier, Simplified-shaped, uniform-width CJK glyphs — the "monospace-looking
 // legacy face" the user reported. A modern proportional Japanese Gothic (Yu Gothic /
 // Meiryo) must win instead.
+//
+// .ttc note: memFont opens face index 0 (OpenFontRW hardwires index 0). Index 0 of
+// YuGothR.ttc is "Yu Gothic Regular" — already a modern proportional Japanese Gothic (the
+// "Yu Gothic UI" faces live at higher indices in the same collection, but the non-UI face
+// at index 0 is the right modern look and needs no index support we don't have). Meiryo's
+// index 0 is "Meiryo" likewise. So the non-UI family at index 0 is deliberately used.
 var cjkHanCandidates = []string{
 	`C:\Windows\Fonts\YuGothM.ttc`,             // Yu Gothic Medium — modern proportional Japanese (best JP)
 	`C:\Windows\Fonts\YuGothR.ttc`,             // Yu Gothic Regular — modern proportional Japanese
@@ -276,11 +285,11 @@ func fileReadable(p string) bool {
 // set — if CJK detection shared that guard it would die silently after the first
 // accent and never fire.
 func (a *App) ensureCJKFontLoad() {
-	if a.font.cjkLoadStarted {
+	if a.cjkLoadStarted {
 		return
 	}
-	a.font.cjkLoadStarted = true
-	ch := a.font.cjkFontRes
+	a.cjkLoadStarted = true
+	ch := a.cjkFontRes
 	go func() {
 		var data [][]byte
 		for _, p := range cjkFontList() {
@@ -302,9 +311,9 @@ func (a *App) ensureCJKFontLoad() {
 // re-rastering the visible message so a previously-tofu CJK name/line repaints.
 func (a *App) pollCJKFont() {
 	select {
-	case data := <-a.font.cjkFontRes:
+	case data := <-a.cjkFontRes:
 		a.ctx.SetCJKFonts(data)
-		a.raster.rasterText = ""
+		a.rasterText = ""
 	default:
 	}
 }

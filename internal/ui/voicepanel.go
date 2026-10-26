@@ -43,7 +43,7 @@ const voiceBuilt = true
 // voiceOfferable reports whether to show any voice surface: a live session whose
 // server advertised voice (VS_CAPS.enabled). This single check is the gate.
 func (a *App) voiceOfferable() bool {
-	return a.link.sess != nil && a.link.sess.VoiceAvailable()
+	return a.sess != nil && a.sess.VoiceAvailable()
 }
 
 func (a *App) toggleVoice() { a.showVoice = !a.showVoice }
@@ -53,25 +53,25 @@ func (a *App) toggleVoice() { a.showVoice = !a.showVoice }
 // accent "Voice ✓" when you're in voice (mic off), plain green when available.
 func (a *App) voiceButtonState() (label string, border sdl.Color) {
 	switch {
-	case a.link.voiceJoined && a.link.voiceMicOn:
+	case a.voiceJoined && a.voiceMicOn:
 		return "● Voice", ColDanger // transmitting
-	case a.link.voiceJoined:
+	case a.voiceJoined:
 		return "Voice ✓", ColAccent // in voice, not talking
 	default:
 		return "Voice", ColTierGreen // available here
 	}
 }
 
-func (classic1 *classicState) voicePanelRect(e *env, w, h int32) sdl.Rect {
-	if r, ok := classic1.seedPanelFromSlot(&e.wins.voiceWin, slotPanelVoice, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, w, h); ok {
+func (a *App) voicePanelRect(w, h int32) sdl.Rect {
+	if r, ok := a.seedPanelFromSlot(&a.voiceWin, slotPanelVoice, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, w, h); ok {
 		return r
 	}
-	if !e.wins.voiceWin.placed {
+	if !a.voiceWin.placed {
 		dw := clampI32(voicePanelDefW, voicePanelMinW, w-2*floatWinMargin)
 		dh := clampI32(voicePanelDefH, voicePanelMinH, h-2*floatWinMargin)
 		return sdl.Rect{X: w - dw - floatWinMargin, Y: floatTitleH, W: dw, H: dh}
 	}
-	return e.wins.voiceWin.rect(voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, w, h)
+	return a.voiceWin.rect(voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, w, h)
 }
 
 // voicePeerName resolves a voice peer uid to a display name via the live roster,
@@ -100,15 +100,15 @@ func (a *App) voicePeerName(uid int) string {
 // is fail-safe — if no audio device is available we stay joined for PRESENCE
 // (you still appear in voice and see others), just without sound.
 func (a *App) voiceJoinChannel() {
-	if a.link.sess == nil || a.link.voiceJoined {
+	if a.sess == nil || a.voiceJoined {
 		return
 	}
-	a.link.sess.VoiceJoin()
-	a.link.voiceJoined = true
+	a.sess.VoiceJoin()
+	a.voiceJoined = true
 	if a.voiceAudio == nil {
 		eng, err := newVoiceEngine(func(b64 string) {
-			if a.link.sess != nil {
-				a.link.sess.VoiceFrame(b64) // single send path: main loop only
+			if a.sess != nil {
+				a.sess.VoiceFrame(b64) // single send path: main loop only
 			}
 		}, a.d.Prefs.Load().VoiceInputDevice, a.d.Prefs.Load().VoiceOutVol())
 		if err == nil {
@@ -119,26 +119,26 @@ func (a *App) voiceJoinChannel() {
 
 // voiceLeaveChannel leaves voice and tears down the audio engine.
 func (a *App) voiceLeaveChannel() {
-	if a.link.sess != nil {
-		if a.link.voiceMicOn {
-			a.link.sess.VoiceSpeak(false)
+	if a.sess != nil {
+		if a.voiceMicOn {
+			a.sess.VoiceSpeak(false)
 		}
-		a.link.sess.VoiceLeave()
+		a.sess.VoiceLeave()
 	}
-	a.link.voiceMicOn = false
-	a.link.voiceJoined = false
+	a.voiceMicOn = false
+	a.voiceJoined = false
 	a.stopVoiceAudio()
 }
 
 // voiceSetMic flips transmit on/off — both the engine (capture) and the wire
 // (VS_SPEAK so peers see your speaking state).
 func (a *App) voiceSetMic(on bool) {
-	a.link.voiceMicOn = on
+	a.voiceMicOn = on
 	if a.voiceAudio != nil {
 		a.voiceAudio.setMic(on)
 	}
-	if a.link.sess != nil {
-		a.link.sess.VoiceSpeak(on)
+	if a.sess != nil {
+		a.sess.VoiceSpeak(on)
 	}
 }
 
@@ -169,11 +169,11 @@ func (a *App) voiceOnAudio(uid int, b64 string) { a.voiceAudio.pushRemote(uid, b
 // voiceReconcilePeers drops decoders for peers who have left voice (VS_LEAVE /
 // VS_PEERS), keeping the engine's peer set in step with the session's.
 func (a *App) voiceReconcilePeers() {
-	if a.voiceAudio == nil || a.link.sess == nil {
+	if a.voiceAudio == nil || a.sess == nil {
 		return
 	}
 	live := map[int]bool{}
-	for _, uid := range a.link.sess.VoicePeers() {
+	for _, uid := range a.sess.VoicePeers() {
 		live[uid] = true
 	}
 	for uid := range a.voiceAudio.peers {
@@ -200,13 +200,13 @@ func (a *App) voicePeerChar(uid int) string {
 // press edge from drawFloatingPanels.
 func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 	c := a.ctx
-	wasActive := a.wins.voiceWin.dragging || a.wins.voiceWin.resizing // detect the drag/resize-end frame for slot persistence
-	r := a.classic.voicePanelRect(&a.env, w, h)
+	wasActive := a.voiceWin.dragging || a.voiceWin.resizing // detect the drag/resize-end frame for slot persistence
+	r := a.voicePanelRect(w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)
 	c.Heading(r.X+pad, r.Y+6, "Voice", ColText)
-	if a.link.voiceJoined && a.link.voiceMicOn { // your mic is live → a red transmit indicator
+	if a.voiceJoined && a.voiceMicOn { // your mic is live → a red transmit indicator
 		c.Label(r.X+pad+58, r.Y+6, "● MIC LIVE", ColDanger)
 	}
 	closeB := sdl.Rect{X: r.X + r.W - 70 - pad, Y: r.Y + 3, W: 70, H: btnH}
@@ -214,12 +214,12 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 		a.showVoice = false
 		return
 	}
-	a.floatWinDrag(&a.wins.voiceWin, sdl.Rect{X: r.X, Y: r.Y, W: closeB.X - r.X - 4, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.voiceWin, sdl.Rect{X: r.X, Y: r.Y, W: closeB.X - r.X - 4, H: floatTitleH}, pressed)
 	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.wins.voiceWin, grip, r, voicePanelMinW, voicePanelMinH, pressed)
+	a.floatWinResize(&a.voiceWin, grip, r, voicePanelMinW, voicePanelMinH, pressed)
 	a.drawResizeGrip(grip)
-	if wasActive && !a.wins.voiceWin.dragging && !a.wins.voiceWin.resizing { // drag/resize just ended → remember where
-		a.classic.persistPanelSlot(&a.env, slotPanelVoice, r, w, h)
+	if wasActive && !a.voiceWin.dragging && !a.voiceWin.resizing { // drag/resize just ended → remember where
+		a.persistPanelSlot(slotPanelVoice, r, w, h)
 	}
 
 	x := r.X + pad
@@ -232,7 +232,7 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 	}
 
 	// Join / Leave + (when joined) your speak toggle.
-	if !a.link.voiceJoined {
+	if !a.voiceJoined {
 		if c.Button(sdl.Rect{X: x, Y: y, W: 130, H: btnH}, "Join voice") {
 			a.voiceJoinChannel()
 		}
@@ -244,7 +244,7 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 		}
 		canTalk := a.voiceAudio.canTalk()
 		talk := "Talk: off"
-		if a.link.voiceMicOn {
+		if a.voiceMicOn {
 			talk = "Talk: ON"
 		}
 		if !canTalk {
@@ -255,7 +255,7 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 			tw = 90
 		}
 		if c.Button(sdl.Rect{X: x + 140, Y: y, W: tw, H: btnH}, talk) && canTalk {
-			a.voiceSetMic(!a.link.voiceMicOn)
+			a.voiceSetMic(!a.voiceMicOn)
 		}
 		y += btnH + 6
 		// Output volume + mute (listen controls).
@@ -282,21 +282,21 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 		y += btnH + 6
 	}
 	// Status line: presence-only when the engine couldn't start (no audio device).
-	if a.link.voiceJoined && a.voiceAudio == nil {
+	if a.voiceJoined && a.voiceAudio == nil {
 		c.LabelClipped(x, y, right-x, "Audio unavailable on this device — presence only (no sound).", ColTierYellow)
 		y += 18
 	}
 
 	// Peer list with live speaking indicators.
-	caps := a.link.sess.VoiceCapsInfo()
-	hdr := "In voice (" + strconv.Itoa(a.link.sess.VoicePeerCount()) + ")"
+	caps := a.sess.VoiceCapsInfo()
+	hdr := "In voice (" + strconv.Itoa(a.sess.VoicePeerCount()) + ")"
 	if caps.MaxPeers > 0 {
 		hdr += " / max " + strconv.Itoa(caps.MaxPeers)
 	}
 	c.Label(x, y, hdr, ColTextDim)
 	// Voice-latency chip: the output buffer depth (ms) we're adding — grows when the
 	// adaptive jitter buffer deepens on a shaky connection, shrinks when it's smooth.
-	if a.link.voiceJoined && a.voiceAudio != nil {
+	if a.voiceJoined && a.voiceAudio != nil {
 		lat := a.voiceAudio.bufferMs()
 		latCol := ColTierGreen
 		if lat > 120 {
@@ -308,7 +308,7 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 		c.Label(right-90, y, "~"+strconv.Itoa(lat)+" ms", latCol)
 	}
 	y += 18
-	peers := a.link.sess.VoicePeers()
+	peers := a.sess.VoicePeers()
 	sort.Ints(peers)
 	me := a.myUID()
 	const vIcon = int32(20) // char-icon thumbnail size per row
@@ -316,7 +316,7 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 		if y > r.Y+r.H-vIcon {
 			break
 		}
-		speaking := a.link.sess.VoiceIsSpeaking(uid)
+		speaking := a.sess.VoiceIsSpeaking(uid)
 		dotCol := ColTextDim
 		if speaking {
 			dotCol = ColAccent // currently transmitting → the dot lights up
@@ -329,11 +329,11 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 		iconR := sdl.Rect{X: x + 14, Y: y, W: vIcon, H: vIcon}
 		c.Fill(iconR, ColPanelHi)
 		if ch != "" {
-			base := a.link.urls.CharIcon(ch)
+			base := a.urls.CharIcon(ch)
 			if page, ok := a.d.Store.Get(base); ok && len(page.Frames) > 0 {
 				_ = c.Ren.Copy(page.Frames[0], nil, &iconR)
 			} else {
-				a.demandAsset(&a.roster.voiceIconAsk, len(peers), i, base, assets.AssetTypeCharIcon) // AssetType: CharIcon
+				a.demandAsset(&a.voiceIconAsk, len(peers), i, base, assets.AssetTypeCharIcon) // AssetType: CharIcon
 			}
 		}
 		if speaking {
@@ -347,12 +347,12 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 		}
 		// Custom profile (pronouns · tagline) from the existing cross-client profile
 		// channel — keyed by the character name, falling back to the display name.
-		if a.link.room != nil {
+		if a.room != nil {
 			key := ch
 			if key == "" {
 				key = name
 			}
-			if p, ok := a.link.room.RemoteProfile(key); ok {
+			if p, ok := a.room.RemoteProfile(key); ok {
 				if extra := strings.TrimSpace(strings.TrimSpace(p.Pronouns) + "  " + strings.TrimSpace(p.Tag)); extra != "" {
 					label += "  ·  " + extra
 				}

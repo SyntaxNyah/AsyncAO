@@ -27,7 +27,7 @@ func testOffsetApp(t *testing.T) *App {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	a := &App{env: env{ctx: ctx}}
+	a := &App{ctx: ctx}
 	a.d.Prefs = prefs
 	a.resetSessionState()
 	return a
@@ -40,7 +40,7 @@ func offsetFrame(a *App, val *int, mx, my int32, click bool, wheel int32) {
 	a.ctx.mouseX, a.ctx.mouseY = mx, my
 	a.ctx.clicked = click
 	a.ctx.wheelY = wheel
-	if next := a.offsetControl("pairoffx", 10, 10, "Offset X %", *val, &a.pairbox.pairOffXText); next != *val {
+	if next := a.offsetControl("pairoffx", 10, 10, "Offset X %", *val, &a.pairOffXText); next != *val {
 		*val = next
 	}
 }
@@ -62,8 +62,8 @@ func TestOffsetControlWheelRefreshesFocusedBuffer(t *testing.T) {
 	if a.ctx.focusID != "pairoffx" {
 		t.Fatalf("wheeling must not blur, focusID=%q", a.ctx.focusID)
 	}
-	if want := "5"; a.pairbox.pairOffXText != want {
-		t.Errorf("focused buffer must mirror the wheel edit, buf=%q want %q", a.pairbox.pairOffXText, want)
+	if want := "5"; a.pairOffXText != want {
+		t.Errorf("focused buffer must mirror the wheel edit, buf=%q want %q", a.pairOffXText, want)
 	}
 }
 
@@ -78,8 +78,8 @@ func TestOffsetControlButtonEditShowsNextFrame(t *testing.T) {
 		t.Fatalf("+ must step the value, got %d want %d", val, offsetStep)
 	}
 	offsetFrame(a, &val, 300, 200, false, 0) // idle frame: unfocused mirror
-	if want := "5"; a.pairbox.pairOffXText != want {
-		t.Errorf("buffer must show the button edit, buf=%q want %q", a.pairbox.pairOffXText, want)
+	if want := "5"; a.pairOffXText != want {
+		t.Errorf("buffer must show the button edit, buf=%q want %q", a.pairOffXText, want)
 	}
 }
 
@@ -93,11 +93,11 @@ func TestOffsetControlTypingKeepsPartialInput(t *testing.T) {
 	a.ctx.BeginFrame(16 * time.Millisecond)
 	a.ctx.mouseX, a.ctx.mouseY = 120, 20
 	a.ctx.typed = "-" // like SDL text input would deliver
-	if next := a.offsetControl("pairoffx", 10, 10, "Offset X %", val, &a.pairbox.pairOffXText); next != val {
+	if next := a.offsetControl("pairoffx", 10, 10, "Offset X %", val, &a.pairOffXText); next != val {
 		val = next
 	}
-	if a.pairbox.pairOffXText != "0-" && a.pairbox.pairOffXText != "-0" && a.pairbox.pairOffXText != "-" {
-		t.Errorf("partial typed input must survive, buf=%q", a.pairbox.pairOffXText)
+	if a.pairOffXText != "0-" && a.pairOffXText != "-0" && a.pairOffXText != "-" {
+		t.Errorf("partial typed input must survive, buf=%q", a.pairOffXText)
 	}
 	if val != 0 {
 		t.Errorf("an unparseable partial must not commit, val=%d", val)

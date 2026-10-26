@@ -6,7 +6,13 @@ import (
 
 // AO2's ooc_toggle: one button that swaps the server chat panel for the debug
 // log (issue #21 label 10, "server/debug?").
+//
 // AO2 wires ui_ooc_toggle to on_ooc_toggle_clicked (../AO2-Client/src/courtroom.cpp:5197):
+// it shows ui_debug_log, hides ui_server_chatlog and relabels itself "Debug",
+// then swaps back. The debug log lives at the ms_chatlog rect — set_size_and_pos(
+// ui_debug_log, "ms_chatlog") at :831, an old key name AO2 keeps for theme
+// compatibility — which is why ms_chatlog is NOT a server_chatlog alias.
+//
 // The button's label names what is CURRENTLY on screen, not what clicking does
 // (AO2 sets "Server" at :1014 while server chat is up). Easy to invert.
 
@@ -19,7 +25,7 @@ const (
 
 // oocToggleLabel is what AO2 writes on the button: the panel now showing.
 func (s *sessionState) oocToggleLabel() string {
-	if s.chatlog.debugOOC {
+	if s.debugOOC {
 		return "Debug"
 	}
 	return "Server"
@@ -65,22 +71,22 @@ func (a *App) drawThemedDebugLog(list sdl.Rect) {
 		return
 	}
 
-	lines := a.debug.Lines()
+	lines := a.debugLog
 	contentH := int32(len(lines)) * lineH
 	maxScroll := contentH - body.H
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
 	if d := c.WheelIn(body); d != 0 {
-		a.chatlog.debugOOCScroll -= d * scrollStepPx
+		a.debugOOCScroll -= d * scrollStepPx
 	}
 	track := sdl.Rect{X: body.X + body.W - scrollBarW, Y: body.Y, W: scrollBarW, H: body.H}
-	a.chatlog.debugOOCScroll = c.VScrollbar("debugoocscroll", track, a.chatlog.debugOOCScroll, contentH, body.H)
-	if a.chatlog.debugOOCScroll > maxScroll {
-		a.chatlog.debugOOCScroll = maxScroll
+	a.debugOOCScroll = c.VScrollbar("debugoocscroll", track, a.debugOOCScroll, contentH, body.H)
+	if a.debugOOCScroll > maxScroll {
+		a.debugOOCScroll = maxScroll
 	}
-	if a.chatlog.debugOOCScroll < 0 {
-		a.chatlog.debugOOCScroll = 0
+	if a.debugOOCScroll < 0 {
+		a.debugOOCScroll = 0
 	}
 
 	if len(lines) == 0 {
@@ -93,9 +99,9 @@ func (a *App) drawThemedDebugLog(list sdl.Rect) {
 	// Clip so the partially-scrolled top and bottom rows stop at the panel edge
 	// rather than bleeding over the theme's art.
 	clipPrev, clipHad := c.pushClip(body)
-	y := body.Y - a.chatlog.debugOOCScroll
+	y := body.Y - a.debugOOCScroll
 	for _, e := range lines {
-		ln := e.Text
+		ln := e.text
 		if y+lineH > body.Y && y < body.Y+body.H { // skip rows scrolled out of view
 			// One weighted draw, not a plain draw plus a 1 px-offset second pass: a
 			// LOGICAL pixel offset is multiplied by the UI scale, so the two copies land

@@ -12,8 +12,13 @@ import (
 
 // focusTestApp is a courtroom App whose IC field drew on the last painted frame —
 // the state claimTypingForIC requires before it will take a keystroke.
+//
+// drawnFieldSeq, not fieldSeq: fieldSeq is the list the CURRENT pass is building
+// and it is empty for the whole pre-screen half of App.Frame, which is where the
+// claim runs. Seeding the wrong one is how this file used to pass against a claim
+// that could not fire — see the frame-driven gate below.
 func focusTestApp() *App {
-	a := &App{env: env{ctx: &Ctx{}}, budget: budgetState{macroBind: -1}}
+	a := &App{ctx: &Ctx{}, macroBind: -1}
 	a.screen = ScreenCourtroom
 	a.ctx.drawnFieldSeq = []string{icFieldID}
 	return a
@@ -22,6 +27,15 @@ func focusTestApp() *App {
 // TestTypingClaimsTheICInputOnTheFIRSTKeystroke is half (a) of the Discord model,
 // and the half that distinguishes it from plain click-to-focus: the character that
 // arms the focus is the character that gets typed.
+//
+// FRAME-DRIVEN, and that is not tidiness. The previous version of this gate seeded
+// ctx.fieldSeq by hand and called a.claimTypingForIC() directly, and it was green
+// against a feature that could never fire in the shipped client: App.Frame calls
+// ctx.BeginDraw() — whose whole body empties the field list — some 280 lines ABOVE
+// the claim, and nothing in between draws a TextField, so the on-screen test the
+// claim ends on always answered "no". That is precisely the hand-seeded mirror
+// CLAUDE.md rule 11 refuses to count. The only honest question is the user's: type
+// a letter into a settled courtroom with nothing focused, and see where it lands.
 func TestTypingClaimsTheICInputOnTheFIRSTKeystroke(t *testing.T) {
 	a, cleanup := stageFrameDrivenApp(t)
 	defer cleanup()
@@ -35,7 +49,7 @@ func TestTypingClaimsTheICInputOnTheFIRSTKeystroke(t *testing.T) {
 		t.Fatal("the fixture's courtroom painted no IC input, so nothing below is measuring the claim")
 	}
 	a.ctx.focusID = "" // nothing focused, which is the whole precondition
-	before := a.compose.icInput
+	before := a.icInput
 
 	driveTypedText(a, "h")
 
@@ -43,9 +57,9 @@ func TestTypingClaimsTheICInputOnTheFIRSTKeystroke(t *testing.T) {
 		t.Fatalf("focus = %q after typing with nothing focused, want %q — the claim refused a real "+
 			"frame's keystroke (it reads the list BeginDraw just emptied)", a.ctx.focusID, icFieldID)
 	}
-	if want := before + "h"; a.compose.icInput != want {
+	if want := before + "h"; a.icInput != want {
 		t.Fatalf("the IC input holds %q, want %q — the FIRST keystroke was swallowed: the claim has to "+
-			"land before the field draws, in the same frame, or this is plain click-to-focus", a.compose.icInput, want)
+			"land before the field draws, in the same frame, or this is plain click-to-focus", a.icInput, want)
 	}
 	if !a.ctx.caretOn {
 		t.Error("the caret must land visible, as the Tab cycle does")
@@ -103,9 +117,9 @@ func TestTypingClaimRefusesWhereTheKeyBelongsToSomethingElse(t *testing.T) {
 		{"a Ctrl chord", func(a *App) { a.ctx.ctrlHeld = true }},
 		{"an Alt chord (a relocated bind namespace)", func(a *App) { a.ctx.altHeld = true }},
 		{"a modal fence is up", func(a *App) { a.ctx.modalOn = true }},
-		{"a key-bind capture is armed", func(a *App) { a.courtkeys.bindingFor = "Judge" }},
+		{"a key-bind capture is armed", func(a *App) { a.bindingFor = "Judge" }},
 		{"the layout editor owns the keyboard", func(a *App) { a.layoutEdit = true }},
-		{"the classic editor owns the keyboard", func(a *App) { a.classic.classicEdit = true }},
+		{"the classic editor owns the keyboard", func(a *App) { a.classicEdit = true }},
 		{"the IC field is not on screen", func(a *App) { a.ctx.drawnFieldSeq = nil }},
 	} {
 		a := focusTestApp()
@@ -143,7 +157,7 @@ func TestBounceFocusToICQueuesRatherThanAssigns(t *testing.T) {
 	}
 	// …and while a bind capture owns the next key.
 	d := focusTestApp()
-	d.courtkeys.bindingFor = "Judge"
+	d.bindingFor = "Judge"
 	d.bounceFocusToIC()
 	if d.ctx.focusNext != "" {
 		t.Error("the bounce must be a no-op while a key-bind capture is armed")
@@ -181,8 +195,8 @@ func TestBounceOnToggleFiresOnTheCHANGEOnly(t *testing.T) {
 func TestSFXPickBouncesFocusAndAuditions(t *testing.T) {
 	a := focusTestApp()
 	a.applySFXPick(0) // row 0 is "auto": no audition, so no audio device is needed
-	if a.emotepick.sfxChoiceIdx != 0 {
-		t.Errorf("the pick did not land (idx %d)", a.emotepick.sfxChoiceIdx)
+	if a.sfxChoiceIdx != 0 {
+		t.Errorf("the pick did not land (idx %d)", a.sfxChoiceIdx)
 	}
 	if a.ctx.focusNext != icFieldID {
 		t.Errorf("an SFX pick queued focus onto %q, want %q (courtroom.cpp:5501)", a.ctx.focusNext, icFieldID)
@@ -191,14 +205,19 @@ func TestSFXPickBouncesFocusAndAuditions(t *testing.T) {
 
 // TestICColorPickBouncesFocusExceptTheColourWheel drives the applier both IC bars
 // call, because the source census above only proves they REACH it.
+//
+// on_text_color_changed's focus_ic_input is the handler's last statement, outside
 // its if/else (courtroom.cpp:6402), so it runs on both the wrap branch and the
 // whole-message branch — this walks both. The one arm that must not bounce is
+// Custom…, which has no canon counterpart at all (AO2's dropdown holds only the
+// palette names, set_text_color_dropdown :6302-6341) and which opens a float that
+// owns the keyboard.
 func TestICColorPickBouncesFocusExceptTheColourWheel(t *testing.T) {
 	// Whole-message branch: no frozen selection, a standard palette pick.
 	a := colorPickTestApp(t)
 	a.applyICColorPick(2)
-	if a.compose.icColor != 2 {
-		t.Fatalf("the pick did not land (icColor %d) — nothing below is measuring the bounce", a.compose.icColor)
+	if a.icColor != 2 {
+		t.Fatalf("the pick did not land (icColor %d) — nothing below is measuring the bounce", a.icColor)
 	}
 	if a.ctx.focusNext != icFieldID {
 		t.Errorf("a colour pick queued focus onto %q, want %q (courtroom.cpp:6402)", a.ctx.focusNext, icFieldID)
@@ -209,14 +228,14 @@ func TestICColorPickBouncesFocusExceptTheColourWheel(t *testing.T) {
 	// markup. Canon bounces here too: the focus call sits below the if/else, not
 	// inside the else.
 	b := colorPickTestApp(t)
-	b.compose.icInput = "hello world"
+	b.icInput = "hello world"
 	b.ctx.focusID, b.ctx.caretField = icFieldID, icFieldID
 	b.ctx.selAnchor, b.ctx.caret = 6, 11 // "world"
 	b.captureICColorSel()
 	b.ctx.focusID = "" // the dropdown's open-click unfocuses the field
 	b.applyICColorPick(1)
-	if b.compose.icInput != "hello `world`" {
-		t.Fatalf("the wrap did not land (%q) — nothing below is measuring the bounce", b.compose.icInput)
+	if b.icInput != "hello `world`" {
+		t.Fatalf("the wrap did not land (%q) — nothing below is measuring the bounce", b.icInput)
 	}
 	if b.ctx.focusNext != icFieldID {
 		t.Errorf("a selection-wrapping pick queued focus onto %q, want %q — focus_ic_input is the last "+
@@ -227,7 +246,7 @@ func TestICColorPickBouncesFocusExceptTheColourWheel(t *testing.T) {
 	// Enter must not reach the IC input's send. The ONE documented divergence.
 	d := colorPickTestApp(t)
 	d.applyICColorPick(icColorCustomIdx)
-	if !d.lookUI.showICColorWheel {
+	if !d.showICColorWheel {
 		t.Fatal("Custom… did not open the colour wheel — this case is no longer the one being excepted")
 	}
 	if d.ctx.focusNext != "" {
@@ -242,11 +261,15 @@ func TestICColorPickBouncesFocusExceptTheColourWheel(t *testing.T) {
 
 // colorPickTestApp is a courtroom App with real preferences — applyICColorChoice
 // writes the rainbow/random flags through them — and no bind capture armed.
+//
+// macroBind is the one App field whose ZERO value means "armed" (slot 0), and
+// bounceFocusToIC is a no-op while a capture is armed, so without the sentinel
+// every bounce assertion below would pass or fail for the wrong reason.
 func colorPickTestApp(t *testing.T) *App {
 	t.Helper()
 	a := testTabApp(t)
 	a.screen = ScreenCourtroom
-	a.budget.macroBind = macroBindIdle
+	a.macroBind = macroBindIdle
 	return a
 }
 
@@ -269,10 +292,10 @@ func TestBareBindKeyRequiresAlt(t *testing.T) {
 		{"a capture owns the key", true, false, true, sdl.K_m, 0},
 		{"no key this frame", true, false, false, 0, 0},
 	} {
-		a := &App{env: env{ctx: &Ctx{}}, budget: budgetState{macroBind: -1}}
+		a := &App{ctx: &Ctx{}, macroBind: -1}
 		a.ctx.keyPressed, a.ctx.altHeld, a.ctx.ctrlHeld = tc.key, tc.alt, tc.ctrl
 		if tc.arm {
-			a.courtkeys.bindingFor = "Judge"
+			a.bindingFor = "Judge"
 		}
 		if got := a.bareBindKey(); got != tc.want {
 			t.Errorf("%s: bareBindKey = %v, want %v", tc.name, got, tc.want)
@@ -280,7 +303,7 @@ func TestBareBindKeyRequiresAlt(t *testing.T) {
 	}
 	// Focus is deliberately NOT a fence any more: an Alt chord is never text, so a
 	// bind must still fire while the user is in the chat box.
-	a := &App{env: env{ctx: &Ctx{}}, budget: budgetState{macroBind: -1}}
+	a := &App{ctx: &Ctx{}, macroBind: -1}
 	a.ctx.keyPressed, a.ctx.altHeld, a.ctx.focusID = sdl.K_m, true, icFieldID
 	if a.bareBindKey() != sdl.K_m {
 		t.Error("an Alt chord must fire even with the IC box focused — it can never be mistaken for typing")

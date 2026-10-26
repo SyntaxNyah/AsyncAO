@@ -31,7 +31,7 @@ func TestMenuServersRowsReachTheLobby(t *testing.T) {
 	if a.screen != ScreenLobby {
 		t.Fatalf("the Phone Book row must go to the lobby first, screen=%v", a.screen)
 	}
-	if !a.conn.lobby.phoneBookPage {
+	if !a.phoneBookPage {
 		t.Error("and it must actually switch the page on")
 	}
 	if !menuRow(t, menuServersTitle, "Phone Book").checked(a, 0) {
@@ -42,8 +42,8 @@ func TestMenuServersRowsReachTheLobby(t *testing.T) {
 	// all-servers page and FocusField silently drops an id nothing draws.
 	a.screen = ScreenCourtroom
 	a.fireMenuItem(menuRow(t, menuServersTitle, "Direct connect…"))
-	if a.screen != ScreenLobby || a.conn.lobby.phoneBookPage {
-		t.Fatalf("Direct connect must land on the all-servers lobby page (screen=%v phoneBook=%v)", a.screen, a.conn.lobby.phoneBookPage)
+	if a.screen != ScreenLobby || a.phoneBookPage {
+		t.Fatalf("Direct connect must land on the all-servers lobby page (screen=%v phoneBook=%v)", a.screen, a.phoneBookPage)
 	}
 	if a.ctx.focusNext != directConnectFieldID {
 		t.Errorf("Direct connect must queue focus onto %q, got %q", directConnectFieldID, a.ctx.focusNext)
@@ -56,20 +56,20 @@ func TestMenuServersRowsReachTheLobby(t *testing.T) {
 // bool would leave selServer pointing at a row that is no longer there.
 func TestMenuServersPhoneBookSharesTheLobbySetter(t *testing.T) {
 	a := stageMenuBarApp(t)
-	a.conn.lobby.selServer, a.conn.lobby.descLines, a.conn.lobby.lobbyScroll = 4, []string{"stale"}, 120
+	a.selServer, a.descLines, a.lobbyScroll = 4, []string{"stale"}, 120
 
 	a.fireMenuItem(menuRow(t, menuServersTitle, "Phone Book"))
-	if a.conn.lobby.selServer != -1 || a.conn.lobby.descLines != nil || a.conn.lobby.lobbyScroll != 0 {
+	if a.selServer != -1 || a.descLines != nil || a.lobbyScroll != 0 {
 		t.Errorf("the page swap must clear the selection/description/scroll: sel=%d desc=%v scroll=%d",
-			a.conn.lobby.selServer, a.conn.lobby.descLines, a.conn.lobby.lobbyScroll)
+			a.selServer, a.descLines, a.lobbyScroll)
 	}
 
 	// Idempotent: asking for the page you are already on must not wipe a selection
 	// the user is reading (the Direct-connect row leaves the page unconditionally).
-	a.conn.lobby.selServer = 7
+	a.selServer = 7
 	a.setPhoneBookPage(true)
-	if a.conn.lobby.selServer != 7 {
-		t.Errorf("a no-op page set cleared the selection (sel=%d)", a.conn.lobby.selServer)
+	if a.selServer != 7 {
+		t.Errorf("a no-op page set cleared the selection (sel=%d)", a.selServer)
 	}
 }
 
@@ -86,34 +86,42 @@ func TestMenuServersRefreshAndPingGateOnTheirOwnState(t *testing.T) {
 	if !a.menuItemEnabled(refresh) || !a.menuItemEnabled(ping) {
 		t.Fatal("an idle lobby must offer both rows")
 	}
-	a.conn.lobby.lobbyFetching = true
+	a.lobbyFetching = true
 	if a.menuItemEnabled(refresh) {
 		t.Error("Refresh must dim while a fetch is in flight — RefreshServers coalesces it away")
 	}
-	a.conn.lobby.lobbyFetching = false
-	a.conn.lobby.pinging = true
+	a.lobbyFetching = false
+	a.pinging = true
 	if a.menuItemEnabled(ping) {
 		t.Error("the connect-time row must dim while a sweep runs — startPinging refuses a second one")
 	}
-	a.conn.lobby.pinging = false
+	a.pinging = false
 
 	// The check tracks pingMode, and turning it OFF re-sorts immediately (pingMode
 	// alone only picks the comparator for the NEXT sort).
-	a.conn.lobby.pingMode = true
-	a.conn.lobby.selServer = 3
+	a.pingMode = true
+	a.selServer = 3
 	if !ping.checked(a, 0) {
 		t.Error("the row must read as checked while the lobby is in connect-time order")
 	}
 	a.fireMenuItem(ping)
-	if a.conn.lobby.pingMode {
+	if a.pingMode {
 		t.Fatal("firing the row again must leave connect-time order")
 	}
-	if a.conn.lobby.selServer != -1 {
-		t.Errorf("leaving connect-time order must re-sort (applyServerSort), sel=%d", a.conn.lobby.selServer)
+	if a.selServer != -1 {
+		t.Errorf("leaving connect-time order must re-sort (applyServerSort), sel=%d", a.selServer)
 	}
 }
 
 // TestLobbyListActionsAreOnTheLobby pins where the SERVER-LIST actions live.
+//
+// Refresh and the connect-time sort came back out of the menu by request: they act
+// on the server list, so a menu carrying them is dead weight the moment you are in
+// a server, and a refresh button belongs beside the thing it refreshes. The
+// cluster's count MUST match the number of cursor steps drawLobby takes, because
+// that constant is what turns "does the row fit?" into arithmetic instead of a
+// measured pass.
+//
 // Both surfaces survive on purpose and call the same setters, so they cannot
 // drift — this test is what stops one of them quietly growing a second copy.
 func TestLobbyListActionsAreOnTheLobby(t *testing.T) {
@@ -164,24 +172,24 @@ func TestMenuKeepAspectRatioReusesTheFitSetter(t *testing.T) {
 	if !keep.checked(a, 0) {
 		t.Fatalf("the shipped default (%d) keeps the aspect ratio, so the row must start checked", config.DefaultThemeFit)
 	}
-	a.skin.themeLay.valid = true
+	a.themeLay.valid = true
 	a.fireMenuItem(keep)
 	if got := a.d.Prefs.Load().ThemeFit; got != config.ThemeFitStretch {
 		t.Errorf("unticking must select Stretch, got mode %d", got)
 	}
-	if a.skin.themeLay.valid {
+	if a.themeLay.valid {
 		t.Error("a fit mutation must invalidate the theme layout cache")
 	}
 	if keep.checked(a, 0) {
 		t.Error("Stretch is the mode that does NOT keep the aspect ratio")
 	}
 
-	a.skin.themeLay.valid = true
+	a.themeLay.valid = true
 	a.fireMenuItem(keep)
 	if got := a.d.Prefs.Load().ThemeFit; got != config.DefaultThemeFit {
 		t.Errorf("re-ticking must return to the shipped default %d, got %d", config.DefaultThemeFit, got)
 	}
-	if a.skin.themeLay.valid {
+	if a.themeLay.valid {
 		t.Error("a fit mutation must invalidate the theme layout cache")
 	}
 
@@ -223,7 +231,7 @@ func TestMenuWindowThemeDesignSizeFollowsTheSharedOffer(t *testing.T) {
 	if a.menuItemEnabled(row) {
 		t.Error("with no theme canvas the row must be offered DISABLED, not act silently")
 	}
-	a.skin.themeRectsOrig = map[string]theme.Rect{
+	a.themeRectsOrig = map[string]theme.Rect{
 		"courtroom": {X: 0, Y: 0, W: 714, H: 579},
 		"viewport":  {X: 0, Y: 0, W: 256, H: 192},
 	}
@@ -280,21 +288,21 @@ func TestMenuExtrasCarriesEveryToolboxCommand(t *testing.T) {
 // was covering, a hotkey, or the Settings screen.
 func TestMenuExtrasTogglesTheFloatingToolbox(t *testing.T) {
 	a := stageMenuBarApp(t)
-	a.classic.seedHiddenFromPrefs(&a.env) // the real App seeds the hidden-chrome map at boot, before any frame
+	a.seedHiddenFromPrefs() // the real App seeds the hidden-chrome map at boot, before any frame
 	row := menuRow(t, menuExtrasTitle, "Floating toolbox")
 
 	if !row.checked(a, 0) {
 		t.Fatal("the strip ships visible, so the row must start checked")
 	}
 	a.fireMenuItem(row)
-	if !a.classic.panelHidden(panelToolbox) {
+	if !a.panelHidden(panelToolbox) {
 		t.Fatal("unticking must hide the floating toolbox through the shipped hidden-chrome set")
 	}
 	if row.checked(a, 0) {
 		t.Error("and the row must then read as unchecked")
 	}
 	a.fireMenuItem(row)
-	if a.classic.panelHidden(panelToolbox) {
+	if a.panelHidden(panelToolbox) {
 		t.Error("re-ticking must bring the strip back")
 	}
 }
@@ -320,7 +328,7 @@ func TestMenuExtrasCourtroomRowsDimElsewhere(t *testing.T) {
 		}
 		a.closeMenuBar()
 	}
-	if a.classic.classicEdit || a.layoutEdit {
+	if a.classicEdit || a.layoutEdit {
 		t.Fatal("a disabled Edit layout row armed an editor the lobby never draws — the bar would be inert forever")
 	}
 
@@ -349,8 +357,8 @@ func TestMenuHelpOpensEachDocument(t *testing.T) {
 	}
 
 	a.fireMenuItem(menuRow(t, menuHelpTitle, "Privacy"))
-	if a.screen != ScreenHelp || a.docs.helpTab != helpTabPrivacy {
-		t.Errorf("Privacy → screen %v tab %d, want Help/%d", a.screen, a.docs.helpTab, helpTabPrivacy)
+	if a.screen != ScreenHelp || a.helpTab != helpTabPrivacy {
+		t.Errorf("Privacy → screen %v tab %d, want Help/%d", a.screen, a.helpTab, helpTabPrivacy)
 	}
 	if a.prevScreen != ScreenLobby {
 		t.Errorf("prevScreen = %v, want the screen we came from — Esc/Back rely on it", a.prevScreen)
@@ -358,8 +366,8 @@ func TestMenuHelpOpensEachDocument(t *testing.T) {
 	// Re-picking a section while already on Help must not overwrite prevScreen, or
 	// backing out would bounce between Help and itself.
 	a.fireMenuItem(menuRow(t, menuHelpTitle, "Glossary"))
-	if a.docs.helpTab != helpTabGlossary {
-		t.Errorf("Glossary → tab %d, want %d", a.docs.helpTab, helpTabGlossary)
+	if a.helpTab != helpTabGlossary {
+		t.Errorf("Glossary → tab %d, want %d", a.helpTab, helpTabGlossary)
 	}
 	if a.prevScreen != ScreenLobby {
 		t.Errorf("prevScreen = %v after a second Help pick, want it untouched", a.prevScreen)
@@ -379,6 +387,14 @@ func TestMenuHelpOpensEachDocument(t *testing.T) {
 
 // TestFxAndEmojiAreReachableUnderATheme pins the regression that the themed IC-bar
 // rewrite introduced and an adversarial review caught.
+//
+// Text FX and the emoji picker are the only two IC controls with NO AO2 design
+// key. The themed bar draws them solely at the asyncao_ic_fx / asyncao_ic_emoji
+// override rects, which no stock AO2 theme declares — and the cram row that used
+// to host them was deleted. For one commit they were unreachable under every real
+// theme: no menu row, no hotkey, no Extras-box entry. icEffect is sticky session
+// state, so an effect armed in the classic layout would then wrap every line with
+// no way to clear it.
 func TestFxAndEmojiAreReachableUnderATheme(t *testing.T) {
 	a := stageMenuBarApp(t)
 	for _, label := range []string{"Text FX…", "Emoji picker…"} {
@@ -389,15 +405,15 @@ func TestFxAndEmojiAreReachableUnderATheme(t *testing.T) {
 	}
 	// The rows must actually toggle the pickers, not merely exist.
 	fx := menuRow(t, menuExtrasTitle, "Text FX…")
-	before := a.lookUI.showFxPicker
+	before := a.showFxPicker
 	fx.act(a, fx.arg)
-	if a.lookUI.showFxPicker == before {
+	if a.showFxPicker == before {
 		t.Error("the Text FX row did not toggle the picker")
 	}
 	em := menuRow(t, menuExtrasTitle, "Emoji picker…")
-	beforeEm := a.emoji.showEmojiPicker
+	beforeEm := a.showEmojiPicker
 	em.act(a, em.arg)
-	if a.emoji.showEmojiPicker == beforeEm {
+	if a.showEmojiPicker == beforeEm {
 		t.Error("the Emoji row did not toggle the picker")
 	}
 }
@@ -407,7 +423,7 @@ func TestFxAndEmojiAreReachableUnderATheme(t *testing.T) {
 // on-screen clamps would pin the list to the top-left corner.
 func TestFxPickerAnchorsOnScreenWithoutAButton(t *testing.T) {
 	a := stageMenuBarApp(t)
-	a.lookUI.fxBtnRect = sdl.Rect{} // never drawn: a theme that declares no asyncao_ic_fx
+	a.fxBtnRect = sdl.Rect{} // never drawn: a theme that declares no asyncao_ic_fx
 	const w, h = 1280, 720
 	r := a.fxPickerRect(w, h)
 	if r.X <= 8 && r.Y <= 8 {

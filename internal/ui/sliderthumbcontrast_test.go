@@ -56,7 +56,7 @@ func sliderThumbFixture(t *testing.T) (*App, *render.CaptureTarget, func()) {
 		cleanup()
 		t.Skipf("capture target unavailable: %v", err)
 	}
-	a := &App{env: env{ctx: ctx}}
+	a := &App{ctx: ctx}
 	return a, ct, func() {
 		ct.Close()
 		activeKitColors = defaultKitColors
@@ -181,7 +181,7 @@ func TestSliderIdleThumbFloorSurvivesADerivedPanelHi(t *testing.T) {
 	activeKitColors = defaultKitColors
 	nearBlack := theme.RGB{R: 10, G: 10, B: 12}
 	applyThemePalette(theme.Palette{Panel: &nearBlack})
-	a.skin.themePalette = theme.Palette{Panel: &nearBlack}
+	a.themePalette = theme.Palette{Panel: &nearBlack}
 
 	trackLuma := colLuma(ColPanel)
 	got := sampleSliderIdleThumb(t, a, ct)

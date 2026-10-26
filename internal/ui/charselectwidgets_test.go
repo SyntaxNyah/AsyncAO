@@ -19,6 +19,8 @@ import (
 // all-or-nothing rule that decides whose control row a frame is drawing, and the
 // behaviour at BOTH ends of the window range — a theme far bigger than the 640x480
 // floor and a theme far smaller than it.
+//
+// stageCharSelect / stockCharSelectDesign live in charselectlayout_test.go.
 
 // nativeCharSelect stages a design table at Native fit and returns the canvas plus the
 // grid plan for a window, with no app-chrome band in the way.
@@ -159,6 +161,16 @@ func TestCharSelectThemedRowNeedsItsThreeEssentials(t *testing.T) {
 
 // TestCharSelectThemedRowNeedsItsEssentialsONSCREEN is the half the first version of
 // the gate was missing, and it shipped an unusable screen.
+//
+// Char-select rects are deliberately never clamped into the canvas — char_buttons
+// overhangs by 30 px BY DESIGN and shifting it back would walk every column off the
+// artwork — so "resolved" says a rect is big enough, never that it is reachable.
+// ThemeFitCrop scales UP on purpose: at 1920x1080 with the shipped chrome band the
+// stock table scales by 2.69 and the canvas becomes {0,-336,1920,1796}, putting
+// char_search at y=-318, back_to_lobby at y=-323 and spectator at y=1385 on a 1080 px
+// window. All three resolved, so the themed row was taken and the client's own header
+// was suppressed: no search, no Spectate, no way out. The draw pushes lay.clip, so
+// they were painted nowhere and hovering() rejected them.
 func TestCharSelectThemedRowNeedsItsEssentialsONSCREEN(t *testing.T) {
 	const w, h int32 = 1920, 1080
 	a := stageCharSelect(t, stockCharSelectDesign())
@@ -202,10 +214,13 @@ func TestCharSelectThemedRowNeedsItsEssentialsONSCREEN(t *testing.T) {
 
 // TestCharSelectTinyCellFallsBackToTheClassicScreen pins the cell floor against the
 // one corpus theme that exercises the downscale path.
+//
 // `microsoft surface 4k webao` declares a canvas far larger than any real window, so
 // at config.MinWindowW/H it scales to about a quarter. With the floor at 8 px the
 // themed grid was KEPT there on a 14 px cell: 64 px icon textures crushed to 14 px,
+// star and caption both suppressed, and — because the widget gate correctly fell back
 // — AsyncAO's own header row sitting over a themed grid. The pre-#20 screen gave that
+// user 64 px captioned cells, so the themed path has to stand down.
 func TestCharSelectTinyCellFallsBackToTheClassicScreen(t *testing.T) {
 	const w, h = config.MinWindowW, config.MinWindowH
 	big := stockCharSelectDesign()
@@ -240,6 +255,7 @@ func TestCharSelectTinyCellFallsBackToTheClassicScreen(t *testing.T) {
 }
 
 // TestCharListTabsShowWhichRosterIsActive pins the roster switch's selected state.
+//
 // It was invisible: the active chip was Fill(chip, ColAccent) followed by
 // Button(chip, ...) on the IDENTICAL rect, and Button fills again with an opaque
 // ColPanel/ColPanelHi. Both chips then took Button's ColAccent border, so Characters
@@ -263,9 +279,9 @@ func TestCharListTabsShowWhichRosterIsActive(t *testing.T) {
 		a.drawCharListTabs(strip)
 		return readRegion(t, ren, strip)
 	}
-	a.charsel.charTab = charTabServer
+	a.charTab = charTabServer
 	onChars := shot()
-	a.charsel.charTab = charTabWardrobe
+	a.charTab = charTabWardrobe
 	onWardrobe := shot()
 	if sameRegion(onChars, onWardrobe) {
 		t.Error("the Characters and Wardrobe chips render identically — nothing tells the user which roster is live")
@@ -273,21 +289,27 @@ func TestCharListTabsShowWhichRosterIsActive(t *testing.T) {
 	// Both chips must stay clickable when the column is too narrow for their natural
 	// widths; the old code clipped the second one to whatever was left, which could be
 	// a pixel — an unreachable Wardrobe tab.
-	a.charsel.charTab = charTabServer
+	a.charTab = charTabServer
 	narrow := sdl.Rect{X: 0, Y: 0, W: charSelectTabsW(ctx) / 2, H: 22}
 	ctx.mouseX, ctx.mouseY = narrow.X+narrow.W-4, narrow.Y+narrow.H/2 // over the LAST chip
 	ctx.clicked = true
 	a.drawCharListTabs(narrow)
 	ctx.clicked = false
-	if a.charsel.charTab != charTabWardrobe {
+	if a.charTab != charTabWardrobe {
 		t.Error("the Wardrobe chip is unreachable in a column too narrow for both labels")
 	}
 }
 
 // TestCharSelectControlsAtTheWindowFloor is C3, both ends.
+//
+// UP: eleven corpus themes are smaller than config.MinWindowW/H and letterbox
+// permanently. That is correct, and their controls must stay at full size and stay
+// usable — nothing may be dropped just because the window is at its floor.
+//
 // DOWN: only `microsoft surface 4k webao` exercises the downscale path. Its 22 px
 // design controls land on 5 px at 640x480, below the layout's own minThemedElementPx,
 // so the themed row must FALL BACK to AsyncAO's header rather than leave the user
+// clicking invisible slivers.
 func TestCharSelectControlsAtTheWindowFloor(t *testing.T) {
 	const w, h = config.MinWindowW, config.MinWindowH
 
@@ -398,16 +420,16 @@ func TestCharSelectFilterIsAO2sTakenCheckbox(t *testing.T) {
 // would silently hide every taken character on a fresh session.
 func TestCharSelectTakenFilterDefaultsToShowing(t *testing.T) {
 	a := testTabApp(t)
-	if !a.charsel.charShowTaken {
+	if !a.charShowTaken {
 		t.Error("a fresh session hides taken characters — AO2 seeds char_taken checked")
 	}
-	if a.charsel.charListSel != -1 {
-		t.Errorf("a fresh session starts with name-column selection %d, want none (-1)", a.charsel.charListSel)
+	if a.charListSel != -1 {
+		t.Errorf("a fresh session starts with name-column selection %d, want none (-1)", a.charListSel)
 	}
-	a.charsel.charShowTaken, a.charsel.charListSel = false, 7
+	a.charShowTaken, a.charListSel = false, 7
 	a.resetSessionState()
-	if !a.charsel.charShowTaken || a.charsel.charListSel != -1 {
-		t.Errorf("reconnecting kept the old filter/selection: showTaken=%v sel=%d", a.charsel.charShowTaken, a.charsel.charListSel)
+	if !a.charShowTaken || a.charListSel != -1 {
+		t.Errorf("reconnecting kept the old filter/selection: showTaken=%v sel=%d", a.charShowTaken, a.charListSel)
 	}
 }
 
@@ -416,17 +438,17 @@ func TestCharSelectTakenFilterDefaultsToShowing(t *testing.T) {
 // shorter list.
 func TestCharListSelectionDropsOnTabSwitch(t *testing.T) {
 	a := testTabApp(t)
-	a.charsel.charListSel, a.charsel.charListScroll = 12, 340
+	a.charListSel, a.charListScroll = 12, 340
 	a.selectCharTab(charTabServer) // no-op: already there
-	if a.charsel.charListSel != 12 || a.charsel.charListScroll != 340 {
+	if a.charListSel != 12 || a.charListScroll != 340 {
 		t.Error("re-selecting the current tab reset the column")
 	}
 	a.selectCharTab(charTabWardrobe)
-	if a.charsel.charTab != charTabWardrobe {
-		t.Fatalf("tab = %d, want the wardrobe", a.charsel.charTab)
+	if a.charTab != charTabWardrobe {
+		t.Fatalf("tab = %d, want the wardrobe", a.charTab)
 	}
-	if a.charsel.charListSel != -1 || a.charsel.charListScroll != 0 {
-		t.Errorf("switching tabs kept sel=%d scroll=%d", a.charsel.charListSel, a.charsel.charListScroll)
+	if a.charListSel != -1 || a.charListScroll != 0 {
+		t.Errorf("switching tabs kept sel=%d scroll=%d", a.charListSel, a.charListScroll)
 	}
 }
 
@@ -554,26 +576,26 @@ func TestCharNameListClickSelectsAndRevealsIsTheSharedSelection(t *testing.T) {
 	a.ctx.mouseY = col.Y + rowH + target*rowH + rowH/2
 	a.ctx.clicked = true
 	a.drawCharNameList(lay, rows, "", true, g)
-	if a.charsel.charListSel != target {
-		t.Fatalf("clicking name %d selected %d", target, a.charsel.charListSel)
+	if a.charListSel != target {
+		t.Fatalf("clicking name %d selected %d", target, a.charListSel)
 	}
-	if a.charsel.charScroll != 0 {
-		t.Errorf("revealing an already-visible cell scrolled the grid to %d", a.charsel.charScroll)
+	if a.charScroll != 0 {
+		t.Errorf("revealing an already-visible cell scrolled the grid to %d", a.charScroll)
 	}
 	// Now a name far down the list: the grid must follow.
 	a.ctx.clicked = true
-	a.charsel.charListScroll = int32(300) * rowH // scroll the column to name 300
-	a.ctx.mouseY = col.Y + rowH + rowH/2         // the first row now visible
+	a.charListScroll = int32(300) * rowH // scroll the column to name 300
+	a.ctx.mouseY = col.Y + rowH + rowH/2 // the first row now visible
 	a.drawCharNameList(lay, rows, "", true, g)
-	if a.charsel.charListSel < 290 {
-		t.Fatalf("a scrolled column selected %d, want a name near 300", a.charsel.charListSel)
+	if a.charListSel < 290 {
+		t.Fatalf("a scrolled column selected %d, want a name near 300", a.charListSel)
 	}
-	if a.charsel.charScroll <= 0 {
-		t.Errorf("selecting a name below the fold left the grid at %d", a.charsel.charScroll)
+	if a.charScroll <= 0 {
+		t.Errorf("selecting a name below the fold left the grid at %d", a.charScroll)
 	}
 	// And the revealed cell really is inside the viewport once the grid snaps to it.
-	ord := int32(a.charsel.charListSel)
-	cell := g.cellAt(ord, a.charsel.charScroll)
+	ord := int32(a.charListSel)
+	cell := g.cellAt(ord, a.charScroll)
 	if cell.Y < g.view.Y || cell.Y+cell.H > g.view.Y+g.view.H {
 		t.Errorf("cell %+v is not inside the viewport %+v after the reveal", cell, g.view)
 	}
@@ -589,25 +611,25 @@ func TestCharTakenCheckboxIsTheFilter(t *testing.T) {
 	if !ok {
 		t.Fatal("char_taken did not resolve on the stock table")
 	}
-	if !a.charsel.charShowTaken {
+	if !a.charShowTaken {
 		t.Fatal("fixture did not start with the AO2 default (checked = show taken)")
 	}
-	a.charsel.charScroll, a.charsel.charListScroll = 500, 700
+	a.charScroll, a.charListScroll = 500, 700
 	a.ctx.mouseX, a.ctx.mouseY = r.X+checkboxBoxPx/2, r.Y+r.H/2
 	a.ctx.clicked = true
 	if a.drawCharSelectControls(lay, g) {
 		t.Fatal("the taken checkbox changed the screen")
 	}
-	if a.charsel.charShowTaken {
+	if a.charShowTaken {
 		t.Error("clicking char_taken did not clear the filter")
 	}
-	if a.charsel.charScroll != 0 || a.charsel.charListScroll != 0 {
-		t.Errorf("a filter change left stale scroll offsets: grid %d, column %d", a.charsel.charScroll, a.charsel.charListScroll)
+	if a.charScroll != 0 || a.charListScroll != 0 {
+		t.Errorf("a filter change left stale scroll offsets: grid %d, column %d", a.charScroll, a.charListScroll)
 	}
 	// A frame with no click leaves it alone.
 	a.ctx.clicked = false
 	a.drawCharSelectControls(lay, g)
-	if a.charsel.charShowTaken {
+	if a.charShowTaken {
 		t.Error("the filter re-checked itself on a quiet frame")
 	}
 }
@@ -629,11 +651,11 @@ func TestCharSelectPageArrowsStepWholePages(t *testing.T) {
 	a.ctx.mouseX, a.ctx.mouseY = right.X+right.W/2, right.Y+right.H/2
 	a.ctx.clicked = true
 	a.drawCharSelectPageArrows(lay, g)
-	if a.charsel.charScroll != wantPage {
-		t.Errorf("the next-page arrow moved %d px, want one whole page of rows (%d)", a.charsel.charScroll, wantPage)
+	if a.charScroll != wantPage {
+		t.Errorf("the next-page arrow moved %d px, want one whole page of rows (%d)", a.charScroll, wantPage)
 	}
-	if a.charsel.charScroll%g.pitchY != 0 {
-		t.Errorf("a page step of %d is not a whole number of %d px rows", a.charsel.charScroll, g.pitchY)
+	if a.charScroll%g.pitchY != 0 {
+		t.Errorf("a page step of %d is not a whole number of %d px rows", a.charScroll, g.pitchY)
 	}
 	left, ok := lay.rect(charSelectLeftKey)
 	if !ok {
@@ -642,38 +664,44 @@ func TestCharSelectPageArrowsStepWholePages(t *testing.T) {
 	a.ctx.mouseX, a.ctx.mouseY = left.X+left.W/2, left.Y+left.H/2
 	a.ctx.clicked = true
 	a.drawCharSelectPageArrows(lay, g)
-	if a.charsel.charScroll != 0 {
-		t.Errorf("the previous-page arrow left the grid at %d, want the top", a.charsel.charScroll)
+	if a.charScroll != 0 {
+		t.Errorf("the previous-page arrow left the grid at %d, want the top", a.charScroll)
 	}
 	// The arrows follow the active tab's grid, not always the Characters one.
-	a.charsel.charTab = charTabWardrobe
+	a.charTab = charTabWardrobe
 	a.ctx.mouseX, a.ctx.mouseY = right.X+right.W/2, right.Y+right.H/2
 	a.ctx.clicked = true
 	a.drawCharSelectPageArrows(lay, g)
-	if a.inibrowse.iniScroll != wantPage || a.charsel.charScroll != 0 {
-		t.Errorf("on the Wardrobe tab the arrows moved the wrong grid: ini=%d chars=%d", a.inibrowse.iniScroll, a.charsel.charScroll)
+	if a.iniScroll != wantPage || a.charScroll != 0 {
+		t.Errorf("on the Wardrobe tab the arrows moved the wrong grid: ini=%d chars=%d", a.iniScroll, a.charScroll)
 	}
 }
 
 // TestCharSelectTakenFilterOnlyAppliesWhereItsCheckboxIs pins the rule the classic arm
 // already followed and the themed one did not: a filter with no control is a trap.
+//
+// char_taken is deliberately NOT one of charSelectEssentialKeys, so the themed control
+// row is taken whether or not the checkbox resolves — a theme may hide the key (AO2's
+// 11037 convention) or the canvas may scale it under minThemedElementPx. Unguarded, a
+// session that cleared the box and then changed theme would keep hiding every taken
+// character with nothing on screen able to bring them back.
 func TestCharSelectTakenFilterOnlyAppliesWhereItsCheckboxIs(t *testing.T) {
 	const w, h int32 = 1920, 1080
 	a, lay, _ := nativeCharSelect(t, stockCharSelectDesign(), w, h)
 	if _, ok := lay.rect(charSelectTakenKey); !ok {
 		t.Fatal("the stock table did not resolve char_taken — this test's premise is gone")
 	}
-	a.charsel.charShowTaken = false
+	a.charShowTaken = false
 	if a.charSelectShowTaken(true, lay) {
 		t.Error("the checkbox is on screen, so the filter must follow it")
 	}
-	a.charsel.charShowTaken = true
+	a.charShowTaken = true
 	if !a.charSelectShowTaken(true, lay) {
 		t.Error("a checked box must show taken characters")
 	}
 	// The classic screen has no checkbox at all: it must behave exactly as it did
 	// before #20, whatever the session value says.
-	a.charsel.charShowTaken = false
+	a.charShowTaken = false
 	if !a.charSelectShowTaken(false, lay) {
 		t.Error("the classic screen inherited a filter it has no control for")
 	}
@@ -688,7 +716,7 @@ func TestCharSelectTakenFilterOnlyAppliesWhereItsCheckboxIs(t *testing.T) {
 	if !b.charSelectWidgetsThemed(hLay, hG) {
 		t.Fatal("hiding char_taken must not cost a theme its control row (it is not an essential key)")
 	}
-	b.charsel.charShowTaken = false
+	b.charShowTaken = false
 	if !b.charSelectShowTaken(true, hLay) {
 		t.Error("a theme with no char_taken box still applied the taken filter — the roster hides " +
 			"characters the user cannot bring back")
@@ -705,43 +733,43 @@ func TestCharSelectTakenFilterOnlyAppliesWhereItsCheckboxIs(t *testing.T) {
 func TestCharSelectWardrobeTabHostsItsOwnDeferredActions(t *testing.T) {
 	a, _, cleanup := cellChromeHarness(t)
 	defer cleanup()
-	a.srvMeta.serverKey = "ws://wardrobe.test"
+	a.serverKey = "ws://wardrobe.test"
 	const w, h int32 = 320, 240
 	lay := a.charSelectLayout(w, h) // themeless: the classic plan, which is what this tab had
 	g := a.charSelectGridPlan(w, h, 40, lay)
 	rows := func() charListRows {
-		return charListRows{n: len(a.inibrowse.iniList), names: a.inibrowse.iniList, lower: a.inibrowse.iniLower}
+		return charListRows{n: len(a.iniList), names: a.iniList, lower: a.iniLower}
 	}
 
 	// The ★.
-	a.inibrowse.iniFavPending, a.inibrowse.iniFavPendingAdd = "Phoenix", true
+	a.iniFavPending, a.iniFavPendingAdd = "Phoenix", true
 	a.drawWardrobeGrid(w, h, g, rows(), "")
-	if a.inibrowse.iniFavPending != "" {
+	if a.iniFavPending != "" {
 		t.Error("a deferred ★ toggle survived the frame — on this screen the star does nothing")
 	}
-	if list := a.d.Prefs.Load().WardrobeList(a.srvMeta.serverKey); len(list) != 1 || list[0] != "Phoenix" {
+	if list := a.d.Prefs.Load().WardrobeList(a.serverKey); len(list) != 1 || list[0] != "Phoenix" {
 		t.Errorf("the wardrobe is %v, want the starred character to have been saved", list)
 	}
 
 	// The move-to-folder menu: Esc is handleIniFolderMenu's own close path, so a screen
 	// that never runs it can never close what its own cells arm.
-	a.inibrowse.iniMenuChar, a.inibrowse.iniMenuAt = "Phoenix", [2]int32{50, 50}
+	a.iniMenuChar, a.iniMenuAt = "Phoenix", [2]int32{50, 50}
 	a.ctx.escPressed = true
 	a.drawWardrobeGrid(w, h, g, rows(), "")
 	a.ctx.escPressed = false
-	if a.inibrowse.iniMenuChar != "" {
+	if a.iniMenuChar != "" {
 		t.Error("the char-select Wardrobe tab never serviced the move-to-folder menu its own cells arm")
 	}
 
 	// ...and the empty-wardrobe arm returns early, so the host bookkeeping has to sit
 	// OUTSIDE it: a ★ that emptied the list must still be applied on that very frame.
-	a.inibrowse.iniList, a.inibrowse.iniLower, a.inibrowse.iniFolders, a.inibrowse.iniWardrobe, a.inibrowse.iniHoverIDs = nil, nil, nil, nil, nil
-	a.inibrowse.iniFavPending, a.inibrowse.iniFavPendingAdd = "Phoenix", false
+	a.iniList, a.iniLower, a.iniFolders, a.iniWardrobe, a.iniHoverIDs = nil, nil, nil, nil, nil
+	a.iniFavPending, a.iniFavPendingAdd = "Phoenix", false
 	a.drawWardrobeGrid(w, h, g, charListRows{}, "")
-	if a.inibrowse.iniFavPending != "" {
+	if a.iniFavPending != "" {
 		t.Error("the empty-wardrobe arm skipped the host bookkeeping")
 	}
-	if list := a.d.Prefs.Load().WardrobeList(a.srvMeta.serverKey); len(list) != 0 {
+	if list := a.d.Prefs.Load().WardrobeList(a.serverKey); len(list) != 0 {
 		t.Errorf("the wardrobe is %v after an un-star, want it empty", list)
 	}
 }
@@ -768,7 +796,7 @@ func TestWardrobeGridPaintsTheHoverSelectorToo(t *testing.T) {
 	}
 	cell := g.cellAt(0, 0)
 	a.ctx.mouseX, a.ctx.mouseY = cell.X+cell.W/2, cell.Y+cell.H/2 // parked ON the cell
-	rows := charListRows{n: len(a.inibrowse.iniList), names: a.inibrowse.iniList, lower: a.inibrowse.iniLower}
+	rows := charListRows{n: len(a.iniList), names: a.iniList, lower: a.iniLower}
 	shot := func() []byte {
 		a.ctx.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
 		a.drawWardrobeGrid(w, h, g, rows, "")
@@ -788,7 +816,7 @@ func TestWardrobeGridPaintsTheHoverSelectorToo(t *testing.T) {
 	if err := a.d.Store.UploadPinned(themeTexKey(themeStemCharSelector), dec); err != nil {
 		t.Skipf("theme upload unavailable: %v", err)
 	}
-	a.skin.themeTex[themeStemCharSelector] = true
+	a.themeTex[themeStemCharSelector] = true
 	with := shot()
 	if sameRegion(without, with) {
 		t.Error("the Wardrobe grid ignored the theme's char_selector — the same cell shows a hover " +

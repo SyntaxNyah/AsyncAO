@@ -75,13 +75,13 @@ func (a *App) playModActionSFX(action render.ModAction) {
 		return
 	}
 	i := int(action)
-	if i < 0 || i >= len(a.sel.lastModSFX) {
+	if i < 0 || i >= len(a.lastModSFX) {
 		return
 	}
 	now := time.Now()
-	if now.Sub(a.sel.lastModSFX[i]) < modSFXCooldown {
+	if now.Sub(a.lastModSFX[i]) < modSFXCooldown {
 		return // collapse the actor-confirmation + area-broadcast burst into one play
 	}
-	a.sel.lastModSFX[i] = now
+	a.lastModSFX[i] = now
 	a.d.Audio.PlayModAction(action, path)
 }

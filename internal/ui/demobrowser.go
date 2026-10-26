@@ -20,9 +20,11 @@ import (
 // descends on click, and PICKS a recording straight into the shared Studio
 // import tail (importDroppedRecording → importRecordingToVideo) — the exact
 // same logic the drag-and-drop path uses, so there is one owner of the import.
+//
 // Perf/hard-rule discipline (spec §17): the entry list is read by ONE bounded
 // loader goroutine per navigation (never per-frame ReadDir on the render thread
 // — a network drive would freeze the UI), cached in the state, and every
+// per-navigation string is built once. Quick-jump paths resolve once at open.
 
 const (
 	// browseResCap bounds the loader→render result channel: exactly one result
@@ -71,9 +73,11 @@ const (
 	// The FIRST purpose whose answer is a DIRECTORY rather than a file, which is
 	// why browsePicksDir exists — the rows are still files and folders, but the
 	// pick is "the folder I am standing in".
+	//
 	// It is in-app for the reason the .demo picker moved in-app: the native folder
 	// dialog is a PowerShell shell-out that exists only on Windows and has failed
 	// to win foreground live before. browseForFolder's own comment names extending
+	// this browser to directories as the escalation path; this is it.
 	purposeBaseFolder
 	// purposeEvidenceImage (issue #6): pick → the evidence editor's Image-file
 	// field. This is the ONE purpose whose browser navigates the MERGED LOCAL ASSET
@@ -308,6 +312,14 @@ func isEvidenceImageName(name string) bool {
 }
 
 // isThemeBundleName reports a theme bundle by its lowercased extension.
+//
+// PLAIN .zip IS LISTED, and that is not the same decision dropclaim.go made. A
+// DROP must not be claimed by extension alone — a .zip is far more likely to be
+// meant for something else, and stealing it would be a drop that vanished — but a
+// BROWSE is the user pointing at one file and saying "this one". The importer
+// never trusts either extension anyway: themepack.Inspect sniffs the archive's own
+// magic bytes (the assets.Sniff doctrine), so a .aotheme that is really a
+// screenshot is refused by name whichever way it arrived.
 func isThemeBundleName(name string) bool {
 	ext := strings.ToLower(filepath.Ext(name))
 	return ext == themePackExt || ext == ".zip"
@@ -740,6 +752,20 @@ func browseMoreLabel(more int) string {
 
 // pickBrowsedFile is the browser's PICK action, routed by the browser's purpose.
 // Close the browser first (every branch does), then:
+//   - purposeVideo: run the SHARED Studio import tail (importDroppedRecording →
+//     importRecordingToVideo) — byte-identical to the drag-onto-Studio path.
+//   - purposeCheck / purposePackage: hand off to the content-report engine
+//     (openContentReportFor), which loads the recording, starts the probe, and
+//     opens the report panel.
+//   - purposeThemeBundle: hand off to handleThemeBundleDrop — the SAME funnel a
+//     dragged bundle enters by, so browsing and dropping cannot diverge about
+//     caps, consent or where a theme lands (v1.90.0 W8).
+//
+// EVERY BRANCH IS A HAND-OFF TO AN EXISTING OWNER; none of them does the work
+// itself. That is the property that has kept this function honest through four
+// purposes — it was renamed from pickBrowsedRecording when the fourth arrived,
+// because "recording" had stopped being true.
+//
 // The video branch is deliberately untouched from the original single-purpose
 // browser so that flow can't regress (pinned by a test).
 func (a *App) pickBrowsedFile(path string) {
@@ -778,5 +804,5 @@ func (a *App) pickBrowsedFile(path string) {
 // a pick in the MERGED browse (issue #6 follow-up). See evidenceRelFromMerged for
 // the conversion, which lives in mergebrowse.go beside the rest of that model.
 func (a *App) setEvidenceImageFromMergedPath(path string) {
-	a.evid.evidImage = evidenceRelFromMerged(path)
+	a.evidImage = evidenceRelFromMerged(path)
 }

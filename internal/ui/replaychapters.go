@@ -104,29 +104,29 @@ func replayJumpContext(events []recEvent, idx int) (bg, music string, lastMsg in
 // seeded, and playback resumes from idx. The in-between messages are never fed,
 // so nothing flashes or blares during the seek.
 func (a *App) replayJumpTo(idx int) {
-	if a.sel.replayRec == nil || idx < 0 || idx > len(a.sel.replayRec.Events) {
+	if a.replayRec == nil || idx < 0 || idx > len(a.replayRec.Events) {
 		return
 	}
-	rec := a.sel.replayRec
-	name := a.sel.replayName
+	rec := a.replayRec
+	name := a.replayName
 	a.startReplay(rec, name) // rebuild from the top (seeds rec.StartBg)
-	if !a.sel.replaying || a.sel.replayRoom == nil {
+	if !a.replaying || a.replayRoom == nil {
 		return
 	}
 	defer a.recoverReplay("jump")
 	bg, music, lastMsg := replayJumpContext(rec.Events, idx)
 	if bg != "" {
-		a.sel.replayRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: bg})
+		a.replayRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: bg})
 	}
 	if music != "" {
 		// Loop: true — replay soundtrack loops, same as eventFromRec (#15 default).
-		a.sel.replayRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventMusic, Text: music, Loop: true})
+		a.replayRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventMusic, Text: music, Loop: true})
 	}
 	if lastMsg >= 0 {
-		a.sel.replayRoom.HandleEvent(eventFromRec(rec.Events[lastMsg]))
-		a.sel.replayRoom.SkipToIdle() // settle the previous speaker instantly (no crawl)
+		a.replayRoom.HandleEvent(eventFromRec(rec.Events[lastMsg]))
+		a.replayRoom.SkipToIdle() // settle the previous speaker instantly (no crawl)
 	}
-	a.sel.replayIdx = idx
+	a.replayIdx = idx
 	a.warnLine = fmt.Sprintf("⏩ Jumped to event %d / %d", idx+1, len(rec.Events))
 	a.warnAt = time.Now()
 }
@@ -136,19 +136,19 @@ func (a *App) replayJumpTo(idx int) {
 // panel. Drawn above the transport strip so it never covers the stage.
 func (a *App) drawReplayChapters(stage sdl.Rect, w int32) {
 	c := a.ctx
-	if len(a.sel.replayChapters) == 0 {
+	if len(a.replayChapters) == 0 {
 		return
 	}
 	y := stage.Y + stage.H + 14
 	btn := sdl.Rect{X: stage.X + stage.W - 110, Y: y, W: 110, H: 28}
 	if c.Button(btn, "☰ Chapters") {
-		a.sel.replayChaptersOpen = !a.sel.replayChaptersOpen
+		a.replayChaptersOpen = !a.replayChaptersOpen
 	}
-	if !a.sel.replayChaptersOpen {
+	if !a.replayChaptersOpen {
 		return
 	}
 	rowH := int32(22)
-	n := int32(len(a.sel.replayChapters))
+	n := int32(len(a.replayChapters))
 	maxRows := (stage.H - 20) / rowH
 	if n > maxRows {
 		n = maxRows // the panel never outgrows the stage; the list is bounded anyway
@@ -161,19 +161,19 @@ func (a *App) drawReplayChapters(stage sdl.Rect, w int32) {
 	c.Fill(panel, ColBackground)
 	c.Border(panel, ColAccent)
 	for i := int32(0); i < n; i++ {
-		ch := a.sel.replayChapters[i]
+		ch := a.replayChapters[i]
 		r := sdl.Rect{X: panel.X + 4, Y: panel.Y + 4 + i*rowH, W: panel.W - 8, H: rowH - 2}
 		if c.hovering(r) {
 			c.Fill(r, ColPanelHi)
 		}
 		cur := " "
-		if a.sel.replayIdx > ch.idx {
+		if a.replayIdx > ch.idx {
 			cur = "·" // already passed — a subtle progress tick
 		}
 		a.labelName(r.X+4, r.Y+3, r.W-8, cur+" "+ch.label, ColText) // CJK-safe (embeds showname / bg / music names)
 		if c.clicked && c.hovering(r) {
 			a.replayJumpTo(ch.idx)
-			a.sel.replayChaptersOpen = false
+			a.replayChaptersOpen = false
 			return // the jump rebuilt the room — stop touching this frame's list
 		}
 	}

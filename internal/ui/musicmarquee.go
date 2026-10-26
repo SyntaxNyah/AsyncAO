@@ -1,11 +1,26 @@
 package ui
 
 // The music banner's marquee: AO2's ScrollText, ported.
+//
+// AO2 draws the now-playing title in a ScrollText widget (AO2-Client
 // src/scrolltext.cpp, constructed at courtroom.cpp:171 and parented inside
+// ui_music_display). A title wider than the widget SCROLLS, endlessly, with a
+// separator between repeats. AsyncAO ellipsized instead, which is why long track
+// names read as "[Cat] Also Sprac…" with the tail simply gone — the deviation was
+// recorded in drawThemedMusicPlate and is now retired.
+//
+// EVERY NUMBER HERE IS AO2's, cited to the line. Nothing is tuned.
+//
+// The geometry is pure integer functions so it can be driven from a test without a
+// renderer; the only state is one phase slot on Ctx (marqueeSlot), because AO2
+// restarts the scroll from its own fixed start offset whenever the text changes
 // (ScrollText::updateText, scrolltext.cpp:51) and a free-running clock alone cannot
+// express that.
+//
 // Pinned by musicmarquee_test.go — the constants against scrolltext.cpp, the
 // pre-roll/step/wrap of the scroll position, the slot's restart-on-new-title and its
 // zero-allocation steady state, and (in theme_layout.go) that the draw still joins
+// the pacing census.
 
 import "time"
 
@@ -48,6 +63,18 @@ const (
 func marqueeScrolls(textW, avail int32) bool { return textW > avail }
 
 // marqueeScrollPos is AO2's scrollPos at a given elapsed time, in pixels.
+//
+// AO2 keeps it in a timer callback: every 50 ms it does
+// `scrollPos = (scrollPos + 2) % wholeTextSize.width()`, starting from -64. C++'s
+// `%` truncates toward zero, so while scrollPos is negative the modulo is the
+// identity and the counter simply climbs to 0; once positive it wraps at the
+// tiled width. This computes the same value from a free-running clock, which is
+// what a frame loop has instead of a timer — and which cannot drift when frames
+// are dropped or the pacer parks.
+//
+// wholeW <= 0 would make the wrap undefined (and AO2's modulo a division by zero);
+// callers never produce it, because a scrolling title is wider than the widget by
+// construction, but the guard keeps the function total.
 func marqueeScrollPos(elapsed time.Duration, wholeW int32) int32 {
 	if wholeW <= 0 {
 		return 0
@@ -81,12 +108,16 @@ func marqueeFirstX(scrollPos, leftMargin int32) int32 {
 
 // marqueeSlot is the phase of the ONE scrolling label the client has, plus the
 // tiled string that phase belongs to.
+//
 // It exists because AO2 resets the scroll whenever the text changes
 // (ScrollText::setText → updateText, scrolltext.cpp:24-28/51): a new track has to
 // start from the pre-roll pause, not halfway through the previous track's cycle.
+// A free-running clock gives elapsed time; this gives the epoch to measure it from.
+//
 // ONE slot, not a map: there is exactly one marquee surface (the music banner), and
 // a map keyed by widget id would be an unbounded cache for a single entry (hard
 // rule 4). A second marquee surface should take a second named slot, so the bound
+// stays visible in the type.
 type marqueeSlot struct {
 	label string        // the title the epoch belongs to
 	tiled string        // label + ao2MarqueeSeparator, built once per title
@@ -97,9 +128,17 @@ type marqueeSlot struct {
 // `m_text + separator` (scrolltext.cpp:52) and the elapsed time to feed
 // marqueeScrollPos, restarting the clock when the title changes. now is the
 // free-running animation clock (Viewport.AnimClock).
+//
+// The reset is on the TEXT, not on the track id, for the same reason AO2's is: what
+// invalidates the scroll is the pixels changing, and two different tracks with the
+// same display name scroll identically anyway.
+//
 // THE CONCATENATION LIVES HERE, not at the draw site, because it is the one
 // allocation in a marquee frame. Built at the draw site it ran on EVERY frame the
 // banner scrolled — a heap allocation inside the render loop, which is what the
+// whole-screen AllocsPerRun gates exist to forbid. It changes only when the title
+// does, so the slot that already keys on the title is the only place it can be
+// cached without adding a second thing to invalidate.
 func (m *marqueeSlot) frame(label string, now time.Duration) (string, time.Duration) {
 	if m.label != label || m.tiled == "" {
 		m.label, m.tiled, m.epoch = label, label+ao2MarqueeSeparator, now

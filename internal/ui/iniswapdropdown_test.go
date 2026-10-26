@@ -39,9 +39,13 @@ func TestIniswapCurrentIndexIsAbsolute(t *testing.T) {
 // TestBuildIniswapChoicesKeepsTheWornFolder is the hole review found: a.iniChar
 // can hold a folder that is NOT in the saved wardrobe, because wearFromMenu takes
 // entries from the SERVER's iniswap.txt and never calls AddWardrobe.
+//
 // Without the trailing entry, iniswapCurrentIndex finds no match and falls back
 // to 0 — so the dropdown would display the player's OWN character while they were
 // visibly wearing something else, and iniswap_remove (gated on cur != 0) would
+// hide itself exactly when it is needed. AO2 cannot hit this: its combobox is
+// editable with InsertAtBottom and it rewrites iniswaps.ini on every change, so
+// what you wear is always in the list.
 func TestBuildIniswapChoicesKeepsTheWornFolder(t *testing.T) {
 	// Worn folder absent from the wardrobe → appended, and findable.
 	got := buildIniswapChoices(nil, "Phoenix", []string{"Edgeworth"}, "ServerOnlyChar")
@@ -106,7 +110,15 @@ func TestBuildIniswapChoicesReusesItsBuffer(t *testing.T) {
 
 // TestPosRemoveHiddenWhileTheCharINIIsInFlight is the wire-safety pin for
 // pos_remove, and it is about a WINDOW, not a steady state.
+//
 // The button reverts to the character's declared side, and clicking it SENDS
+// /pos. Before the fix, charDefaultSide was written only on the char.ini success
+// path, so three situations left the PREVIOUS character's default in place — the
+// char.ini failure branch, a character switch (enterCourtroom clears sidePref but
+// resetSessionState does not run there), and setIniswap. In that window the
+// button would paint for a side the user never overrode and one click would put a
+// wrong /pos on the wire.
+//
 // Clearing the field makes defaultSide() read "wit", which is exactly what AO2's
 // get_char_side returns for an unreadable ini (text_file_functions.cpp:480-483),
 // so the loading window matches mySide()'s own fallback and the button stays down.
@@ -122,14 +134,14 @@ func TestPosRemoveHiddenWhileTheCharINIIsInFlight(t *testing.T) {
 	}
 
 	// A character that declares "def": standing on it is not an override.
-	a.compose.charDefaultSide = "def"
-	a.compose.sidePref = "def"
+	a.charDefaultSide = "def"
+	a.sidePref = "def"
 	if posRemoveVisible(a.mySide(), a.defaultSide()) {
 		t.Error("standing on the character's OWN default is not an override")
 	}
 
 	// A real /pos override: now it shows, and reverting targets the declared side.
-	a.compose.sidePref = "pro"
+	a.sidePref = "pro"
 	if !posRemoveVisible(a.mySide(), a.defaultSide()) {
 		t.Error("a side that differs from the character's default must offer the revert")
 	}
@@ -140,8 +152,8 @@ func TestPosRemoveHiddenWhileTheCharINIIsInFlight(t *testing.T) {
 	// THE BUG: switching characters must not leave the old default behind. With a
 	// stale "def" and a fresh character sitting at "wit", the button would paint
 	// and one click would send "/pos def" for a character that never asked for it.
-	a.compose.charDefaultSide = ""
-	a.compose.sidePref = ""
+	a.charDefaultSide = ""
+	a.sidePref = ""
 	if posRemoveVisible(a.mySide(), a.defaultSide()) {
 		t.Error("a cleared default must hide the button, not offer the previous character's side")
 	}
@@ -151,14 +163,19 @@ func TestPosRemoveHiddenWhileTheCharINIIsInFlight(t *testing.T) {
 // pin above, and it is the one that can only be checked by driving the real code
 // path. The test above proves the PREDICATE hides the button for an empty default;
 // this proves the default actually gets emptied when the character changes.
+//
+// setIniswap is the path review flagged: it resets the emote list and reloads
+// char.ini but used to touch neither side field, so the previous character's
+// declared side survived into the window before the new ini landed. Verified in
+// the other direction too — deleting the clear makes this fail.
 func TestCharacterChangeClearsTheDeclaredSide(t *testing.T) {
 	a := testTabApp(t)
-	a.compose.charDefaultSide = "def"
+	a.charDefaultSide = "def"
 	a.setIniswap("SomeOtherFolder")
-	if a.compose.charDefaultSide != "" {
+	if a.charDefaultSide != "" {
 		t.Errorf("setIniswap left charDefaultSide=%q — the previous character's default "+
 			"survives, so pos_remove would offer to /pos a side this character never declared",
-			a.compose.charDefaultSide)
+			a.charDefaultSide)
 	}
 	if posRemoveVisible(a.mySide(), a.defaultSide()) {
 		t.Error("pos_remove must be hidden in the window between an iniswap and its char.ini")

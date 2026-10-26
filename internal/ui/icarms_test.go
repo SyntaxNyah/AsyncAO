@@ -19,9 +19,9 @@ func armsTestApp(t *testing.T, names ...string) *App {
 	t.Helper()
 	// macroBind:-1 mirrors NewApp: the zero value reads as "a macro bind capture is
 	// armed" (capturingKey), which would make every focus bounce a no-op.
-	a := &App{env: env{ctx: &Ctx{}}, budget: budgetState{macroBind: -1}}
-	a.link.urls = courtroom.NewURLBuilder("https://one.test/base")
-	a.overlays.overlayRosters = map[string]*overlayRoster{
+	a := &App{ctx: &Ctx{}, macroBind: -1}
+	a.urls = courtroom.NewURLBuilder("https://one.test/base")
+	a.overlayRosters = map[string]*overlayRoster{
 		a.overlayRosterKey(""): {set: theme.MergeOverlayFX(names)},
 	}
 	return a
@@ -44,21 +44,21 @@ func TestRealizationArmsTheEffectsRowNotJustTheFlag(t *testing.T) {
 	}
 
 	a.toggleRealization()
-	if !a.compose.icRealize {
+	if !a.icRealize {
 		t.Error("arming must set the wire flag (realization_state = 1, courtroom.cpp:6162)")
 	}
-	if a.emotepick.overlayChoiceIdx != want {
+	if a.overlayChoiceIdx != want {
 		t.Errorf("effects pick = %d, want the realization row %d — the VISIBLE half of the arm "+
-			"(effects_dropdown_find_and_set, courtroom.cpp:6163-6166) did not happen", a.emotepick.overlayChoiceIdx, want)
+			"(effects_dropdown_find_and_set, courtroom.cpp:6163-6166) did not happen", a.overlayChoiceIdx, want)
 	}
 
 	// Disarm is canon's exact inverse: setCurrentIndex(0) unconditionally (:6173).
 	a.toggleRealization()
-	if a.compose.icRealize {
+	if a.icRealize {
 		t.Error("disarming must clear the wire flag")
 	}
-	if a.emotepick.overlayChoiceIdx != 0 {
-		t.Errorf("effects pick = %d after disarm, want 0 (courtroom.cpp:6173 sets index 0 unconditionally)", a.emotepick.overlayChoiceIdx)
+	if a.overlayChoiceIdx != 0 {
+		t.Errorf("effects pick = %d after disarm, want 0 (courtroom.cpp:6173 sets index 0 unconditionally)", a.overlayChoiceIdx)
 	}
 }
 
@@ -69,11 +69,11 @@ func TestRealizationArmsTheEffectsRowNotJustTheFlag(t *testing.T) {
 func TestRealizationStillArmsWithoutARealizationEffect(t *testing.T) {
 	a := armsTestApp(t, "flash", "shake")
 	a.toggleRealization()
-	if !a.compose.icRealize {
+	if !a.icRealize {
 		t.Error("the wire flag must arm even when the pack declares no realization effect")
 	}
-	if a.emotepick.overlayChoiceIdx != 0 {
-		t.Errorf("effects pick = %d, want 0 — find-and-set must leave the pick alone when the row is absent", a.emotepick.overlayChoiceIdx)
+	if a.overlayChoiceIdx != 0 {
+		t.Errorf("effects pick = %d, want 0 — find-and-set must leave the pick alone when the row is absent", a.overlayChoiceIdx)
 	}
 }
 
@@ -85,7 +85,7 @@ func TestRealizationStillArmsWithoutARealizationEffect(t *testing.T) {
 func TestSelectOverlayEffectByNameIsCaseInsensitive(t *testing.T) {
 	a := armsTestApp(t, "Realization")
 	a.selectOverlayEffectByName(overlayRealizationEffect)
-	if a.emotepick.overlayChoiceIdx == 0 {
+	if a.overlayChoiceIdx == 0 {
 		t.Fatalf("a differently-cased %q row was not found — the arm and the sound lookup would disagree", overlayRealizationEffect)
 	}
 }
@@ -97,13 +97,13 @@ func TestSelectOverlayEffectByNameIsCaseInsensitive(t *testing.T) {
 // effect every time someone armed a shake.
 func TestScreenshakeIsTheFlagAlone(t *testing.T) {
 	a := armsTestApp(t, "flash", "realization")
-	a.emotepick.overlayChoiceIdx = 1 // the user picked "flash"
+	a.overlayChoiceIdx = 1 // the user picked "flash"
 	a.toggleScreenshake()
-	if !a.compose.icShake {
+	if !a.icShake {
 		t.Error("arming must set the screenshake flag")
 	}
-	if a.emotepick.overlayChoiceIdx != 1 {
-		t.Errorf("effects pick = %d, want the user's own 1 — screenshake must not touch the dropdown", a.emotepick.overlayChoiceIdx)
+	if a.overlayChoiceIdx != 1 {
+		t.Errorf("effects pick = %d, want the user's own 1 — screenshake must not touch the dropdown", a.overlayChoiceIdx)
 	}
 }
 

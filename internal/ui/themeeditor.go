@@ -1,9 +1,29 @@
 package ui
 
 // THE THEME EDITOR (v1.90.0 W7a) — docs/wip/THEME-EDITOR-DESIGN.md §Q7 and §3.
+//
+// One concern: the SCREEN. The document it edits lives in themeeditordoc.go, the
+// timeline in themeeditorop.go, the property rows in themeeditorinspector.go; this
+// file owns the pixels, the input and the screen's own lifecycle.
+//
+// A REAL SCREEN WHOSE CONTENT IS THE COURTROOM, NOT AN INSET PREVIEW. The editor
+// draws the live courtroom at FULL WINDOW SIZE with two translucent rails floating
+// over it, so you edit at exactly the size the theme will play — 1:1, no mode hop
+// for pixel work (the brief's requirement 1). Insetting the canvas would mean
+// teaching fitDesignCanvas about reserved bands, and that function is shared with
+// char select by product decision and is pinned by TestCharSelectCanvasHonoursThemeFit
+// — the constraint produced the better product.
+//
+// Hold SPACE and both rails drop to editRailPeekAlpha so you see the pure frame.
+// AN ALPHA CHANGE, NEVER A CLIP CHANGE, deliberately: the macOS blank-chatbox hunt
+// established that SDL clip timing is backend-specific (Metal evaluates at USE
+// time), so a peek that collapsed a clip is a class of bug this surface simply does
+// not open.
+//
 // ZERO COST WHEN CLOSED. App carries ONE pointer, a.te, nil while the editor is
 // shut. Nothing on the courtroom's frame path reads it, no goroutine, no timer, no
 // allocation — the v1.89.0 "0 base = 0 cost" rule, benchmarked rather than asserted
+// by TestClosedThemeEditorCostsNothing.
 
 import (
 	"strconv"
@@ -63,6 +83,7 @@ const (
 
 	// editorHeaderBtnW / editorHeaderBtnGap size the header band's button row (Fonts,
 	// Undo, Redo, Save, Back), laid out from the right edge.
+	//
 	// PACKAGE-LEVEL rather than local to the draw, because the band's geometry is what a
 	// gate has to press to prove the header behaves — and a gate that hard-coded 62
 	// would stop pressing the button the day the row was re-spaced, silently.
@@ -164,6 +185,10 @@ type themeEditor struct {
 	// and the pointer IS the flag — the shape `gallery` and `report` already use,
 	// for the same reason: it carries a whole offline session and a room, and a
 	// session that never presses the button should pay one nil pointer.
+	//
+	// DISTINCT FROM livePaused BELOW, deliberately. That is a FREEZE switch whose
+	// value is that its off state does LESS work; this is a player whose whole job
+	// is to do more. One control cannot honestly mean both.
 	preview *editorPreview
 
 	// livePaused is the LIVE PREVIEW toggle, stored INVERTED so the zero value is
@@ -192,12 +217,23 @@ type themeEditor struct {
 // ---------------------------------------------------------------------------
 
 // openThemeEditor arms the editor over the applied theme.
+//
+// IT DISARMS THE TWO LEGACY OVERLAY EDITORS FIRST. They edit PREFERENCES
+// (ThemeRectOverrides / ClassicLayout); this edits a theme DOCUMENT. Two tools, two
+// scopes, never armed simultaneously — layouteditlock_test.go enforces the
+// exclusion, and arming without this would leave the courtroom fenced by an editor
+// nobody can see.
+//
+// ok=false when the applied theme has no native tier to edit yet. That is not an
+// error and it is not a dead end: copy-for-editing is the answer, and the Settings
+// row draws THAT button instead of this one when it applies (themecopy.go's
+// themeEditorRow). Opening an editor over nothing is the one thing this must not do.
 func (a *App) openThemeEditor(from Screen) bool {
-	if a.elemBake.themeSidecar == nil {
+	if a.themeSidecar == nil {
 		return false
 	}
-	if a.classic.classicEdit {
-		a.classic.stopClassicEdit()
+	if a.classicEdit {
+		a.stopClassicEdit()
 	}
 	if a.layoutEdit {
 		a.stopLayoutEdit()
@@ -224,13 +260,13 @@ func (a *App) openThemeEditor(from Screen) bool {
 // path — the exact drift the encapsulation rule forbids.
 func (a *App) armThemeEditor(from Screen) bool {
 	name, _ := a.d.Prefs.Load().Theme()
-	doc := newThemeDoc(name, a.elemBake.themeSidecar)
+	doc := newThemeDoc(name, a.themeSidecar)
 	if doc == nil {
 		return false
 	}
 	// The document is bound to the APPLIED design map, because an [overrides] edit
 	// has to move a pixel as well as write a row (themeDoc.live).
-	doc.bindLive(a.skin.themeRects)
+	doc.bindLive(a.themeRects)
 	a.te = &themeEditor{doc: doc}
 	a.te.editorReturn = from
 	return true
@@ -239,9 +275,13 @@ func (a *App) armThemeEditor(from Screen) bool {
 // requestEditorExit is what Back and the Esc ladder call. It is the ONE place the
 // editor can be left, so "unsaved edits cannot vanish silently" is a property of the
 // exit rather than a rule every caller has to remember.
+//
 // A CLEAN DOCUMENT LEAVES IMMEDIATELY. A dirty one arms: the first press posts the
 // chip, a second press inside its window discards. That is a confirmation without a
 // modal — the design allows exactly two in the whole editor and spends both
+// elsewhere (copy-to-edit, delete-theme), so a third one here would be the modal
+// misery requirement 10 forbids. Saving first clears `dirty`, so Save-then-Back is
+// one press each.
 func (a *App) requestEditorExit() {
 	if a.te == nil {
 		return
@@ -264,7 +304,26 @@ func (a *App) requestEditorExit() {
 }
 
 // closeThemeEditor releases the editor and returns to wherever it was opened from.
+//
 // The document is dropped, NOT the model: a.themeSidecar and doc.side are the same
+// *theme.Sidecar, so whatever the document holds at this moment stays live in the
+// applied theme. That is what makes "Save, then Back" leave the saved theme on
+// screen and "Back, Back" leave the theme it opened over — requestEditorExit has
+// already put the baseline back in the second case.
+//
+// AND THAT IS WHY THE ART IS RECONCILED HERE, on the way out. The model the app keeps
+// drawing is whatever the document holds RIGHT NOW, so the media plan has to agree with
+// it right now — and this is the last moment anything can make it, because dropping a.te
+// is what stops drawThemeEditor (and with it the per-frame editorSyncArt) from ever
+// running again. The discard-on-exit restore is the case that proved it: restoreBaseline
+// moves the model back, invalidateThemeCanvases only drops the geometry caches, and the
+// courtroom went on drawing the EDITED plan — a generator element whose orphaned tile
+// pruneEditorGenTiles had already released could draw nothing at all until the user
+// switched themes and back. Here rather than in requestEditorExit's discard arm because
+// a.te = nil lives in exactly one function (deliberately — themeeditorop.go's note on the
+// ring), so the one function is the only place that covers the clean exit, the
+// canvas-left exit and whatever W8 adds by construction rather than by remembering.
+//
 // A CLEAN EXIT PAYS ONE HASH AND A COMPARE (themeeditorart.go's settled path), which is
 // what makes covering all of them affordable.
 func (a *App) closeThemeEditor() {
@@ -302,9 +361,18 @@ func (a *App) themeEditorOpen() bool {
 
 // editorApply performs one op and records it. It is the ONLY place the screen
 // mutates the document.
+//
+// The three steps are inseparable and that is the point: apply (which fills in the
+// inverse), push (which makes it undoable), invalidate (which re-bakes the geometry
+// the edit is expressed in). A call site that did two of the three would produce an
+// edit that either cannot be undone or cannot be seen.
+//
 // PREVIEW REFUSES HERE, at the funnel, and not only at the input paths that feed
 // it. The demo hides every rail and neutralizes every click inside its own pass
 // (themeeditorpreview.go), so nothing SHOULD reach this — which is exactly why the
+// refusal belongs at the one place all of them converge rather than at seven doors
+// that each have to remember. Preview is a view state; a view state that could
+// write the document would be a mode.
 func (a *App) editorApply(op themeEditOp) bool {
 	if a.te == nil || op.kind == opNone || a.editorPreviewOn() {
 		return false
@@ -318,6 +386,11 @@ func (a *App) editorApply(op themeEditOp) bool {
 		// asks applySlotRect for the rect it already holds, and so does every frame a
 		// drag sits against clampDesignRectToCanvas: those posted "a cap or a lock is
 		// in the way" for four seconds, naming a limit that was not there.
+		//
+		// The kind is no longer the question; the ANSWER is (editApplyResult). A real
+		// theme.OverrideCap / theme.ElementCap / graveyard-full refusal still says so
+		// out loud — design §3.3: name the offender, name the limit, never a bare
+		// "failed" — and a no-op stays as quiet as it always should have been.
 		if res == applyRefused {
 			a.te.note("this " + op.kind.String() + " was refused — a cap or a lock is in the way")
 		}
@@ -335,6 +408,23 @@ func (a *App) editorApply(op themeEditOp) bool {
 
 // editorLiveOn reports the live preview being on. TRUE when there is no editor at
 // all, so a caller outside the screen never has to special-case the closed state.
+//
+// WHAT "LIVE" ALREADY MEANT, AND WHAT THIS ADDS. The canvas has been a real
+// courtroom render since W7a and the art has re-derived per edit since W7b
+// (themeeditorart.go), so the preview was never the missing half — what was missing
+// was a way to STOP it. Every keystroke in a numeric field re-bakes the layout, and
+// every keystroke in a generator's params rasterises a fresh 256 KiB tile and
+// releases the old one (pruneEditorGenTiles' own note). On a big theme, on a slow
+// machine, that is the whole editing experience: type a digit, wait for the frame.
+//
+// So the toggle FREEZES the canvas rather than enabling it. Off, the document goes
+// on taking edits — the rails, the inspector, undo and Save are untouched — and the
+// picture simply stops re-baking until the toggle goes back on, which reconciles
+// once (setEditorLive). The frozen state is the CHEAP one by construction: the
+// gates below return before the signature hash and before the invalidate, so a
+// paused editor does exactly the work an idle one does. That is the zero-cost-closed
+// discipline, and it is the direction that makes the toggle worth having — a toggle
+// whose off-state still rebaked in the background would be a label.
 func (te *themeEditor) editorLiveOn() bool { return te == nil || !te.livePaused }
 
 // editorInvalidateLive is invalidateThemeCanvases, gated by the toggle. One
@@ -348,6 +438,7 @@ func (a *App) editorInvalidateLive() {
 
 // setEditorLive flips the toggle and, on the way back ON, pays the one reconcile
 // the frozen frames skipped.
+//
 // THE RESUME IS UNCONDITIONAL, not "if anything changed": the plan's signature is
 // exactly what says whether anything changed (editorSyncArt compares it), and this
 // is the one moment the answer has to be re-asked rather than trusted.
@@ -367,9 +458,13 @@ func (a *App) setEditorLive(on bool) {
 
 // editorUndo steps the timeline back by one op — or by one whole GROUP, which is
 // what makes "try a preset, hate it, Ctrl+Z" one keypress.
+//
 // IT REFUSES WHILE PREVIEW IS UP, and so does editorRedo below. The two are the
 // only document mutators that do NOT go through editorApply, and the Ctrl+Z chord
 // is claimed PRE-SCREEN (app.go, gated on themeEditorOpen) — so without this a
+// chord typed at the demo would silently rewind work the author cannot see. The
+// chord is still CONSUMED by editorUndoChord either way, which is its whole
+// promise: a key an armed editor owns never also fires whatever else it is bound to.
 func (a *App) editorUndo() bool {
 	if a.te == nil || a.editorPreviewOn() {
 		return false
@@ -477,6 +572,7 @@ func (e *themeEditor) selectClear() { e.selN = 0 }
 
 // selectPrimary makes an ALREADY-SELECTED target the one the inspector follows and
 // the one a multi-drag is led by, by swapping it to the front.
+//
 // A swap rather than a re-select, because a press on one member of a multi-selection
 // must not throw the rest away — that is precisely the gesture "grab this box and
 // move all five" is made of. A target that is not selected at all is selected alone,
@@ -553,6 +649,12 @@ func (a *App) drawThemeEditor(w, h int32) {
 	// rails — and every one of them is hidden by NOT RUNNING rather than by being
 	// asked to hide itself. That is the only version of "hides all editing chrome"
 	// that stays true when the next rail is added.
+	//
+	// BELOW the poll cluster, deliberately: a save or an export started before
+	// Preview was pressed must still land while the demo plays, or the chip that
+	// says so would arrive minutes late. The two polls that MUTATE THE DOCUMENT
+	// (font, image) hold their finished job instead of landing it — they carry that
+	// rule themselves rather than depending on this ordering, see pollEditorFont.
 	if a.editorPreviewOn() {
 		a.te.peek = false
 		a.drawEditorPreviewScreen(w, h)
@@ -602,6 +704,12 @@ func (a *App) drawThemeEditor(w, h int32) {
 	// THE PANEL FENCE, RAISED HERE AND RELEASED BELOW (design §3.1: every editor
 	// surface but the two modals is a panel under the demoBrowser release-and-restore
 	// fence, so what is behind it goes click-dead without stranding modalOn).
+	//
+	// The rails are what needs it: editorFontPanelRect centres the panel over the
+	// canvas, and below ~928 px it overlaps a rail outright, so a press on a font row's
+	// `<` also reached drawEditorElementRow's ClickedIn underneath. modalOn blanks
+	// hovering(), which is what ClickedIn, Button and WheelIn are all built on.
+	//
 	// The HEADER is deliberately outside the fence and drew above: the panel's own rect
 	// starts below editBannerH by construction, so nothing behind it is at risk there —
 	// and fencing it would kill the Fonts button that closes the panel.
@@ -631,9 +739,18 @@ func (a *App) drawThemeEditor(w, h int32) {
 }
 
 // editorPanelUp reports that an editor PANEL is on screen.
+//
+// ONE PREDICATE FOR BOTH HALVES OF THE FENCE, so the two can never disagree about when
+// it is up. The draw raises c.modalOn over the rails (hovering() honours it); the
+// canvas probe hit-tests with RAW pointIn and therefore sees through every fence, so
+// editorCanvasInput has to ask the same question in its own words — exactly as it
+// already does for the compact toolbox.
+//
 // OPEN to the panels design §3.1 still owes (budget details, export sheet): each joins
 // the OR here and is fenced on both sides for free — the preset gallery and the import
 // report took exactly that route in W9.
+// CLOSED against the two MODALS, which are not panels — they close the screen's input
+// path rather than floating over it.
 func (a *App) editorPanelUp() bool {
 	return a.te != nil && (a.te.fontsOpen || a.te.gallery != nil || a.te.report != nil)
 }
@@ -642,6 +759,7 @@ func (a *App) editorPanelUp() bool {
 // it lives beside it so the two are read together: a panel added to the OR above and
 // not closed here would be a panel Esc walks past — which is exactly the hole the Fonts
 // panel had (app.go's ScreenThemeEditor arm).
+//
 // It closes ALL of them rather than "the top one", because the editor has no panel
 // stack: design §3.1's panels are alternatives, never layers, and a "topmost" that is
 // really a one-element set is a z-order nobody maintains.
@@ -656,16 +774,26 @@ func (a *App) closeEditorPanels() {
 }
 
 // drawEditorCanvas paints what the theme looks like RIGHT NOW, full bleed.
+//
 // TWO ARMS, because the editor is reachable from Settings with no server attached
 // and "you must join a courtroom before you may edit your theme" is not an
 // acceptable sentence. With a live room it is the real courtroom pass, 1:1. Without
+// one it is the theme's fitted design canvas with every editable slot and every
+// free element outlined in place — the geometry, at the exact size it will play,
+// which is what the geometry work needs. The live-art offline preview room is
+// W7b's (it must be built through newRoom, which is the one construction site).
 func (a *App) drawEditorCanvas(w, h int32) {
-	if a.link.room != nil && a.link.sess != nil && !a.theaterOn {
+	if a.room != nil && a.sess != nil && !a.theaterOn {
 		// THE COURTROOM'S OWN WIDGETS GO INERT while it is being used as a canvas.
 		// This is layoutEditFence's trick — modalOn blanks hovering() everywhere and
 		// the editor hit-tests with raw pointIn — and it is needed for the same
 		// reason: the kit is single-pass, so a press that selects a themed widget
 		// would ALSO press whatever real button is painted there.
+		//
+		// A BRACKET, not an assignment: an open dropdown belonging to the RAILS holds
+		// modalOn legitimately, and forcing it false on the way out would drop its
+		// fence and let the click behind it through. (app.go's own toolbox-under-an-
+		// editor arm saves and restores for exactly this reason.)
 		saved := a.ctx.modalOn
 		a.ctx.modalOn = true
 		a.drawCourtroom(w, h)
@@ -703,7 +831,7 @@ func (a *App) drawEditorHeader(w int32) {
 	// menuBarPaintsNow) — the same publication both legacy editors make from the
 	// statement that fills their banner. Without it an opaque 22 px strip paints over
 	// Undo / Redo / Save / Back after the screen dispatch.
-	a.toolbox.noteEditorBanner()
+	a.noteEditorBanner()
 	c.Fill(band, a.te.editorPlate(ColPanel))
 	name := a.te.doc.name
 	if name == "" {
@@ -783,6 +911,7 @@ func (a *App) drawEditorHeader(w int32) {
 	// the real theme with every rail, handle and guide gone, which is the only way
 	// an author sees what a player will see; a small toggle beside six others would
 	// have been the least discoverable place in the client to put that.
+	//
 	// Beside Share because they are the two things you do with a finished theme —
 	// look at it, then hand it over — and LEFTMOST because the wide box has to grow
 	// away from the row rather than push it (editorPreviewBtnRect).
@@ -804,9 +933,17 @@ func clampLabelColumn(want, x, edge int32) int32 {
 }
 
 // editorHeaderBtn is one header-band button whose action may be unavailable.
+//
+// A disabled control DRAWS DIM AND STAYS PUT rather than disappearing — the
+// disabled-not-absent rule menubar.go states and the content panel's source picker
+// already follows (drawContentSourcePicker's `seg`). A button that vanished with an
+// empty timeline would re-flow the whole band under the pointer, and "where did Redo
+// go?" is a worse question than a grey Redo.
+//
 // THE CLICK IS SWALLOWED HERE, at the button, not at the action. An action that
 // quietly no-ops is indistinguishable on screen from one that ran and did nothing
 // visible, which is exactly how a redo tail that stopped being reachable would go
+// unnoticed; refusing at the door keeps the answer in one place.
 func (a *App) editorHeaderBtn(r sdl.Rect, label string, enabled bool) bool {
 	c := a.ctx
 	if enabled {
@@ -876,6 +1013,7 @@ func (te *themeEditor) editorPlate(base sdl.Color) sdl.Color {
 }
 
 // drawEditorElementRail is the LEFT rail: the z-order list.
+//
 // Clipped with pushClip/popClip and NEVER with a raw Ren.SetClipRect — the raw call
 // clips DRAW only and lets clicks and hovers leak past the edge, which is the class
 // of bug the char-select grid shipped in v1.55.8. hovering() honours the kit's clip
@@ -891,7 +1029,7 @@ func (a *App) drawEditorElementRail(w, h int32) {
 	// theme with notes shows one row fewer of elements rather than drawing the chip
 	// over the element count (design §3.1: the chip lives in the rail footer).
 	chipH := int32(0)
-	if len(a.skin.themeReport) > 0 {
+	if len(a.themeReport) > 0 {
 		chipH = editRowH
 	}
 	body := sdl.Rect{X: rail.X, Y: rail.Y + editRowH, W: rail.W, H: rail.H - editRowH*2 - chipH}
@@ -937,9 +1075,18 @@ func (a *App) drawEditorElementRail(w, h int32) {
 
 // drawEditorRailActions draws the element rail's header buttons: ADD AN IMAGE, and
 // the LIVE PREVIEW toggle.
+//
+// ON THE RAIL RATHER THAN THE HEADER BAND. The band is full (drawEditorHeader's own
+// note measures it), and this is the better home regardless: the rail is the
+// element list, "+ Image" is the one act that adds to it, and the Live toggle
+// decides whether the list re-bakes as you edit. Both are one press from the list
+// they act on instead of across the window from it.
+//
 // "+ IMAGE" IS THE FIRST ADD-AN-ELEMENT AFFORDANCE IN THE EDITOR. Until this wave
 // opElemAdd had no UI caller at all — it existed only as the inverse of a delete —
 // so an element could be deleted, hidden, locked and re-typed but never created. It
+// is a real gap and this closes it for the kind users asked for; the other five
+// kinds are still reached by re-typing an element in the inspector.
 func (a *App) drawEditorRailActions(rail sdl.Rect) {
 	c := a.ctx
 	// Laid out from the RIGHT edge so the "Elements" label keeps the left and the
@@ -1070,6 +1217,7 @@ func (a *App) drawEditorInspector(w, h int32) {
 
 // drawInspectorTail is what a rail carries BELOW its rows: the widget arm's parity
 // note and its Reset, and the text arm's format-1 note.
+//
 // SEPARATE FROM THE TABLE because neither is a FIELD. Reset is an action (it removes a
 // row rather than setting a value), and the notes are statements about the format. A
 // row invented for either would have to carry a mutator that mutates nothing, which is
@@ -1190,6 +1338,7 @@ func (a *App) drawInspectorRow(f *inspectorField, t editTarget, r sdl.Rect) {
 
 // drawInspectorPick is an fkPick row: two step buttons that walk the LIVE list, then
 // the value itself as free text.
+//
 // THE TEXT FIELD IS NOT A FALLBACK, it is the row's contract. Every fkPick field is
 // read as free text by the format (see fieldKind's own comment), so a build that has
 // never heard of `generator = ripples` must still be able to hold and re-save that
@@ -1231,6 +1380,7 @@ func (a *App) drawInspectorPick(f *inspectorField, t editTarget, ctl sdl.Rect, o
 
 // editorWriteStringField is the ONE path a typed or picked string takes to the
 // document: validate what the FORMAT validates, intern, apply.
+//
 // The validation is here rather than in the setter because a setter cannot say no —
 // it has no return value and the op has already been recorded by the time it runs, so
 // a refusal there is either a silent no-op (an undo step that does nothing) or a
@@ -1252,6 +1402,9 @@ func (a *App) editorWriteStringField(f *inspectorField, t editTarget, s string) 
 		// ignored, an id outside the reader's grammar — because a setter cannot say no
 		// and a refusal discovered there would leave an undo entry claiming a rename
 		// that never happened.
+		//
+		// The message is theme's own, so the editor cannot quote a grammar or a cap the
+		// format does not actually have.
 		el := a.te.doc.element(t)
 		if el == nil {
 			return
@@ -1358,6 +1511,20 @@ func parseEditHex(s string) (editValue, bool) {
 // combination into c.hotkey, so an in-draw c.keyPressed check for Ctrl+Z is dead
 // code — and this screen has no courtroom pass of its own to ride when it is opened
 // from Settings with no server attached.
+//
+// It yields to a focused field, which is the house rule every other plain-key claim
+// already follows — typing "hex" into a colour row must not delete the selection.
+//
+// AND IT YIELDS TO A MODAL, which the focus check does NOT cover. c.modalOn only
+// gates hovering(), so the fence drawThemeEditor raises for the embedded file
+// browser buys the POINTER half its protection and the keyboard half none: with the
+// browser up over the editor, DELETE deleted the selected element, H/L toggled
+// hidden/locked and the arrows nudged it, under a panel that owns the screen. Worse
+// than a stray edit, this function ZEROES c.keyPressed on every arm, so the key is
+// spent — a modal that later wants Escape or a text field could not see it either.
+// The browser reads no keys today and has no field, so c.focusID stays empty and the
+// check above never fires. One line, and it covers the design's two planned modals
+// in advance.
 func (a *App) handleEditorKeys() {
 	c := a.ctx
 	if c.modalOn {
@@ -1392,7 +1559,19 @@ func (a *App) handleEditorKeys() {
 }
 
 // editorNudgeSelection moves the whole selection by one step, as ONE grouped op.
+//
+// IT REUSES nudgeCoord AND layoutGridDesign — the very functions the two legacy
+// editors nudge through (layoutnudge.go) — so "arrow = 1 px, Ctrl = the next grid
+// line" is one implementation rather than three that agree today. An element's rect
+// is design px in its own declared Space, which is the space its authored numbers,
+// its anchor delta and the editors' shared grid all live in.
+//
+// NO CANVAS CLAMP, deliberately, and the argument is layoutnudge.go's: clamping is
+// a SLOT rule. Under design §6.6 R1 an anchored element's rect is a signed DELTA on
+// its anchor — negative values are the normal case for decoration that overhangs
+// its widget — and a SpaceWindow element is measured against no canvas at all.
 // Clamping here would forbid values the format defines.
+//
 // A BURST IS ONE UNDO STEP, and it costs nothing to arrange: consecutive nudges hit
 // the ring's coalescing window on the same (kind, target, field), so twenty taps
 // merge into one op whose `before` is where the element started.
@@ -1404,6 +1583,8 @@ func (a *App) editorNudgeSelection(dx, dy int, coarse bool) {
 	// optimisation — it is what makes a nudge burst one undo step. The group id is
 	// part of the coalescing identity (coalesceKey), so opening a FRESH group on every
 	// tap would give consecutive taps different keys and defeat the merge entirely.
+	// One element = no group = the taps coalesce; many elements = one group per tap,
+	// which undoes together and is the correct step for a multi-select nudge.
 	if a.te.selN > 1 {
 		a.te.ring.begin()
 		defer a.te.ring.end()
@@ -1459,6 +1640,7 @@ func (a *App) editorToggleField(f editField) {
 }
 
 // editorDeleteSelection removes every selected element as one grouped op.
+//
 // HIGHEST INDEX FIRST. Identity is the INDEX (theme.Element), so removing element 3
 // renumbers everything after it — deleting in ascending order would delete the
 // wrong rows from the second one on. Descending is the only order in which the
@@ -1492,6 +1674,12 @@ func (a *App) editorDeleteSelection() {
 	// §3.3's error-copy rule forbids — and the two have OPPOSITE remedies: a locked
 	// element wants L, a full graveyard wants a save or a reopen. One sentence covering
 	// both taught the user nothing about either.
+	//
+	// The counting needs no second predicate and no new state. The lock is tested here,
+	// before the funnel, so it is known without asking the document twice; a target the
+	// selection outlived is skipped as neither (nothing was prevented — see
+	// applyNoChange); and past those two the ONLY answer opElemDel has left is
+	// themeElemGraveCap, so a false from the funnel means the graveyard and nothing else.
 	locked, full := 0, 0
 	for i := 0; i < n; i++ {
 		t := elementTarget(idxs[i])
@@ -1552,9 +1740,18 @@ func itoa(n int) string { return strconv.Itoa(n) }
 // ---------------------------------------------------------------------------
 
 // reclaimThemeDoc re-installs the editor's model after a theme apply.
+//
+// THE DEFECT IT CLOSES, recorded at its own site by W6 (layoutnudge.go): applies
+// are NOT user-initiated. healTheme re-kicks one on any T1 eviction of a theme
+// texture, the texture-filter row kicks one, boot kicks two — and each one does
+// `a.themeSidecar = res.sidecar`, discarding every unsaved edit with nothing on
+// screen to say why. A user could nudge a decoration into place, take their hand
+// off the keyboard, and watch it jump back.
+//
 // ONE NAMED CALL SITE: pollThemeApply, immediately after that assignment. It is
 // deliberately not a general "the editor owns the sidecar" rule — it is a single
 // re-install, guarded on the theme NAME, so switching themes mid-session correctly
+// loses the document rather than pasting the old theme's elements onto the new one.
 func (a *App) reclaimThemeDoc() {
 	if a.te == nil || a.te.doc == nil || a.te.doc.side == nil {
 		return
@@ -1563,13 +1760,21 @@ func (a *App) reclaimThemeDoc() {
 	if name != a.te.doc.name {
 		return // a different theme is applied now; the document is not about it
 	}
-	a.elemBake.themeSidecar = a.te.doc.side
+	a.themeSidecar = a.te.doc.side
 	// THE GEOMETRY TIER NEEDS THE SAME TREATMENT, and it needs it in this order.
 	// pollThemeApply has just replaced a.themeRects wholesale with a map built from
 	// the sidecar ON DISK, so every unsaved [overrides] edit is missing from it and
 	// the document is pointed at a map nobody draws from any more. Re-binding alone
 	// would leave the pixels wrong; re-folding alone would leave the document holding
 	// a dead map.
-	a.te.doc.bindLive(a.skin.themeRects)
-	foldSidecarOverrides(a.skin.themeRects, a.te.doc.side)
+	//
+	// The re-fold lands AFTER applyRectOverrides has already run (app.go), so while
+	// the editor is open the document beats the player's own live Ctrl+F2 tweaks for
+	// the keys it authors. That is the one place the documented precedence is
+	// inverted, and it is inverted deliberately and temporarily: the editor is the
+	// authoring surface, and a stale preference silently overwriting the widget the
+	// user is dragging is not a precedence rule anybody would defend. The next apply
+	// after the editor closes restores the ordinary order.
+	a.te.doc.bindLive(a.themeRects)
+	foldSidecarOverrides(a.themeRects, a.te.doc.side)
 }

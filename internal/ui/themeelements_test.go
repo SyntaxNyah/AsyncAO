@@ -1,6 +1,15 @@
 package ui
 
 // The free-element render model's gates (v1.90.0 W3).
+//
+// WRITTEN BEFORE THE PAINTERS, ON PURPOSE. The wave plan says so in as many
+// words — "write the two zero-alloc gates FIRST, against a stub draw body,
+// before any real drawing exists" (docs/wip/THEME-EDITOR-DESIGN.md §4 W3) —
+// because this is the one wave that puts a NEW draw surface inside a frame that
+// is gated at exactly zero allocations. A gate written afterwards is written
+// against whatever shipped; a gate written first is a constraint every painter
+// that follows has to satisfy.
+//
 // So these tests pass against a table of no-op painters, and they are expected to
 // keep passing, unchanged, as each real painter lands. If one of them has to be
 // loosened to make a painter fit, the painter is wrong.
@@ -55,12 +64,35 @@ const seedGatedEvery = 3
 
 // seedBakedElements fills the layout cache's baked array by hand, exactly as the
 // cold-rebuild bake will.
+//
 // BY HAND, because the gates exist BEFORE the bake does — that is the whole point
 // of writing them first. When the real bake lands these tests do not change: they
 // seed the same array the bake writes, and the alloc contract they pin is a
+// property of the DRAW path, not of how the array got filled.
+//
+// Elements are spread evenly over the three bands and cycle through every
+// theme.ElementKind, so the gate covers every painter in the table rather than the
+// one kind a fixture happened to pick. They also cycle through every elemShape
+// silhouette, every theme.TextAlign and both gradient modes, because each of those
+// is a SEPARATE arm of a painter: elemShapeInset's five branches, paintElementText's
+// width probe (which only runs off the left-aligned default) and paintElementRadial
+// are all invisible to a fixture that leaves those fields at their zero values, and
+// an allocation in one of them would ship un-measured.
+//
+// It takes the App so the condition table can be interned against the app's OWN live
+// pos (a.mySide(), which is never empty — screens.go returns defaultSide). That is
+// what puts refreshElementConditions' resolution pass inside the gates: with
+// lay.condN == 0 the function returns after one field write and the whole per-axis
+// memo — four string compares on a settled frame, a linear scan on the frame the
+// session moves — never runs at all.
+// seedElementArt uploads one small theme-media page and returns it, so the seeded
+// ElemImage / ElemGen rows have real art to blit.
+//
 // WITHOUT IT THE ART PAINTER IS NOT MEASURED AT ALL. paintElementArt returns on the
 // first line when page is nil, so a fixture of pageless elements would have run the
 // two AllocsPerRun gates over an early return and reported zero for a painter that
+// had never executed — which is how a deferred colour-mod restore (a heap-allocated
+// closure per element per frame) would have shipped straight through both of them.
 func seedElementArt(t testing.TB, a *App) *render.TexturePage {
 	t.Helper()
 	const side = 8
@@ -151,6 +183,20 @@ func seedBakedElements(a *App, lay *themeLayoutCache, n int, art *render.Texture
 
 // captureElementPaints swaps the painter table for recorders that log the element
 // each call received, and returns the restore func.
+//
+// A test-local table swap rather than a counter inside the production painters:
+// the shipped table must stay a plain array of top-level funcs with nothing in it
+// for a test's benefit, and this way the recorder sees exactly what the band loop
+// dispatched — including the ORDER, which is what proves all three hook positions
+// fire and that the bands paint back-to-front.
+// THE RESTORE IS REGISTERED WITH t.Cleanup, not merely returned. elemPainters is a
+// package-level var and this swaps the WHOLE table: a t.Fatal (or a panic, or an
+// early return) between the swap and an inline restore would leave every test that
+// runs after it in this package drawing through no-op recorders — and every one of
+// them would PASS, vacuously, against painters that do nothing. The returned func is
+// still there for the sites that legitimately restore mid-test (a live-vs-export
+// comparison captures twice); calling it twice is harmless because it only ever
+// writes back the table that was live at capture time.
 func captureElementPaints(t testing.TB, seen *[]*bakedElement) func() {
 	t.Helper()
 	saved := elemPainters
@@ -165,10 +211,19 @@ func captureElementPaints(t testing.TB, seen *[]*bakedElement) func() {
 // captureElementPaintValues is captureElementPaints' twin, and the difference is the
 // whole point: it records a COPY of the element as the painter received it, not the
 // pointer.
+//
+// The pointer recorder cannot answer any question about the per-frame effect terms.
+// drawElement applies them, calls the painter, and restores the baked row — so every
+// post-paint read through a *bakedElement sees the RESTORED values, which is why the
 // wash arm, the offset arm, the scale arm and the alpha arm of applyElementFX were
+// all deletable with the suite green, and why the one gate that looked relevant had
+// to recompute its own expected alpha three times instead of reading what the painter
+// got. A value snapshot is the only honest oracle for "the terms reached the pixel".
+//
 // Two recorders rather than one wider one: the pointer form pins IDENTITY and ORDER
 // (the alloc gates assert the painter is handed &lay.el[i] and never a copy), the
 // value form pins CONTENT. Folding them into one struct would make every existing
+// call site carry a field it does not use.
 func captureElementPaintValues(t testing.TB, seen *[]bakedElement) func() {
 	t.Helper()
 	saved := elemPainters
@@ -198,9 +253,12 @@ func indexOfBaked(lay *themeLayoutCache, e *bakedElement) int {
 // TestDrawElementBandsZeroAllocWithNoElements is the gate that matters most,
 // because it covers every install that never touches the theme editor: a theme
 // with NO elements must add exactly nothing to a settled themed frame.
+//
 // It is the alloc half of the v1.89.0 "0 base = 0 cost" rule (the ns/op half is
 // BenchmarkThemedFrameNoElements below). A stock AO2 theme leaves the baked array
 // zeroed and every band range at {0, 0}, so the three band loops must not even
+// reach a painter — which this also asserts directly, so the test cannot pass
+// vacuously on a fixture that quietly acquired elements.
 func TestDrawElementBandsZeroAllocWithNoElements(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
@@ -208,13 +266,13 @@ func TestDrawElementBandsZeroAllocWithNoElements(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 	draw()
-	if !a.skin.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
+	if !a.themeLay.valid || !a.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch — the element bands never ran")
 	}
-	if a.skin.themeLay.elN != 0 {
-		t.Fatalf("the stock fixture baked %d elements, want 0 — this gate measures the NO-element case", a.skin.themeLay.elN)
+	if a.themeLay.elN != 0 {
+		t.Fatalf("the stock fixture baked %d elements, want 0 — this gate measures the NO-element case", a.themeLay.elN)
 	}
-	for b, rg := range a.skin.themeLay.band {
+	for b, rg := range a.themeLay.band {
 		if rg.lo != 0 || rg.hi != 0 {
 			t.Fatalf("band %d is %+v on a theme with no elements, want {0 0}", b, rg)
 		}
@@ -256,10 +314,10 @@ func TestDrawElementBandsZeroAllocWith96Elements(t *testing.T) {
 	// One frame FIRST: themeLayoutIn rebuilds the whole cache (`*lay = themeLayoutCache{…}`)
 	// on its cold path, which would wipe anything seeded before it.
 	draw()
-	if !a.skin.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
+	if !a.themeLay.valid || !a.toolboxThemeRectOn {
 		t.Fatal("the fixture did not reach the themed branch — the element bands never ran")
 	}
-	lay := &a.skin.themeLay
+	lay := &a.themeLay
 	seedBakedElements(a, lay, theme.ElementCap, seedElementArt(t, a))
 	if lay.elN != theme.ElementCap {
 		t.Fatalf("seeded %d elements, want %d", lay.elN, theme.ElementCap)
@@ -310,9 +368,13 @@ func TestDrawElementBandsZeroAllocWith96Elements(t *testing.T) {
 // BenchmarkThemedFrameNoElements is the v1.89.0 "0 base = 0 cost" rule applied to
 // the element model: a theme that declares NO elements must pay for the feature in
 // three empty loops and nothing else.
+//
 // BENCHMARKED, NOT ASSERTED — the same rule layered assets shipped under: a nil
 // layer is one atomic load, and the way that was settled was by measuring it, not
 // by claiming it. The target is "within noise of the pre-feature baseline", so the
+// baseline is measured on this exact benchmark before the band loops exist and
+// recorded in the wave's notes; a later run that drifts past noise means the empty
+// case grew a cost that nobody meant to add.
 func BenchmarkThemedFrameNoElements(b *testing.B) {
 	a, cleanup := stageThemedCourtroom(b)
 	defer cleanup()
@@ -322,11 +384,11 @@ func BenchmarkThemedFrameNoElements(b *testing.B) {
 	// Prove the themed branch really ran: a silently-classic frame would measure a
 	// screen the element model never touches.
 	draw()
-	if !a.skin.themeLay.valid || !a.toolbox.toolboxThemeRectOn {
+	if !a.themeLay.valid || !a.toolboxThemeRectOn {
 		b.Fatal("the fixture did not reach the themed branch — the benchmark would measure the classic path")
 	}
-	if a.skin.themeLay.elN != 0 {
-		b.Fatalf("the fixture baked %d elements — this benchmark measures the NO-element case", a.skin.themeLay.elN)
+	if a.themeLay.elN != 0 {
+		b.Fatalf("the fixture baked %d elements — this benchmark measures the NO-element case", a.themeLay.elN)
 	}
 	// Settle first (text atlas, width memos, the demand pump's negative caching) so
 	// b.N measures steady-state frames rather than the app warming up. The gates'
@@ -353,9 +415,24 @@ func BenchmarkThemedFrameNoElements(b *testing.B) {
 // the wave that lands it. It is a CENSUS, not a permission list: the gate fails both
 // ways, so a kind that gains a painter must lose its line here, and a kind that
 // loses one cannot sneak back in.
+//
+// All six were pending at the moment the gates were written — that is what "write
+// the gates first, against a stub draw body" means (design §4 W3). W3's own four
+// painters (shape, gradient, text, pane) have since landed and left this census;
+// the two that need the theme-media texture tier stay until W4 brings it.
+// EMPTY since W4: every kind paints. ElemImage and ElemGen share paintElementArt,
+// because after the bake they are the same thing — a resolved *render.TexturePage
+// plus a fit, a tint and a rotation — and the only difference (where the page came
+// from) was settled at bake time.
 var elemPainterPending = map[theme.ElementKind]string{}
 
 // TestEveryElementKindHasAPainter pins the table TOTAL over the enum.
+//
+// Totality is not a nicety here: drawElementBands indexes elemPainters and calls
+// through it with no nil check, so a kind with no entry is a nil dereference on the
+// render thread — triggered by a file a stranger wrote, the first time somebody
+// shares a theme using a kind this build declared but never wired.
+//
 // It is the free-element twin of TestEveryHandDrawnKeyHasAPainter, which pins the
 // same property for the AO2 slot registry.
 func TestEveryElementKindHasAPainter(t *testing.T) {
