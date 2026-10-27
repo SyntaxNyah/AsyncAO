@@ -44,6 +44,7 @@ func loadGoldenCorpus(t *testing.T) []struct {
 		{"legacy_smoothScaling", map[string]any{"smoothScaling": true}},
 		{"legacy_spriteScalingMigrated", map[string]any{"spriteScalingMigrated": true, "spriteScaling": 2}},
 		{"legacy_autoReconnectDefaultMigrated", map[string]any{"autoReconnectDefaultMigrated": false, "autoReconnect": true}},
+		{"legacy_catchUpDefaultMigrated", map[string]any{"catchUpDefaultMigrated": false, "catchUpWhenBehind": true}},
 		{"legacy_themeFitDefaultMigrated", map[string]any{"themeFitDefaultMigrated": false, "themeFit": 0}},
 		{"legacy_blipSpeedDefaultMigrated", map[string]any{"blipSpeedDefaultMigrated": false, "textCrawlMs": 18}},
 		{"legacy_deskManifestDefaultMigrated", map[string]any{"deskManifestDefaultMigrated": false, "deskFollowManifest": false}},

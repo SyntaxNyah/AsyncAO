@@ -311,6 +311,7 @@ type Settings struct {
 	ICTimestamps                 bool                         `json:"icTimestamps"`
 	AutoReconnect                bool                         `json:"autoReconnect"`
 	AutoReconnectDefaultMigrated bool                         `json:"autoReconnectDefaultMigrated"`
+	CatchUpDefaultMigrated       bool                         `json:"catchUpDefaultMigrated"`
 	ThemeFitDefaultMigrated      bool                         `json:"themeFitDefaultMigrated"`
 	BlipSpeedDefaultMigrated     bool                         `json:"blipSpeedDefaultMigrated"`
 	DeskManifestDefaultMigrated  bool                         `json:"deskManifestDefaultMigrated"`
