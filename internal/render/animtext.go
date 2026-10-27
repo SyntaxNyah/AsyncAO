@@ -117,6 +117,8 @@ func (at *AnimatedText) Animates(reduceMotion bool) bool {
 const (
 	shakeAmpPx     = 1.6
 	shakeFreqHz    = 21.0
+	shakeRunePhase = 1.7  // radians of rattle phase per rune
+	shakeYFreqMul  = 1.37 // y rattles at an incommensurate multiple of x
 	waveAmpPx      = 2.6
 	waveSpeedHz    = 4.4
 	waveRunePhase  = 0.55 // radians of wave phase per rune (the crest travels along the word)
@@ -133,11 +135,13 @@ const (
 	swayRunePhase    = 0.5
 	shiverAmpPx      = 1.2
 	shiverFreqHz     = 30.0
+	shiverRunePhase  = 2.4
 	wobbleAmpPx      = 1.8
 	wobbleSpeedHz    = 1.6
 	wobbleRunePhase  = 0.9
 	trembleAmpPx     = 1.1
 	trembleFreqHz    = 27.0
+	trembleRunePhase = 2.1
 	floatAmpPx       = 2.0
 	floatSpeedHz     = 0.9 // slow, synchronised (no per-rune phase)
 	pulseFreqHz      = 2.2
@@ -404,7 +408,7 @@ func (at *AnimatedText) Draw(ren *sdl.Renderer, gc *GlyphCache, font *ttf.Font, 
 			}
 		case EffectRainbow:
 			if reduceMotion {
-				col = hsvToRGB(math.Mod(float64(i)*rainbowDegRune, 360), rainbowSat, 1) // static band, no flashing
+				col = hsvToRGB(math.Mod(float64(i)*rainbowDegRune, degreesPerTurn), rainbowSat, 1) // static band, no flashing
 			} else {
 				col = rainbowColor(t, i)
 			}
@@ -455,7 +459,7 @@ func (at *AnimatedText) Draw(ren *sdl.Renderer, gc *GlyphCache, font *ttf.Font, 
 			// never share a texture with a text glyph (glyphKey has the font ptr) — text
 			// glyphs stay at the default alpha 255 and skip this extra per-glyph mod, keeping
 			// a plain effects message's per-glyph cost exactly as before.
-			_ = cg.tex.SetColorMod(255, 255, 255) // neutral: draw the emoji's own colours
+			_ = cg.tex.SetColorMod(math.MaxUint8, math.MaxUint8, math.MaxUint8) // neutral: draw the emoji's own colours
 			_ = cg.tex.SetAlphaMod(colorBrightnessAlpha(ar.color, col))
 		} else {
 			_ = cg.tex.SetColorMod(col.R, col.G, col.B)
@@ -480,7 +484,7 @@ func colorBrightnessAlpha(base, eff sdl.Color) uint8 {
 		ref = base.B
 	}
 	if ref == 0 {
-		return 255 // black base has no brightness to scale — keep the emoji opaque
+		return math.MaxUint8 // black base has no brightness to scale — keep the emoji opaque
 	}
 	e := eff.R
 	if eff.G > e {
@@ -490,17 +494,17 @@ func colorBrightnessAlpha(base, eff sdl.Color) uint8 {
 		e = eff.B
 	}
 	if e >= ref {
-		return 255 // brightened / unchanged (rainbow, sparkle peak) — full opacity
+		return math.MaxUint8 // brightened / unchanged (rainbow, sparkle peak) — full opacity
 	}
-	return uint8(uint32(e) * 255 / uint32(ref))
+	return uint8(uint32(e) * math.MaxUint8 / uint32(ref))
 }
 
 // shakeOffset is a small deterministic jitter for glyph idx at time t (seconds). Two
 // incommensurate frequencies for x/y read as a rattle, not a smooth sway. Pure, 0-alloc.
 func shakeOffset(t float64, idx int) (int32, int32) {
-	p := t*shakeFreqHz*2*math.Pi + float64(idx)*1.7
+	p := t*shakeFreqHz*2*math.Pi + float64(idx)*shakeRunePhase
 	return int32(math.Round(math.Sin(p) * shakeAmpPx)),
-		int32(math.Round(math.Cos(p*1.37) * shakeAmpPx))
+		int32(math.Round(math.Cos(p*shakeYFreqMul) * shakeAmpPx))
 }
 
 // waveOffset is a travelling vertical sine — a banner wave along the word. Pure, 0-alloc.
@@ -511,30 +515,42 @@ func waveOffset(t float64, idx int) int32 {
 
 // rainbowColor cycles the hue over time and along the word. Pure, 0-alloc.
 func rainbowColor(t float64, idx int) sdl.Color {
-	return hsvToRGB(math.Mod(t*rainbowDegSec+float64(idx)*rainbowDegRune, 360), rainbowSat, 1)
+	return hsvToRGB(math.Mod(t*rainbowDegSec+float64(idx)*rainbowDegRune, degreesPerTurn), rainbowSat, 1)
 }
+
+// Hue landmarks bounding the six 60-degree sectors of hsvToRGB.
+const (
+	hueSector  = 60
+	hueYellow  = hueSector
+	hueGreen   = 2 * hueSector
+	hueCyan    = 3 * hueSector
+	hueBlue    = 4 * hueSector
+	hueMagenta = 5 * hueSector
+
+	degreesPerTurn = 360
+)
 
 // hsvToRGB converts HSV (h in degrees, s/v in 0..1) to an opaque sdl.Color. Pure, 0-alloc.
 func hsvToRGB(h, s, v float64) sdl.Color {
 	c := v * s
-	x := c * (1 - math.Abs(math.Mod(h/60, 2)-1))
+	x := c * (1 - math.Abs(math.Mod(h/hueSector, 2)-1))
 	m := v - c
 	var r, g, b float64
 	switch {
-	case h < 60:
+	case h < hueYellow:
 		r, g, b = c, x, 0
-	case h < 120:
+	case h < hueGreen:
 		r, g, b = x, c, 0
-	case h < 180:
+	case h < hueCyan:
 		r, g, b = 0, c, x
-	case h < 240:
+	case h < hueBlue:
 		r, g, b = 0, x, c
-	case h < 300:
+	case h < hueMagenta:
 		r, g, b = x, 0, c
 	default:
 		r, g, b = c, 0, x
 	}
-	return sdl.Color{R: uint8((r + m) * 255), G: uint8((g + m) * 255), B: uint8((b + m) * 255), A: 255}
+	return sdl.Color{R: uint8((r + m) * math.MaxUint8), G: uint8((g + m) * math.MaxUint8), B: uint8((b + m) * math.MaxUint8), A: math.MaxUint8}
 }
 
 // --- #M5+ effect math (all pure + 0-alloc; deterministic in the clock so a replay/export matches) ---
@@ -553,7 +569,7 @@ func swayOffset(t float64, idx int) int32 {
 
 // shiverOffset is a fast, tiny horizontal tremor (a nervous shiver).
 func shiverOffset(t float64, idx int) int32 {
-	p := t*shiverFreqHz*2*math.Pi + float64(idx)*2.4
+	p := t*shiverFreqHz*2*math.Pi + float64(idx)*shiverRunePhase
 	return int32(math.Round(math.Sin(p) * shiverAmpPx))
 }
 
@@ -566,7 +582,7 @@ func wobbleGlyphOffset(t float64, idx int) (int32, int32) {
 
 // trembleOffset is a fast, tiny VERTICAL tremor (the y-cousin of shiver).
 func trembleOffset(t float64, idx int) int32 {
-	p := t*trembleFreqHz*2*math.Pi + float64(idx)*2.1
+	p := t*trembleFreqHz*2*math.Pi + float64(idx)*trembleRunePhase
 	return int32(math.Round(math.Sin(p) * trembleAmpPx))
 }
 
@@ -582,7 +598,7 @@ func scaleColor(base sdl.Color, k float64) sdl.Color {
 
 // pulseColor shimmers a glyph's brightness with a wave travelling along the word (floored readable).
 func pulseColor(base sdl.Color, t float64, idx int) sdl.Color {
-	k := pulseFloor + (1-pulseFloor)*0.5*(1+math.Sin(t*pulseFreqHz*2*math.Pi-float64(idx)*pulseRunePhase))
+	k := pulseFloor + (1-pulseFloor)*(1+math.Sin(t*pulseFreqHz*2*math.Pi-float64(idx)*pulseRunePhase))/2
 	return scaleColor(base, k)
 }
 
@@ -595,17 +611,17 @@ func blinkFactor(t float64) float64 {
 // gradientColor is a STATIC per-rune hue band (no animation): colourful but calm, always readable
 // (identical under ReduceMotion).
 func gradientColor(idx int) sdl.Color {
-	return hsvToRGB(math.Mod(float64(idx)*gradientDegRune, 360), gradientSat, 1)
+	return hsvToRGB(math.Mod(float64(idx)*gradientDegRune, degreesPerTurn), gradientSat, 1)
 }
 
 // sparkleColor briefly flashes a glyph toward white on its own twinkle phase — a shimmer of stars.
 func sparkleColor(base sdl.Color, t float64, idx int) sdl.Color {
-	s := 0.5 * (1 + math.Sin(t*sparkleFreqHz*2*math.Pi+float64(idx)*sparkleRunePhase))
+	s := (1 + math.Sin(t*sparkleFreqHz*2*math.Pi+float64(idx)*sparkleRunePhase)) / 2
 	f := math.Pow(s, sparkleSharp) // sharp, brief peaks
 	return sdl.Color{
-		R: uint8(float64(base.R) + (255-float64(base.R))*f),
-		G: uint8(float64(base.G) + (255-float64(base.G))*f),
-		B: uint8(float64(base.B) + (255-float64(base.B))*f),
+		R: uint8(float64(base.R) + (math.MaxUint8-float64(base.R))*f),
+		G: uint8(float64(base.G) + (math.MaxUint8-float64(base.G))*f),
+		B: uint8(float64(base.B) + (math.MaxUint8-float64(base.B))*f),
 		A: base.A,
 	}
 }

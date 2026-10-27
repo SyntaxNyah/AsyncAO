@@ -1,6 +1,8 @@
 package render
 
 import (
+	"math"
+
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
 )
@@ -125,7 +127,7 @@ func (b *Badge) Draw(ren *sdl.Renderer, dst *sdl.Rect, alpha uint8, renderPct in
 	} else {
 		_ = ren.Copy(b.tex, nil, dst)
 	}
-	_ = b.tex.SetAlphaMod(0xFF) // restore: the texture is cached and reused next frame
+	_ = b.tex.SetAlphaMod(math.MaxUint8) // restore: the texture is cached and reused next frame
 }
 
 // Destroy frees the badge's texture. Render thread only.

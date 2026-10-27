@@ -622,7 +622,7 @@ func (v *Viewport) RenderStylePreview(ren *sdl.Renderer, base string, st courtro
 	v.prevVPClip = vp
 	_ = ren.SetClipRect(&v.prevVPClip)
 	v.prevLayer = courtroom.SpriteLayer{Visible: true, Active: base, Style: st}
-	v.drawSprite(ren, &v.prevLayer, &v.prevAnim, vp, 0, 100 /* dimPct 100 = no spotlight dim */)
+	v.drawSprite(ren, &v.prevLayer, &v.prevAnim, vp, 0, percentMax /* dimPct 100 = no spotlight dim */)
 	if v.prevClipSave.W > 0 || v.prevClipSave.H > 0 {
 		_ = ren.SetClipRect(&v.prevClipSave)
 	} else {
@@ -638,11 +638,14 @@ var (
 )
 
 const (
-	outlineAlpha    = 235 // near-solid white outline
-	shadowAlpha     = 110 // soft dark shadow
-	outlineDivisor  = 170 // outline width = vp.H / divisor (scales with the stage), floored
-	outlineWidthMin = 2
-	shadowMultiple  = 3 // shadow offset = outline width * this
+	outlineAlpha     = 235 // near-solid white outline
+	shadowAlpha      = 110 // soft dark shadow
+	outlineDivisor   = 170 // outline width = vp.H / divisor (scales with the stage), floored
+	outlineWidthMin  = 2
+	shadowMultiple   = 3 // shadow offset = outline width * this
+	outlineCardinals = 4 // outlineDirs[:4] are the cardinals, the rest diagonals
+	// screenShakeYFreqMul shakes y at an off ratio of x, so the shake is not a line.
+	screenShakeYFreqMul = 1.3
 )
 
 // NewViewport builds a viewport over the texture store.
@@ -969,7 +972,8 @@ func (v *Viewport) reduceInactiveAnimations(scene *courtroom.Scene) {
 	v.prevActiveIdle = scene.Speaker.IdleBase
 	v.prevActiveTalk = scene.Speaker.TalkBase
 	v.prevActivePreanim = scene.Speaker.PreanimBase
-	active := make(map[string]bool, 3)
+	const speakerSprites = 3 // idle, talk, preanim
+	active := make(map[string]bool, speakerSprites)
 	if scene.Speaker.IdleBase != "" {
 		active[scene.Speaker.IdleBase] = true
 	}
@@ -1056,7 +1060,7 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		amp := float64(vp.W) / shakeAmplitudeDivisor * strength
 		phase := 2 * math.Pi * float64(scene.ShakeLeft) / float64(shakePeriod)
 		vp.X += int32(amp * math.Sin(phase))
-		vp.Y += int32(amp / 2 * math.Cos(phase*1.3))
+		vp.Y += int32(amp / 2 * math.Cos(phase*screenShakeYFreqMul))
 	}
 
 	// #80: contain the full-viewport fills (background + speedlines) to the
@@ -1071,13 +1075,13 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 	if v.fx.DoF {
 		v.drawBackgroundDoF(ren, scene.BackgroundBase, &v.bgAnim, vp) // #11 soft-focus + dim
 	} else {
-		v.drawFill(ren, scene.BackgroundBase, &v.bgAnim, vp, 100) // bg full-bright (spotlight dims pair+desk, not bg)
+		v.drawFill(ren, scene.BackgroundBase, &v.bgAnim, vp, percentMax) // bg full-bright (spotlight dims pair+desk, not bg)
 	}
 	// #126 zoom speedlines: the speaker's own radial art behind them during a zoom
 	// emote (char folder, or the bundled stock burst when the pack ships none).
 	// Drawn over the background, under the characters.
 	if base := effectiveSpeedlineBase(scene, v.store); base != "" {
-		v.drawFill(ren, base, &v.speedlineAnim, vp, 100)
+		v.drawFill(ren, base, &v.speedlineAnim, vp, percentMax)
 	}
 	if contain {
 		_ = ren.SetClipRect(nil)
@@ -1191,7 +1195,7 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 			_ = ren.SetClipRect(&v.stageClip)
 		}
 		v.fillRect = vp
-		_ = ren.SetDrawColor(255, 255, 255, uint8(255*frac))
+		_ = ren.SetDrawColor(channelMax, channelMax, channelMax, uint8(channelMax*frac))
 		_ = ren.FillRect(&v.fillRect)
 		if contain {
 			_ = ren.SetClipRect(nil)
@@ -1269,13 +1273,13 @@ func (v *Viewport) drawFill(ren *sdl.Renderer, base string, anim *animState, vp 
 		return
 	}
 	v.fillRect = vp
-	if dimPct < 100 {
-		d := scaleChannel(255, dimPct)
+	if dimPct < percentMax {
+		d := scaleChannel(channelMax, dimPct)
 		_ = tex.SetColorMod(d, d, d)
 	}
 	_ = ren.Copy(tex, nil, &v.fillRect)
-	if dimPct < 100 {
-		_ = tex.SetColorMod(255, 255, 255) // restore the shared page
+	if dimPct < percentMax {
+		_ = tex.SetColorMod(channelMax, channelMax, channelMax) // restore the shared page
 	}
 }
 
@@ -1416,7 +1420,7 @@ const (
 // drawReflections mirrors the speaker (+ pair) below the floor line as a flipped, faded glass
 // reflection, confined to the stage. Called from Render between the sprites and the desk.
 func (v *Viewport) drawReflections(ren *sdl.Renderer, scene *courtroom.Scene, vp, spkVP sdl.Rect) {
-	floorY := vp.Y + vp.H*reflectFloorPct/100
+	floorY := vp.Y + vp.H*reflectFloorPct/percentMax
 	alpha := reflectAlpha(v.fx.ReflectStrength)
 	// Confine the reflection to the stage so it can't bleed past the viewport bottom — but
 	// only when a clip isn't already active (the zoom path clips to the stage itself), so we
@@ -1459,7 +1463,7 @@ func (v *Viewport) drawReflection(ren *sdl.Renderer, layer *courtroom.SpriteLaye
 	tex := page.Frames[frame]
 	_ = tex.SetAlphaMod(alpha)
 	_ = ren.CopyEx(tex, nil, &v.reflRect, 0, nil, flip)
-	_ = tex.SetAlphaMod(255) // restore the shared page
+	_ = tex.SetAlphaMod(channelMax) // restore the shared page
 }
 
 // reflectAlpha maps the ReflectStrength slider [0,100] to an 0..255 opacity, clamped to a
@@ -1468,7 +1472,7 @@ func reflectAlpha(strength int) uint8 {
 	if strength <= 0 {
 		strength = reflectDefaultPct
 	}
-	a := strength * 255 / 100
+	a := strength * channelMax / percentMax
 	a = value.Clamp(a, reflectMinAlpha, reflectMaxAlpha)
 	return uint8(a)
 }
@@ -1507,7 +1511,7 @@ func (v *Viewport) drawBackgroundDoF(ren *sdl.Renderer, base string, anim *animS
 	_ = ren.Copy(tex, nil, &v.fillRect)
 	for i := range outlineDirs { // eight offset ghosts → a smear blur
 		a := uint8(dofAlphaCard)
-		if i >= 4 { // outlineDirs[4:] are the diagonals
+		if i >= outlineCardinals {
 			a = dofAlphaDiag
 		}
 		_ = tex.SetAlphaMod(a)
@@ -1516,7 +1520,7 @@ func (v *Viewport) drawBackgroundDoF(ren *sdl.Renderer, base string, anim *animS
 		v.fillRect.Y += outlineDirs[i][1] * r
 		_ = ren.Copy(tex, nil, &v.fillRect)
 	}
-	_ = tex.SetAlphaMod(255)
+	_ = tex.SetAlphaMod(channelMax)
 	v.fillRect = vp // dim overlay, pushing the bg behind the sharp speaker
 	_ = ren.SetDrawColor(0, 0, 0, dofDimAlpha)
 	_ = ren.FillRect(&v.fillRect)
@@ -1616,7 +1620,7 @@ func (v *Viewport) drawHeldSprite(ren *sdl.Renderer, layer *courtroom.SpriteLaye
 	}
 	_ = ren.CopyEx(tex, nil, &v.dstRect, 0, nil, flip)
 	if v.tintHeld {
-		_ = tex.SetColorMod(255, 255, 255)
+		_ = tex.SetColorMod(channelMax, channelMax, channelMax)
 	}
 }
 
@@ -1814,7 +1818,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 			// would re-darken exactly what the paint variant exists to fix.
 			modR, modG, modB, doColorMod = st.R, st.G, st.B, true
 		}
-		if b := st.BrightnessPct(); b != 100 {
+		if b := st.BrightnessPct(); b != percentMax {
 			if !doColorMod {
 				modR, modG, modB, doColorMod = 255, 255, 255, true
 			}
@@ -1861,7 +1865,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	// #121 spotlight: dim this non-speaker layer by scaling its colour toward black, ON TOP of
 	// whatever tint / brightness / wash resolved above (a dimmed pair keeps its own style, just
 	// darker). Forces a ColorMod; the speaker passes dimPct 100 → no-op, byte-identical.
-	if dimPct < 100 {
+	if dimPct < percentMax {
 		modR, modG, modB = scaleChannel(modR, dimPct), scaleChannel(modG, dimPct), scaleChannel(modB, dimPct)
 		doColorMod = true
 	}
@@ -1876,11 +1880,11 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		if under, okU := v.store.Get(anim.lastGood); okU && len(under.Frames) > 0 {
 			v.drawHeldSprite(ren, layer, under, vp)
 		}
-		ramp := 255 - int(255*anim.fadeLeft/v.crossfade) // 0 → 255 across the fade
+		ramp := channelMax - int(channelMax*anim.fadeLeft/v.crossfade) // 0 → 255 across the fade
 		if ramp < 0 {
 			ramp = 0
 		}
-		alphaMod = uint8(int(alphaMod) * ramp / 255)
+		alphaMod = uint8(int(alphaMod) * ramp / channelMax)
 	}
 
 	// #122 idle breathing: fold the breathing scale-pulse into scalePct (applied below) and
@@ -1902,7 +1906,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	// applied (the jolt/fringe below runs after them). Pure hash math per time bucket;
 	// the other modes leave alphaMod untouched.
 	if glitch && glitchMode == courtroom.GlitchStatic {
-		alphaMod = uint8(int(alphaMod) * glitchFlickerPct(v.fxClock) / 100)
+		alphaMod = uint8(int(alphaMod) * glitchFlickerPct(v.fxClock) / percentMax)
 	}
 
 	// Apply each modulation, then restore EACH to neutral after the blit so it
@@ -1912,7 +1916,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	if doColorMod {
 		_ = tex.SetColorMod(modR, modG, modB)
 	}
-	if alphaMod != 255 {
+	if alphaMod != channelMax {
 		_ = tex.SetAlphaMod(alphaMod)
 	}
 	if glow {
@@ -1920,9 +1924,9 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	}
 	// Transmitted scale: resize around the sprite's CENTRE so it grows/shrinks in
 	// place rather than from a corner.
-	if scalePct != 100 {
-		nw := v.dstRect.W * int32(scalePct) / 100
-		nh := v.dstRect.H * int32(scalePct) / 100
+	if scalePct != percentMax {
+		nw := v.dstRect.W * int32(scalePct) / percentMax
+		nh := v.dstRect.H * int32(scalePct) / percentMax
 		v.dstRect.X += (v.dstRect.W - nw) / 2
 		v.dstRect.Y += (v.dstRect.H - nh) / 2
 		v.dstRect.W, v.dstRect.H = nw, nh
@@ -1977,7 +1981,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 				v.drawSilhouette(ren, silTex, angle, flip, shadowDir[:], ow*shadowMultiple, 0, 0, 0, shadowAlpha)
 			}
 			if st.Outline {
-				or, og, ob := uint8(255), uint8(255), uint8(255) // white by default
+				or, og, ob := uint8(channelMax), uint8(channelMax), uint8(channelMax) // white by default
 				if st.OutlineR != 0 || st.OutlineG != 0 || st.OutlineB != 0 {
 					or, og, ob = st.OutlineR, st.OutlineG, st.OutlineB // #M5+ custom outline colour
 				}
@@ -1996,10 +2000,10 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		_ = ren.CopyEx(tex, nil, &v.dstRect, angle, nil, flip)
 	}
 	if doColorMod {
-		_ = tex.SetColorMod(255, 255, 255)
+		_ = tex.SetColorMod(channelMax, channelMax, channelMax)
 	}
-	if alphaMod != 255 {
-		_ = tex.SetAlphaMod(255)
+	if alphaMod != channelMax {
+		_ = tex.SetAlphaMod(channelMax)
 	}
 	if glow {
 		_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
@@ -2025,10 +2029,15 @@ func (v *Viewport) drawGlitchFringe(ren *sdl.Renderer, tex *sdl.Texture, angle f
 	if mode == courtroom.GlitchStatic { // signal loss: the ghosts jitter around the sprite
 		h := glitchHash(uint32(v.fxClock / glitchStaticBucket))
 		amp := split * glitchStaticAmpMul
-		adx -= int32(h&0xF) * amp / 15
-		ady = int32((h>>4)&0xF)*amp/15 - amp/2
-		bdx += int32((h>>8)&0xF) * amp / 15
-		bdy = int32((h>>12)&0xF)*amp/15 - amp/2
+		// Four nibbles of the hash, one per offset, each scaled to 0..amp.
+		const nibbleBits, nibbleMax = 4, 0xF
+		adx -= int32(h&nibbleMax) * amp / nibbleMax
+		h >>= nibbleBits
+		ady = int32(h&nibbleMax)*amp/nibbleMax - amp/2
+		h >>= nibbleBits
+		bdx += int32(h&nibbleMax) * amp / nibbleMax
+		h >>= nibbleBits
+		bdy = int32(h&nibbleMax)*amp/nibbleMax - amp/2
 	}
 	if mode == courtroom.GlitchEcho { // a far, faint echo pair behind the main fringe
 		_ = tex.SetAlphaMod(glitchFringeAlpha / glitchEchoFadeDiv)
@@ -2038,8 +2047,8 @@ func (v *Viewport) drawGlitchFringe(ren *sdl.Renderer, tex *sdl.Texture, angle f
 	_ = tex.SetAlphaMod(glitchFringeAlpha)
 	v.blitFringeGhost(ren, tex, angle, flip, adx, ady, aR, aG, aB)
 	v.blitFringeGhost(ren, tex, angle, flip, bdx, bdy, bR, bG, bB)
-	_ = tex.SetColorMod(255, 255, 255)
-	_ = tex.SetAlphaMod(255)
+	_ = tex.SetColorMod(channelMax, channelMax, channelMax)
+	_ = tex.SetAlphaMod(channelMax)
 }
 
 // blitFringeGhost draws one tinted ghost copy at an offset from the sprite's rect.
@@ -2171,17 +2180,26 @@ func glitchFlickerPct(clock time.Duration) int {
 	if h%glitchStaticDropMod == 0 {
 		return glitchStaticDropPct
 	}
-	return glitchStaticFloorPct + int(h>>8)%(100-glitchStaticFloorPct)
+	const flickerBitsShift = 8 // the low byte already chose the dropout
+	return glitchStaticFloorPct + int(h>>flickerBitsShift)%(percentMax-glitchStaticFloorPct)
 }
 
 // glitchHash is a tiny integer scrambler (xorshift-multiply) behind the glitch modes'
 // pseudo-random offsets — deterministic per (band, time bucket), stateless, 0-alloc.
 func glitchHash(n uint32) uint32 {
-	n ^= n >> 16
-	n *= 0x7feb352d
-	n ^= n >> 15
-	n *= 0x846ca68b
-	n ^= n >> 16
+	// lowbias32 (Chris Wellons' hash-prospector): its published shifts and multipliers.
+	const (
+		shiftA = 16
+		mulA   = 0x7feb352d
+		shiftB = 15
+		mulB   = 0x846ca68b
+		shiftC = 16
+	)
+	n ^= n >> shiftA
+	n *= mulA
+	n ^= n >> shiftB
+	n *= mulB
+	n ^= n >> shiftC
 	return n
 }
 
@@ -2198,8 +2216,8 @@ func (v *Viewport) drawSilhouette(ren *sdl.Renderer, tex *sdl.Texture, angle flo
 		v.fxRect.Y += d[1] * width
 		_ = ren.CopyEx(tex, nil, &v.fxRect, angle, nil, flip)
 	}
-	_ = tex.SetColorMod(255, 255, 255)
-	_ = tex.SetAlphaMod(255)
+	_ = tex.SetColorMod(channelMax, channelMax, channelMax)
+	_ = tex.SetAlphaMod(channelMax)
 }
 
 func clampFrame(frame, count int) int {
@@ -2219,12 +2237,12 @@ const spotlightMinBrightness = 15
 // spotlightBrightness maps the SpotlightLevel slider [0,100] (dim intensity, higher = darker)
 // to the brightness percent a non-speaker layer is drawn at, floored so it never blacks out.
 func spotlightBrightness(level int) int {
-	b := 100 - level
+	b := percentMax - level
 	if b < spotlightMinBrightness {
 		return spotlightMinBrightness
 	}
-	if b > 100 {
-		return 100
+	if b > percentMax {
+		return percentMax
 	}
 	return b
 }
@@ -2234,9 +2252,9 @@ func spotlightBrightness(level int) int {
 // caller's phase%cycle and rainbowMod's divide can never hit zero, whatever a
 // hand-edited or out-of-range pref says.
 func cycleForSpeed(speed int) time.Duration {
-	speed = value.Clamp(speed, 1, 100)
+	speed = value.Clamp(speed, 1, percentMax)
 	span := maxRainbowCycle - minRainbowCycle
-	cyc := maxRainbowCycle - time.Duration(int64(span)*int64(speed-1)/99)
+	cyc := maxRainbowCycle - time.Duration(int64(span)*int64(speed-1)/(percentMax-1))
 	if cyc < minRainbowCycle {
 		cyc = minRainbowCycle
 	}
@@ -2251,8 +2269,8 @@ const styleHueVividness = 70
 // dims the sprite, pct > 100 washes it brighter toward white. Used by the
 // transmitted brightness control.
 func scaleChannel(c uint8, pct int) uint8 {
-	v := int(c) * pct / 100
-	if v > 255 {
+	v := int(c) * pct / percentMax
+	if v > channelMax {
 		v = 255
 	}
 	return uint8(v)
@@ -2261,8 +2279,8 @@ func scaleChannel(c uint8, pct int) uint8 {
 // floorForVividness maps the Vividness slider [0,100] to the colour-mod channel
 // floor, higher vividness → lower floor → more saturated/neon.
 func floorForVividness(v int) int {
-	v = value.Clamp(v, 0, 100)
-	return spriteFloorMax * (100 - v) / 100
+	v = value.Clamp(v, 0, percentMax)
+	return spriteFloorMax * (percentMax - v) / percentMax
 }
 
 // Motion-FX tuning (Wobble / Spin). Slow + small so they read as playful, not
@@ -2313,14 +2331,17 @@ func wobbleOffset(clock time.Duration, vp sdl.Rect) (dx, dy int32) {
 
 // spinDegrees is the continuous rotation angle (0..360) for the Spin effect.
 func spinDegrees(clock time.Duration) float64 {
-	return oscFrac(clock, spinPeriod) * 360
+	return oscFrac(clock, spinPeriod) * degreesPerTurn
 }
 
 // Sprite-motion tuning (#34). Amplitude is a fraction of the viewport width (clamped so a
 // roaming sprite can't leave the stage); the period is one slow loop.
 const (
-	motionAmpDivisor = 7.0                     // motion amplitude = vp.W / divisor
-	motionPeriod     = 3500 * time.Millisecond // one full loop
+	motionAmpDivisor    = 7.0                     // motion amplitude = vp.W / divisor
+	motionPeriod        = 3500 * time.Millisecond // one full loop
+	motionShakeSpeedup  = 6                       // the shake path loops this many times faster
+	motionShakeYFreqMul = 1.7                     // y jitters at an off ratio of x
+	spiralRadiusMin     = 0.4                     // the spiral orbit's radius pulses from here to 1
 )
 
 // motionOffset returns the per-frame (dx,dy) for a transmitted Motion path (#34): a clamped
@@ -2341,11 +2362,11 @@ func motionOffset(motion uint8, clock time.Duration, vp sdl.Rect) (dx, dy int32)
 		dx = int32(amp * math.Sin(t)) // a slow figure-8 roam
 		dy = int32(amp * 0.5 * math.Sin(2*t))
 	case courtroom.MotionShake:
-		ft := 2 * math.Pi * oscFrac(clock, motionPeriod/6) // fast jitter, small amplitude
+		ft := 2 * math.Pi * oscFrac(clock, motionPeriod/motionShakeSpeedup) // fast jitter, small amplitude
 		dx = int32(amp * 0.25 * math.Sin(ft))
-		dy = int32(amp * 0.25 * math.Sin(ft*1.7)) // off-ratio so it's not a clean diagonal
+		dy = int32(amp * 0.25 * math.Sin(ft*motionShakeYFreqMul)) // not a clean diagonal
 	case courtroom.MotionSpiral:
-		rad := 0.4 + 0.6*math.Abs(math.Sin(t/2)) // orbit whose radius pulses in and out
+		rad := spiralRadiusMin + (1-spiralRadiusMin)*math.Abs(math.Sin(t/2)) // orbit whose radius pulses in and out
 		dx = int32(amp * rad * math.Cos(t))
 		dy = int32(amp * 0.55 * rad * math.Sin(t))
 	case courtroom.MotionPendulum:
@@ -2380,7 +2401,12 @@ func pathOffset(path []byte, pathLen uint8, clock time.Duration, vp sdl.Rect) (d
 // pathPointPx maps a packed 4-bit X/Y waypoint (each 0..15, centred at 8) to a pixel offset
 // scaled to amp.
 func pathPointPx(p byte, amp float64) (x, y float64) {
-	return float64(int(p>>4)-8) / 8.0 * amp, float64(int(p&0x0F)-8) / 8.0 * amp
+	const (
+		nibbleBits = 4
+		nibbleMask = 0x0F
+		centre     = 8 // a waypoint nibble's zero offset
+	)
+	return float64(int(p>>nibbleBits)-centre) / centre * amp, float64(int(p&nibbleMask)-centre) / centre * amp
 }
 
 // Idle-breathing tuning (#122). Slow + small so a static sprite reads as gently alive.
@@ -2393,9 +2419,9 @@ const (
 
 // breathPeriod maps the BreathSpeed slider [1,100] to a breathing period (higher = faster).
 func breathPeriod(speed int) time.Duration {
-	speed = value.Clamp(speed, 1, 100)
+	speed = value.Clamp(speed, 1, percentMax)
 	span := breathPeriodMax - breathPeriodMin
-	return breathPeriodMax - time.Duration(int64(span)*int64(speed-1)/99)
+	return breathPeriodMax - time.Duration(int64(span)*int64(speed-1)/(percentMax-1))
 }
 
 // breathTransform is the #122 idle-breathing offsets at the given clock: a vertical bob and a
@@ -2403,7 +2429,7 @@ func breathPeriod(speed int) time.Duration {
 // amplitude slider. Pure math off the free-running fxClock — no allocation. The caller gates
 // each component (Bob / Scale) and folds scaleAddPct into the sprite's scale.
 func breathTransform(clock time.Duration, vp sdl.Rect, ampPct, speedPct int) (bobY int32, scaleAddPct int) {
-	ampPct = value.Clamp(ampPct, 1, 100)
+	ampPct = value.Clamp(ampPct, 1, percentMax)
 	s := math.Sin(2 * math.Pi * oscFrac(clock, breathPeriod(speedPct)))
 	bobY = int32(float64(vp.H) * float64(ampPct) / 100 / breathBobDiv * s)
 	scaleAddPct = int(float64(breathScaleMax) * float64(ampPct) / 100 * (1 + s) / 2)
@@ -2448,19 +2474,27 @@ func rainbowMod(phase, cycle time.Duration, floor int) (r, g, b uint8) {
 	seg := hue / segSpan % segments
 	t := hue % segSpan // 0..255 within the current edge
 	var rr, gg, bb int64
+	// The six edges of the hue ring, red round to magenta.
+	const (
+		segRed = iota
+		segYellow
+		segGreen
+		segCyan
+		segBlue
+	)
 	switch seg {
-	case 0:
-		rr, gg, bb = 255, t, 0
-	case 1:
-		rr, gg, bb = 255-t, 255, 0
-	case 2:
-		rr, gg, bb = 0, 255, t
-	case 3:
-		rr, gg, bb = 0, 255-t, 255
-	case 4:
-		rr, gg, bb = t, 0, 255
-	default: // 5
-		rr, gg, bb = 255, 0, 255-t
+	case segRed:
+		rr, gg, bb = channelMax, t, 0
+	case segYellow:
+		rr, gg, bb = channelMax-t, channelMax, 0
+	case segGreen:
+		rr, gg, bb = 0, channelMax, t
+	case segCyan:
+		rr, gg, bb = 0, channelMax-t, channelMax
+	case segBlue:
+		rr, gg, bb = t, 0, channelMax
+	default: // magenta
+		rr, gg, bb = channelMax, 0, channelMax-t
 	}
 	return liftChannel(rr, floor), liftChannel(gg, floor), liftChannel(bb, floor)
 }
@@ -2468,5 +2502,5 @@ func rainbowMod(phase, cycle time.Duration, floor int) (r, g, b uint8) {
 // liftChannel maps a 0..255 hue channel into [floor,255] so the colour-mod
 // tints the sprite rather than silhouetting it (see spriteFloorMax).
 func liftChannel(c int64, floor int) uint8 {
-	return uint8(int64(floor) + c*(255-int64(floor))/255)
+	return uint8(int64(floor) + c*(channelMax-int64(floor))/channelMax)
 }

@@ -3,6 +3,7 @@ package render
 import (
 	"fmt"
 	"image"
+	"math"
 	"unsafe"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -370,7 +371,7 @@ func (p *PreviewWindow) uploadFrame(img *image.RGBA) (*sdl.Texture, error) {
 		return nil, nil
 	}
 	if int64(w)*int64(h)*4 > previewWindowTexBudgetBytes {
-		return nil, fmt.Errorf("render: preview frame %dx%d exceeds the %d MiB preview budget", w, h, previewWindowTexBudgetBytes>>20)
+		return nil, fmt.Errorf("render: preview frame %dx%d exceeds the %d MiB preview budget", w, h, previewWindowTexBudgetBytes>>mibShift)
 	}
 	// Rebuilt every call rather than reused+Update()'d: both callers invoke
 	// this on a selection change or one animation-frame-index tick, never in
@@ -435,7 +436,7 @@ func (p *PreviewWindow) ShowAnimFrame(base string, source any, idx int, fill fun
 		return nil
 	}
 	w, h := int32(img.Rect.Dx()), int32(img.Rect.Dy())
-	frameBytes := int64(w) * int64(h) * 4
+	frameBytes := int64(w) * int64(h) * texBytesPerPixel
 	if !p.animOverflowed && p.animBytes+frameBytes <= previewWindowAnimCacheBudgetBytes {
 		if idx >= len(p.animFrames) {
 			grown := make([]previewAnimFrame, idx+1)
@@ -465,7 +466,7 @@ func (p *PreviewWindow) Present() {
 	if p.ren == nil {
 		return
 	}
-	_ = p.ren.SetDrawColor(0, 0, 0, 255)
+	_ = p.ren.SetDrawColor(0, 0, 0, math.MaxUint8)
 	_ = p.ren.Clear()
 	if p.tex != nil {
 		winW, winH := p.win.GetSize()

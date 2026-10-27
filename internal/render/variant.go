@@ -1,12 +1,14 @@
 package render
 
 import (
+	"math"
 	"time"
 	"unsafe"
 
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 // Per-pixel sprite-style variants (#103): invert and grayscale can't ride the cheap
@@ -162,8 +164,8 @@ func (s *TextureStore) readbackFrame(src *sdl.Texture, w, h int32) ([]byte, erro
 	_ = s.ren.Copy(src, nil, &rect)
 	_ = src.SetBlendMode(sdl.BLENDMODE_BLEND) // restore (the base frame still draws normally)
 
-	pix := make([]byte, int(w)*int(h)*4)
-	if err := s.ren.ReadPixels(&rect, uint32(sdl.PIXELFORMAT_ABGR8888), unsafe.Pointer(&pix[0]), int(w)*4); err != nil {
+	pix := make([]byte, int(w)*int(h)*texBytesPerPixel)
+	if err := s.ren.ReadPixels(&rect, uint32(sdl.PIXELFORMAT_ABGR8888), unsafe.Pointer(&pix[0]), int(w)*texBytesPerPixel); err != nil {
 		return nil, err
 	}
 	return pix, nil
@@ -176,12 +178,36 @@ func uploadPixels(ren *sdl.Renderer, pix []byte, w, h int32) (*sdl.Texture, erro
 	if err != nil {
 		return nil, err
 	}
-	if err := tex.Update(nil, unsafe.Pointer(&pix[0]), int(w)*4); err != nil {
+	if err := tex.Update(nil, unsafe.Pointer(&pix[0]), int(w)*texBytesPerPixel); err != nil {
 		_ = tex.Destroy()
 		return nil, err
 	}
 	_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
 	return tex, nil
+}
+
+// Pixel maths shared by the variants. Weights are in thousandths (weightScale).
+const (
+	channelMax     = math.MaxUint8
+	midGrey        = 128 // the first channel value above the midpoint
+	rgbChannels    = 3
+	weightScale    = 1000
+	rec601R        = 299 // Rec.601 luma weights
+	rec601G        = 587
+	rec601B        = 114
+	posterizeShift = 6  // keep the top 2 bits: 4 levels
+	posterizeStep  = 85 // 255 / 3, so the levels are 0, 85, 170, 255
+	neonContrast   = 3  // neon scales contrast around mid-grey by 3/2
+	percentMax     = 100
+	redShift       = 16 // bit positions in a packed 0xRRGGBB
+	greenShift     = 8
+)
+
+//nolint:mnd // the classic sepia matrix in thousandths, a named data table (rule 9)
+var sepiaMatrix = [rgbChannels][rgbChannels]int{
+	{393, 769, 189},
+	{349, 686, 168},
+	{272, 534, 131},
 }
 
 // applyVariant transforms an ABGR8888 buffer (R,G,B,A per pixel) IN PLACE, preserving
@@ -191,100 +217,91 @@ func uploadPixels(ren *sdl.Renderer, pix []byte, w, h int32) (*sdl.Texture, erro
 func applyVariant(pix []byte, w, h int, effect uint8) {
 	switch courtroom.VariantEffect(effect) {
 	case courtroom.VariantInvert:
-		for i := 0; i+3 < len(pix); i += 4 {
-			pix[i], pix[i+1], pix[i+2] = 255-pix[i], 255-pix[i+1], 255-pix[i+2]
+		for i := 0; i+3 < len(pix); i += texBytesPerPixel {
+			pix[i], pix[i+1], pix[i+2] = channelMax-pix[i], channelMax-pix[i+1], channelMax-pix[i+2]
 		}
 	case courtroom.VariantGrayscale:
-		for i := 0; i+3 < len(pix); i += 4 {
-			y := byte((299*int(pix[i]) + 587*int(pix[i+1]) + 114*int(pix[i+2])) / 1000)
+		for i := 0; i+3 < len(pix); i += texBytesPerPixel {
+			y := byte(luma601(pix[i], pix[i+1], pix[i+2]))
 			pix[i], pix[i+1], pix[i+2] = y, y, y
 		}
 	case courtroom.VariantSepia:
 		// Classic sepia matrix (integer, alloc-free), clamped to 255. #34.
-		for i := 0; i+3 < len(pix); i += 4 {
+		for i := 0; i+3 < len(pix); i += texBytesPerPixel {
 			r, g, b := int(pix[i]), int(pix[i+1]), int(pix[i+2])
-			nr := (393*r + 769*g + 189*b) / 1000
-			ng := (349*r + 686*g + 168*b) / 1000
-			nb := (272*r + 534*g + 131*b) / 1000
-			if nr > 255 {
-				nr = 255
-			}
-			if ng > 255 {
-				ng = 255
-			}
-			if nb > 255 {
-				nb = 255
-			}
-			pix[i], pix[i+1], pix[i+2] = byte(nr), byte(ng), byte(nb)
+			m := &sepiaMatrix
+			pix[i] = byte(min((m[0][0]*r+m[0][1]*g+m[0][2]*b)/weightScale, channelMax))
+			pix[i+1] = byte(min((m[1][0]*r+m[1][1]*g+m[1][2]*b)/weightScale, channelMax))
+			pix[i+2] = byte(min((m[2][0]*r+m[2][1]*g+m[2][2]*b)/weightScale, channelMax))
 		}
 	case courtroom.VariantPosterize:
 		// Quantise each channel to 4 evenly-spaced levels (0/85/170/255) — a poster /
 		// cel-shaded look. Alloc-free. #34.
-		for i := 0; i+3 < len(pix); i += 4 {
-			pix[i] = (pix[i] >> 6) * 85
-			pix[i+1] = (pix[i+1] >> 6) * 85
-			pix[i+2] = (pix[i+2] >> 6) * 85
+		for i := 0; i+3 < len(pix); i += texBytesPerPixel {
+			pix[i] = (pix[i] >> posterizeShift) * posterizeStep
+			pix[i+1] = (pix[i+1] >> posterizeShift) * posterizeStep
+			pix[i+2] = (pix[i+2] >> posterizeShift) * posterizeStep
 		}
 	case courtroom.VariantSilhouette:
 		// Flat WHITE shape, alpha untouched: a per-pixel ColorMod tints it to the outline
 		// (white) or shadow (dark) colour at draw time, so one variant serves both (#8).
-		for i := 0; i+3 < len(pix); i += 4 {
+		for i := 0; i+3 < len(pix); i += texBytesPerPixel {
 			pix[i], pix[i+1], pix[i+2] = 255, 255, 255
 		}
 	// --- the "10 more restyles" set (all alloc-free, alpha preserved) ---
 	case courtroom.VariantRedscale:
-		for i := 0; i+3 < len(pix); i += 4 {
+		for i := 0; i+3 < len(pix); i += texBytesPerPixel {
 			pix[i], pix[i+1], pix[i+2] = byte(luma601(pix[i], pix[i+1], pix[i+2])), 0, 0
 		}
 	case courtroom.VariantGreenscale:
-		for i := 0; i+3 < len(pix); i += 4 {
+		for i := 0; i+3 < len(pix); i += texBytesPerPixel {
 			pix[i], pix[i+1], pix[i+2] = 0, byte(luma601(pix[i], pix[i+1], pix[i+2])), 0
 		}
 	case courtroom.VariantBluescale:
-		for i := 0; i+3 < len(pix); i += 4 {
+		for i := 0; i+3 < len(pix); i += texBytesPerPixel {
 			pix[i], pix[i+1], pix[i+2] = 0, 0, byte(luma601(pix[i], pix[i+1], pix[i+2]))
 		}
 	case courtroom.VariantSolarize: // flip channels above mid — a psychedelic tone-swap
-		for i := 0; i+3 < len(pix); i += 4 {
-			for k := 0; k < 3; k++ {
-				if pix[i+k] > 127 {
-					pix[i+k] = 255 - pix[i+k]
+		for i := 0; i+3 < len(pix); i += texBytesPerPixel {
+			for k := range rgbChannels {
+				if pix[i+k] >= midGrey {
+					pix[i+k] = channelMax - pix[i+k]
 				}
 			}
 		}
 	case courtroom.VariantThreshold: // 1-bit black & white by luma
-		for i := 0; i+3 < len(pix); i += 4 {
+		for i := 0; i+3 < len(pix); i += texBytesPerPixel {
 			v := byte(0)
-			if luma601(pix[i], pix[i+1], pix[i+2]) > 127 {
-				v = 255
+			if luma601(pix[i], pix[i+1], pix[i+2]) >= midGrey {
+				v = channelMax
 			}
 			pix[i], pix[i+1], pix[i+2] = v, v, v
 		}
 	case courtroom.VariantDuotone: // luma across a fixed indigo -> gold ramp
-		for i := 0; i+3 < len(pix); i += 4 {
+		for i := 0; i+3 < len(pix); i += texBytesPerPixel {
 			y := luma601(pix[i], pix[i+1], pix[i+2])
-			pix[i] = byte(duoShadowR + (duoHiR-duoShadowR)*y/255)
-			pix[i+1] = byte(duoShadowG + (duoHiG-duoShadowG)*y/255)
-			pix[i+2] = byte(duoShadowB + (duoHiB-duoShadowB)*y/255)
+			pix[i] = byte(duoShadowR + (duoHiR-duoShadowR)*y/channelMax)
+			pix[i+1] = byte(duoShadowG + (duoHiG-duoShadowG)*y/channelMax)
+			pix[i+2] = byte(duoShadowB + (duoHiB-duoShadowB)*y/channelMax)
 		}
 	case courtroom.VariantWarm: // push warm: more red, less blue
-		for i := 0; i+3 < len(pix); i += 4 {
+		for i := 0; i+3 < len(pix); i += texBytesPerPixel {
 			pix[i] = clamp8(int(pix[i]) + restyleShift)
 			pix[i+2] = clamp8(int(pix[i+2]) - restyleShift)
 		}
 	case courtroom.VariantCool: // push cool: more blue, less red
-		for i := 0; i+3 < len(pix); i += 4 {
+		for i := 0; i+3 < len(pix); i += texBytesPerPixel {
 			pix[i+2] = clamp8(int(pix[i+2]) + restyleShift)
 			pix[i] = clamp8(int(pix[i]) - restyleShift)
 		}
 	case courtroom.VariantNeon: // hard contrast punch around mid-grey
-		for i := 0; i+3 < len(pix); i += 4 {
-			pix[i] = clamp8((int(pix[i])-128)*3/2 + 128)
-			pix[i+1] = clamp8((int(pix[i+1])-128)*3/2 + 128)
-			pix[i+2] = clamp8((int(pix[i+2])-128)*3/2 + 128)
+		for i := 0; i+3 < len(pix); i += texBytesPerPixel {
+			pix[i] = clamp8((int(pix[i])-midGrey)*neonContrast/2 + midGrey)
+			pix[i+1] = clamp8((int(pix[i+1])-midGrey)*neonContrast/2 + midGrey)
+			pix[i+2] = clamp8((int(pix[i+2])-midGrey)*neonContrast/2 + midGrey)
 		}
 	case courtroom.VariantInfrared: // false-colour channel rotate (R<-G<-B<-R)
-		for i := 0; i+3 < len(pix); i += 4 {
+		for i := 0; i+3 < len(pix); i += texBytesPerPixel {
 			pix[i], pix[i+1], pix[i+2] = pix[i+1], pix[i+2], pix[i]
 		}
 	case courtroom.VariantPixelArt: // #77 mosaic (block-average) + palette quantise
@@ -321,9 +338,9 @@ func applyPixelArt(pix []byte, w, h int) {
 			// Alpha-weighted colour sum + plain alpha sum over the block.
 			var sr, sg, sb, sa, n int
 			for y := by; y < y1; y++ {
-				row := y * w * 4
+				row := y * w * texBytesPerPixel
 				for x := bx; x < x1; x++ {
-					i := row + x*4
+					i := row + x*texBytesPerPixel
 					a := int(pix[i+3])
 					sr += int(pix[i]) * a
 					sg += int(pix[i+1]) * a
@@ -342,9 +359,9 @@ func applyPixelArt(pix []byte, w, h int) {
 				b = quantizePixelArt(byte(sb / sa))
 			}
 			for y := by; y < y1; y++ {
-				row := y * w * 4
+				row := y * w * texBytesPerPixel
 				for x := bx; x < x1; x++ {
-					i := row + x*4
+					i := row + x*texBytesPerPixel
 					pix[i], pix[i+1], pix[i+2], pix[i+3] = r, g, b, av
 				}
 			}
@@ -355,8 +372,8 @@ func applyPixelArt(pix []byte, w, h int) {
 // quantizePixelArt snaps a 0..255 channel to one of pixelArtLevels evenly-spaced
 // values (a small palette), rounding to the nearest level.
 func quantizePixelArt(c byte) byte {
-	lvl := (int(c)*(pixelArtLevels-1) + 127) / 255
-	return byte(lvl * 255 / (pixelArtLevels - 1))
+	lvl := (int(c)*(pixelArtLevels-1) + channelMax/2) / channelMax
+	return byte(lvl * channelMax / (pixelArtLevels - 1))
 }
 
 // Restyle pixel-math tuning + helpers (pure, alloc-free).
@@ -386,13 +403,13 @@ const (
 // through the body. Pure (no SDL), integer, alloc-free.
 func applyPaint(pix []byte, w, h int, ar, ag, ab, br, bg, bb uint8, splitPct uint8) {
 	if splitPct == 0 || w <= 0 || h <= 0 || len(pix) < w*h*4 {
-		for i := 0; i+3 < len(pix); i += 4 {
+		for i := 0; i+3 < len(pix); i += texBytesPerPixel {
 			y := luma601(pix[i], pix[i+1], pix[i+2])
 			pix[i], pix[i+1], pix[i+2] = paintChannel(ar, y), paintChannel(ag, y), paintChannel(ab, y)
 		}
 		return
 	}
-	splitRow := h * int(splitPct) / 100
+	splitRow := h * int(splitPct) / percentMax
 	feather := h / paintFeatherDivisor
 	if feather < paintFeatherMin {
 		feather = paintFeatherMin
@@ -407,9 +424,9 @@ func applyPaint(pix []byte, w, h int, ar, ag, ab, br, bg, bb uint8, splitPct uin
 			t, span := d+feather, 2*feather // 0..span across the band
 			cr, cg, cb = lerp8(ar, br, t, span), lerp8(ag, bg, t, span), lerp8(ab, bb, t, span)
 		}
-		base := row * w * 4
+		base := row * w * texBytesPerPixel
 		for x := 0; x < w; x++ {
-			i := base + x*4
+			i := base + x*texBytesPerPixel
 			y := luma601(pix[i], pix[i+1], pix[i+2])
 			pix[i], pix[i+1], pix[i+2] = paintChannel(cr, y), paintChannel(cg, y), paintChannel(cb, y)
 		}
@@ -439,8 +456,8 @@ func paintSplitQuantize(s uint8) uint8 {
 	if q < paintSplitQuant {
 		q = paintSplitQuant
 	}
-	if q > 100-paintSplitQuant {
-		q = 100 - paintSplitQuant
+	if q > percentMax-paintSplitQuant {
+		q = percentMax - paintSplitQuant
 	}
 	return q
 }
@@ -449,10 +466,10 @@ func paintSplitQuantize(s uint8) uint8 {
 // lerps 0→c (shadows), 128..255 lerps c→255 (highlights). Continuous at the
 // midpoint (both halves yield c) and exact at the endpoints (0→0, 255→255).
 func paintChannel(c uint8, y int) byte {
-	if y < 128 {
-		return byte(int(c) * y / 127)
+	if y < midGrey {
+		return byte(int(c) * y / (midGrey - 1))
 	}
-	return byte(int(c) + (255-int(c))*(y-128)/127)
+	return byte(int(c) + (channelMax-int(c))*(y-midGrey)/(midGrey-1))
 }
 
 // paintQuantizeLevels is how many levels each paint channel snaps to before
@@ -460,30 +477,27 @@ func paintChannel(c uint8, y int) byte {
 // colour, and they bound how many distinct pages a full slider sweep can mint.
 const paintQuantizeLevels = 32
 
+// paintQuantizeShift drops a channel to paintQuantizeLevels levels (256 >> 3 = 32).
+const paintQuantizeShift = 3
+
 // paintQuantize snaps a paint channel to paintQuantizeLevels evenly-spaced
 // values with the endpoints exact (0→0, 255→255).
 func paintQuantize(c uint8) uint8 {
-	return uint8((int(c) >> 3) * 255 / (paintQuantizeLevels - 1))
+	return uint8((int(c) >> paintQuantizeShift) * channelMax / (paintQuantizeLevels - 1))
 }
 
 // packPaint / unpackPaint pack an RGB triple into a variantKey's uint32 (0xRRGGBB).
 func packPaint(r, g, b uint8) uint32 {
-	return uint32(r)<<16 | uint32(g)<<8 | uint32(b)
+	return uint32(r)<<redShift | uint32(g)<<greenShift | uint32(b)
 }
 func unpackPaint(p uint32) (r, g, b uint8) {
-	return uint8(p >> 16), uint8(p >> 8), uint8(p)
+	return uint8(p >> redShift), uint8(p >> greenShift), uint8(p)
 }
 
 // luma601 is the Rec.601 luma of an RGB triple (integer, 0..255).
-func luma601(r, g, b byte) int { return (299*int(r) + 587*int(g) + 114*int(b)) / 1000 }
+func luma601(r, g, b byte) int {
+	return (rec601R*int(r) + rec601G*int(g) + rec601B*int(b)) / weightScale
+}
 
 // clamp8 clamps an int to a 0..255 byte.
-func clamp8(v int) byte {
-	if v < 0 {
-		return 0
-	}
-	if v > 255 {
-		return 255
-	}
-	return byte(v)
-}
+func clamp8(v int) byte { return byte(value.Clamp(v, 0, channelMax)) }

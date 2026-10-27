@@ -59,7 +59,7 @@ const (
 // producer-side cap is an alias of this call, never a copy, so the planner and the
 // store can never disagree about the number.
 func ThemeMediaByteCap(texBudgetMiB int) int64 {
-	budget := int64(texBudgetMiB) << 20
+	budget := int64(texBudgetMiB) << mibShift
 	if budget <= 0 {
 		budget = int64(T1BudgetBytes)
 	}

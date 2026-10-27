@@ -1,6 +1,7 @@
 package render
 
 import (
+	"math"
 	"strings"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -8,6 +9,7 @@ import (
 )
 
 // AO chat text colors (TEXT_COLOR field), AO2-Client palette.
+//nolint:mnd // the AO2 palette, a named data table (rule 9)
 var textColors = []sdl.Color{
 	{R: 255, G: 255, B: 255, A: 255}, // 0 white
 	{R: 0, G: 255, B: 0, A: 255},     // 1 green
@@ -107,6 +109,7 @@ type ExtColor struct {
 	Wire  int       // nearest standard palette index (0..8) for non-AsyncAO clients
 }
 
+//nolint:mnd // a named colour table (rule 9)
 var extColors = []ExtColor{
 	{"Purple", 'p', sdl.Color{R: 150, G: 90, B: 245, A: 255}, 4},
 	{"Magenta", 'm', sdl.Color{R: 255, G: 70, B: 230, A: 255}, 6},
@@ -140,7 +143,7 @@ func ExtColorByCode(code byte) (sdl.Color, bool) {
 // field must stay 0..8 or strict servers (LemmyAO-style) drop the message,
 // while non-AsyncAO clients still see a sensible colour.
 func NearestTextColorIndex(r, g, b uint8) int {
-	best, bestD := 0, 1<<62
+	best, bestD := 0, math.MaxInt
 	for i := range textColors {
 		dr := int(textColors[i].R) - int(r)
 		dg := int(textColors[i].G) - int(g)
@@ -364,7 +367,7 @@ func perRuneStyles(runes []rune, spans []ColorSpan) []spanStyle {
 			i++
 		}
 	}
-	tail := spanStyle{color: sdl.Color{R: 255, G: 255, B: 255, A: 255}}
+	tail := spanStyle{color: sdl.Color{R: math.MaxUint8, G: math.MaxUint8, B: math.MaxUint8, A: math.MaxUint8}}
 	if len(spans) > 0 {
 		s := spans[len(spans)-1]
 		tail = spanStyle{color: s.Color, bold: s.Bold, italic: s.Italic}

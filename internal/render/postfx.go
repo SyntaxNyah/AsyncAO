@@ -48,6 +48,7 @@ const (
 	// width (the RGB triad is 3× it); phosphorDim is what the two non-lit channels
 	// of a stripe are multiplied to (out of 255) — high, so the tint stays subtle.
 	phosphorStripeW = 2
+	phosphorCount   = 3 // red, green, blue stripes
 	phosphorDim     = 200
 )
 
@@ -114,14 +115,14 @@ func (v *Viewport) ensureScanlines(ren *sdl.Renderer, w, h int32) *sdl.Texture {
 		_ = v.scanlineTex.Destroy()
 		v.scanlineTex = nil
 	}
-	pix := make([]byte, int(w)*int(h)*4)
+	pix := make([]byte, int(w)*int(h)*texBytesPerPixel)
 	for y := int32(0); y < h; y++ {
 		if y%scanlinePeriod != 0 {
 			continue
 		}
-		row := int(y) * int(w) * 4
+		row := int(y) * int(w) * texBytesPerPixel
 		for x := 0; x < int(w); x++ {
-			pix[row+x*4+3] = scanlineAlpha // black (RGB already 0), only the dark rows get alpha
+			pix[row+x*texBytesPerPixel+3] = scanlineAlpha // black (RGB already 0), only the dark rows get alpha
 		}
 	}
 	t, err := uploadPixels(ren, pix, w, h)
@@ -148,21 +149,21 @@ func (v *Viewport) ensureCRTMask(ren *sdl.Renderer, w, h int32) *sdl.Texture {
 		_ = v.crtMaskTex.Destroy()
 		v.crtMaskTex = nil
 	}
-	pix := make([]byte, int(w)*int(h)*4)
+	pix := make([]byte, int(w)*int(h)*texBytesPerPixel)
 	for y := 0; y < int(h); y++ {
-		row := y * int(w) * 4
+		row := y * int(w) * texBytesPerPixel
 		for x := 0; x < int(w); x++ {
 			r, g, b := byte(phosphorDim), byte(phosphorDim), byte(phosphorDim)
-			switch (x / phosphorStripeW) % 3 { // which phosphor this column lights
+			switch (x / phosphorStripeW) % phosphorCount { // which phosphor this column lights
 			case 0:
-				r = 255
+				r = math.MaxUint8
 			case 1:
-				g = 255
+				g = math.MaxUint8
 			default:
-				b = 255
+				b = math.MaxUint8
 			}
-			i := row + x*4
-			pix[i], pix[i+1], pix[i+2], pix[i+3] = r, g, b, 255
+			i := row + x*texBytesPerPixel
+			pix[i], pix[i+1], pix[i+2], pix[i+3] = r, g, b, math.MaxUint8
 		}
 	}
 	t, err := uploadPixels(ren, pix, w, h)
@@ -178,7 +179,7 @@ func (v *Viewport) ensureCRTMask(ren *sdl.Renderer, w, h int32) *sdl.Texture {
 // stretched to the stage at draw time (an ellipse that follows the frame aspect).
 func buildVignette(ren *sdl.Renderer) *sdl.Texture {
 	const n = vignetteSize
-	pix := make([]byte, n*n*4)
+	pix := make([]byte, n*n*texBytesPerPixel)
 	cx, cy := float64(n-1)/2, float64(n-1)/2
 	maxD := math.Hypot(cx, cy)
 	for y := 0; y < n; y++ {
@@ -188,7 +189,7 @@ func buildVignette(ren *sdl.Renderer) *sdl.Texture {
 			if d > vignetteInner {
 				a = (d - vignetteInner) / (1 - vignetteInner)
 			}
-			pix[(y*n+x)*4+3] = byte(value.Clamp(a, 0, 1) * vignetteMaxA) // black, alpha = darkness
+			pix[(y*n+x)*texBytesPerPixel+3] = byte(value.Clamp(a, 0, 1) * vignetteMaxA) // black, alpha = darkness
 		}
 	}
 	t, err := uploadPixels(ren, pix, n, n)
@@ -204,11 +205,11 @@ func buildGrain(ren *sdl.Renderer, out *[grainFrames]*sdl.Texture) {
 	rng := rand.New(rand.NewSource(grainSeed))
 	const n = grainTileSize
 	for f := 0; f < grainFrames; f++ {
-		pix := make([]byte, n*n*4)
+		pix := make([]byte, n*n*texBytesPerPixel)
 		for i := 0; i < n*n; i++ {
-			g := byte(rng.Intn(256))
-			pix[i*4], pix[i*4+1], pix[i*4+2] = g, g, g
-			pix[i*4+3] = byte(rng.Intn(grainAlpha + 1))
+			g := byte(rng.Intn(math.MaxUint8 + 1))
+			pix[i*texBytesPerPixel], pix[i*texBytesPerPixel+1], pix[i*texBytesPerPixel+2] = g, g, g
+			pix[i*texBytesPerPixel+3] = byte(rng.Intn(grainAlpha + 1))
 		}
 		t, err := uploadPixels(ren, pix, n, n)
 		if err != nil {
