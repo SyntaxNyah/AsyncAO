@@ -646,8 +646,8 @@ type SpriteStylePref struct {
 
 // clampOpacity bounds a persisted/edited opacity to [0,100] (0 = unset/opaque).
 func clampOpacity(v uint8) uint8 {
-	if v > 100 {
-		return 100
+	if v > percentMax {
+		return percentMax
 	}
 	return v
 }
@@ -860,6 +860,15 @@ func ClampWindowSize(reqW, reqH, usableW, usableH int) (int, int) {
 	return w, h
 }
 
+// Values shared by many settings.
+const (
+	percentMax       = 100      // the top of every 0..100 percentage setting
+	rgbMask          = 0xFFFFFF // a packed 0xRRGGBB colour
+	prefetchAggroMax = 4        // most predicted sprites the prefetcher warms per message
+	rotationSteps    = 256      // a rotation byte covers one full turn
+	degreesPerTurn   = 360
+)
+
 // defaultAudioVolume is full volume (the pre-settings behavior) AND the slider
 // ceiling (the load-clamp max), so it must stay 100.
 const defaultAudioVolume = 100
@@ -935,7 +944,7 @@ func DPIScalePercent(dpi float64) int {
 	if dpi <= 0 {
 		return MinAutoUIScalePercent
 	}
-	pct := int(dpi/BaselineDPI*100 + 0.5) // round half up
+	pct := int(math.Round(dpi / BaselineDPI * percentMax))
 	if pct < MinAutoUIScalePercent {
 		return MinAutoUIScalePercent
 	}
@@ -1892,14 +1901,14 @@ func (p *AssetPreferences) ClearLearnedHost(host string) int {
 // HighlightColorRGB returns the packed 0xRRGGBB log-selection highlight colour.
 func (s *Settings) HighlightColorRGB() int {
 
-	return s.HighlightColor & 0xFFFFFF
+	return s.HighlightColor & rgbMask
 }
 
 // ICCustomColorRGB returns the last free IC hex pick, packed 0xRRGGBB
 // (seeds the colour wheel; defaultICCustomColor until first use).
 func (s *Settings) ICCustomColorRGB() int {
 
-	return s.ICCustomColor & 0xFFFFFF
+	return s.ICCustomColor & rgbMask
 }
 
 // SetNameColorSatVal clamps and stores the saturation + brightness together.
@@ -2362,18 +2371,18 @@ func (p *AssetPreferences) SetAssetCharCasing(c uint8) {
 
 // VoiceOutVol reports the voice output volume 0..100 (default 100 when unset).
 func (s *Settings) VoiceOutVol() int {
-	return value.Clamp(orDefault(s.VoiceOutVolume, defaultVoiceOutVol), 0, 100)
+	return value.Clamp(orDefault(s.VoiceOutVolume, defaultVoiceOutVol), 0, percentMax)
 }
 
 // PrefetchAggressiveness reports how many of the top predicted next sprites the
 // Markov prefetcher warms per message, 1..4 (default 1 = conservative). #100.
 func (s *Settings) PrefetchAggressiveness() int {
-	return value.Clamp(s.PrefetchAggro, 1, 4)
+	return value.Clamp(s.PrefetchAggro, 1, prefetchAggroMax)
 }
 
 // SetPrefetchAggressiveness clamps (1..4) and persists the prefetch aggressiveness.
 func (p *AssetPreferences) SetPrefetchAggressiveness(n int) {
-	n = value.Clamp(n, 1, 4)
+	n = value.Clamp(n, 1, prefetchAggroMax)
 	p.Update(func(sn *Settings) {
 		sn.PrefetchAggro = n
 	})
@@ -2451,7 +2460,7 @@ func (s *Settings) ReflectStrength() int {
 
 // SetReflectStrength stores the reflection opacity (clamped to [0,100]).
 func (p *AssetPreferences) SetReflectStrength(v int) {
-	v = value.Clamp(v, 0, 100)
+	v = value.Clamp(v, 0, percentMax)
 	p.Update(func(sn *Settings) {
 		sn.ReflectOpacity = v
 	})
@@ -2506,7 +2515,7 @@ func (s *Settings) WeatherIntensity() int {
 
 // SetWeatherIntensity stores the density (clamped to [1,100]).
 func (p *AssetPreferences) SetWeatherIntensity(v int) {
-	v = value.Clamp(v, 1, 100)
+	v = value.Clamp(v, 1, percentMax)
 	p.Update(func(sn *Settings) {
 		sn.WeatherDensity = v
 	})
@@ -2515,7 +2524,7 @@ func (p *AssetPreferences) SetWeatherIntensity(v int) {
 // SpriteTintColorRGB returns the packed 0xRRGGBB solid-tint colour.
 func (s *Settings) SpriteTintColorRGB() int {
 
-	return s.SpriteTintColor & 0xFFFFFF
+	return s.SpriteTintColor & rgbMask
 }
 
 func (p *AssetPreferences) SetFriendSoundPath(path string) {
@@ -2785,7 +2794,8 @@ func (s *Settings) ServerFriends(key string) []string {
 // (#82). SplitN with 3 keeps the colour parse robust even if the nickname
 // itself contains an "=". Trimmed; missing fields come back "".
 func friendParts(entry string) (name, hex, nick string) {
-	parts := strings.SplitN(entry, "=", 3)
+	const friendFields = 3 // name=hex=nick
+	parts := strings.SplitN(entry, "=", friendFields)
 	name = strings.TrimSpace(parts[0])
 	if len(parts) > 1 {
 		hex = strings.TrimSpace(parts[1])
@@ -2815,7 +2825,7 @@ func (s *Settings) ServerFriendInfo(key, name string) (friend bool, color int, n
 		color = -1
 		if hex != "" {
 			if v, err := strconv.ParseInt(strings.TrimPrefix(hex, "#"), 16, 32); err == nil {
-				color = int(v) & 0xFFFFFF
+				color = int(v) & rgbMask
 			}
 		}
 		return true, color, nk
@@ -3126,7 +3136,7 @@ func (p *AssetPreferences) SetBreathScale(on bool) {
 
 // SetBreathAmp clamps the idle-breath amplitude slider to [1,100] (0 -> 1).
 func (p *AssetPreferences) SetBreathAmp(v int) {
-	v = value.Clamp(v, 1, 100)
+	v = value.Clamp(v, 1, percentMax)
 	p.Update(func(sn *Settings) {
 		sn.BreathAmount = v
 	})
@@ -3134,7 +3144,7 @@ func (p *AssetPreferences) SetBreathAmp(v int) {
 
 // SetBreathSpeed clamps the idle-breath speed slider to [1,100] (0 -> 1).
 func (p *AssetPreferences) SetBreathSpeed(v int) {
-	v = value.Clamp(v, 1, 100)
+	v = value.Clamp(v, 1, percentMax)
 	p.Update(func(sn *Settings) {
 		sn.BreathRate = v
 	})
@@ -3652,9 +3662,9 @@ func EffectiveSpriteCap(base int, off bool, pct int) int {
 		return 0
 	}
 	if pct == 0 {
-		pct = 100
+		pct = percentMax
 	}
-	return base * pct / 100
+	return base * pct / percentMax
 }
 
 // ResetPowerUser reverts EVERY power-user option to its shipped default — the
@@ -4420,18 +4430,18 @@ var RotCoarseCycle = [4]uint8{0, 64, 128, 192}
 // the byte directly (0 → the plain Copy path) so this is only called when a
 // rotation is actually set.
 func RotationByteToDeg(b uint8) float64 {
-	return float64(int(b)) * 360.0 / 256.0
+	return float64(int(b)) * degreesPerTurn / rotationSteps
 }
 
 // RotationDegToByte is the inverse (rounded to the nearest byte, wrapping at
 // 360°) — used when the Shift+R fine step advances by RotStepFineDeg.
 func RotationDegToByte(deg int) uint8 {
-	deg %= 360
+	deg %= degreesPerTurn
 	if deg < 0 {
-		deg += 360
+		deg += degreesPerTurn
 	}
-	// Round to nearest byte: +180 before the integer divide by 360.
-	return uint8((deg*256 + 180) / 360 % 256)
+	// Round to nearest byte: add half a turn-step before the integer divide.
+	return uint8((deg*rotationSteps + degreesPerTurn/2) / degreesPerTurn % rotationSteps)
 }
 
 // NextCoarseRotation advances a rotation byte through RotCoarseCycle. A byte

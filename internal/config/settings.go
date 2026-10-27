@@ -375,17 +375,17 @@ func (p *AssetPreferences) Update(f func(*Settings)) {
 // clampSettingsStrictPhase is the tail of normalizeSettings: the write-path clamps
 // whose sentinel is 0, so a setter touching one field never stomps another's sentinel.
 func clampSettingsStrictPhase(s *Settings) {
-	s.BreathAmount = value.ClampSet(s.BreathAmount, 1, 100)
-	s.BreathRate = value.ClampSet(s.BreathRate, 1, 100)
+	s.BreathAmount = value.ClampSet(s.BreathAmount, 1, percentMax)
+	s.BreathRate = value.ClampSet(s.BreathRate, 1, percentMax)
 	s.CatchUpLingerMsVal = value.ClampSet(s.CatchUpLingerMsVal, 0, CatchUpLingerMaxMs)
 	s.SpotlightStrength = value.ClampSet(s.SpotlightStrength, minSpotlightStrength, maxSpotlightStrength)
 	s.SpriteWaitMsVal = value.ClampSet(s.SpriteWaitMsVal, SpriteWaitMinMs, SpriteWaitMaxMs)
 	s.OOCScalePct = value.ClampSet(s.OOCScalePct, MinLogScalePercent, MaxLogScalePercent)
 	s.PreviewHeightPxVal = value.ClampSet(s.PreviewHeightPxVal, MinPreviewHeightPx, MaxPreviewHeightPx)
-	s.VoiceOutVolume = value.ClampSet(s.VoiceOutVolume, 0, 100)
-	s.WeatherDensity = value.ClampSet(s.WeatherDensity, 1, 100)
+	s.VoiceOutVolume = value.ClampSet(s.VoiceOutVolume, 0, percentMax)
+	s.WeatherDensity = value.ClampSet(s.WeatherDensity, 1, percentMax)
 	s.BgSlideshowSecs = value.ClampSet(s.BgSlideshowSecs, minBgSlideshowSecs, maxBgSlideshowSecs)
-	s.PrefetchAggro = value.ClampSet(s.PrefetchAggro, 1, 4)
+	s.PrefetchAggro = value.ClampSet(s.PrefetchAggro, 1, prefetchAggroMax)
 	s.StageFrameKind = value.ClampSet(s.StageFrameKind, 0, stageFrameKindMax)
 	s.DownloadKBps = value.Clamp(s.DownloadKBps, 0, maxDownloadKBps)
 
@@ -431,13 +431,13 @@ func clampSettingsStrictPhase(s *Settings) {
 // Update both reach these clamps; the one-shot migration stamps live in normalize only.
 func normalizeSettings(s *Settings) {
 	// masks
-	s.HighlightColor &= 0xFFFFFF
-	s.ICCustomColor &= 0xFFFFFF
-	s.SpriteTintColor &= 0xFFFFFF
+	s.HighlightColor &= rgbMask
+	s.ICCustomColor &= rgbMask
+	s.SpriteTintColor &= rgbMask
 	s.MusicFlagsVal &= MusicFlagsMask
 
 	// unconditional range clamps
-	s.NameVal = value.Clamp(s.NameVal, minNameColorVal, 100)
+	s.NameVal = value.Clamp(s.NameVal, minNameColorVal, percentMax)
 	s.RainbowSpriteSpeed = value.Clamp(s.RainbowSpriteSpeed, minRainbowSpeed, maxRainbowSpeed)
 	s.ReplayPlaybackSpeed = value.Clamp(s.ReplayPlaybackSpeed, minReplaySpeed, maxReplaySpeed)
 	s.CatchUpThreshold = value.Clamp(s.CatchUpThreshold, catchUpThresholdMin, catchUpThresholdMax)
@@ -451,7 +451,7 @@ func normalizeSettings(s *Settings) {
 	s.MasterVol = value.Clamp(s.MasterVol, 0, defaultAudioVolume)
 	s.ChatboxOpacity = value.Clamp(s.ChatboxOpacity, MinChatboxOpacity, MaxChatboxOpacity)
 	s.RainbowSpriteVividness = value.Clamp(s.RainbowSpriteVividness, minRainbowVivid, maxRainbowVivid)
-	s.NameSat = value.Clamp(s.NameSat, 0, 100)
+	s.NameSat = value.Clamp(s.NameSat, 0, percentMax)
 	s.TextStayMs = value.Clamp(s.TextStayMs, 0, MaxTextStayMs)
 	s.EmoteGridGapPx = value.Clamp(s.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
 	s.ThemeFitZoom = value.Clamp(s.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
