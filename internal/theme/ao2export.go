@@ -19,7 +19,10 @@ const LostFileName = "ASYNCAO-LOST.txt"
 // lostReportCap bounds the report's lines (hard rule 4). It is ElementCap plus
 // room for the header and the non-element notes, because the report's job is to
 // name every element AO2 drops and a theme cannot hold more elements than that.
-const lostReportCap = ElementCap + 16
+const (
+	lostReportNoteLines = 16 // the header and the non-element notes
+	lostReportCap       = ElementCap + lostReportNoteLines
+)
 
 // BakeAO2Design rewrites a courtroom_design.ini so an AO2-Client reading it sees
 // the geometry this theme actually draws with.
@@ -74,7 +77,7 @@ func LostToAO2(s *Sidecar) []string {
 	if s == nil {
 		return nil
 	}
-	out := make([]string, 0, 16)
+	out := make([]string, 0, lostReportNoteLines)
 	add := func(format string, args ...any) {
 		if len(out) >= lostReportCap {
 			return

@@ -7,6 +7,7 @@ package theme
 
 import (
 	"io"
+	"math"
 	"strconv"
 	"strings"
 
@@ -491,12 +492,12 @@ const tupleJoin = ", "
 // otherwise, so the common case reads like every other hex colour in a theme.
 func formatRGBA(c RGBA) string {
 	const hexDigits = "0123456789abcdef"
-	buf := make([]byte, 0, 9)
+	buf := make([]byte, 0, len("#rrggbbaa"))
 	buf = append(buf, '#')
 	for _, v := range [3]uint8{c.R, c.G, c.B} {
 		buf = append(buf, hexDigits[v>>4], hexDigits[v&0xf])
 	}
-	if c.A != 255 {
+	if c.A != OpacityOpaque {
 		buf = append(buf, hexDigits[c.A>>4], hexDigits[c.A&0xf])
 	}
 	return string(buf)
@@ -593,7 +594,7 @@ func canonMetaPlain(s string) string {
 // changed and rewrites the author's line.
 func canonInt(s string) string { return formatInt(parse.AtoiOr(s, 0)) }
 
-func canonByte(s string) string { return formatInt(value.Clamp(parse.AtoiOr(s, 0), 0, 255)) }
+func canonByte(s string) string { return formatInt(value.Clamp(parse.AtoiOr(s, 0), 0, math.MaxUint8)) }
 
 // canonZ mirrors the reader's int16 clamp on z and on a scalar 9-slice inset.
 func canonZ(s string) string { return formatInt(value.Clamp(parse.AtoiOr(s, 0), ZMin, ZMax)) }
