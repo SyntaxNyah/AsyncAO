@@ -375,90 +375,36 @@ func (p *AssetPreferences) Update(f func(*Settings)) {
 // clampSettingsStrictPhase is the tail of normalizeSettings: the write-path clamps
 // whose sentinel is 0, so a setter touching one field never stomps another's sentinel.
 func clampSettingsStrictPhase(s *Settings) {
-	if s.BreathAmount != 0 {
-		s.BreathAmount = value.Clamp(s.BreathAmount, 1, 100)
-	}
-	if s.BreathRate != 0 {
-		s.BreathRate = value.Clamp(s.BreathRate, 1, 100)
-	}
-	if s.CatchUpLingerMsVal != 0 {
-		s.CatchUpLingerMsVal = value.Clamp(s.CatchUpLingerMsVal, 0, CatchUpLingerMaxMs)
-	}
-	if s.SpotlightStrength != 0 {
-		s.SpotlightStrength = value.Clamp(s.SpotlightStrength, minSpotlightStrength, maxSpotlightStrength)
-	}
-	if s.SpriteWaitMsVal != 0 {
-		s.SpriteWaitMsVal = value.Clamp(s.SpriteWaitMsVal, SpriteWaitMinMs, SpriteWaitMaxMs)
-	}
-	if s.OOCScalePct != 0 {
-		s.OOCScalePct = value.Clamp(s.OOCScalePct, MinLogScalePercent, MaxLogScalePercent)
-	}
-	if s.PreviewHeightPxVal != 0 {
-		s.PreviewHeightPxVal = value.Clamp(s.PreviewHeightPxVal, MinPreviewHeightPx, MaxPreviewHeightPx)
-	}
-	if s.VoiceOutVolume != 0 {
-		s.VoiceOutVolume = value.Clamp(s.VoiceOutVolume, 0, 100)
-	}
-	if s.WeatherDensity != 0 {
-		s.WeatherDensity = value.Clamp(s.WeatherDensity, 1, 100)
-	}
-	if s.BgSlideshowSecs != 0 {
-		s.BgSlideshowSecs = value.Clamp(s.BgSlideshowSecs, minBgSlideshowSecs, maxBgSlideshowSecs)
-	}
-	if s.PrefetchAggro != 0 {
-		s.PrefetchAggro = value.Clamp(s.PrefetchAggro, 1, 4)
-	}
-	if s.StageFrameKind != 0 {
-		s.StageFrameKind = value.Clamp(s.StageFrameKind, 0, stageFrameKindMax)
-	}
+	s.BreathAmount = value.ClampSet(s.BreathAmount, 1, 100)
+	s.BreathRate = value.ClampSet(s.BreathRate, 1, 100)
+	s.CatchUpLingerMsVal = value.ClampSet(s.CatchUpLingerMsVal, 0, CatchUpLingerMaxMs)
+	s.SpotlightStrength = value.ClampSet(s.SpotlightStrength, minSpotlightStrength, maxSpotlightStrength)
+	s.SpriteWaitMsVal = value.ClampSet(s.SpriteWaitMsVal, SpriteWaitMinMs, SpriteWaitMaxMs)
+	s.OOCScalePct = value.ClampSet(s.OOCScalePct, MinLogScalePercent, MaxLogScalePercent)
+	s.PreviewHeightPxVal = value.ClampSet(s.PreviewHeightPxVal, MinPreviewHeightPx, MaxPreviewHeightPx)
+	s.VoiceOutVolume = value.ClampSet(s.VoiceOutVolume, 0, 100)
+	s.WeatherDensity = value.ClampSet(s.WeatherDensity, 1, 100)
+	s.BgSlideshowSecs = value.ClampSet(s.BgSlideshowSecs, minBgSlideshowSecs, maxBgSlideshowSecs)
+	s.PrefetchAggro = value.ClampSet(s.PrefetchAggro, 1, 4)
+	s.StageFrameKind = value.ClampSet(s.StageFrameKind, 0, stageFrameKindMax)
 	s.DownloadKBps = value.Clamp(s.DownloadKBps, 0, maxDownloadKBps)
 
 	// sentinel clamps (0 = unset, kept as-is)
-	if s.TexBudgetMiBVal != 0 {
-		s.TexBudgetMiBVal = value.Clamp(s.TexBudgetMiBVal, TexBudgetMinMiB, TexBudgetMaxMiB)
-	}
-	if s.AnimatedBudgetMiBVal != 0 {
-		s.AnimatedBudgetMiBVal = value.Clamp(s.AnimatedBudgetMiBVal, AnimatedBudgetMinMiB, AnimatedBudgetMaxMiB)
-	}
-	if s.AdaptiveLatMultipleVal != 0 {
-		s.AdaptiveLatMultipleVal = value.Clamp(s.AdaptiveLatMultipleVal, AdaptiveLatMultipleMin, AdaptiveLatMultipleMax)
-	}
-	if s.AnimDecodeConcurrencyVal != 0 {
-		s.AnimDecodeConcurrencyVal = value.Clamp(s.AnimDecodeConcurrencyVal, AnimDecodeConcurrencyMin, AnimDecodeConcurrencyMax)
-	}
-	if s.CrossfadeMsVal != 0 {
-		s.CrossfadeMsVal = value.Clamp(s.CrossfadeMsVal, CrossfadeMinMs, CrossfadeMaxMs)
-	}
-	if s.DiskCacheBudgetMiBVal != 0 {
-		s.DiskCacheBudgetMiBVal = value.Clamp(s.DiskCacheBudgetMiBVal, DiskCacheBudgetMinMiB, DiskCacheBudgetMaxMiB)
-	}
-	if s.HoldPrevMaxAgeMsVal != 0 {
-		s.HoldPrevMaxAgeMsVal = value.Clamp(s.HoldPrevMaxAgeMsVal, HoldPrevMaxAgeMinMs, HoldPrevMaxAgeMaxMs)
-	}
-	if s.ICQueueCapVal != 0 {
-		s.ICQueueCapVal = value.Clamp(s.ICQueueCapVal, ICQueueCapMin, ICQueueCapMax)
-	}
-	if s.NotFoundTTLSecVal != 0 {
-		s.NotFoundTTLSecVal = value.Clamp(s.NotFoundTTLSecVal, NotFoundTTLMinSec, NotFoundTTLMaxSec)
-	}
-	if s.PreanimTimeoutMsVal != 0 {
-		s.PreanimTimeoutMsVal = value.Clamp(s.PreanimTimeoutMsVal, PreanimTimeoutMinMs, PreanimTimeoutMaxMs)
-	}
-	if s.ShoutDurationMsVal != 0 {
-		s.ShoutDurationMsVal = value.Clamp(s.ShoutDurationMsVal, ShoutDurationMinMs, ShoutDurationMaxMs)
-	}
-	if s.SpriteDownscalePctVal != 0 {
-		s.SpriteDownscalePctVal = value.Clamp(s.SpriteDownscalePctVal, SpriteDownscaleMinPct, SpriteDownscaleMaxPct)
-	}
-	if s.ThumbBudgetMiBVal != 0 {
-		s.ThumbBudgetMiBVal = value.Clamp(s.ThumbBudgetMiBVal, ThumbBudgetMinMiB, ThumbBudgetMaxMiB)
-	}
-	if s.ThumbHeightPxVal != 0 {
-		s.ThumbHeightPxVal = value.Clamp(s.ThumbHeightPxVal, ThumbHeightMinPx, ThumbHeightMaxPx)
-	}
-	if s.ThumbQualityVal != 0 {
-		s.ThumbQualityVal = value.Clamp(s.ThumbQualityVal, ThumbQualityMin, ThumbQualityMax)
-	}
+	s.TexBudgetMiBVal = value.ClampSet(s.TexBudgetMiBVal, TexBudgetMinMiB, TexBudgetMaxMiB)
+	s.AnimatedBudgetMiBVal = value.ClampSet(s.AnimatedBudgetMiBVal, AnimatedBudgetMinMiB, AnimatedBudgetMaxMiB)
+	s.AdaptiveLatMultipleVal = value.ClampSet(s.AdaptiveLatMultipleVal, AdaptiveLatMultipleMin, AdaptiveLatMultipleMax)
+	s.AnimDecodeConcurrencyVal = value.ClampSet(s.AnimDecodeConcurrencyVal, AnimDecodeConcurrencyMin, AnimDecodeConcurrencyMax)
+	s.CrossfadeMsVal = value.ClampSet(s.CrossfadeMsVal, CrossfadeMinMs, CrossfadeMaxMs)
+	s.DiskCacheBudgetMiBVal = value.ClampSet(s.DiskCacheBudgetMiBVal, DiskCacheBudgetMinMiB, DiskCacheBudgetMaxMiB)
+	s.HoldPrevMaxAgeMsVal = value.ClampSet(s.HoldPrevMaxAgeMsVal, HoldPrevMaxAgeMinMs, HoldPrevMaxAgeMaxMs)
+	s.ICQueueCapVal = value.ClampSet(s.ICQueueCapVal, ICQueueCapMin, ICQueueCapMax)
+	s.NotFoundTTLSecVal = value.ClampSet(s.NotFoundTTLSecVal, NotFoundTTLMinSec, NotFoundTTLMaxSec)
+	s.PreanimTimeoutMsVal = value.ClampSet(s.PreanimTimeoutMsVal, PreanimTimeoutMinMs, PreanimTimeoutMaxMs)
+	s.ShoutDurationMsVal = value.ClampSet(s.ShoutDurationMsVal, ShoutDurationMinMs, ShoutDurationMaxMs)
+	s.SpriteDownscalePctVal = value.ClampSet(s.SpriteDownscalePctVal, SpriteDownscaleMinPct, SpriteDownscaleMaxPct)
+	s.ThumbBudgetMiBVal = value.ClampSet(s.ThumbBudgetMiBVal, ThumbBudgetMinMiB, ThumbBudgetMaxMiB)
+	s.ThumbHeightPxVal = value.ClampSet(s.ThumbHeightPxVal, ThumbHeightMinPx, ThumbHeightMaxPx)
+	s.ThumbQualityVal = value.ClampSet(s.ThumbQualityVal, ThumbQualityMin, ThumbQualityMax)
 
 	// custom clamp helpers (the setters call these same functions); the sentinel-resolving
 	// ones are guarded so 0 stays 0 and the getter resolves the default.
@@ -511,33 +457,15 @@ func normalizeSettings(s *Settings) {
 	s.ThemeFitZoom = value.Clamp(s.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
 
 	// explicit-zero keeps the default (the getter resolves 0)
-	if s.ViewportPct != 0 {
-		s.ViewportPct = value.Clamp(s.ViewportPct, MinViewportPercent, MaxViewportPercent)
-	}
-	if s.ChatScalePct != 0 {
-		s.ChatScalePct = value.Clamp(s.ChatScalePct, MinChatScalePercent, MaxChatScalePercent)
-	}
-	if s.ChatBoxPct != 0 {
-		s.ChatBoxPct = value.Clamp(s.ChatBoxPct, MinChatBoxPercent, MaxChatBoxPercent)
-	}
-	if s.LogScalePct != 0 {
-		s.LogScalePct = value.Clamp(s.LogScalePct, MinLogScalePercent, MaxLogScalePercent)
-	}
-	if s.InputHeightPct != 0 {
-		s.InputHeightPct = value.Clamp(s.InputHeightPct, MinInputPercent, MaxInputPercent)
-	}
-	if s.UIScalePct != 0 {
-		s.UIScalePct = value.Clamp(s.UIScalePct, MinUIScalePercent, MaxUIScalePercent)
-	}
-	if s.HoldClearMs != 0 {
-		s.HoldClearMs = value.Clamp(s.HoldClearMs, MinHoldClearMs, MaxHoldClearMs)
-	}
-	if s.TextCrawlMs != 0 {
-		s.TextCrawlMs = value.Clamp(s.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
-	}
-	if s.BlipRate != 0 {
-		s.BlipRate = value.Clamp(s.BlipRate, MinBlipRate, MaxBlipRate)
-	}
+	s.ViewportPct = value.ClampSet(s.ViewportPct, MinViewportPercent, MaxViewportPercent)
+	s.ChatScalePct = value.ClampSet(s.ChatScalePct, MinChatScalePercent, MaxChatScalePercent)
+	s.ChatBoxPct = value.ClampSet(s.ChatBoxPct, MinChatBoxPercent, MaxChatBoxPercent)
+	s.LogScalePct = value.ClampSet(s.LogScalePct, MinLogScalePercent, MaxLogScalePercent)
+	s.InputHeightPct = value.ClampSet(s.InputHeightPct, MinInputPercent, MaxInputPercent)
+	s.UIScalePct = value.ClampSet(s.UIScalePct, MinUIScalePercent, MaxUIScalePercent)
+	s.HoldClearMs = value.ClampSet(s.HoldClearMs, MinHoldClearMs, MaxHoldClearMs)
+	s.TextCrawlMs = value.ClampSet(s.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
+	s.BlipRate = value.ClampSet(s.BlipRate, MinBlipRate, MaxBlipRate)
 
 	// enums with a valid range (invalid keeps the shipped default)
 	if s.ProxyModeVal < 0 || s.ProxyModeVal >= ProxyModeCount {
