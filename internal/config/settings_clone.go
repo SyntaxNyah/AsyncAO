@@ -1472,6 +1472,9 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.AutoReconnectDefaultMigrated != o.AutoReconnectDefaultMigrated {
 		return false
 	}
+	if s.CatchUpDefaultMigrated != o.CatchUpDefaultMigrated {
+		return false
+	}
 	if s.ThemeFitDefaultMigrated != o.ThemeFitDefaultMigrated {
 		return false
 	}

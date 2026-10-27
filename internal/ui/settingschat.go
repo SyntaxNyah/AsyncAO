@@ -107,24 +107,23 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		a.applyTimingToRoom()
 	}
 
-	// Packed-room catch-up vs. the OG-client queue. ON (default) = webAO pacing:
-	// when 20 people talk at once, backlog messages skip their animations so the
-	// stage tracks real-time. OFF = the original AO2 client's queue — every line
-	// plays in full and in order, nothing cut off, but a room full of webAO users
-	// (who skip the queue) can leave you behind. The log keeps every line either
-	// way. (This is the "message queue" toggle — it was a setting, not removed.)
+	// Packed-room catch-up vs. the OG-client queue. OFF (default) = the original
+	// AO2 client's queue: every line plays in full and in order, nothing cut off.
+	// ON = webAO pacing: when 20 people talk at once, backlog messages skip their
+	// animations so the stage tracks real-time, at the cost of lines flashing past.
+	// The log keeps every line either way.
 	cuOn, cuThresh := a.d.Prefs.Load().CatchUp()
-	const cuLabel = "Catch up in packed rooms — uncheck for the OG-client queue (every line plays in full, nothing cut off)"
+	const cuLabel = "Catch up in packed rooms (OFF by default) — check for webAO pacing instead of the OG-client queue"
 	if next := c.Checkbox(pad, y, cuLabel, cuOn); next != cuOn {
 		a.d.Prefs.SetCatchUp(next, cuThresh)
 		a.applyTimingToRoom()
 	}
 	c.Tooltip(sdl.Rect{X: pad, Y: y, W: 22 + c.TextWidth(cuLabel), H: 16},
-		"On (default): in a packed room, queued messages skip their animations so chat stays at real-time — like webAO. Off: the original AO2 client's queue — every IC message plays in full and in order (nothing cut off), but a roomful of webAO users can leave you minutes behind. The IC log keeps every line either way.")
+		"Off (default): the original AO2 client's queue — every IC message plays in full and in order (nothing cut off), but a roomful of webAO users can leave you minutes behind. On: in a packed room, queued messages skip their animations so chat stays at real-time — like webAO. The IC log keeps every line either way.")
 	y += 26
-	c.Label(pad+22, y, "Checked (default): webAO pacing — in a busy room, backlog messages skip their animation to keep chat current (they can flash past).", ColTextDim)
+	c.Label(pad+22, y, "Unchecked (default): the original AO2 client's queue — every message plays out in full and in order, nothing skipped (busy webAO rooms may lag you).", ColTextDim)
 	y += 18
-	c.Label(pad+22, y, "Unchecked: the original AO2 client's queue — every message plays out in full and in order, nothing skipped (busy webAO rooms may lag you).", ColTextDim)
+	c.Label(pad+22, y, "Checked: webAO pacing — in a busy room, backlog messages skip their animation to keep chat current (they can flash past).", ColTextDim)
 	y += 22
 	if cuOn {
 		nt := a.numberRow(y, "Catch up after", cuThresh, 1, 1, 50)

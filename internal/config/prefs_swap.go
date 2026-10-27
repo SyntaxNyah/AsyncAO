@@ -177,6 +177,17 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 		s.AutoReconnectDefaultMigrated = true
 		changed = true
 	}
+	// Catch-up shipped ON, so every older file has catchUpWhenBehind:true baked in
+	// (the saver always wrote it); only the absent stamp can tell "old default" from
+	// a deliberate opt-in. Force the OG-client queue once, then honour the saved
+	// choice from the next launch on.
+	if presence["catchUpDefaultMigrated"] && s.CatchUpDefaultMigrated {
+		// already migrated: the on-disk value is honoured as-is
+	} else {
+		s.CatchUpOn = defaultCatchUpWhenBehind
+		s.CatchUpDefaultMigrated = true
+		changed = true
+	}
 	// Mutation (themeFit flags): the migration reads the ON-DISK themeFit (zero when the
 	// key is absent), not the default-prefs value the unmarshal-over-defaults left there.
 	effectiveThemeFit := s.ThemeFit

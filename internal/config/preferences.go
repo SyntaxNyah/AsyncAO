@@ -158,10 +158,11 @@ const defaultPlainLobby = true
 // font override / the dyslexia toggle already outranks the theme's families.
 const defaultThemeFonts = true
 
-// defaultCatchUpWhenBehind ships ON: in a packed room the IC stage otherwise
-// crawls through every queued preanim/shout, falling minutes behind real-time.
-// Catch-up fast-forwards the backlog; the IC log still keeps every message.
-const defaultCatchUpWhenBehind = true
+// defaultCatchUpWhenBehind ships OFF: the original AO2 client queues every IC
+// message and plays each one in full, in order. Opting in enables webAO-style
+// catch-up, which fast-forwards the backlog in a packed room; the IC log keeps
+// every message in either mode.
+const defaultCatchUpWhenBehind = false
 
 // defaultShoutBypassQueue ships ON: shouts skip the queue and play immediately,
 // exactly as AO2 does. Toggle OFF to queue shouts like any other message.
@@ -1309,13 +1310,15 @@ func defaultSettings() *Settings {
 		UnfocusedFullRate:      defaultUnfocusedFullRate,
 		GhostCrawlText:         defaultGhostCrawlText,
 		DetailedLog:            defaultDetailedLog,
-		// All FIVE one-shot default stamps. A fresh install has nothing to move — it
+		// All SIX one-shot default stamps. A fresh install has nothing to move — it
 		// already defaults to auto-reconnect OFF, theme fit Native, a 40 ms message
-		// crawl, manifest-following desks and transcript logging ON — so it counts as
-		// already-migrated. Only a file written by an OLDER build lacks these stamps
-		// (absent → nil on load) and triggers the one-shot force-OFF / Stretch→Native /
-		// 18→40 ms / desks-follow-ON / transcript-ON move in the load overlay.
+		// crawl, manifest-following desks, transcript logging ON and the OG-client
+		// queue (catch-up OFF) — so it counts as already-migrated. Only a file written
+		// by an OLDER build lacks these stamps (absent → nil on load) and triggers the
+		// one-shot force-OFF / Stretch→Native / 18→40 ms / desks-follow-ON /
+		// transcript-ON / catch-up-OFF moves in the load overlay.
 		AutoReconnectDefaultMigrated: true,
+		CatchUpDefaultMigrated:       true,
 		ThemeFitDefaultMigrated:      true,
 		BlipSpeedDefaultMigrated:     true,
 		DeskManifestDefaultMigrated:  true,

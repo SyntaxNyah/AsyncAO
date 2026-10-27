@@ -25,6 +25,14 @@
     "output_delta": {}
   },
   {
+    "name": "legacy_catchUpDefaultMigrated",
+    "input": {
+      "catchUpDefaultMigrated": false,
+      "catchUpWhenBehind": true
+    },
+    "output_delta": {}
+  },
+  {
     "name": "legacy_themeFitDefaultMigrated",
     "input": {
       "themeFit": 0,
@@ -525,6 +533,7 @@
       "callwordsOOC": true,
       "casingEnabled": true,
       "casingRoles": 1,
+      "catchUpDefaultMigrated": true,
       "catchUpLingerMs": 1,
       "catchUpThreshold": 1,
       "catchUpWhenBehind": true,
@@ -1155,6 +1164,7 @@
       "casingEnabled": true,
       "casingRoles": 1,
       "catchUpLingerMs": 1,
+      "catchUpWhenBehind": true,
       "changelogSeenVersion": "v641",
       "charBundlePrefetch": true,
       "charDownloader": true,

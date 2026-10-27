@@ -104,6 +104,7 @@ func TestMigrationStampsMarkDirty(t *testing.T) {
 	fullyStamped := map[string]any{
 		"spriteScalingMigrated": true, "spriteScaling": 2,
 		"autoReconnectDefaultMigrated": true, "autoReconnect": true,
+		"catchUpDefaultMigrated": true, "catchUpWhenBehind": true,
 		"themeFitDefaultMigrated": true, "themeFit": 2,
 		"blipSpeedDefaultMigrated": true, "textCrawlMs": 18,
 		"deskManifestDefaultMigrated": true, "deskFollowManifest": true,
@@ -117,6 +118,7 @@ func TestMigrationStampsMarkDirty(t *testing.T) {
 		{"fully_stamped", fullyStamped, false},
 		{"spriteScaling_unmigrated", map[string]any{"smoothScaling": true}, true},
 		{"autoReconnect_unmigrated", map[string]any{"autoReconnectDefaultMigrated": false, "autoReconnect": true}, true},
+		{"catchUp_unmigrated", map[string]any{"catchUpDefaultMigrated": false, "catchUpWhenBehind": true}, true},
 		{"themeFit_unmigrated", map[string]any{"themeFitDefaultMigrated": false, "themeFit": 0}, true},
 		{"blipSpeed_unmigrated", map[string]any{"blipSpeedDefaultMigrated": false, "textCrawlMs": 18}, true},
 		{"deskManifest_unmigrated", map[string]any{"deskManifestDefaultMigrated": false, "deskFollowManifest": false}, true},

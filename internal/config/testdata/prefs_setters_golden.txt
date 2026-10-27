@@ -90,8 +90,8 @@ SetCallwordsOOC|zero|
 SetCallwordsOOC|valid|CallwordsOOC=true
 SetCasing|zero|
 SetCasing|valid|CasingEnabled=true;CasingRoles=1
-SetCatchUp|zero|CatchUpOn=false
-SetCatchUp|valid|
+SetCatchUp|zero|
+SetCatchUp|valid|CatchUpOn=true
 SetCatchUpLingerMs|zero|
 SetCatchUpLingerMs|valid|CatchUpLingerMsVal=1
 SetCatchUpLingerMs|neg|
