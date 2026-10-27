@@ -607,7 +607,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   shader" path for SDL2's 2D renderer, which has no fragment-shader entry point, #47);
   **entrance slide-in** drifts a new speaker's sprite in from the side on the first line;
   **depth-of-field** soft-focuses + dims the background behind the speaker (a multi-offset
-  smear, since go-sdl2 exposes no per-texture scale mode for a true blur); **speaker
+  smear, since the 2D renderer has no blur shader); **speaker
   spotlight** (#121) dims the non-speaker layers — the pair partner + the desk — toward
   shadow so the talker pops, with a Dim slider (the background is left to depth-of-field, so
   the two compose without double-dimming); and **idle breathing** (#122) gives every static
@@ -1598,11 +1598,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   snapshot the search and domain-grouping use), so the per-frame draw just walks a
   cached slice — **allocation-free**. Stars survive Export/Import; a merged-in
   shared config arrives un-starred (it can't restar your library).
-- **Audio codecs** (the "audio note"): the SDL Mixer X fork bundles Ogg-Vorbis
+- **Audio codecs** (the "audio note"): SDL3_mixer builds Ogg-Vorbis
   (stb_vorbis), MP3 (dr_mp3) and FLAC (dr_flac) straight into its own library, so
-  only **Opus** (libopusfile) ships as a separate DLL and is loaded at startup via
-  `Mix_Init` (best-effort — a missing codec just loses that one format, the rest
-  still play). This is what lets **`.opus`** work everywhere it
+  only **Opus** (libopusfile) ships as a separate library, loaded when the first
+  Opus file plays (best-effort — a missing codec just loses that one format, the
+  rest still play). This is what lets **`.opus`** work everywhere it
   matters: Discord `/play` CDN links (which are `.opus`) **and** a custom
   `.opus` callword/friend alert sound. Decoding always runs in C off the Go
   side (spec §8).
@@ -2292,7 +2292,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   (no per-frame allocations), and the `BenchmarkRenderFrame` alloc gate is
   unchanged.
 - **Linux AppImage** (CI + `scripts/build-appimage.sh`): a self-contained,
-  single-file Linux download that **bundles the SDL2 / SDL2_ttf / SDL2_mixer /
+  single-file Linux download that **bundles the SDL3 / SDL3_ttf / SDL3_mixer /
   libwebp / libavif runtime** (resolved from the binary by `linuxdeploy`) so it
   runs with no install step — the Linux equivalent of the Windows DLL bundle. CI
   builds it on every push in **two flavors**, default and **Discord-free**

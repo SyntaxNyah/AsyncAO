@@ -17,15 +17,15 @@ import (
 // The built-in About page: who made AsyncAO, why, and the original
 // developers this client owes everything to.
 const (
-	aboutRepoURL   = "https://github.com/SyntaxNyah/AsyncAO"
-	aboutAO2URL    = "https://github.com/AttorneyOnline/AO2-Client"
-	aboutWebAOURL  = "https://github.com/AttorneyOnline/webAO"
-	aboutAOSDLURL  = "https://github.com/AttorneyOnline/AO-SDL"
-	aboutAOSiteURL = "https://aceattorneyonline.com"
-	aboutArtistURL = "https://www.instagram.com/hlenbchan2" // app icon artist
-	aboutDROURL    = "https://github.com/Killing-Fever-Online/DRO-Client"
-	aboutKFOURL    = "https://github.com/Killing-Fever-Online/KFO-Client"
-	aboutMixerXURL = "https://github.com/SyntaxNyah/SDL-Mixer-X" // AsyncAO's fork of WohlSoft/SDL-Mixer-X
+	aboutRepoURL     = "https://github.com/SyntaxNyah/AsyncAO"
+	aboutAO2URL      = "https://github.com/AttorneyOnline/AO2-Client"
+	aboutWebAOURL    = "https://github.com/AttorneyOnline/webAO"
+	aboutAOSDLURL    = "https://github.com/AttorneyOnline/AO-SDL"
+	aboutAOSiteURL   = "https://aceattorneyonline.com"
+	aboutArtistURL   = "https://www.instagram.com/hlenbchan2" // app icon artist
+	aboutDROURL      = "https://github.com/Killing-Fever-Online/DRO-Client"
+	aboutKFOURL      = "https://github.com/Killing-Fever-Online/KFO-Client"
+	aboutSDLMixerURL = "https://github.com/libsdl-org/SDL_mixer"
 	// aboutMascotPx is the on-screen (logical) size of the Mayo portrait, drawn in
 	// the Mayo section; the texture is Catmull-Rom downscaled to this exact size.
 	aboutMascotPx = int32(200)
@@ -110,7 +110,6 @@ var aboutLinks = []aboutLink{
 	// Every dependency, linked + credited. All AGPL-v3-compatible free software.
 	{"Open-source dependencies — Go libraries (all free software)", ""},
 	{"coder/websocket — WebSocket client (ISC)", "https://github.com/coder/websocket"},
-	{"veandco/go-sdl2 — SDL2 / mixer / ttf bindings (BSD-3)", "https://github.com/veandco/go-sdl2"},
 	{"golang.org/x/image — image scaling & codecs (BSD-3)", "https://pkg.go.dev/golang.org/x/image"},
 	{"golang.org/x/sync — concurrency primitives (BSD-3)", "https://pkg.go.dev/golang.org/x/sync"},
 	{"golang.org/x/text — text encoding (BSD-3)", "https://pkg.go.dev/golang.org/x/text"},
@@ -122,8 +121,8 @@ var aboutLinks = []aboutLink{
 	{"santhosh-tekuri/jsonschema (v6) — JSON Schema validation (Apache-2.0)", "https://github.com/santhosh-tekuri/jsonschema"},
 
 	{"Native engine — bundled C libraries (all free software)", ""},
-	{"SDL2 — windowing, rendering & audio (zlib)", "https://www.libsdl.org"},
-	{"SDL Mixer X — SDL_mixer music/stream mixer, AsyncAO fork of WohlSoft/SDL-Mixer-X (zlib)", aboutMixerXURL},
+	{"SDL3 and SDL3_ttf — windowing, rendering, text & audio (zlib)", "https://www.libsdl.org"},
+	{"SDL3_mixer — music & sound mixing (zlib)", aboutSDLMixerURL},
 	{"libwebp — WebP image codec (BSD)", "https://chromium.googlesource.com/webm/libwebp"},
 	{"libavif — AVIF image codec (BSD)", "https://github.com/AOMediaCodec/libavif"},
 	{"dav1d / libaom — AV1 decoders (BSD)", "https://code.videolan.org/videolan/dav1d"},
@@ -551,8 +550,8 @@ func aboutLinkGroups() []aboutLinkGroup {
 	return aboutGroupsCache
 }
 
-// openBrowser launches the system browser (go-sdl2 has no SDL_OpenURL
-// binding; per-OS shellout is the portable fallback).
+// openBrowser launches the system browser with a per-OS shellout (SDL_OpenURL
+// replaces it in the platform step of the SDL3 move).
 func openBrowser(url string) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {

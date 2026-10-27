@@ -6,19 +6,11 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// TestSetTextureScaleModeRoundTrips proves the cgo binding actually reaches SDL:
-// it sets each mode on a real texture and reads it back with the SDL getter that
-// go-sdl2 doesn't bind either.
-//
-// Worth a real test rather than inspection, because the failure mode is silent.
-// The shim casts a Go *sdl.Texture straight to a C SDL_Texture* — if go-sdl2 ever
-// stops making that an identity (it is one today: Texture is a struct{} handle),
-// the call would corrupt rather than error, and every sprite would keep drawing
-// with the client-wide filter while the code claimed otherwise.
+// TestSetTextureScaleModeRoundTrips proves a texture's filter really reaches
+// SDL: it sets each mode on a real texture and reads it back. The failure mode
+// is silent (every sprite would keep the default filter while the code claimed
+// otherwise), so it is worth a real test.
 func TestSetTextureScaleModeRoundTrips(t *testing.T) {
-	if !scaleModeSupported {
-		t.Skip("SDL < 2.0.12: per-texture scale mode is compiled out by design")
-	}
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
 

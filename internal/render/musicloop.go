@@ -32,6 +32,9 @@ const (
 	// even a server with 200 music tracks (large) plus 50+ areas (implausible)
 	// fits; eviction is FIFO (oldest entry dropped when cap is hit).
 	loopMetaCacheCap = 256
+
+	// unknownDurationSec is ClampLoopPoints' "length unknown" sentinel.
+	unknownDurationSec = -1.0
 )
 
 // loopMeta records a track's loop points (when found) or the fact that none exist
@@ -45,14 +48,14 @@ type loopMeta struct {
 	fetchedAt time.Time            // when this entry was written; drives TTL expiry
 }
 
-// applyLoopPoints applies a track's custom loop points (#48) to the live stream
-// by setting SDL Mixer X's native loop_start/loop_end. Called exactly once per
-// playDecoded (only when loop=true), after the stream is already playing. On a
-// cache miss it fetches+parses the sidecar synchronously (first playthrough),
-// then sets the points; SDL Mixer X loops gaplessly at the decoder level from
-// then on. Render thread only.
-func (a *Audio) applyLoopPoints(url string, data []byte) {
-	// Check cache first (hit = apply immediately; miss = trigger fetch).
+// loopPointsFor returns a looping song's custom loop points (#48), or ok=false
+// when it has none worth arming. Called once per startMusic, BEFORE the song
+// plays: SDL3_mixer takes loop points as play options and then loops gaplessly
+// at the decoder level. On a cache miss it fetches+parses the sidecar
+// synchronously (first playthrough). durSec is the song's length (haveDur false
+// when unknown); startSec is where playback will begin. Render thread only.
+func (a *Audio) loopPointsFor(url string, data []byte, durSec float64, haveDur bool, startSec float64) (courtroom.LoopPoints, bool) {
+	// Check cache first (hit = use immediately; miss = trigger fetch).
 	meta, cached := a.loopMeta[url]
 	if cached {
 		// Expire stale entries (hard rule #6: never re-probe inside TTL, but DO
@@ -67,73 +70,54 @@ func (a *Audio) applyLoopPoints(url string, data []byte) {
 		// Cache miss: fetch and parse synchronously so we can arm on the FIRST
 		// playthrough. The .txt file is small (typically <100 bytes) and the music
 		// bytes are already in memory for sample rate sniffing, so this is fast.
-		// We write the result to the cache immediately so subsequent plays don't
-		// re-fetch.
 		log.Printf("render: loop cache MISS for %q, fetching synchronously", url)
-		meta = a.fetchLoopMeta(url, data)
+		if !haveDur {
+			durSec = unknownDurationSec
+		}
+		meta = a.fetchLoopMeta(url, data, durSec)
 
-		// Write to cache
 		if len(a.loopMeta) >= loopMetaCacheCap {
-			// Evict oldest (FIFO). We don't have an order slice, so evict randomly.
+			// Evict one entry. We don't have an order slice, so evict arbitrarily.
 			for k := range a.loopMeta {
 				delete(a.loopMeta, k)
 				break
 			}
 		}
 		a.loopMeta[url] = meta
-		cached = true
 	}
 
-	log.Printf("render: loop cache HIT for %q, found=%v", url, meta.found)
-
-	// Cache hit, but no points found (conclusively missing): silent no-op. Most
-	// tracks will hit this path (few have sidecars); logging would be spam.
+	// No points found (conclusively missing): silent no-op. Most tracks take
+	// this path (few have sidecars); logging would be spam.
 	if !meta.found {
-		return
+		return courtroom.LoopPoints{}, false
 	}
 
-	// Real points exist. Refuse to arm if the window is too narrow (would be
-	// skipped by a single idle Frame() gap) or if loop_start >= loop_end (the
+	// Refuse to arm if the window is too narrow, if loop_start >= loop_end (the
 	// parser already clamped this, but an all-zero LoopPoints also satisfies
-	// found=true when a DRO .ini exists but has no loop keys — belt-and-braces).
-	// Also refuse if HaveEnd is false (no loop_end was ever defined).
+	// found=true when a DRO .ini exists but has no loop keys), or if no loop end
+	// was ever defined.
 	p := meta.points
-	log.Printf("render: checking loop arm conditions: HaveEnd=%v, window=%.2fs, start=%.2fs, end=%.2fs",
-		p.HaveEnd, p.EndSec-p.StartSec, p.StartSec, p.EndSec)
 	if !p.HaveEnd || p.EndSec-p.StartSec < minLoopWindowSec || p.StartSec >= p.EndSec {
-		log.Printf("render: loop arm REFUSED (conditions not met)")
-		return
+		log.Printf("render: loop arm REFUSED (HaveEnd=%v start=%.2fs end=%.2fs)", p.HaveEnd, p.StartSec, p.EndSec)
+		return courtroom.LoopPoints{}, false
 	}
-
-	// Check if we've already passed the loop-end point. MusicClock reads the live
-	// stream's position; if it's past `end`, we missed the window (late fetch, or
-	// the track was resumed past the loop point) — don't arm a seek into the past.
-	if pos, _, ok := a.MusicClock(); ok && pos >= p.EndSec {
-		log.Printf("render: loop arm REFUSED (already past loop point: pos=%.2fs >= end=%.2fs)", pos, p.EndSec)
-		return // already past the loop point; wait for the natural loop-around
+	// A resume that starts past the loop end would end the song at once.
+	if startSec >= p.EndSec {
+		log.Printf("render: loop arm REFUSED (start %.2fs is past the loop end %.2fs)", startSec, p.EndSec)
+		return courtroom.LoopPoints{}, false
 	}
-
-	// Apply native loop points (#48): SDL Mixer X loops gaplessly at the decoder
-	// level, so set loop_start/loop_end once and let the mixer handle the
-	// loop-back — no deadline polling, no seek slop. SetLoopStart/End return an
-	// error for formats whose decoder exposes no loop points (e.g. dr_mp3).
-	if err := a.music.SetLoopStartTime(p.StartSec); err != nil {
-		log.Printf("render: SetLoopStartTime(%.2f) failed for %q: %v", p.StartSec, url, err)
-		return
-	}
-	if err := a.music.SetLoopEndTime(p.EndSec); err != nil {
-		log.Printf("render: SetLoopEndTime(%.2f) failed for %q: %v", p.EndSec, url, err)
-		return
-	}
-	log.Printf("render: applied native loop points: start=%.2fs, end=%.2fs", p.StartSec, p.EndSec)
+	log.Printf("render: loop points start=%.2fs end=%.2fs for %q", p.StartSec, p.EndSec, url)
+	return p, true
 }
 
 // fetchLoopMeta fetches and parses a track's sidecar(s) synchronously, returning
-// the result immediately. Called by armLoopFromCache on cache miss so loop points work
+// the result immediately. Called by loopPointsFor on cache miss so loop points work
 // on the first playthrough. For AO .txt sidecars, the sample rate is sniffed from `data`
 // (the track's own bytes, already in memory); for DRO .ini, the folder convention is
 // applied. Direct http(s) URLs (query strings present) never get a sidecar probe.
-func (a *Audio) fetchLoopMeta(url string, data []byte) loopMeta {
+// durSec is the song's length (unknownDurationSec when unknown), used to clamp
+// loop_end.
+func (a *Audio) fetchLoopMeta(url string, data []byte, durSec float64) loopMeta {
 	// Direct URLs (with query strings) are never probed for sidecars — they're
 	// off-domain redirects or parameterized CDN links, not asset-origin paths.
 	if courtroom.IsDirectMusicURL(url) {
@@ -163,7 +147,7 @@ func (a *Audio) fetchLoopMeta(url string, data []byte) loopMeta {
 					if droMeta.PlayOnce {
 						return loopMeta{found: true, fetchedAt: time.Now()}
 					}
-					start, end := courtroom.ClampLoopPoints(droMeta.Loop.StartSec, droMeta.Loop.EndSec, a.musicDuration())
+					start, end := courtroom.ClampLoopPoints(droMeta.Loop.StartSec, droMeta.Loop.EndSec, durSec)
 					points := courtroom.LoopPoints{StartSec: start, EndSec: end, HaveEnd: droMeta.Loop.HaveEnd}
 					log.Printf("render: DRO .ini loop points for %q: start=%.2fs end=%.2fs haveEnd=%v", url, points.StartSec, points.EndSec, points.HaveEnd)
 					return loopMeta{points: points, found: true, fetchedAt: time.Now()}
@@ -177,7 +161,7 @@ func (a *Audio) fetchLoopMeta(url string, data []byte) loopMeta {
 	txtURL := url + ".txt"
 	if data, err := a.mgr.FetchRawLayered(context.Background(), txtURL); err == nil && len(data) > 0 {
 		if points, ok := courtroom.ParseAOLoopSidecar(data, sampleRate); ok {
-			start, end := courtroom.ClampLoopPoints(points.StartSec, points.EndSec, a.musicDuration())
+			start, end := courtroom.ClampLoopPoints(points.StartSec, points.EndSec, durSec)
 			points.StartSec = start
 			points.EndSec = end
 			return loopMeta{points: points, found: true, fetchedAt: time.Now()}
@@ -186,14 +170,4 @@ func (a *Audio) fetchLoopMeta(url string, data []byte) loopMeta {
 
 	// Both DRO and AO conclusively missing (or parse failed): cache that fact.
 	return loopMeta{found: false, fetchedAt: time.Now()}
-}
-
-// musicDuration returns the live stream's duration in seconds, or -1.0 if unknown
-// (pre-2.6 SDL_mixer, mod/midi). Used by ClampLoopPoints to wrap loop_end. Render
-// thread only; must be called with a.music != nil.
-func (a *Audio) musicDuration() float64 {
-	if _, dur, ok := a.MusicClock(); ok {
-		return dur
-	}
-	return -1.0
 }

@@ -102,7 +102,7 @@ a downloaded build is quarantined, so run `xattr -dr com.apple.quarantine .` in
 the extracted folder once (clears the per-library Gatekeeper prompts), then
 right-click → Open on the first launch; each tarball's `INSTALL.txt` spells this
 out. Prefer Homebrew and a smaller download? Grab
-`asyncao-macos-homebrew-arm64.tar.gz`, run `brew install sdl2 sdl2_ttf sdl2_mixer
+`asyncao-macos-homebrew-arm64.tar.gz`, run `brew install sdl3 sdl3_ttf sdl3_mixer
 webp libavif opus opusfile`, and it uses those libraries instead of a bundled `lib/`.
 After the first install AsyncAO keeps itself up to date in place. Prefer to build from source? See **[BUILDING.md](BUILDING.md)** for the
 detailed per-OS guide.
@@ -207,12 +207,11 @@ AGPL-v3-compatible licence**, with no proprietary or licence-incompatible pieces
   MIT ([aolib](https://github.com/AO-Underground/aolib/tree/main/go),
   [xxhash](https://github.com/cespare/xxhash)), Apache-2.0
   ([jsonschema](https://github.com/santhosh-tekuri/jsonschema)), BSD-3
-  ([go-sdl2](https://github.com/veandco/go-sdl2),
-  [kettek/apng](https://github.com/kettek/apng),
+  ([kettek/apng](https://github.com/kettek/apng),
   [klauspost/compress](https://github.com/klauspost/compress), and the
   `golang.org/x/*` libraries), and MPL-2.0
   ([hashicorp/golang-lru](https://github.com/hashicorp/golang-lru)).
-- **Bundled engine** — zlib ([SDL2](https://www.libsdl.org) / ttf / SDL Mixer X);
+- **Bundled engine** — zlib ([SDL3](https://www.libsdl.org) / SDL3_ttf / SDL3_mixer);
   BSD ([libwebp](https://chromium.googlesource.com/webm/libwebp),
   [libavif](https://github.com/AOMediaCodec/libavif) + dav1d/aom,
   [Opus/Ogg](https://xiph.org), WavPack, stb_vorbis); MIT / public-domain (qoa,

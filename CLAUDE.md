@@ -14,7 +14,7 @@ touching anything.
 ## What this is
 
 AsyncAO is a **maximum-performance Attorney Online 2 client in Go** (CGO for
-SDL2 + libwebp). Two pillars: **zero-fallback asset streaming** (exactly one
+SDL3 + libwebp). Two pillars: **zero-fallback asset streaming** (exactly one
 network probe per asset by default, learned formats per server) and **every
 millisecond counts** (lock-free hot paths, three cache tiers, zero-allocation
 render loop, 256 MiB memory budget). Plus full AO2 ≥ 2.6/2.8 **pairing**.
@@ -26,8 +26,8 @@ add TCP framing back.
 ## Hard rules (violations get rejected — spec §17, kept in force)
 
 1. **No SDL calls off the render thread.** SDL is reached through our own
-   binding packages, `internal/sdl`, `internal/ttf` and `internal/mix`; nothing
-   else imports go-sdl2. Only `internal/render`, `internal/ui` and `cmd/asyncao`
+   binding packages, `internal/sdl`, `internal/ttf` and `internal/mix`, the
+   only cgo code that includes SDL headers. Only `internal/render`, `internal/ui` and `cmd/asyncao`
    may import the binding, and everything there runs on the locked main thread.
    `internal/assets`' decoder outputs plain `image.RGBA`.
 2. **No synchronous disk I/O** on render/decode/resolver paths. Preferences
@@ -96,7 +96,7 @@ add TCP framing back.
 ## Build & test commands (Windows dev box)
 
 ```powershell
-# one-time deps (MSYS2 UCRT64 + SDL2 + libwebp)
+# one-time deps (MSYS2 UCRT64 + SDL3, SDL3_ttf, SDL3_mixer + libwebp)
 powershell -ExecutionPolicy Bypass -File scripts\setup-deps.ps1
 # build + stage DLLs
 powershell -ExecutionPolicy Bypass -File scripts\build.ps1 -Release
@@ -124,10 +124,14 @@ imports it — `courtroom`, `logbrowser`, `archive`, `render`, `ui` — needs cg
 SDL packages use the dummy video driver headlessly (`SDL_VIDEODRIVER=dummy`;
 they skip if SDL is unavailable).
 
-`internal/mix` links SDL Mixer X (our fork), which `setup-deps.ps1` does not
-install. Until the SDL3 move removes it, build it once from an MSYS2 UCRT64
-shell, with Git for Windows on PATH (the login shell does not inherit it):
-`MSYSTEM=UCRT64 /c/msys64/usr/bin/bash.exe -lc 'export PATH="$PATH:/c/Program Files/Git/cmd"; pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-{opus,opusfile,cmake,ninja} && bash <repo>/scripts/build-sdl-mixer-x.sh /ucrt64'`
+AsyncAO needs SDL 3.4 or newer (per-renderer default texture scale mode).
+MSYS2, Homebrew, Fedora and Arch package it; Debian/Ubuntu build it with
+`scripts/build-sdl3.sh`, and CI's Linux/macOS jobs use the cached
+`.github/actions/setup-sdl3` build with the same versions and mixer options.
+SDL3_mixer loads some codecs on demand, so no import table names them: the
+Windows build scripts stage `libopusfile-0.dll` explicitly. A test that opens
+an SDL3_mixer device must close it before `sdl.Quit`, or the process dies with
+heap corruption.
 
 ## Package map
 
@@ -143,8 +147,8 @@ shell, with Git for Windows on PATH (the login shell does not inherit it):
 | `internal/courtroom` | session handshake reducer, message lifecycle state machine, typewriter pacing, URL conventions, char.ini | no |
 | `internal/theme` | AO2 theme INIs (design/fonts/sounds), asset lookup ladder | no |
 | `internal/metrics` | 1 Hz sampler (heap, GC p99, hit rates), cold-load report | no |
-| `internal/sdl`, `ttf`, `mix` | our SDL binding: `sdl`/`ttf` forward to go-sdl2 (aliased types, same names), `mix` binds SDL Mixer X; reimplemented over SDL3 in plan step 2c | **yes** |
-| `internal/render` | TextureStore (T1), viewport compositor, message raster, upload pump, SDL_mixer audio | **yes** |
+| `internal/sdl`, `ttf`, `mix` | our cgo binding to SDL3, SDL3_ttf and SDL3_mixer (go-sdl2-style names, Rect/event/display conversion at the boundary) | **yes** |
+| `internal/render` | TextureStore (T1), viewport compositor, message raster, upload pump, SDL3_mixer audio | **yes** |
 | `internal/ui` | immediate-mode kit + screens (lobby/phone book, char select, courtroom, settings, about) | **yes** |
 | `cmd/asyncao` | flags, GOMEMLIMIT, LockOSThread, SDL init, main loop | **yes** |
 

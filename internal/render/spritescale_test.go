@@ -104,9 +104,6 @@ func TestSpriteScaleModeFollowsAO2(t *testing.T) {
 // applyScaleMode). Without the memo a stable stage would flush twice per frame
 // forever, quietly undoing the batching the client turns on at startup.
 func TestApplyScaleModeIsMemoised(t *testing.T) {
-	if !scaleModeSupported {
-		t.Skip("SDL < 2.0.12: per-texture scale mode is compiled out by design")
-	}
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
 	store, err := NewTextureStoreBudget(ren, 64<<20)

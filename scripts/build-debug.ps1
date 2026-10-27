@@ -42,11 +42,19 @@ if (-not $?) { exit 1 }
 Write-Host "Built $out\asyncao.exe (debug)"
 
 # Stage the runtime DLL closure (same recursive-import walk as build.ps1, so the
-# DLL set can't drift as SDL2_mixer/webp/avif pull in new deps).
+# DLL set can't drift as SDL3_mixer/webp/avif pull in new deps). The codec
+# libraries SDL3_mixer loads on demand are seeded, as build.ps1 explains.
+$onDemand = @("libopusfile-0.dll")
 $seen = @{}
 $queue = New-Object System.Collections.Generic.Queue[string]
 $queue.Enqueue("$out\asyncao.exe")
 $staged = 0
+foreach ($d in $onDemand) {
+    $seen[$d.ToLower()] = $true
+    Copy-Item (Join-Path "$msys\bin" $d) "$out\" -Force
+    $queue.Enqueue((Join-Path "$msys\bin" $d))
+    $staged++
+}
 while ($queue.Count -gt 0) {
     $f = $queue.Dequeue()
     $imports = & "$msys\bin\objdump.exe" -p $f 2>$null |

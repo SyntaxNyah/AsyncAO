@@ -113,14 +113,7 @@ func (a *App) drawSettingsVoice(y, _ int32) int32 {
 // through "System default"). Enumerated on click, so there's no per-frame SDL
 // device scan.
 func (a *App) cycleVoiceInput() {
-	n := sdl.GetNumAudioDevices(true)
-	devs := make([]string, 0, n+1)
-	devs = append(devs, "") // system default first
-	for i := 0; i < n; i++ {
-		if name := sdl.GetAudioDeviceName(i, true); name != "" {
-			devs = append(devs, name)
-		}
-	}
+	devs := append([]string{""}, sdl.GetAudioDeviceNames(true)...) // system default first
 	cur := a.d.Prefs.Load().VoiceInputDevice
 	idx := 0
 	for i, d := range devs {

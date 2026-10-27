@@ -4,12 +4,12 @@ AsyncAO is Go ≥ 1.24 with CGO. The C dependencies are:
 
 | Library | Used for |
 |---|---|
-| SDL2 | window, renderer, input |
-| SDL2_ttf | font rasterization |
-| SDL2_mixer (≥ 2.6, with opusfile) | Opus/OGG/MP3/FLAC/WAV decoding in C |
+| SDL3 (≥ 3.4) | window, renderer, input |
+| SDL3_ttf | font rasterization |
+| SDL3_mixer (with opusfile) | music + SFX: Opus/OGG/MP3/FLAC/WAV decoding, loop points, crossfades |
 | libwebp + libwebpdemux | static & animated WebP decode (SIMD) |
 | libavif (+ dav1d/aom) | AVIF image decode |
-| opus | Opus (voice chat + Opus music via SDL2_mixer) |
+| opus | Opus (voice chat + Opus music via SDL3_mixer) |
 
 Everything else is pure Go and fetched by `go build` automatically.
 
@@ -29,9 +29,9 @@ Everything else is pure Go and fetched by `go build` automatically.
 
    ```bash
    pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-pkgconf \
-             mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-SDL2_ttf \
-             mingw-w64-ucrt-x86_64-SDL2_mixer mingw-w64-ucrt-x86_64-libwebp \
-             mingw-w64-ucrt-x86_64-libavif mingw-w64-ucrt-x86_64-opus
+             mingw-w64-ucrt-x86_64-sdl3 mingw-w64-ucrt-x86_64-sdl3-ttf \
+             mingw-w64-ucrt-x86_64-sdl3-mixer mingw-w64-ucrt-x86_64-opusfile \
+             mingw-w64-ucrt-x86_64-libwebp mingw-w64-ucrt-x86_64-libavif
    ```
 
 3. **Build** (sets all the CGO env vars for you, stages runtime DLLs):
@@ -77,20 +77,21 @@ Everything else is pure Go and fetched by `go build` automatically.
 ## Linux
 
 ```bash
-./scripts/setup-deps.sh        # Debian/Ubuntu, Fedora, Arch auto-detected
+./scripts/setup-deps.sh        # Debian/Ubuntu (builds SDL3 from source), Fedora, Arch auto-detected
 go build -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
 ./asyncao
 ```
 
 Package names if you'd rather install manually:
 
-- **Debian/Ubuntu:** `libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev libavif-dev libopus-dev`
-- **Fedora:** `SDL2-devel SDL2_ttf-devel SDL2_mixer-devel libwebp-devel libavif-devel opus-devel`
-- **Arch:** `sdl2 sdl2_ttf sdl2_mixer libwebp libavif opus`
+- **Debian/Ubuntu:** `libwebp-dev libavif-dev libopus-dev libopusfile-dev`, then
+  `sudo scripts/build-sdl3.sh /usr/local` (the distro SDL3 is older than 3.4)
+- **Fedora:** `SDL3-devel SDL3_ttf-devel SDL3_mixer-devel libwebp-devel libavif-devel opus-devel opusfile-devel`
+- **Arch:** `sdl3 sdl3_ttf sdl3_mixer libwebp libavif opus opusfile`
 
 ### Linux AppImage (self-contained download)
 
-The bare binary above runs only where the SDL2/webp/avif shared libraries are
+The bare binary above runs only where the SDL3/webp/avif shared libraries are
 already installed. To produce a **single self-contained executable** that
 bundles those libraries (the Linux equivalent of the Windows DLL bundle):
 
@@ -113,7 +114,7 @@ chat compiled out, `-tags "nodiscord novoice"`). To build the lean one locally:
 ## macOS
 
 ```bash
-brew install sdl2 sdl2_ttf sdl2_mixer webp libavif opus opusfile pkg-config
+brew install sdl3 sdl3_ttf sdl3_mixer webp libavif opus opusfile pkg-config
 go build -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
 ./asyncao
 ```
@@ -121,16 +122,19 @@ go build -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
 Works on Apple Silicon and Intel. Homebrew is a **build-time** dependency here:
 a from-source build links against the brew dylibs and needs them present to run.
 (`opusfile` — not the bare `opus` codec, which serves voice chat — is what gives
-SDL2_mixer Ogg-Opus **music** decode and seeking; the formula hard-links it, so
+SDL3_mixer Ogg-Opus **music** decode and seeking; the formula links it, so
 brew pulls it in anyway, but it's named explicitly to pin the requirement.)
+Release builds use a cached source build of SDL3_mixer instead (the same one
+`scripts/build-sdl3.sh` makes): Homebrew's formula links every codec it can,
+MIDI and tracker libraries included, and the bundle would ship them all.
 
 The **prebuilt release** (`asyncao-macos-bundle-arm64.tar.gz`) needs **no
 Homebrew** — the release pipeline runs `scripts/bundle-macos.sh` to collect the
 dylib closure into a `lib/` folder beside the binary (rewriting install names to
 `@rpath/`, the macOS analogue of the Windows DLL staging), so it runs on a clean
 Mac. The script asserts both directions: no Homebrew path survives in the
-binary, **and** the SDL Mixer X + opusfile dylibs made it into `lib/` (the fork
-bundles Vorbis/MP3/FLAC inside its own dylib, so those need no separate staging)
+binary, **and** the SDL3_mixer + opusfile dylibs made it into `lib/` (SDL3_mixer
+builds Vorbis/MP3/FLAC into its own dylib, so those need no separate staging)
 — the bundler only follows hard links, so a switch to dlopen codec shims would
 otherwise silently ship a tarball whose music can't play on a brew-less Mac. The
 bare `asyncao-macos-arm64` asset is the
@@ -153,7 +157,7 @@ then right-click → Open once (macOS remembers the choice). Each tarball ships 
 
 For a smaller download the release also publishes a **Homebrew edition**,
 `asyncao-macos-homebrew-arm64.tar.gz` (bare binary + `INSTALL.txt`, no bundled
-`lib/`). Run `brew install sdl2 sdl2_ttf sdl2_mixer webp libavif opus opusfile` and the
+`lib/`). Run `brew install sdl3 sdl3_ttf sdl3_mixer webp libavif opus opusfile` and the
 binary resolves its libraries via its `/opt/homebrew/lib` rpath fallback — the
 same rewrite `bundle-macos.sh` applies to the bare asset. Neither
 `asyncao-macos-bundle-arm64.tar.gz` nor `asyncao-macos-homebrew-arm64.tar.gz`
@@ -261,9 +265,9 @@ plus the Opus codec in `internal/voice` — is off unless a server advertises it
   courtroom **Voice** button, the Extras → *Voice* entry, and the **Settings →
   Voice** tab. The remaining UI surface is inert no-op stubs, so no voice control
   ever appears.
-- **Opus MUSIC keeps working.** Music and SFX play through SDL2_mixer, which
-  links `libopusfile`/`libopus` independently of the voice binding, so `.opus`
-  tracks still decode in a `novoice` build (those DLLs ship via SDL2_mixer either
+- **Opus MUSIC keeps working.** Music and SFX play through SDL3_mixer, which
+  uses `libopusfile`/`libopus` independently of the voice binding, so `.opus`
+  tracks still decode in a `novoice` build (those DLLs ship for SDL3_mixer either
   way — the voice binding was never what carried them).
 - The **prebuilt Discord-free downloads are also voice-free**: every
   `asyncao-<platform>-nodiscord` artifact is built `-tags "nodiscord novoice"`,

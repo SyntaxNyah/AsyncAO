@@ -1,9 +1,9 @@
 # Flatpak manifest for AsyncAO (AGPLv3 — that's why we ship one).
 #
 # Builds the Go/CGO binary against the freedesktop runtime using the golang SDK
-# extension, plus the SDL2 satellite libraries AsyncAO links that the base
-# runtime doesn't ship (SDL2_ttf, SDL2_mixer). SDL2, libwebp, libavif and dav1d
-# come from the runtime.
+# extension, plus SDL3 and its satellite libraries (SDL3_ttf, SDL3_mixer),
+# which the base runtime doesn't ship at the 3.4 level AsyncAO needs. libwebp,
+# libavif, dav1d, freetype, harfbuzz and opus come from the runtime.
 #
 # NOTE: authored on a Windows dev box with no Flatpak to test against, so it is
 # validated/iterated through CI (the non-blocking `build-flatpak` job in
@@ -36,29 +36,52 @@ finish-args:
   - --filesystem=xdg-data/asyncao:create
 
 modules:
-  # SDL2_ttf and the SDL Mixer X fork are not in the base runtime — build them
-  # (SDL2_ttf from the SDL release branch; the mixer from our fork, which is what
-  # the Go code links via SDL_mixer_ext.h).
-  - name: sdl2_ttf
-    buildsystem: autotools
+  # SDL3, SDL3_ttf and SDL3_mixer at the versions and options of
+  # scripts/build-sdl3.sh: the mixer keeps zlib-only built-in decoders plus Opus,
+  # with no MIDI, tracker or LGPL codecs.
+  - name: sdl3
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DSDL_TESTS=OFF
+      - -DSDL_EXAMPLES=OFF
+    sources:
+      - type: git
+        url: https://github.com/libsdl-org/SDL.git
+        tag: release-3.4.18
+
+  - name: sdl3_ttf
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DSDLTTF_VENDORED=OFF
+      - -DSDLTTF_HARFBUZZ=ON
+      - -DSDLTTF_SAMPLES=OFF
     sources:
       - type: git
         url: https://github.com/libsdl-org/SDL_ttf.git
-        tag: release-2.22.0
+        tag: release-3.2.2
 
-  - name: sdl2_mixer_ext
-    buildsystem: cmake
+  - name: sdl3_mixer
+    buildsystem: cmake-ninja
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
-      - -DSDL_MIXER_X_SHARED=ON
-      - -DSDL_MIXER_X_STATIC=OFF
-      - -DMIXERX_ENABLE_LGPL=OFF
-      - -DMIXERX_ENABLE_GPL=OFF
-      - -DUSE_MIDI=OFF
+      - -DSDLMIXER_VENDORED=OFF
+      - -DSDLMIXER_TESTS=OFF
+      - -DSDLMIXER_EXAMPLES=OFF
+      - -DSDLMIXER_MIDI=OFF
+      - -DSDLMIXER_MOD=OFF
+      - -DSDLMIXER_GME=OFF
+      - -DSDLMIXER_WAVPACK=OFF
+      - -DSDLMIXER_FLAC_LIBFLAC=OFF
+      - -DSDLMIXER_MP3_MPG123=OFF
+      - -DSDLMIXER_VORBIS_VORBISFILE=OFF
+      - -DSDLMIXER_OPUS=ON
+      - -DSDLMIXER_DEPS_SHARED=OFF
     sources:
       - type: git
-        url: https://github.com/SyntaxNyah/SDL-Mixer-X.git
-        branch: master
+        url: https://github.com/libsdl-org/SDL_mixer.git
+        tag: release-3.2.4
 
   - name: asyncao
     buildsystem: simple
@@ -79,7 +102,7 @@ modules:
       # @ASYNCAO_TAGS@ = "" (full default) or "nodiscord novoice" (lean: no Discord,
       # no voice — quoted below, so the embedded space is safe); @ASYNCAO_VERSION@ =
       # the release tag (stamped for the About / What's New version display).
-      - CGO_CFLAGS="-I/app/include -I/usr/include/SDL2" CGO_LDFLAGS="-L/app/lib64" CGO_ENABLED=1 go build -tags "@ASYNCAO_TAGS@" -pgo=auto -ldflags "-s -w -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=@ASYNCAO_VERSION@" -o /app/bin/asyncao ./cmd/asyncao
+      - PKG_CONFIG_PATH=/app/lib/pkgconfig:/app/lib64/pkgconfig CGO_ENABLED=1 go build -tags "@ASYNCAO_TAGS@" -pgo=auto -ldflags "-s -w -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=@ASYNCAO_VERSION@" -o /app/bin/asyncao ./cmd/asyncao
       - install -Dm644 packaging/flatpak/io.github.SyntaxNyah.AsyncAO.desktop
           /app/share/applications/io.github.SyntaxNyah.AsyncAO.desktop
       - install -Dm644 packaging/flatpak/io.github.SyntaxNyah.AsyncAO.metainfo.xml

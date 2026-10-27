@@ -1661,7 +1661,7 @@ func (a *App) applyMusicAcrossTabs(on bool) {
 // — when no takeover snapshot exists (an old build, a mod/midi with no knowable
 // duration, or the track was never parked). There, duration is unknown, so a very
 // stale backgrounded track can't be wrapped by length; past a few minutes a seek
-// is as likely to overshoot the end (→ Mix_SetMusicPosition fails → restart) as to
+// is as likely to overshoot the end (→ the seek fails → restart) as to
 // help, and even when it lands it's musically meaningless. Beyond this we just
 // restart from the top. The exact, loop-aware path (Audio.SwappedOutSnap +
 // resumeSeek) does NOT use this cap: it wraps by the real duration instead.

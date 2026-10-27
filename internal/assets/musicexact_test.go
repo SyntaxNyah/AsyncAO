@@ -88,8 +88,8 @@ func TestMusicFallbackChainReachesMP3(t *testing.T) {
 	// The three chain formats must all be ones the mixer can actually decode.
 	// A chain entry the audio backend never initialised is the v1.71 INIT_FLAC
 	// ghost: the fetch succeeds, the decode silently fails, and the track is
-	// "just broken". internal/render asks Mix_Init for OGG|MP3|OPUS|FLAC
-	// (render/audio.go), so opus/ogg/mp3 are all covered — this pin fails the day
+	// "just broken". The shipped SDL3_mixer decodes Ogg, MP3 and FLAC itself and
+	// Opus through opusfile, so opus/ogg/mp3 are all covered — this pin fails the day
 	// someone adds a fourth format here without checking that.
 	for _, ext := range got {
 		switch ext {

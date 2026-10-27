@@ -189,8 +189,8 @@ func TestCrawlPrefixIsPixelStable(t *testing.T) {
 
 // TestDrawScaledAllocatesNothing pins the zero-allocation draw loop across the new
 // device-exact path. Two traps it guards: SetScale must be called with plain
-// float32 args (go-sdl2's GetScale takes the address of its named returns, so a
-// read-back to restore the scale would heap-allocate every frame), and the src/dst
+// float32 args (a read-back through GetScale passes out-parameters across cgo, which
+// costs a call per frame for a value the caller already has), and the src/dst
 // rects must keep going through the persistent scratch fields — a local rect whose
 // address reaches cgo escapes and allocates on every blit.
 func TestDrawScaledAllocatesNothing(t *testing.T) {

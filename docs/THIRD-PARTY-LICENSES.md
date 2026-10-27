@@ -32,7 +32,6 @@ Nothing AsyncAO ships is under a proprietary or AGPL-incompatible licence.
 | [coder/websocket](https://github.com/coder/websocket) | WebSocket client (the only transport) | ISC |
 | [AO-Underground/aolib (go/v2)](https://github.com/AO-Underground/aolib/tree/main/go) | AO2 wire protocol codec (FantaCode + JSON) | MIT |
 | [santhosh-tekuri/jsonschema (v6)](https://github.com/santhosh-tekuri/jsonschema) | JSON Schema validation (via aolib-go) | Apache-2.0 |
-| [veandco/go-sdl2](https://github.com/veandco/go-sdl2) | SDL2 / mixer / ttf bindings | BSD-3-Clause |
 | [golang.org/x/image](https://pkg.go.dev/golang.org/x/image) | image scaling (Catmull-Rom) & codecs | BSD-3-Clause |
 | [golang.org/x/sync](https://pkg.go.dev/golang.org/x/sync) | concurrency primitives (singleflight, errgroup) | BSD-3-Clause |
 | [golang.org/x/text](https://pkg.go.dev/golang.org/x/text) | text encoding (indirect) | BSD-3-Clause |
@@ -48,15 +47,14 @@ Shipped next to `asyncao.exe` so it runs without MSYS2 on `PATH` (staged by
 
 | Library | Role | Licence |
 |---|---|---|
-| [SDL2](https://www.libsdl.org), SDL2_ttf | windowing, rendering, audio | zlib |
-| [SDL Mixer X](https://github.com/SyntaxNyah/SDL-Mixer-X) (AsyncAO fork of [WohlSoft/SDL-Mixer-X](https://github.com/WohlSoft/SDL-Mixer-X)) | extended SDL_mixer (music streams, loop points); bundles stb_vorbis (BSD), dr_mp3 & dr_flac (public domain/MIT-0), pxtone (own liberal licence), qoa (MIT) | zlib |
+| [SDL3](https://www.libsdl.org), [SDL3_ttf](https://github.com/libsdl-org/SDL_ttf) | windowing, rendering, text, audio devices | zlib |
+| [SDL3_mixer](https://github.com/libsdl-org/SDL_mixer) | music and sound mixing (tracks, loop points, fades); built-in stb_vorbis (BSD/public domain), dr_mp3 and dr_flac (public domain/MIT-0) decoders; Opus through opusfile | zlib |
 | [libwebp](https://chromium.googlesource.com/webm/libwebp) (+ demux/mux/sharpyuv) | WebP codec | BSD-3-Clause |
 | [libavif](https://github.com/AOMediaCodec/libavif) | AVIF codec | BSD-2-Clause |
 | [dav1d](https://code.videolan.org/videolan/dav1d), [libaom](https://aomedia.googlesource.com/aom), libyuv, rav1e, SVT-AV1 | AV1 decode/encode | BSD-2/3-Clause |
 | [FreeType](https://freetype.org) | font rasterizer | FreeType License (BSD-style) / GPLv2 |
 | [HarfBuzz](https://harfbuzz.github.io) | text shaping | MIT (Old MIT) |
 | [Opus](https://opus-codec.org), Ogg (Xiph.Org) | audio codecs | BSD-3-Clause |
-| [WavPack](https://www.wavpack.com) | WV audio format | BSD-3-Clause |
 | [libpng](https://www.libpng.org), [zlib](https://zlib.net) | PNG & deflate | libpng / zlib |
 | [bzip2](https://sourceware.org/bzip2/), [Brotli](https://github.com/google/brotli), [Zstandard](https://github.com/facebook/zstd) | compression | bzip2 (BSD-like) / MIT / BSD-3 |
 | [GLib](https://gitlab.gnome.org/GNOME/glib) (gio/gobject/…), graphite2 | FreeType/HarfBuzz support | LGPL-2.1 / tri-licence |

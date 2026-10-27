@@ -41,7 +41,7 @@ const previewWindowAnimCacheBudgetBytes = 32 << 20
 // PreviewWindow owns a second, independent SDL window + renderer + a single
 // texture slot, created on Open and fully torn down on Close.
 // Hard rule 1 (no SDL off the render thread): every method here makes SDL
-// calls and must run on the SAME OS thread as the main window's — SDL2
+// calls and must run on the SAME OS thread as the main window's — SDL
 // allows many windows/renderers from one thread but never allows a second
 // thread touching SDL at all (measured empirically on this dev box; see
 // cmd/asyncao/quit.go's doc comment for the full probe). Callers must never

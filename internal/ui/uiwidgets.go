@@ -112,11 +112,9 @@ func (c *Ctx) panelTextWidth(text string) int32 {
 // new key, never a stale width for a live one). ok is false when the face is nil
 // or SDL_ttf refused, so a caller can keep its measurement-failed branch.
 //
-// This exists because ttf.Font.SizeUTF8 is NOT free to call per frame: go-sdl2
-// hands the out-params' addresses to cgo, so each call heap-allocates — the same
-// escape the cgoRect idiom exists for. Any draw path that measures the same
-// string every frame must come through here, or it shows up as a per-frame
-// allocation in the whole-screen zero-alloc gates.
+// This exists because ttf.Font.SizeUTF8 is NOT free to call per frame: each
+// call is a cgo call that shapes the whole string. Any draw path that measures
+// the same string every frame must come through here.
 func (c *Ctx) fontTextWidth(f *ttf.Font, text string) (int32, bool) {
 	return c.fontTextWidthWeight(f, text, false)
 }
