@@ -1291,7 +1291,7 @@ func writeContentBundleCancel(mgr *assets.Manager, destDir, stem string, rec *sc
 					contentPackageMaxBytes>>20, written, float64(total)/(1024*1024)),
 			}
 		}
-		if err := writeBundleFile(destDir, rel, data); err != nil {
+		if err := archive.WriteAsset(destDir, rel, data); err != nil {
 			writeErr++
 			continue
 		}
@@ -1369,23 +1369,6 @@ func fetchBundleBytes(mgr *assets.Manager, url string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), musicHTTPTimeout)
 	defer cancel()
 	return mgr.FetchRaw(ctx, url)
-}
-
-// writeBundleFile writes one bundled asset under destDir at its DECODED,
-// human-readable relative path, refusing path escapes. Uses the SAME
-// archive.DiskPath the synchronous exporter does, so a packaged RP and a
-// maker-exported archive lay assets out identically (and both stay replayable
-// via the local fetcher's decoded-spelling attempt).
-func writeBundleFile(destDir, rel string, data []byte) error {
-	disk := archive.DiskPath(rel)
-	if disk == "" || strings.Contains(disk, "..") {
-		return fmt.Errorf("contentjob: refusing bad relative path %q", rel)
-	}
-	full := filepath.Join(destDir, filepath.FromSlash(disk))
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(full, data, 0o644)
 }
 
 // assetTypeFromBundlePath infers the AssetType of a bundled file from its
