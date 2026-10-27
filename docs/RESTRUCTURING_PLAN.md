@@ -369,7 +369,8 @@ Domain parsing (AO wire, theme INI semantics) stays in its domain package.
 ```go
 // internal/helper/value — keep values inside bounds
 func Clamp[T cmp.Ordered](v, lo, hi T) T          // hi < lo → lo (documented)
-func ClampSet[T cmp.Integer](v, lo, hi T) T       // 0 = "unset" stays 0, else Clamp (the ~30 config sentinel blocks)
+func ClampSet[T integer](v, lo, hi T) T           // 0 = "unset" stays 0, else Clamp (the ~30 config sentinel blocks);
+                                                  // integer is declared locally: the stdlib has no cmp.Integer
 
 // internal/helper/text — rune-safe string shaping
 func Truncate(s string, maxRunes int) string
