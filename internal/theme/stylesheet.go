@@ -8,7 +8,7 @@ package theme
 // buttons, and accents take the theme's colors.
 
 import (
-	"strconv"
+	"math"
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
@@ -159,6 +159,13 @@ func stripCSSComments(s string) string {
 	}
 }
 
+// Hex colour lengths parseCSSColor accepts, after the #.
+const (
+	cssShortHexLen = 3
+	cssHexLen      = 6
+	cssQtHexLen    = 8
+)
+
 // parseCSSColor handles the forms theme authors use: #rgb, #rrggbb,
 // #aarrggbb (Qt's ARGB — alpha ignored), rgb(...)/rgba(...), and a few
 // named colors.
@@ -168,17 +175,17 @@ func parseCSSColor(v string) (RGB, bool) {
 	case strings.HasPrefix(v, "#"):
 		hex := v[1:]
 		switch len(hex) {
-		case 3: // #rgb: each digit doubled, so #abc is #aabbcc
+		case cssShortHexLen: // #rgb: each digit doubled, so #abc is #aabbcc
 			if c, ok := parse.HexColor(string([]byte{hex[0], hex[0], hex[1], hex[1], hex[2], hex[2]})); ok {
 				return RGB{R: c.R, G: c.G, B: c.B}, true
 			}
-		case 6: // #rrggbb
-			if n, err := strconv.ParseUint(hex, 16, 32); err == nil {
-				return RGB{R: uint8(n >> 16), G: uint8(n >> 8), B: uint8(n)}, true
+		case cssHexLen: // #rrggbb
+			if c, ok := parse.HexColor(hex); ok {
+				return RGB{R: c.R, G: c.G, B: c.B}, true
 			}
-		case 8: // #aarrggbb (Qt order) — alpha dropped
-			if n, err := strconv.ParseUint(hex, 16, 64); err == nil {
-				return RGB{R: uint8(n >> 16), G: uint8(n >> 8), B: uint8(n)}, true
+		case cssQtHexLen: // #aarrggbb (Qt order) — alpha dropped
+			if c, ok := parse.HexColor(hex[2:] + hex[:2]); ok { // aarrggbb → rrggbbaa
+				return RGB{R: c.R, G: c.G, B: c.B}, true
 			}
 		}
 	case strings.HasPrefix(v, "rgb(") || strings.HasPrefix(v, "rgba("):
@@ -187,7 +194,7 @@ func parseCSSColor(v string) (RGB, bool) {
 			inner = inner[:end]
 		}
 		parts := strings.Split(inner, ",")
-		if len(parts) >= 3 {
+		if len(parts) >= rgbFields {
 			r := parse.AtoiOr(parts[0], 0)
 			g := parse.AtoiOr(parts[1], 0)
 			b := parse.AtoiOr(parts[2], 0)
@@ -202,12 +209,15 @@ func parseCSSColor(v string) (RGB, bool) {
 
 // cssNamedColors: the handful that appear in real AO themes.
 var cssNamedColors = map[string]RGB{
-	"white":       {R: 255, G: 255, B: 255},
+	"white":       {R: math.MaxUint8, G: math.MaxUint8, B: math.MaxUint8},
 	"black":       {},
-	"red":         {R: 255},
-	"green":       {G: 128},
-	"blue":        {B: 255},
-	"gray":        {R: 128, G: 128, B: 128},
-	"grey":        {R: 128, G: 128, B: 128},
+	"red":         {R: math.MaxUint8},
+	"green":       {G: cssHalfChannel},
+	"blue":        {B: math.MaxUint8},
+	"gray":        {R: cssHalfChannel, G: cssHalfChannel, B: cssHalfChannel},
+	"grey":        {R: cssHalfChannel, G: cssHalfChannel, B: cssHalfChannel},
 	"transparent": {},
 }
+
+// cssHalfChannel is CSS's 128 in green, gray and grey.
+const cssHalfChannel = 128

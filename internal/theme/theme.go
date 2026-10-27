@@ -27,6 +27,7 @@ const (
 	PenaltyFileName = "penalty/penalty.ini"
 
 	rectComponentCount = 4
+	rgbFields          = 3 // "r, g, b"; a fourth field is alpha
 	tupleSeparator     = ","
 )
 
@@ -787,7 +788,7 @@ func (t *Theme) DesignKeys() map[string]string { return t.design.SectionKeys("")
 
 func parseRGB(raw string) (RGB, bool) {
 	parts := strings.Split(raw, tupleSeparator)
-	if len(parts) < 3 {
+	if len(parts) < rgbFields {
 		return RGB{}, false
 	}
 	return RGB{

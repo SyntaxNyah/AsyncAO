@@ -27,6 +27,8 @@ const (
 	// 27, so 128 is an order of magnitude past anything authored while still
 	// bounding a hostile file.
 	OverlayFXCap = 128
+	// overlayFXInitialCap sizes the read slice for a typical theme.
+	overlayFXInitialCap = 8
 	// OverlayFXIndexScanCap bounds the numeric-group scan. AO2 enumerates
 	// QSettings::childGroups() and keeps whatever parses as an int
 	// (text_file_functions.cpp:801-812); a streaming parser has to probe indices
@@ -243,7 +245,7 @@ func ParseOverlayFX(r io.Reader) ([]OverlayFX, error) {
 	if major, _ := ini.GetSection(overlayVersionSec, overlayVersionKey); parse.AtoiOr(major, 0) < overlayFXVersion2 {
 		return migrateOverlayFXV1(ini), nil
 	}
-	out := make([]OverlayFX, 0, 8)
+	out := make([]OverlayFX, 0, overlayFXInitialCap)
 	for i := 0; i < OverlayFXIndexScanCap; i++ {
 		if len(out) >= OverlayFXCap {
 			break

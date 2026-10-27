@@ -10,6 +10,7 @@ package theme
 import (
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -510,7 +511,7 @@ func (s *Sidecar) readPane(d *INIDoc, name string, keys []string) error {
 	if c, ok := parseRGBAValue(get("divider")); ok {
 		p.Divider = c
 	}
-	p.DividerPx = uint8(value.Clamp(parse.AtoiOr(get("divider_px"), 0), 0, 255))
+	p.DividerPx = uint8(value.Clamp(parse.AtoiOr(get("divider_px"), 0), 0, math.MaxUint8))
 
 	hosts, err := parseTextList(get("hosts"), PaneHostCap)
 	if err != nil {
@@ -700,11 +701,11 @@ func (s *Sidecar) readElement(d *INIDoc, name string, keys []string) error {
 	if c, ok := parseRGBAValue(get("stroke")); ok {
 		e.Stroke = c
 	}
-	e.StrokePx = uint8(value.Clamp(parse.AtoiOr(get("stroke_px"), 0), 0, 255))
+	e.StrokePx = uint8(value.Clamp(parse.AtoiOr(get("stroke_px"), 0), 0, math.MaxUint8))
 	if c, ok := parseRGBAValue(get("tint")); ok {
 		e.Tint = c
 	}
-	e.Opacity = uint8(value.Clamp(parse.AtoiOr(get("opacity"), 0), 0, 255))
+	e.Opacity = uint8(value.Clamp(parse.AtoiOr(get("opacity"), 0), 0, math.MaxUint8))
 
 	if e.Text, err = s.elementText(name, get("text")); err != nil {
 		return err
@@ -956,17 +957,17 @@ func parseRGBAValue(raw string) (RGBA, bool) {
 		return RGBA{c.R, c.G, c.B, c.A}, ok
 	}
 	parts := strings.Split(v, tupleSeparator)
-	if len(parts) < 3 {
+	if len(parts) < rgbFields {
 		return RGBA{}, false
 	}
 	c := RGBA{
-		R: uint8(value.Clamp(parse.AtoiOr(parts[0], 0), 0, 255)),
-		G: uint8(value.Clamp(parse.AtoiOr(parts[1], 0), 0, 255)),
-		B: uint8(value.Clamp(parse.AtoiOr(parts[2], 0), 0, 255)),
-		A: 255,
+		R: uint8(value.Clamp(parse.AtoiOr(parts[0], 0), 0, math.MaxUint8)),
+		G: uint8(value.Clamp(parse.AtoiOr(parts[1], 0), 0, math.MaxUint8)),
+		B: uint8(value.Clamp(parse.AtoiOr(parts[2], 0), 0, math.MaxUint8)),
+		A: OpacityOpaque,
 	}
-	if len(parts) > 3 {
-		c.A = uint8(value.Clamp(parse.AtoiOr(parts[3], 0), 0, 255))
+	if len(parts) > rgbFields {
+		c.A = uint8(value.Clamp(parse.AtoiOr(parts[3], 0), 0, math.MaxUint8))
 	}
 	return c, true
 }
