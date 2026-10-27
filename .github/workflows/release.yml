@@ -62,10 +62,9 @@ jobs:
           install: >-
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-pkgconf
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-ninja
-            mingw-w64-ucrt-x86_64-SDL2
-            mingw-w64-ucrt-x86_64-SDL2_ttf
+            mingw-w64-ucrt-x86_64-sdl3
+            mingw-w64-ucrt-x86_64-sdl3-ttf
+            mingw-w64-ucrt-x86_64-sdl3-mixer
             mingw-w64-ucrt-x86_64-libwebp
             mingw-w64-ucrt-x86_64-libavif
             mingw-w64-ucrt-x86_64-opus
@@ -115,11 +114,6 @@ jobs:
           else
             echo "::notice::Non-numeric ref ${{ github.ref_name }} - keeping the committed VERSIONINFO syso."
           fi
-      - name: Build + install SDL Mixer X (crossfade + gapless loop points)
-        run: |
-          bash scripts/build-sdl-mixer-x.sh /ucrt64
-          echo "CGO_CFLAGS=-I/ucrt64/include $(pkg-config --cflags sdl2)" >> "$GITHUB_ENV"
-          echo "CGO_LDFLAGS=-L/ucrt64/lib" >> "$GITHUB_ENV"
       - name: Build + bundle DLLs
         run: |
           export PATH="$(cygpath -u "$GOROOT")/bin:$PATH"
@@ -130,7 +124,10 @@ jobs:
             -ldflags "-s -w -H=windowsgui -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=${{ github.ref_name }}" \
             -o dist/asyncao.exe ./cmd/asyncao
           # Ship the runtime DLLs next to the exe so the bundle runs anywhere.
-          ldd dist/asyncao.exe | grep -io '/ucrt64/bin/[a-z0-9_.+-]*\.dll' | sort -u | while read -r dll; do
+          # SDL3_mixer loads opusfile on demand, so no import table names it:
+          # add it and its own imports by hand (build.ps1 does the same).
+          { ldd dist/asyncao.exe; echo /ucrt64/bin/libopusfile-0.dll; ldd /ucrt64/bin/libopusfile-0.dll; } |
+            grep -io '/ucrt64/bin/[a-z0-9_.+-]*\.dll' | sort -u | while read -r dll; do
             cp "$dll" dist/
           done
       # Authenticode signing — reduces the SmartScreen "unknown publisher" warning
@@ -186,17 +183,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - name: Install SDL2 + libwebp + libavif + AppImage tooling
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libsdl2-dev libsdl2-ttf-dev libwebp-dev libavif-dev libopus-dev libopusfile-dev cmake ninja-build pkg-config \
-            patchelf desktop-file-utils
-      - name: Build + install SDL Mixer X (crossfade + gapless loop points)
-        run: |
-          sudo bash scripts/build-sdl-mixer-x.sh /usr/local
-          echo "CGO_CFLAGS=-I/usr/local/include $(pkg-config --cflags sdl2)" >> "$GITHUB_ENV"
-          echo "CGO_LDFLAGS=-L/usr/local/lib" >> "$GITHUB_ENV"
+      - name: Install C dependencies + SDL3 (cached build) + AppImage tooling
+        uses: ./.github/actions/setup-sdl3
+        with:
+          extra-packages: patchelf desktop-file-utils
       - name: Build (version-stamped)
         run: |
           export CGO_ENABLED=1
@@ -241,19 +231,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      # dylibbundler collects the non-system dylib closure beside the binary — the
-      # macOS analogue of build.ps1's DLL staging (see scripts/bundle-macos.sh).
-      # opusfile (not the bare `opus` codec, which is voice-chat-only) is what
-      # gives SDL2_mixer Ogg-Opus music decode/seek; brew pulls it anyway as an
-      # sdl2_mixer dependency, but pin it explicitly (ci.yml installs the same
-      # list — keep them consistent).
-      - name: Install SDL2 + libwebp + libavif
-        run: brew install sdl2 sdl2_ttf webp libavif opus opusfile cmake ninja pkg-config dylibbundler
-      - name: Build + install SDL Mixer X (crossfade + gapless loop points)
-        run: |
-          bash scripts/build-sdl-mixer-x.sh "$(brew --prefix)"
-          echo "CGO_CFLAGS=-I$(brew --prefix)/include $(pkg-config --cflags sdl2)" >> "$GITHUB_ENV"
-          echo "CGO_LDFLAGS=-L$(brew --prefix)/lib" >> "$GITHUB_ENV"
+      # The cached SDL3 build (see .github/actions/setup-sdl3) plus dylibbundler
+      # for scripts/bundle-macos.sh. Ogg-Opus MUSIC decode/seek comes from the
+      # opusfile formula, linked into that libSDL3_mixer; the bare `opus` formula
+      # is only the codec (voice chat).
+      - name: Install C dependencies + SDL3 (cached build)
+        uses: ./.github/actions/setup-sdl3
+        with:
+          extra-packages: dylibbundler
       - name: Build (version-stamped)
         run: |
           export CGO_ENABLED=1
@@ -450,7 +435,7 @@ jobs:
         run: |
           sudo apt-get update
           # elfutils provides eu-strip / eu-elfcompress, which flatpak-builder uses to
-          # strip module debuginfo — absent on the runner, the SDL2_ttf build fails at
+          # strip module debuginfo — absent on the runner, the SDL3_ttf build fails at
           # the strip step ("Failed to execute child process eu-strip").
           sudo apt-get install -y --no-install-recommends flatpak flatpak-builder elfutils
           flatpak remote-add --if-not-exists --user flathub https://flathub.org/repo/flathub.flatpakrepo

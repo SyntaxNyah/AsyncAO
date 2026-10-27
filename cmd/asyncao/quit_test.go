@@ -9,7 +9,7 @@ import (
 // These tests drive mainWindowShouldQuit directly — the exact function
 // the run loop's event dispatch calls — with synthetic events built by
 // hand. sdl.WindowEvent and sdl.QuitEvent are plain exported-field structs
-// (see go-sdl2 sdl/events.go), so no sdl.Init, window, or renderer is
+// (internal/sdl/events.go), so no sdl.Init, window, or renderer is
 // needed to construct one; this is what makes the run loop's raw SDL
 // dispatch testable at all (it had zero coverage before this phase).
 const testMainWindowID = uint32(1)

@@ -10,14 +10,14 @@ import (
 
 // #77 Part B — reliable per-monitor DPI on Windows.
 //
-// SDL2's GetDisplayDPI commonly reports a flat 96 under per-monitor-v2 DPI
-// awareness (which we opt into at boot via SDL_WINDOWS_DPI_AWARENESS), so the
-// boot auto-scale detection stayed at 100 and a HiDPI monitor was stuck at the
+// SDL2's GetDisplayDPI commonly reported a flat 96 under per-monitor-v2 DPI
+// awareness (SDL3's default), so the boot auto-scale detection stayed at 100
+// and a HiDPI monitor was stuck at the
 // "100% is too small" default. The reliable source is user32!GetDpiForWindow
 // (Windows 10 1607+): it returns the effective DPI for the monitor the given
 // window is on, honoring per-monitor-v2 awareness — exactly what we need.
 //
-// We reach the native window handle through SDL's SysWMInfo (the HWND). This is
+// We reach the native window handle (the HWND) through Window.Win32Handle. This is
 // a plain Win32 syscall, not an SDL render call, but it still must run on the
 // locked main/render thread because it touches the SDL window handle — every
 // caller (boot seed + the display-change event handler) already does.
@@ -39,12 +39,7 @@ func queryWindowDPI(win *sdl.Window) (float64, bool) {
 	if win == nil {
 		return 0, false
 	}
-	info, err := win.GetWMInfo()
-	if err != nil || info == nil {
-		return 0, false
-	}
-	// The HWND lives in the Windows subsystem view of the SysWMInfo union.
-	hwnd := info.GetWindowsInfo().Window
+	hwnd := win.Win32Handle()
 	if hwnd == nil {
 		return 0, false
 	}

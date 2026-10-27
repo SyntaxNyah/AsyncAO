@@ -5,7 +5,7 @@ ships only the binary, not the library closure. Apple Silicon only.
 
 1. Install the runtime libraries (once):
 
-   brew install sdl2 sdl2_ttf sdl2_mixer webp libavif opus opusfile
+   brew install sdl3 sdl3_ttf sdl3_mixer webp libavif opus opusfile
 
 2. Clear the download quarantine so macOS does not prompt to allow each file:
 

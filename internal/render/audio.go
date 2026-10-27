@@ -11,58 +11,38 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/mix"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
-	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 const (
 	// Audio device parameters (48 kHz stereo matches modern opus content).
 	audioFrequency = 48000
 	audioChannels  = 2
-	audioChunkSize = 1024
 
-	// mixChannelCount is the SFX mixing channel pool.
-	mixChannelCount = 16
-	// blipChannel is reserved so a new blip replaces the previous one
-	// (AO blips never stack).
-	blipChannel = 0
-	// alertChannel is reserved for callword/friend pings. A callword fires on
-	// message ARRIVAL, when the blip channel is momentarily free — so Play(-1)
-	// used to land the ping on channel 0, and the typewriter's very first blip
-	// then HaltChannel(0)'d it, cutting the ping the instant blips started
-	// ("can't hear the callword when blips are on"). A dedicated reserved
-	// channel keeps blips and a burst of emote SFX from ever stealing it.
-	alertChannel = 1
-	// reservedChannels holds channels [0,N) (blip + alert) back from the
-	// Play(-1) SFX pool so only their explicit owners use them.
-	reservedChannels = 2
+	// sfxTrackCount is how many emote SFX and shouts can overlap. Blips and
+	// alerts each have a track of their own, so a new blip replaces the last
+	// (AO blips never stack) and a callword ping is never cut by the
+	// typewriter's first blip or a burst of SFX ("can't hear the callword when
+	// blips are on").
+	sfxTrackCount = 14
 
-	// chunkCacheMax bounds decoded SFX/blip chunks held in memory.
+	// chunkCacheMax bounds decoded SFX/blip sounds held in memory. Evicting one
+	// that is still playing is safe: SDL3_mixer frees it when the track is done.
 	chunkCacheMax = 64
-	// chunkCacheHardMax is the absolute ceiling the cache may grow to in the
-	// (by-construction impossible) case that every one of the chunkCacheMax
-	// oldest chunks is currently playing when eviction is due. At most
-	// mixChannelCount (16) chunks can play at once and 16 < chunkCacheMax (64),
-	// so evictChunk always finds a non-playing victim — this cap only exists so
-	// the cache stays bounded (hard rule #4) even if that invariant were ever
-	// violated. We grow-and-log rather than free a playing chunk (rule #7-class
-	// safety over the C audio callback).
-	chunkCacheHardMax = chunkCacheMax + mixChannelCount
 
 	// pendingPlayTTL drops play requests whose asset never arrived.
 	pendingPlayTTL = 10 * time.Second
 
 	// musicFadeInMs is the FADE_IN ramp length (#15). AO2's BASS path slides the
 	// new stream's volume up over 1000ms (../AO2-Client/src/aomusicplayer.cpp:160
-	// FADE_IN branch); we match it. The ramp rides SDL_mixer's native fade
-	// (Mix_FadeInMusic), which interpolates on the C audio callback and always
-	// scales toward the current VolumeMusic — so a mid-fade volume-slider drag
-	// just changes the ceiling the ramp climbs to (no fight, no extra state).
+	// FADE_IN branch); we match it. The ramp is SDL3_mixer's own play-time fade,
+	// applied on top of the track gain — so a mid-fade volume-slider drag just
+	// changes the ceiling the ramp climbs to (no fight, no extra state).
 	musicFadeInMs = 1000
 	// musicFadeOutMs is the FADE_OUT ramp length (#112). AO2's BASS path slides
 	// the PREVIOUS track down over 4000ms (../AO2-Client/src/aomusicplayer.cpp:141
-	// FADE_OUT branch); we match it with SDL Mixer X's native linear
-	// Mix_FadeOutMusicStream. The outgoing stream fades WHILE the incoming track
-	// downloads (zero added latency), then stepFadeOutOld reaps it once halted.
+	// FADE_OUT branch); we match it with SDL3_mixer's linear fade-out stop. The
+	// outgoing track fades WHILE the incoming one downloads (zero added latency),
+	// then stepFadeOutOld reaps it once it has stopped.
 	musicFadeOutMs = 4000
 
 	// Music effect bit flags (MUSIC_EFFECT, ../AO2-Client/src/datatypes.h:95-101).
@@ -72,13 +52,6 @@ const (
 	musicEffectFadeIn  = 1 << 0 // ramp the NEW track up (config.MusicFlagFadeIn)
 	musicEffectFadeOut = 1 << 1 // ramp the PREVIOUS track down (config.MusicFlagFadeOut)
 	musicEffectSyncPos = 1 << 2 // start new track at previous track's position (config.MusicFlagSyncPos)
-
-	// mixInitOpus is MIX_INIT_OPUS (0x40). go-sdl2 v0.4.40's mix package
-	// predates the Opus flag and doesn't export it, but the SDL2_mixer.dll we
-	// ship supports Opus — so we pass the raw value to Mix_Init. Without this,
-	// the on-demand opus DLLs (libopusfile/libopus) never load and .opus
-	// content (Discord /play links, .opus alert sounds) won't decode.
-	mixInitOpus = 0x40
 )
 
 // Compile-time assertion: render-side effect constants must match config's wire values.
@@ -110,13 +83,20 @@ type pendingPlay struct {
 	seekSec float64
 }
 
-// Audio implements courtroom.AudioSink over SDL_mixer: raw bytes from the
+// Audio implements courtroom.AudioSink over SDL3_mixer: raw bytes from the
 // asset pipeline decode in C (spec §8 — no Go audio decoding anywhere).
 // All methods run on the render/game thread.
 type Audio struct {
 	mgr *assets.Manager
 
-	chunks     map[string]*mix.Chunk // key: asset base
+	// mixer is nil when no audio device opened (headless CI): every method is
+	// then a no-op. The tracks are created with it and live as long as it.
+	mixer      *mix.Mixer
+	blipTrack  *mix.Track
+	alertTrack *mix.Track
+	sfxTracks  []*mix.Track
+
+	chunks     map[string]*mix.Audio // key: asset base
 	chunkOrder []string              // FIFO eviction order
 	pending    map[string]pendingPlay
 
@@ -124,30 +104,26 @@ type Audio struct {
 	// for callword/friend alerts whenever the user set no custom sound file.
 	// Synthesized once at open, freed at close; never enters the asset chunk
 	// cache.
-	alert *mix.Chunk
+	alert *mix.Audio
 
 	// modBan/modKick/modMute are the built-in defaults for the optional
 	// mod-command feedback sounds (#60) — distinct synthesized tones, the
 	// fallback when the user sets no custom file for an action. Same lifecycle
 	// as alert (synth once, freed at close).
-	modBan, modKick, modMute *mix.Chunk
+	modBan, modKick, modMute *mix.Audio
 
-	musicBytes []byte // keeps streamed music memory alive while playing
-	musicRW    *sdl.RWops
-	music      *mix.Music
-	musicURL   string // the URL of the track currently playing ("" = none); makes PlayMusic
+	// music is the live song; musicOld is the one fading out during a true
+	// crossfade (#112). Each slot's audio streams from its bytes, so the bytes
+	// stay pinned until the audio is destroyed.
+	music    musicSlot
+	musicOld musicSlot
+	musicURL string // the URL of the track currently playing ("" = none); makes PlayMusic
 	//          idempotent so a room rebuild (random char, char switch, tab reactivation)
 	//          re-seeding the SAME track doesn't restart it.
 	musicLoop bool // whether the current stream loops forever; a non-looping (2.9
 	//          NO_REPEAT, #15) stream is reaped by reapFinishedMusic when it ends, so a
 	//          finished one-shot stops lying to the "is music playing" guards. A looping
 	//          track never ends on its own, so it's never reaped.
-	// Crossfade transient (#112): while a true crossfade runs, the OLD track is
-	// kept alive here and faded out natively by SDL Mixer X
-	// (Mix_FadeOutMusicStream) in parallel with the new track in `music`.
-	musicOld      *mix.Music
-	musicOldRW    *sdl.RWops
-	musicOldBytes []byte
 
 	// loopMeta caches sidecar fetch/parse results (#48): keyed by music URL (full,
 	// host-included), holding either real loop points or the fact that none exist
@@ -173,31 +149,33 @@ type Audio struct {
 	// 100 = none; M11), set per message via SetBlipScale and multiplied into
 	// blipVol when a blip plays.
 	blipScale int
-
-	enabled bool
 }
 
-// fullVolumePercent maps 100% onto SDL_mixer's MAX_VOLUME.
+// musicSlot is one music track and the song on it.
+type musicSlot struct {
+	track *mix.Track
+	audio *mix.Audio // nil = no song loaded
+	bytes []byte     // the encoded song the audio streams from
+}
+
+// fullVolumePercent maps 100% onto a track gain of 1.
 const fullVolumePercent = 100
 
 // msPerSecond converts the synthesizers' millisecond lengths to sample counts.
 const msPerSecond = 1000
 
-func mixVolume(pct int) int { return pct * mix.MAX_VOLUME / fullVolumePercent }
+func gain(pct int) float32 { return float32(pct) / fullVolumePercent }
 
-// SetVolumes applies the user's music/SFX/blip volumes (0–100). Music
-// volume takes effect immediately on the LIVE stream: SDL Mixer X plays music
-// via PlayStream/FadeInStream, and a playing stream's volume is per-stream
-// (SetVolumeStream) — the global VolumeMusic only seeds FUTURE LoadMUS, so it
-// alone can't change what's already audible (the "music slider does nothing"
-// report). The global is still kept in sync as the next stream's default.
+// enabled reports whether an audio device is open.
+func (a *Audio) enabled() bool { return a.mixer != nil }
+
+// SetVolumes applies the user's music/SFX/blip volumes (0–100). Music volume
+// takes effect immediately on the live track (the "music slider does nothing"
+// report came from a volume that only reached FUTURE songs).
 func (a *Audio) SetVolumes(music, sfx, blip int) {
 	a.musicVol, a.sfxVol, a.blipVol = music, sfx, blip
-	if a.enabled {
-		mix.VolumeMusic(mixVolume(music))
-		if a.music != nil {
-			a.music.SetVolumeStream(mixVolume(music))
-		}
+	if a.enabled() {
+		a.music.track.SetGain(gain(music))
 	}
 }
 
@@ -220,15 +198,27 @@ func (a *Audio) HasChunk(base string) bool {
 	return a.chunks[base] != nil
 }
 
-// NewAudio opens the mixer. A failed device (headless CI) degrades to a
-// disabled-but-functional sink.
+// NewAudio opens the default audio device. A failed device (headless CI)
+// degrades to a disabled-but-functional sink.
 func NewAudio(mgr *assets.Manager) *Audio {
 	// Enable debug log capture so render package log.Printf appears in F8 panel
 	EnableDebugLogCapture()
 
+	m, err := mix.OpenDevice(audioFrequency, audioChannels)
+	if err != nil {
+		log.Printf("render: audio disabled: %v", err)
+		m = nil
+	}
+	return newAudio(mgr, m)
+}
+
+// newAudio builds the sink on mixer m (nil = disabled). Tests pass a headless
+// mixer. Every codec SDL3_mixer was built with (opus, ogg, mp3, flac, wav)
+// decodes without further setup.
+func newAudio(mgr *assets.Manager, m *mix.Mixer) *Audio {
 	a := &Audio{
 		mgr:       mgr,
-		chunks:    map[string]*mix.Chunk{},
+		chunks:    map[string]*mix.Audio{},
 		pending:   map[string]pendingPlay{},
 		loopMeta:  map[string]loopMeta{},
 		musicVol:  fullVolumePercent,
@@ -237,25 +227,30 @@ func NewAudio(mgr *assets.Manager) *Audio {
 		alertVol:  fullVolumePercent,
 		blipScale: fullVolumePercent,
 	}
-	// Load the dynamic decoder libraries we ship: opus/ogg/mp3/flac are pulled
-	// in on demand (only WAV is built into SDL_mixer), so without this they
-	// never decode. FLAC is enabled because .flac sits in the custom-music
-	// allowlist (config.musicFileExts) and the macOS bundle asserts libFLAC is
-	// staged (bundle-macos.sh check_present) — without the Init flag those two
-	// promises pointed at a codec that could never load. Best-effort — Init
-	// reports an error if any one codec's DLL is missing, but the codecs that
-	// DID load stay usable, so we log and continue.
-	if err := mix.Init(mix.INIT_OGG | mix.INIT_MP3 | mixInitOpus | mix.INIT_FLAC); err != nil {
-		log.Printf("render: some audio codecs unavailable (opus/ogg/mp3/flac): %v", err)
-	}
-	if err := mix.OpenAudio(audioFrequency, mix.DEFAULT_FORMAT, audioChannels, audioChunkSize); err != nil {
-		log.Printf("render: audio disabled: %v", err)
-		mix.Quit() // pair the Init above even though the device failed
+	if m == nil {
 		return a
 	}
-	mix.AllocateChannels(mixChannelCount)
-	mix.ReserveChannels(reservedChannels) // keep blips + alerts off the Play(-1) SFX pool
-	a.enabled = true
+	var err error
+	track := func() *mix.Track {
+		if err != nil {
+			return nil
+		}
+		var t *mix.Track
+		t, err = m.NewTrack()
+		return t
+	}
+	a.blipTrack, a.alertTrack = track(), track()
+	a.music.track, a.musicOld.track = track(), track()
+	a.sfxTracks = make([]*mix.Track, sfxTrackCount)
+	for i := range a.sfxTracks {
+		a.sfxTracks[i] = track()
+	}
+	if err != nil {
+		log.Printf("render: audio disabled: %v", err)
+		m.Close() // frees the tracks made so far
+		return newAudio(mgr, nil)
+	}
+	a.mixer = m
 	a.loadAlert()
 	a.loadModSounds()
 	return a
@@ -274,23 +269,19 @@ const (
 // (same as loadAlert): a failure leaves the chunk nil and PlayModAction no-ops
 // for that action.
 func (a *Audio) loadModSounds() {
-	a.modBan = loadSynth(builtinModWAV(ModBan))
-	a.modKick = loadSynth(builtinModWAV(ModKick))
-	a.modMute = loadSynth(builtinModWAV(ModMute))
+	a.modBan = a.loadSynth(builtinModWAV(ModBan))
+	a.modKick = a.loadSynth(builtinModWAV(ModKick))
+	a.modMute = a.loadSynth(builtinModWAV(ModMute))
 }
 
-// loadSynth turns an in-memory WAV into a mixer chunk (nil on failure).
-func loadSynth(wav []byte) *mix.Chunk {
-	rw, err := sdl.RWFromMem(wav)
+// loadSynth decodes an in-memory WAV (nil on failure).
+func (a *Audio) loadSynth(wav []byte) *mix.Audio {
+	sound, err := a.mixer.Load(wav, true)
 	if err != nil {
+		log.Printf("render: built-in sound failed: %v", err)
 		return nil
 	}
-	chunk, err := mix.LoadWAVRW(rw, true) // mixer frees the RW
-	if err != nil {
-		log.Printf("render: built-in mod sound failed: %v", err)
-		return nil
-	}
-	return chunk
+	return sound
 }
 
 // PlayModAction plays the feedback sound for a mod action (#60): the user's
@@ -298,14 +289,14 @@ func loadSynth(wav []byte) *mix.Chunk {
 // reserved alert channel (its own volume, never cut by blips/SFX), same as the
 // callword/friend ping. No-op when the device is disabled.
 func (a *Audio) PlayModAction(action ModAction, customPath string) {
-	if !a.enabled {
+	if !a.enabled() {
 		return
 	}
 	if customPath != "" {
 		a.PlayFile(customPath)
 		return
 	}
-	var ch *mix.Chunk
+	var ch *mix.Audio
 	switch action {
 	case ModBan:
 		ch = a.modBan
@@ -319,22 +310,9 @@ func (a *Audio) PlayModAction(action ModAction, customPath string) {
 	}
 }
 
-// loadAlert synthesizes the built-in notification ping and loads it as a
-// mixer chunk (same in-memory path as loadChunk). Best-effort: a failure
+// loadAlert synthesizes the built-in notification ping. Best-effort: a failure
 // leaves a.alert nil and PlayAlert simply no-ops.
-func (a *Audio) loadAlert() {
-	wav := builtinAlertWAV()
-	rw, err := sdl.RWFromMem(wav)
-	if err != nil {
-		return
-	}
-	chunk, err := mix.LoadWAVRW(rw, true) // mixer frees the RW
-	if err != nil {
-		log.Printf("render: built-in alert sound failed: %v", err)
-		return
-	}
-	a.alert = chunk
-}
+func (a *Audio) loadAlert() { a.alert = a.loadSynth(builtinAlertWAV()) }
 
 // builtinAlertWAV synthesizes the callword/friend "ping" as an in-memory WAV
 // (16-bit mono PCM): a ~1.5 s trill of three short two-tone dings, long enough
@@ -480,7 +458,7 @@ func wavMono16(pcm []byte, sampleRate int) []byte {
 // PlayAlert plays the built-in notification ping (callword/friend fallback).
 // No-op when the device is disabled or the ping failed to synthesize.
 func (a *Audio) PlayAlert() {
-	if !a.enabled || a.alert == nil {
+	if !a.enabled() || a.alert == nil {
 		return
 	}
 	a.playChunk(a.alert, pendingAlert)
@@ -488,27 +466,23 @@ func (a *Audio) PlayAlert() {
 
 // Close stops playback and shuts the device.
 func (a *Audio) Close() {
-	if !a.enabled {
+	if !a.enabled() {
 		return
 	}
 	a.stopMusic()
 	for _, c := range a.chunks {
-		c.Free()
+		c.Destroy()
 	}
-	a.chunks = map[string]*mix.Chunk{}
-	if a.alert != nil {
-		a.alert.Free()
-		a.alert = nil
-	}
-	for _, c := range []*mix.Chunk{a.modBan, a.modKick, a.modMute} {
+	a.chunks = map[string]*mix.Audio{}
+	a.chunkOrder = nil
+	for _, c := range []*mix.Audio{a.alert, a.modBan, a.modKick, a.modMute} {
 		if c != nil {
-			c.Free()
+			c.Destroy()
 		}
 	}
-	a.modBan, a.modKick, a.modMute = nil, nil, nil
-	mix.CloseAudio()
-	mix.Quit() // unload the codec libs loaded in NewAudio
-	a.enabled = false
+	a.alert, a.modBan, a.modKick, a.modMute = nil, nil, nil, nil
+	a.mixer.Close() // stops and frees every track
+	a.mixer = nil
 }
 
 // Frame drains delivered audio payloads and fires matured pending plays.
@@ -527,32 +501,25 @@ func (a *Audio) Frame() {
 	}
 }
 
-// reapFinishedMusic clears a.music/a.musicURL once a NON-looping track has played to
-// its natural end, so the "is music playing" signal reflects reality. WHY this exists:
-// a play-once track (2.9 NO_REPEAT / looping=0, #15) leaves a.music non-nil after it
-// finishes — there is no natural-end observer otherwise (no HookMusicFinished callback,
-// which would fire on a C thread and can't touch this state under rule #1). Stale
-// a.music != nil then lies to two guards: PlayMusic's idempotency check (audio.go:687)
-// Only reaps a loaded, non-looping stream that has stopped: a looping track never
-// stops on its own, and music is never paused in this client (no Mix_PauseMusic path),
-// so !PlayingStream() with a.music != nil is unambiguously a finished one-shot — never
-// a pause or a load gap (startMusic's Play() begins synchronously before this runs).
+// reapFinishedMusic unloads the song once a NON-looping track has played to its
+// natural end, so the "is music playing" signal reflects reality. WHY this exists:
+// a play-once track (2.9 NO_REPEAT / looping=0, #15) stays loaded after it
+// finishes — there is no natural-end observer otherwise (a stopped callback would
+// fire on the audio thread and can't touch this state under rule #1). A stale
+// loaded song then lies to PlayMusic's idempotency check. Only reaps a loaded,
+// non-looping song that has stopped: a looping track never stops on its own, and
+// music is never paused in this client, so a stopped track with a song loaded is
+// unambiguously a finished one-shot — never a pause or a load gap (startMusic's
+// Play begins synchronously before this runs).
 func (a *Audio) reapFinishedMusic() {
-	if !a.enabled || a.music == nil {
-		return // nothing loaded or disabled
+	if !a.enabled() || a.music.audio == nil || a.musicLoop || a.music.track.Playing() {
+		return // disabled, nothing loaded, a looper, or still rolling
 	}
-	// Normal reap: only non-looping tracks that have naturally stopped.
-	if a.musicLoop {
-		return // looping track never ends by itself
-	}
-	if a.music.PlayingStream() {
-		return // still rolling
-	}
-	a.stopMusic() // natural end: free the finished stream and clear musicURL so it can be re-triggered/re-fetched
+	a.stopMusic() // natural end: free the finished song and clear musicURL so it can be re-triggered/re-fetched
 }
 
 func (a *Audio) onAudioBytes(asset assets.AudioAsset) {
-	if !a.enabled {
+	if !a.enabled() {
 		delete(a.pending, asset.Base)
 		return
 	}
@@ -578,110 +545,62 @@ func (a *Audio) onAudioBytes(asset assets.AudioAsset) {
 	a.playChunk(chunk, p.kind)
 }
 
-// loadChunk decodes bytes via SDL_mixer (wav/ogg/opus/mp3) and caches the
-// fully-decoded chunk by base.
-func (a *Audio) loadChunk(base string, data []byte) *mix.Chunk {
+// loadChunk decodes bytes via SDL3_mixer (wav/ogg/opus/mp3/flac) and caches
+// the fully-decoded sound by base.
+func (a *Audio) loadChunk(base string, data []byte) *mix.Audio {
 	if chunk, ok := a.chunks[base]; ok {
 		return chunk
 	}
-	rw, err := sdl.RWFromMem(data)
-	if err != nil {
-		return nil
-	}
-	chunk, err := mix.LoadWAVRW(rw, true) // mixer frees the RW
+	chunk, err := a.mixer.Load(data, true)
 	if err != nil {
 		log.Printf("render: audio decode %s failed: %v", base, err)
 		return nil
 	}
-	a.evictChunk()
-	a.chunks[base] = chunk
-	a.chunkOrder = append(a.chunkOrder, base)
+	a.cacheChunk(base, chunk)
 	return chunk
 }
 
-// evictChunk makes room in the chunk cache before a new insert, freeing at most
-// one victim. It is a use-after-free guard around Mix_FreeChunk (#4): a cached
-// chunk can still be playing on a mixer channel, and freeing a playing chunk
-// corrupts SDL_mixer's C audio callback — a crash that -race can't see (the
-// callback runs on a C thread, invisible to the race detector), so correctness
-// here is argued BY CONSTRUCTION, not by a test.
-// the render/game thread, the only place SDL_mixer may be touched (rule #1).
-func (a *Audio) evictChunk() {
-	if len(a.chunkOrder) < chunkCacheMax {
-		return
+// cacheChunk stores a decoded sound, first evicting the oldest one when the
+// cache is full. Evicting a sound that is still playing is safe: SDL3_mixer
+// keeps it alive until its track lets go (#4's use-after-free cannot happen).
+func (a *Audio) cacheChunk(key string, chunk *mix.Audio) {
+	if len(a.chunkOrder) >= chunkCacheMax {
+		oldest := a.chunkOrder[0]
+		a.chunkOrder = a.chunkOrder[1:]
+		a.chunks[oldest].Destroy()
+		delete(a.chunks, oldest)
 	}
-	// Build the set of chunk pointers the mixer is currently playing. Scan ALL
-	// allocated channels, including the reserved blip/alert channels (0,1): a
-	// cached blip chunk lives on channel 0 and must not be freed under it.
-	playing := make(map[*mix.Chunk]struct{}, mixChannelCount)
-	for ch := 0; ch < mixChannelCount; ch++ {
-		if mix.Playing(ch) != 0 {
-			if c := mix.GetChunk(ch); c != nil {
-				playing[c] = struct{}{}
-			}
-		}
-	}
-	// Evict the oldest chunk that isn't playing.
-	for i, base := range a.chunkOrder {
-		c, ok := a.chunks[base]
-		if !ok {
-			// Stale order entry (shouldn't happen) — drop it and keep scanning.
-			a.chunkOrder = append(a.chunkOrder[:i:i], a.chunkOrder[i+1:]...)
-			return
-		}
-		if _, busy := playing[c]; busy {
-			continue // still on a mixer channel — skip to the next-oldest
-		}
-		c.Free()
-		delete(a.chunks, base)
-		a.chunkOrder = append(a.chunkOrder[:i:i], a.chunkOrder[i+1:]...)
-		return
-	}
-	// Unreachable under the invariant (at most mixChannelCount play at once, and
-	// mixChannelCount < chunkCacheMax): every one of the oldest chunks is playing.
-	// We keep the cache bounded (rule #4) by growing to chunkCacheHardMax; only
-	// at that ceiling do we HALT the channels playing the oldest chunk and then
-	// free it (halt-before-free is defined behavior — the C callback stops
-	// touching the chunk before Free), so the cache can never exceed the hard cap.
-	if len(a.chunkOrder) < chunkCacheHardMax {
-		return // grow silently; a non-playing victim will free up next insert
-	}
-	oldest := a.chunkOrder[0]
-	c := a.chunks[oldest]
-	log.Printf("render: audio chunk cache at hard cap %d with all oldest chunks playing; halting to free %q",
-		chunkCacheHardMax, oldest)
-	for ch := 0; ch < mixChannelCount; ch++ {
-		if mix.GetChunk(ch) == c {
-			mix.HaltChannel(ch) // stop the C callback before we free the chunk
-		}
-	}
-	if c != nil {
-		c.Free()
-	}
-	delete(a.chunks, oldest)
-	a.chunkOrder = a.chunkOrder[1:]
+	a.chunks[key] = chunk
+	a.chunkOrder = append(a.chunkOrder, key)
 }
 
-func (a *Audio) playChunk(chunk *mix.Chunk, kind pendingKind) {
+// playOn plays chunk on track at the given volume, replacing whatever it played.
+func playOn(track *mix.Track, chunk *mix.Audio, pct int) {
+	if err := track.SetAudio(chunk); err != nil {
+		return
+	}
+	track.SetGain(gain(pct))
+	_ = track.Play(mix.PlayOptions{})
+}
+
+func (a *Audio) playChunk(chunk *mix.Audio, kind pendingKind) {
 	switch kind {
 	case pendingBlip:
-		// Blips replace each other on the reserved channel — playing one
-		// is a pointer pass (spec §8).
-		mix.HaltChannel(blipChannel)
-		if _, err := chunk.Play(blipChannel, 0); err == nil {
-			mix.Volume(blipChannel, mixVolume(a.blipVol*a.blipScale/fullVolumePercent)) // M11 per-char blip scale
-		}
+		// Blips replace each other on their own track — playing one is a
+		// pointer pass (spec §8).
+		playOn(a.blipTrack, chunk, a.blipVol*a.blipScale/fullVolumePercent) // M11 per-char blip scale
 	case pendingAlert:
-		// Callword/friend ping on its own reserved channel: a new alert replaces
-		// the old (no stacking), and neither blips nor a burst of emote SFX can
-		// steal or halt it. Its OWN volume (alertVol), independent of SFX.
-		mix.HaltChannel(alertChannel)
-		if _, err := chunk.Play(alertChannel, 0); err == nil {
-			mix.Volume(alertChannel, mixVolume(a.alertVol))
-		}
+		// Callword/friend ping on its own track: a new alert replaces the old
+		// (no stacking), and neither blips nor a burst of emote SFX can steal or
+		// halt it. Its OWN volume (alertVol), independent of SFX.
+		playOn(a.alertTrack, chunk, a.alertVol)
 	default:
-		if ch, err := chunk.Play(-1, 0); err == nil {
-			mix.Volume(ch, mixVolume(a.sfxVol))
+		// The first idle SFX track; when all are busy the sound is dropped.
+		for _, t := range a.sfxTracks {
+			if !t.Playing() {
+				playOn(t, chunk, a.sfxVol)
+				return
+			}
 		}
 	}
 }
@@ -689,24 +608,22 @@ func (a *Audio) playChunk(chunk *mix.Chunk, kind pendingKind) {
 // PlayFile plays a sound from a local file PATH (an opt-in user alert sound:
 // callword / friend), loaded + cached by path — OFF the courtroom asset
 // pipeline. A missing/bad path just no-ops. Render thread only; the file loads
-// once (first play), then it's a cached pointer pass like any other chunk.
+// once (first play), then it's a cached pointer pass like any other sound.
 func (a *Audio) PlayFile(path string) {
-	if path == "" || !a.enabled {
+	if path == "" || !a.enabled() {
 		return
 	}
 	chunk, ok := a.chunks[path]
 	if !ok {
-		c, err := mix.LoadWAV(path)
+		c, err := a.mixer.LoadFile(path)
 		if err != nil {
 			log.Printf("render: alert sound %s failed: %v", path, err)
 			return
 		}
-		a.evictChunk() // UAF guard: never free a chunk still on a mixer channel (#4)
-		a.chunks[path] = c
-		a.chunkOrder = append(a.chunkOrder, path)
+		a.cacheChunk(path, c)
 		chunk = c
 	}
-	a.playChunk(chunk, pendingAlert) // alert channel: a custom callword/friend sound is never cut by blips
+	a.playChunk(chunk, pendingAlert) // alert track: a custom callword/friend sound is never cut by blips
 }
 
 // request plays the chunk for base now if cached, else marks it pending and —
@@ -714,7 +631,7 @@ func (a *Audio) PlayFile(path string) {
 // Blips are prefetched by the courtroom (resolveBlip); music self-fetches in
 // PlayMusic.
 func (a *Audio) request(base string, kind pendingKind) {
-	if base == "" || !a.enabled {
+	if base == "" || !a.enabled() {
 		return
 	}
 	if chunk, ok := a.chunks[base]; ok {
@@ -779,13 +696,13 @@ func (a *Audio) PlayBlip(base string) { a.request(base, pendingBlip) }
 // no-restart). A genuinely new track (or a resume after the song stopped) plays
 // as normal. // AssetType: Music
 func (a *Audio) PlayMusic(url string, loop bool, effects int) {
-	if !a.enabled {
+	if !a.enabled() {
 		return
 	}
-	if url == a.musicURL && a.music != nil {
+	if url == a.musicURL && a.music.audio != nil {
 		return // already playing this exact track — don't restart
 	}
-	// FADE_OUT (#112): with SDL Mixer X's multi-music support we now do AO2's
+	// FADE_OUT (#112): with one SDL3_mixer track per song we do AO2's
 	// true overlapping crossfade — the PREVIOUS track keeps playing at full
 	// volume while the new one downloads, then startMusic fades the old out
 	// (dB-linear log ramp) in parallel with the new. Nothing is armed here; the
@@ -798,7 +715,7 @@ func (a *Audio) PlayMusic(url string, loop bool, effects int) {
 			effects&musicEffectSyncPos != 0)
 	}
 	var syncPosSec float64
-	if a.music != nil && a.musicURL != "" {
+	if a.music.audio != nil && a.musicURL != "" {
 		// SYNC_POS: capture the PREVIOUS track's position NOW, before the new one
 		// overwrites it (#112). AO2: ../AO2-Client/src/aomusicplayer.cpp:132-136
 		// reads the old stream's pos, then plays the new one at that exact spot.
@@ -836,7 +753,7 @@ func (a *Audio) purgePendingMusic(keep string) {
 // server recognizing a fake stop track — this lets a listener silence music in
 // their own client right away, regardless of DJ rights. Render thread only.
 func (a *Audio) StopMusic() {
-	if !a.enabled {
+	if !a.enabled() {
 		return
 	}
 	a.stopMusic()
@@ -854,7 +771,7 @@ func (a *Audio) CurrentMusicURL() string { return a.musicURL }
 // loaded and rolling). Cross-tab continuity uses it to know there's a stream to
 // keep alive (ducked) across a switch rather than one to restart. Render thread
 // only.
-func (a *Audio) MusicPlaying() bool { return a.enabled && a.music != nil }
+func (a *Audio) MusicPlaying() bool { return a.enabled() && a.music.audio != nil }
 
 // musicSwapSnap is one takeover snapshot: the outgoing track's true position and
 // total duration (both seconds, from MusicClock) captured the instant a new URL
@@ -919,10 +836,10 @@ func (a *Audio) SwappedOutSnap(url string) (posSec, durSec float64, at time.Time
 // wanted). Otherwise it fetches and, on decode, seeks. seekSec<=0 behaves exactly
 // like PlayMusic (play from the top). // AssetType: Music
 func (a *Audio) PlayMusicAt(url string, loop bool, effects int, seekSec float64) {
-	if !a.enabled {
+	if !a.enabled() {
 		return
 	}
-	if url == a.musicURL && a.music != nil {
+	if url == a.musicURL && a.music.audio != nil {
 		return // already this exact stream — never restart or re-seek a live track
 	}
 	a.purgePendingMusic(url)
@@ -930,191 +847,125 @@ func (a *Audio) PlayMusicAt(url string, loop bool, effects int, seekSec float64)
 	a.mgr.PrefetchExact(url, assets.AssetTypeMusic, network.PriorityHigh) // AssetType: Music
 }
 
-// startMusic decodes and plays a fetched track. loop drives the SDL_mixer loop
-// count (-1 = forever, 0 = play once — 2.9 looping/NO_REPEAT, #15); effects
-// carries the MUSIC_EFFECT bit flags (FADE_IN, FADE_OUT, SYNC_POS — #112);
-// seekSec is a best-effort start position (>0 = seek there, 0 = play from top).
+// startMusic decodes and plays a fetched track. loop picks loop-forever over
+// play-once (2.9 looping/NO_REPEAT, #15); effects carries the MUSIC_EFFECT bit
+// flags (FADE_IN, FADE_OUT, SYNC_POS — #112); seekSec is a best-effort start
+// position (>0 = start there, 0 = play from top).
 // Effect handling (../AO2-Client/src/aomusicplayer.cpp:24-160):
 func (a *Audio) startMusic(url string, data []byte, loop bool, effects int, seekSec float64) {
 	// Takeover snapshot (cross-tab resume, wave 13): this call is about to SWAP a
 	// live, different track out for `url`. Capture the OUTGOING track's true
 	// position NOW — before stopMusic() frees it — so a later resume of that
 	// parked track can seek to exactly where it was plus the seconds it keeps
-	// playing while `url` downloads. Only a readable (ok) clock is recorded;
-	// mod/midi (duration -1) or a pre-2.6 SDL_mixer records nothing, and the
-	// resume falls back to the old wall-clock estimate. Read BEFORE stopMusic,
-	// which nils a.music and would make MusicClock report "no stream".
-	if a.music != nil && a.musicURL != "" && a.musicURL != url {
+	// playing while `url` downloads. Only a readable (ok) clock is recorded; a
+	// song of unknown length records nothing, and the resume falls back to the
+	// old wall-clock estimate.
+	if a.music.audio != nil && a.musicURL != "" && a.musicURL != url {
 		if pos, dur, ok := a.MusicClock(); ok {
 			a.recordSwapSnap(a.musicURL, pos, dur, time.Now())
 		}
 	}
 	// True crossfade (#112): if FADE_OUT is set and a live, audible old track is
-	// still rolling, keep it alive (move it to the musicOld slot) and fade it out
-	// in parallel with the new track, instead of hard-stopping it.
-	crossfade := effects&musicEffectFadeOut != 0 && a.music != nil && a.musicVol > 0
+	// still rolling, keep it playing on the other music track and fade it out in
+	// parallel with the new song, instead of hard-stopping it.
+	crossfade := effects&musicEffectFadeOut != 0 && a.music.audio != nil && a.musicVol > 0
 	if effects != 0 {
 		log.Printf("render: startMusic %q effects=0x%x crossfade=%v musicVol=%d seek=%.2fs",
 			url, effects, crossfade, a.musicVol, seekSec)
 	}
 	if crossfade {
-		a.musicOld = a.music
-		a.musicOldRW = a.musicRW
-		a.musicOldBytes = a.musicBytes
-		a.music = nil
-		a.musicRW = nil
-		a.musicBytes = nil
+		a.clearSlot(&a.musicOld) // a crossfade still fading from before ends now
+		a.music, a.musicOld = a.musicOld, a.music
 	} else {
 		a.stopMusic() // clears musicURL; set below only on a successful start
 	}
-	rw, err := sdl.RWFromMem(data)
-	if err != nil {
-		a.restoreOldMusic()
-		return
-	}
-	music, err := mix.LoadMUSRW(rw, 0) // we own the RW; bytes stay alive below
+	song, err := a.mixer.Load(data, false) // streamed: data stays pinned in the slot
 	if err != nil {
 		log.Printf("render: music decode failed: %v", err)
-		_ = rw.Free()
 		a.restoreOldMusic()
 		return
 	}
-	a.musicBytes = data // pin the payload while the mixer streams from it
-	a.musicRW = rw
-	a.music = music
-	a.musicLoop = loop // remember loop-ness so reapFinishedMusic only reaps a finished one-shot
-	// SDL Mixer X PlayStream/FadeInStream loop counts: -1 = loop forever;
-	// playOnceLoops (1) = play through exactly once. We use 1, not 0, for
-	// play-once: the API documents loops as "play the music loop times through",
-	// so 1 is unambiguously one play, while 0 reads as zero plays (a silent
-	// no-loop track — the exact bug #15 is fixing).
-	const (
-		loopForeverLoops = -1
-		playOnceLoops    = 1
-	)
-	loops := playOnceLoops
+	opts := mix.PlayOptions{}
 	if loop {
-		loops = loopForeverLoops
+		opts.Loops = mix.LoopForever
 	}
-	// Set the new stream's target volume BEFORE the fade-in so the ramp climbs to
-	// the right ceiling (SetVolumeStream is the per-stream equivalent of VolumeMusic).
-	music.SetVolumeStream(mixVolume(a.musicVol))
 	if effects&musicEffectFadeIn != 0 {
-		err = music.FadeInStream(loops, musicFadeInMs) // linear 1000ms ramp (AO2 FADE_IN)
-	} else {
-		err = music.PlayStream(loops)
+		opts.FadeInMs = musicFadeInMs // linear 1000ms ramp (AO2 FADE_IN)
 	}
-	if err != nil {
+	durSec, haveDur := song.Duration()
+	// Cross-tab resume + SYNC_POS (best-effort): start where the track should
+	// be. Wrap the target by the song's REAL length: the ui-side wall-clock
+	// fallback is not duration-wrapped, and AO area loops are short, so its
+	// target routinely lands past the end.
+	if seekSec > 0 && haveDur && durSec > 0 {
+		seekSec = math.Mod(seekSec, durSec)
+	}
+	opts.StartSec = seekSec
+	// Loop points (#48): a looping song with a custom sidecar loops gaplessly
+	// at the decoder level between its loop start and end.
+	if loop {
+		if p, ok := a.loopPointsFor(url, data, durSec, haveDur, seekSec); ok {
+			opts.LoopStartSec, opts.LoopEndSec = p.StartSec, p.EndSec
+		}
+	}
+	if err := a.music.track.SetAudio(song); err != nil {
 		log.Printf("render: music play failed: %v", err)
-		music.HaltStream()
-		music.Free()
-		a.music = nil
-		a.musicRW = nil
-		a.musicBytes = nil
+		song.Destroy()
 		a.restoreOldMusic()
 		return
 	}
-	if crossfade {
-		// Start the old track's native fade-out now that the new track is live.
-		// Mix_FadeOutMusicStream is linear (SDL Mixer X has no log fade), which is
-		// close enough to AO2's BASS_SLIDE_LOG for a 4s music fade; it fades in the
-		// audio callback and halts the stream when done (stepFadeOutOld reaps it).
-		a.musicOld.FadeOutStream(musicFadeOutMs)
+	// Set the gain BEFORE playing so a fade-in climbs to the right ceiling.
+	a.music.track.SetGain(gain(a.musicVol))
+	if err := a.music.track.Play(opts); err != nil {
+		log.Printf("render: music play failed: %v", err)
+		song.Destroy()
+		a.restoreOldMusic()
+		return
 	}
-	// Cross-tab resume + SYNC_POS seek (best-effort): jump to where the track
-	// should be. An explicit resume seek (PlayMusicAt) outranks a SYNC_POS
-	// capture (the resume is deliberate user continuity; SYNC_POS is a DJ
-	// nicety). We seek the NEW stream explicitly (Mix_SetMusicPositionStream),
-	// not the global Mix_SetMusicPosition, so a crossfade's old stream is left
-	// untouched.
-	if seekSec > 0 {
-		// Wrap the target by the freshly-loaded stream's REAL length first: the
-		// ui-side wall-clock fallback is NOT duration-wrapped, and AO area loops
-		// are short, so its target routinely lands past the end — which opusfile
-		// rejects (OP_EINVAL) rather than degrading quietly.
-		durSec := -1.0 // MusicClock's own "unknown length" sentinel; logged below
-		if _, dur, ok := a.MusicClock(); ok && dur > 0 {
-			durSec = dur
-			seekSec = math.Mod(seekSec, dur)
-		}
-		if seekSec > 0 {
-			if err := music.SeekStream(seekSec); err != nil {
-				// Not fatal — playback continues from the start.
-				log.Printf("render: music seek to %.0fs (track length %.0fs) failed for %q (playing from top)", seekSec, durSec, url)
-			}
-		}
+	a.music.audio, a.music.bytes = song, data
+	a.musicLoop = loop // remember loop-ness so reapFinishedMusic only reaps a finished one-shot
+	if crossfade {
+		// Fade the old song out now that the new one is live; stepFadeOutOld
+		// unloads it once the fade has stopped its track.
+		a.musicOld.track.Stop(musicFadeOutMs)
 	}
 	a.musicURL = url // now this exact track is playing — PlayMusic(url) becomes a no-op
-	// Keep the global music volume in sync for future LoadMUS (each new stream's
-	// default); the live stream was already set via SetVolumeStream above.
-	mix.VolumeMusic(mixVolume(a.musicVol))
-	// Loop points (#48): when the stream is looping, apply any custom sidecar
-	// loop points to SDL Mixer X's native loop_start/loop_end. The mixer then
-	// loops gaplessly at the decoder level (no deadline polling).
-	if loop {
-		a.applyLoopPoints(url, data)
+}
+
+// clearSlot stops a music slot and unloads its song.
+func (a *Audio) clearSlot(s *musicSlot) {
+	if s.audio == nil {
+		return
 	}
+	s.track.Stop(0)
+	s.audio.Destroy()
+	s.audio, s.bytes = nil, nil
 }
 
 func (a *Audio) stopMusic() {
-	if a.music != nil {
-		a.music.HaltStream()
-		a.music.Free()
-		a.music = nil
-	}
-	if a.musicRW != nil {
-		_ = a.musicRW.Free()
-		a.musicRW = nil
-	}
-	a.musicBytes = nil
-	a.musicURL = "" // nothing playing now; a later PlayMusic of the same URL plays again
-	// No stream loaded → loop-ness is moot; reset so a stale true can't skip a future reap.
+	a.clearSlot(&a.music)
+	a.clearSlot(&a.musicOld) // tear down an in-flight crossfade too (StopMusic mid-fade)
+	a.musicURL = ""          // nothing playing now; a later PlayMusic of the same URL plays again
+	// No song loaded → loop-ness is moot; reset so a stale true can't skip a future reap.
 	a.musicLoop = false
-	// Tear down any in-flight crossfade's old track too (StopMusic mid-fade).
-	if a.musicOld != nil {
-		a.musicOld.HaltStream()
-		a.musicOld.Free()
-		a.musicOld = nil
-	}
-	if a.musicOldRW != nil {
-		_ = a.musicOldRW.Free()
-		a.musicOldRW = nil
-	}
-	a.musicOldBytes = nil
 }
 
-// restoreOldMusic puts a crossfade's old track back into the live slot after a
+// restoreOldMusic puts a crossfade's old song back as the live one after a
 // failed load/play, so the previous track keeps playing instead of dropping out.
 // No-op when there is no in-flight crossfade.
 func (a *Audio) restoreOldMusic() {
-	if a.musicOld == nil {
+	if a.musicOld.audio == nil {
 		return
 	}
-	a.music = a.musicOld
-	a.musicRW = a.musicOldRW
-	a.musicBytes = a.musicOldBytes
-	a.musicOld = nil
-	a.musicOldRW = nil
-	a.musicOldBytes = nil
+	a.music, a.musicOld = a.musicOld, a.music
 }
 
-// stepFadeOutOld reaps a crossfade's old track once its native fade-out has
-// halted it. The fade itself is Mix_FadeOutMusicStream (linear, started in
-// startMusic); this just polls PlayingStream and frees the stream when the
-// fade has run its course. Called every Frame on the render thread.
+// stepFadeOutOld unloads a crossfade's old song once its fade-out has stopped
+// its track. Called every Frame on the render thread.
 func (a *Audio) stepFadeOutOld() {
-	if a.musicOld == nil {
-		return
-	}
-	if a.musicOld.PlayingStream() {
-		return // native fade still running
+	if a.musicOld.audio == nil || a.musicOld.track.Playing() {
+		return // nothing fading, or the fade is still running
 	}
 	log.Printf("render: fade-out of old track complete")
-	a.musicOld.Free()
-	a.musicOld = nil
-	if a.musicOldRW != nil {
-		_ = a.musicOldRW.Free()
-		a.musicOldRW = nil
-	}
-	a.musicOldBytes = nil
+	a.clearSlot(&a.musicOld)
 }

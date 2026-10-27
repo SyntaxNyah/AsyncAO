@@ -122,7 +122,13 @@ func stageFrameDrivenApp(t *testing.T) (*App, func()) {
 	// the headless case), and Frame drains the manager's audio channel through it
 	// either way — a zero-value &render.Audio{} would nil-deref on that drain.
 	a.d.Audio = render.NewAudio(a.d.Manager)
-	t.Cleanup(a.d.Audio.Close) // pair the device (or the failed open) exactly as the app does
+	// The device closes before the courtroom's SDL teardown, as in the app: an
+	// SDL3_mixer device destroyed after SDL_Quit crashes the process.
+	sdlCleanup := cleanup
+	cleanup = func() {
+		a.d.Audio.Close()
+		sdlCleanup()
+	}
 
 	// --- latches: a headless frame stays off the network and off the wall clock ---
 	// maybeKickUpdateCheck spawns two goroutines on frame 1 (a .old cleanup and the

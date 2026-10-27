@@ -1,378 +1,269 @@
-// Package mix is AsyncAO's binding to SDL Mixer X (our fork of WohlSoft's extended
-// SDL_mixer). It mirrors go-sdl2's `mix` package and adds the runtime loop-point
-// setters (Mix_SetMusicLoopStartTime/EndTime) that custom music loop points (#48)
-// depend on, plus the multi-music stream API behind crossfades and gapless loops.
-// The SDL3 move reimplements it over SDL3_mixer and drops the fork.
+// Package mix is AsyncAO's binding to SDL3_mixer: a Mixer plays any number of
+// Tracks at once, each fed one Audio. Loop points, fades and seeking are
+// SDL3_mixer's own, so crossfades and gapless custom loops (#48) need no fork.
 //
-// Only the library NAME is pinned here; the include and library search paths come
-// from the build environment (CGO_CFLAGS / CGO_LDFLAGS: see scripts/build.ps1,
-// scripts/setup-deps.*, and the CI workflows, which build the fork and point cgo
-// at its install prefix).
+// Positions are converted between seconds and sample frames at the Audio's own
+// sample rate, so a loop point lands on the exact frame the sidecar names.
+// Hard rule 1 applies: everything here runs on the main thread.
 package mix
 
 /*
-#cgo LDFLAGS: -lSDL2_mixer_ext
+#cgo pkg-config: sdl3-mixer
 #include <stdlib.h>
-#include <SDL2/SDL_mixer_ext.h>
+#include <SDL3_mixer/SDL_mixer.h>
+
+static bool asyncaoPlay(MIX_Track *track, Sint64 loops, Sint64 startFrame, Sint64 loopStartFrame,
+		Sint64 maxFrame, Sint64 fadeInMs) {
+	SDL_PropertiesID props = SDL_CreateProperties();
+	if (props == 0) {
+		return false;
+	}
+	SDL_SetNumberProperty(props, MIX_PROP_PLAY_LOOPS_NUMBER, loops);
+	if (startFrame > 0) {
+		SDL_SetNumberProperty(props, MIX_PROP_PLAY_START_FRAME_NUMBER, startFrame);
+	}
+	if (loopStartFrame > 0) {
+		SDL_SetNumberProperty(props, MIX_PROP_PLAY_LOOP_START_FRAME_NUMBER, loopStartFrame);
+	}
+	if (maxFrame > 0) {
+		SDL_SetNumberProperty(props, MIX_PROP_PLAY_MAX_FRAME_NUMBER, maxFrame);
+	}
+	if (fadeInMs > 0) {
+		SDL_SetNumberProperty(props, MIX_PROP_PLAY_FADE_IN_MILLISECONDS_NUMBER, fadeInMs);
+	}
+	bool ok = MIX_PlayTrack(track, props);
+	SDL_DestroyProperties(props);
+	return ok;
+}
+
+static int asyncaoAudioRate(MIX_Audio *audio) {
+	SDL_AudioSpec spec;
+	return MIX_GetAudioFormat(audio, &spec) ? spec.freq : 0;
+}
 */
 import "C"
 
 import (
+	"errors"
 	"unsafe"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Chunk mirrors C's Mix_Chunk. Its memory layout must stay byte-identical to
-// Mix_Chunk because it is handed to C as an unsafe.Pointer.
-type Chunk struct {
-	allocated int32
-	buf       *uint8
-	len_      uint32
-	volume    uint8
-}
+// Mixer mixes tracks into one output.
+type Mixer C.MIX_Mixer
 
-// Fading is the music/channel fading state.
-type Fading int
+// Audio is a loaded sound. It is reference-counted by the tracks that play it,
+// so Destroy is safe while it is still playing.
+type Audio C.MIX_Audio
 
-// The different supported fading types.
-const (
-	NO_FADING Fading = iota
-	FADING_OUT
-	FADING_IN
-)
+// Track plays one Audio at a time.
+type Track C.MIX_Track
 
-// Music is an opaque handle to a decoded music stream.
-type Music C.Mix_Music
+// LoopForever is PlayOptions.Loops for a track that never ends by itself.
+const LoopForever = -1
 
-// MusicType is the file-format encoding of a music stream.
-type MusicType int
+var errEmptyAudio = errors.New("mix: cannot load an empty buffer")
 
-// Init flags.
-const (
-	INIT_FLAC = C.MIX_INIT_FLAC
-	INIT_MOD  = C.MIX_INIT_MOD
-	INIT_MP3  = C.MIX_INIT_MP3
-	INIT_OGG  = C.MIX_INIT_OGG
-	INIT_OPUS = C.MIX_INIT_OPUS
-)
-
-// Good default values for a PC soundcard.
-const (
-	DEFAULT_FREQUENCY = C.MIX_DEFAULT_FREQUENCY
-	DEFAULT_FORMAT    = C.MIX_DEFAULT_FORMAT
-	DEFAULT_CHANNELS  = C.MIX_DEFAULT_CHANNELS
-	MAX_VOLUME        = C.MIX_MAX_VOLUME
-)
-
-func cint(b bool) C.int {
-	if b {
-		return 1
+func failed() error {
+	if err := sdl.GetError(); err != nil {
+		return err
 	}
-	return 0
+	return errors.New("mix: call failed without an error message")
 }
 
-// Init loads dynamic libraries and prepares them for use.
-func Init(flags int) error {
-	initted := int(C.Mix_Init(C.int(flags)))
-	if initted&flags != flags {
-		return sdl.GetError()
+// OpenDevice opens the default playback device, mixing at freq Hz.
+func OpenDevice(freq, channels int) (*Mixer, error) {
+	if !C.MIX_Init() {
+		return nil, failed()
 	}
-	return nil
-}
-
-// Quit unloads libraries loaded with Init.
-func Quit() {
-	C.Mix_Quit()
-}
-
-// OpenAudio opens the mixer with a certain audio format.
-func OpenAudio(frequency int, format uint16, channels, chunksize int) error {
-	if C.Mix_OpenAudio(C.int(frequency), C.Uint16(format), C.int(channels), C.int(chunksize)) < 0 {
-		return sdl.GetError()
+	spec := C.SDL_AudioSpec{format: C.SDL_AUDIO_F32, channels: C.int(channels), freq: C.int(freq)}
+	m := C.MIX_CreateMixerDevice(C.SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec)
+	if m == nil {
+		err := failed()
+		C.MIX_Quit()
+		return nil, err
 	}
-	return nil
+	return (*Mixer)(m), nil
 }
 
-// CloseAudio closes the mixer, halting all playback.
-func CloseAudio() {
-	C.Mix_CloseAudio()
-}
-
-// AllocateChannels dynamically changes the number of channels managed by the
-// mixer. Returns the number of channels allocated.
-func AllocateChannels(numchans int) int {
-	return int(C.Mix_AllocateChannels(C.int(numchans)))
-}
-
-// ReserveChannels reserves num channels from being used when playing samples
-// with channel == -1. Returns the number of channels reserved.
-func ReserveChannels(num int) int {
-	return int(C.Mix_ReserveChannels(C.int(num)))
-}
-
-// LoadWAVRW loads src for use as a sample.
-func LoadWAVRW(src *sdl.RWops, freesrc bool) (*Chunk, error) {
-	_src := (*C.SDL_RWops)(unsafe.Pointer(src))
-	chunk := (*Chunk)(unsafe.Pointer(C.Mix_LoadWAV_RW(_src, cint(freesrc))))
-	if chunk == nil {
-		return nil, sdl.GetError()
+// NewHeadless creates a mixer with no device: its output is pulled with
+// Generate, as float32 samples. Tests use it to play real audio without a
+// sound card.
+func NewHeadless(freq, channels int) (*Mixer, error) {
+	if !C.MIX_Init() {
+		return nil, failed()
 	}
-	return chunk, nil
-}
-
-// LoadWAV loads file for use as a sample.
-func LoadWAV(file string) (*Chunk, error) {
-	_file := C.CString(file)
-	defer C.free(unsafe.Pointer(_file))
-	_rb := C.CString("rb")
-	defer C.free(unsafe.Pointer(_rb))
-	chunk := (*Chunk)(unsafe.Pointer(C.Mix_LoadWAV_RW(C.SDL_RWFromFile(_file, _rb), 1)))
-	if chunk == nil {
-		return nil, sdl.GetError()
+	spec := C.SDL_AudioSpec{format: C.SDL_AUDIO_F32, channels: C.int(channels), freq: C.int(freq)}
+	m := C.MIX_CreateMixer(&spec)
+	if m == nil {
+		err := failed()
+		C.MIX_Quit()
+		return nil, err
 	}
-	return chunk, nil
+	return (*Mixer)(m), nil
 }
 
-// LoadMUSRW loads a music file from an sdl.RWops object.
-func LoadMUSRW(src *sdl.RWops, freesrc int) (*Music, error) {
-	_src := (*C.SDL_RWops)(unsafe.Pointer(src))
-	mus := (*Music)(unsafe.Pointer(C.Mix_LoadMUS_RW(_src, C.int(freesrc))))
-	if mus == nil {
-		return nil, sdl.GetError()
+func (m *Mixer) c() *C.MIX_Mixer { return (*C.MIX_Mixer)(m) }
+
+// Close stops every track, closes the device and frees the tracks. Audio
+// objects are not freed: Destroy them first.
+func (m *Mixer) Close() {
+	C.MIX_DestroyMixer(m.c())
+	C.MIX_Quit()
+}
+
+// Generate mixes len(out) samples of a headless mixer's output into out.
+func (m *Mixer) Generate(out []float32) error {
+	if len(out) == 0 {
+		return nil
 	}
-	return mus, nil
-}
-
-// Free frees the memory used in chunk, and frees chunk itself as well.
-func (chunk *Chunk) Free() {
-	_chunk := (*C.Mix_Chunk)(unsafe.Pointer(chunk))
-	C.Mix_FreeChunk(_chunk)
-}
-
-// Free frees the loaded music. If music is playing it will be halted.
-func (music *Music) Free() {
-	_music := (*C.Mix_Music)(unsafe.Pointer(music))
-	C.Mix_FreeMusic(_music)
-}
-
-// Play plays chunk on channel, or on the first free unreserved channel if
-// channel == -1.
-func (chunk *Chunk) Play(channel, loops int) (int, error) {
-	return chunk.PlayTimed(channel, loops, -1)
-}
-
-// PlayTimed plays chunk on channel for at most ticks milliseconds.
-func (chunk *Chunk) PlayTimed(channel, loops, ticks int) (int, error) {
-	_chunk := (*C.Mix_Chunk)(unsafe.Pointer(chunk))
-	channel_ := int(C.Mix_PlayChannelTimed(C.int(channel), _chunk, C.int(loops), C.int(ticks)))
-	if channel_ == -1 {
-		return channel_, sdl.GetError()
-	}
-	return channel_, nil
-}
-
-// Volume sets the volume for any allocated channel. If channel is -1 then all
-// channels are set at once.
-func Volume(channel, volume int) int {
-	return int(C.Mix_Volume(C.int(channel), C.int(volume)))
-}
-
-// Volume sets the chunk's volume.
-func (chunk *Chunk) Volume(volume int) int {
-	_chunk := (*C.Mix_Chunk)(unsafe.Pointer(chunk))
-	return int(C.Mix_VolumeChunk(_chunk, C.int(volume)))
-}
-
-// VolumeMusic sets the music volume.
-func VolumeMusic(volume int) int {
-	return int(C.Mix_VolumeMusic(C.int(volume)))
-}
-
-// HaltChannel halts playback on a specific channel.
-func HaltChannel(channel int) {
-	C.Mix_HaltChannel(C.int(channel))
-}
-
-// HaltMusic halts music playback.
-func HaltMusic() {
-	C.Mix_HaltMusic()
-}
-
-// FadeOutMusic fades out the current music over ms milliseconds.
-func FadeOutMusic(ms int) bool {
-	return int(C.Mix_FadeOutMusic(C.int(ms))) != 0
-}
-
-// FadingMusic returns the current fading state of the music stream.
-func FadingMusic() Fading {
-	return Fading(C.Mix_FadingMusic())
-}
-
-// PauseMusic pauses the music.
-func PauseMusic() {
-	C.Mix_PauseMusic()
-}
-
-// ResumeMusic resumes paused music.
-func ResumeMusic() {
-	C.Mix_ResumeMusic()
-}
-
-// PausedMusic reports whether the music is paused.
-func PausedMusic() bool {
-	return int(C.Mix_PausedMusic()) != 0
-}
-
-// Playing reports whether the given channel is playing.
-func Playing(channel int) int {
-	return int(C.Mix_Playing(C.int(channel)))
-}
-
-// PlayingMusic reports whether music is currently playing.
-func PlayingMusic() bool {
-	return int(C.Mix_PlayingMusic()) != 0
-}
-
-// GetChunk returns the chunk currently playing on channel, or nil.
-func GetChunk(channel int) *Chunk {
-	return (*Chunk)(unsafe.Pointer(C.Mix_GetChunk(C.int(channel))))
-}
-
-// SetMusicPosition seeks the currently playing music to position (seconds).
-func SetMusicPosition(position int64) error {
-	if C.Mix_SetMusicPosition(C.double(position)) == -1 {
-		return sdl.GetError()
+	bytes := len(out) * int(unsafe.Sizeof(out[0]))
+	if C.MIX_Generate(m.c(), unsafe.Pointer(&out[0]), C.int(bytes)) < 0 {
+		return failed()
 	}
 	return nil
 }
 
-// SetMusicPositionPrecise seeks the currently playing music to an exact
-// sub-second position (seconds).
-func SetMusicPositionPrecise(sec float64) error {
-	if C.Mix_SetMusicPosition(C.double(sec)) == -1 {
-		return sdl.GetError()
+// Load decodes a sound held in memory. A predecoded sound is copied, so data
+// may be dropped afterwards. A streamed one (predecode false, for music) reads
+// data while it plays: the caller keeps data alive until the Audio is destroyed
+// and no track plays it.
+func (m *Mixer) Load(data []byte, predecode bool) (*Audio, error) {
+	if len(data) == 0 {
+		return nil, errEmptyAudio
+	}
+	io := C.SDL_IOFromConstMem(unsafe.Pointer(&data[0]), C.size_t(len(data)))
+	if io == nil {
+		return nil, failed()
+	}
+	a := C.MIX_LoadAudio_IO(m.c(), io, C.bool(predecode), true)
+	if a == nil {
+		return nil, failed()
+	}
+	return (*Audio)(a), nil
+}
+
+// LoadFile decodes a sound file completely.
+func (m *Mixer) LoadFile(path string) (*Audio, error) {
+	cpath := C.CString(path)
+	defer C.free(unsafe.Pointer(cpath))
+	a := C.MIX_LoadAudio(m.c(), cpath, true)
+	if a == nil {
+		return nil, failed()
+	}
+	return (*Audio)(a), nil
+}
+
+// NewTrack creates a track on the mixer.
+func (m *Mixer) NewTrack() (*Track, error) {
+	t := C.MIX_CreateTrack(m.c())
+	if t == nil {
+		return nil, failed()
+	}
+	return (*Track)(t), nil
+}
+
+func (a *Audio) c() *C.MIX_Audio { return (*C.MIX_Audio)(a) }
+
+// Destroy drops the caller's reference.
+func (a *Audio) Destroy() { C.MIX_DestroyAudio(a.c()) }
+
+// rate is the sound's sample rate; frame positions count in it.
+func (a *Audio) rate() float64 { return float64(C.asyncaoAudioRate(a.c())) }
+
+func (a *Audio) frames(sec float64) C.Sint64 { return C.Sint64(sec * a.rate()) }
+
+// Duration returns the sound's length in seconds; ok is false when the
+// decoder cannot tell (some streamed formats) or the sound is endless.
+func (a *Audio) Duration() (sec float64, ok bool) {
+	frames := C.MIX_GetAudioDuration(a.c())
+	rate := a.rate()
+	if frames < 0 || rate == 0 {
+		return 0, false
+	}
+	return float64(frames) / rate, true
+}
+
+// PlayOptions configures Track.Play. Zero values mean: play once, from the
+// start, no fade, no loop points.
+type PlayOptions struct {
+	// Loops is how many times to loop after the first play; LoopForever for no end.
+	Loops int
+	// StartSec is where the first play starts.
+	StartSec float64
+	// LoopStartSec is where each loop restarts; LoopEndSec (when > 0) is where
+	// each pass ends. Both are seconds into the sound.
+	LoopStartSec, LoopEndSec float64
+	// FadeInMs ramps the first play up from silence.
+	FadeInMs int
+}
+
+func (t *Track) c() *C.MIX_Track { return (*C.MIX_Track)(t) }
+
+// Destroy frees the track.
+func (t *Track) Destroy() { C.MIX_DestroyTrack(t.c()) }
+
+// audio is the sound currently on the track, or nil.
+func (t *Track) audio() *Audio { return (*Audio)(C.MIX_GetTrackAudio(t.c())) }
+
+// SetAudio puts a sound on the track. A playing track switches at once.
+func (t *Track) SetAudio(a *Audio) error {
+	if !C.MIX_SetTrackAudio(t.c(), a.c()) {
+		return failed()
 	}
 	return nil
 }
 
-// Duration returns the duration of this music stream in seconds, or -1 if
-// unknown.
-func (music *Music) Duration() float64 {
-	_music := (*C.Mix_Music)(unsafe.Pointer(music))
-	return float64(C.Mix_MusicDuration(_music))
-}
-
-// Position returns the current playback position of this music stream in
-// seconds, or -1 if unknown.
-func (music *Music) Position() float64 {
-	_music := (*C.Mix_Music)(unsafe.Pointer(music))
-	return float64(C.Mix_GetMusicPosition(_music))
-}
-
-// PlayingStream reports whether this specific music stream is currently
-// playing. Unlike PlayingMusic (which checks the global Mix_Music slot), this
-// checks the stream itself; required for multi-music (PlayStream) playback,
-// which never populates the global slot.
-func (music *Music) PlayingStream() bool {
-	_music := (*C.Mix_Music)(unsafe.Pointer(music))
-	return int(C.Mix_PlayingMusicStream(_music)) != 0
-}
-
-// Play plays the loaded music loops times through from start to finish.
-func (music *Music) Play(loops int) error {
-	_music := (*C.Mix_Music)(unsafe.Pointer(music))
-	if C.Mix_PlayMusic(_music, C.int(loops)) == -1 {
-		return sdl.GetError()
+// Play starts the track's sound.
+func (t *Track) Play(o PlayOptions) error {
+	a := t.audio()
+	if a == nil {
+		return errors.New("mix: track has no audio")
+	}
+	var loopStart, maxFrame C.Sint64
+	if o.LoopEndSec > 0 {
+		loopStart, maxFrame = a.frames(o.LoopStartSec), a.frames(o.LoopEndSec)
+	}
+	if !C.asyncaoPlay(t.c(), C.Sint64(o.Loops), a.frames(o.StartSec), loopStart, maxFrame, C.Sint64(o.FadeInMs)) {
+		return failed()
 	}
 	return nil
 }
 
-// FadeIn fades in the loaded music over ms milliseconds, playing it loops
-// times through.
-func (music *Music) FadeIn(loops, ms int) error {
-	_music := (*C.Mix_Music)(unsafe.Pointer(music))
-	if C.Mix_FadeInMusic(_music, C.int(loops), C.int(ms)) == -1 {
-		return sdl.GetError()
+// Stop stops the track, fading out over fadeOutMs first when > 0.
+func (t *Track) Stop(fadeOutMs int) {
+	C.MIX_StopTrack(t.c(), C.MIX_TrackMSToFrames(t.c(), C.Sint64(fadeOutMs)))
+}
+
+// Playing reports whether the track is producing sound (not stopped or ended).
+func (t *Track) Playing() bool { return bool(C.MIX_TrackPlaying(t.c())) }
+
+// SetGain sets the track's volume: 0 silent, 1 unchanged.
+func (t *Track) SetGain(gain float32) { C.MIX_SetTrackGain(t.c(), C.float(gain)) }
+
+// Position returns the playback position in seconds of the track's sound.
+func (t *Track) Position() (sec float64, ok bool) {
+	a := t.audio()
+	if a == nil {
+		return 0, false
 	}
-	return nil
-}
-
-// SetLoopStartTime sets the loop start position (in seconds) for this music
-// stream. Returns an error if loop points are not supported for this codec.
-// This is an SDL Mixer X extension added by AsyncAO's fork.
-func (music *Music) SetLoopStartTime(time float64) error {
-	_music := (*C.Mix_Music)(unsafe.Pointer(music))
-	if C.Mix_SetMusicLoopStartTime(_music, C.double(time)) < 0 {
-		return sdl.GetError()
+	frames := C.MIX_GetTrackPlaybackPosition(t.c())
+	rate := a.rate()
+	if frames < 0 || rate == 0 {
+		return 0, false
 	}
-	return nil
+	return float64(frames) / rate, true
 }
 
-// SetLoopEndTime sets the loop end position (in seconds) for this music
-// stream. Returns an error if loop points are not supported for this codec.
-// This is an SDL Mixer X extension added by AsyncAO's fork.
-func (music *Music) SetLoopEndTime(time float64) error {
-	_music := (*C.Mix_Music)(unsafe.Pointer(music))
-	if C.Mix_SetMusicLoopEndTime(_music, C.double(time)) < 0 {
-		return sdl.GetError()
+// Seek moves playback to sec seconds into the track's sound.
+func (t *Track) Seek(sec float64) error {
+	a := t.audio()
+	if a == nil {
+		return errors.New("mix: track has no audio")
 	}
-	return nil
-}
-
-// PlayStream plays this music object as an independent stream (SDL Mixer X
-// multi-music support). Unlike Play, it can coexist with other playing streams
-// — this is what makes a true crossfade possible.
-func (music *Music) PlayStream(loops int) error {
-	_music := (*C.Mix_Music)(unsafe.Pointer(music))
-	if C.Mix_PlayMusicStream(_music, C.int(loops)) == -1 {
-		return sdl.GetError()
-	}
-	return nil
-}
-
-// FadeInStream fades in this music object as an independent stream over ms
-// milliseconds.
-func (music *Music) FadeInStream(loops, ms int) error {
-	_music := (*C.Mix_Music)(unsafe.Pointer(music))
-	if C.Mix_FadeInMusicStream(_music, C.int(loops), C.int(ms)) == -1 {
-		return sdl.GetError()
-	}
-	return nil
-}
-
-// FadeOutStream fades out this music object over ms milliseconds, then halts it.
-func (music *Music) FadeOutStream(ms int) error {
-	_music := (*C.Mix_Music)(unsafe.Pointer(music))
-	if C.Mix_FadeOutMusicStream(_music, C.int(ms)) == -1 {
-		return sdl.GetError()
-	}
-	return nil
-}
-
-// HaltStream halts this music object's stream immediately.
-func (music *Music) HaltStream() {
-	_music := (*C.Mix_Music)(unsafe.Pointer(music))
-	C.Mix_HaltMusicStream(_music)
-}
-
-// SetVolumeStream sets the volume of this music object's stream.
-func (music *Music) SetVolumeStream(volume int) int {
-	_music := (*C.Mix_Music)(unsafe.Pointer(music))
-	return int(C.Mix_VolumeMusicStream(_music, C.int(volume)))
-}
-
-// FadingStream returns the current fading state of this music object's stream.
-func (music *Music) FadingStream() Fading {
-	_music := (*C.Mix_Music)(unsafe.Pointer(music))
-	return Fading(C.Mix_FadingMusicStream(_music))
-}
-
-// SeekStream seeks this music object's stream to position (seconds).
-func (music *Music) SeekStream(position float64) error {
-	_music := (*C.Mix_Music)(unsafe.Pointer(music))
-	if C.Mix_SetMusicPositionStream(_music, C.double(position)) == -1 {
-		return sdl.GetError()
+	if !C.MIX_SetTrackPlaybackPosition(t.c(), a.frames(sec)) {
+		return failed()
 	}
 	return nil
 }

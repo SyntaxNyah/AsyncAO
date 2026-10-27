@@ -80,15 +80,8 @@ func TestAppendStreamGrowsResidentPage(t *testing.T) {
 // back Nearest and every appended frame stays Linear — the "frame 0 crisp,
 // the rest blurry" report.
 func TestAppendStreamKeepsLatchedScaleMode(t *testing.T) {
-	if !scaleModeSupported {
-		t.Skip("SDL < 2.0.12: per-texture scale mode is compiled out by design")
-	}
-	// The client runs HINT_RENDER_SCALE_QUALITY="1" (linear) — cmd/asyncao/main.go
-	// — so every newly created texture defaults to bilinear. Reproduce that here,
-	// or the bug can't be seen: the headless SDL default is "nearest", which would
-	// make this test pass even without the AppendStream fix.
-	sdl.SetHint(sdl.HINT_RENDER_SCALE_QUALITY, "1")
-	defer sdl.SetHint(sdl.HINT_RENDER_SCALE_QUALITY, "0")
+	// New textures default to linear (SDL3's default, and the client's smooth
+	// setting), so an appended frame that missed the latched Nearest shows up.
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
 	store, err := NewTextureStoreBudget(ren, 16<<20)

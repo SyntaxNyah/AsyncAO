@@ -1476,8 +1476,8 @@ func reflectAlpha(strength int) uint8 {
 	return uint8(a)
 }
 
-// Depth-of-field tuning (#11). A real Gaussian needs per-texture linear filtering that
-// go-sdl2 doesn't expose, so the background is soft-focused by smearing it: the sharp bg
+// Depth-of-field tuning (#11). A real Gaussian needs a blur shader the 2D renderer
+// doesn't have, so the background is soft-focused by smearing it: the sharp bg
 // plus eight low-alpha offset ghosts (the outlineDirs ring), then a dim overlay to push it
 // behind the sharp speaker. All blits + a scratch rect → 0 alloc.
 const (

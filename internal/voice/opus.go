@@ -4,7 +4,7 @@
 // voice transport (internal/courtroom owns the VS_* wire; internal/render owns
 // mic capture + playback). It is deliberately SDL-FREE (hard rule #1): it speaks
 // only PCM int16 in and opus bytes out, so the codec never touches the render
-// thread or go-sdl2.
+// thread or SDL.
 //
 // Settings match the Nyathena VS_CAPS defaults: 48 kHz, mono, 20 ms frames.
 // Opus is BSD-licensed (AGPL-compatible) — see docs/THIRD-PARTY-LICENSES.md.

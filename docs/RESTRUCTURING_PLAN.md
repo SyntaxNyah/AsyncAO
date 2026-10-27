@@ -17,6 +17,11 @@ in **Status**. Update Status in the same commit that completes a step.
       (`render/mixerx` became `internal/mix`; `render/scalemode_cgo.go` still calls SDL C directly, see 2c)
 - [ ] 2c. SDL3 switch: SDL_GPU on Vulkan (hardware, else bundled software Vulkan), device-reset
       re-upload; drop the SDL Mixer X fork; replace platform code
+  - [x] binding over SDL3/SDL3_ttf/SDL3_mixer, audio on `MIX_Track`, fork and go-sdl2 dropped,
+        scale-mode shim moved into the binding; deps scripts + CI (cached setup-sdl build on
+        Linux/macOS, MSYS2 packages on Windows)
+  - [ ] SDL_GPU renderer + force-software flag; device-reset re-upload; backend name shown
+  - [ ] platform code (dialogs, DPI seeding, URL opening, preview ownership, clipboard)
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
       pointer, no park/activate copies; fixes bug 4, #115, #141, #84)
 - [ ] 4. `internal/uikit`: extract the kit, then the input model (press/release + capture,

@@ -675,7 +675,7 @@ a solo sprite.
 
 | Dependency | Why |
 |---|---|
-| `veandco/go-sdl2` | SDL2/ttf/mixer bindings (the stack the references use) |
+| SDL3, SDL3_ttf, SDL3_mixer (CGO, our own binding in `internal/sdl`, `ttf`, `mix`; no Go module) | **replaces `veandco/go-sdl2` (restructuring steps 2b–2c):** go-sdl2 has no SDL3 version, and the purego SDL3 bindings call through reflection and may allocate per call, which breaks the zero-allocation render loop. Our binding wraps only the calls AsyncAO makes, with `#cgo noescape` on the per-frame ones. SDL3_mixer replaces the SDL Mixer X fork: its tracks, loop points and fades cover what the fork existed for. |
 | `hashicorp/golang-lru/v2` (+expirable) | thread-safe LRU; wrapped only for byte accounting |
 | `golang.org/x/sync` singleflight | fetch dedup (v0.20.0, matching the Go 1.25 directive) |
 | `cespare/xxhash/v2` | fast non-crypto cache keys |

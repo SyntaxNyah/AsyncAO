@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
@@ -193,21 +194,9 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	decoder.SetAnimatedDecodeConcurrency(prefs.Load().AnimDecodeConcurrency())
 
 	// --- SDL (render thread = this thread, forever) ---
-	// Texture scale quality must be hinted before textures exist: "1" =
-	// linear filtering (sprites stretched to the viewport stop
-	// shimmering), "0" = nearest (the SDL default). The Settings toggle
-	// re-hints and re-streams live. Batching cuts draw-call overhead on
-	// label/icon-heavy frames.
-	scaleHint := "1"
-	if !prefs.Load().SmoothScaling {
-		scaleHint = "0"
-	}
-	sdl.SetHint(sdl.HINT_RENDER_SCALE_QUALITY, scaleHint)
-	sdl.SetHint(sdl.HINT_RENDER_BATCHING, "1")
-	// Mark the process per-monitor DPI-aware BEFORE video init, so Windows renders
-	// us at NATIVE resolution instead of bitmap-upscaling the whole window at
-	// 125%/150% system scaling (the blurry-UI report). No-op off Windows.
-	sdl.SetHint("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2")
+	// SDL3 batches draws and is per-monitor DPI-aware on Windows by itself, so
+	// the window renders at native resolution at 125%/150% system scaling (the
+	// blurry-UI report) with no hint.
 	if err := sdl.Init(sdl.INIT_VIDEO | sdl.INIT_AUDIO | sdl.INIT_EVENTS); err != nil {
 		return err
 	}
@@ -238,6 +227,11 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		return err
 	}
 	defer window.Destroy()
+	// SDL3 sends no text-input events until this is on (SDL2 had it on by
+	// default): without it nothing typed would reach a text field.
+	if err := window.StartTextInput(); err != nil {
+		log.Printf("text input unavailable: %v", err)
+	}
 	// mainWindowID is recorded once, right after the window exists, and is
 	// compared against every WINDOWEVENT_CLOSE the run loop receives — see
 	// mainWindowShouldQuit's comment for why this exists at all.
@@ -305,6 +299,10 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		}
 	}
 	defer ren.Destroy()
+	// Texture filter for every texture created from now on: linear (sprites
+	// stretched to the viewport stop shimmering) or nearest. The Settings toggle
+	// changes it and re-streams live.
+	_ = ren.SetDefaultTextureScaleMode(ui.TextureScaleMode(prefs.Load().SmoothScaling))
 	// macOS Retina: with ALLOW_HIGHDPI the Metal drawable is 2x the window's
 	// point size; fold that into the render scale so the logical canvas still
 	// fills the window WITHOUT SetLogicalSize (which would also remap mouse
@@ -322,19 +320,8 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	texCompressMode := assets.CompressOff
 	if mode := prefs.TexCompression(); mode != config.TexCompressOff {
 		if info, err := ren.GetInfo(); err == nil {
-			dxt5, dxt1 := false, false
-			n := int(info.NumTextureFormats)
-			if n > len(info.TextureFormats) {
-				n = len(info.TextureFormats)
-			}
-			for i := 0; i < n; i++ {
-				switch uint32(info.TextureFormats[i]) {
-				case assets.DXT5FourCC:
-					dxt5 = true
-				case assets.DXT1FourCC:
-					dxt1 = true
-				}
-			}
+			dxt5 := slices.Contains(info.TextureFormats, assets.DXT5FourCC)
+			dxt1 := slices.Contains(info.TextureFormats, assets.DXT1FourCC)
 			switch {
 			case mode == config.TexCompressDXT5 && dxt5:
 				texCompressMode = assets.CompressDXT5

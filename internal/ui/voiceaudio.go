@@ -33,8 +33,6 @@ import (
 const (
 	// voiceFrameBytes is one Opus frame as raw S16 mono bytes (960 samples * 2).
 	voiceFrameBytes = voice.FrameSize * 2
-	// voiceDeviceSamples sizes the SDL device buffer (power of two, ~21 ms @ 48 kHz).
-	voiceDeviceSamples = 1024
 	// voiceJitterCap bounds a peer's decoded-frame backlog (hard rule #4): ~240 ms,
 	// then the oldest frame is dropped so a stalled peer can't grow unbounded.
 	voiceJitterCap = 12
@@ -72,8 +70,8 @@ type voicePeer struct {
 // voiceEngine owns the capture + playback devices and the per-peer decoders. nil
 // when not in voice; presence still works without it.
 type voiceEngine struct {
-	capture  sdl.AudioDeviceID // 0 = no mic (listen-only)
-	playback sdl.AudioDeviceID
+	capture  *sdl.AudioStream // nil = no mic (listen-only)
+	playback *sdl.AudioStream
 	enc      *voice.Encoder // nil = can't encode (listen-only)
 	peers    map[int]*voicePeer
 	send     func(b64 string)
@@ -104,9 +102,8 @@ func newVoiceEngine(send func(b64 string), captureDev string, outVol int) (*voic
 		Freq:     voice.SampleRate,
 		Format:   sdl.AUDIO_S16SYS, // native order ⇒ []int16 aliases the bytes 1:1
 		Channels: voice.Channels,
-		Samples:  voiceDeviceSamples,
 	}
-	play, err := sdl.OpenAudioDevice("", false, &spec, nil, 0)
+	play, err := sdl.OpenAudioDeviceStream("", false, &spec)
 	if err != nil {
 		return nil, err // no output ⇒ no audio engine (presence-only)
 	}
@@ -123,24 +120,24 @@ func newVoiceEngine(send func(b64 string), captureDev string, outVol int) (*voic
 		out:        make([]int16, voice.FrameSize),
 		playTarget: voicePlayTargetFrames,
 	}
-	sdl.PauseAudioDevice(play, false) // start the output clock
+	play.Resume() // start the output clock
 
 	// Capture is optional: a machine with no mic can still listen. captureDev ""
 	// asks SDL for the system-default recording device.
-	if cap, err := sdl.OpenAudioDevice(captureDev, true, &spec, nil, 0); err == nil {
+	if cap, err := sdl.OpenAudioDeviceStream(captureDev, true, &spec); err == nil {
 		if enc, err := voice.NewEncoder(); err == nil {
 			enc.Tune(voiceBitrate, true) // DTX on (skip silence) + steady VOIP bitrate
 			e.capture, e.enc = cap, enc
-			sdl.PauseAudioDevice(cap, false)
+			cap.Resume()
 		} else {
-			sdl.CloseAudioDevice(cap) // encoder failed ⇒ no point capturing
+			cap.Destroy() // encoder failed ⇒ no point capturing
 		}
 	}
 	return e, nil
 }
 
 // canTalk reports whether this engine can transmit (has a mic + encoder).
-func (e *voiceEngine) canTalk() bool { return e != nil && e.capture != 0 && e.enc != nil }
+func (e *voiceEngine) canTalk() bool { return e != nil && e.capture != nil && e.enc != nil }
 
 // setMic toggles transmitting. Pausing the capture device when off means no
 // samples queue up to drain (and the OS mic indicator goes quiet).
@@ -150,7 +147,7 @@ func (e *voiceEngine) setMic(on bool) {
 	}
 	e.micOn = on
 	if on {
-		sdl.ClearQueuedAudio(e.capture) // drop stale pre-press audio
+		e.capture.Clear() // drop stale pre-press audio
 	}
 }
 
@@ -250,18 +247,18 @@ func (e *voiceEngine) adaptVoice() {
 // bufferMs reports how much audio is buffered for playback, in milliseconds — the
 // voice output latency we add (shown on the voice-latency chip). 0 when not in voice.
 func (e *voiceEngine) bufferMs() int {
-	if e == nil || e.playback == 0 {
+	if e == nil || e.playback == nil {
 		return 0
 	}
-	return int(sdl.GetQueuedAudioSize(e.playback)) / voiceBytesPerMs
+	return int(e.playback.Queued()) / voiceBytesPerMs
 }
 
 func (e *voiceEngine) pumpCapture() {
 	if !e.micOn || !e.canTalk() {
 		return
 	}
-	for n := 0; n < voiceCaptureDrainCap && sdl.GetQueuedAudioSize(e.capture) >= voiceFrameBytes; n++ {
-		got, err := sdl.DequeueAudio(e.capture, e.capBuf)
+	for n := 0; n < voiceCaptureDrainCap && e.capture.Available() >= voiceFrameBytes; n++ {
+		got, err := e.capture.Get(e.capBuf)
 		if err != nil || got < voiceFrameBytes {
 			return
 		}
@@ -279,12 +276,12 @@ func (e *voiceEngine) pumpPlayback() {
 	// Starve = the output ran dry while a peer's audio was arriving (< ~250 ms ago) —
 	// a real jitter underrun, not just silence (DTX stops frames during silence, so a
 	// quiet gap must NOT be counted). adaptVoice deepens the buffer when this happens.
-	if sdl.GetQueuedAudioSize(e.playback) == 0 && time.Since(e.lastRecv) < 250*time.Millisecond {
+	if e.playback.Queued() == 0 && time.Since(e.lastRecv) < 250*time.Millisecond {
 		e.starves++
 	}
 	// Pace to the (adaptive) output target so latency stays bounded: only mix-and-queue
 	// while fewer than playTarget frames are buffered.
-	for sdl.GetQueuedAudioSize(e.playback) < uint32(e.playTarget)*voiceFrameBytes {
+	for e.playback.Queued() < e.playTarget*voiceFrameBytes {
 		if !e.mixOneFrame() {
 			return // nobody has audio queued — let the buffer drain to silence
 		}
@@ -309,7 +306,7 @@ func (e *voiceEngine) mixOneFrame() bool {
 	if !mixFrames(e.out, e.acc, e.mixScratch, vol) {
 		return false
 	}
-	_ = sdl.QueueAudio(e.playback, i16AsBytes(e.out))
+	_ = e.playback.Put(i16AsBytes(e.out))
 	return true
 }
 
@@ -345,12 +342,10 @@ func (e *voiceEngine) close() {
 	if e == nil {
 		return
 	}
-	if e.capture != 0 {
-		sdl.PauseAudioDevice(e.capture, true)
-		sdl.CloseAudioDevice(e.capture)
+	if e.capture != nil {
+		e.capture.Destroy()
 	}
-	sdl.PauseAudioDevice(e.playback, true)
-	sdl.CloseAudioDevice(e.playback)
+	e.playback.Destroy()
 	if e.enc != nil {
 		e.enc.Close()
 	}

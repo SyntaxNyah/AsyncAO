@@ -895,7 +895,7 @@ func (s *TextureStore) AppendStream(base string, d *assets.Decoded) error {
 		// while every appended frame stays bilinear (the "frame 0 crisp, the
 		// rest blurry" regression). No Flush is needed: these are brand-new
 		// textures with no copies queued in the batch yet.
-		if page.scaleModeSet && scaleModeSupported {
+		if page.scaleModeSet {
 			for _, t := range frames {
 				setTextureScaleMode(t, page.scaleMode)
 			}

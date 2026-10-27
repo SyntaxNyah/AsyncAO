@@ -73,26 +73,3 @@ func TestSwapSnapEvictsOldestAtCap(t *testing.T) {
 		t.Error("newest URL must survive")
 	}
 }
-
-// TestMusicClockDisabledOrEmpty pins that MusicClock reports ok=false — never
-// crashing — on a device with nothing to read: disabled, or enabled but with no
-// loaded stream (music==nil). Both return BEFORE any cgo call (the nil/enabled
-// guard), so no SDL device is needed. We deliberately do NOT test the live
-// symbol-resolution path here: it needs a real playing stream, and feeding the
-// bogus non-nil *mix.Music sentinel other tests use would dereference garbage in
-// C.
-func TestMusicClockDisabledOrEmpty(t *testing.T) {
-	// Disabled device: ok=false.
-	if _, _, ok := (&Audio{}).MusicClock(); ok {
-		t.Error("a disabled device must report MusicClock ok=false")
-	}
-	// Enabled but no stream loaded: ok=false (guard trips before any cgo call).
-	if _, _, ok := (&Audio{enabled: true}).MusicClock(); ok {
-		t.Error("an enabled device with no stream must report MusicClock ok=false")
-	}
-	// A nil receiver is also safe.
-	var nilA *Audio
-	if _, _, ok := nilA.MusicClock(); ok {
-		t.Error("a nil Audio must report MusicClock ok=false")
-	}
-}

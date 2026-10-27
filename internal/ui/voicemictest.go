@@ -14,7 +14,7 @@ import (
 // (sidetone). Main-thread only (SDL queue API), driven by pump() from the frame loop
 // exactly like the live engine; nil/inactive ⇒ ~free.
 //
-// It deliberately reuses voiceFrameBytes / voiceDeviceSamples / voicePlayTargetFrames
+// It deliberately reuses voiceFrameBytes / voicePlayTargetFrames
 // from voiceaudio.go so the test path matches the real engine's framing.
 
 const (
@@ -29,10 +29,10 @@ const (
 // micTester owns the capture device (and a playback device while sidetone is on) for
 // the settings mic test. nil when no test is running.
 type micTester struct {
-	capture  sdl.AudioDeviceID
-	playback sdl.AudioDeviceID // 0 unless sidetone is on
-	buf      []byte            // reusable dequeue scratch (one frame)
-	level    float64           // smoothed 0..1 input level for the meter
+	capture  *sdl.AudioStream
+	playback *sdl.AudioStream // nil unless sidetone is on
+	buf      []byte           // reusable dequeue scratch (one frame)
+	level    float64          // smoothed 0..1 input level for the meter
 	sidetone bool
 }
 
@@ -45,21 +45,20 @@ func (a *App) startMicTest(sidetone bool) {
 		Freq:     voice.SampleRate,
 		Format:   sdl.AUDIO_S16SYS,
 		Channels: voice.Channels,
-		Samples:  voiceDeviceSamples,
 	}
-	cap, err := sdl.OpenAudioDevice(a.d.Prefs.Load().VoiceInputDevice, true, &spec, nil, 0)
+	cap, err := sdl.OpenAudioDeviceStream(a.d.Prefs.Load().VoiceInputDevice, true, &spec)
 	if err != nil {
 		a.pushDebug("mic test: no capture device available")
 		return
 	}
 	mt := &micTester{capture: cap, buf: make([]byte, voiceFrameBytes), sidetone: sidetone}
 	if sidetone {
-		if play, err := sdl.OpenAudioDevice("", false, &spec, nil, 0); err == nil {
+		if play, err := sdl.OpenAudioDeviceStream("", false, &spec); err == nil {
 			mt.playback = play
-			sdl.PauseAudioDevice(play, false)
+			play.Resume()
 		}
 	}
-	sdl.PauseAudioDevice(cap, false) // start recording
+	cap.Resume() // start recording
 	a.micTest = mt
 }
 
@@ -78,13 +77,11 @@ func (mt *micTester) close() {
 	if mt == nil {
 		return
 	}
-	if mt.capture != 0 {
-		sdl.PauseAudioDevice(mt.capture, true)
-		sdl.CloseAudioDevice(mt.capture)
+	if mt.capture != nil {
+		mt.capture.Destroy()
 	}
-	if mt.playback != 0 {
-		sdl.PauseAudioDevice(mt.playback, true)
-		sdl.CloseAudioDevice(mt.playback)
+	if mt.playback != nil {
+		mt.playback.Destroy()
 	}
 }
 
@@ -93,12 +90,12 @@ func (mt *micTester) close() {
 // is running. Mirrors voiceEngine.pump's framing so the test reflects the real path.
 func (a *App) micTestPump() {
 	mt := a.micTest
-	if mt == nil || mt.capture == 0 {
+	if mt == nil || mt.capture == nil {
 		return
 	}
 	got := false
-	for n := 0; n < voiceCaptureDrainCap && sdl.GetQueuedAudioSize(mt.capture) >= voiceFrameBytes; n++ {
-		read, err := sdl.DequeueAudio(mt.capture, mt.buf)
+	for n := 0; n < voiceCaptureDrainCap && mt.capture.Available() >= voiceFrameBytes; n++ {
+		read, err := mt.capture.Get(mt.buf)
 		if err != nil || read < voiceFrameBytes {
 			break
 		}
@@ -109,8 +106,8 @@ func (a *App) micTestPump() {
 		} else { // slow release
 			mt.level += (lvl - mt.level) * micMeterRelease
 		}
-		if mt.playback != 0 && sdl.GetQueuedAudioSize(mt.playback) < micMeterSidetoneCapFrames*voiceFrameBytes {
-			_ = sdl.QueueAudio(mt.playback, mt.buf)
+		if mt.playback != nil && mt.playback.Queued() < micMeterSidetoneCapFrames*voiceFrameBytes {
+			_ = mt.playback.Put(mt.buf)
 		}
 	}
 	if !got { // no input this frame → let the meter fall toward zero

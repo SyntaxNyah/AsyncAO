@@ -38,16 +38,7 @@ func (p *PreviewWindow) LinkOwner(mainWin *sdl.Window) bool {
 	if p == nil || p.win == nil || mainWin == nil {
 		return false
 	}
-	childInfo, err := p.win.GetWMInfo()
-	if err != nil || childInfo == nil {
-		return false
-	}
-	child := childInfo.GetWindowsInfo().Window
-	ownerInfo, err := mainWin.GetWMInfo()
-	if err != nil || ownerInfo == nil {
-		return false
-	}
-	owner := ownerInfo.GetWindowsInfo().Window
+	child, owner := p.win.Win32Handle(), mainWin.Win32Handle()
 	if child == nil || owner == nil {
 		return false
 	}

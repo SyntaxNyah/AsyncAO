@@ -12,7 +12,7 @@ import (
 // vignette (darkened edges), scanlines, and animated film grain. All OFF by default; each is
 // a CACHED texture blended in a single stretched blit, so an enabled effect costs one GPU
 // blit per frame and a disabled one is free (an early return). Built GPU-side via the
-// renderer (SDL2's 2D path has no custom fragment shaders); the size-dependent scanline
+// renderer (SDL's 2D renderer has no custom fragment shaders); the size-dependent scanline
 // texture regenerates only when the stage size changes — never per frame. Steady-state is
 // 0-alloc: the overlays are reused and the blit destination is a Viewport scratch rect.
 

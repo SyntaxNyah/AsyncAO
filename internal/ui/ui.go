@@ -2423,7 +2423,7 @@ func clipIntersect(r, prev sdl.Rect, had bool) sdl.Rect {
 //
 // Returns by value (no closure) so the per-frame log/list draws stay
 // allocation-free — the render loop must not heap-allocate. sdl.Rect.Intersect
-// is pure Go in go-sdl2 (no cgo, nothing escapes).
+// is a noescape cgo call, so nothing escapes.
 func (c *Ctx) pushClip(r sdl.Rect) (prev sdl.Rect, had bool) {
 	// The previous clip comes from the mirror fields, NOT an SDL query:
 	// GetClipRect's named-return pointer escapes through cgo and heap-allocates
@@ -2568,7 +2568,7 @@ func (c *Ctx) deviceFontForAnyPct(font *ttf.Font) *ttf.Font {
 // to the cap. ok=false → caller uses a dedicated texture.
 func (c *Ctx) atlasPlace(surf *sdl.Surface) (*sdl.Texture, sdl.Rect, bool) {
 	// Texture.Update needs the page's pixel format; convert once here
-	// (TTF blended output is ARGB8888 on SDL2 — usually a no-op check).
+	// (TTF blended output is ARGB8888 — usually a no-op check).
 	up := surf
 	if surf.Format.Format != uint32(sdl.PIXELFORMAT_ARGB8888) {
 		conv, err := surf.ConvertFormat(uint32(sdl.PIXELFORMAT_ARGB8888), 0)

@@ -561,9 +561,8 @@ func (m *MessageRaster) draw(ren *sdl.Renderer, visibleRunes int, x, y int32, ex
 		m.drawLines(ren, visibleRunes, x, y, exact)
 	}
 	if exact {
-		// Restore by recomputing the scale, not by reading it back: go-sdl2's GetScale
-		// takes the address of its named returns for cgo, so every call heap-allocates
-		// two float32s — a per-frame alloc the draw loop can't have. devScale is the
+		// Restore by recomputing the scale, not by reading it back: the value is
+		// already known here, so a GetScale round trip through cgo buys nothing. devScale is the
 		// right source because deviceExact only returns true when it EQUALS renderPct,
 		// and this is the same float32(pct)/100 the frame loop set the scale with.
 		s := float32(m.devScale) / float32(DefaultDevScale)

@@ -3,8 +3,9 @@ package assets
 import "image"
 
 // DXT / BC compressed-texture FOURCC values (SDL_PIXELFORMAT_DXT1 / DXT5).
-// go-sdl2 v0.4.40 does not expose these constants, so they are defined here as
-// the raw SDL_DEFINE_PIXELFOURCC('D','X','T',n) values CreateTexture expects.
+// They are defined here, not in internal/sdl, because this package is SDL-free
+// (hard rule 1): the raw SDL_DEFINE_PIXELFOURCC('D','X','T',n) values
+// CreateTexture expects.
 // The decode pool stamps Decoded.DXTFormat with one of these; the render thread
 // passes it straight through to CreateTexture.
 const (

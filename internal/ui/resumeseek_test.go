@@ -76,7 +76,7 @@ func TestResumeSeek(t *testing.T) {
 				t.Errorf("seek = %v, want %v", seek, c.wantSeek)
 			}
 			// Invariant: a resumed seek is never negative (a negative
-			// Mix_SetMusicPosition would fail and silently restart).
+			// seek would fail and silently restart).
 			if seek < 0 {
 				t.Errorf("seek = %v is negative", seek)
 			}

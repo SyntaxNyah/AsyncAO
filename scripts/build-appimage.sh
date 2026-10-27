@@ -3,7 +3,7 @@
 # Build a self-contained AppImage for AsyncAO (Linux x86_64).
 #
 # Output: dist/AsyncAO-x86_64.AppImage — a single executable that bundles the
-# SDL2 / SDL2_ttf / SDL2_mixer / libwebp / libavif runtime (resolved from the
+# SDL3 / SDL3_ttf / SDL3_mixer / libwebp / libavif runtime (resolved from the
 # binary's NEEDED libraries by linuxdeploy), so it runs on any reasonably modern
 # x86_64 desktop with no install step. Mirrors the CI "AppImage (Linux x86_64)"
 # job; run it locally after installing the dev deps (scripts/setup-deps.sh).
@@ -15,10 +15,10 @@
 # Env: APPIMAGE_OUTPUT overrides the output filename (default
 # AsyncAO-x86_64.AppImage) — used by CI to name the Discord-free variant.
 #
-# Note: SDL2_mixer codec back-ends that are dlopen()ed at runtime (rather than
-# linked) are not visible to ldd and so are not bundled; the host's SDL2_mixer
-# codecs fill in. Music/SFX of the common formats (Opus/OGG/MP3/WAV) work on
-# desktops that ship SDL2_mixer, which is the overwhelming majority.
+# Note: codec back-ends SDL3_mixer dlopen()s at runtime are not visible to ldd
+# and so are not bundled. scripts/build-sdl3.sh and the CI setup build the mixer
+# with Opus linked in (SDLMIXER_DEPS_SHARED=OFF) and Vorbis/MP3/FLAC/WAV built
+# in, so every format AO uses is covered by what ldd sees.
 set -euo pipefail
 
 # --- locate the repo root (this script lives in scripts/) --------------------

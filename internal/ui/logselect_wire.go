@@ -62,12 +62,8 @@ func (c *Ctx) logRowSplit(font, emojiFont *ttf.Font, line, speaker string, nameO
 		return 0, 0, false
 	}
 	// Both widths come from the MEMO, never font.SizeUTF8 directly: this runs
-	// for every named row of both logs on every frame, and a raw SizeUTF8
-	// heap-allocates through cgo (go-sdl2 hands the out-params' addresses
-	// across the boundary — the same escape the cgoRect idiom exists for).
-	// Measured raw, it cost the whole-screen zero-alloc gates two allocations
-	// per named row per frame — invisible until the OOC box became default and
-	// the gate fixture finally had OOC lines in it.
+	// for every named row of both logs on every frame, and a raw SizeUTF8 is a
+	// cgo call into SDL_ttf's shaper for every row.
 	if pre := line[:idx]; pre != "" {
 		if _, ok := c.fontTextWidthWeight(font, pre, bold); !ok {
 			return 0, 0, false

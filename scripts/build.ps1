@@ -42,13 +42,24 @@ Write-Host "Built bin\asyncao.exe"
 # Stage the runtime DLL closure next to the exe so it runs without MSYS2 on PATH.
 # Walked recursively from the exe's import table (objdump) and resolved against
 # the UCRT64 bin, rather than a hardcoded list: that list silently rotted once
-# (SDL2_mixer pulled in libFLAC/libjpeg-8, the list didn't, the dev build broke
+# (the mixer pulled in libFLAC/libjpeg-8, the list didn't, the dev build broke
 # with "DLL missing"). This computes the exact set, so it can't drift again.
 # CI's release path does the equivalent with `ldd`.
+# SDL3_mixer loads its codec libraries on demand, so no import table names
+# them: they are seeded here. Opus (AO's main music format) needs opusfile;
+# Vorbis, MP3, FLAC and WAV are built into SDL3_mixer. MIDI and the LGPL
+# tracker codecs stay out, as they were with the SDL Mixer X build.
+$onDemand = @("libopusfile-0.dll")
 $seen = @{}
 $queue = New-Object System.Collections.Generic.Queue[string]
 $queue.Enqueue("bin\asyncao.exe")
 $staged = 0
+foreach ($d in $onDemand) {
+    $seen[$d.ToLower()] = $true
+    Copy-Item (Join-Path "$msys\bin" $d) bin\ -Force
+    $queue.Enqueue((Join-Path "$msys\bin" $d))
+    $staged++
+}
 while ($queue.Count -gt 0) {
     $f = $queue.Dequeue()
     $imports = & "$msys\bin\objdump.exe" -p $f 2>$null |

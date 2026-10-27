@@ -7,12 +7,12 @@ import (
 )
 
 // eventWindowID returns the WindowID carried by ev and ok=true, for every
-// SDL event type go-sdl2 v0.4.40 defines a WindowID field for. ok=false for
+// event type internal/sdl defines a WindowID field for. ok=false for
 // every other type (QuitEvent, joystick/controller events, …), which this
 // loop never has to route by window because they aren't addressed to any
 // one window. Extracted as its own function — rather than inlined into
 // eventForPreviewWindow — because it is the one place that has to be kept in
-// sync with go-sdl2's event set; everything downstream just asks "does this
+// sync with internal/sdl's event set; everything downstream just asks "does this
 // id match".
 func eventWindowID(ev sdl.Event) (id uint32, ok bool) {
 	switch e := ev.(type) {

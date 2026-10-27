@@ -1742,13 +1742,9 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	smooth := a.d.Prefs.Load().SmoothScaling
 	if next := c.Checkbox(pad, y, "Smooth texture scaling (linear filtering; re-streams loaded images when toggled)", smooth); next != smooth {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.SmoothScaling = next })
-		hint := "1"
-		if !next {
-			hint = "0"
-		}
-		// The hint applies at texture CREATION; purge so everything
+		// The filter applies at texture CREATION; purge so everything
 		// re-streams (demand pipeline + scenery heal repopulate live).
-		sdl.SetHint(sdl.HINT_RENDER_SCALE_QUALITY, hint)
+		_ = c.Ren.SetDefaultTextureScaleMode(TextureScaleMode(next))
 		a.d.Store.Purge()
 		// Purge destroyed the pinned shape masks SYNCHRONOUSLY — drop the
 		// frame-resolved Ctx pointers before anything shaped draws this frame.
@@ -2176,4 +2172,13 @@ func (a *App) drawContentToolsCallout(y, w int32) int32 {
 		a.openDemoBrowserFor(purposePackage) // pick → probe → package once ready
 	}
 	return y + panelH + 12
+}
+
+// TextureScaleMode is the texture filter for the "Smooth texture scaling"
+// setting: linear when on, nearest when off.
+func TextureScaleMode(smooth bool) sdl.ScaleMode {
+	if smooth {
+		return sdl.ScaleModeLinear
+	}
+	return sdl.ScaleModeNearest
 }

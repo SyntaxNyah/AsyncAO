@@ -8,9 +8,9 @@ import "encoding/binary"
 // magic-byte-walking style as Sniff (sniff.go).
 //
 // AO and DRO loop points (issue #48) are expressed in SAMPLE COUNTS, but
-// AsyncAO seeks in seconds — SDL_mixer's Mix_SetMusicPosition takes a
-// double — so converting needs `seconds = samples / rate`, and SDL_mixer
-// will not report a track's rate. AO2-Client itself never needs one:
+// AsyncAO's music API speaks seconds (internal/mix converts them to frames
+// at the decoded rate), so converting needs `seconds = samples / rate`, read
+// from the file itself. AO2-Client itself never needs one:
 // aomusicplayer.cpp:92-93 declares `float sample_rate;`, fills it via
 // `BASS_ChannelGetAttribute(newstream, BASS_ATTRIB_FREQ, &sample_rate)`,
 // and then never reads it again — BASS positions are byte offsets into a

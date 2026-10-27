@@ -3,21 +3,21 @@ package render
 import (
 	"testing"
 	"time"
-	"unsafe"
-
-	"github.com/SyntaxNyah/AsyncAO/internal/mix"
 )
 
 // TestPlayMusicAtIdempotent pins the cross-tab resume guard: PlayMusicAt for the
 // EXACT URL already playing is a no-op — it neither re-fetches nor re-seeks a live
-// stream, so a switch back to a tab whose track was kept rolling (ducked) preserves
+// song, so a switch back to a tab whose track was kept rolling (ducked) preserves
 // its true position untouched. A disabled device is also a no-op. Both paths return
-// BEFORE touching the (nil-in-test) Manager, so this runs headlessly like
-// TestPurgePendingMusic. CurrentMusicURL / MusicPlaying accessors are pinned too.
+// BEFORE touching the (nil-in-test) Manager.
 func TestPlayMusicAtIdempotent(t *testing.T) {
-	// Disabled device: no-op, no Manager access, no pending entry.
-	off := &Audio{pending: map[string]pendingPlay{}}
-	off.PlayMusicAt("http://cdn/song.opus", true, 0, 12)
+	const (
+		url     = "http://cdn/song.opus"
+		songSec = 2.0
+		seekSec = 30
+	)
+	off := newAudio(nil, nil)
+	off.PlayMusicAt(url, true, 0, seekSec)
 	if len(off.pending) != 0 {
 		t.Error("a disabled device must not queue a pending music fetch")
 	}
@@ -25,24 +25,12 @@ func TestPlayMusicAtIdempotent(t *testing.T) {
 		t.Error("a disabled device must report no music playing")
 	}
 
-	// Enabled + this exact URL already the live stream: PlayMusicAt is a no-op.
-	// A non-nil sentinel *mix.Music makes MusicPlaying() true without decoding; the
-	// guard only compares != nil and never dereferences it, so pointing it at a real
-	// dummy byte is safe (mix.Music is an opaque C type — can't be allocated with new).
-	var dummy byte
-	live := &Audio{
-		enabled:  true,
-		pending:  map[string]pendingPlay{},
-		musicURL: "http://cdn/song.opus",
-		music:    (*mix.Music)(unsafe.Pointer(&dummy)), // non-nil sentinel; never dereferenced
-	}
-	if live.CurrentMusicURL() != "http://cdn/song.opus" {
-		t.Fatalf("CurrentMusicURL = %q, want the live URL", live.CurrentMusicURL())
-	}
+	live := newTestAudio(t)
+	live.startMusic(url, testSong(songSec), false, 0, 0)
 	if !live.MusicPlaying() {
-		t.Fatal("MusicPlaying must be true with an enabled device and a loaded stream")
+		t.Fatal("MusicPlaying must be true with a song loaded")
 	}
-	live.PlayMusicAt("http://cdn/song.opus", true, 0, 30) // same URL → idempotent
+	live.PlayMusicAt(url, true, 0, seekSec) // same URL → idempotent
 	if len(live.pending) != 0 {
 		t.Error("PlayMusicAt for the already-playing URL must NOT queue a fetch (idempotent, position preserved)")
 	}
@@ -50,36 +38,21 @@ func TestPlayMusicAtIdempotent(t *testing.T) {
 
 // TestCurrentMusicURLReflectsLiveStream pins the render contract the cross-tab
 // delivery-time un-duck depends on: CurrentMusicURL reports the URL the mixer is
-// ACTUALLY playing right now (musicURL), which only advances when startMusic swaps
-// in a delivered track — NEVER at request time. The ui side reads it each frame to
-// decide whether the awaited track has landed yet; a still-empty ("") or foreign
-// stream must read as "not yet", so the duck holds. A stopped/fresh device reports
-// "" and MusicPlaying()=false; a device carrying a live stream reports that exact
-// URL. No SDL device needed (both accessors are plain field reads).
+// ACTUALLY playing right now, which only advances when startMusic swaps in a
+// delivered track — NEVER at request time. A fresh device reports "" and
+// MusicPlaying()=false; a device playing a song reports that exact URL.
 func TestCurrentMusicURLReflectsLiveStream(t *testing.T) {
-	// Fresh/stopped device: nothing playing.
-	fresh := &Audio{enabled: true, pending: map[string]pendingPlay{}}
-	if fresh.CurrentMusicURL() != "" {
-		t.Errorf("a fresh device must report no current music, got %q", fresh.CurrentMusicURL())
+	const (
+		foreign = "http://cdn/foreign.opus"
+		songSec = 2.0
+	)
+	a := newTestAudio(t)
+	if a.CurrentMusicURL() != "" || a.MusicPlaying() {
+		t.Errorf("a fresh device must report no current music, got %q", a.CurrentMusicURL())
 	}
-	if fresh.MusicPlaying() {
-		t.Error("a fresh device (no loaded stream) must report MusicPlaying()=false")
-	}
-
-	// A live stream on a FOREIGN url: CurrentMusicURL is that foreign url — so the ui
-	// await check (want != foreign) correctly reads "awaited track not delivered yet".
-	var dummy byte
-	foreign := &Audio{
-		enabled:  true,
-		pending:  map[string]pendingPlay{},
-		musicURL: "http://cdn/foreign.opus",
-		music:    (*mix.Music)(unsafe.Pointer(&dummy)), // non-nil sentinel; never dereferenced
-	}
-	if foreign.CurrentMusicURL() != "http://cdn/foreign.opus" {
-		t.Errorf("CurrentMusicURL = %q, want the live foreign url", foreign.CurrentMusicURL())
-	}
-	if !foreign.MusicPlaying() {
-		t.Error("a device with a loaded stream must report MusicPlaying()=true")
+	a.startMusic(foreign, testSong(songSec), false, 0, 0)
+	if a.CurrentMusicURL() != foreign || !a.MusicPlaying() {
+		t.Errorf("CurrentMusicURL = %q playing=%v, want the live song", a.CurrentMusicURL(), a.MusicPlaying())
 	}
 }
 
@@ -115,42 +88,6 @@ func TestBuiltinAlertWAV(t *testing.T) {
 	}
 	if bits := le16(34); bits != 16 {
 		t.Errorf("bits/sample = %d, want 16", bits)
-	}
-}
-
-// TestReapFinishedMusicGuards pins reapFinishedMusic's early-return guards — the
-// branches that decide NOT to reap WITHOUT polling the mixer, so they're testable
-// headlessly (the actual reap-on-natural-end needs a live SDL_mixer and is argued by
-// construction, like evictChunk). The guards are the safety contract: a LOOPING stream
-// (musicLoop=true) is never reaped (a looper never ends on its own, and Mix_PlayingMusic
-// must not even be consulted); a disabled device and a device with no loaded stream are
-// no-ops. This is what keeps the natural-end reaper from ever clobbering a live looping
-// area track.
-func TestReapFinishedMusicGuards(t *testing.T) {
-	var dummy byte
-	live := (*mix.Music)(unsafe.Pointer(&dummy)) // non-nil sentinel; never dereferenced
-
-	// Looping stream: must return before touching the mixer (musicLoop guard). If it
-	// polled Mix_PlayingMusic here on an uninitialised mixer the test would crash — the
-	// clean return IS the assertion.
-	loop := &Audio{enabled: true, music: live, musicURL: "http://cdn/area.opus", musicLoop: true}
-	loop.reapFinishedMusic()
-	if loop.music == nil || loop.musicURL == "" {
-		t.Error("a looping stream must NEVER be reaped (it never ends on its own)")
-	}
-
-	// Disabled device: no-op (never polls the mixer).
-	off := &Audio{enabled: false, music: live, musicURL: "http://cdn/x.opus", musicLoop: false}
-	off.reapFinishedMusic()
-	if off.music == nil {
-		t.Error("a disabled device must not reap (or poll the mixer)")
-	}
-
-	// No loaded stream: no-op.
-	empty := &Audio{enabled: true}
-	empty.reapFinishedMusic()
-	if empty.musicURL != "" {
-		t.Error("an empty device must stay empty")
 	}
 }
 
