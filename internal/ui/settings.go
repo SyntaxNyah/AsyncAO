@@ -9,6 +9,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 	"github.com/SyntaxNyah/AsyncAO/internal/videoenc"
@@ -1962,7 +1963,8 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	for i, label := range [5]string{"Background", "Gradient ↓", "Border", "Title bar", "Text"} {
 		c.Label(pad+16, y+4, label, ColTextDim)
 		swatch := ColPanel
-		if col, ok := parseHexColor(next[i]); ok {
+		if c, ok := parse.HexColor(next[i]); ok {
+			col := sdl.Color(c)
 			swatch = col
 		}
 		swR := sdl.Rect{X: pad + 120, Y: y + 1, W: 18, H: 18}

@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/veandco/go-sdl2/sdl"
 )
@@ -79,7 +80,8 @@ func (a *App) customChromeColors() [7]sdl.Color {
 	out := defaultKitColors
 	hex := a.d.Prefs.Load().CustomChromeHex
 	for i := range out {
-		if col, ok := parseHexColor(hex[i]); ok {
+		if c, ok := parse.HexColor(hex[i]); ok {
+			col := sdl.Color(c)
 			out[i] = col
 		}
 	}
@@ -271,7 +273,8 @@ func (a *App) drawCustomChromeEditor(y int32) int32 {
 	labels := [7]string{"Background", "Panel", "Raised panel", "Accent", "Text", "Dim text", "Danger"}
 	hex := a.d.Prefs.Load().CustomChromeHex
 	colOf := func(i int) sdl.Color {
-		if col, ok := parseHexColor(hex[i]); ok {
+		if c, ok := parse.HexColor(hex[i]); ok {
+			col := sdl.Color(c)
 			return col
 		}
 		return defaultKitColors[i] // stock dark for blank / unparseable
@@ -377,7 +380,8 @@ func (a *App) wheelHexEditor(y int32, fieldID string, hexBuf *string, cur sdl.Co
 	}
 	if next, _ := c.TextField(fieldID, sdl.Rect{X: hx, Y: y + 42, W: 100, H: fieldH}, *hexBuf, "RRGGBB"); next != *hexBuf {
 		*hexBuf = next
-		if col, ok := parseHexColor(next); ok {
+		if c, ok := parse.HexColor(next); ok {
+			col := sdl.Color(c)
 			apply(col)
 		}
 	}

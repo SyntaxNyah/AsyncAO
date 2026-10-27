@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/text"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -698,26 +699,13 @@ type ProfilePref struct {
 // clampProfile bounds every field length (the setter and the load-merge both run
 // it, so a hand-edited prefs file can't smuggle in an oversized field).
 func clampProfile(p ProfilePref) ProfilePref {
-	p.Name = clampLen(p.Name, profileNameMax)
-	p.Pronouns = clampLen(p.Pronouns, profilePronounsMax)
-	p.Tag = clampLen(p.Tag, profileTagMax)
-	p.Bio = clampLen(p.Bio, profileBioMax)
-	p.ThemeSong = clampLen(p.ThemeSong, profileURLMax)
-	p.ArtURL = clampLen(p.ArtURL, profileURLMax)
+	p.Name = text.Truncate(p.Name, profileNameMax)
+	p.Pronouns = text.Truncate(p.Pronouns, profilePronounsMax)
+	p.Tag = text.Truncate(p.Tag, profileTagMax)
+	p.Bio = text.Truncate(p.Bio, profileBioMax)
+	p.ThemeSong = text.Truncate(p.ThemeSong, profileURLMax)
+	p.ArtURL = text.Truncate(p.ArtURL, profileURLMax)
 	return p
-}
-
-// clampLen truncates s to at most n runes (rune-safe so a multibyte tail can't be
-// split mid-character).
-func clampLen(s string, n int) string {
-	if len(s) <= n { // fast path: byte length ≤ n ⇒ rune count ≤ n
-		return s
-	}
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return string(r[:n])
 }
 
 // AutoStatusPref (#M1) auto-sets your presence status from words you type in IC. Each
@@ -751,11 +739,11 @@ func defaultAutoStatusPref() AutoStatusPref {
 
 // sanitizeAutoStatus bounds every word field (the setter and the load-merge both run it).
 func sanitizeAutoStatus(a AutoStatusPref) AutoStatusPref {
-	a.ClearWords = clampLen(a.ClearWords, autoStatusWordsMax)
-	a.AFKWords = clampLen(a.AFKWords, autoStatusWordsMax)
-	a.BusyWords = clampLen(a.BusyWords, autoStatusWordsMax)
-	a.WritingWords = clampLen(a.WritingWords, autoStatusWordsMax)
-	a.LFRPWords = clampLen(a.LFRPWords, autoStatusWordsMax)
+	a.ClearWords = text.Truncate(a.ClearWords, autoStatusWordsMax)
+	a.AFKWords = text.Truncate(a.AFKWords, autoStatusWordsMax)
+	a.BusyWords = text.Truncate(a.BusyWords, autoStatusWordsMax)
+	a.WritingWords = text.Truncate(a.WritingWords, autoStatusWordsMax)
+	a.LFRPWords = text.Truncate(a.LFRPWords, autoStatusWordsMax)
 	return a
 }
 

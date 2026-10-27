@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
@@ -260,10 +261,10 @@ func ParsePreset(src []byte) (*Preset, error) {
 	}
 
 	if raw, present := doc.Get(secPreset, "design_w"); present {
-		p.DesignW = value.Clamp(atoiTrim(raw), PresetDesignMinPx, PresetDesignMaxPx)
+		p.DesignW = value.Clamp(parse.AtoiOr(raw, 0), PresetDesignMinPx, PresetDesignMaxPx)
 	}
 	if raw, present := doc.Get(secPreset, "design_h"); present {
-		p.DesignH = value.Clamp(atoiTrim(raw), PresetDesignMinPx, PresetDesignMaxPx)
+		p.DesignH = value.Clamp(parse.AtoiOr(raw, 0), PresetDesignMinPx, PresetDesignMaxPx)
 	}
 	if raw, present := doc.Get(secPreset, "full_canvas"); present {
 		if p.FullCanvas, err = parseTextList(raw, PresetFullCanvasCap); err != nil {

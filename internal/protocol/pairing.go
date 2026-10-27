@@ -3,6 +3,8 @@ package protocol
 import (
 	"strconv"
 	"strings"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 )
 
 // Pair z-order, from the 2.8 "<id>^<order>" extension. Semantics mirror
@@ -84,7 +86,7 @@ func ParsePairID(raw string) (id, order int, hasOrder bool) {
 	if !found {
 		return id, PairSpeakerInFront, false
 	}
-	switch atoiDefault(orderPart, PairSpeakerInFront) {
+	switch parse.AtoiOr(orderPart, PairSpeakerInFront) {
 	case PairSpeakerBehind:
 		return id, PairSpeakerBehind, true
 	default:
@@ -100,9 +102,9 @@ func ParseOffset(raw string) (x, y int) {
 		return 0, 0
 	}
 	xPart, yPart, found := strings.Cut(raw, "&")
-	x = atoiDefault(xPart, 0)
+	x = parse.AtoiOr(xPart, 0)
 	if !found {
 		return x, 0
 	}
-	return x, atoiDefault(yPart, 0)
+	return x, parse.AtoiOr(yPart, 0)
 }

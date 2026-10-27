@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -30,7 +31,8 @@ var partColorLabels = [config.LayoutPartColorCount]string{"IC log / right column
 func (a *App) refreshPartColors() {
 	hex := a.d.Prefs.Load().LayoutPartHex
 	for i := range hex {
-		col, ok := parseHexColor(hex[i])
+		c, ok := parse.HexColor(hex[i])
+		col := sdl.Color(c)
 		a.partColorOn[i] = ok
 		if ok {
 			a.partColors[i] = col

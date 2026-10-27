@@ -11,6 +11,7 @@ import (
 
 	aolib "github.com/AO-Underground/aolib/go/v2"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -731,7 +732,7 @@ func (s *Session) handleTyped(t aolib.Outgoing) (ev []Event, ok bool) {
 			}
 			switch v.UpdateType {
 			case aolib.AreaUpdateTypePlayerCount:
-				s.AreaInfo[i].Players = atoiOr(d, -1)
+				s.AreaInfo[i].Players = parse.AtoiOr(d, -1)
 			case aolib.AreaUpdateTypeStatus:
 				s.AreaInfo[i].Status = d
 			case aolib.AreaUpdateTypeCaseManager:
@@ -806,7 +807,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		s.reply(protocol.NewTypedPacket(&aolib.HI{HDID: s.HDID}))
 
 	case "ID":
-		s.PlayerID = atoiOr(p.Field(0), 0)
+		s.PlayerID = parse.AtoiOr(p.Field(0), 0)
 		s.Software = p.Field(1)
 		s.reply(protocol.NewTypedPacket(&aolib.IDToServer{Software: protocol.ClientName, Version: protocol.Version}))
 
@@ -877,11 +878,11 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// PlayerStateObserver streams these to every client from connect — no
 		// /getarea, no opt-in — so the live list reacts to joins/leaves and learns
 		// each player's server UID. (../akashi/src/playerstateobserver.cpp.)
-		id := atoiOr(p.Field(0), -1)
+		id := parse.AtoiOr(p.Field(0), -1)
 		if id < 0 {
 			return nil
 		}
-		if atoiOr(p.Field(1), prJoin) == prLeave {
+		if parse.AtoiOr(p.Field(1), prJoin) == prLeave {
 			delete(s.players, id)
 		} else {
 			s.touchPlayer(id) // join (or a benign re-add); fields follow via PU
@@ -893,7 +894,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// character folder, 2 showname, 3 area id (an index into Areas). Servers
 		// send PR before PU, but touchPlayer keeps it order-robust. Name/showname
 		// ship wire-escaped like every other text field — decode them.
-		id := atoiOr(p.Field(0), -1)
+		id := parse.AtoiOr(p.Field(0), -1)
 		if id < 0 {
 			return nil
 		}
@@ -901,7 +902,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		if pl == nil {
 			return nil // at the cap; reconnect re-dumps the roster
 		}
-		switch atoiOr(p.Field(1), -1) {
+		switch parse.AtoiOr(p.Field(1), -1) {
 		case puOOCName:
 			// The witches/wizards Akashi-party forks stream a mod's target IPID
 			// as a trailing "(<hex>)" token on the PU name ("web71 (eea20f10)"),
@@ -924,7 +925,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		case puShowname:
 			pl.Showname = protocol.DecodeField(p.Field(2))
 		case puAreaID:
-			pl.AreaID = atoiOr(p.Field(2), 0)
+			pl.AreaID = parse.AtoiOr(p.Field(2), 0)
 		case puIPID:
 			// Dedicated mod-only IPID field (see puIPID). Sticky like the
 			// name-embedded form: a server that sends it once per player must not
@@ -1004,19 +1005,19 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// and playing it as the song stopped/replaced the area's real music
 		// (playtest: rejoining a server stayed silent). We don't render
 		// ambience channels (yet), so a non-zero channel is a no-op.
-		if atoiOr(p.Field(4), 0) != 0 {
+		if parse.AtoiOr(p.Field(4), 0) != 0 {
 			return nil
 		}
 		// Field 3 = looping, field 5 = MUSIC_EFFECT bit flags (AO2-Client
 		// handle_song, courtroom.cpp:4764-4787). Both are optional on the wire —
 		// old servers send only fields 0-2, so a short packet degrades to the
 		// AsyncAO default (loop forever, no effects). Field(i) returns "" past the
-		// end, and atoiOr falls back, so no bounds check is needed here.
+		// end, and parse.AtoiOr falls back, so no bounds check is needed here.
 		looping := true
 		if v := p.Field(3); v != "" {
 			looping = v == "1"
 		}
-		effects := atoiOr(p.Field(5), 0)
+		effects := parse.AtoiOr(p.Field(5), 0)
 		// NO_REPEAT overrides the looping field (AO2-Client aomusicplayer.cpp:31
 		// `isLooping = loopEnabled && !(effectFlags & NO_REPEAT)`), so the loop
 		// bool the audio sink receives is already authoritative — the render side
@@ -1036,7 +1037,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		default:
 			s.MusicTrack = track
 		}
-		return []Event{{Kind: EventMusic, Text: track, Int: atoiOr(p.Field(1), protocol.UnpairedCharID), Name: p.Field(2),
+		return []Event{{Kind: EventMusic, Text: track, Int: parse.AtoiOr(p.Field(1), protocol.UnpairedCharID), Name: p.Field(2),
 			Loop: looping, MusicEffects: effects}}
 
 	case "BN":
@@ -1073,7 +1074,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return append(evs, Event{Kind: EventBackground, Text: s.Background, Name: p.Field(1), Wipe: true})
 
 	case "PV":
-		s.MyCharID = atoiOr(p.Field(2), protocol.UnpairedCharID)
+		s.MyCharID = parse.AtoiOr(p.Field(2), protocol.UnpairedCharID)
 		// A mute is keyed to a cid (set_mute compares p_cid to m_cid); a new cid
 		// voids the old mute. Clear it on the char change so a stale MU can't keep
 		// the IC input locked after switching characters (AO2 leans on the server
@@ -1129,7 +1130,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// HP#<bar 1=def|2=pro>#<0..10>#% — judge penalty bars
 		// (packet_distribution.cpp → courtroom.cpp set_hp_bar, which
 		// rejects out-of-range states).
-		bar, val := atoiOr(p.Field(0), 0), atoiOr(p.Field(1), -1)
+		bar, val := parse.AtoiOr(p.Field(0), 0), parse.AtoiOr(p.Field(1), -1)
 		if val < 0 || val > HPBarMax {
 			return nil
 		}
@@ -1150,7 +1151,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		if len(p.Fields) == 0 {
 			return nil
 		}
-		return []Event{{Kind: EventWTCE, Text: p.Field(0), Int: atoiOr(p.Field(1), 0)}}
+		return []Event{{Kind: EventWTCE, Text: p.Field(0), Int: parse.AtoiOr(p.Field(1), 0)}}
 
 	case "ZZ":
 		// Incoming modcall broadcast: the body is the pre-formatted notice
@@ -1167,7 +1168,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// ARUP#<type>#<area0>#<area1>…: type 0 players, 1 status, 2 CM,
 		// 3 lock; field n applies to area n−1, out-of-range entries drop
 		// (courtroom.cpp arup_modify bounds-checks the same way).
-		typ := atoiOr(p.Field(0), -1)
+		typ := parse.AtoiOr(p.Field(0), -1)
 		if typ < 0 || typ > 3 {
 			return nil
 		}
@@ -1178,7 +1179,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 			}
 			switch typ {
 			case 0:
-				s.AreaInfo[n].Players = atoiOr(p.Fields[i], -1)
+				s.AreaInfo[n].Players = parse.AtoiOr(p.Fields[i], -1)
 			case 1:
 				s.AreaInfo[n].Status = p.Fields[i]
 			case 2:
@@ -1196,17 +1197,17 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// the measured half-RTT, matching AO2 and KFO byte for byte; see
 		// latency.go for the citations and for why a paused value is not
 		// corrected (it is a display value, not an anchor).
-		id := atoiOr(p.Field(0), -1)
+		id := parse.AtoiOr(p.Field(0), -1)
 		if id < 0 || id >= TimerCount || len(p.Fields) < 2 {
 			return nil
 		}
 		t := &s.Timers[id]
-		switch atoiOr(p.Field(1), -1) {
+		switch parse.AtoiOr(p.Field(1), -1) {
 		case 0:
 			if len(p.Fields) < 3 {
 				return nil
 			}
-			if ms := atoiOr(p.Field(2), -1); ms > 0 {
+			if ms := parse.AtoiOr(p.Field(2), -1); ms > 0 {
 				// Canon tests ms > 0 BEFORE subtracting, so a correction that
 				// eats the whole remainder still starts the clock — it just
 				// anchors in the past and reads 00:00, which is what AO2's
@@ -1221,7 +1222,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 			if len(p.Fields) < 3 {
 				return nil
 			}
-			if ms := atoiOr(p.Field(2), -1); ms > 0 {
+			if ms := parse.AtoiOr(p.Field(2), -1); ms > 0 {
 				t.Running, t.Left = false, time.Duration(ms)*time.Millisecond
 			} else {
 				t.Running, t.Left = false, 0
@@ -1320,7 +1321,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 	case "EE":
 		// Incoming evidence edit: EE#id#name#desc#image. Bounds-guarded like
 		// LE's cap; out-of-range ids drop (the server will re-sync with an LE).
-		id := atoiOr(p.Field(0), -1)
+		id := parse.AtoiOr(p.Field(0), -1)
 		if id < 0 || id >= len(s.Evidence) {
 			return nil
 		}
@@ -1333,7 +1334,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 
 	case "DE":
 		// Incoming evidence delete: DE#id.
-		id := atoiOr(p.Field(0), -1)
+		id := parse.AtoiOr(p.Field(0), -1)
 		if id < 0 || id >= len(s.Evidence) {
 			return nil
 		}
@@ -1350,7 +1351,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		if len(p.Fields) == 0 || p.Field(0) == "" {
 			return nil
 		}
-		cid := atoiOr(p.Field(0), protocol.UnpairedCharID)
+		cid := parse.AtoiOr(p.Field(0), protocol.UnpairedCharID)
 		if cid != s.MyCharID && cid != protocol.UnpairedCharID {
 			return nil // not us and not mute-all
 		}
@@ -1557,14 +1558,6 @@ func boolWire(b bool) string {
 		return "1"
 	}
 	return "0"
-}
-
-func atoiOr(s string, fallback int) int {
-	v, err := strconv.Atoi(strings.TrimSpace(s))
-	if err != nil {
-		return fallback
-	}
-	return v
 }
 
 // boolToInt maps false/true to 0/1 for an Event.Int flag payload.

@@ -9,6 +9,8 @@ package theme
 import (
 	"errors"
 	"fmt"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 )
 
 // ErrSidecarInvalid reports a MODEL the writer refuses because the reader would
@@ -135,7 +137,7 @@ func (s *Sidecar) validateIDs() error {
 			return fmt.Errorf("%w: [%s%s] is not a valid id ([a-z0-9_-], %d max) — the reader would preserve the section and ignore the group",
 				ErrSidecarInvalid, secClockPrefix, id, IDRuneCap)
 		}
-		if n := atoiTrim(id); n != i {
+		if n := parse.AtoiOr(id, 0); n != i {
 			return fmt.Errorf("%w: clock %d is spelled %q, which reads back as clock %d — the group would move on save",
 				ErrSidecarInvalid, i, id, n)
 		}

@@ -12,6 +12,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
@@ -612,7 +613,8 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 		}
 		if next, _ := c.TextField("spritetinthex", sdl.Rect{X: pad + 166, Y: y, W: 100, H: fieldH}, a.spriteTintHex, "RRGGBB"); next != a.spriteTintHex {
 			a.spriteTintHex = next
-			if rgb, ok := parseHex6(next); ok {
+			if c, ok := parse.HexColor(next); ok {
+				rgb := packRGB(c.R, c.G, c.B)
 				a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteTintColor = rgb })
 			}
 		}

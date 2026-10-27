@@ -8,6 +8,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
@@ -864,7 +865,8 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 			}
 			if next, _ := c.TextField(id, sdl.Rect{X: hx + 30, Y: y, W: hexW, H: fieldH}, *buf, "RRGGBB"); next != *buf {
 				*buf = next
-				if col, ok := parseHexColor(next); ok {
+				if c, ok := parse.HexColor(next); ok {
+					col := sdl.Color(c)
 					set(col)
 					a.d.Prefs.SetSpriteStyle(p)
 				}

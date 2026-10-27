@@ -378,7 +378,7 @@ func TruncateBytes(s string, maxBytes int) string // never splits a rune
 
 // internal/helper/parse — untrusted input → values (future home of config value parsing)
 func AtoiOr(s string, fallback int) int           // trims space
-func HexColor(s string) (color.RGBA, bool)        // optional '#', 6/8 digits
+func HexColor(s string) (color.NRGBA, bool)       // optional '#', 6/8 digits, straight alpha
 ```
 Call sites read as `value.Clamp(...)`, `text.Truncate(...)`, `parse.AtoiOr(...)`. Where a local
 name shadows a package (`text` variables are common in ui), import as `htext`.

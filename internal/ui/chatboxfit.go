@@ -183,7 +183,7 @@ const shownameExtraWidthKey = "showname_extra_width"
 // QString::toInt(), which yields 0 for a blank, absent or unparseable value and
 // is then tested with `extra_width > 0` (AO2-Client courtroom.cpp:3357, :3374).
 // So garbage disables the ladder rather than aborting the chatbox — the same
-// tolerance internal/theme's atoiTrim documents for every other design number.
+// tolerance parse.AtoiOr documents for every other design number.
 //
 // Runs on the theme-apply goroutine, once per theme (hard rule 2).
 func parseShownameExtraWidth(raw string) int {

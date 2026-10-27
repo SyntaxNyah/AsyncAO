@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/text"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -325,7 +326,7 @@ var editFieldSet = [editFieldCount]func(*themeDoc, *theme.Element, editValue){
 	},
 
 	editFieldText: func(d *themeDoc, e *theme.Element, v editValue) {
-		e.Text = truncRunes(d.str(v.s), theme.TextRuneCap)
+		e.Text = text.Truncate(d.str(v.s), theme.TextRuneCap)
 	},
 	editFieldFont: func(d *themeDoc, e *theme.Element, v editValue) { e.Font = d.str(v.s) },
 	editFieldSize: func(_ *themeDoc, e *theme.Element, v editValue) {
@@ -357,7 +358,7 @@ var editFieldSet = [editFieldCount]func(*themeDoc, *theme.Element, editValue){
 		e.VisibleWhen.Axis = theme.ConditionAxis(value.Clamp(v.i[0], 0, int32(theme.ConditionAxisCount)-1))
 	},
 	editFieldVisibleValue: func(d *themeDoc, e *theme.Element, v editValue) {
-		e.VisibleWhen.Value = truncRunes(d.str(v.s), theme.ConditionValueRuneCap)
+		e.VisibleWhen.Value = text.Truncate(d.str(v.s), theme.ConditionValueRuneCap)
 	},
 	editFieldHidden: func(_ *themeDoc, e *theme.Element, v editValue) { e.Hidden = v.i[0] != 0 },
 	editFieldLocked: func(_ *themeDoc, e *theme.Element, v editValue) { e.Locked = v.i[0] != 0 },
@@ -409,20 +410,6 @@ var editFieldSet = [editFieldCount]func(*themeDoc, *theme.Element, editValue){
 func rgbaValue(c theme.RGBA) editValue { return editValueRGBA(c.R, c.G, c.B, c.A) }
 func valueRGBA(v editValue) theme.RGBA {
 	return theme.RGBA{R: v.b[0], G: v.b[1], B: v.b[2], A: v.b[3]}
-}
-
-// truncRunes bounds a free-text field by RUNES (the format's own unit — a byte
-// truncation would cut a multi-byte rune in half and write invalid UTF-8 into a
-// file the reader then has to cope with).
-func truncRunes(s string, max int) string {
-	n := 0
-	for i := range s {
-		n++
-		if n > max {
-			return s[:i]
-		}
-	}
-	return s
 }
 
 // ---------------------------------------------------------------------------
