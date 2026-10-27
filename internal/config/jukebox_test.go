@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func newTestJukebox(t *testing.T) *Jukebox {
@@ -244,5 +245,26 @@ func TestJukeboxQuickAdd(t *testing.T) {
 	}
 	if j.QuickAdd("P", "", "   ") {
 		t.Error("empty URL must be rejected")
+	}
+}
+
+// TestJukeboxCapsNeverSplitARune: a name, title or URL cut at its byte cap must
+// stay valid UTF-8, so a multi-byte rune straddling the cap is dropped whole.
+func TestJukeboxCapsNeverSplitARune(t *testing.T) {
+	const straddler = "é" // two bytes: the first lands on the last allowed byte
+	j := newTestJukebox(t)
+	name := strings.Repeat("a", jukeboxMaxNameLen-1) + straddler
+	title := strings.Repeat("b", jukeboxMaxTitleLen-1) + straddler
+	if !j.AddPlaylist(name) || !j.AddEntry(0, title, "https://example.com/x.mp3") {
+		t.Fatal("add failed")
+	}
+	pl := j.Playlists()[0]
+	for _, s := range []string{pl.Name, pl.Entries[0].Title} {
+		if !utf8.ValidString(s) {
+			t.Errorf("capped text is invalid UTF-8: %q", s[len(s)-1:])
+		}
+	}
+	if want := name[:jukeboxMaxNameLen-1]; pl.Name != want {
+		t.Errorf("name = %d bytes, want the %d before the rune", len(pl.Name), len(want))
 	}
 }
