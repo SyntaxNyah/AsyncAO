@@ -15,10 +15,10 @@ import (
 	"image/png"
 	"unsafe"
 
-	"github.com/veandco/go-sdl2/sdl"
 	xdraw "golang.org/x/image/draw"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 //go:embed assets/mayo.png

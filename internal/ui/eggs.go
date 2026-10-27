@@ -18,9 +18,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Egg kinds. The first three name the client lineage's creators, in the order it

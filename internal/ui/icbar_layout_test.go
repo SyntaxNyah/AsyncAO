@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestICBarUnderStage pins issue #8: the IC input bar's default sits DIRECTLY under the

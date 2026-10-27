@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Issue #30, "AsyncAO Extras window lacks a scroll container, resulting in buttons

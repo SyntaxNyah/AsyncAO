@@ -2,7 +2,7 @@
 
 package ui
 
-import "github.com/veandco/go-sdl2/sdl"
+import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
 // SetWindowIcon is a no-op on Windows. The executable embeds a multi-resolution
 // icon resource (cmd/asyncao/rsrc_windows.syso, built from mayo.ico), which

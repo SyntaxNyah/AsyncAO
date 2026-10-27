@@ -3,9 +3,8 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestApplyAnchorCornerGlue pins the point of the feature: a box saved at

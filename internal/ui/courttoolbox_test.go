@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestHideablePanelsHaveShortLabels pins the editor-toolbox requirement (#27): every

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // drawDebugOverlay paints the bounded failure log plus a one-line session

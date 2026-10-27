@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // NewCtx loads the embedded Go font and prepares the kit.

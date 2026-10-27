@@ -1,9 +1,8 @@
 package ui
 
 import (
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Overlay pointer exclusivity (issue #26; a partial, opt-in answer to the open

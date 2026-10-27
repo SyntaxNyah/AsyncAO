@@ -26,7 +26,7 @@ package ui
 // keys their private string fields carried before. What changes is that there is now
 // ONE place to add the third case, and W7 adds it once instead of in each editor.
 
-import "github.com/veandco/go-sdl2/sdl"
+import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
 // editSpace names WHICH editing model a target belongs to — the coordinate system its
 // geometry lives in, the store its edits persist to, and the rules its resize obeys.

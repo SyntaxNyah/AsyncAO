@@ -3,9 +3,8 @@ package ui
 import (
 	"unicode/utf8"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	hvalue "github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Multiline text editing for the evidence editor (#83). TextField is a

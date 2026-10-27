@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 // TestICColorWheelCaptionFits pins §3.4: the free-hex chat-colour picker's

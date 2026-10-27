@@ -7,7 +7,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/ttf"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 // newFaceCtx is a headless Ctx with the embedded chrome face — enough for every

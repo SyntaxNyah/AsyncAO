@@ -4,11 +4,10 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestInlineSpanAtMapsHeadAndBody pins the per-row span mapping: the head folds

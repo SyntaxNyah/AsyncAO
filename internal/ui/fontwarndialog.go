@@ -3,7 +3,7 @@ package ui
 import (
 	"strings"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // The missing-theme-fonts modal.

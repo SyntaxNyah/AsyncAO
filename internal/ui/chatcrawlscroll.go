@@ -57,9 +57,8 @@ package ui
 // layout, not to this rule.
 
 import (
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // crawlRow is the display row holding the LAST revealed rune, i.e. where AO2

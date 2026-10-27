@@ -24,8 +24,9 @@ package ui
 // per-chain, and that the marker feeds AO2's truncation arithmetic unchanged.
 
 import (
-	"github.com/veandco/go-sdl2/ttf"
 	"golang.org/x/image/font/sfnt"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 // truncateEllipsisASCII is the fallback marker for a face with no U+2026: three

@@ -14,9 +14,8 @@ package ui
 // emoji picker and the open-dropdown list. Esc closes via closeTopOverlay.
 
 import (
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // rosterMenuKind enumerates the single-player actions the menu can carry.

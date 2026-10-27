@@ -23,7 +23,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // openBrowserOverEditor puts the in-app file browser up in the image-intake purpose the

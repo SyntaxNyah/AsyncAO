@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/logbrowser"
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 const (

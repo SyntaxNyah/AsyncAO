@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Showname keybinds (M6): bind a key to a specific saved showname preset, then

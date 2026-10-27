@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Hotkey cheat-sheet (#79): a one-glance window of every keyboard shortcut,

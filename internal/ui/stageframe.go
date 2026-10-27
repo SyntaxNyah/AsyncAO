@@ -1,6 +1,6 @@
 package ui
 
-import "github.com/veandco/go-sdl2/sdl"
+import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
 // Stage frames (#56): a decorative border drawn around the viewport, picked in
 // Settings → Display (0 = Off, the default — nothing draws). Pure chrome: a

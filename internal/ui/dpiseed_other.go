@@ -2,7 +2,7 @@
 
 package ui
 
-import "github.com/veandco/go-sdl2/sdl"
+import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
 // queryWindowDPI has no reliable native equivalent off Windows in this build, so
 // it always reports "unavailable" and the caller falls back to sdl.GetDisplayDPI

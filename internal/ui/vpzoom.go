@@ -8,9 +8,8 @@ package ui
 // pauses while zoomed (zoom is a viewing mode; hit rects assume 1×).
 
 import (
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 const (

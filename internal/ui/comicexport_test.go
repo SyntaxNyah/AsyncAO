@@ -5,7 +5,7 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestComicBubbleRect pins the speech-bubble geometry: it spans the panel width (minus

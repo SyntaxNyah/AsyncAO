@@ -3,10 +3,9 @@ package ui
 import (
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Real reactions (#2), UI side. The wire codec lives in courtroom (reactionwire.go); this

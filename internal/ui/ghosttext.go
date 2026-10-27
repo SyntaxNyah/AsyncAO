@@ -41,7 +41,7 @@ package ui
 // on the frame budget, which is precisely what the census doctrine warns against.
 
 import (
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // ghostTextMixPct is how far a ghosted row's ink is pulled toward the surface

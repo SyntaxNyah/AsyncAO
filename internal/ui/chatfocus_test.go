@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // focusTestApp is a courtroom App whose IC field drew on the last painted frame —

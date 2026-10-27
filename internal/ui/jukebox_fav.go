@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // favRef points at a starred song by (playlist, entry) index into jukeCache.

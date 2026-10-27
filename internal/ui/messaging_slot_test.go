@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestMessagesSlotSeedsPanel pins that the Group Chat panel adopts its persisted

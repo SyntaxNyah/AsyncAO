@@ -9,9 +9,8 @@ package ui
 // fraction scaling, byte-identical.
 
 import (
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Per-axis anchor modes (parsed from config.ClassicAnchor.Mode letters).

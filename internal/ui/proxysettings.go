@@ -1,10 +1,9 @@
 package ui
 
 import (
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // The proxy section of the Power-user tab.

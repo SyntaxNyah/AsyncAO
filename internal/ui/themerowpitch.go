@@ -13,9 +13,8 @@ package ui
 // tables rather than about anything courtroom_fonts.ini declares.
 
 import (
-	"github.com/veandco/go-sdl2/ttf"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 // faceEmPx is the pixel em a fontSet opens its faces at for (pct, devPct).

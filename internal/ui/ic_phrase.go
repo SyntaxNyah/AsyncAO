@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // IC quick-phrases: bind a key to a canned IC line ("Alt+E → Happy Pride Month")

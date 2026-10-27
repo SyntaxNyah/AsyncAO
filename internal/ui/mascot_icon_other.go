@@ -5,7 +5,7 @@ package ui
 import (
 	"unsafe"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // SetWindowIcon uploads the embedded Mayo art as the window / taskbar icon via

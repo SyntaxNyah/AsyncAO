@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // reportFixtureNotes is what the fixture theme's apply "noticed". Two notes, one

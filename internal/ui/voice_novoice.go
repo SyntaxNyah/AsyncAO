@@ -2,7 +2,7 @@
 
 package ui
 
-import "github.com/veandco/go-sdl2/sdl"
+import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
 // Voice chat is compiled out in the -tags novoice build. These stubs stand in
 // for the real surface (voicepanel.go / voiceaudio.go / settings_voice.go, all

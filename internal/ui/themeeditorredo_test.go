@@ -13,7 +13,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // driveCtrlShiftKey delivers ONE real Ctrl+Shift key press, at the outermost level a
