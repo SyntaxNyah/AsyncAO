@@ -402,8 +402,17 @@ call it are owned or moved, so moved code is touched once:
 - `courtroom.Visuals` + `courtroom.Timing` with `SetVisuals/SetTiming` — forced because room
   modes get built from several packages; the room factory is built by App and handed to them.
 - config: remove the `normalizeSnapshot` clamp block duplicated by `normalizeSettings` and the 22
-  setter pre-clamps (in the helper series). Delete pure single-caller `Set*` forwarders, keep
-  setters that carry logic or have ≥3 callers (C5), before the first feature move.
+  setter pre-clamps (in the helper series). **Done in step 1, narrowed:** only setters whose
+  setter golden stays identical lost their clamp (name sat/val, audio volumes, text stay,
+  catch-up, input grace). The rest are not duplicates: for a sentinel field (0 = unset)
+  `SetX(0)` stores the minimum, `Update` stores "unset", so a slider dragged to 0 would jump
+  to the default. Others clamp a field `normalizeSettings` does not touch (export, sprite
+  opacity, panel font, profile, reflect, weather kind, chrome tier, animated cap, chat rate,
+  theme fit + pan); moving those into `normalizeSettings` also clamps them on load, a
+  behaviour change for step 6 to decide. The ~7 ui re-clamps feed labels and local widget
+  state before any setter runs, so they stay until the ranged widgets of steps 4-5.
+  Delete pure single-caller `Set*` forwarders, keep setters that carry logic or have ≥3
+  callers (C5), before the first feature move.
 - `assets.Manager` forwarders: removed before studio/settings (their main callers) are owned.
 - Session writes (4 sites) become methods with the feature that writes them.
 

@@ -1904,8 +1904,6 @@ func (s *Settings) ICCustomColorRGB() int {
 
 // SetNameColorSatVal clamps and stores the saturation + brightness together.
 func (p *AssetPreferences) SetNameColorSatVal(sat, val int) {
-	sat = value.Clamp(sat, 0, 100)
-	val = value.Clamp(val, minNameColorVal, 100)
 	p.Update(func(sn *Settings) {
 		sn.NameSat = sat
 		sn.NameVal = val
@@ -3155,8 +3153,6 @@ func (p *AssetPreferences) SetHoldClearMs(ms int) {
 func (p *AssetPreferences) SetInputGraceFrames(n int) {
 	if n <= 0 {
 		n = InputGraceOff
-	} else {
-		n = value.Clamp(n, InputGraceFramesMin, InputGraceFramesMax)
 	}
 	p.Update(func(sn *Settings) {
 		sn.InputGraceFramesVal = n
@@ -3228,9 +3224,6 @@ func (s *Settings) AudioVolumes() (music, sfx, blip int) {
 
 // SetAudioVolumes clamps and persists the mixer volumes.
 func (p *AssetPreferences) SetAudioVolumes(music, sfx, blip int) {
-	music = value.Clamp(music, 0, defaultAudioVolume)
-	sfx = value.Clamp(sfx, 0, defaultAudioVolume)
-	blip = value.Clamp(blip, 0, defaultAudioVolume)
 	p.Update(func(sn *Settings) {
 		sn.MusicVol = music
 		sn.SFXVol = sfx
@@ -3297,7 +3290,6 @@ func (s *Settings) Timing() (crawlMs, stayMs, rateLimitMs int) {
 // SetTiming clamps and persists the timing knobs.
 func (p *AssetPreferences) SetTiming(crawlMs, stayMs, rateLimitMs int) {
 	crawlMs = value.Clamp(crawlMs, MinTextCrawlMs, MaxTextCrawlMs)
-	stayMs = value.Clamp(stayMs, 0, MaxTextStayMs)
 	rateLimitMs = value.Clamp(rateLimitMs, 0, MaxChatRateLimitMs)
 	p.Update(func(sn *Settings) {
 		sn.TextCrawlMs = crawlMs
@@ -3316,7 +3308,6 @@ func (s *Settings) CatchUp() (on bool, threshold int) {
 
 // SetCatchUp clamps and persists the catch-up toggle + threshold.
 func (p *AssetPreferences) SetCatchUp(on bool, threshold int) {
-	threshold = value.Clamp(threshold, catchUpThresholdMin, catchUpThresholdMax)
 	p.Update(func(sn *Settings) {
 		sn.CatchUpOn = on
 		sn.CatchUpThreshold = threshold

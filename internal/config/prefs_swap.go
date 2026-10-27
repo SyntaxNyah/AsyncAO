@@ -103,93 +103,49 @@ func migrateLegacyKeys(s *Settings, data []byte, presence map[string]bool) {
 	}
 }
 
-// normalize reproduces load()'s range clamps and one-shot stamps over a
-// snapshot-loaded value, so defaultPrefs + Unmarshal-over-defaults + normalize ==
-// load() for every field and case. The clamps are the same functions/constants load()
-// uses; the resets use the defaultPrefs reference so a default change keeps them in step.
+// normalizeSnapshot applies load()'s one-shot stamps, default resets and sanitizers
+// to a snapshot-loaded value, so defaultPrefs + Unmarshal-over-defaults + normalize ==
+// load() for every field and case. Range clamps are left to normalizeSettings, which
+// runs last. The resets use the defaultPrefs reference so a default change keeps them
+// in step.
 func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bool) (changed bool) {
 	def := defaultSettings()
 
-	// (i) clamp/normalise — unconditional (pointer fields load() clamped regardless).
-	s.NameVal = value.Clamp(s.NameVal, minNameColorVal, 100)
-	s.RainbowSpriteSpeed = value.Clamp(s.RainbowSpriteSpeed, minRainbowSpeed, maxRainbowSpeed)
-	s.ReplayPlaybackSpeed = value.Clamp(s.ReplayPlaybackSpeed, minReplaySpeed, maxReplaySpeed)
-	s.CatchUpThreshold = value.Clamp(s.CatchUpThreshold, catchUpThresholdMin, catchUpThresholdMax)
-	s.MultiTabCap = value.Clamp(s.MultiTabCap, minMultiTabCap, maxMultiTabCap)
-	s.PreviewHoverMs = value.Clamp(s.PreviewHoverMs, minPreviewHoverMs, maxPreviewHoverMs)
-	s.EmoteHoverNamesMs = value.Clamp(s.EmoteHoverNamesMs, minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
-	s.MusicVol = value.Clamp(s.MusicVol, 0, defaultAudioVolume)
-	s.SFXVol = value.Clamp(s.SFXVol, 0, defaultAudioVolume)
-	s.BlipVol = value.Clamp(s.BlipVol, 0, defaultAudioVolume)
-	s.AlertVol = value.Clamp(s.AlertVol, 0, defaultAudioVolume)
-	s.MasterVol = value.Clamp(s.MasterVol, 0, defaultAudioVolume)
-	s.HighlightColor &= 0xFFFFFF
-	s.ICCustomColor &= 0xFFFFFF
-	s.SpriteTintColor &= 0xFFFFFF
-	s.ChatboxOpacity = value.Clamp(s.ChatboxOpacity, MinChatboxOpacity, MaxChatboxOpacity)
-	s.RainbowSpriteVividness = value.Clamp(s.RainbowSpriteVividness, minRainbowVivid, maxRainbowVivid)
-	s.NameSat = value.Clamp(s.NameSat, 0, 100)
-	s.MusicFlagsVal &= MusicFlagsMask
-	s.TextStayMs = value.Clamp(s.TextStayMs, 0, MaxTextStayMs)
-	s.EmoteGridGapPx = value.Clamp(s.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
-
-	// (i) clamp/normalise — explicit zero keeps the default (load() used `!= 0`).
+	// (i) explicit zero keeps the default (load() used `!= 0`).
 	if s.ViewportPct == 0 {
 		s.ViewportPct = def.ViewportPct
-	} else {
-		s.ViewportPct = value.Clamp(s.ViewportPct, MinViewportPercent, MaxViewportPercent)
 	}
 	if s.ChatScalePct == 0 {
 		s.ChatScalePct = def.ChatScalePct
-	} else {
-		s.ChatScalePct = value.Clamp(s.ChatScalePct, MinChatScalePercent, MaxChatScalePercent)
 	}
 	if s.ChatBoxPct == 0 {
 		s.ChatBoxPct = def.ChatBoxPct
-	} else {
-		s.ChatBoxPct = value.Clamp(s.ChatBoxPct, MinChatBoxPercent, MaxChatBoxPercent)
 	}
 	if s.LogScalePct == 0 {
 		s.LogScalePct = def.LogScalePct
-	} else {
-		s.LogScalePct = value.Clamp(s.LogScalePct, MinLogScalePercent, MaxLogScalePercent)
 	}
-	if presence["oocScalePercent"] && s.OOCScalePct != 0 {
-		s.OOCScalePct = value.Clamp(s.OOCScalePct, MinLogScalePercent, MaxLogScalePercent)
-	} else {
+	if !presence["oocScalePercent"] || s.OOCScalePct == 0 {
 		// inherit the IC log size once so the OOC box doesn't visibly jump on upgrade
 		// (absent or explicit zero, matching load()'s `onDisk.OOCScalePct != 0`).
 		s.OOCScalePct = s.LogScalePct
 	}
 	if s.InputHeightPct == 0 {
 		s.InputHeightPct = def.InputHeightPct
-	} else {
-		s.InputHeightPct = value.Clamp(s.InputHeightPct, MinInputPercent, MaxInputPercent)
 	}
 	if s.UIScalePct == 0 {
 		s.UIScalePct = def.UIScalePct
-	} else {
-		s.UIScalePct = value.Clamp(s.UIScalePct, MinUIScalePercent, MaxUIScalePercent)
 	}
 	if s.HoldClearMs == 0 {
 		s.HoldClearMs = def.HoldClearMs
-	} else {
-		s.HoldClearMs = value.Clamp(s.HoldClearMs, MinHoldClearMs, MaxHoldClearMs)
 	}
 	if s.TextCrawlMs == 0 {
 		s.TextCrawlMs = def.TextCrawlMs
-	} else {
-		s.TextCrawlMs = value.Clamp(s.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
 	}
 	if s.BlipRate == 0 {
 		s.BlipRate = def.BlipRate
-	} else {
-		s.BlipRate = value.Clamp(s.BlipRate, MinBlipRate, MaxBlipRate)
 	}
 	if s.ThemeFitZoom == 0 {
 		s.ThemeFitZoom = def.ThemeFitZoom
-	} else {
-		s.ThemeFitZoom = value.Clamp(s.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
 	}
 
 	// (i)/(iii) enums and string defaults: invalid or empty keeps the default.
@@ -202,11 +158,6 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 	// Mutation (subtheme): sanitize the subtheme folder on the way in (traversal is
 	// stripped), matching load()'s theme.SanitizeSubtheme call.
 	s.SubthemeName = theme.SanitizeSubtheme(s.SubthemeName)
-	// Mutation (proxyMode): clamp on the way in exactly as SetProxyMode clamps on the way
-	// out; an out-of-range value keeps the shipped default (ProxyModeSystem).
-	if s.ProxyModeVal < 0 || s.ProxyModeVal >= ProxyModeCount {
-		s.ProxyModeVal = def.ProxyModeVal
-	}
 
 	// (iv) explicit-zero keeps the default (non-pointer `> 0` checks).
 	if s.BgSlideshowSecs <= 0 {
@@ -214,9 +165,7 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 	}
 
 	// (ii) one-shot migration stamps — re-apply load()'s stamp decision.
-	if presence["spriteScalingMigrated"] && s.SpriteScalingMigrated {
-		s.SpriteScaling = ClampSpriteScaling(s.SpriteScaling)
-	} else {
+	if !presence["spriteScalingMigrated"] || !s.SpriteScalingMigrated {
 		s.SpriteScaling = defaultSpriteScaling
 		s.SpriteScalingMigrated = true
 		changed = true // persist the stamp promptly so the move never re-fires
@@ -250,11 +199,7 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 		p.themeFitStampPending = true
 		changed = true
 	}
-	if presence["blipSpeedDefaultMigrated"] && s.BlipSpeedDefaultMigrated {
-		if s.TextCrawlMs != 0 {
-			s.TextCrawlMs = value.Clamp(s.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
-		}
-	} else {
+	if !presence["blipSpeedDefaultMigrated"] || !s.BlipSpeedDefaultMigrated {
 		saved := value.Clamp(s.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
 		if s.TextCrawlMs == 0 || saved == preMoveTextCrawlMs {
 			s.TextCrawlMs = DefaultTextCrawlMs
@@ -317,7 +262,6 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 	s.ClassicRotations = sanitizeClassicRotations(s.ClassicRotations)
 	s.ThemeRectRotations = sanitizeThemeRectRotations(s.ThemeRectRotations)
 	s.LayoutProfiles = sanitizeLayoutProfiles(s.LayoutProfiles)
-	s.LayoutGridPx = clampLayoutGridPx(s.LayoutGridPx)
 	s.FontWarnThemes = clampStrings(s.FontWarnThemes, FontWarnThemesCap)
 	{
 		e := defaultExportOptions()
