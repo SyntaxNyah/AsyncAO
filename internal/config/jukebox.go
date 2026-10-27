@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/text"
 )
 
 const (
@@ -117,19 +119,19 @@ func sanitizePlaylists(in []Playlist) []Playlist {
 	total := 0
 	for _, pl := range in {
 		p := Playlist{
-			Name: clampStr(strings.TrimSpace(pl.Name), jukeboxMaxNameLen),
+			Name: text.TruncateBytes(strings.TrimSpace(pl.Name), jukeboxMaxNameLen),
 			Key:  normalizeJukeKey(pl.Key),
 		}
 		for _, e := range pl.Entries {
 			if total >= jukeboxMaxEntries {
 				break
 			}
-			url := clampStr(strings.TrimSpace(e.URL), jukeboxMaxURLLen)
+			url := text.TruncateBytes(strings.TrimSpace(e.URL), jukeboxMaxURLLen)
 			if url == "" {
 				continue
 			}
 			p.Entries = append(p.Entries, JukeboxEntry{
-				Title: clampStr(strings.TrimSpace(e.Title), jukeboxMaxTitleLen),
+				Title: text.TruncateBytes(strings.TrimSpace(e.Title), jukeboxMaxTitleLen),
 				URL:   url,
 				Key:   normalizeJukeKey(e.Key),
 				Fav:   e.Fav, // preserve the star across save→load
@@ -139,13 +141,6 @@ func sanitizePlaylists(in []Playlist) []Playlist {
 		out = append(out, p)
 	}
 	return out
-}
-
-func clampStr(s string, max int) string {
-	if len(s) > max {
-		return s[:max]
-	}
-	return s
 }
 
 // normalizeJukeKey lowercases an SDL key name (binds are case-insensitive).
@@ -190,7 +185,7 @@ func (j *Jukebox) TotalEntries() int {
 
 // AddPlaylist appends a new empty playlist; false at the cap or empty name.
 func (j *Jukebox) AddPlaylist(name string) bool {
-	name = clampStr(strings.TrimSpace(name), jukeboxMaxNameLen)
+	name = text.TruncateBytes(strings.TrimSpace(name), jukeboxMaxNameLen)
 	if name == "" {
 		return false
 	}
@@ -228,11 +223,11 @@ func (j *Jukebox) SetPlaylistKey(i int, key string) {
 // AddEntry appends a link to playlist i; false at the total cap, a bad index,
 // or an empty URL.
 func (j *Jukebox) AddEntry(i int, title, url string) bool {
-	url = clampStr(strings.TrimSpace(url), jukeboxMaxURLLen)
+	url = text.TruncateBytes(strings.TrimSpace(url), jukeboxMaxURLLen)
 	if url == "" {
 		return false
 	}
-	title = clampStr(strings.TrimSpace(title), jukeboxMaxTitleLen)
+	title = text.TruncateBytes(strings.TrimSpace(title), jukeboxMaxTitleLen)
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if i < 0 || i >= len(j.playlists) || j.totalLocked() >= jukeboxMaxEntries {
@@ -380,12 +375,12 @@ func (j *Jukebox) MergeJSON(data []byte) (int, error) {
 // duplicate URL — the one-click "save this shared link" path (e.g. capturing a
 // song a DJ just /played in OOC). Returns true only when a NEW link was stored.
 func (j *Jukebox) QuickAdd(playlist, title, url string) bool {
-	url = clampStr(strings.TrimSpace(url), jukeboxMaxURLLen)
-	playlist = clampStr(strings.TrimSpace(playlist), jukeboxMaxNameLen)
+	url = text.TruncateBytes(strings.TrimSpace(url), jukeboxMaxURLLen)
+	playlist = text.TruncateBytes(strings.TrimSpace(playlist), jukeboxMaxNameLen)
 	if url == "" || playlist == "" {
 		return false
 	}
-	title = clampStr(strings.TrimSpace(title), jukeboxMaxTitleLen)
+	title = text.TruncateBytes(strings.TrimSpace(title), jukeboxMaxTitleLen)
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	idx := -1
