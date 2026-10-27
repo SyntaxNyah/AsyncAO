@@ -30,6 +30,12 @@ const (
 const (
 	// maxParticles caps the pool (the intensity slider scales the active count down from here).
 	maxParticles = 240
+	// weatherIntensityMax is the top of the 1..100 weather intensity setting.
+	weatherIntensityMax = 100
+	// xorshift32 shift triple (Marsaglia 2003).
+	xorshiftA = 13
+	xorshiftB = 17
+	xorshiftC = 5
 	// particleBaseDivisor sets the base dot size: vp.H / divisor px (the per-particle size
 	// factor scales it). particleDotTex is the soft-dot texture resolution.
 	particleBaseDivisor = 72
@@ -53,6 +59,7 @@ type weatherParams struct {
 }
 
 // weatherTable indexes by Weather (WeatherNone is a zero entry, never drawn).
+//nolint:mnd // a named data table (rule 9)
 var weatherTable = [WeatherCount]weatherParams{
 	WeatherNone:   {},
 	WeatherSnow:   {r: 255, g: 255, b: 255, vy: 0.10, vyJitter: 0.04, swayAmp: 0.025, swaySpeed: 1.2, sizeMin: 0.5, sizeMax: 1.2, stretchY: 1, alpha: 210},
@@ -109,8 +116,8 @@ func (f *particleField) set(w Weather, intensity int) {
 	if w == WeatherNone {
 		return
 	}
-	intensity = value.Clamp(intensity, 1, 100)
-	f.n = maxParticles * intensity / 100
+	intensity = value.Clamp(intensity, 1, weatherIntensityMax)
+	f.n = maxParticles * intensity / weatherIntensityMax
 	if w != f.seededFor {
 		f.reseed(w)
 		f.seededFor = w
@@ -122,9 +129,9 @@ func (f *particleField) randf() float32 {
 	if f.rng == 0 {
 		f.rng = 0x9e3779b9
 	}
-	f.rng ^= f.rng << 13
-	f.rng ^= f.rng >> 17
-	f.rng ^= f.rng << 5
+	f.rng ^= f.rng << xorshiftA
+	f.rng ^= f.rng >> xorshiftB
+	f.rng ^= f.rng << xorshiftC
 	return float32(f.rng) / float32(^uint32(0))
 }
 
@@ -136,7 +143,7 @@ func (f *particleField) reseed(w Weather) {
 		f.parts[i] = particle{
 			x:     f.randf(),
 			y:     f.randf(),
-			vy:    p.vy + (f.randf()-0.5)*2*p.vyJitter,
+			vy:    p.vy + (f.randf()*2-1)*p.vyJitter,
 			phase: f.randf() * 2 * math.Pi,
 			size:  p.sizeMin + f.randf()*(p.sizeMax-p.sizeMin),
 		}
@@ -213,8 +220,8 @@ func (f *particleField) draw(ren *sdl.Renderer, vp sdl.Rect) {
 		f.dst = sdl.Rect{X: px - w/2, Y: py - h/2, W: w, H: h}
 		_ = ren.Copy(f.tex, nil, &f.dst)
 	}
-	_ = f.tex.SetAlphaMod(255) // restore the shared cached texture
-	_ = f.tex.SetColorMod(255, 255, 255)
+	_ = f.tex.SetAlphaMod(math.MaxUint8) // restore the shared cached texture
+	_ = f.tex.SetColorMod(math.MaxUint8, math.MaxUint8, math.MaxUint8)
 	if p.additive {
 		_ = f.tex.SetBlendMode(sdl.BLENDMODE_BLEND)
 	}
@@ -235,7 +242,7 @@ func (f *particleField) purge() {
 // fading to a transparent edge (a squared falloff for a soft look), tinted per weather at draw.
 func buildParticleDot(ren *sdl.Renderer) *sdl.Texture {
 	const n = particleDotTex
-	pix := make([]byte, n*n*4)
+	pix := make([]byte, n*n*texBytesPerPixel)
 	c := float64(n-1) / 2
 	maxD := math.Hypot(c, c)
 	for y := 0; y < n; y++ {
@@ -243,9 +250,9 @@ func buildParticleDot(ren *sdl.Renderer) *sdl.Texture {
 			d := math.Hypot(float64(x)-c, float64(y)-c) / maxD // 0 centre → 1 edge
 			a := value.Clamp(1-d, 0, 1)
 			a *= a // softer falloff
-			i := (y*n + x) * 4
-			pix[i], pix[i+1], pix[i+2] = 255, 255, 255
-			pix[i+3] = byte(a * 255)
+			i := (y*n + x) * texBytesPerPixel
+			pix[i], pix[i+1], pix[i+2] = math.MaxUint8, math.MaxUint8, math.MaxUint8
+			pix[i+3] = byte(a * math.MaxUint8)
 		}
 	}
 	t, err := uploadPixels(ren, pix, n, n)

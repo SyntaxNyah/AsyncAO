@@ -132,7 +132,7 @@ func (p *Pump) Frame() {
 		if d.Asset.Animated && !d.Asset.Stream {
 			// #110 diagnostic: log the animated upload attempt (the upload
 			// itself releases the frames, so capture the counts first).
-			log.Printf("[anim-upload] %s animated=%v frames=%d bytes=%dMiB", d.Base, d.Asset.Animated, len(d.Asset.Frames), bytes>>20)
+			log.Printf("[anim-upload] %s animated=%v frames=%d bytes=%dMiB", d.Base, d.Asset.Animated, len(d.Asset.Frames), bytes>>mibShift)
 		}
 		// Small-UI art (emote buttons, char icons) uploads into the shield
 		// tier so sprite streaming can never evict the visible grids (the

@@ -1,6 +1,8 @@
 package render
 
 import (
+	"math"
+
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
 )
@@ -10,7 +12,7 @@ import (
 // that does shake/wave (displacement) AND rainbow (recolour) cleanly — you can't recolour
 // an already-coloured glyph to arbitrary hues, and slicing a line texture at advance
 // boundaries clips antialiased edges the moment a glyph is displaced.
-var glyphWhite = sdl.Color{R: 255, G: 255, B: 255, A: 255}
+var glyphWhite = sdl.Color{R: math.MaxUint8, G: math.MaxUint8, B: math.MaxUint8, A: math.MaxUint8}
 
 // glyphKey identifies a cached glyph by rune + the (size-specific) font pointer.
 type glyphKey struct {
@@ -37,8 +39,9 @@ type GlyphCache struct {
 // NewGlyphCache returns a cache bounded to ~cap glyphs (floored so one message never
 // evicts its own glyphs mid-frame).
 func NewGlyphCache(cap int) *GlyphCache {
-	if cap < 256 {
-		cap = 256
+	const minGlyphCacheCap = 256 // one Latin page plus punctuation
+	if cap < minGlyphCacheCap {
+		cap = minGlyphCacheCap
 	}
 	return &GlyphCache{m: make(map[glyphKey]*cachedGlyph, cap), cap: cap}
 }

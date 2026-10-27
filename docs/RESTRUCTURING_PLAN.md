@@ -8,7 +8,8 @@ in **Status**. Update Status in the same commit that completes a step.
 
 - [x] 0. Prep: delete `internal/debuglog`; CLAUDE.md facts + new rules; plan in repo;
       golangci-lint `mnd` in CI (9 already-clean packages enforced from the start)
-- [ ] 1. `internal/helper/{value,text,parse}` + duplicate removal + config double-clamp removal
+- [x] 1. `internal/helper/{value,text,parse}` + duplicate removal + config double-clamp removal;
+      mnd now enforced on every lower package step 1 touched (setter pre-clamps: see Part 3)
 - [ ] 2. Bug fixes 1–3, 5–7 (one commit each, with tests) → **merge checkpoint** (maintainer pushes)
 - [x] 2a. UI spike: RmlUi 6.3 on SDL_GPU (Vulkan, software Vulkan fallback) (Part 5e); throwaway code outside the module
       — see the Result in Part 5e

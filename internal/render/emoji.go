@@ -25,6 +25,12 @@ const (
 	runeKeycap rune = 0x20E3 // combining enclosing keycap: 1️⃣ #️⃣ etc.
 )
 
+// UTF-8 and Unicode boundaries the emoji routing tests against.
+const (
+	utf8FourByteLead   = 0xF0   // first byte of a 4-byte (astral plane) sequence
+	firstBMPPictograph = 0x00A9 // the copyright sign, the lowest BMP pictograph
+)
+
 // needsEmojiFallback reports whether s contains anything the text font can't
 // render as the user expects — so only these messages take the per-glyph fallback
 // path. A tight byte scan, no rune decoding, no allocation, so an all-BMP/ASCII
@@ -33,7 +39,7 @@ const (
 func needsEmojiFallback(s string) bool {
 	for i := 0; i < len(s); i++ {
 		b := s[i]
-		if b >= 0xF0 {
+		if b >= utf8FourByteLead {
 			return true
 		}
 		if b == 0xEF && i+2 < len(s) && s[i+1] == 0xB8 && s[i+2] == 0x8F {
@@ -107,7 +113,7 @@ var bmpPictographRunes = [...]rune{
 // See bmpPictographBlocks: this is an eligibility test, never a routing decision on
 // its own. Pure; ASCII short-circuits, so a plain line pays one compare per rune.
 func BMPPictograph(r rune) bool {
-	if r < 0x00A9 {
+	if r < firstBMPPictograph {
 		return false // ASCII and Latin-1 punctuation: never a pictograph
 	}
 	for _, b := range bmpPictographBlocks {

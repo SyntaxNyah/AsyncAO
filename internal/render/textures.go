@@ -461,6 +461,12 @@ const heldSceneryMax = 4
 // format the store creates) — sizes the held single-frame page.
 const texBytesPerPixel = 4
 
+// mibShift converts bytes to MiB and back (bytes >> mibShift).
+const mibShift = 20
+
+// dxtBlockPx is the edge of the 4x4 pixel block DXT compresses as one unit.
+const dxtBlockPx = 4
+
 // SetLiveScenery injects the "is this base the on-screen background/desk"
 // probe backing the held-frame bridge (nil = bridge off). Render thread only,
 // set once at boot.
@@ -687,7 +693,7 @@ func (s *TextureStore) buildFrames(d *assets.Decoded) (frames []*sdl.Texture, by
 		if d.DXTFormat == assets.DXT5FourCC {
 			blockBytes = 16
 		}
-		pitch := (d.Width / 4) * blockBytes
+		pitch := (d.Width / dxtBlockPx) * blockBytes
 		for _, comp := range d.Compressed {
 			tex, e := s.ren.CreateTexture(d.DXTFormat, sdl.TEXTUREACCESS_STATIC, int32(d.Width), int32(d.Height))
 			if e != nil {

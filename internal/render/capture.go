@@ -3,6 +3,7 @@ package render
 import (
 	"fmt"
 	"image"
+	"math"
 	"unsafe"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -29,7 +30,7 @@ func NewCaptureTarget(ren *sdl.Renderer, w, h int32) (*CaptureTarget, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &CaptureTarget{tex: tex, w: w, h: h, buf: make([]byte, int(w)*int(h)*4)}, nil
+	return &CaptureTarget{tex: tex, w: w, h: h, buf: make([]byte, int(w)*int(h)*texBytesPerPixel)}, nil
 }
 
 // Size reports the target dimensions.
@@ -44,10 +45,10 @@ func (c *CaptureTarget) Capture(ren *sdl.Renderer, draw func(dst sdl.Rect)) (*im
 		return nil, err
 	}
 	defer func() { _ = ren.SetRenderTarget(nil) }()
-	_ = ren.SetDrawColor(0, 0, 0, 255)
+	_ = ren.SetDrawColor(0, 0, 0, math.MaxUint8)
 	_ = ren.Clear()
 	draw(sdl.Rect{X: 0, Y: 0, W: c.w, H: c.h})
-	pitch := int(c.w) * 4
+	pitch := int(c.w) * texBytesPerPixel
 	rect := sdl.Rect{X: 0, Y: 0, W: c.w, H: c.h}
 	if err := ren.ReadPixels(&rect, uint32(sdl.PIXELFORMAT_ABGR8888), unsafe.Pointer(&c.buf[0]), pitch); err != nil {
 		return nil, err

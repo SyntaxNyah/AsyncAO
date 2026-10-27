@@ -1,6 +1,7 @@
 package render
 
 import (
+	"encoding/binary"
 	"log"
 	"math"
 	"time"
@@ -180,6 +181,9 @@ type Audio struct {
 // fullVolumePercent maps 100% onto SDL_mixer's MAX_VOLUME.
 const fullVolumePercent = 100
 
+// msPerSecond converts the synthesizers' millisecond lengths to sample counts.
+const msPerSecond = 1000
+
 func mixVolume(pct int) int { return pct * mix.MAX_VOLUME / fullVolumePercent }
 
 // SetVolumes applies the user's music/SFX/blip volumes (0–100). Music
@@ -349,10 +353,11 @@ func builtinAlertWAV() []byte {
 		alertFreqHi     = 1320.0 // lift on the ding's second half — the "ping" feel
 		alertAmp        = 0.33   // headroom so it isn't jarring
 		alertAttack     = 0.05   // fraction of a ding spent ramping in (anti-click)
+		alertLiftAt     = 0.5    // fraction of a ding where the tone lifts
 	)
-	dingN := alertSampleRate * alertDingMs / 1000
-	unitN := alertSampleRate * (alertDingMs + alertGapMs) / 1000
-	totalN := alertSampleRate * alertTotalMs / 1000
+	dingN := alertSampleRate * alertDingMs / msPerSecond
+	unitN := alertSampleRate * (alertDingMs + alertGapMs) / msPerSecond
+	totalN := alertSampleRate * alertTotalMs / msPerSecond
 	pcm := make([]byte, 0, totalN*2)
 	for i := 0; i < totalN; i++ {
 		var v int16
@@ -360,7 +365,7 @@ func builtinAlertWAV() []byte {
 			t := float64(pos) / float64(alertSampleRate) // phase per ding
 			prog := float64(pos) / float64(dingN)        // 0..1 through the ding
 			freq := alertFreqLo
-			if prog >= 0.5 {
+			if prog >= alertLiftAt {
 				freq = alertFreqHi
 			}
 			env := 1.0 // attack ramp, then linear decay to 0 (no click)
@@ -371,7 +376,7 @@ func builtinAlertWAV() []byte {
 			}
 			v = int16(math.Sin(2*math.Pi*freq*t) * alertAmp * env * math.MaxInt16)
 		}
-		pcm = append(pcm, byte(v), byte(v>>8)) // little-endian
+		pcm = binary.LittleEndian.AppendUint16(pcm, uint16(v))
 	}
 	return wavMono16(pcm, alertSampleRate)
 }
@@ -391,10 +396,11 @@ type modSegment struct {
 func synthSegments(segs []modSegment) []byte {
 	const sr = 44100
 	const attack = 0.06 // fraction of a segment spent ramping in (anti-click)
-	pcm := make([]byte, 0, 4096)
+	const pcmInitialCap = 4096
+	pcm := make([]byte, 0, pcmInitialCap)
 	phase := 0.0
 	for _, s := range segs {
-		n := sr * s.ms / 1000
+		n := sr * s.ms / msPerSecond
 		for i := 0; i < n; i++ {
 			prog := float64(i) / float64(n) // 0..1 through the segment
 			freq := s.freqStart + (s.freqEnd-s.freqStart)*prog
@@ -405,10 +411,10 @@ func synthSegments(segs []modSegment) []byte {
 				env = 1 - (prog-attack)/(1-attack)
 			}
 			v := int16(math.Sin(phase) * s.amp * env * math.MaxInt16)
-			pcm = append(pcm, byte(v), byte(v>>8))
+			pcm = binary.LittleEndian.AppendUint16(pcm, uint16(v))
 			phase += 2 * math.Pi * freq / sr
 		}
-		for i := 0; i < sr*s.gapMs/1000; i++ {
+		for i := 0; i < sr*s.gapMs/msPerSecond; i++ {
 			pcm = append(pcm, 0, 0)
 		}
 	}
@@ -418,6 +424,7 @@ func synthSegments(segs []modSegment) []byte {
 // builtinModWAV synthesizes the default sound for a mod action — each distinct
 // so they're tell-apart by ear: ban = a low, heavy two-tone "thud"; kick = two
 // quick punchy blips; mute = a muffled downward sweep ("shush").
+//nolint:mnd // a named tone table (rule 9)
 func builtinModWAV(action ModAction) []byte {
 	switch action {
 	case ModKick:
@@ -440,20 +447,22 @@ func builtinModWAV(action ModAction) []byte {
 // wavMono16 wraps 16-bit mono PCM samples in a minimal RIFF/WAVE container.
 func wavMono16(pcm []byte, sampleRate int) []byte {
 	const (
-		channels   = 1
-		bits       = 16
-		pcmFormat  = 1 // WAVE_FORMAT_PCM
-		fmtChunk   = 16
-		headerSize = 44
+		channels     = 1
+		bits         = 16
+		pcmFormat    = 1 // WAVE_FORMAT_PCM
+		fmtChunk     = 16
+		headerSize   = 44
+		riffPreamble = 8 // "RIFF" and the size field, not counted in the size
+		bitsPerByte  = 8
 	)
-	byteRate := sampleRate * channels * bits / 8
-	blockAlign := channels * bits / 8
+	byteRate := sampleRate * channels * bits / bitsPerByte
+	blockAlign := channels * bits / bitsPerByte
 	buf := make([]byte, 0, headerSize+len(pcm))
 	put4 := func(s string) { buf = append(buf, s...) }
-	put32 := func(v int) { buf = append(buf, byte(v), byte(v>>8), byte(v>>16), byte(v>>24)) }
-	put16 := func(v int) { buf = append(buf, byte(v), byte(v>>8)) }
+	put32 := func(v int) { buf = binary.LittleEndian.AppendUint32(buf, uint32(v)) }
+	put16 := func(v int) { buf = binary.LittleEndian.AppendUint16(buf, uint16(v)) }
 	put4("RIFF")
-	put32(36 + len(pcm)) // RIFF chunk size = 4 ("WAVE") + (8+fmt) + (8+data)
+	put32(headerSize - riffPreamble + len(pcm)) // RIFF chunk size: everything after its size field
 	put4("WAVE")
 	put4("fmt ")
 	put32(fmtChunk)

@@ -46,13 +46,16 @@ func (d *debugLogSink) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
+// debugLogBuffer is how many lines the debug log holds before senders drop.
+const debugLogBuffer = 64
+
 var (
 	// debugLogChan is allocated eagerly so the F8 panel's PollDebugLogs can drain it
 	// before EnableDebugLogCapture has run (or while it is running on the audio
 	// goroutine) without racing a lazy write. A nil-check read against the
 	// sync.Once write was a data race: the Once serializes the writers, not the
 	// reader.
-	debugLogChan   = make(chan string, 64) // buffer 64 lines
+	debugLogChan   = make(chan string, debugLogBuffer)
 	debugLogOnce   sync.Once
 	originalStderr *os.File
 )
