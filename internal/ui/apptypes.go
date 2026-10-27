@@ -64,10 +64,7 @@ type sessionState struct {
 	icSwatchRect     sdl.Rect
 	icColorHexBuf    string
 	fxBtnRect        sdl.Rect // last-drawn FX button rect (the picker anchors above it + the fence finds it)
-	// Per-part layout colours: the parsed draw cache (refreshPartColors),
-	// the Settings wheel's selected part, and its hex-field edit buffer.
-	partColors   [config.LayoutPartColorCount]sdl.Color
-	partColorOn  [config.LayoutPartColorCount]bool
+	// The Settings wheel's selected layout part and its hex-field edit buffer.
 	partEditSlot int
 	partHexBuf   string
 	// showPowerUser reveals the advanced/power-user Settings options (TLS, Asset Origin, asset
