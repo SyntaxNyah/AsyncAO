@@ -1,16 +1,14 @@
-// Package mixerx wraps SDL Mixer X (WohlSoft's extended SDL_mixer fork) for
-// AsyncAO. It is a drop-in replacement for go-sdl2's `mix` package with the
-// added runtime loop-point setters (Mix_SetMusicLoopStartTime/EndTime) that
-// AsyncAO's custom music loop points (#48) depend on.
+// Package mix is AsyncAO's binding to SDL Mixer X (our fork of WohlSoft's extended
+// SDL_mixer). It mirrors go-sdl2's `mix` package and adds the runtime loop-point
+// setters (Mix_SetMusicLoopStartTime/EndTime) that custom music loop points (#48)
+// depend on, plus the multi-music stream API behind crossfades and gapless loops.
+// The SDL3 move reimplements it over SDL3_mixer and drops the fork.
 //
-// The cgo preamble links SDL Mixer X (AsyncAO's fork of WohlSoft/SDL-Mixer-X),
-// which provides the multi-music stream API and the runtime loop-point setters
-// that AsyncAO's crossfade and gapless-loop support depend on. Only the library
-// NAME is pinned here; the include and library search paths are supplied by the
-// build environment (CGO_CFLAGS / CGO_LDFLAGS — see scripts/build.ps1,
-// scripts/setup-deps.*, and the CI workflows, which build the fork and point
-// cgo at its install prefix). See docs/SDL_MIXER_X-MIGRATION-PLAN.md.
-package mixerx
+// Only the library NAME is pinned here; the include and library search paths come
+// from the build environment (CGO_CFLAGS / CGO_LDFLAGS: see scripts/build.ps1,
+// scripts/setup-deps.*, and the CI workflows, which build the fork and point cgo
+// at its install prefix).
+package mix
 
 /*
 #cgo LDFLAGS: -lSDL2_mixer_ext
@@ -22,7 +20,7 @@ import "C"
 import (
 	"unsafe"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Chunk mirrors C's Mix_Chunk. Its memory layout must stay byte-identical to

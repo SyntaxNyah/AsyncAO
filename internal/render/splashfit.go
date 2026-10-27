@@ -17,7 +17,7 @@ package render
 // data rather than a constant, and it is a different asset's INI in a different
 // package. Recorded, not half-done.
 
-import "github.com/veandco/go-sdl2/sdl"
+import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
 // splashFitRect is AO2's non-stretch AnimationLayer geometry: scale the frame by
 // the viewport's HEIGHT over the frame's own height, keep the aspect, centre the

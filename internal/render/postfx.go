@@ -4,9 +4,8 @@ import (
 	"math"
 	"math/rand"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Post-processing overlays (#10): retro / CRT looks blended OVER the composited stage —

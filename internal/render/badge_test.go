@@ -5,7 +5,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestBadgeBlendModeAndDraw pins the floating-reaction badge foundation (#2): a badge texture

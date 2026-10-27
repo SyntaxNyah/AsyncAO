@@ -6,13 +6,12 @@ import (
 	"math"
 	"time"
 
-	mix "github.com/SyntaxNyah/AsyncAO/internal/render/mixerx"
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/mix"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 const (

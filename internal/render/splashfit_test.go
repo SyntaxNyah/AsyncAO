@@ -7,7 +7,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestSplashFitRectKeepsTheAspectAndCentres is the reported defect, as numbers.

@@ -3,8 +3,8 @@ package render
 import (
 	"math"
 
-	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 // Badge is a single small text / emoji texture the UI can position, scale and ALPHA-FADE

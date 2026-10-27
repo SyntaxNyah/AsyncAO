@@ -4,9 +4,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Particle weather (#124): an OFF-by-default ambient overlay — snow / rain / sakura / embers

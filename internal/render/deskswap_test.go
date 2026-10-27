@@ -4,9 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Bases for the two-room desk swap: room A is on screen, room B is the incoming

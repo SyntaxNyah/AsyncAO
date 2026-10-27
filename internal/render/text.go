@@ -4,8 +4,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 // AO chat text colors (TEXT_COLOR field), AO2-Client palette.

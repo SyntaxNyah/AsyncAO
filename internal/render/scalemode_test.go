@@ -3,7 +3,7 @@ package render
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestSetTextureScaleModeRoundTrips proves the cgo binding actually reaches SDL:

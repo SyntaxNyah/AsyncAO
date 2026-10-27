@@ -5,7 +5,7 @@ import (
 	"time"
 	"unsafe"
 
-	mix "github.com/SyntaxNyah/AsyncAO/internal/render/mixerx"
+	"github.com/SyntaxNyah/AsyncAO/internal/mix"
 )
 
 // TestPlayMusicAtIdempotent pins the cross-tab resume guard: PlayMusicAt for the

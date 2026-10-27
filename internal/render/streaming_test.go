@@ -5,9 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // streamChunk builds a single-frame streaming chunk (Stream=true) at the given

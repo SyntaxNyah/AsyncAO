@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestPostFXZeroAlloc pins #10/#77: every overlay on (incl. the CRT preset's phosphor

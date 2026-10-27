@@ -4,8 +4,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 // Animated chat text (#M5): shake / wave / rainbow per-span effects in the chatbox. Each

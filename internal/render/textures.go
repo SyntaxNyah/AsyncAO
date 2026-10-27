@@ -12,10 +12,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 const (

@@ -4,9 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestShakeClipsTheBackgroundToTheStage pins #80: the background fill rides the
