@@ -56,6 +56,19 @@ func OpenFontRW(src *sdl.RWops, freesrc, size int) (*Font, error) {
 // Close frees the font.
 func (f *Font) Close() { C.TTF_CloseFont(f.f) }
 
+// AddFallbackFont makes fb draw every glyph f lacks, in the order fallbacks are
+// added, for both rendering and measuring. fb must be the same size as f and stay
+// open while it is attached. Both fonts belong to the calling thread.
+func (f *Font) AddFallbackFont(fb *Font) error {
+	if !C.TTF_AddFallbackFont(f.f, fb.f) {
+		return sdl.GetError()
+	}
+	return nil
+}
+
+// ClearFallbackFonts detaches every fallback added to f.
+func (f *Font) ClearFallbackFonts() { C.TTF_ClearFallbackFonts(f.f) }
+
 // Height is the font's maximum glyph height in pixels.
 func (f *Font) Height() int { return int(C.TTF_GetFontHeight(f.f)) }
 

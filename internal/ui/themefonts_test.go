@@ -174,7 +174,7 @@ func TestElemLabelFontAtPctKeepsTheUndressedContract(t *testing.T) {
 	a := testTabApp(t)
 	a.themeFonts = themeFontTable{}
 	for _, pct := range []int{50, 100, 200} {
-		if got := a.elemLabelFontAtPct(elemMusicName, pct); got != a.ctx.font {
+		if got := a.elemLabelFontAtPct(elemMusicName, pct, "Trial ~ Allegro 2001"); got != a.ctx.font {
 			t.Errorf("undressed at %d%%: got %p, want the chrome face %p", pct, got, a.ctx.font)
 		}
 	}

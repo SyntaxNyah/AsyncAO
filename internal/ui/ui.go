@@ -706,27 +706,25 @@ func (c *Ctx) chromeFace() *ttf.Font {
 	return c.font
 }
 
-// chromeFaceFor is chromeFace for a KNOWN string: the same face when it can draw
-// the text, otherwise the first face in the fallback chain that can.
-//
-// Plain chrome labels used to render straight from one face with no chain at all,
-// so every non-Latin string outside the chat/log paths — character names in the
-// picker, area names, tab titles, menu entries, tooltips, player names — drew as
-// .notdef boxes no matter how many fallback faces were loaded. This is a
-// single-face pick rather than the per-glyph raster the message paths use: a
-// chrome label is nearly always one script, the pick is memoized, and it keeps
-// the label on the shared texture atlas instead of giving every name its own
-// textures.
+// chromeFaceFor is chromeFace for a KNOWN string: for non-ASCII text, the chrome
+// set's first face, which carries the fallback chain (buildSet), so every glyph
+// the chrome face lacks comes from the first fallback face that has it. The label
+// stays one texture on the shared atlas.
 //
 // Pure ASCII short-circuits before anything is built, so the common case is a
-// one-pass byte scan and nothing else. A panel-dressed face is left alone: its
-// whole point is that the user chose that family for that panel.
+// one-pass byte scan and nothing else. A panel-dressed face is returned as is: it
+// is the first face of its element's set, so it carries the same chain once the
+// fallback faces have loaded, and the user's chosen family still draws every glyph
+// it has.
 func (c *Ctx) chromeFaceFor(text string) *ttf.Font {
 	face := c.chromeFace()
-	if c.panelFont != nil || !hasNonASCII(text) {
+	if !hasNonASCII(text) {
 		return face
 	}
 	c.noteScript(text) // latch the off-thread fallback load, exactly as ChatFontFor does
+	if c.panelFont != nil {
+		return face
+	}
 	fonts := c.buildSet(&c.chromeSet, c.fontChain, c.chainCover, DefaultScalePct, DefaultScalePct, c.font, false)
 	if len(fonts) <= 1 {
 		return face // nothing loaded yet; the text re-draws when a face lands
@@ -806,9 +804,10 @@ func (c *Ctx) ChatFont(pct int) *ttf.Font {
 	return c.fontsFor(&c.chatSet, pct)[0]
 }
 
-// ChatFontFor picks the font that covers every rune of text: the embedded
-// font for Latin/Greek/Cyrillic, a broad fallback face (once loaded) for the
-// scripts it lacks. Non-ASCII text also latches the one-time fallback load.
+// ChatFontFor returns the chat set's face for text: its first face, which takes
+// every glyph it lacks from the fallback chain (pickFont), and records whether the
+// chain covers the text for the raster gate. Non-ASCII text also latches the
+// one-time fallback load.
 func (c *Ctx) ChatFontFor(pct int, text string) *ttf.Font {
 	c.noteScript(text)
 	return c.pickSet(&c.chatSet, pct, text)
@@ -897,8 +896,8 @@ func (c *Ctx) dropThemeElemSets() {
 }
 
 // noteScript raises the load latches the first time their script is seen: the broad
-// fallback on any non-ASCII rune, the (independent) CJK tier on a Han/Kana/Hangul
-// letter. Once a tier is loaded or already latched its check drops out, and when both
+// fallback on any non-ASCII rune, the (independent) CJK tier on a CJK rune
+// (isCJKRune). Once a tier is loaded or already latched its check drops out, and when both
 // are settled it returns before the byte scan — so a pure-ASCII session never trips it
 // and the single-font fast path stays untouched (0-perf rule). The CJK latch is kept
 // SEPARATE from the broad one so the broad load (fired by the first European accent)
@@ -916,7 +915,7 @@ func (c *Ctx) noteScript(text string) {
 	if needBroad {
 		c.wantFallback = true
 	}
-	if needCJK && cjkMaybe && hasCJKLetter(text) {
+	if needCJK && cjkMaybe && hasCJKRune(text) {
 		c.wantCJK = true
 	}
 }
@@ -985,15 +984,9 @@ func (c *Ctx) pickIn(s *fontSet, fonts []*ttf.Font, pct int, text string) *ttf.F
 	}
 	f, covered := pickFont(fonts, s.cover, &c.sfntBuf, text)
 	if !covered {
-		// The picked face can't draw the whole string, so some of it may be about to
-		// come out as .notdef — offer those runes to the census.
-		//
-		// "May", not "is": covered==false no longer implies nothing in the set covers
-		// the line, since the pick is now made on the VISIBLE runes alone and a face
-		// that merely lacks a formatting rune still wins it. noteUncoveredIn re-checks
-		// every cover in the set and skips invisible runes outright, so an
-		// invisible-only gap queues nothing — it just costs one scan of a string this
-		// client had not drawn before.
+		// No face in the set has some rune of the string, so it may be about to come
+		// out as .notdef — offer those runes to the census. noteUncoveredIn skips
+		// invisible formatting runes, so a gap of only those queues nothing.
 		//
 		// This sits in the memo-MISS branch on purpose. Every single-face pick lands
 		// here (chat, log, the per-element theme sets, and now chrome labels), and a
@@ -1026,14 +1019,7 @@ func (c *Ctx) noteUncoveredIn(s *fontSet, text string) {
 		if r < 0x80 || isInvisibleRune(r) {
 			continue
 		}
-		covered := false
-		for _, cov := range s.cover {
-			if coverHasRune(cov, &c.sfntBuf, r) {
-				covered = true
-				break
-			}
-		}
-		if !covered {
+		if !anyCoversRune(s.cover, &c.sfntBuf, r) {
 			c.noteUncovered(r)
 		}
 	}
@@ -1185,12 +1171,7 @@ func (c *Ctx) uncoveredPictographMask(primary *ttf.Font, runes []rune) []bool {
 // question coverRunes asks, factored out so the pictograph gate and the per-rune
 // face resolution can never disagree about what "covered" means.
 func (c *Ctx) setCovers(s *fontSet, r rune) bool {
-	for _, cov := range s.cover {
-		if coverHasRune(cov, &c.sfntBuf, r) {
-			return true
-		}
-	}
-	return false
+	return anyCoversRune(s.cover, &c.sfntBuf, r)
 }
 
 // isInvisibleRune reports the formatting characters that are SUPPOSED to render as
@@ -1465,6 +1446,9 @@ func (c *Ctx) buildSet(s *fontSet, chain [][]byte, chainCover []*sfnt.Font, pct,
 	if len(s.fonts) > 0 && s.pct == pct && s.devPct == devPct && s.gen == c.fontChainGen {
 		return s.fonts
 	}
+	if len(s.fonts) > 1 && s.fonts[0] != nil && s.fonts[0] != chromeShare {
+		s.fonts[0].ClearFallbackFonts() // detach before the faces it points at close
+	}
 	for _, f := range s.fonts {
 		if f != chromeShare {
 			f.Close()
@@ -1504,7 +1488,11 @@ func (c *Ctx) buildSet(s *fontSet, chain [][]byte, chainCover []*sfnt.Font, pct,
 	// in for the true last resort, since its coverage isn't goregular's and
 	// the cover entry appended below is the embedded cmap. "At 1:1" means the
 	// requested size equals the chrome face's size: pct==100 AND devPct==100.
-	if chromeShare == nil || (pct == DefaultScalePct && devPct == DefaultScalePct && c.chromeData == nil) {
+	// Nor when the set has fallback faces: the set's first face carries them (see
+	// the end of this function), and a shared chrome face would collect every
+	// set's chain and keep pointers to faces another set's rebuild closes.
+	hasFallbacks := len(chain) > 0 || len(c.fallbackData) > 0 || len(c.cjkData) > 0 || len(c.censusData) > 0
+	if chromeShare == nil || (!hasFallbacks && pct == DefaultScalePct && devPct == DefaultScalePct && c.chromeData == nil) {
 		s.fonts = append(s.fonts, chromeShare)
 	} else if f, err := loadEmbeddedFont(size); err == nil {
 		s.fonts = append(s.fonts, f)
@@ -1540,6 +1528,18 @@ func (c *Ctx) buildSet(s *fontSet, chain [][]byte, chainCover []*sfnt.Font, pct,
 		if f, err := memFont(data, size); err == nil {
 			s.fonts = append(s.fonts, f)
 			s.cover = append(s.cover, coverAt(c.censusCover, i))
+		}
+	}
+	// Per-glyph fallback, the way Qt resolves fonts: the first face draws every
+	// glyph it has and SDL_ttf takes each missing glyph from the first later face
+	// that has it, for drawing and measuring alike. Every label drawn with the
+	// set's face therefore mixes scripts correctly in one texture, and Latin keeps
+	// the primary face's look next to a CJK bracket or a symbol.
+	if primary := s.fonts[0]; primary != nil && primary != chromeShare {
+		for _, f := range s.fonts[1:] {
+			if f != nil && f != chromeShare {
+				_ = primary.AddFallbackFont(f) // a refused face leaves its glyphs as boxes, as before
+			}
 		}
 	}
 	return s.fonts
@@ -1713,41 +1713,44 @@ func (c *Ctx) emojiDeviceFont(pct int) *ttf.Font {
 	return f
 }
 
-// pickFont returns the rendering font for the first set entry whose sfnt cover
-// provides every VISIBLE rune of text — a Cyrillic line stays on the embedded font,
-// a Tifinagh / Indic line resolves to the covering fallback face. cover is aligned
-// with fonts; the last entry is the unconditional fallback (used when nothing
-// covers, so the result is at worst the same .notdef box as before).
+// pickFont returns the set's first face, which draws every line: buildSet attaches
+// the rest of the set to it as SDL_ttf fallbacks, so a glyph it lacks comes from the
+// first later face that has it. This is how Qt resolves fonts, and it replaced a
+// whole-line pick that moved the entire string to the first face covering all of
+// it: "「Edgeworth」" drew its Latin in Yu Gothic, and a string no single face
+// covered drew every missing glyph as a box.
 //
-// VISIBLE is the whole rule. An invisible formatting rune — a joiner, a directional
-// mark, the zero-width sidechannel courtroom/spritestyle.go rides on IC text — draws
-// as nothing when it works, so it must never VETO a face for the words around it. It
-// used to: the embedded face has a glyph for none of the nine codec runes, so one of
-// them anywhere in a message walked the pick off the primary face and onto whichever
-// fallback happened to carry zero-width glyphs, and the whole ASCII line then rendered
-// in that stray family. noteUncoveredIn has applied exactly this skip to the CENSUS
-// since it was written; the pick, which is what the reader actually sees, never got it.
-//
-// The second result stays HONEST — true only when the face covers every rune, the
-// invisible ones included. That bool is the raster gate (coversFace), and a face with
-// no glyph for a formatting rune must still let the per-glyph raster hand that one rune
-// to a face that has it, instead of blitting the whole line through a .notdef box.
+// The second result reports whether some face in the set has every rune, invisible
+// formatting runes included. It is the raster gate (coversFace): when it is false the
+// caller takes the per-glyph raster, which can still hand a pictograph to the colour
+// emoji face.
 func pickFont(fonts []*ttf.Font, cover []*sfnt.Font, buf *sfnt.Buffer, text string) (*ttf.Font, bool) {
 	if len(fonts) == 1 {
 		return fonts[0], true
 	}
-	for i, f := range fonts[:len(fonts)-1] {
-		if i >= len(cover) {
-			continue
-		}
-		if visible, all := coverScan(cover[i], buf, text); visible {
-			return f, all
+	return fonts[0], chainCovers(cover, buf, text)
+}
+
+// chainCovers reports whether every rune of text has a glyph in at least one face of
+// cover. Allocation-free: the reused sfnt buffer, and an early return on the first
+// rune nothing covers.
+func chainCovers(cover []*sfnt.Font, buf *sfnt.Buffer, text string) bool {
+	for _, r := range text {
+		if !anyCoversRune(cover, buf, r) {
+			return false
 		}
 	}
-	// Fell through — no face covers even the visible runes (a mixed-script run). The
-	// last entry renders it (at worst the same .notdef as before); covered=false
-	// tells the raster gate to take the per-glyph path instead.
-	return fonts[len(fonts)-1], false
+	return true
+}
+
+// anyCoversRune reports whether any face in cover has a glyph for r.
+func anyCoversRune(cover []*sfnt.Font, buf *sfnt.Buffer, r rune) bool {
+	for _, f := range cover {
+		if coverHasRune(f, buf, r) {
+			return true
+		}
+	}
+	return false
 }
 
 // coverHasRune reports whether the sfnt face provides a glyph (cmap index != 0)
@@ -1758,35 +1761,6 @@ func coverHasRune(f *sfnt.Font, buf *sfnt.Buffer, r rune) bool {
 	}
 	idx, err := f.GlyphIndex(buf, r)
 	return err == nil && idx != 0
-}
-
-// coverScan answers the pick's two different questions in ONE pass over text:
-//
-//	visible — does f have a glyph for every rune that is SUPPOSED to draw something?
-//	          This is the PICK rule (see pickFont): an isInvisibleRune formatting
-//	          character cannot disqualify a face for the visible text around it.
-//	all     — does f have a glyph for every rune, invisible ones included? This is
-//	          the raster gate, and it must stay honest so a formatting rune the face
-//	          lacks still routes through coverRunes instead of drawing .notdef.
-//
-// The two answers differ only for the runes isInvisibleRune names, which is exactly
-// the point. A nil face covers nothing. Allocation-free: the reused sfnt buffer, and
-// an early return the moment a VISIBLE rune is missing (the common rejection).
-func coverScan(f *sfnt.Font, buf *sfnt.Buffer, text string) (visible, all bool) {
-	if f == nil {
-		return false, false
-	}
-	all = true
-	for _, r := range text {
-		if coverHasRune(f, buf, r) {
-			continue
-		}
-		all = false
-		if !isInvisibleRune(r) {
-			return false, false // a rune that must draw is missing: this face is out
-		}
-	}
-	return true, all
 }
 
 // coverAt returns the cover face at i, or nil when out of range — keeps the

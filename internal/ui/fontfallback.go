@@ -26,10 +26,19 @@ func scanScriptBytes(s string) (nonASCII, cjkMaybe bool) {
 	return nonASCII, false
 }
 
-// isCJKLetter reports a Han / Kana / Hangul letter (NOT CJK punctuation, which the
-// embedded font may already cover) — the runes that need the big CJK faces.
-func isCJKLetter(r rune) bool {
+// isCJKRune reports a rune only the CJK faces draw: Han, Kana and Hangul letters,
+// and the CJK punctuation and full-width forms that come with them. 「」【】～・、。
+// and full-width Latin are in none of the broad fallback faces, so a line made of
+// them and ASCII (a bracketed name, a kaomoji) used to stay boxes until the
+// census found a face.
+func isCJKRune(r rune) bool {
 	switch {
+	case r >= 0x3000 && r <= 0x303F: // CJK Symbols and Punctuation
+		return true
+	case r >= 0xFF00 && r <= 0xFFEF: // Halfwidth and Fullwidth Forms
+		return true
+	case r >= 0xFE30 && r <= 0xFE4F: // CJK Compatibility Forms
+		return true
 	case r >= 0x3040 && r <= 0x30FF: // Hiragana + Katakana
 		return true
 	case r >= 0x3400 && r <= 0x9FFF: // CJK Ext-A + Unified Ideographs (Han)
@@ -44,12 +53,12 @@ func isCJKLetter(r rune) bool {
 	return false
 }
 
-// hasCJKLetter confirms an actual CJK letter, after scanScriptBytes' cheap byte gate
-// said "maybe" (so the rune decode runs only on the rare ≥0xE3 line, never on ASCII or
-// the common European non-ASCII).
-func hasCJKLetter(s string) bool {
+// hasCJKRune confirms a rune only the CJK faces draw, after scanScriptBytes' cheap
+// byte gate said "maybe" (so the rune decode runs only on the rare ≥0xE3 line, never
+// on ASCII or the common European non-ASCII).
+func hasCJKRune(s string) bool {
 	for _, r := range s {
-		if isCJKLetter(r) {
+		if isCJKRune(r) {
 			return true
 		}
 	}
@@ -279,7 +288,7 @@ func fileReadable(p string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// ensureCJKFontLoad reads the CJK faces ONCE, off-thread, the first time a CJK LETTER
+// ensureCJKFontLoad reads the CJK faces ONCE, off-thread, the first time a CJK RUNE
 // is drawn. Its latch (cjkLoadStarted) is INDEPENDENT of the broad-fallback latch: a
 // session routinely hits a European non-ASCII name before any CJK, loading the broad
 // set — if CJK detection shared that guard it would die silently after the first
