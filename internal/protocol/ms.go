@@ -63,8 +63,9 @@ const (
 
 	// legacyEmoteModObjection (2) and legacyEmoteModZoomPre (4) are
 	// deprecated wire values normalized at parse (AO2-Client
-	// handle_emote_mod).
+	// handle_emote_mod). legacyEmoteModUnknown (3) has no meaning at all.
 	legacyEmoteModObjection = 2
+	legacyEmoteModUnknown   = 3
 	legacyEmoteModZoomPre   = 4
 )
 
@@ -481,10 +482,11 @@ func flipSafe(flip bool) aolib.Flip {
 // parseEffect splits the "name|folder|sound" effects slot into aolib's Effect,
 // mirroring aolib's own effectFromWire positionally.
 func parseEffect(raw string) aolib.Effect {
+	const effectFields = 3 // name|folder|sound
 	if raw == "" {
 		return aolib.Effect{}
 	}
-	parts := strings.SplitN(raw, "|", 3)
+	parts := strings.SplitN(raw, "|", effectFields)
 	e := aolib.Effect{Name: parts[0]}
 	if len(parts) > 1 {
 		e.Folder = parts[1]
@@ -508,7 +510,7 @@ func NormalizeOutgoingEmoteMod(mod int, hasPreanim, preanim, immediate bool, fea
 	switch mod {
 	case legacyEmoteModObjection:
 		mod = EmoteModPreanim
-	case 3: // "No clue what emote_mod 3 is even supposed to be." — AO2-Client
+	case legacyEmoteModUnknown: // "No clue what emote_mod 3 is even supposed to be." — AO2-Client
 		mod = EmoteModIdle
 	case legacyEmoteModZoomPre:
 		mod = EmoteModZoom
