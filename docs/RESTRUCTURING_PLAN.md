@@ -26,6 +26,7 @@ in **Status**. Update Status in the same commit that completes a step.
 - [ ] 6. Config API: `Set*` forwarder removal; engine option structs; engine stops importing config
 - [ ] 7. Feature loop (jukebox → notebook → … → courtroom screen), extract then move
 - [ ] 8. Remaining lower-layer work (Settings grouping, Manager `Source`, render debug sink)
+- [ ] 9. Fold `cmd/asyncao-cache` into the client with its own UI (needs a mature uikit)
 
 Diagrams live in the shared diagram page, not in this file:
 https://claude.ai/artifact/APmF2gN8QTGfPyB13mAhQv. The open-issue review behind the
@@ -490,6 +491,12 @@ call it are owned or moved, so moved code is touched once:
 8. **Remaining lower-layer work** (Part 5b) that doesn't touch ui call sites: `Settings` domain
    grouping via embedding (JSON unchanged, proven by the goldens), the internal `Source` chain in
    `assets.Manager`, render debug sink injection.
+9. **Fold the cache tool into the client.** `cmd/asyncao-cache` (stats, inspect, prune, warm for
+   the T3 disk cache) becomes part of the client once uikit has matured: its own screen, opened
+   from Settings or with a command-line flag on `asyncao`, then the separate command is deleted.
+   Until then it stays as it is. It currently builds only with cgo (it imports `internal/assets`
+   for the `extensions.json` parser), though its doc comment says it is pure Go, and no build
+   script or CI job builds it.
 
 The small shared UI pieces that were planned as `shell` services (Toast, Nav, KeyCapture,
 FrameState) land in uikit during step 4, each replacing its hand-written copies in one commit
