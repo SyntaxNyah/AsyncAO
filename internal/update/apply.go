@@ -27,6 +27,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/safepath"
 )
 
 const (
@@ -270,7 +272,7 @@ func ExtractTarGz(tarPath, destDir string) error {
 		}
 		name := strings.TrimPrefix(filepath.ToSlash(hdr.Name), "./")
 		name = strings.TrimPrefix(name, "/")
-		if name == "" || strings.HasPrefix(name, "..") || strings.Contains(name, "/../") {
+		if safepath.UnsafeRel(name) {
 			return fmt.Errorf("update: unsafe path in bundle: %q", hdr.Name)
 		}
 		dst := filepath.Join(destDir, filepath.FromSlash(name))
