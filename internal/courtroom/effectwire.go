@@ -1,6 +1,9 @@
 package courtroom
 
-import "strings"
+import (
+	"encoding/binary"
+	"strings"
+)
 
 // Animated chat text (#M5): a speaker can tag spans of their message with a motion/colour
 // effect — shake, wave, rainbow. The spans ride the SAME invisible zero-width channel as
@@ -216,7 +219,9 @@ func EncodeEffectsMarker(spans []TextEffectSpan) string {
 		if ln > maxEffectLen {
 			ln = maxEffectLen
 		}
-		payload = append(payload, sp.Effect, byte(st>>8), byte(st), byte(ln))
+		payload = append(payload, sp.Effect)
+		payload = binary.BigEndian.AppendUint16(payload, uint16(st))
+		payload = append(payload, byte(ln))
 	}
 	return packZeroWidth(payload)
 }
@@ -246,7 +251,7 @@ func DecodeEffectsMarker(text string) ([]TextEffectSpan, bool) {
 				continue // unknown effect or empty span → drop it
 			}
 			spans = append(spans, TextEffectSpan{
-				Start:  int(fr[off+1])<<8 | int(fr[off+2]),
+				Start:  int(binary.BigEndian.Uint16(fr[off+1:])),
 				Len:    ln,
 				Effect: eff,
 			})

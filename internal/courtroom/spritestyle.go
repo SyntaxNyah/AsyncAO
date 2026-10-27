@@ -1,6 +1,9 @@
 package courtroom
 
-import "strings"
+import (
+	"math"
+	"strings"
+)
 
 // SpriteStyle is a speaker's per-message visual customization of their own
 // character sprite — recolour, opacity, glow, and gentle motion. It is the
@@ -205,14 +208,14 @@ func (s SpriteStyle) Variant() VariantEffect {
 // AlphaMod resolves Opacity to an 0..255 SetTextureAlphaMod value, treating 0 as
 // opaque and flooring an explicit value at minVisibleOpacity.
 func (s SpriteStyle) AlphaMod() uint8 {
-	if s.Opacity == 0 || s.Opacity >= 100 {
-		return 255
+	if s.Opacity == 0 || s.Opacity >= percentMax {
+		return math.MaxUint8
 	}
 	pct := s.Opacity
 	if pct < minVisibleOpacity {
 		pct = minVisibleOpacity
 	}
-	return uint8(int(pct) * 255 / 100)
+	return uint8(int(pct) * math.MaxUint8 / percentMax)
 }
 
 // BrightnessPct / ScalePct resolve their 0-as-unset fields to a usable percent,
@@ -222,12 +225,12 @@ func (s SpriteStyle) BrightnessPct() int {
 }
 func (s SpriteStyle) ScalePct() int { return resolvePct(s.Scale, minStyleScale, maxStyleScale) }
 func (s SpriteStyle) RotationDeg() float64 {
-	return float64(int(s.Rotation)) * 360.0 / 256.0
+	return float64(int(s.Rotation)) * degreesPerTurn / rotationSteps
 }
 
 func resolvePct(v uint8, lo, hi int) int {
 	if v == 0 {
-		return 100
+		return percentMax
 	}
 	if int(v) < lo {
 		return lo
@@ -283,6 +286,23 @@ const (
 	// see payloadBytes — so those clients still colour the outline correctly.)
 	tailFlagPaint2  = 1 << 0 // 4 bytes: split, Paint2R, Paint2G, Paint2B
 	tailFlagGlitchX = 1 << 1 // 7 bytes: mode, GlitchA RGB, GlitchB RGB
+)
+
+// Zero-width packing: each invisible rune carries one octal digit and takes three
+// UTF-8 bytes.
+const (
+	bitsPerOctal = 3
+	bitsPerByte  = 8
+	zwRuneBytes  = 3
+)
+
+// Values the style resolvers share.
+const (
+	percentMax     = 100 // a style percentage at its neutral value
+	rotationSteps  = 256 // the tilt byte covers one full turn
+	degreesPerTurn = 360
+	motionShift    = 5 // the motion path rides the top 3 bits of flags2
+	motionMask     = 0x07
 )
 
 // octalSyms maps an octal digit (3 bits) to one invisible code point. All eight are
@@ -361,7 +381,7 @@ func (s SpriteStyle) payloadBytes() []byte {
 	if s.Posterize {
 		flags2 |= styleFlag2Posterize
 	}
-	flags2 |= (s.Motion & 0x07) << 5 // motion path rides the top 3 bits of flags2 (#34)
+	flags2 |= (s.Motion & motionMask) << motionShift // #34
 	// Append flags2 when it carries anything OR a custom path follows it: the path region sits
 	// right after flags2, so flags2 must be present to keep byte positions deterministic.
 	hasPath := s.PathLen >= 2 && s.PathLen <= maxPathPoints
@@ -445,7 +465,7 @@ func styleFromBytes(b []byte) SpriteStyle {
 		s.Glitch = flags2&styleFlag2Glitch != 0
 		s.Sepia = flags2&styleFlag2Sepia != 0
 		s.Posterize = flags2&styleFlag2Posterize != 0
-		if m := flags2 >> 5; m < MotionCount { // top 3 bits = motion path (#34); unknown ⇒ none
+		if m := flags2 >> motionShift; m < MotionCount { // top 3 bits = motion path (#34); unknown ⇒ none
 			s.Motion = m
 		}
 		// Custom path (#34) right after flags2: b[10] = point count, b[11:] = packed XY bytes.
@@ -526,19 +546,19 @@ func (s SpriteStyle) encodeMarker() string {
 // both the sprite-style and the profile (#101) codecs.
 func packZeroWidth(payload []byte) string {
 	var sb strings.Builder
-	sb.Grow((len(payload)*8/3 + 2) * 3) // data runes + sentinel, 3 UTF-8 bytes each
+	sb.Grow((len(payload)*bitsPerByte/bitsPerOctal + 2) * zwRuneBytes) // data runes + sentinel
 	sb.WriteRune(zwStart)
 	acc, nbits := 0, 0
 	for _, by := range payload {
-		acc = acc<<8 | int(by)
-		nbits += 8
-		for nbits >= 3 { // emit whole octal digits, MSB first
-			nbits -= 3
+		acc = acc<<bitsPerByte | int(by)
+		nbits += bitsPerByte
+		for nbits >= bitsPerOctal { // emit whole octal digits, MSB first
+			nbits -= bitsPerOctal
 			sb.WriteRune(octalSyms[(acc>>uint(nbits))&0x7])
 		}
 	}
 	if nbits > 0 { // pad a trailing partial digit
-		sb.WriteRune(octalSyms[(acc<<uint(3-nbits))&0x7])
+		sb.WriteRune(octalSyms[(acc<<uint(bitsPerOctal-nbits))&0x7])
 	}
 	return sb.String()
 }
@@ -649,11 +669,11 @@ func scanZeroWidthFrames(text string) [][]byte {
 			flush() // first non-symbol rune ends the run
 			continue
 		}
-		acc = acc<<3 | idx
-		nbits += 3
-		if nbits >= 8 {
-			nbits -= 8
-			cur = append(cur, byte((acc>>uint(nbits))&0xFF))
+		acc = acc<<bitsPerOctal | idx
+		nbits += bitsPerOctal
+		if nbits >= bitsPerByte {
+			nbits -= bitsPerByte
+			cur = append(cur, byte(acc>>uint(nbits))) // byte() keeps the low 8 bits
 		}
 	}
 	flush()

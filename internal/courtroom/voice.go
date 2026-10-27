@@ -33,6 +33,24 @@ import (
 // here self-heals rather than corrupting state.
 const voicePeerCap = 256
 
+// voicePeersInitialCap sizes the voice peer sets for a typical area.
+const voicePeersInitialCap = 8
+
+// VS_CAPS field order, and the defaults for fields an older server omits.
+const (
+	vsCapsEnabled = iota
+	vsCapsPTTOnly
+	vsCapsMaxPeers
+	vsCapsCodec
+	vsCapsSampleRate
+	vsCapsFrameMs
+	vsCapsMaxFrameBytes
+
+	voiceDefaultSampleRate    = 48000
+	voiceDefaultFrameMs       = 20
+	voiceDefaultMaxFrameBytes = 4096
+)
+
 // VoiceCaps is the server's voice capability advertisement (VS_CAPS). Enabled
 // gates the whole feature; the rest let capture/transport match the server.
 type VoiceCaps struct {
@@ -61,13 +79,13 @@ func (s *Session) handleVoicePacket(p protocol.Packet) []Event {
 	switch p.Header {
 	case "VS_CAPS":
 		s.voiceCaps = VoiceCaps{
-			Enabled:       voiceBool(p.Field(0)),
-			PTTOnly:       voiceBool(p.Field(1)),
-			MaxPeers:      parse.AtoiOr(p.Field(2), 0),
-			Codec:         p.Field(3),
-			SampleRate:    parse.AtoiOr(p.Field(4), 48000),
-			FrameMs:       parse.AtoiOr(p.Field(5), 20),
-			MaxFrameBytes: parse.AtoiOr(p.Field(6), 4096),
+			Enabled:       voiceBool(p.Field(vsCapsEnabled)),
+			PTTOnly:       voiceBool(p.Field(vsCapsPTTOnly)),
+			MaxPeers:      parse.AtoiOr(p.Field(vsCapsMaxPeers), 0),
+			Codec:         p.Field(vsCapsCodec),
+			SampleRate:    parse.AtoiOr(p.Field(vsCapsSampleRate), voiceDefaultSampleRate),
+			FrameMs:       parse.AtoiOr(p.Field(vsCapsFrameMs), voiceDefaultFrameMs),
+			MaxFrameBytes: parse.AtoiOr(p.Field(vsCapsMaxFrameBytes), voiceDefaultMaxFrameBytes),
 		}
 		return []Event{{Kind: EventVoiceCaps}}
 
@@ -89,7 +107,7 @@ func (s *Session) handleVoicePacket(p protocol.Packet) []Event {
 			return nil
 		}
 		if s.voicePeers == nil {
-			s.voicePeers = make(map[int]bool, 8)
+			s.voicePeers = make(map[int]bool, voicePeersInitialCap)
 		}
 		if len(s.voicePeers) < voicePeerCap {
 			s.voicePeers[uid] = true
@@ -113,7 +131,7 @@ func (s *Session) handleVoicePacket(p protocol.Packet) []Event {
 		on := voiceBool(p.Field(1))
 		if on {
 			if s.voiceSpeaking == nil {
-				s.voiceSpeaking = make(map[int]bool, 8)
+				s.voiceSpeaking = make(map[int]bool, voicePeersInitialCap)
 			}
 			if len(s.voiceSpeaking) < voicePeerCap {
 				s.voiceSpeaking[uid] = true
