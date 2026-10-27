@@ -10,6 +10,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
@@ -121,7 +122,7 @@ func rasterStrokeMask(radius int32) *image.RGBA {
 			// Signed distance to the rounded outline (0 = on the outline,
 			// positive = outside). A ring is |sd| within half the stroke width.
 			sd := roundedRectSignedDist(x, y, dim, radius)
-			cov := 1 - clampF64((math.Abs(sd)-half)/shapeMaskAA, 0, 1)
+			cov := 1 - value.Clamp((math.Abs(sd)-half)/shapeMaskAA, 0, 1)
 			img.SetRGBA(int(x), int(y), color.RGBA{R: 255, G: 255, B: 255, A: uint8(cov * 255)})
 		}
 	}
@@ -154,7 +155,7 @@ func roundedRectSignedDist(x, y, dim, radius int32) float64 {
 func roundedRectCoverage(x, y, dim, radius int32) float64 {
 	sd := roundedRectSignedDist(x, y, dim, radius)
 	// sd<0 inside → coverage 1; sd>0 outside → 0; soft band of width shapeMaskAA.
-	return clampF64(0.5-sd/shapeMaskAA, 0, 1)
+	return value.Clamp(0.5-sd/shapeMaskAA, 0, 1)
 }
 
 // buildShapeMasks rasters the active shape's fill+stroke masks across every tier
@@ -407,9 +408,9 @@ func (c *Ctx) draw9Slice(tex *sdl.Texture, dst sdl.Rect, col sdl.Color) {
 	// but still clamped to fit.
 	corner := src
 	if c.shapePill {
-		corner = min32(dst.W, dst.H) / 2
+		corner = min(dst.W, dst.H) / 2
 	}
-	if maxC := min32(dst.W, dst.H) / 2; corner > maxC {
+	if maxC := min(dst.W, dst.H) / 2; corner > maxC {
 		corner = maxC
 	}
 	if corner < 1 {
@@ -457,13 +458,4 @@ func (c *Ctx) copy9(tex *sdl.Texture, sx, sy, sw, sh, dx, dy, dw, dh int32) {
 	c.shapeSrcScratch = sdl.Rect{X: sx, Y: sy, W: sw, H: sh}
 	c.shapeDstScratch = sdl.Rect{X: dx, Y: dy, W: dw, H: dh}
 	_ = c.Ren.Copy(tex, &c.shapeSrcScratch, &c.shapeDstScratch)
-}
-
-// min32 returns the smaller of two int32s (no generics dependency in this hot
-// path; a plain helper keeps the 9-slice math obvious).
-func min32(a, b int32) int32 {
-	if a < b {
-		return a
-	}
-	return b
 }

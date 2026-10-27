@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -933,16 +934,6 @@ const (
 	MaxChatRateLimitMs     = 5000
 )
 
-func clampPercent(v, min, max int) int {
-	if v < min {
-		return min
-	}
-	if v > max {
-		return max
-	}
-	return v
-}
-
 // DPIScalePercent maps a display DPI to the auto UI-scale percent (#77 Part B):
 // dpi / BaselineDPI, as a percent, rounded half-up, floored at
 // MinAutoUIScalePercent. 96 dpi → 100%, 144 dpi → 150%, 168 dpi → 175%. It is
@@ -1804,7 +1795,7 @@ func (p *AssetPreferences) SpriteScalingMode() int {
 // PreviewHoverMillis returns the configured hover dwell in milliseconds
 // (clamped), for the Settings readout.
 func (s *Settings) PreviewHoverMillis() int {
-	return clampPercent(orDefault(s.PreviewHoverMs, DefaultPreviewHoverMs), minPreviewHoverMs, maxPreviewHoverMs)
+	return value.Clamp(orDefault(s.PreviewHoverMs, DefaultPreviewHoverMs), minPreviewHoverMs, maxPreviewHoverMs)
 }
 
 // PreviewHoverDelay returns the hover dwell as a duration for the UI.
@@ -1815,12 +1806,12 @@ func (p *AssetPreferences) PreviewHoverDelay() time.Duration {
 // PreviewHeightPx returns the preview box's default height in px (the
 // shipped default when unset; clamped to the grip's own bounds).
 func (s *Settings) PreviewHeightPx() int {
-	return clampPercent(orDefault(s.PreviewHeightPxVal, DefaultPreviewHeightPx), MinPreviewHeightPx, MaxPreviewHeightPx)
+	return value.Clamp(orDefault(s.PreviewHeightPxVal, DefaultPreviewHeightPx), MinPreviewHeightPx, MaxPreviewHeightPx)
 }
 
 // SetPreviewHeightPx clamps and persists the preview box's default height.
 func (p *AssetPreferences) SetPreviewHeightPx(n int) {
-	n = clampPercent(n, MinPreviewHeightPx, MaxPreviewHeightPx)
+	n = value.Clamp(n, MinPreviewHeightPx, MaxPreviewHeightPx)
 	p.Update(func(sn *Settings) {
 		sn.PreviewHeightPxVal = n
 	})
@@ -1856,7 +1847,7 @@ func (p *AssetPreferences) SetPreviewWindowRect(x, y, w, h int) {
 // EmoteHoverNamesMillis returns the configured emote-name hover dwell in
 // milliseconds (clamped), for the Settings readout.
 func (s *Settings) EmoteHoverNamesMillis() int {
-	return clampPercent(orDefault(s.EmoteHoverNamesMs, DefaultEmoteHoverNamesMs), minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
+	return value.Clamp(orDefault(s.EmoteHoverNamesMs, DefaultEmoteHoverNamesMs), minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
 }
 
 // EmoteHoverNamesDelay returns the emote-name hover dwell as a duration.
@@ -1873,7 +1864,7 @@ func (p *AssetPreferences) EmoteHoverNamesDelay() time.Duration {
 func (p *AssetPreferences) EmoteGridGap() int {
 	snap := p.Load()
 
-	return clampPercent(snap.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
+	return value.Clamp(snap.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
 }
 
 // ClearLearnedType drops every host's learned format for one asset type (e.g.
@@ -1925,8 +1916,8 @@ func (s *Settings) ICCustomColorRGB() int {
 
 // SetNameColorSatVal clamps and stores the saturation + brightness together.
 func (p *AssetPreferences) SetNameColorSatVal(sat, val int) {
-	sat = clampPercent(sat, 0, 100)
-	val = clampPercent(val, minNameColorVal, 100)
+	sat = value.Clamp(sat, 0, 100)
+	val = value.Clamp(val, minNameColorVal, 100)
 	p.Update(func(sn *Settings) {
 		sn.NameSat = sat
 		sn.NameVal = val
@@ -1936,7 +1927,7 @@ func (p *AssetPreferences) SetNameColorSatVal(sat, val int) {
 // BgSlideshowSeconds is the per-background dwell time, clamped to its bounds
 // (an unset/zero value falls back to the default).
 func (s *Settings) BgSlideshowSeconds() int {
-	return clampPercent(orDefault(s.BgSlideshowSecs, defaultBgSlideshowSecs), minBgSlideshowSecs, maxBgSlideshowSecs)
+	return value.Clamp(orDefault(s.BgSlideshowSecs, defaultBgSlideshowSecs), minBgSlideshowSecs, maxBgSlideshowSecs)
 }
 
 // DownloadCapKBps reports the downloader bandwidth cap in KiB/s (0 = unlimited).
@@ -2032,10 +2023,10 @@ func (p *AssetPreferences) SetLastServer(name, url string) {
 
 // SetExportOpts stores the export options (each field clamped to its range).
 func (p *AssetPreferences) SetExportOpts(o ExportOptions) {
-	o.HeightPx = clampPercent(o.HeightPx, minExportHeight, maxExportHeight)
-	o.FPS = clampPercent(o.FPS, minExportFPS, maxExportFPS)
-	o.Quality = clampPercent(o.Quality, minExportQuality, maxExportQuality)
-	o.TextScale = clampPercent(o.TextScale, minExportText, maxExportText)
+	o.HeightPx = value.Clamp(o.HeightPx, minExportHeight, maxExportHeight)
+	o.FPS = value.Clamp(o.FPS, minExportFPS, maxExportFPS)
+	o.Quality = value.Clamp(o.Quality, minExportQuality, maxExportQuality)
+	o.TextScale = value.Clamp(o.TextScale, minExportText, maxExportText)
 	o.VideoFormat = normalizeVideoFormat(o.VideoFormat)
 	if runes := []rune(o.WatermarkText); len(runes) > maxWatermarkLen {
 		o.WatermarkText = string(runes[:maxWatermarkLen]) // rune-safe: never split a glyph
@@ -2315,7 +2306,7 @@ func (p *AssetPreferences) SetPanelFont(id string, pf PanelFont) {
 		pf.Family = pf.Family[:PanelFontFamilyMaxLen]
 	}
 	if pf.SizePx != 0 {
-		pf.SizePx = clampPercent(pf.SizePx, PanelFontMinPx, PanelFontMaxPx)
+		pf.SizePx = value.Clamp(pf.SizePx, PanelFontMinPx, PanelFontMaxPx)
 	}
 	p.Update(func(sn *Settings) {
 		sn.SetPanelFont(id, pf)
@@ -2385,22 +2376,18 @@ func (p *AssetPreferences) SetAssetCharCasing(c uint8) {
 
 // VoiceOutVol reports the voice output volume 0..100 (default 100 when unset).
 func (s *Settings) VoiceOutVol() int {
-	return clampPercent(orDefault(s.VoiceOutVolume, defaultVoiceOutVol), 0, 100)
+	return value.Clamp(orDefault(s.VoiceOutVolume, defaultVoiceOutVol), 0, 100)
 }
 
 // PrefetchAggressiveness reports how many of the top predicted next sprites the
 // Markov prefetcher warms per message, 1..4 (default 1 = conservative). #100.
 func (s *Settings) PrefetchAggressiveness() int {
-	return clampPercent(s.PrefetchAggro, 1, 4)
+	return value.Clamp(s.PrefetchAggro, 1, 4)
 }
 
 // SetPrefetchAggressiveness clamps (1..4) and persists the prefetch aggressiveness.
 func (p *AssetPreferences) SetPrefetchAggressiveness(n int) {
-	if n < 1 {
-		n = 1
-	} else if n > 4 {
-		n = 4
-	}
+	n = value.Clamp(n, 1, 4)
 	p.Update(func(sn *Settings) {
 		sn.PrefetchAggro = n
 	})
@@ -2432,7 +2419,7 @@ func (s *Settings) SpotlightLevel() int {
 
 // SetSpotlightLevel stores the dim intensity (clamped to [10,90]).
 func (p *AssetPreferences) SetSpotlightLevel(v int) {
-	v = clampPercent(v, minSpotlightStrength, maxSpotlightStrength)
+	v = value.Clamp(v, minSpotlightStrength, maxSpotlightStrength)
 	p.Update(func(sn *Settings) {
 		sn.SpotlightStrength = v
 	})
@@ -2478,7 +2465,7 @@ func (s *Settings) ReflectStrength() int {
 
 // SetReflectStrength stores the reflection opacity (clamped to [0,100]).
 func (p *AssetPreferences) SetReflectStrength(v int) {
-	v = clampPercent(v, 0, 100)
+	v = value.Clamp(v, 0, 100)
 	p.Update(func(sn *Settings) {
 		sn.ReflectOpacity = v
 	})
@@ -2504,7 +2491,7 @@ func (p *AssetPreferences) WeatherType() int {
 
 // SetWeatherType stores the weather index (clamped to [0,weatherKindMax]).
 func (p *AssetPreferences) SetWeatherType(v int) {
-	v = clampPercent(v, 0, weatherKindMax)
+	v = value.Clamp(v, 0, weatherKindMax)
 	p.Update(func(sn *Settings) {
 		sn.WeatherKind = v
 	})
@@ -2533,7 +2520,7 @@ func (s *Settings) WeatherIntensity() int {
 
 // SetWeatherIntensity stores the density (clamped to [1,100]).
 func (p *AssetPreferences) SetWeatherIntensity(v int) {
-	v = clampPercent(v, 1, 100)
+	v = value.Clamp(v, 1, 100)
 	p.Update(func(sn *Settings) {
 		sn.WeatherDensity = v
 	})
@@ -3003,10 +2990,10 @@ func (p *AssetPreferences) SetServerAudioOn(key string, on bool) {
 // four channels are written explicitly (as pointers), so once a server has a profile
 // every channel is a real chosen value — none silently defaults to a muted 0.
 func (p *AssetPreferences) SetServerAudioVolumes(key string, master, music, sfx, blip int) {
-	m := clampPercent(master, 0, defaultAudioVolume)
-	mu := clampPercent(music, 0, defaultAudioVolume)
-	s := clampPercent(sfx, 0, defaultAudioVolume)
-	b := clampPercent(blip, 0, defaultAudioVolume)
+	m := value.Clamp(master, 0, defaultAudioVolume)
+	mu := value.Clamp(music, 0, defaultAudioVolume)
+	s := value.Clamp(sfx, 0, defaultAudioVolume)
+	b := value.Clamp(blip, 0, defaultAudioVolume)
 	p.rememberServer(key, func(w *ServerWarmInfo) {
 		w.AudioOn = true // adjusting volumes makes this server's own profile "exist"
 		w.AudioMaster, w.AudioMusic, w.AudioSFX, w.AudioBlip = &m, &mu, &s, &b
@@ -3089,11 +3076,11 @@ func (s *Settings) LayoutScales() (viewport, chatText, chatBox, logText, input i
 
 // SetLayoutScales clamps and persists the layout knobs.
 func (p *AssetPreferences) SetLayoutScales(viewport, chatText, chatBox, logText, input int) {
-	viewport = clampPercent(viewport, MinViewportPercent, MaxViewportPercent)
-	chatText = clampPercent(chatText, MinChatScalePercent, MaxChatScalePercent)
-	chatBox = clampPercent(chatBox, MinChatBoxPercent, MaxChatBoxPercent)
-	logText = clampPercent(logText, MinLogScalePercent, MaxLogScalePercent)
-	input = clampPercent(input, MinInputPercent, MaxInputPercent)
+	viewport = value.Clamp(viewport, MinViewportPercent, MaxViewportPercent)
+	chatText = value.Clamp(chatText, MinChatScalePercent, MaxChatScalePercent)
+	chatBox = value.Clamp(chatBox, MinChatBoxPercent, MaxChatBoxPercent)
+	logText = value.Clamp(logText, MinLogScalePercent, MaxLogScalePercent)
+	input = value.Clamp(input, MinInputPercent, MaxInputPercent)
 	p.Update(func(sn *Settings) {
 		sn.ViewportPct = viewport
 		sn.ChatScalePct = chatText
@@ -3153,7 +3140,7 @@ func (p *AssetPreferences) SetBreathScale(on bool) {
 
 // SetBreathAmp clamps the idle-breath amplitude slider to [1,100] (0 -> 1).
 func (p *AssetPreferences) SetBreathAmp(v int) {
-	v = clampPercent(v, 1, 100)
+	v = value.Clamp(v, 1, 100)
 	p.Update(func(sn *Settings) {
 		sn.BreathAmount = v
 	})
@@ -3161,7 +3148,7 @@ func (p *AssetPreferences) SetBreathAmp(v int) {
 
 // SetBreathSpeed clamps the idle-breath speed slider to [1,100] (0 -> 1).
 func (p *AssetPreferences) SetBreathSpeed(v int) {
-	v = clampPercent(v, 1, 100)
+	v = value.Clamp(v, 1, 100)
 	p.Update(func(sn *Settings) {
 		sn.BreathRate = v
 	})
@@ -3169,7 +3156,7 @@ func (p *AssetPreferences) SetBreathSpeed(v int) {
 
 // SetHoldClearMs clamps the hold-to-clear hold time (0 -> MinHoldClearMs).
 func (p *AssetPreferences) SetHoldClearMs(ms int) {
-	ms = clampPercent(ms, MinHoldClearMs, MaxHoldClearMs)
+	ms = value.Clamp(ms, MinHoldClearMs, MaxHoldClearMs)
 	p.Update(func(sn *Settings) {
 		sn.HoldClearMs = ms
 	})
@@ -3181,7 +3168,7 @@ func (p *AssetPreferences) SetInputGraceFrames(n int) {
 	if n <= 0 {
 		n = InputGraceOff
 	} else {
-		n = clampPercent(n, InputGraceFramesMin, InputGraceFramesMax)
+		n = value.Clamp(n, InputGraceFramesMin, InputGraceFramesMax)
 	}
 	p.Update(func(sn *Settings) {
 		sn.InputGraceFramesVal = n
@@ -3203,7 +3190,7 @@ func (p *AssetPreferences) SetAnimatedSpriteCap(px int) {
 		if px < AnimatedSpriteCapMinPx {
 			px = 0
 		} else {
-			px = clampPercent(px, AnimatedSpriteCapMinPx, AnimatedSpriteCapMaxPx)
+			px = value.Clamp(px, AnimatedSpriteCapMinPx, AnimatedSpriteCapMaxPx)
 		}
 	}
 	p.Update(func(sn *Settings) {
@@ -3215,7 +3202,7 @@ func (p *AssetPreferences) SetAnimatedSpriteCap(px int) {
 
 // SetUIScale clamps and persists the global UI scale.
 func (p *AssetPreferences) SetUIScale(pct int) {
-	pct = clampPercent(pct, MinUIScalePercent, MaxUIScalePercent)
+	pct = value.Clamp(pct, MinUIScalePercent, MaxUIScalePercent)
 	p.Update(func(sn *Settings) {
 		sn.UIScalePct = pct
 	})
@@ -3253,9 +3240,9 @@ func (s *Settings) AudioVolumes() (music, sfx, blip int) {
 
 // SetAudioVolumes clamps and persists the mixer volumes.
 func (p *AssetPreferences) SetAudioVolumes(music, sfx, blip int) {
-	music = clampPercent(music, 0, defaultAudioVolume)
-	sfx = clampPercent(sfx, 0, defaultAudioVolume)
-	blip = clampPercent(blip, 0, defaultAudioVolume)
+	music = value.Clamp(music, 0, defaultAudioVolume)
+	sfx = value.Clamp(sfx, 0, defaultAudioVolume)
+	blip = value.Clamp(blip, 0, defaultAudioVolume)
 	p.Update(func(sn *Settings) {
 		sn.MusicVol = music
 		sn.SFXVol = sfx
@@ -3321,9 +3308,9 @@ func (s *Settings) Timing() (crawlMs, stayMs, rateLimitMs int) {
 
 // SetTiming clamps and persists the timing knobs.
 func (p *AssetPreferences) SetTiming(crawlMs, stayMs, rateLimitMs int) {
-	crawlMs = clampPercent(crawlMs, MinTextCrawlMs, MaxTextCrawlMs)
-	stayMs = clampPercent(stayMs, 0, MaxTextStayMs)
-	rateLimitMs = clampPercent(rateLimitMs, 0, MaxChatRateLimitMs)
+	crawlMs = value.Clamp(crawlMs, MinTextCrawlMs, MaxTextCrawlMs)
+	stayMs = value.Clamp(stayMs, 0, MaxTextStayMs)
+	rateLimitMs = value.Clamp(rateLimitMs, 0, MaxChatRateLimitMs)
 	p.Update(func(sn *Settings) {
 		sn.TextCrawlMs = crawlMs
 		sn.TextStayMs = stayMs
@@ -3341,7 +3328,7 @@ func (s *Settings) CatchUp() (on bool, threshold int) {
 
 // SetCatchUp clamps and persists the catch-up toggle + threshold.
 func (p *AssetPreferences) SetCatchUp(on bool, threshold int) {
-	threshold = clampPercent(threshold, catchUpThresholdMin, catchUpThresholdMax)
+	threshold = value.Clamp(threshold, catchUpThresholdMin, catchUpThresholdMax)
 	p.Update(func(sn *Settings) {
 		sn.CatchUpOn = on
 		sn.CatchUpThreshold = threshold
@@ -3352,7 +3339,7 @@ func (p *AssetPreferences) SetCatchUp(on bool, threshold int) {
 // [minMultiTabCap, maxMultiTabCap]; an unset/zero value falls back to the
 // default, so older prefs files and tests behave as before).
 func (s *Settings) TabCap() int {
-	return clampPercent(orDefault(s.MultiTabCap, DefaultMultiTabCap), minMultiTabCap, maxMultiTabCap)
+	return value.Clamp(orDefault(s.MultiTabCap, DefaultMultiTabCap), minMultiTabCap, maxMultiTabCap)
 }
 
 // Cold-load sprite behaviour (SpriteLoadMode): what a character layer shows while
@@ -3403,7 +3390,7 @@ func (s *Settings) SpriteWaitMs() int {
 
 // SetSpriteWaitMs persists the wait-mode hold cap (clamped to the tunable range).
 func (p *AssetPreferences) SetSpriteWaitMs(ms int) {
-	ms = clampPercent(ms, SpriteWaitMinMs, SpriteWaitMaxMs)
+	ms = value.Clamp(ms, SpriteWaitMinMs, SpriteWaitMaxMs)
 	p.Update(func(sn *Settings) {
 		sn.SpriteWaitMsVal = ms
 	})
@@ -3579,7 +3566,7 @@ func normalizeFPSPref(fps, min, max int) int {
 	if fps < 0 {
 		return FPSUnlimited
 	}
-	return clampPercent(fps, min, max)
+	return value.Clamp(fps, min, max)
 }
 
 // SetSpriteWaitPreanim persists the wait-covers-preanim knob.
@@ -4394,7 +4381,7 @@ func (s *Settings) BlipTyping() (rate int, onSpaces bool) {
 
 // SetBlipTyping clamps and persists the blip cadence + whitespace toggle.
 func (p *AssetPreferences) SetBlipTyping(rate int, onSpaces bool) {
-	rate = clampPercent(rate, MinBlipRate, MaxBlipRate)
+	rate = value.Clamp(rate, MinBlipRate, MaxBlipRate)
 	p.Update(func(sn *Settings) {
 		sn.BlipRate = rate
 		sn.BlipOnSpaces = onSpaces
@@ -5124,7 +5111,7 @@ func (p *AssetPreferences) ThemeFitDefaultJustMoved() bool {
 
 // SetThemeFit sets the theme-fit mode (clamped to a valid mode).
 func (p *AssetPreferences) SetThemeFit(mode int) {
-	mode = clampPercent(mode, ThemeFitStretch, themeFitModeMax)
+	mode = value.Clamp(mode, ThemeFitStretch, themeFitModeMax)
 	p.Update(func(sn *Settings) {
 		sn.ThemeFit = mode
 	})
@@ -5133,7 +5120,7 @@ func (p *AssetPreferences) SetThemeFit(mode int) {
 // ThemeZoom reports the Custom-mode zoom (percent of the letterbox-fit scale;
 // 100 = exactly fits), clamped.
 func (s *Settings) ThemeZoom() int {
-	return clampPercent(orDefault(s.ThemeFitZoom, DefaultThemeZoom), MinThemeZoom, MaxThemeZoom)
+	return value.Clamp(orDefault(s.ThemeFitZoom, DefaultThemeZoom), MinThemeZoom, MaxThemeZoom)
 }
 
 // ThemePan reports the Custom-mode pan (percent of the window, ±).
@@ -5144,8 +5131,8 @@ func (s *Settings) ThemePan() (x, y int) {
 
 // SetThemeFitPan clamps and stores the Custom-mode pan.
 func (p *AssetPreferences) SetThemeFitPan(x, y int) {
-	x = clampPercent(x, -MaxThemePan, MaxThemePan)
-	y = clampPercent(y, -MaxThemePan, MaxThemePan)
+	x = value.Clamp(x, -MaxThemePan, MaxThemePan)
+	y = value.Clamp(y, -MaxThemePan, MaxThemePan)
 	p.Update(func(sn *Settings) {
 		sn.ThemeFitPanX = x
 		sn.ThemeFitPanY = y
@@ -5715,7 +5702,7 @@ func (p *AssetPreferences) SetBlipVolume(char string, pct int) bool {
 	if char == "" {
 		return false
 	}
-	pct = clampPercent(pct, 0, blipVolumeDefault)
+	pct = value.Clamp(pct, 0, blipVolumeDefault)
 	changed := false
 	p.Update(func(sn *Settings) {
 		changed = sn.SetBlipVolume(char, pct)

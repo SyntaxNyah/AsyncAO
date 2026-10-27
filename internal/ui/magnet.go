@@ -19,7 +19,9 @@ package ui
 // unjustified magic. Always-on, Shift-bypass (matching the editor's KMOD_SHIFT
 // check) — no new pref.
 
-import "github.com/veandco/go-sdl2/sdl"
+import (
+	"github.com/veandco/go-sdl2/sdl"
+)
 
 const (
 	// panelMagnetCap bounds the reused panelMagnetRects candidate buffer (hard
@@ -166,10 +168,10 @@ const (
 // (panelDeOverlapFrac of the smaller rect's area). Pure integer math, SDL-free
 // beyond the rect type, so it unit-tests without a renderer.
 func rectsNearlyCover(a, b sdl.Rect) bool {
-	ix := maxI32(a.X, b.X)
-	iy := maxI32(a.Y, b.Y)
-	ix2 := min32(a.X+a.W, b.X+b.W)
-	iy2 := min32(a.Y+a.H, b.Y+b.H)
+	ix := max(a.X, b.X)
+	iy := max(a.Y, b.Y)
+	ix2 := min(a.X+a.W, b.X+b.W)
+	iy2 := min(a.Y+a.H, b.Y+b.H)
 	if ix2 <= ix || iy2 <= iy {
 		return false // disjoint
 	}

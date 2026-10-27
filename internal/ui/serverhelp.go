@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 // serverHelpOutro closes the catalog: nobody's contribution goes
@@ -241,12 +243,7 @@ func (a *App) drawServerHelp(w, h int32) {
 
 	// Centered reading column.
 	colW := w - 2*pad - scrollBarW - 2*pad
-	if colW > shMaxColW {
-		colW = shMaxColW
-	}
-	if colW < 320 {
-		colW = 320
-	}
+	colW = value.Clamp(colW, 320, shMaxColW)
 	x0 := (w - scrollBarW - colW) / 2
 	if x0 < pad {
 		x0 = pad

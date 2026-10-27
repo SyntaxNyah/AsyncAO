@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 // ---------------------------------------------------------------------------
@@ -423,7 +425,7 @@ func TestFoldIsIdentityAtOneToOne(t *testing.T) {
 // multiplies outside it — and the product then gets its own, higher cap.
 func TestFoldAppliesTheCanvasOutsideTheDeclaredClamp(t *testing.T) {
 	// The declared clamp still bites where it always did.
-	if got := clampInt(themeFontPct(50), themeFontMinPct, themeFontMaxPct); got != themeFontMaxPct {
+	if got := value.Clamp(themeFontPct(50), themeFontMinPct, themeFontMaxPct); got != themeFontMaxPct {
 		t.Fatalf("a declared 50 pt resolves to %d%%, want the %d%% ceiling", got, themeFontMaxPct)
 	}
 	// ...and the canvas may then take the result ABOVE it. 400% x 250% = 1000%,
@@ -485,7 +487,7 @@ func TestCanvasFontFoldDoesNotThrashOnDragResize(t *testing.T) {
 		designW, designH = 714.0, 579.0
 		firstW, lastW    = 400, 1600
 	)
-	declared := clampInt(themeFontPct(10), themeFontMinPct, themeFontMaxPct) // the stock theme's `message = 10`
+	declared := value.Clamp(themeFontPct(10), themeFontMinPct, themeFontMaxPct) // the stock theme's `message = 10`
 
 	pcts := map[int]bool{}
 	sizes := map[int]bool{}
@@ -497,7 +499,7 @@ func TestCanvasFontFoldDoesNotThrashOnDragResize(t *testing.T) {
 		folded := foldCanvasFontPct(declared, canvas, DefaultScalePct)
 		pcts[folded] = true
 		sizes[faceSizeFor(folded, DefaultScalePct)] = true
-		rawPcts[clampInt(declared*canvas/DefaultScalePct, themeFontMinPct, themedCanvasFontMaxPct)] = true
+		rawPcts[value.Clamp(declared*canvas/DefaultScalePct, themeFontMinPct, themedCanvasFontMaxPct)] = true
 	}
 	// One percent per font size, plus AT MOST one. The extra is the exact-1:1 point
 	// the drag passes through: foldCanvasFontPct returns the declared percent
@@ -553,7 +555,7 @@ func TestThemedChatboxScaleParityAcrossTheCorpus(t *testing.T) {
 	} {
 		t.Run(tc.theme, func(t *testing.T) {
 			scale := math.Min(winW/tc.designW, winH/tc.designH)
-			declared := clampInt(themeFontPct(tc.points), themeFontMinPct, themeFontMaxPct)
+			declared := value.Clamp(themeFontPct(tc.points), themeFontMinPct, themeFontMaxPct)
 			// AO2 draws the theme's rect and the theme's point size, both times the
 			// same factor, so its capacity is the authored one at any scale.
 			//

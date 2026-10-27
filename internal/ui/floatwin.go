@@ -1,6 +1,10 @@
 package ui
 
-import "github.com/veandco/go-sdl2/sdl"
+import (
+	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+)
 
 // floatWin is a generic movable + resizable, non-blocking floating window — the
 // pattern the Extras box pioneered, factored out so the Pair menu and the Mod/CM
@@ -46,7 +50,7 @@ func (fw *floatWin) rect(defW, defH, minW, minH, winW, winH int32) sdl.Rect {
 	if hiH < minH {
 		hiH = minH
 	}
-	w, h = clampI32(w, minW, hiW), clampI32(h, minH, hiH)
+	w, h = value.Clamp(w, minW, hiW), value.Clamp(h, minH, hiH)
 	x, y := fw.x, fw.y
 	if !fw.placed {
 		x, y = (winW-w)/2, (winH-h)/2
@@ -59,7 +63,7 @@ func (fw *floatWin) rect(defW, defH, minW, minH, winW, winH int32) sdl.Rect {
 		maxY = floatWinMargin
 	}
 	fw.lastW, fw.lastH, fw.lastWinW, fw.lastWinH = w, h, winW, winH // for drag-snap (#21)
-	return sdl.Rect{X: clampI32(x, floatWinMargin, maxX), Y: clampI32(y, floatWinMargin, maxY), W: w, H: h}
+	return sdl.Rect{X: value.Clamp(x, floatWinMargin, maxX), Y: value.Clamp(y, floatWinMargin, maxY), W: w, H: h}
 }
 
 // snapToEdges nudges a dragging window's top-left to the screen edges or centre when within

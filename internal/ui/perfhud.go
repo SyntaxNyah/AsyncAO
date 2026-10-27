@@ -11,6 +11,8 @@ import (
 	"fmt"
 
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 const (
@@ -54,12 +56,7 @@ func (a *App) drawPerfHUD(w, h int32) {
 			worst = dt
 		}
 		hPx := int32(float32(perfHUDGraphH) * dt / perfHUDScaleMs)
-		if hPx > perfHUDGraphH {
-			hPx = perfHUDGraphH
-		}
-		if hPx < 1 {
-			hPx = 1
-		}
+		hPx = value.Clamp(hPx, 1, perfHUDGraphH)
 		col := ColTierGreen
 		switch {
 		case dt > perfHUDScaleMs:

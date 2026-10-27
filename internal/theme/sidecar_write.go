@@ -9,6 +9,8 @@ import (
 	"io"
 	"strconv"
 	"strings"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 // elementFieldKeys maps every Element FIELD to the wire key that carries it, in
@@ -451,7 +453,7 @@ func sliceIsHeldByItsAlias(d *INIDoc, section string, e *Element) bool {
 	if _, canonical := d.Get(section, "slice"); canonical {
 		return false // both spellings present: the canonical one is the one we keep
 	}
-	n := int16(clampInt(atoiTrim(raw), ZMin, ZMax))
+	n := int16(value.Clamp(atoiTrim(raw), ZMin, ZMax))
 	return e.Slice == [4]int16{n, n, n, n}
 }
 
@@ -590,20 +592,20 @@ func canonMetaPlain(s string) string {
 // changed and rewrites the author's line.
 func canonInt(s string) string { return formatInt(atoiTrim(s)) }
 
-func canonByte(s string) string { return formatInt(clampInt(atoiTrim(s), 0, 255)) }
+func canonByte(s string) string { return formatInt(value.Clamp(atoiTrim(s), 0, 255)) }
 
 // canonZ mirrors the reader's int16 clamp on z and on a scalar 9-slice inset.
-func canonZ(s string) string { return formatInt(clampInt(atoiTrim(s), ZMin, ZMax)) }
+func canonZ(s string) string { return formatInt(value.Clamp(atoiTrim(s), ZMin, ZMax)) }
 
 // canonTimeMs mirrors the reader's int32 clamp on phase_ms, effect_period_ms
 // and [effect.*] period_ms. Without it a legal "phase_ms = 3000000000" saves
 // back as a NEGATIVE number — not merely a rewrite of a line nobody edited, but
 // a rewrite into a value that means something else.
-func canonTimeMs(s string) string { return formatInt(clampInt(atoiTrim(s), TimeMsMin, TimeMsMax)) }
+func canonTimeMs(s string) string { return formatInt(value.Clamp(atoiTrim(s), TimeMsMin, TimeMsMax)) }
 
-func canonAmp(s string) string { return formatInt(clampInt(atoiTrim(s), 0, AmpMaxPct)) }
+func canonAmp(s string) string { return formatInt(value.Clamp(atoiTrim(s), 0, AmpMaxPct)) }
 
-func canonSize(s string) string { return formatInt(clampInt(atoiTrim(s), 0, TextSizeMaxPt)) }
+func canonSize(s string) string { return formatInt(value.Clamp(atoiTrim(s), 0, TextSizeMaxPt)) }
 
 func canonAngle(s string) string { return formatInt(int(parseAngle(s))) }
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
@@ -110,7 +111,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		c.Label(pad, y+4, "Max hold per message:", ColText)
 		waitMs := a.d.Prefs.Load().SpriteWaitMs()
 		wtrack := sdl.Rect{X: pad + 170, Y: y + 2, W: 260, H: 16}
-		nw := int(clampI32(c.Slider("spritewaitms", wtrack, int32(waitMs), config.SpriteWaitMaxMs), config.SpriteWaitMinMs, config.SpriteWaitMaxMs))
+		nw := int(value.Clamp(c.Slider("spritewaitms", wtrack, int32(waitMs), config.SpriteWaitMaxMs), config.SpriteWaitMinMs, config.SpriteWaitMaxMs))
 		c.Tooltip(wtrack, "How long one message may wait for its sprite before playing anyway (50 ms – 30 s).")
 		c.Label(pad+170+266, y+4, formatWaitMs(nw), ColTextDim)
 		if nw != waitMs {
@@ -135,7 +136,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		c.Label(pad, y+4, "Keep the previous sprite for:", ColText)
 		ageMs := a.d.Prefs.Load().HoldPrevMaxAgeMsVal
 		atrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-		na := int(clampI32(c.Slider("holdmaxage", atrack, int32(ageMs), config.HoldPrevMaxAgeMaxMs), 0, config.HoldPrevMaxAgeMaxMs))
+		na := int(value.Clamp(c.Slider("holdmaxage", atrack, int32(ageMs), config.HoldPrevMaxAgeMaxMs), 0, config.HoldPrevMaxAgeMaxMs))
 		if na != 0 && na < config.HoldPrevMaxAgeMinMs {
 			na = 0 // the bottom of the track snaps to "forever" (0)
 		}
@@ -178,7 +179,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	c.Label(pad, y+4, "Speaker-swap crossfade:", ColText)
 	cfMs := a.d.Prefs.Load().CrossfadeMsVal
 	cftrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-	ncf := int(clampI32(c.Slider("crossfadems", cftrack, int32(cfMs), config.CrossfadeMaxMs), 0, config.CrossfadeMaxMs))
+	ncf := int(value.Clamp(c.Slider("crossfadems", cftrack, int32(cfMs), config.CrossfadeMaxMs), 0, config.CrossfadeMaxMs))
 	if ncf != 0 && ncf < config.CrossfadeMinMs {
 		ncf = 0 // bottom of the track = off (the default hard swap)
 	}
@@ -264,7 +265,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	c.Label(pad, y+4, "Input responsiveness:", ColText)
 	ig := a.d.Prefs.Load().InputGraceFrames()
 	igtrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
-	nig := int(clampI32(c.Slider("inputgrace", igtrack, int32(ig), config.InputGraceFramesMax), 0, config.InputGraceFramesMax))
+	nig := int(value.Clamp(c.Slider("inputgrace", igtrack, int32(ig), config.InputGraceFramesMax), 0, config.InputGraceFramesMax))
 	c.Tooltip(igtrack, "How long the frame rate stays at the active cap after a click or keypress, in frames (0–60). 0 = off (just the input's own frame), 1 = snappiest, higher = a smoother tail. Mouse movement isn't affected.")
 	igLabel := strconv.Itoa(nig) + " frame"
 	if nig != 1 {
@@ -353,7 +354,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			c.Label(pad, y+4, "Thumbnail height:", ColText)
 			tHp := a.d.Prefs.Load().ThumbHeightPx()
 			ttrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-			nth := int(clampI32(c.Slider("thumbheight", ttrack, int32(tHp), config.ThumbHeightMaxPx), 0, config.ThumbHeightMaxPx))
+			nth := int(value.Clamp(c.Slider("thumbheight", ttrack, int32(tHp), config.ThumbHeightMaxPx), 0, config.ThumbHeightMaxPx))
 			if nth != 0 && nth < config.ThumbHeightMinPx {
 				nth = 0 // bottom of the track = the default (64 px)
 			}
@@ -371,7 +372,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			c.Label(pad, y+4, "Thumbnail quality:", ColText)
 			tq := a.d.Prefs.Load().ThumbQuality()
 			qtrack2 := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-			ntq := int(clampI32(c.Slider("thumbquality", qtrack2, int32(tq), config.ThumbQualityMax), 0, config.ThumbQualityMax))
+			ntq := int(value.Clamp(c.Slider("thumbquality", qtrack2, int32(tq), config.ThumbQualityMax), 0, config.ThumbQualityMax))
 			if ntq != 0 && ntq < config.ThumbQualityMin {
 				ntq = 0
 			}
@@ -389,7 +390,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			c.Label(pad, y+4, "Thumbnail store budget:", ColText)
 			tb := a.d.Prefs.Load().ThumbBudgetMiB()
 			btrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-			ntb := int(clampI32(c.Slider("thumbbudget", btrack, int32(tb), config.ThumbBudgetMaxMiB), 0, config.ThumbBudgetMaxMiB))
+			ntb := int(value.Clamp(c.Slider("thumbbudget", btrack, int32(tb), config.ThumbBudgetMaxMiB), 0, config.ThumbBudgetMaxMiB))
 			if ntb != 0 && ntb < config.ThumbBudgetMinMiB {
 				ntb = 0 // bottom of the track = the default (64 MiB)
 			}
@@ -422,7 +423,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	c.Label(pad, y+4, "Shout bubble duration:", ColText)
 	shoutMs := a.d.Prefs.Load().ShoutDurationMsVal
 	strack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-	ns := int(clampI32(c.Slider("shoutdurms", strack, int32(shoutMs), config.ShoutDurationMaxMs), 0, config.ShoutDurationMaxMs))
+	ns := int(value.Clamp(c.Slider("shoutdurms", strack, int32(shoutMs), config.ShoutDurationMaxMs), 0, config.ShoutDurationMaxMs))
 	if ns != 0 && ns < config.ShoutDurationMinMs {
 		ns = 0 // bottom of the track = the canonical default
 	}
@@ -440,7 +441,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	c.Label(pad, y+4, "Pre-animation wait cap:", ColText)
 	preMs := a.d.Prefs.Load().PreanimTimeoutMsVal
 	ptrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-	np := int(clampI32(c.Slider("preanimms", ptrack, int32(preMs), config.PreanimTimeoutMaxMs), 0, config.PreanimTimeoutMaxMs))
+	np := int(value.Clamp(c.Slider("preanimms", ptrack, int32(preMs), config.PreanimTimeoutMaxMs), 0, config.PreanimTimeoutMaxMs))
 	if np != 0 && np < config.PreanimTimeoutMinMs {
 		np = 0
 	}
@@ -458,7 +459,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	c.Label(pad, y+4, "IC backlog queue depth:", ColText)
 	qcap := a.d.Prefs.Load().ICQueueCapVal
 	qtrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-	nq := int(clampI32(c.Slider("icqueuecap", qtrack, int32(qcap), config.ICQueueCapMax), 0, config.ICQueueCapMax))
+	nq := int(value.Clamp(c.Slider("icqueuecap", qtrack, int32(qcap), config.ICQueueCapMax), 0, config.ICQueueCapMax))
 	if nq != 0 && nq < config.ICQueueCapMin {
 		nq = 0 // bottom of the track = the canonical default (64)
 	}
@@ -486,7 +487,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	c.Label(pad, y+4, "Catch-up flash linger:", ColText)
 	cul := a.d.Prefs.Load().CatchUpLingerMsVal
 	ctrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-	nc := int(clampI32(c.Slider("catchuplinger", ctrack, int32(cul), config.CatchUpLingerMaxMs), 0, config.CatchUpLingerMaxMs))
+	nc := int(value.Clamp(c.Slider("catchuplinger", ctrack, int32(cul), config.CatchUpLingerMaxMs), 0, config.CatchUpLingerMaxMs))
 	c.Tooltip(ctrack, "How long each fast-forwarded backlog message stays up while catch-up drains a pile-up. 0 (default) = one per frame — fastest; a little linger makes the backlog readable as it flashes past.")
 	culLabel := "default (one per frame)"
 	if nc != 0 {
@@ -566,7 +567,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	c.Label(pad, y+4, "Missing-asset (404) memory:", ColText)
 	ttl := a.d.Prefs.Load().NotFoundTTLSecVal
 	ntrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
-	nttl := int(clampI32(c.Slider("notfoundttl", ntrack, int32(ttl), config.NotFoundTTLMaxSec), 0, config.NotFoundTTLMaxSec))
+	nttl := int(value.Clamp(c.Slider("notfoundttl", ntrack, int32(ttl), config.NotFoundTTLMaxSec), 0, config.NotFoundTTLMaxSec))
 	if nttl != 0 && nttl < config.NotFoundTTLMinSec {
 		nttl = 0 // bottom of the track = the default (5 min)
 	}
@@ -595,7 +596,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	c.Label(pad, y+4, "Slow-host patience:", ColText)
 	lm := a.d.Prefs.Load().AdaptiveLatMultipleVal
 	ltrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
-	nlm := int(clampI32(c.Slider("latmultiple", ltrack, int32(lm), config.AdaptiveLatMultipleMax), 0, config.AdaptiveLatMultipleMax))
+	nlm := int(value.Clamp(c.Slider("latmultiple", ltrack, int32(lm), config.AdaptiveLatMultipleMax), 0, config.AdaptiveLatMultipleMax))
 	if nlm != 0 && nlm < config.AdaptiveLatMultipleMin {
 		nlm = 0 // bottom of the track = the default (×8)
 	}

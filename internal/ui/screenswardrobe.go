@@ -10,6 +10,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
@@ -1159,7 +1160,7 @@ func (a *App) drawMusicVolume(r sdl.Rect) {
 	rate, onSpaces := a.d.Prefs.Load().BlipTyping()
 	c.Label(r.X, y+6, "Blip rate", ColText)
 	rtrack := sdl.Rect{X: r.X + 80, Y: y + 7, W: r.W - 80 - 56, H: 16}
-	nr := clampI32(c.Slider("musicvol:rate", rtrack, int32(rate), int32(config.MaxBlipRate)), int32(config.MinBlipRate), int32(config.MaxBlipRate))
+	nr := value.Clamp(c.Slider("musicvol:rate", rtrack, int32(rate), int32(config.MaxBlipRate)), int32(config.MinBlipRate), int32(config.MaxBlipRate))
 	c.Tooltip(rtrack, "Blip cadence: 1 blip every N letters (left = faster)")
 	c.Label(r.X+r.W-48, y+6, "1/"+strconv.Itoa(int(nr)), ColTextDim)
 	if int(nr) != rate {

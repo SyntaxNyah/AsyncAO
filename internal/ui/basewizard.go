@@ -30,6 +30,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 const (
@@ -235,8 +236,8 @@ func (a *App) drawBaseWizard(w, h int32) {
 	defer func() { c.modalOn = fenced }()
 	s.pollBaseScan()
 
-	pw := clampI32(w-2*browseModalMargin, baseWizMinW, baseWizMaxW)
-	ph := clampI32(h-2*browseModalMargin, baseWizMinH, baseWizMaxH)
+	pw := value.Clamp(w-2*browseModalMargin, baseWizMinW, baseWizMaxW)
+	ph := value.Clamp(h-2*browseModalMargin, baseWizMinH, baseWizMaxH)
 	px, py := (w-pw)/2, (h-ph)/2
 	panel := sdl.Rect{X: px, Y: py, W: pw, H: ph}
 	c.Fill(panel, ColBackground)

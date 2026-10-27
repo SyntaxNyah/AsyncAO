@@ -16,6 +16,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/archive"
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
@@ -997,12 +998,7 @@ func (a *App) drawMakerList(x, y, w, h int32) {
 		c.wheelTaken = true
 		a.makerScroll -= int32(c.wheelY) * makerRowH
 	}
-	if a.makerScroll > maxScroll {
-		a.makerScroll = maxScroll
-	}
-	if a.makerScroll < 0 {
-		a.makerScroll = 0
-	}
+	a.makerScroll = value.Clamp(a.makerScroll, 0, maxScroll)
 
 	for i := range evs {
 		ry := y + int32(i)*makerRowH - a.makerScroll

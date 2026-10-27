@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 // secPreset is the fragment header section. It is NOT part of the sidecar
@@ -258,10 +260,10 @@ func ParsePreset(src []byte) (*Preset, error) {
 	}
 
 	if raw, present := doc.Get(secPreset, "design_w"); present {
-		p.DesignW = clampInt(atoiTrim(raw), PresetDesignMinPx, PresetDesignMaxPx)
+		p.DesignW = value.Clamp(atoiTrim(raw), PresetDesignMinPx, PresetDesignMaxPx)
 	}
 	if raw, present := doc.Get(secPreset, "design_h"); present {
-		p.DesignH = clampInt(atoiTrim(raw), PresetDesignMinPx, PresetDesignMaxPx)
+		p.DesignH = value.Clamp(atoiTrim(raw), PresetDesignMinPx, PresetDesignMaxPx)
 	}
 	if raw, present := doc.Get(secPreset, "full_canvas"); present {
 		if p.FullCanvas, err = parseTextList(raw, PresetFullCanvasCap); err != nil {

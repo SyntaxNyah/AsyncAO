@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 const (
@@ -63,12 +64,7 @@ func ThemeMediaByteCap(texBudgetMiB int) int64 {
 		budget = int64(T1BudgetBytes)
 	}
 	cap := budget * themeMediaBudgetNum / themeMediaBudgetDen
-	if cap < themeMediaByteFloor {
-		cap = themeMediaByteFloor
-	}
-	if cap > themeMediaByteCeil {
-		cap = themeMediaByteCeil
-	}
+	cap = value.Clamp(cap, themeMediaByteFloor, themeMediaByteCeil)
 	return cap
 }
 

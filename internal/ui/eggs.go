@@ -892,8 +892,8 @@ func ringVisible(r, win sdl.Rect) bool {
 // where a clamped fill has no spurious edge (unlike an outline). Keeps the
 // per-edge fills honest at a flush-docked box. Pure integer math — no cgo query.
 func clampRingToWindow(r *sdl.Rect, win sdl.Rect) bool {
-	x0, y0 := max32(r.X, win.X), max32(r.Y, win.Y)
-	x1, y1 := min32(r.X+r.W, win.X+win.W), min32(r.Y+r.H, win.Y+win.H)
+	x0, y0 := max(r.X, win.X), max(r.Y, win.Y)
+	x1, y1 := min(r.X+r.W, win.X+win.W), min(r.Y+r.H, win.Y+win.H)
 	if x1 <= x0 || y1 <= y0 {
 		return false
 	}

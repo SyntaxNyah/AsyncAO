@@ -9,6 +9,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
@@ -535,36 +536,6 @@ func (a *App) chatZoomWheel(box sdl.Rect) {
 	a.zoomWheel(box, &a.chatPct, config.MinChatScalePercent, config.MaxChatScalePercent)
 }
 
-func clampInt(v, min, max int) int {
-	if v < min {
-		return min
-	}
-	if v > max {
-		return max
-	}
-	return v
-}
-
-func clampI32(v, min, max int32) int32 {
-	if v < min {
-		return min
-	}
-	if v > max {
-		return max
-	}
-	return v
-}
-
-func clampF64(v, min, max float64) float64 {
-	if v < min {
-		return min
-	}
-	if v > max {
-		return max
-	}
-	return v
-}
-
 // volStripRowsH is the height of the quick volume popover's two slider rows:
 // "label NN%" (click = mute) over a full-width slider. Named (rule 9) and
 // shared with drawLogPanel's box height so the two can't drift apart. (The
@@ -657,7 +628,7 @@ func (a *App) drawVolumeStrip(r sdl.Rect) {
 		c.Label(x, r.Y+2, label, labelCol)
 		c.LabelClipped(x+c.TextWidth(label)+6, r.Y+2, colW-c.TextWidth(label)-12, valText, ColAccent)
 		track := sdl.Rect{X: x, Y: r.Y + 22, W: colW - 8, H: 14}
-		v := clampI32(c.Slider("volstrip:"+id, track, val, hi), lo, hi)
+		v := value.Clamp(c.Slider("volstrip:"+id, track, val, hi), lo, hi)
 		if tip != "" {
 			c.Tooltip(track, tip)
 		}
@@ -1029,7 +1000,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		a.recallOOC() // Up/Down recall recently-sent OOC lines when the bar is focused
 		// Ctrl+wheel over the OOC row resizes the OOC text (independent of the IC log).
 		if c.ctrlHeld && c.wheelY != 0 && c.hovering(sdl.Rect{X: oocBar.X, Y: oocRowY, W: oocBar.W, H: fH}) {
-			a.oocPct = clampInt(a.oocPct+int(c.wheelY)*config.ScaleStepPercent,
+			a.oocPct = value.Clamp(a.oocPct+int(c.wheelY)*config.ScaleStepPercent,
 				config.MinLogScalePercent, config.MaxLogScalePercent)
 			a.saveLayout()
 		}

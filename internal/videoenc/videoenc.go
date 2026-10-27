@@ -23,6 +23,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/winexec"
 )
 
@@ -70,12 +71,7 @@ const (
 
 // crfFor maps a 0..100 quality (higher = better) to a codec CRF (lower = better).
 func crfFor(format Format, quality int) int {
-	if quality < 0 {
-		quality = 0
-	}
-	if quality > 100 {
-		quality = 100
-	}
+	quality = value.Clamp(quality, 0, 100)
 	best, worst := x264CRFBest, x264CRFWorst
 	if format == FormatWebM {
 		best, worst = vp9CRFBest, vp9CRFWorst

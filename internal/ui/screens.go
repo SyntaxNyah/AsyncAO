@@ -9,6 +9,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 const (
@@ -212,7 +213,7 @@ func (a *App) handlePreviewInput() {
 	// Wheel zoom in/out over the box; claim the wheel so the list/grid under it
 	// doesn't also scroll (same range as the − / + buttons).
 	if c.wheelY != 0 && c.hovering(box) {
-		a.previewZoom = int(clampI32(int32(a.previewZoom)+c.wheelY, 1, previewZoomMax))
+		a.previewZoom = int(value.Clamp(int32(a.previewZoom)+c.wheelY, 1, previewZoomMax))
 		c.wheelY = 0
 		c.wheelTaken = true
 	}
@@ -231,7 +232,7 @@ func (a *App) handlePreviewInput() {
 	}
 	if a.previewResize {
 		if c.mouseDown {
-			a.previewUserH = clampI32(a.previewResizeBase+(c.mouseY-a.previewResizeFrom), previewMinH, previewMaxH)
+			a.previewUserH = value.Clamp(a.previewResizeBase+(c.mouseY-a.previewResizeFrom), previewMinH, previewMaxH)
 		} else {
 			a.previewResize = false
 			c.clicked = false // a finished resize isn't a dismiss/selection
@@ -781,12 +782,7 @@ func (a *App) handleVpDivider(vp sdl.Rect, w int32) {
 			a.d.Prefs.Update(func(sn *config.Settings) { sn.ViewportExactW = 0 })
 		}
 		pct := int(int64(c.mouseX-vp.X) * int64(DefaultScalePct) / int64(w))
-		if pct < config.MinViewportPercent {
-			pct = config.MinViewportPercent
-		}
-		if pct > config.MaxViewportPercent {
-			pct = config.MaxViewportPercent
-		}
+		pct = value.Clamp(pct, config.MinViewportPercent, config.MaxViewportPercent)
 		a.vpPct = pct
 	}
 }

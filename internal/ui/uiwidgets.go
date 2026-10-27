@@ -9,6 +9,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
 
+	hvalue "github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
@@ -796,12 +797,7 @@ func wordForwardBoundary(runes []rune, pos int) int {
 // caller moves only the caret.)
 func editStep(value string, caret int, in editInput) (string, int) {
 	runes := []rune(value)
-	if caret < 0 {
-		caret = 0
-	}
-	if caret > len(runes) {
-		caret = len(runes)
-	}
+	caret = hvalue.Clamp(caret, 0, len(runes))
 	selA, selB := in.selStart, in.selEnd
 	if selA < 0 {
 		selA = 0
@@ -956,12 +952,7 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 			c.caretField = id
 			c.selAnchor = -1 // fresh focus: no selection
 		}
-		if c.caret > rc {
-			c.caret = rc
-		}
-		if c.caret < 0 {
-			c.caret = 0
-		}
+		c.caret = hvalue.Clamp(c.caret, 0, rc)
 		if c.selAnchor > rc {
 			c.selAnchor = rc // value shrank under a live selection
 		}
@@ -1443,12 +1434,7 @@ func scrollKeep(cur, fullW, caretX, avail int32) int32 {
 	}
 	maxScroll := fullW - avail
 	s := cur
-	if s > maxScroll {
-		s = maxScroll
-	}
-	if s < 0 {
-		s = 0
-	}
+	s = hvalue.Clamp(s, 0, maxScroll)
 	// The margin can never exceed half the interior, or the two clamps below
 	// would fight on a very narrow box and oscillate.
 	margin := fieldCaretMarginPx
@@ -2026,20 +2012,10 @@ func (c *Ctx) VScrollbar(id string, track sdl.Rect, scroll, content, visible int
 	if maxScroll <= 0 {
 		return 0
 	}
-	if scroll < 0 {
-		scroll = 0
-	}
-	if scroll > maxScroll {
-		scroll = maxScroll
-	}
+	scroll = hvalue.Clamp(scroll, 0, maxScroll)
 
 	thumbH := track.H * visible / content
-	if thumbH < scrollThumbMinPx {
-		thumbH = scrollThumbMinPx
-	}
-	if thumbH > track.H {
-		thumbH = track.H
-	}
+	thumbH = min(max(thumbH, scrollThumbMinPx), track.H) // a track shorter than the minimum thumb: the thumb fills it
 	span := track.H - thumbH
 
 	grab := sdl.Rect{X: track.X - scrollGrabSlopPx, Y: track.Y, W: track.W + 2*scrollGrabSlopPx, H: track.H}
@@ -2047,12 +2023,7 @@ func (c *Ctx) VScrollbar(id string, track sdl.Rect, scroll, content, visible int
 		c.dragID = id
 		if span > 0 {
 			pos := c.mouseY - track.Y - thumbH/2
-			if pos < 0 {
-				pos = 0
-			}
-			if pos > span {
-				pos = span
-			}
+			pos = hvalue.Clamp(pos, 0, span)
 			scroll = pos * maxScroll / span
 		}
 	}
@@ -2080,12 +2051,7 @@ func (c *Ctx) Slider(id string, track sdl.Rect, value, maxVal int32) int32 {
 	if maxVal <= 0 {
 		return 0
 	}
-	if value < 0 {
-		value = 0
-	}
-	if value > maxVal {
-		value = maxVal
-	}
+	value = hvalue.Clamp(value, 0, maxVal)
 	const sliderThumbW = 10
 	span := track.W - sliderThumbW
 	if span < 0 {
@@ -2096,12 +2062,7 @@ func (c *Ctx) Slider(id string, track sdl.Rect, value, maxVal int32) int32 {
 		c.dragID = id
 		if span > 0 {
 			pos := c.mouseX - track.X - sliderThumbW/2
-			if pos < 0 {
-				pos = 0
-			}
-			if pos > span {
-				pos = span
-			}
+			pos = hvalue.Clamp(pos, 0, span)
 			value = pos * maxVal / span
 		}
 	}
@@ -2116,12 +2077,7 @@ func (c *Ctx) Slider(id string, track sdl.Rect, value, maxVal int32) int32 {
 			step = 1
 		}
 		value += c.wheelY * step
-		if value < 0 {
-			value = 0
-		}
-		if value > maxVal {
-			value = maxVal
-		}
+		value = hvalue.Clamp(value, 0, maxVal)
 	}
 	c.Fill(track, ColPanel)
 	thumbX := track.X

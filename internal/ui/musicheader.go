@@ -40,6 +40,7 @@ import (
 	"github.com/veandco/go-sdl2/ttf"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -502,8 +503,8 @@ func (a *App) musicMenuRect(w, h int32, themed bool) sdl.Rect {
 		}
 	}
 	mh := a.musicMenuHeight(themed)
-	x := clampI32(a.musicMenuAt.X, pad, maxI32(pad, w-mw-pad))
-	y := clampI32(a.musicMenuAt.Y, pad, maxI32(pad, h-mh-pad))
+	x := value.Clamp(a.musicMenuAt.X, pad, max(pad, w-mw-pad))
+	y := value.Clamp(a.musicMenuAt.Y, pad, max(pad, h-mh-pad))
 	return sdl.Rect{X: x, Y: y, W: mw, H: mh}
 }
 

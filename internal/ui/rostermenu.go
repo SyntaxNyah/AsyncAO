@@ -15,6 +15,8 @@ package ui
 
 import (
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 // rosterMenuKind enumerates the single-player actions the menu can carry.
@@ -152,8 +154,8 @@ func (a *App) rosterMenuRect(w, h int32) sdl.Rect {
 		}
 	}
 	mh := int32(len(a.rosterMenuItems))*rosterMenuItemH + 8
-	x := clampI32(a.rosterMenuAt.X, pad, maxI32(pad, w-mw-pad))
-	y := clampI32(a.rosterMenuAt.Y, pad, maxI32(pad, h-mh-pad))
+	x := value.Clamp(a.rosterMenuAt.X, pad, max(pad, w-mw-pad))
+	y := value.Clamp(a.rosterMenuAt.Y, pad, max(pad, h-mh-pad))
 	return sdl.Rect{X: x, Y: y, W: mw, H: mh}
 }
 
@@ -237,12 +239,4 @@ func (a *App) rosterMenuAct(kind rosterMenuKind) {
 			a.openProfileCard(prof, display)
 		}
 	}
-}
-
-// maxI32 is the int32 max (the kit has clampI32 but no bare max helper).
-func maxI32(a, b int32) int32 {
-	if a > b {
-		return a
-	}
-	return b
 }

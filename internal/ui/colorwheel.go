@@ -14,6 +14,7 @@ import (
 	"unsafe"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -319,7 +320,7 @@ func (a *App) drawICColorWheel(w, h int32) {
 	knobY := sl.Y + int32((1-vv)*float64(sl.H-4))
 	c.Border(sdl.Rect{X: sl.X - 2, Y: knobY, W: sl.W + 4, H: 4}, ColText)
 	if c.mouseDown && pointIn(c.mouseX, c.mouseY, sl) {
-		nv := clampF64(1-float64(c.mouseY-sl.Y)/float64(sl.H), 0, 1)
+		nv := value.Clamp(1-float64(c.mouseY-sl.Y)/float64(sl.H), 0, 1)
 		nr, ng, nb := hsvToRGB(hh, ss, nv)
 		a.setICCustomRGB(int(nr)<<16 | int(ng)<<8 | int(nb))
 	}
@@ -391,7 +392,7 @@ func (a *App) drawWheelPicker(x, y int32, cur int, set func(rgb int)) (nextY, he
 	c.Border(sdl.Rect{X: sl.X - 2, Y: knobY, W: sl.W + 4, H: 4}, ColText)
 	if c.mouseDown && c.hovering(sl) {
 		nv := 1 - float64(c.mouseY-sl.Y)/float64(sl.H)
-		nv = clampF64(nv, 0, 1)
+		nv = value.Clamp(nv, 0, 1)
 		nr, ng, nb := hsvToRGB(h, s, nv)
 		set(int(nr)<<16 | int(ng)<<8 | int(nb))
 	}

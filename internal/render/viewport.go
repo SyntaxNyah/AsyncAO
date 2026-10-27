@@ -8,6 +8,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 const (
@@ -1468,12 +1469,7 @@ func reflectAlpha(strength int) uint8 {
 		strength = reflectDefaultPct
 	}
 	a := strength * 255 / 100
-	if a < reflectMinAlpha {
-		a = reflectMinAlpha
-	}
-	if a > reflectMaxAlpha {
-		a = reflectMaxAlpha
-	}
+	a = value.Clamp(a, reflectMinAlpha, reflectMaxAlpha)
 	return uint8(a)
 }
 
@@ -2238,12 +2234,7 @@ func spotlightBrightness(level int) int {
 // caller's phase%cycle and rainbowMod's divide can never hit zero, whatever a
 // hand-edited or out-of-range pref says.
 func cycleForSpeed(speed int) time.Duration {
-	if speed < 1 {
-		speed = 1
-	}
-	if speed > 100 {
-		speed = 100
-	}
+	speed = value.Clamp(speed, 1, 100)
 	span := maxRainbowCycle - minRainbowCycle
 	cyc := maxRainbowCycle - time.Duration(int64(span)*int64(speed-1)/99)
 	if cyc < minRainbowCycle {
@@ -2270,12 +2261,7 @@ func scaleChannel(c uint8, pct int) uint8 {
 // floorForVividness maps the Vividness slider [0,100] to the colour-mod channel
 // floor, higher vividness → lower floor → more saturated/neon.
 func floorForVividness(v int) int {
-	if v < 0 {
-		v = 0
-	}
-	if v > 100 {
-		v = 100
-	}
+	v = value.Clamp(v, 0, 100)
 	return spriteFloorMax * (100 - v) / 100
 }
 
@@ -2407,12 +2393,7 @@ const (
 
 // breathPeriod maps the BreathSpeed slider [1,100] to a breathing period (higher = faster).
 func breathPeriod(speed int) time.Duration {
-	if speed < 1 {
-		speed = 1
-	}
-	if speed > 100 {
-		speed = 100
-	}
+	speed = value.Clamp(speed, 1, 100)
 	span := breathPeriodMax - breathPeriodMin
 	return breathPeriodMax - time.Duration(int64(span)*int64(speed-1)/99)
 }
@@ -2422,11 +2403,7 @@ func breathPeriod(speed int) time.Duration {
 // amplitude slider. Pure math off the free-running fxClock — no allocation. The caller gates
 // each component (Bob / Scale) and folds scaleAddPct into the sprite's scale.
 func breathTransform(clock time.Duration, vp sdl.Rect, ampPct, speedPct int) (bobY int32, scaleAddPct int) {
-	if ampPct < 1 {
-		ampPct = 1
-	} else if ampPct > 100 {
-		ampPct = 100
-	}
+	ampPct = value.Clamp(ampPct, 1, 100)
 	s := math.Sin(2 * math.Pi * oscFrac(clock, breathPeriod(speedPct)))
 	bobY = int32(float64(vp.H) * float64(ampPct) / 100 / breathBobDiv * s)
 	scaleAddPct = int(float64(breathScaleMax) * float64(ampPct) / 100 * (1 + s) / 2)

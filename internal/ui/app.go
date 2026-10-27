@@ -12,6 +12,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/logbrowser"
 	"github.com/SyntaxNyah/AsyncAO/internal/metrics"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
@@ -2025,7 +2026,7 @@ func (a *App) SetAutoScaleFromWindow(winW, winH int32) {
 	}
 	pct := max(100, a.dpiScalePct, winPct)
 	pct = pct / config.UIScaleStepPercent * config.UIScaleStepPercent
-	pct = clampInt(pct, config.MinUIScalePercent, config.MaxUIScalePercent)
+	pct = value.Clamp(pct, config.MinUIScalePercent, config.MaxUIScalePercent)
 	if pct != a.detectedScalePct {
 		a.detectedScalePct = pct
 		a.ctx.SetUIScale(a.UIScale()) // mouse unprojection follows immediately

@@ -2,6 +2,8 @@ package ui
 
 import (
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 // AO2's ooc_toggle: one button that swaps the server chat panel for the debug
@@ -82,12 +84,7 @@ func (a *App) drawThemedDebugLog(list sdl.Rect) {
 	}
 	track := sdl.Rect{X: body.X + body.W - scrollBarW, Y: body.Y, W: scrollBarW, H: body.H}
 	a.debugOOCScroll = c.VScrollbar("debugoocscroll", track, a.debugOOCScroll, contentH, body.H)
-	if a.debugOOCScroll > maxScroll {
-		a.debugOOCScroll = maxScroll
-	}
-	if a.debugOOCScroll < 0 {
-		a.debugOOCScroll = 0
-	}
+	a.debugOOCScroll = value.Clamp(a.debugOOCScroll, 0, maxScroll)
 
 	if len(lines) == 0 {
 		// LabelClippedFont, not LabelClipped: the row pitch above is measured in the

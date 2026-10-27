@@ -4,6 +4,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/veandco/go-sdl2/sdl"
+
+	hvalue "github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 // Multiline text editing for the evidence editor (#83). TextField is a
@@ -73,12 +75,7 @@ func (c *Ctx) TextArea(id string, r sdl.Rect, value string, placeholder string) 
 			c.taCaret = rc
 			c.taSelAnchor = -1
 		}
-		if c.taCaret > rc {
-			c.taCaret = rc
-		}
-		if c.taCaret < 0 {
-			c.taCaret = 0
-		}
+		c.taCaret = hvalue.Clamp(c.taCaret, 0, rc)
 		if c.taSelAnchor > rc {
 			c.taSelAnchor = rc
 		}
@@ -250,8 +247,8 @@ func (c *Ctx) TextArea(id string, r sdl.Rect, value string, placeholder string) 
 			}
 			if selLo >= 0 && selLo < selHi && selLo < ln.end && selHi > ln.start {
 				n := utf8.RuneCountInString(ln.text)
-				x0 := c.TextWidth(string([]rune(ln.text)[:taClamp(selLo-ln.start, 0, n)]))
-				x1 := c.TextWidth(string([]rune(ln.text)[:taClamp(selHi-ln.start, 0, n)]))
+				x0 := c.TextWidth(string([]rune(ln.text)[:hvalue.Clamp(selLo-ln.start, 0, n)]))
+				x1 := c.TextWidth(string([]rune(ln.text)[:hvalue.Clamp(selHi-ln.start, 0, n)]))
 				if x1 > x0 {
 					c.Fill(sdl.Rect{X: r.X + padX + x0, Y: dy, W: x1 - x0, H: lineH},
 						sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 90})
@@ -269,7 +266,7 @@ func (c *Ctx) TextArea(id string, r sdl.Rect, value string, placeholder string) 
 			cl = len(lines) - 1
 		}
 		n := utf8.RuneCountInString(lines[cl].text)
-		col := taClamp(c.taCaret-lines[cl].start, 0, n)
+		col := hvalue.Clamp(c.taCaret-lines[cl].start, 0, n)
 		cx := r.X + padX + c.TextWidth(string([]rune(lines[cl].text)[:col]))
 		c.Fill(sdl.Rect{X: cx, Y: r.Y + padY + int32(cl)*lineH - c.taScroll, W: 2, H: lineH}, ColText)
 	}
@@ -419,15 +416,4 @@ func (c *Ctx) layoutTextArea(value string, maxW int32) []taLine {
 		lines = append(lines, taLine{text: "", start: segStart, end: segStart, hard: false})
 	}
 	return lines
-}
-
-// taClamp is a tiny int clamp for the textarea's selection/caret column math.
-func taClamp(v, lo, hi int) int {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
 }

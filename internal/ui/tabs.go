@@ -35,6 +35,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -1051,8 +1052,8 @@ func (a *App) tabStripCacheRect(lay *themeLayoutCache, w, h, total int32, parked
 	// order of operations or the grab point drifts again.
 	r := def
 	d := a.themeRects[themeTabBarKey]
-	r.X = clampI32(lay.offX+int32(d.X), 0, maxI32(w-r.W, 0))
-	r.Y = clampI32(lay.offY+int32(d.Y), 0, maxI32(h-r.H, 0))
+	r.X = value.Clamp(lay.offX+int32(d.X), 0, max(w-r.W, 0))
+	r.Y = value.Clamp(lay.offY+int32(d.Y), 0, max(h-r.H, 0))
 	return r, true
 }
 

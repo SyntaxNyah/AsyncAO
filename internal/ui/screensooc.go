@@ -12,6 +12,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
@@ -60,7 +61,7 @@ func (a *App) zoomWheel(rect sdl.Rect, pct *int, min, max int) bool {
 	if c.middleHeld {
 		step *= logFastZoomMultiple
 	}
-	*pct = clampInt(*pct+int(c.wheelY)*step, min, max)
+	*pct = value.Clamp(*pct+int(c.wheelY)*step, min, max)
 	a.saveLayout()
 	c.wheelTaken = true
 	return true
@@ -349,7 +350,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 				a.icScroll, a.icStick = maxScroll, true
 			} else if c.rightClicked { // right-click → read forward from the first unread
 				if firstUnreadRow >= 0 {
-					a.icScroll = clampI32(int32(firstUnreadRow)*lineH, 0, maxScroll)
+					a.icScroll = value.Clamp(int32(firstUnreadRow)*lineH, 0, maxScroll)
 					a.icStick = a.icScroll >= maxScroll
 				} else {
 					a.icStick = true // unread rows scrolled off the cap: just go live

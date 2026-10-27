@@ -538,7 +538,7 @@ func paintElementShape(a *App, e *bakedElement) {
 		return
 	}
 	pen := e.strokePx
-	if maxPen := min32(e.r.W, e.r.H) / 2; pen > maxPen {
+	if maxPen := min(e.r.W, e.r.H) / 2; pen > maxPen {
 		pen = maxPen
 	}
 	var prevL, prevR int32
@@ -590,11 +590,11 @@ func paintElementShape(a *App, e *bakedElement) {
 // on whichever side moved. Called only on the stroked path.
 func elemShapeBridge(c *Ctx, e *bakedElement, y int32, pen, prevL, l, prevR, r int32) {
 	if d := abs32(l - prevL); d > pen {
-		x := min32(l, prevL)
+		x := min(l, prevL)
 		c.Fill(sdl.Rect{X: e.r.X + x, Y: y, W: d, H: pen}, e.stroke)
 	}
 	if d := abs32(r - prevR); d > pen {
-		x := e.r.W - max32(r, prevR)
+		x := e.r.W - max(r, prevR)
 		c.Fill(sdl.Rect{X: e.r.X + x, Y: y, W: d, H: pen}, e.stroke)
 	}
 }
@@ -607,7 +607,7 @@ func elemShapeInset(shape uint8, i, n, w, h int32) (int32, int32) {
 	}
 	// t is the band CENTRE's position down the element, in [0, 1].
 	t := (float64(i) + 0.5) / float64(n)
-	short := min32(w, h)
+	short := min(w, h)
 	switch shape {
 	case elemShapeRounded, elemShapePill:
 		// One quarter-circle for both: the only difference is how big it is, and a
@@ -736,7 +736,7 @@ func paintElementGradient(a *App, e *bakedElement) {
 // one, and it lands in W4 as a tile.
 func paintElementRadial(c *Ctx, e *bakedElement) {
 	n := elemGradientBands
-	if half := min32(e.r.W, e.r.H) / 2; half > 0 && half < n {
+	if half := min(e.r.W, e.r.H) / 2; half > 0 && half < n {
 		n = half
 	}
 	if n <= 1 {
@@ -1087,7 +1087,7 @@ func paintElementPane(a *App, e *bakedElement) {
 		return
 	}
 	pen := e.strokePx
-	if maxPen := min32(e.r.W, e.r.H) / 2; pen > maxPen {
+	if maxPen := min(e.r.W, e.r.H) / 2; pen > maxPen {
 		pen = maxPen
 	}
 	if pen <= 0 {

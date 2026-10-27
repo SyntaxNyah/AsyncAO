@@ -11,6 +11,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
@@ -1266,7 +1267,7 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	if hiY < pad {
 		hiY = pad
 	}
-	dst := sdl.Rect{X: clampI32(baseX+a.previewOffX, pad, hiX), Y: clampI32(baseY+a.previewOffY, pad, hiY), W: pw, H: ph}
+	dst := sdl.Rect{X: value.Clamp(baseX+a.previewOffX, pad, hiX), Y: value.Clamp(baseY+a.previewOffY, pad, hiY), W: pw, H: ph}
 	frame := sdl.Rect{X: dst.X - 4, Y: dst.Y - 4, W: dst.W + 8, H: dst.H + 8 + previewCaptionH}
 	a.previewFrameRect = frame // cached for handlePreviewInput (wheel zoom + drag + resize)
 	c.Fill(frame, ColPanel)
@@ -1285,9 +1286,9 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 			}
 			relX := float64(c.mouseX-dst.X) / float64(dst.W)
 			relY := float64(c.mouseY-dst.Y) / float64(dst.H)
-			relX = clampF64(relX, 0, 1)
-			relY = clampF64(relY, 0, 1)
-			src := sdl.Rect{X: clampI32(int32(relX*float64(page.W))-zw/2, 0, page.W-zw), Y: clampI32(int32(relY*float64(page.H))-zh/2, 0, page.H-zh), W: zw, H: zh}
+			relX = value.Clamp(relX, 0, 1)
+			relY = value.Clamp(relY, 0, 1)
+			src := sdl.Rect{X: value.Clamp(int32(relX*float64(page.W))-zw/2, 0, page.W-zw), Y: value.Clamp(int32(relY*float64(page.H))-zh/2, 0, page.H-zh), W: zw, H: zh}
 			_ = c.Ren.Copy(tex, &src, &dst)
 		} else {
 			_ = c.Ren.Copy(tex, nil, &dst)

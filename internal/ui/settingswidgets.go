@@ -12,6 +12,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	hvalue "github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 	"github.com/SyntaxNyah/AsyncAO/internal/winexec"
 )
@@ -42,12 +43,7 @@ func (a *App) volumeRow(y int32, name string, value int) int {
 	if c.hovering(row) && c.wheelY != 0 {
 		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
 		value += int(c.wheelY) * volumeWheelStep
-		if value < 0 {
-			value = 0
-		}
-		if value > 100 {
-			value = 100
-		}
+		value = hvalue.Clamp(value, 0, 100)
 	}
 	c.Label(track.X+track.W+12, y+4, fmt.Sprintf("%3d%%", value), ColAccent)
 	return value
@@ -110,12 +106,7 @@ func (a *App) sliderRow(y int32, label string, value, step, min, max int, tip ..
 		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
 		value += int(c.wheelY) * step
 	}
-	if value < min {
-		value = min
-	}
-	if value > max {
-		value = max
-	}
+	value = hvalue.Clamp(value, min, max)
 	if step > 1 { // snap to the step grid for clean values, then re-clamp
 		value = ((value-min+step/2)/step)*step + min
 		if value > max {
@@ -190,7 +181,7 @@ func (a *App) drawManualUIScale(y int32) int32 {
 // (mouse unprojection) and persist. The single chokepoint for the slider's
 // release, the wheel, and the preset chips.
 func (a *App) applyManualUIScale(pct int) {
-	pct = clampInt(pct, config.MinUIScalePercent, config.MaxUIScalePercent)
+	pct = hvalue.Clamp(pct, config.MinUIScalePercent, config.MaxUIScalePercent)
 	if pct == a.uiScalePct {
 		return
 	}
@@ -250,12 +241,7 @@ func (a *App) drawViewportSizeRow(y int32) int32 {
 		c.wheelTaken = true // hovered control owns the wheel — no page scroll
 		newM = curM + int(c.wheelY)
 	}
-	if newM < 0 {
-		newM = 0
-	}
-	if newM > maxM {
-		newM = maxM
-	}
+	newM = hvalue.Clamp(newM, 0, maxM)
 	if newM != curM {
 		set(newM * config.ViewportArtW) // 0 ⇒ Fit
 	}
@@ -304,12 +290,7 @@ func (a *App) delayRow(y int32, ms int, label, id string, maxMs int) int {
 		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
 		ms += int(c.wheelY) * stepMs
 	}
-	if ms < minMs {
-		ms = minMs
-	}
-	if ms > maxMs {
-		ms = maxMs
-	}
+	ms = hvalue.Clamp(ms, minMs, maxMs)
 	ms = ((ms-minMs+stepMs/2)/stepMs)*stepMs + minMs // snap to the grid
 	if ms > maxMs {
 		ms = maxMs
@@ -355,12 +336,7 @@ func (a *App) emoteGridGapRow(y int32, gap int) int {
 		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
 		gap += int(c.wheelY)
 	}
-	if gap < config.MinEmoteGridGapPx {
-		gap = config.MinEmoteGridGapPx
-	}
-	if gap > config.MaxEmoteGridGapPx {
-		gap = config.MaxEmoteGridGapPx
-	}
+	gap = hvalue.Clamp(gap, config.MinEmoteGridGapPx, config.MaxEmoteGridGapPx)
 	c.Label(track.X+track.W+8, y+4, strconv.Itoa(gap)+" px", ColAccent)
 	return gap
 }

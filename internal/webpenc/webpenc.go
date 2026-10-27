@@ -24,6 +24,8 @@ import (
 	"fmt"
 	"image"
 	"unsafe"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 // Available reports whether the animated-WebP encoder is compiled in (it is, in
@@ -67,12 +69,7 @@ func New(w, h, quality, frameMs int, loop bool) (*Encoder, error) {
 	}
 
 	e := &Encoder{enc: enc, w: w, h: h, frameMs: frameMs}
-	if quality < 0 {
-		quality = 0
-	}
-	if quality > 100 {
-		quality = 100
-	}
+	quality = value.Clamp(quality, 0, 100)
 	if C.WebPConfigPreset(&e.config, C.WEBP_PRESET_DEFAULT, C.float(quality)) == 0 {
 		C.WebPAnimEncoderDelete(enc)
 		return nil, fmt.Errorf("webpenc: config preset failed (encode ABI mismatch)")

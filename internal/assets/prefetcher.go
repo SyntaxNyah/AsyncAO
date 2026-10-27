@@ -3,6 +3,8 @@ package assets
 import (
 	"sort"
 	"sync"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 const (
@@ -144,12 +146,7 @@ type warmTarget struct{ char, emote string }
 // message (#100): 1 = conservative (just the single best guess), higher warms more
 // guesses at the cost of more speculative bandwidth. Clamped to a sane range.
 func (p *Prefetcher) SetAggressiveness(n int) {
-	if n < 1 {
-		n = 1
-	}
-	if n > prefetchMaxPredict {
-		n = prefetchMaxPredict
-	}
+	n = value.Clamp(n, 1, prefetchMaxPredict)
 	p.mu.Lock()
 	p.maxPredict = n
 	p.mu.Unlock()

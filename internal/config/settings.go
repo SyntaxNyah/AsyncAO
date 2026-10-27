@@ -2,6 +2,8 @@ package config
 
 import (
 	"sync/atomic"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 //go:generate go run ./genclone
@@ -374,92 +376,88 @@ func (p *AssetPreferences) Update(f func(*Settings)) {
 // whose sentinel is 0, so a setter touching one field never stomps another's sentinel.
 func clampSettingsStrictPhase(s *Settings) {
 	if s.BreathAmount != 0 {
-		s.BreathAmount = clampPercent(s.BreathAmount, 1, 100)
+		s.BreathAmount = value.Clamp(s.BreathAmount, 1, 100)
 	}
 	if s.BreathRate != 0 {
-		s.BreathRate = clampPercent(s.BreathRate, 1, 100)
+		s.BreathRate = value.Clamp(s.BreathRate, 1, 100)
 	}
 	if s.CatchUpLingerMsVal != 0 {
-		s.CatchUpLingerMsVal = clampPercent(s.CatchUpLingerMsVal, 0, CatchUpLingerMaxMs)
+		s.CatchUpLingerMsVal = value.Clamp(s.CatchUpLingerMsVal, 0, CatchUpLingerMaxMs)
 	}
 	if s.SpotlightStrength != 0 {
-		s.SpotlightStrength = clampPercent(s.SpotlightStrength, minSpotlightStrength, maxSpotlightStrength)
+		s.SpotlightStrength = value.Clamp(s.SpotlightStrength, minSpotlightStrength, maxSpotlightStrength)
 	}
 	if s.SpriteWaitMsVal != 0 {
-		s.SpriteWaitMsVal = clampPercent(s.SpriteWaitMsVal, SpriteWaitMinMs, SpriteWaitMaxMs)
+		s.SpriteWaitMsVal = value.Clamp(s.SpriteWaitMsVal, SpriteWaitMinMs, SpriteWaitMaxMs)
 	}
 	if s.OOCScalePct != 0 {
-		s.OOCScalePct = clampPercent(s.OOCScalePct, MinLogScalePercent, MaxLogScalePercent)
+		s.OOCScalePct = value.Clamp(s.OOCScalePct, MinLogScalePercent, MaxLogScalePercent)
 	}
 	if s.PreviewHeightPxVal != 0 {
-		s.PreviewHeightPxVal = clampPercent(s.PreviewHeightPxVal, MinPreviewHeightPx, MaxPreviewHeightPx)
+		s.PreviewHeightPxVal = value.Clamp(s.PreviewHeightPxVal, MinPreviewHeightPx, MaxPreviewHeightPx)
 	}
 	if s.VoiceOutVolume != 0 {
-		s.VoiceOutVolume = clampPercent(s.VoiceOutVolume, 0, 100)
+		s.VoiceOutVolume = value.Clamp(s.VoiceOutVolume, 0, 100)
 	}
 	if s.WeatherDensity != 0 {
-		s.WeatherDensity = clampPercent(s.WeatherDensity, 1, 100)
+		s.WeatherDensity = value.Clamp(s.WeatherDensity, 1, 100)
 	}
 	if s.BgSlideshowSecs != 0 {
-		s.BgSlideshowSecs = clampPercent(s.BgSlideshowSecs, minBgSlideshowSecs, maxBgSlideshowSecs)
+		s.BgSlideshowSecs = value.Clamp(s.BgSlideshowSecs, minBgSlideshowSecs, maxBgSlideshowSecs)
 	}
 	if s.PrefetchAggro != 0 {
-		s.PrefetchAggro = clampPercent(s.PrefetchAggro, 1, 4)
+		s.PrefetchAggro = value.Clamp(s.PrefetchAggro, 1, 4)
 	}
 	if s.StageFrameKind != 0 {
-		s.StageFrameKind = clampPercent(s.StageFrameKind, 0, stageFrameKindMax)
+		s.StageFrameKind = value.Clamp(s.StageFrameKind, 0, stageFrameKindMax)
 	}
-	if s.DownloadKBps < 0 {
-		s.DownloadKBps = 0
-	} else if s.DownloadKBps > maxDownloadKBps {
-		s.DownloadKBps = maxDownloadKBps
-	}
+	s.DownloadKBps = value.Clamp(s.DownloadKBps, 0, maxDownloadKBps)
 
 	// sentinel clamps (0 = unset, kept as-is)
 	if s.TexBudgetMiBVal != 0 {
-		s.TexBudgetMiBVal = clampPercent(s.TexBudgetMiBVal, TexBudgetMinMiB, TexBudgetMaxMiB)
+		s.TexBudgetMiBVal = value.Clamp(s.TexBudgetMiBVal, TexBudgetMinMiB, TexBudgetMaxMiB)
 	}
 	if s.AnimatedBudgetMiBVal != 0 {
-		s.AnimatedBudgetMiBVal = clampPercent(s.AnimatedBudgetMiBVal, AnimatedBudgetMinMiB, AnimatedBudgetMaxMiB)
+		s.AnimatedBudgetMiBVal = value.Clamp(s.AnimatedBudgetMiBVal, AnimatedBudgetMinMiB, AnimatedBudgetMaxMiB)
 	}
 	if s.AdaptiveLatMultipleVal != 0 {
-		s.AdaptiveLatMultipleVal = clampPercent(s.AdaptiveLatMultipleVal, AdaptiveLatMultipleMin, AdaptiveLatMultipleMax)
+		s.AdaptiveLatMultipleVal = value.Clamp(s.AdaptiveLatMultipleVal, AdaptiveLatMultipleMin, AdaptiveLatMultipleMax)
 	}
 	if s.AnimDecodeConcurrencyVal != 0 {
-		s.AnimDecodeConcurrencyVal = clampPercent(s.AnimDecodeConcurrencyVal, AnimDecodeConcurrencyMin, AnimDecodeConcurrencyMax)
+		s.AnimDecodeConcurrencyVal = value.Clamp(s.AnimDecodeConcurrencyVal, AnimDecodeConcurrencyMin, AnimDecodeConcurrencyMax)
 	}
 	if s.CrossfadeMsVal != 0 {
-		s.CrossfadeMsVal = clampPercent(s.CrossfadeMsVal, CrossfadeMinMs, CrossfadeMaxMs)
+		s.CrossfadeMsVal = value.Clamp(s.CrossfadeMsVal, CrossfadeMinMs, CrossfadeMaxMs)
 	}
 	if s.DiskCacheBudgetMiBVal != 0 {
-		s.DiskCacheBudgetMiBVal = clampPercent(s.DiskCacheBudgetMiBVal, DiskCacheBudgetMinMiB, DiskCacheBudgetMaxMiB)
+		s.DiskCacheBudgetMiBVal = value.Clamp(s.DiskCacheBudgetMiBVal, DiskCacheBudgetMinMiB, DiskCacheBudgetMaxMiB)
 	}
 	if s.HoldPrevMaxAgeMsVal != 0 {
-		s.HoldPrevMaxAgeMsVal = clampPercent(s.HoldPrevMaxAgeMsVal, HoldPrevMaxAgeMinMs, HoldPrevMaxAgeMaxMs)
+		s.HoldPrevMaxAgeMsVal = value.Clamp(s.HoldPrevMaxAgeMsVal, HoldPrevMaxAgeMinMs, HoldPrevMaxAgeMaxMs)
 	}
 	if s.ICQueueCapVal != 0 {
-		s.ICQueueCapVal = clampPercent(s.ICQueueCapVal, ICQueueCapMin, ICQueueCapMax)
+		s.ICQueueCapVal = value.Clamp(s.ICQueueCapVal, ICQueueCapMin, ICQueueCapMax)
 	}
 	if s.NotFoundTTLSecVal != 0 {
-		s.NotFoundTTLSecVal = clampPercent(s.NotFoundTTLSecVal, NotFoundTTLMinSec, NotFoundTTLMaxSec)
+		s.NotFoundTTLSecVal = value.Clamp(s.NotFoundTTLSecVal, NotFoundTTLMinSec, NotFoundTTLMaxSec)
 	}
 	if s.PreanimTimeoutMsVal != 0 {
-		s.PreanimTimeoutMsVal = clampPercent(s.PreanimTimeoutMsVal, PreanimTimeoutMinMs, PreanimTimeoutMaxMs)
+		s.PreanimTimeoutMsVal = value.Clamp(s.PreanimTimeoutMsVal, PreanimTimeoutMinMs, PreanimTimeoutMaxMs)
 	}
 	if s.ShoutDurationMsVal != 0 {
-		s.ShoutDurationMsVal = clampPercent(s.ShoutDurationMsVal, ShoutDurationMinMs, ShoutDurationMaxMs)
+		s.ShoutDurationMsVal = value.Clamp(s.ShoutDurationMsVal, ShoutDurationMinMs, ShoutDurationMaxMs)
 	}
 	if s.SpriteDownscalePctVal != 0 {
-		s.SpriteDownscalePctVal = clampPercent(s.SpriteDownscalePctVal, SpriteDownscaleMinPct, SpriteDownscaleMaxPct)
+		s.SpriteDownscalePctVal = value.Clamp(s.SpriteDownscalePctVal, SpriteDownscaleMinPct, SpriteDownscaleMaxPct)
 	}
 	if s.ThumbBudgetMiBVal != 0 {
-		s.ThumbBudgetMiBVal = clampPercent(s.ThumbBudgetMiBVal, ThumbBudgetMinMiB, ThumbBudgetMaxMiB)
+		s.ThumbBudgetMiBVal = value.Clamp(s.ThumbBudgetMiBVal, ThumbBudgetMinMiB, ThumbBudgetMaxMiB)
 	}
 	if s.ThumbHeightPxVal != 0 {
-		s.ThumbHeightPxVal = clampPercent(s.ThumbHeightPxVal, ThumbHeightMinPx, ThumbHeightMaxPx)
+		s.ThumbHeightPxVal = value.Clamp(s.ThumbHeightPxVal, ThumbHeightMinPx, ThumbHeightMaxPx)
 	}
 	if s.ThumbQualityVal != 0 {
-		s.ThumbQualityVal = clampPercent(s.ThumbQualityVal, ThumbQualityMin, ThumbQualityMax)
+		s.ThumbQualityVal = value.Clamp(s.ThumbQualityVal, ThumbQualityMin, ThumbQualityMax)
 	}
 
 	// custom clamp helpers (the setters call these same functions); the sentinel-resolving
@@ -477,7 +475,7 @@ func clampSettingsStrictPhase(s *Settings) {
 	s.ViewportExactW = clampViewportExactPx(s.ViewportExactW)
 	s.SpriteScaling = ClampSpriteScaling(s.SpriteScaling)
 	if s.InputGraceFramesVal > 0 {
-		s.InputGraceFramesVal = clampPercent(s.InputGraceFramesVal, InputGraceFramesMin, InputGraceFramesMax)
+		s.InputGraceFramesVal = value.Clamp(s.InputGraceFramesVal, InputGraceFramesMin, InputGraceFramesMax)
 	}
 }
 
@@ -493,52 +491,52 @@ func normalizeSettings(s *Settings) {
 	s.MusicFlagsVal &= MusicFlagsMask
 
 	// unconditional range clamps
-	s.NameVal = clampPercent(s.NameVal, minNameColorVal, 100)
-	s.RainbowSpriteSpeed = clampPercent(s.RainbowSpriteSpeed, minRainbowSpeed, maxRainbowSpeed)
-	s.ReplayPlaybackSpeed = clampPercent(s.ReplayPlaybackSpeed, minReplaySpeed, maxReplaySpeed)
-	s.CatchUpThreshold = clampPercent(s.CatchUpThreshold, catchUpThresholdMin, catchUpThresholdMax)
-	s.MultiTabCap = clampPercent(s.MultiTabCap, minMultiTabCap, maxMultiTabCap)
-	s.PreviewHoverMs = clampPercent(s.PreviewHoverMs, minPreviewHoverMs, maxPreviewHoverMs)
-	s.EmoteHoverNamesMs = clampPercent(s.EmoteHoverNamesMs, minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
-	s.MusicVol = clampPercent(s.MusicVol, 0, defaultAudioVolume)
-	s.SFXVol = clampPercent(s.SFXVol, 0, defaultAudioVolume)
-	s.BlipVol = clampPercent(s.BlipVol, 0, defaultAudioVolume)
-	s.AlertVol = clampPercent(s.AlertVol, 0, defaultAudioVolume)
-	s.MasterVol = clampPercent(s.MasterVol, 0, defaultAudioVolume)
-	s.ChatboxOpacity = clampPercent(s.ChatboxOpacity, MinChatboxOpacity, MaxChatboxOpacity)
-	s.RainbowSpriteVividness = clampPercent(s.RainbowSpriteVividness, minRainbowVivid, maxRainbowVivid)
-	s.NameSat = clampPercent(s.NameSat, 0, 100)
-	s.TextStayMs = clampPercent(s.TextStayMs, 0, MaxTextStayMs)
-	s.EmoteGridGapPx = clampPercent(s.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
-	s.ThemeFitZoom = clampPercent(s.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
+	s.NameVal = value.Clamp(s.NameVal, minNameColorVal, 100)
+	s.RainbowSpriteSpeed = value.Clamp(s.RainbowSpriteSpeed, minRainbowSpeed, maxRainbowSpeed)
+	s.ReplayPlaybackSpeed = value.Clamp(s.ReplayPlaybackSpeed, minReplaySpeed, maxReplaySpeed)
+	s.CatchUpThreshold = value.Clamp(s.CatchUpThreshold, catchUpThresholdMin, catchUpThresholdMax)
+	s.MultiTabCap = value.Clamp(s.MultiTabCap, minMultiTabCap, maxMultiTabCap)
+	s.PreviewHoverMs = value.Clamp(s.PreviewHoverMs, minPreviewHoverMs, maxPreviewHoverMs)
+	s.EmoteHoverNamesMs = value.Clamp(s.EmoteHoverNamesMs, minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
+	s.MusicVol = value.Clamp(s.MusicVol, 0, defaultAudioVolume)
+	s.SFXVol = value.Clamp(s.SFXVol, 0, defaultAudioVolume)
+	s.BlipVol = value.Clamp(s.BlipVol, 0, defaultAudioVolume)
+	s.AlertVol = value.Clamp(s.AlertVol, 0, defaultAudioVolume)
+	s.MasterVol = value.Clamp(s.MasterVol, 0, defaultAudioVolume)
+	s.ChatboxOpacity = value.Clamp(s.ChatboxOpacity, MinChatboxOpacity, MaxChatboxOpacity)
+	s.RainbowSpriteVividness = value.Clamp(s.RainbowSpriteVividness, minRainbowVivid, maxRainbowVivid)
+	s.NameSat = value.Clamp(s.NameSat, 0, 100)
+	s.TextStayMs = value.Clamp(s.TextStayMs, 0, MaxTextStayMs)
+	s.EmoteGridGapPx = value.Clamp(s.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
+	s.ThemeFitZoom = value.Clamp(s.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
 
 	// explicit-zero keeps the default (the getter resolves 0)
 	if s.ViewportPct != 0 {
-		s.ViewportPct = clampPercent(s.ViewportPct, MinViewportPercent, MaxViewportPercent)
+		s.ViewportPct = value.Clamp(s.ViewportPct, MinViewportPercent, MaxViewportPercent)
 	}
 	if s.ChatScalePct != 0 {
-		s.ChatScalePct = clampPercent(s.ChatScalePct, MinChatScalePercent, MaxChatScalePercent)
+		s.ChatScalePct = value.Clamp(s.ChatScalePct, MinChatScalePercent, MaxChatScalePercent)
 	}
 	if s.ChatBoxPct != 0 {
-		s.ChatBoxPct = clampPercent(s.ChatBoxPct, MinChatBoxPercent, MaxChatBoxPercent)
+		s.ChatBoxPct = value.Clamp(s.ChatBoxPct, MinChatBoxPercent, MaxChatBoxPercent)
 	}
 	if s.LogScalePct != 0 {
-		s.LogScalePct = clampPercent(s.LogScalePct, MinLogScalePercent, MaxLogScalePercent)
+		s.LogScalePct = value.Clamp(s.LogScalePct, MinLogScalePercent, MaxLogScalePercent)
 	}
 	if s.InputHeightPct != 0 {
-		s.InputHeightPct = clampPercent(s.InputHeightPct, MinInputPercent, MaxInputPercent)
+		s.InputHeightPct = value.Clamp(s.InputHeightPct, MinInputPercent, MaxInputPercent)
 	}
 	if s.UIScalePct != 0 {
-		s.UIScalePct = clampPercent(s.UIScalePct, MinUIScalePercent, MaxUIScalePercent)
+		s.UIScalePct = value.Clamp(s.UIScalePct, MinUIScalePercent, MaxUIScalePercent)
 	}
 	if s.HoldClearMs != 0 {
-		s.HoldClearMs = clampPercent(s.HoldClearMs, MinHoldClearMs, MaxHoldClearMs)
+		s.HoldClearMs = value.Clamp(s.HoldClearMs, MinHoldClearMs, MaxHoldClearMs)
 	}
 	if s.TextCrawlMs != 0 {
-		s.TextCrawlMs = clampPercent(s.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
+		s.TextCrawlMs = value.Clamp(s.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
 	}
 	if s.BlipRate != 0 {
-		s.BlipRate = clampPercent(s.BlipRate, MinBlipRate, MaxBlipRate)
+		s.BlipRate = value.Clamp(s.BlipRate, MinBlipRate, MaxBlipRate)
 	}
 
 	// enums with a valid range (invalid keeps the shipped default)
@@ -548,7 +546,7 @@ func normalizeSettings(s *Settings) {
 	if s.ICLogDepthVal < 0 {
 		s.ICLogDepthVal = ICLogDepthUnlimited
 	} else if s.ICLogDepthVal != 0 {
-		s.ICLogDepthVal = clampPercent(s.ICLogDepthVal, ICLogDepthMin, ICLogDepthMax)
+		s.ICLogDepthVal = value.Clamp(s.ICLogDepthVal, ICLogDepthMin, ICLogDepthMax)
 	}
 	// The strict phase runs last: it holds the write-path clamps whose sentinel is 0
 	// (0 stays 0 so the getter resolves the default). Load reaches it through here.

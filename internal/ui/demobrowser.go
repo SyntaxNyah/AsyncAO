@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 // In-app .demo file browser (v1.72.2). The native OpenFileDialog shell-out
@@ -525,8 +527,8 @@ func (a *App) drawDemoBrowser(w, h int32) {
 		bwMinW = 320
 		bwMinH = 240
 	)
-	pw := clampI32(w-2*browseModalMargin, bwMinW, bwMaxW)
-	ph := clampI32(h-2*browseModalMargin, bwMinH, bwMaxH)
+	pw := value.Clamp(w-2*browseModalMargin, bwMinW, bwMaxW)
+	ph := value.Clamp(h-2*browseModalMargin, bwMinH, bwMaxH)
 	px := (w - pw) / 2
 	py := (h - ph) / 2
 	panel := sdl.Rect{X: px, Y: py, W: pw, H: ph}
@@ -669,12 +671,7 @@ func (a *App) drawDemoBrowser(w, h int32) {
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
-	if s.scroll > maxScroll {
-		s.scroll = maxScroll
-	}
-	if s.scroll < 0 {
-		s.scroll = 0
-	}
+	s.scroll = value.Clamp(s.scroll, 0, maxScroll)
 
 	// Clip the rows to the list rect: raw Ren.SetClipRect clips DRAW only, so
 	// clicks/hovers would leak past the edge (project memory) — pushClip mirrors

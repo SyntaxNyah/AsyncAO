@@ -68,6 +68,8 @@ package ui
 
 import (
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 const (
@@ -602,12 +604,7 @@ func (g charGridPlan) snapScroll(scroll, contentH int32) int32 {
 		maxRow = (d + g.designPitchY - 1) / g.designPitchY
 	}
 	row := (g.toDesignY(scroll) + g.designPitchY/2) / g.designPitchY
-	if row < 0 {
-		row = 0
-	}
-	if row > maxRow {
-		row = maxRow
-	}
+	row = value.Clamp(row, 0, maxRow)
 	return g.rowOffset(row)
 }
 
@@ -624,12 +621,7 @@ func snapScrollToRows(scroll, contentH, viewH, pitchY int32) int32 {
 		maxRow = (over + pitchY - 1) / pitchY
 	}
 	row := (scroll + pitchY/2) / pitchY
-	if row < 0 {
-		row = 0
-	}
-	if row > maxRow {
-		row = maxRow
-	}
+	row = value.Clamp(row, 0, maxRow)
 	return row * pitchY
 }
 

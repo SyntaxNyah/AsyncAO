@@ -868,7 +868,7 @@ func TestMotionGrace(t *testing.T) {
 }
 
 // TestPaceHelpers pins the tiny pace math: non-positive fps = uncapped for
-// paceBudget, rateBudget's off/∞ trichotomy, and clampDur is [lo,hi] inclusive.
+// paceBudget and rateBudget's off/∞ trichotomy.
 func TestPaceHelpers(t *testing.T) {
 	if paceBudget(0) != 0 || paceBudget(-3) != 0 {
 		t.Error("non-positive fps must mean uncapped (0)")
@@ -887,15 +887,5 @@ func TestPaceHelpers(t *testing.T) {
 	}
 	if b, off := rateBudget(4); b != 250*time.Millisecond || off {
 		t.Errorf("rateBudget(4) = (%v,%v), want (250ms,false)", b, off)
-	}
-	lo, hi := 10*time.Millisecond, 100*time.Millisecond
-	if clampDur(5*time.Millisecond, lo, hi) != lo {
-		t.Error("clampDur must floor at lo")
-	}
-	if clampDur(500*time.Millisecond, lo, hi) != hi {
-		t.Error("clampDur must cap at hi")
-	}
-	if clampDur(50*time.Millisecond, lo, hi) != 50*time.Millisecond {
-		t.Error("clampDur must pass an in-range value through")
 	}
 }

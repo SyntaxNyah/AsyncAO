@@ -14,6 +14,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -891,7 +892,7 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 // pairPanelRect is the Pair menu's floating-window rect (floatwin.go): movable +
 // resizable, clamped on-screen, with a window-height-responsive default size.
 func (a *App) pairPanelRect(w, h int32) sdl.Rect {
-	defH := clampI32(h-120, pairPanelMinH, 560)
+	defH := value.Clamp(h-120, pairPanelMinH, 560)
 	if r, ok := a.seedPanelFromSlot(&a.pairWin, slotPanelPair, pairPanelDefW, defH, pairPanelMinW, pairPanelMinH, w, h); ok {
 		return r
 	}

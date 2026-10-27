@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -292,13 +293,13 @@ var editFieldSet = [editFieldCount]func(*themeDoc, *theme.Element, editValue){
 		e.Rot = uint8(v.i[0] & (theme.AngleCount - 1))
 	},
 	editFieldZ: func(_ *themeDoc, e *theme.Element, v editValue) {
-		e.Z = int16(clampInt32(v.i[0], theme.ZMin, theme.ZMax))
+		e.Z = int16(value.Clamp(v.i[0], theme.ZMin, theme.ZMax))
 	},
 	editFieldBand: func(_ *themeDoc, e *theme.Element, v editValue) {
-		e.Band = theme.ElementBand(clampInt32(v.i[0], 0, int32(theme.ElementBandCount)-1))
+		e.Band = theme.ElementBand(value.Clamp(v.i[0], 0, int32(theme.ElementBandCount)-1))
 	},
 	editFieldSpace: func(_ *themeDoc, e *theme.Element, v editValue) {
-		e.Space = theme.Space(clampInt32(v.i[0], 0, int32(theme.SpaceCount)-1))
+		e.Space = theme.Space(value.Clamp(v.i[0], 0, int32(theme.SpaceCount)-1))
 	},
 	editFieldAnchor: func(d *themeDoc, e *theme.Element, v editValue) { e.Anchor = d.str(v.s) },
 
@@ -306,7 +307,7 @@ var editFieldSet = [editFieldCount]func(*themeDoc, *theme.Element, editValue){
 	editFieldShape: func(d *themeDoc, e *theme.Element, v editValue) { e.Shape = d.str(v.s) },
 	editFieldGen:   func(d *themeDoc, e *theme.Element, v editValue) { e.Gen = d.str(v.s) },
 	editFieldFit: func(_ *themeDoc, e *theme.Element, v editValue) {
-		e.Fit = theme.ElementFit(clampInt32(v.i[0], 0, int32(theme.FitCount)-1))
+		e.Fit = theme.ElementFit(value.Clamp(v.i[0], 0, int32(theme.FitCount)-1))
 	},
 	editFieldFill:  func(_ *themeDoc, e *theme.Element, v editValue) { e.Fill = valueRGBA(v) },
 	editFieldFill2: func(_ *themeDoc, e *theme.Element, v editValue) { e.Fill2 = valueRGBA(v) },
@@ -316,11 +317,11 @@ var editFieldSet = [editFieldCount]func(*themeDoc, *theme.Element, editValue){
 	editFieldGradRadial: func(_ *themeDoc, e *theme.Element, v editValue) { e.GradRadial = v.i[0] != 0 },
 	editFieldStroke:     func(_ *themeDoc, e *theme.Element, v editValue) { e.Stroke = valueRGBA(v) },
 	editFieldStrokePx: func(_ *themeDoc, e *theme.Element, v editValue) {
-		e.StrokePx = uint8(clampInt32(v.i[0], 0, 255))
+		e.StrokePx = uint8(value.Clamp(v.i[0], 0, 255))
 	},
 	editFieldTint: func(_ *themeDoc, e *theme.Element, v editValue) { e.Tint = valueRGBA(v) },
 	editFieldOpacity: func(_ *themeDoc, e *theme.Element, v editValue) {
-		e.Opacity = uint8(clampInt32(v.i[0], 0, 255))
+		e.Opacity = uint8(value.Clamp(v.i[0], 0, 255))
 	},
 
 	editFieldText: func(d *themeDoc, e *theme.Element, v editValue) {
@@ -328,32 +329,32 @@ var editFieldSet = [editFieldCount]func(*themeDoc, *theme.Element, editValue){
 	},
 	editFieldFont: func(d *themeDoc, e *theme.Element, v editValue) { e.Font = d.str(v.s) },
 	editFieldSize: func(_ *themeDoc, e *theme.Element, v editValue) {
-		e.Size = int(clampInt32(v.i[0], 0, theme.TextSizeMaxPt))
+		e.Size = int(value.Clamp(v.i[0], 0, theme.TextSizeMaxPt))
 	},
 	editFieldColor: func(_ *themeDoc, e *theme.Element, v editValue) { e.Color = valueRGBA(v) },
 	editFieldAlign: func(_ *themeDoc, e *theme.Element, v editValue) {
-		e.Align = theme.TextAlign(clampInt32(v.i[0], 0, int32(theme.AlignCount)-1))
+		e.Align = theme.TextAlign(value.Clamp(v.i[0], 0, int32(theme.AlignCount)-1))
 	},
 
 	editFieldClock: func(_ *themeDoc, e *theme.Element, v editValue) {
-		e.Clock = uint8(clampInt32(v.i[0], 0, int32(theme.ClockCap)-1))
+		e.Clock = uint8(value.Clamp(v.i[0], 0, int32(theme.ClockCap)-1))
 	},
 	editFieldPhaseMs: func(_ *themeDoc, e *theme.Element, v editValue) {
-		e.PhaseMs = clampInt32(v.i[0], theme.TimeMsMin, theme.TimeMsMax)
+		e.PhaseMs = value.Clamp(v.i[0], theme.TimeMsMin, theme.TimeMsMax)
 	},
 	editFieldLoop: func(_ *themeDoc, e *theme.Element, v editValue) { e.Loop = v.i[0] != 0 },
 	editFieldEffect: func(_ *themeDoc, e *theme.Element, v editValue) {
-		e.Effect = theme.EffectKind(clampInt32(v.i[0], 0, int32(theme.EffectKindCount)-1))
+		e.Effect = theme.EffectKind(value.Clamp(v.i[0], 0, int32(theme.EffectKindCount)-1))
 	},
 	editFieldEffectPeriodMs: func(_ *themeDoc, e *theme.Element, v editValue) {
-		e.EffectPeriodMs = clampInt32(v.i[0], theme.TimeMsMin, theme.TimeMsMax)
+		e.EffectPeriodMs = value.Clamp(v.i[0], theme.TimeMsMin, theme.TimeMsMax)
 	},
 	editFieldEffectAmpPct: func(_ *themeDoc, e *theme.Element, v editValue) {
-		e.EffectAmpPct = int16(clampInt32(v.i[0], 0, theme.AmpMaxPct))
+		e.EffectAmpPct = int16(value.Clamp(v.i[0], 0, theme.AmpMaxPct))
 	},
 
 	editFieldVisibleAxis: func(_ *themeDoc, e *theme.Element, v editValue) {
-		e.VisibleWhen.Axis = theme.ConditionAxis(clampInt32(v.i[0], 0, int32(theme.ConditionAxisCount)-1))
+		e.VisibleWhen.Axis = theme.ConditionAxis(value.Clamp(v.i[0], 0, int32(theme.ConditionAxisCount)-1))
 	},
 	editFieldVisibleValue: func(d *themeDoc, e *theme.Element, v editValue) {
 		e.VisibleWhen.Value = truncRunes(d.str(v.s), theme.ConditionValueRuneCap)
@@ -362,7 +363,7 @@ var editFieldSet = [editFieldCount]func(*themeDoc, *theme.Element, editValue){
 	editFieldLocked: func(_ *themeDoc, e *theme.Element, v editValue) { e.Locked = v.i[0] != 0 },
 
 	editFieldKind: func(_ *themeDoc, e *theme.Element, v editValue) {
-		e.Kind = theme.ElementKind(clampInt32(v.i[0], 0, int32(theme.ElementKindCount)-1))
+		e.Kind = theme.ElementKind(value.Clamp(v.i[0], 0, int32(theme.ElementKindCount)-1))
 	},
 	editFieldGenParams: func(d *themeDoc, e *theme.Element, v editValue) {
 		// Parsed by the FORMAT'S OWN parser (theme.ParseGenParams == the reader's
@@ -379,7 +380,7 @@ var editFieldSet = [editFieldCount]func(*themeDoc, *theme.Element, editValue){
 	// would stop round-tripping.
 	editFieldSlice: func(_ *themeDoc, e *theme.Element, v editValue) {
 		for i := range e.Slice {
-			e.Slice[i] = int16(clampInt32(v.i[i], theme.ZMin, theme.ZMax))
+			e.Slice[i] = int16(value.Clamp(v.i[i], theme.ZMin, theme.ZMax))
 		}
 	},
 	editFieldNoDecimate: func(_ *themeDoc, e *theme.Element, v editValue) { e.NoDecimate = v.i[0] == 0 },
@@ -408,18 +409,6 @@ var editFieldSet = [editFieldCount]func(*themeDoc, *theme.Element, editValue){
 func rgbaValue(c theme.RGBA) editValue { return editValueRGBA(c.R, c.G, c.B, c.A) }
 func valueRGBA(v editValue) theme.RGBA {
 	return theme.RGBA{R: v.b[0], G: v.b[1], B: v.b[2], A: v.b[3]}
-}
-
-// clampInt32 bounds a payload scalar. Named because every setter above uses it and
-// an inline min/max pair repeated thirty times is thirty chances to invert one.
-func clampInt32(v, lo, hi int32) int32 {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
 }
 
 // truncRunes bounds a free-text field by RUNES (the format's own unit — a byte

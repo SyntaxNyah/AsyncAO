@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -164,12 +165,7 @@ func (a *App) drawMakerTimeline(x, y, w int32, press bool) {
 	if c.hovering(track) && c.wheelY != 0 {
 		a.makerTLScroll -= int32(c.wheelY) * makerTLWheelPx
 	}
-	if a.makerTLScroll < 0 {
-		a.makerTLScroll = 0
-	}
-	if a.makerTLScroll > scrollMax {
-		a.makerTLScroll = scrollMax
-	}
+	a.makerTLScroll = value.Clamp(a.makerTLScroll, 0, scrollMax)
 
 	s, e := a.trimRange()
 	cropOn := a.trimActive()
@@ -243,12 +239,7 @@ func (a *App) drawMakerTimeline(x, y, w int32, press bool) {
 			case c.mouseX > x+w-makerTLEdgePx:
 				a.makerTLScroll += makerTLWheelPx
 			}
-			if a.makerTLScroll < 0 {
-				a.makerTLScroll = 0
-			}
-			if a.makerTLScroll > scrollMax {
-				a.makerTLScroll = scrollMax
-			}
+			a.makerTLScroll = value.Clamp(a.makerTLScroll, 0, scrollMax)
 		}
 	}
 
@@ -317,12 +308,7 @@ func (a *App) drawMakerTimeline(x, y, w int32, press bool) {
 			case c.mouseX > x+w-makerTLEdgePx:
 				a.makerTLScroll += makerTLWheelPx
 			}
-			if a.makerTLScroll < 0 {
-				a.makerTLScroll = 0
-			}
-			if a.makerTLScroll > scrollMax {
-				a.makerTLScroll = scrollMax
-			}
+			a.makerTLScroll = value.Clamp(a.makerTLScroll, 0, scrollMax)
 			g := a.makerTLGapAt(c.mouseX, x)
 			var caretRel int32
 			switch {

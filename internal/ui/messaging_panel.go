@@ -8,6 +8,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -80,8 +81,8 @@ func (a *App) msgPanelRect(w, h int32) sdl.Rect {
 		return r
 	}
 	if !a.msgWin.placed { // historical default: tuck top-left (not centred)
-		dw := clampI32(msgPanelDefW, msgPanelMinW, w-2*floatWinMargin)
-		dh := clampI32(msgPanelDefH, msgPanelMinH, h-2*floatWinMargin)
+		dw := value.Clamp(msgPanelDefW, msgPanelMinW, w-2*floatWinMargin)
+		dh := value.Clamp(msgPanelDefH, msgPanelMinH, h-2*floatWinMargin)
 		return sdl.Rect{X: floatWinMargin, Y: floatTitleH, W: dw, H: dh}
 	}
 	return a.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h)
@@ -90,8 +91,8 @@ func (a *App) msgPanelRect(w, h int32) sdl.Rect {
 // msgSlotDefaultRect is where the Group Chat slot lands when first added from the
 // layout editor (the "Group Chat" tray chip): centred, default size, clamped.
 func (a *App) msgSlotDefaultRect(w, h int32) sdl.Rect {
-	dw := clampI32(msgPanelDefW, msgPanelMinW, w-2*floatWinMargin)
-	dh := clampI32(msgPanelDefH, msgPanelMinH, h-2*floatWinMargin)
+	dw := value.Clamp(msgPanelDefW, msgPanelMinW, w-2*floatWinMargin)
+	dh := value.Clamp(msgPanelDefH, msgPanelMinH, h-2*floatWinMargin)
 	return sdl.Rect{X: (w - dw) / 2, Y: (h - dh) / 2, W: dw, H: dh}
 }
 

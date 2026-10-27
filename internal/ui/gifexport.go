@@ -14,6 +14,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/gifenc"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
@@ -35,12 +36,7 @@ func exportChatPct(vpH int32, textScale int) int {
 		textScale = 100
 	}
 	pct := int(vpH) * textScale / exportChatFontDivisor
-	if pct < config.MinChatScalePercent {
-		pct = config.MinChatScalePercent
-	}
-	if pct > config.MaxChatScalePercent {
-		pct = config.MaxChatScalePercent
-	}
+	pct = value.Clamp(pct, config.MinChatScalePercent, config.MaxChatScalePercent)
 	return pct
 }
 
@@ -395,12 +391,7 @@ func exportMaxFrames(w, h int32) int {
 		return maxGifFrames
 	}
 	n := gifFrameBudgetBytes / (int(w) * int(h))
-	if n < minExportFrames {
-		n = minExportFrames
-	}
-	if n > maxGifFrames {
-		n = maxGifFrames
-	}
+	n = value.Clamp(n, minExportFrames, maxGifFrames)
 	return n
 }
 
@@ -954,12 +945,7 @@ func nextWarmBatch(pending []courtroom.AssetRef, batch int, resident func(base s
 // per-tick burst and floored at 0. Pure so it unit-tests without a Store.
 func warmRoom(outstanding int) int {
 	room := warmInFlightWindow - outstanding
-	if room > warmPrefetchPerTick {
-		room = warmPrefetchPerTick
-	}
-	if room < 0 {
-		room = 0
-	}
+	room = value.Clamp(room, 0, warmPrefetchPerTick)
 	return room
 }
 
@@ -1843,12 +1829,7 @@ func (a *App) drawGifProgress(winW, winH int32) {
 	bar := sdl.Rect{X: cx - 160, Y: cy + 26, W: 320, H: 14}
 	c.Fill(bar, ColPanel)
 	fillW := int32(frac * float64(bar.W))
-	if fillW > bar.W {
-		fillW = bar.W
-	}
-	if fillW < 0 {
-		fillW = 0
-	}
+	fillW = value.Clamp(fillW, 0, bar.W)
 	c.Fill(sdl.Rect{X: bar.X, Y: bar.Y, W: fillW, H: bar.H}, ColAccent)
 	if c.Button(sdl.Rect{X: cx - 60, Y: cy + 54, W: 120, H: btnH}, "■ Stop & save") {
 		a.finishGifExport() // keep what's been captured so far

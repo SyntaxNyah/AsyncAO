@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 // Known section names and prefixes. A section that matches neither is unknown:
@@ -507,7 +509,7 @@ func (s *Sidecar) readPane(d *INIDoc, name string, keys []string) error {
 	if c, ok := parseRGBAValue(get("divider")); ok {
 		p.Divider = c
 	}
-	p.DividerPx = uint8(clampInt(atoiTrim(get("divider_px")), 0, 255))
+	p.DividerPx = uint8(value.Clamp(atoiTrim(get("divider_px")), 0, 255))
 
 	hosts, err := parseTextList(get("hosts"), PaneHostCap)
 	if err != nil {
@@ -597,8 +599,8 @@ func (s *Sidecar) readEffectBind(d *INIDoc, name string, keys []string) error {
 	if c, ok := parseRGBAValue(get("color")); ok {
 		e.Color = c
 	}
-	e.PeriodMs = int32(clampInt(atoiTrim(get("period_ms")), TimeMsMin, TimeMsMax))
-	e.AmpPct = int16(clampInt(atoiTrim(get("amp_pct")), 0, AmpMaxPct))
+	e.PeriodMs = int32(value.Clamp(atoiTrim(get("period_ms")), TimeMsMin, TimeMsMax))
+	e.AmpPct = int16(value.Clamp(atoiTrim(get("amp_pct")), 0, AmpMaxPct))
 	e.Clock = parseClockIndex(get("clock"))
 	s.Effects = append(s.Effects, e)
 	return s.markUnknownKeys(name, keys, effectBindKeyKnown)
@@ -656,7 +658,7 @@ func (s *Sidecar) readElement(d *INIDoc, name string, keys []string) error {
 
 	e := Element{ID: id, Kind: kind}
 	e.Band = ElementBand(s.enumOrDegrade(name, "band", get("band"), elementBandNames[:], uint8(BandBackdrop)))
-	e.Z = int16(clampInt(atoiTrim(get("z")), ZMin, ZMax))
+	e.Z = int16(value.Clamp(atoiTrim(get("z")), ZMin, ZMax))
 	e.Space = Space(s.enumOrDegrade(name, "space", get("space"), spaceNames[:], uint8(SpaceCourtroom)))
 
 	var err error
@@ -682,7 +684,7 @@ func (s *Sidecar) readElement(d *INIDoc, name string, keys []string) error {
 	e.Slice = parseSliceValue(get("slice"))
 	if raw := get("nine_slice"); raw != "" && get("slice") == "" {
 		// The scalar shorthand: one inset on all four edges.
-		n := int16(clampInt(atoiTrim(raw), ZMin, ZMax))
+		n := int16(value.Clamp(atoiTrim(raw), ZMin, ZMax))
 		e.Slice = [4]int16{n, n, n, n}
 	}
 
@@ -697,11 +699,11 @@ func (s *Sidecar) readElement(d *INIDoc, name string, keys []string) error {
 	if c, ok := parseRGBAValue(get("stroke")); ok {
 		e.Stroke = c
 	}
-	e.StrokePx = uint8(clampInt(atoiTrim(get("stroke_px")), 0, 255))
+	e.StrokePx = uint8(value.Clamp(atoiTrim(get("stroke_px")), 0, 255))
 	if c, ok := parseRGBAValue(get("tint")); ok {
 		e.Tint = c
 	}
-	e.Opacity = uint8(clampInt(atoiTrim(get("opacity")), 0, 255))
+	e.Opacity = uint8(value.Clamp(atoiTrim(get("opacity")), 0, 255))
 
 	if e.Text, err = s.elementText(name, get("text")); err != nil {
 		return err
@@ -709,7 +711,7 @@ func (s *Sidecar) readElement(d *INIDoc, name string, keys []string) error {
 	if e.Font, err = s.boundedText(name, "font", get("font"), NameRuneCap); err != nil {
 		return err
 	}
-	e.Size = clampInt(atoiTrim(get("size")), 0, TextSizeMaxPt)
+	e.Size = value.Clamp(atoiTrim(get("size")), 0, TextSizeMaxPt)
 	if c, ok := parseRGBAValue(get("color")); ok {
 		e.Color = c
 	}
@@ -719,11 +721,11 @@ func (s *Sidecar) readElement(d *INIDoc, name string, keys []string) error {
 	// The millisecond fields CLAMP into int32 rather than converting into it:
 	// see TimeMsMin. A bare int32() would read a legal 3000000000 as a negative
 	// phase here and as 2147483647 on a 32-bit build.
-	e.PhaseMs = int32(clampInt(atoiTrim(get("phase_ms")), TimeMsMin, TimeMsMax))
+	e.PhaseMs = int32(value.Clamp(atoiTrim(get("phase_ms")), TimeMsMin, TimeMsMax))
 	e.Loop = parseBoolValue(get("loop"))
 	e.Effect = EffectKind(s.enumOrDegrade(name, "effect", get("effect"), effectNames[:], uint8(FXNone)))
-	e.EffectPeriodMs = int32(clampInt(atoiTrim(get("effect_period_ms")), TimeMsMin, TimeMsMax))
-	e.EffectAmpPct = int16(clampInt(atoiTrim(get("effect_amp_pct")), 0, AmpMaxPct))
+	e.EffectPeriodMs = int32(value.Clamp(atoiTrim(get("effect_period_ms")), TimeMsMin, TimeMsMax))
+	e.EffectAmpPct = int16(value.Clamp(atoiTrim(get("effect_amp_pct")), 0, AmpMaxPct))
 	// "decimate" is stored INVERTED so the zero value is version 1's behaviour.
 	// An ABSENT key must therefore leave NoDecimate false, which is why the
 	// negation is guarded rather than applied to an empty string.
@@ -936,7 +938,7 @@ func parseSliceValue(raw string) [4]int16 {
 	}
 	parts := strings.Split(raw, tupleSeparator)
 	for i := 0; i < len(out) && i < len(parts); i++ {
-		out[i] = int16(clampInt(atoiTrim(parts[i]), ZMin, ZMax))
+		out[i] = int16(value.Clamp(atoiTrim(parts[i]), ZMin, ZMax))
 	}
 	return out
 }
@@ -970,13 +972,13 @@ func parseRGBAValue(raw string) (RGBA, bool) {
 		return RGBA{}, false
 	}
 	c := RGBA{
-		R: uint8(clampInt(atoiTrim(parts[0]), 0, 255)),
-		G: uint8(clampInt(atoiTrim(parts[1]), 0, 255)),
-		B: uint8(clampInt(atoiTrim(parts[2]), 0, 255)),
+		R: uint8(value.Clamp(atoiTrim(parts[0]), 0, 255)),
+		G: uint8(value.Clamp(atoiTrim(parts[1]), 0, 255)),
+		B: uint8(value.Clamp(atoiTrim(parts[2]), 0, 255)),
 		A: 255,
 	}
 	if len(parts) > 3 {
-		c.A = uint8(clampInt(atoiTrim(parts[3]), 0, 255))
+		c.A = uint8(value.Clamp(atoiTrim(parts[3]), 0, 255))
 	}
 	return c, true
 }
@@ -1027,7 +1029,7 @@ func parseSpeedPct(raw string) int16 {
 	if v == 0 {
 		return 0
 	}
-	return int16(clampInt(v, SpeedMinPct, SpeedMaxPct))
+	return int16(value.Clamp(v, SpeedMinPct, SpeedMaxPct))
 }
 
 // parseClockIndex resolves a clock reference. An index past the pool falls back
@@ -1039,14 +1041,4 @@ func parseClockIndex(raw string) uint8 {
 		return 0
 	}
 	return uint8(v)
-}
-
-func clampInt(v, lo, hi int) int {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
 }

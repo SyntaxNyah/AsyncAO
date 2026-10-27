@@ -145,7 +145,7 @@ func TestTheScrolledMessageNeverPaintsOnTheNamePlate(t *testing.T) {
 	for row := 0; row < rows; row++ {
 		off := chatCrawlScrollPx(row, lineH, availH)
 		rowTop := textTop - off // row 0 is the topmost thing the raster draws
-		if painted := max32(rowTop, clip.Y); painted < textTop {
+		if painted := max(rowTop, clip.Y); painted < textTop {
 			t.Errorf("row %d revealing: paint starts at y=%d, above the text origin %d — "+
 				"%d px of message is on the showname plate", row, painted, textTop, textTop-painted)
 		}
@@ -252,7 +252,7 @@ func TestAnimatedSpansKeepTheirTopPixels(t *testing.T) {
 		if off > 0 {
 			scrolled = true
 		}
-		if painted := max32(textTop-off, rasterClip.Y); painted < textTop {
+		if painted := max(textTop-off, rasterClip.Y); painted < textTop {
 			t.Errorf("row %d: a scrolled raster paints from y=%d, above the text origin %d",
 				row, painted, textTop)
 		}

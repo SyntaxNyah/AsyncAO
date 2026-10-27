@@ -19,6 +19,7 @@ import (
 	xdraw "golang.org/x/image/draw"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 const (
@@ -355,12 +356,7 @@ type frameDecimator struct {
 // newFrameDecimator prepares to keep `keep` frames (clamped to [1,total]) out of
 // `total`, starting with frame 0.
 func newFrameDecimator(total, keep int) frameDecimator {
-	if keep < 1 {
-		keep = 1
-	}
-	if keep > total {
-		keep = total
-	}
+	keep = value.Clamp(keep, 1, total)
 	return frameDecimator{total: total, keep: keep} // next == 0 keeps frame 0
 }
 
