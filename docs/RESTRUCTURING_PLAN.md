@@ -13,13 +13,13 @@ in **Status**. Update Status in the same commit that completes a step.
 - [x] 2a. UI spike: RmlUi 6.3 on SDL_GPU (Vulkan, software Vulkan fallback) (Part 5e); throwaway code outside the module
       — see the Result in Part 5e
 - [ ] 2b. SDL facade (`internal/sdl`, `ttf`, `mix`) over go-sdl2; switch all importers
-- [ ] 2c. SDL3 switch: hardware renderer or software fallback, device-reset re-upload; drop the
-      SDL Mixer X fork; replace platform code
+- [ ] 2c. SDL3 switch: SDL_GPU on Vulkan (hardware, else bundled software Vulkan), device-reset
+      re-upload; drop the SDL Mixer X fork; replace platform code
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
       pointer, no park/activate copies; fixes bug 4, #115, #141, #84)
 - [ ] 4. `internal/uikit`: extract the kit, then the input model (press/release + capture,
       wheel routing, layer stack)
-- [ ] 5. uikit scaling, layout and text (logical units, Clay layout, nine-slice, scroll
+- [ ] 5. uikit scaling, layout and text (logical units, RmlUi layout, nine-slice, scroll
       container) + shared widgets; one text-colour palette in the engine
 - [ ] 6. Config API: `Set*` forwarder removal; engine option structs; engine stops importing config
 - [ ] 7. Feature loop (jukebox → notebook → … → courtroom screen), extract then move
@@ -235,7 +235,7 @@ App layer     internal/ui            App: Frame order, tabs, screens, connect/di
                                      logs, composer, studio, split, layout editors, settings, …
      │  features draw through uikit and read/act on a *client.Session; nothing else
      ▼
-UI platform   internal/uikit         Ctx; input model; logical-unit scaling; Clay layout; text
+UI platform   internal/uikit         Ctx; input model; logical-unit scaling; RmlUi layout; text
                                      measure/wrap; nine-slice; scroll container; widgets
                                      (combobox+autocomplete, reorderable list, menu, …);
                                      Dock/Panel/Screen; Toast; KeyCapture; FrameState;
@@ -304,9 +304,10 @@ Fixes #62, #76, #77, #90, #116, #53, #67, #97.
   time using `SDL_GetWindowDisplayScale` × the user's UI scale. Glyphs and nine-slice edges are
   rasterised at device size. The renderer is never scaled, so `SetScale` and
   `beginRenderScaleOverride` are deleted. A display-scale-changed event re-rasterises fonts.
-- **Clay** (C layout library, single header, no allocation per frame) lays out every screen we
-  own. Resizing becomes reflowing, not per-screen rectangle code. Text measuring is our callback
-  into SDL3_ttf.
+- **RmlUi** (Part 5e) lays out every screen we own from RML/RCSS (flexbox, media queries, `dp`
+  units). Resizing becomes reflowing, not per-screen rectangle code. RmlUi measures and draws
+  its own text through its FreeType font engine; whether SDL3_ttf stays for the courtroom
+  message raster is an open item in Part 5e.
 - **AO themes** keep their absolute element rectangles for the theme's design size, scaled
   uniformly to fit with letterboxing. Per-element anchors in the sidecar are a later option.
 - Primitives: nine-slice draw, aspect-fit image draw, scroll container (culling by measured
@@ -427,8 +428,8 @@ call it are owned or moved, so moved code is touched once:
     files package by package (import-path swap). Still SDL2, always green.
 2c. **SDL3 switch (Part 5d steps 3–5):** re-implement the binding over SDL3, SDL3_ttf and
     SDL3_mixer; rewrite audio onto `MIX_Track`; delete `render/mixerx`, the fork build script
-    and the CI fork steps. Pin the loop-end behaviour with a test. Renderer: SDL's default
-    hardware driver, else software (Part 5d "Renderer"). Replace the platform code
+    and the CI fork steps. Pin the loop-end behaviour with a test. Renderer: SDL_GPU on
+    hardware Vulkan, else the bundled software Vulkan driver (Part 5d "Renderer"). Replace the platform code
     (file/folder dialogs, DPI seeding, URL/file manager opening, preview window ownership,
     clipboard), one commit each. `setup-deps.ps1` and CI install SDL3 packages.
 3. **Engine.** In order, one commit series each:
@@ -446,9 +447,9 @@ call it are owned or moved, so moved code is touched once:
    tests driven by synthetic SDL events: press/release + capture (#86, #113 first), act-on-press
    opt-in, wheel routing, the layer stack replacing the four hand-kept panel lists.
 5. **uikit, scaling, layout and text.** Logical units + device rasterisation (delete
-   `SetScale` and the scale overrides); Clay layout; nine-slice, aspect-fit, scroll container,
-   text layout; shared widgets; the single text-colour palette in the engine. Each screen is
-   moved onto Clay in its own commit.
+   `SetScale` and the scale overrides); RmlUi layout (RML/RCSS); nine-slice, aspect-fit,
+   scroll container, text layout; shared widgets; the single text-colour palette in the
+   engine. Each screen is moved onto RmlUi in its own commit.
 6. **Config API first** (C2): delete pure single-caller `Set*` forwarders (C5 keeps the rest);
    engine option structs (`client.Options`, `courtroom.Visuals/Timing`, `ViewportOptions`) built
    by App; engine packages stop importing config (`network` → `config.FavoriteServer` moves).
@@ -717,31 +718,40 @@ before the first uikit move, so the exported uikit API is designed on SDL3 types
 redesigned later. The prep commit no longer adds SDL Mixer X to `setup-deps.ps1`; that fork
 is going away.
 
-**Renderer (decided 2026-10-26: SDL3 hardware or software, nothing more).**
-- Create the renderer with SDL's default driver choice (SDL picks the best hardware backend
-  per OS). If that fails, create the software renderer. No per-OS driver lists, no Vulkan
-  renderer of our own, no runtime switching between backends.
-- One setting / command-line flag forces software, for broken GPU drivers.
+**Renderer (decided 2026-10-26; revised by the RmlUi decision in Part 5e).**
+- Create an SDL_GPU device with the `vulkan` driver named explicitly. SDL's default choice is
+  not usable: on Windows it picks D3D12, which rejects the SPIR-V-only shaders RmlUi's backend
+  ships (Part 5e). If no hardware Vulkan driver is present, create the device again on the
+  bundled software Vulkan driver (lavapipe or SwiftShader, pointed to with the Vulkan loader's
+  driver-file setting). SDL does not fall back by itself: on a machine with no Vulkan driver
+  (verified on a Hyper-V VM, 2026-10-27) device creation fails with `vulkan unsupported`.
+  No per-OS driver lists beyond this, no runtime switching between backends.
+- Our compositor draws through SDL_Renderer's `gpu` backend on the same device, so the
+  courtroom viewport is a texture RmlUi can show.
+- One setting / command-line flag forces the software driver, for broken GPU drivers.
 - Handle `SDL_EVENT_RENDER_DEVICE_RESET` / `RENDER_TARGETS_RESET`: drop the GPU texture tier
   (T1) and re-upload from the decoded tier, the way theme textures already heal on eviction.
   Today nothing handles these events, so a device reset (driver update, sleep/resume, Remote
   Desktop) would likely leave textures black until restart.
 - The active backend name is shown in the debug overlay and the About screen.
-- Custom shaders are out of scope. If a feature ever needs one, SDL_GPU is the route, decided
-  then.
+- Custom shaders beyond the viewport post pass (Part 5e) are out of scope; a new one is decided
+  when a feature needs it, and ships as SPIR-V for the SDL_GPU device.
 
 ## Part 5e — UI spike and toolkit decision
 
 **Decided (2026-10-26, revised the same day):** SDL3 stays the platform and **RmlUi** is the UI
 library (customer decision: web-style authoring with RML/RCSS for themes and widgets). Clay was
-dropped with it. Rendering is SDL_GPU: Vulkan (Metal on macOS) on hardware, and a bundled
-CPU Vulkan driver (lavapipe or SwiftShader) as the software tier, so RmlUi, our compositor
-(SDL_Renderer's "gpu" backend on the same device) and viewport shaders share one path. Earlier
-in the day the choice was our own kit with Clay. Dear ImGui was dropped: it fixes input but not scaling,
-layout or skinning, cimgui-go has no SDL_Renderer or SDL3 backend (v1.6.1), and its string
-wrappers are suspected to allocate per call. Full toolkits (Gio, Qt, RmlUi, Ebiten, web) were
-rejected because each rewrites the compositor or the whole UI. Gio is the fallback candidate
-only if the spike fails.
+dropped with it. Rendering is SDL_GPU on Vulkan on hardware, and a bundled CPU Vulkan driver
+(lavapipe or SwiftShader) as the software tier, so RmlUi, our compositor (SDL_Renderer's "gpu"
+backend on the same device) and viewport shaders share one path. macOS is unverified: SDL_GPU
+uses Metal there, which cannot load the SPIR-V-only shaders, so it needs MoltenVK or shaders
+translated to Metal (open item below). Earlier in the day the choice was our own kit with
+Clay. Dear ImGui was dropped: it fixes input but not scaling, layout or skinning, cimgui-go
+has no SDL_Renderer or SDL3 backend (v1.6.1), and its string wrappers are suspected to
+allocate per call. The other full toolkits (Gio, Qt, Ebiten, web) were rejected because each
+rewrites the compositor or the whole UI; RmlUi was first rejected for the same reason and
+then chosen because RML/RCSS authoring is the customer requirement, and it only replaces the
+UI layer, not the compositor. Gio was the fallback candidate had the spike failed.
 
 **RmlUi facts found so far (6.3 source):** the SDL_Renderer backend is deprecated in 6.3 and
 removed on master (2026-08-29), so SDL_GPU is the only maintained SDL3 path. The SDL_GPU renderer
@@ -750,13 +760,16 @@ box-shadow, filters or custom shaders until we port them. Its shaders ship as SP
 texture handle is a plain `SDL_GPUTexture*`, so the courtroom viewport can be shown as an image.
 The RmlUi spike checks: build with MinGW, hardware Vulkan, software Vulkan (lavapipe), data
 binding of a list from Go, click semantics on release (#113), dp scaling, hot reload of RML/RCSS,
-the viewport texture with a SPIR-V post-effect, and which RCSS features render. The Clay criteria
-below are kept for reference.
+the viewport texture with a SPIR-V post-effect, and which RCSS features render. The pass
+criteria below were written for Clay; criterion 5 does not apply to RmlUi as written (see the
+Result).
 
 **Spike scope.** A separate Go module outside the repo (scratch or a sibling folder), throwaway.
-It links SDL3 + SDL3_ttf + Clay through a minimal cgo shim and draws a lobby-like screen: a
-header, a resizable server list with a scrollbar, a details pane, a themed nine-slice panel
-with an aspect-fit icon, buttons, and wrapped text with coloured spans.
+It links SDL3 + SDL3_image + RmlUi 6.3 (static, FreeType font engine, upstream SDL3 platform
+and SDL_GPU renderer backends) through a C++ shim with a cgo binding, and draws a lobby-like
+screen from RML/RCSS: a header, a resizable server list with a scrollbar, a details pane, a
+themed nine-slice panel with an aspect-fit icon, buttons, wrapped text with coloured spans, and
+the courtroom viewport as a GPU texture with a post-effect.
 
 **Pass criteria** (all must hold, or the decision is reopened):
 1. Scaling: moving between 100% and 150% displays and changing the UI scale (125/150/200%)
@@ -770,24 +783,27 @@ with an aspect-fit icon, buttons, and wrapped text with coloured spans.
    (target < 600 lines total); anything bigger means Clay is not making layout easy.
 6. Software renderer: the same screen runs with the software renderer forced.
 
-**Result (2026-10-26, `codebuster-take2`): PASS on all six criteria — keep RmlUi 6.3 on
-SDL_GPU.** Spike (throwaway, outside the module): the sibling folder
-`AsyncAO-rmlui-spike`; build/run/test in its `README.md`, numbers and the feature matrix
-in `RESULTS.md`.
+**Result (2026-10-26, `codebuster-take2`): criteria 1–4 and 6 pass; criterion 5 is waived
+(it measured Clay shim size and has no RmlUi equivalent) — keep RmlUi 6.3 on SDL_GPU.** The
+spike was run by a second developer in a sibling folder `AsyncAO-rmlui-spike` (build/run/test
+in its `README.md`, numbers and the feature matrix in `RESULTS.md`). That folder is not on the
+maintainer's machine, so the numbers below cannot be rerun from the repo; an independent
+retest with a separate, smaller spike follows the list.
 
 1. Scaling: UI 125/150/200% → title 36→45/54/72 px (×1.25/×1.50/×2.00); display 150% →
    ×1.50; only `Context::SetDensityIndependentPixelRatio` is used. Nine-slice edges hold.
 2. Resizing: 1024×700→620×460 → list 418→249 px, details 564→329 px, panel stays inside
    the surface, list scroll 4.0→4.0 px; flexbox plus one media query, no rectangle code.
 3. Input: press 0 clicks / release 1; scrollbar drag (list scrolled to 89 px) released over
-   Refresh → no click; wheel over the list 4 px / details 0, wheel over details 12 px /
-   list unchanged.
+   Refresh → no click; wheel over the list scrolls only the list, wheel over details scrolls
+   only details. (The pixel distances first recorded here, 4 px and 12 px, were read while
+   RmlUi's smooth scroll was still running and are not scroll distances; see the retest.)
 4. Allocation: `AllocsPerRun(200, Frame)` = 0.00; the full suite passes under `-race`.
-5. Effort: 663 lines RML+RCSS (583 non-blank). The C++ side is 1,890 lines of SDL_GPU
-   platform layer (window/device/pipelines, viewport and post passes, screenshot readback,
-   headless mode, metrics, input hooks, hot reload, 3D-card input), not layout — the Clay
-   line target no longer compares like for like, because RmlUi removes the per-screen
-   layout code.
+5. Effort (waived): 663 lines RML+RCSS (583 non-blank) for the screen, against a Clay target
+   of < 600 lines. The C++ side is 1,890 lines of SDL_GPU platform layer (window/device/
+   pipelines, viewport and post passes, screenshot readback, headless mode, metrics, input
+   hooks, hot reload, 3D-card input), not layout. The Clay line target does not compare like
+   for like. A replacement effort target for RML/RCSS screens is to be set before step 4.
 6. Software Vulkan: lavapipe renders 12 frames at 1280×760; hardware Vulkan (RTX 3060 Ti,
    driver 595.79) renders the same screen.
 
@@ -799,7 +815,7 @@ cannot host the shader itself), and 3D UI manipulation — a card with
 `Element::SetProperty("transform", …)` (a Go-owned data path drives the headless test; a
 scripted drag was verified on both lavapipe and the RTX 3060 Ti).
 
-Problems found: the SDL_GPU backend implements no `CompileShader`/`RenderShader`/
+Problems found (gradients, shadows, filters and masks are fixed by the port below): the upstream SDL_GPU backend implements no `CompileShader`/`RenderShader`/
 `CompileFilter`, so `linear-gradient` logs `Could not generate decorator element data` and
 draws nothing, and `box-shadow` corrupts the frame with a garbage quad (evidence in the
 spike's `shots/box-shadow-artifact.png`); the backend requires SDL3_image; its sources need
@@ -809,10 +825,77 @@ RmlUi defaults to `display: inline`, so block rules must say so explicitly;
 `Context::Update()` takes no delta time in 6.3; SDL window/GPU calls must stay on one OS
 thread (the opt-in render test locks its goroutine or it can block in swapchain wait).
 
-Decision: keep RmlUi on SDL_GPU/Vulkan. Before themes rely on gradients, shadows, blur or
-masks, either port those `RenderInterface` methods (from the GL3/Vulkan backends) or ban
-them in the theme format and use geometry/nine-slice equivalents. Nothing here reopens the
-toolkit choice.
+**Retest (2026-10-27, maintainer's machine).** An independent spike (same RmlUi 6.3 build
+and backends, a 10-test suite: driver, allocations, data binding, click semantics, scrollbar
+release, wheel routing, dp scaling, resize, hot reload, RCSS features) was rerun under
+`-race`. The machine is a Hyper-V VM with no GPU.
+- Hardware Vulkan: not testable here — no Vulkan driver is registered, and SDL_GPU device
+  creation fails with `vulkan unsupported` instead of falling back (now handled in Part 5d
+  "Renderer").
+- lavapipe (Mesa, msys2 `vulkan_lvp.dll`, selected with `VK_DRIVER_FILES`): 0 Go allocations
+  per frame; data binding, click on release, scrollbar release over a button, dp scaling
+  (ratio 1.50), resize and hot reload pass.
+- Wheel routing: the suite's test failed (list 51 → 68 px after wheeling over details) because
+  it sampled 3 frames after the wheel while RmlUi's smooth scroll was still moving. The smooth
+  scroll runs on wall-clock time, so no frame count is a safe wait. With
+  `Context::SetDefaultScrollBehavior(ScrollBehavior::Instant, …)` set for the test, wheel over
+  details leaves the list unchanged on every run. Tests of scrolling turn smooth scroll off.
+- RCSS, upstream backend: `linear-gradient` draws nothing and logs `Could not generate
+  decorator element data`; `box-shadow` draws a stray dark rounded quad at the window's
+  top-left corner. Both confirm the problems above. Nine-slice, image and the viewport texture
+  with its SPIR-V post-effect render correctly. The suite's feature test only logged and never
+  failed, and two of its pixel checks were wrong (one sampled the white badge text, one the
+  viewport inside the panel); it now fails on a wrong pixel or a decorator error.
+
+**Advanced rendering port (2026-10-27).** The retest spike now uses its own SDL_GPU render
+interface instead of the upstream one: the upstream backend's drawing, plus RmlUi's advanced
+render interface ported from the GL3 backend — render layers, `CompositeLayers` with filters,
+`SaveLayerAsTexture`/`SaveLayerAsMaskImage`, stencil clip masks, and gradient shaders. About
+1,400 lines of C++ and 12 GLSL shaders compiled to SPIR-V with `glslc`. Differences from GL3:
+no MSAA on layers (edges under 3D transforms are less smooth); textures are top-left origin,
+so no vertical flips; stencil and blend state live in pipelines created on first use.
+Result on lavapipe, under `-race`, stable over repeated runs, all 11 tests passing: a new test
+samples one tile per feature, and every one renders — linear, radial and conic gradients,
+box-shadow with spread and with blur, `filter: blur`, `drop-shadow`, `grayscale`, `opacity`,
+`backdrop-filter: invert`, `mask-image`, and clipping children to a `border-radius`. The badge
+now shows its gradient and soft shadow, and the stray quad is gone. Two notes:
+- RmlUi clips an outer box-shadow to outside the element *before* blurring it, so only the
+  spread ring is blurred and a blurred shadow is lighter near the element than in a browser
+  (19% at the ring's edge in the test, matching the Gaussian exactly). That is RmlUi's
+  algorithm, not the port; GL3 could not be run on this machine to compare side by side.
+- Cost on lavapipe at 1280×760, 13 effects on screen: 16.8 ms per GPU-synced frame against
+  6.6 ms with them hidden, about 0.8 ms per effect on the CPU driver. Copies and clears are
+  limited to the scissor, as in GL3. Measure on hardware before tuning further.
+
+**Open items** — each settled before the step it affects (items 1, 2, 5 and 8 before
+step 2c; 3, 4, 6 and 7 before step 4). None reopens the toolkit choice.
+1. **Software driver size.** msys2's lavapipe is `vulkan_lvp.dll` (17 MB) plus
+   `libLLVM-23.dll` (153 MB) and `libSPIRV-Tools.dll` (2 MB): about 170 MB to ship. Measure a
+   statically linked lavapipe build and SwiftShader before choosing one; also decide whether
+   to ship the Vulkan loader (`vulkan-1.dll`, 0.7 MB) for machines that have none.
+2. **macOS.** SDL_GPU uses Metal there and cannot load SPIR-V; choose MoltenVK or translating
+   shaders to Metal (SDL_shadercross) and test it.
+3. **Advanced rendering in production.** Ported in the retest spike (above). Bring the
+   renderer into the repo with step 2c, add MSAA on layers if transformed edges need it, and
+   run the feature test on a hardware GPU.
+4. **Text.** RmlUi draws text with FreeType. Decide whether SDL3_ttf stays (courtroom message
+   raster) or goes, and test font fallback for CJK and emoji (today's `fontfallback.go`) and
+   IME composition through RmlUi.
+5. **Device loss.** Part 5d handles SDL_Renderer's reset events; find and test the SDL_GPU
+   equivalent (driver update, sleep/resume, Remote Desktop).
+6. **C++ allocations.** The allocation gate counts Go allocations only. Measure RmlUi's heap
+   use per frame in steady state against the 256 MiB budget.
+7. **uikit scope.** Steps 4–5 and the uikit export surface (Part 3) were written for our own
+   kit: our input model (press/release, capture, wheel routing), scroll container, text
+   layout and widgets. RmlUi already provides click-on-release, scrollbars, wheel routing,
+   text layout and form controls (pass criterion 3). Rewrite steps 4–5 to say which of these
+   uikit still owns (likely the AO theme screens and the courtroom, which stay on our
+   compositor) and which become RML/RCSS.
+8. **Platform layer.** Decide where the RmlUi binding lives and add it to the Platform row of
+   the layer diagram (Part 3). The `docs/ARCHITECTURE.md` dependency row for RmlUi is in
+   place as "planned"; finalise it when items 1 and 2 are settled.
+
+Decision: keep RmlUi on SDL_GPU/Vulkan, with the open items above settled on that schedule.
 
 ## Part 6 — Adversarial review (verified against the code; amendments applied above)
 
