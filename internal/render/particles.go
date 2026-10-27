@@ -59,6 +59,7 @@ type weatherParams struct {
 }
 
 // weatherTable indexes by Weather (WeatherNone is a zero entry, never drawn).
+//
 //nolint:mnd // a named data table (rule 9)
 var weatherTable = [WeatherCount]weatherParams{
 	WeatherNone:   {},

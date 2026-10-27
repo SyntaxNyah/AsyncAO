@@ -9,6 +9,7 @@ import (
 )
 
 // AO chat text colors (TEXT_COLOR field), AO2-Client palette.
+//
 //nolint:mnd // the AO2 palette, a named data table (rule 9)
 var textColors = []sdl.Color{
 	{R: 255, G: 255, B: 255, A: 255}, // 0 white
