@@ -2011,20 +2011,34 @@ func (a *App) ensureIniList() {
 func (a *App) pollIniswap() {
 	select {
 	case res := <-a.iniRes:
-		if res.key != a.serverKey {
-			return // landed after a tab switch: not this server's list
+		if res.key == a.serverKey {
+			a.applyIniswap(&a.sessionState, res)
+			a.rebuildIniMenu()
+			return
 		}
-		a.iniBusy = false
-		if res.err != nil {
-			a.iniListErr = "no server list (" + res.err.Error() + ") — your wardrobe still works"
-			a.iniServer = nil
-		} else {
-			a.iniServer = filterServerIniswaps(res.names, res.bgs,
-				a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey).Backgrounds)
+		// Landed after a tab switch: it belongs to the parked tab that asked. Left
+		// undelivered, that tab would stay busy and never fetch its list again.
+		// Its menu rebuilds on activation (ensureIniList).
+		for _, tab := range a.tabs {
+			if tab.state.serverKey == res.key && tab.state.iniBusy {
+				a.applyIniswap(&tab.state, res)
+				return
+			}
 		}
-		a.rebuildIniMenu()
 	default:
 	}
+}
+
+// applyIniswap stores a finished iniswap fetch on the session that made it.
+func (a *App) applyIniswap(s *sessionState, res iniswapFetch) {
+	s.iniBusy = false
+	if res.err != nil {
+		s.iniListErr = "no server list (" + res.err.Error() + ") — your wardrobe still works"
+		s.iniServer = nil
+		return
+	}
+	s.iniServer = filterServerIniswaps(res.names, res.bgs,
+		a.d.Prefs.Load().ServerWarmInfoFor(res.key).Backgrounds)
 }
 
 // rebuildIniMenu merges the menu: wardrobe first (the user's saved
