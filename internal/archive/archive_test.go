@@ -239,3 +239,27 @@ func TestDiskPathDecodesAndClamps(t *testing.T) {
 		}
 	}
 }
+
+// TestWriteAssetGuardsByPathSegments: only a whole ".." segment can traverse, so a
+// name that merely contains ".." is a legal file, while a drive or stream name
+// (anything with ':') must never reach the filesystem.
+func TestWriteAssetGuardsByPathSegments(t *testing.T) {
+	const (
+		legal     = "characters/Mr..Edgeworth/a..b.png"
+		driveName = "C:/escape.png"
+		decoded   = "characters/a%5C..%5C..%5Cescape.png"
+	)
+	data := []byte("x")
+	dir := t.TempDir()
+	if err := WriteAsset(dir, legal, data); err != nil {
+		t.Fatalf("legal name %q refused: %v", legal, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(legal))); err != nil {
+		t.Fatalf("legal name was not written: %v", err)
+	}
+	for _, bad := range []string{driveName, decoded} {
+		if err := WriteAsset(dir, bad, data); err == nil {
+			t.Errorf("unsafe name %q was written", bad)
+		}
+	}
+}

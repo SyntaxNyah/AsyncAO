@@ -17,6 +17,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/safepath"
 )
 
 // Result reports an export: the per-asset-type format extension each type
@@ -61,7 +62,7 @@ func ExportAssets(ctx context.Context, mgr *assets.Manager, origin, startBg stri
 		if fromPack {
 			res.FromPack++
 		}
-		if err := writeAsset(destDir, rel, data); err != nil {
+		if err := WriteAsset(destDir, rel, data); err != nil {
 			// One un-writable name (e.g. a decoded segment carrying a
 			// Windows-illegal character like ':' or '?') must not sink the whole
 			// export — skip it and keep bundling, the same way the renderer degrades
@@ -116,14 +117,14 @@ func resolveRef(ctx context.Context, mgr *assets.Manager, ref courtroom.AssetRef
 	return "", nil, false, false
 }
 
-// writeAsset writes one bundled asset under destDir at its DECODED, human-readable
-// relative path (DiskPath), refusing path escapes.
-func writeAsset(destDir, rel string, data []byte) error {
-	disk := DiskPath(rel)
-	if disk == "" || strings.Contains(disk, "..") {
-		return fmt.Errorf("archive: refusing bad relative path %q", rel)
+// WriteAsset writes one bundled asset under destDir at its DECODED, human-readable
+// relative path (DiskPath). safepath refuses anything that could escape destDir: a
+// ".." segment (a decoded "%5C" can make one), a rooted path, or a name with ':'.
+func WriteAsset(destDir, rel string, data []byte) error {
+	full, err := safepath.Join(destDir, DiskPath(rel))
+	if err != nil {
+		return fmt.Errorf("archive: refusing bad relative path %q: %w", rel, err)
 	}
-	full := filepath.Join(destDir, filepath.FromSlash(disk))
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return err
 	}
