@@ -1,6 +1,6 @@
 package main
 
-import "github.com/veandco/go-sdl2/sdl"
+import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
 // mainWindowShouldQuit reports whether ev ends the run loop, given the id
 // of the application's single top-level (main) window. It is the run

@@ -13,7 +13,8 @@ in **Status**. Update Status in the same commit that completes a step.
 - [x] 2. Bug fixes 1–3, 5–7 (one commit each, with tests; 6 landed in step 1) → **merge checkpoint** (maintainer pushes)
 - [x] 2a. UI spike: RmlUi 6.3 on SDL_GPU (Vulkan, software Vulkan fallback) (Part 5e); throwaway code outside the module
       — see the Result in Part 5e
-- [ ] 2b. SDL facade (`internal/sdl`, `ttf`, `mix`) over go-sdl2; switch all importers
+- [x] 2b. SDL facade (`internal/sdl`, `ttf`, `mix`) over go-sdl2; switch all importers
+      (`render/mixerx` became `internal/mix`; `render/scalemode_cgo.go` still calls SDL C directly, see 2c)
 - [ ] 2c. SDL3 switch: SDL_GPU on Vulkan (hardware, else bundled software Vulkan), device-reset
       re-upload; drop the SDL Mixer X fork; replace platform code
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
@@ -438,8 +439,9 @@ call it are owned or moved, so moved code is touched once:
     `internal/mix`, first implemented over go-sdl2 with identical names. Switch the 187 importing
     files package by package (import-path swap). Still SDL2, always green.
 2c. **SDL3 switch (Part 5d steps 3–5):** re-implement the binding over SDL3, SDL3_ttf and
-    SDL3_mixer; rewrite audio onto `MIX_Track`; delete `render/mixerx`, the fork build script
-    and the CI fork steps. Pin the loop-end behaviour with a test. Renderer: SDL_GPU on
+    SDL3_mixer; rewrite audio onto `MIX_Track`; reimplement `internal/mix` (formerly `render/mixerx`)
+    and delete the fork build script and the CI fork steps. Move render's texture scale-mode cgo
+    shim (`scalemode_cgo.go`) into `internal/sdl`, so only the binding calls SDL. Pin the loop-end behaviour with a test. Renderer: SDL_GPU on
     hardware Vulkan, else the bundled software Vulkan driver (Part 5d "Renderer"). Replace the platform code
     (file/folder dialogs, DPI seeding, URL/file manager opening, preview window ownership,
     clipboard), one commit each. `setup-deps.ps1` and CI install SDL3 packages.
@@ -678,7 +680,7 @@ separate SDL3_mixer satellite library. What changes is that **SDL3_mixer 3.x ups
 - `MIX_SetTrackPlaybackPosition` (seek), per-track gain, tags, a track-stopped callback;
 - raw PCM / `SDL_AudioStream` track input (voice playback could use it).
 
-So the fork goes: `internal/render/mixerx`, `scripts/build-sdl-mixer-x.sh`, the CI fork builds,
+So the fork goes: the SDL Mixer X code in `internal/mix` (formerly `render/mixerx`), `scripts/build-sdl-mixer-x.sh`, the CI fork builds,
 the loop-point patch. Open check: whether `MAX_FRAME` acts as the loop end on *every*
 iteration is not stated in the header. Pin it with a test before relying on it, otherwise loop
 end is emulated with the stopped callback.
@@ -715,7 +717,7 @@ over ~185 distinct identifiers (sdl 152, mix 26, ttf 7). SDL3 changes the render
 2. Switch all 187 files to the facade, package by package. Everything stays on SDL2 and green.
 3. Re-implement the facade over SDL3 + SDL3_ttf + SDL3_mixer in one commit series behind it.
    Int→float rect conversion and the event-shape translation live inside the facade. Audio is
-   rewritten onto `MIX_Track`. Remove `mixerx` and the fork.
+   rewritten onto `MIX_Track`. `internal/mix` drops SDL Mixer X; the fork goes.
 4. Replace the platform code in the table above, one commit each.
 5. Remove the facade's own pure-forwarding compatibility shims where call sites can use the
    SDL3 shape directly (KISS); the binding itself stays.

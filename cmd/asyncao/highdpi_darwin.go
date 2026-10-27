@@ -2,7 +2,7 @@
 
 package main
 
-import "github.com/veandco/go-sdl2/sdl"
+import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
 // highDPIFlags makes the window Retina-aware on macOS so the Metal drawable is
 // the full 2x backing store. retinaScaleFactor then bridges the window's point

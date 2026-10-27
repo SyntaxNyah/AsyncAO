@@ -2,7 +2,7 @@
 
 package main
 
-import "github.com/veandco/go-sdl2/sdl"
+import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
 // highDPIFlags is a no-op off macOS: no high-DPI window flag, no Retina drawable
 // to bridge, so Windows/Linux behave exactly as they always have.
