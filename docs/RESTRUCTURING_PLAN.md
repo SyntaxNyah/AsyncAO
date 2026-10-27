@@ -869,11 +869,13 @@ step 2c; 3, 4, 6 and 7 before step 4). None reopens the toolkit choice.
    to ship the Vulkan loader (`vulkan-1.dll`, 0.7 MB) for machines that have none.
 2. **macOS.** SDL_GPU uses Metal there and cannot load SPIR-V; choose MoltenVK or translating
    shaders to Metal (SDL_shadercross) and test it.
-3. **Unsupported RCSS (decision needed).** Either ban the features in the table above in the
-   theme format, or render them by implementing RmlUi's advanced render interface methods
-   in our own SDL_GPU render interface (RmlUi itself unchanged). Effort, from an unrequested
-   experiment during the retest: about 1,400 lines of C++ and 12 shaders ported from RmlUi's
-   GL3 backend made all twelve render on lavapipe. That code is not part of this plan.
+3. **Advanced RCSS — decided (2026-10-27): our own render interface.** RmlUi's `Backends/`
+   are samples an application is expected to adapt, not part of the library, so we write our
+   own SDL_GPU render interface: the SDL_GPU sample's drawing plus RmlUi's advanced methods
+   (layers, filters, clip masks, gradient shaders) ported from its GL3 sample. RmlUi itself
+   stays unmodified. A port of about 1,400 lines of C++ and 12 shaders made all twelve
+   features in the table render on lavapipe. It lands with step 2c; before then, add MSAA on
+   layers if transformed edges need it, and run the per-feature test on a hardware GPU.
 4. **Text.** RmlUi draws text with FreeType. Decide whether SDL3_ttf stays (courtroom message
    raster) or goes, and test font fallback for CJK and emoji (today's `fontfallback.go`) and
    IME composition through RmlUi.
