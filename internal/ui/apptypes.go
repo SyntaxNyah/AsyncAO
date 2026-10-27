@@ -77,9 +77,6 @@ type sessionState struct {
 	// click arms (label flips), the second fires ResetPowerUser. Cleared on the reveal
 	// toggle and on fire, so a stale arm can't linger across visits.
 	powerNukeArm bool
-	// spriteCapBase is the display-derived decode-downscale base height (set once
-	// from cmd/asyncao); the downscale knobs scale it (config.EffectiveSpriteCap).
-	spriteCapBase int
 	// lastInputAt is the most recent SDL input event (frame pacing: full rate
 	// through the InputGraceFrames hold after any interaction).
 	lastInputAt time.Time
