@@ -661,6 +661,10 @@ type App struct {
 	// from cmd/asyncao); the downscale knobs scale it (config.EffectiveSpriteCap).
 	// App-wide, so it lives here, not in sessionState, which every connect rebuilds.
 	spriteCapBase int
+	// partColors/partColorOn are the parsed per-part layout tints (refreshPartColors).
+	// App-wide for the same reason as spriteCapBase.
+	partColors  [config.LayoutPartColorCount]sdl.Color
+	partColorOn [config.LayoutPartColorCount]bool
 
 	// --- M13 self-update (one-shot launch check; see internal/update) ---
 	// updateRes carries a newer release found by the off-thread probe; the
