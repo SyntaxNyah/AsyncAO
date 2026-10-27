@@ -218,6 +218,12 @@ func (w *Window) SetFullscreen(flags uint32) error {
 	return errorOr(C.SDL_SetWindowFullscreen(w.c(), flags&WINDOW_FULLSCREEN_DESKTOP != 0))
 }
 
+// SetIcon sets the window and taskbar icon. SDL copies the surface, so the
+// caller may free it afterwards.
+func (w *Window) SetIcon(icon *Surface) error {
+	return errorOr(C.SDL_SetWindowIcon(w.c(), icon.s))
+}
+
 // Flash asks the OS to draw attention to the window.
 func (w *Window) Flash(op FlashOperation) error {
 	return errorOr(C.SDL_FlashWindow(w.c(), C.SDL_FlashOperation(op)))
