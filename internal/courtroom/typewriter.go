@@ -3,6 +3,8 @@ package courtroom
 import (
 	"strings"
 	"time"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 )
 
 const (
@@ -101,15 +103,28 @@ type ao2Markup struct {
 // AsyncAO's theme system is asset-driven and does not (yet) expose per-theme
 // remappable chat markup, so we hard-code the stock table: it is what every
 // AO2/webAO peer sends by default, which is exactly the interop target. Every
+// AO2 chat palette indexes, in render.TextColor order.
+const (
+	paletteDefault = iota
+	paletteGreen
+	paletteRed
+	paletteOrange
+	paletteBlue
+	paletteYellow
+	paletteMagenta
+	paletteCyan
+	paletteGray
+)
+
 var ao2Markups = [...]ao2Markup{
-	{Start: '`', End: '`', Palette: 1, Remove: true},  // c1 green
-	{Start: '~', End: '~', Palette: 2, Remove: true},  // c2 red
-	{Start: '|', End: '|', Palette: 3, Remove: true},  // c3 orange
-	{Start: '(', End: ')', Palette: 4, Remove: false}, // c4 blue (brackets kept)
-	{Start: 'º', End: 'º', Palette: 5, Remove: true},  // c5 yellow
-	{Start: '№', End: '№', Palette: 6, Remove: true},  // c6 magenta
-	{Start: '√', End: '√', Palette: 7, Remove: true},  // c7 cyan
-	{Start: '[', End: ']', Palette: 8, Remove: false}, // c8 gray (brackets kept)
+	{Start: '`', End: '`', Palette: paletteGreen, Remove: true},
+	{Start: '~', End: '~', Palette: paletteRed, Remove: true},
+	{Start: '|', End: '|', Palette: paletteOrange, Remove: true},
+	{Start: '(', End: ')', Palette: paletteBlue, Remove: false}, // brackets kept
+	{Start: 'º', End: 'º', Palette: paletteYellow, Remove: true},
+	{Start: '№', End: '№', Palette: paletteMagenta, Remove: true},
+	{Start: '√', End: '√', Palette: paletteCyan, Remove: true},
+	{Start: '[', End: ']', Palette: paletteGray, Remove: false}, // brackets kept
 }
 
 // AO2MarkupFor returns the AO2 start/end delimiters for palette colour p (0..8),
@@ -223,29 +238,26 @@ func isAO2Delim(r rune) bool {
 	return false
 }
 
+// Bit positions of a packed 0xRRGGBB colour.
+const (
+	redShift   = 16
+	greenShift = 8
+)
+
 // parseInlineHex reads the six hex digits of a `\c#RRGGBB` code; at indexes
 // the '#'. A short or malformed code returns ok=false and the caller keeps
 // the text literal (the standing rule for any unrecognised `\X`). Shared by
 // Start and StripChatMarkup so the two can't drift.
 func parseInlineHex(rs []rune, at int) (rgb int, ok bool) {
-	if at+6 >= len(rs) {
+	const hexDigits = 6
+	if at+hexDigits >= len(rs) {
 		return 0, false
 	}
-	for k := at + 1; k <= at+6; k++ {
-		var d int
-		switch r := rs[k]; {
-		case r >= '0' && r <= '9':
-			d = int(r - '0')
-		case r >= 'a' && r <= 'f':
-			d = int(r-'a') + 10
-		case r >= 'A' && r <= 'F':
-			d = int(r-'A') + 10
-		default:
-			return 0, false
-		}
-		rgb = rgb<<4 | d
+	c, ok := parse.HexColor(string(rs[at+1 : at+1+hexDigits]))
+	if !ok {
+		return 0, false
 	}
-	return rgb, true
+	return int(c.R)<<redShift | int(c.G)<<greenShift | int(c.B), true
 }
 
 // EffectKind identifies an inline screen-effect code the parser records at its
@@ -296,6 +308,7 @@ const midMarksMax = 16
 // milliseconds and how many digit runes it consumed. Shared by Start and
 // StripChatMarkup so the two can't drift.
 func parsePauseDuration(rs []rune, at int) (ms, digits int) {
+	const decimalBase = 10
 	pos := at
 	for pos < len(rs) && rs[pos] >= '0' && rs[pos] <= '9' {
 		pos++
@@ -306,7 +319,7 @@ func parsePauseDuration(rs []rune, at int) (ms, digits int) {
 	n := 0
 	for k := at; k < pos; k++ {
 		if n < pauseMaxMs { // clamp early so a long digit run can't overflow
-			n = n*10 + int(rs[k]-'0')
+			n = n*decimalBase + int(rs[k]-'0')
 		}
 	}
 	if n > pauseMaxMs {

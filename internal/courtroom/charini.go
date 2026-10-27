@@ -3,6 +3,7 @@ package courtroom
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -391,18 +392,18 @@ func ParseChatboxFontsIni(data []byte) (showname theme.RGB, shownameSet bool, me
 // parseRGBTuple parses AO2's "r, g, b" colour tuple (the same shape the theme
 // package's message_color / showname_color use). ok=false on any malformed part.
 func parseRGBTuple(raw string) (theme.RGB, bool) {
+	const channels = 3
 	parts := strings.Split(raw, ",")
-	if len(parts) < 3 {
+	if len(parts) < channels {
 		return theme.RGB{}, false
 	}
-	var rgb [3]uint8
-	for i := 0; i < 3; i++ {
+	var rgb [channels]uint8
+	for i := range channels {
 		n, err := strconv.Atoi(strings.TrimSpace(parts[i]))
 		if err != nil {
 			return theme.RGB{}, false
 		}
-		n = value.Clamp(n, 0, 255)
-		rgb[i] = uint8(n)
+		rgb[i] = uint8(value.Clamp(n, 0, math.MaxUint8))
 	}
 	return theme.RGB{R: rgb[0], G: rgb[1], B: rgb[2]}, true
 }

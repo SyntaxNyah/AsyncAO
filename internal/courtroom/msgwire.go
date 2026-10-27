@@ -1,6 +1,7 @@
 package courtroom
 
 import (
+	"encoding/binary"
 	"strconv"
 	"strings"
 )
@@ -33,6 +34,8 @@ const (
 
 	// maxGroupNameBytes bounds an invite's group name on the wire.
 	maxGroupNameBytes = 48
+	// msgUIDBytes is a kick target's UID: a big-endian uint32.
+	msgUIDBytes = 4
 )
 
 // MsgKind is the control kind of a messaging PM.
@@ -61,14 +64,10 @@ type WireMessage struct {
 // EncodeMarker returns the invisible zero-width run carrying this control frame, to
 // append to the PM body after the human-readable text.
 func (m WireMessage) EncodeMarker() string {
-	buf := []byte{
-		msgFrameMagic, msgWireVersion, byte(m.Kind),
-		byte(m.GroupID >> 24), byte(m.GroupID >> 16), byte(m.GroupID >> 8), byte(m.GroupID),
-	}
+	buf := binary.BigEndian.AppendUint32([]byte{msgFrameMagic, msgWireVersion, byte(m.Kind)}, m.GroupID)
 	switch m.Kind {
 	case MsgKick:
-		u := uint32(m.TargetUID)
-		buf = append(buf, byte(u>>24), byte(u>>16), byte(u>>8), byte(u))
+		buf = binary.BigEndian.AppendUint32(buf, uint32(m.TargetUID))
 	case MsgInvite:
 		n := m.GroupName
 		if len(n) > maxGroupNameBytes {
@@ -94,15 +93,15 @@ func DecodeMessageFrame(body string) (WireMessage, string, bool) {
 		}
 		m := WireMessage{
 			Kind:    MsgKind(fr[2]),
-			GroupID: uint32(fr[3])<<24 | uint32(fr[4])<<16 | uint32(fr[5])<<8 | uint32(fr[6]),
+			GroupID: binary.BigEndian.Uint32(fr[3:]),
 		}
 		rest := fr[7:]
 		switch m.Kind {
 		case MsgKick:
-			if len(rest) < 4 {
+			if len(rest) < msgUIDBytes {
 				return WireMessage{}, body, false
 			}
-			m.TargetUID = int(uint32(rest[0])<<24 | uint32(rest[1])<<16 | uint32(rest[2])<<8 | uint32(rest[3]))
+			m.TargetUID = int(binary.BigEndian.Uint32(rest))
 		case MsgInvite:
 			if len(rest) < 1 || len(rest) < 1+int(rest[0]) {
 				return WireMessage{}, body, false

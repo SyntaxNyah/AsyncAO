@@ -121,6 +121,8 @@ const (
 	// evidenceCap bounds the LE list — a hostile server cannot balloon
 	// memory (rule §17.4).
 	evidenceCap = 512
+	// evidenceFields is an LE entry's name&desc&image.
+	evidenceFields = 3
 	// posListCap bounds the SD dropdown for the same reason.
 	posListCap = 64
 	// bnWipeFieldCount is the BN arity at which AO2 re-stages the viewport:
@@ -297,6 +299,9 @@ type LivePlayer struct {
 // hit here self-heals rather than corrupting state.
 const livePlayerCap = 1024
 
+// livePlayersInitialCap sizes the roster map for a typical area.
+const livePlayersInitialCap = 16
+
 // MUSIC_EFFECT bit flags carried in MC field 5 (#15; AO2-Client
 // src/datatypes.h:95-101). Servers OR these into one int: FADE_IN ramps the new
 // track up, FADE_OUT ramps the previous one down, SYNC_POS starts the new track
@@ -421,7 +426,7 @@ func (s *Session) touchPlayer(id int) *LivePlayer {
 		return pl
 	}
 	if s.players == nil {
-		s.players = make(map[int]*LivePlayer, 16)
+		s.players = make(map[int]*LivePlayer, livePlayersInitialCap)
 	}
 	if len(s.players) >= livePlayerCap {
 		return nil
@@ -990,6 +995,12 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventMessage, Message: msg}}
 
 	case "MC":
+		// MC field positions past track (0), char id (1) and showname (2).
+		const (
+			mcLoopingField = 3
+			mcChannelField = 4
+			mcEffectsField = 5
+		)
 		// Field 2 (showname) and field 1 (charID) name who played it for the IC
 		// log line; both are optional on the wire (short legacy MC packets).
 		// Field 0 is the track. Trim whitespace: a DJ /play link can arrive as
@@ -1005,7 +1016,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// and playing it as the song stopped/replaced the area's real music
 		// (playtest: rejoining a server stayed silent). We don't render
 		// ambience channels (yet), so a non-zero channel is a no-op.
-		if parse.AtoiOr(p.Field(4), 0) != 0 {
+		if parse.AtoiOr(p.Field(mcChannelField), 0) != 0 {
 			return nil
 		}
 		// Field 3 = looping, field 5 = MUSIC_EFFECT bit flags (AO2-Client
@@ -1014,10 +1025,10 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// AsyncAO default (loop forever, no effects). Field(i) returns "" past the
 		// end, and parse.AtoiOr falls back, so no bounds check is needed here.
 		looping := true
-		if v := p.Field(3); v != "" {
+		if v := p.Field(mcLoopingField); v != "" {
 			looping = v == "1"
 		}
-		effects := parse.AtoiOr(p.Field(5), 0)
+		effects := parse.AtoiOr(p.Field(mcEffectsField), 0)
 		// NO_REPEAT overrides the looping field (AO2-Client aomusicplayer.cpp:31
 		// `isLooping = loopEnabled && !(effectFlags & NO_REPEAT)`), so the loop
 		// bool the audio sink receives is already authoritative — the render side
@@ -1168,8 +1179,15 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// ARUP#<type>#<area0>#<area1>…: type 0 players, 1 status, 2 CM,
 		// 3 lock; field n applies to area n−1, out-of-range entries drop
 		// (courtroom.cpp arup_modify bounds-checks the same way).
+		// ARUP list types, in wire order.
+		const (
+			arupPlayers = iota
+			arupStatus
+			arupCM
+			arupLock
+		)
 		typ := parse.AtoiOr(p.Field(0), -1)
-		if typ < 0 || typ > 3 {
+		if typ < 0 || typ > arupLock {
 			return nil
 		}
 		for i := 1; i < len(p.Fields); i++ {
@@ -1178,13 +1196,13 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 				break
 			}
 			switch typ {
-			case 0:
+			case arupPlayers:
 				s.AreaInfo[n].Players = parse.AtoiOr(p.Fields[i], -1)
-			case 1:
+			case arupStatus:
 				s.AreaInfo[n].Status = p.Fields[i]
-			case 2:
+			case arupCM:
 				s.AreaInfo[n].CM = p.Fields[i]
-			case 3:
+			case arupLock:
 				s.AreaInfo[n].Lock = p.Fields[i]
 			}
 		}
@@ -1197,17 +1215,25 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// the measured half-RTT, matching AO2 and KFO byte for byte; see
 		// latency.go for the citations and for why a paused value is not
 		// corrected (it is a display value, not an anchor).
+		// TI types, in wire order; ms is field 2.
+		const (
+			timerStart = iota
+			timerPause
+			timerShow
+			timerHide
+		)
+		const timerMsField = 2
 		id := parse.AtoiOr(p.Field(0), -1)
 		if id < 0 || id >= TimerCount || len(p.Fields) < 2 {
 			return nil
 		}
 		t := &s.Timers[id]
 		switch parse.AtoiOr(p.Field(1), -1) {
-		case 0:
-			if len(p.Fields) < 3 {
+		case timerStart:
+			if len(p.Fields) <= timerMsField {
 				return nil
 			}
-			if ms := parse.AtoiOr(p.Field(2), -1); ms > 0 {
+			if ms := parse.AtoiOr(p.Field(timerMsField), -1); ms > 0 {
 				// Canon tests ms > 0 BEFORE subtracting, so a correction that
 				// eats the whole remainder still starts the clock — it just
 				// anchors in the past and reads 00:00, which is what AO2's
@@ -1218,18 +1244,18 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 			} else {
 				t.Running, t.Left = false, 0 // negative value = stop
 			}
-		case 1:
-			if len(p.Fields) < 3 {
+		case timerPause:
+			if len(p.Fields) <= timerMsField {
 				return nil
 			}
-			if ms := parse.AtoiOr(p.Field(2), -1); ms > 0 {
+			if ms := parse.AtoiOr(p.Field(timerMsField), -1); ms > 0 {
 				t.Running, t.Left = false, time.Duration(ms)*time.Millisecond
 			} else {
 				t.Running, t.Left = false, 0
 			}
-		case 2:
+		case timerShow:
 			t.Visible = true
-		case 3:
+		case timerHide:
 			t.Visible = false
 		default:
 			return nil
@@ -1291,7 +1317,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 				break
 			}
 			parts := strings.Split(field, "&")
-			if len(parts) < 3 {
+			if len(parts) < evidenceFields {
 				continue
 			}
 			s.Evidence = append(s.Evidence, EvidenceItem{
@@ -1321,6 +1347,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 	case "EE":
 		// Incoming evidence edit: EE#id#name#desc#image. Bounds-guarded like
 		// LE's cap; out-of-range ids drop (the server will re-sync with an LE).
+		const eeImageField = 3
 		id := parse.AtoiOr(p.Field(0), -1)
 		if id < 0 || id >= len(s.Evidence) {
 			return nil
@@ -1328,7 +1355,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		s.Evidence[id] = EvidenceItem{
 			Name:        protocol.DecodeField(p.Field(1)),
 			Description: protocol.DecodeField(p.Field(2)),
-			Image:       protocol.DecodeField(p.Field(3)),
+			Image:       protocol.DecodeField(p.Field(eeImageField)),
 		}
 		return []Event{{Kind: EventEvidenceChanged, Int: id, Int2: EvidenceOpEdit, Text: s.Evidence[id].Name}}
 
@@ -1378,7 +1405,8 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// Legacy 2.6–2.9 casing_alerts — removed upstream ("No longer
 		// used", serverdata.h) but tsuserver-family servers still send it;
 		// role gating happens UI-side against the user's SETCASE prefs.
-		if len(p.Fields) < 6 {
+		const caseaFields = 6 // msg + five role flags
+		if len(p.Fields) < caseaFields {
 			return nil
 		}
 		need := 0
@@ -1473,7 +1501,8 @@ func (s *Session) RequestMusic(track string) {
 // (courtroom.cpp:5806-5819).
 // The showname condition is canon's, verbatim and in canon's order:
 func (s *Session) RequestMusicWithFlags(track, showname string, flags int) {
-	fields := make([]string, 0, 4)
+	const mcMaxFields = 4 // track, char id, showname, effects
+	fields := make([]string, 0, mcMaxFields)
 	fields = append(fields, track, strconv.Itoa(s.MyCharID))
 	effects := s.Features.Has(protocol.FeatureEffects)
 	if (showname != "" && s.Features.Has(protocol.FeatureCCCCIC)) || effects {

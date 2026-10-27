@@ -79,10 +79,11 @@ func readMidFieldRunes(rs []rune, i int) (string, int, bool) {
 // parseMidEmoteRunes parses an <e:pre:emote:sfx> marker whose '<' is at rs[i]. It
 // returns the mark and the number of runes consumed (through the closing '>').
 func parseMidEmoteRunes(rs []rune, i int) (MidMark, int, bool) {
-	if i+3 >= len(rs) || rs[i] != '<' || rs[i+1] != 'e' || rs[i+2] != ':' {
+	const prefixLen = 3 // "<e:"
+	if i+prefixLen >= len(rs) || rs[i] != '<' || rs[i+1] != 'e' || rs[i+2] != ':' {
 		return MidMark{}, 0, false
 	}
-	pre, j, ok := readMidFieldRunes(rs, i+3)
+	pre, j, ok := readMidFieldRunes(rs, i+prefixLen)
 	if !ok {
 		return MidMark{}, 0, false
 	}
@@ -99,10 +100,11 @@ func parseMidEmoteRunes(rs []rune, i int) (MidMark, int, bool) {
 
 // parseMidSFXRunes parses an <s:sfx> marker whose '<' is at rs[i].
 func parseMidSFXRunes(rs []rune, i int) (MidMark, int, bool) {
+	const prefixLen = 3 // "<s:"
 	if i+2 >= len(rs) || rs[i] != '<' || rs[i+1] != 's' || rs[i+2] != ':' {
 		return MidMark{}, 0, false
 	}
-	sfx, j, ok := readMidFieldRunes(rs, i+3)
+	sfx, j, ok := readMidFieldRunes(rs, i+prefixLen)
 	if !ok {
 		return MidMark{}, 0, false
 	}

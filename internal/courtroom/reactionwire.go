@@ -1,5 +1,7 @@
 package courtroom
 
+import "encoding/binary"
+
 // Real reactions (#2): a player reacts to a PRIOR message with an emoji — like a
 // Discord/Slack reaction — and every AsyncAO viewer sees the emoji float up from that
 // message, while AO2/webAO render clean text. AO has no immediate side-channel (the
@@ -109,11 +111,8 @@ func (r WireReaction) EncodeMarker() string {
 	if int(r.Index) >= len(reactionSet) {
 		return ""
 	}
-	return packZeroWidth([]byte{
-		reactionFrameMagic, reactionWireVersion,
-		byte(r.Ref >> 24), byte(r.Ref >> 16), byte(r.Ref >> 8), byte(r.Ref),
-		r.Index,
-	})
+	buf := binary.BigEndian.AppendUint32([]byte{reactionFrameMagic, reactionWireVersion}, r.Ref)
+	return packZeroWidth(append(buf, r.Index))
 }
 
 // DecodeReactionMarker pulls a WireReaction out of an IC message's text if a well-formed
@@ -134,7 +133,7 @@ func DecodeReactionMarker(text string) (WireReaction, bool) {
 			return WireReaction{}, false // unknown emoji from a newer peer
 		}
 		return WireReaction{
-			Ref:   uint32(fr[2])<<24 | uint32(fr[3])<<16 | uint32(fr[4])<<8 | uint32(fr[5]),
+			Ref:   binary.BigEndian.Uint32(fr[2:]),
 			Index: idx,
 		}, true
 	}

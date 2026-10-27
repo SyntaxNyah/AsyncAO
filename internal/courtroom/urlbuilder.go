@@ -738,15 +738,23 @@ func (u URLBuilder) SpeedlinesCandidates(character, pos string) []string {
 }
 
 // ShoutName maps an objection modifier to its asset stem.
+// Objection modifiers, as the MS packet carries them.
+const (
+	objectionHoldIt = 1 + iota
+	objectionObjection
+	objectionTakeThat
+	objectionCustom
+)
+
 func ShoutName(objection int) string {
 	switch objection {
-	case 1:
+	case objectionHoldIt:
 		return "holdit"
-	case 2:
+	case objectionObjection:
 		return "objection"
-	case 3:
+	case objectionTakeThat:
 		return "takethat"
-	case 4:
+	case objectionCustom:
 		return customShoutStem
 	default:
 		return ""
