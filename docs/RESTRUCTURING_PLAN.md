@@ -873,9 +873,10 @@ step 2c; 3, 4, 6 and 7 before step 4). None reopens the toolkit choice.
    are samples an application is expected to adapt, not part of the library, so we write our
    own SDL_GPU render interface: the SDL_GPU sample's drawing plus RmlUi's advanced methods
    (layers, filters, clip masks, gradient shaders) ported from its GL3 sample. RmlUi itself
-   stays unmodified. A port of about 1,400 lines of C++ and 12 shaders made all twelve
-   features in the table render on lavapipe. It lands with step 2c; before then, add MSAA on
-   layers if transformed edges need it, and run the per-feature test on a hardware GPU.
+   stays unmodified. An experiment during the retest (about 1,400 lines of C++ and 12
+   shaders, not kept) made all twelve features in the table render on lavapipe, so the
+   approach works. The full render interface is written in step 2c; include MSAA on layers
+   if transformed edges need it, and run the per-feature test on a hardware GPU.
 4. **Text.** RmlUi draws text with FreeType. Decide whether SDL3_ttf stays (courtroom message
    raster) or goes, and test font fallback for CJK and emoji (today's `fontfallback.go`) and
    IME composition through RmlUi.
