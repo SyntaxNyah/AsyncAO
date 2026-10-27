@@ -424,6 +424,7 @@ func synthSegments(segs []modSegment) []byte {
 // builtinModWAV synthesizes the default sound for a mod action — each distinct
 // so they're tell-apart by ear: ban = a low, heavy two-tone "thud"; kick = two
 // quick punchy blips; mute = a muffled downward sweep ("shush").
+//
 //nolint:mnd // a named tone table (rule 9)
 func builtinModWAV(action ModAction) []byte {
 	switch action {
