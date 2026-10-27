@@ -815,7 +815,7 @@ cannot host the shader itself), and 3D UI manipulation — a card with
 `Element::SetProperty("transform", …)` (a Go-owned data path drives the headless test; a
 scripted drag was verified on both lavapipe and the RTX 3060 Ti).
 
-Problems found (gradients, shadows, filters and masks are fixed by the port below): the upstream SDL_GPU backend implements no `CompileShader`/`RenderShader`/
+Problems found: the SDL_GPU backend implements no `CompileShader`/`RenderShader`/
 `CompileFilter`, so `linear-gradient` logs `Could not generate decorator element data` and
 draws nothing, and `box-shadow` corrupts the frame with a garbage quad (evidence in the
 spike's `shots/box-shadow-artifact.png`); the backend requires SDL3_image; its sources need
@@ -840,32 +840,26 @@ release, wheel routing, dp scaling, resize, hot reload, RCSS features) was rerun
   scroll runs on wall-clock time, so no frame count is a safe wait. With
   `Context::SetDefaultScrollBehavior(ScrollBehavior::Instant, …)` set for the test, wheel over
   details leaves the list unchanged on every run. Tests of scrolling turn smooth scroll off.
-- RCSS, upstream backend: `linear-gradient` draws nothing and logs `Could not generate
-  decorator element data`; `box-shadow` draws a stray dark rounded quad at the window's
-  top-left corner. Both confirm the problems above. Nine-slice, image and the viewport texture
-  with its SPIR-V post-effect render correctly. The suite's feature test only logged and never
-  failed, and two of its pixel checks were wrong (one sampled the white badge text, one the
-  viewport inside the panel); it now fails on a wrong pixel or a decorator error.
+- RCSS on the stock SDL_GPU backend: a strip of twelve tiles, one per advanced feature, on a
+  known background, judged by screenshot (`advanced.png` in the spike's shots). **None of the
+  twelve renders:**
 
-**Advanced rendering port (2026-10-27).** The retest spike now uses its own SDL_GPU render
-interface instead of the upstream one: the upstream backend's drawing, plus RmlUi's advanced
-render interface ported from the GL3 backend — render layers, `CompositeLayers` with filters,
-`SaveLayerAsTexture`/`SaveLayerAsMaskImage`, stencil clip masks, and gradient shaders. About
-1,400 lines of C++ and 12 GLSL shaders compiled to SPIR-V with `glslc`. Differences from GL3:
-no MSAA on layers (edges under 3D transforms are less smooth); textures are top-left origin,
-so no vertical flips; stencil and blend state live in pipelines created on first use.
-Result on lavapipe, under `-race`, stable over repeated runs, all 11 tests passing: a new test
-samples one tile per feature, and every one renders — linear, radial and conic gradients,
-box-shadow with spread and with blur, `filter: blur`, `drop-shadow`, `grayscale`, `opacity`,
-`backdrop-filter: invert`, `mask-image`, and clipping children to a `border-radius`. The badge
-now shows its gradient and soft shadow, and the stray quad is gone. Two notes:
-- RmlUi clips an outer box-shadow to outside the element *before* blurring it, so only the
-  spread ring is blurred and a blurred shadow is lighter near the element than in a browser
-  (19% at the ring's edge in the test, matching the Gaussian exactly). That is RmlUi's
-  algorithm, not the port; GL3 could not be run on this machine to compare side by side.
-- Cost on lavapipe at 1280×760, 13 effects on screen: 16.8 ms per GPU-synced frame against
-  6.6 ms with them hidden, about 0.8 ms per effect on the CPU driver. Copies and clears are
-  limited to the scissor, as in GL3. Measure on hardware before tuning further.
+  | Feature | Stock SDL_GPU backend |
+  |---|---|
+  | `linear-`, `radial-`, `conic-gradient` | nothing drawn; logs `Could not generate decorator element data` |
+  | `box-shadow` (spread, blurred) | **corrupts the frame**: solid, misplaced blocks in the shadow colour, one covering the window title |
+  | `filter: blur / drop-shadow / grayscale / opacity` | ignored; the element draws unfiltered |
+  | `backdrop-filter` | ignored |
+  | `mask-image` | ignored |
+  | clipping children to `border-radius` | ignored; corners stay square |
+
+  Nine-slice, images, the viewport texture with its SPIR-V post-effect, text, layout and
+  everything in the criteria above do render. The suite's original feature test only logged
+  and two of its pixel checks sampled the wrong spot (the white badge text, the viewport
+  inside the panel); the spike now reports per feature from fixed sample points.
+- Implication for themes: as shipped, a theme may use colours, borders, `border-radius`
+  backgrounds, images, nine-slice and the vertical/horizontal *geometry* gradient decorators,
+  and must not use the features in the table — `box-shadow` actively breaks the page.
 
 **Open items** — each settled before the step it affects (items 1, 2, 5 and 8 before
 step 2c; 3, 4, 6 and 7 before step 4). None reopens the toolkit choice.
@@ -875,9 +869,11 @@ step 2c; 3, 4, 6 and 7 before step 4). None reopens the toolkit choice.
    to ship the Vulkan loader (`vulkan-1.dll`, 0.7 MB) for machines that have none.
 2. **macOS.** SDL_GPU uses Metal there and cannot load SPIR-V; choose MoltenVK or translating
    shaders to Metal (SDL_shadercross) and test it.
-3. **Advanced rendering in production.** Ported in the retest spike (above). Bring the
-   renderer into the repo with step 2c, add MSAA on layers if transformed edges need it, and
-   run the feature test on a hardware GPU.
+3. **Unsupported RCSS (decision needed).** Either ban the features in the table above in the
+   theme format, or render them by implementing RmlUi's advanced render interface methods
+   in our own SDL_GPU render interface (RmlUi itself unchanged). Effort, from an unrequested
+   experiment during the retest: about 1,400 lines of C++ and 12 shaders ported from RmlUi's
+   GL3 backend made all twelve render on lavapipe. That code is not part of this plan.
 4. **Text.** RmlUi draws text with FreeType. Decide whether SDL3_ttf stays (courtroom message
    raster) or goes, and test font fallback for CJK and emoji (today's `fontfallback.go`) and
    IME composition through RmlUi.
