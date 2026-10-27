@@ -194,15 +194,9 @@ Protocol gotchas already encoded in code/tests — don't "fix" them:
 
 ## Environment gotchas (this dev machine)
 
-- The AV intercepts TLS (pacman needed `curl -k`) and sometimes blocks
-  freshly-built test exes (`fork/exec ... Access is denied`) — just re-run.
-- The AV also throttles PARALLEL loopback httptest servers: running several
-  test packages at once can stall one for minutes. **On this machine always
-  test with `go test -p 1 ./...`** (CI runners don't need it).
-- The AV has also quarantined `C:\msys64\ucrt64\bin\ld.exe` mid-session:
-  CGO linking then fails with `collect2: cannot find 'ld'`. Fix:
-  `pacman -S mingw-w64-ucrt-x86_64-binutils`. On any sudden CGO link
-  failure, check ld.exe exists before debugging anything else.
+- If CGO linking suddenly fails with `collect2: cannot find 'ld'`, check
+  that `C:\msys64\ucrt64\bin\ld.exe` exists. If binutils went missing,
+  restore it with `pacman -S mingw-w64-ucrt-x86_64-binutils`.
 - `go.mod` pins `go 1.25.0` and `golang.org/x/sync v0.20.0`, and CI's
   `GO_VERSION` must match the `go` directive; don't let `go get` bump either
   without bumping the other.
