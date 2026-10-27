@@ -754,10 +754,11 @@ is going away.
 - Our compositor draws through SDL_Renderer's `gpu` backend on the same device, so the
   courtroom viewport is a texture RmlUi can show.
 - One setting / command-line flag forces the software driver, for broken GPU drivers.
-- Handle `SDL_EVENT_RENDER_DEVICE_RESET` / `RENDER_TARGETS_RESET`: drop the GPU texture tier
-  (T1) and re-upload from the decoded tier, the way theme textures already heal on eviction.
-  Today nothing handles these events, so a device reset (driver update, sleep/resume, Remote
-  Desktop) would likely leave textures black until restart.
+- Device loss: SDL's `gpu` renderer sends no reset events (Part 5e open item 5), so a failed
+  present or submit marks the device lost; the renderer and device are rebuilt and T1 is
+  re-uploaded from the decoded tier, the way theme textures already heal on eviction. Today
+  nothing handles a reset, so one (driver update, sleep/resume, Remote Desktop) would likely
+  leave textures black until restart.
 - The active backend name is shown in the debug overlay and the About screen.
 - Custom shaders beyond the viewport post pass (Part 5e) are out of scope; a new one is decided
   when a feature needs it, and ships as SPIR-V for the SDL_GPU device.
@@ -888,12 +889,26 @@ release, wheel routing, dp scaling, resize, hot reload, RCSS features) was rerun
 
 **Open items** — each settled before the step it affects (items 1, 2, 5 and 8 before
 step 2c; 3, 4, 6 and 7 before step 4). None reopens the toolkit choice.
-1. **Software driver size.** msys2's lavapipe is `vulkan_lvp.dll` (17 MB) plus
-   `libLLVM-23.dll` (153 MB) and `libSPIRV-Tools.dll` (2 MB): about 170 MB to ship. Measure a
-   statically linked lavapipe build and SwiftShader before choosing one; also decide whether
-   to ship the Vulkan loader (`vulkan-1.dll`, 0.7 MB) for machines that have none.
+1. **Software driver — decided (2026-10-27): lavapipe.** RmlUi is verified on lavapipe and
+   not on SwiftShader, and one driver to make fast beats two dependencies. Measured on the
+   Hyper-V VM (no GPU), a 1920×1080 courtroom-like frame through SDL's `gpu` renderer, synced
+   every frame:
+
+   | Driver | Size raw / gzip | Frame avg / p95 | Private memory | Start |
+   |---|---|---|---|---|
+   | today's default (D3D11, WARP) | — | 10.7 / 11.9 ms | 68 MB | 17 ms |
+   | msys2 lavapipe (LLVM as DLL) | 172 / 47 MB | 22.6 / 31.4 ms | 240 MB | 77 ms |
+   | lavapipe, static LLVM (mesa-dist-win) | 62 / 21 MB | 25.5 / 34.1 ms | 238 MB | 1.8 s |
+   | SwiftShader (Edge's build) | 4.5 / 1.8 MB | 32.2 / 35.0 ms | 161 MB | 68 ms |
+
+   Windows ships msys2's lavapipe (`vulkan_lvp.dll`, `libLLVM-23.dll`, `libSPIRV-Tools.dll`)
+   and the Vulkan loader (`vulkan-1.dll`, 0.7 MB) for machines that have none; Linux uses the
+   distro's Mesa. Optimising that route is follow-up work: a trimmed static build, and the
+   ~240 MB of driver memory, which leaves the 256 MiB budget no room on the software tier.
 2. **macOS.** SDL_GPU uses Metal there and cannot load SPIR-V; choose MoltenVK or translating
-   shaders to Metal (SDL_shadercross) and test it.
+   shaders to Metal (SDL_shadercross) and test it. Until then (decided 2026-10-27) macOS does
+   not name a driver: SDL picks Metal, which the compositor's `gpu` renderer supports (it
+   ships MSL shaders); only RmlUi's SPIR-V shaders need this item.
 3. **Advanced RCSS — decided (2026-10-27): our own render interface.** RmlUi's `Backends/`
    are samples an application is expected to adapt, not part of the library, so we write our
    own SDL_GPU render interface: the SDL_GPU sample's drawing plus RmlUi's advanced methods
@@ -905,8 +920,11 @@ step 2c; 3, 4, 6 and 7 before step 4). None reopens the toolkit choice.
 4. **Text.** RmlUi draws text with FreeType. Decide whether SDL3_ttf stays (courtroom message
    raster) or goes, and test font fallback for CJK and emoji (today's `fontfallback.go`) and
    IME composition through RmlUi.
-5. **Device loss.** Part 5d handles SDL_Renderer's reset events; find and test the SDL_GPU
-   equivalent (driver update, sleep/resume, Remote Desktop).
+5. **Device loss — decided (2026-10-27): detect and rebuild.** SDL 3.4's `gpu` renderer sends
+   no `RENDER_DEVICE_RESET`, `RENDER_TARGETS_RESET` or `DEVICE_LOST` event, and SDL_GPU's
+   Vulkan backend only turns `VK_ERROR_DEVICE_LOST` into a failed call. A failed present or
+   submit therefore marks the device lost; the next frame destroys and recreates the renderer
+   and device and re-uploads T1 from the decoded tier. A test forces a loss.
 6. **C++ allocations.** The allocation gate counts Go allocations only. Measure RmlUi's heap
    use per frame in steady state against the 256 MiB budget.
 7. **uikit scope.** Steps 4–5 and the uikit export surface (Part 3) were written for our own
