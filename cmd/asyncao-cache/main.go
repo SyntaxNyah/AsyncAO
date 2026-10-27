@@ -34,6 +34,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 const (
@@ -264,12 +265,7 @@ func cmdWarm(args []string) error {
 	if len(urls) == 0 {
 		return fmt.Errorf("nothing to warm")
 	}
-	if *workers < 1 {
-		*workers = 1
-	}
-	if *workers > warmWorkersMax {
-		*workers = warmWorkersMax
-	}
+	*workers = value.Clamp(*workers, 1, warmWorkersMax)
 
 	root, err := cacheRoot()
 	if err != nil {

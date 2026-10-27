@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -566,7 +567,7 @@ func (a *App) extrasBoxRect(w, h int32) sdl.Rect {
 	if hiH < extrasMinH {
 		hiH = extrasMinH
 	}
-	bw, bh = clampI32(bw, extrasMinW, hiW), clampI32(bh, extrasMinH, hiH)
+	bw, bh = value.Clamp(bw, extrasMinW, hiW), value.Clamp(bh, extrasMinH, hiH)
 	x, y := a.extrasBoxX, a.extrasBoxY
 	if !a.extrasPlaced {
 		x, y = (w-bw)/2, 76
@@ -578,7 +579,7 @@ func (a *App) extrasBoxRect(w, h int32) sdl.Rect {
 	if maxY < 8 {
 		maxY = 8
 	}
-	return sdl.Rect{X: clampI32(x, 8, maxX), Y: clampI32(y, 8, maxY), W: bw, H: bh}
+	return sdl.Rect{X: value.Clamp(x, 8, maxX), Y: value.Clamp(y, 8, maxY), W: bw, H: bh}
 }
 
 // seedExtrasFromSlot places the Extras box from its persisted classic slot on the
@@ -598,7 +599,7 @@ func (a *App) seedExtrasFromSlot(w, h int32) {
 	r := a.anchoredRect(slotExtras, ov, w, h)
 	a.extrasBoxX, a.extrasBoxY = r.X, r.Y
 	if r.W > 0 && r.H > 0 {
-		a.extrasUserW, a.extrasUserH = clampI32(r.W, extrasMinW, w), clampI32(r.H, extrasMinH, h)
+		a.extrasUserW, a.extrasUserH = value.Clamp(r.W, extrasMinW, w), value.Clamp(r.H, extrasMinH, h)
 	}
 	a.extrasPlaced = true
 }
@@ -628,7 +629,7 @@ func (a *App) detachedBoxRect(i int, w, h int32) sdl.Rect {
 	if hiH < detachedMinH {
 		hiH = detachedMinH
 	}
-	bw, bh = clampI32(bw, detachedMinW, hiW), clampI32(bh, detachedMinH, hiH)
+	bw, bh = value.Clamp(bw, detachedMinW, hiW), value.Clamp(bh, detachedMinH, hiH)
 	maxX, maxY := w-bw-4, h-bh-4
 	if maxX < 4 {
 		maxX = 4
@@ -636,7 +637,7 @@ func (a *App) detachedBoxRect(i int, w, h int32) sdl.Rect {
 	if maxY < 4 {
 		maxY = 4
 	}
-	return sdl.Rect{X: clampI32(d.x, 4, maxX), Y: clampI32(d.y, 4, maxY), W: bw, H: bh}
+	return sdl.Rect{X: value.Clamp(d.x, 4, maxX), Y: value.Clamp(d.y, 4, maxY), W: bw, H: bh}
 }
 
 // widgetDetached reports whether widget id is currently torn out (so the grid
@@ -1187,10 +1188,10 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 	// floating pass over a pointer-fenced courtroom, but the fence is footprint-scoped
 	// and a claimed wheel is what stops a sibling surface reading it too.
 	if c.wheelY != 0 && g.maxScroll > 0 && c.hovering(g.view) {
-		a.extrasScroll = clampI32(a.extrasScroll-c.wheelY*extrasScrollStep, 0, g.maxScroll)
+		a.extrasScroll = value.Clamp(a.extrasScroll-c.wheelY*extrasScrollStep, 0, g.maxScroll)
 		c.wheelY, c.wheelTaken = 0, true
 	}
-	a.extrasScroll = clampI32(a.extrasScroll, 0, g.maxScroll) // a tear-off can shrink the content under us
+	a.extrasScroll = value.Clamp(a.extrasScroll, 0, g.maxScroll) // a tear-off can shrink the content under us
 	if g.barW > 0 {
 		a.extrasScroll = c.VScrollbar("extrasgrid",
 			sdl.Rect{X: g.view.X + g.view.W - extrasScrollW, Y: g.view.Y, W: extrasScrollW, H: g.view.H},

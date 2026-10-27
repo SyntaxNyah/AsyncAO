@@ -7,6 +7,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/update"
 )
 
@@ -154,12 +155,7 @@ func (a *App) drawChangelog(w, h int32) {
 
 	// --- centered reading column --------------------------------------------
 	colW := w - 2*pad - scrollBarW - 2*pad
-	if colW > aboutMaxColW {
-		colW = aboutMaxColW
-	}
-	if colW < 200 {
-		colW = 200
-	}
+	colW = value.Clamp(colW, 200, aboutMaxColW)
 	x0 := (w - scrollBarW - colW) / 2
 	if x0 < pad {
 		x0 = pad

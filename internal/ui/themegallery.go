@@ -230,22 +230,12 @@ func (t *presetThumb) draw(c *Ctx, r sdl.Rect) {
 		c.Fill(sdl.Rect{
 			X: r.X + b.x*r.W/presetThumbUnit,
 			Y: r.Y + b.y*r.H/presetThumbUnit,
-			W: maxInt32(1, b.w*r.W/presetThumbUnit),
-			H: maxInt32(1, b.h*r.H/presetThumbUnit),
+			W: max(1, b.w*r.W/presetThumbUnit),
+			H: max(1, b.h*r.H/presetThumbUnit),
 		}, b.col)
 	}
 	c.popClip(prev, had)
 	c.Border(r, t.ink)
-}
-
-// maxInt32 keeps a rounded-away box visible as a hairline. A slot that rounds to
-// zero pixels at card size is still a slot the layout has, and a miniature that
-// silently drops the narrow ones misrepresents the arrangement it exists to show.
-func maxInt32(a, b int32) int32 {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // ---------------------------------------------------------------------------

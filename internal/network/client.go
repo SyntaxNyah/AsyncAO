@@ -24,6 +24,7 @@ import (
 	"github.com/hashicorp/golang-lru/v2/expirable"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/update"
 )
@@ -170,12 +171,7 @@ const (
 // more spurious timeouts on jittery links); higher = more patient.
 func (c *Client) SetAdaptiveLatencyMultiple(n int) {
 	if n != 0 {
-		if n < latMultipleFloor {
-			n = latMultipleFloor
-		}
-		if n > latMultipleCeil {
-			n = latMultipleCeil
-		}
+		n = value.Clamp(n, latMultipleFloor, latMultipleCeil)
 	}
 	c.latMultiple.Store(int32(n))
 }

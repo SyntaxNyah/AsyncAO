@@ -12,6 +12,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
@@ -1097,7 +1098,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	c.Label(pad, y+4, "Disk cache size limit:", ColText)
 	dcb := a.d.Prefs.Load().DiskCacheBudgetMiBVal
 	dcbTrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-	ndcb := int(clampI32(c.Slider("diskcachebudget", dcbTrack, int32(dcb), config.DiskCacheBudgetMaxMiB), 0, config.DiskCacheBudgetMaxMiB))
+	ndcb := int(value.Clamp(c.Slider("diskcachebudget", dcbTrack, int32(dcb), config.DiskCacheBudgetMaxMiB), 0, config.DiskCacheBudgetMaxMiB))
 	if ndcb != 0 { // snap positive values to a coarse grid and pull sub-minimum up to the floor
 		ndcb = (ndcb / diskCacheBudgetStepMiB) * diskCacheBudgetStepMiB
 		if ndcb < config.DiskCacheBudgetMinMiB {

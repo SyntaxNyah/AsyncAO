@@ -1,6 +1,10 @@
 package ui
 
-import "github.com/veandco/go-sdl2/sdl"
+import (
+	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+)
 
 // Overlay pointer exclusivity (issue #26; a partial, opt-in answer to the open
 // issue #37 "buttons over other ui elements do not block mouse input behind them").
@@ -172,12 +176,7 @@ func (c *Ctx) pushOverlayOwner(mark int) overlayOwnerScope {
 	// Clamp: a mark taken before a release (or from a latch computed earlier in the
 	// frame) must never index past the live registry, and a negative one must not
 	// silently mean "suspend everything".
-	if mark < 0 {
-		mark = 0
-	}
-	if mark > c.overlayFenceN {
-		mark = c.overlayFenceN
-	}
+	mark = value.Clamp(mark, 0, c.overlayFenceN)
 	if prev.on && prev.mark < mark {
 		mark = prev.mark
 	}

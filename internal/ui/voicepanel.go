@@ -11,6 +11,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 // The Voice panel — a Nyathena-gated, non-blocking floating panel for the
@@ -67,8 +68,8 @@ func (a *App) voicePanelRect(w, h int32) sdl.Rect {
 		return r
 	}
 	if !a.voiceWin.placed {
-		dw := clampI32(voicePanelDefW, voicePanelMinW, w-2*floatWinMargin)
-		dh := clampI32(voicePanelDefH, voicePanelMinH, h-2*floatWinMargin)
+		dw := value.Clamp(voicePanelDefW, voicePanelMinW, w-2*floatWinMargin)
+		dh := value.Clamp(voicePanelDefH, voicePanelMinH, h-2*floatWinMargin)
 		return sdl.Rect{X: w - dw - floatWinMargin, Y: floatTitleH, W: dw, H: dh}
 	}
 	return a.voiceWin.rect(voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, w, h)

@@ -13,6 +13,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -433,8 +434,8 @@ func (a *App) clientViewSrc() sdl.Rect {
 	sw, sh := tw/z, th/z
 	sx := a.clientPanX*tw - sw/2
 	sy := a.clientPanY*th - sh/2
-	sx = clampF(sx, 0, tw-sw)
-	sy = clampF(sy, 0, th-sh)
+	sx = value.Clamp(sx, 0, tw-sw)
+	sy = value.Clamp(sy, 0, th-sh)
 	return sdl.Rect{X: int32(sx), Y: int32(sy), W: int32(sw), H: int32(sh)}
 }
 
@@ -453,7 +454,7 @@ func (a *App) handleClientZoomPan(view sdl.Rect, pressed *bool) {
 		if c.wheelY < 0 {
 			nz = old / clientZoomStep
 		}
-		nz = clampF(nz, clientZoomMin, clientZoomMax)
+		nz = value.Clamp(nz, clientZoomMin, clientZoomMax)
 		if nz != old {
 			src := a.clientViewSrc()
 			fx := float64(c.mouseX-view.X) / float64(view.W)
@@ -496,22 +497,8 @@ func (a *App) handleClientZoomPan(view sdl.Rect, pressed *bool) {
 // texture (its half-extent is 0.5/zoom in normalized space).
 func (a *App) clampClientPan() {
 	half := 0.5 / a.clientZoom
-	a.clientPanX = clampF(a.clientPanX, half, 1-half)
-	a.clientPanY = clampF(a.clientPanY, half, 1-half)
-}
-
-// clampF clamps a float64 to [lo, hi] (lo wins if the range is inverted).
-func clampF(v, lo, hi float64) float64 {
-	if hi < lo {
-		return lo
-	}
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
+	a.clientPanX = value.Clamp(a.clientPanX, half, 1-half)
+	a.clientPanY = value.Clamp(a.clientPanY, half, 1-half)
 }
 
 // renderFullClientTexture renders the pinned client's full drawCourtroom into
@@ -959,17 +946,6 @@ func (a *App) HardCapBudget(focused bool) time.Duration {
 	return unf // ∞ → 0 (uncapped); N → 1s/N
 }
 
-// clampDur bounds d to [lo, hi] (lo = the fastest allowed budget).
-func clampDur(d, lo, hi time.Duration) time.Duration {
-	if d < lo {
-		return lo
-	}
-	if d > hi {
-		return hi
-	}
-	return d
-}
-
 // roomBusy reports a message mid-ceremony on the ACTIVE room — typewriter,
 // preanim, shout, linger, or anything still queued.
 func (a *App) roomBusy() bool {
@@ -1113,7 +1089,7 @@ func (a *App) FramePace(focused bool) time.Duration {
 		// animation keeps its OWN schedule — the flat trickle rate here was the
 		// reported cause of choppy idle animations on an unfocused window.
 		if due, ok := nextAnimDue(); ok && due < unf {
-			unf = clampDur(due, full, unf)
+			unf = value.Clamp(due, full, unf)
 			a.lastPacerTier = pacerContentAnim // the stage-anim deadline set the budget
 		}
 		return unf
@@ -1147,7 +1123,7 @@ func (a *App) FramePace(focused bool) time.Duration {
 			talk = idle // a high idle rate lifts the ceremony to match its smoothness
 		}
 		if due, ok := nextAnimDue(); ok && due < talk {
-			talk = clampDur(due, full, talk) // a fast speaker anim gets its frames
+			talk = value.Clamp(due, full, talk) // a fast speaker anim gets its frames
 		}
 		a.lastPacerTier = pacerTalk
 		return talk
@@ -1155,9 +1131,9 @@ func (a *App) FramePace(focused bool) time.Duration {
 	if due, ok := nextAnimDue(); ok {
 		a.lastPacerTier = pacerContentAnim
 		if idleOff || idleUnlimited {
-			return clampDur(due, full, due) // the content's own cadence (never above the cap)
+			return value.Clamp(due, full, due) // the content's own cadence (never above the cap)
 		}
-		return clampDur(due, full, idle) // content cadence, never slower than the idle rate
+		return value.Clamp(due, full, idle) // content cadence, never slower than the idle rate
 	}
 	// Rendered but nothing is animating — see the "active cap" tier note above.
 	// Backstopped: a frame NOTHING demanded (no input, no transition, no anim)

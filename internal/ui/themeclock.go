@@ -750,7 +750,7 @@ func applyElementFX(e *bakedElement, fx elemFX) elemFXSave {
 	if fx.dx != 0 || fx.dy != 0 {
 		// The offsets are fractions of the SHORT side, so the same authored amplitude
 		// reads the same on a badge and on a banner.
-		short := float64(min32(e.r.W, e.r.H))
+		short := float64(min(e.r.W, e.r.H))
 		e.r.X += int32(math.Round(fx.dx * short))
 		e.r.Y += int32(math.Round(fx.dy * short))
 	}

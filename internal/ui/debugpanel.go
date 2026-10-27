@@ -10,6 +10,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
@@ -434,12 +435,7 @@ func (a *App) drawFrameBars(r sdl.Rect) {
 	for i := 0; i < perfHUDFrames; i++ {
 		dt := a.frameDts[(a.frameDtIdx+i)%perfHUDFrames]
 		hPx := int32(float32(r.H) * dt / perfHUDScaleMs)
-		if hPx > r.H {
-			hPx = r.H
-		}
-		if hPx < 1 {
-			hPx = 1
-		}
+		hPx = value.Clamp(hPx, 1, r.H)
 		col := ColTierGreen
 		switch {
 		case dt > perfHUDScaleMs:

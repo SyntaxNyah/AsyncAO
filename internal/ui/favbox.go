@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -31,12 +32,7 @@ const (
 func (a *App) favBoxRect(w, h int32) sdl.Rect {
 	n := int32(len(a.favBoxList))
 	cols := n
-	if cols > favBoxCols {
-		cols = favBoxCols
-	}
-	if cols < 1 {
-		cols = 1
-	}
+	cols = value.Clamp(cols, 1, favBoxCols)
 	rows := (n + cols - 1) / cols
 	if rows < 1 {
 		rows = 1
@@ -66,7 +62,7 @@ func (a *App) favBoxRect(w, h int32) sdl.Rect {
 	if maxY < 8 {
 		maxY = 8
 	}
-	return sdl.Rect{X: clampI32(x, 8, maxX), Y: clampI32(y, 8, maxY), W: bw, H: bh}
+	return sdl.Rect{X: value.Clamp(x, 8, maxX), Y: value.Clamp(y, 8, maxY), W: bw, H: bh}
 }
 
 // drawFavEmoteBox paints the favourite-emotes box and handles its clicks. It

@@ -1,6 +1,10 @@
 package ui
 
-import "unicode/utf8"
+import (
+	"unicode/utf8"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+)
 
 // Inline AO markup, made reachable without memorising the code language (#131).
 // The chatbox already renders every one of these codes (typewriter.go); this is
@@ -11,12 +15,7 @@ import "unicode/utf8"
 // no SDL — so the splice is drivable in a test.
 func insertRunesAt(s string, at int, code string) string {
 	rs := []rune(s)
-	if at < 0 {
-		at = 0
-	}
-	if at > len(rs) {
-		at = len(rs)
-	}
+	at = value.Clamp(at, 0, len(rs))
 	out := make([]rune, 0, len(rs)+utf8.RuneCountInString(code))
 	out = append(out, rs[:at]...)
 	out = append(out, []rune(code)...)

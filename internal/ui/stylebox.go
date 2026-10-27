@@ -8,6 +8,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
@@ -48,8 +49,8 @@ func (a *App) drawStylePathEditor(x, y int32, p config.SpriteStylePref) int32 {
 	}
 	if a.pathDrawing && c.mouseDown && len(a.pathStroke) < pathStrokeCap {
 		a.pathStroke = append(a.pathStroke, sdl.Point{
-			X: int32(clampInt(int(c.mouseX), int(box.X), int(box.X+box.W))),
-			Y: int32(clampInt(int(c.mouseY), int(box.Y), int(box.Y+box.H))),
+			X: int32(value.Clamp(int(c.mouseX), int(box.X), int(box.X+box.W))),
+			Y: int32(value.Clamp(int(c.mouseY), int(box.Y), int(box.Y+box.H))),
 		})
 	}
 	if a.pathDrawing && !c.mouseDown { // release: a real drag samples a new path; a tap adds one point
@@ -59,8 +60,8 @@ func (a *App) drawStylePathEditor(x, y int32, p config.SpriteStylePref) int32 {
 			p.Path, p.PathLen = samplePathStroke(a.pathStroke, box)
 			a.d.Prefs.SetSpriteStyle(p)
 		case inBox && int(p.PathLen) < len(p.Path):
-			gx := uint8(clampInt(int((c.mouseX-box.X)*16/box.W), 0, 15))
-			gy := uint8(clampInt(int((c.mouseY-box.Y)*16/box.H), 0, 15))
+			gx := uint8(value.Clamp(int((c.mouseX-box.X)*16/box.W), 0, 15))
+			gy := uint8(value.Clamp(int((c.mouseY-box.Y)*16/box.H), 0, 15))
 			p.Path[p.PathLen] = gx<<4 | gy
 			p.PathLen++
 			a.d.Prefs.SetSpriteStyle(p)
@@ -141,8 +142,8 @@ func samplePathStroke(stroke []sdl.Point, box sdl.Rect) (pts [16]uint8, count ui
 	}
 	for i := 0; i < k; i++ {
 		sp := stroke[i*(n-1)/(k-1)] // evenly spaced, including the first + last points
-		gx := uint8(clampInt(int((sp.X-box.X)*16/box.W), 0, 15))
-		gy := uint8(clampInt(int((sp.Y-box.Y)*16/box.H), 0, 15))
+		gx := uint8(value.Clamp(int((sp.X-box.X)*16/box.W), 0, 15))
+		gy := uint8(value.Clamp(int((sp.Y-box.Y)*16/box.H), 0, 15))
 		pts[i] = gx<<4 | gy
 	}
 	return pts, uint8(k)
@@ -381,7 +382,7 @@ func (a *App) styleBoxRect(w, h int32) (sdl.Rect, int32) {
 	if maxY < 8 {
 		maxY = 8
 	}
-	return sdl.Rect{X: clampI32(x, 8, maxX), Y: clampI32(y, 8, maxY), W: bw, H: bh}, fullH
+	return sdl.Rect{X: value.Clamp(x, 8, maxX), Y: value.Clamp(y, 8, maxY), W: bw, H: bh}, fullH
 }
 
 // drawSpriteStyleBox paints the floating Sprite Style panel and handles its input.
@@ -425,12 +426,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		maxScroll = 0
 	}
 	a.styleBoxScroll -= c.WheelIn(bodyRect) * scrollStepPx
-	if a.styleBoxScroll < 0 {
-		a.styleBoxScroll = 0
-	}
-	if a.styleBoxScroll > maxScroll {
-		a.styleBoxScroll = maxScroll
-	}
+	a.styleBoxScroll = value.Clamp(a.styleBoxScroll, 0, maxScroll)
 	// pushClip (not a raw SetClipRect) so hovering() honours the clip: a slider,
 	// swatch or checkbox scrolled behind the title bar / off the bottom must not
 	// hit-test in its hidden half (raw clips draw-only — the click leaks past the
@@ -569,7 +565,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		// Derived from the stored RGB, so the swatches and RGB sliders move it.
 		// The wheel helpers work in h ∈ [0,1]; the slider shows degrees.
 		hue, _, _ := rgbToHSV(p.R, p.G, p.B)
-		huePos := clampI32(int32(hue*360+0.5), 0, 359)
+		huePos := value.Clamp(int32(hue*360+0.5), 0, 359)
 		c.Label(x, y, "Hue", ColTextDim)
 		if n := c.Slider("styleHue", sdl.Rect{X: x + 44, Y: y, W: r.W - 44 - styleBoxPad*2, H: 14}, huePos, 359); n != huePos {
 			p.R, p.G, p.B = hsvToRGB(float64(n)/360, 1, 1)
@@ -624,7 +620,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 				}
 				y += 20
 				hueB, _, _ := rgbToHSV(p.Paint2R, p.Paint2G, p.Paint2B)
-				hbPos := clampI32(int32(hueB*360+0.5), 0, 359)
+				hbPos := value.Clamp(int32(hueB*360+0.5), 0, 359)
 				c.Label(x, y, "Hue B", ColTextDim)
 				if n := c.Slider("paintHueB", sdl.Rect{X: x + 44, Y: y, W: r.W - 44 - styleBoxPad*2, H: 14}, hbPos, 359); n != hbPos {
 					p.Paint2R, p.Paint2G, p.Paint2B = hsvToRGB(float64(n)/360, 1, 1)

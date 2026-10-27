@@ -10,6 +10,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
@@ -205,12 +206,7 @@ func (a *Audio) SetAlertVolume(pct int) { a.alertVol = pct }
 // 100 = full blip volume, M11). Multiplied into the blip channel volume at the
 // next blip play; set once per message by the courtroom from per-char prefs.
 func (a *Audio) SetBlipScale(pct int) {
-	if pct < 0 {
-		pct = 0
-	}
-	if pct > fullVolumePercent {
-		pct = fullVolumePercent
-	}
+	pct = value.Clamp(pct, 0, fullVolumePercent)
 	a.blipScale = pct
 }
 

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -399,11 +400,7 @@ func parseRGBTuple(raw string) (theme.RGB, bool) {
 		if err != nil {
 			return theme.RGB{}, false
 		}
-		if n < 0 {
-			n = 0
-		} else if n > 255 {
-			n = 255
-		}
+		n = value.Clamp(n, 0, 255)
 		rgb[i] = uint8(n)
 	}
 	return theme.RGB{R: rgb[0], G: rgb[1], B: rgb[2]}, true

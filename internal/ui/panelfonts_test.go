@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -53,7 +54,7 @@ func TestPxToScalePctRoundTrips(t *testing.T) {
 	for px := config.PanelFontMinPx; px <= config.PanelFontMaxPx; px++ {
 		pct := pxToScalePct(px)
 		got := UIFontSize * pct / DefaultScalePct
-		want := clampInt(px, UIFontSize*themeFontMinPct/DefaultScalePct, UIFontSize*themeFontMaxPct/DefaultScalePct)
+		want := value.Clamp(px, UIFontSize*themeFontMinPct/DefaultScalePct, UIFontSize*themeFontMaxPct/DefaultScalePct)
 		if got != want {
 			t.Errorf("%d px -> %d%% -> reopens at %d px, want %d", px, pct, got, want)
 		}

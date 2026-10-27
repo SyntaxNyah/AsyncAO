@@ -19,6 +19,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -1013,8 +1014,8 @@ func (a *App) evidPanelRect(w, h int32) sdl.Rect {
 		return r
 	}
 	if !a.evidWin.placed {
-		dw := clampI32(evidPanelDefW, evidPanelMinW, w-2*floatWinMargin)
-		dh := clampI32(evidPanelDefH, evidPanelMinH, h-2*floatWinMargin)
+		dw := value.Clamp(evidPanelDefW, evidPanelMinW, w-2*floatWinMargin)
+		dh := value.Clamp(evidPanelDefH, evidPanelMinH, h-2*floatWinMargin)
 		return sdl.Rect{X: floatWinMargin, Y: floatTitleH, W: dw, H: dh}
 	}
 	return a.evidWin.rect(evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, w, h)
@@ -1637,8 +1638,8 @@ func (a *App) modcallPanelRect(w, h int32) sdl.Rect {
 		return r
 	}
 	if !a.modcallWin.placed {
-		dw := clampI32(modcallPanelDefW, modcallPanelMinW, w-2*floatWinMargin)
-		dh := clampI32(modcallPanelDefH, modcallPanelMinH, h-2*floatWinMargin)
+		dw := value.Clamp(modcallPanelDefW, modcallPanelMinW, w-2*floatWinMargin)
+		dh := value.Clamp(modcallPanelDefH, modcallPanelMinH, h-2*floatWinMargin)
 		return sdl.Rect{X: floatWinMargin, Y: floatTitleH, W: dw, H: dh}
 	}
 	return a.modcallWin.rect(modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, w, h)

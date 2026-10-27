@@ -17,6 +17,8 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 	xdraw "golang.org/x/image/draw"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 //go:embed assets/mayo.png
@@ -82,8 +84,8 @@ func (a *App) mayoTexture() (*sdl.Texture, int32, int32) {
 	}
 	// Physical pixels actually shown = logical × UI scale. Bake exactly that (1:1),
 	// capped at the source resolution so we never upscale past the art.
-	physW := clampInt(int(logW)*scale/100, 1, sb.Dx())
-	physH := clampInt(int(logH)*scale/100, 1, sb.Dy())
+	physW := value.Clamp(int(logW)*scale/100, 1, sb.Dx())
+	physH := value.Clamp(int(logH)*scale/100, 1, sb.Dy())
 	dst := image.NewRGBA(image.Rect(0, 0, physW, physH))
 	xdraw.CatmullRom.Scale(dst, dst.Bounds(), src, sb, xdraw.Src, nil)
 

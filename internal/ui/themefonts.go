@@ -29,6 +29,7 @@ import (
 	"github.com/veandco/go-sdl2/ttf"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/safepath"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -172,7 +173,7 @@ func (a *App) elemPct(el themeFontElem, userPct int) int {
 	if f.pct == 0 {
 		return userPct
 	}
-	return clampInt(f.pct*userPct/DefaultScalePct, themeFontMinPct, themeFontMaxPct)
+	return value.Clamp(f.pct*userPct/DefaultScalePct, themeFontMinPct, themeFontMaxPct)
 }
 
 // elemChat reports whether element el draws out of the CHAT font set rather than
@@ -556,7 +557,7 @@ func pxToScalePct(px int) int {
 	if px <= 0 {
 		return 0
 	}
-	return clampInt((px*DefaultScalePct+UIFontSize-1)/UIFontSize, themeFontMinPct, themeFontMaxPct)
+	return value.Clamp((px*DefaultScalePct+UIFontSize-1)/UIFontSize, themeFontMinPct, themeFontMaxPct)
 }
 
 // themeMissingFamilyCap bounds the reported list. A theme names at most one

@@ -31,6 +31,7 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -1445,7 +1446,7 @@ func (a *App) editorSpinner(r sdl.Rect, v, lo, hi int32) int32 {
 		v += step
 	}
 	c.LabelClipped(r.X+editStepW+2, r.Y+3, r.W-editStepW*2-4, strconv.Itoa(int(v)), ColText)
-	return clampInt32(v, lo, hi)
+	return value.Clamp(v, lo, hi)
 }
 
 // editorEnumCycler is a < name > control over the format's own wire names.

@@ -43,6 +43,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -339,11 +340,11 @@ func genParseParams(g theme.GeneratorSpec) GenParams {
 			// measurement, and every value of it is equally legal.
 			p.Ints[genSlotSeed-genSlotPitch] = int32(genAtoi(kv.Value))
 		case genSlotPitch, genSlotSize, genSlotCount:
-			p.Ints[slot-genSlotPitch] = int32(clampInt(genAtoi(kv.Value), 0, int(genIntParamMax)))
+			p.Ints[slot-genSlotPitch] = int32(value.Clamp(genAtoi(kv.Value), 0, int(genIntParamMax)))
 		case genSlotAngle:
 			p.Angle = uint8(genAtoi(kv.Value) % theme.AngleCount)
 		case genSlotPct0, genSlotPct1:
-			p.Pcts[slot-genSlotPct0] = int16(clampInt(genAtoi(kv.Value), 0, int(genPctMax)))
+			p.Pcts[slot-genSlotPct0] = int16(value.Clamp(genAtoi(kv.Value), 0, int(genPctMax)))
 		}
 	}
 	return p
@@ -537,7 +538,7 @@ func drawHalftone(w, h int32, p GenParams) *image.RGBA {
 	// Bounded by the TILE for the same reason the hex lattice is: the dot radius is
 	// a third of the cell, and a cell larger than the tile makes it the disc
 	// rasteriser's whole cost with none of it visible.
-	cell := min32(p.pitchOr(6), theme.GenTileMaxPx)
+	cell := min(p.pitchOr(6), theme.GenTileMaxPx)
 	// Diameter as a percent of the cell, so the radius is pct/200 of it.
 	radius := float64(cell) * float64(p.pctOr(0, genHalftoneDotPct)) / 200
 	// The stagger is the angle's sine, so 0 is a square lattice and 64 (90°) is the
@@ -567,10 +568,10 @@ func genDisc(img *image.RGBA, cx, cy, r float64, c color.RGBA) {
 	// correct and useless: it still visits every coordinate in the disc's bounding
 	// box, which for a hostile radius is billions of them for a 256² tile.
 	b := img.Bounds()
-	x0 := max32(int32(math.Floor(cx-r-1)), int32(b.Min.X))
-	x1 := min32(int32(math.Ceil(cx+r+1)), int32(b.Max.X)-1)
-	y0 := max32(int32(math.Floor(cy-r-1)), int32(b.Min.Y))
-	y1 := min32(int32(math.Ceil(cy+r+1)), int32(b.Max.Y)-1)
+	x0 := max(int32(math.Floor(cx-r-1)), int32(b.Min.X))
+	x1 := min(int32(math.Ceil(cx+r+1)), int32(b.Max.X)-1)
+	y0 := max(int32(math.Floor(cy-r-1)), int32(b.Min.Y))
+	y1 := min(int32(math.Ceil(cy+r+1)), int32(b.Max.Y)-1)
 	for y := y0; y <= y1; y++ {
 		for x := x0; x <= x1; x++ {
 			d := math.Hypot(float64(x)+0.5-cx, float64(y)+0.5-cy)
@@ -637,7 +638,7 @@ func drawHex(w, h int32, p GenParams) *image.RGBA {
 	line := float64(p.sizeOr(1))
 	// Bounded by the TILE: a hexagon larger than the tile it lives in is a straight
 	// line through it, and its circumradius is what genLine's walk is a function of.
-	r := float64(min32(p.pitchOr(20), theme.GenTileMaxPx)) / 2
+	r := float64(min(p.pitchOr(20), theme.GenTileMaxPx)) / 2
 	// Two lattice centres per tile (the offset row), so the pattern closes.
 	for _, c := range [2][2]float64{{0, 0}, {float64(w) * 0.5, float64(h) * 0.5}} {
 		for dy := -1; dy <= 1; dy++ {
@@ -1136,7 +1137,7 @@ func frameAlong(x, y, w, h int32, dx, dy float64) float64 {
 // perspective ellipse (default 100).
 func tileRadial(p GenParams) (int32, int32) {
 	r := p.sizeOr(64)
-	n := int32(clampInt(int(p.countOr(1)), 1, int(genRepeatCap)))
+	n := int32(value.Clamp(int(p.countOr(1)), 1, int(genRepeatCap)))
 	return clampTilePx(r * 2 * n), clampTilePx(r * 2 * n)
 }
 
@@ -1146,8 +1147,8 @@ func drawRadial(w, h int32, p GenParams) *image.RGBA {
 	// Both counts are clamped, not merely defaulted: `count` and `pitch` are what
 	// decide how many figures get drawn, so they are the two knobs a hostile file
 	// would reach for.
-	reps := int32(clampInt(int(p.countOr(1)), 1, int(genRepeatCap)))
-	rays := int32(clampInt(int(p.pitchOr(12)), 1, int(genFigureCap)))
+	reps := int32(value.Clamp(int(p.countOr(1)), 1, int(genRepeatCap)))
+	rays := int32(value.Clamp(int(p.pitchOr(12)), 1, int(genFigureCap)))
 	inner := float64(p.pctOr(0, 0)) / float64(genPctMax)
 	squash := float64(p.pctOr(1, genPctMax)) / float64(genPctMax)
 	if squash <= 0 {
@@ -1164,7 +1165,7 @@ func drawRadial(w, h int32, p GenParams) *image.RGBA {
 			if p.accent().A > 0 {
 				genDisc(img, cx, cy, rOut*squash, p.accent())
 			}
-			jitter := genUnit(rx, ry, seed) * 2 * math.Pi / float64(max32(rays, 1))
+			jitter := genUnit(rx, ry, seed) * 2 * math.Pi / float64(max(rays, 1))
 			for i := int32(0); i < rays; i++ {
 				a := float64(i)*2*math.Pi/float64(rays) + genAngleRad(p.Angle) + jitter
 				x0 := cx + rOut*inner*math.Cos(a)
@@ -1174,7 +1175,7 @@ func drawRadial(w, h int32, p GenParams) *image.RGBA {
 				// A hairline at inner=100, a wedge as inner falls: the STROKE width is
 				// what carries the difference, because a true wedge polygon would need a
 				// scanline fill for a shape that reads identically at tile size.
-				width := 1 + (1-inner)*rOut*math.Pi/float64(max32(rays, 1))
+				width := 1 + (1-inner)*rOut*math.Pi/float64(max(rays, 1))
 				genLine(img, x0, y0, x1, y1, width, p.tint())
 			}
 			if p.shadow().A > 0 {
@@ -1213,7 +1214,7 @@ func drawMottle(w, h int32, p GenParams) *image.RGBA {
 	img := genNewTile(w, h)
 	genFill(img, p.bg())
 	base := p.pitchOr(32)
-	octaves := clampInt(int(p.sizeOr(2)), 1, 4)
+	octaves := value.Clamp(int(p.sizeOr(2)), 1, 4)
 	specks := p.countOr(0)
 	fade := float64(p.pctOr(0, 0)) / float64(genPctMax)
 	amp := float64(p.pctOr(1, genPctMax)) / float64(genPctMax)
@@ -1229,7 +1230,7 @@ func drawMottle(w, h int32, p GenParams) *image.RGBA {
 				gain := 1 / math.Pow(2, float64(o))
 				v += gain * genValueNoise(float64(x), float64(y), cell, w, seed+int32(o))
 				weight += gain
-				cell = max32(cell/2, 1)
+				cell = max(cell/2, 1)
 			}
 			v /= weight
 			ink := p.tint()
@@ -1322,7 +1323,7 @@ func drawSkyline(w, h int32, p GenParams) *image.RGBA {
 	genFill(img, p.bg())
 	seg := p.pitchOr(16)
 	peak := float64(p.sizeOr(48))
-	ranges := clampInt(int(p.countOr(1)), 1, 3)
+	ranges := value.Clamp(int(p.countOr(1)), 1, 3)
 	baseline := float64(p.pctOr(0, 0)) / float64(genPctMax)
 	seed := p.seed()
 	// Back to front, so the nearer range occludes the further one.
@@ -1381,8 +1382,8 @@ func drawWingmark(w, h int32, p GenParams) *image.RGBA {
 	genFill(img, p.bg())
 	// Bounded by HALF the tile: a mark bigger than the tile it scatters into cannot
 	// read as a mark, and its arcs are what genLine's walk is a function of.
-	size := float64(min32(p.sizeOr(12), theme.GenTileMaxPx/2))
-	marks := int32(clampInt(int(p.countOr(6)), 1, int(genFigureCap)))
+	size := float64(min(p.sizeOr(12), theme.GenTileMaxPx/2))
+	marks := int32(value.Clamp(int(p.countOr(6)), 1, int(genFigureCap)))
 	full := float64(p.pctOr(1, genPctMax)) / float64(genPctMax)
 	seed := p.seed()
 	for i := int32(0); i < marks; i++ {

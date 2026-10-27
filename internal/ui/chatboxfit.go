@@ -24,6 +24,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
@@ -524,7 +525,7 @@ func foldCanvasFontPct(pct, canvasPct, devPct int) int {
 	if canvasPct == DefaultScalePct || canvasPct <= 0 {
 		return pct // 1:1 canvas (the Native default): identity, not arithmetic
 	}
-	return canonFontPct(clampInt(pct*canvasPct/DefaultScalePct, themeFontMinPct, themedCanvasFontMaxPct), devPct)
+	return canonFontPct(value.Clamp(pct*canvasPct/DefaultScalePct, themeFontMinPct, themedCanvasFontMaxPct), devPct)
 }
 
 // canonFontPct snaps a scale to the SMALLEST percent that opens the very same

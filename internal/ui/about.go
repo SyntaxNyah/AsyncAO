@@ -11,6 +11,7 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -206,12 +207,7 @@ func (a *App) drawAbout(w, h int32) {
 
 	// --- centered reading column --------------------------------------------
 	colW := w - 2*pad - scrollBarW - 2*pad
-	if colW > aboutMaxColW {
-		colW = aboutMaxColW
-	}
-	if colW < 200 {
-		colW = 200
-	}
+	colW = value.Clamp(colW, 200, aboutMaxColW)
 	x0 := (w - scrollBarW - colW) / 2
 	if x0 < pad {
 		x0 = pad
@@ -251,12 +247,7 @@ func (a *App) drawAbout(w, h int32) {
 		maxScroll = 0
 	}
 	a.aboutScroll -= c.WheelIn(sdl.Rect{X: 0, Y: top, W: w, H: viewH}) * scrollStepPx
-	if a.aboutScroll < 0 {
-		a.aboutScroll = 0
-	}
-	if a.aboutScroll > maxScroll {
-		a.aboutScroll = maxScroll
-	}
+	a.aboutScroll = value.Clamp(a.aboutScroll, 0, maxScroll)
 
 	// #31: pushClip (not a raw SetClipRect) so hovering() honours the clip —
 	// a link Button or the Mayo portrait scrolled behind the header must not
@@ -490,11 +481,7 @@ func (a *App) updateAndDrawRoamers(c *Ctx, tex *sdl.Texture, box sdl.Rect) {
 	now := a.now()
 	dt := now.Sub(a.mayoRoamAt)
 	a.mayoRoamAt = now
-	if dt < 0 {
-		dt = 0
-	} else if dt > roamerDtCap {
-		dt = roamerDtCap
-	}
+	dt = value.Clamp(dt, 0, roamerDtCap)
 	secs := dt.Seconds()
 	for i := range a.mayoRoamers {
 		r := &a.mayoRoamers[i]
@@ -533,15 +520,8 @@ func (g aboutLinkGroup) height(lineH int32) int32 {
 		hgt += lineH + aboutTitleGap
 	}
 	n := int32(len(g.items))
-	hgt += n*btnH + max32(0, n-1)*aboutLinkGap
+	hgt += n*btnH + max(0, n-1)*aboutLinkGap
 	return hgt
-}
-
-func max32(a, b int32) int32 {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // aboutGroupsCache holds the parsed link groups (aboutLinks is static).

@@ -599,21 +599,11 @@ func (a *App) drawEditorPreviewFigure(vp sdl.Rect) {
 		if y >= bottom {
 			break
 		}
-		w := neckW + (figW-neckW)*minInt32(i+1, editorPreviewFigureBandCnt/3)/(editorPreviewFigureBandCnt/3)
+		w := neckW + (figW-neckW)*min(i+1, editorPreviewFigureBandCnt/3)/(editorPreviewFigureBandCnt/3)
 		h := bandH
 		if y+h > bottom {
 			h = bottom - y
 		}
 		c.Fill(sdl.Rect{X: cx - w/2, Y: y, W: w, H: h}, ink)
 	}
-}
-
-// minInt32 is the taper's clamp. Named rather than inlined because the expression
-// it sits inside is already an interpolation and a second `if` in there is where a
-// polarity slip hides.
-func minInt32(a, b int32) int32 {
-	if a < b {
-		return a
-	}
-	return b
 }

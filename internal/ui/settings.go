@@ -9,6 +9,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 	"github.com/SyntaxNyah/AsyncAO/internal/videoenc"
 )
@@ -689,12 +690,7 @@ func (a *App) drawSettings(w, h int32) {
 	// pad-relative layout onto formX so every box lands inside this card.
 	cardX := pad + settSidebarW + settSidebarGap
 	cardW := (w - scrollBarW - pad) - cardX
-	if cardW > settMaxCardW {
-		cardW = settMaxCardW
-	}
-	if cardW < settMinCardW {
-		cardW = settMinCardW
-	}
+	cardW = value.Clamp(cardW, settMinCardW, settMaxCardW)
 	a.formX = cardX + settCardPadX
 	a.formW = cardW - 2*settCardPadX
 	// F2: no chrome label may draw past the card. The settings rows carry sentence-
@@ -1044,7 +1040,7 @@ func (a *App) fpsSettingRow(y int32, id, label string, min, max, def, zeroValue 
 		passed = cur
 	}
 	track := sdl.Rect{X: pad + 210, Y: y + 2, W: 170, H: 16}
-	raw := int(clampI32(c.Slider(id, track, int32(passed), int32(max)), 0, int32(max)))
+	raw := int(value.Clamp(c.Slider(id, track, int32(passed), int32(max)), 0, int32(max)))
 	nv := raw
 	if raw == 0 {
 		nv = zeroValue // bottom of the track: off (Idle/Background) or the min cap (Active)
@@ -1124,7 +1120,7 @@ func (a *App) numSliderRow(y int32, id, label string, min, max, step, def int, g
 
 	cur := get()
 	track := sdl.Rect{X: pad + 210, Y: y + 2, W: 110, H: 16}
-	raw := int(clampI32(c.Slider(id, track, int32(cur), int32(max)), 0, int32(max)))
+	raw := int(value.Clamp(c.Slider(id, track, int32(cur), int32(max)), 0, int32(max)))
 	nv := raw
 	if nv != 0 && nv < min {
 		nv = 0 // below the floor -> the off/default sentinel
@@ -1526,12 +1522,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
 		nph += int(c.wheelY) * 16
 	}
-	if nph < config.MinPreviewHeightPx {
-		nph = config.MinPreviewHeightPx
-	}
-	if nph > config.MaxPreviewHeightPx {
-		nph = config.MaxPreviewHeightPx
-	}
+	nph = value.Clamp(nph, config.MinPreviewHeightPx, config.MaxPreviewHeightPx)
 	c.Label(pad+298, y+4, strconv.Itoa(nph)+" px", ColTextDim)
 	c.Label(pad+360, y+4, "default size of the sprite preview pop-up (384 px default; the corner grip still resizes per session)", ColTextDim)
 	if nph != ph {

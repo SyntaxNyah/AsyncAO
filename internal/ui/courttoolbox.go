@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -660,8 +661,8 @@ func (a *App) compactToolboxStripRect(w, h int32) sdl.Rect {
 	// classic slotICFx. Keep the intrinsic (move-only) W/H; clamp on-window.
 	if a.toolboxThemeRectOn {
 		cur := def
-		cur.X = clampI32(a.toolboxThemeRect.X, compactToolboxMargin, w-def.W-compactToolboxMargin)
-		cur.Y = clampI32(a.toolboxThemeRect.Y, compactToolboxMargin, h-def.H-compactToolboxMargin)
+		cur.X = value.Clamp(a.toolboxThemeRect.X, compactToolboxMargin, w-def.W-compactToolboxMargin)
+		cur.Y = value.Clamp(a.toolboxThemeRect.Y, compactToolboxMargin, h-def.H-compactToolboxMargin)
 		return cur
 	}
 	cur := def
@@ -673,8 +674,8 @@ func (a *App) compactToolboxStripRect(w, h int32) sdl.Rect {
 		// the override's X/Y and always restore the intrinsic size. Clamp X/Y so a
 		// moved toolbox can't sail off a now-smaller window (ungrabbable).
 		cur.W, cur.H = def.W, def.H
-		cur.X = clampI32(cur.X, compactToolboxMargin, w-def.W-compactToolboxMargin)
-		cur.Y = clampI32(cur.Y, compactToolboxMargin, h-def.H-compactToolboxMargin)
+		cur.X = value.Clamp(cur.X, compactToolboxMargin, w-def.W-compactToolboxMargin)
+		cur.Y = value.Clamp(cur.Y, compactToolboxMargin, h-def.H-compactToolboxMargin)
 	}
 	// Register with the editor while editing (so it hands the toolbox move handles),
 	// exactly as slotRect does — but with the NORMALIZED rect, so the editor's drag
@@ -746,12 +747,7 @@ func (a *App) toolboxPiecesRect(w, h int32) sdl.Rect {
 	}
 	// Clamp to the window (leave the toolbox strip + a small margin below).
 	maxH := h - (compactGripH + 2*compactToolboxMargin) - toolboxPiecesTopGap
-	if panelH > maxH {
-		panelH = maxH
-	}
-	if panelH < toolboxPiecesMinH {
-		panelH = toolboxPiecesMinH
-	}
+	panelH = value.Clamp(panelH, toolboxPiecesMinH, maxH)
 	pw := toolboxPiecesW
 	if pw > w-2*compactToolboxMargin {
 		pw = w - 2*compactToolboxMargin

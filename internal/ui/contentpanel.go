@@ -30,6 +30,7 @@ import (
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -639,8 +640,8 @@ func (a *App) drawContentPanel(w, h int32) {
 		cpMinW = 360
 		cpMinH = 260
 	)
-	pw := clampI32(w-2*cpModalMargin, cpMinW, cpMaxW)
-	ph := clampI32(h-2*cpModalMargin, cpMinH, cpMaxH)
+	pw := value.Clamp(w-2*cpModalMargin, cpMinW, cpMaxW)
+	ph := value.Clamp(h-2*cpModalMargin, cpMinH, cpMaxH)
 	px := (w - pw) / 2
 	py := (h - ph) / 2
 	panel := sdl.Rect{X: px, Y: py, W: pw, H: ph}
@@ -789,12 +790,7 @@ func (a *App) drawContentList(s *contentPanelState, rep *ContentReport, inX, lis
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
-	if s.scroll > maxScroll {
-		s.scroll = maxScroll
-	}
-	if s.scroll < 0 {
-		s.scroll = 0
-	}
+	s.scroll = value.Clamp(s.scroll, 0, maxScroll)
 	if rowCount == 0 {
 		c.LabelClipped(inX+8, listTop+6, inW-16, "No missing content — every referenced asset was found.", ColAccent)
 		return

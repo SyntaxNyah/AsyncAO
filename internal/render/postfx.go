@@ -5,6 +5,8 @@ import (
 	"math/rand"
 
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 // Post-processing overlays (#10): retro / CRT looks blended OVER the composited stage —
@@ -186,7 +188,7 @@ func buildVignette(ren *sdl.Renderer) *sdl.Texture {
 			if d > vignetteInner {
 				a = (d - vignetteInner) / (1 - vignetteInner)
 			}
-			pix[(y*n+x)*4+3] = byte(clampF(a, 0, 1) * vignetteMaxA) // black, alpha = darkness
+			pix[(y*n+x)*4+3] = byte(value.Clamp(a, 0, 1) * vignetteMaxA) // black, alpha = darkness
 		}
 	}
 	t, err := uploadPixels(ren, pix, n, n)
@@ -237,14 +239,4 @@ func (v *Viewport) PurgePostFX() {
 		}
 	}
 	v.particles.purge() // #124 free the cached weather dot texture too
-}
-
-func clampF(v, lo, hi float64) float64 {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
 }

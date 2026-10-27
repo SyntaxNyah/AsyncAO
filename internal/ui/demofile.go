@@ -11,6 +11,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -70,12 +71,7 @@ func fixDemoWaitDesync(records []string) []string {
 	for _, r := range records {
 		if !strings.HasPrefix(r, "SC#") && strings.HasPrefix(r, "wait#") {
 			at := len(out) - 1
-			if at < 1 {
-				at = 1
-			}
-			if at > len(out) {
-				at = len(out)
-			}
+			at = value.Clamp(at, 1, len(out))
 			out = append(out, "")
 			copy(out[at+1:], out[at:])
 			out[at] = r

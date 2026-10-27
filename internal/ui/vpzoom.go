@@ -7,7 +7,11 @@ package ui
 // magnify together with zero render-package changes. Sprite dragging
 // pauses while zoomed (zoom is a viewing mode; hit rects assume 1×).
 
-import "github.com/veandco/go-sdl2/sdl"
+import (
+	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+)
 
 const (
 	// vpZoomMax bounds the camera (6× turns a 256-px-tall sprite into
@@ -121,10 +125,10 @@ func (a *App) handleViewportZoom(vp sdl.Rect, inChatBox bool) {
 		zh := float64(vp.H) * z
 		// Solve pan so u stays under the cursor: dst.X = mouseX - u*zw.
 		if zw > float64(vp.W) {
-			a.vpPanX = clampFrac((u*zw - float64(c.mouseX-vp.X)) / (zw - float64(vp.W)))
+			a.vpPanX = value.Clamp((u*zw-float64(c.mouseX-vp.X))/(zw-float64(vp.W)), 0, 1)
 		}
 		if zh > float64(vp.H) {
-			a.vpPanY = clampFrac((v*zh - float64(c.mouseY-vp.Y)) / (zh - float64(vp.H)))
+			a.vpPanY = value.Clamp((v*zh-float64(c.mouseY-vp.Y))/(zh-float64(vp.H)), 0, 1)
 		}
 	}
 
@@ -147,21 +151,10 @@ func (a *App) handleViewportZoom(vp sdl.Rect, inChatBox bool) {
 		overX := float64(vp.W) * (a.vpZoom - 1)
 		overY := float64(vp.H) * (a.vpZoom - 1)
 		if overX > 0 {
-			a.vpPanX = clampFrac(a.zoomBase[0] - float64(c.mouseX-a.zoomStart[0])/overX)
+			a.vpPanX = value.Clamp(a.zoomBase[0]-float64(c.mouseX-a.zoomStart[0])/overX, 0, 1)
 		}
 		if overY > 0 {
-			a.vpPanY = clampFrac(a.zoomBase[1] - float64(c.mouseY-a.zoomStart[1])/overY)
+			a.vpPanY = value.Clamp(a.zoomBase[1]-float64(c.mouseY-a.zoomStart[1])/overY, 0, 1)
 		}
 	}
-}
-
-// clampFrac clamps to [0, 1].
-func clampFrac(f float64) float64 {
-	if f < 0 {
-		return 0
-	}
-	if f > 1 {
-		return 1
-	}
-	return f
 }

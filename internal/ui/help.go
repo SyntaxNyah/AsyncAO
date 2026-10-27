@@ -2,6 +2,8 @@ package ui
 
 import (
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 // The in-app Help screen: a glossary of Attorney Online terms (and, in its
@@ -192,12 +194,7 @@ func (a *App) drawHelp(w, h int32) {
 
 	// Centered reading column (mirrors drawChangelog).
 	colW := w - 2*pad - scrollBarW - 2*pad
-	if colW > aboutMaxColW {
-		colW = aboutMaxColW
-	}
-	if colW < 200 {
-		colW = 200
-	}
+	colW = value.Clamp(colW, 200, aboutMaxColW)
 	x0 := (w - scrollBarW - colW) / 2
 	if x0 < pad {
 		x0 = pad

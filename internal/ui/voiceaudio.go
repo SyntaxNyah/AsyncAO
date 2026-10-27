@@ -4,11 +4,13 @@ package ui
 
 import (
 	"encoding/base64"
+	"math"
 	"time"
 	"unsafe"
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/voice"
 )
 
@@ -160,7 +162,7 @@ func (e *voiceEngine) setMuted(m bool) {
 }
 func (e *voiceEngine) setOutVol(v int) {
 	if e != nil {
-		e.outVol = clampInt(v, 0, 100)
+		e.outVol = value.Clamp(v, 0, 100)
 	}
 }
 
@@ -334,12 +336,7 @@ func mixFrames(out []int16, acc []int32, frames [][]int16, vol int) bool {
 	}
 	for i := range out {
 		v := acc[i] * int32(vol) / 100
-		if v > 32767 {
-			v = 32767
-		} else if v < -32768 {
-			v = -32768
-		}
-		out[i] = int16(v)
+		out[i] = int16(value.Clamp(v, math.MinInt16, math.MaxInt16))
 	}
 	return true
 }

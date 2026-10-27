@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -363,7 +364,7 @@ func (a *App) wheelHexEditor(y int32, fieldID string, hexBuf *string, cur sdl.Co
 	knobY := slR.Y + int32((1-vv)*float64(slR.H-4))
 	c.Border(sdl.Rect{X: slR.X - 2, Y: knobY, W: slR.W + 4, H: 4}, ColText)
 	if c.mouseDown && c.hovering(slR) {
-		nv := clampF64(1-float64(c.mouseY-slR.Y)/float64(slR.H), 0, 1)
+		nv := value.Clamp(1-float64(c.mouseY-slR.Y)/float64(slR.H), 0, 1)
 		nr, ng, nb := hsvToRGB(hh, ss, nv)
 		apply(sdl.Color{R: nr, G: ng, B: nb, A: 255})
 	}

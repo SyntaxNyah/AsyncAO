@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 // Particle weather (#124): an OFF-by-default ambient overlay — snow / rain / sakura / embers
@@ -107,11 +109,7 @@ func (f *particleField) set(w Weather, intensity int) {
 	if w == WeatherNone {
 		return
 	}
-	if intensity < 1 {
-		intensity = 1
-	} else if intensity > 100 {
-		intensity = 100
-	}
+	intensity = value.Clamp(intensity, 1, 100)
 	f.n = maxParticles * intensity / 100
 	if w != f.seededFor {
 		f.reseed(w)
@@ -210,7 +208,7 @@ func (f *particleField) draw(ren *sdl.Renderer, vp sdl.Rect) {
 		px := vp.X + int32((pt.x+sway)*float32(vp.W))
 		py := vp.Y + int32(pt.y*float32(vp.H))
 		if p.fade { // embers dim as they rise (y → 0 near the top)
-			_ = f.tex.SetAlphaMod(uint8(float32(p.alpha) * clampF32(pt.y, 0, 1)))
+			_ = f.tex.SetAlphaMod(uint8(float32(p.alpha) * value.Clamp(pt.y, 0, 1)))
 		}
 		f.dst = sdl.Rect{X: px - w/2, Y: py - h/2, W: w, H: h}
 		_ = ren.Copy(f.tex, nil, &f.dst)
@@ -243,7 +241,7 @@ func buildParticleDot(ren *sdl.Renderer) *sdl.Texture {
 	for y := 0; y < n; y++ {
 		for x := 0; x < n; x++ {
 			d := math.Hypot(float64(x)-c, float64(y)-c) / maxD // 0 centre → 1 edge
-			a := clampF(1-d, 0, 1)
+			a := value.Clamp(1-d, 0, 1)
 			a *= a // softer falloff
 			i := (y*n + x) * 4
 			pix[i], pix[i+1], pix[i+2] = 255, 255, 255
@@ -255,14 +253,4 @@ func buildParticleDot(ren *sdl.Renderer) *sdl.Texture {
 		return nil
 	}
 	return t
-}
-
-func clampF32(v, lo, hi float32) float32 {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
 }

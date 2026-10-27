@@ -21,6 +21,7 @@ import (
 	"github.com/veandco/go-sdl2/ttf"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
@@ -947,7 +948,7 @@ func (a *App) setEffectiveVolumes(master, music, sfx, blip int) {
 // clamps it, applies it, and toasts the new level. Master scales every channel,
 // so this is the quick "turn it down/up" without reaching for a slider.
 func (a *App) nudgeMasterVolume(delta int) {
-	v := clampInt(a.d.Prefs.Load().MasterVol+delta, 0, 100)
+	v := value.Clamp(a.d.Prefs.Load().MasterVol+delta, 0, 100)
 	a.d.Prefs.Update(func(
 		sn *config.
 			Settings) {
