@@ -657,6 +657,10 @@ type App struct {
 	// id is never reused even after a tab closes — a reused id would let a new tab
 	// adopt a dead tab's still-open writer and start appending to its file.
 	nextLogSession int
+	// spriteCapBase is the display-derived decode-downscale base height (set once
+	// from cmd/asyncao); the downscale knobs scale it (config.EffectiveSpriteCap).
+	// App-wide, so it lives here, not in sessionState, which every connect rebuilds.
+	spriteCapBase int
 
 	// --- M13 self-update (one-shot launch check; see internal/update) ---
 	// updateRes carries a newer release found by the off-thread probe; the
