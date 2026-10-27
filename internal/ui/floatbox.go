@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/veandco/go-sdl2/sdl"
 )
@@ -235,53 +236,27 @@ type extrasPalette struct {
 func (a *App) extrasPalette() extrasPalette {
 	bgH, bg2H, brH, tiH, txH, grad := a.d.Prefs.Load().ExtrasBoxStyle()
 	p := extrasPalette{bg: ColPanel, bg2: ColPanel, border: ColAccent, title: ColPanelHi, text: ColText, gradient: grad}
-	if col, ok := parseHexColor(bgH); ok {
+	if c, ok := parse.HexColor(bgH); ok {
+		col := sdl.Color(c)
 		p.bg, p.bg2 = col, col // gradient bottom defaults to the top until set
 	}
-	if col, ok := parseHexColor(bg2H); ok {
+	if c, ok := parse.HexColor(bg2H); ok {
+		col := sdl.Color(c)
 		p.bg2 = col
 	}
-	if col, ok := parseHexColor(brH); ok {
+	if c, ok := parse.HexColor(brH); ok {
+		col := sdl.Color(c)
 		p.border = col
 	}
-	if col, ok := parseHexColor(tiH); ok {
+	if c, ok := parse.HexColor(tiH); ok {
+		col := sdl.Color(c)
 		p.title = col
 	}
-	if col, ok := parseHexColor(txH); ok {
+	if c, ok := parse.HexColor(txH); ok {
+		col := sdl.Color(c)
 		p.text = col
 	}
 	return p
-}
-
-// parseHexColor parses "rrggbb" (optionally "#rrggbb") into an opaque colour.
-// ok=false on empty/invalid input — no allocation, so it's cheap per frame.
-func parseHexColor(s string) (sdl.Color, bool) {
-	s = strings.TrimPrefix(strings.TrimSpace(s), "#")
-	if len(s) != 6 {
-		return sdl.Color{}, false
-	}
-	var rgb [3]uint8
-	for i := 0; i < 3; i++ {
-		hi, ok1 := hexNibble(s[i*2])
-		lo, ok2 := hexNibble(s[i*2+1])
-		if !ok1 || !ok2 {
-			return sdl.Color{}, false
-		}
-		rgb[i] = hi<<4 | lo
-	}
-	return sdl.Color{R: rgb[0], G: rgb[1], B: rgb[2], A: 255}, true
-}
-
-func hexNibble(b byte) (uint8, bool) {
-	switch {
-	case b >= '0' && b <= '9':
-		return b - '0', true
-	case b >= 'a' && b <= 'f':
-		return b - 'a' + 10, true
-	case b >= 'A' && b <= 'F':
-		return b - 'A' + 10, true
-	}
-	return 0, false
 }
 
 // blockingCourtPopup reports a truly BLOCKING courtroom popup — one that takes

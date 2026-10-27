@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 )
 
 // themesFixtureDir holds the hand-authored theme fixtures. They were written
@@ -524,7 +526,7 @@ func fullElement() Element {
 }
 
 // TestWriterNeverEmitsAValueThatReadsAsZero is the writer's half of the parity
-// contract. atoiTrim swallows parse errors ON PURPOSE (AO2 parity), so a
+// contract. parse.AtoiOr swallows parse errors ON PURPOSE (AO2 parity), so a
 // malformed number we emit does not fail — it silently becomes 0, and an
 // element quietly moves to the origin. Nothing we write may depend on that
 // leniency.
@@ -551,7 +553,7 @@ func TestWriterNeverEmitsAValueThatReadsAsZero(t *testing.T) {
 			t.Errorf("%s was never written", key)
 			continue
 		}
-		if got := atoiTrim(raw); got != want {
+		if got := parse.AtoiOr(raw, 0); got != want {
 			t.Errorf("%s = %q reads back as %d, want %d", key, raw, got, want)
 		}
 	}

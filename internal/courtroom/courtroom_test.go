@@ -2968,7 +2968,7 @@ func TestMCLoopingAndEffectsParse(t *testing.T) {
 		t.Errorf("absent effects field must default to 0, got %d", ev[0].MusicEffects)
 	}
 
-	// Malformed effects field degrades to 0 (atoiOr fallback), doesn't drop the event.
+	// Malformed effects field degrades to 0 (parse.AtoiOr fallback), doesn't drop the event.
 	ev = feed(t, s, "MC#Reminiscence.opus#2#DJ#1#0#garbage#%")
 	if len(ev) != 1 || ev[0].MusicEffects != 0 {
 		t.Errorf("malformed effects → events=%+v, want one with Effects=0", ev)

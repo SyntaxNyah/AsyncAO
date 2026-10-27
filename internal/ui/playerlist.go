@@ -20,6 +20,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -902,7 +903,8 @@ const areaHighlightWashAlpha = 56
 // areaHighlightCol resolves the current-area colour: the user's hex pref, or
 // the stock green when unset/malformed.
 func (a *App) areaHighlightCol() sdl.Color {
-	if col, ok := parseHexColor(a.d.Prefs.Load().AreaHighlightHex); ok {
+	if c, ok := parse.HexColor(a.d.Prefs.Load().AreaHighlightHex); ok {
+		col := sdl.Color(c)
 		return col
 	}
 	return areaCurrentDefault

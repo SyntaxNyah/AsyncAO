@@ -95,7 +95,7 @@ func TestARemovalReasonKeepsItsPrefixWhenTheCapBites(t *testing.T) {
 }
 
 // TestTheServerTextCapCountsRunesNotBytes is the Cyrillic half, and it is the reason
-// clampWireBytes (profilewire.go) was not reused.
+// the profile wire's byte cap (text.TruncateBytes) is not used.
 // Exactly serverTextRuneCap Cyrillic runes is TWICE that many bytes. Under a byte cap
 // this payload comes back truncated; under the rune cap it comes back whole. A
 // Russian server's whitelist notice is the shape that makes the difference real.

@@ -9,11 +9,10 @@ package ui
 import (
 	"fmt"
 	"math"
-	"strconv"
-	"strings"
 	"unsafe"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/veandco/go-sdl2/sdl"
 )
@@ -181,19 +180,8 @@ func rgbToHSV(r, g, b uint8) (h, s, v float64) {
 	return h, s, v
 }
 
-// parseHex6 parses "RRGGBB" (with optional leading #) into a packed 0xRRGGBB,
-// reporting success.
-func parseHex6(s string) (int, bool) {
-	s = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(s), "#"))
-	if len(s) != 6 {
-		return 0, false
-	}
-	n, err := strconv.ParseInt(s, 16, 32)
-	if err != nil {
-		return 0, false
-	}
-	return int(n), true
-}
+// packRGB packs 8-bit channels into the 0xRRGGBB int the colour prefs store.
+func packRGB(r, g, b uint8) int { return int(r)<<16 | int(g)<<8 | int(b) }
 
 // ensureColorWheel builds (once) and returns the hue/saturation disc texture:
 // hue around the ring, saturation along the radius, at full value. Pixels
@@ -305,7 +293,7 @@ func (a *App) drawICColorWheel(w, h int32) {
 		if dist := math.Hypot(dx, dy); dist <= rad {
 			nh := math.Atan2(dy, dx) / (2 * math.Pi)
 			nr, ng, nb := hsvToRGB(nh, dist/rad, math.Max(vv, 0.05)) // keep brightness (floor so a black pick still shows hue)
-			a.setICCustomRGB(int(nr)<<16 | int(ng)<<8 | int(nb))
+			a.setICCustomRGB(packRGB(nr, ng, nb))
 		}
 	}
 
@@ -322,7 +310,7 @@ func (a *App) drawICColorWheel(w, h int32) {
 	if c.mouseDown && pointIn(c.mouseX, c.mouseY, sl) {
 		nv := value.Clamp(1-float64(c.mouseY-sl.Y)/float64(sl.H), 0, 1)
 		nr, ng, nb := hsvToRGB(hh, ss, nv)
-		a.setICCustomRGB(int(nr)<<16 | int(ng)<<8 | int(nb))
+		a.setICCustomRGB(packRGB(nr, ng, nb))
 	}
 
 	// Swatch + hex field + Done.
@@ -334,7 +322,8 @@ func (a *App) drawICColorWheel(w, h int32) {
 	}
 	if next, _ := c.TextField("iccustomhex", sdl.Rect{X: hx, Y: wheel.Y + 42, W: 100, H: fieldH}, a.icColorHexBuf, "RRGGBB"); next != a.icColorHexBuf {
 		a.icColorHexBuf = next
-		if rgb, ok := parseHex6(next); ok {
+		if c, ok := parse.HexColor(next); ok {
+			rgb := packRGB(c.R, c.G, c.B)
 			a.setICCustomRGB(rgb)
 		}
 	}
@@ -376,7 +365,7 @@ func (a *App) drawWheelPicker(x, y int32, cur int, set func(rgb int)) (nextY, he
 		if dist := math.Hypot(dx, dy); dist <= rad {
 			nh := math.Atan2(dy, dx) / (2 * math.Pi)
 			nr, ng, nb := hsvToRGB(nh, dist/rad, math.Max(v, 0.05)) // keep brightness (floor so a black pick still shows hue)
-			set(int(nr)<<16 | int(ng)<<8 | int(nb))
+			set(packRGB(nr, ng, nb))
 		}
 	}
 
@@ -394,7 +383,7 @@ func (a *App) drawWheelPicker(x, y int32, cur int, set func(rgb int)) (nextY, he
 		nv := 1 - float64(c.mouseY-sl.Y)/float64(sl.H)
 		nv = value.Clamp(nv, 0, 1)
 		nr, ng, nb := hsvToRGB(h, s, nv)
-		set(int(nr)<<16 | int(ng)<<8 | int(nb))
+		set(packRGB(nr, ng, nb))
 	}
 
 	// --- live swatch (the caller's hex/buttons column starts at hexX) ---
@@ -434,7 +423,8 @@ func (a *App) drawHighlightPicker(y, w int32) int32 {
 	}
 	if next, _ := c.TextField("highlighthex", sdl.Rect{X: hx, Y: wy + 42, W: 100, H: fieldH}, a.colorHex, "RRGGBB"); next != a.colorHex {
 		a.colorHex = next
-		if rgb, ok := parseHex6(next); ok {
+		if c, ok := parse.HexColor(next); ok {
+			rgb := packRGB(c.R, c.G, c.B)
 			a.d.Prefs.Update(func(
 				sn *config.
 					Settings) {

@@ -11,6 +11,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
@@ -131,7 +132,7 @@ func demoToRecording(data []byte, origin string) (rec *sceneRecording, skipped, 
 		}
 		switch pkt.Header {
 		case "wait":
-			d := atoiClamped(pkt.Field(0), 0, demoMaxWaitMs)
+			d := value.Clamp(parse.AtoiOr(pkt.Field(0), 0), 0, demoMaxWaitMs)
 			cum += d
 		case "MS":
 			msg, err := protocol.ParseMS(pkt.Fields, features, 0)
@@ -180,18 +181,6 @@ func demoToRecording(data []byte, origin string) (rec *sceneRecording, skipped, 
 	}
 	rec.RecordedAt = time.Now().Format(time.RFC3339)
 	return rec, skipped, truncated, nil
-}
-
-// atoiClamped parses n with AO tolerance (garbage = lo) and clamps to [lo, hi].
-func atoiClamped(s string, lo, hi int) int {
-	n, err := strconv.Atoi(strings.TrimSpace(s))
-	if err != nil || n < lo {
-		return lo
-	}
-	if n > hi {
-		return hi
-	}
-	return n
 }
 
 // recordingToDemo serializes a scene back into the AO2 .demo shape: a synthetic

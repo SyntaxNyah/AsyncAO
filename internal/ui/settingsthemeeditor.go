@@ -24,6 +24,7 @@ package ui
 import (
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/text"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -134,7 +135,7 @@ func (a *App) drawThemeMakeRows(y, w int32) int32 {
 	// CLAMPED AT THE SANITIZER'S OWN BOUND, here rather than at the create: themepack
 	// truncates past themepack.NameRuneCap, so a field that accepted more would show
 	// the user a name the folder is never going to have and then quietly shorten it.
-	settings.newThemeName = truncRunes(name, themeCreateNameRuneCap)
+	settings.newThemeName = text.Truncate(name, themeCreateNameRuneCap)
 	c.LabelClipped(pad+themeRowLabelW+themeMakeNameFieldW+themeMakeGap, y+4,
 		w-pad-themeRowLabelW-themeMakeNameFieldW-themeMakeGap-scrollBarW, themeMakeHint, ColTextDim)
 	y += themeMakeRowH

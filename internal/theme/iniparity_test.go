@@ -177,24 +177,3 @@ func TestINIQtCommentSemantics(t *testing.T) {
 		t.Errorf("key count = %d, want 5 (4 root keys + sec/inner)", ini.Len())
 	}
 }
-
-// TestAtoiTrimMatchesQtToInt pins the deliberate error-swallowing in atoiTrim.
-// QString::toInt() returns 0 for junk and AO2 uses that unchecked, so a stricter
-// parser here would reject tuples that render fine in the client every theme was
-// authored against.
-func TestAtoiTrimMatchesQtToInt(t *testing.T) {
-	for _, tc := range []struct {
-		in   string
-		want int
-	}{
-		{"22", 22},
-		{"  22  ", 22},
-		{"8SS", 0}, // Qt 6.5.3: QString("8SS").toInt() == 0
-		{"", 0},
-		{"-15", -15}, // negative showname Y is legitimate theme data
-	} {
-		if got := atoiTrim(tc.in); got != tc.want {
-			t.Errorf("atoiTrim(%q) = %d, want %d", tc.in, got, tc.want)
-		}
-	}
-}

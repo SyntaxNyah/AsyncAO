@@ -1,6 +1,6 @@
 package courtroom
 
-import "unicode/utf8"
+import "github.com/SyntaxNyah/AsyncAO/internal/helper/text"
 
 // WireProfile is the small, cross-client slice of a character profile (#101 slice 2)
 // that travels between AsyncAO clients: just the identity glance — pronouns and a
@@ -45,8 +45,8 @@ const (
 // UTF-8 boundary.
 func (p WireProfile) sanitized() WireProfile {
 	return WireProfile{
-		Pronouns: clampWireBytes(stripZeroWidth(p.Pronouns), wireProfilePronounsMax),
-		Tag:      clampWireBytes(stripZeroWidth(p.Tag), wireProfileTagMax),
+		Pronouns: text.TruncateBytes(stripZeroWidth(p.Pronouns), wireProfilePronounsMax),
+		Tag:      text.TruncateBytes(stripZeroWidth(p.Tag), wireProfileTagMax),
 	}
 }
 
@@ -54,17 +54,6 @@ func (p WireProfile) sanitized() WireProfile {
 func (p WireProfile) Empty() bool {
 	q := p.sanitized()
 	return q.Pronouns == "" && q.Tag == ""
-}
-
-// clampWireBytes truncates s to at most n bytes without splitting a UTF-8 rune.
-func clampWireBytes(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return s[:n]
 }
 
 // payloadBytes packs the profile into its wire form: magic, version, then each field as
@@ -184,7 +173,7 @@ func parseProfilePayload(b []byte) (WireProfile, bool) {
 		return WireProfile{}, false
 	}
 	return WireProfile{
-		Pronouns: clampWireBytes(stripZeroWidth(pron), wireProfilePronounsMax),
-		Tag:      clampWireBytes(stripZeroWidth(tag), wireProfileTagMax),
+		Pronouns: text.TruncateBytes(stripZeroWidth(pron), wireProfilePronounsMax),
+		Tag:      text.TruncateBytes(stripZeroWidth(tag), wireProfileTagMax),
 	}, true
 }

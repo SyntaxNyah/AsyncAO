@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
@@ -162,7 +163,7 @@ func ParseCharINI(data []byte) (*CharINI, error) {
 	out.Realization, _ = ini.GetSection(charINIOptionsSection, "realization")
 
 	countRaw, _ := ini.GetSection(charINIEmotionsSection, "number")
-	count := atoiOr(countRaw, 0)
+	count := parse.AtoiOr(countRaw, 0)
 	if count > charEmoteScanCap {
 		count = charEmoteScanCap // hostile/garbage "number=" can't drive an unbounded scan (§17.4)
 	}
@@ -180,7 +181,7 @@ func ParseCharINI(data []byte) (*CharINI, error) {
 			Comment: parts[0],
 			Preanim: parts[1],
 			Anim:    parts[2],
-			Mod:     atoiOr(parts[3], 0),
+			Mod:     parse.AtoiOr(parts[3], 0),
 			// AO2 shows the desk when the emote omits its optional 5th (desk_mod)
 			// field (get_desk_mod → -1, a non-hide value); only an explicit 0/3/5
 			// hides it. Defaulting to 0 here would wrongly hide the desk for the
@@ -188,12 +189,12 @@ func ParseCharINI(data []byte) (*CharINI, error) {
 			DeskMod: protocol.DeskShow,
 		}
 		if len(parts) > emoteFieldCount {
-			e.DeskMod = atoiOr(parts[4], protocol.DeskShow)
+			e.DeskMod = parse.AtoiOr(parts[4], protocol.DeskShow)
 		}
 		// Per-emote audio rides sections keyed by the same number
 		// (get_sfx_name / get_sfx_delay / get_sfx_looping / get_blipname).
 		e.SFXName, _ = ini.GetSection(charINISoundNSection, key)
-		e.SFXDelay = atoiOr(firstSection(ini, charINISoundTSection, key), 0)
+		e.SFXDelay = parse.AtoiOr(firstSection(ini, charINISoundTSection, key), 0)
 		e.SFXLoop = firstSection(ini, charINISoundLSection, key) == "1"
 		e.Blip, _ = ini.GetSection(charINIBlipsSection, key)
 		// Networked frame effects (#17): assemble the three FRAME_* wire fields for

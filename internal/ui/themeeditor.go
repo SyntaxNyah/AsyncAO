@@ -31,6 +31,7 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -1323,7 +1324,8 @@ func (a *App) drawInspectorRow(f *inspectorField, t editTarget, r sdl.Rect) {
 		// instead of writing black.
 		hex := editHex(cur)
 		if s, _ := c.TextField(editFieldID(f.field), hexR, hex, "rrggbbaa"); s != hex {
-			if v, good := parseEditHex(s); good {
+			if c, good := parse.HexColor(s); good {
+				v := editValueRGBA(c.R, c.G, c.B, c.A)
 				a.editorApply(f.mut(t, f.field, v))
 			}
 		}
@@ -1478,29 +1480,6 @@ func editHex(v editValue) string {
 	}
 	return string(out)
 }
-
-// parseEditHex reads rrggbb or rrggbbaa. A six-digit value is OPAQUE, which is what
-// every hex a user pastes from anywhere else means.
-func parseEditHex(s string) (editValue, bool) {
-	if len(s) != 6 && len(s) != 8 {
-		return editValue{}, false
-	}
-	var out [4]uint8
-	out[3] = 255
-	for i := 0; i+1 < len(s); i += 2 {
-		hi, ok1 := hexNibble(s[i])
-		lo, ok2 := hexNibble(s[i+1])
-		if !ok1 || !ok2 {
-			return editValue{}, false
-		}
-		out[i/2] = hi<<4 | lo
-	}
-	return editValueRGBA(out[0], out[1], out[2], out[3]), true
-}
-
-// (The nibble decoder is floatbox.go's hexNibble, reused verbatim rather than
-// restated: two hex parsers in one package are two chances to disagree about
-// upper-case digits.)
 
 // ---------------------------------------------------------------------------
 // Keyboard

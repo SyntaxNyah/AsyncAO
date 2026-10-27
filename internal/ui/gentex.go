@@ -40,9 +40,8 @@ import (
 	"image"
 	"image/color"
 	"math"
-	"strconv"
-	"strings"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -338,13 +337,13 @@ func genParseParams(g theme.GeneratorSpec) GenParams {
 		case genSlotSeed:
 			// The seed is the ONE int that is not clamped: it is a hash input, not a
 			// measurement, and every value of it is equally legal.
-			p.Ints[genSlotSeed-genSlotPitch] = int32(genAtoi(kv.Value))
+			p.Ints[genSlotSeed-genSlotPitch] = int32(parse.AtoiOr(kv.Value, 0))
 		case genSlotPitch, genSlotSize, genSlotCount:
-			p.Ints[slot-genSlotPitch] = int32(value.Clamp(genAtoi(kv.Value), 0, int(genIntParamMax)))
+			p.Ints[slot-genSlotPitch] = int32(value.Clamp(parse.AtoiOr(kv.Value, 0), 0, int(genIntParamMax)))
 		case genSlotAngle:
-			p.Angle = uint8(genAtoi(kv.Value) % theme.AngleCount)
+			p.Angle = uint8(parse.AtoiOr(kv.Value, 0) % theme.AngleCount)
 		case genSlotPct0, genSlotPct1:
-			p.Pcts[slot-genSlotPct0] = int16(value.Clamp(genAtoi(kv.Value), 0, int(genPctMax)))
+			p.Pcts[slot-genSlotPct0] = int16(value.Clamp(parse.AtoiOr(kv.Value, 0), 0, int(genPctMax)))
 		}
 	}
 	return p
@@ -360,17 +359,6 @@ func genParseColor(v string) (color.RGBA, bool) {
 		return color.RGBA{}, false
 	}
 	return color.RGBA{R: c.R, G: c.G, B: c.B, A: c.A}, true
-}
-
-// genAtoi is a tolerant integer parse: anything unreadable is 0, which every
-// generator then replaces with its documented default. Matches how AO2 reads its
-// own numeric INI values (QString::toInt yields 0 and the caller decides).
-func genAtoi(v string) int {
-	n, err := strconv.Atoi(strings.TrimSpace(v))
-	if err != nil {
-		return 0
-	}
-	return n
 }
 
 // ---------------------------------------------------------------------------

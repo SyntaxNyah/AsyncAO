@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/SyntaxNyah/AsyncAO/internal/packetutil"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
@@ -62,11 +63,11 @@ func (s *Session) handleVoicePacket(p protocol.Packet) []Event {
 		s.voiceCaps = VoiceCaps{
 			Enabled:       voiceBool(p.Field(0)),
 			PTTOnly:       voiceBool(p.Field(1)),
-			MaxPeers:      atoiOr(p.Field(2), 0),
+			MaxPeers:      parse.AtoiOr(p.Field(2), 0),
 			Codec:         p.Field(3),
-			SampleRate:    atoiOr(p.Field(4), 48000),
-			FrameMs:       atoiOr(p.Field(5), 20),
-			MaxFrameBytes: atoiOr(p.Field(6), 4096),
+			SampleRate:    parse.AtoiOr(p.Field(4), 48000),
+			FrameMs:       parse.AtoiOr(p.Field(5), 20),
+			MaxFrameBytes: parse.AtoiOr(p.Field(6), 4096),
 		}
 		return []Event{{Kind: EventVoiceCaps}}
 
@@ -83,7 +84,7 @@ func (s *Session) handleVoicePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventVoicePeers}}
 
 	case "VS_JOIN":
-		uid := atoiOr(p.Field(0), -1)
+		uid := parse.AtoiOr(p.Field(0), -1)
 		if uid < 0 {
 			return nil
 		}
@@ -96,7 +97,7 @@ func (s *Session) handleVoicePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventVoicePeers}}
 
 	case "VS_LEAVE":
-		uid := atoiOr(p.Field(0), -1)
+		uid := parse.AtoiOr(p.Field(0), -1)
 		if uid < 0 {
 			return nil
 		}
@@ -105,7 +106,7 @@ func (s *Session) handleVoicePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventVoicePeers}}
 
 	case "VS_SPEAK":
-		uid := atoiOr(p.Field(0), -1)
+		uid := parse.AtoiOr(p.Field(0), -1)
 		if uid < 0 {
 			return nil
 		}
@@ -127,7 +128,7 @@ func (s *Session) handleVoicePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventVoiceSpeak, Int: uid, Int2: spk}}
 
 	case "VS_AUDIO":
-		uid := atoiOr(p.Field(0), -1)
+		uid := parse.AtoiOr(p.Field(0), -1)
 		if uid < 0 {
 			return nil
 		}

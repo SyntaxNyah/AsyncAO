@@ -156,9 +156,9 @@ const (
 	// effect_period_ms and [effect.*] period_ms), which are int32 in the model.
 	// CLAMPED, never truncated. A bare int32() conversion would turn a legal
 	// "phase_ms = 3000000000" into a NEGATIVE phase, and it would do it only on
-	// a 64-bit host — atoiTrim saturates at the platform int width, so a 32-bit
-	// build would read the same file as 2147483647. A published grammar cannot
-	// mean two things on two machines.
+	// a 64-bit host — a 32-bit int cannot even hold the number (parse.AtoiOr would
+	// read it as 0, as Qt's toInt does). A published grammar cannot mean two
+	// things on two machines.
 	TimeMsMin = -2147483648
 	TimeMsMax = 2147483647
 )

@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/SyntaxNyah/AsyncAO/internal/safepath"
 )
 
@@ -203,8 +204,8 @@ func (f OverlayFX) coerce() OverlayFX {
 	f.RespectOffset = f.raw[fxPropRespectOffset] == overlayBoolTrue
 	// sticky is read on the SENDING side only (courtroom.cpp:2348-2354).
 	f.Sticky = strings.HasPrefix(f.raw[fxPropSticky], overlayBoolTrue)
-	// QString::toInt() → 0 for anything unparseable, exactly like atoiTrim.
-	f.MaxFrameMS = atoiTrim(f.raw[fxPropMaxDuration])
+	// QString::toInt() → 0 for anything unparseable, exactly like parse.AtoiOr.
+	f.MaxFrameMS = parse.AtoiOr(f.raw[fxPropMaxDuration], 0)
 	if f.MaxFrameMS < 0 {
 		f.MaxFrameMS = 0 // a negative clamp is not a clamp; AO2's timer would reject it
 	}
@@ -239,7 +240,7 @@ func ParseOverlayFX(r io.Reader) ([]OverlayFX, error) {
 	if err != nil {
 		return nil, err
 	}
-	if major, _ := ini.GetSection(overlayVersionSec, overlayVersionKey); atoiTrim(major) < overlayFXVersion2 {
+	if major, _ := ini.GetSection(overlayVersionSec, overlayVersionKey); parse.AtoiOr(major, 0) < overlayFXVersion2 {
 		return migrateOverlayFXV1(ini), nil
 	}
 	out := make([]OverlayFX, 0, 8)

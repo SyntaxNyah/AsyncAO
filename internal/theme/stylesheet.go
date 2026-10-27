@@ -10,6 +10,8 @@ package theme
 import (
 	"strconv"
 	"strings"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 )
 
 // Palette is the color scheme extracted from a theme stylesheet. Each
@@ -166,12 +168,9 @@ func parseCSSColor(v string) (RGB, bool) {
 	case strings.HasPrefix(v, "#"):
 		hex := v[1:]
 		switch len(hex) {
-		case 3: // #rgb
-			r, okR := hexNibble(hex[0])
-			g, okG := hexNibble(hex[1])
-			b, okB := hexNibble(hex[2])
-			if okR && okG && okB {
-				return RGB{R: r * 17, G: g * 17, B: b * 17}, true
+		case 3: // #rgb: each digit doubled, so #abc is #aabbcc
+			if c, ok := parse.HexColor(string([]byte{hex[0], hex[0], hex[1], hex[1], hex[2], hex[2]})); ok {
+				return RGB{R: c.R, G: c.G, B: c.B}, true
 			}
 		case 6: // #rrggbb
 			if n, err := strconv.ParseUint(hex, 16, 32); err == nil {
@@ -189,9 +188,9 @@ func parseCSSColor(v string) (RGB, bool) {
 		}
 		parts := strings.Split(inner, ",")
 		if len(parts) >= 3 {
-			r := atoiTrim(parts[0])
-			g := atoiTrim(parts[1])
-			b := atoiTrim(parts[2])
+			r := parse.AtoiOr(parts[0], 0)
+			g := parse.AtoiOr(parts[1], 0)
+			b := parse.AtoiOr(parts[2], 0)
 			return RGB{R: uint8(r), G: uint8(g), B: uint8(b)}, true
 		}
 	}
@@ -199,30 +198,6 @@ func parseCSSColor(v string) (RGB, bool) {
 		return named, true
 	}
 	return RGB{}, false
-}
-
-// hexNibble decodes one hex digit, in EITHER case.
-//
-// The uppercase arm is not cosmetic. parseCSSColor lowercases its whole input
-// before it gets here, so within the stylesheet it can never fire — but
-// parseRGBAValue (sidecar_read.go) calls hexNibble DIRECTLY on the author's own
-// text, and without this arm every `#1C1C1C` in an asyncao_theme.ini was refused
-// while `#101010` beside it parsed. That is exactly the silent class the sidecar's
-// rule 3 exists to avoid: the value degraded to "the stylesheet's own colour is
-// kept", the note went to an import report nothing displayed, and four of
-// themes/thh_trial's five [palette] roles simply did not apply. Upper-case hex is
-// the spelling humans write and the spelling every one of the 14 shipped themes
-// writes. Pinned by TestSidecarColoursAcceptEitherHexCase.
-func hexNibble(c byte) (uint8, bool) {
-	switch {
-	case c >= '0' && c <= '9':
-		return c - '0', true
-	case c >= 'a' && c <= 'f':
-		return c - 'a' + 10, true
-	case c >= 'A' && c <= 'F':
-		return c - 'A' + 10, true
-	}
-	return 0, false
 }
 
 // cssNamedColors: the handful that appear in real AO themes.

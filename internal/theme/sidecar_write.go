@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
@@ -453,13 +454,13 @@ func sliceIsHeldByItsAlias(d *INIDoc, section string, e *Element) bool {
 	if _, canonical := d.Get(section, "slice"); canonical {
 		return false // both spellings present: the canonical one is the one we keep
 	}
-	n := int16(value.Clamp(atoiTrim(raw), ZMin, ZMax))
+	n := int16(value.Clamp(parse.AtoiOr(raw, 0), ZMin, ZMax))
 	return e.Slice == [4]int16{n, n, n, n}
 }
 
 // ---------------------------------------------------------------------------
 // Formatters. AO2's exact shapes: "x, y, w, h" with ", ", plain decimal ints.
-// atoiTrim is deliberately lenient (see its comment) and NOTHING here may
+// parse.AtoiOr is deliberately lenient (see its comment) and NOTHING here may
 // depend on that leniency — TestWriterNeverEmitsAValueThatReadsAsZero holds it.
 // ---------------------------------------------------------------------------
 
@@ -583,29 +584,31 @@ func canonMetaPlain(s string) string {
 }
 
 // canonInt is for the integers the reader does NOT narrow: [theme] format and
-// revision, and [chrome] shape_tier, each stored exactly as atoiTrim returned
+// revision, and [chrome] shape_tier, each stored exactly as parse.AtoiOr returned
 // it. (format is additionally the one key a save always stamps — §7's writer
 // rules — so a file that spells it 0, or spells it nothing an integer, is the
 // one line the writer does rewrite, into the grammar it can be read by.)
 // Every integer the reader NARROWS has its own canonicaliser below, because a
 // canonicaliser that skips the reader's conversion reports an untouched file as
 // changed and rewrites the author's line.
-func canonInt(s string) string { return formatInt(atoiTrim(s)) }
+func canonInt(s string) string { return formatInt(parse.AtoiOr(s, 0)) }
 
-func canonByte(s string) string { return formatInt(value.Clamp(atoiTrim(s), 0, 255)) }
+func canonByte(s string) string { return formatInt(value.Clamp(parse.AtoiOr(s, 0), 0, 255)) }
 
 // canonZ mirrors the reader's int16 clamp on z and on a scalar 9-slice inset.
-func canonZ(s string) string { return formatInt(value.Clamp(atoiTrim(s), ZMin, ZMax)) }
+func canonZ(s string) string { return formatInt(value.Clamp(parse.AtoiOr(s, 0), ZMin, ZMax)) }
 
 // canonTimeMs mirrors the reader's int32 clamp on phase_ms, effect_period_ms
 // and [effect.*] period_ms. Without it a legal "phase_ms = 3000000000" saves
 // back as a NEGATIVE number — not merely a rewrite of a line nobody edited, but
 // a rewrite into a value that means something else.
-func canonTimeMs(s string) string { return formatInt(value.Clamp(atoiTrim(s), TimeMsMin, TimeMsMax)) }
+func canonTimeMs(s string) string {
+	return formatInt(value.Clamp(parse.AtoiOr(s, 0), TimeMsMin, TimeMsMax))
+}
 
-func canonAmp(s string) string { return formatInt(value.Clamp(atoiTrim(s), 0, AmpMaxPct)) }
+func canonAmp(s string) string { return formatInt(value.Clamp(parse.AtoiOr(s, 0), 0, AmpMaxPct)) }
 
-func canonSize(s string) string { return formatInt(value.Clamp(atoiTrim(s), 0, TextSizeMaxPt)) }
+func canonSize(s string) string { return formatInt(value.Clamp(parse.AtoiOr(s, 0), 0, TextSizeMaxPt)) }
 
 func canonAngle(s string) string { return formatInt(int(parseAngle(s))) }
 
@@ -672,7 +675,7 @@ func canonMedia(s string) string {
 		m.File = strings.TrimSpace(parts[0])
 	}
 	if len(parts) > 1 {
-		m.Bytes = int64(atoiTrim(parts[1]))
+		m.Bytes = int64(parse.AtoiOr(parts[1], 0))
 	}
 	if len(parts) > 2 {
 		m.Hash = strings.ToLower(strings.TrimSpace(parts[2]))

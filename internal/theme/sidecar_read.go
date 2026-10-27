@@ -15,6 +15,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
@@ -59,7 +60,7 @@ func ParseSidecar(src []byte) (*Sidecar, error) {
 	// The version is read BEFORE anything else so a migration runs against the
 	// document the rest of the parse then walks.
 	if raw, ok := doc.Get(secTheme, "format"); ok {
-		if v := atoiTrim(raw); v > 0 {
+		if v := parse.AtoiOr(raw, 0); v > 0 {
 			s.Format = v
 		}
 	}
@@ -287,7 +288,7 @@ var themeKeyKnown = keySet(
 // short version means a different theme and the file is refused.
 func (s *Sidecar) readTheme(d *INIDoc, keys []string) error {
 	get := sectionGetter(d, secTheme)
-	s.Revision = atoiTrim(get("revision"))
+	s.Revision = parse.AtoiOr(get("revision"), 0)
 	s.Meta.Name = metaFree(get("name"))
 	s.Meta.Author = metaFree(get("author"))
 	s.Meta.License = metaFree(get("license"))
@@ -365,7 +366,7 @@ func (s *Sidecar) readChrome(d *INIDoc, keys []string) error {
 	if s.Chrome.Shape, err = s.plainText(secChrome, "shape", get("shape")); err != nil {
 		return err
 	}
-	s.Chrome.ShapeTier = atoiTrim(get("shape_tier"))
+	s.Chrome.ShapeTier = parse.AtoiOr(get("shape_tier"), 0)
 	if c, ok := parseRGBAValue(get("tabbar_hex")); ok {
 		s.Chrome.TabbarHex = c
 	}
@@ -424,7 +425,7 @@ func (s *Sidecar) readMedia(d *INIDoc, keys []string) error {
 			}
 		}
 		if len(parts) > 1 {
-			e.Bytes = int64(atoiTrim(parts[1]))
+			e.Bytes = int64(parse.AtoiOr(parts[1], 0))
 		}
 		if len(parts) > 2 {
 			e.Hash = strings.ToLower(strings.TrimSpace(parts[2]))
@@ -472,7 +473,7 @@ func (s *Sidecar) readImport(d *INIDoc, keys []string) error {
 
 func (s *Sidecar) readClock(d *INIDoc, name string, keys []string) error {
 	idx := strings.TrimPrefix(name, secClockPrefix)
-	n := atoiTrim(idx)
+	n := parse.AtoiOr(idx, 0)
 	// Clock 0 is the shared theme anchor and is never declared; an index past
 	// the pool is a file we cannot honour, so it is preserved and reported
 	// rather than silently folded onto somebody else's group.
@@ -509,7 +510,7 @@ func (s *Sidecar) readPane(d *INIDoc, name string, keys []string) error {
 	if c, ok := parseRGBAValue(get("divider")); ok {
 		p.Divider = c
 	}
-	p.DividerPx = uint8(value.Clamp(atoiTrim(get("divider_px")), 0, 255))
+	p.DividerPx = uint8(value.Clamp(parse.AtoiOr(get("divider_px"), 0), 0, 255))
 
 	hosts, err := parseTextList(get("hosts"), PaneHostCap)
 	if err != nil {
@@ -599,8 +600,8 @@ func (s *Sidecar) readEffectBind(d *INIDoc, name string, keys []string) error {
 	if c, ok := parseRGBAValue(get("color")); ok {
 		e.Color = c
 	}
-	e.PeriodMs = int32(value.Clamp(atoiTrim(get("period_ms")), TimeMsMin, TimeMsMax))
-	e.AmpPct = int16(value.Clamp(atoiTrim(get("amp_pct")), 0, AmpMaxPct))
+	e.PeriodMs = int32(value.Clamp(parse.AtoiOr(get("period_ms"), 0), TimeMsMin, TimeMsMax))
+	e.AmpPct = int16(value.Clamp(parse.AtoiOr(get("amp_pct"), 0), 0, AmpMaxPct))
 	e.Clock = parseClockIndex(get("clock"))
 	s.Effects = append(s.Effects, e)
 	return s.markUnknownKeys(name, keys, effectBindKeyKnown)
@@ -658,7 +659,7 @@ func (s *Sidecar) readElement(d *INIDoc, name string, keys []string) error {
 
 	e := Element{ID: id, Kind: kind}
 	e.Band = ElementBand(s.enumOrDegrade(name, "band", get("band"), elementBandNames[:], uint8(BandBackdrop)))
-	e.Z = int16(value.Clamp(atoiTrim(get("z")), ZMin, ZMax))
+	e.Z = int16(value.Clamp(parse.AtoiOr(get("z"), 0), ZMin, ZMax))
 	e.Space = Space(s.enumOrDegrade(name, "space", get("space"), spaceNames[:], uint8(SpaceCourtroom)))
 
 	var err error
@@ -684,7 +685,7 @@ func (s *Sidecar) readElement(d *INIDoc, name string, keys []string) error {
 	e.Slice = parseSliceValue(get("slice"))
 	if raw := get("nine_slice"); raw != "" && get("slice") == "" {
 		// The scalar shorthand: one inset on all four edges.
-		n := int16(value.Clamp(atoiTrim(raw), ZMin, ZMax))
+		n := int16(value.Clamp(parse.AtoiOr(raw, 0), ZMin, ZMax))
 		e.Slice = [4]int16{n, n, n, n}
 	}
 
@@ -699,11 +700,11 @@ func (s *Sidecar) readElement(d *INIDoc, name string, keys []string) error {
 	if c, ok := parseRGBAValue(get("stroke")); ok {
 		e.Stroke = c
 	}
-	e.StrokePx = uint8(value.Clamp(atoiTrim(get("stroke_px")), 0, 255))
+	e.StrokePx = uint8(value.Clamp(parse.AtoiOr(get("stroke_px"), 0), 0, 255))
 	if c, ok := parseRGBAValue(get("tint")); ok {
 		e.Tint = c
 	}
-	e.Opacity = uint8(value.Clamp(atoiTrim(get("opacity")), 0, 255))
+	e.Opacity = uint8(value.Clamp(parse.AtoiOr(get("opacity"), 0), 0, 255))
 
 	if e.Text, err = s.elementText(name, get("text")); err != nil {
 		return err
@@ -711,7 +712,7 @@ func (s *Sidecar) readElement(d *INIDoc, name string, keys []string) error {
 	if e.Font, err = s.boundedText(name, "font", get("font"), NameRuneCap); err != nil {
 		return err
 	}
-	e.Size = value.Clamp(atoiTrim(get("size")), 0, TextSizeMaxPt)
+	e.Size = value.Clamp(parse.AtoiOr(get("size"), 0), 0, TextSizeMaxPt)
 	if c, ok := parseRGBAValue(get("color")); ok {
 		e.Color = c
 	}
@@ -721,11 +722,11 @@ func (s *Sidecar) readElement(d *INIDoc, name string, keys []string) error {
 	// The millisecond fields CLAMP into int32 rather than converting into it:
 	// see TimeMsMin. A bare int32() would read a legal 3000000000 as a negative
 	// phase here and as 2147483647 on a 32-bit build.
-	e.PhaseMs = int32(value.Clamp(atoiTrim(get("phase_ms")), TimeMsMin, TimeMsMax))
+	e.PhaseMs = int32(value.Clamp(parse.AtoiOr(get("phase_ms"), 0), TimeMsMin, TimeMsMax))
 	e.Loop = parseBoolValue(get("loop"))
 	e.Effect = EffectKind(s.enumOrDegrade(name, "effect", get("effect"), effectNames[:], uint8(FXNone)))
-	e.EffectPeriodMs = int32(value.Clamp(atoiTrim(get("effect_period_ms")), TimeMsMin, TimeMsMax))
-	e.EffectAmpPct = int16(value.Clamp(atoiTrim(get("effect_amp_pct")), 0, AmpMaxPct))
+	e.EffectPeriodMs = int32(value.Clamp(parse.AtoiOr(get("effect_period_ms"), 0), TimeMsMin, TimeMsMax))
+	e.EffectAmpPct = int16(value.Clamp(parse.AtoiOr(get("effect_amp_pct"), 0), 0, AmpMaxPct))
 	// "decimate" is stored INVERTED so the zero value is version 1's behaviour.
 	// An ABSENT key must therefore leave NoDecimate false, which is why the
 	// negation is guarded rather than applied to an empty string.
@@ -915,8 +916,8 @@ func (s *Sidecar) condition(section, raw string) (Condition, error) {
 }
 
 // parseRectValue reads "x, y, w, h". Missing components are 0 and a bad one is
-// 0, because atoiTrim swallows the error ON PURPOSE — AO2 parity, so a tuple
-// AO2 renders can never be stricter here (see atoiTrim).
+// 0, because parse.AtoiOr swallows the error ON PURPOSE — AO2 parity, so a tuple
+// AO2 renders can never be stricter here (see parse.AtoiOr).
 func parseRectValue(raw string) Rect {
 	var r Rect
 	if strings.TrimSpace(raw) == "" {
@@ -925,7 +926,7 @@ func parseRectValue(raw string) Rect {
 	parts := strings.Split(raw, tupleSeparator)
 	dst := [rectComponentCount]*int{&r.X, &r.Y, &r.W, &r.H}
 	for i := 0; i < rectComponentCount && i < len(parts); i++ {
-		*dst[i] = atoiTrim(parts[i])
+		*dst[i] = parse.AtoiOr(parts[i], 0)
 	}
 	return r
 }
@@ -938,7 +939,7 @@ func parseSliceValue(raw string) [4]int16 {
 	}
 	parts := strings.Split(raw, tupleSeparator)
 	for i := 0; i < len(out) && i < len(parts); i++ {
-		out[i] = int16(value.Clamp(atoiTrim(parts[i]), ZMin, ZMax))
+		out[i] = int16(value.Clamp(parse.AtoiOr(parts[i], 0), ZMin, ZMax))
 	}
 	return out
 }
@@ -951,34 +952,21 @@ func parseRGBAValue(raw string) (RGBA, bool) {
 		return RGBA{}, false
 	}
 	if v[0] == '#' {
-		hex := v[1:]
-		if len(hex) != 6 && len(hex) != 8 {
-			return RGBA{}, false
-		}
-		var out [4]uint8
-		out[3] = 255
-		for i := 0; i < len(hex)/2; i++ {
-			hi, okHi := hexNibble(hex[i*2])
-			lo, okLo := hexNibble(hex[i*2+1])
-			if !okHi || !okLo {
-				return RGBA{}, false
-			}
-			out[i] = hi<<4 | lo
-		}
-		return RGBA{out[0], out[1], out[2], out[3]}, true
+		c, ok := parse.HexColor(v)
+		return RGBA{c.R, c.G, c.B, c.A}, ok
 	}
 	parts := strings.Split(v, tupleSeparator)
 	if len(parts) < 3 {
 		return RGBA{}, false
 	}
 	c := RGBA{
-		R: uint8(value.Clamp(atoiTrim(parts[0]), 0, 255)),
-		G: uint8(value.Clamp(atoiTrim(parts[1]), 0, 255)),
-		B: uint8(value.Clamp(atoiTrim(parts[2]), 0, 255)),
+		R: uint8(value.Clamp(parse.AtoiOr(parts[0], 0), 0, 255)),
+		G: uint8(value.Clamp(parse.AtoiOr(parts[1], 0), 0, 255)),
+		B: uint8(value.Clamp(parse.AtoiOr(parts[2], 0), 0, 255)),
 		A: 255,
 	}
 	if len(parts) > 3 {
-		c.A = uint8(value.Clamp(atoiTrim(parts[3]), 0, 255))
+		c.A = uint8(value.Clamp(parse.AtoiOr(parts[3], 0), 0, 255))
 	}
 	return c, true
 }
@@ -1015,7 +1003,7 @@ func parseTextList(raw string, max int) ([]string, error) {
 // parseAngle reads the 360/256 angle byte, wrapping rather than clamping: an
 // angle is modular, so 300 is a real rotation and 256 is zero.
 func parseAngle(raw string) uint8 {
-	v := atoiTrim(raw) % AngleCount
+	v := parse.AtoiOr(raw, 0) % AngleCount
 	if v < 0 {
 		v += AngleCount
 	}
@@ -1025,7 +1013,7 @@ func parseAngle(raw string) uint8 {
 // parseSpeedPct clamps a clock group's speed. 0 means UNDECLARED and resolves
 // to nominal at use (ClockSpec.EffectivePct), so it is preserved as 0.
 func parseSpeedPct(raw string) int16 {
-	v := atoiTrim(raw)
+	v := parse.AtoiOr(raw, 0)
 	if v == 0 {
 		return 0
 	}
@@ -1036,7 +1024,7 @@ func parseSpeedPct(raw string) int16 {
 // to the SHARED anchor (clock 0) rather than to a neighbour's group: being in
 // step with the theme is the only safe wrong answer.
 func parseClockIndex(raw string) uint8 {
-	v := atoiTrim(raw)
+	v := parse.AtoiOr(raw, 0)
 	if v <= 0 || v >= ClockCap {
 		return 0
 	}

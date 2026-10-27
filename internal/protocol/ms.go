@@ -7,6 +7,7 @@ import (
 
 	aolib "github.com/AO-Underground/aolib/go/v2"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/SyntaxNyah/AsyncAO/internal/packetutil"
 )
 
@@ -165,7 +166,7 @@ func ParseMS(fields []string, features FeatureSet, charListSize int) (*ChatMessa
 		return get(i)
 	}
 
-	charID := atoiDefault(get(MSCharID), UnpairedCharID)
+	charID := parse.AtoiOr(get(MSCharID), UnpairedCharID)
 	if charID < UnpairedCharID || (charListSize > 0 && charID >= charListSize) {
 		return nil, fmt.Errorf("protocol: MS char id %d out of range", charID)
 	}
@@ -176,22 +177,22 @@ func ParseMS(fields []string, features FeatureSet, charListSize int) (*ChatMessa
 	msg := &ChatMessage{
 		// Mirrors QString::toInt: non-numeric legacy values ("chat") read
 		// as 0 (DeskHide), exactly like AO2-Client.
-		DeskMod:      atoiDefault(get(MSDeskMod), DeskHide),
+		DeskMod:      parse.AtoiOr(get(MSDeskMod), DeskHide),
 		PreEmote:     get(MSPreEmote),
 		CharName:     get(MSCharName),
 		Emote:        get(MSEmote),
 		Message:      get(MSMessage),
 		Side:         get(MSSide),
 		SFXName:      get(MSSFXName),
-		EmoteMod:     normalizeEmoteMod(atoiDefault(get(MSEmoteMod), EmoteModIdle)),
+		EmoteMod:     normalizeEmoteMod(parse.AtoiOr(get(MSEmoteMod), EmoteModIdle)),
 		CharID:       charID,
-		SFXDelay:     atoiDefault(get(MSSFXDelay), 0),
+		SFXDelay:     parse.AtoiOr(get(MSSFXDelay), 0),
 		Objection:    objection,
 		CustomShout:  customShout,
-		EvidenceID:   atoiDefault(get(MSEvidenceID), 0),
+		EvidenceID:   parse.AtoiOr(get(MSEvidenceID), 0),
 		Flip:         get(MSFlip) == "1",
 		Realization:  get(MSRealization) == "1",
-		TextColor:    atoiDefault(get(MSTextColor), 0),
+		TextColor:    parse.AtoiOr(get(MSTextColor), 0),
 		Showname:     get(MSShowname),
 		Pair:         ParsePair(get(MSOtherCharID), get(MSOtherName), get(MSOtherEmote), get(MSOtherOffset), get(MSOtherFlip)),
 		SelfOffsetX:  selfX,
@@ -229,7 +230,7 @@ func normalizeEmoteMod(mod int) int {
 // parseObjection splits "mod" or "mod&customname" (2.8 custom objections).
 func parseObjection(raw string) (int, string) {
 	mod, custom, found := strings.Cut(raw, "&")
-	value := atoiDefault(mod, ShoutNone)
+	value := parse.AtoiOr(mod, ShoutNone)
 	if !found {
 		return value, ""
 	}
@@ -239,19 +240,6 @@ func parseObjection(raw string) (int, string) {
 // IsShout reports whether the objection value plays a shout bubble.
 func (m *ChatMessage) IsShout() bool {
 	return m.Objection >= ShoutHoldIt && m.Objection <= ShoutCustom
-}
-
-// atoiDefault parses an int with a fallback, AO-style (garbage reads as the
-// fallback, never an error mid-courtroom).
-func atoiDefault(s string, fallback int) int {
-	if s == "" {
-		return fallback
-	}
-	v, err := strconv.Atoi(strings.TrimSpace(s))
-	if err != nil {
-		return fallback
-	}
-	return v
 }
 
 // --- Outgoing MS ----------------------------------------------------------------
