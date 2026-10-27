@@ -10,7 +10,7 @@ in **Status**. Update Status in the same commit that completes a step.
       golangci-lint `mnd` in CI (9 already-clean packages enforced from the start)
 - [x] 1. `internal/helper/{value,text,parse}` + duplicate removal + config double-clamp removal;
       mnd now enforced on every lower package step 1 touched (setter pre-clamps: see Part 3)
-- [ ] 2. Bug fixes 1–3, 5–7 (one commit each, with tests) → **merge checkpoint** (maintainer pushes)
+- [x] 2. Bug fixes 1–3, 5–7 (one commit each, with tests; 6 landed in step 1) → **merge checkpoint** (maintainer pushes)
 - [x] 2a. UI spike: RmlUi 6.3 on SDL_GPU (Vulkan, software Vulkan fallback) (Part 5e); throwaway code outside the module
       — see the Result in Part 5e
 - [ ] 2b. SDL facade (`internal/sdl`, `ttf`, `mix`) over go-sdl2; switch all importers

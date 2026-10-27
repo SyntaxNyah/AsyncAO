@@ -12,15 +12,13 @@ package ui
 // `true`. Both failures were invisible: screen effects simply did not appear in
 // the pinned pane or in an exported comic, and with the preference OFF a replay
 // or a preview still resolved effect rosters, fetched misc manifests, decoded
-// art and uploaded pages — the exact cost TestVisualGateOffCostsNoResolve
-// exists to forbid, defeated by rooms that test never saw.
+// art and uploaded pages: the very cost the visual gate exists to avoid, paid by
+// rooms that never got the gate.
 //
 // The cure is not a better comment on wireRoomOverlay. It is that CONSTRUCTION
 // AND WIRING ARE THE SAME STEP: newRoom below is the only production call site
-// of courtroom.NewCourtroom in this package, and
-// TestRoomConstructionHasExactlyOneCallSite fails the build gate on a sixth
-// room built any other way. A future mode cannot be born unwired, because there
-// is nothing to forget.
+// of courtroom.NewCourtroom in this package. A future mode cannot be born
+// unwired, because there is nothing to forget.
 //
 // WHAT A MODE STILL OWNS. Everything that is genuinely per-mode stays at the
 // call site as a POST-CONSTRUCTION override: every timing knob, and — for the
@@ -107,8 +105,8 @@ func (a *App) applyVisualPrefsToRoom(room *courtroom.Courtroom) {
 // silently DELETE what the author wrote, are exempt.
 //
 // Called AFTER newRoom, never inside it: an authoring room is a call-site
-// decision, and TestRoomConstructionSitesDoNotHandRollTheVisualGates is what
-// stops the next mode from spelling these three lines out again.
+// decision. Keeping the three lines in this one function is what stops the next
+// mode from spelling them out again.
 func (a *App) applyAuthoringVisualsToRoom(room *courtroom.Courtroom) {
 	if room == nil {
 		return
