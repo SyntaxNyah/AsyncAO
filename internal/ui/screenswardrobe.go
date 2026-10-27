@@ -1264,7 +1264,7 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 	// says nothing, so an undressed client draws exactly what it did before; real
 	// themes set music_name_bold = 1, hence the weighted draw.
 	if br, ok := plan.rect(musicItemNowPlaying); ok {
-		nameFont := a.elemLabelFont(elemMusicName, DefaultScalePct)
+		nameFont := a.elemLabelFont(elemMusicName, DefaultScalePct, nowLabel)
 		// #21 label 16: "music_name_color". themed IS the canvas flag here — the two
 		// mean the same thing at every call site (see the doc comment above).
 		nameInk := ColTextDim

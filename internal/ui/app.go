@@ -579,7 +579,7 @@ type App struct {
 	// single-font fast path (pickSet len==1) is untouched — zero perf change.
 	fallbackFontRes     chan [][]byte
 	fallbackLoadStarted bool
-	// CJK tier (Han/Kana + Hangul), read off-thread only when a CJK letter is drawn —
+	// CJK tier (Han/Kana + Hangul), read off-thread only when a CJK rune is drawn —
 	// independent latch so the broad load can't swallow it (a Cyrillic name usually
 	// comes first). 13-35 MB, so kept out of the common non-ASCII path.
 	cjkFontRes     chan [][]byte

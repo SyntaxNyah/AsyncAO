@@ -88,13 +88,15 @@ func TestFontCoverageMatrix(t *testing.T) {
 
 // TestScriptLoadGate pins the cheap byte/rune gate that decides which font tiers load:
 // pure-ASCII trips nothing (the 0-perf invariant), European non-ASCII trips the broad
-// tier but NOT the heavy CJK one, and only an actual Han/Kana/Hangul LETTER (not CJK
-// punctuation) trips CJK. Keeps a stray accent from pulling in ~30 MB of CJK faces.
+// tier but NOT the heavy CJK one, and only a rune the CJK faces alone draw — a
+// Han/Kana/Hangul letter, CJK punctuation or a full-width form — trips CJK. Keeps a
+// stray accent or symbol from pulling in ~30 MB of CJK faces, while a bracketed
+// name like 「Edgeworth」 still gets the faces that have its brackets.
 func TestScriptLoadGate(t *testing.T) {
 	cases := []struct {
 		text             string
 		nonASCII, cjkMab bool
-		cjkLetter        bool
+		cjkRune          bool
 	}{
 		{"Hello, world!", false, false, false}, // pure ASCII → nothing
 		{"café", true, false, false},           // Latin-1 accent → broad only
@@ -104,15 +106,19 @@ func TestScriptLoadGate(t *testing.T) {
 		{"あいう", true, true, true},              // Kana → CJK
 		{"안녕하세요", true, true, true},            // Hangul → CJK
 		{"hi 世界", true, true, true},            // mixed Latin + Han → both
-		{"。、！", true, true, false},             // CJK punctuation only → byte gate yes, letter no
+		{"。、！", true, true, true},              // CJK punctuation only → CJK (no broad face has it)
+		{"「Edgeworth」", true, true, true},      // CJK brackets around Latin → CJK
+		{"Ｆｕｌｌ", true, true, true},             // full-width Latin → CJK
+		{"★ Star ♪", true, false, false},       // BMP symbols (lead 0xE2) → broad only
+		{"ꀀ", true, true, false},               // Yi syllable: byte gate says maybe, not a CJK rune
 	}
 	for _, tc := range cases {
 		nonASCII, cjkMab := scanScriptBytes(tc.text)
 		if nonASCII != tc.nonASCII || cjkMab != tc.cjkMab {
 			t.Errorf("scanScriptBytes(%q) = (%v,%v), want (%v,%v)", tc.text, nonASCII, cjkMab, tc.nonASCII, tc.cjkMab)
 		}
-		if got := hasCJKLetter(tc.text); got != tc.cjkLetter {
-			t.Errorf("hasCJKLetter(%q) = %v, want %v", tc.text, got, tc.cjkLetter)
+		if got := hasCJKRune(tc.text); got != tc.cjkRune {
+			t.Errorf("hasCJKRune(%q) = %v, want %v", tc.text, got, tc.cjkRune)
 		}
 	}
 }

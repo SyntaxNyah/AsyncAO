@@ -376,19 +376,16 @@ func TestIsInvisibleRuneCoversTheWholeZeroWidthCodec(t *testing.T) {
 	}
 }
 
-// TestPickFontIgnoresInvisibleRunesWhenChoosingAFace pins the render-side half of the
-// fix directly on the production picker.
-//
-// The bug: coverHasAll demanded a real cmap glyph for EVERY rune, and no ordinary text
-// face has one for the codec's zero-width symbols, so a single marker rune disqualified
-// the primary face and threw the whole row onto whatever came later in the chain. The
-// fix has to satisfy two things at once, which is why coverScan returns two values:
-// the PICK ignores invisible runes, and the covered flag stays HONEST (false here), so
-// the raster gate still takes the per-glyph path rather than blitting .notdef.
+// TestPickFontKeepsThePrimaryFace pins the production picker's rule: the set's first
+// face draws every line, whatever the line holds, and SDL_ttf takes each glyph it
+// lacks from the fallback faces attached to it. A zero-width style marker, a rune no
+// face has, or a rune only a later face has never moves the line to another family.
+// The covered flag reports whether the chain as a whole has every rune, invisible
+// ones included, because the raster gate reads it.
 //
 // Hermetic: pickFont only compares and returns the font pointers, never dereferences
 // them, so empty sentinels stand in for real faces and this runs with no SDL at all.
-func TestPickFontIgnoresInvisibleRunesWhenChoosingAFace(t *testing.T) {
+func TestPickFontKeepsThePrimaryFace(t *testing.T) {
 	marker := courtroom.SpriteStyle{Tint: true, R: 10, G: 20, B: 30}.EncodeMarker()
 	if marker == "" {
 		t.Fatal("EncodeMarker returned nothing for an active style — nothing would be under test")
@@ -400,17 +397,12 @@ func TestPickFontIgnoresInvisibleRunesWhenChoosingAFace(t *testing.T) {
 	if emb == nil {
 		t.Fatal("parseCover(goregular) returned nil — sfnt can't read the embedded font")
 	}
-	// Only the primary has a cover; the middle is a face nothing is known about, which is
-	// what a chain looks like before the fallback tiers load.
-	cover := []*sfnt.Font{emb, nil, nil}
 	var buf sfnt.Buffer
 
 	const tifinaghYath = "ⵜ" // a VISIBLE rune the embedded face genuinely lacks
 
-	// Ground truth this test rests on, in all three parts: the embedded face covers
-	// 'a', covers NONE of the codec runes, and does NOT cover the tifinagh. Every case
-	// below is an assertion about one of those three, so if any stopped being true the
-	// table would keep passing while testing nothing.
+	// Ground truth the cases rest on: the embedded face covers 'a', covers NONE of the
+	// codec runes, and does NOT cover the tifinagh.
 	if !coverHasRune(emb, &buf, 'a') {
 		t.Fatal("the embedded face does not cover 'a' — the fixture is broken")
 	}
@@ -420,44 +412,32 @@ func TestPickFontIgnoresInvisibleRunesWhenChoosingAFace(t *testing.T) {
 		}
 	}
 	if coverHasRune(emb, &buf, []rune(tifinaghYath)[0]) {
-		t.Fatal("the embedded face covers U+2D5C — the fall-through cases below would never fall through")
+		t.Fatal("the embedded face covers U+2D5C — the uncovered cases below would be covered")
 	}
 
+	primaryOnly := []*sfnt.Font{emb, nil, nil}
+	laterOnly := []*sfnt.Font{nil, emb, nil} // only a fallback face has Latin
 	cases := []struct {
 		name        string
+		cover       []*sfnt.Font
 		text        string
-		wantFont    *ttf.Font
 		wantCovered bool
 	}{
-		{"plain latin", "abc", primary, true},
-		{"latin plus a style marker", "abc" + marker, primary, false},
-		{"a marker on its own", marker, primary, false},
-		{"a genuinely uncovered visible rune still falls through", tifinaghYath, last, false},
-		{"an uncovered visible rune wins over the invisible ones", "abc" + tifinaghYath + marker, last, false},
+		{"plain latin", primaryOnly, "abc", true},
+		{"latin plus a style marker", primaryOnly, "abc" + marker, false},
+		{"a marker on its own", primaryOnly, marker, false},
+		{"a rune no face has", primaryOnly, tifinaghYath, false},
+		{"an uncovered rune among covered ones", primaryOnly, "abc" + tifinaghYath + marker, false},
+		{"runes only a fallback face has", laterOnly, "abc", true},
 	}
 	for _, tc := range cases {
-		got, covered := pickFont(fonts, cover, &buf, tc.text)
-		if got != tc.wantFont {
-			t.Errorf("%s: pickFont chose the wrong face", tc.name)
+		got, covered := pickFont(fonts, tc.cover, &buf, tc.text)
+		if got != primary {
+			t.Errorf("%s: pickFont moved the line off the primary face", tc.name)
 		}
 		if covered != tc.wantCovered {
 			t.Errorf("%s: covered = %v, want %v — the raster gate reads this flag", tc.name, covered, tc.wantCovered)
 		}
-	}
-
-	// coverScan's two answers, stated separately: the marker is invisible so the face is
-	// still a valid PICK, and it is still not FULL coverage.
-	if visible, all := coverScan(emb, &buf, "abc"+marker); !visible || all {
-		t.Errorf("coverScan(latin+marker) = (%v,%v), want (true,false)", visible, all)
-	}
-	if visible, all := coverScan(emb, &buf, "abc"); !visible || !all {
-		t.Errorf("coverScan(latin) = (%v,%v), want (true,true)", visible, all)
-	}
-	if visible, all := coverScan(emb, &buf, tifinaghYath); visible || all {
-		t.Errorf("coverScan(tifinagh) = (%v,%v), want (false,false)", visible, all)
-	}
-	if visible, all := coverScan(nil, &buf, "abc"); visible || all {
-		t.Errorf("coverScan(nil face) = (%v,%v), want (false,false)", visible, all)
 	}
 
 	// pickFont may not allocate. Production reaches it only on a pickIn memo MISS — a
@@ -465,9 +445,8 @@ func TestPickFontIgnoresInvisibleRunesWhenChoosingAFace(t *testing.T) {
 	// per-frame cost; it is the cost of every FIRST sighting of a line, which for a
 	// busy log is every line. The reused sfnt buffer is what makes zero possible.
 	//
-	// BOTH exits are measured. The early return (a face covers the visible runes) and
-	// the fall-through (nothing does, so the last entry is handed back) walk different
-	// amounts of the chain, and only the fall-through scans every cover in the set.
+	// Both outcomes are measured: a covered line scans every rune against the chain,
+	// an uncovered one returns at the first rune nothing has.
 	//
 	// Measured through allocsPerFrame, not a bare AllocsPerRun window: that window
 	// counts the WHOLE process, so a background burst under two concurrent
@@ -475,10 +454,10 @@ func TestPickFontIgnoresInvisibleRunesWhenChoosingAFace(t *testing.T) {
 	// allocation present. A real per-call allocation is in every window, so the
 	// retry cannot hide one.
 	marked := "abc" + marker // concatenated OUTSIDE the measured closure
-	if n := allocsPerFrame(50, 0, func() { pickFont(fonts, cover, &buf, marked) }); n != 0 {
-		t.Errorf("pickFont allocated %v times per call on the early-return path", n)
+	if n := allocsPerFrame(50, 0, func() { pickFont(fonts, laterOnly, &buf, "abc") }); n != 0 {
+		t.Errorf("pickFont allocated %v times per call on a covered line", n)
 	}
-	if n := allocsPerFrame(50, 0, func() { pickFont(fonts, cover, &buf, tifinaghYath) }); n != 0 {
-		t.Errorf("pickFont allocated %v times per call on the fall-through path", n)
+	if n := allocsPerFrame(50, 0, func() { pickFont(fonts, primaryOnly, &buf, marked) }); n != 0 {
+		t.Errorf("pickFont allocated %v times per call on an uncovered line", n)
 	}
 }

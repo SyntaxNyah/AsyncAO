@@ -485,7 +485,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.ensureFallbackFontLoad()
 	}
 	a.pollFallbackFont()
-	if a.ctx.TakeWantsCJK() { // a CJK letter was drawn → kick the (independent) CJK-font read
+	if a.ctx.TakeWantsCJK() { // a CJK rune was drawn → kick the (independent) CJK-font read
 		a.ensureCJKFontLoad()
 	}
 	a.pollCJKFont()

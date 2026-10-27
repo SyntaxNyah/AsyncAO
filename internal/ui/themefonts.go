@@ -235,10 +235,11 @@ func (a *App) elemFont(el themeFontElem, userPct int) *ttf.Font {
 // elemLabelFont is elemFont for a surface that used the fixed CHROME face before
 // #39 (the "Now playing" line): an undressed element keeps that chrome face, so
 // the label is byte-identical, while a theme that sizes/names music_name gets
-// its own.
-func (a *App) elemLabelFont(el themeFontElem, userPct int) *ttf.Font {
+// its own. The undressed arm resolves through chromeFaceFor, so a title with
+// symbols or another script draws with the fallback chain instead of boxes.
+func (a *App) elemLabelFont(el themeFontElem, userPct int, text string) *ttf.Font {
 	if !a.themeFonts.e[el].dressed() {
-		return a.ctx.font
+		return a.ctx.chromeFaceFor(text)
 	}
 	return a.elemFont(el, userPct)
 }
@@ -252,10 +253,10 @@ func (a *App) elemLabelFont(el themeFontElem, userPct int) *ttf.Font {
 // must draw byte-identically to a client with no theme at all), and it is the
 // reason the fold is opt-in per element rather than applied inside elemPct. The
 // consequence is explicit: an UNDRESSED music_name cannot shrink with the canvas.
-func (a *App) elemLabelFontAtPct(el themeFontElem, pct int) *ttf.Font {
+func (a *App) elemLabelFontAtPct(el themeFontElem, pct int, text string) *ttf.Font {
 	f := a.themeFonts.e[el]
 	if !f.dressed() {
-		return a.ctx.font
+		return a.ctx.chromeFaceFor(text)
 	}
 	// Dressed, so this is elemFont's dressed arm with the pct handed in: the
 	// !dressed && elemChat branch there is unreachable from here by construction.

@@ -2058,7 +2058,7 @@ func (a *App) drawThemedMusicPlate(lay *themeLayoutCache) bool {
 	// Custom, or Native in a window narrower than the design canvas — leaving the
 	// glyphs at the theme's declared point size clipped the track name early. This
 	// was the only themed text surface that never got the fold.
-	font := a.elemLabelFontAtPct(elemMusicName, a.themedChatPct(elemMusicName, DefaultScalePct, lay))
+	font := a.elemLabelFontAtPct(elemMusicName, a.themedChatPct(elemMusicName, DefaultScalePct, lay), label)
 	dst := sdl.Rect{X: md.X + mn.X, Y: md.Y + mn.Y, W: mn.W, H: mn.H}
 	// AO2's ScrollText insets its text by leftMargin on BOTH sides and reserves
 	// both in its fit test (../AO2-Client/src/scrolltext.cpp:47, drawn at :75/:78/
