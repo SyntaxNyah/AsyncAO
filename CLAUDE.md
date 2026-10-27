@@ -25,9 +25,11 @@ add TCP framing back.
 
 ## Hard rules (violations get rejected — spec §17, kept in force)
 
-1. **No SDL calls off the render thread.** Only `internal/render`, `internal/ui`
-   and `cmd/asyncao` may import go-sdl2, and everything there runs on the
-   locked main thread. `internal/assets`' decoder outputs plain `image.RGBA`.
+1. **No SDL calls off the render thread.** SDL is reached through our own
+   binding packages, `internal/sdl`, `internal/ttf` and `internal/mix`; nothing
+   else imports go-sdl2. Only `internal/render`, `internal/ui` and `cmd/asyncao`
+   may import the binding, and everything there runs on the locked main thread.
+   `internal/assets`' decoder outputs plain `image.RGBA`.
 2. **No synchronous disk I/O** on render/decode/resolver paths. Preferences
    use the debounced saver; the disk cache has one async writer goroutine.
 3. **No per-asset preference writes** — learning marks dirty, the saver flushes.
@@ -122,7 +124,7 @@ imports it — `courtroom`, `logbrowser`, `archive`, `render`, `ui` — needs cg
 SDL packages use the dummy video driver headlessly (`SDL_VIDEODRIVER=dummy`;
 they skip if SDL is unavailable).
 
-`render/mixerx` links SDL Mixer X (our fork), which `setup-deps.ps1` does not
+`internal/mix` links SDL Mixer X (our fork), which `setup-deps.ps1` does not
 install. Until the SDL3 move removes it, build it once from an MSYS2 UCRT64
 shell, with Git for Windows on PATH (the login shell does not inherit it):
 `MSYSTEM=UCRT64 /c/msys64/usr/bin/bash.exe -lc 'export PATH="$PATH:/c/Program Files/Git/cmd"; pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-{opus,opusfile,cmake,ninja} && bash <repo>/scripts/build-sdl-mixer-x.sh /ucrt64'`
@@ -141,6 +143,7 @@ shell, with Git for Windows on PATH (the login shell does not inherit it):
 | `internal/courtroom` | session handshake reducer, message lifecycle state machine, typewriter pacing, URL conventions, char.ini | no |
 | `internal/theme` | AO2 theme INIs (design/fonts/sounds), asset lookup ladder | no |
 | `internal/metrics` | 1 Hz sampler (heap, GC p99, hit rates), cold-load report | no |
+| `internal/sdl`, `ttf`, `mix` | our SDL binding: `sdl`/`ttf` forward to go-sdl2 (aliased types, same names), `mix` binds SDL Mixer X; reimplemented over SDL3 in plan step 2c | **yes** |
 | `internal/render` | TextureStore (T1), viewport compositor, message raster, upload pump, SDL_mixer audio | **yes** |
 | `internal/ui` | immediate-mode kit + screens (lobby/phone book, char select, courtroom, settings, about) | **yes** |
 | `cmd/asyncao` | flags, GOMEMLIMIT, LockOSThread, SDL init, main loop | **yes** |

@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // These tests drive mainWindowShouldQuit directly — the exact function
