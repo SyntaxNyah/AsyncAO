@@ -102,12 +102,13 @@ func main() {
 		g.eqHelpers[n].emitEq(&buf)
 	}
 
+	const generatedFileMode = 0o644 // an ordinary source file
 	out, err := format.Source(buf.Bytes())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, buf.String())
 		panic(err)
 	}
-	if err := os.WriteFile("settings_clone.go", out, 0o644); err != nil {
+	if err := os.WriteFile("settings_clone.go", out, generatedFileMode); err != nil {
 		panic(err)
 	}
 	fmt.Println("wrote internal/config/settings_clone.go")

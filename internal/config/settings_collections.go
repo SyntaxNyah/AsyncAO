@@ -244,8 +244,9 @@ func (s *Settings) SetPanelFont(id string, pf PanelFont) {
 		}
 		return
 	}
+	const panelFontsInitialCap = 4 // a typical user overrides a few panels
 	if s.PanelFontsVal == nil {
-		s.PanelFontsVal = make(map[string]PanelFont, 4)
+		s.PanelFontsVal = make(map[string]PanelFont, panelFontsInitialCap)
 	}
 	if len(s.PanelFontsVal) >= PanelFontMaxEntries {
 		if _, replacing := s.PanelFontsVal[id]; !replacing {
