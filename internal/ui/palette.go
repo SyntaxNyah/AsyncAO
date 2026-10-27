@@ -3,9 +3,8 @@ package ui
 import (
 	"strings"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Command palette (#39, Ctrl+Space): one fuzzy search over EVERYTHING —

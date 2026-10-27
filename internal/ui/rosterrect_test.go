@@ -8,7 +8,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // rosterLayout is a themed layout declaring exactly the named rects.

@@ -1,9 +1,8 @@
 package ui
 
 import (
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // The in-app Help screen: a glossary of Attorney Online terms (and, in its

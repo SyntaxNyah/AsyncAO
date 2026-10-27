@@ -5,7 +5,7 @@ package ui
 import (
 	"syscall"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // #77 Part B — reliable per-monitor DPI on Windows.

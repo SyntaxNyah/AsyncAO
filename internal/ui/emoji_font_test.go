@@ -3,8 +3,8 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 // TestColorFontRenderable pins the COLRv1 detection driving the emoji fallback (the "empty boxes"

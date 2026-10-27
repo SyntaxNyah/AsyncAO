@@ -3,7 +3,7 @@ package ui
 import (
 	"sync/atomic"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // The render-loop wake event (experimental event-driven loop): background

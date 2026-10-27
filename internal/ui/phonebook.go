@@ -12,9 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // setPhoneBookPage switches the lobby between the full server list and the Phone

@@ -22,9 +22,8 @@ package ui
 // with c.onRow so the gather-search finds them by label.
 
 import (
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/text"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 

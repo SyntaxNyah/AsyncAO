@@ -8,9 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // In-app .demo file browser (v1.72.2). The native OpenFileDialog shell-out

@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
-	"github.com/veandco/go-sdl2/sdl"
 )
 
 // TestChromePresetApplies pins #M3: a non-dark preset changes the kit colours; dark

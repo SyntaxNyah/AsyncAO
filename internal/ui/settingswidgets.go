@@ -9,10 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	hvalue "github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 	"github.com/SyntaxNyah/AsyncAO/internal/winexec"
 )

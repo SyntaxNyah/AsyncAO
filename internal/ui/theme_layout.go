@@ -12,13 +12,12 @@ import (
 	"math"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 // AO2 themes "hide" elements by flinging them off the design space

@@ -13,10 +13,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // rebuildBgFav refreshes the Backgrounds-section list from prefs. Called when

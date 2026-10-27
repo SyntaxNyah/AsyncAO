@@ -88,7 +88,7 @@ package ui
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Strip metrics. Chosen so a WIDE panel lays out exactly as the old two-row strip

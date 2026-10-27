@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // The server notice box: the one modal that shows a server's own words to the

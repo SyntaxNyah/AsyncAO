@@ -1,9 +1,8 @@
 package ui
 
 import (
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Player-list presence badges (#M1): a short label + colour per Status, shown as a chip

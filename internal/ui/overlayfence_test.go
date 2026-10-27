@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // The overlay-fence primitive (overlayfence.go) exists because the kit is

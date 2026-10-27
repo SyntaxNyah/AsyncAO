@@ -27,7 +27,7 @@ package ui
 // drops: Extras ▸ "Wardrobe / iniswap…" reaches the same modal from every screen, at
 // every width, and the classic layout keeps its own Wardrobe button.
 
-import "github.com/veandco/go-sdl2/sdl"
+import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
 const (
 	// iniswapChipLabel is the word people search for. Deliberately "Iniswap" and not

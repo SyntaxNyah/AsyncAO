@@ -4,7 +4,7 @@ import (
 	"sort"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 const (

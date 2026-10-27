@@ -3,9 +3,8 @@ package ui
 import (
 	"strings"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // #M5 Text FX on the IC bar. Clicking the FX button opens a small PICKER (a floating list) — with

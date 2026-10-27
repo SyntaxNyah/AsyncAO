@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Connection-quality chip (#128): an OPTIONAL, off-by-default signal-bar icon showing the

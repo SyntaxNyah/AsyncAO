@@ -1,6 +1,6 @@
 package ui
 
-import "github.com/veandco/go-sdl2/sdl"
+import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
 // IC emoji picker (#M2 slice 1): a button on the IC bar opens a grid of common emojis;
 // clicking one inserts it into your message. Purely LOCAL and standard-client-safe — it

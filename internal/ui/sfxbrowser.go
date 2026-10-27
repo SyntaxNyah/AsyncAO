@@ -3,7 +3,7 @@ package ui
 import (
 	"strings"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // #12 SFX Browser — an opt-in modal that EXPANDS the cramped IC-bar SFX dropdown. A streaming

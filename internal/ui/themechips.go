@@ -16,7 +16,7 @@ package ui
 // every strip goes through fitThemedChips instead, which is TOTAL: for any panel
 // width it returns a layout that fits inside the panel, or no strip at all.
 
-import "github.com/veandco/go-sdl2/sdl"
+import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
 const (
 	// themedChipMinW is the narrowest chip that still says something. Ctx.Button

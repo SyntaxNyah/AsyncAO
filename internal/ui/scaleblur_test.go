@@ -47,10 +47,9 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 // autoScaleStepW / autoScaleStepH are the FIRST window size that leaves 100%,

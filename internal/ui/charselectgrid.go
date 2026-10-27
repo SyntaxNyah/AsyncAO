@@ -67,9 +67,8 @@ package ui
 // far you have scrolled, which is exactly what a rounded device pitch could not do.
 
 import (
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 const (

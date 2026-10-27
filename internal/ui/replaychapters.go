@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Replay auto-chapters (#70): a loaded replay gets a jump list of its natural

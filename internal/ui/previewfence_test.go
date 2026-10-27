@@ -3,9 +3,8 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Issues #37 and #36, both reported against the sprite-preview box.

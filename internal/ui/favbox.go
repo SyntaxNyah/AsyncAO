@@ -3,7 +3,7 @@ package ui
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // The floating Favourite-Emotes box (#85): a small, movable, on-top panel showing

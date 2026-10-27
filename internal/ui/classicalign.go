@@ -9,7 +9,7 @@ package ui
 // never line boxes up: the defaults aren't grid-aligned, so a snapped box
 // always sat a few px off its unsnapped neighbour.
 
-import "github.com/veandco/go-sdl2/sdl"
+import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
 const (
 	// alignSnapPx is the capture distance (logical px) for edge/centre

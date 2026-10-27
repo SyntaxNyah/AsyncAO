@@ -9,9 +9,8 @@ package ui
 import (
 	"strings"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // serverHelpOutro closes the catalog: nobody's contribution goes

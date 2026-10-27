@@ -1,9 +1,8 @@
 package ui
 
 import (
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // #130 — the CM (area control) tools live in their OWN panel, separate from the mod (ban/kick)

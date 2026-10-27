@@ -39,7 +39,7 @@ package ui
 // PURE AND ALLOCATION-FREE. Fixed arrays, an injected measure, no App and no Ctx —
 // so the geometry is gate-able headless and the per-frame draw pays nothing for it.
 
-import "github.com/veandco/go-sdl2/sdl"
+import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
 // ---------------------------------------------------------------------------
 // Named caps and metrics (hard rule 9)

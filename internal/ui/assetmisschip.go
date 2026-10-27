@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // GH #27 — the missing-asset report gets a surface of its own.

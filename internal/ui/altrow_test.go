@@ -4,10 +4,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestDisableAltEmoteRowGatesNumberRow pins the kill-switch: with the pref on, a

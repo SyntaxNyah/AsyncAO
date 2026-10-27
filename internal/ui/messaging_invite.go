@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Group invites are explicit now: an incoming invite is queued (not auto-joined)

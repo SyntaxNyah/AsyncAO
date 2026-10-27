@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Custom style presets (#126): named "mood" bundles of your own sprite style + text colour

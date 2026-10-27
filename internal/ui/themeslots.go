@@ -24,7 +24,7 @@ package ui
 // hand-ordered draw bodies into the `draw` field and flips them to
 // slotStateTable. That is why the state is data and not a bool.
 
-import "github.com/veandco/go-sdl2/sdl"
+import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
 // themeSlotRelSpace is the coordinate system a design rect is expressed in.
 // AO2's own courtroom_design.ini says this out loud in its section banners

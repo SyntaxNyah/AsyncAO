@@ -18,9 +18,8 @@ package ui
 // renderAnimated passes as the fallback.
 
 import (
-	"github.com/veandco/go-sdl2/ttf"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 // animFontResolver builds the per-rune font resolver for one effects message: the colour-emoji

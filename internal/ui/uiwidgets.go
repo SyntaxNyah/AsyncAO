@@ -6,11 +6,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
-
 	hvalue "github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 // LabelClippedFontAlpha is LabelClippedFont with a per-draw alpha, applied with

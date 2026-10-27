@@ -16,8 +16,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
-	"github.com/veandco/go-sdl2/sdl"
 )
 
 // writeThemeDesign fabricates a theme dir holding only a courtroom_design.ini.

@@ -29,11 +29,10 @@ package ui
 // that the real per-frame call site (drawICLogList) is untouched.
 
 import (
-	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 const (

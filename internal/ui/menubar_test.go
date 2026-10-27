@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // The app-wide menu bar (#14, menubar.go). These pin the four things that make it a

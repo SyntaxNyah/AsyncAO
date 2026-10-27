@@ -6,9 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // The #21 theme-parity arc's two oracles.

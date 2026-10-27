@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // The #38 suite: "clickable OOC links highlight the entire message rather than

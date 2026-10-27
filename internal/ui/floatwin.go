@@ -1,9 +1,8 @@
 package ui
 
 import (
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // floatWin is a generic movable + resizable, non-blocking floating window — the

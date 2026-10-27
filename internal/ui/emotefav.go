@@ -2,7 +2,7 @@ package ui
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Emote favourites (#77): star the handful of emotes you actually use on a

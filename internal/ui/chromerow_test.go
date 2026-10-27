@@ -15,7 +15,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // chromeProbeCtls is a row with the Music header's real shape: five fixed icon

@@ -22,7 +22,7 @@ package ui
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // areaMenuKindBase offsets the area rows well clear of the music/roster block's

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // drawFriendsTab is the dedicated Friends window the playtesters asked for — a tab

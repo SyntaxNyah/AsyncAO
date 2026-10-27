@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestAreaMenuRowsAreAllReachableActions pins the area kebab's model (areamenu.go):

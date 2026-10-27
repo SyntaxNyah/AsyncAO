@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestChromeLabelFallsBackForNonLatin is the "tofu everywhere" regression.

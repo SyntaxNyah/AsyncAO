@@ -20,9 +20,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Slot names — string literals so the render path never formats a key (which

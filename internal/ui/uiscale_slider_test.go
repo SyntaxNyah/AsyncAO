@@ -4,9 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestManualUIScaleCommitOnRelease drives the manual UI-scale slider through a
