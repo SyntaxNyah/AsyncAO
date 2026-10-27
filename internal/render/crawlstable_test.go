@@ -4,7 +4,7 @@ import (
 	"image"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestDeviceExactGate pins when the device-exact blit engages. It must NOT fire at

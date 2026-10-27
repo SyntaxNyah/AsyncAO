@@ -6,10 +6,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // overlayPage builds a bare multi-frame page. Frame textures are never

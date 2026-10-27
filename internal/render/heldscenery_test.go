@@ -5,10 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // bigDecoded builds a decoded asset of frames×(w×h) RGBA frames — sized so a

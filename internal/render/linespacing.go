@@ -1,6 +1,6 @@
 package render
 
-import "github.com/veandco/go-sdl2/ttf"
+import "github.com/SyntaxNyah/AsyncAO/internal/ttf"
 
 // The ONE line-advance metric every message raster stacks wrapped rows by.
 // (../AO2-Client/src/courtroom.h:626, constructed at src/courtroom.cpp:97), so its

@@ -14,8 +14,8 @@ package render
 // text font mid-emoji.
 
 import (
-	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 const (

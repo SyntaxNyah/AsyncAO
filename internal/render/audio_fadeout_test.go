@@ -4,7 +4,7 @@ import (
 	"testing"
 	"unsafe"
 
-	mix "github.com/SyntaxNyah/AsyncAO/internal/render/mixerx"
+	"github.com/SyntaxNyah/AsyncAO/internal/mix"
 )
 
 // TestStopMusicClearsCrossfade pins that stopMusic tears down the crossfade

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestPunchScale pins the #12 shout-punch curve: zero at/after the end and for a

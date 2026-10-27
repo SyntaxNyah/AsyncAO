@@ -4,10 +4,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
 	"golang.org/x/image/font/gofont/gomono"
 	"golang.org/x/image/font/gofont/goregular"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 func newAnimTestFont(t testing.TB, size int) (*ttf.Font, func()) {

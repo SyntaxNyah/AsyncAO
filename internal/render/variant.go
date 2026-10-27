@@ -5,10 +5,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Per-pixel sprite-style variants (#103): invert and grayscale can't ride the cheap

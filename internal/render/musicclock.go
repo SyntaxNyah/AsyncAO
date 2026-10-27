@@ -1,7 +1,7 @@
 package render
 
 // MusicClock reports the currently-playing stream's true position and total
-// duration in seconds, read straight from SDL_mixer (2.6+) through the mixerx
+// duration in seconds, read straight from SDL_mixer (2.6+) through the mix
 // wrapper. ok is false when the device is disabled, no stream is loaded, or the
 // source cannot report a duration/position (mod/midi return -1); in every one
 // of those cases callers fall back to the wall-clock estimate rather than
@@ -12,7 +12,7 @@ package render
 // This used to resolve Mix_MusicDuration / Mix_GetMusicPosition through a
 // dlsym/GetProcAddress shim (so a pre-2.6 SDL_mixer link would not break the
 // build). That shim is gone now: the binary links SDL Mixer X directly
-// (internal/render/mixerx), which always exports both symbols, so the direct
+// (internal/mix), which always exports both symbols, so the direct
 // bindings below are safe and simpler.
 func (a *Audio) MusicClock() (posSec, durSec float64, ok bool) {
 	if a == nil || !a.enabled || a.music == nil {

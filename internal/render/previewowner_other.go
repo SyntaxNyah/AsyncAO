@@ -2,7 +2,7 @@
 
 package render
 
-import "github.com/veandco/go-sdl2/sdl"
+import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
 // LinkOwner has no portable equivalent off Windows in this build (the
 // z-order-linked-owner-window concept is Win32-specific; X11/macOS have

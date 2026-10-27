@@ -6,7 +6,7 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // previewWindowTexBudgetBytes bounds the preview window's OWN texture slot —

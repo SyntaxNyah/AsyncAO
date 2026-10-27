@@ -5,7 +5,7 @@ import (
 
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestClipRectSurvivesScaleChange is an EMPIRICAL check of the assumption the

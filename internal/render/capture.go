@@ -6,7 +6,7 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // CaptureTarget is a reusable offscreen render target for the scene GIF export:

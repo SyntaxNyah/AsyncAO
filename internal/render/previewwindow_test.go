@@ -5,7 +5,7 @@ import (
 	"image"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // previewFixtureImage builds a small opaque RGBA fixture — a stand-in for

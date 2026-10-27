@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestDepthOfFieldZeroAlloc pins #11: the background soft-focus + dim renders with zero

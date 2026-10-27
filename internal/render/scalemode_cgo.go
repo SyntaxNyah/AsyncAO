@@ -37,9 +37,8 @@ import "C"
 import (
 	"unsafe"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // scaleModeSupported reports whether this build can override a texture's filter

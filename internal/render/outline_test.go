@@ -4,9 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestSpriteOutlineShadowZeroAlloc pins #8: a received outline + drop-shadow on BOTH the

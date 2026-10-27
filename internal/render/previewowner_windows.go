@@ -5,7 +5,7 @@ package render
 import (
 	"syscall"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // Ties the detached preview window's real OS window to the main window's, so

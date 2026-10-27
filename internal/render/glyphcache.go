@@ -3,8 +3,8 @@ package render
 import (
 	"math"
 
-	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 // glyphWhite is the colour every cached glyph is rendered in; a per-draw SetColorMod

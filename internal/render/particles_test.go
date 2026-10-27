@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestParticleWeatherZeroAlloc pins #124: an active weather overlay renders with zero per-frame

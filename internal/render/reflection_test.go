@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestReflectionZeroAlloc pins #123: the flipped glass-floor reflection of the speaker + pair

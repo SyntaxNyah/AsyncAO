@@ -4,9 +4,10 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
 	"golang.org/x/image/font/gofont/goregular"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 // The chatbox row pitch. Two wrapped IC lines were drawn almost touching because
