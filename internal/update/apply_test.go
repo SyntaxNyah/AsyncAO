@@ -580,3 +580,37 @@ func TestStageBundleMacLib(t *testing.T) {
 		t.Error("documentation (INSTALL.txt) must not be installed")
 	}
 }
+
+// TestExtractTarGzGuardsByPathSegments: a tar name is attacker-controlled, and
+// Windows treats '\' as a separator, so a backslash ".." segment must be refused
+// like a slash one. A name that merely starts with two dots is a legal file.
+func TestExtractTarGzGuardsByPathSegments(t *testing.T) {
+	const (
+		legal      = "..notes.txt"
+		legalBody  = "notes"
+		escape     = `lib\..\..\escape.dylib`
+		trailingUp = "lib/.."
+	)
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	okPath := filepath.Join(dir, "ok.tar.gz")
+	writeTarGz(t, okPath, map[string]string{legal: legalBody})
+	if err := ExtractTarGz(okPath, out); err != nil {
+		t.Fatalf("legal name %q refused: %v", legal, err)
+	}
+	if got := readFile(t, filepath.Join(out, legal)); got != legalBody {
+		t.Errorf("%s = %q, want %q", legal, got, legalBody)
+	}
+
+	for _, bad := range []string{escape, trailingUp} {
+		badPath := filepath.Join(dir, "bad.tar.gz")
+		writeTarGz(t, badPath, map[string]string{bad: "x"})
+		if err := ExtractTarGz(badPath, out); err == nil {
+			t.Errorf("unsafe name %q was extracted", bad)
+		}
+	}
+}
