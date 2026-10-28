@@ -928,7 +928,11 @@ step 2c; 3, 4, 6, 7, 9, 10 and 11 before step 4). None reopens the toolkit choic
    if transformed edges need it, and run the per-feature test on a hardware GPU.
 4. **Text.** RmlUi draws text with FreeType. Decide whether SDL3_ttf stays (courtroom message
    raster) or goes, and test font fallback for CJK and emoji (today's `fontfallback.go`) and
-   IME composition through RmlUi.
+   IME composition through RmlUi. Known SDL_ttf 3.2.2 bug (2026-10-28): a glyph from a
+   fallback font is placed by that font's ascent, not the line's (fixed on SDL_ttf main, not
+   yet released). Labels compose runs on the primary's baseline (`Ctx.renderLabel`) and
+   messages use the per-run raster until msys2 and the distros ship a fixed release; then
+   mixed text can draw through the fallback chain in one call again.
 5. **Device loss — decided (2026-10-27): detect and rebuild.** SDL 3.4's `gpu` renderer sends
    no `RENDER_DEVICE_RESET`, `RENDER_TARGETS_RESET` or `DEVICE_LOST` event, and SDL_GPU's
    Vulkan backend only turns `VK_ERROR_DEVICE_LOST` into a failed call. A failed present or
