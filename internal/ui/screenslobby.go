@@ -523,7 +523,7 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 	if e.Favorite {
 		starCol = ColStar
 	}
-	c.Label(starRect.X+4, y+4, "★", starCol)
+	c.IconLabel(starRect, "★", starCol)
 	if c.hovering(starRect) && c.clicked {
 		a.toggleFavorite(e)
 		return
@@ -1123,7 +1123,7 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 		if starred {
 			starCol = ColStar
 		}
-		c.Label(starR.X+3, starR.Y+1, "★", starCol)
+		c.IconLabel(starR, "★", starCol)
 		if c.hovering(starR) {
 			c.Tooltip(starR, "Star → save to your Wardrobe (favourites)")
 			if c.clicked {

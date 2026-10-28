@@ -109,7 +109,7 @@ func (a *App) drawFavSongRow(ref favRef, r sdl.Rect) {
 	bx -= 28
 	sr := sdl.Rect{X: bx, Y: r.Y, W: 26, H: r.H}
 	c.Fill(sr, ColPanelHi)
-	c.Label(sr.X+5, r.Y+5, "★", ColStar)
+	c.IconLabel(sr, "★", ColStar)
 	c.Tooltip(sr, "Remove from favorites")
 	if c.hovering(sr) && c.clicked {
 		a.juke.SetEntryFav(ref.pl, ref.e, false)

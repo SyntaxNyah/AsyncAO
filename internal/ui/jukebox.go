@@ -524,7 +524,7 @@ func (a *App) drawJukeEntryRow(e config.JukeboxEntry, idx int, r sdl.Rect) {
 		starCol = ColStar
 	}
 	c.Fill(sr, ColPanelHi)
-	c.Label(sr.X+5, r.Y+5, "★", starCol)
+	c.IconLabel(sr, "★", starCol)
 	c.Tooltip(sr, "Favorite this song (★) — find it fast in the Favorites view")
 	if c.hovering(sr) && c.clicked {
 		a.juke.SetEntryFav(a.jukeOpen, idx, !e.Fav)
