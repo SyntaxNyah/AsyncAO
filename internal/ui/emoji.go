@@ -109,6 +109,7 @@ func (a *App) ensureEmojiFontLoad() {
 		if b := bestEmojiFont(); len(b) > 0 {
 			select {
 			case ch <- b:
+				PushWake() // an idle screen would otherwise keep its emoji boxes until the next input
 			default:
 			}
 		}

@@ -291,6 +291,11 @@ type Ctx struct {
 	embeddedCover *sfnt.Font
 	sfntBuf       sfnt.Buffer
 	wantFallback  bool
+	// fallbackAsked and cjkAsked record that the request was raised once this session.
+	// noteScript never raises it again: on a machine without the faces the load finds
+	// nothing, and a request raised on every draw would keep the render loop busy.
+	fallbackAsked bool
+	cjkAsked      bool
 	// CJK tier: big Han/Kana + Hangul faces (13-35 MB each), loaded only when a CJK
 	// LETTER is actually drawn (not on every non-ASCII), appended after the broad set.
 	// Separate from fallbackData so the two tiers load independently.
@@ -903,8 +908,8 @@ func (c *Ctx) dropThemeElemSets() {
 // SEPARATE from the broad one so the broad load (fired by the first European accent)
 // can't swallow a later CJK trigger.
 func (c *Ctx) noteScript(text string) {
-	needBroad := c.fallbackData == nil && !c.wantFallback
-	needCJK := c.cjkData == nil && !c.wantCJK
+	needBroad := c.fallbackData == nil && !c.fallbackAsked
+	needCJK := c.cjkData == nil && !c.cjkAsked
 	if !needBroad && !needCJK {
 		return
 	}
@@ -913,10 +918,12 @@ func (c *Ctx) noteScript(text string) {
 		return
 	}
 	if needBroad {
-		c.wantFallback = true
+		c.wantFallback, c.fallbackAsked = true, true
+		PushWake() // the App starts the load next frame; an idle screen would never run one
 	}
 	if needCJK && cjkMaybe && hasCJKRune(text) {
-		c.wantCJK = true
+		c.wantCJK, c.cjkAsked = true, true
+		PushWake()
 	}
 }
 
@@ -1560,6 +1567,7 @@ func (c *Ctx) noteUncovered(r rune) {
 	}
 	c.missingRunes[c.missingN] = r
 	c.missingN++
+	PushWake() // the App hands queued runes to the census next frame, idle screen or not
 }
 
 // TakeMissingRunes copies out (and clears) the runes nothing could draw. dst is

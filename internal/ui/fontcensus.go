@@ -319,6 +319,7 @@ func (a *App) startCensus() {
 			case res <- data:
 				sent[path] = true
 				delivered++
+				PushWake() // pollCensusFont installs it on the next frame, even on an idle screen
 			default:
 				continue // the render thread hasn't drained yet; it will re-ask
 			}

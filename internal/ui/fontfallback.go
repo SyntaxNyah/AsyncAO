@@ -156,22 +156,41 @@ func (a *App) ensureFallbackFontLoad() {
 	if len(cands) == 0 {
 		return
 	}
-	ch := a.fallbackFontRes
-	go func() {
-		var data [][]byte
-		for _, p := range cands {
-			if b, err := os.ReadFile(p); err == nil && len(b) > 0 && len(b) <= fontFileMaxBytes {
-				data = append(data, b)
-			}
+	go loadFontFiles(cands, a.fallbackFontRes)
+}
+
+// fontWorkPending reports font loading the next frame has to act on: a request a
+// label raised while drawing (this frame's polls had already run), runes queued
+// for the census, or a finished load waiting to be installed. SkipFrame renders a
+// static screen only for a reason, and a wake event alone is not one, so without
+// this an idle screen kept its boxes until the next input. Cheap: field reads and
+// channel lengths.
+func (a *App) fontWorkPending() bool {
+	if c := a.ctx; c != nil && (c.wantFallback || c.wantCJK || c.missingN > 0) {
+		return true
+	}
+	return len(a.fallbackFontRes) > 0 || len(a.cjkFontRes) > 0 || len(a.emojiFontRes) > 0 || len(a.censusRes) > 0
+}
+
+// loadFontFiles reads the font files that exist, off the render thread, hands
+// their bytes to ch and wakes the render loop: an idle screen draws no frame of
+// its own, so without the wake the faces would sit in ch until the next input
+// and every label waiting on them would stay boxes.
+func loadFontFiles(paths []string, ch chan<- [][]byte) {
+	var data [][]byte
+	for _, p := range paths {
+		if b, err := os.ReadFile(p); err == nil && len(b) > 0 && len(b) <= fontFileMaxBytes {
+			data = append(data, b)
 		}
-		if len(data) == 0 {
-			return
-		}
-		select {
-		case ch <- data:
-		default:
-		}
-	}()
+	}
+	if len(data) == 0 {
+		return
+	}
+	select {
+	case ch <- data:
+		PushWake()
+	default:
+	}
 }
 
 // pollFallbackFont installs the broad fallback faces on the render thread once their
@@ -299,21 +318,7 @@ func (a *App) ensureCJKFontLoad() {
 	}
 	a.cjkLoadStarted = true
 	ch := a.cjkFontRes
-	go func() {
-		var data [][]byte
-		for _, p := range cjkFontList() {
-			if b, err := os.ReadFile(p); err == nil && len(b) > 0 && len(b) <= fontFileMaxBytes {
-				data = append(data, b)
-			}
-		}
-		if len(data) == 0 {
-			return
-		}
-		select {
-		case ch <- data:
-		default:
-		}
-	}()
+	go func() { loadFontFiles(cjkFontList(), ch) }() // cjkFontList stats files, so it runs off-thread too
 }
 
 // pollCJKFont installs the CJK faces on the render thread once their bytes land,
