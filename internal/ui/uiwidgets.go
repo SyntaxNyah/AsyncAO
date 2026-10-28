@@ -131,11 +131,7 @@ func (c *Ctx) fontTextWidthWeight(f *ttf.Font, text string, bold bool) (int32, b
 	if w, ok := c.panelWidth[k]; ok {
 		return w, true
 	}
-	if bold {
-		f.SetStyle(ttf.STYLE_BOLD)
-		defer f.SetStyle(ttf.STYLE_NORMAL) // never leave a weight on the shared face
-	}
-	w, _, err := f.SizeUTF8(text)
+	w, err := c.measureLabel(f, text, bold) // the width the label draws at, run by run when mixed
 	if err != nil {
 		return 0, false
 	}
@@ -144,8 +140,8 @@ func (c *Ctx) fontTextWidthWeight(f *ttf.Font, text string, bold bool) (int32, b
 	} else if len(c.panelWidth) >= textCacheMax {
 		c.panelWidth = make(map[panelWidthKey]int32, textCacheMax)
 	}
-	c.panelWidth[k] = int32(w)
-	return int32(w), true
+	c.panelWidth[k] = w
+	return w, true
 }
 
 // devTextWidth measures text on the DEVICE chrome face — the metric the drawn

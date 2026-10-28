@@ -276,6 +276,11 @@ type Ctx struct {
 	// so emojiData must outlive the faces.
 	emojiData  []byte
 	emojiFonts map[int]*ttf.Font
+	// emojiCover is emojiData's cmap, so the colour face can sit last in every font
+	// set like any fallback face (buildSet). emojiAsked records that a label asked
+	// for the face, so the byte scan for emoji runs until the first request only.
+	emojiCover *sfnt.Font
+	emojiAsked bool
 	// Broad-Unicode TEXT fallback faces (Segoe UI, Ebrima, Nirmala, Segoe UI Symbol),
 	// loaded LAZILY off-thread only after a message carries a non-ASCII rune. Unlike
 	// the emoji face these DO join the per-size set (after the embedded font), so
@@ -800,6 +805,9 @@ type fontSet struct {
 	// resolves a face to its set, not to which chain that set came from).
 	srcChain []([]byte)
 	srcCover []*sfnt.Font
+	// emoji is the set's colour-emoji face, the last entry of fonts, or nil while
+	// the face is not loaded. Labels route emoji sequences to it (renderLabel).
+	emoji *ttf.Font
 }
 
 // fontChainCap bounds the override chain (a primary plus a few CJK
@@ -912,7 +920,8 @@ func (c *Ctx) dropThemeElemSets() {
 func (c *Ctx) noteScript(text string) {
 	needBroad := c.fallbackData == nil && !c.fallbackAsked
 	needCJK := c.cjkData == nil && !c.cjkAsked
-	if !needBroad && !needCJK {
+	needEmoji := c.emojiData == nil && !c.emojiAsked && c.emojiLoad != nil
+	if !needBroad && !needCJK && !needEmoji {
 		return
 	}
 	nonASCII, cjkMaybe := scanScriptBytes(text)
@@ -927,6 +936,20 @@ func (c *Ctx) noteScript(text string) {
 		c.wantCJK, c.cjkAsked = true, true
 		PushWake()
 	}
+	if needEmoji && render.NeedsEmojiFallback(text) {
+		c.requestEmoji()
+	}
+}
+
+// requestEmoji asks the App, once per session, to load the colour-emoji face. The
+// App's read runs off-thread and wakes the loop when it lands; SetEmojiFont then
+// rebuilds every set with the face last, so labels drawn as boxes redraw in colour.
+func (c *Ctx) requestEmoji() {
+	if c.emojiData != nil || c.emojiAsked || c.emojiLoad == nil {
+		return
+	}
+	c.emojiAsked = true
+	c.emojiLoad()
 }
 
 // TakeWantsFallback / TakeWantsCJK report (and clear) whether their script was seen
@@ -1474,6 +1497,7 @@ func (c *Ctx) buildSet(s *fontSet, chain [][]byte, chainCover []*sfnt.Font, pct,
 	}
 	s.fonts = s.fonts[:0]
 	s.cover = s.cover[:0]
+	s.emoji = nil
 	s.pct, s.devPct, s.gen = pct, devPct, c.fontChainGen
 	s.srcChain, s.srcCover = chain, chainCover
 	// Fold the device scale into the point size (#77): the per-element pct AND the
@@ -1500,7 +1524,7 @@ func (c *Ctx) buildSet(s *fontSet, chain [][]byte, chainCover []*sfnt.Font, pct,
 	// Nor when the set has fallback faces: the set's first face carries them (see
 	// the end of this function), and a shared chrome face would collect every
 	// set's chain and keep pointers to faces another set's rebuild closes.
-	hasFallbacks := len(chain) > 0 || len(c.fallbackData) > 0 || len(c.cjkData) > 0 || len(c.censusData) > 0
+	hasFallbacks := len(chain) > 0 || len(c.fallbackData) > 0 || len(c.cjkData) > 0 || len(c.censusData) > 0 || len(c.emojiData) > 0
 	if chromeShare == nil || (!hasFallbacks && pct == DefaultScalePct && devPct == DefaultScalePct && c.chromeData == nil) {
 		s.fonts = append(s.fonts, chromeShare)
 	} else if f, err := loadEmbeddedFont(size); err == nil {
@@ -1539,6 +1563,15 @@ func (c *Ctx) buildSet(s *fontSet, chain [][]byte, chainCover []*sfnt.Font, pct,
 			s.cover = append(s.cover, coverAt(c.censusCover, i))
 		}
 	}
+	// The colour-emoji face last of all: emoji live in no text face, and a text face
+	// that has a symbol draws it in the text's style rather than as a picture.
+	if len(c.emojiData) > 0 {
+		if f, err := memFont(c.emojiData, size); err == nil {
+			s.fonts = append(s.fonts, f)
+			s.cover = append(s.cover, c.emojiCover)
+			s.emoji = f
+		}
+	}
 	// Per-glyph fallback, the way Qt resolves fonts: the first face has every glyph
 	// it can, and SDL_ttf takes each missing glyph from the first later face that
 	// has it. Measuring goes through this chain. Drawing mixed text does not, while
@@ -1559,6 +1592,9 @@ func (c *Ctx) buildSet(s *fontSet, chain [][]byte, chainCover []*sfnt.Font, pct,
 // the raster BUILD path only (coverRunes), never per frame, and allocation-free:
 // the queue is a fixed array that stops accepting once full.
 func (c *Ctx) noteUncovered(r rune) {
+	if render.BMPPictograph(r) {
+		c.requestEmoji() // no text face has this pictograph; the colour face may
+	}
 	if c.missingN >= len(c.missingRunes) {
 		return
 	}
@@ -1624,6 +1660,11 @@ func (c *Ctx) SetEmojiFont(data []byte) {
 	}
 	c.emojiFonts = nil
 	c.emojiData = data
+	c.emojiCover = nil
+	if len(data) > 0 {
+		c.emojiCover = parseCover(data)
+	}
+	c.fontChainGen++    // every set rebuilds with the face last; labels drawn as boxes redraw
 	c.purgeEmojiCache() // cached rasters used the OLD emoji face — rebuild on next draw
 }
 
@@ -2515,65 +2556,131 @@ func (c *Ctx) textTextureBold(text string, col sdl.Color, font *ttf.Font, bold b
 
 // renderLabel rasterizes a label's text in dev, the device face of font. Text dev
 // has every glyph for is one SDL_ttf render. Text that needs fallback faces is
-// rendered run by run, each run in the face that has its glyphs, and the runs are
-// placed on dev's baseline. SDL_ttf would draw such text in one call through the
-// fallback chain, but 3.2.2 places a fallback glyph by its own font's ascent, not
-// the line's: Segoe UI Symbol glyphs landed a pixel or more low and Japanese ones
-// high, more at larger sizes. Fixed on SDL_ttf main, not yet released. The label
-// grows above dev's top only when a run's ink would reach past it.
+// rendered run by run (labelRuns), each run in the face that has its glyphs, and
+// the runs are placed on dev's baseline. SDL_ttf would draw such text in one call
+// through the fallback chain, but 3.2.2 places a fallback glyph by its own font's
+// ascent, not the line's: Segoe UI Symbol glyphs landed a pixel or more low and
+// Japanese ones high, more at larger sizes. Fixed on SDL_ttf main, not yet
+// released. The label grows above dev's top only when a run's ink would reach past
+// it.
 func (c *Ctx) renderLabel(font, dev *ttf.Font, text string, col sdl.Color, bold bool) (*sdl.Surface, error) {
-	if s := c.setOf(font); !hasNonASCII(text) || s == nil || len(s.fonts) <= 1 {
-		return renderStyled(dev, text, col, bold) // no fallback faces to take glyphs from
-	}
-	runes := []rune(text)
-	faces := c.deviceCoverRunes(font, DefaultScalePct, runes)
-	if allSameFont(faces, dev) {
+	runs := c.labelRuns(font, text, true)
+	if runs == nil {
 		return renderStyled(dev, text, col, bold)
 	}
-	type run struct {
-		surf *sdl.Surface
-		face *ttf.Font
-	}
-	var runs []run
+	surfs := make([]*sdl.Surface, 0, len(runs))
 	defer func() {
-		for _, r := range runs {
-			r.surf.Free()
+		for _, s := range surfs {
+			s.Free()
 		}
 	}()
 	ascent := int32(dev.Ascent())
 	var above, width int32 // rows a run's ink needs above dev's top; total width
-	for i := 0; i < len(runes); {
-		j := i + 1
-		for j < len(runes) && faces[j] == faces[i] {
-			j++
-		}
-		s, err := renderStyled(faces[i], string(runes[i:j]), col, bold)
+	for _, r := range runs {
+		s, err := renderStyled(r.face, r.text, col, bold)
 		if err != nil {
 			return nil, err
 		}
-		runs = append(runs, run{surf: s, face: faces[i]})
+		surfs = append(surfs, s)
 		inkTop, _ := inkRows(s)
-		above = max(above, int32(faces[i].Ascent())-ascent-inkTop)
+		above = max(above, int32(r.face.Ascent())-ascent-inkTop)
 		width += s.W
-		i = j
 	}
 	height := above + int32(dev.Height())
-	for _, r := range runs {
-		height = max(height, above+ascent-int32(r.face.Ascent())+r.surf.H)
+	for i, r := range runs {
+		height = max(height, above+ascent-int32(r.face.Ascent())+surfs[i].H)
 	}
 	out, err := sdl.CreateRGBSurfaceWithFormat(0, width, height, 0, uint32(sdl.PIXELFORMAT_ARGB8888))
 	if err != nil {
 		return nil, err
 	}
 	x := int32(0)
-	for _, r := range runs {
-		if err := r.surf.CopyTo(out, x, above+ascent-int32(r.face.Ascent())); err != nil {
+	for i, r := range runs {
+		if err := surfs[i].CopyTo(out, x, above+ascent-int32(r.face.Ascent())); err != nil {
 			out.Free()
 			return nil, err
 		}
-		x += r.surf.W
+		x += surfs[i].W
 	}
 	return out, nil
+}
+
+// measureLabel is the width renderLabel draws text at, in f's own scale: one
+// SDL_ttf measure, or the sum of the runs' widths when the label draws run by run.
+// Measuring the whole string through the fallback chain instead rounds fractional
+// advances differently at the run boundaries, and layout would be off by a pixel.
+func (c *Ctx) measureLabel(f *ttf.Font, text string, bold bool) (int32, error) {
+	runs := c.labelRuns(f, text, false)
+	if runs == nil {
+		return sizeStyled(f, text, bold)
+	}
+	var width int32
+	for _, r := range runs {
+		w, err := sizeStyled(r.face, r.text, bold)
+		if err != nil {
+			return 0, err
+		}
+		width += w
+	}
+	return width, nil
+}
+
+// textRun is a maximal piece of a label drawn in one face.
+type textRun struct {
+	face *ttf.Font
+	text string
+}
+
+// labelRuns splits text into maximal runs that each draw in one face of font's set:
+// the face that has the glyphs, and the colour-emoji face for whole emoji sequences
+// (the joiners, variation selectors and skin-tone modifiers too, or a family or a
+// flag would split into its parts; the chat's raster routes them by the same rule).
+// device picks the device-scaled faces, for drawing; otherwise font's own set, for
+// measuring. nil when font draws all of text itself.
+func (c *Ctx) labelRuns(font *ttf.Font, text string, device bool) []textRun {
+	s := c.setOf(font)
+	if !hasNonASCII(text) || s == nil || len(s.fonts) <= 1 {
+		return nil // no fallback faces to take glyphs from
+	}
+	runes := []rune(text)
+	faces, self, emoji := c.coverRunes(font, runes), font, s.emoji
+	if device {
+		faces, self, emoji = c.deviceCoverRunes(font, DefaultScalePct, runes), c.deviceTextFont(font), c.deviceEmojiFace(font)
+	}
+	if emoji != nil && render.NeedsEmojiFallback(text) {
+		for i, isEmoji := range render.AssignEmoji(runes) {
+			if isEmoji {
+				faces[i] = emoji
+			}
+		}
+	}
+	if allSameFont(faces, self) {
+		return nil
+	}
+	var runs []textRun
+	for i := 0; i < len(runes); {
+		j := i + 1
+		for j < len(runes) && faces[j] == faces[i] {
+			j++
+		}
+		runs = append(runs, textRun{face: faces[i], text: string(runes[i:j])})
+		i = j
+	}
+	return runs
+}
+
+// deviceEmojiFace is the colour-emoji face of the device set font belongs to, or
+// nil when font is in no set or the face is not loaded.
+func (c *Ctx) deviceEmojiFace(font *ttf.Font) *ttf.Font {
+	log, dev, _ := c.setIndexOf(font)
+	if log == nil {
+		return nil
+	}
+	if c.textDevPct == DefaultScalePct || c.textDevPct == 0 {
+		return log.emoji // 1:1: the device set is the logical one
+	}
+	c.fontsForDev(log, dev, log.pct)
+	return dev.emoji
 }
 
 // renderStyled renders text in f at a weight, restoring f's style afterwards so
@@ -2584,6 +2691,17 @@ func renderStyled(f *ttf.Font, text string, col sdl.Color, bold bool) (*sdl.Surf
 		defer f.SetStyle(ttf.STYLE_NORMAL)
 	}
 	return f.RenderUTF8Blended(text, col)
+}
+
+// sizeStyled is renderStyled's measuring twin: the width text renders at in f at a
+// weight.
+func sizeStyled(f *ttf.Font, text string, bold bool) (int32, error) {
+	if bold {
+		f.SetStyle(ttf.STYLE_BOLD)
+		defer f.SetStyle(ttf.STYLE_NORMAL)
+	}
+	w, _, err := f.SizeUTF8(text)
+	return int32(w), err
 }
 
 // deviceTextFont maps a LOGICAL rasterization face to its DEVICE-scaled sibling
