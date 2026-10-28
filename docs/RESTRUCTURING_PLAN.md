@@ -890,7 +890,7 @@ release, wheel routing, dp scaling, resize, hot reload, RCSS features) was rerun
   and must not use the features in the table — `box-shadow` actively breaks the page.
 
 **Open items** — each settled before the step it affects (items 1, 2, 5 and 8 before
-step 2c; 3, 4, 6, 7, 9 and 10 before step 4). None reopens the toolkit choice.
+step 2c; 3, 4, 6, 7, 9, 10 and 11 before step 4). None reopens the toolkit choice.
 1. **Software driver — decided (2026-10-27): lavapipe.** RmlUi is verified on lavapipe and
    not on SwiftShader, and one driver to make fast beats two dependencies. Measured on the
    Hyper-V VM (no GPU), a 1920×1080 courtroom-like frame through SDL's `gpu` renderer, synced
@@ -980,6 +980,12 @@ step 2c; 3, 4, 6, 7, 9 and 10 before step 4). None reopens the toolkit choice.
 10. **Bundle safety.** Caps on bundle size, document count, data model sizes and image sizes
     (hard rule 4); file access confined to the bundle through `safepath`; what the validator
     rejects and what it only warns about. Settled before step 4.
+11. **Separate windows (Part 5f).** A small spike: two OS windows on one SDL_GPU device, an
+    RmlUi context in each with a data model fed from the same Go state, the courtroom
+    viewport's GPU texture drawn in the second window (an SDL_Renderer texture belongs to one
+    window's renderer, so this needs the underlying `SDL_GPUTexture`), dragging a panel
+    across windows, and a forced device loss rebuilding both. Settled before step 4, because
+    the binding's context handling and the part registration depend on it.
 
 Decision: keep RmlUi on SDL_GPU/Vulkan, with the open items above settled on that schedule.
 
@@ -1023,8 +1029,20 @@ bundle never takes the client down.
 
 **Docking is the client's.** The client owns the dock system (layers, drop targets, the
 saved arrangement per theme in config). A theme declares panels and defaults; the user moves
-them. "Detached" means moved elsewhere in the main window, so one RmlUi context covers
-everything; separate OS windows are out of scope.
+them. Docking within the main window ships first; detaching a panel into its own OS window,
+and docking it back by dragging it onto the main window, follows (decided 2026-10-28). The
+design allows for it from the start:
+- One RmlUi context per OS window, each with its own `dp` ratio, so a window on another
+  monitor scales on its own. Parts are registered in every context that shows them, all fed
+  from the same client state, so nothing is copied or synchronised.
+- One swapchain per window on the shared SDL_GPU device (`SDL_ClaimWindowForGPUDevice`);
+  device-loss recovery rebuilds every window.
+- SDL events carry the window id and go to that window's context. Dragging a window back
+  onto the main window's drop targets uses the global mouse position.
+- The saved arrangement records which panel is in which window, and each window's position
+  and size per monitor.
+- The detached preview window (`render/previewowner_windows.go`, replaced by SDL3 parent
+  windows in step 2c) is the first user of the same mechanism.
 
 **Our own UI uses the same format.** The default theme is a bundle and our panels are built
 from the public parts. If our own OOC panel cannot be built from them, a theme author cannot
