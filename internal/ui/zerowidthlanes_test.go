@@ -377,11 +377,11 @@ func TestIsInvisibleRuneCoversTheWholeZeroWidthCodec(t *testing.T) {
 }
 
 // TestPickFontKeepsThePrimaryFace pins the production picker's rule: the set's first
-// face draws every line, whatever the line holds, and SDL_ttf takes each glyph it
-// lacks from the fallback faces attached to it. A zero-width style marker, a rune no
-// face has, or a rune only a later face has never moves the line to another family.
-// The covered flag reports whether the chain as a whole has every rune, invisible
-// ones included, because the raster gate reads it.
+// face draws every line, whatever the line holds; the glyphs it lacks come from the
+// later faces, run by run. A zero-width style marker, a rune no face has, or a rune
+// only a later face has never moves the line to another family. The covered flag
+// reports whether the first face alone has every rune, invisible ones included: the
+// raster gate reads it to send mixed text to the per-run raster.
 //
 // Hermetic: pickFont only compares and returns the font pointers, never dereferences
 // them, so empty sentinels stand in for real faces and this runs with no SDL at all.
@@ -428,7 +428,7 @@ func TestPickFontKeepsThePrimaryFace(t *testing.T) {
 		{"a marker on its own", primaryOnly, marker, false},
 		{"a rune no face has", primaryOnly, tifinaghYath, false},
 		{"an uncovered rune among covered ones", primaryOnly, "abc" + tifinaghYath + marker, false},
-		{"runes only a fallback face has", laterOnly, "abc", true},
+		{"runes only a fallback face has", laterOnly, "abc", false},
 	}
 	for _, tc := range cases {
 		got, covered := pickFont(fonts, tc.cover, &buf, tc.text)
@@ -445,8 +445,8 @@ func TestPickFontKeepsThePrimaryFace(t *testing.T) {
 	// per-frame cost; it is the cost of every FIRST sighting of a line, which for a
 	// busy log is every line. The reused sfnt buffer is what makes zero possible.
 	//
-	// Both outcomes are measured: a covered line scans every rune against the chain,
-	// an uncovered one returns at the first rune nothing has.
+	// Both outcomes are measured: a covered line scans every rune, an uncovered one
+	// returns at the first rune the first face lacks.
 	//
 	// Measured through allocsPerFrame, not a bare AllocsPerRun window: that window
 	// counts the WHOLE process, so a background burst under two concurrent
@@ -454,7 +454,7 @@ func TestPickFontKeepsThePrimaryFace(t *testing.T) {
 	// allocation present. A real per-call allocation is in every window, so the
 	// retry cannot hide one.
 	marked := "abc" + marker // concatenated OUTSIDE the measured closure
-	if n := allocsPerFrame(50, 0, func() { pickFont(fonts, laterOnly, &buf, "abc") }); n != 0 {
+	if n := allocsPerFrame(50, 0, func() { pickFont(fonts, primaryOnly, &buf, "abc") }); n != 0 {
 		t.Errorf("pickFont allocated %v times per call on a covered line", n)
 	}
 	if n := allocsPerFrame(50, 0, func() { pickFont(fonts, primaryOnly, &buf, marked) }); n != 0 {

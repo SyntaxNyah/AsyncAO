@@ -2,6 +2,12 @@ package sdl
 
 /*
 #include <SDL3/SDL.h>
+
+static bool asyncaoCopySurface(SDL_Surface *src, SDL_Surface *dst, int x, int y) {
+	SDL_SetSurfaceBlendMode(src, SDL_BLENDMODE_NONE);
+	SDL_Rect r = {x, y, src->w, src->h};
+	return SDL_BlitSurface(src, NULL, dst, &r);
+}
 */
 import "C"
 
@@ -83,4 +89,10 @@ func (s *Surface) At(x, y int) color.Color {
 	var r, g, b, a C.Uint8
 	C.SDL_ReadSurfacePixel(s.s, C.int(x), C.int(y), &r, &g, &b, &a)
 	return color.NRGBA{R: uint8(r), G: uint8(g), B: uint8(b), A: uint8(a)}
+}
+
+// CopyTo copies s into dst with its top-left at (x, y), replacing dst's pixels
+// rather than blending with them, and clipped to dst.
+func (s *Surface) CopyTo(dst *Surface, x, y int32) error {
+	return errorOr(C.asyncaoCopySurface(s.s, dst.s, C.int(x), C.int(y)))
 }
