@@ -2536,7 +2536,7 @@ func (c *Ctx) textTextureBold(text string, col sdl.Color, font *ttf.Font, bold b
 	if len(c.textCache) >= textCacheMax {
 		c.purgeTextCache()
 	}
-	inkTop, inkBottom := inkRows(surf)
+	inkTop, inkBottom, _ := inkRows(surf)
 
 	if tex, slot, ok := c.atlasPlace(surf); ok {
 		entry := cachedText{tex: tex, src: slot, w: surf.W, h: surf.H, devPct: c.textDevPct, inkTop: inkTop, inkBottom: inkBottom}
@@ -2582,8 +2582,9 @@ func (c *Ctx) renderLabel(font, dev *ttf.Font, text string, col sdl.Color, bold 
 			return nil, err
 		}
 		surfs = append(surfs, s)
-		inkTop, _ := inkRows(s)
-		above = max(above, int32(r.face.Ascent())-ascent-inkTop)
+		if inkTop, _, inked := inkRows(s); inked { // a run with no ink (a space) needs no room
+			above = max(above, int32(r.face.Ascent())-ascent-inkTop)
+		}
 		width += s.W
 	}
 	height := above + int32(dev.Height())
@@ -3019,17 +3020,18 @@ func (c *Ctx) IconLabel(r sdl.Rect, glyph string, col sdl.Color) {
 	c.blitLabel(t, r.X+(r.W-w)/2, r.Y+(r.H-inkH)/2-inkTop, w)
 }
 
-// inkRows returns the first and last rows of surf that hold a visible pixel. A
-// surface in another format than the ARGB8888 SDL_ttf renders, or one with no
-// visible pixel, reports its full height.
-func inkRows(surf *sdl.Surface) (top, bottom int32) {
+// inkRows returns the first and last rows of surf that hold a visible pixel, and
+// whether there is one. A surface in another format than the ARGB8888 SDL_ttf
+// renders reports its full height as inked; one with no visible pixel (a space)
+// reports its full height and inked false.
+func inkRows(surf *sdl.Surface) (top, bottom int32, inked bool) {
 	const (
 		bytesPerPixel = 4
 		alphaByte     = 3 // ARGB8888 is B, G, R, A in memory on little-endian hosts
 	)
 	top, bottom = 0, surf.H-1
 	if surf.Format.Format != uint32(sdl.PIXELFORMAT_ARGB8888) {
-		return top, bottom
+		return top, bottom, true
 	}
 	px := surf.Pixels()
 	rowInked := func(y int32) bool {
@@ -3048,9 +3050,9 @@ func inkRows(surf *sdl.Surface) (top, bottom int32) {
 		bottom--
 	}
 	if top > bottom {
-		return 0, surf.H - 1
+		return 0, surf.H - 1, false
 	}
-	return top, bottom
+	return top, bottom, true
 }
 
 // Heading draws large text.
