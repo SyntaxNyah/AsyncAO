@@ -1218,7 +1218,7 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 			}
 		}
 	}
-	if a.wantsFullRate() || a.roomBusy() || a.warnActive() {
+	if a.wantsFullRate() || a.roomBusy() || a.warnActive() || a.fontWorkPending() {
 		return false
 	}
 	// voicePump (mic capture, mixer, the Settings mic test) is driven from
