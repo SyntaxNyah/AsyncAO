@@ -93,7 +93,7 @@ func (a *App) drawEmoteFavStar(cell sdl.Rect, realIdx int) bool {
 	if fav || c.hovering(cell) {
 		c.Fill(sr, ColPanelHi) // backing for contrast only when it matters
 	}
-	c.Label(sr.X+2, sr.Y, "★", col)
+	c.IconLabel(sr, "★", col)
 	if c.ClickedIn(sr) {
 		a.toggleEmoteFav(realIdx)
 		return true

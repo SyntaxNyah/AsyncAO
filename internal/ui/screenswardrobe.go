@@ -861,7 +861,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 		if idx < len(a.iniWardrobe) && a.iniWardrobe[idx] {
 			starCol = ColStar
 		}
-		c.Label(star.X+2, star.Y, "★", starCol)
+		c.IconLabel(star, "★", starCol)
 		c.Tooltip(star, "★ add to / remove from your wardrobe (right-click the cell for more)")
 		if c.hovering(star) && c.clicked && !a.iniDragging {
 			// DEFER the toggle: rebuilding the wardrobe here shrinks the iniList/

@@ -101,6 +101,9 @@ type cachedText struct {
 	// at a device face draws at its logical size (the renderer's SetScale then
 	// maps it 1:1 onto device pixels — crisp). Stamped in textTexture.
 	devPct int32
+	// inkTop and inkBottom are the first and last DEVICE rows holding a visible
+	// pixel, measured once at rasterization. IconLabel centres a symbol by them.
+	inkTop, inkBottom int32
 }
 
 // Label atlas (§perf texture atlas): labels pack into shared pages so a
@@ -2496,9 +2499,10 @@ func (c *Ctx) textTextureBold(text string, col sdl.Color, font *ttf.Font, bold b
 	if len(c.textCache) >= textCacheMax {
 		c.purgeTextCache()
 	}
+	inkTop, inkBottom := inkRows(surf)
 
 	if tex, slot, ok := c.atlasPlace(surf); ok {
-		entry := cachedText{tex: tex, src: slot, w: surf.W, h: surf.H, devPct: c.textDevPct}
+		entry := cachedText{tex: tex, src: slot, w: surf.W, h: surf.H, devPct: c.textDevPct, inkTop: inkTop, inkBottom: inkBottom}
 		c.textCache[key] = entry
 		return entry, true
 	}
@@ -2508,7 +2512,7 @@ func (c *Ctx) textTextureBold(text string, col sdl.Color, font *ttf.Font, bold b
 	if err != nil {
 		return cachedText{}, false
 	}
-	entry := cachedText{tex: tex, src: sdl.Rect{W: surf.W, H: surf.H}, w: surf.W, h: surf.H, owned: true, devPct: c.textDevPct}
+	entry := cachedText{tex: tex, src: sdl.Rect{W: surf.W, H: surf.H}, w: surf.W, h: surf.H, owned: true, devPct: c.textDevPct, inkTop: inkTop, inkBottom: inkBottom}
 	c.textCache[key] = entry
 	return entry, true
 }
@@ -2809,6 +2813,57 @@ func (c *Ctx) Label(x, y int32, text string, col sdl.Color) int32 {
 	lw := t.logicalW()
 	c.blitLabel(t, x, y, lw)
 	return lw
+}
+
+// IconLabel draws a symbol (★, ✓, →) centred in r by its visible ink rather
+// than by the font's line box. A symbol sits wherever its font's designer put it
+// against the baseline (Segoe UI Symbol's ★ rests on the baseline and reaches
+// barely past the x-height), and SDL_ttf places a fallback glyph by its own
+// font's ascent, a pixel or more off the primary's baseline. Drawn like text,
+// such a symbol reads as low in the row it belongs to.
+func (c *Ctx) IconLabel(r sdl.Rect, glyph string, col sdl.Color) {
+	t, ok := c.textTexture(glyph, col, c.chromeFaceFor(glyph))
+	if !ok {
+		return
+	}
+	w := t.logicalW()
+	inkTop := uiLogicalFromDevice(t.inkTop, t.devPct)
+	inkH := uiLogicalFromDevice(t.inkBottom+1, t.devPct) - inkTop
+	c.blitLabel(t, r.X+(r.W-w)/2, r.Y+(r.H-inkH)/2-inkTop, w)
+}
+
+// inkRows returns the first and last rows of surf that hold a visible pixel. A
+// surface in another format than the ARGB8888 SDL_ttf renders, or one with no
+// visible pixel, reports its full height.
+func inkRows(surf *sdl.Surface) (top, bottom int32) {
+	const (
+		bytesPerPixel = 4
+		alphaByte     = 3 // ARGB8888 is B, G, R, A in memory on little-endian hosts
+	)
+	top, bottom = 0, surf.H-1
+	if surf.Format.Format != uint32(sdl.PIXELFORMAT_ARGB8888) {
+		return top, bottom
+	}
+	px := surf.Pixels()
+	rowInked := func(y int32) bool {
+		row := px[int(y)*int(surf.Pitch):]
+		for x := int32(0); x < surf.W; x++ {
+			if row[int(x)*bytesPerPixel+alphaByte] != 0 {
+				return true
+			}
+		}
+		return false
+	}
+	for top <= bottom && !rowInked(top) {
+		top++
+	}
+	for bottom >= top && !rowInked(bottom) {
+		bottom--
+	}
+	if top > bottom {
+		return 0, surf.H - 1
+	}
+	return top, bottom
 }
 
 // Heading draws large text.

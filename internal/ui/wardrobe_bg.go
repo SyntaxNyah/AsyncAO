@@ -276,7 +276,7 @@ func (a *App) drawBgFavCell(idx int, cell sdl.Rect) {
 	// Unstar (top-right): leaves favourites (and this section).
 	star := sdl.Rect{X: cell.X + cell.W - 20, Y: cell.Y + 2, W: 18, H: 18}
 	c.Fill(star, sdl.Color{R: 0, G: 0, B: 0, A: 150}) // backing: the star must read over busy thumbnails
-	c.Label(star.X+3, star.Y+1, "★", ColStar)
+	c.IconLabel(star, "★", ColStar)
 	c.Tooltip(star, "Remove from favourites")
 	if c.hovering(star) && c.clicked && !a.iniDragging {
 		a.d.Prefs.RemoveFavBackground(a.serverKey, name)

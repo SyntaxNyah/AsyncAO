@@ -408,7 +408,7 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool, budget *int6
 	if starred {
 		starCol = ColStar
 	}
-	c.Label(star.X+4, star.Y+1, "★", starCol)
+	c.IconLabel(star, "★", starCol)
 	c.Tooltip(star, "Favorite this background (saved per server)")
 	if c.hovering(star) && c.clicked {
 		if starred {
