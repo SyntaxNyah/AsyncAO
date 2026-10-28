@@ -255,12 +255,14 @@ Engine        internal/client        Session per tab: async connect, conn, court
               render, courtroom, protocol, packetutil, assets, network, cache, theme
                                      (no engine package imports config)        [render: SDL]
 Platform      internal/sdl, ttf, mix our thin cgo binding to SDL3 / SDL3_ttf / SDL3_mixer
+              internal/rmlui         our cgo binding to RmlUi: Go API, our SDL_GPU render
+                                     interface, RmlUi's SDL3 platform backend (C++)
 all layers ──► internal/helper/{value,text,parse}
 ```
 
 **Import rule.** App layer → uikit, engine, config. Feature → uikit, engine (never
-`internal/ui`, never a sibling feature, never config). uikit → render, theme, sdl. Engine →
-engine and helper only. Cross-feature needs (#114: OOC log → jukebox) use a small
+`internal/ui`, never a sibling feature, never config). uikit → render, theme, sdl, rmlui.
+Only uikit and `cmd/asyncao` import rmlui. Engine → engine and helper only. Cross-feature needs (#114: OOC log → jukebox) use a small
 consumer-side interface wired by App.
 
 ### Dependencies are passed, not looked up
@@ -747,7 +749,7 @@ is going away.
 - Create an SDL_GPU device with the `vulkan` driver named explicitly. SDL's default choice is
   not usable: on Windows it picks D3D12, which rejects the SPIR-V-only shaders RmlUi's backend
   ships (Part 5e). If no hardware Vulkan driver is present, create the device again on the
-  bundled software Vulkan driver (lavapipe or SwiftShader, pointed to with the Vulkan loader's
+  bundled software Vulkan driver (lavapipe, open item 1, pointed to with the Vulkan loader's
   driver-file setting). SDL does not fall back by itself: on a machine with no Vulkan driver
   (verified on a Hyper-V VM, 2026-10-27) device creation fails with `vulkan unsupported`.
   No per-OS driver lists beyond this, no runtime switching between backends.
@@ -768,7 +770,7 @@ is going away.
 **Decided (2026-10-26, revised the same day):** SDL3 stays the platform and **RmlUi** is the UI
 library (customer decision: web-style authoring with RML/RCSS for themes and widgets). Clay was
 dropped with it. Rendering is SDL_GPU on Vulkan on hardware, and a bundled CPU Vulkan driver
-(lavapipe or SwiftShader) as the software tier, so RmlUi, our compositor (SDL_Renderer's "gpu"
+(lavapipe, chosen in open item 1) as the software tier, so RmlUi, our compositor (SDL_Renderer's "gpu"
 backend on the same device) and viewport shaders share one path. macOS is unverified: SDL_GPU
 uses Metal there, which cannot load the SPIR-V-only shaders, so it needs MoltenVK or shaders
 translated to Metal (open item below). Earlier in the day the choice was our own kit with
@@ -888,7 +890,7 @@ release, wheel routing, dp scaling, resize, hot reload, RCSS features) was rerun
   and must not use the features in the table — `box-shadow` actively breaks the page.
 
 **Open items** — each settled before the step it affects (items 1, 2, 5 and 8 before
-step 2c; 3, 4, 6 and 7 before step 4). None reopens the toolkit choice.
+step 2c; 3, 4, 6, 7, 9 and 10 before step 4). None reopens the toolkit choice.
 1. **Software driver — decided (2026-10-27): lavapipe.** RmlUi is verified on lavapipe and
    not on SwiftShader, and one driver to make fast beats two dependencies. Measured on the
    Hyper-V VM (no GPU), a 1920×1080 courtroom-like frame through SDL's `gpu` renderer, synced
@@ -932,12 +934,123 @@ step 2c; 3, 4, 6 and 7 before step 4). None reopens the toolkit choice.
    layout and widgets. RmlUi already provides click-on-release, scrollbars, wheel routing,
    text layout and form controls (pass criterion 3). Rewrite steps 4–5 to say which of these
    uikit still owns (likely the AO theme screens and the courtroom, which stay on our
-   compositor) and which become RML/RCSS.
-8. **Platform layer.** Decide where the RmlUi binding lives and add it to the Platform row of
-   the layer diagram (Part 3). The `docs/ARCHITECTURE.md` dependency row for RmlUi is in
-   place as "planned"; finalise it when items 1 and 2 are settled.
+   compositor) and which become RML/RCSS. Part 5f answers most of this; what remains is
+   rewriting steps 4–5 to match it.
+8. **Platform layer — decided (2026-10-27): `internal/rmlui`, a fourth binding package.**
+   - It sits next to `sdl`, `ttf` and `mix` in the Platform row (Part 3). It holds the Go API
+     (context, documents, data models, input forwarding, update and render), our SDL_GPU render
+     interface (item 3), and RmlUi's upstream SDL3 platform backend. The render interface
+     includes SDL headers, so hard rule 1 names `rmlui` as a binding package when it lands.
+     Only uikit and `cmd/asyncao` import it, and everything there runs on the locked main
+     thread.
+   - `internal/sdl` owns the window, the SDL_GPU device (Vulkan, then software Vulkan; Part 5d)
+     and the `gpu` SDL_Renderer on that device. rmlui is handed the window and device the way
+     `ttf` hands surfaces back: an `unsafe.Pointer` across the package boundary
+     (`sdl.WrapSurface` today), because cgo's C types are local to each package.
+   - RmlUi itself is not in the repo. msys2 has no RmlUi package, so a script builds a pinned
+     RmlUi 6.3 tag as a static library, with the FreeType font engine, into a local prefix
+     (`scripts/build-rmlui.sh`, run under msys2 bash on Windows), and CI caches it like
+     `setup-sdl3`. RmlUi stays unmodified.
+   - Shaders are compiled to SPIR-V by a generation script and committed as Go-embedded bytes,
+     so a normal build needs no shader compiler (the same approach as the committed
+     `versioninfo_windows.syso`).
+   - Hard rule 2: RmlUi's file and texture callbacks run on the render thread and are
+     synchronous. Our file interface reads only from memory (embedded RML/RCSS and fonts, and
+     theme bundles loaded off-thread). Our `LoadTexture` serves from the decoded tier: if the
+     image isn't ready, it returns a placeholder, queues a fetch, and releases the texture when
+     the decode lands so RmlUi loads it again. Images then go through our own decoder (WebP,
+     AVIF, APNG), so **SDL3_image is not used**; the spike needed it only because the sample's
+     `LoadTexture` calls `IMG_Load` from disk.
+   - Image sizes without a layout jump: only an `<img>` with no RCSS width or height takes its
+     size from the image (decorators and nine-slice draw into a box the layout already sized).
+     For a bundle image, `LoadTexture` reads width and height from the image header in the
+     in-memory bundle (PNG, WebP, AVIF and GIF store them in the first bytes; no disk, no
+     decode) and returns them with a placeholder of that size, so the first layout is final
+     and only the pixels arrive later. Server images (character icons, evidence) sit in boxes
+     the theme sizes; the bundle validator warns when one has no size.
+   - The binding also provides what Part 5f needs: several documents in one context, data
+     models registered from Go, events routed to Go commands, and our own custom elements
+     registered with RmlUi (`ElementInstancer`).
+   - macOS: rmlui builds there, but its SPIR-V shaders don't load on Metal until item 2 is
+     settled.
+
+9. **Capability API v1.** Name the first set of parts (Part 5f), their data, attributes and
+   commands, how the API is versioned, and how data model updates and commands stay free of
+   per-frame allocations. Settled before step 4.
+10. **Bundle safety.** Caps on bundle size, document count, data model sizes and image sizes
+    (hard rule 4); file access confined to the bundle through `safepath`; what the validator
+    rejects and what it only warns about. Settled before step 4.
 
 Decision: keep RmlUi on SDL_GPU/Vulkan, with the open items above settled on that schedule.
+
+## Part 5f — Theme bundles and widgets (decided 2026-10-28)
+
+The reason for the bundle format is custom widgets: a theme can ship its own panels, for
+example an audio mixer with different controls than ours, that the user can move around the
+UI and dock. Our own editor makes bundles easier to build. Old AO themes keep working as they
+do today (absolute rectangles, scaled uniformly; Part 3).
+
+**Parts, not panels.** The client publishes fine-grained parts that do not belong to any
+panel: `ooc.log`, `ooc.input`, `audio.channels`, `audio.nowplaying`, `area.list`, … A widget
+declares which parts it uses, from any feature: a mixer that also holds the OOC input, while
+the OOC log sits in another widget, is a valid layout, and so is one part in two widgets.
+Parts come at two levels:
+- **Data and commands** for simple things (a volume, a track name, `audio.play`, `ooc.send`),
+  through RmlUi data binding. A theme builds any control it likes from them.
+- **Built-in elements** for parts with real behaviour: custom tags such as `<ao-chatlog>`
+  (a virtual list over thousands of lines, zero allocations per frame), `<ao-ooc-input>` (IME,
+  emoji, history, Enter to send) and `<ao-viewport>`. A theme places, configures (attributes)
+  and styles (RCSS) them; the behaviour stays ours, so a bundle cannot break the chat.
+
+**No scripting.** Bundles hold RML, RCSS, fonts, images and a manifest; nothing executes.
+RmlUi's Lua plugin is not linked. Revisited only if a real widget cannot be built from parts.
+
+**State lives in the client; documents are views.** Shared data (log lines, volumes, the area
+list) is the same in every widget showing it. Per-instance state (an input's draft text,
+scroll position, focus) is owned by the client, keyed by widget instance. Commands are global.
+Any document can be destroyed and recreated without losing anything, which is what moving and
+docking, hot reload in the editor and device-loss recovery all rely on.
+
+**Parts follow the active tab.** Parts read from the active tab's `client.Session` (step 3),
+so switching tabs changes what every widget shows without reopening any document. The
+capability API sits on `client.Session`.
+
+**Loading.** The manifest lists each widget: id, title, the parts and API version it needs,
+default dock position, minimum size, whether it can be moved. On load the client validates the
+bundle and connects each widget to its parts. A widget asking for a missing part or a newer
+API is turned off with a visible message and the built-in panel takes its place; a broken
+bundle never takes the client down.
+
+**Docking is the client's.** The client owns the dock system (layers, drop targets, the
+saved arrangement per theme in config). A theme declares panels and defaults; the user moves
+them. "Detached" means moved elsewhere in the main window, so one RmlUi context covers
+everything; separate OS windows are out of scope.
+
+**Our own UI uses the same format.** The default theme is a bundle and our panels are built
+from the public parts. If our own OOC panel cannot be built from them, a theme author cannot
+build one either, so gaps in the API show up in our work first.
+
+**Scaling and resizing.** Layout is RCSS: `dp` units follow display DPI and the UI scale,
+percentages and flexbox reflow on resize, media queries switch layouts at breakpoints (all
+verified in the spike, Part 5e). `img { width: 100%; height: auto; }` keeps an image's aspect
+ratio from the header size (item 8). For sharpness at high scale the manifest can list
+resolution variants of an image (1×, 2×, …); the loader picks the nearest to the current
+scale and swaps on a scale change without moving anything. Theme options (compact chat,
+colour variants, …) are declared in the manifest and switched with RmlUi themes
+(`@media (theme: …)`), shown in Settings with no per-option code.
+
+**Manifest contents.** Documents and stylesheets, fonts, images (size, hash, resolution
+variants), widgets (above), theme options, required capability API version.
+
+**Editor.** A palette of parts with live fake data (a fake `client.Session` through
+constructor injection, rule 12), so a widget can be designed without a server; changes show
+through hot reload.
+
+**Plan impact.** Open item 7 is mostly answered: panels, docking and the built-in widgets
+become RML documents in the client's dock system, and our own kit keeps the courtroom
+viewport and the legacy AO theme screens. Steps 4–5 are rewritten with item 7. Focus and
+keyboard routing across widgets (Esc, Enter, global hotkeys following the focused part)
+belong to the client's input handling, not to themes.
 
 ## Part 6 — Adversarial review (verified against the code; amendments applied above)
 
