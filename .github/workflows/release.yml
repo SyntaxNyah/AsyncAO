@@ -69,6 +69,8 @@ jobs:
             mingw-w64-ucrt-x86_64-libavif
             mingw-w64-ucrt-x86_64-opus
             mingw-w64-ucrt-x86_64-opusfile
+            mingw-w64-ucrt-x86_64-vulkan-loader
+            mingw-w64-ucrt-x86_64-mesa
             git
       - uses: actions/setup-go@v5
         with:
@@ -124,12 +126,17 @@ jobs:
             -ldflags "-s -w -H=windowsgui -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=${{ github.ref_name }}" \
             -o dist/asyncao.exe ./cmd/asyncao
           # Ship the runtime DLLs next to the exe so the bundle runs anywhere.
-          # SDL3_mixer loads opusfile on demand, so no import table names it:
-          # add it and its own imports by hand (build.ps1 does the same).
-          { ldd dist/asyncao.exe; echo /ucrt64/bin/libopusfile-0.dll; ldd /ucrt64/bin/libopusfile-0.dll; } |
+          # Libraries loaded on demand appear in no import table, so they and their
+          # own imports are added by hand (build.ps1 does the same): SDL3_mixer's
+          # opusfile, SDL's Vulkan loader, and lavapipe (the software Vulkan driver).
+          ondemand="/ucrt64/bin/libopusfile-0.dll /ucrt64/bin/vulkan-1.dll /ucrt64/bin/vulkan_lvp.dll"
+          { ldd dist/asyncao.exe; for d in $ondemand; do echo "$d"; ldd "$d"; done; } |
             grep -io '/ucrt64/bin/[a-z0-9_.+-]*\.dll' | sort -u | while read -r dll; do
             cp "$dll" dist/
           done
+          # lavapipe's manifest, pointing at the staged DLL (msys2's points into its own tree).
+          sed 's|"library_path": *"[^"]*"|"library_path": ".\\\\vulkan_lvp.dll"|' \
+            /ucrt64/share/vulkan/icd.d/lvp_icd.x86_64.json > dist/lvp_icd.x86_64.json
       # Authenticode signing — reduces the SmartScreen "unknown publisher" warning
       # (an OV cert builds reputation over time; an EV cert clears it immediately).
       # GATED: with no WINDOWS_CODESIGN_PFX_BASE64 secret it skips cleanly and ships

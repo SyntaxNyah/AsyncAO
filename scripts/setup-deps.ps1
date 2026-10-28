@@ -1,6 +1,6 @@
 # AsyncAO Windows dependency bootstrap: installs MSYS2 (if missing) and the
 # UCRT64 packages CGO needs (gcc, SDL3, SDL3_ttf, SDL3_mixer, opusfile, libwebp,
-# libavif).
+# libavif), plus the Vulkan loader and Mesa for lavapipe, the software GPU driver.
 # Usage:  powershell -ExecutionPolicy Bypass -File scripts\setup-deps.ps1
 $ErrorActionPreference = "Stop"
 
@@ -18,7 +18,9 @@ $packages = @(
     "mingw-w64-ucrt-x86_64-sdl3-mixer",
     "mingw-w64-ucrt-x86_64-opusfile",
     "mingw-w64-ucrt-x86_64-libwebp",
-    "mingw-w64-ucrt-x86_64-libavif"
+    "mingw-w64-ucrt-x86_64-libavif",
+    "mingw-w64-ucrt-x86_64-vulkan-loader",
+    "mingw-w64-ucrt-x86_64-mesa"
 ) -join " "
 
 & $bash -lc "pacman -Sy --noconfirm --noprogressbar && pacman -S --noconfirm --needed --noprogressbar $packages"

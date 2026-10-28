@@ -49,7 +49,10 @@ Write-Host "Built bin\asyncao.exe"
 # them: they are seeded here. Opus (AO's main music format) needs opusfile;
 # Vorbis, MP3, FLAC and WAV are built into SDL3_mixer. MIDI and the LGPL
 # tracker codecs stay out, as they were with the SDL Mixer X build.
-$onDemand = @("libopusfile-0.dll")
+# SDL loads the Vulkan loader on demand too, and the loader loads lavapipe (the
+# software Vulkan driver, for machines without a GPU driver) through the
+# manifest written below; the walk then stages lavapipe's LLVM and SPIRV-Tools.
+$onDemand = @("libopusfile-0.dll", "vulkan-1.dll", "vulkan_lvp.dll")
 $seen = @{}
 $queue = New-Object System.Collections.Generic.Queue[string]
 $queue.Enqueue("bin\asyncao.exe")
@@ -78,5 +81,12 @@ while ($queue.Count -gt 0) {
     }
 }
 Write-Host "Runtime DLLs staged in bin\ ($staged)"
+
+# lavapipe's manifest, pointing at the staged DLL. msys2's own copy points into
+# the msys2 tree. A relative path resolves against the manifest's folder, and
+# the client passes this file to the Vulkan loader (cmd/asyncao/softwaregpu_windows.go).
+$lvpManifest = Get-Content "$msys\share\vulkan\icd.d\lvp_icd.x86_64.json" -Raw | ConvertFrom-Json
+$lvpManifest.ICD.library_path = ".\vulkan_lvp.dll"
+[IO.File]::WriteAllText((Join-Path (Resolve-Path bin) "lvp_icd.x86_64.json"), ($lvpManifest | ConvertTo-Json -Depth 4))
 
 if ($Run) { & bin\asyncao.exe }

@@ -75,7 +75,18 @@ type RendererInfo struct {
 // CreateRenderer creates a renderer for window. index is ignored (SDL3 picks by
 // name); flags are the RENDERER_* constants.
 func CreateRenderer(window *Window, _ int, flags uint32) (*Renderer, error) {
-	r := C.asyncaoCreateRenderer(window.c(), flags&RENDERER_SOFTWARE != 0)
+	return newRenderer(C.asyncaoCreateRenderer(window.c(), flags&RENDERER_SOFTWARE != 0), flags)
+}
+
+// CreateGPURenderer creates a renderer that draws through device, so other
+// SDL_GPU users can share it. Only RENDERER_PRESENTVSYNC applies.
+func CreateGPURenderer(device *GPUDevice, window *Window, flags uint32) (*Renderer, error) {
+	return newRenderer(C.SDL_CreateGPURenderer(device.c(), window.c()), flags)
+}
+
+// newRenderer wraps a freshly created renderer and applies the flags SDL3 sets
+// after creation.
+func newRenderer(r *C.SDL_Renderer, flags uint32) (*Renderer, error) {
 	if r == nil {
 		return nil, errorOr(false)
 	}

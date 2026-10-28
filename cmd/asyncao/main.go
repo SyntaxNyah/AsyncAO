@@ -56,10 +56,11 @@ func main() {
 	runtime.LockOSThread()
 
 	var (
-		flagServer = flag.String("server", "", "skip the lobby and connect to this ws:// or wss:// URL")
-		flagMaster = flag.String("master", network.DefaultMasterServerURL, "master server list endpoint")
-		flagDebug  = flag.Bool("debug", false, "expose pprof on "+debugPprofAddr)
-		flagVsync  = flag.Bool("vsync", true, "use vsync presentation")
+		flagServer  = flag.String("server", "", "skip the lobby and connect to this ws:// or wss:// URL")
+		flagMaster  = flag.String("master", network.DefaultMasterServerURL, "master server list endpoint")
+		flagDebug   = flag.Bool("debug", false, "expose pprof on "+debugPprofAddr)
+		flagVsync   = flag.Bool("vsync", true, "use vsync presentation")
+		flagSoftGPU = flag.Bool("software-gpu", false, "draw with the bundled software GPU driver (for broken GPU drivers)")
 	)
 	flag.Parse()
 
@@ -78,7 +79,12 @@ func main() {
 		}()
 	}
 
-	if err := run(*flagServer, *flagMaster, *flagVsync, *flagDebug); err != nil {
+	gpuOpts := render.GPUOptions{
+		VSync:              *flagVsync,
+		ForceSoftware:      *flagSoftGPU,
+		SoftwareDriverFile: softwareVulkanDriverFile(),
+	}
+	if err := run(*flagServer, *flagMaster, gpuOpts, *flagDebug); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -122,7 +128,8 @@ func logSamples(p *metrics.Profiler) {
 	}
 }
 
-func run(serverURL, masterURL string, vsync, debugMode bool) error {
+func run(serverURL, masterURL string, gpuOpts render.GPUOptions, debugMode bool) error {
+	vsync := gpuOpts.VSync
 	// --- engine singletons (SDL-free) ---
 	prefsPath, err := config.DefaultPath()
 	if err != nil {
@@ -285,20 +292,13 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		}
 	}
 
-	renFlags := uint32(sdl.RENDERER_ACCELERATED)
-	if vsync {
-		renFlags |= sdl.RENDERER_PRESENTVSYNC
-	}
-	ren, err := sdl.CreateRenderer(window, -1, renFlags)
+	gpu, err := render.OpenGPU(window, gpuOpts)
 	if err != nil {
-		// VMs/headless (dummy video driver) have no accelerated backend.
-		log.Printf("accelerated renderer unavailable (%v); falling back to software", err)
-		ren, err = sdl.CreateRenderer(window, -1, sdl.RENDERER_SOFTWARE)
-		if err != nil {
-			return err
-		}
+		return err
 	}
-	defer ren.Destroy()
+	defer gpu.Close()
+	log.Printf("renderer: %s", gpu.Backend())
+	ren := gpu.Renderer()
 	// Texture filter for every texture created from now on: linear (sprites
 	// stretched to the viewport stop shimmering) or nearest. The Settings toggle
 	// changes it and re-streams live.

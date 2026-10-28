@@ -20,7 +20,9 @@ in **Status**. Update Status in the same commit that completes a step.
   - [x] binding over SDL3/SDL3_ttf/SDL3_mixer, audio on `MIX_Track`, fork and go-sdl2 dropped,
         scale-mode shim moved into the binding; deps scripts + CI (cached setup-sdl build on
         Linux/macOS, MSYS2 packages on Windows)
-  - [ ] SDL_GPU renderer + force-software flag; device-reset re-upload; backend name shown
+  - [x] SDL_GPU renderer on one device (`render.OpenGPU`: Vulkan, then lavapipe, then SDL's own
+        renderer), `-software-gpu` flag; lavapipe staged by build.ps1 and the release job
+  - [ ] device-loss rebuild with T1 re-upload; backend name in the debug overlay and About
   - [ ] platform code (dialogs, DPI seeding, URL opening, preview ownership, clipboard)
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
       pointer, no park/activate copies; fixes bug 4, #115, #141, #84)
@@ -755,6 +757,11 @@ is going away.
   No per-OS driver lists beyond this, no runtime switching between backends.
 - Our compositor draws through SDL_Renderer's `gpu` backend on the same device, so the
   courtroom viewport is a texture RmlUi can show.
+- Measured on the maintainer's machine (RTX 3070, 2026-10-28), lobby open, private memory of
+  the whole process: hardware Vulkan 307 MB, lavapipe 223 MB, SDL's D3D11 renderer 146 MB.
+  The difference is driver memory, outside the Go heap that GOMEMLIMIT governs, but it counts
+  against the 256 MiB budget. Follow-up: find what the Vulkan driver holds (pipeline cache,
+  swapchain images, staging buffers) and what SDL's `gpu` renderer lets us trim.
 - One setting / command-line flag forces the software driver, for broken GPU drivers.
 - Device loss: SDL's `gpu` renderer sends no reset events (Part 5e open item 5), so a failed
   present or submit marks the device lost; the renderer and device are rebuilt and T1 is
