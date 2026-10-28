@@ -14,6 +14,8 @@ package render
 // text font mid-emoji.
 
 import (
+	"unicode/utf8"
+
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
@@ -28,14 +30,17 @@ const (
 // UTF-8 and Unicode boundaries the emoji routing tests against.
 const (
 	utf8FourByteLead   = 0xF0   // first byte of a 4-byte (astral plane) sequence
+	utf8LeadU2000      = 0xE2   // first byte of U+2000..U+2FFF, where every BMP emoji-by-default lives
 	firstBMPPictograph = 0x00A9 // the copyright sign, the lowest BMP pictograph
 )
 
 // needsEmojiFallback reports whether s contains anything the text font can't
 // render as the user expects — so only these messages take the per-glyph fallback
-// path. A tight byte scan, no rune decoding, no allocation, so an all-BMP/ASCII
-// message (the overwhelming common case) pays almost nothing and stays on the
-// single-font fast path. Two signals:
+// path. A tight byte scan that decodes only the 0xE2 sequences where the BMP
+// emoji-by-default characters live, no allocation, so an ASCII message (the
+// overwhelming common case) pays almost nothing and stays on the single-font fast
+// path. Three signals: a 4-byte (supplementary-plane) sequence, VS16, and a BMP
+// character drawn as emoji by default (bmpEmojiPresentation).
 func needsEmojiFallback(s string) bool {
 	for i := 0; i < len(s); i++ {
 		b := s[i]
@@ -44,6 +49,11 @@ func needsEmojiFallback(s string) bool {
 		}
 		if b == 0xEF && i+2 < len(s) && s[i+1] == 0xB8 && s[i+2] == 0x8F {
 			return true
+		}
+		if b == utf8LeadU2000 {
+			if r, _ := utf8.DecodeRuneInString(s[i:]); bmpEmojiPresentation(r) {
+				return true
+			}
 		}
 	}
 	return false
@@ -64,9 +74,67 @@ const (
 	emojiBlockHi rune = 0x1FAFF
 )
 
-// isEmojiBase reports a rune that on its own selects an emoji glyph. VS15 forces
-// text presentation, so it never counts as a base.
-func isEmojiBase(r rune) bool { return r >= emojiBlockLo && r <= emojiBlockHi && r != runeVS15 }
+// isEmojiBase reports a rune that on its own selects an emoji glyph: the
+// supplementary emoji blocks, and the BMP characters Unicode presents as emoji by
+// default. VS15 forces text presentation, so it never counts as a base.
+func isEmojiBase(r rune) bool {
+	return (r >= emojiBlockLo && r <= emojiBlockHi && r != runeVS15) || bmpEmojiPresentation(r)
+}
+
+// bmpEmojiPresentationRanges are the BMP characters with Emoji_Presentation=Yes
+// (Unicode emoji-data.txt): drawn as colour emoji with no variation selector, the
+// way Qt, DirectWrite and every browser draw ⭐ ✨ ⌛ ✅ ❌ ⚡ ☕. The other BMP
+// pictographs (♥ ★ ☀ ✓) default to text and turn into emoji only with VS16.
+var bmpEmojiPresentationRanges = [...][2]rune{
+	{0x231A, 0x231B}, // ⌚ ⌛
+	{0x23E9, 0x23EC}, // ⏩ ⏪ ⏫ ⏬
+	{0x23F0, 0x23F0}, // ⏰
+	{0x23F3, 0x23F3}, // ⏳
+	{0x25FD, 0x25FE}, // ◽ ◾
+	{0x2614, 0x2615}, // ☔ ☕
+	{0x2648, 0x2653}, // ♈ … ♓
+	{0x267F, 0x267F}, // ♿
+	{0x2693, 0x2693}, // ⚓
+	{0x26A1, 0x26A1}, // ⚡
+	{0x26AA, 0x26AB}, // ⚪ ⚫
+	{0x26BD, 0x26BE}, // ⚽ ⚾
+	{0x26C4, 0x26C5}, // ⛄ ⛅
+	{0x26CE, 0x26CE}, // ⛎
+	{0x26D4, 0x26D4}, // ⛔
+	{0x26EA, 0x26EA}, // ⛪
+	{0x26F2, 0x26F3}, // ⛲ ⛳
+	{0x26F5, 0x26F5}, // ⛵
+	{0x26FA, 0x26FA}, // ⛺
+	{0x26FD, 0x26FD}, // ⛽
+	{0x2705, 0x2705}, // ✅
+	{0x270A, 0x270B}, // ✊ ✋
+	{0x2728, 0x2728}, // ✨
+	{0x274C, 0x274C}, // ❌
+	{0x274E, 0x274E}, // ❎
+	{0x2753, 0x2755}, // ❓ ❔ ❕
+	{0x2757, 0x2757}, // ❗
+	{0x2795, 0x2797}, // ➕ ➖ ➗
+	{0x27B0, 0x27B0}, // ➰
+	{0x27BF, 0x27BF}, // ➿
+	{0x2B1B, 0x2B1C}, // ⬛ ⬜
+	{0x2B50, 0x2B50}, // ⭐
+	{0x2B55, 0x2B55}, // ⭕
+}
+
+// bmpEmojiPresentation reports whether r is a BMP character drawn as emoji by
+// default (bmpEmojiPresentationRanges). A short scan of a fixed array, no
+// allocation.
+func bmpEmojiPresentation(r rune) bool {
+	if r < bmpEmojiPresentationRanges[0][0] || r > bmpEmojiPresentationRanges[len(bmpEmojiPresentationRanges)-1][1] {
+		return false
+	}
+	for _, b := range bmpEmojiPresentationRanges {
+		if r >= b[0] && r <= b[1] {
+			return true
+		}
+	}
+	return false
+}
 
 // bmpPictographBlocks are the BASIC MULTILINGUAL PLANE blocks whose characters
 // have an emoji presentation and are routinely absent from ordinary text faces:
@@ -139,6 +207,13 @@ func assignEmoji(runes []rune) []bool {
 	for i, r := range runes {
 		if isEmojiBase(r) {
 			out[i] = true
+		}
+	}
+	// VS15 forces text presentation: the character before it stays on the text font
+	// even when it is an emoji by default (⭐︎ draws as the text star).
+	for i, r := range runes {
+		if r == runeVS15 && i > 0 {
+			out[i-1] = false
 		}
 	}
 	// VS16 is emoji and promotes the immediately-preceding base into the emoji run.
