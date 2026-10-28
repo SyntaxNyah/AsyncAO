@@ -812,10 +812,9 @@ func (c *Ctx) ChatFont(pct int) *ttf.Font {
 	return c.fontsFor(&c.chatSet, pct)[0]
 }
 
-// ChatFontFor returns the chat set's face for text: its first face, which takes
-// every glyph it lacks from the fallback chain (pickFont), and records whether the
-// chain covers the text for the raster gate. Non-ASCII text also latches the
-// one-time fallback load.
+// ChatFontFor returns the chat set's face for text: its first face (pickFont),
+// recording whether that face alone covers the text for the raster gate.
+// Non-ASCII text also latches the one-time fallback load.
 func (c *Ctx) ChatFontFor(pct int, text string) *ttf.Font {
 	c.noteScript(text)
 	return c.pickSet(&c.chatSet, pct, text)
@@ -994,9 +993,9 @@ func (c *Ctx) pickIn(s *fontSet, fonts []*ttf.Font, pct int, text string) *ttf.F
 	}
 	f, covered := pickFont(fonts, s.cover, &c.sfntBuf, text)
 	if !covered {
-		// No face in the set has some rune of the string, so it may be about to come
-		// out as .notdef — offer those runes to the census. noteUncoveredIn skips
-		// invisible formatting runes, so a gap of only those queues nothing.
+		// The first face lacks some rune of the string, and if no other face in the set
+		// has it either it is about to come out as .notdef — offer those runes to the
+		// census. noteUncoveredIn checks every face and skips invisible formatting runes.
 		//
 		// This sits in the memo-MISS branch on purpose. Every single-face pick lands
 		// here (chat, log, the per-element theme sets, and now chrome labels), and a
@@ -1540,11 +1539,11 @@ func (c *Ctx) buildSet(s *fontSet, chain [][]byte, chainCover []*sfnt.Font, pct,
 			s.cover = append(s.cover, coverAt(c.censusCover, i))
 		}
 	}
-	// Per-glyph fallback, the way Qt resolves fonts: the first face draws every
-	// glyph it has and SDL_ttf takes each missing glyph from the first later face
-	// that has it, for drawing and measuring alike. Every label drawn with the
-	// set's face therefore mixes scripts correctly in one texture, and Latin keeps
-	// the primary face's look next to a CJK bracket or a symbol.
+	// Per-glyph fallback, the way Qt resolves fonts: the first face has every glyph
+	// it can, and SDL_ttf takes each missing glyph from the first later face that
+	// has it. Measuring goes through this chain. Drawing mixed text does not, while
+	// SDL_ttf 3.2.2 misplaces fallback glyphs vertically: labels compose runs
+	// (renderLabel) and messages use the per-run raster (pickFont).
 	if primary := s.fonts[0]; primary != nil && primary != chromeShare {
 		for _, f := range s.fonts[1:] {
 			if f != nil && f != chromeShare {
@@ -1731,23 +1730,24 @@ func (c *Ctx) emojiDeviceFont(pct int) *ttf.Font {
 // it: "「Edgeworth」" drew its Latin in Yu Gothic, and a string no single face
 // covered drew every missing glyph as a box.
 //
-// The second result reports whether some face in the set has every rune, invisible
+// The second result reports whether the first face alone has every rune, invisible
 // formatting runes included. It is the raster gate (coversFace): when it is false the
-// caller takes the per-glyph raster, which can still hand a pictograph to the colour
-// emoji face.
+// caller takes the per-run raster, which draws each run in the face that has its
+// glyphs on one baseline and can hand a pictograph to the colour emoji face. The
+// single SDL_ttf render through the fallback chain is not used for such text:
+// SDL_ttf 3.2.2 places fallback glyphs by their own font's ascent (renderLabel).
 func pickFont(fonts []*ttf.Font, cover []*sfnt.Font, buf *sfnt.Buffer, text string) (*ttf.Font, bool) {
 	if len(fonts) == 1 {
 		return fonts[0], true
 	}
-	return fonts[0], chainCovers(cover, buf, text)
+	return fonts[0], faceCovers(coverAt(cover, 0), buf, text)
 }
 
-// chainCovers reports whether every rune of text has a glyph in at least one face of
-// cover. Allocation-free: the reused sfnt buffer, and an early return on the first
-// rune nothing covers.
-func chainCovers(cover []*sfnt.Font, buf *sfnt.Buffer, text string) bool {
+// faceCovers reports whether f has a glyph for every rune of text. Allocation-free:
+// the reused sfnt buffer, and an early return on the first rune f lacks.
+func faceCovers(f *sfnt.Font, buf *sfnt.Buffer, text string) bool {
 	for _, r := range text {
-		if !anyCoversRune(cover, buf, r) {
+		if !coverHasRune(f, buf, r) {
 			return false
 		}
 	}
@@ -2487,11 +2487,7 @@ func (c *Ctx) textTextureBold(text string, col sdl.Color, font *ttf.Font, bold b
 		return t, true
 	}
 	dev := c.deviceTextFont(font) // chrome/set logical face → device-scaled face
-	if bold {
-		dev.SetStyle(ttf.STYLE_BOLD)
-		defer dev.SetStyle(ttf.STYLE_NORMAL) // always restore, even on error/panic
-	}
-	surf, err := dev.RenderUTF8Blended(text, col)
+	surf, err := c.renderLabel(font, dev, text, col, bold)
 	if err != nil {
 		return cachedText{}, false
 	}
@@ -2515,6 +2511,79 @@ func (c *Ctx) textTextureBold(text string, col sdl.Color, font *ttf.Font, bold b
 	entry := cachedText{tex: tex, src: sdl.Rect{W: surf.W, H: surf.H}, w: surf.W, h: surf.H, owned: true, devPct: c.textDevPct, inkTop: inkTop, inkBottom: inkBottom}
 	c.textCache[key] = entry
 	return entry, true
+}
+
+// renderLabel rasterizes a label's text in dev, the device face of font. Text dev
+// has every glyph for is one SDL_ttf render. Text that needs fallback faces is
+// rendered run by run, each run in the face that has its glyphs, and the runs are
+// placed on dev's baseline. SDL_ttf would draw such text in one call through the
+// fallback chain, but 3.2.2 places a fallback glyph by its own font's ascent, not
+// the line's: Segoe UI Symbol glyphs landed a pixel or more low and Japanese ones
+// high, more at larger sizes. Fixed on SDL_ttf main, not yet released. The label
+// grows above dev's top only when a run's ink would reach past it.
+func (c *Ctx) renderLabel(font, dev *ttf.Font, text string, col sdl.Color, bold bool) (*sdl.Surface, error) {
+	if s := c.setOf(font); !hasNonASCII(text) || s == nil || len(s.fonts) <= 1 {
+		return renderStyled(dev, text, col, bold) // no fallback faces to take glyphs from
+	}
+	runes := []rune(text)
+	faces := c.deviceCoverRunes(font, DefaultScalePct, runes)
+	if allSameFont(faces, dev) {
+		return renderStyled(dev, text, col, bold)
+	}
+	type run struct {
+		surf *sdl.Surface
+		face *ttf.Font
+	}
+	var runs []run
+	defer func() {
+		for _, r := range runs {
+			r.surf.Free()
+		}
+	}()
+	ascent := int32(dev.Ascent())
+	var above, width int32 // rows a run's ink needs above dev's top; total width
+	for i := 0; i < len(runes); {
+		j := i + 1
+		for j < len(runes) && faces[j] == faces[i] {
+			j++
+		}
+		s, err := renderStyled(faces[i], string(runes[i:j]), col, bold)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, run{surf: s, face: faces[i]})
+		inkTop, _ := inkRows(s)
+		above = max(above, int32(faces[i].Ascent())-ascent-inkTop)
+		width += s.W
+		i = j
+	}
+	height := above + int32(dev.Height())
+	for _, r := range runs {
+		height = max(height, above+ascent-int32(r.face.Ascent())+r.surf.H)
+	}
+	out, err := sdl.CreateRGBSurfaceWithFormat(0, width, height, 0, uint32(sdl.PIXELFORMAT_ARGB8888))
+	if err != nil {
+		return nil, err
+	}
+	x := int32(0)
+	for _, r := range runs {
+		if err := r.surf.CopyTo(out, x, above+ascent-int32(r.face.Ascent())); err != nil {
+			out.Free()
+			return nil, err
+		}
+		x += r.surf.W
+	}
+	return out, nil
+}
+
+// renderStyled renders text in f at a weight, restoring f's style afterwards so
+// the shared face never leaks a weight into the next label.
+func renderStyled(f *ttf.Font, text string, col sdl.Color, bold bool) (*sdl.Surface, error) {
+	if bold {
+		f.SetStyle(ttf.STYLE_BOLD)
+		defer f.SetStyle(ttf.STYLE_NORMAL)
+	}
+	return f.RenderUTF8Blended(text, col)
 }
 
 // deviceTextFont maps a LOGICAL rasterization face to its DEVICE-scaled sibling
