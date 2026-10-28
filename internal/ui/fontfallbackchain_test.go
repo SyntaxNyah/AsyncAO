@@ -23,6 +23,14 @@ const (
 // the fallback tier, on SDL's dummy video driver.
 func newFallbackCtx(t *testing.T) *Ctx {
 	t.Helper()
+	c := newFontCtx(t)
+	c.SetFallbackFonts([][]byte{twemojiTTF})
+	return c
+}
+
+// newFontCtx is a Ctx with the embedded chrome face and no fallback faces yet.
+func newFontCtx(t *testing.T) *Ctx {
+	t.Helper()
 	t.Setenv("SDL_VIDEODRIVER", "dummy")
 	if err := sdl.Init(sdl.INIT_VIDEO); err != nil {
 		t.Skipf("SDL unavailable: %v", err)
@@ -47,7 +55,6 @@ func newFallbackCtx(t *testing.T) *Ctx {
 		t.Fatalf("embedded heading font: %v", err)
 	}
 	c := &Ctx{font: font, fontBig: fontBig, textCache: map[textKey]cachedText{}, widthCache: map[string]int32{}}
-	c.SetFallbackFonts([][]byte{twemojiTTF})
 	t.Cleanup(func() {
 		c.Destroy()
 		ttf.Quit()
@@ -186,4 +193,65 @@ func surfaceRows(surf *sdl.Surface, keep func(spread uint32) bool) (top, bottom 
 		}
 	}
 	return top, bottom
+}
+
+// TestPlainLabelDrawsColourEmoji pins colour emoji everywhere: an ordinary chrome
+// label — not a chat line or a showname — draws an emoji from the colour face, in
+// the same texture as the text around it, once the face is loaded.
+func TestPlainLabelDrawsColourEmoji(t *testing.T) {
+	const label = "hi 😀 there"
+	c := newFontCtx(t)
+	white := sdl.Color{R: 255, G: 255, B: 255, A: 255}
+	twemoji, err := memFont(twemojiTTF, UIFontSize)
+	if err != nil {
+		t.Fatalf("open the Twemoji face: %v", err)
+	}
+	top, _ := colouredRows(t, twemoji, "😀", white)
+	twemoji.Close()
+	if top < 0 {
+		t.Skip("this SDL_ttf build draws no colour glyphs, so the emoji cannot be told from a box")
+	}
+
+	c.SetEmojiFont(twemojiTTF)
+	face := c.chromeFaceFor(label)
+	surf, err := c.renderLabel(face, face, label, white, false)
+	if err != nil {
+		t.Fatalf("renderLabel: %v", err)
+	}
+	defer surf.Free()
+	if top, _ := surfaceColouredRows(surf); top < 0 {
+		t.Error("the label drew the emoji without colour: it did not come from the colour face")
+	}
+	// Layout measures, the label draws: the two must agree or a centred label is
+	// off-centre and a clipped one is cut early.
+	if w, ok := c.fontTextWidth(face, label); !ok || w != surf.W {
+		t.Errorf("label measures %d px but draws %d px", w, surf.W)
+	}
+}
+
+// TestLabelsAskForTheEmojiFaceOnce pins the load trigger: a label with an emoji, or
+// a pictograph no text face has, asks the App for the colour face — once per
+// session, and never for plain text.
+func TestLabelsAskForTheEmojiFaceOnce(t *testing.T) {
+	c := newFontCtx(t)
+	asked := 0
+	c.emojiLoad = func() { asked++ }
+
+	c.chromeFaceFor("Привет, Phoenix")
+	if asked != 0 {
+		t.Errorf("a label without emoji asked for the colour face")
+	}
+	c.chromeFaceFor("hi 😀")
+	c.chromeFaceFor("bye 👋")
+	if asked != 1 {
+		t.Errorf("labels with emoji asked %d times, want once", asked)
+	}
+
+	c2 := newFontCtx(t)
+	asked2 := 0
+	c2.emojiLoad = func() { asked2++ }
+	c2.noteUncovered('✨') // a pictograph no text face on this machine has
+	if asked2 != 1 {
+		t.Errorf("an uncovered pictograph asked %d times, want once", asked2)
+	}
 }
