@@ -256,13 +256,20 @@ func applyBundleUpdate(url, sumsURL, assetName, exe, libSubdir string) error {
 // cleanly via SDL_QUIT. The new binary starts AFTER the main loop exits and
 // prefs/tabs are flushed (see MaybeRelaunch), so the two instances never fight
 // over the prefs file or the window.
-func (a *App) requestRelaunch() {
-	a.relaunchOnExit = true
+func (a *App) requestRelaunch() { a.RequestRelaunch(nil, false) }
+
+// RequestRelaunch quits cleanly and starts the binary again with args once the
+// main loop has exited and state is saved. keepTabs saves the open tabs for the
+// new process to restore even when restore-on-launch is off: a relaunch the user
+// did not ask for (a GPU device loss) must not drop their servers.
+func (a *App) RequestRelaunch(args []string, keepTabs bool) {
+	a.relaunchOnExit, a.relaunchArgs, a.relaunchKeepTabs = true, args, keepTabs
 	_, _ = sdl.PushEvent(&sdl.QuitEvent{Type: sdl.QUIT})
 }
 
-// MaybeRelaunch starts the freshly-installed binary if "Restart to apply" was
-// clicked. Called by main AFTER the run loop exits and state is saved.
+// MaybeRelaunch starts the binary again if a relaunch was requested ("Restart to
+// apply", a GPU device loss). Called by main AFTER the run loop exits and state is
+// saved.
 func (a *App) MaybeRelaunch() {
 	if !a.relaunchOnExit {
 		return
@@ -271,7 +278,7 @@ func (a *App) MaybeRelaunch() {
 	if err != nil {
 		return
 	}
-	cmd := exec.Command(exe)
+	cmd := exec.Command(exe, a.relaunchArgs...)
 	winexec.Hide(cmd) // dev builds are console-subsystem; no console flash on relaunch
 	_ = cmd.Start()
 }

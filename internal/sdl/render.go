@@ -145,8 +145,9 @@ func (r *Renderer) CreateTextureFromSurface(s *Surface) (*Texture, error) {
 // Clear fills the target with the draw colour.
 func (r *Renderer) Clear() error { return errorOr(C.SDL_RenderClear(r.c())) }
 
-// Present shows the frame.
-func (r *Renderer) Present() { C.SDL_RenderPresent(r.c()) }
+// Present shows the frame. It fails when the GPU can no longer present, such as
+// after a device loss.
+func (r *Renderer) Present() error { return errorOr(C.SDL_RenderPresent(r.c())) }
 
 // Flush submits queued draws now.
 func (r *Renderer) Flush() error { return errorOr(C.SDL_FlushRenderer(r.c())) }

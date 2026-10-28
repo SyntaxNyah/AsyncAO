@@ -56,11 +56,12 @@ func main() {
 	runtime.LockOSThread()
 
 	var (
-		flagServer  = flag.String("server", "", "skip the lobby and connect to this ws:// or wss:// URL")
-		flagMaster  = flag.String("master", network.DefaultMasterServerURL, "master server list endpoint")
-		flagDebug   = flag.Bool("debug", false, "expose pprof on "+debugPprofAddr)
-		flagVsync   = flag.Bool("vsync", true, "use vsync presentation")
-		flagSoftGPU = flag.Bool("software-gpu", false, "draw with the bundled software GPU driver (for broken GPU drivers)")
+		flagServer      = flag.String("server", "", "skip the lobby and connect to this ws:// or wss:// URL")
+		flagMaster      = flag.String("master", network.DefaultMasterServerURL, "master server list endpoint")
+		flagDebug       = flag.Bool("debug", false, "expose pprof on "+debugPprofAddr)
+		flagVsync       = flag.Bool("vsync", true, "use vsync presentation")
+		flagSoftGPU     = flag.Bool("software-gpu", false, "draw with the bundled software GPU driver (for broken GPU drivers)")
+		flagGPURecovery = flag.Int("gpu-recovery", 0, "set by the client when it restarts after a GPU device loss: losses so far")
 	)
 	flag.Parse()
 
@@ -79,12 +80,12 @@ func main() {
 		}()
 	}
 
-	gpuOpts := render.GPUOptions{
+	gpuOpts := render.BackendOptions{
 		VSync:              *flagVsync,
 		ForceSoftware:      *flagSoftGPU,
 		SoftwareDriverFile: softwareVulkanDriverFile(),
 	}
-	if err := run(*flagServer, *flagMaster, gpuOpts, *flagDebug); err != nil {
+	if err := run(*flagServer, *flagMaster, gpuOpts, *flagGPURecovery, *flagDebug); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -128,7 +129,7 @@ func logSamples(p *metrics.Profiler) {
 	}
 }
 
-func run(serverURL, masterURL string, gpuOpts render.GPUOptions, debugMode bool) error {
+func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveries int, debugMode bool) error {
 	vsync := gpuOpts.VSync
 	// --- engine singletons (SDL-free) ---
 	prefsPath, err := config.DefaultPath()
@@ -292,13 +293,14 @@ func run(serverURL, masterURL string, gpuOpts render.GPUOptions, debugMode bool)
 		}
 	}
 
-	gpu, err := render.OpenGPU(window, gpuOpts)
+	backend, err := render.OpenBackend(window, gpuOpts)
 	if err != nil {
 		return err
 	}
-	defer gpu.Close()
-	log.Printf("renderer: %s", gpu.Backend())
-	ren := gpu.Renderer()
+	defer backend.Close()
+	log.Printf("renderer: %s", backend.Name())
+	ren := backend.Renderer()
+	gpuWatcher := render.NewGPUWatcher(gpuRecoveries, backend.Software(), time.Now)
 	// Texture filter for every texture created from now on: linear (sprites
 	// stretched to the viewport stop shimmering) or nearest. The Settings toggle
 	// changes it and re-streams live.
@@ -449,6 +451,7 @@ func run(serverURL, masterURL string, gpuOpts render.GPUOptions, debugMode bool)
 		Preview:          preview,
 		Presence:         pres,
 		MasterURL:        masterURL,
+		RestoreTabs:      gpuRecoveries > 0, // restarted after a GPU device loss: reopen the saved tabs
 		ConfigQuarantine: configQuarantine,
 		AutoMounts:       autoMounts,
 	})
@@ -672,7 +675,15 @@ func run(serverURL, masterURL string, gpuOpts render.GPUOptions, debugMode bool)
 		_ = ren.SetDrawColor(0, 0, 0, 255)
 		_ = ren.Clear()
 		app.Frame(dt, lw, lh)
-		ren.Present()
+		switch recovery := gpuWatcher.Observe(backend.Present()); recovery {
+		case render.GPUWorking:
+		case render.GPUGiveUp:
+			log.Printf("gpu: the software driver lost its device too; quitting instead of restarting again")
+			_ = sdl.ShowErrorBox(windowTitle, gpuGiveUpMessage, window)
+			running = false
+		default:
+			app.RequestRelaunch(gpuRecoveryArgs(recovery, masterURL, gpuOpts, gpuRecoveries, debugMode), true)
+		}
 		// The detached preview's own present, independent of the main
 		// window's renderer. Present is a single nil check when the preview
 		// is closed (the overwhelmingly common case: nothing has ever been
