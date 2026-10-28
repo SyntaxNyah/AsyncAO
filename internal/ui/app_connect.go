@@ -218,9 +218,9 @@ func (a *App) collectOpenTabs() []config.OpenTab {
 
 // RememberOpenTabs persists the open tabs for next launch's restore — called
 // once at shutdown (before the final SaveNow). No-op unless restore-on-launch
-// is enabled, so the feature is truly zero-cost when off.
+// is enabled or a relaunch asked to keep the tabs (RequestRelaunch).
 func (a *App) RememberOpenTabs() {
-	if !a.d.Prefs.Load().RestoreTabs {
+	if !a.d.Prefs.Load().RestoreTabs && !a.relaunchKeepTabs {
 		return
 	}
 	a.d.Prefs.SetOpenTabs(a.collectOpenTabs())

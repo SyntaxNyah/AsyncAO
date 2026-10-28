@@ -235,3 +235,16 @@ func (w *Window) StartTextInput() error { return errorOr(C.SDL_StartTextInput(w.
 
 // Win32Handle returns the window's HWND, or nil off Windows.
 func (w *Window) Win32Handle() unsafe.Pointer { return C.asyncaoWin32Handle(w.c()) }
+
+// ShowErrorBox shows a modal error message over window (nil for none) and waits
+// until the user closes it. It works before and after the renderer is gone.
+func ShowErrorBox(title, message string, window *Window) error {
+	ctitle, cmsg := C.CString(title), C.CString(message)
+	defer C.free(unsafe.Pointer(ctitle))
+	defer C.free(unsafe.Pointer(cmsg))
+	var w *C.SDL_Window
+	if window != nil {
+		w = window.c()
+	}
+	return errorOr(C.SDL_ShowSimpleMessageBox(C.SDL_MESSAGEBOX_ERROR, ctitle, cmsg, w))
+}

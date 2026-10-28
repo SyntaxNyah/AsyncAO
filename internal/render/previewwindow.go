@@ -473,7 +473,7 @@ func (p *PreviewWindow) Present() {
 		dst := previewFitRect(winW, winH, p.texW, p.texH)
 		_ = p.ren.Copy(p.tex, nil, &dst)
 	}
-	p.ren.Present()
+	_ = p.ren.Present() // the preview has its own renderer; a failed present only drops a preview frame
 }
 
 // previewFitRect fits a srcW x srcH image inside a winW x winH window,

@@ -166,6 +166,9 @@ type Deps struct {
 	Profiler *metrics.Profiler
 	// MasterURL is the server-list endpoint.
 	MasterURL string
+	// RestoreTabs reopens the tabs saved at the last shutdown even when
+	// restore-on-launch is off: set for a relaunch after a GPU device loss.
+	RestoreTabs bool
 	// ConfigQuarantine, when non-nil, means the preferences file was corrupt
 	// at startup and was renamed aside (defaults are in effect). NewApp raises
 	// a one-time startup notice from it. Nil on a clean/first-run load.
@@ -685,7 +688,12 @@ type App struct {
 	updateBusy     bool
 	updateStaged   bool
 	updateErr      string
-	relaunchOnExit bool // "Restart to apply": relaunch the new binary after a clean shutdown
+	relaunchOnExit bool // relaunch the binary after a clean shutdown ("Restart to apply", a GPU device loss)
+	// relaunchArgs are the command-line arguments the relaunched client gets, and
+	// relaunchKeepTabs saves the open tabs for it to restore even when
+	// restore-on-launch is off (RequestRelaunch).
+	relaunchArgs     []string
+	relaunchKeepTabs bool
 
 	// --- IC/OOC log text selection (drag to highlight, Ctrl+C to copy) ---
 	// Anchored to (wrapped-line index, rune offset in that line); see
@@ -1807,12 +1815,15 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	// Frame reconnects them one per frame. Capped to the live tab cap so we
 	// never queue a connect that allocateTab would reject. Off ⇒ nil queue ⇒
 	// pumpTabRestore is a single length check, so boot is byte-identical.
-	if d.Prefs.Load().RestoreTabs {
+	if d.Prefs.Load().RestoreTabs || d.RestoreTabs {
 		q := d.Prefs.Load().OpenTabList()
 		if cap := d.Prefs.Load().TabCap(); len(q) > cap {
 			q = q[:cap]
 		}
 		a.restoreQueue = q
+		if !d.Prefs.Load().RestoreTabs {
+			d.Prefs.SetOpenTabs(nil) // saved only for this relaunch: restore-on-launch is off
+		}
 	}
 	// Auto-connect-on-launch (opt-in, OFF by default): if tab-restore didn't queue
 	// anything, dial the last server on the first frames so you land straight on

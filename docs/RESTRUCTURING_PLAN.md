@@ -20,9 +20,12 @@ in **Status**. Update Status in the same commit that completes a step.
   - [x] binding over SDL3/SDL3_ttf/SDL3_mixer, audio on `MIX_Track`, fork and go-sdl2 dropped,
         scale-mode shim moved into the binding; deps scripts + CI (cached setup-sdl build on
         Linux/macOS, MSYS2 packages on Windows)
-  - [x] SDL_GPU renderer on one device (`render.OpenGPU`: Vulkan, then lavapipe, then SDL's own
-        renderer), `-software-gpu` flag; lavapipe staged by build.ps1 and the release job
-  - [ ] device-loss rebuild with T1 re-upload; backend name in the debug overlay and About
+  - [x] SDL_GPU renderer on one device (`render.OpenBackend`: Vulkan, then lavapipe, then SDL's
+        own renderer, each a `render.Backend`), `-software-gpu` flag; lavapipe staged by
+        build.ps1 and the release job
+  - [x] device loss (decided 2026-10-28): `render.GPUWatcher` restarts the client, restoring
+        its tabs; in-process rebuild with T1 re-upload moves to after step 3 (Part 5d)
+  - [ ] backend name in the debug overlay and About
   - [ ] platform code (dialogs, DPI seeding, URL opening, preview ownership, clipboard)
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
       pointer, no park/activate copies; fixes bug 4, #115, #141, #84)
@@ -763,11 +766,16 @@ is going away.
   against the 256 MiB budget. Follow-up: find what the Vulkan driver holds (pipeline cache,
   swapchain images, staging buffers) and what SDL's `gpu` renderer lets us trim.
 - One setting / command-line flag forces the software driver, for broken GPU drivers.
-- Device loss: SDL's `gpu` renderer sends no reset events (Part 5e open item 5), so a failed
-  present or submit marks the device lost; the renderer and device are rebuilt and T1 is
-  re-uploaded from the decoded tier, the way theme textures already heal on eviction. Today
-  nothing handles a reset, so one (driver update, sleep/resume, Remote Desktop) would likely
-  leave textures black until restart.
+- Device loss: SDL's `gpu` renderer sends no reset events (Part 5e open item 5), so
+  `render.GPUWatcher` treats three failed presents in a row as a lost device. Recovery, decided
+  2026-10-28, is a clean restart through the existing relaunch, reopening the open tabs: every
+  texture belongs to the lost renderer, and about twenty owners (the label atlas, T1, viewport
+  effect textures, rasters, parked-tab copies) would each have to release first, where one
+  missed owner is a use-after-free on a path that almost never runs. A loss within a minute of
+  a restart escalates to the software driver, and then to quitting with a message instead of
+  restarting in a loop. Rebuilding in-process (new device and renderer, T1 re-uploaded from
+  the decoded tier) follows step 3, when per-tab sessions remove the parked copies and texture
+  ownership is in a few places.
 - The active backend name is shown in the debug overlay and the About screen.
 - Custom shaders beyond the viewport post pass (Part 5e) are out of scope; a new one is decided
   when a feature needs it, and ships as SPIR-V for the SDL_GPU device.
@@ -937,7 +945,9 @@ step 2c; 3, 4, 6, 7, 9, 10 and 11 before step 4). None reopens the toolkit choic
    no `RENDER_DEVICE_RESET`, `RENDER_TARGETS_RESET` or `DEVICE_LOST` event, and SDL_GPU's
    Vulkan backend only turns `VK_ERROR_DEVICE_LOST` into a failed call. A failed present or
    submit therefore marks the device lost; the next frame destroys and recreates the renderer
-   and device and re-uploads T1 from the decoded tier. A test forces a loss.
+   and device and re-uploads T1 from the decoded tier. A test forces a loss. Revised
+   2026-10-28: the client restarts instead, until step 3 makes in-process rebuild safe
+   (Part 5d "Renderer").
 6. **C++ allocations.** The allocation gate counts Go allocations only. Measure RmlUi's heap
    use per frame in steady state against the 256 MiB budget.
 7. **uikit scope.** Steps 4–5 and the uikit export surface (Part 3) were written for our own
