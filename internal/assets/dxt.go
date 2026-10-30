@@ -2,18 +2,12 @@ package assets
 
 import "image"
 
-// DXT / BC compressed-texture FOURCC values (SDL_PIXELFORMAT_DXT1 / DXT5).
-// They are defined here, not in internal/sdl, because this package is SDL-free
-// (hard rule 1): the raw SDL_DEFINE_PIXELFOURCC('D','X','T',n) values
-// CreateTexture expects.
-// The decode pool stamps Decoded.DXTFormat with one of these; the render thread
-// passes it straight through to CreateTexture.
+// SDL_PIXELFORMAT_DXT1/DXT5 FOURCC values, defined here because this package is SDL-free (hard rule 1).
 const (
 	DXT1FourCC uint32 = 0x31545844 // '1','T','X','D'
 	DXT5FourCC uint32 = 0x35545844 // '5','T','X','D'
 )
 
-// dxtBlockDim is the fixed 4x4 texel block size S3TC uses.
 const dxtBlockDim = 4
 
 // Block byte sizes: DXT1 (BC1) is 4 bpp, DXT5 (BC3) is 8 bpp.
@@ -22,9 +16,7 @@ const (
 	dxt5BlockBytes = 16
 )
 
-// EncodeDXT1 compresses an RGBA image to DXT1 (BC1, 4 bpp). Width and height
-// MUST be multiples of 4. Fully-opaque blocks use the 4-color mode; a block
-// containing a semi-transparent texel uses the 3-color + transparent mode.
+// EncodeDXT1 compresses to DXT1 (BC1); width and height must be multiples of 4.
 func EncodeDXT1(img *image.RGBA) []byte {
 	w, h := img.Rect.Dx(), img.Rect.Dy()
 	bw, bh := w/dxtBlockDim, h/dxtBlockDim
@@ -38,9 +30,7 @@ func EncodeDXT1(img *image.RGBA) []byte {
 	return out
 }
 
-// EncodeDXT5 compresses an RGBA image to DXT5 (BC3, 8 bpp). Width and height
-// MUST be multiples of 4. Alpha is interpolated (3-bit indices over an 8-value
-// ramp), so soft sprite edges survive.
+// EncodeDXT5 compresses to DXT5 (BC3); width and height must be multiples of 4.
 func EncodeDXT5(img *image.RGBA) []byte {
 	w, h := img.Rect.Dx(), img.Rect.Dy()
 	bw, bh := w/dxtBlockDim, h/dxtBlockDim
@@ -218,8 +208,7 @@ func readBlock(img *image.RGBA, x0, y0 int, r, g, b, a *[16]uint8) {
 	}
 }
 
-// blockMinMax returns the min/max RGB over the texels considered (opaque texels
-// only when skipTransparent is true).
+// blockMinMax returns min/max RGB over the texels, opaque ones only when skipTransparent.
 func blockMinMax(r, g, b, a [16]uint8, skipTransparent bool) (minR, minG, minB, maxR, maxG, maxB uint8) {
 	minR, minG, minB = 255, 255, 255
 	for i := 0; i < 16; i++ {
@@ -284,11 +273,7 @@ const (
 	CompressDXT1 = 2 // DXT1/BC1, 4 bpp, 1-bit alpha
 )
 
-// compress encodes Frames to the given DXT format and releases the raw RGBA
-// (returning pooled buffers to the pool immediately). No-op when the canvas is
-// not a multiple of 4 (DXT blocks are 4x4), when there are no frames, or when
-// the format is 0. Call exactly once, in the decode pool, before the Decoded
-// is handed to the render thread.
+// compress encodes Frames and pools the raw buffers; no-op unless 4-aligned with frames and a format; call once.
 func (d *Decoded) compress(format uint32) {
 	if format == 0 || len(d.Frames) == 0 || d.Width%dxtBlockDim != 0 || d.Height%dxtBlockDim != 0 {
 		return

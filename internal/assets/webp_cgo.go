@@ -2,9 +2,7 @@
 
 package assets
 
-// Thin CGO binding over libwebp + libwebpdemux (spec §2): SIMD decode
-// straight into RGBA, animated and static alike, via the WebPAnimDecoder
-// API. Roughly a hundred lines — no third-party wrapper needed.
+// CGO binding over libwebp and libwebpdemux: SIMD decode into RGBA through the WebPAnimDecoder API.
 
 /*
 #cgo pkg-config: libwebpdemux libwebp
@@ -35,9 +33,7 @@ func decodeWebP(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	return decodeWebPStatic(data)
 }
 
-// peekWebPAnimDims reads an animated WebP's canvas size and frame count from the
-// demuxer header only (no pixel decode) so the progressive first frame can be
-// downscaled to the same budget-fit dimensions the stream's appends use.
+// peekWebPAnimDims reads canvas size and frame count from the demuxer header, without decoding pixels.
 func peekWebPAnimDims(data []byte) (width, height, frames int, ok bool) {
 	if len(data) == 0 {
 		return 0, 0, 0, false
@@ -95,15 +91,9 @@ func decodeWebPStatic(data []byte) (*Decoded, error) {
 	return d, nil
 }
 
-// decodeWebPAnim walks the WebPAnimDecoder, copying each composed canvas
-// into pooled RGBA frames. Frame delays come from the demuxer's per-frame
-// ANMF duration — NOT from GetNext's cumulative timestamp, whose first frame
-// is stamped at 0 in the common convention and therefore shifted every delay
-// by one frame (frame 0 fell through to the 100 ms zero-delay substitute, so
-// a looping sprite stuttered once per cycle at the wrap).
+// decodeWebPAnim takes delays from ANMF durations, as GetNext's cumulative timestamps shift them by one frame.
 func decodeWebPAnim(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
-	// The decoder reads from the payload across calls; pin it so handing
-	// the pointer to C stays legal without copying the payload.
+	// The decoder reads the payload across calls; pin it so handing the pointer to C stays legal without a copy.
 	var pinner runtime.Pinner
 	pinner.Pin(&data[0])
 	defer pinner.Unpin()
@@ -136,10 +126,7 @@ func decodeWebPAnim(data []byte, playAnimations bool, maxH int) (*Decoded, error
 		return nil, fmt.Errorf("assets: webp anim reports zero frames")
 	}
 
-	// Per-frame delays from the demuxer's ANMF duration — independent of the
-	// cumulative-timestamp convention GetNext uses (see the comment above).
-	// Default every frame to the zero-delay fallback, then overwrite with the
-	// authored duration where the demuxer reports it.
+	// Default to the zero-delay fallback, then use the authored duration where the demuxer has one.
 	durations := make([]time.Duration, frameTotal)
 	for i := range durations {
 		durations[i] = defaultZeroFrameDelay
@@ -191,8 +178,7 @@ func decodeWebPAnim(data []byte, playAnimations bool, maxH int) (*Decoded, error
 		delay := durations[i]
 		sourceDelays = append(sourceDelays, delay)
 
-		// Every GetNext ran (compositing the running canvas); copy out only the
-		// decimated subset, with skipped frames' delays folded into the kept one.
+		// Every GetNext composited the canvas; copy out only the kept frames, folding skipped delays.
 		folded, keepIt := fdec.step(i, delay)
 		if !keepIt {
 			continue
@@ -223,13 +209,7 @@ func decodeWebPAnim(data []byte, playAnimations bool, maxH int) (*Decoded, error
 	return d, nil
 }
 
-// decodeWebPAnimStream is decodeWebPAnim's incremental form: it walks the same
-// WebPAnimDecoder and emits each frame from kept index 1 (frame 0 was already
-// delivered by the progressive first frame) as a single-frame chunk via emit.
-// It streams only when the clip needs no decimation (the common case —
-// downscale-to-fit keeps every frame in budget); otherwise it returns
-// streamed=false so the caller falls back to the classic full decode, which
-// keeps spreadLoopDelays correct. total is the source frame count.
+// decodeWebPAnimStream emits each frame from kept index 1 as a chunk; decimation returns streamed=false.
 func decodeWebPAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed bool, total int, err error) {
 	var pinner runtime.Pinner
 	pinner.Pin(&data[0])
@@ -263,7 +243,6 @@ func decodeWebPAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed 
 		return false, 0, fmt.Errorf("assets: webp anim reports zero frames")
 	}
 
-	// Per-frame delays from the demuxer's ANMF duration (see decodeWebPAnim).
 	durations := make([]time.Duration, walk)
 	for i := range durations {
 		durations[i] = defaultZeroFrameDelay
@@ -290,11 +269,7 @@ func decodeWebPAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed 
 
 	canvasBytes := width * height * webpBytesPerPixel
 
-	// When downscaling, the native canvas is transient (copied out of the C
-	// decoder, downscaled, then discarded). Reuse ONE native buffer across the
-	// whole stream instead of churning the pixel pool (and re-mmap'ing under GC
-	// pressure) per frame. When not downscaling the native buffer IS the
-	// delivered frame, so it cannot be reused.
+	// When downscaling, reuse one native buffer instead of churning the pool; else it is the delivered frame.
 	var reuse *image.RGBA
 	var reuseToken *[]byte
 	if down {

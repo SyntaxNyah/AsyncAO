@@ -1,12 +1,7 @@
 package assets
 
-// MountIndex is the pre-built map of everything in the user's local mount
-// folders and .zip packs, so a layered lookup is an in-memory map hit instead of
-// a directory walk or a stat storm on the fetch path.
-// Threading: BuildMountIndex blocks and MUST run on a goroutine, never on the
-// render thread (rule 2 — no synchronous disk I/O on the render path). Lookups
-// run on pool workers. Reference counting keeps an archive handle alive while a
-// worker is mid-read across a Rescan that swaps the index out from under it.
+// MountIndex maps local mount folders and .zip packs, so a lookup is a map hit instead of a directory walk.
+// BuildMountIndex blocks, so never call it on the render thread (hard rule 2).
 
 import (
 	"archive/zip"
@@ -24,49 +19,36 @@ import (
 )
 
 const (
-	// No entry-count or byte cap: local mounts are the user's own content and must
-	// never be silently truncated. The old mountIndexByteCap stopped indexing packs
-	// past ~46k files — the "size cap" / "not indexing files" report. Index memory
-	// grows with the pack (~180 bytes/file); the only remaining bounds are the
-	// SAFETY ones below (depth, per-entry size, symlink skip).
+	// No entry-count or byte cap: local mounts are the user's and must never be silently truncated.
 	mountIndexMaxDepth = safepath.MaxDepth
-	// mountBadCap bounds the quarantine of pack files that failed to DECODE.
+	// mountBadCap bounds the quarantine of pack files that failed to decode.
 	mountBadCap = 256
-	// mountArchiveCap bounds simultaneously OPEN .zip handles (rule 4). Each is an
-	// OS file descriptor plus its parsed central directory held for the index's
-	// lifetime, so this is a real resource, not a counter.
+	// mountArchiveCap bounds open .zip handles (hard rule 4); each holds a descriptor and its central directory.
 	mountArchiveCap = 8
-	// mountZipEntryMaxBytes refuses a single pack entry larger than this. A zip
-	// entry's uncompressed size is attacker-controlled metadata, and ReadFile
-	// allocates it in one piece; no legitimate AO asset comes close.
+	// mountZipEntryMaxBytes refuses larger entries: the size is attacker-controlled and ReadFile allocates it whole.
 	mountZipEntryMaxBytes = 64 << 20
 )
 
-// indexedExts is the extension table the stem mask is bit-indexed over. Its
-// length is the mask width, so it may never exceed 16 entries — the compile-time
-// assertion below enforces that. Order is irrelevant to correctness (the mask is
-// only ever consulted through extBit), so entries may be appended freely.
+// indexedExts is the stem mask's bit table, at most 16 entries; order does not matter, so append freely.
 var indexedExts = [...]string{
 	config.ExtPNG, config.ExtWebP, config.ExtAPNG, config.ExtGIF,
 	config.ExtJPG, config.ExtAVIF,
 	config.ExtOpus, config.ExtOgg, config.ExtWAV, config.ExtMP3,
 }
 
-// A stem's presence set is a uint16, so indexedExts must fit in 16 bits. This
-// constant fails to compile (unsigned overflow) the moment a 17th is added.
+// Fails to compile (unsigned overflow) if indexedExts exceeds the uint16 mask.
 const _ = uint(16 - len(indexedExts))
 
 var (
-	// errNotAMount rejects a configured mount that is neither a folder nor a .zip.
+	// errNotAMount rejects a mount that is neither a folder nor a .zip.
 	errNotAMount = errors.New("not a folder or a .zip pack")
 	// errTooManyArchives reports the mountArchiveCap refusal.
 	errTooManyArchives = errors.New("too many .zip packs mounted")
-	// errEntryTooLarge refuses a zip entry whose size exceeds mountZipEntryMaxBytes.
+	// errEntryTooLarge refuses an entry over mountZipEntryMaxBytes.
 	errEntryTooLarge = errors.New("pack entry is too large")
 )
 
-// mountError names which mount a build error came from, so the Settings status
-// line can say "Folder not found: C:\AO2\pack" instead of a bare errno.
+// mountError names the mount a build error came from, for the Settings status line.
 type mountError struct {
 	mount string
 	err   error
@@ -78,10 +60,7 @@ func (e *mountError) Unwrap() error { return e.err }
 // Mount reports which configured mount failed.
 func (e *mountError) Mount() string { return e.mount }
 
-// extBit returns the stem-mask bit for ext and whether ext is indexed at all.
-// An unindexed extension is not an error: the lookup simply falls back to a
-// direct exact-key probe, so adding a format to the probe chain without adding
-// it here degrades to a map hit rather than a miss.
+// extBit returns ext's mask bit and whether it is indexed; an unindexed one falls back to an exact-key probe.
 func extBit(ext string) (uint16, bool) {
 	for i, e := range indexedExts {
 		if e == ext {
@@ -91,16 +70,13 @@ func extBit(ext string) (uint16, bool) {
 	return 0, false
 }
 
-// packFile locates one indexed file. rel is the EXACT on-disk (or in-archive)
-// relative path; it is left EMPTY when that path equals the folded key, which is
-// the common all-lowercase case and halves the index's string data. mount is the
-// index of the source it came from.
+// packFile locates one indexed file; rel is empty when it equals the folded key, saving string data.
 type packFile struct {
 	rel   string
 	mount uint8
 }
 
-// MountIndex is described in the file header.
+// MountIndex maps local mount contents; see the file header.
 type MountIndex struct {
 	sources []mountSource
 	mounts  []string // display/identity copy of the configured mount list
@@ -112,36 +88,23 @@ type MountIndex struct {
 
 	bad quarantine
 
-	// refs keeps archive handles alive across a Rescan: a pool worker that has
-	// acquired the index may be mid-read when the render thread publishes a new
-	// one and retires this one. Close happens when the last reference drops, not
-	// when the pointer is swapped.
+	// refs keeps archives open across a Rescan: close comes with the last reference, not the pointer swap.
 	refs    atomic.Int32
 	retired atomic.Bool
 	closeUp sync.Once
 }
 
-// mountSource is the folder-or-archive seam. Both implementations are read-only
-// after construction; walk runs once at build time on a goroutine, read runs on
-// pool workers and MUST be safe for concurrent use.
+// mountSource is a folder or archive, read-only once built; read must be safe for concurrent use.
 type mountSource interface {
-	// walk visits every FILE under the source, passing the source-relative path
-	// with forward slashes. Returning false stops the walk.
+	// walk visits every file with a forward-slash relative path; returning false stops it.
 	walk(fn func(rel string) bool) error
-	// read returns one entry's bytes by its exact source-relative path.
 	read(rel string) ([]byte, error)
-	// close releases any OS handle. Safe to call once.
+	// close releases any OS handle; call it once.
 	close() error
-	// name is the configured mount string, for diagnostics.
 	name() string
 }
 
-// BuildMountIndex walks every mount in order and returns the published index.
-// BLOCKING — goroutine only.
-// Errors are deliberately not fatal. A mount that cannot be opened (an unplugged
-// drive, a deleted folder, a corrupt zip) is skipped with its error recorded, and
-// whatever else indexed still serves: the layer only ever ADDS hits over the
-// network path, so partial degradation is always safe.
+// BuildMountIndex walks every mount in order and blocks; a mount that cannot open is skipped with its error.
 func BuildMountIndex(mounts []string) (*MountIndex, []error) {
 	ix := &MountIndex{
 		mounts: append([]string(nil), mounts...),
@@ -175,12 +138,9 @@ func BuildMountIndex(mounts []string) (*MountIndex, []error) {
 	return ix, errs
 }
 
-// absorb indexes one source's files.
 func (ix *MountIndex) absorb(src mountSource, mount uint8) error {
 	return src.walk(func(rel string) bool {
-		// Folder walks are already depth-bounded by safepath.WalkFiles; this
-		// covers the OTHER source kind, whose entry names come straight out of a
-		// zip central directory and never touch a walker.
+		// Folder walks are depth-bounded by safepath.WalkFiles; zip names come straight from the central directory.
 		if safepath.TooDeep(rel, mountIndexMaxDepth) {
 			return true
 		}
@@ -203,23 +163,19 @@ func (ix *MountIndex) absorb(src mountSource, mount uint8) error {
 	})
 }
 
-// LookupStem returns the indexed-extension mask for a folded, extension-stripped
-// rel. Zero allocations, and no lock: the maps are immutable after publication.
+// LookupStem returns the extension mask for a folded stem, lock-free as the maps are immutable once published.
 func (ix *MountIndex) LookupStem(foldedStem string) (uint16, bool) {
 	m, ok := ix.stems[foldedStem]
 	return m, ok
 }
 
-// LookupExact resolves a folded rel (WITH extension) to its location.
+// LookupExact resolves a folded rel, with extension, to its location.
 func (ix *MountIndex) LookupExact(foldedRel string) (packFile, bool) {
 	f, ok := ix.files[foldedRel]
 	return f, ok
 }
 
-// Covers reports whether the index holds anything for a folded rel, testing BOTH
-// namespaces. Both are required: the probe path uploads textures under an
-// extensionLESS base while the exact path (evidence, music) uses a full URL with
-// its extension, so a stem-only test would silently miss every exact-keyed asset.
+// Covers tests both namespaces, as a stem-only test would miss every exact-keyed asset.
 func (ix *MountIndex) Covers(folded string) bool {
 	if _, ok := ix.stems[folded]; ok {
 		return true
@@ -228,7 +184,7 @@ func (ix *MountIndex) Covers(folded string) bool {
 	return ok
 }
 
-// ReadFile returns one indexed file's bytes. Runs on pool workers.
+// ReadFile returns one indexed file's bytes; pool workers only.
 func (ix *MountIndex) ReadFile(f packFile, foldedRel string) ([]byte, error) {
 	if int(f.mount) >= len(ix.sources) {
 		return nil, os.ErrNotExist
@@ -240,28 +196,24 @@ func (ix *MountIndex) ReadFile(f packFile, foldedRel string) ([]byte, error) {
 	return ix.sources[f.mount].read(rel)
 }
 
-// Stats reports what the settings status line shows.
+// Stats reports the file and mount counts.
 func (ix *MountIndex) Stats() (files, mounts int) {
 	return ix.entries, len(ix.mounts)
 }
 
-// Mounts returns the configured mount list this index was built from, so a
-// caller can tell whether a pref change actually changed the mount SET.
+// Mounts returns the mount list, so a caller can tell whether a pref change changed the set.
 func (ix *MountIndex) Mounts() []string { return ix.mounts }
 
-// MarkBad quarantines a folded rel whose bytes failed to DECODE. Returns true on
-// a new insert. Render thread only.
+// MarkBad quarantines a folded rel whose bytes failed to decode, returning true on a new insert; render thread only.
 func (ix *MountIndex) MarkBad(foldedRel string) bool { return ix.bad.mark(foldedRel) }
 
-// IsBad reports whether a folded rel is quarantined. Pool workers; the empty
-// case costs one atomic load and takes no lock.
+// IsBad reports whether a folded rel is quarantined; pool workers, one atomic load when empty.
 func (ix *MountIndex) IsBad(foldedRel string) bool { return ix.bad.has(foldedRel) }
 
-// BadCount is the quarantine size, for the settings status line.
+// BadCount returns the quarantine size.
 func (ix *MountIndex) BadCount() int64 { return ix.bad.n.Load() }
 
-// acquire takes a read reference, returning false once the index is retired AND
-// fully released. Callers that get true MUST call release.
+// acquire takes a read reference, false once retired and released; on true the caller must call release.
 func (ix *MountIndex) acquire() bool {
 	if ix == nil {
 		return false
@@ -277,7 +229,6 @@ func (ix *MountIndex) acquire() bool {
 	}
 }
 
-// release drops a reference, closing the sources when the last one goes.
 func (ix *MountIndex) release() {
 	if ix == nil {
 		return
@@ -287,10 +238,7 @@ func (ix *MountIndex) release() {
 	}
 }
 
-// Retire drops the owner reference taken at build time. The index stops being
-// acquirable, but any worker already inside a read keeps its handles until it
-// releases — which is the whole reason archives are refcounted rather than
-// closed when the layer pointer is swapped.
+// Retire drops the owner reference; a worker already reading keeps its handles until it releases.
 func (ix *MountIndex) Retire() {
 	if ix == nil || ix.retired.Swap(true) {
 		return
@@ -306,22 +254,17 @@ func (ix *MountIndex) closeSources() {
 	})
 }
 
-// --- the quarantine ------------------------------------------------------------
-
-// quarantine is the bounded set of pack entries that failed to decode. Written
-// from the render thread (the upload pump's decode-error branch and the audio
-// loader), read from pool workers on every pack lookup.
+// quarantine is the bounded set of entries that failed to decode, written by render, read by pool workers.
 type quarantine struct {
 	n   atomic.Int64
 	mu  sync.Mutex
 	set map[string]struct{}
-	// ring records insertion order so eviction is oldest-first; see mountBadCap.
+	// ring records insertion order for oldest-first eviction.
 	ring [mountBadCap]string
 	seq  int
 }
 
-// has is the hot path: the overwhelmingly common case is an empty quarantine, so
-// it must cost one atomic load with no lock and no allocation.
+// has is the hot path: an empty quarantine must cost one atomic load, with no lock or allocation.
 func (q *quarantine) has(foldedRel string) bool {
 	if q.n.Load() == 0 {
 		return false
@@ -332,8 +275,7 @@ func (q *quarantine) has(foldedRel string) bool {
 	return bad
 }
 
-// mark inserts, evicting the oldest entry at the cap. Returns true only on a new
-// insert, so the caller can log once per damaged file rather than once per retry.
+// mark inserts, evicting the oldest at the cap; true only on a new insert, so callers log once per file.
 func (q *quarantine) mark(foldedRel string) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -355,14 +297,7 @@ func (q *quarantine) mark(foldedRel string) bool {
 	return true
 }
 
-// --- key folding ---------------------------------------------------------------
-
-// foldRel maps a URL-relative path onto the index's ONE key space: percent
-// decoded per segment, then lowercased.
-// Decoding per SEGMENT rather than over the whole string keeps a literal "%2F"
-// inside a filename from inventing a path separator. Folding case is what makes a
-// pack authored on Windows resolve identically on Linux, which is strictly better
-// than today's reliance on NTFS being case-insensitive.
+// foldRel percent-decodes per segment so "%2F" cannot invent a separator, then lowercases for case-sensitive disks.
 func foldRel(rel string) string {
 	if !needsFold(rel) {
 		return rel
@@ -377,9 +312,7 @@ func foldRel(rel string) string {
 	return strings.Join(parts, "/")
 }
 
-// needsFold is the zero-allocation fast path: a rel needs folding only if it
-// holds an upper-case ASCII letter, a percent escape, a backslash, or a non-ASCII
-// byte (which may be upper-case under Unicode rules).
+// needsFold is the zero-allocation fast path: true for upper-case ASCII, a percent escape, a backslash or non-ASCII.
 func needsFold(rel string) bool {
 	for i := 0; i < len(rel); i++ {
 		c := rel[i]
@@ -390,9 +323,7 @@ func needsFold(rel string) bool {
 	return false
 }
 
-// decodeSegment percent-decodes one path segment. ok=false on a malformed escape
-// — that is not a real filename, so the caller keeps the raw text rather than
-// failing the lookup.
+// decodeSegment percent-decodes one segment; on a malformed escape, ok=false and the caller keeps the raw text.
 func decodeSegment(seg string) (string, bool) {
 	if !strings.ContainsRune(seg, '%') {
 		return seg, false
@@ -404,8 +335,7 @@ func decodeSegment(seg string) (string, bool) {
 	return dec, true
 }
 
-// pathExt returns the final extension of a folded rel (including the dot), or ""
-// when the last segment has none.
+// pathExt returns a folded rel's final extension including the dot, or "".
 func pathExt(key string) string {
 	for i := len(key) - 1; i >= 0 && key[i] != '/'; i-- {
 		if key[i] == '.' {
@@ -415,16 +345,11 @@ func pathExt(key string) string {
 	return ""
 }
 
-// --- sources -------------------------------------------------------------------
-
-// isArchivePath reports whether a mount string names a .zip pack rather than a
-// folder. Extension-based on purpose: it has to answer before the file is opened
-// (for the open-archive cap) and it is what the Settings UI shows the user.
+// isArchivePath checks the .zip extension, since it must answer before the open-archive cap is checked.
 func isArchivePath(m string) bool {
 	return strings.EqualFold(filepath.Ext(m), ".zip")
 }
 
-// openMountSource opens a folder or a .zip as a mount source.
 func openMountSource(m string) (mountSource, error) {
 	if isArchivePath(m) {
 		return openZipSource(m)
@@ -439,7 +364,6 @@ func openMountSource(m string) (mountSource, error) {
 	return &dirSource{root: filepath.Clean(m)}, nil
 }
 
-// dirSource is a plain folder mount.
 type dirSource struct{ root string }
 
 func (d *dirSource) name() string { return d.root }
@@ -452,17 +376,12 @@ func (d *dirSource) read(rel string) ([]byte, error) {
 	return os.ReadFile(p)
 }
 
-// walk indexes every regular file under the folder. SYMLINKS ARE SKIPPED and the
-// recursion is depth-bounded — both live in safepath.WalkFiles, which is the one
-// implementation this and internal/themepack share.
+// walk indexes every regular file; symlinks are skipped and depth is bounded by safepath.WalkFiles.
 func (d *dirSource) walk(fn func(rel string) bool) error {
 	return safepath.WalkFiles(d.root, mountIndexMaxDepth, fn)
 }
 
-// zipSource is a .zip pack mount.
-// LIFETIME: the handle is owned by the MountIndex and closed only when the last
-// reference drops (see acquire/release), never when the layer pointer is swapped
-// — otherwise a Rescan during a read would close the file mid-ReadAt.
+// zipSource is a .zip mount, closed with the last reference, or a Rescan could close it mid-ReadAt.
 type zipSource struct {
 	path   string
 	rc     *zip.ReadCloser
@@ -520,8 +439,7 @@ func (z *zipSource) read(rel string) ([]byte, error) {
 	return out, nil
 }
 
-// readAllInto reads r into buf's capacity, refusing to exceed limit — the header
-// size is only a hint, so a lying zip cannot make this allocate without bound.
+// readAllInto refuses to exceed limit: the header size is only a hint, and a zip can lie.
 func readAllInto(buf []byte, r io.Reader, limit int64) ([]byte, error) {
 	for {
 		if len(buf) == cap(buf) {

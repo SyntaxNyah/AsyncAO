@@ -23,46 +23,30 @@ import (
 )
 
 const (
-	// decodeQueueCap bounds the decode job queue; Submit blocks briefly when
-	// full (decode work is never speculative enough to shed — the pool ahead
-	// of it already filtered).
+	// decodeQueueCap bounds the decode job queue; Submit blocks briefly when full, since decode work is never shed.
 	decodeQueueCap = 64
 
-	// minDecodeWorkers is the floor for the worker count formula
-	// max(2, NumCPU/2) from spec §8.
+	// minDecodeWorkers is the floor of the worker count, max(2, NumCPU/2).
 	minDecodeWorkers = 2
 
 	// gifDelayUnit is the GIF frame-delay resolution.
 	gifDelayUnit = 10 * time.Millisecond
 
-	// defaultZeroFrameDelay replaces zero/negative frame delays, matching
-	// browser & webAO handling of broken assets.
+	// defaultZeroFrameDelay replaces zero or negative frame delays, as browsers and webAO do.
 	defaultZeroFrameDelay = 100 * time.Millisecond
 
-	// rgbaBytesPerPixel is the decoded pixel size (image.RGBA).
 	rgbaBytesPerPixel = 4
 )
 
-// defaultMaxAnimatedDecodedAssetBytes bounds ONE animated asset's decoded
-// payload (Σ w×h×4 across frames) shipped as the default. Animated sprites are
-// no longer DECIMATED to fit the T1 tier (the #110 choppy-animation fix): the
-// decoder DOWNSCALES the frames far enough that every authored frame fits this
-// budget (budgetFitHeight), so a long clip stays smooth at a smaller on-screen
-// size instead of dropping frames (slideshow) or loading full-size (memory
-// hog). The decimation path (frameDecimator) stays only as a safety net.
+// defaultMaxAnimatedDecodedAssetBytes bounds one animated asset; frames downscale to fit, so long clips stay smooth.
 var defaultMaxAnimatedDecodedAssetBytes = int64(cache.DefaultMaxAnimatedDecodedAssetBytes)
 
-// maxAnimatedDecodedAssetBytes is the LIVE per-animated-asset frame budget. It
-// defaults to defaultMaxAnimatedDecodedAssetBytes (128 MiB). Atomic: decode
-// workers read it live. Tests shrink it directly to exercise the budget-fit
-// downscale deterministically.
+// maxAnimatedDecodedAssetBytes is the live per-animated-asset frame budget, read by decode workers.
 var maxAnimatedDecodedAssetBytes atomic.Int64
 
 func init() { maxAnimatedDecodedAssetBytes.Store(defaultMaxAnimatedDecodedAssetBytes) }
 
-// SetAnimatedDecodedAssetBytes sets the LIVE per-animated-asset frame budget
-// (bytes); <= 0 resets to the default. Atomic: decode workers read it live, so
-// newly decoded animations pick it up immediately.
+// SetAnimatedDecodedAssetBytes sets the live per-animated-asset frame budget; <= 0 resets to the default.
 func SetAnimatedDecodedAssetBytes(bytes int64) {
 	if bytes <= 0 {
 		bytes = defaultMaxAnimatedDecodedAssetBytes
@@ -71,19 +55,13 @@ func SetAnimatedDecodedAssetBytes(bytes int64) {
 }
 
 const (
-	// charIconDecodePx / emoteButtonDecodePx are the post-decode thumbnail
-	// edges for the two asset types drawn at fixed small cells (they mirror
-	// ui.iconCell and ui.emoteBtnCell — assets cannot import ui). Packs ship
-	// char icons at arbitrary sizes; a 500×500 icon decoded natively costs
-	// ~1 MB of T1 for a 64 px cell (~60× waste), capping how many icons stay
-	// resident and churning the cache while scrolling. Thumbnailing in the
-	// decode pool makes an icon ~16 KB: a 4000-char roster fits T1 whole.
+	// charIconDecodePx and emoteButtonDecodePx mirror ui.iconCell and ui.emoteBtnCell (assets cannot import ui).
+	// Packs ship icons at any size, and a 500x500 icon costs about 60x its 64 px cell in T1.
 	charIconDecodePx    = 64
 	emoteButtonDecodePx = 40
 )
 
-// decodeTargetPx returns the thumbnail edge for fixed-cell asset types;
-// 0 means keep the native size.
+// decodeTargetPx returns the thumbnail edge for fixed-cell types; 0 keeps the native size.
 func decodeTargetPx(t AssetType) int {
 	switch t {
 	case AssetTypeCharIcon:
@@ -95,10 +73,7 @@ func decodeTargetPx(t AssetType) int {
 	}
 }
 
-// downscaleDecoded rescales every frame to target×target (the same stretch
-// the GPU performed when drawing the native texture into a square cell, so
-// visuals are unchanged) and releases the source buffers. No-op when the
-// canvas already fits.
+// downscaleDecoded rescales every frame to target x target, the stretch the GPU did, and frees the source buffers.
 func downscaleDecoded(d *Decoded, target int) *Decoded {
 	if d.Width <= target && d.Height <= target {
 		return d
@@ -109,12 +84,7 @@ func downscaleDecoded(d *Decoded, target int) *Decoded {
 		Height:   target,
 		Frames:   make([]*image.RGBA, 0, len(d.Frames)),
 		Delays:   d.Delays,
-		// Carried, not dropped: a downscale resizes PIXELS and never removes a
-		// frame, so the source frame space is unchanged. Rebuilding the struct
-		// without it left SourceFrames at 0, and FrameKeepIndex reads a
-		// non-positive sourceTotal as "no decimation happened" and returns the
-		// identity — silently mis-mapping #17 networked frame effects on any
-		// animation that was BOTH decimated and downscaled.
+		// Without SourceFrames, FrameKeepIndex reads "no decimation" and mis-maps networked frame effects.
 		SourceFrames: d.SourceFrames,
 	}
 	for _, frame := range d.Frames {
@@ -129,15 +99,8 @@ func downscaleDecoded(d *Decoded, target int) *Decoded {
 	return out
 }
 
-// downscaleDecodedAspect shrinks every frame so its HEIGHT fits within maxH,
-// preserving aspect. Sprites/backgrounds are drawn scaled to the viewport
-// height, so a texture taller than the display can never show more detail — it
-// only costs memory and forces SDL to single-pass-shrink the full ~2000px
-// source every frame (the visible quality loss vs a browser's mipmapped
-// downsample). Doing one HIGH-QUALITY CatmullRom downscale here — once, off the
-// render thread — lands a near-display-size texture, so the per-frame CopyEx
-// then has a far gentler ratio and the result is sharper AND cheaper to draw.
-// Downscale-only: a no-op when the asset already fits.
+// downscaleDecodedAspect shrinks every frame's height to maxH, off the render thread, once.
+// A gentler per-frame draw ratio looks sharper, and a texture taller than the display only costs memory.
 func downscaleDecodedAspect(d *Decoded, maxH int) *Decoded {
 	if maxH <= 0 || d.Height <= maxH {
 		return d
@@ -166,8 +129,7 @@ func downscaleDecodedAspect(d *Decoded, maxH int) *Decoded {
 	return out
 }
 
-// decodeTargetDims returns the on-screen dimensions for a sprite after the
-// aspect-preserving height cap maxH, plus whether any downscale is needed.
+// decodeTargetDims returns a sprite's size after the height cap maxH, and whether a downscale is needed.
 func decodeTargetDims(width, height, maxH int) (tw, th int, downscale bool) {
 	if maxH <= 0 || height <= maxH {
 		return width, height, false
@@ -180,20 +142,13 @@ func decodeTargetDims(width, height, maxH int) (tw, th int, downscale bool) {
 	return tw, th, true
 }
 
-// budgetFitHeight returns the max HEIGHT (px) at which `frames` frames of a
-// `width`×`height` canvas still fit within maxAnimatedDecodedAssetBytes,
-// preserving aspect. It is the #110 memory bound: an over-budget animation is
-// DOWNSCALED so every authored frame fits, rather than decimated (dropping
-// frames — the choppy/slideshow behaviour) or loaded at full size (the memory
-// hog). Returns `height` when the native canvas already fits (or the inputs
-// are degenerate, so the caller's height cap still applies).
+// budgetFitHeight returns the max height at which all frames fit the animated budget, or height if already fitting.
 func budgetFitHeight(width, height, frames int) int {
 	budget := maxAnimatedDecodedAssetBytes.Load()
 	if budget <= 0 || width <= 0 || height <= 0 || frames <= 1 {
 		return height
 	}
-	// frames × (width×th/height) × th × 4 ≤ budget
-	//   =>  th² ≤ budget × height / (frames × width × 4)
+	// frames * (width*th/height) * th * 4 <= budget, so th^2 <= budget * height / (frames * width * 4)
 	th2 := budget * int64(height) / (int64(frames) * int64(width) * rgbaBytesPerPixel)
 	th := int(math.Sqrt(float64(th2)))
 	if th <= 0 {
@@ -205,10 +160,7 @@ func budgetFitHeight(width, height, frames int) int {
 	return th
 }
 
-// decodeTargetDimsBudgeted is decodeTargetDims with the animated frame budget
-// folded in: it downscales far enough that `frames` frames fit
-// maxAnimatedDecodedAssetBytes, so a long high-res clip keeps every authored
-// frame at a smaller on-screen size instead of being decimated (#110).
+// decodeTargetDimsBudgeted is decodeTargetDims that also downscales until all frames fit the animated budget.
 func decodeTargetDimsBudgeted(width, height, maxH, frames int) (tw, th int, downscale bool) {
 	if frames <= 0 {
 		frames = 1
@@ -219,13 +171,8 @@ func decodeTargetDimsBudgeted(width, height, maxH, frames int) (tw, th int, down
 	return decodeTargetDims(width, height, maxH)
 }
 
-// downscaleFrame shrinks one full-size frame to tw×th with an area-average
-// (box) filter. Every source pixel is visited exactly once — unlike
-// ApproxBiLinear, which skips source pixels when shrinking and produces the
-// aliased "low-res" look — so the result is smooth and anti-aliased. Alpha is
-// averaged in premultiplied space (weighted by A) so transparent pixels can't
-// darken a sprite's edge. Integer-only, so it stays fast (a fraction of
-// CatmullRom's float64 kernel).
+// downscaleFrame uses an area-average filter, as ApproxBiLinear skips source pixels and aliases.
+// Alpha is averaged premultiplied so transparent pixels cannot darken an edge.
 func downscaleFrame(src *image.RGBA, tw, th int) (*image.RGBA, *[]byte) {
 	sw, sh := src.Rect.Dx(), src.Rect.Dy()
 	out, token := newPooledRGBA(tw, th)
@@ -270,12 +217,7 @@ func downscaleFrame(src *image.RGBA, tw, th int) (*image.RGBA, *[]byte) {
 	return out, token
 }
 
-// boundedFrameCount reports how many frames of an animation may stay resident:
-// the count whose decoded bytes fit maxAnimatedDecodedAssetBytes — never below
-// one frame (a single canvas larger than the budget fails at upload with a
-// clear error instead). The decoders honour this budget by DECIMATION, not
-// truncation (see frameDecimator): the returned count is how many evenly-spaced
-// frames to keep across the whole clip, not a prefix length.
+// boundedFrameCount reports how many evenly spaced frames fit the budget, at least one.
 func boundedFrameCount(width, height, frames int) int {
 	canvasBytes := width * height * rgbaBytesPerPixel
 	if canvasBytes <= 0 {
@@ -291,30 +233,10 @@ func boundedFrameCount(width, height, frames int) int {
 	return frames
 }
 
-// --- animation decimation -----------------------------------------------------
-//
-// boundedFrameCount caps how many frames of one animation may stay resident (the
-// T1 memory budget). The decoders used to honour it by TRUNCATION — materialise
-// the first N frames, drop the rest — but a long one-shot preanimation (Great-
-// Ace-Attorney-style sprites ship 60–150 full-canvas frames) then played only
-// its first quarter and SNAPPED to the talking pose: the "animations break / cut
-// off / flash" report. Decimation instead keeps N frames EVENLY SPACED across
-// the whole clip and folds every skipped frame's delay into the next kept one,
-// so the clip plays start→end (final pose intact) at a lower frame rate inside
-// the same byte budget — and, because it now plays for its real duration, the
-// courtroom's preanim timeout matches and the next sprite has the full window to
-// stream in. Compositing decoders must still walk EVERY source frame (each frame
-// composes onto the running canvas); only the kept frames are copied out, so the
-// resident cost stays bounded while decode CPU scales with the source length —
-// an acceptable trade for a one-shot preanim decoded off the render thread.
-// Short animations (frames ≤ budget) decimate to themselves: idles and talk
-// loops are never touched.
+// Decimation keeps frames evenly spaced and folds skipped delays into the next kept one, so a preanim plays in full.
+// Compositing decoders must still walk every source frame.
 
-// frameKeepIndex maps kept-frame ordinal j∈[0,keep) to its SOURCE frame index
-// when sampling `keep` frames out of `total` (1 ≤ keep ≤ total), spanning both
-// endpoints: j=0→0, j=keep-1→total-1, evenly spaced (round-to-nearest). The
-// indices are strictly increasing for total ≥ keep, so exactly `keep` distinct
-// frames are kept.
+// frameKeepIndex maps kept-frame ordinal j to its source index, spanning both endpoints, strictly increasing.
 func frameKeepIndex(j, total, keep int) int {
 	if keep <= 1 {
 		return 0
@@ -322,15 +244,8 @@ func frameKeepIndex(j, total, keep int) int {
 	return (j*(total-1) + (keep-1)/2) / (keep - 1) // round(j*(total-1)/(keep-1))
 }
 
-// FrameKeepIndex is the exported forward map kept-frame ordinal → SOURCE frame
-// index for the same (total, keep) decimation the decoders applied. The render
-// side needs it to convert a decimated (kept) frame ordinal back into the
-// sender's raw frame space when firing networked frame-synced effects (#17):
-// wire frame indices are authored against the un-decimated file, so a trigger
-// must be tested against the SOURCE index a kept frame stands in for. Guards
-// keep>total / non-positive args to a safe identity so a malformed page never
-// panics. Reuses the private helper so the rounding formula lives in one place
-// (a duplicated ratio was a shipped bug — see decoder.go's page-cap history).
+// FrameKeepIndex maps a kept frame to its source index, as wire frame effects use the undecimated file.
+// Non-positive args or keep > total return the identity so a malformed page cannot panic.
 func FrameKeepIndex(keptOrdinal, sourceTotal, keptCount int) int {
 	if keptCount <= 0 || sourceTotal <= 0 || keptCount >= sourceTotal {
 		return keptOrdinal // identity: no decimation happened (or bad args)
@@ -344,26 +259,19 @@ func FrameKeepIndex(keptOrdinal, sourceTotal, keptCount int) int {
 	return frameKeepIndex(keptOrdinal, sourceTotal, keptCount)
 }
 
-// frameDecimator walks an animation's source frames in order and decides which
-// to materialise, folding skipped-frame delays into the kept frames (see the
-// block comment above). The zero value is unusable; build with newFrameDecimator
-// and call step once per source frame, in index order.
+// frameDecimator picks source frames to keep, folding skipped delays; call step once per source frame, in order.
 type frameDecimator struct {
 	total, keep, next, kept int
 	pending                 time.Duration
 }
 
-// newFrameDecimator prepares to keep `keep` frames (clamped to [1,total]) out of
-// `total`, starting with frame 0.
+// newFrameDecimator keeps keep frames (clamped to [1,total]) out of total, starting with frame 0.
 func newFrameDecimator(total, keep int) frameDecimator {
 	keep = value.Clamp(keep, 1, total)
 	return frameDecimator{total: total, keep: keep} // next == 0 keeps frame 0
 }
 
-// step records source frame i's display delay and reports whether that frame
-// should be materialised. When keep is true, dur is the kept frame's folded
-// delay (every skipped frame since the previous kept one, plus this one), so the
-// kept sequence's total playback time equals the original.
+// step reports whether frame i is kept; dur is then its folded delay, so total playback time equals the original.
 func (fd *frameDecimator) step(i int, delay time.Duration) (dur time.Duration, keep bool) {
 	fd.pending += delay
 	if i != fd.next {
@@ -380,16 +288,8 @@ func (fd *frameDecimator) step(i int, delay time.Duration) (dur time.Duration, k
 	return dur, true
 }
 
-// spreadLoopDelays evens out a decimated animation's kept-frame delays when the
-// SOURCE delays were uniform (a looping idle/talk cycle, e.g. a trotting
-// horse): the fold that packs skipped-frame delays forward would otherwise play
-// such a loop as [D, 2D, 2D, …] — every kept frame a different duration — so
-// the loop judders. Evenly spreading the total across the kept frames restores
-// a constant frame rate at the SAME total playback time. Non-uniform sources (a
-// one-shot preanim whose final frame holds) stay folded so the hold remains on
-// the final kept frame. sourceDelays is the full source-order delay sequence;
-// GIF/APNG build it up front, AVIF/WebP collect it during their walk. No-op
-// unless the clip was actually decimated.
+// spreadLoopDelays evens kept delays when source delays were uniform, because the fold would make a loop judder.
+// Non-uniform sources stay folded so a preanim's final hold stays on the last frame.
 func spreadLoopDelays(d *Decoded, sourceDelays []time.Duration) {
 	if len(d.Delays) < 2 || len(sourceDelays) <= len(d.Delays) {
 		return
@@ -416,7 +316,7 @@ func spreadLoopDelays(d *Decoded, sourceDelays []time.Duration) {
 	}
 }
 
-// DecodeWorkers returns the §8 worker-count formula.
+// DecodeWorkers returns the worker count, max(minDecodeWorkers, NumCPU/2).
 func DecodeWorkers() int {
 	n := runtime.NumCPU() / 2
 	if n < minDecodeWorkers {
@@ -425,16 +325,10 @@ func DecodeWorkers() int {
 	return n
 }
 
-// defaultAnimatedDecodeConcurrency bounds how many FULL animated decodes run at
-// once. The per-frame decoded RGBA of a long clip is the memory spike (60+
-// native frames held until upload), so the decode worker pool may be wider than
-// this gate without the heap ballooning.
+// defaultAnimatedDecodeConcurrency bounds full animated decodes, since their per-frame RGBA is the memory spike.
 const defaultAnimatedDecodeConcurrency = 2
 
-// animGate is a live-adjustable semaphore bounding concurrent animated decodes.
-// A buffered channel cannot be resized, so the limit is an atomic the condition
-// variable re-checks each time a worker waits for a free slot. limit <= 0 means
-// "unlimited".
+// animGate is a resizable semaphore: a buffered channel cannot resize, so waiters re-check an atomic limit.
 type animGate struct {
 	mu     sync.Mutex
 	cond   *sync.Cond
@@ -449,7 +343,7 @@ func newAnimGate(limit int) *animGate {
 	return g
 }
 
-// SetLimit adjusts the concurrency bound live; a raised limit wakes waiters.
+// SetLimit changes the bound live; a raised limit wakes waiters.
 func (g *animGate) SetLimit(n int) {
 	g.mu.Lock()
 	g.limit.Store(int64(n))
@@ -457,7 +351,7 @@ func (g *animGate) SetLimit(n int) {
 	g.mu.Unlock()
 }
 
-// acquire blocks until an animated-decode slot is free.
+// acquire blocks until an animated decode may start.
 func (g *animGate) acquire() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -476,25 +370,18 @@ func (g *animGate) release() {
 
 // DecodeRequest is one decode job.
 type DecodeRequest struct {
-	// URL identifies the asset (cache key); carried through to OnDone.
 	URL string
-	// Data is the raw payload. Treated as immutable.
+	// Data is the raw payload, treated as immutable.
 	Data []byte
-	// Type hints budget accounting; routing is by sniffed magic, never
-	// extension.
+	// Type hints budget accounting; routing is by sniffed magic, never extension.
 	Type AssetType
-	// PlayAnimations decodes all frames when true; only the first frame
-	// when false (the "Play Animations" toggle — a decode-level switch,
-	// never a network-level one).
+	// PlayAnimations decodes all frames when true, only the first when false.
 	PlayAnimations bool
-	// OnDone receives the result on a decoder goroutine. It must be cheap
-	// (hand off to a channel) and must not touch SDL (spec §17.1).
+	// OnDone runs on a decoder goroutine: it must be cheap and must not touch SDL (hard rule 1).
 	OnDone func(url string, d *Decoded, err error)
 }
 
-// DecoderPool decodes image payloads into plain RGBA memory. It performs
-// zero SDL calls: texture upload happens on the render thread, which drains
-// the manager's decoded channel (spec §8).
+// DecoderPool decodes image payloads into plain RGBA with no SDL calls; upload happens on the render thread.
 type DecoderPool struct {
 	jobs      chan DecodeRequest
 	stop      chan struct{}
@@ -504,41 +391,25 @@ type DecoderPool struct {
 	decoded atomic.Int64
 	failed  atomic.Int64
 
-	// spriteCap is the max HEIGHT in px for full-size assets (character
-	// sprites, backgrounds, …); 0 = no cap. Set once at startup from the
-	// display height: a texture taller than the screen can never show more
-	// detail, only cost memory and force the GPU to single-pass-shrink a huge
-	// source every frame. atomic because workers read it while the SDL thread
-	// stores it at startup.
+	// spriteCap is the max height for full-size assets (0 = no cap); atomic as workers read while SDL stores.
 	spriteCap atomic.Int64
 
-	// animatedSpriteCap is an OPTIONAL tighter height cap for ANIMATED assets
-	// only (0 = off, the default): a power-user memory knob that downscales
-	// animated sprites harder than stills, so a long full-canvas preanim costs
-	// less VRAM without touching still-art sharpness. Applied post-decode in
-	// fit, which already knows whether the asset animated.
+	// animatedSpriteCap is an optional tighter height cap for animated assets (0 = off), applied post-decode in fit.
 	animatedSpriteCap atomic.Int64
 
-	// animGate bounds concurrent FULL animated decodes (the per-frame RGBA
-	// spike). The worker pool may be wider; the gate keeps the decode burst
-	// from holding several whole clips in flight at once.
+	// animGate bounds concurrent full animated decodes; the worker pool may be wider.
 	animGate *animGate
 
-	// texCompress is the live texture-compression FOURCC (0 = off, DXT1/DXT5).
-	// Set once at startup from the power-user setting intersected with the
-	// renderer's supported formats; decode workers read it while compressing.
+	// texCompress is the live compression FOURCC (0 = off): the setting intersected with the renderer's formats.
 	texCompress atomic.Uint32
 
-	// decodeNsEWMA tracks decode+fit wall time (cold-load profiling; the debug
-	// overlay's per-stage line reads it via Stats).
+	// decodeNsEWMA tracks decode+fit wall time.
 	decodeNsEWMA atomic.Int64
 }
 
-// ewmaFoldWeightDen is the EWMA weight (1/4 — matches the network TTFB EWMA)
-// for the cold-load profiling averages.
+// ewmaFoldWeightDen is the EWMA weight denominator (1/4, as the network TTFB EWMA).
 const ewmaFoldWeightDen = 4
 
-// foldEWMA folds one duration sample into an atomic nanosecond EWMA.
 func foldEWMA(dst *atomic.Int64, sample time.Duration) {
 	if sample <= 0 {
 		return
@@ -551,24 +422,13 @@ func foldEWMA(dst *atomic.Int64, sample time.Duration) {
 	dst.Store(old + (int64(sample)-old)/ewmaFoldWeightDen)
 }
 
-// --- animated-decode heap reclaim ---------------------------------------------
-//
-// An animated decode burst (a character's dozens of emotion animations decoded
-// in quick succession) frees a large amount of heap the moment its frames
-// upload and their raw RGBA buffers are released. The Go runtime's background
-// scavenger returns those pages to the OS over a few seconds, so process RSS
-// can transiently read far above the GOMEMLIMIT budget. maybeReclaimHeap forces
-// a single GC from a decode worker once a burst has left a lot of idle heap, so
-// the heap stops re-growing while the scavenger catches up. It deliberately does
-// NOT call debug.FreeOSMemory: that stop-the-world scavenge would stall the
-// render thread and drop frames.
+// After an animated burst, maybeReclaimHeap forces one GC from a decode worker, as the scavenger returns pages slowly.
+// It must not call debug.FreeOSMemory: that stop-the-world scavenge would stall the render thread.
 
 const (
-	// reclaimHeapIdleThreshold is the minimum unused heap (HeapIdle, bytes)
-	// that triggers a forced GC. Below it the runtime's own pacing suffices.
+	// reclaimHeapIdleThreshold is the HeapIdle bytes that trigger a forced GC.
 	reclaimHeapIdleThreshold = 128 << 20
-	// reclaimHeapMinInterval bounds how often a decode worker may force a GC so
-	// a burst of small animations cannot thrash the collector.
+	// reclaimHeapMinInterval stops a burst of small animations thrashing the collector.
 	reclaimHeapMinInterval = time.Second
 )
 
@@ -594,19 +454,14 @@ func maybeReclaimHeap() {
 	runtime.GC()
 }
 
-// heapSysMiB reports the Go runtime's total memory obtained from the OS
-// (runtime.MemStats.Sys) in MiB — the Go-heap contribution to process RSS,
-// including freed-but-not-yet-returned pages. Logged on every animated decode
-// so the memory footprint of a large-animated-sprite burst is visible in an
-// exported console log without a profiler.
+// heapSysMiB reports runtime.MemStats.Sys in MiB, logged per animated decode to show a burst's memory.
 func heapSysMiB() uint64 {
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
 	return ms.Sys >> 20
 }
 
-// NewDecoderPool starts workers decode goroutines (DecodeWorkers() when
-// workers <= 0).
+// NewDecoderPool starts workers decode goroutines (DecodeWorkers() when workers <= 0).
 func NewDecoderPool(workers int) *DecoderPool {
 	if workers <= 0 {
 		workers = DecodeWorkers()
@@ -623,9 +478,7 @@ func NewDecoderPool(workers int) *DecoderPool {
 	return p
 }
 
-// SetSpriteCap sets the display-height ceiling (px) for full-size assets; 0
-// disables it. Call once at startup (from the SDL display height) before
-// decodes begin. Safe to call concurrently with workers (atomic store).
+// SetSpriteCap sets the height ceiling for full-size assets; 0 disables it.
 func (p *DecoderPool) SetSpriteCap(px int) {
 	if px < 0 {
 		px = 0
@@ -633,9 +486,7 @@ func (p *DecoderPool) SetSpriteCap(px int) {
 	p.spriteCap.Store(int64(px))
 }
 
-// SetAnimatedSpriteCap sets the optional animated-only height cap (px); 0
-// disables it (animated sprites then use the same sprite cap as stills). Like
-// SetSpriteCap it is safe to call concurrently with workers (atomic store).
+// SetAnimatedSpriteCap sets the animated-only height cap; 0 disables it.
 func (p *DecoderPool) SetAnimatedSpriteCap(px int) {
 	if px < 0 {
 		px = 0
@@ -643,20 +494,17 @@ func (p *DecoderPool) SetAnimatedSpriteCap(px int) {
 	p.animatedSpriteCap.Store(int64(px))
 }
 
-// SetAnimatedBudgetMiB sets the live per-animated-asset frame budget (MiB);
-// <= 0 resets to the default. Decode workers read the budget atomically.
+// SetAnimatedBudgetMiB sets the per-animated-asset frame budget; <= 0 resets to the default.
 func (p *DecoderPool) SetAnimatedBudgetMiB(mib int) {
 	SetAnimatedDecodedAssetBytes(int64(mib) << 20)
 }
 
-// SetAnimatedDecodeConcurrency sets the live concurrent-animated-decode bound.
+// SetAnimatedDecodeConcurrency sets the concurrent animated decode bound.
 func (p *DecoderPool) SetAnimatedDecodeConcurrency(n int) {
 	p.animGate.SetLimit(n)
 }
 
-// SetTextureCompression sets the decode-pool texture-compression mode
-// (CompressOff / CompressDXT5 / CompressDXT1). New decodes compress their
-// frames to the chosen DXT format before upload.
+// SetTextureCompression sets the compression mode (CompressOff, CompressDXT5, CompressDXT1) for new decodes.
 func (p *DecoderPool) SetTextureCompression(mode int) {
 	switch mode {
 	case CompressDXT5:
@@ -668,8 +516,7 @@ func (p *DecoderPool) SetTextureCompression(mode int) {
 	}
 }
 
-// compressIfEnabled compresses a freshly decoded asset in place when a DXT mode
-// is active (and the canvas is 4-aligned). Idempotent.
+// compressIfEnabled compresses in place when a DXT mode is active and the canvas is 4-aligned; idempotent.
 func (p *DecoderPool) compressIfEnabled(d *Decoded) {
 	if d == nil {
 		return
@@ -679,11 +526,7 @@ func (p *DecoderPool) compressIfEnabled(d *Decoded) {
 	}
 }
 
-// fit shrinks a freshly decoded asset to its on-screen ceiling: fixed-cell
-// types (char icons / emote buttons) to a small square thumbnail, every other
-// (full-size) type to the display-height sprite cap — or, for animated assets,
-// the tighter animated-only cap when one is set (the opt-in memory knob).
-// Both are downscale-only, so already-small assets pass through untouched.
+// fit downscales to the ceiling: fixed-cell types to a square, others to the sprite cap or the animated cap when set.
 func (p *DecoderPool) fit(t AssetType, d *Decoded) *Decoded {
 	if d == nil {
 		return d
@@ -703,10 +546,7 @@ func (p *DecoderPool) fit(t AssetType, d *Decoded) *Decoded {
 	return d
 }
 
-// fullSizeMaxH is the decode-time height cap for a full-size asset: the sprite
-// cap when the type is not a fixed-cell thumbnail (those downscale in fit to a
-// square), 0 otherwise. Animated decoders use it to downscale per-frame DURING
-// decode and to budget their frame count against the on-screen bytes (#110).
+// fullSizeMaxH is the decode-time height cap for a full-size asset, 0 for fixed-cell types, which downscale in fit.
 func (p *DecoderPool) fullSizeMaxH(t AssetType) int {
 	if decodeTargetPx(t) > 0 {
 		return 0
@@ -714,8 +554,7 @@ func (p *DecoderPool) fullSizeMaxH(t AssetType) int {
 	return int(p.spriteCap.Load())
 }
 
-// Submit queues a decode. Returns false when the pool is closed (OnDone is
-// then invoked inline with an error so callers always hear back).
+// Submit queues a decode; a closed pool returns false and calls OnDone inline, so callers always hear back.
 func (p *DecoderPool) Submit(req DecodeRequest) bool {
 	if req.OnDone == nil {
 		return false
@@ -735,7 +574,7 @@ func (p *DecoderPool) Submit(req DecodeRequest) bool {
 	}
 }
 
-// Close stops the workers and fails any queued jobs so nobody waits forever.
+// Close stops the workers and fails queued jobs so nobody waits forever.
 func (p *DecoderPool) Close() {
 	p.closeOnce.Do(func() {
 		close(p.stop)
@@ -753,9 +592,7 @@ func (p *DecoderPool) Close() {
 
 func (p *DecoderPool) worker() {
 	defer p.wg.Done()
-	// A decode runs on a background goroutine the render thread's crash guard
-	// cannot see; log any panic to disk (then re-panic so the crash behaviour
-	// is unchanged — it just becomes diagnosable).
+	// The render thread's crash guard cannot see this goroutine: log any panic to disk, then re-panic.
 	defer func() {
 		if r := recover(); r != nil {
 			writeDecodeCrash(r)
@@ -772,22 +609,12 @@ func (p *DecoderPool) worker() {
 	}
 }
 
-// runJob decodes one payload. Animated payloads with full playback
-// requested deliver progressively: frame 0 first (the cheap first-frame
-// path — one frame decoded instead of N), then the full set replaces it
-// at upload. A 5 MB preanim starts on screen after one frame-decode
-// instead of after the whole sequence.
+// runJob decodes one payload; animated payloads deliver frame 0 first, then the full set replaces it at upload.
 func (p *DecoderPool) runJob(req DecodeRequest) {
 	animated := req.PlayAnimations && sniffMaybeAnimated(req.Data)
 	streamable := animated && streamableFormat(req.Data)
 
-	// Animated decodes hold an animGate slot for their WHOLE run — both the
-	// establishing frame-0 decode and the full/streaming decode. The frame-0
-	// prefix used to run un-gated (up to NumCPU/2 at once), which multiplied the
-	// transient native-frame allocations into the multi-GiB RSS spike the gate
-	// exists to cap (docs/PERFORMANCE.md). Taking the slot up front bounds the
-	// entire animated decode to the configured concurrency without touching the
-	// render/playback path.
+	// Hold the permit for the whole run, including frame 0, or native-frame allocations spike RSS to multiple GiB.
 	if animated {
 		p.animGate.acquire()
 		defer p.animGate.release()
@@ -795,22 +622,17 @@ func (p *DecoderPool) runJob(req DecodeRequest) {
 
 	if animated {
 		if first, err := DecodeImage(req.Data, false); err == nil {
-			// GIF/APNG can sniff "maybe" but decode static — only a real
-			// animation benefits from the early frame (statics would just
-			// upload the same texture twice).
+			// GIF/APNG can sniff "maybe" but decode static, and a static would upload the same texture twice.
 			if first.Animated && len(first.Frames) > 0 {
 				if streamable {
-					// Match the stream's frame size: downscale frame 0 to the
-					// same budget-fit dimensions the appends use (fit below still
-					// applies any tighter animated-only cap after).
+					// Match the frame size of the stream's appends; fit below still applies any tighter animated cap.
 					first = fitEstablishingPrefix(first, req.Data, p.fullSizeMaxH(req.Type))
 				}
 				first = p.fit(req.Type, first)
 				p.compressIfEnabled(first)
 				first.Partial = true
 				if streamable {
-					// Streaming formats park the page in the oversized map so it
-					// can grow frame-by-frame; frame 0 is the establishing prefix.
+					// Streaming pages grow frame by frame; frame 0 is the first chunk.
 					first.Stream = true
 				}
 				req.OnDone(req.URL, first, nil)
@@ -820,8 +642,7 @@ func (p *DecoderPool) runJob(req DecodeRequest) {
 		}
 	}
 
-	// Streaming decode for the definitely-animated CGO formats: frames land one
-	// at a time and the page plays the growing prefix (see streamAnimated).
+	// The definitely-animated CGO formats stream: frames land one at a time and the page plays what has arrived.
 	if streamable {
 		p.streamAnimated(req)
 		return
@@ -835,22 +656,17 @@ func (p *DecoderPool) runJob(req DecodeRequest) {
 		d = p.fit(req.Type, d)
 		p.compressIfEnabled(d)
 		p.decoded.Add(1)
-		// Cold-load profiling: fold decode+fit wall time into the EWMA (weight
-		// 1/4, same as the network TTFB) — the debug overlay's per-stage line.
 		foldEWMA(&p.decodeNsEWMA, time.Since(start))
 	}
 	req.OnDone(req.URL, d, err)
 
-	// A completed full animated decode (GIF/APNG — the streaming path reclaims
-	// in streamAnimated) just freed its burst; nudge the heap now.
+	// GIF/APNG only: the streaming path reclaims in streamAnimated.
 	if animated {
 		maybeReclaimHeap()
 	}
 }
 
-// sniffMaybeAnimated reports payloads worth a progressive first frame:
-// definitely-animated containers plus GIF/APNG (frame count unknowable
-// without decoding; the cheap first-frame decode settles it).
+// sniffMaybeAnimated reports payloads worth a first frame: animated containers plus GIF/APNG, which need a decode.
 func sniffMaybeAnimated(data []byte) bool {
 	switch Sniff(data) {
 	case FormatWebPAnim, FormatAVIFAnim, FormatAPNG, FormatGIF:
@@ -860,11 +676,7 @@ func sniffMaybeAnimated(data []byte) bool {
 	}
 }
 
-// streamableFormat reports the definitely-animated CGO containers whose
-// decoders can stream frames incrementally (WebP ANMF / AV1 image sequence).
-// GIF and APNG are excluded: their DecodeAll decodes every frame up front, so
-// there is no per-frame decode to overlap and they keep the classic
-// progressive+full path.
+// streamableFormat reports the CGO containers that decode incrementally; GIF and APNG decode all frames up front.
 func streamableFormat(data []byte) bool {
 	switch Sniff(data) {
 	case FormatWebPAnim, FormatAVIFAnim:
@@ -874,9 +686,7 @@ func streamableFormat(data []byte) bool {
 	}
 }
 
-// peekAnimatedDims returns an animated payload's canvas size and frame count
-// without decoding pixels, dispatching to the format's header reader. Used to
-// make the progressive first frame match the stream's budget-fit dimensions.
+// peekAnimatedDims returns an animated payload's canvas size and frame count without decoding pixels.
 func peekAnimatedDims(data []byte) (width, height, frames int, ok bool) {
 	switch Sniff(data) {
 	case FormatWebPAnim:
@@ -888,11 +698,7 @@ func peekAnimatedDims(data []byte) (width, height, frames int, ok bool) {
 	}
 }
 
-// fitEstablishingPrefix downscales a streaming asset's frame-0 prefix to the
-// same budget-fit dimensions the incremental appends will use (downscaleFrame,
-// the same box filter), so the whole clip is one consistent resolution and the
-// establishing frame doesn't pay a full-size downscale + upload. No-op when the
-// prefix already matches or the header can't be peeked.
+// fitEstablishingPrefix downscales frame 0 to the appends' dimensions, so the clip has one resolution.
 func fitEstablishingPrefix(first *Decoded, data []byte, maxH int) *Decoded {
 	w, h, frames, ok := peekAnimatedDims(data)
 	if !ok {
@@ -921,22 +727,11 @@ func fitEstablishingPrefix(first *Decoded, data []byte, maxH int) *Decoded {
 	return out
 }
 
-// streamAnimated drives the incremental decode of a WebP/AVIF animation. The
-// progressive first frame above already delivered the establishing chunk; this
-// walks the remaining frames and appends each as it decodes, so the resident
-// page grows and the renderer plays the prefix instead of holding frame 0
-// until the whole clip decodes (docs/ANIMATION-COLD-LOAD-INVESTIGATION.md gap
-// #3).
-//
-// A decoder may refuse to stream (when the frame budget forces decimation —
-// rare, since downscale-to-fit keeps everything in budget); in that case this
-// falls back to the classic full decode so spreadLoopDelays keeps working.
+// streamAnimated appends each remaining WebP/AVIF frame; if decimation is needed it falls back to a full decode.
 func (p *DecoderPool) streamAnimated(req DecodeRequest) {
 	format := Sniff(req.Data)
 	maxH := p.fullSizeMaxH(req.Type)
 	start := time.Now()
-	// Reclaim the heap this burst frees once the stream (or its full-decode
-	// fallback) completes — every return path below runs it.
 	defer maybeReclaimHeap()
 
 	emit := func(chunk *Decoded) {
@@ -959,8 +754,7 @@ func (p *DecoderPool) streamAnimated(req DecodeRequest) {
 	}
 
 	if !streamed {
-		// Decimation needed (rare): the classic full decode replaces the
-		// establishing prefix and keeps spreadLoopDelays correct.
+		// Decimation needed: the full decode replaces frame 0 and keeps spreadLoopDelays correct.
 		start = time.Now()
 		d, derr := DecodeImageSized(req.Data, req.PlayAnimations, maxH)
 		if derr != nil {
@@ -975,10 +769,7 @@ func (p *DecoderPool) streamAnimated(req DecodeRequest) {
 		return
 	}
 
-	// Finalize: clear Partial on the resident page so the renderer stops
-	// treating it as a growing prefix (finish a playOnce layer, report the
-	// true duration). Sent even after a mid-stream decode failure — the frames
-	// that decoded form the final page.
+	// Clear Partial so the page stops growing; sent even after a failure, as the decoded frames form the final page.
 	req.OnDone(req.URL, &Decoded{
 		Stream:       true,
 		Partial:      false,
@@ -1002,8 +793,7 @@ func (p *DecoderPool) streamAnimated(req DecodeRequest) {
 type DecoderStats struct {
 	Decoded int64
 	Failed  int64
-	// AvgDecode is the decode+fit wall-time EWMA (cold-load profiling; zero
-	// until the first successful decode).
+	// AvgDecode is the decode+fit wall-time EWMA, zero until the first success.
 	AvgDecode time.Duration
 }
 
@@ -1016,27 +806,17 @@ func (p *DecoderPool) Stats() DecoderStats {
 	}
 }
 
-// DecodeImage decodes a payload by sniffed format. Exported for benchmarks
-// and the emote preview path; the client itself goes through the pool.
-// DecodeImage decodes a payload by sniffed format with no decode-time downscale
-// (maxH = 0). Exported for benchmarks and the emote preview path; the client
-// goes through the pool, which passes its sprite cap via DecodeImageSized.
+// DecodeImage decodes a payload by sniffed format with no downscale; the client itself goes through the pool.
 func DecodeImage(data []byte, playAnimations bool) (*Decoded, error) {
 	return DecodeImageSized(data, playAnimations, 0)
 }
 
-// DecodeImageSized is DecodeImage with an optional aspect-preserving height cap
-// (maxH). Animated decoders honour it by downscaling each frame DURING decode
-// and by budgeting their frame count against the DOWNSCALED bytes, so a
-// high-res clip keeps its full authored frame rate while its resident memory
-// stays bounded by its on-screen size (#110). maxH <= 0 = keep native size.
+// DecodeImageSized is DecodeImage with a height cap (<= 0 keeps native size) that animated decoders apply per frame.
 func DecodeImageSized(data []byte, playAnimations bool, maxH int) (d *Decoded, err error) {
 	format := Sniff(data)
 	start := time.Now()
 	if format == FormatWebPAnim || format == FormatAVIFAnim || format == FormatAPNG || format == FormatGIF {
-		// #110 diagnostic: log every animated decode (native→decoded size,
-		// frame counts, budget, timing, error) so a choppy/static sprite can be
-		// triaged from the console log alone.
+		// Log every animated decode so a choppy or static sprite can be diagnosed from the console log.
 		defer func() {
 			if err != nil {
 				log.Printf("[anim-decode] %s playAnim=%v maxH=%d ERR=%v sys=%dMiB took=%s",
@@ -1068,8 +848,6 @@ func DecodeImageSized(data []byte, playAnimations bool, maxH int) (d *Decoded, e
 	}
 }
 
-// --- Static stdlib formats ----------------------------------------------------
-
 func decodePNG(data []byte) (*Decoded, error) {
 	img, err := png.Decode(bytes.NewReader(data))
 	if err != nil {
@@ -1086,8 +864,7 @@ func decodeJPEG(data []byte) (*Decoded, error) {
 	return staticDecoded(img), nil
 }
 
-// staticDecoded wraps a single still image, converting to RGBA when the
-// decoder produced another color model.
+// staticDecoded wraps a still image, converting to RGBA when needed.
 func staticDecoded(img image.Image) *Decoded {
 	rgba, token := toRGBA(img)
 	d := &Decoded{
@@ -1103,9 +880,7 @@ func staticDecoded(img image.Image) *Decoded {
 	return d
 }
 
-// toRGBA returns img as *image.RGBA, drawing into a pooled buffer when a
-// conversion is needed. The second return is the pool token (nil when img
-// was already RGBA and is used as-is).
+// toRGBA returns img as *image.RGBA; the pool token is nil when img was already RGBA.
 func toRGBA(img image.Image) (*image.RGBA, *[]byte) {
 	if rgba, ok := img.(*image.RGBA); ok {
 		return rgba, nil
@@ -1128,11 +903,7 @@ func newPooledRGBA(w, h int) (*image.RGBA, *[]byte) {
 	}, token
 }
 
-// --- GIF -----------------------------------------------------------------------
-
-// decodeGIF composes a multi-frame GIF onto a persistent canvas, honoring
-// per-frame disposal, producing full-canvas RGBA frames the render loop can
-// flip between with zero work.
+// decodeGIF composes a GIF onto a persistent canvas, honoring disposal, producing full-canvas RGBA frames.
 func decodeGIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	g, err := gif.DecodeAll(bytes.NewReader(data))
 	if err != nil {
@@ -1171,17 +942,14 @@ func decodeGIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 		Delays:       make([]time.Duration, 0, keep),
 	}
 
-	// canvas accumulates composition; the backdrop snapshot supports
-	// DisposalPrevious. Both come from the pixel pool and go back at the
-	// end — animated decodes allocate only their output frames.
+	// The backdrop snapshot supports DisposalPrevious.
 	canvas, canvasTok := newPooledRGBA(width, height)
 	defer putPixBuf(canvasTok)
 	var prevSnapshot *image.RGBA
 	var snapTok *[]byte
 	defer func() { putPixBuf(snapTok) }()
 
-	// Compose EVERY source frame onto the canvas (a kept frame's pixels depend
-	// on the disposal of the ones before it); copy out only the decimated subset.
+	// Compose every source frame, because a kept frame depends on the disposal before it; copy out only the kept ones.
 	for i := 0; i < walk; i++ {
 		frame := g.Image[i]
 		disposal := byte(0)
@@ -1241,7 +1009,6 @@ func gifFrameDelay(g *gif.GIF, i int) time.Duration {
 	return delay
 }
 
-// clearRect zeroes a rectangle of canvas to transparent black.
 func clearRect(canvas *image.RGBA, r image.Rectangle) {
 	r = r.Intersect(canvas.Rect)
 	for y := r.Min.Y; y < r.Max.Y; y++ {
@@ -1254,10 +1021,7 @@ func clearRect(canvas *image.RGBA, r image.Rectangle) {
 	}
 }
 
-// --- APNG ----------------------------------------------------------------------
-
-// decodeAPNG composes APNG frames (offsets, dispose ops, blend ops) onto a
-// persistent canvas, mirroring the GIF path.
+// decodeAPNG composes APNG frames onto a persistent canvas, as decodeGIF does.
 func decodeAPNG(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	a, err := apng.DecodeAll(bytes.NewReader(data))
 	if err != nil {
@@ -1270,8 +1034,7 @@ func decodeAPNG(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	first := a.Frames[0].Image.Bounds()
 	width, height := first.Dx(), first.Dy()
 
-	// Frames flagged IsDefault are the static fallback image, not part of
-	// the animation proper.
+	// Frames flagged IsDefault are the static fallback image, not part of the animation.
 	animFrames := make([]apng.Frame, 0, len(a.Frames))
 	for _, f := range a.Frames {
 		if !f.IsDefault {
@@ -1311,8 +1074,7 @@ func decodeAPNG(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	var snapTok *[]byte
 	defer func() { putPixBuf(snapTok) }()
 
-	// Compose every source frame; copy out only the decimated subset (a kept
-	// frame depends on the dispose/blend of all frames before it).
+	// Compose every source frame, because a kept frame depends on the dispose and blend before it.
 	for i := 0; i < walk; i++ {
 		frame := animFrames[i]
 		target := image.Rect(

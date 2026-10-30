@@ -6,15 +6,8 @@ import (
 	"time"
 )
 
-// missMemo is a bounded, TTL'd negative memo — "this key was conclusively
-// missing at time T" — with NO background goroutine and nothing to close.
-// (expirable/expirable_lru.go:77-92: `go func(done){ ticker :=
-// time.NewTicker(res.ttl / numBuckets) … }`, numBuckets = 100) and Close() is
-// COMMENTED OUT in that release with the note "done channel is never closed, so
-// deleteExpired() goroutine will never exit". It also allocates 100 bucket maps
-// per instance.
-// Expiry is therefore LAZY: a read drops its own stale entry, and an insert
-// sweeps when the memo is full. Correctness does not depend on any timer.
+// missMemo is a bounded, TTL'd negative memo without expirable.LRU's unstoppable janitor goroutine.
+// Expiry is lazy: a read drops its own stale entry and an insert sweeps when full.
 type missMemo struct {
 	mu       sync.Mutex
 	entries  map[string]missEntry
@@ -24,26 +17,16 @@ type missMemo struct {
 	ttl      time.Duration
 }
 
-// missEntry carries the expiry AND an insertion sequence. Eviction orders by
-// seq, not by deadline: a uniform TTL makes the two equivalent in principle, but
-// the wall clock's resolution is coarse enough that a burst of inserts can share
-// a deadline, and ties would evict an unpredictable number of entries.
+// missEntry has an insertion seq for eviction: a burst can share a deadline, and ties would evict unpredictably.
 type missEntry struct {
 	deadline time.Time
 	seq      uint64
 }
 
-// missMemoOverflowEvictShift sizes the batch dropped when the memo is full and
-// nothing in it has expired yet: capacity>>shift entries, i.e. an eighth
-// (256 of localNotFoundCacheSize's 2048). Batching amortizes the O(n log n)
-// overflow scan over that many inserts instead of paying it on every insert past
-// the cap, and dropping an eighth costs at most that many extra disk walks —
-// a negative memo has no correctness stake in what it forgets.
+// missMemoOverflowEvictShift drops an eighth when full with nothing expired, amortizing the O(n log n) scan.
 const missMemoOverflowEvictShift = 3
 
-// newMissMemo returns a memo holding at most capacity keys for ttl each.
-// A non-positive capacity or ttl yields a memo that never remembers anything,
-// which keeps a misconfigured caller correct (just slower) rather than unbounded.
+// newMissMemo holds at most capacity keys for ttl each; non-positive values remember nothing.
 func newMissMemo(capacity int, ttl time.Duration) *missMemo {
 	return &missMemo{
 		entries:  make(map[string]missEntry), // no size hint: the cap is enforced in add(); a hint preallocates ~224 KiB per memo for a map that normally holds a handful of keys
@@ -52,9 +35,7 @@ func newMissMemo(capacity int, ttl time.Duration) *missMemo {
 	}
 }
 
-// has reports whether key is a live remembered miss. An expired entry is deleted
-// here — the read pays for its own staleness, which is what removes the need for
-// a janitor. Nil-receiver safe: a zero-value holder degrades to "never memoized".
+// has reports whether key is a live miss, deleting an expired entry; safe on a nil receiver.
 func (m *missMemo) has(key string) bool {
 	if m == nil || m.entries == nil {
 		return false
@@ -72,8 +53,7 @@ func (m *missMemo) has(key string) bool {
 	return true
 }
 
-// add remembers key for the memo's TTL, evicting first if that would exceed the
-// cap (rule 4). Re-adding a live key refreshes its deadline.
+// add remembers key for the TTL, evicting at the cap (hard rule 4); re-adding refreshes the deadline.
 func (m *missMemo) add(key string) {
 	if m == nil || m.entries == nil || m.capacity <= 0 || m.ttl <= 0 {
 		return
@@ -95,8 +75,7 @@ func (m *missMemo) add(key string) {
 	m.nextSeq++
 }
 
-// sweepLocked drops every entry whose TTL has run out. Deleting during a range
-// is defined behaviour in Go and does not restart the iteration.
+// sweepLocked drops every expired entry.
 func (m *missMemo) sweepLocked(now time.Time) {
 	for k, e := range m.entries {
 		if !now.Before(e.deadline) {
@@ -105,8 +84,7 @@ func (m *missMemo) sweepLocked(now time.Time) {
 	}
 }
 
-// evictOldestLocked drops the n earliest-inserted entries (exact FIFO — seqs are
-// unique, so there are no ties to spill over).
+// evictOldestLocked drops the n earliest-inserted entries; seqs are unique, so there are no ties.
 func (m *missMemo) evictOldestLocked(n int) {
 	if n <= 0 || len(m.entries) == 0 {
 		return
@@ -128,7 +106,7 @@ func (m *missMemo) evictOldestLocked(n int) {
 	}
 }
 
-// size is the live entry count, expired-but-unswept included (test/diagnostic).
+// size is the entry count, expired-but-unswept included.
 func (m *missMemo) size() int {
 	if m == nil {
 		return 0
@@ -138,8 +116,7 @@ func (m *missMemo) size() int {
 	return len(m.entries)
 }
 
-// clear empties the memo: every remembered miss is forgotten so the next lookup
-// re-walks the mounts. Used by the Settings "clear cached 404s" action.
+// clear forgets every miss, so the next lookup re-walks the mounts.
 func (m *missMemo) clear() {
 	if m == nil || m.entries == nil {
 		return
