@@ -13,6 +13,9 @@ type Probe interface {
 	// Executable returns the running binary's path.
 	Executable() (string, error)
 	PathExists(path string) bool
+	CPUCount() int
+	// TotalMemory returns the machine's physical memory in bytes, false when unknown.
+	TotalMemory() (uint64, bool)
 }
 
 // SystemProbe reads the machine the process runs on.
@@ -31,6 +34,12 @@ func (SystemProbe) Getenv(key string) string { return os.Getenv(key) }
 
 // Executable returns the running binary's path.
 func (SystemProbe) Executable() (string, error) { return os.Executable() }
+
+// CPUCount returns the number of logical CPUs.
+func (SystemProbe) CPUCount() int { return runtime.NumCPU() }
+
+// TotalMemory returns the machine's physical memory in bytes, false when unknown.
+func (SystemProbe) TotalMemory() (uint64, bool) { return totalMemory() }
 
 // PathExists reports whether a file or folder exists at path.
 func (SystemProbe) PathExists(path string) bool {

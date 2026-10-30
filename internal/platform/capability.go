@@ -20,6 +20,7 @@ const (
 	MicrophoneCapture
 	ExtraWindows
 	BackgroundRendering
+	HighMemoryFeatures
 	capabilityCount
 )
 
@@ -28,7 +29,7 @@ func (c Capability) String() string {
 		"open URL", "reveal file", "pick folder", "copy files to clipboard",
 		"system notifications", "relaunch", "self-update", "external video encoder",
 		"system font discovery", "proxy discovery", "machine id", "discord presence",
-		"microphone capture", "extra windows", "background rendering",
+		"microphone capture", "extra windows", "background rendering", "high-memory features",
 	}[c]
 }
 
@@ -46,6 +47,15 @@ func (c Capabilities) Has(capability Capability) bool { return c.offReason[capab
 func (c Capabilities) Reason(capability Capability) string { return c.offReason[capability] }
 
 const (
+	// lowMemoryBytes is the physical memory below which the client runs with the
+	// minimum feature set. It sits above 4 GiB because a "4 GB" machine reports
+	// less than that once firmware and integrated graphics take their share, and
+	// such a machine has little left beside its OS and browser. An estimate until
+	// the client's use on one has been measured.
+	lowMemoryBytes = 6 << 30
+	bytesPerGiB    = 1 << 30
+
+	reasonLowMemory    = "needs at least 6 GiB of memory"
 	reasonMobile       = "not available on mobile yet"
 	reasonWindowsOnly  = "implemented on Windows only"
 	reasonSandbox      = "not available in a sandbox"
@@ -55,7 +65,7 @@ const (
 
 // capabilitiesFor states today's behaviour: each off reason is a branch the client
 // already takes. Moving a service onto SDL widens its row here.
-func capabilitiesFor(env Environment) Capabilities {
+func capabilitiesFor(env Environment, hardware Hardware) Capabilities {
 	var caps Capabilities
 	off := func(reason string, capabilities ...Capability) {
 		for _, capability := range capabilities {
@@ -74,6 +84,9 @@ func capabilitiesFor(env Environment) Capabilities {
 	// After the rows above: the sandbox is the reason a user can act on.
 	if env.Sandboxed {
 		off(reasonSandbox, SelfUpdate, ExternalVideoEncoder)
+	}
+	if hardware.LowMemory() {
+		off(reasonLowMemory, HighMemoryFeatures)
 	}
 	if env.FormFactor == Mobile {
 		off(reasonMobile, OpenURL, RevealFile, PickFolder, CopyFilesToClipboard,

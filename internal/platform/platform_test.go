@@ -17,9 +17,20 @@ type fakeProbe struct {
 	exe    string
 	exeErr error
 	paths  []string
+	memory uint64
 }
 
 var _ platform.Probe = fakeProbe{}
+
+const (
+	gib       = 1 << 30
+	fakeCPUs  = 8
+	belowLine = 4 * gib
+	aboveLine = 8 * gib
+)
+
+func (f fakeProbe) CPUCount() int               { return fakeCPUs }
+func (f fakeProbe) TotalMemory() (uint64, bool) { return f.memory, f.memory != 0 }
 
 func (f fakeProbe) GOOS() string                { return f.goos }
 func (f fakeProbe) GOARCH() string              { return "amd64" }
@@ -165,5 +176,51 @@ func TestSystemProbeReadsThisMachine(t *testing.T) {
 	}
 	if got := platform.Detect(probe).Report(); got == "" {
 		t.Error("empty report")
+	}
+}
+
+func TestHighMemoryFeaturesFollowPhysicalMemory(t *testing.T) {
+	tests := []struct {
+		name   string
+		memory uint64
+		want   bool
+	}{
+		{"low memory turns them off", belowLine, false},
+		{"enough memory keeps them", aboveLine, true},
+		{"unknown memory keeps them", 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := platform.Detect(fakeProbe{goos: "windows", exe: "asyncao", memory: tt.memory})
+			if got := p.Capabilities.Has(platform.HighMemoryFeatures); got != tt.want {
+				t.Errorf("high-memory features: got %v, want %v", got, tt.want)
+			}
+			if got := p.Hardware.LowMemory(); got == tt.want {
+				t.Errorf("LowMemory: got %v with features %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReportNamesHardware(t *testing.T) {
+	low := platform.Detect(fakeProbe{goos: "windows", exe: "asyncao", memory: belowLine}).Report()
+	for _, want := range []string{"hardware: 8 CPUs, 4.0 GiB memory", "high-memory features: off (needs at least 6 GiB of memory)"} {
+		if !strings.Contains(low, want) {
+			t.Errorf("report lacks %q:\n%s", want, low)
+		}
+	}
+	unknown := platform.Detect(fakeProbe{goos: "windows", exe: "asyncao"}).Report()
+	if !strings.Contains(unknown, "unknown memory") {
+		t.Errorf("report does not say memory is unknown:\n%s", unknown)
+	}
+}
+
+func TestSystemProbeReadsMemoryAndCPUs(t *testing.T) {
+	var probe platform.SystemProbe
+	if probe.CPUCount() < 1 {
+		t.Errorf("CPU count %d", probe.CPUCount())
+	}
+	if total, ok := probe.TotalMemory(); ok && total == 0 {
+		t.Error("memory reported as known but zero")
 	}
 }

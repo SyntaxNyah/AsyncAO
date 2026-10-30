@@ -1314,6 +1314,16 @@ Decided 2026-10-30:
   locations keep today's paths for existing installs, with an explicit precedence, a portable
   marker and a test pinning them.
 
+**Low-memory machines (requested 2026-10-30).** Detection reads the CPU count and physical
+memory. Under 6 GiB (an estimate until measured), `HighMemoryFeatures` is off and the client runs
+with its minimum feature set, the same way as any other absent capability: `build` hands the
+engine the smallest option values, and the App layer hides what is off. This replaces the old
+process-wide budget: it chooses features at startup and does not limit a running process. An
+unknown amount of memory counts as enough. Applied from item 3, starting with the proposed set:
+smallest T1, T2, thumbnail and animated decode budgets, one animated decode at a time, the
+animated sprite cap on, no detached preview, no split or pinned tab, no video or GIF export, no
+RmlUi multisampling or `backdrop-filter`.
+
 **Sequence (F11; every commit builds and passes the gate).**
 1. Restore the working tree to `03324c58`, keeping this plan.
 2. Platform skeleton: `Detect(probe)`, capabilities, report. No consumers yet.

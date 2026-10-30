@@ -9,17 +9,37 @@ import (
 	"strings"
 )
 
-// Platform is what detection found: the environment and what it supports.
+// Platform is what detection found: the environment, the hardware and what they
+// support.
 type Platform struct {
 	Environment  Environment
+	Hardware     Hardware
 	Capabilities Capabilities
+}
+
+// Hardware is the machine's resources, detected once. Plain data.
+type Hardware struct {
+	CPUCount int
+	// TotalMemoryBytes is the physical memory, 0 when unknown.
+	TotalMemoryBytes uint64
+}
+
+// LowMemory reports whether the machine is known to have too little memory for
+// the high-memory features. An unknown amount is not low: a failed reading must
+// not take features away from a capable machine.
+func (h Hardware) LowMemory() bool {
+	return h.TotalMemoryBytes != 0 && h.TotalMemoryBytes < lowMemoryBytes
 }
 
 // Detect reads the machine through probe, once, at startup. It touches the disk,
 // so it never runs on a render, decode or resolver path (hard rule 2).
 func Detect(probe Probe) Platform {
 	env := detectEnvironment(probe)
-	return Platform{Environment: env, Capabilities: capabilitiesFor(env)}
+	hardware := Hardware{CPUCount: probe.CPUCount()}
+	if total, ok := probe.TotalMemory(); ok {
+		hardware.TotalMemoryBytes = total
+	}
+	return Platform{Environment: env, Hardware: hardware, Capabilities: capabilitiesFor(env, hardware)}
 }
 
 // Report describes the platform for the log, the About screen and the debug
@@ -36,6 +56,12 @@ func (p Platform) Report() string {
 		b.WriteString(", case-insensitive paths")
 	}
 	b.WriteByte('\n')
+	fmt.Fprintf(&b, "hardware: %d CPUs, ", p.Hardware.CPUCount)
+	if p.Hardware.TotalMemoryBytes == 0 {
+		b.WriteString("unknown memory\n")
+	} else {
+		fmt.Fprintf(&b, "%.1f GiB memory\n", float64(p.Hardware.TotalMemoryBytes)/bytesPerGiB)
+	}
 	for c := Capability(0); c < capabilityCount; c++ {
 		if p.Capabilities.Has(c) {
 			fmt.Fprintf(&b, "%s: yes\n", c)
