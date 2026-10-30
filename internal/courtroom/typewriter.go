@@ -8,88 +8,51 @@ import (
 )
 
 const (
-	// DefaultCharInterval is the base typewriter cadence (spec §1).
+	// DefaultCharInterval is the base typewriter cadence.
 	DefaultCharInterval = 18 * time.Millisecond
-	// DefaultBlipRate fires one blip per N visible characters (AO2-Client
-	// blip_rate default).
+	// DefaultBlipRate fires one blip per N visible characters (AO2 blip_rate default).
 	DefaultBlipRate = 2
 
-	// speedStepCount is the number of AO text-speed steps; '{' slows one
-	// step, '}' speeds one step, starting at speedStepDefault — mirrors
-	// AO2-Client's message_display_speed table, expressed as multipliers of
-	// the base interval.
+	// speedStepCount is the AO speed steps; '{' slows and '}' speeds one from speedStepDefault (message_display_speed).
 	speedStepDefault = 3
 
-	// \p pause parity with AO2-Client parse_pause_duration (courtroom.cpp:3515):
-	// a bare \p pauses one second; \p<n> pauses n milliseconds, capped so a
-	// hostile message can't freeze the crawl.
+	// \p parity with parse_pause_duration (courtroom.cpp:3515): bare is one second, \p<n> n ms, capped.
 	pauseDefaultMs = 1000
 	pauseMaxMs     = 10000
 
-	// blipSpamCrawlNum/blipSpamCrawlDen express AO2's "overwhelming blip spam
-	// prevention" threshold — chat_tick only raises the blip period while
-	// msg_delay <= 25 ms (AO2-Client courtroom.cpp:4529-4537) — as a FRACTION of
-	// the base crawl it was written against (AO2's text_crawl default, 40 ms).
-	// It is carried as a ratio, not the raw 25 ms, because AsyncAO's base cadence
-	// is DefaultCharInterval (18 ms): an absolute copy would gate at a different
-	// speed step than AO2 does. 25/40 == speed multiplier 0.625 and faster.
+	// AO2's blip-spam limit, msg_delay <= 25 ms (courtroom.cpp:4529-4537), as a fraction of its 40 ms base crawl,
+	// since our base is 18 ms and an absolute copy would gate at another speed step.
 	blipSpamCrawlNum = 25
 	blipSpamCrawlDen = 40
 
-	// blipsPerUpdate bounds the blips ONE Update may emit, and it is the whole of
-	// AsyncAO's departure from AO2's blip timing.
-	// The budget therefore sits on the AUDIBLE half ONLY; the reveal stays proportional
-	// to dt (see Update). Capping the reveal instead coupled the crawl to the caller's
-	// step rate: the exporters captured a fraction of the requested crawl and truncated
+	// blipsPerUpdate caps only sound: capping the reveal would couple the crawl to the caller's step rate.
 	blipsPerUpdate = 1
 )
 
-// speedMultipliers scales the base interval per AO speed step. Index 3 is
-// 1.0× (AO2-Client's 40 ms baseline maps to our 18 ms budget cadence).
+// speedMultipliers scales the base interval per speed step; index 3 is 1.0 (AO2's 40 ms maps to our 18 ms).
 var speedMultipliers = [...]float64{0, 0.25, 0.625, 1.0, 1.25, 1.75, 2.25}
 
-// Inline-color sentinels for StyleRun.Color (real palette colors are 0..N-1,
-// matching render.textColors / the AO TEXT_COLOR field).
+// Inline-color sentinels for StyleRun.Color (real palette colors are 0..N-1).
 const (
-	// ColorDefault means "use the message's own TextColor" — the state before
-	// any inline code and the initial run color.
+	// ColorDefault means use the message's own TextColor.
 	ColorDefault = -1
-	// ColorRainbow cycles the palette per rune (rendered render-side; the
-	// parser just tags the run).
+	// ColorRainbow cycles the palette per rune, on the render side.
 	ColorRainbow = -2
-	// ColorExtBase tags an extended AsyncAO color (#98): StyleRun.Color is
-	// ColorExtBase + the inline letter code, so the render side resolves it by
-	// letter (render.ExtColorByCode) with no positional coupling. Sits well
-	// above the palette/sentinels so the buildColorSpans switch can branch on
-	// `Color >= ColorExtBase`.
+	// ColorExtBase + the inline letter tags an extended color, resolved by letter (render.ExtColorByCode).
 	ColorExtBase = 0x1000
-	// ColorHexBase tags an EXACT transmitted colour (v1.52.0, requested by Tifera:
-	// any hex colour while chatting). StyleRun.Color is ColorHexBase + 0xRRGGBB, parsed
-	// from the inline `\c#RRGGBB` code. Sits above ColorExtBase + any letter
-	// (≈0x107A) so the render switch can branch `>= ColorHexBase` first; the
-	// packed range spans exactly 24 bits, so the two can never collide.
+	// ColorHexBase + 0xRRGGBB tags an exact `\c#RRGGBB`; it sits above ColorExtBase + any letter, so no collision.
 	ColorHexBase = 0x2000
 )
 
-// ExtColorCodes gates which `\c<letter>` codes the parser consumes as extended
-// colors (render owns the actual RGB by the same letter; a ui test pins the two
-// sets equal). Reserved letters are excluded: 'r' is rainbow, and we keep 'b'/
-// 'i'/'c' clear of the bold/italic/lead-in markup to avoid confusion.
+// ExtColorCodes lists consumed `\c<letter>` codes; 'r' is rainbow, and 'b', 'i', 'c' stay clear of other markup.
 const ExtColorCodes = "pmtlgokv"
 
-// isExtColorCode reports whether r is a consumed extended-color letter. The
-// ASCII guard keeps a non-ASCII rune whose low byte aliases a code letter from
-// matching. Shared by Start and StripChatMarkup so they can't drift.
+// isExtColorCode reports a consumed letter; the ASCII guard stops a non-ASCII rune's low byte matching.
 func isExtColorCode(r rune) bool {
 	return r >= 'a' && r <= 'z' && strings.IndexByte(ExtColorCodes, byte(r)) >= 0
 }
 
-// ao2Markup is one AO2 inline chat-colour delimiter (§3.8 interop). AO2 keeps
-// these characters IN the transmitted text — unlike AsyncAO's render-only `\c`
-// codes — which is what lets a real AO2/webAO client render the same colour, so
-// we interpret them at render time on both incoming and outgoing text and let
-// them survive to the wire untouched (packet.go escapes only `#%$&`, never
-// these). Semantics + the stock character table are transcribed from AO2-Client:
+// ao2Markup is one AO2 colour delimiter; these stay in the sent text, so others render the colour. From AO2-Client:
 type ao2Markup struct {
 	Start   rune // opening delimiter (chat_config.ini cN_start)
 	End     rune // closing delimiter (cN_end; == Start for the toggle colours)
@@ -97,13 +60,7 @@ type ao2Markup struct {
 	Remove  bool // cN_remove: true → the delimiter is consumed, false → kept visible
 }
 
-// ao2Markups is the STOCK default-theme table, in AO2 colour order c1..c8
-// (c0 is the uncoloured default — no delimiter). Values verbatim from
-// AO2-Client/bin/base/themes/default/chat_config.ini:
-// AsyncAO's theme system is asset-driven and does not (yet) expose per-theme
-// remappable chat markup, so we hard-code the stock table: it is what every
-// AO2/webAO peer sends by default, which is exactly the interop target. Every
-// AO2 chat palette indexes, in render.TextColor order.
+// AO2's palette in render.TextColor order; ao2Markups hard-codes the stock chat_config.ini table peers send.
 const (
 	paletteDefault = iota
 	paletteGreen
@@ -127,12 +84,7 @@ var ao2Markups = [...]ao2Markup{
 	{Start: '[', End: ']', Palette: paletteGray, Remove: false}, // brackets kept
 }
 
-// AO2MarkupFor returns the AO2 start/end delimiters for palette colour p (0..8),
-// so the IC "select-and-colour" UI can wrap a selection exactly as AO2 does
-// (courtroom.cpp:6381-6388 on_text_color_changed brackets the selection with
-// cN_start … cN_end). ok is false for palette 0 (the default colour has no
-// delimiter) or an out-of-range index. Both returned runes are the STOCK
-// default-theme characters, so the wrapped span renders on any AO2/webAO peer.
+// AO2MarkupFor returns the stock delimiters for p, as on_text_color_changed wraps (courtroom.cpp:6381-6388).
 func AO2MarkupFor(p int) (start, end rune, ok bool) {
 	for i := range ao2Markups {
 		if ao2Markups[i].Palette == p {
@@ -142,16 +94,10 @@ func AO2MarkupFor(p int) (start, end rune, ok bool) {
 	return 0, 0, false
 }
 
-// AO2ColorCount is how many AO palette colours (1..8) carry an inline delimiter;
-// the swatch row draws one cube per colour. Colour 0 (default) has no markup.
+// AO2ColorCount is how many colours carry a delimiter; colour 0 has none.
 const AO2ColorCount = len(ao2Markups)
 
-// ao2ColorStack is the parse-time nesting stack for AO2 markup, mirroring
-// std::stack<int> ic_color_stack in filter_ic_text (courtroom.cpp:3539). It
-// holds AO palette indices of the OPEN colours; the innermost (top) is the
-// colour that renders. It is a fixed-size value type so the parser stays
-// allocation-free on the message-raster hot path (a message can't nest deeper
-// than it has characters, but ao2StackMax bounds a hostile input cheaply).
+// ao2StackMax sizes the stack mirroring ic_color_stack (courtroom.cpp:3539), a value type so parsing doesn't allocate.
 const ao2StackMax = 64
 
 type ao2ColorStack struct {
@@ -164,11 +110,7 @@ func (s *ao2ColorStack) top() int {
 	if s.n == 0 {
 		return ColorDefault
 	}
-	// Clamp the read index: push lets n advance PAST ao2StackMax (so a later close
-	// still balances a dropped open), but buf only has ao2StackMax slots — an
-	// unguarded buf[n-1] would panic on a hostile deeply-nested incoming message
-	// (e.g. `~`~`~… drives n past the cap). Reading the last real slot instead is
-	// harmless: over-deep colours simply share the deepest stored colour.
+	// Clamp the read: push lets n pass ao2StackMax so a close balances, and buf[n-1] would panic on hostile nesting.
 	idx := s.n - 1
 	if idx >= ao2StackMax {
 		idx = ao2StackMax - 1
@@ -187,16 +129,8 @@ func (s *ao2ColorStack) pop() {
 	}
 }
 
-// ao2Match interprets rune r as an AO2 markup delimiter against the current
-// colour stack, mirroring the delimiter branch of filter_ic_text exactly
-// (courtroom.cpp:3646-3703). It reports whether r was a delimiter (handled),
-// whether the delimiter character is consumed (skip = its Remove flag), and the
-// new innermost colour (stack top). It MUST be called identically from Start and
-// StripChatMarkup — the pair is kept equal by TestStripMatchesTypewriter, and a
-// delimiter recognised in one but not the other silently desyncs the chatbox
-// from the IC log. Toggle colours (Start==End) close when they are the innermost
-// open colour, else open (nest); paired colours open on Start and close on End
-// only when they are innermost, else the stray delimiter is an ordinary glyph.
+// ao2Match mirrors filter_ic_text's delimiter branch (courtroom.cpp:3646-3703). Start and StripChatMarkup must call it
+// identically, or the chatbox desyncs from the IC log. Toggles nest unless innermost; pairs close only when innermost.
 func ao2Match(r rune, stack *ao2ColorStack) (handled, skip bool) {
 	for i := range ao2Markups {
 		m := &ao2Markups[i]
@@ -224,11 +158,7 @@ func ao2Match(r rune, stack *ao2ColorStack) (handled, skip bool) {
 	return false, false
 }
 
-// isAO2Delim reports whether r is any AO2 markup delimiter (start OR end). Used
-// only by the `\`-escape path so `\`+delimiter emits the delimiter LITERALLY —
-// AO2's parse_escape_seq suppresses markup on the next character
-// (courtroom.cpp:3633-3639, 3729-3759: an escaped non-code char just falls
-// through to the literal insert). Shared by Start and StripChatMarkup.
+// isAO2Delim is for the `\` escape, which emits a delimiter literally (courtroom.cpp:3633-3639, 3729-3759).
 func isAO2Delim(r rune) bool {
 	for i := range ao2Markups {
 		if r == ao2Markups[i].Start || r == ao2Markups[i].End {
@@ -244,10 +174,7 @@ const (
 	greenShift = 8
 )
 
-// parseInlineHex reads the six hex digits of a `\c#RRGGBB` code; at indexes
-// the '#'. A short or malformed code returns ok=false and the caller keeps
-// the text literal (the standing rule for any unrecognised `\X`). Shared by
-// Start and StripChatMarkup so the two can't drift.
+// parseInlineHex reads `\c#RRGGBB`, at indexes the '#'; ok=false keeps the text literal.
 func parseInlineHex(rs []rune, at int) (rgb int, ok bool) {
 	const hexDigits = 6
 	if at+hexDigits >= len(rs) {
@@ -260,9 +187,7 @@ func parseInlineHex(rs []rune, at int) (rgb int, ok bool) {
 	return int(c.R)<<redShift | int(c.G)<<greenShift | int(c.B), true
 }
 
-// EffectKind identifies an inline screen-effect code the parser records at its
-// reveal position. Only \s and \f are effects; \p is a timing modifier (folded
-// into the rune intervals) and \n is a real newline rune — neither is a mark.
+// EffectKind is an inline \s or \f; \p folds into intervals and \n is a real rune.
 type EffectKind uint8
 
 const (
@@ -270,43 +195,25 @@ const (
 	EffectFlash                   // \f — realization flash (AO2-Client do_flash parity)
 )
 
-// EffectMark is one inline \s/\f effect to fire when the reveal reaches it. At is
-// the VISIBLE-rune index (the codes aren't emitted, so it lines up with
-// Typewriter.Visible()); the courtroom drains marks in order via NextEffect and
-// mutates the Scene — the typewriter itself never touches SDL.
+// EffectMark is one \s or \f to fire when the reveal reaches At, a visible-rune index.
 type EffectMark struct {
 	At   int
 	Kind EffectKind
 }
 
-// MidEmoteMark is one mid-text <e:...>/<s:...> marker to fire when the reveal
-// reaches At (a visible-rune index, mirroring EffectMark). The courtroom drains
-// them via NextMidEmote and plays the emote / sound; the typewriter never touches
-// SDL.
+// MidEmoteMark is one mid-text marker to fire when the reveal reaches At, a visible-rune index.
 type MidEmoteMark struct {
 	At   int
 	Mark MidMark
 }
 
-// effectMarksMax bounds how many inline \s/\f marks ONE MESSAGE can record (hard
-// rule §17.4 — every queue has a named cap). Two runes per code against AO's
-// ~256-character IC line means a hostile peer could otherwise hand us ~128 marks
-// in a single message; a hand-authored line never uses more than a handful. The
-// visual is already idempotent (each fire just restamps the same ShakeLeft /
-// FlashLeft countdown), so dropping the overflow costs nothing real and keeps a
-// wall of \s from being a screenshake-spam vector.
+// effectMarksMax bounds a message's marks (hard rule 4); each fire restamps one countdown, so overflow costs nothing.
 const effectMarksMax = 32
 
-// midMarksMax bounds how many mid-text markers ONE MESSAGE can record (same hard
-// rule as effectMarksMax): a hostile peer must not be able to grow an unbounded
-// queue with a wall of <e:...> markers. A hand-authored line uses a handful.
+// midMarksMax bounds a message's mid-text markers (hard rule 4).
 const midMarksMax = 16
 
-// parsePauseDuration reads the optional digit run of a \p code beginning at index
-// `at` (the char after 'p'). Bare \p is a 1000 ms pause; \p<n> is n ms clamped to
-// pauseMaxMs (AO2-Client parse_pause_duration parity). Returns the pause in
-// milliseconds and how many digit runes it consumed. Shared by Start and
-// StripChatMarkup so the two can't drift.
+// parsePauseDuration reads a \p digit run at `at`, clamped to pauseMaxMs, returning ms and digits consumed.
 func parsePauseDuration(rs []rune, at int) (ms, digits int) {
 	const decimalBase = 10
 	pos := at
@@ -328,14 +235,7 @@ func parsePauseDuration(rs []rune, at int) (ms, digits int) {
 	return n, pos - at
 }
 
-// StyleRun styles a contiguous span of the CLEAN (markup-stripped) rune
-// sequence. Runs are produced in order and partition the whole message, so
-// they index into the typewriter's runes by simple accumulation — the reveal
-// and the styling can never drift (one parse, one rune sequence). Two inline
-// colour schemes are honoured:
-// A literal backtick, tilde, pipe, º, №, √, or a matched bracket pair therefore
-// now colours chat instead of showing verbatim — escape with a leading `\` to
-// type one literally.
+// StyleRun styles a span of the clean runes; runs partition the message. A literal AO2 delimiter needs a leading `\`.
 type StyleRun struct {
 	Len    int  // clean runes covered
 	Color  int  // palette index, ColorDefault / ColorRainbow, or ColorExtBase+code
@@ -343,8 +243,7 @@ type StyleRun struct {
 	Italic bool // \i
 }
 
-// Typewriter reveals message text at AO cadence and schedules blips. Pure
-// logic: rasterization and the audible blip live render/audio-side.
+// Typewriter reveals text at AO cadence and schedules blips; rasterizing and audio live elsewhere.
 type Typewriter struct {
 	runes     []rune
 	intervals []time.Duration // per-rune delay (speed codes pre-applied)
@@ -357,42 +256,24 @@ type Typewriter struct {
 	blipCounter  int
 	effectCursor int // next unfired effect (advanced by NextEffect; dropped by SkipToEnd)
 	midCursor    int // next unfired mid-text marker (advanced by NextMidEmote; dropped by SkipToEnd)
-	// effectMarkBase is where the current parse phase's effectMarksMax budget starts
-	// counting from — 0 for an ordinary Start, and the mark count AT THE JOIN for the
-	// additive StartAppend, so the appended tail gets its own full allowance instead of
-	// inheriting a budget the accumulated prefix already spent. See effectMarksMax.
+	// effectMarkBase is where the mark budget starts: 0 for Start, the join for StartAppend.
 	effectMarkBase int
 
-	// Interval is the base per-character delay.
 	Interval time.Duration
 	// BlipRate fires a blip every N visible non-space characters.
 	BlipRate int
-	// BlipOnSpaces also counts spaces toward blips (AO "blank blips").
+	// BlipOnSpaces also counts spaces toward blips.
 	BlipOnSpaces bool
 }
 
-// NewTypewriter returns a typewriter with AO defaults.
 func NewTypewriter() Typewriter {
 	return Typewriter{Interval: DefaultCharInterval, BlipRate: DefaultBlipRate}
 }
 
-// Start loads a message in a SINGLE pass that produces the clean rune
-// sequence, the per-rune delays (AO speed codes '{' slower / '}' faster
-// pre-applied), and the inline-color style runs — all indexed off the same
-// runes, so the reveal and the colors stay in lockstep. Inline markup: the
-// AsyncAO-native `\c` codes (`\cN` palette, `\cr` rainbow, `\c<letter>`/`\c#hex`,
-// `\b`/`\i`) plus AO2's bare colour delimiters (§3.8, ao2Markups) which nest OVER
-// the current `\c` colour; `\\` is a literal backslash and `\`+delimiter escapes
-// an AO2 delimiter. A lone `\` (or any other `\X`) is kept literally so ordinary
-// text isn't eaten. Every consumption rule here is mirrored in StripChatMarkup
-// (pinned equal by TestStripMatchesTypewriter).
+// Start parses in one pass into runes, delays and style runs; every rule must be mirrored in StripChatMarkup.
 func (t *Typewriter) Start(message string) { t.startJoined("", message) }
 
-// startJoined is the one parse both entry points run. prefix is the ALREADY-REVEALED
-// additive text StartAppend prepends (empty for a plain Start); it is parsed in the
-// same single pass as message — that is what carries inline colour/speed state across
-// an additive join exactly like AO2 concatenating the HTML — and its only other effect
-// is to mark where the effect-mark budget restarts (effectMarksMax).
+// startJoined parses prefix+message in one pass, carrying colour and speed across the join as AO2's HTML does.
 func (t *Typewriter) startJoined(prefix, message string) {
 	t.runes = t.runes[:0]
 	t.intervals = t.intervals[:0]
@@ -407,12 +288,7 @@ func (t *Typewriter) startJoined(prefix, message string) {
 	t.midCursor = 0
 
 	speed := speedStepDefault
-	// base is the AsyncAO-native `\c` colour (ColorDefault until a `\cN` code).
-	// ao2 is the AO2 inline-markup nesting stack (§3.8): while it is non-empty its
-	// innermost colour WINS over base, so an AO2 span colours text even mid-message
-	// and returns to base when it closes — the "return to default" that the render-
-	// only `\c` scheme lacks. curColor folds the two into the run colour, so the
-	// two schemes compose in one message without confusing each other.
+	// base is the `\c` colour; ao2 is the nesting stack, whose innermost colour wins, so a span returns to base.
 	base := ColorDefault
 	var ao2 ao2ColorStack
 	curColor := func() int {
@@ -424,9 +300,7 @@ func (t *Typewriter) startJoined(prefix, message string) {
 	color := curColor() // the colour of the run currently being built
 	bold, italic := false, false
 	runLen := 0
-	// pendingPause holds a \p code's delay until the next rune is emitted; it
-	// rides that rune's interval (a timing modifier like the '{'/'}' speed steps,
-	// NOT a fired effect).
+	// pendingPause holds a \p delay until the next rune, riding its interval.
 	pendingPause := time.Duration(0)
 	emit := func(r rune) {
 		t.runes = append(t.runes, r)
@@ -434,16 +308,14 @@ func (t *Typewriter) startJoined(prefix, message string) {
 		pendingPause = 0
 		runLen++
 	}
-	// flush closes the current run; a style change opens a new one, so each run
-	// carries one (color, bold, italic) over the runes it covers.
+	// flush closes the current run; each run has one (color, bold, italic).
 	flush := func() {
 		if runLen > 0 {
 			t.styles = append(t.styles, StyleRun{Len: runLen, Color: color, Bold: bold, Italic: italic})
 			runLen = 0
 		}
 	}
-	// setColor re-derives the effective run colour after a base or AO2-stack change
-	// and starts a fresh run if it moved. Called after every colour-affecting code.
+	// setColor recomputes the run colour after a base or stack change.
 	setColor := func() {
 		if c := curColor(); c != color {
 			flush()
@@ -452,11 +324,7 @@ func (t *Typewriter) startJoined(prefix, message string) {
 	}
 
 	rs := []rune(prefix + message)
-	// join is where the appended tail starts, in SOURCE runes. Crossing it opens the
-	// tail's own effect-mark budget. `>=` rather than `==` because the body advances i
-	// past whole escape sequences, so the index can step over the join (a prefix ending
-	// in a lone `\` and a message starting with `s` parse as one `\s` across it); the
-	// latch makes the first index at or past the join the phase change, once.
+	// join is where the tail starts; `>=` because i skips whole escapes and can step over it.
 	join := len([]rune(prefix))
 	tailOpen := false
 	for i := 0; i < len(rs); i++ {
@@ -499,8 +367,7 @@ func (t *Typewriter) startJoined(prefix, message string) {
 				i += 2
 				continue
 			case n == 'c' && i+2 < len(rs) && rs[i+2] == '#':
-				// Exact hex colour `\c#RRGGBB` (v1.52.0). Malformed hex exits
-				// the switch → the backslash (and the rest) stays literal.
+				// Malformed hex exits the switch, so the backslash stays literal.
 				if rgb, hok := parseInlineHex(rs, i+2); hok {
 					base = ColorHexBase + rgb
 					setColor()
@@ -535,35 +402,24 @@ func (t *Typewriter) startJoined(prefix, message string) {
 				i += 1 + digits
 				continue
 			case isAO2Delim(n):
-				// AO2 escape (§3.8): a backslash before an AO2 markup delimiter
-				// makes it a LITERAL character, not a colour toggle — AO2's
-				// parse_escape_seq (courtroom.cpp:3633-3639). The backslash is
-				// dropped, the delimiter emitted as an ordinary glyph.
+				// A backslash before a delimiter makes it literal (parse_escape_seq, courtroom.cpp:3633-3639).
 				emit(n)
 				i++
 				continue
 			}
 			// any other `\X`: fall through and emit the backslash literally
 		}
-		// AO2 inline colour markup (§3.8): interpret bare delimiters against the
-		// nesting stack. A handled delimiter updates the effective colour; its
-		// glyph is dropped for toggle colours (Remove) and kept for the bracket
-		// pairs. Runs BEFORE the plain emit so a stray/unmatched delimiter still
-		// emits as a normal character (ao2Match returned handled=false).
+		// Delimiters run before the plain emit, so an unmatched one still emits as a normal character.
 		depthBefore := ao2.n
 		if handled, skip := ao2Match(r, &ao2); handled {
 			if ao2.n > depthBefore {
-				// An OPEN delimiter: AO2 colours an opening bracket with the NEW
-				// span colour (courtroom.cpp:3723 emits the font switch before the
-				// char), so recompute the colour, then emit any kept glyph.
+				// Open: AO2 colours an opening bracket with the new colour (courtroom.cpp:3723), so recompute first.
 				setColor()
 				if !skip {
 					emit(r)
 				}
 			} else {
-				// A CLOSE delimiter: AO2 keeps the closing bracket in the span
-				// colour it closes (courtroom.cpp:3716-3722 inserts the char, then
-				// closes the font), so emit any kept glyph before recomputing.
+				// Close: AO2 keeps a closing bracket in the closed colour (courtroom.cpp:3716-3722), so emit first.
 				if !skip {
 					emit(r)
 				}
@@ -588,10 +444,7 @@ func (t *Typewriter) startJoined(prefix, message string) {
 	flush()
 }
 
-// addEffect records one inline \s/\f mark at the current reveal position, capped at
-// effectMarksMax marks SINCE the current parse phase began (effectMarkBase — zero for
-// a plain Start, the join for an additive StartAppend). Shared by the two Start cases
-// so the cap can't be applied to one code and not the other.
+// addEffect records a mark at the reveal position, capped at effectMarksMax since effectMarkBase.
 func (t *Typewriter) addEffect(k EffectKind) {
 	if len(t.effects)-t.effectMarkBase >= effectMarksMax {
 		return
@@ -599,8 +452,7 @@ func (t *Typewriter) addEffect(k EffectKind) {
 	t.effects = append(t.effects, EffectMark{At: len(t.runes), Kind: k})
 }
 
-// addMidMark records one mid-text <e:...>/<s:...> marker at the current reveal
-// position, capped at midMarksMax per message (midtext.go).
+// addMidMark records a marker at the reveal position, capped at midMarksMax per message.
 func (t *Typewriter) addMidMark(m MidMark) {
 	if len(t.midMarks) >= midMarksMax {
 		return
@@ -608,51 +460,30 @@ func (t *Typewriter) addMidMark(m MidMark) {
 	t.midMarks = append(t.midMarks, MidEmoteMark{At: len(t.runes), Mark: m})
 }
 
-// StartAppend loads message with prefix ALREADY revealed — the 2.8 additive case
-// (#14): an ADDITIVE=1 line continues the previous one, so the prior text shows
-// instantly and only the appended tail crawls (pacing + blips run on the tail
-// alone). It runs the ordinary single pass over prefix+message — so inline
-// colour/speed state carries across the join exactly like AO2 concatenating the
-// HTML — then reveals up to the prefix's rune count. Interior \s/\f marks inside the
-// prefix are DROPPED (they fired on the original line; a re-reveal must not re-fire
-// them), matching SkipToEnd's rule for skipped marks. prefix "" is identical to
-// Start(message).
-// The tail also gets its OWN effect-mark budget rather than whatever the accumulated
-// prefix left of one — see effectMarksMax, and TestAppendTailKeepsItsOwnEffectBudget.
+// StartAppend loads an ADDITIVE=1 line with prefix revealed. Prefix marks already fired, so they drop.
 func (t *Typewriter) StartAppend(prefix, message string) {
 	t.startJoined(prefix, message)
-	// The processed-prefix rune count is what StripChatMarkup yields for the prefix:
-	// TestStripMatchesTypewriter pins StripChatMarkup's rune output equal to Start's
-	// emitted runes, so this lands the boundary exactly at the join.
+	// StripChatMarkup's rune output equals Start's, so this lands exactly at the join.
 	pre := len([]rune(StripChatMarkup(prefix)))
 	if pre > len(t.runes) {
 		pre = len(t.runes)
 	}
 	t.visible = pre
-	// Skip effect marks strictly INSIDE the prefix (they fired on the original
-	// line). A mark AT the boundary (At == pre) belongs to the appended tail — the
-	// reveal reaches it as the tail starts — so it must NOT be skipped.
+	// Skip marks strictly inside the prefix; a mark at the boundary (At == pre) belongs to the tail.
 	for t.effectCursor < len(t.effects) && t.effects[t.effectCursor].At < pre {
 		t.effectCursor++
 	}
-	// Skip mid-text markers strictly INSIDE the prefix too (they fired on the
-	// original line); a marker AT the boundary belongs to the appended tail.
+	// Same for mid-text markers.
 	for t.midCursor < len(t.midMarks) && t.midMarks[t.midCursor].At < pre {
 		t.midCursor++
 	}
 }
 
-// StripChatMarkup returns the plain display text for a message — the same
-// markup the typewriter removes (speed `{ }`, color `\cN`/`\cr`, bold/italic
-// `\b`/`\i`, the `\\` escape, and AO2 inline colour delimiters §3.8), so the IC
-// log shows exactly what the chatbox renders. Kept in lock-step with Start by
-// TestStripMatchesTypewriter — every consumption rule here MUST mirror Start.
+// StripChatMarkup returns the display text; every consumption rule must mirror Start.
 func StripChatMarkup(message string) string {
 	rs := []rune(message)
 	out := make([]rune, 0, len(rs))
-	// AO2 markup stack, run IDENTICALLY to Start so the two can't drift: toggle
-	// delimiters (Remove) are dropped, bracket pairs are kept — the stack drives
-	// exactly the same skip decision ao2Match makes in Start.
+	// Run the AO2 stack as Start does, so the skip decision is the same.
 	var ao2 ao2ColorStack
 	for i := 0; i < len(rs); i++ {
 		r := rs[i]
@@ -714,43 +545,27 @@ func StripChatMarkup(message string) string {
 	return string(out)
 }
 
-// Text returns the full display text (markup stripped).
 func (t *Typewriter) Text() string { return string(t.runes) }
 
-// Styles returns the inline-color runs over the clean text (read-only; a
-// single run of ColorDefault when the message has no inline color markup).
+// Styles returns the inline-color runs (read-only).
 func (t *Typewriter) Styles() []StyleRun { return t.styles }
 
-// Visible returns how many runes are revealed.
 func (t *Typewriter) Visible() int { return t.visible }
 
-// Done reports whether the full message is revealed.
 func (t *Typewriter) Done() bool { return t.visible >= len(t.runes) }
 
-// SkipToEnd reveals everything (queue skip / user interrupt). Interior \s/\f
-// marks are DROPPED, not fired — a skip/recall must not burst every screenshake
-// the message would have crawled through.
+// SkipToEnd reveals everything; marks are dropped, as a skip must not burst every screenshake.
 func (t *Typewriter) SkipToEnd() {
 	t.visible = len(t.runes)
 	t.effectCursor = len(t.effects)
 	t.midCursor = len(t.midMarks)
 }
 
-// EffectsPending reports whether this message still has inline \s/\f marks that
-// NextEffect has not handed out. It exists because "the reveal is finished" and
-// "there is nothing left to do" are NOT the same thing: a message that is ONLY
-// effect codes (`\f`, `\s\s`) strips to zero runes, so Done() is true from the
-// first instant while its marks — all at position 0 — have never fired. The
-// lifecycle uses it to decide whether the talking phase is still needed, which
-// is what makes a bare-effect message behave like AO2, whose emptiness test
-// (start_chat_ticking, AO2-Client courtroom.cpp:4183) reads the RAW wire text —
-// and a raw "\f" is not empty, so AO2 ticks it and do_flash() runs.
+// EffectsPending reports unfired marks: an effect-only message is Done at once, yet AO2 tests the raw text and ticks it
+// (courtroom.cpp:4183).
 func (t *Typewriter) EffectsPending() bool { return t.effectCursor < len(t.effects) }
 
-// NextEffect returns the next inline \s/\f mark whose position has been revealed
-// since the last call, advancing an internal cursor; ok=false when none are
-// pending. The courtroom drains these each tick and mutates the Scene, so the
-// pure typewriter never touches SDL. 0-alloc (value return, no slice).
+// NextEffect returns the next revealed mark, advancing a cursor; ok=false when none. 0-alloc.
 func (t *Typewriter) NextEffect() (EffectMark, bool) {
 	if t.effectCursor < len(t.effects) && t.effects[t.effectCursor].At <= t.visible {
 		m := t.effects[t.effectCursor]
@@ -760,14 +575,10 @@ func (t *Typewriter) NextEffect() (EffectMark, bool) {
 	return EffectMark{}, false
 }
 
-// MidEmotesPending reports whether this message still has mid-text markers that
-// NextMidEmote has not handed out — the same distinction EffectsPending makes for
-// inline effects (a marker at position 0 in a glyph-less message must still fire).
+// MidEmotesPending is EffectsPending for mid-text markers.
 func (t *Typewriter) MidEmotesPending() bool { return t.midCursor < len(t.midMarks) }
 
-// NextMidEmote returns the next mid-text marker whose position has been revealed
-// since the last call, advancing an internal cursor; ok=false when none are
-// pending. 0-alloc (value return, no slice).
+// NextMidEmote returns the next revealed marker, advancing a cursor; ok=false when none. 0-alloc.
 func (t *Typewriter) NextMidEmote() (MidEmoteMark, bool) {
 	if t.midCursor < len(t.midMarks) && t.midMarks[t.midCursor].At <= t.visible {
 		m := t.midMarks[t.midCursor]
@@ -777,12 +588,7 @@ func (t *Typewriter) NextMidEmote() (MidEmoteMark, bool) {
 	return MidEmoteMark{}, false
 }
 
-// Update advances the reveal by dt. It returns how many new runes became
-// visible and how many blips to fire this tick. The render thread's frame
-// cost stays O(revealed) — no per-character layout here (spec §12).
-// Only the BLIPS carry a per-call budget (blipsPerUpdate), because they are the half a
-// coarse step turns into one overlapping sound instead of a rhythm. That IS AO2's own
-// limit: one blip per chat_tick delivery (courtroom.cpp:4545, timer re-armed at :4586).
+// Update advances the reveal; only blips have a per-call budget, one per chat_tick (courtroom.cpp:4545, :4586).
 func (t *Typewriter) Update(dt time.Duration) (revealed, blips int) {
 	if t.Done() {
 		return 0, 0
@@ -807,16 +613,10 @@ func (t *Typewriter) Update(dt time.Duration) (revealed, blips int) {
 	return revealed, blips
 }
 
-// tickBlip advances AO2's blip_ticker for one just-revealed rune and reports whether
-// that rune is DUE to sound a blip. Transcribed from Courtroom::chat_tick
-// (AO2-Client courtroom.cpp:4540-4555):
-// Whether the due blip is actually SOUNDED is Update's call (blipsPerUpdate) — the
-// ticker keeps AO2's phase either way, so a blip dropped for being simultaneous with
-// another does not shift the rhythm of the rest of the line.
+// tickBlip advances blip_ticker and reports a due blip (chat_tick, courtroom.cpp:4540-4555), keeping phase if dropped.
 func (t *Typewriter) tickBlip(r rune, need time.Duration) bool {
 	if r == '\n' {
-		// AO2: `\n` is a formatting_char (:4436-4439) and never reaches the blip
-		// block (:4479) — no sound, no ticker, whatever blank_blip says.
+		// AO2: `\n` is a formatting_char (:4436-4439) and never reaches the blip block (:4479).
 		return false
 	}
 	if t.blipCounter%t.effectiveBlipRate(need) != 0 {
@@ -830,13 +630,7 @@ func (t *Typewriter) tickBlip(r rune, need time.Duration) bool {
 	return true
 }
 
-// effectiveBlipRate is AO2's per-character blip period for a rune whose delay is
-// need: the user's BlipRate, raised when the crawl is fast enough that firing
-// every BlipRate-th character would machine-gun. AO2-Client courtroom.cpp:
-// 4528-4537 —
-//
-//	int b_rate = blip_rate;
-//	if (msg_delay != 0 && msg_delay <= 25)
+// effectiveBlipRate is AO2's blip period for delay need: BlipRate, raised on a fast crawl (courtroom.cpp:4528-4537).
 func (t *Typewriter) effectiveBlipRate(need time.Duration) int {
 	rate := t.BlipRate
 	if rate < 1 {

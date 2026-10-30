@@ -5,20 +5,9 @@ import (
 	"strings"
 )
 
-// Animated chat text (#M5): a speaker can tag spans of their message with a motion/colour
-// effect — shake, wave, rainbow. The spans ride the SAME invisible zero-width channel as
-// sprite style (#103) / profile (#101) / status (#M1), told apart by a leading magic byte,
-// so every AsyncAO viewer animates the text while AO2/webAO render the plain message: the
-// [shake]…[/shake] markup is stripped before send and the spans are invisible on the wire.
-//
-// Unlike style/profile/status (per-speaker STATE, sent on change), effects are per-message
-// CONTENT, so the frame rides every message that carries an effect (there is nothing to
-// recall). The codec is SDL-free plain data; the UI translates a TextEffectSpan into the
-// render package's EffectSpan.
+// Animated text spans ride the zero-width channel on every message with an effect, as per-message content.
 
-// Text effect ids. These MUST match render.Effect* (the UI maps courtroom→render); courtroom
-// is SDL-free and can't import render, so the values are duplicated here and pinned equal by
-// a ui-package test (TestEffectIDsMatchRender).
+// Text effect ids must match render.Effect*; courtroom can't import render, so the values are duplicated.
 const (
 	TextEffectNone uint8 = iota
 	TextEffectShake
@@ -36,14 +25,11 @@ const (
 	TextEffectGradient // a STATIC multicolour band — colourful but calm (readable + photosensitive-safe)
 	TextEffectBlink    // hard brightness on/off (attention)
 	TextEffectSparkle  // occasional twinkle toward white per glyph
-	// TextEffectCount MUST stay last. The UI cycles modulo it, and the decoder drops any effect
-	// id >= it — so a NEWER client's effect renders as plain text on an OLDER one (graceful).
+	// TextEffectCount must stay last: the decoder drops ids >= it, so a newer effect is plain text on an older client.
 	TextEffectCount
 )
 
-// TextEffectSpan tags Len consecutive runes (from Start — a rune index into the CLEAN
-// display text, i.e. after BOTH the zero-width strip and the \cN chat-markup strip) with an
-// effect. SDL-free; the UI converts it to render.EffectSpan at raster time.
+// TextEffectSpan tags Len runes from Start, an index into the clean text (after zero-width and \cN strips).
 type TextEffectSpan struct {
 	Start  int
 	Len    int
@@ -51,32 +37,24 @@ type TextEffectSpan struct {
 }
 
 const (
-	// effectsMarkerMagic is this frame's leading payload byte — distinct from spriteStyle
-	// version 0x01, profile 0x70 and status 0x71, so the shared scanner tells the frames
-	// apart on a message that carries several.
+	// effectsMarkerMagic is the frame's first byte, distinct from sprite style (1), profile (0x70) and status (0x71).
 	effectsMarkerMagic = 0x72
 
-	// maxEffectSpans bounds the spans per message (hard rule §17.4): each span is
-	// effectSpanBytes wire bytes ≈ 11 invisible runes that other clients typewriter + blip
-	// on, so a crafted stream must not be able to grow the tail without bound. A real
-	// message uses 1–4.
+	// maxEffectSpans bounds a message's spans (hard rule 4), as other clients blip on each invisible rune.
 	maxEffectSpans = 8
 
 	// effectSpanBytes is the per-span wire size: effect(1) + start(2, big-endian) + len(1).
 	effectSpanBytes = 4
 
-	// Field ceilings — start is two bytes, len is one.
+	// Field ceilings: start is two bytes, len is one.
 	maxEffectStart = 0xFFFF
 	maxEffectLen   = 0xFF
 
-	// maxTagLen caps how far matchTag scans for a closing ']' so a stray '[' can't make the
-	// parser quadratic; the longest real tag is "[rainbow]" (9).
+	// maxTagLen stops a stray '[' from making the parser quadratic; the longest real tag is "[rainbow]".
 	maxTagLen = 12
 )
 
-// effectTags maps a recognised opening-tag name to its effect. SQUARE brackets delimit the
-// markup, deliberately NOT braces: AO uses `{ }` for typewriter speed, so braces would be
-// eaten by the pipeline. The tags are stripped before send and never reach the wire.
+// effectTags uses square brackets, as AO's { } set typewriter speed and would be eaten by the pipeline.
 var effectTags = map[string]uint8{
 	"shake":    TextEffectShake,
 	"wave":     TextEffectWave,
@@ -93,17 +71,8 @@ var effectTags = map[string]uint8{
 	"sparkle":  TextEffectSparkle,
 }
 
-// ParseTextEffects splits a raw IC input into the WIRE text (effect tags removed; all other
-// markup — \cN colour, { } speed, \b \i, AO2 delimiters — left for the normal pipeline) and
-// the display-indexed effect spans. The spans index the FINAL visible text the receiver
-// shows. The alignment argument: \cN { } \b \i use trigger characters disjoint from [..],
-// and although AO2's c8 gray markup (typewriter.go ao2Markups) DOES share [ ] with effect
-// tags, StripChatMarkup keeps ALL brackets (c8 is Remove:false; unmatched brackets emit as
-// literals), so no bracket position ever shifts and spans measured against
-// StripChatMarkup(raw) still align exactly with the receiver's MessageText (= StripChatMarkup
-// of the wire text). The one hole: chat markup INSIDE a bracket tag (e.g. "[sh~ake]") is
-// stripped and can misalign or re-form a tag — adversarial input only, accepted. Pinned by
-// TestParseTextEffectsAlignment.
+// ParseTextEffects splits raw input into wire text and spans; StripChatMarkup keeps brackets, so spans stay aligned.
+// One accepted hole: chat markup inside a bracket tag ("[sh~ake]") can misalign or re-form a tag.
 func ParseTextEffects(raw string) (wire string, spans []TextEffectSpan) {
 	if !strings.ContainsRune(raw, '[') {
 		return raw, nil // no possible tag → nothing to strip or index (0-alloc common case)
@@ -113,11 +82,7 @@ func ParseTextEffects(raw string) (wire string, spans []TextEffectSpan) {
 	return wire, spans
 }
 
-// parseEffectTags removes recognised [tag]…[/tag] runs from s and returns the cleaned text
-// plus the spans (rune indices into the cleaned text). Unknown brackets ("[OOC]") are left
-// literal; an unclosed tag runs to the end; there is no nesting — a new opening tag closes
-// the previous span and opens a new one (simple + predictable). Zero-alloc fast path when s
-// has no '['.
+// parseEffectTags removes [tag] runs; unknown brackets stay literal, and a new tag closes the previous (no nesting).
 func parseEffectTags(s string) (string, []TextEffectSpan) {
 	if !strings.ContainsRune(s, '[') {
 		return s, nil
@@ -160,9 +125,7 @@ func parseEffectTags(s string) (string, []TextEffectSpan) {
 	return string(out), spans
 }
 
-// matchTag tries to read a "[name]" or "[/name]" group starting at rs[i] (== '['). It
-// returns the lower-case tag name (without the slash), whether it was a closing tag, the
-// rune length of the whole group, and whether a group was found within maxTagLen.
+// matchTag reads "[name]" or "[/name]" at rs[i], returning the lower-case name, closing flag, length and found flag.
 func matchTag(rs []rune, i int) (name string, isClose bool, n int, ok bool) {
 	end := i + maxTagLen
 	if end > len(rs) {
@@ -184,8 +147,7 @@ func matchTag(rs []rune, i int) (name string, isClose bool, n int, ok bool) {
 	return "", false, 0, false
 }
 
-// appendEffectSpan adds a [start,end) span for eff, dropping empty spans and respecting the
-// per-message cap and the field ceilings (a clamp keeps a malformed input benign).
+// appendEffectSpan adds a [start,end) span, dropping empty ones and applying the per-message cap and field ceilings.
 func appendEffectSpan(spans []TextEffectSpan, start, end int, eff uint8) []TextEffectSpan {
 	if end <= start || len(spans) >= maxEffectSpans || start > maxEffectStart {
 		return spans
@@ -197,8 +159,7 @@ func appendEffectSpan(spans []TextEffectSpan, start, end int, eff uint8) []TextE
 	return append(spans, TextEffectSpan{Start: start, Len: ln, Effect: eff})
 }
 
-// EncodeEffectsMarker returns the invisible zero-width run carrying these spans, to append
-// to an outgoing message's text. "" when there are no spans (nothing to send).
+// EncodeEffectsMarker returns the invisible run for these spans, "" when there are none.
 func EncodeEffectsMarker(spans []TextEffectSpan) string {
 	if len(spans) == 0 {
 		return ""
@@ -226,10 +187,7 @@ func EncodeEffectsMarker(spans []TextEffectSpan) string {
 	return packZeroWidth(payload)
 }
 
-// DecodeEffectsMarker pulls the effect spans out of a message's text, if a well-formed
-// effects frame is present. A short/corrupt/empty frame yields (nil, false) — benign, the
-// message just renders un-animated. Only the spans with a known effect and a non-zero
-// length survive.
+// DecodeEffectsMarker returns known non-empty spans; a corrupt or empty frame yields (nil, false).
 func DecodeEffectsMarker(text string) ([]TextEffectSpan, bool) {
 	if !hasMarker(text) {
 		return nil, false

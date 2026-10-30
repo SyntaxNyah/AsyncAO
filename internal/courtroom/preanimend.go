@@ -1,50 +1,28 @@
 package courtroom
 
-// This file owns ONE concern: the single door out of a one-shot preanimation,
-// and the record of who walked through it.
-// The funnel is also the fix for a real defect, not just instrumentation:
-
-// PreanimEndReason names the thing that ended the one-shot preanimation that
-// was on stage. It is diagnostic only: the stage result is the same for every
-// reason (the speaker drops to the talk loop or to idle), so nothing branches
-// on it and adding a reason cannot change behavior.
+// PreanimEndReason names what ended a one-shot preanimation; it is diagnostic only and nothing branches on it.
 type PreanimEndReason int
 
 const (
-	// PreanimEndNone is the zero value: no preanimation has ended in this room
-	// yet. Never reported by endPreanim.
+	// PreanimEndNone means no preanimation has ended in this room yet.
 	PreanimEndNone PreanimEndReason = iota
-	// PreanimEndFinished — the render side reported the one-shot's last frame
-	// (NotifyPreanimDone). This is the ONLY healthy reason for a preanim that
-	// had art; every other one cut it short.
+	// PreanimEndFinished: the render side reported the last frame, the only healthy reason for a preanim with art.
 	PreanimEndFinished
-	// PreanimEndTimeout — the bound expired before any "done" arrived:
-	// PreanimTimeout for a still-decoding preanim, or the duration
-	// NotifyPreanimStarted reported plus preanimPlaybackSlack for one that
-	// played. Seeing this on a preanim that DID decode is the signature of the
-	// "randomly interrupted" report.
+	// PreanimEndTimeout: PreanimTimeout expired while decoding, or duration plus preanimPlaybackSlack while playing.
 	PreanimEndTimeout
-	// PreanimEndMissing — the asset manager proved the preanim can never
-	// resolve (NotifyAssetMissing; AO2 skips a missing preanim synchronously,
-	// ../AO2-Client/src/courtroom.cpp play_preanim).
+	// PreanimEndMissing: the preanim can never resolve (AO2 skips it synchronously, courtroom.cpp play_preanim).
 	PreanimEndMissing
-	// PreanimEndTextSettled — the message's text finished and no immediate-mode
-	// decoration was running, so the settled message parks the speaker on idle.
+	// PreanimEndTextSettled: the text finished with no immediate-mode decoration running, so the speaker parks on idle.
 	PreanimEndTextSettled
-	// PreanimEndNewMessage — the next message took the stage while this
-	// animation was still playing (AO2's unpack_chatmessage resets anim_state).
+	// PreanimEndNewMessage: the next message took the stage (AO2's unpack_chatmessage resets anim_state).
 	PreanimEndNewMessage
-	// PreanimEndStageWiped — an area change / handshake wiped the stage out
-	// from under the animation.
+	// PreanimEndStageWiped: an area change or handshake wiped the stage.
 	PreanimEndStageWiped
-	// preanimEndReasonCount bounds the reason table below (rule §17.4: every
-	// table has a named cap, and String() can never index past it).
+	// preanimEndReasonCount sizes the name table (hard rule 4).
 	preanimEndReasonCount
 )
 
-// preanimEndNames is indexed by PreanimEndReason; kept beside the constants so
-// a new reason without a name fails the table-length test, not silently at
-// runtime.
+// preanimEndNames is indexed by PreanimEndReason.
 var preanimEndNames = [preanimEndReasonCount]string{
 	PreanimEndNone:        "none",
 	PreanimEndFinished:    "finished",
@@ -55,7 +33,6 @@ var preanimEndNames = [preanimEndReasonCount]string{
 	PreanimEndStageWiped:  "stage-wiped",
 }
 
-// String names the reason for logs and the debug panel.
 func (r PreanimEndReason) String() string {
 	if r < 0 || r >= preanimEndReasonCount {
 		return "unknown"
@@ -63,11 +40,7 @@ func (r PreanimEndReason) String() string {
 	return preanimEndNames[r]
 }
 
-// endPreanim is the ONE door out of a one-shot preanimation: it clears the
-// PlayOnce latch, records why, and notifies any listener. Callers keep owning
-// what the speaker shows NEXT (talk loop vs idle) — that differs per site and
-// is not this seam's concern.
-// Game thread only, like every other Courtroom method.
+// endPreanim is the only way out of a one-shot; callers choose what the speaker shows next. Game thread only.
 func (c *Courtroom) endPreanim(reason PreanimEndReason) {
 	if !c.Scene.Speaker.PlayOnce {
 		return
@@ -79,7 +52,5 @@ func (c *Courtroom) endPreanim(reason PreanimEndReason) {
 	}
 }
 
-// LastPreanimEnd reports why the most recent one-shot preanimation in this room
-// ended (PreanimEndNone before the first one). Read-only diagnostic: the
-// courtroom never branches on it.
+// LastPreanimEnd reports why the last preanimation here ended; diagnostic only.
 func (c *Courtroom) LastPreanimEnd() PreanimEndReason { return c.preanimEnd }

@@ -2,35 +2,25 @@ package courtroom
 
 import "strings"
 
-// Per-sprite texture filtering, ported from AO2-Client.
-// Issue #21 label 15: a hand-pixelled character drawn through AsyncAO's single
-// client-wide linear filter "becomes a smoothie". AO2 doesn't have one filter —
-// it resolves one per sprite, from two inputs, in a strict order:
-// The order matters and is easy to get backwards: char.ini does NOT override the
-// user, the user overrides char.ini.
+// Per-sprite texture filtering, ported from AO2-Client: the user's mode overrides char.ini, not the other way round.
 type ScalingMode uint8
 
 const (
-	// ScalingAuto defers: to char.ini if it asks, otherwise to the geometry rule.
 	ScalingAuto ScalingMode = iota
-	// ScalingSmooth filters (SDL linear) — the client's historical behaviour.
+	// ScalingSmooth filters with SDL linear.
 	ScalingSmooth
-	// ScalingPixel point-samples (SDL nearest) — crisp pixel art.
+	// ScalingPixel point-samples with SDL nearest.
 	ScalingPixel
 )
 
-// char.ini [Options] scaling= spellings. "fast" is AO2's Qt-side alias for
-// pixel (Qt::FastTransformation) and real char.inis in the wild use it, so it
-// is not a synonym we invented — see get_scaling.
+// char.ini [Options] scaling= spellings; "fast" is AO2's Qt alias for pixel (see get_scaling).
 const (
 	scalingKeyPixel  = "pixel"
 	scalingKeyFast   = "fast"
 	scalingKeySmooth = "smooth"
 )
 
-// ScalingMode resolves this character's char.ini request. Unknown and absent
-// values are Auto — AO2 falls through rather than guessing, so a typo'd key
-// leaves the automatic rule in charge instead of forcing a filter.
+// ScalingMode resolves the char.ini request; unknown and absent are Auto, as AO2 falls through.
 func (c *CharINI) ScalingMode() ScalingMode {
 	if c == nil {
 		return ScalingAuto
@@ -38,8 +28,7 @@ func (c *CharINI) ScalingMode() ScalingMode {
 	return ParseScalingMode(c.Scaling)
 }
 
-// ParseScalingMode maps a raw char.ini scaling= value to a mode. Case- and
-// space-insensitive: char.inis are hand-edited and "Pixel" / " pixel" appear.
+// ParseScalingMode maps a raw scaling= value to a mode, ignoring case and spaces because char.inis are hand-edited.
 func ParseScalingMode(raw string) ScalingMode {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case scalingKeyPixel, scalingKeyFast:
@@ -51,8 +40,7 @@ func ParseScalingMode(raw string) ScalingMode {
 	}
 }
 
-// scalingFor asks the App what filter a character requested. Called once per
-// message when the sprite layers are built — never per render frame.
+// scalingFor asks the App what filter a character requested; call once per message, never per frame.
 func (c *Courtroom) scalingFor(charName string) ScalingMode {
 	if c.Assets == nil || charName == "" {
 		return ScalingAuto
@@ -60,10 +48,7 @@ func (c *Courtroom) scalingFor(charName string) ScalingMode {
 	return c.Assets.SpriteScaling(charName)
 }
 
-// ResolveScalingMode applies AO2's precedence: the user's mode unless it is
-// Auto, in which case the character's request, and Auto if neither decided.
-// The caller settles a remaining Auto with the geometry rule, because only the
-// draw site knows the target size.
+// ResolveScalingMode applies AO2's precedence; the caller settles Auto, as only the draw site knows the target size.
 func ResolveScalingMode(user, char ScalingMode) ScalingMode {
 	if user != ScalingAuto {
 		return user // an explicit user choice is not overridable by an asset

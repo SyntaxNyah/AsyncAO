@@ -8,28 +8,10 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
-// Networked frame-synced effects (#17): a speaker's message can carry three
-// FRAME_* wire fields that fire a screenshake / realization flash / sound effect
-// as their sprite reaches specific animation frames. AO2-Client decodes
-// "<emote>|<frame>=<value>|…^<emote>|…^<emote>|…^" into a per-frame effect map and
-// fires each effect when the layer displaying that emote crosses the frame
-// (src/courtroom.cpp:2779-2787 decode, src/animationlayer.cpp:472-569 map+fire).
-// The three "^"-separated sections are, in fixed send order, the PREANIM emote,
-// the "(b)" TALK emote, and the "(a)" IDLE emote (courtroom.cpp:2268-2269
-// emotes_to_check = {pre_emote, "(b)"+emote, "(a)"+emote}). AO2 matches an
-// effect's stored emote name against the layer's resolved file name; because the
-// section ORDER already identifies which of our three sprite bases plays, we bind
-// each section to a phase group by position instead of reconstructing the resolved
-// spelling across our URL-encoding/lowercasing boundary — identical behaviour for
-// a well-formed packet, simpler and encoding-proof.
-// non-empty (courtroom.cpp:2778 gates the whole parse on realization[SFX]), so a
-// message carrying only FRAME_SCREENSHAKE / FRAME_REALIZATION with an empty
-// FRAME_SFX drops shake+realize entirely there. buildFrameTriggers parses all
-// three FRAME_* fields independently, so shake/realize still fire without an SFX
-// field — the more complete reading of the wire, not a regression: the shake/
-// realize data was authored and sent; honoring it is strictly a superset.
+// FRAME_* fields fire shake, flash or sfx at sprite frames (courtroom.cpp:2779-2787, animationlayer.cpp:472-569).
+// Sections are in fixed order preanim, (b), (a) (courtroom.cpp:2268-2269), so we bind by position, not by name.
+// Deliberate divergence: courtroom.cpp:2778 gates the parse on SFX; we parse all three, so shake fires without sfx.
 
-// frameGroup indexes the three "^" sections of a FRAME_* field, in AO2 send order.
 const (
 	frameGroupPreanim = iota // section 0: the preanim emote
 	frameGroupTalk           // section 1: the "(b)" talk emote
@@ -37,18 +19,10 @@ const (
 	frameGroupCount
 )
 
-// maxFrameTriggers caps how many frame triggers one message's table may hold,
-// summed across every group and effect type. A malicious server can pack a huge
-// FRAME_* string (thousands of "<n>=<sfx>" pairs); the table is built once at
-// message-begin, but it's still bounded memory + parse work per message. 256 is
-// far above any real preanim's frame count (long dramatic clips run ~150 frames)
+// maxFrameTriggers caps one message's table; a hostile server can pack thousands of pairs (real preanims: ~150 frames).
 const maxFrameTriggers = 256
 
-// frameTrigger is one authored effect at a source frame index (the sender's raw,
-// un-decimated frame space — the render side maps our decimated cursor back into
-// it before calling NotifyFrameShown). sfxURL is pre-resolved at build time for
-// the SFX kind ("" for shake/flash, and "" for a silenced/muted sfx), so the
-// per-frame fire path does zero string work.
+// frameTrigger is one effect in the sender's raw frame space; sfxURL is resolved at build time, so firing does no work.
 type frameTrigger struct {
 	frame  int
 	kind   frameEffectKind
@@ -63,23 +37,17 @@ const (
 	frameEffectSFX
 )
 
-// frameTriggerTable holds a message's parsed triggers, one sorted slice per phase
-// group with a forward-only cursor. Empty (the overwhelmingly common case — almost
-// no char.ini authors frame effects) means NotifyFrameShown returns immediately.
+// frameTriggerTable holds one sorted slice per phase group with a forward-only cursor; usually empty.
 type frameTriggerTable struct {
 	groups  [frameGroupCount][]frameTrigger
 	cursors [frameGroupCount]int
 	total   int // triggers across all groups (0 = table inert)
 }
 
-// buildFrameTriggers parses the three incoming FRAME_* fields into a bounded,
-// per-group sorted table, resolving each SFX name to its URL up front (honoring
-// the same silent-value + M11 mute rules as armSFXDelay so a firing frame does no
-// string work). Built once per message in begin(); never touched per frame.
+// buildFrameTriggers parses FRAME_* once per message in begin(), resolving SFX with armSFXDelay's rules.
 func (c *Courtroom) buildFrameTriggers(msg *protocol.ChatMessage) frameTriggerTable {
 	var t frameTriggerTable
-	// ORDER pins effect kind to wire field, matching AO2's netstrings order
-	// (courtroom.cpp:2782: {FRAME_SCREENSHAKE, FRAME_REALIZATION, FRAME_SFX}).
+	// Order pins effect kind to wire field, as AO2's netstrings do (courtroom.cpp:2782).
 	c.parseFrameField(&t, msg.FrameShake, frameEffectShake)
 	c.parseFrameField(&t, msg.FrameRealize, frameEffectRealize)
 	c.parseFrameField(&t, msg.FrameSFX, frameEffectSFX)
@@ -93,13 +61,8 @@ func (c *Courtroom) buildFrameTriggers(msg *protocol.ChatMessage) frameTriggerTa
 	return t
 }
 
-// parseFrameField decodes one FRAME_* wire string of the form
-// "<emote>[|<f>=<v>]…^<emote>[|…]^<emote>[|…]^" into t, binding section i to phase
-// group i (preanim / talk / idle). The leading token of each "^" section is the
-// emote NAME (dropped — position identifies the group; see the file header); the
-// remaining "|"-parts are "<frame>=<value>" pairs. Mirrors AO2-Client
-// setFrameEffects (animationlayer.cpp:472-505): a part lacking "=" is skipped, the
-// frame is atoi'd, and only the SFX kind keeps the value.
+// parseFrameField decodes "<emote>[|<f>=<v>]...^" into t, section i to group i, as setFrameEffects does
+// (animationlayer.cpp:472-505): a part without "=" is skipped and only SFX keeps the value.
 func (c *Courtroom) parseFrameField(t *frameTriggerTable, field string, kind frameEffectKind) {
 	if field == "" {
 		return
@@ -135,10 +98,7 @@ func (c *Courtroom) parseFrameField(t *frameTriggerTable, field string, kind fra
 	}
 }
 
-// resolveFrameSFX turns a frame-SFX value into a playable URL, applying the same
-// silent + M11-mute rules as armSFXDelay: "", "0" and "1" are AO's silent values,
-// and a per-SFX mute drops it too. "" means the trigger still fires (advancing the
-// cursor) but plays nothing.
+// resolveFrameSFX returns a playable URL; "", "0" and "1" are silent, and "" still fires to advance the cursor.
 func (c *Courtroom) resolveFrameSFX(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" || name == "0" || name == "1" {
@@ -150,18 +110,12 @@ func (c *Courtroom) resolveFrameSFX(name string) string {
 	return c.urls.SFX(name)
 }
 
-// activeFrameGroup reports which trigger group the speaker layer's Active base
-// belongs to (preanim / talk / idle), or -1 when it matches none (a shout bubble,
-// a blank layer). Pure comparison against the bases begin() set — no allocation.
-// file, animationlayer.cpp:558). So we DERIVE the group from the phase machine —
-// the authoritative record of which sprite phase is playing — and only then confirm
-// Active actually holds that group's base (a shout/blank layer confirms none → -1):
+// activeFrameGroup derives the group from the phase, then confirms Active holds its base (cf. animationlayer.cpp:558).
 func (c *Courtroom) activeFrameGroup() int {
 	sp := &c.Scene.Speaker
 	switch {
 	case sp.PlayOnce:
-		// One-shot preanim playing. Confirm Active is the (non-empty) preanim base;
-		// an empty PreanimBase never resolves a real layer.
+		// One-shot preanim playing; an empty PreanimBase never resolves a real layer.
 		if sp.PreanimBase != "" && sp.Active == sp.PreanimBase {
 			return frameGroupPreanim
 		}
@@ -179,12 +133,7 @@ func (c *Courtroom) activeFrameGroup() int {
 	}
 }
 
-// NotifyFrameShown is called by the render side each time the SPEAKER layer draws
-// a new frame, with src the frame index in the SENDER's raw (un-decimated) space.
-// It fires every not-yet-fired trigger in the active group up to and including src
-// (a decimated jump can skip past several source frames in one step, so the cursor
-// sweeps the whole [cursor, src] range). Game-thread only, like the other Notify*
-// callbacks; a message with no frame triggers returns on the first guard.
+// NotifyFrameShown fires every unfired trigger up to src, as a decimated jump can skip frames. Game thread only.
 func (c *Courtroom) NotifyFrameShown(src int) {
 	if c.frameTriggers.total == 0 {
 		return
@@ -202,10 +151,7 @@ func (c *Courtroom) NotifyFrameShown(src int) {
 	c.frameTriggers.cursors[g] = cursor
 }
 
-// fireFrameTrigger dispatches one trigger through the existing effect paths: shake
-// and realization go to the Scene countdowns (gated by effectsVisible, exactly
-// like fireMessageEffects), and SFX plays through the audio sink unconditionally
-// (feedback sound survives reduce-motion, same as every other effect sound).
+// fireFrameTrigger applies effectsVisible to shake and realization; SFX plays regardless, surviving reduce-motion.
 func (c *Courtroom) fireFrameTrigger(tr frameTrigger) {
 	switch tr.kind {
 	case frameEffectShake:

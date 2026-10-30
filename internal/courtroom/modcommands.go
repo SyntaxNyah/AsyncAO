@@ -6,13 +6,8 @@ import (
 	"strings"
 )
 
-// Server-software-aware moderation commands (#130). AO moderation is done by sending OOC slash
-// commands, and the syntax DIFFERS per server software (read from the server sources — see the
-// server-mod-commands research). This file builds the right command string for the detected
-// software, so the dashboard's Ban / Kick buttons can't send wrong-syntax-that-silently-fails.
-// Pure data + string building, SDL-free, unit-tested against every family's exact format.
+// Moderation is OOC slash commands with per-server syntax, and wrong syntax fails silently; this builds the right one.
 
-// ServerSoftware identifies the AO2 server-software family, which determines the command syntax.
 type ServerSoftware uint8
 
 const (
@@ -21,27 +16,15 @@ const (
 	SoftwareAthena                   // Athena (Go): flags -u/-i, -d duration, reason at end (UID or IPID)
 	SoftwareAkashi                   // Akashi (C++) + witches/wizards forks: IPID, positional, duration-then-reason
 	SoftwareWhisker                  // Whisker (C3): UID, positional, reason-then-duration (quoted)
-	// SoftwareNyathena forks Athena: the ban/kick/CM *syntax* is byte-identical (the command
-	// builders share Athena's path), but it ships a richer area/CM toolkit, so it gets its own
-	// reference. Stock Nyathena announces "Athena" on the wire (it inherited Athena's hard-coded
-	// ID string), so it's indistinguishable from Athena UNLESS the operator sets the ID packet's
-	// software field to "Nyathena" — then DetectSoftware picks it up (and the user can also select
-	// it by hand). Kept last so the existing enum values stay stable.
+	// SoftwareNyathena has Athena's syntax; stock Nyathena announces "Athena", so detection needs the ID field set.
+	// Kept last so earlier enum values stay stable.
 	SoftwareNyathena
-	// SoftwareWitches is the witches-akashi-party (WAP) fork of Akashi. Its ban /
-	// kick / CM *syntax* is Akashi's (positional IPID, duration-then-reason — the
-	// command builders reuse the Akashi cases), so it earns its own family for one
-	// reason: WAP runs a PlayerStateObserver that streams the mod-only IPID inside
-	// the live PU name field ("web71 (eea20f10)") to authenticated mods, so the ban
-	// box fills straight from the player list with NO /getarea (see
-	// courtroom.splitTrailingIPID; ../witches-akashi-party/src/playerstateobserver.cpp).
-	// Detected from an ID string carrying "wap"/"witches"; kept last so the earlier
-	// enum values stay stable.
+	// SoftwareWitches has Akashi's syntax, but WAP streams the mod-only IPID in the PU name (playerstateobserver.cpp).
+	// Kept last so earlier values stay stable.
 	SoftwareWitches
 	ServerSoftwareCount
 )
 
-// String is the human label (for the dashboard's software selector).
 func (s ServerSoftware) String() string {
 	switch s {
 	case SoftwareTsuserver:
@@ -61,11 +44,7 @@ func (s ServerSoftware) String() string {
 	}
 }
 
-// DetectSoftware maps the server's announced software string (Session.Software — the ID
-// packet's field 1, e.g. "Akashi 1.8", "KFO-Server", "Nyathena", "Athena", "Whisker") to its
-// family, so the dashboard auto-selects the right command syntax on join. Case-insensitive
-// substring match (the strings carry a version too); an unrecognised one is Unknown, and the
-// dashboard then asks the user to pick. Mirrors the heuristic the built-in login already uses.
+// DetectSoftware maps the ID packet's software string by case-insensitive substring, as strings carry versions.
 func DetectSoftware(software string) ServerSoftware {
 	s := strings.ToLower(software)
 	switch {
@@ -86,7 +65,6 @@ func DetectSoftware(software string) ServerSoftware {
 	}
 }
 
-// BanDuration is a friendly preset the UI offers; each maps to the software's own token format.
 type BanDuration uint8
 
 const (
@@ -102,9 +80,7 @@ const (
 	BanDurationCount
 )
 
-// durationToken renders a preset in the software's own duration format: short tokens (6h/1d/1w)
-// for the Go/C++ servers (str2duration / Akashi's parseTime both accept y/w/d/h/m/s), human
-// tokens (6 hours / 1 day) for KFO (pytimeparse) and Whisker (its "3 days" example).
+// durationToken renders short tokens for str2duration and Akashi parseTime, human ones for KFO and Whisker.
 func durationToken(sw ServerSoftware, d BanDuration) string {
 	if d == BanPerma {
 		return "perma"
@@ -126,14 +102,12 @@ func durationToken(sw ServerSoftware, d BanDuration) string {
 	case Ban3Weeks:
 		return pick(human, "3 weeks", "3w")
 	case Ban1Month:
-		// Months parse inconsistently (Akashi's "m" is minutes; not every parser takes "1mo"),
-		// so emit a day count every server accepts. The label still reads "1 month".
+		// Months parse inconsistently (Akashi's "m" is minutes), so emit a day count every server accepts.
 		return pick(human, "30 days", "30d")
 	}
 	return ""
 }
 
-// BanDurationLabel is the friendly UI label for a preset (software-independent).
 func BanDurationLabel(d BanDuration) string {
 	switch d {
 	case BanPerma:
@@ -158,12 +132,7 @@ func BanDurationLabel(d BanDuration) string {
 	return ""
 }
 
-// --- custom durations (savable duration chips) --------------------------------------------------
-
-// banDurationUnits maps a duration-unit spelling to its canonical single letter.
-// Every server family's parser (str2duration, Akashi parseTime, pytimeparse) takes
-// minutes/hours/days/weeks; months/years are deliberately excluded — the presets
-// already cover "1 month", and "1mo vs 1m" ambiguity isn't worth it.
+// banDurationUnits maps a unit to its letter; months and years are out, as "1mo" vs "1m" is ambiguous.
 var banDurationUnits = map[string]byte{
 	"m": 'm', "min": 'm', "mins": 'm', "minute": 'm', "minutes": 'm',
 	"h": 'h', "hr": 'h', "hrs": 'h', "hour": 'h', "hours": 'h',
@@ -171,15 +140,10 @@ var banDurationUnits = map[string]byte{
 	"w": 'w', "wk": 'w', "wks": 'w', "week": 'w', "weeks": 'w',
 }
 
-// maxCustomBanNumber bounds a custom duration's count so a typo ("100000d") can't
-// save a nonsense chip. 9999 of any unit comfortably covers real moderation.
+// maxCustomBanNumber stops a typo like "100000d" from saving a nonsense chip.
 const maxCustomBanNumber = 9999
 
-// CanonicalBanDuration parses a user-typed custom ban duration ("45m", "45 min",
-// "2 days", "12H", "perma") into its canonical short token ("45m", "2d", "12h",
-// "perma") — the form the saved duration chips store and BanCommandToken renders
-// per software. Reports ok=false for anything unparseable, so garbage can't
-// become a chip.
+// CanonicalBanDuration parses a typed duration into its short token; ok=false for anything unparseable.
 func CanonicalBanDuration(s string) (string, bool) {
 	s = strings.ToLower(strings.TrimSpace(s))
 	if s == "perma" || s == "permanent" || s == "forever" {
@@ -203,9 +167,7 @@ func CanonicalBanDuration(s string) (string, bool) {
 	return strconv.Itoa(n) + string(unit), true
 }
 
-// BanDurationTokenLabel is the friendly UI label for a canonical custom token
-// ("45m" → "45 minutes", "1d" → "1 day", "perma" → "Permanent") — the custom-chip
-// counterpart of BanDurationLabel.
+// BanDurationTokenLabel is the UI label for a canonical custom token.
 func BanDurationTokenLabel(token string) string {
 	if token == "perma" {
 		return "Permanent"
@@ -213,8 +175,7 @@ func BanDurationTokenLabel(token string) string {
 	return banDurationHuman(token)
 }
 
-// banDurationHuman renders a canonical short token in words ("45m" → "45 minutes",
-// "1h" → "1 hour") for the servers whose parsers take human phrasing.
+// banDurationHuman renders a short token in words for servers whose parsers take human phrasing.
 func banDurationHuman(token string) string {
 	if len(token) < 2 {
 		return token
@@ -239,20 +200,12 @@ func banDurationHuman(token string) string {
 	return num + " " + word
 }
 
-// BanCommand builds the OOC /ban for sw. ipid / uid are the target's identifiers (one may be
-// ""); the function uses whichever the software bans by — IPID for KFO/Akashi, UID for Whisker,
-// and Athena prefers IPID (offline-capable) but falls back to UID. Returns "" when the required
-// identifier is missing (the caller then can't ban that target on that software). reason is
-// sanitized so it can't break the quoting / command.
+// BanCommand builds the OOC /ban: IPID for KFO/Akashi, UID for Whisker, Athena prefers IPID; "" if the id is missing.
 func BanCommand(sw ServerSoftware, ipid, uid string, dur BanDuration, reason string) string {
 	return banCommandWith(sw, ipid, uid, durationToken(sw, dur), reason)
 }
 
-// BanCommandToken is BanCommand with a CUSTOM duration: token is a canonical short
-// duration ("45m", "2d", "1w", "perma" — what CanonicalBanDuration returns; the
-// saved custom-duration chips store exactly this). It renders the token in the
-// software's own format — human ("45 minutes") for the pytimeparse/Whisker servers,
-// short for the rest — mirroring durationToken's split.
+// BanCommandToken is BanCommand with a canonical custom duration token, rendered per durationToken's split.
 func BanCommandToken(sw ServerSoftware, ipid, uid, token, reason string) string {
 	if token == "" {
 		return ""
@@ -267,8 +220,7 @@ func BanCommandToken(sw ServerSoftware, ipid, uid, token, reason string) string 
 	return banCommandWith(sw, ipid, uid, d, reason)
 }
 
-// banCommandWith builds the per-software /ban with an already-rendered duration
-// string — the shared body of BanCommand (preset) and BanCommandToken (custom).
+// banCommandWith builds the per-software /ban with an already-rendered duration.
 func banCommandWith(sw ServerSoftware, ipid, uid, d, reason string) string {
 	reason = sanitizeReason(reason)
 	if reason == "" {
@@ -300,12 +252,7 @@ func banCommandWith(sw ServerSoftware, ipid, uid, d, reason string) string {
 	return ""
 }
 
-// KickCommand builds the OOC /kick for sw. A blank reason is allowed on the families that default
-// it (KFO/Akashi/Whisker); the Athena/Nyathena family REQUIRES a reason — its server-side
-// validation rejects a bare "/kick -u <uid>", which read as "kick does nothing".
-// NOTE: kick is NOT the same as ban — it disconnects a CONNECTED client, so the Athena/Nyathena
-// family targets the live client UID (-u), never the IPID. "/kick -i <ipid>" is silently a no-op
-// there (the IPID is the offline-capable BAN identifier).
+// KickCommand builds the OOC /kick. Athena/Nyathena need a reason and the client UID: "/kick -i" is a silent no-op.
 func KickCommand(sw ServerSoftware, ipid, uid, reason string) string {
 	reason = sanitizeReason(reason)
 	switch sw {
@@ -328,31 +275,22 @@ func KickCommand(sw ServerSoftware, ipid, uid, reason string) string {
 	return ""
 }
 
-// KickRequiresReason reports whether sw's /kick requires a non-blank reason. Only the
-// Athena/Nyathena family does (Nyathena's server-side validation rejects a bare
-// "/kick -u <uid>"), so the UI can prompt for a reason and the builder refuses a blank one.
+// KickRequiresReason reports whether sw's /kick rejects a blank reason, which only Athena/Nyathena do.
 func KickRequiresReason(sw ServerSoftware) bool {
 	return sw == SoftwareAthena || sw == SoftwareNyathena
 }
 
-// --- CM / area room controls (#130) -----------------------------------------------------------
-// AO area moderation ("CM" = case maker) is OOC slash commands too, and which exist + how they
-// spell the area-kick varies by software (read from the server sources). These build the exact
-// command (or "" when the software doesn't have it / the user hasn't picked a software yet), so
-// the dashboard's room controls match the server. Unit-tested alongside the ban/kick builders.
+// CM and area controls: each builder returns the exact command, or "" when the software lacks it or none is picked yet.
 
-// CMClaim / CMRelease claim or hand back area CM. tsuserver/Athena/Akashi share /cm + /uncm;
-// Whisker uses a different area model (no /cm), and Unknown stays blank until the user picks a
-// software via the dashboard's Change button. "" means the dashboard hides the control.
+// CMClaim and CMRelease claim or hand back area CM; Whisker has no /cm, and "" means the dashboard hides the control.
 func CMClaim(sw ServerSoftware) string   { return cmCommand(sw, "/cm", true) }
 func CMRelease(sw ServerSoftware) string { return cmCommand(sw, "/uncm", true) }
 
-// LockArea / UnlockArea seal the area to newcomers — universal across the four known families.
+// LockArea and UnlockArea seal the area to newcomers on all known families.
 func LockArea(sw ServerSoftware) string   { return cmCommand(sw, "/lock", false) }
 func UnlockArea(sw ServerSoftware) string { return cmCommand(sw, "/unlock", false) }
 
-// cmCommand returns cmd for a known software, "" for Unknown; cmModel commands (/cm, /uncm) are
-// additionally blank on Whisker (no CM model there).
+// cmCommand returns cmd for a known software, ""  for Unknown; cmModel commands are also blank on Whisker.
 func cmCommand(sw ServerSoftware, cmd string, cmModel bool) string {
 	if sw == SoftwareUnknown {
 		return ""
@@ -363,9 +301,7 @@ func cmCommand(sw ServerSoftware, cmd string, cmModel bool) string {
 	return cmd
 }
 
-// AreaKick removes uid from the current area (a CM room control). Athena/Nyathena spell it
-// /kickarea; KFO/Akashi use /area_kick; Whisker has no area-kick command. Returns "" when the
-// software lacks it or uid is blank (the dashboard then disables the button).
+// AreaKick is /kickarea on Athena/Nyathena and /area_kick on KFO/Akashi; "" on Whisker or a blank uid.
 func AreaKick(sw ServerSoftware, uid string) string {
 	if uid == "" {
 		return ""
@@ -380,8 +316,7 @@ func AreaKick(sw ServerSoftware, uid string) string {
 	}
 }
 
-// CommandReference is the human "look at this server's commands" panel for the dashboard: a short
-// list of sw's moderation + CM syntax, "<label> — <command form>". Mirrors what the builders emit.
+// CommandReference lists sw's moderation and CM syntax for the dashboard panel; mirrors what the builders emit.
 func CommandReference(sw ServerSoftware) []string {
 	switch sw {
 	case SoftwareTsuserver:
@@ -432,7 +367,7 @@ func CommandReference(sw ServerSoftware) []string {
 	}
 }
 
-// banTarget picks the Athena/Nyathena flag form: prefer IPID (offline-capable), else UID.
+// banTarget picks the Athena/Nyathena flag form: IPID (offline-capable), else UID.
 func banTarget(ipid, uid string) string {
 	if ipid != "" {
 		return "-i " + ipid
@@ -443,9 +378,7 @@ func banTarget(ipid, uid string) string {
 	return ""
 }
 
-// sanitizeReason keeps a reason from breaking the command: collapse newlines + replace the
-// double-quotes that would break the quoted-reason servers' shell-style parse, then trim. May
-// return "" (kick allows a blank reason; ban defaults it).
+// sanitizeReason collapses newlines and replaces the double quotes that break quoted-reason parsing; may return "".
 func sanitizeReason(s string) string {
 	return strings.TrimSpace(strings.NewReplacer("\n", " ", "\r", " ", "\"", "'").Replace(s))
 }

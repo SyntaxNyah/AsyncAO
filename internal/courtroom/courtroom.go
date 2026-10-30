@@ -13,78 +13,43 @@ import (
 )
 
 const (
-	// DefaultShoutDuration approximates the canonical AO objection bubble
-	// length; the render side may finish earlier when the bubble animation
-	// reports completion.
+	// DefaultShoutDuration approximates the AO objection bubble; the render side may finish earlier.
 	DefaultShoutDuration = 724 * time.Millisecond
-	// DefaultPreanimTimeout bounds a preanim wait when its real duration is
-	// not yet known (asset still decoding); NotifyPreanimDone (the one-shot
-	// finished) or NotifyAssetMissing (it can never start — conclusive 404)
-	// cuts it short, and once the decoded preanim plays NotifyPreanimStarted
-	// EXTENDS it to the real duration — so a live wait only ever runs this long
-	// while the asset is genuinely still downloading, never as a cap on a long
-	// but decoded preanimation (the "long preanims skip to the end" report).
+	// DefaultPreanimTimeout bounds a preanim wait only while the asset decodes; NotifyPreanimDone or NotifyAssetMissing
+	// cut it short, and NotifyPreanimStarted extends it to the real duration.
 	DefaultPreanimTimeout = 2500 * time.Millisecond
-	// preanimPlaybackSlack pads the extended timeout past a decoded preanim's
-	// real duration (last-frame delay + the one-shot done report's latency), so
-	// the natural NotifyPreanimDone always wins the race, not the fallback.
+	// preanimPlaybackSlack pads past a preanim's duration, so NotifyPreanimDone wins the race, not the fallback.
 	preanimPlaybackSlack = 250 * time.Millisecond
-	// DefaultTextStayTime holds a finished message on screen before the
-	// queue advances (AO2-Client text_stay_time flavor).
+	// DefaultTextStayTime holds a finished message before the queue advances (AO2 text_stay_time).
 	DefaultTextStayTime = 200 * time.Millisecond
-	// messageQueueCap bounds the IC message queue (spec §17.4).
+	// messageQueueCap bounds the IC message queue (hard rule 4).
 	messageQueueCap = 64
-	// DefaultQueueCap is the exported canonical queue depth (= messageQueueCap):
-	// what QueueCap seeds to, and what the App restores when the power-user pref
-	// is back at its 0 = default sentinel.
+	// DefaultQueueCap is what QueueCap seeds to and what a 0 pref restores.
 	DefaultQueueCap = messageQueueCap
-	// missingSpritesCap bounds the conclusively-404'd base set the wait gate
-	// consults (spec §17.4 — no unbounded caches). A session sees only a handful
-	// of genuinely-missing sprites; past the cap we stop recording and the
-	// SpriteWaitTimeout still bounds any un-recorded miss.
+	// missingSpritesCap bounds the 404'd base set (hard rule 4); past it SpriteWaitTimeout bounds any unrecorded miss.
 	missingSpritesCap = 512
-	// missingDesksCap bounds the conclusively-404'd DESK base set (spec §17.4 —
-	// no unbounded caches), sized like missingSpritesCap: a session visits a
-	// handful of backgrounds, each contributing at most one desk per position.
-	// Past the cap we stop recording and the desk simply keeps the pre-#44
-	// behaviour (the render-side release still covers the on-screen layer).
+	// missingDesksCap bounds the 404'd desk set (hard rule 4); past it the render-side release covers the layer.
 	missingDesksCap = 512
-	// blipVolumeFull is the unattenuated per-character blip scale (M11): 100%,
-	// used when no BlipVolumeFor callback is wired (tests/embedders).
+	// blipVolumeFull is the unattenuated blip scale, used with no BlipVolumeFor callback.
 	blipVolumeFull = 100
 	// emptyPreanim values AO uses for "no preanimation".
 	emptyPreanimDash = "-"
 
-	// catchUpDefaultThreshold is the queue depth at which packed-room catch-up
-	// fast-forwards backlog messages — the floor (1) so the stage stays on the
-	// newest message (a message catches up the moment one or more wait behind
-	// it). The App overrides it from prefs; direct NewCourtroom callers
-	// (tests/embedders) get catch-up OFF regardless.
+	// catchUpDefaultThreshold is the floor: a message catches up once one waits behind it. Off for direct callers.
 	catchUpDefaultThreshold = 1
-	// catchUpLinger holds a fast-forwarded backlog message on screen before
-	// the next dequeues — zero so a deep backlog drains one message per frame
-	// (the IC log keeps every message regardless; only the on-stage ceremony
-	// is skipped, mirroring AO2-Client's "catch up when behind").
+	// catchUpLinger is zero so a backlog drains one per frame; the IC log keeps every message.
 	catchUpLinger = 0 * time.Millisecond
 
-	// RealizationFlashDuration approximates AO2-Client's realization flash
-	// (do_flash plays the theme's one-shot flash animation, ~a quarter
-	// second on stock themes).
+	// RealizationFlashDuration approximates do_flash's one-shot animation on stock themes.
 	RealizationFlashDuration = 250 * time.Millisecond
 	// ScreenshakeDuration approximates do_screenshake's elastic UI wobble.
 	ScreenshakeDuration = 350 * time.Millisecond
 
-	// sfxDelayUnit is the wire SFX_DELAY time unit (#12). AO2-Client multiplies
-	// the wire value by time_mod = 40ms to start sfx_delay_timer, so a whip-crack
-	// lands mid-preanim rather than at message start (../AO2-Client/src/
-	// courtroom.cpp:4052 `sfx_delay = m_chatmessage[SFX_DELAY].toInt() * time_mod`,
-	// time_mod defined at courtroom.h:428). msg.SFXDelay is the raw wire int, so
-	// the deadline is SFXDelay × sfxDelayUnit.
+	// sfxDelayUnit is AO2's time_mod (courtroom.cpp:4052, courtroom.h:428), so a sound lands mid-preanim.
 	sfxDelayUnit = 40 * time.Millisecond
 )
 
-// MessagePhase is the IC message lifecycle: shout → preanim → talking →
-// linger → idle (AO2-Client handle_chatmessage ordering).
+// MessagePhase is the IC lifecycle: shout, preanim, talking, linger, idle (handle_chatmessage).
 type MessagePhase int
 
 const (
@@ -95,49 +60,31 @@ const (
 	PhaseLinger
 )
 
-// SpriteLayer describes one character layer for the renderer: which sprite
-// base to show and how to place it. Bases are extension-less URL bases.
+// SpriteLayer describes one character layer; bases are extension-less URL bases.
 type SpriteLayer struct {
-	// Name is the character folder this layer shows — the key client-side
-	// position overrides attach to (drag-to-move in the viewport).
+	// Name is the character folder, the key client-side position overrides attach to.
 	Name        string
 	IdleBase    string
 	TalkBase    string
 	PreanimBase string
 	// Active selects which base renders right now.
 	Active string
-	// PlayOnce marks the active animation as one-shot (preanim). It means EXACTLY
-	// "this is the speaker's preanimation" — set true only for the speaker's own
-	// preanim (enterAfterShout), never on the pair layer or an idle/talk sprite.
-	// The render miss-branch relies on that: viewport.drawSprite exempts any
-	// PlayOnce layer from the missingno placeholder (a missing preanim must never
-	// flash a placeholder). Setting PlayOnce anywhere else would silently suppress
-	// the WANTED idle/talk placeholder for a conclusively-missing base.
+	// PlayOnce means this is the speaker's preanimation, nothing else: drawSprite exempts such layers from the
+	// missing-sprite placeholder, so setting it elsewhere would suppress a wanted one.
 	PlayOnce bool
 	Flip     bool
-	// OffsetX/Y are percent of viewport dimensions (−100..100).
+	// OffsetX/Y are percent of viewport dimensions (-100..100).
 	OffsetX, OffsetY int
-	// Side is the member's AO position (def/pro/wit/…), carried from the GP
-	// roster so the renderer can place cross-position group members on their own
-	// bench. Empty for the speaker/pair layers (they inherit scene.Position).
+	// Side is a group member's position, for their own bench; speaker and pair inherit scene.Position.
 	Side    string
 	Visible bool
-	// Style is this layer's transmitted sprite customization (recolour / glow /
-	// opacity / motion): the speaker's is decoded from this message's text, a
-	// pair partner's is recalled by char id (the wire carries no partner style —
-	// see begin()). Zero value = none; the renderer leaves the blit
-	// byte-identical when it's inactive.
+	// Style is the transmitted look: the speaker's from this message, a partner's recalled by char id.
 	Style SpriteStyle
-	// Scaling is this layer's texture filter, per AO2's per-sprite model (each
-	// AnimationLayer carries its own resize mode, so a pixel-art speaker and a
-	// smooth pair partner each get what they asked for). Zero value is
-	// ScalingAuto, which is both the default and the case the renderer settles
-	// with the geometry rule — see scaling.go.
+	// Scaling is this layer's filter, per AO2's per-sprite model; ScalingAuto is settled by the geometry rule.
 	Scaling ScalingMode
 }
 
-// Scene is the renderer's entire input: plain data, no SDL types, mutated
-// only by Courtroom on the game thread.
+// Scene is the renderer's whole input: plain data, mutated only by Courtroom on the game thread.
 type Scene struct {
 	Position       string
 	BackgroundBase string
@@ -146,32 +93,21 @@ type Scene struct {
 
 	Speaker SpriteLayer
 	Pair    SpriteLayer
-	// Group holds the extra group-pair members (GP extension, JSON-only), drawn
-	// behind the speaker/pair in roster z-order. Empty when not in a group.
+	// Group holds the extra group-pair members, drawn behind speaker and pair in roster z-order.
 	Group          []SpriteLayer
 	PairActive     bool
 	SpeakerInFront bool
 
 	ShoutBase string // active shout bubble base ("" = none)
-	// ShoutFallbackBase is the default (misc/default) bubble the render draws
-	// when the character ships no custom interjection art (most don't) —
-	// AO2-Client falls back the same way. Prefetched alongside ShoutBase.
+	// ShoutFallbackBase is the misc/default bubble for characters with no custom art, as AO2 falls back.
 	ShoutFallbackBase string
 	ShoutCustom       bool
-	// SpeedlinesChain is the speaker's own zoom speedline overlay candidates (char
-	// folder, MOST SPECIFIC FIRST — see urlbuilder.SpeedlinesCandidates: the
-	// position's <pos>_speedlines before the AO2 side stem), set for a
-	// zoom/preanim-zoom emote and nil otherwise. The renderer draws the first
-	// candidate that is resident. Issue #126.
+	// SpeedlinesChain is the zoom overlay candidates, most specific first; the renderer draws the first resident one.
 	SpeedlinesChain []string
-	// SpeedlinesSide is the zoom emote's speedline side ("defense"/"prosecution"),
-	// "" only when NOT zooming — a zoom always has one, because ZoomSide never
-	// returns "". The renderer maps it to the bundled stock fallback when the
-	// character ships none of SpeedlinesChain. Issue #126.
+	// SpeedlinesSide is the zoom side, "" only when not zooming; it maps to the bundled fallback.
 	SpeedlinesSide string
 
-	// MusicTrack is the currently-playing track (raw MC text; "" = nothing,
-	// stopped, or an area transfer) — the courtroom Now-Playing display reads it.
+	// MusicTrack is the playing track (raw MC text; "" = nothing, stopped or an area transfer).
 	MusicTrack string
 
 	// Chat box state.
@@ -179,54 +115,32 @@ type Scene struct {
 	MessageText  string // full text (markup stripped); VisibleRunes gates the reveal
 	VisibleRunes int
 	TextColor    int
-	// ChatSkinBase is the speaker's per-character chatbox art (char.ini
-	// chat=<misc> → misc/<misc>/chatbox), "" for the client's normal box. Set
-	// per message in begin(); the ui draws it when the texture is resident.
+	// ChatSkinBase is the speaker's chatbox art (char.ini chat=<misc>), "" for the normal box.
 	ChatSkinBase string
-	// ChatSkinMsgColor / ChatSkinNameColor are the speaker's own chatbox ink: the
-	// default text colour (misc/<chat>/chat_config.ini c0) and showname colour
-	// (courtroom_fonts.ini showname_color), AO2's per-chatbox colours. Has flags
-	// false = not fetched or not declared → the theme's colour wins.
+	// ChatSkinMsgColor and ChatSkinNameColor come from chat_config.ini c0 and courtroom_fonts.ini; false means theme.
 	ChatSkinMsgColor  theme.RGB
 	ChatSkinMsgHas    bool
 	ChatSkinNameColor theme.RGB
 	ChatSkinNameHas   bool
-	// MessageStyles colors runs of MessageText (inline \cN markup). MessageRaw
-	// is the pre-strip message — the raster cache keys on it, since two
-	// differently-colored messages can share the same stripped MessageText.
+	// MessageStyles colors runs of MessageText. MessageRaw keys the raster cache: colors can differ over equal text.
 	MessageStyles []StyleRun
 	MessageRaw    string
-	// MessageEffects tags spans of MessageText with an animated effect (#M5:
-	// shake / wave / rainbow), decoded from the speaker's zero-width effects
-	// frame. Rune indices into MessageText. Empty (the common case) → the plain
-	// raster fast path; the UI maps these to render.EffectSpan only when present.
+	// MessageEffects tags rune spans of MessageText with an animated effect; empty keeps the plain raster fast path.
 	MessageEffects []TextEffectSpan
-	// Centered renders the chatbox text centre-aligned (the webAO "~~" prefix
-	// convention). Set per message in begin; the "~~" marker is stripped from the
-	// display text. Off (the common case) = the untouched left-aligned raster.
+	// Centered centre-aligns the text (webAO's "~~" prefix, stripped from display).
 	Centered bool
-	// IsBlankPost is set when the message's text is empty or whitespace-only
-	// (an AO "blankpost": animate the sprite, say nothing). The UI hides the
-	// whole chatbox — frame, showname and text — so only the sprite shows.
-	// Decided in begin() from the raw message, so an animated blankpost never
-	// flashes an empty box during its preanim.
+	// IsBlankPost marks empty or whitespace text; the UI hides the chatbox. Set in begin() so the box never flashes.
 	IsBlankPost bool
 
-	// Full-viewport effects: Update counts these down, the renderer reads
-	// the remainders (flash alpha, shake amplitude). Plain data — the
-	// effect art pipeline stays render-side.
+	// Full-viewport effects: Update counts these down and the renderer reads the remainders.
 	FlashLeft time.Duration
 	ShakeLeft time.Duration
 
-	// Overlay is the active AO2 screen-effect overlay (effects.ini): the art
-	// base plus everything do_effect precomputes for it. Zero value = nothing on
-	// screen. Set only by fireOverlay, cleared at exactly three sites (see
-	// overlayfx.go) — deliberately NOT at message end, matching canon.
+	// Overlay is the active effects.ini overlay; fireOverlay sets it, three sites clear it, not message end (canon).
 	Overlay SceneOverlay
 }
 
-// AudioSink receives playback triggers; the SDL_mixer implementation lives
-// render-side, tests use a recorder.
+// AudioSink receives playback triggers.
 type AudioSink interface {
 	// PlayShout plays a character's shout cry (base lacks extension).
 	PlayShout(base string)
@@ -234,18 +148,14 @@ type AudioSink interface {
 	PlaySFX(base string, delay time.Duration)
 	// PlayBlip fires one chat blip.
 	PlayBlip(base string)
-	// SetBlipScale sets the current speaker's per-character blip attenuation
-	// (0–100, 100 = none; M11), applied to subsequent blips.
+	// SetBlipScale sets the speaker's blip attenuation (0-100, 100 = none) for later blips.
 	SetBlipScale(pct int)
-	// PlayMusic streams a track from a full URL. loop=false plays it once
-	// (2.9 NO_REPEAT / looping=0); effects carries the MUSIC_EFFECT bit flags
-	// (fade in/out) — see the musicEffect* constants (#15).
+	// PlayMusic streams a full URL; loop=false plays once, effects carries the musicEffect* flags.
 	PlayMusic(url string, loop bool, effects int)
 	// StopMusic halts playback now (the ~stop sentinel; also on disconnect).
 	StopMusic()
 }
 
-// NopAudio discards all triggers (headless tests, muted client).
 type NopAudio struct{}
 
 func (NopAudio) PlayShout(string)              {}
@@ -255,79 +165,45 @@ func (NopAudio) SetBlipScale(int)              {}
 func (NopAudio) PlayMusic(string, bool, int)   {}
 func (NopAudio) StopMusic()                    {}
 
-// Courtroom drives the courtroom state machine: it consumes session events,
-// prefetches every asset a message needs, and advances Scene each tick. No
-// SDL calls anywhere in this type (spec §17.1).
-// BlipResolver is the consumer-provided audio/blip lookup surface: per-SFX mute
-// (M11), per-character blip attenuation, and the char.ini blip-set fallback
-// (webAO parity). nil = the AO defaults (play everything, full volume, wire blip
-// only). The App sets it from live prefs + its per-URL char.ini cache.
+// BlipResolver is the audio lookup: per-SFX mute, blip attenuation, char.ini blip-set fallback. nil = AO defaults.
 type BlipResolver interface {
 	SFXMuted(name string) bool
 	BlipVolumeFor(char string) int
 	BlipNameFor(char string) (name string, known bool)
 }
 
-// CharResolver is the consumer-provided char.ini lookup surface: a speaker's
-// chatbox skin folder, chatbox ink, custom showname and custom realization sound.
-// nil = the AO defaults (no speaker-specific overrides). The App sets it from its
-// per-URL char.ini cache, so all four answers come from the same single fetch.
+// CharResolver is the char.ini lookup; nil = AO defaults. The App answers all four from one fetch.
 type CharResolver interface {
-	// ChatSkinFor resolves a speaker's chatbox-skin misc folder
-	// (char.ini [Options] chat, AO2-Client get_chat). "" = no per-character skin.
+	// ChatSkinFor resolves the chatbox-skin misc folder (get_chat); "" = none.
 	ChatSkinFor(char string) string
-	// ChatInkFor resolves a speaker's own chatbox ink — misc/<chat>/courtroom_fonts.ini
-	// message_color / showname_color. Both ok flags false = no per-character chatbox,
-	// or its fonts INI declares no colours → the theme's colours win.
+	// ChatInkFor resolves courtroom_fonts.ini colours; false flags let the theme win.
 	ChatInkFor(char string) (msg theme.RGB, msgOK bool, name theme.RGB, nameOK bool)
-	// IniShownameFor is AOApplication::get_showname: the char.ini [Options] showname
-	// (with the needs_showname opt-out). known=false means "no char.ini yet" (the
-	// name chain falls back to the folder); a known-but-EMPTY answer is a deliberate
-	// blank plate (needs_showname=false) and is honoured as one.
+	// IniShownameFor is get_showname; known=false means no char.ini yet, known and empty is a deliberate blank plate.
 	IniShownameFor(char string) (showname string, known bool)
-	// CustomRealizationFor resolves a speaker's OWN realization sound to a full
-	// SFX url (char.ini [Options] realization). "" = the character declares none;
-	// RealizationSFX (the theme's value) is the fallback.
+	// CustomRealizationFor resolves the character's realization sound to a URL; "" falls back to RealizationSFX.
 	CustomRealizationFor(char string) string
 }
 
-// AssetResolver is the consumer-provided asset/scene/overlay/scaling surface: a
-// speaker's effects folder, the overlay engine's resolve, texture/audio residency
-// probes, and the per-character scaling filter. nil = the AO defaults (no overlay
-// engine, no wait gating, auto scaling). The App sets it from the render store, the
-// audio store and the per-URL char.ini cache.
+// AssetResolver covers effects folder, overlay, residency and scaling. nil = no overlay, no wait gating, auto scaling.
 type AssetResolver interface {
-	// EffectsFolderFor resolves a speaker's screen-effect misc folder
-	// (char.ini [Options] effects). "" = the theme's own effects only.
+	// EffectsFolderFor resolves [Options] effects; "" = the theme's effects only.
 	EffectsFolderFor(char string) string
-	// OverlayFor resolves an effect NAME + misc FOLDER to its merged effects.ini
-	// properties and the T1 key / URL its art lives under. STATEFUL and render-thread
-	// only; ok=true does not mean the art is resident (the result carries a pending
-	// state, so a substitute must pin behaviour, not just shape).
+	// OverlayFor resolves an effect name and folder. Render-thread only; ok=true doesn't mean the art is resident.
 	OverlayFor(name, folder string) (OverlayResolved, bool)
-	// SpriteReady reports texture residency (the render store's uploaded-texture
-	// probe). Same-thread, a plain map probe.
+	// SpriteReady reports texture residency; same thread, a plain map probe.
 	SpriteReady(base string) bool
-	// AudioReady reports whether a decoded audio chunk for base is cached and ready
-	// to play (the render.Audio chunk probe). Same-thread, a plain map probe.
+	// AudioReady reports a cached decoded chunk; same thread, a plain map probe.
 	AudioReady(base string) bool
-	// SpriteScaling reports a character's char.ini [Options] scaling= request.
 	SpriteScaling(charName string) ScalingMode
 }
 
-// EnvResolver is the consumer-provided local-state/event surface: our own side (the
-// pos dropdown), the :shortcode: emoji resolver, and the preanimation-end
-// notification. nil = the AO defaults (no shortcode expansion, no end notification,
-// and the side degrades to Scene.Position). The App sets it; the split pane swaps in
-// a per-tab side override.
+// EnvResolver covers our side, shortcode emoji and the preanim-end notice. nil side degrades to Scene.Position.
 type EnvResolver interface {
-	// LocalSide reports OUR OWN side — the pos dropdown's value with AO2's default
-	// when it is unset (current_or_default_side).
+	// LocalSide reports our side, with AO2's default when unset (current_or_default_side).
 	LocalSide() string
-	// InlineEmote resolves a :shortcode: stem to its emoji (#18). ok=false = unknown.
+	// InlineEmote resolves a :shortcode: stem; ok=false = unknown.
 	InlineEmote(stem string) (string, bool)
-	// OnPreanimEnd is called with the reason every time a one-shot preanimation is
-	// released. Diagnostic only; the App reads LastPreanimEnd instead of streaming.
+	// OnPreanimEnd is called with the reason at each release; diagnostic only.
 	OnPreanimEnd(reason PreanimEndReason)
 }
 
@@ -339,274 +215,140 @@ type Courtroom struct {
 
 	Scene      Scene
 	Typewriter Typewriter
-	// TextStay holds a finished message before the queue advances
-	// (user-tunable; AO2-Client "text stay time").
+	// TextStay holds a finished message before the queue advances.
 	TextStay time.Duration
 
-	// CatchUp fast-forwards the on-stage ceremony (shout/preanim/typewriter/
-	// stay) of backlog messages once the queue is deeper than CatchUpThreshold,
-	// so a packed room tracks near real-time instead of crawling through every
-	// preanim. The IC log still records every message. Off by default here; the
-	// App turns it on from prefs.
+	// CatchUp fast-forwards backlog ceremony once the queue reaches CatchUpThreshold; the IC log records every message.
 	CatchUp          bool
 	CatchUpThreshold int
 
-	// ReduceMotion suppresses the jarring visual effects (screen shake,
-	// realization flash) — accessibility. Effect SOUNDS still play; only the
-	// motion is skipped. Set by the App from prefs (default off). It also
-	// suppresses a RECEIVED sprite style's wobble/spin (transmitted motion).
+	// ReduceMotion suppresses shake, flash and received sprite motion; effect sounds still play.
 	ReduceMotion bool
 
-	// ScreenEffects gates the AO2 inline \s/\f codes and the field-based
-	// screenshake / realization flash — ON by default, a dedicated off-switch
-	// distinct from the accessibility ReduceMotion. Effects render only when
-	// ScreenEffects && !ReduceMotion (see effectsVisible). Defaults ON in
-	// NewCourtroom so authored/export contexts show effects; the App pushes the
-	// user's pref onto the live room.
+	// ScreenEffects gates \s/\f and field effects, drawn only when ScreenEffects && !ReduceMotion; on for exports.
 	ScreenEffects bool
 
-	// AdditiveText honors the 2.8 ADDITIVE flag: an incoming message with
-	// ADDITIVE=1 APPENDS to the previous line (the typewriter starts with the prior
-	// text pre-revealed; pacing/blips run only on the appended tail) — narration-style
-	// RP relies on it. Default ON (set by the App from prefs). OFF = every additive
-	// fragment replaces the previous, the old behavior. additivePrevText tracks the
-	// last message's accumulated text, exactly like AO2's single additive_previous
-	// accumulator (courtroom.cpp:4225-4330 append whenever ADDITIVE=1, with NO char-id
-	// gate — a continuation can even come from a different speaker; the reset at
-	// :4229 wipes it only when a line is NOT additive).
+	// AdditiveText honors 2.8 ADDITIVE=1. additivePrevText matches AO2's accumulator (courtroom.cpp:4225-4330), with no
+	// check, so another speaker can continue; courtroom.cpp:4229 resets it on a non-additive line.
 	AdditiveText     bool
 	additivePrevText string
 	additivePrefix   string // this message's pre-revealed additive prefix ("" = replace); set in begin, consumed in startTalking
 
-	// HideSpriteStyles ignores other speakers' transmitted SpriteStyle entirely
-	// (every character renders normally) — a viewer off-switch. Set by the App
-	// from prefs; default off (zero value) = show received styles.
+	// HideSpriteStyles ignores other speakers' transmitted SpriteStyle.
 	HideSpriteStyles bool
 
-	// ForceCharNames shows every speaker's CHARACTER name instead of their
-	// custom showname (true-roleplay / anti-impersonation for casing). Set by
-	// the App from prefs (default off); the IC log mirrors it App-side.
+	// ForceCharNames shows character names rather than shownames (anti-impersonation); the IC log mirrors it App-side.
 	ForceCharNames bool
 
-	// StreamMusic is set by the App from prefs (default ON). false = never
-	// fetch a /play track; the room still tracks what's "playing" for
-	// Now-Playing display, it just isn't audible on this client. Seeded ON in
-	// NewCourtroom (like ScreenEffects/AdditiveText) so direct callers
-	// (tests/export/replay) keep playing music; the App pushes the user's pref.
+	// StreamMusic false never fetches a /play track, while Now-Playing still tracks it.
 	StreamMusic bool
 
-	// Blips, when set, resolves per-SFX mute (M11), per-character blip
-	// attenuation, and the char.ini blip-set fallback (webAO parity). nil = the
-	// AO defaults (play everything, full volume, wire blip only). Set by the App
-	// from live prefs + its per-URL char.ini cache.
+	// Blips is the audio lookup (see BlipResolver).
 	Blips BlipResolver
 
-	// Chars is the consumer-provided char.ini lookup surface (see CharResolver):
-	// chatbox skin folder, chatbox ink, custom showname and custom realization.
-	// nil = no per-character overrides (the AO defaults).
+	// Chars is the char.ini lookup (see CharResolver).
 	Chars CharResolver
 
-	// Assets is the consumer-provided asset/scene/overlay/scaling surface (see
-	// AssetResolver): a speaker's effects folder, the overlay engine's resolve,
-	// texture/audio residency probes, and the per-character scaling filter.
-	// nil = the AO defaults (no overlay engine, no wait gating, auto scaling).
+	// Assets is the asset lookup (see AssetResolver).
 	Assets AssetResolver
 
-	// Env is the consumer-provided local-state/event surface (see EnvResolver): our
-	// own side, the :shortcode: emoji resolver, and the preanimation-end stream.
-	// nil = the AO defaults (no shortcode expansion, side degrades to Scene.Position).
+	// Env is the local state lookup (see EnvResolver).
 	Env EnvResolver
 
-	// Cold-load "wait" mode (the third SpriteLoadMode; client-AO flavour): hold a
-	// message OFF-STAGE until its speaker's idle sprite has decoded, so the stage
-	// never shows the message with a missing sprite. SpriteWait turns it on;
-	// Assets.SpriteReady reports texture residency (nil = gate off); SpriteWaitTimeout
-	// caps one message's hold so a 404 or a decode failure can only ever DELAY a
-	// message, never hang the queue (a zero timeout deliberately never holds — a
-	// wiring bug degrades to mode-off). Shouts bypass (AO2 parity: they nuke the
-	// queue and play NOW) and packed-room catch-up wins (a backlog never waits —
-	// beginCaughtUp doesn't redraw the sprite anyway).
+	// SpriteWait holds a message off-stage until its idle sprite decodes; SpriteWaitTimeout means a 404 only delays it
+	// (zero never holds). Shouts bypass, as AO2 plays them at once, and catch-up wins.
 	SpriteWait        bool
 	SpriteWaitTimeout time.Duration
-	// SpriteWaitPair / SpriteWaitPreanim widen the gate (power-user strictness
-	// knobs, both default off): also hold until the pair partner's idle sprite /
-	// the message's preanimation have decoded. The timeout caps the whole hold
-	// either way.
+	// SpriteWaitPair and SpriteWaitPreanim also hold for the partner's idle or the preanim, under the same timeout.
 	SpriteWaitPair    bool
 	SpriteWaitPreanim bool
-	// SequentialWait is the "Default" loading mode (power user, the default):
-	// wait for EVERY asset the message will present — character sprites
-	// (speaker idle/talk/preanim, pair partner, group members), the position
-	// background + desk, the custom chatbox skin, zoom speedlines, the emote
-	// SFX + blip, screen-effect art + realization/effect sounds, and (for a
-	// queued shout) its bubble + cry — to settle before each message begins.
+	// SequentialWait is the "Default" loading mode: every asset the message presents settles before it begins.
 	SequentialWait bool
-	// ShoutBypassQueue is AO2's default: a shout nukes the queue and plays NOW
-	// (no wait). When the user turns it OFF, shouts enqueue and wait like any
-	// other message (and, under SequentialWait, wait for their bubble + cry).
+	// ShoutBypassQueue is AO2's default: a shout clears the queue and plays at once; off, shouts queue normally.
 	ShoutBypassQueue bool
 
-	// ShoutDuration / PreanimTimeout are the core message-ceremony timings,
-	// exposed as power-user knobs (defaults = the canonical AO2-flavoured
-	// DefaultShoutDuration / DefaultPreanimTimeout, seeded in NewCourtroom):
-	// how long an interjection bubble holds the stage, and how long a preanim
-	// may play before the text starts anyway when its real length is unknown
-	// (asset still decoding — NotifyPreanimDone / NotifyAssetMissing cut it
-	// short the moment the animation finishes / proves unresolvable).
+	// ShoutDuration and PreanimTimeout are the ceremony timings; Notify callbacks cut the preanim wait short.
 	ShoutDuration  time.Duration
 	PreanimTimeout time.Duration
 
-	// QueueCap bounds the IC message queue (power-user; seeded to
-	// messageQueueCap in NewCourtroom and ALWAYS ≥ 1, so the queue stays
-	// bounded whatever the pref says — §17.4). Past it the oldest unplayed
-	// message drops; the IC log still records everything.
+	// QueueCap bounds the queue, always >= 1 (hard rule 4); past it the oldest unplayed message drops, not its log.
 	QueueCap int
-	// CatchUpLinger holds each fast-forwarded backlog message on screen before
-	// the next dequeues (power-user; the canonical default is catchUpLinger =
-	// zero — drain one per frame). A small value lets you actually read the
-	// backlog flashing past, trading catch-up speed for legibility.
+	// CatchUpLinger holds each fast-forwarded message before the next; default zero drains one per frame.
 	CatchUpLinger time.Duration
 
-	// waitLeft counts down an armed hold; waitFor is the exact message it was
-	// armed for (pointer identity — queue entries are stable), so a new head
-	// re-arms fresh and begin() clears it.
+	// waitLeft counts down an armed hold; waitFor is its message by pointer, so a new head re-arms.
 	waitLeft time.Duration
 	waitFor  *protocol.ChatMessage
-	// missingSprites remembers bases the asset manager conclusively 404'd,
-	// recorded from the SAME NotifyAssetMissing warning relay the play path uses.
-	// Despite the name it is the gate's shared "conclusively-missing base" set:
-	// the strict-sequencing gate consults it for character sprites AND the
-	// background / chatbox / speedlines / SFX / blip bases it waits on, so a
-	// 404'd scenery or audio base releases the hold on the miss signal instead of
-	// hanging (there is no timeout under SequentialWait). It is also what lets a
-	// declared-but-absent preanim — live packs fill the char.ini preanim field
-	// with a dummy "-<n>" on every emote — release on the miss instead of burning
-	// the full SpriteWaitTimeout. Bounded (missingSpritesCap); lazily allocated;
-	// game-thread only.
+	// missingSprites holds 404'd bases of every kind, not just sprites, so a miss releases the wait gate's hold.
+	// A dummy "-<n>" preanim releases this way. Bounded; game thread only.
 	missingSprites map[string]struct{}
-	// missingDesks remembers DESK bases the asset manager conclusively 404'd, fed
-	// by the same warning relay (NotifyDeskMissing). AO2-Client's set_scene calls
-	// file_exists on the position's desk image and forces show_desk = false when it
-	// is absent — with NO fallback, unlike the background arm right above it
-	// (../AO2-Client/src/courtroom.cpp:4613-4634). A streaming client can only learn
-	// absence asynchronously, and this set is that knowledge. Deliberately NOT the
-	// missingSprites map: that one is read by the preanim wait gate, where a desk
-	// base would be a semantic lie. Bounded (missingDesksCap); lazily allocated;
-	// game-thread only.
+	// missingDesks is the 404'd desk set: set_scene hides the desk with no fallback (courtroom.cpp:4613-4634).
+	// Separate because the preanim gate reads missingSprites. Bounded; game thread only.
 	missingDesks map[string]struct{}
 
 	queue []*protocol.ChatMessage
 	phase MessagePhase
 	timer time.Duration
 
-	// Pending SFX deadline (#12): AO2 starts sfx_delay_timer at SFX_DELAY × 40ms
-	// after the shout so the emote sound lands mid-preanim, and fires the preanim
-	// screenshake at that same moment (../AO2-Client/src/courtroom.cpp:4052-4054,
-	// play_sfx 4590-4596). armSFXDelay sets these in enterAfterShout; the Update
-	// tick counts sfxLeft down and fires at zero. begin() clears them so a
-	// superseded message's SFX can't fire late.
+	// Pending SFX deadline: AO2's sfx_delay_timer, with the preanim shake (courtroom.cpp:4052-4054, 4590-4596).
+	// begin() clears these so a superseded message's SFX can't fire late.
 	sfxArmed bool          // a delayed SFX/shake is waiting to fire
 	sfxLeft  time.Duration // countdown to the fire moment (SFXDelay × sfxDelayUnit)
 	sfxBase  string        // resolved SFX URL to play at the deadline ("" = shake only)
 	sfxShake bool          // also fire the screenshake at the deadline (preanim mods)
 
-	// overlayPending is the ONE deferred screen-effect arm: an effect whose misc
-	// folder's roster had not resolved when the message fired, re-asked on the
-	// Update tick until it lands or its TTL expires (overlayfx.go). Zero = none.
+	// overlayPending is the one deferred screen-effect request, re-asked on Update until it lands or expires.
 	overlayPending overlayPendingFX
 
-	// frameTriggers holds THIS message's networked frame-synced effects (#17):
-	// the FRAME_* wire fields parsed once at message-begin into a bounded,
-	// per-phase-group sorted table with forward-only cursors. NotifyFrameShown
-	// (called from the render side as the speaker sprite advances) fires them.
-	// Empty for a message with no FRAME_* data (the common case) — an inert table.
+	// frameTriggers holds this message's FRAME_* effects, fired by NotifyFrameShown; usually empty.
 	frameTriggers frameTriggerTable
 
 	current *protocol.ChatMessage
-	// currentText is current.Message with any transmitted SpriteStyle marker
-	// decoded out — the visible-only text the typewriter/blankpost use. The raw
-	// current.Message keeps the marker (recordings share that pointer, so replays
-	// re-decode the style); we never mutate it.
+	// currentText has style markers decoded out; the raw Message keeps them for recordings, so never mutate it.
 	currentText string
-	// blipRef is THIS message's blip chain, minted in begin() by the one guarded
-	// mint (blipurl.go BlipRef): Base is the identity the blip player and the
-	// texture/audio tiers key on, Alts are the further AO2 spellings the
-	// prefetch chain walks on a miss. It may stay empty while the speaker's
-	// char.ini is in flight (see blipPending / resolveBlip).
+	// blipRef is this message's blip chain from BlipRef; it may stay empty while the speaker's char.ini is in flight.
 	blipRef AssetRef
-	// blipWire is the message's validated wire blip field ("" when absent or a
-	// sentinel); blipSpeaker is the speaker's character folder. blipPending is
-	// set when the speaker's char.ini is still in flight: resolveBlip leaves
-	// blipRef empty then, and the talk ticks re-ask until the meta lands, so the
-	// first message never sounds the wrong (male) default before the set loads.
+	// blipWire is the validated wire blip ("" if absent or a sentinel). blipPending means char.ini is in flight
+	// and talk ticks re-ask, so the first message never sounds the wrong default.
 	blipWire    string
 	blipSpeaker string
 	blipPending bool
-	// pendingEffects holds the current message's decoded animated-text spans (#M5),
-	// set in begin() and copied onto Scene.MessageEffects when the text shows
-	// (startTalking) — effects are per-message content, never recalled.
+	// pendingEffects holds this message's animated-text spans until startTalking; per-message content, never recalled.
 	pendingEffects []TextEffectSpan
 
-	// styleByChar remembers each speaker's last TRANSMITTED sprite style, keyed by
-	// msg.CharID. Senders transmit the marker only when their style CHANGES
-	// (send-on-change keeps the invisible run off most messages — EncodeChangeMarker),
-	// so a message with no marker reuses its speaker's remembered style. A clear (an
-	// inactive style) frees the entry; the map is bounded by maxRememberedStyles.
+	// styleByChar remembers each speaker's last style by CharID; a clear frees the entry. Bounded.
 	styleByChar map[int]SpriteStyle
 
-	// profileByName remembers each speaker's transmitted WireProfile (#101 slice 2),
-	// keyed by the bare character name (the player list rows key by character too). Like
-	// the style memory it's send-on-change: a message carries the profile marker only when
-	// it changed; an empty profile (a clear) frees the entry. Bounded by
-	// maxRememberedProfiles.
+	// profileByName remembers each speaker's WireProfile by bare character name; a clear frees the entry. Bounded.
 	profileByName map[string]WireProfile
 
-	// asyncAOByName flags characters seen emitting the cross-client zero-width channel
-	// — i.e. driven by an AsyncAO client (AO2 / webAO never emit it). The player list
-	// badges them; detection is passive (after they speak / react). Bounded by
-	// maxDetectedAsyncAO.
+	// asyncAOByName flags characters seen on the zero-width channel. Bounded by maxDetectedAsyncAO.
 	asyncAOByName map[string]struct{}
 
-	// statusByName remembers each speaker's transmitted presence Status (#M1), keyed by
-	// bare character name — the same send-on-change zero-width channel as the profile and
-	// sprite style. A clear (StatusNone) frees the entry; bounded by maxRememberedStatuses.
+	// statusByName remembers each speaker's Status by bare character name; a clear frees the entry. Bounded.
 	statusByName map[string]Status
 
 	// Predictor warms the predicted next speaker's sprite (optional).
 	Predictor *assets.Prefetcher
 
-	// preanimDone is flipped by NotifyPreanimDone (render reports one-shot
-	// animation completion).
+	// preanimDone is set by NotifyPreanimDone.
 	preanimDone bool
 
-	// imPreLeft bounds an IMMEDIATE-mode preanim, the one AO2 plays as pure
-	// DECORATION over a message that is already ticking (anim_state 4 — see
-	// play_preanim(true), ../AO2-Client/src/courtroom.cpp:4093-4096). It is a
-	// SEPARATE countdown from c.timer on purpose: c.timer belongs to the phase,
-	// and this animation deliberately outlives the phase that started it. >0 means
-	// a decoration is running; 0 means none. Cleared per message in begin().
+	// imPreLeft bounds an immediate-mode preanim, decoration over a ticking message (courtroom.cpp:4093-4096);
+	// separate from c.timer because it outlives its phase. >0 means running.
 	imPreLeft time.Duration
 
-	// preanimEnd records why the last one-shot preanimation ended (preanimend.go).
-	// Diagnostic only — nothing in the machine branches on it.
+	// preanimEnd records why the last preanimation ended; diagnostic only.
 	preanimEnd PreanimEndReason
 
-	// restoring is set for the span of RestoreMessage: begin() then skips the
-	// prefetches for art the settled form can never draw (shout bubbles, the
-	// preanimation) — a restore whose message landed while the tab was
-	// backgrounded would otherwise spend cold HIGH-priority probes on
-	// never-shown assets (the one-probe doctrine, spec §4).
+	// restoring makes begin() skip prefetches for art the settled form never draws, saving cold high-priority probes.
 	restoring bool
 
-	// ShoutUses tracks whether the per-character bubble resolved; the
-	// renderer falls back to the default bubble base if not.
+	// ShoutUses tracks whether the per-character bubble resolved; else the renderer uses the default.
 	ShoutCharBase    string
 	ShoutDefaultBase string
 
-	// RealizationSFX is the full URL base of the realization sound (theme
-	// courtroom_sounds.ini "realization", resolved UI-side where the theme
-	// lives; "" = silent). Played when a message carries REALIZATION=1
-	// without a 2.8 Effects override.
+	// RealizationSFX is the theme's realization sound ("" = silent), for REALIZATION=1 without an Effects override.
 	RealizationSFX string
 }
 
@@ -621,57 +363,37 @@ func NewCourtroom(urls URLBuilder, mgr *assets.Manager, sess *Session, audio Aud
 		sess:       sess,
 		audio:      audio,
 		Typewriter: NewTypewriter(),
-		// AO2 screen effects (\s/\f + field shake/flash) default ON; the App
-		// pushes the user's pref onto the live room, and authored/export/replay
-		// contexts keep them on.
+		// Default on; the App pushes the pref, and export and replay contexts keep them on.
 		ScreenEffects: true,
-		// 2.8 additive text default ON (honor ADDITIVE=1 append); the App pushes the
-		// user's pref. additivePrevText starts empty so the first message appends to
-		// nothing (an empty prefix is a no-op — identical to replace).
+		// Default on; the App pushes the pref. An empty prefix appends as a plain replace.
 		AdditiveText: true,
-		// Custom /play music streaming default ON; the App pushes the user's pref.
-		// Seeded here so direct callers (tests/export/replay) keep playing music
-		// (the zero value false would silently swallow every /play track).
+		// Default on: the zero value would silently swallow every /play track for direct callers.
 		StreamMusic: true,
 		TextStay:    DefaultTextStayTime,
-		// Catch-up defaults OFF so direct callers (tests/embedders) keep the
-		// full lifecycle; the App enables it from prefs (default ON there).
+		// Catch-up is off here so direct callers keep the full lifecycle; the App enables it.
 		CatchUpThreshold: catchUpDefaultThreshold,
-		// Power-user core-timing knobs, seeded to the canonical AO2 values so
-		// direct callers behave exactly as before; the App overrides from prefs.
+		// Seeded to AO2's values; the App overrides from prefs.
 		ShoutDuration:  DefaultShoutDuration,
 		PreanimTimeout: DefaultPreanimTimeout,
 		QueueCap:       messageQueueCap,
 		CatchUpLinger:  catchUpLinger,
-		// Shouts skip the queue by default (AO2 parity); the App pushes the user's
-		// pref, and direct callers (tests/embedders) keep the canonical behaviour.
+		// Shouts skip the queue by default (AO2); the App pushes the pref.
 		ShoutBypassQueue: true,
 	}
 	c.Scene.SpeakerInFront = true
 	return c
 }
 
-// Phase exposes the current message phase.
 func (c *Courtroom) Phase() MessagePhase { return c.phase }
 
-// AudioActive reports whether the live message is actively streaming audio-timed
-// events — the typewriter is still revealing text, so blips fire as it advances.
-// The main loop reads it to advance the courtroom (and play its blips) at a fine
-// cadence even while the PRESENT rate is capped low, so audio never batches to the
-// frame rate ("blips only every screen refresh at a 1 fps cap"). One-shot sounds
-// (shout cries, emote SFX) fire on their own arrival and don't need this; only the
-// continuous blip stream does. False the instant the text finishes (PhaseLinger).
+// AudioActive reports the typewriter is revealing text; the main loop then ticks finely so blips never batch to frames.
 func (c *Courtroom) AudioActive() bool {
 	return c.phase == PhaseTalking && !c.Typewriter.Done()
 }
 
-// QueueLen exposes the pending message count.
 func (c *Courtroom) QueueLen() int { return len(c.queue) }
 
-// CurrentShout is the shout stem of the message being presented right now —
-// "holdit", "objection", "takethat", "custom" — or "" when the stage is idle or
-// the message carried no shout. It is ShoutName over the live message's
-// objection modifier, i.e. exactly the stem the bubble and the cry resolve from.
+// CurrentShout is the live message's shout stem, "" when idle or none.
 func (c *Courtroom) CurrentShout() string {
 	if c.phase == PhaseIdle || c.current == nil {
 		return ""
@@ -679,29 +401,23 @@ func (c *Courtroom) CurrentShout() string {
 	return ShoutName(c.current.Objection)
 }
 
-// HandleEvent consumes a session event.
 func (c *Courtroom) HandleEvent(ev Event) {
 	switch ev.Kind {
 	case EventMessage:
 		c.enqueue(ev.Message)
 	case EventBackground:
-		// Name carries the BN's pos; Wipe is its arity flag (#23). Both are false/""
-		// for every client-side background change, which is what keeps buildRoom's
-		// re-seed from erasing the message it is about to restore.
+		// Name carries the BN's pos, Wipe its arity; both unset for client changes, so re-seeds can't erase a restore.
 		c.setBackground(ev.Text, ev.Name, ev.Wipe)
 	case EventMusic:
 		switch {
 		case ev.Text == "" || isAreaTransfer(ev.Text):
-			// empty, or an area-name transfer (unified music/area list) — not a song
+			// empty, or an area-name transfer (unified music/area list): not a song
 		case isMusicStop(ev.Text):
-			// The ~stop sentinel isn't a real track: halt now instead of trying to
-			// fetch+play it (PlayMusic is async, so a 404 would leave music running).
+			// ~stop isn't a track: halt now, as PlayMusic is async and a 404 would leave music running.
 			c.audio.StopMusic()
 			c.Scene.MusicTrack = "" // clear Now-Playing
 		default:
-			// Streaming toggle (default ON): when off, never fetch the /play
-			// track — but still record what the room intends to play so
-			// Now-Playing stays accurate to the room, just silent here.
+			// When off, never fetch, but still record the track so Now-Playing stays accurate.
 			if c.StreamMusic {
 				c.audio.PlayMusic(c.urls.MusicURL(ev.Text), ev.Loop, ev.MusicEffects) // AssetType: Music
 			}
@@ -710,17 +426,12 @@ func (c *Courtroom) HandleEvent(ev Event) {
 	}
 }
 
-// prefetchScenery warms the position background for bg, walking AO2's
-// witness-view fallback ladder when the position ships no art of its own.
-// draws anything (../AO2-Client/src/path_functions.cpp:108-159).
+// prefetchScenery warms the position background, walking AO2's witness fallback (path_functions.cpp:108-159).
 func (c *Courtroom) prefetchScenery(bg, bgPart string) {
 	c.mgr.PrefetchChain(c.Scene.BackgroundBase, backgroundAltURLs(c.urls, bg, bgPart), assets.AssetTypeBackground, network.PriorityHigh)
 }
 
-// backgroundAltURLs turns BackgroundFallbacks' stems into URLs under bg. One
-// owner for "the witness ladder, as URLs": the live prefetch above and the
-// archive enumeration in SceneAssets both call it, so the exporter bundles
-// whichever stem the live path would have accepted instead of only the primary.
+// backgroundAltURLs turns BackgroundFallbacks into URLs; shared so the exporter bundles what the live path accepts.
 func backgroundAltURLs(urls URLBuilder, bg, bgPart string) []string {
 	stems := BackgroundFallbacks(bgPart)
 	alts := make([]string, 0, len(stems))
@@ -730,16 +441,12 @@ func backgroundAltURLs(urls URLBuilder, bg, bgPart string) []string {
 	return alts
 }
 
-// isMusicStop reports whether a track is an AO "stop music" sentinel (the fake
-// ~stop track AO2-Client sends) rather than a real song — Now-Playing clears.
+// isMusicStop reports AO's ~stop sentinel.
 func isMusicStop(track string) bool {
 	return strings.HasPrefix(strings.ToLower(track), "~stop")
 }
 
-// MusicAction classifies an MC track for the IC "has played a song" log line,
-// mirroring AO2-Client handle_song: a real song → ("has played a song",
-// <clean name>, true); the ~stop sentinel → ("has stopped the music", "", true);
-// an area-name transfer → ("", "", false), i.e. not a song, don't log.
+// MusicAction classifies an MC track for the IC log like handle_song; ok=false for an area-name transfer.
 func MusicAction(track string) (action, song string, ok bool) {
 	if track == "" {
 		return "", "", false
@@ -753,21 +460,10 @@ func MusicAction(track string) (action, song string, ok bool) {
 	return "has played a song", MusicDisplayName(track), true
 }
 
-// pathSeparators are the characters that end a track's directory part. AO2 only
-// splits on '/' (list_music / QUrl), but a Windows-authored list entry can carry
-// a '\'; treating it as a separator too is a strict superset — it can never
-// change the result for a '/'-only (or separator-free) name.
+// pathSeparators ends a track's directory part; AO2 splits only on '/', but Windows-authored lists can carry '\'.
 const pathSeparators = `/\`
 
-// MusicDisplayName is the SHORT display name of a music-list entry or MC track —
-// what the music list, the Now-Playing line and the IC "has played a song" line
-// show (issue #43: a nested entry like "999/songs/that/slap/[999] Tranquility.ogg"
-// used to be printed whole). The WIRE name is never touched: callers keep the raw
-// string for the MC packet (Session.RequestMusic) and for URLBuilder.MusicURL.
-// Two shapes, in this precedence order:
-// One deliberate divergence: Qt's left(0) yields "" for a name that is nothing
-// but an extension (".mp3"), which would draw a blank, unclickable row. An empty
-// result falls back to the raw name so every row always shows something.
+// MusicDisplayName is an entry's short name; the wire name is untouched. An extension-only name falls back to raw.
 func MusicDisplayName(track string) string {
 	s := track
 	if isMusicURL(track) {
@@ -795,12 +491,7 @@ func MusicDisplayName(track string) string {
 	return s
 }
 
-// isAreaTransfer filters MC packets that carry area names (server-relative, no
-// audio ext) from real music. A full http(s):// URL is ALWAYS music: its audio
-// extension can sit before a query string (a Discord CDN /play link ends in a
-// signed ?ex=&is=&hm=& suffix), so the trailing-extension check alone would
-// misread it as an area name and silently swallow the /play. Area names are
-// never URLs, so the URL test is exact.
+// isAreaTransfer filters area names; an http(s) URL is always music, as its extension can precede a query string.
 func isAreaTransfer(track string) bool {
 	if isMusicURL(track) {
 		return false
@@ -808,11 +499,7 @@ func isAreaTransfer(track string) bool {
 	return !HasAudioExt(track)
 }
 
-// spriteSettled reports whether base is done resolving one way or the other:
-// resident in T1 (SpriteReady is the render store's uploaded-texture probe, so
-// this really is "decoded AND uploaded"), or conclusively 404'd. Both are
-// answers, and the wait gate must never hold for one it has already received —
-// the "never wait past the conclusively-missing rules" bound.
+// spriteSettled reports resident or conclusively 404'd; the wait gate must never hold for an answer it has.
 func (c *Courtroom) spriteSettled(base string) bool {
 	if c.Assets != nil && c.Assets.SpriteReady(base) {
 		return true
@@ -820,11 +507,7 @@ func (c *Courtroom) spriteSettled(base string) bool {
 	return c.spriteConfirmedMissing(base)
 }
 
-// audioSettled reports whether an audio base has resolved one way or the other:
-// decoded and cached (AudioReady, the render.Audio chunk probe), or
-// conclusively 404'd. Same contract as spriteSettled, for the blip/SFX bases the
-// strict-sequencing gate also waits on; the conclusively-missing arm is the SAME
-// shared set (a 404'd audio base records there via the warning relay).
+// audioSettled is spriteSettled for audio: decoded and cached, or in the shared 404 set.
 func (c *Courtroom) audioSettled(base string) bool {
 	if c.Assets != nil && c.Assets.AudioReady(base) {
 		return true
@@ -832,22 +515,14 @@ func (c *Courtroom) audioSettled(base string) bool {
 	return c.spriteConfirmedMissing(base)
 }
 
-// preanimWillPlay reports whether this message's preanimation is the thing the
-// stage shows FIRST — the selection enterAfterShout makes (playPre), lifted out
-// so the wait gate cannot drift from the play path. AO2's handle_emote_mod
-// reaches play_preanim only for PREANIM / PREANIM_ZOOM, or for IDLE / ZOOM with
-// immediate ticked (../AO2-Client/src/courtroom.cpp:2889-2910).
+// preanimWillPlay reports that the preanim shows first; AO2 reaches play_preanim only for PREANIM, PREANIM_ZOOM,
+// or immediate IDLE and ZOOM (courtroom.cpp:2889-2910).
 func preanimWillPlay(msg *protocol.ChatMessage) bool {
 	return hasPreanim(msg) &&
 		(msg.EmoteMod == protocol.EmoteModPreanim || msg.EmoteMod == protocol.EmoteModPreanimZoom || msg.Immediate)
 }
 
-// waitHolds reports whether the cold-load "wait" gate holds msg off-stage this
-// tick (SpriteWait mode): the sprite the stage would show FIRST hasn't decoded
-// yet and the timeout hasn't expired. behind is how
-// many messages are queued BEHIND msg (matching begin()'s post-pop catch-up
-// check, so the two triggers can never disagree); dt advances the countdown
-// (pass 0 at an arm-only site). Arming fires the SAME idle/talk prefetch begin()
+// waitHolds reports whether the gate holds msg this tick; behind matches begin()'s catch-up check, dt 0 only arms.
 func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Duration) bool {
 	if c.Assets == nil || msg == nil {
 		return false
@@ -855,50 +530,28 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 	if !c.SpriteWait && !c.SequentialWait {
 		return false
 	}
-	// Catch-up wins (AO2's optional skip-to-newest, ON by default): a backlog
-	// fast-forwards past the wait. Deliberately INDEPENDENT of strict
-	// sequencing — the two are separate knobs, exactly as AO2 keeps them.
+	// Catch-up wins, independent of strict sequencing; the two are separate knobs, as in AO2.
 	if c.CatchUp && behind >= c.CatchUpThreshold {
 		c.waitFor = nil // catch-up wins: this message fast-forwards, waiting would only add lag
 		return false
 	}
 	idle := c.urls.Emote(msg.CharName, msg.Emote, EmoteIdle)
 	ready := c.spriteSettled(idle)
-	// ...and the TALK sprite, which for a message with no preanim is the one the
-	// stage draws FIRST: enterAfterShout falls straight through to startTalking,
-	// which parks Active on TalkBase in the same tick begin() runs — the idle base
-	// is only what the message SETTLES onto, a second or more later. Waiting for
-	// idle alone therefore opened the gate onto a cold talk sprite and flashed the
-	// placeholder for exactly the pre-message-stall window this audit is about.
+	// Also the talk sprite: with no preanim the stage draws it first, and waiting for idle alone flashes a placeholder.
 	if ready {
 		ready = c.spriteSettled(c.urls.Emote(msg.CharName, msg.Emote, EmoteTalk))
 	}
-	// The pair partner's idle sprite — the SpriteWaitPair strictness knob, or
-	// always under strict sequencing (the pair is on screen whenever active).
+	// The partner's idle: SpriteWaitPair, or always under strict sequencing.
 	if ready && (c.SpriteWaitPair || c.SequentialWait) && msg.Pair.Active() {
 		ready = c.spriteSettled(c.urls.Emote(msg.Pair.Name, msg.Pair.Emote, EmoteIdle))
 	}
-	// The preanimation is what the stage SHOWS first whenever it will actually
-	// play (enterAfterShout parks Active on it before a single character is
-	// revealed), so the base gate covers that case — waiting for the idle sprite
-	// and then opening onto a cold preanim is the pre-message stall this audit was
-	// asked to close. It is deliberately preanimWillPlay, not hasPreanim: live
-	// packs fill the char.ini preanim field with a dummy on EVERY emote, and a
-	// declared-but-never-played preanim is not something the first frame uses.
+	// A preanim that will play shows first. preanimWillPlay, not hasPreanim: packs fill the field with dummies.
 	if ready && hasPreanim(msg) && (preanimWillPlay(msg) || c.SpriteWaitPreanim) {
 		pre := c.urls.Emote(msg.CharName, msg.PreEmote, EmotePreanim)
-		// A preanim that has CONCLUSIVELY 404'd is nothing to wait for — release on
-		// the miss signal instead of burning the full timeout. Live packs fill the
-		// char.ini preanim field with a dummy "-<n>" on every emote (and idle
-		// emote-mod upgrades to preanim on the wire when a preanim name is present,
-		// so the gate would otherwise wait for a sprite that never exists — the
-		// "flower sprites always wait the whole delay" report). Mirrors the play
-		// path's NotifyAssetMissing skip.
+		// A conclusively 404'd preanim releases on the miss, mirroring the play path's NotifyAssetMissing skip.
 		ready = c.spriteSettled(pre)
 	}
-	// Group pairing: every other member's idle sprite is also on screen, and
-	// strict sequencing waits for all of them too (begin() stages each as an
-	// on-screen layer). The speaker is already covered by the Speaker checks.
+	// Group pairing: strict sequencing waits for every other member's idle too.
 	if ready && c.SequentialWait {
 		for _, m := range msg.Additional {
 			if m.CharID == msg.CharID {
@@ -910,11 +563,7 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 			}
 		}
 	}
-	// Scenery + audio (strict sequencing only): the background, desk, custom
-	// chatbox, zoom speedlines, emote SFX and blip are all on screen/audible the
-	// instant the message begins, so a 1:1 queue waits for them too. Each is
-	// computed the same way begin() computes it, so the gate can never disagree
-	// with the play path about what will be shown or heard.
+	// Strict sequencing also waits for scenery and audio, computed as begin() does so they can't disagree.
 	if ready && c.SequentialWait {
 		if c.sess != nil && c.sess.Background != "" {
 			bgPart, deskPart := PositionScene(msg.Side)
@@ -959,8 +608,7 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 				ready = c.audioSettled(shoutSFX)
 			}
 		}
-		// Screen effects: the legacy REALIZATION=1 sound, and the 2.8 EFFECTS
-		// field's overlay art + sound — the last assets a message can present.
+		// The REALIZATION=1 sound and the EFFECTS overlay art and sound.
 		if ready && msg.Realization && c.Assets != nil {
 			if sfx := c.realizationSFXFor(msg.CharName); sfx != "" {
 				ready = c.audioSettled(sfx)
@@ -974,9 +622,7 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 			if c.Assets != nil && OverlaySoundPlayable(sound) {
 				ready = c.audioSettled(c.urls.SFX(sound))
 			}
-			// Overlay ART is best-effort: a still-pending resolve has no base to
-			// wait on yet (the deferred-overlay mechanism re-arms it once it
-			// lands). A resolved base gates like any other T1 texture.
+			// Overlay art is best-effort: a pending resolve has no base to wait on; the deferred overlay re-arms it.
 			if ready && c.Assets != nil {
 				if res, ok := c.Assets.OverlayFor(fx, folder); ok && !res.Pending && res.Base != "" {
 					ready = c.spriteSettled(res.Base)
@@ -1006,9 +652,7 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 				}
 				c.mgr.PrefetchChain(c.urls.Emote(m.Name, m.Emote, EmoteIdle), c.spriteAlts(m.Name, m.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm, group)
 			}
-			// Scenery + audio warm: the same prefetches begin() / armSFXDelay /
-			// resolveBlip would issue, at HIGH so the gate can actually end
-			// (singleflight makes begin()'s repeat a no-op).
+			// The prefetches begin(), armSFXDelay and resolveBlip would issue, at HIGH so the gate can end.
 			if c.sess != nil && c.sess.Background != "" {
 				bgPart, deskPart := PositionScene(msg.Side)
 				c.mgr.PrefetchChain(c.urls.Background(c.sess.Background, bgPart), backgroundAltURLs(c.urls, c.sess.Background, bgPart), assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (wait-gate warm)
@@ -1056,14 +700,11 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 				if OverlaySoundPlayable(sound) {
 					c.mgr.Prefetch(c.urls.SFX(sound), assets.AssetTypeSFX, network.PriorityHigh) // AssetType: SFX (wait-gate warm, effect sound)
 				}
-				// The overlay ART resolve is kicked by the gate's OverlayFor call in
-				// the ready-check above (the App owns the demand); nothing to prefetch.
+				// The gate's OverlayFor call starts the overlay art resolve; nothing to prefetch.
 			}
 		}
 	}
-	// Strict sequencing waits for settlement, never a timeout: the network
-	// layer's per-host deadline guarantees every sprite eventually settles
-	// (resident, or conclusively 404'd), so the gate can't hang the room.
+	// Strict sequencing waits for settlement, never a timeout: the per-host deadline makes every sprite settle.
 	if c.SequentialWait {
 		return true
 	}
@@ -1075,8 +716,7 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 	return true
 }
 
-// enqueue mirrors AO2-Client chatmessage_enqueue: shouts nuke the queue and
-// play immediately; otherwise messages process in order.
+// enqueue mirrors chatmessage_enqueue: shouts clear the queue and play at once; others run in order.
 func (c *Courtroom) enqueue(msg *protocol.ChatMessage) {
 	if msg == nil {
 		return
@@ -1087,8 +727,7 @@ func (c *Courtroom) enqueue(msg *protocol.ChatMessage) {
 		return
 	}
 	if c.phase == PhaseIdle && len(c.queue) == 0 {
-		// Wait mode: a cold sprite parks the message in the queue instead of
-		// beginning — Update's PhaseIdle case drains it once ready / timed out.
+		// A cold sprite parks the message in the queue; Update's PhaseIdle case drains it.
 		if c.waitHolds(msg, 0, 0) {
 			c.queue = append(c.queue, msg)
 			return
@@ -1096,8 +735,7 @@ func (c *Courtroom) enqueue(msg *protocol.ChatMessage) {
 		c.begin(msg)
 		return
 	}
-	// The cap is the power-user QueueCap, hard-floored ≥ 1 so a bad pref can
-	// never unbound the queue (rule §17.4).
+	// Floored at 1 so a bad pref can't unbound the queue (hard rule 4).
 	qcap := c.QueueCap
 	if qcap < 1 {
 		qcap = 1
@@ -1105,8 +743,7 @@ func (c *Courtroom) enqueue(msg *protocol.ChatMessage) {
 	if len(c.queue) < qcap {
 		c.queue = append(c.queue, msg)
 	}
-	// Beyond the cap the oldest unplayed message drops — bounded queues
-	// beat unbounded lag (rule §17.4); IC history still records via logs.
+	// Beyond the cap the oldest unplayed message drops (hard rule 4); logs still record it.
 	if len(c.queue) == qcap {
 		copy(c.queue, c.queue[1:])
 		c.queue = c.queue[:qcap-1]
@@ -1114,9 +751,7 @@ func (c *Courtroom) enqueue(msg *protocol.ChatMessage) {
 	}
 }
 
-// setBackground prefetches the new room's scenery for the current position, and
-// on a WIPING BN (one that carried a pos field — see Event.Wipe) also tears the
-// viewport down the way AO2's set_background(bg, display=true) does.
+// setBackground prefetches the scenery and, on a wiping BN, tears down as set_background(bg, display=true) does.
 func (c *Courtroom) setBackground(bg, pos string, wipe bool) {
 	if wipe {
 		if pos == "" && c.Env != nil {
@@ -1131,12 +766,7 @@ func (c *Courtroom) setBackground(bg, pos string, wipe bool) {
 	c.Scene.DeskBase = c.urls.Background(bg, deskPart)
 	c.prefetchScenery(bg, bgPart)
 	c.mgr.Prefetch(c.Scene.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
-	// ShowDesk is derived from the DESK BASE's residency, and that base just
-	// changed — so re-derive it here or the new room inherits the old room's
-	// answer. This is the reported "the background is missing its desk on purpose,
-	// but the default desk appears anyway": a room whose desk 404s kept drawing the
-	// PREVIOUS room's desk until the next phase edge, and a settled message has no
-	// further edge.
+	// Re-derive from the new desk base, or the new room draws the old desk: a settled message has no phase edge.
 	if wipe {
 		c.wipeStage()
 		return
@@ -1146,36 +776,21 @@ func (c *Courtroom) setBackground(bg, pos string, wipe bool) {
 	}
 }
 
-// wipeStage ports AO2-Client's set_background(bg, display=true) teardown
-// (../AO2-Client/src/courtroom.cpp — the `if (display)` block) so an AREA SWAP
-// leaves a clean stage instead of the previous area's frozen sprite and chatbox
-// (#23). It runs ONLY from a server BN that carried a pos field; every
-// client-side background change (buildRoom's re-seed, the bg picker, replay, the
-// scene maker) goes through the wipe=false path, which is unchanged.
-// Deliberately NOT cleared, because AO2's block does not touch them and the
-// server re-sends them itself: the IC log, music/ambience, the evidence LIST, HP,
-// missingSprites/missingDesks, and the send-on-change memories. Stopping the
+// WipeStage ports set_background's `if (display)` teardown (courtroom.cpp), only for a server BN with a pos.
+// Not cleared, as AO2 leaves them: IC log, music, evidence list, HP, missing sets, remembered styles.
 func (c *Courtroom) WipeStage() { c.wipeStage() }
 
 func (c *Courtroom) wipeStage() {
-	// Report a one-shot the wipe is about to destroy BEFORE the layer is zeroed —
-	// past that assignment there is no evidence a preanimation was ever playing.
-	// Idempotent when nothing was.
+	// Report a one-shot before the layer is zeroed, as nothing shows one was playing after that.
 	c.endPreanim(PreanimEndStageWiped)
-	// Sprites: stopPlayback + hide on the speaker and the pair layer. drawSprite
-	// early-returns on `!Visible || Active == ""` ABOVE the missingno/held/
-	// hold-previous chain, so a zeroed layer cannot leak the previous frame.
-	// SpeakerInFront returns to NewCourtroom's default rather than keeping the
-	// departed pair's order.
+	// drawSprite returns early on `!Visible || Active == ""`, so a zeroed layer can't leak a frame.
 	c.Scene.Speaker = SpriteLayer{}
 	c.Scene.Pair = SpriteLayer{}
 	c.Scene.Group = nil
 	c.Scene.PairActive = false
 	c.Scene.SpeakerInFront = true
 
-	// Chatbox: ui_vp_message->hide() + the chatbox visibility reset. Clearing both
-	// texts IS the hide — drawChatOverlay returns early when they are both empty,
-	// so no new draw-side flag is needed.
+	// Clearing both texts is the hide: drawChatOverlay returns early when both are empty.
 	c.Scene.ShownameText = ""
 	c.Scene.MessageText = ""
 	c.Scene.MessageRaw = ""
@@ -1187,36 +802,24 @@ func (c *Courtroom) wipeStage() {
 	c.Scene.Centered = false
 	c.Scene.IsBlankPost = false
 
-	// Shout bubble (ui_vp_objection->stopPlayback) and the screen effects the
-	// speedlines/effect hides cover.
+	// Shout bubble (ui_vp_objection->stopPlayback) and the screen effects.
 	c.Scene.ShoutBase = ""
 	c.Scene.ShoutFallbackBase = ""
 	c.Scene.ShoutCustom = false
 	c.Scene.FlashLeft = 0
 	c.Scene.ShakeLeft = 0
-	// CLEAR SITE 2 of 3: set_background(bg, display=true) stops and hides the
-	// effect layer with the rest of the stage (courtroom.cpp:1427-1435). An area
-	// swap must not carry the previous room's looping wash across.
+	// Clear site 2 of 3: set_background(bg, display=true) hides the effect layer (courtroom.cpp:1427-1435).
 	c.clearOverlay()
 
-	// text_queue_timer->stop() + skip_chatmessage_queue(). This loses NO IC log
-	// line: AsyncAO appends to the log at INGEST, before the room ever sees the
-	// message — the same split AO2 achieves by re-logging each dequeued message
-	// DISPLAY_ONLY.
+	// This loses no IC log line: we append at ingest, before the room sees the message.
 	c.queue = c.queue[:0]
 
-	// text_state = 2; anim_state = 3 — i.e. "nothing is playing". Nilling current
-	// is load-bearing beyond the phase reset: applyDeskMods and the asynchronous
-	// NotifyDeskMissing both early-return on a nil current, which is what stops a
-	// late desk-404 from recomputing PairActive off the message we just wiped and
-	// resurrecting the pair sprite.
+	// text_state = 2; anim_state = 3. Nil current stops a late desk 404 resurrecting the pair sprite.
 	c.phase, c.timer = PhaseIdle, 0
 	c.current, c.currentText = nil, ""
 	c.Typewriter.Start("") // chat_tick_timer->stop(); in place, keeps Interval/BlipRate
 
-	// Per-message latches with no AO2 analogue: a Go port has to clear them or a
-	// message held for a cold sprite is stranded, and the next area's first line
-	// inherits this one's delayed SFX, frame triggers or 2.8 additive prefix.
+	// No AO2 analogue: else the next area's first line inherits delayed SFX, frame triggers or the additive prefix.
 	c.preanimDone = false
 	c.imPreLeft = 0
 	c.waitFor, c.waitLeft = nil, 0
@@ -1225,18 +828,11 @@ func (c *Courtroom) wipeStage() {
 	c.pendingEffects = c.pendingEffects[:0]
 	c.additivePrevText, c.additivePrefix = "", ""
 
-	// set_scene(true, …): show_desk is hard-true there, and only a missing file
-	// suppresses it.
+	// set_scene(true, ...): show_desk is hard-true, and only a missing file suppresses it.
 	c.Scene.ShowDesk = c.deskResolution() != DeskAbsent
 }
 
-// begin starts one message: prefetch everything in parallel at HIGH priority
-// (speaker and pair resolve concurrently — the §11 wall-clock gate), then
-// enter the first phase.
-// applyCenterPrefix implements webAO's "~~" convention: a message whose visible text
-// starts with "~~" is centred in the chatbox. Strip the 2-rune marker from the display
-// text, raise Scene.Centered, and shift any transmitted effect spans left by 2 so they
-// stay aligned (the sender computed them over the text that still carried the "~~").
+// applyCenterPrefix implements webAO's "~~": strip it, set Scene.Centered, and shift effect spans left by 2.
 func (c *Courtroom) applyCenterPrefix() {
 	if !strings.HasPrefix(c.currentText, "~~") {
 		c.Scene.Centered = false
@@ -1257,14 +853,8 @@ func (c *Courtroom) applyCenterPrefix() {
 	}
 }
 
-// AdditiveOutgoingLeadingSpace applies AO2's sender-side additive convention to
-// an outgoing IC message: when the additive box is on, AO2-Client keeps a literal
-// leading space in the IC input so each appended fragment lands after a separator
-// (courtroom.cpp:2320-2326 re-inserts " " into ui_ic_chat_message after every
-// send; on_additive_clicked at :6563-6573 prefaces the message with whitespace).
-// The check runs on the STRIPPED text because funColor may have prepended colour
-// markup (\cr, \c#RRGGBB) — the raw first byte would then be '\', not the visible
-// rune. A blankpost (" ", or a colourised "\cr ") strips to a leading space and is
+// AdditiveOutgoingLeadingSpace keeps AO2's leading space on additive sends (courtroom.cpp:2320-2326, :6563-6573).
+// It checks stripped text because funColor may have prepended markup; a blankpost strips to a leading space.
 func AdditiveOutgoingLeadingSpace(text string) string {
 	if !AdditiveWantsLeadingSpace(text) {
 		return text // already separated (real leading space, or a blankpost)
@@ -1272,17 +862,7 @@ func AdditiveOutgoingLeadingSpace(text string) string {
 	return " " + text
 }
 
-// AdditiveWantsLeadingSpace reports whether AdditiveOutgoingLeadingSpace would
-// actually prepend a space to text: true iff the STRIPPED text is non-empty, its
-// first visible rune is not a space, and that rune is not from a no-space script.
-// The send path needs this as a separate
-// predicate because it must shift the transmitted effect spans by +1 in lockstep
-// with the prepend — and the spans are baked into an invisible frame BEFORE the
-// prepend happens (EncodeEffectsMarker runs first), so a single shared predicate
-// is the only way the shift decision and the prepend can never disagree. Splitting
-// it out (rather than duplicating the test at the call site) keeps that one source
-// of truth. Stripping first matters: funColor may have prepended \cr/\c# markup, so
-// the raw first byte would be '\', not the visible rune.
+// AdditiveWantsLeadingSpace is the shared test: spans are encoded before the prepend, so both must decide alike.
 func AdditiveWantsLeadingSpace(text string) bool {
 	stripped := StripChatMarkup(text)
 	if stripped == "" {
@@ -1292,24 +872,15 @@ func AdditiveWantsLeadingSpace(text string) bool {
 	return !unicode.IsSpace(first) && !isNoSpaceRune(first)
 }
 
-// additiveNeedsJoiner reports whether a single space should be inserted between
-// the accumulated additive prefix and an incoming fragment. Both arguments are
-// already StripChatMarkup'd (markup at the boundary must not hide the real
-// visible rune). A joiner is wanted iff the prefix is non-empty, the prefix ends
-// with a non-space rune, and the fragment starts with a non-space rune — i.e.
-// neither side already supplies the separator (so an AO2 sender who DID insert
-// CJK/no-space scripts are suppressed: a space after "。" or "、" is
-// typographically wrong in Japanese/Chinese RP (this client has JP-heavy users),
-// and CJK scripts don't word-separate with spaces at all. If EITHER boundary rune
+// additiveNeedsJoiner reports whether a space belongs between prefix and fragment (both stripped):
+// neither side supplies one, and neither boundary rune is from a no-space script.
 func additiveNeedsJoiner(prev, frag string) bool {
 	if prev == "" || frag == "" {
 		return false
 	}
 	last, _ := utf8.DecodeLastRuneInString(prev)
 	first, _ := utf8.DecodeRuneInString(frag)
-	// utf8.RuneError guards: DecodeRune on "" returns RuneError, but the ""
-	// checks above already excluded that. A genuine RuneError (invalid UTF-8)
-	// counts as non-space, non-CJK — glue it, matching a raw byte join.
+	// A genuine RuneError (invalid UTF-8) counts as non-space, non-CJK, so glue it like a raw byte join.
 	if unicode.IsSpace(last) || unicode.IsSpace(first) {
 		return false
 	}
@@ -1319,11 +890,7 @@ func additiveNeedsJoiner(prev, frag string) bool {
 	return true
 }
 
-// isNoSpaceRune reports whether r belongs to a script or punctuation block that
-// does not use inter-word spaces, so an inserted joiner would be wrong there.
-// Covers the CJK Han/Hiragana/Katakana/Hangul scripts PLUS the two Unicode
-// punctuation blocks AO2's JP users actually hit — CJK Symbols & Punctuation
-// (U+3000-303F: 。、「」…, which are script=Common and so NOT in unicode.Han)
+// isNoSpaceRune reports a block without inter-word spaces; CJK punctuation is script=Common, so not in unicode.Han.
 func isNoSpaceRune(r rune) bool {
 	switch {
 	case r >= 0x3000 && r <= 0x303F: // CJK Symbols and Punctuation (。、「」〜…)
@@ -1338,105 +905,58 @@ func isNoSpaceRune(r rune) bool {
 }
 
 func (c *Courtroom) begin(msg *protocol.ChatMessage) {
-	// A new message takes the stage before anything below re-assigns the speaker
-	// layers, so this is the last moment a still-running one-shot can be reported
-	// as ended by THIS cause (AO2's unpack_chatmessage resets anim_state to 0).
-	// Idempotent — nothing to report when no preanim was playing.
+	// Last moment to report a one-shot as ended by this cause (unpack_chatmessage resets anim_state to 0).
 	c.endPreanim(PreanimEndNewMessage)
 	c.current = msg
 	c.waitFor = nil // beginning ends any armed wait-gate hold
-	// Drop any SFX/shake still armed from the previous message so a superseded
-	// one can't fire late over this one (#12). enterAfterShout re-arms below.
+	// Drop any armed SFX or shake so a superseded message can't fire late; enterAfterShout re-arms.
 	c.sfxArmed, c.sfxLeft, c.sfxBase, c.sfxShake = false, 0, "", false
-	// Packed-room catch-up: a backlog behind this message means the stage is
-	// behind real-time. Fast-forward this one (no shout/preanim/typewriter/
-	// effects/sfx/prefetch) and linger briefly so the queue drains. The trigger
-	// is "threshold or more waiting behind it" — at the default of 1, a message
-	// plays in full only when nothing is queued behind it (so calm back-and-forth
-	// still plays every line; only a genuine pile-up flashes past). The IC log
-	// already holds every message's full text.
+	// A backlog means the stage is behind: fast-forward. At threshold 1, only an unqueued message plays in full.
 	if c.CatchUp && len(c.queue) >= c.CatchUpThreshold {
 		c.beginCaughtUp(msg)
 		return
 	}
-	// Decode this speaker's transmitted sprite style out of the text (an invisible
-	// zero-width marker). currentText is the visible-only text the typewriter and
-	// blankpost test use; we never mutate msg.Message (the recording shares that
-	// pointer, so a replay re-decodes the same marker).
+	// Never mutate msg.Message: the recording shares that pointer and a replay re-decodes the marker.
 	style, clean := DecodeSpriteStyle(msg.Message)
 	c.currentText = clean
-	// Send-on-change: a message carries the style marker only when this speaker's
-	// style CHANGED. With a STYLE marker, remember it (an update — or a clear that frees
-	// the entry); without one, reuse the speaker's last remembered style so a styled
-	// character stays styled across the messages that omit the marker. Gate on
-	// HasStyleMarker (not any zero-width run): a profile-only message (#101 shares this
-	// invisible channel) must NOT be misread as a style clear that wipes the style.
+	// Sent only on change: remember it, else reuse the last style. A profile-only message must not read as a clear.
 	if HasStyleMarker(msg.Message) {
 		c.rememberStyle(msg.CharID, style)
 	} else {
 		style = c.RecalledStyle(msg.CharID)
 	}
-	// Remember this speaker's transmitted character profile (#101 slice 2) — the same
-	// invisible channel, told apart by frame magic. The player list reads it per
-	// character; an empty profile (a clear) frees the entry.
+	// The speaker's profile, on the same channel; an empty one frees the entry.
 	if hasMarker(msg.Message) {
 		c.rememberAsyncAO(msg.CharName) // any cross-client frame ⇒ this speaker is on AsyncAO
 	}
 	if prof, ok := DecodeProfileMarker(msg.Message); ok {
 		c.rememberProfile(msg.CharName, prof)
 	}
-	// And this speaker's presence status (#M1) — same channel, told apart by frame magic.
+	// The speaker's status, on the same channel.
 	if st, ok := DecodeStatusMarker(msg.Message); ok {
 		c.rememberStatus(msg.CharName, st)
 	}
-	// Animated-text spans (#M5) — same channel, distinct magic. Per-message content (not
-	// recalled): decode straight from this message, kept until the text shows (startTalking).
+	// Animated-text spans are per-message, kept until the text shows (startTalking).
 	c.pendingEffects = c.pendingEffects[:0]
 	if spans, ok := DecodeEffectsMarker(msg.Message); ok {
 		c.pendingEffects = append(c.pendingEffects, spans...)
 	}
-	// "~~" prefix → centre the chatbox text (webAO). Strip the marker (and realign any
-	// transmitted effect spans) BEFORE the blankpost test / inline-emote expand / reveal.
+	// Strip "~~" and realign effect spans before the blankpost test, emote expansion and reveal.
 	c.applyCenterPrefix()
-	// #18 inline emotes: expand known :shortcode: tokens in the speaker's visible text to
-	// their emoji, so the chatbox renders them like the IC log. GATED to messages with NO
-	// effect spans: the wire span indices were computed over the literal text and a
-	// substitution shifts rune counts, so expanding would misalign them (the colour runs are
-	// parsed from currentText just below, so those stay aligned for free). This MUST run here
-	// — after the pendingEffects decode (so the gate can read it) and BEFORE IsBlankPost and
-	// Typewriter.Start — so the reveal, the blankpost test, and the raster all consume the
-	// same substituted text. The wire msg.Message is untouched, so the reaction ref and the
-	// recording stay literal/cross-client-stable.
+	// Expand only with no effect spans, as substitution shifts rune counts. Must run after the pendingEffects decode
+	// and before IsBlankPost and Typewriter.Start; msg.Message stays literal, keeping reaction refs stable.
 	if c.Env != nil && len(c.pendingEffects) == 0 {
 		c.currentText = ExpandInlineEmotes(c.currentText, c.Env.InlineEmote)
 	}
-	// Filter the speaker's style through the viewer's accessibility opt-outs. The
-	// SAME helper filters the pair partner's recalled style below, so a paired player
-	// can never impose motion/glitch a viewer opted out of on either sprite.
+	// Same filter as the pair partner's style below, so no one imposes motion a viewer opted out of.
 	style = c.filterStyleForViewer(style)
 
-	// 2.8 additive text (#14): when honored and this line is ADDITIVE=1, the prior
-	// accumulated text becomes a pre-revealed prefix (typewriter crawls only the
-	// tail). This mirrors AO2 exactly: additive_previous appends on ANY ADDITIVE=1
-	// line with NO char-id gate (courtroom.cpp:4225-4330), and resets only when a
-	// line is NOT additive (:4229) — a continuation may even come from a different
-	// speaker. c.currentText is final here (center prefix stripped, inline emotes
-	// expanded), so the accumulation matches what displays. Any per-message effect
-	// spans are indexed over THIS message's text, so shift them past the prefix so
-	// they still align in the concatenated MessageText. On a non-additive line the
-	// prefix is "" and prev resets to this message — the old replace behavior. Off
-	// (pref/restore) → also "" (RestoreMessage settles one message, so it must never
-	// inherit a stale accumulation).
+	// ADDITIVE=1 makes the prior text a pre-revealed prefix, with no char-id check (courtroom.cpp:4225-4330);
+	// a non-additive line resets it (courtroom.cpp:4229). Restoring gives "", so it can't inherit a stale prefix.
 	c.additivePrefix = ""
 	if c.AdditiveText && !c.restoring && msg.Additive {
 		c.additivePrefix = c.additivePrevText
-		// Auto-joiner: real AO senders glue the incoming fragment onto the prior
-		// accumulated text with no separator, so two additive sentences read
-		// "First.Second" instead of "First. Second". AO2's own client works around
-		// this by inserting a leading space into the SENDER's input whenever the
-		// additive box is on (courtroom.cpp:2320-2326, 6563-6573); clients that
-		// don't (older AO2, webAO, ours before this fix) produce the glued form.
-		// Fix it on the DISPLAY side too, for ANY sender: when the boundary visually
+		// Senders glue fragments; AO2 works around it when sending (courtroom.cpp:2320-2326, 6563-6573), so join here.
 		if additiveNeedsJoiner(StripChatMarkup(c.additivePrefix), StripChatMarkup(c.currentText)) {
 			c.additivePrefix += " "
 		}
@@ -1450,10 +970,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 
 	speakerName := msg.CharName
 
-	// --- prefetch fan-out (all HIGH, all parallel on the pool) ---
-	// Idle/talk walk the full sprite spelling chain — the glued "(a)X", the
-	// bare file name, then the "(a)/X" prefix FOLDER — packs ship any of the
-	// three (AO2-Client animationlayer.cpp:422-444; order note in EmoteAlts).
+	// Prefetch fan-out, all HIGH. Sprites walk "(a)X", bare, "(a)/X" (animationlayer.cpp:422-444).
 	idle := c.urls.Emote(speakerName, msg.Emote, EmoteIdle)
 	talk := c.urls.Emote(speakerName, msg.Emote, EmoteTalk)
 	c.mgr.PrefetchChain(idle, c.spriteAlts(speakerName, msg.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
@@ -1486,17 +1003,12 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		c.audio.PlayShout(shoutSFX) // AssetType: SFX
 	}
 
-	// Predictive prefetch: warm the likely next speaker — and their likely
-	// next emote (§10 step 3 + per-character emote chains).
+	// Warm the likely next speaker and their likely next emote.
 	if c.Predictor != nil {
 		c.Predictor.OnMessage(speakerName, msg.Pair.Name, msg.Emote)
 	}
 
-	// Resolve this message's blip set: the wire field wins; a missing wire field
-	// asks the speaker's char.ini (webAO parity); only a KNOWN-but-empty char.ini
-	// falls back to AO's default. An in-flight char.ini (known=false) leaves the
-	// message pending — re-resolved on the talk ticks — so a female character's
-	// FIRST message never sounds the male default (see resolveBlip).
+	// Blip set: wire first, then char.ini (webAO); in-flight stays pending, and only known-but-empty uses AO's default.
 	c.blipWire = msg.Blipname
 	if !validBlipName(c.blipWire) {
 		c.blipWire = "" // sentinel / path-unsafe: fall through to char.ini
@@ -1504,12 +1016,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	c.blipSpeaker = speakerName
 	c.resolveBlip()
 
-	// Per-character chatbox skin (char.ini chat=<misc>, AO2 get_chat): the scene
-	// carries the misc art's base; the ui draws it as the chatbox background
-	// when resident (and the client's normal box until then / when absent).
-	// The spellings — two stems × two casings, see MiscChatboxCandidates —
-	// walk in order; the first candidate stays the asset's identity (same
-	// shape as the (a)-sprite / bare-sprite chain).
+	// Per-character chatbox skin (chat=<misc>, get_chat); candidates walk in order, the first being the identity.
 	c.Scene.ChatSkinBase = ""
 	if c.Chars != nil {
 		if misc := c.Chars.ChatSkinFor(speakerName); misc != "" {
@@ -1518,9 +1025,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 			c.mgr.PrefetchChain(cands[0], cands[1:], assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (chatbox skin)
 		}
 	}
-	// The speaker's own chatbox ink rides the same per-message resolution: AO2
-	// colours the chatbox from misc/<chat>/courtroom_fonts.ini (get_chat), falling
-	// back to the theme. Set flags false = keep the theme's colour.
+	// The speaker's chatbox colours (misc/<chat>/courtroom_fonts.ini, get_chat), falling back to the theme.
 	c.Scene.ChatSkinMsgColor, c.Scene.ChatSkinMsgHas = theme.RGB{}, false
 	c.Scene.ChatSkinNameColor, c.Scene.ChatSkinNameHas = theme.RGB{}, false
 	if c.Chars != nil {
@@ -1530,17 +1035,14 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		}
 	}
 
-	// M11 per-character blip volume: attenuate this speaker's blips by their
-	// stored scale. One int-set per message — the render loop is untouched.
+	// Attenuate this speaker's blips; one int-set per message, so the render loop is untouched.
 	blipScale := blipVolumeFull
 	if c.Blips != nil {
 		blipScale = c.Blips.BlipVolumeFor(speakerName)
 	}
 	c.audio.SetBlipScale(blipScale)
 
-	// The emote SFX is NOT played here — it's armed on a deadline in
-	// enterAfterShout so it lands SFX_DELAY × 40ms into the message (mid-preanim),
-	// matching AO2's sfx_delay_timer (#12; ../AO2-Client/src/courtroom.cpp:4052).
+	// The emote SFX is armed in enterAfterShout, to land SFX_DELAY x 40ms in (sfx_delay_timer, courtroom.cpp:4052).
 
 	// --- scene state ---
 	c.Scene.Position = msg.Side
@@ -1548,29 +1050,15 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		bgPart, deskPart := PositionScene(msg.Side)
 		c.Scene.BackgroundBase = c.urls.Background(c.sess.Background, bgPart)
 		c.Scene.DeskBase = c.urls.Background(c.sess.Background, deskPart)
-		// HIGH like every other live-message asset: this scenery is on
-		// screen NOW. At low priority a busy lane shed these, and the
-		// viewport had nothing to draw for the new position (the
-		// "background goes black while talking" bug).
+		// HIGH like every live-message asset: at low priority a busy lane sheds these and nothing draws.
 		c.prefetchScenery(c.sess.Background, bgPart)
 		c.mgr.Prefetch(c.Scene.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
 	}
-	// Initial desk state = the talk/idle column (a message with no preanim goes
-	// straight to talk; a shout holds the stage without touching the desk). The
-	// phase transitions (enterAfterShout preanim entry, startTalking) call
-	// applyDeskMods to flip it per phase — AO2's set_scene at preanim_start /
-	// start_chat_ticking. Pair/offset are set below from the message. A zoom
-	// emote's TALK side hides the desk outright (zoomEmote), and its preanim side
-	// re-shows it through applyDeskMods(true).
-	// this position stays hidden — AO2's set_scene existence check (#44).
+	// Start on the talk column; phase changes call applyDeskMods (set_scene at preanim_start, start_chat_ticking).
+	// A zoom's talk side hides the desk, and a missing desk stays hidden.
 	c.Scene.ShowDesk = DeskDrawn(msg.DeskMod, false, c.deskResolution()) && !zoomEmote(msg.EmoteMod)
 
-	// CLEAR SITE 1 of 3 (overlayfx.go): AO2 stops and hides ui_vp_effect inside
-	// display_character (courtroom.cpp:2755-2761), i.e. the moment the next IC
-	// message stages its emote — which is exactly here. fireMessageEffects runs
-	// LATER (enterAfterShout), so a message that carries an effect re-arms it
-	// after this clear, and one that does not leaves the stage clean. There is
-	// deliberately no clear at message END.
+	// Clear site 1 of 3: display_character hides ui_vp_effect (courtroom.cpp:2755-2761); no clear at message end.
 	c.clearOverlay()
 
 	c.Scene.Speaker = SpriteLayer{
@@ -1587,14 +1075,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		Scaling:     c.scalingFor(speakerName),
 	}
 
-	// #126 zoom speedlines: a zoom/preanim-zoom emote shows the speaker's own
-	// <side>_speedlines overlay behind them (char folder first, the bundled stock
-	// burst when the pack ships none). Resolved + prefetched once per message;
-	// "" for a non-zoom emote or a side with none. There is deliberately NO
-	// magnification: AO2's zoom only hides the desk + pair and plays these
-	// speedlines (courtroom.cpp:3456-3477) — it never rescales the character
-	// layer — so the punch-in is the character's own zoom preanimation art.
-	// The chain is what replaced v1.98.0's single <side>_speedlines base: every
+	// Zoom speedlines go behind the speaker. No magnification: AO2 only hides desk and pair (courtroom.cpp:3456-3477).
 	c.Scene.SpeedlinesChain = nil
 	c.Scene.SpeedlinesSide = ""
 	if msg.EmoteMod == protocol.EmoteModZoom || msg.EmoteMod == protocol.EmoteModPreanimZoom {
@@ -1604,23 +1085,11 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 			assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (zoom speedlines)
 	}
 
-	// #17 networked frame effects: parse this message's FRAME_* fields into the
-	// per-frame trigger table ONCE here (never per render frame — the render loop
-	// is zero-allocation). Built after the Speaker bases above so a later
-	// NotifyFrameShown can bind the active layer to its group. A message with no
-	// FRAME_* data yields an inert (empty) table. A restore/settled replay never
-	// animates a preanim, but a live talk/idle loop still can, so the table is
-	// built the same way; the cursors start at 0 and only NotifyFrameShown moves
-	// them.
+	// Parse FRAME_* once here, never per frame, after the Speaker bases so NotifyFrameShown can bind the group.
 	c.frameTriggers = c.buildFrameTriggers(msg)
 
-	// A zoom emote is a SOLO shot: AO2 never displays the pair for one, in either
-	// phase (zoomEmote). SpeakerInFront is still read from the wire — it orders the
-	// two layers whenever the pair IS on stage, and the pair layer below is left
-	// zeroed, so a stale one from a previous message cannot draw.
-	// A group roster supersedes the 2-person pair: the pair layer would re-draw
-	// the first partner the group already renders. The roster comes from the
-	// per-message additional_chars (present only when a group member speaks), so
+	// A zoom is a solo shot, so the pair layer stays zeroed. A group roster (additional_chars) supersedes the pair,
+	// which would re-draw the first partner.
 	hasGroup := len(msg.Additional) >= 2
 	c.Scene.PairActive = msg.Pair.Active() && !zoomEmote(msg.EmoteMod) && !hasGroup
 	c.Scene.SpeakerInFront = msg.Pair.SpeakerInFront()
@@ -1633,13 +1102,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 			OffsetX:  msg.Pair.OffsetX,
 			OffsetY:  msg.Pair.OffsetY,
 			Visible:  true,
-			// The wire never carries the partner's style (protocol.PairInfo has no
-			// style field — pairing.go), so recall it by the partner's char id, the
-			// SAME send-on-change memory the speaker path uses. Without this only the
-			// current speaker showed a style, flipping between the two as the turn
-			// passed. RecalledStyle returns the zero (inactive) style for a negative
-			// char id, and filterStyleForViewer honours the viewer's opt-outs for the
-			// pair sprite too.
+			// The wire carries no partner style, so recall it by char id; a negative id gets the zero style.
 			Style:   c.filterStyleForViewer(c.RecalledStyle(msg.Pair.CharID)),
 			Scaling: c.scalingFor(msg.Pair.Name),
 		}
@@ -1647,8 +1110,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		c.Scene.Pair = SpriteLayer{}
 	}
 
-	// Group pairing (additional_chars): stage the other members behind the
-	// speaker/pair, in roster z-order. Empty when no group member is speaking.
+	// Stage other group members behind speaker and pair, in roster z-order.
 	c.Scene.Group = c.Scene.Group[:0]
 	for _, m := range msg.Additional {
 		if m.CharID == msg.CharID {
@@ -1676,17 +1138,10 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	c.Scene.MessageStyles = c.Scene.MessageStyles[:0]
 	c.Scene.MessageEffects = c.Scene.MessageEffects[:0]
 	c.Scene.VisibleRunes = 0
-	// Blankpost decided up front from the raw text (StripChatMarkup is pinned
-	// to the typewriter by TestStripMatchesTypewriter, so this matches what
-	// would type out) — known from frame 1 so the box never flashes during an
-	// animated blankpost's preanim. Under additive (#14) the DISPLAYED text is the
-	// accumulated prefix + tail, so a continuation with real prior text is never a
-	// blankpost even when its own tail is whitespace.
+	// Set up front so the box never flashes in a preanim; a continuation with real prior text is never a blankpost.
 	c.Scene.IsBlankPost = strings.TrimSpace(StripChatMarkup(c.additivePrefix+c.currentText)) == ""
 	c.preanimDone = false
-	// A new message takes the stage: any previous message's immediate-mode
-	// decoration is over (AO2's unpack_chatmessage resets anim_state to 0). The
-	// speaker layers are re-assigned above, so only the countdown needs clearing.
+	// Any previous immediate-mode decoration is over (unpack_chatmessage resets anim_state to 0).
 	c.imPreLeft = 0
 
 	// --- phase entry ---
@@ -1702,16 +1157,12 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	}
 }
 
-// resolveBlip mints c.blipRef from the current message's wire blip or the
-// speaker's char.ini set, holding the message (blipRef empty, blipPending set)
-// while the char.ini fetch is still in flight — so a female character's first
-// message never sounds the male default before her set loads. Re-run from the
-// talk ticks until the meta lands (pollCharMeta flips it to known=true).
+// resolveBlip sets c.blipRef, holding while char.ini is in flight so the first message never sounds the wrong default.
 func (c *Courtroom) resolveBlip() {
 	c.blipPending = false
 	ref, pending := c.blipRefFor(c.blipWire, c.blipSpeaker)
 	if pending {
-		// In-flight: hold, don't default. The talk ticks re-ask until known.
+		// In-flight: hold, don't default.
 		c.blipPending = true
 		c.blipRef = AssetRef{}
 		return
@@ -1720,11 +1171,7 @@ func (c *Courtroom) resolveBlip() {
 	c.mgr.PrefetchChain(ref.Base, ref.Alts, ref.Type, network.PriorityHigh)
 }
 
-// blipRefFor mints the blip chain for a (wire, speaker) pair WITHOUT touching the
-// message fields, so the strict-sequencing wait gate can resolve the same chain
-// begin() will before the message is current. pending means the speaker's char.ini
-// blip set is still in flight and there is nothing to wait for yet (resolveBlip
-// re-asks on the talk ticks); the caller should skip the blip rather than hold.
+// blipRefFor builds the chain for the wait gate; pending means char.ini is in flight, so skip the blip, don't hold.
 func (c *Courtroom) blipRefFor(blipWire, blipSpeaker string) (AssetRef, bool) {
 	if blipWire != "" {
 		return c.urls.BlipRef(blipWire), false
@@ -1745,18 +1192,14 @@ func (c *Courtroom) blipRefFor(blipWire, blipSpeaker string) (AssetRef, bool) {
 	return c.urls.BlipRef(defaultBlipSet), false
 }
 
-// shoutBases is the ONE mint for a shout's art + cry: the per-character bubble
-// base, the default (misc) bubble base, and the cry SFX base. Shared by begin()
-// (the play path) and the strict-sequencing gate so the two can never disagree
-// about what a queued shout will show and play.
+// shoutBases returns bubble, default bubble and cry, shared by begin() and the gate so they can't disagree.
 func (c *Courtroom) shoutBases(msg *protocol.ChatMessage) (charBase, defaultBase, sfx string) {
 	shout := ShoutName(msg.Objection)
 	custom := msg.Objection == protocol.ShoutCustom
 	charBase = c.urls.ShoutBubble(msg.CharName, shout, custom)
 	sfx = c.urls.ShoutSFX(msg.CharName, shout)
 	if custom && msg.CustomShout != "" {
-		// 2.10 named interjection: art and sound live under
-		// custom_objections/<name> (courtroom.cpp objection_custom).
+		// 2.10 named interjection under custom_objections/<name> (courtroom.cpp objection_custom).
 		charBase = c.urls.NamedCustomShout(msg.CharName, msg.CustomShout)
 		sfx = charBase
 	}
@@ -1766,16 +1209,9 @@ func (c *Courtroom) shoutBases(msg *protocol.ChatMessage) (charBase, defaultBase
 	return charBase, defaultBase, sfx
 }
 
-// beginCaughtUp shows a backlog message's text for ~one frame with no
-// shout/preanim/typewriter/effects/sfx/prefetch, then lingers briefly so the
-// next dequeues. It drains a deep queue toward real-time; the newest message
-// (played in full by begin) sets the real scene, and the IC log already has
-// every message's text. Speaker sprite is intentionally left as-is — a
-// one-frame backlog flash is never seen.
+// beginCaughtUp shows a backlog message for about a frame with no ceremony; the sprite stays, as it is never seen.
 func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
-	// A fast-forwarded backlog message plays no ceremony (no preanim/sfx/effects),
-	// so it must carry no frame triggers either — clear any left from the prior
-	// message so a later NotifyFrameShown can't fire them over this flash (#17).
+	// No ceremony means no frame triggers: clear the prior message's so NotifyFrameShown can't fire them.
 	c.frameTriggers = frameTriggerTable{}
 	c.Scene.ShoutBase = ""
 	c.Scene.ShoutFallbackBase = ""
@@ -1783,12 +1219,11 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 	c.Scene.TextColor = msg.TextColor
 	caStyle, caClean := DecodeSpriteStyle(msg.Message) // strip the style marker (catch-up never redraws the sprite)
 	c.currentText = caClean
-	// "~~" centre prefix (webAO): strip it so the one-frame flash doesn't show the marker.
+	// Strip "~~" so the flash doesn't show it.
 	if c.Scene.Centered = strings.HasPrefix(c.currentText, "~~"); c.Scene.Centered {
 		c.currentText = c.currentText[2:]
 	}
-	// #18 inline emotes: mirror begin()'s gated expansion so a backlog flash agrees with the
-	// (already-expanded) IC log. Same gate — no expansion when the message carries effect spans.
+	// Mirror begin()'s expansion so the flash agrees with the IC log; none with effect spans.
 	if c.Env != nil {
 		if _, hasEffects := DecodeEffectsMarker(msg.Message); !hasEffects {
 			c.currentText = ExpandInlineEmotes(c.currentText, c.Env.InlineEmote)
@@ -1817,38 +1252,26 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 		c.Scene.MessageEffects = c.Scene.MessageEffects[:0]
 	}
 	c.Scene.VisibleRunes = c.Typewriter.Visible()
-	// Same blankpost rule as begin(); this path doesn't route through it.
+	// Same blankpost rule as begin(); this path skips it.
 	c.Scene.IsBlankPost = strings.TrimSpace(c.Scene.MessageText) == ""
 	c.preanimDone = false
-	// A caught-up (fast-forwarded) message breaks the additive chain: treat it as a
-	// replace (empty prefix) and seed the accumulator with its own text so a later
-	// ADDITIVE=1 line continues from THIS message, not pre-catch-up text (#14).
+	// A caught-up message breaks the additive chain, so a later ADDITIVE=1 continues from this one.
 	c.additivePrefix, c.additivePrevText = "", c.currentText
 	c.phase = PhaseLinger
 	c.timer = c.CatchUpLinger // power-user knob; the canonical default is zero (drain one per frame)
 }
 
-// enterAfterShout picks preanim vs talking, mirroring handle_emote_mod:
-// preanim plays first unless absent; IDLE/ZOOM with immediate plays preanim
-// alongside the text.
+// enterAfterShout picks preanim or talking as handle_emote_mod does; immediate IDLE and ZOOM preanims run with text.
 func (c *Courtroom) enterAfterShout() {
 	c.Scene.ShoutBase = ""
 	c.Scene.ShoutFallbackBase = ""
 	msg := c.current
-	// The emote SFX arms HERE (AO2 starts sfx_delay_timer inside play_preanim,
-	// courtroom.cpp:4054 — before the preanim's own art is even checked), but the
-	// message EFFECTS do not: do_effect lives in start_chat_ticking (:4154-4172), which
-	// a blocking preanim only reaches through preanim_done → handle_ic_speaking
-	// (:4108-4118 → :3506). So the overlay, its sound and the legacy flash/shake fire
-	// when the TEXT starts — see startTalking.
+	// The SFX arms here (play_preanim, courtroom.cpp:4054); effects wait for start_chat_ticking
+	// (courtroom.cpp:4154-4172), reached through preanim_done (courtroom.cpp:4108-4118, :3506). See startTalking.
 	if preanimSFXPlays(msg) {
 		c.armSFXDelay(msg)
 	}
-	// !preanimDone: begin() resets the flag, so it can only be true here when
-	// NotifyAssetMissing landed while the shout bubble held the stage — the
-	// preanim conclusively 404'd and hijacking Active with it would draw a
-	// blank speaker. Skip straight to the talk loop, exactly where a played
-	// preanim would have ended up.
+	// preanimDone here means NotifyAssetMissing landed during the shout; a 404'd preanim would draw a blank speaker.
 	playPre := preanimWillPlay(msg) && !c.preanimDone && !c.spriteConfirmedMissing(c.Scene.Speaker.PreanimBase)
 	blockOnPre := playPre && !msg.Immediate &&
 		(msg.EmoteMod == protocol.EmoteModPreanim || msg.EmoteMod == protocol.EmoteModPreanimZoom)
@@ -1858,10 +1281,7 @@ func (c *Courtroom) enterAfterShout() {
 		c.Scene.Speaker.PlayOnce = true
 	}
 	if blockOnPre {
-		// A blocking preanim holds the stage — apply the PREANIM desk column
-		// (AO2 set_scene at preanim_start, courtroom.cpp:4075-4091). Immediate-mode
-		// preanims fall through to startTalking, where the talk column wins (AO2
-		// calls preanim_start then start_chat_ticking).
+		// A blocking preanim applies the preanim desk column (courtroom.cpp:4075-4091); immediate ones get the talk's.
 		c.applyDeskMods(true)
 		c.phase = PhasePreanim
 		c.timer = c.PreanimTimeout // power-user knob; seeded to DefaultPreanimTimeout
@@ -1870,33 +1290,20 @@ func (c *Courtroom) enterAfterShout() {
 	c.startTalking()
 }
 
-// preanimSFXPlays reports whether this message's emote SFX may play at all — the
-// gate on the whole sfx_delay_timer, not on the sound itself.
-// Note where the preanim start sits: :4054 is BEFORE the `file_exists(anim_to_find)`
-// check at :4056, so a preanim whose ART is missing still plays the sound. The gate
-// is never whether the sprite resolved — which is why this deliberately does not
+// preanimSFXPlays gates sfx_delay_timer, whose start at courtroom.cpp:4054 precedes the file_exists at :4056,
+// so a preanim with missing art still plays the sound.
 func preanimSFXPlays(msg *protocol.ChatMessage) bool {
 	if msg.EmoteMod == protocol.EmoteModPreanim ||
 		msg.EmoteMod == protocol.EmoteModPreanimZoom ||
 		msg.Immediate {
 		return true
 	}
-	// A non-silent SFX_NAME on an IDLE/ZOOM line is a hand-picked sound shipped
-	// regardless of Pre; play it. The silent sentinels stay silent.
+	// A non-silent SFX_NAME on IDLE or ZOOM is hand-picked, so play it; silent sentinels stay silent.
 	return msg.SFXName != "" && msg.SFXName != "0" && msg.SFXName != "1"
 }
 
-// armSFXDelay schedules the message's emote SFX and (for preanim mods) its
-// screenshake to fire SFX_DELAY × 40ms into the message, matching AO2's
-// sfx_delay_timer started after the shout (#12; ../AO2-Client/src/courtroom.cpp
-// :4052-4054). AO2's play_sfx does the screenshake for a preanim message BEFORE
-// the sfx_name=="1" early-return (courtroom.cpp:4593-4596 do_screenshake), so
-// the shake fires at the deadline even when there's no audible SFX (name "0"/
-// "1"/empty). Idle/zoom shakes already fire immediately in fireMessageEffects
-// and are a DISJOINT emote-mod set, so there's no double-fire. Nothing is armed
-// when there is neither an SFX to play nor a preanim shake to fire — a zero-
-// delay SFX still routes through the deadline (fires on the first Update tick).
-// sfxBaseFor resolves the message's emote SFX base ("" = no audible sound: a
+// sfxBaseFor resolves the emote SFX base, "" for no sound. Armed for SFX_DELAY x 40ms (courtroom.cpp:4052-4054);
+// play_sfx shakes before the sfx_name=="1" return (courtroom.cpp:4593-4596), so silent preanims still shake.
 func (c *Courtroom) sfxBaseFor(msg *protocol.ChatMessage) string {
 	if msg.SFXName == "" || msg.SFXName == "0" || msg.SFXName == "1" {
 		return ""
@@ -1909,16 +1316,13 @@ func (c *Courtroom) sfxBaseFor(msg *protocol.ChatMessage) string {
 
 func (c *Courtroom) armSFXDelay(msg *protocol.ChatMessage) {
 	base := c.sfxBaseFor(msg)
-	// The preanim screenshake (AO2 play_sfx) fires for preanim-mod messages when
-	// SCREENSHAKE=1; effectsVisible gates the visual (reduce-motion / toggle).
+	// Preanim shake (play_sfx) on SCREENSHAKE=1; effectsVisible gates the visual.
 	preanimMod := msg.EmoteMod == protocol.EmoteModPreanim || msg.EmoteMod == protocol.EmoteModPreanimZoom
 	shake := msg.Screenshake && preanimMod && c.effectsVisible()
 	if base == "" && !shake {
 		return // nothing to schedule
 	}
-	// Warm the bytes now so they're cached when the deadline fires — the audio
-	// sink's request() also self-fetches as a backstop, but prefetching here keeps
-	// a first play from adding fetch latency on top of the SFX_DELAY.
+	// Warm now so a first play adds no fetch latency on top of SFX_DELAY.
 	if base != "" && c.mgr != nil {
 		c.mgr.Prefetch(base, assets.AssetTypeSFX, network.PriorityHigh) // AssetType: SFX
 	}
@@ -1928,8 +1332,7 @@ func (c *Courtroom) armSFXDelay(msg *protocol.ChatMessage) {
 	c.sfxShake = shake
 }
 
-// fireSFXDelay plays the armed SFX and fires the armed preanim screenshake, then
-// disarms. Called from Update when the deadline elapses.
+// fireSFXDelay plays the armed SFX and shake, then disarms.
 func (c *Courtroom) fireSFXDelay() {
 	if c.sfxBase != "" {
 		c.audio.PlaySFX(c.sfxBase, 0) // AssetType: SFX (deadline reached; delay already elapsed)
@@ -1940,29 +1343,18 @@ func (c *Courtroom) fireSFXDelay() {
 	c.sfxArmed, c.sfxLeft, c.sfxBase, c.sfxShake = false, 0, "", false
 }
 
-// fireMessageEffects triggers the message-display effects exactly where
-// AO2-Client's start_chat_ticking does (courtroom.cpp:4154): the 2.8 Effects
-// field wins ("fx", "fx|sound" or "fx|folder|sound") and SUPPRESSES the legacy
-// realization path entirely (it is an `else if`, :4173-4177); plain
-// REALIZATION=1 is that fallback flash; SCREENSHAKE=1 shakes for IDLE/ZOOM
-// emote mods.
+// fireMessageEffects follows start_chat_ticking (courtroom.cpp:4154): Effects suppresses realization (:4173-4177).
 func (c *Courtroom) fireMessageEffects(msg *protocol.ChatMessage) {
-	// Reduce-motion gates the VISUAL effects only — the feedback sounds still
-	// play (accessibility: kill the shake/flash, keep the audio cue).
+	// Reduce-motion gates only the visuals; sounds still play.
 	if msg.Effects != "" {
 		fx, folder, sound := parseEffectsField(msg.Effects)
 		if folder == "" {
-			// 1- and 2-part fields omit it: fall back to the SENDER's own char.ini
-			// (text_file_functions.cpp:836-839). Free — charMeta already has it.
+			// 1- and 2-part fields omit it: use the sender's char.ini (text_file_functions.cpp:836-839).
 			folder = c.OverlayEffectsFolderFor(msg.CharName)
 		}
-		// The overlay when it resolves, the legacy flash/shake mapping when it does
-		// not — one helper (overlayfx.go) so a resolve that had to WAIT for its
-		// roster settles the message identically (tickOverlayPending re-asks).
+		// One helper, so a resolve that had to wait settles the message identically.
 		c.applyEffectField(fx, folder, msg.Flip, msg.SelfOffsetX, msg.SelfOffsetY)
-		// The sound plays whenever the field names one, INCLUDING when the art did
-		// not resolve and when the visual gate is off — canon's own ordering
-		// (courtroom.cpp:3196 precedes the effectsEnabled test at :3202).
+		// The sound plays even if art is unresolved or visuals are off (courtroom.cpp:3196 precedes :3202).
 		if OverlaySoundPlayable(sound) {
 			c.audio.PlaySFX(c.urls.SFX(sound), 0) // AssetType: SFX (2.8 effect sound)
 		}
@@ -1970,9 +1362,7 @@ func (c *Courtroom) fireMessageEffects(msg *protocol.ChatMessage) {
 		if c.effectsVisible() {
 			c.Scene.FlashLeft = RealizationFlashDuration
 		}
-		// The SENDER's own realization sound wins over the theme's, exactly as canon
-		// plays get_custom_realization(CHAR_NAME) here rather than get_court_sfx
-		// (courtroom.cpp:4175 → text_file_functions.cpp:896-903).
+		// The sender's realization wins over the theme's (courtroom.cpp:4175, text_file_functions.cpp:896-903).
 		if sfx := c.realizationSFXFor(msg.CharName); sfx != "" {
 			c.audio.PlaySFX(sfx, 0) // AssetType: SFX (realization)
 		}
@@ -1982,15 +1372,10 @@ func (c *Courtroom) fireMessageEffects(msg *protocol.ChatMessage) {
 	}
 }
 
-// effectsVisible reports whether authored screen effects (shake/flash) should
-// render: the user's ScreenEffects toggle is on AND accessibility ReduceMotion
-// isn't suppressing motion. Effect SOUNDS ignore this — they always play.
+// effectsVisible gates shake and flash; effect sounds always play.
 func (c *Courtroom) effectsVisible() bool { return c.ScreenEffects && !c.ReduceMotion }
 
-// fireInlineEffect fires a \s/\f screen effect the typewriter reached during the
-// crawl. Kept courtroom-side (Scene mutation) so the pure typewriter stays
-// SDL-free; the ScreenEffects toggle and reduce-motion both gate the visual,
-// matching fireMessageEffects' field-based path (purely visual, no sound to keep).
+// fireInlineEffect fires a \s or \f the crawl reached, gated like fireMessageEffects.
 func (c *Courtroom) fireInlineEffect(m EffectMark) {
 	if !c.effectsVisible() {
 		return
@@ -2003,28 +1388,15 @@ func (c *Courtroom) fireInlineEffect(m EffectMark) {
 	}
 }
 
-// startTalking begins the typewriter reveal. It IS AO2's start_chat_ticking
-// (courtroom.cpp:4120-4261), so everything canon does there happens here.
+// startTalking is AO2's start_chat_ticking (courtroom.cpp:4120-4261).
 func (c *Courtroom) startTalking() {
-	// Talk/idle desk column (AO2 set_scene at start_chat_ticking,
-	// courtroom.cpp:4134-4152). Restores the pair/offset a preanim's mod-4 hide
-	// may have zeroed, and flips mod-2/3 desk visibility for the talk phase.
+	// Talk/idle desk column (courtroom.cpp:4134-4152), restoring what a preanim's mod-4 hide zeroed.
 	c.applyDeskMods(false)
-	// The 2.8 EFFECTS field — the overlay, its sound, and the legacy
-	// realization/screenshake fallback — fires HERE, not at message start.
-	// start_chat_ticking runs do_effect at :4154-4172, immediately after that same
-	// set_scene block, and a BLOCKING preanim only reaches start_chat_ticking through
-	// preanim_done → handle_ic_speaking (:4108-4118 → :3506). Firing it in
-	// enterAfterShout instead put a "realization" flash and the effect's sound at the
-	// START of a preanim, one whole preanim ahead of where AO2 puts them. Idle
-	// messages are unaffected: for them enterAfterShout falls straight through to here.
+	// EFFECTS fires here, not at message start: do_effect is at courtroom.cpp:4154-4172, after preanim_done.
 	if c.current != nil {
 		c.fireMessageEffects(c.current)
 	}
-	// 2.8 additive (#14): an ADDITIVE=1 continuation starts with the prior
-	// accumulated text pre-revealed (StartAppend), so only the appended tail crawls
-	// + blips; a plain message starts from empty. MessageRaw is the concatenation so
-	// the raster cache keys on the full displayed text.
+	// MessageRaw is the concatenation, so the raster cache keys on the full text.
 	if c.additivePrefix != "" {
 		c.Typewriter.StartAppend(c.additivePrefix, c.currentText)
 	} else {
@@ -2038,25 +1410,11 @@ func (c *Courtroom) startTalking() {
 	if !c.Scene.Speaker.PlayOnce {
 		c.Scene.Speaker.Active = c.Scene.Speaker.TalkBase
 	} else {
-		// Immediate mode: the preanim keeps playing over the text (Active stays on
-		// PreanimBase) on its OWN countdown, not the phase timer — the message is
-		// free to finish and hand the stage to the next one while this animation is
-		// still running (see tickImmediatePreanim). Bounded so a slow-decoding or
-		// never-arriving preanim can't leave Active parked on it forever;
-		// NotifyPreanimStarted extends it to the real duration once the decoded
-		// preanim plays, exactly like the blocking PhasePreanim path.
+		// Immediate mode: the preanim has its own countdown so the message can finish; bounded so it can't park Active.
 		c.imPreLeft = c.PreanimTimeout
 	}
-	// Skip the talking phase only when there is genuinely nothing left to do:
-	// no text still to reveal and no inline \s/\f mark still to fire. The effects
-	// clause is load-bearing for a message that is ONLY effect codes ("\f",
-	// "\s\f"): it strips to zero runes, so Done() is true from the first instant,
-	// and without EffectsPending this jumped straight to linger — PhaseTalking (the
-	// only place NextEffect is drained, see Update) never ran, so a bare effect
-	// silently did nothing while the SAME code attached to text worked. AO2 has
-	// no such hole because its emptiness test reads the RAW wire text
-	// (start_chat_ticking, ../AO2-Client/src/courtroom.cpp:4183) and a raw "\f"
-	// is not empty, so chat_tick walks the escape and calls do_flash (:4442-4448).
+	// Skip talking only with no text and no marks: PhaseTalking alone drains NextEffect, and "\f" strips to zero runes.
+	// AO2 tests the raw text (courtroom.cpp:4183), so chat_tick calls do_flash (courtroom.cpp:4442-4448).
 	if c.Typewriter.Done() && !c.Typewriter.EffectsPending() {
 		c.enterLinger()
 		return
@@ -2064,11 +1422,7 @@ func (c *Courtroom) startTalking() {
 	c.phase = PhaseTalking
 }
 
-// enterLinger settles the message: text done, TextStay counting down to the
-// queue advance.
-// It leaves an IMMEDIATE-mode preanim alone (imPreLeft > 0). That animation is
-// decoration AO2 plays over an already-ticking message — anim_state 4 — and its
-// lifetime is owned by tickImmediatePreanim, which parks the speaker on the idle
+// enterLinger starts TextStay, leaving an immediate preanim (anim_state 4) to tickImmediatePreanim.
 func (c *Courtroom) enterLinger() {
 	if c.imPreLeft <= 0 {
 		c.Scene.Speaker.Active = c.Scene.Speaker.IdleBase
@@ -2078,11 +1432,7 @@ func (c *Courtroom) enterLinger() {
 	c.timer = c.TextStay
 }
 
-// tickImmediatePreanim advances the decoration an immediate-mode message started
-// and ends it when the animation finishes (NotifyPreanimDone) or its bound
-// expires. It runs OUTSIDE the phase switch because the animation deliberately
-// outlives its phase: AO2 leaves anim_state at 4 and lets the layer play on
-// while text_state reaches 2 and the queue timer runs.
+// tickImmediatePreanim ends the decoration; it runs outside the switch because AO2 lets the layer outlive text_state 2.
 func (c *Courtroom) tickImmediatePreanim(dt time.Duration) {
 	if c.imPreLeft <= 0 {
 		return
@@ -2095,29 +1445,21 @@ func (c *Courtroom) tickImmediatePreanim(dt time.Duration) {
 	if !c.Scene.Speaker.PlayOnce {
 		return // already released (NotifyAssetMissing, a new message, a wipe)
 	}
-	// preanimDone here means the render reported the last frame; otherwise the
-	// bound above ran out first — the two reasons the interrupt audit needs to
-	// tell apart.
+	// preanimDone means the render reported the last frame; otherwise the bound ran out.
 	if c.preanimDone {
 		c.endPreanim(PreanimEndFinished)
 	} else {
 		c.endPreanim(PreanimEndTimeout)
 	}
 	if c.phase == PhaseTalking {
-		// Text still crawling: flap the talk sprite for the rest (it used to
-		// freeze on the last preanim frame).
+		// Text still crawling: flap the talk sprite for the rest.
 		c.Scene.Speaker.Active = c.Scene.Speaker.TalkBase
 		return
 	}
 	c.Scene.Speaker.Active = c.Scene.Speaker.IdleBase
 }
 
-// NotifyPreanimDone is called by the render side when a one-shot animation
-// finishes (or by tests). The next Update releases the one-shot and flips the
-// speaker to the talk loop.
-// PlayOnce is the precise test: it is set synchronously by enterAfterShout the
-// moment this room selects a preanim to play and cleared by endPreanim the moment
-// the animation is over, so "PlayOnce is up" is exactly "this room has a one-shot
+// NotifyPreanimDone reports a finished one-shot from the render side; PlayOnce shows this room selected it.
 func (c *Courtroom) NotifyPreanimDone() {
 	if !c.Scene.Speaker.PlayOnce {
 		return // no one-shot on stage here — a stale report from a shared viewport
@@ -2125,30 +1467,18 @@ func (c *Courtroom) NotifyPreanimDone() {
 	c.preanimDone = true
 }
 
-// NotifyPreanimStarted is called by the render side the first frame a decoded,
-// multi-frame preanimation actually plays, reporting its real total duration.
-// PreanimTimeout is only a fallback for a preanim whose length isn't known yet
-// (still decoding); once we're playing it we know the truth, so extend the
-// phase timer to cover the full playback. Without this a preanim longer than
-// PreanimTimeout was cut short AT the timeout ("plays a second or two, then
-// skips to the end"). NotifyPreanimDone still ends the phase exactly at the
-// natural finish — this only stops the fallback pre-empting it. Extend-only and
-// phase-guarded, so a stale callback from another room while a replay/maker
-// preview drives the same shared viewport is a safe no-op.
+// NotifyPreanimStarted extends the phase timer to the real duration, as PreanimTimeout is only a fallback.
+// Extend-only and phase-guarded, so a stale callback from a shared viewport is a no-op.
 func (c *Courtroom) NotifyPreanimStarted(total time.Duration) {
 	want := total + preanimPlaybackSlack
-	// An IMMEDIATE-mode preanim runs on its own countdown (imPreLeft), because it
-	// is allowed to outlive the message. Extend THAT, not the phase timer — the
-	// phase timer is by then the linger/queue-advance clock, and lengthening it
-	// would re-introduce the very stall this decoupling removed.
+	// Extend imPreLeft, not the phase timer, which is by then the linger clock; lengthening it would stall the queue.
 	if c.imPreLeft > 0 {
 		if want > c.imPreLeft {
 			c.imPreLeft = want
 		}
 		return
 	}
-	// PhasePreanim = a BLOCKING preanim wait: the phase timer IS the bound, and a
-	// long decoded preanim must play in full.
+	// PhasePreanim is a blocking wait: the phase timer is the bound, and a long preanim must play in full.
 	if c.phase != PhasePreanim {
 		return
 	}
@@ -2157,68 +1487,34 @@ func (c *Courtroom) NotifyPreanimStarted(total time.Duration) {
 	}
 }
 
-// NotifyAssetMissing reports that the asset manager conclusively failed to
-// resolve base: every spelling and format 404'd (the §4 warning lane — the
-// App relays char-sprite warnings here; wrong-room and wrong-message bases
-// simply don't match). Only the CURRENT message's preanimation reacts.
+// NotifyAssetMissing reports every spelling and format of base 404'd; only the current message's preanim reacts.
 func (c *Courtroom) NotifyAssetMissing(base string) {
 	if base == "" {
 		return
 	}
-	// Remember every conclusively-missing base FIRST: the wait gate (waitHolds)
-	// holds a message BEFORE it is current, so a dummy preanim's 404 lands here
-	// while c.current is still the previous message and would be dropped by the
-	// guard below. Recording it lets the gate release on the miss signal.
+	// Record first: the gate holds a message before it is current, and the guard below would drop this 404.
 	c.recordMissing(base)
 	if c.current == nil || base != c.Scene.Speaker.PreanimBase {
 		return
 	}
-	// Exactly NotifyPreanimDone: the preanim "finished" (it can never start).
-	// PhasePreanim exits on the next Update; enterAfterShout reads the flag
-	// too, so a miss learned during the shout bubble skips the phase outright.
+	// As NotifyPreanimDone: PhasePreanim exits next Update, and enterAfterShout reads the flag too.
 	c.preanimDone = true
-	// Swap Active OFF the missing preanim base SYNCHRONOUSLY, in the same drain in
-	// which the render side marks it missing (store.MarkMissing runs beside this in
-	// drainWarnings). Leaving Active on the preanim base and relying on "the next
-	// Update" opens a one-frame placeholder flash on any draw driver that draws
-	// WITHOUT calling this room's Update first — the audio-paced present cycle
-	// (roomPreAdvanced skips Update but still draws), a minimized→restored frame, or
-	// a split/replay/maker room advanced on its own cadence. Both the blocking
-	// preanim (PhasePreanim, Active parked on the preanim, PlayOnce set) and the
-	// immediate-mode preanim (PhaseTalking, Active on the preanim over the crawl,
-	// PlayOnce set) must drop to the talk sprite here — exactly what their next
-	// Update would do (PhasePreanim → startTalking sets Active=TalkBase since
-	// PlayOnce is now false; PhaseTalking's PlayOnce branch already flaps to
-	// TalkBase). A leftover missingno flash is never useful for a preanim we're
-	// skipping anyway. The draw-side guard (viewport drawSprite) is the belt-and-
-	// braces for the residual frame before ANY Update on paths this can't reach.
+	// Move Active off the missing base now: draws can skip this room's Update (audio-paced present, restored window,
+	// split or replay rooms), which would flash a placeholder for one frame.
 	if c.Scene.Speaker.PlayOnce {
 		c.endPreanim(PreanimEndMissing)
 		c.imPreLeft = 0 // an immediate-mode decoration that can never play
 		if c.phase == PhaseTalking || c.phase == PhasePreanim {
 			c.Scene.Speaker.Active = c.Scene.Speaker.TalkBase
 		}
-		// A blocking preanim also parked the PREANIM desk column at entry
-		// (applyDeskMods(true), :1220). Its deferred exit is PhasePreanim →
-		// startTalking → applyDeskMods(false), which flips ShowDesk/PairActive/
-		// offset back to the talk column. Mirror that flip HERE so the synchronous
-		// frame is identical to the deferred one for ALL desk mods — otherwise mods
-		// 2-5 (DESK/PRE-ONLY[+EX]) render one frame with Active correctly on
-		// TalkBase but the desk/pair-hide/offset still on the preanim column on the
-		// very Update-skipping draw drivers this swap exists for. Idempotent
-		// (recomputes from c.current, non-nil past the :1432 guard). The immediate-
-		// mode (PhaseTalking) arm is already on the talk column — its startTalking
-		// ran applyDeskMods(false) at entry — so only PhasePreanim needs it.
+		// Mirror PhasePreanim's exit so this frame matches the deferred one for all desk mods; idempotent.
 		if c.phase == PhasePreanim {
 			c.applyDeskMods(false)
 		}
 	}
 }
 
-// recordMissing remembers a conclusively-404'd base so the wait gate can treat a
-// declared-but-absent sprite as "nothing to wait for". Bounded (missingSpritesCap)
-// and game-thread only (called from the App's warning drain, like the rest of
-// NotifyAssetMissing).
+// recordMissing remembers a 404'd base for the wait gate. Bounded; game thread only.
 func (c *Courtroom) recordMissing(base string) {
 	if c.missingSprites == nil {
 		c.missingSprites = make(map[string]struct{})
@@ -2232,18 +1528,13 @@ func (c *Courtroom) recordMissing(base string) {
 	c.missingSprites[base] = struct{}{}
 }
 
-// spriteConfirmedMissing reports whether base has been conclusively 404'd this
-// session. The wait gate reads it so a never-arriving preanim releases the hold
-// on the miss signal instead of the full timeout.
+// spriteConfirmedMissing reports a base 404'd this session, so the gate releases on the miss.
 func (c *Courtroom) spriteConfirmedMissing(base string) bool {
 	_, ok := c.missingSprites[base]
 	return ok
 }
 
-// SkipToIdle fast-forwards the CURRENT message straight to idle: reveal the rest
-// of the text, release a preanim that's waiting on the viewport callback, and
-// collapse every timed phase (shout / preanim / linger) with a huge step. A
-// replay/player "next" uses it so the following event can be fed immediately.
+// SkipToIdle fast-forwards the current message to idle, so a replay "next" can feed the following event at once.
 func (c *Courtroom) SkipToIdle() {
 	const bigStep = time.Hour // collapse any phase timer in a single Update
 	for i := 0; i < 8 && c.phase != PhaseIdle; i++ {
@@ -2253,17 +1544,8 @@ func (c *Courtroom) SkipToIdle() {
 	}
 }
 
-// RestoreMessage re-stages a previously-played message in its SETTLED form:
-// idle sprite, full text revealed, phase back at idle — the state a live
-// watcher would have ended on. A rebuilt room (tab reactivation, re-entering
-// court, pinning a background tab) seeds it from Session.LastIC so the stage
-// isn't blank until the next MS. The ceremony is skipped wholesale: audio is
-// diverted to NopAudio for the replay (the shout/SFX/blips already played when
-// the message was live — or landed off screen, where they must stay silent),
-// catch-up is bypassed (beginCaughtUp leaves the sprite as-is, which on a
-// fresh room means no speaker at all), and the message's one-shot screen
-// effects (flash/shake) are cleared rather than re-fired. Prefetches for the
-// art the settled scene DOES show (idle/talk/pair sprites, scenery, chat skin)
+// RestoreMessage re-stages a message settled, for a rebuilt room. Audio goes to NopAudio, as sounds must not replay;
+// catch-up is bypassed because it leaves the sprite as-is; one-shot effects are cleared.
 func (c *Courtroom) RestoreMessage(msg *protocol.ChatMessage) {
 	if msg == nil {
 		return
@@ -2273,20 +1555,12 @@ func (c *Courtroom) RestoreMessage(msg *protocol.ChatMessage) {
 	c.begin(msg)
 	c.SkipToIdle()
 	c.audio, c.CatchUp, c.restoring = savedAudio, savedCatchUp, false
-	// SkipToIdle's hour-sized steps already count any begin-fired flash/shake
-	// down to zero; clear explicitly so the no-replayed-effects invariant
-	// doesn't hinge on Update's countdown-before-phase ordering.
+	// Clear explicitly so no-replayed-effects doesn't rely on Update's countdown ordering.
 	c.Scene.FlashLeft, c.Scene.ShakeLeft = 0, 0
-	// begin() rebuilt frameTriggers (#17) with cursors at 0, but a restore is a
-	// SETTLED replay: the idle sprite now loops on the real (restored) audio sink,
-	// so any idle-phase FRAME_* trigger would fire its SFX/flash/shake on tab-back /
-	// court re-entry / pin — a replay violating the no-sound/flash-replay restore
-	// invariant. Clear the table like beginCaughtUp does so NotifyFrameShown stays
-	// inert for the restored message.
+	// The idle loop runs on the real audio sink, so an idle trigger would replay sound or flash on tab-back.
 	c.frameTriggers = frameTriggerTable{}
 }
 
-// Update advances the message lifecycle by dt.
 func (c *Courtroom) Update(dt time.Duration) {
 	// Effect countdowns run independent of the phase machine.
 	if c.Scene.FlashLeft > 0 {
@@ -2301,22 +1575,16 @@ func (c *Courtroom) Update(dt time.Duration) {
 			c.Scene.ShakeLeft = 0
 		}
 	}
-	// A screen effect whose misc roster was still resolving when the message fired
-	// re-asks here until it lands (overlayfx.go). Inert otherwise.
+	// A screen effect whose roster was resolving re-asks here.
 	c.tickOverlayPending(dt)
-	// Delayed emote SFX + preanim screenshake (#12): fire at SFX_DELAY × 40ms.
-	// Runs independent of the phase machine (armed in enterAfterShout, cleared in
-	// begin), so a delay that outlasts the preanim still lands during the talk
-	// loop, exactly as AO2's sfx_delay_timer does.
+	// Independent of the phase machine, so a delay outlasting the preanim lands during talk, as sfx_delay_timer does.
 	if c.sfxArmed {
 		c.sfxLeft -= dt
 		if c.sfxLeft <= 0 {
 			c.fireSFXDelay()
 		}
 	}
-	// An immediate-mode preanim is decoration, not occupancy: it advances outside
-	// the phase switch so it can keep playing across linger and into idle, exactly
-	// as AO2 leaves anim_state at 4 while the message settles.
+	// An immediate preanim advances outside the switch so it plays across linger, as AO2 leaves anim_state at 4.
 	c.tickImmediatePreanim(dt)
 	switch c.phase {
 	case PhaseShout:
@@ -2328,9 +1596,7 @@ func (c *Courtroom) Update(dt time.Duration) {
 	case PhasePreanim:
 		c.timer -= dt
 		if c.preanimDone || c.timer <= 0 {
-			// Which of the two fired is exactly the interrupt audit's question: a
-			// TIMEOUT on a preanim that decoded means the bound pre-empted a real
-			// animation, a FINISHED means it played out.
+			// TIMEOUT on a decoded preanim means the bound cut a real animation short; FINISHED means it played out.
 			if c.preanimDone {
 				c.endPreanim(PreanimEndFinished)
 			} else {
@@ -2342,8 +1608,7 @@ func (c *Courtroom) Update(dt time.Duration) {
 	case PhaseTalking:
 		_, blips := c.Typewriter.Update(dt)
 		c.Scene.VisibleRunes = c.Typewriter.Visible()
-		// Inline \s/\f codes fire the instant the crawl reaches them (AO2-Client
-		// chat_tick parity); a skip drops any it hasn't reached (SkipToEnd).
+		// Inline codes fire as the crawl reaches them (chat_tick); a skip drops any unreached.
 		for {
 			m, ok := c.Typewriter.NextEffect()
 			if !ok {
@@ -2359,14 +1624,7 @@ func (c *Courtroom) Update(dt time.Duration) {
 				c.audio.PlayBlip(c.blipRef.Base) // AssetType: Blip
 			}
 		}
-		// Text completion ends the message's OCCUPANCY, full stop — an
-		// immediate-mode preanim still playing over the box does not extend it.
-		// AO2 starts text_queue_timer (the queue advance) from chat_tick the
-		// instant the text finishes (../AO2-Client/src/courtroom.cpp:4332-4338, and
-		// :4208-4213 for a blank post) with anim_state still 4, i.e. with the
-		// immediate preanim mid-playback. This used to hold the whole queue for the
-		// preanim's length, which is precisely what ticking "immediate" asks the
-		// client NOT to do; tickImmediatePreanim now owns the animation's lifetime.
+		// Text completion ends occupancy: AO2 starts text_queue_timer here (courtroom.cpp:4332-4338, :4208-4213).
 		if c.Typewriter.Done() {
 			c.enterLinger()
 		}
@@ -2375,9 +1633,7 @@ func (c *Courtroom) Update(dt time.Duration) {
 		c.timer -= dt
 		if c.timer <= 0 {
 			c.phase = PhaseIdle
-			// Wait mode: a cold next sprite holds in the queue (the PhaseIdle case
-			// below keeps ticking it). Gate off → waitHolds is false immediately and
-			// the next message dequeues THIS tick, exactly as before.
+			// A cold next sprite holds in the queue; with the gate off the next message dequeues this tick.
 			if len(c.queue) > 0 && c.waitHolds(c.queue[0], len(c.queue)-1, 0) {
 				break
 			}
@@ -2385,10 +1641,7 @@ func (c *Courtroom) Update(dt time.Duration) {
 		}
 
 	case PhaseIdle:
-		// Only the wait gate can leave a message queued while idle (every other
-		// path drains on arrival / linger-end), so this case is a no-op unless a
-		// hold is in flight: tick it and begin the moment the sprite lands or the
-		// timeout expires.
+		// Only the wait gate leaves a message queued while idle, so this is a no-op without a hold.
 		if len(c.queue) > 0 && !c.waitHolds(c.queue[0], len(c.queue)-1, dt) {
 			c.dequeue()
 		}
@@ -2405,21 +1658,17 @@ func (c *Courtroom) dequeue() {
 	c.begin(next)
 }
 
-// hasPreanim mirrors webAO's emptiness checks for the preanim field.
+// hasPreanim mirrors webAO's emptiness checks.
 func hasPreanim(msg *protocol.ChatMessage) bool {
 	return msg.PreEmote != "" && msg.PreEmote != emptyPreanimDash
 }
 
-// spriteAlts is URLBuilder.EmoteAlts through the room's builder (the chain
-// every sprite prefetch in this file feeds to PrefetchChain).
+// spriteAlts is URLBuilder.EmoteAlts through the room's builder.
 func (c *Courtroom) spriteAlts(character, emote string, kind EmoteKind) []string {
 	return c.urls.EmoteAlts(character, emote, kind)
 }
 
-// deskVisible reports whether the desk is drawn for a desk mod in a given phase.
-// AO2 flips the EX/pre/emote modes between the preanim and the talk/idle phase
-// (courtroom.cpp:4075-4091 preanim vs :4134-4152 talk); this table is exactly
-// those two switch statements:
+// deskVisible is AO2's two desk_mod switches (courtroom.cpp:4075-4091 preanim, :4134-4152 talk).
 func deskVisible(deskMod int, preanim bool) bool {
 	switch deskMod {
 	case protocol.DeskShow:
@@ -2435,27 +1684,19 @@ func deskVisible(deskMod int, preanim bool) bool {
 	}
 }
 
-// DeskResolution is what a streaming client currently knows about the desk image
-// for the live background+position pair. AO2-Client answers this synchronously
-// with file_exists (../AO2-Client/src/courtroom.cpp:4628); we can only answer it
-// as the one prefetch we already issued resolves, so "not yet known" is a state.
+// DeskResolution is what we know of the desk; AO2 uses file_exists (courtroom.cpp:4628), and we learn asynchronously.
 type DeskResolution int
 
 const (
-	// DeskUnresolved: the desk image has neither landed nor been declared absent
-	// (still streaming, or never asked for). The scenery already on screen is
-	// held exactly as before — a real desk must never blink off mid-load.
+	// DeskUnresolved: neither landed nor absent; held so a real desk never blinks off mid-load.
 	DeskUnresolved DeskResolution = iota
-	// DeskResolved: the desk image for THIS background+position is resident.
+	// DeskResolved: the desk for this background and position is resident.
 	DeskResolved
-	// DeskAbsent: every configured format for the desk 404'd
-	// (assets.Manager.reportMissing → the App's warning drain → NotifyDeskMissing).
+	// DeskAbsent: every format 404'd (reportMissing, then NotifyDeskMissing).
 	DeskAbsent
 )
 
-// DeskDrawn is the whole desk-visibility decision: the char.ini desk_mod phase
-// table AND the streamed availability of the desk image.
-// room's (#44).
+// DeskDrawn is the desk decision: the desk_mod table and the streamed availability.
 func DeskDrawn(deskMod int, preanim bool, res DeskResolution) bool {
 	if res == DeskAbsent {
 		return false
@@ -2463,10 +1704,7 @@ func DeskDrawn(deskMod int, preanim bool, res DeskResolution) bool {
 	return deskVisible(deskMod, preanim)
 }
 
-// deskResolutionOf reports what this room knows about a desk base. Only
-// DeskAbsent changes the outcome of DeskDrawn, so a base we have not been told
-// about is simply DeskUnresolved. Game-thread only: a map read plus, where the
-// room was wired one, the same T1 residency probe the sprite wait-gate uses.
+// deskResolutionOf reports what this room knows of a desk base; only DeskAbsent changes DeskDrawn. Game thread only.
 func (c *Courtroom) deskResolutionOf(base string) DeskResolution {
 	if base == "" {
 		return DeskUnresolved
@@ -2481,35 +1719,23 @@ func (c *Courtroom) deskResolutionOf(base string) DeskResolution {
 	return DeskUnresolved
 }
 
-// deskResolution is deskResolutionOf for the LIVE scene's desk.
 func (c *Courtroom) deskResolution() DeskResolution {
 	return c.deskResolutionOf(c.Scene.DeskBase)
 }
 
-// NotifyDeskMissing reports that the desk image for a background+position
-// conclusively 404'd (every configured format probed). Called from the App's
-// warning drain on the game/render thread, exactly like NotifyAssetMissing, and
-// costs no extra probe — it rides the Warning the desk prefetch already emitted.
-// One Manager serves every room, so bases for OTHER rooms arrive here too; the
-// Scene.DeskBase compare makes those a string-compare no-op (the wrong-room
-// contract NotifyAssetMissing already follows).
+// NotifyDeskMissing reports a desk 404 from the warning drain; the Scene.DeskBase compare ignores other rooms' bases.
 func (c *Courtroom) NotifyDeskMissing(base string) {
 	if base == "" {
 		return
 	}
 	c.recordMissingDesk(base)
-	// Re-derive the LIVE scene so the current message reacts immediately instead
-	// of waiting for the next phase edge (a settled message has no further edge —
-	// the desk would stay wrongly visible for the rest of the message).
-	// applyDeskMods recomputes from c.current and is idempotent.
+	// Re-derive now, as a settled message has no further phase edge; applyDeskMods is idempotent.
 	if c.current != nil && base == c.Scene.DeskBase {
 		c.applyDeskMods(c.phase == PhasePreanim)
 	}
 }
 
-// recordMissingDesk remembers a conclusively-404'd desk base. Bounded
-// (missingDesksCap) and game-thread only, mirroring recordMissing's
-// stop-inserting-when-full policy.
+// recordMissingDesk remembers a 404'd desk base. Bounded; game thread only.
 func (c *Courtroom) recordMissingDesk(base string) {
 	if c.missingDesks == nil {
 		c.missingDesks = make(map[string]struct{})
@@ -2523,42 +1749,26 @@ func (c *Courtroom) recordMissingDesk(base string) {
 	c.missingDesks[base] = struct{}{}
 }
 
-// zoomEmote reports whether an emote mod takes the stage over the way AO2's zoom
-// does. Two separate AO2 behaviours key off it, and both are about a zoom being a
-// SOLO shot rather than a courtroom scene:
-// Reported on the #126 zoom playtest (Crystalwarrior quoted handle_ic_speaking).
+// zoomEmote reports a mod that makes a solo shot, as AO2's zoom does (handle_ic_speaking).
 func zoomEmote(mod int) bool {
 	return mod == protocol.EmoteModZoom || mod == protocol.EmoteModPreanimZoom
 }
 
-// applyDeskMods re-derives the phase-dependent desk state from the CURRENT
-// message for the given phase (preanim vs talk/idle). It always recomputes from
-// c.current — never cumulatively mutating Scene — so a phase that shows the pair
-// or restores an offset does so from the message, not from prior Scene state.
-// Pair-hide and offset-zero are DECOUPLED because AO2 handles them independently
-// (they are NOT symmetric across the two EX modes).
-// Mod 5 (DESK_PRE_ONLY_EX): the sideplayer/offset stay put through the preanim
-// (set_scene(true) fall-through, courtroom.cpp:4085-4089), and only talk hides the
-// sideplayer + move(0,0) (courtroom.cpp:4145-4146). So the pair is hidden and the
-// offset zeroed in TALK only, both restored in the preanim.
+// applyDeskMods recomputes from c.current, never Scene. Pair-hide and offset-zero are separate because AO2's EX modes
+// differ: mod 5 hides and zeroes in talk only (courtroom.cpp:4085-4089, courtroom.cpp:4145-4146).
 func (c *Courtroom) applyDeskMods(preanim bool) {
 	if c.current == nil {
 		return
 	}
 	msg := c.current
 	zoom := zoomEmote(msg.EmoteMod)
-	// The desk is a WRITE-ONLY to the talk side for a zoom emote: shown through the
-	// preanimation (play_preanim's set_scene), hidden once the talking starts
-	// (handle_ic_speaking) — see zoomEmote.
+	// A zoom shows the desk through the preanim (set_scene), hidden once talking (handle_ic_speaking).
 	c.Scene.ShowDesk = DeskDrawn(msg.DeskMod, preanim, c.deskResolution()) && !(zoom && !preanim)
-	// Pair visibility. Mod 4 hides it in both phases (never re-shown by AO2); mod 5
-	// hides it in talk only; a zoom emote hides it in BOTH (AO2 never displays the
-	// pair for one). Otherwise it comes straight from the message.
+	// Mod 4 hides the pair in both phases, mod 5 in talk only, a zoom in both.
 	hidePair := msg.DeskMod == protocol.DeskEmoteOnlyEx ||
 		(!preanim && msg.DeskMod == protocol.DeskPreOnlyEx) || zoom
 	c.Scene.PairActive = msg.Pair.Active() && !hidePair
-	// Speaker offset. Zeroed only in the phase AO2 does move(0,0): mod 4 during the
-	// PREANIM (restored to the message offset in talk), mod 5 during TALK/idle.
+	// Zeroed only where AO2 does move(0,0): mod 4 in preanim, mod 5 in talk and idle.
 	zeroOffset := (preanim && msg.DeskMod == protocol.DeskEmoteOnlyEx) ||
 		(!preanim && msg.DeskMod == protocol.DeskPreOnlyEx)
 	if zeroOffset {
@@ -2568,11 +1778,7 @@ func (c *Courtroom) applyDeskMods(preanim bool) {
 	}
 }
 
-// displayName is the chatbox name plate for a message — the shared
-// DisplayName chain (displayname.go) bound to this room's viewer settings.
-// The IC log drives the SAME function, which is the whole point of it being a
-// function: the plate and the log used to reach the same answer only because
-// they happened to implement the same two of canon's three rungs.
+// displayName is the name plate, DisplayName bound to this room's settings; the IC log uses the same function.
 func (c *Courtroom) displayName(msg *protocol.ChatMessage) string {
 	var ini IniShowname
 	if c.Chars != nil {

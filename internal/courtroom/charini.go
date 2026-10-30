@@ -14,9 +14,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
-// Emote is one [Emotions] entry from a character's char.ini:
-// "<n> = comment#preanim#anim#emote_mod[#desk_mod]", enriched with the
-// per-emote audio sections keyed by the same 1-based number.
+// Emote is one [Emotions] entry, "<n> = comment#preanim#anim#emote_mod[#desk_mod]", plus its numbered audio sections.
 type Emote struct {
 	Comment string
 	Preanim string
@@ -24,76 +22,45 @@ type Emote struct {
 	Mod     int
 	DeskMod int
 
-	// Per-emote audio (AO2-Client read_char_ini):
-	// [SoundN] sfx name ("" or "1" = silent), [SoundT] delay ticks,
-	// [SoundL] looping flag (2.8), [Blips] per-emote blip override (2.9.1).
+	// Per-emote audio (read_char_ini): [SoundN] sfx ("" or "1" = silent), [SoundT] delay, [SoundL] loop, [Blips] blip.
 	SFXName  string
 	SFXDelay int
 	SFXLoop  bool
 	Blip     string
 
-	// Networked frame-synced effects (#17): the three FRAME_* wire fields for
-	// THIS emote, pre-assembled at parse in AO2's exact format
-	// "<pre>[|<f>=<v>…]^(b)<anim>[|…]^(a)<anim>[|…]^" (courtroom.cpp:2266-2287).
-	// Empty when the char.ini authors no [<emote>_FrameScreenshake] /
-	// [<emote>_FrameRealization] / [<emote>_FrameSFX] sections — the send path
-	// then ships "" (unchanged wire) and KFOCompat still fills its template.
+	// FRAME_* wire fields in AO2's format (courtroom.cpp:2266-2287); "" without frame sections, which KFOCompat fills.
 	FrameShake   string
 	FrameRealize string
 	FrameSFX     string
 }
 
-// CustomShout is one 2.10 custom interjection: Name is the menu label,
-// File the art stem under characters/<char>/custom_objections/. A
-// streaming client cannot list that directory, so the char.ini [Shouts]
-// "<stem>_name" keys are the discoverable source (AO2-Client uses them as
-// display-name overrides for the dir scan it can do locally).
+// CustomShout is a 2.10 interjection; we can't list custom_objections/, so [Shouts] "<stem>_name" keys are the source.
 type CustomShout struct {
 	Name string
 	File string
 }
 
-// CharINI is the slice of char.ini AsyncAO needs: emote list, default side,
-// blip set, showname, custom shouts.
+// CharINI is the part of char.ini AsyncAO needs.
 type CharINI struct {
 	Showname string
-	// NeedsShowname is the [Options] needs_showname= opt-out, kept RAW because
-	// canon tests it with startsWith rather than a boolean parse:
-	// get_showname returns the empty string when it starts with "false"
-	// (text_file_functions.cpp:465-468), which is a deliberate blank plate and
-	// not "fall back to the folder name". ShownameOrFolder is that rule.
+	// NeedsShowname stays raw: canon tests startsWith "false" (text_file_functions.cpp:465-468), giving a blank plate.
 	NeedsShowname string
 	Side          string
 	Blips         string
-	// Chat is the [Options] chat= misc folder: the character's own chatbox
-	// skin lives at misc/<Chat>/chatbox (AO2-Client get_chat). Empty = the
-	// client's normal chatbox.
+	// Chat is the [Options] chat= misc folder holding misc/<Chat>/chatbox (get_chat); empty means the normal chatbox.
 	Chat string
-	// Effects is the [Options] effects= misc folder: the character's own screen-
-	// effect pack lives at misc/<Effects>/ — its effects.ini plus the art in the
-	// folder ROOT (not in an effects/ subfolder) plus icons/. AO2 defaults
-	// get_effect / get_effects / get_effect_property's p_folder to this whenever
-	// the caller passes none (text_file_functions.cpp:772, :836-839, :855-858).
-	// Empty = the theme's own effects only.
+	// Effects is the [Options] effects= misc folder, effects.ini and art in its root
+	// (text_file_functions.cpp:772, :836-839, :855-858); empty means theme effects only.
 	Effects string
-	// Realization is the [Options] realization= sound NAME: the character's own
-	// realization SFX. Canon gives it two jobs, both of which override whatever
-	// effects.ini says — get_effect_property special-cases fx=="realization" &&
-	// prop=="sound" and replaces the merged value wholesale with
-	// get_custom_realization (text_file_functions.cpp:889-892, :896-903), and the
-	// legacy REALIZATION=1 path plays it directly (courtroom.cpp:4175). Empty = the
-	// theme's own courtroom_sounds.ini "realization".
+	// Realization is the [Options] realization= sound; it overrides effects.ini (text_file_functions.cpp:889-892,
+	// :896-903), and legacy REALIZATION=1 plays it (courtroom.cpp:4175).
 	Realization string
-	// Scaling is the [Options] scaling= filter this character asks for:
-	// "pixel"/"fast" = point-sample (hand-pixelled art must not be blurred),
-	// "smooth" = filter, anything else (including absent) = let the automatic
-	// rule decide. Raw here, resolved by ScalingMode.
+	// Scaling is the raw [Options] scaling= request, resolved by ScalingMode.
 	Scaling string
 	Emotes  []Emote
-	// CustomName renames the character's base "custom" shout ([Shouts]
-	// custom_name); empty when the ini doesn't define it.
+	// CustomName renames the base "custom" shout ([Shouts] custom_name).
 	CustomName string
-	// CustomShouts are the named 2.10 interjections (≤ customShoutCap).
+	// CustomShouts are the named 2.10 interjections (at most customShoutCap).
 	CustomShouts []CustomShout
 }
 
@@ -107,39 +74,22 @@ const (
 	charINIShoutsSection   = "shouts"
 	emoteFieldCount        = 4
 
-	// Networked frame-effect section suffixes (#17): AO2-Client reads
-	// [<emote>_FrameScreenshake] / [<emote>_FrameRealization] / [<emote>_FrameSFX]
-	// where <emote> is the pre-emote name, "(b)"+anim, and "(a)"+anim
-	// (courtroom.cpp:2266-2280). Section names are matched case-insensitively by
-	// the INI reader, so the suffixes are lowercase here.
+	// Frame-effect section suffixes (courtroom.cpp:2266-2280); INI sections match case-insensitively, so lowercase.
 	frameScreenshakeSuffix = "_framescreenshake"
 	frameRealizationSuffix = "_framerealization"
 	frameSFXSuffix         = "_framesfx"
-	// frameEffectFramesCap bounds how many "<frame>=<value>" pairs one emote's
-	// FRAME_* section may contribute to the outgoing wire, so our OWN char.ini
-	// with a pathological section can't build an unbounded packet (§17.4). Well
-	// above any real preanim's frame count.
+	// frameEffectFramesCap bounds one emote's FRAME_* pairs (hard rule 4), so a local char.ini can't grow the packet.
 	frameEffectFramesCap = 256
-	// charEmoteScanCap bounds the [Emotions] "number=" scan (rule §17.4). The
-	// count is attacker-controlled server bytes — a hostile "number=2000000000"
-	// otherwise loops ~2e9 times, each allocating an fmt.Sprintf key: a hang +
-	// GC storm from one malformed char.ini (caught by FuzzParseCharINI). Chosen
-	// well clear of any REAL char.ini: single characters carry at most a few
-	// hundred emotes, and even a merged "ensemble"/megachar sheet stacking many
-	// casts stays comfortably under this — 8192 is an order of magnitude past the
-	// largest shipped set while still bounding the scan to a trivial cost (a
-	// claimed count above it simply stops reading extra rows, which would have to
-	// exist as [Emotions] keys anyway). If a genuine char legitimately needs more,
-	// raise this named constant; do not remove the clamp.
+	// charEmoteScanCap bounds the "number=" scan (hard rule 4): a hostile count would loop billions of times.
+	// Raise it if needed; never remove the clamp.
 	charEmoteScanCap = 8192
-	// customShoutCap bounds the [Shouts] scan (rule §17.4).
+	// customShoutCap bounds the [Shouts] scan (hard rule 4).
 	customShoutCap = 32
 	// customNameSuffix marks "<stem>_name" keys in [Shouts].
 	customNameSuffix = "_name"
 )
 
-// ParseCharINI parses a char.ini payload (AO2-Client read_char_ini
-// semantics, tolerant of missing fields).
+// ParseCharINI parses a char.ini payload with read_char_ini semantics, tolerating missing fields.
 func ParseCharINI(data []byte) (*CharINI, error) {
 	ini, err := theme.ParseINI(bytes.NewReader(data))
 	if err != nil {
@@ -157,10 +107,7 @@ func ParseCharINI(data []byte) (*CharINI, error) {
 	out.Chat, _ = ini.GetSection(charINIOptionsSection, "chat")       // per-character chatbox skin (misc folder)
 	out.Effects, _ = ini.GetSection(charINIOptionsSection, "effects") // per-character screen-effect pack (misc folder)
 	out.Scaling, _ = ini.GetSection(charINIOptionsSection, "scaling") // per-character texture filter (get_scaling)
-	// The character's OWN realization sound. It overrides the effects.ini `sound` of
-	// the "realization" effect outright (get_effect_property,
-	// text_file_functions.cpp:889-892 → get_custom_realization :896-903) and is what
-	// the legacy REALIZATION=1 path plays (courtroom.cpp:4175).
+	// The character's own realization sound (courtroom.cpp:4175); see CharINI.Realization.
 	out.Realization, _ = ini.GetSection(charINIOptionsSection, "realization")
 
 	countRaw, _ := ini.GetSection(charINIEmotionsSection, "number")
@@ -183,34 +130,25 @@ func ParseCharINI(data []byte) (*CharINI, error) {
 			Preanim: parts[1],
 			Anim:    parts[2],
 			Mod:     parse.AtoiOr(parts[3], 0),
-			// AO2 shows the desk when the emote omits its optional 5th (desk_mod)
-			// field (get_desk_mod → -1, a non-hide value); only an explicit 0/3/5
-			// hides it. Defaulting to 0 here would wrongly hide the desk for the
-			// majority of emotes, which have no desk_mod field.
+			// AO2 shows the desk when the emote omits desk_mod (get_desk_mod returns -1), so a 0 default would hide it.
 			DeskMod: protocol.DeskShow,
 		}
 		if len(parts) > emoteFieldCount {
 			e.DeskMod = parse.AtoiOr(parts[4], protocol.DeskShow)
 		}
-		// Per-emote audio rides sections keyed by the same number
-		// (get_sfx_name / get_sfx_delay / get_sfx_looping / get_blipname).
+		// Per-emote audio (get_sfx_name, get_sfx_delay, get_sfx_looping, get_blipname).
 		e.SFXName, _ = ini.GetSection(charINISoundNSection, key)
 		e.SFXDelay = parse.AtoiOr(firstSection(ini, charINISoundTSection, key), 0)
 		e.SFXLoop = firstSection(ini, charINISoundLSection, key) == "1"
 		e.Blip, _ = ini.GetSection(charINIBlipsSection, key)
-		// Networked frame effects (#17): assemble the three FRAME_* wire fields for
-		// this emote from its [<emote>_Frame*] sections, matching AO2's send format
-		// exactly (courtroom.cpp:2266-2287, emotes_to_check = {pre, "(b)"+anim,
-		// "(a)"+anim}). Empty ("") when no such sections exist, so the outgoing wire
-		// is unchanged for the (vast majority of) char.inis without frame data.
+		// Build the FRAME_* wire fields in AO2's send format (courtroom.cpp:2266-2287).
 		e.FrameShake = buildFrameField(ini, e.Preanim, e.Anim, frameScreenshakeSuffix)
 		e.FrameRealize = buildFrameField(ini, e.Preanim, e.Anim, frameRealizationSuffix)
 		e.FrameSFX = buildFrameField(ini, e.Preanim, e.Anim, frameSFXSuffix)
 		out.Emotes = append(out.Emotes, e)
 	}
 
-	// [Shouts]: custom_name renames the base custom shout; every other
-	// "<stem>_name" key names a custom_objections/<stem> interjection.
+	// custom_name renames the base shout; every other "<stem>_name" names a custom_objections/<stem> interjection.
 	out.CustomName, _ = ini.GetSection(charINIShoutsSection, "custom_name")
 	for key, val := range ini.SectionKeys(charINIShoutsSection) {
 		if len(out.CustomShouts) >= customShoutCap {
@@ -225,20 +163,9 @@ func ParseCharINI(data []byte) (*CharINI, error) {
 	return out, nil
 }
 
-// ShownameOrFolder is AOApplication::get_showname
-// (text_file_functions.cpp:446-473) with p_emote == -1, which is the argument
-// every DISPLAY call site passes (courtroom.cpp:2532 log_chatmessage,
-// :3286 initialize_chatbox, :3868 append_ic_text, :4798). Only the OUTGOING
-// send reads the [OptionsN] per-emote override (:2219), so it is deliberately
-// not transcribed here.
-//
-// Canon's order matters and is not the obvious one: needs_showname is tested
-// FIRST, so a character that opts out gets a genuinely BLANK name — not the
-// folder name — and blank is a real answer that routes into the plate-less
-// chatblank rung. Only then does an absent showname fall back to the folder.
-//
-// A nil receiver (no char.ini fetched yet, or an unparsable one) answers the
-// folder name, which is exactly what canon answers for an unreadable ini.
+// ShownameOrFolder is get_showname (text_file_functions.cpp:446-473) with p_emote == -1, as display calls pass
+// (courtroom.cpp:2532, :3286, :3868, :4798; only the send, :2219, reads [OptionsN]).
+// needs_showname is tested first, so an opt-out is a real blank name; a nil receiver answers the folder.
 func (c *CharINI) ShownameOrFolder(folder string) string {
 	if c == nil {
 		return folder
@@ -252,23 +179,8 @@ func (c *CharINI) ShownameOrFolder(folder string) string {
 	return folder // :470-472
 }
 
-// IdleAnim is the character's DEFAULT RESTING POSE: the anim name of the FIRST
-// [Emotions] entry. That is emote 1, the one AO2 has selected for you the moment
-// a character is picked (enter_courtroom leaves m_emote_id at 0 and paints the
-// first button pressed, courtroom.cpp:1487 / on_emote_clicked), so it is
-// literally what a player looks like before they touch anything.
-//
-// IT EXISTS BECAUSE "normal" IS A CONVENTION, NOT A GUARANTEE. Plenty of packs
-// spell their poses SNormal / SCry / HSmug and ship no `normal.*` sprite at all;
-// a surface that mints characters/<x>/(a)normal for them probes a 404 and draws
-// an empty box. Every preview in this client that needs "the sprite this
-// character shows when idle" wants THIS answer, and one function for it is what
-// stops the next surface from spelling the literal again.
-//
-// A nil receiver (nothing fetched yet, or an unparsable ini) and an ini with no
-// [Emotions] both answer "" — an ABSENT answer, never a guess. The caller keeps
-// its own optimistic convention for that window, which is what lets the common
-// pack still fill its box from a single probe (ui.previewPortraitAnim's rule).
+// IdleAnim is the first [Emotions] anim, AO2's preselected emote (courtroom.cpp:1487), as many packs have no "normal".
+// Nil or no emotes returns "", and the caller keeps its own convention.
 func (c *CharINI) IdleAnim() string {
 	if c == nil || len(c.Emotes) == 0 {
 		return ""
@@ -276,20 +188,12 @@ func (c *CharINI) IdleAnim() string {
 	return strings.TrimSpace(c.Emotes[0].Anim)
 }
 
-// firstSection is GetSection collapsed to its value.
 func firstSection(ini *theme.INI, section, key string) string {
 	v, _ := ini.GetSection(section, key)
 	return v
 }
 
-// buildFrameField assembles one outgoing FRAME_* wire field (#17) for an emote,
-// mirroring AO2-Client on_chat_return_pressed (courtroom.cpp:2266-2287): three
-// "^"-terminated sections for the pre-emote, the "(b)" talk emote and the "(a)"
-// idle emote, each "<emote>[|<frame>=<value>…]". The frame pairs come from the
-// char.ini [<emote><suffix>] section (read_ini_tags → "<key>=<value>", joined by
-// "|"). Returns "" when NONE of the three sections carry a tag, so a char.ini
-// without frame data leaves the wire byte-identical to before (the send path then
-// ships "" and KFOCompat still fills its template).
+// buildFrameField assembles one FRAME_* field as on_chat_return_pressed does (courtroom.cpp:2266-2287); "" if no tags.
 func buildFrameField(ini *theme.INI, pre, anim, suffix string) string {
 	emotes := [...]string{pre, "(b)" + anim, "(a)" + anim}
 	var b strings.Builder
@@ -310,11 +214,8 @@ func buildFrameField(ini *theme.INI, pre, anim, suffix string) string {
 	return b.String()
 }
 
-// frameSectionTags renders a [<section>]'s "<frame>=<value>" entries as a
-// "|"-joined, frame-number-sorted string (QSettings::allKeys returns keys sorted,
-// so a receiver sees a stable order). *remaining bounds the total pairs across the
-// three sections of one field (§17.4) so our own hostile char.ini can't build an
-// unbounded packet. Only numeric keys are emitted (AO2's frame_data.at(0).toInt).
+// frameSectionTags renders numeric "<frame>=<value>" entries sorted, as QSettings::allKeys does;
+// remaining bounds pairs across a field's three sections (hard rule 4).
 func frameSectionTags(ini *theme.INI, section string, remaining *int) string {
 	keys := ini.SectionKeys(section)
 	if len(keys) == 0 {
@@ -352,9 +253,7 @@ func frameSectionTags(ini *theme.INI, section string, remaining *int) string {
 	return b.String()
 }
 
-// ParseChatboxDefaultColor parses a misc chatbox's chat_config.ini, returning the
-// default IC text colour: c0, palette index 0 (the colour AO2 uses for uncoloured
-// text). ok=false when the key is absent or malformed.
+// ParseChatboxDefaultColor returns c0 from a misc chatbox's chat_config.ini, the colour AO2 uses for uncoloured text.
 func ParseChatboxDefaultColor(data []byte) (theme.RGB, bool) {
 	ini, err := theme.ParseINI(bytes.NewReader(data))
 	if err != nil {
@@ -367,10 +266,7 @@ func ParseChatboxDefaultColor(data []byte) (theme.RGB, bool) {
 	return parseRGBTuple(raw)
 }
 
-// ParseChatboxFontsIni parses a misc chatbox's courtroom_fonts.ini, returning
-// showname_color and message_color (the latter a secondary default-text source for
-// packs that set it there instead of chat_config.ini c0). Set flags false = absent
-// or malformed → the theme's colour stays.
+// ParseChatboxFontsIni returns courtroom_fonts.ini's showname_color and message_color; false keeps the theme's.
 func ParseChatboxFontsIni(data []byte) (showname theme.RGB, shownameSet bool, message theme.RGB, messageSet bool) {
 	ini, err := theme.ParseINI(bytes.NewReader(data))
 	if err != nil {
@@ -389,8 +285,7 @@ func ParseChatboxFontsIni(data []byte) (showname theme.RGB, shownameSet bool, me
 	return
 }
 
-// parseRGBTuple parses AO2's "r, g, b" colour tuple (the same shape the theme
-// package's message_color / showname_color use). ok=false on any malformed part.
+// parseRGBTuple parses AO2's "r, g, b" colour; ok=false on any malformed part.
 func parseRGBTuple(raw string) (theme.RGB, bool) {
 	const channels = 3
 	parts := strings.Split(raw, ",")

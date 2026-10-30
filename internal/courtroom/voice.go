@@ -11,32 +11,19 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
-// Voice chat — the Nyathena/LemmyAO server-relayed VS_* transport. Every opus
-// frame travels client -> AO2 server -> peers over the EXISTING WebSocket: no
-// WebRTC, no STUN/TURN/ICE, no P2P, so peers never learn each other's IPs (a
-// structural privacy property — ../LemmyAO/src/voice/voice.ts). This file owns
-// the wire + the session-side presence state only; the opus codec lives in
-// internal/voice and mic capture / playback in internal/render (hard rule #1).
-//
-// The whole feature is gated on the server's VS_CAPS advert, so a server that
-// never sends VS_CAPS has zero voice surface and an unchanged wire.
-//
-// Wire (canonical, '#' separator / '%' terminator; base64 needs no escaping):
+// Server-relayed VS_* voice over the WebSocket: no P2P, so peers never learn IPs (../LemmyAO/src/voice/voice.ts).
 //
 //	s2c  VS_CAPS#<enabled>#<ptt_only>#<max_peers>#<codec>#<sample_rate>#<frame_ms>#<max_frame_bytes>#%
 //	s2c  VS_PEERS#<csv_uids>#%
 //	s2c  VS_JOIN#<uid>#%   VS_LEAVE#<uid>#%   VS_SPEAK#<uid>#<on>#%   VS_AUDIO#<from_uid>#<b64>#%
 //	c2s  VS_JOIN#%         VS_LEAVE#%         VS_SPEAK#<on>#%         VS_FRAME#<b64>#%
 
-// voicePeerCap bounds the voice peer / speaking maps (hard rule #4: no unbounded
-// caches). Far above any real voice room; a reconnect re-dumps VS_PEERS, so a hit
-// here self-heals rather than corrupting state.
+// voicePeerCap bounds the voice maps (hard rule 4); a reconnect re-dumps VS_PEERS, so hitting it self-heals.
 const voicePeerCap = 256
 
-// voicePeersInitialCap sizes the voice peer sets for a typical area.
 const voicePeersInitialCap = 8
 
-// VS_CAPS field order, and the defaults for fields an older server omits.
+// VS_CAPS field order, and defaults for fields an older server omits.
 const (
 	vsCapsEnabled = iota
 	vsCapsPTTOnly
@@ -51,8 +38,7 @@ const (
 	voiceDefaultMaxFrameBytes = 4096
 )
 
-// VoiceCaps is the server's voice capability advertisement (VS_CAPS). Enabled
-// gates the whole feature; the rest let capture/transport match the server.
+// VoiceCaps is the server's VS_CAPS advertisement; Enabled gates the whole feature.
 type VoiceCaps struct {
 	Enabled       bool
 	PTTOnly       bool
@@ -63,8 +49,7 @@ type VoiceCaps struct {
 	MaxFrameBytes int
 }
 
-// voiceBool parses an AO wire bool: "1"/"true"/"yes"/"on" = true, else false
-// (servers vary, so accept the common spellings).
+// voiceBool parses an AO wire bool, accepting the spellings servers vary between.
 func voiceBool(s string) bool {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "1", "true", "yes", "on":
@@ -73,8 +58,7 @@ func voiceBool(s string) bool {
 	return false
 }
 
-// handleVoicePacket reduces one VS_* packet into voice state + an event. Pure
-// w.r.t. the network (no sends); mutates only the session's voice maps.
+// handleVoicePacket reduces one VS_* packet into voice state and an event, without sending.
 func (s *Session) handleVoicePacket(p protocol.Packet) []Event {
 	switch p.Header {
 	case "VS_CAPS":
@@ -156,14 +140,13 @@ func (s *Session) handleVoicePacket(p protocol.Packet) []Event {
 	return nil
 }
 
-// VoiceCapsInfo returns the server's advertised voice caps (zero value = none yet).
+// VoiceCapsInfo returns the advertised voice caps (zero value = none yet).
 func (s *Session) VoiceCapsInfo() VoiceCaps { return s.voiceCaps }
 
-// VoiceAvailable reports whether this server offers voice (VS_CAPS.enabled) — the
-// single gate the UI checks before showing any voice surface.
+// VoiceAvailable reports whether this server offers voice; the UI checks it before showing any voice control.
 func (s *Session) VoiceAvailable() bool { return s.voiceCaps.Enabled }
 
-// VoicePeers returns the current voice peer uids (unordered snapshot, nil if none).
+// VoicePeers returns the current voice peer uids (unordered, nil if none).
 func (s *Session) VoicePeers() []int {
 	if len(s.voicePeers) == 0 {
 		return nil
@@ -175,27 +158,21 @@ func (s *Session) VoicePeers() []int {
 	return out
 }
 
-// VoicePeerCount is the live voice peer count (alloc-free; for the UI badge).
+// VoicePeerCount is the allocation-free peer count for the UI badge.
 func (s *Session) VoicePeerCount() int { return len(s.voicePeers) }
 
-// VoiceIsSpeaking reports whether uid is currently transmitting.
 func (s *Session) VoiceIsSpeaking(uid int) bool { return s.voiceSpeaking[uid] }
 
-// VoiceJoin / VoiceLeave enter or leave the area's voice channel (the server
-// attaches our uid and rebroadcasts).
+// VoiceJoin and VoiceLeave enter or leave the area's voice channel; the server attaches our uid.
 func (s *Session) VoiceJoin()  { s.reply(protocol.NewTypedPacket(&packetutil.VS_JOINToServer{})) }
 func (s *Session) VoiceLeave() { s.reply(protocol.NewTypedPacket(&packetutil.VS_LEAVEToServer{})) }
 
-// VoiceSpeak announces our speaking-state change (PTT press/release, or open-mic
-// VAD). Sent on the caller's loop.
+// VoiceSpeak announces a speaking-state change.
 func (s *Session) VoiceSpeak(on bool) {
 	s.reply(protocol.NewTypedPacket(&packetutil.VS_SPEAKToServer{On: on}))
 }
 
-// VoiceFrame sends one base64-encoded opus frame upstream (VS_FRAME). NOTE: the
-// audio-capture slice must funnel frames through the session's loop (or a
-// write-serialised path) — never call this directly from the SDL audio thread, or
-// it races other packet writes.
+// VoiceFrame sends one opus frame upstream; never call it from the SDL audio thread, or it races other writes.
 func (s *Session) VoiceFrame(b64 string) {
 	s.reply(protocol.NewTypedPacket(&packetutil.VS_FRAME{Payload: b64}))
 }
