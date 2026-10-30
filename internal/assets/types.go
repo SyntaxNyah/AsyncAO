@@ -1,6 +1,4 @@
-// Package assets implements the zero-fallback asset pipeline: the lock-free
-// resolution engine (learned formats), the tier-walking manager
-// (T1 → T2 → T3 → network → decode), and the SDL-free decode pool.
+// Package assets implements the asset pipeline: lock-free resolver, tier-walking manager and SDL-free decode pool.
 package assets
 
 import (
@@ -11,8 +9,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 )
 
-// AssetType identifies what kind of asset a path refers to, selecting its
-// format policy (spec §4).
+// AssetType identifies what kind of asset a path refers to, selecting its format policy.
 type AssetType int
 
 const (
@@ -26,18 +23,13 @@ const (
 	AssetTypeMusic
 	AssetTypeBlip
 	AssetTypeEmoteButton
-	// AssetTypeEffect is AO2 screen-effect overlay art (effects/<name> in a theme,
-	// misc/<folder>/<name> at the origin) and its dropdown icons. Its own type
-	// because its format policy is get_image_suffix's (.webp → .apng → .gif →
-	// .png) and because extensions.json carries no effects key, so autodetect
-	// cannot seed it — the learned table has to earn it per host.
+	// AssetTypeEffect is AO2 screen-effect art; extensions.json has no effects key, so it is learned per host.
 	AssetTypeEffect
 	// AssetTypeCount is the sentinel for fixed-size per-type tables.
 	AssetTypeCount
 )
 
-// typeNames maps AssetType to the canonical config key names. Index order
-// must match the enum; TestTypeNamesMatchConfig pins the correspondence.
+// typeNames maps AssetType to config key names; index order must match the enum.
 var typeNames = [AssetTypeCount]string{
 	AssetTypeCharIcon:    config.TypeCharIcon,
 	AssetTypeCharSprite:  config.TypeCharSprite,
@@ -52,12 +44,11 @@ var typeNames = [AssetTypeCount]string{
 	AssetTypeEffect:      config.TypeEffect,
 }
 
-// Valid reports whether t is a concrete asset type (not the sentinel).
 func (t AssetType) Valid() bool {
 	return t >= 0 && t < AssetTypeCount
 }
 
-// Name returns the canonical type name shared with internal/config.
+// Name returns the type name shared with internal/config.
 func (t AssetType) Name() string {
 	if !t.Valid() {
 		return fmt.Sprintf("AssetType(%d)", int(t))
@@ -65,14 +56,12 @@ func (t AssetType) Name() string {
 	return typeNames[t]
 }
 
-// IsAudio reports whether the type carries audio payloads, which bypass the
-// image decode pool entirely (spec §8: bytes go straight to SDL_mixer).
+// IsAudio reports whether the type carries audio, which bypasses the image decode pool and goes straight to SDL_mixer.
 func (t AssetType) IsAudio() bool {
 	return t == AssetTypeSFX || t == AssetTypeMusic || t == AssetTypeBlip
 }
 
-// TypeFromName resolves a canonical name back to its AssetType, for learned
-// table warm-up from persisted preferences.
+// TypeFromName resolves a config key name back to its AssetType.
 func TypeFromName(name string) (AssetType, bool) {
 	for t := AssetType(0); t < AssetTypeCount; t++ {
 		if typeNames[t] == name {
@@ -82,58 +71,34 @@ func TypeFromName(name string) (AssetType, bool) {
 	return 0, false
 }
 
-// Decoded is the decode pool's output: plain memory, zero SDL types. The
-// render thread turns frames into textures and then calls Release.
+// Decoded is the decode pool's output, plain memory with no SDL types; the render thread calls Release after upload.
 type Decoded struct {
-	// Frames holds RGBA pixel data per animation frame; static images have
-	// exactly one frame.
+	// Frames holds RGBA pixels per frame; static images have one.
 	Frames []*image.RGBA
-	// Delays holds the per-frame display duration, parallel to Frames.
-	// Static images carry a single zero delay.
+	// Delays is parallel to Frames; static images carry a single zero delay.
 	Delays []time.Duration
-	// Animated reports whether the payload itself was animated (VP8X ANIM
-	// flag, APNG acTL, multi-frame GIF) — independent of whether all frames
-	// were decoded (PreferAnimated=false decodes only the first).
+	// Animated reports whether the payload was animated, even if only the first frame was decoded.
 	Animated bool
-	// SourceFrames is the animation's pre-decimation frame count — the frame
-	// space the FILE was authored in (and, since AO2 never decimates, the space
-	// remote clients transmit networked frame-synced effect indices in; #17).
-	// len(Frames) may be smaller after frameDecimator dropped frames to fit the
-	// T1 byte budget. 0 for a static image / a decoder that didn't set it
-	// (treated as len(Frames), the safe identity).
+	// SourceFrames is the pre-decimation count, the space remote frame-effect indices use; 0 means len(Frames).
 	SourceFrames int
-	// Partial marks an incomplete delivery: more frames for the same base
-	// follow from the same decode job. For a classic progressive delivery the
-	// full frame set follows and REPLACES this page on upload; for a streaming
-	// delivery (Stream below) the page GROWS as further chunks append.
+	// Partial marks an incomplete delivery: the full set later replaces this page, or for a Stream the page grows.
 	Partial bool
-	// Stream marks an incremental (streaming) delivery: these frames are a
-	// PREFIX EXTENSION of the same base's resident page, not a replacement.
-	// FrameOffset is the 0-based kept-frame index these frames begin at — 0 for
-	// the establishing first frame (which parks the page in the oversized map
-	// so it can grow without LRU byte-accounting churn), k>0 for an append.
-	// When Partial is false the stream is complete and the page stops being
-	// treated as a growing prefix (the renderer may then finish a playOnce
-	// layer and report its true duration).
+	// Stream marks frames extending the resident page rather than replacing it, from kept index FrameOffset;
+	// frame 0 parks the page in the oversized map to avoid LRU churn. Partial false ends the stream.
 	Stream      bool
 	FrameOffset int
-	// Width and Height are the canvas dimensions in pixels.
+	// Width and Height are the canvas size in pixels.
 	Width, Height int
-	// Compressed holds DXT1/DXT5-encoded frame payloads, parallel to Frames.
-	// nil when compression is off/unsupported; DXTFormat is the FOURCC when set.
-	// When non-nil, Frames has already been released and the render thread
-	// uploads Compressed instead of raw RGBA.
+	// Compressed holds DXT payloads parallel to Frames, nil when off; when set, Frames has been released.
 	Compressed [][]byte
-	// DXTFormat is the compressed-texture FOURCC of Compressed (0 = raw RGBA).
+	// DXTFormat is the FOURCC of Compressed (0 = raw RGBA).
 	DXTFormat uint32
 
-	// pooledPix tracks which frame pixel buffers were drawn from the pixel
-	// pool and must be returned on Release.
+	// pooledPix tracks pool-drawn frame buffers to return on Release.
 	pooledPix []*[]byte
 }
 
-// PixelBytes returns the canvas payload size the T1 texture budget accounts
-// for: Σ w×h×4 per frame (or the encoded DXT payload size when compressed).
+// PixelBytes returns the payload size the T1 budget accounts for: w*h*4 per frame, or the DXT size when compressed.
 func (d *Decoded) PixelBytes() int64 {
 	var total int64
 	if d.DXTFormat != 0 && len(d.Compressed) > 0 {
@@ -150,9 +115,7 @@ func (d *Decoded) PixelBytes() int64 {
 	return total
 }
 
-// Release returns pooled frame buffers to the pixel pool. Call exactly once,
-// after the frames have been uploaded to textures; the Decoded must not be
-// used afterwards.
+// Release returns pooled frame buffers; call exactly once, after upload, and do not use the Decoded afterwards.
 func (d *Decoded) Release() {
 	for _, buf := range d.pooledPix {
 		putPixBuf(buf)
@@ -164,19 +127,12 @@ func (d *Decoded) Release() {
 
 // ResolvedAsset describes where an asset was found and how.
 type ResolvedAsset struct {
-	// URL is the full asset URL that answered.
+	// URL is the asset URL that answered.
 	URL string
-	// Ext is the extension that worked (".webp", ".png", ...).
+	// Ext is the extension that worked.
 	Ext string
-	// Type is the asset's type.
+	// Type is the asset type.
 	Type AssetType
-	// Learned reports whether the format came from the learned table
-	// (exactly one probe) rather than list probing.
+	// Learned reports whether the format came from the learned table, which means exactly one probe.
 	Learned bool
 }
-
-// preferredExtFor named the modern format the warning nudged content packs
-// toward. It went with ErrAllFormatsMissing: nothing constructs that error (the
-// resolver falls through to the next tier and records a miss instead), so the
-// type, its Error() and this helper were dead — deadcode + `git grep -w` at the
-// tip found no constructor anywhere, tests included.

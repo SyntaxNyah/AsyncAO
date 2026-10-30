@@ -16,19 +16,8 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/webpenc"
 )
 
-// ThumbCache is the OPT-IN persistent low-quality sprite thumbnail store
-// (power user, default OFF): a second, independent DiskCache holding a tiny
-// (~1 KB) heavily-compressed WebP still of every character sprite that ever
-// decodes, so a COLD sprite can show a low-q stand-in of the RIGHT character
-// instantly while the full-quality one streams (the "shitty compressed 1 KB
-// sprite" playtest idea). Separate from T3 by design — thumbs are ~100×
-// smaller than the sprites they stand in for, so they stay useful long after
-// the full asset was evicted ("more permanent, allows more stuff, REALLY low
-// quality").
-// Every path is bounded and off the hot loop (§17.4 / spec §2): Store and
-// RequestLoad are non-blocking enqueues that DROP when their queue is full
-// (thumbs are speculative — the paced heal retry re-asks), one goroutine
-// encodes, one loads+decodes, and the render thread only drains Results()
+// ThumbCache is the opt-in persistent store of tiny WebP sprite stills, shown while a cold sprite streams.
+// Store and RequestLoad never block and drop when full, since thumbnails are speculative.
 type ThumbCache struct {
 	disk *cache.DiskCache
 
@@ -49,54 +38,37 @@ type ThumbCache struct {
 	done      sync.WaitGroup
 }
 
-// thumbJob carries one ALREADY-SHRUNK thumbnail frame to the encode worker.
-// The shrink happens synchronously in Store (on the decode worker) because the
-// source *Decoded's pixel buffers are POOLED — TextureStore.Upload releases
-// them right after the GPU upload, so holding the original frame across a
-// queue would read recycled memory. The small copy here is independently
-// owned, so the encode worker can take its time.
+// thumbJob carries an already-shrunk frame, because source buffers are pooled and released after upload.
 type thumbJob struct {
 	base  string
 	small *image.RGBA
 }
 
-// ThumbLoaded is one loaded + decoded thumbnail, ready for the render thread
-// to upload under its thumb:// T1 key.
+// ThumbLoaded is one decoded thumbnail, ready to upload under its thumb:// T1 key.
 type ThumbLoaded struct {
 	Base  string
 	Asset *Decoded
 }
 
 const (
-	// thumbJobQueueCap / thumbLoadQueueCap / thumbResultCap bound the three
-	// hand-off queues (full = drop; thumbs are speculative).
+	// thumbJobQueueCap, thumbLoadQueueCap and thumbResultCap bound the hand-off queues; a full queue drops.
 	thumbJobQueueCap  = 16
 	thumbLoadQueueCap = 8
 	thumbResultCap    = 8
-	// ThumbHeightDefault / ThumbQualityDefault are the shipped knob defaults:
-	// 64 px tall at webp q20 lands ~1 KB per sprite — visibly low-q (that's
-	// the deal) but instantly recognisable.
+	// ThumbHeightDefault and ThumbQualityDefault give about 1 KB per sprite: visibly low quality but recognisable.
 	ThumbHeightDefault  = 64
 	ThumbQualityDefault = 20
-	// thumbFrameMs is the still frame's nominal duration inside the 1-frame
-	// animated-WebP container webpenc produces (never played as animation).
+	// thumbFrameMs is the still's nominal duration in webpenc's 1-frame animated container; it never plays.
 	thumbFrameMs = 1000
-	// thumbBudgetDefaultBytes bounds the store when the knob is unset: 64 MiB
-	// ≈ ~60k thumbnails at the default params — effectively unlimited in
-	// practice, but a hard ceiling by construction (§17.4).
+	// thumbBudgetDefaultBytes bounds the store when unset (hard rule 4), about 60k thumbnails.
 	thumbBudgetDefaultBytes = 64 << 20
-	// thumbPruneEvery is how many stores pass between prune sweeps (the sweep
-	// also runs once at open). A dir walk every store would be wasteful; one
-	// every N bounds the overshoot to N × ~1 KB.
+	// thumbPruneEvery is how many stores pass between prune sweeps, bounding overshoot to N x about 1 KB.
 	thumbPruneEvery = 64
 )
 
-// NewThumbCache opens (creating if needed) the thumbnail store rooted at root
-// and starts its two workers. Call Close to drain and stop.
+// NewThumbCache opens the store at root and starts its two workers; call Close to stop.
 func NewThumbCache(root string) (*ThumbCache, error) {
-	// 0 = no DiskCache-level auto-prune: the ThumbCache runs its OWN byte-budget
-	// prune (SetBudget/prune below) over this store, so the tier's sweep must
-	// stay out of its way.
+	// 0 disables DiskCache's own prune, because ThumbCache runs its own over this store.
 	disk, err := cache.NewDiskCache(root, 0)
 	if err != nil {
 		return nil, err
@@ -114,32 +86,22 @@ func NewThumbCache(root string) (*ThumbCache, error) {
 	return t, nil
 }
 
-// SetEnabled flips the whole feature (mirrored from the pref). Off = every
-// entry point returns immediately; nothing is read, encoded or written.
+// SetEnabled flips the whole feature; when off, every entry point returns immediately.
 func (t *ThumbCache) SetEnabled(on bool) { t.enabled.Store(on) }
 
 // Enabled reports the live toggle.
 func (t *ThumbCache) Enabled() bool { return t.enabled.Load() }
 
-// SetParams tunes the thumb size + quality (mirrored from the prefs; 0 keeps
-// the shipped default). Applies to NEW encodes; existing thumbs stay as
-// written until re-encoded by a fresh decode.
+// SetParams sets thumbnail size and quality for new encodes (0 keeps the default).
 func (t *ThumbCache) SetParams(heightPx, quality int) {
 	t.height.Store(int32(heightPx))
 	t.quality.Store(int32(quality))
 }
 
-// SetBudget caps the store's on-disk bytes (0 = the default 64 MiB). The next
-// prune sweep (at open, then every thumbPruneEvery stores) drops the OLDEST
-// thumbnails until under budget.
+// SetBudget caps the store's on-disk bytes (0 = the default); the next sweep drops the oldest.
 func (t *ThumbCache) SetBudget(bytes int64) { t.budget.Store(bytes) }
 
-// Store shrinks a freshly-decoded sprite's first frame to thumb size and
-// enqueues the small copy for encoding. The shrink runs HERE, synchronously on
-// the calling decode worker, because d's pixel buffers are pooled and released
-// after the texture upload — only an independently-owned copy may cross the
-// queue (see thumbJob). At ~64 px the CatmullRom pass is a small fraction of
-// the decode that just ran, and the whole path is opt-in. Non-blocking enqueue:
+// Store shrinks frame 0 on the decode worker, as d's buffers are pooled, then enqueues the copy without blocking.
 func (t *ThumbCache) Store(base string, d *Decoded) {
 	if !t.enabled.Load() || d == nil || len(d.Frames) == 0 || d.Frames[0] == nil {
 		return
@@ -166,8 +128,7 @@ func (t *ThumbCache) Store(base string, d *Decoded) {
 	}
 }
 
-// RequestLoad asks for base's thumbnail to be read + decoded; the result (if
-// the thumb exists) lands on Results. Non-blocking; callers pace retries.
+// RequestLoad asks for base's thumbnail without blocking; any result lands on Results, and callers pace retries.
 func (t *ThumbCache) RequestLoad(base string) {
 	if !t.enabled.Load() || base == "" {
 		return
@@ -179,18 +140,17 @@ func (t *ThumbCache) RequestLoad(base string) {
 	}
 }
 
-// Results delivers loaded thumbnails; the render thread drains it and uploads
-// each under its thumb:// key.
+// Results delivers loaded thumbnails to the render thread.
 func (t *ThumbCache) Results() <-chan ThumbLoaded { return t.results }
 
-// Stored / Dropped are diagnostics counters (debug overlay material).
+// Stored and Dropped are diagnostics counters.
 func (t *ThumbCache) Stored() int64  { return t.stored.Load() }
 func (t *ThumbCache) Dropped() int64 { return t.dropped.Load() }
 
-// Root exposes the thumbnail directory (Settings: open / size).
+// Root returns the thumbnail directory.
 func (t *ThumbCache) Root() string { return t.disk.Root() }
 
-// Clear wipes every stored thumbnail (the Settings button).
+// Clear wipes every stored thumbnail.
 func (t *ThumbCache) Clear() error { return t.disk.Clear() }
 
 // Close stops the workers and the underlying disk writer.
@@ -202,7 +162,7 @@ func (t *ThumbCache) Close() {
 	})
 }
 
-// params reads the live knobs with their defaults applied.
+// params reads the live settings with defaults applied.
 func (t *ThumbCache) params() (h, q int) {
 	h, q = int(t.height.Load()), int(t.quality.Load())
 	if h <= 0 {
@@ -214,10 +174,7 @@ func (t *ThumbCache) params() (h, q int) {
 	return h, q
 }
 
-// encodeWorker compresses each pre-shrunk job frame into one low-quality WebP
-// still through webpenc, then hands the bytes to the disk tier's own async
-// writer. A webpenc-less (fallback) build errors on New and the job is skipped
-// — the feature degrades to "no thumbs", never a fault.
+// encodeWorker encodes each job into a WebP still for the disk writer; a build without webpenc skips the job.
 func (t *ThumbCache) encodeWorker() {
 	defer t.done.Done()
 	t.prune() // enforce the byte budget on whatever a previous session left
@@ -260,12 +217,7 @@ type thumbFile struct {
 	mod  int64 // mtime, UnixNano — the prune order
 }
 
-// prune enforces the byte budget: when the store's files sum past it, the
-// OLDEST (mtime) are deleted until under. Runs on the encode worker (off every
-// hot path) at open and every thumbPruneEvery stores; a walk of even a full
-// 64 MiB store (~60k tiny files) is an occasional background dir scan, not a
-// per-frame cost. Errors are ignored per-file (a locked file just survives to
-// the next sweep).
+// prune deletes the oldest files until under budget, on the encode worker; per-file errors are ignored.
 func (t *ThumbCache) prune() {
 	budget := t.budget.Load()
 	if budget <= 0 {
@@ -292,10 +244,7 @@ func (t *ThumbCache) prune() {
 	pruneToBudget(files, total, budget, os.Remove)
 }
 
-// pruneToBudget deletes oldest-first until the snapshot's bytes fall to budget.
-// Split out of prune so the one case that cannot be staged on a real directory —
-// an entry the snapshot listed but that is GONE by the time this pass reaches it
-// — is drivable through the remove hook instead of raced.
+// pruneToBudget deletes oldest-first; split out so a file that vanished can be driven through the remove hook.
 func pruneToBudget(files []thumbFile, total, budget int64, remove func(string) error) {
 	if total <= budget {
 		return
@@ -311,9 +260,7 @@ func pruneToBudget(files []thumbFile, total, budget int64, remove func(string) e
 	}
 }
 
-// loadWorker reads + decodes requested thumbnails off-thread and offers them
-// on results (non-blocking: a full results queue drops — the paced heal retry
-// asks again while the sprite is still cold).
+// loadWorker reads and decodes requested thumbnails off-thread; a full results queue drops.
 func (t *ThumbCache) loadWorker() {
 	defer t.done.Done()
 	for {

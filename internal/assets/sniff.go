@@ -2,8 +2,7 @@ package assets
 
 import "encoding/binary"
 
-// Format is a payload format detected from magic bytes — never from the file
-// extension (spec §8: servers lie, payloads don't).
+// Format is a payload format from magic bytes, never the extension: servers lie, payloads don't.
 type Format int
 
 const (
@@ -21,7 +20,6 @@ const (
 	FormatMP3
 )
 
-// String names the format for logs and warnings.
 func (f Format) String() string {
 	switch f {
 	case FormatPNG:
@@ -51,7 +49,6 @@ func (f Format) String() string {
 	}
 }
 
-// IsImage reports whether the format goes through the image decode pool.
 func (f Format) IsImage() bool {
 	switch f {
 	case FormatPNG, FormatAPNG, FormatWebP, FormatWebPAnim, FormatGIF, FormatJPEG,
@@ -135,8 +132,7 @@ func hasPrefix(data, prefix []byte) bool {
 	return true
 }
 
-// pngHasACTL scans PNG chunks for an acTL (animation control) chunk before
-// the first IDAT — the defining marker of APNG.
+// pngHasACTL scans for an acTL chunk before the first IDAT, the defining marker of APNG.
 func pngHasACTL(data []byte) bool {
 	offset := pngSigLen
 	for offset+pngChunkHdrLen <= len(data) {
@@ -158,10 +154,7 @@ func pngHasACTL(data []byte) bool {
 	return false
 }
 
-// AVIF detection: an ISOBMFF "ftyp" box whose major brand or compatible
-// brands list contains avif/avis. The brands sit right after the box
-// header (size + "ftyp" + major + minor + compat...), so scanning the
-// ftyp box body covers both placements.
+// AVIF: an ISOBMFF "ftyp" box whose major or compatible brands contain avif/avis.
 const (
 	avifFtypOffset  = 4  // "ftyp" fourcc position
 	avifBrandOffset = 8  // major brand position
@@ -176,17 +169,13 @@ func isAVIF(data []byte) bool {
 	return avifScanBrands(data, "avif") || avifScanBrands(data, "avis")
 }
 
-// avifIsSequence reports the animated variant: the avis brand marks an
-// AV1 image sequence (animation is a brand property at this layer; frame
-// truth still comes from the decoder, like WebP's VP8X flag).
+// avifIsSequence reports the animated variant by the avis brand; frame truth still comes from the decoder.
 func avifIsSequence(data []byte) bool {
-	// Major brand wins; avis anywhere in compat brands also counts (some
-	// encoders write major avif + compat avis for compatibility).
+	// Some encoders write major avif with compat avis.
 	return avifScanBrands(data, "avis")
 }
 
-// avifScanBrands looks for brand inside the ftyp box body, bounded by the
-// declared box size and avifScanMax.
+// avifScanBrands looks for brand in the ftyp body, bounded by the declared size and avifScanMax.
 func avifScanBrands(data []byte, brand string) bool {
 	boxSize := int(binary.BigEndian.Uint32(data[0:4]))
 	limit := len(data)
@@ -204,8 +193,7 @@ func avifScanBrands(data []byte, brand string) bool {
 	return false
 }
 
-// webpHasANIM checks the VP8X extended-header ANIM flag. Plain VP8/VP8L
-// payloads (no VP8X chunk) are never animated.
+// webpHasANIM checks the VP8X ANIM flag; plain VP8/VP8L is never animated.
 func webpHasANIM(data []byte) bool {
 	const (
 		chunkHeaderLen = 8

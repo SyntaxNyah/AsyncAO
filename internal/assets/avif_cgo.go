@@ -2,11 +2,7 @@
 
 package assets
 
-// Thin CGO binding over libavif (same shape as the libwebp one): native
-// dav1d/aom decode straight into pooled RGBA, still images and AV1 image
-// sequences (animated AVIF) alike. Dependency justification lives in
-// docs/ARCHITECTURE.md; the package comes from MSYS2
-// (mingw-w64-ucrt-x86_64-libavif).
+// CGO binding over libavif: dav1d/aom decode into pooled RGBA, for still images and AV1 image sequences.
 
 /*
 #cgo pkg-config: libavif
@@ -28,8 +24,7 @@ func decodeAVIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("assets: empty avif payload")
 	}
-	// libavif reads from the payload across calls; pin it so handing the
-	// pointer to C stays legal without copying.
+	// libavif reads the payload across calls; pin it so handing the pointer to C stays legal without a copy.
 	var pinner runtime.Pinner
 	pinner.Pin(&data[0])
 	defer pinner.Unpin()
@@ -39,13 +34,7 @@ func decodeAVIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 		return nil, fmt.Errorf("assets: avif decoder allocation failed")
 	}
 	defer C.avifDecoderDestroy(dec)
-	// Animated AVIF (AV1 image sequences) is a multi-frame decode and dav1d
-	// scales across worker threads, so let it use the machine's cores instead
-	// of serialising every frame (the animation cold-load cost — see
-	// docs/ANIMATION-COLD-LOAD-INVESTIGATION.md gap #1). The decode pool
-	// parallelises ACROSS assets and animGate bounds CONCURRENT full animated
-	// decodes (default 2), so a per-decoder pool of NumCPU threads cannot
-	// multiply into unbounded oversubscription.
+	// dav1d scales across threads; animGate bounds full animated decodes, so NumCPU threads cannot pile up.
 	dec.maxThreads = C.int(runtime.NumCPU())
 
 	if res := C.avifDecoderSetIOMemory(dec, (*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data))); res != C.AVIF_RESULT_OK {
@@ -87,16 +76,14 @@ func decodeAVIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 			break // truncated sequence: keep what decoded
 		}
 
-		// imageTiming.duration is this frame's display time in seconds.
+		// imageTiming.duration is in seconds.
 		delay := time.Duration(float64(dec.imageTiming.duration) * float64(time.Second))
 		if delay <= 0 {
 			delay = defaultZeroFrameDelay
 		}
 		sourceDelays = append(sourceDelays, delay)
 
-		// The decoder is now advanced onto frame i; copy out only the decimated
-		// subset (skipped frames still advanced, so kept frames compose right),
-		// folding skipped delays into the kept one.
+		// Skipped frames still advanced, so kept ones compose right; copy out only the kept frames.
 		folded, keepIt := fdec.step(i, delay)
 		if !keepIt {
 			continue
@@ -108,8 +95,7 @@ func decodeAVIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 		rgb.depth = 8
 
 		rgba, token := newPooledRGBA(width, height)
-		// The rgb struct carries a Go pointer into C — legal only while
-		// the destination buffer is pinned (cgo pointer-passing rules).
+		// The rgb struct carries a Go pointer into C, legal only while the buffer is pinned (cgo pointer rules).
 		pinner.Pin(&rgba.Pix[0])
 		rgb.pixels = (*C.uint8_t)(unsafe.Pointer(&rgba.Pix[0]))
 		rgb.rowBytes = C.uint32_t(rgba.Stride)
@@ -142,12 +128,7 @@ func decodeAVIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	return d, nil
 }
 
-// decodeAVIFAnimStream is decodeAVIF's incremental form: it walks the same
-// avifDecoder and emits each frame from kept index 1 (frame 0 was already
-// delivered by the progressive first frame) as a single-frame chunk via emit.
-// It streams only when the clip needs no decimation (the common case); when
-// decimation is needed it returns streamed=false so the caller falls back to
-// the classic full decode. total is the source frame count.
+// decodeAVIFAnimStream emits each frame from kept index 1 as a chunk; decimation returns streamed=false.
 func decodeAVIFAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed bool, total int, err error) {
 	var pinner runtime.Pinner
 	pinner.Pin(&data[0])
@@ -178,10 +159,7 @@ func decodeAVIFAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed 
 		return false, walk, nil // decimation needed — fall back to the full decode
 	}
 
-	// When downscaling, the native canvas is transient (YUV→RGB into it, then
-	// downscaled and discarded). Reuse ONE native buffer across the whole stream
-	// instead of churning the pixel pool per frame. When not downscaling the
-	// native buffer IS the delivered frame, so it cannot be reused.
+	// When downscaling, reuse one native buffer instead of churning the pool; else it is the delivered frame.
 	var reuse *image.RGBA
 	var reuseToken *[]byte
 	if down {
@@ -257,9 +235,7 @@ func avifError(stage string, res C.avifResult) error {
 	return fmt.Errorf("assets: avif %s: %s", stage, C.GoString(C.avifResultToString(res)))
 }
 
-// peekAVIFAnimDims reads an animated AVIF's canvas size and frame count from a
-// header parse only (no frame decode) so the progressive first frame can be
-// downscaled to the same budget-fit dimensions the stream's appends use.
+// peekAVIFAnimDims reads canvas size and frame count from a header parse, without decoding frames.
 func peekAVIFAnimDims(data []byte) (width, height, frames int, ok bool) {
 	if len(data) == 0 {
 		return 0, 0, 0, false

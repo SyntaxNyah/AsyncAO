@@ -8,38 +8,23 @@ import (
 )
 
 const (
-	// speakerWindowSize bounds the Markov history (spec §10: sliding
-	// window of the last 32 messages).
+	// speakerWindowSize bounds the Markov history to the last 32 messages.
 	speakerWindowSize = 32
-	// pairPartnerPriorWeight doubles the current pair partner's predicted
-	// likelihood — paired characters talk back-to-back.
+	// pairPartnerPriorWeight doubles the pair partner's likelihood: paired characters talk back-to-back.
 	pairPartnerPriorWeight = 2
-	// emoteChainCap bounds the per-character emote-transition table
-	// (rule §17.4): past the cap the chain stops learning new edges but
-	// keeps reinforcing known ones.
+	// emoteChainCap bounds the per-character emote table (hard rule 4); past it, known edges still reinforce.
 	emoteChainCap = 2048
 	// lastEmoteCap bounds the per-character last-emote map.
 	lastEmoteCap = 256
-	// prefetchMaxPredict caps the predictive-prefetch aggressiveness slider (#100):
-	// how many of the top predicted next sprites to warm per message.
+	// prefetchMaxPredict caps how many predicted next sprites to warm per message.
 	prefetchMaxPredict = 4
 )
 
-// WarmFunc speculatively warms a predicted (character, emote) sprite. The UI
-// layer supplies it, because it alone owns the URL conventions (the (a)/(b)/
-// bare spelling chain) AND the manager: the implementation must warm BOTH the
-// idle and the (b) talk sprite through the full spelling chain at PriorityLow
-// with the missing-asset warning SUPPRESSED (this is pure speculation — a bare-
-// named pack 404s the prefixed spelling in every format, and warning about a
-// sprite no one demanded is a false alarm). emote "" means the character's
-// default loop.
+// WarmFunc warms idle and (b) talk sprites at PriorityLow with the missing warning suppressed; "" is the default loop.
 type WarmFunc func(character, emote string)
 
-// Prefetcher predicts the next speaker with a first-order Markov chain over
-// recent speakers — and, per character, the next EMOTE with a second chain —
-// then warms the predicted sprite at LOW priority (spec §10). All methods
-// are called from the game thread; the lock exists only for the metrics
-// snapshot.
+// Prefetcher predicts the next speaker and emote with Markov chains and warms the sprite at low priority.
+// Methods run on the game thread; the lock is only for the metrics snapshot.
 type Prefetcher struct {
 	warm WarmFunc
 
@@ -47,10 +32,7 @@ type Prefetcher struct {
 	window      []string                  // recent speakers, oldest first
 	transitions map[string]map[string]int // speaker → next speaker → count
 
-	// Per-character emote chains: "<char>|<from>" → to → count. Characters
-	// habitually cycle the same few emotes (think → slam → point), so the
-	// predicted next SPEAKER gets their predicted next EMOTE warmed, not
-	// just their default sprite.
+	// emoteChain counts "<char>|<from>" to next emote, because characters cycle the same few emotes.
 	emoteChain map[string]map[string]int
 	emoteEdges int               // total edges across emoteChain (cap guard)
 	lastEmote  map[string]string // char → last seen emote
@@ -59,9 +41,7 @@ type Prefetcher struct {
 	maxPredict  int // top-N predicted sprites to warm per message (1 = conservative; #100 slider)
 }
 
-// NewPrefetcher wires the predictor to a warm callback (the UI supplies it —
-// it owns the URL spelling chain and the manager). warm may be nil (tests that
-// exercise prediction only).
+// NewPrefetcher wires the predictor to warm, which may be nil.
 func NewPrefetcher(warm WarmFunc) *Prefetcher {
 	return &Prefetcher{
 		warm:        warm,
@@ -72,8 +52,7 @@ func NewPrefetcher(warm WarmFunc) *Prefetcher {
 	}
 }
 
-// OnMessage records a message (speaker, optional pair partner, emote) and
-// prefetches the predicted next speaker's predicted emote sprite.
+// OnMessage records a message and prefetches the predicted next speaker's predicted sprite.
 func (p *Prefetcher) OnMessage(speaker, pairPartner, emote string) {
 	if speaker == "" {
 		return
@@ -92,8 +71,6 @@ func (p *Prefetcher) OnMessage(speaker, pairPartner, emote string) {
 	}
 	p.window = append(p.window, speaker)
 	if len(p.window) > speakerWindowSize {
-		// Drop the oldest transition's weight as it slides out, keeping
-		// the chain representative of the recent conversation.
 		old := p.window[0]
 		if len(p.window) > 1 {
 			next := p.window[1]
@@ -128,9 +105,7 @@ func (p *Prefetcher) OnMessage(speaker, pairPartner, emote string) {
 	}
 	p.mu.Unlock()
 
-	// Warm each predicted next sprite — the callback fires the idle AND (b)
-	// talk spelling chain at LOW priority (shed-able speculation, §10) with
-	// the missing-asset warning suppressed. // AssetType: CharSprite (predicted next speaker+emote)
+	// Low priority, so it can be shed. // AssetType: CharSprite (predicted next speaker+emote)
 	if p.warm != nil {
 		for _, w := range warm {
 			p.warm(w.char, w.emote)
@@ -138,13 +113,10 @@ func (p *Prefetcher) OnMessage(speaker, pairPartner, emote string) {
 	}
 }
 
-// warmTarget is one predicted (character, emote) sprite to warm, carried out of the
-// lock so the Prefetch call happens unlocked.
+// warmTarget carries a prediction out of the lock, so the warm call happens unlocked.
 type warmTarget struct{ char, emote string }
 
-// SetAggressiveness sets how many of the top predicted next sprites to warm per
-// message (#100): 1 = conservative (just the single best guess), higher warms more
-// guesses at the cost of more speculative bandwidth. Clamped to a sane range.
+// SetAggressiveness sets how many top predictions to warm per message, clamped to a sane range.
 func (p *Prefetcher) SetAggressiveness(n int) {
 	n = value.Clamp(n, 1, prefetchMaxPredict)
 	p.mu.Lock()
@@ -152,9 +124,7 @@ func (p *Prefetcher) SetAggressiveness(n int) {
 	p.mu.Unlock()
 }
 
-// predictTopNLocked returns up to n most likely next speakers after current, best
-// first (the active pair partner keeps the 2× prior). The per-speaker transition
-// fan-out is small, so the partial sort is cheap; n<=1 fast-paths to predictLocked.
+// predictTopNLocked returns up to n likely next speakers, best first; the pair partner keeps its prior.
 func (p *Prefetcher) predictTopNLocked(current, pairPartner string, n int) []string {
 	if n <= 1 {
 		if s := p.predictLocked(current, pairPartner); s != "" {
@@ -187,7 +157,6 @@ func (p *Prefetcher) predictTopNLocked(current, pairPartner string, n int) []str
 	return out
 }
 
-// learnEmoteLocked records the speaker's emote transition.
 func (p *Prefetcher) learnEmoteLocked(speaker, emote string) {
 	if emote == "" {
 		return
@@ -197,7 +166,6 @@ func (p *Prefetcher) learnEmoteLocked(speaker, emote string) {
 		to := p.emoteChain[key]
 		if to == nil {
 			if p.emoteEdges >= emoteChainCap {
-				// Table full: keep reinforcing known edges only.
 				to = nil
 			} else {
 				to = map[string]int{}
@@ -222,8 +190,7 @@ func (p *Prefetcher) learnEmoteLocked(speaker, emote string) {
 	}
 }
 
-// predictEmoteLocked returns the character's most likely next emote ("" =
-// no signal; the caller's emoteBase falls back to the default sprite).
+// predictEmoteLocked returns the most likely next emote, "" for no signal.
 func (p *Prefetcher) predictEmoteLocked(character string) string {
 	if character == "" {
 		return ""
@@ -241,8 +208,7 @@ func (p *Prefetcher) predictEmoteLocked(character string) string {
 	return best
 }
 
-// predictLocked returns the most likely next speaker after current. The
-// active pair partner gets a 2× prior.
+// predictLocked returns the most likely next speaker; the pair partner gets a 2x prior.
 func (p *Prefetcher) predictLocked(current, pairPartner string) string {
 	best, bestScore := "", 0
 	for to, count := range p.transitions[current] {
@@ -255,7 +221,6 @@ func (p *Prefetcher) predictLocked(current, pairPartner string) string {
 		}
 	}
 	if best == "" && pairPartner != "" {
-		// No history yet: the pair partner is still the best guess.
 		return pairPartner
 	}
 	return best

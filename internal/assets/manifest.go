@@ -8,20 +8,12 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 )
 
-// Server asset manifest, webAO-compatible: every server ships its own
-// "extensions.json" at the asset origin (e.g. <origin>/extensions.json)
-// declaring the extension order it serves per asset class. Reference:
-// webAO src/client/fetchLists.ts fetchExtensions.
-//
-// Seeding the per-host learned table from it turns the cold-load probe
-// storm into exactly one fetch per asset: the learned slot answers first,
-// and the user's configured per-type order still covers servers without a
-// manifest (plus any file that deviates from its server's declared format).
+// extensions.json at the asset origin (webAO fetchLists.ts fetchExtensions) declares extension order per class;
+// seeding the learned table from it gives one fetch per asset.
 
 const (
-	// ManifestFileName is the well-known manifest path under the origin.
 	ManifestFileName = "extensions.json"
-	// manifestExtCap bounds each parsed list (rule §17.4).
+	// manifestExtCap bounds each parsed list (hard rule 4).
 	manifestExtCap = 8
 )
 
@@ -31,20 +23,12 @@ type Manifest struct {
 	Emote      []string `json:"emote_extensions"`
 	Emotions   []string `json:"emotions_extensions"`
 	Background []string `json:"background_extensions"`
-	// Audio classes. webAO's extensions.json only declares the image classes;
-	// SFX and blip URLs are extension-less in practice (audio.request self-fetches
-	// by base), so these keys are optional. A server that ships them seeds the
-	// SFX/blip probe order exactly like the image classes; absent → the type's
-	// default order (opus → ogg → wav → mp3) plus per-host learning still applies.
+	// Optional: webAO's file declares only image classes; absent, the default order and learning apply.
 	SFX   []string `json:"sfx_extensions"`
 	Blips []string `json:"blips_extensions"`
 }
 
-// manifestKnownExts is the decoder-supported set a manifest may declare;
-// anything else (typos, future formats) is dropped. Image and audio formats
-// share one set: each class seeds only its own asset types, so an audio
-// extension on an image class (or vice-versa) is a server mistake the probe
-// self-corrects.
+// manifestKnownExts is what a manifest may declare; a wrong-kind extension on a class self-corrects on probe.
 var manifestKnownExts = map[string]bool{
 	config.ExtWebP: true,
 	config.ExtAVIF: true,
@@ -58,12 +42,7 @@ var manifestKnownExts = map[string]bool{
 	config.ExtWAV:  true,
 }
 
-// bundledVanillaManifestJSON is the official AO vanilla base's extensions.json
-// (attorneyoffline.de/newvanillabase). It ships as the default for servers that
-// publish no reachable extensions.json of their own: vanilla AO servers serve
-// PNG art, so seeding .png-first beats the webp-led global default and a vanilla
-// server stops wasting a webp probe on every background / icon / emote button. A
-// server that actually serves webp self-corrects on the first probe (RecordSuccess).
+// bundledVanillaManifestJSON is the vanilla AO extensions.json, the default for servers without one, as vanilla is PNG.
 const bundledVanillaManifestJSON = `{
 	"charicon_extensions": [".png"],
 	"emote_extensions": [".apng", ".webp", ".png"],
@@ -71,9 +50,7 @@ const bundledVanillaManifestJSON = `{
 	"background_extensions": [".png"]
 }`
 
-// BundledVanillaManifestJSON is the official-vanilla manifest as text, exposed so
-// the UI can offer it as the ready-made example a player applies to a per-server
-// format profile (Settings → Assets).
+// BundledVanillaManifestJSON is that manifest as text, offered as the example for per-server format profiles.
 const BundledVanillaManifestJSON = bundledVanillaManifestJSON
 
 // ParseManifest decodes and sanitizes extensions.json content.
@@ -91,10 +68,7 @@ func ParseManifest(data []byte) (*Manifest, error) {
 	return &m, nil
 }
 
-// sanitizeManifestExts lowercases, maps webAO's pseudo-suffixes
-// (".webp.static"/".webp.animated" — animation is a payload property
-// here, never a separate probe) onto plain .webp, drops unknown entries,
-// dedupes, and caps the list.
+// sanitizeManifestExts lowercases, maps .webp.static/.webp.animated to .webp, drops unknowns, dedupes and caps.
 func sanitizeManifestExts(in []string) []string {
 	out := make([]string, 0, len(in))
 	seen := map[string]bool{}
@@ -115,13 +89,7 @@ func sanitizeManifestExts(in []string) []string {
 	return out
 }
 
-// manifestSeedTargets maps each manifest class onto the asset types it
-// governs (emote art covers sprites and shout bubbles — per-character files;
-// backgrounds cover desk overlays). Misc art is deliberately NOT seeded from
-// the emote class: extensions.json has no misc key, and live mirrors prove
-// the two diverge — miku.pizza declares webp emotes while its misc/ tree
-// mixes chat.png and chatbox.webp pack by pack. Misc keeps its own
-// two-format default order plus per-host learning.
+// manifestSeedTargets maps classes to types; misc is not seeded from emotes, as mirrors such as miku.pizza differ.
 func (m *Manifest) manifestSeedTargets() []struct {
 	exts  []string
 	types []AssetType
@@ -139,26 +107,13 @@ func (m *Manifest) manifestSeedTargets() []struct {
 	}
 }
 
-// SeedLearned writes each class's declared extensions into the learned table
-// for host, in the order the manifest lists them: the first is what gets probed,
-// the rest are the recovery ladder for when it 404s. Returns how many types
-// were seeded. Call Resolver.WarmFromPrefs afterwards to publish.
-//
-// ALL of them, not just the first. A server declaring
-// "emotions_extensions": [".png", ".webp"] is telling us its emote-button fleet
-// is genuinely mixed — umineko.online ships ~560 PNG-button and ~490
-// WebP-button characters — and keeping only exts[0] threw that away: the half
-// that didn't match sat behind a single candidate that could never fall back,
-// because the type's own configured list is one entry too (see learnedTable).
+// SeedLearned writes every declared extension in order, as servers such as umineko.online genuinely mix formats.
+// Call Resolver.WarmFromPrefs afterwards.
 func (m *Manifest) SeedLearned(prefs *config.AssetPreferences, host string) int {
 	if prefs == nil || host == "" {
 		return 0
 	}
-	// Desks follow the manifest by default like every other class; pinning them
-	// to WebP is the opt-OUT for servers whose manifests are wrong (the shared
-	// background/desk manifest class was the original worry that once shipped
-	// the pin as the default). See defaultDeskFollowManifest / Settings →
-	// Formats → "Always use WebP for desks".
+	// Desks follow the manifest unless the user opts out for servers with wrong manifests.
 	deskFollows := prefs.Load().DeskFollowManifest
 	seeded := 0
 	for _, target := range m.manifestSeedTargets() {
