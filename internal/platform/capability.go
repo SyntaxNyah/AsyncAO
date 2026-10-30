@@ -33,9 +33,8 @@ func (c Capability) String() string {
 	}[c]
 }
 
-// Capabilities is what this OS and packaging support, fixed at detection. Whether
-// a supported thing works right now (ffmpeg installed, permission granted) is the
-// service call's result, not a capability.
+// Capabilities is what this machine supports, fixed at detection. Whether something
+// works right now (ffmpeg installed, permission granted) is the service call's result.
 type Capabilities struct {
 	offReason [capabilityCount]string
 }
@@ -47,11 +46,8 @@ func (c Capabilities) Has(capability Capability) bool { return c.offReason[capab
 func (c Capabilities) Reason(capability Capability) string { return c.offReason[capability] }
 
 const (
-	// lowMemoryBytes is the physical memory below which the client runs with the
-	// minimum feature set. It sits above 4 GiB because a "4 GB" machine reports
-	// less than that once firmware and integrated graphics take their share, and
-	// such a machine has little left beside its OS and browser. An estimate until
-	// the client's use on one has been measured.
+	// lowMemoryBytes is above 4 GiB because a "4 GB" machine reports less than
+	// that. An estimate, not yet measured.
 	lowMemoryBytes = 6 << 30
 	bytesPerGiB    = 1 << 30
 
@@ -63,8 +59,7 @@ const (
 	reasonNoDiscovery  = "no OS proxy settings to read here"
 )
 
-// capabilitiesFor states today's behaviour: each off reason is a branch the client
-// already takes. Moving a service onto SDL widens its row here.
+// capabilitiesFor mirrors the OS branches the client takes today.
 func capabilitiesFor(env Environment, hardware Hardware) Capabilities {
 	var caps Capabilities
 	off := func(reason string, capabilities ...Capability) {

@@ -28,10 +28,7 @@ import (
 )
 
 const (
-	// memoryBudgetBytes is the soft heap limit. 700 MiB accommodates the
-	// 500 MiB animated decode budget — a full-size clip's decoded RGBA stays
-	// live in the heap until its textures upload — plus T2 raw bytes, so the
-	// GC doesn't thrash while a big animation decodes.
+	// memoryBudgetBytes fits a full animated decode plus T2, so the GC doesn't thrash.
 	memoryBudgetBytes = 700 << 20
 
 	windowTitle    = "AsyncAO"
@@ -39,16 +36,10 @@ const (
 	windowHeight   = 864
 	frameCap       = 16667 * time.Microsecond // ~60 FPS when vsync is off
 	debugPprofAddr = "localhost:6060"
-	// minimizedNap paces the loop while the window is minimized: the
-	// session still pumps (keepalives, queues) but nothing draws — no
-	// point compositing 60 fps to nowhere.
+	// minimizedNap paces the loop while nothing draws; the session still pumps.
 	minimizedNap = 50 * time.Millisecond
-	// maxFrameDelta clamps one frame's dt after a stall so time-driven
-	// state (typewriter, blips, effect countdowns) resumes smoothly
-	// instead of bursting the backlog (§perf frame pacing).
+	// maxFrameDelta clamps dt after a stall so the typewriter and blips don't burst.
 	maxFrameDelta = 100 * time.Millisecond
-	// The DPI→scale divisor moved to config.BaselineDPI with the reliable
-	// per-monitor seed (#77 Part B, App.SeedDisplayDPIScale).
 )
 
 func main() {
@@ -66,10 +57,7 @@ func main() {
 	flag.Parse()
 
 	debug.SetMemoryLimit(memoryBudgetBytes)
-	// Crash reports must include every goroutine's stack (a decode/render crash
-	// spans threads), and any unhandled panic or fatal error — including cgo
-	// signal faults from the SDL2/webp/avif decode paths — must still land on
-	// disk even in -H=windowsgui builds where stderr goes nowhere.
+	// Crash reports need every goroutine's stack, even in -H=windowsgui where stderr goes nowhere.
 	debug.SetTraceback("all")
 	setupCrashOutput()
 
@@ -90,13 +78,7 @@ func main() {
 	}
 }
 
-// setupCrashOutput wires the process-wide crash hook so any unhandled panic or
-// fatal runtime error is also written to asyncao-crash.log next to the
-// executable. This is the safety net for crashes the per-path recover sites
-// (frameCrashLog, writeDecodeCrash) miss — e.g. a panic on the main goroutine
-// outside Frame(), or a native fault in a decode library. It is effectively
-// free: the runtime only writes to the duplicated fd while the process is
-// already dying, so steady-state operation is unaffected.
+// setupCrashOutput writes crashes the per-path recover sites miss to asyncao-crash.log.
 func setupCrashOutput() {
 	exe, err := os.Executable()
 	if err != nil {
@@ -140,10 +122,7 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 	if err != nil {
 		log.Printf("config: %v", err) // defaults already applied
 	}
-	// If the settings file was corrupt, config renamed it aside before the
-	// saver could overwrite the only copy with defaults (#3). Surface a
-	// startup notice through the UI (release builds are windowed — the log
-	// above is invisible). Nil on a clean/first-run load.
+	// Corrupt settings were renamed aside; tell the user, since release builds have no console.
 	configQuarantine := prefs.Quarantine()
 	defer prefs.Close()
 
@@ -157,18 +136,13 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 	if err != nil {
 		return err
 	}
-	// #34: pass the T3 auto-prune cap up front so the writer's at-open sweep
-	// enforces it on whatever a previous session left (0 = unlimited, the
-	// default). The live SetDiskBudget below re-applies it for Settings changes.
+	// Pass the cap up front so the at-open sweep enforces it (0 = unlimited).
 	disk, err := cache.NewDiskCache(diskRoot, int64(prefs.Load().DiskCacheBudgetMiBVal)<<20)
 	if err != nil {
 		return err
 	}
 	defer disk.Close()
-	// The opt-in low-q sprite thumbnail store (power user, default OFF) lives in
-	// its own directory BESIDE the T3 asset cache — independent lifetime by
-	// design: thumbs are ~100× smaller than their sprites, so they stay useful
-	// long after the full asset was pruned. Non-fatal: no thumbs ≠ no client.
+	// Thumbnails live beside T3 and outlive pruned assets. Failing to open them is not fatal.
 	thumbs, err := assets.NewThumbCache(filepath.Join(filepath.Dir(diskRoot), "thumbs"))
 	if err != nil {
 		log.Printf("thumbcache: %v (thumbnails disabled)", err)
@@ -180,17 +154,11 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 		thumbs.SetBudget(int64(prefs.Load().ThumbBudgetMiB()) << 20)
 	}
 
-	// Proxy: resolve where traffic goes BEFORE anything can dial. Every outbound
-	// transport reads netproxy's published policy, so this has to run ahead of
-	// the asset client below and well ahead of the first master-list fetch,
-	// otherwise the launch's earliest requests would go direct while everything
-	// after them was proxied — the split tunnel this exists to remove.
+	// Resolve the proxy before anything can dial, or the earliest requests would go direct.
 	proxyPolicy := netproxy.Configure(netproxy.Mode(prefs.Load().ProxyModeVal), prefs.Load().ProxyURL)
 	log.Printf("proxy: %s", proxyPolicy.Describe())
 
-	// Power-user network knobs: the 404 TTL is boot-applied (the negative-cache
-	// LRU takes its TTL at construction — the Settings row says "restart");
-	// the per-host deadline multiple is live but seeded here too.
+	// The 404 TTL is set at construction, so changing it needs a restart.
 	client := network.NewClientNotFoundTTL(time.Duration(prefs.Load().NotFoundTTLSecVal) * time.Second)
 	client.SetAssetOrigin(prefs.Load().AssetOrigin) // power-user Origin/CORS override for asset streaming
 	client.SetAdaptiveLatencyMultiple(prefs.Load().AdaptiveLatMultipleVal)
@@ -202,16 +170,11 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 	decoder.SetAnimatedDecodeConcurrency(prefs.Load().AnimDecodeConcurrency())
 
 	// --- SDL (render thread = this thread, forever) ---
-	// SDL3 batches draws and is per-monitor DPI-aware on Windows by itself, so
-	// the window renders at native resolution at 125%/150% system scaling (the
-	// blurry-UI report) with no hint.
 	if err := sdl.Init(sdl.INIT_VIDEO | sdl.INIT_AUDIO | sdl.INIT_EVENTS); err != nil {
 		return err
 	}
 	defer sdl.Quit()
-	// The cross-thread render-loop doorbell (experimental event-driven loop):
-	// packet arrivals and finished decodes push this user event so a loop
-	// parked on WaitEventTimeout reacts instantly. Registered once, up front.
+	// Packet arrivals and finished decodes push this event to wake a parked loop.
 	ui.EnsureWakeEvent()
 	if err := ttf.Init(); err != nil {
 		return err
@@ -223,11 +186,7 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 	if sw, sh := prefs.Load().WindowSize(); sw > 0 && sh > 0 {
 		winW, winH = int32(sw), int32(sh)
 	}
-	// sdl.WINDOWPOS_CENTERED is literally SDL_WINDOWPOS_CENTERED_DISPLAY(0), i.e.
-	// the PRIMARY display — and that is correct here and only here: there is no
-	// window yet, so there is no "current display" to prefer, and we persist a
-	// window size but never a position. Everywhere a window already exists we go
-	// through ui.CenteredWindowPos instead, which keeps it on the display it is on.
+	// The primary display is right here only: no window exists yet and no position is saved.
 	window, err := sdl.CreateWindow(windowTitle,
 		sdl.WINDOWPOS_CENTERED, sdl.WINDOWPOS_CENTERED,
 		winW, winH, sdl.WINDOW_SHOWN|sdl.WINDOW_RESIZABLE|highDPIFlags())
@@ -235,29 +194,20 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 		return err
 	}
 	defer window.Destroy()
-	// SDL3 sends no text-input events until this is on (SDL2 had it on by
-	// default): without it nothing typed would reach a text field.
+	// SDL3 sends no text-input events until this is on.
 	if err := window.StartTextInput(); err != nil {
 		log.Printf("text input unavailable: %v", err)
 	}
-	// mainWindowID is recorded once, right after the window exists, and is
-	// compared against every WINDOWEVENT_CLOSE the run loop receives — see
-	// mainWindowShouldQuit's comment for why this exists at all.
 	mainWindowID, idErr := window.GetID()
 	if idErr != nil {
-		// Unreachable in practice (the window we just created must have an
-		// id), but fail safe: 0 is not a real SDL window id, so a CLOSE
-		// event can never match it and behavior degrades to today's
-		// SDL_QUIT-only quit rather than silently never quitting.
+		// 0 is no real window id, so quitting falls back to SDL_QUIT alone.
 		mainWindowID = 0
 	}
-	// Clamp the (possibly stale/oversize) saved size to the display we landed on
-	// and recenter — the startup half of the "too big to drag smaller" fix.
+	// Clamp a stale saved size to the display we landed on.
 	if di, err := window.GetDisplayIndex(); err == nil {
 		if ub, err := sdl.GetDisplayUsableBounds(di); err == nil {
 			if cw, ch := config.ClampWindowSize(int(winW), int(winH), int(ub.W), int(ub.H)); int32(cw) != winW || int32(ch) != winH {
-				// Recenter on the display we just measured, NOT on display 0: the two
-				// must agree or the window lands on one monitor sized for another.
+				// Use the measured display, or the window lands on one monitor sized for another.
 				pos := ui.CenteredWindowPos(di)
 				window.SetSize(int32(cw), int32(ch))
 				window.SetPosition(pos, pos)
@@ -268,11 +218,7 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 		_ = window.SetFullscreen(sdl.WINDOW_FULLSCREEN_DESKTOP)
 	}
 
-	// Cap full-size textures (sprites/backgrounds) at the courtroom STAGE
-	// height — the display height minus the chatbox/UI strip the layout always
-	// reserves below the stage (screens.go: vpH = h-220). The stage never fills
-	// the whole display, so capping to the real stage height makes the final
-	// per-frame GPU scale gentler in EVERY window size (sharper, esp. windowed)
+	// Cap textures at the stage height, which keeps the per-frame GPU scale gentle.
 	const (
 		stageBottomReservePx = 220 // mirrors screens.go default-courtroom chatbox reserve
 		minSpriteCapPx       = 480
@@ -284,10 +230,7 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 			if spriteCapBase < minSpriteCapPx {
 				spriteCapBase = int(db.H) // tiny display: keep full height, don't over-shrink
 			}
-			// Power-user downscale override rides ON TOP of the display-derived
-			// base: a percent scales the target, the off switch drops the cap
-			// entirely (config.EffectiveSpriteCap owns the math; the App re-derives
-			// it live when the Settings sliders move).
+			// config.EffectiveSpriteCap applies the user's downscale override to this base.
 			decoder.SetSpriteCap(config.EffectiveSpriteCap(spriteCapBase, prefs.Load().SpriteDownscaleOff, prefs.Load().SpriteDownscalePctVal))
 			decoder.SetAnimatedSpriteCap(prefs.Load().AnimatedSpriteCapPxVal)
 		}
@@ -301,24 +244,14 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 	log.Printf("renderer: %s", backend.Name())
 	ren := backend.Renderer()
 	gpuWatcher := render.NewGPUWatcher(gpuRecoveries, backend.Software(), time.Now)
-	// Texture filter for every texture created from now on: linear (sprites
-	// stretched to the viewport stop shimmering) or nearest. The Settings toggle
-	// changes it and re-streams live.
+	// Linear or nearest, for every texture created from now on.
 	_ = ren.SetDefaultTextureScaleMode(ui.TextureScaleMode(prefs.Load().SmoothScaling))
-	// macOS Retina: with ALLOW_HIGHDPI the Metal drawable is 2x the window's
-	// point size; fold that into the render scale so the logical canvas still
-	// fills the window WITHOUT SetLogicalSize (which would also remap mouse
-	// events and break hit-testing). 1 off macOS / non-Retina.
+	// macOS Retina: fold the 2x drawable into the render scale, since SetLogicalSize would break hit-testing.
 	retinaScale := retinaScaleFactor(ren, window)
-	// Draw-op alpha (taken overlays, chat box, selection highlights) needs
-	// the renderer's blend mode set: SDL defaults to NONE and renders
-	// every alpha Fill opaque. Textures set their own mode at upload.
+	// SDL defaults to no blending, which draws every alpha fill opaque.
 	_ = ren.SetDrawBlendMode(sdl.BLENDMODE_BLEND)
 
-	// Texture compression (DXT/BC): intersect the power-user setting with the
-	// renderer's advertised formats so the decode pool only compresses when the
-	// GPU can actually upload the compressed format (the software fallback
-	// cannot). The mode is fixed for the process lifetime (restart-applied).
+	// Only compress to formats this renderer can upload; the software fallback cannot.
 	texCompressMode := assets.CompressOff
 	if mode := prefs.TexCompression(); mode != config.TexCompressOff {
 		if info, err := ren.GetInfo(); err == nil {
@@ -334,23 +267,15 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 	}
 	decoder.SetTextureCompression(texCompressMode)
 
-	// Power-user T1 budget (restart-applied; the default 64 MiB fits the 256 MiB
-	// memory budget alongside T2's 128 MiB).
+	// Applied at restart.
 	store, err := render.NewTextureStoreBudget(ren, int64(prefs.Load().TexBudgetMiB())<<20)
 	if err != nil {
 		return err
 	}
 	defer store.Purge()
-	// Animated sprites are no longer decimated to fit the T1 budget (#110): the
-	// decoder ships a fixed 128 MiB downscale-to-fit budget
-	// (cache.DefaultMaxAnimatedDecodedAssetBytes) and oversized pages overflow
-	// the main tier into the store's eviction-exempt map. No per-budget scaling
-	// here anymore — the texture budget now only bounds the STILL-asset decode
-	// cap and the two LRU tiers.
 
 	// --- asset pipeline ---
-	// Auto-mounted asset packages (issue #128): discovered once beside the exe
-	// and appended after the manual mounts so an explicit folder always wins.
+	// Appended after the manual mounts so an explicit folder wins.
 	enabled, manualMounts := prefs.LocalAssets()
 	autoMounts := config.DiscoverPackages(config.ExecutableDir())
 	allMounts := config.CombineMounts(manualMounts, autoMounts)
@@ -373,18 +298,12 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 		T1Contains: store.ContainsAnimated,
 		T1Failed:   store.FailedRecently,
 	})
-	// Seed the streaming manager's local:// overlay from the configured mounts,
-	// regardless of the legacy "read from local folders" flag: mounts are now also
-	// the recording-resolution base (the content report can resolve a recording
-	// against the local base while connected). A local-mode Manager ignores the
-	// overlay (its source already is the LocalFetcher); no mounts → nil (no
-	// overlay). rebuildAssetOrigin re-pushes this on every mounts/pref change.
+	// Mounts also resolve recordings, so seed the overlay regardless of the local-folders flag.
 	if len(allMounts) > 0 {
 		manager.SetLocalOverlay(assets.NewLocalFetcher(allMounts))
 	}
 	manager.SetDiskCompression(prefs.Load().DiskZstd)
-	// #34: apply the T3 auto-prune cap (0 = unlimited, the default). The writer
-	// goroutine sweeps oldest-past-budget at open and every N stores.
+	// 0 = unlimited.
 	manager.SetDiskBudget(int64(prefs.Load().DiskCacheBudgetMiBVal) << 20)
 
 	viewport := render.NewViewport(store)
@@ -419,21 +338,12 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 	}
 	defer uiCtx.Destroy()
 	uiCtx.SetWindow(window) // modcall/case-alert taskbar flashing
-	// preview is the detachable emote-preview window: closed (nil sdl.Window)
-	// until the user's own pop-out toggle opens it (internal/ui's
-	// toggleDetachPreview, wired below via Deps.Preview) — see
-	// render.PreviewWindow's doc for the "closed = free" contract
-	// dispatchEvent and the render loop's Present call below both rely on.
+	// preview stays closed, at no cost, until the user pops it out.
 	preview := render.NewPreviewWindow()
 	defer preview.Close()
 	ui.SetWindowIcon(window) // window / taskbar icon = the Mayo mascot (mascot.go)
 
-	// Discord Rich Presence: stdlib-only local IPC, fully optional at
-	// build (-tags nodiscord) AND runtime — it idles silently when the
-	// Settings toggle is off or Discord isn't running. The app identity is the
-	// baked-in official AsyncAO app (not user-editable); the Enabled toggle is
-	// enforced dynamically in updatePresence, so dialing it unconditionally here
-	// is safe and works even for saved prefs whose AppID predates the bake.
+	// Enabled is checked in updatePresence, so dialing here is safe; it idles without Discord.
 	pres := presence.New(config.DefaultDiscordAppID)
 	defer pres.Close()
 
@@ -460,18 +370,8 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 	app.SetSpriteCapBase(spriteCapBase)     // the Settings downscale sliders re-derive the cap from this live
 	uiCtx.SetDeviceScaleFactor(retinaScale) // macOS Retina: device pixel scale for text raster only (no-op off macOS)
 
-	// Auto UI scale has two inputs, combined per frame in SetAutoScaleFromWindow:
-	// the display DPI (HiDPI laptops) and the WINDOW SIZE (a maximized window on a
-	// big display would otherwise show a tiny island of fixed-pixel widgets — the
-	// "text is too small" reports; it's also why shrinking the window already
-	// looked right). Both are floored at 100% so we never auto-SHRINK: an
-	// unreliable / low DPI reading must not shrink the whole UI below native (#6).
-	// SeedDisplayDPIScale (#77 Part B) records the DPI component using the reliable
-	// per-monitor query (Windows GetDpiForWindow; sdl.GetDisplayDPI reports a flat
-	// 96 under per-monitor-v2 awareness, leaving detection stuck at 100 — the
-	// "100% is too small on a HiDPI monitor" report). The per-frame call in the
-	// loop adds the window factor, snaps to the step, and caps at MaxUIScalePercent;
-	// the loop's display-change handler re-seeds when the window changes monitor.
+	// Auto UI scale combines display DPI and window size, floored at 100% so a bad reading never shrinks the UI.
+	// sdl.GetDisplayDPI reports a flat 96 under per-monitor-v2 awareness, hence the per-monitor query.
 	app.SeedDisplayDPIScale()
 
 	if serverURL != "" {
@@ -480,35 +380,23 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 
 	// --- main loop: fixed-cadence update + single render pass ---
 	last := time.Now()
-	// scheduledNap is the sleep WE chose last pass (pacing tier / skip nap /
-	// minimized nap): the stall guard below must allow it in full, or every
-	// pacing tier slower than maxFrameDelta plays animation clocks in slow
-	// motion (dt loss ate real time — the "anims crawl at 5 fps unfocused"
-	// class of bug).
+	// scheduledNap is the sleep we chose last pass. The stall guard must allow it in full,
+	// or slow pacing tiers play animations in slow motion.
 	scheduledNap := time.Duration(0)
-	// pendingEv carries the one event a WaitEventTimeout park dequeued (the
-	// experimental loop's wake): it feeds the NEXT pass's input phase first,
-	// so nothing is lost or reordered against the regular poll drain.
+	// pendingEv is the event a wait dequeued; the next pass handles it first.
 	var pendingEv sdl.Event
 	running := true
 	for running {
 		now := time.Now()
 		dt := now.Sub(last)
 		last = now
-		// Pacing guard: after a STALL (window drag, driver freeze, sleep
-		// wake) an unbounded dt would dump the typewriter's whole backlog
-		// and machine-gun its blips in one frame. A stall is time beyond
-		// what we scheduled: the allowance is the chosen nap plus the usual
-		// margin, so deliberate slow cadences stay honest while real stalls
-		// still clamp. Animation clocks just resume.
+		// Clamp a stall (window drag, driver freeze, sleep wake) so the typewriter doesn't burst.
 		if limit := scheduledNap + maxFrameDelta; dt > limit {
 			dt = limit
 		}
 		scheduledNap = 0
 
-		// Order matters: BeginFrame resets the per-frame input snapshot
-		// that HandleEvent fills, so it must run before the event poll.
-		// (Inverting these erased every click before the UI saw it.)
+		// BeginFrame resets the input snapshot HandleEvent fills, so it must run first.
 		uiCtx.BeginFrame(dt)
 		sawEvent := false
 		sawInput := false // any non-motion event (click, key, wheel, window)
@@ -519,41 +407,24 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 			if mainWindowShouldQuit(ev, mainWindowID) {
 				running = false
 			}
-			// The preview/main routing gate (see dispatchEvent's doc for the
-			// coordinate-aliasing hazard this exists to prevent). A preview
-			// event is the preview's OWN concern end to end: it never reaches
-			// uiCtx, and it never reaches the main-window-only bookkeeping
-			// below either, since that bookkeeping is about the MAIN
-			// window's monitor/focus/drop state, not the preview's.
+			// Preview events stay out of uiCtx and the main-window state below (see dispatchEvent).
 			if dispatchEvent(ev, uiCtx, preview) {
 				return
 			}
 			switch e := ev.(type) {
 			case *sdl.DropEvent:
-				// Drag-and-drop import (#73): a .aorec / AO2 .demo dropped on the
-				// window imports into recordings\ and starts playing.
 				if e.Type == sdl.DROPFILE {
 					app.HandleFileDrop(e.File)
 				}
 			case *sdl.WindowEvent:
-				// The window moved to a different monitor (#77 Part B): re-query the
-				// DPI so a HiDPI display re-detects. NoteDisplayChanged gates on the
-				// display index actually changing, so a same-monitor move is a no-op.
-				// DISPLAY_CHANGED is the exact signal; MOVED is the fallback for SDL
-				// builds that don't surface it (both are cheap after the index gate).
+				// DISPLAY_CHANGED is exact; MOVED covers SDL builds without it.
 				if e.Event == sdl.WINDOWEVENT_DISPLAY_CHANGED || e.Event == sdl.WINDOWEVENT_MOVED {
 					app.NoteDisplayChanged()
 				}
-				// Coming back to the window is the signal that the user may have
-				// just changed something on disk in another program — the theme
-				// catalog's one-stat trigger (v1.90.0 §Q6). It only latches a
-				// bool; nothing is read here.
+				// The user may have changed files in another program: recheck the theme catalog.
 				if e.Event == sdl.WINDOWEVENT_FOCUS_GAINED {
 					app.NoteFocusGained()
 				}
-				// Clicking away drops text-field focus: the IC/OOC caret stops
-				// blinking and typing goes to whatever app now has focus, instead
-				// of a field that is no longer on screen.
 				if e.Event == sdl.WINDOWEVENT_FOCUS_LOST {
 					app.NoteFocusLost()
 				}
@@ -570,9 +441,7 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 		for ev := sdl.PollEvent(); ev != nil; ev = sdl.PollEvent() {
 			handleEv(ev)
 		}
-		// Frame pacing: real interaction snaps back to full rate; bare pointer
-		// motion gets the short motion grace instead (experimental loop), so
-		// waving the cursor over nothing stops costing frames when it stops.
+		// Real input restores full rate; bare motion only gets a short grace.
 		if sawInput {
 			app.NoteInput()
 		} else if sawEvent {
@@ -581,65 +450,38 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 
 		if window.GetFlags()&sdl.WINDOW_MINIMIZED != 0 {
 			app.Background(dt) // keep the session alive, draw nothing
-			// The detached emote preview is a SEPARATE OS window: it must keep
-			// animating even while the MAIN window is minimized, which is
-			// precisely the case a user pops it out to watch (v1.94.0). Both
-			// calls are "closed/static = free" (a nil check, or a nil check
-			// plus one texture-store lookup) — see render.PreviewWindow.Present
-			// and ui.App.AdvanceDetachedPreview's docs.
+			// The preview is its own OS window and must keep animating while this one is minimized.
 			app.AdvanceDetachedPreview()
 			preview.Present()
 			nap := minimizedNap
-			// A detached, animating preview must not be frozen for the length
-			// of the (much longer) minimized nap — see PreviewAnimWakeCap's doc.
+			// Don't freeze an animating preview for the whole nap.
 			if wakeCap := app.PreviewAnimWakeCap(); wakeCap > 0 && nap > wakeCap {
 				nap = wakeCap
 			}
 			scheduledNap = nap
-			// Interruptible nap: a restore / focus-gain / alt-tab-in event returns
-			// immediately so the window wakes and redraws on the spot, instead of
-			// finishing out the nap first (a felt delay coming back to the window).
+			// Interruptible, so restoring the window redraws at once.
 			if ev := sdl.WaitEventTimeout(int(nap / time.Millisecond)); ev != nil {
 				pendingEv = ev
 			}
 			continue
 		}
 
-		// Static skip (the deepest pacing tier): nothing new to show — no input
-		// this pass, nothing animating, nobody talking, no toast/caret/timer — so
-		// the last presented frame is still exactly right. Skip render+present
-		// entirely (GPU cost → zero) and keep the session pumping. The event-
-		// driven loop then parks until something actually happens; the classic
-		// loop naps at the idle cadence and re-polls.
+		// Nothing new to show: skip render and present, and keep the session pumping.
 		focused := window.GetFlags()&sdl.WINDOW_INPUT_FOCUS != 0
-		// #5 bypass: with the frame limiter disabled the loop renders every pass
-		// (no static skip, no adaptive pacing) — vsync alone paces it. The
-		// deliberate high-GPU escape hatch; default OFF.
+		// Limiter off: render every pass and let vsync pace.
 		limiterOff := prefs.Load().DisableFrameLimiter
 		if !limiterOff && app.SkipFrame(focused, sawEvent) {
 			app.Background(dt)
-			// Same reasoning as the minimized branch above: a detached preview
-			// must keep feeding/presenting on a pass that SkipFrame decided
-			// needs no main-window redraw at all, or it freezes the instant the
-			// courtroom goes idle or the window loses focus — the exact
-			// scenario a popped-out preview exists for (v1.94.0).
+			// Keep the preview animating on passes the main window skips.
 			app.AdvanceDetachedPreview()
 			preview.Present()
 			if prefs.Load().EventDrivenLoop {
-				// EXPERIMENTAL event-driven wait. The Background pumps above may
-				// have produced redraw-worthy work (packets, texture uploads):
-				// loop straight around and render it — the next pass's SkipFrame
-				// refuses on RenderNeeded. Otherwise park on the OS event wait
-				// until input, a wake doorbell, or the nearest scheduled deadline.
+				// Background may have produced work: render it. Otherwise wait for input, a wake or a deadline.
 				if app.RenderNeeded() && !app.RenderSuppressed(focused) {
 					continue
 				}
 				wait, renderDue := app.NextWakeDelay(focused)
-				// A detached, animating preview must not be frozen for the
-				// length of an otherwise-long event park — see
-				// PreviewAnimWakeCap's doc. This only shortens the SLEEP; it
-				// never sets renderDue, so it cannot force a main-window
-				// redraw (SkipFrame's own contract is untouched).
+				// Only shortens the wait; it never forces a main-window redraw.
 				if wakeCap := app.PreviewAnimWakeCap(); wakeCap > 0 && wait > wakeCap {
 					wait = wakeCap
 				}
@@ -663,9 +505,7 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 			continue
 		}
 
-		// Global UI scale: render at logical size, let the GPU scale the
-		// whole frame; the kit unprojects the mouse through the same
-		// factor, so every widget scales without per-element math.
+		// Draw at logical size and let the GPU scale the frame; the kit unprojects the mouse to match.
 		w, h := window.GetSize()
 		app.SetAutoScaleFromWindow(w, h) // window-relative auto scale (when auto-scale is on)
 		scale := float32(app.UIScale()) / 100
@@ -684,27 +524,13 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 		default:
 			app.RequestRelaunch(gpuRecoveryArgs(recovery, masterURL, gpuOpts, gpuRecoveries, debugMode), true)
 		}
-		// The detached preview's own present, independent of the main
-		// window's renderer. Present is a single nil check when the preview
-		// is closed (the overwhelmingly common case: nothing has ever been
-		// popped out this session — see render.PreviewWindow.Present's doc
-		// and BenchmarkPreviewWindowPresentClosed for the proof).
 		preview.Present()
-		// A real interaction (click / key / wheel) almost always changed UI-visible
-		// state DURING the draw above — a screen switch, a menu open, a toggle — which
-		// only appears on the NEXT frame. Force that one frame so it's never stranded
-		// until cursor motion or the idle tick reveals it. Motion is excluded (it has
-		// its own live grace); idle-safe (no input, no follow-up).
+		// A click's state change only appears on the next frame, so force one.
 		if sawInput {
 			app.NoteInteraction()
 		}
 
-		// Frame pacing (the GPU-burn fix): sleep the frame's remaining budget.
-		// vsync stays on for tear-free presents, but it CANNOT be the throttle —
-		// it ties the loop to the panel (165 Hz laptops burned GPU while idle)
-		// and some windowed present paths don't block at all (the "54% GPU in a
-		// tiny window" report). Two nested budgets:
-		// With vsync off both fall back to the old fixed ~60 fps sleep.
+		// vsync can't be the throttle: it follows the panel's rate, and some windowed presents don't block.
 		pace := app.FramePace(focused)
 		hardCap := app.HardCapBudget(focused)
 		if limiterOff {
@@ -726,21 +552,10 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 		if nap := budget - elapsed; nap > 0 {
 			scheduledNap = nap // total intended sleep — the stall guard must allow it in full
 		}
-		// Audio independent of the frame rate: while a message types (AudioPaceActive),
-		// a single pacing sleep would advance the courtroom once with a big dt and
-		// machine-gun a whole present-period of blips at one instant ("blips only every
-		// screen refresh at a 1 fps cap"). Instead advance the room — and play its blips
-		// — at the fine audio cadence THREADED THROUGH the same two-tier sleep below, so
-		// the inviolable hardCap floor stays uninterruptible (the cap is obeyed even
-		// under a mouse-motion flood while talking, exactly as before) and only the
-		// idle-tier surplus yields to input. Background advances room + drains audio
-		// without drawing; the next Frame draws the already-current room
-		// (MarkRoomPreAdvanced skips its own room.Update). Only while the LIVE courtroom
-		// streams blips, so a static screen still idles at zero cost.
+		// While a message types, advance the room and blips in fine steps through the sleep, or a low
+		// frame cap fires a whole period of blips at once. The hard cap stays uninterruptible.
 		audioPace := !limiterOff && app.AudioPaceActive(budget)
-		// fineAdvance sleeps total in ~audio-cadence steps, advancing the room + audio
-		// each step (no draw). interruptible = the surplus tier: an event returns early
-		// to render now; uninterruptible = the hardCap floor (the cap must hold).
+		// fineAdvance sleeps total in audio-sized steps; only the surplus tier yields to input.
 		fineAdvance := func(total time.Duration, interruptible bool) {
 			end := time.Now().Add(total)
 			for {
@@ -772,9 +587,7 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 				time.Sleep(s)
 			}
 		}
-		// The surplus beyond the ceiling, interruptibly (slower idle/anim tiers only):
-		// input or a background wake arriving here renders NOW rather than waiting the
-		// whole slow budget out. The classic loop keeps a plain sleep.
+		// Surplus beyond the cap: input or a wake renders at once.
 		if pace > hardCap {
 			if sleep := pace - time.Since(now); sleep > 0 {
 				switch {
