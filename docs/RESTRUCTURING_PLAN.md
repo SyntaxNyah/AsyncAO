@@ -25,8 +25,11 @@ in **Status**. Update Status in the same commit that completes a step.
         build.ps1 and the release job
   - [x] device loss (decided 2026-10-28): `render.GPUWatcher` restarts the client, restoring
         its tabs; in-process rebuild with T1 re-upload moves to after step 3 (Part 5d)
-  - [ ] backend name in the debug overlay and About
-  - [ ] platform code (dialogs, DPI seeding, URL opening, preview ownership, clipboard)
+  - [x] platform skeleton: `internal/platform` (`Detect(probe)`, environment, capabilities, report);
+        no consumers yet, nothing moved (Part 5g, Review outcome, sequence item 2)
+  - [ ] the rest of Part 5g's sequence, items 3–7, which includes the backend name in the debug
+        overlay and About, and the platform code (dialogs, DPI seeding, URL opening, preview
+        ownership, clipboard)
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
       pointer, no park/activate copies; fixes bug 4, #115, #141, #84)
 - [ ] 4. `internal/uikit`: extract the kit, then the input model (press/release + capture,
@@ -1090,6 +1093,239 @@ become RML documents in the client's dock system, and our own kit keeps the cour
 viewport and the legacy AO theme screens. Steps 4–5 are rewritten with item 7. Focus and
 keyboard routing across widgets (Esc, Enter, global hotkeys following the focused part)
 belong to the client's input handling, not to themes.
+
+## Part 5g — Platform layer and graphics (PROPOSED 2026-10-28, awaiting approval)
+
+**Why.** Platform knowledge is scattered: 22 OS-tagged files in seven packages (`hwid`,
+`netproxy`, `presence`, `winexec`, `render`, `ui`, `cmd`) and 19 `runtime.GOOS` uses in 13
+files, twelve of those files in `ui` opening URLs, revealing paths, picking folders, copying files,
+showing notifications and locating fonts on their own. Nothing at startup knows what the
+client can do where it runs; each feature finds out by trying. Mobile (Android, iOS) would
+add a third and fourth branch to every one of them.
+
+**The boundary (decided 2026-10-28, option C of the F4 review).** The platform layer hides
+the operating system, the app's lifecycle and hardware acquisition. It does not hide SDL:
+SDL is the portability layer for windows, input, 2D drawing, text, audio and the GPU, and
+every layer above the platform is written against it, but only through our binding
+(`internal/sdl`, `ttf`, `mix`, `rmlui`), never SDL's C API or a third-party wrapper. The
+binding is the replaceable layer: if SDL ever had to go, its API is re-implemented on
+something else and the code above it does not change, the same way steps 2b and 2c moved
+the client from go-sdl2/SDL2 to SDL3. Graphics backends are what SDL offers (SDL_GPU on
+Direct3D 12, Vulkan, Metal; SDL's renderer on Direct3D 11, OpenGL, OpenGL ES, software). Not
+pursued: hiding SDL behind our own drawing, text, input and audio interfaces (option B),
+which only a web build would need, since Go's WebAssembly target has no cgo. In one line:
+above the platform, code knows SDL's drawing and input API through our binding, and never
+which OS, driver or device it runs on.
+
+**The layer.** `internal/platform` is the platform abstraction layer and the bootstrap
+backbone: the first thing `main` builds, before SDL, and the only package that knows which
+OS it is on.
+- `Environment` (plain data, detected once): OS and architecture; form factor (desktop,
+  mobile); packaging (dev build, portable, installed, Flatpak, AppImage, macOS bundle, app
+  store); sandboxed; input (mouse and keyboard, touch); whether paths are case-insensitive;
+  the main-loop style the OS wants (a blocking loop, or SDL's main callbacks on iOS); and the
+  paths (config, cache, data, logs, user fonts).
+- `Capability` (an enum) and `Capabilities` (the set present): open a URL, reveal a file,
+  pick a folder or file, copy files to the clipboard, system notifications, relaunch the
+  client, self-update, an external video encoder (ffmpeg), system font discovery, proxy
+  discovery, machine id, Discord presence, extra OS windows, background rendering.
+- One service interface per capability, each with one job (`URLOpener`, `FileRevealer`,
+  `FilePicker`, `Notifier`, `ClipboardFiles`, `Relauncher`, `Updater`, `ProcessRunner`,
+  `FontLocator`, `ProxyDiscoverer`, `MachineID`, `PresenceDialer`, …). A capability is present
+  exactly when its service is: `Platform` hands a service out as `(service, ok)`, and the
+  capability set is derived from the services, so the two cannot disagree.
+- `GraphicsAPIs()`: the graphics APIs this platform offers, in order, as plain descriptors
+  (API name, has an SDL_GPU device, software, Vulkan driver manifest). Windows: Direct3D 12,
+  then Direct3D 11; Linux: Vulkan, then lavapipe, then OpenGL; macOS: Metal; Android: Vulkan,
+  then OpenGL ES; iOS: Metal.
+
+**The toolkit** (revised 2026-10-28): everything the client needs from the machine it runs
+on, grouped by job. Each group is a few single-job services; a group is not an object.
+Pure Go in `internal/platform` unless marked *host* (SDL-backed, Part "The host" below).
+Rows marked *mobile* are reserved for the mobile milestone and not built before it.
+
+| Group | Services | Comes from today |
+|---|---|---|
+| Identity | `AppIdentity` (name, version, channel, executable, packaging); `DeviceFingerprint` (the machine's stable fingerprint) | `update.Version`, `ui/datadir.go`; `hwid/hwid_{windows,darwin,linux,other}.go` |
+| System | `SystemInfo` (OS and version, arch, CPU count, total memory, form factor) | `runtime.GOOS` branches; memory budget in `main` |
+| Paths and storage | `Paths` (config, cache, data, logs and crash log, user fonts, desktop, temp; portable mode); `FileSystem` (roots, case-insensitive paths) | `config/location.go`, `ui/datadir.go`, `setupCrashOutput`, `USERPROFILE` in `ui/debugpanel.go`, `ui/demobrowser.go`, `ui/app_frame.go` |
+| Process | `ProcessRunner` (hidden console, find a tool such as ffmpeg); `Relauncher`; `Updater` (release asset, permissions, quarantine) | `winexec`, `videoenc`, `update/apply.go`, `ui/update_ui.go` |
+| Network and IPC | `ProxyDiscoverer` (the OS proxy settings); `PresenceDialer` (Discord's socket or pipe) | `netproxy/discover_*.go`; `presence/dial_*.go`, `XDG_RUNTIME_DIR` |
+| Fonts | `FontLocator` (system font folders, well-known faces per role) | `ui/fontcensus.go`, `fontfallback.go`, `themefonts.go`, `emoji.go`, `WINDIR`, `LOCALAPPDATA` |
+| Desktop integration (*host*) | `URLOpener`, `FileRevealer`, `FilePicker`, `ClipboardFiles`, `Notifier`, `WindowIcon`, `Windows` (extra OS windows) | `ui/about.go`, `openpath.go`, `settingstabs.go`, `settingswidgets.go`, `clipfile.go`, `ostoast.go`, `mascot_icon_*.go`, `render/previewowner_*.go` |
+| OS preferences (*host*) | `DisplayScale`; system light/dark theme and reduced motion (*mobile*) | `ui/dpiseed_*.go` |
+| Hardware (*host*) | window, `Graphics`, audio device, displays, input devices (touch); power and low-memory warnings (*mobile*) | `cmd/asyncao/main.go`, `render` audio |
+| Lifecycle (*host*) | frame loop in the OS's style; background and foreground; GPU loss | `cmd/asyncao/main.go` |
+
+Two moves keep existing logic where it is and inject only the OS part. The per-server HDID
+stays derived at the dial site in `internal/ui` (`hwid.For(fingerprint, address)`), so the
+privacy gate (CLAUDE.md rule 11) keeps seeing it; only the fingerprint's OS detection moves.
+`netproxy` keeps its policy and transport and receives the discovered OS settings.
+
+**The host: app init and hardware acquisition** (decided 2026-10-28: the platform layer owns
+the whole initialisation, from process setup through SDL to the GPU, so platform differences
+are settled before SDL starts). The SDL-backed half of the layer, `internal/platform/host`,
+starts the app and acquires the hardware it runs on, so `render` and `ui` only consume what
+they are handed. Before `SDL_Init`, from what `platform.Detect()` found:
+- Process setup: lock the main OS thread where SDL needs it (not on Android, where SDL calls
+  the app's main on its own thread); the memory limit from `SystemInfo` instead of a fixed
+  700 MiB (`memoryBudgetBytes`; the 256 MiB in older text predates 7fe8aec2); the crash log in the platform's log path (today it goes next to the executable,
+  which is not writable under Program Files, in a macOS bundle or in a Flatpak).
+- SDL hints, none of which are set today: the app id and name (Wayland, Flatpak and the
+  audio mixer show "AsyncAO"), the Wayland or X11 preference, Windows DPI awareness,
+  touch-to-mouse behaviour on mobile.
+- The subsystems to start and the window flags (high-DPI on macOS), and the main-loop style
+  (blocking, or SDL's main callbacks on iOS), which must be chosen before SDL owns the entry
+  point.
+Then:
+- **Init and run.** `host.Start(platform)` initialises SDL's subsystems, opens the main window
+  with the flags the platform asks for (high-DPI on macOS), and runs the frame loop in the
+  style the environment asks for: a blocking loop on desktop, SDL's main callbacks on iOS. It
+  turns lifecycle events (entering and leaving the background) into calls on the app.
+- **GPU acquisition.** `host.Driver` (interface: `Name`, `Open(window, vsync)`) has two
+  implementations, `gpuDeviceDriver{api, shader format, driver files}` (an SDL_GPU device on a
+  native API and SDL's gpu renderer on it; Vulkan driver files set only while the device is
+  created) and `sdlRendererDriver{name}` (SDL's own renderer, no device). They are built from
+  the platform's `GraphicsAPIs()`; `host.AcquireGraphics` walks them in order and returns
+  `Graphics`, which owns renderer and device (`Renderer`, `Device`, `Info`, `Present`,
+  `Suspend`/`Resume`, `Close`). `render` and `ui` receive the renderer; RmlUi the device.
+- **GPU loss.** `LossDetector` (pure), `RecoveryPolicy` (pure, clock injected) and
+  `RecoveryActions` (interface: relaunch through the platform's `Relauncher` on desktop,
+  re-acquire `Graphics` in place on mobile once texture ownership allows it), composed by
+  `GPUWatcher`, all in the host. The frame loop observes each present; nothing outside the
+  host knows a device can be lost, only that the app may be relaunched or asked to re-upload.
+- **Other hardware**: the audio device (SDL3_mixer), displays and their scale, input devices
+  (touch present or not), acquired the same way and handed out the same way.
+- **SDL-backed services** (URL opening and file reveal through `SDL_OpenURL`, file dialogs,
+  clipboard, extra windows) are added to the `Platform` by the host after SDL starts.
+
+**Entry and exit: the platform is the app's begin and end point** (decided 2026-10-28).
+`cmd/asyncao`'s `main` is one line, `host.Main(build)`. The platform drives the app's whole
+lifetime and calls back into `cmd` for the one thing only `cmd` knows, how to compose the
+client:
+1. Detect and pre-init: `platform.Detect()` (environment, paths, the services that need no
+   SDL), then process setup and SDL hints (above).
+2. SDL and hardware: SDL starts, the window opens, graphics (from `GraphicsAPIs()`) and the
+   audio device are acquired; SDL's services and facts join the platform.
+3. Report: environment, hardware acquired ("direct3d12 (NVIDIA GeForce RTX 3070)"),
+   capabilities present, capabilities missing and why ("self-update: off in a Flatpak"), to
+   the log, the About screen and the debug overlay.
+4. Build: the platform calls `build(runtime)`, `cmd`'s composition function. `Runtime` holds
+   what was acquired and offered (graphics, audio device, window, services); `build` wires
+   the client by constructor injection and returns an `Application`.
+5. Run: the frame loop in the OS's style. The platform owns how it waits, presents and
+   watches the GPU; the `Application` decides when a frame is worth drawing (its pacing).
+   Lifecycle events become `Suspend`/`Resume` calls.
+6. Shutdown: `Application.Shutdown()` (flush prefs, remember tabs, close logs), then the
+   hardware is released in reverse order, then the process relaunches (if the app asked the
+   `Relauncher`, or GPU-loss recovery did) or exits.
+
+`Application` (interface, crosses the platform → app boundary): `Event`, `Frame`, its pacing,
+`Suspend`, `Resume`, `Shutdown`. The App layer implements it.
+
+**Who sees what.** `cmd/asyncao` (its `build` function) is the only importer of `platform` and `host` besides the
+App layer. It hands each consumer the services and hardware it uses through its constructor
+(rule 12; no services bag). The App layer reads `Capabilities` to decide what to show: no
+"Browse…" without a file picker, no "Restart to apply" without a relauncher. Features never
+branch on the OS.
+
+**Hard rule 1** names `internal/platform/host` beside `render`, `ui` and `cmd/asyncao`: it
+imports the SDL binding and runs on the main thread. `internal/platform` itself stays SDL-free.
+
+**Enforcement.** golangci-lint `forbidigo` rejects `runtime.GOOS` outside `internal/platform`
+and the binding packages, and `depguard` rejects `os/exec` and `syscall` outside them. OS
+build-tagged files exist only there (review rule; a lint cannot see file names).
+
+**Graphics decisions carried over** (replaces the 03324c58 design). Vulkan is no longer
+required everywhere (decided 2026-10-28): RmlUi's shaders ship as SPIR-V, DXIL and MSL, and
+the Direct3D 11 and OpenGL ES tiers have no SDL_GPU device (open: RmlUi on SDL's renderer
+there, or a device-level floor such as Android 10).
+
+**Sequence (replaces step 2c's "platform code" item).** (1) `platform` skeleton: Environment,
+Capabilities, Detect, report; (2) the host: init, window, frame loop, graphics acquisition
+on `GraphicsAPIs()` and GPU loss, bootstrap in `main`; (3) the audio device and displays move
+into the host; (4) the services, one commit each, deleting the OS branches they replace: URL
+and reveal, dialogs, notifications, clipboard, fonts, proxy, machine id, presence, process
+runner and ffmpeg, updater and relaunch, paths; (5) turn on the lints. Android and iOS
+implementations, and main callbacks, come with the mobile milestone.
+
+### Review outcome (2026-10-30; replaces the text above where they differ)
+
+The adversarial review of 2026-10-28 (findings F1–F11) changed this design. Comparison page:
+https://claude.ai/artifact/LmDrwvSC42cuwLLagFpLkV.
+
+**Decided by the maintainer:** the platform layer owns initialisation from process setup
+through SDL to the GPU; it is the app's begin and end point; the boundary is option C (above).
+Decided 2026-10-30:
+- **No browser build.** Nothing is designed around WebAssembly.
+- **No memory budget.** The fixed limit (`debug.SetMemoryLimit`, 700 MiB today, 256 MiB in older
+  text) and the process-wide budget are dropped as goals, and the host sets no limit. Every
+  budget check in this plan (Part 5d, open items 1 and 6) is void; those measurements remain
+  information. Hard rule 4 and the zero-allocation render loop stay. One commit removes the
+  limit, the budget line in `ui/perfhud.go`, the "fits the budget" limits and text in `config`
+  and the Settings power tab, and the wording in README and docs.
+- **RmlUi stays, unmodified, on SDL_GPU; no OpenGL.** Windows: Direct3D 12. Linux and Android:
+  Vulkan. macOS and iOS: Metal. Linux's software tier is lavapipe; Windows' (lavapipe or WARP) is
+  chosen when the render interface runs on both. OpenGL, OpenGL ES and SDL's Direct3D 11 renderer
+  are not tiers, and SDL's renderer stops being a fallback when RmlUi lands.
+- **Our own render interface, with the least code that does the job (settles open item 3).** It
+  lives in `internal/rmlui`. We use no third-party fork of RmlUi or of its renderers. It starts
+  from upstream's SDL_GPU sample and ports from upstream's OpenGL 3 renderer: clip masks,
+  gradients, layers, blur and drop shadow (and so `box-shadow`), colour filters and opacity,
+  `mask-image` and `backdrop-filter`. Nothing beyond what those need. Shaders have one HLSL
+  source, compiled ahead of time to SPIR-V, DXIL and MSL and committed, so a build needs no
+  shader tools. It is written before the rest of step 4, and an effect counts as done only after
+  it has run on a real GPU (RTX 3070) through Direct3D 12 and Vulkan; Metal needs a Mac.
+
+**Adopted as the working plan, the maintainer may overrule any of them:**
+- **Frame loop (F1).** Loop shape S4 now, S3 as the target. S4: `host.Main(build)` does pre-init,
+  SDL, hardware, report, then `app.Run(loop)`, then shutdown and relaunch; the loop body keeps
+  its behaviour but calls host primitives (event wait, wake event, waits, `Present` through the
+  GPU watcher). S3: `Application` is events, `Plan`, `Draw`, `Suspend`, `Resume`, `Shutdown`, and
+  the loop body lives in the host. A 30-method `Application` shaped around today's App is
+  rejected: the platform would know about features.
+- **Causes first (F1 follow-up).** Of the 34 App methods the loop calls, most are patches and are
+  deleted, not moved. Patches are removed only after their cause is fixed: sessions on their
+  own goroutines (step 3), blips on the audio clock, one `FrameScheduler` replacing the 14
+  pacing methods and the classic loop mode (step 4), the preview as an ordinary window.
+- **`FrameScheduler`** lives in `internal/platform`: pure Go, clock and waker injected, the user's
+  frame caps passed as options by `build`, `Invalidate` and `RequestFrameAt` atomic and callable
+  from any goroutine. Producers declare a two-method interface themselves and import nothing
+  from the platform. Its acceptance tests are the bug reports in today's comments: no GPU burn
+  when idle, instant input, one follow-up frame after a click, true animation speed at any frame
+  rate with no catch-up burst, even blips at any cap, connections alive while minimised, the
+  user's caps respected.
+- **Hardware (F2).** The host offers a window factory (every window gets the same driver order
+  and the same GPU watcher) and audio devices (playback, capture, enumeration; capture is
+  consent-aware). `render/previewwindow.go`, `ui/voiceaudio.go`, `ui/voicemictest.go` and
+  `render/audio.go` stop opening devices themselves.
+- **GPU reset (F3).** "Nothing outside the host knows a device can be lost" holds only for the
+  desktop restart. In-place re-acquisition adds a `GraphicsReset` event on `Application`.
+- **Capability and availability (F5).** A capability is static, decided at detection, with a
+  reason when absent. Availability is the service call's result at the time, as a typed error
+  (not installed, denied, unavailable). The UI hides by capability and handles availability
+  errors. "Present exactly when its service is" no longer applies.
+- **Driver lists (F6)** are per-OS files in the host; `GraphicsAPIs()` descriptors are dropped.
+- **`Runtime` (F7)** never leaves `build`. `ui.Deps` grows until step 7 moves services to their
+  features; this is known debt.
+- **Globals (F8).** The wake event moves into the host. `netproxy`'s policy stays global, as
+  decision C3 already says; only its OS discovery moves.
+- **Testing and paths (F9, F10).** `Detect(probe)` takes an injected OS probe. Config and data
+  locations keep today's paths for existing installs, with an explicit precedence, a portable
+  marker and a test pinning them.
+
+**Sequence (F11; every commit builds and passes the gate).**
+1. Restore the working tree to `03324c58`, keeping this plan.
+2. Platform skeleton: `Detect(probe)`, capabilities, report. No consumers yet.
+3. `host.Main(build)` owns pre-init, SDL, hardware and shutdown; the loop runs on host primitives.
+4. Window factory and audio devices in the host.
+5. Driver lists and the GPU watcher in the host; backend name in the debug overlay and About.
+6. The services, one commit each, deleting the OS branches they replace.
+7. Lints on. This closes step 2c.
+8. Step 3, with blips on the audio clock.
+9. Steps 4–5, rewritten per open item 7, with `FrameScheduler`, one loop mode, the preview as a
+   window, and the loop body moved into the host (S3).
+10. Steps 6–9. Android and iOS follow as their own milestone.
 
 ## Part 6 — Adversarial review (verified against the code; amendments applied above)
 
