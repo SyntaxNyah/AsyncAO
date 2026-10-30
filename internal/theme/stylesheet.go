@@ -1,11 +1,6 @@
 package theme
 
-// AO2 ≥ 2.10 themes ship courtroom_stylesheets.css — a Qt stylesheet
-// (QSS) skinning every widget. Full QSS is a Qt rendering feature, but
-// the properties theme authors actually use for the LOOK are a handful
-// of colors. This parses that subset into a Palette the UI applies over
-// its own color scheme, so "the css stuff" visibly works: panels, text,
-// buttons, and accents take the theme's colors.
+// AO2 2.10+ courtroom_stylesheets.css is QSS; this parses the colour subset into a Palette.
 
 import (
 	"math"
@@ -14,9 +9,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 )
 
-// Palette is the color scheme extracted from a theme stylesheet. Each
-// pointer is nil when the stylesheet didn't define it — the UI keeps its
-// default for those slots.
+// Palette is the extracted colour scheme; a nil pointer keeps the UI's default.
 type Palette struct {
 	Text    *RGB // base text (QWidget/body color)
 	Panel   *RGB // window/panel background
@@ -25,13 +18,11 @@ type Palette struct {
 	Danger  *RGB // error text, when themes define one
 }
 
-// Empty reports whether nothing usable was parsed.
 func (p Palette) Empty() bool {
 	return p.Text == nil && p.Panel == nil && p.PanelHi == nil &&
 		p.Accent == nil && p.Danger == nil
 }
 
-// paletteSlot identifies where a parsed declaration lands.
 type paletteSlot int
 
 const (
@@ -43,20 +34,14 @@ const (
 	slotDanger
 )
 
-// selectorSlots maps the QSS selectors theme authors use onto palette
-// slots, per property. Lowercased selector → property → slot.
+// selectorSlots maps lowercased QSS selector, then property, to palette role.
 var selectorSlots = map[string]map[string]paletteSlot{
-	// Base widget look: the whole-window colors.
 	"*":           {"color": slotText, "background-color": slotPanel, "background": slotPanel},
 	"qwidget":     {"color": slotText, "background-color": slotPanel, "background": slotPanel},
 	"qmainwindow": {"color": slotText, "background-color": slotPanel, "background": slotPanel},
-	// Buttons: raised surfaces.
 	"qpushbutton": {"background-color": slotPanelHi, "background": slotPanelHi, "color": slotText, "border-color": slotAccent},
 	"aobutton":    {"background-color": slotPanelHi, "background": slotPanelHi, "border-color": slotAccent},
-	// Inputs give the accent via their borders. List/edit widget
-	// backgrounds are REFINEMENTS of the window look, not the window look
-	// — only QWidget-level selectors define the panel slot (a theme that
-	// darkens its lists must not recolor every panel).
+	// Inputs give the accent via borders; only QWidget-level selectors define the panel.
 	"qlineedit":      {"background-color": slotPanelHi, "background": slotPanelHi, "border-color": slotAccent},
 	"qplaintextedit": {"color": slotText},
 	"qtextedit":      {"color": slotText},
@@ -64,14 +49,12 @@ var selectorSlots = map[string]map[string]paletteSlot{
 	"qtreewidget":    {"color": slotText},
 	"qcheckbox":      {"color": slotText},
 	"qlabel":         {"color": slotText},
-	// Hover/checked states are the closest thing QSS has to an accent.
+	// Hover and checked states are the closest QSS has to an accent.
 	"qpushbutton:hover":   {"background-color": slotAccent, "background": slotAccent},
 	"qpushbutton:pressed": {"background-color": slotAccent, "background": slotAccent},
 }
 
-// ParseStylesheet extracts the supported palette from QSS content.
-// Later declarations win, like CSS. Unknown selectors/properties are
-// ignored wholesale — this is a palette extractor, not a CSS engine.
+// ParseStylesheet extracts the palette; later declarations win, and unknown selectors and properties are ignored.
 func ParseStylesheet(data []byte) Palette {
 	var pal Palette
 	assign := func(slot paletteSlot, c RGB) {
@@ -128,7 +111,6 @@ func ParseStylesheet(data []byte) Palette {
 	return pal
 }
 
-// parseDeclarations splits "prop: value; prop: value" into a map.
 func parseDeclarations(body string) map[string]string {
 	out := map[string]string{}
 	for _, decl := range strings.Split(body, ";") {
@@ -141,7 +123,6 @@ func parseDeclarations(body string) map[string]string {
 	return out
 }
 
-// stripCSSComments removes /* ... */ runs.
 func stripCSSComments(s string) string {
 	var b strings.Builder
 	for {
@@ -159,16 +140,13 @@ func stripCSSComments(s string) string {
 	}
 }
 
-// Hex colour lengths parseCSSColor accepts, after the #.
 const (
 	cssShortHexLen = 3
 	cssHexLen      = 6
 	cssQtHexLen    = 8
 )
 
-// parseCSSColor handles the forms theme authors use: #rgb, #rrggbb,
-// #aarrggbb (Qt's ARGB — alpha ignored), rgb(...)/rgba(...), and a few
-// named colors.
+// parseCSSColor handles #rgb, #rrggbb, #aarrggbb (Qt's ARGB, alpha ignored), rgb()/rgba() and a few named colours.
 func parseCSSColor(v string) (RGB, bool) {
 	v = strings.ToLower(strings.TrimSpace(v))
 	switch {
@@ -207,7 +185,7 @@ func parseCSSColor(v string) (RGB, bool) {
 	return RGB{}, false
 }
 
-// cssNamedColors: the handful that appear in real AO themes.
+// cssNamedColors are those that appear in real AO themes.
 var cssNamedColors = map[string]RGB{
 	"white":       {R: math.MaxUint8, G: math.MaxUint8, B: math.MaxUint8},
 	"black":       {},
@@ -219,5 +197,4 @@ var cssNamedColors = map[string]RGB{
 	"transparent": {},
 }
 
-// cssHalfChannel is CSS's 128 in green, gray and grey.
 const cssHalfChannel = 128

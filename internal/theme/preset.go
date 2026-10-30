@@ -1,8 +1,6 @@
 package theme
 
-// ONE PRESET FRAGMENT: the parsed form of internal/theme/presets/{layout,style}/<id>.ini.
-// SDL-free and cold-path only, exactly like the reader it wraps (hard rules 1
-// and 2).
+// One preset fragment, the parsed form of presets/{layout,style}/<id>.ini; cold path only (hard rule 2).
 
 import (
 	"errors"
@@ -15,91 +13,55 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
-// secPreset is the fragment header section. It is NOT part of the sidecar
-// grammar: the sidecar reader classifies it as unknown and preserves it
-// verbatim (format rule 2), which is why a fragment stays a legal theme file
-// and why a theme file with no [preset] header is still a legal fragment body.
+// secPreset is the header, unknown to the sidecar reader, so a fragment stays a legal theme file.
 const secPreset = "preset"
 
 const (
-	// PresetIDRuneCap is the fragment id grammar's bound. Deliberately the same
-	// constant the element/pane/clock ids use (IDRuneCap): an id is a file name,
-	// a section suffix and a [theme] layout_preset value, and three different
-	// length rules for one concept is three chances to disagree.
+	// PresetIDRuneCap shares IDRuneCap, as an id is a file name, section suffix and layout_preset value.
 	PresetIDRuneCap = IDRuneCap
-	// PresetFullCanvasCap bounds one fragment's `full_canvas` list. It can never
-	// usefully exceed the element cap — every entry names an element in the same
-	// file — so it is written as a const alias rather than as a second number.
+	// PresetFullCanvasCap aliases ElementCap, as every entry names an element in the same file.
 	PresetFullCanvasCap = ElementCap
-	// PresetDesignMinPx / PresetDesignMaxPx bound a layout fragment's declared
-	// design canvas. The floor is AO2's own smallest shipped canvas class
-	// (retro_lowres is 640x480) halved, so a deliberately tiny canvas is still
-	// legal; the ceiling is four times the widest shipped fragment (21:9 at
-	// 1512), which is past any canvas a design-space geometry stays readable in.
-	// CLAMPED, never refused: a typo'd canvas is a fragment that lays out
-	// strangely, not a fragment that must stop the gallery from opening.
+	// PresetDesignMinPx and PresetDesignMaxPx clamp a layout's canvas, as a typo must not stop the gallery.
 	PresetDesignMinPx = 240
 	PresetDesignMaxPx = 6048
 )
 
 var (
-	// ErrPresetKind reports a fragment whose [preset] kind is neither axis. It
-	// is a REFUSAL rather than a degrade, unlike every enum in the sidecar
-	// itself: the kind decides which section partition applies, so guessing it
-	// would be guessing whether the file is allowed to contain what it contains.
+	// ErrPresetKind is a refusal, unlike sidecar enums, because the kind decides which sections the file may contain.
 	ErrPresetKind = errors.New("theme: preset kind must be \"layout\" or \"style\"")
 	// ErrPresetID reports an id outside the [a-z0-9_-]{1,24} grammar.
 	ErrPresetID = errors.New("theme: preset id must be [a-z0-9_-] and at most " +
 		strconv.Itoa(PresetIDRuneCap) + " characters")
-	// ErrPresetTier reports a fragment declaring a section the OTHER axis owns —
-	// the disjointness violation TestLayoutAndStylePresetKeySetsAreDisjoint
-	// exists to make impossible. Refused rather than ignored: a style fragment
-	// carrying [overrides] would silently move widgets the layout axis owns, and
-	// the two axes would stop being swappable.
+	// ErrPresetTier reports a section the other axis owns, or the axes stop being swappable.
 	ErrPresetTier = errors.New("theme: preset declares a section its axis does not own")
-	// ErrPresetElementKind reports `kind = pane` in a style fragment or a
-	// non-pane element in a layout fragment. Same partition, one level down:
-	// [element.*] is the one section BOTH axes may declare, so the kind decides
-	// which tier the element belongs to.
+	// ErrPresetElementKind reports an element kind on the wrong axis; both declare [element.*].
 	ErrPresetElementKind = errors.New("theme: preset element kind belongs to the other axis")
-	// ErrPresetAnchor reports a style element that neither anchors to a slot key
-	// nor appears in its own [preset] full_canvas list (design §6.1, gated by
-	// TestStylePresetElementsAlwaysAnchor). It is THE orthogonality rule: an
-	// absolutely-placed decoration is decoration that only fits one layout.
+	// ErrPresetAnchor reports a style element neither anchored nor in full_canvas, fitting one layout only.
 	ErrPresetAnchor = errors.New("theme: style preset element is neither anchored nor declared full_canvas")
 )
 
-// PresetKind is which axis a fragment belongs to.
-//
-// WIRE NAMES ARE THE FORMAT, exactly as they are for every sidecar enum:
-// append-only, at the end, never renamed. Unlike those enums this one does not
-// degrade — see ErrPresetKind.
+// PresetKind is a fragment's axis; wire names are append-only, and it does not degrade.
 type PresetKind uint8
 
 const (
 	// PresetLayout places: [overrides], [rotations], [pane.*] and pane elements.
 	PresetLayout PresetKind = iota
-	// PresetStyle dresses: [palette], [chrome], [fonts], [fontbind], [media],
-	// [sounds], [clock.*], [effect.*] and every non-pane element.
+	// PresetStyle dresses: [palette], [chrome], [fonts], [fontbind], [media], [sounds], [clock.*],
+	// [effect.*] and non-pane elements.
 	PresetStyle
-	// PresetKindCount bounds every per-kind table.
 	PresetKindCount
 )
 
 var presetKindNames = [PresetKindCount]string{"layout", "style"}
 
-// String returns the wire name, or "" for a value outside the enum.
 func (k PresetKind) String() string { return enumName(presetKindNames[:], uint8(k)) }
 
-// PresetKindOf resolves a wire name.
 func PresetKindOf(s string) (PresetKind, bool) {
 	v, ok := enumValue(presetKindNames[:], strings.TrimSpace(s))
 	return PresetKind(v), ok
 }
 
-// presetTierSections is THE PARTITION, as data.
-// TestLayoutAndStylePresetKeySetsAreDisjoint asserts over this table AND over
-// the shipped fragments, so neither the rule nor the data can drift alone.
+// presetTierSections is the partition of sections between axes, as data.
 var presetTierSections = [PresetKindCount]struct {
 	exact    []string
 	prefixes []string
@@ -114,15 +76,10 @@ var presetTierSections = [PresetKindCount]struct {
 	},
 }
 
-// presetManifestSections are the three sections a tier MERGES rather than
-// replaces (presetmerge.go's header says why: every value in them names a file
-// inside the theme folder, and dropping the entry orphans the bytes). They are
-// listed here, beside the partition they are the exception to, because the tier
-// CLEAR below is the only place the distinction has teeth.
+// presetManifestSections merge rather than replace: dropping an entry orphans the theme's file.
 var presetManifestSections = []string{secFonts, secMedia, secSounds}
 
-// presetTierClears reports whether applying tier k must delete this section from
-// the carrier before the writer re-emits the tier's own model into it.
+// presetTierClears reports whether applying tier k deletes this section before the writer re-emits it.
 func presetTierClears(k PresetKind, section string) bool {
 	if section == secPreset || strings.HasPrefix(section, secElementPrefix) {
 		return false
@@ -138,8 +95,7 @@ func presetTierClears(k PresetKind, section string) bool {
 	return true
 }
 
-// presetOwns reports whether an axis may declare a section. [preset] itself is
-// owned by both: it is the header that says which axis this is.
+// presetOwns reports whether an axis may declare a section; both own [preset], the header naming the axis.
 func presetOwns(k PresetKind, section string) bool {
 	if section == secPreset {
 		return true
@@ -162,8 +118,6 @@ func presetOwns(k PresetKind, section string) bool {
 }
 
 // presetElementKindOK reports whether an element kind belongs to an axis.
-// [element.*] is the ONE section both axes declare, so this is the second half
-// of the partition and it is spelled once, here.
 func presetElementKindOK(k PresetKind, ek ElementKind) bool {
 	if k == PresetLayout {
 		return ek == ElemPane
@@ -171,12 +125,7 @@ func presetElementKindOK(k PresetKind, ek ElementKind) bool {
 	return ek != ElemPane
 }
 
-// Preset is one parsed fragment: its header, and the sidecar tier it carries.
-// Side is a FULL *Sidecar rather than a reduced struct on purpose. The whole
-// argument for the format is that a preset is written in exactly the grammar a
-// user authors, so anything a user can write a preset must be able to carry —
-// and the moment the preset model is a subset, the two grammars start to drift
-// and the editor grows a second code path for "things only presets can do".
+// Preset is one parsed fragment; Side is a full *Sidecar, as a subset of the grammar would drift.
 type Preset struct {
 	Kind        PresetKind
 	ID          string // [a-z0-9_-]{1,24}; the file stem and the [theme] *_preset value
@@ -184,26 +133,17 @@ type Preset struct {
 	Description string // gallery card body
 	Credit      string // the "zero bytes of art" line (§6.5 clause 7)
 
-	// DesignW / DesignH are the canvas a LAYOUT fragment's geometry was authored
-	// against. Zero on a style fragment, which is not an omission: style geometry
-	// is anchor-relative by rule, so it has no canvas of its own to declare.
+	// DesignW and DesignH are a layout's authoring canvas; zero on a style, whose geometry is anchor-relative.
 	DesignW, DesignH int
 
-	// FullCanvas lists the element ids this fragment declares layout-independent
-	// (design §6.1: scanlines, vignette, grid floor, noise). It is an EXPLICIT
-	// allow-list rather than an inference from the rect, so a decoration that
-	// merely happens to be large cannot quietly opt out of the anchor rule.
+	// FullCanvas lists layout-independent ids, explicit so a large decoration cannot skip the anchor rule.
 	FullCanvas []string
 
-	// Side is the fragment's contribution, parsed by the ordinary sidecar reader.
-	// Its Meta is always zero — [theme] is not a section either axis owns.
+	// Side is the fragment's contribution, with zero Meta since neither axis owns [theme].
 	Side *Sidecar
 }
 
-// IsFullCanvas reports whether the fragment declared this element id
-// layout-independent. Linear over a list bounded by PresetFullCanvasCap, on the
-// cold path only; a map would be an allocation per fragment for a list whose
-// median length is three.
+// IsFullCanvas reports whether the fragment declared this id layout-independent; linear, cold path.
 func (p *Preset) IsFullCanvas(id string) bool {
 	if p == nil {
 		return false
@@ -216,8 +156,7 @@ func (p *Preset) IsFullCanvas(id string) bool {
 	return false
 }
 
-// Elements is the fragment's element list (nil-safe; never a copy — callers
-// read it, and the library is immutable after load).
+// Elements is the fragment's element list (nil-safe; not a copy, as the library is immutable after load).
 func (p *Preset) Elements() []Element {
 	if p == nil || p.Side == nil {
 		return nil
@@ -225,10 +164,7 @@ func (p *Preset) Elements() []Element {
 	return p.Side.Elements
 }
 
-// ParsePreset reads one fragment. The BODY goes through ParseSidecar — the same
-// reader, the same caps, the same degrades — and only the [preset] header and
-// the tier partition are this function's own.
-// COLD PATH ONLY (hard rule 2).
+// ParsePreset reads one fragment, its body through ParseSidecar; cold path only (hard rule 2).
 func ParsePreset(src []byte) (*Preset, error) {
 	sc, err := ParseSidecar(src)
 	if err != nil {
@@ -250,9 +186,7 @@ func ParsePreset(src []byte) (*Preset, error) {
 		return nil, fmt.Errorf("%w (got %q)", ErrPresetID, p.ID)
 	}
 
-	// Free text rides the same four-character encoding every other free-text
-	// value in the format does (%25 %3B %0A %0D), so a semicolon in a description
-	// survives the INI comment rule.
+	// Free text uses the format's percent-encoding, so a semicolon survives the INI comment rule.
 	p.Name = sc.degradePresetText(p, "name", metaFree(mustGet(doc, secPreset, "name")))
 	p.Description = sc.degradePresetText(p, "description", metaFree(mustGet(doc, secPreset, "description")))
 	p.Credit = sc.degradePresetText(p, "credit", metaFree(mustGet(doc, secPreset, "credit")))
@@ -278,35 +212,24 @@ func ParsePreset(src []byte) (*Preset, error) {
 	return p, nil
 }
 
-// mustGet is Get without the presence flag, for the keys whose absence and
-// whose emptiness mean the same thing (a free-text header field).
+// mustGet is Get for keys whose absence and emptiness mean the same.
 func mustGet(d *INIDoc, section, key string) string {
 	v, _ := d.Get(section, key)
 	return v
 }
 
-// degradePresetText applies the METADATA class rule (metatext.go) to one
-// [preset] header string: truncate to NameRuneCap and note it, never refuse.
-// It calls truncMetaRunes rather than repeating the rune walk — the note text is
-// the same sentence degradeMeta writes, because a user who hits the cap from a
-// preset and from a theme should not have to learn that they are two rules.
+// degradePresetText truncates a [preset] header string to NameRuneCap with a note, never refusing (metatext.go).
 func (s *Sidecar) degradePresetText(p *Preset, key, v string) string {
 	cut, dropped := truncMetaRunes(v)
 	if dropped == 0 {
 		return v
 	}
-	// DEGRADE path: NoteCap bounds the report, not the load (see note).
 	_ = s.note("[%s] %s of preset %q is %d runes, %d over the %d-rune limit — it is shortened for display and the file is kept as written",
 		secPreset, key, p.ID, utf8.RuneCountInString(cut)+dropped, dropped, NameRuneCap)
 	return cut
 }
 
-// validateTier enforces the partition: the sections, the element kinds and the
-// style axis's anchor rule.
-// It walks the DOCUMENT for sections rather than the model, because a section
-// the model dropped (an unknown one, a [theme] block) is still a section the
-// fragment declared — and "the reader ignored it" is exactly the shape a
-// disjointness violation would hide behind.
+// validateTier enforces the partition; it walks the document, as dropped sections were still declared.
 func (p *Preset) validateTier(d *INIDoc) error {
 	for _, name := range walkSections(d).names {
 		if name == "" {

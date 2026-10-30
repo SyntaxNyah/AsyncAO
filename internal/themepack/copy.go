@@ -1,17 +1,6 @@
 package themepack
 
-// COPY FOR EDITING — "editing makes your own copy".
-// WHY IT IS NOT A ZIP ROUND TRIP. Write-then-Extract would give the same tree and
-// would also compress and decompress every byte for no reason, and would report a
-// bundle's caps ("this .aotheme is too big") for a folder nobody is bundling. The
-// caps are the same, the guards are the same, and the walk is the same
-// safepath.WalkFiles — only the destination differs.
-// THE ORIGINAL IS NEVER OPENED FOR WRITING. Every path on the source side is
-// read-only, and that is what TestCopyForEditingLeavesTheOriginalUntouched
-// hashes (pack_test.go). The name that used to stand here —
-// TestOriginalThemeIsNeverMutatedByEditing — is the DESIGN document's name for
-// the gate and has never been a function in this tree; a comment pointing at a
-// test that does not exist is a claim nobody can check by grepping for it.
+// Copy for editing is not a zip round trip, which would report bundle caps; the original stays read-only.
 
 import (
 	"errors"
@@ -24,9 +13,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
-// CopyForEditing copies srcDir into a new folder under themesRoot and stamps the
-// copy's [import] provenance.
-// BLOCKING — goroutine only (hard rule 2).
+// CopyForEditing copies srcDir under themesRoot and stamps [import]; goroutine only (hard rule 2).
 func CopyForEditing(srcDir, themesRoot, name string) (*Manifest, error) {
 	entries, m, err := scanFolder(srcDir)
 	if err != nil {
@@ -55,8 +42,7 @@ func CopyForEditing(srcDir, themesRoot, name string) (*Manifest, error) {
 		os.RemoveAll(part)
 		return nil, err
 	}
-	// The spelling the SOURCE actually used, carried across so the stamp lands in
-	// the file the copy has rather than beside it — see stampProvenance.
+	// The source's spelling, so the stamp lands in the file the copy has rather than beside it.
 	if err := stampProvenance(part, filepath.Base(srcDir), foundSidecarRel(entries)); err != nil {
 		os.RemoveAll(part)
 		return nil, err
@@ -69,9 +55,7 @@ func CopyForEditing(srcDir, themesRoot, name string) (*Manifest, error) {
 	return m, nil
 }
 
-// copyEntries reproduces the tree. Every destination goes through safepath.Join,
-// so a source that grew a hostile name between the scan and the copy still cannot
-// be written outside dest.
+// copyEntries goes through safepath.Join, so a hostile name after the scan still cannot leave dest.
 func copyEntries(srcDir, dest string, entries []srcEntry) error {
 	for _, e := range entries {
 		from, err := safepath.Join(srcDir, e.rel)
@@ -116,13 +100,7 @@ func copyOneFile(from, to, rel string) error {
 	return nil
 }
 
-// foundSidecarRel is the spelling the SOURCE FOLDER used for its native tier, or
-// "" when it had none. Case-folded, because that is the question: on a
-// case-sensitive filesystem `ASYNCAO_THEME.INI` is a different file from
-// `asyncao_theme.ini`, and the copy has whichever one the source had.
-// It is readFolderSidecar's own probe, factored out rather than repeated: the two
-// callers must agree about which entry IS the sidecar, or one of them reads the
-// author's metadata while the other writes beside it.
+// foundSidecarRel is the source's sidecar spelling, or ""; shared so both callers agree on the entry.
 func foundSidecarRel(entries []srcEntry) string {
 	for _, e := range entries {
 		if strings.EqualFold(e.rel, sidecarName) {
@@ -132,8 +110,7 @@ func foundSidecarRel(entries []srcEntry) string {
 	return ""
 }
 
-// stampProvenance writes [import] derived_from / derived_at / derived_hash into
-// the copy's sidecar, creating one when the source had none.
+// stampProvenance writes [import] derived_from, derived_at and derived_hash, creating a sidecar if needed.
 func stampProvenance(dir, from, rel string) error {
 	if rel == "" {
 		rel = sidecarName // the source had none; the copy gets one under the format's name
@@ -141,9 +118,7 @@ func stampProvenance(dir, from, rel string) error {
 	path := filepath.Join(dir, filepath.FromSlash(rel))
 	sc, err := loadSidecarFile(path)
 	if err != nil {
-		// A sidecar this build cannot read is the AUTHOR's file and is left exactly
-		// as it is. Losing the provenance stamp is a smaller harm than rewriting a
-		// stranger's native tier from a model we could not parse.
+		// An unreadable sidecar is the author's and left alone; losing the stamp is the smaller harm.
 		return nil
 	}
 	if sc == nil {

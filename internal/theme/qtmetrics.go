@@ -1,56 +1,27 @@
 package theme
 
-// The row pitch Qt gives a face, read out of the face's own OS/2 table.
-// text engine (ui_vp_message is a QTextEdit — AO2-Client src/courtroom.h:626,
-// constructed at src/courtroom.cpp:97). AsyncAO stacks them with the metric
-// SDL_ttf reports (internal/render.FontLineSpacing). Those two read DIFFERENT
-// tables out of the same font file, and for a face that disagrees with itself the
-// gap is enormous:
-// It is a THEME concern rather than a render one because the input is a font FILE
-// and the read is parse work that belongs on the theme-apply goroutine (hard rule
-// 2), next to every other per-theme font decision. internal/render consumes the
-// resulting number and never opens a file.
+// The row pitch Qt gives a face, from its OS/2 table; SDL_ttf reads a different table of the same file.
+// AO2's message is a QTextEdit (src/courtroom.h:626, constructed at src/courtroom.cpp:97).
+// Parsing belongs on the theme-apply goroutine (hard rule 2); internal/render never opens a file.
 
 import "encoding/binary"
 
-// QtRowPitch is one face's Qt vertical metrics, in FONT UNITS, plus the em they
-// are expressed against. Font units rather than pixels because a single face is
-// opened at several sizes (the chatbox zoom, the canvas fold, the device scale)
-// and the conversion has to happen per size.
-// The zero value is deliberately inert: Pitch returns 0 for it, and 0 is what
-// every consumer treats as "no Qt opinion, keep the SDL_ttf metric".
+// QtRowPitch is a face's Qt metrics in font units; the zero value is inert, keeping the SDL_ttf metric.
 type QtRowPitch struct {
-	// UnitsPerEm is head.unitsPerEm. Zero means the face carried no usable
-	// metrics and the whole value is inert.
+	// UnitsPerEm is head.unitsPerEm; zero means no usable metrics.
 	UnitsPerEm int
-	// Ascent / Descent are the metric family fsSelection selected, both POSITIVE
-	// (a descent is stored negative in the typo fields and positive in the win
-	// fields; both are normalised to positive-down here so the sum is a pitch).
+	// Ascent and Descent are the family fsSelection selected, normalised to positive so the sum is a pitch.
 	Ascent  int
 	Descent int
-	// Leading is the extra gap between rows.
 	Leading int
-	// UsesTypoMetrics records which branch was taken. Not consulted by Pitch —
-	// the branch is already baked into the three numbers — but a test that has to
-	// prove the branch was TAKEN cannot do it from the pitch alone (the two
-	// families agree for most faces), and a diagnostic that cannot say which
-	// family a face used is the kind of thing this file exists to stop guessing at.
+	// UsesTypoMetrics records the branch taken, as the two families agree for most faces.
 	UsesTypoMetrics bool
 }
 
-// Valid reports whether the face carried the tables this needs.
 func (q QtRowPitch) Valid() bool { return q.UnitsPerEm > 0 && q.Ascent+q.Descent > 0 }
 
-// Pitch is the baseline-to-baseline step Qt would use for this face at emPx
-// pixels, or 0 when the face carried no usable metrics.
-// Each of the three parts is scaled and rounded SEPARATELY, because that is what
-// Qt does to the ascent and the descent (QFixed::round() per metric in
-// QFontEngine::initializeHeightMetrics, measurable in the table above: Calibri's
-// 38.09 and 10.74 are reported as 38 and 11) and because rounding the sum instead
-// lands a pixel off — 38.09 + 10.74 rounds to 49 term-by-term and to 48 as a sum,
-// and Qt reports 49. Qt leaves the LEADING fractional; rounding it here can put
-// the answer one pixel over Qt's, which is harmless in the only direction this
-// number is ever used (render.UseRowPitch raises, never tightens).
+// Pitch is Qt's baseline step at emPx, or 0 without metrics.
+// Ascent and descent round separately (QFontEngine::initializeHeightMetrics); a rounded sum lands a pixel off.
 func (q QtRowPitch) Pitch(emPx int32) int32 {
 	if !q.Valid() || emPx <= 0 {
 		return 0
@@ -58,8 +29,7 @@ func (q QtRowPitch) Pitch(emPx int32) int32 {
 	return q.scale(q.Ascent, emPx) + q.scale(q.Descent, emPx) + q.scale(q.Leading, emPx)
 }
 
-// scale converts font units to pixels at emPx, rounding half up on the
-// non-negative values this is only ever called with.
+// scale converts font units to pixels at emPx, rounding half up on non-negative values.
 func (q QtRowPitch) scale(units int, emPx int32) int32 {
 	if units <= 0 {
 		return 0
@@ -67,9 +37,7 @@ func (q QtRowPitch) scale(units int, emPx int32) int32 {
 	return int32((units*int(emPx)*2 + q.UnitsPerEm) / (2 * q.UnitsPerEm))
 }
 
-// Table tags and field offsets. Named because a bare 18 in a slice expression is
-// exactly the kind of number hard rule 9 exists to stop, and because the OS/2
-// offsets in particular are easy to be one field out on.
+// Table tags and field offsets (the OS/2 ones are easy to be one field out on).
 const (
 	sfntTagHead = "head"
 	sfntTagOS2  = "OS/2"
@@ -78,10 +46,8 @@ const (
 	headUnitsPerEmOff = 18
 	headMinLen        = headUnitsPerEmOff + 2
 
-	// OS/2 (version >= 0): fsSelection is a uint16 at 62,
-	// sTypoAscender/Descender/LineGap are int16 at 68/70/72, and
-	// usWinAscent/usWinDescent are uint16 at 74/76. A table shorter than 78 bytes
-	// predates the win metrics and is refused outright.
+	// OS/2: fsSelection uint16 at 62, sTypo* int16 at 68/70/72, usWin* uint16 at 74/76.
+	// A table under 78 bytes predates win metrics and is refused.
 	os2FsSelectionOff   = 62
 	os2TypoAscenderOff  = 68
 	os2TypoDescenderOff = 70
@@ -90,14 +56,10 @@ const (
 	os2WinDescentOff    = 76
 	os2MinLen           = os2WinDescentOff + 2
 
-	// os2UseTypoMetrics is fsSelection bit 7 (0x0080), "USE_TYPO_METRICS" in the
-	// OpenType spec: "If set, it is strongly recommended that applications use
-	// sTypoAscender - sTypoDescender + sTypoLineGap as the default line spacing
-	// for this font." Qt honours it; FreeType does not.
+	// os2UseTypoMetrics is fsSelection bit 7, USE_TYPO_METRICS; Qt honours it and FreeType does not.
 	os2UseTypoMetrics = 0x0080
 
-	// The sfnt table directory: numTables is a uint16 at byte 4 of the header and
-	// the 16-byte records start at byte 12.
+	// The sfnt directory: numTables is uint16 at byte 4, and 16-byte records start at byte 12.
 	sfntNumTablesOff = 4
 	sfntDirOff       = 12
 	sfntRecordLen    = 16
@@ -105,22 +67,16 @@ const (
 	sfntRecordLenOff = 12
 	sfntHeaderMinLen = sfntDirOff
 
-	// A TrueType Collection puts its member offsets at byte 12, one uint32 each.
-	// Only the FIRST member is read: a theme names ONE family per element and the
-	// loader hands us the bytes of the file that family resolved to, so there is
-	// no second face here to pick between.
+	// A TrueType Collection has uint32 member offsets at byte 12; only the first member is read.
 	ttcTag       = "ttcf"
 	ttcFirstOff  = 12
 	ttcMinLength = ttcFirstOff + 4
 
-	// sfntMaxTables bounds the directory walk (hard rule 4). Theme fonts are user
-	// data: a hostile file can claim 65535 tables in two bytes and make the loop
-	// as long as it likes. 64 is more than double what any real face ships.
+	// sfntMaxTables bounds the directory walk (hard rule 4), since a hostile font can claim 65535 tables.
 	sfntMaxTables = 64
 )
 
-// ReadQtRowPitch parses a font file's head + OS/2 tables out of `data`.
-// Runs on the theme-apply goroutine, once per distinct face (hard rule 2).
+// ReadQtRowPitch parses head and OS/2 tables; runs on the theme-apply goroutine once per face (hard rule 2).
 func ReadQtRowPitch(data []byte) QtRowPitch {
 	head, os2 := sfntTables(data)
 	if len(head) < headMinLen || len(os2) < os2MinLen {
@@ -144,11 +100,7 @@ func ReadQtRowPitch(data []byte) QtRowPitch {
 			q.Leading = ext
 		}
 	}
-	// A designer can author a negative typo descender OR a positive one; the
-	// negation above assumes the spec's sign (descender below the baseline is
-	// negative) and a font that breaks it would produce a negative descent here.
-	// Clamp rather than trust: a negative term would SHORTEN the pitch, which is
-	// the one direction this whole mechanism must never move.
+	// A font may author a positive typo descender; clamp, as a negative term would shorten the pitch.
 	if q.Ascent < 0 {
 		q.Ascent = 0
 	}
@@ -164,8 +116,7 @@ func ReadQtRowPitch(data []byte) QtRowPitch {
 	return q
 }
 
-// sfntTables returns the head and OS/2 table slices of an sfnt (or of the first
-// member of a TrueType Collection). Either may come back nil.
+// sfntTables returns the head and OS/2 slices of an sfnt or a collection's first member; either may be nil.
 func sfntTables(data []byte) (head, os2 []byte) {
 	base := 0
 	if len(data) >= ttcMinLength && string(data[:4]) == ttcTag {

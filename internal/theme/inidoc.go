@@ -7,128 +7,71 @@ import (
 	"unicode"
 )
 
-// INIDoc is a LOSSLESS INI document: the original lines, in order, with an index
-// into them. ParseINI's map stays the fast READ path (theme.Load, char.ini);
-// INIDoc is the WRITE path and is COLD ONLY — it is never touched from a draw,
-// decode or resolver path (rule 2).
-// CLASSIFICATION IS PARITY-BOUND. Every line is read here EXACTLY as ParseINI
-// reads it — same BOM strip, same whole-line ';' truncation, same '#' rule, same
-// last-declaration-wins on a repeated key. If the two ever disagreed, INIDoc
-// would rewrite a line the reader does not read, which is a silent no-op edit.
+// INIDoc is a lossless INI document for writing, cold path only (hard rule 2).
+// It must classify lines exactly as ParseINI does, or an edit rewrites a line the reader ignores.
 type INIDoc struct {
 	lines   []iniLine      // cap IniDocLineCap
 	index   map[string]int // "section/key" (lowercased) -> line
 	touched map[int]string // line -> new raw value
-	// eol is the line ending DETECTED in the source and used for lines this
-	// document ADDS. Every pre-existing line re-emits its OWN terminator (see
-	// iniLine.term), so a file with mixed endings — or with no final newline,
-	// which the aceattorney2x fonts fixture genuinely has — still round-trips
-	// byte-identically. bufio.ScanLines eats a trailing '\r' silently, so an
-	// LF-only writer would produce a whole-file diff on every Windows-authored
-	// theme, which is most of the corpus. New files are written "\n".
+	// eol is used for added lines; existing ones keep iniLine.term, or a Windows theme rewrites whole.
 	eol string
-	// bom records that the source opened with a UTF-8 byte-order mark. It is held
-	// at the DOCUMENT level, deliberately NOT as content of lines[0], because a
-	// BOM is POSITIONAL: it is a BOM only while it is the first thing in the file.
-	// As ordinary line content it would be displaceable — adding a root key to a
-	// BOM'd file whose first line is a section header splices the new line above
-	// it, the reader then strips nothing, "[Sec]" parses as neither header nor key
-	// and is dropped, and every key beneath it silently reparents into the root
-	// section. Stripping it here and re-emitting it FIRST in Bytes makes that
-	// unreachable by construction. This is the write-side twin of the Uminek2x /
-	// Uminek3x data loss ini.go:24 documents.
+	// bom is held on the document because a BOM only counts first in the file.
+	// As line content, an insert above it would break the header and reparent its keys into root.
 	bom bool
 	// size is the source length, so Bytes can size its builder in one go.
 	size int
 }
 
 const (
-	// IniDocLineCap bounds the lines one document may hold: ~16x the largest
-	// design INI in the ~80-pack reference corpus. Past it the file is refused,
-	// never truncated — a truncated theme INI that then gets written back is
-	// data loss (rule 4).
+	// IniDocLineCap bounds a document's lines; refused, as a truncated INI written back is data loss.
 	IniDocLineCap = 8192
-	// IniDocByteCap refuses a 1 MiB "INI" BEFORE parsing it. The largest real
-	// theme INI in the corpus is a few tens of KiB; anything at this size is not
-	// a theme file and must not be turned into 8192 line headers to find out.
+	// IniDocByteCap refuses a 1 MiB "INI" before parsing, since real theme INIs are tens of KiB.
 	IniDocByteCap = 1 << 20
 
-	// iniDocLF and iniDocCRLF are the two terminators a source line can carry.
-	// Named because they are matched, emitted and compared in several places and
-	// a bare "\r\n" literal in the middle of the splitter reads as noise.
 	iniDocLF   = "\n"
 	iniDocCRLF = "\r\n"
-	// iniAssign is the key/value separator. Qt splits on the FIRST one, so a
-	// value may contain further '=' characters.
+	// iniAssign is the key/value separator; Qt splits on the first, so a value may contain more.
 	iniAssign = '='
-	// iniAssignSpaced is how an ADDED line spells that separator: one space
-	// either side, which is the shape every AO2 theme INI in the corpus uses and
-	// therefore the shape a diff against one stays quiet in.
+	// iniAssignSpaced is how an added line spells it, the shape AO2 theme INIs use, keeping diffs quiet.
 	iniAssignSpaced = " = "
-	// iniSectionOpen / iniSectionClose delimit a section header line.
 	iniSectionOpen  = "["
 	iniSectionClose = "]"
-	// iniHashComment starts a comment only at the beginning of a line (Qt
-	// honours '#' there and nowhere else — see iniCommentStart).
+	// iniHashComment starts a comment only at the beginning of a line, as in Qt (see iniCommentStart).
 	iniHashComment = "#"
 )
 
 var (
-	// ErrINIDocTooLarge reports the IniDocByteCap refusal.
 	ErrINIDocTooLarge = errors.New("theme: INI file is larger than the document cap")
 	// ErrINIDocTooManyLines reports the IniDocLineCap refusal.
 	ErrINIDocTooManyLines = errors.New("theme: INI file has more lines than the document cap")
-	// ErrINIDocBadKey refuses a section or key that could not be written and
-	// read back as itself.
+	// ErrINIDocBadKey refuses a section or key that could not be written and read back as itself.
 	ErrINIDocBadKey = errors.New("theme: INI key or section is not writable")
-	// ErrINIDocNoSection reports a rename of a section the document does not
-	// declare. Distinct from a failure: an element authored this session has no
-	// lines in the carrier yet, and renaming it is a no-op rather than a problem.
+	// ErrINIDocNoSection reports a rename of an undeclared section, a no-op for a new element.
 	ErrINIDocNoSection = errors.New("theme: INI document declares no such section")
-	// ErrINIDocSectionTaken refuses a rename onto a section that already exists.
-	// Merging two sections is not a rename — the winner of every shared key would
-	// be decided by line order — so the caller has to mean it explicitly.
+	// ErrINIDocSectionTaken refuses a rename onto a section, since line order would decide shared keys.
 	ErrINIDocSectionTaken = errors.New("theme: INI section name is already taken")
-	// ErrINIDocBadValue refuses a value that would not survive its own reader:
-	// a newline splits the line in two, and a ';' truncates it (iniCommentStart).
-	// Free text is percent-encoded by the caller before it gets here.
+	// ErrINIDocBadValue refuses a newline, which splits the line, or a ';', which truncates it.
 	ErrINIDocBadValue = errors.New("theme: INI value would not read back unchanged")
 )
 
-// iniLine is one source line, kept verbatim.
 type iniLine struct {
-	// raw is the line WITHOUT its terminator, aliasing the source string.
+	// raw is the line without its terminator, aliasing the source string.
 	raw string
-	// term is the exact terminator this line carried: "\r\n", "\n", or "" for a
-	// final line with no trailing newline. Re-emitted verbatim, which is what
-	// makes a mixed-ending or newline-less file round-trip.
+	// term is this line's exact terminator ("" if none), re-emitted so mixed endings round-trip.
 	term string
-	// section is the section IN EFFECT at this line, lowercased. A header line
-	// belongs to the section it opens, so "the last line of section S" includes
-	// S's own header when S has no keys.
+	// section is the lowercased section in effect; a header belongs to the section it opens.
 	section string
-	// key is the lowercased key this line declares; isKey says whether it
-	// declares one at all (comments, blanks, headers and separator-less lines
-	// do not).
+	// isKey says whether the line declares a key (comments, blanks, headers and separator-less lines do not).
 	key   string
 	isKey bool
-	// isHeader says the line OPENS its section, i.e. it is a "[name]" line. It
-	// is not the negation of isKey — a comment is neither — and it is what
-	// RenameSection edits.
+	// isHeader says the line is "[name]"; not the negation of isKey, since a comment is neither.
 	isHeader bool
-	// valStart/valEnd bound the SPLICEABLE SPAN inside raw: the VALUE for a key
-	// line, and the section NAME INSIDE THE BRACKETS for a header line. Both
-	// exclude the surrounding whitespace and any ';' comment that follows, which
-	// is what makes an edit preserve a trailing comment on either kind of line.
-	// ONE SPAN, ONE SPLICER. Bytes replaces raw[valStart:valEnd] with whatever
-	// `touched` holds for the line and re-emits the rest verbatim, so a header
-	// rename and a value edit are the same three writes rather than two
-	// near-identical ones that could drift about whitespace.
+	// valStart and valEnd bound the editable span: a key's value or the name inside a header's brackets.
+	// They exclude whitespace and any ';' comment, which an edit preserves.
 	valStart, valEnd int
 }
 
-// ParseINIDoc builds a lossless document from raw INI bytes. It refuses, rather
-// than truncates, anything past the caps.
+// ParseINIDoc builds a lossless document, refusing rather than truncating anything past the caps.
 func ParseINIDoc(src []byte) (*INIDoc, error) {
 	if len(src) > IniDocByteCap {
 		return nil, ErrINIDocTooLarge
@@ -140,9 +83,7 @@ func ParseINIDoc(src []byte) (*INIDoc, error) {
 		eol:     iniDocLF, // a file with no terminator at all is written LF
 		size:    len(text),
 	}
-	// The BOM belongs to the FILE, not to line 0 (see INIDoc.bom). Take it off
-	// before the split so no line ever carries it and no later insertion can
-	// displace it; Bytes puts it back ahead of everything.
+	// The BOM belongs to the file (see INIDoc.bom); Bytes puts it back first.
 	if strings.HasPrefix(text, utf8BOM) {
 		d.bom, text = true, text[len(utf8BOM):]
 	}
@@ -158,8 +99,7 @@ func ParseINIDoc(src []byte) (*INIDoc, error) {
 				l.raw, l.term = l.raw[:len(l.raw)-1], iniDocCRLF
 			}
 			if !eolSeen {
-				// The FIRST terminator in the file is the file's ending. Lines
-				// that disagree keep their own; only ADDED lines use this.
+				// The first terminator is the file's ending, used only for added lines.
 				d.eol, eolSeen = l.term, true
 			}
 		} else {
@@ -170,8 +110,7 @@ func ParseINIDoc(src []byte) (*INIDoc, error) {
 		}
 		section = classifyINILine(&l, section)
 		if l.isKey {
-			// Last declaration wins, exactly as ParseINI's map assignment does.
-			// Indexing the FIRST would point Set at a line the reader ignores.
+			// Last declaration wins as in ParseINI; indexing the first would point Set at a line the reader ignores.
 			d.index[l.section+iniSectionSep+l.key] = len(d.lines)
 		}
 		d.lines = append(d.lines, l)
@@ -179,26 +118,14 @@ func ParseINIDoc(src []byte) (*INIDoc, error) {
 	return d, nil
 }
 
-// There is no LoadINIDoc. One existed — an exported open + LimitReader dance
-// with zero callers anywhere, tests included — and it was a SECOND, untested
-// copy of what LoadSidecar already does on the way to a model (ledger L32).
-// Reading a document off the disk means reading a SIDECAR: LoadSidecar owns the
-// cap, the migration and the degrade notes, and a path that skipped it would
-// hand back a document nobody had validated.
+// There is no LoadINIDoc: LoadSidecar owns the cap, migration and degrade notes.
 
-// classifyINILine fills l's section/key/value fields and returns the section in
-// effect AFTER it. A leading BOM was taken off the source ahead of the line split
-// (see INIDoc.bom), so l.raw is pure line content here — which is also why a
-// U+FEFF that reaches this function is ordinary key text, exactly as the reader
-// treats a mid-file one (iniparity_test.go's mid-file case).
-// This is ParseINI's body, expressed in OFFSETS instead of trimmed copies. Any
-// change to one must be mirrored in the other; FuzzINIDocRoundTrip fails
-// loudly when they drift.
+// classifyINILine fills l's fields and returns the section in effect after it.
+// It is ParseINI's body in offsets; a change to one must be mirrored in the other.
 func classifyINILine(l *iniLine, section string) string {
 	l.section = section
 	body := l.raw
-	// Qt truncates at the first ';' before it looks at anything else, so this
-	// must run ahead of the section/key split — see iniCommentStart.
+	// Qt truncates at the first ';' before anything else, so this runs ahead of the section/key split.
 	if i := strings.IndexByte(body, iniCommentStart); i >= 0 {
 		body = body[:i]
 	}
@@ -211,12 +138,7 @@ func classifyINILine(l *iniLine, section string) string {
 		opened := strings.ToLower(strings.TrimSpace(inner))
 		l.section = opened // a header belongs to the section it opens
 		l.isHeader = true
-		// The NAME's span inside raw, computed the same way the value span below
-		// is: trimmed sits at offset `lead` in body, body is a prefix of raw, and
-		// the name sits one byte past the '[' plus its own leading whitespace. A
-		// header written "[  element.a  ]  ; the box" therefore renames to
-		// "[  element.b  ]  ; the box" — the author's spacing and their comment
-		// both survive, which is the whole reason this type exists.
+		// The name's span in raw, so a rename keeps the author's spacing and trailing comment.
 		lead := len(body) - len(strings.TrimLeftFunc(body, unicode.IsSpace))
 		nameLead := len(inner) - len(strings.TrimLeftFunc(inner, unicode.IsSpace))
 		l.valStart = lead + 1 + nameLead
@@ -227,8 +149,7 @@ func classifyINILine(l *iniLine, section string) string {
 	if eq < 0 {
 		return section
 	}
-	// trimmed is body[lead:][:len(trimmed)], and body is a prefix of raw, so an
-	// offset inside trimmed maps to raw by adding lead.
+	// body is a prefix of raw, so an offset inside trimmed maps to raw by adding lead.
 	lead := len(body) - len(strings.TrimLeftFunc(body, unicode.IsSpace))
 	rest := trimmed[eq+1:]
 	valLead := len(rest) - len(strings.TrimLeftFunc(rest, unicode.IsSpace))
@@ -239,8 +160,7 @@ func classifyINILine(l *iniLine, section string) string {
 	return section
 }
 
-// Get returns the value the READER would see for key under section, including
-// any pending Set. Section and key are matched case-insensitively, like ParseINI.
+// Get returns the value the reader would see, including any pending Set; matching is case-insensitive like ParseINI.
 func (d *INIDoc) Get(section, key string) (string, bool) {
 	i, ok := d.index[strings.ToLower(section)+iniSectionSep+strings.ToLower(key)]
 	if !ok {
@@ -253,12 +173,7 @@ func (d *INIDoc) Get(section, key string) (string, bool) {
 	return l.raw[l.valStart:l.valEnd], true
 }
 
-// Set records a new value for key under section, adding the key — and the
-// section header, if that is missing too — when it is not already declared.
-// It refuses a value it could not read back as itself (rule: never emit a value
-// that reads as something else). A ';' would truncate the line at the reader,
-// and a newline would split it in two, so free text is percent-encoded by the
-// caller before it arrives here.
+// Set records a value, adding the key and header if missing; refuses one that would not read back.
 func (d *INIDoc) Set(section, key, value string) error {
 	sec, k := strings.ToLower(strings.TrimSpace(section)), strings.ToLower(strings.TrimSpace(key))
 	if k == "" || badINIToken(sec) || badINIToken(k) {
@@ -274,26 +189,12 @@ func (d *INIDoc) Set(section, key, value string) error {
 	return d.appendKey(sec, k, value)
 }
 
-// RenameSection moves a whole section under a new name, losslessly.
-// THE BYTES DO NOT MOVE — the NAME does. Only the header line's own name span is
-// spliced; every key, comment, blank line and unknown line under it stays exactly
-// where the author put it, in the author's own spelling, and the section keeps its
-// position in the file. That is the difference between a rename and a
-// delete-then-append, and it is the whole reason this primitive exists rather than
-// its two-step imitation: this document has no DELETE, so "write the section again
-// under the new name" leaves the old one behind and the file reads back as TWO of
-// whatever the section described (sidecar_write.go's stated limit, and the exact
-// duplication TestElementIdIsNotAnInspectorField was written to forbid until this
-// function existed).
-// COLD PATH (hard rule 2), like every other mutator here.
+// RenameSection splices only the header's name span, so every line stays put; cold path (hard rule 2).
 func (d *INIDoc) RenameSection(from, to string) error {
 	f := strings.ToLower(strings.TrimSpace(from))
 	t := strings.ToLower(strings.TrimSpace(to))
 	if f == "" || t == "" || badINIToken(f) || badINIToken(t) {
-		// The ROOT section is refused along with the malformed ones, and for a
-		// reason rather than by accident: it has no header line to rename, so
-		// "renaming" it could only mean inventing one and reparenting every key
-		// above the first header into it.
+		// Root has no header line, so renaming it would reparent every key above the first header.
 		return ErrINIDocBadKey
 	}
 	if f == t {
@@ -308,33 +209,25 @@ func (d *INIDoc) RenameSection(from, to string) error {
 			continue
 		}
 		if d.lines[i].isHeader {
-			// The splice rides `touched`, which is the SAME mechanism a value edit
-			// uses (see iniLine.valStart), so Bytes needs no header-shaped special
-			// case and a rename cannot emit a line shape a Set could not.
+			// The same mechanism as a value edit (see iniLine.valStart), so Bytes needs no header special case.
 			d.touched[i] = t
 			found = true
 		}
 		d.lines[i].section = t
 	}
 	if !found {
-		// A section that was never declared is not an error the CALLER can act on
-		// — an element authored this session has no lines yet — so it is reported
-		// as its own condition rather than as a failure.
+		// An element authored this session has no lines yet, so this is its own condition rather than a failure.
 		return ErrINIDocNoSection
 	}
 	d.reindex()
 	return nil
 }
 
-// RemoveSection deletes a whole section: its header, its keys, and the comments
-// the author wrote INSIDE it.
-// COLD PATH (hard rule 2), like every other mutator here.
+// RemoveSection deletes a section's header, keys and inner comments; cold path (hard rule 2).
 func (d *INIDoc) RemoveSection(name string) error {
 	sec := strings.ToLower(strings.TrimSpace(name))
 	if sec == "" || badINIToken(sec) {
-		// The ROOT section is refused with the malformed ones and for the same reason
-		// RenameSection refuses it: it has no header, so "removing" it could only mean
-		// deleting every key above the first header and reparenting nothing.
+		// Root has no header, so removing it could only mean deleting every key above the first header.
 		return ErrINIDocBadKey
 	}
 	if !d.hasSection(sec) {
@@ -356,9 +249,7 @@ func (d *INIDoc) RemoveSection(name string) error {
 		}
 		kept = append(kept, d.lines[i])
 	}
-	// The source's own "no final newline" is a property Bytes round-trips, so
-	// deleting the last line must move the missing terminator up rather than invent
-	// one — the mirror of what insertLine does when it splices past the end.
+	// Bytes round-trips a missing final newline, so deleting the last line moves it up rather than inventing one.
 	if n := len(d.lines); n > 0 && drop[n-1] && d.lines[n-1].term == "" && len(kept) > 0 {
 		kept[len(kept)-1].term = ""
 	}
@@ -369,9 +260,7 @@ func (d *INIDoc) RemoveSection(name string) error {
 	return nil
 }
 
-// keepTrailingProse un-drops the blank lines and comments at the END of each
-// removed run. See RemoveSection's comment for why they are kept; the header
-// itself is never given back, which is what makes the section actually gone.
+// keepTrailingProse un-drops blanks and comments ending each removed run, never the header.
 func (d *INIDoc) keepTrailingProse(drop []bool) {
 	for i := 0; i < len(drop); i++ {
 		if !drop[i] {
@@ -391,10 +280,7 @@ func (d *INIDoc) keepTrailingProse(drop []bool) {
 	}
 }
 
-// reparentOrphans re-derives the section in effect for every line, which is what
-// a re-parse of the emitted bytes would compute. Only the kept prose of a removed
-// run can actually change owner, but deriving the whole list is how the answer
-// stays classifyINILine's answer rather than a second opinion about it.
+// reparentOrphans re-derives each line's section as a re-parse would, keeping classifyINILine the only answer.
 func (d *INIDoc) reparentOrphans() {
 	section := ""
 	for i := range d.lines {
@@ -406,10 +292,7 @@ func (d *INIDoc) reparentOrphans() {
 	}
 }
 
-// resize re-derives the builder hint after a removal. Bytes uses it only to Grow,
-// so a touched line's new length is not worth tracking here — being short by a
-// value edit costs one reallocation, and being long by a deleted section costs a
-// page of unused capacity on every save.
+// resize re-derives the builder hint after a removal; only used to Grow, so a touched line's length is not tracked.
 func (d *INIDoc) resize() {
 	n := 0
 	for i := range d.lines {
@@ -418,9 +301,7 @@ func (d *INIDoc) resize() {
 	d.size = n
 }
 
-// hasSection reports whether a header for name exists. Header-based rather than
-// index-based on purpose: a section whose only content is a comment still exists,
-// and renaming another section onto it would still be a collision.
+// hasSection checks headers, as a section holding only a comment still exists and would collide.
 func (d *INIDoc) hasSection(name string) bool {
 	for i := range d.lines {
 		if d.lines[i].isHeader && d.lines[i].section == name {
@@ -430,26 +311,19 @@ func (d *INIDoc) hasSection(name string) bool {
 	return false
 }
 
-// Dirty reports whether anything has been Set. A clean document serialises to
-// its source bytes, so a caller can skip the write entirely.
+// Dirty reports whether anything has been Set; a clean document serialises to its source bytes.
 func (d *INIDoc) Dirty() bool { return len(d.touched) > 0 }
 
-// Lines reports how many source lines the document holds.
 func (d *INIDoc) Lines() int { return len(d.lines) }
 
-// EOL is the line ending detected in the source and used for added lines.
 func (d *INIDoc) EOL() string { return d.eol }
 
-// Bytes serialises the document. Untouched lines are emitted verbatim, which is
-// the whole point of the type: the default behaviour on any line this document
-// did not deliberately change is "emit the original bytes".
+// Bytes serialises the document, emitting untouched lines verbatim.
 func (d *INIDoc) Bytes() []byte {
 	var b strings.Builder
 	b.Grow(d.size)
 	if d.bom {
-		// Ahead of every line, unconditionally: a BOM is a BOM only while it is
-		// the first thing in the file, so it cannot be one of the lines an insert
-		// is allowed to push down (see INIDoc.bom).
+		// Ahead of every line: a BOM only counts first in the file (see INIDoc.bom).
 		b.WriteString(utf8BOM)
 	}
 	for i, l := range d.lines {
@@ -465,16 +339,13 @@ func (d *INIDoc) Bytes() []byte {
 	return []byte(b.String())
 }
 
-// Write serialises the document to w. The atomic temp+fsync+rename dance belongs
-// to the caller that owns the destination directory.
+// Write serialises the document to w; the atomic rename belongs to the caller that owns the destination directory.
 func (d *INIDoc) Write(w io.Writer) error {
 	_, err := w.Write(d.Bytes())
 	return err
 }
 
-// appendKey adds "key = value" at the END of its section — never at the end of
-// the FILE, which for a root-section key would drop it inside whatever section
-// happens to be last and silently change which key it is.
+// appendKey adds "key = value" at its section's end; at file end, a root key would change section.
 func (d *INIDoc) appendKey(section, key, value string) error {
 	at, needHeader := d.sectionEnd(section)
 	grow := 1
@@ -486,18 +357,13 @@ func (d *INIDoc) appendKey(section, key, value string) error {
 	}
 	if needHeader {
 		at = d.insertLine(at, iniSectionOpen+section+iniSectionClose, section, "", false) + 1
-		// The header a WRITE created is a header like any other: it carries its own
-		// name span so RenameSection can move it later. Without this, a section this
-		// document authored would be the one section in the file that could not be
-		// renamed — and worse, a splice against a zero span would prepend the new
-		// name in front of the '[' instead of replacing what is inside it.
+		// A created header carries its name span, or a splice would put the name before the '['.
 		h := &d.lines[at-1]
 		h.isHeader = true
 		h.valStart = len(iniSectionOpen)
 		h.valEnd = h.valStart + len(section)
 	}
 	raw := key + iniAssignSpaced + value
-	// The value span is everything after "key = ".
 	valStart := len(raw) - len(value)
 	i := d.insertLine(at, raw, section, key, true)
 	d.lines[i].valStart, d.lines[i].valEnd = valStart, len(raw)
@@ -505,17 +371,12 @@ func (d *INIDoc) appendKey(section, key, value string) error {
 	return nil
 }
 
-// insertLine splices one line in at index at, returning where it landed. Both
-// line-number-keyed maps (index, touched) shift with it.
+// insertLine splices a line in at index at and returns where it landed; index and touched shift with it.
 func (d *INIDoc) insertLine(at int, raw, section, key string, isKey bool) int {
 	l := iniLine{raw: raw, term: d.eol, section: section, key: key, isKey: isKey}
 	moved := 0
 	if at > 0 && d.lines[at-1].term == "" {
-		// The source did not end with a newline. Keep that property by moving
-		// the missing terminator onto the new last line instead of inventing one.
-		// The line ABOVE gains one it never had, so those bytes are counted here:
-		// the new line's own term is now "", and charging only len(raw) would leave
-		// size short of what Bytes emits and under-Grow its builder.
+		// No final newline: move it to the new last line, counting the bytes so Bytes does not under-Grow.
 		d.lines[at-1].term = d.eol
 		l.term = ""
 		moved = len(d.eol)
@@ -537,14 +398,8 @@ func (d *INIDoc) insertLine(at int, raw, section, key string, isKey bool) int {
 	return at
 }
 
-// sectionEnd returns the index one past the last line of section, and whether a
-// header for it has to be created.
-// That placement is accepted, not overlooked. Deciding that a trailing comment
-// "really" belongs to the section below means guessing at prose, and a wrong
-// guess moves the author's own words, which is the one thing this type exists to
-// never do. Where a key SITS never changes which key it is: the reader binds it
-// to the section header above it, and that is the property the placement
-// preserves.
+// sectionEnd returns the index past section's last line and whether a header is needed.
+// Trailing comments stay in the section, as guessing could move the author's words.
 func (d *INIDoc) sectionEnd(section string) (at int, needHeader bool) {
 	end, found := -1, false
 	for i, l := range d.lines {
@@ -554,22 +409,15 @@ func (d *INIDoc) sectionEnd(section string) (at int, needHeader bool) {
 	}
 	if !found {
 		if section == "" {
-			// The root section always EXISTS — it just has no lines yet because
-			// the file opens with a header. Its key goes at the TOP: appending it
-			// at EOF would drop it inside whatever section happens to be last,
-			// silently making it a different key.
+			// Root always exists; its key goes at the top, as EOF would put it in the last section.
 			return 0, false
 		}
-		// A section nobody has opened yet: its header goes at the end of the file.
 		return len(d.lines), true
 	}
 	return end + 1, false
 }
 
-// reindex rebuilds the key index after an insertion shifted line numbers. Cold
-// path: an insert happens once per newly-authored key, never per frame. Last
-// declaration still wins, so a key inserted into a section that already shadows
-// it cannot steal the reader's attention from the later line.
+// reindex rebuilds the key index after an insert; last declaration still wins.
 func (d *INIDoc) reindex() {
 	clear(d.index)
 	for i, l := range d.lines {
@@ -579,23 +427,14 @@ func (d *INIDoc) reindex() {
 	}
 }
 
-// badINIToken reports a section or key that could not survive a write/read
-// round trip: the reader would truncate it, split it, or fail to find the '='.
-// it — ini.go:34 — and reads back "k" for a key this document indexed as
-// utf8BOM+"k"; a literal BOM is never spelled out in this source because it is
-// invisible in every editor and diff, which is what makes the bug class so
-// quiet). Whether a BOM-carrying token reads back as itself depends on WHERE
-// its line lands, and the writer chooses that; a position-dependent
-// classification is precisely what this type's PARITY-BOUND promise forbids. The
-// character is invisible in every editor, so admitting it conditionally buys
-// nothing and costs the invariant.
+// badINIToken reports a section or key that could not round-trip.
+// A BOM-carrying token is refused because whether it survives depends on where its line lands.
 func badINIToken(s string) bool {
 	return strings.ContainsAny(s, "=[]\r\n") || strings.ContainsRune(s, iniCommentStart) ||
 		strings.Contains(s, utf8BOM) || strings.HasPrefix(s, iniHashComment) ||
 		s != strings.TrimSpace(s)
 }
 
-// badINIValue reports a value that would not read back unchanged.
 func badINIValue(v string) bool {
 	return strings.ContainsAny(v, "\r\n") || strings.ContainsRune(v, iniCommentStart) ||
 		v != strings.TrimSpace(v)

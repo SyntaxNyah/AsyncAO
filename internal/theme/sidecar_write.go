@@ -1,9 +1,6 @@
 package theme
 
-// The sidecar WRITER. It never rebuilds a file from the model: it edits the
-// lossless document the reader kept, so comments, blank lines, key order, key
-// casing, unknown keys, entire unknown sections and the author's own formatting
-// all survive byte-identical.
+// The sidecar writer edits the reader's lossless document rather than rebuilding, so every line survives.
 
 import (
 	"io"
@@ -15,10 +12,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
-// elementFieldKeys maps every Element FIELD to the wire key that carries it, in
-// the order a freshly written element lists them.
-// An empty key means the value is carried by the SECTION NAME instead. There is
-// no third category.
+// elementFieldKeys maps Element fields to wire keys in written order; empty means the section name.
 var elementFieldKeys = []struct{ field, key string }{
 	{"ID", ""}, // the [element.<id>] section suffix, never a key
 	{"Kind", "kind"},
@@ -59,19 +53,12 @@ var elementFieldKeys = []struct{ field, key string }{
 	{"Hidden", "hidden"},
 }
 
-// Bytes serialises the sidecar back through its lossless document.
-// COLD PATH ONLY (hard rule 2). On error the document may hold a partial edit —
-// the caller discards it rather than writing it, which is why the atomic
-// temp+fsync+rename dance belongs to whoever owns the destination directory.
+// Bytes serialises through the document; cold path (hard rule 2); on error, discard the partial edit.
 func (s *Sidecar) Bytes() ([]byte, error) {
 	if s == nil {
 		return nil, nil
 	}
-	// THE METADATA DEGRADE runs BEFORE the guard, in the same order the reader runs
-	// it: a model carrying a 300-rune credit (a preset, a copy-for-editing stamp, an
-	// inspector row) shortens with a note rather than making the whole save fail.
-	// Validate then only ever sees values inside the cap, which is why its length
-	// walk skips exactly these keys (metatext.go).
+	// Before the guard, as in the reader: a long credit shortens rather than failing the save.
 	s.degradeMeta()
 	if err := s.Validate(); err != nil {
 		return nil, err
@@ -83,9 +70,7 @@ func (s *Sidecar) Bytes() ([]byte, error) {
 		}
 		s.doc = d
 	}
-	// THE DEFERRED DELETIONS, before a single key is written: a section the model
-	// dropped must not be resurrected by the very write that was supposed to
-	// remove it. After Validate, so a refused save leaves the carrier untouched.
+	// Before any key, so a write cannot resurrect a dropped section; after Validate, so a refusal is clean.
 	s.flushRetiredSections()
 	if err := s.writeInto(s.doc); err != nil {
 		return nil, err
@@ -93,11 +78,7 @@ func (s *Sidecar) Bytes() ([]byte, error) {
 	return s.doc.Bytes(), nil
 }
 
-// Write serialises to w. It does not touch the disk itself — the atomic
-// temp+fsync+rename dance belongs to whoever owns the destination directory.
-// Named Write, not WriteTo, to mirror INIDoc.Write: io.WriterTo's WriteTo has a
-// fixed (int64, error) signature, and go vet's stdmethods check is right that a
-// method wearing that name should be that interface.
+// Write serialises to w; named Write, not WriteTo, because go vet's stdmethods expects io.WriterTo's signature there.
 func (s *Sidecar) Write(w io.Writer) error {
 	b, err := s.Bytes()
 	if err != nil {
@@ -107,9 +88,7 @@ func (s *Sidecar) Write(w io.Writer) error {
 	return err
 }
 
-// writeInto emits every section in canonical order. For a document that was
-// READ, the order is irrelevant (each key lands on its existing line); for one
-// authored from scratch it is the file's layout.
+// writeInto emits every section in canonical order, which is the layout of a file authored from scratch.
 func (s *Sidecar) writeInto(d *INIDoc) error {
 	for _, emit := range []func(*INIDoc) error{
 		s.writeTheme,
@@ -134,12 +113,9 @@ func (s *Sidecar) writeInto(d *INIDoc) error {
 	return nil
 }
 
-// canonFunc re-derives what the document's CURRENT text means, in the writer's
-// own spelling. It is always format(parse(raw)) using the reader's parser, so
-// "unchanged" is decided by meaning and never by bytes.
+// canonFunc is format(parse(raw)) with the reader's parser, so "unchanged" is decided by meaning, not bytes.
 type canonFunc func(string) string
 
-// setKey is the whole preservation contract in nine lines.
 func setKey(d *INIDoc, section, key, want, def string, canon canonFunc) error {
 	if want == "" {
 		return nil
@@ -162,19 +138,14 @@ func (s *Sidecar) writeTheme(d *INIDoc) error {
 	if format <= 0 {
 		format = ThemeFormatVersion
 	}
-	// Written with no default, so every file states its own grammar: a sidecar
-	// with no format key is the one shape a third-party reader has to guess at.
+	// No default, so every file states its grammar.
 	rows := []struct {
 		key, want, def string
 		canon          canonFunc
 	}{
 		{"format", formatInt(format), "", canonInt},
 		{"revision", formatInt(s.Revision), "0", canonInt},
-		// THE METADATA ROWS CANONICALISE THROUGH THE TRUNCATION (canonMetaFree /
-		// canonMetaPlain). That is what keeps the degrade out of the FILE: the
-		// author's 300-rune credit on disk canonicalises to the same 240-rune string
-		// the model holds, so setKey decides the file already means it and writes
-		// nothing — §7's own writer rule, applied to the one cap that degrades.
+		// Metadata rows canonicalise through truncation, so a long credit on disk writes nothing.
 		{"name", encodeFreeText(s.Meta.Name), "", canonMetaFree},
 		{"author", encodeFreeText(s.Meta.Author), "", canonMetaFree},
 		{"license", encodeFreeText(s.Meta.License), "", canonMetaFree},
@@ -206,8 +177,7 @@ func (s *Sidecar) writeOverrides(d *INIDoc) error {
 
 func (s *Sidecar) writeRotations(d *INIDoc) error {
 	for _, r := range s.Rotations {
-		// An angle of 0 is a real, meaningful entry (it says "this key is not
-		// rotated" over a preset that rotates it), so it has no default.
+		// An angle of 0 says "not rotated" over a preset that rotates, so it has no default.
 		if err := setKey(d, secRotations, r.Key, formatInt(int(r.Angle)), "", canonAngle); err != nil {
 			return err
 		}
@@ -267,18 +237,13 @@ func (s *Sidecar) writeMedia(d *INIDoc) error {
 }
 
 func (s *Sidecar) writeClocks(d *INIDoc) error {
-	// Clock 0 is the shared theme anchor and is never declared, so the loop
-	// starts at 1 — writing [clock.0] would invent a group that cannot exist.
+	// From 1: clock 0 is the shared anchor and [clock.0] cannot exist.
 	for i := 1; i < ClockCap; i++ {
 		c := s.Clocks[i]
 		if !c.Declared && c.SpeedPct == 0 {
 			continue
 		}
-		// The section name is the one the READER SAW (ClockSpec.ID), never one
-		// re-derived from the index: "01" is a legal id that reads as clock 1,
-		// so rebuilding the name would miss the author's section and append a
-		// second one beside it saying the same thing. A group the editor
-		// declared carries no source spelling and gets the canonical one.
+		// The name the reader saw: rebuilding "01" from the index would append a second section.
 		id := c.ID
 		if id == "" {
 			id = strconv.Itoa(i)
@@ -295,10 +260,7 @@ func (s *Sidecar) writePanes(d *INIDoc) error {
 	for i := range s.Panes {
 		p := &s.Panes[i]
 		sec := secPanePrefix + p.ID
-		// An all-zero rect is the DEFAULT here, not a statement: a pane with no
-		// area cannot host anything, so a file that omits the key must not gain
-		// one. (An [overrides] entry is the opposite case — it exists only
-		// because the author wrote it — so there the default is "no value".)
+		// An all-zero rect is the default, so a file omitting the key must not gain one.
 		if err := setKey(d, sec, "rect", formatRect(p.Rect), formatRect(Rect{}), canonRect); err != nil {
 			return err
 		}
@@ -354,7 +316,7 @@ func (s *Sidecar) writeImport(d *INIDoc) error {
 		key, want, def string
 		canon          canonFunc
 	}{
-		// Metadata, so the same truncating canonicaliser [theme]'s rows use.
+		// Metadata: the same truncating canonicaliser as [theme].
 		{"derived_from", canonPlain(s.Import.DerivedFrom), "", canonMetaPlain},
 		{"derived_at", canonPlain(s.Import.DerivedAt), "", canonMetaPlain},
 		{"derived_hash", canonPlain(s.Import.DerivedHash), "", canonMetaPlain},
@@ -370,9 +332,7 @@ func (s *Sidecar) writeImport(d *INIDoc) error {
 	return nil
 }
 
-// writeElements emits one [element.<id>] per model element, in the model's
-// order — which for a document that was read is its declaration order, so a
-// save never re-orders the author's file.
+// writeElements emits sections in model order, so a save never re-orders the file.
 func (s *Sidecar) writeElements(d *INIDoc) error {
 	for i := range s.Elements {
 		if err := s.writeElement(d, &s.Elements[i]); err != nil {
@@ -384,9 +344,6 @@ func (s *Sidecar) writeElements(d *INIDoc) error {
 
 func (s *Sidecar) writeElement(d *INIDoc, e *Element) error {
 	sec := secElementPrefix + e.ID
-	// The rows are in elementFieldKeys order, and the schema gate asserts the
-	// two lists hold the same keys — so this is the one place a new field has
-	// to be wired, not two.
 	rows := []struct {
 		key, want, def string
 		canon          canonFunc
@@ -423,7 +380,7 @@ func (s *Sidecar) writeElement(d *INIDoc, e *Element) error {
 		{"effect", e.Effect.String(), effectNames[FXNone], canonEffect},
 		{"effect_period_ms", formatInt(int(e.EffectPeriodMs)), "0", canonTimeMs},
 		{"effect_amp_pct", formatInt(int(e.EffectAmpPct)), "0", canonAmp},
-		// Inverted on the wire: the key says "decimate", the field says "no".
+		// Inverted on the wire.
 		{"decimate", formatBool(!e.NoDecimate), formatBool(true), canonDecimate},
 		{"visible_when", formatCondition(e.VisibleWhen), "", canonCondition},
 		{"locked", formatBool(e.Locked), formatBool(false), canonBool},
@@ -441,12 +398,7 @@ func (s *Sidecar) writeElement(d *INIDoc, e *Element) error {
 	return nil
 }
 
-// sliceIsHeldByItsAlias reports that the author spelled the 9-slice inset with
-// the scalar alias ("nine_slice = 12") and still means it. Writing the
-// canonical four-tuple beside it would be a diff nobody asked for — and two
-// keys saying the same thing, which is worse than either spelling.
-// It is deliberately narrow: the moment the model's inset stops matching what
-// the alias says, the canonical key IS written, so an edit is never lost.
+// sliceIsHeldByItsAlias reports that "nine_slice = N" still matches, so no four-tuple is written.
 func sliceIsHeldByItsAlias(d *INIDoc, section string, e *Element) bool {
 	raw, ok := d.Get(section, "nine_slice")
 	if !ok {
@@ -459,11 +411,7 @@ func sliceIsHeldByItsAlias(d *INIDoc, section string, e *Element) bool {
 	return e.Slice == [4]int16{n, n, n, n}
 }
 
-// ---------------------------------------------------------------------------
-// Formatters. AO2's exact shapes: "x, y, w, h" with ", ", plain decimal ints.
-// parse.AtoiOr is deliberately lenient (see its comment) and NOTHING here may
-// depend on that leniency — TestWriterNeverEmitsAValueThatReadsAsZero holds it.
-// ---------------------------------------------------------------------------
+// Formatters, in AO2's shapes; nothing here may depend on parse.AtoiOr's leniency.
 
 func formatInt(v int) string { return strconv.Itoa(v) }
 
@@ -483,13 +431,9 @@ func formatSlice(s [4]int16) string {
 	return b.String()
 }
 
-// tupleJoin is how AO2 spells a tuple separator in every theme in the corpus.
-// Written as ", " and never as "," so a diff against a hand-authored file stays
-// quiet.
+// tupleJoin is how AO2 themes spell a tuple separator, keeping diffs against hand-authored files quiet.
 const tupleJoin = ", "
 
-// formatRGBA writes "#rrggbb" when the colour is opaque and "#rrggbbaa"
-// otherwise, so the common case reads like every other hex colour in a theme.
 func formatRGBA(c RGBA) string {
 	const hexDigits = "0123456789abcdef"
 	buf := make([]byte, 0, len("#rrggbbaa"))
@@ -506,9 +450,7 @@ func formatRGBA(c RGBA) string {
 // formatRGB is the palette's spelling: alpha has no meaning for a QSS role.
 func formatRGB(c RGB) string { return formatRGBA(RGBA{c.R, c.G, c.B, 255}) }
 
-// formatBool writes the spelling the published examples use. Every other legal
-// spelling ("1", "true") still READS, and canonBool folds them, so an author's
-// own choice survives a save untouched.
+// formatBool writes the published spelling; canonBool folds others, so an author's choice survives.
 func formatBool(b bool) string {
 	if b {
 		return "yes"
@@ -535,10 +477,7 @@ func formatGenParams(e *Element) string {
 	return b.String()
 }
 
-// formatMedia writes "file, bytes, hash", dropping trailing components that
-// carry nothing — both because a bare file name is what a hand-authored theme
-// looks like, and because a trailing ", " would be a value INIDoc refuses (the
-// reader trims, so it could not read back as itself).
+// formatMedia drops empty trailing components, because a trailing ", " would not read back and INIDoc refuses it.
 func formatMedia(m MediaEntry) string {
 	switch {
 	case m.File == "":
@@ -562,18 +501,13 @@ func formatCondition(c Condition) string {
 	return name + ":" + c.Value
 }
 
-// ---------------------------------------------------------------------------
-// Canonicalisers: format(parse(raw)) with the READER's parser, one per value
-// type. A missing or unparseable value must canonicalise to whatever the reader
-// STORED for it, or an untouched save would rewrite a line nobody edited.
-// ---------------------------------------------------------------------------
+// Canonicalisers: a bad value must give what the reader stored, or a save rewrites the line.
 
 func canonPlain(s string) string { return strings.TrimSpace(s) }
 
 func canonFree(s string) string { return encodeFreeText(decodeFreeText(s)) }
 
-// canonMetaFree / canonMetaPlain are canonFree / canonPlain THROUGH the metadata
-// truncation, and they are the reason the degrade never reaches the author's file.
+// canonMetaFree and canonMetaPlain go through the metadata truncation, keeping it out of the file.
 func canonMetaFree(s string) string {
 	v, _ := truncMetaRunes(decodeFreeText(s))
 	return encodeFreeText(v)
@@ -584,25 +518,15 @@ func canonMetaPlain(s string) string {
 	return v
 }
 
-// canonInt is for the integers the reader does NOT narrow: [theme] format and
-// revision, and [chrome] shape_tier, each stored exactly as parse.AtoiOr returned
-// it. (format is additionally the one key a save always stamps — §7's writer
-// rules — so a file that spells it 0, or spells it nothing an integer, is the
-// one line the writer does rewrite, into the grammar it can be read by.)
-// Every integer the reader NARROWS has its own canonicaliser below, because a
-// canonicaliser that skips the reader's conversion reports an untouched file as
-// changed and rewrites the author's line.
+// canonInt is for integers the reader does not narrow; narrowed ones need their own canonicaliser,
+// or an untouched line gets rewritten.
 func canonInt(s string) string { return formatInt(parse.AtoiOr(s, 0)) }
 
 func canonByte(s string) string { return formatInt(value.Clamp(parse.AtoiOr(s, 0), 0, math.MaxUint8)) }
 
-// canonZ mirrors the reader's int16 clamp on z and on a scalar 9-slice inset.
 func canonZ(s string) string { return formatInt(value.Clamp(parse.AtoiOr(s, 0), ZMin, ZMax)) }
 
-// canonTimeMs mirrors the reader's int32 clamp on phase_ms, effect_period_ms
-// and [effect.*] period_ms. Without it a legal "phase_ms = 3000000000" saves
-// back as a NEGATIVE number — not merely a rewrite of a line nobody edited, but
-// a rewrite into a value that means something else.
+// canonTimeMs mirrors the reader's int32 clamp; without it a legal "phase_ms = 3000000000" saves back negative.
 func canonTimeMs(s string) string {
 	return formatInt(value.Clamp(parse.AtoiOr(s, 0), TimeMsMin, TimeMsMax))
 }
@@ -621,8 +545,7 @@ func canonRect(s string) string { return formatRect(parseRectValue(s)) }
 
 func canonSlice(s string) string { return formatSlice(parseSliceValue(s)) }
 
-// canonColor folds an unparseable colour to the ZERO colour, because that is
-// exactly what the reader left in the model when the parse failed.
+// canonColor folds a bad colour to zero, what the reader left in the model.
 func canonColor(s string) string {
 	c, _ := parseRGBAValue(s)
 	return formatRGBA(c)
@@ -635,8 +558,7 @@ func canonRGB(s string) string {
 
 func canonBool(s string) string { return formatBool(parseBoolValue(s)) }
 
-// canonDecimate mirrors the reader's guarded negation: an ABSENT key leaves
-// NoDecimate false, so an empty string canonicalises to "yes".
+// canonDecimate mirrors the reader's guarded negation: empty canonicalises to "yes".
 func canonDecimate(s string) string {
 	if strings.TrimSpace(s) == "" {
 		return formatBool(true)
@@ -645,9 +567,7 @@ func canonDecimate(s string) string {
 }
 
 func canonList(s string) string {
-	// The cap is the reader's problem; here a longer list simply canonicalises
-	// as far as it parses, and the reader already refused the file if it was
-	// over.
+	// The reader already refused an over-cap file; here a list canonicalises as far as it parses.
 	items, _ := parseTextList(s, PaneHostCap+SubthemeCap)
 	return formatList(items)
 }
@@ -684,9 +604,7 @@ func canonMedia(s string) string {
 	return formatMedia(m)
 }
 
-// canonEnum builds the canonicaliser for one wire-name table: an unknown value
-// folds to the SAME fallback the reader degraded it to, which is what makes an
-// unknown enum value survive a save (rule 3's second half).
+// canonEnum folds an unknown value to the reader's fallback, so it survives a save.
 func canonEnum(names []string, fallback uint8) canonFunc {
 	return func(s string) string {
 		if v, ok := enumValue(names, s); ok {

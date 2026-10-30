@@ -1,7 +1,6 @@
 package themepack
 
-// CREATE FROM A MODEL — "a theme from nothing" (v1.90.0 W9, the preset gallery).
-// BLOCKING — goroutine only (hard rule 2).
+// Create a theme from a model; blocking, goroutine only (hard rule 2).
 
 import (
 	"errors"
@@ -11,20 +10,11 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
-// ErrCreateNoModel reports a create with nothing to write. Named because the
-// caller's fix differs from every other refusal here: it is a bug in the caller,
-// not a problem with the disk.
+// ErrCreateNoModel reports a create with nothing to write, a caller bug rather than a disk problem.
 var ErrCreateNoModel = errors.New("themepack: no sidecar to create a theme from")
 
-// CreateFromSidecar writes sc into a NEW folder under themesRoot.
-// The name is sanitized and collision-suffixed exactly as an import is, so
-// building the same pair twice gives "Neon Netrunner" and "Neon Netrunner (2)"
-// rather than one overwriting the other.
-// THE BYTES GO THROUGH Sidecar.Bytes, which is the write guard: a model that
-// would not load back cannot reach the disk, and the refusal happens before the
-// folder is created rather than after (design §3.3 — every refusal names the
-// offender). The folder is built under a .part suffix and renamed, so a crash
-// mid-write leaves no half-theme in the picker.
+// CreateFromSidecar writes sc into a new collision-suffixed folder, built under .part and renamed,
+// so a crash leaves no half-theme; Sidecar.Bytes refuses bad models first.
 func CreateFromSidecar(themesRoot, name string, sc *theme.Sidecar) (*Manifest, error) {
 	if sc == nil {
 		return nil, ErrCreateNoModel
@@ -32,8 +22,7 @@ func CreateFromSidecar(themesRoot, name string, sc *theme.Sidecar) (*Manifest, e
 	if themesRoot == "" {
 		return nil, errors.New("themepack: no themes folder to create in")
 	}
-	// FIRST, before anything touches the disk: a model the reader would refuse is
-	// not a theme, and finding that out after MkdirAll leaves a folder behind.
+	// Before touching the disk: finding a bad model after MkdirAll leaves a folder behind.
 	body, err := sc.Bytes()
 	if err != nil {
 		return nil, err

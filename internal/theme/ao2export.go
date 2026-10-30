@@ -1,9 +1,6 @@
 package theme
 
-// AO2-COMPAT EXPORT (v1.90.0 W8) — design §Q4 "Also work in AO2-Client".
-// AND ASYNCAO-LOST.txt GOES IN THE BUNDLE. A file in the archive beats a dialog
-// in our UI: it survives re-share, renaming and re-zipping, and it reaches the
-// AO2 user who will never see our export sheet.
+// AO2-compatible export; ASYNCAO-LOST.txt is in the bundle so it survives re-share and reaches AO2 users.
 
 import (
 	"fmt"
@@ -11,22 +8,16 @@ import (
 	"strings"
 )
 
-// LostFileName is the plain-text report bundled with an AO2-compat export.
-// SHOUTED and hyphenated so it sorts to the top of a folder listing and reads
-// as a notice rather than as one of the theme's own files.
+// LostFileName is the report in an AO2-compat export, uppercase and hyphenated so it sorts first and reads as a notice.
 const LostFileName = "ASYNCAO-LOST.txt"
 
-// lostReportCap bounds the report's lines (hard rule 4). It is ElementCap plus
-// room for the header and the non-element notes, because the report's job is to
-// name every element AO2 drops and a theme cannot hold more elements than that.
+// lostReportCap bounds the report's lines (hard rule 4): ElementCap plus the header and non-element notes.
 const (
 	lostReportNoteLines = 16 // the header and the non-element notes
 	lostReportCap       = ElementCap + lostReportNoteLines
 )
 
-// BakeAO2Design rewrites a courtroom_design.ini so an AO2-Client reading it sees
-// the geometry this theme actually draws with.
-// COLD PATH ONLY (hard rule 2).
+// BakeAO2Design rewrites a courtroom_design.ini with the geometry this theme draws; cold path only (hard rule 2).
 func BakeAO2Design(src []byte, s *Sidecar) ([]byte, error) {
 	d, err := ParseINIDoc(src)
 	if err != nil {
@@ -36,8 +27,7 @@ func BakeAO2Design(src []byte, s *Sidecar) ([]byte, error) {
 		return d.Bytes(), nil
 	}
 	for _, o := range s.Overrides {
-		// AO2's design keys live in the ROOT section: courtroom_design.ini has no
-		// [headers] at all, which is why every reader of it uses the "" section.
+		// AO2's design keys live in the root section: courtroom_design.ini has no [headers].
 		if err := d.Set("", o.Key, formatRect(o.Rect)); err != nil {
 			return nil, fmt.Errorf("%s: %w", o.Key, err)
 		}
@@ -45,14 +35,8 @@ func BakeAO2Design(src []byte, s *Sidecar) ([]byte, error) {
 	return d.Bytes(), nil
 }
 
-// StripForAO2 returns a COPY of the sidecar with the tier that has just been
-// baked emptied out, so the exported theme does not apply its overrides twice
-// when an AsyncAO client opens it.
-// The lossless carrier is deliberately NOT copied — the copy re-emits from the
-// model into a fresh document, which is exactly right for a DERIVED file: the
-// bundle's sidecar is a new artefact, and carrying the original's untouched
-// [overrides] lines into it would put back the rows this function exists to
-// remove.
+// StripForAO2 returns a copy with the baked tier emptied, so overrides do not apply twice.
+// The document is not copied, or its [overrides] lines would come back.
 func StripForAO2(s *Sidecar) *Sidecar {
 	if s == nil {
 		return nil
@@ -61,18 +45,11 @@ func StripForAO2(s *Sidecar) *Sidecar {
 	out.doc = nil
 	out.Overrides = nil
 	out.Rotations = nil
-	// The slices that remain are shared with the original and are only READ from
-	// here on (Bytes walks them). Copying them would be defensive against a
-	// mutation nothing performs.
+	// The remaining slices are shared with the original and only read from here on.
 	return &out
 }
 
-// LostToAO2 names, by id and kind, everything an AO2-Client will not show. It is
-// the body of ASYNCAO-LOST.txt.
-// EVERY LINE IS ACTIONABLE OR IT IS NOT WRITTEN. "Your theme is different in
-// AO2" helps nobody; "[element.butterflies] (image) — AsyncAO free elements have
-// no AO2 equivalent" tells the reader exactly what they are missing and lets the
-// author decide whether it mattered.
+// LostToAO2 names by id and kind everything an AO2-Client will not show; every line must be actionable.
 func LostToAO2(s *Sidecar) []string {
 	if s == nil {
 		return nil
@@ -122,11 +99,7 @@ func LostToAO2(s *Sidecar) []string {
 	return out
 }
 
-// LostReport renders LostToAO2 as the file's whole text, header included.
-//
-// The header explains itself to somebody who has never heard of AsyncAO, because
-// that is exactly who finds this file: a person who unzipped a theme a friend
-// sent them and is reading the odd shouty text file in it.
+// LostReport renders the file's text, with a header for someone who has never heard of AsyncAO.
 func LostReport(themeName string, s *Sidecar) []byte {
 	var b strings.Builder
 	name := themeName

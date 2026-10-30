@@ -1,7 +1,4 @@
-// Package theme loads AO2-Client theme folders (courtroom_design.ini,
-// courtroom_fonts.ini, theme images and sounds) so existing AO2 themes
-// migrate to AsyncAO unchanged. Format reference: AO2-Client
-// text_file_functions.cpp (QSettings INI + "x, y, w, h" tuples).
+// Package theme loads AO2-Client theme folders unchanged (format: AO2-Client text_file_functions.cpp).
 package theme
 
 import (
@@ -11,37 +8,21 @@ import (
 	"strings"
 )
 
-// INI is a minimal QSettings-compatible INI reader: optional [sections],
-// key=value pairs, a leading UTF-8 BOM, ';' comments (whole-line OR inline)
-// and '#' comment lines, whitespace-insensitive keys. Section-less keys live
-// under the root section "".
+// INI is a minimal QSettings-compatible reader; section-less keys live under root "".
 type INI struct {
 	values map[string]string // "section/key" (lowercased) → raw value
 }
 
 const iniSectionSep = "/"
 
-// utf8BOM is the byte-order mark Windows text editors prepend to a UTF-8 file.
-// Qt's QSettings::IniFormat strips it, so a BOM'd theme's FIRST key parses
-// normally under AO2 (verified against Qt 6.5.3: a file starting
-// EF BB BF "showname = 16" reads back under the key "showname"). Without this
-// the U+FEFF becomes part of the key — "\ufeffshowname" — and the entire first
-// entry of the file silently disappears, which is exactly how the Uminek2x and
-// Uminek3x themes lost their showname font size.
-// Written as an escape on purpose: a literal BOM in the source is invisible in
-// every editor and diff, which is what makes this class of bug so quiet.
+// utf8BOM is stripped as Qt's IniFormat does, or the first key silently vanishes.
+// Written as an escape because a literal BOM is invisible in editors and diffs.
 const utf8BOM = "\ufeff"
 
-// iniCommentStart is the character QSettings::IniFormat treats as the start of
-// a comment ANYWHERE on a line, not only in column 0. Verified against Qt
-// 6.5.3 with the real theme data that breaks without it:
-// too (AO2-Client text_file_functions.cpp:411) — and it was measured against the
-// 74-theme reference corpus (517 INI files, 7335 lines containing a ';') before
-// being turned on.
-// Implementing either means carrying quote state (and Qt's whole escape table)
+// iniCommentStart begins a comment anywhere on a line, as in QSettings (text_file_functions.cpp:411).
 const iniCommentStart = ';'
 
-// LoadINI reads path; a missing file yields an empty (usable) INI.
+// LoadINI reads path; a missing file yields an empty usable INI.
 func LoadINI(path string) (*INI, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -51,8 +32,7 @@ func LoadINI(path string) (*INI, error) {
 	return ParseINI(f)
 }
 
-// ParseINI reads INI content from any reader (char.ini payloads fetched over
-// the asset pipeline use this).
+// ParseINI reads INI content from any reader, including char.ini fetched over the asset pipeline.
 func ParseINI(r io.Reader) (*INI, error) {
 	ini := &INI{values: map[string]string{}}
 	section := ""
@@ -65,9 +45,7 @@ func ParseINI(r io.Reader) (*INI, error) {
 			raw = strings.TrimPrefix(raw, utf8BOM)
 			firstLine = false
 		}
-		// Qt truncates at the first ';' before it looks at anything else, so
-		// this must run ahead of the section/key split — see iniCommentStart.
-		// It also covers a whole-line ';' comment (the line becomes empty).
+		// Qt truncates at the first ';' before anything else, so this runs ahead of the section/key split.
 		if i := strings.IndexByte(raw, iniCommentStart); i >= 0 {
 			raw = raw[:i]
 		}
@@ -88,23 +66,18 @@ func ParseINI(r io.Reader) (*INI, error) {
 	return ini, scanner.Err()
 }
 
-// Get returns the value for key in the root section.
 func (i *INI) Get(key string) (string, bool) {
 	return i.GetSection("", key)
 }
 
-// GetSection returns the value for key under [section].
 func (i *INI) GetSection(section, key string) (string, bool) {
 	v, ok := i.values[strings.ToLower(section)+iniSectionSep+strings.ToLower(key)]
 	return v, ok
 }
 
-// Len reports how many keys were loaded.
 func (i *INI) Len() int { return len(i.values) }
 
-// SectionKeys returns every key=value under [section] (keys lowercased,
-// section prefix stripped). Iteration order is unspecified — callers that
-// care must sort.
+// SectionKeys returns every key under [section], lowercased without the prefix; order is unspecified.
 func (i *INI) SectionKeys(section string) map[string]string {
 	prefix := strings.ToLower(section) + iniSectionSep
 	out := map[string]string{}

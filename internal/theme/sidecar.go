@@ -1,9 +1,6 @@
 package theme
 
-// asyncao_theme.ini — the AsyncAO extension tier of a theme folder.
-// SDL-free by hard rule 1, and cold-path only: parsing walks maps and allocates
-// strings, so it belongs on the theme-apply goroutine and never on a draw,
-// decode or resolver path (rule 2).
+// asyncao_theme.ini parsing allocates, so never run it on a draw, decode or resolver path (hard rule 2).
 
 import (
 	"errors"
@@ -12,173 +9,98 @@ import (
 )
 
 const (
-	// SidecarFileName is the AsyncAO native tier of a theme folder. The name is
-	// deliberately outside AO2's three (courtroom_design/fonts/sounds.ini) so no
-	// AO2 build, script or community tool has ever had a reason to open it.
+	// SidecarFileName is outside AO2's three INI names, so no AO2 tool opens it.
 	SidecarFileName = "asyncao_theme.ini"
 
-	// ThemeFormatVersion is the sidecar grammar this build AUTHORS. READING is
-	// never gated on it (rule 1 above): a format-2 theme renders here with
-	// everything format 1 understands, and saves without losing the rest.
+	// ThemeFormatVersion is the grammar this build writes; reading is never limited by it.
 	ThemeFormatVersion = 1
 
-	// SidecarMediaDir is where imported art lives inside a theme folder. AO2
-	// never scans it, so a bundled theme stays a valid AO2 theme; it is a
-	// forward-slash RELATIVE path because it appears verbatim in [media] values.
+	// SidecarMediaDir holds imported art where AO2 never scans; relative, as it appears in [media] values.
 	SidecarMediaDir = "asyncao/media"
 
-	// VendorSectionPrefix / VendorKeyPrefix are RESERVED FOR THIRD PARTIES and
-	// are never assigned an official meaning. Anything matching them is carried
-	// through untouched, so a third-party tool can squat here forever without
-	// ever colliding with a key AsyncAO adds later.
-	// Pinned by TestVendorNamespaceIsPreservedAndNeverAssigned.
+	// VendorSectionPrefix and VendorKeyPrefix are reserved for third parties and carried through untouched.
 	VendorSectionPrefix = "x."
 	VendorKeyPrefix     = "x_"
 )
 
-// ---------------------------------------------------------------------------
-// Named caps. Hard rule 4: nothing unbounded, and every number says why it is
-// that number. They REFUSE rather than truncate — a silently truncated theme
-// that then gets saved is data loss, which is the one failure this feature
-// cannot recover from. Pinned by TestSidecarCapsRefuseNotTruncate.
+// Named caps (hard rule 4). They refuse rather than truncate: a truncated theme that then gets saved is data loss.
 const (
-	// ElementCap bounds [element.*]. ~4x the densest style preset (Manga Panel
-	// is ~22 elements); 96 baked entries is a fixed array that never grows.
+	// ElementCap bounds [element.*] at about 4x the densest style preset; baked entries are a fixed array.
 	ElementCap = 96
 	// PaneCap bounds [pane.*] — two-way splits on at most four regions.
 	PaneCap = 8
 	// PaneHostCap bounds the slot keys one pane may re-home.
 	PaneHostCap = 8
-	// TextRuneCap bounds an ElemText string: a verdict line, and short enough
-	// that truncating it to its rect at bake stays cheap.
+	// TextRuneCap bounds an ElemText string, short enough that truncating it to its rect at bake stays cheap.
 	TextRuneCap = 240
-	// GenParamCap bounds a generator's parameter list. It is EXACTLY the number of
-	// addressable slots in the typed view a generator actually reads
-	// (ui.GenParams: Colors[4] + Ints[4] + Angle + Pcts[2] = 11), so a twelfth
-	// pair is by construction either a repeat of a slot already set — the reader's
-	// "later wins" rule makes it dead — or a key no generator resolves. There is
-	// nothing a file can say in a twelfth pair that it cannot say in eleven.
+	// GenParamCap is exactly the addressable fields of ui.GenParams, so a twelfth pair could add nothing.
 	GenParamCap = 11
-	// ClockCap bounds the authoring clock groups. Clock 0 is the shared theme
-	// anchor and is never declared; the densest style preset wants four.
+	// ClockCap bounds the authoring clock groups; clock 0 is the shared theme anchor and is never declared.
 	ClockCap = 16
-	// MediaCap / FontCap bound [media] and [fonts]: manifest entry bounds that
-	// match the texture budget (24 images) and a theme's realistic face count.
+	// MediaCap and FontCap bound [media] and [fonts]; MediaCap matches the 24-image texture budget.
 	MediaCap = 24
 	FontCap  = 6
-	// FontBindCap bounds [fontbind]. FontElements is append-only and currently
-	// holds 11 ids; 32 leaves room for it to grow without touching the format.
+	// FontBindCap bounds [fontbind], leaving room for append-only FontElements to grow.
 	FontBindCap = 32
-	// OverrideCap bounds [overrides] and [rotations] independently: one entry
-	// per themeSlots row (ui.themeSlotCap = 160) is the most a theme could
-	// possibly restate.
+	// OverrideCap bounds [overrides] and [rotations] independently, at one entry per themeSlots row (ui.themeSlotCap).
 	OverrideCap = 160
-	// EffectBindCap bounds [effect.*], the effects bound to EXISTING AO2
-	// widgets. Every one of them occupies a slot in the same stateful-effect
-	// pool an element's own effect draws from, so the number belongs to that
-	// pool rather than to this section — and the pool is sized to the media
-	// budget, because a stateful effect always dresses art or a generator and
-	// both are bounded by MediaCap. It is written as a CONST ALIAS, not as a
-	// second 24, for the reason the texture budget already const-aliases its
-	// producer and store caps: two copies of a number are two numbers.
+	// EffectBindCap aliases MediaCap, as each binding uses the stateful-effect pool sized to media.
 	EffectBindCap = MediaCap
 	// SoundCap bounds [sounds], the AsyncAO-tier sound overrides.
 	SoundCap = 16
-	// SubthemeCap bounds [import] subthemes — AO2 subtheme folders are a
-	// handful per pack, and the list is provenance, not configuration.
+	// SubthemeCap bounds [import] subthemes, which are provenance rather than configuration.
 	SubthemeCap = 16
-	// ElementRetireCap bounds the pending-deletion list (Sidecar.retire): element
-	// sections a delete has dropped from the model and the next write must remove.
-	// TWICE ElementCap, because that is what a DOCUMENT can hold and the list only
-	// ever records an id whose section the document actually carries: at most
-	// ElementCap model elements, plus the sections of elements this build skipped
+	// ElementRetireCap is twice ElementCap: the document's elements plus sections this build skipped.
 	ElementRetireCap = 2 * ElementCap
-	// PreservedCap bounds how many unknown keys and sections one file may carry
-	// BEFORE it stops looking like a theme. INIDoc preserves the lines either
-	// way; this caps the enumeration the import report reads.
+	// PreservedCap bounds the unknown keys and sections one file may carry; INIDoc keeps the lines anyway.
 	PreservedCap = 512
-	// NoteCap bounds the degrade notes one parse may collect (a skipped
-	// element, a dropped pane host). It is the ONE cap here that bounds the
-	// REPORT rather than the LOAD: past it the reader stops recording notes and
-	// keeps going, because refusing would contradict rule 1 and gut rule 3 —
-	// an unknown kind is the forward-compat path and notes once per element, so
-	// 65 of them from a newer client must still load. Every note call site
-	// absorbs the error; see note() in sidecar_read.go, and
-	// TestUnknownKindsPastNoteCapStillLoad.
+	// NoteCap bounds the report, not the load: unknown kinds from a newer client must still load.
 	NoteCap = 64
-	// IDRuneCap is the id grammar's length bound: [a-z0-9_-]{1,24}. Ids are
-	// section suffixes, so they must stay short enough to read in a diff.
+	// IDRuneCap is the id grammar's bound, [a-z0-9_-]{1,24}; ids are section suffixes.
 	IDRuneCap = 24
-	// ConditionValueRuneCap bounds a visible_when value (a pos, character or
-	// side name). Every one in the reference corpus is far under it, and the
-	// value is interned once per element at bake.
+	// ConditionValueRuneCap bounds a visible_when value, interned once per element at bake.
 	ConditionValueRuneCap = 64
-	// AnchorRuneCap bounds an anchor: a themeSlots key or a pane id. The
-	// longest shipped slot key is well under half of it.
+	// AnchorRuneCap bounds an anchor: a themeSlots key or a pane id.
 	AnchorRuneCap = 48
-	// NameRuneCap bounds every other short free-text field (theme name, author,
-	// licence, a font family, a media file path).
+	// NameRuneCap bounds every other short free-text field (name, author, licence, font family, media path).
 	NameRuneCap = 240
 	// GenParamRuneCap bounds one generator parameter's key or value.
 	GenParamRuneCap = 48
 )
 
-// Numeric ranges. Clamped on load rather than refused: a percent outside its
-// range is a typo, not a hostile file, and rule 1 says render what we can.
+// Numeric ranges, clamped on load rather than refused: an out-of-range percent is a typo, not a hostile file.
 const (
-	// OpacityOpaque is what an ABSENT opacity means. 0 is the absent marker in
-	// the FILE and in the STRUCT alike (see Element.EffectiveOpacity), so the
-	// value round-trips symmetrically and the zero Element cannot paint.
+	// OpacityOpaque is what an absent opacity means; 0 is the absent marker, so a zero Element cannot paint.
 	OpacityOpaque = 255
 	// SpeedNominalPct is a clock running at the shared theme anchor's rate.
 	SpeedNominalPct = 100
-	// SpeedMinPct / SpeedMaxPct bound a clock group: a tenth speed still reads
-	// as motion, and 4x is past the point where any of it is legible.
+	// SpeedMinPct and SpeedMaxPct: a tenth speed still reads as motion, and past 4x nothing is legible.
 	SpeedMinPct = 10
 	SpeedMaxPct = 400
 	// AmpMaxPct bounds an effect amplitude (0..100 is the whole range).
 	AmpMaxPct = 100
-	// TextSizeMaxPt bounds an ElemText point size. 0 = inherit the bound font's
-	// own size; 256 pt is taller than the design canvas.
+	// TextSizeMaxPt bounds an ElemText point size; 0 inherits the bound font's size.
 	TextSizeMaxPt = 256
-	// AngleCount is the 360/256 angle byte's modulus — the same convention
-	// ThemeRectRotations already persists, so 64 is 90 degrees.
+	// AngleCount is the modulus of the angle byte, the convention ThemeRectRotations persists, so 64 is 90 degrees.
 	AngleCount = 256
-	// ZMin / ZMax bound Element.Z and the four 9-slice insets: both are int16
-	// in the model, and the file's grammar has to say so out loud.
-	// NAMED because THREE places must agree on the number — the reader, the
-	// writer's canonicaliser and docs/THEME-FORMAT.md. When they do not, the
-	// writer decides an untouched file "does not already mean" what it says and
-	// rewrites the author's line on a save nobody asked for.
+	// ZMin and ZMax bound Element.Z and 9-slice insets (int16); reader, writer and docs/THEME-FORMAT.md
+	// must agree, or a save rewrites an untouched line.
 	ZMin = -32768
 	ZMax = 32767
-	// TimeMsMin / TimeMsMax bound every millisecond-valued key (phase_ms,
-	// effect_period_ms and [effect.*] period_ms), which are int32 in the model.
-	// CLAMPED, never truncated. A bare int32() conversion would turn a legal
-	// "phase_ms = 3000000000" into a NEGATIVE phase, and it would do it only on
-	// a 64-bit host — a 32-bit int cannot even hold the number (parse.AtoiOr would
-	// read it as 0, as Qt's toInt does). A published grammar cannot mean two
-	// things on two machines.
+	// TimeMsMin and TimeMsMax bound millisecond keys (int32); clamp, never convert.
+	// int32() would turn a legal large value negative, and only on 64-bit hosts.
 	TimeMsMin = -2147483648
 	TimeMsMax = 2147483647
 )
 
 var (
-	// ErrSidecarCap reports a REFUSED file: one of the named caps above was
-	// exceeded. Never a truncation — see the caps block.
+	// ErrSidecarCap reports a file refused for exceeding a named cap.
 	ErrSidecarCap = errors.New("theme: sidecar exceeds a named cap")
-	// ErrSidecarUnreadable reports a file the READER could not parse at all
-	// (bufio's own line limit, or an INIDoc cap). It is distinct from a cap
-	// refusal because the fix is different: one is a huge theme, one is not a
-	// theme.
+	// ErrSidecarUnreadable reports a file the reader could not parse: not a theme, rather than a huge one.
 	ErrSidecarUnreadable = errors.New("theme: sidecar is not readable as INI")
 )
 
-// ---------------------------------------------------------------------------
-// Enums. WIRE NAMES ARE THE FORMAT: append-only, at the END, never renamed and
-// never repurposed. Inserting a value in the middle silently re-maps every
-// theme already on disk. Pinned by TestElementKindNamesAreAppendOnly and
-// TestElementBandNamesAreAppendOnly.
+// Enums. Wire names are the format: append only, never renamed, or every theme on disk is re-mapped.
 
 // ElementKind is what a free element paints.
 type ElementKind uint8
@@ -190,33 +112,27 @@ const (
 	ElemGen                         // procedural texture TILE
 	ElemText                        // author-authored static string (watermark, credit, stamp)
 	ElemPane                        // the plate/divider of a split-screen [pane.*]
-	// ElementKindCount sizes internal/ui's painter table — a fixed array
-	// indexed by kind, never a map on the draw path.
+	// ElementKindCount sizes internal/ui's painter table, a fixed array so the draw path needs no map.
 	ElementKindCount
 )
 
 var elementKindNames = [ElementKindCount]string{"image", "shape", "gradient", "gen", "text", "pane"}
 
-// ElementBand is WHERE in the themed pass an element paints.
-//
-// THREE, not a global z-sort, because the themed pass is hand-ordered across
-// the stage and panel phases and carries a mid-sequence abort (the courtroom
-// modals' early return) that a flat sortable list cannot reproduce.
+// ElementBand is where in the themed pass an element paints.
+// Not a z-sort: the pass is hand-ordered and has a mid-sequence abort (the courtroom modals' early return).
 type ElementBand uint8
 
 const (
 	BandBackdrop ElementBand = iota // above the courtroom backdrop, below every widget
 	BandMid                         // between the stage and the panels — behind the logs
 	BandOverlay                     // above everything, below editor chrome
-	// ElementBandCount is the number of insertion points, and the number of
-	// band loops internal/ui runs per themed frame.
+	// ElementBandCount is the number of insertion points and of band loops internal/ui runs per themed frame.
 	ElementBandCount
 )
 
 var elementBandNames = [ElementBandCount]string{"backdrop", "mid", "overlay"}
 
-// Space is the coordinate space an element's rect is expressed in. The first
-// four mirror ui.themeSlotRelSpace exactly; the last two are AsyncAO's.
+// Space is the coordinate space of an element's rect; the first four mirror ui.themeSlotRelSpace exactly.
 type Space uint8
 
 const (
@@ -224,16 +140,10 @@ const (
 	SpaceChatbox                   // child of ao2_chatbox
 	SpaceViewport                  // child of the stage
 	SpaceMusicDisplay              // child of the music_display plate
-	// SpaceWindow is WINDOW pixels, OUTSIDE the design canvas entirely — the
-	// letterbox bars, the chrome band, a full-bleed vignette. It is the one
-	// space AO2 has no analogue for, and it is the AO2-full-parity rule
-	// ("extras go in chrome OUTSIDE the canvas") expressed as a type instead of
-	// a prohibition.
+	// SpaceWindow is window pixels outside the design canvas (letterbox bars, chrome band, vignette).
 	SpaceWindow
-	// SpacePane is a child of a named [pane.*]; the element's Anchor is a pane
-	// id rather than a slot key.
+	// SpacePane is a child of a named [pane.*]; the element's Anchor is a pane id rather than a slot key.
 	SpacePane
-	// SpaceCount bounds every space table.
 	SpaceCount
 )
 
@@ -248,14 +158,12 @@ const (
 	FitContain                   // scale to fit, letterboxed
 	FitCover                     // scale to fill, cropped
 	FitNine                      // 9-slice using Element.Slice
-	// FitCount bounds the fit tables.
 	FitCount
 )
 
 var fitNames = [FitCount]string{"stretch", "tile", "contain", "cover", "nine"}
 
-// EffectKind is an element's motion. FXNone is the zero value, so an element
-// that names no effect is static — rule 4's "zero value behaves as version 1".
+// EffectKind is an element's motion; the zero value FXNone keeps an element that names no effect static.
 type EffectKind uint8
 
 const (
@@ -283,15 +191,12 @@ const (
 	AlignLeft TextAlign = iota
 	AlignCenter
 	AlignRight
-	// AlignCount bounds the alignment tables.
 	AlignCount
 )
 
 var alignNames = [AlignCount]string{"left", "center", "right"}
 
-// ConditionAxis is the ONE axis a VisibleWhen gate may test. Deliberately not
-// an expression language: anything richer needs a parser on the frame path,
-// and this compiles to an integer compare against an index interned at bake.
+// ConditionAxis is the one axis a VisibleWhen may test; an expression language needs a frame-path parser.
 type ConditionAxis uint8
 
 const (
@@ -301,7 +206,6 @@ const (
 	CondSide                          // side:def, side:pro, …
 	CondSpeaking                      // someone is speaking (no value)
 	CondShout                         // shout:objection, …
-	// ConditionAxisCount bounds the axis tables.
 	ConditionAxisCount
 )
 
@@ -316,8 +220,7 @@ var conditionAxisTakesValue = [ConditionAxisCount]bool{
 	CondSide: true, CondSpeaking: false, CondShout: true,
 }
 
-// String returns the wire name, or "" for a value outside the enum (which the
-// reader can never produce — every parse degrades into range).
+// String returns the wire name, or "" for a value outside the enum.
 func (k ElementKind) String() string   { return enumName(elementKindNames[:], uint8(k)) }
 func (b ElementBand) String() string   { return enumName(elementBandNames[:], uint8(b)) }
 func (s Space) String() string         { return enumName(spaceNames[:], uint8(s)) }
@@ -333,10 +236,7 @@ func enumName(names []string, v uint8) string {
 	return names[v]
 }
 
-// enumValue resolves a wire name case-insensitively. ok=false means UNKNOWN,
-// and every caller degrades rather than failing (rule 3) — the raw text is then
-// preserved on save because the writer only rewrites a key whose meaning
-// actually changed.
+// enumValue resolves a wire name case-insensitively; on ok=false callers degrade, and the raw text stays.
 func enumValue(names []string, s string) (uint8, bool) {
 	want := strings.ToLower(strings.TrimSpace(s))
 	for i, n := range names {
@@ -347,35 +247,22 @@ func enumValue(names []string, s string) (uint8, bool) {
 	return 0, false
 }
 
-// ---------------------------------------------------------------------------
-// Values
-// ---------------------------------------------------------------------------
-
-// RGBA is a sidecar colour. The AO2 side of a theme is RGB (theme.RGB); the
-// extension tier needs alpha because a frame element is a stroke over a
-// TRANSPARENT fill, which RGB cannot say.
+// RGBA is a sidecar colour; alpha is needed because a frame element is a stroke over a transparent fill.
 type RGBA struct{ R, G, B, A uint8 }
 
-// Opaque reports whether the colour would paint anything at all.
 func (c RGBA) Opaque() bool { return c.A > 0 }
 
-// RGB drops the alpha, for the many call sites that want AO2's own tuple.
 func (c RGBA) RGB() RGB { return RGB{c.R, c.G, c.B} }
 
-// KV is one ordered generator parameter or sound override. Ordered, because a
-// generator's parameter hash is order-sensitive and is used as a cache key.
+// KV is one ordered generator parameter or sound override; the parameter hash is a cache key.
 type KV struct{ Key, Value string }
 
-// Condition gates an element on live session state.
 type Condition struct {
 	Axis  ConditionAxis
 	Value string // interned to an index at bake; "" for the value-less axes
 }
 
-// Element is one free element: a box the AO2 registry has no row for.
-// EVERY FIELD IS IN elementFieldKeys (sidecar_write.go), and
-// TestSidecarSchemaMatchesTheElementStruct fails on any that is not: a field
-// added here without a wire key would save silently as nothing, which is the
+// Element is one free element; a field with no key in elementFieldKeys silently saves as nothing.
 type Element struct {
 	ID    string // [a-z0-9_-]{1,24}; the section suffix; editor-only
 	Kind  ElementKind
@@ -383,16 +270,12 @@ type Element struct {
 	Z     int16 // order WITHIN the band; ties break on declaration index
 	Space Space
 
-	// Anchor is a themeSlots key (or a pane id when Space == SpacePane). ""
-	// means the Space's own origin, and Rect is then absolute in that space.
-	//
-	// ANCHORS MAY NOT CHAIN. An anchor is a slot key or a pane id, NEVER
-	// another element: one bake pass, no cycle detection, no depth cap.
+	// Anchor is a themeSlots key, or a pane id when Space == SpacePane; "" makes Rect absolute in the Space.
+	// Anchors may not chain to another element: one bake pass, no cycle detection, no depth cap.
 	Anchor string
 	Rect   Rect  // design px in the four AO2 spaces + SpacePane; WINDOW px in SpaceWindow
 	Rot    uint8 // 360/256 angle byte — the ThemeRectRotations convention
 
-	// --- fill: exactly one is meaningful per Kind --------------------------
 	Media      string // ElemImage: an id into Sidecar.Media
 	Shape      string // ElemShape: silhouette name ("sharp", "rounded", "pill", "hex", "ribbon", "tape", …)
 	Gen        string // ElemGen: generator kind
@@ -406,47 +289,31 @@ type Element struct {
 	Stroke     RGBA
 	StrokePx   uint8
 	Tint       RGBA // multiplied into ElemImage/ElemGen at draw
-	// Opacity is 0..255, where 0 means ABSENT and is drawn as opaque
-	// (EffectiveOpacity). The absent marker is the same in the file and in the
-	// struct on purpose: it is what lets a value survive write-then-read
-	// unchanged, and what makes the zero Element unable to paint.
+	// Opacity is 0..255; 0 means absent and draws opaque (EffectiveOpacity).
 	Opacity uint8
 
-	// --- text --------------------------------------------------------------
 	Text string // <= TextRuneCap runes
-	// Font / Size are CARRIED, NOT DRAWN in format 1: read, bounds-checked and
-	// written back unchanged, but no format-1 renderer resolves them (see
-	// internal/ui paintElementText for the measurement and docs/THEME-FORMAT.md §3
-	// for the same sentence in the format's own words). They live here rather than
-	// in the preserved-unknown bag because they ARE format-1 keys with a defined
-	// grammar — a later format starts honouring them with no upgrade path.
+	// Font and Size are carried, not drawn, in format 1, so a later format can honour them.
 	Font  string // a FontElements id (inherit that element's face) or a [fonts] family
 	Size  int    // points; 0 = inherit
 	Color RGBA
 	Align TextAlign
 
-	// --- motion -------------------------------------------------------------
 	Clock          uint8 // 0..ClockCap-1; 0 = the shared theme clock
 	PhaseMs        int32 // per-element phase offset — FREE, consumes no clock slot
 	Loop           bool  // false = one-shot, true = loop
 	Effect         EffectKind
 	EffectPeriodMs int32
 	EffectAmpPct   int16 // 0..AmpMaxPct
-	// NoDecimate is "decimate = no", stored INVERTED so the zero value is the
-	// version-1 behaviour (decimation allowed). It is honoured only when the
-	// undecimated page fits the per-item media budget; otherwise it is ignored
-	// and the inspector says why.
+	// NoDecimate is inverted so the zero value allows decimation; ignored past the per-item media budget.
 	NoDecimate bool
 
-	// --- behaviour ----------------------------------------------------------
 	VisibleWhen Condition
 	Locked      bool // editor-only: excluded from marquee + drag
 	Hidden      bool // authored-off; still in the file, still in the element list
 }
 
-// EffectiveOpacity resolves the absent marker. It is the ONE place the
-// substitution happens, so Element values compare, write and read back
-// symmetrically everywhere else.
+// EffectiveOpacity is the one place the absent marker is substituted, so values round-trip.
 func (e Element) EffectiveOpacity() uint8 {
 	if e.Opacity == 0 {
 		return OpacityOpaque
@@ -454,11 +321,7 @@ func (e Element) EffectiveOpacity() uint8 {
 	return e.Opacity
 }
 
-// EffectiveTint resolves the absent marker for a multiply tint. A zero RGBA is
-// "no tint declared", and a multiply by transparent black would black out the
-// art it was meant to leave alone — so absent resolves to opaque white, the
-// identity of the operation. Same shape as EffectiveOpacity, same reason: rule
-// 4 says the zero value must behave as version 1 did.
+// EffectiveTint resolves absent to opaque white, as multiplying by transparent black blacks out art.
 func (e Element) EffectiveTint() RGBA {
 	if e.Tint.A == 0 {
 		return RGBA{255, 255, 255, 255}
@@ -466,8 +329,7 @@ func (e Element) EffectiveTint() RGBA {
 	return e.Tint
 }
 
-// EffectiveColor resolves an absent ElemText colour to opaque white, which is
-// what FontSpec already defaults to when a theme declares no "<id>_color".
+// EffectiveColor resolves an absent ElemText colour to opaque white, FontSpec's own default.
 func (e Element) EffectiveColor() RGBA {
 	if e.Color.A == 0 {
 		return RGBA{255, 255, 255, 255}
@@ -475,9 +337,7 @@ func (e Element) EffectiveColor() RGBA {
 	return e.Color
 }
 
-// GenParamCount is how many generator parameters are packed into GenParams.
-// Entries are packed from index 0 and an empty Key terminates the list, so the
-// fixed array needs no companion count field to fall out of sync with.
+// GenParamCount counts parameters packed from index 0; an empty Key ends the list.
 func (e Element) GenParamCount() int {
 	for i := range e.GenParams {
 		if e.GenParams[i].Key == "" {
@@ -487,11 +347,7 @@ func (e Element) GenParamCount() int {
 	return len(e.GenParams)
 }
 
-// Inert reports that this element can never produce a pixel, whatever the
-// session does. It is the property TestZeroValueElementIsInert pins: an
-// Element nobody filled in is an ElemImage with no media, so a zeroed array
-// slot, a cleared row or a struct built by a future caller is silently
-// harmless instead of silently painting.
+// Inert reports that this element can never produce a pixel; a zero Element is inert, so a cleared row is harmless.
 func (e Element) Inert() bool {
 	if e.Hidden {
 		return true
@@ -502,12 +358,9 @@ func (e Element) Inert() bool {
 	case ElemGen:
 		return e.Gen == "" // no generator named
 	case ElemText:
-		// The colour is NOT part of this test: an absent one resolves to white
-		// (EffectiveColor), so only an empty string means nothing to draw.
+		// An absent colour resolves to white, so only an empty string means nothing to draw.
 		return e.Text == ""
 	case ElemShape:
-		// A shape with no kind has no silhouette; one with neither fill nor
-		// stroke has nothing to put inside it.
 		return e.Shape == "" || (!e.Fill.Opaque() && !e.Stroke.Opaque())
 	case ElemGradient, ElemPane:
 		return !e.Fill.Opaque() && !e.Fill2.Opaque() && !e.Stroke.Opaque()
@@ -515,11 +368,7 @@ func (e Element) Inert() bool {
 	return true // an unknown kind never reaches the model, and never draws
 }
 
-// Pane is split-screen. It REPARENTS the listed slot keys into a second rect:
-// each host widget draws EXACTLY ONCE, at the pane's position.
-// Calling the host's draw site twice was rejected and must stay rejected: the
-// immediate-mode kit has ONE drag owner and a documented single wheel consumer,
-// so a widget cannot be in two places.
+// Pane reparents slot keys into a second rect; each host draws once, as the kit has one drag owner.
 type Pane struct {
 	ID        string
 	Rect      Rect
@@ -530,22 +379,17 @@ type Pane struct {
 	DividerPx uint8
 }
 
-// paneForbiddenHosts can never be re-homed. "courtroom" IS the design canvas
-// every other rect is expressed inside, and "viewport" is the stage the scene
-// composites into; moving either into a pane would reparent a space onto
-// itself. Pinned by TestPaneCannotHostCourtroom.
+// paneForbiddenHosts are the design canvas and the stage; moving one reparents a space onto itself.
 var paneForbiddenHosts = [...]string{"courtroom", "viewport"}
 
-// Hosts reports the slot keys this pane re-homes (a copy; cold path only).
+// HostKeys reports the slot keys this pane re-homes (a copy; cold path only).
 func (p *Pane) HostKeys() []string {
 	out := make([]string, p.NHosts)
 	copy(out, p.Hosts[:p.NHosts])
 	return out
 }
 
-// MediaEntry is one [media] row: "id = file, bytes, xxhash64". The size and
-// hash are declared by the author so an import can BUDGET and VERIFY before it
-// decodes anything a stranger sent.
+// MediaEntry is "id = file, bytes, xxhash64"; an import verifies these before decoding a stranger's file.
 type MediaEntry struct {
 	ID    string
 	File  string // theme-relative, forward slashes
@@ -553,27 +397,19 @@ type MediaEntry struct {
 	Hash  string // xxhash64, lowercase hex, as text — verification is the import's
 }
 
-// FontFamily is one [fonts] row: a family name and the file under <theme>/fonts.
 type FontFamily struct {
 	Family string
 	File   string
 }
 
-// ClockSpec is one authoring clock group. SpeedPct 0 means the group was never
-// declared and runs at SpeedNominalPct.
+// ClockSpec is one authoring clock group; SpeedPct 0 means never declared, running at SpeedNominalPct.
 type ClockSpec struct {
-	// ID is the [clock.<ID>] suffix EXACTLY as the file spells it, and it is
-	// carried for the same reason Pane and Element carry theirs: the section
-	// name is the author's, not ours to re-derive.
-	// It is empty for a group the editor declared rather than read; that one is
-	// written in the canonical spelling, because there is no author's spelling
-	// to preserve.
+	// ID is the [clock.<ID>] suffix as spelled, or empty for a group the editor declared.
 	ID       string
 	SpeedPct int16
 	Declared bool
 }
 
-// EffectivePct resolves the absent marker, exactly as EffectiveOpacity does.
 func (c ClockSpec) EffectivePct() int16 {
 	if c.SpeedPct == 0 {
 		return SpeedNominalPct
@@ -581,9 +417,7 @@ func (c ClockSpec) EffectivePct() int16 {
 	return c.SpeedPct
 }
 
-// EffectBind is an [effect.<slot key>] section: an effect attached to an
-// EXISTING AO2 widget rather than to a free element ("attach an effect to
-// anything").
+// EffectBind is an [effect.<slot key>] section: an effect on an existing AO2 widget rather than a free element.
 type EffectBind struct {
 	Target   string // a themeSlots key
 	Effect   EffectKind
@@ -593,18 +427,14 @@ type EffectBind struct {
 	Clock    uint8
 }
 
-// Chrome is [chrome]: AsyncAO chrome OUTSIDE the AO2 design canvas. The
-// full-parity rule's "extras go in chrome outside the canvas", as data.
+// Chrome is [chrome]: AsyncAO chrome outside the AO2 design canvas.
 type Chrome struct {
 	Shape     string // a shapemask kind
 	ShapeTier int
 	TabbarHex RGBA
 }
 
-// Meta is [theme]: identity and provenance. IDENTITY IS THE FOLDER NAME
-// (sanitized, lowercased) — Name is a display string only, because re-shared
-// zips get renamed constantly and a manifest-name identity would make two
-// different themes the same theme.
+// Meta is [theme]; identity is the sanitized folder name, as re-shared zips get renamed.
 type Meta struct {
 	Name         string
 	Author       string
@@ -619,9 +449,7 @@ type Meta struct {
 	GeneratedBy  string
 }
 
-// ImportInfo is [import]: provenance written by convert-to-editable-copy, never
-// authored by hand. PerMisc and LobbyDesign are RECORDED, not applied — they
-// name the two AO2 features AsyncAO deliberately inherits rather than imports.
+// ImportInfo is [import], written by convert-to-editable-copy; PerMisc and LobbyDesign are not applied.
 type ImportInfo struct {
 	DerivedFrom string
 	DerivedAt   string
@@ -631,9 +459,7 @@ type ImportInfo struct {
 	LobbyDesign bool
 }
 
-// KeyRect is one [overrides] row: a design-space rect laid OVER
-// courtroom_design.ini. Only keys that EXIST and are editable are honoured by
-// the applier, which is unchanged by this format.
+// KeyRect is one [overrides] row over courtroom_design.ini; only existing editable keys are honoured.
 type KeyRect struct {
 	Key  string
 	Rect Rect
@@ -645,12 +471,7 @@ type KeyAngle struct {
 	Angle uint8
 }
 
-// Sidecar is a parsed asyncao_theme.ini PLUS the lossless document it came
-// from. The document is what preserves everything this build does not
-// understand; the struct is what this build draws.
-// A nil *Sidecar is the STOCK AO2 THEME: every accessor is nil-safe and returns
-// nothing, so "a theme with no sidecar produces zero elements" needs no branch
-// at any call site.
+// Sidecar is a parsed asyncao_theme.ini plus its lossless document; nil is the stock AO2 theme.
 type Sidecar struct {
 	Format   int // as READ; may be greater than ThemeFormatVersion
 	Revision int // the author's own bump; informational
@@ -670,36 +491,24 @@ type Sidecar struct {
 	Sounds    []KV
 	Import    ImportInfo
 
-	// notes are degrade reports for the import panel: what was skipped and why.
 	notes []string
-	// unknown lists the "section/key" entries this build does not define, and
-	// the unknown sections themselves as "section/". They are PRESERVED by doc
-	// regardless; this is the enumeration the editor's read-only card counts.
+	// unknown lists unrecognised "section/key" entries and "section/" sections; doc preserves them regardless.
 	unknown []string
-	// retire lists the element ids whose [element.<id>] lines the next write must
-	// delete from doc. See RetireElementSection for why the removal is deferred
-	// rather than immediate; bounded by ElementRetireCap (hard rule 4).
+	// retire lists element ids the next write must delete from doc; bounded by ElementRetireCap.
 	retire []string
-	// doc is the lossless source. Saving goes through it, so every comment,
-	// blank line, key order and unknown section survives byte-identically.
+	// doc is the lossless source: saving through it keeps every unmodified line byte-identical.
 	doc *INIDoc
 }
 
-// NewSidecar returns an empty sidecar backed by an empty document — the
-// starting point for a theme authored from scratch.
+// NewSidecar returns an empty sidecar backed by an empty document.
 func NewSidecar() *Sidecar {
 	d, _ := ParseINIDoc(nil) // an empty document cannot fail a cap
 	return &Sidecar{Format: ThemeFormatVersion, doc: d}
 }
 
-// The lossless document is NOT exposed. It was, as Doc() *INIDoc, with zero
-// production consumers and a nil check for a test — and INIDoc's Set/Bytes/Write
-// are exported, so it handed any caller a second writer with no arbitration:
-// sc.Doc().Set("element.x", "z", "9") is silently reverted by the next Bytes()
+// The lossless document is not exposed: INIDoc's Set would be a second writer, silently reverted by the next Bytes().
 
-// IsFutureFormat reports a theme authored by a NEWER AsyncAO. It never blocks
-// reading (rule 1); it is what gates the editor into read-only with a
-// Duplicate-for-editing card.
+// IsFutureFormat reports a theme from a newer AsyncAO; it never blocks reading, and makes the editor read-only.
 func (s *Sidecar) IsFutureFormat() bool { return s != nil && s.Format > ThemeFormatVersion }
 
 // Notes returns the degrade reports (a copy; cold path only).
@@ -712,8 +521,7 @@ func (s *Sidecar) Notes() []string {
 	return out
 }
 
-// Unknown returns the "section/key" entries this build does not define, and
-// "section/" for whole unknown sections (a copy; cold path only).
+// Unknown returns unrecognised "section/key" entries and "section/" sections (a copy; cold path only).
 func (s *Sidecar) Unknown() []string {
 	if s == nil {
 		return nil
@@ -723,9 +531,7 @@ func (s *Sidecar) Unknown() []string {
 	return out
 }
 
-// FindElement returns the element with the given id. Ids are unique within a
-// file (a repeated [element.x] is one section, last declaration winning per
-// key, exactly as the reader treats a repeated key).
+// FindElement returns the element with this id; a repeated [element.x] is one section.
 func (s *Sidecar) FindElement(id string) (*Element, bool) {
 	if s == nil {
 		return nil, false
@@ -738,14 +544,10 @@ func (s *Sidecar) FindElement(id string) (*Element, bool) {
 	return nil, false
 }
 
-// RetireElementSection marks an element's [element.<id>] lines for deletion from
-// the lossless carrier, and reports whether the file was actually carrying any.
-// COLD PATH (hard rule 2).
+// RetireElementSection marks an element's lines for deletion and reports whether the file had any.
 func (s *Sidecar) RetireElementSection(id string) bool {
 	if s == nil || s.doc == nil || !s.doc.hasSection(secElementPrefix+id) {
-		// A section the file never carried needs no retirement, and refusing to
-		// record one is what BOUNDS the list: it can never hold more ids than the
-		// document has element sections.
+		// Refusing a section the file never carried is what bounds the list.
 		return false
 	}
 	for _, have := range s.retire {
@@ -754,10 +556,7 @@ func (s *Sidecar) RetireElementSection(id string) bool {
 		}
 	}
 	if len(s.retire) >= ElementRetireCap {
-		// FAIL SAFE at the bound: the FILE stays correct and only the undo's
-		// byte-exactness is given up, which is the right way round. Reachable only by
-		// retiring more distinct ids than a document can hold sections, between two
-		// writes.
+		// At the bound the file stays correct and only the undo's byte-exactness is given up.
 		_ = s.doc.RemoveSection(secElementPrefix + id)
 		return true
 	}
@@ -765,9 +564,7 @@ func (s *Sidecar) RetireElementSection(id string) bool {
 	return true
 }
 
-// UnretireElementSection cancels a pending retirement — the undo of a delete.
-// Nothing else may call it: "put the element back" is the only act that means
-// "the section was never really going".
+// UnretireElementSection cancels a pending retirement; only undoing a delete may call it.
 func (s *Sidecar) UnretireElementSection(id string) {
 	if s == nil {
 		return
@@ -780,13 +577,8 @@ func (s *Sidecar) UnretireElementSection(id string) {
 	}
 }
 
-// flushRetiredSections performs the deferred removals. Called by Bytes, before
-// any key is written, so a retired section cannot be resurrected by the very
-// write that was supposed to delete it.
-// UNCONDITIONAL: an id still in the model is not a reason to keep its lines. The
-// only thing that cancels a retirement is UnretireElementSection, because the
-// caller that re-added the element is the only one that knows the two acts are
-// the same element rather than two elements sharing a name.
+// flushRetiredSections removes retired sections before Bytes writes any key.
+// An id still in the model does not cancel it: only UnretireElementSection knows it is the same element.
 func (s *Sidecar) flushRetiredSections() {
 	if s.doc == nil || len(s.retire) == 0 {
 		return
@@ -797,7 +589,6 @@ func (s *Sidecar) flushRetiredSections() {
 	s.retire = s.retire[:0]
 }
 
-// FindPane returns the pane with the given id.
 func (s *Sidecar) FindPane(id string) (*Pane, bool) {
 	if s == nil {
 		return nil, false
@@ -810,9 +601,7 @@ func (s *Sidecar) FindPane(id string) (*Pane, bool) {
 	return nil, false
 }
 
-// PaneHosting returns the pane that re-homes a slot key, if any. Host sets are
-// disjoint by construction (the reader drops a duplicate claim), so the first
-// match is the only match.
+// PaneHosting returns the pane re-homing a slot key; the reader drops duplicate claims.
 func (s *Sidecar) PaneHosting(slotKey string) (*Pane, bool) {
 	if s == nil {
 		return nil, false
@@ -828,7 +617,6 @@ func (s *Sidecar) PaneHosting(slotKey string) (*Pane, bool) {
 	return nil, false
 }
 
-// FindMedia returns the [media] row for an id.
 func (s *Sidecar) FindMedia(id string) (MediaEntry, bool) {
 	if s == nil {
 		return MediaEntry{}, false
@@ -841,7 +629,6 @@ func (s *Sidecar) FindMedia(id string) (MediaEntry, bool) {
 	return MediaEntry{}, false
 }
 
-// OverrideRect returns the [overrides] rect for a slot key.
 func (s *Sidecar) OverrideRect(key string) (Rect, bool) {
 	if s == nil {
 		return Rect{}, false
@@ -854,7 +641,6 @@ func (s *Sidecar) OverrideRect(key string) (Rect, bool) {
 	return Rect{}, false
 }
 
-// RotationFor returns the [rotations] angle byte for a slot key.
 func (s *Sidecar) RotationFor(key string) (uint8, bool) {
 	if s == nil {
 		return 0, false
@@ -867,7 +653,6 @@ func (s *Sidecar) RotationFor(key string) (uint8, bool) {
 	return 0, false
 }
 
-// FontFamilyFile returns the file declared for a [fonts] family.
 func (s *Sidecar) FontFamilyFile(family string) (string, bool) {
 	if s == nil {
 		return "", false
@@ -880,7 +665,6 @@ func (s *Sidecar) FontFamilyFile(family string) (string, bool) {
 	return "", false
 }
 
-// BoundFamily returns the [fontbind] family for a FontElements id.
 func (s *Sidecar) BoundFamily(elementID string) (string, bool) {
 	if s == nil {
 		return "", false
@@ -893,9 +677,7 @@ func (s *Sidecar) BoundFamily(elementID string) (string, bool) {
 	return "", false
 }
 
-// ClockSpeedPct returns the effective speed of a clock group. Out-of-range
-// indices resolve to the shared anchor rather than panicking: the value comes
-// from a file a stranger wrote.
+// ClockSpeedPct returns a clock's speed; a bad index gives the shared anchor, as files are untrusted.
 func (s *Sidecar) ClockSpeedPct(i int) int16 {
 	if s == nil || i < 0 || i >= ClockCap {
 		return SpeedNominalPct
@@ -903,8 +685,7 @@ func (s *Sidecar) ClockSpeedPct(i int) int16 {
 	return s.Clocks[i].EffectivePct()
 }
 
-// SoundFile returns an AsyncAO-tier [sounds] override. The AO2
-// courtroom_sounds.ini stays authoritative for AO2's own keys.
+// SoundFile returns an AsyncAO-tier [sounds] override; courtroom_sounds.ini stays authoritative for AO2's own keys.
 func (s *Sidecar) SoundFile(key string) (string, bool) {
 	if s == nil {
 		return "", false
@@ -917,7 +698,6 @@ func (s *Sidecar) SoundFile(key string) (string, bool) {
 	return "", false
 }
 
-// EffectFor returns the [effect.<key>] binding for an AO2 widget.
 func (s *Sidecar) EffectFor(target string) (EffectBind, bool) {
 	if s == nil {
 		return EffectBind{}, false
@@ -930,32 +710,19 @@ func (s *Sidecar) EffectFor(target string) (EffectBind, bool) {
 	return EffectBind{}, false
 }
 
-// ---------------------------------------------------------------------------
-// Version migration
-// ---------------------------------------------------------------------------
-
-// sidecarMigration rewrites a document from format N to format N+1, in place,
-// through INIDoc — so a migration preserves comments and unknown sections like
-// every other write does.
+// sidecarMigration rewrites a document from format N to N+1 in place through INIDoc.
 type sidecarMigration func(*INIDoc) error
 
-// sidecarMigrations[i] migrates format (i+1) to (i+2). It ships EMPTY, and that
-// is the point: the chain exists, is called, and is tested BEFORE it is needed,
-// so the first real migration is one entry in a table rather than a design
-// decision taken under pressure.
+// sidecarMigrations[i] migrates format i+1 to i+2; empty until a second format exists.
 var sidecarMigrations = []sidecarMigration{}
 
-// migrateSidecar walks the chain from the file's format up to this build's.
-// The bound is the CHAIN'S OWN LENGTH rather than ThemeFormatVersion, and the two
-// are the same number by TestMigrationChainCoversEveryFormatVersion — a step
-// exists to reach each grammar after the first. Reading the length is what lets a
+// migrateSidecar walks the chain up to this build's format; its length is ThemeFormatVersion-1.
 func migrateSidecar(from int, d *INIDoc) error {
 	if d == nil {
 		return nil
 	}
 	if from < 1 {
-		// A file with no [theme] format key predates nothing — there has never
-		// been a format 0 — so it is read as the first grammar.
+		// A file with no [theme] format key is read as the first grammar; there has never been a format 0.
 		from = 1
 	}
 	for v := from; v-1 < len(sidecarMigrations); v++ {
@@ -970,14 +737,7 @@ func migrateSidecar(from int, d *INIDoc) error {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
-// Free text
-// ---------------------------------------------------------------------------
-
-// The FOUR characters percent-encoding covers, and nothing else.
-// SCOPE IS ENUMERATED, NOT GENERAL: decoding applies ONLY to the free-text keys
-// of asyncao_theme.ini, never to an AO2 root-section value, where inventing an
-// escape AO2 does not have would break parity with every existing theme.
+// The four characters percent-encoding covers; asyncao_theme.ini free text only, for AO2 parity.
 const (
 	freeTextEscape  = '%'
 	freeTextPercent = "%25"
@@ -986,9 +746,7 @@ const (
 	freeTextCR      = "%0D"
 )
 
-// encodeFreeText makes a value safe to write. It also TRIMS: the reader trims
-// every value it returns, so a string with edge whitespace could not read back
-// as itself in any INI, and INIDoc would (correctly) refuse it.
+// encodeFreeText makes a value safe to write; it trims because the reader trims.
 func encodeFreeText(s string) string {
 	s = strings.TrimSpace(s)
 	if !strings.ContainsAny(s, "%;\n\r") {
@@ -1013,11 +771,7 @@ func encodeFreeText(s string) string {
 	return b.String()
 }
 
-// decodeFreeText reverses encodeFreeText. Only the four sequences are decoded —
-// "nothing else is escaped" — so a literal "%20" a human typed stays "%20",
-// which is consistent because our own writer spells a literal '%' as "%25".
-// The hex digits are matched case-insensitively so a third-party writer that
-// emits "%3b" is understood.
+// decodeFreeText reverses the four sequences only, so a typed "%20" stays literal; hex in either case.
 func decodeFreeText(s string) string {
 	if !strings.ContainsRune(s, freeTextEscape) {
 		return s
@@ -1038,7 +792,6 @@ func decodeFreeText(s string) string {
 	return b.String()
 }
 
-// freeTextByte decodes ONE escape pair, and only the four the format defines.
 func freeTextByte(a, b byte) (byte, bool) {
 	switch {
 	case a == '2' && (b == '5'):
@@ -1053,16 +806,7 @@ func freeTextByte(a, b byte) (byte, bool) {
 	return 0, false
 }
 
-// ---------------------------------------------------------------------------
-// Identifiers
-// ---------------------------------------------------------------------------
-
-// validID reports whether s matches the id grammar [a-z0-9_-]{1,24} — element,
-// pane, media and clock ids. Section names arrive lowercased from the reader,
-// so an id with capitals in the file is already folded by the time it is
-// checked here; anything else (a space, a dot, a slash) is not an id and the
-// section is treated as one this build does not understand: preserved, ignored,
-// and named in the import report.
+// validID reports s matches [a-z0-9_-]{1,24}; otherwise the section is preserved, ignored and reported.
 func validID(s string) bool {
 	if s == "" || utf8.RuneCountInString(s) > IDRuneCap {
 		return false
@@ -1078,10 +822,7 @@ func validID(s string) bool {
 	return true
 }
 
-// assignPaletteSlot writes one role into a Palette. It mirrors the closure in
-// ParseStylesheet deliberately: the sidecar's [palette] OVERLAYS the QSS
-// palette, so both must land in the same five slots or a theme's own colours
-// would disagree with its stylesheet's.
+// assignPaletteSlot mirrors ParseStylesheet's closure, as [palette] overlays the QSS palette.
 func assignPaletteSlot(p *Palette, slot paletteSlot, c RGB) {
 	v := c
 	switch slot {
@@ -1098,7 +839,6 @@ func assignPaletteSlot(p *Palette, slot paletteSlot, c RGB) {
 	}
 }
 
-// paletteSlotColor reads one role back out.
 func paletteSlotColor(p Palette, slot paletteSlot) *RGB {
 	switch slot {
 	case slotText:
@@ -1115,8 +855,7 @@ func paletteSlotColor(p Palette, slot paletteSlot) *RGB {
 	return nil
 }
 
-// paletteRoleKeys maps the [palette] wire keys onto the QSS palette slots they
-// overlay. APPEND-ONLY, like every other wire-name table here.
+// paletteRoleKeys maps [palette] wire keys onto the QSS palette fields they overlay; append-only.
 var paletteRoleKeys = [...]struct {
 	key  string
 	slot paletteSlot

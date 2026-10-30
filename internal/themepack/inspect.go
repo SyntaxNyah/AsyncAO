@@ -1,13 +1,7 @@
 package themepack
 
-// INSPECT — read a bundle's CENTRAL DIRECTORY and nothing else.
-// ONE concern: "what is in this file, and would I accept it?", answered without
-// decompressing a byte.
-// The one exception is deliberate and bounded: when the bundle carries an
-// asyncao_theme.ini, exactly THAT entry is decompressed (bounded by the format's
-// own theme.IniDocByteCap) so the sheet can show a name, an author and a licence
-// instead of a folder name. One small entry, chosen by name, after every cap has
-// already been checked.
+// Inspect reads only the central directory, plus one bounded asyncao_theme.ini after every cap,
+// so the sheet can show a name and licence.
 
 import (
 	"archive/zip"
@@ -23,23 +17,17 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
-// packEntry is one accepted archive member, with the bundle-relative path it
-// will be written to (i.e. with the single root folder stripped).
+// packEntry is one accepted archive member with its bundle-relative path.
 type packEntry struct {
-	// idx is the index into zip.Reader.File, so Extract never has to match names
-	// a second time.
+	// idx indexes zip.Reader.File, so Extract never re-matches names.
 	idx int
-	// rel is the path INSIDE the theme folder, forward-slashed and already past
-	// every guard: safepath.UnsafeRel, TooDeep and PackPathLenCap.
+	// rel is forward-slashed and past safepath.UnsafeRel, TooDeep and PackPathLenCap.
 	rel string
 	// size is the uncompressed size from the central directory.
 	size int64
 }
 
-// Inspect reads path's central directory and reports what a bundle holds.
-//
-// BLOCKING — goroutine only (hard rule 2). It opens the file read-only, reads
-// metadata, and closes it before returning.
+// Inspect reports what a bundle holds; blocking, goroutine only (hard rule 2).
 func Inspect(name string) (*Manifest, error) {
 	zr, err := openPack(name)
 	if err != nil {
@@ -50,10 +38,7 @@ func Inspect(name string) (*Manifest, error) {
 	return m, err
 }
 
-// packReader is an open bundle plus its on-disk size, which is the number a user
-// actually cares about ("will this fit on a chat message?").
-// A POINTER to the zip.Reader, never an embedded value: zip.Reader carries a
-// sync.Once, so copying one is a vet failure and a latent double-initialisation.
+// packReader holds a pointer because zip.Reader carries a sync.Once and must not be copied.
 type packReader struct {
 	r        *zip.Reader
 	f        *os.File
@@ -62,10 +47,7 @@ type packReader struct {
 
 func (p *packReader) Close() error { return p.f.Close() }
 
-// openPack opens a bundle and refuses anything that is not a zip BY ITS BYTES.
-// The extension is never the test: a friend who re-zipped the folder sends a
-// .zip, and a .aotheme that is really a screenshot must not be trusted because
-// of its name (the assets.Sniff doctrine, applied to archives).
+// openPack refuses anything not a zip by its bytes, never its extension.
 func openPack(name string) (*packReader, error) {
 	f, err := os.Open(name)
 	if err != nil {
@@ -80,8 +62,7 @@ func openPack(name string) (*packReader, error) {
 	if err != nil {
 		f.Close()
 		if errors.Is(err, zip.ErrFormat) {
-			// NAMED, not bare: a user with three files in their Downloads folder
-			// needs to know which one this is about (design §3.3).
+			// Named so a user knows which of their files this is about.
 			return nil, errWrap(ErrPackNotABundle, filepath.Base(name))
 		}
 		return nil, err
@@ -89,13 +70,11 @@ func openPack(name string) (*packReader, error) {
 	return &packReader{r: zr, f: f, zipBytes: info.Size()}, nil
 }
 
-// inspectReader is the census itself, split out so Extract can run it against the
-// same reader it is about to extract from — one implementation of "would I accept
-// this?", never a second one that could be laxer.
+// inspectReader is the acceptance check, shared with Extract so there is no laxer second copy.
 func inspectReader(zr *zip.Reader, zipBytes int64, fallbackName string) (*Manifest, []packEntry, error) {
 	m := &Manifest{ZipBytes: zipBytes}
 	if len(zr.File) > PackEntryCap {
-		// REFUSED FROM THE DIRECTORY ALONE, before a single entry is touched.
+		// Refused from the directory alone, before any entry is touched.
 		return nil, nil, capErr("entry count", int64(len(zr.File)), PackEntryCap, "")
 	}
 	root, layout := packRoot(zr)
@@ -106,9 +85,7 @@ func inspectReader(zr *zip.Reader, zipBytes int64, fallbackName string) (*Manife
 		return nil, nil, fmt.Errorf("%w: it holds more than one top-level folder, so it is not one theme",
 			ErrPackNotABundle)
 	case packLayoutFlat:
-		// A FRIEND'S RE-ZIP. The files are the theme, so the folder is named after
-		// the archive — refusing this shape would fail the one user story the wave
-		// exists for ("someone sent me a zip").
+		// A re-zip of a theme's files: the folder is named after the archive.
 		m.Root = fallbackName
 	default:
 		m.Root = SanitizeName(root)
@@ -118,9 +95,7 @@ func inspectReader(zr *zip.Reader, zipBytes int64, fallbackName string) (*Manife
 	}
 
 	entries := make([]packEntry, 0, len(zr.File))
-	// seen is the "one file per name" guard. It is keyed on the path an entry will
-	// be WRITTEN to (after the root is stripped and the sidecar's case is folded),
-	// because that is the name that can collide on disk.
+	// seen is keyed on the path an entry will be written to, the name that can collide on disk.
 	seen := newCaseSet()
 	var total int64
 	skippedLinks := 0
@@ -130,18 +105,14 @@ func inspectReader(zr *zip.Reader, zipBytes int64, fallbackName string) (*Manife
 			continue // a directory entry: the tree is created from the file paths
 		}
 		if !f.Mode().IsRegular() {
-			// SYMLINKS ARE SKIPPED, exactly as safepath.WalkFiles skips them on the
-			// folder side: a link at fonts/x.ttf pointing at ~/.ssh/id_rsa would
-			// otherwise be materialised — or, worse, followed by the next writer.
+			// Symlinks are skipped as in safepath.WalkFiles: a link to ~/.ssh/id_rsa would be materialised.
 			skippedLinks++
 			continue
 		}
 		if len(name) > PackPathLenCap {
 			return nil, nil, capErr("entry path length", int64(len(name)), PackPathLenCap, name)
 		}
-		// THE GUARDS, from the one implementation (internal/safepath). Applied to the
-		// ARCHIVE'S OWN name before the root is stripped, so a "../.." that hides
-		// behind the root folder is refused too.
+		// internal/safepath guards, before the root is stripped, so a "../.." behind the root is refused.
 		if safepath.UnsafeRel(name) {
 			return nil, nil, unsafeErr(name)
 		}
@@ -154,38 +125,28 @@ func inspectReader(zr *zip.Reader, zipBytes int64, fallbackName string) (*Manife
 		}
 		total += size
 		if total > PackTotalBytesCap {
-			// THE ZIP-BOMB REFUSAL, and it happens here — against the central
-			// directory, before anything is decompressed.
+			// The zip-bomb refusal, against the central directory before decompression.
 			return nil, nil, capErr("uncompressed total in bytes", total, PackTotalBytesCap, name)
 		}
 		rel := name
 		if layout == packLayoutRooted {
 			rel = strings.TrimPrefix(name, root+"/")
 			if rel == name {
-				// An entry outside the single root folder. Refused rather than hoisted:
-				// a bundle is ONE theme (§2.5), and quietly importing a second folder's
-				// worth of files under the first folder's name is a lie about identity.
+				// Outside the single root: refused, as a bundle is one theme and hoisting misstates identity.
 				return nil, nil, unsafeErr(name)
 			}
 		}
 		if rel == "" || safepath.UnsafeRel(rel) {
 			return nil, nil, unsafeErr(name)
 		}
-		// The native tier is installed under the format's own spelling, so the sheet
-		// below and the loader on disk read the same file (canonicalSidecarRel).
+		// Installed under the format's spelling, so the sheet and the loader read the same file.
 		if canon, folded := canonicalSidecarRel(rel); folded {
 			m.addWarning("%s is spelled %q in this bundle; it installs under the format's own name so it loads on every filesystem",
 				sidecarName, rel)
 			rel = canon
 		}
-		// ONE FILE PER NAME. Refused rather than collapsed: two entries that are one
-		// file on the recipient's disk would make Files count a file that is not
-		// there, and would let the LAST spelling decide what the theme claims about
-		// its author and its licence.
-		// CLAIMED ON rel AND QUOTED AS name: the collision is decided by the path that
-		// will be written, and the refusal names the entry the way the ARCHIVE spells
-		// it — root folder included — because that is the name the user has to find in
-		// their zip and rename.
+		// Refused, not collapsed: two entries that are one file would let the last spelling decide the licence.
+		// Claimed on rel, quoted as the archive spells it.
 		if err := seen.claim(rel, name); err != nil {
 			return nil, nil, err
 		}
@@ -205,27 +166,18 @@ func inspectReader(zr *zip.Reader, zipBytes int64, fallbackName string) (*Manife
 	return m, entries, nil
 }
 
-// packLayout is the SHAPE of an archive — the question "where is the theme?".
 type packLayout uint8
 
 const (
-	// packLayoutNone: not one usable file. Refused as empty.
 	packLayoutNone packLayout = iota
-	// packLayoutRooted: the published layout (§2.5) — one root folder, everything
-	// inside it. What our own exporter writes.
+	// packLayoutRooted is the published layout (one root folder), what our exporter writes.
 	packLayoutRooted
-	// packLayoutFlat: at least one file at the TOP LEVEL, so the archive itself is
-	// the theme folder. A friend who selected the files inside a theme and pressed
-	// "compress" produces this, and refusing it would fail the one user story the
-	// wave exists for. The folder is then named after the archive.
+	// packLayoutFlat has a file at the top level, so the archive is the theme folder and takes its name.
 	packLayoutFlat
-	// packLayoutSplit: two or more top-level folders and nothing loose. Refused —
-	// a bundle is ONE theme, and picking one of the folders for the user would be
-	// guessing at which of somebody's themes they meant.
+	// packLayoutSplit has several top-level folders and nothing loose; refused rather than guessing.
 	packLayoutSplit
 )
 
-// packRoot classifies an archive and, for the rooted shape, names the folder.
 func packRoot(zr *zip.Reader) (string, packLayout) {
 	root, seen, flat, split := "", false, false, false
 	for _, f := range zr.File {
@@ -234,12 +186,7 @@ func packRoot(zr *zip.Reader) (string, packLayout) {
 			continue
 		}
 		if safepath.UnsafeRel(name) {
-			// A HOSTILE NAME IS NOT PART OF THE SHAPE. "/etc/passwd" has an empty
-			// first segment and would otherwise read as a SECOND top-level folder,
-			// so the archive would be refused as "more than one theme" instead of as
-			// the traversal attempt it is — a true refusal with a false reason, which
-			// is how a security guard gets "simplified" away by somebody who read
-			// only the message. The main loop refuses it by name.
+			// A hostile name is not part of the shape: "/etc/passwd" would look like a second folder.
 			continue
 		}
 		seen = true
@@ -258,8 +205,7 @@ func packRoot(zr *zip.Reader) (string, packLayout) {
 	case !seen:
 		return "", packLayoutNone
 	case flat:
-		// A loose file at the root settles it even when folders sit beside it: the
-		// archive IS the theme folder, and those folders are its fonts/ and misc/.
+		// A loose file settles it: the archive is the theme folder, and folders beside it are its fonts/ and misc/.
 		return "", packLayoutFlat
 	case split:
 		return "", packLayoutSplit
@@ -268,21 +214,13 @@ func packRoot(zr *zip.Reader) (string, packLayout) {
 	}
 }
 
-// normalizeEntryName folds an archive entry name into the one spelling every
-// guard below is written against: forward slashes, no "./" prefix.
-// BACKSLASHES ARE FOLDED FIRST and that is not cosmetic. A zip entry name is
-// '/'-separated by the format, but the name is ATTACKER-CONTROLLED metadata and
-// Windows treats '\' as a separator too — an entry called `..\..\evil.dll` would
-// otherwise sail past a '/'-only ".." check and be joined into a real traversal.
+// normalizeEntryName folds backslashes first, as Windows treats them as separators
+// and `..\..\evil.dll` would pass a '/'-only check.
 func normalizeEntryName(name string) string {
 	return strings.TrimPrefix(strings.ReplaceAll(name, `\`, "/"), "./")
 }
 
-// describeContents fills the two lists the consent sheet shows: what art comes
-// with the theme, and what typefaces — with whether their licence travels along.
-// BOTH BOUNDED (hard rule 4): theme.MediaCap and theme.FontCap are the format's
-// own manifest bounds, reused rather than restated so the sheet cannot claim more
-// entries than a sidecar could ever declare.
+// describeContents fills the sheet's art and font lists, bounded by theme.MediaCap and theme.FontCap (hard rule 4).
 func describeContents(m *Manifest, entries []packEntry) {
 	licenses := make(map[string]string, theme.FontCap)
 	for _, e := range entries {
@@ -301,9 +239,7 @@ func describeContents(m *Manifest, entries []packEntry) {
 			fe := FontEntry{File: e.rel, LicenseFile: licenses[path.Dir(e.rel)]}
 			m.Fonts = append(m.Fonts, fe)
 			if fe.LicenseFile == "" {
-				// NAMED, NEVER SILENT. OFL requires the licence to travel with the
-				// face, and a bundle that quietly omits it makes the person who
-				// re-shares it the one breaking the terms.
+				// OFL requires the licence to travel with the face, or whoever re-shares it breaks the terms.
 				m.addWarning("%s has no licence file beside it — fonts you did not make may not be redistributable", e.rel)
 			}
 		case isMediaFile(lower):
@@ -315,8 +251,7 @@ func describeContents(m *Manifest, entries []packEntry) {
 	}
 }
 
-// readPackSidecar decompresses the ONE entry named asyncao_theme.ini, if the
-// bundle has one, so the sheet can show a name rather than a folder.
+// readPackSidecar decompresses the one asyncao_theme.ini, if any, so the sheet can show a name.
 func readPackSidecar(m *Manifest, zr *zip.Reader, entries []packEntry) {
 	for _, e := range entries {
 		if e.rel != sidecarName {
@@ -344,8 +279,7 @@ func readPackSidecar(m *Manifest, zr *zip.Reader, entries []packEntry) {
 	m.addWarning("no %s — this is a plain AO2 theme, which imports fine but has no name or licence of its own", sidecarName)
 }
 
-// unsafeErr names the offending entry. The path is quoted so a name built to be
-// invisible in a log (trailing spaces, control characters) still reads as one.
+// unsafeErr names the entry, quoted so a name built to be invisible in a log still reads.
 func unsafeErr(name string) error {
 	return errWrap(ErrPackUnsafe, name)
 }
@@ -354,7 +288,6 @@ func isFontFile(lower string) bool {
 	return strings.HasSuffix(lower, ".ttf") || strings.HasSuffix(lower, ".otf")
 }
 
-// looksLikeLicense reports whether an already-lowered path is a licence file.
 func looksLikeLicense(lower string) bool {
 	if isFontFile(lower) {
 		return false // a face is never its own licence
@@ -376,8 +309,7 @@ func isMediaFile(lower string) bool {
 	return false
 }
 
-// packMediaExts are the image extensions the sheet calls "media". Display only —
-// the decoder decides what it can actually read, by magic bytes, at load time.
+// packMediaExts are what the sheet calls "media", display only; the decoder sniffs magic bytes at load time.
 var packMediaExts = [...]string{".png", ".webp", ".gif", ".jpg", ".jpeg", ".apng", ".avif", ".bmp"}
 
 func plural(n int, one, many string) string {

@@ -1,9 +1,6 @@
 package theme
 
-// THE FOUR-TIER MERGE.
-// A rendered AsyncAO theme is four tiers stacked in this order, lowest first:
-// WHAT "APPLYING A PRESET" MEANS, stated once, because everything else follows:
-// COLD PATH ONLY (hard rule 2): it allocates a whole model.
+// The four-tier preset merge; cold path only (hard rule 2), as it allocates a whole model.
 
 import (
 	"errors"
@@ -12,37 +9,21 @@ import (
 )
 
 var (
-	// ErrPresetMergeCap reports a merge whose result would exceed a named sidecar
-	// cap — ElementCap above all, since a layout's panes and a style's decoration
-	// both land in one list. REFUSED, never truncated, exactly as the reader
-	// refuses: half a preset is a theme nobody authored.
+	// ErrPresetMergeCap reports a merge past a named cap; refused, as half a preset is nobody's theme.
 	ErrPresetMergeCap = errors.New("theme: applying this preset would exceed a named cap")
-	// ErrPresetMergeCollision reports two elements claiming one id across the
-	// tiers. It cannot happen with the shipped set (the ids are disjoint and the
-	// gate asserts it), but a user element sharing an id with a preset's would
-	// otherwise produce a sidecar whose own Validate refuses it — at SAVE time,
-	// long after the act that caused it.
+	// ErrPresetMergeCollision reports one id across tiers, which Validate would only catch at save.
 	ErrPresetMergeCollision = errors.New("theme: an element id is claimed by both the theme and the preset")
 )
 
-// PresetPair is the two axes a theme resolves to. It exists so the many call
-// sites that carry "a layout and a style, either of which may be absent" carry
-// ONE value instead of two positional pointers nothing stops them swapping.
+// PresetPair is the two axes a theme resolves to, one value so call sites cannot swap two pointers.
 type PresetPair struct {
 	Layout *Preset
 	Style  *Preset
 }
 
-// Empty reports a pair that would change nothing.
 func (p PresetPair) Empty() bool { return p.Layout == nil && p.Style == nil }
 
-// ResolvePresets reads a theme's declared axes out of its own [theme] section.
-//
-// AN UNKNOWN ID IS NOT AN ERROR IN THE THEME'S SENSE (format rule 1): a theme
-// authored on a newer build names a preset this one has never heard of, and the
-// right behaviour is to render everything else and say so. The unresolved ids
-// come back in `missing` for the import report; the caller decides how loud to
-// be about them, and no caller may refuse the theme over one.
+// ResolvePresets reads a theme's declared axes; no caller may refuse the theme over missing ids.
 func (l *PresetLibrary) ResolvePresets(sc *Sidecar) (pair PresetPair, missing []string) {
 	if sc == nil {
 		return PresetPair{}, nil
@@ -65,10 +46,7 @@ func (l *PresetLibrary) ResolvePresets(sc *Sidecar) (pair PresetPair, missing []
 	return pair, missing
 }
 
-// MergePresets returns a NEW sidecar: `base` with both tiers applied.
-// A nil `base` is "a theme from nothing", which is what the gallery's create
-// action passes: the result is a fresh sidecar whose document is empty, so the
-// writer emits every section canonically instead of editing someone's file.
+// MergePresets returns a new sidecar, base with both tiers; a nil base gives an empty document.
 func MergePresets(base *Sidecar, pair PresetPair) (*Sidecar, error) {
 	out, err := clonePresetBase(base)
 	if err != nil {
@@ -82,17 +60,10 @@ func MergePresets(base *Sidecar, pair PresetPair) (*Sidecar, error) {
 	return out, nil
 }
 
-// PresetGeneratedBy is the [theme] generated_by stamp a gallery-built theme
-// carries. It is PROVENANCE, never a version check (Meta.MinClient's own comment
-// says why enforcing one would brick themes on downgrade): its job is to answer
-// "where did this file come from" three months later, in a zip somebody
-// re-shared.
+// PresetGeneratedBy is the [theme] generated_by stamp, provenance and never a version check.
 const PresetGeneratedBy = "AsyncAO theme gallery"
 
-// NewThemeFromPresets builds a theme FROM NOTHING: a fresh sidecar carrying both
-// tiers, its identity stamped, its document empty.
-// It is therefore the gallery's PRIMARY action, and the reason the gallery
-// creates rather than converts.
+// NewThemeFromPresets builds a theme from nothing: both tiers, identity stamped, document empty.
 func NewThemeFromPresets(name string, pair PresetPair) (*Sidecar, error) {
 	out, err := MergePresets(nil, pair)
 	if err != nil {
@@ -100,10 +71,7 @@ func NewThemeFromPresets(name string, pair PresetPair) (*Sidecar, error) {
 	}
 	out.Meta.Name = name
 	out.Meta.GeneratedBy = PresetGeneratedBy
-	// The art-provenance line comes from the STYLE axis because the style axis is
-	// what draws: §6.5 clause 7 asks every preset to state that it ships zero bytes
-	// of art, and it is the style fragments that would have been the ones to ship
-	// some. A layout contributes rectangles.
+	// The art-provenance line comes from the style axis, which is what draws; a layout contributes rectangles.
 	if pair.Style != nil {
 		out.Meta.Credit = pair.Style.Credit
 		out.Meta.Description = pair.Style.Description
@@ -111,24 +79,13 @@ func NewThemeFromPresets(name string, pair PresetPair) (*Sidecar, error) {
 	return out, nil
 }
 
-// PresetUndo is the one-deep snapshot a preset apply can be reverted from.
-// The snapshot is opaque on purpose. It holds a whole *Sidecar, and exposing that
-// would hand a caller a second model of the same theme with no arbitration —
-// which is the exact door Sidecar.Doc() was deleted for (ledger L32).
+// PresetUndo is the one-deep snapshot of a preset apply; opaque so callers get no second model of the theme.
 type PresetUndo struct{ snap *Sidecar }
 
-// Valid reports a snapshot that can be restored. A zero PresetUndo is "nothing
-// to go back to", which is what the gallery's Undo button reads to disable
-// itself, so it must be answerable without unwrapping anything.
+// Valid reports a snapshot that can be restored; a zero PresetUndo disables the gallery's Undo button.
 func (u *PresetUndo) Valid() bool { return u != nil && u.snap != nil }
 
-// SnapshotForPreset captures everything ApplyPresetTier can change.
-//
-// IT IS clonePresetBase, DELIBERATELY — the same deep copy the merge uses, so the
-// snapshot cannot fall behind a field the merge learned to touch. A hand-written
-// field list here would be the second place that has to know Sidecar's shape, and
-// the first time the two disagreed a preset apply would become unundoable in
-// exactly one section.
+// SnapshotForPreset uses the merge's own deep copy, so it cannot fall behind a field.
 func (s *Sidecar) SnapshotForPreset() (*PresetUndo, error) {
 	if s == nil {
 		return nil, nil
@@ -140,10 +97,7 @@ func (s *Sidecar) SnapshotForPreset() (*PresetUndo, error) {
 	return &PresetUndo{snap: snap}, nil
 }
 
-// RestorePreset puts this sidecar back exactly as the snapshot found it.
-// The DOCUMENT is restored too. Skipping it would leave the carrier holding the
-// preset's lines after the model had gone back, and the next save would write a
-// file that is neither state.
+// RestorePreset restores the document too, or the next save would write neither state.
 func (s *Sidecar) RestorePreset(u *PresetUndo) bool {
 	if s == nil || !u.Valid() {
 		return false
@@ -151,17 +105,12 @@ func (s *Sidecar) RestorePreset(u *PresetUndo) bool {
 	doc := u.snap.doc
 	*s = *u.snap
 	s.doc = doc
-	// The snapshot is spent: restoring twice from one capture would silently undo
-	// an edit made AFTER the restore. The gallery re-captures before every apply.
+	// Restoring twice from one capture would silently undo an edit made after the restore.
 	u.snap = nil
 	return true
 }
 
-// AdoptPresetMerge takes over a merged model IN PLACE, keeping this object's
-// identity.
-// It is a no-op if src is nil or is this very sidecar: adopting yourself is what
-// a caller does when the merge changed nothing, and it must not be a way to
-// half-assign.
+// AdoptPresetMerge takes over a merged model in place; a no-op if src is nil or this sidecar.
 func (s *Sidecar) AdoptPresetMerge(src *Sidecar) {
 	if s == nil || src == nil || s == src {
 		return
@@ -171,14 +120,7 @@ func (s *Sidecar) AdoptPresetMerge(src *Sidecar) {
 	s.doc = doc
 }
 
-// clonePresetBase deep-copies a sidecar, document included.
-//
-// THE DOCUMENT IS RE-PARSED FROM ITS OWN BYTES rather than field-copied. INIDoc
-// holds a line list, a section index and a touched set, and a struct copy would
-// alias the first two — so the "copy" would write through into the original the
-// moment anything set a key, which is the exact failure this function exists to
-// prevent. Re-parsing is O(file) on a cold path and is pinned lossless by
-// FuzzINIDocRoundTrip, so it is the cheap way to be certain rather than careful.
+// clonePresetBase re-parses the document, as a struct copy would alias lines and write through.
 func clonePresetBase(base *Sidecar) (*Sidecar, error) {
 	if base == nil {
 		return NewSidecar(), nil
@@ -189,9 +131,7 @@ func clonePresetBase(base *Sidecar) (*Sidecar, error) {
 	}
 	out := *base // value copy: scalars and Meta land correctly, slices are aliased
 	out.doc = doc
-	// Every slice and map field re-allocated, in the order Sidecar declares them,
-	// so a field added to the struct without a line here shows up as an aliasing
-	// bug in TestMergePresetsNeverMutatesItsBase rather than as a silent share.
+	// Every slice and map field is re-allocated; a field missed here is shared with the base.
 	out.Overrides = append([]KeyRect(nil), base.Overrides...)
 	out.Rotations = append([]KeyAngle(nil), base.Rotations...)
 	out.Fonts = append([]FontFamily(nil), base.Fonts...)
@@ -208,11 +148,8 @@ func clonePresetBase(base *Sidecar) (*Sidecar, error) {
 	return &out, nil
 }
 
-// ApplyPresetTier replaces ONE axis of this sidecar IN PLACE.
-// In place, because the editor's live model is shared by pointer with the
-// courtroom's renderer (a.themeSidecar and themeDoc.side are the same object):
-// ALL OF IT OR NONE OF IT. Every refusal is decided before the first field
-// moves, so a failed apply leaves a model that was never half-written.
+// ApplyPresetTier replaces one axis in place, as the editor's model is shared with the renderer.
+// Every refusal comes before the first field moves.
 func (s *Sidecar) ApplyPresetTier(p *Preset) error {
 	if s == nil || p == nil {
 		return nil
@@ -224,9 +161,7 @@ func (s *Sidecar) ApplyPresetTier(p *Preset) error {
 	if err := elementIDsDisjoint(kept, adopted); err != nil {
 		return err
 	}
-	// --- past this line nothing can fail -------------------------------------
-	// THE CARRIER LOSES WHAT THE MODEL LOST, before the model changes, or the file
-	// would hold both tiers and the reader would hand back their union.
+	// Past this line nothing can fail; clear the document first, or the reader returns both tiers.
 	s.clearReplacedTier(p)
 	s.Elements = append(kept, adopted...)
 	switch p.Kind {
@@ -243,17 +178,14 @@ func (s *Sidecar) ApplyPresetTier(p *Preset) error {
 		s.Effects = append([]EffectBind(nil), p.Side.Effects...)
 		s.Meta.StylePreset = p.ID
 	}
-	// The manifests, merged by id rather than replaced — see the file header.
+	// Manifests merge by id rather than replace, because their values name files in the theme folder.
 	s.Fonts = mergeFonts(s.Fonts, p.Side.Fonts)
 	s.Media = mergeMedia(s.Media, p.Side.Media)
 	s.Sounds = mergeKV(s.Sounds, p.Side.Sounds)
 	return nil
 }
 
-// clearReplacedTier deletes, from the lossless CARRIER, every section this tier
-// replace has just taken over in the MODEL.
-// A section the document never carried is not an error: an element authored this
-// session, or a whole theme built from nothing, has no lines to remove yet.
+// clearReplacedTier deletes the sections this replace took over; one never carried is no error.
 func (s *Sidecar) clearReplacedTier(p *Preset) {
 	if s.doc == nil {
 		return
@@ -274,12 +206,7 @@ func (s *Sidecar) clearReplacedTier(p *Preset) {
 	}
 }
 
-// droppedElementIDs is the set of element ids whose sections this tier replace
-// takes over: the ones the incoming axis OWNS in the model, plus every id the
-// incoming fragment itself declares.
-// A section for an id in NEITHER set is untouched, which is what keeps a
-// preserved forward-compat element (one whose `kind` this build does not know, so
-// the reader skipped it and kept its lines — format rule 3) out of the blast.
+// droppedElementIDs is what the incoming axis owns or declares; a preserved unknown kind stays.
 func (s *Sidecar) droppedElementIDs(p *Preset) map[string]struct{} {
 	out := make(map[string]struct{}, len(s.Elements))
 	for i := range s.Elements {
@@ -293,33 +220,21 @@ func (s *Sidecar) droppedElementIDs(p *Preset) map[string]struct{} {
 	return out
 }
 
-// splitElementsByTier partitions this sidecar's elements into the ones the
-// incoming tier does NOT own (kept, in their existing order) and returns the
-// tier's own contribution (adopted, deep-copied out of the immutable library).
-//
-// OWNERSHIP IS BY KIND, and it is the same test the parser enforces on the
-// fragment (presetElementKindOK). One rule, one spelling: a pane element is
-// layout, everything else is style, in the file and in the apply alike.
+// splitElementsByTier returns kept and adopted elements; ownership is by kind (presetElementKindOK).
 func (s *Sidecar) splitElementsByTier(p *Preset) (kept, adopted []Element) {
 	for i := range s.Elements {
 		if !presetElementKindOK(p.Kind, s.Elements[i].Kind) {
 			kept = append(kept, s.Elements[i])
 		}
 	}
-	// A VALUE COPY out of the library, which is what keeps the library immutable
-	// (presetlib.go): Element is a flat struct — every field is a scalar, a string
-	// or a fixed array — so one copy is a complete one, with nothing left aliased
-	// for a later edit to write through. TestPresetLibraryIsImmutableAcrossCallers
-	// drives exactly that: apply, edit the result, apply again elsewhere.
+	// A value copy keeps the library immutable: Element is flat, so nothing stays aliased.
 	src := p.Elements()
 	adopted = make([]Element, len(src))
 	copy(adopted, src)
 	return kept, adopted
 }
 
-// elementIDsDisjoint refuses a merge that would produce two [element.<id>]
-// sections. Sidecar.Validate would catch it too — but at SAVE time, which is
-// hours after the click that caused it.
+// elementIDsDisjoint refuses two [element.<id>] at the click, not later at save.
 func elementIDsDisjoint(kept, adopted []Element) error {
 	if len(adopted) == 0 {
 		return nil
@@ -336,11 +251,7 @@ func elementIDsDisjoint(kept, adopted []Element) error {
 	return nil
 }
 
-// mergeFonts / mergeMedia / mergeKV upsert a manifest by its id field, keeping
-// the existing order and appending what is new. Three near-identical functions
-// rather than one generic: the id field has a different name in each, the caps
-// differ, and a reflective or type-parameterised version would be harder to read
-// than the thing it replaced.
+// mergeFonts, mergeMedia and mergeKV upsert by id; not generic because id fields and caps differ.
 func mergeFonts(dst, src []FontFamily) []FontFamily {
 	for _, e := range src {
 		replaced := false
