@@ -17,7 +17,7 @@ AsyncAO is a **maximum-performance Attorney Online 2 client in Go** (CGO for
 SDL3 + libwebp). Two pillars: **zero-fallback asset streaming** (exactly one
 network probe per asset by default, learned formats per server) and **every
 millisecond counts** (lock-free hot paths, three cache tiers, zero-allocation
-render loop, 256 MiB memory budget). Plus full AO2 ≥ 2.6/2.8 **pairing**.
+render loop, every cache capped). Plus full AO2 ≥ 2.6/2.8 **pairing**.
 
 WebSocket-only. **Legacy raw-TCP AO servers are deliberately unsupported** —
 the lobby shows them black, pinned to the bottom, with an upgrade note. Never
