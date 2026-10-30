@@ -8,19 +8,9 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Post-processing overlays (#10): retro / CRT looks blended OVER the composited stage —
-// vignette (darkened edges), scanlines, and animated film grain. All OFF by default; each is
-// a CACHED texture blended in a single stretched blit, so an enabled effect costs one GPU
-// blit per frame and a disabled one is free (an early return). Built GPU-side via the
-// renderer (SDL's 2D renderer has no custom fragment shaders); the size-dependent scanline
-// texture regenerates only when the stage size changes — never per frame. Steady-state is
-// 0-alloc: the overlays are reused and the blit destination is a Viewport scratch rect.
+// Post-processing overlays are cached textures blended over the stage, as SDL's 2D renderer has no custom shaders.
 
-// PostFX selects which overlays are active (all OFF/false = no work). CRT is a
-// PRESET: it forces scanlines + vignette and adds a phosphor/aperture-grille mask,
-// so one toggle gives the whole retro-TV look. (True barrel curvature + bloom need
-// the whole stage captured to a render target — a perf-sensitive change deferred
-// out of this 0-alloc overlay path.)
+// PostFX selects the active overlays; CRT is a preset that forces scanlines and vignette and adds a phosphor mask.
 type PostFX struct {
 	Vignette  bool
 	Scanlines bool
@@ -28,7 +18,6 @@ type PostFX struct {
 	CRT       bool
 }
 
-// Active reports whether any overlay is on (so applyPostFX returns immediately when off).
 func (p PostFX) Active() bool { return p.Vignette || p.Scanlines || p.Grain || p.CRT }
 
 const (
@@ -42,28 +31,21 @@ const (
 	grainAlpha     = 26   // subtle
 	grainSeed      = 0x5eed
 
-	// #77 CRT aperture-grille mask: vertical R/G/B phosphor stripes multiplied
-	// (BLENDMODE_MOD) over the stage. phosphorStripeW is each colour stripe's
-	// width (the RGB triad is 3× it); phosphorDim is what the two non-lit channels
-	// of a stripe are multiplied to (out of 255) — high, so the tint stays subtle.
+	// CRT mask: R/G/B stripes multiplied over the stage; phosphorDim is high so the tint stays subtle.
 	phosphorStripeW = 2
 	phosphorCount   = 3 // red, green, blue stripes
 	phosphorDim     = 200
 )
 
-// SetPostFX mirrors the user's post-processing prefs onto the viewport (once per frame, like
-// SetSpriteFX). Cheap: a value copy; the textures build lazily on first enable.
+// SetPostFX sets the post-processing prefs once per frame; textures build lazily on first enable.
 func (v *Viewport) SetPostFX(p PostFX) { v.postFX = p }
 
-// applyPostFX blends the enabled overlays over the stage rect (the ORIGINAL vp, before the
-// shout-punch / shake moved it — the frame, not the art). 0-alloc when off (early return)
-// and on (cached textures + a scratch rect).
+// applyPostFX blends enabled overlays over the original vp, before the shout punch or shake moved it.
 func (v *Viewport) applyPostFX(ren *sdl.Renderer, vp sdl.Rect) {
 	if !v.postFX.Active() {
 		return
 	}
-	// CRT is a preset that layers scanlines + an aperture-grille mask + vignette,
-	// so those two overlays turn on with it as well as on their own toggles.
+	// CRT turns these two overlays on as well as their own toggles.
 	scan := v.postFX.Scanlines || v.postFX.CRT
 	vign := v.postFX.Vignette || v.postFX.CRT
 	if scan {
@@ -73,8 +55,7 @@ func (v *Viewport) applyPostFX(ren *sdl.Renderer, vp sdl.Rect) {
 		}
 	}
 	if v.postFX.CRT {
-		// Phosphor stripes MULTIPLY the stage (+ scanlines) — drawn before the
-		// vignette so the darkened edges sit on top of the grille.
+		// Before the vignette, so the darkened edges sit on top of the grille.
 		if t := v.ensureCRTMask(ren, vp.W, vp.H); t != nil {
 			v.postRect = vp
 			_ = ren.Copy(t, nil, &v.postRect)
@@ -101,8 +82,7 @@ func (v *Viewport) applyPostFX(ren *sdl.Renderer, vp sdl.Rect) {
 	}
 }
 
-// ensureScanlines returns the W×H scanline texture, rebuilding it only when the stage size
-// changed (a resize — never per frame). Blitting it 1:1 over the stage keeps the lines crisp.
+// ensureScanlines returns the WxH scanline texture, rebuilt only on a resize; a 1:1 blit keeps lines crisp.
 func (v *Viewport) ensureScanlines(ren *sdl.Renderer, w, h int32) *sdl.Texture {
 	if w <= 0 || h <= 0 {
 		return nil
@@ -132,11 +112,7 @@ func (v *Viewport) ensureScanlines(ren *sdl.Renderer, w, h int32) *sdl.Texture {
 	return t
 }
 
-// ensureCRTMask returns the W×H aperture-grille mask (vertical R/G/B phosphor
-// stripes), rebuilding it only when the stage size changed. Its blend mode is MOD
-// so blitting MULTIPLIES the stage: the "lit" channel of each stripe stays 255
-// (×1) while the other two scale to phosphorDim/255 — a subtle colour shimmer.
-// 0-alloc after the one-time (per size) build, like the scanline texture.
+// ensureCRTMask returns the WxH mask, rebuilt on resize; MOD blend scales each stripe's unlit channels.
 func (v *Viewport) ensureCRTMask(ren *sdl.Renderer, w, h int32) *sdl.Texture {
 	if w <= 0 || h <= 0 {
 		return nil
@@ -174,8 +150,7 @@ func (v *Viewport) ensureCRTMask(ren *sdl.Renderer, w, h int32) *sdl.Texture {
 	return t
 }
 
-// buildVignette makes the square radial-darkening texture (clear centre → dark corners),
-// stretched to the stage at draw time (an ellipse that follows the frame aspect).
+// buildVignette makes the square radial texture, stretched at draw time so the ellipse follows the frame aspect.
 func buildVignette(ren *sdl.Renderer) *sdl.Texture {
 	const n = vignetteSize
 	pix := make([]byte, n*n*texBytesPerPixel)
@@ -198,8 +173,7 @@ func buildVignette(ren *sdl.Renderer) *sdl.Texture {
 	return t
 }
 
-// buildGrain fills out with grainFrames noise tiles (grey speckle at a low alpha), cycled to
-// animate. Deterministic seed so it looks the same each launch (cycling provides the motion).
+// buildGrain fills out with noise tiles from a deterministic seed; cycling them provides the motion.
 func buildGrain(ren *sdl.Renderer, out *[grainFrames]*sdl.Texture) {
 	rng := rand.New(rand.NewSource(grainSeed))
 	const n = grainTileSize
@@ -218,7 +192,7 @@ func buildGrain(ren *sdl.Renderer, out *[grainFrames]*sdl.Texture) {
 	}
 }
 
-// PurgePostFX frees the cached overlay textures (shutdown). Render thread only.
+// PurgePostFX frees the overlay textures; render thread only.
 func (v *Viewport) PurgePostFX() {
 	if v.vignetteTex != nil {
 		_ = v.vignetteTex.Destroy()

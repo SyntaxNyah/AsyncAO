@@ -1,36 +1,19 @@
 package render
 
-// The shout splash's geometry: AO2 fits it BY HEIGHT and centres it. It does not
-// stretch it across the viewport.
-// (AO2-Client src/courtroom.cpp:111), moved and resized to the viewport
-// (courtroom.cpp:808-809). Splash layers never turn stretching on:
-// SplashAnimationLayer::loadAndPlayAnimation (src/animationlayer.cpp:632-637)
-// (src/animationlayer.h:91). Only the speedlines, the interface layers and an
-// effect whose own INI says `stretch = true` ever set it (courtroom.cpp:59,
-// animationlayer.cpp:672, courtroom.cpp:3206).
-// (src/animationlayer.cpp:229-260) takes the non-stretch arm:
-// was constructed with `setAlignment(Qt::AlignCenter)` (animationlayer.cpp:16),
-// which is what centres it horizontally in the viewport.
-// The desk and the background are NOT changed here, deliberately. Their layer
-// (BackgroundLayer) reads `stretch` out of the background's own design.ini
-// (animationlayer.cpp:616), so their correct behaviour is per-background theme
-// data rather than a constant, and it is a different asset's INI in a different
-// package. Recorded, not half-done.
+// AO2 builds the splash layer (src/courtroom.cpp:111), sized to the viewport (courtroom.cpp:808-809).
+// It never stretches (animationlayer.cpp:229-260, animationlayer.cpp:632-637, animationlayer.h:91).
+// AlignCenter centres it (animationlayer.cpp:16). Only speedlines, interface layers and `stretch = true`
+// effects stretch (courtroom.cpp:59, animationlayer.cpp:672, courtroom.cpp:3206).
+// Desk and background stretch comes from each background's design.ini (animationlayer.cpp:616).
 
 import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
-// splashFitRect is AO2's non-stretch AnimationLayer geometry: scale the frame by
-// the viewport's HEIGHT over the frame's own height, keep the aspect, centre the
-// result in the viewport.
-// Integer arithmetic only, and it runs once per shout frame on the render thread:
+// splashFitRect is AO2's non-stretch geometry: scale by viewport height over frame height, keep the aspect, centre it.
 func splashFitRect(vp sdl.Rect, srcW, srcH int32) sdl.Rect {
 	if srcW <= 0 || srcH <= 0 || vp.H <= 0 {
 		return vp
 	}
-	// Width from the HEIGHT factor, rounded to the nearest pixel. Qt computes
-	// `QSize *= double`, which rounds; truncating would shave a pixel off wide
-	// art and leave a hairline of stage showing through a bubble meant to cover
-	// the frame edge-to-edge at its own aspect.
+	// Round like Qt's QSize *= double; truncating would leave a hairline of stage showing through a bubble.
 	w := int32((int64(srcW)*int64(vp.H)*2 + int64(srcH)) / (int64(srcH) * 2))
 	if w <= 0 {
 		w = 1
@@ -38,20 +21,9 @@ func splashFitRect(vp sdl.Rect, srcW, srcH int32) sdl.Rect {
 	return sdl.Rect{X: vp.X + (vp.W-w)/2, Y: vp.Y, W: w, H: vp.H}
 }
 
-// drawSplash blits a shout bubble with the geometry above, CONTAINED to the stage.
-// child of the viewport (courtroom.cpp:808-809 moves and resizes it to the
-// viewport rect), and Qt clips a widget's painting to its own rect — so
-// AlignCenter (animationlayer.cpp:16) both CENTRES an oversized pixmap and cuts
-// off what hangs over the edge. Fitting by height means art wider than the stage's
-// aspect comes out wider than the stage: 2000x40 art on a 960x540 stage fits to
-// 27000 px. Unclipped, SDL_RenderCopy paints that straight over the chatbox and
-// the side panels — which drawFill, blitting the viewport rect itself, could never
-// do. The fit rect stays the full pixmap (that is what Qt scales to and what
-// splashFitRect is tested on); the clip is what makes it a QLabel.
-// The clip rides v.splashClip and the destination v.fillRect because &localRect
-// heap-escapes through cgo on every call; SDL copies both during the call and
-// retains neither (the cgoRect contract), and nothing runs between the
-// assignments and the Copy.
+// drawSplash blits a bubble clipped to the stage, as Qt clips a child to its rect (courtroom.cpp:808-809).
+// Wide art fit by height would otherwise paint over the chatbox.
+// The clip and destination are fields because a local rect heap-escapes through cgo; SDL retains neither.
 func (v *Viewport) drawSplash(ren *sdl.Renderer, base string, anim *animState, vp sdl.Rect) {
 	if base == "" {
 		return
@@ -72,8 +44,7 @@ func (v *Viewport) drawSplash(ren *sdl.Renderer, base string, anim *animState, v
 	}
 }
 
-// layerFrame resolves the texture a full-viewport layer should blit this frame,
-// plus that page's source pixel size.
+// layerFrame resolves a full-viewport layer's texture this frame and its source size.
 func (v *Viewport) layerFrame(anim *animState) (tex *sdl.Texture, w, h int32, ok bool) {
 	frame := 0
 	page, live := anim.resolve(v.store)

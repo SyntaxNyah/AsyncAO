@@ -9,121 +9,49 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// previewWindowTexBudgetBytes bounds the preview window's OWN texture slot —
-// it holds exactly ONE frame at a time (never a general-purpose cache, hard
-// rule 4: no unbounded cache), so the cap only needs to cover the largest
-// single decoded RGBA frame this client can legitimately produce. 16 MiB
-// covers a 2048x2048 frame (2048*2048*4 bytes) — comfortably above
-// decoder.go's spriteCap ceiling (the display height minus the courtroom's
-// UI reserve, cmd/asyncao's stageBottomReservePx, so at most ~2160px even on
-// a 4K display) — while staying a rounding error against the 256 MiB total
-// memory budget (cmd/asyncao's memoryBudgetBytes) and dwarfed by T1's 64 MiB
-// / T2's 128 MiB (cache.DefaultT1BudgetBytes / DefaultT2BudgetBytes): a
-// single preview frame can never meaningfully compete with the main asset
-// budgets.
+// previewWindowTexBudgetBytes bounds the displayed frame; 16 MiB covers 2048x2048 RGBA, above decoder.go's spriteCap.
 const previewWindowTexBudgetBytes = 16 << 20
 
-// previewWindowAnimCacheBudgetBytes bounds the SUM of every DISTINCT decoded
-// frame ShowAnimFrame retains for one animated pick — separate from, and in
-// ADDITION to, previewWindowTexBudgetBytes' per-frame ceiling above. Hard
-// rule 4 (no unbounded cache): a looping animation's whole cached frame set,
-// not just its momentarily-displayed frame, needs its own named cap. Sized
-// to comfortably exceed the decoder's own default per-asset decoded-bytes
-// cap (cache.MaxDecodedAssetBytes(cache.DefaultT1BudgetBytes) == 16 MiB —
-// the sum of every frame of one animated asset, by construction, at the
-// default T1 budget) with headroom for GPU texture padding/alignment: two
-// decoded-asset-caps' worth rather than an unrelated round number. A
-// power-user who raises T1's budget raises the per-asset cap proportionally
-// (budget/4); a pick whose total decoded bytes exceed THIS window's cap
-// degrades gracefully instead of growing past it — see animOverflowed.
+// previewWindowAnimCacheBudgetBytes bounds one pick's retained frames: two decoded-asset caps at the default T1.
 const previewWindowAnimCacheBudgetBytes = 32 << 20
 
-// PreviewWindow owns a second, independent SDL window + renderer + a single
-// texture slot, created on Open and fully torn down on Close.
-// Hard rule 1 (no SDL off the render thread): every method here makes SDL
-// calls and must run on the SAME OS thread as the main window's — SDL
-// allows many windows/renderers from one thread but never allows a second
-// thread touching SDL at all (measured empirically on this dev box; see
-// cmd/asyncao/quit.go's doc comment for the full probe). Callers must never
-// wrap Open/Close/Present/HandleEvent/SetFrame in a goroutine.
+// PreviewWindow owns a second SDL window and renderer with one texture, created on Open, torn down on Close.
+// Every method must run on the main window's OS thread: SDL never allows a second thread (hard rule 1).
 type PreviewWindow struct {
 	win *sdl.Window
 	ren *sdl.Renderer
 	tex *sdl.Texture
-	// texW/texH are the CURRENTLY DISPLAYED texture's pixel size (queried
-	// off the texture itself by setDisplayTexture, never hand-tracked), used
-	// by Present's fit math.
+	// texW/texH are the displayed texture's size, for Present's fit math.
 	texW, texH int32
-	// texIsCached reports whether tex is currently one of animFrames' own
-	// entries (owned by the animation cache below — destroyed only by
-	// resetAnimCache/Close) rather than a texture the display slot alone
-	// owns (built by SetFrame, or ShowAnimFrame's cache-overflow fallback —
-	// destroyed by setDisplayTexture's own replace, or by Close). Without
-	// this distinction, leaving an animated pick would either double-free a
-	// texture still referenced by animFrames or leak a solo one.
+	// texIsCached means tex belongs to animFrames, not the display alone; confusing them double-frees or leaks.
 	texIsCached bool
-	// id is cached once at Open (an SDL window's id never changes after
-	// creation) so the main loop's per-event routing gate (ID) never touches
-	// SDL to answer a question the window already answered once.
+	// id is cached at Open so per-event routing doesn't call SDL.
 	id uint32
-	// lastX/Y/W/H + hadLastRect capture the window's final desktop position
-	// and client size the MOMENT Close tears it down — whether Close was
-	// called by internal/ui's own re-attach toggle or by HandleEvent reacting
-	// to the window's OWN titlebar X (measured fact 1: SDL posts
-	// WINDOWEVENT_CLOSE and nothing else; nobody destroys the window for
-	// you). Reading GetPosition/GetSize AFTER Destroy would be a use-after-
-	// free, so Close is the one place that must snapshot them, and LastRect
-	// is the one place a caller reads the snapshot back — this is the whole
-	// "closing with its own X reconciles state" contract: there is no
-	// separate "detached" bool anywhere to go stale, because IsOpen() is
-	// already live and LastRect() already survives the very Close() call
-	// that flips it.
+	// lastX/Y/W/H and hadLastRect are snapped in Close, as reading after Destroy is a use-after-free.
 	lastX, lastY, lastW, lastH int32
 	hadLastRect                bool
-	// animFrames/animFor/animSource/animBytes/animOverflowed together are
-	// ShowAnimFrame's bounded per-pick cache of distinct decoded animation
-	// frames — see ShowAnimFrame's doc for the full contract. animFrames is
-	// indexed by the source page's own frame ordinal (nil until that ordinal
-	// has been visited); animFor/animSource are the (base, source-identity)
+	// animFrames/animFor/animSource/animBytes hold ShowAnimFrame's per-pick cache, indexed by source frame.
 	animFrames []previewAnimFrame
 	animFor    string
 	animSource any
 	animBytes  int64
-	// animOverflowed latches once caching one more distinct frame for the
-	// CURRENT pick would exceed previewWindowAnimCacheBudgetBytes: no further
-	// frames are added to animFrames for this pick, and every subsequent
-	// ShowAnimFrame call for an uncached ordinal falls back to calling fill
-	// and uploading directly every time it's shown — graceful degrade (still
-	// correct, still bounded by the animation's own frame-index-change rate,
-	// never by render-frame rate) rather than growing the cache past its cap.
+	// animOverflowed means the cache budget is reached; uncached frames then call fill each show.
 	animOverflowed bool
 }
 
-// previewAnimFrame is one cached animation frame: the texture plus the pixel
-// size Present's fit math needs. The size is carried alongside rather than
-// asked back off the texture because sdl.Texture.Query crosses cgo with four
-// out-parameters, which escape to the heap — measured at 4 allocs / 16 B per
-// call, the same class of trap as Ren.GetScale (CLAUDE.md). Every producer
-// already knows the size at upload time, so nothing has to ask.
+// previewAnimFrame carries its size because Texture.Query's cgo out-parameters escape, 4 allocs per call.
 type previewAnimFrame struct {
 	tex  *sdl.Texture
 	w, h int32
 }
 
-// NewPreviewWindow returns a closed PreviewWindow. See the type doc for the
-// "closed is a nil check" contract.
+// NewPreviewWindow returns a closed PreviewWindow.
 func NewPreviewWindow() *PreviewWindow { return &PreviewWindow{} }
 
-// IsOpen reports whether the OS window exists. THE NIL CHECK COMES FIRST and
-// is the entire cost when closed — the overwhelmingly common case, mirroring
-// internal/assets.Manager.activeMountLayer's documented ordering.
+// IsOpen reports whether the OS window exists; the nil check is the entire cost when closed.
 func (p *PreviewWindow) IsOpen() bool { return p != nil && p.win != nil }
 
-// ID returns the SDL window id events for this window are tagged with, or 0
-// when closed. 0 is never a real SDL window id (SDL ids are assigned from 1),
-// the same sentinel cmd/asyncao's mainWindowShouldQuit relies on — so a
-// caller comparing an event's WindowID against ID() never has to branch on
-// IsOpen() first (see cmd/asyncao's eventForPreviewWindow).
+// ID returns the window's SDL id, or 0 when closed; SDL ids start at 1, so callers need no IsOpen check.
 func (p *PreviewWindow) ID() uint32 {
 	if p == nil {
 		return 0
@@ -131,12 +59,7 @@ func (p *PreviewWindow) ID() uint32 {
 	return p.id
 }
 
-// Open creates the OS window and its own renderer, destroying anything a
-// previous Open already had (idempotent-replace, never additive/leaking).
-// w/h are the initial window size in pixels.
-// PRESENTVSYNC: MEASURED on this dev box (165 Hz display) that two vsync'd
-// direct3d renderers do NOT serialize — presenting the second one measured
-// as cheap as not having it at all (see cmd/asyncao/quit.go's probe comment)
+// Open creates the window and renderer, replacing any previous; two vsync'd direct3d renderers don't serialize.
 func (p *PreviewWindow) Open(title string, w, h int32) error {
 	p.Close() // idempotent-replace, not additive
 	win, err := sdl.CreateWindow(title, sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
@@ -146,8 +69,7 @@ func (p *PreviewWindow) Open(title string, w, h int32) error {
 	}
 	ren, err := sdl.CreateRenderer(win, -1, sdl.RENDERER_ACCELERATED|sdl.RENDERER_PRESENTVSYNC)
 	if err != nil {
-		// VMs/headless (dummy video driver) have no accelerated backend —
-		// same fallback cmd/asyncao's main renderer takes (main.go).
+		// VMs and the dummy video driver have no accelerated backend.
 		ren, err = sdl.CreateRenderer(win, -1, sdl.RENDERER_SOFTWARE)
 		if err != nil {
 			win.Destroy()
@@ -157,8 +79,7 @@ func (p *PreviewWindow) Open(title string, w, h int32) error {
 	_ = ren.SetDrawBlendMode(sdl.BLENDMODE_BLEND)
 	id, err := win.GetID()
 	if err != nil {
-		// Unreachable in practice (a window that was just created must have
-		// an id), but fail safe rather than leak: tear down what Open built.
+		// A new window must have an id, but fail safe rather than leak.
 		ren.Destroy()
 		win.Destroy()
 		return fmt.Errorf("preview window id: %w", err)
@@ -167,12 +88,7 @@ func (p *PreviewWindow) Open(title string, w, h int32) error {
 	return nil
 }
 
-// OpenAt is Open but places the window at a specific desktop position instead
-// of letting the OS/window manager choose — the entry point for reopening at
-// a remembered spot (config.AssetPreferences' persisted rect). x,y are the
-// window's top-left in desktop coordinates. Callers restoring a SAVED
-// position should go through OpenAtClamped instead, so a monitor that no
-// longer exists can never strand the window somewhere unreachable.
+// OpenAt is Open at a desktop position; callers restoring a saved position should use OpenAtClamped.
 func (p *PreviewWindow) OpenAt(title string, x, y, w, h int32) error {
 	if err := p.Open(title, w, h); err != nil {
 		return err
@@ -181,35 +97,16 @@ func (p *PreviewWindow) OpenAt(title string, x, y, w, h int32) error {
 	return nil
 }
 
-// OpenAtClamped is OpenAt after passing x,y through ClampPositionToDisplays —
-// the sanity net for requirement 5 (preview-window-wire): a position saved
-// while a second monitor was connected must not reopen off every currently
-// connected display.
+// OpenAtClamped is OpenAt through ClampPositionToDisplays, so a saved position can't land off every display.
 func (p *PreviewWindow) OpenAtClamped(title string, x, y, w, h int32) error {
 	cx, cy := ClampPositionToDisplays(x, y, w, h)
 	return p.OpenAt(title, cx, cy, w, h)
 }
 
-// previewOffscreenMarginPx is how much of the window's top-left corner must
-// land inside a currently connected display's usable bounds for a saved
-// position to be trusted. Sized to a typical title bar's height — enough
-// that if the corner lands within a display at all, the user can actually
-// see and grab that title bar to drag the window the rest of the way back,
-// rather than requiring the WHOLE window to already be on-screen (which
-// would needlessly recentre a window that is mostly, but not entirely, on a
-// display whose resolution merely shrank).
+// previewOffscreenMarginPx is a title bar's height: enough of the corner must show for the user to grab it.
 const previewOffscreenMarginPx = 40
 
-// ClampPositionToDisplays returns x,y unchanged if the window's top-left
-// corner (inset by previewOffscreenMarginPx) lands inside ANY currently
-// connected display's usable bounds, or recentres it on the PRIMARY display
-// otherwise — requirement 5 (preview-window-wire): reopening on a monitor
-// that was unplugged, had its resolution changed, or belonged to a laptop
-// that's since been undocked must never strand the window somewhere the user
-// can never reach again.
-// A missing/unavailable display API (headless dummy driver with no reported
-// displays) trusts the input rather than guessing — there is nothing to
-// clamp AGAINST.
+// ClampPositionToDisplays keeps x,y if on a display, else recentres on the primary; no displays trusts the input.
 func ClampPositionToDisplays(x, y, w, h int32) (cx, cy int32) {
 	n, err := sdl.GetNumVideoDisplays()
 	if err != nil || n <= 0 {
@@ -225,9 +122,7 @@ func ClampPositionToDisplays(x, y, w, h int32) (cx, cy int32) {
 			return x, y
 		}
 	}
-	// Unreachable on every connected display: recentre on the primary
-	// display's usable bounds. Display index 0 is always the primary
-	// (SDL_GetDisplayBounds's own documented convention).
+	// Display index 0 is always the primary (SDL_GetDisplayBounds).
 	b, err := sdl.GetDisplayUsableBounds(0)
 	if err != nil {
 		return x, y // nothing to go on; leave the input rather than guess
@@ -235,8 +130,7 @@ func ClampPositionToDisplays(x, y, w, h int32) (cx, cy int32) {
 	return b.X + (b.W-w)/2, b.Y + (b.H-h)/2
 }
 
-// Position returns the window's current desktop-pixel top-left, and
-// ok=false when closed (there is nothing to report).
+// Position returns the window's desktop top-left; ok=false when closed.
 func (p *PreviewWindow) Position() (x, y int32, ok bool) {
 	if p == nil || p.win == nil {
 		return 0, 0, false
@@ -245,8 +139,7 @@ func (p *PreviewWindow) Position() (x, y int32, ok bool) {
 	return x, y, true
 }
 
-// Size returns the window's current client-area pixel size, and ok=false
-// when closed.
+// Size returns the client-area size; ok=false when closed.
 func (p *PreviewWindow) Size() (w, h int32, ok bool) {
 	if p == nil || p.win == nil {
 		return 0, 0, false
@@ -255,12 +148,7 @@ func (p *PreviewWindow) Size() (w, h int32, ok bool) {
 	return w, h, true
 }
 
-// LastRect returns the position+size the window had at the moment it was
-// last torn down by Close — the ONLY way to learn a rect for a window that
-// closed itself via its own titlebar X (Position/Size are both "closed" by
-// the time HandleEvent's caller could otherwise ask). ok=false before the
-// very first Close, matching a freshly constructed PreviewWindow that has
-// never been open at all — there is nothing to have remembered yet.
+// LastRect returns the rect at the last Close, for a window closed by its own X; ok=false before the first Close.
 func (p *PreviewWindow) LastRect() (x, y, w, h int32, ok bool) {
 	if p == nil || !p.hadLastRect {
 		return 0, 0, 0, 0, false
@@ -268,23 +156,15 @@ func (p *PreviewWindow) LastRect() (x, y, w, h int32, ok bool) {
 	return p.lastX, p.lastY, p.lastW, p.lastH, true
 }
 
-// Close destroys the texture/renderer/window and returns PreviewWindow to
-// its zero (closed) state. Safe on an already-closed PreviewWindow (a no-op)
-// and safe to call more than once.
+// Close destroys everything and returns to the closed state; safe when already closed.
 func (p *PreviewWindow) Close() {
 	if p.win != nil {
-		// MUST happen before Destroy: reading position/size from a destroyed
-		// window is a use-after-free, and this is the only chance to ever
-		// learn the final rect of a window that is closing itself (see
-		// LastRect's doc).
+		// Must precede Destroy: reading a destroyed window's rect is a use-after-free.
 		p.lastX, p.lastY = p.win.GetPosition()
 		p.lastW, p.lastH = p.win.GetSize()
 		p.hadLastRect = true
 	}
-	// resetAnimCache frees every cached animation-frame texture AND the display
-	// slot, in whichever of the two ownership cases applies. Close deliberately
-	// does not repeat that test itself: one place knowing the rule is what
-	// keeps a solo-owned frame from surviving a teardown it should not.
+	// resetAnimCache also frees the displayed texture in whichever ownership case applies.
 	p.resetAnimCache()
 	if p.ren != nil {
 		p.ren.Destroy()
@@ -297,14 +177,7 @@ func (p *PreviewWindow) Close() {
 	p.texW, p.texH, p.id = 0, 0, 0
 }
 
-// resetAnimCache destroys every texture ShowAnimFrame has cached for the
-// CURRENT (animFor, animSource) pick and returns the cache to empty. Called
-// whenever ShowAnimFrame sees the pick or its source page's identity change
-// (a stale cache would otherwise show frames from the WRONG animation or the
-// wrong decode generation of the right one), whenever SetFrame is used
-// (a plain single-picture display means leaving animation mode for this
-// window entirely — there is nothing left to invalidate it later), and from
-// Close.
+// resetAnimCache destroys the pick's cached textures, on a pick or source change, SetFrame and Close.
 func (p *PreviewWindow) resetAnimCache() {
 	for _, f := range p.animFrames {
 		if f.tex != nil {
@@ -322,12 +195,7 @@ func (p *PreviewWindow) resetAnimCache() {
 	p.tex, p.texW, p.texH, p.texIsCached = nil, 0, 0, false
 }
 
-// setDisplayTexture points the window's display slot at tex — either a
-// freshly built texture this call is handing off ownership of, or a cached
-// animation frame an earlier ShowAnimFrame call already owns (cached=true).
-// The PREVIOUS display texture is destroyed only when this slot owned it
-// outright (cached==false last time): a cache-owned one belongs to
-// animFrames and is torn down there (resetAnimCache/Close), never here.
+// setDisplayTexture shows tex; the old texture is destroyed only if the display owned it, not animFrames.
 func (p *PreviewWindow) setDisplayTexture(tex *sdl.Texture, w, h int32, cached bool) {
 	if p.tex != nil && !p.texIsCached && p.tex != tex {
 		p.tex.Destroy()
@@ -335,7 +203,6 @@ func (p *PreviewWindow) setDisplayTexture(tex *sdl.Texture, w, h int32, cached b
 	p.tex, p.texW, p.texH, p.texIsCached = tex, w, h, cached
 }
 
-// SetFrame uploads img as the preview's next displayed frame.
 func (p *PreviewWindow) SetFrame(img *image.RGBA) error {
 	if p.ren == nil || img == nil {
 		return nil
@@ -347,24 +214,13 @@ func (p *PreviewWindow) SetFrame(img *image.RGBA) error {
 	if tex == nil {
 		return nil // degenerate (zero) size — matches the previous silent no-op
 	}
-	// A plain SetFrame means leaving animation mode for this window entirely
-	// (the caller has a single, non-animated picture to show) — tear down
-	// whatever animation cache the PREVIOUS pick may have built, or its
-	// textures would simply leak (nothing else ever visits them again).
+	// Leaving animation mode: nothing else would ever visit the previous pick's textures, so they would leak.
 	p.resetAnimCache()
 	p.setDisplayTexture(tex, int32(img.Rect.Dx()), int32(img.Rect.Dy()), false)
 	return nil
 }
 
-// uploadFrame is the single primitive that turns decoded pixels into a
-// texture on THIS window's own renderer — SetFrame and ShowAnimFrame's
-// cache-miss path both build on it, so there is exactly one place in this
-// type that knows how to do that and one place that enforces the per-frame
-// budget.
-// Returns (nil, nil) for a degenerate (zero-area) image — the existing
-// silent-no-op shape SetFrame documented before this was extracted — and
-// (nil, err) when img exceeds previewWindowTexBudgetBytes or an SDL call
-// fails. The caller owns the returned texture on success.
+// uploadFrame builds a texture within the frame budget; (nil, nil) for zero area; the caller owns the result.
 func (p *PreviewWindow) uploadFrame(img *image.RGBA) (*sdl.Texture, error) {
 	w, h := int32(img.Rect.Dx()), int32(img.Rect.Dy())
 	if w <= 0 || h <= 0 {
@@ -373,12 +229,7 @@ func (p *PreviewWindow) uploadFrame(img *image.RGBA) (*sdl.Texture, error) {
 	if int64(w)*int64(h)*4 > previewWindowTexBudgetBytes {
 		return nil, fmt.Errorf("render: preview frame %dx%d exceeds the %d MiB preview budget", w, h, previewWindowTexBudgetBytes>>mibShift)
 	}
-	// Rebuilt every call rather than reused+Update()'d: both callers invoke
-	// this on a selection change or one animation-frame-index tick, never in
-	// the main per-frame hot path (that's Present, below), so the simpler
-	// always-recreate shape — the exact one TextureStore.buildPage already
-	// uses for every sprite frame in the client — is worth more here than the
-	// small win of a STREAMING texture nothing else in this package uses.
+	// Recreated each call: this runs on selection or frame-index changes, so a streaming texture isn't worth it.
 	tex, err := p.ren.CreateTexture(uint32(sdl.PIXELFORMAT_ABGR8888), sdl.TEXTUREACCESS_STATIC, w, h)
 	if err != nil {
 		return nil, err
@@ -391,20 +242,7 @@ func (p *PreviewWindow) uploadFrame(img *image.RGBA) (*sdl.Texture, error) {
 	return tex, nil
 }
 
-// ShowAnimFrame displays frame idx of the animated pick identified by
-// (base, source), building a small per-pick cache the first time each
-// distinct ordinal is visited so that a LOOPING animation calls fill at most
-// ONCE PER DISTINCT FRAME, no matter how many times ShowAnimFrame itself is
-// called afterward (every subsequent loop through the same frames is a
-// cache hit: point the display slot at the already-uploaded texture, no
-// readback, no upload — the exact per-render-frame cost Present already
-// pays regardless). fill is the caller's readback+decode step (in practice,
-// internal/ui's readTexturePixels against the MAIN renderer); it is called
-// at most once per (base, source, idx) triple under budget, or on every
-// call once previewWindowAnimCacheBudgetBytes is exhausted for this pick
-// (see animOverflowed) — still correct, just no longer avoiding the repeat
-// readback for that one oversized pick.
-// A no-op (returns nil) when closed, mirroring SetFrame.
+// ShowAnimFrame shows frame idx of (base, source), calling fill once per frame until the cache budget is reached.
 func (p *PreviewWindow) ShowAnimFrame(base string, source any, idx int, fill func() (*image.RGBA, error)) error {
 	if p.ren == nil {
 		return nil
@@ -447,21 +285,14 @@ func (p *PreviewWindow) ShowAnimFrame(base string, source any, idx int, fill fun
 		p.animBytes += frameBytes
 		p.setDisplayTexture(tex, w, h, true)
 	} else {
-		// Over cache budget for this pick: show it, but do not retain it —
-		// the NEXT visit to this ordinal calls fill again (graceful degrade,
-		// hard rule 4 — never grow the cache past its named cap).
+		// Show it but don't retain it; never grow the cache past its cap (hard rule 4).
 		p.animOverflowed = true
 		p.setDisplayTexture(tex, w, h, false)
 	}
 	return nil
 }
 
-// Present draws the preview's current texture CONTAINED within the window
-// (aspect preserved, letterboxed, centred — never stretched) and presents it.
-// The window is user-resizable (Open's WINDOW_RESIZABLE) and SetFrame is
-// deliberately NOT called every time the window resizes — only on a content
-// change — so Present must re-fit against the CURRENT window size every
-// frame rather than trusting a stale rect computed at SetFrame time.
+// Present draws the texture contained in the window, re-fitting every frame because SetFrame doesn't run on a resize.
 func (p *PreviewWindow) Present() {
 	if p.ren == nil {
 		return
@@ -476,25 +307,14 @@ func (p *PreviewWindow) Present() {
 	_ = p.ren.Present() // the preview has its own renderer; a failed present only drops a preview frame
 }
 
-// previewFitRect fits a srcW x srcH image inside a winW x winH window,
-// preserving aspect ratio (CONTAIN, not stretch) and centring the result —
-// the same non-stretch idiom splashfit.go documents for the shout bubble,
-// but fit to BOTH axes here (splashFitRect only fits by height, correct for
-// a viewport-anchored overlay but wrong for a freely resizable OS window,
-// which can just as easily end up narrower than the art as shorter).
-// Falls back to filling the whole window when either input has no usable
-// size (mirrors splashFitRect's own fallback: a rect nobody can reason about
-// still needs SOME answer, and "fill everything" is the least-wrong one).
+// previewFitRect fits src in win on both axes, centred, as the window can be narrower than the art.
 func previewFitRect(winW, winH, srcW, srcH int32) sdl.Rect {
 	if winW <= 0 || winH <= 0 || srcW <= 0 || srcH <= 0 {
 		return sdl.Rect{W: winW, H: winH}
 	}
-	// Cross-multiply instead of dividing to floats: winW/srcW vs winH/srcH,
-	// compared as (winW*srcH) vs (winH*srcW) so the smaller ratio (the
-	// tighter-fitting axis) is found with only integer math.
+	// Cross-multiply to compare the ratios using only integer math.
 	var w, h int32
 	if int64(winW)*int64(srcH) <= int64(winH)*int64(srcW) {
-		// Width is the binding constraint: fill it, derive height from it.
 		w = winW
 		h = int32((int64(srcH)*int64(winW) + int64(srcW)/2) / int64(srcW)) // rounded, not truncated
 	} else {
@@ -504,10 +324,7 @@ func previewFitRect(winW, winH, srcW, srcH int32) sdl.Rect {
 	return sdl.Rect{X: (winW - w) / 2, Y: (winH - h) / 2, W: w, H: h}
 }
 
-// HandleEvent is the preview window's entire input handling.
-// Callers (cmd/asyncao's event routing gate) only ever invoke this with an
-// event carrying THIS window's id, so no id check is needed here — see
-// eventForPreviewWindow.
+// HandleEvent handles this window's events; the caller routes by window id, so no id check is needed.
 func (p *PreviewWindow) HandleEvent(ev sdl.Event) {
 	if e, ok := ev.(*sdl.WindowEvent); ok && e.Event == sdl.WINDOWEVENT_CLOSE {
 		p.Close()

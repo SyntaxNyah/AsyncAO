@@ -7,37 +7,28 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
-// glyphWhite is the colour every cached glyph is rendered in; a per-draw SetColorMod
-// tints it to the message colour or the rainbow hue. White + ColorMod is the ONE path
-// that does shake/wave (displacement) AND rainbow (recolour) cleanly — you can't recolour
-// an already-coloured glyph to arbitrary hues, and slicing a line texture at advance
-// boundaries clips antialiased edges the moment a glyph is displaced.
+// glyphWhite is every glyph's colour for SetColorMod; a coloured glyph can't be recoloured to any hue.
 var glyphWhite = sdl.Color{R: math.MaxUint8, G: math.MaxUint8, B: math.MaxUint8, A: math.MaxUint8}
 
-// glyphKey identifies a cached glyph by rune + the (size-specific) font pointer.
+// glyphKey identifies a glyph by rune and size-specific font pointer.
 type glyphKey struct {
 	r    rune
 	font *ttf.Font
 }
 
-// cachedGlyph is a WHITE single-glyph texture, tinted per draw via SetColorMod.
 type cachedGlyph struct {
 	tex  *sdl.Texture // nil for a blank glyph (space / render failure) — Draw skips it
 	w, h int32
 }
 
-// GlyphCache renders individual glyphs to white textures once and reuses them, so #M5
-// animated chat text can displace + tint each glyph with no per-frame rasterise. Bounded
-// (FIFO eviction); a live message re-resolves its glyphs every frame, so eviction is safe
-// — a miss just re-renders. Render thread only.
+// GlyphCache renders glyphs once to white textures; FIFO eviction is safe as messages re-resolve each frame.
 type GlyphCache struct {
 	m     map[glyphKey]*cachedGlyph
 	order []glyphKey
 	cap   int
 }
 
-// NewGlyphCache returns a cache bounded to ~cap glyphs (floored so one message never
-// evicts its own glyphs mid-frame).
+// NewGlyphCache returns a cache of about cap glyphs, floored so one message can't evict its own glyphs mid-frame.
 func NewGlyphCache(cap int) *GlyphCache {
 	const minGlyphCacheCap = 256 // one Latin page plus punctuation
 	if cap < minGlyphCacheCap {
@@ -46,9 +37,7 @@ func NewGlyphCache(cap int) *GlyphCache {
 	return &GlyphCache{m: make(map[glyphKey]*cachedGlyph, cap), cap: cap}
 }
 
-// glyph returns the white glyph for r in font, rendering + caching on a miss. A blank or
-// unrenderable rune caches a nil-tex entry so it isn't retried every frame. On a HIT it's
-// a plain map read — zero allocation, the per-frame property the whole feature rests on.
+// glyph returns r's white glyph; an unrenderable rune caches a nil texture so it isn't retried every frame.
 func (g *GlyphCache) glyph(ren *sdl.Renderer, font *ttf.Font, r rune) *cachedGlyph {
 	k := glyphKey{r, font}
 	if cg, ok := g.m[k]; ok {
@@ -78,7 +67,6 @@ func (g *GlyphCache) glyph(ren *sdl.Renderer, font *ttf.Font, r rune) *cachedGly
 	return cg
 }
 
-// Purge frees every cached glyph (font rebuild / shutdown).
 func (g *GlyphCache) Purge() {
 	for _, cg := range g.m {
 		if cg != nil && cg.tex != nil {
