@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	// Idle-per-host matches the worker pool, so back-to-back fetch bursts reuse connections instead of re-dialing.
+	// Idle-per-host matches the worker pool, so back-to-back fetch bursts reuse connections instead of reconnecting.
 	defaultMaxConnsPerHost     = 16
 	defaultMaxIdleConnsPerHost = 16
 	defaultMaxIdleConnsTotal   = 96
