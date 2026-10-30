@@ -1,9 +1,6 @@
 package config
 
-// Canonical asset-type names. These strings are the single source of truth
-// for keying AssetPreferences.AssetTypes and learned-format entries
-// ("<host>|<type name>"). internal/assets maps its AssetType enum onto these
-// names; a cross-package test asserts the two stay in sync.
+// Canonical asset-type names: keys of AssetTypes and learned-format entries ("<host>|<type name>").
 const (
 	TypeCharIcon    = "CharIcon"
 	TypeCharSprite  = "CharSprite"
@@ -14,16 +11,13 @@ const (
 	TypeSFX         = "SFX"
 	TypeMusic       = "Music"
 	TypeBlip        = "Blip"
-	// TypeEmoteButton is the courtroom emote-picker art
-	// (characters/<char>/emotions/button<N>_off|_on).
+	// TypeEmoteButton is the emote-picker art (characters/<char>/emotions/button<N>_off|_on).
 	TypeEmoteButton = "EmoteButton"
-	// TypeEffect is AO2 screen-effect overlay art and its dropdown icons
-	// (effects/<name> inside a theme, misc/<folder>/<name> at the origin).
+	// TypeEffect is AO2 screen-effect art (effects/<name> in a theme, misc/<folder>/<name> at the origin).
 	TypeEffect = "Effect"
 )
 
-// TypeNames lists every canonical asset-type name, in the same order as the
-// internal/assets.AssetType enum declares its constants.
+// TypeNames lists every asset-type name in internal/assets.AssetType enum order.
 var TypeNames = []string{
 	TypeCharIcon,
 	TypeCharSprite,
@@ -38,8 +32,7 @@ var TypeNames = []string{
 	TypeEffect,
 }
 
-// File extensions probed for assets. Extensions always carry the leading dot
-// so candidate URLs are a plain string concatenation.
+// Extensions carry the leading dot so candidate URLs are plain concatenation.
 const (
 	ExtPNG  = ".png"
 	ExtWebP = ".webp"
@@ -53,25 +46,12 @@ const (
 	ExtMP3  = ".mp3"
 )
 
-// OptionalImageFormats are the extensions the Settings UI offers as opt-in
-// probe formats (all disabled by default — zero-fallback policy).
+// OptionalImageFormats are the opt-in probe formats Settings offers, all off by default (zero-fallback policy).
 var OptionalImageFormats = []string{ExtWebP, ExtAVIF, ExtAPNG, ExtGIF, ExtPNG, ExtJPG}
 
-// defaultFormatOrders is the zero-fallback probe list per asset type: with
-// fallbacks disabled this is the *entire* probe list (spec §4). Every bulk
-// type defaults to a single format, so a cold asset costs exactly one probe.
-//
-// Misc is the deliberate exception (two formats): chatbox skins have no
-// extensions.json key and no per-host convention — ONE live mirror serves
-// misc/yttd/chat.png beside misc/helltaker/chatbox.webp, so a single
-// per-host format can never cover the type. It's also the rarest probe in
-// the client (one URL per chat=-declaring character, then cached), so the
-// extra candidate costs nothing measurable. Per-host learning still
-// front-runs the order; a learned miss falls back to this full list within
-// the same pass (spec §4's stale-learned re-probe).
-//
-// Note there is no ".webp.animated": animation is a property of the .webp
-// payload (VP8X ANIM flag), detected at decode time, never a separate probe.
+// defaultFormatOrders is the entire probe list per type while fallbacks are off, so a cold asset costs one probe.
+// Misc has two: chatbox skins have no extensions.json key and one mirror can mix chat.png with chatbox.webp.
+// There is no ".webp.animated": animation is the VP8X ANIM flag, detected at decode time.
 var defaultFormatOrders = map[string][]string{
 	TypeCharIcon:    {ExtPNG},
 	TypeCharSprite:  {ExtWebP},
@@ -83,17 +63,12 @@ var defaultFormatOrders = map[string][]string{
 	TypeMusic:       {ExtOpus},
 	TypeBlip:        {ExtOpus},
 	TypeEmoteButton: {ExtWebP},
-	// Effect overlays follow get_image_suffix's own first choice (.webp). Real
-	// packs are MIXED (a transitions pack ships 22 .webp beside 4 .png), and
-	// extensions.json has no effects key, so autodetect cannot seed this type —
-	// the ordered learned list plus RecordSuccess's promote is what stops a mixed
-	// roster costing a probe per effect forever (the v1.87.2 mixed-fleet fix).
+	// Effect packs mix .webp and .png with no extensions.json key, so the learned list and promote limit probes.
+	// .webp is get_image_suffix's first choice.
 	TypeEffect: {ExtWebP},
 }
 
-// legacyFallbackChains is appended (order preserved, deduplicated) to the
-// configured format order when fallbacks are enabled for a type, globally or
-// per-type (spec §4).
+// legacyFallbackChains is appended, in order and deduplicated, to the format order when fallbacks are on for a type.
 var legacyFallbackChains = map[string][]string{
 	TypeCharIcon:    {ExtWebP},
 	TypeCharSprite:  {ExtAPNG, ExtGIF, ExtPNG},
@@ -110,20 +85,17 @@ var legacyFallbackChains = map[string][]string{
 	TypeEffect: {ExtAPNG, ExtGIF, ExtPNG},
 }
 
-// DefaultFormatOrder returns a copy of the zero-fallback probe list for the
-// given asset-type name, or nil for an unknown name.
+// DefaultFormatOrder returns a copy of a type's probe list, or nil for an unknown name.
 func DefaultFormatOrder(typeName string) []string {
 	return cloneStrings(defaultFormatOrders[typeName])
 }
 
-// LegacyFallbackChain returns a copy of the legacy chain appended when
-// fallbacks are enabled for the given asset-type name.
+// LegacyFallbackChain returns a copy of a type's legacy fallback chain.
 func LegacyFallbackChain(typeName string) []string {
 	return cloneStrings(legacyFallbackChains[typeName])
 }
 
-// defaultAssetTypes builds the per-type preference table with every known
-// asset type present, fallbacks disabled, default format orders.
+// defaultAssetTypes builds the per-type table with fallbacks off and default format orders.
 func defaultAssetTypes() map[string]AssetTypePrefs {
 	m := make(map[string]AssetTypePrefs, len(TypeNames))
 	for _, name := range TypeNames {

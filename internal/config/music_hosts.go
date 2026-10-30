@@ -1,44 +1,23 @@
 package config
 
-// Music-history domain allowlist (M12). The "recently played" history records a
-// /play link only when its host is on this list — the point is to capture songs
-// from "unique" user-hosted domains (catbox, file.garden, …) that you'd want to
-// keep, NOT the server's own music library (which still plays; it's just not worth
-// saving, you already have it on the server). Discord is allowlisted but only
-// counts when the link is an actual audio file, since most Discord CDN links are
-// images/attachments. The whole list is editable in Settings — NOTHING is
-// hardcoded to a specific server.
-//
-// An entry is either a bare host ("catbox.moe" — records any /play link on it) or
-// a host/folder ("miku.pizza/base/youtube" — records only audio files under that
-// path, so a server's user-rip folder can be saved while the rest of its library
-// isn't). Folder rules are opt-in: a player who wants their server's rips saved
-// adds that one path themselves.
-//
-// All of this runs once per song (at capture) and once per Save click — never on
-// a per-frame path, so it costs nothing on the render/UI hot loop.
+// Music-history allowlist: only /play links on these hosts are recorded, not a server's own library.
+// An entry is a host (any link) or host/folder (audio files only); Discord counts only for audio files.
 
 import (
 	"net/url"
 	"strings"
 )
 
-// musicHostsCap bounds the editable allowlist (rule §17.4: no unbounded slices).
+// musicHostsCap bounds the editable allowlist (hard rule 4).
 const musicHostsCap = 64
 
-// musicFileExts are the link extensions that count as a real song file. Used to
-// gate Discord and path-scoped entries (an image/attachment link must not record).
+// musicFileExts are the extensions that count as a song; they restrict Discord and path-scoped entries.
 var musicFileExts = []string{".opus", ".mp3", ".ogg", ".oga", ".wav", ".m4a", ".flac", ".aac", ".weba", ".webm"}
 
-// discordHosts are matched case- and subdomain-insensitively for the "Discord
-// only when it's an audio file" rule.
+// discordHosts are matched ignoring case and subdomains for the audio-file-only rule.
 var discordHosts = []string{"discord.com", "discordapp.com", "discordapp.net"}
 
-// musicEntry is one allowlist rule: a host (matched including subdomains) and an
-// optional path prefix. A bare-host rule records any /play link on that host; a
-// path-scoped rule records only links whose URL path starts with the prefix AND
-// that point at an actual audio file. Path rules carve a "songs people host here"
-// folder out of a domain we otherwise skip.
+// musicEntry is one allowlist rule: a host, with subdomains, and an optional path prefix requiring an audio file.
 type musicEntry struct {
 	host string
 	path string // "" = whole host; else a leading-slash prefix, audio-file only
@@ -48,8 +27,7 @@ func (e musicEntry) matches(host, path string) bool {
 	return hostMatches(host, e.host) && (e.path == "" || strings.HasPrefix(path, e.path))
 }
 
-// label is the entry's canonical stored/display form: "host" or "host/folder"
-// (no trailing slash), e.g. "catbox.moe" or "miku.pizza/base/youtube".
+// label is the canonical stored form: "host" or "host/folder" without a trailing slash.
 func (e musicEntry) label() string {
 	if e.path == "" {
 		return e.host
@@ -57,10 +35,7 @@ func (e musicEntry) label() string {
 	return e.host + strings.TrimSuffix(e.path, "/")
 }
 
-// defaultMusicHostList is the out-of-the-box allowlist (returned fresh so callers
-// never alias a shared slice): generic public music hosts, all removable in
-// Settings. Discord is here but only ever matches audio files. No server-specific
-// entries — those are opt-in.
+// defaultMusicHostList returns a fresh slice of public hosts; server-specific entries are opt-in.
 func defaultMusicHostList() []string {
 	return []string{
 		"catbox.moe",
@@ -72,16 +47,13 @@ func defaultMusicHostList() []string {
 	}
 }
 
-// cleanMusicHost lowercases, trims stray dots, and drops a leading "www.".
+// cleanMusicHost lowercases, trims stray dots and drops a leading "www.".
 func cleanMusicHost(h string) string {
 	h = strings.Trim(strings.ToLower(strings.TrimSpace(h)), ".")
 	return strings.TrimPrefix(h, "www.")
 }
 
-// musicEntryFromInput parses a user-typed allowlist entry into a host (+ optional
-// path-prefix rule). A full URL (with a scheme) yields a HOST rule — pasting a
-// song link must not turn into a one-file rule. A bare "host/folder" yields a
-// PATH-scoped rule. Returns a zero entry (host=="") for unparseable input.
+// musicEntryFromInput parses a typed entry; a full URL yields a host rule so a song link can't be a one-file rule.
 func musicEntryFromInput(s string) musicEntry {
 	s = strings.TrimSpace(strings.ToLower(s))
 	if s == "" {
@@ -111,8 +83,7 @@ func musicEntryFromInput(s string) musicEntry {
 	return musicEntry{host: host, path: path}
 }
 
-// musicEntryFromStored parses a canonical allowlist string (as label() produces)
-// back into a musicEntry.
+// musicEntryFromStored parses a label() string back into a musicEntry.
 func musicEntryFromStored(s string) musicEntry {
 	if i := strings.IndexByte(s, '/'); i >= 0 {
 		return musicEntry{host: s[:i], path: "/" + strings.Trim(s[i+1:], "/") + "/"}
@@ -120,8 +91,7 @@ func musicEntryFromStored(s string) musicEntry {
 	return musicEntry{host: s}
 }
 
-// sanitizeMusicHosts normalizes, dedups, drops empties, and caps a loaded list
-// (each entry parsed to its canonical host-or-host/folder label).
+// sanitizeMusicHosts normalizes, dedups, drops empties and caps a loaded list.
 func sanitizeMusicHosts(in []string) []string {
 	out := make([]string, 0, len(in))
 	seen := map[string]bool{}
@@ -143,9 +113,7 @@ func sanitizeMusicHosts(in []string) []string {
 	return out
 }
 
-// urlHostPath extracts a /play link's lowercased host and path (no port), or
-// ("","") if it isn't a real URL (a bare server-music name has no host and is
-// never recorded). The path feeds path-scoped allowlist rules.
+// urlHostPath returns a link's lowercased host and path, or empty strings; a bare music name is never recorded.
 func urlHostPath(rawURL string) (host, path string) {
 	rawURL = strings.TrimSpace(rawURL)
 	if !strings.Contains(rawURL, "://") {
@@ -163,8 +131,7 @@ func hostMatches(host, domain string) bool {
 	return host == domain || strings.HasSuffix(host, "."+domain)
 }
 
-// hasMusicFileExt reports whether a link points at an audio file (extension
-// check, query/fragment stripped).
+// hasMusicFileExt checks the link's extension with query and fragment stripped.
 func hasMusicFileExt(rawURL string) bool {
 	p := rawURL
 	if i := strings.IndexAny(p, "?#"); i >= 0 {
@@ -188,8 +155,7 @@ func isDiscordHost(host string) bool {
 	return false
 }
 
-// MusicHostList returns a copy of the editable allowlist (insertion order) for
-// the settings UI.
+// MusicHostList returns a copy of the allowlist in insertion order.
 func (s *Settings) MusicHostList() []string {
 
 	if len(s.MusicHosts) == 0 {
@@ -200,8 +166,7 @@ func (s *Settings) MusicHostList() []string {
 	return out
 }
 
-// AddMusicHost normalizes and appends a host (or host/folder) to the allowlist
-// (deduped, bounded). Reports whether it changed.
+// AddMusicHost normalizes and appends a host or host/folder; reports whether it changed.
 func (p *AssetPreferences) AddMusicHost(input string) bool {
 	e := musicEntryFromInput(input)
 	if e.host == "" {
@@ -215,8 +180,7 @@ func (p *AssetPreferences) AddMusicHost(input string) bool {
 	return changed
 }
 
-// RemoveMusicHost drops an entry from the allowlist by its stored label (what the
-// settings list shows). Reports whether it changed.
+// RemoveMusicHost drops an entry by its stored label; reports whether it changed.
 func (p *AssetPreferences) RemoveMusicHost(label string) bool {
 	changed := false
 	p.Update(func(sn *Settings) {
@@ -225,12 +189,7 @@ func (p *AssetPreferences) RemoveMusicHost(label string) bool {
 	return changed
 }
 
-// MusicURLAllowed reports whether a /play link should be recorded into the music
-// history (and thus be Save-able): its host (or host/folder) must be on the
-// allowlist, and a Discord link OR a path-scoped entry additionally has to be an
-// actual audio file. A bare track name (no host) or a song on a non-listed domain
-// returns false — it still plays, it just isn't recorded. Once per song, never per
-// frame.
+// MusicURLAllowed reports whether a /play link is recorded; others still play.
 func (s *Settings) MusicURLAllowed(rawURL string) bool {
 
 	host, path := urlHostPath(rawURL)
@@ -251,10 +210,7 @@ func (s *Settings) MusicURLAllowed(rawURL string) bool {
 	return false
 }
 
-// MusicURLDomain returns the normalized label of a /play link for grouping (e.g.
-// "files.catbox.moe" -> "catbox.moe", or a folder entry -> "miku.pizza/base/youtube"
-// so those rips group apart from the rest of the host), else the bare host. "" when
-// it isn't a URL.
+// MusicURLDomain returns a link's allowlist label for grouping, else the bare host, or "" if it isn't a URL.
 func (s *Settings) MusicURLDomain(rawURL string) string {
 
 	host, path := urlHostPath(rawURL)

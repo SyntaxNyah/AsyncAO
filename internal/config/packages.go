@@ -7,27 +7,16 @@ import (
 	"strings"
 )
 
-// Auto-mounted asset packages (issue #128): a `packages/` folder beside the
-// executable whose subfolders are each a full AO base folder
-// (characters/, background/, sounds/, ...). They are discovered once at startup
-// and appended AFTER the user's manual asset-source mounts, so an explicit mount
-// always wins the first-hit-wins search. DiscoverPackages is startup-only disk
-// I/O — never called on a render/decode path (hard rule §2).
+// Packages are subfolders of packages/ beside the executable, each a full AO base folder.
+// Found once at startup (hard rule 2) and mounted after manual mounts.
 
-// PackagesDirName is the folder beside the executable that holds the auto-mounted
-// packages.
+// PackagesDirName is the folder beside the executable holding the packages.
 const PackagesDirName = "packages"
 
-// PackagesSortName is the optional ordering file inside PackagesDirName: a plain
-// list of package folder names, one per line, highest priority first. Packages
-// named in it mount in that order; any not named follow in lexical order. Blank
-// lines and lines starting with '#' are ignored.
+// PackagesSortName is the optional order file: one name per line, highest first; blank and '#' lines are ignored.
 const PackagesSortName = "sorting.txt"
 
-// DiscoverPackages returns the ordered auto-mount list from <exeDir>/packages/:
-// subfolders named in packages/sorting.txt first (in listed order), then the
-// remaining subfolders in lexical order. A missing or unreadable packages/
-// folder, or an empty exeDir, returns nil — "no packages" is not an error.
+// DiscoverPackages returns sorting.txt's folders in order, then the rest lexically; nil is not an error.
 func DiscoverPackages(exeDir string) []string {
 	if exeDir == "" {
 		return nil
@@ -59,7 +48,7 @@ func DiscoverPackages(exeDir string) []string {
 			seen[name] = true
 		}
 	}
-	// The rest, lexical, so the result is deterministic even without a file.
+	// Lexical, so the result is deterministic without a file.
 	var rest []string
 	for _, name := range names {
 		if !seen[name] {
@@ -73,9 +62,7 @@ func DiscoverPackages(exeDir string) []string {
 	return out
 }
 
-// CombineMounts returns manual followed by auto. Manual first, so a user's
-// explicit folder always wins over an auto-mounted package. When auto is empty
-// the manual list is returned unchanged (no allocation).
+// CombineMounts returns manual then auto, so an explicit folder wins first-hit search.
 func CombineMounts(manual, auto []string) []string {
 	if len(auto) == 0 {
 		return manual
@@ -86,10 +73,7 @@ func CombineMounts(manual, auto []string) []string {
 	return out
 }
 
-// readPackageOrder parses packages/sorting.txt into the listed package names,
-// highest priority first. Unreadable files and malformed/blank/comment lines are
-// skipped; a listed name that is not actually a package folder is filtered out by
-// the caller.
+// readPackageOrder parses sorting.txt; the caller filters out names that aren't package folders.
 func readPackageOrder(path string) []string {
 	data, err := os.ReadFile(path)
 	if err != nil {

@@ -2,34 +2,30 @@ package config
 
 import "strings"
 
-// Collection mutators on *Settings. Each owns ONE rule (via the shared collection
-// helpers in collection_helpers.go) so the *AssetPreferences orchestration — normalize
-// the input, run Update, bump any generation counter — never re-derives the
-// dedupe/cap/toggle logic at a call site.
+// Collection mutators on *Settings; the *AssetPreferences callers normalize input, run Update and bump generations.
 
-// AddCallWord appends one normalized highlight word (the caller lowercases + trims);
-// exact-deduped and capped at callWordCap. Reports whether the list grew.
+// AddCallWord appends a normalized highlight word, deduped and capped; reports whether it grew.
 func (s *Settings) AddCallWord(w string) bool {
 	var ok bool
 	s.CallWordList, ok = addExactUnique(s.CallWordList, w, callWordCap)
 	return ok
 }
 
-// RemoveCallWord drops a highlight word (exact; the caller lowercases). Reports a change.
+// RemoveCallWord drops a highlight word; the caller lowercases. Reports a change.
 func (s *Settings) RemoveCallWord(word string) bool {
 	var changed bool
 	s.CallWordList, changed = removeExact(s.CallWordList, word)
 	return changed
 }
 
-// AddShownamePreset appends a showname (case-insensitive dedupe, capped). Reports change.
+// AddShownamePreset appends a showname, fold-deduped and capped; reports a change.
 func (s *Settings) AddShownamePreset(name string) bool {
 	var changed bool
 	s.ShownamePresets, changed = addFoldUnique(s.ShownamePresets, name, ShownameCap)
 	return changed
 }
 
-// RemoveShownamePreset drops a showname and any key bound to it. Reports change.
+// RemoveShownamePreset drops a showname and any key bound to it; reports a change.
 func (s *Settings) RemoveShownamePreset(name string) bool {
 	var changed bool
 	s.ShownamePresets, changed = removeFold(s.ShownamePresets, name)
@@ -43,22 +39,21 @@ func (s *Settings) RemoveShownamePreset(name string) bool {
 	return changed
 }
 
-// MuteSFX appends an SFX name (exact dedupe, capped). Reports change.
+// MuteSFX appends an SFX name, deduped and capped; reports a change.
 func (s *Settings) MuteSFX(name string) bool {
 	var changed bool
 	s.MutedSFX, changed = addExactUnique(s.MutedSFX, name, mutedSFXCap)
 	return changed
 }
 
-// UnmuteSFX removes an SFX name (exact). Reports change.
+// UnmuteSFX removes an SFX name; reports a change.
 func (s *Settings) UnmuteSFX(name string) bool {
 	var changed bool
 	s.MutedSFX, changed = removeExact(s.MutedSFX, name)
 	return changed
 }
 
-// ToggleSfxFavorite stars an SFX name if absent (deduped, bounded) or unstars it if
-// present. Reports the new state (true = now starred). A no-op (false) when at the cap.
+// ToggleSfxFavorite flips a star and reports the new state; false at the cap.
 func (s *Settings) ToggleSfxFavorite(name string) bool {
 	var removed, nowFav bool
 	s.SfxFavorites, removed = removeExact(s.SfxFavorites, name)
@@ -69,22 +64,21 @@ func (s *Settings) ToggleSfxFavorite(name string) bool {
 	return nowFav
 }
 
-// AddModDuration appends a custom duration token (deduped, bounded). Reports change.
+// AddModDuration appends a duration token, deduped and capped; reports a change.
 func (s *Settings) AddModDuration(token string) bool {
 	var changed bool
 	s.ModDurations, changed = addFoldUnique(s.ModDurations, token, modDurationsCap)
 	return changed
 }
 
-// RemoveModDuration drops a custom duration token. Reports change.
+// RemoveModDuration drops a duration token; reports a change.
 func (s *Settings) RemoveModDuration(token string) bool {
 	var changed bool
 	s.ModDurations, changed = removeFold(s.ModDurations, token)
 	return changed
 }
 
-// AddModReasonTemplate appends a reason template (deduped, bounded), seeding the
-// built-in list first. Reports change.
+// AddModReasonTemplate appends a template after seeding the built-ins; reports a change.
 func (s *Settings) AddModReasonTemplate(v string) bool {
 	seedModTemplates(s)
 	var changed bool
@@ -92,7 +86,7 @@ func (s *Settings) AddModReasonTemplate(v string) bool {
 	return changed
 }
 
-// RemoveModReasonTemplate drops a reason template, seeding the built-ins first. Reports change.
+// RemoveModReasonTemplate drops a template after seeding the built-ins; reports a change.
 func (s *Settings) RemoveModReasonTemplate(v string) bool {
 	seedModTemplates(s)
 	var changed bool
@@ -100,22 +94,21 @@ func (s *Settings) RemoveModReasonTemplate(v string) bool {
 	return changed
 }
 
-// AddMusicHost appends a music-host entry (exact dedupe, capped). Reports change.
+// AddMusicHost appends an entry, deduped and capped; reports a change.
 func (s *Settings) AddMusicHost(lbl string) bool {
 	var changed bool
 	s.MusicHosts, changed = addExactUnique(s.MusicHosts, lbl, musicHostsCap)
 	return changed
 }
 
-// RemoveMusicHost removes a music-host entry (exact). Reports change.
+// RemoveMusicHost removes an entry; reports a change.
 func (s *Settings) RemoveMusicHost(label string) bool {
 	var changed bool
 	s.MusicHosts, changed = removeExact(s.MusicHosts, label)
 	return changed
 }
 
-// AddFavorite stars a server (upsert by URL): an existing entry is renamed/re-described,
-// otherwise a new entry is appended. The caller pre-checks url != "".
+// AddFavorite upserts a server by URL; the caller checks url != "".
 func (s *Settings) AddFavorite(name, url, description string) {
 	for i, f := range s.Favorites {
 		if f.URL == url {
@@ -142,9 +135,7 @@ func (s *Settings) RemoveFavorite(url string) {
 	s.Favorites = kept
 }
 
-// UpdateFavorite renames/re-addresses an existing phone-book entry, preserving its
-// position. Reports false when oldURL is absent, or when newURL already belongs to a
-// DIFFERENT entry (a silent merge would surprise). A no-op edit reports true.
+// UpdateFavorite edits in place; false when oldURL is absent or newURL is another entry's (no silent merge).
 func (s *Settings) UpdateFavorite(oldURL, newName, newURL, description string) bool {
 	idx := -1
 	for i, f := range s.Favorites {
@@ -173,8 +164,7 @@ func (s *Settings) UpdateFavorite(oldURL, newName, newURL, description string) b
 	return true
 }
 
-// AddStylePreset stores a preset by name (overwrite in place, else append bounded by
-// stylePresetCap). The caller pre-normalizes pr (trim, clamp opacity, lower key).
+// AddStylePreset overwrites by name or appends up to the cap; the caller normalizes pr.
 func (s *Settings) AddStylePreset(pr StylePreset) {
 	for i := range s.SavedStyles {
 		if s.SavedStyles[i].Name == pr.Name {
@@ -189,15 +179,14 @@ func (s *Settings) AddStylePreset(pr StylePreset) {
 	s.SavedStyles = append(s.SavedStyles, pr)
 }
 
-// DeleteStylePreset removes the preset at i (bounds-checked).
+// DeleteStylePreset removes the preset at i, bounds-checked.
 func (s *Settings) DeleteStylePreset(i int) {
 	if i >= 0 && i < len(s.SavedStyles) {
 		s.SavedStyles = append(s.SavedStyles[:i], s.SavedStyles[i+1:]...)
 	}
 }
 
-// SetStylePresetKey binds (or clears, key == "") a key to preset i, unbinding it from any
-// other preset first so a key maps to exactly one mood. The caller lowercases/trims key.
+// SetStylePresetKey binds or, with "", clears a key, unbinding it elsewhere so it maps to one preset.
 func (s *Settings) SetStylePresetKey(i int, key string) {
 	if i < 0 || i >= len(s.SavedStyles) {
 		return
@@ -212,9 +201,7 @@ func (s *Settings) SetStylePresetKey(i int, key string) {
 	s.SavedStyles[i].Key = key
 }
 
-// MarkFontWarnShown records a theme as warned (fold-deduped, keeps the most recent
-// FontWarnThemesCap). The caller trims theme.
-// Mutation: change the keep-tail slice to keep-head and TestFontWarnThemesCap fails.
+// MarkFontWarnShown records a warned theme, fold-deduped, keeping the most recent; the caller trims theme.
 func (s *Settings) MarkFontWarnShown(theme string) {
 	for _, t := range s.FontWarnThemes {
 		if strings.EqualFold(t, theme) {
@@ -232,10 +219,7 @@ func (s *Settings) ClearFontWarnThemes() {
 	s.FontWarnThemes = nil
 }
 
-// SetPanelFont stores one element's override (an empty override removes the entry rather
-// than storing a zero value, so a later default change still reaches the user). The
-// caller normalizes id and clamps pf.
-// Mutation: change the "empty removes" branch to always-store and TestPanelFontResetRemoves fails.
+// SetPanelFont stores an override; an empty one removes the entry so a later default change still reaches the user.
 func (s *Settings) SetPanelFont(id string, pf PanelFont) {
 	if pf.Family == "" && pf.SizePx == 0 {
 		delete(s.PanelFontsVal, id)
@@ -261,9 +245,7 @@ func (s *Settings) ClearPanelFonts() {
 	s.PanelFontsVal = nil
 }
 
-// SetShownameKeyBind binds a bare key to a showname preset (an empty showname clears it),
-// bounded by shownameKeyCap. The caller lowercases/trims key.
-// Mutation: drop the len >= shownameKeyCap guard and TestShownameKeyCap fails.
+// SetShownameKeyBind binds a bare key to a showname, "" clears, capped; the caller normalizes key.
 func (s *Settings) SetShownameKeyBind(key, showname string) {
 	if showname == "" {
 		delete(s.ShownameKeys, key)
@@ -278,8 +260,7 @@ func (s *Settings) SetShownameKeyBind(key, showname string) {
 	s.ShownameKeys[key] = showname
 }
 
-// SetICPhraseKey binds key to a canned IC line (an empty phrase clears it), bounded by
-// icPhraseKeyCap. The caller lowercases/trims key and trims phrase.
+// SetICPhraseKey binds a key to a canned IC line, "" clears, capped; the caller normalizes both.
 func (s *Settings) SetICPhraseKey(key, phrase string) {
 	if phrase == "" {
 		delete(s.ICPhraseKeys, key)
@@ -305,9 +286,7 @@ func (s *Settings) SetHotkey(action, key string) {
 	s.HotkeyMap[action] = key
 }
 
-// SetBlipVolume stores one character's typing-blip volume (the default value removes the
-// entry). Reports a change. The caller lowercases/trims char and clamps pct.
-// Mutation: change the "default removes" branch to store and TestBlipVolumeDefaultRemoves fails.
+// SetBlipVolume stores a character's volume, the default removes the entry; reports a change.
 func (s *Settings) SetBlipVolume(char string, pct int) bool {
 	cur, had := s.BlipVols[char]
 	if pct == blipVolumeDefault {
@@ -330,11 +309,7 @@ func (s *Settings) SetBlipVolume(char string, pct int) bool {
 	return true
 }
 
-// ToggleEmoteFav flips an emote index's favourite state for a character and returns the
-// NEW state (true = now favourited). Bounded by the per-char and char-count caps; removing
-// the last favourite drops the character's entry. The caller lowercases/trims char and
-// pre-checks idx >= 0.
-// Mutation: drop the emoteFavPerCharCap guard and TestEmoteFavPerCharCap fails.
+// ToggleEmoteFav flips a favourite, capped, and returns the new state; removing the last drops the character.
 func (s *Settings) ToggleEmoteFav(char string, idx int) bool {
 	list := s.EmoteFavs[char]
 	if !containsInt(list, idx) {
@@ -361,7 +336,7 @@ func (s *Settings) ToggleEmoteFav(char string, idx int) bool {
 	return true
 }
 
-// SetClassicSlot stores one default-courtroom slot's override (bounded by classicSlotCap).
+// SetClassicSlot stores one default-courtroom slot's override, capped.
 func (s *Settings) SetClassicSlot(name string, frac [4]float64) {
 	if s.ClassicLayout == nil {
 		s.ClassicLayout = map[string][4]float64{}
@@ -372,8 +347,7 @@ func (s *Settings) SetClassicSlot(name string, frac [4]float64) {
 	s.ClassicLayout[name] = frac
 }
 
-// ClearClassicSlot drops one slot's override (name "" clears every slot plus its anchors
-// and rotations, the editor's "Reset all").
+// ClearClassicSlot drops a slot's override; "" clears every slot with its anchors and rotations.
 func (s *Settings) ClearClassicSlot(name string) {
 	if name == "" {
 		s.ClassicLayout = nil
@@ -386,7 +360,7 @@ func (s *Settings) ClearClassicSlot(name string) {
 	delete(s.ClassicRotations, name)
 }
 
-// SetClassicAnchor pins one slot to a window reference (bounded by classicSlotCap).
+// SetClassicAnchor pins a slot to a window reference, capped.
 func (s *Settings) SetClassicAnchor(name string, a ClassicAnchor) {
 	if s.ClassicAnchors == nil {
 		s.ClassicAnchors = map[string]ClassicAnchor{}
@@ -402,7 +376,7 @@ func (s *Settings) ClearClassicAnchor(name string) {
 	delete(s.ClassicAnchors, name)
 }
 
-// SetClassicRotation stores one slot's rotation angle byte (bounded by classicSlotCap).
+// SetClassicRotation stores a slot's rotation angle byte, capped.
 func (s *Settings) SetClassicRotation(name string, deg uint8) {
 	if s.ClassicRotations == nil {
 		s.ClassicRotations = map[string]uint8{}
@@ -418,8 +392,7 @@ func (s *Settings) ClearClassicRotation(name string) {
 	delete(s.ClassicRotations, name)
 }
 
-// SaveLayoutProfile stores a sanitized profile (bounded by layoutProfileCap). The caller
-// sanitizes prof and rejects empty profiles.
+// SaveLayoutProfile stores a profile, capped; the caller sanitizes and rejects empty ones.
 func (s *Settings) SaveLayoutProfile(name string, prof LayoutProfile) {
 	if s.LayoutProfiles == nil {
 		s.LayoutProfiles = map[string]LayoutProfile{}
@@ -440,7 +413,7 @@ func (s *Settings) DeleteLayoutProfile(name string) {
 	}
 }
 
-// SetThemeRectOverride stores one widget's edit (bounded by themeOvThemesCap/themeOvRectsCap).
+// SetThemeRectOverride stores a widget's edit, capped.
 func (s *Settings) SetThemeRectOverride(theme, key string, r [4]int) {
 	if s.ThemeRectOv == nil {
 		s.ThemeRectOv = map[string]map[string][4]int{}
@@ -459,8 +432,7 @@ func (s *Settings) SetThemeRectOverride(theme, key string, r [4]int) {
 	m[key] = r
 }
 
-// ClearThemeRectOverride drops one widget's edit (key "" = the whole theme's edits); the
-// matching rotation dies with its override (A4), mirroring the classic anchor coupling.
+// ClearThemeRectOverride drops a widget's edit ("" = the whole theme's) and its rotation with it.
 func (s *Settings) ClearThemeRectOverride(theme, key string) {
 	if m, ok := s.ThemeRectOv[theme]; ok {
 		if key == "" {
@@ -484,8 +456,7 @@ func (s *Settings) ClearThemeRectOverride(theme, key string) {
 	}
 }
 
-// SetThemeRectRotation stores one widget's rotation angle byte (bounded by the same
-// themeOvThemesCap/themeOvRectsCap as the overrides).
+// SetThemeRectRotation stores a widget's rotation angle byte, capped.
 func (s *Settings) SetThemeRectRotation(theme, key string, deg uint8) {
 	if s.ThemeRectRotations == nil {
 		s.ThemeRectRotations = map[string]map[string]uint8{}
@@ -504,7 +475,7 @@ func (s *Settings) SetThemeRectRotation(theme, key string, deg uint8) {
 	m[key] = deg
 }
 
-// ClearThemeRectRotation drops one widget's rotation (key "" = the whole theme's).
+// ClearThemeRectRotation drops a widget's rotation ("" = the whole theme's).
 func (s *Settings) ClearThemeRectRotation(theme, key string) {
 	if m, ok := s.ThemeRectRotations[theme]; ok {
 		if key == "" {
