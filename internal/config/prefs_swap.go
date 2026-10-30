@@ -8,10 +8,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
-// presencePrepass decodes data into the set of PRESENT (non-null) JSON key paths,
-// recursing into nested objectp. A JSON null counts as absent, matching the old
-// pointer-field load(): a nil *T meant "key not written", so explicit null and an
-// absent key were the same thing.
+// presencePrepass returns the present JSON key paths; a JSON null counts as absent.
 func presencePrepass(data []byte) map[string]bool {
 	var raw map[string]json.RawMessage
 	if json.Unmarshal(data, &raw) != nil {
@@ -36,10 +33,7 @@ func collectPresence(raw map[string]json.RawMessage, prefix string, out map[stri
 	}
 }
 
-// snapshotLoad is the B0 candidate load: start from the defaults, unmarshal the file
-// OVER them, run the ordered legacy-key migrations, then normalize (clamps + stamps)
-// using the presence pre-pass. A JSON decode error returns the (untouched) defaults and
-// the unmarshal error so load() can wrap it and quarantine the file exactly as today.
+// snapshotLoad overlays the file on defaults, migrates and normalizes; a decode error returns untouched defaults.
 func snapshotLoad(data []byte) (*AssetPreferences, error) {
 	p := defaultPrefs("")
 	s := p.settings.Load()
@@ -54,22 +48,15 @@ func snapshotLoad(data []byte) (*AssetPreferences, error) {
 	return p, nil
 }
 
-// legacyKey is one legacy → current JSON key migration. The migrate func receives the
-// raw file bytes (to decode legacy keys AssetPreferences no longer carries), plus the
-// presence set so it can honour "only when the new key is absent".
+// legacyKey is one old-to-current key migration; migrate gets raw bytes as the struct lacks the old keys.
 type legacyKey struct {
 	migrate func(s *Settings, data []byte, presence map[string]bool)
 }
 
-// legacyKeys lists the on-disk key migrations in the order they must apply. Order
-// matters: a migration may only write the new field when the new key is ABSENT, so a
-// file that already carries the new key is never clobbered. Each migration commits its
-// own entry (Order 1A-b) and removes the matching allowlist entry.
+// legacyKeys apply in order; a migration writes the new field only when the new key is absent, so it never overwrites.
 var legacyKeys = []legacyKey{
 	{
-		// Mutation (layoutPresets → layoutProfiles): one-way, no clobber. A legacy
-		// layoutPresets file (classic slots only) wraps each sanitized preset into a
-		// Classic-only profile; skipped once any profile existp.
+		// layoutPresets to layoutProfiles, one way: presets wrap into Classic-only profiles unless a profile exists.
 		migrate: func(s *Settings, data []byte, presence map[string]bool) {
 			if presence["layoutProfiles"] || !presence["layoutPresets"] {
 				return
@@ -96,22 +83,17 @@ var legacyKeys = []legacyKey{
 	},
 }
 
-// migrateLegacyKeys applies every legacyKey in order.
 func migrateLegacyKeys(s *Settings, data []byte, presence map[string]bool) {
 	for _, lk := range legacyKeys {
 		lk.migrate(s, data, presence)
 	}
 }
 
-// normalizeSnapshot applies load()'s one-shot stamps, default resets and sanitizers
-// to a snapshot-loaded value, so defaultPrefs + Unmarshal-over-defaults + normalize ==
-// load() for every field and case. Range clamps are left to normalizeSettings, which
-// runs last. The resets use the defaultPrefs reference so a default change keeps them
-// in step.
+// normalizeSnapshot applies stamps, default resets and sanitizers; normalizeSettings clamps ranges last.
 func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bool) (changed bool) {
 	def := defaultSettings()
 
-	// (i) explicit zero keeps the default (load() used `!= 0`).
+	// Explicit zero keeps the default.
 	if s.ViewportPct == 0 {
 		s.ViewportPct = def.ViewportPct
 	}
@@ -125,8 +107,7 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 		s.LogScalePct = def.LogScalePct
 	}
 	if !presence["oocScalePercent"] || s.OOCScalePct == 0 {
-		// inherit the IC log size once so the OOC box doesn't visibly jump on upgrade
-		// (absent or explicit zero, matching load()'s `onDisk.OOCScalePct != 0`).
+		// Inherit the IC log size once so the OOC box doesn't jump, whether the key is absent or zero.
 		s.OOCScalePct = s.LogScalePct
 	}
 	if s.InputHeightPct == 0 {
@@ -148,37 +129,35 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 		s.ThemeFitZoom = def.ThemeFitZoom
 	}
 
-	// (i)/(iii) enums and string defaults: invalid or empty keeps the default.
+	// Invalid or empty enums and strings keep the default.
 	if s.ChromeShapeKey != chromeShapeRounded && s.ChromeShapeKey != chromeShapePill {
 		s.ChromeShapeKey = def.ChromeShapeKey
 	}
 	if s.HoldClearKey == "" {
 		s.HoldClearKey = def.HoldClearKey
 	}
-	// Mutation (subtheme): sanitize the subtheme folder on the way in (traversal is
-	// stripped), matching load()'s theme.SanitizeSubtheme call.
+	// Strip traversal from the subtheme folder.
 	s.SubthemeName = theme.SanitizeSubtheme(s.SubthemeName)
 
-	// (iv) explicit-zero keeps the default (non-pointer `> 0` checks).
+	// Explicit zero keeps the default.
 	if s.BgSlideshowSecs <= 0 {
 		s.BgSlideshowSecs = def.BgSlideshowSecs
 	}
 
-	// (ii) one-shot migration stamps — re-apply load()'s stamp decision.
+	// One-shot migration stamps.
 	if !presence["spriteScalingMigrated"] || !s.SpriteScalingMigrated {
 		s.SpriteScaling = defaultSpriteScaling
 		s.SpriteScalingMigrated = true
 		changed = true // persist the stamp promptly so the move never re-fires
 	}
 	if presence["autoReconnectDefaultMigrated"] && s.AutoReconnectDefaultMigrated {
-		// already migrated: the on-disk value is honoured as-is
+		// Already migrated: the on-disk value stands.
 	} else {
 		s.AutoReconnect = false
 		s.AutoReconnectDefaultMigrated = true
 		changed = true
 	}
-	// Mutation (themeFit flags): the migration reads the ON-DISK themeFit (zero when the
-	// key is absent), not the default-prefs value the unmarshal-over-defaults left there.
+	// The migration reads the on-disk themeFit (zero when absent), not the default the overlay left there.
 	effectiveThemeFit := s.ThemeFit
 	if !presence["themeFit"] {
 		effectiveThemeFit = 0
@@ -188,8 +167,7 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 	} else {
 		saved := value.Clamp(effectiveThemeFit, ThemeFitStretch, themeFitModeMax)
 		if saved == ThemeFitStretch {
-			// Mutation (themeFit flags): only a file still on the legacy Stretch default
-			// arms the one-shot move-to-native; every un-migrated file stamps.
+			// Only a file still on the legacy Stretch default moves to Native; every unmigrated file gets the stamp.
 			s.ThemeFit = defaultThemeFit
 			p.themeFitMovedToNative = true
 		} else {
@@ -224,12 +202,12 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 		changed = true
 	}
 
-	// (i) enum clamp: a garbage / newer sprite-load mode falls back to the default.
+	// A garbage or newer sprite-load mode falls back to the default.
 	if s.SpriteLoadModeVal < SpriteLoadBlank || s.SpriteLoadModeVal >= SpriteLoadModeCount {
 		s.SpriteLoadModeVal = defaultSpriteLoadMode
 	}
 
-	// (iii) non-zero nested defaults the unmarshal-over-defaults zeroed.
+	// Restore non-zero nested defaults the overlay zeroed.
 	if len(s.AssetTypes) == 0 {
 		s.AssetTypes = def.AssetTypes
 	} else {
@@ -251,8 +229,7 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 	if s.LearnedFormats == nil {
 		s.LearnedFormats = def.LearnedFormats
 	}
-	// sanitize tail (Mutations): reproduce load()'s per-helper clean-ups — bounds, blank
-	// name/id drops, and dedupe — so a hand-edited file cannot grow or corrupt the maps.
+	// Bound, drop blank names and ids, and dedupe, so a hand-edited file cannot grow or corrupt the maps.
 	s.SavedStyles = sanitizeStylePresets(s.SavedStyles)
 	s.PanelFontsVal = sanitizePanelFonts(s.PanelFontsVal)
 	s.UserMacros = sanitizeMacros(s.UserMacros)
@@ -282,15 +259,12 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 		}
 		e.Loop = s.Export.Loop
 		if presence["export"] && !presence["export.loop"] {
-			// Mutation (export): the old load read onDisk.Export.Loop — a present export
-			// object without a loop key reads false, not the default.
+			// A present export object without a loop key reads false, not the default.
 			e.Loop = false
 		}
 		s.Export = e
 	}
-	// discord + autoStatus: load() copied the whole on-disk struct when the key was
-	// PRESENT, so a present-but-omitempty field reads as ZERO, not the defaultPrefs
-	// value (which the unmarshal-over-defaults keeps). An ABSENT key keeps the default.
+	// A present key's omitted field reads as zero, not the default; an absent key keeps the default.
 	if presence["discord"] && !presence["discord.appId"] {
 		s.DiscordRPC.AppID = ""
 	}
@@ -312,9 +286,7 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 		}
 	}
 	s.MyAutoStatus = sanitizeAutoStatus(s.MyAutoStatus)
-	// Strict load: clamp out-of-range file values exactly as the setters do, so the
-	// clamp-on-read getters can collapse to plain field reads. A clamp never sets
-	// `changed` (no dirty, no rewrite until the next real Save).
+	// Clamp as the setters do so getters can be plain reads; a clamp never sets changed, so nothing rewrites.
 	normalizeSettings(s)
 	return changed
 }

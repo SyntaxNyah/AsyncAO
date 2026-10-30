@@ -1,7 +1,4 @@
-// genclone emits internal/config/settings_clone.go: a generated deep copy of Settings
-// that does `c := *s` then explicit deep copies of every map, slice, pointer and nested
-// value that holds references. The reflection clone (settings.go cloneSettings) stays ONLY
-// in the test as the oracle. Stdlib-only (go/parser + go/ast, no go/types, no x/tools).
+// genclone emits settings_clone.go: `c := *s` plus explicit deep copies of everything holding references. Stdlib-only.
 package main
 
 import (
@@ -114,8 +111,7 @@ func main() {
 	fmt.Println("wrote internal/config/settings_clone.go")
 }
 
-// structFields yields each exported field name and type of a struct (embedded fields
-// use the embedded type's base name).
+// structFields yields each exported field; embedded fields use the type's base name.
 func structFields(st *ast.StructType, yield func(name string, typ ast.Expr)) {
 	for _, f := range st.Fields.List {
 		if len(f.Names) == 0 {
@@ -144,7 +140,6 @@ func embeddedName(e ast.Expr) string {
 	return ""
 }
 
-// typeString prints an AST type expression back to Go source.
 func typeString(e ast.Expr) string {
 	var b bytes.Buffer
 	printer.Fprint(&b, fset, e)
@@ -170,8 +165,7 @@ func (g *gen) loopVar(prefix string) string {
 	return fmt.Sprintf("%s%d", prefix, g.n)
 }
 
-// deref resolves a package-local named type to its underlying expression, unwrapping
-// aliases; builtins and foreign selector types are returned as-is.
+// deref resolves a package-local named type to its underlying expression; builtins and foreign types return as-is.
 func (g *gen) deref(e ast.Expr) ast.Expr {
 	for {
 		id, ok := e.(*ast.Ident)
@@ -186,8 +180,7 @@ func (g *gen) deref(e ast.Expr) ast.Expr {
 	}
 }
 
-// holdsRefs reports whether e holds a reference (map/slice/pointer, direct or nested).
-// Package-local named types resolve by name; foreign (selector) types are opaque scalars.
+// holdsRefs reports whether e holds a reference; foreign selector types are opaque scalars.
 func (g *gen) holdsRefs(e ast.Expr) bool {
 	switch t := g.deref(e).(type) {
 	case *ast.Ident, *ast.SelectorExpr:
@@ -232,8 +225,7 @@ func structName(e ast.Expr) string {
 	return ""
 }
 
-// emitCopy writes statements that copy src into dst, recursing for nested refs and
-// collecting struct-with-references types into g.helpers.
+// emitCopy writes statements copying src to dst, recursing and collecting struct types into g.helpers.
 func (g *gen) emitCopy(buf *bytes.Buffer, indent string, t ast.Expr, src, dst string) {
 	switch u := g.deref(t).(type) {
 	case *ast.Ident, *ast.SelectorExpr:
@@ -304,8 +296,7 @@ func (g *gen) emitCopy(buf *bytes.Buffer, indent string, t ast.Expr, src, dst st
 	}
 }
 
-// emitEqual writes statements that return false when a and b differ, recursing for
-// nested refs and collecting struct-with-references types into g.eqHelpers.
+// emitEqual writes statements returning false when a and b differ, collecting struct types into g.eqHelpers.
 func (g *gen) emitEqual(buf *bytes.Buffer, indent string, t ast.Expr, a, b string) {
 	switch u := g.deref(t).(type) {
 	case *ast.Ident, *ast.SelectorExpr:

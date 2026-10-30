@@ -12,36 +12,19 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
-// ErrAlreadyPortable is returned by MigrateToPortable when the active config is
-// already the portable one (nothing to copy).
+// ErrAlreadyPortable is returned by MigrateToPortable when the active config is already the portable one.
 var ErrAlreadyPortable = errors.New("config: already portable")
 
-// ErrThemesNotMigrated marks MigrateToPortable's PARTIAL success: the config set
-// copied, the themes folder did not. It exists so the caller can say the true
-// thing ("your settings moved; your themes did not") instead of reporting a total
-// failure for a migration that actually did most of its job — the user's next
-// action, restarting into the portable copy, is still the right one. Test with
-// errors.Is; the underlying filesystem error stays wrapped behind it.
+// ErrThemesNotMigrated marks a partial success: settings copied, themes did not; test with errors.Is.
 var ErrThemesNotMigrated = errors.New("config: settings copied, but the themes folder did not")
 
-// PortableDirName is the folder beside the executable that holds a *portable*
-// config set (asset_preferences.json, notebooks/, jukebox.json). Its presence
-// is what makes a copied AsyncAO folder — or a USB stick — carry its settings
-// with it. Kept a plain, obvious name so it's "readily available right there".
+// PortableDirName is the folder beside the executable that makes a copied install carry its settings.
 const PortableDirName = "config"
 
-// writeProbeName is the throwaway file ConfigBaseDir creates to test whether the
-// executable's directory is writable (Program Files / read-only mounts are not).
+// writeProbeName is the throwaway file used to test whether the executable's directory is writable.
 const writeProbeName = ".asyncao-writetest"
 
-// ConfigBaseDir returns the directory that holds asset_preferences.json and the
-// rest of AsyncAO's per-user data (notebooks, jukebox). It is **portable-first**
-// with an OS-config-dir fallback:
-// The result is memoized: the active location is fixed for the process lifetime,
-// so the writability probe in step 3 (a single create+delete) runs exactly once
-// — never per call. That matters because DefaultPath() flows through here and is
-// read on hot paths (e.g. the settings screen shows the path every frame); a
-// per-frame disk probe would violate hard rule #2.
+// The location is fixed for the process, so the probe runs once; settings reads it every frame (hard rule 2).
 var (
 	configBaseOnce     sync.Once
 	configBaseDirCache string
@@ -61,25 +44,19 @@ func resolveConfigBaseOnce() {
 	})
 }
 
-// ConfigBaseDir returns the directory that holds asset_preferences.json and the
-// rest of AsyncAO's per-user data. See the package doc above for the policy.
+// ConfigBaseDir returns the directory holding preferences and per-user data: portable first, then the OS config dir.
 func ConfigBaseDir() (string, error) {
 	resolveConfigBaseOnce()
 	return configBaseDirCache, configBaseErr
 }
 
-// ConfigIsPortable reports whether the active config (ConfigBaseDir) is the
-// portable location beside the executable (vs. the OS config dir). Memoized;
-// after a MigrateToPortable it still reflects *this* session — the move takes
-// effect on the next launch, which is exactly what the UI should report.
+// ConfigIsPortable describes this session even after MigrateToPortable, which applies on the next launch.
 func ConfigIsPortable() bool {
 	resolveConfigBaseOnce()
 	return configBasePortable
 }
 
-// PortableConfigDir returns where a portable config set would live for this exe
-// (<exeDir>/config), independent of which location is currently active — used by
-// the "Make portable" migration. Empty string if the exe path can't be resolved.
+// PortableConfigDir returns where a portable config would live for this exe, or "" if the path is unknown.
 func PortableConfigDir() string {
 	exeDir := executableDir()
 	if exeDir == "" {
@@ -88,22 +65,11 @@ func PortableConfigDir() string {
 	return filepath.Join(exeDir, PortableDirName)
 }
 
-// FontsDirName is the folder inside the config directory where a user may drop
-// font files for themes to use.
+// FontsDirName is the folder inside the config directory for user-supplied theme fonts.
 const FontsDirName = "fonts"
 
-// UserFontsDir is where AsyncAO looks for fonts the USER supplied — the last
-// resort before the operating system's own font folders.
-// It exists because of how AO themes are actually distributed. A theme names its
-// families ("Ace Name", "Igiari Cyrillic", "DangitSpeaker") and ships none of the
-// files, because in AO2 they live in the BASE's fonts/ folder and Qt registers
-// that folder globally at startup. Themes, however, are shared on their own — a
-// themes-only repository, a zip from a friend — so a user who has never
-// downloaded a full base has the theme and none of its fonts, and every string
-// in it renders in the wrong face with nothing to say why.
-// Empty string if the config location cannot be resolved, which callers treat as
-// "no such tier" rather than as an error — a missing font folder is the normal
-// state, not a fault.
+// UserFontsDir is the last lookup before OS fonts, as shared themes name families without shipping files.
+// "" means no such folder, not an error.
 func UserFontsDir() string {
 	base, err := ConfigBaseDir()
 	if err != nil || base == "" {
@@ -112,18 +78,10 @@ func UserFontsDir() string {
 	return filepath.Join(base, FontsDirName)
 }
 
-// ThemesDirName is the folder holding theme folders (and the .aotheme bundles
-// dropped beside them). It is a CONST ALIAS of theme.ThemesDirName rather than a
-// second spelling of "themes", so config and theme cannot drift: the writer here
-// and the reader there are the same string by construction.
+// ThemesDirName aliases theme.ThemesDirName so the writer here and the reader there can't drift.
 const ThemesDirName = theme.ThemesDirName
 
-// UserThemesDir is the ONE directory AsyncAO writes themes into — imports,
-// exports, editable copies, saved presets — and the third root theme lookups
-// search (internal/ui's themeLoadRoots, appended LAST so nothing that resolves
-// today resolves differently).
-// Empty string if the config location cannot be resolved — callers treat that as
-// "no write root", never as an error, exactly like UserFontsDir.
+// UserThemesDir is where themes are written and the last root lookups search; "" means no write root.
 func UserThemesDir() string {
 	base, err := ConfigBaseDir()
 	if err != nil {
@@ -132,9 +90,7 @@ func UserThemesDir() string {
 	return userThemesDir(ConfigIsPortable(), executableDir(), base)
 }
 
-// userThemesDir is the pure policy behind UserThemesDir (no I/O of its own, so
-// it unit-tests directly): portable puts themes beside the exe, everything else
-// beside the config file, and an unresolvable location yields "".
+// userThemesDir is the policy without I/O: portable beside the exe, otherwise beside the config file.
 func userThemesDir(portable bool, exeDir, configBase string) string {
 	if portable && exeDir != "" {
 		return filepath.Join(exeDir, ThemesDirName)
@@ -145,10 +101,7 @@ func userThemesDir(portable bool, exeDir, configBase string) string {
 	return filepath.Join(configBase, ThemesDirName)
 }
 
-// resolveConfigBase is the pure resolution policy (no I/O of its own — existence
-// and writability are injected so it's unit-testable). Returns the chosen base
-// directory and whether that base is the portable one.
-// The step-1 trigger is the existence of the prefs *file*, never the directory:
+// resolveConfigBase picks the base and reports if it is portable; step 1 tests the prefs file, never the directory.
 func resolveConfigBase(exeDir, osDir string, exists func(string) bool, writable func(string) bool) (dir string, portable bool) {
 	portableDir := ""
 	if exeDir != "" {
@@ -174,19 +127,12 @@ func resolveConfigBase(exeDir, osDir string, exists func(string) bool, writable 
 	if classicDir != "" {
 		return classicDir, false
 	}
-	// Only reachable when osDir is empty; portableDir is the sole option.
+	// Only reachable when osDir is empty.
 	return portableDir, portableDir != ""
 }
 
-// MigrateToPortable copies the *entire* active config set — preferences,
-// notebooks/ and jukebox.json — into the portable folder beside the executable
-// (<exeDir>/config), so the next launch resolves there and the folder travels
-// with a copied install or a USB stick. The source (e.g. AppData) is left
-// untouched: migration is a copy, never a move, so a botched run can't lose
-// settings. Takes effect on the next launch. Returns the destination directory.
-// All three are copied together because, while resolution keeps them in one
-// place automatically, the migration copy is the single spot where that
-// consistency isn't free — copying only prefs would strand notebooks/jukebox.
+// MigrateToPortable copies preferences, notebooks and jukebox beside the executable, returning the destination.
+// It is a copy, never a move, so a botched run can't lose settings; it applies on the next launch.
 func (p *AssetPreferences) MigrateToPortable() (string, error) {
 	dest := PortableConfigDir()
 	if dest == "" {
@@ -196,7 +142,7 @@ func (p *AssetPreferences) MigrateToPortable() (string, error) {
 	if filepath.Clean(src) == filepath.Clean(dest) {
 		return dest, ErrAlreadyPortable
 	}
-	// Flush any debounced changes so the on-disk source is current before copy.
+	// Flush debounced changes so the on-disk source is current.
 	if err := p.SaveNow(); err != nil {
 		return "", err
 	}
@@ -204,20 +150,13 @@ func (p *AssetPreferences) MigrateToPortable() (string, error) {
 		return "", err
 	}
 	if err := migrateThemesToPortable(src, filepath.Dir(dest)); err != nil {
-		// The settings DID move; say so rather than reporting a total failure,
-		// because the user's next action ("restart to use the portable copy")
-		// is still the right one and only the themes need attention. The error
-		// wraps ErrThemesNotMigrated so the caller can tell this partial success
-		// from a migration that copied nothing at all — dest is valid here.
+		// Settings did move and dest is valid; the wrapped error tells the caller this from a total failure.
 		return dest, err
 	}
 	return dest, nil
 }
 
-// migrateThemesToPortable copies <srcBase>/themes to <exeDir>/themes — the
-// portable write root UserThemesDir will resolve on the next launch. A missing
-// source folder is the normal case (no themes yet) and is not an error, and a
-// source that already IS the destination is a no-op rather than a self-copy.
+// migrateThemesToPortable copies the themes folder; a missing source is normal, source == destination a no-op.
 func migrateThemesToPortable(srcBase, exeDir string) error {
 	if srcBase == "" || exeDir == "" {
 		return nil
@@ -236,17 +175,10 @@ func migrateThemesToPortable(srcBase, exeDir string) error {
 	return nil
 }
 
-// copyTree recursively copies the contents of src into dst (creating dst), never
-// removing anything from src. The write-probe throwaway is skipped.
+// copyTree recursively copies src into dst, never removing from src; the write-probe file is skipped.
 func copyTree(src, dst string) error { return copyTreeExcept(src, dst, nil) }
 
-// copyTreeExcept is copyTree with a set of TOP-LEVEL entry names to leave behind
-// (matched by name, so only the roots of the copy are filtered — a nested
-// "themes" folder inside a notebook directory is still copied).
-// The match is case-INSENSITIVE (skipEntry): Windows and macOS filesystems fold
-// case, so a user whose folder is spelled "Themes" has the same directory the
-// exact-match set was meant to exclude, and an exact match would copy it into
-// config/ — the very split MigrateToPortable's themes step exists to prevent.
+// copyTreeExcept skips named top-level entries, ignoring case because Windows and macOS filesystems fold it.
 func copyTreeExcept(src, dst string, skip map[string]bool) error {
 	entries, err := os.ReadDir(src)
 	if err != nil {
@@ -274,10 +206,7 @@ func copyTreeExcept(src, dst string, skip map[string]bool) error {
 	return nil
 }
 
-// skipEntry reports whether name is in copyTreeExcept's skip set, folding case.
-// The exact hit is tried first so the common path is one map lookup; the walk is
-// over a set that holds ONE entry today (ThemesDirName) and is bounded by the
-// caller's own literal in every call site, so it can never grow with input.
+// skipEntry folds case; the skip set is a small caller literal, so the walk can't grow with input.
 func skipEntry(skip map[string]bool, name string) bool {
 	if len(skip) == 0 {
 		return false
@@ -293,8 +222,7 @@ func skipEntry(skip map[string]bool, name string) bool {
 	return false
 }
 
-// copyFile copies a single regular file s to d (overwriting), via a temp file +
-// rename so an interrupted copy can't leave a half-written destination.
+// copyFile copies via temp file + rename so an interrupted copy can't leave a half-written destination.
 func copyFile(s, d string) error {
 	in, err := os.Open(s)
 	if err != nil {
@@ -322,37 +250,17 @@ func copyFile(s, d string) error {
 	return nil
 }
 
-// executableDirOnce memoizes executableDir. The path cannot change while the
-// process runs, and resolving it is NOT free: os.Executable plus
-// filepath.EvalSymlinks is a chain of Lstat syscalls, one per path component.
-// UserThemesDir and PortableConfigDir call executableDir on every invocation and
-// the settings screen calls those from a draw helper, so without this the walk
-// would run every frame — hard rule #2 (no synchronous disk I/O on a draw path).
+// executableDirOnce memoizes: EvalSymlinks is one Lstat per path component, reached while drawing (hard rule 2).
 var (
 	executableDirOnce  sync.Once
 	executableDirCache string
 )
 
-// ExecutableDir is executableDir for callers outside this package — the ONE
-// spelling of "the directory the running executable is in".
-// It is exported because internal/ui resolves the same directory to build its
-// theme search roots, and it used to do so with a raw os.Executable +
-// filepath.Dir. That skips the EvalSymlinks step below, so on a symlinked or
-// junctioned install the two answers are different STRINGS for one directory —
-// and every "is this the same place?" test in the theme code (samePath, the
-// write-root backstop, the origin badge) is a string comparison by design. Two
-// spellings there mean a root scanned twice, or a "bundled" theme badged
-// "read-only". One memoized answer, shared, is the fix.
-// All THREE theme root builders now call it — the catalog scan
-// (ui/themecatalog.go), the picker's shared list (ui.themeSearchRootsNow) and
-// the loader (ui.applyThemeAsync) — which is what makes their root lists equal
-// strings rather than merely equal places; ui's TestThemeRootBuildersShareOneExeDir
-// pins that they do.
+// ExecutableDir is the one spelling of this directory: theme code compares paths as strings.
+// A raw os.Executable without EvalSymlinks would scan a root twice or mislabel a bundled theme.
 func ExecutableDir() string { return executableDir() }
 
-// executableDir returns the directory containing the running executable, with
-// symlinks resolved, or "" if it can't be determined. Memoized (see above): the
-// syscalls happen exactly once per process, so callers on a draw path are safe.
+// executableDir returns the executable's directory with symlinks resolved, or ""; memoized, so draw paths may call it.
 func executableDir() string {
 	executableDirOnce.Do(func() {
 		exe, err := os.Executable()
@@ -367,7 +275,7 @@ func executableDir() string {
 	return executableDirCache
 }
 
-// fileExists reports whether path names an existing file (or anything stat-able).
+// fileExists reports whether path names anything stat-able.
 func fileExists(path string) bool {
 	if path == "" {
 		return false
@@ -376,9 +284,7 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// dirWritable reports whether dir (which need not exist yet) can be written to,
-// by attempting to create — then immediately remove — a throwaway probe file.
-// MkdirAll first so a not-yet-created config parent still tests its real parent.
+// dirWritable creates then removes a probe file; MkdirAll first so a new config parent tests its real parent.
 func dirWritable(dir string) bool {
 	if dir == "" {
 		return false

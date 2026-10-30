@@ -324,10 +324,7 @@ type Settings struct {
 	MusicHosts                   []string                     `json:"musicHosts,omitempty"`
 }
 
-// Load returns the current settings snapshot. Callers must not mutate the returned
-// value (it is shared) and must not retain it across time. The snapshot is published
-// by load(), Update, ImportSettings and the resets, so Load is a plain atomic read
-// that lazily seeds the built-in defaults on the very first call.
+// Load returns the shared current snapshot, seeding defaults on first call; callers must not mutate or retain it.
 func (p *AssetPreferences) Load() *Settings {
 	if s := p.settings.Load(); s != nil {
 		return s
@@ -341,18 +338,13 @@ func (p *AssetPreferences) Load() *Settings {
 	return s
 }
 
-// markDirtyCalls and snapshotRebuilds are the race-hammer v3 counters: they count the
-// write-path dirty signals and the snapshot publishes so a hammer can assert both
-// actually ran (not just that the setter calls returned).
+// markDirtyCalls and snapshotRebuilds count dirty signals and publishes so a concurrency test can assert both ran.
 var (
 	markDirtyCalls   atomic.Int64
 	snapshotRebuilds atomic.Int64
 )
 
-// Update applies f to a clone of the current snapshot, clamps the result, and — when
-// the clone actually changed — publishes the new snapshot and marks dirty. The
-// generated equal() replaces the old reflection diff; the snapshot is the single
-// source of truth for Save.
+// Update applies f to a clone, clamps it and, if it changed, publishes the snapshot and marks dirty.
 func (p *AssetPreferences) Update(f func(*Settings)) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -372,8 +364,7 @@ func (p *AssetPreferences) Update(f func(*Settings)) {
 	p.markDirty()
 }
 
-// clampSettingsStrictPhase is the tail of normalizeSettings: the write-path clamps
-// whose sentinel is 0, so a setter touching one field never stomps another's sentinel.
+// clampSettingsStrictPhase holds clamps whose sentinel is 0, so a setter can't overwrite another's sentinel.
 func clampSettingsStrictPhase(s *Settings) {
 	s.BreathAmount = value.ClampSet(s.BreathAmount, 1, percentMax)
 	s.BreathRate = value.ClampSet(s.BreathRate, 1, percentMax)
@@ -406,8 +397,7 @@ func clampSettingsStrictPhase(s *Settings) {
 	s.ThumbHeightPxVal = value.ClampSet(s.ThumbHeightPxVal, ThumbHeightMinPx, ThumbHeightMaxPx)
 	s.ThumbQualityVal = value.ClampSet(s.ThumbQualityVal, ThumbQualityMin, ThumbQualityMax)
 
-	// custom clamp helpers (the setters call these same functions); the sentinel-resolving
-	// ones are guarded so 0 stays 0 and the getter resolves the default.
+	// Guarded so 0 stays 0 and the getter resolves the default.
 	s.FPSCapVal = normalizeFPSPref(s.FPSCapVal, FPSCapMin, FPSCapMax)
 	s.IdleFPSVal = normalizeFPSPref(s.IdleFPSVal, IdleFPSMin, IdleFPSMax)
 	s.UnfocusedFPSVal = normalizeFPSPref(s.UnfocusedFPSVal, UnfocusedFPSMin, UnfocusedFPSMax)
@@ -425,18 +415,13 @@ func clampSettingsStrictPhase(s *Settings) {
 	}
 }
 
-// normalizeSettings is the SINGLE write-path clamp implementation: it reproduces every
-// range clamp the setters enforce, using the same package clamp helpers, so an assignment
-// through Update normalizes exactly like the setter it will replace. normalize (load) and
-// Update both reach these clamps; the one-shot migration stamps live in normalize only.
+// normalizeSettings is the single clamp implementation; one-shot migration stamps live in normalize only.
 func normalizeSettings(s *Settings) {
-	// masks
 	s.HighlightColor &= rgbMask
 	s.ICCustomColor &= rgbMask
 	s.SpriteTintColor &= rgbMask
 	s.MusicFlagsVal &= MusicFlagsMask
 
-	// unconditional range clamps
 	s.NameVal = value.Clamp(s.NameVal, minNameColorVal, percentMax)
 	s.RainbowSpriteSpeed = value.Clamp(s.RainbowSpriteSpeed, minRainbowSpeed, maxRainbowSpeed)
 	s.ReplayPlaybackSpeed = value.Clamp(s.ReplayPlaybackSpeed, minReplaySpeed, maxReplaySpeed)
@@ -476,7 +461,6 @@ func normalizeSettings(s *Settings) {
 	} else if s.ICLogDepthVal != 0 {
 		s.ICLogDepthVal = value.Clamp(s.ICLogDepthVal, ICLogDepthMin, ICLogDepthMax)
 	}
-	// The strict phase runs last: it holds the write-path clamps whose sentinel is 0
-	// (0 stays 0 so the getter resolves the default). Load reaches it through here.
+	// Runs last; 0 stays 0 so the getter resolves the default.
 	clampSettingsStrictPhase(s)
 }
