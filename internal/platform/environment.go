@@ -33,8 +33,7 @@ const (
 
 func (f FormFactor) String() string { return [...]string{"desktop", "mobile"}[f] }
 
-// Packaging is how the client was delivered, which decides what it may change on
-// the machine (self-update, where it may write).
+// Packaging is how the client was delivered.
 type Packaging int
 
 // Packaging kinds. Installed means none of the others was recognised.
@@ -62,8 +61,7 @@ const (
 
 func (i InputKind) String() string { return [...]string{"mouse and keyboard", "touch"}[i] }
 
-// LoopStyle is how the OS wants the main loop run. It has to be known before SDL
-// takes the entry point.
+// LoopStyle must be known before SDL takes the entry point.
 type LoopStyle int
 
 // Loop styles. iOS gives the app no blocking loop, so it runs on SDL's main callbacks.
@@ -74,7 +72,7 @@ const (
 
 func (l LoopStyle) String() string { return [...]string{"blocking", "main callbacks"}[l] }
 
-// Environment is what the client runs on, detected once. Plain data.
+// Environment is what the client runs on.
 type Environment struct {
 	OS                   OS
 	Arch                 string
@@ -87,10 +85,8 @@ type Environment struct {
 }
 
 const (
-	// portableDirName is the folder beside the executable that marks a portable
-	// copy. It repeats config.PortableDirName until the paths service moves here.
+	// portableDirName repeats config.PortableDirName until the paths service moves here.
 	portableDirName = "config"
-	// macBundleExeDir is the path a macOS bundle keeps its executable in.
 	macBundleExeDir = ".app/Contents/MacOS"
 
 	flatpakEnv    = "FLATPAK_ID"
@@ -133,8 +129,7 @@ func detectOS(goos string) OS {
 	return OtherOS
 }
 
-// detectPackaging checks the most specific evidence first: a packaging system
-// announces itself, while a portable folder could also sit inside one of them.
+// detectPackaging checks packaging systems first: a portable folder can sit inside one.
 func detectPackaging(probe Probe, osKind OS) Packaging {
 	if osKind == Android || osKind == IOS {
 		return AppStore

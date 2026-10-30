@@ -224,7 +224,13 @@ Protocol gotchas already encoded in code/tests — don't "fix" them:
 
 ## Conventions
 
-- Comments explain *why*; protocol behavior cites the AO2-Client source spot.
+- Comments are the exception: none when the code says it, one line otherwise,
+  more only for a real trap. Keep what code cannot show: an invariant, a reason
+  something must or must not happen, an OS or library quirk, the AO2-Client source
+  spot for protocol behavior. Doc comments are one sentence. Bug stories, playtest
+  reports, what the code used to do and how it got here belong in commit messages.
+  Trim by content, never by length: length-based rounds lost the reasons and were
+  reverted (47e3f7d7).
 - Every `Prefetch` call site carries an `// AssetType: X` comment.
 - Tests pin behavior, including performance gates (`testing.AllocsPerRun`).
 - Cache keys are full URLs (host included) — per-server separation is

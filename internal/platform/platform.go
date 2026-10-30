@@ -1,7 +1,4 @@
-// Package platform is the platform abstraction layer: the first thing the
-// client builds and the one place that may know which operating system it runs
-// on. It holds no SDL; the part that talks to SDL and the hardware is added
-// beside it. See docs/RESTRUCTURING_PLAN.md, Part 5g.
+// Package platform is the one place that may know which operating system it runs on.
 package platform
 
 import (
@@ -9,30 +6,27 @@ import (
 	"strings"
 )
 
-// Platform is what detection found: the environment, the hardware and what they
-// support.
+// Platform is what detection found.
 type Platform struct {
 	Environment  Environment
 	Hardware     Hardware
 	Capabilities Capabilities
 }
 
-// Hardware is the machine's resources, detected once. Plain data.
+// Hardware is the machine's resources.
 type Hardware struct {
 	CPUCount int
 	// TotalMemoryBytes is the physical memory, 0 when unknown.
 	TotalMemoryBytes uint64
-	// VirtualMachine names the hypervisor when one was recognised, empty otherwise.
-	// For debugging only: a guest can hide itself, so empty proves nothing and no
-	// feature may depend on this.
+	// VirtualMachine is for debugging only: a guest can hide itself, so no feature
+	// may depend on it.
 	VirtualMachine string
 }
 
 // genericVirtualMachine is the name for a guest whose hypervisor is unknown.
 const genericVirtualMachine = "virtual machine"
 
-// virtualMachineModels maps text in a machine's vendor or product name to the
-// hypervisor it belongs to.
+// virtualMachineModels maps text in a machine model to its hypervisor.
 var virtualMachineModels = []struct{ text, name string }{
 	{"vmware", "VMware"},
 	{"virtualbox", "VirtualBox"},
@@ -56,15 +50,13 @@ func detectVirtualMachine(model string) string {
 	return ""
 }
 
-// LowMemory reports whether the machine is known to have too little memory for
-// the high-memory features. An unknown amount is not low: a failed reading must
-// not take features away from a capable machine.
+// LowMemory reports whether memory is known to be low. Unknown is not low, so a
+// failed reading cannot take features from a capable machine.
 func (h Hardware) LowMemory() bool {
 	return h.TotalMemoryBytes != 0 && h.TotalMemoryBytes < lowMemoryBytes
 }
 
-// Detect reads the machine through probe, once, at startup. It touches the disk,
-// so it never runs on a render, decode or resolver path (hard rule 2).
+// Detect reads the machine once at startup; it touches the disk (hard rule 2).
 func Detect(probe Probe) Platform {
 	env := detectEnvironment(probe)
 	hardware := Hardware{CPUCount: probe.CPUCount(), VirtualMachine: detectVirtualMachine(probe.MachineModel())}
@@ -74,8 +66,7 @@ func Detect(probe Probe) Platform {
 	return Platform{Environment: env, Hardware: hardware, Capabilities: capabilitiesFor(env, hardware)}
 }
 
-// Report describes the platform for the log, the About screen and the debug
-// overlay: the environment, then each capability, with the reason when it is off.
+// Report describes the platform for the log, About screen and debug overlay.
 func (p Platform) Report() string {
 	env := p.Environment
 	var b strings.Builder
