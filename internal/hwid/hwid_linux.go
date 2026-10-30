@@ -7,9 +7,7 @@ import (
 	"strings"
 )
 
-// roots returns the Linux machine identity: /etc/machine-id (set once at install
-// by systemd), falling back to the D-Bus machine id. Per-OS-install and stable
-// across renames; best-effort.
+// roots returns /etc/machine-id, falling back to the D-Bus machine id; per-install and stable across renames.
 func roots() []string {
 	for _, p := range []string{"/etc/machine-id", "/var/lib/dbus/machine-id"} {
 		if b, err := os.ReadFile(p); err == nil {

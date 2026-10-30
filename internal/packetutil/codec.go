@@ -13,9 +13,7 @@ func IsJSON(raw []byte) bool {
 	return len(raw) > 0 && raw[0] == '{'
 }
 
-// Codec is a both-wire codec for a custom header (packetutil's own type-erased
-// shape; aolib 2.6.0's typed RegisterPacket is wrapped below). The outbound
-// encode path dispatches any payload through it without a type switch.
+// Codec is a both-wire codec for a custom header, type-erased so the encode path needs no type switch.
 type Codec struct {
 	EncodeFanta func(p any) ([]string, error)
 	DecodeFanta func(args []string) (any, error)
@@ -23,17 +21,11 @@ type Codec struct {
 	DecodeJSON  func(raw []byte) (any, error)
 }
 
-// customCodecs holds the registered codecs for AsyncAO's nonstandard headers.
-// aolib keeps its own registry private, so AsyncAO tracks them here for its own
-// wire dispatch.
+// customCodecs holds AsyncAO's nonstandard headers, because aolib keeps its registry private.
 var customCodecs = map[string]Codec{}
 
-// Register installs a both-wire codec in aolib (typed, for the session's inbound
-// decode + OnCustom dispatch) and in packetutil's table (type-erased, for the
-// outbound encode). T is the inbound payload type the codec's Decode* functions
-// return; for bidirectional headers (VS_JOIN/…) the outbound direction uses a
-// different payload, which packetutil's EncodeCustom handles, so the
-// aolib-registered Encode closures are unused.
+// Register installs a codec in aolib (inbound decode) and customCodecs (outbound encode); T is the inbound
+// type, and bidirectional headers encode through EncodeCustom, so the aolib Encode closures are unused.
 func Register[T any](header string, c Codec) {
 	customCodecs[header] = c
 	aolib.RegisterPacket(header, aolib.PacketOptions[T]{
@@ -68,9 +60,7 @@ func IsCustom(header string) bool {
 	return ok
 }
 
-// encodeCustom serializes a typed custom packet through its registered codec in
-// the given wire mode, applying framing (header + trailing "%" for Fanta, the
-// "$header" key for JSON).
+// encodeCustom applies framing: header and trailing "%" for Fanta, the "$header" key for JSON.
 func encodeCustom(header string, p any, c Codec, mode aolib.WireMode) ([]byte, error) {
 	switch mode {
 	case aolib.WireFanta:
@@ -90,9 +80,7 @@ func encodeCustom(header string, p any, c Codec, mode aolib.WireMode) ([]byte, e
 	}
 }
 
-// EncodeCustom encodes a typed value for a header that has a registered codec
-// (the VS_* voice headers) in the given wire mode. It is the both-wire path for
-// custom packets; canonical packets go through aolib.Encode instead.
+// EncodeCustom encodes a value for a header with a registered codec; canonical packets go through aolib.Encode.
 func EncodeCustom(header string, p any, mode aolib.WireMode) ([]byte, error) {
 	c, ok := customCodecs[header]
 	if !ok {
@@ -101,8 +89,7 @@ func EncodeCustom(header string, p any, mode aolib.WireMode) ([]byte, error) {
 	return encodeCustom(header, p, c, mode)
 }
 
-// frameFanta frames header + positional args into HEADER#a#b#...#%. The args
-// are expected to already be escaped (aolib's EncodeFanta contract).
+// frameFanta frames HEADER#a#b#...#%; args must already be escaped (aolib's EncodeFanta contract).
 func frameFanta(header string, args []string) []byte {
 	var b strings.Builder
 	b.WriteString(header)
@@ -114,7 +101,7 @@ func frameFanta(header string, args []string) []byte {
 	return []byte(b.String())
 }
 
-// ensureHeader guarantees the JSON object carries a matching "$header" key.
+// ensureHeader makes sure the JSON object has a matching "$header" key.
 func ensureHeader(raw []byte, header string) ([]byte, error) {
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &obj); err != nil {

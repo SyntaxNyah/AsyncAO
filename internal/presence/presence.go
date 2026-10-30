@@ -1,11 +1,7 @@
 //go:build !nodiscord
 
-// Package presence is an OPTIONAL Discord Rich Presence client speaking
-// the local IPC protocol directly — no Discord SDK, no third-party
-// module, nothing linked: pure stdlib. Discord is never required to
-// build OR run AsyncAO; when Discord isn't running (or the feature is
-// off) this package quietly does nothing. Build with -tags nodiscord to
-// compile even this file out (see BUILDING.md).
+// Package presence is an optional stdlib-only Discord Rich Presence client over local IPC; it does nothing
+// when Discord isn't running, and -tags nodiscord compiles it out.
 package presence
 
 import (
@@ -20,34 +16,28 @@ import (
 )
 
 const (
-	// opHandshake / opFrame are the Discord IPC opcodes we use.
+	// opHandshake and opFrame are the Discord IPC opcodes we use.
 	opHandshake = 0
 	opFrame     = 1
 
-	// retryInterval paces reconnect attempts while updates are pending —
-	// a closed Discord must not be probed every frame.
+	// retryInterval paces reconnects, as a closed Discord must not be probed every frame.
 	retryInterval = 30 * time.Second
-	// maxFrameLen bounds inbound frames (rule §17.4 — Discord's replies
-	// are small JSON; anything bigger is garbage).
+	// maxFrameLen bounds inbound frames (hard rule 4).
 	maxFrameLen = 64 << 10
-	// pipeCandidates: Discord listens on discord-ipc-0..9.
+	// pipeCandidates is the count of pipes Discord may listen on, discord-ipc-0..9.
 	pipeCandidates = 10
-	// largeImageKey is the art asset key the activity references — upload
-	// the AsyncAO icon under this name in the Discord application.
+	// largeImageKey is the art asset name to upload the icon under in the Discord application.
 	largeImageKey = "appicon"
 )
 
-// Activity is what shows on the profile. Empty fields are omitted; the
-// UI layer composes them from the user's per-field checkboxes.
+// Activity is what shows on the profile; empty fields are omitted.
 type Activity struct {
 	Details string // first line (e.g. the server)
 	State   string // second line (e.g. "Nyah as Phoenix — Courtroom 1")
 	Start   time.Time
 }
 
-// Client owns one worker goroutine that lazily connects to the local
-// Discord IPC socket and pushes the newest activity. Every method is
-// non-blocking and safe from the render thread.
+// Client owns one worker goroutine that connects lazily; every method is non-blocking and safe from the render thread.
 type Client struct {
 	appID string
 
@@ -59,9 +49,7 @@ type Client struct {
 	status atomic.Pointer[string]
 }
 
-// New starts the worker. An empty appID leaves the client idle with an
-// explanatory status (create a Discord application named AsyncAO, upload
-// the icon as "appicon", paste its ID in Settings).
+// New starts the worker; an empty appID leaves the client idle with an explanatory status.
 func New(appID string) *Client {
 	c := &Client{
 		appID:   appID,
@@ -89,8 +77,7 @@ func (c *Client) Set(act Activity) {
 	}
 }
 
-// Clear asks Discord to drop the activity (presence toggled off /
-// disconnected from the server).
+// Clear asks Discord to drop the activity.
 func (c *Client) Clear() {
 	select {
 	case c.clear <- struct{}{}:
@@ -113,9 +100,7 @@ func (c *Client) Status() string {
 
 func (c *Client) setStatus(s string) { c.status.Store(&s) }
 
-// worker drains updates, (re)connecting lazily with backoff. All I/O —
-// including the blocking reads Discord's protocol expects after each
-// write — lives here, never on a caller's goroutine.
+// worker holds all I/O, including the blocking reads Discord expects after each write, off callers' goroutines.
 func (c *Client) worker() {
 	var conn io.ReadWriteCloser
 	var lastTry time.Time
@@ -176,7 +161,7 @@ func (c *Client) worker() {
 		case <-c.clear:
 			pending = nil
 			if conn != nil {
-				// nil activity clears the profile entry.
+				// A nil activity clears the profile entry.
 				if err := c.sendActivity(conn, nil); err != nil {
 					conn.Close()
 					conn = nil
@@ -194,7 +179,6 @@ func (c *Client) worker() {
 	}
 }
 
-// handshake performs op 0 and reads Discord's READY reply.
 func (c *Client) handshake(conn io.ReadWriter) error {
 	payload, err := json.Marshal(map[string]any{"v": 1, "client_id": c.appID})
 	if err != nil {
@@ -207,7 +191,7 @@ func (c *Client) handshake(conn io.ReadWriter) error {
 	return err
 }
 
-// sendActivity pushes one SET_ACTIVITY (nil = clear) and drains the ack.
+// sendActivity pushes one SET_ACTIVITY (nil clears) and drains the ack.
 func (c *Client) sendActivity(conn io.ReadWriter, act *Activity) error {
 	payload, err := json.Marshal(setActivityCmd(os.Getpid(), act))
 	if err != nil {
@@ -220,8 +204,7 @@ func (c *Client) sendActivity(conn io.ReadWriter, act *Activity) error {
 	return err
 }
 
-// setActivityCmd builds the SET_ACTIVITY body (exported shape pinned by
-// tests; the nonce keeps Discord's request/reply pairing happy).
+// setActivityCmd builds the SET_ACTIVITY body; the nonce is for Discord's request and reply pairing.
 func setActivityCmd(pid int, act *Activity) map[string]any {
 	args := map[string]any{"pid": pid}
 	if act != nil {
@@ -249,7 +232,7 @@ func setActivityCmd(pid int, act *Activity) map[string]any {
 	}
 }
 
-// writeFrame emits one [opcode LE][length LE][json] IPC frame.
+// writeFrame emits one [opcode LE][length LE][json] frame.
 func writeFrame(w io.Writer, op uint32, payload []byte) error {
 	var hdr [8]byte
 	binary.LittleEndian.PutUint32(hdr[0:], op)
@@ -261,7 +244,7 @@ func writeFrame(w io.Writer, op uint32, payload []byte) error {
 	return err
 }
 
-// readFrame consumes one IPC frame (Discord replies to every command).
+// readFrame consumes one IPC frame; Discord replies to every command.
 func readFrame(r io.Reader) (op uint32, payload []byte, err error) {
 	var hdr [8]byte
 	if _, err = io.ReadFull(r, hdr[:]); err != nil {

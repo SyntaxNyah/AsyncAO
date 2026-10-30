@@ -9,11 +9,8 @@ import (
 	"syscall"
 )
 
-// roots returns Windows identity roots, strongest first: the per-account SID
-// (what AO2-Client keys its HDID on) and the per-OS-install MachineGuid. Neither
-// is exposed in any settings UI; a SID changes only with a new Windows account,
-// MachineGuid only with an OS reinstall. Each is best-effort — a read failure is
-// skipped, never fatal (compute() uses the hostname only if BOTH miss).
+// roots returns the account SID (what AO2-Client keys its HDID on) and the per-install MachineGuid; a failed
+// read is skipped, and the hostname is used only if both miss.
 func roots() []string {
 	var out []string
 	if u, err := user.Current(); err == nil {
@@ -27,21 +24,17 @@ func roots() []string {
 	return out
 }
 
-// machineGUID reads HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid via reg.exe.
-// The standard library has no registry access and we deliberately avoid adding a
-// dependency for one value; reg.exe is a signed in-box tool, run once per connect
-// (cold path). A missing or blocked reg.exe simply drops this root.
+// machineGUID uses reg.exe, as the stdlib has no registry access and one value isn't worth a dependency.
 func machineGUID() string {
 	cmd := exec.Command("reg", "query",
 		`HKLM\SOFTWARE\Microsoft\Cryptography`, "/v", "MachineGuid")
-	// HideWindow stops reg.exe flashing a console window when AsyncAO is linked as
-	// a GUI app (-H windowsgui); harmless on a console build.
+	// HideWindow stops reg.exe flashing a console in a -H windowsgui build.
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
-	// A matching line looks like: "    MachineGuid    REG_SZ    <guid>".
+	// Matching line: "    MachineGuid    REG_SZ    <guid>".
 	for _, line := range strings.Split(string(out), "\n") {
 		if i := strings.Index(line, "REG_SZ"); i >= 0 {
 			return strings.TrimSpace(line[i+len("REG_SZ"):])

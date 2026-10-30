@@ -6,14 +6,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/ui"
 )
 
-// eventWindowID returns the WindowID carried by ev and ok=true, for every
-// event type internal/sdl defines a WindowID field for. ok=false for
-// every other type (QuitEvent, joystick/controller events, …), which this
-// loop never has to route by window because they aren't addressed to any
-// one window. Extracted as its own function — rather than inlined into
-// eventForPreviewWindow — because it is the one place that has to be kept in
-// sync with internal/sdl's event set; everything downstream just asks "does this
-// id match".
+// eventWindowID returns the WindowID of ev, if any; it must be kept in sync with internal/sdl's event set.
 func eventWindowID(ev sdl.Event) (id uint32, ok bool) {
 	switch e := ev.(type) {
 	case *sdl.WindowEvent:
@@ -38,9 +31,7 @@ func eventWindowID(ev sdl.Event) (id uint32, ok bool) {
 	return 0, false
 }
 
-// eventForPreviewWindow reports whether ev is addressed to the preview
-// window identified by previewWindowID, so the run loop's event dispatch can
-// route it to the preview's own handler instead of uiCtx.HandleEvent.
+// eventForPreviewWindow reports whether ev is addressed to the preview window.
 func eventForPreviewWindow(ev sdl.Event, previewWindowID uint32) bool {
 	if previewWindowID == 0 {
 		return false
@@ -49,11 +40,7 @@ func eventForPreviewWindow(ev sdl.Event, previewWindowID uint32) bool {
 	return ok && id == previewWindowID
 }
 
-// dispatchEvent is the run loop's ENTIRE per-event routing decision between
-// the preview window and the main Ctx, extracted into a named function for
-// the same reason mainWindowShouldQuit is (quit.go): so it is testable
-// without a live event loop or a live window, and so a test can drive the
-// REAL function the loop calls rather than a re-implementation of it.
+// dispatchEvent routes between the preview window and the main Ctx, separate so tests drive the real function.
 func dispatchEvent(ev sdl.Event, uiCtx *ui.Ctx, preview *render.PreviewWindow) (consumedByPreview bool) {
 	if eventForPreviewWindow(ev, preview.ID()) {
 		preview.HandleEvent(ev)

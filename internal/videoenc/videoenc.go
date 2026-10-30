@@ -1,16 +1,5 @@
-// Package videoenc is the MP4/WebM side of the scene exporter: it turns the
-// captured RGBA frames into a real video file by streaming them into a SYSTEM
-// ffmpeg over a stdin pipe (rawvideo → H.264/VP9).
-//
-// Unlike internal/webpenc this package is PURE GO — no CGO, no build-time
-// dependency — because ffmpeg is invoked as an external process, not linked.
-// That is deliberate and load-bearing: the app must boot and run fully WITHOUT
-// ffmpeg installed (only the video-export action is then disabled), so the
-// encoder can't be a linked library (user constraint: "it still boots even
-// without em"). SDL-free and off the render hot path; the capture side that
-// feeds it lives in the UI layer. It mirrors webpenc's method SURFACE
-// (New / AddFrame / Frames / Finish / Close) plus Available()/FFmpegPath() so
-// the UI can gate on a runtime ffmpeg.
+// Package videoenc streams captured RGBA frames into a system ffmpeg over a stdin pipe to make MP4 or WebM files.
+// It is pure Go on purpose: the app must boot and run without ffmpeg, so the encoder can't be linked.
 package videoenc
 
 import (
@@ -31,15 +20,13 @@ import (
 type Format int
 
 const (
-	// FormatMP4 is H.264 in MP4 — plays in every browser, editor, and phone; the
-	// safe default for "free content creation".
+	// FormatMP4 is H.264 in MP4, which plays everywhere; the default.
 	FormatMP4 Format = iota
-	// FormatWebM is VP9 in WebM — smaller and fully open, but slower to encode.
+	// FormatWebM is VP9 in WebM: smaller and open, but slower to encode.
 	FormatWebM
 )
 
-// FormatFromString maps a persisted preference string to a Format ("webm" →
-// WebM, anything else → the MP4 default).
+// FormatFromString maps a preference string to a Format; anything but "webm" is MP4.
 func FormatFromString(s string) Format {
 	if strings.EqualFold(s, "webm") {
 		return FormatWebM
@@ -55,28 +42,23 @@ func FormatExt(f Format) string {
 	return "mp4"
 }
 
-// ffmpeg quality is a CRF (constant rate factor): LOWER = better + bigger. The UI
-// exposes a friendly 0..100 "quality %" and we map it per-codec into a sane CRF
-// window, so the one slider means the same thing for both formats. The windows
-// are clamped well inside each codec's legal range so the slider never produces a
-// uselessly soft or absurdly huge file.
+// ffmpeg CRF: lower is better and bigger. The UI's 0..100 quality maps into these per-codec windows, clamped
+// inside the legal range so the slider means the same for both formats.
 const (
-	// H.264 CRF window. 16 ≈ visually lossless, 32 ≈ "fine for a clip".
+	// H.264 window: 16 is about visually lossless, 32 is fine for a clip.
 	x264CRFBest  = 16
 	x264CRFWorst = 32
-	// VP9 CRF window (VP9 CRFs run higher than x264 for a comparable look).
+	// VP9 CRFs run higher than x264 for a comparable look.
 	vp9CRFBest  = 18
 	vp9CRFWorst = 40
 )
 
-// crfFor maps a 0..100 quality (higher = better) to a codec CRF (lower = better).
 func crfFor(format Format, quality int) int {
 	quality = value.Clamp(quality, 0, 100)
 	best, worst := x264CRFBest, x264CRFWorst
 	if format == FormatWebM {
 		best, worst = vp9CRFBest, vp9CRFWorst
 	}
-	// quality 100 → best (low CRF); quality 0 → worst (high CRF).
 	return worst - (worst-best)*quality/100
 }
 
@@ -85,9 +67,7 @@ var (
 	ffmpegPath string
 )
 
-// FFmpegPath returns the resolved system ffmpeg executable path ("" if none).
-// Looked up once and cached — a missing ffmpeg is the normal, supported state,
-// not an error.
+// FFmpegPath returns the system ffmpeg path, looked up once; "" (a supported state, not an error) if none.
 func FFmpegPath() string {
 	ffmpegOnce.Do(func() {
 		if p, err := exec.LookPath("ffmpeg"); err == nil {
@@ -97,20 +77,13 @@ func FFmpegPath() string {
 	return ffmpegPath
 }
 
-// Available reports whether a system ffmpeg was found on PATH. Callers gate the
-// video-export action on this and degrade gracefully (the app still boots and
-// runs fully without ffmpeg).
+// Available reports whether a system ffmpeg was found; callers must check it before video export.
 func Available() bool { return FFmpegPath() != "" }
 
-// stderrTailBytes bounds how much of ffmpeg's stderr we keep for error reporting
-// (the tail holds the real failure reason; we never need the whole log).
+// stderrTailBytes bounds the ffmpeg stderr kept for errors; the tail holds the real failure reason.
 const stderrTailBytes = 600
 
-// Encoder streams captured RGBA frames into a running ffmpeg process. Not safe
-// for concurrent use — drive it from ONE goroutine (the render thread, during
-// capture). Call Finish OFF the render thread: it closes stdin and waits for
-// ffmpeg to flush the file, which can take a beat (mirrors webpenc's off-thread
-// Assemble).
+// Encoder is driven from one goroutine; call Finish off the render thread, as it waits for ffmpeg to flush.
 type Encoder struct {
 	cmd      *exec.Cmd
 	stdin    io.WriteCloser
@@ -122,10 +95,7 @@ type Encoder struct {
 	done     bool
 }
 
-// New starts an ffmpeg that reads rawvideo (RGBA, w×h, fps) from stdin and writes
-// an encoded video to outPath in the chosen format at the given quality (0..100).
-// ffmpeg must exist — guard with Available first. The process runs until
-// Finish/Close. Returns an error if ffmpeg can't be started.
+// New starts ffmpeg reading rawvideo from stdin at quality 0..100; check Available first.
 func New(outPath string, w, h, fps, quality int, format Format) (*Encoder, error) {
 	if w <= 0 || h <= 0 {
 		return nil, fmt.Errorf("videoenc: bad size %dx%d", w, h)
@@ -151,12 +121,8 @@ func New(outPath string, w, h, fps, quality int, format Format) (*Encoder, error
 	return &Encoder{cmd: cmd, stdin: stdin, stderr: &stderr, w: w, h: h, rowBytes: w * 4}, nil
 }
 
-// ffmpegArgs builds the encode command line. Input: rawvideo rgba from stdin —
-// "rgba" matches the capture's image.RGBA byte order (R,G,B,A), so colours are
-// correct. Output: H.264/yuv420p in MP4 (plays everywhere) or VP9/yuv420p in
-// WebM. yuv420p on the OUTPUT is mandatory for broad playback (browsers/QuickTime
-// reject yuv444). The encoder presets favour speed because the capture loop owns
-// the window during export — a slower preset would just stutter the progress bar.
+// ffmpegArgs always outputs yuv420p because browsers and QuickTime reject yuv444; "rgba" matches image.RGBA,
+// and presets favour speed because the capture loop owns the window during export.
 func ffmpegArgs(outPath string, w, h, fps, quality int, format Format) []string {
 	size := strconv.Itoa(w) + "x" + strconv.Itoa(h)
 	args := []string{
@@ -193,38 +159,22 @@ func ffmpegArgs(outPath string, w, h, fps, quality int, format Format) []string 
 	return append(args, outPath)
 }
 
-// MuxAudioBed remuxes an existing (silent) video with a single audio file as its
-// soundtrack bed: it COPIES the video stream (no re-encode — fast) and encodes the
-// audio to the container's codec. The audio is delayed by delayMs (when the song
-// started in the scene) and padded with silence so the OUTPUT is exactly the
-// video's length — apad makes the audio infinite, -shortest then trims it to the
-// video, so a song shorter than the video can't truncate it and a longer one is cut
-// to fit. ffmpeg decodes the source audio (any codec it supports) — there is no Go
-// audio decoding (spec §8); ffmpeg is an external process. MUST run off the render
-// thread (it blocks until ffmpeg exits). Guard with Available() first.
+// MuxAudioBed copies the silent video and adds one audio file delayed by delayMs, padded to the video's length.
+// It blocks until ffmpeg exits, so it must run off the render thread; check Available first.
 func MuxAudioBed(videoPath, audioPath, outPath string, delayMs int, format Format) error {
 	dur, _ := probeDurationSec(videoPath) // 0 on failure → the unbounded-apad fallback
 	return runMux(muxArgs(videoPath, audioPath, outPath, delayMs, format, dur))
 }
 
-// AudioClip is one timed audio file for the multi-input mux: the local file ffmpeg
-// reads, the ms it starts at in the scene, and an optional trim. TrimMs > 0 cuts the
-// clip to that length — a music segment that must end when the NEXT song starts;
-// TrimMs == 0 plays the clip in full (a one-shot SFX, or the final song whose tail
-// the post-mix apad fills to the video's end).
+// AudioClip is one timed audio file; TrimMs > 0 cuts it (music ending when the next song starts), 0 plays it all.
 type AudioClip struct {
 	Path    string
 	DelayMs int
 	TrimMs  int
 }
 
-// MuxAudioMix remuxes the silent video with SEVERAL timed audio clips summed into one
-// track — the music bed plus each one-shot SFX/shout at its moment. Like MuxAudioBed
-// it copies the video stream (no re-encode); each clip is delayed to its start and
-// the clips are amix'd at full volume (normalize=0 — normalize would duck the music
-// on every SFX, which pumps; occasional clipping is the accepted v1 trade). Off the
-// render thread; guard with Available(). Used only when there ARE SFX cues; a
-// music-only export takes the simpler MuxAudioBed.
+// MuxAudioMix copies the video and amixes clips at full volume: normalize would duck the music on every SFX,
+// so occasional clipping is accepted. Run it off the render thread and check Available first.
 func MuxAudioMix(videoPath string, clips []AudioClip, outPath string, format Format) error {
 	if len(clips) == 0 {
 		return fmt.Errorf("videoenc: no audio clips")
@@ -233,16 +183,13 @@ func MuxAudioMix(videoPath string, clips []AudioClip, outPath string, format For
 	return runMux(muxMixArgs(videoPath, clips, outPath, format, dur))
 }
 
-// muxMixArgs builds the multi-input mux command. Each clip is input i+1 (input 0 is
-// the video), delayed to its start; the delayed streams are summed and THEN padded
-// (bounded to padDurSec — see padFilter). Pure so the filter graph is unit-tested.
+// muxMixArgs: input 0 is the video, each clip is input i+1 delayed to its start, and the sum is padded.
 func muxMixArgs(videoPath string, clips []AudioClip, outPath string, format Format, padDurSec float64) []string {
 	args := []string{"-y", "-loglevel", "error", "-i", videoPath}
 	var fc, labels strings.Builder
 	for i, c := range clips {
 		args = append(args, "-i", c.Path)
-		// A music segment is trimmed to its window (it ends when the next song starts);
-		// SFX and the final song play in full. adelay then shifts the clip to its time.
+		// Only a music segment is trimmed; adelay then shifts the clip to its time.
 		if c.TrimMs > 0 {
 			fmt.Fprintf(&fc, "[%d:a]atrim=end=%s,adelay=delays=%d:all=1[a%d];", i+1, secs(c.TrimMs), c.DelayMs, i)
 		} else {
@@ -250,9 +197,7 @@ func muxMixArgs(videoPath string, clips []AudioClip, outPath string, format Form
 		}
 		fmt.Fprintf(&labels, "[a%d]", i)
 	}
-	// Sum the clips at full volume, THEN pad to the video's length. apad MUST come
-	// after amix, never per-input: a SFX-only mix (no infinite music bed) would
-	// otherwise end at the last SFX and -shortest would truncate the VIDEO.
+	// apad must follow amix, never per input: a SFX-only mix would end early and -shortest would truncate the video.
 	fmt.Fprintf(&fc, "%samix=inputs=%d:normalize=0,%s[aout]", labels.String(), len(clips), padFilter(padDurSec))
 	acodec := "aac"
 	if format == FormatWebM {
@@ -267,10 +212,8 @@ func muxMixArgs(videoPath string, clips []AudioClip, outPath string, format Form
 	)
 }
 
-// secs renders milliseconds as an ffmpeg seconds timestamp (S.mmm) for atrim.
 func secs(ms int) string { return fmt.Sprintf("%d.%03d", ms/1000, ms%1000) }
 
-// runMux runs an ffmpeg mux command and surfaces the stderr tail on failure.
 func runMux(args []string) error {
 	bin := FFmpegPath()
 	if bin == "" {
@@ -289,11 +232,7 @@ func runMux(args []string) error {
 	return nil
 }
 
-// lastStderrLines condenses an ffmpeg stderr dump to its last TWO non-empty lines
-// (joined with " | "). ffmpeg often prints the real cause one line ABOVE a generic
-// final line — a mux-queue overflow reads "Terminating thread with return code -28
-// (No space left on device)" last, which alone looks like a disk problem and hid
-// the actual error during a playtest gate.
+// lastStderrLines keeps two lines, as ffmpeg often prints the real cause above a misleading final line.
 func lastStderrLines(s string) string {
 	s = strings.TrimSpace(s)
 	if len(s) > stderrTailBytes {
@@ -313,10 +252,7 @@ func lastStderrLines(s string) string {
 	return strings.Join(kept, " | ")
 }
 
-// probeDurationSec asks ffmpeg for path's container duration by parsing the
-// "Duration: HH:MM:SS.ss" header of `ffmpeg -i` output (which exits non-zero with
-// no output requested — expected, and cheap: headers only, nothing decodes).
-// ok=false when ffmpeg is missing or the header doesn't parse (e.g. "N/A").
+// probeDurationSec parses "Duration: HH:MM:SS.ss" from `ffmpeg -i`, which exits non-zero as expected.
 func probeDurationSec(path string) (secs float64, ok bool) {
 	bin := FFmpegPath()
 	if bin == "" {
@@ -344,15 +280,8 @@ func probeDurationSec(path string) (secs float64, ok bool) {
 	return float64(hh*3600+mm*60) + ss, true
 }
 
-// padFilter returns the audio padding filter, bounded to the video's duration when
-// known: apad=whole_dur=D emits a FINITE stream. An unbounded apad + -shortest races
-// ffmpeg's mux sync queue: the infinite silence buffers while the muxer waits for the
-// video stream to drain, and on a loaded machine the queue cap wins — the mux thread
-// dies with AVERROR(ENOSPC) ("No space left on device" with plenty of disk; it flaked
-// this package's own e2e tests and would kill a real export the same way). The plain
-// apad remains only as the probe-failure fallback, and -shortest stays as the final
-// trim either way (whole_dur never pads past the video, and a mix already longer than
-// the video is passed through untouched for -shortest to cut).
+// padFilter uses finite apad=whole_dur=D: unbounded apad with -shortest races ffmpeg's mux sync queue, and the
+// mux thread can die with a false ENOSPC. Plain apad is only the fallback when the probe fails.
 func padFilter(padDurSec float64) string {
 	if padDurSec > 0 {
 		return fmt.Sprintf("apad=whole_dur=%.3f", padDurSec)
@@ -360,15 +289,11 @@ func padFilter(padDurSec float64) string {
 	return "apad"
 }
 
-// muxArgs builds the audio-mux command line: copy the video stream, encode the
-// audio (AAC for MP4, Opus for WebM — both standard for their container), optionally
-// delay the audio to its scene start, pad it to the video length (bounded — see
-// padFilter), and stop at the video's end. Pure so the argument shape is unit-tested.
+// muxArgs copies the video, encodes audio (AAC for MP4, Opus for WebM), and pads it (see padFilter).
 func muxArgs(videoPath, audioPath, outPath string, delayMs int, format Format, padDurSec float64) []string {
 	af := padFilter(padDurSec) // pad the audio with trailing silence; -shortest trims to the video
 	if delayMs > 0 {
-		// adelay's all=1 delays every channel by delayMs regardless of channel count
-		// (mono or stereo source), so the song lands where it started in the scene.
+		// all=1 delays every channel, whether the source is mono or stereo.
 		af = "adelay=delays=" + strconv.Itoa(delayMs) + ":all=1," + af
 	}
 	acodec := "aac"
@@ -388,11 +313,7 @@ func muxArgs(videoPath, audioPath, outPath string, delayMs int, format Format, p
 	}
 }
 
-// AddFrame writes one RGBA frame to ffmpeg's stdin. Synchronous, like webpenc's
-// AddFrame: the OS pipe buffers the small frame and the export owns the window,
-// so a brief stall while ffmpeg encodes only stutters the progress overlay, never
-// the live client. A broken pipe (ffmpeg exited on bad input) is recorded as a
-// sticky error and returned so the caller can stop and surface the reason.
+// AddFrame writes synchronously, since the export owns the window; a broken pipe is a sticky error.
 func (e *Encoder) AddFrame(img *image.RGBA) error {
 	if e.done {
 		return fmt.Errorf("videoenc: encoder already finished")
@@ -406,9 +327,7 @@ func (e *Encoder) AddFrame(img *image.RGBA) error {
 	if len(img.Pix) == 0 {
 		return fmt.Errorf("videoenc: empty frame")
 	}
-	// rawvideo wants tightly packed rows of exactly w*4 bytes. The capture's
-	// stride is already w*4 (fast path: one write of the whole buffer); the
-	// row-by-row branch keeps us correct if a stride-padded image is ever passed.
+	// rawvideo needs tightly packed rows of w*4 bytes; the row loop handles a padded stride.
 	if img.Stride == e.rowBytes {
 		if _, err := e.stdin.Write(img.Pix); err != nil {
 			e.writeErr = e.pipeErr(err)
@@ -427,8 +346,7 @@ func (e *Encoder) AddFrame(img *image.RGBA) error {
 	return nil
 }
 
-// pipeErr enriches a write error with the tail of ffmpeg's stderr (the real
-// reason it died) — a raw "broken pipe" is useless to the user.
+// pipeErr adds ffmpeg's stderr tail, because a raw "broken pipe" tells the user nothing.
 func (e *Encoder) pipeErr(err error) error {
 	if tail := e.stderrTail(); tail != "" {
 		return fmt.Errorf("ffmpeg failed: %s", tail)
@@ -436,20 +354,15 @@ func (e *Encoder) pipeErr(err error) error {
 	return fmt.Errorf("videoenc: ffmpeg write failed: %w", err)
 }
 
-// Frames reports how many frames have been written.
 func (e *Encoder) Frames() int { return e.frames }
 
-// Finish closes ffmpeg's stdin (signalling end-of-stream) and waits for it to
-// flush and write the file. MUST be called off the render thread — Wait blocks
-// until ffmpeg exits. Returns an error (with the stderr tail) if ffmpeg failed,
-// or if nothing was written.
+// Finish waits for ffmpeg to write the file, so it must run off the render thread.
 func (e *Encoder) Finish() error {
 	if e.done {
 		return fmt.Errorf("videoenc: already finished")
 	}
 	e.done = true
-	// Close stdin FIRST (EOF lets ffmpeg finalize the container), THEN Wait —
-	// the reverse order would hang ffmpeg waiting for input.
+	// Close stdin first: EOF lets ffmpeg finalize, and waiting first would hang it.
 	_ = e.stdin.Close()
 	waitErr := e.cmd.Wait()
 	if e.frames == 0 {
@@ -464,8 +377,7 @@ func (e *Encoder) Finish() error {
 	return e.writeErr
 }
 
-// Close kills ffmpeg if it's still running (the abort path) and reaps it. Safe to
-// call after Finish (no-op) and more than once.
+// Close kills and reaps ffmpeg if still running; safe after Finish and more than once.
 func (e *Encoder) Close() {
 	if e.done {
 		return
@@ -478,7 +390,6 @@ func (e *Encoder) Close() {
 	_ = e.cmd.Wait()
 }
 
-// stderrTail returns the trimmed tail of ffmpeg's captured stderr.
 func (e *Encoder) stderrTail() string {
 	if e.stderr == nil {
 		return ""
@@ -487,7 +398,7 @@ func (e *Encoder) stderrTail() string {
 	if len(s) > stderrTailBytes {
 		s = s[len(s)-stderrTailBytes:]
 	}
-	// Collapse to the last non-empty line — that's where ffmpeg prints the cause.
+	// ffmpeg prints the cause on the last non-empty line.
 	if i := strings.LastIndexByte(s, '\n'); i >= 0 {
 		if last := strings.TrimSpace(s[i+1:]); last != "" {
 			return last

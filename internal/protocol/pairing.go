@@ -7,14 +7,8 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 )
 
-// Pair z-order, from the 2.8 "<id>^<order>" extension. Semantics mirror
-// AO2-Client display_pair_character exactly:
-//
-//	^0 → the SPEAKER renders in front (pair behind) — also the default
-//	^1 → the speaker renders behind (pair in front)
-//
-// (spec §11's table had these inverted; AO2-Client wins on protocol
-// behavior per its own ground rule.)
+// Pair z-order from the 2.8 "<id>^<order>" extension, mirroring AO2-Client display_pair_character:
+// ^0 (the default) renders the speaker in front, ^1 renders the speaker behind.
 const (
 	PairSpeakerInFront = 0
 	PairSpeakerBehind  = 1
@@ -23,24 +17,19 @@ const (
 // PairInfo is the pairing state of one chat message (AO2 ≥ 2.6, with 2.8
 // order/vertical-offset extensions).
 type PairInfo struct {
-	// CharID is the partner's character list index; UnpairedCharID means no
-	// pair.
+	// CharID is the partner's character list index; UnpairedCharID means no pair.
 	CharID int
 	// Order is PairSpeakerInFront or PairSpeakerBehind.
 	Order int
 	// HasOrder reports whether the wire carried an explicit ^order.
 	HasOrder bool
-	// Name is the partner's character folder; empty disables pairing even
-	// with a valid CharID (AO2-Client is_pairing checks both).
+	// Name is the partner's folder; empty disables pairing even with a valid CharID (AO2-Client is_pairing).
 	Name string
-	// Emote is the partner's idle emote: the pair renders the looping
-	// (a)<Emote> animation.
+	// Emote is the partner's idle emote, rendered as the looping (a)<Emote> animation.
 	Emote string
-	// OffsetX and OffsetY shift the partner sprite, in percent of viewport
-	// width/height (−100..100).
+	// OffsetX and OffsetY shift the partner sprite, in percent of viewport size (-100..100).
 	OffsetX, OffsetY int
-	// Flip mirrors the partner sprite horizontally (server feature
-	// "flipping" gates whether the renderer honors it).
+	// Flip mirrors the partner sprite; the server feature "flipping" decides whether the renderer honors it.
 	Flip bool
 }
 
@@ -60,14 +49,12 @@ func ParsePair(otherCharID, otherName, otherEmote, otherOffset, otherFlip string
 	}
 }
 
-// Active reports whether the message actually renders a pair partner —
-// AO2-Client semantics: a valid char id AND a non-empty pair folder.
+// Active reports whether a partner renders, per AO2-Client: a valid char id and a non-empty pair folder.
 func (p PairInfo) Active() bool {
 	return p.CharID > UnpairedCharID && p.Name != ""
 }
 
-// SpeakerInFront resolves z-order: an explicit ^order wins, otherwise the
-// speaker renders in front.
+// SpeakerInFront resolves z-order: an explicit ^order wins, otherwise the speaker is in front.
 func (p PairInfo) SpeakerInFront() bool {
 	if p.HasOrder && p.Order == PairSpeakerBehind {
 		return false
@@ -75,8 +62,7 @@ func (p PairInfo) SpeakerInFront() bool {
 	return true
 }
 
-// ParsePairID splits the 2.6 "<id>" / 2.8 "<id>^<order>" forms. A
-// non-numeric id reads as unpaired (AO2-Client toInt(&ok) gating).
+// ParsePairID splits "<id>" and "<id>^<order>"; a non-numeric id reads as unpaired (AO2-Client toInt(&ok)).
 func ParsePairID(raw string) (id, order int, hasOrder bool) {
 	idPart, orderPart, found := strings.Cut(raw, "^")
 	id = UnpairedCharID
@@ -94,9 +80,7 @@ func ParsePairID(raw string) (id, order int, hasOrder bool) {
 	}
 }
 
-// ParseOffset splits the 2.6 "<x>" / 2.9 "<x>&<y>" offset forms, in percent
-// of the viewport dimensions. One component means X only, Y = 0 — exactly
-// AO2-Client's split("&") handling.
+// ParseOffset splits "<x>" and "<x>&<y>" in viewport percent; X alone means Y = 0, as AO2-Client's split("&").
 func ParseOffset(raw string) (x, y int) {
 	if raw == "" {
 		return 0, 0

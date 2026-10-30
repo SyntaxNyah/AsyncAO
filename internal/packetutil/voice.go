@@ -1,9 +1,6 @@
 package packetutil
 
-// Voice-chat packets (VS_*). Removed from the canonical aolib spec (aa8d0fb);
-// AsyncAO keeps them as a client extension, registered both-wire via
-// RegisterCodec so the JSON wire carries them too (LemmyAO/Nyathena speak the
-// same shapes). Wire contract:
+// Voice-chat packets (VS_*), an extension outside canonical aolib, on both wires (LemmyAO, Nyathena). Contract:
 //
 //	S→C  VS_CAPS#<enabled>#<ptt_only>#<max_peers>#<codec>#<sample_rate>#<frame_ms>#<max_frame_bytes>#%
 //	S→C  VS_PEERS#<csv_uids>#%

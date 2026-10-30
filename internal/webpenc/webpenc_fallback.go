@@ -1,7 +1,6 @@
 //go:build !cgo || nocgo_webp
 
-// Stub for builds without the libwebp CGO encoder: the scene exporter calls
-// Available() and falls back to GIF when animated WebP isn't compiled in.
+// Stub for builds without libwebp: the scene exporter falls back to GIF.
 package webpenc
 
 import (

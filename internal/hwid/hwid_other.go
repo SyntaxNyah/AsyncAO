@@ -2,7 +2,5 @@
 
 package hwid
 
-// roots has no platform identity source on other GOOSes, so compute() falls back
-// to the hostname. AsyncAO ships windows/linux/darwin; this keeps the package
-// buildable everywhere.
+// roots has no identity source on other GOOSes, so the hostname is used.
 func roots() []string { return nil }

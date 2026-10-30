@@ -1,13 +1,7 @@
 //go:build !novoice
 
-// Package voice is AsyncAO's Opus codec for the Nyathena/LemmyAO server-relayed
-// voice transport (internal/courtroom owns the VS_* wire; internal/render owns
-// mic capture + playback). It is deliberately SDL-FREE (hard rule #1): it speaks
-// only PCM int16 in and opus bytes out, so the codec never touches the render
-// thread or SDL.
-//
-// Settings match the Nyathena VS_CAPS defaults: 48 kHz, mono, 20 ms frames.
-// Opus is BSD-licensed (AGPL-compatible) — see docs/THIRD-PARTY-LICENSES.md.
+// Package voice is the Opus codec for the Nyathena and LemmyAO voice relay; it takes only PCM and opus bytes,
+// staying SDL-free (hard rule 1).
 package voice
 
 /*
@@ -35,17 +29,14 @@ const (
 	// FrameSize is one frame's PCM sample count (960 = 20 ms @ 48 kHz mono).
 	FrameSize = SampleRate / 1000 * FrameMs
 
-	// opusApplicationVOIP / opusOK mirror opus_defines.h. Hard-coded (not C.*) so
-	// the build never depends on cgo exposing those object-like macros.
+	// These mirror opus_defines.h; hard-coded so the build doesn't depend on cgo exposing object-like macros.
 	opusApplicationVOIP = 2048
 	opusOK              = 0
-	// maxEncodedBytes caps one encoded packet; an opus frame at our settings is
-	// far smaller, but the buffer must be sized for opus_encode's worst case.
+	// maxEncodedBytes is sized for opus_encode's worst case.
 	maxEncodedBytes = 4000
 )
 
-// Encoder wraps a libopus encoder configured for AsyncAO voice (48 kHz mono VOIP).
-// Not safe for concurrent use — one Encoder per capture stream.
+// Encoder wraps a libopus encoder (48 kHz mono VOIP), one per capture stream; not safe for concurrent use.
 type Encoder struct{ enc *C.OpusEncoder }
 
 // NewEncoder creates an Opus VOIP encoder.
@@ -82,11 +73,8 @@ func (e *Encoder) Close() {
 	}
 }
 
-// Tune applies AsyncAO's voice encoder settings: a target bitrate (bits/sec), DTX
-// (discontinuous transmission — don't send during silence, which cuts bandwidth
-// and is the main resilience lever over a reliable TCP/WebSocket transport), and a
-// middling complexity (good quality, low CPU). Best-effort; a failed ctl is
-// non-fatal (voice still works at the encoder defaults).
+// Tune sets bitrate, DTX (no sending during silence, the main resilience lever over TCP) and complexity;
+// a failed ctl is non-fatal.
 func (e *Encoder) Tune(bitrate int, dtx bool) {
 	if e.enc == nil {
 		return
@@ -100,8 +88,7 @@ func (e *Encoder) Tune(bitrate int, dtx bool) {
 	C.asyncao_opus_set_complexity(e.enc, 5)
 }
 
-// SetBitrate adjusts the encoder's target bitrate (bits/sec) live — used for the
-// adaptive-bitrate path (drop it when the jitter buffer backs up). Best-effort.
+// SetBitrate adjusts the target bitrate live, for adaptive bitrate when the jitter buffer backs up; best-effort.
 func (e *Encoder) SetBitrate(bps int) {
 	if e.enc != nil {
 		C.asyncao_opus_set_bitrate(e.enc, C.int(bps))
@@ -121,8 +108,7 @@ func NewDecoder() (*Decoder, error) {
 	return &Decoder{dec: dec}, nil
 }
 
-// Decode expands one opus packet to PCM (FrameSize samples). A nil/empty packet
-// asks libopus to conceal a single lost frame (packet-loss concealment).
+// Decode expands one packet to FrameSize samples; a nil or empty packet asks libopus to conceal one lost frame.
 func (d *Decoder) Decode(packet []byte) ([]int16, error) {
 	if d.dec == nil {
 		return nil, errors.New("voice: decoder closed")

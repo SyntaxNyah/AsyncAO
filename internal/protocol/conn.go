@@ -20,41 +20,20 @@ import (
 )
 
 const (
-	// dialTimeout caps the WebSocket handshake.
 	dialTimeout = 10 * time.Second
 	// writeTimeout caps one outgoing packet write.
 	writeTimeout = 10 * time.Second
-	// keepaliveInterval is how often the connection's keepalive goroutine sends the
-	// CH ping. Matches AO2-Client's keepalive_timer (courtroom.cpp,
-	// keepalive_timer->start(45000)). It runs on its OWN goroutine (keepaliveLoop),
-	// NOT the render loop — Windows stalls a minimized app's frame loop when it's
-	// occluded by a fullscreen foreground app, which used to freeze the old
-	// loop-driven ping and let the server idle-drop the "silent" client.
+	// keepaliveInterval matches AO2-Client's keepalive_timer (courtroom.cpp).
 	keepaliveInterval = 45 * time.Second
-	// incomingQueueCap bounds the deliver-loop → client channel; the game
-	// loop drains it every frame.
+	// incomingQueueCap bounds the deliver-loop to client channel; the game loop drains it every frame.
 	incomingQueueCap = 256
-	// readBacklogCap bounds the read-loop → deliver-loop parking channel that sits
-	// in FRONT of Incoming. It exists so readLoop NEVER blocks on a full Incoming:
-	// coder/websocket answers the server's WS PING control frames only while some
-	// goroutine is inside ws.Read (read.go handleControl), so a reader parked on a
-	// channel send stops ponging — and once Incoming filled (hours at idle-room
-	// packet rates, ~256 × 60 s) the server's ping-timeout dropped a perfectly
-	// healthy minimized client. Windows provably stalls the render loop that drains
-	// Incoming while the app is occluded (the v1.81.5 finding), so the socket must
-	// stay alive without it — for the WHOLE occlusion, which the reporting users
-	// measure in workdays. Sized for a BUSY room's full occluded stretch, not just
-	// an idle one (~0.5 packets/s of active courtroom chatter → ~18 h; idle rooms →
-	// days), because an occluded-but-healthy client is indistinguishable from a
-	// wedged one down here and must not be torn down inside any plausible stall.
+	// readBacklogCap keeps readLoop from blocking on a full Incoming: coder/websocket answers pings only inside
+	// ws.Read, and Windows can stall the draining render loop for a whole occlusion.
+	// Sized for about 18 h of a busy room: a stalled client looks like a wedged one and must not be torn down.
 	readBacklogCap = 32768
-	// readBacklogMaxBytes bounds the WIRE bytes parked in the backlog channel, so a
-	// hostile/buggy server spraying maximum-size frames (maxIncomingBytes each)
-	// can't turn the packet-count bound into gigabytes of buffered strings. Idle
-	// traffic is tens of bytes per packet, so real stalls never approach this.
+	// readBacklogMaxBytes stops maximum-size frames turning the packet bound into gigabytes of strings.
 	readBacklogMaxBytes = 32 << 20
-	// maxIncomingBytes bounds one server packet defensively (character
-	// lists on 200-char servers fit comfortably).
+	// maxIncomingBytes bounds one server packet.
 	maxIncomingBytes = 8 << 20
 
 	// userAgent mirrors AO2-Client's request header shape.
@@ -65,22 +44,16 @@ const (
 	ClientName = "AsyncAO"
 )
 
-// errReadBacklogOverflow is the terminal error when the app has not drained
-// Incoming for an entire readBacklogCap of arriving packets (or the backlog's
-// byte bound): the render thread is genuinely wedged, not merely napping, so
-// the connection is abandoned deliberately rather than buffered without bound.
+// errReadBacklogOverflow ends the connection when Incoming went undrained for the whole backlog bound.
 var errReadBacklogOverflow = errors.New("protocol: incoming packet backlog overflowed (client stopped draining)")
 
-// sizedPacket carries a parsed packet plus its wire size through the backlog
-// channel, so the byte bound can be released when the packet is handed on.
+// sizedPacket carries a packet's wire size so the backlog's byte bound can be released on hand-off.
 type sizedPacket struct {
 	p Packet
 	n int
 }
 
-// Conn is a WebSocket AO2 connection: one text frame in = one packet out the
-// Incoming channel; Send serializes and writes one packet. Legacy raw TCP is
-// not supported anywhere in AsyncAO.
+// Conn is a WebSocket AO2 connection: one text frame in, one packet out on Incoming.
 type Conn struct {
 	ws       *websocket.Conn
 	incoming chan Packet
@@ -88,57 +61,35 @@ type Conn struct {
 	closed   chan struct{}
 	once     sync.Once
 
-	// sess is the aolib session representing the remote server: it decodes
-	// inbound frames (Fanta or JSON) and dispatches them to the typed On*
-	// handlers registered in registerInbound. Receive is called only by
-	// readLoop; the handlers run on that same goroutine.
+	// sess decodes inbound frames; Receive is called only by readLoop, and the handlers run on that goroutine.
 	sess *aolib.ServerSession
-	// frameBytes is the wire size of the frame currently being received, set by
-	// readLoop just before sess.Receive so the On* handlers can charge the
-	// backlog's byte bound correctly. Single-writer (readLoop), read by the same
-	// goroutine's handler closures.
+	// frameBytes is the current frame's wire size, for the byte bound; only the readLoop goroutine touches it.
 	frameBytes int
-	// jsonMode is the outbound wire format: true = JSON, false = FantaCode. It
-	// auto-flips to true the first time a JSON frame arrives, and the client can
-	// force it earlier from the server's decryptor capability flag.
+	// jsonMode is the outbound format (true is JSON); it flips on the first JSON frame or the decryptor flag.
 	jsonMode atomic.Bool
 
-	// backlog decouples readLoop from Incoming (see readBacklogCap): readLoop is
-	// its only sender/closer and never blocks on it; deliverLoop moves packets on
-	// to Incoming with a blocking send, which is safe because deliverLoop is NOT
-	// the goroutine that must keep re-entering ws.Read to answer server pings.
+	// backlog decouples readLoop (only sender and closer, never blocks) from Incoming; deliverLoop may block
+	// because it doesn't have to answer server pings.
 	backlog chan sizedPacket
-	// backlogBytes tracks wire bytes currently parked in backlog (single adder:
-	// readLoop; single subtractor: deliverLoop) against readBacklogMaxBytes.
+	// backlogBytes counts wire bytes parked in backlog; readLoop only adds, deliverLoop only subtracts.
 	backlogBytes atomic.Int64
 
-	// writeMu serializes every ws.Write: application Sends (render thread) and the
-	// keepalive goroutine share the one underlying socket, and coder/websocket
-	// permits only a single writer at a time (concurrent reads are fine, which is
-	// why readLoop needs no lock). Held only for the duration of a frame write.
+	// writeMu serializes ws.Write: coder/websocket permits a single writer, and keepalive shares the socket.
 	writeMu sync.Mutex
-	// keepalive is the CH ping payload the keepalive goroutine sends each interval,
-	// swapped atomically by the client (SetKeepalive) so it always carries the
-	// current char id. nil means "nothing to send yet" (pre-join / handshake).
+	// keepalive is the CH ping payload carrying the current char id; nil means nothing to send yet.
 	keepalive atomic.Pointer[string]
-	// keepaliveEvery is this connection's ping interval (0 → keepaliveInterval
-	// default); set from DialOptions so tests can shorten it.
+	// keepaliveEvery is the ping interval; 0 means keepaliveInterval.
 	keepaliveEvery time.Duration
 
-	// notify, when set, is called from the read loop after each packet is
-	// queued on Incoming (and once when Incoming closes) — the experimental
-	// event-driven render loop's wake hook, so a packet landing mid-idle is
-	// processed immediately instead of on the next poll tick. The callback
-	// must be cheap and non-blocking; protocol stays SDL-free (the UI injects
-	// an SDL wake-event push).
+	// notify, if set, wakes the event-driven render loop after each packet and when Incoming closes.
+	// It must be cheap and non-blocking, and keeps protocol SDL-free.
 	notify atomic.Pointer[func()]
 
 	sent     atomic.Int64
 	received atomic.Int64
 }
 
-// SetNotify installs (or clears, with nil) the packet-arrival wake callback.
-// Safe to call at any time from any goroutine.
+// SetNotify installs or, with nil, clears the packet-arrival callback; safe from any goroutine.
 func (c *Conn) SetNotify(f func()) {
 	if f == nil {
 		c.notify.Store(nil)
@@ -147,36 +98,24 @@ func (c *Conn) SetNotify(f func()) {
 	c.notify.Store(&f)
 }
 
-// wake invokes the notify callback if one is installed.
 func (c *Conn) wake() {
 	if f := c.notify.Load(); f != nil {
 		(*f)()
 	}
 }
 
-// DialOptions tunes a Dial. The zero value is the secure default: wss:// TLS
-// certificates are verified by the transport. SkipTLSVerify mirrors the
-// power-user "Validate server certificates" setting being OFF (the app default,
-// so self-signed community AO servers stay reachable). ws:// is never affected.
+// DialOptions tunes a Dial; the zero value verifies wss:// TLS certificates.
 type DialOptions struct {
 	SkipTLSVerify bool
 	Origin        string
-	// KeepaliveInterval overrides how often the keepalive goroutine pings (0 = the
-	// keepaliveInterval package default). Tests set a short value to exercise the
-	// goroutine without waiting 45 s; production leaves it zero.
+	// KeepaliveInterval overrides the ping interval; 0 means keepaliveInterval.
 	KeepaliveInterval time.Duration
-	// ReadBacklogCap overrides the backlog channel's packet capacity (0 = the
-	// readBacklogCap package default). Tests set a tiny value to exercise the
-	// wedged-client overflow disconnect without buffering thousands of packets;
-	// production leaves it zero.
+	// ReadBacklogCap overrides the backlog's packet capacity; 0 means readBacklogCap.
 	ReadBacklogCap int
 }
 
-// registerCodecsOnce serialises codec registration so the packet registry maps
-// are written exactly once, before any session's read loop can read them (§17.8:
-// aolib.RegisterPacket and packetutil.customCodecs are plain maps; a second Dial
-// re-writing them while an existing session's receiveCustom reads is a concurrent
-// map read/write fatal — the two-tab connect crash).
+// registerCodecsOnce: the packet registries are plain maps, so writing them on a second Dial while a live
+// session reads them is a fatal concurrent map access.
 var registerCodecsOnce sync.Once
 
 func registerCodecs() {
@@ -185,7 +124,6 @@ func registerCodecs() {
 }
 
 // Dial connects to a ws:// or wss:// AO server URL and starts the read loop.
-// An optional DialOptions controls TLS verification; the zero value verifies.
 func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
@@ -193,32 +131,20 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 	dialOpts := &websocket.DialOptions{
 		HTTPHeader: http.Header{"User-Agent": []string{userAgent}},
 	}
-	// Power-user WS Origin override (see DialOptions.Origin). Set only when
-	// configured, so the default handshake is byte-identical to before.
 	if len(opts) > 0 && opts[0].Origin != "" {
 		dialOpts.HTTPHeader.Set("Origin", opts[0].Origin)
 	}
-	// Only wss:// is affected — ws:// upgrades over plain TCP and ignores the TLS
-	// config. We install a custom client ONLY when skipping verification, so the
-	// verifying default keeps coder/websocket's shared default client untouched.
+	// A custom client only when skipping verification, so the default keeps coder/websocket's shared client.
 	if len(opts) > 0 && opts[0].SkipTLSVerify {
 		transport := netproxy.Transport()
-		// Opt-in, gated behind the power-user Security toggle (default OFF =
-		// accept self-signed). Set on the CLONE's own config, so nothing here can
-		// reach http.DefaultTransport's shared one.
+		// Set on the clone, so http.DefaultTransport's shared config is never touched.
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 		dialOpts.HTTPClient = &http.Client{Transport: transport}
 	}
 
 	ws, resp, err := websocket.Dial(ctx, wsURL, dialOpts)
 	if err != nil {
-		// A non-nil resp means the server ANSWERED and refused: the socket and any
-		// TLS handshake worked, and this is a 403/429/503-style rejection that
-		// usually carries instructions (a whitelist procedure, an appeal link). Keep
-		// them — see DialError for what was being thrown away here. resp stays nil
-		// for a DNS failure, a refused connection or a TLS error, so every one of
-		// those keeps the exact error string it has today and every existing
-		// classifier that reads it is untouched.
+		// A non-nil resp means the server refused, usually with instructions (whitelist, appeal link).
 		if resp != nil {
 			return nil, &DialError{
 				URL:        wsURL,
@@ -232,10 +158,7 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 	}
 	ws.SetReadLimit(maxIncomingBytes)
 
-	// Install the both-wire codecs for the non-canonical headers (voice VS_*,
-	// the JSON-only GP roster). Registered EXACTLY ONCE via the package Once:
-	// re-writing the registry maps on a second Dial races a live session's
-	// readLoop (receiveCustom) — see registerCodecsOnce's doc.
+	// Registered once only; see registerCodecsOnce.
 	registerCodecsOnce.Do(registerCodecs)
 
 	backlogCap := readBacklogCap
@@ -250,9 +173,7 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 	}
 	c.sess = aolib.NewServer(aolib.SessionConfig{
 		Send: func(wire []byte) { _ = c.write(wire) },
-		// Unknown headers are the handful of AsyncAO/AO2 extensions aolib's
-		// spec doesn't model (MU, UM, SD, CASEA, checkconnection): frame them
-		// positionally from the Fanta wire so the courtroom still sees them.
+		// Headers aolib doesn't model (MU, UM, SD, CASEA, checkconnection) are framed positionally from the Fanta wire.
 		OnUnknownHeader: func(header string, wire []byte) {
 			pkt, err := aolib.NewPacket(strings.TrimSuffix(string(wire), "%"))
 			if err != nil {
@@ -260,8 +181,7 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 			}
 			c.enqueue(Packet{Header: header, Fields: unescapeArgs(pkt.Body)})
 		},
-		// Malformed / undecodable frames are tolerated (dropped), matching
-		// AO2-Client's tolerance of a bad server frame.
+		// Undecodable frames are dropped, matching AO2-Client's tolerance of a bad server frame.
 	})
 	c.registerInbound()
 	if len(opts) > 0 && opts[0].KeepaliveInterval > 0 {
@@ -273,14 +193,12 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 	return c, nil
 }
 
-// Incoming returns the channel of parsed server packets. It closes when the
-// connection dies; Err then reports why.
+// Incoming returns the channel of parsed server packets; it closes when the connection dies, and Err then reports why.
 func (c *Conn) Incoming() <-chan Packet {
 	return c.incoming
 }
 
-// Err reports the terminal read error after Incoming closes (nil on clean
-// shutdown via Close).
+// Err reports the terminal read error after Incoming closes (nil after Close).
 func (c *Conn) Err() error {
 	if p := c.readErr.Load(); p != nil {
 		return *p
@@ -288,16 +206,11 @@ func (c *Conn) Err() error {
 	return nil
 }
 
-// SetJSONMode forces the outbound wire format (true = JSON). By default the
-// connection auto-detects JSON from the first inbound JSON frame; call this to
-// switch eagerly, e.g. when the server advertises JSON in its decryptor
-// capability flag.
+// SetJSONMode forces the outbound wire format, for a server that advertises JSON before sending it.
 func (c *Conn) SetJSONMode(enabled bool) { c.jsonMode.Store(enabled) }
 
-// JSONMode reports the current outbound wire format.
 func (c *Conn) JSONMode() bool { return c.jsonMode.Load() }
 
-// Send serializes and writes one packet.
 func (c *Conn) Send(ctx context.Context, p Packet) error {
 	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
 	defer cancel()
@@ -307,10 +220,7 @@ func (c *Conn) Send(ctx context.Context, p Packet) error {
 	}
 	raw, err := c.encode(p, mode)
 	if err != nil {
-		// A packet that fails aolib validation is an edge case (out-of-range
-		// enum, etc.). Fall back to positional framing, which the server accepts
-		// regardless of wire mode (it auto-detects per frame), preserving the
-		// old never-drop behavior.
+		// A packet failing aolib validation falls back to positional framing, accepted in either wire mode.
 		raw = []byte(p.String())
 	}
 	c.writeMu.Lock()
@@ -323,11 +233,7 @@ func (c *Conn) Send(ctx context.Context, p Packet) error {
 	return nil
 }
 
-// encode serializes one outbound packet in the given wire mode. A packet that
-// carries a canonical typed form is encoded through aolib directly (so MS and
-// the other C2S packets get correct enum strings and a valid JSON shape); a
-// custom header (VS_*) goes through its registered codec; and a positional
-// packet (tests, unmodeled headers) is framed as Fanta.
+// encode serializes typed forms through aolib, custom headers (VS_*) by codec, and the rest as Fanta.
 func (c *Conn) encode(p Packet, mode aolib.WireMode) ([]byte, error) {
 	if p.typed != nil {
 		if packetutil.IsCustom(p.Header) {
@@ -335,8 +241,7 @@ func (c *Conn) encode(p Packet, mode aolib.WireMode) ([]byte, error) {
 		}
 		raw, err := aolib.Encode(p.typed, mode)
 		if err != nil {
-			// JSON validation failed (e.g. an out-of-range enum): fall back to
-			// Fanta for this frame, which the server accepts per-frame.
+			// JSON validation failed; the server accepts Fanta per frame.
 			return aolib.Encode(p.typed, aolib.WireFanta)
 		}
 		return raw, nil
@@ -344,8 +249,7 @@ func (c *Conn) encode(p Packet, mode aolib.WireMode) ([]byte, error) {
 	return []byte(p.String()), nil
 }
 
-// write writes one already-encoded frame to the socket, serializing with the
-// keepalive goroutine. Used by the session's Send callback.
+// write sends one encoded frame, serializing with the keepalive goroutine.
 func (c *Conn) write(raw []byte) error {
 	ctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
 	defer cancel()
@@ -355,11 +259,7 @@ func (c *Conn) write(raw []byte) error {
 	return err
 }
 
-// SetKeepalive installs (or clears, with an empty string) the CH ping payload the
-// keepalive goroutine sends each keepaliveInterval. The client refreshes it whenever
-// the char id can change (join / char pick); an empty string parks the ping (nothing
-// to send yet). Safe to call from any goroutine — the render loop sets it, the
-// keepalive goroutine reads it, via an atomic swap.
+// SetKeepalive sets the CH ping payload, or with an empty string stops the ping; safe from any goroutine.
 func (c *Conn) SetKeepalive(payload string) {
 	if payload == "" {
 		c.keepalive.Store(nil)
@@ -368,16 +268,8 @@ func (c *Conn) SetKeepalive(payload string) {
 	c.keepalive.Store(&payload)
 }
 
-// keepaliveLoop sends the CH keepalive on a fixed interval from its OWN goroutine,
-// independent of the render loop — the whole point of the fix. AsyncAO used to fire
-// the ping from the frame/Background pump, but Windows stalls that loop when the app
-// is minimized behind a fullscreen foreground app (a video, say), so the ping
-// stopped and the server idle-dropped the "silent" client. This goroutine keeps it
-// flowing regardless of window state, exactly like readLoop keeps reading. A write
-// failure here is a genuinely dead socket (this is real traffic we must send, not a
-// probe), so it surfaces the drop through the same readErr/Close path as any read
-// error — no false positives like the removed staleness watchdog. Exits when the
-// conn closes, so a reconnect cycle can't leak it (rule §17.4).
+// keepaliveLoop has its own goroutine because Windows stalls the frame loop of an occluded app; a write
+// failure means a dead socket, so it closes. It exits on Close so reconnects can't leak it (hard rule 4).
 func (c *Conn) keepaliveLoop() {
 	every := c.keepaliveEvery
 	if every <= 0 {
@@ -401,9 +293,7 @@ func (c *Conn) keepaliveLoop() {
 		c.writeMu.Unlock()
 		cancel()
 		if err != nil {
-			// A real write failed → the socket is dead. Record it (first error wins;
-			// after Close, readLoop won't clobber it) and Close, so Incoming closes and
-			// the drop reaches the UI (→ lobby) without waiting for the read side.
+			// First error wins; Close makes the drop reach the UI without waiting for the read side.
 			e := fmt.Errorf("protocol: keepalive write failed: %w", err)
 			c.readErr.CompareAndSwap(nil, &e)
 			c.Close()
@@ -413,7 +303,7 @@ func (c *Conn) keepaliveLoop() {
 	}
 }
 
-// Close tears the connection down. Safe to call multiple times.
+// Close tears the connection down; safe to call more than once.
 func (c *Conn) Close() {
 	c.once.Do(func() {
 		close(c.closed)
@@ -421,24 +311,12 @@ func (c *Conn) Close() {
 	})
 }
 
-// readLoop's ONE invariant is that it always returns to ws.Read promptly: the
-// library answers server WS PING control frames only from inside an in-flight
-// Read, and an unanswered ping is how servers drop a healthy idle client (the
-// hours-minimized disconnect — the render loop that drains Incoming is stalled
-// by the OS while occluded, so this goroutine is the only thing keeping the
-// socket alive). It therefore NEVER blocks on a channel send: packets go into
-// backlog non-blockingly, and deliverLoop does the blocking hand-off to
-// Incoming. Backlog exhaustion (count or bytes) is the deliberate exception:
+// readLoop must always return to ws.Read promptly: the library answers pings only inside Read, and an
+// unanswered ping drops a healthy client. So packets go to backlog, and deliverLoop does the blocking hand-off.
+// Backlog exhaustion is the deliberate exception:
 func (c *Conn) readLoop() {
-	// readLoop is backlog's only sender, so it closes it on exit; deliverLoop
-	// then finishes delivering whatever is parked and closes Incoming — a
-	// dropped connection still surfaces (the "connection closed" toast + tab
-	// teardown) right after the buffered packets. Deliberately NO Close() on
-	// the transport-error path below: closing c.closed would make deliverLoop
-	// abandon parked packets, and surfacing the drop "immediately" buys
-	// nothing while the drain is stalled (nobody is watching a stalled
-	// window; on resume pumpConnection drains the parked packets AND hits the
-	// channel close in the same call, so the drop surfaces the same frame).
+	// Closing backlog lets deliverLoop finish parked packets and close Incoming. Transport errors below
+	// deliberately don't Close: closing c.closed would make deliverLoop abandon parked packets.
 	defer close(c.backlog)
 	for {
 		msgType, data, err := c.ws.Read(context.Background())
@@ -458,18 +336,13 @@ func (c *Conn) readLoop() {
 		if packetutil.IsJSON(data) {
 			c.jsonMode.Store(true)
 		}
-		// Decode + dispatch through aolib's typed session. The On* handlers
-		// registered in registerInbound enqueue each packet to the backlog
-		// (non-blocking); the decryptor handler flips jsonMode on decryptor#JSON.
+		// The registerInbound handlers enqueue without blocking; the decryptor handler flips jsonMode.
 		c.frameBytes = len(data)
 		c.sess.Receive(data)
 	}
 }
 
-// enqueue hands one decoded packet to the backlog, charging the backlog's byte
-// bound and tearing the connection down (deliberately) if the drain has been
-// stalled for the whole bound. It runs on readLoop, or its On* handler closures
-// (the same goroutine), so frameBytes is read without a lock.
+// enqueue closes the connection if the bound is exhausted; it runs only on the readLoop goroutine.
 func (c *Conn) enqueue(p Packet) {
 	c.received.Add(1)
 	n := c.frameBytes
@@ -484,24 +357,15 @@ func (c *Conn) enqueue(p Packet) {
 	case <-c.closed:
 		return
 	default:
-		// Backlog full: the app hasn't drained Incoming for the entire
-		// bound while packets kept arriving — wedged, not napping.
+		// Backlog full: Incoming went undrained for the whole bound, so the app is wedged.
 		c.readErr.CompareAndSwap(nil, &errReadBacklogOverflow)
 		c.Close()
 	}
 }
 
-// deliverLoop moves packets backlog → Incoming. Its send may block for hours —
-// that's the point: blocking HERE (instead of in readLoop) is what keeps the
-// reader inside ws.Read answering server pings while the render loop is
-// stalled. When the drain resumes, delivery resumes instantly (no waiting for
-// the next inbound frame). It is Incoming's only closer. On a transport drop
-// (readLoop exits WITHOUT Close, so c.closed stays open) the select's closed
-// arm is dead and every parked packet is delivered before the range ends —
-// nothing is dropped ahead of the close notification. Once c.closed IS closed
-// (deliberate Close, overflow, or keepaliveLoop's write-failure Close on an
-// already-dead socket) still-parked packets may be abandoned — acceptable, the
-// connection is being torn down and a reconnect resyncs full server state.
+// deliverLoop is Incoming's only closer; blocking here keeps the reader answering pings during a stall.
+// After a transport drop every parked packet is delivered before the close; after Close parked packets
+// may be abandoned, since a reconnect resyncs full server state.
 func (c *Conn) deliverLoop() {
 	defer func() {
 		close(c.incoming)
@@ -518,10 +382,7 @@ func (c *Conn) deliverLoop() {
 	}
 }
 
-// Ping sends a WebSocket ping control frame and returns the round-trip time once the peer's
-// pong arrives (or an error if ctx fires first / the conn died). coder/websocket permits Ping
-// concurrently with the read loop and Send, so a background ping-loop can measure latency
-// without disturbing traffic. Used by the optional connection-quality chip (#128).
+// Ping returns a WebSocket ping's round-trip time; coder/websocket allows it alongside reads and Send.
 func (c *Conn) Ping(ctx context.Context) (time.Duration, error) {
 	start := time.Now()
 	if err := c.ws.Ping(ctx); err != nil {
@@ -530,13 +391,11 @@ func (c *Conn) Ping(ctx context.Context) (time.Duration, error) {
 	return time.Since(start), nil
 }
 
-// ConnStats is a point-in-time counter snapshot.
 type ConnStats struct {
 	Sent     int64
 	Received int64
 }
 
-// Stats snapshots the connection counters.
 func (c *Conn) Stats() ConnStats {
 	return ConnStats{Sent: c.sent.Load(), Received: c.received.Load()}
 }

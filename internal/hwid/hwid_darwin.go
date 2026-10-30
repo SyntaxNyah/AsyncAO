@@ -7,15 +7,13 @@ import (
 	"strings"
 )
 
-// roots returns the macOS hardware UUID (IOPlatformUUID), read via ioreg — the
-// stable per-machine identifier. Best-effort; a failure drops this root and
-// compute() falls back to the hostname.
+// roots returns the hardware UUID (IOPlatformUUID) from ioreg; on failure the hostname is used.
 func roots() []string {
 	out, err := exec.Command("ioreg", "-rd1", "-c", "IOPlatformExpertDevice").Output()
 	if err != nil {
 		return nil
 	}
-	// A matching line looks like: `    "IOPlatformUUID" = "XXXXXXXX-...."`.
+	// Matching line: `    "IOPlatformUUID" = "XXXXXXXX-...."`.
 	for _, line := range strings.Split(string(out), "\n") {
 		if !strings.Contains(line, "IOPlatformUUID") {
 			continue

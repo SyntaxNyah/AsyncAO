@@ -1,8 +1,6 @@
 package ttf
 
-// Text calls pass the Go string's own bytes with an explicit length: SDL3_ttf
-// never keeps them, so no C copy is made per measurement. noescape keeps the
-// out-parameters on the stack.
+// Text calls pass the Go string's bytes with a length, as SDL3_ttf never keeps them; noescape keeps out-params local.
 
 /*
 #cgo pkg-config: sdl3-ttf

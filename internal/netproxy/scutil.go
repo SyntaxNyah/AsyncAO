@@ -2,16 +2,8 @@ package netproxy
 
 import "strings"
 
-// parseScutil reads the dictionary `scutil --proxy` prints on macOS.
-//
-// Platform-NEUTRAL on purpose, even though only the darwin build calls it. The
-// parsing is where the bugs live, and a file named discover_darwin.go can only
-// ever be compiled — let alone tested — on a machine nobody here develops on.
-// Keeping the syscall (a subprocess) on one side of this line and the decision
-// on the other is what makes the decision testable everywhere.
-//
-// The format is a block of `Key : Value` lines, with ExceptionsList rendered as
-// a nested `<array> { 0 : *.local  1 : 169.254/16 }`.
+// parseScutil reads `scutil --proxy` output: `Key : Value` lines, with a nested ExceptionsList `<array>`.
+// It is platform-neutral so the parsing can be tested off macOS.
 func parseScutil(out string) *Policy {
 	vals := map[string]string{}
 	var exceptions []string
@@ -39,9 +31,7 @@ func parseScutil(out string) *Policy {
 		vals[key] = val
 	}
 
-	// macOS keeps the host and port after the box is unticked, so the Enable key
-	// is the only thing that decides. Honouring a disabled entry would route a
-	// user through a proxy they explicitly turned off.
+	// macOS keeps host and port after the box is unticked, so only the Enable key decides.
 	hostPort := func(enable, host, port string) string {
 		if vals[enable] != "1" || vals[host] == "" {
 			return ""
@@ -65,18 +55,13 @@ func parseScutil(out string) *Policy {
 	}
 
 	bypass := parseBypass(strings.Join(exceptions, ","))
-	// "Exclude simple hostnames" is macOS's spelling of Windows' <local> macro.
+	// macOS's spelling of Windows' <local> macro.
 	if vals["ExcludeSimpleHostnames"] == "1" {
 		bypass.noDot = true
 	}
 
 	if httpVia == nil && httpsVia == nil {
-		// No explicit proxy. An auto-config script or auto-discovery IS a
-		// configuration, and one this platform cannot evaluate: there is no macOS
-		// equivalent of WinHttpGetProxyForUrl reachable without embedding a
-		// JavaScript engine, which is not a trade this client will make against a
-		// 256 MiB budget. Report it honestly and let the fail-closed rule and the
-		// banner take over, rather than quietly connecting direct.
+		// This platform can't evaluate a script without a JavaScript engine, so fail closed rather than go direct.
 		if vals["ProxyAutoConfigEnable"] == "1" || vals["ProxyAutoDiscoveryEnable"] == "1" {
 			src := "macOS automatic proxy detection, which cannot be evaluated on this platform"
 			if u := vals["ProxyAutoConfigURLString"]; u != "" {

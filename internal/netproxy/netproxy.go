@@ -1,7 +1,4 @@
-// Package netproxy is the single answer to "which proxy, if any, carries this
-// request". Every outbound HTTP(S) transport in AsyncAO installs Proxy, and
-// nothing constructs an http.Transport without it — a gate test enforces that,
-// because the failure it prevents is silent.
+// Package netproxy picks the proxy for a request; every http.Transport must install Proxy, or it fails silently.
 package netproxy
 
 import (
@@ -10,25 +7,14 @@ import (
 	"sync/atomic"
 )
 
-// resolver is the installed proxy resolver, or nil for the environment default.
-// An atomic pointer because Proxy is called from every transport goroutine while
-// the OS-config layer may refresh it: the read path must not take a lock, and a
-// resolver swap must not tear.
-// Pointer-to-func rather than a func value because atomic.Pointer needs a
-// pointer type; the indirection is one load on a path that is already doing a
-// DNS lookup and a TCP connect.
+// resolver is the installed resolver, nil for the environment default; atomic because Proxy must not lock
+// on the transport goroutines.
 var resolver atomic.Pointer[ProxyFunc]
 
-// ProxyFunc is the shape net/http wants for Transport.Proxy: it returns the
-// proxy URL for req, nil for "connect directly", or an error to fail the request.
+// ProxyFunc is net/http's Transport.Proxy shape: the proxy URL, nil for direct, or an error to fail the request.
 type ProxyFunc func(*http.Request) (*url.URL, error)
 
-// SetResolver installs f as the process-wide proxy resolver, replacing whatever
-// was there. Pass nil to fall back to the environment.
-// Deliberately process-wide and not per-client: a proxy is a property of the
-// machine's network, not of one connection, and threading it through every
-// constructor is exactly how one transport gets missed. Callers that need a
-// per-request decision make it inside f, which receives the request.
+// SetResolver installs the process-wide resolver, as threading it through constructors would miss a transport.
 func SetResolver(f ProxyFunc) {
 	if f == nil {
 		resolver.Store(nil)
@@ -37,11 +23,7 @@ func SetResolver(f ProxyFunc) {
 	resolver.Store(&f)
 }
 
-// Proxy is the value every http.Transport.Proxy field must hold.
-// It is not simply http.ProxyFromEnvironment because that function memoises the
-// environment behind a sync.Once on first use, process-wide — so nothing read
-// after the first request can ever change the answer. Routing through here keeps
-// a later resolver swap (a settings change, an OS-config refresh) effective.
+// Proxy is the value every Transport.Proxy must hold; http.ProxyFromEnvironment memoises behind a sync.Once.
 func Proxy(req *http.Request) (*url.URL, error) {
 	if f := resolver.Load(); f != nil {
 		return (*f)(req)
@@ -49,35 +31,22 @@ func Proxy(req *http.Request) (*url.URL, error) {
 	return http.ProxyFromEnvironment(req)
 }
 
-// ForURL reports the proxy that would carry a request to u, or nil for direct.
-// The caller it exists for is DNS pre-resolution: when a proxy carries the
-// request, the ORIGIN hostname must never be resolved locally — the proxy
-// resolves it, and a local lookup would publish to the machine's resolver
-// exactly the server name the user routed through a proxy to keep private. The
-// proxy's OWN hostname still resolves locally, which is unavoidable and correct.
+// ForURL reports the proxy for u, or nil for direct. DNS pre-resolution needs it: resolving a proxied origin
+// locally would publish the name to the machine's resolver.
 func ForURL(u *url.URL) *url.URL {
 	if u == nil {
 		return nil
 	}
-	// Proxy resolvers read only req.URL (this is true of
-	// http.ProxyFromEnvironment and of anything modelled on it), so a bare
-	// request is enough and avoids allocating a body or a header map.
+	// Resolvers read only req.URL, so a bare request is enough.
 	p, err := Proxy(&http.Request{URL: u})
 	if err != nil {
-		// An unresolvable proxy config is not a licence to go direct: report that
-		// SOMETHING is configured so the caller takes the cautious branch. The
-		// request itself will fail later with the real error.
+		// An unresolvable config is no licence to go direct: report one so the caller stays cautious.
 		return &url.URL{}
 	}
 	return p
 }
 
-// Transport returns an http.Transport with the client's proxy resolver already
-// installed, cloned from http.DefaultTransport so it also carries the stdlib's
-// dial, TLS-handshake and idle-connection timeouts.
-// Cloning matters more than it looks: the bug this package was written for was a
-// hand-built `&http.Transport{TLSClientConfig: ...}` that silently dropped not
-// just Proxy but every one of those timeouts along with it.
+// Transport clones http.DefaultTransport; a hand-built one would silently drop Proxy and the stdlib's timeouts.
 func Transport() *http.Transport {
 	t, ok := http.DefaultTransport.(*http.Transport)
 	if !ok { // only reachable if something replaced http.DefaultTransport

@@ -1,10 +1,5 @@
-// Package network fetches assets over HTTP with aggressive deduplication and
-// negative caching (spec §7), runs the prioritized fetch worker pool,
-// and talks to the AO master server. Every request must earn its RTT:
-// duplicate in-flight fetches collapse via singleflight, cached 404s never
-// touch the wire inside their TTL, and failing hosts back off exponentially.
-// The game connection itself is WebSocket-only (see internal/protocol);
-// legacy raw-TCP servers are intentionally unsupported.
+// Package network fetches assets with deduplication and negative caching, and talks to the AO master server.
+// In-flight fetches collapse, cached 404s stay off the wire inside their TTL, and failing hosts back off.
 package network
 
 import (
@@ -30,57 +25,26 @@ import (
 )
 
 const (
-	// Transport tuning (spec §7). Most AO asset hosts speak plain
-	// http://, where ForceAttemptHTTP2 is inert and tuned HTTP/1.1
-	// keep-alive does the work; HTTP/2 kicks in automatically on https.
-	// Idle-per-host matches the worker pool: at 8 every 16-wide fetch
-	// burst closed half its connections and the NEXT burst re-dialed
-	// (plus TLS handshake on https) — cold-load bursts are back-to-back,
-	// so all lanes stay warm now. The total covers maxTabs concurrent
-	// servers' asset hosts at full width plus master-list/manifest slack.
+	// Idle-per-host matches the worker pool, so back-to-back fetch bursts reuse connections instead of re-dialing.
 	defaultMaxConnsPerHost     = 16
 	defaultMaxIdleConnsPerHost = 16
 	defaultMaxIdleConnsTotal   = 96
 	defaultIdleConnTimeout     = 90 * time.Second
-	// defaultTLSHandshakeTimeout bounds just the TLS handshake, a phase that
-	// runs BEFORE the request is written (so defaultResponseHeaderTimeout never
-	// covers it). It must match the header/request budget: a slow host like
-	// catbox.moe occasionally takes several seconds to finish its handshake,
-	// and a 2s cap cut those tracks off with "TLS handshake timeout" long
-	// before headers could arrive. 15s mirrors the other slow-host timeouts;
-	// fast hosts are still cut by the request context's adaptive deadline
-	// (2s floor), so sprite/icon fetches keep failing fast.
+	// defaultTLSHandshakeTimeout: the handshake runs before the request is written, so the header timeout never
+	// covers it. Slow hosts need seconds; fast hosts are still cut by the adaptive deadline (2s floor).
 	defaultTLSHandshakeTimeout = 15 * time.Second
-	// defaultResponseHeaderTimeout fails a stalled server faster than the
-	// overall request deadline, freeing the connection slot for the next
-	// probe. 15s (not 3s) because slow file hosts — catbox.moe and friends —
-	// routinely take several seconds to send their first byte, and music is
-	// exactly the payload that lives on those hosts. Fast hosts are still cut
-	// off by the per-request adaptive deadline (2s floor) before this trips,
-	// so sprite/icon stalls keep failing fast.
+	// defaultResponseHeaderTimeout: slow file hosts, where music lives, take seconds to send the first byte.
 	defaultResponseHeaderTimeout = 15 * time.Second
 	tlsSessionCacheSize          = 64
 
-	// DefaultRequestTimeout caps the wait for response HEADERS to arrive
-	// (the time-to-first-byte window), NOT the body transfer. The adaptive
-	// per-host deadline (adaptiveTimeout) is derived from the TTFB EWMA and
-	// clamped to this ceiling; once headers land the body read is governed by
-	// bodyTransferBudget instead. It bounds only the header wait so a stalled
-	// server frees its fetch worker fast. 15s (not 5s) lets a slow-but-alive
-	// host (catbox) get its headers out; fast hosts still fail at the 2s
-	// adaptive floor, and a genuinely dead host is still bounded at 15s.
+	// DefaultRequestTimeout caps the wait for headers, not the body, and is the adaptive deadline's ceiling.
 	DefaultRequestTimeout = 15 * time.Second
 
-	// bodyTransferBudget caps the BODY download once headers have arrived,
-	// separately from the TTFB-derived header deadline. The two must not share
-	// a deadline: the TTFB EWMA is dominated by tiny sprite/icon probes on the
-	// same host, so reusing it for the body collapsed a large music track's
-	// download window toward adaptiveTimeoutFloor (2s) and cut multi-MB files
-	// mid-stream — "big music silently doesn't play" (§1.1). 180s (not 60s)
+	// bodyTransferBudget is separate from the header deadline: the TTFB EWMA is dominated by tiny sprite probes,
+	// and sharing it would cut large music files mid-stream.
 	bodyTransferBudget = 180 * time.Second
 
-	// NotFoundCacheSize / NotFoundCacheTTL bound the negative cache: a 404
-	// is never re-probed inside the TTL (spec §17.6).
+	// NotFoundCacheSize and NotFoundCacheTTL bound the negative cache (hard rule 6).
 	NotFoundCacheSize = 1024
 	NotFoundCacheTTL  = 5 * time.Minute
 
@@ -88,34 +52,24 @@ const (
 	backoffBase = 500 * time.Millisecond
 	backoffMax  = 30 * time.Second
 
-	// Adaptive deadlines (the bounded "self-tuning within the cap" the
-	// perf roadmap calls for): each host's observed time-to-first-byte
-	// EWMA sets that host's request deadline at adaptiveLatencyMultiple ×
-	// EWMA, clamped to [adaptiveTimeoutFloor, the client timeout]. A
-	// degrading mirror stops pinning fetch workers for the full global
-	// timeout — the lane keeps flowing for healthy hosts — while fast
-	// hosts never notice (the floor dwarfs their real responses).
+	// A host's deadline is adaptiveLatencyMultiple x its TTFB EWMA, clamped to [adaptiveTimeoutFloor, client
+	// timeout], so a degrading mirror doesn't pin fetch workers.
 	adaptiveLatencyMultiple = 8
 	adaptiveTimeoutFloor    = 2 * time.Second
-	// EWMA weight 1/4: new samples track congestion without letting one
-	// blip swing the average.
+	// EWMA weight 1/4: tracks congestion without letting one blip swing the average.
 	ewmaWeightDen = 4
 
-	// unknownLengthPrealloc seeds the scratch buffer for responses without
-	// a Content-Length header.
+	// unknownLengthPrealloc seeds the scratch buffer for responses without a Content-Length.
 	unknownLengthPrealloc = 64 << 10
 )
 
-// ErrAssetNotFound reports a 404, possibly served from the negative cache
-// without a network round-trip.
+// ErrAssetNotFound reports a 404, possibly served from the negative cache.
 var ErrAssetNotFound = errors.New("network: asset not found")
 
-// ErrHostBackingOff reports that the host failed recently and the client is
-// inside its exponential backoff window.
+// ErrHostBackingOff reports that the host is inside its exponential backoff window.
 var ErrHostBackingOff = errors.New("network: host backing off after failures")
 
-// Client is the deduplicating, negatively-caching asset fetcher. All methods
-// are safe for concurrent use.
+// Client is the deduplicating, negatively-caching asset fetcher, safe for concurrent use.
 type Client struct {
 	httpClient *http.Client
 	group      singleflight.Group
@@ -124,10 +78,7 @@ type Client struct {
 	backoff    sync.Map // host string → *hostBackoff
 	hostLat    sync.Map // host string → *hostLatency (TTFB EWMA)
 	timeout    time.Duration
-	// bodyBudget caps the body read once headers arrive (separate from the
-	// TTFB-derived header deadline — see bodyTransferBudget). A field, not the
-	// const directly, so tests can shrink it to prove the body read no longer
-	// inherits the header deadline without dribbling a 60s stream.
+	// bodyBudget is a field rather than the const so tests can shrink it.
 	bodyBudget time.Duration
 	bufPool    sync.Pool // *bytes.Buffer for unknown-length reads
 
@@ -138,37 +89,26 @@ type Client struct {
 	failures   atomic.Int64
 	bytesRead  atomic.Int64
 
-	// assetOrigin, when set, is sent as the Origin (and matching Referer) header on
-	// every asset fetch — a power-user override for servers that gate their asset
-	// base by Origin / CORS. nil = unset (default). Read on the fetch goroutines,
-	// set from the Security setting; atomic so it's race-free.
+	// assetOrigin, if set, is the Origin and Referer on every asset fetch, for servers restricting by origin.
 	assetOrigin atomic.Pointer[string]
 
-	// latMultiple overrides adaptiveLatencyMultiple when non-zero (the power-user
-	// per-host deadline knob): each host's request deadline = multiple × its TTFB
-	// EWMA, clamped. Atomic — read per request, set from Settings.
+	// latMultiple overrides adaptiveLatencyMultiple when non-zero.
 	latMultiple atomic.Int32
 
-	// globalTTFBNs is the all-hosts TTFB EWMA (cold-load profiling: the debug
-	// overlay's per-stage line wants ONE fetch number, not a per-host map walk).
+	// globalTTFBNs is the all-hosts TTFB EWMA, for the debug overlay's single fetch number.
 	globalTTFBNs atomic.Int64
 }
 
-// AvgTTFB reports the all-hosts time-to-first-byte EWMA (zero until the first
-// sample) — the fetch stage of the cold-load profiling line.
+// AvgTTFB reports the all-hosts time-to-first-byte EWMA; zero until the first sample.
 func (c *Client) AvgTTFB() time.Duration { return time.Duration(c.globalTTFBNs.Load()) }
 
-// Hard bounds the deadline-multiple setter enforces regardless of what the
-// caller sends (a runaway pref can't produce a 0× or 1000× deadline).
+// Bounds enforced by the setter, so a bad preference can't produce a 0x or 1000x deadline.
 const (
 	latMultipleFloor = 1
 	latMultipleCeil  = 64
 )
 
-// SetAdaptiveLatencyMultiple overrides the per-host adaptive-deadline multiple
-// (0 = the built-in default, adaptiveLatencyMultiple). Live-safe: read per
-// request. Lower = give up on a degrading mirror sooner (snappier shedding,
-// more spurious timeouts on jittery links); higher = more patient.
+// SetAdaptiveLatencyMultiple overrides the deadline multiple; 0 means default, lower gives up on a mirror sooner.
 func (c *Client) SetAdaptiveLatencyMultiple(n int) {
 	if n != 0 {
 		n = value.Clamp(n, latMultipleFloor, latMultipleCeil)
@@ -176,10 +116,7 @@ func (c *Client) SetAdaptiveLatencyMultiple(n int) {
 	c.latMultiple.Store(int32(n))
 }
 
-// SetAssetOrigin sets the Origin (and Referer) header sent on every asset fetch.
-// Empty clears it (the default — no header). Safe to call from any goroutine. The
-// power-user escape hatch for servers that only serve their base to a specific web
-// origin (a "join only via https://webao.example" setup).
+// SetAssetOrigin sets the Origin and Referer on every asset fetch, or clears them when empty; safe from any goroutine.
 func (c *Client) SetAssetOrigin(origin string) {
 	if origin == "" {
 		c.assetOrigin.Store(nil)
@@ -188,11 +125,8 @@ func (c *Client) SetAssetOrigin(origin string) {
 	c.assetOrigin.Store(&origin)
 }
 
-// NewClientNotFoundTTL is the boot-applied constructor: the negative-cache TTL
-// (how long a 404 stays "missing" before a re-probe is allowed; 0 = the default
-// NotFoundCacheTTL). BOOT-applied by design: the expirable LRU takes its TTL at
-// construction, and rebuilding it live would flush every cached 404 — the
-// Settings row says "applies on restart".
+// NewClientNotFoundTTL sets the 404 TTL (0 means NotFoundCacheTTL) at construction: the expirable LRU takes it
+// there, and rebuilding it live would flush every cached 404.
 func NewClientNotFoundTTL(ttl time.Duration) *Client {
 	if ttl <= 0 {
 		ttl = NotFoundCacheTTL
@@ -200,23 +134,17 @@ func NewClientNotFoundTTL(ttl time.Duration) *Client {
 	return newClient(DefaultRequestTimeout, ttl)
 }
 
-// newClient lets tests shrink timeouts and TTLs.
 func newClient(timeout, notFoundTTL time.Duration) *Client {
 	dns := newDNSCache()
 	transport := &http.Transport{
-		// Every asset in the app rides this one transport, and a zero Proxy field
-		// means NEVER proxy — not "use the default". Without this line a user
-		// behind a proxy fetched their lobby list through it (that path inherits
-		// http.DefaultTransport) and then streamed every sprite, background and
-		// track around it.
+		// A zero Proxy field means never proxy, not the default, and every asset rides this transport.
 		Proxy:                 netproxy.Proxy,
 		MaxConnsPerHost:       defaultMaxConnsPerHost,
 		MaxIdleConnsPerHost:   defaultMaxIdleConnsPerHost,
 		MaxIdleConns:          defaultMaxIdleConnsTotal,
 		IdleConnTimeout:       defaultIdleConnTimeout,
 		ResponseHeaderTimeout: defaultResponseHeaderTimeout,
-		// Assets are pre-compressed media; transparent gzip would burn CPU
-		// for nothing.
+		// Assets are pre-compressed media, so transparent gzip would waste CPU.
 		DisableCompression:  true,
 		ForceAttemptHTTP2:   true,
 		TLSHandshakeTimeout: defaultTLSHandshakeTimeout,
@@ -241,10 +169,8 @@ func newClient(timeout, notFoundTTL time.Duration) *Client {
 	}
 }
 
-// PreResolve warms the DNS cache for host so the first asset probe never
-// blocks on a lookup. Call it at server connect with the asset host.
-// It is also useless work in that case: DialContext's cached-IP substitution
-// applies to the address the transport asks for, which is the proxy's.
+// PreResolve warms the DNS cache for host so the first asset probe doesn't block on a lookup.
+// With a proxy it is useless work: cached-IP substitution applies to the proxy's address.
 func (c *Client) PreResolve(ctx context.Context, host string) {
 	if proxiedHost(host) {
 		return
@@ -252,10 +178,7 @@ func (c *Client) PreResolve(ctx context.Context, host string) {
 	c.dns.preResolve(ctx, host)
 }
 
-// proxiedHost reports whether a proxy would carry asset traffic to host. Probed
-// for both schemes because NO_PROXY-style rules and the http/https split make
-// the answer per-scheme, and warming the cache is only safe when NEITHER is
-// proxied.
+// proxiedHost probes both schemes, as NO_PROXY rules make the answer per-scheme; warm only if neither is proxied.
 func proxiedHost(host string) bool {
 	if host == "" {
 		return false
@@ -268,10 +191,8 @@ func proxiedHost(host string) bool {
 	return false
 }
 
-// Fetch returns the asset bytes at url. Concurrent fetches of the same URL
-// collapse into one upstream request whose result every caller shares; ctx
-// cancels only this caller's wait, not the shared fetch. The returned slice
-// is owned by the asset pipeline and must be treated as immutable.
+// Fetch shares one upstream request between callers; ctx cancels only this caller's wait, and the returned
+// slice must be treated as immutable.
 func (c *Client) Fetch(ctx context.Context, url string) ([]byte, error) {
 	if _, found := c.notFound.Get(url); found {
 		c.cached404s.Add(1)
@@ -293,19 +214,15 @@ func (c *Client) Fetch(ctx context.Context, url string) ([]byte, error) {
 		}
 		return res.Val.([]byte), nil
 	case <-ctx.Done():
-		// The shared fetch keeps running for other waiters; only this
-		// caller gives up.
+		// The shared fetch keeps running for other waiters.
 		return nil, ctx.Err()
 	}
 }
 
-// hostLatency is one host's TTFB EWMA in nanoseconds. Plain atomic
-// load/store: a lost concurrent update only delays the average by one
-// sample — fine for statistics, free of CAS loops on the fetch path.
+// hostLatency uses plain load and store, as a lost update only delays the average by one sample.
 type hostLatency struct{ ewmaNs atomic.Int64 }
 
-// observeLatency folds one time-to-first-byte sample into host's EWMA (and the
-// all-hosts one the profiling line reads).
+// observeLatency folds one TTFB sample into the host's EWMA and the all-hosts one.
 func (c *Client) observeLatency(host string, sample time.Duration) {
 	if host == "" || sample <= 0 {
 		return
@@ -325,9 +242,7 @@ func (c *Client) observeLatency(host string, sample time.Duration) {
 	lat.ewmaNs.Store(old + (int64(sample)-old)/ewmaWeightDen)
 }
 
-// adaptiveTimeout returns the per-request deadline for host: the global
-// timeout until samples exist, then multiple×EWMA clamped to
-// [adaptiveTimeoutFloor, global timeout].
+// adaptiveTimeout is the global timeout until samples exist, then multiple x EWMA, clamped.
 func (c *Client) adaptiveTimeout(host string) time.Duration {
 	v, ok := c.hostLat.Load(host)
 	if !ok {
@@ -351,31 +266,19 @@ func (c *Client) adaptiveTimeout(host string) time.Duration {
 	return d
 }
 
-// clientUserAgent identifies AsyncAO to asset hosts. Go's default
-// "Go-http-client" UA sits on WAF/bot-filter lists (asset mirrors live
-// behind Cloudflare and friends), and an identifiable agent lets server
-// owners find this client in their access logs when debugging reports.
+// clientUserAgent replaces Go's default, which sits on WAF and bot-filter lists in front of asset mirrors.
 var clientUserAgent = "AsyncAO/" + update.Version
 
 const (
-	// transientFetchAttempts bounds how many times one singleflight pass
-	// tries a URL that failed TRANSIENTLY (transport error / 5xx). Flaky
-	// origins behind CDNs — a live AO mirror was observed returning
-	// intermittent Cloudflare 522s — succeed on an immediate retry far more
-	// often than not, and without one a single hiccup surfaced as "asset
-	// missing" for the whole message. 404 is definitive and never retried.
+	// transientFetchAttempts bounds tries after a transport error or 5xx, as CDN-fronted origins usually succeed
+	// on immediate retry; a 404 is definitive.
 	transientFetchAttempts = 2
-	// transientRetryDelay separates the attempts: long enough for the CDN
-	// to pick a healthy origin connection, short enough to resolve within
-	// one message's ceremony.
+	// transientRetryDelay lets the CDN pick a healthy origin connection, and still resolves within one message.
 	transientRetryDelay = 300 * time.Millisecond
 )
 
-// fetchOnce performs the upstream request behind singleflight — one bounded
-// transient retry included, so every collapsed waiter shares the recovery.
-// It runs detached from any one caller's context, bounded per attempt by the
-// host's adaptive deadline, so one impatient caller cannot kill the fetch
-// for everyone and one slow host cannot pin workers for the global timeout.
+// fetchOnce is detached from any caller's context, so one impatient caller can't kill the shared fetch;
+// the host's adaptive deadline bounds each attempt.
 func (c *Client) fetchOnce(url string) ([]byte, error) {
 	var lastErr error
 	for attempt := 0; attempt < transientFetchAttempts; attempt++ {
@@ -391,20 +294,12 @@ func (c *Client) fetchOnce(url string) ([]byte, error) {
 	return nil, lastErr
 }
 
-// fetchAttempt is one upstream request: 200 → bytes, 404 → the definitive
-// negative-cached miss, anything else → a transient error (the caller may
-// retry once).
+// fetchAttempt is one request: 200 gives bytes, 404 the negative-cached miss, anything else a transient error.
 func (c *Client) fetchAttempt(url string) ([]byte, error) {
 	c.requests.Add(1)
 	host := hostOf(url)
-	// One cancelable context governs the whole request, but two DIFFERENT
-	// deadlines drive it in sequence: the TTFB-derived adaptive deadline
-	// bounds only the wait for headers, then — the instant Do returns — we
-	// re-arm the same timer to the (much larger) body-transfer budget. This is
-	// what stops a fast host's small-asset TTFB EWMA from cutting a slow, large
-	// body (e.g. a big music track) mid-stream (§1.1). A time.AfterFunc that we
-	// Stop-and-reset is the smallest shape that swaps deadlines on one ctx
-	// without allocating a second one or racing Do.
+	// One timer drives two deadlines: adaptive TTFB for headers, then the body budget, so a small-asset EWMA
+	// can't cut a large body mid-stream.
 	ctx, cancel := context.WithCancel(context.Background())
 	deadline := time.AfterFunc(c.adaptiveTimeout(host), cancel)
 	defer cancel()
@@ -427,12 +322,7 @@ func (c *Client) fetchAttempt(url string) ([]byte, error) {
 		c.failures.Add(1)
 		return nil, fmt.Errorf("network: fetching %s: %w", url, err)
 	}
-	// Do returns once headers arrive: this IS the time-to-first-byte. The TTFB
-	// deadline has done its only job — swap it for the body-transfer budget so
-	// the download below is never bounded by the (small-asset-dominated) header
-	// EWMA. Reset re-arms the SAME timer; a false return means it had already
-	// fired (headers landed right at the deadline), in which case ctx is
-	// canceled and the body read below fails fast, exactly as before.
+	// Headers arrived: swap to the body budget. If the timer already fired, ctx is canceled and the read fails fast.
 	deadline.Reset(c.bodyBudget)
 	c.observeLatency(host, time.Since(start))
 	defer func() {
@@ -460,24 +350,15 @@ func (c *Client) fetchAttempt(url string) ([]byte, error) {
 		return nil, fmt.Errorf("%w: %s", ErrAssetNotFound, url)
 
 	default:
-		// 5xx and friends: the HOST is misbehaving, not just this asset —
-		// count it toward host backoff like a transport failure (it never
-		// was, which let a sick origin dodge the backoff entirely) and let
-		// fetchOnce's bounded retry absorb the one-off hiccups.
+		// 5xx means the host is misbehaving, so it counts toward backoff; fetchOnce's retry absorbs one-off hiccups.
 		c.recordFailure(host)
 		c.failures.Add(1)
 		return nil, fmt.Errorf("network: fetching %s: unexpected status %s", url, resp.Status)
 	}
 }
 
-// readBody reads the response payload. With a known Content-Length the
-// destination is allocated exactly once at final size and filled with
-// io.ReadFull — no growth, no copies. Unknown lengths accumulate in a pooled
-// scratch buffer and are copied out once.
-// Deliberate deviation from spec §7's "pooled []byte" for the known-
-// length path: the returned payload is retained indefinitely by the T2/T3
-// caches, so a pooled buffer could never be returned to the pool — pooling
-// would add a copy and zero reuse. See docs/ARCHITECTURE.md.
+// readBody allocates once for a known length; that path can't pool because T2 and T3 retain the payload
+// indefinitely (docs/ARCHITECTURE.md). Unknown lengths use a pooled scratch buffer.
 func (c *Client) readBody(resp *http.Response) ([]byte, error) {
 	if n := resp.ContentLength; n > 0 {
 		data := make([]byte, n)
@@ -500,20 +381,15 @@ func (c *Client) readBody(resp *http.Response) ([]byte, error) {
 	return data, nil
 }
 
-// ForgetNotFound drops url from the negative cache (e.g. the user toggled
-// fallbacks and wants an immediate retry).
+// ForgetNotFound drops url from the negative cache.
 func (c *Client) ForgetNotFound(url string) {
 	c.notFound.Remove(url)
 }
 
-// ClearNotFound empties the whole negative cache: every 404 is forgotten so the
-// next fetch re-probes the network. The Settings "clear 404s" action pairs this
-// with the manager's conclusive-miss memory for a complete wipe.
+// ClearNotFound forgets every 404; Settings pairs it with the manager's conclusive-miss memory.
 func (c *Client) ClearNotFound() {
 	c.notFound.Purge()
 }
-
-// --- Host backoff ------------------------------------------------------------
 
 type hostBackoff struct {
 	mu       sync.Mutex
@@ -551,14 +427,9 @@ func (c *Client) recordFailure(host string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	now := time.Now()
-	// Count at most ONE failure per backoff window. The 16 fetch workers time
-	// out concurrently on a single origin hiccup, so an unconditional
-	// increment pushed ~16 failures in a burst and the delay formula
-	// (backoffBase << failures-1) saturated at backoffMax instantly — a 2s CDN
-	// blip blanked the whole server's assets for 30s (the "files go missing in
-	// waves" report). While still inside the current window, we EXTEND it
-	// (re-arm from now) without bumping the counter, so a burst stays at the
-	// first-failure tier. A genuinely-down host still climbs across windows:
+	// Count at most one failure per backoff window: the 16 workers time out together on one hiccup, and counting
+	// each would saturate the delay at backoffMax. Inside a window, extend it without bumping the counter.
+	// A down host still climbs across windows:
 	if now.Before(b.until) {
 		delay := backoffBase << (b.failures - 1)
 		if delay > backoffMax || delay <= 0 {
@@ -588,8 +459,7 @@ func (c *Client) recordSuccess(host string) {
 	}
 }
 
-// hostOf extracts the host:port of an absolute http(s) URL without a full
-// url.Parse on the hot path.
+// hostOf extracts host:port without a full url.Parse on the hot path.
 func hostOf(rawURL string) string {
 	rest := rawURL
 	if i := indexAfterScheme(rest); i >= 0 {
@@ -615,12 +485,7 @@ func indexAfterScheme(rawURL string) int {
 	return -1
 }
 
-// --- DNS pre-resolve ---------------------------------------------------------
-
-// dnsCache resolves hosts ahead of time so the first probe after server
-// connect doesn't pay a DNS round-trip. Entries refresh lazily after
-// dnsRefreshInterval: an expired entry is still dialed (last known IP) while
-// a background re-resolve replaces it.
+// dnsCache dials an expired entry's last known IP while a background re-resolve replaces it.
 type dnsCache struct {
 	mu       sync.RWMutex
 	entries  map[string]dnsEntry
@@ -669,8 +534,7 @@ func (d *dnsCache) lookup(host string) (addrs []string, stale bool, found bool) 
 	return entry.addrs, time.Now().After(entry.expires), true
 }
 
-// DialContext dials addr, substituting a cached IP for the host when one is
-// known so the connection never blocks on DNS.
+// DialContext substitutes a cached IP for the host when known, so the connection doesn't block on DNS.
 func (d *dnsCache) DialContext(ctx context.Context, netw, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -691,9 +555,7 @@ func (d *dnsCache) DialContext(ctx context.Context, netw, addr string) (net.Conn
 	return conn, nil
 }
 
-// --- Stats -------------------------------------------------------------------
-
-// ClientStats is a point-in-time counter snapshot for the metrics sampler.
+// ClientStats is a counter snapshot for the metrics sampler.
 type ClientStats struct {
 	Requests   int64 // upstream requests actually issued
 	Hits       int64 // 200 responses
@@ -703,7 +565,6 @@ type ClientStats struct {
 	BytesRead  int64
 }
 
-// Stats snapshots the client's counters.
 func (c *Client) Stats() ClientStats {
 	return ClientStats{
 		Requests:   c.requests.Load(),

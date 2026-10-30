@@ -2,9 +2,8 @@ package protocol
 
 import "strings"
 
-// Server feature flags from the FL packet, wire names exactly as AO servers
-// advertise them (mirrors AO2-Client BASE_FEATURE_SET; matching is
-// case-insensitive like ServerData::get_feature).
+// Server feature flags from FL, spelled as servers advertise them (AO2-Client BASE_FEATURE_SET);
+// matching is case-insensitive like ServerData::get_feature.
 const (
 	FeatureYellowText       = "yellowtext"         // 2.1
 	FeatureFlipping         = "flipping"           // 2.1
@@ -31,7 +30,6 @@ const (
 // FeatureSet is the set of features a server advertised.
 type FeatureSet map[string]struct{}
 
-// ParseFeatures builds a FeatureSet from FL packet fields.
 func ParseFeatures(fields []string) FeatureSet {
 	fs := make(FeatureSet, len(fields))
 	for _, f := range fields {
