@@ -16,6 +16,8 @@ type Probe interface {
 	CPUCount() int
 	// TotalMemory returns the machine's physical memory in bytes, false when unknown.
 	TotalMemory() (uint64, bool)
+	// MachineModel returns the machine's vendor and product name, empty when unknown.
+	MachineModel() string
 }
 
 // SystemProbe reads the machine the process runs on.
@@ -40,6 +42,9 @@ func (SystemProbe) CPUCount() int { return runtime.NumCPU() }
 
 // TotalMemory returns the machine's physical memory in bytes, false when unknown.
 func (SystemProbe) TotalMemory() (uint64, bool) { return totalMemory() }
+
+// MachineModel returns the machine's vendor and product name, empty when unknown.
+func (SystemProbe) MachineModel() string { return machineModel() }
 
 // PathExists reports whether a file or folder exists at path.
 func (SystemProbe) PathExists(path string) bool {

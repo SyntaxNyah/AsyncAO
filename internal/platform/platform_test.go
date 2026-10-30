@@ -18,6 +18,7 @@ type fakeProbe struct {
 	exeErr error
 	paths  []string
 	memory uint64
+	model  string
 }
 
 var _ platform.Probe = fakeProbe{}
@@ -29,6 +30,7 @@ const (
 	aboveLine = 8 * gib
 )
 
+func (f fakeProbe) MachineModel() string        { return f.model }
 func (f fakeProbe) CPUCount() int               { return fakeCPUs }
 func (f fakeProbe) TotalMemory() (uint64, bool) { return f.memory, f.memory != 0 }
 
@@ -222,5 +224,38 @@ func TestSystemProbeReadsMemoryAndCPUs(t *testing.T) {
 	}
 	if total, ok := probe.TotalMemory(); ok && total == 0 {
 		t.Error("memory reported as known but zero")
+	}
+}
+
+func TestVirtualMachineIsRecognisedFromTheMachineModel(t *testing.T) {
+	tests := []struct{ model, want string }{
+		{"VMware, Inc. VMware Virtual Platform", "VMware"},
+		{"innotek GmbH VirtualBox", "VirtualBox"},
+		{"QEMU Standard PC (Q35 + ICH9, 2009)", "QEMU"},
+		{"Microsoft Corporation Virtual Machine", "Hyper-V"},
+		{"virtual machine", "virtual machine"},
+		{"Micro-Star International Co., Ltd. MS-7C91", ""},
+		{"Microsoft Corporation Surface Laptop", ""},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			p := platform.Detect(fakeProbe{goos: "windows", exe: "asyncao", model: tt.model})
+			if p.Hardware.VirtualMachine != tt.want {
+				t.Errorf("got %q, want %q", p.Hardware.VirtualMachine, tt.want)
+			}
+		})
+	}
+}
+
+func TestReportNamesAVirtualMachineOnlyWhenRecognised(t *testing.T) {
+	const line = "virtual machine:"
+	guest := platform.Detect(fakeProbe{goos: "linux", exe: "asyncao", model: "QEMU"}).Report()
+	if !strings.Contains(guest, line+" QEMU") {
+		t.Errorf("guest report: %s", guest)
+	}
+	host := platform.Detect(fakeProbe{goos: "linux", exe: "asyncao", model: "Dell Inc. XPS"}).Report()
+	if strings.Contains(host, line) {
+		t.Errorf("host report: %s", host)
 	}
 }

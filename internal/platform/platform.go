@@ -22,6 +22,38 @@ type Hardware struct {
 	CPUCount int
 	// TotalMemoryBytes is the physical memory, 0 when unknown.
 	TotalMemoryBytes uint64
+	// VirtualMachine names the hypervisor when one was recognised, empty otherwise.
+	// For debugging only: a guest can hide itself, so empty proves nothing and no
+	// feature may depend on this.
+	VirtualMachine string
+}
+
+// genericVirtualMachine is the name for a guest whose hypervisor is unknown.
+const genericVirtualMachine = "virtual machine"
+
+// virtualMachineModels maps text in a machine's vendor or product name to the
+// hypervisor it belongs to.
+var virtualMachineModels = []struct{ text, name string }{
+	{"vmware", "VMware"},
+	{"virtualbox", "VirtualBox"},
+	{"innotek", "VirtualBox"},
+	{"qemu", "QEMU"},
+	{"kvm", "KVM"},
+	{"xen", "Xen"},
+	{"parallels", "Parallels"},
+	{"bochs", "Bochs"},
+	{"microsoft corporation virtual machine", "Hyper-V"},
+	{genericVirtualMachine, genericVirtualMachine},
+}
+
+func detectVirtualMachine(model string) string {
+	model = strings.ToLower(model)
+	for _, known := range virtualMachineModels {
+		if strings.Contains(model, known.text) {
+			return known.name
+		}
+	}
+	return ""
 }
 
 // LowMemory reports whether the machine is known to have too little memory for
@@ -35,7 +67,7 @@ func (h Hardware) LowMemory() bool {
 // so it never runs on a render, decode or resolver path (hard rule 2).
 func Detect(probe Probe) Platform {
 	env := detectEnvironment(probe)
-	hardware := Hardware{CPUCount: probe.CPUCount()}
+	hardware := Hardware{CPUCount: probe.CPUCount(), VirtualMachine: detectVirtualMachine(probe.MachineModel())}
 	if total, ok := probe.TotalMemory(); ok {
 		hardware.TotalMemoryBytes = total
 	}
@@ -58,10 +90,14 @@ func (p Platform) Report() string {
 	b.WriteByte('\n')
 	fmt.Fprintf(&b, "hardware: %d CPUs, ", p.Hardware.CPUCount)
 	if p.Hardware.TotalMemoryBytes == 0 {
-		b.WriteString("unknown memory\n")
+		b.WriteString("unknown memory")
 	} else {
-		fmt.Fprintf(&b, "%.1f GiB memory\n", float64(p.Hardware.TotalMemoryBytes)/bytesPerGiB)
+		fmt.Fprintf(&b, "%.1f GiB memory", float64(p.Hardware.TotalMemoryBytes)/bytesPerGiB)
 	}
+	if p.Hardware.VirtualMachine != "" {
+		fmt.Fprintf(&b, ", virtual machine: %s", p.Hardware.VirtualMachine)
+	}
+	b.WriteByte('\n')
 	for c := Capability(0); c < capabilityCount; c++ {
 		if p.Capabilities.Has(c) {
 			fmt.Fprintf(&b, "%s: yes\n", c)
