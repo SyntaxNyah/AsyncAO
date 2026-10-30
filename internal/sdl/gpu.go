@@ -22,6 +22,7 @@ type GPUShaderFormat uint32
 // Shader formats in use.
 const (
 	GPUShaderFormatSPIRV GPUShaderFormat = C.SDL_GPU_SHADERFORMAT_SPIRV
+	GPUShaderFormatDXIL  GPUShaderFormat = C.SDL_GPU_SHADERFORMAT_DXIL
 	GPUShaderFormatMSL   GPUShaderFormat = C.SDL_GPU_SHADERFORMAT_MSL
 )
 
