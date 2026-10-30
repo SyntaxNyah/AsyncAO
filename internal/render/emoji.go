@@ -1,17 +1,6 @@
 package render
 
-// Per-glyph emoji font fallback. SDL_ttf renders one face at a time and does no
-// font substitution, so a message mixing text and emoji ("hi 😀") needs the runes
-// split into runs — text runes drawn from the chat font, emoji runs from a color
-// emoji face — and laid out side by side. This file holds the PURE routing: which
-// runes belong to the emoji font. The rasterizer (text.go) turns runs into
-// textures; the UI owns loading the emoji face.
-// Routing is codepoint-based (no font metrics), so it's allocation-light and
-// table-tested. The base signal is the supplementary plane (U+10000+) where the
-// bulk of emoji, skin-tone modifiers and regional-indicator flags live; on top of
-// that the BMP joiners/selectors that build COMPOUND emoji are absorbed into the
-// adjacent emoji run so sequences render whole instead of fragmenting back to the
-// text font mid-emoji.
+// Emoji routing: SDL_ttf has no font substitution, so mixed text splits into runs by codepoint.
 
 import (
 	"unicode/utf8"
@@ -27,20 +16,13 @@ const (
 	runeKeycap rune = 0x20E3 // combining enclosing keycap: 1️⃣ #️⃣ etc.
 )
 
-// UTF-8 and Unicode boundaries the emoji routing tests against.
 const (
 	utf8FourByteLead   = 0xF0   // first byte of a 4-byte (astral plane) sequence
 	utf8LeadU2000      = 0xE2   // first byte of U+2000..U+2FFF, where every BMP emoji-by-default lives
 	firstBMPPictograph = 0x00A9 // the copyright sign, the lowest BMP pictograph
 )
 
-// needsEmojiFallback reports whether s contains anything the text font can't
-// render as the user expects — so only these messages take the per-glyph fallback
-// path. A tight byte scan that decodes only the 0xE2 sequences where the BMP
-// emoji-by-default characters live, no allocation, so an ASCII message (the
-// overwhelming common case) pays almost nothing and stays on the single-font fast
-// path. Three signals: a 4-byte (supplementary-plane) sequence, VS16, and a BMP
-// character drawn as emoji by default (bmpEmojiPresentation).
+// needsEmojiFallback reports whether s needs the per-glyph path: a 4-byte sequence, VS16 or a BMP default emoji.
 func needsEmojiFallback(s string) bool {
 	for i := 0; i < len(s); i++ {
 		b := s[i]
@@ -59,32 +41,21 @@ func needsEmojiFallback(s string) bool {
 	return false
 }
 
-// NeedsEmojiFallback reports whether text contains emoji the chat font can't
-// render, so the UI should take the per-glyph RasterizeFallback path instead of
-// the single-font fast path. Exported gate over the cheap byte scan.
+// NeedsEmojiFallback reports whether text needs the per-glyph RasterizeFallback path.
 func NeedsEmojiFallback(s string) bool { return needsEmojiFallback(s) }
 
-// emojiBlockLo / emojiBlockHi bound the supplementary-plane range where emoji
-// actually live: U+1F000 (Mahjong Tiles) through U+1FAFF (Symbols and Pictographs
-// Extended-A). That span holds the pictographs, the U+1F1E6.. regional indicators
-// and the U+1F3FB.. skin-tone modifiers. Nothing outside it in the supplementary
-// planes is emoji.
+// emojiBlockLo/Hi bound supplementary-plane emoji, including regional indicators and skin-tone modifiers.
 const (
 	emojiBlockLo rune = 0x1F000
 	emojiBlockHi rune = 0x1FAFF
 )
 
-// isEmojiBase reports a rune that on its own selects an emoji glyph: the
-// supplementary emoji blocks, and the BMP characters Unicode presents as emoji by
-// default. VS15 forces text presentation, so it never counts as a base.
+// isEmojiBase reports a rune that selects an emoji glyph alone; VS15 forces text presentation, so it never counts.
 func isEmojiBase(r rune) bool {
 	return (r >= emojiBlockLo && r <= emojiBlockHi && r != runeVS15) || bmpEmojiPresentation(r)
 }
 
-// bmpEmojiPresentationRanges are the BMP characters with Emoji_Presentation=Yes
-// (Unicode emoji-data.txt): drawn as colour emoji with no variation selector, the
-// way Qt, DirectWrite and every browser draw ⭐ ✨ ⌛ ✅ ❌ ⚡ ☕. The other BMP
-// pictographs (♥ ★ ☀ ✓) default to text and turn into emoji only with VS16.
+// bmpEmojiPresentationRanges are BMP Emoji_Presentation=Yes (emoji-data.txt); other pictographs need VS16.
 var bmpEmojiPresentationRanges = [...][2]rune{
 	{0x231A, 0x231B}, // ⌚ ⌛
 	{0x23E9, 0x23EC}, // ⏩ ⏪ ⏫ ⏬
@@ -121,9 +92,6 @@ var bmpEmojiPresentationRanges = [...][2]rune{
 	{0x2B55, 0x2B55}, // ⭕
 }
 
-// bmpEmojiPresentation reports whether r is a BMP character drawn as emoji by
-// default (bmpEmojiPresentationRanges). A short scan of a fixed array, no
-// allocation.
 func bmpEmojiPresentation(r rune) bool {
 	if r < bmpEmojiPresentationRanges[0][0] || r > bmpEmojiPresentationRanges[len(bmpEmojiPresentationRanges)-1][1] {
 		return false
@@ -136,19 +104,7 @@ func bmpEmojiPresentation(r rune) bool {
 	return false
 }
 
-// bmpPictographBlocks are the BASIC MULTILINGUAL PLANE blocks whose characters
-// have an emoji presentation and are routinely absent from ordinary text faces:
-// hearts, stars, sparkles, dingbats, the weather/zodiac symbols, arrows and the
-// clock/technical pictographs. They are the F5 gap. Unlike the supplementary-plane
-// emoji isEmojiBase routes, these are plain BMP codepoints — a bare ♥ (U+2665), ✨
-// (U+2728) or ⭐ (U+2B50) carries no VS16 and no 4-byte lead, so needsEmojiFallback
-// says "no emoji here", nothing ever asks for the colour face, and the character
-// draws as the text font's .notdef box. That is exactly what the field report
-// described: hearts and sparkles as boxes while CJK and Greek — which the TEXT
-// tiers and the system-font census answer — came out fine. The v1.87 Unicode census
-// covered SCRIPTS; symbol blocks were never in it.
-// Ranges, not a rune set, because these are contiguous Unicode blocks; a sorted
-// fixed array so the lookup is a short scan with no map and no allocation.
+// bmpPictographBlocks are BMP emoji blocks text faces often lack; with no VS16 they would draw as .notdef.
 var bmpPictographBlocks = [...][2]rune{
 	{0x2190, 0x21FF}, // Arrows — ↔ ↕ ↩ ↪ (emoji presentation forms)
 	{0x2300, 0x23FF}, // Miscellaneous Technical — ⌚ ⌛ ⏰ ⏳ ⏩ ⏪
@@ -158,10 +114,7 @@ var bmpPictographBlocks = [...][2]rune{
 	{0x2B00, 0x2BFF}, // Misc Symbols and Arrows — ⭐ ⭕ ⬅ ⬆ ⬇
 }
 
-// bmpPictographRunes are the strays that sit OUTSIDE any of the blocks above but
-// share their problem: an emoji presentation on a codepoint most text faces treat
-// as ordinary punctuation (or don't have at all). Listed individually rather than
-// widening a block, so the table never swallows the letters and digits around them.
+// bmpPictographRunes are strays outside those blocks, listed singly so nearby letters and digits stay out.
 var bmpPictographRunes = [...]rune{
 	0x00A9, // © copyright
 	0x00AE, // ® registered
@@ -176,10 +129,7 @@ var bmpPictographRunes = [...]rune{
 	0x3299, // ㊙ circled secret
 }
 
-// BMPPictograph reports whether r is a BMP character with an emoji presentation —
-// i.e. one the COLOUR-EMOJI face can draw when no text face on the machine can.
-// See bmpPictographBlocks: this is an eligibility test, never a routing decision on
-// its own. Pure; ASCII short-circuits, so a plain line pays one compare per rune.
+// BMPPictograph reports whether the colour face can draw r when no text face can; eligibility, not routing.
 func BMPPictograph(r rune) bool {
 	if r < firstBMPPictograph {
 		return false // ASCII and Latin-1 punctuation: never a pictograph
@@ -197,11 +147,7 @@ func BMPPictograph(r rune) bool {
 	return false
 }
 
-// assignEmoji marks which runes render from the EMOJI font (true) vs the text font
-// (false). Supplementary-plane runes are emoji; VS16 promotes the BMP char before
-// it (so ❤️ = U+2764 U+FE0F renders as a color heart); a keycap pulls in its base
-// (and any VS16); and a ZWJ adjacent to an emoji is absorbed so ZWJ sequences
-// (families, professions) stay one run. Pure — table-tested.
+// assignEmoji marks emoji-font runes: supplementary plane, VS16 and base, keycaps and base, ZWJ next to an emoji.
 func assignEmoji(runes []rune) []bool {
 	out := make([]bool, len(runes))
 	for i, r := range runes {
@@ -209,14 +155,12 @@ func assignEmoji(runes []rune) []bool {
 			out[i] = true
 		}
 	}
-	// VS15 forces text presentation: the character before it stays on the text font
-	// even when it is an emoji by default (⭐︎ draws as the text star).
+	// VS15 keeps the character before it on the text font, even an emoji by default.
 	for i, r := range runes {
 		if r == runeVS15 && i > 0 {
 			out[i-1] = false
 		}
 	}
-	// VS16 is emoji and promotes the immediately-preceding base into the emoji run.
 	for i, r := range runes {
 		if r == runeVS16 {
 			out[i] = true
@@ -225,8 +169,7 @@ func assignEmoji(runes []rune) []bool {
 			}
 		}
 	}
-	// Keycap: <base> [VS16] U+20E3 — keycap, its optional VS16, and the base all
-	// render from the emoji font.
+	// Keycap: <base> [VS16] U+20E3 all render from the emoji font.
 	for i, r := range runes {
 		if r != runeKeycap {
 			continue
@@ -241,9 +184,7 @@ func assignEmoji(runes []rune) []bool {
 			out[j] = true // the keycap base (digit / # / *)
 		}
 	}
-	// ZWJ between/next to emoji joins them: absorb it (and keep VS16 selectors
-	// inside the run) so a family/profession sequence is one emoji run, not three
-	// emoji split by text-font joiners.
+	// Absorb a ZWJ next to emoji so a sequence is one run, not emoji split by text-font joiners.
 	for i, r := range runes {
 		if r != runeZWJ {
 			continue
@@ -257,25 +198,10 @@ func assignEmoji(runes []rune) []bool {
 	return out
 }
 
-// AssignEmoji marks which runes render from the colour-emoji face (true) vs the
-// text font (false). Exported wrapper over assignEmoji so the animated (#M5
-// effects) path in package ui resolves its per-rune emoji mask through the SAME
-// routing as the plain RasterizeFallback path — keeping an effects line's emoji
-// runs byte-identical to a plain line's. Build/layout time only.
+// AssignEmoji exposes assignEmoji so the animated path routes emoji the same way as RasterizeFallback.
 func AssignEmoji(runes []rune) []bool { return assignEmoji(runes) }
 
-// RasterizeFallback renders a message mixing text and emoji: each rune routes to
-// the primary font or the emoji face (assignEmoji), maximal same-font same-style
-// runs become spans laid out left to right, and runs are baseline-aligned (the two
-// faces differ in ascent). It reuses the styled-span structure and its zero-alloc
-// Draw — only the once-per-message BUILD does extra work, and the UI gates this on
-// needsEmojiFallback so plain messages never reach here. emoji may be nil (face
-// not loaded / unavailable): every run then uses the primary font, degrading to
-// today's behaviour rather than failing.
-// devScale (#77) is the device font scale the caller opened the faces at (100 =
-// 1:1); wrapW is LOGICAL px and scales up to measure the wrap against the device
-// glyphs, and Draw divides the device dst back to logical. Pass
-// render.DefaultDevScale (100) for the pre-#77 behavior / exports.
+// RasterizeFallback renders text and emoji as baseline-aligned spans; a nil emoji face uses the primary font.
 func RasterizeFallback(ren *sdl.Renderer, textFonts []*ttf.Font, emoji *ttf.Font, text string, spans []ColorSpan, wrapW int32, devScale int32) (*MessageRaster, error) {
 	if devScale <= 0 {
 		devScale = DefaultDevScale
@@ -288,10 +214,7 @@ func RasterizeFallback(ren *sdl.Renderer, textFonts []*ttf.Font, emoji *ttf.Font
 	}
 	mask := assignEmoji(runes)
 	styles := perRuneStyles(runes, spans)
-	// Per rune: the colour-emoji face for emoji runes, else this rune's covering text
-	// face (textFonts is per-rune — the caller routes each glyph to a face that has it,
-	// so a mixed-script run no single face covers still renders). For a pure-emoji or
-	// single-script message textFonts is uniform, reproducing the old behaviour.
+	// textFonts is per-rune, so a mixed-script run no single face covers still renders.
 	fonts := make([]*ttf.Font, len(runes))
 	for i := range runes {
 		if mask[i] && emoji != nil {
@@ -300,8 +223,7 @@ func RasterizeFallback(ren *sdl.Renderer, textFonts []*ttf.Font, emoji *ttf.Font
 			fonts[i] = textFonts[i]
 		}
 	}
-	// lineH / ascent over the faces ACTUALLY used (a CJK or emoji face is taller than
-	// the embedded one); the per-run baseline-align below handles the differing ascents.
+	// Height and ascent over the faces used, as a CJK or emoji face is taller than the embedded one.
 	var lineH, ascent int32
 	for _, f := range fonts {
 		if f == nil {
@@ -327,8 +249,7 @@ func RasterizeFallback(ren *sdl.Renderer, textFonts []*ttf.Font, emoji *ttf.Font
 	return m, nil
 }
 
-// rasterizeFallbackLine builds one wrapped line's spans: a new span whenever the
-// font OR the colour/style changes, each baseline-aligned to the line ascent.
+// rasterizeFallbackLine builds a line's spans, starting a new one when font or style changes.
 func rasterizeFallbackLine(ren *sdl.Renderer, runes []rune, fonts []*ttf.Font, styles []spanStyle, ascent int32) ([]rasterSpan, error) {
 	var spans []rasterSpan
 	var x int32
@@ -354,11 +275,7 @@ func rasterizeFallbackLine(ren *sdl.Renderer, runes []rune, fonts []*ttf.Font, s
 	return spans, nil
 }
 
-// measureRuns is the pixel width of runes[lo:hi] under per-rune fonts — summing
-// each maximal same-font sub-run's SizeUTF8 (a mixed-face line can't be measured
-// with one font). A nil face contributes nothing: RasterizeFallback never builds
-// one (it would fail at buildSpan), but a headless caller measuring a set whose
-// last-resort face is nil must not panic.
+// measureRuns sums SizeUTF8 per same-font sub-run; a nil face adds nothing, so a headless caller can't panic.
 func measureRuns(fonts []*ttf.Font, runes []rune, lo, hi int) int32 {
 	var w int32
 	for i := lo; i < hi; {
@@ -375,14 +292,7 @@ func measureRuns(fonts []*ttf.Font, runes []rune, lo, hi int) int32 {
 	return w
 }
 
-// MeasureFallbackWidth is the pixel width of runes laid out EXACTLY the way
-// RasterizeFallback lays them out: emoji runes (assignEmoji) on the colour-emoji
-// face, every other rune on its own covering text face, summed run by run. It is
-// the measuring twin of the per-glyph draw, so a caller that wraps text which
-// will land on that path can break lines against the widths it will really get
-// (#42 — the OOC/IC log wrap). textFonts is per-rune (the ui's coverRunes);
-// emoji may be nil (no colour face yet), which routes every rune to its text
-// face, exactly as RasterizeFallback degrades. Build-time only.
+// MeasureFallbackWidth is the width RasterizeFallback would give, so callers wrap against real widths.
 func MeasureFallbackWidth(textFonts []*ttf.Font, emoji *ttf.Font, runes []rune) int32 {
 	if len(runes) == 0 || len(textFonts) < len(runes) {
 		return 0
@@ -399,13 +309,7 @@ func MeasureFallbackWidth(textFonts []*ttf.Font, emoji *ttf.Font, runes []rune) 
 	return measureRuns(fonts, runes, 0, len(runes))
 }
 
-// WrapEmojiAware word-wraps text to maxW pixels, measuring emoji runes with the EMOJI
-// font — the primary font sizes colour emoji as narrow tofu, so a line of wide emoji
-// (a heart-laden showname) would otherwise never break and overflow the column. Returns
-// the wrapped lines, capped at maxLines (0 = uncapped). emoji may be nil → a plain
-// single-font wrap. Used by the IC/OOC log, whose rows render through this same
-// per-rune fallback, so the wrap must measure the way the draw will. Build-time only
-// (the log caches its wrap), so the per-rune allocation never touches the render loop.
+// WrapEmojiAware measures emoji with the emoji font, as the primary sizes them narrow and they overflow; 0 = uncapped.
 func WrapEmojiAware(primary, emoji *ttf.Font, text string, maxW int32, maxLines int) []string {
 	runes := []rune(text)
 	if len(runes) == 0 || primary == nil {
@@ -431,19 +335,7 @@ func WrapEmojiAware(primary, emoji *ttf.Font, text string, maxW int32, maxLines 
 	return out
 }
 
-// WrapMeasured word-wraps text to maxW px asking measure for the width of each
-// candidate line — the caller answers with the width that line will have once
-// DRAWN, whatever face(s) the draw resolves for it. WrapEmojiAware can only
-// answer that for one fixed primary face: under a multi-face chain (a custom
-// font plus the embedded last resort) a paragraph containing one rune the custom
-// font lacks picks the fallback face for the WHOLE paragraph, while the draw
-// picks per row and puts the covered rows back in the wider custom face — they
-// then overflowed the column (#42, the half of it the v1.81.2 wrapToWidth fix
-// didn't reach). Same greedy line breaker as WrapEmojiAware (break at the last
-// space, else cut at a rune boundary), so only the metric changes.
-// Cost: one measure per rune step, each handed a fresh candidate string — the
-// same order as WrapEmojiAware's per-step measureRuns, and build-time only (the
-// log caches its wrap), never the render loop. maxLines 0 = uncapped.
+// WrapMeasured wraps using the caller's measure of each line, for per-row face chains; maxLines 0 = uncapped.
 func WrapMeasured(measure func(string) int32, text string, maxW int32, maxLines int) []string {
 	runes := []rune(text)
 	if len(runes) == 0 || measure == nil {
@@ -460,17 +352,12 @@ func WrapMeasured(measure func(string) int32, text string, maxW int32, maxLines 
 	return out
 }
 
-// wrapMultiFont greedily word-wraps runes to maxW px under per-rune fonts (mirrors
-// wrapStyled's visuals, but measures mixed-face prefixes). Build-time, fallback
-// path only.
+// wrapMultiFont word-wraps runes to maxW under per-rune fonts; build-time, fallback path only.
 func wrapMultiFont(fonts []*ttf.Font, runes []rune, maxW int32) []lineRange {
 	return wrapMeasured(func(lo, hi int) int32 { return measureRuns(fonts, runes, lo, hi) }, runes, maxW)
 }
 
-// wrapMeasured is the shared greedy line breaker: measure(lo, hi) reports the
-// pixel width of runes[lo:hi]. Splitting it out lets the per-rune-font wrap
-// (wrapMultiFont) and the caller-measured wrap (WrapMeasured) share one set of
-// break rules, so the two can never drift apart.
+// wrapMeasured is the shared greedy line breaker; measure(lo, hi) reports the width of runes[lo:hi].
 func wrapMeasured(measure func(lo, hi int) int32, runes []rune, maxW int32) []lineRange {
 	n := len(runes)
 	if maxW <= 0 {

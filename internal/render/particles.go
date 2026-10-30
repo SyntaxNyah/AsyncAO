@@ -8,13 +8,8 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Particle weather (#124): an OFF-by-default ambient overlay — snow / rain / sakura / embers
-// drifting over the scene. A fixed, bounded particle pool (§17.4) drawn from ONE cached soft-dot
-// texture, tinted + shaped per weather; nothing is allocated per frame (the pool is reused, the
-// dot built once, the blit destination a scratch rect). Off → an early return, byte-identical.
-// Purely local eye-candy — nothing on the wire.
+// Particle weather: a local-only overlay from a fixed pool and one cached dot, with no per-frame allocation.
 
-// Weather selects the ambient overlay (None = off).
 type Weather uint8
 
 const (
@@ -27,7 +22,7 @@ const (
 )
 
 const (
-	// maxParticles caps the pool (the intensity slider scales the active count down from here).
+	// maxParticles caps the pool; the intensity slider scales the active count down from it.
 	maxParticles = 240
 	// weatherIntensityMax is the top of the 1..100 weather intensity setting.
 	weatherIntensityMax = 100
@@ -35,14 +30,12 @@ const (
 	xorshiftA = 13
 	xorshiftB = 17
 	xorshiftC = 5
-	// particleBaseDivisor sets the base dot size: vp.H / divisor px (the per-particle size
-	// factor scales it). particleDotTex is the soft-dot texture resolution.
+	// particleBaseDivisor sets the base dot size as vp.H / divisor; particleDotTex is the texture resolution.
 	particleBaseDivisor = 72
 	particleDotTex      = 16
 )
 
-// weatherParams tunes one weather. Velocities + sway are FRACTIONS of the viewport per second,
-// so the look is resolution-independent. additive + fade are for the rising embers' glow.
+// weatherParams tunes one weather; velocities and sway are viewport fractions, so it is resolution-independent.
 type weatherParams struct {
 	r, g, b   uint8
 	vy        float32 // base vertical velocity (fraction/sec); negative = rises (embers)
@@ -68,7 +61,7 @@ var weatherTable = [WeatherCount]weatherParams{
 	WeatherEmbers: {r: 255, g: 140, b: 45, vy: -0.16, vyJitter: 0.06, swayAmp: 0.015, swaySpeed: 1.0, sizeMin: 0.4, sizeMax: 1.0, stretchY: 1, alpha: 210, additive: true, fade: true},
 }
 
-// particle is one drop/flake, positioned in [0,1] fractions of the viewport.
+// particle is one drop or flake, positioned in viewport fractions.
 type particle struct {
 	x, y  float32
 	vy    float32 // this particle's vertical velocity (base ± jitter)
@@ -76,7 +69,7 @@ type particle struct {
 	size  float32 // size factor in [sizeMin,sizeMax]
 }
 
-// particleField is the bounded pool + its cached dot texture. Lives on the Viewport.
+// particleField is the pool and its cached dot texture.
 type particleField struct {
 	weather   Weather
 	n         int // active particle count (intensity-scaled)
@@ -88,7 +81,6 @@ type particleField struct {
 	clipSave  sdl.Rect
 }
 
-// WeatherName is the label for a weather (for the UI picker / toast).
 func WeatherName(w Weather) string {
 	switch w {
 	case WeatherSnow:
@@ -104,8 +96,7 @@ func WeatherName(w Weather) string {
 	}
 }
 
-// SetWeather mirrors the user's weather choice + intensity onto the viewport each frame (like
-// SetSpriteFX). Cheap: scales the active count and re-seeds only when the weather changed.
+// SetWeather sets the weather and intensity each frame; it re-seeds only when the weather changed.
 func (v *Viewport) SetWeather(w Weather, intensity int) { v.particles.set(w, intensity) }
 
 func (f *particleField) set(w Weather, intensity int) {
@@ -124,7 +115,7 @@ func (f *particleField) set(w Weather, intensity int) {
 	}
 }
 
-// randf returns a deterministic pseudo-random float in [0,1) via xorshift32 — no allocation.
+// randf returns a deterministic float in [0,1) via xorshift32.
 func (f *particleField) randf() float32 {
 	if f.rng == 0 {
 		f.rng = 0x9e3779b9
@@ -135,8 +126,7 @@ func (f *particleField) randf() float32 {
 	return float32(f.rng) / float32(^uint32(0))
 }
 
-// reseed scatters every particle across the viewport with weather-appropriate velocity, size
-// and phase — called once when the weather changes (not per frame).
+// reseed scatters every particle, once per weather change.
 func (f *particleField) reseed(w Weather) {
 	p := weatherTable[w]
 	for i := range f.parts {
@@ -150,8 +140,7 @@ func (f *particleField) reseed(w Weather) {
 	}
 }
 
-// update advances the active particles and wraps them back across the field when they leave the
-// far edge. Sway is applied at draw time (so x never permanently drifts). 0-alloc.
+// update advances active particles and wraps them at the far edge; sway applies at draw, so x never permanently drifts.
 func (f *particleField) update(dt time.Duration) {
 	if f.weather == WeatherNone || f.n == 0 {
 		return
@@ -173,8 +162,7 @@ func (f *particleField) update(dt time.Duration) {
 	}
 }
 
-// draw blits the active particles over the stage rect, confined to it (so edge flakes can't
-// bleed past). One cached dot texture, tinted + (for embers) additively blended. 0-alloc.
+// draw blits active particles clipped to the stage, so edge flakes can't bleed past.
 func (f *particleField) draw(ren *sdl.Renderer, vp sdl.Rect) {
 	if f.weather == WeatherNone || f.n == 0 {
 		return
@@ -230,7 +218,7 @@ func (f *particleField) draw(ren *sdl.Renderer, vp sdl.Rect) {
 	}
 }
 
-// purge frees the cached dot texture (shutdown). Render thread only.
+// purge frees the dot texture; render thread only.
 func (f *particleField) purge() {
 	if f.tex != nil {
 		_ = f.tex.Destroy()
@@ -238,8 +226,7 @@ func (f *particleField) purge() {
 	}
 }
 
-// buildParticleDot makes the soft round dot used for every particle: white, opaque centre
-// fading to a transparent edge (a squared falloff for a soft look), tinted per weather at draw.
+// buildParticleDot makes the white soft round dot, tinted per weather at draw.
 func buildParticleDot(ren *sdl.Renderer) *sdl.Texture {
 	const n = particleDotTex
 	pix := make([]byte, n*n*texBytesPerPixel)

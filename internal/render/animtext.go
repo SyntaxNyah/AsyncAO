@@ -8,21 +8,15 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
-// Animated chat text (#M5): shake / wave / rainbow per-span effects in the chatbox. Each
-// affected glyph is drawn from a WHITE GlyphCache texture, displaced and/or tinted per
-// frame by cheap SCALAR math — no per-frame re-rasterise and no allocation. PLAIN messages
-// never reach this path (the UI gates on effect spans), so the common case stays the
-// untouched line raster. The math is deterministic in the clock, so a replay/export shows
-// the same motion.
+// Animated chat text: white cached glyphs moved and tinted per frame, deterministic in the clock so replays match.
 
-// Text effects — the wire codec and the renderer share these values.
+// Text effects; the wire codec and the renderer share these values.
 const (
 	EffectNone uint8 = iota
 	EffectShake
 	EffectWave
 	EffectRainbow
-	// #M5+ — MUST stay in the same order/values as courtroom.TextEffect* (pinned by
-	// TestEffectIDsMatchRender). Motion effects first, then colour effects.
+	// Must stay in the same order and values as courtroom.TextEffect*; motion effects first, then colour.
 	EffectBounce
 	EffectSway
 	EffectShiver
@@ -35,20 +29,14 @@ const (
 	EffectSparkle
 )
 
-// EffectSpan marks Len consecutive runes (from Start, a rune index into the CLEAN visible
-// text) with an effect. Spans cover only the affected runes; gaps are EffectNone.
+// EffectSpan marks Len runes from Start, an index into the clean visible text; gaps are EffectNone.
 type EffectSpan struct {
 	Start  int
 	Len    int
 	Effect uint8
 }
 
-// EffectAnimates reports whether effect e moves/shimmers ON THE CLOCK — i.e. a message
-// showing it needs frames to keep coming while it's on screen, or the motion freezes
-// between redraws (the FX-text-stutters-at-idle report). Gradient is a STATIC per-rune
-// band (identical every frame, see Draw) and None is plain text, so neither needs
-// animation frames; under reduce-motion Draw renders EVERY effect static (rainbow pins
-// to its static band), so nothing does. Must stay in agreement with Draw's switch.
+// EffectAnimates reports whether e changes on the clock; it must agree with Draw's switch.
 func EffectAnimates(e uint8, reduceMotion bool) bool {
 	if reduceMotion {
 		return false
@@ -56,20 +44,10 @@ func EffectAnimates(e uint8, reduceMotion bool) bool {
 	return e != EffectNone && e != EffectGradient
 }
 
-// FontResolver returns the face to lay out + draw rune r (at global clean rune index gi,
-// the same index spans/colors use) plus whether it's a COLOUR-EMOJI glyph. The UI builds
-// this from its existing per-rune fallback chain (CJK/broad faces + the colour-emoji face),
-// so an effects line resolves fonts exactly the way a plain message does — no tofu, no
-// uniform .notdef advances. Called ONCE per rune at layout time (never per frame), so it may
-// allocate; a nil resolver (or a nil font return) means "use the single base font", the
-// pre-fallback behaviour. emoji=true glyphs skip the colour tint at draw time (see Draw).
+// FontResolver returns the face for rune r at clean index gi and whether it is a colour emoji; nil = base font.
 type FontResolver func(gi int, r rune) (font *ttf.Font, emoji bool)
 
-// animRune is one laid-out glyph: its rune, base position (relative to the message origin),
-// its effect, its base colour (rainbow overrides per frame), the face it was resolved to at
-// layout time (mixed fonts coexist in the cache — glyphKey includes the font pointer), a
-// baseline y-shift (faces differ in ascent — the shared-baseline align, mirrors emoji.go),
-// and whether it's a colour-emoji glyph (drawn tint-free).
+// animRune is one laid-out glyph; yOff aligns face ascents to a shared baseline, and emoji draw untinted.
 type animRune struct {
 	r      rune
 	x, y   int32
@@ -80,40 +58,27 @@ type animRune struct {
 	emoji  bool      // colour-emoji glyph: SetColorMod stays neutral so effects can't discolour it
 }
 
-// AnimatedText is the per-glyph layout of a message that has at least one effect. Built
-// once by RasterizeAnimated; Draw resolves glyph textures from the cache and animates them
-// with zero per-frame allocations.
+// AnimatedText is the per-glyph layout of a message with at least one effect; Draw doesn't allocate.
 type AnimatedText struct {
 	runes []animRune
 	lineH int32
 	total int
-	// timeAnimated: at least one laid-out rune carries a CLOCK-driven effect
-	// (EffectAnimates) — precomputed so Animates is a field read per frame.
+	// timeAnimated is precomputed so Animates is a field read per frame.
 	timeAnimated bool
 	dst          sdl.Rect // per-glyph scratch, reused so Draw never allocates
-	// chainGen stamps the UI font-chain generation this layout was built at. The UI's
-	// CJK/broad/emoji tiers load LAZILY (fontChainGen bumps when one lands); a line
-	// rastered BEFORE its tier arrived must re-raster after — the chatbox keys msAnim's
-	// validity on this the same way the log wrap caches key on fontChainGen. Zero for a
-	// resolver-free (single-font / test) layout.
+	// chainGen is the font-chain generation at layout; tiers load lazily, so older lines must re-raster.
 	chainGen int
 }
 
-// ChainGen reports the UI font-chain generation this layout was built at, so the chatbox
-// can drop + rebuild an effects message once a lazily-loaded CJK/emoji tier lands (its
-// glyphs would otherwise stay tofu). See AnimatedText.chainGen.
+// ChainGen reports the font-chain generation, so the chatbox can rebuild a message once a lazily loaded tier lands.
 func (at *AnimatedText) ChainGen() int { return at.chainGen }
 
-// Animates reports whether drawing this message again with a later clock produces a
-// DIFFERENT picture — the UI's frame-pacing census hook: while an animating message is on
-// screen the draw must keep marking frames (NoteAnimating), or the FX freeze at idle=0.
-// False for gradient-only / effect-free layouts and under reduce-motion (Draw renders
-// those identical every frame), so a static chatbox still parks at zero redraws.
+// Animates reports whether a later clock draws differently; if so the draw must call NoteAnimating or effects freeze.
 func (at *AnimatedText) Animates(reduceMotion bool) bool {
 	return !reduceMotion && at.timeAnimated
 }
 
-// Effect tuning — small + gentle so the text stays readable.
+// Effect tuning: small and gentle so the text stays readable.
 const (
 	shakeAmpPx     = 1.6
 	shakeFreqHz    = 21.0
@@ -126,7 +91,6 @@ const (
 	rainbowDegRune = 16.0 // hue degrees per rune (a band sliding across the word)
 	rainbowSat     = 0.85
 
-	// #M5+ additional effects — same "small + gentle so text stays readable" budget.
 	bounceAmpPx      = 3.0
 	bounceFreqHz     = 3.0
 	bounceRunePhase  = 0.6 // radians of hop phase per rune (the hop travels along the word)
@@ -156,22 +120,11 @@ const (
 	sparkleSharp     = 6.0  // higher = briefer, sharper flashes
 )
 
-// RasterizeAnimated lays out text (wrapped to wrapW) into per-glyph animRunes, tagging each
-// rune with its effect (from spans), base colour (from colors, a per-clean-rune slice so
-// inline \cN colours COMPOSE with shake/wave — a red shaking word) and its RESOLVED face
-// (from resolve, the UI's per-rune fallback chain). The rainbow effect still overrides the
-// colour per frame at draw time. colors is indexed by the same global rune index the effect
-// spans + the resolver use, so colour + effect + face stay locked together; nil/short colors
-// → white / the last colour. resolve may be nil (single-font / test) — every rune then uses
-// font and no emoji flag, the pre-fallback behaviour. chainGen stamps the font-chain
-// generation for lazy-tier re-raster (see AnimatedText.chainGen). No textures here — Draw
-// resolves them from the GlyphCache. Render thread; call once per message.
+// RasterizeAnimated lays out text into animRunes, all indexed by global rune index; render thread, once per message.
 func RasterizeAnimated(font *ttf.Font, text string, spans []EffectSpan, colors []sdl.Color, wrapW int32, resolve FontResolver, chainGen int) *AnimatedText {
 	at := &AnimatedText{lineH: FontLineSpacing(font), chainGen: chainGen}
 	runes := []rune(text)
-	// Resolve every rune's face ONCE (layout time). A mixed-script / emoji line thus lays
-	// out glyph-by-glyph on the faces that actually cover it — the wrap, the pen advance and
-	// the baseline all follow from these, mirroring the plain fallback path (emoji.go).
+	// Resolve each rune's face once, so wrap, pen and baseline follow the faces that cover it, as in emoji.go.
 	fonts := make([]*ttf.Font, len(runes))
 	isEmoji := make([]bool, len(runes))
 	for gi, r := range runes {
@@ -183,10 +136,7 @@ func RasterizeAnimated(font *ttf.Font, text string, spans []EffectSpan, colors [
 		}
 		fonts[gi] = f
 	}
-	// lineH / shared ascent over the faces ACTUALLY used: a CJK or emoji face is taller than
-	// the base one, so a single-font height would clip it and the differing ascents would ride
-	// glyphs high/low. Each rune's yOff drops its face to this shared baseline (mirrors
-	// rasterizeFallbackLine). Height stays right too (Draw/typewriter step by lineH).
+	// A CJK or emoji face is taller, so one font's height would clip it; yOff drops each to the shared baseline.
 	var ascent int32
 	for _, f := range fonts {
 		if f == nil {
@@ -201,11 +151,7 @@ func RasterizeAnimated(font *ttf.Font, text string, spans []EffectSpan, colors [
 	}
 	for li, lr := range wrapAnimated(fonts, runes, wrapW) {
 		baseY := int32(li) * at.lineH
-		// Pen position runs per same-font RUN: within a run the glyph's x is measured
-		// cumulatively (SizeUTF8 of the run prefix), so adjacent same-font glyphs keep their
-		// KERNING (the old single-font path's behaviour, preserved for Latin); a font boundary
-		// advances runBase by the run's full width, so CJK/emoji switch faces cleanly and stop
-		// getting the base font's uniform advance. Mirrors buildSpan / rasterizeFallbackLine.
+		// Measure cumulatively within a same-font run to keep kerning; a font change advances runBase.
 		var runBase int32
 		for gi := lr.start; gi < lr.end; {
 			f := fonts[gi]
@@ -245,8 +191,7 @@ func RasterizeAnimated(font *ttf.Font, text string, spans []EffectSpan, colors [
 	return at
 }
 
-// runPrefixWidth is the kerned pixel width of a same-font rune slice (SizeUTF8 of the whole
-// slice) — the pen advance for a run, keeping intra-run kerning. 0 for a nil font / on error.
+// runPrefixWidth is the kerned width of a same-font rune slice; 0 for a nil font or on error.
 func runPrefixWidth(f *ttf.Font, runes []rune) int32 {
 	if f == nil || len(runes) == 0 {
 		return 0
@@ -257,10 +202,7 @@ func runPrefixWidth(f *ttf.Font, runes []rune) int32 {
 	return 0
 }
 
-// runeAdvance is the pen advance for one rune under its OWN font — the per-rune metric that
-// keeps CJK from collapsing to uniform .notdef boxes and sizes an emoji the way the plain
-// wrap path does (its emoji face reports the same narrow-tofu width). 0 for a nil font or on
-// a metrics error (harmless — the glyph still draws, only the next pen step is short).
+// runeAdvance is one rune's advance under its own font, so CJK doesn't collapse to .notdef widths.
 func runeAdvance(f *ttf.Font, r rune) int32 {
 	if f == nil {
 		return 0
@@ -271,11 +213,7 @@ func runeAdvance(f *ttf.Font, r rune) int32 {
 	return 0
 }
 
-// wrapAnimated word-wraps runes to wrapW px measuring each rune with its OWN resolved font
-// (a mixed-face line can't be measured with one font). Greedy, breaks on spaces, splits on
-// '\n', mirrors wrapMultiFont's per-rune measurement (emoji.go). Unlike the old single-font
-// wrap it keeps rune indices position-exact, so effect spans + colours (indexed by the clean
-// rune index) stay aligned without the per-line +1 fudge. Build-time only.
+// wrapAnimated measures each rune with its own font, keeping indices exact so spans and colours stay aligned.
 func wrapAnimated(fonts []*ttf.Font, runes []rune, wrapW int32) []lineRange {
 	n := len(runes)
 	if wrapW <= 0 || n == 0 {
@@ -283,10 +221,7 @@ func wrapAnimated(fonts []*ttf.Font, runes []rune, wrapW int32) []lineRange {
 	}
 	var out []lineRange
 	lineStart, lastSpace := 0, -1
-	// i is advanced MANUALLY (not by a for-post statement) so a wrap-break can re-evaluate the
-	// rune that overflowed under the NEW line — the wrapMultiFont structure (emoji.go). Width is
-	// measured per-prefix; a mixed-face line can't be sized with one font, so no cached running
-	// total (matches wrapMultiFont; a chat message is short, so O(line²) is negligible at build).
+	// i advances manually so a wrap break can re-evaluate the overflowing rune on the new line.
 	for i := 0; i < n; {
 		if runes[i] == '\n' {
 			out = append(out, lineRange{lineStart, i})
@@ -314,8 +249,7 @@ func wrapAnimated(fonts []*ttf.Font, runes []rune, wrapW int32) []lineRange {
 	return out
 }
 
-// measureAnimated is the pixel width of runes[lo:hi] under per-rune fonts (the wrap's
-// per-prefix measure — a mixed-face line can't be sized with one font). Build-time only.
+// measureAnimated is the width of runes[lo:hi] under per-rune fonts.
 func measureAnimated(fonts []*ttf.Font, runes []rune, lo, hi int) int32 {
 	var w int32
 	for i := lo; i < hi; i++ {
@@ -324,7 +258,6 @@ func measureAnimated(fonts []*ttf.Font, runes []rune, lo, hi int) int32 {
 	return w
 }
 
-// effectAt returns the effect covering global rune index gi (EffectNone if none).
 func effectAt(gi int, spans []EffectSpan) uint8 {
 	for i := range spans {
 		if gi >= spans[i].Start && gi < spans[i].Start+spans[i].Len {
@@ -334,10 +267,7 @@ func effectAt(gi int, spans []EffectSpan) uint8 {
 	return EffectNone
 }
 
-// colorAt returns the base colour for global rune index gi: white when colors is empty, the
-// last colour when gi runs past the slice (a wrapped tail beyond the styled runs), else the
-// per-rune colour. Lets a uniform message pass a single-element slice and have every rune
-// take it (the clamp), while a \cN message passes a full per-rune slice.
+// colorAt returns gi's base colour: white when colors is empty, the last colour past the end.
 func colorAt(gi int, colors []sdl.Color) sdl.Color {
 	if len(colors) == 0 {
 		return glyphWhite
@@ -348,7 +278,7 @@ func colorAt(gi int, colors []sdl.Color) sdl.Color {
 	return colors[gi]
 }
 
-// TotalRunes / Height mirror MessageRaster so the chatbox can size + reveal the same way.
+// TotalRunes and Height mirror MessageRaster so the chatbox can size and reveal the same way.
 func (at *AnimatedText) TotalRunes() int { return at.total }
 func (at *AnimatedText) Height() int32 {
 	if at.total == 0 {
@@ -363,19 +293,14 @@ func (at *AnimatedText) Height() int32 {
 	return maxY + at.lineH
 }
 
-// Warm pre-renders every glyph into the cache so subsequent Draws — including each frame of
-// the typewriter reveal, when new runes appear — are allocation-free. Render thread; call
-// once right after RasterizeAnimated (mirrors MessageRaster building all its line textures
-// up front, so an effects message carries the same one-time build cost, not a per-frame one).
+// Warm pre-renders every glyph so Draws don't allocate; render thread, once after RasterizeAnimated.
 func (at *AnimatedText) Warm(ren *sdl.Renderer, gc *GlyphCache, font *ttf.Font) {
 	for i := range at.runes {
 		gc.glyph(ren, at.runeFont(&at.runes[i], font), at.runes[i].r)
 	}
 }
 
-// runeFont returns the face to draw ar with: its per-rune resolved face, falling back to the
-// base font when the resolver left it nil (single-font / test layouts). A pure field read —
-// keeps Draw allocation-free while letting mixed fonts share the cache (glyphKey has the ptr).
+// runeFont returns ar's resolved face, or base when nil.
 func (at *AnimatedText) runeFont(ar *animRune, base *ttf.Font) *ttf.Font {
 	if ar.font != nil {
 		return ar.font
@@ -383,10 +308,7 @@ func (at *AnimatedText) runeFont(ar *animRune, base *ttf.Font) *ttf.Font {
 	return base
 }
 
-// Draw renders the animated message up to visibleRunes (the typewriter reveal) at origin
-// (ox, oy). reduceMotion pins rainbow to a static hue and stops all displacement — the
-// accessibility / photosensitivity floor. ZERO allocations per frame on a warm glyph
-// cache (every line below is a scratch-rect copy or scalar math).
+// Draw renders up to visibleRunes without allocating on a warm cache; reduceMotion is the photosensitivity floor.
 func (at *AnimatedText) Draw(ren *sdl.Renderer, gc *GlyphCache, font *ttf.Font, clock time.Duration, visibleRunes int, ox, oy int32, reduceMotion bool) {
 	t := clock.Seconds()
 	for i := 0; i < len(at.runes) && i < visibleRunes; i++ {
@@ -452,13 +374,7 @@ func (at *AnimatedText) Draw(ren *sdl.Renderer, gc *GlyphCache, font *ttf.Font, 
 			}
 		}
 		if ar.emoji {
-			// A colour emoji is drawn from the emoji face's own artwork: keep the tint
-			// NEUTRAL so rainbow/gradient/pulse can't repaint it, but carry a brightness
-			// effect over to its ALPHA so pulse/blink/sparkle still read on it, and let
-			// displacement (dx/dy) apply as usual. Emoji glyphs use the emoji FACE, so they
-			// never share a texture with a text glyph (glyphKey has the font ptr) — text
-			// glyphs stay at the default alpha 255 and skip this extra per-glyph mod, keeping
-			// a plain effects message's per-glyph cost exactly as before.
+			// A neutral tint stops colour effects repainting an emoji; brightness goes to alpha instead.
 			_ = cg.tex.SetColorMod(math.MaxUint8, math.MaxUint8, math.MaxUint8) // neutral: draw the emoji's own colours
 			_ = cg.tex.SetAlphaMod(colorBrightnessAlpha(ar.color, col))
 		} else {
@@ -469,13 +385,9 @@ func (at *AnimatedText) Draw(ren *sdl.Renderer, gc *GlyphCache, font *ttf.Font, 
 	}
 }
 
-// colorBrightnessAlpha maps a colour effect's RGB dimming back onto an opacity for a
-// colour-emoji glyph (which can't be recoloured): the effect scaled base→eff on the darkest
-// channel, applied as alpha so pulse/blink dim the emoji instead of tinting it. Rainbow/
-// gradient don't dim (their eff is a full-brightness hue) → 255, the emoji stays solid.
-// Pure + 0-alloc (Draw is on the per-frame path).
+// colorBrightnessAlpha maps a colour effect's dimming to opacity, as a colour emoji can't be recoloured.
 func colorBrightnessAlpha(base, eff sdl.Color) uint8 {
-	// Use the brightest base channel as the reference so a pure-red base still yields a ratio.
+	// The brightest base channel is the reference, so a pure-red base still yields a ratio.
 	ref := base.R
 	if base.G > ref {
 		ref = base.G
@@ -499,21 +411,18 @@ func colorBrightnessAlpha(base, eff sdl.Color) uint8 {
 	return uint8(uint32(e) * math.MaxUint8 / uint32(ref))
 }
 
-// shakeOffset is a small deterministic jitter for glyph idx at time t (seconds). Two
-// incommensurate frequencies for x/y read as a rattle, not a smooth sway. Pure, 0-alloc.
+// shakeOffset is a deterministic jitter; incommensurate x and y frequencies read as a rattle, not a sway.
 func shakeOffset(t float64, idx int) (int32, int32) {
 	p := t*shakeFreqHz*2*math.Pi + float64(idx)*shakeRunePhase
 	return int32(math.Round(math.Sin(p) * shakeAmpPx)),
 		int32(math.Round(math.Cos(p*shakeYFreqMul) * shakeAmpPx))
 }
 
-// waveOffset is a travelling vertical sine — a banner wave along the word. Pure, 0-alloc.
 func waveOffset(t float64, idx int) int32 {
 	p := t*waveSpeedHz*2*math.Pi + float64(idx)*waveRunePhase
 	return int32(math.Round(math.Sin(p) * waveAmpPx))
 }
 
-// rainbowColor cycles the hue over time and along the word. Pure, 0-alloc.
 func rainbowColor(t float64, idx int) sdl.Color {
 	return hsvToRGB(math.Mod(t*rainbowDegSec+float64(idx)*rainbowDegRune, degreesPerTurn), rainbowSat, 1)
 }
@@ -530,7 +439,6 @@ const (
 	degreesPerTurn = 360
 )
 
-// hsvToRGB converts HSV (h in degrees, s/v in 0..1) to an opaque sdl.Color. Pure, 0-alloc.
 func hsvToRGB(h, s, v float64) sdl.Color {
 	c := v * s
 	x := c * (1 - math.Abs(math.Mod(h/hueSector, 2)-1))
@@ -553,68 +461,60 @@ func hsvToRGB(h, s, v float64) sdl.Color {
 	return sdl.Color{R: uint8((r + m) * math.MaxUint8), G: uint8((g + m) * math.MaxUint8), B: uint8((b + m) * math.MaxUint8), A: math.MaxUint8}
 }
 
-// --- #M5+ effect math (all pure + 0-alloc; deterministic in the clock so a replay/export matches) ---
-
-// bounceOffset lifts glyph idx in a hopping sequence (up-only from the baseline).
+// bounceOffset lifts glyph idx up from the baseline in a hopping sequence.
 func bounceOffset(t float64, idx int) int32 {
 	p := t*bounceFreqHz*2*math.Pi - float64(idx)*bounceRunePhase
 	return -int32(math.Round(math.Abs(math.Sin(p)) * bounceAmpPx))
 }
 
-// swayOffset is a travelling horizontal sine — the x-cousin of the wave.
 func swayOffset(t float64, idx int) int32 {
 	p := t*swaySpeedHz*2*math.Pi + float64(idx)*swayRunePhase
 	return int32(math.Round(math.Sin(p) * swayAmpPx))
 }
 
-// shiverOffset is a fast, tiny horizontal tremor (a nervous shiver).
 func shiverOffset(t float64, idx int) int32 {
 	p := t*shiverFreqHz*2*math.Pi + float64(idx)*shiverRunePhase
 	return int32(math.Round(math.Sin(p) * shiverAmpPx))
 }
 
-// wobbleGlyphOffset drifts a glyph in a slow circle, phase-shifted per rune (a floaty roam). Named
-// to avoid the sprite-layer wobbleOffset (viewport.go), which is a different, whole-sprite wobble.
+// wobbleGlyphOffset drifts a glyph in a slow circle, phase-shifted per rune.
 func wobbleGlyphOffset(t float64, idx int) (int32, int32) {
 	p := t*wobbleSpeedHz*2*math.Pi + float64(idx)*wobbleRunePhase
 	return int32(math.Round(math.Cos(p) * wobbleAmpPx)), int32(math.Round(math.Sin(p) * wobbleAmpPx))
 }
 
-// trembleOffset is a fast, tiny VERTICAL tremor (the y-cousin of shiver).
 func trembleOffset(t float64, idx int) int32 {
 	p := t*trembleFreqHz*2*math.Pi + float64(idx)*trembleRunePhase
 	return int32(math.Round(math.Sin(p) * trembleAmpPx))
 }
 
-// floatOffset is a slow, synchronised vertical drift (calm — every glyph together).
+// floatOffset is a slow vertical drift, the same for every glyph.
 func floatOffset(t float64) int32 {
 	return int32(math.Round(math.Sin(t*floatSpeedHz*2*math.Pi) * floatAmpPx))
 }
 
-// scaleColor multiplies a colour's RGB by k (keeping alpha) — a brightness dim.
 func scaleColor(base sdl.Color, k float64) sdl.Color {
 	return sdl.Color{R: uint8(float64(base.R) * k), G: uint8(float64(base.G) * k), B: uint8(float64(base.B) * k), A: base.A}
 }
 
-// pulseColor shimmers a glyph's brightness with a wave travelling along the word (floored readable).
+// pulseColor shimmers brightness along the word, floored to stay readable.
 func pulseColor(base sdl.Color, t float64, idx int) sdl.Color {
 	k := pulseFloor + (1-pulseFloor)*(1+math.Sin(t*pulseFreqHz*2*math.Pi-float64(idx)*pulseRunePhase))/2
 	return scaleColor(base, k)
 }
 
-// blinkFactor is a brightness on/off (squared sine → more time bright, a snappy dim between).
+// blinkFactor is a squared sine, so more time is spent bright.
 func blinkFactor(t float64) float64 {
 	s := math.Sin(t * blinkFreqHz * 2 * math.Pi)
 	return blinkFloor + (1-blinkFloor)*s*s
 }
 
-// gradientColor is a STATIC per-rune hue band (no animation): colourful but calm, always readable
-// (identical under ReduceMotion).
+// gradientColor is a static per-rune hue band, identical under ReduceMotion.
 func gradientColor(idx int) sdl.Color {
 	return hsvToRGB(math.Mod(float64(idx)*gradientDegRune, degreesPerTurn), gradientSat, 1)
 }
 
-// sparkleColor briefly flashes a glyph toward white on its own twinkle phase — a shimmer of stars.
+// sparkleColor briefly flashes a glyph toward white on its own phase.
 func sparkleColor(base sdl.Color, t float64, idx int) sdl.Color {
 	s := (1 + math.Sin(t*sparkleFreqHz*2*math.Pi+float64(idx)*sparkleRunePhase)) / 2
 	f := math.Pow(s, sparkleSharp) // sharp, brief peaks

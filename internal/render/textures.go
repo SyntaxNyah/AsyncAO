@@ -1,7 +1,4 @@
-// Package render owns every SDL resource: window, renderer, textures, fonts,
-// and the audio device. Everything in this package must run on the render
-// thread (runtime.LockOSThread in main) — spec §17.1. It consumes plain
-// data (assets.Decoded, courtroom.Scene) produced by the SDL-free packages.
+// Package render owns every SDL resource; everything in it must run on the render thread (hard rule 1).
 package render
 
 import (
@@ -18,119 +15,66 @@ import (
 )
 
 const (
-	// T1BudgetBytes bounds decoded texture payload bytes (spec §9).
+	// T1BudgetBytes bounds decoded texture payload bytes.
 	T1BudgetBytes = cache.DefaultT1BudgetBytes
 	t1MaxEntries  = cache.DefaultMaxEntries
 
-	// Speculative upload budget per frame: live-message assets bypass it,
-	// prefetch-ahead uploads stop after this many textures or bytes
-	// (spec §8). The BYTE cap is what protects 16 ms; the texture count
-	// exists so a burst of tiny uploads stays bounded too. At the old
-	// count of 2, a 600-icon char-select viewport took ~5 s to fill even
-	// with every payload already decoded (icons are ~16 KB thumbnails);
-	// 16 small Updates cost tens of µs while big sprites still gate on
-	// bytes long before the count.
+	// Speculative uploads per frame: bytes protect 16 ms, the count bounds tiny bursts; live assets bypass both.
 	speculativeUploadMaxTextures = 16
 	speculativeUploadMaxBytes    = 4 << 20
 
-	// destroyQueueCap bounds the texture destroy queue drained each frame.
 	destroyQueueCap = 256
 	// destroyBudgetPerFrame caps destroys per frame to keep 16 ms.
 	destroyBudgetPerFrame = 16
 
-	// The small-UI texture shield: emote buttons and char icons live in their
-	// own byte-budgeted LRU CARVED OUT of the configured T1 budget, so a burst
-	// of multi-MiB sprite uploads can never evict them. They are decode-capped
-	// tiny (40/64 px — KBs each), they back ALWAYS-VISIBLE grids, and their
-	// recency in the LRU is structurally stale (the UI's generation-keyed page
-	// caches skip Get() on steady frames — the whole point of that cache), so
-	// under the old single tier every big streaming burst swept them out and
-	// the next drawn frame flashed the grid back to fallbacks while they
-	// re-streamed: the "emote buttons visibly refresh/redraw" playtest report.
+	// Small UI textures get their own LRU: the UI's page caches skip Get, so their recency goes stale.
 )
 
-// smallTexTier reports whether an asset type belongs in the small-UI shield.
-// Exactly the decode-thumbnailed types (decoder.go decodeTargetPx): both are
-// guaranteed small per frame, so the shield can never be flooded by full-size
-// art wearing the wrong label.
+// smallTexTier reports decode-thumbnailed types (decodeTargetPx), so full-size art can't flood the tier.
 func smallTexTier(t assets.AssetType) bool {
 	return t == assets.AssetTypeCharIcon || t == assets.AssetTypeEmoteButton
 }
 
-// splitT1Budget carves the small-texture shield out of the configured T1
-// budget (total residency stays exactly the configured budget). The arithmetic
-// lives in cache (cache.SmallTierBytes / cache.MainTierBytes) — the single
-// source of truth also used by the animated decode cap — so the two can never
-// drift apart.
+// splitT1Budget carves the small tier using the cache package's arithmetic, shared with the decode cap.
 func splitT1Budget(budget int64) (main, small int64) {
 	return cache.MainTierBytes(budget), cache.SmallTierBytes(budget)
 }
 
 const (
-	// decodeFailTTL backs off a base whose bytes downloaded but failed to
-	// DECODE (a corrupt/truncated payload — distinct from a 404, which the
-	// network tier already caches). Without it a single bad asset is re-fetched
-	// + re-decoded every retry interval, storming the log and the network; the
-	// asset can't render regardless, so a long backoff costs nothing and a
-	// transient failure still recovers after the window.
+	// decodeFailTTL backs off a base that failed to decode, so one bad asset isn't re-fetched every retry.
 	decodeFailTTL = 30 * time.Second
-	// decodeFailCap bounds the negative cache (rule §17.4); pruned on insert.
+	// decodeFailCap bounds the negative cache; pruned on insert.
 	decodeFailCap = 2048
 )
 
-// TexturePage is one decoded asset uploaded to the GPU: all frames plus
-// timing metadata.
+// TexturePage is one decoded asset on the GPU: all frames plus timing.
 type TexturePage struct {
 	Frames   []*sdl.Texture
 	Delays   []time.Duration
 	Animated bool
-	// Partial marks a progressive first-frame delivery: the page holds only frame 0
-	// and the FULL frame set for the same base follows shortly and replaces it
-	// (assets.Decoded.Partial). The renderer must not treat it as the real
-	// animation — a playOnce layer must not complete on it, and a swap must keep
-	// holding the previous sprite instead of freezing on this single static frame.
+	// Partial marks a first frame the full set will replace: playOnce must not complete on it, and swaps keep holding.
 	Partial bool
-	// SourceFrames is the pre-decimation frame count of the decoded animation
-	// (assets.Decoded.SourceFrames) — the frame space remote clients index
-	// networked frame-synced effects into (#17). 0 for a static / non-decimated
-	// page; the viewport treats 0 as len(Frames) (identity).
+	// SourceFrames is the pre-decimation frame count, the space networked frame effects index; 0 means len(Frames).
 	SourceFrames int
-	// Stilled marks a page downgraded from a full animation to its first frame
-	// by ReduceAnimatedExcept (the "non-active characters are a still" memory
-	// cap). Animated stays true, but only frame 0 remains. ContainsAnimated
-	// treats these as absent so an animate demand re-decodes the full clip;
-	// Get still returns them so the frozen frame keeps drawing while it streams.
+	// Stilled marks a page reduced to frame 0: ContainsAnimated treats it as absent, Get still draws it.
 	Stilled bool
 	W, H    int32
 	bytes   int64
-	// scaleMode/scaleModeSet memoise the per-texture filter this page's frames
-	// currently carry (scalemode_cgo.go). Per PAGE rather than per texture
-	// because every frame of one animation is the same art at the same size, and
-	// because the cgo call plus its mandatory renderer flush must not happen once
-	// per frame per draw. A variant page keeps its OWN memo — it holds different
-	// textures — which is correct and needs no special case.
+	// scaleMode/scaleModeSet memoise the filter, as the cgo call and flush must not run per frame per draw.
 	scaleMode    sdl.ScaleMode
 	scaleModeSet bool
-	// variants holds lazily-built per-pixel transforms of this page (invert /
-	// grayscale / the hue-paint colorize) — a transmitted sprite style needs a
-	// genuinely transformed texture (SetColorMod can't invert/desaturate). They live
-	// HERE so they're destroyed with the base page (eviction frees them too), keeping
-	// the cache from leaking or going stale. Bounded by maxVariantPages (variant.go).
+	// variants holds lazily built per-pixel transforms, destroyed with the page and bounded by maxVariantPages.
 	variants map[variantKey]*TexturePage
 }
 
-// variantKey identifies one cached per-pixel transform of a page: the effect id plus
-// the paint parameters when the effect is parameterised. The classic effects (invert,
-// grayscale, the restyles, the silhouette) leave the paint fields zero — their key is
-// the effect alone, exactly as before; the hue-paint colorize (variantPaint) keys by
-// its pre-quantised colour(s) + split so each painted look is its own cached page.
+// variantKey identifies a cached transform: the effect, plus the paint parameters for variantPaint (zero otherwise).
 type variantKey struct {
 	effect         uint8
 	paintA, paintB uint32 // packed 0xRRGGBB, pre-quantised (variantPaint only)
 	split          uint8  // two-tone split row percent (variantPaint only; 0 = one colour)
 }
 
-// destroy releases every frame texture and any built variants. Render thread only.
+// destroy releases every frame texture and variant; render thread only.
 func (p *TexturePage) destroy() {
 	for _, t := range p.Frames {
 		if t != nil {
@@ -144,16 +88,13 @@ func (p *TexturePage) destroy() {
 	}
 }
 
-// reduceToStill destroys every frame but the first, collapsing the page to a
-// single-frame still and marking it Stilled. The caller owns the byte-accounting
-// update (oversizedBytes or the LRU Resize). Render thread only.
+// reduceToStill destroys all frames but the first; the caller owns the byte accounting. Render thread only.
 func (p *TexturePage) reduceToStill() {
 	n := len(p.Frames)
 	if n <= 1 {
 		return
 	}
-	// Frames of one decoded animation are equal-size, so the remaining frame's
-	// bytes are the page's per-frame share (correct for both raw RGBA and DXT).
+	// Frames of one animation are equal-size, so this holds for both raw RGBA and DXT.
 	frameBytes := p.bytes / int64(n)
 	if frameBytes <= 0 {
 		frameBytes = int64(p.W) * int64(p.H) * texBytesPerPixel
@@ -171,109 +112,59 @@ func (p *TexturePage) reduceToStill() {
 	p.bytes = frameBytes
 }
 
-// TextureStore is T1: a byte-budgeted texture cache keyed by asset BASE
-// (extension-less URL base — unique per asset). Evicted pages drain through
-// a bounded destroy queue on the render thread. Three tiers share the one
-// configured budget: the main LRU (sprites, backgrounds, everything big),
-// the small-UI shield LRU (emote buttons + char icons, immune to sprite
-// churn — see smallTexBudgetDiv), and the pinned map (theme chrome). A base
-// lives in exactly one tier: the pump routes uploads by asset type, and
-// theme keys use their own scheme.
+// TextureStore is T1, keyed by asset base; a base lives in one of the main, small, pinned or oversized tiers.
 type TextureStore struct {
 	ren *sdl.Renderer
 	t1  *cache.ByteBudgetLRU[string, *TexturePage]
-	// small is the UI shield tier (emote buttons, char icons): its own byte
-	// budget carved from the T1 total, so streaming sprites can never evict
-	// the button/icon grids (and icon floods never evict sprites).
+	// small is the UI tier: sprites can't evict button and icon grids, and icon floods can't evict sprites.
 	small *cache.ByteBudgetLRU[string, *TexturePage]
-	// pinned holds pages exempt from LRU eviction: the active theme's
-	// chrome (skin, splashes, bars, buttons, full-screen backdrops).
-	// Bounded by the theme stem tables (≈40 pages), render-thread only.
-	// Without pinning, themed backdrops churned against streaming
-	// sprites in the LRU and the stage flashed black every time an
-	// eviction caught them (the gen-keyed UI cache stopped refreshing
-	// their recency, making it constant).
+	// pinned holds LRU-exempt pages (theme chrome), bounded by the theme stem tables; render thread only.
 	pinned      map[string]*TexturePage
 	pinnedBytes int64
-	// oversized holds animated pages too large for the main LRU tier's budget
-	// (a full high-res animation is routinely larger than the whole T1). They
-	// are eviction-exempt like pinned pages, but bounded by their OWN hard cap
-	// (oversizedCap) so a hostile server cannot pin an unbounded number of
-	// giant animations. Guarded by oversizedMu because Contains (the manager's
-	// T1 probe) runs OFF the render thread and must still see these pages —
-	// otherwise a resident animation would be re-fetched every time its owner
-	// speaks. Mutations are render-thread only, so the lock is held briefly.
+	// oversized holds animated pages too large for the main tier, bounded by oversizedCap against hostile servers.
+	// oversizedMu: Contains runs off the render thread and must see them, or a resident animation is re-fetched.
 	oversizedMu    sync.RWMutex
 	oversized      map[string]*TexturePage
 	oversizedBytes int64
 	oversizedCap   int64
 	oversizedOrder []string // insertion order, oldest first, for cap eviction
-	// themeMediaBytes / themeMediaCount / themeGenCount account for the THEME-MEDIA
-	// subset of `pinned` (thememedia.go): user art and generator tiles. They are a
-	// separate ledger from pinnedBytes because the two answer different questions —
-	// pinnedBytes is "how much eviction-exempt memory is committed", these are "how
-	// much of the USER'S OWN art budget is spent", which is the number the editor's
-	// budget bar shows and the number the admission gate enforces. Chrome the client
-	// pins on the theme's behalf (the chatbox skin, the shout splashes) is not the
-	// user's art and must not count against their allowance.
+	// themeMediaBytes/Count and themeGenCount count the user's art in pinned; client chrome doesn't count.
 	themeMediaBytes int64
 	themeMediaCount int
 	themeGenCount   int
 	destroy         chan *TexturePage
 	generation      atomic.Uint64
 
-	// Held-frame bridge (the black-flash fix): when the LRU must evict the
-	// ON-SCREEN background/desk — a cap-sized incoming sprite page can force it,
-	// since one page may be half the budget while the main tier is 7/8 of it —
-	// onEvict STEALS the page's first frame into the pinned map under a
-	// HeldKeyPrefix key instead of letting the stage draw the black clear color
-	// until the heal re-decodes. liveScenery is the injected "is this base the
-	// drawn bg/desk" probe (nil = bridge off; render thread only, like every
-	// mutation here). heldKeys is a fixed ring bounding the bridge to
-	// heldSceneryMax stolen frames; purging suppresses the steal during Purge
-	// (the tier purges fire onEvict per entry AFTER the pinned map was cleared —
-	// stealing there would leak held pages past the purge).
+	// Held frames: when the LRU evicts on-screen scenery, onEvict pins its first frame, so the stage doesn't go black.
+	// liveScenery is the "is this base drawn" probe (nil = off); heldKeys bounds the frames to heldSceneryMax.
+	// purging suppresses this during Purge: tier purges fire onEvict after pinned clears, leaking held pages.
 	liveScenery func(base string) bool
 	heldKeys    [heldSceneryMax]string
 	heldNext    int
 	purging     bool
-	// heldSteals / heldReleases are debug-visibility counters for the F8 panel
-	// (#50): how many times the bridge stole an evicted live-scenery frame vs
-	// released one when its real page came back. atomic so the panel read is
-	// race-proof against these render-thread adds; they never gate behaviour.
+	// heldSteals/heldReleases are debug counters; atomic so the panel read can't race, and they never affect behaviour.
 	heldSteals   atomic.Int64
 	heldReleases atomic.Int64
 
-	// failed is the decode-failure negative cache: base → last failure time.
-	// Written on the render thread (the upload pump) but read off-thread by the
-	// manager's prefetch gate, so it carries its own lock.
+	// failed is the decode-failure cache; the render thread writes it and the prefetch check reads it off-thread.
 	failedMu sync.Mutex
 	failed   map[string]time.Time
 
-	// missing is the CONCLUSIVELY-MISSING char-sprite set (the missingno gate):
-	// a base whose whole fallback chain 404'd (every format of every spelling —
-	// the manager's reportMissing Warning, relayed here by the App's render-thread
-	// warning drain). drawSprite's miss branch draws the shared MissingKey
-	// placeholder for a base in this set instead of holding a DIFFERENT (stale)
+	// missing holds char sprite bases whose whole fallback chain 404'd; render thread only, so no lock.
 	missing map[string]struct{}
 
-	// budget is the T1 byte budget this store was built with (the default, or
-	// the power-user override); error messages and Settings read it.
+	// budget is the T1 byte budget this store was built with.
 	budget int64
-	// uploadNsEWMA tracks Upload wall time (cold-load profiling; the debug
-	// overlay's per-stage line reads it via AvgUpload).
+	// uploadNsEWMA tracks Upload wall time for the debug overlay.
 	uploadNsEWMA atomic.Int64
 }
 
-// AvgUpload reports the texture-upload wall-time EWMA (zero until the first
-// upload) — the upload stage of the cold-load profiling line.
+// AvgUpload reports the texture-upload wall-time EWMA, zero until the first upload.
 func (s *TextureStore) AvgUpload() time.Duration { return time.Duration(s.uploadNsEWMA.Load()) }
 
-// uploadEWMAWeightDen is the upload EWMA weight (1/4, matching the decode and
-// TTFB EWMAs so the three profiling stages average alike).
+// uploadEWMAWeightDen is 1/4, matching the decode and TTFB EWMAs so the profiling stages average alike.
 const uploadEWMAWeightDen = 4
 
-// foldUploadEWMA folds one duration sample into an atomic nanosecond EWMA.
 func foldUploadEWMA(dst *atomic.Int64, sample time.Duration) {
 	if sample <= 0 {
 		return
@@ -286,8 +177,7 @@ func foldUploadEWMA(dst *atomic.Int64, sample time.Duration) {
 	dst.Store(old + (int64(sample)-old)/uploadEWMAWeightDen)
 }
 
-// MarkFailed records that base failed to DECODE and reports whether this is a
-// NEW failure (so the caller logs once per decodeFailTTL, not on every retry).
+// MarkFailed records a decode failure and reports whether it is new, so the caller logs once per decodeFailTTL.
 func (s *TextureStore) MarkFailed(base string) bool {
 	now := time.Now()
 	s.failedMu.Lock()
@@ -311,8 +201,7 @@ func (s *TextureStore) MarkFailed(base string) bool {
 	return fresh
 }
 
-// FailedRecently reports whether base failed to decode within decodeFailTTL —
-// the manager's prefetch gate skips re-fetching it. Safe from any goroutine.
+// FailedRecently reports whether base failed to decode within decodeFailTTL; safe from any goroutine.
 func (s *TextureStore) FailedRecently(base string) bool {
 	if base == "" {
 		return false
@@ -323,8 +212,7 @@ func (s *TextureStore) FailedRecently(base string) bool {
 	return ok && time.Since(t) < decodeFailTTL
 }
 
-// clearFailed drops base from the negative cache (it just uploaded fine, so a
-// transient failure recovered).
+// clearFailed drops base from the negative cache after a good upload.
 func (s *TextureStore) clearFailed(base string) {
 	s.failedMu.Lock()
 	if s.failed != nil {
@@ -333,10 +221,7 @@ func (s *TextureStore) clearFailed(base string) {
 	s.failedMu.Unlock()
 }
 
-// NewTextureStoreBudget builds T1 over the given renderer at a power-user T1
-// byte budget (≤ 0 = the default). BOOT-applied by design: resizing a live LRU
-// would be an eviction storm mid-session — the Settings row says "applies on
-// restart".
+// NewTextureStoreBudget builds T1 (<= 0 = default); boot only, as resizing a live LRU is an eviction storm.
 func NewTextureStoreBudget(ren *sdl.Renderer, budgetBytes int64) (*TextureStore, error) {
 	if budgetBytes <= 0 {
 		budgetBytes = int64(T1BudgetBytes)
@@ -349,11 +234,7 @@ func NewTextureStoreBudget(ren *sdl.Renderer, budgetBytes int64) (*TextureStore,
 		destroy:      make(chan *TexturePage, destroyQueueCap),
 		budget:       budgetBytes,
 	}
-	// Both LRU tiers share one eviction path: bump the generation (cached
-	// page pointers must re-resolve) and route the page through the bounded
-	// destroy queue. The held-frame bridge intercepts live scenery first —
-	// mutating s.pinned here is legal (it is store-owned, not the inner LRU,
-	// so the "no call back into the cache" contract holds).
+	// Eviction bumps the generation so cached pointers re-resolve; mutating s.pinned is legal, as it isn't the LRU.
 	onEvict := func(base string, page *TexturePage, _ int64) {
 		s.generation.Add(1)
 		if !s.purging && s.liveScenery != nil && s.liveScenery(base) {
@@ -362,8 +243,7 @@ func NewTextureStoreBudget(ren *sdl.Renderer, budgetBytes int64) (*TextureStore,
 		select {
 		case s.destroy <- page:
 		default:
-			// Queue full: we are on the render thread (every T1 mutation
-			// happens here), destroying inline is legal and bounded.
+			// Queue full: every T1 mutation is on the render thread, so destroying inline is legal and bounded.
 			page.destroy()
 		}
 	}
@@ -381,31 +261,16 @@ func NewTextureStoreBudget(ren *sdl.Renderer, budgetBytes int64) (*TextureStore,
 	return s, nil
 }
 
-// HeldKeyPrefix namespaces held-frame bridge pages in the pinned map (like
-// theme:// and thumb:// — a scheme prefix can never collide with an asset URL
-// base). The viewport's scenery miss path probes HeldKeyPrefix+base.
+// HeldKeyPrefix namespaces held pages in pinned; a scheme prefix can't collide with an asset URL.
 const HeldKeyPrefix = "held://"
 
-// MissingKey is the reserved pinned key the ONE shared missingno placeholder
-// page lives under (the AO2 "placeholder" fallback for a conclusively-missing
-// character sprite). A scheme prefix can never collide with an asset URL base
-// (same rationale as held://, thumb://, theme://). ONE shared key, never
-// per-base, so drawSprite's miss-branch probe is a plain const-key map read
-// with zero string building — the 0-alloc miss path.
+// MissingKey is the one shared key of the missing-sprite placeholder, so drawSprite's miss path builds no string.
 const MissingKey = "missingno://"
 
-// missingSetCap bounds the conclusively-missing char-sprite set (rule §17.4),
-// mirroring courtroom.missingSpritesCap — the game-side confirmed-missing set
-// this render-side set shadows. When full, MarkMissing skips the insert (like
-// recordMissing): an un-recorded miss simply falls through to the normal
-// hold-previous/blank path, no worse than before the feature.
+// missingSetCap bounds the set, mirroring courtroom.missingSpritesCap; a miss when full takes the normal path.
 const missingSetCap = 512
 
-// MarkMissing records that base's whole fallback chain 404'd, so drawSprite
-// draws the missingno placeholder for it instead of a stale hold-previous.
-// Render thread ONLY (called from the App's warning drain; see the `missing`
-// field comment for the no-mutex invariant). Bounded + dedup, matching
-// courtroom.recordMissing's stop-inserting-when-full policy.
+// MarkMissing records that base's whole fallback chain 404'd, stopping inserts when full; render thread only.
 func (s *TextureStore) MarkMissing(base string) {
 	if base == "" {
 		return
@@ -422,9 +287,7 @@ func (s *TextureStore) MarkMissing(base string) {
 	s.missing[base] = struct{}{}
 }
 
-// IsMissing reports whether base was conclusively 404'd this session (the
-// missingno gate probed FIRST in drawSprite's miss branch). Plain map read,
-// render thread ONLY.
+// IsMissing reports whether base was conclusively 404'd this session; render thread only.
 func (s *TextureStore) IsMissing(base string) bool {
 	if len(s.missing) == 0 {
 		return false
@@ -433,52 +296,27 @@ func (s *TextureStore) IsMissing(base string) bool {
 	return ok
 }
 
-// clearMissing drops base from the missing set (its real page just uploaded, so
-// a transient/healed miss recovered). Render thread only; called from
-// uploadTier beside clearFailed/releaseHeld.
+// clearMissing drops base from the missing set after its real page uploads; render thread only.
 func (s *TextureStore) clearMissing(base string) {
 	if s.missing != nil {
 		delete(s.missing, base)
 	}
 }
 
-// heldSceneryMax bounds the held-frame bridge: at most this many stolen stage
-// frames live in the pinned map at once — a fixed ring, oldest slot reused. It
-// is 4 because the bridge now covers every on-screen stage layer that has no
-// other cold-load fallback: background + desk (the original scenery pair) PLUS
-// the current speaker and pair sprites (the character-layer extension — a
-// mid-display eviction of the speaker had no hold-previous/thumb fallback). The
-// ring is PINNED (eviction-exempt) memory: each held page is ONE stolen frame,
-// so the worst case is 4 × the largest single stage frame's bytes
-// (W×H×texBytesPerPixel). At a full-viewport 1920×1080 frame that is
-// ≈8.3 MiB/frame → ≈33 MiB worst case, but stage sprites and desks are almost
-// always far smaller, and each hold releases the instant its real page
-// re-uploads (releaseHeld), so the steady-state cost is a few frames at most.
+// heldSceneryMax bounds held frames to background, desk, speaker and pair; pinned until the real page returns.
 const heldSceneryMax = 4
 
-// texBytesPerPixel is the byte cost of one ABGR8888 texel (the only texture
-// format the store creates) — sizes the held single-frame page.
+// texBytesPerPixel is one ABGR8888 texel, the only format the store creates.
 const texBytesPerPixel = 4
 
-// mibShift converts bytes to MiB and back (bytes >> mibShift).
 const mibShift = 20
 
-// dxtBlockPx is the edge of the 4x4 pixel block DXT compresses as one unit.
 const dxtBlockPx = 4
 
-// SetLiveScenery injects the "is this base the on-screen background/desk"
-// probe backing the held-frame bridge (nil = bridge off). Render thread only,
-// set once at boot.
+// SetLiveScenery sets the "is this base on screen" probe for held frames (nil = off); render thread only, once at boot.
 func (s *TextureStore) SetLiveScenery(f func(base string) bool) { s.liveScenery = f }
 
-// holdSceneryFrame steals an evicted live-scenery page's FIRST frame into the
-// eviction-exempt pinned map under HeldKeyPrefix+base, so the stage draws a
-// frozen background instead of the black clear color while the heal
-// re-decodes (or forever, if the scene is genuinely over budget and the heal
-// latch has gone quiet). Zero decode, zero copy, zero upload — the texture
-// already exists; destroy() skips the nil'd slot. Render thread only (called
-// from onEvict). Bounded by the heldSceneryMax ring; released by releaseHeld
-// the moment the real page re-uploads.
+// holdSceneryFrame pins an evicted page's first frame, reusing the texture; destroy skips the nil entry.
 func (s *TextureStore) holdSceneryFrame(base string, page *TexturePage) {
 	if len(page.Frames) == 0 || page.Frames[0] == nil {
 		return
@@ -493,11 +331,11 @@ func (s *TextureStore) holdSceneryFrame(base string, page *TexturePage) {
 	page.Frames[0] = nil // stolen: the page's destroy() skips nil frames
 	key := HeldKeyPrefix + base
 	if old, ok := s.pinned[key]; ok {
-		// Re-steal for the same base: replace in place (ring slot already ours).
+		// Same base again: replace in place.
 		s.pinnedBytes -= old.bytes
 		s.queueDestroy(old)
 	} else {
-		// Claim the next ring slot, releasing its previous occupant.
+		// Take the next ring entry, releasing its previous occupant.
 		if prev := s.heldKeys[s.heldNext]; prev != "" {
 			if op, ok := s.pinned[prev]; ok {
 				s.pinnedBytes -= op.bytes
@@ -513,10 +351,7 @@ func (s *TextureStore) holdSceneryFrame(base string, page *TexturePage) {
 	s.heldSteals.Add(1)
 }
 
-// releaseHeld drops the held-frame bridge page for base once its real page is
-// resident again (called from uploadTier after a successful Add — the Add
-// already bumped the generation, so cached pointers re-resolve to the real
-// page). Ring slot cleared so a stale key can't evict an unrelated hold.
+// releaseHeld drops base's held page once its real page is resident; a stale key can't evict another hold.
 func (s *TextureStore) releaseHeld(base string) {
 	key := HeldKeyPrefix + base
 	page, ok := s.pinned[key]
@@ -534,17 +369,14 @@ func (s *TextureStore) releaseHeld(base string) {
 	s.heldReleases.Add(1)
 }
 
-// HeldStats is a lazy snapshot of the held-frame bridge counters for the F8
-// panel (#50). Current is how many stolen frames are pinned right now.
+// HeldStats is a snapshot of the held-frame counters; Current is the number pinned now.
 type HeldStats struct {
 	Steals   int64 // stage frames stolen into the pinned bridge on eviction
 	Releases int64 // holds released when the real page re-uploaded
 	Current  int64 // held frames pinned right now (≤ heldSceneryMax)
 }
 
-// HeldStats snapshots the bridge counters. Render thread only (it reads the
-// heldKeys ring, which every bridge mutation also touches on this thread); the
-// steal/release totals are atomic loads so they can't tear against the adds.
+// HeldStats snapshots the counters; render thread only, because it reads the heldKeys ring.
 func (s *TextureStore) HeldStats() HeldStats {
 	current := int64(0)
 	for i := range s.heldKeys {
@@ -559,11 +391,7 @@ func (s *TextureStore) HeldStats() HeldStats {
 	}
 }
 
-// Contains reports whether a texture page exists for the asset base in
-// either LRU tier or the oversized map. Safe to call from any goroutine (the
-// inner LRUs are thread-safe; the oversized map is mutex-guarded) — wired as
-// the manager's T1 probe, which must see oversized pages or it would re-fetch
-// a resident animation.
+// Contains reports whether a page exists in either LRU or the oversized map; safe from any goroutine.
 func (s *TextureStore) Contains(base string) bool {
 	if s.small.Contains(base) || s.t1.Contains(base) {
 		return true
@@ -574,11 +402,7 @@ func (s *TextureStore) Contains(base string) bool {
 	return ok
 }
 
-// ContainsAnimated is Contains but treats Stilled pages as absent: a full
-// animation downgraded to a still re-decodes on the next animate demand. It is
-// the manager's T1 probe (so a reduced pair/previous-speaker re-streams when it
-// becomes the speaker), while Contains stays the wait-gate probe (a reduced page
-// must still count as settled). Safe from any goroutine.
+// ContainsAnimated is Contains with Stilled pages absent, so a reduced page re-streams.
 func (s *TextureStore) ContainsAnimated(base string) bool {
 	if page, ok := s.small.Peek(base); ok {
 		return !page.Stilled
@@ -592,15 +416,10 @@ func (s *TextureStore) ContainsAnimated(base string) bool {
 	return ok && !page.Stilled
 }
 
-// ReduceAnimatedExcept downgrades every resident ANIMATED page whose base is
-// NOT in active to a single still frame, freeing the rest. It is the
-// "non-active characters are a still" memory cap: only the active speaker's
-// animation stays full; the pair and every previously-shown animation collapse
-// to frame 0 and re-stream (~20 ms) when they become active again.
+// ReduceAnimatedExcept reduces animated pages not in active to one frame; they re-stream when active.
 func (s *TextureStore) ReduceAnimatedExcept(active map[string]bool) int {
 	reduced := 0
 
-	// Oversized map (animated pages too large for the main tier).
 	s.oversizedMu.Lock()
 	for base, page := range s.oversized {
 		if active[base] || !page.Animated || page.Stilled || len(page.Frames) <= 1 {
@@ -613,7 +432,6 @@ func (s *TextureStore) ReduceAnimatedExcept(active map[string]bool) int {
 	}
 	s.oversizedMu.Unlock()
 
-	// Main tier (bulky-but-fits animations live here under DXT5).
 	for _, base := range s.t1.Keys() {
 		if active[base] {
 			continue
@@ -632,9 +450,7 @@ func (s *TextureStore) ReduceAnimatedExcept(active map[string]bool) int {
 	return reduced
 }
 
-// Get returns the page for base (pinned pages first, then the oversized map,
-// then the small-UI shield, then the main tier), bumping recency for
-// LRU-resident ones. Render thread only.
+// Get returns the page, checking pinned, oversized, small then main; render thread only.
 func (s *TextureStore) Get(base string) (*TexturePage, bool) {
 	if page, ok := s.pinned[base]; ok {
 		return page, true
@@ -651,8 +467,7 @@ func (s *TextureStore) Get(base string) (*TexturePage, bool) {
 	return s.t1.Get(base)
 }
 
-// buildPage turns a decoded asset into a texture page (shared by the LRU
-// and pinned upload paths). The Decoded is NOT released here.
+// buildPage turns a decoded asset into a page; the Decoded is not released here.
 func (s *TextureStore) buildPage(d *assets.Decoded) (*TexturePage, error) {
 	page := &TexturePage{
 		Delays:       append([]time.Duration(nil), d.Delays...),
@@ -672,10 +487,7 @@ func (s *TextureStore) buildPage(d *assets.Decoded) (*TexturePage, error) {
 	return page, nil
 }
 
-// buildFrames uploads a Decoded's frames to GPU textures — the pre-encoded DXT
-// payloads or the raw RGBA frames — returning the textures and their accounted
-// byte size. The Decoded is NOT released here; on error any already-built
-// textures are destroyed.
+// buildFrames uploads DXT or RGBA frames, keeping the Decoded; on error built textures are destroyed.
 func (s *TextureStore) buildFrames(d *assets.Decoded) (frames []*sdl.Texture, bytes int64, err error) {
 	fail := func() {
 		for _, t := range frames {
@@ -685,9 +497,7 @@ func (s *TextureStore) buildFrames(d *assets.Decoded) (frames []*sdl.Texture, by
 		}
 	}
 	if d.DXTFormat != 0 && len(d.Compressed) > 0 {
-		// Compressed path: upload the pre-encoded DXT payloads. The canvas is
-		// guaranteed 4-aligned by Decoded.compress, and the format was already
-		// validated against the renderer at startup.
+		// Decoded.compress guarantees a 4-aligned canvas, and the format was validated against the renderer at startup.
 		blockBytes := 8
 		if d.DXTFormat == assets.DXT5FourCC {
 			blockBytes = 16
@@ -732,30 +542,22 @@ func (s *TextureStore) buildFrames(d *assets.Decoded) (frames []*sdl.Texture, by
 	return frames, bytes, nil
 }
 
-// Upload turns a decoded asset into textures under the asset's base key.
-// Render thread only. The Decoded is released here.
+// Upload turns a decoded asset into textures and releases the Decoded; render thread only.
 func (s *TextureStore) Upload(base string, d *assets.Decoded) error {
 	return s.uploadTier(base, d, s.t1)
 }
 
-// UploadSmall is Upload into the small-UI shield tier (emote buttons, char
-// icons — see smallTexBudgetDiv). The pump routes by asset type. A page too
-// big for the shield's whole budget (a pathological many-frame animated
-// icon) falls through to the MAIN tier instead of being refused: it still
-// shows, it just doesn't get churn immunity. Render thread only.
+// UploadSmall is Upload into the small tier; a page too big for it goes to main. Render thread only.
 func (s *TextureStore) UploadSmall(base string, d *assets.Decoded) error {
 	if d.PixelBytes() > s.small.Budget() {
 		return s.uploadTier(base, d, s.t1)
 	}
-	// The tiers are alternatives for a key, never both: drop a stale main-tier
-	// page from before this asset's type routed here (belt-and-braces — a
-	// base's type never actually changes at runtime).
+	// The tiers are alternatives for a key, never both.
 	s.t1.Remove(base)
 	return s.uploadTier(base, d, s.small)
 }
 
-// uploadTier builds and registers a page in the given LRU tier (shared by
-// Upload and UploadSmall). The Decoded is released here.
+// uploadTier builds and registers a page in the given tier and releases the Decoded.
 func (s *TextureStore) uploadTier(base string, d *assets.Decoded, tier *cache.ByteBudgetLRU[string, *TexturePage]) error {
 	defer d.Release()
 	start := time.Now()
@@ -765,22 +567,10 @@ func (s *TextureStore) uploadTier(base string, d *assets.Decoded, tier *cache.By
 	}
 	foldUploadEWMA(&s.uploadNsEWMA, time.Since(start)) // cold-load profiling: GPU-upload stage
 	if !tier.Add(base, page, page.bytes) {
-		// Bigger than the whole tier budget: ByteBudgetLRU refuses it. Animated
-		// sprites legitimately get this big (a full high-res animation is larger
-		// than the entire T1), so a page too big for the MAIN tier is parked in
-		// the eviction-exempt oversized map (bounded by its own cap) instead of
-		// being refused — the #110 fix: load the full clip, don't decimate it
-		// into a slideshow. A page too big for the SMALL shield never reaches
-		// here (UploadSmall routes it to main first); if it somehow does, the
-		// loud error stays.
+		// An animation can exceed all of T1, which the LRU refuses, so it goes to oversized undecimated.
+		// UploadSmall routes too-big pages to main first, so reaching here from small is a real error.
 		if tier == s.t1 {
-			// Drop any stale entry this base still holds in the MAIN tier. A
-			// progressive upload parks its 1-frame "Partial" in the main LRU
-			// first, and ByteBudgetLRU.Add rejects the over-budget FULL page
-			// BEFORE removing that old entry. Leaving it meant an oversized-cap
-			// eviction of the full clip fell back to the stale static frame and
-			// the T1 Contains probe short-circuited re-decode (the "static after
-			// reconnect" report). The oversized map is authoritative now.
+			// Add rejects an over-budget page before removing the old entry, so drop the stale partial here.
 			s.t1.Remove(base)
 			s.storeOversized(base, page)
 			s.generation.Add(1)
@@ -799,9 +589,7 @@ func (s *TextureStore) uploadTier(base string, d *assets.Decoded, tier *cache.By
 	return nil
 }
 
-// storeOversized parks a page too large for the main LRU tier in the
-// eviction-exempt oversized map, evicting the oldest oversized pages until the
-// map is back under oversizedCap. Render thread only.
+// storeOversized parks a page in the oversized map, evicting the oldest down to oversizedCap; render thread only.
 func (s *TextureStore) storeOversized(base string, page *TexturePage) {
 	s.oversizedMu.Lock()
 	defer s.oversizedMu.Unlock()
@@ -816,13 +604,10 @@ func (s *TextureStore) storeOversized(base string, page *TexturePage) {
 	s.enforceOversizedCapLocked(base)
 }
 
-// enforceOversizedCapLocked evicts the oldest oversized pages (never `keep`)
-// until the map is back under oversizedCap. Caller holds oversizedMu.
+// enforceOversizedCapLocked evicts the oldest oversized pages except keep; the caller holds oversizedMu.
 func (s *TextureStore) enforceOversizedCapLocked(keep string) {
 	for s.oversizedBytes > s.oversizedCap && len(s.oversizedOrder) > 0 {
-		// Evict the OLDEST page that isn't `keep` (the page just stored or
-		// being grown must never be evicted while its stream is live). A lone
-		// page is allowed to exceed the cap (the decode cap bounds one clip).
+		// keep's stream may be live, so never evict it; a lone page may exceed the cap.
 		idx := -1
 		for i, k := range s.oversizedOrder {
 			if k != keep {
@@ -843,20 +628,11 @@ func (s *TextureStore) enforceOversizedCapLocked(keep string) {
 	}
 }
 
-// AppendStream grows a streaming (incremental) animation page in place. The
-// establishing chunk (FrameOffset 0) parks a fresh page in the oversized map so
-// it can grow without LRU byte-accounting churn; later chunks append frames to
-// it; the finalize chunk (Partial=false, no frames) clears Partial so the
-// renderer stops treating it as a growing prefix. Render thread only.
+// AppendStream grows a page in the oversized map, avoiding LRU churn; the finalize chunk clears Partial.
 func (s *TextureStore) AppendStream(base string, d *assets.Decoded) error {
 	defer d.Release()
 	if d.FrameOffset == 0 && len(d.Frames) > 0 {
-		// Establishing frame. If a page is already resident for this base, a
-		// redundant re-decode is racing this stream (the demand/prefetch overlap
-		// window before the base becomes T1-resident). Re-establishing here would
-		// SHRINK the fuller resident page and leave the viewport's playback cursor
-		// pointing past its frame count. Keep the fuller page and drop this
-		// stream's prefix — its later appends then hit the ordering guard below.
+		// A re-decode can race this stream; re-establishing would shrink the page and strand the cursor, so keep it.
 		s.oversizedMu.RLock()
 		_, exists := s.oversized[base]
 		s.oversizedMu.RUnlock()
@@ -888,13 +664,8 @@ func (s *TextureStore) AppendStream(base string, d *assets.Decoded) error {
 		if err != nil {
 			return err
 		}
-		// Streamed appends must inherit the page's already-latched filter.
-		// buildFrames creates each texture under the client-wide hint (linear),
-		// and applyScaleMode's memo skips a page whose scaleModeSet is already
-		// latched — so without this, only the establishing frame 0 keeps nearest
-		// while every appended frame stays bilinear (the "frame 0 crisp, the
-		// rest blurry" regression). No Flush is needed: these are brand-new
-		// textures with no copies queued in the batch yet.
+		// applyScaleMode skips a page already set, so appended frames must inherit its filter or stay bilinear.
+		// No Flush is needed: new textures have no queued copies.
 		if page.scaleModeSet {
 			for _, t := range frames {
 				setTextureScaleMode(t, page.scaleMode)
@@ -916,8 +687,7 @@ func (s *TextureStore) AppendStream(base string, d *assets.Decoded) error {
 	return nil
 }
 
-// dropOversizedOrderLocked removes base from the insertion-order ring; the
-// caller holds oversizedMu.
+// dropOversizedOrderLocked removes base from the order ring; the caller holds oversizedMu.
 func (s *TextureStore) dropOversizedOrderLocked(base string) {
 	for i, k := range s.oversizedOrder {
 		if k == base {
@@ -927,16 +697,7 @@ func (s *TextureStore) dropOversizedOrderLocked(base string) {
 	}
 }
 
-// UploadPinned is Upload into the eviction-exempt tier (theme chrome:
-// losing the courtroom backdrop to LRU pressure flashed the stage black).
-// Replacing an existing pinned page routes the old one through the
-// destroy queue. Render thread only.
-// IT REFUSES THE TWO THEME-MEDIA SUB-PREFIXES (thememedia.go). Pinned is
-// eviction-exempt and therefore count-uncapped by nature, which is fine for the
-// bounded stem tables the client itself uploads and is not fine at all for art a
-// stranger's theme declares. UploadThemeMedia is the gated door for those, and a
-// second un-gated door beside it would be a budget nobody enforces — so this one is
-// locked rather than documented. Gated by TestUploadPinnedRejectsThemeMediaPrefixes.
+// UploadPinned is Upload into the LRU-exempt tier; theme-media prefixes must use UploadThemeMedia's budget.
 func (s *TextureStore) UploadPinned(base string, d *assets.Decoded) error {
 	if IsThemeMediaKey(base) {
 		d.Release()
@@ -946,12 +707,7 @@ func (s *TextureStore) UploadPinned(base string, d *assets.Decoded) error {
 	return s.uploadPinnedTracked(base, d, false)
 }
 
-// uploadPinnedTracked is the shared body of UploadPinned and UploadThemeMedia: build
-// the page, replace any predecessor, and keep the theme-media ledger in step.
-// `admitted` says the caller already passed the admission gate. It is a parameter
-// rather than a re-derivation from the key so the two doors cannot both think the
-// other one checked: UploadPinned passes false and has already refused every key
-// this would apply to, UploadThemeMedia passes true and has already measured it.
+// uploadPinnedTracked is the shared body; admitted is a parameter so neither caller assumes the other checked.
 func (s *TextureStore) uploadPinnedTracked(base string, d *assets.Decoded, admitted bool) error {
 	defer d.Release()
 	page, err := s.buildPage(d)
@@ -972,16 +728,12 @@ func (s *TextureStore) uploadPinnedTracked(base string, d *assets.Decoded, admit
 	return nil
 }
 
-// Remove evicts one page from whichever tier holds it (theme swaps
-// replace skin textures). Render thread only.
+// Remove evicts a page from whichever tier holds it; render thread only.
 func (s *TextureStore) Remove(base string) {
 	if page, ok := s.pinned[base]; ok {
 		delete(s.pinned, base)
 		s.pinnedBytes -= page.bytes
-		// The theme-media ledger drains through the SAME path the pinned bytes do —
-		// which is what makes the theme-swap prune (App.pollThemeApply's reconcile
-		// loop, unchanged) return the whole allowance without knowing this tier
-		// exists. A separate removal path would be the leak.
+		// The ledger drains here so the theme-swap prune returns the whole allowance; a separate path would leak it.
 		s.noteThemeMediaRemoved(base, page.bytes)
 		s.queueDestroy(page)
 		s.generation.Add(1)
@@ -1005,14 +757,9 @@ func (s *TextureStore) Remove(base string) {
 	s.t1.Remove(base)
 }
 
-// reservedKeySchemes are the T1 key namespaces that are NOT server asset URLs:
-// theme chrome, the held-frame scenery bridge, thumbnails, editor shapes and the
-// missingno placeholder. A local-pack sweep must never touch them — they are not
-// something a mount can re-answer, and dropping the pinned placeholder or the
-// theme pages would blank chrome the pack has nothing to do with.
+// reservedKeySchemes aren't server asset URLs; a local-pack sweep must skip them, as no mount can re-answer them.
 var reservedKeySchemes = [...]string{"theme://", "held://", "thumb://", "shape://", "missingno://"}
 
-// reservedKey reports whether a T1 key belongs to one of those namespaces.
 func reservedKey(key string) bool {
 	for _, s := range reservedKeySchemes {
 		if strings.HasPrefix(key, s) {
@@ -1022,17 +769,8 @@ func reservedKey(key string) bool {
 	return false
 }
 
-// RemoveWhere drops every resident page whose key satisfies pred, and returns how
-// many it dropped. Render thread ONLY, and USER-INITIATED only: it snapshots
-// every key in all three spaces, so it allocates proportionally to the resident
-// set and must never run per frame.
-// It exists because resolution short-circuits on a resident texture: without it,
-// switching the asset source or pressing Rescan would leave the CURRENT speaker
-// and background showing the old source's art until they happened to evict —
-// which is the very first thing anyone tests after adding a pack.
-// The keys are SNAPSHOTTED before anything is removed. Removing while iterating
-// re-enters the cache through the eviction callback, which is exactly what the
-// onEvict contract forbids.
+// RemoveWhere drops pages whose key satisfies pred; render thread, user-initiated, as it allocates.
+// Without it, resolution short-circuits on resident textures and a Rescan keeps showing old art.
 func (s *TextureStore) RemoveWhere(pred func(key string) bool) int {
 	if pred == nil {
 		return 0
@@ -1061,29 +799,19 @@ func (s *TextureStore) RemoveWhere(pred func(key string) bool) int {
 	return len(doomed)
 }
 
-// ForgetMissing empties the conclusively-404'd set so every previously missingno
-// asset is re-demandable. Render thread only, user-initiated (a mount change or
-// Rescan): a base that 404'd on the server may be exactly what the user just
-// added a pack to supply.
+// ForgetMissing empties the 404'd set, as a mount change or Rescan may supply them; render thread only.
 func (s *TextureStore) ForgetMissing() {
 	clear(s.missing)
 }
 
-// ForgetFailed empties the decode negative cache — the bulk sibling of
-// clearFailed. Render thread, user-initiated.
-// Rescan MUST call this. The prefetch gate consults the failed set BEFORE the
-// mount layer is ever reached, so a base whose SERVER copy is corrupt — the single
-// most plausible reason to deploy a pack in the first place — would stay
-// suppressed for the full decodeFailTTL after the user adds the fixing file and
-// presses Rescan.
+// ForgetFailed empties the decode cache; Rescan must call it, as the prefetch check runs before mounts.
 func (s *TextureStore) ForgetFailed() {
 	s.failedMu.Lock()
 	clear(s.failed)
 	s.failedMu.Unlock()
 }
 
-// queueDestroy hands a page to the bounded destroy queue (inline when
-// full — render thread, legal and bounded).
+// queueDestroy hands a page to the destroy queue, or destroys inline when full (render thread, bounded).
 func (s *TextureStore) queueDestroy(page *TexturePage) {
 	select {
 	case s.destroy <- page:
@@ -1092,8 +820,7 @@ func (s *TextureStore) queueDestroy(page *TexturePage) {
 	}
 }
 
-// DrainDestroyQueue destroys up to destroyBudgetPerFrame evicted pages.
-// Render thread only; call once per frame (spec §12).
+// DrainDestroyQueue destroys up to destroyBudgetPerFrame pages; render thread only, once per frame.
 func (s *TextureStore) DrainDestroyQueue() {
 	for i := 0; i < destroyBudgetPerFrame; i++ {
 		select {
@@ -1105,13 +832,11 @@ func (s *TextureStore) DrainDestroyQueue() {
 	}
 }
 
-// Generation reports the mutation counter backing cached page pointers.
 func (s *TextureStore) Generation() uint64 {
 	return s.generation.Load()
 }
 
-// Stats exposes T1 counters for the HUD: both LRU tiers aggregated, so the
-// readout keeps describing "decoded textures vs the configured budget".
+// Stats returns T1 counters aggregated over both LRU tiers.
 func (s *TextureStore) Stats() cache.MemoryStats {
 	main, small := s.t1.Stats(), s.small.Stats()
 	return cache.MemoryStats{
@@ -1124,22 +849,16 @@ func (s *TextureStore) Stats() cache.MemoryStats {
 	}
 }
 
-// OversizedBytes reports the total bytes resident in the oversized overflow
-// map (animated sprites too large for the main LRU tier). Safe to call from
-// any goroutine — wired to the debug panel's memory readout.
+// OversizedBytes reports total bytes in the oversized map; safe from any goroutine.
 func (s *TextureStore) OversizedBytes() int64 {
 	s.oversizedMu.RLock()
 	defer s.oversizedMu.RUnlock()
 	return s.oversizedBytes
 }
 
-// Purge destroys everything — pinned pages included (server switch /
-// shutdown / filtering swap; the theme re-applies after). Render thread
-// only.
+// Purge destroys everything, pinned pages included; the theme re-applies after. Render thread only.
 func (s *TextureStore) Purge() {
-	// The tier purges below fire onEvict per entry AFTER the pinned map is
-	// cleared — the held-frame steal must stay out of the way or held pages
-	// would be re-created mid-purge and leak past it.
+	// The tier purges fire onEvict after pinned is cleared; a held-frame steal then would leak past the purge.
 	s.purging = true
 	defer func() { s.purging = false }()
 	s.generation.Add(1)
@@ -1156,9 +875,7 @@ func (s *TextureStore) Purge() {
 	s.oversizedBytes = 0
 	s.oversizedOrder = s.oversizedOrder[:0]
 	s.oversizedMu.Unlock()
-	// The theme-media ledger is a view of the pinned map, so emptying one empties
-	// the other. themePage's generation-keyed negative cache and healTheme's paced
-	// re-kick then bring the theme's art back exactly as they bring its chrome back.
+	// The ledger is a view of pinned, so it empties with it; healTheme brings the art back like the chrome.
 	s.themeMediaBytes, s.themeMediaCount, s.themeGenCount = 0, 0, 0
 	s.heldKeys = [heldSceneryMax]string{}
 	s.heldNext = 0

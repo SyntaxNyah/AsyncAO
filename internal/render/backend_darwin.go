@@ -2,8 +2,7 @@ package render
 
 import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
-// macOS names no driver: SDL picks Metal, which the gpu renderer ships MSL
-// shaders for. The UI library's SPIR-V shaders wait on plan open item 2.
+// macOS names no driver: SDL picks Metal, with MSL shaders; the UI library's SPIR-V shaders don't load there yet.
 const (
 	gpuDriver        = ""
 	gpuShaderFormats = sdl.GPUShaderFormatMSL
