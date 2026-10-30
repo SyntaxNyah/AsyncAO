@@ -2,47 +2,23 @@ package courtroom
 
 import "github.com/SyntaxNyah/AsyncAO/internal/helper/text"
 
-// WireProfile is the small, cross-client slice of a character profile (#101 slice 2)
-// that travels between AsyncAO clients: just the identity glance — pronouns and a
-// one-line tagline. It rides the SAME invisible zero-width channel as the sprite style
-// (a marker appended to an IC message), so standard AO2/webAO clients render nothing
-// and are unaffected. The larger profile fields (bio, art image, theme song) stay
-// local: they're too big for the message channel and the roster card doesn't show art
-// yet. The card's title uses the speaker's live showname, so the name isn't sent here.
-//
-// Like the sprite style it is transmitted ONLY on change (a profile rarely changes), so
-// the invisible run rides at most the speaker's first post-join message, not every line.
+// WireProfile is the profile part sent on the zero-width channel, only on change; larger fields stay local.
 type WireProfile struct {
 	Pronouns string
 	Tag      string
 }
 
 const (
-	// Wire field caps in BYTES (not runes) — the cap bounds the zero-width run's length
-	// on the wire. Kept DELIBERATELY tight: other clients typewriter the invisible run and
-	// blip on each character, and the payload also eats into the server's IC
-	// message-length limit (a tsuserver default is ~256 chars). The codec packs 3 bits
-	// per invisible rune, so the worst case here (16+24 fields + ~4 overhead = 44 bytes)
-	// is ~117 invisible runes on ONE message; send-on-change means it rides at most a
-	// player's first post-join message, not every line. The local profile fields can be
-	// longer — only this subset transmits, clamped. (Tightening these shrinks the blip
-	// and the length cost; loosening them grows both.)
+	// Field caps in bytes, deliberately tight: others blip on each invisible rune, and it eats the IC length limit.
 	wireProfilePronounsMax = 16
 	wireProfileTagMax      = 24
 
-	// profileFrameMagic is the first payload byte of a profile frame, deliberately
-	// distinct from spriteStyleVersion (1) so the shared zero-width frame scanner tells
-	// the two codecs' frames apart by their leading byte: a sprite-style decoder reads a
-	// profile frame as "not my version" and ignores it (benign), and the profile decoder
-	// skips style frames. profileWireVersion follows, so a later format change is
-	// detectable (an unknown version decodes to no profile).
+	// profileFrameMagic is the first byte, distinct from spriteStyleVersion (1); an unknown version decodes to nothing.
 	profileFrameMagic  = 0x70
 	profileWireVersion = 1
 )
 
-// sanitized returns the profile with each field stripped of any codec runes (so a
-// pasted invisible can't corrupt the frame) and clamped to its wire byte budget on a
-// UTF-8 boundary.
+// sanitized strips codec runes, so a pasted invisible can't corrupt the frame, and clamps on a UTF-8 boundary.
 func (p WireProfile) sanitized() WireProfile {
 	return WireProfile{
 		Pronouns: text.TruncateBytes(stripZeroWidth(p.Pronouns), wireProfilePronounsMax),
@@ -50,15 +26,12 @@ func (p WireProfile) sanitized() WireProfile {
 	}
 }
 
-// Empty reports whether the (sanitized) profile carries nothing to transmit.
 func (p WireProfile) Empty() bool {
 	q := p.sanitized()
 	return q.Pronouns == "" && q.Tag == ""
 }
 
-// payloadBytes packs the profile into its wire form: magic, version, then each field as
-// a one-byte length prefix followed by its UTF-8 bytes (fields are byte-capped well
-// under 255).
+// payloadBytes packs magic, version, then each field with a one-byte length prefix.
 func (p WireProfile) payloadBytes() []byte {
 	q := p.sanitized()
 	b := make([]byte, 0, 4+len(q.Pronouns)+len(q.Tag))
@@ -70,10 +43,7 @@ func (p WireProfile) payloadBytes() []byte {
 	return b
 }
 
-// EncodeMarker returns the invisible zero-width run that carries this profile, to append
-// to an outgoing IC message. "" for an empty profile (nothing to send). TEST-SUPPORT in
-// production terms: the live send path uses EncodeChangeMarker (send-on-change), while
-// this always-builder stages a marker for the codec tests in both packages.
+// EncodeMarker always builds a marker and exists for codec tests; the live send path uses EncodeChangeMarker.
 func (p WireProfile) EncodeMarker() string {
 	if p.Empty() {
 		return ""
@@ -81,26 +51,17 @@ func (p WireProfile) EncodeMarker() string {
 	return packZeroWidth(p.payloadBytes())
 }
 
-// EncodeChangeMarker returns the run to append to an outgoing message given prev (the
-// profile this client last TRANSMITTED): "" when nothing changed, the new marker when
-// it changed, or a CLEAR marker (an empty profile, which tells receivers to drop this
-// speaker's card) when a profile was turned off. Mirrors the sprite-style send-on-change
-// so the invisible run rides only the change message — clients track the last-sent
-// profile and pass it here.
+// EncodeChangeMarker returns "" when unchanged from prev, the new marker, or a clear (empty profile) when turned off.
 func (p WireProfile) EncodeChangeMarker(prev WireProfile) string {
 	cur := p.sanitized()
 	if cur == prev.sanitized() {
 		return ""
 	}
-	// Active → its marker; empty → a clear (payloadBytes is magic,version,0,0).
+	// Active gets its marker; empty gets a clear (payloadBytes is magic,version,0,0).
 	return packZeroWidth(cur.payloadBytes())
 }
 
-// DecodeProfileMarker pulls a WireProfile out of an IC message's text, if one is
-// present. It scans every zero-width frame for the profile magic, so it coexists with a
-// sprite-style frame on the same message. ok=false means "no profile frame" (or a
-// short/corrupt one — benign, no card); ok=true with an empty profile is a CLEAR, which
-// the receiver uses to drop this speaker's card.
+// DecodeProfileMarker finds a profile frame among any others; ok=true with an empty profile is a clear.
 func DecodeProfileMarker(text string) (WireProfile, bool) {
 	if !hasMarker(text) {
 		return WireProfile{}, false
@@ -113,17 +74,10 @@ func DecodeProfileMarker(text string) (WireProfile, bool) {
 	return WireProfile{}, false
 }
 
-// --- per-character profile memory (send-on-change) ---------------------------
-
-// maxRememberedProfiles bounds the per-character profile memory (#101, hard rule §17.4)
-// — like the style memory, capped so a malformed stream can't grow the map without
-// bound. A clear frees its entry, so it stays near the active-profile count.
+// maxRememberedProfiles bounds the per-character profile memory (hard rule 4); a clear frees its entry.
 const maxRememberedProfiles = 512
 
-// rememberProfile records a speaker's transmitted profile from an explicit marker,
-// keyed by their bare character name. An EMPTY profile is a clear — it frees the entry.
-// A blank name (system / spectator, no character) is not stored. The key is the raw
-// character name (no case-folding) so the player-list lookup stays allocation-free.
+// rememberProfile keys by raw character name so the lookup stays allocation-free; empty clears, blank is skipped.
 func (c *Courtroom) rememberProfile(charName string, p WireProfile) {
 	if charName == "" {
 		return
@@ -141,17 +95,13 @@ func (c *Courtroom) rememberProfile(charName string, p WireProfile) {
 	c.profileByName[charName] = p
 }
 
-// RemoteProfile returns a character's last transmitted WireProfile (ok=false when none).
-// The player list looks it up by the row's character name. Allocation-free (a plain map
-// read) so it can run per row per frame.
+// RemoteProfile returns a character's last transmitted profile; allocation-free, safe per row per frame.
 func (c *Courtroom) RemoteProfile(charName string) (WireProfile, bool) {
 	p, ok := c.profileByName[charName]
 	return p, ok
 }
 
-// parseProfilePayload reads the length-prefixed fields after the magic+version header.
-// A truncated field yields ok=false (benign). Fields are re-clamped on decode so a peer
-// can't push oversize text into the card.
+// parseProfilePayload re-clamps fields so a peer can't push oversize text; truncation yields ok=false.
 func parseProfilePayload(b []byte) (WireProfile, bool) {
 	i := 2 // past magic + version (already checked by the caller)
 	read := func() (string, bool) {

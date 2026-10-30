@@ -2,20 +2,12 @@ package courtroom
 
 import "strings"
 
-// Mid-text emotes (#130) — a marker embedded in the IC Message text that plays an
-// emote (and optionally a sound) at that point in the message, instead of the KFO
-// "just send two packets" hack that silently depends on the queue. The user types a
-// Discord-style :stem: (or right-clicks an emote in the grid); on send the shortcode
-// is converted to the INTERNAL marker, which travels literally on the wire:
+// Mid-text markers play an emote or sound mid-message; a typed :stem: becomes one on send and travels literally:
 //
 //	<e:<pre>:<emote>:<sfx>>   a mid-text emote  (pre/sfx "-" or "" = none)
 //	<s:<sfx>>                 a mid-text sound only
 //
-// AsyncAO strips these markers from the displayed text (typewriter.go, in lock-step
-// with StripChatMarkup) and renders the sprite / plays the sound at that point in the
-// crawl; non-AsyncAO clients show the readable "<e:...>" text. Fields are matched
-// case-sensitively against char.ini and must not contain '<', '>' or ':' (those are
-// the marker's own delimiters).
+// AsyncAO strips these with StripChatMarkup; others show the text. Fields must not contain '<', '>' or ':'.
 
 const (
 	midEmoteOpen = "<e:"
@@ -23,20 +15,17 @@ const (
 	midNone      = "-"
 )
 
-// MidEmote is one parsed mid-text emote marker.
 type MidEmote struct {
 	Pre   string // preanim name ("" = none)
 	Emote string // emote name
 	SFX   string // sound name ("" = none)
 }
 
-// MidMark is one marker found in a message: either an emote or a bare sound.
 type MidMark struct {
 	Emote *MidEmote // non-nil for an <e:...> marker
 	SFX   string    // non-empty for an <s:...> marker
 }
 
-// EncodeMidEmote renders a mid-text emote marker.
 func EncodeMidEmote(pre, emote, sfx string) string {
 	if pre == "" {
 		pre = midNone
@@ -47,10 +36,9 @@ func EncodeMidEmote(pre, emote, sfx string) string {
 	return midEmoteOpen + pre + ":" + emote + ":" + sfx + ">"
 }
 
-// EncodeMidSFX renders a mid-text sound-only marker.
 func EncodeMidSFX(sfx string) string { return midSFXOpen + sfx + ">" }
 
-// cleanNone maps the wire's "-" none-sentinel back to the empty string.
+// cleanNone maps the wire's "-" none value to "".
 func cleanNone(s string) string {
 	if s == midNone {
 		return ""
@@ -58,10 +46,7 @@ func cleanNone(s string) string {
 	return s
 }
 
-// readMidFieldRunes reads a marker field starting at rs[i], up to the next ':' or
-// '>'. It returns the field text, the index just PAST the delimiter, and ok=false
-// when the field runs off the end without a delimiter or contains a '<' (a stray
-// marker opener — malformed, so the whole thing stays literal).
+// readMidFieldRunes reads a field up to ':' or '>', returning the index past it; ok=false leaves the marker literal.
 func readMidFieldRunes(rs []rune, i int) (string, int, bool) {
 	j := i
 	for j < len(rs) {
@@ -76,8 +61,7 @@ func readMidFieldRunes(rs []rune, i int) (string, int, bool) {
 	return "", 0, false
 }
 
-// parseMidEmoteRunes parses an <e:pre:emote:sfx> marker whose '<' is at rs[i]. It
-// returns the mark and the number of runes consumed (through the closing '>').
+// parseMidEmoteRunes parses an <e:pre:emote:sfx> marker at rs[i], returning the mark and runes consumed.
 func parseMidEmoteRunes(rs []rune, i int) (MidMark, int, bool) {
 	const prefixLen = 3 // "<e:"
 	if i+prefixLen >= len(rs) || rs[i] != '<' || rs[i+1] != 'e' || rs[i+2] != ':' {
@@ -98,7 +82,6 @@ func parseMidEmoteRunes(rs []rune, i int) (MidMark, int, bool) {
 	return MidMark{Emote: &MidEmote{Pre: cleanNone(pre), Emote: emote, SFX: cleanNone(sfx)}}, j - i, true
 }
 
-// parseMidSFXRunes parses an <s:sfx> marker whose '<' is at rs[i].
 func parseMidSFXRunes(rs []rune, i int) (MidMark, int, bool) {
 	const prefixLen = 3 // "<s:"
 	if i+2 >= len(rs) || rs[i] != '<' || rs[i+1] != 's' || rs[i+2] != ':' {
@@ -111,8 +94,7 @@ func parseMidSFXRunes(rs []rune, i int) (MidMark, int, bool) {
 	return MidMark{SFX: cleanNone(sfx)}, j - i, true
 }
 
-// ScanMidText returns the markers embedded in message in left-to-right order.
-// ok=false (marks nil) when there are none, so the common case allocates nothing.
+// ScanMidText returns the markers in order; ok=false with nil marks when none, allocating nothing.
 func ScanMidText(message string) (marks []MidMark, ok bool) {
 	if !strings.ContainsRune(message, '<') {
 		return nil, false
@@ -135,8 +117,7 @@ func ScanMidText(message string) (marks []MidMark, ok bool) {
 	return marks, len(marks) > 0
 }
 
-// StripMidText removes every mid-text marker from message, returning the visible
-// text. Zero-alloc when no marker is present.
+// StripMidText removes every marker; zero-alloc when none is present.
 func StripMidText(message string) string {
 	if !strings.ContainsRune(message, '<') {
 		return message
@@ -173,17 +154,12 @@ func StripMidText(message string) string {
 	return b.String()
 }
 
-// isMidStemChar reports a byte allowed inside a :stem: mid-text shortcode (letters
-// of either case, digits, and the usual joiners). Excludes ':' so the closing colon
-// ends the scan.
+// isMidStemChar reports a byte allowed inside a :stem:; ':' is excluded so the closing colon ends the scan.
 func isMidStemChar(b byte) bool {
 	return isShortcodeChar(b) || (b >= 'A' && b <= 'Z')
 }
 
-// ExpandMidTextShortcodes replaces every :stem: that resolve maps to a MidEmote with
-// its encoded <e:...> marker, leaving unknown tokens (and all other text) untouched.
-// It is allocation-free unless it actually substitutes. This is the send-side half of
-// #130: what the user types stays readable, and the wire carries the internal marker.
+// ExpandMidTextShortcodes replaces resolved :stem: tokens with markers; allocation-free unless it substitutes.
 func ExpandMidTextShortcodes(text string, resolve func(stem string) (MidEmote, bool)) string {
 	if resolve == nil || !strings.ContainsRune(text, ':') {
 		return text

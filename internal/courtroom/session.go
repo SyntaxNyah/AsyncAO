@@ -15,11 +15,8 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
-// Handshake phases, driving the fast-loading flow AO2-Client 2.11 uses
-// exclusively: decryptor→HI, ID→ID, PN→askchaa, SI→RC, SC→RM, SM→RD,
-// DONE. Loading is *client-initiated*: askchaa is what makes the server
-// send SI — without it every server waits forever. (Only the legacy
-// askchar2 paging is dead.)
+// Handshake phases, as AO2-Client 2.11: decryptor→HI, ID→ID, PN→askchaa, SI→RC, SC→RM, SM→RD, DONE.
+// askchaa is what makes the server send SI; without it every server waits forever.
 type SessionPhase int
 
 const (
@@ -28,7 +25,6 @@ const (
 	PhaseReady
 )
 
-// String names the phase for diagnostics (debug overlay health line).
 func (p SessionPhase) String() string {
 	switch p {
 	case PhaseGreeting:
@@ -41,15 +37,13 @@ func (p SessionPhase) String() string {
 	return "unknown"
 }
 
-// CharacterSlot is one server character list entry.
 type CharacterSlot struct {
 	Name        string
 	Description string
 	Taken       bool
 }
 
-// AreaInfo is the live ARUP state for one area (AO2-Client arup_players/
-// statuses/cms/locks, courtroom.cpp arup_modify).
+// AreaInfo is the live ARUP state for one area (courtroom.cpp arup_modify).
 type AreaInfo struct {
 	// Players is the live player count (-1 until the server reports it).
 	Players int
@@ -61,18 +55,14 @@ type AreaInfo struct {
 	Lock string
 }
 
-// EvidenceItem is one LE list entry (packet_distribution.cpp: each field
-// splits on '&' into name & description & image, each sub-element decoded
-// again, exactly like SC).
+// EvidenceItem is one LE entry; each field splits on '&' and each part is decoded again (packet_distribution.cpp).
 type EvidenceItem struct {
 	Name        string
 	Description string
 	Image       string
 }
 
-// TimerState is one TI server clock. The 2.8 protocol defines up to five
-// (AO2-Client max_clocks); time is computed client-side from a deadline so
-// rendering never depends on packet cadence.
+// TimerState is one TI clock, computed from a deadline so rendering never depends on packet cadence.
 type TimerState struct {
 	Visible bool
 	Running bool
@@ -82,7 +72,6 @@ type TimerState struct {
 	Left time.Duration
 }
 
-// Remaining reports the time the clock should display right now.
 func (t *TimerState) Remaining(now time.Time) time.Duration {
 	if t.Running {
 		if d := t.Deadline.Sub(now); d > 0 {
@@ -93,20 +82,17 @@ func (t *TimerState) Remaining(now time.Time) time.Duration {
 	return t.Left
 }
 
-// Judge-control states from the JD packet (AO2-Client Courtroom::JudgeState).
+// Judge-control states from the JD packet (Courtroom::JudgeState).
 const (
-	// JudgePosDependent (-1): fall back to client-side behavior — controls
-	// show while our pos is the judge stand.
+	// JudgePosDependent: controls show while our pos is the judge stand.
 	JudgePosDependent = -1
-	// JudgeHide (0): server says hide the judge controls.
+	// JudgeHide: the server hides the judge controls.
 	JudgeHide = 0
-	// JudgeShow (1): server granted the judge controls.
+	// JudgeShow: the server grants the judge controls.
 	JudgeShow = 1
 )
 
-// Casing role bits for CASEA alerts (wire order def#pro#judge#jury#steno;
-// legacy 2.6–2.9 casing_alerts, removed upstream but still served by
-// tsuserver-family servers).
+// Casing role bits for CASEA (def#pro#judge#jury#steno); removed upstream but tsuserver-family servers still send them.
 const (
 	CaseRoleDef = 1 << iota
 	CaseRolePro
@@ -116,39 +102,24 @@ const (
 )
 
 const (
-	// TimerCount caps TI clocks (AO2-Client max_clocks = 5).
+	// TimerCount caps TI clocks (AO2 max_clocks = 5).
 	TimerCount = 5
-	// evidenceCap bounds the LE list — a hostile server cannot balloon
-	// memory (rule §17.4).
+	// evidenceCap stops a hostile server ballooning the LE list (hard rule 4).
 	evidenceCap = 512
 	// evidenceFields is an LE entry's name&desc&image.
 	evidenceFields = 3
-	// posListCap bounds the SD dropdown for the same reason.
+	// posListCap bounds the SD dropdown (hard rule 4).
 	posListCap = 64
-	// bnWipeFieldCount is the BN arity at which AO2 re-stages the viewport:
-	// BN#<bg>#<pos>#% carries a pos, BN#<bg>#% does not
-	// (../AO2-Client/src/packet_distribution.cpp — `content.size() >= 2`).
+	// bnWipeFieldCount is the BN arity at which AO2 re-stages (packet_distribution.cpp, content.size() >= 2).
 	bnWipeFieldCount = 2
-	// HPBarMax is the top HP pip count (AO2-Client set_hp_bar guards 0..10;
-	// exported because the UI draws defensebar0..defensebar<HPBarMax>).
+	// HPBarMax is the top HP pip count (set_hp_bar guards 0..10); the UI draws defensebar0..defensebar<HPBarMax>.
 	HPBarMax = 10
-	// serverTextRuneCap bounds one piece of server-authored PROSE that the UI will
-	// render into a texture: a KK/KB/BD removal reason and a BB popup notice (rule
-	// §17.4 — a hostile server cannot balloon memory, and LabelClipped does NOT save
-	// us because it rasterizes the whole string before clipping the blit width, so an
-	// oversized reason draws NOTHING at all).
+	// serverTextRuneCap bounds rasterized prose (hard rule 4); LabelClipped draws nothing for an oversized string.
 	serverTextRuneCap = 8192
 )
 
-// capServerText clamps server-authored prose to serverTextRuneCap runes, marking a
-// cut with an ellipsis so a truncated copy-paste never reads as the whole message.
-// It MUST be applied to the raw wire field BEFORE any "Kicked: " / "Banned: "
-// prefix is concatenated on. Capping the joined string instead would let a small cap
-// eat into the prefix literal itself, and four consumers in internal/ui match that
-// prefix with strings.HasPrefix — shouldAutoReconnect (reconnect.go) among them. A
-// reason that stopped matching "Banned" would silently re-arm auto-reconnect against
-// a ban, turning a display bug into ban evasion. Capping the field keeps the prefix
-// structurally out of reach of the cap whatever its value.
+// capServerText clamps with an ellipsis. Apply it to the raw field before any "Kicked: " or "Banned: " prefix:
+// internal/ui matches those, and a cut "Banned" would re-arm auto-reconnect against a ban.
 func capServerText(s string) string {
 	s = protocol.SanitizeText(s)
 	if utf8.RuneCountInString(s) <= serverTextRuneCap {
@@ -157,46 +128,31 @@ func capServerText(s string) string {
 	return string([]rune(s)[:serverTextRuneCap]) + "…"
 }
 
-// EventKind tags session events handed to the UI/courtroom layer.
 type EventKind int
 
 const (
 	EventNone EventKind = iota
-	// EventReady fires on DONE: lists are loaded, joining is possible.
 	EventReady
-	// EventCharsUpdated fires when the character list or taken flags
-	// change (rebuild char select).
+	// EventCharsUpdated fires when the character list or taken flags change.
 	EventCharsUpdated
-	// EventMessage carries a parsed IC chat message.
 	EventMessage
-	// EventBackground carries a background change (BN).
 	EventBackground
-	// EventMusic carries a music change (MC): Text=track, Int=charID,
-	// Name=showname (field 2, may be ""). charID/showname name who played it
-	// for the IC "has played a song" log line (AO2 handle_song).
+	// EventMusic carries an MC: Text=track, Int=charID, Name=showname (may be ""), for the IC log (handle_song).
 	EventMusic
-	// EventOOC carries server/OOC chat: Name + Text.
+	// EventOOC carries server or OOC chat: Name + Text.
 	EventOOC
 	// EventCharPicked confirms our character (PV): Int=char id.
 	EventCharPicked
-	// EventAssetURL announces the server's asset repository (ASS).
 	EventAssetURL
-	// EventDisconnect carries kick/ban notices.
 	EventDisconnect
-	// EventDebug carries protocol-level diagnostics (unhandled packet
-	// headers, dropped malformed messages) for the UI's debug overlay.
-	// Consumers may ignore it freely; Courtroom.HandleEvent does.
+	// EventDebug carries protocol diagnostics for the debug overlay; consumers may ignore it.
 	EventDebug
 	// EventHP is a penalty-bar change: Int = bar (1 def, 2 pro), Int2 = 0..10.
 	EventHP
-	// EventWTCE is a testimony/verdict splash: Text = wtce id
-	// (testimony1/testimony2/judgeruling/custom), Int = variant.
+	// EventWTCE is a testimony or verdict splash: Text = wtce id, Int = variant.
 	EventWTCE
-	// EventModcall carries the server's modcall broadcast line (ZZ).
 	EventModcall
-	// EventAreasUpdated signals ARUP state changed (UI re-reads AreaInfo).
 	EventAreasUpdated
-	// EventJudge carries the JD judge-controls state in Int.
 	EventJudge
 	// EventAuth carries the AUTH state in Int (1+ mod, 0 failed, <0 logout).
 	EventAuth
@@ -204,53 +160,36 @@ const (
 	EventSetPos
 	// EventPosList signals the SD dropdown list arrived (read PosList).
 	EventPosList
-	// EventCase is a CASEA announcement: Text = message, Int = needed-role
-	// bits (CaseRole*).
+	// EventCase is a CASEA announcement: Text = message, Int = needed-role bits (CaseRole*).
 	EventCase
-	// EventNotice is a BB popup notice from the server.
 	EventNotice
-	// EventMuted signals our own mute state changed (MU/UM targeting our cid, or
-	// -1 = all): Int = 1 muted, 0 unmuted. The UI reads Session.Muted to gate the
-	// IC send and show a notice chip.
+	// EventMuted signals our mute state changed (MU/UM on our cid or -1): Int = 1 muted, 0 unmuted.
 	EventMuted
-	// EventEvidence signals the LE list was replaced (read Evidence).
 	EventEvidence
-	// EventEvidenceChanged signals ONE item changed in place (an incoming
-	// PE/EE/DE broadcast from another player or the server — not a full LE
-	// replace). Int = the item index (-1 for a PE append), Int2 = the
-	// operation (EvidenceOpAdd/Edit/Delete), Text = the item's name. The UI
-	// re-reads Evidence and adjusts its selection without resetting scroll.
+	// EventEvidenceChanged signals one PE/EE/DE change: Int = index (-1 append), Int2 = EvidenceOp*, Text = name.
 	EventEvidenceChanged
-	// EventTimer signals TI clock Int changed (read Timers).
 	EventTimer
-	// EventPlayersUpdated signals the live player list changed (PR/PU from the
-	// server's PlayerStateObserver); the UI re-reads Players().
+	// EventPlayersUpdated signals the live player list changed (PR/PU).
 	EventPlayersUpdated
-	// EventVoiceCaps signals the server's voice capability advert arrived
-	// (VS_CAPS); the UI re-reads VoiceCaps() to decide whether to offer voice.
+	// EventVoiceCaps signals VS_CAPS arrived.
 	EventVoiceCaps
-	// EventVoicePeers signals the voice peer set changed (VS_PEERS/JOIN/LEAVE);
-	// the UI re-reads VoicePeers().
+	// EventVoicePeers signals the voice peer set changed (VS_PEERS/JOIN/LEAVE).
 	EventVoicePeers
-	// EventVoiceSpeak is a peer speaking-state toggle (VS_SPEAK): Int = uid,
-	// Int2 = 1 speaking / 0 stopped.
+	// EventVoiceSpeak is a peer speaking toggle (VS_SPEAK): Int = uid, Int2 = 1 speaking, 0 stopped.
 	EventVoiceSpeak
-	// EventVoiceAudio is one inbound opus frame (VS_AUDIO): Int = from-uid,
-	// Text = base64 opus payload. Consumed by the audio layer (decode + play).
+	// EventVoiceAudio is one inbound opus frame (VS_AUDIO): Int = from-uid, Text = base64 payload.
 	EventVoiceAudio
-	// EventGroupPair signals the group-pair roster changed (GP); the UI re-reads
-	// Session.GroupPair.
+	// EventGroupPair signals the group-pair roster changed (GP).
 	EventGroupPair
 )
 
-// Evidence operation kinds, carried in EventEvidenceChanged.Int2.
 const (
 	EvidenceOpAdd = iota
 	EvidenceOpEdit
 	EvidenceOpDelete
 )
 
-// Event is one session occurrence. Fields are populated per Kind.
+// Event is one session occurrence; fields are populated per Kind.
 type Event struct {
 	Kind    EventKind
 	Message *protocol.ChatMessage
@@ -259,56 +198,31 @@ type Event struct {
 	Int     int
 	// Int2 is the second integer payload (EventHP's bar value).
 	Int2 int
-	// Loop and MusicEffects carry the 2.9+ MC play semantics (#15): whether the
-	// track should loop (field 3) and the MUSIC_EFFECT bit flags (field 5,
-	// FADE_IN/FADE_OUT/SYNC_POS/NO_REPEAT). Only EventMusic populates them.
+	// Loop and MusicEffects carry MC looping (field 3) and MUSIC_EFFECT flags (field 5); only EventMusic sets them.
 	Loop         bool
 	MusicEffects int
-	// Wipe is AO2's set_background(bg, display) second parameter
-	// (../AO2-Client/src/packet_distribution.cpp:352, body at courtroom.cpp:1427):
-	// a BN carrying a pos field means "re-stage the viewport too", so the previous
-	// area's sprite, chatbox, shout and message queue are torn down. Only
-	// EventBackground populates it, and ONLY when the reducer saw a real server BN
-	// — the client's own EventBackground constructors (buildRoom's re-seed, the bg
-	// picker, replay, scene maker) must leave it false or they would erase the
-	// stage they are re-seeding (#23).
+	// Wipe is set_background's display parameter (packet_distribution.cpp:352, courtroom.cpp:1427): a BN with a pos.
+	// Only the reducer sets it; client-made EventBackgrounds must leave it false or they erase what they re-seed.
 	Wipe bool
 }
 
-// LivePlayer is one entry of the server-pushed live player list. Akashi and
-// Nyathena run a PlayerStateObserver that streams PR (join/leave) and PU (field
-// update) packets to every client from connect — no /getarea, no opt-in — so the
-// roster is live and carries the server UID (the id pairing and /getarea target).
-// Areas. (../akashi/src/playerstateobserver.cpp.)
+// LivePlayer is one entry of the list PlayerStateObserver streams as PR and PU (../akashi/src/playerstateobserver.cpp).
 type LivePlayer struct {
 	ID       int
 	OOCName  string
 	Char     string
 	Showname string
 	AreaID   int
-	// IPID is mod-only, and only some server families surface it in the live
-	// list: the witches/wizards Akashi-party forks append it to a mod's PU NAME
-	// field as a trailing "(<hex>)" token (../witches-akashi-party/src/
-	// playerstateobserver.cpp). Empty on every other server / for non-mods; the
-	// UI still falls back to a /getarea snapshot when it's blank. Never persisted.
+	// IPID is mod-only: WAP forks append "(<hex>)" to a mod's PU name (playerstateobserver.cpp). Never persisted.
 	IPID string
 }
 
-// livePlayerCap bounds the live roster map (hard rule #4: no unbounded caches).
-// Far above any real area population; a reconnect re-dumps the full roster, so a
-// hit here self-heals rather than corrupting state.
+// livePlayerCap bounds the roster map (hard rule 4); a reconnect re-dumps it, so hitting it self-heals.
 const livePlayerCap = 1024
 
-// livePlayersInitialCap sizes the roster map for a typical area.
 const livePlayersInitialCap = 16
 
-// MUSIC_EFFECT bit flags carried in MC field 5 (#15; AO2-Client
-// src/datatypes.h:95-101). Servers OR these into one int: FADE_IN ramps the new
-// track up, FADE_OUT ramps the previous one down, SYNC_POS starts the new track
-// at the previous track's position, NO_REPEAT forces a single play regardless of
-// the looping field. AsyncAO honors FADE_IN, FADE_OUT (stop-path only) and
-// NO_REPEAT; SYNC_POS is skipped (see startMusic — SDL_mixer can't cheaply seek
-// a freshly-loaded stream mid-fetch).
+// MUSIC_EFFECT flags in MC field 5 (datatypes.h:95-101). SYNC_POS is skipped: SDL_mixer can't cheaply seek mid-fetch.
 const (
 	musicEffectFadeIn   = 1
 	musicEffectFadeOut  = 2
@@ -316,14 +230,13 @@ const (
 	musicEffectNoRepeat = 8
 )
 
-// PR roster-change types — PR#<id>#<type>#% (akashi PacketPR::UPDATE_TYPE).
+// PR roster-change types (akashi PacketPR::UPDATE_TYPE).
 const (
 	prJoin  = 0 // ADD
 	prLeave = 1 // REMOVE
 )
 
-// PU field types — PU#<id>#<type>#<data>#% (akashi PacketPU::DATA_TYPE).
-// Whether a client is ALLOWED to see this is the server's decision, not ours:
+// PU field types (akashi PacketPU::DATA_TYPE); whether a client may see one is the server's decision.
 const (
 	puOOCName  = 0
 	puChar     = 1
@@ -332,35 +245,18 @@ const (
 	puIPID     = 4
 )
 
-// ipidHexMin / ipidHexMax bound the parenthesised IPID token the witches-akashi-
-// party fork appends to a mod's PU name. Akashi IPIDs are 8 hex chars (the last
-// 4 bytes of a SHA hash — akashi/src/aoclient.cpp calculateIpid: toHex().right(8));
-// the slack tolerates a fork widening it while staying clear of the short hex
-// words a real OOC name might end in ("cafe", "beef").
+// ipidHexMin and ipidHexMax bound the WAP token: 8 hex chars (aoclient.cpp calculateIpid), clear of words like "cafe".
 const (
 	ipidHexMin = 6
 	ipidHexMax = 12
 )
 
-// embedsIPIDInName reports whether the connected server's family streams the
-// mod-only IPID inside the PU name field. ONLY the witches-akashi-party (WAP)
-// fork does (SoftwareWitches, announced as "WAP-Akashi") — the fork author draws
-// exactly this line: stock Akashi has no PlayerStateObserver and never puts IPIDs
-// in the player list, so it's deliberately kept out. This also excludes
-// Athena/Nyathena/KFO/Whisker — they push PU packets too, so gating stops a
-// parenthesised OOC name on those servers being mis-read as an IPID (which, via
-// BanCommand's -i flag, could otherwise build a wrong-target ban).
+// embedsIPIDInName is true only for WAP; elsewhere a parenthesised name could become a wrong-target -i ban.
 func (s *Session) embedsIPIDInName() bool {
 	return DetectSoftware(s.Software) == SoftwareWitches
 }
 
-// splitTrailingIPID peels a trailing "(<hex>)" IPID token off a witches-akashi-
-// party PU name: "web71 (eea20f10)" → "web71", "eea20f10"; a bare "(eea20f10)"
-// → "", "eea20f10". Returns the input unchanged with an empty ipid when there is
-// no IPID-looking token, so an ordinary parenthesised name ("Bob (cafe)") — or
-// any name on a server that doesn't do this — is left intact. Callers gate on
-// embedsIPIDInName; the hex + length test is a second guard.
-// (../witches-akashi-party/src/playerstateobserver.cpp.)
+// splitTrailingIPID peels "(<hex>)" off a WAP PU name (playerstateobserver.cpp); callers gate on embedsIPIDInName.
 func splitTrailingIPID(s string) (name, ipid string) {
 	t := strings.TrimRight(s, " \t\r\n")
 	if !strings.HasSuffix(t, ")") {
@@ -377,9 +273,7 @@ func splitTrailingIPID(s string) (name, ipid string) {
 	return strings.TrimRight(t[:open], " \t\r\n"), tok
 }
 
-// looksLikeIPID reports whether tok is an Akashi-style hex IPID (all hex digits,
-// within the length bounds), so splitTrailingIPID never mistakes a word-in-parens
-// for one.
+// looksLikeIPID reports all-hex within the bounds, so a word in parens isn't mistaken for one.
 func looksLikeIPID(tok string) bool {
 	if len(tok) < ipidHexMin || len(tok) > ipidHexMax {
 		return false
@@ -393,10 +287,7 @@ func looksLikeIPID(tok string) bool {
 	return true
 }
 
-// Players returns the live roster (PR/PU) as a slice sorted by UID for a stable
-// display order. Empty when the server doesn't push the player-list packets (an
-// older tsuserver) — the UI then falls back to its CharsCheck-derived roster.
-// Allocates a fresh slice; call it on EventPlayersUpdated, not per frame.
+// Players returns the roster sorted by UID, empty without PR/PU; it allocates, so call on EventPlayersUpdated only.
 func (s *Session) Players() []LivePlayer {
 	if len(s.players) == 0 {
 		return nil
@@ -409,8 +300,7 @@ func (s *Session) Players() []LivePlayer {
 	return out
 }
 
-// PlayerArea returns the live (PR/PU) area id of player id and whether that
-// player is currently known — the basis for follow-a-player (M3). O(1).
+// PlayerArea returns a player's live area id and whether they are known.
 func (s *Session) PlayerArea(id int) (int, bool) {
 	if pl := s.players[id]; pl != nil {
 		return pl.AreaID, true
@@ -418,9 +308,7 @@ func (s *Session) PlayerArea(id int) (int, bool) {
 	return 0, false
 }
 
-// touchPlayer returns player id's live entry, creating it (bounded by
-// livePlayerCap) when absent. Returns nil only at the cap. A PR join and a
-// field-first PU both route through here, so the roster survives either order.
+// touchPlayer returns or creates an entry, nil only at the cap; PR and PU can arrive in either order.
 func (s *Session) touchPlayer(id int) *LivePlayer {
 	if pl := s.players[id]; pl != nil {
 		return pl
@@ -436,9 +324,7 @@ func (s *Session) touchPlayer(id int) *LivePlayer {
 	return pl
 }
 
-// Session is a synchronous reducer over server packets: HandlePacket
-// mutates state, sends protocol replies through send, and returns UI events.
-// It owns no goroutines; the caller's loop feeds it (spec §17.4).
+// Session reduces server packets to state, replies and UI events; it owns no goroutines.
 type Session struct {
 	send func(protocol.Packet) error
 
@@ -452,37 +338,17 @@ type Session struct {
 	AssetURL string
 
 	Background string
-	// MusicTrack is the area's currently-playing song (the last real MC track; "" =
-	// nothing / stopped). Persisted on the session like Background so a room rebuilt
-	// LATER — entering the courtroom after the join handshake already announced the
-	// song, or a tab reactivation — can resume it (buildRoom re-seeds it). Without this
-	// the track lived only on the throwaway Scene, so a song playing when the room is
-	// (re)built fell silent while the background, tracked here, survived.
+	// MusicTrack is the last real MC track ("" = stopped), kept here so a room rebuilt later can resume it.
 	MusicTrack string
-	// LastIC is the most recent well-formed IC chat message (MS) this session
-	// parsed — persisted like Background/MusicTrack so a room rebuilt LATER (a
-	// tab reactivation, re-entering court, pinning a background tab) can
-	// re-stage it settled (Courtroom.RestoreMessage) instead of coming back to
-	// a blank stage. One replaced pointer, bounded by construction; cleared on
-	// a fresh SI handshake like MusicTrack (no stale stage across a rejoin).
-	// speaker — the #81 ignore list is active-tab UI state, so an ignored
-	// LAST speaker shadows the previous non-ignored line and the restore
-	// stages nothing; and the send-on-change memories (sprite style, status,
-	// profile) live on the throwaway room, so a restored message that carried
-	// no style marker re-stages its speaker unstyled until they next change.
+	// LastIC is the latest well-formed MS, for a rebuilt room's RestoreMessage; cleared on SI.
+	// An ignored last speaker restores nothing, and a restored speaker is unstyled until their next change.
 	LastIC   *protocol.ChatMessage
 	MyCharID int
 
-	// Muted is set by a server MU packet targeting our char id (or -1 = mute-all)
-	// and cleared by UM, mirroring AO2-Client set_mute (courtroom.cpp:4689-4711).
-	// The UI reads it to disable IC sends + show a notice. It resets on a char
-	// change (PV): the mute is keyed to a cid (set_mute compares p_cid to m_cid),
-	// so a mute for the OLD cid is void for the NEW one — AO2 relies on the server
-	// re-sending MU/UM; this reset is the defensive client-side equivalent.
+	// Muted is set by MU on our cid or -1, cleared by UM (set_mute, courtroom.cpp:4689-4711); PV resets it (per cid).
 	Muted bool
 
-	// Live court state (AO2-Client parity; all mutated only by HandlePacket
-	// on the caller's loop — same single-threaded discipline as the rest).
+	// Live court state; mutated only by HandlePacket on the caller's loop.
 	HPDef    int                    // defense penalty bar, 0..10
 	HPPro    int                    // prosecution penalty bar, 0..10
 	AreaInfo []AreaInfo             // ARUP columns, parallel to Areas
@@ -490,37 +356,29 @@ type Session struct {
 	Evidence []EvidenceItem         // LE list (≤ evidenceCap)
 	Timers   [TimerCount]TimerState // TI server clocks
 	PosList  []string               // SD dropdown entries (≤ posListCap)
-	// latency / pingSentAt time the CH → CHECK round trip so a TI type-0 clock
-	// can be anchored where the SERVER meant it, not half an RTT late. See
-	// latency.go for the canon this mirrors.
+	// latency and pingSentAt time the CH to CHECK round trip for TI type-0 clocks.
 	latency    time.Duration
 	pingSentAt time.Time
 	// Judge is the JD state (JudgePosDependent until the server says).
 	Judge int
-	// ModGranted reports mod authentication (AUTH 1, or the legacy OOC
-	// confirmation line on servers without auth_packet).
+	// ModGranted reports mod authentication (AUTH 1, or the legacy OOC line without auth_packet).
 	ModGranted bool
 
-	// GroupPair is the active group roster (GP extension), ordered front→back
-	// with the speaker included. nil/empty when not in a group.
+	// GroupPair is the active roster (GP), ordered front to back including the speaker; nil when not in a group.
 	GroupPair *protocol.GroupPair
 
-	// Voice (Nyathena/LemmyAO VS_* relay): the caps the server advertised, the
-	// live voice peer set, and who's currently transmitting. All mutated only by
-	// HandlePacket on the caller's loop, like the rest of the live state.
+	// Voice state (VS_* relay); mutated only by HandlePacket on the caller's loop.
 	voiceCaps     VoiceCaps
 	voicePeers    map[int]bool // uids currently in voice (≤ voicePeerCap)
 	voiceSpeaking map[int]bool // uids currently transmitting (subset of voicePeers)
 
-	// Rehearsal marks an offline session (NewRehearsalSession): picks
-	// resolve locally, sends are swallowed, nothing network exists.
+	// Rehearsal marks an offline session: picks resolve locally and sends are swallowed.
 	Rehearsal bool
 
 	phase   SessionPhase
 	sendErr error
 }
 
-// NewSession builds a session that writes packets via send.
 func NewSession(send func(protocol.Packet) error, hdid string) *Session {
 	return &Session{
 		send:     send,
@@ -528,21 +386,15 @@ func NewSession(send func(protocol.Packet) error, hdid string) *Session {
 		Features: protocol.ParseFeatures(nil),
 		MyCharID: protocol.UnpairedCharID,
 		phase:    PhaseGreeting,
-		// Full bars until the server's join-time HP packets land (servers
-		// send both immediately; 10/10 is the AO resting state).
+		// Full bars until the join-time HP packets land.
 		HPDef: HPBarMax,
 		HPPro: HPBarMax,
-		// Judge controls are pos-dependent until a JD packet overrides
-		// (Courtroom::judge_state = POS_DEPENDENT initial).
+		// Pos-dependent until a JD packet overrides (judge_state = POS_DEPENDENT).
 		Judge: JudgePosDependent,
 	}
 }
 
-// NewRehearsalSession builds an OFFLINE session over a server's
-// remembered state: the character list browses, emotes play from cache,
-// and every outgoing packet is swallowed — rehearse a character without
-// connecting (or even a network). The UI resolves picks locally (no PV
-// will ever arrive) and labels itself from the Rehearsal flag.
+// NewRehearsalSession builds an offline session over remembered state; picks resolve locally, sends are swallowed.
 func NewRehearsalSession(origin string, chars []string) *Session {
 	s := NewSession(func(protocol.Packet) error { return nil }, "")
 	s.Rehearsal = true
@@ -555,10 +407,9 @@ func NewRehearsalSession(origin string, chars []string) *Session {
 	return s
 }
 
-// Phase reports the handshake phase.
 func (s *Session) Phase() SessionPhase { return s.phase }
 
-// SendErr reports the first failed reply write (connection teardown signal).
+// SendErr reports the first failed reply write, which signals teardown.
 func (s *Session) SendErr() error { return s.sendErr }
 
 func (s *Session) reply(p protocol.Packet) {
@@ -570,23 +421,16 @@ func (s *Session) reply(p protocol.Packet) {
 	}
 }
 
-// KFOCompat reports whether the connected server is KFO-Server (from the ID packet's
-// software name; tsuserver.py sets self.software = "KFO-Server"). KFO's MS validator
-// (validate_net_cmd) rejects EMPTY strings for the frame/effect fields it types STR —
-// where AO2-Client always sends a non-empty value — so the outgoing MS must fill them
-// the same way. Scoped to KFO so every other server's wire is unchanged.
+// KFOCompat reports a KFO-Server: validate_net_cmd rejects empty STR frame and effect fields, so MS must fill them.
 func (s *Session) KFOCompat() bool {
 	return strings.Contains(strings.ToLower(s.Software), "kfo")
 }
 
-// handleTyped reduces a canonical aolib typed packet to state + events. It
-// returns ok=false for headers whose aolib typed model is not a faithful
-// superset of what AsyncAO consumes, so those fall through to the positional
-// switch in HandlePacket:
+// handleTyped reduces an aolib typed packet; ok=false for headers whose model isn't a faithful superset of ours.
 func (s *Session) handleTyped(t aolib.Outgoing) (ev []Event, ok bool) {
 	switch v := t.(type) {
 	case *aolib.Decryptor:
-		// Modern servers still open with this; FantaCrypt itself is dead — HI goes out plain.
+		// FantaCrypt is dead, so HI goes out plain.
 		s.reply(protocol.NewTypedPacket(&aolib.HI{HDID: s.HDID}))
 		return nil, true
 
@@ -598,9 +442,7 @@ func (s *Session) handleTyped(t aolib.Outgoing) (ev []Event, ok bool) {
 
 	case *aolib.FL:
 		s.Features = protocol.ParseFeatures(v.Features)
-		// Symmetric FL: advertise our own capabilities back, but only features
-		// the server itself supports — advertising grouppair to a server that
-		// never sent it would gain nothing (and surprises packet-count tests).
+		// Advertise only features the server itself supports.
 		if s.Features.Has(protocol.FeatureGroupPair) {
 			s.reply(protocol.NewTypedPacket(&aolib.FL{Features: []string{protocol.FeatureGroupPair}}))
 		}
@@ -680,13 +522,12 @@ func (s *Session) handleTyped(t aolib.Outgoing) (ev []Event, ok bool) {
 
 	case *aolib.PV:
 		s.MyCharID = v.CharID
-		// A mute is keyed to a cid; a new cid voids the old mute (defensive reset).
+		// A mute is keyed to a cid; a new cid voids the old mute.
 		s.Muted = false
 		return []Event{{Kind: EventCharPicked, Int: s.MyCharID}}, true
 
 	case *aolib.CTToClient:
-		// Legacy mod-login detection: servers without auth_packet confirm a /login
-		// with this exact OOC line — emulate AUTH 1.
+		// Servers without auth_packet confirm a /login with this exact OOC line; treat it as AUTH 1.
 		if !s.Features.Has(protocol.FeatureAuthPacket) && v.Message == "Logged in as a moderator." {
 			s.ModGranted = true
 			return []Event{
@@ -807,8 +648,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 	}
 	switch p.Header {
 	case "decryptor":
-		// Modern servers still open with this; FantaCrypt itself is dead —
-		// HI goes out plain (noencryption era).
+		// FantaCrypt is dead, so HI goes out plain.
 		s.reply(protocol.NewTypedPacket(&aolib.HI{HDID: s.HDID}))
 
 	case "ID":
@@ -831,11 +671,8 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventGroupPair}}
 
 	case "PN":
-		// Population marker, the tail of every server family's greeting.
-		// Joining is client-initiated from here: webAO sends askchaa on PN
-		// (handshake.ts applyServerInfo), AO2-Client at join time
-		// (networkmanager.cpp join_to_server); the server answers with SI.
-		// Phase guard: population re-broadcasts must not reload the lists.
+		// Client-initiated from here: webAO sends askchaa on PN, AO2 at join (networkmanager.cpp join_to_server).
+		// Re-broadcasts must not reload the lists.
 		if s.phase == PhaseGreeting {
 			s.reply(protocol.NewTypedPacket(&aolib.Askchaa{}))
 		}
@@ -860,8 +697,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 
 	case "SC":
 		for _, field := range p.Fields {
-			// AO2-Client splits on & and percent-decodes each sub-element
-			// again (packet_distribution.cpp) — mirror it.
+			// AO2 splits on & and decodes each part again (packet_distribution.cpp).
 			parts := strings.Split(field, "&")
 			slot := CharacterSlot{Name: protocol.DecodeField(parts[0])}
 			if len(parts) > 1 {
@@ -879,10 +715,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventCharsUpdated}}
 
 	case "PR":
-		// Player roster change (PR#<id>#<type>#%): the Akashi/Nyathena
-		// PlayerStateObserver streams these to every client from connect — no
-		// /getarea, no opt-in — so the live list reacts to joins/leaves and learns
-		// each player's server UID. (../akashi/src/playerstateobserver.cpp.)
+		// PR#<id>#<type>#%: streamed from connect by PlayerStateObserver (../akashi/src/playerstateobserver.cpp).
 		id := parse.AtoiOr(p.Field(0), -1)
 		if id < 0 {
 			return nil
@@ -895,10 +728,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventPlayersUpdated}}
 
 	case "PU":
-		// Player field update (PU#<id>#<type>#<data>#%): type 0 OOC name, 1
-		// character folder, 2 showname, 3 area id (an index into Areas). Servers
-		// send PR before PU, but touchPlayer keeps it order-robust. Name/showname
-		// ship wire-escaped like every other text field — decode them.
+		// PU#<id>#<type>#<data>#%: PR and PU may come in either order; name and showname ship wire-escaped.
 		id := parse.AtoiOr(p.Field(0), -1)
 		if id < 0 {
 			return nil
@@ -909,11 +739,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		}
 		switch parse.AtoiOr(p.Field(1), -1) {
 		case puOOCName:
-			// The witches/wizards Akashi-party forks stream a mod's target IPID
-			// as a trailing "(<hex>)" token on the PU name ("web71 (eea20f10)"),
-			// and as a bare "(eea20f10)" ADD follow-up. Peel it into pl.IPID so
-			// the ban box fills without a /getarea. Gated to that family so a
-			// normal server's parenthesised OOC name is never touched.
+			// WAP forks put a mod's target IPID on the name (playerstateobserver.cpp); gated so others stay intact.
 			name := protocol.DecodeField(p.Field(2))
 			if s.embedsIPIDInName() {
 				if stripped, ipid := splitTrailingIPID(name); ipid != "" {
@@ -932,12 +758,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		case puAreaID:
 			pl.AreaID = parse.AtoiOr(p.Field(2), 0)
 		case puIPID:
-			// Dedicated mod-only IPID field (see puIPID). Sticky like the
-			// name-embedded form: a server that sends it once per player must not
-			// have it cleared by a later update that omits it. Format is opaque —
-			// akashi uses 8 hex chars, Athena/Nyathena a longer base64-ish token —
-			// so unlike splitTrailingIPID there is nothing to validate beyond
-			// "non-empty", precisely because a dedicated field is unambiguous.
+			// Dedicated IPID field, sticky across updates. The format is opaque per server: only non-empty is checked.
 			if ipid := protocol.DecodeField(p.Field(2)); ipid != "" {
 				pl.IPID = ipid
 			}
@@ -946,8 +767,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 
 	case "SM":
 		s.Areas, s.Music = splitAreasAndMusic(p.Fields)
-		// Fresh ARUP table parallel to the area list; -1 players = "the
-		// server hasn't reported yet" (servers without arup never will).
+		// -1 players means not yet reported; servers without arup never will.
 		s.AreaInfo = make([]AreaInfo, len(s.Areas))
 		for i := range s.AreaInfo {
 			s.AreaInfo[i].Players = -1
@@ -955,18 +775,11 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		s.reply(protocol.NewTypedPacket(&aolib.RD{}))
 
 	case "FM":
-		// Fetch-music refresh (AO2-Client packet_distribution "FM"): the
-		// MUSIC list alone is replaced, live — tsuserver-family servers push
-		// a fresh list on area moves (per-area jukeboxes; a live server sent
-		// 2106 fields of it and we dropped them on the floor). Every field
-		// is a track verbatim (AO2 appends without the SM area/music split);
-		// the music tab's first/last/len memo picks the swap up next frame.
+		// FM replaces the music list live (packet_distribution.cpp "FM"), as servers push one on area moves.
 		s.Music = append(s.Music[:0], p.Fields...)
 
 	case "FA":
-		// Fetch-areas refresh (packet_distribution "FA"): the AREA list is
-		// replaced and the ARUP table resets to unknown until the next ARUP
-		// lands (AO2 clear_areas + arup_clear with "Unknown" rows).
+		// FA replaces the area list and resets ARUP to unknown (AO2 clear_areas + arup_clear).
 		s.Areas = append(s.Areas[:0], p.Fields...)
 		s.AreaInfo = make([]AreaInfo, len(s.Areas))
 		for i := range s.AreaInfo {
@@ -981,13 +794,10 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 	case "MS":
 		msg, err := protocol.ParseMS(p.Fields, s.Features, len(s.Chars))
 		if err != nil {
-			// Malformed/japing message: drop it like AO2-Client does, but
-			// surface the reason on the debug lane — a server emitting
-			// broken MS packets is exactly what the overlay exists for.
+			// Drop a malformed message like AO2, but show the reason on the debug overlay.
 			return []Event{{Kind: EventDebug, Text: "MS dropped: " + err.Error()}}
 		}
-		// additional_chars (JSON-only): the per-message group roster, broadcast
-		// on every MS from a group member so non-members can render the group.
+		// additional_chars (JSON-only): the group roster on every MS from a member.
 		if typed, ok := p.Typed().(*aolib.MSToClient); ok {
 			msg.Additional = protocol.ParseAdditionalChars(typed.Extras["additional_chars"])
 		}
@@ -1001,45 +811,24 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 			mcChannelField = 4
 			mcEffectsField = 5
 		)
-		// Field 2 (showname) and field 1 (charID) name who played it for the IC
-		// log line; both are optional on the wire (short legacy MC packets).
-		// Field 0 is the track. Trim whitespace: a DJ /play link can arrive as
-		// " https://files.catbox.moe/x.mp3" and, left untrimmed, isMusicURL misses
-		// the http(s):// prefix so the direct URL is misread as a server-relative
-		// name and rebuilt as origin + "%20https://…" (a 404). One trim fixes the
-		// URL, Now-Playing/IC-log display and ~stop/area-transfer classification.
+		// Field 0 is the track; fields 1-2 are optional. Trim it, or a /play link's leading space misses isMusicURL.
 		track := strings.TrimSpace(p.Field(0))
-		// Field 4 is the 2.9+ CHANNEL (AO2-Client courtroom.cpp handle_song:
-		// "Channel 0 is 'master music', other for ambient"; absent = 0). An
-		// ambience MC must never reach the music path: WAP-family servers
-		// stream area ambience on channel 1 — including one on EVERY join —
-		// and playing it as the song stopped/replaced the area's real music
-		// (playtest: rejoining a server stayed silent). We don't render
-		// ambience channels (yet), so a non-zero channel is a no-op.
+		// Field 4 is the channel (courtroom.cpp handle_song: 0 is music). WAP streams ambience on channel 1 at join,
+		// which must not replace the song; we don't render ambience.
 		if parse.AtoiOr(p.Field(mcChannelField), 0) != 0 {
 			return nil
 		}
-		// Field 3 = looping, field 5 = MUSIC_EFFECT bit flags (AO2-Client
-		// handle_song, courtroom.cpp:4764-4787). Both are optional on the wire —
-		// old servers send only fields 0-2, so a short packet degrades to the
-		// AsyncAO default (loop forever, no effects). Field(i) returns "" past the
-		// end, and parse.AtoiOr falls back, so no bounds check is needed here.
+		// Field 3 = looping, field 5 = MUSIC_EFFECT flags (handle_song, courtroom.cpp:4764-4787); both optional.
 		looping := true
 		if v := p.Field(mcLoopingField); v != "" {
 			looping = v == "1"
 		}
 		effects := parse.AtoiOr(p.Field(mcEffectsField), 0)
-		// NO_REPEAT overrides the looping field (AO2-Client aomusicplayer.cpp:31
-		// `isLooping = loopEnabled && !(effectFlags & NO_REPEAT)`), so the loop
-		// bool the audio sink receives is already authoritative — the render side
-		// needs no separate NO_REPEAT check.
+		// NO_REPEAT overrides the looping field (aomusicplayer.cpp:31), so the audio sink's loop bool is authoritative.
 		if effects&musicEffectNoRepeat != 0 {
 			looping = false
 		}
-		// Persist the current REAL song on the session (like Background), so a room
-		// rebuilt later can resume it. Mirror the courtroom's play classification
-		// (courtroom.go EventMusic): a stop clears it; an area-name transfer leaves the
-		// playing song alone (the song continues across an area move until a new MC).
+		// Keep the real song here, classified as in the courtroom: a stop clears it, an area transfer leaves it.
 		switch {
 		case track == "" || isAreaTransfer(track):
 			// not a song — leave s.MusicTrack as-is
@@ -1052,12 +841,8 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 			Loop: looping, MusicEffects: effects}}
 
 	case "BN":
-		// ../AO2-Client/src/packet_distribution.cpp:342-358. Two things ride this
-		// packet, and both are keyed off its ARITY, not off the pos being non-empty:
-		// does not (#23). It must NOT be softened to `Field(1) != ""`: akashi's
-		// area side is empty until someone runs /side (../akashi/src/area_data.cpp),
-		// and KFO's remote-listen form sends BN with an explicitly empty pos
-		// (../KFO-Server/server/area.py) — AO2 wipes on both.
+		// packet_distribution.cpp:342-358. The wipe keys off arity: never soften to Field(1) != "", as akashi's side
+		// empty (area_data.cpp) and KFO's remote-listen sends an empty pos (area.py), and AO2 wipes on both.
 		if len(p.Fields) == 0 {
 			return nil // AO2's content.isEmpty() guard; "" would burn a probe on background//
 		}
@@ -1066,37 +851,24 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		if !wipe {
 			return []Event{{Kind: EventBackground, Text: s.Background}}
 		}
-		// A wiping BN retires the remembered message: a parked tab has no Courtroom
-		// at all (tabs.go remembers only the background), so the reducer is the ONLY
-		// place that can stop buildRoom's RestoreMessage from re-staging the PREVIOUS
-		// area's message when the user tabs back. Same reasoning — and same one-liner
-		// — as the SI handshake's clear above.
+		// A wiping BN retires the remembered message: a parked tab has no Courtroom, so only the reducer can stop it.
 		s.LastIC = nil
 		evs := make([]Event, 0, 2)
 		if pos := p.Field(1); pos != "" {
-			// set_side runs BEFORE set_background upstream, so the re-stage at the end
-			// of set_background already sees the new pos. Order matters here too. The
-			// side itself lives on the UI's per-tab state (there is no Session.Side),
-			// exactly as the SP handler leaves it.
+			// set_side runs before set_background upstream so the re-stage sees the new pos; order matters.
 			evs = append(evs, Event{Kind: EventSetPos, Text: pos})
 		}
-		// Name carries the pos to setBackground so the wiped stage re-scenes at the
-		// NEW position instead of whatever side the last speaker happened to use.
+		// Name carries the pos so the wiped stage re-scenes at the new position.
 		return append(evs, Event{Kind: EventBackground, Text: s.Background, Name: p.Field(1), Wipe: true})
 
 	case "PV":
 		s.MyCharID = parse.AtoiOr(p.Field(2), protocol.UnpairedCharID)
-		// A mute is keyed to a cid (set_mute compares p_cid to m_cid); a new cid
-		// voids the old mute. Clear it on the char change so a stale MU can't keep
-		// the IC input locked after switching characters (AO2 leans on the server
-		// re-sending; this is the defensive client-side reset).
+		// A mute is keyed to a cid (set_mute); clear it so a stale MU can't lock IC input after switching characters.
 		s.Muted = false
 		return []Event{{Kind: EventCharPicked, Int: s.MyCharID}}
 
 	case "CT":
-		// Legacy mod-login detection (courtroom.cpp
-		// append_server_chatmessage): servers without auth_packet confirm
-		// a /login with this exact OOC line — emulate AUTH 1.
+		// Servers without auth_packet confirm /login with this OOC line (courtroom.cpp append_server_chatmessage).
 		if !s.Features.Has(protocol.FeatureAuthPacket) && p.Field(1) == "Logged in as a moderator." {
 			s.ModGranted = true
 			return []Event{
@@ -1106,11 +878,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		}
 		return []Event{{Kind: EventOOC, Name: p.Field(0), Text: p.Field(1)}}
 
-	// A removal reason is attacker-controlled prose the UI renders into a modal, so it
-	// is capped here at the wire seam — one choke point ahead of every consumer
-	// (connErr, the disconnect dialog, the notice box, the tab's deadReason latch, the
-	// clipboard). Note the cap wraps the FIELD, not the joined string: see
-	// capServerText for why the prefix must stay out of its reach.
+	// Removal reasons are attacker-controlled, capped ahead of every consumer; cap the field (see capServerText).
 	case "KK":
 		return []Event{{Kind: EventDisconnect, Text: "Kicked: " + capServerText(p.Field(0))}}
 	case "KB":
@@ -1119,28 +887,16 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventDisconnect, Text: "Banned: " + capServerText(p.Field(0))}}
 
 	case "checkconnection":
-		// Keepalive: AO2-Client answers CH with our char id.
-		// COMPATIBILITY ONLY — no server in the maintained fleet sends this
-		// header (zero occurrences across KFO-Server, Nyathena, Athena, akashi
-		// and Whisker; AO2-Client names it only to exclude it from a debug log,
-		// inside #ifdef DEBUG_NETWORK at packet_distribution.cpp:40). So the
-		// stamp below is not the production latency source. See latency.go.
+		// Answer CH with our char id. Compatibility only: no maintained server sends it (packet_distribution.cpp:40).
 		s.reply(protocol.NewTypedPacket(&aolib.CH{CharID: s.MyCharID}))
 		s.stampPing() // the CHECK that answers this CH times the round trip
 
 	case "CHECK":
-		// The tsuserver family answers every CH with CHECK
-		// (../KFO-Server/server/network/aoprotocol.py:248-253 net_cmd_ch). AO2
-		// times exactly this reply and keeps it as `latency`
-		// (packet_distribution.cpp CHECK → pong()). Nothing else changes — it is
-		// not an event, it does not touch the keepalive (the connection's own
-		// goroutine owns that), it only dates the clock correction.
+		// The tsuserver family answers CH with CHECK (aoprotocol.py:248-253); AO2 times it (packet_distribution.cpp).
 		s.notePong()
 
 	case "HP":
-		// HP#<bar 1=def|2=pro>#<0..10>#% — judge penalty bars
-		// (packet_distribution.cpp → courtroom.cpp set_hp_bar, which
-		// rejects out-of-range states).
+		// HP#<bar 1=def|2=pro>#<0..10>#% (packet_distribution.cpp); courtroom.cpp set_hp_bar rejects bad states.
 		bar, val := parse.AtoiOr(p.Field(0), 0), parse.AtoiOr(p.Field(1), -1)
 		if val < 0 || val > HPBarMax {
 			return nil
@@ -1156,17 +912,14 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventHP, Int: bar, Int2: val}}
 
 	case "RT":
-		// Witness Testimony / Cross Examination splashes, 2.8 judgeruling
-		// verdicts, and the 2.9 "testimony1#1" end-of-recording marker —
-		// variant semantics live in handle_wtce (courtroom.cpp:4846).
+		// Testimony splashes, verdicts and the 2.9 "testimony1#1" marker; see handle_wtce (courtroom.cpp:4846).
 		if len(p.Fields) == 0 {
 			return nil
 		}
 		return []Event{{Kind: EventWTCE, Text: p.Field(0), Int: parse.AtoiOr(p.Field(1), 0)}}
 
 	case "ZZ":
-		// Incoming modcall broadcast: the body is the pre-formatted notice
-		// line (courtroom.cpp mod_called appends it to the server chatlog).
+		// The body is the pre-formatted notice line (courtroom.cpp mod_called).
 		if len(p.Fields) == 0 {
 			return nil
 		}
@@ -1176,10 +929,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return s.handleVoicePacket(p)
 
 	case "ARUP":
-		// ARUP#<type>#<area0>#<area1>…: type 0 players, 1 status, 2 CM,
-		// 3 lock; field n applies to area n−1, out-of-range entries drop
-		// (courtroom.cpp arup_modify bounds-checks the same way).
-		// ARUP list types, in wire order.
+		// ARUP#<type>#<area0>#...: field n applies to area n-1; out-of-range entries drop (courtroom.cpp arup_modify).
 		const (
 			arupPlayers = iota
 			arupStatus
@@ -1209,13 +959,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventAreasUpdated}}
 
 	case "TI":
-		// TI#<id>#<type>#[<ms>]: type 0 start/resume countdown at ms,
-		// 1 pause at ms, 2 show, 3 hide; ms ≤ 0 stops the clock
-		// (packet_distribution.cpp). Type 0 — and ONLY type 0 — is corrected by
-		// the measured half-RTT, matching AO2 and KFO byte for byte; see
-		// latency.go for the citations and for why a paused value is not
-		// corrected (it is a display value, not an anchor).
-		// TI types, in wire order; ms is field 2.
+		// TI#<id>#<type>#[<ms>]: ms <= 0 stops the clock (packet_distribution.cpp). Only type 0 gets the half-RTT fix.
 		const (
 			timerStart = iota
 			timerPause
@@ -1234,11 +978,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 				return nil
 			}
 			if ms := parse.AtoiOr(p.Field(timerMsField), -1); ms > 0 {
-				// Canon tests ms > 0 BEFORE subtracting, so a correction that
-				// eats the whole remainder still starts the clock — it just
-				// anchors in the past and reads 00:00, which is what AO2's
-				// AOClockLabel does with a target already behind it. Remaining()
-				// clamps to zero for the same display.
+				// Canon tests ms > 0 before subtracting, so a correction eating the remainder still starts the clock.
 				t.Running = true
 				t.Deadline = time.Now().Add(time.Duration(ms)*time.Millisecond - s.clockLead())
 			} else {
@@ -1263,9 +1003,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventTimer, Int: id}}
 
 	case "JD":
-		// JD#<state>: −1 fall back to client-side judge buttons (pos ==
-		// judge stand), 0 hide, 1 show; malformed packets are ignored
-		// (packet_distribution.cpp JD).
+		// JD#<state>: -1 client-side buttons, 0 hide, 1 show; malformed packets are ignored (packet_distribution.cpp).
 		n, err := strconv.Atoi(strings.TrimSpace(p.Field(0)))
 		if err != nil {
 			return nil
@@ -1274,9 +1012,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventJudge, Int: n}}
 
 	case "AUTH":
-		// AUTH#<state>: 1+ mod granted, 0 login failed, <0 logged out
-		// (on_authentication_state_received). Honored only with the
-		// auth_packet feature, exactly like packet_distribution.cpp.
+		// AUTH#<state>: 1+ granted, 0 failed, <0 logged out; only with auth_packet, as in packet_distribution.cpp.
 		if !s.Features.Has(protocol.FeatureAuthPacket) || len(p.Fields) == 0 {
 			return nil
 		}
@@ -1288,8 +1024,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventAuth, Int: n}}
 
 	case "SD":
-		// SD#<pos1*pos2*…>: the server's position dropdown
-		// (set_pos_dropdown splits on '*').
+		// SD#<pos1*pos2*...>: position dropdown (set_pos_dropdown splits on '*').
 		if p.Field(0) == "" {
 			return nil
 		}
@@ -1308,9 +1043,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventSetPos, Text: p.Field(0)}}
 
 	case "LE":
-		// Evidence list replace. Same nested decode as SC: split each field
-		// on '&', percent-decode every sub-element again
-		// (packet_distribution.cpp LE "decoding has to be done here").
+		// Same nested decode as SC (packet_distribution.cpp LE "decoding has to be done here").
 		s.Evidence = s.Evidence[:0]
 		for _, field := range p.Fields {
 			if len(s.Evidence) >= evidenceCap {
@@ -1329,10 +1062,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventEvidence}}
 
 	case "PE":
-		// Incoming evidence add (a server relay — another player or the server
-		// added an item; tsuserver-family servers echo PE rather than re-sending
-		// the whole LE). Same per-field percent-decode as LE; append and signal
-		// a single-item change rather than a full list replace.
+		// tsuserver-family servers echo PE rather than resend LE, so signal a single-item change.
 		if len(p.Fields) < 3 || len(s.Evidence) >= evidenceCap {
 			return nil
 		}
@@ -1345,8 +1075,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventEvidenceChanged, Int: len(s.Evidence) - 1, Int2: EvidenceOpAdd, Text: name}}
 
 	case "EE":
-		// Incoming evidence edit: EE#id#name#desc#image. Bounds-guarded like
-		// LE's cap; out-of-range ids drop (the server will re-sync with an LE).
+		// EE#id#name#desc#image; out-of-range ids drop, and the server re-syncs with an LE.
 		const eeImageField = 3
 		id := parse.AtoiOr(p.Field(0), -1)
 		if id < 0 || id >= len(s.Evidence) {
@@ -1360,7 +1089,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventEvidenceChanged, Int: id, Int2: EvidenceOpEdit, Text: s.Evidence[id].Name}}
 
 	case "DE":
-		// Incoming evidence delete: DE#id.
+		// DE#id.
 		id := parse.AtoiOr(p.Field(0), -1)
 		if id < 0 || id >= len(s.Evidence) {
 			return nil
@@ -1370,11 +1099,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventEvidenceChanged, Int: id, Int2: EvidenceOpDelete, Text: name}}
 
 	case "MU", "UM":
-		// Mute / unmute a character (packet_distribution.cpp:483-497 →
-		// set_mute). MU mutes, UM unmutes; field 0 is the target cid. AO2's
-		// set_mute (courtroom.cpp:4691) only acts when the cid is OURS or -1
-		// (mute-all); a mute for another player is the server's business, not
-		// ours. Ignore an empty/malformed packet like AO2 (guards on !isEmpty).
+		// MU mutes, UM unmutes (packet_distribution.cpp:483-497); set_mute acts on our cid or -1 (courtroom.cpp:4691).
 		if len(p.Fields) == 0 || p.Field(0) == "" {
 			return nil
 		}
@@ -1390,21 +1115,14 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventMuted, Int: boolToInt(muted)}}
 
 	case "BB":
-		// Server popup notice (call_notice). AO2 shows this in a real modal
-		// (courtroom.cpp call_notice); we mirror it to OOC so it stays in the
-		// searchable log AND raise the notice box, because a transient line is exactly
-		// how a whitelist code or a lockdown explanation gets missed. Capped like the
-		// removal reasons above: same attacker-controlled prose, same texture.
+		// AO2 shows a modal (courtroom.cpp call_notice); we also mirror to OOC, as a transient line gets missed.
 		if len(p.Fields) == 0 {
 			return nil
 		}
 		return []Event{{Kind: EventNotice, Text: capServerText(p.Field(0))}}
 
 	case "CASEA":
-		// Case announcement: CASEA#<msg>#<def>#<pro>#<judge>#<jury>#<steno>.
-		// Legacy 2.6–2.9 casing_alerts — removed upstream ("No longer
-		// used", serverdata.h) but tsuserver-family servers still send it;
-		// role gating happens UI-side against the user's SETCASE prefs.
+		// CASEA#<msg>#<def>#<pro>#<judge>#<jury>#<steno>; removed upstream (serverdata.h), still sent by tsuserver.
 		const caseaFields = 6 // msg + five role flags
 		if len(p.Fields) < caseaFields {
 			return nil
@@ -1418,24 +1136,15 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventCase, Text: p.Field(0), Int: need}}
 
 	default:
-		// Headers this client doesn't implement (vendor extensions, not-yet
-		// -built features): ignoring them is harmless, but "the server sends
-		// X and nothing happens" must be diagnosable — debug lane only.
+		// Ignoring unimplemented headers is harmless, but they must be diagnosable: debug overlay only.
 		return []Event{{Kind: EventDebug,
 			Text: fmt.Sprintf("unhandled packet %q (%d fields)", p.Header, len(p.Fields))}}
 	}
 	return nil
 }
 
-// splitAreasAndMusic mirrors AO2-Client's SM scan (packet_distribution.cpp
-// "SM" handler): entries before the first audio-extension entry are areas,
-// the rest (inclusive) are music. The one subtlety is fix_last_area
-// (courtroom.cpp:613): the entry immediately preceding the first song is a
-// music *category header* (e.g. "==Cave Story OST=="), NOT an area — AO music
-// lists always wrap their songs in a category, so that last "area" is
-// malplaced and gets moved to the front of the music list. Without this a
-// category header leaks into the Areas tab (and leaves a trailing area row
-// with no ARUP column).
+// splitAreasAndMusic mirrors AO2's SM scan (packet_distribution.cpp): before the first audio extension are areas.
+// fix_last_area (courtroom.cpp:613): the entry just before the first song is a music category header.
 func splitAreasAndMusic(fields []string) (areas, music []string) {
 	musicStart := len(fields)
 	for i, f := range fields {
@@ -1444,9 +1153,7 @@ func splitAreasAndMusic(fields []string) (areas, music []string) {
 			break
 		}
 	}
-	// fix_last_area: when at least one song exists and an entry precedes it,
-	// that preceding entry is the music category header — shift the boundary
-	// back one so it lands in music instead of areas.
+	// fix_last_area: shift the boundary back one so the category header lands in music.
 	if musicStart > 0 && musicStart < len(fields) {
 		musicStart--
 	}
@@ -1457,10 +1164,7 @@ func splitAreasAndMusic(fields []string) (areas, music []string) {
 
 var audioExts = []string{".wav", ".mp3", ".mp4", ".ogg", ".opus"}
 
-// HasAudioExt reports whether name ends in a known AO audio extension.
-// Exported so the UI's music-list grouping (Issue #17 category
-// expand/collapse) can tell a track apart from a category-header entry
-// without re-deriving the AO2-Client extension list.
+// HasAudioExt reports a known AO audio extension; exported for the UI's music-list grouping.
 func HasAudioExt(name string) bool {
 	lower := strings.ToLower(name)
 	for _, ext := range audioExts {
@@ -1471,9 +1175,6 @@ func HasAudioExt(name string) bool {
 	return false
 }
 
-// --- Outgoing actions -------------------------------------------------------
-
-// PickCharacter requests a character (CC packet).
 func (s *Session) PickCharacter(charID int) {
 	s.reply(protocol.NewTypedPacket(&aolib.CC{PlayerID: s.PlayerID, CharID: charID, CharPassword: s.HDID}))
 }
@@ -1488,18 +1189,12 @@ func (s *Session) SendOOC(name, text string) {
 	s.reply(protocol.NewTypedPacket(&aolib.CTToServer{Name: name, Message: text}))
 }
 
-// RequestMusic asks the server to play a track (or area transfer by name), in the
-// bare two-field form. This is the AREA-JUMP shape: AO2's on_area_list_clicked
-// appends nothing at all (courtroom.cpp:6036-6044), and a server that reads field
-// 3 as a showname must not see one for a jump.
+// RequestMusic is the two-field area-jump shape (courtroom.cpp:6036-6044); a server may read field 3 as a showname.
 func (s *Session) RequestMusic(track string) {
 	s.reply(protocol.NewTypedPacket(&aolib.MCToServer{Name: track, CharID: s.MyCharID}))
 }
 
-// RequestMusicWithFlags is AO2's TRACK-PLAY shape,
-// MC#<song>#<cid>[#<showname>][#<flags>] — Courtroom::on_music_list_double_clicked
-// (courtroom.cpp:5806-5819).
-// The showname condition is canon's, verbatim and in canon's order:
+// RequestMusicWithFlags is AO2's track-play shape, MC#<song>#<cid>[#<showname>][#<flags>] (courtroom.cpp:5806-5819).
 func (s *Session) RequestMusicWithFlags(track, showname string, flags int) {
 	const mcMaxFields = 4 // track, char id, showname, effects
 	fields := make([]string, 0, mcMaxFields)
@@ -1514,19 +1209,12 @@ func (s *Session) RequestMusicWithFlags(track, showname string, flags int) {
 	s.reply(protocol.NewPacket("MC", fields...))
 }
 
-// KeepalivePacket returns the CH keepalive as a wire string for the connection's
-// background keepalive goroutine (Conn.SetKeepalive), which sends it off the render
-// loop so it keeps firing while the window is minimized. Built here so it carries
-// the current MyCharID; the caller refreshes it whenever that can change. Read on
-// the render thread (MyCharID is owned there), never from the keepalive goroutine —
-// that goroutine only sees the immutable string.
+// KeepalivePacket returns the CH string for Conn.SetKeepalive. Read on the render thread, which owns MyCharID.
 func (s *Session) KeepalivePacket() string {
 	return protocol.NewPacket("CH", strconv.Itoa(s.MyCharID)).String()
 }
 
-// CallMod sends a mod call with an optional reason. The second field is
-// the target player id, −1 = whole area (courtroom.cpp:6530
-// on_call_mod_clicked sends {reason, "-1"}).
+// CallMod sends a mod call; the second field is the target, -1 = whole area (on_call_mod_clicked, courtroom.cpp:6530).
 func (s *Session) CallMod(reason string) {
 	if s.Features.Has(protocol.FeatureModcallReason) {
 		s.reply(protocol.NewTypedPacket(&aolib.ZZToServer{Reason: reason, ReportedPlayerID: -1}))
@@ -1535,8 +1223,7 @@ func (s *Session) CallMod(reason string) {
 	s.reply(protocol.NewPacket("ZZ"))
 }
 
-// SendHP submits a judge penalty-bar change: HP#<bar 1=def|2=pro>#<0..10>
-// (courtroom.cpp on_defense_minus_clicked et al.).
+// SendHP submits HP#<bar 1=def|2=pro>#<0..10> (courtroom.cpp on_defense_minus_clicked et al.).
 func (s *Session) SendHP(bar, state int) {
 	if state < 0 || state > HPBarMax || (bar != 1 && bar != 2) {
 		return
@@ -1548,8 +1235,7 @@ func (s *Session) SendHP(bar, state int) {
 	s.reply(protocol.NewTypedPacket(&aolib.HPToServer{Bar: side, Value: state}))
 }
 
-// SendWTCE fires a judge splash: testimony1/testimony2 plain, judgeruling
-// with the verdict variant (courtroom.cpp judge button handlers).
+// SendWTCE fires a judge splash: judgeruling takes the verdict variant (courtroom.cpp judge button handlers).
 func (s *Session) SendWTCE(name string, variant int) {
 	if name == "judgeruling" {
 		s.reply(protocol.NewPacket("RT", name, strconv.Itoa(variant)))
@@ -1573,15 +1259,12 @@ func (s *Session) EditEvidence(id int, name, desc, image string) {
 	s.reply(protocol.NewTypedPacket(&aolib.EE{ID: id, Name: name, Description: desc, Image: image}))
 }
 
-// SetCasingPrefs subscribes to CASEA announcements by role. The leading
-// field is the legacy case-list blob no server reads (tsuserver
-// net_cmd_setcase skips args[0]).
+// SetCasingPrefs subscribes to CASEA by role; the leading field is a legacy blob (tsuserver net_cmd_setcase skips it).
 func (s *Session) SetCasingPrefs(def, pro, judge, jury, steno bool) {
 	s.reply(protocol.NewPacket("SETCASE", "",
 		boolWire(def), boolWire(pro), boolWire(judge), boolWire(jury), boolWire(steno)))
 }
 
-// boolWire is the AO wire encoding for booleans.
 func boolWire(b bool) string {
 	if b {
 		return "1"
@@ -1589,7 +1272,6 @@ func boolWire(b bool) string {
 	return "0"
 }
 
-// boolToInt maps false/true to 0/1 for an Event.Int flag payload.
 func boolToInt(b bool) int {
 	if b {
 		return 1

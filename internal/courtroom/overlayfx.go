@@ -1,11 +1,7 @@
 package courtroom
 
-// AO2 screen-effect OVERLAYS — the wire parse, the scene model and the trigger /
-// clear lifecycle. Canon is ../AO2-Client (do_effect, courtroom.cpp:3182-3273 and
-// start_chat_ticking, :4154-4177); it wins every conflict.
-// NAMING FENCE: this package already owns TextEffect* / EffectSpan / EffectMark
-// (effectwire.go — animated chat TEXT, a different feature entirely), so every
-// identifier here is prefixed Overlay… / overlay….
+// AO2 screen-effect overlays (do_effect, courtroom.cpp:3182-3273; start_chat_ticking, courtroom.cpp:4154-4177).
+// TextEffect* in effectwire.go is a different feature, hence the Overlay prefix.
 
 import (
 	"strings"
@@ -14,20 +10,12 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
-// OverlayFXFileCap is theme.OverlayFXFileCap under the name the spec gives it —
-// how many effects.ini files the PROPERTY pass merges. One constant, two names,
-// because the merge is split across the two packages: internal/theme walks the
-// LOCAL ladder and internal/ui appends the one ORIGIN file.
+// OverlayFXFileCap is how many effects.ini files merge: internal/theme walks local ones, internal/ui adds the origin's.
 const OverlayFXFileCap = theme.OverlayFXFileCap
 
-// Overlay layer, mirroring theme.OverlayLayer. Scene is plain data consumed by
-// internal/render, which has no business importing internal/theme just to read a
-// switch value, so the layer crosses as a uint8 — with the same ordering, and
-// overlayLayerFromTheme as the one conversion point.
+// Overlay layer, mirroring theme.OverlayLayer as a uint8 so internal/render need not import internal/theme.
 const (
-	// OverlayLayerChat is do_effect's ELSE branch: the overlay is reparented OUT
-	// of the viewport and stacked under the shout bubble. Zero value on purpose —
-	// an absent, empty, "under" or "beho" layer lands here (courtroom.cpp:3233).
+	// OverlayLayerChat is do_effect's else branch; zero so absent, "under" or "beho" land here (courtroom.cpp:3233).
 	OverlayLayerChat uint8 = iota
 	// OverlayLayerBehind stacks under the speaker sprite.
 	OverlayLayerBehind
@@ -37,9 +25,7 @@ const (
 	OverlayLayerOver
 )
 
-// overlayLayerFromTheme is the ONE place theme.OverlayLayer becomes the wire-free
-// uint8 the renderer reads. A compile-time-checked switch rather than a cast, so
-// a layer added on either side cannot silently mean something else here.
+// overlayLayerFromTheme uses a switch, not a cast, so a layer added on either side can't change meaning.
 func overlayLayerFromTheme(l theme.OverlayLayer) uint8 {
 	switch l {
 	case theme.OverlayLayerBehind:
@@ -53,58 +39,35 @@ func overlayLayerFromTheme(l theme.OverlayLayer) uint8 {
 	}
 }
 
-// SceneOverlay is the active screen-effect overlay: everything the renderer needs
-// to draw it, precomputed once per trigger so the draw is pointer math.
+// SceneOverlay is the active overlay, precomputed once per trigger.
 type SceneOverlay struct {
-	// Base is the T1 key / URL the art lives under ("" = no overlay). A cold base
-	// simply draws nothing until the page lands — pixel-identical to canon's
-	// clear, and the same shape as a cold shout bubble.
+	// Base is the T1 key or URL ("" = no overlay); a cold base draws nothing until its page lands.
 	Base string
-	// Layer is where in the stack the overlay blits (courtroom.cpp:3216-3237).
+	// Layer is the overlay's place in the stack (courtroom.cpp:3216-3237).
 	Layer uint8
-	// Loop wraps forever (cull is then inert, animationlayer.cpp:660-666);
-	// Cull hides a finished PLAY-ONCE clip instead of holding its last frame;
-	// Stretch fills the viewport instead of fitting its height; Flip mirrors it.
+	// Loop wraps forever (cull is then inert, animationlayer.cpp:660-666); Cull hides a finished play-once clip.
 	Loop, Cull, Stretch, Flip bool
-	// OffsetX/Y are PERCENT of the viewport, copied from the speaker's own
-	// self-offset when the effect declares respect_offset (courtroom.cpp:3251-3267).
-	// Zero otherwise — the layer is never resized, it always covers the viewport.
+	// OffsetX/Y are percent of the viewport, copied when the effect declares respect_offset (courtroom.cpp:3251-3267).
 	OffsetX, OffsetY int
-	// MaxFrameDelay clamps EACH FRAME's delay (animationlayer.cpp:281-286).
-	// 0 = no clamp. Named for what it does, unlike the ini key it comes from.
+	// MaxFrameDelay clamps each frame's delay (animationlayer.cpp:281-286); 0 = no clamp.
 	MaxFrameDelay time.Duration
-	// Scaling is the effect's own texture filter request, resolved against the
-	// user's global mode at the draw site (ResolveScalingMode).
+	// Scaling is resolved against the user's mode at the draw site (ResolveScalingMode).
 	Scaling ScalingMode
-	// Gen bumps on EVERY trigger so the renderer restarts a clip even when the
-	// same effect fires twice in a row: animState.reset only fires on a base
-	// change, so a repeat of the identical base would otherwise keep playing
-	// (or stay frozen on its held last frame).
+	// Gen bumps on every trigger so a repeated effect restarts: animState.reset only fires on a base change.
 	Gen uint32
 }
 
-// Active reports whether anything is on screen.
 func (o SceneOverlay) Active() bool { return o.Base != "" }
 
-// OverlayResolved is what the App hands back for an effect name + folder: the
-// merged properties and the T1 key / URL its art will live under.
+// OverlayResolved is the merged properties and T1 key for an effect name and folder.
 type OverlayResolved struct {
 	FX   theme.OverlayFX
 	Base string
-	// Pending says "ask again": the folder's roster — the LOCAL ladder's resolved
-	// art paths AND the merged properties — has not landed yet, so the resolver
-	// cannot answer without either probing the network for art the theme may
-	// already hold on disk (spec §1.f: rung 8 is the ONLY network rung, reached
-	// only when the whole local ladder misses) or arming with a zero-valued
-	// OverlayFX that nothing would ever correct. fireOverlay defers instead; the
-	// resolver's own async work is already in flight.
+	// Pending means ask again: answering now would probe for art the theme may hold, or arm with zero properties.
 	Pending bool
 }
 
-// overlayPendingFX is the ONE deferred overlay arm: the request a message made
-// while its folder's roster was still resolving. A single slot, exactly like the
-// single overlay on stage — a new message supersedes it, and every clear site
-// cancels it.
+// overlayPendingFX is the one deferred overlay request; a new message supersedes it and every clear cancels it.
 type overlayPendingFX struct {
 	name, folder string
 	flip         bool
@@ -114,31 +77,17 @@ type overlayPendingFX struct {
 }
 
 const (
-	// overlayPendingTTL bounds the deferred arm. It outlives the resolver's own
-	// manifest fetch (internal/ui overlayFetchTimeout = 8s) so a slow but
-	// successful resolve still arms; past it the request settles as a miss, so a
-	// resolve whose result was dropped on channel overflow can never leave an
-	// effect waiting forever (hard rule 4).
+	// overlayPendingTTL outlives the 8s manifest fetch, then settles as a miss, so nothing waits forever (hard rule 4).
 	overlayPendingTTL = 10 * time.Second
-	// overlayPendingRetryInterval paces the re-ask. Deliberately NOT every frame:
-	// the resolver keys its roster cache by "origin|folder", a concatenation it can
-	// memoise for only ONE folder at a time, and the picker asks for OUR OWN folder
-	// every frame — so a per-frame re-ask for a different folder would allocate on
-	// the zero-alloc courtroom frame.
+	// overlayPendingRetryInterval is not per-frame: the resolver memoises one folder, so per-frame asks would allocate.
 	overlayPendingRetryInterval = 200 * time.Millisecond
 )
 
-// overlayMaxDurationUnit is the unit of the effects.ini max_duration value.
-// AO2 feeds it straight to a QTimer as milliseconds (animationlayer.cpp:281-286).
+// overlayMaxDurationUnit: AO2 feeds max_duration to a QTimer as milliseconds (animationlayer.cpp:281-286).
 const overlayMaxDurationUnit = time.Millisecond
 
-// overlayNameSentinels are wire effect NAMES that mean "no overlay". "" is the
-// canon early-return (courtroom.cpp:3184-3187, which does NOT clear); "-" is
-// webAO's BAD_EFFECTS marker (handleICSpeaking.ts:28) and "none" is the ASCII
-// spelling of the row AO2 prepends to its dropdown. AO2 sends the TRANSLATED word
-// for that row (courtroom.cpp:5600), so this list can never be complete — the
-// unresolvable path covers every other language, and does exactly what canon does
-// with an unknown name: clear.
+// overlayNameIsNone: "" is canon's early return, which does not clear (courtroom.cpp:3184-3187); "-" is webAO's
+// BAD_EFFECTS (handleICSpeaking.ts:28). AO2 translates "None" (courtroom.cpp:5600); other languages clear as unknown.
 func overlayNameIsNone(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "-", "none":
@@ -147,12 +96,7 @@ func overlayNameIsNone(name string) bool {
 	return false
 }
 
-// OverlaySoundPlayable filters the effect SOUND sentinels.
-// Canon only tests `fx_sound != ""` (courtroom.cpp:3196). The extras are earned:
-// EXPORTED because the message path is not the only place an effect sound is
-// played: the picker's right-click PREVIEW (internal/ui/effectspicker.go) plays
-// the same value, and a second copy of this list there would drift — reintroducing
-// the exact probe this filter exists to stop.
+// OverlaySoundPlayable filters sound sentinels; canon tests non-empty (courtroom.cpp:3196). Shared with the picker.
 func OverlaySoundPlayable(sound string) bool {
 	switch strings.ToLower(strings.TrimSpace(sound)) {
 	case "", "0", "-", "none":
@@ -161,10 +105,7 @@ func OverlaySoundPlayable(sound string) bool {
 	return true
 }
 
-// parseEffectsField splits the 2.8 EFFECTS wire field, verbatim per
-// start_chat_ticking (courtroom.cpp:4154-4172):
-// The ≥4 case is why this cannot take parts[len-1] as the sound: a sender that
-// pads the field would have its FOLDER read as the sound and its sound dropped.
+// parseEffectsField splits EFFECTS per courtroom.cpp:4154-4172; parts[len-1] isn't the sound, as padding shifts it.
 func parseEffectsField(raw string) (fx, folder, sound string) {
 	parts := strings.Split(raw, "|")
 	fx = parts[0]
@@ -178,10 +119,7 @@ func parseEffectsField(raw string) (fx, folder, sound string) {
 	return fx, folder, sound
 }
 
-// BuildEffectsField assembles the OUTGOING field: "<name>|<folder>|<sound>"
-// (courtroom.cpp:2296-2308). The "None" row sends "" rather than canon's
-// translated tr("None") — every receiver clears identically on both, and ""
-// cannot be mistaken for a real effect name the way a localised word can.
+// BuildEffectsField assembles "<name>|<folder>|<sound>" (courtroom.cpp:2296-2308); the None row sends "".
 func BuildEffectsField(name, folder, sound string) string {
 	if name == "" {
 		return ""
@@ -189,26 +127,17 @@ func BuildEffectsField(name, folder, sound string) string {
 	return name + "|" + folder + "|" + sound
 }
 
-// clearOverlay is AO2's `ui_vp_effect->stopPlayback(); hide()`. Gen is preserved
-// (it only ever counts UP) so a later retrigger of the same base still restarts.
-// A clear also cancels a deferred arm: "nothing is on stage" has to mean nothing
-// is on its way either, or a superseded request would pop up a message later.
+// clearOverlay is AO2's stopPlayback and hide; Gen stays so a retrigger restarts, and a deferred request is cancelled.
 func (c *Courtroom) clearOverlay() {
 	gen := c.Scene.Overlay.Gen
 	c.Scene.Overlay = SceneOverlay{Gen: gen}
 	c.overlayPending = overlayPendingFX{}
 }
 
-// fireOverlay is do_effect. It returns whether an overlay is now on stage, so the
-// caller can decide about the legacy flash/shake fallback.
-// The three CLEAR sites in canon are display_character (courtroom.cpp:2755-2761 —
-// the next IC message carrying an emote, i.e. our begin), set_background with
-// display=true (:1427-1435 — wipeStage), and the unresolvable branch below
-// (:3188-3194). There is deliberately NO clear at message end.
+// fireOverlay is do_effect, returning whether an overlay is on stage. Canon clears at display_character
+// (courtroom.cpp:2755-2761), set_background (:1427-1435) and an unresolvable name (:3188-3194), never at message end.
 func (c *Courtroom) fireOverlay(name, folder string, flip bool, offX, offY int) bool {
-	// fx == "" → return immediately, NO clear (courtroom.cpp:3184-3187). The
-	// distinction matters: an empty field must not kill a looping overlay the
-	// previous message started.
+	// Empty name returns without clearing (courtroom.cpp:3184-3187), so a looping overlay survives.
 	if name == "" {
 		return c.Scene.Overlay.Active()
 	}
@@ -216,48 +145,26 @@ func (c *Courtroom) fireOverlay(name, folder string, flip bool, offX, offY int) 
 		c.clearOverlay()
 		return false
 	}
-	// THE VISUAL GATE COMES FIRST — ahead of the resolve, where canon has it after
-	// (:3188 resolves, :3202 tests effectsEnabled). AO2 can afford that order
-	// because get_effect is a local stat; c.OverlayFor is a STREAMING resolve that
-	// fetches a misc manifest, reads+decodes a theme file into T1, or probes the
-	// origin. With "Enable screen effects" off (or Reduce motion on) none of that
-	// art may ever be drawn, so paying network, decode and VRAM for it is pure
-	// waste — the same reason remoteChatSkinFor gates on its pref before touching
-	// the misc art (internal/ui/charmeta.go:127-134).
-	// Observably identical to the canon order: the effect SOUND is played by the
-	// caller, outside this function (fireMessageEffects), and the clear below is
-	// exactly what the gated path leaves behind either way.
+	// Tested before the resolve, unlike canon (courtroom.cpp:3188, :3202): OverlayFor streams, so hidden art would pay.
 	if !c.effectsVisible() {
-		// ScreenEffects off / ReduceMotion on: no overlay may be on screen at all.
-		// Canon returns here WITHOUT clearing (:3202-3205), which leaves the
-		// previous effect playing — the exact permanent wash reduce-motion exists
-		// to kill. Clearing also makes "ReduceMotion forbids a looping overlay"
-		// fall out of the one gate instead of needing a second knob.
+		// Canon returns without clearing (courtroom.cpp:3202-3205), leaving the loop reduce-motion exists to stop.
 		c.clearOverlay()
 		return false
 	}
 	res, ok := c.Assets.OverlayFor(name, folder)
 	if ok && res.Pending {
-		// The folder's roster is still resolving, so the LOCAL ladder cannot be
-		// walked yet. DEFER rather than arm: arming now would spend the one network
-		// rung on art the theme may already have on disk and would stage the effect
-		// with default properties (chat layer, no loop/stretch) that nothing would
-		// correct when the roster lands. The stage is already clear here (clear site
-		// 1 ran when this message staged its emote), so holding shows nothing —
-		// exactly like a cold base whose page has not landed.
+		// Defer rather than arm: arming would spend the network probe and stage default properties.
 		if c.overlayPending.left <= 0 || c.overlayPending.name != name || c.overlayPending.folder != folder {
 			c.overlayPending = overlayPendingFX{
 				name: name, folder: folder, flip: flip, offX: offX, offY: offY,
 				left: overlayPendingTTL, next: overlayPendingRetryInterval,
 			}
 		}
-		// Report "on stage": the legacy flash/shake fallback is deferred with the
-		// rest of the decision, and tickOverlayPending fires it if this settles to
-		// a miss.
+		// Report on stage: tickOverlayPending runs the legacy fallback if this settles to a miss.
 		return true
 	}
 	if !ok || res.Base == "" {
-		// An unknown effect name is an explicit CLEAR in canon, not a no-op.
+		// An unknown effect name is an explicit clear in canon, not a no-op.
 		c.clearOverlay()
 		return false
 	}
@@ -268,16 +175,14 @@ func (c *Courtroom) fireOverlay(name, folder string, flip bool, offX, offY int) 
 		Loop:    fx.Loop,
 		Cull:    fx.Cull,
 		Stretch: fx.Stretch,
-		// respect_flip is ANDed with the message's own FLIP field (:3208).
+		// respect_flip is ANDed with the message's FLIP field (:3208).
 		Flip:          fx.RespectFlip && flip,
 		Scaling:       ParseScalingMode(fx.Scaling),
 		MaxFrameDelay: time.Duration(fx.MaxFrameMS) * overlayMaxDurationUnit,
 		Gen:           c.Scene.Overlay.Gen + 1,
 	}
 	if fx.RespectOffset {
-		// SpriteLayer.OffsetX/Y is already "percent of viewport", which is exactly
-		// what :3264-3266 computes (viewport.width() * self_offset / 100), so this
-		// is a straight copy rather than an arithmetic port.
+		// SpriteLayer.OffsetX/Y is already percent of viewport, what :3264-3266 computes.
 		ov.OffsetX, ov.OffsetY = offX, offY
 	}
 	c.Scene.Overlay = ov
@@ -285,12 +190,7 @@ func (c *Courtroom) fireOverlay(name, folder string, flip bool, offX, offY int) 
 	return true
 }
 
-// applyEffectField is the whole visual half of the 2.8 EFFECTS field: the overlay
-// when it resolves, the legacy flash/shake name mapping when it does not. Split
-// out of fireMessageEffects so the DEFERRED retry below settles a message exactly
-// the way its first attempt would have — a bare install with no effects.ini still
-// reacts to "realization"/"screenshake" even when the decision had to wait for a
-// roster. The effect SOUND is not here: it plays regardless of this outcome.
+// applyEffectField is the visual half of EFFECTS, so a deferred retry settles a message as the first attempt would.
 func (c *Courtroom) applyEffectField(name, folder string, flip bool, offX, offY int) {
 	if c.fireOverlay(name, folder, flip, offX, offY) {
 		return
@@ -301,8 +201,7 @@ func (c *Courtroom) applyEffectField(name, folder string, flip bool, offX, offY 
 	c.fireLegacyEffectFallback(name)
 }
 
-// fireLegacyEffectFallback is the pre-overlay behaviour: the two effect NAMES
-// AsyncAO has always realized itself, for installs with no effects.ini anywhere.
+// fireLegacyEffectFallback handles the two effect names we realize ourselves for installs with no effects.ini.
 func (c *Courtroom) fireLegacyEffectFallback(name string) {
 	switch strings.ToLower(name) {
 	case "screenshake":
@@ -312,17 +211,14 @@ func (c *Courtroom) fireLegacyEffectFallback(name string) {
 	}
 }
 
-// tickOverlayPending re-asks for a deferred overlay until its roster lands or the
-// TTL runs out. Free when nothing is deferred: one comparison.
+// tickOverlayPending re-asks for a deferred overlay until its roster lands or the TTL ends.
 func (c *Courtroom) tickOverlayPending(dt time.Duration) {
 	if c.overlayPending.left <= 0 {
 		return
 	}
 	c.overlayPending.left -= dt
 	if c.overlayPending.left <= 0 {
-		// Gave up. Settle it exactly as an unresolvable name settles: clear, then
-		// the legacy fallback, so a resolve that never came back cannot swallow a
-		// "realization" for good.
+		// Settle as an unresolvable name does, so a resolve that never returns can't swallow a "realization".
 		p := c.overlayPending
 		c.clearOverlay() // also empties the pending slot
 		if c.effectsVisible() {
@@ -336,24 +232,14 @@ func (c *Courtroom) tickOverlayPending(dt time.Duration) {
 	}
 	c.overlayPending.next = overlayPendingRetryInterval
 	p := c.overlayPending
-	// fireOverlay re-arms the SAME request while the roster is still in flight,
-	// preserving this countdown, so the retry can never outlive its TTL.
+	// fireOverlay re-arms the same request preserving this countdown, so the retry can't outlive its TTL.
 	c.applyEffectField(p.name, p.folder, p.flip, p.offX, p.offY)
 }
 
-// OverlayRealizationEffect is the ONE effect name canon special-cases: for it,
-// get_effect_property replaces the merged effects.ini `sound` wholesale with
-// get_custom_realization (text_file_functions.cpp:889-892). Exported because the
-// SEND side lives in internal/ui (it builds the outgoing field from the roster)
-// and a second spelling there would drift.
+// OverlayRealizationEffect is the name canon special-cases (text_file_functions.cpp:889-892); also used by internal/ui.
 const OverlayRealizationEffect = "realization"
 
-// realizationSFXFor is AO2's get_custom_realization (text_file_functions.cpp:
-// 896-903): the SPEAKER's own char.ini [Options] realization when it declares
-// one, else the theme's courtroom_sounds.ini "realization". Canon applies that
-// precedence in both places a realization sound is chosen — the legacy
-// REALIZATION=1 receive path and the outgoing effects field — so it lives in one
-// helper here rather than being re-derived at each.
+// realizationSFXFor is get_custom_realization (text_file_functions.cpp:896-903): char.ini, else the theme's.
 func (c *Courtroom) realizationSFXFor(char string) string {
 	if c.Chars != nil && char != "" {
 		if sfx := strings.TrimSpace(c.Chars.CustomRealizationFor(char)); sfx != "" {
@@ -363,11 +249,7 @@ func (c *Courtroom) realizationSFXFor(char string) string {
 	return c.RealizationSFX
 }
 
-// OverlayEffectsFolderFor answers "which misc folder do this speaker's effects
-// live in" for the 1- and 2-part wire shapes, which omit it: AO2 defaults
-// p_folder to the SENDER's char.ini [Options] effects
-// (text_file_functions.cpp:836-839). Costs no network work — charMeta already
-// fetched and cached that char.ini for the blip set and chatbox skin.
+// OverlayEffectsFolderFor defaults to the sender's char.ini effects (text_file_functions.cpp:836-839); already cached.
 func (c *Courtroom) OverlayEffectsFolderFor(char string) string {
 	if c.Assets == nil || char == "" {
 		return ""

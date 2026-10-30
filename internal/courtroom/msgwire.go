@@ -6,39 +6,19 @@ import (
 	"strings"
 )
 
-// AsyncAO messaging: private DMs and group chats between AsyncAO users, carried
-// over the SERVER's private-message command (/pm) — never the broadcast IC/OOC
-// channel. So normal players in the room see nothing and no area is spammed; the
-// server relays each message only to its recipients (the owner's logs see it, like
-// all traffic — other players don't). The server attributes every PM to its real
-// sender, so group roles (owner-only kick) can't be forged.
-//
-// The PM body is the human-readable text PLUS a tiny invisible control frame
-// (magic 0x74) carrying the KIND and, for groups, the group id / control fields. A
-// non-AsyncAO recipient just reads the text; AsyncAO threads it and acts on the
-// frame. Group state (members, owner) is reconstructed client-side from these
-// control messages — there is NO server-side group.
-//
-// Nyathena / Athena (and tsuserver) take "/pm <uid[,uid...]> <message>": the comma
-// list fans the message out to every recipient in ONE command, the server
-// delivering it privately to each. Received PMs arrive as a server CT whose Name is
-// "[PM] [UID <n>] <ooc name>" — the UID there is the server's attribution, the
-// trustworthy sender identity for roles.
+// DMs and group chats over the server's /pm, never broadcast; group state is rebuilt client-side.
+// Received PMs arrive as a CT named "[PM] [UID <n>] <ooc name>"; that UID is the identity trusted for roles.
 
 const (
-	// msgFrameMagic is this frame's leading byte, distinct from sprite-style (1),
-	// profile (0x70), status (0x71), effects (0x72) and reaction (0x73) so the shared
-	// zero-width scanner tells the codecs apart.
+	// msgFrameMagic is the first byte, distinct from the other frames' (1, 0x70, 0x71, 0x72, 0x73).
 	msgFrameMagic  = 0x74
 	msgWireVersion = 1
 
-	// maxGroupNameBytes bounds an invite's group name on the wire.
 	maxGroupNameBytes = 48
 	// msgUIDBytes is a kick target's UID: a big-endian uint32.
 	msgUIDBytes = 4
 )
 
-// MsgKind is the control kind of a messaging PM.
 type MsgKind uint8
 
 const (
@@ -50,10 +30,7 @@ const (
 	MsgKick      MsgKind = 5 // owner removed a member (GroupID + TargetUID)
 )
 
-// WireMessage is a decoded messaging control frame (SDL-free plain data). The
-// human-readable text travels as the plain PM body, NOT here — this is only the
-// metadata that threads / controls it. The sender is taken from the server's PM
-// attribution (ParsePMSender), never from this frame, so it can't be forged.
+// WireMessage is a control frame; the sender comes from the server's PM attribution, so it can't be forged.
 type WireMessage struct {
 	Kind      MsgKind
 	GroupID   uint32 // 0 for a plain DM
@@ -61,8 +38,7 @@ type WireMessage struct {
 	GroupName string // MsgInvite: the group's display name
 }
 
-// EncodeMarker returns the invisible zero-width run carrying this control frame, to
-// append to the PM body after the human-readable text.
+// EncodeMarker returns the invisible run to append after the PM's readable text.
 func (m WireMessage) EncodeMarker() string {
 	buf := binary.BigEndian.AppendUint32([]byte{msgFrameMagic, msgWireVersion, byte(m.Kind)}, m.GroupID)
 	switch m.Kind {
@@ -79,10 +55,7 @@ func (m WireMessage) EncodeMarker() string {
 	return packZeroWidth(buf)
 }
 
-// DecodeMessageFrame pulls a WireMessage out of a PM body if a well-formed messaging
-// frame is present, and returns the body with all zero-width runes stripped (the
-// human-readable text). ok=false (with the body unchanged) means no valid frame — a
-// short / corrupt frame is benign. Coexists with any other frame on the same text.
+// DecodeMessageFrame returns the frame and the stripped body; ok=false with the body unchanged means no valid frame.
 func DecodeMessageFrame(body string) (WireMessage, string, bool) {
 	if !hasMarker(body) {
 		return WireMessage{}, body, false
@@ -113,8 +86,7 @@ func DecodeMessageFrame(body string) (WireMessage, string, bool) {
 	return WireMessage{}, body, false
 }
 
-// PMCommand builds the OOC command that privately sends body to every uid via the
-// server's /pm (the comma list fans out in one command). Empty uids → "".
+// PMCommand builds the /pm command for every uid (the comma list fans out in one command); empty uids return "".
 func PMCommand(uids []int, body string) string {
 	if len(uids) == 0 {
 		return ""
@@ -132,10 +104,7 @@ func PMCommand(uids []int, body string) string {
 	return sb.String()
 }
 
-// ParsePMSender reads the server's PM attribution from an incoming CT Name field —
-// "[PM] [UID <n>] <ooc name>" (Nyathena / Athena). Returns the sender UID and OOC
-// name; ok=false when the Name isn't a received PM (e.g. the sender's own echo,
-// which starts "[PM →"). The UID is the server's attribution — trust it for roles.
+// ParsePMSender reads a CT Name's attribution; ok=false if not a received PM (the sender's echo starts "[PM →").
 func ParsePMSender(name string) (uid int, oocName string, ok bool) {
 	const prefix = "[PM] [UID "
 	if !strings.HasPrefix(name, prefix) {
