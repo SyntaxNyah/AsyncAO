@@ -11,19 +11,16 @@ import (
 )
 
 const (
-	// DesignFileName matches AO2-Client's courtroom design INI.
 	DesignFileName = "courtroom_design.ini"
 	// FontsFileName matches AO2-Client's courtroom fonts INI.
 	FontsFileName = "courtroom_fonts.ini"
 	// SoundsFileName matches AO2-Client's courtroom sounds INI.
 	SoundsFileName = "courtroom_sounds.ini"
-	// DefaultThemeName is the theme every lookup falls back to, exactly
-	// like AO2-Client's default_theme.
+	// DefaultThemeName is the theme every lookup falls back to, like AO2-Client's default_theme.
 	DefaultThemeName = "default"
 	// ThemesDirName is the folder (under each content root) holding themes.
 	ThemesDirName = "themes"
-	// PenaltyFileName is the HP-bar config (AO2-Client get_penalty_value
-	// reads "penalty/penalty.ini" from the theme).
+	// PenaltyFileName is the HP-bar config (AO2-Client get_penalty_value).
 	PenaltyFileName = "penalty/penalty.ini"
 
 	rectComponentCount = 4
@@ -36,41 +33,24 @@ type Rect struct {
 	X, Y, W, H int
 }
 
-// Valid reports whether the element carried usable dimensions.
 func (r Rect) Valid() bool { return r.W > 0 && r.H > 0 }
 
-// FontSpec is one courtroom_fonts.ini entry (AO2-Client Courtroom::set_font,
-// courtroom.cpp:1212 — "<id>" size, "<id>_font" family, "<id>_bold",
-// "<id>_sharp", "<id>_color").
+// FontSpec is one courtroom_fonts.ini entry (AO2-Client Courtroom::set_font, courtroom.cpp:1212).
 type FontSpec struct {
 	Size  int
 	Bold  bool
 	Color RGB
 	Font  string // optional "<name>_font" family (AO2); used to find a bundled .ttf
-	// Sharp mirrors "<id>_sharp = 1" — AO2 renders that element WITHOUT
-	// antialiasing (courtroom.cpp:1237, QFont::NoAntialias).
-	// Only the literal string "1" counts (courtroom.cpp:1237 is `!= "1"`), so
-	// "true"/"yes"/"0" all leave antialiasing ON. Do not "improve" the read below
-	// into a boolean parser: it would flip the elements a theme deliberately left
-	// smooth.
+	// Sharp mirrors "<id>_sharp = 1", no antialiasing; only the literal "1" counts (courtroom.cpp:1237).
 	Sharp bool
-	// SizeSet reports that the theme actually declared "<id>" — Size otherwise
-	// carries the parser's default and must NOT override the client's own scale.
-	// ColorSet is the same signal for "<id>_color". HasFont conflates the two,
-	// so it cannot answer either question on its own.
+	// SizeSet and ColorSet report declared keys; otherwise Size must not override the client's scale.
 	SizeSet  bool
 	ColorSet bool
 }
 
-// FontElements are the courtroom_fonts.ini identifiers AsyncAO honours, drawn
-// from AO2-Client Courtroom::set_fonts (courtroom.cpp:1195-1207).
-// Order is load-bearing but is NOT AO2's call order: internal/ui indexes its
-// resolved per-element table by position in this list, so the pairing that must
-// hold is with the themeFontElem enum there (pinned by TestThemeFontElemOrder).
-// Still unhonoured, each for its own reason: "clock_N" has no themed clock
-// widget, and "evidence_name" / "evidence_image_name" / "evidence_description"
-// are set from a different translation unit (evidence.cpp:94-96) onto a surface
-// AsyncAO does not dress yet.
+// FontElements are the fonts INI ids AsyncAO honours (courtroom.cpp:1195-1207).
+// internal/ui indexes its table by position, so the order must match its themeFontElem enum.
+// Not honoured: "clock_N" (no widget) and evidence_* (evidence.cpp:94-96, a surface not dressed).
 var FontElements = [...]string{
 	"showname",
 	"message",
@@ -79,104 +59,55 @@ var FontElements = [...]string{
 	"music_list",
 	"music_name",
 	"area_list",
-	// debug_log dresses the panel drawn at the ms_chatlog RECT. It was skipped
-	// while AsyncAO's debug log was chrome-only; the themed debug panel gave it a
-	// surface inside the design canvas, so it needs its own font like every other
-	// widget in there. AO2: set_font(ui_debug_log, "", "debug_log", p_char)
-	// (courtroom.cpp:1198) — note this is NOT server_chatlog's font, which is the
-	// neighbouring key it is easiest to mistake it for, and NOT "ms_chatlog":
-	// (courtroom.cpp:831).
+	// debug_log dresses the panel at the ms_chatlog rect (courtroom.cpp:1198, courtroom.cpp:831).
+	// It is not server_chatlog's font and not "ms_chatlog".
 	"debug_log",
 
-	// --- AsyncAO's own panels, below AO2's set -------------------------------
-	//
-	// AO2 has no identifier for any of these because it has no such panel: the
-	// player roster, the notes tab and the friends list are AsyncAO's. They are
-	// here, in the same table, because everything downstream of it — the INI
-	// parse, the off-thread family resolution, the user's per-panel override and
-	// the Settings rows — is identical whether an element came from AO2 or from
-	// us, and a second parallel table would have to duplicate all of it to say
-	// nothing new.
-	// A theme MAY set them ("player_list = 12", "notes_font = Arial") and nothing
-	// stops it, which is deliberate — AsyncAO's own theme format will want to.
+	// AsyncAO's own panels, below AO2's set: parsing, resolution and Settings treat them identically.
 	"player_list",
 	"notes",
 	"friends",
 }
 
-// RGB is a theme color tuple.
 type RGB struct{ R, G, B uint8 }
 
-// Theme resolves AO2 theme assets with the AO2-Client lookup order:
-// the active theme first, then the default theme. Images keep their original
-// theme file names (chatbox.png, chat_arrow.png, holdit_bubble.*, ...).
+// Theme resolves AO2 theme assets in AO2-Client's order: the active theme, then the default theme.
 type Theme struct {
-	// Name is the active theme's directory name.
 	Name string
-	// Sub is the AO2 subtheme folder inside the theme ("" = none), already
-	// sanitized. It is a variant selector, not a second theme: it contributes
-	// a HIGHER-priority directory inside the same theme folder.
+	// Sub is the sanitized AO2 subtheme folder ("" = none), a higher-priority directory inside the same theme.
 	Sub string
-	// dirs are the candidate theme directories in priority order:
-	// <root>/themes/<name>/<sub>, <root>/themes/<name>, then
-	// <root>/themes/default for every root.
+	// dirs in priority order: <root>/themes/<name>/<sub>, <root>/themes/<name>, <root>/themes/default.
 	dirs    []string
 	design  *INI
 	fonts   *INI
 	sounds  *INI
 	penalty *INI
 
-	// ownDirN is how many LEADING entries of dirs belong to THIS theme (its
-	// subtheme tier, its own folder and the flat-folder tier). Everything past it
-	// is the DEFAULT-theme fallback, which exists because AO2 falls back per key
-	// in the three design INIs.
-	// The sidecar deliberately does NOT: see sidecar below.
+	// ownDirN counts leading dirs of this theme; the rest are the per-key default fallback.
 	ownDirN int
-	// sidecar is the AsyncAO extension tier (asyncao_theme.ini), read ATOMICALLY
-	// from the first of THIS theme's own directories that has one — never merged
-	// per id across the ladder, and never inherited from the default theme.
-	// Both halves matter and they fail differently. Merging per id would
-	// materialise a fallback theme's decoration onto rects the author's canvas
-	// does not have; adopting the default theme's file wholesale would do the same
-	// thing to every theme that simply has no sidecar, which is most of them.
-	// AO2's own per-key merge is copied for the three design INIs because AO2 does
-	// it; nothing about the extension tier obliges us to repeat it.
+	// sidecar is read whole from this theme's first dir having one, never merged or inherited.
+	// Either would put decoration on rects the author's canvas lacks.
 	sidecar    *Sidecar
 	sidecarDir string
-	// sidecarErr is a sidecar that FAILED to parse (a cap refusal, or a file that
-	// is not INI at all). It never fails Load — rule 1 says a theme still renders
-	// with everything this build understands, and a theme with an unreadable
-	// extension tier is exactly a stock AO2 theme.
+	// sidecarErr is a sidecar that failed to parse; it never fails Load, as such a theme renders like stock AO2.
 	sidecarErr error
 }
 
-// SubthemeNameLen bounds a subtheme folder name. AO2 has no bound at all (it is
-// a free string in Options), but this one is joined onto a filesystem path from
-// a hand-editable preferences file, so it gets a named cap like every other
-// user-supplied collection member (hard rule 4). 48 is past every subtheme in
-// the reference corpus ("night", "alt", "christmas", "aa_investigations").
+// SubthemeNameLen bounds a name that joins a filesystem path from a hand-editable file (hard rule 4).
 const SubthemeNameLen = 48
 
-// SanitizeSubtheme reduces a user-supplied subtheme to ONE safe folder name, or
-// "" when it cannot be one. A subtheme is a single directory inside the theme
-// folder (AO2: get_theme_path(p_element, p_theme + "/" + p_subtheme),
-// path_functions.cpp:192), so anything with a separator, a drive letter, a ".."
-// segment or a leading dot is refused outright rather than cleaned into
-// something plausible — cleaning is how a guard becomes a suggestion.
-// Refusal is silent by design: the value comes from a preferences file, and the
-// only sane reading of an impossible subtheme is "no subtheme", which resolves
-// exactly like AO2 with the option unset.
+// SanitizeSubtheme reduces a subtheme to one safe folder name (path_functions.cpp:192), or "".
+// It refuses rather than cleans, as an impossible value means no subtheme.
 func SanitizeSubtheme(sub string) string {
 	sub = strings.TrimSpace(sub)
 	if sub == "" || safepath.UnsafeRel(sub) {
 		return ""
 	}
-	// One SEGMENT: UnsafeRel allows "night/deep", which would be two folders.
+	// One segment: UnsafeRel allows "night/deep", which would be two folders.
 	if strings.ContainsAny(sub, `/\`) {
 		return ""
 	}
-	// "." and any dotfile: neither names a subtheme, and both are how a probe
-	// gets pointed back at the theme folder itself.
+	// "." and dotfiles do not name a subtheme and point a probe back at the theme folder.
 	if strings.HasPrefix(sub, ".") {
 		return ""
 	}
@@ -186,14 +117,8 @@ func SanitizeSubtheme(sub string) string {
 	return sub
 }
 
-// Load opens the named theme across the given content roots (e.g. the
-// user config dir and the executable's directory). Missing INIs are
-// tolerated; lookups then simply miss into defaults.
-// (path_functions.cpp:190-193) and — deliberately — gives the default-theme
-// fallback NO subtheme tier (:202-205), so a subtheme can only ever add
-// resolutions inside the theme that owns it. That order is reproduced exactly;
-// with sub == "" the directory list is byte-identical to what it was before
-// subthemes existed.
+// Load opens the theme across roots, in AO2's order (path_functions.cpp:190-193).
+// The default fallback has no subtheme tier (path_functions.cpp:202-205).
 func Load(name, sub string, roots []string) (*Theme, error) {
 	if name == "" {
 		name = DefaultThemeName
@@ -204,21 +129,13 @@ func Load(name, sub string, roots []string) (*Theme, error) {
 		if root == "" {
 			continue
 		}
-		// Per ROOT, not per tier: root order is priority (a custom themes folder
-		// outranks the app directory), so a root's subtheme and its theme stay
-		// together ahead of the next root — the same shape the flat and default
-		// tiers below already have.
+		// Per root, not per tier: root order is priority, so a root's subtheme and theme stay together.
 		if sub != "" {
 			t.dirs = append(t.dirs, filepath.Join(root, ThemesDirName, name, sub))
 		}
 		t.dirs = append(t.dirs, filepath.Join(root, ThemesDirName, name))
 	}
-	// FLAT TIER (#21): themes ship as a zip holding one folder, and users drop
-	// that folder straight onto the window. AO2 never sees this shape — its root
-	// is always base/, so get_theme_path always joins "themes/" — but a streaming
-	// client's content root is whatever the user pointed at. Probing <root>/<name>
-	// AFTER every <root>/themes/<name> means a real base can never lose to it:
-	// loadFirstINI takes the FIRST hit per key and FindAsset walks dirs in order.
+	// Flat tier for a dropped theme folder; probed after every themes/<name>, so a real base wins.
 	for _, root := range roots {
 		if root == "" {
 			continue
@@ -228,18 +145,10 @@ func Load(name, sub string, roots []string) (*Theme, error) {
 		}
 		t.dirs = append(t.dirs, filepath.Join(root, name))
 	}
-	// Everything appended so far is THIS theme; everything after is the default
-	// fallback. Recorded here rather than re-derived, because the boundary is the
-	// whole of the sidecar's no-inheritance rule (see Theme.sidecar).
+	// The boundary between this theme and the default fallback is the sidecar's no-inheritance rule.
 	t.ownDirN = len(t.dirs)
-	// No flat tier for the DEFAULT fallback, deliberately: a bare-folder import
-	// supplies exactly one theme, and synthesising <root>/default would let a
-	// stray folder named "default" sitting beside the drop hijack every key the
-	// real theme leaves unresolved.
-	// No SUBTHEME tier here either, and that is AO2's call, not a shortcut:
-	// (path_functions.cpp:202-205) while every earlier tier takes one, so
-	// "night" inside your theme must not reach into the bundled default's
-	// "night". Adding it would resolve files AO2 would not.
+	// No flat tier for the default, or a stray "default" folder hijacks unresolved keys.
+	// No subtheme tier either, matching AO2 (path_functions.cpp:202-205).
 	for _, root := range roots {
 		if root == "" || name == DefaultThemeName {
 			continue
@@ -254,20 +163,15 @@ func Load(name, sub string, roots []string) (*Theme, error) {
 	t.fonts = t.loadFirstINI(FontsFileName)
 	t.sounds = t.loadFirstINI(SoundsFileName)
 	t.penalty = t.loadFirstINI(filepath.FromSlash(PenaltyFileName))
-	// The AsyncAO extension tier, over this theme's OWN directories only. A parse
-	// failure is recorded and swallowed: rule 1 (docs/THEME-FORMAT.md §7) says
-	// reading never refuses, and a theme whose sidecar cannot be read is a stock
-	// AO2 theme, which is a thing that renders.
+	// Own dirs only; a parse failure is recorded and swallowed, as reading never refuses.
 	t.sidecar, t.sidecarDir, t.sidecarErr = LoadSidecarIn(t.dirs[:t.ownDirN])
 	return t, nil
 }
 
-// ownDirs are THIS theme's own directories — its subtheme tier, its own folder
-// and the flat-folder tier — with the default-theme fallback excluded.
+// ownDirs excludes the default-theme fallback.
 func (t *Theme) ownDirs() []string { return t.dirs[:t.ownDirN] }
 
-// Sidecar is the parsed asyncao_theme.ini, or nil for a stock AO2 theme. Every
-// Sidecar accessor is nil-safe, so callers need no branch.
+// Sidecar is the parsed asyncao_theme.ini, or nil for a stock AO2 theme.
 func (t *Theme) Sidecar() *Sidecar {
 	if t == nil {
 		return nil
@@ -275,8 +179,7 @@ func (t *Theme) Sidecar() *Sidecar {
 	return t.sidecar
 }
 
-// SidecarDir is the directory the sidecar came out of ("" when there is none).
-// It is where [media] file paths and the theme's own fonts/ resolve from.
+// SidecarDir is where the sidecar came from ("" when none), and where [media] paths and the theme's fonts/ resolve.
 func (t *Theme) SidecarDir() string {
 	if t == nil {
 		return ""
@@ -284,8 +187,7 @@ func (t *Theme) SidecarDir() string {
 	return t.sidecarDir
 }
 
-// SidecarErr reports a sidecar that exists but could not be parsed. Diagnostics
-// only — it never blocks a load, and the import report is where a user sees it.
+// SidecarErr reports a sidecar that exists but could not be parsed; diagnostics only.
 func (t *Theme) SidecarErr() error {
 	if t == nil {
 		return nil
@@ -293,8 +195,7 @@ func (t *Theme) SidecarErr() error {
 	return t.sidecarErr
 }
 
-// loadFirstINI merges the named INI across dirs, FIRST hit per key winning
-// (active theme overrides default).
+// loadFirstINI merges the named INI across dirs, the first hit per key winning.
 func (t *Theme) loadFirstINI(fileName string) *INI {
 	merged := &INI{values: map[string]string{}}
 	for _, dir := range t.dirs {
@@ -311,8 +212,7 @@ func (t *Theme) loadFirstINI(fileName string) *INI {
 	return merged
 }
 
-// ElementRect returns the design rect for an element name (AO2-Client
-// get_element_dimensions): "name = x, y, w, h".
+// ElementRect returns the design rect for an element (AO2-Client get_element_dimensions).
 func (t *Theme) ElementRect(name string) (Rect, bool) {
 	raw, ok := t.design.Get(name)
 	if !ok {
@@ -330,13 +230,11 @@ func (t *Theme) ElementRect(name string) (Rect, bool) {
 	}, true
 }
 
-// DesignValue exposes a raw design key (e.g. "music_display_x" extras).
 func (t *Theme) DesignValue(key string) (string, bool) {
 	return t.design.Get(key)
 }
 
-// Font returns the font spec for an element: AO2 stores "<name> = <size>"
-// plus optional "<name>_color = r, g, b" and "<name>_bold = 1".
+// Font returns an element's font spec from "<name> = <size>" plus optional "_color" and "_bold" keys.
 func (t *Theme) Font(name string) FontSpec {
 	const defaultFontSize = 12
 	spec := FontSpec{Size: defaultFontSize, Color: RGB{255, 255, 255}}
@@ -362,8 +260,7 @@ func (t *Theme) Font(name string) FontSpec {
 	return spec
 }
 
-// HasFont reports whether the theme's fonts INI defines the element at
-// all (size or color) — callers keep their own defaults otherwise.
+// HasFont reports whether the fonts INI defines the element at all; callers keep their own defaults otherwise.
 func (t *Theme) HasFont(name string) bool {
 	if _, ok := t.fonts.Get(name); ok {
 		return true
@@ -372,12 +269,7 @@ func (t *Theme) HasFont(name string) bool {
 	return ok
 }
 
-// FontFile returns the path to the font file (.ttf/.otf) the ACTIVE theme wants
-// its courtroom text drawn in, so a streaming client can honour a theme's font
-// (#6/#39, Crystalwarrior). Resolution order:
-// The default-theme fallback dirs are skipped — only the active theme may impose
-// a font. "" = none found (keep the client font). FontFileFor / FontFiles resolve
-// the OTHER elements the same way (#39).
+// NamesAnyFontFamily and FontFile use the active theme only: nothing else may impose a font.
 func (t *Theme) NamesAnyFontFamily() bool {
 	for _, id := range FontElements {
 		if t.Font(id).Font != "" {
@@ -388,20 +280,11 @@ func (t *Theme) NamesAnyFontFamily() bool {
 }
 
 func (t *Theme) FontFile() string {
-	// A theme that NAMES families dresses its elements one by one (FontFiles, #39)
-	// and must not also impose a face on the whole client. This used to return the
-	// declared MESSAGE family first, which predates per-element fonts: it meant
-	// aceattorney2x's chatbox family became the app font — menus, lobby, settings
-	// and all — while the per-element table was separately applying the same face
-	// to the message anyway. The client-wide install is now only for the case that
-	// motivated it: a theme that ships one .ttf and declares nothing.
+	// A theme that names families dresses elements one by one and must not also impose a face on the whole client.
 	if t.NamesAnyFontFamily() {
 		return ""
 	}
-	// (3): any font file bundled in the active theme's own dir — a theme that
-	// ships one .ttf but declares no family (the original #6 case). Deliberately
-	// NOT recursive: a themes/<name>/fonts/ folder holding a dozen faces must not
-	// hand an arbitrary one to the whole client.
+	// A bundled font for a theme that declares no family; not recursive, to avoid an arbitrary face.
 	for _, dir := range t.ownDirs() { // this theme's own tiers, subtheme FIRST (ownDirs)
 		if f := firstFontIn(dir); f != "" {
 			return f
@@ -410,24 +293,13 @@ func (t *Theme) FontFile() string {
 	return ""
 }
 
-// fontScanMaxDepth bounds the recursive font walks. AO2-Client registers
-// <base>/fonts with an UNBOUNDED QDirIterator::Subdirectories (main.cpp:44-55);
-// a named cap keeps hard rule 4 (nothing unbounded) while covering every real
-// layout seen in the wild: <theme>/x.ttf, <theme>/fonts/x.otf,
-// <base>/fonts/<family>/x.ttf.
+// fontScanMaxDepth bounds font walks (hard rule 4), unbounded in AO2 (main.cpp:44-55).
 const fontScanMaxDepth = 3
 
-// fontScanMaxFiles caps one resolution's total file visits, so a user who points
-// the theme root at a whole drive can't stall the off-thread theme-apply. 4096 is
-// far past any real theme pack (C:\Windows\Fonts itself holds ~400 files).
+// fontScanMaxFiles caps one resolution's file visits, so a theme root set to a whole drive cannot stall theme apply.
 const fontScanMaxFiles = 4096
 
-// systemFontAliases maps a declared family to its Windows font FILE stem where
-// normalizeFontKey can't bridge the two ("Times New Roman" ships as times.ttf).
-// Families whose stem already normalizes to the family (Arial, Verdana, Tahoma,
-// Georgia, Impact, Calibri, Segoe UI, Consolas) need no entry. AO2 gets these for
-// free from Qt's system font database (get_qfont, courtroom.cpp:1263); a
-// streaming client has to name them.
+// systemFontAliases maps a family to its Windows file stem; AO2 uses Qt's database (courtroom.cpp:1263).
 var systemFontAliases = map[string]string{
 	"timesnewroman":        "times",
 	"couriernew":           "cour",
@@ -441,10 +313,7 @@ var systemFontAliases = map[string]string{
 	"microsoftsansserif":   "micross",
 }
 
-// HasAnyFontFile reports whether ANY font file is reachable through this theme's
-// ladder — its own directory tree, or a fonts/ folder beside the content roots.
-// Off-thread only: it walks the disk. Stops at the FIRST hit, so the common
-// healthy case is cheap.
+// HasAnyFontFile reports a font file reachable through this theme's dirs; off-thread only, walks the disk.
 func (t *Theme) HasAnyFontFile() bool {
 	idx := &fontIndex{budget: fontScanMaxFiles}
 	for _, dir := range t.ownDirs() { // the active theme's own tree only, as FontFiles does
@@ -468,11 +337,7 @@ func (t *Theme) HasAnyFontFile() bool {
 	return false
 }
 
-// ResolveFamilies resolves arbitrary family NAMES to font files, for callers
-// choosing a font that no theme declared — the per-panel font a USER picks in
-// Settings, rather than one courtroom_fonts.ini asked for.
-// Off-thread only (hard rule 2): this walks the disk. Returns a map from the
-// requested name to its resolved path, omitting whatever did not resolve.
+// ResolveFamilies maps family names to font paths, omitting misses; off-thread only (hard rule 2).
 func ResolveFamilies(families []string, contentDirs, sysDirs []string) map[string]string {
 	out := make(map[string]string, len(families))
 	want := make(map[string]struct{}, len(families))
@@ -481,7 +346,6 @@ func ResolveFamilies(families []string, contentDirs, sysDirs []string) map[strin
 		if fam == "" {
 			continue
 		}
-		// A usable path wins outright — no walk, no alias table, no surprises.
 		if looksLikeFontPath(fam) {
 			if st, err := os.Stat(fam); err == nil && !st.IsDir() {
 				out[fam] = fam
@@ -521,9 +385,7 @@ func ResolveFamilies(families []string, contentDirs, sysDirs []string) map[strin
 	return out
 }
 
-// looksLikeFontPath reports whether s should be treated as a file path rather
-// than a family name. Deliberately generous — a family name never contains a
-// separator, and never ends in a font extension.
+// looksLikeFontPath: families never contain a separator or end in a font extension.
 func looksLikeFontPath(s string) bool {
 	if strings.ContainsAny(s, `/\`) {
 		return true
@@ -532,22 +394,14 @@ func looksLikeFontPath(s string) bool {
 	return ext == ".ttf" || ext == ".otf" || ext == ".ttc"
 }
 
-// FontFileFor resolves ONE courtroom_fonts.ini element's declared family
-// ("<id>_font") to a font file on disk. The ladder mirrors what AO2-Client gets
-// from Qt — main.cpp:44-55 registers <base>/fonts RECURSIVELY into the
-// application font database, and QFont(family) then resolves against that plus
-// the system fonts:
-// "" when the element declares no family or nothing matches.
+// FontFileFor resolves an element's "<id>_font" family as Qt would after main.cpp:44-55; "" if none.
 func (t *Theme) FontFileFor(element string, sysDirs []string) string {
 	return t.FontFiles(sysDirs)[element]
 }
 
-// FontFiles resolves every FontElements entry in ONE bounded disk walk, so a
-// theme apply pays a single scan instead of one per element. Absent keys mean
-// "no family declared, or nothing matched". Off-thread only (hard rule 2).
+// FontFiles resolves every FontElements entry in one bounded disk walk; off-thread only (hard rule 2).
 func (t *Theme) FontFiles(sysDirs []string) map[string]string {
-	// Collect the declared families first: a theme that names none (the common
-	// case, and every theme before AO2 2.8) must not touch the disk at all.
+	// A theme that names no family must not touch the disk at all.
 	want := make(map[string]string, len(FontElements))
 	for _, id := range FontElements {
 		if fam := strings.TrimSpace(t.Font(id).Font); fam != "" {
@@ -559,14 +413,11 @@ func (t *Theme) FontFiles(sysDirs []string) map[string]string {
 		return out
 	}
 	idx := &fontIndex{budget: fontScanMaxFiles}
-	// (1) the ACTIVE theme's own directory tree — subtheme tier first, then the
-	// theme folder, then the flat tier; never the default-theme fallback, because
-	// only the active theme imposes fonts (ownDirs).
+	// The active theme's own tree, never the default fallback: only the active theme imposes fonts.
 	for _, dir := range t.ownDirs() {
 		idx.scan(dir, fontScanMaxDepth)
 	}
-	// (2) <root>/fonts — a theme dir is "<root>/themes/<name>", so the AO base
-	// "fonts/" sibling is "<root>/fonts/". Deduped across roots.
+	// <root>/fonts, the AO base sibling of themes/, deduped across roots.
 	seen := make(map[string]struct{}, len(t.dirs))
 	for _, dir := range t.dirs {
 		fontsDir := filepath.Join(filepath.Dir(filepath.Dir(dir)), "fonts")
@@ -593,8 +444,7 @@ func (t *Theme) FontFiles(sysDirs []string) map[string]string {
 	if resolve() == 0 {
 		return out
 	}
-	// (3) the OS font folders, scanned only when something is still unresolved —
-	// so a fully self-contained theme never reads C:\Windows\Fonts.
+	// OS font folders, only when something is unresolved, so a self-contained theme never reads C:\Windows\Fonts.
 	for _, dir := range sysDirs {
 		idx.scan(dir, 1) // flat: the system font folder has no per-family subdirs
 	}
@@ -602,21 +452,16 @@ func (t *Theme) FontFiles(sysDirs []string) map[string]string {
 	return out
 }
 
-// fontEntry is one indexed font file: its NORMALIZED file stem (the comparison
-// key) and the full path.
+// fontEntry is one indexed font file; stem is normalized for comparison.
 type fontEntry struct{ stem, path string }
 
-// fontIndex is the flat, priority-ordered list of candidate font files built by
-// one resolution pass. budget is the shared remaining file allowance
-// (fontScanMaxFiles) so the whole walk — every tier, every root — is bounded.
+// fontIndex is one pass's priority-ordered files; budget is what remains of fontScanMaxFiles.
 type fontIndex struct {
 	ents   []fontEntry
 	budget int
 }
 
-// scan appends dir's .ttf/.otf files to the index, then recurses into its
-// sub-directories while depth allows. FILES BEFORE DIRS so a font at the theme
-// root outranks one buried in a subfolder at the same tier.
+// scan appends dir's font files, then recurses; files first, so the theme root outranks a subfolder.
 func (idx *fontIndex) scan(dir string, depth int) {
 	if depth <= 0 || idx.budget <= 0 || dir == "" {
 		return
@@ -651,10 +496,8 @@ func (idx *fontIndex) scan(dir string, depth int) {
 	}
 }
 
-// match resolves a declared family to an indexed path: an EXACT normalized stem
-// match first (so "Igiari" can't lose to "igiari-cyrillic.ttf"), then a stem that
-// CONTAINS the family ("IBM Plex Serif" → "IBMPlexSerif-Regular.otf"), then the
-// same two passes through systemFontAliases. "" when nothing matches.
+// match resolves a family: exact stem first, so "Igiari" cannot lose to "igiari-cyrillic.ttf",
+// then a containing stem, then both through systemFontAliases.
 func (idx *fontIndex) match(family string) string {
 	want := normalizeFontKey(family)
 	if want == "" {
@@ -679,8 +522,7 @@ func (idx *fontIndex) match(family string) string {
 	return ""
 }
 
-// firstFontIn returns any .ttf/.otf directly inside dir (no recursion) — the
-// family-less fallback for a theme that simply bundles one font file.
+// firstFontIn returns any font file directly inside dir, for a theme that bundles one.
 func firstFontIn(dir string) string {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
@@ -698,9 +540,7 @@ func firstFontIn(dir string) string {
 	return ""
 }
 
-// normalizeFontKey folds a font family or file stem to a comparison key:
-// lowercased with spaces, underscores and hyphens dropped, so the many spellings
-// of one family ("Igiari", "igiari", "ig-iari") collapse together.
+// normalizeFontKey lowercases and drops spaces, underscores and hyphens, so spellings of one family compare equal.
 func normalizeFontKey(s string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(s) {
@@ -713,20 +553,16 @@ func normalizeFontKey(s string) string {
 	return b.String()
 }
 
-// SoundName returns the courtroom_sounds.ini entry (e.g. "word_call").
 func (t *Theme) SoundName(key string) (string, bool) {
 	return t.sounds.Get(key)
 }
 
-// PenaltyValue returns a penalty/penalty.ini entry (hp_increased_sfx,
-// hp_decreased_sfx, ... — AO2-Client get_penalty_value).
+// PenaltyValue returns a penalty/penalty.ini entry (AO2-Client get_penalty_value).
 func (t *Theme) PenaltyValue(key string) (string, bool) {
 	return t.penalty.Get(key)
 }
 
-// FindAsset locates a theme file by stem, probing the given extensions in
-// order across the theme directories (active theme first). Returns the
-// first existing path.
+// FindAsset returns the first existing theme file for stem, probing exts in order across the theme dirs.
 func (t *Theme) FindAsset(stem string, exts []string) (string, bool) {
 	for _, dir := range t.dirs {
 		if path, ok := FindAssetIn(dir, stem, exts); ok {
@@ -736,23 +572,10 @@ func (t *Theme) FindAsset(stem string, exts []string) (string, bool) {
 	return "", false
 }
 
-// FindAssetIn is FindAsset restricted to ONE directory — the same extension
-// probe, without the fall-through to the next theme dir (and therefore without
-// the fall-through to the bundled default theme).
-// that path minus its extension (courtroom.cpp:3358-3368) — so those two files
-// can only ever come out of the directory the base skin came out of. A theme
-// that ships chatmed.png but no chat.png does not get its med art in AO2, and
-// must not get it here either: pairing one theme's variant with another theme's
-// base would stretch mismatched art into the same box.
+// FindAssetIn is FindAsset for one directory: AO2 derives chat variants from the base skin's path
+// (courtroom.cpp:3358-3368), so they must not pair with another theme's base.
 func FindAssetIn(dir, stem string, exts []string) (string, bool) {
-	// An EMPTY stem is "this variant does not apply to this theme", not "probe
-	// the directory for a file called .png". Without the guard, filepath.Join
-	// builds <dir>/.png — a dotfile that is legal on every filesystem this runs
-	// on, so a theme could ship one and have it silently adopted as a variant
-	// skin. The chatbox's blank rung returns "" for exactly this reason (a theme
-	// whose BASE skin already is chatblank has no separate blank variant), and it
-	// is the one caller that can produce it; pinned by
-	// TestFindAssetInRefusesAnEmptyStem.
+	// An empty stem means no variant; otherwise Join builds <dir>/.png, adoptable as a skin.
 	if stem == "" {
 		return "", false
 	}
@@ -765,25 +588,18 @@ func FindAssetIn(dir, stem string, exts []string) (string, bool) {
 	return "", false
 }
 
-// Dirs exposes the probe order (diagnostics / docs tooling).
 func (t *Theme) Dirs() []string {
 	out := make([]string, len(t.dirs))
 	copy(out, t.dirs)
 	return out
 }
 
-// KeyCount totals the keys loaded across the three INIs — 0 means the
-// theme directories contributed nothing (diagnostics).
+// KeyCount totals the keys loaded across the three INIs; 0 means the theme dirs contributed nothing.
 func (t *Theme) KeyCount() int {
 	return t.design.Len() + t.fonts.Len() + t.sounds.Len()
 }
 
-// DesignKeys returns every ROOT-SECTION courtroom_design.ini key the theme
-// resolved (lowercased, values raw). Keys under a [section] are excluded, which
-// is what the caller wants: AO2 reads courtroom_design.ini's widget rects from
-// the root only.
-// Diagnostics only — it allocates a map, so it must never be called from a draw
-// path. The one caller runs on the theme-apply goroutine.
+// DesignKeys returns root-section keys, where AO2 reads rects; it allocates, so never on a draw path.
 func (t *Theme) DesignKeys() map[string]string { return t.design.SectionKeys("") }
 
 func parseRGB(raw string) (RGB, bool) {

@@ -1,12 +1,6 @@
 package themepack
 
-// WRITE — turn a theme folder into one shareable file.
-// There is deliberately no exported "plan it first" entry point yet. The design's
-// export SHEET wants those numbers before the click, and getting them means a
-// disk walk, which is goroutine-only (hard rule 2) — so the sheet needs its own
-// off-thread stage, and an exported primitive whose only caller was a test would
-// be the parsed-but-never-applied shape rule 11 forbids. It arrives with the
-// sheet.
+// Write turns a theme folder into one shareable file.
 
 import (
 	"archive/zip"
@@ -19,21 +13,13 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/safepath"
 )
 
-// srcEntry is one file of the source folder, with the size the caps are counted
-// against.
+// srcEntry is one source file with the size the caps count.
 type srcEntry struct {
 	rel  string // folder-relative, forward slashes
 	size int64
 }
 
-// Extra is a bundle member produced by the CALLER rather than read off the
-// folder: the AO2-compat export's baked courtroom_design.ini, its emptied
-// sidecar, and ASYNCAO-LOST.txt.
-// AN EXTRA REPLACES a folder entry with the same Rel, which is what makes
-// "bake the overrides into the design INI, but only in the bundle" possible
-// WITHOUT ever writing that file back into the author's own folder — the
-// highest-blast-radius risk the design names (§Q5 R3). The bytes exist for the
-// length of one zip and are never on disk under the theme's name.
+// Extra is a caller-made member replacing a folder entry, so baked output never enters the author's folder.
 type Extra struct {
 	// Rel is the bundle path inside the theme folder, forward slashes.
 	Rel string
@@ -41,13 +27,10 @@ type Extra struct {
 	Data []byte
 }
 
-// PackExtraCap bounds caller-supplied members (hard rule 4). Three is the
-// AO2-compat set; eight leaves room for a future manifest or preview without
-// letting a caller turn Write into an arbitrary archiver.
+// PackExtraCap bounds caller-supplied members (hard rule 4), so Write cannot become an arbitrary archiver.
 const PackExtraCap = 8
 
-// Write zips srcDir into destPath and returns what it wrote.
-// BLOCKING — goroutine only (hard rule 2).
+// Write zips srcDir into destPath and returns what it wrote; blocking, goroutine only (hard rule 2).
 func Write(srcDir, destPath string, extras []Extra) (*Manifest, error) {
 	entries, m, err := scanFolder(srcDir)
 	if err != nil {
@@ -61,8 +44,7 @@ func Write(srcDir, destPath string, extras []Extra) (*Manifest, error) {
 	}
 	for _, x := range extras {
 		if x.Rel == "" || safepath.UnsafeRel(x.Rel) || len(x.Rel) > PackPathLenCap {
-			// The SAME guard the archive's own names go through. A caller is trusted
-			// code, but "trusted code cannot make a mistake" is not a security model.
+			// The same guard as archive names, as trusted code can still make a mistake.
 			return nil, unsafeErr(x.Rel)
 		}
 		if int64(len(x.Data)) > PackEntryBytesCap {
@@ -88,8 +70,7 @@ func Write(srcDir, destPath string, extras []Extra) (*Manifest, error) {
 	return m, nil
 }
 
-// writeArchive is the zip itself. The root folder is prefixed onto every entry
-// name, which is the whole of §2.5's layout.
+// writeArchive prefixes the root folder onto every entry name, the published layout.
 func writeArchive(srcDir, root string, entries []srcEntry, extras []Extra, destPath string) error {
 	f, err := os.Create(destPath)
 	if err != nil {
@@ -129,9 +110,7 @@ func writeArchive(srcDir, root string, entries []srcEntry, extras []Extra, destP
 		f.Close()
 		return err
 	}
-	// FSYNC BEFORE THE RENAME. Without it the directory entry can land before the
-	// bytes on a crash, which is a zero-byte .aotheme wearing a valid name — the
-	// exact shape the temp-then-rename dance exists to prevent.
+	// Fsync before the rename: otherwise a crash can leave a zero-byte .aotheme with a valid name.
 	if err := f.Sync(); err != nil {
 		f.Close()
 		return err
@@ -139,7 +118,6 @@ func writeArchive(srcDir, root string, entries []srcEntry, extras []Extra, destP
 	return f.Close()
 }
 
-// addOneFile streams one file into the archive, bounded by PackEntryBytesCap.
 func addOneFile(zw *zip.Writer, name, src string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -155,16 +133,13 @@ func addOneFile(zw *zip.Writer, name, src string) error {
 		return err
 	}
 	if n > PackEntryBytesCap {
-		// A file that GREW between the scan and the copy. Refused rather than
-		// truncated, for the reason the import side gives: half a texture is worse
-		// than none.
+		// A file that grew between scan and copy is refused, not truncated: half a texture is worse than none.
 		return capErr("one entry's size in bytes", n, PackEntryBytesCap, name)
 	}
 	return nil
 }
 
-// scanFolder walks a theme folder under the import's own caps and builds the
-// manifest.
+// scanFolder walks a theme folder under the import's caps and builds the manifest.
 func scanFolder(srcDir string) ([]srcEntry, *Manifest, error) {
 	if srcDir == "" {
 		return nil, nil, errors.New("themepack: no theme folder to bundle")
@@ -182,11 +157,7 @@ func scanFolder(srcDir string) ([]srcEntry, *Manifest, error) {
 	}
 	m := &Manifest{Root: root}
 	entries := make([]srcEntry, 0, 64)
-	// The SAME "one file per name" guard the import census applies. It can only
-	// ever fire on a case-SENSITIVE filesystem, because that is the only kind that
-	// can hold the pair — and that is exactly the machine on which an export would
-	// otherwise produce a bundle this client refuses to import, which is the
-	// asymmetry this file's header promises does not exist.
+	// The import's "one file per name" check, or a case-sensitive export makes a bundle we refuse.
 	seen := newCaseSet()
 	var total int64
 	var capFail error
@@ -217,8 +188,7 @@ func scanFolder(srcDir string) ([]srcEntry, *Manifest, error) {
 			capFail = capErr("uncompressed total in bytes", total, PackTotalBytesCap, rel)
 			return false
 		}
-		// The write path and the quoted name are the same string here: on the folder
-		// side nothing is folded, so the file is spelled exactly as it will be packed.
+		// Nothing folds on the folder side, so the write path and quoted name are the same.
 		if err := seen.claim(rel, rel); err != nil {
 			capFail = err
 			return false
@@ -242,10 +212,7 @@ func scanFolder(srcDir string) ([]srcEntry, *Manifest, error) {
 	return entries, m, nil
 }
 
-// asPackEntries adapts the folder walk's rows to the shape describeContents
-// reads, so the media/font census is ONE function for both directions — an
-// exporter that classified fonts differently from the importer would warn about a
-// missing licence on the way in and not on the way out.
+// asPackEntries adapts folder rows for describeContents, so export and import classify fonts identically.
 func asPackEntries(entries []srcEntry) []packEntry {
 	out := make([]packEntry, len(entries))
 	for i, e := range entries {
@@ -254,8 +221,7 @@ func asPackEntries(entries []srcEntry) []packEntry {
 	return out
 }
 
-// readFolderSidecar fills the display metadata from the folder's own sidecar, or
-// warns that there is none — the folder-side twin of readPackSidecar.
+// readFolderSidecar fills display metadata from the folder's sidecar, or warns there is none.
 func readFolderSidecar(m *Manifest, srcDir string, entries []srcEntry) {
 	for _, e := range entries {
 		if !strings.EqualFold(e.rel, sidecarName) {
@@ -271,9 +237,7 @@ func readFolderSidecar(m *Manifest, srcDir string, entries []srcEntry) {
 		}
 		m.Name, m.Author, m.License, m.Format = sc.Meta.Name, sc.Meta.Author, sc.Meta.License, sc.Format
 		if m.License == "" {
-			// NAMED, because the licence is the one field a recipient needs and the
-			// one an author forgets. Not an error: plenty of themes are shared with
-			// no licence at all, and refusing that would be inventing a policy.
+			// Not an error: refusing themes shared without a licence would invent a policy.
 			m.addWarning("this theme declares no [theme] license — say what people may do with it")
 		}
 		return

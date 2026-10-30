@@ -1,10 +1,6 @@
 package themepack
 
-// EXTRACT — turn a bundle into a theme folder, or leave the disk untouched.
-// COLLISIONS SUFFIX, THEY DO NOT OVERWRITE. Re-shared themes are renamed
-// constantly, so "paper" arriving twice is two themes far more often than it is
-// one theme twice — and the cost of guessing wrong in the overwrite direction is
-// somebody else's work, silently gone.
+// Extract makes a theme folder or leaves the disk untouched; collisions suffix, as overwriting destroys work.
 
 import (
 	"archive/zip"
@@ -18,8 +14,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/safepath"
 )
 
-// Extract imports the bundle at packPath into a new folder under themesRoot.
-// BLOCKING — goroutine only (hard rule 2).
+// Extract imports the bundle at packPath into a new folder under themesRoot; blocking, goroutine only (hard rule 2).
 func Extract(packPath, themesRoot string) (*Manifest, error) {
 	if themesRoot == "" {
 		return nil, errors.New("themepack: no themes folder to import into")
@@ -30,7 +25,7 @@ func Extract(packPath, themesRoot string) (*Manifest, error) {
 	}
 	defer zr.Close()
 
-	// EVERY REFUSAL HAPPENS HERE, from metadata, with the destination untouched.
+	// Every refusal happens here, from metadata, with the destination untouched.
 	m, entries, err := inspectReader(zr.r, zr.zipBytes, SanitizeName(stemOf(packPath)))
 	if err != nil {
 		return nil, err
@@ -46,8 +41,7 @@ func Extract(packPath, themesRoot string) (*Manifest, error) {
 	m.Root = name
 	final := filepath.Join(themesRoot, name)
 	part := final + packPartSuffix
-	// A leftover .part from a crashed run is scrap, not data: it was never a
-	// theme and nothing has ever read it.
+	// A leftover .part from a crashed run was never a theme.
 	if err := os.RemoveAll(part); err != nil {
 		return nil, err
 	}
@@ -63,13 +57,7 @@ func Extract(packPath, themesRoot string) (*Manifest, error) {
 	return m, nil
 }
 
-// writeEntries materialises the accepted entries under dest.
-// THAT INVARIANT IS PINNED, not assumed: TestTheDeclaredSizeIsAHardCeilingOnWhat
-// AnEntryCanDeliver drives a forged under-declaring archive through the real
-// reader, so a future Go that relaxed the check would fail this package rather
-// than silently un-bound its extractor. The per-entry cap below is re-checked
-// anyway — it is one comparison, and it is the one line that would hold if that
-// gate ever went red.
+// writeEntries materialises entries, re-checking the per-entry cap on top of archive/zip's ceiling.
 func writeEntries(zr *zip.Reader, entries []packEntry, dest string) error {
 	for _, e := range entries {
 		out, err := safepath.Join(dest, e.rel)
@@ -86,7 +74,6 @@ func writeEntries(zr *zip.Reader, entries []packEntry, dest string) error {
 	return nil
 }
 
-// writeOneEntry copies one member, bounded.
 func writeOneEntry(f *zip.File, out, rel string) error {
 	rc, err := f.Open()
 	if err != nil {
@@ -97,8 +84,7 @@ func writeOneEntry(f *zip.File, out, rel string) error {
 	if err != nil {
 		return err
 	}
-	// One byte past the cap is read so the cap can REFUSE rather than silently
-	// truncate: a theme missing the tail of a texture is worse than no theme.
+	// One byte past the cap is read so it can refuse: a theme missing a texture's tail is worse than none.
 	n, err := io.Copy(w, io.LimitReader(rc, PackEntryBytesCap+1))
 	closeErr := w.Close()
 	if err != nil {
@@ -113,11 +99,7 @@ func writeOneEntry(f *zip.File, out, rel string) error {
 	return nil
 }
 
-// freeName returns the first unused folder name under root: base, then
-// "base (2)", "base (3)" … up to PackCollisionCap.
-// BOUNDED (hard rule 4), and the bound has a behaviour: past it the import
-// refuses and names the number, rather than probing forever or overwriting the
-// sixteenth copy.
+// freeName returns the first unused name, "base (2)" and so on up to PackCollisionCap (hard rule 4).
 func freeName(root, base string) (string, error) {
 	for i := 1; i <= PackCollisionCap; i++ {
 		name := base
