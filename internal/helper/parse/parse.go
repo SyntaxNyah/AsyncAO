@@ -1,6 +1,4 @@
-// Package parse turns untrusted text into values. It is part of internal/helper
-// (see package value for the scope rule). AO wire parsing and theme INI rules
-// stay in their own packages.
+// Package parse turns untrusted text into values; AO wire parsing and theme INI rules stay in their own packages.
 package parse
 
 import (
@@ -9,12 +7,8 @@ import (
 	"strings"
 )
 
-// AtoiOr parses a base-10 integer, ignoring surrounding space. Empty or
-// malformed input gives fallback, never an error. That is AO2 parity: AO2 reads
-// numbers with QString::toInt(), which yields 0 for anything it cannot parse
-// (Qt 6.5.3: "8SS" → 0), and uses the result unchecked (AO2-Client
-// text_file_functions.cpp:212-239). Rejecting such input would make AsyncAO
-// stricter than the client every theme and server was written against.
+// AtoiOr gives fallback for unparsable input: AO2 reads numbers with QString::toInt and uses the 0 unchecked
+// (AO2-Client text_file_functions.cpp:212-239), so rejecting them would be stricter than the client.
 func AtoiOr(s string, fallback int) int {
 	n, err := strconv.Atoi(strings.TrimSpace(s))
 	if err != nil {
@@ -31,9 +25,7 @@ const (
 	nibbleBits    = 4
 )
 
-// HexColor parses "rrggbb" or "rrggbbaa", in either case, with an optional
-// leading '#' and surrounding space. Six digits are opaque; alpha is straight
-// (not premultiplied), as everyone who types a hex colour means it.
+// HexColor parses "rrggbb" or "rrggbbaa", with an optional '#'; alpha is straight, not premultiplied.
 func HexColor(s string) (color.NRGBA, bool) {
 	s = strings.TrimPrefix(strings.TrimSpace(s), "#")
 	if len(s) != hexRGBDigits && len(s) != hexRGBADigits {

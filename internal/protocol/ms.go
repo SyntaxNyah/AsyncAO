@@ -11,8 +11,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/packetutil"
 )
 
-// MS packet field indices, mirroring AO2-Client's CHAT_MESSAGE enum
-// (src/datatypes.h) exactly. Field count and order are protocol law.
+// MS field indices mirror AO2-Client's CHAT_MESSAGE enum (src/datatypes.h); count and order are fixed by the protocol.
 const (
 	MSDeskMod          = 0
 	MSPreEmote         = 1
@@ -47,8 +46,7 @@ const (
 	MSBlipname         = 30
 	MSSlide            = 31
 
-	// MSMinimum is the pre-2.6 field count; shorter packets are dropped
-	// (AO2-Client MS_MINIMUM).
+	// MSMinimum is the pre-2.6 field count; shorter packets are dropped (AO2-Client MS_MINIMUM).
 	MSMinimum = 15
 	// MSMaximum is the full 2.8+ field count (AO2-Client MS_MAXIMUM).
 	MSMaximum = 32
@@ -61,9 +59,7 @@ const (
 	EmoteModZoom        = 5
 	EmoteModPreanimZoom = 6
 
-	// legacyEmoteModObjection (2) and legacyEmoteModZoomPre (4) are
-	// deprecated wire values normalized at parse (AO2-Client
-	// handle_emote_mod). legacyEmoteModUnknown (3) has no meaning at all.
+	// Deprecated wire values, normalized at parse (AO2-Client handle_emote_mod); 3 has no meaning at all.
 	legacyEmoteModObjection = 2
 	legacyEmoteModUnknown   = 3
 	legacyEmoteModZoomPre   = 4
@@ -124,16 +120,12 @@ type ChatMessage struct {
 	Blipname     string
 	Slide        bool
 
-	// Additional is the per-message group roster (additional_chars), populated
-	// only when a group member speaks. Empty for a non-member message.
+	// Additional is the group roster (additional_chars), set only when a group member speaks.
 	Additional []GroupPairMember
 }
 
-// ParseMS validates and parses an incoming MS packet's fields. Mirrors
-// AO2-Client chatmessage_enqueue/unpack_chatmessage: packets shorter than
-// MSMinimum are rejected; fields at index ≥ MSMinimum are honored only when
-// the server advertised cccc_ic_support; absent fields read as "".
-// charListSize bounds CHAR_ID validation (pass 0 to skip the upper bound).
+// ParseMS mirrors AO2-Client chatmessage_enqueue/unpack_chatmessage: fields past MSMinimum need
+// cccc_ic_support, absent fields read as "", and charListSize 0 skips the CHAR_ID upper bound.
 func ParseMS(fields []string, features FeatureSet, charListSize int) (*ChatMessage, error) {
 	if len(fields) < MSMinimum {
 		return nil, fmt.Errorf("protocol: MS packet has %d fields, minimum %d", len(fields), MSMinimum)
@@ -149,17 +141,8 @@ func ParseMS(fields []string, features FeatureSet, charListSize int) (*ChatMessa
 		return fields[i]
 	}
 
-	// getBlips is get() with AO2-Client's CUSTOM_BLIPS gate on top
-	// (courtroom.cpp:4249-4255 reads m_chatmessage[BLIPNAME] only when
-	// serverdata advertises BASE_FEATURE_SET::CUSTOM_BLIPS, serverdata.h:64).
-	// Indices 30/31 are the 2.9.1 blipname/slide pair, and BuildFields appends
-	// them as a pair under that same feature. KFO-Server does NOT advertise
-	// custom_blips and reuses both slots for its "triplex" third-pairing
-	// extension — third_charid at 30 (idle value the literal "-1") and
-	// third_folder at 31 — so reading them ungated turned a sentinel into a
-	// blip URL on every incoming message. Gating Slide alongside Blipname is
-	// deliberate: on a server that genuinely advertises custom_blips the two
-	// always ship together, so behaviour is unchanged everywhere else.
+	// getBlips applies AO2-Client's CUSTOM_BLIPS check (courtroom.cpp:4249-4255, serverdata.h:64): KFO-Server
+	// reuses indices 30/31 for third_charid ("-1" when idle) and third_folder, which aren't a blip name or slide.
 	getBlips := func(i int) string {
 		if !features.Has(FeatureCustomBlips) {
 			return ""
@@ -176,8 +159,7 @@ func ParseMS(fields []string, features FeatureSet, charListSize int) (*ChatMessa
 	selfX, selfY := ParseOffset(get(MSSelfOffset))
 
 	msg := &ChatMessage{
-		// Mirrors QString::toInt: non-numeric legacy values ("chat") read
-		// as 0 (DeskHide), exactly like AO2-Client.
+		// Mirrors QString::toInt: non-numeric legacy values ("chat") read as 0 (DeskHide), as in AO2-Client.
 		DeskMod:      parse.AtoiOr(get(MSDeskMod), DeskHide),
 		PreEmote:     get(MSPreEmote),
 		CharName:     get(MSCharName),
@@ -212,9 +194,7 @@ func ParseMS(fields []string, features FeatureSet, charListSize int) (*ChatMessa
 	return msg, nil
 }
 
-// normalizeEmoteMod maps deprecated wire values onto live ones, mirroring
-// AO2-Client handle_emote_mod: 4 → preanim-zoom (old zoompre bug), 2 →
-// preanim (deprecated objection-preanim), anything unknown → idle.
+// normalizeEmoteMod mirrors AO2-Client handle_emote_mod: 4 to preanim-zoom, 2 to preanim, anything unknown to idle.
 func normalizeEmoteMod(mod int) int {
 	switch mod {
 	case EmoteModIdle, EmoteModPreanim, EmoteModZoom, EmoteModPreanimZoom:
@@ -243,11 +223,7 @@ func (m *ChatMessage) IsShout() bool {
 	return m.Objection >= ShoutHoldIt && m.Objection <= ShoutCustom
 }
 
-// --- Outgoing MS ----------------------------------------------------------------
-
-// OutgoingMS describes a message to send; Fields applies the same
-// feature-gating ladder as AO2-Client's on_chat_return_pressed, so the
-// packet shape matches what the connected server expects.
+// OutgoingMS is a message to send; Fields applies the same feature checks as AO2-Client's on_chat_return_pressed.
 type OutgoingMS struct {
 	DeskMod     int
 	PreEmote    string
@@ -287,25 +263,18 @@ type OutgoingMS struct {
 	Blipname string
 	Slide    bool
 
-	// KFOCompat fills the frame/effect fields the AO2-Client way (non-empty) when the
-	// server is KFO-Server, whose MS validator rejects empty STR values. Off for every
-	// other server, so their wire is byte-identical to before.
+	// KFOCompat fills frame and effect fields as AO2-Client does; KFO-Server's validator rejects empty STR values.
 	KFOCompat bool
 }
 
-// kfoFrameTemplate is AO2-Client's per-emote frame field (courtroom.cpp ~2272):
-// "<pre>^(b)<emote>^(a)<emote>^" — non-empty, so KFO-Server's strict MS validator
-// accepts it. AsyncAO tracks no per-frame SFX data, so it's the bare template.
+// kfoFrameTemplate is AO2-Client's per-emote frame field (courtroom.cpp ~2272), non-empty for KFO-Server's
+// validator; AsyncAO tracks no per-frame SFX data.
 func kfoFrameTemplate(pre, emote string) string {
 	return pre + "^(b)" + emote + "^(a)" + emote + "^"
 }
 
-// clampDeskMod collapses the expanded 2.9 desk mods (2–5) down to the legacy
-// hide/show values when the server did NOT advertise expanded_desk_mods, matching
-// AO2-Client's on_chat_return_pressed clamp (courtroom.cpp:2021-2031):
-// A strict-validator server (same class as the KFO/LemmyAO fixes) rejects the
-// whole MS otherwise; 0/1 pass everywhere. When the feature IS advertised the mod
-// rides raw. Same clamp table as ms.go's other legacy-value normalizations.
+// clampDeskMod collapses 2.9 desk mods (2-5) to hide/show without expanded_desk_mods, as AO2-Client does
+// (courtroom.cpp:2021-2031); strict servers reject the whole MS otherwise.
 func clampDeskMod(mod int, features FeatureSet) int {
 	if features.Has(FeatureExpandedDeskMods) {
 		return mod
@@ -390,9 +359,7 @@ func (o OutgoingMS) Fields(features FeatureSet) []string {
 	return fields
 }
 
-// Packet wraps Fields into the MS packet, carrying aolib's canonical typed form
-// so the JSON wire is built from the typed struct (correct enum strings + field
-// mapping) rather than reconstructed from the positional args.
+// Packet wraps Fields and carries aolib's typed form, so the JSON wire is built from the typed struct.
 func (o OutgoingMS) Packet(features FeatureSet) Packet {
 	p := NewPacket("MS", o.Fields(features)...)
 	typed := o.ToAolibMSToServer(features)
@@ -400,11 +367,8 @@ func (o OutgoingMS) Packet(features FeatureSet) Packet {
 	return p
 }
 
-// ToAolibMSToServer maps this message onto aolib's canonical typed MS struct,
-// honoring the same feature-gating as Fields. It uses aolib's own enum types so
-// the JSON encoder emits schema-valid values (never an empty enum), and drops
-// the Fanta-only extensions aolib doesn't model (custom shout name, pair
-// z-order, blip name/slide) exactly as the JSON wire does.
+// ToAolibMSToServer applies the checks of Fields, and drops Fanta-only extensions aolib doesn't model
+// (custom shout name, pair z-order, blip name and slide).
 func (o OutgoingMS) ToAolibMSToServer(features FeatureSet) aolib.MSToServer {
 	return aolib.MSToServer{
 		DeskModifier:           deskModifierSafe(clampDeskMod(o.DeskMod, features)),
@@ -436,9 +400,7 @@ func (o OutgoingMS) ToAolibMSToServer(features FeatureSet) aolib.MSToServer {
 	}
 }
 
-// deskModifierSafe maps a wire desk-mod integer to its enum, falling back to
-// aolib's own default (shown) for out-of-range values so the JSON never carries
-// an empty enum.
+// deskModifierSafe falls back to aolib's default (shown) so the JSON never carries an empty enum.
 func deskModifierSafe(mod int) aolib.DeskModifier {
 	if v, ok := packetutil.DeskModifierFromWire[mod]; ok {
 		return v
@@ -446,8 +408,7 @@ func deskModifierSafe(mod int) aolib.DeskModifier {
 	return aolib.DeskModifierShown
 }
 
-// emoteModifierSafe maps a wire emote-mod integer to its enum, defaulting to
-// no_preanim (aolib's default) for out-of-range values.
+// emoteModifierSafe falls back to no_preanim, aolib's default.
 func emoteModifierSafe(mod int) aolib.EmoteModifier {
 	if v, ok := packetutil.EmoteModifierFromWire[mod]; ok {
 		return v
@@ -455,7 +416,7 @@ func emoteModifierSafe(mod int) aolib.EmoteModifier {
 	return aolib.EmoteModifierNoPreanim
 }
 
-// shoutModifierSafe maps a wire shout integer to its enum, defaulting to none.
+// shoutModifierSafe falls back to none.
 func shoutModifierSafe(mod int) aolib.ShoutModifier {
 	if v, ok := packetutil.ShoutModifierFromWire[mod]; ok {
 		return v
@@ -463,7 +424,7 @@ func shoutModifierSafe(mod int) aolib.ShoutModifier {
 	return aolib.ShoutModifierNone
 }
 
-// textColorSafe maps a wire text-color integer to its enum, defaulting to white.
+// textColorSafe falls back to white.
 func textColorSafe(c int) aolib.TextColor {
 	if v, ok := packetutil.TextColorFromWire[c]; ok {
 		return v
@@ -471,7 +432,6 @@ func textColorSafe(c int) aolib.TextColor {
 	return aolib.TextColorWhite
 }
 
-// flipSafe maps AsyncAO's horizontal-only boolean flip to aolib's Flip enum.
 func flipSafe(flip bool) aolib.Flip {
 	if flip {
 		return aolib.FlipHorizontal
@@ -479,8 +439,7 @@ func flipSafe(flip bool) aolib.Flip {
 	return aolib.FlipNone
 }
 
-// parseEffect splits the "name|folder|sound" effects slot into aolib's Effect,
-// mirroring aolib's own effectFromWire positionally.
+// parseEffect splits the "name|folder|sound" field, mirroring aolib's effectFromWire.
 func parseEffect(raw string) aolib.Effect {
 	const effectFields = 3 // name|folder|sound
 	if raw == "" {
@@ -497,15 +456,9 @@ func parseEffect(raw string) aolib.Effect {
 	return e
 }
 
-// NormalizeOutgoingEmoteMod applies AO2-Client's on_chat_return_pressed
-// emote-mod overrides (courtroom.cpp "EMOTE MOD OVERRIDES", 2.11): char.ini
-// files ship legacy values that must never reach the wire — 2 is
-// objection-internal, 3 is meaningless, 4 aliases zoom — and, when the "Pre"
-// toggle wants it, an emote with a preanimation upgrades idle→preanim and
-// zoom→preanim-zoom (the latter only when the server advertises prezoom).
-// UNCHECKED) forces the "pre off" branch (courtroom.cpp:2080-2092): a preanim
-// mod is downgraded to idle (preanim_zoom→zoom) so the intro is suppressed
-// even when the char.ini emote defines one.
+// NormalizeOutgoingEmoteMod applies AO2-Client's on_chat_return_pressed overrides ("EMOTE MOD OVERRIDES"):
+// legacy char.ini values never reach the wire (2 is objection-internal, 3 meaningless, 4 aliases zoom),
+// and the "Pre" toggle upgrades or, unchecked, downgrades preanim mods (courtroom.cpp:2080-2092).
 func NormalizeOutgoingEmoteMod(mod int, hasPreanim, preanim, immediate bool, features FeatureSet) int {
 	switch mod {
 	case legacyEmoteModObjection:
@@ -516,7 +469,7 @@ func NormalizeOutgoingEmoteMod(mod int, hasPreanim, preanim, immediate bool, fea
 		mod = EmoteModZoom
 	}
 	if preanim && hasPreanim && !immediate {
-		// "Pre" on: upgrade idle→preanim, zoom→preanim-zoom (courtroom.cpp:2065-2079).
+		// "Pre" on: idle to preanim, zoom to preanim-zoom (courtroom.cpp:2065-2079).
 		switch {
 		case mod == EmoteModIdle:
 			mod = EmoteModPreanim
@@ -524,10 +477,7 @@ func NormalizeOutgoingEmoteMod(mod int, hasPreanim, preanim, immediate bool, fea
 			mod = EmoteModPreanimZoom
 		}
 	} else if !preanim {
-		// "Pre" off: downgrade a preanim mod so no intro plays, mirroring
-		// AO2-Client's else branch (courtroom.cpp:2080-2092). immediate keeps
-		// its historical no-op here: when Pre is on, immediate only stops the
-		// mod from upgrading (via the guard above), never forces a downgrade.
+		// "Pre" off: downgrade so no intro plays (courtroom.cpp:2080-2092); immediate only stops the upgrade above.
 		switch mod {
 		case EmoteModPreanim:
 			mod = EmoteModIdle
@@ -538,8 +488,7 @@ func NormalizeOutgoingEmoteMod(mod int, hasPreanim, preanim, immediate bool, fea
 	return mod
 }
 
-// formatObjection emits "mod" or "mod&custom" (custom objections need the
-// server feature).
+// formatObjection emits "mod" or "mod&custom"; custom objections need the server feature.
 func formatObjection(mod int, custom string, features FeatureSet) string {
 	if mod == ShoutCustom && custom != "" && features.Has(FeatureCustomObjections) {
 		return strconv.Itoa(mod) + "&" + custom
@@ -547,9 +496,8 @@ func formatObjection(mod int, custom string, features FeatureSet) string {
 	return strconv.Itoa(mod)
 }
 
-// formatPairID emits the charid_pair field: "-1" unpaired, else the partner's
-// id, with the 2.8 "^<order>" reorder suffix appended only on effects servers
-// AND only for a NON-default order (speaker behind).
+// formatPairID emits "-1" unpaired, else the id, with the 2.8 "^<order>" suffix only on effects servers
+// and only for a non-default order (speaker behind).
 func formatPairID(pairWith, order int, features FeatureSet) string {
 	if pairWith <= UnpairedCharID {
 		return strconv.Itoa(UnpairedCharID)

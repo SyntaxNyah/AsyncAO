@@ -1,6 +1,4 @@
-// Package metrics implements the cold-load report and the 1 Hz runtime
-// sampler (spec §15): cache hit rates, heap size via runtime/metrics,
-// and GC pause p99 — feeding the debug HUD and --debug logging.
+// Package metrics implements the cold-load report and the 1 Hz runtime sampler for the debug HUD and --debug.
 package metrics
 
 import (
@@ -10,7 +8,6 @@ import (
 )
 
 const (
-	// SampleInterval is the sampler cadence.
 	SampleInterval = 1 * time.Second
 
 	heapBytesMetric  = "/memory/classes/heap/objects:bytes"
@@ -118,7 +115,6 @@ func (p *Profiler) loop() {
 	}
 }
 
-// histogramQuantile extracts a quantile from a runtime/metrics histogram.
 func histogramQuantile(h *metrics.Float64Histogram, q float64) time.Duration {
 	if h == nil || len(h.Counts) == 0 {
 		return 0
@@ -135,7 +131,7 @@ func histogramQuantile(h *metrics.Float64Histogram, q float64) time.Duration {
 	for i, c := range h.Counts {
 		cumulative += c
 		if cumulative >= target {
-			// Bucket i spans Buckets[i]..Buckets[i+1] (seconds).
+			// Bucket i spans Buckets[i]..Buckets[i+1] in seconds.
 			upper := h.Buckets[i+1]
 			return time.Duration(upper * float64(time.Second))
 		}

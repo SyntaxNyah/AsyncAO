@@ -7,9 +7,7 @@ import (
 	aolib "github.com/AO-Underground/aolib/go/v2"
 )
 
-// voiceCodec builds a both-wire codec for a single-shape voice packet. T is the
-// server→client (inbound, for the client-side Conn) payload the codec decodes
-// to; the outbound direction uses whatever payload EncodeFanta is handed.
+// voiceCodec builds a both-wire codec; T is the inbound payload, and outbound takes what EncodeFanta is handed.
 func voiceCodec[T aolib.Outgoing](parse func([]string) (T, error)) Codec {
 	return Codec{
 		EncodeFanta: func(p any) ([]string, error) {
@@ -30,10 +28,7 @@ func voiceCodec[T aolib.Outgoing](parse func([]string) (T, error)) Codec {
 	}
 }
 
-// RegisterVoiceCodecs installs the both-wire codecs for every VS_* header. The
-// bidirectional headers (VS_JOIN / VS_LEAVE / VS_SPEAK) carry a different shape
-// per direction; each codec decodes to the server→client shape (what this client
-// receives) and encodes whatever payload the outbound path hands it.
+// RegisterVoiceCodecs installs every VS_* codec; bidirectional headers decode to the server-to-client shape.
 func RegisterVoiceCodecs() {
 	Register[*VS_CAPS]("VS_CAPS", voiceCodec(ParseVS_CAPS))
 	Register[*VS_PEERS]("VS_PEERS", voiceCodec(ParseVS_PEERS))

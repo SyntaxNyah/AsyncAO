@@ -8,8 +8,7 @@ import (
 	"os"
 )
 
-// dialDiscord opens the local Discord IPC named pipe. Plain os.OpenFile
-// works for duplex byte-mode pipes — no winio dependency needed.
+// dialDiscord uses plain os.OpenFile, which works for duplex byte-mode pipes, so no winio dependency is needed.
 func dialDiscord() (io.ReadWriteCloser, error) {
 	for i := 0; i < pipeCandidates; i++ {
 		f, err := os.OpenFile(fmt.Sprintf(`\\.\pipe\discord-ipc-%d`, i), os.O_RDWR, 0)

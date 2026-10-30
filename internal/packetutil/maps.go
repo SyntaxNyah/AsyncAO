@@ -1,6 +1,4 @@
-// Package packetutil holds the small set of AsyncAO-side conveniences that
-// aolib-go intentionally keeps unexported: the FantaCode primitive helpers and
-// the wire-int enum maps. Everything canonical is delegated to aolib.
+// Package packetutil holds the FantaCode helpers and wire-int enum maps that aolib-go keeps unexported.
 package packetutil
 
 import (

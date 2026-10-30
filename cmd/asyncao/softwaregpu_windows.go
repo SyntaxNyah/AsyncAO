@@ -5,12 +5,10 @@ import (
 	"path/filepath"
 )
 
-// lavapipeManifest is the software Vulkan driver's manifest the Windows build
-// stages next to the executable (scripts/build.ps1).
+// lavapipeManifest is the software Vulkan driver's manifest, staged next to the executable (scripts/build.ps1).
 const lavapipeManifest = "lvp_icd.x86_64.json"
 
-// softwareVulkanDriverFile is the staged lavapipe manifest, or "" when this build
-// has none (a plain `go build`).
+// softwareVulkanDriverFile is the staged manifest, or "" when the build has none (a plain `go build`).
 func softwareVulkanDriverFile() string {
 	exe, err := os.Executable()
 	if err != nil {

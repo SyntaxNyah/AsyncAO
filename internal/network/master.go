@@ -17,41 +17,28 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 )
 
-// DefaultMasterServerURL is the canonical AO master server list endpoint
-// (same JSON API webAO and AO2-Client use).
+// DefaultMasterServerURL is the AO master list endpoint, the same JSON API webAO and AO2-Client use.
 const DefaultMasterServerURL = "https://servers.aceattorneyonline.com/servers"
 
-// DefaultMasterServerURLs is the ordered set of master server endpoints
-// AsyncAO polls. Every list is fetched and merged, so servers advertised on
-// any one of them appear in the lobby. DefaultMasterServerURL stays the first
-// entry for the --master flag default, the Settings placeholder, and any
-// caller that wants a single canonical endpoint.
+// DefaultMasterServerURLs are polled and merged; DefaultMasterServerURL stays first for single-endpoint callers.
 var DefaultMasterServerURLs = []string{
 	DefaultMasterServerURL,
 	"https://servers.umineko.online/servers",
 }
 
-// masterFetchTimeout caps the server-list request.
 const masterFetchTimeout = 10 * time.Second
 
-// maxMasterResponseBytes bounds the list response defensively.
 const maxMasterResponseBytes = 4 << 20
 
-// ServerSecurity classifies how a listed server can be reached. AsyncAO is
-// WebSocket-only: legacy raw-TCP servers are not supported at all.
+// ServerSecurity classifies how a listed server can be reached; raw TCP is not supported at all.
 type ServerSecurity int
 
 const (
-	// SecurityWSS — has a TLS WebSocket port. Green in the lobby: the
-	// fastest and secure (https); TLS session resumption + HTTP/2-capable
-	// asset hosts tend to live here too.
+	// SecurityWSS has a TLS WebSocket port; green in the lobby.
 	SecurityWSS ServerSecurity = iota
-	// SecurityWS — plain WebSocket only. Yellow in the lobby: joinable,
-	// but the connection is unencrypted http.
+	// SecurityWS has plain WebSocket only; yellow in the lobby, joinable but unencrypted.
 	SecurityWS
-	// SecurityLegacyTCP — only a raw TCP port. Black in the lobby, pinned
-	// to the bottom, NOT joinable: server owners should upgrade their
-	// software to WebSockets if they want people to join.
+	// SecurityLegacyTCP has only a raw TCP port; black, pinned to the bottom, and not joinable.
 	SecurityLegacyTCP
 )
 
@@ -79,16 +66,11 @@ type ServerEntry struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 
-	// Favorite pins the entry to the very top of the lobby list. Set by the
-	// lobby when merging the master list with persisted favorites; favorite
-	// entries not present on the master list (private/direct-connect
-	// servers) are synthesized with DirectEntry.
+	// Favorite pins the entry to the top; favorites missing from the master list come from DirectEntry.
 	Favorite bool `json:"-"`
 }
 
-// DirectEntry synthesizes a list entry for a favorite or direct-connect
-// server that is not on the master list (private servers). The phone-book
-// description rides along so the lobby stays informative offline.
+// DirectEntry synthesizes an entry for a server not on the master list.
 func DirectEntry(name, wsURL, description string) (ServerEntry, error) {
 	scheme, host, port, err := splitWSURL(wsURL)
 	if err != nil {
@@ -103,7 +85,7 @@ func DirectEntry(name, wsURL, description string) (ServerEntry, error) {
 	return e, nil
 }
 
-// Security classifies the entry per the lobby's green/yellow/black tiers.
+// Security classifies the entry per the lobby's tiers.
 func (e ServerEntry) Security() ServerSecurity {
 	switch {
 	case e.WSSPort > 0:
@@ -120,8 +102,7 @@ func (e ServerEntry) Joinable() bool {
 	return e.Security() != SecurityLegacyTCP
 }
 
-// WebSocketURL returns the connection URL, preferring wss over ws. Empty for
-// legacy TCP-only entries.
+// WebSocketURL prefers wss over ws; empty for legacy TCP-only entries.
 func (e ServerEntry) WebSocketURL() string {
 	switch e.Security() {
 	case SecurityWSS:
@@ -136,13 +117,8 @@ func (e ServerEntry) WebSocketURL() string {
 // UnsupportedReason is the lobby message for black-tier entries.
 const UnsupportedReason = "Legacy TCP servers are not supported. Server owners should upgrade their software to WebSockets if they want people to join."
 
-// ParseDirectAddress normalizes direct-connect input for private servers:
-//
-//	"wss://host:port" → unchanged
-//	"ws://host:port"  → unchanged
-//	"host:port"       → "ws://host:port" (or wss:// when secure is set)
-//
-// The port is required — AO servers have no conventional default.
+// ParseDirectAddress keeps ws:// and wss://, and gives "host:port" ws:// (wss:// when secure); the port is
+// required, as AO servers have no conventional default.
 func ParseDirectAddress(input string, secure bool) (string, error) {
 	input = strings.TrimSpace(input)
 	if input == "" {
@@ -171,7 +147,6 @@ func ParseDirectAddress(input string, secure bool) (string, error) {
 	return scheme + "://" + net.JoinHostPort(host, port), nil
 }
 
-// splitWSURL dissects ws://host:port or wss://host:port.
 func splitWSURL(wsURL string) (scheme, host string, port int, err error) {
 	rest, ok := strings.CutPrefix(wsURL, "ws://")
 	scheme = "ws"
@@ -194,10 +169,7 @@ func splitWSURL(wsURL string) (scheme, host string, port int, err error) {
 	return scheme, h, portNum, nil
 }
 
-// FetchServerList downloads and parses the master server list.
-// Master-list ETag revalidation: the lobby Refresh button re-fetches the
-// full list every press; with the validator a no-change refresh costs a
-// 304 and zero payload bytes. One URL in practice — a tiny capped table.
+// A no-change lobby refresh costs a 304 with the ETag validator; one URL in practice, so a tiny capped table.
 type cachedMasterList struct {
 	etag string
 	body []byte
@@ -253,7 +225,6 @@ func FetchServerList(ctx context.Context, listURL string) ([]ServerEntry, error)
 	return ParseServerList(data)
 }
 
-// ParseServerList decodes the master JSON.
 func ParseServerList(data []byte) ([]ServerEntry, error) {
 	var entries []ServerEntry
 	if err := json.Unmarshal(data, &entries); err != nil {
@@ -262,10 +233,7 @@ func ParseServerList(data []byte) ([]ServerEntry, error) {
 	return entries, nil
 }
 
-// MergeServerLists concatenates server lists from several master servers,
-// dropping later duplicates so a server advertised on more than one list shows
-// exactly once. Duplicates are keyed by WebSocketURL; legacy TCP-only entries
-// (no WS URL) fall back to ip:port.
+// MergeServerLists drops later duplicates, keyed by WebSocketURL or ip:port for legacy TCP-only entries.
 func MergeServerLists(lists ...[]ServerEntry) []ServerEntry {
 	var merged []ServerEntry
 	seen := make(map[string]struct{})
@@ -274,7 +242,7 @@ func MergeServerLists(lists ...[]ServerEntry) []ServerEntry {
 			key := e.WebSocketURL()
 			if key == "" {
 				if e.IP == "" {
-					// No usable identity: skip (never happens for real master JSON).
+					// No usable identity; real master JSON never has this.
 					continue
 				}
 				key = fmt.Sprintf("%s:%d", e.IP, e.Port)
@@ -289,11 +257,7 @@ func MergeServerLists(lists ...[]ServerEntry) []ServerEntry {
 	return merged
 }
 
-// FetchServerLists fetches every endpoint in urls and merges the results
-// (deduped by MergeServerLists). A single unreachable endpoint does not fail
-// the whole fetch: as long as at least one list returns entries, they are
-// returned without error so a partial outage still shows a usable lobby. An
-// error is returned only when every endpoint failed and nothing was fetched.
+// FetchServerLists merges every endpoint, so a partial outage still shows a lobby; errors only if nothing came.
 func FetchServerLists(ctx context.Context, urls []string) ([]ServerEntry, error) {
 	var lists [][]ServerEntry
 	var errs []error
@@ -312,10 +276,8 @@ func FetchServerLists(ctx context.Context, urls []string) ([]ServerEntry, error)
 	return merged, nil
 }
 
-// ProbeLatency measures the TCP connect round-trip to addr ("host:port") — a
-// rough relative-latency probe for the lobby's "connect time" sort. It is NOT
-// an ICMP ping and undercounts wss:// (no TLS handshake); the first dial to a
-// host also folds in DNS. Honors ctx (the caller bounds it with a timeout).
+// ProbeLatency measures TCP connect time for the lobby's sort: it undercounts wss:// (no TLS), and the first
+// dial includes DNS.
 func ProbeLatency(ctx context.Context, addr string) (time.Duration, error) {
 	var d net.Dialer
 	start := time.Now()
@@ -330,8 +292,7 @@ func ProbeLatency(ctx context.Context, addr string) (time.Duration, error) {
 	return rtt, nil
 }
 
-// DialTarget is the host:port the lobby would connect to (wss preferred), for
-// ProbeLatency. Empty for legacy/unjoinable entries.
+// DialTarget is the host:port the lobby would connect to (wss preferred), empty for unjoinable entries.
 func (e ServerEntry) DialTarget() string {
 	switch e.Security() {
 	case SecurityWSS:
@@ -342,9 +303,7 @@ func (e ServerEntry) DialTarget() string {
 	return ""
 }
 
-// SortServers orders entries for the lobby: favorites pinned to the very
-// top, then joinable servers (green and yellow interleaved by player count,
-// then name), legacy TCP-only entries always pinned to the bottom.
+// SortServers puts favorites first, then joinable servers by player count and name, and legacy TCP last.
 func SortServers(entries []ServerEntry) {
 	sort.SliceStable(entries, func(i, j int) bool {
 		a, b := entries[i], entries[j]
@@ -363,10 +322,7 @@ func SortServers(entries []ServerEntry) {
 	})
 }
 
-// MergeFavorites flags master-list entries whose connection URL is in the
-// phone book and appends synthesized entries for favorites missing from the
-// list (private/direct-connect servers), descriptions included. The master
-// list's live description wins for servers it still carries.
+// MergeFavorites flags phone book entries and appends missing favorites; the live description wins.
 func MergeFavorites(entries []ServerEntry, favs []config.FavoriteServer) []ServerEntry {
 	byURL := make(map[string]config.FavoriteServer, len(favs))
 	for _, f := range favs {
@@ -382,8 +338,7 @@ func MergeFavorites(entries []ServerEntry, favs []config.FavoriteServer) []Serve
 			entries[i].Favorite = true
 			seen[url] = struct{}{}
 		}
-		// A server may be favorited via its plain-ws URL while the master
-		// list now advertises wss too; match the ws form as well.
+		// A favorite may use the plain ws URL while the list now advertises wss too, so match the ws form as well.
 		if entries[i].WSPort > 0 {
 			alt := "ws://" + entries[i].IP + ":" + strconv.Itoa(entries[i].WSPort)
 			if _, ok := byURL[alt]; ok {

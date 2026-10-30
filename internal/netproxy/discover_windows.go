@@ -5,108 +5,69 @@ import (
 	"unsafe"
 )
 
-// Windows proxy discovery, using only the standard library.
-
 func init() { discoverSystem = discoverWindows }
 
 const (
-	// internetSettingsKey holds the WinINET configuration — the values
-	// INTERNET_OPEN_TYPE_PRECONFIG reads, and what the Windows proxy UI writes.
+	// internetSettingsKey holds the WinINET configuration that the Windows proxy UI writes.
 	internetSettingsKey = `Software\Microsoft\Windows\CurrentVersion\Internet Settings`
 
-	// loadLibrarySearchSystem32 restricts LoadLibraryExW to %SystemRoot%\System32,
-	// which is the whole point of using it (see the DLL-planting note above).
+	// loadLibrarySearchSystem32 restricts LoadLibraryExW to %SystemRoot%\System32, to prevent DLL planting.
 	loadLibrarySearchSystem32 = 0x00000800
 
-	// regValueMaxBytes caps one registry read. ProxyServer and ProxyOverride are
-	// user-writable and externally controlled, so the buffer needs a named bound
-	// (hard rule 4). 32 KiB is orders of magnitude past any real value — the
-	// longest observed override list is a few hundred bytes.
+	// regValueMaxBytes caps one registry read, as these values are externally controlled (hard rule 4).
 	regValueMaxBytes = 32 << 10
 
-	// autoProbeURL is the destination WPAD / a PAC script is evaluated against.
-	// A script CAN return different proxies for different destinations, and one
-	// probe cannot capture that; https is chosen because it is what the game
-	// socket and every asset actually use, so the one answer we get is the one
-	// that matters. See autoProxyPolicy for why this is resolved once.
+	// autoProbeURL is what a PAC script is evaluated against; https because the game socket and assets use it.
 	autoProbeURL = "https://www.example.com/"
 
-	// winhttpConfigURL is WINHTTP_AUTOPROXY_CONFIG_URL — the flag that asks
-	// WinHTTP to evaluate an explicit auto-config script (PAC URL). The WPAD
-	// auto-detect flag (WINHTTP_AUTOPROXY_AUTO_DETECT) is deliberately NOT used:
-	// see discoverWindows for why.
+	// winhttpConfigURL is WINHTTP_AUTOPROXY_CONFIG_URL; AUTO_DETECT is deliberately not used, see discoverWindows.
 	winhttpConfigURL = 0x00000002
 
-	// errAutodetectionFailed is ERROR_WINHTTP_AUTODETECTION_FAILED. It is NOT an
-	// error condition for us: it means "no WPAD server answered on this network",
-	// which is the correct, common answer on a home connection and means direct.
+	// errAutodetectionFailed is ERROR_WINHTTP_AUTODETECTION_FAILED: no WPAD server answered, which means direct.
 	errAutodetectionFailed = 12180
-	// errUnrecognizedScheme is ERROR_WINHTTP_UNRECOGNIZED_SCHEME, returned for a
-	// destination WinHTTP will not evaluate. Treated the same as direct.
+	// errUnrecognizedScheme is ERROR_WINHTTP_UNRECOGNIZED_SCHEME, treated as direct.
 	errUnrecognizedScheme = 12006
 
-	// winhttpAccessTypeNoProxy is WINHTTP_ACCESS_TYPE_NO_PROXY: the session used
-	// to RESOLVE the proxy must not itself go through one.
+	// winhttpAccessTypeNoProxy is WINHTTP_ACCESS_TYPE_NO_PROXY: the session resolving the proxy must not use one.
 	winhttpAccessTypeNoProxy = 1
-	// winhttpNoProxy is WINHTTP_PROXY_TYPE_DIRECT — the access type WinHTTP
-	// reports when it resolved successfully and the answer is "connect directly".
+	// winhttpNoProxy is WINHTTP_PROXY_TYPE_DIRECT: resolved, and the answer is connect directly.
 	winhttpNoProxy = 1
 
-	// winhttpStringMaxChars caps how far a returned WinHTTP string is walked when
-	// converting it from UTF-16. The API returns NUL-terminated buffers it
-	// allocated itself; the bound only exists so a corrupt pointer cannot make
-	// the walk unbounded.
+	// winhttpStringMaxChars bounds the UTF-16 walk so a corrupt pointer can't make it unbounded.
 	winhttpStringMaxChars = 8 << 10
 )
 
-// discoverWindows reads the machine's configuration into a Policy, or returns
-// nil when there is nothing configured.
+// discoverWindows returns the machine's proxy configuration, or nil when nothing is configured.
 func discoverWindows() *Policy {
 	cfg, ok := winhttpIEConfig()
 	if !ok {
-		// WinHTTP is unavailable (a stripped container, a service context). The
-		// registry is still worth reading — it is the same data minus the
-		// auto-detect flag.
+		// WinHTTP is unavailable (a stripped container, a service); the registry has the same minus auto-detect.
 		return registryPolicy()
 	}
-	// The registry remains the source for the proxy itself: WinHTTP reports the
-	// current CONNECTION's settings, and the two agree for a desktop LAN user
-	// while the registry is the one that survives WinHTTP being unavailable.
+	// The registry stays the source for the proxy itself, because it survives WinHTTP being unavailable.
 	if p := registryPolicy(); p != nil {
 		return p
 	}
 	if cfg.autoConfigURL == "" {
 		return nil
 	}
-	// An explicit auto-config script (PAC URL) is the only automatic proxy
-	// configuration honoured here. Windows' "Automatically detect settings"
-	// (WPAD) flag is deliberately NOT honoured: it is on by default on Windows,
-	// and a machine pointed at a misbehaving WPAD server — or an ISP that
-	// redirects WPAD to a captive proxy — would otherwise route every asset
-	// through it and can take the whole client down. A user who genuinely needs
-	// auto-discovery can still set an explicit PAC URL or proxy server.
+	// Only an explicit PAC URL is honoured. WPAD is deliberately not: it is on by default, and a misbehaving
+	// server or an ISP's captive redirect would route every asset through it and could take the client down.
 	return autoProxyPolicy(cfg)
 }
 
-// autoProxyPolicy resolves WPAD / a PAC script into a concrete policy, ONCE.
-// Once, and not per request, because each call is a network round trip on the
-// first use and a syscall thereafter — squarely the kind of work hard rule 2
-// keeps off a request path, on a transport that fires thousands of requests per
-// cold load. The cost is that a script returning DIFFERENT proxies for different
-// destinations is collapsed to the answer for one representative destination.
+// autoProxyPolicy resolves a PAC script once: each call is a network round trip then a syscall, which hard
+// rule 2 keeps off a request path. A script with per-destination proxies collapses to one answer.
 func autoProxyPolicy(cfg ieConfig) *Policy {
 	bypass := parseBypass(cfg.proxyBypass)
 	if bypass.dropped == 0 && len(bypass.hosts)+len(bypass.nets)+len(bypass.ips) == 0 && !bypass.noDot {
-		// WinHTTP reports no bypass for an auto-configured machine; the registry
-		// list is still the user's own and still applies.
+		// WinHTTP reports no bypass for an auto-configured machine; the user's registry list still applies.
 		bypass = parseBypass(regString(internetSettingsKey, "ProxyOverride"))
 	}
 	via, status := winhttpProxyForURL(autoProbeURL, cfg)
 	switch status {
 	case autoProxyDirect:
-		// Resolved, and the answer is "no proxy on this network". This is the
-		// common case on a home machine and it is a real result, not a failure —
-		// report nothing so the caller falls through to "no proxy configured".
+		// A real result, common at home, not a failure: report no proxy configured.
 		return nil
 	case autoProxyFound:
 		src := "Windows automatic proxy detection"
@@ -119,10 +80,7 @@ func autoProxyPolicy(cfg ieConfig) *Policy {
 		}
 		return &Policy{Mode: ModeSystem, Source: src, HTTP: httpVia, HTTPS: httpsVia, Bypass: bypass}
 	}
-	// The script or the discovery is configured but could not be evaluated. This
-	// is the case the fail-closed rule is for: something IS set up, we cannot say
-	// where traffic should go, and guessing "direct" would send it somewhere the
-	// user did not agree to.
+	// Configured but not evaluable, so fail closed: guessing direct would send traffic where the user did not agree to.
 	return &Policy{
 		Mode:       ModeSystem,
 		Source:     "Windows automatic proxy configuration could not be evaluated",
@@ -131,7 +89,6 @@ func autoProxyPolicy(cfg ieConfig) *Policy {
 	}
 }
 
-// registryPolicy reads ProxyEnable / ProxyServer / ProxyOverride.
 func registryPolicy() *Policy {
 	if regDWORD(internetSettingsKey, "ProxyEnable") == 0 {
 		return nil
@@ -149,12 +106,7 @@ func registryPolicy() *Policy {
 	}
 }
 
-// --- registry ---------------------------------------------------------------
-
-// openSettings opens the Internet Settings key for reading. HKEY_CURRENT_USER
-// only: the per-machine variant applies when a group policy sets
-// ProxySettingsPerUser=0, which is a managed-fleet configuration where WinHTTP —
-// read above — already reports the effective answer.
+// openSettings uses HKEY_CURRENT_USER only; under the per-machine group policy, WinHTTP has the real answer.
 func openSettings() (syscall.Handle, bool) {
 	path, err := syscall.UTF16PtrFromString(internetSettingsKey)
 	if err != nil {
@@ -167,9 +119,7 @@ func openSettings() (syscall.Handle, bool) {
 	return h, true
 }
 
-// regString reads a REG_SZ value, or "" when it is absent or unreadable. An
-// absent value is the NORMAL case for every one of these names — a machine with
-// no proxy simply does not have them — so a missing key is never an error here.
+// regString reads a REG_SZ value, or "" when absent, which is the normal case on a machine with no proxy.
 func regString(key, name string) string {
 	h, ok := openSettings()
 	if !ok {
@@ -192,7 +142,6 @@ func regString(key, name string) string {
 	return utf16BytesToString(buf[:size])
 }
 
-// regDWORD reads a REG_DWORD value, or 0 when it is absent.
 func regDWORD(key, name string) uint32 {
 	h, ok := openSettings()
 	if !ok {
@@ -215,9 +164,7 @@ func regDWORD(key, name string) uint32 {
 	return val
 }
 
-// utf16BytesToString converts a REG_SZ byte buffer to a Go string, stopping at
-// the first NUL. Written by hand rather than reinterpreting the slice as
-// []uint16 because the buffer's alignment is not guaranteed by []byte.
+// utf16BytesToString decodes by hand because []byte alignment isn't guaranteed for a []uint16 cast.
 func utf16BytesToString(b []byte) string {
 	u := make([]uint16, 0, len(b)/2)
 	for i := 0; i+1 < len(b); i += 2 {
@@ -229,8 +176,6 @@ func utf16BytesToString(b []byte) string {
 	}
 	return syscall.UTF16ToString(u)
 }
-
-// --- WinHTTP ----------------------------------------------------------------
 
 // ieProxyConfig is WINHTTP_CURRENT_USER_IE_PROXY_CONFIG.
 type ieProxyConfig struct {
@@ -248,9 +193,7 @@ type ieConfig struct {
 	proxyBypass   string
 }
 
-// winhttpIEConfig calls WinHttpGetIEProxyConfigForCurrentUser. Reports ok=false
-// when winhttp.dll or the call is unavailable, which is a normal outcome in a
-// service or a stripped image and not an error worth surfacing.
+// winhttpIEConfig calls WinHttpGetIEProxyConfigForCurrentUser; ok=false is normal in a service or stripped image.
 func winhttpIEConfig() (ieConfig, bool) {
 	proc, ok := system32Proc("winhttp.dll", "WinHttpGetIEProxyConfigForCurrentUser")
 	if !ok {
@@ -261,9 +204,7 @@ func winhttpIEConfig() (ieConfig, bool) {
 	if r == 0 {
 		return ieConfig{}, false
 	}
-	// The three strings are allocated by the API and MUST be released by the
-	// caller. A long session refreshing its policy would otherwise leak a little
-	// each time, which is the kind of bug that only shows up after hours.
+	// The API allocates these strings and the caller must release them.
 	defer globalFree(raw.autoConfigURL)
 	defer globalFree(raw.proxy)
 	defer globalFree(raw.proxyBypass)
@@ -275,11 +216,7 @@ func winhttpIEConfig() (ieConfig, bool) {
 	}, true
 }
 
-// autoProxyStatus is the three-way outcome of asking Windows to resolve an
-// automatic configuration. Three and not two because "resolved: go direct" and
-// "could not resolve" must lead to opposite decisions — collapsing them is
-// exactly how a fail-closed client breaks every home machine, or how a leaky one
-// ignores a real proxy.
+// autoProxyStatus has three outcomes because "go direct" and "could not resolve" need opposite decisions.
 type autoProxyStatus int
 
 const (
@@ -306,9 +243,7 @@ type winhttpAutoproxyOptions struct {
 	autoLogonIfChallenge int32
 }
 
-// winhttpProxyForURL asks Windows where a request to target should go by
-// evaluating an explicit auto-config script (PAC URL). WPAD auto-detection is
-// deliberately not requested here.
+// winhttpProxyForURL evaluates an explicit PAC URL for target; WPAD auto-detection is deliberately not requested.
 func winhttpProxyForURL(target string, cfg ieConfig) (string, autoProxyStatus) {
 	open, ok := system32Proc("winhttp.dll", "WinHttpOpen")
 	if !ok {
@@ -326,8 +261,7 @@ func winhttpProxyForURL(target string, cfg ieConfig) (string, autoProxyStatus) {
 	if err != nil {
 		return "", autoProxyFailed
 	}
-	// The session that RESOLVES the proxy must not itself be proxied, or a
-	// misconfiguration becomes a loop.
+	// The session resolving the proxy must not itself be proxied, or a misconfiguration becomes a loop.
 	session, _, _ := syscall.SyscallN(open,
 		uintptr(unsafe.Pointer(agent)), winhttpAccessTypeNoProxy, 0, 0, 0)
 	if session == 0 {
@@ -354,7 +288,6 @@ func winhttpProxyForURL(target string, cfg ieConfig) (string, autoProxyStatus) {
 	if r == 0 {
 		switch uintptr(callErr) {
 		case errAutodetectionFailed, errUnrecognizedScheme:
-			// Resolved, and the answer is "nothing to go through".
 			return "", autoProxyDirect
 		}
 		return "", autoProxyFailed
@@ -367,9 +300,7 @@ func winhttpProxyForURL(target string, cfg ieConfig) (string, autoProxyStatus) {
 	return utf16PtrToString(info.proxy), autoProxyFound
 }
 
-// userAgentForWPAD is sent on the request that FETCHES an auto-config script.
-// Named because it reaches a network the user's administrator controls, and
-// naming the client honestly there is the same courtesy the asset fetches pay.
+// userAgentForWPAD identifies the client on the request that fetches an auto-config script.
 const userAgentForWPAD = "AsyncAO"
 
 var (
@@ -379,7 +310,7 @@ var (
 	procGlobalFree    = kernel32.NewProc("GlobalFree")
 )
 
-// system32Proc resolves one export of a DLL loaded from System32 ONLY.
+// system32Proc resolves one export of a DLL loaded from System32 only.
 func system32Proc(dll, name string) (uintptr, bool) {
 	wide, err := syscall.UTF16PtrFromString(dll)
 	if err != nil {
@@ -389,9 +320,7 @@ func system32Proc(dll, name string) (uintptr, bool) {
 	if h == 0 {
 		return 0, false
 	}
-	// Deliberately NOT FreeLibrary'd: the handle is reused across refreshes, the
-	// module is a system DLL that stays mapped anyway, and freeing it while
-	// another goroutine holds a resolved proc address would be a use-after-free.
+	// Deliberately never freed: another goroutine may hold a resolved proc address.
 	cname, err := syscall.BytePtrFromString(name)
 	if err != nil {
 		return 0, false
@@ -406,8 +335,7 @@ func globalFree(p *uint16) {
 	}
 }
 
-// utf16PtrToString reads a NUL-terminated UTF-16 string the API allocated.
-// Bounded by winhttpStringMaxChars so a corrupt pointer cannot walk forever.
+// utf16PtrToString reads a NUL-terminated string the API allocated, bounded by winhttpStringMaxChars.
 func utf16PtrToString(p *uint16) string {
 	if p == nil {
 		return ""

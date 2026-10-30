@@ -6,13 +6,10 @@ import (
 	aolib "github.com/AO-Underground/aolib/go/v2"
 )
 
-// voiceHeaders are the custom (non-canonical) headers AsyncAO registers codecs
-// for; aolib models only the canonical spec, so these ride its custom channel.
+// voiceHeaders are custom headers with AsyncAO codecs; aolib models only the canonical spec.
 var voiceHeaders = []string{"VS_CAPS", "VS_PEERS", "VS_AUDIO", "VS_FRAME", "VS_JOIN", "VS_LEAVE", "VS_SPEAK"}
 
-// registerInbound wires the session's typed On*/OnCustom hooks so every inbound
-// packet becomes a Packet on the conn's backlog. Canonical packets decode
-// through aolib's typed structs; only the VS_* custom headers use codecs.
+// registerInbound wires the session's typed hooks so every inbound packet reaches the backlog.
 func (c *Conn) registerInbound() {
 	s := c.sess
 	enq := func(p aolib.Outgoing) {
@@ -55,7 +52,7 @@ func (c *Conn) registerInbound() {
 	s.OnSP(func(p *aolib.SP) { enq(p) })
 	s.OnTI(func(p *aolib.TI) { enq(p) })
 	s.OnZZ(func(p *aolib.ZZToClient) { enq(p) })
-	// decryptor also flips the outbound wire mode when the server advertises JSON.
+	// The decryptor packet also flips the outbound wire mode when the server advertises JSON.
 	s.OnDecryptor(func(p *aolib.Decryptor) {
 		if strings.EqualFold(p.Value, "json") {
 			c.jsonMode.Store(true)
@@ -63,7 +60,6 @@ func (c *Conn) registerInbound() {
 		enq(p)
 	})
 
-	// VS_* custom headers (registered codecs).
 	for _, h := range voiceHeaders {
 		_ = s.OnCustom(h, func(p any) {
 			if o, ok := p.(aolib.Outgoing); ok {
@@ -72,7 +68,7 @@ func (c *Conn) registerInbound() {
 		})
 	}
 
-	// GP: the JSON-only group-pair roster announcement (Nyathena extension).
+	// GP is the JSON-only group-pair roster (Nyathena extension).
 	_ = s.OnCustom("GP", func(p any) {
 		if o, ok := p.(aolib.Outgoing); ok {
 			c.enqueue(Packet{Header: o.Header(), Fields: unescapeArgs(o.Args()), typed: o})

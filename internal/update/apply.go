@@ -1,14 +1,8 @@
 package update
 
-// Self-replace mechanism (M13). The choreography is PURE over paths so it is
-// unit-testable in a temp dir without touching the live executable — the caller
-// supplies os.Executable() at the one call site. On Windows a RUNNING .exe
-// can't be deleted or overwritten, but it CAN be renamed, so the swap is:
-// Rollback is the safety net for the AV-quarantine-mid-swap case CLAUDE.md
-// warns about: if installing the new binary fails, the old one is renamed back
-// so the install is never left broken. Verification here is INTEGRITY (the
-// download isn't corrupt/truncated), NOT authenticity — that needs release
-// signing, which slots in at VerifyChecksum's call site later.
+// Self-replace. A running Windows .exe can't be overwritten but can be renamed, so the swap renames it aside;
+// a failed install renames it back, because an AV can quarantine mid-swap.
+// Verification here is integrity, not authenticity, which would need release signing at VerifyChecksum's call.
 
 import (
 	"archive/tar"
@@ -32,35 +26,24 @@ import (
 )
 
 const (
-	// downloadMaxBytes bounds a release asset download (rule §17.4). Far larger
-	// than the JSON cap — a client binary is tens of MiB — but still finite so a
-	// hostile or mislinked asset can't fill the disk.
+	// downloadMaxBytes bounds a release download (hard rule 4), so a hostile or mislinked asset can't fill the disk.
 	downloadMaxBytes = 256 << 20
-	// downloadTimeout caps the asset download (a binary, not a tiny JSON).
+	// downloadTimeout caps the asset download, larger than a JSON fetch.
 	downloadTimeout = 5 * time.Minute
 )
 
-// BackupPath is where the current binary is moved during a swap (a sibling of
-// the exe, so the rename stays same-volume and atomic). It also marks a swap
-// for next-boot cleanup.
+// BackupPath is a sibling of the binary, so the rename is atomic; it also marks a swap for next-boot cleanup.
 func BackupPath(targetPath string) string { return targetPath + ".old" }
 
-// StagedPath is where a download lands before the swap — also a sibling of the
-// exe, so moving it into place is an atomic same-volume rename.
+// StagedPath is where a download lands before the swap; a sibling, so the rename is atomic.
 func StagedPath(targetPath string) string { return targetPath + ".new" }
 
-// CleanupOldVersion removes a leftover .old backup from a previous update.
-// Safe to call on every boot: a no-op when absent, and a still-locked backup
-// (an AV scan holding it) is simply left for a later boot. Caller should run it
-// OFF the boot critical path (it touches the disk).
+// CleanupOldVersion leaves a locked backup (AV scan) for a later boot; it touches disk, so run it off boot.
 func CleanupOldVersion(targetPath string) {
 	_ = os.Remove(BackupPath(targetPath))
 }
 
-// CleanupOldBundle removes leftover .old backups from a previous BUNDLE update
-// — the exe's .old and every sibling runtime lib's .old (Windows DLLs beside the
-// exe, macOS dylibs in lib/). Safe to call on every boot: a still-locked file is
-// left for a later boot, and the caller runs it off the boot critical path.
+// CleanupOldBundle removes .old backups of the exe and its runtime libs; locked files wait for a later boot.
 func CleanupOldBundle(exePath string) {
 	dir := filepath.Dir(exePath)
 	clean := func(d string) {
@@ -78,11 +61,8 @@ func CleanupOldBundle(exePath string) {
 	clean(filepath.Join(dir, bundledLibDirName)) // macOS dylib backups live in lib/
 }
 
-// Download streams the asset at url to destPath (created/truncated), bounded by
-// downloadMaxBytes. destPath MUST sit on the same volume as the install dir
-// (use StagedPath) so the later rename into place is atomic. A truncated or
-// over-cap download removes the partial file and errors, so a half file is
-// never handed to the swap.
+// Download streams url to destPath, which must be on the install's volume (use StagedPath); a truncated or
+// over-cap download is removed, so a partial file never reaches the swap.
 func Download(ctx context.Context, url, destPath string) (int64, error) {
 	cctx, cancel := context.WithTimeout(ctx, downloadTimeout)
 	defer cancel()
@@ -116,26 +96,18 @@ func Download(ctx context.Context, url, destPath string) (int64, error) {
 		_ = os.Remove(destPath)
 		return n, fmt.Errorf("update: asset exceeds the %d-byte cap", int64(downloadMaxBytes))
 	}
-	// The staged file must be EXECUTABLE before the swap: os.Create made it
-	// 0644 (0666 & umask) and StageReplace's renames preserve mode, so without
-	// this every macOS/Linux self-update would install a binary the OS refuses
-	// to launch — and CleanupOldVersion unlinks the .old backup right after the
-	// stage, so there'd be nothing runnable left. Windows ignores the exec bit.
+	// os.Create made the file 0644 and renames preserve mode, so macOS and Linux would not launch the new binary.
 	if runtime.GOOS != "windows" {
 		_ = os.Chmod(destPath, stagedBinaryMode)
 	}
 	return n, nil
 }
 
-// stagedBinaryMode is the file mode for a freshly staged self-update binary:
-// rwxr-xr-x, the conventional mode for an installed executable (matches what
-// a tar -xzf of the release tarball or a chmod +x by the user would yield).
+// stagedBinaryMode is the conventional mode for an installed executable.
 const stagedBinaryMode = 0o755
 
-// VerifyChecksum reports whether the file at path has the given hex SHA-256.
-// This is INTEGRITY (corruption/truncation), not authenticity: a compromised
-// release could publish a matching sum. An empty wantHex skips the check (no
-// sum was published) and returns nil so the caller can still proceed.
+// VerifyChecksum is integrity, not authenticity: a compromised release could publish a matching sum.
+// An empty wantHex (no sum published) skips the check.
 func VerifyChecksum(path, wantHex string) error {
 	if strings.TrimSpace(wantHex) == "" {
 		return nil
@@ -156,33 +128,21 @@ func VerifyChecksum(path, wantHex string) error {
 	return nil
 }
 
-// renameFn is os.Rename, overridable in tests to simulate a mid-swap failure
-// (the one operation that can leave a half-applied state without rollback).
+// renameFn is overridable in tests to simulate a mid-swap failure.
 var renameFn = os.Rename
 
-// StageReplace swaps the binary at targetPath with the one at newPath, keeping
-// the old binary at backupPath, after the macOS SONAME-skew preflight. Pure over
-// paths (no os.Executable). A failed install rolls back so the install always
-// works; a failed rollback is a hard error naming where the good binary is. All
-// three paths must be on one volume.
+// StageReplace swaps targetPath for newPath after the macOS SONAME preflight; a failed install rolls back,
+// and a failed rollback is a hard error naming the good binary. All paths must share a volume.
 func StageReplace(newPath, targetPath, backupPath string) error {
-	// macOS SONAME-skew preflight, BEFORE any mutation (§ finding: the
-	// BARE-binary self-update swaps only the executable, never the sibling ./lib
-	// the tarball shipped — see docs/CODE-SIGNING.md). If the new binary needs an
-	// @rpath dylib the installed lib/ doesn't have, refuse HERE, while the install
-	// is still pristine (no backup rename yet), so the caller degrades to
-	// "re-download the bundle" and nothing is left broken. Fail-open by
-	// construction (see the fn). The bundle path (StageBundle) skips this — it
-	// replaces lib/ too — and calls stageReplaceFile directly.
+	// Before any mutation: a bare-binary update never replaces ./lib (docs/CODE-SIGNING.md), so refuse while the
+	// install is pristine. StageBundle skips this because it replaces lib/ too.
 	if err := preflightDarwinSwap(newPath, targetPath); err != nil {
 		return err
 	}
 	return stageReplaceFile(newPath, targetPath, backupPath)
 }
 
-// stageReplaceFile is the core rename-with-rollback swap, shared by StageReplace
-// (bare binary, preflight included) and StageBundle (bundle file swap, no
-// preflight — the bundle replaces lib/ too, so SONAME-skew can't happen).
+// stageReplaceFile is the rename-with-rollback swap shared by StageReplace and StageBundle.
 func stageReplaceFile(newPath, targetPath, backupPath string) error {
 	if _, err := os.Stat(newPath); err != nil {
 		return fmt.Errorf("update: staged file missing: %w", err)
@@ -200,11 +160,7 @@ func stageReplaceFile(newPath, targetPath, backupPath string) error {
 	return nil
 }
 
-// ExtractZip unpacks a release bundle zip into destDir. Only flat, basename
-// entries are accepted (the Windows bundle is the exe + runtime DLLs at the top
-// level); any entry carrying a path separator is refused so a hostile or
-// malformed archive can't write outside destDir (rule §17.4). Directory entries
-// are skipped.
+// ExtractZip unpacks a flat Windows bundle, refusing entries with a separator so nothing lands outside destDir.
 func ExtractZip(zipPath, destDir string) error {
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -242,11 +198,7 @@ func ExtractZip(zipPath, destDir string) error {
 	return nil
 }
 
-// ExtractTarGz unpacks a release bundle tarball (the macOS binary + lib/) into
-// destDir. Entries are confined to flat names or a lib/ subdir; '..' and
-// absolute paths are refused (rule §17.4). File modes are preserved so the
-// binary keeps its exec bit. Directory, symlink and non-regular entries are
-// skipped.
+// ExtractTarGz allows only flat names or a lib/ subdir, refuses '..' and absolute paths, and keeps the exec bit.
 func ExtractTarGz(tarPath, destDir string) error {
 	f, err := os.Open(tarPath)
 	if err != nil {
@@ -297,12 +249,8 @@ func ExtractTarGz(tarPath, destDir string) error {
 	}
 }
 
-// StageBundle replaces a running install's binary AND its bundled runtime
-// libraries from an extracted bundle directory (ExtractZip / ExtractTarGz
-// output). libSubdir names the directory inside the bundle that holds the
-// runtime libraries — "" on Windows (DLLs sit flat beside the exe), "lib" on
-// macOS (dylibs). The binary is the flat .exe, or the flat file that is neither
-// a library nor documentation (the macOS bare binary); documentation (.txt/.md)
+// StageBundle replaces the binary and libraries from an extracted bundle; libSubdir is "" on Windows, "lib" on
+// macOS, and the binary is the flat .exe or the flat file that is neither library nor documentation.
 func StageBundle(stagingDir, targetExe, libSubdir string) error {
 	dir := filepath.Dir(targetExe)
 	var newBin string
@@ -333,12 +281,10 @@ func StageBundle(stagingDir, targetExe, libSubdir string) error {
 			case newBin == "" && ext == ".exe":
 				newBin = p
 			case isDoc(ext):
-				// documentation, not runtime
 			case isLib(ext):
 				files = append(files, staged{p, e.Name()})
 			case newBin == "":
-				// A flat file that's neither an exe, a library, nor docs is the
-				// macOS bare binary (e.g. asyncao-macos-arm64, no extension).
+				// Neither exe, library nor docs: the macOS bare binary, which has no extension.
 				newBin = p
 			default:
 				files = append(files, staged{p, e.Name()})
@@ -383,10 +329,7 @@ func StageBundle(stagingDir, targetExe, libSubdir string) error {
 	return stageReplaceFile(newBin, targetExe, targetExe+".old")
 }
 
-// TargetWritable reports whether the directory holding targetPath can be
-// written — the swap renames within it, so a read-only install (Program Files
-// without elevation) must degrade to "open the release page" instead. It probes
-// by creating and removing a temp file (the only reliable cross-FS check).
+// TargetWritable creates a temp file, the only reliable cross-filesystem check; read-only installs need the page.
 func TargetWritable(targetPath string) bool {
 	dir := targetPath[:strings.LastIndexAny(targetPath, `/\`)+1]
 	if dir == "" {
@@ -402,22 +345,12 @@ func TargetWritable(targetPath string) bool {
 	return true
 }
 
-// bundledLibDirName is the sibling folder the macOS first-install tarball ships
-// its dylib closure in (scripts/bundle-macos.sh stages the binary + this dir;
-// the binary's rpath list is @executable_path/lib first). Its presence beside
-// the running binary is how preflightDarwinSwap tells the no-Homebrew tarball
-// install (which CAN skew) from a bare brew install (which falls through to
-// /opt/homebrew/lib and can't).
+// bundledLibDirName is the macOS tarball's dylib folder; its presence tells a tarball install, which can
+// skew, from a bare brew install, which falls through to /opt/homebrew/lib.
 const bundledLibDirName = "lib"
 
-// preflightDarwinSwap refuses a macOS self-update that would leave the new
-// binary unable to load one of its @rpath dylibs from the STALE sibling lib/
-// the tarball shipped. This is the SONAME-skew brick documented in
-// docs/CODE-SIGNING.md: the self-updater swaps only the bare binary, not lib/,
-// so a Homebrew dependency crossing a SONAME bump (e.g. libavif.16 → libavif.17)
-// Called as the FIRST thing in StageReplace, before any rename, so a refusal
-// leaves the install completely untouched — a false positive costs the user a
-// manual tarball re-download, never a broken install.
+// preflightDarwinSwap refuses an update whose binary can't load an @rpath dylib from the stale lib/
+// (docs/CODE-SIGNING.md). A false positive costs a manual tarball download, never a broken install.
 func preflightDarwinSwap(newPath, targetPath string) error {
 	if runtime.GOOS != "darwin" {
 		return nil
@@ -435,18 +368,10 @@ func preflightDarwinSwap(newPath, targetPath string) error {
 	if err != nil {
 		return nil // fail open
 	}
-	// A tarball install updating to a binary that imports straight from a
-	// Homebrew prefix is PROVABLY mis-bundled: bundle-macos.sh's check_clean
-	// gate guarantees a correctly built release binary never carries such an
-	// import (everything is rewritten to @rpath), and the tarball audience by
-	// definition may have no Homebrew — dyld would fail at launch. This is the
-	// one shape a failed release-side bundle step could emit, so refuse it
-	// outright; it is not fail-open erosion because the case is affirmatively
-	// inspectable and never legitimate.
+	// A correct release is all @rpath (bundle-macos.sh check_clean), so a Homebrew import means a mis-bundled
+	// binary, and dyld would fail at launch for tarball users without Homebrew.
 	if hb := homebrewImports(imported); len(hb) > 0 {
-		// "or any newer release": besides a mis-bundled asset, this fires on an
-		// experimental-channel DOWNGRADE onto a pre-bundling release, which
-		// published no tarball — don't send that user chasing one.
+		// "or any newer release": this also fires on an experimental downgrade onto a release with no tarball.
 		return fmt.Errorf("update: the new macOS build links %s directly from Homebrew instead of its bundled lib/ "+
 			"(a mis-bundled release asset) — install from the release page's bundle tarball, or any newer release", hb[0])
 	}
@@ -454,17 +379,12 @@ func preflightDarwinSwap(newPath, targetPath string) error {
 	if len(missing) == 0 {
 		return nil
 	}
-	// Name the first missing dylib so the log/modal is actionable; the recovery
-	// is the tarball, which carries a matching lib/ (docs/CODE-SIGNING.md).
+	// Name the missing dylib so the message is actionable; the matching lib/ comes with the tarball.
 	return fmt.Errorf("update: the new macOS build needs %s, which the installed lib/ doesn't have "+
 		"(a dependency changed its version) — re-download the bundle tarball from the release page to update", missing[0])
 }
 
-// homebrewImports returns the imported dylib paths that resolve inside a
-// Homebrew prefix (/opt/homebrew on Apple Silicon, /usr/local on Intel).
-// System locations (/usr/lib, /System/…) and @-relative names pass through.
-// Pure (no I/O) and split out so it is unit-testable off macOS, like
-// missingBundledDylibs below.
+// homebrewImports returns paths inside a Homebrew prefix (/opt/homebrew on Apple Silicon, /usr/local on Intel).
 func homebrewImports(imported []string) []string {
 	var bad []string
 	for _, name := range imported {
@@ -475,11 +395,7 @@ func homebrewImports(imported []string) []string {
 	return bad
 }
 
-// missingBundledDylibs returns the base names of the binary's @rpath-resolved
-// dylib dependencies that are absent from libDir. Only @rpath/ imports are
-// considered: absolute (/usr/lib/…, /System/…) and @executable_path/…-relative
-// names resolve elsewhere and are never bundled. Split out from
-// preflightDarwinSwap so this pure name-set logic is unit-testable off macOS.
+// missingBundledDylibs returns base names of @rpath imports absent from libDir; others are never bundled.
 func missingBundledDylibs(imported []string, libDir string) []string {
 	const rpathPrefix = "@rpath/"
 	var missing []string

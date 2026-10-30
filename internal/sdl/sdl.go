@@ -1,8 +1,6 @@
 package sdl
 
-// The noescape/nocallback lines keep per-frame calls allocation-free: without
-// them, every pointer argument (a stack rect, an out-parameter) escapes to the
-// heap. None of these SDL functions keeps a pointer or calls back into Go.
+// noescape/nocallback keep per-frame calls allocation-free; none of these keeps a pointer or calls back into Go.
 
 /*
 #cgo pkg-config: sdl3

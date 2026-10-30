@@ -6,16 +6,10 @@ import (
 )
 
 const (
-	// DefaultWorkers sizes the fetch pool. Spec §7 started this at 8, but
-	// fetches are RTT-bound, not CPU-bound: the transport is already sized
-	// for 16 conns/host, and modern AO bases speak HTTP/2 (16 streams
-	// multiplex over one connection). 16 in-flight fetches roughly halves
-	// cold-viewport fill on 600-cell icon grids.
+	// DefaultWorkers: fetches are RTT-bound, not CPU-bound, and the transport allows 16 conns per host.
 	DefaultWorkers = 16
-	// highLaneCap and lowLaneCap bound the two priority lanes. The low lane
-	// holds speculative prefetches and sheds its OLDEST job when full; the
-	// high lane briefly blocks the producer instead — results are never
-	// dropped or stolen (spec §17.7).
+	// highLaneCap and lowLaneCap bound the lanes: low sheds its oldest job when full, high briefly blocks the
+	// producer; results are never dropped or stolen (hard rule 7).
 	highLaneCap = 64
 	lowLaneCap  = 256
 )
@@ -34,23 +28,17 @@ const (
 // EpochAny marks a job that survives room/server changes (e.g. UI chrome).
 const EpochAny int64 = -1
 
-// Job is one unit of pool work. Run is invoked exactly once for every
-// accepted job — with stale=false to do the work, or stale=true when the job
-// was cancelled (epoch bump, shedding, shutdown) so waiters always hear back.
+// Job is one unit of pool work; Run is invoked exactly once per accepted job, with stale=true if cancelled.
 type Job struct {
 	// ID exists for tracing/metrics. Allocate via Pool.NextID.
 	ID int64
-	// Epoch is the pool epoch the job belongs to (Pool.Epoch at queue
-	// time), or EpochAny to never go stale.
+	// Epoch is Pool.Epoch at queue time, or EpochAny to never go stale.
 	Epoch int64
-	// Run does the work. It must be non-nil.
+	// Run does the work and must be non-nil.
 	Run func(stale bool)
 }
 
-// Pool is the prioritized fetch worker pool with epoch cancellation:
-// room/server changes bump the epoch and all queued jobs from earlier epochs
-// no-op (their Run gets stale=true) without spawning goroutines or losing
-// anybody's results.
+// Pool is the fetch worker pool; bumping the epoch makes queued jobs from earlier epochs get Run(stale=true).
 type Pool struct {
 	high chan Job
 	low  chan Job
@@ -84,8 +72,7 @@ func NewPool(workers int) *Pool {
 	return p
 }
 
-// NextID returns a unique job ID (atomic counter — collision-free, unlike
-// the random IDs spec §7 bans).
+// NextID returns a unique job ID; an atomic counter can't collide, unlike random IDs.
 func (p *Pool) NextID() int64 {
 	return p.nextID.Add(1)
 }
@@ -95,23 +82,14 @@ func (p *Pool) Epoch() int64 {
 	return p.epoch.Load()
 }
 
-// BumpEpoch invalidates every queued job from earlier epochs (room change,
-// server switch). Queued stale jobs still get Run(stale=true) when a worker
-// reaches them; in-flight jobs finish normally.
+// BumpEpoch invalidates queued jobs from earlier epochs; in-flight jobs finish normally.
 func (p *Pool) BumpEpoch() int64 {
 	return p.epoch.Add(1)
 }
 
-// Submit queues job on the given lane.
-//
-//   - PriorityHigh: blocks briefly if the lane is full (live-message work is
-//     never shed).
-//   - PriorityLow: never blocks; when the lane is full the OLDEST queued low
-//     job is shed — cancelled via Run(stale=true) — to make room, because
-//     the newest speculation tends to be the best-informed one.
-//
-// Returns false only when the pool is closed (the job is then cancelled via
-// Run(stale=true) on the caller's goroutine).
+// Submit: high priority blocks briefly when full (live-message work is never shed); low never blocks and
+// sheds the oldest low job, as the newest speculation is the best informed.
+// It returns false only when the pool is closed, with Run(stale=true) called on the caller's goroutine.
 func (p *Pool) Submit(prio Priority, job Job) bool {
 	if job.Run == nil {
 		return false
@@ -142,24 +120,20 @@ func (p *Pool) Submit(prio Priority, job Job) bool {
 			return false
 		default:
 		}
-		// Lane full: shed the oldest queued low job and retry. The shed
-		// job's Run(stale=true) executes here on the producer, which must
-		// therefore stay cheap (manager cancellations are flag flips).
+		// The shed job's Run(stale=true) runs here on the producer, so it must stay cheap.
 		select {
 		case victim := <-p.low:
 			p.shed.Add(1)
 			p.runJob(victim, true)
 		default:
-			// A worker drained the lane in the meantime; loop and enqueue.
+			// A worker drained the lane; loop and enqueue.
 		}
 	}
 }
 
-// worker drains high before low, then waits on all lanes.
 func (p *Pool) worker() {
 	defer p.workersWG.Done()
 	for {
-		// Priority pass: exhaust high first.
 		select {
 		case job := <-p.high:
 			p.dispatch(job)
@@ -177,7 +151,6 @@ func (p *Pool) worker() {
 	}
 }
 
-// dispatch applies epoch staleness and runs the job.
 func (p *Pool) dispatch(job Job) {
 	stale := job.Epoch != EpochAny && job.Epoch != p.epoch.Load()
 	p.runJob(job, stale)
@@ -192,8 +165,7 @@ func (p *Pool) runJob(job Job, stale bool) {
 	job.Run(stale)
 }
 
-// Close stops the workers and cancels (Run(stale=true)) every job still
-// queued, so no caller is left waiting. Safe to call multiple times.
+// Close stops the workers and cancels every queued job, so no caller is left waiting; safe to call more than once.
 func (p *Pool) Close() {
 	p.closeOnce.Do(func() {
 		close(p.stop)

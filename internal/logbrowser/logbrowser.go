@@ -1,7 +1,4 @@
-// Package logbrowser is the pure logic + disk IO behind the log browser screen:
-// scanning the logs/ tree, loading a scope off-thread, and filtering/stats over the
-// loaded lines. It holds no UI state (scroll, selection, query) and never touches SDL
-// or App — ui keeps those and calls this package's functions.
+// Package logbrowser is the logic and disk I/O behind the log browser; UI state stays in ui.
 package logbrowser
 
 import (
@@ -18,9 +15,7 @@ import (
 )
 
 const (
-	// transcriptStampLayout must stay in sync with internal/ui/translog.go's
-	// transcriptStampLayout: the writer names files with it and SessionLabel parses
-	// them back.
+	// transcriptStampLayout must match internal/ui/translog.go's: the writer names files with it.
 	transcriptStampLayout = "2006-01-02_15-04-05"
 	sessionLabelLayout    = "2006-01-02 15:04"
 
@@ -31,8 +26,7 @@ const (
 	maxLogFileBytes  = 16 << 20
 	maxLogLineRunes  = 600
 
-	// MaxScopeLines is the scope-load line cap, exposed for the browser's
-	// "truncated" indicator.
+	// MaxScopeLines is the line cap of a scope load, for the "truncated" indicator.
 	MaxScopeLines = maxLogScopeLines
 )
 
@@ -254,7 +248,7 @@ func SessionLabel(file string) string {
 	return name
 }
 
-// truncateRunes caps s at max runes, appending "…" when it cut. Pure.
+// truncateRunes caps s at max runes, appending "…" when it cut.
 func truncateRunes(s string, max int) string {
 	if max <= 0 {
 		return s
@@ -269,9 +263,7 @@ func truncateRunes(s string, max int) string {
 	return s
 }
 
-// ParseWho extracts the speaker from a transcript line "[ts] who: message".
-// Exported so internal/ui's transcript writer can cross-check that what it
-// writes is still recoverable by the reader.
+// ParseWho extracts the speaker from "[ts] who: message"; exported so ui's writer can check it stays recoverable.
 func ParseWho(line string) string {
 	i := strings.Index(line, "] ")
 	if i < 0 {

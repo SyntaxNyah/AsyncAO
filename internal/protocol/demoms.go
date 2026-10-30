@@ -5,14 +5,8 @@ import (
 	"strconv"
 )
 
-// BuildServerMS serializes a ChatMessage back into the SERVER→client MS field
-// shape — the form AO2 demo files store (one raw packet per line). It is the
-// inverse of ParseMS for every field ParseMS keeps: TestBuildServerMSRoundTrip
-// pins ParseMS(BuildServerMS(m)) == m. Legacy wire spellings don't round-trip
-// by design (ParseMS normalizes them): emote-mod 2/4 serialize as their live
-// values and a non-numeric desk mod as its parsed number — the same message an
-// AO2 client would DISPLAY. Offsets always emit the 2.9 "x&y" form (AO2's
-// split("&") reads the 2.6 single-x form out of it unchanged).
+// BuildServerMS serializes a ChatMessage into the server-to-client MS shape of AO2 demo files, inverting ParseMS.
+// Legacy spellings don't round-trip, as ParseMS normalizes them; offsets use "x&y", which AO2's split("&") reads.
 func BuildServerMS(m *ChatMessage) Packet {
 	b := func(v bool) string {
 		if v {

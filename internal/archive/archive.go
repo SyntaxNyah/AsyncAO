@@ -1,9 +1,4 @@
-// Package archive bundles a scene's assets into a self-contained folder so a
-// recorded/built `.aorec` keeps its visuals even if the origin CDN goes away.
-// It resolves every asset the scene needs through the SAME manager candidate
-// logic the renderer uses (Manager.ResolveRaw / SceneAssets), then writes each
-// at the exact origin-relative path replay will later request — symmetry by
-// construction, proved by the export→replay round-trip test.
+// Package archive bundles a scene's assets into a folder so an .aorec keeps its visuals if the origin goes away.
 package archive
 
 import (
@@ -20,28 +15,17 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/safepath"
 )
 
-// Result reports an export: the per-asset-type format extension each type
-// resolved to (so a replay over the archive can seed the resolver and find the
-// bundled files without re-probing), plus size stats for the UI.
+// Result reports each asset type's resolved format, so replay can seed the resolver, plus size stats.
 type Result struct {
 	Formats map[string]string // AssetType.Name() → ext, e.g. "CharSprite" → ".webp"
 	Files   int
 	Bytes   int64
-	// FromPack counts files that came from the user's own local mounts rather
-	// than the server. The caller warns on it: those bytes are the user's private
-	// art, and a bundle is a file they hand to someone else.
+	// FromPack counts files from the user's local mounts; the caller warns, as that private art gets shared.
 	FromPack int
 }
 
-// ExportAssets resolves every asset SceneAssets enumerates for the scene through
-// mgr (the live/source manager, which knows the learned formats), and writes the
-// bytes into destDir at the origin-relative path the asset resolved to. De-duped
-// upstream by SceneAssets, so each unique asset is fetched + written once (small
-// archives). Missing assets are skipped — the zero-fallback renderer degrades
-// gracefully, so a 404 here just 404s on replay too, never aborts the export.
-//
-// The returned Formats is the archive's manifest: replay seeds the resolver from
-// it so the bundled (possibly non-webp) files resolve on the first probe.
+// ExportAssets writes every asset SceneAssets enumerates through mgr, which knows the learned formats.
+// A missing asset is skipped rather than aborting: it just 404s on replay too.
 func ExportAssets(ctx context.Context, mgr *assets.Manager, origin, startBg string, events []courtroom.Event, destDir string) (*Result, error) {
 	urls := courtroom.NewURLBuilder(origin)
 	refs := courtroom.SceneAssets(urls, startBg, events)
@@ -63,10 +47,7 @@ func ExportAssets(ctx context.Context, mgr *assets.Manager, origin, startBg stri
 			res.FromPack++
 		}
 		if err := WriteAsset(destDir, rel, data); err != nil {
-			// One un-writable name (e.g. a decoded segment carrying a
-			// Windows-illegal character like ':' or '?') must not sink the whole
-			// export — skip it and keep bundling, the same way the renderer degrades
-			// on a single missing asset. It simply 404s on replay, like any gap.
+			// One unwritable name (a decoded ':' or '?' on Windows) must not sink the export; it simply 404s on replay.
 			continue
 		}
 		res.Files++
@@ -80,14 +61,8 @@ func ExportAssets(ctx context.Context, mgr *assets.Manager, origin, startBg stri
 	return res, nil
 }
 
-// resolveRef fetches one asset's bytes + the concrete URL it lives at. Exact refs
-// (music) are a direct fetch; bases probe candidates, walking the alternate
-// sprite spellings (bare X, then the "(a)/X" folder — EmoteAlts order).
-// It resolves through the user's local packs as well as the server (the
-// ResolveRawLayered path, which never teaches the server's learned formats and
-// never writes pack bytes into the server-keyed caches), and reports which
-// answered so the caller can both place the file correctly and warn about
-// bundling private art.
+// resolveRef probes candidates and alternate sprite spellings (EmoteAlts order). ResolveRawLayered checks
+// local packs but never teaches learned formats or writes pack bytes into server-keyed caches.
 func resolveRef(ctx context.Context, mgr *assets.Manager, ref courtroom.AssetRef) (string, []byte, bool, bool) {
 	if ref.Exact {
 		if data, err := mgr.FetchRaw(ctx, ref.Base); err == nil && len(data) > 0 {
@@ -104,12 +79,8 @@ func resolveRef(ctx context.Context, mgr *assets.Manager, ref courtroom.AssetRef
 			continue
 		}
 		if fromPack {
-			// A pack answers under a local:// transport URL, which is NOT under the
-			// origin. Return the SERVER-side path the asset would have been fetched
-			// at instead — base plus whichever extension the pack file carried — so
-			// the caller's origin cut works uniformly and the bundled file lands
-			// exactly where replay will look for it. Returning the transport URL
-			// would fail that prefix test and silently drop every pack asset.
+			// A pack answers under a local:// URL, so return the server-side path; the transport URL would fail the
+			// caller's prefix test and silently drop every pack asset.
 			return base + path.Ext(url), data, true, true
 		}
 		return url, data, false, true
@@ -117,9 +88,7 @@ func resolveRef(ctx context.Context, mgr *assets.Manager, ref courtroom.AssetRef
 	return "", nil, false, false
 }
 
-// WriteAsset writes one bundled asset under destDir at its DECODED, human-readable
-// relative path (DiskPath). safepath refuses anything that could escape destDir: a
-// ".." segment (a decoded "%5C" can make one), a rooted path, or a name with ':'.
+// WriteAsset writes at the decoded path; safepath refuses a ".." from a decoded "%5C", a rooted path, or a ':'.
 func WriteAsset(destDir, rel string, data []byte) error {
 	full, err := safepath.Join(destDir, DiskPath(rel))
 	if err != nil {
@@ -131,16 +100,8 @@ func WriteAsset(destDir, rel string, data []byte) error {
 	return os.WriteFile(full, data, 0o644)
 }
 
-// DiskPath maps an origin-relative URL path to the clean, human-readable path a
-// bundle writes on disk: it percent-DECODES each segment (so "%20"→space,
-// "%5B"→"[", "%28"→"(", and a "%2F"→a real separator) and lexically collapses
-// "."/".." clamped at the root. Without this, a bundle recorded every asset at
-// its raw URL spelling — "characters/drio%2Fbyakuya%20togami", "sounds/music/
-// daily%20life/%5Bresign%5D…" — folders no human or other AO client can read
-// (#40 follow-up). A URL MUST escape spaces, so the clean names can only be
-// recovered here, at the URL→disk boundary; replay resolves them because the
-// local fetcher already tries a percent-decoded spelling (LocalFetcher.Fetch
-// Attempt 2), keeping the bundle replayable byte-for-byte.
+// DiskPath percent-decodes segments and clamps "."/".." at the root, so folders stay readable to humans and
+// other AO clients; replay resolves them because the local fetcher also tries a percent-decoded spelling.
 func DiskPath(rel string) string {
 	var out []string
 	for _, seg := range strings.Split(rel, "/") {
@@ -148,12 +109,11 @@ func DiskPath(rel string) string {
 		if err != nil {
 			dec = seg // malformed escape (%zz) — keep the literal, never fabricate a name
 		}
-		// A decoded segment can itself hold "/" (a decoded "%2F") or "."/".."; split
-		// again so those become real separators / traversal, then clamp.
+		// A decoded segment can hold "/" or "."/".."; split again so they become real separators, then clamp.
 		for _, part := range strings.Split(dec, "/") {
 			switch part {
 			case "", ".":
-				// skip empty ("" from a leading/double slash) and current-dir
+				// Skip "" from a leading or double slash, and the current dir.
 			case "..":
 				if len(out) > 0 {
 					out = out[:len(out)-1] // pop — clamped, can never escape the bundle root
@@ -166,10 +126,7 @@ func DiskPath(rel string) string {
 	return strings.Join(out, "/")
 }
 
-// SeedFormats teaches a replay resolver the formats the archive bundled (keyed
-// by the archive's own origin/host) so the bundled — possibly non-webp — files
-// resolve on the first candidate probe instead of missing under the webp-first
-// default list. Call before replaying a bundled archive.
+// SeedFormats teaches a replay resolver the archive's formats, so non-webp files resolve on the first probe.
 func SeedFormats(resolver *assets.Resolver, origin string, formats map[string]string) {
 	host := assets.HostOf(origin)
 	for name, ext := range formats {

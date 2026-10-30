@@ -1,10 +1,5 @@
-// Package mix is AsyncAO's binding to SDL3_mixer: a Mixer plays any number of
-// Tracks at once, each fed one Audio. Loop points, fades and seeking are
-// SDL3_mixer's own, so crossfades and gapless custom loops (#48) need no fork.
-//
-// Positions are converted between seconds and sample frames at the Audio's own
-// sample rate, so a loop point lands on the exact frame the sidecar names.
-// Hard rule 1 applies: everything here runs on the main thread.
+// Package mix binds SDL3_mixer; positions convert at the Audio's sample rate, so loop points land on exact frames.
+// Everything here runs on the main thread (hard rule 1).
 package mix
 
 /*
@@ -87,9 +82,7 @@ func OpenDevice(freq, channels int) (*Mixer, error) {
 	return (*Mixer)(m), nil
 }
 
-// NewHeadless creates a mixer with no device: its output is pulled with
-// Generate, as float32 samples. Tests use it to play real audio without a
-// sound card.
+// NewHeadless creates a mixer with no device, whose output is pulled with Generate as float32 samples.
 func NewHeadless(freq, channels int) (*Mixer, error) {
 	if !C.MIX_Init() {
 		return nil, failed()

@@ -8,8 +8,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/packetutil"
 )
 
-// GroupPairMember is one ordered member of a group roster (render model). Order
-// is the z-order: 0 front-most, increasing toward the back.
+// GroupPairMember is one member of a group roster; Order 0 is front-most.
 type GroupPairMember struct {
 	UID              int
 	CharID           int
@@ -21,15 +20,13 @@ type GroupPairMember struct {
 	Order            int
 }
 
-// GroupPair is the current group roster, ordered front→back with the speaker
-// included (the single source of truth for on-screen ordering).
+// GroupPair is the group roster ordered front to back, speaker included.
 type GroupPair struct {
 	GroupID string
 	Members []GroupPairMember
 }
 
-// Empty reports whether no renderable group is active (nil or fewer than two
-// members).
+// Empty reports whether no renderable group is active (nil or fewer than two members).
 func (g *GroupPair) Empty() bool {
 	return g == nil || len(g.Members) < 2
 }
@@ -56,8 +53,7 @@ func FromGP(gp *packetutil.GP) *GroupPair {
 	return out
 }
 
-// GroupPairFromPacket extracts the group roster from a GP Packet's typed value
-// (nil for non-GP or untyped packets).
+// GroupPairFromPacket returns the roster from a GP packet's typed value, or nil for other packets.
 func GroupPairFromPacket(p Packet) *GroupPair {
 	if gp, ok := p.Typed().(*packetutil.GP); ok {
 		return FromGP(gp)
@@ -70,10 +66,7 @@ func (m GroupPairMember) FlipH() bool {
 	return m.Flip == aolib.FlipHorizontal || m.Flip == aolib.FlipHorizontalAndVertical
 }
 
-// ParseAdditionalChars converts the JSON-only `additional_chars` MS field
-// (aolib's MSToClient.Extras["additional_chars"]) into the render model. The
-// server broadcasts it on every MS from a group member, so non-members (a new
-// entrant) can render the group without holding the GP roster.
+// ParseAdditionalChars converts the JSON-only additional_chars MS field, so non-members can render the group.
 func ParseAdditionalChars(v any) []GroupPairMember {
 	if v == nil {
 		return nil

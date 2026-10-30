@@ -1,14 +1,11 @@
 //go:build nodiscord
 
-// The -tags nodiscord build: the entire presence implementation compiles
-// out and this no-op stub keeps the call sites identical. Discord is
-// never a build requirement either way — the real implementation is
-// stdlib-only local IPC (see BUILDING.md).
+// The nodiscord build: a no-op stub keeps the call sites identical.
 package presence
 
 import "time"
 
-// Activity mirrors the real type so call sites compile unchanged.
+// Activity mirrors the real type so call sites compile.
 type Activity struct {
 	Details string
 	State   string
