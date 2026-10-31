@@ -25,7 +25,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		a.screen = a.prevScreen // back to the courtroom, where the panel is drawn
 	}
 	y += btnH + 6
-	y = a.settingsDesc(pad, y, "Server software, live packet inspector, performance (frame graph, heap vs budget, GC), the three-tier asset cache, and the failure log — one floating panel. Also opens with F8 anywhere, or Extras → Debug.", ColTextDim)
+	y = a.settingsDesc(pad, y, "Server software, live packet inspector, performance (frame graph, heap, GC), the three-tier asset cache, and the failure log — one floating panel. Also opens with F8 anywhere, or Extras → Debug.", ColTextDim)
 	y += 10
 
 	y = a.settingsSection(y, w, "Power user (advanced)")
@@ -663,7 +663,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			sn.TexBudgetMiBVal = v
 		})
 	}, &settings.memBufs[4], " MiB", "How much GPU-texture memory decoded art may occupy before the least-recently-used is evicted (32-256 MiB). Above 128 is EXPERIMENTAL and may stutter or crash on low-RAM machines. Applies on RESTART.")
-	y = a.settingsDesc(pad, y, "GPU memory for decoded art; past it the least-recently-used is evicted (and re-fetched if needed again). Bigger = fewer evictions in packed rooms AND longer animations decode before they truncate; smaller = lighter footprint. The default (64) and anything up to 128 fit the 256 MiB memory budget — above 128 is EXPERIMENTAL and deliberately exceeds it, so only raise it there if long animations are cut and you have RAM to spare. Applies on restart.", ColTextDim)
+	y = a.settingsDesc(pad, y, "GPU memory for decoded art; past it the least-recently-used is evicted (and re-fetched if needed again). Bigger = fewer evictions in packed rooms AND longer animations decode before they truncate; smaller = lighter footprint. Above 128 is EXPERIMENTAL, so only raise it there if long animations are cut and you have RAM to spare. Applies on restart.", ColTextDim)
 	y += 10
 
 	// Texture compression (restart-applied; lossy).

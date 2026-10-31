@@ -18,8 +18,6 @@ const (
 	// perfHUDGraphH is the graph height; perfHUDScaleMs is the dt that reaches the top, and anything taller clips.
 	perfHUDGraphH  = 48
 	perfHUDScaleMs = 33.0
-	// perfBudgetBytes mirrors main's GOMEMLIMIT; the HUD shows heap pressure against it.
-	perfBudgetBytes = 700 << 20
 	// frameBudgetMs is the 60 fps line drawn across the graph.
 	frameBudgetMs = 16.7
 )
@@ -78,15 +76,7 @@ func (a *App) drawPerfHUD(w, h int32) {
 	if a.d.Profiler != nil {
 		if s := a.d.Profiler.Latest(); s != nil {
 			heapMiB := float64(s.HeapBytes) / (1 << 20)
-			budMiB := float64(perfBudgetBytes) / (1 << 20)
-			heapCol := ColText
-			if s.HeapBytes > perfBudgetBytes*3/4 {
-				heapCol = ColTierYellow
-			}
-			if s.HeapBytes > perfBudgetBytes {
-				heapCol = ColDanger
-			}
-			c.Label(x0, ty, fmt.Sprintf("heap %5.1f / %.0f MiB   gc p99 %s", heapMiB, budMiB, s.GCPauseP99), heapCol)
+			c.Label(x0, ty, fmt.Sprintf("heap %5.1f MiB   gc p99 %s", heapMiB, s.GCPauseP99), ColText)
 			ty += 18
 			c.Label(x0, ty, fmt.Sprintf("cache hit %3.0f%%   probes %d   cached 404s %d",
 				s.CacheHitRate*100, s.Probes, s.Cached404s), ColText)

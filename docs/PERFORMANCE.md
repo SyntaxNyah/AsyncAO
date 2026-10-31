@@ -10,17 +10,16 @@ GOAMD64=v3 go build ...                                        # AVX2 builds (20
 `-pgo=auto` picks up `default.pgo` at the repo root. Ship both a v3 and a
 baseline build; v3 refuses to start on pre-Haswell CPUs.
 
-## Memory budget
+## Memory
 
-`cmd/asyncao` sets `debug.SetMemoryLimit(700 MiB)` at startup. The byte
-budgets stack under it: T1 64 MiB textures + T2 128 MiB bytes + working set.
+The client sets no process-wide memory limit. Each cache has its own byte cap:
+T1 64 MiB textures, T2 128 MiB bytes.
 Animated sprites are the deliberate exception: they are no longer decimated to
 fit T1 (#110) — instead each animation is downscaled to fit a 500 MiB budget,
 so a 60-frame 1600×1200 clip decodes at native and only very long clips shrink.
 The per-frame downscale is a fast area-average (box) filter — CatmullRom's
-float64 kernel was the decode bottleneck. The 700 MiB limit covers the Go heap
-(a clip's decoded RGBA stays live there until its textures upload); the
-textures themselves live in VRAM.
+float64 kernel was the decode bottleneck. A clip's decoded RGBA stays live on the
+Go heap until its textures upload; the textures themselves live in VRAM.
 
 A decode burst (a character's dozens of emotion animations) still transiently
 spikes RSS above the limit, because the Go scavenger returns the freed pages to
@@ -107,8 +106,8 @@ go tool pprof http://localhost:6060/debug/pprof/allocs               # alloc chu
 Watch for:
 - any allocation inside `render.Viewport.Render` / `Update` (the gate is 0),
 - `runtime.cgocall` overhead spikes (batching texture ops beats chatty calls),
-- `GC pause p99` in the 1 Hz sampler (budget < 2 ms; the 256 MiB soft limit
-  plus low allocation rates keep cycles rare and short).
+- `GC pause p99` in the 1 Hz sampler (budget < 2 ms; low allocation rates
+  keep cycles rare and short).
 
 ## Hot-path inventory
 

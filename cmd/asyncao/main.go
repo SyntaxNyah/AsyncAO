@@ -8,7 +8,6 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"path/filepath"
-	"runtime/debug"
 	"slices"
 	"time"
 
@@ -28,9 +27,6 @@ import (
 )
 
 const (
-	// memoryBudgetBytes fits a full animated decode plus T2, so the GC doesn't thrash.
-	memoryBudgetBytes = 700 << 20
-
 	windowTitle    = "AsyncAO"
 	appID          = "io.github.SyntaxNyah.AsyncAO"
 	windowWidth    = 1152
@@ -53,8 +49,6 @@ func main() {
 		flagGPURecovery = flag.Int("gpu-recovery", 0, "set by the client when it restarts after a GPU device loss: losses so far")
 	)
 	flag.Parse()
-
-	debug.SetMemoryLimit(memoryBudgetBytes)
 
 	if *flagDebug {
 		go func() {
