@@ -329,6 +329,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		AudioDevices:     rt.Audio,
 		GraphicsName:     graphics.Name(),
 		Desktop:          rt.Desktop,
+		Capabilities:     rt.Platform.Capabilities,
 		Preview:          preview,
 		Presence:         pres,
 		MasterURL:        masterURL,
