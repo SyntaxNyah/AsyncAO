@@ -146,9 +146,7 @@ func newClient(timeout, notFoundTTL time.Duration, sockets *netproxy.Factory) *C
 	transport.DisableCompression = true
 	transport.ForceAttemptHTTP2 = true
 	transport.TLSHandshakeTimeout = defaultTLSHandshakeTimeout
-	transport.TLSClientConfig = &tls.Config{
-		ClientSessionCache: tls.NewLRUClientSessionCache(tlsSessionCacheSize),
-	}
+	transport.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(tlsSessionCacheSize)
 	transport.DialContext = sockets.Dialer(dns.DialContext)
 	sockets.Track(transport)
 	return &Client{
