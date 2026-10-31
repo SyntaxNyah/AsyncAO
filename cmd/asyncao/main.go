@@ -63,10 +63,10 @@ func main() {
 		}()
 	}
 
-	gpuOpts := render.BackendOptions{
+	gpuOpts := host.GraphicsOptions{
 		VSync:              *flagVsync,
 		ForceSoftware:      *flagSoftGPU,
-		SoftwareDriverFile: softwareVulkanDriverFile(),
+		SoftwareDriverFile: host.SoftwareVulkanDriverFile(),
 	}
 	app := host.App{Name: windowTitle, Version: update.Version, ID: appID}
 	err := host.Main(app, platform.SystemProbe{}, func(rt *host.Runtime) error {
@@ -91,7 +91,7 @@ func logSamples(p *metrics.Profiler) {
 	}
 }
 
-func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveries int, debugMode bool) error {
+func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOptions, gpuRecoveries int, debugMode bool) error {
 	vsync := gpuOpts.VSync
 	// --- engine singletons (SDL-free) ---
 	prefsPath, err := config.DefaultPath()
@@ -200,14 +200,14 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts render.BackendOp
 		}
 	}
 
-	backend, err := render.OpenBackend(window, gpuOpts)
+	graphics, err := host.OpenGraphics(window, gpuOpts)
 	if err != nil {
 		return err
 	}
-	defer backend.Close()
-	log.Printf("renderer: %s", backend.Name())
-	ren := backend.Renderer()
-	gpuWatcher := render.NewGPUWatcher(gpuRecoveries, backend.Software(), time.Now)
+	defer graphics.Close()
+	log.Printf("renderer: %s", graphics.Name())
+	ren := graphics.Renderer()
+	gpuWatcher := host.NewGPUWatcher(gpuRecoveries, graphics.Software(), time.Now)
 	// Linear or nearest, for every texture created from now on.
 	_ = ren.SetDefaultTextureScaleMode(ui.TextureScaleMode(prefs.Load().SmoothScaling))
 	// macOS Retina: fold the 2x drawable into the render scale, since SetLogicalSize would break hit-testing.
@@ -327,6 +327,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts render.BackendOp
 		Pump:             nil, // set below (needs app for liveness)
 		Audio:            audio,
 		AudioDevices:     rt.Audio,
+		GraphicsName:     graphics.Name(),
 		Preview:          preview,
 		Presence:         pres,
 		MasterURL:        masterURL,
@@ -484,9 +485,9 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts render.BackendOp
 		_ = ren.SetDrawColor(0, 0, 0, 255)
 		_ = ren.Clear()
 		app.Frame(dt, lw, lh)
-		switch recovery := gpuWatcher.Observe(backend.Present()); recovery {
-		case render.GPUWorking:
-		case render.GPUGiveUp:
+		switch recovery := gpuWatcher.Observe(graphics.Present()); recovery {
+		case host.GPUWorking:
+		case host.GPUGiveUp:
 			log.Printf("gpu: the software driver lost its device too; quitting instead of restarting again")
 			_ = sdl.ShowErrorBox(windowTitle, gpuGiveUpMessage, window)
 			running = false

@@ -1,6 +1,6 @@
 //go:build !windows
 
-package main
+package host
 
 import "os"
 
@@ -11,8 +11,8 @@ var lavapipeManifests = []string{
 	"/usr/local/share/vulkan/icd.d/lvp_icd.x86_64.json",
 }
 
-// softwareVulkanDriverFile is the system's lavapipe manifest, or "" when not installed.
-func softwareVulkanDriverFile() string {
+// SoftwareVulkanDriverFile is the system's lavapipe manifest, or "" when not installed.
+func SoftwareVulkanDriverFile() string {
 	for _, p := range lavapipeManifests {
 		if _, err := os.Stat(p); err == nil {
 			return p

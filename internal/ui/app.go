@@ -123,6 +123,8 @@ type Deps struct {
 	Audio    *render.Audio
 	// AudioDevices opens the voice streams and lists microphones.
 	AudioDevices host.AudioDevices
+	// GraphicsName says what is drawing, for the perf HUD and the About screen.
+	GraphicsName string
 	// Preview is the detachable emote-preview OS window; consumers must stay nil-safe for headless tests.
 	Preview *render.PreviewWindow
 	// Presence is the optional Discord Rich Presence client; nil in tests.

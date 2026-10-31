@@ -174,6 +174,9 @@ func (a *App) buildAboutFlat(c *Ctx, colW int32) []aboutFlatLine {
 			}
 		}
 	}
+	if a.d.GraphicsName != "" {
+		out = append(out, aboutFlatLine{text: "Drawing with " + a.d.GraphicsName, col: ColTextDim, gap: aboutParaGap})
+	}
 	return out
 }
 

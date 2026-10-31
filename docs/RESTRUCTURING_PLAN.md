@@ -34,8 +34,10 @@ in **Status**. Update Status in the same commit that completes a step.
   - [x] window factory and audio devices in the host (sequence item 4): `host.OpenExtraWindow`, `host.AudioDevices`.
         Extra windows keep SDL's own renderer until item 5 moves the driver list. Capture reports a missing device as a
         typed error; a denied microphone is not detectable through SDL on desktop and waits for the mobile milestone
-  - [ ] the rest of Part 5g's sequence, items 5–7, which includes the backend name in the debug
-        overlay and About, and the platform code (dialogs, DPI seeding, URL opening, preview
+  - [x] driver lists and the GPU watcher in the host, `render.Backend` now `host.Graphics` (sequence item 5); the name
+        shows in the perf HUD and About. The detached preview keeps SDL's own renderer until it becomes an ordinary
+        window (sequence item 9)
+  - [ ] the rest of Part 5g's sequence, items 6–7, which includes the platform code (dialogs, DPI seeding, URL opening, preview
         ownership, clipboard)
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
       pointer, no park/activate copies; fixes bug 4, #115, #141, #84)
