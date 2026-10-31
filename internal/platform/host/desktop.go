@@ -43,6 +43,16 @@ func (Desktop) PickFolders(opts sdl.DialogOptions, done sdl.DialogDone) {
 	sdl.ShowOpenFolderDialog(opts, done)
 }
 
+// fileClipboardData offers an absolute path the way Linux file managers paste it: most read text/uri-list, while GNOME's
+// Files reads its own type.
+func fileClipboardData(abs string) map[string][]byte {
+	address := fileURL(abs)
+	return map[string][]byte{
+		"text/uri-list":                []byte(address + "\r\n"),
+		"x-special/gnome-copied-files": []byte("copy\n" + address),
+	}
+}
+
 // fileURL percent-encodes an absolute path; a Windows drive path gains the leading slash file URLs need.
 func fileURL(abs string) string {
 	p := filepath.ToSlash(abs)

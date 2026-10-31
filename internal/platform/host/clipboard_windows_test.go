@@ -1,20 +1,44 @@
 package host
 
-import "testing"
+import (
+	"bytes"
+	"encoding/binary"
+	"testing"
+	"unicode/utf16"
+)
 
-// A quote in a file name must not end the string and run the rest as a command.
-func TestPowerShellLiteralKeepsQuotesInside(t *testing.T) {
-	const (
-		input = `C:\a'; calc; 'b.gif`
-		want  = `'C:\a''; calc; ''b.gif'`
-	)
-	if got := powerShellLiteral(input); got != want {
-		t.Errorf("got %s, want %s", got, want)
+func TestDropFilesLayout(t *testing.T) {
+	const path = `C:\exports\ゲーム.gif`
+	block, err := dropFiles(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := binary.LittleEndian.Uint32(block); got != dropFilesHeaderSize {
+		t.Errorf("pFiles = %d, want %d", got, dropFilesHeaderSize)
+	}
+	if got := binary.LittleEndian.Uint32(block[dropFilesWideOffset:]); got != 1 {
+		t.Errorf("fWide = %d, want 1", got)
+	}
+	var want bytes.Buffer
+	for _, unit := range utf16.Encode([]rune(path + "\x00\x00")) {
+		_ = binary.Write(&want, binary.LittleEndian, unit)
+	}
+	if got := block[dropFilesHeaderSize:]; !bytes.Equal(got, want.Bytes()) {
+		t.Errorf("path bytes = %x, want %x", got, want.Bytes())
 	}
 }
 
-func TestCopyFileToClipboardRefusesAnEmptyPath(t *testing.T) {
-	if (Desktop{}).CopyFileToClipboard("") {
+func TestDropFilesRefusesANULInThePath(t *testing.T) {
+	if _, err := dropFiles("a\x00b"); err == nil {
+		t.Error("a NUL would have cut the path short")
+	}
+}
+
+func TestCopyFileToClipboardRefusesWhatItCannotCopy(t *testing.T) {
+	if (Desktop{}).CopyFileToClipboard(nil, "") {
 		t.Error("an empty path was accepted")
+	}
+	if (Desktop{}).CopyFileToClipboard(nil, "a\x00b") {
+		t.Error("an invalid path was accepted")
 	}
 }

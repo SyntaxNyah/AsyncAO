@@ -60,6 +60,7 @@ const (
 	reasonLinuxRelease = "Linux releases update as an AppImage"
 	reasonNoDiscovery  = "no OS proxy settings to read here"
 	reasonOneFolder    = "folder dialogs here pick one folder"
+	reasonNoFileCopy   = "copying a file for Finder is not confirmed to work yet"
 )
 
 // capabilitiesFor mirrors the OS branches the client takes today.
@@ -71,7 +72,10 @@ func capabilitiesFor(env Environment, hardware Hardware) Capabilities {
 		}
 	}
 	if env.OS != Windows {
-		off(reasonWindowsOnly, CopyFilesToClipboard, SystemNotifications)
+		off(reasonWindowsOnly, SystemNotifications)
+	}
+	if env.OS == MacOS {
+		off(reasonNoFileCopy, CopyFilesToClipboard)
 	}
 	// SDL passes multiselect to the folder dialog on these three only (src/dialog).
 	if env.OS != Windows && env.OS != MacOS && env.OS != Linux {

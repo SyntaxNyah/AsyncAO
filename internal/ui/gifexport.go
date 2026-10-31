@@ -1424,7 +1424,7 @@ func (a *App) pollGifExport() {
 	case res := <-a.gifResultCh:
 		a.warnLine = res.msg
 		if res.path != "" && a.d.Prefs.Load().Export.CopyToClipboard {
-			if a.d.Desktop.CopyFileToClipboard(res.path) {
+			if a.d.Desktop.CopyFileToClipboard(a.ctx.win, res.path) {
 				a.warnLine += "  📋 on the clipboard"
 			}
 		}
