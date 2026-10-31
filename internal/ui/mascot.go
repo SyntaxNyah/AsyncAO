@@ -20,7 +20,7 @@ import (
 //go:embed assets/mayo.png
 var mayoPNG []byte
 
-// SetWindowIcon is per-platform (mascot_icon_*.go). On Windows it is a no-op because the exe embeds a multi-resolution
+// SetWindowIcon (mascot_icon.go) is a no-op on Windows because the exe embeds a multi-resolution
 // .ico (cmd/asyncao/rsrc_windows.syso) that one large SDL surface would override with a poor downscale.
 
 // decodeMayoRGBA decodes the embedded mascot into a tightly-packed RGBA image

@@ -1,6 +1,4 @@
-//go:build windows
-
-package render
+package host
 
 import (
 	"syscall"
@@ -8,26 +6,23 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// A Win32 owner link makes the window manager keep the preview z-ordered with the main window.
+// A Win32 owner link makes the window manager keep a window z-ordered with its owner.
 var (
-	user32   = syscall.NewLazyDLL("user32.dll")
-	kernel32 = syscall.NewLazyDLL("kernel32.dll")
-
 	procSetWindowLongPtrW = user32.NewProc("SetWindowLongPtrW")
-	// SetLastError disambiguates SetWindowLongPtrW's return value; see LinkOwner.
+	// SetLastError disambiguates SetWindowLongPtrW's return value; see LinkWindowOwner.
 	procSetLastError = kernel32.NewProc("SetLastError")
 )
 
 // gwlpHwndParent is GWLP_HWNDPARENT (-8); SetWindowLongPtrW then installs an owner, not a WS_CHILD parent.
 const gwlpHwndParent = -8
 
-// LinkOwner makes mainWin the Win32 owner of p's window; call once after a successful open. Render thread only.
-func (p *PreviewWindow) LinkOwner(mainWin *sdl.Window) bool {
-	if p == nil || p.win == nil || mainWin == nil {
+// LinkWindowOwner makes owner the Win32 owner of child; call once after child opens. Main thread only.
+func LinkWindowOwner(child, owner *sdl.Window) bool {
+	if child == nil || owner == nil {
 		return false
 	}
-	child, owner := p.win.Win32Handle(), mainWin.Win32Handle()
-	if child == nil || owner == nil {
+	childHandle, ownerHandle := child.Win32Handle(), owner.Win32Handle()
+	if childHandle == nil || ownerHandle == nil {
 		return false
 	}
 	if procSetWindowLongPtrW.Find() != nil {
@@ -39,7 +34,7 @@ func (p *PreviewWindow) LinkOwner(mainWin *sdl.Window) bool {
 		procSetLastError.Call(0)
 	}
 	idx := int32(gwlpHwndParent) // sign-extended per SetWindowLongPtrW's LONG_PTR nIndex parameter
-	prev, _, callErr := procSetWindowLongPtrW.Call(uintptr(child), uintptr(uint64(int64(idx))), uintptr(owner))
+	prev, _, callErr := procSetWindowLongPtrW.Call(uintptr(childHandle), uintptr(uint64(int64(idx))), uintptr(ownerHandle))
 	if prev == 0 {
 		if errno, ok := callErr.(syscall.Errno); !ok || errno != 0 {
 			return false

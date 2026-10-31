@@ -1275,7 +1275,7 @@ func (a *App) SetDisplayDPIScale(pct int) {
 }
 
 // SeedDisplayDPIScale records the auto scale from the OS DPI of the window's monitor; render thread, at boot and on
-// display change. It prefers queryWindowDPI because sdl.GetDisplayDPI reports a flat 96 under per-monitor-v2 awareness.
+// display change. It prefers host.WindowDPI because sdl.GetDisplayDPI reports a flat 96 under per-monitor-v2 awareness.
 // Runtime-only and auto path only: a saved manual scale still wins.
 func (a *App) SeedDisplayDPIScale() {
 	win := a.ctx.win
@@ -1286,7 +1286,7 @@ func (a *App) SeedDisplayDPIScale() {
 	if idx, err := win.GetDisplayIndex(); err == nil {
 		a.lastDPIDisplayIndex = idx
 	}
-	dpi, ok := queryWindowDPI(win)
+	dpi, ok := host.WindowDPI(win)
 	if !ok {
 		// Cross-platform fallback.
 		idx, err := win.GetDisplayIndex()

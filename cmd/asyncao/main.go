@@ -205,7 +205,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	// Linear or nearest, for every texture created from now on.
 	_ = ren.SetDefaultTextureScaleMode(ui.TextureScaleMode(prefs.Load().SmoothScaling))
 	// macOS Retina: fold the 2x drawable into the render scale, since SetLogicalSize would break hit-testing.
-	retinaScale := retinaScaleFactor(ren, window)
+	retinaScale := host.RetinaScale(ren, window)
 	// SDL defaults to no blending, which draws every alpha fill opaque.
 	_ = ren.SetDrawBlendMode(sdl.BLENDMODE_BLEND)
 
