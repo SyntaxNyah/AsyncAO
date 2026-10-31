@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -257,11 +256,9 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 		a.scanThemes(true) // user-driven: the scan landing may arm the #35 auto-resize
 		a.applyThemeAsync()
 	}
-	if runtime.GOOS == "windows" {
-		if c.Button(sdl.Rect{X: pad + 600, Y: y, W: 90, H: btnH}, "Browse...") {
-			if !browseForFolder() {
-				settings.statusLine = "The folder picker is already open — finish or close it first (Alt-Tab if you don't see it)."
-			}
+	if c.Button(sdl.Rect{X: pad + 600, Y: y, W: 90, H: btnH}, "Browse...") {
+		if !a.browseForFolder() {
+			settings.statusLine = "The folder picker is already open — finish or close it first (Alt-Tab if you don't see it)."
 		}
 	}
 	y += 36

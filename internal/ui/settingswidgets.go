@@ -1,10 +1,8 @@
 package ui
 
 import (
-	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -13,7 +11,6 @@ import (
 	hvalue "github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
-	"github.com/SyntaxNyah/AsyncAO/internal/winexec"
 )
 
 // volumeWheelStep is how many percent one wheel tick nudges a volume row.
@@ -292,43 +289,36 @@ func (a *App) emoteGridGapRow(y int32, gap int) int {
 	return gap
 }
 
-// browseForFolder shells the native Windows theme-folder picker on a goroutine; the chosen path lands on folderRes
-// (empty = cancelled). Returns false when a dialog is already open.
-func browseForFolder() bool {
+// browseForFolder shows the theme-folder picker; the result lands on folderRes. Returns false when one is already open.
+func (a *App) browseForFolder() bool {
 	if settings.browseBusy {
 		return false
 	}
 	settings.browseBusy = true
-	go func() {
-		// A shown-and-activated TopMost owner form (invisible) so the modal dialog inherits real foreground z-order.
-		const dialog = `Add-Type -AssemblyName System.Windows.Forms; ` +
-			`$d = New-Object System.Windows.Forms.FolderBrowserDialog; ` +
-			`$d.Description = 'Pick the folder that CONTAINS themes\<name>'; ` +
-			`$o = New-Object System.Windows.Forms.Form; $o.TopMost = $true; $o.ShowInTaskbar = $false; $o.Opacity = 0; $o.Show(); $o.Activate(); ` +
-			`if ($d.ShowDialog($o) -eq 'OK') { Write-Output $d.SelectedPath }`
-		cmd := exec.Command("powershell", "-NoProfile", "-STA", "-Command", dialog)
-		winexec.Hide(cmd) // GUI-subsystem build: no empty PowerShell window (the dialog still shows)
-		// A CREATE_NO_WINDOW child cannot activate its own dialog, so Start, donate foreground rights, then Wait.
-		var outBuf bytes.Buffer
-		cmd.Stdout = &outBuf
-		if err := cmd.Start(); err != nil {
-			settings.folderRes <- pickFailed
-			return
-		}
-		winexec.AllowSetForeground(cmd.Process.Pid)
-		err := cmd.Wait()
-		path := strings.TrimSpace(outBuf.String())
-		if err != nil {
-			settings.folderRes <- pickFailed // failure ≠ cancel
-			return
-		}
-		if path == "" {
-			settings.folderRes <- ""
-			return
-		}
-		settings.folderRes <- path
-	}()
+	a.d.Desktop.PickFolders(sdl.DialogOptions{
+		Window:   a.ctx.win,
+		Title:    "Pick the folder that CONTAINS themes/<name>",
+		Location: settings.themeDir,
+	}, func(paths []string, err error) {
+		// SDL's callback must not block, and a dropped folder may hold folderRes's one place.
+		go func() {
+			settings.folderRes <- folderPickResult(paths, err)
+			PushWake()
+		}()
+	})
 	return true
+}
+
+// folderPickResult is a single-folder dialog's outcome as folderRes carries it: a path, "" when cancelled, or pickFailed.
+func folderPickResult(paths []string, err error) string {
+	switch {
+	case err != nil:
+		return pickFailed
+	case len(paths) == 0:
+		return ""
+	default:
+		return paths[0]
+	}
 }
 
 // resolveDroppedFolder turns an SDL drop path into a directory off-thread (a dropped file means its folder).

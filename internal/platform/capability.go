@@ -68,7 +68,7 @@ func capabilitiesFor(env Environment, hardware Hardware) Capabilities {
 		}
 	}
 	if env.OS != Windows {
-		off(reasonWindowsOnly, PickFolder, CopyFilesToClipboard, SystemNotifications)
+		off(reasonWindowsOnly, CopyFilesToClipboard, SystemNotifications)
 	}
 	if env.OS != Windows && env.OS != MacOS {
 		off(reasonNoDiscovery, ProxyDiscovery)

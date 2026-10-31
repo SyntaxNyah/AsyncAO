@@ -33,6 +33,16 @@ func (Desktop) OpenPath(path string) error {
 	return sdl.OpenURL(fileURL(abs))
 }
 
+// PickFiles shows the OS's open-file dialog on the main thread; done may run on any thread and must not block.
+func (Desktop) PickFiles(opts sdl.DialogOptions, done sdl.DialogDone) {
+	sdl.ShowOpenFileDialog(opts, done)
+}
+
+// PickFolders shows the OS's folder dialog on the main thread; done may run on any thread and must not block.
+func (Desktop) PickFolders(opts sdl.DialogOptions, done sdl.DialogDone) {
+	sdl.ShowOpenFolderDialog(opts, done)
+}
+
 // fileURL percent-encodes an absolute path; a Windows drive path gains the leading slash file URLs need.
 func fileURL(abs string) string {
 	p := filepath.ToSlash(abs)
