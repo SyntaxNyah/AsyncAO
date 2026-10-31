@@ -51,6 +51,8 @@ func friendlyConnError(wsURL string, err error) string {
 	switch {
 	// Proxy cases come first: the websocket library wraps every dial failure with its own name, so a proxy error would
 	// fall into the "not a WebSocket server" arm below.
+	case errors.Is(err, netproxy.ErrBadProxyAddress):
+		return "The proxy address in Settings can't be read, so connections are blocked rather than sent around it. Settings → Power user → Proxy: fix the address, or choose \"never use one\"."
 	case errors.Is(err, netproxy.ErrProxyUnresolvable):
 		return "This computer is set to find its proxy from a script AsyncAO can't run, so connections are blocked rather than sent around it. Settings → Power user → Proxy: enter the proxy yourself, or choose \"never use one\"."
 	case strings.Contains(s, "proxyconnect") || strings.Contains(s, "proxy"):
@@ -114,7 +116,7 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	}(wsURL)
 	// TLS: default off accepts self-signed wss certs (most community AO servers); the Security toggle enables strict
 	// verification.
-	conn, err := protocol.Dial(dialCtx, wsURL, protocol.DialOptions{
+	conn, err := protocol.Dial(dialCtx, a.sockets(), wsURL, protocol.DialOptions{
 		SkipTLSVerify: !a.d.Prefs.Load().ValidateTLSCerts,
 		Origin:        a.d.Prefs.Load().WSOrigin, // power-user: servers that allowlist their web client's origin ("" = none)
 	})

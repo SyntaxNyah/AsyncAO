@@ -13,6 +13,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -81,7 +82,7 @@ func newExportStallHarness(t *testing.T) (*App, string) {
 		Prefs:    a.d.Prefs,
 		T2:       t2,
 		Disk:     disk,
-		Source:   network.NewClientNotFoundTTL(0), // stream over HTTP: every request 404s (the all-404 origin)
+		Source:   network.NewClientNotFoundTTL(0, netproxy.Direct()), // stream over HTTP: every request 404s (the all-404 origin)
 		Pool:     pool,
 		Decoder:  decoder,
 	})

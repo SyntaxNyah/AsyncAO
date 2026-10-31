@@ -4,13 +4,15 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 )
 
 // TestConnPing pins the #128 RTT source: Conn.Ping sends a WebSocket ping and returns a
 // positive round-trip once the peer's pong lands (the echo server's read loop auto-pongs).
 func TestConnPing(t *testing.T) {
 	srv := echoAOServer(t)
-	conn, err := Dial(context.Background(), wsURL(srv))
+	conn, err := Dial(context.Background(), netproxy.Direct(), wsURL(srv))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}

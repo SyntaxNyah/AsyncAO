@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
@@ -51,7 +52,7 @@ func newPackRig(tb testing.TB, server map[string]string, pack map[string]string)
 	tb.Cleanup(ix.Retire)
 	pr.layer = NewMountLayer(ix, []string{pr.dir}, []string{pr.origin})
 
-	pr.rig = newRig(tb, network.NewClientNotFoundTTL(0), false)
+	pr.rig = newRig(tb, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	pr.rig.manager.SetMountLayer(pr.layer)
 	return pr
 }
@@ -264,7 +265,7 @@ func TestMountLayerSwapDuringResolveRaceClean(t *testing.T) {
 // cost" rule: with no layer installed the whole feature must resolve to a nil
 // pointer and stop, touching no index, no goroutine and no disk.
 func TestNoMountsIsExactlyOneAtomicLoad(t *testing.T) {
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	if l := rig.manager.activeMountLayer(); l != nil {
 		t.Fatal("a Manager with no mounts reports a live layer")
 	}

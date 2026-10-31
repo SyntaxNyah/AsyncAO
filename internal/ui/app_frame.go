@@ -27,10 +27,11 @@ func (a *App) RefreshServers() {
 	// and pollLobbyFetch prunes it when a fresh list lands (hard rule 4).
 	urls := a.masterListURLs()
 	ch := a.lobbyResult
+	sockets := a.sockets()
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), lobbyRefreshTimeout)
 		defer cancel()
-		entries, err := network.FetchServerLists(ctx, urls)
+		entries, err := network.FetchServerLists(ctx, sockets, urls)
 		ch <- lobbyFetch{entries: entries, err: err}
 	}()
 }

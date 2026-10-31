@@ -57,7 +57,9 @@ in **Status**. Update Status in the same commit that completes a step.
         and cache locations stay in `config` and `cache`, which use the standard library and have no OS branch
   - [x] item 6, window details: `host.WindowDPI`, `LinkWindowOwner`, `RetinaScale`; this finishes item 6
   - [x] sequence item 7: `.golangci-platform.yml` keeps `runtime.GOOS`, `os/exec` and `syscall` in `internal/platform` and the
-        SDL binding; `netproxy` is exempt until its discussion. This closes step 2c
+        SDL binding. This closes step 2c
+  - [x] `netproxy` rebuilt as a socket factory (decided 2026-10-31, replaces decision C3's process-wide policy); every
+        outbound connection comes from an injected `netproxy.Factory`, and OS discovery moved to `internal/platform`
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
       pointer, no park/activate copies; fixes bug 4, #115, #141, #84)
 - [ ] 4. `internal/uikit`: extract the kit, then the input model (press/release + capture,

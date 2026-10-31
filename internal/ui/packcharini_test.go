@@ -17,6 +17,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
@@ -50,7 +51,7 @@ func packApp(t *testing.T, files map[string]string) *App {
 		Prefs:    a.d.Prefs,
 		T2:       t2,
 		Disk:     disk,
-		Source:   network.NewClientNotFoundTTL(0),
+		Source:   network.NewClientNotFoundTTL(0, netproxy.Direct()),
 		Pool:     pool,
 		Decoder:  decoder,
 	})

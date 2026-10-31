@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 )
 
 // dribbleBody flushes response headers immediately, then writes total bytes in
@@ -70,7 +72,7 @@ func TestSlowLargeBodyOutlivesHeaderDeadline(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := newClient(headerDeadline, NotFoundCacheTTL)
+	c := newClient(headerDeadline, NotFoundCacheTTL, netproxy.Direct())
 
 	start := time.Now()
 	data, err := c.Fetch(context.Background(), srv.URL+"/sounds/music/big-track.opus")
@@ -113,7 +115,7 @@ func TestBodyBudgetTimeoutIsNotA404(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := newClient(headerDeadline, NotFoundCacheTTL)
+	c := newClient(headerDeadline, NotFoundCacheTTL, netproxy.Direct())
 	c.bodyBudget = tinyBodyBudget // inject a body ceiling the slow stream overruns
 	url := srv.URL + "/sounds/music/stalls.opus"
 

@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"errors"
+	"log"
+
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
@@ -21,10 +24,30 @@ func proxyModeLabel(mode int) string {
 	}
 }
 
-// applyProxyPrefs re-resolves the policy from saved preferences; called on change and re-check, never per request.
+// applyProxyPrefs re-resolves the policy from saved preferences, off the render thread because it may read the registry
+// or start a process. One goroutine at a time (hard rule 4): a change made meanwhile runs right after it.
 func (a *App) applyProxyPrefs() {
-	p := netproxy.Configure(netproxy.Mode(a.d.Prefs.Load().ProxyModeVal), a.d.Prefs.Load().ProxyURL)
-	a.pushDebug("proxy: " + p.Describe())
+	if a.proxyApplyBusy.Swap(true) {
+		a.proxyApplyAgain.Store(true)
+		return
+	}
+	sockets, prefs := a.sockets(), a.d.Prefs
+	go func() {
+		defer PushWake()
+		for {
+			a.proxyApplyAgain.Store(false)
+			p := sockets.Apply(netproxy.Mode(prefs.Load().ProxyModeVal), prefs.Load().ProxyURL)
+			log.Printf("proxy: %s", p.Describe())
+			if !a.proxyApplyAgain.Load() {
+				break
+			}
+		}
+		a.proxyApplyBusy.Store(false)
+		// A change between the last check and clearing busy would otherwise wait for the next one.
+		if a.proxyApplyAgain.Swap(false) {
+			a.applyProxyPrefs()
+		}
+	}()
 }
 
 func (a *App) drawProxySettings(y, w int32) int32 {
@@ -64,22 +87,22 @@ func (a *App) drawProxySettings(y, w int32) int32 {
 	}
 
 	// Colour repeats the words so "nothing is proxied" and "connections are being blocked" differ at a glance.
-	p := netproxy.Current()
+	p := a.sockets().Current()
 	statusCol := ColTextDim
-	if p.AutoScript {
+	if p.Blocked() {
 		statusCol = ColDanger
-	} else if p.HTTP != nil || p.HTTPS != nil {
+	} else if p.Via != nil {
 		statusCol = ColAccent
 	}
 	c.Label(pad, y+4, "In effect:", ColText)
 	c.LabelClipped(pad+90, y+4, w-90-8, p.Describe(), statusCol)
 	y += 26
 
-	if p.AutoScript {
+	if errors.Is(p.Block, netproxy.ErrProxyUnresolvable) {
 		y = a.settingsDesc(pad, y, "This computer is set to find its proxy from a script, which AsyncAO can't run here. Rather than connect around a proxy you meant to use, connections are being BLOCKED. Two ways out: switch the setting above to \"the address below\" and enter the proxy yourself, or switch it to \"never use one\" if you don't want AsyncAO proxied at all.", ColDanger)
 		y += 6
 	}
-	y = a.settingsDesc(pad, y, "Where AsyncAO's traffic goes: the server connection, all character and background art, music, the server list and updates. It follows this computer's own setting by default. If a proxy is found that can't carry AO traffic — some block the ports community servers use — nothing will load, and \"never use one\" is the fix.", ColTextDim)
+	y = a.settingsDesc(pad, y, "Everything AsyncAO connects to follows this: the server connection, all character and background art, music, the server list and its pings, and updates. A change applies to new connections, so reconnect to move a server you're already on. If a proxy can't carry AO traffic — some block the ports community servers use — nothing will load, and \"never use one\" is the fix.", ColTextDim)
 	y += 10
 	return y
 }

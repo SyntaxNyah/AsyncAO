@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
@@ -84,7 +85,7 @@ func TestManagerConcurrentInvalidateWindowDoesNotStrandExistingAssets(t *testing
 		}
 	}
 	cs := newCountingServer(t, payloads)
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 
 	host := hostOf(cs.srv.URL + "/x")
 	// Seed the learned format once, mirroring the extensions.json manifest seed

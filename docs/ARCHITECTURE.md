@@ -437,27 +437,23 @@ No new module dependency: `archive/zip` is stdlib.
 
 ### Proxy (`internal/netproxy`)
 
-One immutable `Policy` published through an `atomic.Pointer`, read by every dial
-without a lock; a refresh builds a new one and swaps. Resolved at boot (before
-`sdl.Init`, so a registry read or a WPAD round trip costs boot latency and never
-frames) and on an explicit Settings change — **never per request** (hard rule 2).
+`netproxy.Factory` is the socket factory: **every outbound connection is opened by it**, so what Settings shows and
+what the client does cannot disagree. `cmd/asyncao` builds one and injects it. A golangci rule
+(`.golangci-platform.yml`) rejects `http.DefaultClient`, `http.Client`, `http.Transport` and `net.Dial` elsewhere.
 
-- **Every** `http.Transport` in the repo sets `Proxy`. A nil `Proxy` means *never
-  proxy*, not "use the default", and a `go/ast` census over the tree fails the
-  build gate on any literal without it. Before that gate, the asset transport and
-  the game socket were both nil-`Proxy` while the lobby and updater inherited
-  `http.DefaultTransport` — a split tunnel worse than either extreme.
-- Order inside "use the system's setting": **environment first, OS second.** An
-  env var is an explicit per-launch instruction; the OS setting is ambient.
-- Discovery: Windows registry + WinHTTP (with `WinHttpGetProxyForUrl` actually
-  *resolving* WPAD/PAC rather than assuming — the auto-detect flag is ON by
-  default on machines with no proxy at all, so assuming would strand them);
-  macOS `scutil --proxy`; elsewhere env only.
-- **Fail closed** when a proxy is configured but its destination is unknowable (a
-  PAC script off Windows). Falling back to direct is the leak this exists to
-  close. Bypassed destinations are exempt — we know where those go.
-- Bypass matching is hand-written; see the dependency table for the measurements
-  that rule out every library alternative.
+- One immutable `Policy` published through an `atomic.Pointer` and read per connection without a lock. `Apply` builds a
+  new one off the render thread and closes idle connections, so the next request takes the new route. A live connection
+  keeps its route until it reconnects.
+- Routing happens at the socket: `Transport.Proxy` is always nil. HTTP proxies are always asked for a `CONNECT` tunnel,
+  including for `ws://` and `http://`, and SOCKS5 always sends names, so no lookup leaves the machine. A socket has no
+  scheme to choose by, so a policy has **one proxy**, and a per-scheme OS setting uses its `https` entry first. A proxy
+  that allows `CONNECT` only to port 443 cannot carry `ws://` or `http://`.
+- Order inside "use the system's setting": **environment first, OS second.** An env var is an explicit per-launch
+  instruction; the OS setting is ambient.
+- OS discovery is in `internal/platform` and returns raw text. Automatic detection alone counts as no proxy.
+- **Fail closed** when a proxy is configured but unusable (a PAC script, which is not evaluated, or an unreadable manual
+  address) and before the first `Apply`. Bypassed destinations are exempt: we know where those go.
+- Bypass matching is hand-written; see the dependency table for the measurements that rule out every library alternative.
 - Fetch pool: 16 workers (fetches are RTT-bound; the transport is sized
   for 16 conns/host and h2 bases multiplex them over one connection —
   spec §7's original 8 halved cold-viewport fill for nothing), HIGH lane

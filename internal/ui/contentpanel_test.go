@@ -10,6 +10,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
@@ -300,7 +301,7 @@ func mountedProbeApp(t *testing.T, mount string) (*App, string) {
 // for the inline base-setup flow ("Local base" works while streaming).
 func streamingProbeApp(t *testing.T) *App {
 	t.Helper()
-	return headlessProbeApp(t, network.NewClientNotFoundTTL(0), false)
+	return headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 }
 
 // writeDemoFile writes a minimal .demo (SC + one MS) under a temp dir and returns

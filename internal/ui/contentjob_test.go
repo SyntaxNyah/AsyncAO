@@ -17,6 +17,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
@@ -307,7 +308,7 @@ func TestContentProbeWindowBounded(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0), false)
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	// A big scene — far more refs than the window — so an unbounded probe would
 	// blow past contentProbeWorkers.
 	rec := &sceneRecording{Origin: srv.URL + "/", StartBg: "courtroom"}
@@ -360,7 +361,7 @@ func TestContentProbeFoundMissing(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0), false)
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	rec := &sceneRecording{
 		Origin:  srv.URL + "/",
 		StartBg: "courtroom",
@@ -434,7 +435,7 @@ func TestPackageBundleLayout(t *testing.T) {
 	bundle := nextBundleDir(dir, "myscene")
 	t.Cleanup(func() { _ = os.RemoveAll(bundle) })
 
-	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0), false)
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	rec := &sceneRecording{
 		Origin:  srv.URL + "/",
 		StartBg: "courtroom",
@@ -659,7 +660,7 @@ func TestCancelMidProbeLeakFree(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0), false)
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	rec := &sceneRecording{Origin: srv.URL + "/", StartBg: "courtroom"}
 	for i := 0; i < 40; i++ {
 		rec.Events = append(rec.Events, msgEvent(fmt.Sprintf("C%d", i), "normal", "", "", ""))
@@ -731,7 +732,7 @@ func TestCancelMidPackageLeakFree(t *testing.T) {
 	cancelBundle := filepath.Join(dir, "cancelpkg"+contentBundleSuffix)
 	_ = os.RemoveAll(cancelBundle)
 	t.Cleanup(func() { _ = os.RemoveAll(cancelBundle) })
-	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0), false)
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	rec := &sceneRecording{
 		Origin: srv.URL + "/", StartBg: "courtroom",
 		Events: []recEvent{msgEvent("Phoenix", "normal", "", "", "")},
@@ -879,7 +880,7 @@ func TestStopRecordingAutoBundlesWithAssets(t *testing.T) {
 	}
 	_, origin := autoBundleServer(t)
 
-	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0), false)
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	if !a.d.Prefs.Load().RecordingsKeepAssets {
 		t.Fatal("pref must default ON for this test")
 	}
@@ -949,7 +950,7 @@ func TestStopRecordingPrefOffNoBundle(t *testing.T) {
 	}
 	_, origin := autoBundleServer(t)
 
-	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0), false)
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.RecordingsKeepAssets = false })
 
 	before := existingAorecs(t)
@@ -984,7 +985,7 @@ func TestStopRecordingEmptyOriginNoBundle(t *testing.T) {
 	if dir == "" {
 		t.Skip("no recordings dir resolvable in this environment")
 	}
-	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0), false) // pref default ON
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false) // pref default ON
 	before := existingAorecs(t)
 	armRecording(a, "", []recEvent{msgEvent("Phoenix", "normal", "", "", "")}) // no origin
 	a.stopRecording()
@@ -1016,7 +1017,7 @@ func TestStopRecordingSkipsWhenJobBusy(t *testing.T) {
 		t.Skip("no recordings dir resolvable in this environment")
 	}
 	_, origin := autoBundleServer(t)
-	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0), false)
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 
 	// Occupy the single content slot with an origin-missing report (it parks in
 	// phaseReport with contentBusy set — the simplest way to hold the slot).

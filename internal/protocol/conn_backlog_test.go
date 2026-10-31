@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 )
 
 // TestReaderKeepsPongingWhileConsumerStalled is the regression test for the
@@ -64,7 +66,7 @@ func TestReaderKeepsPongingWhileConsumerStalled(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	conn, err := Dial(context.Background(), wsURL(srv))
+	conn, err := Dial(context.Background(), netproxy.Direct(), wsURL(srv))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -134,7 +136,7 @@ func TestReadBacklogOverflowDisconnects(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	conn, err := Dial(context.Background(), wsURL(srv), DialOptions{ReadBacklogCap: 8})
+	conn, err := Dial(context.Background(), netproxy.Direct(), wsURL(srv), DialOptions{ReadBacklogCap: 8})
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -199,7 +201,7 @@ func TestIdleOnlyPingsNeverWedge(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	conn, err := Dial(context.Background(), wsURL(srv))
+	conn, err := Dial(context.Background(), netproxy.Direct(), wsURL(srv))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}

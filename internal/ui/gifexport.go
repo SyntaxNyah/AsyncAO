@@ -1303,6 +1303,7 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 	a.warnLine = fmt.Sprintf("Finishing video (%d frames)…", j.captured)
 	a.warnAt = time.Now()
 	ch := a.gifResultCh
+	musicClient := a.sockets().Client(musicHTTPTimeout)
 	go func() {
 		if err := enc.Finish(); err != nil {
 			_ = os.Remove(path) // a failed encode leaves a corrupt file — don't keep it
@@ -1314,7 +1315,7 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 		// silent fallback finalPath is the original.
 		finalPath, soundNote := path, ""
 		if len(songs) > 0 || len(sfx) > 0 {
-			if muxed, ok := muxSceneAudio(mgr, path, songs, sfx, format); ok {
+			if muxed, ok := muxSceneAudio(mgr, musicClient, path, songs, sfx, format); ok {
 				finalPath, soundNote = muxed, "  ♪ with sound"
 				// A factual note when the 64-clip cap trimmed the soundtrack, on the success branch only (the
 				// silent-fallback message already says there is no sound). Say "left out", not "past the cap": failed

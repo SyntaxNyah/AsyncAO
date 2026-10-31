@@ -2,7 +2,6 @@ package protocol
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"net/http"
@@ -124,7 +123,7 @@ func registerCodecs() {
 }
 
 // Dial connects to a ws:// or wss:// AO server URL and starts the read loop.
-func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error) {
+func Dial(ctx context.Context, sockets *netproxy.Factory, wsURL string, opts ...DialOptions) (*Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
 
@@ -134,12 +133,9 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 	if len(opts) > 0 && opts[0].Origin != "" {
 		dialOpts.HTTPHeader.Set("Origin", opts[0].Origin)
 	}
-	// A custom client only when skipping verification, so the default keeps coder/websocket's shared client.
+	dialOpts.HTTPClient = sockets.Client(0)
 	if len(opts) > 0 && opts[0].SkipTLSVerify {
-		transport := netproxy.Transport()
-		// Set on the clone, so http.DefaultTransport's shared config is never touched.
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-		dialOpts.HTTPClient = &http.Client{Transport: transport}
+		dialOpts.HTTPClient = sockets.InsecureClient()
 	}
 
 	ws, resp, err := websocket.Dial(ctx, wsURL, dialOpts)

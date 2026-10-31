@@ -11,7 +11,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -71,7 +70,8 @@ var ErrHostBackingOff = errors.New("network: host backing off after failures")
 
 // Client is the deduplicating, negatively-caching asset fetcher, safe for concurrent use.
 type Client struct {
-	httpClient *http.Client
+	sockets    *netproxy.Factory
+	httpClient *http.Client //nolint:forbidigo // its transport comes from the factory
 	group      singleflight.Group
 	notFound   *expirable.LRU[string, struct{}]
 	dns        *dnsCache
@@ -127,34 +127,33 @@ func (c *Client) SetAssetOrigin(origin string) {
 
 // NewClientNotFoundTTL sets the 404 TTL (0 means NotFoundCacheTTL) at construction: the expirable LRU takes it
 // there, and rebuilding it live would flush every cached 404.
-func NewClientNotFoundTTL(ttl time.Duration) *Client {
+func NewClientNotFoundTTL(ttl time.Duration, sockets *netproxy.Factory) *Client {
 	if ttl <= 0 {
 		ttl = NotFoundCacheTTL
 	}
-	return newClient(DefaultRequestTimeout, ttl)
+	return newClient(DefaultRequestTimeout, ttl, sockets)
 }
 
-func newClient(timeout, notFoundTTL time.Duration) *Client {
+func newClient(timeout, notFoundTTL time.Duration, sockets *netproxy.Factory) *Client {
 	dns := newDNSCache()
-	transport := &http.Transport{
-		// A zero Proxy field means never proxy, not the default, and every asset rides this transport.
-		Proxy:                 netproxy.Proxy,
-		MaxConnsPerHost:       defaultMaxConnsPerHost,
-		MaxIdleConnsPerHost:   defaultMaxIdleConnsPerHost,
-		MaxIdleConns:          defaultMaxIdleConnsTotal,
-		IdleConnTimeout:       defaultIdleConnTimeout,
-		ResponseHeaderTimeout: defaultResponseHeaderTimeout,
-		// Assets are pre-compressed media, so transparent gzip would waste CPU.
-		DisableCompression:  true,
-		ForceAttemptHTTP2:   true,
-		TLSHandshakeTimeout: defaultTLSHandshakeTimeout,
-		TLSClientConfig: &tls.Config{
-			ClientSessionCache: tls.NewLRUClientSessionCache(tlsSessionCacheSize),
-		},
-		DialContext: dns.DialContext,
+	transport := sockets.NewTransport()
+	transport.MaxConnsPerHost = defaultMaxConnsPerHost
+	transport.MaxIdleConnsPerHost = defaultMaxIdleConnsPerHost
+	transport.MaxIdleConns = defaultMaxIdleConnsTotal
+	transport.IdleConnTimeout = defaultIdleConnTimeout
+	transport.ResponseHeaderTimeout = defaultResponseHeaderTimeout
+	// Assets are pre-compressed media, so transparent gzip would waste CPU.
+	transport.DisableCompression = true
+	transport.ForceAttemptHTTP2 = true
+	transport.TLSHandshakeTimeout = defaultTLSHandshakeTimeout
+	transport.TLSClientConfig = &tls.Config{
+		ClientSessionCache: tls.NewLRUClientSessionCache(tlsSessionCacheSize),
 	}
+	transport.DialContext = sockets.Dialer(dns.DialContext)
+	sockets.Track(transport)
 	return &Client{
-		httpClient: &http.Client{Transport: transport},
+		sockets:    sockets,
+		httpClient: &http.Client{Transport: transport}, //nolint:forbidigo // its transport comes from the factory
 		notFound:   expirable.NewLRU[string, struct{}](NotFoundCacheSize, nil, notFoundTTL),
 		dns:        dns,
 		timeout:    timeout,
@@ -170,25 +169,12 @@ func newClient(timeout, notFoundTTL time.Duration) *Client {
 }
 
 // PreResolve warms the DNS cache for host so the first asset probe doesn't block on a lookup.
-// With a proxy it is useless work: cached-IP substitution applies to the proxy's address.
+// A proxied name is never looked up here, as that would publish it to the machine's resolver.
 func (c *Client) PreResolve(ctx context.Context, host string) {
-	if proxiedHost(host) {
+	if host == "" || c.sockets.Proxied(host) {
 		return
 	}
 	c.dns.preResolve(ctx, host)
-}
-
-// proxiedHost probes both schemes, as NO_PROXY rules make the answer per-scheme; warm only if neither is proxied.
-func proxiedHost(host string) bool {
-	if host == "" {
-		return false
-	}
-	for _, scheme := range [...]string{"https", "http"} {
-		if netproxy.ForURL(&url.URL{Scheme: scheme, Host: host}) != nil {
-			return true
-		}
-	}
-	return false
 }
 
 // Fetch shares one upstream request between callers; ctx cancels only this caller's wait, and the returned
@@ -490,7 +476,7 @@ type dnsCache struct {
 	mu       sync.RWMutex
 	entries  map[string]dnsEntry
 	resolver *net.Resolver
-	dialer   *net.Dialer
+	dialer   *net.Dialer //nolint:forbidigo // only reached through the socket factory, for direct routes
 }
 
 const (
@@ -507,7 +493,7 @@ func newDNSCache() *dnsCache {
 	return &dnsCache{
 		entries:  map[string]dnsEntry{},
 		resolver: net.DefaultResolver,
-		dialer:   &net.Dialer{},
+		dialer:   &net.Dialer{}, //nolint:forbidigo // only reached through the socket factory, for direct routes
 	}
 }
 

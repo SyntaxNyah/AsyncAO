@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
@@ -44,7 +45,7 @@ func settleMiss(t *testing.T, rig *testRig, prefetch func()) {
 // — Courtroom.NotifyAssetMissing rides that lane to skip a preanimation that can
 func TestConclusiveMissStopsTheProbeButNotTheWarning(t *testing.T) {
 	cs := newCountingServer(t, nil) // serves nothing: every probe 404s
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	base := cs.srv.URL + "/characters/uma/emotions/button3_off"
 
 	demand := func() {
@@ -79,7 +80,7 @@ func TestConclusiveMissKeysOnBaseAndType(t *testing.T) {
 		"/characters/uma/emotions/button3_on.webp": sprite, // EmoteButton probes .webp
 		"/characters/uma/char_icon.png":            sprite, // CharIcon probes .png (config.defaultFormatOrders)
 	})
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	stem := cs.srv.URL + "/characters/uma/"
 
 	settleMiss(t, rig, func() {
@@ -115,7 +116,7 @@ func TestNarrowChainDoesNotSilenceAWiderOne(t *testing.T) {
 	cs := newCountingServer(t, map[string][]byte{
 		"/characters/uma/normal.webp": sprite, // only the BARE spelling exists
 	})
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	primary := cs.srv.URL + "/characters/uma/(a)normal"
 	bare := cs.srv.URL + "/characters/uma/normal"
 
@@ -143,7 +144,7 @@ func TestNarrowChainDoesNotSilenceAWiderOne(t *testing.T) {
 func TestRehearsalMissesAreNotRemembered(t *testing.T) {
 	sprite := encodePNG(t, 8, 8, color.RGBA{G: 255, A: 255})
 	cs := newCountingServer(t, map[string][]byte{"/background/court/defenseempty.webp": sprite})
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	base := cs.srv.URL + "/background/court/defenseempty"
 
 	rig.manager.SetOffline(true)
@@ -184,7 +185,7 @@ func TestFormatPreferenceChangeRetiresTheMemory(t *testing.T) {
 			cs := newCountingServer(t, map[string][]byte{
 				"/characters/edgeworth/(a)normal.png": sprite,
 			})
-			rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+			rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 			base := cs.srv.URL + "/characters/edgeworth/(a)normal"
 
 			settleMiss(t, rig, func() {
@@ -227,7 +228,7 @@ func TestSourceChangeForgetsRememberedMisses(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cs := newCountingServer(t, nil)
-			rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+			rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 			base := cs.srv.URL + "/characters/uma/char_icon"
 
 			settleMiss(t, rig, func() {
@@ -248,7 +249,7 @@ func TestSourceChangeForgetsRememberedMisses(t *testing.T) {
 // roster back to the wire.
 func TestRepushingTheSameMountSetKeepsTheMemory(t *testing.T) {
 	cs := newCountingServer(t, nil)
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	base := cs.srv.URL + "/characters/uma/char_icon"
 	mount := t.TempDir()
 
@@ -269,7 +270,7 @@ func TestRepushingTheSameMountSetKeepsTheMemory(t *testing.T) {
 func TestForgetUnderIsScopedToOneOrigin(t *testing.T) {
 	rejoined := newCountingServer(t, nil)
 	other := newCountingServer(t, nil)
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	mine := rejoined.srv.URL + "/characters/uma/char_icon"
 	theirs := other.srv.URL + "/characters/uma/char_icon"
 
@@ -303,7 +304,7 @@ func TestForgetUnderIsScopedToOneOrigin(t *testing.T) {
 // to quietly reopen the storm.
 func TestEveryPrefetchEntryPointConsultsTheMissGate(t *testing.T) {
 	cs := newCountingServer(t, nil) // serves nothing
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 
 	// Executed+Stale counts every job the pool ACCEPTED, however it ended, so a
 	// submit cannot hide behind a shed or an epoch bump.

@@ -3,13 +3,15 @@ package network
 import (
 	"testing"
 	"time"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 )
 
 // TestAdaptiveLatencyMultipleKnob pins the power-user deadline multiple: the
 // default ×8, an override, the clamps, and 0 = back to default. Samples are
 // chosen so the results sit between the 2 s floor and the 15 s global timeout.
 func TestAdaptiveLatencyMultipleKnob(t *testing.T) {
-	c := newClient(DefaultRequestTimeout, NotFoundCacheTTL)
+	c := newClient(DefaultRequestTimeout, NotFoundCacheTTL, netproxy.Direct())
 	const host = "assets.example"
 	c.observeLatency(host, 500*time.Millisecond)
 
@@ -37,8 +39,8 @@ func TestAdaptiveLatencyMultipleKnob(t *testing.T) {
 	if got := c.AvgTTFB(); got != 500*time.Millisecond {
 		t.Errorf("AvgTTFB = %v, want the single 500ms sample", got)
 	}
-	// NewClientNotFoundTTL(0) must fall back to the default TTL, not a zero-TTL cache.
-	if c2 := NewClientNotFoundTTL(0); c2 == nil {
-		t.Fatal("NewClientNotFoundTTL(0) returned nil")
+	// NewClientNotFoundTTL(0, netproxy.Direct()) must fall back to the default TTL, not a zero-TTL cache.
+	if c2 := NewClientNotFoundTTL(0, netproxy.Direct()); c2 == nil {
+		t.Fatal("NewClientNotFoundTTL(0, netproxy.Direct()) returned nil")
 	}
 }

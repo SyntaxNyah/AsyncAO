@@ -16,6 +16,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 )
 
 // refusingServer answers every upgrade attempt with status and body, never accepting
@@ -36,7 +38,7 @@ func refusingServer(t *testing.T, status int, contentType, body string) *httptes
 // dialRefused dials the server and returns the *DialError it must produce.
 func dialRefused(t *testing.T, srv *httptest.Server) *DialError {
 	t.Helper()
-	conn, err := Dial(context.Background(), wsURL(srv))
+	conn, err := Dial(context.Background(), netproxy.Direct(), wsURL(srv))
 	if err == nil {
 		conn.Close()
 		t.Fatal("the dial SUCCEEDED against a server that refuses every upgrade")
@@ -142,7 +144,7 @@ func TestANetworkFailureIsNotADialError(t *testing.T) {
 	url := wsURL(srv)
 	srv.Close() // now dial the dead address
 
-	_, err := Dial(context.Background(), url)
+	_, err := Dial(context.Background(), netproxy.Direct(), url)
 	if err == nil {
 		t.Fatal("dialling a closed port succeeded")
 	}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -47,7 +48,7 @@ func TestPumpConnectionSurvivesServerKick(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	conn, err := protocol.Dial(context.Background(), "ws"+strings.TrimPrefix(srv.URL, "http"))
+	conn, err := protocol.Dial(context.Background(), netproxy.Direct(), "ws"+strings.TrimPrefix(srv.URL, "http"))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
