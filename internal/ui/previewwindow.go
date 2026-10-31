@@ -7,6 +7,7 @@ import (
 	"unsafe"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
@@ -52,8 +53,8 @@ func (a *App) openDetachedPreview() {
 		return
 	}
 	// Ties z-order to the main window (Windows only, a no-op elsewhere). Best-effort: a failed link just leaves
-	// the preview's independent z-order. See render.PreviewWindow.LinkOwner.
-	a.d.Preview.LinkOwner(a.ctx.win)
+	// the preview's independent z-order.
+	host.LinkWindowOwner(a.d.Preview.Window(), a.ctx.win)
 	// A new OS window has no texture, so forget what a prior window was fed.
 	a.previewWinFedBase = ""
 	a.previewWinFedPage = nil

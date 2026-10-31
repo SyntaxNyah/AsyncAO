@@ -55,8 +55,8 @@ in **Status**. Update Status in the same commit that completes a step.
         starts the new client after SDL has quit
   - [x] item 6, paths: `platform.UserFolders`, `SamePath`, `DriveRoots`; the crash log falls back to the cache folder. Config
         and cache locations stay in `config` and `cache`, which use the standard library and have no OS branch
-  - [ ] the rest of Part 5g's sequence, items 6–7, which includes the platform code (dialogs, DPI seeding, URL opening, preview
-        ownership, clipboard)
+  - [x] item 6, window details: `host.WindowDPI`, `LinkWindowOwner`, `RetinaScale`; this finishes item 6
+  - [ ] sequence item 7: turn on the lints, exempting `netproxy` and `presence` until their decisions are made
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
       pointer, no park/activate copies; fixes bug 4, #115, #141, #84)
 - [ ] 4. `internal/uikit`: extract the kit, then the input model (press/release + capture,

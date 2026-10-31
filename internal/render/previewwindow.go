@@ -52,6 +52,14 @@ type WindowOpener func(title string, w, h int32) (*sdl.Window, *sdl.Renderer, er
 // NewPreviewWindow returns a closed PreviewWindow that opens through open.
 func NewPreviewWindow(open WindowOpener) *PreviewWindow { return &PreviewWindow{open: open} }
 
+// Window returns the OS window, nil when closed.
+func (p *PreviewWindow) Window() *sdl.Window {
+	if p == nil {
+		return nil
+	}
+	return p.win
+}
+
 // IsOpen reports whether the OS window exists; the nil check is the entire cost when closed.
 func (p *PreviewWindow) IsOpen() bool { return p != nil && p.win != nil }
 
