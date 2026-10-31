@@ -7,9 +7,8 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Group invites are explicit now: an incoming invite is queued (not auto-joined)
-// and surfaced as a top-centre banner with Accept / Decline, plus a window flash
-// and — when you're tabbed away — a desktop toast. Accepting joins the group and
+// Group invites are explicit: an incoming invite is queued, not auto-joined, and shown as a top-centre banner with
+// Accept / Decline, plus a window flash and, when you're tabbed away, a desktop toast. Accepting joins the group and
 // tells the owner; declining tells the owner to drop you.
 
 const maxPendingInvites = 8
@@ -80,12 +79,8 @@ func (a *App) removePendingInvite(gid uint32) {
 	a.pendingInvites = out
 }
 
-// inviteToastGapY is the breathing room between the app-chrome band and the invite
-// banner. The banner used to be pinned at a bare Y=8, which put its first line under
-// the menu bar and the group's NAME under the centred server-tab chips — it is a
-// window-centred banner drawn from the COURTROOM arm, i.e. before either strip paints
-// (#14). Everything the client draws at the top of the window now starts below
-// topChromeH; this is that rule for the toast.
+// inviteToastGapY is the gap between the app-chrome band and the invite banner: the banner draws from the courtroom arm
+// before either strip paints, so it starts below topChromeH like everything else at the top of the window.
 const inviteToastGapY = int32(8)
 
 // drawGroupInviteToast shows the newest pending invite as a banner under the top

@@ -8,25 +8,16 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// IC quick-phrases: bind a key to a canned IC line ("Alt+E → Happy Pride Month")
-// so pressing that chord makes your CHARACTER say the line in IC — the IC
-// counterpart to the OOC-only macros. Same shape as the showname keybinds
-// (showname_bind.go): a global key→text map, cached per connect, dispatched
-// through the shared Alt gate (bareBindKey, qol.go), and a Settings key-capture to
-// set one. You still press the bare letter to BIND it; it FIRES as Alt+<key>,
-// which is why every row here prints bareBindLabel and not the raw letter.
+// IC quick-phrases bind a key to a canned IC line. You press the bare letter to bind but it fires as Alt+<key>, which
+// is why rows print bareBindLabel rather than the raw letter.
 
-// refreshICPhraseKeys re-reads the global key→IC-phrase binds into the per-frame
-// lookup cache (connect + bind edits only, never per frame).
+// refreshICPhraseKeys re-reads the binds into the lookup cache, on connect and bind edits only.
 func (a *App) refreshICPhraseKeys() {
 	a.icPhraseKeys = a.d.Prefs.Load().ICPhraseBinds()
 }
 
-// handleICPhraseKeys sends a bound IC phrase on Alt+<bound key> in the courtroom
-// — the shared bareBindKey gate every plain-key namespace moved onto (qol.go), so
-// typing the same letter can never fire one. Returns true when it consumed the
-// key (so the character/emote binds don't also fire on the same press). Mirrors
-// handleShownameKeys.
+// handleICPhraseKeys sends the phrase bound to Alt+<key>, returning true when it consumed the key so character and
+// emote binds don't also fire.
 func (a *App) handleICPhraseKeys() bool {
 	k := a.bareBindKey()
 	if k == 0 {
@@ -40,13 +31,8 @@ func (a *App) handleICPhraseKeys() bool {
 	return true
 }
 
-// sendICPhrase sends a canned line through the normal IC pipeline (current
-// character / emote / colour) WITHOUT disturbing whatever is in the IC draft: it
-// swaps the input, sends, then restores the draft. The phrase rides out as the
-// pending-echo snapshot, so the restored draft never matches it and the echo
-// can't clear your draft (keep-until-echo, noteOwnICEcho); if the server
-// swallows a phrase, re-pressing its key is the natural retry. A "/command"
-// phrase runs as the command, same as typing it.
+// sendICPhrase sends a line through the normal IC path, restoring the draft afterwards.
+// The phrase is the pending-echo snapshot, so its echo can't clear the restored draft.
 func (a *App) sendICPhrase(phrase string) {
 	if a.sess == nil || a.sess.MyCharID < 0 || strings.TrimSpace(phrase) == "" {
 		return
@@ -57,9 +43,7 @@ func (a *App) sendICPhrase(phrase string) {
 	a.icInput = draft
 }
 
-// pollICPhraseBind completes an armed Settings key-capture: the next plain keypress
-// binds key → the typed IC phrase; Esc cancels. Runs every frame from the main
-// poll loop so it captures even while Settings is up. Mirrors pollShownameBind.
+// pollICPhraseBind completes an armed key capture; it runs every frame so it works while Settings is up.
 func (a *App) pollICPhraseBind() {
 	if a.icPhraseBindFor == "" {
 		return
@@ -79,9 +63,7 @@ func (a *App) pollICPhraseBind() {
 	a.refreshICPhraseKeys()
 }
 
-// drawICPhraseSettings renders the IC quick-phrase list + editor (Settings →
-// Controls). Returns the next y. Mirrors drawMacroSettings, but binds one key to
-// one canned IC line.
+// drawICPhraseSettings draws the quick-phrase list and editor in Settings and returns the next y.
 func (a *App) drawICPhraseSettings(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -104,7 +86,6 @@ func (a *App) drawICPhraseSettings(y, w int32) int32 {
 		y += 24
 	}
 
-	// Editor: the phrase + a key-capture button (the next key binds to this line).
 	settings.icPhrase, _ = c.TextField("icphrase", sdl.Rect{X: pad, Y: y, W: a.formW - 130, H: fieldH}, settings.icPhrase, "what your character says, e.g. Happy Pride Month")
 	keyLabel := "Bind key"
 	if a.icPhraseBindFor != "" {
@@ -119,9 +100,7 @@ func (a *App) drawICPhraseSettings(y, w int32) int32 {
 		}
 	}
 	y += 30
-	// NOT "with no text box focused" any more: bareBindKey dropped the focus fence
-	// outright when the namespace moved onto Alt, because an Alt chord is never
-	// text — the phrase fires even mid-sentence in the IC box.
+	// An Alt chord is never text, so the phrase fires even while a text box has focus.
 	c.Label(pad, y, "Fires on "+bareBindChordPrefix+"<key>, even while you are typing, as your character with your current emote. A /command phrase runs the command.", ColTextDim)
 	return y + 24
 }

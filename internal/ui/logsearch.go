@@ -8,22 +8,16 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
-// Log find (Ctrl+F) — the search bar already filters the IC log (icLogFiltered);
-// this file focuses it from the keyboard and highlights the matched words so a
-// hit is visible at a glance, not just implied by the rows that survived the
-// filter. The filter still runs: a non-empty query hides non-matching rows, and
-// the highlight marks WHERE within each survivor the query matched.
+// Log find (Ctrl+F): the search bar already filters the IC log (icLogFiltered); this file focuses it from the
+// keyboard and highlights where in each surviving row the query matched.
 
-// searchFillColor is the translucent band behind each find match (find-in-page
-// convention: a warm tint the text stays legible through). Fixed, not themed —
-// it has to read as "search hit" against any skin.
+// searchFillColor is the translucent band behind each find match; fixed, not themed, so it reads on any skin.
 var searchFillColor = sdl.Color{R: 255, G: 210, B: 70, A: 96}
 
 // matchSpan is a rune range [start,end) of one match within a log row.
 type matchSpan struct{ start, end int }
 
-// searchMatches returns the rune ranges of every case-insensitive occurrence of
-// query within text. Pure — no SDL — so the matching is drivable in a test.
+// searchMatches returns the rune ranges of every case-insensitive occurrence of query within text.
 func searchMatches(text, query string) []matchSpan {
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "" {
@@ -49,18 +43,14 @@ func searchMatches(text, query string) []matchSpan {
 	return out
 }
 
-// focusLogSearch puts the caret into the log find field (the "logsearch" text
-// field in the log panel). If that panel isn't on screen the focus is still
-// armed, so the field is ready the moment the panel is next drawn.
+// focusLogSearch puts the caret into the log find field; the focus stays armed if the panel is off screen.
 func (a *App) focusLogSearch() {
 	if a.ctx != nil {
 		a.ctx.focusID = "logsearch"
 	}
 }
 
-// drawLogSearchHighlight fills the search-match band behind one display row
-// (called inside the line loop, under the text — the same layering the selection
-// highlight uses). A non-empty a.logSearch must already be active.
+// drawLogSearchHighlight fills the match band behind one display row, under the text like the selection highlight.
 func (a *App) drawLogSearchHighlight(which, li int, listX, y, wrapW, lineH int32, text string, font *ttf.Font) {
 	q := strings.TrimSpace(a.logSearch)
 	if q == "" {

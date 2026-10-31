@@ -1,12 +1,7 @@
 package ui
 
-// Persistent window anchoring for classic-layout slots (playtest request,
-// Tifera: anchor layout items to the corners and centre of the screen). The
-// alignment magnet (classicalign.go) places a box flush ONCE; an anchor keeps
-// it there THROUGH WINDOW RESIZES: the slot's fraction override is re-based
-// to pixel offsets from the pinned reference, reconstructed from the window
-// size the override was saved at. Un-anchored slots keep today's pure
-// fraction scaling, byte-identical.
+// Window anchoring for classic-layout boxes: the fraction override is re-based to pixel offsets from the pinned
+// reference, using the window size it was saved at, so the box stays put through resizes.
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -21,19 +16,16 @@ const (
 	anchorMid               // pixel-glued to the window centre
 )
 
-// anchorRef is the App-local parsed form of config.ClassicAnchor — resolved
-// per slot per frame, so the string mode is parsed once at load.
+// anchorRef is config.ClassicAnchor parsed once at load, because it is resolved per box per frame.
 type anchorRef struct {
 	h, v       uint8
 	winW, winH int32
 }
 
-// anchorCycle is the editor's A-key order: unpinned, the four corners, then
-// dead centre. Mode strings are horizontal-then-vertical (config letters).
+// anchorCycle is the editor's A-key order; mode strings are horizontal then vertical.
 var anchorCycle = []string{"", "lt", "rt", "lb", "rb", "cc"}
 
-// nextAnchorMode advances the A-key cycle; unknown modes (a hand-edited
-// single-axis pin like "rf") restart at unpinned so the key always works.
+// nextAnchorMode advances the cycle; an unknown mode (a hand-edited "rf") restarts at unpinned so the key always works.
 func nextAnchorMode(cur string) string {
 	for i, m := range anchorCycle {
 		if m == cur {
@@ -60,8 +52,7 @@ func anchorModeLabel(m string) string {
 	return "off"
 }
 
-// parseAnchorMode decodes the two-letter mode; ok=false on junk (the caller
-// treats that as unpinned).
+// parseAnchorMode decodes the two-letter mode; ok=false on junk, which the caller treats as unpinned.
 func parseAnchorMode(m string) (h, v uint8, ok bool) {
 	if len(m) != 2 {
 		return anchorFrac, anchorFrac, false
@@ -131,12 +122,8 @@ func formatAnchorMode(h, v uint8) string {
 	return string([]byte{hs, vs})
 }
 
-// applyAnchor resolves an anchored slot for the CURRENT window (w,h): the
-// override fraction is first reconstructed at its saved window (the exact
-// pixel rect the user placed), then each pinned axis keeps its pixel offset
-// from the pinned reference and its pixel size; a 'f' axis falls back to the
-// fraction. The result clamps on-screen so a hard window shrink can't strand
-// a pinned box outside. Pure — unit-tested without SDL.
+// applyAnchor resolves an anchored box for the current window: the rect is rebuilt at its saved window, then each
+// pinned axis keeps its pixel offset and size. The result clamps on-screen so shrinking the window can't strand it.
 func applyAnchor(ov [4]float64, ar anchorRef, w, h int32) sdl.Rect {
 	r0 := fracToRect(ov, ar.winW, ar.winH)
 	r := sdl.Rect{X: r0.X, Y: r0.Y, W: r0.W, H: r0.H}
@@ -160,7 +147,7 @@ func applyAnchor(ov [4]float64, ar anchorRef, w, h int32) sdl.Rect {
 		r.Y = fracPx(ov[1], h)
 		r.H = fracPx(ov[3], h)
 	}
-	// On-screen clamp (position only — sizes are the user's).
+	// Clamp position only; sizes are the user's.
 	if r.X+r.W > w {
 		r.X = w - r.W
 	}
@@ -176,9 +163,7 @@ func applyAnchor(ov [4]float64, ar anchorRef, w, h int32) sdl.Rect {
 	return r
 }
 
-// anchoredRect resolves one slot's override honouring its window pin, if any.
-// The no-anchor path is the historical fracToRect — anchored resolution costs
-// one extra map lookup, only for slots that HAVE an override.
+// anchoredRect resolves one box's override honouring its window pin, if any.
 func (a *App) anchoredRect(name string, ov [4]float64, w, h int32) sdl.Rect {
 	if ar, ok := a.classicAnchor[name]; ok {
 		return applyAnchor(ov, ar, w, h)
@@ -186,7 +171,7 @@ func (a *App) anchoredRect(name string, ov [4]float64, w, h int32) sdl.Rect {
 	return fracToRect(ov, w, h)
 }
 
-// slotAnchorMode reports a slot's current pin mode string ("" = unpinned).
+// slotAnchorMode reports a box's current pin mode string ("" = unpinned).
 func (a *App) slotAnchorMode(name string) string {
 	ar, ok := a.classicAnchor[name]
 	if !ok {
@@ -195,14 +180,11 @@ func (a *App) slotAnchorMode(name string) string {
 	return formatAnchorMode(ar.h, ar.v)
 }
 
-// cycleSlotAnchor advances the hovered slot through the A-key pin cycle. A
-// slot with no override yet gets one minted from its current on-screen rect
-// (pin-in-place without a drag); clearing the pin keeps the override.
+// cycleSlotAnchor advances the hovered box through the pin cycle; clearing the pin keeps the override.
 func (a *App) cycleSlotAnchor(name string, w, h int32) {
 	next := nextAnchorMode(a.slotAnchorMode(name))
 	if _, ok := a.classicOv[name]; !ok {
-		// Pin-in-place: the anchor re-bases an override, so mint one from the
-		// rect the slot drew at this frame.
+		// The anchor re-bases an override, so make one from the rect drawn this frame.
 		info, reg := a.slotReg[name]
 		if !reg {
 			return
@@ -229,10 +211,8 @@ func (a *App) cycleSlotAnchor(name string, w, h int32) {
 	a.pushDebug("layout: " + classicSlotLabel(name) + " pinned to the " + anchorModeLabel(next))
 }
 
-// syncAnchorWindow re-bases a slot's LOCAL anchor to the current window —
-// called whenever the editor rewrites the slot's fraction override (the
-// override now describes the rect at THIS window size). Persisted at
-// drag-release alongside the override.
+// syncAnchorWindow re-bases a box's local anchor to the current window after the editor rewrites its override.
+// The saved copy is written at drag release.
 func (a *App) syncAnchorWindow(name string, w, h int32) {
 	if ar, ok := a.classicAnchor[name]; ok {
 		ar.winW, ar.winH = w, h
@@ -243,9 +223,8 @@ func (a *App) syncAnchorWindow(name string, w, h int32) {
 // anchorPinDot is the size of the editor's pin marker on an anchored box.
 const anchorPinDot = int32(7)
 
-// drawAnchorPin marks an anchored box's pinned reference in the editor: a
-// small filled dot at the pinned corner (or centre; edge-midpoints for
-// single-axis pins from hand-edited prefs).
+// drawAnchorPin marks the pinned reference with a dot at the corner or centre, or at an edge midpoint for a
+// hand-edited single-axis pin.
 func (a *App) drawAnchorPin(r sdl.Rect, name string) {
 	ar, ok := a.classicAnchor[name]
 	if !ok {

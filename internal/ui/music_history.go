@@ -1,12 +1,7 @@
 package ui
 
-// Music history (M12 slice): a session-only "recently played" list of the songs
-// that played in the room, captured at the existing EventMusic hook (once per
-// song — never per frame) so you can grab a link someone /played and save it to
-// the jukebox. In-memory only: it's a "what just played" scratchpad, not a
-// persisted library (the jukebox playlists are the persisted half). The display
-// string is precomputed at capture so the per-frame row draw does zero string
-// work — the render/UI hot path stays allocation-free.
+// Session-only, in-memory list of songs played in the room, captured once per song at EventMusic.
+// The display string is precomputed at capture so the row draw does no string work.
 
 import (
 	"fmt"
@@ -18,17 +13,13 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// musicHistoryCap bounds the recently-played ring (rule §17.4: no unbounded
-// slices). Newest first; a replay moves its entry to the front.
+// musicHistoryCap bounds the recently-played list (hard rule 4); newest first, a replay moves its entry to the front.
 const musicHistoryCap = 30
 
-// jukeboxHistoryPlaylist is the dedicated playlist the "recently played" Save
-// button files into — kept separate from the OOC-log "Saved from chat" list so
-// songs you grab from the room collect in their own folder.
+// jukeboxHistoryPlaylist is the playlist the recently-played Save button files into, apart from "Saved from chat".
 const jukeboxHistoryPlaylist = "Music history"
 
-// musicHistEntry is one played song. track is the raw MC text (a full /play URL
-// or a server music-list name); the rest are precomputed for the draw.
+// musicHistEntry is one played song; track is the raw MC text, a full /play URL or a server music-list name.
 type musicHistEntry struct {
 	track   string // raw wire text — what Play/Share/Save act on
 	name    string // cleaned song name (Save uses it as the link title)
@@ -36,11 +27,8 @@ type musicHistEntry struct {
 	isURL   bool   // a real link → Save/Share make sense (a bare name doesn't)
 }
 
-// noteMusicHistory records a room music change into the session ring. Called
-// from the EventMusic handler (rare — once per song), so it never touches a
-// per-frame path. Mirrors logMusicChange's filtering via MusicAction, but —
-// unlike the IC log line — it keeps system/area-played songs too (attribution
-// is best-effort), and it never indexes Chars out of range.
+// noteMusicHistory records a room music change into the session list.
+// Filters like logMusicChange via MusicAction, but keeps system and area-played songs and checks Chars' range.
 func (a *App) noteMusicHistory(ev courtroom.Event) {
 	if !a.d.Prefs.Load().MusicHistory {
 		return // history disabled in Settings (default ON)
@@ -82,15 +70,12 @@ func (a *App) noteMusicHistory(ev courtroom.Event) {
 	a.refreshRecentLabel()
 }
 
-// refreshRecentLabel rebuilds the cached toggle label. Called only when the ring
-// size changes (capture / clear) — never per frame — so the jukebox draw reads a
-// ready string instead of formatting one every frame.
+// refreshRecentLabel rebuilds the cached toggle label; called only when the list size changes.
 func (a *App) refreshRecentLabel() {
 	a.jukeRecentLbl = fmt.Sprintf("Recently played (%d)", len(a.musicHist))
 }
 
-// drawJukeHistory is the jukebox's "Recently played" top-level view: a back
-// button, a clear, and a scrollable list of session songs (Save/Play/Share).
+// drawJukeHistory is the jukebox's Recently played view: back button, clear, and a scrollable list of session songs.
 func (a *App) drawJukeHistory(x, y, wide, bottom int32) {
 	c := a.ctx
 	if c.Button(sdl.Rect{X: x, Y: y, W: 140, H: btnH}, "‹ Playlists") {
@@ -133,8 +118,7 @@ func (a *App) drawJukeHistory(x, y, wide, bottom int32) {
 	}
 }
 
-// drawJukeHistRow draws one recently-played song: Play always, plus Save/Share
-// when it's a real link (a bare server-song name can only be re-played).
+// drawJukeHistRow draws one song: Play always, plus Save and Share when it is a real link, not a bare server-song name.
 func (a *App) drawJukeHistRow(e musicHistEntry, r sdl.Rect) {
 	c := a.ctx
 	c.Fill(r, ColPanel)
@@ -159,28 +143,22 @@ func (a *App) drawJukeHistRow(e musicHistEntry, r sdl.Rect) {
 	c.LabelClipped(r.X+8, r.Y+5, bx-r.X-12, e.display, ColText)
 }
 
-// jukeGroupRow is one row of the domain-grouped "Music history" view: a domain
-// header (domain != "") or an entry (index into the playlist's Entries).
+// jukeGroupRow is one row of the grouped Music history view: a domain header (domain != "") or an entry index.
 type jukeGroupRow struct {
 	domain string
 	entry  int
 }
 
-// jukeGroupCacheKey memoizes the grouped layout so it's rebuilt only when the
-// open playlist or the library revision changes — never per frame.
+// jukeGroupCacheKey rebuilds the grouped layout only when the open playlist or library revision changes.
 type jukeGroupCacheKey struct {
 	pl  int
 	rev int64
 }
 
-// jukeHistoryDomainOther labels entries with no recognizable host (e.g. a
-// manually added bare name) in the grouped view.
+// jukeHistoryDomainOther labels entries with no recognizable host, such as a manually added bare name.
 const jukeHistoryDomainOther = "other"
 
-// refreshJukeGroups (re)builds the domain-grouped row layout for the "Music
-// history" playlist: entries bucketed under a header per domain, domains sorted.
-// Memoized against (playlist, revision); the per-frame draw just walks the
-// cached slice, so the grouping costs nothing on the render loop.
+// refreshJukeGroups rebuilds the domain-grouped rows for the Music history playlist, memoized on playlist and revision.
 func (a *App) refreshJukeGroups(pl int, entries []config.JukeboxEntry) {
 	key := jukeGroupCacheKey{pl: pl, rev: a.jukeCacheRev}
 	if key == a.jukeGroupKey && a.jukeGroupRows != nil {

@@ -11,18 +11,14 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// drawSettingsPowerUser is the advanced Settings card (its own left-sidebar tab): TLS validation,
-// the Asset Origin header, character-folder casing, and image-format tuning — options that can
-// BREAK connections or asset fetching if set wrong. The whole card hides behind a reveal button and
-// its warnings are red. Kept out of Account / Assets so everyday settings stay uncluttered.
+// drawSettingsPowerUser is the advanced card: TLS validation, Asset Origin header, folder casing and image-format
+// tuning, which can break connections or fetching if set wrong. It hides behind a reveal button; warnings are red.
 func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	w := a.formW2()
 
-	// Diagnostics — the Debug panel only READS state, so it sits ABOVE the
-	// dangerous reveal gate below. Opening it returns to the courtroom, where the
-	// floating panel draws. Also on F8 anywhere, and Extras → Debug.
+	// Diagnostics: the Debug panel only reads state, so it sits above the reveal. Also on F8 and Extras > Debug.
 	y = a.settingsSection(y, w, "Diagnostics")
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 260, H: btnH}, "Open Debug panel (F8)") {
 		a.showDebugPanel = true
@@ -44,9 +40,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		return y
 	}
 
-	// The nuke: reset EVERY option on this tab to its shipped default (two-click
-	// confirm — arming flips the label). Scoped to this tab; the image-format block
-	// keeps its own controls (its learned state is per-server, not a "knob").
+	// Resets every option on this tab to its default (two-click confirm); the image-format block keeps its own.
 	nukeLabel := "⟲ Reset ALL power-user options to defaults"
 	if a.powerNukeArm {
 		nukeLabel = "⚠ Click again to confirm the reset"
@@ -73,17 +67,13 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Puts every option on this tab back to its default. Image-format probing keeps its own controls below; saved presets and mod chips are untouched.", ColTextDim)
 	y += 10
 
-	// Update channel: stable releases vs the experimental test-branch feed.
-	// Power-user by design — test builds exist for extensive debugging and may
-	// move sideways or DOWN in version; the strict per-platform asset match
-	// still applies, and flipping back rejoins stable on its next release.
+	// Update channel: stable vs the experimental test-branch feed. Test builds may move sideways or down in version;
+	// the per-platform asset match still applies.
 	y = a.settingsSection(y, w, "Update channel")
 	expCh := a.d.Prefs.Load().UpdateExperimental
 	if next := c.Checkbox(pad, y, "Get experimental test builds (the MayAO-Test branch) instead of stable releases", expCh); next != expCh {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.UpdateExperimental = next })
-		// Re-arm the one-shot launch check so the swap takes effect NOW (next
-		// frame), not on the next restart — and drop a stale offer from the
-		// other channel so its modal can't push the wrong build.
+		// Re-arm the launch check so the swap applies next frame; drop a stale offer from the other channel.
 		a.updateChecked = false
 		a.updateRel = nil
 		a.updateShow = false
@@ -92,11 +82,8 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "OFF (default): the launch check follows stable releases and only ever moves forward. ON: it follows the newest published build INCLUDING prereleases cut from the test branch — riskier, less tested, and it may offer a lower version than you run (that's also how you get back: turn this off and take the next stable offer). Toggling re-checks immediately.", ColTextDim)
 	y += 10
 
-	// Message sequencing — how each IC message is presented while its assets are
-	// still streaming + decoding. Four named modes; Default (strict sequencing) is
-	// the shipped default. Fully isolated (it can't break a connection or an asset
-	// fetch), but it touches the render/message path, so it sits behind the reveal
-	// with the rest of the advanced kit.
+	// Message sequencing: how each IC message is presented while assets stream and decode. Default (strict) is shipped;
+	// it touches the render/message path, so it sits behind the reveal.
 	y = a.settingsSection(y, w, "Message sequencing")
 	slm := a.d.Prefs.Load().SpriteLoadModeVal
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 520, H: btnH}, spriteLoadModeLabel(slm)) {
@@ -205,9 +192,8 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Fades the new sprite in over the old on every character/emote change instead of hard-swapping. Local only; a still-loading sprite starts its fade when it arrives. With a crossfade set, the idle frame-rate cap stands down so fades stay smooth.", ColTextDim)
 	y += 10
 
-	// Shouts — AO2's default is that an interjection (Hold it!/Objection!/…) skips
-	// the queue and plays immediately. The toggle off queues shouts like any other
-	// message, so under the Default mode they wait for their bubble art + cry too.
+	// Shouts: AO2 plays an interjection at once, skipping the queue. Off queues shouts like any message, so under
+	// the Default mode they wait for their bubble art and cry.
 	y = a.settingsSection(y, w, "Shouts")
 	shoutBypass := a.d.Prefs.Load().ShoutBypassQueue
 	if next := c.Checkbox(pad, y, "Shouts skip the queue and play immediately (AO2 default)", shoutBypass); next != shoutBypass {
@@ -218,9 +204,9 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "ON (default): a shout clears the backlog and plays at once, exactly like AO2. OFF: shouts queue in order and, under the Default loading mode, wait for their bubble art and cry like any other message.", ColTextDim)
 	y += 10
 
-	// (The missing-sprite "missingno" placeholder controls are on Settings → Assets.)
+	// The missing-sprite placeholder controls are on Settings > Assets.
 
-	// Frame rate & GPU — the adaptive pacing that fixed the idle GPU burn.
+	// Frame rate and GPU: adaptive pacing.
 	y = a.settingsSection(y, w, "Frame rate & GPU")
 	y = a.settingsDesc(pad, y, "AsyncAO renders adaptively: the active rate while you interact or anything animates, the idle rate when nothing needs redrawing, the unfocused rate when another window has focus (minimized draws nothing). Any change returns to the active rate instantly. Each rate takes a typed exact number; 0 on Idle/Unfocused means never redraw in that state (0 GPU when nothing moves), and ∞ removes the cap — for Active that means vsync paces the frames.", ColTextDim)
 	y += 6
@@ -248,10 +234,8 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			})
 		}, &settings.fpsBufs[2],
 		"The rate while another window has focus (1–60, 0 = never redraw when unfocused, or ∞ = uncapped). Minimized draws nothing.")
-	// The "ignore the background rate entirely" escape hatch (pacingfocus.go). An
-	// OPTION, never a default change: it overrides the focus boolean the whole pacer
-	// branches on, so the background rate above, the static park and the wake
-	// schedule all stop applying at once.
+	// Ignore the background rate entirely (pacingfocus.go): overrides the focus boolean the pacer branches on, so the
+	// background rate, static park and wake schedule all stop applying.
 	ufr := a.d.Prefs.Load().UnfocusedFullRate
 	if next := c.Checkbox(pad, y, "Keep full speed when another window has focus (OFF by default)", ufr); next != ufr {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.UnfocusedFullRate = next })
@@ -259,8 +243,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y += 26
 	y = a.settingsDesc(pad, y, "On, the client paces an unfocused window exactly like a focused one — the Unfocused frame rate above stops applying, including its 0 = never-redraw setting. For a second monitor, or for capture software recording AsyncAO while you work in another app. Costs power: leave it off unless you can see the window.", ColTextDim)
 	y += 6
-	// Post-input full-rate hold, in frames — a slider (the playtest ask). Default
-	// 1 frame: the input's own frame shows, then the rate drops straight to idle.
+	// Post-input full-rate hold, in frames: default 1, so the input's own frame shows and the rate then drops to idle.
 	c.Label(pad, y+4, "Input responsiveness:", ColText)
 	ig := a.d.Prefs.Load().InputGraceFrames()
 	igtrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
@@ -334,7 +317,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Off by default. On = no idle skipping and no pacing at all: the client redraws continuously, paced only by vsync (or a 60 fps floor with -vsync=false). The opposite of everything above — it trades GPU for the last drop of responsiveness. Leave it off unless you have a specific reason.", ColTextDim)
 	y += 10
 
-	// Sprite thumbnail cache — the persistent low-q stand-in store.
+	// Sprite thumbnail cache: the persistent low-quality stand-in store.
 	y = a.settingsSection(y, w, "Sprite thumbnail cache")
 	th := a.d.Manager.Thumbs()
 	if th == nil {
@@ -417,7 +400,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		y += 10
 	}
 
-	// Core message timings — the courtroom ceremony's hard-coded spans, exposed.
+	// Core message timings: the courtroom's hard-coded spans, exposed.
 	y = a.settingsSection(y, w, "Core message timings")
 	c.Label(pad, y+4, "Shout bubble duration:", ColText)
 	shoutMs := a.d.Prefs.Load().ShoutDurationMsVal
@@ -511,7 +494,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Shout and preanim pace the message ceremony; queue depth bounds how much backlog is kept; catch-up linger holds each fast-forwarded backlog message a touch longer. Far left on every slider = the canonical AO2 default.", ColTextDim)
 	y += 10
 
-	// Viewport sprite mask — confine offset sprites to the stage.
+	// Viewport sprite mask: confine offset sprites to the stage.
 	y = a.settingsSection(y, w, "Viewport sprite mask")
 	clipS := a.d.Prefs.Load().ClipSpritesToStage
 	if next := c.Checkbox(pad, y, "Clip sprites to the stage (default ON)", clipS); next != clipS {
@@ -561,7 +544,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Sends this Origin header on the SERVER CONNECTION itself (the WebSocket handshake), for the rare server that only accepts its own web client — e.g. one that requires \"webao.<its domain>\". Applies on the next connect. Wrong value can get the connection refused — leave it blank unless a server demands it.", ColDanger)
 	y += 10
 
-	// Network tuning — the streaming pipeline's self-tuning bounds, exposed.
+	// Network tuning: the streaming pipeline's self-tuning bounds, exposed.
 	y = a.settingsSection(y, w, "Network tuning")
 	c.Label(pad, y+4, "Missing-asset (404) memory:", ColText)
 	ttl := a.d.Prefs.Load().NotFoundTTLSecVal
@@ -623,7 +606,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Each asset host's request deadline is N × its average response time, so one dying mirror can't stall the download lane. Lower gives up sooner (jittery links may see spurious timeouts); higher is more patient.", ColTextDim)
 	y += 10
 
-	// Decode downscale + texture memory — how big decoded art lives on the GPU.
+	// Decode downscale and texture memory: how big decoded art lives on the GPU.
 	y = a.settingsSection(y, w, "Decode downscale & texture memory")
 	dsOff := a.d.Prefs.Load().SpriteDownscaleOff
 	if next := c.Checkbox(pad, y, "Disable the automatic sprite downscale entirely (keep EXACT source art)", dsOff); next != dsOff {
@@ -716,11 +699,8 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 
 	y = a.drawProxySettings(y, w)
 
-	// Image formats have their own tab. They are
-	// NOT power-user knobs: art failing to render is a first-week problem, and
-	// burying its fix behind a tab called Power user is why it went unfound. A
-	// pointer stays because the casing control above is the OTHER reason a server's
-	// art fetches nothing, so someone who lands here is one click away.
+	// Image formats have their own tab, not here: art failing to render is a first-week problem. The pointer stays
+	// because the casing control above is the other reason a server's art fetches nothing.
 	y = a.settingsSection(y, w, "Image & audio formats")
 	y = a.settingsDesc(pad, y, "Which file types AsyncAO asks a server for — and the one-click fix for a server whose art isn't loading — live on their own tab now.", ColTextDim)
 	y += 6
@@ -733,8 +713,7 @@ func (a *App) drawSettingsAccount(y, _ int32) int32 {
 	pad := a.formX
 	w := a.formW2()
 	y = a.settingsSection(y, w, "Login")
-	// Auto-login: ITS OWN automation, not a macro — per-server creds,
-	// software-detected wire flow, fires on join (or via hotkey/button).
+	// Auto-login: per-server creds with a detected wire flow; fires on join or via hotkey/button.
 	y = a.drawLoginSettings(y, w)
 	y += 8
 
@@ -747,8 +726,7 @@ func (a *App) drawSettingsAccount(y, _ int32) int32 {
 	}
 	y += 34
 
-	// Discord Rich Presence: the whole section lives in a build-tagged file, so a
-	// -tags nodiscord binary compiles it out entirely (no section, no code).
+	// Discord Rich Presence lives in a build-tagged file, so a -tags nodiscord binary compiles it out.
 	y = a.drawDiscordSection(y, w)
 	return y
 }
@@ -761,9 +739,7 @@ func (a *App) drawSettingsHotkeys(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Hotkeys")
 	y = a.settingsDesc(pad, y, "Click a binding, then press a key (Ctrl + that key triggers it). Esc cancels · right-click resets to default.", ColTextDim)
 	y += 8
-	// Hotkeys are opt-in: every Ctrl+key chord below is OFF until this is ticked,
-	// so a fresh install fires none of them (no accidental shout / FX / menu). The
-	// bindings stay editable either way.
+	// Hotkeys are opt-in: every Ctrl+key chord is OFF until ticked. Bindings stay editable either way.
 	hk := a.d.Prefs.Load().HotkeysEnabled
 	if next := c.Checkbox(pad, y, "Enable hotkeys (Ctrl+key shortcuts) — OFF by default", hk); next != hk {
 		a.d.Prefs.Update(func(
@@ -779,8 +755,7 @@ func (a *App) drawSettingsHotkeys(y, _ int32) int32 {
 
 	}
 	y += 28
-	// Conflict scan: two actions resolving to the same key clash — only the first
-	// in the dispatch switch fires — so flag both rather than fail silently.
+	// Conflict scan: only the first action in the dispatch switch fires for a shared key, so flag both.
 	hkConflicts := a.hotkeyConflictKeys()
 	hx := pad
 	for _, def := range hotkeyDefs {
@@ -834,16 +809,14 @@ func (a *App) drawSettingsHotkeys(y, _ int32) int32 {
 	y += 8
 
 	y = a.settingsSection(y, w, "IC quick-phrases")
-	// Bind a key to a canned IC line your CHARACTER says (the IC counterpart to macros).
+	// Bind a key to a canned IC line your character says (the IC counterpart to macros).
 	y = a.drawICPhraseSettings(y, w)
 	y += 8
-	// (Export / Import / Open config are on the "Data" tab.)
+	// Export / Import / Open config are on the Data tab.
 	return y
 }
 
-// drawSettingsData is the dedicated "where's my stuff / back it up" tab — one place
-// for the settings file, its folder, and export/import, so nobody hunts through
-// %AppData% (the recurring confusion).
+// drawSettingsData is the Data tab: the settings file, its folder, and export/import.
 func (a *App) drawSettingsData(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -893,7 +866,7 @@ func (a *App) drawSettingsData(y, _ int32) int32 {
 	}
 	y += 38
 
-	// Setting presets (Nightingale): named bundles of the WHOLE settings file.
+	// Setting presets: named bundles of the whole settings file.
 	y = a.settingsSection(y, w, "Setting presets")
 	y = a.settingsDesc(pad, y, "Save your current settings under a name and switch between bundles. A preset is a full snapshot (passwords excluded); applying one replaces your settings on the next restart, like an import. Save your current setup as its own preset first if you'll want it back.", ColTextDim)
 	y += 6

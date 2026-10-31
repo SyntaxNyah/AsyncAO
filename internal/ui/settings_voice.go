@@ -9,14 +9,10 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// The Voice settings tab lives here (moved out of settings.go) so the entire
-// voice-settings surface compiles out of the -tags novoice build along with the
-// rest of voice chat. The Settings sidebar omits the Voice tab there
-// (voiceBuilt == false) and drawSettingsVoice is a no-op stub.
+// The Voice settings tab lives here so the voice-settings surface compiles out of the -tags novoice build; the
+// sidebar omits the tab there (voiceBuilt == false) and drawSettingsVoice is a no-op stub.
 
-// drawSettingsVoice is the Voice tab: pick the microphone (system default unless
-// you choose another) and set the output volume. Voice chat itself only appears
-// on servers that support it (Nyathena) — the Voice button shows in a VC area.
+// drawSettingsVoice is the Voice tab: pick the microphone (system default unless changed) and set the output volume.
 func (a *App) drawSettingsVoice(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -41,9 +37,8 @@ func (a *App) drawSettingsVoice(y, _ int32) int32 {
 	c.Label(pad, y, "Uses your system default mic unless you pick another. Takes effect next time you Join voice.", ColTextDim)
 	y += 24
 
-	// Mic test (#84): check the mic + levels (and optionally hear yourself) without
-	// joining a call. The tester owns its own device and auto-stops when you leave
-	// this tab (voicemictest.go); driven from the frame loop by voicePump.
+	// Mic test: check the mic and levels (optionally hear yourself) without joining a call. The tester owns its device
+	// and auto-stops when you leave this tab (voicemictest.go); voicePump drives it from the frame loop.
 	y = a.settingsSection(y, w, "Test microphone")
 	testing := a.micTest != nil
 	btnLabel := "Start mic test"
@@ -88,9 +83,7 @@ func (a *App) drawSettingsVoice(y, _ int32) int32 {
 
 	y = a.settingsSection(y, w, "Push-to-talk")
 	c.Label(pad, y+4, "Mic toggle key:", ColText)
-	// bindChipLabel: pollVoicePTT reads the shared Alt gate (bareBindKey, qol.go),
-	// so the mic toggles on Alt+<key> — printing the bare letter would advertise a
-	// press that now just types into whatever field has focus.
+	// bindChipLabel: pollVoicePTT reads the shared Alt gate (bareBindKey, qol.go), so the mic toggles on Alt+<key>.
 	keyLabel := bindChipLabel(a.d.Prefs.Load().VoicePTTKey, a.voicePTTBindArmed, "press a key…  (Esc cancels)", "(unbound)")
 	c.Label(pad+120, y+4, keyLabel, ColAccent)
 	y += 26
@@ -109,9 +102,8 @@ func (a *App) drawSettingsVoice(y, _ int32) int32 {
 	return y
 }
 
-// cycleVoiceInput advances the chosen mic to the next capture device (wrapping
-// through "System default"). Enumerated on click, so there's no per-frame SDL
-// device scan.
+// cycleVoiceInput advances the chosen mic to the next capture device, wrapping through "System default";
+// enumerated on click.
 func (a *App) cycleVoiceInput() {
 	devs := append([]string{""}, sdl.GetAudioDeviceNames(true)...) // system default first
 	cur := a.d.Prefs.Load().VoiceInputDevice

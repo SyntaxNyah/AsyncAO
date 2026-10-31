@@ -6,31 +6,21 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
-// Packet inspector (#333) — the data behind the Debug panel's "Packets" view: a
-// bounded, render-thread ring of the ACTIVE connection's recent packets plus
-// per-header in/out counts. Recording is ALWAYS on (not gated on the panel being
-// open) so it captures what happened BEFORE you opened the panel — it's a
-// fixed-size struct copy on the packet-pump path, never the drawn 60 fps loop,
-// so it costs effectively nothing and doesn't touch the zero-alloc render gates
-// (only the panel's fmt draw is panel-gated). Every write happens on the render
-// thread — pumpConnection (inbound) and the active session's send closure
-// (outbound, gated conn==a.conn) — so, like the debugLog ring, no locks are
-// needed. Scoped to the active connection: a tab switch / reconnect resets it,
-// so the counts stay coherent for one server.
+// Packet inspector: the data behind the Debug panel's Packets view, a bounded ring of the active connection's recent
+// packets plus per-header in/out counts. Recording is always on so it captures what happened before the panel opened.
+// All writes are on the render thread (pumpConnection inbound, the session send closure outbound), so no locks.
+// A tab switch or reconnect resets it.
 
 const (
-	// pktLogCap bounds the recent-packet ring (hard rule #4).
+	// pktLogCap bounds the recent-packet ring (hard rule 4).
 	pktLogCap = 256
-	// pktHeaderCap bounds the distinct-header count maps. AO's header set is a
-	// small fixed vocabulary, but a hostile server could invent headers, so any
-	// past the cap bucket into pktOtherHeader rather than growing the map unbounded.
+	// pktHeaderCap bounds the distinct-header count maps; a hostile server could invent headers,
+	// so extras bucket into pktOtherHeader.
 	pktHeaderCap   = 64
 	pktOtherHeader = "(other)"
 )
 
-// packetRec is one recorded packet: header, an approximate wire size and field
-// count, when it happened, and its direction. Fixed-size (no retained field
-// slice), so recording is a cheap value copy off the hot path.
+// packetRec is one recorded packet: header, approximate wire size and field count, time and direction. Fixed-size.
 type packetRec struct {
 	at     time.Time
 	hdr    string
@@ -50,8 +40,7 @@ type packetLog struct {
 	outTotal int
 }
 
-// record appends one packet. Always called; only the draw is panel-gated.
-// Render-thread only — no locking.
+// record appends one packet; always called, render thread only.
 func (pl *packetLog) record(hdr string, fields, size int, out bool) {
 	if pl.ring == nil {
 		pl.ring = make([]packetRec, pktLogCap)
@@ -73,8 +62,7 @@ func (pl *packetLog) record(hdr string, fields, size int, out bool) {
 	m[hdr]++
 }
 
-// reset clears the recorder for a new connection (the ring backing array is kept
-// — stale slots are masked by total/idx on read). Called when the active conn changes.
+// reset clears the recorder for a new connection; the ring is kept and stale slots are masked by total/idx.
 func (pl *packetLog) reset() {
 	pl.idx, pl.total, pl.inTotal, pl.outTotal = 0, 0, 0, 0
 	for k := range pl.inCount {
@@ -85,9 +73,7 @@ func (pl *packetLog) reset() {
 	}
 }
 
-// recent returns up to n of the most recent records, newest first, into dst
-// (reused by the caller to stay alloc-free on the draw path). A ring read: the
-// live window is the last min(total, pktLogCap) slots ending just before idx.
+// recent returns up to n records, newest first, into dst (reused to stay allocation-free).
 func (pl *packetLog) recent(dst []packetRec, n int) []packetRec {
 	dst = dst[:0]
 	have := pl.total
@@ -115,9 +101,7 @@ func (a *App) recordPacket(p protocol.Packet, out bool) {
 	a.pkts.record(p.Header, len(p.Fields), size, out)
 }
 
-// notePktConn resets the packet log when the active connection changes, so the
-// ring + counts always describe one server. Called on the inbound pump (which
-// runs for the active conn) and on connect.
+// notePktConn resets the packet log when the active connection changes, so it describes one server.
 func (a *App) notePktConn() {
 	if a.conn != a.pktConn {
 		a.pkts.reset()

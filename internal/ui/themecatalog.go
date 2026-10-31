@@ -1,21 +1,8 @@
 package ui
 
-// The theme catalog: what themes exist, where they came from, and what shape
-// they are in — scanned OFF-THREAD and published as an immutable snapshot.
-//
-// It exists because the theme picker is about to stop being a list of names.
-// A user drops a folder in, exports an edited copy, or has a locked-down
-// install where the client writes themes somewhere the drop convention never
-// looked; every one of those questions is answered by reading directories, and
-// reading directories is exactly what a draw helper may never do (hard rule 2).
-// So the scan runs on a goroutine, the answer lands in an atomic.Pointer, and
-// the settings screen only ever reads the pointer (hard rule 5).
-//
-// There is deliberately NO filesystem watcher. A cross-platform watcher is a
-// dependency, a goroutine and an unbounded event stream bought to save one
-// second over four triggers that cost nothing: drag-and-drop (which knows what
-// it just imported), opening the picker (floored at themeScanMinInterval), a
-// single os.Stat on focus-gain, and an explicit Refresh.
+// The theme catalog: scanned off-thread (hard rule 2) and published as an immutable snapshot behind an atomic.Pointer
+// (hard rule 5). No filesystem watcher: drop, picker open, one os.Stat on focus gain and Refresh are enough, and a
+// watcher means a dependency, a goroutine and an unbounded event stream.
 
 import (
 	"os"
@@ -29,66 +16,33 @@ import (
 )
 
 const (
-	// themeCatalogCap bounds one catalog snapshot (hard rule 4). 128 is several
-	// times the largest theme collection seen in the wild (the reference corpus
-	// is ~80) and the list is a dropdown, not a database: past this the scan
-	// stops and says so rather than growing without limit.
+	// themeCatalogCap bounds one snapshot (hard rule 4); past it the scan stops and says so.
 	themeCatalogCap = 128
-	// themeSubthemeCap bounds the subtheme folders recorded per theme. AO2
-	// themes ship one or two variants ("night", "alt"); the cap is the format's
-	// own [import] subthemes bound so the catalog and the sidecar agree.
+	// themeSubthemeCap bounds subtheme folders per theme, using the format's own [import] subthemes bound.
 	themeSubthemeCap = theme.SubthemeCap
-	// themeSubthemeScanCap bounds the WORK scanSubthemes does, as distinct from
-	// the output it keeps: each candidate costs up to four os.Stat calls
-	// (themeKindOf), and the output cap alone bounds nothing when a theme folder
-	// holds hundreds of asset subdirectories that are all rejected. A theme's
-	// own layout — misc/, fonts/, penalty/, sounds/, characters/, evidence/ and
-	// a variant or two — is a couple of dozen directories; 64 is generous for
-	// every theme in the reference corpus and makes the stat count bounded by
-	// construction (hard rule 4) rather than by what a folder happens to hold.
+	// themeSubthemeScanCap bounds the work of scanSubthemes (up to four os.Stat per candidate), since the output cap
+	// bounds nothing when a theme holds hundreds of rejected asset subdirectories (hard rule 4).
 	themeSubthemeScanCap = 64
-	// themeScanMinInterval floors the on-open rescan, mirroring the lobby's
-	// refresh-on-open-with-a-floor idiom: opening the picker twice in a second
-	// must not walk the disk twice. Explicit refresh ignores it.
+	// themeScanMinInterval floors the on-open rescan; opening twice in a second must not walk the disk twice.
 	themeScanMinInterval = 5 * time.Second
 )
 
-// themeKind is what a theme folder actually contains — the badge that answers
-// "will this do anything?". Zero value is themeKindBroken on purpose: a folder
-// nothing recognised is the honest default, not a silent "fine".
+// themeKind is what a theme folder contains. The zero value is broken: an unrecognised folder must not read as fine.
 type themeKind uint8
 
 const (
-	// themeKindBroken: none of the four files this client reads out of a theme
-	// folder (themeINIFiles + the sidecar) is here, so nothing in it can load.
+	// themeKindBroken: none of the four files this client reads from a theme folder is here.
 	themeKindBroken themeKind = iota
-	// themeKindAO2: at least one of the three AO2 courtroom INIs — design, fonts
-	// or sounds. Any one of them is a theme that does something (theme.Load merges
-	// the three independently), and it is the same test normalizeThemeRoot applies
-	// to a dropped folder.
+	// themeKindAO2: at least one of the design, fonts or sounds INIs; theme.Load merges them independently.
 	themeKindAO2
-	// themeKindNative: asyncao_theme.ini only — native, with no AO2 base.
-	//
-	// TODO(W3/W7): this badge is currently AHEAD of the loader. theme.Load still
-	// needs one of the three AO2 courtroom INIs to consider a folder a theme, and
-	// normalizeThemeRoot (settings.go, themeINIFiles) refuses a sidecar-only folder
-	// on drop — so a folder the catalog badges "native" browses but does not yet
-	// apply. The sidecar becomes a standalone source in the element render model
-	// (W3) and the editor's save path (W7); the badge is deliberately left telling
-	// the truth about the FILES so it does not need changing then.
-	// TestNativeOnlyFolderIsBadgedNativeEvenThoughItCannotLoadYet pins both halves.
+	// themeKindNative: asyncao_theme.ini only. The badge reports the files: theme.Load and normalizeThemeRoot still
+	// need an AO2 INI, so such a folder browses but does not apply.
 	themeKindNative
-	// themeKindBoth: an AO2 theme carrying the native sidecar. The shape every
-	// theme edited in AsyncAO ends up in, since the sidecar is additive.
+	// themeKindBoth: an AO2 theme carrying the native sidecar.
 	themeKindBoth
 )
 
-// themeKindLabel is the badge text. Short by design: it sits beside a name in a
-// row that already has a dropdown and two arrows.
-//
-// The zero-value badge names WHAT IS MISSING rather than diagnosing the folder:
-// "broken" would be a verdict the rest of the client disagrees with the moment
-// this function's file list and normalizeThemeRoot's drift apart again.
+// themeKindLabel is the badge text, sitting in a crowded row. The zero-value badge names what is missing, no verdict.
 func themeKindLabel(k themeKind) string {
 	switch k {
 	case themeKindAO2:
@@ -102,14 +56,13 @@ func themeKindLabel(k themeKind) string {
 	}
 }
 
-// themeOrigin is WHERE a theme lives, which is the same question as "may I edit
-// it in place?" — the editor copies before touching anything it does not own.
+// themeOrigin is where a theme lives, which decides whether the editor must copy before editing.
 type themeOrigin uint8
 
 const (
-	// themeOriginYours: under config.UserThemesDir() — ours to write.
+	// themeOriginYours: under config.UserThemesDir(), ours to write.
 	themeOriginYours themeOrigin = iota
-	// themeOriginBundled: beside the executable, where the client's own themes ship.
+	// themeOriginBundled: beside the executable.
 	themeOriginBundled
 	// themeOriginReadOnly: inside a custom theme folder the user pointed at.
 	themeOriginReadOnly
@@ -126,40 +79,31 @@ func themeOriginLabel(o themeOrigin) string {
 	}
 }
 
-// themeCatalogEntry is one theme, as scanned.
 type themeCatalogEntry struct {
-	// Name is the FOLDER name — the identity every other subsystem keys by
-	// (docs/THEME-FORMAT.md §1), never the sidecar's display name.
+	// Name is the folder name, the identity every subsystem keys by; never the sidecar's display name.
 	Name string
 	// Dir is the resolved folder the entry was found in.
 	Dir string
-	// Kind is the badge: what INIs this folder actually holds.
+	// Kind is the badge.
 	Kind themeKind
-	// Origin is where it lives, i.e. whether the editor may write to it.
+	// Origin says whether the editor may write to it.
 	Origin themeOrigin
-	// Subthemes are the AO2 variant folders found inside it (bounded by
-	// themeSubthemeCap).
+	// Subthemes are the AO2 variant folders inside it (at most themeSubthemeCap).
 	Subthemes []string
-	// SidecarErr is why this folder's asyncao_theme.ini was REFUSED ("" when there
-	// is none, or when it parses). It is what stops Kind claiming a native tier the
-	// loader will drop on the floor — see themeEntryKind.
+	// SidecarErr is why asyncao_theme.ini was refused ("" when absent or parsed); see themeEntryKind.
 	SidecarErr string
 }
 
-// themeCatalog is an IMMUTABLE snapshot. Nothing mutates one after publish:
-// the scanner builds a fresh value and CASes the pointer, which is what lets
-// the draw path read it with no lock at all.
+// themeCatalog is immutable after publish: the scanner CASes in a fresh value, so the draw path reads with no lock.
 type themeCatalog struct {
 	Entries []themeCatalogEntry
 	// WriteRoot is config.UserThemesDir() as this scan resolved it.
 	WriteRoot string
-	// RootMod is WriteRoot's mtime at scan time — the one value the focus-gain
-	// stat compares against, and the reason that trigger costs one syscall.
+	// RootMod is WriteRoot's mtime at scan time, compared by the focus-gain stat.
 	RootMod time.Time
 	// ScannedAt is what themeScanMinInterval floors the automatic triggers on.
 	ScannedAt time.Time
-	// Truncated reports that themeCatalogCap was hit, so the list is a prefix
-	// and the UI says so rather than implying these are all the themes there are.
+	// Truncated: themeCatalogCap was hit, so the list is a prefix and the UI says so.
 	Truncated bool
 }
 
@@ -176,33 +120,25 @@ func (c *themeCatalog) Entry(name string) (themeCatalogEntry, bool) {
 	return themeCatalogEntry{}, false
 }
 
-// themeScanReason names the four triggers. It exists so the floor is applied
-// where it belongs — to the automatic ones — instead of everywhere.
+// themeScanReason names the triggers, so the floor applies only to the automatic ones.
 type themeScanReason uint8
 
 const (
-	// themeScanOnOpen: the settings screen or the picker opened — FLOORED by
-	// themeScanMinInterval, because this one can fire on its own.
+	// themeScanOnOpen: the settings screen or picker opened; floored by themeScanMinInterval.
 	themeScanOnOpen themeScanReason = iota
-	// themeScanOnFocus: the window regained focus — one os.Stat of the write
-	// root, and a walk only if its mtime moved.
+	// themeScanOnFocus: the window regained focus; one os.Stat of the write root, a walk only if its mtime moved.
 	themeScanOnFocus
-	// themeScanExplicit: the user pressed Refresh. Unconditional: a floor on a
-	// button the user just pressed reads as a broken button.
+	// themeScanExplicit: the user pressed Refresh; unconditional.
 	themeScanExplicit
-	// themeScanAfterDrop: something was just imported. Unconditional, same reason.
+	// themeScanAfterDrop: something was just imported; unconditional.
 	themeScanAfterDrop
 )
 
-// themeCatalogSnapshot is the ONLY read a draw path may do.
+// themeCatalogSnapshot is the only read a draw path may do.
 func (a *App) themeCatalogSnapshot() *themeCatalog { return a.themeCat.Load() }
 
-// requestThemeCatalog kicks a scan if this reason allows one. Render thread;
-// everything expensive happens on the goroutine it starts.
-//
-// Single-flight via an atomic bool rather than a plain field: the flag is
-// cleared by the scanner goroutine when it publishes, so both ends touch it and
-// -race would (rightly) fail on anything less.
+// requestThemeCatalog starts a scan if the reason allows one. The in-flight flag is atomic because the scanner
+// goroutine clears it on publish.
 func (a *App) requestThemeCatalog(reason themeScanReason) {
 	if !a.themeCatBusy.CompareAndSwap(false, true) {
 		return // a scan is already in flight; its result is the fresher one anyway
@@ -212,8 +148,7 @@ func (a *App) requestThemeCatalog(reason themeScanReason) {
 		a.themeCatBusy.Store(false)
 		return
 	}
-	// Everything the scan needs, snapshotted on this thread: the custom root is
-	// a preference and the goroutine must not take the preferences lock.
+	// Snapshotted here: the goroutine must not take the preferences lock.
 	_, customRoot := a.d.Prefs.Load().Theme()
 	statOnly := reason == themeScanOnFocus
 	go func() {
@@ -226,9 +161,8 @@ func (a *App) requestThemeCatalog(reason themeScanReason) {
 	}()
 }
 
-// scanThemeCatalog walks the theme roots and builds a snapshot. BLOCKING —
-// goroutine only. Returns nil when statOnly found the write root unchanged,
-// which is the whole point of the focus-gain trigger: one os.Stat, not a walk.
+// scanThemeCatalog builds a snapshot; blocking, goroutine only. Returns nil when statOnly found the write root
+// unchanged.
 func scanThemeCatalog(customRoot string, prev *themeCatalog, statOnly bool) *themeCatalog {
 	writeRoot := config.UserThemesDir()
 	rootMod := dirModTime(writeRoot)
@@ -242,12 +176,8 @@ func scanThemeCatalog(customRoot string, prev *themeCatalog, statOnly bool) *the
 	}
 
 	root, _ := normalizeThemeRoot(customRoot)
-	// config.ExecutableDir, not a local os.Executable + filepath.Dir: the
-	// write-root backstop below and themeOriginOf both ask samePath whether two
-	// directories are the same place, and samePath is a STRING comparison by
-	// design. config.UserThemesDir resolves symlinks on its way to the write root,
-	// so a raw spelling here would disagree with it on a symlinked or junctioned
-	// install — one root scanned twice, or a bundled theme badged "read-only".
+	// config.ExecutableDir, not os.Executable: samePath compares strings and UserThemesDir resolves symlinks, so a raw
+	// spelling on a symlinked install would scan one root twice or badge a bundled theme read-only.
 	exeDir := config.ExecutableDir()
 	configBase, _ := config.ConfigBaseDir()
 
@@ -257,13 +187,8 @@ func scanThemeCatalog(customRoot string, prev *themeCatalog, statOnly bool) *the
 		ScannedAt: time.Now(),
 	}
 	seen := map[string]bool{}
-	// The SAME list, in the same order, that themeLoadRoots and the picker build:
-	// the catalog must not claim a theme the loader would never find, nor hide one
-	// it would. Same STRINGS too, not merely the same places — all three builders
-	// take their exe root from config.ExecutableDir (see above), which is what makes
-	// the samePath/origin comparisons agree on a symlinked install; the loader and
-	// the picker are pinned to that by TestThemeRootBuildersShareOneExeDir. First
-	// hit per name wins, and its origin badge is the root it was found in.
+	// The same list, order and strings as themeLoadRoots and the picker, or the catalog would claim themes the loader
+	// can't find or hide ones it can. First hit per name wins, and the origin badge is the root it was found in.
 	type rootSpec struct {
 		dir    string
 		origin themeOrigin
@@ -272,11 +197,8 @@ func scanThemeCatalog(customRoot string, prev *themeCatalog, statOnly bool) *the
 	for _, dir := range themeSearchRoots(root, exeDir, configBase) {
 		roots = append(roots, rootSpec{dir, themeOriginOf(dir, exeDir, configBase)})
 	}
-	// The write root's PARENT is already one of the roots above under every
-	// location policy this client has: portable writes <exeDir>/themes (parent =
-	// the exe dir) and everything else writes <configBase>/themes (parent = the
-	// config base). This arm is the backstop for the day that stops being true —
-	// a theme the client itself just wrote must never be invisible in the browser.
+	// Backstop: the write root's parent is already listed under every location policy today, but a theme the client
+	// just wrote must never be invisible in the browser.
 	if writeRoot != "" {
 		if parent := filepath.Dir(writeRoot); !samePath(parent, exeDir) && !samePath(parent, configBase) && !samePath(parent, root) {
 			roots = append(roots, rootSpec{parent, themeOriginYours})
@@ -297,11 +219,7 @@ func scanThemeCatalog(customRoot string, prev *themeCatalog, statOnly bool) *the
 			if seen[key] {
 				continue // an earlier root already answers this name
 			}
-			// The cap check goes AFTER both filters, so Truncated means what it
-			// says: a theme this scan would really have listed was dropped. Tested
-			// before them it fired on a stray FILE, or on a name an earlier root had
-			// already answered, and a collection of exactly themeCatalogCap themes
-			// with one loose file beside it claimed to be a prefix of itself.
+			// After both filters, so Truncated means a theme that would really have been listed was dropped.
 			if len(out.Entries) >= themeCatalogCap {
 				out.Truncated = true
 				break
@@ -332,11 +250,7 @@ func scanThemeCatalog(customRoot string, prev *themeCatalog, statOnly bool) *the
 	return out
 }
 
-// themeOriginOf answers "may the editor write here?" for one search root: the
-// executable's directory ships the themes the client itself bundles, the config
-// base is the folder we write into, and anything else is a folder the user
-// pointed us at and that we therefore copy before touching. Kept beside the root
-// list it classifies so the two are read together.
+// themeOriginOf classifies one search root: exe dir ships bundled themes, config base is ours, anything else is copied.
 func themeOriginOf(dir, exeDir, configBase string) themeOrigin {
 	switch {
 	case samePath(dir, exeDir):
@@ -348,19 +262,8 @@ func themeOriginOf(dir, exeDir, configBase string) themeOrigin {
 	}
 }
 
-// themeKindOf badges a folder by what it holds. A handful of os.Stat calls,
-// off-thread.
-//
-// The AO2 arm reads themeINIFiles — ALL THREE courtroom INIs — and not just the
-// design one, because that list is the app's own definition of a theme folder:
-// normalizeThemeRoot uses it to decide a dropped folder IS a theme, and
-// theme.Load merges the fonts and sounds INIs independently of the design one
-// (theme.go:254-256), so a fonts-or-sounds-only theme is a theme that loads and
-// does something. Badging one of those "no theme files" would have the browser
-// contradict the client that had just accepted it on drop. The zero-value badge
-// therefore says exactly one testable thing: not one of the four files this
-// client reads out of a theme folder is present.
-// TestThemeBadgeAgreesWithWhatTheClientAcceptsAsATheme.
+// themeKindOf badges a folder; a few os.Stat calls, off-thread. Reads all of themeINIFiles because normalizeThemeRoot
+// accepts any of them and theme.Load merges them independently, so a fonts-only theme is a real theme.
 func themeKindOf(dir string) themeKind {
 	ao2 := false
 	for _, ini := range themeINIFiles {
@@ -382,23 +285,9 @@ func themeKindOf(dir string) themeKind {
 	}
 }
 
-// themeEntryKind is themeKindOf for a TOP-LEVEL catalog entry: the same file
-// census, plus one parse of the sidecar so the badge cannot claim a native tier
-// that the loader is going to refuse.
-//
-// It is a separate function from themeKindOf, and that split is a bound rather
-// than a style choice. themeKindOf is also the subtheme filter, called up to
-// themeSubthemeScanCap (64) times per theme — folding a file READ into it would
-// turn a 128-theme scan's handful of stats into up to 8192 parses. Here it runs
-// exactly once per listed theme, off-thread, against a file INIDoc already caps.
-//
-// The downgrade is deliberate and it is the whole point: a refused sidecar
-// contributes NOTHING (theme.Load records the error and carries on with the AO2
-// half — format rule 1), so a folder badged "AO2 + native" on the strength of a
-// file the client will never use is the browser lying about what will happen.
-// Sidecar-only + refused therefore lands on themeKindBroken, which is the honest
-// answer: not one thing in that folder loads. The reason travels beside the badge
-// in themeCatalogEntry.SidecarErr rather than being thrown away.
+// themeEntryKind is themeKindOf for a top-level entry, plus one parse so the badge can't claim a native tier the loader
+// will refuse (a refused sidecar contributes nothing). Separate because themeKindOf also filters subthemes, up to
+// themeSubthemeScanCap times per theme, and parsing there would be thousands of reads.
 func themeEntryKind(dir string) (themeKind, string) {
 	kind := themeKindOf(dir)
 	if kind != themeKindNative && kind != themeKindBoth {
@@ -413,16 +302,8 @@ func themeEntryKind(dir string) (themeKind, string) {
 	return kind, ""
 }
 
-// scanSubthemes lists the AO2 subtheme folders inside a theme: a subdirectory
-// that is itself a theme folder by this client's own definition (themeKindOf) is
-// what AO2 resolves as a subtheme, and it is the only shape we can honestly offer
-// as a variant. Bounded by themeSubthemeCap.
-//
-// The test is themeKindOf and not "has courtroom_design.ini" because AO2 probes
-// the subtheme tier per ELEMENT, not per theme (path_functions.cpp
-// get_asset_paths: "Subtheme path" is tried for whatever file is being resolved),
-// so a variant that only overrides courtroom_fonts.ini is a real one — and our
-// own Load tiers the three INIs the same way.
+// scanSubthemes lists subdirectories that are themselves theme folders (themeKindOf), up to themeSubthemeCap.
+// Not just "has courtroom_design.ini": AO2 probes subthemes per element (path_functions.cpp get_asset_paths).
 func scanSubthemes(themeDir string) []string {
 	entries, err := os.ReadDir(themeDir)
 	if err != nil {
@@ -451,9 +332,8 @@ func scanSubthemes(themeDir string) []string {
 	return out
 }
 
-// dirModTime is the one stat behind the focus-gain trigger. A missing directory
-// reports the zero time, which compares equal to the previous zero time — so a
-// user with no write root costs exactly one stat and never a rescan.
+// dirModTime is the stat behind focus gain. A missing directory is the zero time, equal to the previous zero, so no
+// rescan.
 func dirModTime(dir string) time.Time {
 	if dir == "" {
 		return time.Time{}
@@ -465,20 +345,14 @@ func dirModTime(dir string) time.Time {
 	return info.ModTime()
 }
 
-// fileExists is the local spelling of "is there a file here", kept private to
-// this file so the scan reads as one thing.
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
 }
 
-// NoteFocusGained is called from the event loop when the window regains input
-// focus. It only LATCHES: the actual stat happens off-thread, and only while
-// the screen that cares is the visible one — the user story is "I dropped a
-// theme in Explorer and came back", not "poll the disk forever".
+// NoteFocusGained only records the event; the stat happens off-thread, and only while the screen that cares is visible.
 func (a *App) NoteFocusGained() { a.themeCatFocusStat = true }
 
-// consumeThemeFocusStat is the settings screen's end of that latch.
 func (a *App) consumeThemeFocusStat() bool {
 	if !a.themeCatFocusStat {
 		return false
@@ -487,10 +361,7 @@ func (a *App) consumeThemeFocusStat() bool {
 	return true
 }
 
-// openThemesFolder opens the write root in the OS file manager, creating it
-// first when it does not exist yet — "Open folder" on a folder that is not
-// there is a dead button, and the one directory the client writes themes into
-// is one it may create. Off-thread: MkdirAll is disk I/O (hard rule 2).
+// openThemesFolder opens the write root, creating it first; off-thread because MkdirAll is disk I/O (hard rule 2).
 func openThemesFolder(dir string) {
 	if dir == "" {
 		return
@@ -501,6 +372,5 @@ func openThemesFolder(dir string) {
 	}()
 }
 
-// themesDirPerm is the permission the themes folder is created with — the same
-// 0755 every other directory this client creates uses.
+// themesDirPerm is the permission the themes folder is created with.
 const themesDirPerm = 0o755

@@ -6,26 +6,17 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// The render-loop wake event (experimental event-driven loop): background
-// producers — the websocket read loop, the decode pool's delivery — push one
-// SDL user event so a main loop parked in WaitEventTimeout processes their
-// work immediately instead of waiting out its idle tick. SDL_PushEvent is
-// documented thread-safe, which is the whole point: this is the ONE sanctioned
-// cross-thread doorbell into the SDL event queue (no SDL state is touched).
-//
-// wakePending collapses bursts: a hundred packets landing while one loop pass
-// runs push exactly one event (the pass drains everything anyway). The flag
-// clears when the loop consumes the event, so a producer firing after that
-// queues a fresh one — at most one stale extra pass, never a missed wake.
+// The render-loop wake event: background producers (websocket read loop, decode pool) push one SDL user event so a
+// main loop parked in WaitEventTimeout runs at once instead of waiting out its idle tick. SDL_PushEvent is thread-safe
+// and is the one sanctioned cross-thread call into SDL. wakePending collapses bursts into one event and clears when
+// the loop consumes it, so a wake is never missed.
 var (
 	wakeEventType atomic.Uint32
 	wakePending   atomic.Bool
 )
 
-// EnsureWakeEvent registers the user event type once. Render thread, after
-// sdl.Init; safe to call again (no-op). Registration failure (event range
-// exhausted — practically impossible) leaves wakes disabled: PushWake becomes
-// a no-op and the loop's timeout heartbeat still bounds staleness.
+// EnsureWakeEvent registers the user event type once, on the render thread after sdl.Init. If registration fails
+// PushWake is a no-op and the loop's timeout still bounds staleness.
 func EnsureWakeEvent() {
 	if wakeEventType.Load() != 0 {
 		return
@@ -43,14 +34,12 @@ func PushWake() {
 		return
 	}
 	if _, err := sdl.PushEvent(&sdl.UserEvent{Type: t}); err != nil {
-		// Queue full / event system gone: clear the flag so a later push can
-		// retry; the loop's heartbeat covers the gap regardless.
+		// Queue full or event system gone: clear the flag so a later push can retry.
 		wakePending.Store(false)
 	}
 }
 
-// IsWakeEvent reports whether ev is the wake doorbell, consuming the pending
-// flag (the loop is awake now — later producers must be able to knock again).
+// IsWakeEvent reports whether ev is the wake event, clearing wakePending so later producers can push again.
 func IsWakeEvent(ev sdl.Event) bool {
 	t := wakeEventType.Load()
 	if t == 0 {

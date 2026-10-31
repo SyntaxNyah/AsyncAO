@@ -5,21 +5,16 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// The in-app Help screen: a glossary of Attorney Online terms (and, in its
-// Privacy section, a plain-English "what the server can see" explainer) for
-// newcomers. Reached from the lobby top bar and the courtroom Extras menu. The
-// content is reflowed + cached by column width like drawChangelog / drawAbout, so
-// the page stays allocation-free per frame.
+// The in-app Help screen: an AO glossary and a Privacy section for newcomers, reached from the lobby top bar and the
+// courtroom Extras menu. Content is reflowed and cached by column width, like drawChangelog / drawAbout.
 
-// helpSectionNames drives the section tab row (which hides itself when there's
-// only one section).
+// helpSectionNames drives the section tab row (hidden when there is only one section).
 var helpSectionNames = []string{"Glossary", "Privacy"}
 
 // glossaryEntry is one Attorney Online term and its plain-English explanation.
 type glossaryEntry struct{ term, def string }
 
-// glossaryEntries is the AO newcomer glossary — deliberately plain language, for
-// someone who just opened the client and doesn't yet know what "IC" or "CM" mean.
+// glossaryEntries is the AO newcomer glossary, in plain language.
 var glossaryEntries = []glossaryEntry{
 	{"IC — In Character", "Talking AS your character in the courtroom: your line shows in the chatbox over your sprite. This is the main roleplay channel."},
 	{"OOC — Out Of Character", "Talking as YOURSELF, not your character — for coordinating, joking or asking questions. It shows in the OOC box, never over a sprite."},
@@ -46,9 +41,7 @@ type privacySection struct {
 	body    []string
 }
 
-// privacySections is the plain-English "what a server can see" explainer. Honest
-// and specific: it names exactly what AsyncAO sends (see internal/hwid for the
-// HDID) so there are no surprises, rather than vaguely reassuring.
+// privacySections explains what a server can see, naming exactly what AsyncAO sends (HDID: internal/hwid).
 var privacySections = []privacySection{
 	{"What every server can see", []string{
 		"Connecting to an Attorney Online server — like opening any website or joining any game — lets it see a few things about you. AsyncAO can't hide these, so here's exactly what they are.",
@@ -114,9 +107,7 @@ var privacySections = []privacySection{
 	}},
 }
 
-// buildHelpFlat reflows the active Help section to colW (cached by width via
-// a.helpFlat / a.helpFlatW). The aboutFlatLine model + the draw loop mirror
-// drawChangelog, so the wrap runs only on a resize, never per frame.
+// buildHelpFlat reflows the active section to colW, cached by width; mirrors drawChangelog.
 func (a *App) buildHelpFlat(c *Ctx, colW int32) []aboutFlatLine {
 	out := make([]aboutFlatLine, 0, 128)
 	switch a.helpTab {
@@ -152,8 +143,7 @@ func (a *App) buildHelpFlat(c *Ctx, colW int32) []aboutFlatLine {
 	return out
 }
 
-// openHelp switches to the Help screen on a given section tab (0 = Glossary,
-// 1 = Privacy), re-reflowing for that section. Callers set prevScreen first.
+// openHelp switches to the Help screen on a section tab (0 = Glossary, 1 = Privacy); callers set prevScreen first.
 func (a *App) openHelp(tab int) {
 	a.helpTab, a.helpFlat, a.helpDocScroll = tab, nil, 0
 	a.screen = ScreenHelp
@@ -162,7 +152,7 @@ func (a *App) openHelp(tab int) {
 func (a *App) drawHelp(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
-	// Content starts below the app-chrome band (#14, chrometop.go).
+	// Content starts below the app-chrome band (chrometop.go).
 	hdrY := a.topChromeH() + pad
 	c.Heading(pad, hdrY, "Help", ColText)
 	c.Label(pad, hdrY+30, "What the words mean — and what a server can see about you.", ColTextDim)

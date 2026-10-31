@@ -9,24 +9,18 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
-// Subtitle export (#69): an opt-in .srt + .vtt written beside every 🎥 Video
-// export, cue-timed to THE VIDEO's frames — not the recording's wall-clock
-// offsets, which the idle-paced export deliberately ignores (the same reason
-// the timeline uses OffsetMs but exports don't). A cue opens on the first
-// captured frame that actually shows the message's text (so preanim/shout lead
-// time isn't subtitled) and closes when the next message replaces it, matching
-// what the exported chatbox shows. Pure cue/format helpers, unit-tested.
+// Subtitle export: an opt-in .srt + .vtt beside every video export, cue-timed to the video's frames, not the
+// recording's wall-clock offsets (the idle-paced export ignores them). A cue opens on the first captured frame
+// that shows the message's text and closes when the next message replaces it.
 
-// subCue is one subtitle: the video frame window + the speaker and line.
+// subCue is one subtitle: the video frame window plus the speaker and line.
 type subCue struct {
 	startFrame, endFrame int // [start, end) in captured frames
 	speaker, text        string
 }
 
-// subtitleLine extracts the speaker + plain display text for a recorded message:
-// zero-width wire frames stripped, the "~~" centre prefix dropped, and the
-// typewriter's markup ({}, \cN, \b, \i) removed — exactly what the export
-// chatbox renders (export rooms don't expand inline emotes, so neither do we).
+// subtitleLine extracts the speaker and plain text of a recorded message as the export chatbox renders it:
+// zero-width wire frames stripped, "~~" centre prefix dropped, typewriter markup removed.
 func subtitleLine(msg *protocol.ChatMessage) (speaker, text string) {
 	if msg == nil {
 		return "", ""
@@ -41,10 +35,8 @@ func subtitleLine(msg *protocol.ChatMessage) (speaker, text string) {
 	return speaker, text
 }
 
-// subFeed is called when the export feeds a message event: the currently-open
-// cue closes at frame (its text is being replaced on screen) and the new line
-// becomes pending until a captured frame actually shows it. Blank posts pend
-// with empty text and simply never anchor.
+// subFeed closes the open cue at frame (its text is being replaced) and makes the new line pending until shown.
+// Blank posts pend with empty text and never anchor.
 func (j *gifExportJob) subFeed(msg *protocol.ChatMessage, frame int) {
 	if !j.subsOn {
 		return
@@ -55,8 +47,7 @@ func (j *gifExportJob) subFeed(msg *protocol.ChatMessage, frame int) {
 	j.subHasPend = text != ""
 }
 
-// subAnchor promotes the pending cue to open once the scene shows its text —
-// called for each captured frame with that frame's index.
+// subAnchor promotes the pending cue to open once a captured frame shows its text.
 func (j *gifExportJob) subAnchor(visibleRunes int, frame int) {
 	if !j.subsOn || !j.subHasPend || visibleRunes <= 0 {
 		return
@@ -66,8 +57,7 @@ func (j *gifExportJob) subAnchor(visibleRunes int, frame int) {
 	j.subHasPend = false
 }
 
-// subClose ends the open cue (if any) at frame, keeping it only if it was ever
-// visible for at least one frame.
+// subClose ends the open cue at frame, keeping it only if it was visible for at least one frame.
 func (j *gifExportJob) subClose(frame int) {
 	if !j.subHasOpen {
 		return
@@ -80,8 +70,7 @@ func (j *gifExportJob) subClose(frame int) {
 	j.subHasOpen = false
 }
 
-// subTimestamp renders ms as an SRT/VTT clock; SRT wants a comma decimal
-// separator, VTT a dot.
+// subTimestamp renders ms as an SRT/VTT clock; SRT wants a comma decimal separator, VTT a dot.
 func subTimestamp(ms int, comma bool) string {
 	if ms < 0 {
 		ms = 0
@@ -93,9 +82,8 @@ func subTimestamp(ms int, comma bool) string {
 	return fmt.Sprintf("%02d:%02d:%02d%s%03d", ms/3600000, ms/60000%60, ms/1000%60, sep, ms%1000)
 }
 
-// formatSubtitles renders the cues as one SRT or VTT document. fps converts a cue's
-// frame window to milliseconds via frameToMs (the video's real cadence) — multiply-
-// first, so an hours-long export's cues don't drift out of sync with the picture.
+// formatSubtitles renders the cues as one SRT or VTT document, converting frames to ms via frameToMs.
+// Multiply first so an hours-long export does not drift out of sync with the picture.
 func formatSubtitles(cues []subCue, fps int, vtt bool) string {
 	var b strings.Builder
 	if vtt {
@@ -115,9 +103,7 @@ func formatSubtitles(cues []subCue, fps int, vtt bool) string {
 	return b.String()
 }
 
-// writeSubtitleFiles writes <video stem>.srt + .vtt beside the video (called
-// off-thread by finishVideoExport). Returns whether both writes succeeded. fps drives
-// the cue timing via formatSubtitles (multiply-first, drift-free over long exports).
+// writeSubtitleFiles writes <video stem>.srt and .vtt beside the video, off-thread; it reports whether both succeeded.
 func writeSubtitleFiles(vidPath string, cues []subCue, fps int) bool {
 	if len(cues) == 0 {
 		return false

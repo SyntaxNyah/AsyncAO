@@ -8,15 +8,11 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Auto-status (#M1): flip your presence status from trigger words you type in IC (e.g.
-// "brb" → AFK). Configurable per status in Settings; OFF by default. The match runs on
-// the SEND path (not the render loop), so its small ToLower/Fields cost is fine — and a
-// trigger word rides the same message, so others see the change immediately (it fixes
-// the "status only updates when you next speak" gap for announced changes).
+// Auto-status: flip your presence status from trigger words typed in IC (e.g. "brb" is AFK), configurable per status
+// in Settings, off by default. The match runs on the send path and the word rides the same message.
 
-// matchAutoStatus scans an outgoing IC message for a configured trigger word and returns
-// the status to switch to. Whole-word, case-insensitive; the last matching word wins (so
-// a "back" later in the line clears an earlier "brb"). Pure + testable.
+// matchAutoStatus scans an outgoing IC message for a trigger word and returns the status to switch to.
+// Whole-word, case-insensitive; the last match wins, so a later "back" clears an earlier "brb".
 func matchAutoStatus(text string, pref config.AutoStatusPref) (courtroom.Status, bool) {
 	if !pref.Enabled {
 		return courtroom.StatusNone, false
@@ -48,15 +44,14 @@ func addAutoStatusWords(m map[string]courtroom.Status, csv string, s courtroom.S
 	}
 }
 
-// applyAutoStatus flips myStatus from a trigger word in the outgoing message (#M1).
+// applyAutoStatus flips myStatus from a trigger word in the outgoing message.
 func (a *App) applyAutoStatus(text string) {
 	if s, ok := matchAutoStatus(text, a.d.Prefs.Load().MyAutoStatus); ok {
 		a.myStatus = s
 	}
 }
 
-// drawAutoStatusSettings draws the "Auto-status" editor: an enable toggle plus a
-// comma-separated trigger-word field per status. Settings-only; never a hot path.
+// drawAutoStatusSettings draws the editor: an enable toggle plus a comma-separated trigger-word field per status.
 func (a *App) drawAutoStatusSettings(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX

@@ -1,12 +1,9 @@
 package ui
 
-// The wardrobe's Backgrounds section: your favourite backgrounds (the ★ set
-// from the Background picker) organized into the same navigable folders as
-// characters. Clicking a favourite asks the server to change the room to it.
-// Favourites live in config.FavBackgrounds; folders are a per-server
-// background→folder map (config.FavBackgroundFolder). bgFavList is the
-// favourites in ONE stable order so the index-keyed bgFavPages thumbnail cache
-// survives folder navigation (navigation filters via a predicate; see the
+// The wardrobe's Backgrounds section: favourite backgrounds (the ★ set from the Background picker) in the same folders
+// as characters; clicking one asks the server to change the room. Favourites live in config.FavBackgrounds; folders are
+// a per-server background-to-folder map (config.FavBackgroundFolder). bgFavList keeps one stable order so the
+// index-keyed bgFavPages thumbnail cache survives folder navigation (navigation filters via a predicate; see the
 // cachedPage reorder invariant).
 
 import (
@@ -18,10 +15,9 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// rebuildBgFav refreshes the Backgrounds-section list from prefs. Called when
-// the section opens and after any favourite/folder change — NOT per frame and
-// NOT on folder navigation. Nulls the thumbnail cache because the set/order
-// changed (the cache is keyed by index without re-checking the URL).
+// rebuildBgFav refreshes the Backgrounds-section list from prefs when the section opens and after a favourite or folder
+// change, not per frame or on navigation. It nils the thumbnail cache because the cache is keyed by index without
+// re-checking the URL.
 func (a *App) rebuildBgFav() {
 	favs := a.d.Prefs.Load().FavBackgroundList(a.serverKey)
 	folders := a.d.Prefs.Load().FavBackgroundFolderMap(a.serverKey)
@@ -54,9 +50,8 @@ func (a *App) bgFavFolderNames() []string {
 	return out
 }
 
-// drawWardrobeBgsBody draws the Backgrounds section grid (favourite backgrounds
-// + folder icons). Mirrors drawWardrobeCharsBody; the shared drag bookkeeping
-// is in the drawIniswapPanel wrapper.
+// drawWardrobeBgsBody draws the Backgrounds section grid (favourite backgrounds + folder icons), mirroring
+// drawWardrobeCharsBody; the shared drag bookkeeping is in drawIniswapPanel.
 func (a *App) drawWardrobeBgsBody(panel sdl.Rect, w, h int32) {
 	c := a.ctx
 	y := panel.Y + 44
@@ -150,9 +145,8 @@ func (a *App) drawWardrobeBgsBody(panel sdl.Rect, w, h int32) {
 	}
 	y += btnH + 8
 
-	// Grid: landscape thumbnails (like the picker) with folder icons at the top
-	// level. Slot drives layout only; background cells pass their bgFavList
-	// index to drawBgFavCell so the index-keyed cache stays correct.
+	// Grid: landscape thumbnails with folder icons at the top level. slot drives layout only; background cells pass
+	// their bgFavList index to drawBgFavCell so the index-keyed cache stays correct.
 	gridTop := y
 	gridW := panel.W - 2*pad - scrollBarW - scrollBarGap
 	cols := gridW / (bgCellW + bgCellGap)
@@ -231,10 +225,9 @@ func (a *App) drawBgFavFolderCell(name string, count int, cell sdl.Rect) {
 	}
 }
 
-// drawBgFavCell draws one favourite background: landscape thumbnail, name, an
-// unstar ★, and (on a plain click) a request to change the room to it. Drag it
-// onto a folder to file it — the drag uses the shared modal drag state, so the
-// "dragged thing" is this background's name.
+// drawBgFavCell draws one favourite background: thumbnail, name, an unstar ★, and on a plain click a request to change
+// the room. Drag it onto a folder to file it; the drag uses the shared modal drag state, so the dragged thing is this
+// background's name.
 func (a *App) drawBgFavCell(idx int, cell sdl.Rect) {
 	c := a.ctx
 	name := a.bgFavList[idx]

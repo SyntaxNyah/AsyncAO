@@ -1,9 +1,6 @@
 package ui
 
-// Case notebook UI: the Notes tab in the courtroom right column. Pins
-// arrive from the IC log (right-click a line), the evidence panel (Pin
-// button), or the free-form input here; storage is per-server
-// (config.Notebook, async I/O).
+// Case notebook UI: the Notes tab; pins come from the IC log, the evidence panel or the input here, stored per server.
 
 import (
 	"strings"
@@ -12,23 +9,18 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// pinNote adds one line to the current server's notebook (silently a
-// no-op pre-load — the off-thread load lands within a frame or two of
-// connecting; there is nothing meaningful to pin before that).
+// pinNote adds one line to the current server's notebook; a no-op before the off-thread load lands.
 func (a *App) pinNote(line string) {
 	if a.notebook == nil {
 		return
 	}
 	a.notebook.Add(line)
 	a.pushDebug("notebook: pinned " + clampLine(line))
-	// Visible confirmation (the pin was otherwise silent — easy to miss).
 	a.warnLine = "Pinned to notebook (Notes tab)"
 	a.warnAt = time.Now()
 }
 
-// pollNotebook lands a per-server notebook load: on the active session
-// when the key matches, else on the parked tab it belongs to (a tab
-// switch between request and landing must not cross notebooks).
+// pollNotebook lands a load on the session or parked tab whose key matches, so a tab switch cannot cross notebooks.
 func (a *App) pollNotebook() {
 	select {
 	case res := <-a.notebookRes:
@@ -42,15 +34,14 @@ func (a *App) pollNotebook() {
 				return
 			}
 		}
-		// No owner anymore (tab closed): drop.
+		// The owning tab was closed: drop.
 	default:
 	}
 }
 
-// drawNotesTab renders the notebook list (wrapped, newest at the bottom),
-// per-row delete, the free-form input, and a copy-all button.
+// drawNotesTab renders the wrapped notebook list, per-row delete, the free-form input and a copy-all button.
 func (a *App) drawNotesTab(r sdl.Rect) {
-	// See drawPlayerList: the whole panel follows the user's pick, or nothing does.
+	// The whole panel follows the user's font pick, or nothing does.
 	defer a.ctx.popPanelFont(a.ctx.pushPanelFont(a.elemChromeFont(elemNotes, a.logPct)))
 	c := a.ctx
 	if a.notebook == nil {
@@ -60,15 +51,12 @@ func (a *App) drawNotesTab(r sdl.Rect) {
 
 	const inputH = 26
 	list := sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: r.H - inputH - 6}
-	// Snapshot cache: Lines() copies, so take it only when the notebook
-	// actually changed (rev) — never per frame.
+	// Lines() copies, so take a snapshot only when the notebook changed.
 	if rev := a.notebook.Rev(); a.noteCache == nil || rev != a.noteCacheRev {
 		a.noteCache, a.noteCacheRev = a.notebook.Lines(), rev
 	}
 	lines := a.noteCache
-	// The Notes panel's own font and size. Resolved through the same per-element
-	// table the chatlogs use, so the user's Settings override reaches it — the
-	// panel was left on the shared log font when the rest gained one.
+	// Resolved through the per-element table so the user's Settings override reaches it.
 	font := a.elemFont(elemNotes, a.logPct)
 	lineH := int32(font.Height()) + 4
 	wrapW := list.W - scrollBarW - scrollBarGap - 18 // room for the ✕ hit zone
@@ -113,7 +101,6 @@ func (a *App) drawNotesTab(r sdl.Rect) {
 		a.notebook.Remove(removeIdx)
 	}
 
-	// Free-form note input + copy-all.
 	iy := r.Y + r.H - inputH
 	const copyW = 52
 	var add bool

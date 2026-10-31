@@ -1,17 +1,9 @@
 package ui
 
-// Tear-off log tabs. The right-column tabs (Music, Areas, Players, Notes,
-// Friends) can be popped OUT of the docked tab strip into their own movable,
-// resizable floating panels — each rendering the tab's real content. A torn tab
-// is just a classic-layout SLOT (classiclayout.go) under a "tab:<name>" key:
-// presence in classicOv means "torn off, and here's where". That reuse buys drag,
-// 8-handle resize, right-click-to-redock and cross-session persistence for free —
-// the generic drawClassicEditor already does all of it over any registered slot.
-//
-// Reset-all (the editor's "Reset all") clears the whole map, so every tab redocks
-// and the default is plain buttons again — exactly the user's "by default it's
-// buttons" ask. Log and OOC are deliberately NOT tear-offable: Log is the home /
-// fallback tab, and OOC is already its own box in the new default.
+// Tear-off log tabs: the right-column tabs can be popped out of the docked strip into movable, resizable floating
+// panels. A torn tab is a classic-layout slot (classiclayout.go) under a "tab:<name>" key, so presence in classicOv
+// means torn off and the generic drawClassicEditor supplies drag, resize, redock and persistence.
+// Log and OOC are not tear-offable: Log is the fallback tab and OOC is its own box by default.
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -28,16 +20,14 @@ const (
 	tornTabCascade = int32(26)
 )
 
-// dockTab is one entry in the docked tab strip (id + button label). Kept here so
-// dockedLogTabs (the 0-alloc strip builder) is unit-testable without SDL.
+// dockTab is one entry in the docked tab strip (id + button label).
 type dockTab struct {
 	id    int
 	label string
 }
 
-// tornTabTable is the fixed set of tear-offable tabs, in strip order. A package
-// array (built once at init) so iterating it on the render path allocates nothing.
-// The keys are string literals — slotRect must never format a key per frame.
+// tornTabTable is the fixed set of tear-offable tabs, in strip order; an array so the render path allocates nothing.
+// The keys are string literals so slotRect never formats a key per frame.
 var tornTabTable = [...]struct {
 	id    int
 	key   string
@@ -50,8 +40,7 @@ var tornTabTable = [...]struct {
 	{logTabFriends, "tab:friends", "Friends"},
 }
 
-// tornKeyFor returns the classicOv key for a tear-offable tab id, or "" if the tab
-// can't be torn off (Log / OOC).
+// tornKeyFor returns the classicOv key for a tear-offable tab id, or "" for Log / OOC.
 func tornKeyFor(id int) string {
 	for i := range tornTabTable {
 		if tornTabTable[i].id == id {
@@ -71,8 +60,7 @@ func tornTabIndex(id int) int {
 	return 0
 }
 
-// tabTorn reports whether tab id is currently torn out into a floating panel.
-// A nil/empty classicOv (the common case) makes this a cheap, alloc-free miss.
+// tabTorn reports whether tab id is currently torn out into a floating panel; a nil classicOv is a cheap miss.
 func (a *App) tabTorn(id int) bool {
 	k := tornKeyFor(id)
 	if k == "" {
@@ -82,8 +70,7 @@ func (a *App) tabTorn(id int) bool {
 	return ok
 }
 
-// tabHideID maps a log tab to its hide pref id, or "" for the always-present
-// Log / OOC tabs (which aren't individually hideable here).
+// tabHideID maps a log tab to its hide pref id, or "" for Log / OOC, which are not individually hideable.
 func tabHideID(tab int) string {
 	switch tab {
 	case logTabMusic:
@@ -100,17 +87,14 @@ func tabHideID(tab int) string {
 	return ""
 }
 
-// tabHidden reports whether the user fully hid a right-column tab (UI… popup):
-// gone from the docked strip AND not drawn even if it was torn out.
+// tabHidden reports whether the user fully hid a right-column tab: gone from the strip and not drawn even if torn out.
 func (a *App) tabHidden(tab int) bool {
 	id := tabHideID(tab)
 	return id != "" && a.panelHidden(id)
 }
 
-// dockedLogTabs builds the docked tab strip, skipping any tab torn into a floating
-// panel OR fully hidden. Returns a fixed-size array (by value → stack, 0-alloc) and
-// the live count. Log is always present (the home/fallback tab); OOC appears only
-// when it's a tab (oocAsTab = the Legacy theme, or the opt-in "OOC in the log tab").
+// dockedLogTabs builds the docked tab strip, skipping torn and hidden tabs, as a fixed-size array and the live count.
+// Log is always present; OOC appears only when it is a tab (oocAsTab).
 func (a *App) dockedLogTabs(oocAsTab bool) ([7]dockTab, int32) {
 	var d [7]dockTab
 	n := int32(0)
@@ -143,8 +127,7 @@ func (a *App) dockedLogTabs(oocAsTab bool) ([7]dockTab, int32) {
 	return d, n
 }
 
-// drawTabContent renders a tab's body into rect — the exact renderers the docked
-// tab strip uses, so a torn panel and a docked tab show identical content.
+// drawTabContent renders a tab's body into rect with the renderers the docked strip uses.
 func (a *App) drawTabContent(id int, inner sdl.Rect) {
 	switch id {
 	case logTabMusic:
@@ -160,9 +143,8 @@ func (a *App) drawTabContent(id int, inner sdl.Rect) {
 	}
 }
 
-// tornTabRect returns a torn panel's screen rect (override → px, honouring a
-// window pin), or ok=false when the tab isn't torn. No slotReg write, so the
-// pointer-fence pass can call it.
+// tornTabRect returns a torn panel's screen rect, or ok=false when the tab isn't torn. It writes no slotReg, so the
+// pointer-blocking pass can call it.
 func (a *App) tornTabRect(key string, w, h int32) (sdl.Rect, bool) {
 	ov, ok := a.classicOv[key]
 	if !ok {
@@ -171,8 +153,7 @@ func (a *App) tornTabRect(key string, w, h int32) (sdl.Rect, bool) {
 	return a.anchoredRect(key, ov, w, h), true
 }
 
-// tornTabDefaultRect is where a tab lands the first time it's popped out: a
-// cascade near the upper-middle, clamped on-screen below the editor banner.
+// tornTabDefaultRect is where a tab first lands when popped out: a cascade below the editor banner.
 func (a *App) tornTabDefaultRect(i int, w, h int32) sdl.Rect {
 	dw, dh := tornTabDefaultW, tornTabDefaultH
 	if dw > w-16 {
@@ -198,8 +179,7 @@ func (a *App) tornTabDefaultRect(i int, w, h int32) sdl.Rect {
 	return sdl.Rect{X: x, Y: y, W: dw, H: dh}
 }
 
-// tearOffTab pops tab id out of the docked strip into a floating panel at its
-// cascade default, persisting the slot (the debounced saver flushes it).
+// tearOffTab pops tab id out of the docked strip into a floating panel at its cascade default and persists the slot.
 func (a *App) tearOffTab(id int, w, h int32) {
 	key := tornKeyFor(id)
 	if key == "" {
@@ -216,10 +196,8 @@ func (a *App) tearOffTab(id int, w, h int32) {
 	a.d.Prefs.SetClassicSlot(key, frac)
 }
 
-// tornTabOrder returns the back-to-front draw order of the tear-off tabs as
-// tornTabTable indices. Session-scoped: tornZ records bring-to-front clicks;
-// empty means the table's own order (the pre-z-order default). A fixed-size
-// value so the per-frame draw loop allocates nothing.
+// tornTabOrder returns the back-to-front draw order of the tear-off tabs as tornTabTable indices; tornZ records the
+// bring-to-front clicks and empty means table order. A fixed-size value so the draw loop allocates nothing.
 func (a *App) tornTabOrder() [len(tornTabTable)]int {
 	var order [len(tornTabTable)]int
 	if len(a.tornZ) == 0 {
@@ -232,11 +210,7 @@ func (a *App) tornTabOrder() [len(tornTabTable)]int {
 	return order
 }
 
-// bringTornToFront promotes the topmost torn panel under a fresh left-click to
-// the front of the z-order, so clicking a floating panel (anywhere in its rect)
-// raises it above the others — the standard window behaviour the old fixed
-// table order lacked (the Players tab always drew over Music/Areas no matter
-// how the panels were arranged).
+// bringTornToFront promotes the topmost torn panel under a fresh left-click to the front of the z-order.
 func (a *App) bringTornToFront(w, h int32) {
 	c := a.ctx
 	if !c.clicked {
@@ -272,12 +246,9 @@ func (a *App) bringTornToFront(w, h int32) {
 	}
 }
 
-// drawTornTabs paints every torn-off tab as its own floating panel: a titled
-// header (the editor's drag handle) over the tab's real content. slotRect returns
-// the override and — only while editing — registers the slot, so the editor draws
-// its move/resize handles. Called post-courtroom in normal mode (interactive,
-// fenced by boxFencesPointer); in the courtroom pass during edit (inert, so you
-// see what you're arranging). Alloc-free when nothing is torn.
+// drawTornTabs paints every torn-off tab as a floating panel: a titled header (the editor's drag handle) over the
+// tab's content. slotRect returns the override and registers the slot only while editing.
+// Called post-courtroom in normal mode (blocked via boxFencesPointer); in the courtroom pass during edit (inert).
 func (a *App) drawTornTabs(w, h int32) {
 	if len(a.classicOv) == 0 {
 		return
@@ -301,10 +272,7 @@ func (a *App) drawTornTabs(w, h int32) {
 		hdr := sdl.Rect{X: r.X + 1, Y: r.Y + 1, W: r.W - 2, H: tornTabHeaderH}
 		c.Fill(hdr, ColPanelHi)
 		c.Label(hdr.X+7, hdr.Y+3, t.title, ColText)
-		// Redock: RIGHT-CLICK the header — a deliberate gesture. The old one-click "x"
-		// sat in the corner and was far too easy to hit by accident during normal play
-		// (playtest: it was hit by accident in normal play), so it's gone.
-		// In edit mode the tray chip / right-click-reset handle redocking instead.
+		// Redock is a right-click on the header; in edit mode the tray chip or right-click-reset does it.
 		if !a.classicEdit {
 			c.TooltipAfter("redock:"+t.key, hdr, "Right-click to redock this panel")
 			if c.rightClicked && c.hovering(hdr) {
@@ -324,21 +292,13 @@ func (a *App) drawTornTabs(w, h int32) {
 	}
 }
 
-// drawClassicTabTray is the editor's tray strip (just under the banner, at the TOP):
-// one chip per tear-offable tab, clicked to pop it out (or redock it), plus the OOC
-// box/tab chip. Returns whether the cursor is over the tray, so the editor suppresses a
-// slot-move when you press a chip. It lives at the top, not the bottom, so it doesn't
-// cover bottom-anchored bars (the OOC bar / emote grid) — a tester couldn't drag the OOC
-// bar to the bottom because the old bottom tray hid it and blocked the grab. Big boxes
-// (stage / right column) are grabbed by their bodies, so a top strip costs them nothing.
-// Edit-only.
+// drawClassicTabTray is the editor's tray strip under the banner: one chip per tear-offable tab to pop it out or
+// redock it, plus the OOC box/tab chip. It returns whether the cursor is over the tray so a chip press doesn't
+// start a slot-move. It sits at the top so it doesn't cover bottom-anchored bars. Edit-only.
 func (a *App) drawClassicTabTray(w, h int32) bool {
 	c := a.ctx
 	trayY := int32(classicBannerH + 8)
-	// A dark backing strip so the tray reads as chrome even if a slot's outline
-	// crosses it (the slot overlay draws after this). The WHOLE strip suppresses a
-	// slot-move (overTray), not just the chips — else pressing a gap would grab a
-	// box parked under it.
+	// A dark backing strip so the tray reads as chrome; the whole strip suppresses slot-move (overTray).
 	trayStrip := sdl.Rect{X: 0, Y: trayY - 4, W: w, H: 40}
 	c.Fill(trayStrip, sdl.Color{R: 0, G: 0, B: 0, A: 205})
 	c.Label(pad, trayY-2, "Pop a tab out into its own movable panel (click again to redock):", ColTierYellow)
@@ -368,10 +328,7 @@ func (a *App) drawClassicTabTray(w, h int32) bool {
 		}
 		tx += cw + 6
 	}
-	// OOC placement chip (yellow, set apart): switch OOC between its own box (new
-	// default) and a tab in the log panel (the old layout). Hidden on Legacy, where
-	// OOC is always a tab — toggling there would be a no-op. Lives here because this
-	// strip is "where tabs get arranged", which is what the maintainer asked for.
+	// OOC placement chip: switch OOC between its own box and a log-panel tab. Hidden on Legacy (always a tab).
 	if !a.d.Prefs.Load().LegacyDevTheme {
 		tx += 14 // separate it from the tear-off chips
 		inTab := a.d.Prefs.Load().OOCInLogTab
@@ -406,9 +363,7 @@ func (a *App) drawClassicTabTray(w, h int32) bool {
 		}
 		tx += ow // advance past the OOC chip so the next chip doesn't overlap it
 	}
-	// Group Chat panel placement chip (both themes): give the Group Chat / DMs panel a
-	// fixed home in this layout you can drag here (click again to remove it). It only
-	// owns WHERE the panel sits — whether it's shown stays the Extras → Group Chat toggle.
+	// Group Chat panel placement chip: gives the panel a fixed home in this layout; display stays on the Extras toggle.
 	tx += 14
 	_, gcPlaced := a.classicOv[slotMessages]
 	gcLabel := "Group Chat"

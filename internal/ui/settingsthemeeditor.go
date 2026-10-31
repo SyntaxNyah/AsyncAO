@@ -1,25 +1,13 @@
 package ui
 
-// SETTINGS ▸ THEME EDITOR (v1.90.0 W10) — the authoring tab.
+// Settings > Theme editor: the authoring tab. One concern: the rows that make, open and receive a theme. Selection
+// (catalog, badge, subtheme variant, write root, art budget) stays on the Theme tab.
 //
-// ONE concern: the rows that make, open and receive a theme. Selection — the
-// catalog, the badge, the subtheme variant, the write root, the art budget — stays
-// on the Theme tab, which is what someone is looking at when they want to PICK one.
+// Row order: make one, open the one you have, take one somebody sent you. Creation comes first because it has no
+// prerequisite; import last because it needs a file you already have.
 //
-// WHY THERE IS A TAB AT ALL. The editor shipped as one row two thirds of the way
-// down the Theme tab, between "Get themes" and "Your themes folder", under the
-// label "Theme editor:" — findable by search (W7a's census made sure of that) and
-// invisible to anyone scrolling. A tab in the sidebar is the one surface a user
-// reads top-to-bottom before they give up, and the flagship of the release has to
-// be on it.
-//
-// THE ROW ORDER IS THE STORY: make one → open the one you have → take one somebody
-// sent you. Creation first because it is the act with no prerequisite; import last
-// because it is the one that needs a file you already have.
-//
-// Every draw helper here shadows `pad := a.formX` (the settings-origin rule — a
-// missing shadow renders the row silently under the sidebar) and registers its rows
-// with c.onRow so the gather-search finds them by label.
+// Every draw helper shadows `pad := a.formX` (the settings-origin rule: a missing shadow renders the row under the
+// sidebar) and registers its rows with c.onRow so the gather-search finds them by label.
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/text"
@@ -27,34 +15,24 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
-// ---------------------------------------------------------------------------
-// Named metrics (hard rule 9)
-// ---------------------------------------------------------------------------
-
 const (
-	// themeMakeNameFieldW is the "call it" field. Wide enough for a name at
-	// themepack.NameRuneCap without the caret scrolling on a normal name.
+	// themeMakeNameFieldW is the "call it" field, wide enough for a name at themepack.NameRuneCap.
 	themeMakeNameFieldW = 260
 	// themeMakeTemplateW is the template cycler beside it.
 	themeMakeTemplateW = 190
-	// themeMakeAxisW is one preset-axis cycler (layout, style). Two of them fit the
-	// card at settMinCardW with the label gutter intact.
+	// themeMakeAxisW is one preset-axis cycler; two of them fit the card at settMinCardW.
 	themeMakeAxisW = 190
 	// themeMakeGap separates the controls on a multi-control row.
 	themeMakeGap = 10
-	// themeMakeBtnW is the Create button — wider than the catalog rows' buttons
-	// because it is the headline act of the tab and its label carries a verb.
+	// themeMakeBtnW is the Create button, wider than the catalog buttons because its label carries a verb.
 	themeMakeBtnW = 150
-	// themeMakeRowH / themeMakeNoteRowH are a control row and the hint under it.
-	// Same measurements the catalog rows use, so the two tabs line up.
+	// themeMakeRowH / themeMakeNoteRowH are a control row and the hint under it, matching the catalog rows.
 	themeMakeRowH     = 30
 	themeMakeNoteRowH = 22
 )
 
-// The tab's fixed strings. Package constants because every one of them draws on
-// every frame the tab is open and the label cache keys on the string — a formatted
-// one would rasterise a fresh texture sixty times a second (the settings-text
-// doctrine; see themeRowText).
+// The tab's fixed strings are constants because they draw every frame and the label cache keys on the string; a
+// formatted one would rasterise a fresh texture every frame (see themeRowText).
 const (
 	themeMakeIntro = "a theme of your own: elements, colours, motion and images, edited live over the real courtroom. It lands in your themes folder and nothing else is touched."
 	themeMakeHint  = "the name becomes the folder; an existing name gets a \"(2)\" rather than overwriting anything"
@@ -65,30 +43,16 @@ const (
 
 	themeImportIntro = "someone sent you an .aotheme? Drag it onto the window, or browse for one you have already downloaded. Nothing is installed until you confirm what is in it."
 
-	// themeAuthoringHintText is the cross-tab pointer left on the Theme tab where
-	// the two rows used to be. Worded as the hint machinery words its own line, so
-	// the two read the same wherever a user meets them.
+	// themeAuthoringHintText is the pointer left on the Theme tab where the two rows used to be, worded as the hint
+	// machinery words its own line.
 	themeAuthoringHintText = "→ the Theme editor tab covers this — open it"
 	themeAuthoringHintRow  = "Make or edit a theme"
 )
 
-// ---------------------------------------------------------------------------
-// The tab
-// ---------------------------------------------------------------------------
-
-// drawSettingsThemeEditor draws the authoring tab.
-//
-// THE WIDTH IS THE CARD'S, NOT THE WINDOW'S — the house form every other tab body
-// follows (drawSettingsGeneral, drawSettingsTheme, drawSettingsAssets, …), and it is
-// load-bearing here rather than cosmetic: drawSettingsTabBody hands each body the
-// WINDOW width, while the card is clipped to {formX, formW}. The two right-aligned
-// buttons below place themselves at `w - themeGetBtnW - scrollBarW`, so with the
-// window width they land outside the clip — clipped at the edge on a narrow window
-// and, on a wide one, drawn and hit-tested entirely past it (Ctx.hovering reads
-// false outside c.clipRect), i.e. an invisible, unpressable button. Rebasing here
-// also gives the note labels their true widths, which the card's row-label limit was
-// silently trimming for them. These rows read correct at the old call site only
-// because drawSettingsTheme had already rebased w before calling them.
+// drawSettingsThemeEditor draws the authoring tab. The width is the card's, not the window's, like every other tab
+// body: drawSettingsTabBody hands each body the window width while the card is clipped to {formX, formW}, so the
+// right-aligned buttons at `w - themeGetBtnW - scrollBarW` would land outside the clip, drawn and hit-tested past it
+// (Ctx.hovering reads false outside c.clipRect).
 func (a *App) drawSettingsThemeEditor(y, _ int32) int32 {
 	w := a.formW2()
 	y = a.settingsSection(y, w, "New theme")
@@ -102,18 +66,15 @@ func (a *App) drawSettingsThemeEditor(y, _ int32) int32 {
 	return y
 }
 
-// drawThemeMakeRows is the CREATOR: a name, a starting point, and the button that
-// makes the folder and opens the editor over it.
+// drawThemeMakeRows is the creator: a name, a starting point, and the button that makes the folder and opens the
+// editor.
 //
-// THE TEMPLATES ARE ALL THINGS THAT ALREADY SHIPPED (themecreate.go's header): a
-// blank sidecar, W9's preset compose funnel, or W8's copy-for-editing. This row
-// picks between them and performs none of them.
+// The templates all already exist (themecreate.go): a blank sidecar, the preset compose funnel, or copy-for-editing;
+// this row picks one and performs none of them.
 //
-// A CYCLER, NOT THE GALLERY'S TWO-AXIS GRID. The gallery is 21 × 14 miniatures and
-// wants a panel; a settings row is one line tall, and the axes here are the same
-// two lists in the same order, so a user who picks a pair here and then opens the
-// gallery finds themselves where they left off (openThemeGallery seeds from the
-// theme's declared preset ids). The grid stays where the space for it is.
+// A cycler, not the gallery's two-axis grid: a settings row is one line tall, and the axes are the same two lists in
+// the same order, so a pair picked here matches the gallery (openThemeGallery seeds from the theme's declared preset
+// ids).
 func (a *App) drawThemeMakeRows(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // the settings-origin shadow rule
@@ -131,9 +92,8 @@ func (a *App) drawThemeMakeRows(y, w int32) int32 {
 	name, _ := c.TextField("newthemename",
 		sdl.Rect{X: pad + themeRowLabelW, Y: y, W: themeMakeNameFieldW, H: fieldH},
 		settings.newThemeName, themeCreateFallbackName)
-	// CLAMPED AT THE SANITIZER'S OWN BOUND, here rather than at the create: themepack
-	// truncates past themepack.NameRuneCap, so a field that accepted more would show
-	// the user a name the folder is never going to have and then quietly shorten it.
+	// Clamped at the sanitizer's bound here, not at create: themepack truncates past themepack.NameRuneCap, so a longer
+	// field would show a name the folder never gets.
 	settings.newThemeName = text.Truncate(name, themeCreateNameRuneCap)
 	c.LabelClipped(pad+themeRowLabelW+themeMakeNameFieldW+themeMakeGap, y+4,
 		w-pad-themeRowLabelW-themeMakeNameFieldW-themeMakeGap-scrollBarW, themeMakeHint, ColTextDim)
@@ -171,10 +131,7 @@ func (a *App) drawThemeMakeRows(y, w int32) int32 {
 		label = themeMakeBusy
 	}
 	if c.Button(sdl.Rect{X: pad, Y: y, W: themeMakeBtnW, H: btnH}, label) && !busy {
-		// ONE CALL, and the branch inside it is the template's, not this row's
-		// (startThemeCreateFromTemplate): a draw site that chose between "mint" and
-		// "copy" itself would be a second place that has to know which templates are
-		// which.
+		// One call: the branch is the template's, not this row's (startThemeCreateFromTemplate).
 		if a.startThemeCreateFromTemplate(settings.newThemeTemplate, settings.newThemeName, settings.presetPair()) {
 			settings.newThemeName = "" // spent: the next create starts from the placeholder again
 		}
@@ -183,12 +140,8 @@ func (a *App) drawThemeMakeRows(y, w int32) int32 {
 	return y
 }
 
-// drawThemePresetAxes is the two-cycler pick for templatePreset.
-//
-// THE LIBRARY LOAD IS ONE sync.Once OVER EMBEDDED BYTES (theme.ShippedPresets), not
-// a disk read — the fragments ship inside the executable — so it is safe on a
-// frame. A failure draws a line and no cyclers rather than refusing the tab: an
-// empty axis that says why beats a control that does nothing.
+// drawThemePresetAxes is the two-cycler pick for templatePreset. theme.ShippedPresets is one sync.Once over embedded
+// bytes, not a disk read, so it is safe on a frame. A failure draws a line and no cyclers.
 func (a *App) drawThemePresetAxes(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // the settings-origin shadow rule
@@ -220,12 +173,8 @@ func (a *App) drawThemePresetAxes(y, w int32) int32 {
 	return y + themeMakeRowH
 }
 
-// drawThemeEditorOpenRow is the row that MOVED here from the Theme tab, unchanged in
-// behaviour: open what can be opened, copy what cannot.
-//
-// The two strings and the branch are themecopy.go's (themeEditorRow /
-// copyAppliedThemeForEditing) and are untouched by the move — the row is in a
-// different place, not a different row.
+// drawThemeEditorOpenRow is the row moved from the Theme tab: open what can be opened, copy what cannot. The strings
+// and the branch are themecopy.go's (themeEditorRow / copyAppliedThemeForEditing).
 func (a *App) drawThemeEditorOpenRow(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // the settings-origin shadow rule
@@ -239,9 +188,8 @@ func (a *App) drawThemeEditorOpenRow(y, w int32) int32 {
 		c.onRow("Open the theme editor", y)
 	}
 	c.Label(pad, y+4, "Theme editor:", ColText)
-	// THE BUTTON IS NEVER ABSENT (v1.90.0 W8). This row used to draw "copy it for
-	// editing first" with NO button beside it, so an AO2 theme — the state every AO2
-	// user is in on first run — got advice and no way to act on it.
+	// The button is never absent: an AO2 theme (every first-run user) must get a way to copy it for editing, not just
+	// advice.
 	edit := a.themeEditorRow()
 	c.LabelClipped(pad+themeRowLabelW, y+4, w-pad-themeRowLabelW-themeGetBtnsW-scrollBarW, edit.note, ColTextDim)
 	if c.Button(sdl.Rect{X: w - themeGetBtnW - scrollBarW, Y: y, W: themeGetBtnW, H: btnH}, edit.button) {
@@ -254,16 +202,11 @@ func (a *App) drawThemeEditorOpenRow(y, w int32) int32 {
 	return y + themeGetRowH
 }
 
-// drawThemeImportRow is the .aotheme intake, moved here from the Theme tab.
+// drawThemeImportRow is the .aotheme intake. It is authoring, not selection: the receiving half of the editor's Share
+// button. "Get themes" stayed on the Theme tab because it answers "I have none".
 //
-// IT IS AUTHORING, not selection, and that is why it moved: it is the receiving
-// half of the editor's own Share button, the two shipped as one funnel in W8, and
-// the Theme tab is about choosing among the themes you already have. "Get themes"
-// stayed behind, because that row answers "I have none" — a selection dead end, not
-// a creator flow.
-//
-// IT IS THE SAME FUNNEL as a drag (themeimport.go): the button opens the in-app
-// browser bound to purposeThemeBundle, and picking calls handleThemeBundleDrop.
+// Same funnel as a drag (themeimport.go): the button opens the in-app browser bound to purposeThemeBundle, and picking
+// calls handleThemeBundleDrop.
 func (a *App) drawThemeImportRow(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // the settings-origin shadow rule
@@ -285,19 +228,9 @@ func (a *App) drawThemeImportRow(y, w int32) int32 {
 	return y + themeGetRowH
 }
 
-// ---------------------------------------------------------------------------
-// The cross-tab hint left behind on the Theme tab
-// ---------------------------------------------------------------------------
-
-// drawThemeAuthoringHint is the pointer the Theme tab keeps where the editor and
-// import rows used to be.
-//
-// A MOVED ROW LEAVES A HOLE where the user's memory is, and the hint machinery is
-// the tool for it — the keyword fallback already draws exactly this sentence for a
-// search that resolves to another tab, so this is the same line in the same words,
-// on the surface rather than in the search results. It registers with c.onRow under
-// the label people would search for, so the gather-search finds the SIGNPOST too and
-// nobody lands on a tab that no longer answers.
+// drawThemeAuthoringHint is the pointer the Theme tab keeps where the editor and import rows used to be: the same
+// sentence the keyword fallback draws for a search resolving to another tab. It registers with c.onRow under the label
+// people would search for, so the search finds the signpost too.
 func (a *App) drawThemeAuthoringHint(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // the settings-origin shadow rule
@@ -312,26 +245,17 @@ func (a *App) drawThemeAuthoringHint(y, w int32) int32 {
 	c.LabelClipped(r.X, y+4, r.W, themeAuthoringHintText, ColAccent)
 	if c.clicked && c.hovering(r) {
 		settings.tab = tabThemeEditor
-		// The index is rebuilt on the next search: the row offsets it stores are
-		// per-tab, and a jump that left it stale would scroll a later search to a row
-		// that has moved.
+		// The index is rebuilt on the next search: stored row offsets are per-tab and a stale index would scroll to a
+		// moved row.
 		settings.indexBuilt = false
 		c.clicked = false
 	}
 	return y + themeGetRowH
 }
 
-// ---------------------------------------------------------------------------
-// The preset axes, as the settings tab sees them
-// ---------------------------------------------------------------------------
-
-// presetAxisNameCache memoizes the two dropdowns' label slices.
-//
-// KEYED ON THE LIBRARY POINTER, which is a valid identity precisely because
-// theme.ShippedPresets is immutable after load and hands back the same pointer
-// every time (presetlib.go's "IMMUTABLE AFTER LOAD" note). Without the memo the tab
-// would rebuild two 20-odd-entry string slices on every frame it is open — the
-// per-frame-allocation-in-a-loop shape the settings-text doctrine exists to stop.
+// presetAxisNameCache memoizes the two dropdowns' label slices, keyed on the library pointer: theme.ShippedPresets is
+// immutable after load and returns the same pointer every time (presetlib.go). Without it the tab would rebuild two
+// string slices every frame.
 type presetAxisNameCache struct {
 	lib             *theme.PresetLibrary
 	layouts, styles []string
@@ -359,13 +283,9 @@ func presetAxisLabels(list []*theme.Preset) []string {
 	return out
 }
 
-// presetPair is the pair the two dropdowns currently name.
-//
-// It resolves through theme.ShippedPresets rather than through the cached label
-// slices, because a NAME is not an identity — MergePresets needs the *Preset, and
-// re-deriving it from a label would be a second lookup table to keep in step with
-// the first. An unreadable library yields the empty pair, which the funnel refuses
-// with its own sentence (errThemeCreateNoPair).
+// presetPair is the pair the two dropdowns currently name. It resolves through theme.ShippedPresets, not the cached
+// label slices, because a name is not an identity: MergePresets needs the *Preset. An unreadable library yields the
+// empty pair, which the funnel refuses with errThemeCreateNoPair.
 func (s *settingsState) presetPair() theme.PresetPair {
 	lib, err := theme.ShippedPresets()
 	if err != nil || lib == nil {

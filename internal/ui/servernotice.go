@@ -4,150 +4,72 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// The server notice box: the one modal that shows a server's own words to the
-// user, verbatim and copyable, on any screen.
-//
-// WHY IT EXISTS. Four packets are a server talking directly to the person at the
-// keyboard — KK (kick), KB (ban), BD (ban with reason, which is what a lockdown
-// sends) and BB (a popup notice). AO2 puts all four in a real modal
-// (courtroom.cpp call_notice / the QMessageBox in packet_distribution.cpp). We
-// had three different fates for them instead:
-//
-//   - BB became one OOC line and a toast, so it scrolled away;
-//   - KK/KB/BD opened the disconnect dialog ONLY if a room already existed,
-//     because handleInvoluntaryDrop gates on a.screen == ScreenCourtroom;
-//   - a drop before the courtroom (the common case: the server refuses during
-//     the handshake) fell through to a single unclipped label on the lobby.
-//
-// That last one is the reported bug. A server that is locked down, or that
-// whitelists by IP, sends the instructions for getting in — a Discord invite, an
-// access code — in that string, and a lockdown message puts the code on the LAST
-// line (../Nyathena/internal/athena/lockdown_passkey.go). One label cannot show a
-// second line, so the code was structurally unreachable. Worse, LabelClipped is
-// not a safety net: it rasterizes the WHOLE string and only clips the blit, so
-// past some length the label drew nothing at all.
-//
-// WHY IT IS ON App, NOT sessionState. resetSessionState rebuilds that struct
-// wholesale (tabs.go), on connect AND on disconnect, so a removal reason stored
-// there is wiped by the very teardown that produced it — before the lobby draws.
-// fontWarnDlg is the existing App-level precedent and says the same thing.
-//
-// WHY IT BLOCKS. It joins the disconnectDlg / pendingCloseTab family (dimmed
-// backdrop, pointer fence, Esc closes), not the panelSlotTable floatWins: those
-// are deliberately non-blocking with a live courtroom behind them
-// (blockingCourtPopup, floatbox.go), and this has to work with no session at all.
-//
-// WHY NO SCROLLBAR. The body is capped at serverNoticeMaxRows and says so when it
-// cuts. A scroll region here would need WheelIn, which is single-consumer, and a
-// clipped click region, which needs pushClip rather than a raw SetClipRect — both
-// avoidable, because Copy already hands over the entire uncapped message and that
-// is what someone with a code to type actually wants.
+// The server notice box shows a server's own words verbatim and copyable, on any screen: KK, KB, BD and BB.
+// AO2 uses a modal too (courtroom.cpp call_notice, the QMessageBox in packet_distribution.cpp).
+// On App, not sessionState: resetSessionState rebuilds that on disconnect, wiping the reason before the lobby draws.
+// Blocking, unlike the panelSlotTable floatWins, because it must work with no session at all.
+// No scrollbar: the body is capped, says so, and Copy hands over the whole message.
+// A lockdown's code is on the last line.
 
-// serverNoticeKind is what the notice MEANS, which is the only thing the box
-// varies on. It deliberately does not encode which packet arrived: the box is not
-// a protocol consumer and must stay drawable from a test with no session.
+// serverNoticeKind is what the notice means, not which packet arrived, so a test can draw it with no session.
 type serverNoticeKind int
 
 const (
-	// serverNoticeNone is the zero value: closed.
 	serverNoticeNone serverNoticeKind = iota
-	// serverNoticeRemoved means the session is already gone (kick, ban, lockdown,
-	// a refused dial). Dismissing it cannot restore anything, so the caller has
-	// already torn down and routed; the box only stops showing.
+	// serverNoticeRemoved: the session is gone and the caller already tore down; the box only stops showing.
 	serverNoticeRemoved
-	// serverNoticeInfo means the connection is FINE and the server just said
-	// something (BB). Dismissing it must leave the session completely alone.
+	// serverNoticeInfo: the connection is fine (BB), and dismissing must leave the session alone.
 	serverNoticeInfo
 )
 
-// Modal geometry. All named per rule §17.9; the arithmetic below is what keeps
-// the box inside the smallest window we allow (config.MinWindowH) without a
-// scroll region.
+// Modal geometry; the arithmetic keeps the box inside config.MinWindowH without a scroll region.
 const (
-	// serverNoticeW matches the fonts modal's width. Wide enough that a URL in a
-	// whitelist notice usually survives on one row, which matters because a
-	// wrapped link is a link people mistype.
+	// serverNoticeW is wide enough that a whitelist URL usually stays on one row, since a wrapped link gets mistyped.
 	serverNoticeW = 560
-	// serverNoticeMinH stops a one-line notice from rendering as a tooltip-sized
-	// box that reads as dismissable chrome. This IS the message.
+	// serverNoticeMinH stops a one-line notice looking like a dismissable tooltip.
 	serverNoticeMinH = 180
-	// serverNoticeMaxH is the tallest we grow, chosen to leave the window edges
-	// visible at the minimum window height so the box never looks like a screen.
+	// serverNoticeMaxH leaves the window edges visible at the minimum height.
 	serverNoticeMaxH = 420
-	// serverNoticeMargin is the least gap kept to the window edge at any size.
+	// serverNoticeMargin is the least gap to the window edge.
 	serverNoticeMargin = 24
-	// serverNoticeLineH is one wrapped body row, matching drawFontWarnDialog's
-	// step so the two modals have the same rhythm.
+	// serverNoticeLineH is one wrapped body row, matching drawFontWarnDialog's step.
 	serverNoticeLineH = 20
-	// serverNoticeMaxRows caps the body. Past this the box says it truncated and
-	// points at Copy.
+	// serverNoticeMaxRows caps the body; past this the box says it truncated and points at Copy.
 	serverNoticeMaxRows = 14
-	// serverNoticeHeadH is the heading band: the same m.Y+48 the sibling modals
-	// use for their first body row.
+	// serverNoticeHeadH is the heading band, the same as the sibling modals' first body row.
 	serverNoticeHeadH = 48
-	// serverNoticeMetaH is the attribution row that names the server. With more
-	// than one tab open, "who said this" is half the message.
+	// serverNoticeMetaH is the row naming the server; with several tabs open, who said it matters.
 	serverNoticeMetaH = 22
 	// serverNoticeBtnGap keeps the last body row off the buttons.
 	serverNoticeBtnGap = 10
-	// serverNoticeBtnW is the width of both buttons. Named because the layout gates
-	// have to speak in it: "a click 63 px from the window's left edge lands on Copy"
-	// is only meaningful as pad + serverNoticeBtnW/2, and the X-clamp gate turns on
-	// that point falling inside the button when the panel is pinned to 0 and outside
-	// it when the panel is allowed to centre off-screen.
+	// serverNoticeBtnW is the width of both buttons.
 	serverNoticeBtnW = 110
-	// serverNoticeTitleRuneCap bounds the HEADING, which draws through c.Heading
-	// and is therefore unclipped. The title is client-authored by contract; this
-	// is the structural guarantee that a caller who ignores that contract gets a
-	// clamped heading rather than a panel-wide overflow.
+	// serverNoticeTitleRuneCap bounds the heading: c.Heading is unclipped, so a long title would overflow the panel.
 	serverNoticeTitleRuneCap = 96
-	// serverNoticeTruncMark is the visible cut marker. wrapToWidthMeasured
-	// truncates SILENTLY, and silence is the bug: the tail of these payloads is
-	// the part you need.
+	// serverNoticeTruncMark marks the cut, since wrapToWidthMeasured truncates silently.
 	serverNoticeTruncMark = "… more (use Copy for the whole message)"
-	// serverNoticeNoReason stands in when the server closed us out and said
-	// nothing, so the box is never an empty panel with a button.
+	// serverNoticeNoReason stands in when the server gave none, so the box is never empty.
 	serverNoticeNoReason = "The server did not give a reason."
-	// serverNoticeInfoTitle heads a BB popup notice. Deliberately neutral: BB is
-	// how servers send rules, a MOTD and a whitelist procedure alike, and we have
-	// no way to tell which, so the box must not editorialise.
+	// serverNoticeInfoTitle is neutral: BB carries rules, a MOTD or a whitelist procedure alike.
 	serverNoticeInfoTitle = "Notice from the server"
 )
 
-// serverNoticeDialog is the modal's state. The zero value is closed.
 type serverNoticeDialog struct {
 	open bool
 	kind serverNoticeKind
-	// title is the client-authored headline ("The server banned you."). Clamped at
-	// open time to serverNoticeTitleRuneCap.
+	// title is the client-authored headline, clamped at open to serverNoticeTitleRuneCap.
 	title string
-	// server is who said it, for the attribution row.
+	// server is the server name shown in the header.
 	server string
-	// body is the server's text EXACTLY as it will be copied — post-cap
-	// (courtroom.capServerText) but otherwise untouched, newlines and all. The
-	// draw wraps a view of this; Copy sends this.
+	// body is the server's text exactly as copied, after courtroom.capServerText; the draw wraps a view of it.
 	body string
 
-	// wrap memoizes the laid-out body; see paraWrapCache (qol.go) for why a modal
-	// that redraws every frame must not rewrap every frame.
+	// wrap memoizes the laid-out body so a modal redrawing every frame does not rewrap (paraWrapCache).
 	wrap paraWrapCache
 }
 
-// openServerNotice raises the box for one server-authored message.
-//
-// title must be CLIENT-authored and short; body is the server's text and may be
-// any length and any script. Only body is ever copied, and only body is wrapped.
-//
-// The box does NOT navigate. A serverNoticeRemoved notice arrives after the
-// caller has already torn the session down and routed to the lobby, so dismissing
-// it has nothing to undo; keeping the routing out here is what lets the whole
-// modal be driven headlessly by a test with no session, and keeps internal/ui's
-// screen machine out of the box's dependencies.
-//
-// PRECEDENCE: a removal always replaces whatever is showing, and an info notice
-// never replaces a removal. A server that spams a MOTD popup as it closes the
-// socket must not be able to bury the ban reason underneath it — that reason is
-// the only copy of the appeal instructions the user will get.
+// openServerNotice raises the box; title must be client-authored and short, and it does not navigate.
+// A removal replaces anything showing and info never replaces a removal, so a MOTD popup cannot bury a ban reason.
 func (a *App) openServerNotice(kind serverNoticeKind, title, server, body string) {
 	if kind == serverNoticeNone {
 		return
@@ -155,31 +77,23 @@ func (a *App) openServerNotice(kind serverNoticeKind, title, server, body string
 	if a.serverNoticeDlg.open && kind == serverNoticeInfo && a.serverNoticeDlg.kind == serverNoticeRemoved {
 		return
 	}
-	// Whole-struct assignment, so no field of a previous notice can survive into
-	// this one — the wrap cache included. A stale wrapped body under a new title
-	// would be a server putting words in another server's mouth.
+	// Whole-struct assignment, so no field, wrap cache included, survives from a previous notice.
 	a.serverNoticeDlg = serverNoticeDialog{
 		open: true,
 		kind: kind,
-		// Both the title and the attribution are clamped, and the attribution is the
-		// one that is NOT client-authored: it is a.serverName, which for a lobby entry
-		// came out of the master list's JSON with no per-field length of its own. It
-		// draws through LabelClipped, which rasterizes the whole string before clipping
-		// the blit — so a long enough server name reproduces the draws-nothing failure
-		// on the attribution row of the box built to end it.
+		// The attribution is not client-authored: a.serverName comes from the master list with no length limit, and
+		// LabelClipped rasterizes the whole string before clipping, so a long name draws nothing.
 		title:  clampRunes(title, serverNoticeTitleRuneCap),
 		server: clampRunes(server, serverNoticeTitleRuneCap),
 		body:   body,
 	}
 }
 
-// closeServerNotice dismisses the box and drops the cached wrap with it.
 func (a *App) closeServerNotice() {
 	a.serverNoticeDlg = serverNoticeDialog{}
 }
 
-// clampRunes cuts s to at most n runes, marking a cut. RUNES, not bytes: a
-// Cyrillic or CJK heading would lose half its characters to a byte cap.
+// clampRunes cuts s to at most n runes, marking a cut; runes because a byte cap halves Cyrillic or CJK.
 func clampRunes(s string, n int) string {
 	if len(s) <= n { // bytes >= runes, so this clears every short string without decoding
 		return s
@@ -191,9 +105,7 @@ func clampRunes(s string, n int) string {
 	return string(r[:n]) + "…"
 }
 
-// serverNoticeRows reports how many body rows fit in a window h tall. Derived
-// from the same arithmetic drawServerNotice lays out with, so the wrap budget and
-// the drawn area cannot drift apart.
+// serverNoticeRows reports how many body rows fit in a window h tall, by the same arithmetic drawServerNotice uses.
 func serverNoticeRows(h int32) int {
 	avail := int32(serverNoticeMaxH)
 	if lim := h - 2*serverNoticeMargin; lim < avail {
@@ -209,19 +121,12 @@ func serverNoticeRows(h int32) int {
 	return rows
 }
 
-// serverNoticeChromeH is every vertical pixel the panel spends on something other
-// than body rows.
+// serverNoticeChromeH is the panel's vertical pixels other than body rows.
 func serverNoticeChromeH() int32 {
 	return serverNoticeHeadH + serverNoticeMetaH + serverNoticeBtnGap + btnH + pad
 }
 
-// serverNoticeBody returns the wrapped body, whether it all fit, and rebakes the
-// cache only when the text, the width, the row budget or the font chain changed.
-//
-// Measured through chromeFaceFor — the face LabelClipped will actually draw each
-// row in — not through the bare ctx font. Measuring in a face that does not cover
-// the script and drawing in one that does is the #42 bug class, and it is not
-// hypothetical here: the reported notice is Russian.
+// serverNoticeBody returns the wrapped body and whether it all fit, rebaking only when an input changed.
 func (a *App) serverNoticeBody(width int32, rows int) ([]string, bool) {
 	d := &a.serverNoticeDlg
 	src := d.body
@@ -231,18 +136,9 @@ func (a *App) serverNoticeBody(width int32, rows int) ([]string, bool) {
 	return d.wrap.get(a.chromeWrapMeasure(), a.ctx.fontChainGen, src, width, rows, serverNoticeTruncMark)
 }
 
-// chromeWrapMeasure is the metric every modal body wrap breaks rows against: the
-// width of the row in the face LabelClipped will ACTUALLY draw it in.
-//
-// Not ctx.TextWidth. That measures the base chrome font, and chromeFaceFor may hand
-// the draw a different face entirely for non-Latin text — measuring in a face that
-// does not cover the script and drawing in one that does is the #42 bug class, and
-// it is not hypothetical here: the notice this was built for is Russian. Going
-// through chromeFaceFor also latches the off-thread fallback load (noteScript) for
-// free, so the first frame that needs Cyrillic is the frame that asks for it.
-//
-// Built ONCE and kept. A closure — or a bound method value — allocates, and this is
-// handed to a cache that is consulted on every frame a modal is open.
+// chromeWrapMeasure measures a row in the face LabelClipped draws it in, not ctx.TextWidth's base chrome font,
+// which may not cover the script. It also triggers the off-thread fallback load (noteScript).
+// Built once and kept, because a closure allocates and the wrap cache consults this every frame.
 func (a *App) chromeWrapMeasure() func(string) int32 {
 	if a.chromeMeasure == nil {
 		a.chromeMeasure = func(s string) int32 { return fontWidth(a.ctx.chromeFaceFor(s), s) }
@@ -250,9 +146,7 @@ func (a *App) chromeWrapMeasure() func(string) int32 {
 	return a.chromeMeasure
 }
 
-// drawServerNotice paints the box. Drawn at the frame tail with the rest of the
-// blocking modal family so nothing behind it can be clicked. Off the render hot
-// path — only while open.
+// drawServerNotice paints the box at the frame tail with the other blocking modals.
 func (a *App) drawServerNotice(w, h int32) {
 	if !a.serverNoticeDlg.open {
 		return
@@ -271,13 +165,8 @@ func (a *App) drawServerNotice(w, h int32) {
 	if lim := h - 2*serverNoticeMargin; mh > lim {
 		mh = lim
 	}
-	// THE FLOOR IS ABSOLUTE, and it goes after the window clamp on purpose. The window
-	// is resizable and the logical height is the physical one divided by the UI scale, so
-	// nothing guarantees the "cannot happen above config.MinWindowH" comment on
-	// serverNoticeRows: drag the window short enough (or scale up enough) and the clamp
-	// above would shrink the panel below its own chrome, putting the buttons — whose y is
-	// measured from the panel's BOTTOM — on top of the heading. Overflowing a window this
-	// small is the lesser evil, so the box keeps its shape and Esc stays the way out.
+	// The floor goes after the window clamp: the buttons measure from the bottom, so a short window or a big UI scale
+	// would land them on the heading. Overflowing is the lesser evil, and Esc stays the way out.
 	if floor := serverNoticeChromeH() + serverNoticeLineH; mh < floor {
 		mh = floor
 	}
@@ -285,11 +174,7 @@ func (a *App) drawServerNotice(w, h int32) {
 	if my < 0 {
 		my = 0 // taller than the window: keep the heading and the first rows on screen
 	}
-	// X degrades the same way, and for a sharper reason than tidiness: centring a 560 px
-	// panel in a narrower logical viewport gives a NEGATIVE x, which puts Copy — the
-	// left-anchored button, the one that exists to rescue an access code — off the left
-	// edge where no click can reach it. Pinned to 0 the left button always lands, and
-	// only the right edge of the panel spills.
+	// Centring in a narrow viewport gives negative x, putting Copy out of reach; pin to 0.
 	mx := (w - serverNoticeW) / 2
 	if mx < 0 {
 		mx = 0
@@ -298,8 +183,7 @@ func (a *App) drawServerNotice(w, h int32) {
 
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 160})
 	c.Fill(m, ColPanel)
-	// A removal is bordered in the danger ink: the one glance-level cue that this
-	// is "you are out" and not "the server has news".
+	// The danger color says "you are out", not "the server has news".
 	border := ColAccent
 	head := ColText
 	if d.kind == serverNoticeRemoved {
@@ -323,9 +207,7 @@ func (a *App) drawServerNotice(w, h int32) {
 	}
 
 	by := m.Y + mh - btnH - pad
-	// Copy sends the RAW body, not the wrapped view: the whole point is that a
-	// truncated or re-flowed access code is useless. An empty body copies nothing
-	// rather than copying our own stand-in sentence back at the user.
+	// Copy the raw body, since a re-flowed code is useless; an empty body copies nothing, not our stand-in sentence.
 	if c.Button(sdl.Rect{X: m.X + pad, Y: by, W: serverNoticeBtnW, H: btnH}, "Copy") {
 		if d.body != "" {
 			_ = sdl.SetClipboardText(d.body)

@@ -20,37 +20,25 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Scene maker (M16 [3/3]): an in-app editor over the SAME .aorec model the
-// recorder/replayer use. Build a scene from scratch or load a recording, edit
-// the ordered event stream (who speaks, emote, text, background, music), Preview
-// it through the existing replay engine, and Save a fresh .aorec. It reuses the
-// recording model + the replay renderer, so there is no second renderer and no
-// new asset path — and because it's a full-window overlay drawn only while
-// makerOpen, it costs nothing on the live render hot path.
-//
-// A scene is just a list of recEvents, and .aorec is pretty-printed JSON, so a
-// scene built here is hand-editable in any text editor too (and vice-versa).
+// Scene maker: an in-app editor over the same .aorec model the recorder/replayer use. It previews through the
+// existing replay engine and saves a fresh .aorec, so there is no second renderer or asset path. It is a full-window
+// overlay drawn only while makerOpen, so it costs nothing on the live render path.
 
 const (
-	// defaultMakerEmote is the starter sprite stem for a new line — the bare
-	// form, which the prefetch fallback chain probes as both "(a)normal" and
-	// "normal" (CLAUDE.md: AO2-Client CharLayer::load_image tries both).
+	// defaultMakerEmote is the starter sprite stem for a new line: the bare form, which the prefetch fallback chain
+	// probes as both "(a)normal" and "normal" (AO2-Client CharLayer::load_image tries both).
 	defaultMakerEmote = "normal"
-	// defaultMakerSide centres a new speaker on the witness stand, where a
-	// talking character is visible without needing a specific background slot.
+	// defaultMakerSide centres a new speaker on the witness stand.
 	defaultMakerSide = "wit"
 
 	makerListW int32 = 300 // left event-list column width
 	makerRowH  int32 = 24  // event-list row height
 
-	// makerCharSuggest caps the character-autocomplete chips. The scan stops
-	// once this many matches are found, so it stays cheap even on a 4000-char
-	// server (you never list all of them — a dropdown would be unusable there).
+	// makerCharSuggest caps the character-autocomplete chips; the scan stops once this many matches are found.
 	makerCharSuggest = 6
 )
 
-// makerSideLabels / makerSideValues map friendly position names to the AO side
-// codes the URL builder understands (urlbuilder.go positionFolder).
+// makerSideLabels / makerSideValues map friendly position names to the AO side codes (urlbuilder.go positionFolder).
 var (
 	makerSideLabels = []string{"Defense", "Prosecution", "Witness", "Judge", "Defense (hold)", "Prosecution (hold)", "Jury", "Seance"}
 	makerSideValues = []string{"def", "pro", "wit", "jud", "hld", "hlp", "jur", "sea"}
@@ -65,10 +53,8 @@ func makerSideIndex(side string) int {
 	return 2 // default: witness
 }
 
-// newMessageEvent builds a synthetic IC line. EmoteMod defaults to idle (NOT
-// preanim): a from-scratch line must not wait on a preanim asset that may not
-// exist at the origin, which would stall the preview (advisor note on the
-// replay-delay thread). The user opts into a preanim explicitly.
+// newMessageEvent builds a synthetic IC line. EmoteMod defaults to idle, not preanim: a from-scratch line must not
+// wait on a preanim asset that may not exist at the origin, which would stall the preview.
 func newMessageEvent(char, emote, text string) recEvent {
 	if strings.TrimSpace(emote) == "" {
 		emote = defaultMakerEmote
@@ -94,8 +80,7 @@ func newMusicEvent(track string) recEvent {
 	return recEvent{Kind: int(courtroom.EventMusic), Text: track}
 }
 
-// sanitizeStem turns a user-typed scene name into a safe filename stem (no path
-// separators or odd characters), so Save can never escape recordings\.
+// sanitizeStem turns a user-typed scene name into a safe filename stem so Save cannot escape recordings\.
 func sanitizeStem(s string) string {
 	s = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(s), recordingExt))
 	var b strings.Builder
@@ -114,10 +99,7 @@ func sanitizeStem(s string) string {
 	return out
 }
 
-// cloneScene copies a scene so the maker edits its own buffer: the Events slice
-// and each Message pointer are duplicated, so editing a field never reaches back
-// into a live recording or a previously loaded file (and a Preview can't mutate
-// the edit buffer).
+// cloneScene copies a scene (Events and each Message pointer) so edits and Preview never reach the original.
 func cloneScene(rec *sceneRecording) *sceneRecording {
 	if rec == nil {
 		return &sceneRecording{Version: recordingVersion}
@@ -133,8 +115,7 @@ func cloneScene(rec *sceneRecording) *sceneRecording {
 	return &out
 }
 
-// cloneEvent deep-copies one event (duplicating the Message pointer so an edit
-// to the copy never touches the original).
+// cloneEvent deep-copies one event, duplicating the Message pointer.
 func cloneEvent(e recEvent) recEvent {
 	if e.Message != nil {
 		m := *e.Message
@@ -143,14 +124,10 @@ func cloneEvent(e recEvent) recEvent {
 	return e
 }
 
-// openSceneMaker shows the maker editing a CLONE of rec (so the source is never
-// mutated in place). Recording and replay are mutually exclusive with it.
+// openSceneMaker shows the maker editing a clone of rec. Recording and replay are mutually exclusive with it.
 func (a *App) openSceneMaker(rec *sceneRecording, name string) {
-	// This runs in a Settings/picker CLICK handler (drawSettings), which is NOT
-	// recover-wrapped — so a panic here (cloneScene / ensureBgList / …) would
-	// hard-crash the app with no log, which is the reported "Edit crashes, no
-	// crash log" symptom (recoverMaker only guards the maker's own draw). Catch +
-	// log it here so the cause finally names itself and the app survives.
+	// This runs in a Settings/picker click handler that is not recover-wrapped (recoverMaker only guards the maker's
+	// own draw), so catch and log a panic here instead of crashing without a log.
 	defer func() {
 		if r := recover(); r != nil {
 			a.warnLine = a.logMakerCrash(r)
@@ -181,9 +158,7 @@ func (a *App) openSceneMaker(rec *sceneRecording, name string) {
 	a.ensureBgList() // warm the background list once so the BG picker has suggestions
 }
 
-// newScene opens the maker on a fresh one-line scene, seeded with the asset
-// origin of the connected server (if any) and the player's current character —
-// so "New scene → Preview" shows a real sprite out of the box where possible.
+// newScene opens the maker on a fresh one-line scene seeded with the connected server's origin and current character.
 func (a *App) newScene() {
 	origin := a.urls.Origin() // the connected server's asset base, "" when offline
 	bg := ""
@@ -199,8 +174,7 @@ func (a *App) newScene() {
 	a.openSceneMaker(rec, "untitled")
 }
 
-// editRecordingInMaker loads a saved .aorec into the maker for editing (the
-// Studio "Edit" entry point).
+// editRecordingInMaker loads a saved .aorec into the maker for editing.
 func (a *App) editRecordingInMaker(path string) {
 	rec, err := a.loadRecordingAny(path) // .aorec, or an AO2 .demo converted on the fly
 	if err != nil {
@@ -213,9 +187,8 @@ func (a *App) editRecordingInMaker(path string) {
 	a.openSceneMaker(rec, stem)
 }
 
-// closeSceneMaker hides the maker, frees its buffer, and tears down the preview
-// room (restoring the viewport's preanim callback to the live room). The
-// dispatch then falls back to whatever screen was underneath.
+// closeSceneMaker hides the maker, frees its buffer and tears down the preview room, restoring the viewport's
+// preanim callback to the live room.
 func (a *App) closeSceneMaker() {
 	a.makerOpen = false
 	a.makerScene = nil
@@ -230,10 +203,8 @@ func (a *App) closeSceneMaker() {
 	a.teardownMakerPreview()
 }
 
-// makerPreviewKey is the VISUAL identity of the previewed line — everything that
-// changes what the pane should draw EXCEPT the message text (so typing doesn't
-// re-trigger a rebuild on every keystroke). Compared field-by-field each frame,
-// alloc-free.
+// makerPreviewKey is the visual identity of the previewed line, everything that changes the pane except the message
+// text, so typing does not rebuild on every keystroke. Compared field-by-field, alloc-free.
 type makerPreviewKey struct {
 	bg, char, emote, side, pre string
 	emoteMod, deskMod, kind    int
@@ -241,9 +212,8 @@ type makerPreviewKey struct {
 	flip, shake, flash         bool
 }
 
-// makerPreviewKeyFor computes the preview key for the selected event: the
-// effective background (the selected BG itself, else the most recent BG before
-// it, else StartBg) plus the message's visual fields.
+// makerPreviewKeyFor computes the key for the selected event: the effective background (its own, else the most
+// recent earlier BG, else StartBg) plus the message's visual fields.
 func (a *App) makerPreviewKeyFor(sel int) makerPreviewKey {
 	rec := a.makerScene
 	e := rec.Events[sel]
@@ -268,10 +238,8 @@ func (a *App) makerPreviewKeyFor(sel int) makerPreviewKey {
 	return k
 }
 
-// ensureMakerPreview (re)builds the preview-pane room so it reflects the selected
-// line — only when the origin, selection, or the line's visual identity changed
-// (so it's idle most frames). Feeds the background context then the selected
-// message, so the pane shows that line type out and settle, like the real stage.
+// ensureMakerPreview rebuilds the preview-pane room only when the origin, selection or the line's visual identity
+// changed. It feeds the background context, then the selected message.
 func (a *App) ensureMakerPreview() {
 	if a.makerScene == nil || a.d.Manager == nil {
 		return
@@ -285,16 +253,13 @@ func (a *App) ensureMakerPreview() {
 		a.makerPreviewIdx == sel && a.makerPreviewKey == key {
 		return // unchanged — keep playing the current preview
 	}
-	// Construction IS wiring (newroom.go): preview speakers blip, skin and flash
-	// like live, and the pane starts under the author's own visual prefs — minus
-	// the three effect gates it takes back four lines down.
+	// Construction is wiring (newroom.go): preview speakers blip, skin and flash like live, under the author's own
+	// visual prefs, minus the effect gates overridden below.
 	room := a.newRoom(courtroom.NewURLBuilder(a.makerScene.Origin), nil, a.d.Audio)
 	room.Typewriter.Interval, room.TextStay = a.replayTiming()
 	room.CatchUp = false
-	// POST-CONSTRUCTION override (newroom.go): authored WYSIWYG. The pane shows
-	// the line's screenshake/flash/overlays and any recorded sprite style even
-	// when this author watches with reduce-motion, screen effects or sprite
-	// styles switched off — otherwise the preview lies about what it will export.
+	// Post-construction override (newroom.go): the pane shows screenshake/flash/overlays and recorded sprite styles
+	// even with reduce-motion, screen effects or sprite styles off, so the preview matches the export.
 	a.applyAuthoringVisualsToRoom(room)
 	if a.d.Viewport != nil {
 		a.d.Viewport.OnPreanimDone = room.NotifyPreanimDone
@@ -312,8 +277,7 @@ func (a *App) ensureMakerPreview() {
 	a.makerPreviewKey = key
 }
 
-// driveMakerPreview advances the preview-pane room each frame (build-on-change +
-// Update + viewport sync), wrapped so a bad scene/asset can't crash the maker.
+// driveMakerPreview advances the preview-pane room each frame, recovering from a bad scene or asset.
 func (a *App) driveMakerPreview(dt time.Duration) {
 	defer a.recoverMakerPreview()
 	if a.makerPickerOpen { // the picker covers the body — no pane to drive
@@ -324,9 +288,8 @@ func (a *App) driveMakerPreview(dt time.Duration) {
 		return
 	}
 	if a.d.Viewport != nil {
-		// Re-assert each frame: a full ▶ Preview (replay) rebinds this to the
-		// replay room and stopReplay points it at the live room — neither is right
-		// once we're back in the pane.
+		// Re-assert each frame: a full Preview (replay) rebinds this to the replay room and stopReplay
+		// points it at the live room.
 		a.d.Viewport.OnPreanimDone = a.makerPreviewRoom.NotifyPreanimDone
 		a.d.Viewport.OnFrameShown = a.makerPreviewRoom.NotifyFrameShown // #17: same rebind for frame effects
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
@@ -338,8 +301,7 @@ func (a *App) driveMakerPreview(dt time.Duration) {
 	}
 }
 
-// recoverMakerPreview turns a panic in the preview drive/render into a clean
-// teardown + debug line, never an app crash (the pane is optional).
+// recoverMakerPreview turns a panic in the preview drive/render into a clean teardown and debug line.
 func (a *App) recoverMakerPreview() {
 	if r := recover(); r != nil {
 		a.pushDebug("maker preview panic: " + fmt.Sprint(r))
@@ -347,10 +309,8 @@ func (a *App) recoverMakerPreview() {
 	}
 }
 
-// recoverMaker turns a panic anywhere in the maker DRAW (list / editor / actions —
-// the parts the preview's own recover doesn't cover) into a debug line + a clean
-// close, never an app crash. It also SURFACES the cause: the panic value lands in
-// the debug overlay so a hard-to-reproduce edit crash names itself.
+// recoverMaker turns a panic in the maker draw (list / editor / actions, which the preview's recover does not
+// cover) into a debug line and a clean close.
 func (a *App) recoverMaker() {
 	if r := recover(); r != nil {
 		a.warnLine = a.logMakerCrash(r)
@@ -359,13 +319,8 @@ func (a *App) recoverMaker() {
 	}
 }
 
-// logMakerCrash records a recovered maker panic: it pushes a debug line and
-// writes the panic + full stack to recordings\scene-maker-crash.log so the exact
-// site is pinpointed (a hard-to-reproduce crash names itself). One-shot synchronous
-// write on the exceptional recover path (not the steady render path). Returns the
-// toast string the caller should show. Shared by the draw recover AND the
-// open-from-Settings recover (the crash that produced no log was in the latter,
-// unrecovered, path).
+// logMakerCrash records a recovered maker panic: a debug line plus the panic and stack in
+// recordings\scene-maker-crash.log (synchronous, on the exceptional path). Returns the toast string to show.
 func (a *App) logMakerCrash(r any) string {
 	msg := fmt.Sprint(r)
 	a.pushDebug("scene maker panic: " + msg)
@@ -373,10 +328,8 @@ func (a *App) logMakerCrash(r any) string {
 	return "Scene Maker error: " + msg + " — details saved to recordings\\scene-maker-crash.log"
 }
 
-// writeCrashLog best-effort writes a panic + full stack to
-// recordings\scene-maker-crash.log. It touches only os/debug, so it's safe to
-// call from ANY goroutine (the background bg-list fetch can't recover up the main
-// stack, so it logs here directly).
+// writeCrashLog best-effort writes a panic and stack to recordings\scene-maker-crash.log. It touches only
+// os/debug, so it is safe from any goroutine (the background bg-list fetch logs here directly).
 func writeCrashLog(header string, r any) {
 	dir := recordingsDir()
 	if dir == "" {
@@ -389,8 +342,7 @@ func writeCrashLog(header string, r any) {
 		[]byte(header+fmt.Sprint(r)+"\n\n"+string(debug.Stack())), 0o644)
 }
 
-// drawMakerPreviewPane renders the selected line into a 4:3 stage — the WYSIWYG
-// "studio" view, so you see your scene as you build it.
+// drawMakerPreviewPane renders the selected line into a 4:3 stage, the WYSIWYG view.
 func (a *App) drawMakerPreviewPane(x, y, w, h int32) {
 	defer a.recoverMakerPreview()
 	c := a.ctx
@@ -416,8 +368,7 @@ func (a *App) drawMakerPreviewPane(x, y, w, h int32) {
 	}
 }
 
-// teardownMakerPreview disposes the preview-pane room and restores the
-// viewport's one-shot preanim callback to the live room (or clears it).
+// teardownMakerPreview disposes the preview-pane room and restores the viewport's preanim callback.
 func (a *App) teardownMakerPreview() {
 	a.makerPreviewRoom = nil
 	a.makerPreviewOrig = ""
@@ -433,8 +384,7 @@ func (a *App) teardownMakerPreview() {
 	}
 }
 
-// makerInsert adds an event just after the selection (bounded by the recording
-// cap) and selects it.
+// makerInsert adds an event just after the selection (bounded by the recording cap) and selects it.
 func (a *App) makerInsert(ev recEvent) {
 	if a.makerScene == nil {
 		return
@@ -455,8 +405,7 @@ func (a *App) makerInsert(ev recEvent) {
 	a.makerSel = at
 }
 
-// makerDuplicateSel clones the selected event right after it (the fastest way to
-// build a back-and-forth: dup, then tweak the copy).
+// makerDuplicateSel clones the selected event right after it.
 func (a *App) makerDuplicateSel() {
 	if a.makerScene == nil {
 		return
@@ -468,11 +417,8 @@ func (a *App) makerDuplicateSel() {
 	a.makerInsert(cloneEvent(a.makerScene.Events[i]))
 }
 
-// makerNewLineSeed builds the event a fresh "+ Line" inserts. It INHERITS the
-// speaker of the line you're inserting after — char/emote/position/colour/flip/
-// desk — so a conversation doesn't make you retype the character every line; you
-// just edit the text (and swap the character when the speaker changes). Falls
-// back to your current character for the very first line.
+// makerNewLineSeed builds the event a fresh "+ Line" inserts. It inherits the speaker of the line it follows
+// (char/emote/position/colour/flip/desk); the first line falls back to your current character.
 func (a *App) makerNewLineSeed() recEvent {
 	if a.makerScene != nil {
 		i := a.makerSel
@@ -493,9 +439,7 @@ func (a *App) makerNewLineSeed() recEvent {
 	return newMessageEvent(a.activeCharName(), defaultMakerEmote, "")
 }
 
-// makerPreviewFrom previews the scene starting at idx — so you can iterate on a
-// late line without watching the whole thing. It carries the most recent
-// background before idx so the partial replay isn't blank.
+// makerPreviewFrom previews the scene from idx, carrying the most recent earlier background so it is not blank.
 func (a *App) makerPreviewFrom(idx int) {
 	if a.makerScene == nil || idx < 0 || idx >= len(a.makerScene.Events) {
 		return
@@ -511,16 +455,13 @@ func (a *App) makerPreviewFrom(idx int) {
 	a.startReplay(sub, a.makerName+" (from line "+strconv.Itoa(idx+1)+")")
 }
 
-// trimActive reports whether a crop In or Out point is set (so the export /
-// preview should use a sub-range, not the whole scene).
+// trimActive reports whether a crop In or Out point is set.
 func (a *App) trimActive() bool {
 	return a.makerTrimStart >= 0 || a.makerTrimEnd >= 0
 }
 
-// trimRange resolves the In/Out points to a concrete, in-bounds [start, end]
-// (inclusive) over the current events: an unset/out-of-range end means "to the
-// end", and an inverted range (after deletes/reorders) degrades to the whole
-// scene rather than producing an empty export.
+// trimRange resolves the In/Out points to a concrete in-bounds inclusive [start, end]: an unset or out-of-range
+// end means "to the end", and an inverted range degrades to the whole scene.
 func (a *App) trimRange() (int, int) {
 	n := 0
 	if a.makerScene != nil {
@@ -542,8 +483,7 @@ func (a *App) trimRange() (int, int) {
 	return s, e
 }
 
-// inTrim reports whether event i is inside the crop range (always true when no
-// crop is set) — used to dim the excluded rows in the list.
+// inTrim reports whether event i is inside the crop range (always true when no crop is set).
 func (a *App) inTrim(i int) bool {
 	if !a.trimActive() {
 		return true
@@ -552,11 +492,8 @@ func (a *App) inTrim(i int) bool {
 	return i >= s && i <= e
 }
 
-// trimmedScene returns a clone of the maker scene clipped to the crop range (or
-// the whole scene when no crop is set). The clone is always fresh so a Preview /
-// export can't mutate the edit buffer; StartBg is carried forward to the
-// background in effect at the crop start so a mid-scene crop isn't blank (same as
-// "Preview from this line"). Music before the crop is not carried (visual crop).
+// trimmedScene returns a fresh clone of the scene clipped to the crop range, so Preview/export cannot mutate the
+// edit buffer. StartBg carries the background in effect at the crop start; music before the crop is not carried.
 func (a *App) trimmedScene() *sceneRecording {
 	sub := cloneScene(a.makerScene)
 	if !a.trimActive() || len(sub.Events) == 0 {
@@ -591,9 +528,7 @@ func (a *App) makerDeleteSel() {
 	}
 }
 
-// makerMoveSel moves the selection one slot in dir (the ▲/▼ buttons), delegating
-// to the shared reorder path so the crop endpoints follow the move too. An
-// out-of-range neighbour is a no-op (makerMoveEvent bounds-checks dst).
+// makerMoveSel moves the selection one place in dir via the shared reorder path (makerMoveEvent bounds-checks dst).
 func (a *App) makerMoveSel(dir int) {
 	if a.makerScene == nil {
 		return
@@ -601,10 +536,8 @@ func (a *App) makerMoveSel(dir int) {
 	a.makerMoveEvent(a.makerSel, a.makerSel+dir)
 }
 
-// reindexAfterMove maps an index p to where it lands after the event at src is
-// moved to dst (every other event keeping its relative order). Pure helper so the
-// reorder can carry the selection AND the crop In/Out with their events, not their
-// old slots. Tested directly.
+// reindexAfterMove maps index p to where it lands after the event at src moves to dst, so the selection and the
+// crop In/Out follow their events.
 func reindexAfterMove(p, src, dst int) int {
 	switch {
 	case p == src:
@@ -618,10 +551,8 @@ func reindexAfterMove(p, src, dst int) int {
 	}
 }
 
-// makerMoveEvent moves the event at src to index dst within the scene, preserving
-// every other event's order, and reindexes the selection + crop In/Out so they
-// keep pointing at the SAME events. The single reorder path: the ▲/▼ buttons and
-// the timeline drag both go through it.
+// makerMoveEvent moves the event at src to dst, reindexing the selection and crop In/Out so they keep pointing at
+// the same events. The single reorder path for the buttons and the timeline drag.
 func (a *App) makerMoveEvent(src, dst int) {
 	if a.makerScene == nil {
 		return
@@ -647,9 +578,7 @@ func (a *App) makerMoveEvent(src, dst int) {
 	}
 }
 
-// makerPreview plays the scene through the replay engine on a copy, so playback
-// can't mutate the edit buffer; on ■ Stop the maker (still makerOpen) reappears
-// with the edit intact.
+// makerPreview plays the scene through the replay engine on a copy; on Stop the maker reappears with the edit intact.
 func (a *App) makerPreview() {
 	if a.makerScene == nil || len(a.makerScene.Events) == 0 {
 		a.warnLine = "Nothing to preview yet — add a line first."
@@ -664,9 +593,8 @@ func (a *App) makerPreview() {
 	a.startReplay(a.trimmedScene(), name) // honours the crop range
 }
 
-// makerSave writes the scene as a NEW timestamped .aorec — never overwriting the
-// file you loaded (the user's recordings aren't ours to clobber). The write is
-// off the render thread (saveSceneRecording, §17.2).
+// makerSave writes the scene as a new timestamped .aorec, never overwriting the loaded file. The write is off the
+// render thread (saveSceneRecording).
 func (a *App) makerSave() {
 	if a.makerScene == nil || len(a.makerScene.Events) == 0 {
 		a.warnLine = "Nothing to save yet — add a line first."
@@ -688,10 +616,8 @@ func (a *App) makerSave() {
 	a.warnAt = time.Now()
 }
 
-// exportSceneArchive bundles the scene's assets into a self-contained folder so
-// the .aorec keeps its visuals when the origin CDN dies. It downloads through the
-// live Manager (the same one streaming the session), so it must run connected to
-// the origin — off the UI thread, since it fetches many assets.
+// exportSceneArchive bundles the scene's assets into a self-contained folder so the .aorec keeps its visuals when
+// the origin dies. It downloads through the live Manager, so it must run connected and off the UI thread.
 func (a *App) exportSceneArchive(scene *sceneRecording, name string) {
 	if a.makerExporting {
 		return
@@ -701,10 +627,8 @@ func (a *App) exportSceneArchive(scene *sceneRecording, name string) {
 		a.warnAt = time.Now()
 		return
 	}
-	// A bundle is a file the user hands to someone else, so bundling art that
-	// exists only in their own folders needs saying out loud FIRST. Counting is a
-	// pure index lookup over the refs the export would resolve — no reads, no
-	// fetches — so asking costs nothing when there is nothing to ask about.
+	// A bundle is handed to someone else, so bundling art that exists only in the user's own folders must be said
+	// first. Counting is a pure index lookup (no reads or fetches), so asking is free when there is nothing to ask.
 	if n := a.packContribution(scene); n > 0 && !a.makerExportPackOK {
 		a.makerExportPack = n
 		a.makerExportScene, a.makerExportName = scene, name
@@ -724,9 +648,8 @@ func (a *App) exportSceneArchive(scene *sceneRecording, name string) {
 	go func() { ch <- runArchiveExport(mgr, snap, stem) }()
 }
 
-// runArchiveExport (off-thread) resolves+writes every asset the scene needs into
-// recordings\<stem>\ and drops a bundled .aorec beside them. Returns a status
-// line for the UI.
+// runArchiveExport (off-thread) writes every asset the scene needs into recordings\<stem>\ plus a bundled
+// .aorec, and returns a status line for the UI.
 func runArchiveExport(mgr *assets.Manager, scene *sceneRecording, stem string) string {
 	dir := recordingsDir()
 	if dir == "" {
@@ -755,8 +678,7 @@ func runArchiveExport(mgr *assets.Manager, scene *sceneRecording, stem string) s
 		stem, res.Files, float64(res.Bytes)/(1024*1024))
 }
 
-// pollMakerExport delivers the archive-export result back to the UI (called each
-// frame from Update).
+// pollMakerExport delivers the archive-export result back to the UI (called each frame from Update).
 func (a *App) pollMakerExport() {
 	if !a.makerExporting || a.makerExportCh == nil {
 		return
@@ -770,12 +692,9 @@ func (a *App) pollMakerExport() {
 	}
 }
 
-// eventSummary returns a short tag + one-line description for the event list.
-//
-// It is a DISPLAY string, so the zero-width sidechannel comes off, the same rule
-// icMessageBody follows. The event itself keeps its literal Message: makerSave and
-// makerExportDemo serialise that field verbatim, because a replay has to re-decode
-// the very same marker to reproduce the sprite style it was played with.
+// eventSummary returns a short tag and one-line description for the event list. It is a display string, so the
+// zero-width marker comes off (as icMessageBody does); the event keeps its literal Message, which replay needs to
+// re-decode the sprite style.
 func eventSummary(e recEvent) (tag, text string) {
 	switch courtroom.EventKind(e.Kind) {
 	case courtroom.EventMessage:
@@ -797,9 +716,8 @@ func eventSummary(e recEvent) (tag, text string) {
 	return tag, text
 }
 
-// drawSceneMaker paints the full-window editor overlay (dispatched instead of a
-// screen while makerOpen, so it owns input). Left: the event list + add/reorder/
-// delete. Right: the per-event editor. Top: name, origin, Preview / Save / New.
+// drawSceneMaker paints the full-window editor overlay (dispatched instead of a screen while makerOpen, so it
+// owns input): event list on the left, per-event editor on the right, name/origin/actions on top.
 func (a *App) drawSceneMaker(winW, winH int32) {
 	defer a.recoverMaker() // a draw panic closes the maker + names itself, never kills the app
 	c := a.ctx
@@ -807,14 +725,12 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 	if a.makerScene == nil { // defensive: never draw an open maker with no scene
 		a.newScene()
 	}
-	// Mouse-press edge for the timeline crop-handle grab (computed once per frame
-	// so a handle is grabbed on press, not when a drag from elsewhere drifts in).
+	// Mouse-press edge for the timeline crop-handle grab, computed once per frame so a drag from elsewhere cannot grab.
 	press := c.mouseDown && !a.makerPrevDown
 	a.makerPrevDown = c.mouseDown
 
-	// The maker is a full-window overlay: menuBarShows() is false for it, so the
-	// band below is just the server-tab strip's — which still paints over the maker
-	// (app.go draws it after the screen dispatch). Was a bare tabBarH+8 (#14).
+	// menuBarShows() is false for the maker, so the band below is just the server-tab strip's, which paints over the
+	// maker (app.go draws it after the screen dispatch).
 	y := a.topChromeH() + int32(8)
 	c.Label(pad, y, "🎬 Scene Maker — build or edit a scene, then Preview / Save", ColText)
 	if c.Button(sdl.Rect{X: winW - pad - 92, Y: y - 4, W: 92, H: btnH}, "✖ Close") {
@@ -911,8 +827,7 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 	a.drawMakerList(pad, bodyY, makerListW, bodyH)
 	edX := pad + makerListW + 16
 	edRight := winW - pad
-	// Far-right live preview pane, when the window is wide enough to show it
-	// without crushing the editor (keep >= makerEditorMinW for the fields).
+	// Far-right live preview pane, when the window is wide enough to keep makerEditorMinW for the fields.
 	const makerPaneW, makerEditorMinW = 380, 320
 	if winW-edX-16-makerPaneW >= makerEditorMinW {
 		paneX := winW - pad - makerPaneW
@@ -923,11 +838,8 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 	a.drawMakerTimeline(pad, tlY, winW-2*pad, press)
 }
 
-// drawMakerOpenPicker lists saved recordings to load straight into the maker
-// (the "import existing recordings to edit" ask) — no trip out to Settings.
-// drawMakerExportPanel is the in-maker "⚙ Export options" body: the shared export
-// controls (size / fps / quality / loop / speed) plus guidance. The 🎞 GIF / 🎬
-// WebP buttons in the actions row run the export with these settings.
+// drawMakerOpenPicker lists saved recordings to load straight into the maker.
+// drawMakerExportPanel is the in-maker export options body: the shared export controls plus guidance.
 func (a *App) drawMakerExportPanel(x, y int32) {
 	c := a.ctx
 	c.Label(x, y, "⚙ Export options — apply to 🎞 GIF / 🎬 WebP (buttons above)", ColAccent)
@@ -972,8 +884,7 @@ func (a *App) drawMakerOpenPicker(x, y, w, h int32) {
 	}
 }
 
-// drawMakerList renders the scrollable event list and its add/reorder/delete
-// toolbar.
+// drawMakerList renders the scrollable event list and its add/reorder/delete toolbar.
 func (a *App) drawMakerList(x, y, w, h int32) {
 	c := a.ctx
 	evs := a.makerScene.Events
@@ -1054,8 +965,7 @@ func (a *App) drawMakerList(x, y, w, h int32) {
 	if c.Button(sdl.Rect{X: x, Y: ty, W: 184, H: btnH}, "▶ Preview from this line") {
 		a.makerPreviewFrom(a.makerSel)
 	}
-	// Crop / trim: set In/Out around the funny moment; Preview + Export use the
-	// range, and the excluded lines dim above (delete with ✖ Del to cut for good).
+	// Crop / trim: set In/Out around a span; Preview and Export use the range and excluded lines dim.
 	ty += btnH + 6
 	if c.Button(sdl.Rect{X: x, Y: ty, W: 76, H: btnH}, "⏮ Set In") {
 		a.makerTrimStart = a.makerSel
@@ -1083,12 +993,8 @@ func (a *App) drawMakerList(x, y, w, h int32) {
 	}
 }
 
-// drawCharSuggestions shows up to makerCharSuggest server characters whose name
-// contains the typed text, as click-to-fill chips under the Character field —
-// the searchable picker (a flat dropdown can't list a 4000-char server). Hidden
-// when offline or when the field is empty. Returns the new y (== y when hidden).
-// The scan stops after makerCharSuggest hits and uses an alloc-free fold match,
-// so it costs almost nothing even with the field open on a huge roster.
+// drawCharSuggestions shows up to makerCharSuggest server characters whose name contains the typed text as
+// click-to-fill chips. Hidden when offline or empty. Returns the new y (== y when hidden). Alloc-free fold match.
 func (a *App) drawCharSuggestions(x, y, leftX, availW int32, m *protocol.ChatMessage) int32 {
 	typed := strings.TrimSpace(m.CharName)
 	if a.sess == nil || typed == "" {
@@ -1109,10 +1015,8 @@ func (a *App) drawCharSuggestions(x, y, leftX, availW int32, m *protocol.ChatMes
 	return a.drawSuggestionChips(x, y, leftX, availW, buf[:n], &m.CharName)
 }
 
-// drawBgSuggestions is drawCharSuggestions for backgrounds: click-to-fill chips
-// from the server's discovered background list (a.bgPick.server, the same names
-// the background picker shows), so a BG line isn't a guess. Free-text stays for
-// names a host's autoindex doesn't list.
+// drawBgSuggestions is drawCharSuggestions for backgrounds, from the server's discovered list (a.bgPick.server).
+// Free text stays for names a host's autoindex does not list.
 func (a *App) drawBgSuggestions(x, y, leftX, availW int32, target *string) int32 {
 	typed := strings.TrimSpace(*target)
 	if typed == "" || len(a.bgPick.server) == 0 {
@@ -1133,9 +1037,8 @@ func (a *App) drawBgSuggestions(x, y, leftX, availW int32, target *string) int32
 	return a.drawSuggestionChips(x, y, leftX, availW, buf[:n], target)
 }
 
-// drawSuggestionChips renders up to makerCharSuggest click-to-fill chips (wrapped
-// rows), writing the clicked name into *target. Shared by the character +
-// background autocompletes. Returns the y below the chips (== y when none).
+// drawSuggestionChips renders up to makerCharSuggest click-to-fill chips, writing the clicked name into *target.
+// Returns the y below the chips (== y when none).
 func (a *App) drawSuggestionChips(x, y, leftX, availW int32, names []string, target *string) int32 {
 	if len(names) == 0 {
 		return y
@@ -1160,9 +1063,8 @@ func (a *App) drawSuggestionChips(x, y, leftX, availW int32, names []string, tar
 	return cy + btnH + 6
 }
 
-// containsFold reports whether s contains sub, ASCII-case-insensitively, WITHOUT
-// allocating (strings.ToLower would alloc per name — this runs over the whole
-// server char list while the autocomplete is open).
+// containsFold reports whether s contains sub, ASCII-case-insensitively, without allocating (it runs over the
+// whole char list while the autocomplete is open).
 func containsFold(s, sub string) bool {
 	if sub == "" {
 		return true
@@ -1189,11 +1091,9 @@ func lowerASCII(b byte) byte {
 	return b
 }
 
-// drawMakerEditor renders the fields for the selected event (message / bg /
-// music). Edits write straight back into the cloned scene buffer.
-// makerOffsetSlider draws a −100..100 % slider for a sprite offset at column fx,
-// with a numeric readout, returning the new value (drag; 0 = centred). The kit
-// slider is 0..max, so the value is biased by +100 and unbiased on the way out.
+// drawMakerEditor renders the fields for the selected event, writing edits straight into the cloned scene buffer.
+// makerOffsetSlider draws a -100..100 % sprite-offset slider at column fx with a numeric readout (0 = centred).
+// The kit slider is 0..max, so the value is biased by +100 and unbiased on the way out.
 func makerOffsetSlider(c *Ctx, id string, fx, y int32, v int) int {
 	track := sdl.Rect{X: fx, Y: y + 6, W: 150, H: 14}
 	nv := int(c.Slider(id, track, int32(v+100), 200)) - 100
@@ -1254,9 +1154,7 @@ func (a *App) drawMakerEditor(x, y, w int32) {
 			m.Flip = next
 		}
 		y += 26
-		// Desk: with it on, the character stands behind the desk (grounded, the
-		// normal AO look). Off shows the whole body floating on the background —
-		// which reads as "zoomed in / clipping" with no desk to anchor the feet.
+		// Desk: on, the character stands behind the desk; off, the whole body floats on the background.
 		showDesk := m.DeskMod != protocol.DeskHide
 		if next := c.Checkbox(x, y, "Show the desk (character stands behind it — off = full body on the background)", showDesk); next != showDesk {
 			if next {
@@ -1281,8 +1179,7 @@ func (a *App) drawMakerEditor(x, y, w int32) {
 			m.PreEmote, _ = c.TextField("mk_pre", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, m.PreEmote, "pre-animation stem, e.g. (a)point")
 			y += 32
 		}
-		// Effects — these render in the live preview AND the GIF/WebP export
-		// (the export ignores the live reduce-motion pref so authored shakes show).
+		// Effects render in the live preview and the GIF/WebP export (the export ignores the live reduce-motion pref).
 		shakeLabel := "Screenshake"
 		if pre {
 			shakeLabel = "Screenshake (only without a pre-anim)" // AO fires shake on idle/zoom only
@@ -1301,7 +1198,7 @@ func (a *App) drawMakerEditor(x, y, w int32) {
 		c.Label(x, y+5, "Move Y:", ColText)
 		m.SelfOffsetY = makerOffsetSlider(c, "mk_offy", fx, y, m.SelfOffsetY)
 		y += 30
-		// Sound effect — plays in Preview / a recording, but a GIF/WebP has no audio.
+		// Sound effect: plays in Preview / a recording; a GIF/WebP has no audio.
 		c.Label(x, y+5, "Sound FX:", ColText)
 		m.SFXName, _ = c.TextField("mk_sfx", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, m.SFXName, "sfx name — plays in replay, silent in the GIF")
 		y += 34
@@ -1326,10 +1223,8 @@ func (a *App) drawMakerEditor(x, y, w int32) {
 	}
 }
 
-// packContribution counts how many of the scene's assets would be bundled from
-// the user's OWN local folders rather than from the server. A pure index lookup
-// per ref — no reads, no fetches — so it is cheap enough to run before every
-// export just to decide whether a warning is warranted.
+// packContribution counts how many of the scene's assets would be bundled from the user's own local folders
+// rather than the server (a pure index lookup, no reads or fetches).
 func (a *App) packContribution(scene *sceneRecording) int {
 	if a.d.Manager == nil || scene == nil || a.d.Manager.MountLayer() == nil {
 		return 0
@@ -1355,13 +1250,8 @@ func (a *App) packContribution(scene *sceneRecording) int {
 	return n
 }
 
-// drawExportPackConfirm asks before a bundle carries the user's private art.
-//
-// It states the consequence rather than the mechanism: the point is not that
-// files are copied, it is that a file they are about to hand to someone else
-// will contain art only they have. Declining exports NOTHING — a partial,
-// server-only bundle would silently produce a recording that plays wrong for the
-// recipient, which is worse than not exporting.
+// drawExportPackConfirm asks before a bundle carries the user's private art. Declining exports nothing: a partial,
+// server-only bundle would play wrong for the recipient.
 func (a *App) drawExportPackConfirm(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 160})

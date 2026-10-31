@@ -1,11 +1,7 @@
 package ui
 
-// Perf HUD (F3, any screen): live frame-time graph plus the 1 Hz
-// profiler's numbers — heap vs the 256 MiB budget, GC pause p99, cache
-// hit rate, network probes, cached 404s. The sampler already existed
-// (internal/metrics, --debug logged it); this renders it. Diagnostics
-// path: per-frame allocations here are acceptable, same policy as the
-// debug overlay.
+// Perf HUD (F3, any screen): a live frame-time graph plus the 1 Hz sampler's numbers (heap, GC pause p99, cache hit
+// rate, network probes, cached 404s). It is diagnostics, so per-frame allocations here are acceptable.
 
 import (
 	"fmt"
@@ -19,12 +15,10 @@ const (
 	perfHUDFrames = 120
 	// perfHUDBarW is one frame's bar width in the graph.
 	perfHUDBarW = 2
-	// perfHUDGraphH is the graph height; perfHUDScaleMs is the dt that
-	// reaches the top (33 ms ≈ a 30 fps frame — anything taller clips).
+	// perfHUDGraphH is the graph height; perfHUDScaleMs is the dt that reaches the top, and anything taller clips.
 	perfHUDGraphH  = 48
 	perfHUDScaleMs = 33.0
-	// perfBudgetBytes mirrors main's GOMEMLIMIT budget (spec §13): the
-	// HUD shows heap pressure against it.
+	// perfBudgetBytes mirrors main's GOMEMLIMIT; the HUD shows heap pressure against it.
 	perfBudgetBytes = 700 << 20
 	// frameBudgetMs is the 60 fps line drawn across the graph.
 	frameBudgetMs = 16.7
@@ -45,8 +39,7 @@ func (a *App) drawPerfHUD(w, h int32) {
 	c.Fill(panel, sdl.Color{R: 0, G: 0, B: 0, A: 200})
 	c.Border(panel, ColPanelHi)
 
-	// Frame-time graph: oldest → newest left to right; green under the
-	// 60 fps budget, amber to 33 ms, red above.
+	// Frame-time graph, oldest to newest left to right: green under the 60 fps budget, amber to 33 ms, red above.
 	var sum, worst float32
 	for i := 0; i < perfHUDFrames; i++ {
 		dt := a.frameDts[(a.frameDtIdx+i)%perfHUDFrames]

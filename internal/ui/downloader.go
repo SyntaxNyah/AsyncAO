@@ -1,16 +1,10 @@
 package ui
 
-// Built-in single-asset downloader (opt-in, off by default). It exists so a
-// player who only wants one character or background can pull it straight from
-// the server's asset host instead of scrambling a whole multi-GB pack for one
-// file. It rides the autoindex listing (same discovery as the background
-// picker) to walk a folder, and uses network.Client.Fetch directly — NOT the
-// asset cache — so a bulk grab never evicts live T2/T3 entries.
-//
-// Scope is deliberately offline/local: downloads write a structured base
-// (downloads/{characters,background,sounds}/...) usable via the "Read assets
-// from local folders" mode (or rehearsal). Using a downloaded asset LIVE
-// alongside streaming would need a local-overlay resolver — a separate change.
+// Built-in single-asset downloader (opt-in, off by default), for a player who wants one character or background
+// from the server's asset host instead of a whole pack. It walks a folder through the autoindex listing (as the
+// background picker does) and uses network.Client.Fetch directly, not the asset cache, so a bulk grab never evicts
+// live T2/T3 entries. Downloads write a structured base (downloads/{characters,background,sounds}/...) for the
+// "Read assets from local folders" mode or rehearsal, not for live use alongside streaming.
 
 import (
 	"context"
@@ -29,8 +23,8 @@ import (
 )
 
 const (
-	// Download bounds (rule §17.4 — a hostile or self-referential listing
-	// must never run away on disk, bytes, or recursion).
+	// Download bounds (hard rule 4): a hostile or self-referential listing must not run away on disk, bytes or
+	// recursion.
 	dlMaxFiles = 20000   // files per job
 	dlMaxBytes = 2 << 30 // 2 GiB per job
 	dlMaxDepth = 8       // folder recursion depth
@@ -38,24 +32,20 @@ const (
 	dlSoundCap = 4096    // distinct char.ini sounds resolved per job
 	dlQueueCap = 128     // grabs queued behind the active one (rule §17.4)
 
-	// dlPausePoll is how often a paused worker re-checks the pause flag (and
-	// cancellation) — short enough to feel instant on resume, idle otherwise.
+	// dlPausePoll is how often a paused worker re-checks the pause flag and cancellation.
 	dlPausePoll = 150 * time.Millisecond
 
 	dlDirPerm  = 0o755
 	dlFilePerm = 0o644
 
-	// downloadGlyph is the grid-cell download badge icon (↓ — same Arrows
-	// block as the font-chain "→" the kit already renders).
+	// downloadGlyph is the grid-cell download badge icon (same Arrows block as the font-chain "→").
 	downloadGlyph = "↓"
-	// charINIFileName is the per-character config the downloader re-reads to
-	// resolve a character's sfx/blip dependencies.
+	// charINIFileName is the per-character config re-read to resolve a character's sfx/blip dependencies.
 	charINIFileName = "char.ini"
 )
 
-// downloader is the opt-in downloader's runtime state. One job runs at a time;
-// further grabs wait in queue (v2). Progress lands on a latest-wins channel
-// drained each frame by pollDownload, which also starts the next queued job.
+// downloader is the runtime state. One job runs at a time; further grabs wait in queue. Progress lands on a
+// latest-wins channel drained each frame by pollDownload, which also starts the next queued job.
 type downloader struct {
 	active   bool
 	label    string // "character X" / "background Y" — shown on the indicator
@@ -69,8 +59,7 @@ type downloader struct {
 	queue    []dlReq // grabs waiting behind the active one (render-thread only)
 }
 
-// dlReq is one queued grab — the args launchDownload needs. The queue is
-// render-thread-only App state; the worker goroutine never touches it.
+// dlReq is one queued grab, the args launchDownload needs. The queue is render-thread-only App state.
 type dlReq struct {
 	label, rootURL, destBase, soundChar, target string
 }
@@ -84,13 +73,10 @@ type dlProgress struct {
 	done  bool
 }
 
-// downloadsRootMemo caches downloadsRoot's result (declared with its mutex in
-// datadir.go): the settings screen calls it every frame, and os.Executable is a
-// syscall + allocation. Guarded by exeDataMu because tests reset the root while
-// a render-thread call may be in flight.
+// downloadsRootMemo (declared with its mutex in datadir.go) caches downloadsRoot's result: the settings screen
+// calls it every frame and os.Executable is a syscall. Guarded by exeDataMu because tests reset the root.
 
-// downloadsRoot is the structured local base downloads write into. Point the
-// "Read assets from local folders" mounts at it to use the files offline.
+// downloadsRoot is the local base downloads write into; point the local-folder mounts at it to use files offline.
 func downloadsRoot() string {
 	exeDataMu.RLock()
 	memo := downloadsRootMemo
@@ -109,11 +95,9 @@ func downloadsRoot() string {
 	return out
 }
 
-// pollDownload drains the latest progress snapshot into the status line, flips
-// active off when a job finishes, and starts the next queued grab when idle and
-// not paused. Runs every frame (Frame). The single per-frame queue check covers
-// done-advance AND resume, and a paused downloader simply doesn't advance it —
-// one rule, no special resume path (advisor #2).
+// pollDownload drains the latest progress snapshot into the status line, flips active off when a job finishes, and
+// starts the next queued grab when idle and not paused. The one per-frame queue check covers done-advance and
+// resume; a paused downloader doesn't advance it.
 func (a *App) pollDownload() {
 	if a.dl.progress != nil {
 		select {
@@ -131,16 +115,15 @@ func (a *App) pollDownload() {
 				}
 			} else {
 				a.dl.status = fmt.Sprintf("Downloading %s... %d files, %.1f MiB", p.label, p.files, float64(p.bytes)/(1<<20))
-				// Build the compact chip string here (only when progress changes),
-				// so the per-frame indicator draw stays allocation-free.
+				// Build the chip string here, only when progress changes, so the per-frame indicator draw stays
+				// allocation-free.
 				a.dl.chip = fmt.Sprintf("%s Downloading %s — %d files, %.1f MiB%s",
 					downloadGlyph, p.label, p.files, float64(p.bytes)/(1<<20), dlQueued(len(a.dl.queue)))
 			}
 		default:
 		}
 	}
-	// Advance the queue when idle and not paused (covers done-advance and
-	// resume; pause stops it here).
+	// Advance the queue when idle and not paused (covers done-advance and resume).
 	if !a.dl.active && !a.dlPaused.Load() && len(a.dl.queue) > 0 {
 		next := a.dl.queue[0]
 		a.dl.queue = append(a.dl.queue[:0], a.dl.queue[1:]...)
@@ -163,9 +146,8 @@ func dlQueued(n int) string {
 	return fmt.Sprintf(" (+%d queued)", n)
 }
 
-// cancelDownload stops everything: the in-flight job AND the pending queue
-// (Cancel button, disconnect, quit). Clearing the queue first means the done
-// snapshot won't auto-start the next one.
+// cancelDownload stops the in-flight job and the pending queue (Cancel button, disconnect, quit). The queue is
+// cleared first so the done snapshot won't start the next one.
 func (a *App) cancelDownload() {
 	a.dl.queue = a.dl.queue[:0]
 	a.dlPaused.Store(false) // a paused worker wakes on ctx.Done(); clear so the next grab isn't silently paused
@@ -174,9 +156,8 @@ func (a *App) cancelDownload() {
 	}
 }
 
-// dlQueuedTarget reports whether an asset is waiting in the download queue (for
-// the per-cell "queued" marker). Linear over the bounded queue (dlQueueCap),
-// only for visible cells — cheap.
+// dlQueuedTarget reports whether an asset is waiting in the queue (the per-cell "queued" marker); linear over the
+// bounded queue, for visible cells only.
 func (a *App) dlQueuedTarget(target string) bool {
 	for _, q := range a.dl.queue {
 		if q.target == target {
@@ -186,10 +167,9 @@ func (a *App) dlQueuedTarget(target string) bool {
 	return false
 }
 
-// drawDownloadBadge paints the ↓ download badge in a grid cell's bottom-right
-// corner (with a hover hint) and reports a click. Shared by the char-select
-// and background-picker grids when the opt-in downloader is on; it claims its
-// own click so the cell's primary action (pick / select) never co-fires.
+// drawDownloadBadge paints the download badge in a grid cell's bottom-right corner (with a hover hint) and reports
+// a click. Shared by the char-select and background-picker grids; it claims its own click so the cell's primary
+// action doesn't also fire.
 func (a *App) drawDownloadBadge(cell sdl.Rect, tip string) bool {
 	c := a.ctx
 	b := sdl.Rect{X: cell.X + cell.W - 22, Y: cell.Y + cell.H - 20, W: 20, H: 18}
@@ -200,10 +180,9 @@ func (a *App) drawDownloadBadge(cell sdl.Rect, tip string) bool {
 	return c.hovering(b) && c.clicked
 }
 
-// drawDownloadIndicator floats a live progress chip (top-center, just under
-// the tab strip) while a download runs, so a grab is visible from any screen.
-// Progress-only — Cancel lives in Settings (a button in this post-screen
-// overlay would race clicks with the widgets drawn underneath it).
+// drawDownloadIndicator floats a progress chip (top-center, under the tab strip) while a download runs. Progress
+// only: Cancel lives in Settings, since a button in this post-screen overlay would race clicks with the widgets
+// under it.
 func (a *App) drawDownloadIndicator(w int32) {
 	if !a.dl.active {
 		return
@@ -214,8 +193,7 @@ func (a *App) drawDownloadIndicator(w int32) {
 	if x < 0 {
 		x = 0
 	}
-	// Just under the app-chrome band (#14, chrometop.go) — this used to be a bare
-	// tabBarH+4, which the docked server-tab strip now sits on top of.
+	// Just under the app-chrome band (chrometop.go), below the docked server-tab strip.
 	chip := sdl.Rect{X: x, Y: a.topChromeH() + 4, W: bw, H: btnH}
 	c.Fill(chip, sdl.Color{R: ColPanel.R, G: ColPanel.G, B: ColPanel.B, A: 240})
 	col := ColAccent
@@ -226,9 +204,8 @@ func (a *App) drawDownloadIndicator(w int32) {
 	c.Label(chip.X+10, chip.Y+5, a.dl.chip, col)
 }
 
-// startCharDownload grabs one character's folder plus the sfx/blips its
-// char.ini references — those live in sounds/general and sounds/blips,
-// OUTSIDE the character folder, so a plain folder grab leaves it silent.
+// startCharDownload grabs one character's folder plus the sfx/blips its char.ini references, which live in
+// sounds/general and sounds/blips outside the folder.
 func (a *App) startCharDownload(char string) {
 	dest := filepath.Join(downloadsRoot(), "characters", strings.ToLower(char))
 	a.enqueueDownload(dlReq{label: "character " + char, rootURL: a.urls.CharFolder(char), destBase: dest, soundChar: char, target: char})
@@ -240,10 +217,8 @@ func (a *App) startBgDownload(bg string) {
 	a.enqueueDownload(dlReq{label: "background " + bg, rootURL: a.urls.BackgroundFolder(bg), destBase: dest, target: bg})
 }
 
-// enqueueDownload starts a grab immediately when idle, else queues it behind
-// the active one (v2). It refuses politely when the downloader is off, the
-// server has no asset URL, the same target is already active/queued, or the
-// queue is full — all render-thread state, no goroutine touches the queue.
+// enqueueDownload starts a grab immediately when idle, else queues it. It refuses when the downloader is off, the
+// server has no asset URL, the target is already active or queued, or the queue is full.
 func (a *App) enqueueDownload(req dlReq) {
 	if !a.d.Prefs.Load().CharDownloaderOn {
 		return
@@ -274,10 +249,9 @@ func (a *App) enqueueDownload(req dlReq) {
 	a.dl.status = fmt.Sprintf("Queued %s (%d waiting).", req.label, len(a.dl.queue))
 }
 
-// launchDownload runs one recursive folder download off-thread (rule §17.2 —
-// disk writes are fine OFF the render thread). Caller ensured the downloader is
-// on, a server is connected, and nothing is active. soundChar non-empty means
-// "after the folder, resolve the char.ini sound dependencies".
+// launchDownload runs one recursive folder download off-thread (hard rule 2). The caller ensured the downloader is
+// on, a server is connected and nothing is active. A non-empty soundChar resolves the char.ini sound dependencies
+// after the folder.
 func (a *App) launchDownload(req dlReq) {
 	if a.dl.progress == nil {
 		a.dl.progress = make(chan dlProgress, 1)
@@ -291,10 +265,9 @@ func (a *App) launchDownload(req dlReq) {
 	a.dl.status = "Starting " + req.label + "..."
 	a.dl.chip = downloadGlyph + " Starting " + req.label + "..." // seeded; progress refreshes it
 
-	// Snapshot everything the goroutine touches; it must not read App fields.
-	// dlPaused is the one exception — an atomic, safe to share (advisor #3).
-	// The bandwidth cap is snapshot here (applies per job; a slider change hits
-	// the next grab, which with a queue is soon enough).
+	// Snapshot everything the goroutine touches; it must not read App fields. dlPaused is the one exception, an
+	// atomic.
+	// The bandwidth cap is snapshot per job.
 	job := &dlJob{
 		label: req.label, base: downloadsRoot(), progress: a.dl.progress,
 		paused: &a.dlPaused, capBPS: int64(a.d.Prefs.DownloadCapKBps()) * 1024, start: time.Now(),
@@ -313,16 +286,15 @@ func (a *App) launchDownload(req dlReq) {
 	}()
 }
 
-// audioProbeExts is the FULL audio extension set (default + every legacy
-// fallback), so a download finds the sound whatever format the server ships —
-// independent of the user's current zero-fallback probe order.
+// audioProbeExts is the full audio extension set (default plus every legacy fallback), so a download finds the
+// sound whatever format the server ships.
 func audioProbeExts() []string {
 	exts := config.DefaultFormatOrder(config.TypeSFX)
 	return append(exts, config.LegacyFallbackChain(config.TypeSFX)...)
 }
 
-// dlJob accumulates one download's progress. It never touches App state — the
-// goroutine communicates only through the progress channel.
+// dlJob accumulates one download's progress. It never touches App state; the goroutine talks only through the
+// progress channel.
 type dlJob struct {
 	label    string
 	base     string // downloadsRoot, for the containment check
@@ -335,11 +307,9 @@ type dlJob struct {
 	start    time.Time    // job start, for the cumulative average-rate throttle
 }
 
-// throttle holds the job to its average-rate bandwidth cap. client.Fetch
-// returns whole files, so this paces BETWEEN files (a single big file fetches
-// at full speed, then we sleep) — an average-rate limiter, not an instantaneous
-// one. Cumulative form self-corrects; the wait selects on ctx.Done() so cancel
-// never wedges it. No-op when uncapped (the default).
+// throttle holds the job to its average-rate bandwidth cap. client.Fetch returns whole files, so it paces between
+// files. The cumulative form self-corrects, and the wait selects on ctx.Done() so cancel never wedges it. No-op
+// when uncapped.
 func (j *dlJob) throttle(ctx context.Context) {
 	if j.capBPS <= 0 {
 		return
@@ -355,9 +325,8 @@ func (j *dlJob) throttle(ctx context.Context) {
 
 func (j *dlJob) overBudget() bool { return j.files >= dlMaxFiles || j.bytes >= dlMaxBytes }
 
-// waitWhilePaused blocks the worker while the user has it paused, waking on
-// resume OR on cancellation (so Cancel / disconnect / quit never wedge a paused
-// job). Called at the same per-file checkpoints as the cancel/budget tests.
+// waitWhilePaused blocks the worker while paused, waking on resume or cancellation. Called at the same per-file
+// checkpoints as the cancel and budget tests.
 func (j *dlJob) waitWhilePaused(ctx context.Context) {
 	for j.paused != nil && j.paused.Load() {
 		select {
@@ -393,13 +362,11 @@ func (j *dlJob) walk(ctx context.Context, client *network.Client, dirURL, destDi
 	}
 }
 
-// resolveCharSounds reads the just-downloaded char.ini and pulls the
-// sounds/general sfx and sounds/blips blips it names (the ones that live
-// outside the character folder).
+// resolveCharSounds reads the just-downloaded char.ini and pulls the sounds/general sfx and sounds/blips blips it
+// names (outside the character folder).
 func (j *dlJob) resolveCharSounds(ctx context.Context, client *network.Client, urls courtroom.URLBuilder, char string, exts []string) {
-	// Read char.ini fresh from the server so sound resolution never depends on
-	// the folder walk's on-disk copy (path/case/partial-write quirks); the
-	// just-walked disk copy is the fallback if the network read fails.
+	// Read char.ini fresh from the server so sound resolution doesn't depend on the folder walk's on-disk copy; the
+	// disk copy is the fallback if the network read fails.
 	data, err := client.Fetch(ctx, urls.CharFolder(char)+charINIFileName)
 	if err != nil {
 		data, err = os.ReadFile(filepath.Join(j.base, "characters", strings.ToLower(char), charINIFileName))
@@ -417,7 +384,7 @@ func (j *dlJob) resolveCharSounds(ctx context.Context, client *network.Client, u
 		blips[ini.Blips] = struct{}{}
 	}
 	for _, e := range ini.Emotes {
-		// "" / "0" / "1" are AO's "silent" sentinels (courtroom.go).
+		// "" / "0" / "1" are AO's silent sentinels (courtroom.go).
 		if e.SFXName != "" && e.SFXName != "0" && e.SFXName != "1" {
 			sfx[e.SFXName] = struct{}{}
 		}
@@ -446,25 +413,12 @@ func (j *dlJob) resolveCharSounds(ctx context.Context, client *network.Client, u
 	}
 }
 
-// fetchBlip mirrors what the LIVE ladder plays for one blip set.
-//
-// THE GAP IT CLOSES. This used to fetch exactly `urls.Blip(name)` —
-// sounds/blips/<lowercased name> — which is rung 1 of six. The live client walks
-// courtroom.URLBuilder.BlipCandidates: the set folder in both casings, then AO1's
-// legacy sounds/general/sfx-blip<name>, then the plain general sound
-// (blipurl.go, from AO2-Client text_file_functions.cpp:515-527). An AO1-era base
-// serves ONLY the legacy spelling, so the download probed one URL, 404'd, counted a
-// skip — and shipped an offline pack whose blips are silent while the very same base
-// blips fine online. That is the worst shape an offline pack can have: it works until
-// you unplug.
-//
-// RESOLVE-THEN-WRITE, not write-every-spelling. Writing all six spellings would cost
-// up to six fetches per set on a base that serves one, and would leave five copies of
-// one file in the pack. Instead the chain is probed in ITS OWN ORDER and the first
-// format of the first rung that exists is written AT THAT RUNG's own path — which is
-// where the local resolver, walking the identical chain against the pack's own origin,
-// looks for it. The pack therefore reproduces the live ladder's answer by construction
-// rather than by a second table agreeing with it.
+// fetchBlip mirrors what the live ladder plays for one blip set. The live client walks
+// courtroom.URLBuilder.BlipCandidates: the set folder in both casings, AO1's sounds/general/sfx-blip<name>, then
+// the plain general sound (blipurl.go, from AO2-Client text_file_functions.cpp:515-527). An AO1-era base serves
+// only the legacy spelling, so fetching just sounds/blips/<name> would 404 and ship an offline pack with silent
+// blips. It resolves rather than writing every spelling: the chain is probed in its own order, and the first format
+// of the first rung that exists is written at that rung's own path, where the local resolver looks.
 func (j *dlJob) fetchBlip(ctx context.Context, client *network.Client, urls courtroom.URLBuilder, name string, exts []string) {
 	origin := urls.Origin()
 	for _, cand := range urls.BlipCandidates(name) {
@@ -485,17 +439,11 @@ func (j *dlJob) fetchBlip(ctx context.Context, client *network.Client, urls cour
 	j.errs++ // the set is missing in every rung and every format
 }
 
-// blipPackRel turns one candidate URL into the pack-relative path the LOCAL resolver
-// will probe for it: strip the origin, un-escape the segments.
-//
-// The un-escape is load-bearing rather than cosmetic. BlipCandidates escapes a set
-// name as one path segment, so a two-word set arrives as `sounds/blips/deep%20voice`;
-// writing that literally would put a file called "deep%20voice" on disk, and the local
-// resolver — which escapes the SAME name the same way and then resolves it against a
-// file:// origin — would ask for "deep voice" and miss. ok=false for anything that is
-// not under the origin, or that un-escapes into a path with a separator or a `..` in a
-// segment, so a hostile origin string cannot steer a write out of the pack (saveURL's
-// containment check is the second line, not the first).
+// blipPackRel turns one candidate URL into the pack-relative path the local resolver probes: strip the origin,
+// un-escape the segments. The un-escape is required: BlipCandidates escapes a set name as one segment
+// ("deep%20voice"), and writing that literally would not match the local resolver's lookup of "deep voice".
+// ok=false for anything outside the origin or whose un-escaped segment has a separator or `..`, so a hostile
+// origin can't steer a write out of the pack (saveURL's containment check is the second line).
 func blipPackRel(origin, cand string) (string, bool) {
 	if origin == "" || !strings.HasPrefix(cand, origin) {
 		return "", false
@@ -517,9 +465,8 @@ func blipPackRel(origin, cand string) (string, bool) {
 	return strings.Join(parts, "/"), true
 }
 
-// fetchSound probes the audio formats for one named sound; the first that
-// exists is saved with its extension (so the local resolver, which probes the
-// same way, finds it). A sound missing in every format counts one skip.
+// fetchSound probes the audio formats for one named sound and saves the first that exists with its extension (so
+// the local resolver finds it). A sound missing in every format counts one skip.
 func (j *dlJob) fetchSound(ctx context.Context, client *network.Client, urlBase, destDir, diskBase string, exts []string) {
 	for _, ext := range exts {
 		if ctx.Err() != nil || j.overBudget() {
@@ -532,10 +479,9 @@ func (j *dlJob) fetchSound(ctx context.Context, client *network.Client, urlBase,
 	j.errs++
 }
 
-// saveURL fetches one URL and writes it under destPath, returning whether it
-// landed. The containment check is defense in depth on top of
-// cleanAutoindexEntry's "no .." rule: the cleaned path must stay strictly
-// under base (trailing separator so a sibling like downloads-evil can't pass).
+// saveURL fetches one URL and writes it under destPath, returning whether it landed. The containment check backs
+// cleanAutoindexEntry's "no .." rule: the cleaned path must stay strictly under base (trailing separator, so a
+// sibling like downloads-evil can't pass).
 func (j *dlJob) saveURL(ctx context.Context, client *network.Client, url, destPath string) bool {
 	clean := filepath.Clean(destPath)
 	if !strings.HasPrefix(clean, filepath.Clean(j.base)+string(os.PathSeparator)) {
@@ -557,12 +503,9 @@ func (j *dlJob) saveURL(ctx context.Context, client *network.Client, url, destPa
 	return true
 }
 
-// publish sends a progress snapshot. Intermediate snapshots are latest-wins
-// (dropped if the consumer hasn't drained the previous one — pollDownload reads
-// the freshest each frame). The TERMINAL snapshot (done) MUST land, or the
-// on-screen indicator never clears: it blocks until pollDownload makes room
-// (a cap-1 buffer the render thread drains every frame, so it lands within a
-// frame or two — the job is finished, so the brief block is harmless).
+// publish sends a progress snapshot. Intermediate snapshots are latest-wins (dropped if the previous wasn't
+// drained). The terminal snapshot must land or the indicator never clears, so it blocks until pollDownload makes
+// room in the cap-1 buffer, which the render thread drains every frame.
 func (j *dlJob) publish(done bool) {
 	if j.progress == nil {
 		return

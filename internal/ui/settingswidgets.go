@@ -16,17 +16,10 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/winexec"
 )
 
-// volumeWheelStep is how many percent one wheel tick nudges a volume row (#52):
-// fine enough for precise tuning, coarse enough that a flick crosses the 0–100
-// range in a handful of ticks. It's the volume analog of sliderRow's per-call
-// step; a value row without an explicit step needs a named one here.
+// volumeWheelStep is how many percent one wheel tick nudges a volume row.
 const volumeWheelStep = 2
 
-// volumeRow draws one "<name>  [====slider====] NN%" control and returns the
-// value. A draggable slider (click/drag anywhere on the track) instead of
-// +/- buttons — far nicer to set than stepping a button. Continuous 0–100.
-// Mousewheel over the row steps by volumeWheelStep (numberRow/sliderRow parity,
-// #52) and the row joins the settings gather-search index like every other row.
+// volumeRow draws one "<name>  [slider]  NN%" control (0-100); the wheel steps by volumeWheelStep.
 func (a *App) volumeRow(y int32, name string, value int) int {
 	c := a.ctx
 	pad := a.formX
@@ -36,8 +29,7 @@ func (a *App) volumeRow(y int32, name string, value int) int {
 	c.Label(pad, y+4, name+":", ColText)
 	track := sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}
 	value = int(c.Slider(name, track, int32(value), 100))
-	// Wheel-over-row stepping (#52): the whole label+track band owns the wheel so
-	// a hover-scroll fine-tunes instead of paging the settings list.
+	// The label+track band owns the wheel so a hover-scroll tunes the value instead of paging the settings list.
 	row := sdl.Rect{X: pad, Y: y, W: track.X + track.W - pad, H: 26}
 	if c.hovering(row) && c.wheelY != 0 {
 		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
@@ -48,8 +40,7 @@ func (a *App) volumeRow(y int32, name string, value int) int {
 	return value
 }
 
-// numberRow is volumeRow for arbitrary units/steps/bounds (spinbox-style:
-// −/+ plus mousewheel over the row).
+// numberRow is volumeRow for arbitrary units, steps and bounds (spinbox-style: -/+ plus wheel).
 func (a *App) numberRow(y int32, label string, value, step, min, max int, tip ...string) int {
 	c := a.ctx
 	pad := a.formX
@@ -76,20 +67,14 @@ func (a *App) numberRow(y int32, label string, value, step, min, max int, tip ..
 	return value
 }
 
-// settingTip shows a value row's "what's this" tooltip (#19) when one was passed — a hover
-// explanation for the terse slider / number controls that can't carry a full inline label like the
-// (already self-documenting) checkboxes do.
+// settingTip shows a value row's tooltip when one was passed.
 func settingTip(c *Ctx, row sdl.Rect, tip []string) {
 	if len(tip) > 0 && tip[0] != "" {
 		c.Tooltip(row, tip[0])
 	}
 }
 
-// sliderRow is numberRow drawn as a draggable slider (same signature, so it's
-// a drop-in): label, a slider track, then the live value — all left of the
-// pad+270 help text the settings rows use. Drag for coarse; mousewheel over
-// the row still fine-tunes by ±step (numberRow parity). The result snaps to
-// the step grid and clamps to [min, max].
+// sliderRow is numberRow drawn as a draggable slider; the result snaps to the step grid and clamps to [min, max].
 func (a *App) sliderRow(y int32, label string, value, step, min, max int, tip ...string) int {
 	c := a.ctx
 	pad := a.formX
@@ -117,21 +102,15 @@ func (a *App) sliderRow(y int32, label string, value, step, min, max int, tip ..
 	return value
 }
 
-// uiScaleSliderID is the manual UI-scale slider's drag id (== the label passed to
-// sliderRow), used to detect the drag for commit-on-release.
+// uiScaleSliderID is the manual UI-scale slider's drag id (the label passed to sliderRow), used to commit on release.
 const uiScaleSliderID = "UI scale %"
 
-// drawManualUIScale draws the manual UI-scale control. Applying the scale LIVE
-// rescales the whole UI — this very slider included — so a live drag chases the
-// cursor (the "super hard to use" report). Fix: the slider COMMITS ON RELEASE
-// (preview the number while dragging, apply on mouse-up), and a row of preset
-// chips gives a one-click path that never fights the cursor. Returns the new y.
+// drawManualUIScale draws the manual UI-scale control. Applying live rescales this slider too, so it commits on
+// release; preset chips give a one-click path. Returns the new y.
 func (a *App) drawManualUIScale(y int32) int32 {
 	c := a.ctx
 	pad := a.formX
-	// While a drag is armed, feed the PENDING value back in: on the release
-	// frame the Slider no longer tracks the mouse and echoes whatever it was
-	// passed, so passing uiScalePct made the thumb (and worse, `next`) revert.
+	// While a drag is armed, feed the pending value back: on the release frame the Slider echoes what it was passed.
 	shown := a.uiScalePct
 	if a.uiScaleDragging {
 		shown = a.uiScalePending
@@ -140,28 +119,23 @@ func (a *App) drawManualUIScale(y int32) int32 {
 		config.MinUIScalePercent, config.MaxUIScalePercent,
 		"Zooms the WHOLE interface. Drag to preview, release to apply (applying mid-drag would rescale this slider under your cursor); or click a preset below.")
 	switch {
-	// The mouseDown guard is load-bearing: BeginFrame clears dragID only on a
-	// frame that STARTS with the button up, so on the release frame itself
-	// dragID still names this slider while mouseDown is already false. Without
-	// the guard this case fired one extra frame and clobbered uiScalePending
-	// with the un-applied base value — the release then committed a no-op and
-	// the slider "snapped back to 100%" (the playtest report).
+	// The mouseDown guard is load-bearing: dragID is cleared only on a frame that starts with the button up, so on the
+	// release frame it still names this slider; without the guard uiScalePending is clobbered with the un-applied base.
 	case c.dragID == uiScaleSliderID && c.mouseDown:
-		// Dragging: remember the value but DON'T rescale yet (that's the feedback loop).
+		// Dragging: remember the value but do not rescale yet (that would be a feedback loop).
 		a.uiScaleDragging = true
 		a.uiScalePending = next
 	case a.uiScaleDragging:
-		// Released → apply once, on the release frame.
+		// Released: apply once, on the release frame.
 		a.uiScaleDragging = false
 		a.applyManualUIScale(a.uiScalePending)
 	case next != a.uiScalePct:
-		// Wheel or click-to-set (no drag) — discrete, no feedback loop.
+		// Wheel or click-to-set (no drag) is discrete, so no feedback loop.
 		a.applyManualUIScale(next)
 	}
 	y += 30
 
-	// Preset chips: a no-drag, one-click path (the easy way to land 150/175% on a
-	// big screen). A click is instantaneous, so it can't chase the cursor.
+	// Preset chips: a one-click path that cannot chase the cursor.
 	cx := pad + 130
 	for _, p := range []int{100, 125, 150, 175, 200} {
 		r := sdl.Rect{X: cx, Y: y, W: 46, H: btnH}
@@ -176,9 +150,7 @@ func (a *App) drawManualUIScale(y int32) int32 {
 	return y + 34
 }
 
-// applyManualUIScale commits a manual UI scale: clamp, store, push to the kit
-// (mouse unprojection) and persist. The single chokepoint for the slider's
-// release, the wheel, and the preset chips.
+// applyManualUIScale commits a manual UI scale: clamp, store, push to the kit (mouse unprojection) and persist.
 func (a *App) applyManualUIScale(pct int) {
 	pct = hvalue.Clamp(pct, config.MinUIScalePercent, config.MaxUIScalePercent)
 	if pct == a.uiScalePct {
@@ -189,14 +161,9 @@ func (a *App) applyManualUIScale(pct int) {
 	a.d.Prefs.SetUIScale(pct)
 }
 
-// drawViewportSizeRow is the precise stage-size control. The AO stage art is
-// 256×192, so the stage stays sharp at integer multiples and softens at the
-// %-of-window sizes that fall between them. Preset chips pick the crisp
-// multiples, a slider / mouse-wheel step through them, and an entry box takes an
-// exact px width for power users; 0 px = "Fit" (size by the View % knob / edge
-// drag, the prior behaviour). The entry buffer is written only on edit / commit
-// / chip / slider — never reseeded per frame — so it stays freely editable.
-// Settings screen only; off the courtroom hot path.
+// drawViewportSizeRow is the stage-size control: chips pick crisp integer multiples of the 256x192 art, a slider
+// or wheel steps through them, and an entry box takes an exact px width; 0 px is "Fit". The entry buffer is written
+// only on edit, commit, chip or slider so it stays editable.
 func (a *App) drawViewportSizeRow(y int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -230,8 +197,7 @@ func (a *App) drawViewportSizeRow(y int32) int32 {
 	}
 	y += 30
 
-	// Slider + wheel step in art-multiples (so every slider stop is a crisp size);
-	// 0 = the leftmost stop = Fit.
+	// Slider and wheel step in art multiples, so every stop is a crisp size; 0 (leftmost) is Fit.
 	maxM := config.MaxViewportExactPx / config.ViewportArtW
 	curM := cur / config.ViewportArtW
 	track := sdl.Rect{X: pad + 130, Y: y + 5, W: 160, H: 16}
@@ -245,8 +211,7 @@ func (a *App) drawViewportSizeRow(y int32) int32 {
 		set(newM * config.ViewportArtW) // 0 ⇒ Fit
 	}
 
-	// Exact-px entry for "specific numbers" (commit on Enter; mirrors the
-	// window-size inputs — no live filtering, Atoi just ignores junk on submit).
+	// Exact-px entry, committed on Enter; Atoi ignores junk on submit.
 	box := sdl.Rect{X: track.X + track.W + 14, Y: y, W: 64, H: fieldH}
 	next, submitted := c.TextField("vpexactpx", box, a.vpExactBuf, "px")
 	a.vpExactBuf = next
@@ -272,10 +237,8 @@ func (a *App) drawViewportSizeRow(y int32) int32 {
 	return y + 20
 }
 
-// delayRow draws a hover-dwell slider with a seconds readout and returns the
-// picked ms, clamped to [minMs, maxMs] and snapped to the half-second grid.
-// Shared by previewDelayRow and emoteNameDelayRow, which differ only in the row
-// label, widget id and upper bound (the config setters are authoritative).
+// delayRow draws a hover-dwell slider with a seconds readout and returns the picked ms, clamped to [minMs, maxMs]
+// and snapped to the half-second grid. Callers differ in label, widget id and upper bound.
 func (a *App) delayRow(y int32, ms int, label, id string, maxMs int) int {
 	c := a.ctx
 	pad := a.formX
@@ -298,30 +261,19 @@ func (a *App) delayRow(y int32, ms int, label, id string, maxMs int) int {
 	return ms
 }
 
-// previewDelayRow draws the sprite-preview hover dwell as a draggable slider
-// with a seconds readout (the value is stored in milliseconds; a raw "5000"
-// would be opaque). Bounds mirror the config clamp — SetPreviewHoverMs is
-// authoritative — and the result snaps to the half-second grid.
+// previewDelayRow draws the sprite-preview hover dwell slider; bounds mirror the config clamp.
 func (a *App) previewDelayRow(y int32, ms int) int {
 	return a.delayRow(y, ms, "Preview after hovering:", "previewdelay", 15000) // == config.maxPreviewHoverMs
 }
 
-// emoteNameDelayRow draws the emote-name hover dwell as a draggable slider with
-// a seconds readout (mirrors previewDelayRow; the value is stored in ms). Bounds
-// mirror the config clamp — SetEmoteHoverNamesMs is authoritative — and the
-// result snaps to the half-second grid.
+// emoteNameDelayRow draws the emote-name hover dwell slider; bounds mirror the config clamp.
 func (a *App) emoteNameDelayRow(y int32, ms int) int {
 	return a.delayRow(y, ms, "Name after hovering:", "emotenamedelay", 10000) // == config.maxEmoteHoverNamesMs
 }
 
-// emoteGridGapRow draws the emote-grid icon-spacing slider and returns the picked
-// gap in LOGICAL px. Same shape as emoteNameDelayRow (slider + wheel-over-the-row
-// nudge + a live readout), and it shadows pad from a.formX like every settings
-// draw helper must — without that shadow the row renders under the sidebar.
-//
-// The range starts at 0 on purpose (icons flush against each other) and the value
-// is NOT snapped to a step, unlike the half-second grid on the delay row above:
-// this setting is specified in pixels, so every pixel in range must be reachable.
+// emoteGridGapRow draws the emote-grid icon-spacing slider and returns the gap in logical px. It shadows pad from
+// a.formX like every settings draw helper, or the row renders under the sidebar. The range starts at 0 (icons flush)
+// and the value is not snapped, because every pixel in range must be reachable.
 func (a *App) emoteGridGapRow(y int32, gap int) int {
 	c := a.ctx
 	pad := a.formX
@@ -340,22 +292,15 @@ func (a *App) emoteGridGapRow(y int32, gap int) int {
 	return gap
 }
 
-// browseForFolder shells the native Windows THEME-folder picker on a goroutine;
-// the chosen path lands on folderRes (empty = cancelled, dropped). Returns
-// false when a dialog is already open (busy) so the caller can say so. This is
-// the last native shell-out picker: it's a FOLDER picker the in-app file browser
-// (demobrowser.go) doesn't replace today. If this one ever fails foreground live
-// the same way the old .demo file dialog did, the in-app browser is the proven
-// escalation path (extend it to pick directories).
+// browseForFolder shells the native Windows theme-folder picker on a goroutine; the chosen path lands on folderRes
+// (empty = cancelled). Returns false when a dialog is already open.
 func browseForFolder() bool {
 	if settings.browseBusy {
 		return false
 	}
 	settings.browseBusy = true
 	go func() {
-		// A shown-and-activated TopMost owner form: a merely-CREATED owner proved
-		// insufficient live, so it's Show()n (invisible: Opacity 0, no taskbar) and
-		// Activate()d first so the modal dialog inherits real foreground z-order.
+		// A shown-and-activated TopMost owner form (invisible) so the modal dialog inherits real foreground z-order.
 		const dialog = `Add-Type -AssemblyName System.Windows.Forms; ` +
 			`$d = New-Object System.Windows.Forms.FolderBrowserDialog; ` +
 			`$d.Description = 'Pick the folder that CONTAINS themes\<name>'; ` +
@@ -363,8 +308,7 @@ func browseForFolder() bool {
 			`if ($d.ShowDialog($o) -eq 'OK') { Write-Output $d.SelectedPath }`
 		cmd := exec.Command("powershell", "-NoProfile", "-STA", "-Command", dialog)
 		winexec.Hide(cmd) // GUI-subsystem build: no empty PowerShell window (the dialog still shows)
-		// Start → donate foreground rights → Wait: a CREATE_NO_WINDOW child can't
-		// activate its own dialog, so we hand it OUR foreground-activation rights.
+		// A CREATE_NO_WINDOW child cannot activate its own dialog, so Start, donate foreground rights, then Wait.
 		var outBuf bytes.Buffer
 		cmd.Stdout = &outBuf
 		if err := cmd.Start(); err != nil {
@@ -387,8 +331,7 @@ func browseForFolder() bool {
 	return true
 }
 
-// resolveDroppedFolder turns an SDL drop path into a directory off-thread
-// (a dropped file means "its folder") and feeds the same channel as Browse.
+// resolveDroppedFolder turns an SDL drop path into a directory off-thread (a dropped file means its folder).
 func resolveDroppedFolder(path string) {
 	go func() {
 		st, err := os.Stat(path)
@@ -417,60 +360,30 @@ func (a *App) pollFolderPick() {
 		settings.themeDir = path
 		a.d.Prefs.SetTheme(settings.themeName, path)
 		a.scanThemes(true) // the user picked/dropped this folder — a real import (#35)
-		// Trigger 4: an import just landed. Unconditional — the floor exists to
-		// stop idle polling, not to make a user wait after their own action.
+		// An import just landed: unconditional, since the rescan floor only stops idle polling.
 		a.requestThemeCatalog(themeScanAfterDrop)
 		settings.statusLine = "Theme folder set: " + path
 	default:
 	}
 }
 
-// pickFailed marks a native-picker shell-out FAILURE on folderRes, distinct from
-// "" (user cancelled). NUL can never be a real path, so it can't collide. Used by
-// browseForFolder (the THEME folder picker); the .demo picker is in-app
-// (demobrowser.go), so this is the theme picker's alone.
+// pickFailed marks a native-picker failure on folderRes, distinct from "" (cancelled); NUL can never be a real path.
 const pickFailed = "\x00"
 
-// themePickerCap bounds the theme dropdown's list (hard rule 4). It is derived
-// from themeCatalogCap, not a second number: the picker and the browser answer
-// the same question about the same directories, and a name in one but not the
-// other is the class of bug where a theme resolves yet cannot be picked.
-// Past it the list stops and the row says so — the themes are still on disk and
-// still load by name, which is what the truncation note tells the user.
-//
-// The +1 is the seed, and it is what makes "same question" true. scanThemeDirs
-// starts the list with the built-in "default" NAME before it reads a single
-// directory (theme.Load falls back to it even when no themes/ folder exists),
-// while the catalog counts directories only. At a plain themeCatalogCap the seed
-// would spend a directory's slot: a machine with exactly themeCatalogCap real
-// themes got 128 catalog entries and 127 picker rows — one theme the browser
-// lists and the dropdown cannot reach, i.e. precisely the bug above.
+// themePickerCap bounds the theme dropdown's list (hard rule 4), derived from themeCatalogCap so picker and browser
+// agree. The +1 is the built-in "default" name scanThemeDirs seeds before reading any directory; the catalog counts
+// directories only. Past the cap the row says the list is truncated; the themes still load by name.
 const themePickerCap = themeCatalogCap + 1 // +1: the "default" seed is a name, not a directory
 
-// scanThemeDirs collects theme names across roots, "default" always first
-// (the built-in fallback theme.Load uses even when no folder exists). BLOCKING
-// (os.ReadDir per root) — goroutine only, never a draw path.
+// scanThemeDirs collects theme names across roots, "default" first (theme.Load's built-in fallback). BLOCKING
+// (os.ReadDir per root): goroutine only.
 //
-// pick is the bare-folder import normalizeThemeRoot just resolved (#21). It has
-// no themes/ parent, so the ReadDir below can never find it; without appending
-// it the theme applies once and then vanishes from the dropdown, and stepping
-// the ◀ ▶ arrows would walk off it with no way back. It is appended even at the
-// cap — a theme the user just picked must never be the one entry the bound drops,
-// or the pick becomes unreachable the moment it is made.
+// pick is the bare-folder import normalizeThemeRoot resolved; it has no themes/ parent, so ReadDir cannot find it.
+// It is appended even at the cap so a theme the user just picked never drops out of the dropdown.
 //
-// Dedup keys on the FOLDED name, matching the catalog scan: on Windows and macOS
-// "Nocturne" and "nocturne" are one directory, and keying case-sensitively listed
-// it twice in the dropdown while the catalog held one entry for it. The name kept
-// is the first spelling seen, which is the one the first root actually holds.
-//
-// On a case-SENSITIVE filesystem (Linux) those are two real directories, and
-// folding costs the second SPELLING ENCOUNTERED its dropdown row (root order,
-// then directory order, decides which). That is deliberate, not an oversight:
-// the catalog scan folds too
-// (themecatalog.go), so the picker and the browser stay one list, and the price
-// is paid by a collection that keeps two themes whose names differ only in case.
-// The hidden one is not lost — theme.Load takes the name as spelled, so a
-// preferences file or a drag-and-drop import still resolves it.
+// Dedup keys on the folded name, matching the catalog scan (themecatalog.go): on Windows and macOS "Nocturne" and
+// "nocturne" are one directory. On case-sensitive filesystems the later spelling loses its row; theme.Load still
+// resolves it by the spelled name.
 func scanThemeDirs(roots []string, pick string) []string {
 	names := []string{theme.DefaultThemeName}
 	seen := map[string]bool{strings.ToLower(theme.DefaultThemeName): true}
@@ -497,9 +410,7 @@ func scanThemeDirs(roots []string, pick string) []string {
 	return appendThemePick(names, seen, pick)
 }
 
-// appendThemePick adds the bare-folder import to the list unless a root already
-// produced it. Split out so the cap's early return and the normal end of the walk
-// cannot forget it — the #21 vanishing-theme bug is exactly that omission.
+// appendThemePick adds the bare-folder import to the list unless a root already produced it.
 func appendThemePick(names []string, seen map[string]bool, pick string) []string {
 	if pick != "" && !seen[strings.ToLower(pick)] {
 		names = append(names, pick)
@@ -507,18 +418,12 @@ func appendThemePick(names []string, seen map[string]bool, pick string) []string
 	return names
 }
 
-// themeListTruncated reports whether the picker list may be a prefix of what is
-// on disk. Derived rather than returned alongside the list, because the list is
-// carried across a channel to the render thread and one slice is the whole
-// message; a list at the cap is reported as possibly-truncated, which overstates
-// by one collection-size exactly (a machine with EXACTLY themePickerCap themes),
-// always in the honest direction.
+// themeListTruncated reports whether the picker list may be a prefix of what is on disk. A list exactly at the cap
+// counts as truncated, which errs in the honest direction.
 func themeListTruncated(names []string) bool { return len(names) >= themePickerCap }
 
-// themeFoundText is the "(N found)" line beside the picker, memoized on the count
-// it was built from: it draws every frame the Theme tab is up, and a per-frame
-// fmt.Sprintf on a settings row is the allocation the settings-text doctrine
-// exists to keep out. Render thread only (settingsState).
+// themeFoundText is the "(N found)" line beside the picker, memoized on the count so it does not allocate per frame.
+// Render thread only.
 func themeFoundText(names []string) string {
 	n := len(names)
 	if settings.themeCountFor == n && settings.themeCountText != "" {
@@ -526,9 +431,7 @@ func themeFoundText(names []string) string {
 	}
 	settings.themeCountFor = n
 	if themeListTruncated(names) {
-		// At the bound the list IS a prefix: say so rather than implying these are
-		// all the themes there are. They still load by name — only the dropdown
-		// stops here.
+		// At the bound the list is a prefix: say so. The themes still load by name.
 		settings.themeCountText = fmt.Sprintf("(first %d — more are on disk and still load by name)", themePickerCap)
 	} else {
 		settings.themeCountText = fmt.Sprintf("(%d found)", n)
@@ -536,8 +439,7 @@ func themeFoundText(names []string) string {
 	return settings.themeCountText
 }
 
-// Per-character sprite filtering (#21 label 15). Indices MUST match
-// config.SpriteScaling* — the pref is mirrored straight into the dropdown row.
+// Per-character sprite filtering. Indices MUST match config.SpriteScaling*; the pref is mirrored into the dropdown row.
 const (
 	spriteScaleDDX = 110 // dropdown x, past the "Sprite filtering:" label
 	spriteScaleDDW = 230 // wide enough for the longest label below
@@ -549,8 +451,7 @@ var spriteScalingLabels = [...]string{
 	config.SpriteScalingPixel:  "Always crisp pixels",
 }
 
-// One line of plain why-would-I-pick-this under the row. Short and factual —
-// settings text stays descriptive, never chatty.
+// One factual line under the row saying why you would pick it.
 var spriteScalingHints = [...]string{
 	config.SpriteScalingAuto:   "Follows each character's own char.ini, and keeps small pixel-art sprites crisp when they're enlarged.",
 	config.SpriteScalingSmooth: "Blurs enlarged pixel art. Ignores what characters ask for.",

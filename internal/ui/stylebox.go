@@ -12,21 +12,17 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// stylePathBox is the side of the draw-a-path square (#34).
+// stylePathBox is the side of the draw-a-path square.
 const stylePathBox = int32(112)
 
-// pathCellCenter maps a packed 4-bit X/Y waypoint to the centre of its cell inside box.
 func pathCellCenter(p byte, box sdl.Rect) (x, y int32) {
 	return box.X + int32(p>>4)*box.W/16 + box.W/32, box.Y + int32(p&0x0F)*box.H/16 + box.H/32
 }
 
-// pathStrokeCap bounds the freehand stroke buffer (rule §17.4).
+// pathStrokeCap bounds the freehand stroke buffer (hard rule 4).
 const pathStrokeCap = 256
 
-// drawStylePathEditor draws the "draw your own motion path" box (#34, B2): DRAG inside it to
-// sketch a loop (sampled to up to 16 waypoints on release), or CLICK to drop a single waypoint;
-// centre = the sprite's rest spot. Your sprite loops through the path — overriding the Move
-// cycle — transmitted + stacking. Shows the live stroke / saved path; a Clear button removes it.
+// drawStylePathEditor draws the motion-path box: drag to sketch a loop (up to 16 waypoints), or click to add one.
 func (a *App) drawStylePathEditor(x, y int32, p config.SpriteStylePref) int32 {
 	c := a.ctx
 	c.Label(x, y, "Or draw a custom path (drag to sketch · click to add a point · centre = rest):", ColTextDim)
@@ -37,10 +33,7 @@ func (a *App) drawStylePathEditor(x, y int32, p config.SpriteStylePref) int32 {
 	c.Fill(sdl.Rect{X: box.X + box.W/2 - 1, Y: box.Y + 4, W: 2, H: box.H - 8}, ColPanelHi) // crosshair = rest
 	c.Fill(sdl.Rect{X: box.X + 4, Y: box.Y + box.H/2 - 1, W: box.W - 8, H: 2}, ColPanelHi)
 
-	// c.hovering (not raw pointIn) so the clip mirror is honoured: when the box body
-	// is scrolled, a path box scrolled behind the title/notes band must NOT catch a
-	// drag-to-sketch press or a tap-to-add-point (the clipped-grids-need-pushClip
-	// class — raw pointIn would leak the interaction past the clip edge, #C).
+	// c.hovering, not raw pointIn, so a box scrolled behind the title band cannot catch a press past the clip edge.
 	inBox := c.hovering(box)
 	press := c.mouseDown && !a.pathPrevDown
 	a.pathPrevDown = c.mouseDown
@@ -69,7 +62,6 @@ func (a *App) drawStylePathEditor(x, y int32, p config.SpriteStylePref) int32 {
 		a.pathStroke = a.pathStroke[:0]
 	}
 
-	// The live stroke while sketching, else the saved path (dots + connecting loop).
 	if a.pathDrawing && len(a.pathStroke) > 1 {
 		_ = c.Ren.SetDrawColor(ColTierGreen.R, ColTierGreen.G, ColTierGreen.B, 255)
 		for i := 1; i < len(a.pathStroke); i++ {
@@ -104,8 +96,7 @@ func (a *App) drawStylePathEditor(x, y int32, p config.SpriteStylePref) int32 {
 	return y + stylePathBox + 8
 }
 
-// strokeMoved reports whether a freehand stroke is a real drag (vs a click/tap): its bounding
-// box spans more than a few pixels.
+// strokeMoved reports whether a stroke's bounding box spans more than a few pixels, a drag rather than a click.
 func strokeMoved(stroke []sdl.Point) bool {
 	if len(stroke) < 3 {
 		return false
@@ -128,9 +119,7 @@ func strokeMoved(stroke []sdl.Point) bool {
 	return maxX-minX > 8 || maxY-minY > 8
 }
 
-// samplePathStroke reduces a raw freehand stroke to up to len(pts) evenly-spaced waypoints, packed
-// as 4-bit X/Y bytes on the box's grid. Returns the points + count (>=2, else 0). The array size
-// (and so the point cap) tracks config.SpriteStylePref.Path.
+// samplePathStroke reduces a stroke to evenly-spaced 4-bit X/Y waypoints, returning them and a count (>=2, else 0).
 func samplePathStroke(stroke []sdl.Point, box sdl.Rect) (pts [16]uint8, count uint8) {
 	n := len(stroke)
 	if n < 2 || box.W <= 0 || box.H <= 0 {
@@ -149,7 +138,7 @@ func samplePathStroke(stroke []sdl.Point, box sdl.Rect) (pts [16]uint8, count ui
 	return pts, uint8(k)
 }
 
-// motionName labels a transmitted sprite-motion path for the cycle button (#34).
+// motionName labels a transmitted sprite-motion path for the cycle button.
 func motionName(m uint8) string {
 	switch m {
 	case courtroom.MotionOrbit:
@@ -171,7 +160,6 @@ func motionName(m uint8) string {
 	}
 }
 
-// restyleName labels the extra per-pixel restyle for its cycle button (the "10 more restyles" set).
 func restyleName(r uint8) string {
 	switch courtroom.VariantEffect(r) {
 	case courtroom.VariantRedscale:
@@ -201,7 +189,7 @@ func restyleName(r uint8) string {
 	}
 }
 
-// nextRestyle cycles None → the 10 restyles → None (the restyle values are contiguous).
+// nextRestyle cycles None through the restyles and back; the restyle values are contiguous.
 func nextRestyle(r uint8) uint8 {
 	switch {
 	case r == 0:
@@ -213,8 +201,7 @@ func nextRestyle(r uint8) uint8 {
 	}
 }
 
-// prevRestyle is nextRestyle's inverse (right-click on the Restyle button): cycles None ←
-// the 10 restyles ← None. The restyle values are contiguous, so it's the same wrap reversed.
+// prevRestyle is nextRestyle's inverse, for right-click.
 func prevRestyle(r uint8) uint8 {
 	switch {
 	case r == 0:
@@ -226,19 +213,16 @@ func prevRestyle(r uint8) uint8 {
 	}
 }
 
-// prevMotion cycles the movement path backward (right-click on the Move button); the forward
-// cycle is the inline (m+1) % MotionCount.
+// prevMotion cycles the movement path backward, for right-click.
 func prevMotion(m uint8) uint8 {
 	return (m + courtroom.MotionCount - 1) % courtroom.MotionCount
 }
 
-// prevGlitchMode cycles the glitch look backward (right-click on the Glitch button); the
-// forward cycle is the inline (m+1) % GlitchModeCount.
+// prevGlitchMode cycles the glitch look backward, for right-click.
 func prevGlitchMode(m uint8) uint8 {
 	return (m + courtroom.GlitchModeCount - 1) % courtroom.GlitchModeCount
 }
 
-// glitchModeName labels the transmitted glitch look for its cycle button.
 func glitchModeName(m uint8) string {
 	switch m {
 	case courtroom.GlitchHeavy:
@@ -254,9 +238,7 @@ func glitchModeName(m uint8) string {
 	}
 }
 
-// glitchPairPresets are the quick fringe colour PAIRS (the ask: not only red and
-// blue). "Classic" stores all-zero — the wire default — so picking it sends the lean
-// frame and every build, old or new, renders the same red/blue.
+// glitchPairPresets are the fringe colour pairs; "Classic" stores all zero, the wire default every build draws alike.
 var glitchPairPresets = []struct {
 	name                   string
 	ar, ag, ab, br, bg, bb uint8
@@ -269,8 +251,7 @@ var glitchPairPresets = []struct {
 	{"Ember (red / dark red)", 255, 60, 40, 120, 10, 10},
 }
 
-// glitchEffective resolves a stored fringe pair to the colours that actually draw:
-// the all-zero pair is the classic red/blue default (mirrors the render's rule).
+// glitchEffective resolves a stored pair to the drawn colours; all zero means classic red and blue, as in the render.
 func glitchEffective(ar, ag, ab, br, bg, bb uint8) (sdl.Color, sdl.Color) {
 	if ar == 0 && ag == 0 && ab == 0 && br == 0 && bg == 0 && bb == 0 {
 		return sdl.Color{R: 255, A: 255}, sdl.Color{B: 255, A: 255}
@@ -278,23 +259,13 @@ func glitchEffective(ar, ag, ab, br, bg, bb uint8) (sdl.Color, sdl.Color) {
 	return sdl.Color{R: ar, G: ag, B: ab, A: 255}, sdl.Color{R: br, G: bg, B: bb, A: 255}
 }
 
-// minVisibleStyleOpacity floors the Fade slider so a style can't go invisible. It
-// mirrors courtroom.minVisibleOpacity (the render side floors it too); kept here
-// because config/courtroom consts aren't exported.
+// minVisibleStyleOpacity floors the Fade slider, mirroring courtroom.minVisibleOpacity, which is not exported.
 const minVisibleStyleOpacity = 25
 
-// defaultPaintSplit seeds the two-tone split when it's first enabled: ~30% from the
-// top lands near the head/body line on a typical AO sprite; the Split slider tunes it.
+// defaultPaintSplit seeds the two-tone split: about 30% from the top is near a typical AO sprite's head and body line.
 const defaultPaintSplit = 30
 
-// The floating Sprite Style box (#104): the non-intrusive, draggable cousin of
-// the Extras box for the transmitted Sprite Style (#103). It floats ON TOP of the
-// live courtroom so you can recolour / glow / fade your character ON THE FLY
-// without leaving the chat — the scene, IC input and logs stay live underneath
-// (it shares the Extras surface's pointer fence + single press edge). Opened from
-// the Extras "Sprite Style" entry; drawn only while open, so it's free when shut.
-// Every control writes the sticky pref immediately, so a change shows on your very
-// next message. Session-only open + position (a quick tool, not persisted chrome).
+// The floating Sprite Style box, over the live courtroom; it shares the Extras surface's pointer block and press edge.
 
 const (
 	styleBoxW       = int32(268)
@@ -305,18 +276,11 @@ const (
 	styleSwatchGap  = int32(6)
 	styleSwatchCols = 5
 	stylePrevH      = int32(104) // live-preview strip height (the sprite renders at this stage height)
-	// styleBoxWinMargin is the window-edge gap the box keeps top+bottom / left+right.
-	// The drawn box height is clamped to h-styleBoxWinMargin; anything taller scrolls
-	// inside the body (#C — the box grew off the bottom of the screen before).
+	// styleBoxWinMargin is the window-edge gap; the height clamps to h-styleBoxWinMargin and the rest scrolls.
 	styleBoxWinMargin = int32(16)
 )
 
-// styleBoxRect is the box's screen rect: a fixed width, a height that grows when
-// the tint controls are showing, clamped fully on-screen at its dragged position
-// (else a default tucked under the top-right, clear of the stage centre). It also
-// returns fullH, the UNCLAMPED content height — the caller derives the scroll range
-// from it (maxScroll = fullH - r.H) so the drawn height and the scroll range come
-// from the exact same section sum and can never disagree (#C).
+// styleBoxRect returns the on-screen rect and fullH, the unclamped height the scroll range derives from.
 func (a *App) styleBoxRect(w, h int32) (sdl.Rect, int32) {
 	p := a.d.Prefs.Load().MySpriteStyle
 	bh := extrasTitleH + styleBoxPad // title + top pad
@@ -354,7 +318,7 @@ func (a *App) styleBoxRect(w, h int32) (sdl.Rect, int32) {
 		bh += 30 + 26 + 30 // glitch-look cycle + preset pairs + custom hex row
 	}
 	bh += 30 // clear button
-	// #126 presets: a header, a Save row, and one row per saved mood.
+	// A header, a Save row, and one row per saved preset.
 	bh += 22 + 28 + int32(a.d.Prefs.Load().StylePresetCount())*26
 	bh += styleBoxPad
 	bw := styleBoxW
@@ -385,9 +349,7 @@ func (a *App) styleBoxRect(w, h int32) (sdl.Rect, int32) {
 	return sdl.Rect{X: value.Clamp(x, 8, maxX), Y: value.Clamp(y, 8, maxY), W: bw, H: bh}, fullH
 }
 
-// drawSpriteStyleBox paints the floating Sprite Style panel and handles its input.
-// pressed is the Extras surface's shared press edge (the title bar consumes it for
-// dragging). Mirrors drawFavEmoteBox's frame.
+// drawSpriteStyleBox paints the panel; pressed is the Extras surface's shared press edge, consumed by title dragging.
 func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	c := a.ctx
 	p := a.d.Prefs.Load().MySpriteStyle
@@ -395,12 +357,10 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
 
-	// Title bar / drag handle + close. Drawn (and hit-tested) OUTSIDE the scrolled
-	// body clip below, so the drag handle and close button always see the clamped
-	// rect and never scroll away (#C).
+	// Outside the scrolled clip below, so the drag handle and close button never scroll away.
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: extrasTitleH}, ColPanelHi)
 	c.Label(r.X+8, r.Y+6, "Sprite Style", ColText)
-	// Live swatch in the title bar (white = no tint).
+	// White means no tint.
 	swCol := sdl.Color{R: 255, G: 255, B: 255, A: 255}
 	if p.Tint {
 		swCol = sdl.Color{R: p.R, G: p.G, B: p.B, A: 255}
@@ -414,12 +374,8 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	}
 	a.handleStyleBoxDrag(sdl.Rect{X: r.X, Y: r.Y, W: r.W - 56, H: extrasTitleH}, w, h, pressed)
 
-	// Scrollable body (#C): the content is a pure top-to-bottom y-cursor whose total
-	// height (fullH) can exceed the window-clamped box. The body scrolls inside the
-	// area below the title bar; maxScroll is derived from the SAME section sum as the
-	// drawn height so the two can never disagree. styleBoxScroll is clamped every
-	// frame (rule §17.4) — toggling an effect off shrinks maxScroll, and a stale
-	// offset would otherwise strand the view in blank space.
+	// maxScroll derives from the same section sum as the drawn height. Clamped every frame: turning an effect off
+	// shrinks maxScroll, and a stale offset would strand the view in blank space.
 	bodyRect := sdl.Rect{X: r.X, Y: r.Y + extrasTitleH, W: r.W, H: r.H - extrasTitleH}
 	maxScroll := fullH - r.H
 	if maxScroll < 0 {
@@ -427,17 +383,12 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	}
 	a.styleBoxScroll -= c.WheelIn(bodyRect) * scrollStepPx
 	a.styleBoxScroll = value.Clamp(a.styleBoxScroll, 0, maxScroll)
-	// pushClip (not a raw SetClipRect) so hovering() honours the clip: a slider,
-	// swatch or checkbox scrolled behind the title bar / off the bottom must not
-	// hit-test in its hidden half (raw clips draw-only — the click leaks past the
-	// edge). NOT deferred: the width-resize grip draws AFTER the body and must stay
-	// unclipped (it spans the full height), so popClip is called explicitly below.
+	// pushClip, not SetClipRect, so hovering() honours the clip. Not deferred: the resize grip must stay unclipped.
 	clipPrev, clipHad := c.pushClip(bodyRect)
 
 	x := r.X + styleBoxPad
 	y := r.Y + extrasTitleH + 6 - a.styleBoxScroll
 
-	// What it does + how others see it (the user asked for this in the box).
 	noteW := r.W - styleBoxPad*2
 	c.LabelClipped(x, y, noteW, "Restyle YOUR own character live.", ColTextDim)
 	y += 16
@@ -446,9 +397,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	c.LabelClipped(x, y, noteW, "AO2 / webAO see a normal character.", ColTextDim)
 	y += 19
 
-	// Live preview (the ask: preview the restyles like the Pair tab): your selected
-	// emote's idle over your position's background, rendered through the REAL stage
-	// path with the current style applied — paint, restyle, glitch, motion and all.
+	// Live preview: the selected emote over the position background, through the real stage path.
 	c.Label(x, y+1, "Preview", ColTextDim)
 	tgl := "Hide"
 	if a.stylePrevOff {
@@ -460,8 +409,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	y += 20
 	if !a.stylePrevOff {
 		pv := sdl.Rect{X: x, Y: y, W: noteW, H: stylePrevH}
-		// The real stage background behind the sprite (the pair-ghost pattern): a
-		// flat fill stands in until it streams.
+		// A flat fill stands in until the real stage background streams.
 		bgPart, _ := courtroom.PositionScene(a.mySide())
 		bgBase := a.urls.Background(a.sess.Background, bgPart)
 		if bgBase != a.stylePrevBgKey {
@@ -493,19 +441,12 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		y += stylePrevH + 8
 	}
 
-	// Saved styles pinned to the TOP, right under the preview (the user's ask —
-	// they were stranded off the bottom before). drawStylePresets returns its final
-	// y so the effect sections below continue from there; the whole body scrolls, so
-	// every effect control is still reachable no matter how many presets exist (#C).
+	// Saved styles sit under the preview; the body scrolls, so every control stays reachable with many presets.
 	y = a.drawStylePresets(c, x, y, r.W-styleBoxPad*2) // #126 saved moods + keybinds
 	y += 8
 
-	// Recolour toggle + the hue-paint mode (playtest: the multiply tint DARKENS
-	// a colourful sprite — the ask was a recolour that only affects hue). Hue
-	// paint = the tint applied over the sprite's GRAYSCALE variant: every pixel
-	// takes the chosen hue while keeping its own light and shadow (luma × hue).
-	// It's a composition of two EXISTING wire fields (Tint + Grayscale), so any
-	// AsyncAO build — old or new — renders it identically; no wire change.
+	// Hue paint is the tint over the sprite's grayscale variant, keeping each pixel's light and shadow.
+	// It composes the existing Tint and Grayscale wire fields, so every AsyncAO build renders it the same.
 	if next := c.Checkbox(x, y, "Recolour (tint)", p.Tint); next != p.Tint {
 		p.Tint = next
 		a.d.Prefs.SetSpriteStyle(p)
@@ -515,11 +456,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	if next := c.Checkbox(x+132, y, "Hue paint", huePaint); next != huePaint {
 		if next {
 			p.Tint, p.Grayscale = true, true
-			// Invert and the Restyle picker OVERRIDE the grayscale half of the
-			// composition (courtroom.Variant() priority), which reduced "hue paint
-			// on" to the plain multiply tint over that other look — the playtest
-			// bug ("turning it on turns on the old recolour"). Turning hue paint
-			// on now claims the per-pixel slot outright.
+			// Invert and Restyle override grayscale (courtroom.Variant() priority), so hue paint clears them.
 			p.Invert, p.Restyle = false, 0
 			if p.R == p.G && p.G == p.B { // a hueless (gray/white) tint paints nothing — seed a visible hue
 				p.R, p.G, p.B = 255, 0, 0
@@ -533,7 +470,6 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	y += 26
 
 	if p.Tint {
-		// Preset swatches — click to set the colour.
 		px, col := x, 0
 		for _, pr := range spriteStylePresets {
 			sq := sdl.Rect{X: px, Y: y, W: styleSwatchSz, H: styleSwatchSz}
@@ -559,11 +495,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 			y += styleSwatchSz + styleSwatchGap
 		}
 		y += 4
-		// Hue: one slider that drives R/G/B together (a full-vividness hue).
-		// With Hue paint on this IS the painted hue ("set all the colors to the
-		// same hue, then edit that hue"); as a plain tint it's a pure-hue tint.
-		// Derived from the stored RGB, so the swatches and RGB sliders move it.
-		// The wheel helpers work in h ∈ [0,1]; the slider shows degrees.
+		// One slider driving R, G and B; with hue paint on it is the painted hue. Derived from stored RGB, h in [0,1].
 		hue, _, _ := rgbToHSV(p.R, p.G, p.B)
 		huePos := value.Clamp(int32(hue*360+0.5), 0, 359)
 		c.Label(x, y, "Hue", ColTextDim)
@@ -572,7 +504,6 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 			a.d.Prefs.SetSpriteStyle(p)
 		}
 		y += 20
-		// Fine RGB control.
 		swW := r.W - 24 - styleBoxPad*2
 		nr := c.Slider("styleR", sdl.Rect{X: x + 22, Y: y, W: swW, H: 14}, int32(p.R), 255)
 		c.Label(x, y, "R", ColTextDim)
@@ -587,10 +518,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 			p.R, p.G, p.B = uint8(nr), uint8(ng), uint8(nb)
 			a.d.Prefs.SetSpriteStyle(p)
 		}
-		// Two-tone paint ("head red, rest blue") — hue paint only: the split row +
-		// second colour ride the wire tail and paint the sprite in two bands (upper =
-		// the colour above, lower = Hue B). An older AsyncAO client shows the single
-		// upper colour; AO2/webAO still see a normal sprite.
+		// Hue paint only: the split and second colour ride the wire tail. Older clients show the upper colour alone.
 		if p.Grayscale {
 			twoTone := p.PaintSplit != 0
 			ttRect := sdl.Rect{X: x, Y: y, W: 22 + c.TextWidth("Two-tone"), H: 16}
@@ -631,7 +559,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		}
 	}
 
-	// Opacity (25..100; below the floor renders at the floor, never invisible).
+	// Below the floor renders at the floor, never invisible.
 	op := int32(p.Opacity)
 	if op == 0 {
 		op = 100
@@ -650,7 +578,6 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	}
 	y += 30
 
-	// Rainbow (transmitted hue cycle) + Mirror.
 	if next := c.Checkbox(x, y, "Rainbow", p.HueCycle); next != p.HueCycle {
 		p.HueCycle = next
 		a.d.Prefs.SetSpriteStyle(p)
@@ -661,7 +588,6 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	}
 	y += 26
 
-	// Brightness / Size / Tilt sliders.
 	slX, slW := x+56, r.W-56-styleBoxPad*2
 	br := int32(p.Brightness)
 	if br == 0 {
@@ -697,7 +623,6 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	}
 	y += 26
 
-	// Glow / Wobble / Spin.
 	if next := c.Checkbox(x, y, "Glow", p.Glow); next != p.Glow {
 		p.Glow = next
 		a.d.Prefs.SetSpriteStyle(p)
@@ -712,10 +637,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	}
 	y += 26
 
-	// Invert / Grayscale — per-pixel effects (the renderer builds a cached variant
-	// texture; the recolour/glow above still compose on top). Both interact with
-	// hue paint (= Tint+Grayscale): leaving or overriding it must never strand the
-	// bare multiply tint — that IS the darkening the hue-paint mode exists to avoid.
+	// Per-pixel effects that interact with hue paint: overriding it must never leave the bare multiply tint.
 	if next := c.Checkbox(x, y, "Invert", p.Invert); next != p.Invert {
 		p.Invert = next
 		if next && p.Tint && p.Grayscale {
@@ -740,7 +662,6 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		a.d.Prefs.SetSpriteStyle(p)
 	}
 	y += 26
-	// Extra restyle (#M5+): cycle one of 10 per-pixel looks (redscale, solarize, neon…), transmitted.
 	// Left-click moves next, right-click moves back.
 	rsb := sdl.Rect{X: x, Y: y, W: r.W - styleBoxPad*2, H: btnH}
 	if c.Button(rsb, restyleName(p.Restyle)) {
@@ -758,9 +679,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	}
 	c.Tooltip(rsb, "An extra per-pixel restyle for your sprite — redscale, greenscale, bluescale, solarize, threshold, duotone, warm, cool, neon, infrared, pixel art. Overrides Invert/Grayscale/Sepia/Posterize; other AsyncAO players see it. Left-click next · right-click back.")
 	y += 30
-	// Movement path (#34): a transmitted looping motion — None → Orbit → Bounce → Sway →
-	// Drift. Other AsyncAO players see your sprite follow it; it stacks with the effects
-	// above. The viewer's ReduceMotion suppresses it (accessibility).
+	// Transmitted looping motion that stacks with the effects above; the viewer's ReduceMotion suppresses it.
 	mb := sdl.Rect{X: x, Y: y, W: r.W - styleBoxPad*2, H: btnH}
 	if c.Button(mb, motionName(p.Motion)) {
 		p.Motion = (p.Motion + 1) % courtroom.MotionCount
@@ -773,7 +692,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	y += 30
 	y = a.drawStylePathEditor(x, y, p) // #34 B2: draw-your-own custom path
 
-	// Outline / drop-shadow (#8) — silhouette effects drawn behind the sprite, transmitted.
+	// Silhouette effects drawn behind the sprite, transmitted.
 	if next := c.Checkbox(x, y, "Outline", p.Outline); next != p.Outline {
 		p.Outline = next
 		a.d.Prefs.SetSpriteStyle(p)
@@ -825,7 +744,6 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		}
 		c.Tooltip(gb, "The glitch look — Classic (fringe + jolt), Heavy (wider, harder, oftener), Torn (VHS band tearing), Static (jitter + signal-loss flicker), Echo (far trailing ghosts). Transmitted; an older AsyncAO build shows Classic. Left-click next · right-click back.")
 		y += 30
-		// Preset colour pairs: each swatch is the two ghost colours side by side.
 		c.Label(x, y+5, "Pair", ColTextDim)
 		px := x + 34
 		for _, pr := range glitchPairPresets {
@@ -849,8 +767,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 			px += 28
 		}
 		y += 26
-		// Custom pair: one hex colour per ghost (A = left, B = right), with a live
-		// swatch each. The field mirrors the effective colour when not being typed in.
+		// One hex colour per ghost, each with a swatch; the field mirrors the effective colour when not being typed in.
 		effA, effB := glitchEffective(p.GlitchAR, p.GlitchAG, p.GlitchAB, p.GlitchBR, p.GlitchBG, p.GlitchBB)
 		half := (r.W - styleBoxPad*2 - 8) / 2
 		hexW := half - 30
@@ -883,17 +800,11 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	if c.Button(sdl.Rect{X: x, Y: y, W: r.W - styleBoxPad*2, H: btnH}, "Clear style") {
 		a.d.Prefs.SetSpriteStyle(config.SpriteStylePref{})
 	}
-	// The Clear button is the last body control (saved styles moved to the top, #C).
 
-	// End of the scrolled body. popClip explicitly (not deferred) BEFORE the grip so
-	// the full-height resize grip below draws + hit-tests against the clamped rect,
-	// never the clipped/scrolled region (#C).
+	// Pop explicitly before the grip, so it hit-tests against the clamped rect, not the clipped region.
 	c.popClip(clipPrev, clipHad)
 
-	// Right-edge width grip: drag to widen the box (the notes / sliders / buttons
-	// all follow r.W). Height stays content-driven. The hit strip sits in the right
-	// margin, clear of every control (they stop at r.W - styleBoxPad). Handled with
-	// the box's shared press edge, like the title-bar drag.
+	// Height stays content-driven. The hit strip is in the right margin, clear of every control.
 	grip := sdl.Rect{X: r.X + r.W - styleGripW, Y: r.Y + extrasTitleH, W: styleGripW, H: r.H - extrasTitleH}
 	a.handleStyleResize(grip, r, pressed)
 	for i := int32(0); i < 3; i++ { // three nubs down the right-edge centre so it reads as draggable
@@ -924,9 +835,7 @@ func (a *App) handleStyleBoxDrag(handle sdl.Rect, w, h int32, pressed *bool) {
 	}
 }
 
-// handleStyleResize widens the box from its right-edge grip (height stays
-// content-driven). Shares the Extras surface's press edge + the box's grab
-// offset; styleBoxRect clamps the result to [styleBoxMinW, window].
+// handleStyleResize widens the box from its right-edge grip; styleBoxRect clamps the result.
 func (a *App) handleStyleResize(grip, r sdl.Rect, pressed *bool) {
 	c := a.ctx
 	if *pressed && pointIn(c.mouseX, c.mouseY, grip) {

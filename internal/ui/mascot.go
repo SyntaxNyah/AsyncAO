@@ -1,11 +1,7 @@
 package ui
 
-// Mayo — the AsyncAO mascot AND app icon (commissioned by Nyah, illustrated by
-// hlenbchan / @hlenbchan2). She's a mashup of the Go gopher (AsyncAO is written
-// in Go — hence the gopher-blue palette) and Maya Fey from Ace Attorney; the name
-// began as "MayAO" (Maya + AO) and became "Mayo". The 512x512 art is embedded
-// once and used three ways: the SDL window/taskbar icon (SetWindowIcon), a
-// texture on the About page (mayoTexture), and the README.
+// Mayo, the AsyncAO mascot and app icon (art by hlenbchan). The 512x512 art is embedded once and used for the SDL
+// window icon (SetWindowIcon), the About page texture (mayoTexture) and the README.
 
 import (
 	"bytes"
@@ -24,12 +20,8 @@ import (
 //go:embed assets/mayo.png
 var mayoPNG []byte
 
-// SetWindowIcon sets the window / taskbar icon to Mayo. It's split per-platform
-// (mascot_icon_*.go): on Windows it's a no-op because the executable embeds a
-// proper multi-resolution .ico resource (cmd/asyncao/rsrc_windows.syso) that
-// Windows renders crisply at every size — handing SDL one big surface would
-// override that resource with a badly downscaled icon. Elsewhere it uploads the
-// embedded art via SDL_SetWindowIcon.
+// SetWindowIcon is per-platform (mascot_icon_*.go). On Windows it is a no-op because the exe embeds a multi-resolution
+// .ico (cmd/asyncao/rsrc_windows.syso) that one large SDL surface would override with a poor downscale.
 
 // decodeMayoRGBA decodes the embedded mascot into a tightly-packed RGBA image
 // (image.RGBA byte order == SDL ABGR8888). ok=false on any decode failure, so
@@ -48,14 +40,9 @@ func decodeMayoRGBA() (*image.RGBA, bool) {
 	return rgba, true
 }
 
-// mayoTexture returns the About-page portrait texture and the LOGICAL size to draw
-// it at (aboutMascotPx, aspect-kept). The texture is a high-quality Catmull-Rom
-// downscale of the embedded 512² art, baked to the exact PHYSICAL pixel size
-// (logical × the UI render scale) so it draws 1:1 on screen — far sharper than
-// letting the GPU shrink the full-res art, and independent of the smooth-scaling
-// setting. Built once (render thread), cached, and rebuilt only when the UI scale
-// changes; nil on failure (About omits the portrait). ZERO per-frame cost — the
-// resample never touches the render loop.
+// mayoTexture returns the About-page portrait texture and its logical size (aboutMascotPx, aspect kept). It is a
+// Catmull-Rom downscale baked at the physical pixel size (logical x UI scale) so it draws 1:1; built once on the
+// render thread and rebuilt only when the UI scale changes. Nil on failure.
 func (a *App) mayoTexture() (*sdl.Texture, int32, int32) {
 	scale := a.UIScale() // percent; bake to physical px = logical × scale
 	if a.mayoTex != nil {

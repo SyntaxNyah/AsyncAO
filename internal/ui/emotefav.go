@@ -5,26 +5,18 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Emote favourites (#77): star the handful of emotes you actually use on a
-// character (many ship dozens), and optionally filter the grid to just those.
-// Favourites are keyed per character by the emote's INDEX in its list — emote
-// labels and talking sprites duplicate within a character (Apollo has three
-// "normal" emotes sharing one anim), so a name key would merge distinct emotes
-// into one star. See config.ToggleEmoteFav.
+// Emote favourites: star the emotes you use and optionally filter the grid to them. Keyed per character by the emote's
+// index in its list, since labels and talking sprites duplicate within a character (Apollo has three "normal" emotes
+// sharing one anim) and a name key would merge distinct emotes. See config.ToggleEmoteFav.
 //
-// Performance: the grid draw is per-frame, so the lookups must be free. A click
-// rebuilds emoteFavSet (O(1) membership) and emoteVisible (the indices to show)
-// once, then every steady-state frame is a single guard-key compare. The
-// backing arrays are reused; nothing here touches the render loop, which keeps
-// its 0-alloc gate (render.Viewport).
+// A click rebuilds emoteFavSet (O(1) membership) and emoteVisible once; every steady-state frame is a single guard-key
+// compare, reusing the backing arrays.
 
 const emoteFavStarPx = 15 // star badge size in an emote cell's top-right corner
 
-// refreshEmoteView rebuilds the favourite set + visible-index list for the
-// active character, but only when the guard key changed (character, favs-only
-// toggle, emote count, or a favourite edit). Cheap and idempotent — safe to call
-// from every consumer (both grids, the number keys, random) so none depends on
-// call order.
+// refreshEmoteView rebuilds the favourite set and visible-index list for the active character only when the guard key
+// changed (character, favs-only toggle, emote count, favourite edit). It is idempotent, so every consumer (both grids,
+// number keys, random) can call it without depending on call order.
 func (a *App) refreshEmoteView() {
 	char := a.activeCharName()
 	favOnly := a.d.Prefs.Load().EmoteFavOnly
@@ -44,9 +36,8 @@ func (a *App) refreshEmoteView() {
 		a.emoteFavSet[idx] = struct{}{}
 	}
 
-	// favBoxList is always the favourites in emote order (the floating box reads
-	// it regardless of the grid filter). Built here so both it and the box stay
-	// allocation-free at steady state — only this rebuild touches them.
+	// favBoxList is always the favourites in emote order (the floating box reads it regardless of the grid filter);
+	// built here so it and the box stay allocation-free.
 	a.favBoxList = a.favBoxList[:0]
 	for i := range a.emotes {
 		if _, ok := a.emoteFavSet[i]; ok {
@@ -71,14 +62,10 @@ func (a *App) toggleEmoteFav(realIdx int) {
 	a.emoteFavRev++
 }
 
-// drawEmoteFavStar draws the favourite badge in an emote cell's top-right corner
-// and reports whether THIS frame's click toggled it (so the caller skips the
-// cell's emote-select). The ★ is ALWAYS shown — dim grey when not yet a
-// favourite, gold when it is — so favouriting is discoverable (a hover-only star
-// is invisible until you happen to hover; the whole feature then goes unnoticed).
-// A faint backing only appears when it's favourited or the cell is hovered, so an
-// idle grid stays subtle, not noisy. Must be drawn AFTER the cell button (sits on
-// top) and its result must win over the button's pick — see the call sites.
+// drawEmoteFavStar draws the favourite badge in an emote cell's top-right corner and reports whether this frame's click
+// toggled it (so the caller skips emote-select). The star is always shown, dim when not a favourite and gold when it
+// is, so the feature is discoverable; the backing appears only when favourited or hovered. Draw it after the cell
+// button; its result must win over the button's pick.
 func (a *App) drawEmoteFavStar(cell sdl.Rect, realIdx int) bool {
 	if !a.d.Prefs.Load().EmoteFavStars {
 		return false // favourites are opt-in (default off): no badge, no tofu on every cell
@@ -101,9 +88,8 @@ func (a *App) drawEmoteFavStar(cell sdl.Rect, realIdx int) bool {
 	return false
 }
 
-// drawEmoteFavToggle draws the favourites-only filter button at btn and flips
-// the (persisted) pref when clicked, invalidating the view. Shared by both
-// emote grids. Highlighted while the filter is on.
+// drawEmoteFavToggle draws the favourites-only filter button at btn and flips the persisted pref, invalidating the
+// view. Shared by both emote grids; highlighted while on.
 func (a *App) drawEmoteFavToggle(btn sdl.Rect) {
 	if !a.d.Prefs.Load().EmoteFavStars {
 		return // feature off: no "★ Favs" filter button either

@@ -1,19 +1,7 @@
 package ui
 
-// M13 self-update, UI side: the one-shot launch check, the persistent
-// "update available" chip, and the What's New patch-notes modal. "Get the
-// update" runs the full self-replace in-app (startSelfUpdate, wired to the
-// modal button): download the platform asset next to the running exe → verify
-// it against the release's SHA256SUMS manifest when published → stage-replace
-// the binary (rename-with-rollback) → relaunch into the new build on the next
-// quit (requestRelaunch → MaybeRelaunch). It degrades to opening the release
-// page in the browser only when the release has no matching asset or the
-// install dir is read-only (the low-level pieces live in internal/update).
-//
-// Input is handled in handleUpdateInput BEFORE the screens draw (the kit has
-// one per-frame click bool, so a modal must consume it first — same pattern as
-// the tab strip); drawUpdateAvailable only paints, in the overlay phase, using
-// the same rects.
+// Self-update UI: the launch check, the update-available chip and the What's New modal. handleUpdateInput runs before
+// the screens draw because the kit has one per-frame click bool a modal must consume first.
 
 import (
 	"context"
@@ -33,27 +21,19 @@ const (
 	// updateModalW/H size the What's New panel.
 	updateModalW int32 = 560
 	updateModalH int32 = 420
-	// updateNotesLineH is the patch-notes line pitch (matches the kit's body
-	// font density, like the hotkey sheet's rows).
+	// updateNotesLineH is the patch-notes line pitch.
 	updateNotesLineH int32 = 18
-	// updateNotesMaxLines bounds the wrapped patch notes the modal builds
-	// (rule §17.4: a huge release body can't grow the draw unbounded — the
-	// overflow is reachable via "Get the update" → the full release page).
+	// updateNotesMaxLines bounds the wrapped patch notes; the overflow is on the release page.
 	updateNotesMaxLines = 400
 )
 
-// maybeKickUpdateCheck fires the update probe EXACTLY ONCE, on the first frame
-// (the window is already up), so the check never touches the boot path. A
-// disabled pref short-circuits it, and Check itself skips an unstamped dev
-// build, so neither hits the network.
+// maybeKickUpdateCheck fires the update probe once, on the first frame, to keep it off the boot path.
 func (a *App) maybeKickUpdateCheck() {
 	if a.updateChecked {
 		return
 	}
 	a.updateChecked = true
-	// Clear a leftover .old backup from a previous self-update — off the render
-	// thread (disk I/O) and off the boot path (frame 1), regardless of the
-	// check pref (you want the stale binary gone even with checks disabled).
+	// Clear a leftover .old backup off the render thread, even when update checks are disabled.
 	go func() {
 		if exe, err := os.Executable(); err == nil {
 			update.CleanupOldBundle(exe)
@@ -65,12 +45,8 @@ func (a *App) maybeKickUpdateCheck() {
 	res := a.updateRes
 	experimental := a.d.Prefs.Load().UpdateExperimental // read on the render thread; the goroutine only captures the bool
 	go func() {
-		// assetMatch identifies THIS platform's ONE swappable default binary
-		// (see update.SelfUpdateAssetMatch — a bare GOOS match could grab a
-		// .zip bundle and brick the self-replace). A failed or already-current
-		// check is silent — the updater never nags. The experimental channel
-		// (Power user) follows the prerelease/test-branch feed instead, and
-		// may offer sideways/downgrade builds — that's how you hop back off.
+		// assetMatch picks this platform's one swappable binary; a bare GOOS match could grab a .zip bundle.
+		// Failures are silent. The experimental channel follows the prerelease feed and may offer downgrades.
 		var rel *update.Release
 		var err error
 		if experimental {
@@ -86,9 +62,7 @@ func (a *App) maybeKickUpdateCheck() {
 	}()
 }
 
-// pollUpdate drains a found release: it stores it, builds the chip label once
-// (so the per-frame draw never allocates), and auto-opens the modal the first
-// time so the patch notes are surfaced without the user hunting for them.
+// pollUpdate drains a found release, builds the chip label once, and opens the modal the first time.
 func (a *App) pollUpdate() {
 	select {
 	case rel := <-a.updateRes:
@@ -117,15 +91,9 @@ func (a *App) pollUpdate() {
 	}
 }
 
-// startSelfUpdate downloads the release asset next to the running exe, verifies
-// it against the release's SHA256SUMS manifest WHEN one was published (releases
-// cut before checksums shipped have none and proceed unverified but
-// integrity-capped), and stages the swap — all off-thread, reporting on
-// updateApplyRes. A checksum mismatch (or a failure to fetch/find the entry on a
-// release that ships sums) aborts the update and surfaces an error rather than
-// installing an unverified binary. It degrades to the release page when there's
-// no downloadable asset or the install dir is read-only (Program Files without
-// elevation). No-op while a previous run is in flight or already staged.
+// startSelfUpdate downloads the release asset, verifies it against SHA256SUMS when published, and stages the swap
+// off-thread, reporting on updateApplyRes. A bad checksum aborts; with no asset or a read-only install it opens the
+// release page.
 func (a *App) startSelfUpdate() {
 	if a.updateBusy || a.updateStaged || a.updateRel == nil {
 		return
@@ -156,36 +124,27 @@ func (a *App) startSelfUpdate() {
 		var err error
 		switch runtime.GOOS {
 		case "windows":
-			// Windows self-updates via the DLL bundle (exe + runtime DLLs beside
-			// it), so a new engine ships with its libraries.
+			// Windows ships the exe with its runtime DLLs, so they update together.
 			err = applyBundleUpdate(url, sumsURL, assetName, exe, "")
 		case "darwin":
-			// macOS self-updates via the bundle tarball (binary + lib/), so a
-			// SONAME bump no longer strands a bare binary against a stale lib/.
+			// macOS updates the bundle tarball (binary + lib/) so a SONAME bump can't strand a stale lib/.
 			err = applyBundleUpdate(url, sumsURL, assetName, exe, "lib")
 		default:
-			// Linux ships a self-contained AppImage — a single-file swap is the
-			// whole update.
+			// Linux ships a single-file AppImage.
 			err = applyBinaryUpdate(url, sumsURL, assetName, exe)
 		}
 		res <- err
 	}()
 }
 
-// applyBinaryUpdate is the single-binary self-update path (Linux AppImage,
-// macOS bare binary): download the one asset, verify it against the release's
-// SHA256SUMS manifest when published, and stage-replace the running binary.
+// applyBinaryUpdate is the single-binary path (Linux AppImage): download, verify, stage-replace.
 func applyBinaryUpdate(url, sumsURL, assetName, exe string) error {
 	staged := update.StagedPath(exe)
 	if _, err := update.Download(context.Background(), url, staged); err != nil {
 		return err
 	}
-	// Verify the download against the release's SHA256SUMS manifest when one
-	// was published. Releases cut before checksums shipped carry no manifest
-	// (SumsURL == ""): we skip verification and proceed exactly as before — the
-	// download is still integrity-capped, just not sum-checked. A release that
-	// DOES ship sums gets enforced: any fetch/lookup/mismatch failure aborts,
-	// deletes the partial download, and surfaces the error in the modal.
+	// A release without a checksum manifest (SumsURL == "") is not verified; one that ships sums must match,
+	// otherwise the partial download is deleted and the error shown.
 	if sumsURL != "" {
 		wantHex, err := update.FetchSums(context.Background(), sumsURL, assetName)
 		if err != nil {
@@ -201,20 +160,13 @@ func applyBinaryUpdate(url, sumsURL, assetName, exe string) error {
 		_ = os.Remove(staged)
 		return err
 	}
-	// Uninstall the old binary now. On Unix the renamed-away old exe unlinks
-	// immediately (the running process keeps its open inode); on Windows it is
-	// still locked, so this no-ops and the next-launch CleanupOldBundle
-	// finishes the job — a running .exe can't delete itself.
+	// Unix unlinks the old exe at once; on Windows it stays locked, so the next launch's CleanupOldBundle finishes.
 	update.CleanupOldVersion(exe)
 	return nil
 }
 
-// applyBundleUpdate is the bundle self-update (Windows DLL zip, macOS binary +
-// lib/ tarball): download the archive, verify it, extract it, and stage-replace
-// the binary plus every runtime library (see update.StageBundle). libSubdir is
-// "" on Windows (DLLs beside the exe) and "lib" on macOS (dylibs). This fixes
-// the v1.95.1 class of breakage, where a bare-binary swap updated the executable
-// but left stale engine libraries beside it so the new build couldn't launch.
+// applyBundleUpdate is the bundle path (Windows DLL zip, macOS tarball): download, verify, extract, stage-replace the
+// binary and every runtime library. libSubdir is "" on Windows and "lib" on macOS.
 func applyBundleUpdate(url, sumsURL, assetName, exe, libSubdir string) error {
 	archivePath := update.StagedPath(exe) + ".archive"
 	defer os.Remove(archivePath)
@@ -252,24 +204,18 @@ func applyBundleUpdate(url, sumsURL, assetName, exe, libSubdir string) error {
 	return nil
 }
 
-// requestRelaunch is the "Restart to apply" action: flag a relaunch and quit
-// cleanly via SDL_QUIT. The new binary starts AFTER the main loop exits and
-// prefs/tabs are flushed (see MaybeRelaunch), so the two instances never fight
-// over the prefs file or the window.
+// requestRelaunch flags a relaunch and quits via SDL_QUIT; the new binary starts after the main loop exits
+// and prefs are flushed, so the two instances never fight over the prefs file.
 func (a *App) requestRelaunch() { a.RequestRelaunch(nil, false) }
 
-// RequestRelaunch quits cleanly and starts the binary again with args once the
-// main loop has exited and state is saved. keepTabs saves the open tabs for the
-// new process to restore even when restore-on-launch is off: a relaunch the user
-// did not ask for (a GPU device loss) must not drop their servers.
+// RequestRelaunch quits cleanly and restarts with args after state is saved.
+// keepTabs saves open tabs even with restore-on-launch off, so a GPU-loss relaunch keeps the user's servers.
 func (a *App) RequestRelaunch(args []string, keepTabs bool) {
 	a.relaunchOnExit, a.relaunchArgs, a.relaunchKeepTabs = true, args, keepTabs
 	_, _ = sdl.PushEvent(&sdl.QuitEvent{Type: sdl.QUIT})
 }
 
-// MaybeRelaunch starts the binary again if a relaunch was requested ("Restart to
-// apply", a GPU device loss). Called by main AFTER the run loop exits and state is
-// saved.
+// MaybeRelaunch starts the binary again if requested; main calls it after the run loop exits and state is saved.
 func (a *App) MaybeRelaunch() {
 	if !a.relaunchOnExit {
 		return
@@ -283,16 +229,13 @@ func (a *App) MaybeRelaunch() {
 	_ = cmd.Start()
 }
 
-// updateChipRect is the persistent reopen chip, top-right and just under the
-// app-chrome band (#14, chrometop.go) — it used to be a bare tabBarH+4, which the
-// docked server-tab strip now sits on top of.
+// updateChipRect is the reopen chip, top-right under the app-chrome band.
 func (a *App) updateChipRect(w int32) sdl.Rect {
 	cw := a.ctx.TextWidth(a.updateChipLabel) + 18
 	return sdl.Rect{X: w - cw - pad, Y: a.topChromeH() + 4, W: cw, H: updateChipH}
 }
 
-// updateModalRects lays out the What's New panel and its hit targets (shared by
-// the pre-screen input pass and the overlay draw so they can't drift).
+// updateModalRects lays out the What's New panel, shared by the input pass and the overlay draw.
 func updateModalRects(w, h int32) (panel, notes, getBtn, laterBtn sdl.Rect) {
 	panel = sdl.Rect{X: (w - updateModalW) / 2, Y: (h - updateModalH) / 2, W: updateModalW, H: updateModalH}
 	notes = sdl.Rect{X: panel.X + pad, Y: panel.Y + 60, W: panel.W - 2*pad, H: panel.H - 60 - 48}
@@ -302,12 +245,8 @@ func updateModalRects(w, h int32) (panel, notes, getBtn, laterBtn sdl.Rect) {
 	return panel, notes, getBtn, laterBtn
 }
 
-// handleUpdateInput consumes the chip / modal interaction before the screens
-// see this frame's click. No-op until the one-shot check found a release.
-// While the modal is up it hit-tests with raw pointIn, NOT hovering():
-// updateModalFence holds the kit's modal fence (modalOn) so everything
-// underneath is pointer-blind on every screen — hovering() is false for the
-// modal itself too, by design (the same discipline as the emoji picker).
+// handleUpdateInput consumes chip and modal clicks before the screens see them.
+// The modal hit-tests with raw pointIn because updateModalFence makes hovering() false everywhere, itself included.
 func (a *App) handleUpdateInput(w, h int32) {
 	if a.updateRel == nil {
 		return
@@ -321,9 +260,7 @@ func (a *App) handleUpdateInput(w, h int32) {
 		return
 	}
 	panel, notes, getBtn, laterBtn := updateModalRects(w, h)
-	// Raw wheel consume: scroll the notes AND zero the frame's wheel, so the
-	// list behind the scrim can't also scroll ("scrolling the changelog
-	// scrolled the server list") — WheelIn is hovering()-based and modal-fenced.
+	// Consume the wheel so the list behind the scrim doesn't also scroll; WheelIn is hovering()-based and fenced.
 	if c.wheelY != 0 && pointIn(c.mouseX, c.mouseY, notes) {
 		a.updateScroll -= c.wheelY * scrollStepPx
 		if a.updateScroll < 0 {
@@ -332,7 +269,7 @@ func (a *App) handleUpdateInput(w, h int32) {
 		c.wheelY = 0
 		c.wheelTaken = true
 	}
-	// (Esc closes via closeTopOverlay — the app-level escPressed handler.)
+	// Esc closes via closeTopOverlay.
 	if !c.clicked {
 		return
 	}
@@ -351,13 +288,8 @@ func (a *App) handleUpdateInput(w, h int32) {
 	c.clicked = false // the modal owns this frame's click
 }
 
-// updateModalFence holds the kit's modal fence while the What's New modal is
-// up: hovering() reads false for EVERY widget on every screen, so nothing
-// under the scrim reacts — no wheel scroll (WheelIn), no hover highlights, no
-// scrollbar/slider drags. Released the frame after the modal closes, exactly
-// like emojiPickerFence (an un-released modalOn would freeze the whole UI).
-// The modal's own interaction runs on raw pointIn (handleUpdateInput /
-// drawUpdateButton), so the fence never blinds it.
+// updateModalFence sets the kit's modal fence while the modal is up so nothing under the scrim reacts.
+// It is released the frame after the modal closes; a stuck modalOn would freeze the whole UI.
 func (a *App) updateModalFence(c *Ctx) {
 	if a.updateRel != nil && a.updateShow {
 		c.modalOn = true
@@ -368,8 +300,7 @@ func (a *App) updateModalFence(c *Ctx) {
 	}
 }
 
-// drawUpdateAvailable paints the M13 affordances over every screen: the
-// persistent reopen chip when the modal is closed, else the modal itself.
+// drawUpdateAvailable paints the reopen chip, or the modal when it is open.
 func (a *App) drawUpdateAvailable(w, h int32) {
 	if a.updateRel == nil {
 		return
@@ -393,8 +324,7 @@ func (a *App) drawUpdateAvailable(w, h int32) {
 	c.Heading(panel.X+pad, panel.Y+10, kind+a.updateRel.Version+" available", ColText)
 	c.Label(panel.X+pad, panel.Y+38, "What's new:", ColAccent)
 
-	// Patch notes: split on newlines FIRST (WrapText collapses whitespace and
-	// would flatten the bullet structure), then wrap each line to the panel.
+	// Split on newlines first: WrapText collapses whitespace and would flatten the bullets.
 	lines := a.updateNotesLines(notes.W)
 	contentH := int32(len(lines)) * updateNotesLineH
 	maxScroll := contentH - notes.H
@@ -417,7 +347,6 @@ func (a *App) drawUpdateAvailable(w, h int32) {
 	}
 	c.popClip(clipPrev, clipHad)
 
-	// Status line above the buttons reflects the apply flow.
 	statusY := getBtn.Y - 20
 	switch {
 	case a.updateErr != "":
@@ -438,8 +367,7 @@ func (a *App) drawUpdateAvailable(w, h int32) {
 	a.drawUpdateButton(laterBtn, "Close")
 }
 
-// updateNotesLines wraps the release body for the modal, preserving its line
-// breaks and bounding the total (rule §17.4).
+// updateNotesLines wraps the release body for the modal, keeping its line breaks, capped at updateNotesMaxLines.
 func (a *App) updateNotesLines(wrapW int32) []string {
 	c := a.ctx
 	lines := make([]string, 0, 32)
@@ -457,9 +385,7 @@ func (a *App) updateNotesLines(wrapW int32) []string {
 	return lines
 }
 
-// drawUpdateButton paints one modal button (visual only — the click is handled
-// pre-screen in handleUpdateInput). Raw pointIn for the hover tint: the modal
-// holds the modalOn fence, under which hovering() is false everywhere.
+// drawUpdateButton paints one modal button; raw pointIn because hovering() is false under the modal fence.
 func (a *App) drawUpdateButton(r sdl.Rect, label string) {
 	c := a.ctx
 	bg := ColPanelHi

@@ -10,8 +10,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 )
 
-// savePresetAsync snapshots the current settings under presets/<name>.json
-// (the export machinery: flush, strip passwords, write) off-thread.
+// savePresetAsync snapshots the current settings under presets/<name>.json off-thread.
 func savePresetAsync(d Deps, name string) {
 	go func() {
 		line := "Preset saved — pick it from the list any time."
@@ -25,8 +24,7 @@ func savePresetAsync(d Deps, name string) {
 	}()
 }
 
-// applyPresetAsync stages a preset as the live settings (the import machinery:
-// validate + atomic replace, applied on the next start) off-thread.
+// applyPresetAsync stages a preset as the live settings off-thread, applied on the next start.
 func applyPresetAsync(d Deps, name string) {
 	go func() {
 		line := "Preset \"" + name + "\" staged — RESTART AsyncAO to apply (changes made this session won't save)."
@@ -40,8 +38,7 @@ func applyPresetAsync(d Deps, name string) {
 	}()
 }
 
-// measureDiskCacheAsync walks the T3 directory off-thread and reports the
-// blob count + total size on the status line.
+// measureDiskCacheAsync walks the T3 directory off-thread and reports blob count and size.
 func measureDiskCacheAsync(root string) {
 	if root == "" {
 		return
@@ -67,8 +64,7 @@ func measureDiskCacheAsync(root string) {
 	}()
 }
 
-// learnedExportFileName sits next to the executable — easy to hand to a
-// friend, easy to find.
+// learnedExportFileName sits next to the executable.
 const learnedExportFileName = "learned-formats.json"
 
 func learnedExportPath() (string, error) {
@@ -79,8 +75,7 @@ func learnedExportPath() (string, error) {
 	return filepath.Join(dir, learnedExportFileName), nil
 }
 
-// exportLearnedAsync writes the learned table off-thread (§17.2: no sync
-// disk I/O on the render thread) and reports on the status line.
+// exportLearnedAsync writes the learned table off-thread (hard rule 2).
 func exportLearnedAsync(d Deps) {
 	go func() {
 		path, err := learnedExportPath()
@@ -101,17 +96,8 @@ func exportLearnedAsync(d Deps) {
 	}()
 }
 
-// makePortableAsync copies the active config set (settings + notebooks + jukebox)
-// into a config/ folder beside the executable, AND your themes folder to the
-// portable write root beside it (<exeDir>/themes — not inside config/, which is
-// not where anything writes themes after the move), so the whole set travels with
-// a portable copy or USB stick. Off-thread (§17.2: no sync disk I/O on the render
-// thread); the move takes effect on the next launch.
-//
-// Themes are the one half that can fail on its own, and MigrateToPortable says so
-// with ErrThemesNotMigrated rather than an opaque error. That case is reported as
-// what it is — the settings DID move — because "Make portable failed" would send
-// the user hunting for settings that are already in place.
+// makePortableAsync copies the config set beside the executable, and themes to <exeDir>/themes, off-thread (hard rule
+// 2). Themes can fail alone (ErrThemesNotMigrated); that is reported as such because the settings did move.
 func makePortableAsync(d Deps) {
 	go func() {
 		dest, err := d.Prefs.MigrateToPortable()
@@ -134,8 +120,7 @@ func makePortableAsync(d Deps) {
 	}()
 }
 
-// exportSettingsAsync writes the whole-settings bundle beside the exe
-// (timestamped, so repeated exports never clobber each other).
+// exportSettingsAsync writes the settings bundle beside the exe, timestamped so exports never clobber each other.
 func exportSettingsAsync(d Deps) {
 	go func() {
 		var path string
@@ -156,9 +141,7 @@ func exportSettingsAsync(d Deps) {
 	}()
 }
 
-// importSettingsAsync replaces the preferences file with a dropped
-// bundle; the import owns the file from then on (saver freezes) and
-// applies on the next start.
+// importSettingsAsync replaces the preferences file; the saver freezes and it applies on the next start.
 func importSettingsAsync(d Deps, path string) {
 	go func() {
 		line := "Settings imported — RESTART AsyncAO to apply (changes made this session won't save)."
@@ -172,8 +155,8 @@ func importSettingsAsync(d Deps, path string) {
 	}()
 }
 
-// importLearnedAsync merges a learned-formats export and republishes the
-// resolver snapshot (its table swap is atomic — safe off-thread).
+// importLearnedAsync merges a learned-formats export and republishes the resolver snapshot (atomic swap, safe
+// off-thread).
 func importLearnedAsync(d Deps) {
 	go func() {
 		var line string

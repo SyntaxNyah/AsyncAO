@@ -5,8 +5,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Player-list presence badges (#M1): a short label + colour per Status, shown as a chip
-// on the row and cycled by the header "Status:" button. StatusNone has no badge.
+// Player-list presence badges: a label and colour per Status; StatusNone has no badge.
 
 func statusLabel(s courtroom.Status) string {
 	switch s {
@@ -22,8 +21,7 @@ func statusLabel(s courtroom.Status) string {
 	return ""
 }
 
-// statusColor is the chip background for a status — dark enough that the chip's light
-// text stays legible.
+// statusColor is the chip background, dark enough to keep the chip's light text legible.
 func statusColor(s courtroom.Status) sdl.Color {
 	switch s {
 	case courtroom.StatusAFK:

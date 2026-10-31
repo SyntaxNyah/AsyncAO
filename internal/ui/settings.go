@@ -14,63 +14,48 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/videoenc"
 )
 
-// settingsState lives on App lazily (kept here for file cohesion).
 type settingsState struct {
 	mountInput string
 	loaded     bool
 	statusLine string
-	// fpsBufs backs the three frame-rate rows' exact-number entries (active,
-	// idle, unfocused) — reseeded from the pref while unfocused, applied on
-	// Enter (fpsSettingRow).
+	// fpsBufs backs the active, idle and unfocused rows' number entries; reseeded while unfocused, applied on Enter.
 	fpsBufs [3]string
-	// memBufs backs the exact-number fields of the memory/scale slider rows
-	// (downscale %, animated height cap, animated budget, decode concurrency,
-	// texture budget) - reseeded while unfocused, applied on Enter.
+	// memBufs backs the number fields of the memory and scale slider rows; reseeded while unfocused, applied on Enter.
 	memBufs [5]string
-	// logDepthBuf backs the "IC log depth" exact-number entry in the Chat tab's
-	// Chat log section — reseeded while unfocused, applied on Enter.
+	// logDepthBuf backs the "IC log depth" number entry; reseeded while unfocused, applied on Enter.
 	logDepthBuf string
 	tab         int                    // active settings tab (index into settingsTabNames)
 	tabScroll   [numSettingsTabs]int32 // per-tab page scroll (each tab remembers its position)
 	search      string                 // settings search query (jumps to the matching tab)
-	// scrollToSection holds a lowercased query for one frame after a search jump: the
-	// first section card whose title contains it scrolls itself to the top, so search
-	// lands on the SECTION (e.g. "scene maker"), not just the tab. Cleared each frame.
+	// scrollToSection is a lowercased query held one frame after a search jump, for the first matching section card.
 	scrollToSection string
-	// #26 gather-search: the collected all-tabs row index (label + tab + the row's
-	// offset within its tab at zero scroll), built once per search session by a
-	// fenced, clipped-away draw of every tab. flash* highlight the landed row.
+	// index is the all-tabs row list for search, built once per search session by a clipped-away, input-blocked draw.
 	index      []settingsIndexRow
 	indexBuilt bool
 	flashTab   int
 	flashY     int32
 	flashUntil time.Time
 
-	// callword manager add-field buffer: a fresh empty field (NOT preloaded with
-	// the word list — the words render as ×-removable rows below it).
+	// callAddInput is an empty field, not preloaded: the words render as removable rows below it.
 	callAddInput string
 
-	// friends edit buffer — reloaded when the server (friendKey) changes,
-	// since the friend list is per server.
+	// friendInput is reloaded when friendKey changes, since the friend list is per server.
 	friendInput string
 	friendKey   string
 
-	// ignore edit buffer — same per-server reload, so you can un-ignore a
-	// player who's left (the player-row button is gone once they're offline).
+	// ignoreInput is reloaded per server likewise, so you can un-ignore a player who has left.
 	ignoreInput string
 	ignoreKey   string
 
-	// font override edit buffer (semicolon-separated chain).
+	// fontInput is the font override chain, semicolon-separated.
 	fontInput  string
 	fontLoaded bool
 
-	// custom missing-sprite (missingno) image path edit buffer, seeded once from
-	// the pref. errorSpriteLoaded gates the one-time seed like fontLoaded.
+	// errorSpriteInput is the custom missing-sprite path, seeded once from the pref (errorSpriteLoaded).
 	errorSpriteInput  string
 	errorSpriteLoaded bool
 
-	// custom window-size edit buffers (W, H), seeded from the live size and
-	// re-seeded after a preset/fit so they track the window.
+	// winWInput and winHInput are seeded from the live size and again after a preset or fit.
 	winWInput, winHInput string
 	winLoaded            bool
 
@@ -79,18 +64,17 @@ type settingsState struct {
 	// presetName is the "Save as preset" name buffer (setting presets).
 	presetName string
 
-	// macro editor buffers (name, captured key, |-separated lines).
+	// Macro editor buffers: name, captured key, |-separated lines.
 	macroName  string
 	macroKey   string
 	macroLines string
-	// IC quick-phrase editor buffer (the line to bind a key to).
+	// icPhrase is the IC quick-phrase line to bind a key to.
 	icPhrase string
 
-	// theme-binding picker (shares the login section's server list cache).
+	// themeBindKey is the theme-binding picker, sharing the login section's server list cache.
 	themeBindKey string
 
-	// login section: the picked server + its credential edit buffers
-	// (configurable for ANY known server, connected or not).
+	// Login section: the picked server and its credential buffers, for any known server, connected or not.
 	loginKey      string
 	loginUser     string
 	loginPass     string
@@ -101,107 +85,59 @@ type settingsState struct {
 	loginSrvCount int
 	loginSrvFor   string
 
-	// theme picker state: list scanning runs on a goroutine (directory
-	// I/O stays off the render thread — §17.2) and lands on themeRes.
+	// Theme picker: scanning runs on a goroutine, landing on themeRes (hard rule 2).
 	themeName string
 	themeDir  string
 	themeList []string
 	themeRes  chan themeScan
 	themeBusy bool
-	// themeScanUserWant latches "a user asked for a rescan" across a scan that was
-	// already in flight. scanThemes single-flights on themeBusy, and it used to
-	// drop the whole request — including the fromUser bit — so clicking "Apply &
-	// rescan" (or picking a folder) while the Settings screen's automatic first-open
-	// scan was still running silently lost the #35 auto-snap for that action. The
-	// latch is OR'd on every user-initiated call and cleared only by the landing
-	// that actually acts on it, so neither a stale result nor a landing that
-	// resolved nothing can swallow the intent. Render thread only, like the rest of
-	// this struct: the scan goroutine never touches it (hard rules 1 and 8).
+	// themeScanUserWant remembers a user-asked rescan across a scan in flight, which scanThemes would drop.
+	// Set on every user call, cleared only by the landing that acts on it. Render thread only (hard rules 1 and 8).
 	themeScanUserWant bool
-	// themeDDWasOpen edge-detects the theme dropdown so the catalog is rescanned
-	// once per OPEN rather than once per themeScanMinInterval for as long as the
-	// list is held open. The floor alone made a held-open picker poll the disk
-	// every 5 s, which is exactly what the no-watcher decision (themecatalog.go's
-	// header) exists to avoid; the floor stays on top of this edge, so opening the
-	// picker twice in a second is still one scan. Render thread only.
+	// themeDDWasOpen detects the dropdown opening, so the catalog rescans once per open, not while it stays open.
 	themeDDWasOpen bool
-	// themeCountText memoizes the "(N found)" line beside the picker on the count
-	// it was built from — see themeFoundText.
+	// themeCountText memoizes the "(N found)" line on its count; see themeFoundText.
 	themeCountText string
 	themeCountFor  int
-	// themeRows memoizes every string drawThemeCatalogRows draws. See themeRowText.
+	// themeRows memoizes the strings drawThemeCatalogRows draws.
 	themeRows themeRowText
-	// themeArt memoizes the theme-art budget bar's label. See themeArtBarText.
+	// themeArt memoizes the theme-art budget bar's label.
 	themeArt themeArtBarText
 
-	// --- Settings ▸ Theme editor, the authoring tab ------------
+	// Theme editor tab state, read once by the act (settingsthemeeditor.go). Render thread only.
 	//
-	// The CREATOR's four pieces of UI state. On settingsState rather than on App
-	// because they are exactly that — what the tab's controls are showing — and they
-	// die with nothing: the act reads them once and hands values to the funnel
-	// (settingsthemeeditor.go). Render thread only, like the rest of this struct.
-	//
-	// newThemeName is the name field's live text (empty = use the placeholder).
+	// newThemeName is the name field's live text; empty uses the placeholder.
 	newThemeName string
-	// newThemeTemplate is the picked starting point. The zero value is templateBlank,
-	// which is the right default: it is the one template with no prerequisite.
+	// newThemeTemplate is the picked starting point; the zero value, templateBlank, has no prerequisite.
 	newThemeTemplate themeCreateTemplate
-	// presetLayout / presetStyle index the two shipped preset axes, in the library's
-	// own order — the same order the editor's gallery lists them in, so a pair picked
-	// here and then opened in the gallery is the pair the gallery shows.
+	// presetLayout and presetStyle index the two preset axes, in the same order as the editor's gallery.
 	presetLayout, presetStyle int
-	// presetAxisNames memoizes the two label slices those dropdowns draw from, keyed
-	// on the library pointer. Without it the tab would rebuild two 20-odd-entry
-	// string slices every frame.
+	// presetAxisNames memoizes the dropdowns' two label slices on the library pointer, not rebuilt per frame.
 	presetAxisNames presetAxisNameCache
 
-	// folder picking: native dialog output / resolved drag-drops land
-	// here from goroutines (never block or stat on the render thread). Still used
-	// by the THEME folder picker (browseForFolder) — the .demo picker moved fully
-	// in-app (demobrowser.go), so this is the theme picker's alone.
+	// Theme folder picker: dialog output and resolved drops land here from goroutines, never stat on the render thread.
 	folderRes  chan string
 	browseBusy bool
 
-	// ioRes carries one-line results of off-thread file ops (learned
-	// format export/import) back to the status line.
+	// ioRes carries one-line results of off-thread file ops back to the status line.
 	ioRes chan string
 
-	// Formats tab: fmtOrderText caches each asset type's EFFECTIVE probe list as
-	// ready-to-draw text, parallel to config.TypeNames (whose order matches the
-	// assets.AssetType enum). It is rebuilt only when the preferences' format
-	// generation moves — one atomic load per frame — so drawing the tab joins no
-	// strings and clones no slices per frame. That matters here because the
-	// settings screen has no allocation gate: a per-frame regression on this page
-	// would not be caught by the benchmark suite, so the cache is the guard.
-	// fmtOrderOK distinguishes "never built" from "built at generation 0".
+	// fmtOrderText caches each asset type's probe list, parallel to config.TypeNames (assets.AssetType order).
+	// Rebuilt only when the format generation moves; fmtOrderOK separates never built from generation 0.
 	fmtOrderText []string
 	fmtOrderGen  uint64
 	fmtOrderOK   bool
 }
 
-// themeScan is one scan result: the theme names found, the NORMALIZED
-// root (users paste the themes folder itself, or a single theme inside
-// it — both resolve to the root theme.Load expects), and an optional
-// auto-pick when the pasted path WAS a single theme.
+// themeScan is one result: theme names found, the normalized root, and an auto-pick when the path was a single theme.
 type themeScan struct {
 	names    []string
 	root     string
 	pickName string
-	// in is the theme folder this scan was ISSUED for — settings.themeDir as it
-	// read at scanThemes time, before normalizeThemeRoot touched it. It is what
-	// makes a STALE result recognisable: the folder can change (a picker landing,
-	// a drop, a typed path) while a scan is in flight, and this result then
-	// answers a question nobody is asking any more. Comparing `in` against the
-	// current folder is the only sound test — comparing res.root would fire on
-	// every normalized path too, because normalizing is exactly when root and the
-	// configured folder legitimately differ. See pollThemeScan.
+	// in is the folder this scan was issued for, before normalizing, so pollThemeScan can recognise a stale result.
+	// Comparing res.root would misfire: root and the configured folder legitimately differ after normalizing.
 	in string
-	// fromUser marks a scan the user actually asked for (Apply & rescan, the
-	// folder picker, a dropped folder) as opposed to the automatic one the
-	// Settings screen fires the first time it opens. Only the former may arm the
-	// #35 auto-resize: the automatic scan re-applies the theme for anyone who has
-	// a custom theme folder saved, so treating it as a pick would resize the
-	// window merely for opening Settings.
+	// fromUser marks a scan the user asked for; only it may auto-resize, or opening Settings would resize the window.
 	fromUser bool
 }
 
@@ -211,34 +147,22 @@ var settings = settingsState{
 	ioRes:     make(chan string, 1),
 }
 
-// Settings tabs: the screen is split into these categories so it's
-// navigable instead of one long scroll. numSettingsTabs sizes the per-tab
-// scroll array (keep it == len(settingsTabNames)).
+// numSettingsTabs sizes the per-tab scroll array; keep it equal to len(settingsTabNames).
 const numSettingsTabs = 14
 
 var settingsTabNames = [numSettingsTabs]string{
 	"General", "Theme", "Theme editor", "Assets", "Formats", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Voice", "Power user", "Reset",
 }
 
-// Tab indices (order matches settingsTabNames).
+// Tab indices, in settingsTabNames order.
 const (
 	tabGeneral = iota
 	tabTheme
-	// tabThemeEditor owns AUTHORING: making a theme, opening the editor over one,
-	// and taking a bundle somebody sent you. It exists because the editor — the
-	// flagship — deserves a dedicated tab: a feature you have to scroll to
-	// discover is a feature nobody discovers.
-	//
-	// IMMEDIATELY AFTER Theme, not at the end: the two are read as a pair ("pick
-	// one" / "make one"), and the sidebar is scanned top to bottom, so the
-	// authoring tab has to be where the eye already is when it fails to find the
-	// editor on Theme. The Theme tab keeps SELECTION — the catalog, the badge, the
-	// subtheme variant, the write root — and points here (drawThemeAuthoringHint).
+	// tabThemeEditor owns authoring: making a theme, opening the editor, taking a bundle.
+	// It sits right after Theme, which keeps selection, because the two read as a pair in the sidebar.
 	tabThemeEditor
 	tabAssets
-	// tabFormats owns EVERY control that decides which image/audio file type is
-	// asked for. It sits next to Assets because that's the neighbourhood people
-	// browse when something didn't load.
+	// tabFormats owns every control that decides which file type is asked for; beside Assets, where people look.
 	tabFormats
 	tabAudio
 	tabChat
@@ -251,108 +175,53 @@ const (
 	tabReset
 )
 
-// settingsSearchKeywords maps each tab to terms the search box matches. It folds
-// in every SECTION TITLE on the tab (so "friends", "cache", "callwords", "window"
-// etc. all resolve) plus the individual setting terms, since the old curated list
-// missed most sections — the "search doesn't work that much" report (#102). Keep
-// terms lowercase; when adding a settings section, add its title here.
+// settingsSearchKeywords maps each tab to terms the search box matches, including every section title.
+// Keep terms lowercase; when adding a settings section, add its title here.
 var settingsSearchKeywords = [numSettingsTabs][]string{
 	tabGeneral: {
-		// sections: Identity, Display & behaviour, Application, Log colours, Stage,
-		// Scale & text size, Window, Extras box, Fonts.
+		// Identity, Display & behaviour, Application, Log colours, Stage, Scale & text size, Window, Extras box, Fonts.
 		"identity", "showname", "ooc name", "default showname", "force char names", "anti-impersonation",
 		"your profile", "profile", "character profile", "pronouns", "bio", "tagline", "theme song", "card",
 		"display", "behaviour", "behavior", "animation", "reduce motion", "accessibility",
 		"sprite style", "recolour", "recolor", "tint", "glow", "opacity", "hide sprite styles", "hide other",
 		"emote button", "favourite emotes", "favorite emotes", "fav emotes",
-		// The sprite hover-preview cluster had NO keyword on this tab at all. The
-		// bare "preview" is listed DELIBERATELY: the table is scanned in tab order
-		// with substring matching, so any phrase here would swallow that query
-		// anyway (it is a substring of "sprite preview"), and a silent theft is
-		// exactly what the shadow test forbids. This tab owns four preview settings
-		// to Theme's one section, so it takes the bare word and Theme keeps the
-		// qualified "theme preview".
+		// The table is scanned in tab order with substring matching, so this tab, with four preview settings,
+		// takes bare "preview"; Theme keeps the qualified "theme preview".
 		"preview", "sprite preview", "hover preview", "preview box", "pin preview", "pinned preview", "preview pin",
 		"application", "streamer mode", "debug", "performance", "perf hud", "fps", "notify ooc", "unread badge",
 		"log colours", "log colors", "selection highlight", "highlight colour", "name colour", "name colours",
 		"stage", "desk", "hide desk", "scale", "text size", "ui scale", "dpi", "zoom",
 		"window", "fullscreen", "window size", "resolution", "extras box", "extras", "tear off",
 		"fonts", "font", "cjk", "dyslexia", "dyslexic", "emoji", "smooth scaling", "tabs", "server tabs", "max tabs",
-		// The system-font toggle's written path was wrong too ("Interface"); it is
-		// on this tab, under Fonts.
+		// The system-font toggle is on this tab, under Fonts.
 		"system fonts", "installed fonts", "use fonts installed",
 	},
 	tabTheme: {
-		// sections: Theme, Layout & fit, Layout presets, Lobby, Preview & binding.
-		// Emote-grid spacing had NO keyword at all and its only written path named
-		// a tab that does not exist, so it was effectively unreachable. Every word
-		// someone would actually type for it lives here, on the tab that owns it.
+		// Theme, Layout & fit, Layout presets, Lobby, Preview & binding.
 		"emote icon spacing", "emote spacing", "icon spacing", "emote gap", "spacing", "gap",
 		"emote grid", "emote icons",
 		"theme", "theme picker", "chatbox", "skin", "default theme",
-		// "theme preview", not a bare "preview": General's sprite-preview cluster
-		// takes that word (see its block above). "bind"/"binding" still reach this
-		// section, and the gather-search matches its ROW LABELS first regardless.
+		// "theme preview", not bare "preview", which General takes above.
 		"layout", "fit", "courtroom design", "lobby", "theme preview", "bind", "binding",
 		"layout presets", "preset", "presets", "save layout", "stage preset", "theater", "theatre",
-		// the themes folder, its badges and AO2 subthemes. Terms are
-		// picked to avoid the shadow trap (the table is scanned in TAB ORDER and
-		// matches forward, so a term here swallows every later tab's query hidden
-		// inside it): NOT "rescan" (Assets owns it), NOT anything containing
-		// "import"/"portable" (Data), hence "reload themes" and "themes folder".
+		// The table matches forward in tab order, so a term here takes every later tab's query inside it: not "rescan"
+		// (Assets) nor anything containing "import" or "portable" (Data).
 		"subtheme", "subthemes", "theme variant", "variant",
 		"themes folder", "my themes", "where are my themes", "open themes folder",
 		"reload themes", "find themes", "theme badge",
-		// The "Get themes" discovery row. Same shadow discipline as the block above
-		// (the table is scanned in TAB ORDER and matches forward, so a term here
-		// swallows every later tab's query hidden inside it): every entry is anchored
-		// on "themes" or on a word no later tab claims. Note the trap the shadow test
-		// CANNOT see: TestSettingsSearchKeywordsDoNotShadowLaterTabs compares WHOLE
-		// keywords, so a long term here that merely CONTAINS a later tab's short query
-		// passes the gate while stealing that query for real. Hence three exclusions,
-		// each a word a later tab owns outright:
-		//   - anything containing "download" — Assets owns "download"/"downloader".
-		//   - "source repository" — the bare "source" belongs to Assets' "asset
-		//     source", the only other "source" term and the owner of the real
-		//     "Asset source" section.
-		//   - "new themes" — the bare "new" belongs to Chat's "jump to newest".
-		// "github" and "theme repository" stay: no later tab claims either word.
+		// Anchored on "themes" or a word no later tab claims. A long term containing a later tab's short query
+		// steals it: nothing with "download" (Assets), "source repository" ("source" is Assets') or
+		// "new themes" ("new" is Chat's).
 		"get themes", "more themes", "free themes", "extra themes",
 		"where to get themes", "drop-in themes", "franchise themes",
 		"github", "theme repository",
-		// The theme EDITOR's terms are on tabThemeEditor below — search terms stay
-		// with the row they describe.
+		// The theme editor's terms are on tabThemeEditor below.
 	},
 	tabThemeEditor: {
-		// sections: New theme, The editor, Bring a theme in.
-		//
-		// THE SHADOW DISCIPLINE IS UNCHANGED and it still governs every line here.
-		// The table is scanned in TAB ORDER and matches FORWARD (the query must be a
-		// substring of a term), so a term on this tab swallows every later tab's
-		// query hidden inside it. This tab is index 2, so "later" is Assets onwards —
-		// the same set the theme-editor block was vetted against at index 1, minus Theme
-		// itself, which sits BEFORE us and therefore still wins its own words.
-		//
-		// Each exclusion below is a word a later tab owns outright:
-		//   - nothing containing "export" or "import" (tabData, tabStudio) — hence
-		//     no "export theme" and no "import theme" either. "aotheme" and "theme
-		//     bundle" carry the transport rows instead; they contain neither word.
-		//   - nothing containing "layer" (tabAssets owns "layer"/"layered", the
-		//     layered assets). THIS is why the editor's noun is "element".
-		//   - nothing containing "custom" (tabAudio's "custom music", tabAssets'
-		//     "custom error sprite"). This is why the brief's suggested "customize
-		//     layout" is NOT here: it would steal the bare "custom" from both. The
-		//     feature is not lost — "edit the layout" and "move things around" below
-		//     answer the same question with words nobody else claims, and the
-		//     gather-search matches ROW LABELS first regardless.
-		//   - not "maker" on its own and nothing containing it (tabStudio's "scene
-		//     maker"): "theme maker" would steal the bare "maker". "theme builder"
-		//     and "theme creator" say the same thing and collide with nothing.
-		//   - nothing containing "scan" ("scanlines" → tabAssets' "rescan"),
-		//     "order"/"list" (tabFormats' "probe order", tabAccount's "master
-		//     list"), "new" (tabChat's "jump to newest"), "download" (tabAssets),
-		//     "source" (tabAssets' "asset source") or "grid"/"glow" (tabGeneral).
-		//     Hence "start a theme from scratch", never "new theme".
+		// New theme, The editor, Bring a theme in. Excluded because a later tab owns the word:
+		// "export" and "import" (Data, Studio), "layer" (Assets; hence the noun "element"), "custom" (Audio, Assets),
+		// "maker" (Studio), "scan" (Assets' "rescan"), "order" and "list" (Formats, Account), "new" (Chat),
+		// "download" and "source" (Assets), "grid" and "glow" (General).
 		"theme editor", "editor", "make a theme", "build a theme", "create a theme",
 		"theme builder", "theme creator", "edit theme", "edit a theme", "edit my theme",
 		"start a theme", "from scratch", "blank theme", "template", "templates",
@@ -361,28 +230,18 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"decorate", "decoration", "element", "elements", "stacking", "inspector",
 		"undo", "shapes", "masks", "animated background", "background art",
 		"split screen", "procedural", "halftone", "generator",
-		// The image/animated-webp intake (this wave). "upload" is the word a person
-		// actually types for it even though nothing is uploaded anywhere.
-		// NOT "webp" and NOT anything containing it ("animated webp"): tabFormats'
-		// own note reserves "webp"/"gif" for tabStudio's video export, and this tab
-		// sits ahead of both. "animated image" carries the same question.
+		// "upload" is what people type. Not "webp" or anything containing it: reserved for Studio's video export.
 		"add an image", "upload an image", "upload image", "add art", "picture",
 		"animated image", "theme art", "theme image",
-		// Live preview, the editor rail's own toggle.
 		"live preview", "live", "freeze the preview", "preview while editing",
-		// The transport rows: taking in what a friend sent, and (in the editor's
-		// header) handing one back.
+		// Taking in what a friend sent, and handing one back from the editor's header.
 		"aotheme", "theme bundle", "share a theme", "send a theme", "give a theme",
 	},
 	tabAssets: {
-		// sections: Predictive prefetch, Missing sprites, Asset source, Downloader,
-		// Cache. (Everything format-related lives on the Formats tab.)
+		// Predictive prefetch, Missing sprites, Asset source, Downloader, Cache.
 		"predictive prefetch", "prefetch", "aggressiveness", "speculative", "preload",
 		"local assets", "local", "mount", "downloader", "download",
-		// The layered source. Terms stay specific — the table is scanned in
-		// tab order with substring matching, so a broad word would hijack the query.
-		// NB: NOT a bare "stream" — the table is scanned in tab order with substring
-		// matching, and General's "streamer mode" already owns that prefix.
+		// Keep terms specific, since a broad word would take the query; not bare "stream" (General's "streamer mode").
 		"asset source", "layered", "layer", "pack", "content pack", "zip", "override",
 		"rescan", "folders", "my folders",
 		"cache", "disk cache", "disk", "zstd", "clear cache",
@@ -390,21 +249,10 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"placeholder", "missing sprite", "missingno", "missing character", "error sprite", "custom error sprite", "404",
 	},
 	tabFormats: {
-		// sections: How formats work, This server, Automatic detection, Formats per
-		// asset type, Fallbacks, Learned formats.
-		// NOTE the table is scanned in TAB ORDER and matches forward (the query is a
-		// SUBSTRING of a term), so a term here silently steals every query a LATER
-		// tab answers better — including queries hidden inside a longer term. Absent
-		// on purpose, each because a later tab owns the word: "blip"/"volume"
-		// (Audio); "ignore"/"callword" (Chat); "password" (Account); "webp"/"gif"
-		// (Studio's video export — so no "webp format" either, which would still
-		// contain "webp"); "export"/"import" (Studio, Data); "extensions.json"
-		// (its ".json" tail would swallow Data's "json").
-		// None of those are lost: the gather-search matches ROW LABELS first, and
-		// this tab's rows literally read ".webp", "extensions.json", "Export
-		// learned". This table is only the concept-level fallback. Bare
-		// "audio"/"format" need no entry at all — they match a TAB NAME, and the
-		// name pass runs before this one.
+		// How formats work, This server, Automatic detection, Formats per asset type, Fallbacks, Learned formats.
+		// Absent because a later tab owns the word: "blip", "volume" (Audio); "ignore", "callword" (Chat);
+		// "password" (Account); "webp", "gif" (Studio); "export", "import" (Studio, Data);
+		// "extensions.json" (its ".json" would take Data's "json").
 		"image format", "file type", "file types", "extension", "extensions", "manifest",
 		"format profile", "server format profile", "per-server format", "pin format",
 		"probe", "probing", "one probe", "probe order", "format order", "which format",
@@ -416,23 +264,18 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"stuck images", "repeated images", "same image", "nothing loads",
 	},
 	tabAudio: {
-		// sections: Volume (master / music / SFX / blip / alert), music ducking,
-		// custom music streaming.
+		// Volume, music ducking, custom music streaming.
 		"audio", "volume", "master volume", "music volume", "sfx volume", "blip volume", "blip",
 		"alert volume", "music ducking", "duck",
 		"stream music", "disable music", "stop fetching music", "custom music",
 		"music across tabs", "tab music", "keep music playing", "music continuity", "keep music",
 	},
 	tabChat: {
-		// sections: Text & typing, Chat log, Case alerts, Callwords, Do Not Disturb,
-		// Messages & connection, Sound effects, Music history, Friends, Ignored
-		// players, Mod tools.
+		// Text & typing, Chat log, Case alerts, Callwords, Do Not Disturb, Messages & connection, Sound effects,
+		// Music history, Friends, Ignored players, Mod tools.
 		"text", "typing", "text crawl", "text stay", "text speed", "chat limit", "catch up",
 		"chat log", "ic log", "timestamps", "log", "song url", "song link", "full link", "music url",
-		// The follow-jump toggle. NOT a bare "smooth" — the table is scanned in TAB
-		// ORDER and matches forward, and General's "smooth scaling" already owns that
-		// prefix. Also NOT the "-ing" forms: "scrolling" literally CONTAINS "rolling",
-		// which would hand Studio's rolling-buffer queries to this tab.
+		// Not bare "smooth", which General's "smooth scaling" owns, nor "scrolling", which contains Studio's "rolling".
 		"log scroll", "smooth log scroll", "scroll", "jump to newest", "auto scroll", "autoscroll",
 		"case alerts", "casing", "case", "callword", "callwords", "ping", "alert",
 		"do not disturb", "dnd", "messages", "connection", "auto reconnect", "reconnect", "disconnect confirm",
@@ -441,65 +284,58 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"mod tools", "moderator", "modcall", "ipid",
 	},
 	tabAccount: {
-		// sections: Login, Master list, Discord. (TLS / Asset Origin are on Power user.)
+		// Login, Master list, Discord; TLS and Asset Origin are on Power user.
 		"login", "password", "username", "credential", "auto login",
 		"master list", "server list", "discord", "presence", "rich presence",
 	},
 	tabHotkeys: {
-		// sections: Hotkeys, Macros, IC quick-phrases.
+		// Hotkeys, Macros, IC quick-phrases.
 		"hotkey", "hotkeys", "keybind", "keybinding", "shortcut",
 		"macro", "macros", "ic quick", "quick phrase", "phrase",
 	},
 	tabData: {
-		// sections: Your settings file, Back up / move, Other data.
+		// Your settings file, Back up / move, Other data.
 		"data", "settings file", "config folder", "config location", "open config", "open settings file",
 		"asset_preferences", "where are my settings", "appdata", "export", "import", "backup", "portable", "usb", "move to another pc", "json",
 	},
 	tabVoice: {
-		// sections: Microphone, Test microphone, Output, Push-to-talk.
+		// Microphone, Test microphone, Output, Push-to-talk.
 		"voice", "voice chat", "microphone", "mic", "input device", "recording device", "capture",
 		"test microphone", "mic test", "sidetone", "hear myself", "level meter", "meter",
 		"output volume", "speaker", "nyathena", "vc", "ptt", "talk", "push-to-talk", "push to talk",
 	},
 	tabStudio: {
-		// sections: Scene recording, Instant replay, Scene maker, Recordings, Replay
-		// playback, Export to GIF / WebP.
+		// Scene recording, Instant replay, Scene maker, Recordings, Replay playback, Export to GIF / WebP.
 		"studio", "scene recording", "record", "recording", "instant replay", "clip", "rolling buffer",
 		"scene maker", "maker", "aorec", "recordings", "replay", "replay playback", "playback speed",
 		"export", "gif", "webp", "video", "mp4", "webm", "movie", "frame rate", "quality", "scene", "capture", "archive",
 	},
 	tabReset: {
-		// sections: Reset / clear data.
+		// Reset / clear data.
 		"reset", "factory reset", "reset to defaults", "restore defaults", "wipe", "fresh install",
 		"clear settings", "clear data", "defaults",
 	},
 	tabPowerUser: {
-		// sections: TLS, Asset Origin, character-folder casing, Proxy, and the
-		// render/GPU knobs. (Image formats are on the Formats tab — see tabFormats.)
+		// TLS, Asset Origin, character-folder casing, Proxy, and the render and GPU knobs.
 		"power user", "advanced", "expert",
 		"tls", "ssl", "certificate", "cert", "validate certificate", "self-signed", "wss", "verify", "security",
 		"origin", "cors", "referer", "asset origin", "origin header", "stream from base",
 		"casing", "capital", "capitalize", "capitalise", "uppercase", "lowercase", "character folder", "folder case",
-		// Someone looking for this is usually looking for it because nothing will
-		// connect, so the terms they might actually type all belong here.
+		// Someone looking for this usually cannot connect, so include the terms they might type.
 		"proxy", "socks", "socks5", "vpn", "tunnel", "corporate network", "work network",
 		"wpad", "proxy script", "pac file", "system proxy", "no proxy", "bypass",
-		// NOT the bare "pac": the search matches forward, so it is a substring of
-		// General's "opacity" and would silently steal the query for that tab.
+		// Not bare "pac": it is a substring of General's "opacity" and would take that query.
 	},
 }
 
-// settingsSearchMatch returns the first tab whose name or keywords contain the
-// (lowercased, trimmed) query, or -1 for none/empty. Matching is forward only
-// (the query is a substring of a setting term) — the comprehensive keyword list
-// above is what makes the search actually find things; a reverse match would let
-// a longer query like "keybind" wrongly hit the short "bind" (Theme preview).
+// settingsSearchMatch returns the first tab whose name or keywords contain the query, or -1.
+// Forward only: a reverse match would let "keybind" hit the short "bind".
 func settingsSearchMatch(query string) int {
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "" {
 		return -1
 	}
-	// A tab-name match wins (you typed the destination directly).
+	// A tab-name match wins.
 	for i, name := range settingsTabNames {
 		if !voiceBuilt && i == tabVoice {
 			continue // no Voice tab in the -tags novoice build
@@ -521,26 +357,20 @@ func settingsSearchMatch(query string) int {
 	return -1
 }
 
-// settingsIndexRow is one collected settings row for the gather-search (#26):
-// its (trimmed) label, the tab it lives on, and its y offset within that tab's
-// content at zero scroll — enough to list it and to jump straight to it.
+// settingsIndexRow is one collected row for search: its trimmed label, tab, and y offset at zero scroll.
 type settingsIndexRow struct {
 	label string
 	tab   int
 	y     int32
 }
 
-// settingsIndexCap bounds the collected index (hard rule §17.4) — ~600 rows is
-// several times the real settings count; past it the collector just stops.
+// settingsIndexCap bounds the collected index (hard rule 4); past it the collector stops.
 const settingsIndexCap = 600
 
-// diskCacheBudgetStepMiB snaps the #34 disk-cache-limit slider to a round grid
-// (128 MiB): the cap covers 128 MiB … 64 GiB, where exact bytes don't matter,
-// so a coarse grid keeps the displayed value clean.
+// diskCacheBudgetStepMiB snaps the disk-cache-limit slider to a grid; exact bytes do not matter at this range.
 const diskCacheBudgetStepMiB = 128
 
-// diskCacheBudgetLabel formats a positive T3 cap in MiB as "N MiB" below 1 GiB
-// and "N.N GiB" at or above it (0 = unlimited is handled by the caller).
+// diskCacheBudgetLabel formats a positive cap in MiB as "N MiB" below 1 GiB and "N.N GiB" above; 0 is the caller's.
 func diskCacheBudgetLabel(mib int) string {
 	if mib >= 1024 {
 		return fmt.Sprintf("%.1f GiB", float64(mib)/1024)
@@ -563,71 +393,34 @@ func (a *App) drawSettings(w, h int32) {
 		}
 		settings.loaded = true
 		a.scanThemes(false) // automatic: opening Settings is not a theme pick (#35)
-		// Trigger 1 of four (§Q6): opening the screen asks for a catalog. Floored
-		// by themeScanMinInterval, so bouncing in and out of Settings does not
-		// walk the disk each time.
+		// Opening the screen asks for a catalog, floored by themeScanMinInterval so bouncing does not rescan.
 		a.requestThemeCatalog(themeScanOnOpen)
 	}
-	// Trigger 3: the window regained focus while this screen is up — the
-	// "I dropped a theme into the folder in Explorer and came back" story. Costs
-	// exactly one os.Stat of the write root, off-thread, and only rescans if the
-	// directory's mtime actually moved.
+	// The window regained focus: one off-thread os.Stat of the write root, rescanning only if its mtime moved.
 	if a.consumeThemeFocusStat() {
 		a.requestThemeCatalog(themeScanOnFocus)
 	}
 
-	// In-app .demo browser fence: while it's open the WHOLE settings screen behind
-	// it must go click-dead (header Back/search, tab strip, tab body), so a click on
-	// the modal can't also fire a widget beneath it. Recomputed fresh each frame from
-	// the open flag — no cross-frame persist-and-release bug (unlike emojiPickerFence).
-	// It's set HERE (before the header widgets draw) and RELEASED at the very end,
-	// right before the browser itself draws, so the browser's own c.Button/VScrollbar
-	// (which read hovering()) work while everything behind stays fenced. Mirrors the
-	// app.go toolbox release-and-restore idiom. The Studio content-report panel
-	// (contentpanel.go) is the SAME kind of blocking modal and rides the same fence —
-	// the two are mutually exclusive (picking in the browser closes it and opens the
-	// panel), so one flag OR the other is set, never contended.
-	//
-	// The base-folder wizard (basewizard.go) is the same kind of blocking modal and
-	// joins the same fence. It is NOT exclusive with the browser — its step 1 opens
-	// one on top of itself — so the wizard fences ITSELF while the browser is up;
-	// see drawBaseWizard.
+	// While a blocking modal is open the whole screen behind it takes no clicks. Set before the header widgets draw and
+	// released right before the modals draw, so their own widgets work.
+	// The wizard's step 1 opens the browser on top of itself.
 	if demoBrowser.open || contentPanel.open || baseWizard.open {
 		c.modalOn = true
 	}
 
-	// These run regardless of the active tab, so async results land and
-	// dropped files are honored from any tab (theme scan, folder pick,
-	// drag-drop, and the off-thread IO status line).
+	// These run regardless of the active tab, so async results land and drops are honored from any tab.
 	a.pollThemeScan()
 	a.pollFolderPick()
-	// baseWizardTakesDrop CONSUMES the drop when it returns true: the OPEN
-	// base-folder wizard gets first refusal, because it says "or drag the folder
-	// onto this window" and has to mean it. Without that arm the drop falls through
-	// to the default below, which points the user's THEME ROOT at the folder they
-	// were setting up as an asset base — the silent-wrong-action class dropclaim.go
-	// exists to end, arriving through a different door. It refuses anything a
-	// global owner already claimed, so it cannot resurrect that bug from the other
-	// side either. Pinned by TestOpenBaseWizardTakesTheDropBeforeTheThemeRoot.
+	// baseWizardTakesDrop consumes the drop: an open wizard gets first refusal, or the folder becomes the theme root.
 	if c.dropped != "" && !a.baseWizardTakesDrop(c.dropped) {
-		// Drag-and-drop anywhere on this screen. The classification is shared
-		// with HandleFileDrop (dropclaim.go) precisely because this arm and that
-		// one used to disagree: a recording, or a theme BUNDLE, must not fall
-		// through to the default here, or the same drop would ALSO repoint the
-		// theme folder at the file's parent directory — silently, since the
-		// global handler was meanwhile warning about the very same file.
-		// Anything unclaimed still points the theme folder, which is the
-		// documented folder-import path (#21).
-		// The routing itself is settingsDropAction (dropclaim.go) — a named
-		// function with a table test on it, so the arm that stops a .ttf or a
-		// .aotheme from repointing the theme root cannot be deleted green.
+		// The classification is shared with HandleFileDrop (dropclaim.go): a recording or bundle must not also repoint
+		// the theme folder at its parent. Anything unclaimed still points the theme folder.
 		switch settingsDropAction(claimDroppedFile(c.dropped, settings.importArmed)) {
 		case settingsDropImportSettings:
 			settings.importArmed = false
 			importSettingsAsync(a.d, c.dropped)
 		case settingsDropIgnore:
-			// HandleFileDrop is the single owner of dropped recordings, theme
-			// bundles and theme FONTS.
+			// HandleFileDrop is the single owner of dropped recordings, theme bundles and theme fonts.
 		case settingsDropRepointThemeRoot:
 			resolveDroppedFolder(c.dropped)
 		}
@@ -638,13 +431,10 @@ func (a *App) drawSettings(w, h int32) {
 	default:
 	}
 
-	// --- header band: title, search, Back -----------------------------------
-	// Content starts below the app-chrome band (#14, chrometop.go).
+	// Header band: content starts below the app-chrome band (chrometop.go).
 	hdrY := a.topChromeH() + pad
 	c.Heading(pad, hdrY, "Settings", ColText)
-	// Search (#26 gather): type a term and the page becomes a live list of EVERY
-	// matching setting across every tab — click (or Enter for the top hit) jumps
-	// straight to that row. The old jump-to-tab hint is superseded.
+	// With a term typed, the page lists every matching setting across tabs; click or Enter jumps to that row.
 	q, committed := c.TextField("settsearch", sdl.Rect{X: pad + 130, Y: hdrY + 2, W: 240, H: fieldH}, settings.search, "Search settings…")
 	settings.search = q
 	if strings.TrimSpace(q) != "" {
@@ -659,7 +449,7 @@ func (a *App) drawSettings(w, h int32) {
 	contentTop := hdrY + settContentTop
 	c.Fill(sdl.Rect{X: 0, Y: contentTop - 10, W: w, H: 1}, ColPanelHi) // hairline under the header
 
-	// --- left sidebar: a vertical category list (replaces the old chip row) --
+	// Left sidebar.
 	navY := contentTop + 4
 	for i, name := range settingsTabNames {
 		if !voiceBuilt && i == tabVoice {
@@ -685,55 +475,27 @@ func (a *App) drawSettings(w, h int32) {
 		navY += settNavItemH + 2
 	}
 
-	// --- content card region (right of the sidebar) -------------------------
-	// formX/formW define where the section + row helpers draw; they rebase their
-	// pad-relative layout onto formX so every box lands inside this card.
+	// formX and formW define where the section and row helpers draw, so every box lands inside this card.
 	cardX := pad + settSidebarW + settSidebarGap
 	cardW := (w - scrollBarW - pad) - cardX
 	cardW = value.Clamp(cardW, settMinCardW, settMaxCardW)
 	a.formX = cardX + settCardPadX
 	a.formW = cardW - 2*settCardPadX
-	// F2: no chrome label may draw past the card. The settings rows carry sentence-
-	// long help text and the form draws it two ways, both of which overflowed:
-	//
-	//   - Checkbox grew its hit box and its label to whatever the string measured,
-	//     with nothing bounding it, so on a narrow window the row ran off the card
-	//     and out of the WINDOW entirely. That is the FONTS section's system-fonts
-	//     line and about forty siblings.
-	//   - The bare help lines under the rows — roughly a hundred c.Label calls, some
-	//     190 characters, plus the FONTS chain line's c.LabelClipped, whose own maxW
-	//     is the window and not the card — stayed inside the window but were cut dead
-	//     at the card's clip edge, with no ellipsis to say the sentence continued.
-	//     A hard cut reads as a rendering fault; that is the "cut off at the right
-	//     border" half of the report.
-	//
-	// One bracket answers both: Ctx.Label / LabelClipped / Checkbox all consult it,
-	// the card knows its own right edge and the rows do not need to be told. Popped
-	// with defer so the several early returns below cannot strand the limit on the
-	// shared Ctx and truncate the courtroom's labels on the next screen — and popped
-	// AGAIN, explicitly, the moment the card's clip closes, because the chrome after
-	// it (the full-window warn banner, the .demo browser, the content panel) is not
-	// inside the card and must keep its own width. Popping twice with the same saved
-	// value is idempotent.
+	// No chrome label may draw past the card: Label, LabelClipped and Checkbox all consult this limit.
+	// Popped by defer so early returns cannot truncate the next screen's labels, and again when the card's clip closes.
+	// Popping twice with the same saved value is idempotent.
 	cardLabelLimit := c.pushRowLabelLimit(a.formX + a.formW)
 	defer c.popRowLabelLimit(cardLabelLimit)
 
 	viewH := h - contentTop - pad
 	scroll := &settings.tabScroll[settings.tab]
 
-	// Clip everything below the header; fill the card surface (a step between the
-	// page background and panels) so each section reads as a card, separated by
-	// page-coloured gap bands punched in by settingsSection.
+	// Clip below the header and fill the card surface; settingsSection punches page-coloured gaps between cards.
 	clipPrev, clipHad := c.pushClip(sdl.Rect{X: cardX, Y: contentTop, W: cardW, H: viewH})
 	c.Fill(sdl.Rect{X: cardX, Y: contentTop, W: cardW, H: viewH}, cardColor())
 
-	// #26 gather-search: with a query typed, the card region becomes a RESULTS
-	// list of every matching setting across every tab (click → jump + flash).
-	// Skipped while the .demo browser is open (!demoBrowser.open): this branch
-	// returns EARLY, which would jump over the end-of-function fence release +
-	// browser draw — stranding c.modalOn=true and freezing the whole UI (the
-	// un-released-fence failure the emoji picker documents). Falling through draws
-	// the fenced (click-dead, covered) tab body instead, so the release always runs.
+	// With a query, the card becomes a list of matching settings. Skipped while the .demo browser is open: this branch
+	// returns early, past the modal release at the end, which would leave c.modalOn set and freeze the UI.
 	if q := strings.ToLower(strings.TrimSpace(settings.search)); q != "" && !demoBrowser.open {
 		if !settings.indexBuilt {
 			a.buildSettingsIndex(w, contentTop)
@@ -747,8 +509,7 @@ func (a *App) drawSettings(w, h int32) {
 
 	y := contentTop - *scroll
 	y = a.drawSettingsTabBody(settings.tab, y, w, h)
-	// Landed-row flash: after a search jump, pulse a band around the row so the
-	// eye finds it (the scroll already put it near the top).
+	// Pulse a band around the landed row after a search jump.
 	if settings.flashUntil.After(time.Now()) && settings.flashTab == settings.tab {
 		fy := contentTop - *scroll + settings.flashY
 		c.Border(sdl.Rect{X: cardX + 4, Y: fy - 5, W: cardW - 8, H: 30}, ColAccent)
@@ -758,7 +519,6 @@ func (a *App) drawSettings(w, h int32) {
 		c.Label(a.formX, y+6, settings.statusLine, ColAccent)
 		y += 28
 	}
-	// Page-coloured fill below the last card so the surface base doesn't run on.
 	if y < contentTop+viewH {
 		fy := y
 		if fy < contentTop {
@@ -767,50 +527,34 @@ func (a *App) drawSettings(w, h int32) {
 		c.Fill(sdl.Rect{X: cardX, Y: fy, W: cardW, H: contentTop + viewH - fy}, ColBackground)
 	}
 	c.popClip(clipPrev, clipHad)
-	// The card is drawn: everything below is full-window chrome (the warn banner
-	// spans w-2*pad, the .demo browser and content panel are their own overlays), so
-	// release the card's right edge here rather than letting it shorten their labels.
+	// Everything below is full-window chrome, so release the card's right edge rather than shorten their labels.
 	c.popRowLabelLimit(cardLabelLimit)
 
 	contentH := (y + *scroll) - contentTop + pad
-	// !c.modalOn: with the in-app .demo browser open the page must not scroll behind
-	// it (this wheel consume is unconditional — the VScrollbar drag below already
-	// self-gates on hovering(), which reads false under modalOn). The browser reads
-	// the wheel for its own list after the fence is released.
+	// !c.modalOn: this wheel consume is unconditional, so the page must not scroll behind the .demo browser.
 	if !c.ctrlHeld && !c.wheelTaken && !c.modalOn {
 		*scroll -= c.wheelY * scrollStepPx
 	}
 	track := sdl.Rect{X: w - scrollBarW - 2, Y: contentTop, W: scrollBarW, H: viewH}
 	*scroll = c.VScrollbar("settscroll", track, *scroll, contentH, viewH)
 	settings.scrollToSection = "" // one-shot: consumed by the matching section this frame, else dropped
-	// Warn banner, mirroring the lobby/char-select/courtroom draw sites: Settings
-	// was the ONE screen without it, so every Studio-picker message (import
-	// confirmation, extension rejection, picker failure) went invisible exactly
-	// where the user stood (a hotfix review find). Fixed position, outside
-	// the scrolled clip, so it can't scroll away.
+	// Fixed position outside the scrolled clip, so it cannot scroll away.
 	if a.warnActive() {
 		c.LabelClipped(pad, h-24, w-2*pad, a.warnLine, ColDanger)
 	}
 
-	// The in-app .demo browser and the Studio content-report panel draw LAST
-	// (topmost) with the page fence RELEASED, so their own widgets work while
-	// everything behind stayed click-dead all frame. Both no-op when closed; they're
-	// mutually exclusive, so releasing once for either is correct. The content panel
-	// draws after the browser (a pick closes the browser and opens the panel in the
-	// same click — the panel must own this frame's release).
+	// These draw last with input released, so their widgets work; the content panel follows the browser,
+	// because a pick closes the browser and opens the panel in the same click.
 	if demoBrowser.open || contentPanel.open || baseWizard.open {
 		c.modalOn = false
 	}
-	// The wizard draws BEFORE the browser: its step 1 opens one on top of itself,
-	// and the topmost panel has to be the one drawn last. drawBaseWizard re-fences
-	// itself for exactly that overlap.
+	// Before the browser: step 1 opens one on top of itself, and the topmost must draw last.
 	a.drawBaseWizard(w, h)
 	a.drawDemoBrowser(w, h)
 	a.drawContentPanel(w, h)
 }
 
-// drawSettingsTabBody dispatches one tab's rows starting at y — shared by the
-// normal page draw and the search collector's fenced all-tabs pass (#26).
+// drawSettingsTabBody dispatches one tab's rows, for the page draw and the search collector.
 func (a *App) drawSettingsTabBody(tab int, y, w, h int32) int32 {
 	switch tab {
 	case tabGeneral:
@@ -845,10 +589,7 @@ func (a *App) drawSettingsTabBody(tab int, y, w, h int32) int32 {
 	return y
 }
 
-// buildSettingsIndex runs every tab's draw once with the input FENCED and all
-// drawing CLIPPED AWAY, purely to collect each row's label/tab/offset through
-// the Ctx.onRow hook (checkboxes; sections + slider rows record directly).
-// A few milliseconds, once per search session — never on a normal frame.
+// buildSettingsIndex draws every tab once, input blocked and clipped away, to collect rows through Ctx.onRow.
 func (a *App) buildSettingsIndex(w, contentTop int32) {
 	c := a.ctx
 	settings.index = settings.index[:0]
@@ -877,9 +618,7 @@ func (a *App) buildSettingsIndex(w, contentTop int32) {
 	c.keyPressed, c.wheelY, c.modalOn = savedKey, savedWheel, savedModal
 }
 
-// drawSettingsSearchResults lists every collected row matching q (substring,
-// case-blind) in the card region; clicking one — or Enter for the first —
-// switches to its tab, scrolls the row to the top, and arms the flash band.
+// drawSettingsSearchResults lists rows matching q; a click, or Enter for the first, jumps there and arms the flash.
 func (a *App) drawSettingsSearchResults(q string, enter bool, cardX, cardW, contentTop, viewH int32) {
 	c := a.ctx
 	const rowH = int32(26)
@@ -928,8 +667,7 @@ func (a *App) drawSettingsSearchResults(q string, enter bool, cardX, cardW, cont
 	}
 	switch {
 	case total == 0:
-		// Keyword fallback: no row label matched, but the per-tab keyword table
-		// (settingsSearchMatch) may still know the CONCEPT ("volume" → Audio).
+		// No row label matched, but the keyword table may know the concept.
 		if mt := settingsSearchMatch(q); mt >= 0 {
 			r := sdl.Rect{X: cardX + 6, Y: y, W: cardW - 12, H: rowH - 2}
 			if c.hovering(r) {
@@ -951,8 +689,6 @@ func (a *App) drawSettingsSearchResults(q string, enter bool, cardX, cardW, cont
 	}
 }
 
-// --- modernized settings layout: sidebar nav + content cards -----------------
-
 const (
 	settContentTop = 44   // header band height (title + search row)
 	settSidebarW   = 140  // left category-nav width (slim: the labels are short)
@@ -966,35 +702,20 @@ const (
 	settCardTopPad = 14  // padding above a card title
 	settSectionMid = 22  // title baseline → hairline
 	settSectionBot = 12  // hairline → the section's first row
-	// labelBtnPadX is the horizontal padding a label-measured button adds around
-	// its text (half each side). Buttons whose width is measured from the label
-	// rather than fixed — the Window section's size presets and the "Theme's
-	// design size (W×H)" row, which both size themselves because their labels
-	// carry live numbers — share it so a wider label can never look tighter than
-	// a narrow one in the same column.
+	// labelBtnPadX is the horizontal padding a label-measured button adds around its text, half each side.
 	labelBtnPadX = 14
-	// designSizeHintGap separates the "Theme's design size (W×H)" button from its
-	// explanatory hint. Its own constant because that button's width is measured
-	// from the label (the size is in it), so the hint's x AND its clip width are
-	// both derived from this one number — they must not drift apart.
+	// designSizeHintGap separates the design-size button from its hint; the hint's x and clip width derive from it.
 	designSizeHintGap = 10
 )
 
-// settingsSection delimits one card: it punches a page-coloured gap above the
-// card (separating it from the previous one over the cardColor surface base),
-// then draws the card's uppercase accent title and a hairline, returning the y
-// of the card's first row. Pure draw (no widget ids), so it never disturbs
-// hit-testing, per-tab scroll, or search. The w param is unused (the region is
-// taken from a.formX/a.formW) but kept so existing call sites need no change.
+// settingsSection punches a gap above the card and draws its title and hairline, returning the first row's y.
+// The w param is unused; the region comes from a.formX and a.formW.
 func (a *App) settingsSection(y, w int32, title string) int32 {
 	c := a.ctx
 	if c.onRow != nil {
 		c.onRow("§ "+title, y+settCardTopPad+2) // gather-search: sections are jumpable headers
 	}
-	// Search jump (#26): the FIRST section card whose title contains the pending query
-	// scrolls itself to the top, so a search lands on the SECTION (e.g. "scene maker"),
-	// not just the tab. One-shot; takes effect next frame and is clamped by the page
-	// scrollbar (so a bottom section just sits as low as it can).
+	// Search jump: the first section titled with the query scrolls to the top, one-shot, clamped next frame.
 	if settings.scrollToSection != "" && strings.Contains(strings.ToLower(title), settings.scrollToSection) {
 		settings.tabScroll[settings.tab] += y - (pad + settContentTop)
 		if settings.tabScroll[settings.tab] < 0 {
@@ -1013,28 +734,17 @@ func (a *App) settingsSection(y, w int32, title string) int32 {
 	return y
 }
 
-// formW2 returns the shadow value for a section/helper's `w` parameter so its
-// existing `w - pad - K - scrollBarW` width math and `w - scrollBarW` right edge
-// resolve inside the content card. Paired with `pad := a.formX` at the top of
-// every settings draw helper. (See drawSettingsGeneral for the pattern.)
+// formW2 returns the value for a helper's w parameter, so its width math resolves inside the content card.
 func (a *App) formW2() int32 { return a.formX + a.formW + scrollBarW }
 
-// fpsSettingRow draws one frame-rate row: the slider, an exact-number entry
-// (Enter applies), and the ∞ no-limit toggle. get/set wrap the pref — the
-// setters are sentinel-aware (config.FPSUnlimited / config.FPSOff) and clamp
-// typed values to [min, max]. zeroValue is what the slider bottom or a typed 0
-// stores: config.FPSOff for the Idle/Background rows (0 = never redraw in that
-// state), or the min cap for Active (which has no "off"). buf backs the number
-// field (settingsState), reseeded from the pref while unfocused so live typing
-// never fights the stored value. Returns the y past the row.
+// fpsSettingRow draws a frame-rate row: slider, exact-number entry (Enter applies) and no-limit toggle.
+// zeroValue is what a slider bottom or typed 0 stores: config.FPSOff for Idle and Background, the min cap for Active.
 func (a *App) fpsSettingRow(y int32, id, label string, min, max, def, zeroValue int, get func() int, set func(int), buf *string, tip string) int32 {
 	c := a.ctx
 	pad := a.formX // settings helpers must shadow the form origin (drawSettings rebase)
 	c.Label(pad, y+4, label, ColText)
 	cur := get()
-	// Slider: compare against the value we PASSED (unlimited shows as the
-	// bottom position), so merely displaying an unlimited pref can't write a
-	// concrete value back — only a real drag/wheel move does.
+	// Compare against the value passed, so displaying an unlimited pref cannot write a concrete value back.
 	passed := 0
 	if cur > 0 {
 		passed = cur
@@ -1050,12 +760,9 @@ func (a *App) fpsSettingRow(y int32, id, label string, min, max, def, zeroValue 
 		set(nv)
 		cur = get()
 	}
-	// Exact-number entry (the power-user ask): type any value, Enter applies.
 	fieldID := id + "-num"
 	fr := sdl.Rect{X: track.X + track.W + 8, Y: y, W: 52, H: btnH}
-	// The getter maps 0 to the shipped default, so cur is FPSUnlimited, FPSOff,
-	// or a concrete rate here. "off" shows as 0 in the field (the sentinel is
-	// internal); ∞ shows blank.
+	// The getter maps 0 to the default, so cur is FPSUnlimited, FPSOff or a rate; "off" shows as 0, unlimited as blank.
 	if c.focusID != fieldID {
 		switch cur {
 		case config.FPSUnlimited:
@@ -1079,7 +786,7 @@ func (a *App) fpsSettingRow(y int32, id, label string, min, max, def, zeroValue 
 		}
 		c.focusID = "" // commit releases the field so it reseeds from the pref
 	}
-	// ∞ toggle: no limit on / off (off returns to the default).
+	// No limit on or off; off returns to the default.
 	ub := sdl.Rect{X: fr.X + fr.W + 6, Y: y, W: 28, H: btnH}
 	if cur == config.FPSUnlimited {
 		c.Fill(sdl.Rect{X: ub.X - 2, Y: ub.Y - 2, W: ub.W + 4, H: ub.H + 4}, ColAccent)
@@ -1108,11 +815,7 @@ func (a *App) fpsSettingRow(y int32, id, label string, min, max, def, zeroValue 
 	return y + 26
 }
 
-// numSliderRow renders a labelled slider with -/+ nudge buttons and an
-// exact-value entry field (the power-user ask: nudge with arrows or type a
-// value). 0 is the off/default sentinel (the bottom of the track); the getter
-// maps it to the shipped default. buf backs the number field (settingsState),
-// reseeded from the pref while unfocused. Returns y past the row.
+// numSliderRow renders a slider with -/+ nudges and an exact-value field; 0 is the off or default sentinel.
 func (a *App) numSliderRow(y int32, id, label string, min, max, step, def int, get func() int, set func(int), buf *string, suffix, tip string) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -1191,9 +894,7 @@ func (a *App) numSliderRow(y int32, id, label string, min, max, step, def int, g
 	return y + 26
 }
 
-// settingsDesc draws a WORD-WRAPPED description block at (pad, y) inside the settings card and
-// returns the y past it. Plain c.Label doesn't wrap, so long help text ran off the card; route it
-// through here (wraps to the card content width, 16 px per line — matching the hand-rolled blocks).
+// settingsDesc draws a word-wrapped description at (pad, y) inside the card and returns the y past it.
 func (a *App) settingsDesc(pad, y int32, text string, col sdl.Color) int32 {
 	for _, ln := range a.ctx.WrapText(text, a.formW-8, 0) {
 		a.ctx.Label(pad, y, ln, col)
@@ -1202,25 +903,20 @@ func (a *App) settingsDesc(pad, y int32, text string, col sdl.Color) int32 {
 	return y
 }
 
-// drawSettingsGeneral: identity + display toggles + UI scale + font chain.
 func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX // rebase every pad-relative box into the content card
 	w := a.formW2()
 	y = a.settingsSection(y, w, "Identity")
-	// Showname: write-through to prefs. A stale once-per-session copy here
-	// used to overwrite names typed in the courtroom on Back.
+	// Write through to prefs, so a stale copy cannot overwrite names typed in the courtroom.
 	c.Label(pad, y+4, "Showname:", ColText)
 	shown := a.d.Prefs.Load().Showname
-	// CJK / non-Latin shownames must render as real glyphs while typed here too
-	// (a saved Japanese showname); plain ASCII keeps the single-font fast path.
+	// A non-Latin showname must render as real glyphs while typed; plain ASCII keeps the single-font path.
 	snPrimary, snEmoji := a.icFieldFonts(shown)
 	if next, _ := c.TextFieldEmoji("showname", sdl.Rect{X: pad + 130, Y: y, W: 240, H: fieldH}, shown, "your saved showname", snPrimary, snEmoji); next != shown {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.Showname = next })
 	}
-	// Default OOC name: write-through to prefs like the showname; it seeds
-	// every NEW tab (blank sends a sticky AsyncAO<n>). The courtroom OOC-name
-	// fields are tab-local and never write this back.
+	// Seeds every new tab (blank sends a sticky AsyncAO<n>); the courtroom's OOC-name fields are tab-local.
 	c.Label(pad+390, y+4, "OOC name:", ColText)
 	savedOOC := a.d.Prefs.Load().OOCName
 	onPrimary, onEmoji := a.icFieldFonts(savedOOC) // CJK-safe OOC name (ASCII stays fast path)
@@ -1230,8 +926,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	y += 38
 
-	// Showname presets (M6): a saved, global list — quick-swap them in-game with
-	// keybinds (random or a specific one). Cleared only by a factory reset.
+	// A saved, global list, swapped in-game with keybinds; cleared only by a factory reset.
 	c.Label(pad, y+4, "Presets:", ColText)
 	var addNow bool
 	saP, saE := a.icFieldFonts(a.shownameAdd) // CJK-safe preset entry (ASCII stays fast path)
@@ -1259,12 +954,9 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 			if c.Button(sdl.Rect{X: pad + 38, Y: y, W: 46, H: 18}, "Use") {
 				a.shownameOverride = name // apply now (the in-courtroom override)
 			}
-			// Per-preset keybind: arm a capture (pollShownameBind binds the next
-			// key to this showname); right-click the button clears the bind.
+			// Arm a capture (pollShownameBind binds the next key); right-click clears the bind.
 			bound := a.shownameKeyFor(name)
-			// bindChipLabel, not "Key: "+bound: this namespace fires on Alt+<key>
-			// (bareBindKey, qol.go) and a row printing the bare letter advertises
-			// a press that no longer does anything.
+			// bindChipLabel, not "Key: "+bound: this namespace fires on Alt+<key> (bareBindKey, qol.go).
 			keyLbl := bindChipLabel(bound, a.shownameBindFor == name, "press a key…", "Bind key")
 			kr := sdl.Rect{X: pad + 90, Y: y, W: 96, H: 18}
 			if c.Button(kr, keyLbl) {
@@ -1302,8 +994,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y += 8
 
 	y = a.settingsSection(y, w, "Display & behaviour")
-	// Streamer mode leads the section (playtest: it's the one people need to
-	// find FAST, right before going live).
+	// Streamer mode leads the section, because people need it fast before going live.
 	streamer := a.d.Prefs.Load().StreamerModeOn
 	if next := c.Checkbox(pad, y, "Streamer mode (masks OOC names + IPs in the log display, silences callword pings)", streamer); next != streamer {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.StreamerModeOn = next })
@@ -1330,9 +1021,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.applyTimingToRoom() // push the flag to the live room
 	}
 	y += 26
-	// #103: viewer opt-out of OTHER players' transmitted sprite styles (your own
-	// is set in the Extras → Sprite Style picker). Reduce-motion already drops a
-	// received style's wobble/spin; this hides the whole thing.
+	// Viewer opt-out of other players' sprite styles; reduce-motion only drops a received style's wobble and spin.
 	hideStyles := a.d.Prefs.Load().HideSpriteStyles
 	if next := c.Checkbox(pad, y, "Hide other players' sprite styles: show every character normally (ignore transmitted recolour, glow, spinning, wobble, motion paths and glitch)", hideStyles); next != hideStyles {
 		a.d.Prefs.Update(func(
@@ -1351,8 +1040,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		}
 	}
 	y += 26
-	// #2: viewer opt-out of OTHER players' emoji reactions (the floating emoji over the
-	// stage). Sending your own reactions is unaffected — this only hides incoming floats.
+	// Viewer opt-out of incoming reaction floats; sending your own is unaffected.
 	hideReact := a.d.Prefs.Load().HideReactions
 	if next := c.Checkbox(pad, y, "Hide other players' emoji reactions: don't float their reaction emoji over the stage (#2)", hideReact); next != hideReact {
 		a.d.Prefs.Update(func(
@@ -1493,9 +1181,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		}
 	}
 	y += 26
-	// Sprite hover-previews: rest the cursor on a character/emote button to pop a
-	// full-size preview. ON by default; the dwell before it shows is tunable.
-	// Gates ONLY the hover dwell — right-click previews always work.
+	// Hover preview of a character or emote button; this controls only the dwell, right-click previews always work.
 	prev := a.d.Prefs.Load().SpritePreviewOn
 	if next := c.Checkbox(pad, y, "Sprite hover-previews (ON by default): hovering a character or emote button shows the full-size sprite. Off only disables the hover pop-up — right-click still previews", prev); next != prev {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.SpritePreviewOn = next })
@@ -1509,10 +1195,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		c.Label(pad+340, y+4, "how long to hover before the preview pops (default 5 s)", ColTextDim)
 		y += 30
 	}
-	// Preview box default height: the pop-up's size before any corner-drag
-	// (playtest: the old 192 px default read tiny and re-dragging it every
-	// session got old). Applies to hover AND right-click previews, so it
-	// shows regardless of the toggle above.
+	// Applies to hover and right-click previews, so it shows regardless of the toggle above.
 	ph := a.d.Prefs.Load().PreviewHeightPx()
 	c.Label(pad, y+4, "Preview box height:", ColText)
 	phTrack := sdl.Rect{X: pad + 170, Y: y + 5, W: 120, H: 16}
@@ -1529,25 +1212,14 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetPreviewHeightPx(nph)
 	}
 	y += 30
-	// Keep the preview pinned: the box's own pin button writes this same preference,
-	// so a player who pins one box discovers the setting and vice versa. A pinned
-	// ANIMATED preview holds the frame pacer at the active cap for as long as it is
-	// up — true of the right-click pin already, but a sticky default makes it the
-	// steady state, hence the note in the label.
-	//
-	// The row says "pin button", never a 📌. This label is drawn through
-	// chromeFaceFor like every other settings string, and U+1F4CC is outside the
-	// chrome face's coverage on plenty of installs — a tofu box in the one sentence
-	// whose whole job is to point at a control. It would also be a lie: the box
-	// draws a VECTOR pin (drawToolIcon/iconPin), not that glyph.
+	// The box's pin button writes this same pref. A pinned animated preview holds the pacer at the active cap,
+	// hence the note. The label says "pin button", not the emoji, which many chrome faces lack (U+1F4CC).
 	pinned := a.d.Prefs.Load().PreviewPinned
 	if next := c.Checkbox(pad, y, "Keep the sprite preview pinned: it stays open until you close it (the pin button on the box toggles this too; an animated preview keeps the client at full frame rate while it is up)", pinned); next != pinned {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewPinned = next })
 	}
 	y += 26
-	// Emote-name hover tooltips: rest the cursor on an emote button to see its
-	// name (independent of the sprite pop-up above). ON by default; the dwell is
-	// tunable. Lightweight — a name-only tooltip, not the full-size art.
+	// Name-only tooltip on an emote button, independent of the sprite pop-up above.
 	names := a.d.Prefs.Load().EmoteHoverNamesOn
 	if next := c.Checkbox(pad, y, "Emote name tooltips (ON by default): hovering an emote button shows its name after a short delay", names); next != names {
 		a.d.Prefs.Update(func(
@@ -1596,11 +1268,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		c.Label(pad+340, y+4, "how long to hover before the name shows (default 5 s)", ColTextDim)
 		y += 30
 	}
-	// (Emote-grid icon spacing lives under Theme > Layout & fit — it is a layout
-	// measurement and AO2 themes override it, which is where people look for it.)
-	// Sprite repositioning: drag a character in the viewport to move them (the
-	// override sticks per character until reset). OFF by default so a stray click
-	// can't nudge a sprite; right-clicking a sprite resets just that one.
+	// Drag a character to move them, sticking per character until reset; off by default so a stray click cannot nudge.
 	move := a.d.Prefs.Load().SpriteMoveOn
 	if next := c.Checkbox(pad, y, "Let me drag character sprites to reposition them (OFF by default; right-click a sprite to reset it)", move); next != move {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteMoveOn = next })
@@ -1614,8 +1282,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		c.Label(pad+232, y+5, "drop every drag override back to the server's placement", ColTextDim)
 		y += 32
 	}
-	// Hide-sprite ("Missingno"): right-click a sprite → confirm → hidden for the
-	// session (for players who'd rather not see certain art). ON by default.
+	// Right-click a sprite to hide it for the session.
 	hideRC := a.d.Prefs.Load().RightClickHideSprite
 	if next := c.Checkbox(pad, y, "Right-click a sprite to hide it from the viewport (ON by default): confirms, then hides it for the session. Reshow all with the Reshow-hidden-sprites key (Controls tab).", hideRC); next != hideRC {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.RightClickHideSprite = next })
@@ -1628,7 +1295,6 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		c.Label(pad+232, y+5, fmt.Sprintf("%d sprite(s) hidden this session — un-hide them all", len(a.hiddenSprites)), ColTextDim)
 		y += 32
 	}
-	// Hide the desk (the foreground table the character stands behind).
 	hideDesk := a.d.Prefs.Load().HideDesk
 	if next := c.Checkbox(pad, y, "Hide the courtroom desk (OFF by default): suppresses the foreground desk so the full character shows.", hideDesk); next != hideDesk {
 		a.d.Prefs.Update(func(
@@ -1678,11 +1344,9 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	y += 30
 	y = a.settingsSection(y, w, "Log colours")
-	// Log-selection highlight colour: a hue/saturation wheel + brightness
-	// slider + hex field (drag-select in IC/OOC shows it).
+	// Log-selection highlight colour: hue/saturation wheel, brightness slider and hex field.
 	y = a.drawHighlightPicker(y, w)
-	// Per-speaker name colours: tint each speaker's name by a stable hash, with
-	// saturation/brightness sliders + a live preview. OFF by default.
+	// Per-speaker name colours: a stable hash per name, with sliders and a preview.
 	y = a.drawNameColorPicker(y, w)
 	boldNames := a.d.Prefs.Load().BoldNamesOn()
 	if next := c.Checkbox(pad, y, "Bold speaker names + timestamps (ON by default): renders the name prefix (and the IC-log time stamp) in the log and chatbox in bold for readability.", boldNames); next != boldNames {
@@ -1707,7 +1371,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y += 26
 	if slideOn {
 		secs := a.d.Prefs.Load().BgSlideshowSeconds()
-		// Bounds match the config clamp (3..600s); SetBgSlideshowSeconds is authoritative.
+		// Bounds match the config clamp; SetBgSlideshowSeconds is authoritative.
 		if next := a.numberRow(y, "  Seconds per background", secs, 1, 3, 600); next != secs {
 			a.d.Prefs.Update(func(
 				sn *config.
@@ -1742,18 +1406,15 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	smooth := a.d.Prefs.Load().SmoothScaling
 	if next := c.Checkbox(pad, y, "Smooth texture scaling (linear filtering; re-streams loaded images when toggled)", smooth); next != smooth {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.SmoothScaling = next })
-		// The filter applies at texture CREATION; purge so everything
-		// re-streams (demand pipeline + scenery heal repopulate live).
+		// The filter applies at texture creation, so purge and let everything re-stream.
 		_ = c.Ren.SetDefaultTextureScaleMode(TextureScaleMode(next))
 		a.d.Store.Purge()
-		// Purge destroyed the pinned shape masks SYNCHRONOUSLY — drop the
-		// frame-resolved Ctx pointers before anything shaped draws this frame.
+		// Purge destroyed the pinned shape masks synchronously; drop the Ctx pointers before anything shaped draws.
 		a.invalidateShapeMasks()
 		c.purgeTextCache()
 		a.applyThemeAsync()
-		// Purge also destroyed the pinned missingno placeholder — re-pin the
-		// embedded default (render thread) and re-kick a custom image if set, so
-		// the missing-sprite fallback survives a filtering swap (missingno.go).
+		// Purge also destroyed the pinned missingno placeholder; re-pin the default and re-kick a custom image
+		// so the missing-sprite fallback survives a filtering swap (missingno.go).
 		a.uploadEmbeddedMissingno()
 		if p := a.d.Prefs.Load().ErrorSpriteFile; p != "" {
 			a.applyErrorSprite(p)
@@ -1761,10 +1422,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		settings.statusLine = "Re-streaming textures with new filtering."
 	}
 	y += 26
-	// Per-character sprite filtering (#21). Separate from the client-wide toggle
-	// above, which still governs backgrounds, desks and chrome. This one applies
-	// live — the filter is resolved at draw time from the page memo — so unlike
-	// the hint it needs no purge and no re-stream.
+	// Separate from the client-wide toggle above; resolved at draw time from the page memo, so it needs no purge.
 	spriteScale := a.d.Prefs.SpriteScalingMode()
 	c.Label(pad, y+4, "Sprite filtering:", ColText)
 	if next, changed := c.Dropdown("spritescale",
@@ -1778,7 +1436,6 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	c.Label(pad, y+2, spriteScalingHints[spriteScale], ColTextDim)
 	y += 24
 	y = a.settingsSection(y, w, "Scale & text size")
-	// Global scale: DPI-driven by default, manual spinbox when auto is off.
 	scaleAuto := a.d.Prefs.Load().UIScaleAutoOn
 	scaleAutoLabel := "Auto UI scale (fits the window + display DPI)"
 	if a.detectedScalePct > 0 {
@@ -1797,10 +1454,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	y = a.drawViewportSizeRow(y)
 
-	// Independent text size: scale the IC/OOC log + chatbox message text WITHOUT
-	// zooming the courtroom art (that's the UI scale above — it's a whole-frame
-	// zoom). These map to the same persisted layout scales the in-courtroom
-	// Ctrl+wheel zoom tunes, so a change here shows at once and survives restart.
+	// Scales log and chatbox text without zooming the art; same persisted scales as the in-courtroom Ctrl+wheel zoom.
 	if v := a.sliderRow(y, "Chat log text size %", a.logPct, config.ScaleStepPercent, config.MinLogScalePercent, config.MaxLogScalePercent,
 		"Size of the IC/OOC log text only — not the courtroom art. Ctrl+wheel over the log does the same."); v != a.logPct {
 		a.logPct = v
@@ -1819,7 +1473,6 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.saveLayout()
 	}
 	y += 30
-	// See-through chatbox: panel opacity (0 = fully transparent, 100 = solid).
 	// Only affects the flat fallback skin; a theme chatbox keeps its own art.
 	op := a.d.Prefs.Load().ChatboxOpacity
 	if v := a.sliderRow(y, "Chatbox opacity %", op, 5, config.MinChatboxOpacity, config.MaxChatboxOpacity,
@@ -1854,9 +1507,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y += 26
 
 	y = a.settingsSection(y, w, "Window")
-	// Window size / fullscreen: pick your own client dimensions (a window bigger
-	// than the monitor can't be dragged smaller; F11 + Fit to screen are the
-	// escapes). All window ops run here on the render thread.
+	// A window bigger than the monitor cannot be dragged smaller; F11 and Fit to screen are the escapes. Render thread.
 	full := a.d.Prefs.Load().WindowFull
 	if next := c.Checkbox(pad, y, "Fullscreen (borderless) · F11 toggles", full); next != full {
 		a.applyFullscreen(next)
@@ -1912,21 +1563,8 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 			}
 		}
 		y += btnH + 10
-		// #35, manual half: snap to the size the ACTIVE theme was drawn for. Only
-		// offered when the theme declares a courtroom rect — the automatic snap on a
-		// theme pick covers the common case, this is the way back to 1:1 after any
-		// manual resize. Same applyWindowSize route as every button above, so the
-		// clamp, the un-maximize and the persist are shared, and it stays a one-line
-		// call a future Window menu can reuse.
-		//
-		// themeDesignSizeOffer, not themeDesignWindowSize: it also gates on the
-		// themed courtroom layout being the one actually drawn, so this row and the
-		// automatic snap agree about when a theme canvas is meaningful.
-		// The label carries the size the button APPLIES, not the theme's raw canvas.
-		// They are not the same number: the canvas sits below the app-chrome band, so
-		// the snap asks for canvas + themeDesignWindowInset (44 px) — the stock theme's
-		// 714×579 canvas needs a 714×623 window. Printing the canvas here while
-		// applying the window size made the button describe a resize it never performed.
+		// Snap to the size the active theme was drawn for; themeDesignSizeOffer also needs the themed layout drawn.
+		// The label shows the applied size: canvas + themeDesignWindowInset, as the canvas sits below the chrome band.
 		if _, _, ok := a.themeDesignSizeOffer(); ok {
 			tw, th, _ := a.themeDesignWindowTarget()
 			label := fmt.Sprintf("Theme's design size (%d×%d)", tw, th)
@@ -1935,8 +1573,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 				a.applyThemeDesignWindowSize()
 				settings.winLoaded = false
 			}
-			// The button label carries the size, so the hint is pure explanation —
-			// drop it rather than draw it into a negative width at a narrow window.
+			// The label carries the size, so drop the hint rather than draw it into a negative width.
 			if hintW := w - pad - bw - designSizeHintGap - scrollBarW; hintW > 0 {
 				c.LabelClipped(pad+bw+designSizeHintGap, y+4, hintW,
 					"this theme's canvas plus the menu bar and tab strip above it — the courtroom then draws 1:1, like the stock AO2 client", ColTextDim)
@@ -1946,9 +1583,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 
 	y = a.settingsSection(y, w, "Extras box")
-	// Extras box appearance: a hex colour per element (blank = the stock colour),
-	// a live swatch, and a Background → Gradient↓ fade. Applies to the floating
-	// Extras box and its torn-off boxes; default (all blank) is byte-identical.
+	// Extras box appearance: a hex colour per element (blank is stock), a swatch, and a Background to Gradient fade.
 	c.Label(pad, y+4, "Colours:", ColTextDim)
 	c.LabelClipped(pad+150, y+4, w-pad-150-scrollBarW, "hex like 78aaff — blank = default · live on the open box", ColTextDim)
 	y += 24
@@ -1978,13 +1613,8 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 
 	y = a.settingsSection(y, w, "Fonts")
-	// Dyslexia-friendly font: a persisted one-click toggle backed by the bundled
-	// OpenDyslexic (no install needed). Drives the IC/OOC chat + log text and
-	// takes precedence over the manual override below.
-	// The census reads the machine's OWN fonts, so it is the only text path whose
-	// behaviour differs per operating system. Exposed so a player seeing wrong or
-	// missing text can take the whole subsystem out of the picture in one click
-	// instead of waiting for a build.
+	// The scan reads the machine's own fonts, the only text path differing per OS,
+	// so a player seeing wrong text can take it out of the picture in one click.
 	census := a.d.Prefs.Load().FontCensus
 	if next := c.Checkbox(pad, y, "Use fonts installed on this computer (ON by default): lets text in scripts the bundled fonts don't cover borrow a font from your system. Turn off if text renders wrongly or goes missing — the client then uses only the fonts it ships with.", census); next != census {
 		a.d.Prefs.Update(func(
@@ -2023,11 +1653,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	y += 28
 
-	// Custom font override: a chain of TTF/TTC paths, first covering font per
-	// line wins (put a CJK-capable font later in the chain). Drives the IC/OOC
-	// chat + log text; the "everywhere" checkbox below extends it to the whole
-	// UI. Saved even while the dyslexia font is on (which overrides it), so it
-	// returns when you switch back.
+	// A chain of TTF/TTC paths; first covering font per line wins. Saved even while the dyslexia font overrides it.
 	c.Label(pad, y+4, "Custom font:", ColText)
 	if !settings.fontLoaded {
 		settings.fontInput = a.d.Prefs.Load().FontOverridePaths
@@ -2054,10 +1680,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	y += 34
 
-	// Font-everywhere: extend the ACTIVE override (dyslexia toggle or the chain
-	// above) to all chrome text too. Opt-in — the chrome's fixed row/button
-	// metrics are tuned for the embedded face, so an unusual font can sit tight
-	// in buttons; chat/log stay the reading-optimized surface either way.
+	// Opt-in: chrome's row and button metrics are tuned for the embedded face, so an unusual font can sit tight.
 	few := a.d.Prefs.Load().FontEverywhere
 	if next := c.Checkbox(pad, y, "Use the font everywhere — menus, buttons, lists & tabs too (not just chat)", few); next != few {
 		a.d.Prefs.Update(func(
@@ -2087,31 +1710,21 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	return y
 }
 
-// Call-out copy (precomputed package-level strings — drawn every frame, so no
-// per-frame fmt.Sprintf/concat: sibling settings labels use literals for the same
-// reason). The Import button opens the in-app file browser on EVERY OS; the
-// "drag anywhere" line is the second, cross-platform mechanism.
+// Package-level strings because these draw every frame.
 const (
 	demoVideoCalloutLead = "Have an AO2 .demo session file? Turn it into a shareable video."
 	demoVideoCalloutDrag = "…or drag the .demo file anywhere onto this window."
-	// Reuses the ffmpeg wording from drawExportOptions/startSceneExport so the MP4
-	// promise doesn't dead-end: GIF/WebP still work, and the import still lands.
+	// So the MP4 promise does not dead-end: GIF/WebP still work, and the import still lands.
 	demoVideoCalloutNoFF = "🎥 Video needs ffmpeg on PATH — GIF/WebP work without it, and the import still lands in Recordings."
 )
 
-// drawDemoToVideoCallout draws the prominent ".demo → video" entry point at the
-// top of the Studio tab: a highlighted panel (the c.Fill(ColPanel)+c.Border(ColAccent)
-// idiom) with a one-line pitch, the in-app Import file browser (ALL platforms),
-// the cross-platform drag hint, and — without ffmpeg — the ColDanger fallback note.
-// Shadows pad/w per the mandatory settings idiom.
+// drawDemoToVideoCallout draws the .demo to video entry point at the top of the Studio tab.
 func (a *App) drawDemoToVideoCallout(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	y = a.settingsSection(y, w, ".demo → video")
 
-	// Highlighted panel background + accent border spanning the section width. The
-	// Import button now shows on every OS (the in-app browser is cross-platform),
-	// so the panel is always the full two-row height.
+	// The Import button shows on every OS, so the panel is always the full two-row height.
 	panelH := int32(60)
 	if !videoenc.Available() {
 		panelH += 18 // room for the ffmpeg fallback line
@@ -2134,20 +1747,14 @@ func (a *App) drawDemoToVideoCallout(y, w int32) int32 {
 	return y + panelH + 12
 }
 
-// Content-tools call-out copy (package-level literals — drawn every frame, no
-// per-frame concat, matching the demo-video call-out).
+// Package-level literals because these draw every frame.
 const (
 	contentToolsLead = "Check what a recording needs — or bundle it so it plays anywhere."
 	contentToolsBody = "Enumerates every sprite/background/music/SFX/blip a .demo/.aorec references, probes the origin, and lists what's missing."
 	contentToolsPkg  = "Package writes the found assets + a self-contained .aorec into recordings\\<name>-bundle\\ — it replays offline forever."
 )
 
-// drawContentToolsCallout draws the "Check demo content" / "Package this RP"
-// entry points right under the .demo → video call-out (same highlighted-panel
-// idiom). Both reuse the in-app demo browser (openDemoBrowserFor) with a pick
-// PURPOSE, so the file-navigation surface is shared with the video flow — the
-// pick then routes to the content-report engine (openContentReportFor) and opens
-// the report panel. Shadows pad/w per the mandatory settings idiom.
+// drawContentToolsCallout draws the content entry points, which reuse the demo browser with a pick purpose.
 func (a *App) drawContentToolsCallout(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -2174,8 +1781,7 @@ func (a *App) drawContentToolsCallout(y, w int32) int32 {
 	return y + panelH + 12
 }
 
-// TextureScaleMode is the texture filter for the "Smooth texture scaling"
-// setting: linear when on, nearest when off.
+// TextureScaleMode is the texture filter for "Smooth texture scaling": linear when on, nearest when off.
 func TextureScaleMode(smooth bool) sdl.ScaleMode {
 	if smooth {
 		return sdl.ScaleModeLinear

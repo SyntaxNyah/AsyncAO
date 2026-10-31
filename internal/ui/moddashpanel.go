@@ -13,19 +13,14 @@ import (
 // modRosterRowH is the height of a rich (two-line) roster row in the mod / CM panels.
 const modRosterRowH = int32(40)
 
-// modRosterIconInset is the icon's vertical inset within a roster row (the icon is rowH minus this);
-// modRosterSubLineUp is the second identity line's baseline offset up from the row bottom at 100%
-// zoom. Both scale with the mod-dash row height / modDashPct so the icon and OOC/IPID line track a
-// zoomed row exactly like drawPlayerRow (fixed-height-rows + big-fonts bug class).
+// modRosterIconInset is the icon's vertical inset in a row; modRosterSubLineUp is the second line's offset up from
+// the row bottom at 100% zoom. Both scale with modDashPct.
 const (
 	modRosterIconInset = int32(10) // icon = rrow.H - 10 (28px at 100%, where rrow.H = rh-2 = 38 — preserves the historical modRosterRowH-12 icon); grows with the zoomed row
 	modRosterSubLineUp = int32(16) // second line sits 16px above the row bottom at 100% (mirrors drawPlayerRow)
 )
 
-// rosterIdentityLines composes the rich two-line identity for one roster row (pure, no draw):
-// line 1 "[uid] showname · character", line 2 "OOC: … · IPID: …" (dimmer, may be ""). Shared by
-// the chrome-font CM/mod path (drawModRosterIdentity) and the zoom-scaled mod-dash row
-// (drawModRosterRow), so the two can never drift on what the strings say.
+// rosterIdentityLines composes the two identity lines of a roster row; sub may be empty.
 func rosterIdentityLines(p areaPlayer) (ic, sub string) {
 	display := rosterDisplayName(p)
 	ic = "[" + p.uid + "] " + display
@@ -44,12 +39,8 @@ func rosterIdentityLines(p areaPlayer) (ic, sub string) {
 	return ic, sub
 }
 
-// drawModRosterIdentity paints the rich two-line identity for one roster row, shared by the mod
-// dashboard and the CM panel: line 1 "[uid] showname · character", line 2 "OOC: … · IPID: …"
-// (dimmer). nameCol recolours line 1 (e.g. a selected row); textW caps the width so a caller can
-// leave room for a per-row button. Off the hot path (opt-in panels), so the string building is fine.
-// Chrome font at fixed offsets — the CM panel keeps this stable-target look; the mod-dash row draws
-// its own zoom-scaled variant inline (drawModRosterRow) so ctrl+wheel resizes it.
+// drawModRosterIdentity paints the two-line identity in the chrome font; nameCol recolours line 1, textW leaves room
+// for a button.
 func (a *App) drawModRosterIdentity(p areaPlayer, x, rowY, textW int32, nameCol sdl.Color) {
 	c := a.ctx
 	ic, sub := rosterIdentityLines(p)
@@ -59,14 +50,8 @@ func (a *App) drawModRosterIdentity(p areaPlayer, x, rowY, textW int32, nameCol 
 	}
 }
 
-// #130 CM / mod dashboard — a STANDALONE panel (its own thing; it never bloats the player list)
-// for server-software-aware moderation + area (CM) control. Opened from the Extras "Mod / CM"
-// entry or its hotkey (Ctrl+/). Closed by default, so it costs nothing until you open it;
-// detection + command building run only while it draws (never per frame). The OOC slash-command
-// syntax differs per server software, so every Ban / Kick goes through a box with a LIVE PREVIEW
-// of the exact command before it sends — a wrong-syntax ban silently fails on the server, so the
-// user sees precisely what will go out. The per-software command builders live in
-// internal/courtroom/modcommands.go (unit-tested); this file is only their UI.
+// Mod / CM dashboard panel. Ban and kick go through a box with a live preview of the exact command, because syntax
+// differs per server software and a wrong one fails silently. Command builders: courtroom/modcommands.go.
 
 const (
 	modDashW    = int32(680)
@@ -76,19 +61,13 @@ const (
 	modDashMinH = int32(420)
 )
 
-// The ban/kick box is a non-blocking floating box too (its own floatWin: banWin),
-// so a mod can drag it aside and keep chatting while it's open — it never blanks
-// the courtroom. Width is shared; the HEIGHT defaults + floors are per-kind
-// (banBoxDims) because the four boxes carry different content (kick has no
-// duration row; the bulk boxes carry a frozen target list).
+// The ban/kick box is a floating window (banWin). Width is shared; height default and floor are per kind (banBoxDims).
 const (
 	banBoxDefW = int32(560)
 	banBoxMinW = int32(440)
 )
 
-// banBoxDims gives the default + minimum HEIGHT for the ban/kick box of a given
-// kind (1 ban, 2 kick, 3 bulk ban, 4 bulk kick). The min floors each fit that
-// kind's content so a resize-to-minimum never overlaps the bottom Send/Cancel row.
+// banBoxDims gives the default and minimum height for kind 1 ban, 2 kick, 3 bulk ban, 4 bulk kick.
 func banBoxDims(kind int) (defH, minH int32) {
 	switch kind {
 	case 2: // kick — no duration row
@@ -102,8 +81,7 @@ func banBoxDims(kind int) (defH, minH int32) {
 	}
 }
 
-// banBoxRect is the ban/kick box's floating-window rect (floatwin.go), sized for
-// the open kind. Shared banWin geometry: a position/size the mod set carries over.
+// banBoxRect is the ban/kick box's floating-window rect, sized for the open kind.
 func (a *App) banBoxRect(w, h int32) sdl.Rect {
 	defH, minH := banBoxDims(a.banBoxKind)
 	if r, ok := a.seedPanelFromSlot(&a.banWin, slotPanelBan, banBoxDefW, defH, banBoxMinW, minH, w, h); ok {
@@ -115,11 +93,7 @@ func (a *App) banBoxRect(w, h int32) sdl.Rect {
 // modDashChipOn is the "active" status-chip colour (green; matches the ping chip's "good").
 var modDashChipOn = sdl.Color{R: 70, G: 200, B: 90, A: 255}
 
-// drawReasonTemplateChips draws the editable ban/kick reason chips (from prefs). Clicking a chip
-// fills banBoxReason; the active one is outlined. When manage is set (the single box, which has the
-// room — the bulk box passes false to stay compact) it also shows "+ Save" (store the current
-// reason as a chip) and an Edit toggle whose chips show a × that removes them. Returns the y past
-// the block. Shared by the single and bulk boxes so the list and behaviour can't drift apart.
+// drawReasonTemplateChips draws the reason chips; manage adds Save and Edit controls. Returns the y past the block.
 func (a *App) drawReasonTemplateChips(x, y, maxW int32, manage bool) int32 {
 	c := a.ctx
 	tpls := a.d.Prefs.Load().ModReasonTemplatesList()
@@ -167,13 +141,8 @@ func (a *App) drawReasonTemplateChips(x, y, maxW int32, manage bool) int32 {
 	return y + 6
 }
 
-// drawDurationChips draws the ban-duration row: the BanDuration enum presets, then the
-// user's SAVED custom-duration chips (prefs), each clickable — an enum pick clears the
-// custom, a custom pick overrides the enum — with the active one outlined. When manage
-// is set (the single box; the bulk box stays compact) it adds an "add custom" field
-// ("45m", "2 days", validated via courtroom.CanonicalBanDuration so garbage can't
-// become a chip) and an Edit toggle whose chips show × to remove. Shared by the single
-// and bulk boxes so the list and behaviour can't drift apart. Returns the y past the block.
+// drawDurationChips draws the duration presets and saved custom chips; manage adds the add-custom field and Edit
+// toggle. Returns the y past the block.
 func (a *App) drawDurationChips(x, y, maxW int32, manage bool) int32 {
 	c := a.ctx
 	dx := x
@@ -242,8 +211,7 @@ func (a *App) drawDurationChips(x, y, maxW int32, manage bool) int32 {
 	return y + 4
 }
 
-// formatModAudit renders the session audit log as plain text (one tab-separated row per entry) for
-// the clipboard export. Pure — testable without SDL.
+// formatModAudit renders the audit log as tab-separated text for the clipboard.
 func (a *App) formatModAudit() string {
 	var b strings.Builder
 	b.WriteString("AsyncAO mod audit")
@@ -264,8 +232,7 @@ func (a *App) formatModAudit() string {
 	return b.String()
 }
 
-// copyModAudit puts the audit log on the clipboard — the "export" path. Clipboard, not a file, so
-// there's no disk I/O on the render thread (the phone book / jukebox share the same way, §17.2).
+// copyModAudit copies the audit log to the clipboard; a file would mean disk I/O on the render thread.
 func (a *App) copyModAudit() {
 	if len(a.modAudit) == 0 {
 		return
@@ -275,13 +242,10 @@ func (a *App) copyModAudit() {
 	a.warnAt = a.now()
 }
 
-// modAuditCap bounds the session audit log (hard rule #4 / spec §17.4: every buffer is capped).
-// Oldest entries drop once it's full — the dashboard only needs "what did I just do this session",
-// not a permanent record.
+// modAuditCap bounds the audit log (hard rule 4); the oldest entries drop first.
 const modAuditCap = 100
 
-// modAuditEntry is one logged dashboard command: when it was sent, the action label ("Ban" / "Kick"),
-// the frozen target identity, and the exact OOC command that went out.
+// modAuditEntry is one logged dashboard command.
 type modAuditEntry struct {
 	at     time.Time
 	action string
@@ -289,8 +253,7 @@ type modAuditEntry struct {
 	cmd    string
 }
 
-// recordModAudit appends one sent command to the session audit log, dropping the oldest entry when
-// the log is full. It's the only writer; the dashboard's Send paths call it just before sending.
+// recordModAudit appends one sent command, dropping the oldest when full.
 func (a *App) recordModAudit(action, target, cmd string) {
 	if cmd == "" {
 		return
@@ -301,12 +264,10 @@ func (a *App) recordModAudit(action, target, cmd string) {
 	}
 }
 
-// modBulkCap caps how many players can be ticked for a bulk ban / kick at once (#13). It bounds the
-// selection map (hard rule #4) and is a guard rail against a fat-fingered "ban the whole room".
+// modBulkCap caps the bulk selection (hard rule 4) and guards against banning a whole room by accident.
 const modBulkCap = 50
 
-// toggleModSelected ticks / unticks a UID for the bulk action, lazily creating the set and pruning
-// the entry on untick so the map only ever holds ticked UIDs. Refuses to grow past modBulkCap.
+// toggleModSelected ticks or unticks a UID, refusing to grow past modBulkCap.
 func (a *App) toggleModSelected(uid string) {
 	if uid == "" {
 		return
@@ -326,17 +287,14 @@ func (a *App) toggleModSelected(uid string) {
 	a.modDashSelected[uid] = true
 }
 
-// clearModSelected drops the whole bulk selection (the "Clear" button) — also the escape hatch for
-// ticked players who have since left, since their rows are gone and can't be unticked individually.
+// clearModSelected drops the bulk selection, including players who left and can no longer be unticked.
 func (a *App) clearModSelected() {
 	for k := range a.modDashSelected {
 		delete(a.modDashSelected, k)
 	}
 }
 
-// selectedPresentUIDs returns the ticked UIDs that are STILL in the roster, in roster order. A
-// player who left is silently dropped, so a bulk command never targets a stale slot. Order matches
-// the roster so the bulk box lists people the way the mod sees them.
+// selectedPresentUIDs returns the ticked UIDs still in the roster, in roster order.
 func (a *App) selectedPresentUIDs() []string {
 	if len(a.modDashSelected) == 0 {
 		return nil
@@ -351,8 +309,7 @@ func (a *App) selectedPresentUIDs() []string {
 	return out
 }
 
-// countSelectedPresent is the allocation-free count of ticked-and-still-present players, for the
-// per-frame button labels (selectedPresentUIDs allocates, so it's reserved for the one-shot freeze).
+// countSelectedPresent counts without allocating, for per-frame labels.
 func (a *App) countSelectedPresent() int {
 	if len(a.modDashSelected) == 0 {
 		return 0
@@ -367,9 +324,7 @@ func (a *App) countSelectedPresent() int {
 	return n
 }
 
-// openModBulkBox freezes the currently-ticked, present UIDs into the bulk box and opens it
-// (banBoxKind 3 = bulk ban, 4 = bulk kick). Freezing by UID matches the single box's safety: a
-// roster rebuild while a reason is typed can't repoint the batch. A reused reason/duration carries
+// openModBulkBox freezes the ticked, present UIDs so a roster rebuild can't repoint the batch.
 // over from the single box, so default the reason empty and the duration to a sane value.
 func (a *App) openModBulkBox(kind int) {
 	uids := a.selectedPresentUIDs()
@@ -383,10 +338,7 @@ func (a *App) openModBulkBox(kind int) {
 	a.banBoxCustomDur = "" // a fresh box starts on the sane preset, never a stale custom chip
 }
 
-// bulkCommandFor builds the exact OOC command for one bulk target UID, re-resolving its IPID by UID
-// (from the enriched roster, else the raw /getarea snapshot) — same per-person resolution the single
-// box does. Returns "" when the server needs an identifier we don't have yet (e.g. an un-fetched
-// IPID), so the caller can count and report those instead of sending a broken command.
+// bulkCommandFor builds the OOC command for one UID; empty when the server needs an IPID we don't have yet.
 func (a *App) bulkCommandFor(uid string, isBan bool) string {
 	ipid := ""
 	if row, ok := a.rosterByUID(uid); ok && row.ipid != "" {
@@ -401,8 +353,7 @@ func (a *App) bulkCommandFor(uid string, isBan bool) string {
 	return courtroom.KickCommand(sw, ipid, uid, a.banBoxReason)
 }
 
-// toggleModDash opens / closes the dashboard (the Extras entry + the hotkey). Closing it also
-// drops any half-filled ban/kick box, so it can't reappear out of context next open.
+// toggleModDash opens or closes the dashboard; closing drops any half-filled ban/kick box.
 func (a *App) toggleModDash() {
 	a.showModDash = !a.showModDash
 	if !a.showModDash {
@@ -410,15 +361,12 @@ func (a *App) toggleModDash() {
 	}
 }
 
-// cycleModDashSoftware advances the manual software override one step (… → KFO → Athena → Akashi
-// → Whisker → Nyathena → auto). SoftwareUnknown means "auto-detect from the ID packet".
+// cycleModDashSoftware advances the software override; SoftwareUnknown means auto-detect.
 func (a *App) cycleModDashSoftware() {
 	a.cmSoftwareOverride = (a.cmSoftwareOverride + 1) % courtroom.ServerSoftwareCount
 }
 
-// rosterByUID resolves a live-roster row by UID — the STABLE identity key. The roster slice is
-// replaced wholesale on every join/leave (rebuildLiveRoster), so a destructive command must never
-// be keyed by a row index; UID survives the rebuild. 0-alloc slice scan.
+// rosterByUID resolves a roster row by UID; the roster is replaced on every join/leave, so never key by index.
 func (a *App) rosterByUID(uid string) (areaPlayer, bool) {
 	if uid == "" {
 		return areaPlayer{}, false
@@ -442,8 +390,7 @@ func rosterDisplayName(p areaPlayer) string {
 	return "Spectator"
 }
 
-// sendModCommand fires one already-built OOC command (the only send path for the dashboard) and
-// flashes a confirming toast of exactly what went out. Refuses an empty command defensively.
+// sendModCommand sends one built OOC command and toasts what went out.
 func (a *App) sendModCommand(cmd string) {
 	if cmd == "" || a.sess == nil {
 		return
@@ -453,10 +400,7 @@ func (a *App) sendModCommand(cmd string) {
 	a.warnAt = a.now()
 }
 
-// openModDashBox opens the Ban (kind 1) / Kick (kind 2) box for the selected target, FREEZING the
-// target's identity into the box state. A roster rebuild while the reason is being typed then
-// can't repoint the command at whoever shifted into that slot — only the IPID is allowed to fill
-// in later (re-resolved by the frozen UID, i.e. the same person).
+// openModDashBox opens the Ban (1) or Kick (2) box and freezes the target; only the IPID may fill in later.
 func (a *App) openModDashBox(kind int) {
 	row, ok := a.rosterByUID(a.modDashTargetUID)
 	if !ok {
@@ -472,12 +416,8 @@ func (a *App) openModDashBox(kind int) {
 	a.modTemplatesEdit = false      // start in normal (fill) mode, not the template editor
 }
 
-// fetchAreaForBan asks the server for the area roster — the mod-only reply that carries IPIDs — so
-// the ban box re-resolves the frozen target's IPID from it (by UID). It sends /getareas (ALL areas),
-// not /getarea (current area only): the target may be in another area, and Akashi surfaces the
-// mod-only IPID via /getareas (the user confirmed plain /getarea doesn't). pairAreaReset starts a
-// clean roster (Akashi's "=== area ===" blocks carry no "----" reset marker), and the reply burst is
-// kept out of OOC like the other roster pulls. (WAP doesn't reach here — its IPID arrives live.)
+// fetchAreaForBan sends /getareas, not /getarea: the target may be in another area, and Akashi gives the mod-only
+// IPID only there. pairAreaReset starts a clean roster (Akashi's area blocks have no reset marker).
 func (a *App) fetchAreaForBan() {
 	if a.sess == nil {
 		return
@@ -489,8 +429,7 @@ func (a *App) fetchAreaForBan() {
 	a.warnAt = a.now()
 }
 
-// drawModDashPanel paints the dashboard (or the ban/kick box on top of it) and handles its input.
-// modDashRect is the Mod dashboard's floating-window rect (floatwin.go).
+// modDashRect is the Mod dashboard's floating-window rect.
 func (a *App) modDashRect(w, h int32) sdl.Rect {
 	if r, ok := a.seedPanelFromSlot(&a.modWin, slotPanelMod, modDashW, modDashH, modDashMinW, modDashMinH, w, h); ok {
 		return r
@@ -525,7 +464,7 @@ func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
 		return
 	}
 
-	// Software row: detected (or overridden) family + a Change button that cycles the override.
+	// Server software row; Change cycles the override.
 	sw := a.detectedSoftware()
 	sy := panel.Y + 48
 	c.Label(x, sy+5, "Server:", ColTextDim)
@@ -540,7 +479,6 @@ func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
 		a.cycleModDashSoftware()
 	}
 
-	// Status chips + a one-line situational hint.
 	cy := panel.Y + 80
 	nx := a.drawModDashChip(x, cy, "MOD", a.amIMod())
 	nx = a.drawModDashChip(nx, cy, "CM", a.amICM())
@@ -554,13 +492,11 @@ func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
 
 	c.Fill(sdl.Rect{X: x, Y: panel.Y + 108, W: pw - 2*modDashIn, H: 1}, ColPanelHi) // divider
 
-	// Body: roster picker (left) + actions (right). Footer: the server's command reference.
 	bodyTop := panel.Y + 118
 	bodyBottom := panel.Y + ph - 100 - 14
 	leftW := int32(322)
 	rightX := x + leftW + 16
 	rightW := panel.X + pw - modDashIn - rightX
-	// Left column: the roster picker OR the session audit log (#13), switched by a two-button toggle.
 	rosterLabel := "Players (" + strconv.Itoa(len(a.rosterView())) + ")"
 	auditLabel := "Audit (" + strconv.Itoa(len(a.modAudit)) + ")"
 	rosterBtn := sdl.Rect{X: x, Y: bodyTop, W: c.TextWidth(rosterLabel) + 22, H: btnH}
@@ -598,7 +534,6 @@ func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
 	}
 }
 
-// drawModDashChip paints one status pill (green when active) and returns the x past it.
 func (a *App) drawModDashChip(x, y int32, label string, on bool) int32 {
 	c := a.ctx
 	cw := c.TextWidth(label) + 16
@@ -612,9 +547,7 @@ func (a *App) drawModDashChip(x, y int32, label string, on bool) int32 {
 	return x + cw + 8
 }
 
-// drawModDashActions draws the right column: the selected target, the Moderation buttons (gated on
-// being mod), and the Room (CM) controls. Claim-CM sits OUTSIDE the amICM() gate (you can't be CM
-// yet when you claim it); the uncm / area-kick / lock controls are gated on actually being CM.
+// Claim-CM sits outside the amICM check because you can't be CM yet when you claim it.
 func (a *App) drawModDashActions(x, y, w int32) {
 	c := a.ctx
 	row, hasTarget := a.rosterByUID(a.modDashTargetUID)
@@ -633,7 +566,6 @@ func (a *App) drawModDashActions(x, y, w int32) {
 		y += 26
 	}
 
-	// Moderation (ban / kick) — needs mod auth, a known software, and a target.
 	c.Label(x, y, "Moderation", ColAccent)
 	y += 20
 	switch {
@@ -656,8 +588,7 @@ func (a *App) drawModDashActions(x, y, w int32) {
 		y += btnH + 10
 	}
 
-	// Bulk ban / kick (#13): acts on the ticked set, INDEPENDENT of the single target above. The
-	// section only appears once at least one present player is ticked. nStr drives the button labels.
+	// Bulk actions act on the ticked set, independent of the single target.
 	if n := a.countSelectedPresent(); n > 0 {
 		y += 2
 		nStr := strconv.Itoa(n)
@@ -679,8 +610,7 @@ func (a *App) drawModDashActions(x, y, w int32) {
 		y += btnH + 10
 	}
 
-	// CM (area control) is its OWN panel now (#130) — it opens from the corner "CM" chip the
-	// moment you hold CM, so the mod dashboard stays focused on ban / kick. Claim CM with /cm.
+	// CM controls live in their own panel, opened from the corner CM chip.
 	y += 6
 	c.Label(x, y, "Room (CM)", ColAccent)
 	y += 20
@@ -691,12 +621,8 @@ func (a *App) drawModDashActions(x, y, w int32) {
 	}
 }
 
-// drawModDashRoster renders the live roster as a clickable, scrollable list with a character icon
-// and rich two-line rows (showname · IC · OOC · UID · IPID). It reuses the player list's grouped,
-// memoized row layout (playerRosterRows), so a /gas spanning areas shows the SAME area-grouped
-// headers the player list does — organised by the server software's own area order — and shares
-// the player list's index-keyed icon cache (same rosterView indices), so faces stay warm in both.
-// Selecting a row sets modDashTargetUID (by UID, never index, so a roster rebuild can't repoint it).
+// drawModDashRoster renders the live roster, reusing the player list's grouped rows and icon cache (same rosterView
+// indices). Selecting a row sets modDashTargetUID by UID, never index.
 func (a *App) drawModDashRoster(r sdl.Rect) {
 	c := a.ctx
 	c.Border(r, ColPanelHi)
@@ -707,12 +633,9 @@ func (a *App) drawModDashRoster(r sdl.Rect) {
 		c.LabelClipped(r.X+6, r.Y+6, r.W-12, "No players yet (or no live list on this server).", ColTextDim)
 		return
 	}
-	// Pass the SAME speaker arg the player list passes: playerRosterRows memoizes on it over one
-	// shared backing slice, so a mismatch would rebuild that slice every frame while both panels
-	// are open (a per-frame allocation). currentSpeakerName is what drawPlayerList feeds it too.
+	// Pass the player list's speaker arg: playerRosterRows memoizes on it, so a mismatch rebuilds the rows every frame.
 	speaker := a.currentSpeakerName()
 	rows := a.playerRosterRows(speaker) // flat for a /ga, area-grouped (with headers) for a /gas
-	// Ctrl+wheel (or wheel-button) resizes the dashboard list text (modDashPct); plain wheel scrolls.
 	a.zoomWheel(r, &a.modDashPct, config.MinLogScalePercent, config.MaxLogScalePercent)
 	if !c.ctrlHeld {
 		a.modDashScroll -= c.WheelIn(r) * scrollStepPx
@@ -743,11 +666,7 @@ func (a *App) drawModDashRoster(r sdl.Rect) {
 	}
 }
 
-// modRowHeight is the display height of one mod-dashboard roster row at zoom pct. Area-group headers
-// are short (playerHeaderH, fixed — mirrors the player list's rowHeight, which never scales headers);
-// player rows are the full two-line identity height (modRosterRowH) scaled by the dashboard zoom
-// (modDashPct) so ctrl+wheel resizes the row, its click hitbox and the scrollbar content-height in
-// lock-step (the fixed-height-rows + big-fonts bug class). The CM panel keeps the fixed const.
+// modRowHeight is a row's height at zoom pct: headers are fixed, player rows scale with the text.
 func modRowHeight(row rosterRow, pct int) int32 {
 	if row.header {
 		return playerHeaderH
@@ -755,11 +674,8 @@ func modRowHeight(row rosterRow, pct int) int32 {
 	return modRosterRowH * int32(pct) / 100
 }
 
-// drawModRosterRow is one mod-dashboard player row: a character icon (shared player-list cache),
-// the rich two-line identity, and click-to-target (by UID). It mirrors the player list's row so a
-// mod sees the same faces, but the click selects a ban / kick target instead of the pair / copy
-// actions. idx is the rosterView index — the icon-cache key, valid because it came from
-// playerRosterRows iterating that same rosterView.
+// drawModRosterRow is one player row; a click picks the ban/kick target by UID. idx is the rosterView index, which
+// is also the icon-cache key.
 func (a *App) drawModRosterRow(idx int, rrow sdl.Rect) {
 	c := a.ctx
 	p := &a.rosterView()[idx]
@@ -774,8 +690,7 @@ func (a *App) drawModRosterRow(idx int, rrow sdl.Rect) {
 		c.Fill(rrow, ColPanelHi)
 	}
 
-	// Bulk tick-box on the right edge. Toggling it CONSUMES the click so the row-body select below
-	// doesn't also fire (the box sits inside the row rect, so both would otherwise see the click).
+	// The tick-box click is consumed so the row select below doesn't also fire.
 	cbSz := int32(18)
 	cb := sdl.Rect{X: rrow.X + rrow.W - cbSz - 6, Y: rrow.Y + (rrow.H-cbSz)/2, W: cbSz, H: cbSz}
 	clickedCB := false
@@ -794,8 +709,7 @@ func (a *App) drawModRosterRow(idx int, rrow sdl.Rect) {
 	}
 
 	isSpec := strings.EqualFold(p.name, "Spectator")
-	// Icon derives from the SCALED row height (rrow.H), not the modRosterRowH const, so it grows
-	// with the zoom and stays centred — mirrors drawPlayerRow's iconSz = playerIconSz*pct/100.
+	// Icon size follows the scaled row height so it grows with the zoom.
 	iconSz := rrow.H - modRosterIconInset
 	iconR := sdl.Rect{X: rrow.X + 6, Y: rrow.Y + (rrow.H-iconSz)/2, W: iconSz, H: iconSz}
 	a.drawPlayerIcon(p, idx, iconR, isSpec)
@@ -805,9 +719,7 @@ func (a *App) drawModRosterRow(idx int, rrow sdl.Rect) {
 	}
 	textX := rrow.X + 6 + iconSz + 8
 	textW := cb.X - 8 - textX // stop the text short of the tick-box
-	// Zoom-scaled two-line identity (mirrors drawPlayerRow): the log font at modDashPct and a
-	// pct-scaled second-line baseline, so ctrl+wheel resizes the row text. Shared string logic
-	// with the chrome-font CM path via rosterIdentityLines.
+	// Zoom-scaled identity: log font at modDashPct and a scaled second-line baseline.
 	ic, sub := rosterIdentityLines(*p)
 	c.LabelClippedFont(c.LogFontFor(a.modDashPct, ic), textX, rrow.Y+5, textW, ic, nameCol)
 	if sub != "" {
@@ -816,10 +728,7 @@ func (a *App) drawModRosterRow(idx int, rrow sdl.Rect) {
 	}
 }
 
-// drawModDashAudit renders the session audit log (newest first): a bounded, scrollable list of the
-// ban / kick commands sent from this dashboard, each with its timestamp, action, target and the
-// exact command. Read-only — a record of what went out, not a re-send path. Opt-in (only when the
-// Audit view is selected), so its per-row string building stays off the render hot path.
+// drawModDashAudit renders the audit log newest first. Read-only; opt-in, so string building is off the hot path.
 func (a *App) drawModDashAudit(r sdl.Rect) {
 	c := a.ctx
 	c.Border(r, ColPanelHi)
@@ -830,7 +739,6 @@ func (a *App) drawModDashAudit(r sdl.Rect) {
 		c.LabelClipped(r.X+6, r.Y+6, r.W-12, "No ban / kick actions sent yet this session.", ColTextDim)
 		return
 	}
-	// Ctrl+wheel (or wheel-button) resizes the audit text (modDashPct); plain wheel scrolls.
 	a.zoomWheel(r, &a.modDashPct, config.MinLogScalePercent, config.MaxLogScalePercent)
 	if !c.ctrlHeld {
 		a.modAuditScroll -= c.WheelIn(r) * scrollStepPx
@@ -858,15 +766,10 @@ func (a *App) drawModDashAudit(r sdl.Rect) {
 	}
 }
 
-// modAuditSubLinePad is the vertical slack between an audit row's two lines on top of the font
-// height; auditRowHeight adds the top/bottom margins. Both named so the row-height math is one
-// testable formula that stays in lock-step with the label offsets and scales with modDashPct.
+// modAuditSubLinePad is the slack between an audit row's two lines beyond the font height.
 const modAuditSubLinePad = int32(4)
 
-// auditRowHeight is the on-screen height of one two-line audit row at a given font height (two text
-// lines + the inter-line pad + a bottom margin). Pure and testable, matching the area
-// row-height formula's shape; at 100% zoom (chrome-height ≈ 17) it lands near the
-// historical fixed 38.
+// auditRowHeight is the height of a two-line audit row for a given font height.
 func auditRowHeight(fontH int32) int32 {
 	return fontH*2 + modAuditSubLinePad + modAuditRowBottomPad
 }
@@ -874,8 +777,7 @@ func auditRowHeight(fontH int32) int32 {
 // modAuditRowBottomPad is the bottom margin below an audit row's second line.
 const modAuditRowBottomPad = int32(4)
 
-// banBoxDurLabel is the friendly label of the CURRENTLY chosen duration — the custom
-// chip's when one is active, else the enum preset's.
+// banBoxDurLabel is the label of the chosen duration, custom first.
 func (a *App) banBoxDurLabel() string {
 	if a.banBoxCustomDur != "" {
 		return courtroom.BanDurationTokenLabel(a.banBoxCustomDur)
@@ -883,9 +785,7 @@ func (a *App) banBoxDurLabel() string {
 	return courtroom.BanDurationLabel(a.banBoxDur)
 }
 
-// banCmdFor builds the /ban for the chosen duration — the custom token when a custom
-// chip is active, else the enum preset. One spot so the preview, the single Send and
-// the bulk builder can never disagree.
+// banCmdFor builds the /ban for the chosen duration; preview, single Send and bulk share it.
 func (a *App) banCmdFor(sw courtroom.ServerSoftware, ipid, uid string) string {
 	if a.banBoxCustomDur != "" {
 		return courtroom.BanCommandToken(sw, ipid, uid, a.banBoxCustomDur, a.banBoxReason)
@@ -893,10 +793,7 @@ func (a *App) banCmdFor(sw courtroom.ServerSoftware, ipid, uid string) string {
 	return courtroom.BanCommand(sw, ipid, uid, a.banBoxDur, a.banBoxReason)
 }
 
-// banActionSummary is the plain-English "who · how long · why" line shown in the ban/kick box, so a
-// mod sees exactly what they're about to do — even before the server-specific command can be built
-// (e.g. an IPID-only server hasn't surfaced the IPID yet). durLabel is the friendly duration text
-// (a preset label or a custom chip's — see banBoxDurLabel). Pure; unit-tested.
+// banActionSummary is the plain-English who, how long, why line, shown before the command can be built.
 func banActionSummary(isBan bool, who string, durLabel string, reason string) string {
 	s := "Kick " + who
 	if isBan {
@@ -908,21 +805,15 @@ func banActionSummary(isBan bool, who string, durLabel string, reason string) st
 	return s + " — (no reason given)"
 }
 
-// drawModDashBanBox is the Ban (kind 1) / Kick (kind 2) box: the frozen target, a duration
-// picker (ban only), a reason field, and a LIVE PREVIEW of the exact command. Send refuses an
-// empty command; when the preview is empty because an IPID-only server hasn't surfaced the IPID
-// yet, it explains and offers a one-click fetch instead of silently disabling the button. It's a
-// NON-BLOCKING floating box now (floatWin: drag the title bar, resize the bottom-right grip), so a
-// mod can drag it aside and keep chatting — the live preview + the explicit Send keep the
-// don't-accidentally-ban safety the old blocking confirm had.
+// drawModDashBanBox is the single Ban (1) / Kick (2) box: target, duration, reason and a live command preview.
+// If an IPID-only server hasn't surfaced the IPID yet, it offers a fetch instead of disabling Send.
 func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 	if a.banBoxKind >= 3 { // kinds 3/4 are the BULK ban/kick — a different (frozen-list) box
 		a.drawModBulkBox(w, h, pressed)
 		return
 	}
 	c := a.ctx
-	// Lazy IPID fill: re-resolve the FROZEN uid's IPID (same person — safe) from the enriched
-	// roster, else from the raw /getarea snapshot, so a fetch populates the preview live.
+	// Re-resolve the frozen UID's IPID (same person) so a fetch fills the preview live.
 	if a.banBoxIPID == "" {
 		if row, ok := a.rosterByUID(a.banBoxUID); ok && row.ipid != "" {
 			a.banBoxIPID = row.ipid
@@ -973,8 +864,6 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 	if isBan {
 		c.Label(x, y, "Duration:", ColTextDim)
 		y += 20
-		// Preset + saved-custom duration chips, with the add/edit manage row (shared
-		// with the bulk box, which passes manage=false to stay compact).
 		y = a.drawDurationChips(x, y, maxW, true)
 	}
 
@@ -987,15 +876,12 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 	a.banBoxReason, _ = c.TextField("moddashreason", sdl.Rect{X: x, Y: y, W: maxW, H: fieldH}, a.banBoxReason, reasonHint)
 	y += fieldH + 8
 
-	// Quick-reason templates: editable chips fill the field; the single box gets the manage row.
 	y = a.drawReasonTemplateChips(x, y, maxW, true)
 
-	// At-a-glance summary of the action (always shown, even before the exact command below can be
-	// built) so the mod sees who, how long and why — the "ban someone 6 hours for disrespect" feedback.
+	// Summary shown even before the exact command can be built.
 	c.LabelClipped(x, y, maxW, banActionSummary(isBan, "["+a.banBoxUID+"] "+a.banBoxName, a.banBoxDurLabel(), a.banBoxReason), ColText)
 	y += 24
 
-	// Live preview of the exact command.
 	var cmd string
 	if isBan {
 		cmd = a.banCmdFor(sw, a.banBoxIPID, a.banBoxUID)
@@ -1012,8 +898,7 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 		case !a.dashSoftwareKnown():
 			c.LabelClipped(x, y, maxW, "Pick the server software first (Close, then Change).", ColDanger)
 		case needIPID && sw == courtroom.SoftwareWitches:
-			// WAP streams the IPID to authenticated mods inside the live player list — nothing to
-			// fetch; the mod just has to be logged in for it to arrive on the target's PU name.
+			// WAP streams the IPID live in the player list; nothing to fetch.
 			c.LabelClipped(x, y, maxW, "WAP sends the IPID to mods in the player list. Log in as a server mod (Extras → Login) and it fills in.", ColDanger)
 		case needIPID:
 			c.LabelClipped(x, y, maxW, "This server bans by IPID (mod-only). Fetch it, then it fills in:", ColDanger)
@@ -1027,7 +912,6 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 		}
 	}
 
-	// Send (only when a real command exists) + Cancel, anchored to the box bottom.
 	by := panel.Y + ph - btnH - 14
 	if cmd != "" {
 		send := title + " (send)"
@@ -1043,12 +927,8 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 	}
 }
 
-// drawModBulkBox is the bulk Ban (kind 3) / Kick (kind 4) box: a FROZEN list of ticked targets,
-// a shared duration (ban) + reason with the same quick-reason templates, a live count of how many
-// commands are ready vs. still missing an identifier, and a Send that queues one paced command per
-// ready target (each audited) through the macro OOC pacing — so a 30-player batch can't flood the
-// server. Frozen by UID like the single box, so a roster churn can't repoint the batch. Also a
-// NON-BLOCKING floating box (floatWin: drag the title bar, resize the grip) — chat stays live.
+// drawModBulkBox is the bulk Ban (3) / Kick (4) box over a frozen UID list; Send queues one paced, audited command
+// per ready target.
 func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	c := a.ctx
 	if c.escPressed {
@@ -1085,8 +965,7 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	}
 	y := panel.Y + 44
 
-	// Frozen target list. Capped display (modBulkCap can be 50): show the first rows, then "…and K
-	// more" so the box never grows unbounded. Each line: "[uid] name" (or "(left)" if they've gone).
+	// Display is capped (up to modBulkCap targets): show the first rows, then "…and K more".
 	const maxListRows = int32(6)
 	listH := maxListRows*16 + 8
 	listR := sdl.Rect{X: x, Y: y, W: maxW, H: listH}
@@ -1129,12 +1008,10 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	y += fieldH + 8
 	y = a.drawReasonTemplateChips(x, y, maxW, false) // compact (no manage row) in the busy bulk box
 
-	// At-a-glance summary of the bulk action (always shown), so the mod sees how long and why.
 	c.LabelClipped(x, y, maxW, banActionSummary(isBan, strconv.Itoa(n)+" player(s)", a.banBoxDurLabel(), a.banBoxReason), ColText)
 	y += 22
 
-	// Readiness: how many frozen targets have a buildable command right now (the rest need an IPID
-	// this server hasn't surfaced yet). Ground truth — we just try to build each command.
+	// Ready = targets whose command builds now; the rest still need an IPID.
 	ready := 0
 	for _, uid := range a.bulkBoxUIDs {
 		if a.bulkCommandFor(uid, isBan) != "" {
@@ -1172,10 +1049,8 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	}
 }
 
-// sendBulk builds and queues one paced OOC command per ready frozen target (skipping any that still
-// lack an identifier), audits each individually, then clears the selection. Paced through
-// queueOOCLines (the macro pipeline) so a large batch never floods the server. Returns the number
-// queued (for the test / the toast).
+// sendBulk queues one paced command per ready target, audits each, then clears the selection.
+// It returns the number queued.
 func (a *App) sendBulk(isBan bool) int {
 	action := "Kick"
 	if isBan {

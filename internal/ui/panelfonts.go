@@ -9,33 +9,19 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
-// Per-panel font and size, chosen by the USER rather than by a theme.
-//
-// A theme already sets a family and a point size for each courtroom element, and
-// #39 made AsyncAO honour them. But a theme author picked those for their own
-// design; only the person reading knows whether they can actually read it. This
-// is the override — same table, same off-thread resolution, applied last.
-//
-// Size and family are INDEPENDENT on purpose. The common request is "the same
-// look, but bigger", and forcing someone to also name a font to get that would
-// make the feature useless to exactly the people who need it most.
+// Per-panel font and size chosen by the user, applied after the theme's. Size and family are independent so a panel
+// can be made bigger without naming a font.
 
 // panelFontRow is one editable element on the Settings screen.
 type panelFontRow struct {
-	// id is the AO2 identifier. It is the PERSISTED key: theme.FontElements'
-	// indices are load-bearing and appended to, so storing an index would silently
-	// re-point every saved override the next time an element joins that list.
+	// id is the AO2 identifier and the persisted key; a theme.FontElements index could re-point saved overrides.
 	id    string
 	el    themeFontElem
 	label string
 	hint  string
 }
 
-// panelFontRows is what the Settings screen offers, in the order a user thinks
-// about them rather than theme.FontElements' wire order.
-//
-// showname and message are FIRST because they are the chatbox — the text
-// everyone reads most — and debug_log is last because almost nobody wants it.
+// panelFontRows is the Settings order: chatbox text first, debug_log last.
 var panelFontRows = [...]panelFontRow{
 	{id: "message", el: elemMessage, label: "Chat message", hint: "what characters say, in the chatbox"},
 	{id: "showname", el: elemShowname, label: "Character name", hint: "the name above the chatbox"},
@@ -50,27 +36,19 @@ var panelFontRows = [...]panelFontRow{
 	{id: "debug_log", el: elemDebugLog, label: "Debug log", hint: "the failure log a theme can show"},
 }
 
-// panelFontSizeW / panelFontFamilyW are the two field widths. The family field
-// takes most of the room because a path can be long; the size field fits three
-// digits and no more, since PanelFontMaxPx is two.
+// The family field is widest because a path can be long.
 const (
 	panelFontFamilyW = 250
 	panelFontSizeW   = 60
 	panelFontLabelW  = 130
 )
 
-// applyPanelFontPrefs re-runs the theme apply so the new font is resolved and
-// read OFF-THREAD, exactly as the "use the theme's fonts" checkbox does. There
-// is no lighter path on purpose: resolving a family walks the disk, and doing
-// that on the render thread to save a few milliseconds is the rule this codebase
-// exists around.
+// applyPanelFontPrefs re-runs the theme apply because resolving a family walks the disk, off the render thread.
 func (a *App) applyPanelFontPrefs() {
 	a.applyThemeAsync()
 }
 
-// currentPanelSizePx is what the size field shows when the user has set nothing:
-// the size the element is ACTUALLY being drawn at right now, so the field starts
-// from what they can see rather than from a blank or a zero.
+// currentPanelSizePx is the size the element is drawn at now, shown in the size field when the user has set nothing.
 func (a *App) currentPanelSizePx(el themeFontElem) int {
 	return UIFontSize * a.elemPct(el, DefaultScalePct) / DefaultScalePct
 }
@@ -79,11 +57,7 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX
 
-	// The theme's OWN missing fonts, before the override rows — because if this is
-	// showing, it is almost certainly why the user came to this screen, and the
-	// answer is to install the fonts rather than to override every panel by hand.
-	// Persistent here, unlike the toast on apply, which is gone by the time anyone
-	// goes looking.
+	// The theme's missing fonts come first: they are likely why the user opened this screen.
 	if a.themeFontWarn != "" {
 		y = a.settingsSection(y, w, "This theme's fonts are missing")
 		y = a.settingsDesc(pad, y, a.themeFontWarn, ColDanger)
@@ -128,15 +102,9 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 			a.applyPanelFontPrefs()
 		}
 
-		// The size box shows the size actually in use when nothing is set, so the
-		// starting point is what the user is looking at rather than a blank.
-		//
-		// WHILE THE FIELD HAS FOCUS ITS OWN TEXT IS AUTHORITATIVE, and that is the
-		// whole fix rather than a nicety. This used to clamp on every keystroke and
-		// feed the clamped number straight back in, so typing the "1" of "18" became
-		// a 6 (the minimum) before the "8" could be typed, and no size below ten was
-		// reachable at all. A field must never rewrite what someone is in the middle
-		// of typing.
+		// While focused the field's own text is authoritative: clamping each keystroke would turn the "1" of "18" into
+		// the
+		// minimum.
 		sizeID := "panelsize-" + row.id
 		sizeRect := sdl.Rect{X: pad + panelFontLabelW + panelFontFamilyW + 8, Y: y, W: panelFontSizeW, H: fieldH}
 		shown := a.panelSizeText(sizeID, row.id, cur.SizePx)
@@ -155,9 +123,7 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 		"Clear all eight overrides at once and go back to the theme's fonts. Worth knowing about before you try a font you can't read.")
 	y += btnH + 6
 
-	// A family that resolved to nothing is the single most likely way this
-	// confuses someone, so it is reported HERE, beside the box they typed it in,
-	// and not only in the debug log.
+	// Reported here as well as in the debug log, because an unresolved family is the likeliest confusion.
 	if len(a.panelFontMissing) > 0 {
 		y = a.settingsDesc(pad, y, "Not found, so the theme's font is still being used for: "+strings.Join(a.panelFontMissing, ", ")+
 			". On Windows a family name like \"Arial\" or \"Comic Sans MS\" works; elsewhere give the full path to a .ttf or .otf file.", ColDanger)
@@ -169,14 +135,8 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 	return y
 }
 
-// panelSizeText is what the size box should display this frame: the text the
-// user is typing while the box has focus, and the SAVED value otherwise.
-//
-// The two differ on purpose, and only while typing. A half-typed number is not a
-// size — "1" on the way to "18" is below the minimum, and "1" on the way to "120"
-// is below it too — so it is held as text and never round-tripped through the
-// clamp. The moment focus leaves, the saved value is the truth again, which is
-// also what discards a box left holding something unusable.
+// panelSizeText is the size box's text: what the user is typing while focused, otherwise the saved value.
+// A half-typed number is held as text and never goes through the clamp.
 func (a *App) panelSizeText(fieldID, rowID string, saved int) string {
 	if a.ctx.focusID == fieldID {
 		if s, editing := a.panelSizeEdit[rowID]; editing {
@@ -189,13 +149,8 @@ func (a *App) panelSizeText(fieldID, rowID string, saved int) string {
 	return ""
 }
 
-// commitPanelSize takes one keystroke's worth of typing: it always remembers the
-// raw text, and saves a size only when the text actually is one.
-//
-// Emptying the box CLEARS the override — that is how a panel is put back — so an
-// empty string commits immediately. Anything below the minimum is treated as
-// incomplete rather than wrong: it is almost always a number mid-typing, and
-// rejecting it outright is the same trap as clamping it.
+// commitPanelSize remembers the raw text and saves a size only when the text is one.
+// Empty clears the override; below the minimum is treated as mid-typing, not wrong.
 func (a *App) commitPanelSize(fieldID, rowID string, cur config.PanelFont, text string) {
 	if a.panelSizeEdit == nil {
 		a.panelSizeEdit = make(map[string]string, len(panelFontRows))
@@ -227,9 +182,7 @@ func (a *App) commitPanelSize(fieldID, rowID string, cur config.PanelFont, text 
 	a.applyPanelFontPrefs()
 }
 
-// panelFontPlaceholder shows what the panel is using NOW — the theme's family
-// when it declared one, otherwise the client's own — so an empty box reads as
-// "currently X" rather than as "nothing".
+// panelFontPlaceholder names the font in use now, so an empty box reads as "currently X".
 func (a *App) panelFontPlaceholder(el themeFontElem) string {
 	if name := a.themeFaceNameFor(el); name != "" {
 		return "theme: " + name

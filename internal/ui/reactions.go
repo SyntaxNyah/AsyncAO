@@ -8,56 +8,40 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Real reactions (#2), UI side. The wire codec lives in courtroom (reactionwire.go); this
-// file is the parts that need SDL: the floating-emoji overlay over the stage, the react
-// button + palette, and the per-message piggyback on send.
-//
-// Flow: you click React → pick an emoji from the palette → it's QUEUED (rides your next IC
-// message as an invisible frame referencing the message you reacted to). Every AsyncAO
-// viewer (including you, when your message echoes back) decodes the frame, matches the
-// content-stable ref to a message in their IC log, and floats the emoji up from the stage.
-// AO2 / webAO see clean text. Incoming floats display by default (like received sprite
-// styles / profiles / effects); HideReactions is the viewer opt-out. The overlay is a
-// 0-alloc early-return when nothing is floating, so a room with no reactions pays nothing.
+// Reactions, UI side: floating-emoji overlay, react palette and piggyback on send (codec in courtroom/reactionwire.go).
+// A queued reaction rides your next IC message as an invisible frame; AO2 and webAO see clean text.
 
 const (
-	// reactionFloatPct sizes the floating emoji as a percent of the UI font — chunky, so a
-	// reaction reads at a glance over the busy stage.
+	// reactionFloatPct sizes the floating emoji as a percent of the UI font.
 	reactionFloatPct = 220
 	// reactionFloatLifeMs is one float's lifetime: rise + fade, then it's culled.
 	reactionFloatLifeMs = 1600
 	// reactionFloatRisePx is how far a float drifts upward over its life.
 	reactionFloatRisePx = 130
-	// reactionFloatsMax bounds the active floats (hard rule §17.4): a burst of reactions
-	// can't grow the slice without bound — the oldest float is evicted past the cap.
+	// reactionFloatsMax bounds the active floats (hard rule 4); the oldest is evicted past the cap.
 	reactionFloatsMax = 16
-	// reactionFadeInFrac / reactionFadeOutFrac are the fractions of the lifetime spent
-	// fading in (from 0) and fading out (to 0); full opacity in between.
+	// reactionFadeInFrac and reactionFadeOutFrac are the lifetime fractions spent fading in and out.
 	reactionFadeInFrac  = 0.15
 	reactionFadeOutFrac = 0.35
 	// reactionFloatBottomMargin is how far above the stage's bottom edge a float is born.
 	reactionFloatBottomMargin = 22
-	// reactionFloatSpreadPx is the horizontal band floats scatter across (so several
-	// reactions don't stack on one column).
+	// reactionFloatSpreadPx is the horizontal band floats scatter across so they do not stack on one column.
 	reactionFloatSpreadPx = 130
-	// reactionMatchScan bounds how far back the ref match looks (newest-first) — reactions
-	// target recent messages, and a bound keeps the scan cheap on a long log.
+	// reactionMatchScan bounds how far back, newest first, the ref match looks.
 	reactionMatchScan = 120
 
 	// reactPaletteCols lays the fixed palette out as a compact grid above the React button.
 	reactPaletteCols = 6
 )
 
-// reactionFloat is one emoji rising over the stage. Plain data; the index keys the cached
-// badge, born drives the rise + fade, xJit scatters it horizontally.
+// reactionFloat is one emoji rising over the stage: index keys the cached badge, born drives the rise and fade.
 type reactionFloat struct {
 	index uint8
 	born  time.Time
 	xJit  int32
 }
 
-// spawnReactionFloat starts a float for a palette index (no-op for an unknown index — a
-// reaction from a newer peer). Past the cap the oldest float is dropped (bounded ring).
+// spawnReactionFloat starts a float for a palette index; an unknown index, from a newer peer, is a no-op.
 func (a *App) spawnReactionFloat(index uint8) {
 	if _, ok := courtroom.ReactionEmoji(index); !ok {
 		return
@@ -73,11 +57,7 @@ func (a *App) spawnReactionFloat(index uint8) {
 	a.reactionFloats = append(a.reactionFloats, f)
 }
 
-// drawReactionFloats renders + ages the active floats over the stage rect vp, culling
-// expired ones in place. Called from BOTH courtroom draw paths (classic + themed). A
-// 0-alloc early return when nothing is floating keeps the common frame free (the zero-perf
-// constraint for received content); with floats active it is also 0-alloc on a warm badge
-// cache (a reused scratch rect, cached badges, no per-frame build).
+// drawReactionFloats renders and ages the active floats over vp, culling expired ones; no allocation on a warm cache.
 func (a *App) drawReactionFloats(vp sdl.Rect) {
 	if len(a.reactionFloats) == 0 {
 		return
@@ -103,11 +83,8 @@ func (a *App) drawReactionFloats(vp sdl.Rect) {
 		x := baseX + f.xJit - bw/2
 		y := baseY - int32(float64(reactionFloatRisePx)*prog) - bh
 		a.reactRect = sdl.Rect{X: x, Y: y, W: bw, H: bh}
-		// The clip param mirrors whatever's ambient right now (nil when nothing is
-		// fenced, which is every call site today) rather than assuming none — a future
-		// caller that wraps this in a pushClip must not silently reintroduce the
-		// macOS-Metal lazy-clip bug Badge.Draw's own doc describes. c.clipRect is a
-		// plain field read, so this costs nothing extra when clipOn is false.
+		// Mirror the current clip rather than assume none, so a caller inside a pushClip cannot hit
+		// the macOS Metal lazy-clip bug Badge.Draw describes.
 		var clip *sdl.Rect
 		if c.clipOn {
 			clip = &c.clipRect
@@ -117,7 +94,7 @@ func (a *App) drawReactionFloats(vp sdl.Rect) {
 	a.reactionFloats = a.reactionFloats[:w]
 }
 
-// reactionAlpha is the fade envelope over a float's life: ramp up, hold, ramp down.
+// reactionAlpha is the fade over a float's life: ramp up, hold, ramp down.
 func reactionAlpha(prog float64) uint8 {
 	switch {
 	case prog < reactionFadeInFrac:
@@ -129,17 +106,8 @@ func reactionAlpha(prog float64) uint8 {
 	}
 }
 
-// ensureReactBadge returns the cached float badge for a palette index, building it once
-// from the colour-emoji face at the CURRENT device text scale. Returns nil (not cached)
-// while the face is still loading, so it retries on a later frame; warmReactBadges
-// pre-builds all of them once the face lands.
-//
-// A UI-scale change purges every cached badge first (reactBadgeDevScale mismatch) — the
-// same "one stale scale invalidates the whole cache" idiom SetTextDevScale already uses
-// for the label/emoji-raster caches. Without it a badge built at whatever scale was
-// active the first time a reaction floated would keep blitting that device pixel count
-// forever, going soft again the moment the user changed the UI scale (Badge.Draw's
-// non-exact fallback still displays it at the right LOGICAL size, just resampled).
+// ensureReactBadge returns the cached badge for a palette index at the device text scale; nil while the face loads.
+// A UI-scale change purges every cached badge, or one built at the old scale would stay soft.
 func (a *App) ensureReactBadge(index uint8) *render.Badge {
 	if a.ctx.textDevPct != a.reactBadgeDevScale {
 		a.purgeReactBadges()
@@ -147,11 +115,7 @@ func (a *App) ensureReactBadge(index uint8) *render.Badge {
 	if b, ok := a.reactBadges[index]; ok {
 		return b
 	}
-	// emojiDeviceFont, not EmojiFont: the float now blits through Badge.Draw's
-	// device-exact bracket (the same #77 pattern the chatbox/log rasters use), which
-	// needs the glyph rasterized AT the current device scale, not the logical one —
-	// EmojiFont alone left the badge a fixed pixel size that then got bilinearly
-	// resampled by the frame's ambient SetScale at any UI scale other than 100%.
+	// emojiDeviceFont, not EmojiFont: Badge.Draw's device-exact path needs the glyph rasterized at the device scale.
 	emoji := a.ctx.emojiDeviceFont(reactionFloatPct)
 	if emoji == nil {
 		return nil
@@ -172,9 +136,7 @@ func (a *App) ensureReactBadge(index uint8) *render.Badge {
 	return b
 }
 
-// purgeReactBadges destroys every cached reaction badge texture and empties the map.
-// Render thread only (the textures are render-thread-owned) — called from
-// ensureReactBadge on a device-scale mismatch, mirroring purgeEmojiCache/purgeTextCache.
+// purgeReactBadges destroys every cached reaction badge texture; render thread only.
 func (a *App) purgeReactBadges() {
 	for k, b := range a.reactBadges {
 		if b != nil {
@@ -184,9 +146,7 @@ func (a *App) purgeReactBadges() {
 	}
 }
 
-// warmReactBadges pre-builds every reaction badge once the emoji face is available, so the
-// first real float never hitches on a synchronous build (and the 0-alloc draw test isn't
-// measuring a one-time raster). Called from pollEmojiFont when the face lands.
+// warmReactBadges pre-builds every reaction badge once the emoji face lands, so the first float never hitches.
 func (a *App) warmReactBadges() {
 	if a.ctx.EmojiFont(reactionFloatPct) == nil {
 		return
@@ -196,9 +156,7 @@ func (a *App) warmReactBadges() {
 	}
 }
 
-// onIncomingReaction handles a decoded reaction frame: float it only if its ref matches a
-// recent message we've actually seen (a stray / late-join ref matches nothing — benign).
-// Gated by the HideReactions viewer opt-out, and by the master effects off-switch.
+// onIncomingReaction floats a reaction whose ref matches a recent message, unless reactions or effects are off.
 func (a *App) onIncomingReaction(r courtroom.WireReaction) {
 	if a.d.Prefs.Load().HideReactions || a.d.Prefs.Load().DisableEffects {
 		return // opted out of reactions specifically, or of every visual extra
@@ -208,9 +166,7 @@ func (a *App) onIncomingReaction(r courtroom.WireReaction) {
 	}
 }
 
-// reactionTargetKnown reports whether a recent IC log entry has the given content ref. It
-// scans newest-first (so a same-content hash collision resolves to the most recent message)
-// and stops at the first match, bounded to the last reactionMatchScan entries.
+// reactionTargetKnown reports whether a recent IC log entry has the content ref, scanning newest-first.
 func (a *App) reactionTargetKnown(ref uint32) bool {
 	if ref == 0 {
 		return false
@@ -228,16 +184,9 @@ func (a *App) reactionTargetKnown(ref uint32) bool {
 	return false
 }
 
-// --- react trigger: palette ------------------------------------------------------------
-// The IC-bar React BUTTON was removed by request (playtest: unused), which removed the
-// palette's only opener; the rest of the reaction machinery stays: INCOMING floats from
-// other AsyncAO clients still render (Hide-reactions still hides them), and the wire
-// codec is untouched.
+// The IC bar has no React button, so nothing opens the palette; incoming floats still render.
 
-// drawReactPalette draws the open reaction palette (a small grid anchored above the React
-// button) and queues the clicked emoji against the snapshotted target. No-op when closed;
-// a click outside the panel and the button closes it. Called once per frame after the
-// courtroom (covers both layouts), like the emoji picker.
+// drawReactPalette draws the open palette above the React button and queues the clicked emoji against the target.
 func (a *App) drawReactPalette(w, h int32) {
 	if !a.showReactPicker {
 		return
@@ -263,7 +212,6 @@ func (a *App) drawReactPalette(w, h int32) {
 	panel := sdl.Rect{X: px, Y: py, W: pw, H: ph}
 	c.Fill(panel, ColBackground)
 	c.Border(panel, ColAccent)
-	// Header: who you're reacting to (or a hint when there's nothing yet).
 	head := "React to last message"
 	if a.reactTargetName != "" {
 		head = "React to " + a.reactTargetName
@@ -290,8 +238,7 @@ func (a *App) drawReactPalette(w, h int32) {
 	}
 }
 
-// queueReaction stores the chosen emoji against the snapshotted target message; it rides
-// the next IC send. A click with no target (nothing reactable yet) just closes the palette.
+// queueReaction stores the chosen emoji against the snapshotted target; it rides the next IC send.
 func (a *App) queueReaction(index uint8) {
 	a.showReactPicker = false
 	if a.reactTargetRef == 0 {
@@ -301,9 +248,8 @@ func (a *App) queueReaction(index uint8) {
 	a.pendingReactSet = true
 }
 
-// reactPickerFence manages the palette's modal fence each frame, BEFORE the screen draws —
-// mirrors emojiPickerFence (c.modalOn persists across frames, so it MUST be released the
-// frame the palette closes, or the UI freezes). Courtroom-only, force-closed elsewhere.
+// reactPickerFence manages the palette's modal each frame before the screen draws.
+// c.modalOn persists across frames, so it must be released the frame the palette closes or the UI freezes.
 func (a *App) reactPickerFence(c *Ctx) {
 	courtroomActive := a.screen == ScreenCourtroom && !a.gifExporting && !a.replaying && !a.makerOpen
 	if a.showReactPicker && !courtroomActive {

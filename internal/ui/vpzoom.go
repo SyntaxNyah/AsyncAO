@@ -1,11 +1,9 @@
 package ui
 
-// Viewport camera zoom ("hyperfocus"): Ctrl+wheel over the stage zooms
-// toward the cursor, Ctrl+drag pans while zoomed, the 1× chip resets.
-// Pure draw-side trick — the scene renders into an EXPANDED destination
-// rect under a clip rect, so sprites, preanims, shakes, and effects all
-// magnify together with zero render-package changes. Sprite dragging
-// pauses while zoomed (zoom is a viewing mode; hit rects assume 1×).
+// Viewport camera zoom: Ctrl+wheel over the stage zooms toward the cursor, Ctrl+drag pans while zoomed,
+// the 1x chip resets.
+// The scene renders into an expanded destination rect under a clip, so everything magnifies together. Sprite
+// dragging pauses while zoomed, since hit rects assume 1x.
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
@@ -13,18 +11,16 @@ import (
 )
 
 const (
-	// vpZoomMax bounds the camera (6× turns a 256-px-tall sprite into
-	// pixel-art appreciation; past that it's just mush).
+	// vpZoomMax bounds the camera.
 	vpZoomMax = 6.0
 	// vpZoomStep is the per-wheel-tick multiplier.
 	vpZoomStep = 1.15
-	// vpZoomSnap collapses near-1× back to exactly 1× (clears the clip
-	// path and re-enables sprite drag).
+	// vpZoomSnap collapses near-1x back to exactly 1x, clearing the clip path and re-enabling sprite drag.
 	vpZoomSnap = 1.05
 )
 
-// zoomDst maps the viewport rect to the zoomed destination: vp scaled by
-// vpZoom with the pan fractions picking which slice stays visible.
+// zoomDst maps the viewport rect to the zoomed destination: vp scaled by vpZoom,
+// with the pan fractions picking the slice.
 func (a *App) zoomDst(vp sdl.Rect) sdl.Rect {
 	if a.vpZoom <= 1 {
 		return vp
@@ -39,19 +35,14 @@ func (a *App) zoomDst(vp sdl.Rect) sdl.Rect {
 	}
 }
 
-// renderViewportZoomed draws the scene at the current camera (clip set
-// only while zoomed) and the 1× reset chip.
+// renderViewportZoomed draws the scene at the current camera (clip set only while zoomed) and the 1x reset chip.
 func (a *App) renderViewportZoomed(vp sdl.Rect) {
 	c := a.ctx
 	sc := a.renderScene() // real scene, or the slideshow's background override
-	// Ambient-FX census: while the DRAWN stage animates on the free-running
-	// clock — the rainbow/wobble/spin/breath washes, a transmitted sprite
-	// style's motion, live weather — report it from the draw site, exactly like
-	// drawSpritePreview. State-gated and self-clearing: it fires only while a
-	// stage showing the effect actually renders, so the lobby/Settings (and an
-	// empty stage) park like any static screen. Replaces wantsFullRate's old
-	// pref-knob checks — the "knob not state" anti-pattern — and is paced by
-	// FramePace's anim-chrome tier (finite even under the ∞ cap).
+	// Report ambient FX from the draw site, like drawSpritePreview: while the drawn stage animates on the free-running
+	// clock (washes, a transmitted sprite style's motion, live weather). It fires only while such a stage actually
+	// renders, so the lobby, Settings and an empty stage park like any static screen.
+	// Paced by FramePace's anim-chrome tier.
 	if a.d.Viewport != nil && a.d.Viewport.AmbientAnimating(sc) {
 		a.NoteAnimating()
 	}
@@ -62,19 +53,15 @@ func (a *App) renderViewportZoomed(vp sdl.Rect) {
 		a.drawStageFrame(vp)          // #56 decorative frame (Off by default → no-op)
 		return
 	}
-	// &vp into cgo would heap-allocate the parameter on EVERY call — even at
-	// 1× zoom where this branch never runs (escape analysis is static). The
-	// Ctx scratch rect keeps the per-frame stage draw off the heap.
+	// &vp into cgo would heap-allocate on every call even at 1x (escape analysis is static);
+	// the Ctx scratch rect avoids it.
 	c.cgoRect = vp
 	_ = c.Ren.SetClipRect(&c.cgoRect)
 	a.d.Viewport.Render(c.Ren, sc, a.zoomDst(vp))
 	_ = c.Ren.SetClipRect(nil)
-	// The stand-in rides the STAGE rect like the petals and the frame below: it is a
-	// placeholder for art, not art, so the camera must not magnify it into the one
-	// thing on screen that is obviously fake.
+	// The stand-in rides the stage rect: it is a placeholder for art, so the camera must not magnify it.
 	a.drawEditorPreviewFigure(vp)
-	// Petals ride the STAGE rect, not the zoomed scene rect: like the frame below
-	// they're chrome over the stage, so zooming the camera must not blow them up.
+	// Petals ride the stage rect, not the zoomed scene rect: they are chrome over the stage, like the frame below.
 	a.drawStageEgg(vp, sc)
 	a.drawStageFrame(vp) // frame is chrome — it stays fixed while the camera zooms
 	// Reset chip, top-right of the stage.
@@ -84,9 +71,8 @@ func (a *App) renderViewportZoomed(vp sdl.Rect) {
 	}
 }
 
-// handleViewportZoom owns the camera input: Ctrl+wheel zooms toward the
-// cursor (the point under it stays put), Ctrl+drag pans. Skips when the
-// cursor sits in the chat box band (that area's Ctrl+wheel resizes text).
+// handleViewportZoom owns the camera input: Ctrl+wheel zooms toward the cursor, Ctrl+drag pans. It skips when the
+// cursor is in the chat box band, where Ctrl+wheel resizes text.
 func (a *App) handleViewportZoom(vp sdl.Rect, inChatBox bool) {
 	c := a.ctx
 	if vp.W <= 0 || vp.H <= 0 || a.dragVpDivider || a.courtModalOpen() {
@@ -115,7 +101,7 @@ func (a *App) handleViewportZoom(vp sdl.Rect, inChatBox bool) {
 			return
 		}
 		// Zoom-to-cursor: keep the scene point under the mouse fixed.
-		// u = fraction of the zoomed image at the cursor before the step.
+		// u is the fraction of the zoomed image at the cursor.
 		oldDst := a.zoomDst(vp)
 		u := float64(c.mouseX-oldDst.X) / float64(oldDst.W)
 		v := float64(c.mouseY-oldDst.Y) / float64(oldDst.H)

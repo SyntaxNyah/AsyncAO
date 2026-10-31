@@ -11,28 +11,22 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Group-chat visual pass (playtest: the surfaces were plain, with no character
-// icons and little customization): character icons on every message/member/DM surface, a stable
-// per-person name colour, chat-app bubbles with timestamps drawn newest-first
-// from the bottom, a per-group accent chip, and unread counts in the chat list.
-// All of it is LOCAL rendering — the wire (the /pm fan-out) is untouched.
+// Group-chat visuals: character icons on every message/member/DM surface, a stable per-person name colour, bubbles with
+// timestamps drawn newest-first from the bottom, a per-group accent chip and unread counts. All local rendering.
 
 const (
 	// msgBubbleIconPx / msgBubbleLineH size a thread bubble's icon and text rows.
 	msgBubbleIconPx = int32(20)
 	msgBubbleLineH  = int32(17)
-	// msgBubbleMaxLines caps one bubble's wrapped text (a wall of text scrolls
-	// away like any chat app; the cap keeps a single line from eating the box).
+	// msgBubbleMaxLines caps one bubble's wrapped text so a single message cannot fill the box.
 	msgBubbleMaxLines = 6
-	// msgIconAskCap bounds the paced-demand map (hard rule §17.4).
+	// msgIconAskCap bounds the paced-demand map (hard rule 4).
 	msgIconAskCap = 128
-	// msgNameSat / msgNameVal are the fixed name-colour knobs for this panel —
-	// readable pastel on the dark bubbles (independent of the IC-log pref).
+	// msgNameSat / msgNameVal are the fixed name-colour values for this panel, independent of the IC-log pref.
 	msgNameSat, msgNameVal = 0.55, 0.95
 )
 
-// rosterCharByUID resolves a live UID to its character folder ("" when the
-// player isn't in the roster — offline members keep their initial circle).
+// rosterCharByUID resolves a live UID to its character folder, or "" when the player isn't in the roster.
 func (a *App) rosterCharByUID(uid int) string {
 	if uid == 0 {
 		return ""
@@ -64,9 +58,8 @@ func (a *App) rosterCharByName(name string) string {
 	return ""
 }
 
-// demandMsgIcon paces a char-icon fetch for the messaging surfaces: one ask per
-// base per charIconRetryInterval, bounded map (reset past the cap — the stamps
-// only pace retries, so a reset is harmless).
+// demandMsgIcon paces a char-icon fetch: one ask per base per charIconRetryInterval. The map resets past its cap, which
+// is harmless because the stamps only pace retries.
 func (a *App) demandMsgIcon(base string) {
 	if base == "" {
 		return
@@ -84,9 +77,8 @@ func (a *App) demandMsgIcon(base string) {
 	a.d.Manager.Prefetch(base, assets.AssetTypeCharIcon, network.PriorityLow) // AssetType: CharIcon
 }
 
-// drawMsgCharIcon paints a small char icon for char (resolved folder) into cell,
-// falling back to an initial disc in the person's name colour. Store-direct
-// (these panels draw only while open — no per-index page cache to invalidate).
+// drawMsgCharIcon paints a small char icon for char (resolved folder) into cell, falling back to an initial disc in the
+// person's name colour. It reads the store directly because these panels draw only while open.
 func (a *App) drawMsgCharIcon(char, displayName string, cell sdl.Rect) {
 	c := a.ctx
 	if char != "" {
@@ -108,8 +100,7 @@ func (a *App) drawMsgCharIcon(char, displayName string, cell sdl.Rect) {
 	c.Border(cell, ColPanelHi)
 }
 
-// groupChipColor is a group's stable accent (hash of its id) for the list chip
-// and header — so two groups never look interchangeable.
+// groupChipColor is a group's stable accent (hash of its id) for the list chip and header.
 func groupChipColor(id uint32) sdl.Color {
 	r, g, b := hsvToRGB(float64(id%360)/360, 0.6, 0.95)
 	return sdl.Color{R: r, G: g, B: b, A: 255}
@@ -123,10 +114,8 @@ func msgStamp(at time.Time) string {
 	return at.Format("15:04")
 }
 
-// drawChatBubbles renders a thread as chat-app bubbles, NEWEST at the bottom,
-// walking backwards until the box is full — variable-height bubbles (wrapped
-// text) work naturally this way. Mine sit right-aligned in an accent-tinted
-// bubble; others left, in panel bubbles with their icon + coloured name.
+// drawChatBubbles renders a thread as bubbles, newest at the bottom, walking backwards until the box is full so
+// variable-height bubbles work. Mine sit right-aligned and accent-tinted; others left with icon and coloured name.
 // lineAt returns (from, text, fromMe, char, at) for entry i.
 func (a *App) drawChatBubbles(box sdl.Rect, n int, lineAt func(i int) (string, string, bool, string, time.Time)) {
 	c := a.ctx

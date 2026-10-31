@@ -1,39 +1,12 @@
 package ui
 
-// The Music panel's header row — the planner and the overflow menu.
-//
-// WHY a planner, and what it fixes.
-//
-// drawMusicList used to lay its header out with UNCONDITIONAL draws interleaved
-// with CONDITIONAL row advances: "Stop music" drew at the panel body's origin and
-// advanced nothing, and the 28 px that covered it belonged to the now-playing
-// label beside it — which a theme that declares `music_display` takes over. With
-// that label gone, and `music_search` external too, the whole header collapsed
-// onto one origin: Expand all was painted ON TOP of Stop music, and since
-// Ctx.Button ends in `hover && c.clicked` with no click consumption, ONE click
-// fired BOTH — expanding the categories also stopped the music. With only the
-// plate external, the search TextField landed on the button instead. It also
-// meant the panel body shifted 28 px the moment the plate's art streamed into T1
-// (and back on eviction), because the advance was gated on texture residency.
-//
-// The cure is the one plStrip already applies to the Players toolbar: a single
-// left-to-right cursor. One cursor cannot overlap itself, so the whole class is
-// gone by construction rather than by careful arithmetic — and the plan is a pure
-// value built from an injected measure, so the geometry is testable headless.
-//
-// WHY the controls shrank. The header cost 83 px of chrome (28+27+28) in a panel
-// that is 212x243 usable inside aceattorney2x's music_list — about a third of it,
-// for three buttons AO2 does not put on screen at all. AO2-Client keeps Stop
-// Current Song, Play Random Song, Expand All and Collapse All in the music list's
-// RIGHT-CLICK context menu (courtroom.cpp:5821-5875), and its four playback flags
-// (Fade In / Fade Out Previous / Synchronize / No Repeat) with them. So: the
-// four common actions become square icon buttons with tooltips, everything modal
-// moves into an overflow ("kebab") menu that right-clicking the track list also
-// opens, and the header is one 22 px row plus the search row.
-//
-// Icons are VECTOR (drawToolIcon), never font glyphs — the compact toolbox's rule,
-// and the same reason the fold markers are "[-]"/"[+]": LogFont's primary face is
-// not guaranteed to cover Geometric Shapes, so a "■" is a tofu risk.
+// The Music panel's header row: the planner and the overflow menu.
+// One left-to-right cursor, so controls can't overlap: Ctx.Button doesn't consume clicks, so one click on two
+// overlapped buttons fires both.
+// AO2-Client keeps these actions and its playback flags in the music list's right-click menu (courtroom.cpp:5821-5875),
+// so here the common actions are icon buttons and the rest moves to an overflow menu that right-clicking the list also
+// opens.
+// Icons are vector (drawToolIcon), not font glyphs: LogFont's primary face isn't guaranteed to cover Geometric Shapes.
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -44,32 +17,23 @@ import (
 )
 
 const (
-	// musicIconPx is one square icon button in the header row. Equal to
-	// plStripRowH so the icons and any text control on the row share a baseline.
+	// musicIconPx is one square icon button, equal to plStripRowH so controls on the row share a baseline.
 	musicIconPx = plStripRowH
-	// musicNameMinPx is the narrowest the now-playing readout is still worth
-	// drawing at — enough for a couple of words before the clip. Below it the
-	// planner drops the readout rather than paint a sliver.
+	// musicNameMinPx is the narrowest the now-playing readout is drawn at; below it the planner drops it.
 	musicNameMinPx = int32(56)
 	// musicSearchMinPx is the narrowest the search field stays usable at.
 	musicSearchMinPx = int32(70)
-	// musicNothingPlaying is the readout's empty state. AsyncAO's own text (AO2
-	// leaves ui_music_name blank), so the theme's music_name_color has no claim
-	// on it — see drawMusicList.
+	// musicNothingPlaying is AsyncAO's own empty-state text (AO2 leaves ui_music_name blank), so music_name_color
+	// doesn't apply.
 	musicNothingPlaying = "Nothing playing"
-	// musicNowPrefix fronts the readout when something IS playing.
+	// musicNowPrefix fronts the readout when something is playing.
 	musicNowPrefix = "Now playing: "
 
-	// musicHeaderMaxLines bounds the header's WRAP however tall the panel is. Two: the
-	// action row and the search row are the header's whole design, and a third line
-	// would be the header eating the track list it is a header for — the same judgement
-	// chromeRowMinBodyPx makes from the other end.
+	// musicHeaderMaxLines bounds the header's wrap: the action row and search row. A third would eat the track list.
 	musicHeaderMaxLines = 2
 )
 
-// The header's DROP ORDER, highest first (see planMusicHeader for the argument).
-// Named constants rather than bare 1/2/3 so the ranking reads as the reachability
-// decision it is (hard rule 9).
+// The header's drop order, highest first; see planMusicHeader.
 const (
 	// musicDropOnlyRoute: dropping this control removes the ONLY route to its action.
 	musicDropOnlyRoute uint8 = iota + 1
@@ -81,10 +45,7 @@ const (
 	musicDropReadout
 )
 
-// fontLineH is a face's line height, or 0 when there is no face. Every *ttf.Font
-// in this package can be nil — the chrome face is loaded from a TTF at runtime and
-// a headless Ctx has none — and Label*Font already tolerates that, so a caller
-// doing its own vertical centring must too.
+// fontLineH is a face's line height, or 0 with no face: a *ttf.Font in this package can be nil, as on a headless Ctx.
 func fontLineH(f *ttf.Font) int32 {
 	if f == nil {
 		return 0
@@ -92,8 +53,7 @@ func fontLineH(f *ttf.Font) int32 {
 	return int32(f.Height())
 }
 
-// Header control ids. Ids rather than closures, so a plan stays a plain value:
-// no allocation, no captured App, and a test can assert on it with no renderer.
+// Header control ids. Ids rather than closures keep a plan a plain value with no allocation.
 const (
 	musicItemStop = iota + 1
 	musicItemRandom
@@ -105,13 +65,10 @@ const (
 	musicItemCount
 )
 
-// musicHeaderMaxItems is the longest the header can get: five row-one controls
-// plus the readout, then the search field and its shown/total count. Fixed, so
-// musicHeaderPlan is a stack value the per-frame draw builds without allocating.
+// musicHeaderMaxItems is the longest the header can get; fixed so the plan is a stack value.
 const musicHeaderMaxItems = 8
 
-// musicHeaderPlan is one frame's header. h is the vertical room it took, which
-// the caller subtracts before drawing the track list.
+// musicHeaderPlan is one frame's header; h is the vertical room it took.
 type musicHeaderPlan struct {
 	items [musicHeaderMaxItems]plToolbarItem
 	n     int
@@ -126,9 +83,7 @@ func (p *musicHeaderPlan) add(id int, label string, r sdl.Rect) {
 	p.n++
 }
 
-// rect finds a placed control. ok=false means the panel was too small to hold it
-// and the draw must skip it — the same degradation contract plStrip.placeFlex
-// documents: a missing control is recoverable, one drawn over its neighbour is not.
+// rect finds a placed control; ok=false means the panel was too small and the draw must skip it.
 func (p *musicHeaderPlan) rect(id int) (sdl.Rect, bool) {
 	for i := 0; i < p.n; i++ {
 		if p.items[i].id == id {
@@ -138,45 +93,16 @@ func (p *musicHeaderPlan) rect(id int) (sdl.Rect, bool) {
 	return sdl.Rect{}, false
 }
 
-// planMusicHeader lays out the Music panel's header for one frame.
-//
-// Placement order is the cursor's order, so it is also the on-screen order: the
-// four actions first (stop, random, expand, collapse), the overflow menu, then
-// the now-playing readout LAST because it is the only flexible control — a
-// clipped label would rather shrink into the tail of the line than push a real
-// button onto a second one. Row two is the search field and its count.
-//
-// hideSearchRow drops row two WHOLE — its draws and its height — so the caller
-// gets those pixels back rather than a gap. Two callers set it: a theme that
-// declared its own music_search rect (AO2 puts the field outside music_list,
-// courtroom.cpp:219-222) and the volume view, which has no track list to filter.
-//
-// nowPlayingExternal means a theme's music_display plate already painted the name
-// (AO2 parents ui_music_name inside that plate, courtroom.cpp:171), so the readout
-// is dropped — but NOT the row, which belongs to the buttons.
-// THE REFLOW GUARD (v1.90.0 W7b). The placement runs through planChromeRow
-// (chromerow.go) rather than through a strip of its own, because a THEME chooses this
-// panel's rect and a squeezed rect is data, not a corner case: a tester's imported AO2
-// theme stacked Expand all and Collapse all into the same pixels, which is this file's
-// own opening defect returning through a narrower door. planChromeRow places every
-// control through ONE cursor and, when the cursor runs out, degrades in a stated order
-// — shrink to each control's own minimum, wrap, then DROP BY PRIORITY — so "two
-// controls on top of each other" is not a state it can produce.
-//
-// THE PRIORITIES ARE A REACHABILITY ARGUMENT, not a taste ranking:
-//   - the ⋮ menu is chromeCtlNeverDrop, because every row it hosts (the volume view,
-//     the four MC playback flags, the four roster switches) is reachable ONLY through
-//     it inside a theme's canvas;
-//   - Stop and Random go FIRST, because both are also rows of that menu — dropping
-//     them hides a shortcut, not a feature;
-//   - Expand all / Collapse all go last of the four, because they are in NO menu
-//     (musicMenuRows) and the fold markers are the only other way to reach them;
-//   - the now-playing readout is pure information and goes before any button.
+// planMusicHeader lays out the header for one frame, in on-screen order: the four actions, the menu, the flexible
+// readout, then the search row.
+// hideSearchRow drops row two and its height, for a theme's own music_search rect (courtroom.cpp:219-222) or the volume
+// view. nowPlayingExternal means a theme's music_display plate painted the name (courtroom.cpp:171), so only the
+// readout goes.
+// planChromeRow shrinks, wraps, then drops by priority, since a theme chooses this rect and a squeezed one is normal.
+// Priorities follow reachability: ⋮ never drops, its rows have no other route inside a theme canvas; Stop and Random go
+// first, also in the menu; Expand and Collapse go last of the four, in no menu; the readout loses no action.
 func planMusicHeader(r sdl.Rect, now string, count string, hideSearchRow, nowPlayingExternal bool, measure func(string) int32) musicHeaderPlan {
-	// A FIXED ARRAY AND AN INDEX, never an `add` closure: this runs on every frame the
-	// music panel draws, and a closure capturing the array and the counter is one heap
-	// allocation per frame on the themed courtroom — the class
-	// TestDrawCourtroomThemedZeroAlloc exists to catch.
+	// A fixed array and an index, never a closure: this runs every frame and a capturing closure allocates.
 	var want [musicHeaderMaxItems]chromeCtl
 	n := 0
 	want[n] = chromeCtl{id: musicItemStop, w: musicIconPx, min: musicIconPx, prio: musicDropShortcut}
@@ -213,9 +139,7 @@ func planMusicHeader(r sdl.Rect, now string, count string, hideSearchRow, nowPla
 	return p
 }
 
-// musicHeaderItemLabel is the text a placed item carries. Only two items have any —
-// the icon buttons draw vector glyphs (see the file header) and the search field draws
-// its own contents.
+// musicHeaderItemLabel is a placed item's text; only the readout and count have any.
 func musicHeaderItemLabel(id int, now, count string) string {
 	switch id {
 	case musicItemNowPlaying:
@@ -226,15 +150,7 @@ func musicHeaderItemLabel(id int, now, count string) string {
 	return ""
 }
 
-// --- the overflow ("kebab") menu ------------------------------------------------
-
-// musicMenuKind enumerates the rows of the LIST PANEL's overflow menu.
-//
-// It is named for the Music header it started on, but the menu belongs to the whole
-// right-hand list panel — Music, Areas and the roster share one rect, one ⋮ and one
-// pane. The roster rows below are the four controls the Players toolbar debloated out
-// of its three header rows (playerlisttoolbar.go); they have no other home in the UI,
-// so they moved here rather than being deleted.
+// musicMenuKind enumerates the rows of the list panel's overflow menu, shared by Music, Areas and the roster.
 type musicMenuKind int
 
 const (
@@ -258,29 +174,18 @@ const (
 	musicMenuSepH  = int32(7)
 	musicMenuPadX  = int32(10)
 	musicMenuMinW  = int32(200)
-	// musicMenuGutterW reserves the check-mark column so every label in the menu
-	// shares a left edge — the menu-bar pane's rule (menuPaneGutterW).
+	// musicMenuGutterW reserves the check-mark column so every label shares a left edge.
 	musicMenuGutterW = int32(18)
 )
 
-// musicMenuRow is one row: what it is and the label it draws.
 type musicMenuRow struct {
 	kind  musicMenuKind
 	label string
 }
 
-// musicMenuRows is the fixed row model, package-level so opening the menu never
-// allocates a table. Order follows AO2's own context menu
-// (courtroom.cpp:5822-5875): the view toggle, the four playback flags, then the
-// two immediate actions.
-// The roster block is appended AFTER the music block, behind its own separator, so
-// the menu reads as two named halves rather than one mixed list — and so the music
-// rows keep the exact order (and therefore the exact muscle memory) they had before
-// the roster moved in.
-// The AREA block is APPENDED (areamenu.go owns its rows, kinds and behaviour):
-// the Areas view shares this rect and this ⋮, so its actions belong in this pane
-// rather than in a rival popup, and keeping them in their own file means adding a
-// music row can never renumber them.
+// musicMenuRows is the fixed row model, so opening the menu allocates nothing. Order follows AO2's context menu
+// (courtroom.cpp:5822-5875). The roster block sits behind its own separator, and the area block is appended from
+// areamenu.go, so adding a music row can't renumber it.
 var musicMenuRows = append([]musicMenuRow{
 	{musicMenuVolumeView, "Volume sliders"},
 	{musicMenuSeparator, ""},
@@ -292,29 +197,15 @@ var musicMenuRows = append([]musicMenuRow{
 	{musicMenuStop, "Stop current song"},
 	{musicMenuRandom, "Play random song"},
 	{musicMenuSeparator, ""},
-	// Labels are self-describing sentences, not the toolbar's abbreviations
-	// ("Pairs", "Follow", "Legacy"): Ctx.Tooltip no-ops under modalOn, so a row that
-	// needed a tooltip to be understood would be unexplained here.
+	// Labels must explain themselves: Ctx.Tooltip no-ops under modalOn.
 	{musicMenuRosterRefresh, "Refresh roster details"},
 	{musicMenuRosterLegacy, "Legacy roster snapshot"},
 	{musicMenuPairStatus, "Show each player's pair"},
 	{musicMenuFollow, "Follow players"},
 }, areaMenuRows[:]...)
 
-// musicMenuRowLive reports whether a row is offered at all this frame. The volume
-// view is not offered inside a theme's design canvas: the theme declares its own
-// music_slider / sfx_slider / blip_slider rects and those win (#21), so offering
-// both would put two sets of volume controls on one screen.
-//
-// The four ROSTER rows are deliberately live in every branch, including from the
-// Music view's own ⋮. They are panel-level settings for a list that shares this rect,
-// and gating them on "the roster happens to be the visible view" would only mean the
-// user has to switch views to reach a switch that is already one menu deep.
-//
-// The AREA block is the case that does NOT generalise from that, and areamenu.go
-// owns the reason: its rows act on the area list itself, so they are offered only
-// from the Areas view. Without this forward the block leaks into the Music header's
-// ⋮ and the roster toolbar's ⋮, growing every user's music menu by five rows.
+// musicMenuRowLive reports whether a row is offered this frame. The volume view isn't offered in a theme's canvas,
+// whose slider rects win. Roster rows are live everywhere; area rows only from the Areas view (areamenu.go).
 func (a *App) musicMenuRowLive(k musicMenuKind, themed bool) bool {
 	if isAreaMenuKind(k) {
 		return a.areaMenuRowLive(k) // areamenu.go owns the AREA block
@@ -325,16 +216,8 @@ func (a *App) musicMenuRowLive(k musicMenuKind, themed bool) bool {
 	return true
 }
 
-// musicMenuRowDrawn reports whether row i of musicMenuRows paints this frame: it is
-// live, and — if it is a SEPARATOR — some live item still follows it.
-//
-// The lookahead is what takes a block's divider down with the block. A separator has
-// no kind of its own (every one of them is musicMenuSeparator, which is also the one
-// kind allowed an empty label), so no per-kind predicate can gate it, and the AREA
-// block appended last is live only on the Areas view: on the Music view its rows
-// vanish and its divider would otherwise draw a rule under the final roster row with
-// nothing beneath it. Generalised rather than special-cased, because the next block
-// appended to this pane inherits the same hazard.
+// musicMenuRowDrawn reports whether row i paints: it is live and, if a separator, some live item follows. A separator
+// has no kind of its own, so this takes a block's divider down with the block.
 func (a *App) musicMenuRowDrawn(i int, themed bool) bool {
 	row := musicMenuRows[i]
 	if !a.musicMenuRowLive(row.kind, themed) {
@@ -354,11 +237,8 @@ func (a *App) musicMenuRowDrawn(i int, themed bool) bool {
 	return false
 }
 
-// musicMenuRowEnabled reports whether a live row can be acted on. The four
-// playback flags ride an outgoing MC's LAST field, which AO2 appends only when the
-// server advertised `effects` (courtroom.cpp:5806-5819) — on a server without it
-// the bits would never leave the client, so the rows are shown greyed rather than
-// hidden (the setting is real, this server just can't carry it).
+// musicMenuRowEnabled reports whether a live row can be acted on. The playback flags ride an outgoing MC's last field,
+// which AO2 appends only if the server advertised `effects` (courtroom.cpp:5806-5819), so they grey out otherwise.
 func (a *App) musicMenuRowEnabled(k musicMenuKind) bool {
 	if isAreaMenuKind(k) {
 		return a.areaMenuRowEnabled(k) // areamenu.go owns the AREA block
@@ -367,14 +247,13 @@ func (a *App) musicMenuRowEnabled(k musicMenuKind) bool {
 	case musicMenuFadeIn, musicMenuFadeOut, musicMenuSyncPos, musicMenuLoop:
 		return a.musicEffectsSupported()
 	case musicMenuRosterRefresh:
-		// The pull is an OOC command, so it needs a session to send it down.
+		// The pull is an OOC command, so it needs a session.
 		return a.sess != nil
 	}
 	return true
 }
 
-// musicMenuRowChecked reports a toggle row's state. Loop is the INVERSE of the
-// NO_REPEAT bit: AO2 stores "don't repeat", KFO's UI says "Loop".
+// musicMenuRowChecked reports a toggle row's state. Loop is the inverse of NO_REPEAT.
 func (a *App) musicMenuRowChecked(k musicMenuKind) bool {
 	if isAreaMenuKind(k) {
 		return a.areaMenuRowChecked(k) // areamenu.go owns the AREA block
@@ -403,10 +282,8 @@ func (a *App) musicMenuRowChecked(k musicMenuKind) bool {
 	return false
 }
 
-// musicMenuRowIsToggle reports whether acting on a row should leave the menu
-// OPEN. Qt closes its context menu on every click; we do not, because setting
-// three playback flags in a row is precisely what this menu exists for. Pinned by
-// a test so it is not "tidied" back to Qt's behaviour later.
+// musicMenuRowIsToggle reports whether acting on a row leaves the menu open. Qt closes on every click; we don't,
+// because setting several playback flags in a row is what this menu is for.
 func musicMenuRowIsToggle(k musicMenuKind) bool {
 	if isAreaMenuKind(k) {
 		return areaMenuRowIsToggle(k) // areamenu.go owns the AREA block
@@ -419,17 +296,13 @@ func musicMenuRowIsToggle(k musicMenuKind) bool {
 	return false
 }
 
-// musicEffectsSupported reports whether this server can carry the MUSIC_EFFECT
-// bitmask at all.
+// musicEffectsSupported reports whether this server can carry the MUSIC_EFFECT bitmask.
 func (a *App) musicEffectsSupported() bool {
 	return a.sess != nil && a.sess.Features.Has(protocol.FeatureEffects)
 }
 
-// openMusicMenu opens the overflow menu with its top-left preferred at `at` (the
-// draw clamps it on-screen). Latching the tab is the rosterMenu discipline: a
-// popup must never survive a switch to another session's tab. `themed` is latched
-// too, for the same snapshot reason — the menu paints at the frame tail, long
-// after the panel that owns that answer has returned.
+// openMusicMenu opens the menu at `at` (the draw clamps it). The tab is stored so a popup can't survive a tab switch,
+// and themed because the menu paints after the panel has returned.
 func (a *App) openMusicMenu(at sdl.Point, themed bool) {
 	a.musicMenuAt = at
 	a.musicMenuTab = a.activeTab
@@ -437,27 +310,15 @@ func (a *App) openMusicMenu(at sdl.Point, themed bool) {
 	a.musicMenuOpen = true
 }
 
-// openMusicMenuFromButton opens the overflow menu from the header's ⋮ control
-// and CONSUMES the opening press.
-//
-// The consumption is load-bearing, not tidiness. musicIconButton ends in
-// `hover && c.clicked` and never clears the flag (Ctx.Button behaves the same),
-// so the press is still live when drawMusicMenu runs at the frame tail. Its
-// click-away test then sees a click whose cursor is on the BUTTON — and the
-// panel is anchored at the button's BOTTOM edge, so the cursor is above
-// panel.Y, pointIn is false, and the menu closes on the very frame it opened.
-// The result was a dead control: every row it hosts (the volume view, the four
-// MC playback flags, stop, random) was reachable only by right-clicking the
-// track list, which does consume its press. Same discipline as the roster
-// list's "…" trigger (playerlist.go).
+// openMusicMenuFromButton opens the menu and consumes the press: musicIconButton never clears c.clicked, and the panel
+// anchors below the button, so drawMusicMenu's click-away would close it the frame it opened.
 func (a *App) openMusicMenuFromButton(at sdl.Point, themed bool) {
 	a.openMusicMenu(at, themed)
 	a.ctx.clicked = false // the opening click is the menu's, not the click-away's
 }
 
-// musicMenuFence holds / RELEASES the kit's modal fence for the open menu, and
-// force-closes it when its surface is gone. Same set-and-release discipline as
-// rosterMenuFence: a stranded modalOn freezes the whole UI.
+// musicMenuFence holds and releases c.modalOn for the open menu, and closes it when its surface is gone. A stranded
+// modalOn freezes the UI.
 func (a *App) musicMenuFence(c *Ctx) {
 	live := a.screen == ScreenCourtroom && !a.gifExporting && !a.replaying &&
 		!a.makerOpen && a.activeTab == a.musicMenuTab
@@ -473,7 +334,6 @@ func (a *App) musicMenuFence(c *Ctx) {
 	}
 }
 
-// musicMenuHeight is the open menu's height for the rows live this frame.
 func (a *App) musicMenuHeight(themed bool) int32 {
 	h := int32(8)
 	for i, row := range musicMenuRows {
@@ -489,7 +349,6 @@ func (a *App) musicMenuHeight(themed bool) int32 {
 	return h
 }
 
-// musicMenuRect is the open menu's clamped on-screen panel.
 func (a *App) musicMenuRect(w, h int32, themed bool) sdl.Rect {
 	c := a.ctx
 	mw := musicMenuMinW
@@ -507,10 +366,8 @@ func (a *App) musicMenuRect(w, h int32, themed bool) sdl.Rect {
 	return sdl.Rect{X: x, Y: y, W: mw, H: mh}
 }
 
-// drawMusicMenu paints the open menu and resolves its interaction. Raw pointIn,
-// because our own modal fence blanks hovering() everywhere — including here — and
-// Ctx.Tooltip no-ops under modalOn, which is why every row's LABEL has to say
-// what it does on its own (tooltips belong on the icon buttons).
+// drawMusicMenu paints the open menu and resolves its input, with raw pointIn because the modal state blanks
+// hovering().
 func (a *App) drawMusicMenu(w, h int32) {
 	if !a.musicMenuOpen {
 		return
@@ -553,8 +410,7 @@ func (a *App) drawMusicMenu(w, h int32) {
 		c.LabelClipped(r.X+musicMenuPadX-4+musicMenuGutterW, r.Y+3, r.W-musicMenuGutterW-2*musicMenuPadX+8, row.label, ink)
 		y += musicMenuItemH
 	}
-	// Click-away (or a fresh right-click) closes; the fence already kept the press
-	// from reaching anything underneath.
+	// Click-away or a fresh right-click closes.
 	if (c.clicked || c.rightClicked) && !pointIn(c.mouseX, c.mouseY, panel) {
 		a.musicMenuOpen = false
 		c.clicked = false
@@ -562,7 +418,6 @@ func (a *App) drawMusicMenu(w, h int32) {
 	}
 }
 
-// musicMenuAct performs one menu row.
 func (a *App) musicMenuAct(k musicMenuKind) {
 	if isAreaMenuKind(k) {
 		a.areaMenuAct(k) // areamenu.go owns the AREA block
@@ -583,24 +438,16 @@ func (a *App) musicMenuAct(k musicMenuKind) {
 	case musicMenuSyncPos:
 		a.toggleMusicFlag(config.MusicFlagSyncPos)
 	case musicMenuLoop:
-		// "Loop" is the inverse of NO_REPEAT. It drives the OUTGOING bit only —
-		// our own absent-`looping`-field default is deliberately Loop=true, and a
-		// UI toggle must not reach into local playback.
+		// "Loop" is the inverse of NO_REPEAT. It drives the outgoing bit only; a UI toggle must not reach local
+		// playback, whose default is Loop=true.
 		a.toggleMusicFlag(config.MusicFlagNoRepeat)
 	case musicMenuStop:
 		a.stopMusic()
 	case musicMenuRandom:
 		a.playRandomMusic()
 	case musicMenuRosterRefresh:
-		// What the retired "Refresh details" button did, minus its hardcoded
-		// /getarea: that spelling is registered on neither Athena, Nyathena nor
-		// Whisker (liveroster.go, rosterDetailCmd), and two of those three have no
-		// 2.11 live list in the base server to fall back on (serverhelp.go: Athena
-		// plist:false, Whisker plistPlugin), so the button's replacement would have
-		// answered "unknown command" exactly where it is the last roster control —
-		// the inert row playerlisttoolbar.go's degradation contract forbids. The
-		// toast NAMES the command so a mis-detected server can still be driven by
-		// hand.
+		// rosterDetailCmd, not a hardcoded /getarea: that spelling is unknown on Athena, Nyathena and Whisker
+		// (liveroster.go). The toast names the command so a mis-detected server can be driven by hand.
 		cmd := a.rosterDetailCmd()
 		a.pairAreaReset = true
 		a.queueOOCLines([]string{cmd})
@@ -632,7 +479,6 @@ func (a *App) musicMenuAct(k musicMenuKind) {
 	}
 }
 
-// toggleMusicFlag flips one MUSIC_EFFECT bit in the persisted mask.
 func (a *App) toggleMusicFlag(bit int) {
 	flags := a.d.Prefs.Load().MusicFlags() ^ bit
 	a.d.Prefs.Update(func(sn *config.Settings) {

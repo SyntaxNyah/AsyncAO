@@ -8,143 +8,84 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Involuntary-disconnect dialog.
-//
-// BOTH drop arms reach it, through the one shared freeze
-// (freezeSessionUnderDialog). An ACTIVE tab whose link dies under the user
-// freezes in place; a PARKED tab that died in the background can't boot the user
-// off whatever tab they're actually looking at, so it latches its reason and
-// surfaces the same modal when the user later reactivates it (tabs.go,
-// activateTab).
-//
-// The two used to diverge: v1.81.4 made an active-tab drop tear straight down to
-// the lobby, so the tab you were LOOKING at vanished while a background tab got a
-// dialog. Playtesters hit exactly that and reported it. The freeze was collateral
-// damage in that commit — what actually needed removing was its 5-minute grace
-// window and its background auto-retry, both of which are gone and stay gone.
-//
-// The dialog keeps the tab's courtroom on screen — FROZEN, the IC/OOC log
-// TAIL still readable around the modal (the whole frozen pass is pointer-fenced, so
-// scrolling back through history is not available while it's up) — under a modal
-// that says what happened and offers one-click Reconnect / Back to lobby.
-//
-// "Frozen" means precisely: the network session is torn down (conn closed and
-// nilled, music/voice stopped) so no more packets arrive, but a.sess and a.room
-// are DELIBERATELY kept alive so drawCourtroom keeps rendering the last scene and
-// the IC/OOC logs stay drawn. The pointer fence (like every confirm modal) makes
-// the COURTROOM PASS behind the dialog click-proof, and handleHotkeys short-circuits
-// while the dialog is up, so no keyboard shout or IC send reaches the dead socket.
-// (The non-blocking floating panels — Extras / Pair / the pinned second-server
-// client — draw AFTER the courtroom's fence lifts, so they stay live; a send there
-// into a closed conn is harmless, just recorded in sendErr, and the pinned client is
-// a DIFFERENT server that must keep working.) handleTabBar is also inert while the
-// dialog is up, so a chip click can't park the frozen-but-not-dead session into a
-// zombie tab (tabs.go). Back to lobby then runs the real Disconnect() (today's exact
-// post-disconnect path); Reconnect tears the frozen session down and redials — the
-// same server + name, so the once-per-join auto-login machinery takes over on the
-// fresh join.
-//
-// This is one more member of the confirm-modal family (drawDisconnectConfirm /
-// drawCloseTabConfirm / drawQuitConfirm): same dimmed backdrop, same fence
-// discipline (fenced with the family in app.go's frame tail, pointer restored
-// just before it draws), same Esc rung via closeTopOverlay. Copy that shape,
-// don't invent one.
+// Involuntary-disconnect dialog. Both drop arms reach it through freezeSessionUnderDialog. An active tab whose
+// link dies freezes in place; a parked tab that died in the background keeps its reason and surfaces the same
+// modal when reactivated (tabs.go, activateTab), so it can't boot the user off the tab they're viewing.
+// The tab's courtroom stays on screen frozen, with the IC/OOC log tail readable (the frozen pass is pointer-fenced,
+// so scrolling history is unavailable), under a modal offering Reconnect or Back to lobby.
+// Frozen means the network session is torn down (conn closed and nilled, music/voice stopped) but a.sess and
+// a.room are kept so drawCourtroom keeps rendering the last scene. The pointer fence makes the courtroom pass
+// click-proof and handleHotkeys short-circuits while the dialog is up. The non-blocking floating panels (Extras,
+// Pair, the pinned second-server client) draw after the fence lifts and stay live; a send into the closed conn
+// is harmless (recorded in sendErr), and the pinned client is a different server. handleTabBar is inert while the
+// dialog is up so a chip click can't park the session into a zombie tab (tabs.go). Back to lobby runs the real
+// Disconnect(); Reconnect tears the frozen session down and redials the same server and name.
+// It follows the confirm-modal family (drawDisconnectConfirm / drawCloseTabConfirm / drawQuitConfirm): dimmed
+// backdrop, fenced in app.go's frame tail with the pointer restored just before it draws, Esc via closeTopOverlay.
 
-// disconnectDialog is the modal's state. The zero value is closed/inert (open ==
-// false), so an App with no drop showing costs a single bool check per frame.
-// It lives on sessionState (see the field doc in app.go for why it's per-tab, not
-// on App): it parks/restores with its own tab, so an active-tab drop shows THIS
-// dialog directly. A tab that drops while BACKGROUNDED can't pop a modal then (it
-// would cover whatever tab the user is looking at), so it arms its own deadReason
-// instead and surfaces this same dialog on reactivation (see tabs.go, activateTab).
-// Nothing relies on it surviving resetSessionState — the close paths
-// (closeDisconnectDialogToLobby / reconnectFromDisconnectDialog) snapshot name/url
-// and clear the dialog BEFORE any teardown/reset runs.
+// disconnectDialog is the modal's state. The zero value is closed, so an idle App pays one bool check per frame.
+// It lives on sessionState (see the field doc in app.go) and parks with its tab. A tab that drops while
+// backgrounded can't pop a modal over another tab, so it arms its own deadReason and surfaces this dialog on
+// reactivation (tabs.go, activateTab). The close paths (closeDisconnectDialogToLobby /
+// reconnectFromDisconnectDialog) snapshot name/url and clear the dialog before any teardown.
 type disconnectDialog struct {
 	open   bool
 	reason disconnectReason
-	// name/url are the server we dropped from, captured at freeze time so
-	// Reconnect redials exactly it even though the teardown that runs first would
-	// otherwise re-point lastConn* (they're global). Mirrors Disconnect's
-	// lastConn* re-capture rationale.
+	// name/url are the server we dropped from, captured at freeze time so Reconnect redials exactly it; the teardown
+	// would otherwise re-point the global lastConn*.
 	name string
 	url  string
-	// wrap memoizes the laid-out raw reason. The raw line used to be ONE clipped
-	// label, which for a kick/ban is the server's own multi-line prose — so an
-	// access code or an appeal link on its second line was unreachable here too,
-	// and past some length the label drew nothing at all (LabelClipped rasterizes
-	// the whole string and clips only the blit). See paraWrapCache (qol.go).
+	// wrap memoizes the laid-out raw reason. A kick/ban reason is the server's multi-line prose, and an access code
+	// or
+	// appeal link may sit on a later line (see paraWrapCache, qol.go).
 	wrap paraWrapCache
-	// hiddenUntil defers actually DRAWING the modal (open stays true the whole
-	// time — the pointer-fence and pollAutoReconnect's frozen-retry trigger are
-	// both keyed on open, not visibility) until this time; the zero value shows
-	// immediately. A fresh drop gets a grace window here so a blip that heals
-	// itself on the very first retry never interrupts the user at all — only a
-	// drop that survives that attempt earns the modal.
+	// hiddenUntil defers drawing the modal until this time (open stays true; the pointer fence and
+	// pollAutoReconnect's
+	// frozen-retry trigger key on open). The zero value shows it immediately.
 	hiddenUntil time.Time
 }
 
-// disconnectReason is what the dialog tells the user: an optional friendly line
-// (empty when the cause is unknown) and ALWAYS the raw close code / error
-// underneath, so a server restart and a local failure never look identical and
-// no information is hidden behind a guess.
+// disconnectReason is what the dialog tells the user: an optional friendly line (empty when the cause is unknown)
+// and always the raw close code or error, so a server restart and a local failure never look identical.
 type disconnectReason struct {
 	friendly string // "" when we can't name the cause — only the raw line shows then
 	raw      string
 }
 
-// friendlyDisconnectReason maps a raw close reason to a disconnectReason. The
-// friendly line is set only for the obviously-known cases; everything else keeps
-// friendly == "" and shows the raw string alone. Extensible by design: a future
-// known cause is one more case here, one line, no call-site changes — the raw
-// reason strings are exactly what the drop paths already build (pumpConnection's
-// "connection lost: …" / conn.Err(), the EventDisconnect "Kicked: …" / "Banned: …"
-// prefixes, and dial-failure errors). We deliberately do NOT guess at server
-// families or parse close codes we don't recognise: an unknown reason is honestly
-// shown raw rather than mislabelled.
+// friendlyDisconnectReason maps a raw close reason to a disconnectReason. The friendly line is set only for known
+// cases; otherwise it stays "" and the raw string shows alone. The raw strings are what the drop paths build
+// (pumpConnection's "connection lost: …" / conn.Err(), EventDisconnect's "Kicked: …" / "Banned: …", dial errors).
+// Unrecognised reasons are shown raw rather than guessed at.
 func friendlyDisconnectReason(raw string) disconnectReason {
 	r := disconnectReason{raw: raw}
 	low := strings.ToLower(raw)
 	switch {
 	case strings.HasPrefix(raw, "Kicked"):
-		// KK/KB surface as "Kicked: <reason>" from EventDisconnect — the server
-		// removed us on purpose; auto-reconnect stays off (shouldAutoReconnect).
+		// KK/KB surface as "Kicked: <reason>" from EventDisconnect; auto-reconnect stays off (shouldAutoReconnect).
 		r.friendly = "The server kicked you."
 	case strings.HasPrefix(raw, "Banned"):
-		// BD surfaces as "Banned: <reason>" — same source, worse optics; never
-		// auto-reconnects (ban evasion).
+		// BD surfaces as "Banned: <reason>"; never auto-reconnects.
 		r.friendly = "The server banned you."
 	case strings.Contains(low, "network is unreachable") || strings.Contains(low, "no route"):
-		// The local link is down — distinct from the server going away, so the
-		// user knows to check their own connection.
+		// The local link is down, distinct from the server going away.
 		r.friendly = "Your network is unreachable — check your internet connection."
 	case strings.Contains(low, "timeout") || strings.Contains(low, "deadline exceeded") ||
 		strings.Contains(low, "stale") || strings.Contains(low, "i/o timeout"):
-		// A write/keepalive timed out: the connection went quiet rather than
-		// closing cleanly.
+		// A write/keepalive timed out: the connection went quiet rather than closing cleanly.
 		r.friendly = "The connection timed out — the server stopped responding."
 	case strings.Contains(low, "connection closed") || strings.Contains(low, "eof") ||
 		strings.Contains(low, "connection lost") || strings.Contains(low, "closed") ||
 		strings.Contains(low, "reset by peer") || strings.Contains(low, "going away"):
-		// The socket closed under us — most often a server restart or a clean
-		// server-side close. Phrased as a likely cause, never as certainty.
+		// The socket closed under us, often a server restart or clean close. Phrased as a likely cause.
 		r.friendly = "The server closed the connection (it may have restarted)."
 	}
 	return r
 }
 
-// serverRemovalMessage pulls the SERVER'S OWN words out of a drop reason, which is
-// the only thing the notice box is for.
-//
-// EventDisconnect builds its Text as "Kicked: " / "Banned: " plus the raw wire
-// field (internal/courtroom/session.go, the KK/KB/BD cases). Anything else — a
-// transport drop, a timeout, our own dial error — is OUR prose, already fully said
-// by the lobby line and the friendly sentence above, and must NOT raise a modal:
-// popping a box on every blip is the nagging drawFontWarnDialog exists to avoid.
-//
-// A removal with no reason attached returns false too. "The server banned you."
-// is already on screen; a modal whose body is "no reason given" adds a click and
-// no information.
+// serverRemovalMessage pulls the server's own words out of a drop reason, the only thing the notice box is for.
+// EventDisconnect builds "Kicked: " / "Banned: " plus the raw wire field (internal/courtroom/session.go, KK/KB/BD).
+// Anything else (transport drop, timeout, our dial error) is our own prose, already said by the lobby line and
+// friendly sentence, and must not raise a modal. A removal with no reason returns false too.
 func serverRemovalMessage(raw string) (string, bool) {
 	rest, cut := strings.CutPrefix(raw, "Kicked: ")
 	if !cut {
@@ -153,43 +94,32 @@ func serverRemovalMessage(raw string) (string, bool) {
 	if !cut {
 		return "", false
 	}
-	// Trailing newlines are common in server-formatted reasons and would otherwise
-	// spend a body row on nothing. Interior newlines are the whole point and stay.
+	// Trailing newlines are common in server reasons and would waste a body row; interior newlines stay.
 	if rest = strings.TrimSpace(rest); rest == "" {
 		return "", false
 	}
 	return rest, true
 }
 
-// serverNoticeRemovedFallbackTitle heads a removal we could not name. Unreachable
-// from today's single caller (friendlyDisconnectReason names both prefixes that
-// serverRemovalMessage matches), and kept anyway so the box can never draw a blank
-// heading if either side of that pairing changes.
+// serverNoticeRemovedFallbackTitle heads a removal we could not name. It is unreachable today
+// (friendlyDisconnectReason
+// names both prefixes serverRemovalMessage matches) and keeps the box from drawing a blank heading.
 const serverNoticeRemovedFallbackTitle = "The server closed your connection"
 
-// freezeSessionUnderDialog is the ONE freeze both drop arms use: the active tab's
-// link dying under the user, and a parked tab's death surfaced later by
-// activateTab. It performs the NETWORK + AUDIO subset of Disconnect() — the part
-// that must happen the instant the link dies — and deliberately not the session
-// reset, tab close or navigation, which wait for the dialog's Back to lobby /
-// Reconnect so the room stays drawable underneath.
-//
-// Its guards make it a no-op for the half a parked tab has already done (its
-// socket was nilled when it died), so both arms can call it unconditionally.
+// freezeSessionUnderDialog is the one freeze both drop arms use. It performs the network and audio part of
+// Disconnect() that must happen the instant the link dies, and leaves the session reset, tab close and navigation
+// for Back to lobby / Reconnect so the room stays drawable. Its guards make it a no-op for what a parked tab
+// already did (its socket was nilled), so both arms call it unconditionally.
 func (a *App) freezeSessionUnderDialog(raw string) {
-	// Re-capture the redial target BEFORE nilling the conn, exactly as Disconnect
-	// does and for the same reason: lastConn* is GLOBAL and in a multi-tab session
-	// may hold whatever server connected most recently rather than THIS one.
+	// Re-capture the redial target before nilling the conn, as Disconnect does: lastConn* is global and in a
+	// multi-tab session may hold whichever server connected most recently.
 	if a.conn != nil {
 		a.lastConnName, a.lastConnURL = a.serverName, a.serverKey
 	}
-	// Close any courtroom-owned confirm that could be open at freeze time — it
-	// would stack with this modal for a frame. confirmDisconnect: the user clicked
-	// Disconnect with instant-disconnect off and the link died before they
-	// answered, so the pending question is moot. hidePrompt: a sprite-hide confirm;
-	// clearing it cancels a moot confirm and leaves hiddenSprites alone. We do NOT
-	// clear showQuitConfirm (a GLOBAL quit choice) or pendingCloseTab (a DIFFERENT
-	// tab's confirm) — neither is ours to cancel on a drop.
+	// Close any courtroom-owned confirm open at freeze time so it doesn't stack with this modal. confirmDisconnect
+	// and
+	// hidePrompt are moot after the drop. Not cleared: showQuitConfirm (a global choice) and pendingCloseTab (another
+	// tab's confirm).
 	a.confirmDisconnect = false
 	a.hidePrompt = ""
 	if a.conn != nil {
@@ -205,53 +135,31 @@ func (a *App) freezeSessionUnderDialog(raw string) {
 	}
 	a.stopVoiceAudio() // free the voice devices with the connection
 	a.voiceJoined, a.voiceMicOn = false, false
-	// hiddenUntil is deliberately the zero value: ALWAYS visible immediately. The
-	// 5-minute grace window this function used to take is half of what made
-	// v1.81.4 rip the freeze out — a drop hid itself, self-healed in the
-	// background, and dumped the user at char-select without ever saying why.
+	// hiddenUntil is the zero value: the dialog is always visible immediately, so a drop never self-heals silently.
 	a.openDisconnectDialog(a.serverName, a.serverKey, raw, time.Time{})
 }
 
-// handleInvoluntaryDrop is the SHARED tail every active-tab drop path runs once its
-// reason is known: pumpConnection's SendErr (half-dead write) and closed-Incoming
-// (transport drop) branches, and handleSessionEvents' EventDisconnect (kick/ban).
+// handleInvoluntaryDrop is the shared tail every active-tab drop path runs once its reason is known:
+// pumpConnection's SendErr and closed-Incoming branches, and handleSessionEvents' EventDisconnect (kick/ban).
 func (a *App) handleInvoluntaryDrop(reason string) {
 	deliberate := a.deliberateClose
 	a.connErr = reason // set FIRST: it must survive whichever branch runs below
-	// A live courtroom FREEZES under the dialog instead of being torn down: the
-	// logs and the last frame stay readable, the reason is named, and Reconnect is
-	// one click. That is the same end state a PARKED tab reaches via activateTab,
-	// and playtesters reported the inconsistency directly — a background tab showed
-	// the box while the tab they were looking at was slammed to the server list.
-	//
-	// This restores the freeze v1.81.4 removed, WITHOUT the two things that made it
-	// a bug then: there is no grace window (see freezeSessionUnderDialog), and no
-	// auto-reconnect is armed here. Arming would paint a countdown that
-	// pollAutoReconnect can never fire — it returns early off the lobby — and
-	// re-adding a background retry is exactly the regression that dumped users at
-	// char-select while minimized. The dialog's Reconnect button is the action.
+	// A live courtroom freezes under the dialog instead of being torn down, the same end state a parked tab reaches
+	// via activateTab. No grace window (see freezeSessionUnderDialog), and no auto-reconnect is armed here: its
+	// countdown could never fire because pollAutoReconnect returns early off the lobby, and a background retry would
+	// dump users at char-select while minimized. The dialog's Reconnect button is the action.
 	if !deliberate && a.room != nil && a.sess != nil && a.screen == ScreenCourtroom {
 		a.freezeSessionUnderDialog(reason)
 		return
 	}
-	// No room to freeze (char-select, already torn down) or a deliberate close:
-	// today's plain teardown to the lobby, which still arms auto-reconnect for a
-	// genuine transport drop. shouldAutoReconnect suppresses ban/kick.
-	//
-	// This is the arm the reported bug lives on. A server that refuses during the
-	// handshake — locked down, or whitelisting by IP — sends its instructions as the
-	// BD reason and closes, and we reach here with a.room == nil, so there is no
-	// frozen courtroom for the disconnect dialog to sit on. All the reason had left
-	// was one unclipped label on the lobby, which cannot show a second line; a
-	// lockdown puts the access code on the LAST line, so the code was structurally
-	// unreachable. Snapshot the pieces BEFORE the teardown: serverName is on
-	// sessionState and resetSessionState rebuilds that struct wholesale, so reading
-	// it after Disconnect would attribute the message to nobody.
-	//
-	// The two surfaces stay mutually exclusive by construction: the branch above
-	// returns, so a drop either freezes under the disconnect dialog (which gets the
-	// same wrapped body and Copy) or lands here and raises the notice box. Never
-	// both, and the a.disconnectDlg.open ⇒ screen == Courtroom invariant is untouched.
+	// No room to freeze (char-select, already torn down) or a deliberate close: plain teardown to the lobby, which
+	// still arms auto-reconnect for a genuine transport drop (shouldAutoReconnect suppresses ban/kick).
+	// A server that refuses during the handshake (locked down, IP whitelist) sends its instructions as the BD reason
+	// and closes with a.room == nil, so there is no frozen courtroom to sit on. The lobby's single clipped label
+	// could not show a later line, where a lockdown puts the access code. Snapshot before the teardown:
+	// serverName is on sessionState and resetSessionState rebuilds it, so reading it after Disconnect names nobody.
+	// The two surfaces are exclusive: the branch above returns, so a drop either freezes under the disconnect dialog
+	// or lands here and raises the notice box. The a.disconnectDlg.open implies screen == Courtroom invariant holds.
 	noticeBody, showNotice := "", false
 	if !deliberate {
 		noticeBody, showNotice = serverRemovalMessage(reason)
@@ -260,21 +168,19 @@ func (a *App) handleInvoluntaryDrop(reason string) {
 	if noticeTitle == "" {
 		noticeTitle = serverNoticeRemovedFallbackTitle
 	}
-	//
-	// A genuine transport drop about to auto-retry is "we're coming back" just
-	// as much as a dialog Reconnect click is: snapshot today's log before
-	// Disconnect wipes it, so a successful retry can restore it
-	// (applySessionCarryIfPending, gated on the SAME server). Gated on the same
-	// shouldAutoReconnect check as the re-arm below, so a kick/ban/deliberate
-	// close starts clean — nothing here for those cases to ever consume.
+	// A genuine transport drop about to auto-retry is "coming back": snapshot today's log before Disconnect wipes it
+	// so
+	// a successful retry can restore it (applySessionCarryIfPending, same server). Same condition as the re-arm
+	// below,
+	// so a kick/ban/deliberate close starts clean.
 	if shouldAutoReconnect(reason, deliberate) {
 		a.snapshotSessionCarry()
 	}
 	a.Disconnect() // → lobby; nils conn/sess and cancels any pending retry
 	if showNotice {
-		// AFTER the teardown, deliberately. The box is App-level so it survives
-		// resetSessionState either way, but opening it last means no teardown step
-		// can run with a modal already fenced over the screen.
+		// Open the notice after the teardown, so no teardown step runs with a modal already fenced over the screen.
+		// The
+		// box is App-level and survives resetSessionState.
 		a.openServerNotice(serverNoticeRemoved, noticeTitle, noticeServer, noticeBody)
 	}
 	if shouldAutoReconnect(reason, deliberate) {
@@ -282,22 +188,14 @@ func (a *App) handleInvoluntaryDrop(reason string) {
 	}
 }
 
-// openDisconnectDialog is the single place the dialog's open state is set, so the
-// two entry paths (ACTIVATING a tab that died in the background via activateTab,
-// and a failed retry re-surfacing it) can't diverge in what the modal shows. It
-// is reached for BOTH a background/parked tab's death and an active-tab drop,
-// through the one shared freeze (see freezeSessionUnderDialog). name/url are the
-// redial target captured for Reconnect (see the disconnectDialog field doc for why
-// they're frozen here rather than read from lastConn* at click time). hiddenUntil
-// is the zero value for immediate display, which is what both arms now pass.
+// openDisconnectDialog is the single place the dialog's open state is set, so both entry paths (activating a tab
+// that died in the background, and an active-tab drop through the shared freeze) show the same modal. name/url
+// are the redial target captured for Reconnect (see the disconnectDialog field doc). hiddenUntil is the zero value
+// for immediate display.
 func (a *App) openDisconnectDialog(name, url, raw string, hiddenUntil time.Time) {
-	// A BB popup notice can be on screen when the link dies — a server that is about
-	// to close the socket is exactly the kind that just sent one. Two blocking modals
-	// would then stack, and the server's MOTD is moot the instant the session is gone.
-	// ONLY an info notice is dismissed: a serverNoticeRemoved box is the only copy of
-	// the appeal instructions the user will get, and nothing may destroy it. (It
-	// cannot be open here anyway — a removal takes the other branch of
-	// handleInvoluntaryDrop — so this is the invariant, stated where it is enforced.)
+	// A BB popup notice can be on screen when the link dies, and two blocking modals would stack. Only an info notice
+	// is dismissed: a serverNoticeRemoved box is the only copy of the appeal instructions. (It can't be open here,
+	// since a removal takes the other branch of handleInvoluntaryDrop.)
 	if a.serverNoticeDlg.open && a.serverNoticeDlg.kind == serverNoticeInfo {
 		a.closeServerNotice()
 	}
@@ -309,23 +207,16 @@ func (a *App) openDisconnectDialog(name, url, raw string, hiddenUntil time.Time)
 		hiddenUntil: hiddenUntil,
 	}
 	if hiddenUntil.IsZero() {
-		// Only flash for a drop we're actually SHOWING right now — a hidden
-		// grace-period drop that's about to self-heal shouldn't flash the
-		// taskbar for nothing. The exact FlashWindow idiom modcalls and
-		// callwords already use (ui.go FlashWindow); FLASH_UNTIL_FOCUSED keeps
-		// the taskbar icon flashing until the user actually returns to the
-		// window, however long that takes.
+		// Flash only for a drop we're showing now, using the same FlashWindow idiom as modcalls and callwords;
+		// FLASH_UNTIL_FOCUSED keeps the taskbar icon flashing until the user returns.
 		a.ctx.FlashWindow()
 	}
 }
 
-// closeDisconnectDialogToLobby is the dialog's Back to lobby: it runs the real
-// Disconnect() so we land in EXACTLY today's post-disconnect state (session
-// reset, tab closed, screen == lobby, connErr showing the reason). The freeze
-// already nilled a.conn, so Disconnect's conn-guarded steps simply skip; the
-// deliberate/involuntary auto-reconnect decision was already made on the drop
-// path, so this teardown must not re-arm — mark it deliberate. Clears the dialog
-// LAST so its fence is released this frame (the emoji-picker freeze class).
+// closeDisconnectDialogToLobby is Back to lobby: it runs the real Disconnect() (session reset, tab closed, lobby,
+// connErr showing the reason). The freeze already nilled a.conn, so Disconnect's conn-guarded steps skip. The
+// auto-reconnect decision was made on the drop path, so mark this teardown deliberate to avoid re-arming. The
+// dialog is cleared last so its fence releases this frame.
 func (a *App) closeDisconnectDialogToLobby() {
 	a.disconnectDlg = disconnectDialog{}
 	a.deliberateClose = true // Back to lobby is a user choice — this teardown must not auto-reconnect
@@ -333,21 +224,17 @@ func (a *App) closeDisconnectDialogToLobby() {
 	a.Disconnect()
 }
 
-// reconnectFromDisconnectDialog is the dialog's Reconnect: tear the frozen
-// session fully down (deliberate, so the teardown itself doesn't auto-retry) and
-// redial the SAME server + name — the exact lobby-Reconnect path (Connect), so
-// the normal join flow (fresh courtroom entry, once-per-join auto-login) takes
-// over. Clears the dialog first so its fence releases; a failed dial lands on the
-// lobby with connErr, just like the lobby button.
+// reconnectFromDisconnectDialog is Reconnect: tear the frozen session down (deliberate, so the teardown doesn't
+// auto-retry) and redial the same server and name through Connect, so the normal join flow takes over. The dialog
+// is cleared first so its fence releases; a failed dial lands on the lobby with connErr.
 func (a *App) reconnectFromDisconnectDialog() {
 	name, url := a.disconnectDlg.name, a.disconnectDlg.url
 	a.disconnectDlg = disconnectDialog{}
 	a.deliberateClose = true // reconnecting on purpose — the frozen-tab teardown must not auto-retry
 	if url != "" {
-		// Clicking Reconnect IS "we're coming back": snapshot today's log before
-		// the teardown below wipes it, so the redial to this SAME server (below)
-		// can restore it — applySessionCarryIfPending checks the key match, so
-		// this is a no-op harvest if url somehow changes before the dial lands.
+		// Reconnect means "we're coming back": snapshot today's log before the teardown so the redial to the same
+		// server
+		// can restore it. applySessionCarryIfPending checks the key match.
 		a.snapshotSessionCarry()
 	}
 	a.Disconnect() // full teardown of the frozen session → lobby
@@ -356,12 +243,9 @@ func (a *App) reconnectFromDisconnectDialog() {
 	}
 }
 
-// drawDisconnectDialog paints the involuntary-disconnect modal over the frozen
-// courtroom: dimmed backdrop, the friendly line (when known) + the raw reason
-// underneath, an optional auto-reconnect countdown, and Reconnect / Back to lobby
-// buttons. Drawn at the frame tail with its family (pointer restored just before,
-// fenced with them) so clicks can't reach the frozen scene behind. Off the render
-// hot path — only while open.
+// drawDisconnectDialog paints the modal over the frozen courtroom: dimmed backdrop, the friendly line (when
+// known), the raw reason, an optional auto-reconnect countdown, and Reconnect / Back to lobby buttons. Drawn at
+// the frame tail with its family (pointer restored just before, fenced with them). Only while open.
 func (a *App) drawDisconnectDialog(w, h int32) {
 	c := a.ctx
 	if !a.disconnectDlg.open {
@@ -380,10 +264,8 @@ func (a *App) drawDisconnectDialog(w, h int32) {
 		friendlyH = discDlgFriendlyH
 	}
 
-	// The raw reason wraps now instead of being one clipped label. For a kick or a
-	// ban it IS the server's prose, newlines and all, and the tail is the part that
-	// matters (a lockdown puts its access code on the last line). Copy below hands
-	// over the whole untruncated string either way.
+	// The raw reason wraps instead of being one clipped label. For a kick or ban it is the server's prose, and the
+	// tail matters (a lockdown puts its access code on the last line). Copy hands over the whole string.
 	textW := int32(discDlgW) - 2*pad
 	rows := discDlgRawRows(h, friendlyH)
 	lines, _ := a.disconnectDlg.wrap.get(a.chromeWrapMeasure(), a.ctx.fontChainGen,
@@ -396,12 +278,9 @@ func (a *App) drawDisconnectDialog(w, h int32) {
 	if lim := h - 2*serverNoticeMargin; mh > lim {
 		mh = lim
 	}
-	// Same absolute floor and same edge clamps as the notice box, for the same reason:
-	// the window clamp above is the one line that can hand back a height smaller than
-	// the chrome, and the buttons' y is measured from the panel's BOTTOM, so a collapsed
-	// panel stacks Reconnect on top of the heading. friendlyH is inside the floor here
-	// (the notice box has no equivalent row) so one row of the server's own reason is
-	// always visible, not just the sentence we wrote about it.
+	// Same floor and edge clamps as the notice box: the window clamp can return a height smaller than the chrome, and
+	// the buttons' y is measured from the panel's bottom, so a collapsed panel would stack Reconnect on the heading.
+	// friendlyH is inside the floor so one row of the server's own reason is always visible.
 	if floor := discDlgChromeH() + friendlyH + discDlgLineH; mh < floor {
 		mh = floor
 	}
@@ -419,11 +298,8 @@ func (a *App) drawDisconnectDialog(w, h int32) {
 	c.Border(m, ColAccent)
 	c.Heading(m.X+pad, m.Y+pad, "Disconnected from the server", ColText)
 
-	// The friendly line (when we could name the cause) in the normal text colour,
-	// then the raw reason ALWAYS below it, dimmer — a server restart and a local
-	// failure can't look identical, and no cause is hidden behind a guess. Both are
-	// server-supplied / error-derived and variable length, so clip to the panel
-	// (the §3.4 spill-past-the-border class of bug).
+	// The friendly line (when we could name the cause) in the normal colour, then the raw reason always below it,
+	// dimmer. Both are variable length, so clip to the panel.
 	y := m.Y + discDlgHeadH
 	if friendly != "" {
 		c.LabelClipped(m.X+pad, y, mw-2*pad, friendly, ColText)
@@ -438,11 +314,9 @@ func (a *App) drawDisconnectDialog(w, h int32) {
 		y += discDlgLineH
 	}
 
-	// Auto-reconnect status: if a retry is armed and counting down (the pref is on
-	// and this was a genuine drop), show it — the buttons still work, and a
-	// successful auto-reconnect closes the dialog on its own (pollAutoReconnect
-	// clears disconnectDlg on success; see reconnect.go). Reads the EXISTING
-	// autoReconnect* state, no new timer.
+	// Auto-reconnect status: if a retry is armed and counting down, show it. A successful auto-reconnect closes the
+	// dialog itself (pollAutoReconnect clears disconnectDlg; see reconnect.go). Reads the existing autoReconnect*
+	// state.
 	if !a.autoReconnectAt.IsZero() {
 		secs := int(a.autoReconnectAt.Sub(a.now()).Round(time.Second) / time.Second)
 		if secs < 0 {
@@ -456,11 +330,9 @@ func (a *App) drawDisconnectDialog(w, h int32) {
 		a.reconnectFromDisconnectDialog()
 		return
 	}
-	// Copy, between the two actions: the raw reason is the server's own text, and for
-	// a kick or a ban it carries the thing you have to act on — an appeal link, a
-	// Discord invite, a whitelist code. Reading it off the screen and retyping it was
-	// the only option before. Sends the WHOLE raw string, never the wrapped view: a
-	// re-flowed or truncated code is worse than none.
+	// Copy, between the two actions: the raw reason is the server's own text and for a kick or ban may carry an
+	// appeal
+	// link, invite or whitelist code. It sends the whole raw string, never the wrapped view.
 	if c.Button(sdl.Rect{X: m.X + (mw-discDlgCopyW)/2, Y: by, W: discDlgCopyW, H: btnH}, "Copy") {
 		_ = sdl.SetClipboardText(raw)
 		a.warnLine = clampLine("Copied the disconnect reason.")
@@ -471,45 +343,37 @@ func (a *App) drawDisconnectDialog(w, h int32) {
 	}
 }
 
-// Involuntary-disconnect dialog geometry. Named per rule §17.9; the panel now GROWS
-// with the wrapped reason instead of being a fixed 520x220, so the arithmetic has to
-// be stated once and shared with discDlgRawRows rather than inlined twice.
+// Involuntary-disconnect dialog geometry (hard rule 9). The panel grows with the wrapped reason, so the
+// arithmetic is shared with discDlgRawRows.
 const (
-	// discDlgW is unchanged from the fixed-size version.
+	// discDlgW is the panel width.
 	discDlgW = 520
-	// discDlgMinH is the old fixed height, kept as a FLOOR so the overwhelmingly
-	// common case — a one-line transport drop — looks exactly as it did.
+	// discDlgMinH is a floor, so a one-line transport drop keeps the standard size.
 	discDlgMinH = 220
 	// discDlgHeadH is the heading band, the m.Y+48 the whole modal family uses.
 	discDlgHeadH = 48
-	// discDlgFriendlyH is the row the named-cause sentence occupies when there is
-	// one. Zero when friendly == "", which is why it is added separately.
+	// discDlgFriendlyH is the row the named-cause sentence occupies; zero when friendly == "".
 	discDlgFriendlyH = 24
 	// discDlgLineH is one wrapped raw-reason row.
 	discDlgLineH = 20
-	// discDlgCountdownH is the strip above the buttons the auto-reconnect countdown
-	// draws in. RESERVED ALWAYS, even for a kick or ban that can never count down,
-	// so the panel does not resize under the user's eyes when a retry arms.
+	// discDlgCountdownH is the strip above the buttons for the auto-reconnect countdown. Always reserved, so the
+	// panel
+	// doesn't resize when a retry arms.
 	discDlgCountdownH = 26
-	// discDlgRawMaxRows caps the wrapped reason. Lower than the notice box's budget
-	// because this panel also carries a heading, the friendly line, the countdown
-	// strip and three buttons — and Copy is the escape hatch for anything longer.
+	// discDlgRawMaxRows caps the wrapped reason. Lower than the notice box's budget because this panel also carries a
+	// heading, the friendly line, the countdown strip and three buttons; Copy covers anything longer.
 	discDlgRawMaxRows = 8
-	// discDlgCopyW is the middle button. It has to fit between two 150 px buttons in
-	// a 520 px panel, which leaves 204 px of gap.
+	// discDlgCopyW is the middle button; it fits in the 204 px gap between two 150 px buttons in a 520 px panel.
 	discDlgCopyW = 110
 )
 
-// discDlgChromeH is every vertical pixel the panel spends on something other than
-// the friendly line and the wrapped body.
+// discDlgChromeH is every vertical pixel the panel spends other than on the friendly line and wrapped body.
 func discDlgChromeH() int32 {
 	return discDlgHeadH + discDlgCountdownH + btnH + pad
 }
 
-// discDlgRawRows is how many wrapped reason rows fit in a window h tall. Derived
-// from the same arithmetic drawDisconnectDialog lays out with, so the wrap budget and
-// the drawn area cannot drift apart — the duplicated-layout-constant trap the lobby
-// row helpers call out (screens.go).
+// discDlgRawRows is how many wrapped reason rows fit in a window h tall, from the same arithmetic as
+// drawDisconnectDialog so the wrap budget and drawn area can't drift.
 func discDlgRawRows(h, friendlyH int32) int {
 	avail := h - 2*serverNoticeMargin - discDlgChromeH() - friendlyH
 	rows := int(avail / discDlgLineH)

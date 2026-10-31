@@ -1,25 +1,7 @@
 package ui
 
-// The system-font CENSUS: the backstop that ends the hardcoded-fallback-list
-// treadmill, and the reason a rune the client cannot draw should now be a
-// genuinely unassigned codepoint rather than "nobody added that font path yet".
-//
-// The curated tiers (fontfallback.go) stay: they are ranked, they pick the RIGHT
-// face for a script rather than merely a covering one — Japanese before Chinese
-// for shared Han, a modern proportional Gothic before a bitmap-era legacy face —
-// and for the overwhelming majority of sessions they answer everything with two
-// or three faces. The census only runs when something reaches the draw that none
-// of them covers. Then it asks a much simpler question: of every font actually
-// installed on this machine, which one has this rune? That is self-maintaining
-// (a user who installs a Tibetan font gets Tibetan), OS-agnostic (it is the only
-// reason macOS and Linux are not permanently stuck on the embedded Latin face),
-// and it needs no new font bytes shipped in the binary.
-//
-// EVERYTHING HERE IS OFF THE RENDER THREAD. Parsing is done through
-// sfnt.ParseReaderAt, so a face is never slurped into the heap — but that also
-// means every GlyphIndex call is a disk read, which is exactly the synchronous
-// I/O the render path forbids (CLAUDE.md rule 2). The render thread only ever
-// hands over runes and receives font BYTES; it never touches a census face.
+// System font scan: for runes no curated tier (fontfallback.go) covers, it asks which installed font has them.
+// All of it runs off the render thread: each GlyphIndex call is a disk read (hard rule 2).
 
 import (
 	"os"
@@ -33,56 +15,37 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 )
 
-// Bounds. Every one of these is the named cap CLAUDE.md rule 4 asks for.
+// Named caps (hard rule 4).
 const (
-	// fontCensusMaxDepth / fontCensusMaxFiles bound the directory walk. Linux font
-	// trees nest by foundry and family, hence a depth of 3 rather than a flat scan;
-	// 512 files is comfortably past a stock Windows 11 install (~150) or a
-	// well-stocked Linux desktop, and stops a user who has symlinked a font farm
-	// into ~/.fonts from turning the first non-Latin rune into a minutes-long walk.
+	// fontCensusMaxDepth and fontCensusMaxFiles bound the walk; Linux font trees nest by foundry and family.
 	fontCensusMaxDepth = 3
 	fontCensusMaxFiles = 512
 
-	// censusFaceCap bounds how many faces the census may add to the live chain over
-	// a whole session. Each one is opened by buildSet into every per-size font set,
-	// so this is really a cap on open FreeType faces and their glyph caches, not
-	// just on bytes. Six is more scripts than any real conversation mixes, and the
-	// curated tiers have already answered the common ones before we get here.
+	// censusFaceCap bounds faces added to the live chain per session; buildSet opens each in every per-size font set.
 	censusFaceCap = 6
 
-	// censusQueueCap bounds the runes awaiting an answer. The render thread records
-	// misses into a fixed array (no allocation, no growth); past this it simply
-	// stops recording until the queue drains, because a message full of unknown
-	// runes needs one answer, not four hundred.
+	// censusQueueCap bounds runes awaiting an answer in a fixed array; past it recording stops until the queue drains.
 	censusQueueCap = 32
 
-	// censusMaxAnswered bounds the memo of runes already resolved (or proven
-	// unresolvable), so a session cannot accumulate an unbounded map by scrolling
-	// through text nothing can draw.
+	// censusMaxAnswered bounds the memo of runes already resolved or proven unresolvable.
 	censusMaxAnswered = 4096
 )
 
-// fontCensusFile is one indexed font file: its path and the parsed cmap face used
-// to answer coverage questions. The face is ReaderAt-backed, so this holds a file
-// handle rather than the file's bytes.
+// fontCensusFile is one indexed font file; its face is ReaderAt-backed, holding a file handle rather than the bytes.
 type fontCensusFile struct {
 	path string
 	face *sfnt.Font
 	file *os.File
 }
 
-// fontCensus indexes the machine's installed fonts and answers "which file has
-// this rune". Owned entirely by its goroutine — no mutex, because nothing else
-// ever touches it.
+// fontCensus answers which installed font file has a rune; owned by its goroutine, so it needs no mutex.
 type fontCensus struct {
 	files    []fontCensusFile
 	answered map[rune]string // rune → path ("" = nothing on this machine has it)
 	indexed  bool
 }
 
-// censusFontDirs is where each OS keeps fonts. The user's own AsyncAO fonts
-// folder comes first so a font someone dropped in there outranks a system one,
-// which is the whole point of that folder.
+// censusFontDirs is where each OS keeps fonts; the user's AsyncAO fonts folder comes first so it outranks system ones.
 func censusFontDirs() []string {
 	var dirs []string
 	if d := config.UserFontsDir(); d != "" {
@@ -93,8 +56,7 @@ func censusFontDirs() []string {
 		if win := os.Getenv("WINDIR"); win != "" {
 			dirs = append(dirs, filepath.Join(win, "Fonts"))
 		}
-		// Per-user installs (Windows 10+ "Install for me only") never appear in
-		// %WINDIR%\Fonts, and are exactly where a user puts a script font.
+		// Per-user installs never appear in %WINDIR%\Fonts.
 		if local := os.Getenv("LOCALAPPDATA"); local != "" {
 			dirs = append(dirs, filepath.Join(local, "Microsoft", "Windows", "Fonts"))
 		}
@@ -132,8 +94,7 @@ func isFontFile(name string) bool {
 	return false
 }
 
-// index walks the font directories once and parses each file's cmap. Bounded by
-// fontCensusMaxFiles across ALL directories, so the budget cannot be spent twice.
+// index walks the font directories once, with fontCensusMaxFiles shared across all of them.
 func (fc *fontCensus) index() {
 	if fc.indexed {
 		return
@@ -147,15 +108,8 @@ func (fc *fontCensus) index() {
 		}
 		fc.walk(dir, fontCensusMaxDepth, &budget)
 	}
-	// Regular faces first, then smallest first.
-	//
-	// Size is the primary signal because a rune covered by both a 0.4 MB Leelawadee
-	// and a 35 MB PMingLiU should resolve to Leelawadee: it opens faster, costs less
-	// in every per-size set, and a font that small is almost always the one actually
-	// designed for that script rather than a pan-Unicode catch-all that happens to
-	// include it. But bold and italic cuts are usually SMALLER than their regular
-	// sibling, so size alone picked "Leelawadee UI Bold" for Thai — correct glyphs,
-	// wrong weight, next to text drawn in a regular face. Weight outranks size.
+	// Regular faces first, then smallest: a small font is usually the one designed for that script.
+	// Bold and italic cuts are usually smaller than their regular sibling, so weight outranks size.
 	sort.SliceStable(fc.files, func(i, j int) bool {
 		bi, bj := isStyledCut(fc.files[i].path), isStyledCut(fc.files[j].path)
 		if bi != bj {
@@ -165,11 +119,8 @@ func (fc *fontCensus) index() {
 	})
 }
 
-// isStyledCut guesses from the file name whether a face is a bold/italic/light cut
-// rather than the family's regular one. A guess is the right tool here: it only
-// orders candidates that all cover the rune, so being wrong costs a weight, never
-// a glyph. Matching is on the stem so a family whose NAME contains one of these
-// words is not demoted for it.
+// isStyledCut guesses from the file name stem whether a face is a bold, italic or light cut.
+// Being wrong costs only a weight, never a glyph, since it only orders fonts that all cover the rune.
 func isStyledCut(path string) bool {
 	stem := strings.ToLower(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
 	for _, s := range []string{"bold", "italic", "oblique", "light", "thin", "black", "semib", "medium", "condensed"} {
@@ -177,14 +128,8 @@ func isStyledCut(path string) bool {
 			return true
 		}
 	}
-	// Windows' terse convention: a style letter tacked onto the family stem —
-	// segoeuib (bold), segoeuii (italic), segoeuiz (bold italic), LeelaUIb,
-	// LeelUIsl (semilight), mmrtextb.
-	//
-	// A BARE trailing "i" is deliberately not in this list: plenty of regular faces
-	// legitimately end in one (segoeui, LeelaUI, gadugi), and demoting those ranked
-	// every family's bold cut above its regular. Windows spells italic as a DOUBLED
-	// i on a stem that already ends in one, which is what "ii" catches.
+	// Windows appends a style letter to the stem: segoeuib (bold), segoeuii (italic), segoeuiz (bold italic), LeelUIsl.
+	// A bare trailing i is not a style (segoeui, LeelaUI and gadugi are regular); Windows italic doubles it, hence ii.
 	for _, suf := range []string{"bi", "bd", "sl", "z", "ii"} {
 		if strings.HasSuffix(stem, suf) {
 			return true
@@ -226,11 +171,8 @@ func (fc *fontCensus) walk(dir string, depth int, budget *int) {
 	}
 }
 
-// add parses one font file's cmap, keeping the file open so the face can answer
-// coverage lazily instead of holding the whole font in memory. Collections
-// contribute their first face, matching what memFont opens at draw time
-// (ttf.OpenFontRW hardwires face index 0) — indexing a face we could not then
-// render would hand back a path that still draws tofu.
+// add parses one font file's cmap, keeping the file open so coverage is answered lazily.
+// Collections contribute their first face only: ttf.OpenFontRW hardwires face index 0, so others would draw tofu.
 func (fc *fontCensus) add(path string) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -249,10 +191,7 @@ func (fc *fontCensus) add(path string) {
 	_ = f.Close()
 }
 
-// find returns the path of an installed font covering r, or "" when nothing on
-// this machine does. Memoized both ways: a negative answer is as worth keeping as
-// a positive one, since it is what stops a page of unknown runes from re-walking
-// every font on every frame.
+// find returns the path of an installed font covering r, or "" if none; negative answers are memoized too.
 func (fc *fontCensus) find(r rune) string {
 	fc.index()
 	if p, ok := fc.answered[r]; ok {
@@ -284,15 +223,10 @@ func (fc *fontCensus) close() {
 	fc.files = nil
 }
 
-// --- App wiring: render thread ⇄ census goroutine ----------------------------
-//
-// The render thread only ever sends RUNES and receives font BYTES. Both channels
-// are buffered and every send is non-blocking, so a busy or dead census can never
-// stall a frame — a dropped request simply comes back next frame, because the
-// rune is still uncovered and coverRunes will queue it again.
+// The render thread sends runes and receives font bytes over buffered channels with non-blocking sends.
+// A dropped request comes back next frame, because the rune is still uncovered.
 
-// startCensus launches the census goroutine on first need. It serves requests
-// forever (one per uncovered rune) and answers with the font's bytes. Idempotent.
+// startCensus launches the scan goroutine on first need; it answers each uncovered rune with a font's bytes.
 func (a *App) startCensus() {
 	if a.censusStarted {
 		return
@@ -324,12 +258,8 @@ func (a *App) startCensus() {
 				continue // the render thread hasn't drained yet; it will re-ask
 			}
 			if delivered >= censusFaceCap {
-				// The chain is full, so no further answer could be installed. Release the
-				// indexed file handles now rather than at process exit: holding a hundred
-				// or so system font files open for a whole session serves nothing, and on
-				// Windows an open handle is enough to stop the user replacing a font.
-				// The render side stops asking at the same cap, so this cannot strand a
-				// pending request.
+				// The chain is full: release the file handles, since on Windows an open handle blocks replacing a font.
+				// The render side stops asking at the same cap, so no request is stranded.
 				fc.close()
 				return
 			}
@@ -337,20 +267,14 @@ func (a *App) startCensus() {
 	}()
 }
 
-// drainMissingRunes hands the frame's uncovered runes to the census. Starting the
-// goroutine is deferred to the first miss, so a session that never draws an
-// uncoverable rune — nearly all of them — never scans the font directories at all.
+// drainMissingRunes hands the frame's uncovered runes to the scan, whose goroutine starts on the first miss.
 func (a *App) drainMissingRunes() {
 	a.missingBuf = a.ctx.TakeMissingRunes(a.missingBuf)
 	if len(a.missingBuf) == 0 {
 		return
 	}
-	// The census reads whatever fonts the MACHINE has, so it is the one subsystem
-	// here whose behaviour is not the same on two operating systems — and it
-	// installs what it finds into the live chat font chain, bumping the chain
-	// generation and purging the text caches as it goes. That makes it the first
-	// thing to eliminate when text misbehaves on a platform we cannot reproduce
-	// on, and an off switch turns a long guessing game into one A/B.
+	// The scan reads whatever fonts the machine has and changes the live chain,
+	// so it is the first thing to rule out when text misbehaves on one platform; hence this off switch.
 	if !a.d.Prefs.Load().FontCensus {
 		return
 	}
@@ -366,8 +290,7 @@ func (a *App) drainMissingRunes() {
 	}
 }
 
-// pollCensusFont installs a face the census found, on the render thread, and
-// forces a re-raster so the text that was drawing tofu repaints with real glyphs.
+// pollCensusFont installs a found face on the render thread and forces a re-raster so tofu repaints.
 func (a *App) pollCensusFont() {
 	if !a.censusStarted {
 		return

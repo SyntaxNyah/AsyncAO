@@ -8,18 +8,11 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Scene-maker timeline (#75): a horizontal film-strip of the scene's events, the
-// one view the vertical list can't give — each segment's WIDTH is proportional to
-// how long that event was on screen in the recording (its OffsetMs gap to the
-// next event), so you SEE the pacing: which message dominates, where the dead air
-// is. Click a segment to select it; drag the ⟦ ⟧ handles to crop In/Out directly.
-//
-// Honest-axis guards: segments are by ARRAY ORDER (offsets drive width only, so
-// edits don't reshuffle them); idle gaps are CLAMPED [min,max] in ms so an AFK
-// pause can't swallow the strip, plus a MIN PIXEL floor so every event stays
-// clickable (the strip scrolls when they overflow); a hand-built scene with no
-// recorded pacing (all-zero offsets) clamps to equal widths automatically. Only
-// drawn while the maker is open — no live-render cost.
+// Scene-maker timeline: a horizontal strip of the scene's events whose widths are proportional to how long each was on
+// screen (its OffsetMs gap to the next event). Click a segment to select it; drag the handles to crop In/Out.
+// Segments are by array order, idle gaps are clamped [min,max] ms so an AFK pause can't swallow the strip, and a
+// minimum pixel width keeps every event clickable. A scene with all-zero offsets gets equal widths.
+// Only drawn while the maker is open.
 
 const (
 	makerTimelineH = int32(72) // total strip height (label + track + scrub lane + overhang)
@@ -40,7 +33,7 @@ const (
 	makerTLTailMs = 2000.0 // the last event has no successor — assume this on-screen
 )
 
-// abs32 is |v| for the drag-threshold check (no generics dependency / import).
+// abs32 is |v| for the drag-threshold check.
 func abs32(v int32) int32 {
 	if v < 0 {
 		return -v
@@ -48,11 +41,8 @@ func abs32(v int32) int32 {
 	return v
 }
 
-// makerTLDurations fills durs (reused) with each event's display duration in ms:
-// the recorded OffsetMs gap to the next event, clamped [min,max]. When the
-// offsets carry no pacing signal at all (a hand-built scene, or an archive that
-// didn't capture wall-clock — every gap <= 0), it falls back to equal widths
-// rather than a degenerate fused bar. By array order.
+// makerTLDurations fills durs (reused) with each event's display duration in ms: the OffsetMs gap to the next event,
+// clamped [min,max]. When every gap is <= 0 (no recorded pacing) it falls back to equal widths.
 func makerTLDurations(evs []recEvent, durs []float64) []float64 {
 	durs = durs[:0]
 	if len(evs) == 0 {
@@ -87,9 +77,8 @@ func makerTLDurations(evs []recEvent, durs []float64) []float64 {
 	return durs
 }
 
-// makerTLLayout fills a.makerSegX/W (px, pre-scroll) from the clamped durations,
-// applying a minimum pixel floor so every segment stays clickable. Returns the
-// total content width including seams (for scroll clamping).
+// makerTLLayout fills a.makerSegX/W (px, pre-scroll) from the clamped durations with a minimum pixel width.
+// It returns the total content width including gaps, for scroll clamping.
 func (a *App) makerTLLayout(evs []recEvent, usableW int32) int32 {
 	a.makerTLDur = makerTLDurations(evs, a.makerTLDur)
 	a.makerSegX = a.makerSegX[:0]
@@ -114,8 +103,7 @@ func (a *App) makerTLLayout(evs []recEvent, usableW int32) int32 {
 	return cx
 }
 
-// makerTLSegAt returns the segment index under screen-x mx (track left edge at
-// stripX, honouring the horizontal scroll), or -1 if past the ends.
+// makerTLSegAt returns the segment index under screen-x mx (track left edge at stripX, honouring scroll), or -1.
 func (a *App) makerTLSegAt(mx, stripX int32) int {
 	rel := mx - stripX + a.makerTLScroll
 	for i := range a.makerSegX {
@@ -126,10 +114,8 @@ func (a *App) makerTLSegAt(mx, stripX int32) int {
 	return -1
 }
 
-// makerTLGapAt returns the insertion gap (0..n) nearest screen-x mx — the slot a
-// dragged segment would drop into. Gap g means "between segment g-1 and g"; 0 is
-// before the first, n after the last. Segments are laid left→right in order, so
-// the scan can stop at the first midpoint past the cursor.
+// makerTLGapAt returns the insertion gap (0..n) nearest screen-x mx, where a dragged segment would drop.
+// Gap g is between segment g-1 and g, so the scan stops at the first midpoint past the cursor.
 func (a *App) makerTLGapAt(mx, stripX int32) int {
 	rel := mx - stripX + a.makerTLScroll
 	g := 0
@@ -143,8 +129,7 @@ func (a *App) makerTLGapAt(mx, stripX int32) int {
 	return g
 }
 
-// drawMakerTimeline paints the strip and handles its clicks. press is this
-// frame's mouse-press edge (so a handle is grabbed on press, not on a drag-in).
+// drawMakerTimeline paints the strip and handles its clicks; press is this frame's press edge.
 func (a *App) drawMakerTimeline(x, y, w int32, press bool) {
 	c := a.ctx
 	evs := a.makerScene.Events
@@ -200,11 +185,8 @@ func (a *App) drawMakerTimeline(x, y, w int32, press bool) {
 		}
 	}
 
-	// #68 scrub lane: a slim strip under the track — press/drag along it and the
-	// SELECTION follows the segment under the cursor continuously, so the preview
-	// pane re-plays each line as you sweep (ensureMakerPreview rebuilds on any
-	// makerSel change — that's the whole trick). The playhead knob marks the
-	// selected segment's centre. Its own lane, so it can't fight the reorder drag.
+	// Scrub lane: pressing and dragging along it moves the selection to the segment under the cursor, and the preview
+	// re-plays as ensureMakerPreview rebuilds on any makerSel change. Its own lane, so it can't fight the reorder drag.
 	lane := sdl.Rect{X: x, Y: ty + makerTrackH + 2, W: w, H: makerScrubH}
 	c.Fill(lane, ColBackground)
 	c.Border(lane, ColPanelHi)
@@ -251,8 +233,7 @@ func (a *App) drawMakerTimeline(x, y, w int32, press bool) {
 	c.Fill(inH, ColAccent)
 	c.Fill(outH, ColAccent)
 
-	// Interaction: grab a crop handle on the press edge, else select the clicked
-	// block AND arm it for a possible reorder drag.
+	// Interaction: grab a crop handle on the press edge, else select the clicked block and arm it for a reorder drag.
 	if press {
 		switch {
 		case pointIn(c.mouseX, c.mouseY, inH):
@@ -293,9 +274,8 @@ func (a *App) drawMakerTimeline(x, y, w int32, press bool) {
 		}
 	}
 
-	// Reorder drag: once the armed press travels past a small threshold it's a
-	// drag, not a click. A caret marks the drop gap; an edge nudge auto-scrolls so
-	// you can drop past the visible window; release commits the move.
+	// Reorder drag: once the armed press travels past a small threshold it is a drag, not a click. A caret marks the
+	// drop gap, an edge nudge auto-scrolls, and release commits the move.
 	if a.makerDragSeg >= 0 && c.mouseDown {
 		if !a.makerDragMoved && abs32(c.mouseX-a.makerDragX) > makerDragThreshPx {
 			a.makerDragMoved = true
@@ -345,8 +325,7 @@ func (a *App) drawMakerTimeline(x, y, w int32, press bool) {
 	}
 }
 
-// makerKindColor tints a timeline segment by event kind, so the scene's shape
-// reads at a glance: dialogue, scene change, music, other.
+// makerKindColor tints a timeline segment by event kind: dialogue, scene change, music, other.
 func makerKindColor(kind int) sdl.Color {
 	switch courtroom.EventKind(kind) {
 	case courtroom.EventMessage:

@@ -7,13 +7,10 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Command palette (#39, Ctrl+Space): one fuzzy search over EVERYTHING —
-// every Extras action (the canonical client-action table, so the two can't
-// drift) plus this server's slash-command reference (software-aware, from the
-// mod dashboard's data). Running an action fires it; picking a slash command
-// INSERTS its form into the OOC input for you to fill in — the palette never
-// sends a server command itself. Drawn over the courtroom only while open;
-// zero cost otherwise.
+// Command palette (Ctrl+Space): one fuzzy search over every Extras action (the canonical client-action table) plus this
+// server's slash-command reference (software-aware, from the mod dashboard's data). Running an action fires it; picking
+// a slash command inserts its form into the OOC input; the palette never sends a server command itself. Drawn over the
+// courtroom only while open.
 
 const (
 	paletteW       = int32(540)
@@ -34,34 +31,24 @@ type paletteMatch struct {
 	run    func(a *App)
 }
 
-// paletteExtra is one palette-only action row: the actions that used to live on
-// the retired Extras "Hide chrome"/"Theater"/"Edit Layout" widgets, plus the
-// toolbox's own entries. These have NO extrasWidgets() slot (the toolbox owns
-// them now), so the palette would otherwise have lost them — this restores them
-// as first-class palette results. run is a METHOD VALUE bound at table-build
-// time (below), never a closure capturing an *App, so the table is package-level
-// and the palette's iteration over it stays allocation-free (the same idiom as
-// compactToolboxChips).
+// paletteExtra is one palette-only action row: the actions of the retired Extras "Hide chrome"/"Theater"/"Edit Layout"
+// widgets plus the toolbox's own entries, which have no extrasWidgets() slot. run is a method value bound at
+// table-build time, never a closure capturing an *App, so the table is package-level and iteration stays
+// allocation-free (as with compactToolboxChips).
 type paletteExtra struct {
 	label, desc string
 	run         func(a *App)
 }
 
-// paletteExtraActions is the fixed set of palette-only actions, merged into the
-// palette candidates ahead of the server commands. Edit Layout opens the live
-// layout editor (classic or themed — openLayoutEditor picks); Theater runs the
-// exact same toggle as the Theater hotkey; Hide UI pieces opens the pinned
-// per-piece panel (identical to the Hide-UI hotkey / toolbox chip). Reusing the
-// compact* method values keeps the three entry points (palette, hotkey, toolbox
-// chip) behaviourally identical — no drift.
+// paletteExtraActions is the fixed set of palette-only actions, merged ahead of the server commands. They reuse the
+// compact* method values so the palette, hotkey and toolbox chip behave identically.
 var paletteExtraActions = []paletteExtra{
 	{"Edit Layout", "Rearrange the courtroom — drag & resize every box", (*App).compactEditLayout},
 	{"Theater", "Theater mode — stage only, Esc exits", (*App).compactTheater},
 	{"Hide UI pieces", "Per-piece show/hide list for the courtroom chrome", (*App).compactHideUI},
 }
 
-// fuzzyMatch reports whether every rune of query appears in s in order
-// (case-insensitive) — the classic subsequence filter, cheap and forgiving.
+// fuzzyMatch reports whether every rune of query appears in s in order (case-insensitive).
 func fuzzyMatch(s, query string) bool {
 	if query == "" {
 		return true
@@ -98,9 +85,8 @@ func (a *App) paletteMatches(query string) []paletteMatch {
 			out = append(out, paletteMatch{label: w.label, hint: w.desc, widget: i})
 		}
 	}
-	// Palette-only actions (Edit Layout / Theater / Hide UI pieces): these have no
-	// extrasWidgets() slot — the bottom-right toolbox owns them — so they'd be
-	// unreachable from the palette otherwise. widget: -1 marks a non-widget row.
+	// Palette-only actions have no extrasWidgets() slot (the toolbox owns them), so they'd be unreachable otherwise.
+	// widget -1 marks a non-widget row.
 	for i := range paletteExtraActions {
 		if len(out) >= paletteMaxN {
 			return out
@@ -157,8 +143,7 @@ func (a *App) runPaletteMatch(m paletteMatch) {
 		return
 	}
 	if m.cmd != "" {
-		// Overwriting the OOC draft is recoverable: the field's undo history
-		// records the rewrite at its next draw (fieldhistory.go) — Ctrl+Z.
+		// Overwriting the OOC draft is recoverable: the field's undo history records the rewrite (fieldhistory.go).
 		a.oocInput = m.cmd       // both layouts' OOC fields read this
 		a.ctx.focusID = "oocmsg" // caret into the default layout's OOC box
 	}

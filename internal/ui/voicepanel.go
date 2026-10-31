@@ -13,44 +13,30 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// The Voice panel — a Nyathena-gated, non-blocking floating panel for the
-// server's VS_* voice channel: Join / Leave, the live peer list with speaking
-// indicators, and your own speak (push-to-talk-style) toggle. It rides the
-// server's voice relay (courtroom/voice.go); the option appears ONLY when the
-// server advertises voice (VS_CAPS — i.e. Nyathena), per the "show the voice
-// option only for Nyathena, like a server wire" requirement.
-//
-// Live MIC AUDIO (capture + playback) is the next slice — the Opus codec
-// (internal/voice) and this signaling are already in place, so it's purely
-// additive. Until then this shares presence + speaking state (which the server
-// relays), so two AsyncAO clients can see each other in voice.
+// The Voice panel: a non-blocking floating panel for the server's VS_* voice channel (Join / Leave, the live peer
+// list with speaking indicators, your own speak toggle). It rides the server's voice relay (courtroom/voice.go)
+// and is offered only when the server advertises voice (VS_CAPS, i.e. Nyathena).
 
-// voiceExtraLabel is the Extras-menu entry; the draw loops skip it when voice
-// isn't offered, so it's hidden on non-Nyathena servers.
+// voiceExtraLabel is the Extras-menu entry; the draw loops skip it when voice isn't offered.
 const voiceExtraLabel = "Voice (Nyathena)"
 
-// voiceBuilt is true in this (voice-enabled) build. The -tags novoice stub sets
-// it false, which makes the Settings sidebar omit the Voice tab and the search
-// skip it. It's a compile-time const, so the default build's settings render
-// carries zero added cost.
+// voiceBuilt is true in this voice-enabled build. The -tags novoice stub sets it false, so the Settings sidebar
+// omits the Voice tab and search skips it. A compile-time const, so the default build pays nothing.
 const voiceBuilt = true
 
-// The voice panel's geometry consts (voicePanelDefW/DefH/MinW/MinH) live in
-// floatbox.go, NOT here: panelSlotTable references them from the always-built
-// side, and this file is compiled out under -tags novoice (the v1.63.0 lean
-// release build broke on exactly that).
+// The voice panel's geometry consts (voicePanelDefW/DefH/MinW/MinH) live in floatbox.go: panelSlotTable references
+// them from the always-built side, and this file is compiled out under -tags novoice.
 
-// voiceOfferable reports whether to show any voice surface: a live session whose
-// server advertised voice (VS_CAPS.enabled). This single check is the gate.
+// voiceOfferable reports whether to show any voice surface: a live session whose server advertised voice
+// (VS_CAPS.enabled).
 func (a *App) voiceOfferable() bool {
 	return a.sess != nil && a.sess.VoiceAvailable()
 }
 
 func (a *App) toggleVoice() { a.showVoice = !a.showVoice }
 
-// voiceButtonState gives the courtroom Voice button its label + colour so it
-// doubles as a transmit indicator: a red "● Voice" while your mic is live, an
-// accent "Voice ✓" when you're in voice (mic off), plain green when available.
+// voiceButtonState gives the courtroom Voice button its label and colour so it doubles as a transmit indicator: red
+// "● Voice" while your mic is live, accent "Voice ✓" in voice with the mic off, green when available.
 func (a *App) voiceButtonState() (label string, border sdl.Color) {
 	switch {
 	case a.voiceJoined && a.voiceMicOn:
@@ -74,8 +60,7 @@ func (a *App) voicePanelRect(w, h int32) sdl.Rect {
 	return a.voiceWin.rect(voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, w, h)
 }
 
-// voicePeerName resolves a voice peer uid to a display name via the live roster,
-// falling back to "UID <n>" when the roster doesn't have it.
+// voicePeerName resolves a voice peer uid to a display name via the live roster, else "UID <n>".
 func (a *App) voicePeerName(uid int) string {
 	want := strconv.Itoa(uid)
 	for _, p := range a.rosterView() {
@@ -95,10 +80,8 @@ func (a *App) voicePeerName(uid int) string {
 	return "UID " + want
 }
 
-// voiceJoinChannel joins the server's voice channel and starts the live audio
-// engine (opt-in: this is the only place the audio path turns on). Engine start
-// is fail-safe — if no audio device is available we stay joined for PRESENCE
-// (you still appear in voice and see others), just without sound.
+// voiceJoinChannel joins the server's voice channel and starts the live audio engine (the only place the audio
+// path turns on). If no audio device is available we stay joined for presence, without sound.
 func (a *App) voiceJoinChannel() {
 	if a.sess == nil || a.voiceJoined {
 		return
@@ -130,8 +113,7 @@ func (a *App) voiceLeaveChannel() {
 	a.stopVoiceAudio()
 }
 
-// voiceSetMic flips transmit on/off — both the engine (capture) and the wire
-// (VS_SPEAK so peers see your speaking state).
+// voiceSetMic flips transmit on or off: the engine (capture) and the wire (VS_SPEAK so peers see your state).
 func (a *App) voiceSetMic(on bool) {
 	a.voiceMicOn = on
 	if a.voiceAudio != nil {
@@ -142,8 +124,7 @@ func (a *App) voiceSetMic(on bool) {
 	}
 }
 
-// stopVoiceAudio closes the engine (devices + codecs). Safe any time; called on
-// leave, disconnect and teardown.
+// stopVoiceAudio closes the engine (devices and codecs). Safe any time; called on leave, disconnect and teardown.
 func (a *App) stopVoiceAudio() {
 	if a.voiceAudio != nil {
 		a.voiceAudio.close()
@@ -151,10 +132,9 @@ func (a *App) stopVoiceAudio() {
 	}
 }
 
-// voicePump drives capture→encode→send and decode→mix→play once per frame, plus the
-// settings mic-test loopback. No-op (a couple of nil checks) unless the audio engine
-// or a mic test is running. The mic test auto-stops the moment we leave the Voice
-// settings tab — so the test mic never stays open in the background (#84).
+// voicePump drives capture, encode and send, and decode, mix and play, once per frame, plus the settings mic-test
+// loopback. It is a couple of nil checks unless the engine or a mic test is running. The mic test stops when we
+// leave the Voice settings tab.
 func (a *App) voicePump() {
 	a.voiceAudio.pump()
 	if a.micTest != nil && (a.screen != ScreenSettings || settings.tab != tabVoice) {
@@ -166,8 +146,8 @@ func (a *App) voicePump() {
 // voiceOnAudio feeds one inbound peer frame (VS_AUDIO) to the mixer.
 func (a *App) voiceOnAudio(uid int, b64 string) { a.voiceAudio.pushRemote(uid, b64) }
 
-// voiceReconcilePeers drops decoders for peers who have left voice (VS_LEAVE /
-// VS_PEERS), keeping the engine's peer set in step with the session's.
+// voiceReconcilePeers drops decoders for peers who left voice (VS_LEAVE / VS_PEERS), keeping the engine's peer set
+// in step with the session's.
 func (a *App) voiceReconcilePeers() {
 	if a.voiceAudio == nil || a.sess == nil {
 		return
@@ -183,9 +163,8 @@ func (a *App) voiceReconcilePeers() {
 	}
 }
 
-// voicePeerChar resolves a voice peer uid to its CHARACTER name (for the icon +
-// profile lookup) via the live roster — "" when unknown (spectator / not in this
-// area's roster snapshot).
+// voicePeerChar resolves a voice peer uid to its character name (for the icon and profile lookup) via the live
+// roster; "" when unknown.
 func (a *App) voicePeerChar(uid int) string {
 	want := strconv.Itoa(uid)
 	for _, p := range a.rosterView() {
@@ -196,8 +175,7 @@ func (a *App) voicePeerChar(uid int) string {
 	return ""
 }
 
-// drawVoicePanel paints the floating voice panel. pressed is the shared floatWin
-// press edge from drawFloatingPanels.
+// drawVoicePanel paints the floating voice panel. pressed is the shared floatWin press edge from drawFloatingPanels.
 func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	wasActive := a.voiceWin.dragging || a.voiceWin.resizing // detect the drag/resize-end frame for slot persistence
@@ -231,7 +209,7 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 		return
 	}
 
-	// Join / Leave + (when joined) your speak toggle.
+	// Join / Leave, plus your speak toggle when joined.
 	if !a.voiceJoined {
 		if c.Button(sdl.Rect{X: x, Y: y, W: 130, H: btnH}, "Join voice") {
 			a.voiceJoinChannel()
@@ -258,7 +236,7 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 			a.voiceSetMic(!a.voiceMicOn)
 		}
 		y += btnH + 6
-		// Output volume + mute (listen controls).
+		// Output volume and mute (listen controls).
 		muteLbl := "Mute others"
 		if a.voiceAudio != nil && a.voiceAudio.muted {
 			muteLbl = "Unmute"
@@ -294,8 +272,7 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 		hdr += " / max " + strconv.Itoa(caps.MaxPeers)
 	}
 	c.Label(x, y, hdr, ColTextDim)
-	// Voice-latency chip: the output buffer depth (ms) we're adding — grows when the
-	// adaptive jitter buffer deepens on a shaky connection, shrinks when it's smooth.
+	// Voice-latency chip: the output buffer depth (ms) we're adding, growing when the adaptive jitter buffer deepens.
 	if a.voiceJoined && a.voiceAudio != nil {
 		lat := a.voiceAudio.bufferMs()
 		latCol := ColTierGreen
@@ -322,9 +299,9 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 			dotCol = ColAccent // currently transmitting → the dot lights up
 		}
 		c.Label(x, y+4, "•", dotCol)
-		// Character icon: straight from the URL-keyed texture Store (no index→page
-		// cache, so no reorder hazard); a paced fetch + placeholder on a miss. A
-		// speaking peer gets an accent frame so you can see who's talking at a glance.
+		// Character icon straight from the URL-keyed texture Store (no index-to-page cache, so no reorder hazard); a
+		// paced
+		// fetch and placeholder on a miss. A speaking peer gets an accent frame.
 		ch := a.voicePeerChar(uid)
 		iconR := sdl.Rect{X: x + 14, Y: y, W: vIcon, H: vIcon}
 		c.Fill(iconR, ColPanelHi)
@@ -339,14 +316,14 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 		if speaking {
 			c.Border(iconR, ColAccent)
 		}
-		// [UID] name — the username + id the user asked to see; "(you)" for self.
+		// [UID] name, with "(you)" for self.
 		name := a.voicePeerName(uid)
 		label := "[" + strconv.Itoa(uid) + "] " + name
 		if uid == me {
 			label += " (you)"
 		}
-		// Custom profile (pronouns · tagline) from the existing cross-client profile
-		// channel — keyed by the character name, falling back to the display name.
+		// Custom profile (pronouns, tagline) from the cross-client profile channel, keyed by character name else
+		// display name.
 		if a.room != nil {
 			key := ch
 			if key == "" {

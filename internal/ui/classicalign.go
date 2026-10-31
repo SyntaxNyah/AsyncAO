@@ -1,29 +1,20 @@
 package ui
 
-// Inkscape-style alignment snapping for the classic layout editor (playtest
-// request, Tifera: boxes would not line up with each other, and Inkscape's
-// alignment guides were the named model). While a box is dragged or resized, its edges and centre
-// are compared against every OTHER registered slot's edges/centres and the
-// window's edges/centre; within alignSnapPx the box snaps flush and a
-// full-length guide line shows WHAT it aligned to. Grid snapping alone could
-// never line boxes up: the defaults aren't grid-aligned, so a snapped box
-// always sat a few px off its unsnapped neighbour.
+// Inkscape-style alignment snapping for the classic layout editor. While a box is dragged or resized, its edges and
+// centre are compared against every other registered slot and the window; within alignSnapPx it snaps flush and a
+// guide line shows what it aligned to. Grid snapping alone can't line boxes up because the defaults are off-grid.
 
 import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
 const (
-	// alignSnapPx is the capture distance (logical px) for edge/centre
-	// alignment — big enough to feel magnetic, small enough not to fight a
-	// deliberate near-miss placement.
+	// alignSnapPx is the capture distance (logical px) for alignment.
 	alignSnapPx = 6
 )
 
-// layoutGridSizes are the snap-grid steps the editor's Grid chip cycles
-// through (logical px). 8 is the long-standing default (layoutGridDesign).
+// layoutGridSizes are the snap-grid steps (logical px) the editor's Grid chip cycles through.
 var layoutGridSizes = []int{4, 8, 16, 32}
 
-// nextLayoutGridSize returns the cycle successor of the current grid size —
-// unknown/legacy values restart the cycle at the first entry.
+// nextLayoutGridSize returns the next grid size in the cycle; unknown values restart at the first entry.
 func nextLayoutGridSize(cur int) int {
 	for i, g := range layoutGridSizes {
 		if g == cur {
@@ -33,27 +24,21 @@ func nextLayoutGridSize(cur int) int {
 	return layoutGridSizes[0]
 }
 
-// alignGuide is one matched alignment this drag frame: a full-length vertical
-// line at pos (an x) or horizontal line at pos (a y), drawn by the editor so
-// the user sees what the box just snapped to.
+// alignGuide is one matched alignment this drag frame: a full-length line at pos (an x if vertical, else a y).
 type alignGuide struct {
 	vertical bool
 	pos      int32
 }
 
-// axisCand is one snap candidate on a single axis: the dragged box's own
-// coordinate (cur) and how to apply a delta to the rect.
+// axisCand is one snap candidate on a single axis: the dragged box's own coordinate (cur) and how to apply a delta.
 type axisCand struct {
 	cur int32
-	// apply moves the rect so cur lands on target: whole-box translate for a
-	// move, single-edge adjust for a resize.
+	// apply moves the rect so cur lands on target: translate for a move, single-edge adjust for a resize.
 	apply func(r sdl.Rect, d int32) sdl.Rect
 }
 
-// alignRect snaps r against the other slots' edges/centres and the window
-// bounds/centre. move selects translate semantics; otherwise only the gripped
-// edges participate. guides is appended in place (reused by the caller across
-// frames) and returned. Pure — unit-tested without SDL.
+// alignRect snaps r against the other slots and the window bounds. move selects translate semantics; otherwise only
+// the gripped edges participate. guides is appended in place and returned.
 func alignRect(r sdl.Rect, others []sdl.Rect, w, h int32, move bool, edges uint8, guides []alignGuide) (sdl.Rect, []alignGuide) {
 	// X axis --------------------------------------------------------------
 	moveX := func(r sdl.Rect, d int32) sdl.Rect { r.X += d; return r }
@@ -117,10 +102,8 @@ func alignRect(r sdl.Rect, others []sdl.Rect, w, h int32, move bool, edges uint8
 	return r, guides
 }
 
-// bestAlign finds the closest (candidate, target) pair within alignSnapPx on
-// one axis. Targets: each other slot's low edge / high edge / centre, plus the
-// window's 0 / extent / centre (the "anchor to corners and centre of the
-// screen" ask). vertical selects the X axis of the others; extent is w or h.
+// bestAlign finds the closest (candidate, target) pair within alignSnapPx on one axis. Targets are each other slot's
+// low edge, high edge and centre, plus the window's 0, extent and centre. extent is w or h.
 func bestAlign(cands []axisCand, others []sdl.Rect, extent int32, vertical bool) (int32, axisCand, bool) {
 	bestD := int32(alignSnapPx + 1)
 	var bestT int32

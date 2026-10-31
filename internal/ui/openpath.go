@@ -23,9 +23,7 @@ func openInFileManager(path string) {
 	_ = cmd.Start()
 }
 
-// openConfigFolder opens the AsyncAO config directory — where asset_preferences.json
-// (every setting: layout, favourites, hotkeys, colours…), the per-server case
-// notebooks and the jukebox library live — in the OS file manager.
+// openConfigFolder opens the AsyncAO config directory (preferences, notebooks, jukebox library) in the file manager.
 func openConfigFolder() {
 	if d := configDir(); d != "" {
 		openInFileManager(d)
@@ -39,8 +37,7 @@ func openSettingsFile() {
 	}
 }
 
-// configDir returns the AsyncAO config directory's path for display, or "" if it
-// can't be resolved.
+// configDir returns the config directory path for display, or "" if it can't be resolved.
 func configDir() string {
 	if p, err := config.DefaultPath(); err == nil {
 		return filepath.Dir(p)

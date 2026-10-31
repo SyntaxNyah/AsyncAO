@@ -5,13 +5,8 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// floatWin is a generic movable + resizable, non-blocking floating window — the
-// pattern the Extras box pioneered, factored out so the Pair menu and the Mod/CM
-// panel can reuse it instead of being blocking modals. Geometry is session state
-// (one position per window, shared across tabs); while the cursor is over an open
-// floatWin the courtroom pass fences the pointer (boxFencesPointer), so the
-// courtroom behind stays interactive everywhere else — you can still chat with
-// one of these open.
+// floatWin is a movable, resizable, non-blocking floating window; geometry is per-window session state.
+// While the cursor is over one, boxFencesPointer blocks the courtroom's pointer, leaving it usable everywhere else.
 type floatWin struct {
 	x, y, w, h     int32 // current rect; w/h ≤ 0 = use the caller's default size
 	placed         bool  // dragged/resized at least once (else centered default)
@@ -19,8 +14,7 @@ type floatWin struct {
 	dragging       bool
 	resizing       bool
 	grabDX, grabDY int32
-	// Last drawn size + the window dims rect() saw — so floatWinDrag can snap to the screen edges
-	// (#21) without every caller threading them through. Stamped by rect() each frame.
+	// Last drawn size and window dims, stamped by rect() each frame, so floatWinDrag can snap to the screen edges.
 	lastW, lastH, lastWinW, lastWinH int32
 }
 
@@ -31,9 +25,7 @@ const (
 	floatSnapPx    = 12 // a dragged edge within this many px of a screen edge / centre snaps to it
 )
 
-// rect clamps the window on-screen, using the default size until first placed and
-// a centered default position. Mirrors extrasBoxRect's clamping so a resize or a
-// shrunk window can never strand it off-edge or oversize it.
+// rect clamps the window on-screen, using the default size and a centered position until first placed.
 func (fw *floatWin) rect(defW, defH, minW, minH, winW, winH int32) sdl.Rect {
 	w, h := fw.w, fw.h
 	if w <= 0 {
@@ -65,9 +57,7 @@ func (fw *floatWin) rect(defW, defH, minW, minH, winW, winH int32) sdl.Rect {
 	return sdl.Rect{X: value.Clamp(x, floatWinMargin, maxX), Y: value.Clamp(y, floatWinMargin, maxY), W: w, H: h}
 }
 
-// snapToEdges nudges a dragging window's top-left to the screen edges or centre when within
-// floatSnapPx, using the size/window dims rect() last stamped (#21). Two windows snapped to the
-// same edge thereby line up with each other. No-op until rect() has run once (lastWinW/H == 0).
+// snapToEdges nudges a dragging window to screen edges or centre within floatSnapPx; a no-op until rect() has run once.
 func (fw *floatWin) snapToEdges() {
 	w, h, winW, winH := fw.lastW, fw.lastH, fw.lastWinW, fw.lastWinH
 	if winW <= 0 || winH <= 0 {
@@ -92,9 +82,7 @@ func (fw *floatWin) snapToEdges() {
 	}
 }
 
-// floatWinDrag moves a window by its title-bar handle. pressed is the shared
-// per-frame press edge — zeroed when this window grabs it, so one press moves one
-// window. Runs in the box pass (real pointer).
+// floatWinDrag moves a window by its handle; pressed is zeroed when grabbed, so one press moves one window.
 func (a *App) floatWinDrag(fw *floatWin, handle sdl.Rect, pressed *bool) {
 	c := a.ctx
 	if *pressed && pointIn(c.mouseX, c.mouseY, handle) {
@@ -104,10 +92,8 @@ func (a *App) floatWinDrag(fw *floatWin, handle sdl.Rect, pressed *bool) {
 	}
 	if !c.mouseDown {
 		if fw.dragging && fw.lastWinW > 0 && fw.lastWinH > 0 {
-			// A1 Phase 2: on drag-RELEASE, cascade this window off any sibling it
-			// was dropped nearly on top of (deOverlapRect no-ops when clear, and
-			// the 82% threshold leaves deliberate partial stacks alone). fw.dragging
-			// is still true here, so the census skips this window by identity.
+			// On release, cascade off a sibling it was dropped nearly on top of; fw.dragging is still true, so the
+			// search skips this window.
 			r := sdl.Rect{X: fw.x, Y: fw.y, W: fw.lastW, H: fw.lastH}
 			nr := deOverlapRect(r, a.panelDeOverlapCensus(r, fw.lastWinW, fw.lastWinH), fw.lastWinW, fw.lastWinH)
 			fw.x, fw.y = nr.X, nr.Y
@@ -124,9 +110,8 @@ func (a *App) floatWinDrag(fw *floatWin, handle sdl.Rect, pressed *bool) {
 	}
 }
 
-// floatWinResize grows a window from its bottom-right grip, pinning the top-left.
-// Floors at min here so a far-inward drag can't drive the size to ≤0 (which rect
-// would misread as "unset → default"); rect clamps the ceiling.
+// floatWinResize grows from the bottom-right grip. Floored here: a size <= 0 would read in rect as "unset, use
+// default".
 func (a *App) floatWinResize(fw *floatWin, grip, r sdl.Rect, minW, minH int32, pressed *bool) {
 	c := a.ctx
 	if *pressed && pointIn(c.mouseX, c.mouseY, grip) {

@@ -1,10 +1,8 @@
 package ui
 
-// SDL/ttf wiring for IC/OOC log text selection. The pure model + hit-test +
-// copy extraction live in logselect.go; this feeds them from the live logs,
-// renders the highlight, and copies on Ctrl+C. All of it is gated on an active
-// selection (or a press inside the log), so a log with nothing selected draws
-// byte-identical to before.
+// SDL/ttf wiring for IC/OOC log text selection. The pure model, hit-test and copy extraction are in logselect.go;
+// this feeds them from the live logs, renders the highlight and copies on Ctrl+C. It only acts with an active
+// selection or a press inside the log.
 
 import (
 	"strings"
@@ -16,54 +14,35 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
-// logRowSplit decides whether one log row draws with a bold speaker span (the
-// leading prefix, if any, plus the speaker name) followed by a plain message,
-// or as a single plain-weight run — and if it splits, exactly where. This is
-// the ONE place that gate lives: drawLogLineNamed draws it, logPrefixWidth
-// measures it for selection/highlight, and neither may re-derive it
-// independently, which is how the two drifted apart in the first place (a
-// selection that always measured the row at plain weight while the draw put
-// a BOLD speaker on it — "select empty space past the text").
-//
-// ok=false covers every case drawLogLineNamed's old inline gate fell through
-// on: no speaker, name colours and bold both off, the speaker not found in
-// the line, a line no single face covers (or that needs the emoji/mixed-
-// script raster), or either segment's width lookup itself failing — every one
-// of those draws (and must measure) the WHOLE line at plain weight via
-// a.labelEmoji, never a partial bold span.
-//
-// boldEnd is a BYTE offset into line (nameStart+len(speaker), matching
-// strings.Index's own unit) so callers slice line directly; a caller that
-// needs a rune offset converts once with utf8.RuneCountInString, same as the
-// rest of this file already does for wrap indices.
-//
-// Both width lookups are proven to succeed HERE, before either drawLogLineNamed
-// or logPrefixWidth commits to anything — the old code drew the "pre" segment
-// and only THEN checked whether the speaker segment would measure, so a rare
-// SizeUTF8 failure on the speaker left "pre" painted once and the whole line
-// painted again on top of it via the plain-weight fallback (a real double
-// draw, not merely a mis-measurement).
+// logRowSplit decides whether a log row draws as a bold speaker span (the leading prefix plus the speaker name)
+// followed by plain message text, or as one plain-weight run, and where it splits. drawLogLineNamed draws it and
+// logPrefixWidth measures it for selection, and neither may re-derive it, or the selection measures a row at plain
+// weight while the draw puts a bold speaker on it.
+// ok=false means the whole line draws and measures at plain weight via a.labelEmoji: no speaker, name colours and
+// bold both off, speaker not in the line, a line no single face covers (or needing the emoji/mixed-script raster),
+// or either segment's width lookup failing.
+// boldEnd is a byte offset into line (nameStart+len(speaker)); convert with utf8.RuneCountInString for rune offsets.
+// Both width lookups are proven here before either caller commits, so a failing SizeUTF8 on the speaker can't
+// leave the prefix painted and then the whole line painted over it.
 func (c *Ctx) logRowSplit(font, emojiFont *ttf.Font, line, speaker string, nameOn, bold bool) (nameStart, boldEnd int, ok bool) {
 	if speaker == "" || !(nameOn || bold) {
 		return 0, 0, false
 	}
-	// The speaker may sit AFTER a leading prefix ("16:11 LowGuy: …") when IC
-	// timestamps are on, so locate it by index rather than HasPrefix: the prefix
-	// (the timestamp, if any) bolds in the line colour, the name bolds + tints, and
-	// the rest draws plain. This also lets name colours apply with timestamps on.
+	// The speaker may follow a leading prefix ("16:11 LowGuy: …") when IC timestamps are on, so locate it by index.
+	// The
+	// prefix bolds in the line colour, the name bolds and tints, the rest draws plain.
 	idx := strings.Index(line, speaker)
 	if idx < 0 {
 		return 0, 0, false // name not in the line — shouldn't happen; fall back to plain
 	}
-	// An emoji line OR a mixed-script line no single face covers skips the
-	// per-speaker split (one `font` can't do per-glyph faces) and renders whole
-	// via the raster — coverage wins over the tint/bold for the rare mixed name.
+	// An emoji line or a mixed-script line no single face covers skips the per-speaker split and renders whole via
+	// the
+	// raster; coverage wins over the tint and bold.
 	if (emojiFont != nil && render.NeedsEmojiFallback(line)) || !c.coversFace(font, line) {
 		return 0, 0, false
 	}
-	// Both widths come from the MEMO, never font.SizeUTF8 directly: this runs
-	// for every named row of both logs on every frame, and a raw SizeUTF8 is a
-	// cgo call into SDL_ttf's shaper for every row.
+	// Widths come from the memo, never font.SizeUTF8 directly: this runs for every named row every frame, and a raw
+	// SizeUTF8 is a cgo call into SDL_ttf's shaper.
 	if pre := line[:idx]; pre != "" {
 		if _, ok := c.fontTextWidthWeight(font, pre, bold); !ok {
 			return 0, 0, false
@@ -75,25 +54,19 @@ func (c *Ctx) logRowSplit(font, emojiFont *ttf.Font, line, speaker string, nameO
 	return idx, idx + len(speaker), true
 }
 
-// drawLogLineNamed draws one wrapped log line, tinting the speaker's name prefix
-// in its per-speaker colour when name colours are on and speaker != "" (the
-// caller passes "" for non-first rows and system lines, so no draw-time
-// re-parsing of ": "). The rest of the line draws in col. Falls back to a plain
-// draw otherwise. Shared by the IC and OOC log render paths.
+// drawLogLineNamed draws one wrapped log line, tinting the speaker's name prefix in its per-speaker colour when
+// name colours are on and speaker != "" (the caller passes "" for non-first rows and system lines). The rest draws
+// in col; otherwise a plain draw. Shared by the IC and OOC log paths.
 func (a *App) drawLogLineNamed(font, emojiFont *ttf.Font, x, y, wrapW int32, line, speaker string, col sdl.Color, nameOn bool, sat, val float64, bold bool) {
 	c := a.ctx
-	// logRowSplit proves BOTH segments will measure before anything is drawn, so
-	// there is no partial-draw state to fall out of into the plain-weight
-	// fallback below (the double-draw the funky-fonts report traced).
+	// logRowSplit proves both segments will measure before anything is drawn, so there is no partial-draw state to
+	// fall into the plain-weight fallback below.
 	if nameStart, boldEnd, ok := c.logRowSplit(font, emojiFont, line, speaker, nameOn, bold); ok {
-		// The weight rides the RASTER (LabelClippedFontWeight → SDL_ttf
-		// STYLE_BOLD), not a second pass one pixel to the right. The old
-		// faux-bold offset was a LOGICAL pixel, so at a fractional UI scale the
-		// renderer spread the two copies 1×scale device px apart on different
-		// sub-pixel phases and the name read DOUBLED beside message text on the
-		// same row that stayed crisp (F1b). One texture, one blit, device-exact
-		// at every scale — and the widths are measured at the SAME weight, so
-		// the message still starts where the bold name ends.
+		// The weight rides the raster (LabelClippedFontWeight, SDL_ttf STYLE_BOLD), not a second pass one pixel to
+		// the
+		// right: at a fractional UI scale two copies land on different sub-pixel phases and the name reads doubled.
+		// Widths
+		// are measured at the same weight, so the message starts where the bold name ends.
 		px, used := x, int32(0)
 		if pre := line[:nameStart]; pre != "" { // timestamp / leading prefix — bold, line colour
 			pw, _ := c.fontTextWidthWeight(font, pre, bold) // logRowSplit already proved this succeeds
@@ -111,8 +84,7 @@ func (a *App) drawLogLineNamed(font, emojiFont *ttf.Font, x, y, wrapW int32, lin
 		c.LabelClippedFont(font, px+nw, y, wrapW-used, line[boldEnd:], col)
 		return
 	}
-	// Default path: labelEmoji is the byte-identical LabelClippedFont for plain
-	// text (after one cheap scan), the cached multi-font raster for an emoji line.
+	// Default path: labelEmoji is the plain LabelClippedFont for plain text, the cached multi-font raster for emoji.
 	a.labelEmoji(font, emojiFont, x, y, wrapW, line, col)
 }
 
@@ -122,22 +94,18 @@ const (
 	logSelOOC
 )
 
-// logSelAlpha keeps the highlight translucent so the text reads through it,
-// whatever RGB the user picks in Settings.
+// logSelAlpha keeps the highlight translucent so the text reads through it, whatever RGB is picked in Settings.
 const logSelAlpha = 96
 
-// highlightFill is the configured selection colour (Settings → packed RGB) at
-// the fixed translucent alpha. Read once per frame into a.logSelFill while a
-// selection is active, so the per-line draw never locks prefs.
+// highlightFill is the configured selection colour (packed RGB) at the fixed alpha. Read once per frame into
+// a.logSelFill while a selection is active, so the line draw never locks prefs.
 func (a *App) highlightFill() sdl.Color {
 	rgb := a.d.Prefs.Load().HighlightColorRGB()
 	return sdl.Color{R: uint8(rgb >> 16), G: uint8(rgb >> 8), B: uint8(rgb), A: logSelAlpha}
 }
 
-// logLineCount / logLineText give the shared selection code random access to a
-// log's CURRENT wrapped display lines. Selection only needs the displayed text
-// and its row index, so IC (rows with a source entry) and OOC (flat strings)
-// feed it the same way.
+// logLineCount / logLineText give the shared selection code random access to a log's current wrapped display lines.
+// IC (rows with a source entry) and OOC (flat strings) feed it the same way.
 func (a *App) logLineCount(which int) int {
 	if which == logSelIC {
 		return len(a.icWrap)
@@ -158,35 +126,16 @@ func (a *App) logLineText(which, i int) string {
 	return ""
 }
 
-// logPrefixWidth measures the first off runes of display row li of log `which`
-// in the SAME weight(s) drawLogLineNamed draws that row with — the
-// selection/hit-test twin of drawLogLineNamed, sharing its logRowSplit gate so
-// the two can never disagree about where a row's bold speaker span ends. Used
-// only for the two partial-end lines of a selection (interior lines fill the
-// whole column, so they need no measurement).
-//
-// Before the bold-aware split (see git history), the selection side always
-// measured at plain weight regardless of what drew — a named row's true
-// on-screen width (bold speaker + plain message) was systematically
-// under-measured by the bold/plain advance delta, so the mouse had to travel
-// past the last glyph into empty space before hitTestRune's binary search
-// would conclude the line was fully covered ("you have to select empty space
-// past the text to select it all").
-//
-// Every partial-row width here goes through devTextWidthWeight, NOT
-// fontTextWidthWeight (the plain c.font.SizeUTF8 measure) — the same two
-// steps (device-face SizeUTF8, uiLogicalFromDevice fold) the row's actual
-// draw performs in textTextureBold/cachedText.logicalW(). The two faces are
-// independently-hinted FreeType rasterizations at different point sizes and
-// agree exactly only at textDevPct==100; at any fractional UI scale a
-// logical-only measure drifts from the real glyph advances, growing with how
-// far into the row the offset reaches, until a long wrapped row's highlight
-// and clipboard copy land on visibly different runes than the ones drawn
-// (measured on the MOTD, the longest text in a typical log, but the row-
-// relative mechanism is identical for IC and OOC and for any long row of
-// either). Both branches below fold with the SAME c.textDevPct, so an
-// interrupted bold+plain split still sums to one consistent device-exact
-// prefix width.
+// logPrefixWidth measures the first off runes of display row li of log `which` in the same weight(s)
+// drawLogLineNamed draws it with; it shares logRowSplit so the two agree on where the bold speaker span ends.
+// Used for the two partial-end lines of a selection (interior lines fill the column).
+// Measuring at plain weight under-measures a named row by the bold/plain advance delta, so the mouse had to travel
+// past the last glyph before hitTestRune concluded the line was fully covered.
+// Every partial-row width goes through devTextWidthWeight, not fontTextWidthWeight: it does what the row's draw
+// does (device-face SizeUTF8, uiLogicalFromDevice fold). The two faces are separately hinted and agree only at
+// textDevPct==100; at a fractional UI scale a logical-only measure drifts, growing along a long wrapped row, until
+// the highlight and copy land on different runes than the ones drawn. Both branches fold with the same
+// c.textDevPct, so a bold+plain split sums to one device-exact width.
 func (a *App) logPrefixWidth(which, li int, text string, font *ttf.Font, runes []rune, off int) int32 {
 	c := a.ctx
 	if font == nil || off <= 0 {
@@ -197,9 +146,7 @@ func (a *App) logPrefixWidth(which, li int, text string, font *ttf.Font, runes [
 	}
 	speaker, nameOn, bold := a.logRowNameStyle(which, li)
 	if _, boldEndByte, ok := c.logRowSplit(font, a.logRowEmojiFont(which), text, speaker, nameOn, bold); ok {
-		// boldEndByte is a byte offset into `text`; runes/off are rune-indexed, so
-		// fold it once, the same way the rest of this file turns byte spans from
-		// strings.Index into rune counts for wrap indices.
+		// boldEndByte is a byte offset into `text`; runes/off are rune-indexed, so fold it once.
 		boldEnd := utf8.RuneCountInString(text[:boldEndByte])
 		if off <= boldEnd {
 			w, _ := c.devTextWidthWeight(font, string(runes[:off]), bold)
@@ -209,16 +156,13 @@ func (a *App) logPrefixWidth(which, li int, text string, font *ttf.Font, runes [
 		restW, _ := c.devTextWidthWeight(font, string(runes[boldEnd:off]), false)
 		return uiLogicalFromDevice(boldW, c.textDevPct) + uiLogicalFromDevice(restW, c.textDevPct)
 	}
-	// No split: the whole row drew (and is measured) at plain weight — the MOTD
-	// continuation-row shape (a system line has no speaker span at all).
+	// No split: the whole row drew and is measured at plain weight (such as a MOTD continuation row).
 	w, _ := c.devTextWidthWeight(font, string(runes[:off]), false)
 	return uiLogicalFromDevice(w, c.textDevPct)
 }
 
-// logRowFont is the face one display row of log `which` is DRAWN in. The IC and
-// OOC logs are separate courtroom_fonts.ini elements (#39) with their own point
-// sizes and families, so the selection hit-test has to ask per log — measuring
-// both with the IC log's face put the caret on the wrong glyph in the OOC one.
+// logRowFont is the face one display row of log `which` is drawn in. The IC and OOC logs are separate
+// courtroom_fonts.ini elements with their own sizes and families, so the hit-test asks per log.
 func (a *App) logRowFont(which int, text string) *ttf.Font {
 	if which == logSelIC {
 		return a.elemFontFor(elemICChatlog, a.logPct, text)
@@ -226,10 +170,8 @@ func (a *App) logRowFont(which int, text string) *ttf.Font {
 	return a.elemFontFor(elemServerChatlog, a.oocPct, text)
 }
 
-// logRowEmojiFont is logRowFont's emoji-fallback twin: the colour-emoji face at
-// the SAME resolved scale the row's text draws at, so logRowSplit's "does this
-// line need the per-glyph raster" gate matches drawLogLineNamed's exactly (#39:
-// an emoji baseline that didn't match the row's own scale was label 16's bug).
+// logRowEmojiFont is logRowFont's emoji twin: the colour-emoji face at the same resolved scale the row's text draws
+// at, so logRowSplit's "needs the per-glyph raster" check matches drawLogLineNamed's.
 func (a *App) logRowEmojiFont(which int) *ttf.Font {
 	if which == logSelIC {
 		return a.elemEmoji(elemICChatlog, a.logPct)
@@ -237,12 +179,9 @@ func (a *App) logRowEmojiFont(which int) *ttf.Font {
 	return a.elemEmoji(elemServerChatlog, a.oocPct)
 }
 
-// logRowBoldPref reports whether log `which` draws its speaker names bold —
-// the global BoldNamesOn toggle OR'd with that log's own theme "*_bold"
-// override (#39: IC and OOC dress separate elements, so they read separate
-// overrides). The draw loop reads this once per frame; logRowNameStyle reads
-// it on demand for selection — both through this one function, so a future
-// change to the rule can't update one and silently leave the other behind.
+// logRowBoldPref reports whether log `which` draws speaker names bold: the global BoldNamesOn toggle OR'd with that
+// log's theme "*_bold" override (IC and OOC dress separate elements). The draw loop and logRowNameStyle both read it
+// through this one function.
 func (a *App) logRowBoldPref(which int) bool {
 	if which == logSelIC {
 		return a.d.Prefs.Load().BoldNamesOn() || a.elemBold(elemICChatlog)
@@ -250,14 +189,11 @@ func (a *App) logRowBoldPref(which int) bool {
 	return a.d.Prefs.Load().BoldNamesOn() || a.elemBold(elemServerChatlog)
 }
 
-// logRowNameStyle resolves the (speaker, nameOn, bold) triple drawLogLineNamed
-// draws display row li of log `which` with. OOC bakes its speaker into
-// oocWrapName at wrap time (empty on every row but an entry's first); IC
-// re-derives it from the entry every call, because it also depends on the
-// live ghost span (ghosttext.go) and NameColorsOn, neither of which the wrap
-// cache carries. This is the ONE place either is read from for selection, so
-// a continuation row, a ghosted (queued-but-unspoken) row, or name colours
-// being off can never be measured with a speaker the draw never tinted.
+// logRowNameStyle resolves the (speaker, nameOn, bold) triple drawLogLineNamed draws display row li of log `which`
+// with. OOC bakes its speaker into oocWrapName at wrap time (empty except an entry's first row); IC re-derives it
+// each call, since it also depends on the live ghost span (ghosttext.go) and NameColorsOn, which the wrap cache
+// doesn't carry. Selection reads it here only, so a continuation row, a ghosted row or name colours being off is
+// never measured with a speaker the draw never tinted.
 func (a *App) logRowNameStyle(which, li int) (speaker string, nameOn, bold bool) {
 	nameOn = a.d.Prefs.Load().NameColors // one global toggle, shared by both logs
 	bold = a.logRowBoldPref(which)
@@ -277,9 +213,8 @@ func (a *App) logRowNameStyle(which, li int) (speaker string, nameOn, bold bool)
 	return a.icLog[entry].speaker, nameOn, bold
 }
 
-// logPointAt maps a pixel position to a selection point: the wrapped-line index
-// from the scroll-adjusted y, and the rune offset from a binary search over
-// that ONE line's prefix widths (no per-rune-per-row metrics).
+// logPointAt maps a pixel position to a selection point: the wrapped-line index from the scroll-adjusted y, and the
+// rune offset from a binary search over that one line's prefix widths.
 func (a *App) logPointAt(which int, listX, listY, scroll, lineH, mx, my int32) selPoint {
 	n := a.logLineCount(which)
 	if n == 0 || lineH <= 0 {
@@ -295,19 +230,16 @@ func (a *App) logPointAt(which int, listX, listY, scroll, lineH, mx, my int32) s
 	text := a.logLineText(which, li)
 	runes := []rune(text)
 	font := a.logRowFont(which, text)
-	// A wrap continuation row draws indented (hanging indent), so its rune
-	// hit-test starts at the same offset — clicks land on what's drawn.
+	// A wrap continuation row draws indented, so its rune hit-test starts at the same offset.
 	off := hitTestRune(runes, mx-listX-a.logRowIndent(which, li), func(r []rune) int32 {
 		return a.logPrefixWidth(which, li, text, font, r, len(r))
 	})
 	return selPoint{entry: li, off: off}
 }
 
-// handleLogSelect runs drag-select, click-to-clear, and Ctrl+C for one log. It
-// must be called from the log's draw AFTER the scroll is finalized and BEFORE
-// the line loop, so a real drag can swallow the frame's click (links/pins then
-// don't also fire). No-op when the cursor isn't in this log and nothing is
-// selected.
+// handleLogSelect runs drag-select, click-to-clear and Ctrl+C for one log. Call it from the log's draw after the
+// scroll is final and before the line loop, so a real drag can swallow the frame's click (links/pins then don't
+// also fire). No-op when the cursor isn't in this log and nothing is selected.
 func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int32) {
 	c := a.ctx
 	n := a.logLineCount(which)
@@ -336,8 +268,8 @@ func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int
 			}
 		}
 	}
-	// Ctrl+C copies the active selection when no text field is focused (a
-	// focused field's own copy wins). Consume copyReq so it fires once.
+	// Ctrl+C copies the active selection when no text field is focused (a focused field's own copy wins). copyReq is
+	// consumed so it fires once.
 	if c.copyReq && c.focusID == "" && a.logSelActive && a.logSelWhich == which {
 		lo, hi := orderSel(a.logSelAnchor, a.logSelHead)
 		if !lo.equal(hi) {
@@ -347,11 +279,9 @@ func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int
 		}
 		c.copyReq = false
 	}
-	// Double-click selects the WORD under the cursor, triple-click the whole
-	// wrapped line (native text gestures — the playtest ask was copying one
-	// word without taking the line; dragging still selects any range). The
-	// old IC double-click-to-pair is long gone (pairing lives on the player
-	// list). Event-gated: a normal frame never enters here.
+	// Double-click selects the word under the cursor, triple-click the whole wrapped line; dragging selects any
+	// range.
+	// Event-gated.
 	if c.tripleClick && n > 0 && c.hovering(list) && inText {
 		a.selectLogLine(which, list, scroll, lineH)
 		c.clicked = false     // the line is selected — don't also open a link under it
@@ -364,11 +294,9 @@ func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int
 		c.focusID = ""     // unfocus so Ctrl+C / right-click copies the selection
 		c.dblClick = false // consume: this double-click was the log's
 	}
-	// Right-click copies. A deliberate SELECTION wins and is consumed (so a link
-	// line's copy-URL and the unread pill don't also fire); otherwise copy the
-	// whole line under the cursor WITHOUT consuming — an OOC link line then still
-	// copies its URL (it runs after; last write wins) and the pill keeps its
-	// gesture. Pin-to-notes moved to its chord (default Ctrl+N).
+	// Right-click copies. A deliberate selection wins and is consumed (so a link line's copy-URL and the unread pill
+	// don't also fire); otherwise copy the whole line under the cursor without consuming, so an OOC link line still
+	// copies its URL after (last write wins). Pin-to-notes has its own chord (default Ctrl+N).
 	if c.rightClicked && n > 0 && c.hovering(list) && inText {
 		if a.logSelActive && a.logSelWhich == which {
 			lo, hi := orderSel(a.logSelAnchor, a.logSelHead)
@@ -390,9 +318,8 @@ func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int
 	}
 }
 
-// selectLogLine selects the whole wrapped line under the cursor in log `which`
-// (the triple-click gesture). Anchors at the line's start and head at its end so
-// the existing highlight + copy paths treat it like any drag selection.
+// selectLogLine selects the whole wrapped line under the cursor in log `which` (triple-click): anchor at its start,
+// head at its end, so the highlight and copy paths treat it like a drag.
 func (a *App) selectLogLine(which int, list sdl.Rect, scroll, lineH int32) {
 	c := a.ctx
 	li := a.logPointAt(which, list.X, list.Y, scroll, lineH, c.mouseX, c.mouseY).entry
@@ -403,11 +330,8 @@ func (a *App) selectLogLine(which int, list sdl.Rect, scroll, lineH int32) {
 	a.logSelDragging = false
 }
 
-// selectLogWord selects the word under the cursor (the double-click gesture):
-// the maximal non-space run around the hit boundary, within the one wrapped
-// display line (a word split by the wrap selects its visible half — clicks
-// land on what's drawn). Shares wordBoundsAt with the text fields and the
-// chatbox so the three gestures can never disagree.
+// selectLogWord selects the word under the cursor (double-click): the maximal non-space run around the hit
+// boundary, within one wrapped display line. It shares wordBoundsAt with the text fields and chatbox.
 func (a *App) selectLogWord(which int, list sdl.Rect, scroll, lineH int32) {
 	c := a.ctx
 	p := a.logPointAt(which, list.X, list.Y, scroll, lineH, c.mouseX, c.mouseY)
@@ -423,9 +347,8 @@ func (a *App) selectLogWord(which int, list sdl.Rect, scroll, lineH int32) {
 	a.logSelDragging = false
 }
 
-// drawLogSelHighlight fills the selection background behind one display line
-// (called inside the line loop, before the text). Interior lines fill the whole
-// column; only the first/last partial lines measure an offset.
+// drawLogSelHighlight fills the selection background behind one display line, before the text. Interior lines fill
+// the whole column; only the first and last partial lines measure an offset.
 func (a *App) drawLogSelHighlight(which, li int, listX, y, wrapW, lineH int32, text string, font *ttf.Font) {
 	if !a.logSelActive || a.logSelWhich != which {
 		return
@@ -436,8 +359,7 @@ func (a *App) drawLogSelHighlight(which, li int, listX, y, wrapW, lineH int32, t
 	}
 	x0, x1 := listX, listX+wrapW
 	runes := []rune(text)
-	// The measured endpoints shift by the row's hanging indent (interior rows
-	// keep the full-column band), matching where the text actually draws.
+	// The measured endpoints shift by the row's hanging indent, matching where the text draws.
 	if li == lo.entry {
 		x0 = listX + a.logRowIndent(which, li) + a.logPrefixWidth(which, li, text, font, runes, lo.off)
 	}

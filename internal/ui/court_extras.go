@@ -1,12 +1,9 @@
 package ui
 
-// Court extras: everything the 2.6–2.8 protocol layers on top of plain IC
-// chat — penalty bars (HP), testimony/verdict splashes (RT), server clocks
-// (TI), judge controls (JD), modcalls (ZZ), evidence (LE/PE/DE/EE), case
-// announcements (CASEA), the SD position dropdown — plus the user-facing
-// hide-this-chrome panel. Semantics cite AO2-Client courtroom.cpp /
-// packet_distribution.cpp throughout; the session reducer owns the state,
-// this file owns pixels and sends.
+// Court extras: what the 2.6-2.8 protocol layers on top of IC chat (penalty bars, testimony/verdict splashes,
+// server clocks, judge controls, modcalls, evidence, case announcements, the SD position dropdown) plus the
+// hide-this-chrome panel. Cites AO2-Client courtroom.cpp / packet_distribution.cpp; the session reducer owns the
+// state, this file owns pixels and sends.
 
 import (
 	"fmt"
@@ -33,12 +30,10 @@ const (
 	badgeWidthPct = 18
 	// evidPopupWidthPct sizes the presented-evidence popup.
 	evidPopupWidthPct = 22
-	// splashStaticDuration holds a STATIC splash image (or the text
-	// fallback) on screen; animated splashes run their own length
-	// (AO2-Client plays the animation once — wtce_max_time caps frames).
+	// splashStaticDuration holds a static splash (or the text fallback); animated splashes run their own length
+	// (AO2-Client plays the animation once; wtce_max_time caps frames).
 	splashStaticDuration = 1500 * time.Millisecond
-	// evidenceShowDuration keeps the presented-evidence popup visible,
-	// approximating AOEvidenceDisplay's message-length linger.
+	// evidenceShowDuration keeps the presented-evidence popup visible, approximating AOEvidenceDisplay's linger.
 	evidenceShowDuration = 4 * time.Second
 	// hpBarSegments is the pip count of the procedural fallback bar.
 	hpBarSegments = courtroom.HPBarMax
@@ -55,43 +50,26 @@ const (
 	panelTimers    = "timers"
 	panelTestimony = "testimony"
 	panelJudge     = "judge"
-	// panelExtras is RETIRED (#21). It hid the bottom-left ★ Extras chip row in
-	// themed mode; that row was deleted because it painted over the theme's own
-	// design canvas, and its commands are Extras-menu rows now. The const stays
-	// because it is a PERSISTED prefs key: a user who hid the row still has
-	// "extras" in HiddenPanels, and seedHiddenFromPrefs reads that set back
-	// verbatim. Dropping the name would not delete their saved entry, it would
-	// only make it unnameable. Nothing may hide behind it again.
+	// panelExtras is retired: the bottom-left Extras chip row it hid was deleted, its commands are Extras-menu rows.
+	// The const stays because it is a persisted prefs key; seedHiddenFromPrefs reads "extras" back verbatim.
 	panelExtras = "extras"
-	// panelMenuBar hides the top menu strip (#14). Same spirit as panelToolbox:
-	// client furniture a user may not want, and on a themed courtroom it is the
-	// one band that sits ABOVE the theme's design canvas, so hiding it hands the
-	// canvas the whole window. menuBarHeight() already reports 0 whenever the bar
-	// is not shown and every screen offsets by topChromeH(), so nothing else has
-	// to learn about this.
-	//
-	// It is a MOUSE LIFELINE (mouseLifelines, courttoolbox.go) — under a theme it
-	// is the only one of the three that draws at all, because ctrlSettingsSlot
-	// belongs to the classic IC row and the themed ★ Extras chip row was deleted
-	// in #21. Hiding the last surviving lifeline is refused.
+	// panelMenuBar hides the top menu strip. On a themed courtroom it is the one band above the theme's design
+	// canvas,
+	// so hiding it gives the canvas the whole window. menuBarHeight() reports 0 when hidden and screens offset by
+	// topChromeH(). It is a mouse lifeline (mouseLifelines, courttoolbox.go); hiding the last one is refused.
 	panelMenuBar = "menubar"
-	// panelToolbox hides the compact hover toolbox (#27) — the slim bottom-right
-	// grip that reveals Theater / Edit-layout / Hide-UI icon chips on hover. It's
-	// hideable from the very dialog one of its chips opens, so a user who prefers
-	// the plain toolbar buttons can dismiss it.
+	// panelToolbox hides the compact hover toolbox, the bottom-right grip that reveals Theater / Edit-layout /
+	// Hide-UI
+	// chips. Hideable from the dialog one of its chips opens.
 	panelToolbox = "toolbox"
-	// Individual right-column tabs — hide ones you never use (e.g. Friends/Notes). A
-	// hidden tab leaves the docked strip AND isn't drawn even if it was torn out.
+	// Individual right-column tabs. A hidden tab leaves the docked strip and isn't drawn even if torn out.
 	panelTabMusic   = "tab.music"
 	panelTabAreas   = "tab.areas"
 	panelTabPlayers = "tab.players"
 	panelTabNotes   = "tab.notes"
 	panelTabFriends = "tab.friends"
-	// Players-list per-row actions. These once gated inline row BUTTONS; the
-	// actions now live in the per-row "…" / right-click menu (rostermenu.go)
-	// and each id hides its menu ENTRY instead — same prefs, same popup grid.
-	// The Friend action keeps its own Settings toggle (FriendButtonShown) —
-	// no duplicate id here.
+	// Players-list per-row actions. Each id hides its entry in the per-row "…" / right-click menu (rostermenu.go).
+	// The Friend action has its own Settings toggle (FriendButtonShown).
 	rosterBtnPair    = "roster.pair"
 	rosterBtnUID     = "roster.uid"
 	rosterBtnIPID    = "roster.ipid"
@@ -99,8 +77,7 @@ const (
 	rosterBtnProfile = "roster.profile"
 )
 
-// hideableRosterButtons drives the "Players-list row buttons" grid in the UI
-// popup (tick to hide — same semantics as the control-button grid).
+// hideableRosterButtons drives the "Players-list row buttons" grid in the UI popup.
 var hideableRosterButtons = []struct{ id, label string }{
 	{rosterBtnPair, "Pair"},
 	{rosterBtnUID, "UID copy"},
@@ -109,8 +86,8 @@ var hideableRosterButtons = []struct{ id, label string }{
 	{rosterBtnProfile, "Profile"},
 }
 
-// hideablePanels drives the UI popup AND the editor toolbox (#27): id + human label
-// (the dialog's checkbox text) + a SHORT chip label (the toolbox), draw order.
+// hideablePanels drives the UI popup and the editor toolbox: id, checkbox label, short toolbox chip label, draw
+// order.
 var hideablePanels = []struct{ id, label, short string }{
 	{panelShouts, "Shout buttons (Hold It / Objection / Take That)", "Shouts"},
 	{panelKnobs, "Layout knobs (View/Text/MsgBox/Log/Input)", "Knobs"},
@@ -121,8 +98,8 @@ var hideablePanels = []struct{ id, label, short string }{
 	{panelTabPlayers, "Players tab", "Players tab"},
 	{panelTabNotes, "Notes tab", "Notes tab"},
 	{panelTabFriends, "Friends tab", "Friends tab"},
-	// short is the string the Hide-UI checkbox actually renders; label only feeds
-	// the search filter, so it carries BOTH names for the box and bar layouts.
+	// short is what the Hide-UI checkbox renders; label only feeds the search filter, so it carries both layouts'
+	// names.
 	{panelOOC, "OOC chat box / bottom OOC row / out of character", "OOC chat"},
 	{panelHP, "Penalty bars", "Penalty bars"},
 	{panelTimers, "Server timers", "Timers"},
@@ -132,17 +109,13 @@ var hideablePanels = []struct{ id, label, short string }{
 	{panelToolbox, "Compact toolbox (bottom-right hover chips: Theater / Edit layout / Hide UI)", "Toolbox"},
 }
 
-// ctrlSettingsSlot is the toolbar Settings button's ctrl.* slot key, named
-// because the no-strand guard pairs it with panelToolbox as the two mouse
-// "lifelines" (setPanelHiddenGuarded / seedHiddenFromPrefs).
+// ctrlSettingsSlot is the toolbar Settings button's ctrl.* key; it and panelToolbox are two of the mouse lifelines
+// (setPanelHiddenGuarded / seedHiddenFromPrefs).
 const ctrlSettingsSlot = "ctrl.settings"
 
-// hideableButtons drives the "Control buttons" grid in the UI popup — the
-// customizable courtroom toolbar (screens.go ctrlSlot). Each id is a ctrl.*
-// slot key; ticking one hides that button and the row compacts with no gap.
-// "UI…" itself is deliberately absent (it's the way back to this popup) and so
-// are the contextual buttons (Mod/CM/Pos/Group/Voice/Disconnect) that already
-// appear and disappear on their own.
+// hideableButtons drives the "Control buttons" grid: each id is a ctrl.* key (screens.go ctrlSlot) and ticking it
+// hides the button. "UI…" is absent (it opens this popup) as are the contextual buttons (Mod/CM/Group/Disconnect)
+// that appear on their own.
 var hideableButtons = []struct{ id, label string }{
 	{"ctrl.character", "Character"},
 	{"ctrl.wardrobe", "Wardrobe"},
@@ -154,10 +127,8 @@ var hideableButtons = []struct{ id, label string }{
 	{"ctrl.hotkeys", "Hotkeys"},
 	{"ctrl.about", "About"},
 	{"ctrl.login", "Login"},
-	// v1.50.5 (reported by Nightingale: the hide menus omitted several buttons,
-	// among them voice chat and group chat): the once-"contextual" buttons are hideable
-	// too. Each still self-gates (Voice only in VC areas, GC behind its pref);
-	// hiding wins over both. Mod/CM stay auto-only (moderation affordances).
+	// The once-contextual buttons are hideable too. Each still self-checks (Voice only in VC areas, GC behind
+	// its pref); hiding wins. Mod/CM stay auto-only.
 	{"ctrl.pair", "Pair"},
 	{"ctrl.pos", "Pos selector"},
 	{"ctrl.groupchat", "Group Chat"},
@@ -165,8 +136,7 @@ var hideableButtons = []struct{ id, label string }{
 	{"ctrl.disconnect", "Disconnect (Esc still leaves)"},
 	{"ctrl.randchar", "Rand char (emote grid)"},
 	{"ctrl.favsfilter", "★ Favs filter (emote grid)"},
-	// Individually-hideable shouts (the "Shout buttons" panel toggle above
-	// still hides the whole row) and the IC bar's emoji button.
+	// Individually hideable shouts (the "Shout buttons" toggle hides the whole row) and the IC bar's emoji button.
 	{"ctrl.holdit", "Hold It! shout"},
 	{"ctrl.objection", "Objection! shout"},
 	{"ctrl.takethat", "Take That! shout"},
@@ -180,10 +150,8 @@ func (a *App) panelHidden(id string) bool { return a.hidden[id] }
 // setPanelHidden flips one region and persists the full set.
 func (a *App) setPanelHidden(id string, hide bool) {
 	if hide {
-		// Created on demand rather than assumed. The map is normally seeded from
-		// preferences at startup, but this is now reachable from a HOTKEY, and a key
-		// pressed before that seeding — or on any path that never ran it — would
-		// otherwise be a nil-map write, which is a panic and not a no-op.
+		// Created on demand: this is reachable from a hotkey pressed before the map was seeded, and a nil-map write
+		// panics.
 		if a.hidden == nil {
 			a.hidden = make(map[string]bool, 4)
 		}
@@ -199,25 +167,18 @@ func (a *App) setPanelHidden(id string, hide bool) {
 	a.d.Prefs.SetHiddenPanels(ids)
 }
 
-// seedHiddenFromPrefs rebuilds the live hidden-chrome map from the persisted
-// set, then enforces the no-strand invariant (A6): a set hiding BOTH mouse
-// lifelines — the toolbox grip (panelToolbox) and the toolbar Settings button
-// (ctrlSettingsSlot) — leaves a pure-mouse user only hotkeys or a destructive
-// full reset to get any chrome back, so the toolbox is un-hidden and the
-// correction persisted. Interactive toggles refuse the second hide up front
-// (setPanelHiddenGuarded); this catches the WHOLESALE writes — startup load,
-// prefs reset/import, layout-profile apply — whose saved Hidden slice may
-// predate the guard or carry a stranded pair.
+// seedHiddenFromPrefs rebuilds the hidden-chrome map from the persisted set and enforces the no-strand rule: a
+// set hiding all the mouse lifelines un-hides the toolbox and persists the correction. Interactive toggles refuse
+// the second hide (setPanelHiddenGuarded); this covers wholesale writes (startup, prefs reset/import, layout
+// profile).
 func (a *App) seedHiddenFromPrefs() {
 	a.hidden = map[string]bool{}
 	for _, id := range a.d.Prefs.Load().HiddenPanels() {
 		a.hidden[id] = true
 	}
-	// Every mouse lifeline hidden at once — a saved set that predates the guard, a
-	// layout profile, or a prefs import — un-hides the toolbox, which is the one
-	// that works in BOTH layouts. See mouseLifelines for why the set is three:
-	// ctrlSettingsSlot only ever draws on the classic path, so a themed user who
-	// hid the toolbox and the menu bar had no mouse chrome left.
+	// If every mouse lifeline is hidden, un-hide the toolbox, which works in both layouts (ctrlSettingsSlot draws
+	// only
+	// on the classic path; see mouseLifelines).
 	stranded := true
 	for _, l := range mouseLifelines {
 		if !a.hidden[l] {
@@ -228,10 +189,7 @@ func (a *App) seedHiddenFromPrefs() {
 	if stranded {
 		a.setPanelHidden(panelToolbox, false)
 	}
-	// panelExtras is retired (#21): the row it hid no longer exists, so a stale
-	// entry would sit in HiddenPanels forever hiding nothing. Dropped on load
-	// rather than migrated, because there is no successor to move it to — the
-	// Extras MENU is not hideable, it is the chrome home those commands moved to.
+	// panelExtras is retired: the row no longer exists, so a stale entry is dropped on load rather than migrated.
 	if a.hidden[panelExtras] {
 		a.setPanelHidden(panelExtras, false)
 	}
@@ -239,11 +197,9 @@ func (a *App) seedHiddenFromPrefs() {
 
 // --- sounds -----------------------------------------------------------------
 
-// playThemeSFX streams the theme-configured sound for key (picked up at
-// theme apply from courtroom_sounds.ini / penalty.ini, with stock AO2
-// fallbacks). Missing keys stay silent (AO2 with a sparse INI does too).
-// Callword/friend alerts deliberately don't go through here — they use the
-// built-in ping so a sparse theme can never silence them.
+// playThemeSFX streams the theme-configured sound for key (from courtroom_sounds.ini / penalty.ini, with stock AO2
+// fallbacks). Missing keys stay silent. Callword/friend alerts use the built-in ping so a sparse theme can't
+// silence them.
 func (a *App) playThemeSFX(key string) {
 	if a.room == nil {
 		return
@@ -263,7 +219,7 @@ var wtceFallbackText = map[string]string{
 	"guilty":           "GUILTY",
 }
 
-// handleWTCE drives splash + badge + sfx per courtroom.cpp handle_wtce.
+// handleWTCE drives splash, badge and sfx per courtroom.cpp handle_wtce.
 func (a *App) handleWTCE(name string, variant int) {
 	switch name {
 	case "testimony1":
@@ -289,8 +245,8 @@ func (a *App) handleWTCE(name string, variant int) {
 			a.playThemeSFX("not_guilty")
 		}
 	default:
-		// Fully custom WTCE: image and sfx share the packet string
-		// (handle_wtce's else branch). No preloaded texture → text banner.
+		// Fully custom WTCE: image and sfx share the packet string (handle_wtce's else branch). No texture, so a
+		// text banner.
 		a.startSplash(name)
 		a.d.Audio.PlaySFX(a.urls.SFX(name), 0) // AssetType: SFX (custom wtce)
 	}
@@ -300,9 +256,8 @@ func (a *App) startSplash(stem string) {
 	a.wtceName, a.wtceAt = stem, time.Now()
 }
 
-// pageFrameAt maps elapsed time onto a one-shot animation's frame index;
-// done reports playback completion. Static pages hold for
-// splashStaticDuration.
+// pageFrameAt maps elapsed time onto a one-shot animation's frame index; done reports completion. Static pages
+// hold for splashStaticDuration.
 func pageFrameAt(page *render.TexturePage, elapsed time.Duration) (idx int, done bool) {
 	if !page.Animated || len(page.Frames) < 2 {
 		return 0, elapsed >= splashStaticDuration
@@ -352,10 +307,8 @@ func pageFrameLoop(page *render.TexturePage, elapsed time.Duration) int {
 
 // --- viewport overlays ---------------------------------------------------------
 
-// timerChipLabels returns the visible server clocks' "Tn mm:ss" labels for the
-// overlay, into a REUSED backing slice and memoized per displayed second — so a
-// stable (e.g. paused) clock allocates nothing on the always-on courtroom draw,
-// and a running one rebuilds at most once per second instead of every frame.
+// timerChipLabels returns the visible server clocks' "Tn mm:ss" labels, into a reused slice and memoized per
+// displayed second, so a stable clock allocates nothing in the courtroom draw.
 func (a *App) timerChipLabels(now time.Time) []string {
 	chips := a.timerChips[:0]
 	for id := 0; id < courtroom.TimerCount; id++ {
@@ -367,7 +320,7 @@ func (a *App) timerChipLabels(now time.Time) []string {
 		if secs < 0 {
 			secs = 0
 		}
-		// A built label is never "" → that doubles as the "not yet built" check.
+		// A built label is never "", which doubles as the "not yet built" check.
 		if a.timerLabels[id] == "" || a.timerLabelSecs[id] != secs {
 			a.timerLabels[id] = fmt.Sprintf("T%d %02d:%02d", id+1, secs/60, secs%60)
 			a.timerLabelSecs[id] = secs
@@ -378,10 +331,9 @@ func (a *App) timerChipLabels(now time.Time) []string {
 	return chips
 }
 
-// drawCourtOverlays paints the live court state over the viewport: penalty
-// bars, server clocks, the testimony badge, the presented-evidence popup,
-// and the WT/CE/verdict splash (top-most). lay positions the bars at their
-// design rects when the theme defines them (nil = classic corners).
+// drawCourtOverlays paints the live court state over the viewport: penalty bars, server clocks, testimony badge,
+// presented-evidence popup and the WT/CE/verdict splash on top. lay positions the bars at their design rects when
+// the theme defines them (nil = classic corners).
 func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 	c := a.ctx
 	now := time.Now()
@@ -395,8 +347,8 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 			proR, okPro = lay.rect("prosecution_bar")
 		}
 		if okDef {
-			// A4: themed HP bars resolve their angle from the baked layout cache
-			// (lay!=nil here — okDef came from lay.rect); an unrotated bar reads 0.
+			// Themed HP bars resolve their angle from the baked layout cache (lay is non-nil here); an unrotated bar
+			// reads 0.
 			a.drawHPBarRect(defR, true, a.sess.HPDef, lay.angle("defense_bar"))
 		} else {
 			barH = a.drawHPBar(vp, true, a.sess.HPDef)
@@ -408,8 +360,7 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 		}
 	}
 
-	// Server clocks: centered chips along the viewport top (between the
-	// bars), drawn only while the server marked them visible.
+	// Server clocks: centered chips along the viewport top, only while the server marked them visible.
 	if !a.panelHidden(panelTimers) {
 		chips := a.timerChipLabels(now)
 		var totalW int32
@@ -428,8 +379,8 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 		a.drawTimerChip(vp) // #97 local alarm countdown — same visibility group as the server clocks
 	}
 
-	// Testimony recording badge under the defense bar (loops while the
-	// server is recording — RT testimony1 starts it, testimony1#1 ends).
+	// Testimony recording badge under the defense bar; loops while recording (RT testimony1 starts it, testimony1#1
+	// ends).
 	if a.testimonyOn && !a.panelHidden(panelTestimony) {
 		by := vp.Y + 6 + barH + 4
 		if page, ok := a.themePage("testimony"); ok {
@@ -439,11 +390,11 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 			w := vp.W * badgeWidthPct / 100
 			h := w * page.H / page.W
 			dst := sdl.Rect{X: vp.X + 6, Y: by, W: w, H: h}
-			// A4: structured angle==0 → Copy / else CopyEx (ruling 1). This site is
-			// PLUMBING-ONLY — the badge isn't an editor-hoverable key, so no cheap-tier
-			// control sets its angle and it resolves 0 today; the branch keeps it
-			// bolt-on-ready. The local &dst stays (this branch is false on the settled
-			// gate, so no per-frame alloc); do NOT promote it to a shared scratch.
+			// Angle 0 uses Copy, else CopyEx. The badge isn't an editor-hoverable key, so its angle resolves 0 today
+			// and the
+			// branch is only here for later use. Keep the local &dst: this branch is not taken on an unchanged
+			// frame, so it
+			// costs no per-frame allocation; do not promote it to a shared scratch.
 			frame := page.Frames[pageFrameLoop(page, time.Since(a.wtceAt))]
 			if ang := badgeAngle(lay, "testimony"); ang == 0 {
 				_ = c.Ren.Copy(frame, nil, &dst)
@@ -457,8 +408,7 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 		}
 	}
 
-	// Presented-evidence popup (display_evidence_image): right side, gone
-	// after evidenceShowDuration.
+	// Presented-evidence popup (display_evidence_image): right side, gone after evidenceShowDuration.
 	if a.evShowImg != "" {
 		if time.Since(a.evShowAt) >= evidenceShowDuration {
 			a.evShowImg = ""
@@ -466,8 +416,7 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 			w := vp.W * evidPopupWidthPct / 100
 			h := w * page.H / page.W
 			dst := sdl.Rect{X: vp.X + vp.W - w - 8, Y: vp.Y + vp.H/4, W: w, H: h}
-			// A4 plumbing-only (see the testimony badge above): angle resolves 0
-			// today; local &dst kept (branch false on the settled gate).
+			// Angle resolves 0 today (see the testimony badge); the local &dst is kept for the same reason.
 			if ang := badgeAngle(lay, "evidence_display"); ang == 0 {
 				_ = c.Ren.Copy(page.Frames[0], nil, &dst)
 			} else {
@@ -479,8 +428,8 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 
 	// WT/CE/verdict splash, top-most overlay.
 	if a.wtceName != "" {
-		// Splash in flight (animated page OR the timed fallback banner): both
-		// step/expire on the draw clock, so the static skip must stand down.
+		// Splash in flight (animated page or timed fallback banner): both step and expire on the draw clock, so the
+		// static skip must not apply.
 		a.NoteAnimating()
 		elapsed := time.Since(a.wtceAt)
 		if page, ok := a.themePage(a.wtceName); ok {
@@ -491,8 +440,7 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 				w := vp.W * splashWidthPct / 100
 				h := w * page.H / page.W
 				dst := sdl.Rect{X: vp.X + (vp.W-w)/2, Y: vp.Y + (vp.H-h)/2, W: w, H: h}
-				// A4 plumbing-only (see the testimony badge above): angle resolves 0
-				// today; local &dst kept (branch false on the settled gate).
+				// Angle resolves 0 today (see the testimony badge); the local &dst is kept for the same reason.
 				if ang := badgeAngle(lay, "wtce_splash"); ang == 0 {
 					_ = c.Ren.Copy(page.Frames[idx], nil, &dst)
 				} else {
@@ -513,8 +461,7 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 	}
 }
 
-// drawHPBar draws one penalty bar at the classic corner placement and
-// returns the drawn height (the themed path positions via design rects).
+// drawHPBar draws one penalty bar at the classic corner placement and returns its height.
 func (a *App) drawHPBar(vp sdl.Rect, def bool, val int) int32 {
 	w := vp.W * hpBarWidthPct / 100
 	x := vp.X + vp.W - w - 6 // prosecution right
@@ -525,9 +472,8 @@ func (a *App) drawHPBar(vp sdl.Rect, def bool, val int) int32 {
 	if page, ok := a.themePage(a.hpBarStem(def, val)); ok {
 		h = w * page.H / page.W
 	}
-	// A4: the classic HP bar isn't a draggable slot (no slotHP; it's panelHP), so
-	// this angle is only ever nonzero via an applied LayoutProfile that carries a
-	// classic HP-bar rotation — a settled/unedited frame resolves 0 (plain Copy).
+	// The classic HP bar isn't a draggable control (no slotHP; it is panelHP), so its angle is nonzero only through an
+	// applied LayoutProfile with a classic HP-bar rotation.
 	rotKey := classicRotHPBarPro
 	if def {
 		rotKey = classicRotHPBarDef
@@ -536,11 +482,9 @@ func (a *App) drawHPBar(vp sdl.Rect, def bool, val int) int32 {
 	return h
 }
 
-// hpBarStems holds the precomputed theme-art key for every penalty value
-// ([0] = defense, [1] = prosecution), so the per-frame HP draw looks a key up
-// instead of allocating one by string concatenation. val is 0..HPBarMax (the
-// session clamps it there). Built once at init; the always-on courtroom draw
-// calls hpBarStem up to 4×/frame, so this keeps that path off the heap.
+// hpBarStems holds the theme-art key for every penalty value ([0] = defense, [1] = prosecution) so the HP draw
+// looks a key up instead of concatenating. val is 0..HPBarMax (the session clamps it). The courtroom draw calls
+// hpBarStem up to 4 times per frame.
 var hpBarStems = func() [2][hpBarSegments + 1]string {
 	var t [2][hpBarSegments + 1]string
 	for v := 0; v <= hpBarSegments; v++ {
@@ -551,9 +495,7 @@ var hpBarStems = func() [2][hpBarSegments + 1]string {
 }()
 
 func (a *App) hpBarStem(def bool, val int) string {
-	// Out of the precomputed range (a server sent an odd value): fall back to
-	// the concat — rare/never given the session clamp, and it keeps the table
-	// bounded.
+	// Out of range (an odd server value): fall back to the concat, which keeps the table bounded.
 	if val < 0 || val > hpBarSegments {
 		if def {
 			return "defensebar" + strconv.Itoa(val)
@@ -566,22 +508,19 @@ func (a *App) hpBarStem(def bool, val int) string {
 	return hpBarStems[1][val]
 }
 
-// drawHPBarRect draws one penalty bar into an exact rect: theme art
-// (defensebar<N>/prosecutionbar<N>, the images set_hp_bar swaps) stretched
-// like AO2 stretches them, or a procedural pip strip.
+// drawHPBarRect draws one penalty bar into an exact rect: theme art (defensebar<N>/prosecutionbar<N>, the images
+// set_hp_bar swaps) stretched like AO2, or a procedural pip strip.
 func (a *App) drawHPBarRect(bar sdl.Rect, def bool, val int, angleDeg float64) {
 	c := a.ctx
 	if page, ok := a.themePage(a.hpBarStem(def, val)); ok {
-		// &bar into cgo would heap-allocate the PARAMETER on every call — even
-		// when this branch doesn't run (escape analysis is static). The Ctx
-		// scratch rect keeps the always-drawn HP bars off the heap.
+		// Passing &bar into cgo would heap-allocate the parameter on every call, even when this branch doesn't run
+		// (escape
+		// analysis is static). The Ctx scratch rect avoids that.
 		c.cgoRect = bar
-		// A4: angle 0 keeps the original Copy path (byte-identical, alloc-free on
-		// the settled gate); only a persisted nonzero angle rotates via CopyEx
-		// (center=nil rotates about the dst-rect centre — no scratch Point). SDL's
-		// rotated blit of rect chrome is nearest-neighbour, so a non-90° tilt shows
-		// jagged edges; accepted for chrome (the coarse 0/90/180/270 cycle avoids it
-		// by default).
+		// Angle 0 keeps the plain Copy path (allocation-free); a nonzero angle rotates via CopyEx about the dst-rect
+		// centre. SDL's rotated blit is nearest-neighbour, so a non-90 degree tilt shows jagged edges; the
+		// 0/90/180/270
+		// cycle avoids that.
 		if angleDeg == 0 {
 			_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
 		} else {
@@ -603,10 +542,10 @@ func (a *App) drawHPBarRect(bar sdl.Rect, def bool, val int, angleDeg float64) {
 	c.Border(bar, ColPanelHi)
 }
 
-// --- judge controls -------------------------------------------------------------
+// Judge controls.
 
-// judgeVisible mirrors show_judge_controls: the JD state wins; pos-dependent
-// falls back to "are we on the judge stand" (get_pos_is_judge).
+// judgeVisible mirrors show_judge_controls: the JD state wins; otherwise "are we on the judge stand"
+// (get_pos_is_judge).
 func (a *App) judgeVisible() bool {
 	if a.panelHidden(panelJudge) {
 		return false
@@ -621,8 +560,8 @@ func (a *App) judgeVisible() bool {
 	}
 }
 
-// drawJudgeRow renders the judge button strip and returns its height
-// (0 when nothing drew). Buttons mirror courtroom.cpp's judge handlers.
+// drawJudgeRow renders the judge button strip and returns its height (0 when nothing drew), mirroring courtroom.cpp's
+// judge handlers.
 func (a *App) drawJudgeRow(x, y int32) int32 {
 	c := a.ctx
 	put := func(label string) bool {
@@ -658,10 +597,8 @@ func (a *App) drawJudgeRow(x, y int32) int32 {
 	return btnH + 4
 }
 
-// prewarmServer warms what this server needed last visit (favorite
-// pre-warm): the last-used character's icon + core sprites and the
-// last-seen background's standard position parts — all LOW priority
-// through the normal pool, shed freely under real load.
+// prewarmServer warms what this server needed last visit: the last-used character's icon and core sprites and the
+// last-seen background's standard position parts, all low priority.
 func (a *App) prewarmServer() {
 	info := a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey)
 	if info.Char != "" {
@@ -672,8 +609,7 @@ func (a *App) prewarmServer() {
 		a.d.Manager.PrefetchChain(talk, a.urls.EmoteAlts(info.Char, "normal", courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (pre-warm)
 	}
 	if info.Background != "" {
-		// wit/def/pro/jud cover the courtroom core (standardPositions
-		// leads with exactly those four).
+		// wit/def/pro/jud cover the courtroom core (standardPositions leads with those four).
 		for _, pos := range standardPositions[:4] {
 			bgPart, deskPart := courtroom.PositionScene(pos)
 			a.d.Manager.Prefetch(a.urls.Background(info.Background, bgPart), assets.AssetTypeBackground, network.PriorityLow)    // AssetType: Background (pre-warm)
@@ -682,9 +618,8 @@ func (a *App) prewarmServer() {
 	}
 }
 
-// speculateEmote warms everything the picked emote will need the moment
-// the user hits enter: idle/talk loops, the preanim, and its char.ini SFX.
-// LOW priority — shed-able speculation, never a render-path cost (§10).
+// speculateEmote warms what the picked emote will need on send: idle/talk loops, the preanim and its char.ini SFX.
+// Low priority, so it is shed under load.
 func (a *App) speculateEmote(me string, e *courtroom.Emote) {
 	idle := a.urls.Emote(me, e.Anim, courtroom.EmoteIdle)
 	talk := a.urls.Emote(me, e.Anim, courtroom.EmoteTalk)
@@ -698,19 +633,15 @@ func (a *App) speculateEmote(me string, e *courtroom.Emote) {
 	}
 }
 
-// hasCustomShout reports whether the current character ships a custom
-// interjection. AO2-Client shows ui_custom_objection only when the char
-// folder holds custom art (courtroom.cpp set_widgets file_exists checks);
-// a streaming client can't stat the folder, so the discoverable evidence
-// is char.ini: a custom_name rename or named [Shouts] entries. Without
-// either, the button hides (playtest: it highlighted on hover for chars
-// with no custom shout at all).
+// hasCustomShout reports whether the current character ships a custom interjection. AO2-Client shows
+// ui_custom_objection only when the char folder holds custom art (courtroom.cpp set_widgets file_exists checks).
+// A streaming client can't stat the folder, so char.ini is the evidence: a custom_name rename or named [Shouts]
+// entries.
 func (a *App) hasCustomShout() bool {
 	return len(a.customShouts) > 0 || a.customName != ""
 }
 
-// customShoutLabel is the active custom-shout button text: a named
-// [Shouts] pick, the char.ini custom_name rename, or plain "Custom!".
+// customShoutLabel is the custom-shout button text: a named [Shouts] pick, the char.ini custom_name, or "Custom!".
 func (a *App) customShoutLabel() string {
 	if a.customIdx >= 0 && a.customIdx < len(a.customShouts) {
 		return a.customShouts[a.customIdx].Name + "!"
@@ -723,8 +654,7 @@ func (a *App) customShoutLabel() string {
 
 // --- position cycler -------------------------------------------------------------
 
-// standardPositions is the classic AO side set used until an SD packet
-// supplies the server's own list.
+// standardPositions is the classic AO side set used until an SD packet supplies the server's own list.
 var standardPositions = []string{"wit", "def", "pro", "jud", "hld", "hlp", "jur", "sea"}
 
 func (a *App) posChoices() []string {
@@ -734,17 +664,11 @@ func (a *App) posChoices() []string {
 	return standardPositions
 }
 
-// applySide sets OUR side and, when we're connected, immediately tells the server
-// with the /pos OOC command — the exact path a playtester confirmed moves them
-// instantly. AO2-Client's pos dropdown is local-only: the chosen side merely rides
-// the NEXT IC message (on_pos_dropdown_changed sends nothing to the server), so on a
-// tsuserver-family server picking a position felt inert — nothing visibly happened
-// until you spoke. Firing /pos here mirrors typing it in the OOC box, so the move
-// (and the server's SP/BG echo that repaints the scene) lands the moment you pick;
-// a.sidePref still rides later IC messages exactly as before. A deliberate, minimal
-// deviation from AO2-Client. User-initiated only (dropdown / Ctrl+P cycle / IC-box
-// "/pos") — never per frame, so the render loop and its alloc gate are untouched —
-// and the same-side guard makes a re-pick of the current side a no-op (no resend).
+// applySide sets our side and, when connected, sends the /pos OOC command. AO2-Client's pos dropdown is
+// local-only (on_pos_dropdown_changed sends nothing; the side rides the next IC message), so on tsuserver-family
+// servers a pick felt inert until you spoke. Sending /pos here mirrors typing it in OOC, so the move and the
+// server's SP/BG echo land at once; a.sidePref still rides later IC messages. A deliberate deviation from
+// AO2-Client. User-initiated only, and re-picking the current side is a no-op.
 func (a *App) applySide(side string) {
 	side = strings.ToLower(strings.TrimSpace(side))
 	if side == "" || side == a.sidePref {
@@ -759,37 +683,28 @@ func (a *App) applySide(side string) {
 // posSelectW fits the widest standard side ("Pos" label drawn separately).
 const posSelectW = 64
 
-// colorSelectW fits the widest color name ("Orange") in the IC selector.
+// colorSelectW fits the widest colour name ("Orange") in the IC selector.
 const colorSelectW = 86
 
-// Pos-dropdown thumbnail geometry: open rows show a 4:3 stage thumbnail of each
-// position's background down the left, so you can SEE the placement (and which
-// positions this background actually has art for) instead of guessing from "wit
-// / def / pro …" codes. 48×36 = 4:3.
+// Pos-dropdown thumbnail geometry: open rows show a 4:3 thumbnail of each position's background, so you can see
+// the placement and which positions this background has art for.
 const (
 	posThumbW       = 48
 	posThumbRowH    = 40
 	posSelectThumbW = 96 // closed Pos control width when it carries a bg thumbnail (thumb + side code + chevron)
 )
 
-// drawPosSelect renders the side selector as a real dropdown (AO2's
-// ui_pos_dropdown; playtest asked for dropdowns over cyclers) at the given
-// height. Returns the next x. The Ctrl+P hotkey still cycles (cyclePos). When a
-// background is loaded, each open row carries a bg thumbnail (fetched on demand
-// only while the list is open — one probe per position, within the streaming
-// design); without one it falls back to the plain text dropdown.
+// drawPosSelect renders the side selector as a dropdown (AO2's ui_pos_dropdown) at the given height and returns
+// the next x. Ctrl+P still cycles (cyclePos). With a background loaded, each open row carries a thumbnail fetched
+// on demand while the list is open (one probe per position); otherwise it is a plain text dropdown.
 func (a *App) drawPosSelect(x, y, h int32) int32 {
 	c := a.ctx
 	labelW := c.TextWidth("Pos") + 6
-	// v1.50.5 (reported by Nightingale: every control was movable except the Pos
-	// one): the whole Pos control (label + dropdown) is a movable+resizable "ctrl.pos"
-	// slot — and hideable like any control button. The row cursor advances by
-	// the DEFAULT width either way (wrap-not-extract), so moving or hiding it
-	// never cascades the rest of the row.
+	// The whole Pos control (label + dropdown) is a movable, resizable, hideable "ctrl.pos" control. The row cursor
+	// advances by the default width either way, so moving or hiding it never shifts the rest of the row.
 	ddDefW := int32(posSelectW)
 	if a.sess != nil && a.sess.Background != "" {
-		// Wider control so the CLOSED box fits the current position's bg thumbnail
-		// + the side code + the chevron ("show the thing that's already selected").
+		// Wider control so the closed box fits the current position's thumbnail, side code and chevron.
 		ddDefW = int32(posSelectThumbW)
 	}
 	adv := labelW + ddDefW + 6
@@ -833,11 +748,9 @@ func (a *App) drawPosSelect(x, y, h int32) int32 {
 	return x + adv
 }
 
-// posThumbDraw paints the i-th position's background thumbnail into tr — used by
-// both the open dropdown rows and the closed control's "currently selected" chip.
-// Stored once as a.posThumbFn (not a per-frame closure), and reads the live
-// bg/choices so it's always current. On the render thread (FinishFrame or the
-// closed-control draw), so the on-demand cachedPage / paced fetch is safe.
+// posThumbDraw paints the i-th position's background thumbnail into tr, for both the open rows and the closed
+// control's selected chip. Stored once as a.posThumbFn (not a per-frame closure) and reads the live bg/choices.
+// Runs on the render thread, so the on-demand cachedPage / paced fetch is safe.
 func (a *App) posThumbDraw(i int, tr sdl.Rect) {
 	c := a.ctx
 	choices := a.posChoices()
@@ -861,10 +774,9 @@ func (a *App) posThumbDraw(i int, tr sdl.Rect) {
 	c.Border(tr, ColPanelHi)
 }
 
-// --- casing ----------------------------------------------------------------------
+// Casing.
 
-// sendCasingPrefs pushes the persisted SETCASE subscription on join (the
-// tsuserver family keeps it per connection).
+// sendCasingPrefs pushes the persisted SETCASE subscription on join (the tsuserver family keeps it per connection).
 func (a *App) sendCasingPrefs() {
 	if a.sess == nil {
 		return
@@ -882,11 +794,10 @@ func (a *App) sendCasingPrefs() {
 	)
 }
 
-// --- evidence ---------------------------------------------------------------------
+// Evidence.
 
-// noteEvidencePresented mirrors display_evidence_image + the "has presented
-// evidence" IC log line for incoming messages carrying an evidence id
-// (wire ids are shifted by 1; 0 = none per legacy standards).
+// noteEvidencePresented mirrors display_evidence_image and the "has presented evidence" IC log line for incoming
+// messages carrying an evidence id (wire ids are shifted by 1; 0 = none).
 func (a *App) noteEvidencePresented(msg *protocol.ChatMessage) {
 	id := msg.EvidenceID
 	if a.sess == nil || id <= 0 || id > len(a.sess.Evidence) {
@@ -894,10 +805,8 @@ func (a *App) noteEvidencePresented(msg *protocol.ChatMessage) {
 	}
 	item := a.sess.Evidence[id-1]
 	img := item.Image
-	// #59: the local presenter can override the displayed image, decoupling the
-	// shown picture from the evidence id (legacy clients still show the
-	// evidence's own image; the server-side hook for remote custom images rides
-	// this same override).
+	// The local presenter can override the displayed image, decoupling the shown picture from the evidence id; legacy
+	// clients still show the evidence's own image.
 	if msg.CharID == a.sess.MyCharID && a.evidPresentImage != "" {
 		img = a.evidPresentImage
 	}
@@ -912,10 +821,8 @@ func (a *App) noteEvidencePresented(msg *protocol.ChatMessage) {
 	a.d.Manager.PrefetchExact(a.evidURL(img), assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (evidence image, exact URL)
 }
 
-// evidURL resolves an evidence image name to the URL its pixels come from, honouring
-// the evidence panel's "stream from server" toggle: OFF (default) reads the user's
-// local mounts (local://), ON streams from the server. Falls back to streaming when
-// there are no local mounts. Same cost as URLs.Evidence — no extra allocation.
+// evidURL resolves an evidence image name to its pixel source, honouring the panel's "stream from server" toggle:
+// off (default) reads local mounts (local://), on streams from the server; no local mounts falls back to streaming.
 func (a *App) evidURL(name string) string {
 	if !a.evidStream && a.evidLocalOrigin != "" {
 		return courtroom.NewURLBuilder(a.evidLocalOrigin).Evidence(name)
@@ -923,8 +830,7 @@ func (a *App) evidURL(name string) string {
 	return a.urls.Evidence(name)
 }
 
-// demandEvidence paces thumbnail fetches for the evidence grid: one exact
-// fetch per item per retry interval while the panel is open.
+// demandEvidence paces thumbnail fetches: one exact fetch per item per retry interval while the panel is open.
 func (a *App) demandEvidence(idx int, url string) {
 	if len(a.evidAsk) != len(a.sess.Evidence) {
 		a.evidAsk = make([]time.Time, len(a.sess.Evidence))
@@ -936,48 +842,37 @@ func (a *App) demandEvidence(idx int, url string) {
 	a.d.Manager.PrefetchExact(url, assets.AssetTypeMisc, network.PriorityLow) // AssetType: Misc (evidence thumbnail, exact URL)
 }
 
-// toggleEvidence flips the Evidence floating window open/closed (#57): the
-// Evidence button — and its hotkey — acts as a toggle rather than an
-// "open, never close" latch, matching every other floating panel's button.
+// toggleEvidence flips the Evidence floating window; its button and hotkey toggle rather than only open.
 func (a *App) toggleEvidence() { a.showEvid = !a.showEvid }
 
-// evidPanelDefW etc. size the floating Evidence window; the min keeps the grid +
-// inspector usable.
+// evidPanelDefW etc. size the floating Evidence window; the min keeps the grid and inspector usable.
 const (
 	evidPanelDefW = 560
 	evidPanelDefH = 420
 	evidPanelMinW = 360
 	evidPanelMinH = 240
 
-	// evidInspectorDefW/DefH size the detached inspector window (the popped-out
-	// right column); it reuses the panel's min so the edit/view layout stays usable.
+	// evidInspectorDefW/DefH size the detached inspector window; it reuses the panel's min.
 	evidInspectorDefW = 340
 	evidInspectorDefH = 420
 )
 
-// evidDescLineH is the pixel height of one wrapped description line in the
-// inspector (Issue #15). evidDescWrapMaxLines is a generous named cap (not a
-// visual constraint — the description now scrolls — but CLAUDE.md rule §4
-// forbids an unbounded wrap, so one runaway description can't allocate
-// without limit).
+// evidDescLineH is the pixel height of one wrapped description line in the inspector. evidDescWrapMaxLines caps
+// the wrap (hard rule 4) so one runaway description can't allocate without limit.
 const (
 	evidDescLineH        = 18
 	evidDescWrapMaxLines = 200
 	evidDescMinViewH     = evidDescLineH * 2 // floor so a tiny/minimized panel still shows something scrollable
-	// evidInspectorImageLineH/evidInspectorBtnRowH/evidInspectorLastBtnH mirror
-	// the exact Y increments the inspector's trailing block below the
-	// description uses (image line, present button, edit/delete row, pin
-	// button) — reserving the SAME numbers here keeps the description
-	// viewport's height in sync with them instead of guessing a duplicate
-	// magic constant that could drift.
+	// evidInspectorImageLineH/evidInspectorBtnRowH/evidInspectorLastBtnH mirror the Y increments of the inspector's
+	// trailing block (image line, present button, edit/delete row, pin button), keeping the description viewport
+	// height in sync.
 	evidInspectorImageLineH = 28
 	evidInspectorBtnRowH    = btnH + 6
 	evidInspectorLastBtnH   = btnH
 )
 
-// Evidence icon-size slider bounds and the grid name-label band (Issue #119):
-// one in-memory size scales both the list icons and the grid cells; grid names
-// wrap to at most two centered lines.
+// Evidence icon-size slider bounds and the grid name-label band: one in-memory size scales the list icons and
+// grid cells; grid names wrap to at most two centred lines.
 const (
 	evidIconDefault  = 40
 	evidIconMin      = 32
@@ -988,13 +883,8 @@ const (
 	evidNameBandH    = evidNameLineH*evidNameMaxLines + 2
 )
 
-// evidDescViewH is the pure height arithmetic behind the Issue #15
-// description viewport: whatever's left between descTop (just under the
-// item's name heading) and panelBottom (the panel's inner bottom edge)
-// after reserving the fixed trailing block (image line + present button +
-// edit/delete row + pin button), floored at evidDescMinViewH so a tiny or
-// mid-resize panel still shows a usable, scrollable region rather than a
-// zero/negative-height rect.
+// evidDescViewH is the description viewport height: what's left between descTop and panelBottom after the fixed
+// trailing block, floored at evidDescMinViewH so a tiny panel still shows a scrollable region.
 func evidDescViewH(panelBottom, descTop int32) int32 {
 	trailH := int32(evidInspectorImageLineH + evidInspectorBtnRowH*2 + evidInspectorLastBtnH)
 	viewH := panelBottom - descTop - trailH
@@ -1004,10 +894,8 @@ func evidDescViewH(panelBottom, descTop int32) int32 {
 	return viewH
 }
 
-// evidPanelRect is the Evidence window's screen rect. Its FIRST-OPEN default tucks
-// into the top-LEFT over the stage (not centred), so the IC input (bottom) and the log
-// (right column) stay visible — you can keep talking and follow the conversation while
-// you browse evidence (#5). Once dragged/resized (placed) the floatWin geometry wins.
+// evidPanelRect is the Evidence window's screen rect. Its first-open default sits top-left over the stage so the
+// IC input and the log stay visible while you browse. Once dragged or resized the floatWin geometry wins.
 func (a *App) evidPanelRect(w, h int32) sdl.Rect {
 	if r, ok := a.seedPanelFromSlot(&a.evidWin, slotPanelEvid, evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, w, h); ok {
 		return r
@@ -1020,31 +908,26 @@ func (a *App) evidPanelRect(w, h int32) sdl.Rect {
 	return a.evidWin.rect(evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, w, h)
 }
 
-// drawEvidencePanel is the evidence browser/editor — a NON-BLOCKING floating window
-// (floatWin: drag the title bar, resize the bottom-right grip) so the courtroom stays
-// live behind it: you can keep talking, follow the chat and pre-write a message while
-// you browse or arm evidence (#5, Crystalwarrior). A vertical icon list of the
-// server's LE evidence, and an inspector for the selection. The inspector's view/edit
-// is a TOGGLE (editing is merged in, not a whole-panel mode swap), and it can be
-// popped out into its own window (evidInspectorDetached → drawEvidenceInspectorWindow).
+// drawEvidencePanel is the evidence browser/editor, a non-blocking floating window (floatWin: drag the title,
+// resize the bottom-right grip) so the courtroom stays live behind it. It shows an icon list of the server's LE
+// evidence and an inspector for the selection. View/edit is a toggle, and the inspector can pop out into its own
+// window (evidInspectorDetached, drawEvidenceInspectorWindow).
 func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	wasActive := a.evidWin.dragging || a.evidWin.resizing // detect the drag/resize-end frame for slot persistence
 	r := a.evidPanelRect(w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
-	// Title bar / drag handle + close + "Add new" + "Pop out/in" + a bottom-right
-	// resize grip. The whole strip is clipped so a narrow panel can't let a button
-	// or the heading escape the window (Issue #119).
+	// Title bar / drag handle, close, "Add new", "Pop out/in" and the resize grip. The strip is clipped so a narrow
+	// panel can't let a button or the heading escape the window.
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)
 	titleClip, titleHad := c.pushClip(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH})
 	closeB := sdl.Rect{X: r.X + r.W - 80 - pad, Y: r.Y + 3, W: 80, H: btnH}
 	addB := sdl.Rect{X: closeB.X - 90, Y: r.Y + 3, W: 84, H: btnH}
 	popB := sdl.Rect{X: addB.X - 86, Y: r.Y + 3, W: 80, H: btnH}
 	viewB := sdl.Rect{X: popB.X - 76, Y: r.Y + 3, W: 70, H: btnH}
-	// The heading takes whatever width is left of the button column and
-	// ellipsizes instead of drawing under it (Heading doesn't clip, so use the
-	// big face through LabelClippedFont).
+	// The heading takes the width left of the button column and ellipsizes (Heading doesn't clip, so use the big face
+	// through LabelClippedFont).
 	availW := viewB.X - r.X - 2*pad
 	if availW < 0 {
 		availW = 0
@@ -1065,8 +948,7 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	if c.Button(popB, popLabel) {
 		a.evidInspectorDetached = !a.evidInspectorDetached
 	}
-	// List ↔ grid layout toggle (in-memory): a quick flip between the DRO icon
-	// list and the AO2 thumbnail grid, not a persisted preference.
+	// List/grid layout toggle: a quick flip between the DRO icon list and the AO2 thumbnail grid, not persisted.
 	viewLabel := "View: List"
 	if a.evidGridView {
 		viewLabel = "View: Grid"
@@ -1085,9 +967,7 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	}
 	contentTop := r.Y + floatTitleH + 8
 
-	// Icon-size slider (Issue #119): one in-memory value scales both the list
-	// icons and the grid cells. Mapped onto [min,max] so the thumb sits on the
-	// real size.
+	// Icon-size slider: one in-memory value scales the list icons and grid cells, mapped onto [min,max].
 	if a.evidIconSize == 0 {
 		a.evidIconSize = evidIconDefault
 	}
@@ -1098,9 +978,8 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	c.Label(r.X+pad+196, contentTop+4, fmt.Sprintf("%d px", a.evidIconSize), ColTextDim)
 	contentTop += evidIconRowH
 
-	// Evidence image source: local folders by default, one click to stream from
-	// the server instead. Active (streaming) is accent-filled; the tooltip explains
-	// the trade. evidAsk clears so thumbnails re-demand against the new source.
+	// Evidence image source: local folders by default, one click to stream from the server. evidAsk clears so
+	// thumbnails re-demand against the new source.
 	streamB := sdl.Rect{X: r.X + pad, Y: contentTop + 1, W: 176, H: btnH}
 	if a.evidStream {
 		if c.ButtonCol(streamB, "Streaming from server", ColAccent, ColAccent, ColAccent, ColBackground) {
@@ -1137,11 +1016,8 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	a.drawEvidenceInspector(inspRect)
 }
 
-// drawEvidenceList draws the vertical DRO-style icon list (40×40 icons +
-// right-click context menu, #16) into list. The wheel scrolls the list (WheelIn
-// is single-consumer and the list rect doesn't overlap the inspector, so the
-// description's own wheel is untouched), and rows are clipped to the viewport so
-// a row scrolled part-way out can't bleed into the title bar.
+// drawEvidenceList draws the DRO-style icon list with a right-click context menu. The wheel scrolls the list
+// (WheelIn is single-consumer and the list doesn't overlap the inspector), and rows are clipped to the viewport.
 func (a *App) drawEvidenceList(list sdl.Rect) {
 	c := a.ctx
 	if a.evidIconSize == 0 {
@@ -1190,9 +1066,8 @@ func (a *App) drawEvidenceList(list sdl.Rect) {
 	}
 }
 
-// drawEvidenceGrid draws the AO2-style thumbnail grid of the evidence into grid
-// (the list ↔ grid toggle's grid side). Same selection/context-menu/demand
-// behaviour as the list, laid out as 72×72 cells with the name beneath each.
+// drawEvidenceGrid draws the AO2-style thumbnail grid (the grid side of the list/grid toggle), with the same
+// selection, context menu and demand behaviour as the list, and the name beneath each cell.
 func (a *App) drawEvidenceGrid(grid sdl.Rect) {
 	c := a.ctx
 	if a.evidIconSize == 0 {
@@ -1234,7 +1109,7 @@ func (a *App) drawEvidenceGrid(grid sdl.Rect) {
 			a.demandEvidence(i, url)
 		}
 		c.Border(rc, ColPanelHi)
-		// Name: word-wrapped and centered beneath the cell (Issue #119).
+		// Name: word-wrapped and centred beneath the cell.
 		nameLines := c.WrapText(item.Name, cell, evidNameMaxLines)
 		ny := cy + cell + 2
 		for _, line := range nameLines {
@@ -1257,15 +1132,13 @@ func (a *App) drawEvidenceGrid(grid sdl.Rect) {
 	}
 }
 
-// drawEvidenceInspector draws the evidence inspector (the right column, or the
-// popped-out window's body) into rect. View/edit is a TOGGLE: editing is merged
-// into the inspector rather than swapping the whole panel.
+// drawEvidenceInspector draws the inspector (right column or popped-out window body) into rect. Editing is merged
+// in as a toggle rather than swapping the whole panel.
 func (a *App) drawEvidenceInspector(rect sdl.Rect) {
 	c := a.ctx
 	ix, iw := rect.X, rect.W
 
-	// Incoming-edit compare (an EE arrived for the item being edited): show the
-	// Keep mine / Accept theirs view instead of the editor.
+	// Incoming-edit compare (an EE arrived for the item being edited): show Keep mine / Accept theirs.
 	if a.evidConflict && a.evidEditing {
 		a.drawEvidenceCompare(rect)
 		return
@@ -1289,8 +1162,7 @@ func (a *App) drawEvidenceInspector(rect sdl.Rect) {
 	c.Label(ix, iy, sel.Name, ColAccent)
 	iy += 22
 
-	// Description viewport (Issue #15): a fixed-height scrollable region, with
-	// URLs rendered as clickable links the way the OOC log does.
+	// Description viewport: a fixed-height scrollable region, with URLs rendered as clickable links like the OOC log.
 	descTextW := iw - scrollBarW - scrollBarGap
 	if descTextW < 40 {
 		descTextW = 40 // degenerate-width guard (very narrow panel)
@@ -1315,8 +1187,7 @@ func (a *App) drawEvidenceInspector(rect sdl.Rect) {
 
 	c.LabelClipped(ix, iy, iw, "image: "+sel.Image, ColTextDim)
 	iy += 24
-	// #59: present-image override — present THIS picture instead of the
-	// evidence's own image (decouples the shown picture from the evidence id).
+	// Present-image override: present this picture instead of the evidence's own image.
 	c.Label(ix, iy, "Present image (optional):", ColTextDim)
 	iy += 16
 	a.evidPresentImage, _ = c.TextField("evpresentimg", sdl.Rect{X: ix, Y: iy, W: iw, H: fieldH}, a.evidPresentImage, "leave blank to use the evidence's image")
@@ -1344,9 +1215,8 @@ func (a *App) drawEvidenceInspector(rect sdl.Rect) {
 	}
 }
 
-// drawEvidenceEditor draws the inspector's EDIT view (the toggle's edit side):
-// name + multiline description (#83) + image fields, then Save/Cancel. Add when
-// evidIdx == -1, replace otherwise.
+// drawEvidenceEditor draws the inspector's edit view: name, multiline description and image fields, then
+// Save/Cancel. Add when evidIdx == -1, replace otherwise.
 func (a *App) drawEvidenceEditor(rect sdl.Rect) {
 	c := a.ctx
 	ix, iy, iw := rect.X, rect.Y, rect.W
@@ -1362,19 +1232,16 @@ func (a *App) drawEvidenceEditor(rect sdl.Rect) {
 	a.evidDesc = c.TextArea("evdesc", sdl.Rect{X: ix, Y: iy, W: iw, H: descH}, a.evidDesc, "What it proves")
 	iy += descH + 8
 	c.Label(ix, iy+4, "Image file:", ColText)
-	// ONE button, not two (issue #6 follow-up): "Choose" and "Browse" now open the
-	// same browser — the merged local asset sources — so two entries were two doors
-	// into one room. The width the second button held goes back to the field, which
-	// is what wants it: an asset path ("../characters/foo/char_icon.png") is longer
-	// than the filename the old placeholder suggested.
+	// One Browse button opens the merged local asset sources browser; the width goes to the image field, since asset
+	// paths are long.
 	const browseBtnW = 90
 	imgW := iw - 60 - browseBtnW - 6
 	if imgW < 60 {
 		imgW = 60
 	}
 	a.evidImage, _ = c.TextField("evimg", sdl.Rect{X: ix + 60, Y: iy, W: imgW, H: fieldH}, a.evidImage, "knife.png (base/evidence/)")
-	// The picker source follows the panel's "Stream from server" toggle: local
-	// folders by default, the server's evidence/ index when streaming.
+	// The picker source follows the panel's "Stream from server" toggle: local folders, or the server's evidence/
+	// index.
 	browseLabel := "Browse…"
 	if a.evidStream {
 		browseLabel = "Server…"
@@ -1405,9 +1272,8 @@ func (a *App) drawEvidenceEditor(rect sdl.Rect) {
 	}
 }
 
-// requestEvidenceSelection is the ONE seam for changing the evidence selection
-// from the list/grid. While the editor is open it first asks (Stop editing?)
-// instead of silently discarding the unsaved work; otherwise it switches.
+// requestEvidenceSelection changes the evidence selection from the list/grid. While the editor is open it asks
+// "Stop editing?" instead of discarding the unsaved work.
 func (a *App) requestEvidenceSelection(idx int) {
 	if a.evidEditing && idx != a.evidIdx {
 		a.evidDiscardConfirm = true
@@ -1417,9 +1283,8 @@ func (a *App) requestEvidenceSelection(idx int) {
 	a.evidIdx = idx
 }
 
-// startEvidenceAdd opens a fresh "Add new" editor, first asking the same
-// Stop-editing? confirm when an edit to an EXISTING item is already in progress
-// (re-adding while already adding just resets the draft, as before).
+// startEvidenceAdd opens a fresh "Add new" editor, asking the same confirm when an edit to an existing item is in
+// progress (re-adding while adding resets the draft).
 func (a *App) startEvidenceAdd() {
 	if a.evidEditing && a.evidIdx != -1 {
 		a.evidDiscardConfirm = true
@@ -1432,9 +1297,7 @@ func (a *App) startEvidenceAdd() {
 	a.evidName, a.evidDesc, a.evidImage = "", "", "empty.png"
 }
 
-// drawEvidenceDiscardConfirm is the "Stop editing?" modal (drawn top-level over
-// the courtroom, mirroring drawQuitConfirm): swapping the evidence selection
-// while the editor is open asks before the unsaved edit is discarded.
+// drawEvidenceDiscardConfirm is the "Stop editing?" modal, drawn top-level over the courtroom like drawQuitConfirm.
 func (a *App) drawEvidenceDiscardConfirm(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 160})
@@ -1460,9 +1323,8 @@ func (a *App) drawEvidenceDiscardConfirm(w, h int32) {
 	}
 }
 
-// drawEvidenceCompare is the incoming-edit compare view (the inspector's edit
-// side replaced while evidConflict is set): your unsaved edit side-by-side with
-// the server's new values, so you can Keep mine or Accept theirs.
+// drawEvidenceCompare is the incoming-edit compare view (shown while evidConflict is set): your unsaved edit beside
+// the server's new values, for Keep mine or Accept theirs.
 func (a *App) drawEvidenceCompare(rect sdl.Rect) {
 	c := a.ctx
 	ix, iy, iw := rect.X, rect.Y, rect.W
@@ -1505,9 +1367,7 @@ func (a *App) drawEvidenceCompare(rect sdl.Rect) {
 	}
 }
 
-// drawEvidenceDescriptionLine draws one wrapped description line, rendering any
-// URLs in it as clickable links (accent + hover underline + open browser), the
-// same way the OOC log treats links.
+// drawEvidenceDescriptionLine draws one wrapped description line, rendering URLs as clickable links like the OOC log.
 func (a *App) drawEvidenceDescriptionLine(x, y, maxW int32, line string) {
 	c := a.ctx
 	links := extractURLs(line, oocLinksPerParagraphMax)
@@ -1536,8 +1396,7 @@ func (a *App) drawEvidenceDescriptionLine(x, y, maxW int32, line string) {
 	}
 }
 
-// drawEvidenceInspectorWindow draws the detached inspector in its own floating
-// window. The body is the same drawEvidenceInspector (view/edit toggle).
+// drawEvidenceInspectorWindow draws the detached inspector in its own floating window around drawEvidenceInspector.
 func (a *App) drawEvidenceInspectorWindow(w, h int32, pressed *bool) {
 	c := a.ctx
 	r := a.evidInspectorRect(w, h)
@@ -1562,15 +1421,13 @@ func (a *App) drawEvidenceInspectorWindow(w, h int32, pressed *bool) {
 	a.drawEvidenceInspector(sdl.Rect{X: r.X + pad, Y: contentTop, W: r.W - 2*pad, H: r.Y + r.H - contentTop - pad})
 }
 
-// evidInspectorRect is the detached inspector window's rect (floatWin default
-// size, centered until first placed).
+// evidInspectorRect is the detached inspector window's rect (floatWin default size, centred until first placed).
 func (a *App) evidInspectorRect(w, h int32) sdl.Rect {
 	return a.evidInspectorWin.rect(evidInspectorDefW, evidInspectorDefH, evidPanelMinW, evidPanelMinH, w, h)
 }
 
-// drawEvidenceContextMenu draws the evidence list's right-click context
-// menu (#16): Edit / Delete / Present / Pin for the selected item, at the spot
-// the user right-clicked. Clicking outside closes it.
+// drawEvidenceContextMenu draws the evidence list's right-click menu (Edit / Delete / Present / Pin) at the click
+// spot. Clicking outside closes it.
 func (a *App) drawEvidenceContextMenu() {
 	c := a.ctx
 	if a.evidIdx < 0 || a.evidIdx >= len(a.sess.Evidence) {
@@ -1620,7 +1477,7 @@ func (a *App) drawEvidenceContextMenu() {
 	}
 }
 
-// --- modcall panel ----------------------------------------------------------------
+// Modcall panel.
 
 const (
 	modcallPanelDefW = 460
@@ -1629,9 +1486,8 @@ const (
 	modcallPanelMinH = 120
 )
 
-// modcallPanelRect is the Call-Mod window's screen rect. First-open tucks top-left
-// (like the evidence panel) so the IC input and log stay clear; once dragged or
-// resized (placed) the floatWin geometry wins.
+// modcallPanelRect is the Call-Mod window's screen rect. First open sits top-left (like the evidence panel) so the
+// IC input and log stay clear; once placed the floatWin geometry wins.
 func (a *App) modcallPanelRect(w, h int32) sdl.Rect {
 	if r, ok := a.seedPanelFromSlot(&a.modcallWin, slotPanelModcall, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, w, h); ok {
 		return r
@@ -1644,11 +1500,8 @@ func (a *App) modcallPanelRect(w, h int32) sdl.Rect {
 	return a.modcallWin.rect(modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, w, h)
 }
 
-// drawModcallPanel collects the reason and fires ZZ — a NON-BLOCKING floating
-// window (floatWin: drag the title bar, resize the bottom-right grip) so the
-// courtroom stays live behind it: you can keep talking and watching while the
-// call is open. Servers without modcall_reason get the bare packet (Session.CallMod
-// handles both).
+// drawModcallPanel collects the reason and fires ZZ in a non-blocking floating window (floatWin), so the courtroom
+// stays live behind it. Servers without modcall_reason get the bare packet (Session.CallMod handles both).
 func (a *App) drawModcallPanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	wasActive := a.modcallWin.dragging || a.modcallWin.resizing // detect the drag/resize-end frame for slot persistence
@@ -1678,8 +1531,3 @@ func (a *App) drawModcallPanel(w, h int32, pressed *bool) {
 		a.showModcall, a.modReason = false, ""
 	}
 }
-
-// The former drawUICfgPanel "Hide UI pieces" modal was retired (A1): its
-// per-piece checkbox list now lives in the pinned toolbox pieces panel
-// (drawToolboxPieces in courttoolbox.go), which reuses the same registries
-// (hideablePanels / hideableButtons / hideableRosterButtons) and setPanelHidden.

@@ -6,13 +6,9 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// #12 SFX Browser — an opt-in modal that EXPANDS the cramped IC-bar SFX dropdown. A streaming
-// client can't list a server's sounds/general/ directory, so the browseable set is: your persisted
-// FAVOURITES (starred, global, reusable across characters and servers) + this character's own
-// char.ini emote sounds + a free-text "use any sound name" entry. Every row previews (▶) and stars
-// (★); picking one Uses it as your next-message override. Opt-in (Extras → "SFX Browser"), so it
-// costs nothing until opened and never touches the render hot path. It writes the SAME sfxChoiceIdx
-// override the dropdown does (find-or-append), so the IC-bar dropdown reflects whatever it picked.
+// SFX Browser: opt-in modal that expands the IC-bar SFX dropdown. A streaming client can't list sounds/general/, so the
+// set is starred favourites, this character's char.ini sounds, and a free-text name. Picking writes the same
+// sfxChoiceIdx override as the dropdown.
 
 const (
 	sfxBrowserRowH = int32(28)
@@ -20,8 +16,7 @@ const (
 	sfxBrowserH    = int32(460)
 )
 
-// toggleSfxBrowser opens / closes the browser (Extras entry). Opening clears the stale query so the
-// full list shows first.
+// toggleSfxBrowser opens or closes the browser; opening clears the stale query.
 func (a *App) toggleSfxBrowser() {
 	a.showSfxBrowser = !a.showSfxBrowser
 	if a.showSfxBrowser {
@@ -30,10 +25,8 @@ func (a *App) toggleSfxBrowser() {
 	}
 }
 
-// selectSFXOverride points the IC-bar SFX override at a sound NAME, reusing the dropdown's
-// sfxChoiceIdx mechanism: if the name is already a choice it selects it, else it appends it and
-// selects that. ensureSFXChoices rebuilds the list on a real character switch, dropping the
-// appended entry — fine, the override is a transient "rides your next message" pick.
+// selectSFXOverride points the IC-bar override at a sound name via sfxChoiceIdx: select it if listed, else append it.
+// ensureSFXChoices drops the appended entry on a character switch, which suits a transient pick.
 func (a *App) selectSFXOverride(name string) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -49,8 +42,7 @@ func (a *App) selectSFXOverride(name string) {
 	a.sfxChoiceIdx = len(a.sfxChoices) - 1
 }
 
-// previewSFX plays a sound name through the normal SFX channel (the same preview the dropdown does).
-// Gated on a connected origin: in the lobby urls.SFX has no host, so there's nothing to play.
+// previewSFX plays a sound through the normal SFX channel; needs a connected origin (the lobby has no host).
 func (a *App) previewSFX(name string) {
 	name = strings.TrimSpace(name)
 	if name == "" || a.urls.Origin() == "" {
@@ -59,15 +51,9 @@ func (a *App) previewSFX(name string) {
 	a.d.Audio.PlaySFX(a.urls.SFX(name), 0)
 }
 
-// sfxRowRightClickPreview auditions the SFX dropdown row under the pointer
-// WITHOUT selecting it (spec 1.e). Left-click picks and previews; before this
-// there was no way to hear a sound without committing it to your next message.
-// Consumes the click (DropdownRowRightClicked does), so it never leaks to the
-// widget under the open list. Row 0 is "SFX: auto" — the emote's own sound, which
-// has no name to play here — so it is refused AFTER that consume, deliberately:
-// the consume is the open list's modal fence and belongs to every in-range row,
-// while "there is nothing to audition" is this caller's business.
-// previewOverlayRow's row-0 ("None") arm is the same shape.
+// sfxRowRightClickPreview auditions the dropdown row under the pointer without selecting it. It consumes the click so
+// it doesn't reach the widget under the open list; row 0 ("SFX: auto", no name to play) is refused after that consume,
+// because the consume belongs to every in-range row.
 func (a *App) sfxRowRightClickPreview() {
 	row, ok := a.ctx.DropdownRowRightClicked("sfxdd")
 	if !ok || row <= 0 || row >= len(a.sfxChoices) {
@@ -82,10 +68,8 @@ type sfxBrowserRow struct {
 	fav  bool
 }
 
-// sfxBrowserRows builds the displayed list: starred favourites first (so they're always to hand),
-// then this character's distinct emote sounds that aren't already starred, all filtered by the
-// query substring (case-insensitive). Allocations here are fine — it runs only while the opt-in
-// modal is open, never on the render hot path.
+// sfxBrowserRows builds the list: starred favourites first, then this character's other emote sounds, filtered by the
+// case-insensitive query. Allocates; runs only while the modal is open.
 func (a *App) sfxBrowserRows() []sfxBrowserRow {
 	q := strings.ToLower(strings.TrimSpace(a.sfxBrowserQuery))
 	match := func(name string) bool { return q == "" || strings.Contains(strings.ToLower(name), q) }
@@ -112,9 +96,7 @@ func (a *App) sfxBrowserRows() []sfxBrowserRow {
 	return rows
 }
 
-// drawSfxBrowser paints the modal: a search / free-text field, a "use the typed name" affordance
-// (the streaming-client power feature — any sound, not just the listed ones), and a scrollable list
-// where each row stars (★), previews (▶), and on a body click Uses the sound as the override.
+// drawSfxBrowser paints the modal: a search / free-text field, a "use the typed name" row, and a scrollable list.
 func (a *App) drawSfxBrowser(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 200}) // backdrop dim
@@ -124,8 +106,7 @@ func (a *App) drawSfxBrowser(w, h int32) {
 	}
 	bw, bh := sfxBrowserW, sfxBrowserH
 	panel := sdl.Rect{X: (w - bw) / 2, Y: (h - bh) / 2, W: bw, H: bh}
-	// A click on the dimmed backdrop (outside the panel) closes — a quick escape that matches the
-	// emoji picker's feel; a click inside is handled by the widgets below.
+	// A click on the dimmed backdrop closes; a click inside is handled by the widgets below.
 	if c.clicked && !pointIn(c.mouseX, c.mouseY, panel) {
 		a.showSfxBrowser = false
 		return
@@ -145,8 +126,7 @@ func (a *App) drawSfxBrowser(w, h int32) {
 	a.sfxBrowserQuery, _ = c.TextField("sfxquery", sdl.Rect{X: x, Y: y, W: innerW, H: fieldH}, a.sfxBrowserQuery, "search sounds — or type any sound name…")
 	y += fieldH + 6
 
-	// Free-text power row: Use / preview / star the EXACT typed name (any server sound, listed or
-	// not). Shown only when the query isn't already an exact list entry (avoids a duplicate row).
+	// Free-text row: Use / preview / star the exact typed name; hidden when the query is already an exact list entry.
 	typed := strings.TrimSpace(a.sfxBrowserQuery)
 	if typed != "" && !a.sfxBrowserHasExact(typed) {
 		rowR := sdl.Rect{X: x, Y: y, W: innerW, H: sfxBrowserRowH}
@@ -185,8 +165,8 @@ func (a *App) drawSfxBrowser(w, h int32) {
 	}
 }
 
-// sfxBrowserHasExact reports whether a name is already an exact (case-insensitive) entry of the
-// displayed list — so the free-text row doesn't duplicate a listed sound.
+// sfxBrowserHasExact reports whether a name is already an exact (case-insensitive) list entry, so the free-text row
+// doesn't duplicate it.
 func (a *App) sfxBrowserHasExact(name string) bool {
 	for _, r := range a.sfxBrowserRows() {
 		if strings.EqualFold(r.name, name) {
@@ -196,9 +176,8 @@ func (a *App) sfxBrowserHasExact(name string) bool {
 	return false
 }
 
-// drawSfxRow paints one browser row: a ★ toggle, a ▶ preview, and the name — clicking the name area
-// Uses the sound (sets the override) and closes the browser. The ★/▶ buttons CONSUME their click so
-// the body Use doesn't also fire. useLabel, when set, replaces the name (the free-text "Use ‹x›" row).
+// drawSfxRow paints one row: a star toggle, a preview button, and the name, whose click Uses the sound and closes the
+// browser. The buttons consume their click so the body Use doesn't also fire. useLabel replaces the name.
 func (a *App) drawSfxRow(r sdl.Rect, name string, fav bool, useLabel string) {
 	c := a.ctx
 	if c.hovering(r) {
@@ -228,12 +207,7 @@ func (a *App) drawSfxRow(r sdl.Rect, name string, fav bool, useLabel string) {
 		label = useLabel
 	}
 	c.LabelClipped(labelX, r.Y+(r.H-14)/2, r.X+r.W-labelX-4, label, ColText)
-	// Right-click auditions WITHOUT using (spec §1.e, second half — the same
-	// audition-vs-commit split the sfxdd dropdown got). The browser's ▶ button
-	// already previews, but the row BODY commits: a right-click anywhere on the row
-	// is the gesture that reads "just let me hear it", and it rides the same
-	// previewSFX (same origin guard, silent in the lobby). CONSUMED, so it cannot
-	// leak to the modal backdrop's close-on-click underneath.
+	// Right-click auditions without using, via previewSFX; consumed so it can't reach the backdrop's close-on-click.
 	if c.hovering(r) && c.rightClicked {
 		c.rightClicked = false
 		a.previewSFX(name)

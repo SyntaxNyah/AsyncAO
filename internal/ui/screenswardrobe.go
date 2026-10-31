@@ -21,8 +21,8 @@ type folderMenuOpt struct {
 
 const iniFolderMenuW = 200
 
-// iniFolderMenuOpts builds the character menu rows: remove from wardrobe, unfile,
-// each existing folder, then a "+ new: X" row when the new-folder field has text.
+// iniFolderMenuOpts builds the character menu rows: remove, unfile, each folder, and "+ new: X" when the new-folder
+// field has text.
 func (a *App) iniFolderMenuOpts() []folderMenuOpt {
 	opts := []folderMenuOpt{{label: "× Remove from wardrobe", remove: true}, {label: "(unsorted)"}}
 	for _, f := range a.wardrobeFolders() {
@@ -34,7 +34,6 @@ func (a *App) iniFolderMenuOpts() []folderMenuOpt {
 	return opts
 }
 
-// iniFolderMenuRect positions the menu at the cursor, clamped on-screen.
 func iniFolderMenuRect(at [2]int32, nOpts int, w, h int32) sdl.Rect {
 	r := sdl.Rect{X: at[0], Y: at[1], W: iniFolderMenuW, H: int32(nOpts)*iniMenuRowH + 4}
 	if r.X+r.W > w {
@@ -54,14 +53,11 @@ func iniFolderMenuRect(at [2]int32, nOpts int, w, h int32) sdl.Rect {
 
 const iniMenuRowH = 22
 
-// iniDragThreshold is the cursor travel (logical px) past which a press on a
-// wardrobe cell becomes a drag-to-file instead of a wear-click.
+// iniDragThreshold is the cursor travel (logical px) past which a press on a wardrobe cell becomes a drag-to-file.
 const iniDragThreshold = 6
 
-// handleIniFolderMenu resolves a click on the open move-to-folder menu BEFORE
-// the grid draws (so the click never leaks through to a cell). A click on a
-// row files the character; a click anywhere else closes it; Esc closes it.
-// Either way the click is consumed.
+// handleIniFolderMenu resolves a click on the open menu before the grid draws, so it never leaks to a cell. The click
+// is always consumed.
 func (a *App) handleIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
 	c := a.ctx
 	if c.escPressed {
@@ -89,8 +85,7 @@ func (a *App) handleIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
 	c.clicked = false
 }
 
-// drawIniFolderMenu paints the move-to-folder menu on top, highlighting the
-// character's current folder.
+// drawIniFolderMenu paints the menu on top, highlighting the character's current folder.
 func (a *App) drawIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
 	c := a.ctx
 	c.Fill(rect, sdl.Color{R: 18, G: 18, B: 26, A: 245})
@@ -111,9 +106,7 @@ func (a *App) drawIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
 	}
 }
 
-// Wardrobe sections: your curated characters (folders), your favourite
-// backgrounds, and a flat browse of the server's full iniswap list (★ to add
-// one to your characters).
+// Wardrobe sections.
 const (
 	wardSectionCharacters = iota
 	wardSectionBackgrounds
@@ -121,17 +114,12 @@ const (
 	wardSectionJukebox
 )
 
-// drawIniswapPanel is the wardrobe modal shell. It owns the state SHARED by
-// both sections — the drag press-edge and the end-of-frame drag cleanup, which
-// must run exactly once per frame so a drag can't arm twice or fail to clear —
-// and the section tabs, then dispatches to the active section's body for the
-// grid region. A tab is a mouseup, so a section never switches mid-drag.
+// drawIniswapPanel is the wardrobe modal shell. It owns the drag press edge and end-of-frame cleanup, which must run
+// exactly once per frame so a drag can't arm twice or fail to clear.
 func (a *App) drawIniswapPanel(w, h int32) {
 	c := a.ctx
 	a.iniPressed = c.mouseDown && !a.iniPrevDown // mouse went down this frame (drag arm; shared)
-	// Kept clear of the app-chrome band (#14, chrometop.go): the menu bar and the
-	// docked server-tab strip paint AFTER the screens, so a panel starting at the raw
-	// pad*3 would have its top edge and title covered by the strip.
+	// Clear of the app-chrome band: the menu bar and tab strip paint after the screens and would cover the panel's top.
 	top := a.topChromeH()
 	panel := sdl.Rect{X: pad * 3, Y: top + pad*3, W: w - pad*6, H: h - top - pad*6}
 	c.Fill(panel, ColPanel)
@@ -144,7 +132,6 @@ func (a *App) drawIniswapPanel(w, h int32) {
 		a.iniPrevDown = c.mouseDown
 		return
 	}
-	// Section tabs on the header row.
 	tabX := panel.X + 110
 	for _, t := range [...]struct {
 		id    int
@@ -160,8 +147,8 @@ func (a *App) drawIniswapPanel(w, h int32) {
 		c.Label(r.X+12, r.Y+5, t.label, ColText)
 		if c.hovering(r) && c.clicked && a.wardSection != t.id {
 			a.wardSection = t.id
-			// Each section owns its own preview — and its own dwell, so this goes
-			// through closeSpritePreview rather than blanking previewBase.
+			// Each section owns its own preview and dwell, so go through closeSpritePreview rather than blanking
+			// previewBase.
 			a.closeSpritePreview()
 			a.iniMenuChar = ""   // close any open character move-to-folder menu
 			a.wardDelFolder = "" // close any open folder-delete confirmation
@@ -172,9 +159,7 @@ func (a *App) drawIniswapPanel(w, h int32) {
 		}
 		tabX += 126
 	}
-	// Armed key-capture hint: while a wardrobe bind waits for a key, say so loudly
-	// in the header AND that Esc or a click cancels — the per-cell "press..." badge
-	// alone was too easy to miss after an accidental arm.
+	// While a bind waits for a key, say so in the header, including that Esc or a click cancels.
 	if a.bindingFor != "" {
 		hintX := tabX + 8
 		hintW := (panel.X + panel.W - 90 - pad) - hintX - 8
@@ -193,15 +178,14 @@ func (a *App) drawIniswapPanel(w, h int32) {
 		a.drawWardrobeCharsBody(panel, w, h)
 	}
 	a.applyPendingFav() // a ★ toggle a cell deferred: rebuild AFTER the grid loop, never during it
-	// Shared drag ghost: a label trailing the cursor shows what's being dragged
-	// (a character or a background — whichever section armed the drag).
+	// Drag ghost: a label trailing the cursor, for whichever section armed the drag.
 	if a.iniDragging && a.iniDragChar != "" {
 		g := sdl.Rect{X: c.mouseX + 12, Y: c.mouseY + 8, W: c.TextWidth(a.iniDragChar) + 16, H: 22}
 		c.Fill(g, sdl.Color{R: 0, G: 0, B: 0, A: 225})
 		c.Border(g, ColAccent)
 		c.Label(g.X+6, g.Y+3, a.iniDragChar, ColAccent)
 	}
-	// Shared end-of-frame drag bookkeeping (once per frame, both sections).
+	// End-of-frame drag cleanup, once per frame for all sections.
 	if !c.mouseDown {
 		a.iniDragChar = ""
 		a.iniDragging = false
@@ -209,14 +193,12 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	a.iniPrevDown = c.mouseDown
 }
 
-// drawWardrobeCharsBody is the Characters section: the navigable wardrobe grid.
 func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 	c := a.ctx
 	a.pollIniswap()
 	a.pollPreviewEmotes() // try-before-wear: drain a previewed char's emote list
 	a.iniHoverChar = ""   // recomputed by the cells this frame (quick-file target)
-	// Move-to-folder menu: handle its clicks FIRST so they can't leak to the
-	// folder icons/grid underneath (it's painted last, on top).
+	// Handle the menu's clicks first so they can't reach the grid underneath; it paints last.
 	if a.iniMenuChar != "" {
 		opts := a.iniFolderMenuOpts()
 		a.handleIniFolderMenu(iniFolderMenuRect(a.iniMenuAt, len(opts), w, h), opts)
@@ -234,24 +216,19 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 		}
 	}
 	y += 32
-	// Default: clicking a favourite SWITCHES you to that character (claims its
-	// slot — the CC → PV flow). Tick this to iniswap it instead: wear the look,
-	// keep your slot. Per session (resets on restart). Iniswap-by-name now lives
-	// on the Iniswaps tab's search box.
+	// Clicking a favourite switches character (the CC → PV flow); ticking this wears it as an iniswap instead. Per
+	// session.
 	const swapLabel = "Iniswap instead of switching character"
 	a.iniSwapMode = c.Checkbox(panel.X+pad, y, swapLabel, a.iniSwapMode)
 	c.Tooltip(sdl.Rect{X: panel.X + pad, Y: y, W: 22 + c.TextWidth(swapLabel), H: 16},
 		"Off (default): clicking a character switches you to them (takes a slot). On: wears them as an iniswap — no slot taken.")
 	y += 32
 	a.iniSearch, _ = c.TextField("iniswapsearch", sdl.Rect{X: panel.X + pad, Y: y, W: 230, H: fieldH}, a.iniSearch, "Search...")
-	// Add any folder name on the current asset base to the wardrobe —
-	// no server list required (★ marks saved entries; ★ persists
-	// across sessions and servers).
+	// Add any folder name on the current asset base; no server list required.
 	var addNow bool
 	a.iniAdd, addNow = c.TextField("iniswapadd", sdl.Rect{X: panel.X + pad + 240, Y: y, W: 230, H: fieldH}, a.iniAdd, "Add char (or folder/char) to wardrobe...")
 	if c.Button(sdl.Rect{X: panel.X + pad + 476, Y: y, W: 60, H: btnH}, "Add") || addNow {
-		// "folder/char" files it explicitly; otherwise it joins the folder
-		// you're currently viewing ("" at the top level = unfiled).
+		// "folder/char" files it explicitly; otherwise it joins the folder in view ("" at the top level = unfiled).
 		raw := strings.TrimSpace(a.iniAdd)
 		folder, char := a.iniFolder, raw
 		if i := strings.IndexByte(raw, '/'); i >= 0 {
@@ -275,20 +252,12 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 		c.Label(statusX, y+4, fmt.Sprintf("%d entries", len(a.iniList)), ColTextDim)
 	}
 	y += 30
-	// One-line orientation — the Wardrobe confused some newcomers. Names the two
-	// ways in (★ in Character Select, or the Add box) and the folder/wear flow.
 	c.LabelClipped(panel.X+pad, y, panel.W-2*pad,
 		"Your saved characters, kept per server. ★ a character in Character Select (or use Add above) to save it; drag a card onto a folder to organise; click a card to wear it.", ColTextDim)
 	y += 22
 
-	// --- Folder navigation -----------------------------------------------------
-	// Folders are real objects you open. At the top level the grid leads with a
-	// folder icon per category; click one to open it (the grid then shows just
-	// that folder's characters) and drag a character onto one to file it. Inside
-	// a folder, a back button returns to the top (and is itself a drop target
-	// that removes a character from the folder). Folders are membership-derived;
-	// typing a name below makes a transient folder cell so the FIRST character
-	// has something to drop onto. A search spans every folder.
+	// Folders are membership-derived; a name typed below makes a transient folder cell so the first character has
+	// something to drop onto. A search spans every folder.
 	query := a.iniQ.get(a.iniSearch)
 	searching := query != ""
 
@@ -309,8 +278,7 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 		if i >= len(a.iniWardrobe) || i >= len(a.iniFolders) || i >= len(a.iniLower) {
 			return false // never index past the parallel slices if they ever shrink mid-frame
 		}
-		// Characters is YOUR wardrobe only — starred or filed into a folder. The
-		// full server list lives on the Iniswaps tab (★ there adds it here).
+		// Characters is the user's wardrobe only: starred or filed. The full server list lives on the Iniswaps tab.
 		if !a.iniWardrobe[i] && a.iniFolders[i] == "" {
 			return false
 		}
@@ -378,10 +346,8 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 	}
 	y += btnH + 8
 
-	// Grid: folder icons (top level only) then character cells. The grid slot
-	// drives layout ONLY — character cells always pass their iniList index to
-	// drawIniswapCell so the index-keyed cachedPage stays correct (see the
-	// cachedPage reorder invariant).
+	// Grid: folder icons (top level only), then character cells. Cells always pass their iniList index to
+	// drawIniswapCell, not the grid position, so the index-keyed cachedPage stays correct.
 	gridTop := y
 	gridW := panel.W - 2*pad - scrollBarW - scrollBarGap
 	cols := gridW / (iconCell + iconGap)
@@ -431,8 +397,7 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 	}
 	c.popClip(clipPrev, clipHad)
 
-	// Number-key quick-file: hover a character (no field focused, no menu open)
-	// and press a digit to file it — 1-9 = that-numbered folder, 0 = unsorted.
+	// Number-key quick-file: hover a character and press 1-9 for that folder, 0 for unsorted.
 	if a.iniHoverChar != "" && c.focusID == "" && a.iniMenuChar == "" {
 		switch {
 		case c.keyPressed == sdl.K_0:
@@ -451,31 +416,18 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 		a.dismissPreviewOnClick()           // pin-aware, and disarms the trigger's dwell id
 	}
 
-	// Move-to-folder menu paints last (above the grid + preview). The shared
-	// drag ghost and end-of-frame drag cleanup live in the drawIniswapPanel
-	// wrapper — one place for both sections.
+	// The menu paints last, above the grid and preview.
 	if a.iniMenuChar != "" {
 		opts := a.iniFolderMenuOpts()
 		a.drawIniFolderMenu(iniFolderMenuRect(a.iniMenuAt, len(opts), w, h), opts)
 	}
 }
 
-// drawWardrobeIniswapsBody is the Iniswaps section: a flat browse of every
-// character folder this client knows exists on the base, from TWO sources the
-// chip row switches between.
-//
-//   - "Server list" is the server's published iniswap.txt: art cells, ★ to add one
-//     to your wardrobe (it then appears under Characters), click to try it on. It
-//     renders from the SAME a.iniList with the SAME indices as the Characters grid,
-//     so the index-keyed thumbnail cache (a.iniPages) stays valid across a tab
-//     switch (the cachedPage reorder invariant — a different list under the same
-//     index keys would paint wrong art).
-//   - "From your base" is the server's character ROSTER plus the characters/ folders
-//     in your local mounts — the answer for the many servers that publish no
-//     iniswap.txt at all. It keeps its OWN list and draws name buttons rather than
-//     index-keyed art cells, for exactly the invariant above; see iniswapbase.go.
-//
-// No folders in either — organizing lives in Characters.
+// drawWardrobeIniswapsBody is the Iniswaps section, a flat browse from two sources.
+// "Server list" is the published iniswap.txt; it renders from a.iniList with the same indices as the Characters grid,
+// so the index-keyed thumbnail cache stays valid across a tab switch.
+// "From your base" is the server roster plus local mounts' characters/ folders, for servers that publish no list. It
+// keeps its own list and draws name buttons for that same cache reason (iniswapbase.go).
 func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	c := a.ctx
 	a.pollIniswap()            // drain the server list (fetched on open)
@@ -483,7 +435,7 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	a.ensureLocalCharFolders() // starts one only when the mount list actually changed
 	a.iniHoverChar = ""        // recomputed by the cells (quick-file target; unused here)
 	serverN, baseN := a.baseSourceCounts()
-	// Memoized: this body draws every frame the tab is up (iniswapbase.go).
+	// Memoized, because this body draws every frame the tab is up (iniswapbase.go).
 	serverLabel, baseLabel, statusLabel := a.iniBase.sourceLabels(serverN, baseN)
 
 	y := panel.Y + 44
@@ -502,20 +454,14 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	case a.iniBusy:
 		c.Label(statusX, y+4, "Fetching "+iniswapFileName+"...", ColTextDim)
 	case serverN == 0:
-		// No iniswap.txt on this server (404 or none published): say so calmly — the
-		// base browser below is the answer, and the favourites on the Characters tab
-		// are untouched.
+		// No iniswap.txt on this server is not an error; the base browser below is the answer.
 		c.LabelClipped(statusX, y+4, panel.X+panel.W-statusX-pad, "This server doesn't publish an "+iniswapFileName+" list.", ColTextDim)
 	default:
 		c.Label(statusX, y+4, statusLabel, ColTextDim)
 	}
 	y += 30
 
-	// TWO SOURCES (iniswapbase.go). The published iniswap.txt is one list of folders
-	// on the base; the server's own character roster plus the user's local mounts are
-	// two more, and on the many servers that publish no iniswap.txt they are the ONLY
-	// ones. A server with no published list opens on the base browser once per server
-	// (the autoDone/autoKey latch) rather than on the empty state this replaces.
+	// A server with no published list opens on the base browser, once per server (autoDone/autoKey).
 	if !a.iniBusy && (!a.iniBase.autoDone || a.iniBase.autoKey != a.serverKey) {
 		a.iniBase.autoDone, a.iniBase.autoKey = true, a.serverKey
 		a.iniBase.show = serverN == 0 && baseN > 0
@@ -546,8 +492,7 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 		return
 	}
 
-	// No server list yet → a mini guide for owners (where to put iniswap.txt) and
-	// players (they can still wear any folder by name).
+	// No server list: a short guide for owners (where to put iniswap.txt) and players (any folder works by name).
 	if !a.iniBusy && serverN == 0 {
 		base := a.urls.Origin()
 		if base == "" {
@@ -576,8 +521,7 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	}
 
 	query := a.iniQ.get(a.iniSearch)
-	// The Iniswaps tab is the server's iniswap.txt ONLY — a favourite that isn't
-	// a server iniswap (or any favourite on a server with no list) stays out.
+	// This tab is the server's iniswap.txt only; a favourite that isn't a server iniswap stays out.
 	visible := func(i int) bool {
 		if i >= len(a.iniServerMem) || !a.iniServerMem[i] {
 			return false
@@ -626,12 +570,8 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	}
 }
 
-// drawFolderShape paints a folder icon — a tab over a body, the member count
-// centered, the name beneath — sized to the given cell. The shared VISUAL for
-// both wardrobe sections; interaction (open/drop) is the caller's, since
-// characters and backgrounds file into different prefs. Pure graphics — no
-// cachedPage — so a folder cell is safe to draw at any grid slot (unlike the
-// index-keyed character/background cells).
+// drawFolderShape paints a folder icon sized to the cell, shared by both wardrobe sections. Pure graphics with no
+// cachedPage, so it is safe at any grid position.
 func (a *App) drawFolderShape(cell sdl.Rect, count int, name string, hover, dropTarget bool) {
 	c := a.ctx
 	tab := sdl.Rect{X: cell.X + 4, Y: cell.Y + 5, W: (cell.W - 8) / 2, H: 9}
@@ -653,10 +593,8 @@ func (a *App) drawFolderShape(cell sdl.Rect, count int, name string, hover, drop
 	c.LabelClipped(cell.X, cell.Y+cell.H+1, cell.W, name, ColText)
 }
 
-// folderDeleteHit draws the folder's delete (×) button when the icon is hovered
-// (and no drag is in flight — during a drag the folder is a drop target) and
-// reports a click on it. Shared by both wardrobe sections; the caller opens the
-// delete confirmation. The × claims its own click so the folder doesn't open.
+// folderDeleteHit draws the delete (×) button on a hovered folder when no drag is in flight, and reports a click on it.
+// The × claims its click so the folder doesn't open.
 func (a *App) folderDeleteHit(cell sdl.Rect, hover bool) bool {
 	if !hover || a.iniDragging {
 		return false
@@ -679,9 +617,8 @@ const (
 	folderDeleteCancel
 )
 
-// drawFolderDeleteConfirm draws the "delete folder?" bar (replacing the nav row
-// while a.wardDelFolder is set) and returns the user's choice this frame. noun
-// is "characters"/"backgrounds" for the copy. Esc cancels.
+// drawFolderDeleteConfirm draws the "delete folder?" bar and returns this frame's choice. noun is "characters" or
+// "backgrounds". Esc cancels.
 func (a *App) drawFolderDeleteConfirm(x, y, maxW int32, count int, noun string) folderDeleteChoice {
 	c := a.ctx
 	if c.escPressed {
@@ -704,9 +641,7 @@ func (a *App) drawFolderDeleteConfirm(x, y, maxW int32, count int, noun string) 
 	return folderDeleteNone
 }
 
-// drawIniFolderCell draws one Characters-section folder. Clicking opens it (the
-// grid then shows only its characters); dropping a dragged character files it;
-// the hover × deletes it.
+// drawIniFolderCell draws one Characters-section folder: click opens, a drop files, the hover × deletes.
 func (a *App) drawIniFolderCell(name string, count int, cell sdl.Rect) {
 	c := a.ctx
 	hover := c.hovering(cell)
@@ -728,11 +663,8 @@ func (a *App) drawIniFolderCell(name string, count int, cell sdl.Rect) {
 	}
 }
 
-// cellClick is what clicking a wardrobe cell does: always iniswap (the Iniswaps
-// tab), or run the Characters-tab logic — switch to the character (claim its
-// slot), falling back to iniswap when it's taken / not a server char / the box
-// is ticked. cellClickChar drives the courtroom Characters tab AND the
-// char-select Wardrobe tab, so a favourite switches in both.
+// cellClick is what clicking a wardrobe cell does: always iniswap, or switch to the character, falling back to iniswap
+// when it's taken, not a server char, or the box is ticked.
 type cellClick int
 
 const (
@@ -740,15 +672,11 @@ const (
 	cellClickChar
 )
 
-// The wardrobe cell's fixed-size corner chrome, in pixels (hard rule 9 — these were
-// bare literals, and they have to be legible now that cellFitsCornerChrome decides
-// whether they are drawn at all).
+// The wardrobe cell's fixed-size corner chrome, in pixels.
 const (
 	// iniCellStarPx is the ★ box's edge, top-right, inset one pixel.
 	iniCellStarPx int32 = 17
-	// iniCellStarLaneW is how much of the cell's right edge the folder tag leaves
-	// clear for that star: the star's own width plus its inset and a few px of gap,
-	// so a long folder name never prints under the glyph.
+	// iniCellStarLaneW is how much of the right edge the folder tag leaves clear for the star.
 	iniCellStarLaneW int32 = 22
 	// iniCellTagH is the folder tag's height, top-left.
 	iniCellTagH int32 = 15
@@ -756,25 +684,16 @@ const (
 	iniCellKeyBadgeH int32 = 16
 )
 
-// caption draws the folder name UNDER the cell. The char-select Wardrobe tab turns
-// it off on a theme canvas, where the row gutter is the theme's and a caption would
-// print across the next row's slot frame (charGridPlan) — the cell's own tooltip
-// above already names it there.
+// caption draws the folder name under the cell. The char-select Wardrobe tab turns it off on a theme canvas, where it
+// would print across the next row's frame (charGridPlan).
 func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption bool) {
 	c := a.ctx
 	name := a.iniList[idx]
 
-	// Hover hint for what a click does here. Registered before the star/key-badge
-	// tooltips below, which override it on their own sub-rects (Tooltip = last
-	// write wins, and the cursor sits on those rects when it's over them).
+	// Registered before the star and key-badge tooltips, which override it on their own rects (last write wins).
 	switch {
 	case !caption:
-		// No caption strip under the cell (the char-select Wardrobe tab on a theme
-		// canvas), so the tooltip carries the name instead — same as AO2, which puts
-		// the character's name on the button as its tooltip and nowhere else. Naming
-		// the cell beats explaining the click: the tab this grid lives on already says
-		// what a click does, and with no caption there is otherwise nothing to tell two
-		// un-iconed folders apart.
+		// No caption, so the tooltip carries the name, as in AO2; with no icon nothing else tells two folders apart.
 		c.Tooltip(cell, name)
 	case click == cellClickChar:
 		c.Tooltip(cell, "Click to switch to this character (take its slot). Tick \"Iniswap instead\" above to wear it without a slot.")
@@ -782,12 +701,8 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 		c.Tooltip(cell, "Click to iniswap into this folder — wear its look, no slot taken.")
 	}
 
-	// App-drawer drag: a press on the cell arms this character as the drag
-	// candidate; once the cursor travels past iniDragThreshold it becomes a
-	// floating ghost that drops onto a folder chip to file it (the chip drop
-	// handler and ghost live in drawIniswapPanel). A press that never moves is
-	// just a click and still wears/toggles below — the click actions are gated
-	// on !a.iniDragging so a drag never also fires them.
+	// A press arms this character as the drag candidate; past iniDragThreshold it becomes a ghost that drops on a
+	// folder. A press that never moves is a click, and the click actions check !a.iniDragging.
 	if a.iniPressed && a.iniMenuChar == "" && c.hovering(cell) {
 		a.iniDragChar = name
 		a.iniDragStart = [2]int32{c.mouseX, c.mouseY}
@@ -809,14 +724,9 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 	c.Fill(cell, ColBackground)
 	base := a.urls.CharIcon(name)
 	if page, ok := a.cachedPage(&a.iniPages, &a.iniPagesGen, len(a.iniList), idx, base); ok && len(page.Frames) > 0 {
-		// Shared scratch, not &cell: cell is a PARAMETER, and escape analysis is
-		// static, so a cgo pointer taken from it moves it to the heap on every call —
-		// including the placeholder branch below, which never touches SDL. One
-		// allocation per visible cell per frame, on three grids (the char-select
-		// Wardrobe tab and both wardrobe-panel bodies). Same fix, same reason, as
-		// drawCharCell's; SDL copies the rect during the call and never retains the
-		// pointer (the ui.go cgoRect contract), and the cachedPage lookup above is
-		// already done, so nothing can interleave.
+		// Shared scratch, not &cell: a cgo pointer taken from a parameter moves it to the heap on every call, including
+		// the branch that never touches SDL. SDL copies the rect during the call and never keeps the pointer (ui.go
+		// cgoRect).
 		c.cgoRect = cell
 		_ = c.Ren.Copy(page.Frames[0], nil, &c.cgoRect)
 	} else {
@@ -831,18 +741,10 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 		c.LabelClipped(cell.X, cell.Y+cell.H+1, cell.W, name, ColTextDim)
 	}
 
-	// FIXED-SIZE CORNER CHROME — the folder tag, the ★ and the key badge — behind the
-	// SAME gate drawCharCell puts its own star and download badge behind
-	// (cellFitsCornerChrome). Since #20 the char-select Wardrobe tab draws these cells
-	// on the Characters tab's own charGridPlan, so a cell here can be as small as
-	// charCellMinPx while all three of these are drawn at the client font's size
-	// whatever the cell. On the measured 39 px cell (the 640x480 floor with the stock
-	// table) they covered three-quarters of the character art AND ate the click aimed
-	// at it. Above the floor nothing changes; the courtroom's own wardrobe panels draw
-	// 64 px cells and never reach it.
+	// Corner chrome draws at the client font's size whatever the cell, so behind cellFitsCornerChrome: on a tiny cell
+	// it would cover the art and eat the click aimed at it.
 	if cellFitsCornerChrome(cell) {
-		// Folder tag (top-left): the category this character is filed under
-		// (right-click the cell to file it into the active folder).
+		// Folder tag (top-left): the category this character is filed under.
 		if idx < len(a.iniFolders) && a.iniFolders[idx] != "" {
 			ft := a.iniFolders[idx]
 			tw := c.TextWidth(ft) + 6
@@ -854,8 +756,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 			c.LabelClipped(tag.X+3, tag.Y+1, tag.W-5, ft, ColAccent)
 		}
 
-		// Wardrobe star (top-right of the cell): toggle membership without
-		// wearing — the favourites list itself, exactly like lobby stars.
+		// Wardrobe star (top-right): toggle membership without wearing.
 		star := sdl.Rect{X: cell.X + cell.W - iniCellStarPx - 1, Y: cell.Y + 1, W: iniCellStarPx, H: iniCellStarPx}
 		starCol := ColTextDim
 		if idx < len(a.iniWardrobe) && a.iniWardrobe[idx] {
@@ -864,23 +765,17 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 		c.IconLabel(star, "★", starCol)
 		c.Tooltip(star, "★ add to / remove from your wardrobe (right-click the cell for more)")
 		if c.hovering(star) && c.clicked && !a.iniDragging {
-			// DEFER the toggle: rebuilding the wardrobe here shrinks the iniList/
-			// iniWardrobe/iniFolders slices the grid loop is currently ranging, which
-			// panicked on a REMOVE (the reported crash). The HOST applies it after its
-			// loop — drawIniswapPanel for the wardrobe modal, drawWardrobeGrid for the
-			// char-select Wardrobe tab.
+			// Defer the toggle: rebuilding the wardrobe here shrinks the slices the grid loop is ranging and panics on
+			// a remove. The host applies it after its loop (drawIniswapPanel, drawWardrobeGrid).
 			a.iniFavPending = name
 			a.iniFavPendingAdd = idx >= len(a.iniWardrobe) || !a.iniWardrobe[idx]
 			c.clicked = false // consumed; don't also wear it
 			return
 		}
 
-		// Key badge (bottom-left): the CHORD that wears this character on this
-		// server, or "+key" on hover. Click arms capture (next plain keypress
-		// binds); right-click clears the binding. The badge goes through
-		// bindChipLabel, not the bare letter: handleCharKeys fires on Alt+<key>
-		// (bareBindKey, qol.go), so a badge reading "M" would advertise a press
-		// that now just types an "m" into the IC box.
+		// Key badge (bottom-left): the chord that wears this character, or "+key" on hover. Click arms capture;
+		// right-click clears. It uses bindChipLabel because handleCharKeys fires on Alt+<key> (bareBindKey, qol.go), so
+		// a bare letter would advertise a press that types into the IC box.
 		bound := a.charKeyFor(name)
 		unbound := "" // an unbound cell shows nothing until the pointer is on it
 		if c.hovering(cell) {
@@ -911,8 +806,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 		}
 	}
 
-	// Right-click the cell opens a "move to folder" menu (pick any destination,
-	// including a brand-new one). The key badge's own right-click ran first.
+	// Right-click opens the move-to-folder menu. The key badge's own right-click ran first.
 	if c.rightClicked && c.hovering(cell) {
 		a.iniMenuChar = name
 		a.iniMenuAt = [2]int32{c.mouseX, c.mouseY}
@@ -937,25 +831,16 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick, caption b
 	}
 }
 
-// musicFilterKey memoizes the server-music-list filter so a list of thousands
-// isn't re-scanned (and re-lowercased — that allocates) every frame. Keyed by
-// the query plus a cheap identity of the list (len + first/last track), which
-// changes whenever the server resends SM.
+// musicFilterKey memoizes the music filter so a list of thousands isn't re-lowered every frame. Keyed by the query plus
+// a cheap list identity (len, first and last track), which changes when the server resends SM.
 type musicFilterKey struct {
 	q           string
 	n           int
 	first, last string
 }
 
-// refreshMusicFilter recomputes the matching track indices for a non-empty
-// query, memoized against the query + the list identity. Only this O(N) scan
-// (and its ToLower allocs) is gated here; the per-frame call is an O(1) key
-// compare and early-return when neither the query nor the list changed.
-//
-// It matches the RAW list entry, which covers the displayed short name too:
-// courtroom.MusicDisplayName only ever slices, so the display is always a
-// substring of the raw name (#43 shortened the rows, not what you can search).
-// Searching the raw text additionally keeps a directory ("songs/") findable.
+// refreshMusicFilter recomputes the matching track indices when the query or list identity changes. It matches the raw
+// entry: MusicDisplayName only slices, so the display is a substring, and a directory ("songs/") stays findable.
 func (a *App) refreshMusicFilter(query string) {
 	n := len(a.sess.Music)
 	key := musicFilterKey{q: query, n: n}
@@ -974,19 +859,15 @@ func (a *App) refreshMusicFilter(query string) {
 	}
 }
 
-// musicRow is one displayed row of the Music tab's track list: either a
-// category header (Issue #17: AO2/KFO group songs under a "==Category=="
-// entry with no audio extension — see courtroom.HasAudioExt) or a track,
-// both identified by their ORIGINAL index into a.sess.Music.
+// musicRow is one row of the Music tab: a category header (a "==Category==" entry with no audio extension, see
+// courtroom.HasAudioExt) or a track, by original index into a.sess.Music.
 type musicRow struct {
 	ti     int
 	header bool
 }
 
-// musicGroupKey memoizes the grouped/collapsed row layout, mirroring
-// musicFilterKey: the query plus a cheap list identity, PLUS
-// musicCollapseGen so toggling a category (or Expand/Collapse All)
-// invalidates it without re-keying on the whole collapse map every frame.
+// musicGroupKey memoizes the grouped row layout like musicFilterKey, plus musicCollapseGen so a fold invalidates it
+// without re-keying on the whole map.
 type musicGroupKey struct {
 	q           string
 	n           int
@@ -994,18 +875,8 @@ type musicGroupKey struct {
 	collapseGen uint64
 }
 
-// refreshMusicGroups (re)builds the visible row layout for the Music tab:
-// every category header, plus its tracks unless the header is collapsed.
-// Memoized against (query, list identity, collapse generation) so folding a
-// category — or typing in the search box — costs an O(N) rescan only on the
-// frame that actually changed something (the icWrapped/refreshMusicFilter
-// idiom), never per frame.
-//
-// While a search is active, collapse state is bypassed entirely: matching
-// tracks always show (auto-expanded, VSCode-style), with their category
-// header pulled in for context even if that header didn't itself match.
-// Manual collapse state is untouched and resumes the moment the query is
-// cleared.
+// refreshMusicGroups rebuilds the Music tab's visible rows when its key changes. A search bypasses collapse state:
+// matches always show, with their header for context, and manual state resumes when the query clears.
 func (a *App) refreshMusicGroups(query string) {
 	n := len(a.sess.Music)
 	key := musicGroupKey{q: query, n: n, collapseGen: a.musicCollapseGen}
@@ -1055,9 +926,7 @@ func (a *App) refreshMusicGroups(query string) {
 	}
 }
 
-// setAllMusicCollapsed (Issue #17's Expand All / Collapse All button) bulk-sets
-// every category header's fold state in one pass and bumps musicCollapseGen
-// once, instead of one toggle (and one memo-invalidating bump) per category.
+// setAllMusicCollapsed sets every header's fold state and bumps musicCollapseGen once, not once per category.
 func (a *App) setAllMusicCollapsed(collapsed bool) {
 	if !collapsed {
 		if len(a.musicCollapsed) == 0 {
@@ -1078,27 +947,18 @@ func (a *App) setAllMusicCollapsed(collapsed bool) {
 	a.musicCollapseGen++
 }
 
-// areaFilterKey memoizes the areas-list filter (#20), mirroring musicFilterKey.
-// Keyed by the query plus a cheap identity of the Areas list (len +
-// first/last name), which changes whenever the server resends the area list.
-// It deliberately does NOT key on AreaInfo (player counts / status / lock):
-// those change on every area packet, and the name filter doesn't depend on
-// them, so including them would defeat the memo and re-scan constantly.
+// areaFilterKey memoizes the areas filter like musicFilterKey. Not keyed on AreaInfo: it changes on every area packet
+// and the name filter doesn't depend on it.
 type areaFilterKey struct {
 	q           string
 	n           int
 	first, last string
 }
 
-// refreshAreaFilter returns the matching area indices for a non-empty query,
-// memoized against the query + the list identity — same O(1)-per-frame guard as
-// refreshMusicFilter. The indices are ORIGINAL indices into a.sess.Areas, which
-// parallels a.sess.AreaInfo, so a caller uses ti (not the visible index) to look
-// up either.
-//
-// slot names the query SOURCE (areaQuerySlotOwn/Themed), never the drawer: two
-// panels reading the same box share a slot and hit the same memo entry, while the
-// two boxes cannot evict each other.
+// refreshAreaFilter returns matching original indices into a.sess.Areas, which parallels a.sess.AreaInfo; memoized like
+// refreshMusicFilter.
+// slot names the query source (areaQuerySlotOwn/Themed), not the drawer: panels reading one box share an entry, and two
+// boxes can't evict each other.
 func (a *App) refreshAreaFilter(query string, slot int) []int {
 	n := len(a.sess.Areas)
 	key := areaFilterKey{q: query, n: n}
@@ -1119,19 +979,13 @@ func (a *App) refreshAreaFilter(query string, slot int) []int {
 	return out
 }
 
-// drawMusicVolume is the Music tab's pure volume menu (toggled in place of the
-// track list) — Master + the three channels, full sliders + readouts. Reachable
-// on a legacy AO2 theme too, since the theme draws drawMusicList directly.
+// drawMusicVolume is the Music tab's volume view, in place of the track list: Master, the three channels and blip rate.
 func (a *App) drawMusicVolume(r sdl.Rect) {
 	c := a.ctx
 	c.LabelClipped(r.X, r.Y, r.W, "Volume — the IC box stays live below, so adjust and keep chatting.", ColTextDim)
 	y := r.Y + 30
-	// FIX #9 parity (playtest: the Music tab's Volume control did nothing): drive the
-	// EFFECTIVE (per-server when connected) volumes, exactly like the strip and the
-	// Settings/Extras sliders. This menu used to read/write the GLOBAL prefs, which a
-	// connected server's per-server audio profile overrides — so as soon as volume had
-	// been touched anywhere else (those all write per-server), these sliders moved
-	// values nothing was listening to.
+	// Drive the effective (per-server when connected) volumes, like the strip and Settings; a per-server profile
+	// overrides the global prefs, so sliders on those would do nothing.
 	master, music, sfx, blip := a.effectiveVolumes()
 	row := func(id, label string, val int) int {
 		c.Label(r.X, y+6, label, ColText)
@@ -1153,9 +1007,7 @@ func (a *App) drawMusicVolume(r sdl.Rect) {
 	if nv := row("blip", "Blip", blip); nv != blip {
 		a.setEffectiveVolumes(master, music, sfx, nv)
 	}
-	// Blip rate, right under the Blip volume — the same cadence control as the volume
-	// strip's "Rate" column and Settings → Blips, mirrored here so it's adjustable straight
-	// from the Music menu's volume view. Range is clamped like the strip (left = faster).
+	// Blip rate, the same control as the volume strip's "Rate" column and Settings → Blips; left is faster.
 	rate, onSpaces := a.d.Prefs.Load().BlipTyping()
 	c.Label(r.X, y+6, "Blip rate", ColText)
 	rtrack := sdl.Rect{X: r.X + 80, Y: y + 7, W: r.W - 80 - 56, H: 16}
@@ -1168,69 +1020,43 @@ func (a *App) drawMusicVolume(r sdl.Rect) {
 	}
 }
 
-// themed reports that this panel is drawing INSIDE a theme's design canvas, where
-// the theme declares its own music_slider / sfx_slider / blip_slider rects and those
-// win (issue #21, owner decision). The Volume toggle is AsyncAO's own affordance for
-// the same job, so offering both would put two sets of volume controls on one screen.
-// Master volume and blip rate have no AO2 rect and stay reachable in Settings.
+// themed means this panel draws inside a theme's canvas, whose music_slider / sfx_slider / blip_slider rects win over
+// the Volume toggle.
 func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExternal bool) {
 	c := a.ctx
 	if a.musicPct < config.MinLogScalePercent { // uninit / stale → match the log
 		a.musicPct = a.logPct
 	}
-	// See drawPlayerList. AFTER the zoom is settled, and BEFORE the volume-mode
-	// early return, so the sliders and their labels are dressed too.
+	// After the zoom is settled and before the volume-mode return, so the sliders are dressed too.
 	defer c.popPanelFont(c.pushPanelFont(a.elemChromeFont(elemMusicList, a.musicPct)))
-	// Ctrl+wheel (or wheel-button) resizes the track text (musicPct). Lives HERE
-	// — not just the classic log panel — so it also works on the THEMED courtroom
-	// (which draws drawMusicList directly). In classic the panel already took the
-	// wheel (wheelTaken), so this no-ops there; no double-step.
+	// Here as well as in the classic log panel, so it works on the themed courtroom; in classic the panel already took
+	// the wheel, so no double step.
 	a.zoomWheel(r, &a.musicPct, config.MinLogScalePercent, config.MaxLogScalePercent)
-	// Inside a theme's canvas the theme's own slider rects are the volume surface,
-	// so the volume view is not offered (#21). volMode is forced FALSE rather than
-	// merely hiding its control: musicVolMode persists across restarts, so a user
-	// who left it on and then applied a theme would otherwise open to a volume view
-	// with no way out of it.
+	// volMode is forced false, not just its control hidden: musicVolMode persists, so a user who left it on and applied
+	// a theme would open to a volume view with no way out.
 	volMode := a.musicVolMode && !themed
-	// Now-Playing indicator: the current track from the server's MC (cleared on
-	// stop / area transfer), so you can see and silence what's playing.
-	//
-	// nowPlayingExternal means the THEME declared a music_display plate and the
-	// themed pass already painted the name on it (AO2 parents ui_music_name inside
-	// that plate — courtroom.cpp:171), so only the READOUT is dropped. The row
-	// itself belongs to the header buttons and is placed either way; that coupling
-	// is exactly what used to paint Expand all on top of Stop music.
+	// nowPlayingExternal means the theme's music_display plate already painted the name (courtroom.cpp:171), so only
+	// the readout is dropped, not the row.
 	now := ""
 	if a.room != nil {
 		now = a.room.Scene.MusicTrack
 	}
 	nowLabel := musicNothingPlaying
 	if now != "" {
-		// Same short name the list rows and the IC "has played a song" line use
-		// (courtroom.MusicDisplayName — AO2 list_music), so the three agree.
+		// The short name, matching the list rows and the IC "has played a song" line (AO2 list_music).
 		nowLabel = a.musicNowLabel.text(now)
 	}
-	// The search row is dropped WHOLE — draw and reserved height — in two cases:
-	// the theme declared its own music_search rect (searchExternal, below), and the
-	// volume view has replaced the track list. Filtering a list that is not on
-	// screen is nothing but ~26 px stolen from the sliders, which is what the old
-	// code's early return used to prevent.
+	// The search row is dropped whole when the theme declared music_search or the volume view replaced the track list.
 	hideSearchRow := searchExternal || volMode
 	total := len(a.sess.Music)
-	// planMusicHeader needs the count's WIDTH to size the search field, so a label
-	// has to exist BEFORE the field draws — but the count's NUMBERS must not be
-	// computed up here. The TextField returns this frame's text, so a query read
-	// before it runs is last frame's, and every result (count, filtered rows, the
-	// empty-state hint) then trails typing by a frame. The measurement therefore
-	// uses last frame's outcome — a.musicFiltered is already populated, so no extra
-	// scan — and the live query/filter/label are all evaluated after the draw below.
+	// The plan needs the count's width before the field draws, but the field returns this frame's text, so measure with
+	// last frame's outcome and evaluate the live query after the draw. Otherwise results trail typing by a frame.
 	prevShown := total
 	if strings.TrimSpace(a.musicSearch) != "" {
 		prevShown = len(a.musicFiltered)
 	}
 	plan := planMusicHeader(r, nowLabel, a.musicCount.text(prevShown, total), hideSearchRow, nowPlayingExternal, c.TextWidth)
 
-	// --- header row 1: the four actions, the overflow menu, the readout ---
 	if br, ok := plan.rect(musicItemStop); ok {
 		if a.musicIconButton(br, iconStop, "Stop the current song (also the M hotkey)") {
 			a.stopMusic()
@@ -1253,20 +1079,15 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 	}
 	if br, ok := plan.rect(musicItemMenu); ok {
 		if a.musicIconButton(br, iconKebab, "More: playback options, volume sliders (right-click the list opens this too)") {
-			// FromButton, not openMusicMenu: the press has to be consumed here or
-			// drawMusicMenu's click-away test closes the menu the same frame it
-			// opened (see openMusicMenuFromButton).
+			// FromButton: the press must be consumed or drawMusicMenu's click-away closes the menu the frame it opened.
 			a.openMusicMenuFromButton(sdl.Point{X: br.X, Y: br.Y + br.H}, themed)
 		}
 	}
-	// #39: "music_name" is AO2's own id for this line (Courtroom::set_fonts,
-	// courtroom.cpp:1201). elemLabelFont keeps the fixed chrome face when the theme
-	// says nothing, so an undressed client draws exactly what it did before; real
-	// themes set music_name_bold = 1, hence the weighted draw.
+	// "music_name" is AO2's id for this line (courtroom.cpp:1201). elemLabelFont keeps the chrome face when the theme
+	// says nothing; real themes set music_name_bold = 1.
 	if br, ok := plan.rect(musicItemNowPlaying); ok {
 		nameFont := a.elemLabelFont(elemMusicName, DefaultScalePct, nowLabel)
-		// #21 label 16: "music_name_color". themed IS the canvas flag here — the two
-		// mean the same thing at every call site (see the doc comment above).
+		// "music_name_color"; themed is the canvas flag here.
 		nameInk := ColTextDim
 		if now != "" {
 			nameInk = a.elemInkOr(elemMusicName, themed, ColAccent)
@@ -1274,17 +1095,12 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 		ty := br.Y + (br.H-fontLineH(nameFont))/2
 		c.LabelClippedFontWeight(nameFont, br.X, ty, br.W, nowLabel, nameInk, a.elemBold(elemMusicName))
 	}
-	// --- header row 2: the search filter and its shown/total count ---
-	//
-	// searchExternal means the THEME declared its own music_search rect and the
-	// themed pass already drew the field there (AO2 puts it outside music_list —
-	// courtroom.cpp:219-222), so the row is skipped entirely and the track list
-	// gets those pixels back. Volume mode skips it for its own reason (hideSearchRow).
+	// searchExternal means the theme drew the field in its own rect, outside music_list (courtroom.cpp:219-222); the
+	// plan then skips this row.
 	if br, ok := plan.rect(musicItemSearch); ok {
 		a.musicSearch, _ = c.TextField("musicsearch", sdl.Rect{X: br.X, Y: br.Y, W: br.W, H: fieldH}, a.musicSearch, "Search music…  (Ctrl+wheel resizes)")
 	}
-	// Evaluated AFTER the field, so the filter, the count and the rows below all run
-	// on the text typed THIS frame — see the measurement note above the plan.
+	// After the field, so the filter, count and rows all use the text typed this frame.
 	query := strings.ToLower(strings.TrimSpace(a.musicSearch))
 	shown := total
 	if query != "" {
@@ -1301,17 +1117,14 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 		return
 	}
 
-	// Hover-gated (playtest: the music list scrolled from anywhere).
 	if !c.ctrlHeld { // ctrl+wheel resizes text (musicPct), never scrolls
 		a.musicScroll -= c.WheelIn(r) * scrollStepPx
 	}
-	// #39: the theme's "music_list" size/family, folded with the music zoom
-	// (independent of the IC log scale).
+	// The theme's "music_list" size and family, folded with the music zoom.
 	font := a.elemFont(elemMusicList, a.musicPct)
 	musicBold := a.elemBold(elemMusicList) // music_list_bold → the row's real bold cut
-	// #21 label 16: "music_list_color" is the TRACK rows' ink. Category headers keep
-	// ColAccent — they are filled ColPanelHi and the [-]/[+] marker is AsyncAO's own
-	// collapse affordance, not one of AO2's tree items.
+	// "music_list_color" is the track rows' ink. Category headers keep ColAccent: the [-]/[+] marker is AsyncAO's, not
+	// one of AO2's tree items.
 	trackInk := a.elemInkOr(elemMusicList, themed, ColText)
 	lineH := int32(font.Height()) + 10
 	a.refreshMusicGroups(query) // grouped + (search: auto-expanded) row layout — cached, see screens.go
@@ -1332,9 +1145,7 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 			hover := c.hovering(row)
 			if mr.header {
 				c.Fill(row, ColPanelHi) // section header, like drawJukeGroupHeader (music_history.go)
-				// ASCII fold marker, not a ▶/▼ glyph — LogFont's primary face isn't
-				// guaranteed to cover Geometric Shapes (see jukebox.go's "Play" button
-				// comment: those tofu on fonts without that block).
+				// ASCII fold marker: LogFont's primary face isn't guaranteed to cover Geometric Shapes.
 				glyph := "[-] " // expanded
 				if a.musicCollapsed[mr.ti] {
 					glyph = "[+] " // collapsed
@@ -1356,11 +1167,8 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 				if hover {
 					c.Fill(row, ColPanelHi)
 				}
-				// #43: show AO2's DISPLAY name (directory + extension cut —
-				// courtroom.MusicDisplayName mirrors Courtroom::list_music), not the
-				// whole wire entry. The click below still sends `entry` VERBATIM: the
-				// display is a pure substring, the MC packet and the music URL are
-				// built from the raw name.
+				// AO2's display name (courtroom.MusicDisplayName mirrors Courtroom::list_music). The click sends the
+				// raw entry: the MC packet and URL are built from it.
 				display := courtroom.MusicDisplayName(entry)
 				c.LabelClippedFontWeight(font, r.X+20, y+4, row.W-24, display, trackInk, musicBold) // indented under its category, tree-style
 				if hover {
@@ -1380,21 +1188,15 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 		}
 		c.Label(r.X+4, r.Y+6, hint, ColTextDim)
 	}
-	// Right-click anywhere in the list opens the same overflow menu the ⋮ button
-	// does — AO2's real entry point for these actions is
-	// on_music_list_context_menu_requested (courtroom.cpp:5821), so the button is
-	// the discoverable route and this is the shortcut.
+	// Right-click opens the same menu as the ⋮ button; AO2's entry point is on_music_list_context_menu_requested
+	// (courtroom.cpp:5821).
 	if c.rightClicked && c.hovering(r) {
 		a.openMusicMenu(sdl.Point{X: c.mouseX, Y: c.mouseY}, themed)
 		c.rightClicked = false
 	}
 }
 
-// musicCategoryLabel strips a category header's decorative "==" wrapper
-// (the AO2 convention for marking a music-list entry as a section header,
-// e.g. "==Cave Story OST==") for display now that folding gives it a real
-// header row instead of relying on the punctuation to read as one. Left
-// untouched if the server didn't use that convention.
+// musicCategoryLabel strips a category header's decorative "==" wrapper for display, if the server used it.
 func musicCategoryLabel(name string) string {
 	trimmed := strings.TrimSpace(name)
 	if strings.HasPrefix(trimmed, "==") && strings.HasSuffix(trimmed, "==") && len(trimmed) > 4 {
@@ -1403,8 +1205,8 @@ func musicCategoryLabel(name string) string {
 	return name
 }
 
-// scaleControl draws one "Name − +" layout knob; steps mutate *value
-// within [min, max] and persist the layout. Returns the next x.
+// scaleControl draws one "Name − +" layout knob, stepping *value within [min, max] and saving the layout; returns the
+// next x.
 func (a *App) scaleControl(x, y int32, name string, value *int, step, min, max int) int32 {
 	c := a.ctx
 	x += c.Label(x, y+6, name, ColTextDim) + 4

@@ -1,11 +1,7 @@
 package ui
 
-// Per-part layout colours (v1.52.0, requested by Tifera: colour individual parts
-// of the layout). Each big courtroom panel — the log column, the OOC box, the emote
-// grid, the chatbox — can carry its own background tint instead of the global
-// chrome Panel colour. Overrides live in prefs as hex strings (blank = chrome
-// default) and are parsed ONCE into an App-local cache, so the draw sites pay
-// an array read per frame, never a parse or a pref lock.
+// Per-part layout colours: each big panel can carry its own background tint, stored in prefs as hex (blank = chrome
+// default) and parsed once into an App cache, so draw sites never parse or take a pref lock.
 
 import (
 	"fmt"
@@ -26,8 +22,7 @@ const (
 // partColorLabels are the Settings row names, indexed like the pref array.
 var partColorLabels = [config.LayoutPartColorCount]string{"IC log / right column", "OOC box", "Emote grid", "Chatbox"}
 
-// refreshPartColors re-parses the pref hexes into the draw cache. Called at
-// launch and after every Settings edit — never per frame.
+// refreshPartColors re-parses the pref hexes; called at launch and after Settings edits, never per frame.
 func (a *App) refreshPartColors() {
 	hex := a.d.Prefs.Load().LayoutPartHex
 	for i := range hex {
@@ -53,9 +48,7 @@ func (a *App) partPanelOr(i int, def sdl.Color) sdl.Color {
 	return def
 }
 
-// drawPartColorSettings is the Settings → Theme "Layout part colours" section:
-// one row per part — swatch, name, Edit (opens the shared wheel on that part)
-// and Reset. Returns the next y. Settings-only; never a hot path.
+// drawPartColorSettings is the Settings section with one row per part; returns the next y.
 func (a *App) drawPartColorSettings(y int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -89,8 +82,7 @@ func (a *App) drawPartColorSettings(y int32) int32 {
 		y += 28
 	}
 
-	// The shared wheel edits the selected part (same feel as the custom
-	// chrome editor above it).
+	// The shared wheel edits the selected part.
 	sel := a.partEditSlot
 	if sel < 0 || sel >= len(partColorLabels) {
 		sel = 0

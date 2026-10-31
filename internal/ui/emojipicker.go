@@ -2,22 +2,18 @@ package ui
 
 import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
-// IC emoji picker (#M2 slice 1): a button on the IC bar opens a grid of common emojis;
-// clicking one inserts it into your message. Purely LOCAL and standard-client-safe — it
-// just adds emoji to the text you type. The grid renders colour emoji through the same
-// fallback raster as the chatbox. While open it is MODAL-FENCED (drawCourtroom sets
-// c.modalOn) so a click on a cell can't fall through to the stage / log / emote row
-// beneath; the picker + its button use the raw pointIn hit test, like the dropdown.
+// IC emoji picker: a button on the IC bar opens a grid of common emojis; clicking one inserts it into your message.
+// Purely local: it just adds emoji to the text you type. The grid renders colour emoji through the chatbox's
+// fallback raster. While open it is modal-fenced (drawCourtroom sets c.modalOn) so a cell click can't fall through
+// to the stage, log or emote row; the picker and its button use the raw pointIn hit test, like the dropdown.
 
-// icEmojiSet is a curated set of common reaction/chat emojis (emojiPickerCols per row).
-// Two coverage rules so none render as tofu boxes:
-//  1. BMP symbol emoji (U+2xxx: ✨ ⭐ ❓ ❗ ✅ ❌ …) carry a trailing VARIATION SELECTOR-16
-//     (U+FE0F). Without it they're text-presentation code points and never reach the
-//     colour-emoji font (isEmojiBase only auto-promotes the supplementary plane) — they'd
-//     box. The selector is invisible; ❤️ ✌️ ⚖️ already have it.
-//  2. No bleeding-edge code points: the very newest faces (e.g. 🫡 🫠, Unicode 14/2021) are
-//     absent from emoji fonts that predate them, and a streaming client can't ship its own
-//     coloured glyphs, so the set stays within widely-shipped (≤ Unicode 11) pictographs.
+// icEmojiSet is a curated set of common reaction/chat emojis (emojiPickerCols per row). Two coverage rules avoid
+// tofu boxes:
+//  1. BMP symbol emoji (U+2xxx: ✨ ⭐ ❓ ❗ ✅ ❌ …) carry a trailing VARIATION SELECTOR-16 (U+FE0F). Without it they
+//     are text-presentation code points and never reach the colour-emoji font (isEmojiBase only auto-promotes the
+//     supplementary plane). The selector is invisible; ❤️ ✌️ ⚖️ already have it.
+//  2. No bleeding-edge code points (e.g. 🫡 🫠, Unicode 14): emoji fonts that predate them lack them and a
+//     streaming client can't ship its own glyphs, so the set stays within Unicode 11 and earlier.
 var icEmojiSet = []string{
 	"😀", "😂", "🙂", "😉", "😍", "😎", "😭", "😡",
 	"👍", "👎", "👏", "🙏", "💪", "🤝", "✌️", "👋",
@@ -34,9 +30,8 @@ const (
 	emojiBtnPct     = 120 // the IC-bar button's emoji size
 )
 
-// drawEmojiBarButton draws the IC-bar emoji button and reports a toggle click. It uses
-// the raw pointIn test so it works whether or not the fence is up (it's up while the
-// picker is open). Stores its rect so the overlay can anchor above it.
+// drawEmojiBarButton draws the IC-bar emoji button and reports a toggle click. It uses the raw pointIn test so it
+// works whether or not the fence is up. Stores its rect so the overlay can anchor above it.
 func (a *App) drawEmojiBarButton(btn sdl.Rect) bool {
 	c := a.ctx
 	a.emojiBtnRect = btn
@@ -47,10 +42,9 @@ func (a *App) drawEmojiBarButton(btn sdl.Rect) bool {
 	} else {
 		c.Border(btn, ColTextDim)
 	}
-	// Pre-warm the ~12 MB colour-emoji face on HOVER, so the grid (and this button's own
-	// glyph) are already in colour by the time the picker opens — no first-open tofu flash
-	// while the off-thread read lands. Lazy is preserved: a user who never reaches for the
-	// emoji button never triggers the read.
+	// Pre-warm the ~12 MB colour-emoji face on hover, so the grid and this button's glyph are in colour when the
+	// picker
+	// opens. A user who never hovers the button never triggers the read.
 	if hover {
 		a.ensureEmojiFontLoad()
 	}
@@ -58,9 +52,8 @@ func (a *App) drawEmojiBarButton(btn sdl.Rect) bool {
 	return c.clicked && hover
 }
 
-// drawEmojiPicker draws the open picker overlay (a grid anchored above the button) and
-// inserts the clicked emoji. Called once per frame after the courtroom (covers both
-// layouts). No-op when closed. A click outside the panel and the button closes it.
+// drawEmojiPicker draws the open picker overlay (a grid anchored above the button) and inserts the clicked emoji.
+// Called once per frame after the courtroom, for both layouts. A click outside the panel and button closes it.
 func (a *App) drawEmojiPicker(w, h int32) {
 	if !a.showEmojiPicker {
 		return
@@ -101,18 +94,15 @@ func (a *App) drawEmojiPicker(w, h int32) {
 	}
 }
 
-// insertICEmoji appends an emoji to the IC input and re-focuses it; on the focus change
-// the kit puts the caret at the end, right after the inserted emoji.
+// insertICEmoji appends an emoji to the IC input and re-focuses it; the kit puts the caret at the end.
 func (a *App) insertICEmoji(emoji string) {
 	a.icInput += emoji
 	a.ctx.FocusField("ic")
 }
 
-// emojiPickerFence manages the picker's modal fence each frame, BEFORE the screen draws.
-// c.modalOn PERSISTS across frames (like the dropdown's), so it MUST be released the
-// frame the picker closes — otherwise the whole UI stays fenced and frozen (the reported
-// open-then-close bug). The picker is courtroom-only, so it's force-closed if any other
-// screen / overlay is up, to never strand the fence elsewhere.
+// emojiPickerFence manages the picker's modal fence each frame, before the screen draws. c.modalOn persists across
+// frames, so it must be released the frame the picker closes or the whole UI stays frozen. The picker is
+// courtroom-only, so it is force-closed on any other screen or overlay.
 func (a *App) emojiPickerFence(c *Ctx) {
 	courtroomActive := a.screen == ScreenCourtroom && !a.gifExporting && !a.replaying && !a.makerOpen
 	if a.showEmojiPicker && !courtroomActive {

@@ -9,16 +9,10 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// drawFriendsTab is the dedicated Friends window the playtesters asked for — a tab
-// beside Log / OOC / Notes listing THIS server's friends (each in their saved
-// colour / nickname), with Remove and a click-to-PM. Picking PM selects the
-// friend into a little composer at the bottom of the tab: type a message, Send,
-// and it goes out as "/pm <their id> <message>" over OOC (the only private channel
-// AO has; the reply comes back in the OOC log). Friends are stored per-server by
-// showname (added via the player list / IC-log "+ Friend"), so no new storage.
+// drawFriendsTab lists this server's friends with Remove and click-to-PM; a PM goes out as "/pm <id> <message>"
+// over OOC. Friends are stored per server by showname.
 func (a *App) drawFriendsTab(r sdl.Rect) {
-	// See drawPlayerList. The Friends panel has no zoom of its own, so the element
-	// size stands alone at the client's base scale.
+	// See drawPlayerList. The panel has no zoom of its own, so the element size stands at the base scale.
 	defer a.ctx.popPanelFont(a.ctx.pushPanelFont(a.elemChromeFont(elemFriends, DefaultScalePct)))
 	c := a.ctx
 	if a.serverKey == "" {
@@ -27,8 +21,7 @@ func (a *App) drawFriendsTab(r sdl.Rect) {
 	}
 	names := a.d.Prefs.Load().ServerFriends(a.serverKey)
 	c.Label(r.X+4, r.Y+4, fmt.Sprintf("Friends here (%d) — add with \"+ Friend\" on a player:", len(names)), ColTextDim)
-	// Start a group chat right from the friends list — the natural place to gather
-	// friends. Opens the Group Chat panel on a fresh group's invite view.
+	// Start a group chat from the friends list; opens the Group Chat panel on a fresh invite view.
 	ngLabel := "+ New group chat"
 	ngW := c.TextWidth(ngLabel) + 16
 	ngR := sdl.Rect{X: r.X + r.W - ngW - 4, Y: r.Y, W: ngW, H: 22}
@@ -49,8 +42,7 @@ func (a *App) drawFriendsTab(r sdl.Rect) {
 		return
 	}
 
-	// A friend is picked: split into a compact list (to switch between friends), the
-	// PM thread (the DM view), and the composer pinned at the bottom.
+	// A friend is picked: compact list, PM thread, and the composer pinned at the bottom.
 	composerH := fieldH + 22
 	listH := (r.H - composerH) / 3
 	if listH < 64 {
@@ -121,9 +113,7 @@ func (a *App) drawFriendRows(r sdl.Rect, listH int32, names []string) {
 	}
 }
 
-// drawPMComposer is the "lil menu you can type on": a one-line message box that
-// sends /pm <their id> over OOC. Drawn at the bottom of the Friends tab once a
-// friend is selected.
+// drawPMComposer is the one-line message box that sends /pm <id> over OOC.
 func (a *App) drawPMComposer(box sdl.Rect) {
 	c := a.ctx
 	c.Fill(box, ColPanelHi)
@@ -141,9 +131,7 @@ func (a *App) drawPMComposer(box sdl.Rect) {
 	}
 }
 
-// sendPM fires the composed message as "/pm <id> <message>" over OOC, resolving
-// the friend's current client id from the roster (server /pm wants the id; falls
-// back to the name when we don't have a live id). The reply lands in the OOC log.
+// sendPM sends "/pm <id> <message>" over OOC, using the friend's live id from the roster, else their name.
 func (a *App) sendPM() {
 	msg := strings.TrimSpace(a.pmInput)
 	if msg == "" || a.pmTarget == "" || a.sess == nil {
@@ -158,9 +146,7 @@ func (a *App) sendPM() {
 	a.pmInput = ""
 }
 
-// friendUID looks up a friend's current client UID by matching their saved name
-// against the live roster (showname or character). "" when they're not currently
-// visible to us (no /getarea snapshot / not in our area).
+// friendUID finds a friend's current UID by matching their name against the live roster; "" when not visible.
 func (a *App) friendUID(name string) string {
 	want := strings.ToLower(strings.TrimSpace(name))
 	for _, p := range a.rosterView() {
@@ -171,8 +157,7 @@ func (a *App) friendUID(name string) string {
 	return ""
 }
 
-// pmLine is one line of a PM conversation: who said it and the text. A tiny
-// convenience mirror of the OOC log, not a store of record.
+// pmLine is one line of a PM conversation, a mirror of the OOC log and not a store of record.
 type pmLine struct {
 	fromMe bool
 	text   string
@@ -184,22 +169,10 @@ const (
 	pmThreadCap     = 32  // distinct conversations kept (bounds the map)
 )
 
-// pmAppend records one PM line under the partner's canonical thread key, bounded
-// per-thread and in the number of threads.
+// pmAppend records one PM line under the partner's thread key, bounded per thread and in thread count.
 func (a *App) pmAppend(partner string, fromMe bool, text string) {
-	// The DM channel is the one place the zero-width codec rides by DESIGN: a group
-	// invite / join / kick / DM tag travels as a control frame inside an otherwise
-	// ordinary PM body (courtroom/msgwire.go, magic 0x74).
-	//
-	// None of the four callers hands us a marked string TODAY — routeIncomingPM passes
-	// DecodeMessageFrame's already-clean text, detectIncomingPM is reached from inside
-	// pushOOC which strips before it parses, and the two send paths pass the composed
-	// text rather than the wire body. This strip is the seam's own guarantee, not a
-	// patch for a live defect, and the send paths are why it is worth having:
-	// sendDirectMessage builds `body := text + ...EncodeMarker()` on the line above its
-	// pmAppend(target, true, text), so mirroring the WIRE string into the thread is a
-	// one-word slip. Stating the rule at the seam means the slip is invisible instead
-	// of being a bug report about a DM that ate its own font. Zero-alloc when absent.
+	// Strip the zero-width control frame (courtroom/msgwire.go, magic 0x74): group invite/join/kick tags ride in PM
+	// bodies, and mirroring the wire string into the thread would show them. Zero-alloc when absent.
 	text = strings.TrimSpace(courtroom.StripSpriteStyle(text))
 	key := a.pmThreadKey(partner)
 	if key == "" || text == "" {
@@ -218,11 +191,8 @@ func (a *App) pmAppend(partner string, fromMe bool, text string) {
 	a.pmThreads[key] = cur
 }
 
-// pmThreadKey canonicalises a PM partner name to a thread key so incoming and
-// outgoing share ONE conversation. Matches a known friend by their stored name,
-// or via the live roster's showname / char / OOC name (a server's "PM from <X>"
-// may use a different identity field than the one we filed the friend under);
-// otherwise the lowercased name itself.
+// pmThreadKey canonicalises a PM partner to a thread key so incoming and outgoing share one conversation:
+// a known friend's stored name, a roster showname / char / OOC name, else the lowercased name.
 func (a *App) pmThreadKey(name string) string {
 	want := strings.ToLower(strings.TrimSpace(name))
 	if want == "" {
@@ -249,25 +219,17 @@ func (a *App) pmThreadKey(name string) string {
 	return want
 }
 
-// detectIncomingPM best-effort parses a received PM out of an OOC line and mirrors
-// it into the Friends-tab thread (the line ALSO stays in the OOC log, so a miss
-// loses nothing). Matches the common "PM from <sender>: <message>" shape, dropping
-// a trailing "(...)" annotation from the sender. Server formats vary across
-// tsuserver forks, so this is deliberately tolerant + easy to extend once a real
-// line is confirmed. Outgoing PMs are recorded in sendPM, and a server's own
-// "PM sent to ..." echo never matches "PM from", so nothing double-records.
+// detectIncomingPM best-effort parses a received PM from an OOC line into the thread (the line stays in the OOC log).
+// It matches "PM from <sender>: <message>" and drops a trailing "(...)"; formats vary across tsuserver forks.
+// Outgoing PMs are recorded in sendPM.
 func (a *App) detectIncomingPM(text string) {
 	if sender, msg, ok := parseIncomingPM(text); ok {
 		a.pmAppend(sender, false, msg)
 	}
 }
 
-// routeIncomingPM files a received private message into its DM thread. This is the
-// ROBUST path for servers that attribute the sender in the CT NAME field — Nyathena
-// / Athena deliver a PM as a server message whose name is "[PM] [UID n] <name>"
-// (courtroom.ParsePMSender), which the text-shape detectIncomingPM can't see. Any
-// AsyncAO control frame in the body is stripped before it's shown. Group routing
-// layers onto this later.
+// routeIncomingPM files a received PM into its DM thread. Nyathena / Athena put the sender in the CT name field as
+// "[PM] [UID n] <name>" (courtroom.ParsePMSender), which detectIncomingPM can't see. Control frames are stripped.
 func (a *App) routeIncomingPM(uid int, sender, body string) {
 	m, clean, ok := courtroom.DecodeMessageFrame(body)
 	if ok {
@@ -292,10 +254,8 @@ func (a *App) routeIncomingPM(uid int, sender, body string) {
 	a.pmAppend(sender, false, clean) // plain DM (MsgDM or no control frame)
 }
 
-// parseIncomingPM extracts (sender, message) from a received-PM OOC line, or
-// ok=false when it isn't the recognised "PM from <sender>: <message>" shape (a
-// trailing "(CID 5)" / "(in Area)" annotation on the sender is dropped). Pure, so
-// the format match is unit-tested — and easy to adjust — without a live App.
+// parseIncomingPM extracts (sender, message) from a "PM from <sender>: <message>" OOC line, dropping a trailing
+// "(CID 5)" / "(in Area)" annotation; ok=false otherwise. Pure.
 func parseIncomingPM(text string) (sender, msg string, ok bool) {
 	const prefix = "pm from "
 	t := strings.TrimSpace(text)
@@ -318,9 +278,7 @@ func parseIncomingPM(text string) (sender, msg string, ok bool) {
 	return sender, msg, true
 }
 
-// drawPMThread renders the selected friend's PM history as a little DM view (your
-// lines in accent, theirs plain), newest at the bottom. A convenience mirror of
-// the OOC log; incoming lines are best-effort parsed there.
+// drawPMThread renders the selected friend's PM history, newest at the bottom, your lines in accent.
 func (a *App) drawPMThread(box sdl.Rect) {
 	c := a.ctx
 	c.Fill(box, ColPanel)

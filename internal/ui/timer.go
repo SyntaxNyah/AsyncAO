@@ -8,23 +8,18 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Local alarm/timer (#97): an opt-in personal countdown — set a duration, then
-// Start / Pause / Reset (optionally Repeat) — that pings, flashes the window and
-// shows an on-screen banner when it reaches zero, so RPers and casers feel a bit
-// of urgency. It is entirely distinct from the SERVER courtroom timers
-// (sess.TimerCount / the centered clock chips). Off by default and zero-footprint
-// until used: pollTimer returns on the first compare while idle, the on-stage
-// chip only draws while a countdown is live, and nothing here touches the render
-// hot path. App-global (one personal timer across all tabs, like Do-Not-Disturb).
+// Local alarm/timer: an opt-in personal countdown (Start / Pause / Reset, optionally Repeat) that pings, flashes the
+// window and shows a banner at zero. It is distinct from the server courtroom timers and app-global.
+// pollTimer returns on the first compare while idle, and the chip only draws while a countdown is live.
 
 // timerRunning reports a live countdown (not idle, not paused).
 func (a *App) timerRunning() bool { return !a.timerEndAt.IsZero() }
 
-// timerActive reports a countdown that's running OR paused (so the chip shows).
+// timerActive reports a countdown that is running or paused (so the chip shows).
 func (a *App) timerActive() bool { return a.timerRunning() || a.timerPausedLeft > 0 }
 
-// timerRemaining is the time left: until timerEndAt while running, the frozen
-// remainder while paused, else the configured duration (idle preview).
+// timerRemaining is the time left: until timerEndAt while running, the frozen remainder while paused, else the
+// duration.
 func (a *App) timerRemaining() time.Duration {
 	switch {
 	case a.timerRunning():
@@ -88,9 +83,7 @@ func (a *App) resetTimer() {
 	a.timerPausedLeft = 0
 }
 
-// pollTimer fires the alarm when a running countdown reaches zero. One time
-// compare per frame while running; an immediate return (zero cost) when idle or
-// paused. Called from the main poll loop.
+// pollTimer fires the alarm when a running countdown reaches zero; one compare per frame while running, none when idle.
 func (a *App) pollTimer() {
 	if a.timerEndAt.IsZero() {
 		return
@@ -101,10 +94,8 @@ func (a *App) pollTimer() {
 	a.fireTimer()
 }
 
-// fireTimer raises the alarm: built-in ping + window flash + on-screen banner,
-// then repeats from the same duration if Repeat is on, else stops. User-initiated
-// (you started it), so unlike callwords it is NOT gated by Do-Not-Disturb or
-// streamer mode. Nil-guards keep it callable from tests with a bare App.
+// fireTimer raises the alarm (ping, window flash, banner), then repeats if Repeat is on, else stops.
+// It is not gated by Do-Not-Disturb or streamer mode because the user started it. Nil guards allow a bare App.
 func (a *App) fireTimer() {
 	a.warnLine = "Timer finished!"
 	a.warnAt = time.Now()
@@ -121,8 +112,7 @@ func (a *App) fireTimer() {
 	}
 }
 
-// formatTimer renders a duration as MM:SS (or H:MM:SS past an hour), rounded to
-// whole seconds and floored at zero.
+// formatTimer renders a duration as MM:SS (H:MM:SS past an hour), rounded to whole seconds and floored at zero.
 func formatTimer(d time.Duration) string {
 	if d < 0 {
 		d = 0
@@ -135,10 +125,8 @@ func formatTimer(d time.Duration) string {
 	return fmt.Sprintf("%02d:%02d", m, s)
 }
 
-// drawTimerChip draws the live countdown over the stage (top-right) while a timer
-// is running or paused, so the urgency is always visible — independent of whether
-// the setup panel is open. Drawn from drawCourtOverlays (both layouts); a no-op
-// when no timer is active, so it costs nothing when unused.
+// drawTimerChip draws the live countdown over the stage (top-right) while a timer is running or paused, whether or not
+// the setup panel is open; a no-op when no timer is active.
 func (a *App) drawTimerChip(vp sdl.Rect) {
 	if !a.timerActive() {
 		return
@@ -163,9 +151,7 @@ func (a *App) drawTimerChip(vp sdl.Rect) {
 	c.Label(r.X+6, r.Y+3, label, col)
 }
 
-// Timer panel geometry. The old modal was a fixed 400×270 centred block; as a
-// floatWin it keeps that as its default size and can be resized down to the
-// controls' own footprint.
+// Timer panel geometry: a floatWin with a default size that can shrink to the controls' footprint.
 const (
 	timerPanelDefW = int32(400)
 	timerPanelDefH = int32(300)
@@ -176,8 +162,7 @@ const (
 	timerValueColW = int32(62)
 )
 
-// timerPanelRect is the panel's screen rect, seeded from its persisted layout slot
-// on first open and clamped on-screen thereafter (the modcallPanelRect idiom).
+// timerPanelRect is the panel's screen rect, seeded from its persisted layout slot on first open and clamped on-screen.
 func (a *App) timerPanelRect(w, h int32) sdl.Rect {
 	if r, ok := a.seedPanelFromSlot(&a.timerWin, slotPanelTimer, timerPanelDefW, timerPanelDefH, timerPanelMinW, timerPanelMinH, w, h); ok {
 		return r
@@ -185,16 +170,9 @@ func (a *App) timerPanelRect(w, h int32) sdl.Rect {
 	return a.timerWin.rect(timerPanelDefW, timerPanelDefH, timerPanelMinW, timerPanelMinH, w, h)
 }
 
-// drawTimerPanel is the countdown's setup surface: a large remaining readout,
-// Minutes/Seconds sliders + quick presets while idle, and Start/Pause/Resume/Reset
-// + Repeat. Opened from the Extras "Timer" entry.
-//
-// It was a return-to-top modal, and that is issue #31: opening a personal
-// countdown blanked the courtroom, the logs, the music list and every button —
-// drawCourtroomModals ends the pass, so nothing under it draws at all. A timer is
-// the LAST thing that should take the screen; you set it precisely so you can
-// watch the scene against it. It is a non-blocking floatWin now (drag the title
-// bar, resize the bottom-right grip) like the Evidence and Call Mod boxes.
+// drawTimerPanel is the countdown's setup surface: remaining readout, Minutes/Seconds sliders and presets while idle,
+// and Start/Pause/Resume/Reset plus Repeat. It is a non-blocking floatWin rather than a modal, because a modal ends the
+// courtroom pass and blanks everything under it while the user wants to watch the scene.
 func (a *App) drawTimerPanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	wasActive := a.timerWin.dragging || a.timerWin.resizing // detect the drag/resize-end frame for slot persistence
@@ -240,9 +218,7 @@ func (a *App) drawTimerPanel(w, h int32, pressed *bool) {
 		}
 	} else {
 		// Idle: pick a duration via sliders + presets, then Start.
-		// The tracks follow the panel width now that it is resizable — a fixed 200 px
-		// track with its value label pinned 278 px in would have run straight out of a
-		// panel dragged down to timerPanelMinW.
+		// The tracks follow the panel width so they cannot run out of a panel dragged down to timerPanelMinW.
 		mins := int32(a.timerSetSec / 60)
 		secs := int32(a.timerSetSec % 60)
 		trackX := panel.X + pad + 70
@@ -274,9 +250,8 @@ func (a *App) drawTimerPanel(w, h int32, pressed *bool) {
 			a.startTimer()
 		}
 	}
-	// Repeat toggle (both states), persisted so it's remembered next session. Sits on
-	// its own row ABOVE the transport buttons rather than beside them: on the bottom
-	// row it collided with the resize grip the moment the panel was dragged narrow.
+	// Repeat toggle (both states), persisted. It sits above the transport buttons because beside them it collides with
+	// the resize grip when the panel is narrow.
 	if rep := c.Checkbox(panel.X+pad, by-24, "Repeat", a.timerRepeat); rep != a.timerRepeat {
 		a.timerRepeat = rep
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.TimerRepeat = rep })

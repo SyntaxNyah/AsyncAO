@@ -9,16 +9,9 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// drawDebugOverlay paints the bounded failure log plus a one-line session
-// health readout over whatever screen is active (Settings → "Debug
-// overlay"). It exists to answer two questions without a debugger attached:
-// "what failed?" (the ring: missing assets, theme misses, dropped/unknown
-// packets, disconnect reasons) and "is the server itself misbehaving?"
-// (phase stuck before ready + a rising last-packet age = server-side hang).
-//
-// This is an opt-in diagnostics path: the fmt allocations here are accepted
-// and never run while the toggle is off (the zero-alloc render gates bench
-// with it off).
+// drawDebugOverlay paints the bounded failure log plus a one-line session health readout over the active screen.
+// It answers "what failed?" (the ring) and "is the server misbehaving?" (phase stuck before ready with a rising
+// last-packet age). It is opt-in, so its fmt allocations are accepted and never run while the toggle is off.
 func (a *App) drawDebugOverlay(w, h int32) {
 	c := a.ctx
 	const (
@@ -29,8 +22,7 @@ func (a *App) drawDebugOverlay(w, h int32) {
 	if len(lines) > debugOverlayLines {
 		lines = lines[len(lines)-debugOverlayLines:]
 	}
-	// Header + lines, anchored bottom-left; 55% width leaves the right
-	// column (logs/music) readable underneath.
+	// Header and lines anchor bottom-left; 55% width leaves the right column readable.
 	panelH := int32(len(lines)+3)*lineH + 2*panelPad // 3 header lines (health + diag + cold-load)
 	panel := sdl.Rect{X: 0, Y: h - panelH, W: w * 55 / 100, H: panelH}
 	c.Fill(panel, sdl.Color{R: 0, G: 0, B: 0, A: 200})
@@ -47,10 +39,8 @@ func (a *App) drawDebugOverlay(w, h int32) {
 	}
 }
 
-// debugHealthLine summarizes the live session: handshake phase, the server
-// software string it announced, and how stale the incoming packet stream
-// is. A buggy/hung server shows up as the phase stuck before "ready" with
-// the last-packet age climbing.
+// debugHealthLine summarizes the live session: handshake phase, announced server software, and the age of the
+// last incoming packet.
 func (a *App) debugHealthLine() string {
 	if a.sess == nil {
 		return "debug · no session (lobby) · log " +
@@ -72,11 +62,8 @@ func (a *App) debugHealthLine() string {
 		a.sess.Phase(), software, wire, age, len(a.debugLog), debugLogCap)
 }
 
-// debugDiagLine is the second readout: live structural counts that catch leaks
-// and stuck state at a glance — open tabs, the area we're in, the IC play-queue
-// depth (a backlog that won't drain), the IC/OOC scrollback sizes, and the
-// goroutine count (a steady climb is the classic leak tell). Cheap fields only;
-// computed solely while the opt-in overlay is open.
+// debugDiagLine is the second readout: structural counts that reveal leaks and stuck state (open tabs, area, IC
+// play-queue depth, scrollback sizes, goroutine count). Cheap fields only.
 func (a *App) debugDiagLine() string {
 	area := a.curArea
 	if area == "" {
@@ -90,11 +77,8 @@ func (a *App) debugDiagLine() string {
 		len(a.tabs), area, queue, len(a.icLog), len(a.oocLog), runtime.NumGoroutine())
 }
 
-// debugColdLoadLine is the cold-load profiling readout (the playtest ask for a
-// profile that names the exact bottleneck): per-stage EWMAs of what
-// an UNCACHED asset costs — network fetch (all-hosts TTFB) · decode+downscale ·
-// GPU upload. The big number is the bottleneck. Computed only while the opt-in
-// overlay draws; a stage with no samples yet reads "—".
+// debugColdLoadLine is the cold-load readout: per-stage averages of an uncached asset (network fetch, decode and
+// downscale, GPU upload); the largest is the bottleneck. A stage with no samples reads "â€”".
 func (a *App) debugColdLoadLine() string {
 	fetch, decode := a.d.Manager.ColdLoadStats()
 	up := a.d.Store.AvgUpload()

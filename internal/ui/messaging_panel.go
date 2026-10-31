@@ -12,14 +12,9 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// The Group Chat / Messages panel — a NON-BLOCKING floating window (drag to move,
-// grip to resize, Close to hide; Extras → "Group Chat") for AsyncAO-to-AsyncAO
-// private messaging over the server's /pm. Left column = your conversations plus the
-// AsyncAO players in the room (the "AO"-badged ones) to start a DM with; right =
-// the selected partner's profile, the thread, and a compose box. It's confidential
-// from normal players (server /pm only) and never spams an area, and it draws only
-// while open, so it costs nothing on the render hot path. Group chats (create /
-// invite / owner / kick) layer onto this next.
+// The Group Chat / Messages panel: a non-blocking floating window (Extras > Group Chat) for AsyncAO-to-AsyncAO private
+// messages over the server's /pm. The left column lists conversations and AsyncAO players in the room; the right shows
+// the partner's profile, the thread and a compose box. It draws only while open.
 
 const (
 	msgPanelDefW = 560
@@ -30,15 +25,9 @@ const (
 
 func (a *App) toggleMessages() { a.showMessages = !a.showMessages }
 
-// seedPanelFromSlot is the generic first-open seed shared by every persistable
-// floatWin panel (extracted from msgPanelRect). If the layout editor positioned
-// the panel (classicOv[slot] exists) and it hasn't been dragged this session
-// (!fw.placed), it adopts that persisted rect via anchoredRect (pin honoured),
-// marks the floatWin placed, and returns (rect, true). Otherwise it returns
-// (zero, false) and the caller keeps its OWN default first-open position (each
-// panel's historical tuck / centre) — this helper only owns the slot-seed path,
-// never a panel's default, so wiring it in can't move an un-persisted panel.
-// panelSlotTable is the canonical enumeration of the panels this drives.
+// seedPanelFromSlot is the first-open seed shared by every persistable floatWin panel. If the layout editor positioned
+// the panel (classicOv[slot]) and it hasn't been dragged this session, it adopts that rect via anchoredRect and
+// returns (rect, true); otherwise (zero, false) and the caller keeps its own default. panelSlotTable lists the panels.
 func (a *App) seedPanelFromSlot(fw *floatWin, slot string, defW, defH, minW, minH, w, h int32) (sdl.Rect, bool) {
 	if fw.placed {
 		return sdl.Rect{}, false
@@ -52,14 +41,9 @@ func (a *App) seedPanelFromSlot(fw *floatWin, slot string, defW, defH, minW, min
 	return fw.rect(defW, defH, minW, minH, w, h), true
 }
 
-// persistPanelSlot is the generic slot writer shared by every persistable
-// floatWin panel (extracted from persistMsgSlot). It writes the panel's CURRENT
-// drawn rect (r — the caller already computed it this frame) back to its classic
-// slot (in-memory classicOv + the durable pref via the debounced saver) so a
-// drag/resize survives a relaunch. Taking the rect directly (rather than
-// re-deriving it from def/min sizes) keeps panels with a dynamic default height in
-// sync automatically. Callers must invoke it only on the drag/resize-END frame
-// (the wasActive guard) — never per-frame.
+// persistPanelSlot writes a floatWin panel's current rect r (already computed this frame) to its classic slot, in
+// memory and through the debounced saver, so a drag/resize survives relaunch. Call it only on the drag/resize-end
+// frame.
 func (a *App) persistPanelSlot(slot string, r sdl.Rect, w, h int32) {
 	frac := rectToFrac(r, w, h)
 	if a.classicOv == nil {
@@ -73,9 +57,8 @@ func (a *App) persistPanelSlot(slot string, r sdl.Rect, w, h int32) {
 	}
 }
 
-// msgPanelRect is the panel's screen rect. First open this session seeds from the
-// persisted layout slot (if you positioned it in Edit Layout), else tucks it
-// top-left; thereafter the live floatWin geometry (drag / resize) wins.
+// msgPanelRect is the panel's screen rect: seeded from the persisted layout slot on first open, else tucked top-left;
+// after that the live floatWin geometry wins.
 func (a *App) msgPanelRect(w, h int32) sdl.Rect {
 	if r, ok := a.seedPanelFromSlot(&a.msgWin, slotMessages, msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h); ok {
 		return r
@@ -88,25 +71,20 @@ func (a *App) msgPanelRect(w, h int32) sdl.Rect {
 	return a.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h)
 }
 
-// msgSlotDefaultRect is where the Group Chat slot lands when first added from the
-// layout editor (the "Group Chat" tray chip): centred, default size, clamped.
+// msgSlotDefaultRect is where the Group Chat slot lands when first added from the layout editor: centred, clamped.
 func (a *App) msgSlotDefaultRect(w, h int32) sdl.Rect {
 	dw := value.Clamp(msgPanelDefW, msgPanelMinW, w-2*floatWinMargin)
 	dh := value.Clamp(msgPanelDefH, msgPanelMinH, h-2*floatWinMargin)
 	return sdl.Rect{X: (w - dw) / 2, Y: (h - dh) / 2, W: dw, H: dh}
 }
 
-// persistMsgSlot writes the Group Chat panel's rect back to its layout slot on the
-// drag/resize-END frame (never per-frame). Thin wrapper over the generic
-// persistPanelSlot now that every panel shares that path.
+// persistMsgSlot writes the panel's rect back to its layout slot on the drag/resize-end frame.
 func (a *App) persistMsgSlot(w, h int32) {
 	a.persistPanelSlot(slotMessages, a.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h), w, h)
 }
 
-// drawMessagesSlotGhost draws an inert titled placeholder for the Group Chat panel
-// while the layout editor is open, registering it via slotRect so the generic
-// editor hands it move/resize handles. Edit-only and only when the slot exists
-// (added via the tray chip); the real interactive panel draws in normal mode.
+// drawMessagesSlotGhost draws an inert placeholder while the layout editor is open, registered via slotRect so it gets
+// move/resize handles. Only when the slot exists.
 func (a *App) drawMessagesSlotGhost(w, h int32) {
 	if _, ok := a.classicOv[slotMessages]; !ok {
 		return
@@ -169,8 +147,7 @@ func (a *App) msgEntries() []msgEntry {
 	return out
 }
 
-// drawMessagesPanel paints the floating Group Chat window. pressed is the shared
-// floatWin press edge from drawFloatingPanels.
+// drawMessagesPanel paints the floating Group Chat window; pressed is the shared floatWin press edge.
 func (a *App) drawMessagesPanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	wasActive := a.msgWin.dragging || a.msgWin.resizing // detect the drag/resize-end frame for slot persistence
@@ -247,7 +224,6 @@ func (a *App) drawMessagesPanel(w, h int32, pressed *bool) {
 func (a *App) drawDMView(rx, top, rw, bottom int32) {
 	c := a.ctx
 	hy := top
-	// Partner's character icon (resolved from the live roster) beside the name.
 	partnerChar := a.rosterCharByName(a.msgSel)
 	a.drawMsgCharIcon(partnerChar, a.msgSel, sdl.Rect{X: rx, Y: hy - 2, W: 22, H: 22})
 	a.labelName(rx+28, hy, rw-28, a.msgSel, nameColor(a.msgSel, msgNameSat, msgNameVal)) // CJK-safe DM peer
@@ -281,7 +257,6 @@ func (a *App) drawGroupView(rx, top, rw, bottom int32) {
 		return
 	}
 	g.unread = 0 // on screen = read (the chat-list badge clears)
-	// Per-group accent chip + name + member count + your owner star.
 	chip := groupChipColor(g.id)
 	c.Fill(sdl.Rect{X: rx, Y: top + 1, W: 10, H: 14}, chip)
 	head := "# " + g.name + "  ·  " + strconv.Itoa(len(g.members)) + " members"
@@ -325,8 +300,7 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 		if y > box.Y+box.H/2-rowH {
 			break
 		}
-		// Char icon (live-roster lookup; offline members keep the initial disc)
-		// + the member's stable name colour — same identity language as the thread.
+		// Char icon from the live roster (offline members keep the initial disc) and the member's stable name colour.
 		a.drawMsgCharIcon(a.rosterCharByUID(m.uid), m.name, sdl.Rect{X: box.X + 6, Y: y, W: rowH - 4, H: rowH - 4})
 		label := m.name
 		if m.uid == g.ownerUID {
@@ -351,10 +325,8 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 	if a.room == nil {
 		return
 	}
-	// Show EVERYONE in the room (no AsyncAO-detection filter — that needed people to
-	// send a marked IC message, so it usually showed nobody). Inviting rides /pm:
-	// AsyncAO clients get the rich invite, others get a readable PM they can ignore.
-	// "(AO)" tags players we've already confirmed are on AsyncAO.
+	// Show everyone in the room: AsyncAO detection needs a marked IC message, so it usually showed nobody.
+	// Inviting rides /pm; AsyncAO clients get the rich invite, others a readable PM.
 	roster := a.rosterView()
 	me := a.myUID()
 	shown := 0
@@ -369,8 +341,7 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 			continue
 		}
 		isAO := a.room.RemoteIsAsyncAO(name)
-		// AsyncAO users get the FULL group chat, so highlight their row green ("compatible");
-		// everyone else can still be invited (they just get a one-off PM).
+		// AsyncAO users get the full group chat, so their row is green; others get a one-off PM.
 		if isAO {
 			c.Fill(sdl.Rect{X: box.X, Y: y, W: box.W, H: rowH - 2}, sdl.Color{R: ColTierGreen.R, G: ColTierGreen.G, B: ColTierGreen.B, A: 46})
 		}
@@ -378,7 +349,6 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 		if isAO { // blue "AO" chip, same as the player list
 			tx += a.drawRosterChip(tx, y+2, "AO", ColAccent, ColBackground) + 5
 		}
-		// Showname + OOC name, so you know who you're inviting (not just the character).
 		disp := strings.TrimSpace(p.showname)
 		if disp == "" {
 			disp = name
@@ -398,9 +368,7 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 	}
 }
 
-// drawGroupThread renders a group's messages as chat bubbles, newest at the
-// bottom (drawChatBubbles walks backwards, so variable-height wrapped bubbles
-// fill the box naturally).
+// drawGroupThread renders a group's messages as chat bubbles, newest at the bottom.
 func (a *App) drawGroupThread(g *msgGroup, box sdl.Rect) {
 	if box.H < 24 {
 		return
@@ -436,10 +404,8 @@ func (a *App) drawMsgThreadBody(box sdl.Rect) {
 	})
 }
 
-// sendDirectMessage sends text to one partner over the server's /pm, tagging it with
-// an AsyncAO DM control frame (stripped on the receiver's display) and mirroring it
-// into the local thread. Resolves the partner's live UID from the roster; falls back
-// to the name when there's no live id (some servers accept it).
+// sendDirectMessage sends text over the server's /pm with an AsyncAO DM control frame (stripped on display) and mirrors
+// it into the local thread. The partner's live UID comes from the roster; without one it falls back to the name.
 func (a *App) sendDirectMessage(target, text string) {
 	text = strings.TrimSpace(text)
 	if text == "" || target == "" || a.sess == nil {

@@ -10,17 +10,8 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/update"
 )
 
-// The built-in "What's New" / version-history screen. It renders an embedded
-// copy of CHANGELOG.md, so every build ships its full history offline; the entry
-// matching the running build (update.Version, stamped at link time) is tagged
-// "installed". This complements the post-self-update modal (update_ui.go), which
-// fetches only the LATEST release's notes from GitHub — this screen is the
-// always-available history, opened on demand from the lobby top bar.
-//
-// Rendering mirrors drawAbout: the markdown is reflowed to the column width and
-// cached by width (a.changelogFlat / a.changelogFlatW), so the wrap runs only on
-// a resize, never per frame — the page is off the hot path, but this repo keeps
-// every UI draw allocation-free.
+// The built-in What's New / version-history screen. It renders an embedded CHANGELOG.md, so every build ships its
+// history offline; the entry matching update.Version is tagged installed. Wrapped lines are cached by width.
 
 //go:embed assets/CHANGELOG.md
 var changelogMD string
@@ -34,13 +25,9 @@ const (
 	changelogInstalledTag = "    • installed"
 )
 
-// buildChangelogFlat reflows the embedded changelog to colW. A "## " line is a
-// version header (accent, extra top gap, tagged when it names the running
-// build); "### " is a sub-header; "- "/"* " is a bullet with a hanging indent;
-// blank lines become paragraph gaps; the document H1 ("# ") is dropped since the
-// screen has its own header. The content is a shipped, developer-controlled file
-// (not hostile server input), so unlike the update modal's GitHub body it needs
-// no runtime line cap (§17.4) — it's bounded by what we ship.
+// buildChangelogFlat reflows the embedded changelog to colW. "## " is a version header (tagged when it names the
+// running build), "### " a sub-header, "- "/"* " a bullet with hanging indent; blank lines are paragraph gaps; the H1
+// is dropped. The file is shipped, not server input, so it needs no line cap.
 func (a *App) buildChangelogFlat(c *Ctx, colW int32) []aboutFlatLine {
 	out := make([]aboutFlatLine, 0, 256)
 	bulletIndent := c.TextWidth("•  ")
@@ -113,15 +100,8 @@ func changelogHeaderMatches(title, cur string) bool {
 	return strings.TrimPrefix(fields[0], "v") == cur
 }
 
-// markChangelogSeen records the current build version as seen — called when the
-// user opens the What's New screen.
-//
-// Nothing displays "unread" any more. The green dot this stamp used to drive rode
-// the Help title in the menu bar, where it read as a defect in the strip rather
-// than as a notification (it overlapped the title's last glyph) and nagged about
-// something the user had not asked to be told. The stamp is kept because it is
-// the only record of which release notes a user has actually seen, and a future
-// notification would need it; it costs one preference write per changelog open.
+// markChangelogSeen records the current build version as seen when the What's New screen opens.
+// Nothing shows "unread" any more; the stamp is the only record of which notes were seen.
 func (a *App) markChangelogSeen() {
 	{
 		pv1 := strings.TrimSpace(update.Version)
@@ -135,8 +115,7 @@ func (a *App) drawChangelog(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
 
-	// --- header band ---------------------------------------------------------
-	// Content starts below the app-chrome band (#14, chrometop.go).
+	// Content starts below the app-chrome band.
 	hdrY := a.topChromeH() + pad
 	c.Heading(pad, hdrY, "What's New — Version History", ColText)
 	sub := "You're running AsyncAO " + strings.TrimSpace(update.Version)
@@ -152,7 +131,6 @@ func (a *App) drawChangelog(w, h int32) {
 	c.Fill(sdl.Rect{X: 0, Y: top - 10, W: w, H: 1}, ColPanelHi) // hairline under the header
 	viewH := h - top - pad
 
-	// --- centered reading column --------------------------------------------
 	colW := w - 2*pad - scrollBarW - 2*pad
 	colW = value.Clamp(colW, 200, aboutMaxColW)
 	x0 := (w - scrollBarW - colW) / 2
@@ -160,8 +138,7 @@ func (a *App) drawChangelog(w, h int32) {
 		x0 = pad
 	}
 
-	// Reflow only when the column width changes (kept alloc-free per frame per
-	// this repo's UI bar, exactly like drawAbout).
+	// Reflow only when the column width changes, as drawAbout does.
 	if a.changelogFlat == nil || a.changelogFlatW != colW {
 		a.changelogFlat = a.buildChangelogFlat(c, colW)
 		a.changelogFlatW = colW
@@ -175,7 +152,6 @@ func (a *App) drawChangelog(w, h int32) {
 	contentH += pad
 
 	a.changelogScroll -= c.WheelIn(sdl.Rect{X: 0, Y: top, W: w, H: viewH}) * scrollStepPx
-	// A draggable scrollbar on the right for fast up/down navigation of a long history.
 	track := sdl.Rect{X: w - scrollBarW - pad, Y: top, W: scrollBarW, H: viewH}
 	a.changelogScroll = c.VScrollbar("changelogbar", track, a.changelogScroll, contentH, viewH)
 

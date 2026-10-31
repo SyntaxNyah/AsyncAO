@@ -1,10 +1,7 @@
 package ui
 
-// HSV colour-wheel picker for the log-selection highlight colour: a hue/
-// saturation disc (drag to pick), a brightness slider, a live swatch, and a
-// hex field. The disc is rendered to a texture ONCE (cached) — per-frame it's
-// just a Copy + a few rects, so the picker costs nothing on idle settings
-// frames. Settings-only; not on any hot path.
+// HSV colour-wheel picker for the log-selection highlight colour: a hue/saturation disc, a brightness slider,
+// a live swatch and a hex field. The disc is rendered to a texture once and cached.
 
 import (
 	"fmt"
@@ -17,23 +14,16 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// colorWheelDiam is the picker disc diameter (deliberately large, per the request).
+// colorWheelDiam is the picker disc diameter.
 const colorWheelDiam = 150
 
-// icColorWheelCaption is the free-hex picker's heading. It MUST fit the
-// picker's fixed 348px width (see icColorWheelRect, minus the 8px side
-// margins the label draws at) — the draw clips it as a hard guard, and
-// icColorWheel_test.go pins that it fits at the default chrome font so a
-// future wording edit can't silently reopen the overflow bug (§3.4). It
-// still conveys both halves: exact colour for AsyncAO players, nearest AO
-// colour for everyone else.
+// icColorWheelCaption is the free-hex picker's heading. It must fit the picker's fixed 348px width (see
+// icColorWheelRect, minus the 8px side margins); the draw clips it as a guard. It conveys both halves: exact
+// colour for AsyncAO players, nearest AO colour for everyone else.
 const icColorWheelCaption = "Chat colour — exact for AsyncAO, nearest AO for others"
 
-// nameColor maps a speaker name to a stable, smooth colour: an FNV-1a hash of
-// the name picks the hue, the caller's saturation/value (0..1) fill it out.
-// Deterministic (same name → same colour every launch, unlike a map-seeded
-// hash) and allocation-free, so it's cheap to call inline per visible name —
-// no cache to go stale when the sliders move.
+// nameColor maps a speaker name to a stable colour: an FNV-1a hash picks the hue, the caller's saturation/value
+// (0..1) fill it out. Deterministic across launches and allocation-free.
 func nameColor(name string, sat, val float64) sdl.Color {
 	var h uint32 = 2166136261 // FNV-1a offset basis
 	for i := 0; i < len(name); i++ {
@@ -44,10 +34,8 @@ func nameColor(name string, sat, val float64) sdl.Color {
 	return sdl.Color{R: r, G: g, B: b, A: 255}
 }
 
-// Per-character chatbox tint (#14): blend a hint of the speaker's stable hue into the flat
-// chatbox panel so each character's box carries their colour while staying dark enough to
-// read light text on. Viewer-local; shares nameColor's hue, so a tinted box and a coloured
-// name match for the same speaker.
+// Per-character chatbox tint: blend a hint of the speaker's stable hue into the flat chatbox panel, dark enough to
+// read light text on. Viewer-local; shares nameColor's hue.
 const (
 	chatboxTintSat = 0.85 // vivid hue source
 	chatboxTintVal = 0.55 // mid-tone so the blend shifts colour without lightening the box
@@ -70,10 +58,8 @@ func mixByte(a, b uint8, mix int) uint8 {
 	return uint8((int(a)*(100-mix) + int(b)*mix) / 100)
 }
 
-// drawNameColorPicker draws the per-speaker name-colour controls — a toggle,
-// saturation + brightness rows (brightness floored so names stay readable), and
-// a live preview of sample names in their computed colours. OFF by default;
-// returns the y below the section. Settings-only, not a hot path.
+// drawNameColorPicker draws the per-speaker name-colour controls: a toggle, saturation and brightness rows
+// (brightness floored so names stay readable) and a live preview. Off by default; returns the y below the section.
 func (a *App) drawNameColorPicker(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // rebase into the settings content card
@@ -106,7 +92,7 @@ func (a *App) drawNameColorPicker(y, w int32) int32 {
 	if ns != sat || nv != val {
 		a.d.Prefs.SetNameColorSatVal(ns, nv)
 	}
-	// Live preview — sample names in their hash colours at the current sliders.
+	// Live preview: sample names in their hash colours at the current sliders.
 	fs, fv := float64(a.d.Prefs.Load().NameSat)/100, float64(a.d.Prefs.Load().NameVal)/100
 	c.Label(pad, y+4, "Preview:", ColTextDim)
 	px := pad + 70
@@ -183,9 +169,8 @@ func rgbToHSV(r, g, b uint8) (h, s, v float64) {
 // packRGB packs 8-bit channels into the 0xRRGGBB int the colour prefs store.
 func packRGB(r, g, b uint8) int { return int(r)<<16 | int(g)<<8 | int(b) }
 
-// ensureColorWheel builds (once) and returns the hue/saturation disc texture:
-// hue around the ring, saturation along the radius, at full value. Pixels
-// outside the disc are transparent. Cached for the App's lifetime.
+// ensureColorWheel builds (once) and returns the hue/saturation disc texture: hue around the ring, saturation
+// along the radius, at full value. Pixels outside the disc are transparent.
 func (a *App) ensureColorWheel() *sdl.Texture {
 	if a.colorWheel != nil {
 		return a.colorWheel
@@ -217,12 +202,10 @@ func (a *App) ensureColorWheel() *sdl.Texture {
 	return tex
 }
 
-// --- free-hex IC chat colour (v1.52.0, requested by Tifera: any hex while chatting) ---
+// Free-hex IC chat colour: any hex while chatting.
 
-// icColorWheelRect is the free-hex picker's floating rect, anchored just above
-// the IC colour swatch (the IC bar sits near the bottom), clamped on-screen —
-// derived from the remembered swatch rect so the draw and the pointer fence
-// agree (the fxPickerRect pattern).
+// icColorWheelRect is the free-hex picker's floating rect, anchored above the IC colour swatch and clamped
+// on-screen; derived from the remembered swatch rect so the draw and the pointer fence agree (fxPickerRect pattern).
 func (a *App) icColorWheelRect(w, h int32) sdl.Rect {
 	const (
 		pw = 12 + colorWheelDiam + 18 + 26 + 20 + 110 + 12 // wheel · brightness bar · swatch/hex column
@@ -242,9 +225,7 @@ func (a *App) icColorWheelRect(w, h int32) sdl.Rect {
 	return sdl.Rect{X: x, Y: y, W: pw, H: ph}
 }
 
-// setICCustomRGB applies a wheel/slider/hex pick: the session colour updates
-// live (the swatch + the next send use it) and the pick persists as the
-// default a fresh tab seeds from.
+// setICCustomRGB applies a wheel/slider/hex pick: the session colour updates live and persists as the new-tab default.
 func (a *App) setICCustomRGB(rgb int) {
 	a.icCustomRGB = rgb & 0xFFFFFF
 	icRGB := a.icCustomRGB
@@ -254,20 +235,15 @@ func (a *App) setICCustomRGB(rgb int) {
 
 }
 
-// drawICColorWheel paints the free-hex chat-colour picker: the shared hue/sat
-// disc, a brightness slider, a live swatch and a hex field. A non-blocking
-// floating panel like the FX picker — chat stays live behind it; Esc, the
-// Done chip, or clicking the swatch again closes it.
+// drawICColorWheel paints the free-hex chat-colour picker: the shared disc, a brightness slider, a swatch and a hex
+// field. A non-blocking floating panel like the FX picker; Esc, Done, or clicking the swatch again closes it.
 func (a *App) drawICColorWheel(w, h int32) {
 	c := a.ctx
 	r := a.icColorWheelRect(w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
-	// Clip to the panel interior (8px margin each side): the panel is sized
-	// to the wheel/bar/swatch controls, not the caption, so an unclipped
-	// c.Label would paint past the border onto the live scene behind this
-	// floating popup (§3.4). LabelClipped shares the same text cache — no
-	// allocation change.
+	// Clip to the panel interior (8px margin each side): the panel is sized to the controls, not the caption, so an
+	// unclipped c.Label would paint past the border. LabelClipped shares the same text cache.
 	c.LabelClipped(r.X+8, r.Y+5, r.W-16, icColorWheelCaption, ColTextDim)
 
 	cur := a.icCustomRGB
@@ -285,8 +261,7 @@ func (a *App) drawICColorWheel(w, h int32) {
 	dotY := wheel.Y + int32(rad+math.Sin(ang)*ss*rad)
 	c.Border(sdl.Rect{X: dotX - 5, Y: dotY - 5, W: 10, H: 10}, ColText)
 	c.Border(sdl.Rect{X: dotX - 4, Y: dotY - 4, W: 8, H: 8}, ColBackground)
-	// The popup is drawn over a fenced pointer (hovering() is false under a
-	// modal), so it hit-tests raw like the editor chips do.
+	// The popup is drawn over a fenced pointer (hovering() is false under a modal), so it hit-tests raw.
 	if c.mouseDown && pointIn(c.mouseX, c.mouseY, wheel) {
 		dx := float64(c.mouseX-wheel.X) - rad
 		dy := float64(c.mouseY-wheel.Y) - rad
@@ -297,7 +272,7 @@ func (a *App) drawICColorWheel(w, h int32) {
 		}
 	}
 
-	// Brightness slider (full at top → black at bottom) of the current hue/sat.
+	// Brightness slider (full at top, black at bottom) of the current hue/sat.
 	sl := sdl.Rect{X: wheel.X + diam + 18, Y: wheel.Y, W: 26, H: diam}
 	for i := int32(0); i < sl.H; i++ {
 		br := 1 - float64(i)/float64(sl.H)
@@ -335,12 +310,9 @@ func (a *App) drawICColorWheel(w, h int32) {
 	}
 }
 
-// drawWheelPicker draws the settings pickers' shared inline core — the hue/sat
-// disc, the vertical brightness bar, and a live swatch — reading cur (packed
-// 0xRRGGBB) and writing every wheel/bar edit through set. The wheel sets hue+sat
-// (keeping the current brightness, floored so a black pick still shows its hue);
-// the bar sets brightness. Returns the next y and the swatch column's x (callers
-// hang their own hex field / buttons there — each binds its own pref format).
+// drawWheelPicker draws the settings pickers' shared inline core: the hue/sat disc, the vertical brightness bar
+// and a live swatch, reading cur (packed 0xRRGGBB) and writing every edit through set. The wheel keeps the current
+// brightness (floored so a black pick still shows its hue). Returns the next y and the swatch column's x.
 func (a *App) drawWheelPicker(x, y int32, cur int, set func(rgb int)) (nextY, hexX int32) {
 	c := a.ctx
 	r8, g8, b8 := uint8(cur>>16), uint8(cur>>8), uint8(cur)
@@ -393,10 +365,8 @@ func (a *App) drawWheelPicker(x, y int32, cur int, set func(rgb int)) (nextY, he
 	return y + diam + 12, hexX
 }
 
-// drawHighlightPicker draws the colour-wheel picker for the selection highlight
-// and returns the next y. Reads/writes the packed pref; the wheel sets hue+sat
-// (keeping the current brightness), the slider sets brightness, the hex field
-// sets all three.
+// drawHighlightPicker draws the colour-wheel picker for the selection highlight and returns the next y; the wheel
+// sets hue+sat, the slider brightness, the hex field all three.
 func (a *App) drawHighlightPicker(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX // rebase into the settings content card

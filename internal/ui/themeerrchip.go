@@ -1,36 +1,9 @@
 package ui
 
-// The theme-sidecar refusal chip (v1.90.0 W4 — docs/wip/THEME-EDITOR-DESIGN.md §3.3,
-// "cap-hit and error UX").
-//
-// THE SHIP-BLOCKER THIS CLOSES. theme.Theme.SidecarErr() had existed since W1 with
-// ZERO consumers. A sidecar the reader refuses — a named cap exceeded
-// (theme.ErrSidecarCap), or a file that is not INI at all (theme.ErrSidecarUnreadable)
-// — is swallowed on purpose (format rule 1: reading never refuses, so a theme with an
-// unreadable extension tier renders as the stock AO2 theme it validly is). That is
-// the right LOAD behaviour and it was a catastrophic REPORTING one: seven of the
-// fourteen themes this repository ships lost their entire AsyncAO tier — every
-// element, override, palette role and pane — through the whole of W2 because one
-// free-text line was one rune over a named cap, and absolutely nothing anywhere said
-// so. The theme applied. It just quietly was not the theme.
-//
-// So a refusal now has a surface: a chip in the menu-bar band carrying the reason.
-//
-// WHERE IT LIVES, AND WHY. The same band, and for the same three reasons, as #27's
-// missing-asset chip (assetmisschip.go) and the Iniswap button (iniswapchip.go):
-// always on screen at a fixed place, ABOVE every theme's design canvas by
-// construction (so it can never sit on an AO2 control — #21's parity rule), and
-// already the home for AsyncAO chrome AO2 has no rect for. This file follows those
-// two files' geometry, their two-phase input/paint split and their "drop rather than
-// overlap" rule; it does not invent a third idiom for a third chip.
-//
-// NOT TIME-LIMITED, unlike the missing-asset chip. A missing asset is an EVENT and
-// that chip is a notification of it; a refused sidecar is a STATE — it is refused
-// now, it will be refused on the next apply, and it stays refused until somebody
-// edits the file. A thirty-second badge for a permanent condition is a badge nobody
-// sees. It clears when the user acknowledges it (the click, which opens the log
-// holding the full line) and re-arms on the next apply that still refuses, so the
-// state cannot be silently lost either.
+// Theme-sidecar refusal chip in the menu-bar band. A refused sidecar (a cap exceeded, or not INI) is swallowed on
+// load, so this chip is the only sign the theme applied without its AsyncAO tier.
+// Geometry and input/paint split follow assetmisschip.go and iniswapchip.go; the chip drops rather than overlaps.
+// Not time-limited: a refusal is a state, so the chip clears on click (opens the log) and re-arms on the next refusal.
 
 import (
 	"fmt"
@@ -40,55 +13,27 @@ import (
 )
 
 const (
-	// themeErrChipLabel is what the chip says. It names the CONSEQUENCE rather than
-	// the fault, because the consequence is the thing the user is looking at and
-	// cannot explain: their theme applied and looks wrong.
+	// themeErrChipLabel names the consequence (the theme looks wrong), not the fault.
 	themeErrChipLabel = "! theme extras skipped"
-	// themeErrChipPadX / themeErrChipInsetY are assetmisschip.go's numbers, restated
-	// under this file's own names so the three chips read as one band rhythm rather
-	// than as one chip reaching into another's constants.
+	// themeErrChipPadX / themeErrChipInsetY repeat assetmisschip.go's values under this file's names.
 	themeErrChipPadX   = int32(8)
 	themeErrChipInsetY = int32(2)
-	// themeErrChipMarginX insets the chip from the window's right edge — the same
-	// breathing room the menu titles get on the left (menuBarPadX).
+	// themeErrChipMarginX insets the chip from the window's right edge (mirrors menuBarPadX).
 	themeErrChipMarginX = int32(4)
-	// themeErrChipMinGapX is the clearance the chip demands from the menu titles.
-	// Below it the chip is dropped whole for the frame rather than drawn over a
-	// title: chrome must never lie about what is clickable, and the F8 debug log
-	// carries the same line unconditionally either way.
+	// themeErrChipMinGapX is the clearance from the menu titles; below it the chip is dropped for the frame.
 	themeErrChipMinGapX = int32(12)
 )
 
 // themeErrChipActive reports whether the chip should draw and take input.
-//
-// Deliberately NOT gated on a screen. A theme is picked in Settings and judged in
-// the courtroom, and the whole failure this reports is "I applied a theme and it is
-// not the theme" — gating it to the courtroom would hide it on the very screen the
-// user is standing on when they change themes.
+// Not gated on a screen: a theme is picked in Settings but judged in the courtroom.
 func (a *App) themeErrChipActive() bool {
 	return a.themeSidecarErr != "" && !a.themeSidecarErrAck
 }
 
-// themeErrChipRect is the chip's rect in the menu-bar band, right-aligned.
-// ok=false means DRAW NOTHING this frame.
-//
-// It is the OUTERMOST thing in the band, and that placement is what lets a third
-// chip join without the other two moving: the missing-asset chip now measures its
-// own right edge against menuBarRightContentLeft instead of against the window, and
-// the Iniswap chip's reserve is taken off the same value. Two chips both anchored to
-// `w` would have drawn on top of each other — the mirror of the problem
-// menuBarLeftContentRight already solves on the other side of the band.
-//
-// This chip wins the outer slot on purpose: it reports a permanent, actionable state
-// while the missing-asset chip reports a transient event that clears itself in
-// thirty seconds.
-//
-// It measures its clearance against the menu TITLES ALONE (menuBarTitlesRight) and
-// not against menuBarLeftContentRight, which is a correctness requirement rather
-// than a simplification: menuBarLeftContentRight asks iniswapChipRect, iniswapChipRect
-// asks menuBarRightContentLeft, and menuBarRightContentLeft asks this — so consulting
-// it here would be unbounded recursion on the render thread. The band's whole
-// geometry resolves strictly outside-in, and this is the outermost step.
+// themeErrChipRect is the chip's rect in the menu-bar band, right-aligned; ok=false means draw nothing this frame.
+// It is the outermost item, so the other chips measure against menuBarRightContentLeft, not the window.
+// Clearance is measured against menuBarTitlesRight, not menuBarLeftContentRight: that chain asks this function,
+// so using it here would recurse forever.
 func (a *App) themeErrChipRect(w int32) (sdl.Rect, bool) {
 	if !a.themeErrChipActive() || !a.menuBarPaints() {
 		return sdl.Rect{}, false
@@ -106,13 +51,8 @@ func (a *App) themeErrChipRect(w int32) (sdl.Rect, bool) {
 	return r, true
 }
 
-// menuBarRightContentLeft is the left edge of everything RIGHT-anchored in the band
-// OUTSIDE the caller — the mirror of menuBarLeftContentRight (iniswapchip.go).
-//
-// It returns the window width when nothing is right-anchored, which is exactly the
-// value the missing-asset chip and the Iniswap chip used to hardcode: with no theme
-// error on screen every rect in this band is byte-identical to what it was before
-// this chip existed.
+// menuBarRightContentLeft is the left edge of everything right-anchored in the band outside the caller;
+// it is the window width when nothing is.
 func (a *App) menuBarRightContentLeft(w int32) int32 {
 	if r, ok := a.themeErrChipRect(w); ok {
 		return r.X
@@ -120,9 +60,8 @@ func (a *App) menuBarRightContentLeft(w int32) int32 {
 	return w
 }
 
-// menuBarTitlesRight is the right edge of the menu TITLES alone — no chips. Shared
-// by menuBarLeftContentRight (which then folds the Iniswap chip in) and by
-// themeErrChipRect (which must not, see above), so the two cannot drift.
+// menuBarTitlesRight is the right edge of the menu titles alone, shared by menuBarLeftContentRight and
+// themeErrChipRect.
 func (a *App) menuBarTitlesRight() int32 {
 	if len(menuBarMenus) == 0 {
 		return 0
@@ -131,9 +70,7 @@ func (a *App) menuBarTitlesRight() int32 {
 	return last.X + last.W
 }
 
-// handleThemeErrChipInput claims a click on the chip. Called pre-screen, beside
-// handleAssetMissChipInput and for the same reason: the chip paints over the band
-// the screens offset below, so its click must be claimed before they see it.
+// handleThemeErrChipInput claims a click pre-screen, as handleAssetMissChipInput does, before the screens see it.
 func (a *App) handleThemeErrChipInput(w int32) {
 	r, ok := a.themeErrChipRect(w)
 	if !ok {
@@ -150,36 +87,25 @@ func (a *App) handleThemeErrChipInput(w int32) {
 	c.clicked = false
 	a.showDebugPanel = true
 	a.debugSection = assetMissDebugLogTab()
-	// Acknowledged: the log owns the detail from here, and the next apply that still
-	// refuses re-arms the chip (pollThemeApply). Never cleared by a TIMER — the
-	// condition it reports does not expire on its own.
+	// Acknowledged: the log holds the detail, and the next apply that still refuses re-arms the chip (pollThemeApply).
 	a.themeSidecarErrAck = true
 }
 
-// drawThemeErrChip paints the chip. Called from drawMenuBar (phase 2), so it lands
-// on top of the band it shares with the menu titles and the other two chips.
+// drawThemeErrChip paints the chip from drawMenuBar, over the band.
 func (a *App) drawThemeErrChip(w int32) {
 	r, ok := a.themeErrChipRect(w)
 	if !ok {
 		return
 	}
 	c := a.ctx
-	// A filled plate with a danger border — the missing-asset chip's treatment,
-	// because this is the same class of message: something is not there, and the
-	// user cannot see that it is not there.
+	// Filled plate with a danger border, like the missing-asset chip.
 	c.Fill(r, ColPanelHi)
 	c.Border(r, ColDanger)
 	c.Label(r.X+themeErrChipPadX, r.Y+a.menuBarTextY(r.H), themeErrChipLabel, ColDanger)
 }
 
-// themeSidecarRefusalLine renders one refused sidecar as the single line that goes
-// to the debug log and the Settings status line.
-//
-// Built on the theme-apply goroutine, never on a draw: it formats. `name` is the
-// theme as that apply resolved it, `dir` is the directory the refused file was found
-// in ("" when the loader could not say), and `err` is theme.Theme.SidecarErr's own
-// error — already wrapped with the failing section and the numbers, so nothing here
-// re-derives why.
+// themeSidecarRefusalLine renders one refused sidecar as the line for the debug log and the Settings status.
+// It runs on the theme-apply goroutine; dir is "" when the loader could not say.
 func themeSidecarRefusalLine(name, dir string, err error) string {
 	if err == nil {
 		return ""
@@ -193,10 +119,7 @@ func themeSidecarRefusalLine(name, dir string, err error) string {
 	return line
 }
 
-// themeSidecarRefusalTip is the chip's tooltip: the same fact in the shape a hover
-// can absorb, plus where to go next. Built once per apply on the apply goroutine,
-// for the reason noteAssetMiss builds its own tooltip there — a warning arrives at
-// most once per apply, the chip draws every frame.
+// themeSidecarRefusalTip is the chip's tooltip, built once per apply because the chip draws every frame.
 func themeSidecarRefusalTip(name string, err error) string {
 	if err == nil {
 		return ""

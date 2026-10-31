@@ -1,20 +1,9 @@
 package ui
 
-// missingno — the placeholder drawn for a CONCLUSIVELY-MISSING character sprite
-// (its whole prefix→bare / every-format fallback chain 404'd). This is AsyncAO's
-// nickname for AO2's "placeholder" asset: AO2-Client appends the default theme's
-// placeholder to the Idle/Talk emote fallback chain (animationlayer.cpp), shown
-// whenever a character emote sprite can't be found. A streaming client has no
-// local theme dir to read, so we embed the art and upload it once under the
-// reserved render.MissingKey; render/viewport.go probes store.IsMissing(base) in
-// the miss branch and blits this page.
-//
-// Art origin: internal/ui/assets/missingno.webp is AO2-Client's canonical default
-// theme placeholder (bin/base/themes/default/placeholder.webp) copied verbatim —
-// the scrambled purple/white glitch sprite AO players recognise. Kept as its
-// native .webp and decoded ONCE at startup through the SDL-free assets decoder
-// (magic-byte sniffing), so no PNG re-encode ceremony is needed. Glitch content
-// is not authored expression; this comment records provenance for maintainers.
+// missingno is the placeholder drawn for a character sprite whose whole fallback chain 404'd. It mirrors AO2's
+// placeholder asset (animationlayer.cpp appends the default theme's placeholder to the Idle/Talk fallback chain).
+// A streaming client has no theme dir, so assets/missingno.webp (AO2-Client's bin/base/themes/default/placeholder.webp,
+// copied verbatim) is embedded, decoded once at startup and uploaded under render.MissingKey.
 
 import (
 	_ "embed"
@@ -28,26 +17,19 @@ import (
 //go:embed assets/missingno.webp
 var missingnoWebP []byte
 
-// errorSpriteMaxBytes caps a user-supplied custom placeholder file read (rule
-// §17.4 — every read is bounded). A placeholder is a small portrait sprite; 8 MiB
-// is a generous ceiling that still rejects an accidental huge file.
+// errorSpriteMaxBytes caps a custom placeholder file read (hard rule 4); 8 MiB rejects an accidental huge file.
 const errorSpriteMaxBytes = 8 << 20
 
-// errorSpriteLoad carries an off-thread custom-placeholder load result back to the
-// render thread. On success dec is a decoded page ready to UploadPinned over
-// render.MissingKey; on failure dec is nil and err describes why (surfaced inline
-// in Settings + the debug overlay), leaving the embedded default in place.
+// errorSpriteLoad carries an off-thread custom-placeholder load result to the render thread. On failure dec is nil
+// and err says why (shown in Settings and the debug overlay), leaving the embedded default in place.
 type errorSpriteLoad struct {
 	dec *assets.Decoded
 	err error
 }
 
-// uploadEmbeddedMissingno decodes the embedded default placeholder and pins it
-// under render.MissingKey. Called ONCE at startup (render thread) BEFORE any
-// custom load, so a later custom-load failure simply leaves this default in place
-// (nothing to undo). Best-effort: a decode/upload failure just means the miss
-// branch finds no MissingKey page and falls through to hold-previous/blank — the
-// feature degrades to today's behaviour rather than crashing.
+// uploadEmbeddedMissingno decodes the embedded placeholder and pins it under render.MissingKey. Called once at
+// startup on the render thread, before any custom load. A failure leaves no MissingKey page, so the miss branch
+// holds the previous frame or draws blank.
 func (a *App) uploadEmbeddedMissingno() {
 	if a.d.Store == nil {
 		return
@@ -62,12 +44,8 @@ func (a *App) uploadEmbeddedMissingno() {
 	}
 }
 
-// applyErrorSprite (re)loads the custom placeholder from path, OFF-THREAD (rule
-// §17.2 — no synchronous disk I/O on the render path), landing the result on
-// errorSpriteRes for pollErrorSprite to install. An empty path re-installs the
-// embedded default synchronously (no file to read). Used both at startup (if the
-// pref is non-empty) and on Settings → Apply, so a changed path re-triggers the
-// load rather than latching once like the font-fallback read.
+// applyErrorSprite loads the custom placeholder from path off-thread (hard rule 2), landing the result on
+// errorSpriteRes for pollErrorSprite. An empty path re-installs the embedded default synchronously.
 func (a *App) applyErrorSprite(path string) {
 	if path == "" {
 		// Cleared: restore the embedded default immediately (render thread, no I/O).
@@ -98,12 +76,8 @@ func (a *App) applyErrorSprite(path string) {
 	}()
 }
 
-// deliverErrorSprite hands a load result to the render thread. If the buffered
-// slot already holds a stale result (a rapid re-Apply), drop the OLD one and
-// release its decoded page so we never leak — the newest Apply wins. Releasing
-// off-thread here is safe: Decoded.Release only returns pixel buffers to a
-// sync.Pool (goroutine-safe), and the render thread's pollErrorSprite is the
-// only other drainer of this cap-1 channel.
+// deliverErrorSprite hands a load result to the render thread. A stale result already in the buffer is dropped and
+// its decoded page released; Release only returns buffers to a sync.Pool, so it is safe off-thread.
 func (a *App) deliverErrorSprite(res errorSpriteLoad) {
 	for {
 		select {
@@ -121,11 +95,8 @@ func (a *App) deliverErrorSprite(res errorSpriteLoad) {
 	}
 }
 
-// pollErrorSprite installs a landed custom-placeholder load on the render thread:
-// on success it UploadPinned's over render.MissingKey (replacing the embedded
-// default or a prior custom); on failure it records the inline Settings error,
-// pushes one debug line, and leaves whatever page is currently pinned (the
-// embedded default at worst). Drained once per frame beside the font polls.
+// pollErrorSprite installs a landed custom-placeholder load on the render thread. On success it uploads over
+// render.MissingKey; on failure it records the Settings error, pushes a debug line and keeps the current page.
 func (a *App) pollErrorSprite() {
 	select {
 	case res := <-a.errorSpriteRes:

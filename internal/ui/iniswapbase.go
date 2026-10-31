@@ -1,37 +1,9 @@
 package ui
 
-// "Swap from your base" — the Iniswaps tab's second source.
-//
-// THE GAP THIS CLOSES. The wardrobe's browse tab only ever listed the server's
-// `iniswap.txt`, a file most servers do not publish; on those servers the tab was a
-// paragraph explaining that you could type a folder name if you happened to know
-// one. But the client already KNOWS two complete lists of folders that exist on the
-// base:
-//
-//   - the server's character ROSTER (the SC packet — every character folder the
-//     server offers, taken or not), and
-//   - the character folders inside the user's own LOCAL MOUNTS, which is the whole
-//     point of having mounted a content pack.
-//
-// Both are now browsable and wearable. What CANNOT be listed is a plain remote HTTP
-// base: there is no directory listing over HTTP, and probing for names is exactly
-// the fallback-storm this client is built to avoid — so the type-a-name field stays,
-// and now carries a visible line saying why.
-//
-// WHY A SEPARATE BROWSER, not more entries in a.iniList. iniList is the wardrobe's
-// backing store: it is index-keyed (a.iniPages / a.iniAsk are parallel slices, and
-// cachedPage does not re-check the URL behind an index), and char select's Wardrobe
-// tab ranges it WHOLE. Merging a 4000-character roster into it would flood that tab
-// with the entire server and invalidate every cached icon page on each rebuild. This
-// browser keeps its own list AND its own icon page cache (a.iniBase.pages / .ask),
-// so it can draw the same 64 px char-icon cells without aliasing the wardrobe's, and
-// touches nothing the wardrobe owns.
-//
-// THREADING. The local scan is os.ReadDir on the user's disk, so it runs on a
-// goroutine and lands through a buffered channel that the draw drains — hard rule 2
-// (no synchronous disk I/O on a draw path). It is bounded twice: at most
-// config.LocalMountCap mounts are walked, and at most iniBaseLocalFolderCap names
-// come back (hard rule 4).
+// "Swap from your base": browses the server's SC roster and the character folders in local mounts. A remote HTTP base
+// has no directory listing, and probing names is the fallback storm this client avoids, so the type-a-name field stays.
+// Separate from a.iniList because that is index-keyed (a.iniPages / a.iniAsk are parallel, cachedPage does not re-check
+// the URL) and char select's Wardrobe tab ranges it whole. The local scan runs on a goroutine (hard rule 2).
 
 import (
 	"fmt"
@@ -47,24 +19,16 @@ import (
 )
 
 const (
-	// iniBaseCharsDir is the sub-folder of a mount that holds character folders.
-	// AO2-Client mount paths point at a BASE (the folder holding characters/,
-	// background/, sounds/ …), which is the same layout the streaming URL builder
-	// assumes, so this is the one place a mount is turned into a character list.
+	// iniBaseCharsDir is the sub-folder of a mount that holds character folders; mounts point at a base.
 	iniBaseCharsDir = "characters"
-	// iniBaseLocalFolderCap bounds ONE scan's result. A content pack with more
-	// character folders than this is already past anything a person browses; the
-	// browser says so rather than growing without limit (hard rule 4).
+	// iniBaseLocalFolderCap bounds one scan's result (hard rule 4).
 	iniBaseLocalFolderCap = 4096
-	// iniBaseNameCap bounds the MERGED list (roster + local folders). Sized above
-	// iniBaseLocalFolderCap so a full local scan can still be joined by a large
-	// server roster; hub servers in the wild run to a few thousand characters.
+	// iniBaseNameCap bounds the merged list, above the local cap so a full scan can still join a large server roster.
 	iniBaseNameCap = 8192
-	// iniBaseSourceChipW is one source chip in the tab's own two-way switch.
+	// iniBaseSourceChipW is one source chip in the tab's two-way switch.
 	iniBaseSourceChipW = int32(150)
 )
 
-// iniBaseScan is one completed local-mount scan, delivered from the goroutine.
 type iniBaseScan struct {
 	mounts    []string // the mount list this scan was made from (the staleness key)
 	names     []string // character folder names, de-duplicated, sorted
@@ -72,31 +36,24 @@ type iniBaseScan struct {
 	err       string   // "" = fine; a human line for the status row
 }
 
-// iniBaseBrowser is the tab's state. One value on App (app.go); everything in it is
-// touched from the render thread only, except `res`, which is the goroutine's seam.
+// iniBaseBrowser is the tab's state: render thread only, except `res`, which the scan goroutine sends on.
 type iniBaseBrowser struct {
 	show   bool // the "From your base" source is the selected one
 	scroll int32
-	// autoDone / autoKey latch the ONE automatic source choice: a server that
-	// publishes no iniswap.txt opens straight on the base browser, because the
-	// alternative is the empty state this whole file exists to replace. A LATCH and
-	// not a live test, so a deliberate switch back to "Server list" is not undone on
-	// the next frame — and keyed by server, so joining a different one decides again.
+	// autoDone / autoKey record the one automatic source choice per server, so a deliberate switch back to "Server
+	// list" is not undone on the next frame. A server with no iniswap.txt opens on the base browser.
 	autoDone bool
 	autoKey  string
 
 	res      chan iniBaseScan
 	scanning bool
-	// scanned is the mount list `local` came from — the staleness key. Comparing the
-	// list itself (rather than a hash or a joined string) keeps the per-frame check
-	// allocation-free.
+	// scanned is the mount list `local` came from; comparing the list itself keeps the per-frame check allocation-free.
 	scanned   []string
 	local     []string
 	truncated bool
 	scanErr   string
 
-	// The merged (roster + local) list, memoized on the three things that can change
-	// it. Rebuilding a few thousand names every frame would be absurd on a draw path.
+	// The merged list, memoized on the three things that can change it.
 	names      []string
 	lower      []string
 	namesKey   string // a.serverKey the list was built for
@@ -104,29 +61,21 @@ type iniBaseBrowser struct {
 	namesLocal int    // len(local) it was built from
 	truncatedN bool   // the merge itself hit iniBaseNameCap
 
-	// The count-bearing strings this tab draws EVERY frame it is open, memoized on
-	// the counts they were built from — the same doctrine as themeFoundText
-	// (settings.go): a per-frame fmt.Sprintf on a draw path is exactly the
-	// allocation the zero-allocation render loop exists to keep out, and these
-	// numbers change only when a fetch or a mount scan lands.
+	// Strings drawn every frame the tab is open, memoized on their counts to keep the render loop allocation-free.
 	labelServer  string // "Server list (N)"
 	labelBase    string // "From your base (N)"
 	labelStatus  string // "<N> on this server · ★ adds one …"
 	labelServerN int    // the serverN they were built from
 	labelBaseN   int    // ...and the baseN
 
-	// Char icons for the base grid, index-keyed into the merged list (names) and
-	// generation-checked like the wardrobe's iniPages — but SEPARATE, because this
-	// list is its own indices and must never alias a.iniPages.
+	// Char icons index-keyed into names; separate because this list's indices must never alias a.iniPages.
 	pages    []*render.TexturePage
 	pagesGen uint64
 	ask      []time.Time
 }
 
-// sourceLabels returns the two source-chip labels and the server-count status line
-// for these counts, rebuilding the strings only when a count actually moved.
-// labelServer is never legitimately empty, so it doubles as the "unset" marker (the
-// zero counts are a real pair — an empty server list beside no mounts).
+// sourceLabels rebuilds the chip labels only when a count moved; labelServer is never legitimately empty, so "" =
+// unset.
 func (b *iniBaseBrowser) sourceLabels(serverN, baseN int) (server, base, status string) {
 	if b.labelServer == "" || b.labelServerN != serverN || b.labelBaseN != baseN {
 		b.labelServerN, b.labelBaseN = serverN, baseN
@@ -137,12 +86,8 @@ func (b *iniBaseBrowser) sourceLabels(serverN, baseN int) (server, base, status 
 	return b.labelServer, b.labelBase, b.labelStatus
 }
 
-// scanLocalCharFolders walks each mount's characters/ folder and returns the folder
-// names. BLOCKING — goroutine only.
-//
-// A mount that cannot be opened is skipped, not fatal: mounts go missing (an
-// unplugged drive, a deleted folder, an archive rather than a folder) and whatever
-// else resolved is still worth showing — the same degradation BuildMountIndex makes.
+// scanLocalCharFolders returns each mount's character folder names, skipping mounts that can't be opened. Blocking:
+// goroutine only.
 func scanLocalCharFolders(mounts []string) iniBaseScan {
 	out := iniBaseScan{mounts: append([]string(nil), mounts...)}
 	seen := make(map[string]struct{})
@@ -153,9 +98,8 @@ func scanLocalCharFolders(mounts []string) iniBaseScan {
 		}
 		entries, err := os.ReadDir(filepath.Join(m, iniBaseCharsDir))
 		if err != nil {
-			// An ARCHIVE mount lands here too (a .zip is not a directory). Archives are
-			// indexed for ASSET reads by internal/assets; enumerating one for names
-			// would mean opening it on this goroutine and is deliberately out of scope.
+			// An archive mount lands here too; enumerating one would mean opening it on this goroutine, deliberately
+			// out of scope.
 			skipped++
 			continue
 		}
@@ -191,18 +135,10 @@ func scanLocalCharFolders(mounts []string) iniBaseScan {
 	return out
 }
 
-// baseMounts is the mount list the browser scans — and it is empty unless a local
-// mode is actually ON. Both accessors hand back the stored paths whatever their
-// mode flag says, so the flag is what must be tested: offering folders from mounts
-// the asset pipeline is not reading would list characters that then fail to load.
-// LayeredAssets normalizes the reachable both-set state, so asking it second is
-// enough (config.LayeredAssets).
-//
-// This COPIES (both accessors do), so it is for callers that keep the list. The
-// staleness check does not: it asks config.BaseMountsEqual, which answers the same
-// question against the stored slice under the read lock. The two must agree on
-// which mode yields which list — TestBaseMountsEqualMatchesBaseMounts walks the
-// mode matrix to keep them from drifting apart.
+// baseMounts is empty unless a local mode is on: both accessors return the stored paths whatever the flag says, and
+// listing mounts the asset pipeline isn't reading offers characters that fail to load. LayeredAssets normalizes the
+// both-set state, so asking it second is enough. This copies; the mode-to-list mapping must agree with
+// config.BaseMountsEqual.
 func (a *App) baseMounts() []string {
 	if on, mounts := a.d.Prefs.LocalAssets(); on {
 		return mounts
@@ -213,18 +149,8 @@ func (a *App) baseMounts() []string {
 	return nil
 }
 
-// ensureLocalCharFolders starts a scan when the mount list has changed since the
-// last one. Cheap and allocation-free when nothing changed (a slice compare), which
-// is what lets a draw path call it every frame.
-//
-// That "allocation-free" is why the unchanged path asks config.BaseMountsEqual
-// instead of comparing against baseMounts(): baseMounts routes through
-// LocalAssets/LayeredAssets, and BOTH of those take a make+copy of the stored
-// paths under the lock. Fetching the list only to throw it away would have cost a
-// user with mounts — the exact user this feature exists for — one or two heap
-// allocations EVERY frame the Iniswaps tab was open. The copy is now taken only
-// on the changed path, which runs once per mount edit and hands the slice to a
-// goroutine that must own it anyway.
+// ensureLocalCharFolders starts a scan when the mount list changed. It uses config.BaseMountsEqual on the unchanged
+// path because baseMounts copies under the lock, which would allocate every frame the tab is open.
 func (a *App) ensureLocalCharFolders() {
 	b := &a.iniBase
 	if b.scanning {
@@ -255,7 +181,6 @@ func (a *App) ensureLocalCharFolders() {
 	}()
 }
 
-// pollLocalCharFolders lands a finished scan. Non-blocking, like pollIniswap.
 func (a *App) pollLocalCharFolders() {
 	b := &a.iniBase
 	if b.res == nil {
@@ -273,10 +198,8 @@ func (a *App) pollLocalCharFolders() {
 	}
 }
 
-// baseNames is the merged, sorted, de-duplicated list of every character folder the
-// client knows exists on this base: the server's roster first (it is authoritative
-// for what the SERVER will accept), then any local folder the roster did not name.
-// Memoized — see iniBaseBrowser.names.
+// baseNames is the merged, sorted, de-duplicated folder list: the roster first (authoritative for what the server
+// will accept), then any local folder it did not name.
 func (a *App) baseNames() ([]string, []string) {
 	b := &a.iniBase
 	chars := 0
@@ -321,7 +244,6 @@ func (a *App) baseNames() ([]string, []string) {
 	return b.names, b.lower
 }
 
-// baseSourceCounts is what the two source chips advertise.
 func (a *App) baseSourceCounts() (serverList, base int) {
 	n := 0
 	for _, in := range a.iniServerMem {
@@ -333,14 +255,8 @@ func (a *App) baseSourceCounts() (serverList, base int) {
 	return n, len(names)
 }
 
-// drawIniswapBaseBody draws the "From your base" source: a search-filtered grid of
-// 64 px char-icon cells, one per character folder, click to wear.
-//
-// It draws art cells like the wardrobe, but through its OWN index-keyed page cache
-// (a.iniBase.pages / .ask) rather than a.iniPages — a second list under the same
-// indices is the cachedPage reorder trap the wardrobe's own comments describe.
-// Demand stays paced (only visible cells ask), so browsing a four-thousand-character
-// roster stays free.
+// drawIniswapBaseBody draws a search-filtered grid of char-icon cells, click to wear. Its own index-keyed page cache:
+// a second list under a.iniPages' indices would hit the cachedPage reorder trap. Only visible cells ask for art.
 func (a *App) drawIniswapBaseBody(panel sdl.Rect, y int32, query string) {
 	c := a.ctx
 	names, lower := a.baseNames()
@@ -354,8 +270,7 @@ func (a *App) drawIniswapBaseBody(panel sdl.Rect, y int32, query string) {
 		c.LabelClipped(panel.X+pad, y+4, panel.W-2*pad, msg, ColTextDim)
 		return
 	}
-	// The one thing a remote base can never offer, said out loud where the field that
-	// works around it is (the search box doubles as the wear-by-name field).
+	// A remote base cannot be listed; the search box doubles as the wear-by-name field.
 	c.LabelClipped(panel.X+pad, y, panel.W-2*pad,
 		"A plain web asset base can't be listed — type any folder name above and press Enter to wear it. "+
 			"The names below come from this server's character roster and from your local mounts.", ColTextDim)

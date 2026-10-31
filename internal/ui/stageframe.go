@@ -2,12 +2,8 @@ package ui
 
 import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
-// Stage frames (#56): a decorative border drawn around the viewport, picked in
-// Settings → Display (0 = Off, the default — nothing draws). Pure chrome: a
-// handful of Fill/Border rects inside the stage rect, zero per-frame
-// allocations, drawn under the chatbox overlay (the frame belongs to the stage,
-// the chatbox sits on it). The style list must stay in step with config's
-// stageFrameKindMax — TestStageFrameKindMaxMatchesUI pins the contract.
+// Stage frames: a decorative border around the viewport, chosen in Settings > Display (0 = Off draws nothing).
+// Drawn under the chatbox overlay. The style list must match config's stageFrameKindMax.
 
 // stageFrameNames is the Settings dropdown, index == the persisted style id.
 var stageFrameNames = []string{
@@ -45,9 +41,8 @@ func insetRect(r sdl.Rect, n int32) sdl.Rect {
 	return sdl.Rect{X: r.X + n, Y: r.Y + n, W: r.W - 2*n, H: r.H - 2*n}
 }
 
-// drawStageFrame paints the selected decorative frame just inside vp. Called at
-// the end of renderViewportZoomed so every stage (classic, themed, theater) gets
-// it; a zoomed camera keeps the frame fixed (it's chrome, not scene).
+// drawStageFrame paints the selected frame just inside vp, at the end of renderViewportZoomed so every stage gets it.
+// A zoomed camera keeps the frame fixed.
 func (a *App) drawStageFrame(vp sdl.Rect) {
 	kind := a.d.Prefs.StageFrame()
 	if kind == stageFrameOff || vp.W < 40 || vp.H < 40 {

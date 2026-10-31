@@ -17,50 +17,31 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Scene recording (M16): record the courtroom EVENT stream — not pixels — to a
-// tiny .aorec file you can reopen in AsyncAO and replay natively at perfect
-// quality, with near-zero recording cost. The asset origin is stored so a
-// replay fetches the same sprites/backgrounds over HTTP (independent of the
-// game WebSocket), and it's the foundation the later phases (a replay player,
-// an event-timeline editor, GIF/video export) build on: editing manipulates
-// this lightweight event list, and only the opt-in export ever touches pixels.
+// Scene recording: record the courtroom event stream, not pixels, to a small .aorec file to reopen and replay natively.
+// The asset origin is stored so a replay fetches sprites and backgrounds over HTTP, independent of the game WebSocket.
+// Editing manipulates this event list; only the opt-in export touches pixels.
 const (
 	recordingVersion = 1
 	recordingExt     = ".aorec"
-	// maxRecordedEvents bounds one recording (hard rule §17.4 — no unbounded
-	// buffers): a runaway session can't balloon memory. Recording/import stops
-	// accepting events past the cap (a coherent leading prefix is kept). 50000 is
-	// sized to import a WHOLE real session: the largest real fixture is 8943 scene
-	// events, so 50000 is ~5.6× that — full archives fit with room to spare. Memory
-	// math: an MS event costs ~464 B of struct (the recEvent slot + its heap
-	// *ChatMessage) + ~250 B of string backing ≈ 700 B avg (≈1 KB worst), so one
-	// resident scene at 50000 events is ~35 MB, and the transient export/preview
-	// second copy adds only ~23 MB (string bytes are shared across clones, only the
-	// structs multiply) — well inside the 256 MiB budget. Video export length is NO
-	// LONGER coupled to this: video streams to ffmpeg under its own maxVideoHours
-	// wedge-brake, so a big import is fully exportable.
+	// maxRecordedEvents bounds one recording (hard rule 4): recording and import stop accepting events past the cap,
+	// keeping a coherent leading prefix. Sized to import a whole real session (the largest real fixture is under 9000
+	// scene events). Video export streams to ffmpeg under its own maxVideoHours limit, so a big import is still fully
+	// exportable.
 	maxRecordedEvents = 50000
 
-	// instantReplayMaxEvents bounds the always-on rolling clip buffer (hard rule
-	// §17.4): even a 1-hour window in a frantic room can't balloon memory — past
-	// the cap the oldest captured events fall off the ring. Each entry is a
-	// timestamp + a recEvent (which only holds a pointer to the already-parsed
-	// message), so the whole ring is well under a megabyte.
+	// instantReplayMaxEvents bounds the rolling clip buffer (hard rule 4): past the cap the oldest events fall off the
+	// ring.
 	instantReplayMaxEvents = 5000
 
-	// Replay pacing base (at 100% playback speed). A replay is meant to be
-	// WATCHED, not skimmed, so it's deliberately slower than live chat: the
-	// crawl is a relaxed reading cadence and the linger gives time to read the
-	// whole finished line before the next event is fed. The ReplaySpeed pref
-	// scales both — lower percent = slower (longer crawl + linger), higher =
-	// faster — so the user can dial it from a slow cinematic to a quick recap.
+	// Replay pacing base at 100% playback speed. A replay is meant to be watched, so it is slower than live chat: a
+	// relaxed crawl, then a linger to read the finished line. The ReplaySpeed pref scales both (lower percent =
+	// slower).
 	replayBaseCrawlMs = 55   // ms per character typed at 100%
 	replayBaseStayMs  = 3200 // ms the finished line lingers at 100%
 )
 
-// recEvent is one recorded scene-mutating event. Only the three events that
-// Courtroom.HandleEvent acts on are captured (message / background / music);
-// the fields mirror courtroom.Event so a replay can reconstruct it exactly.
+// recEvent is one recorded scene-mutating event: only the events Courtroom.HandleEvent acts on (message, background,
+// music); the fields mirror courtroom.Event.
 type recEvent struct {
 	OffsetMs int                   `json:"offsetMs"` // wall-clock ms from record start
 	Kind     int                   `json:"kind"`     // courtroom.EventKind
@@ -70,25 +51,22 @@ type recEvent struct {
 	Int      int                   `json:"int,omitempty"`
 }
 
-// sceneRecording is the serialized .aorec: the asset origin + the background at
-// record-start (so the first frames render against the right scene, not a blank
-// one) + the timed event stream.
+// sceneRecording is the serialized .aorec: the asset origin, the background at record start (so the first frames aren't
+// blank) and the timed event stream.
 type sceneRecording struct {
 	Version    int        `json:"version"`
 	Origin     string     `json:"origin"`
 	StartBg    string     `json:"startBackground"`
 	RecordedAt string     `json:"recordedAt"`
 	Events     []recEvent `json:"events"`
-	// Bundled marks a self-contained archive: the assets live in THIS file's
-	// folder (webAO layout) and Formats maps AssetType.Name()→ext so replay can
-	// seed the resolver. Set only by the archive exporter; replay reads them to
-	// play from the folder instead of the (possibly dead) Origin CDN.
+	// Bundled marks a self-contained archive whose assets live in this file's folder (webAO layout); Formats maps
+	// AssetType.Name() to ext to seed the resolver. Set only by the archive exporter; replay then plays from the folder
+	// instead of a possibly dead Origin CDN.
 	Bundled bool              `json:"bundled,omitempty"`
 	Formats map[string]string `json:"formats,omitempty"`
 }
 
-// recordable reports whether an event mutates the scene (so it belongs in a
-// recording) — exactly the set Courtroom.HandleEvent acts on.
+// recordable reports whether an event mutates the scene: exactly the set Courtroom.HandleEvent acts on.
 func recordable(k courtroom.EventKind) bool {
 	return k == courtroom.EventMessage || k == courtroom.EventBackground || k == courtroom.EventMusic
 }
@@ -102,8 +80,8 @@ func (a *App) toggleRecording() {
 	}
 }
 
-// startRecording begins capturing the scene event stream. Snapshots the asset
-// origin + current background so a replay starts against the right scene.
+// startRecording begins capturing the event stream, snapshotting the asset origin and background so a replay starts on
+// the right scene.
 func (a *App) startRecording() {
 	if a.recActive {
 		return
@@ -124,21 +102,15 @@ func (a *App) startRecording() {
 	a.warnAt = time.Now()
 }
 
-// recEventFrom builds a recEvent from a live courtroom.Event, keeping the recording
-// SELF-CONTAINED for sprite styles. Send-on-change transmits the style marker only on
-// a CHANGE, so a no-marker message inherits the speaker's last style — which a clip
-// that starts mid-stream (instant-replay, a cropped export) would otherwise lose. When
-// the live message omits the marker but the speaker HAS a remembered style, record a
-// COPY of the message with the marker re-injected; the live msg is never mutated (the
-// room processes the original, and the recording shares that pointer for unstyled
-// lines). Called BEFORE room.HandleEvent, so RecalledStyle still reflects this
-// speaker's last style (a no-marker line doesn't change it). The caller fills OffsetMs
-// (it owns the time base). Shared by the recorder and the instant-replay buffer.
+// recEventFrom builds a recEvent from a live event, keeping the recording self-contained for sprite styles. The style
+// marker is sent only on a change, so a clip starting mid-stream would lose the speaker's inherited style. When the
+// message omits the marker but the speaker has a remembered style, record a copy with it re-injected; the live message
+// is never mutated. Called before room.HandleEvent so RecalledStyle still holds the speaker's last style. The caller
+// fills OffsetMs. Shared by the recorder and the instant-replay buffer.
 func (a *App) recEventFrom(ev courtroom.Event) recEvent {
-	// Gate on HasStyleMarker, not "any zero-width marker": a line may carry a #101
-	// PROFILE marker but no style marker, and such a line from a styled speaker still
-	// needs the style re-injected for a self-contained clip. DecodeSpriteStyle scans all
-	// frames, so appending the style after an existing profile marker decodes fine.
+	// Gate on HasStyleMarker, not any zero-width marker: a line may carry a profile marker but no style marker and
+	// still needs the style re-injected. DecodeSpriteStyle scans all frames, so appending after a profile marker
+	// decodes fine.
 	if ev.Kind == courtroom.EventMessage && ev.Message != nil && a.room != nil &&
 		!courtroom.HasStyleMarker(ev.Message.Message) {
 		if style := a.room.RecalledStyle(ev.Message.CharID); style.Active() {
@@ -157,7 +129,6 @@ func (a *App) recEventFrom(ev courtroom.Event) recEvent {
 }
 
 // recordEvent appends a scene-mutating event to the active recording (bounded).
-// Called from the event loop for every event while recActive.
 func (a *App) recordEvent(ev courtroom.Event) {
 	if a.rec == nil || !recordable(ev.Kind) || len(a.rec.Events) >= maxRecordedEvents {
 		return
@@ -167,19 +138,15 @@ func (a *App) recordEvent(ev courtroom.Event) {
 	a.rec.Events = append(a.rec.Events, re)
 }
 
-// replayBufEntry is one ring slot for the instant-replay buffer: a wall-clock
-// capture time plus the scene event, so a clip can window by real elapsed time.
+// replayBufEntry is one ring entry: capture time plus the event, so a clip can window by real elapsed time.
 type replayBufEntry struct {
 	at time.Time
 	ev recEvent
 }
 
-// bufferReplayEvent stamps a scene-mutating event into the rolling clip buffer
-// when the opt-in pref is on. Called for EVERY game event from the event loop, so
-// it stays O(1) and allocation-free after the one-time ring allocation (it runs
-// per incoming message, never per render frame). The ring is released when the
-// feature is off and reset when the asset origin changes — a clip must never mix
-// two servers' assets (a long window can outlive a server switch).
+// bufferReplayEvent stamps a scene-mutating event into the rolling clip buffer when the opt-in pref is on. It runs per
+// incoming message, O(1) and allocation-free after the one-time ring allocation. The ring is released when the feature
+// is off and reset when the asset origin changes, so a clip never mixes two servers' assets.
 func (a *App) bufferReplayEvent(ev courtroom.Event) {
 	if !a.d.Prefs.Load().InstantReplay {
 		if a.replayBuf != nil { // turned off at runtime → free the ring
@@ -206,8 +173,7 @@ func (a *App) bufferReplayEvent(ev courtroom.Event) {
 	}
 }
 
-// linearizeReplayBuf copies the ring into a fresh oldest→newest slice. Only the
-// clip key calls it (a rare user action), so the allocation is fine here.
+// linearizeReplayBuf copies the ring into an oldest-to-newest slice; only the clip key calls it.
 func (a *App) linearizeReplayBuf() []replayBufEntry {
 	n := a.replayBufN
 	if n == 0 || len(a.replayBuf) == 0 {
@@ -224,12 +190,9 @@ func (a *App) linearizeReplayBuf() []replayBufEntry {
 	return out
 }
 
-// buildClip assembles a sceneRecording from the buffered entries whose capture
-// time is within [cutoff, now], recomputing each OffsetMs from the first kept
-// entry and carrying the scene context (the last background — and music — change
-// BEFORE the window) so a mid-conversation clip isn't blank or silent. Pure: no
-// ring, clock, or SDL, so it's tested directly. entries must be oldest-first.
-// Returns nil when nothing falls in the window.
+// buildClip assembles a sceneRecording from buffered entries captured within [cutoff, now], recomputing each OffsetMs
+// from the first kept entry and carrying the last background and music change before the window so the clip isn't blank
+// or silent. Pure (no ring, clock or SDL). entries must be oldest-first; returns nil when nothing falls in the window.
 func buildClip(entries []replayBufEntry, cutoff time.Time, origin, sessBg string) *sceneRecording {
 	start := -1
 	for i := range entries {
@@ -241,8 +204,7 @@ func buildClip(entries []replayBufEntry, cutoff time.Time, origin, sessBg string
 	if start < 0 {
 		return nil
 	}
-	// Scene context active at the window start: the most recent background and
-	// music change BEFORE it, so the clip opens on the right stage and track.
+	// Scene context at the window start: the most recent background and music change before it.
 	startBg, startMusic := sessBg, ""
 	foundBg, foundMus := false, false
 	for i := start - 1; i >= 0 && (!foundBg || !foundMus); i-- {
@@ -276,9 +238,8 @@ func buildClip(entries []replayBufEntry, cutoff time.Time, origin, sessBg string
 	}
 }
 
-// clipInstantReplay saves the last capture-window of conversation as a .aorec —
-// the "save what just happened" key, with no recording started in advance. The
-// write is deferred off the render thread by saveSceneRecording.
+// clipInstantReplay saves the last capture window as a .aorec with no recording started in advance; saveSceneRecording
+// defers the write off the render thread.
 func (a *App) clipInstantReplay() {
 	if !a.d.Prefs.Load().InstantReplay {
 		a.warnLine = "Instant Replay is off — enable “Pre-record recent conversation” in Settings → Studio first."
@@ -328,11 +289,8 @@ func formatReplayWindow(d time.Duration) string {
 	}
 }
 
-// stopRecording ends capture and writes the .aorec next to the exe under
-// recordings\ off the render thread (§17.2: file I/O never blocks rendering).
-// It returns a done channel closed when the deferred .aorec write finishes (or
-// gives up), so a caller can wait for the file instead of polling the filesystem;
-// nil when nothing was written.
+// stopRecording ends capture and writes the .aorec under recordings\ off the render thread (hard rule 2). It returns a
+// channel closed when the write finishes or gives up, or nil if nothing was written.
 func (a *App) stopRecording() <-chan struct{} {
 	if !a.recActive {
 		return nil
@@ -355,29 +313,20 @@ func (a *App) stopRecording() <-chan struct{} {
 	a.warnLine = "Recording saved (" + strconv.Itoa(len(rec.Events)) + " events): recordings\\" + name
 	a.warnAt = time.Now()
 
-	// "Recordings keep their assets" (default ON): the scene we just recorded was
-	// rendered live, so all its assets are already warm in the cache — package them
-	// into a self-contained bundle folder beside the flat .aorec so the recording
-	// survives its CDN going dark, at zero user effort. This hooks AFTER the async
-	// .aorec write and is render-thread-cheap (it only STARTS the same single-flight
-	// content job the Studio buttons run; the fetch/probe/write all happen off-thread
-	// and never block or slow the stop). Skips silently on an offline recording (no
-	// origin → nothing to package) or when a content job is already running. The
-	// single "Recording packaged…" toast lands when the build finishes (tickContentJob).
+	// "Recordings keep their assets" (default on): the scene was rendered live so its assets are warm in the cache;
+	// package them into a bundle folder beside the .aorec so the recording survives its CDN going dark. This hooks
+	// after the async write and only starts the single-flight content job the Studio buttons run; the work happens
+	// off-thread. It skips an offline recording (no origin) or a running content job. The "Recording packaged" toast
+	// lands when the build finishes (tickContentJob).
 	if a.d.Prefs.Load().RecordingsKeepAssets {
 		a.startAutoBundle(rec, stem)
 	}
 	return done
 }
 
-// saveSceneRecording marshals a scene to pretty-printed (hand-editable) JSON and
-// writes it under recordings\ as <stem>.aorec OFF the render thread (§17.2: no
-// synchronous disk I/O on the render path). The marshal is cheap and done on the
-// caller; only the WriteFile is deferred. Returns the filename it will land as and
-// a done channel closed when the write goroutine finishes (or gives up), so a
-// caller can wait for the file instead of polling the filesystem.
-// Shared by recording (stopRecording) and the scene maker's Save so both produce
-// identical, reopenable .aorec files.
+// saveSceneRecording marshals a scene to hand-editable JSON and writes recordings\<stem>.aorec off the render thread
+// (hard rule 2); only the WriteFile is deferred. It returns the filename and a channel closed when the write finishes
+// or gives up. Shared by stopRecording and the scene maker's Save.
 func saveSceneRecording(rec *sceneRecording, stem string) (string, <-chan struct{}, error) {
 	data, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
@@ -399,8 +348,6 @@ func saveSceneRecording(rec *sceneRecording, stem string) (string, <-chan struct
 	return name, done, nil
 }
 
-// --- M16 [2/2]: replay player ---
-
 // eventFromRec reconstructs the courtroom event a recorded entry stands for.
 func eventFromRec(e recEvent) courtroom.Event {
 	ev := courtroom.Event{
@@ -410,10 +357,8 @@ func eventFromRec(e recEvent) courtroom.Event {
 		Text:    e.Text,
 		Int:     e.Int,
 	}
-	// .aorec doesn't record the 2.9 MC loop/effect flags (#15), so a replayed
-	// music event would carry the zero-value Loop=false and now PLAY ONCE. Replay
-	// has always looped its soundtrack, so default recorded music to loop-forever
-	// (no format change, no migration for existing recordings).
+	// .aorec doesn't record the 2.9 MC loop/effect flags, so a replayed music event would play once. Replay has always
+	// looped its soundtrack: default recorded music to loop-forever (no format change).
 	if ev.Kind == courtroom.EventMusic {
 		ev.Loop = true
 	}
@@ -430,10 +375,8 @@ func loadRecording(path string) (*sceneRecording, error) {
 	if err := json.Unmarshal(data, &rec); err != nil {
 		return nil, err
 	}
-	// A hand-edited .aorec must not smuggle an over-cap scene past every guard
-	// (hard rule §17.4): the file is the fifth ingestion path, so enforce the
-	// same maxRecordedEvents ceiling the recorder and demo import hold — keep the
-	// coherent leading prefix (OffsetMs is cumulative).
+	// A hand-edited .aorec must not smuggle an over-cap scene past the guards (hard rule 4): enforce the same
+	// maxRecordedEvents ceiling as the recorder and demo import, keeping the leading prefix (OffsetMs is cumulative).
 	if len(rec.Events) > maxRecordedEvents {
 		rec.Events = rec.Events[:maxRecordedEvents]
 	}
@@ -471,8 +414,7 @@ func listRecordings() []recordingFile {
 	}
 	var all []withMod
 	for _, en := range entries {
-		// .aorec is ours; .demo is AO2's recorder format (played/edited via the
-		// on-the-fly converter in demofile.go — backwards compatibility).
+		// .aorec is ours; .demo is AO2's recorder format, converted on the fly (demofile.go).
 		if en.IsDir() || !(strings.HasSuffix(en.Name(), recordingExt) || strings.HasSuffix(strings.ToLower(en.Name()), demoExt)) {
 			continue
 		}
@@ -498,9 +440,7 @@ func latestRecordingPath() string {
 	return ""
 }
 
-// openRecordingsFolder makes sure the recordings\ folder exists (the default
-// place .aorec files live) and opens it in the OS file manager, so saved
-// recordings are easy to find and share.
+// openRecordingsFolder ensures recordings\ exists and opens it in the OS file manager.
 func (a *App) openRecordingsFolder() {
 	dir := recordingsDir()
 	if dir == "" {
@@ -515,9 +455,8 @@ func (a *App) openRecordingsFolder() {
 	a.warnAt = time.Now()
 }
 
-// replayFromPath loads a specific .aorec and starts replaying it (the picker
-// entry point). The replay plays in an overlay over whatever screen you're on
-// (drawReplayOverlay), so it works connected or from the lobby.
+// replayFromPath loads a specific .aorec and starts replaying it. The replay plays in an overlay over whatever screen
+// you're on (drawReplayOverlay).
 func (a *App) replayFromPath(path string) {
 	if a.recActive {
 		a.warnLine = "Stop recording first, then replay."
@@ -533,9 +472,8 @@ func (a *App) replayFromPath(path string) {
 	a.playRecording(rec, path)
 }
 
-// playRecording starts replaying a loaded recording. A self-contained archive
-// (Bundled) plays its assets from the .aorec's own folder, CDN-free; a normal
-// recording streams from its Origin.
+// playRecording starts replaying a loaded recording. A bundled archive plays its assets from the .aorec's folder,
+// CDN-free; a normal one streams from its Origin.
 func (a *App) playRecording(rec *sceneRecording, path string) {
 	if rec.Bundled {
 		a.beginBundledReplay(rec, filepath.Dir(path))
@@ -543,12 +481,10 @@ func (a *App) playRecording(rec *sceneRecording, path string) {
 	a.startReplay(rec, filepath.Base(path))
 }
 
-// beginBundledReplay points the shared Manager at the archive folder (so the
-// archive's local:// asset URLs resolve from disk, with the CDN gone) and seeds
-// the resolver with the archive's bundled formats. rec.Origin is rewritten to
-// the archive's local base so the courtroom builds matching URLs. The shared
-// Manager is used deliberately — its Decoded channel is the one the render Pump
-// drains, so textures actually upload. Undone by endBundledReplay.
+// beginBundledReplay points the shared Manager at the archive folder (local:// asset URLs resolve from disk) and seeds
+// the resolver with the archive's formats. rec.Origin is rewritten to the archive's local base so the courtroom builds
+// matching URLs. It must be the shared Manager: its Decoded channel is the one the render Pump drains, so textures
+// upload. Undone by endBundledReplay.
 func (a *App) beginBundledReplay(rec *sceneRecording, dir string) {
 	local := assets.NewLocalFetcher([]string{dir})
 	rec.Origin = local.BaseURL()
@@ -592,13 +528,9 @@ func (a *App) toggleReplay() {
 	a.playRecording(rec, path)
 }
 
-// replayTiming maps the ReplaySpeed pref (percent, 100 = base) to the replay
-// typewriter crawl + linger. 100% is the readable base; lower percent slows
-// both (so the whole message plays out and can be read), higher speeds it up.
-// Re-applied every frame in driveReplay so the Studio "Playback speed" slider
-// is live — the new crawl takes the NEXT typed message, the new linger the next
-// settle (Typewriter precomputes per-rune delays at Start; TextStay is read at
-// linger), which is exactly when a mid-replay speed change should bite.
+// replayTiming maps the ReplaySpeed pref (percent, 100 = base) to the typewriter crawl and linger; lower percent slows
+// both. Re-applied every frame in driveReplay so the slider is live: the new crawl takes the next typed message and the
+// new linger the next settle (Typewriter precomputes per-rune delays at Start).
 func (a *App) replayTiming() (crawl, stay time.Duration) {
 	spd := a.d.Prefs.Load().ReplayPlaybackSpeed
 	if spd < 1 {
@@ -609,29 +541,22 @@ func (a *App) replayTiming() (crawl, stay time.Duration) {
 	return crawl, stay
 }
 
-// startReplay spins up a throwaway courtroom pointed at the recorded asset
-// origin (asset HTTP fetch is independent of the game WS), seeds the starting
-// background so the first frames aren't blank, and begins feeding events. Paced
-// by replayTiming (slower than live, scaled by the Playback-speed slider).
+// startReplay builds a throwaway courtroom on the recorded asset origin, seeds the starting background so the first
+// frames aren't blank, and feeds events, paced by replayTiming.
 func (a *App) startReplay(rec *sceneRecording, name string) {
 	if rec == nil || len(rec.Events) == 0 {
 		return
 	}
 	defer a.recoverReplay("start") // building the room / seeding must never crash the app
-	// Constructed AND wired through the one seam (newroom.go): speakers blip,
-	// skin and flash in a replay exactly as they do live, and the room starts
-	// under the viewer's own visual prefs instead of NewCourtroom's defaults.
+	// Constructed and wired through newRoom (newroom.go), so speakers blip, skin and flash as they do live, under the
+	// viewer's own visual prefs.
 	a.replayRoom = a.newRoom(courtroom.NewURLBuilder(rec.Origin), nil, a.d.Audio)
 	a.replayRoom.Typewriter.Interval, a.replayRoom.TextStay = a.replayTiming() // slower than live + slider-driven
 	a.replayRoom.CatchUp = false                                               // play every recorded line in full; the driver feeds one at a time
-	// POST-CONSTRUCTION OVERRIDE, and the only one this mode needs: a Preview
-	// launched from the maker is authoring (show the scene's screenshake, flash
-	// and overlays), while a normal replay honours the viewer's reduce-motion,
-	// screen-effects and sprite-style choices. The master off-switch rides along
-	// with the individual prefs, under the same makerOpen exemption: authoring a
-	// scene must still SHOW what is being authored, or the maker previews a lie.
-	// The three gates come from newroom.go so this mode cannot answer differently
-	// from the export it is previewing. Everything else newRoom seeded stands.
+	// Post-construction override: a Preview launched from the maker is authoring and shows screenshake, flash and
+	// overlays, while a normal replay honours the viewer's reduce-motion, screen-effects and sprite-style choices. The
+	// master off-switch follows the same makerOpen exemption, or the maker would preview a lie. The gates come from
+	// newroom.go so this mode answers like the export it previews.
 	if a.makerOpen {
 		a.applyAuthoringVisualsToRoom(a.replayRoom)
 	}
@@ -650,10 +575,9 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 	a.replayChapters = buildReplayChapters(rec.Events) // #70 the jump list (idempotent across restarts/jumps)
 	a.replayPaused = false                             // a fresh replay starts playing
 	a.replaying = true
-	// H5: a FLAT (streamed) recording pre-warms its sprites + music before the first
-	// event so nothing pops in or plays silent. A bundled replay reads local files
-	// (already gap-free — beginBundledReplay ran first and set replayBundled), so it
-	// skips the warm. An empty / non-http origin also skips (startReplayWarm no-ops).
+	// A flat (streamed) recording pre-warms its sprites and music before the first event so nothing pops in or plays
+	// silent. A bundled replay reads local files (beginBundledReplay already set replayBundled), so it skips the warm;
+	// an empty or non-http origin skips too (startReplayWarm no-ops).
 	a.endReplayWarm() // clear any prior phase (⏮ Restart re-enters here)
 	if !a.replayBundled {
 		a.startReplayWarm(rec)
@@ -662,12 +586,8 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 	a.warnAt = time.Now()
 }
 
-// --- replay player controls (drawReplayOverlay) ---
-
-// replayNext skips the current message straight to idle and feeds the following
-// event — the "fast-forward to the next line" button. Works while paused. While the
-// H5 pre-warm is running, ⏭ Next means "start already": end the warm and let the
-// first event feed next frame, rather than fast-forwarding a scene that hasn't begun.
+// replayNext skips the current message to idle and feeds the next event; works while paused. During the pre-warm it
+// means "start already": end the warm and let the first event feed next frame.
 func (a *App) replayNext() {
 	if a.replayRoom == nil {
 		return
@@ -680,8 +600,7 @@ func (a *App) replayNext() {
 	a.advanceReplay(0) // now idle → feed the next event immediately (or end if exhausted)
 }
 
-// replayTogglePause freezes / resumes playback (Next + Restart still work while
-// paused).
+// replayTogglePause freezes or resumes playback (Next and Restart still work while paused).
 func (a *App) replayTogglePause() { a.replayPaused = !a.replayPaused }
 
 // replayRestart rebuilds the replay from the first event.
@@ -691,8 +610,7 @@ func (a *App) replayRestart() {
 	}
 }
 
-// replayMessagePos reports the current / total MESSAGE count (ignoring bg/music
-// events) for the player's position readout.
+// replayMessagePos reports the current and total message count (ignoring bg/music events).
 func (a *App) replayMessagePos() (cur, total int) {
 	for i, e := range a.replayEvents {
 		if courtroom.EventKind(e.Kind) != courtroom.EventMessage {
@@ -706,10 +624,9 @@ func (a *App) replayMessagePos() (cur, total int) {
 	return cur, total
 }
 
-// advanceReplay feeds the next recorded event whenever the replay room returns
-// to idle, so the courtroom's own pacing (typewriter / preanim / linger) times
-// the playback — NOT the recorded wall-clock deltas, which would double-drag.
-// When the stream is exhausted and the room settles, the replay ends.
+// advanceReplay feeds the next recorded event whenever the replay room returns to idle, so the courtroom's own pacing
+// times playback, not the recorded wall-clock deltas, which would double-drag. When the stream is exhausted and the
+// room settles, the replay ends.
 func (a *App) advanceReplay(dt time.Duration) {
 	if !a.replaying || a.replayRoom == nil {
 		return
@@ -757,10 +674,8 @@ func (a *App) stopReplay() {
 	a.warnAt = time.Now()
 }
 
-// recoverReplay turns a panic anywhere in the replay drive/render into a clean
-// stop + a debug line, instead of crashing the app — a replay is optional and a
-// bad/edge recording must never take the client down. The recovered value names
-// the cause (visible in the debug overlay) so the root bug can be pinned.
+// recoverReplay turns a panic in the replay drive/render into a clean stop and a debug line: a replay is optional and a
+// bad recording must not take the client down. The recovered value goes to the debug overlay.
 func (a *App) recoverReplay(where string) {
 	r := recover()
 	if r == nil {
@@ -796,11 +711,9 @@ func (a *App) recoverReplay(where string) {
 func (a *App) driveReplay(dt time.Duration) {
 	defer a.recoverReplay("update")
 	a.replayRoom.Typewriter.Interval, a.replayRoom.TextStay = a.replayTiming() // live Playback-speed slider
-	// H5 pre-warm: while the FLAT recording's sprites + music load, hold the first
-	// event off-stage (advanceReplay is skipped) so playback starts warm, not popping.
-	// The room + viewport still Update so the stage (StartBg, once resident) draws
-	// under the loading overlay. The phase self-ends (all-ready / quiesce / hard cap)
-	// or the Skip button clears it; either way the next frame feeds the first event.
+	// Pre-warm: while a flat recording's sprites and music load, hold the first event off-stage (advanceReplay skipped)
+	// but still Update the room and viewport so the stage draws under the loading overlay. The phase self-ends or Skip
+	// clears it; the next frame feeds the first event.
 	if a.replayWarming() {
 		a.tickReplayWarm()
 		a.replayRoom.Update(dt)
@@ -821,10 +734,8 @@ func (a *App) driveReplay(dt time.Duration) {
 	a.d.Viewport.Update(&a.replayRoom.Scene, dt)
 }
 
-// drawStageRecordButton draws the optional on-stage control at the top-left of
-// the viewport. While replaying it's a Stop-replay button (so a replay is always
-// easy to end on screen); otherwise it's the opt-in ● Record toggle, shown only
-// when the "Show a Record button" setting is on.
+// drawStageRecordButton draws the optional on-stage control at the viewport's top-left: Stop replay while replaying,
+// else the opt-in Record toggle (setting "Show a Record button").
 func (a *App) drawStageRecordButton(vp sdl.Rect) {
 	c := a.ctx
 	if a.replaying {
@@ -846,12 +757,9 @@ func (a *App) drawStageRecordButton(vp sdl.Rect) {
 	}
 }
 
-// drawInstantReplayDot marks that the instant-replay rolling buffer is ARMED — a
-// small accent dot in the stage's top-right corner, dim until hovered, so the
-// otherwise-invisible buffer is discoverable. Click it (or press the clip key) to
-// save the last window. Hidden while an explicit recording is running (the Record
-// button/toast already says so) and off entirely unless the opt-in pref is on, so
-// the default client draws nothing here.
+// drawInstantReplayDot marks that the instant-replay buffer is armed: an accent dot at the stage's top-right, dim until
+// hovered. Click it (or the clip key) to save the last window. Hidden during an explicit recording and unless the
+// opt-in pref is on.
 func (a *App) drawInstantReplayDot(vp sdl.Rect) {
 	if a.recActive || !a.d.Prefs.Load().InstantReplay {
 		return
@@ -881,11 +789,9 @@ func (a *App) drawInstantReplayDot(vp sdl.Rect) {
 	}
 }
 
-// drawReplayOverlay renders an in-progress replay as a full-window viewer — used
-// when it was launched off the courtroom screen (lobby / Settings), so it can be
-// watched in place. The caller draws it INSTEAD of the underlying screen, so the
-// Stop button owns the input. The courtroom screen renders the replay in its own
-// stage instead, so this isn't used there.
+// drawReplayOverlay renders an in-progress replay as a full-window viewer, used when launched off the courtroom screen.
+// The caller draws it instead of the underlying screen, so the Stop button owns the input; the courtroom screen renders
+// the replay in its own stage.
 func (a *App) drawReplayOverlay(w, h int32) {
 	if a.replayRoom == nil {
 		return
@@ -893,8 +799,7 @@ func (a *App) drawReplayOverlay(w, h int32) {
 	defer a.recoverReplay("render")
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 10, G: 10, B: 14, A: 255})
-	// A 4:3 stage, centred, leaving a top strip for the title + Stop and a bottom
-	// strip for the player transport controls.
+	// A 4:3 stage, centred, with a top strip for title + Stop and a bottom strip for the transport controls.
 	stageH := h - 120
 	stageW := stageH * 4 / 3
 	if stageW > w-40 {
@@ -915,11 +820,8 @@ func (a *App) drawReplayOverlay(w, h int32) {
 	a.drawReplayChapters(stage, w) // #70: the jump list, right of the transport strip
 }
 
-// drawReplayWarmBanner draws the H5 pre-warm progress line + a Skip button, centred
-// low on the stage, while a FLAT recording's sprites/music load before the first
-// event. A no-op once the phase ends (all-ready / quiesce / hard cap), so it simply
-// vanishes when playback begins. Skip ends the warm immediately and plays with
-// whatever has loaded (the rest streams in on demand, as before this phase existed).
+// drawReplayWarmBanner draws the pre-warm progress line and a Skip button, low on the stage, while a flat recording's
+// sprites and music load. A no-op once the phase ends. Skip plays with whatever has loaded; the rest streams on demand.
 func (a *App) drawReplayWarmBanner(stage sdl.Rect) {
 	w := a.replayWarm
 	if w == nil {
@@ -927,7 +829,6 @@ func (a *App) drawReplayWarmBanner(stage sdl.Rect) {
 	}
 	c := a.ctx
 	total := len(w.warmRefs)
-	// A dim strip near the bottom of the stage so it doesn't cover the (loading) scene.
 	strip := sdl.Rect{X: stage.X, Y: stage.Y + stage.H - 64, W: stage.W, H: 64}
 	c.Fill(strip, sdl.Color{R: 10, G: 10, B: 16, A: 200})
 	line := "Loading scene…"
@@ -937,7 +838,6 @@ func (a *App) drawReplayWarmBanner(stage sdl.Rect) {
 		line = fmt.Sprintf("Loading scene… %d / %d ready", w.resident, total)
 	}
 	c.Label(strip.X+12, strip.Y+10, line, ColText)
-	// A slim progress bar under the line (settle fraction), mirroring the export overlay.
 	bar := sdl.Rect{X: strip.X + 12, Y: strip.Y + 34, W: strip.W - 120, H: 10}
 	c.Fill(bar, ColPanel)
 	if total > 0 {
@@ -949,8 +849,8 @@ func (a *App) drawReplayWarmBanner(stage sdl.Rect) {
 	}
 }
 
-// drawReplayControls draws the player transport strip below the stage: Restart,
-// Pause/Play, Next message (fast-forward), and a message position readout.
+// drawReplayControls draws the transport strip below the stage: Restart, Pause/Play, Next message and a position
+// readout.
 func (a *App) drawReplayControls(stage sdl.Rect, w int32) {
 	c := a.ctx
 	y := stage.Y + stage.H + 14

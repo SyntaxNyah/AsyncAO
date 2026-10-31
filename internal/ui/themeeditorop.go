@@ -1,87 +1,42 @@
 package ui
 
-// THE UNDO STACK (v1.90.0 W7a) — docs/wip/THEME-EDITOR-DESIGN.md §Q7
-// ("ONE undo stack over ONE document") and §3.2's keyboard map.
-//
-// ONE STACK, ONE DOCUMENT, ONE MUTATION PATH. The user's model is "undo the last
-// thing I did", and cross-domain mutations are the norm in an editor of this shape:
-// paste-style writes colour AND font AND effect, applying a preset writes
-// everything, a marquee drag writes twelve rects. Separate per-domain stacks make
-// Ctrl+Z ambiguous, which is the modal misery the brief forbids in as many words.
-//
-// AN OP IS A VALUE — no pointers, no closures, no method values. That is not
-// stylistic: a closure per op ALLOCATES, and this ring is written to on the render
-// thread from a drag that fires every frame. themeslots.go:105 states the same rule
-// for the shipped editors' tables. Everything an op needs to be undone is packed
-// into two fixed-size editValues plus an interned string id, so
-// [themeEditUndoCap]themeEditOp is a plain array on App and pushing to it cannot
-// heap-allocate. Gate: TestUndoRingIsCappedAndNeverAllocatesAfterWarmup.
-//
-// EVERY MUTATION RETURNS ITS OWN INVERSE. themeDoc.apply reads the CURRENT value
-// into op.before before writing op.after, so undo is "write before" and redo is
-// "write after" — one code path, and a field physically cannot be edited without
-// producing an undo entry (themeeditordoc.go carries that argument at the funnel).
+// Undo stack for the theme editor: one stack over one document, because cross-domain edits are normal and separate
+// stacks would make Ctrl+Z ambiguous.
+// An op is a value with no pointers or closures, since the ring is written from a per-frame drag on the render thread
+// and must not allocate.
+// themeDoc.apply reads the current value into op.before before writing op.after, so undo and redo share one code path
+// and no field can be edited without an undo entry.
 
 import "time"
 
-// ---------------------------------------------------------------------------
-// Named caps (hard rule 9)
-// ---------------------------------------------------------------------------
-
 const (
-	// themeEditUndoCap bounds the editor's single timeline. 2x layoutUndoCap (64),
-	// because one stack now carries geometry AND colour AND motion AND element
-	// add/delete where the legacy editors' two carried rects alone. A fixed array:
-	// past the cap the OLDEST op is dropped, never the newest — losing the thing you
-	// just did is the one failure an undo stack must not have.
+	// themeEditUndoCap bounds the single timeline; past it the oldest op is dropped, never the newest.
 	themeEditUndoCap = 128
 
-	// editStrCap bounds the per-session string interning table that keeps editValue
-	// a fixed size. 256 distinct strings is far past what one editing session types
-	// into media ids, shape names, anchors and label text; past it an op carrying a
-	// NEW string is refused at construction (mutateElemField returns opNone) rather
-	// than silently editing to the wrong string.
+	// editStrCap bounds the per-session string table that keeps editValue fixed size; past it an op carrying a new
+	// string is refused (mutateElemField returns opNone) rather than editing to the wrong string.
 	editStrCap = 256
 
-	// editCoalesceWindow makes a continuous gesture ONE undo step. A drag fires a
-	// mutation every frame and a typed hex fires one per keystroke; 400 ms is long
-	// enough that neither ever splits mid-gesture and short enough that two
-	// deliberate edits to the same field stay two steps.
+	// editCoalesceWindow makes a continuous gesture one undo step, while two deliberate edits stay two steps.
 	editCoalesceWindow = 400 * time.Millisecond
 )
 
-// ---------------------------------------------------------------------------
-// editValue — the fixed-size payload
-// ---------------------------------------------------------------------------
-
-// editStrID indexes the editor's interning table. 0 is ALWAYS the empty string, so
-// the zero editValue means "empty" for every string field rather than "whatever
-// happened to be interned first".
+// editStrID indexes the editor's string table; 0 is always the empty string, so a zero editValue means empty.
 type editStrID int16
 
 // editStrNone is the empty string's id, and the zero value.
 const editStrNone editStrID = 0
 
-// editValue is one field's value, in a FIXED SIZE, for every field kind.
-//
-// Four int32s carry a rect (x, y, w, h) or a single scalar in i[0]; four bytes
-// carry an RGBA; one interned id carries a string. A union rather than an
-// interface, because an interface field would box every int and allocate on a path
-// that runs per frame during a drag.
-//
-// Which lanes a field uses is the FIELD's business, not this type's — editFieldGet
-// and editFieldSet are the only two places that know, and they are each other's
-// inverse by construction (TestEveryInspectorFieldIsUndoable pins the round trip).
+// editValue is one field's value in a fixed size: a rect or scalar in i, an RGBA in b, an interned string in s.
+// A union, not an interface, because an interface would box every int and allocate per frame during a drag.
+// Only editFieldGet and editFieldSet know which parts a field uses.
 type editValue struct {
 	i [4]int32
 	b [4]uint8
 	s editStrID
 }
 
-// editValueInt / editValueRect / editValueRGBA / editValueStr are the named
-// constructors. They exist so a call site READS as the lane it means; a bare
-// composite literal that filled i[0] for a colour would compile and be silently
-// wrong.
+// Named constructors, so a call site reads as the part it fills.
 func editValueInt(v int32) editValue           { return editValue{i: [4]int32{v}} }
 func editValueRect(x, y, w, h int32) editValue { return editValue{i: [4]int32{x, y, w, h}} }
 func editValueRGBA(r, g, b, a uint8) editValue { return editValue{b: [4]uint8{r, g, b, a}} }
@@ -94,15 +49,7 @@ func boolToInt32(on bool) int32 {
 	return 0
 }
 
-// ---------------------------------------------------------------------------
-// themeEditOp
-// ---------------------------------------------------------------------------
-
-// editOpKind is WHAT a mutation did, which decides how the document applies it.
-//
-// The zero value is opNone — "not a mutation" — so a table row that forgot to fill
-// its op, or a refused construction (an unknown field, a full interning table),
-// pushes nothing instead of pushing a mutation with an arbitrary meaning.
+// editOpKind is what a mutation did; the zero value opNone pushes nothing, so a forgotten or refused op has no effect.
 type editOpKind uint8
 
 const (
@@ -110,63 +57,30 @@ const (
 	opNone editOpKind = iota
 	// opElemField: one field of one free element, named by editField.
 	opElemField
-	// opElemAdd: an element appended at index target.elem. before is empty, after
-	// names the graveyard slot holding the element's body.
+	// opElemAdd: an element appended at index target.elem; after names the graveyard entry holding its body.
 	opElemAdd
-	// opElemDel: the element at index target.elem removed. before names the
-	// graveyard slot holding its body so undo can resurrect it byte-for-byte.
+	// opElemDel: the element at target.elem removed; before names the graveyard entry holding its body for undo.
 	opElemDel
-	// opSlotRect: one AO2 widget's geometry, i.e. one [overrides] row. The target
-	// is a DESIGN target, so the key rides in the target itself and needs no
-	// interning; before/after carry the rect in the int lanes plus the
-	// editSlotRowPresent flag (themeeditordoc.go), which is what lets an undo
-	// DELETE a row the edit created instead of leaving an override behind that says
-	// exactly what the AO2 tier already said.
+	// opSlotRect: one AO2 widget's [overrides] row, with the rect in i plus editSlotRowPresent, so undo can delete a
+	// row the edit created.
 	opSlotRect
-	// opSlotReset: one AO2 widget's [overrides] row REMOVED, putting the widget back
-	// on whatever the tiers below resolve. before carries the row that was there (with
-	// editSlotRowPresent set, or it would not be a reset); after carries the rect the
-	// tiers below give, with the flag CLEAR — which is what makes redo drop the row
-	// again rather than write the baseline into one.
+	// opSlotReset: one AO2 widget's [overrides] row removed; after has editSlotRowPresent clear, so redo drops the row
+	// again.
 	opSlotReset
-	// opFontFamily: one [fonts] row — a family name and the file under <theme>/fonts.
-	// The target is a spaceFont target whose index is the row's position in
-	// Sidecar.Fonts; an index equal to len(Fonts) APPENDS. before/after carry
-	// "family<sep>file" as one interned string (fontRowValue), and an EMPTY after
-	// removes the row — which is what makes "delete a family" and "undo an add" the
-	// same code path.
+	// opFontFamily: one [fonts] row; the target index is its position in Sidecar.Fonts, len(Fonts) appends, values are
+	// "family<sep>file" as one interned string (fontRowValue), and an empty after removes the row.
 	opFontFamily
-	// opFontBind: one [fontbind] row — a FontElements class id bound to a [fonts]
-	// family. The target's index is the class's index in theme.FontElements, which is
-	// append-only and therefore a stable identity (TestFontElementsIsAppendOnly);
-	// before/after carry the family, "" meaning "no binding".
-	//
-	// THIS IS THE TIER THAT RENDERS. An element's own `font`/`size` are carried and
-	// not drawn in format 1 (paintElementText's measurement); a class binding is
-	// resolved by applySidecarFonts on every theme apply and changes the real face.
+	// opFontBind: one [fontbind] row, the class's append-only theme.FontElements index bound to a family; "" means
+	// none.
+	// This is what renders: an element's own font and size are carried but not drawn in format 1.
 	opFontBind
-	// opMediaRow: one [media] row — an image id, the file under the theme folder,
-	// its decoded byte cost and its content hash. The target is a spaceMedia target
-	// whose index is the row's position in Sidecar.Media; an index equal to
-	// len(Media) APPENDS. before/after carry the whole row as one interned string
-	// (mediaRowValue), and an EMPTY after removes it — which is what makes "undo an
-	// image intake" and "delete a declared image" the same code path, exactly as
-	// opFontFamily does for a face.
-	//
-	// IT IS ALWAYS GROUPED WITH THE ELEMENT THAT DRAWS IT (thememediaintake.go): a
-	// declared image with nothing pointing at it still costs the theme's art budget,
-	// so an undo that took back the element and left the declaration would leave the
-	// budget bar counting a picture nobody can see. One group, one Ctrl+Z.
-	//
-	// THE CARRIER KEEPS THE LINE until the next full rewrite, and that is the same
-	// limitation opSlotReset carries: INIDoc can remove a SECTION
-	// (RetireElementSection's route) but not a KEY, so a removed row disappears from
-	// the model — which is what the plan, the budget bar and the canvas all read —
-	// while the file keeps the text until the format grows a key removal. Stated
-	// here rather than discovered later; it is a stale declaration of a file that is
-	// still in the folder, not a corrupt one, and the reader accepts it.
+	// opMediaRow: one [media] row; same index and empty-after rules as opFontFamily, with the row as one string
+	// (mediaRowValue).
+	// Always grouped with the element that draws it, or undo would leave an unseen image counting against the art
+	// budget.
+	// INIDoc can't remove a key, so a removed row stays in the file until the next full rewrite; the reader accepts it.
 	opMediaRow
-	// editOpKindCount sizes the census tables; never a real kind.
+	// editOpKindCount sizes the tables; never a real kind.
 	editOpKindCount
 )
 
@@ -182,11 +96,7 @@ func (k editOpKind) String() string {
 	return editOpKindNames[k]
 }
 
-// themeEditOp is one undoable mutation.
-//
-// group ties ops that must undo TOGETHER: a preset apply writes everything and is
-// one Ctrl+Z, a duplicate is an add plus a selection change, a multi-drag is one
-// delta over N elements. 0 means "alone".
+// themeEditOp is one undoable mutation; ops with the same nonzero group undo together, 0 means alone.
 type themeEditOp struct {
 	kind   editOpKind
 	target editTarget
@@ -196,14 +106,8 @@ type themeEditOp struct {
 	group  uint32
 }
 
-// coalesceKey is the identity two ops must share to merge into one undo step: the
-// same kind, on the same target, in the same field, inside the same group.
-//
-// The TARGET is part of it and that is the load-bearing half: without it, dragging
-// element 3 and then element 7 inside the same 400 ms would merge into one op whose
-// `before` belonged to element 3 and whose `after` belonged to element 7 — an undo
-// that writes one element's old value onto another. A drag cannot produce that, a
-// nudge burst across a Tab-cycled selection can.
+// coalesceKey is what two ops must share to merge. The target is essential: without it, a nudge burst across a
+// Tab-cycled selection would merge and undo would write one element's old value onto another.
 type coalesceKey struct {
 	kind   editOpKind
 	target editTarget
@@ -215,38 +119,23 @@ func (op themeEditOp) coalesceKey() coalesceKey {
 	return coalesceKey{kind: op.kind, target: op.target, field: op.field, group: op.group}
 }
 
-// ---------------------------------------------------------------------------
-// The ring
-// ---------------------------------------------------------------------------
-
-// themeEditRing is the editor's single timeline.
-//
-// A FIXED ARRAY WITH TWO CURSORS, not a slice: `n` is how many ops the timeline
-// holds and `applied` is how many of them are currently in effect, so redo is
-// simply applied < n. A new push after an undo TRUNCATES the redo tail (n =
-// applied), which is what every editor of this shape does and what stops a redo
-// from replaying a mutation against a document that has since diverged.
+// themeEditRing is the single timeline: n ops held, applied of them in effect, so redo is applied < n.
+// A push after an undo drops the redo tail, so redo can't replay against a document that has diverged.
 type themeEditRing struct {
 	ops     [themeEditUndoCap]themeEditOp
 	n       int
 	applied int
 	// group is the group id currently being accumulated; 0 = ops stand alone.
 	group uint32
-	// nextGroup hands out group ids. It only ever increases within a session, so a
-	// truncated redo tail can never leave a stale id that a later group collides
-	// with (which would make two unrelated edits undo together).
+	// nextGroup only increases within a session, so a dropped redo tail can't leave an id a later group collides with.
 	nextGroup uint32
-	// lastAt / lastKey drive coalescing. lastAt is a wall-clock stamp taken by the
-	// caller (the draw site already has one) rather than read here, so the ring has
-	// no clock of its own and a test can drive a whole gesture deterministically.
+	// lastAt / lastKey drive coalescing; the caller supplies the time so the ring has no clock of its own.
 	lastAt  time.Time
 	lastKey coalesceKey
 }
 
-// begin opens a group: every op pushed until end() undoes together. Nested calls
-// are NOT supported and do not silently nest — a second begin while one is open
-// keeps the first group, so a helper that groups internally cannot split a caller's
-// larger group in half.
+// begin opens a group undone together until end; a second begin keeps the first group, so a helper can't split a
+// caller's.
 func (r *themeEditRing) begin() uint32 {
 	if r.group != 0 {
 		return r.group
@@ -259,12 +148,8 @@ func (r *themeEditRing) begin() uint32 {
 // end closes the open group.
 func (r *themeEditRing) end() { r.group = 0 }
 
-// push records an applied op. Returns false for an op that was merged into its
-// predecessor or was never a mutation, so a caller can tell "nothing new happened".
-//
-// ZERO ALLOCATION. The full-ring case shifts the array down by one with copy(),
-// which moves 127 values on the stack-free array that already lives on App. Growing
-// a slice instead would allocate on a drag.
+// push records an applied op, returning false if it merged into its predecessor or was never a mutation.
+// The full-ring case shifts the array with copy; a growing slice would allocate on a drag.
 func (r *themeEditRing) push(op themeEditOp, now time.Time) bool {
 	if op.kind == opNone {
 		return false
@@ -274,8 +159,7 @@ func (r *themeEditRing) push(op themeEditOp, now time.Time) bool {
 	r.n = r.applied
 	if r.n > 0 && !now.Before(r.lastAt) && now.Sub(r.lastAt) < editCoalesceWindow &&
 		r.lastKey == op.coalesceKey() && coalescableKind(op.kind) {
-		// MERGE: keep the ORIGINAL before (the state the gesture started from) and take
-		// the newest after. That is what makes a hundred-frame drag one Ctrl+Z.
+		// Keep the original before and take the newest after, so a hundred-frame drag is one Ctrl+Z.
 		r.ops[r.n-1].after = op.after
 		r.lastAt = now
 		return false
@@ -292,31 +176,21 @@ func (r *themeEditRing) push(op themeEditOp, now time.Time) bool {
 	return true
 }
 
-// coalescableKind reports whether two adjacent ops of this kind may merge.
-//
-// STRUCTURAL ops never merge, and the reason is that merging them is meaningless
-// rather than merely unwanted: two adds are two different elements, and an add
-// followed by a delete inside the window is two facts about the document, not one
-// value that moved twice. Only a VALUE carries a "same thing, new value" reading —
-// an element field, or an AO2 widget's rect, both of which a drag rewrites every
-// frame for as long as the button is down.
+// coalescableKind reports whether adjacent ops may merge: only value edits, which a drag rewrites each frame; never
+// structural ops.
 func coalescableKind(k editOpKind) bool { return k == opElemField || k == opSlotRect }
 
 // canUndo / canRedo drive the header band's two buttons.
 func (r *themeEditRing) canUndo() bool { return r.applied > 0 }
 func (r *themeEditRing) canRedo() bool { return r.applied < r.n }
 
-// takeUndo pops the next op to invert, newest first, and reports whether the caller
-// should keep going for the same group. Returning the op rather than performing it
-// keeps this type free of any knowledge of the document — the ring is a timeline,
-// not an editor.
+// takeUndo returns the next op to invert, newest first, leaving the document to the caller.
 func (r *themeEditRing) takeUndo() (themeEditOp, bool) {
 	if r.applied == 0 {
 		return themeEditOp{}, false
 	}
 	r.applied--
-	// A coalesce partner must never survive an undo: after stepping back, the next
-	// push starts a fresh op even if it lands inside the window.
+	// A coalesce partner must not survive an undo: the next push starts a fresh op even inside the window.
 	r.lastKey = coalesceKey{}
 	return r.ops[r.applied], true
 }
@@ -332,8 +206,7 @@ func (r *themeEditRing) takeRedo() (themeEditOp, bool) {
 	return op, true
 }
 
-// peekUndoGroup / peekRedoGroup report the group of the op the next step would
-// take, so the caller can drain a whole grouped edit in one Ctrl+Z.
+// peekUndoGroup / peekRedoGroup report the next step's group, so one Ctrl+Z can drain a grouped edit.
 func (r *themeEditRing) peekUndoGroup() (uint32, bool) {
 	if r.applied == 0 {
 		return 0, false
@@ -347,8 +220,3 @@ func (r *themeEditRing) peekRedoGroup() (uint32, bool) {
 	}
 	return r.ops[r.applied].group, true
 }
-
-// (There is no reset(). The ring is born with the editor and dies with it — the
-// editor is one allocation whose lifetime IS the document's, so "empty the timeline
-// because the theme changed" is spelled `a.te = nil`. A reset method would be a
-// second way to reach a state that already has one, and the two would drift.)

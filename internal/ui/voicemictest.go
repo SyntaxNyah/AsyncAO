@@ -7,27 +7,19 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/voice"
 )
 
-// Mic test (#84): the Voice-settings "Test microphone" tool. It opens the chosen
-// capture device INDEPENDENTLY of being in a voice channel — so you can check your
-// mic and levels before you ever Join — measures the live input level for a meter,
-// and optionally loops the mic back to the speakers so you can HEAR yourself
-// (sidetone). Main-thread only (SDL queue API), driven by pump() from the frame loop
-// exactly like the live engine; nil/inactive ⇒ ~free.
-//
-// It deliberately reuses voiceFrameBytes / voicePlayTargetFrames
-// from voiceaudio.go so the test path matches the real engine's framing.
+// Mic test: the Voice-settings "Test microphone" tool. It opens the chosen capture device without joining a voice
+// channel, drives a level meter, and optionally loops the mic back to the speakers. Main-thread only (SDL queue API),
+// driven by pump() from the frame loop. It reuses voiceFrameBytes / voicePlayTargetFrames from voiceaudio.go so the
+// framing matches the real engine.
 
 const (
-	// micMeterRelease is the per-frame decay the meter eases toward a lower level with,
-	// so the bar jumps to your voice (fast attack) then falls smoothly (slow release).
+	// micMeterRelease is the per-frame decay of the meter: fast attack, slow release.
 	micMeterRelease = 0.20
-	// micMeterSidetoneCapFrames bounds the sidetone loopback buffer (~2 frames ≈ 40 ms)
-	// so "hear yourself" stays low-latency instead of building an echo.
+	// micMeterSidetoneCapFrames bounds the sidetone loopback buffer so it stays low-latency instead of echoing.
 	micMeterSidetoneCapFrames = 2
 )
 
-// micTester owns the capture device (and a playback device while sidetone is on) for
-// the settings mic test. nil when no test is running.
+// micTester owns the capture device (and a playback device while sidetone is on); nil when no test is running.
 type micTester struct {
 	capture  *sdl.AudioStream
 	playback *sdl.AudioStream // nil unless sidetone is on
@@ -36,9 +28,8 @@ type micTester struct {
 	sidetone bool
 }
 
-// startMicTest opens the chosen mic (and, if sidetone, an output device for loopback)
-// and begins the test. Fail-safe: any open failure leaves the tester nil (inactive)
-// and is never fatal. Re-opens cleanly if a test was already running.
+// startMicTest opens the chosen mic (and an output device if sidetone) and begins the test. An open failure leaves
+// the tester nil and is never fatal. Re-opens cleanly if a test was already running.
 func (a *App) startMicTest(sidetone bool) {
 	a.stopMicTest() // never double-open the device
 	spec := sdl.AudioSpec{
@@ -62,9 +53,7 @@ func (a *App) startMicTest(sidetone bool) {
 	a.micTest = mt
 }
 
-// stopMicTest closes the test devices (idempotent). Called when the user stops the
-// test, leaves the Voice settings tab, or exits Settings — so the mic never stays
-// open in the background.
+// stopMicTest closes the test devices (idempotent) so the mic never stays open in the background.
 func (a *App) stopMicTest() {
 	if a.micTest == nil {
 		return
@@ -85,9 +74,7 @@ func (mt *micTester) close() {
 	}
 }
 
-// micTestPump drains available capture frames, updates the smoothed meter level, and
-// (if sidetone) loops them to the speakers. Bounded work per frame; no-op when no test
-// is running. Mirrors voiceEngine.pump's framing so the test reflects the real path.
+// micTestPump drains capture frames, updates the smoothed meter level and, with sidetone, loops them to the speakers.
 func (a *App) micTestPump() {
 	mt := a.micTest
 	if mt == nil || mt.capture == nil {
@@ -115,8 +102,7 @@ func (a *App) micTestPump() {
 	}
 }
 
-// micMeterLevel reports the current smoothed input level (0..1), or 0 when no test is
-// running — read by the settings meter draw.
+// micMeterLevel reports the smoothed input level (0..1), or 0 when no test is running.
 func (a *App) micMeterLevel() float64 {
 	if a.micTest == nil {
 		return 0
@@ -124,7 +110,7 @@ func (a *App) micMeterLevel() float64 {
 	return a.micTest.level
 }
 
-// micLevel returns a PCM frame's peak amplitude as 0..1. Pure (no SDL) — unit-tested.
+// micLevel returns a PCM frame's peak amplitude as 0..1.
 func micLevel(frame []int16) float64 {
 	peak := 0
 	for _, s := range frame {
@@ -139,8 +125,7 @@ func micLevel(frame []int16) float64 {
 	return float64(peak) / 32768
 }
 
-// drawMicMeter paints a left-to-right level bar (green → yellow → red as it nears
-// clipping) with a thin frame. level is 0..1.
+// drawMicMeter paints a left-to-right level bar (green to red near clipping) with a thin frame; level is 0..1.
 func (a *App) drawMicMeter(x, y, w int32, level float64) {
 	c := a.ctx
 	const meterH = 14
