@@ -19,7 +19,7 @@ import (
 // Pair, the pinned second-server client) draw after the fence lifts and stay live; a send into the closed conn
 // is harmless (recorded in sendErr), and the pinned client is a different server. handleTabBar is inert while the
 // dialog is up so a chip click can't park the session into a zombie tab (tabs.go). Back to lobby runs the real
-// Disconnect(); Reconnect tears the frozen session down and redials the same server and name.
+// Disconnect(); Reconnect tears the frozen session down and reconnects to the same server and name.
 // It follows the confirm-modal family (drawDisconnectConfirm / drawCloseTabConfirm / drawQuitConfirm): dimmed
 // backdrop, fenced in app.go's frame tail with the pointer restored just before it draws, Esc via closeTopOverlay.
 
@@ -31,7 +31,7 @@ import (
 type disconnectDialog struct {
 	open   bool
 	reason disconnectReason
-	// name/url are the server we dropped from, captured at freeze time so Reconnect redials exactly it; the teardown
+	// name/url are the server we dropped from, captured at freeze time so Reconnect reconnects to exactly it; the teardown
 	// would otherwise re-point the global lastConn*.
 	name string
 	url  string
@@ -111,7 +111,7 @@ const serverNoticeRemovedFallbackTitle = "The server closed your connection"
 // for Back to lobby / Reconnect so the room stays drawable. Its guards make it a no-op for what a parked tab
 // already did (its socket was nilled), so both arms call it unconditionally.
 func (a *App) freezeSessionUnderDialog(raw string) {
-	// Re-capture the redial target before nilling the conn, as Disconnect does: lastConn* is global and in a
+	// Re-capture the reconnect target before nilling the conn, as Disconnect does: lastConn* is global and in a
 	// multi-tab session may hold whichever server connected most recently.
 	if a.conn != nil {
 		a.lastConnName, a.lastConnURL = a.serverName, a.serverKey
@@ -190,7 +190,7 @@ func (a *App) handleInvoluntaryDrop(reason string) {
 
 // openDisconnectDialog is the single place the dialog's open state is set, so both entry paths (activating a tab
 // that died in the background, and an active-tab drop through the shared freeze) show the same modal. name/url
-// are the redial target captured for Reconnect (see the disconnectDialog field doc). hiddenUntil is the zero value
+// are the reconnect target captured for Reconnect (see the disconnectDialog field doc). hiddenUntil is the zero value
 // for immediate display.
 func (a *App) openDisconnectDialog(name, url, raw string, hiddenUntil time.Time) {
 	// A BB popup notice can be on screen when the link dies, and two blocking modals would stack. Only an info notice
@@ -225,14 +225,14 @@ func (a *App) closeDisconnectDialogToLobby() {
 }
 
 // reconnectFromDisconnectDialog is Reconnect: tear the frozen session down (deliberate, so the teardown doesn't
-// auto-retry) and redial the same server and name through Connect, so the normal join flow takes over. The dialog
+// auto-retry) and reconnect the same server and name through Connect, so the normal join flow takes over. The dialog
 // is cleared first so its fence releases; a failed dial lands on the lobby with connErr.
 func (a *App) reconnectFromDisconnectDialog() {
 	name, url := a.disconnectDlg.name, a.disconnectDlg.url
 	a.disconnectDlg = disconnectDialog{}
 	a.deliberateClose = true // reconnecting on purpose — the frozen-tab teardown must not auto-retry
 	if url != "" {
-		// Reconnect means "we're coming back": snapshot today's log before the teardown so the redial to the same
+		// Reconnect means "we're coming back": snapshot today's log before the teardown so the reconnect to the same
 		// server
 		// can restore it. applySessionCarryIfPending checks the key match.
 		a.snapshotSessionCarry()
