@@ -27,7 +27,7 @@ func sizedFixture(edge, frames int) *assets.Decoded {
 
 // TestSplitT1Budget pins the shield carve math: an eighth of the budget with a
 // 4 MiB floor, capped at half, and main+small always equals the configured
-// total (the 256 MiB memory-budget invariant).
+// total.
 func TestSplitT1Budget(t *testing.T) {
 	cases := []struct {
 		budget, main, small int64

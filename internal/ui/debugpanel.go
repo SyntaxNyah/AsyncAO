@@ -217,14 +217,7 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 	if a.d.Profiler != nil {
 		if s := a.d.Profiler.Latest(); s != nil {
 			heapMiB := float64(s.HeapBytes) / (1 << 20)
-			col := ColText
-			if s.HeapBytes > perfBudgetBytes*3/4 {
-				col = ColTierYellow
-			}
-			if s.HeapBytes > perfBudgetBytes {
-				col = ColDanger
-			}
-			c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Heap: %.1f / %d MiB   ·   GC pause p99: %s", heapMiB, perfBudgetBytes>>20, s.GCPauseP99), col)
+			c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Heap: %.1f MiB   ·   GC pause p99: %s", heapMiB, s.GCPauseP99), ColText)
 			y += debugLineH
 			c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Assets — cache hit %.0f%%   ·   network probes %d   ·   cached 404s %d",
 				s.CacheHitRate*100, s.Probes, s.Cached404s), ColText)

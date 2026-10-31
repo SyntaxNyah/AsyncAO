@@ -257,7 +257,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   display-size texture; the per-frame `CopyEx` then works at a gentle ratio and
   looks sharper. It's a **net speedup**: a smaller cached texture samples faster
   and uses far less VRAM (a 2000² RGBA frame is ~16 MB → ~4 MB at 1080p), easing
-  the 256 MiB budget. Downscale-only, so already-small art is untouched — and the
+  the texture budget. Downscale-only, so already-small art is untouched — and the
   WebP/AVIF *decode* stays exact; this is purely the resample that used to fall
   to the GPU every frame.
 - **Missing-asset banner is opt-in** (Settings → Assets, **default OFF**): the
@@ -2032,8 +2032,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   always work even with no name set.
 - **Perf HUD (F3, any screen)**: live frame-time graph (last 120 frames;
   green under 16.7 ms, amber to 33 ms, red past it, with the 60 fps line
-  drawn in), average/worst frame + fps, heap vs the 256 MiB GOMEMLIMIT
-  budget (amber at 75%, red over), GC pause p99, cache hit rate, network
+  drawn in), average/worst frame + fps, heap, GC pause p99, cache hit rate, network
   probes, and cached 404s — rendered from the 1 Hz sampler that already
   powered `--debug` logging. F3 again hides it.
 - **Blankposting**: Enter on an empty IC input sends the AO single-space
