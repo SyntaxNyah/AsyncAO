@@ -18,10 +18,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 	"github.com/SyntaxNyah/AsyncAO/internal/safepath"
 )
 
@@ -97,7 +97,7 @@ func Download(ctx context.Context, url, destPath string) (int64, error) {
 		return n, fmt.Errorf("update: asset exceeds the %d-byte cap", int64(downloadMaxBytes))
 	}
 	// os.Create made the file 0644 and renames preserve mode, so macOS and Linux would not launch the new binary.
-	if runtime.GOOS != "windows" {
+	if platform.CurrentOS() != platform.Windows {
 		_ = os.Chmod(destPath, stagedBinaryMode)
 	}
 	return n, nil
@@ -352,7 +352,7 @@ const bundledLibDirName = "lib"
 // preflightDarwinSwap refuses an update whose binary can't load an @rpath dylib from the stale lib/
 // (docs/CODE-SIGNING.md). A false positive costs a manual tarball download, never a broken install.
 func preflightDarwinSwap(newPath, targetPath string) error {
-	if runtime.GOOS != "darwin" {
+	if platform.CurrentOS() != platform.MacOS {
 		return nil
 	}
 	libDir := filepath.Join(filepath.Dir(targetPath), bundledLibDirName)
