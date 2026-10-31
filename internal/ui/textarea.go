@@ -7,29 +7,20 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Multiline text editing for the evidence editor (#83). TextField is a
-// deliberately single-line, device-exact, horizontal-scroll field; the evidence
-// Description needs a real multiline editor instead. TextArea keeps its own
-// caret/selection/scroll (see the Ctx ta* fields) so it never entangles with
-// the single-line field's math, but shares c.focusID so HandleEvent captures
-// clipboard chords and select-all for it exactly as it does for TextField.
-//
-// This widget only ever draws while the evidence editor is in EDIT mode (an
-// off-the-hot-path modal state), so unlike the courtroom chrome it is allowed
-// to allocate (layout + wrap rebuild per frame).
+// Multiline text editing for the evidence editor. TextField is deliberately single-line; the evidence Description
+// needs a real multiline editor. TextArea keeps its own caret, selection and scroll (the Ctx ta* fields) but shares
+// c.focusID so HandleEvent captures clipboard chords and select-all for it as for TextField. It only draws in the
+// evidence editor's edit mode, off the hot path, so it may allocate (layout and wrap rebuild per frame).
 
-// editAreaUp/editAreaDown are TextArea-only caret moves. They extend the editOp
-// space AFTER editWordRight (the last editStep op) and are intercepted by
-// TextArea before editStep ever sees them — editStep is line-agnostic and would
-// otherwise treat them as a no-op.
+// editAreaUp/editAreaDown are TextArea-only caret moves. They extend the editOp space after editWordRight and are
+// intercepted before editStep, which is line-agnostic and would treat them as a no-op.
 const (
 	editAreaUp editOp = editWordRight + 1 + iota
 	editAreaDown
 )
 
-// taLine is one laid-out visual line: the text drawn (without the terminating
-// newline) and its [start,end) RUNE range into the full value. hard marks a
-// line that ended with an explicit '\n' rather than a soft wrap.
+// taLine is one laid-out visual line: the text drawn (without the newline) and its [start,end) rune range into the
+// full value. hard marks a line that ended with an explicit '\n' rather than a soft wrap.
 type taLine struct {
 	text  string
 	start int
@@ -37,9 +28,8 @@ type taLine struct {
 	hard  bool
 }
 
-// TextArea edits a MULTILINE string in place (id keys focus). Enter inserts a
-// newline instead of signalling submit; Up/Down move between visual lines; long
-// lines soft-wrap and the box scrolls vertically. Returns the new value.
+// TextArea edits a multiline string in place (id keys focus). Enter inserts a newline instead of submitting;
+// Up/Down move between visual lines; long lines soft-wrap and the box scrolls vertically. Returns the new value.
 func (c *Ctx) TextArea(id string, r sdl.Rect, value string, placeholder string) string {
 	c.fieldSeq = append(c.fieldSeq, id) // Tab-cycle order = draw order
 	hover := c.hovering(r)
@@ -67,8 +57,8 @@ func (c *Ctx) TextArea(id string, r sdl.Rect, value string, placeholder string) 
 
 	rc := utf8.RuneCountInString(value)
 	if focused {
-		// Fresh focus lands the caret at the end (native); clamp against a value
-		// that shrank underneath us; Ctrl+A arms a real whole-value selection.
+		// Fresh focus puts the caret at the end; clamp against a value that shrank; Ctrl+A arms a whole-value
+		// selection.
 		if c.taCaretField != id {
 			c.taCaretField = id
 			c.taCaret = rc
@@ -103,8 +93,9 @@ func (c *Ctx) TextArea(id string, r sdl.Rect, value string, placeholder string) 
 
 	lines := c.layoutTextArea(value, innerW)
 
-	// Mouse: press places the caret AND anchors a selection; holding drags the
-	// caret end; shift+press extends from the current caret (mirrors textField).
+	// Mouse: press places the caret and anchors a selection; holding drags the caret end; shift+press extends from
+	// the
+	// current caret (as textField does).
 	if (press && hover && c.dragID == "") || (c.dragID == id && c.mouseDown) {
 		ly := int((c.mouseY - (r.Y + padY) + c.taScroll) / lineH)
 		idx := c.taIndexAt(lines, ly, c.mouseX-(r.X+padX))
@@ -171,7 +162,7 @@ func (c *Ctx) TextArea(id string, r sdl.Rect, value string, placeholder string) 
 					in.op = editWordRight
 				}
 			}
-			// Enter = line break, not submit.
+			// Enter is a line break, not submit.
 			if c.enter && in.typed == "" && in.op == editNone && !in.back && !in.wordBack && !in.wordFwd {
 				in.typed = "\n"
 			}
@@ -202,10 +193,10 @@ func (c *Ctx) TextArea(id string, r sdl.Rect, value string, placeholder string) 
 		}
 	}
 
-	// Re-layout after edits so the caret line / scroll track the new text.
+	// Re-layout after edits so the caret line and scroll track the new text.
 	lines = c.layoutTextArea(value, innerW)
 
-	// Wheel scroll + keep the caret line visible; then clamp.
+	// Wheel scroll and keep the caret line visible, then clamp.
 	c.taScroll -= c.WheelIn(r) * scrollStepPx
 	contentH := int32(len(lines)) * lineH
 	if focused {
@@ -271,14 +262,14 @@ func (c *Ctx) TextArea(id string, r sdl.Rect, value string, placeholder string) 
 	}
 	c.popClip(clipPrev, clipHad)
 
-	// Draggable scrollbar on the right (same convention as every other panel).
+	// Draggable scrollbar on the right.
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	c.taScroll = c.VScrollbar("ta"+id, track, c.taScroll, contentH, innerH)
 
 	return value
 }
 
-// taSelRange returns the ordered (lo, hi) RUNE selection, or (0,0) when none.
+// taSelRange returns the ordered (lo, hi) rune selection, or (0,0) when none.
 func (c *Ctx) taSelRange(rc int) (int, int) {
 	a, b := c.taSelAnchor, c.taCaret
 	if a < 0 {
@@ -296,8 +287,8 @@ func (c *Ctx) taSelRange(rc int) (int, int) {
 	return a, b
 }
 
-// taMoveVertical moves the caret one visual line up/down, clamping the column to
-// the target line's length. It returns the (unchanged) value and sets the caret.
+// taMoveVertical moves the caret one visual line up or down, clamping the column to the target line's length. It
+// returns the unchanged value and sets the caret.
 func (c *Ctx) taMoveVertical(value string, lines []taLine, op editOp) string {
 	caret := c.taCaret
 	li := c.taCaretLine(lines, caret)
@@ -317,9 +308,8 @@ func (c *Ctx) taMoveVertical(value string, lines []taLine, op editOp) string {
 	return value
 }
 
-// taCaretLine maps a caret RUNE index to its visual line index. A caret at a
-// hard-break boundary belongs to the NEXT line (it renders at that line's
-// start); the very end of the value belongs to the last line.
+// taCaretLine maps a caret rune index to its visual line. A caret at a hard-break boundary belongs to the next
+// line (it renders at that line's start); the end of the value belongs to the last line.
 func (c *Ctx) taCaretLine(lines []taLine, caret int) int {
 	for i := range lines {
 		if caret >= lines[i].start && caret < lines[i].end {
@@ -337,7 +327,7 @@ func (c *Ctx) taCaretLine(lines []taLine, caret int) int {
 	return len(lines) - 1
 }
 
-// taIndexAt maps a click (visual line ly, x px) to a RUNE index into the value.
+// taIndexAt maps a click (visual line ly, x px) to a rune index into the value.
 func (c *Ctx) taIndexAt(lines []taLine, ly int, mx int32) int {
 	if len(lines) == 0 {
 		return 0
@@ -358,10 +348,8 @@ func (c *Ctx) taIndexAt(lines []taLine, ly int, mx int32) int {
 	return ln.end
 }
 
-// layoutTextArea lays the value out into visual lines: hard breaks at '\n',
-// then a greedy word wrap (breaking at the last space before overflow) at maxW.
-// Each line records its [start,end) rune range into the whole value so the
-// caret, click mapping and selection all stay on the same coordinates.
+// layoutTextArea lays the value out into visual lines: hard breaks at '\n', then a greedy word wrap at maxW. Each
+// line records its [start,end) rune range so caret, click mapping and selection share coordinates.
 func (c *Ctx) layoutTextArea(value string, maxW int32) []taLine {
 	runes := []rune(value)
 	lines := make([]taLine, 0, 8)

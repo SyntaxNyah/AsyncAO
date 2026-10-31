@@ -1,35 +1,10 @@
 package ui
 
-// THE FONT RAIL (v1.90.0 W7b) — docs/wip/THEME-EDITOR-DESIGN.md §3.1's panel list.
-//
-// ONE concern: the theme's TYPE, as a thing you can drop a file onto and point at a
-// widget.
-//
-// WHY IT IS THE TIER THAT SHIPS. There are two font tiers in this format and only one
-// of them renders. `[fonts]` + `[fontbind]` bind an AO2 element CLASS to a face file
-// the theme carries; applySidecarFonts resolves them on every theme apply and the
-// courtroom really does change face (W4, themefontbind_test.go). An ELEMENT's own
-// `font`/`size` are carried and not drawn in format 1, and that is a MEASURED ruling
-// rather than an omission — paintElementText spells out the arithmetic: every other
-// face in this client lives in a fontSet holding exactly one point size, so an element
-// asking a panel's set for its own size rebuilds that set, and purges the text cache
-// with it, on every frame the panel and the element are both on screen. Reversing it
-// needs a per-element face pool with its own cap and its own lifetime, which is a wave
-// of its own; W7b therefore ships the picker, the rail and the intake for the tier
-// that renders, and the inspector SAYS SO on the tier that does not
-// (drawInspectorTail) instead of letting `size = 27` do nothing in silence.
-//
-// EVERY EDIT IS AN OP. opFontFamily and opFontBind go through editorApply exactly as a
-// rect drag does, so Ctrl+Z takes back a binding, "Back, Back" throws the whole
-// session's type away with the rest of it (restoreBaseline), and the censuses that
-// forbid a second mutation path cover this rail without knowing it exists.
-//
-// THE FILE COPY IS NOT AN OP, and that asymmetry is deliberate. Undo restores the
-// [fonts] ROW; the .ttf stays in the theme's fonts\ folder. A font file nobody
-// references is inert — it is not read, not opened and not shipped by anything but an
-// export — whereas an undo that deleted a file the user dropped would be an undo that
-// destroys data outside the document it owns. Same judgement the media graveyard
-// makes: bodies survive, rows are the undoable thing.
+// The font panel: the theme's type, as a file to drop and a widget to point it at.
+// [fonts] and [fontbind] are the tier that renders; an element's own font and size are carried but not drawn,
+// because each would rebuild a fontSet and purge the text cache per frame. The inspector says so.
+// Every edit is an op, but the file copy is not: undo restores the row and leaves the file, since an unreferenced
+// font is inert and an undo must not destroy data outside the document.
 
 import (
 	"os"
@@ -41,53 +16,36 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
-// ---------------------------------------------------------------------------
-// Named caps and metrics (hard rule 9)
-// ---------------------------------------------------------------------------
-
 const (
-	// editFontPanelW is the panel's width: two rails' worth, so it can show a class id
-	// and a family name side by side without either clipping to nothing.
+	// editFontPanelW is two rails, so a class id and family name sit side by side.
 	editFontPanelW = editRailW * 2
 	// editFontRowH is one family or binding row.
 	editFontRowH = editFieldRowH
-	// editFontLabelW is the left column (a class id, or "Family").
+	// editFontLabelW is the left column.
 	editFontLabelW = 108
 
-	// editFontFileMaxBytes bounds a face file the editor will copy into a theme
-	// (hard rule 4). internFace already refuses an oversized face at APPLY time; this
-	// is the same limit applied at INTAKE, so a 400 MB file dropped on the editor is
-	// refused by name before anything is read rather than copied and then ignored.
-	// 16 MiB is far past any real TTF/OTF — the largest CJK faces this client ships
-	// fallbacks for are single-digit megabytes.
+	// editFontFileMaxBytes bounds a face file at intake (hard rule 4): internFace refuses it at apply anyway,
+	// so a huge file is refused by name before anything is read.
 	editFontFileMaxBytes = 16 << 20
 
-	// editFontDirName is the folder inside a theme that carries its faces. It is the
-	// rung themeSidecarFontPath resolves first, so a file copied here is found by the
-	// resolver without the author writing a path.
+	// editFontDirName is the theme's face folder, the rung themeSidecarFontPath resolves first.
 	editFontDirName = "fonts"
 )
 
-// editFontJob is one in-flight face copy. Same shape as editSaveJob and for the same
-// reasons: the channel is buffered so the goroutine never blocks on an editor that
-// closed, and exactly one runs at a time because the pointer IS the flag.
+// editFontJob is one in-flight face copy;
+// the buffered channel never blocks on a closed editor, and the pointer is the flag.
 type editFontJob struct {
 	family string
 	file   string // theme-relative, forward slashes — what the [fonts] row will say
 	done   chan error
 }
 
-// ---------------------------------------------------------------------------
-// The panel
-// ---------------------------------------------------------------------------
-
-// editorFontPanelRect is the panel's rect, centred over the canvas.
 func editorFontPanelRect(w, h int32) sdl.Rect {
 	pw := int32(editFontPanelW)
 	if pw > w-editRowPad*2 {
 		pw = w - editRowPad*2
 	}
-	// Height: a heading, the class ladder, a separator, the families, and a footer.
+	// A heading, the class ladder, a separator, the families and a footer.
 	ph := editFontRowH*int32(len(theme.FontElements)+theme.FontCap+4) + editRowPad*2
 	if ph > h-editBannerH-editRowPad*2 {
 		ph = h - editBannerH - editRowPad*2
@@ -95,9 +53,7 @@ func editorFontPanelRect(w, h int32) sdl.Rect {
 	return sdl.Rect{X: (w - pw) / 2, Y: editBannerH + editRowPad, W: pw, H: ph}
 }
 
-// drawEditorFontPanel is the rail. A PANEL, not a modal (design §3.1 allows exactly
-// two modals in the editor and spends both elsewhere), so the canvas behind it keeps
-// drawing and the theme keeps animating while you pick a face.
+// drawEditorFontPanel draws the panel; not a modal, so the canvas keeps animating behind it.
 func (a *App) drawEditorFontPanel(w, h int32) {
 	if a.te == nil || !a.te.fontsOpen {
 		return
@@ -117,25 +73,15 @@ func (a *App) drawEditorFontPanel(w, h int32) {
 	y += editRowPad
 	c.Fill(sdl.Rect{X: r.X + editRowPad, Y: y, W: r.W - editRowPad*2, H: 1}, ColPanelHi)
 	y += editRowPad
-	// The families list is the LAST thing on the running cursor, and its answer is
-	// deliberately dropped: the footer below is anchored to the panel's own bottom
-	// edge, not to where the list ended, and both list loops stop two rows short of it
-	// (`y > r.Y+r.H-editFontRowH*2`) precisely so the two can never meet. Keeping the
-	// assignment would read as a cursor somebody forgot to use.
+	// The result is dropped: the footer anchors to the panel's bottom, and both list loops stop two rows short of it.
 	a.drawEditorFontFamilies(r, y)
 	c.popClip(prev, had)
-	// The footer says where a face comes FROM, because "drop a .ttf here" is the whole
-	// intake and nothing else on screen says it.
+	// The footer is the only thing on screen that says a dropped .ttf is the intake.
 	c.LabelClipped(r.X+editRowPad, r.Y+r.H-editFontRowH+3, r.W-editRowPad*2,
 		"Drop a .ttf or .otf on this window to add it — it is copied into "+editFontDirName+"\\", ColTextDim)
 }
 
-// drawEditorFontBinds is the CLASS LADDER: every AO2 element this client dresses, and
-// the family (if any) the theme binds it to.
-//
-// theme.FontElements' own order, never sorted: it is append-only and meaningful
-// (TestFontElementsIsAppendOnly), and it is the order the classes appear in AO2's
-// courtroom_fonts.ini.
+// drawEditorFontBinds lists every AO2 element and its bound family, in theme.FontElements' order, never sorted.
 func (a *App) drawEditorFontBinds(r sdl.Rect, y int32) int32 {
 	c := a.ctx
 	c.Label(r.X+editRowPad, y+3, "Bind a face to an AO2 element", ColAccent)
@@ -157,10 +103,7 @@ func (a *App) drawEditorFontBinds(r sdl.Rect, y int32) int32 {
 	return y
 }
 
-// drawEditorFontFamilies lists [fonts]: a family name, the file it resolves to, and a
-// remove button. There is no ADD row, because the intake is the DROP — deriving the
-// family from the file name is what lets a face be installed without a modal, and the
-// design allows two modals in the whole editor and spends both elsewhere.
+// drawEditorFontFamilies lists [fonts] with a remove button; there is no add row because the intake is the drop.
 func (a *App) drawEditorFontFamilies(r sdl.Rect, y int32) int32 {
 	c := a.ctx
 	c.Label(r.X+editRowPad, y+3, "Faces this theme carries ("+
@@ -174,10 +117,7 @@ func (a *App) drawEditorFontFamilies(r sdl.Rect, y int32) int32 {
 		row := sdl.Rect{X: r.X + editRowPad, Y: y, W: r.W - editRowPad*2, H: editFontRowH - 2}
 		c.LabelClipped(row.X, row.Y+3, editFontLabelW, f.Family, ColText)
 		c.LabelClipped(row.X+editFontLabelW, row.Y+3, row.W-editFontLabelW-editStepW*2, f.File, ColTextDim)
-		// REMOVE, never RENAME, from this rail: a family's name is what every
-		// [fontbind] row points at, so renaming it in place would silently unbind every
-		// element that used it. Removing is the honest destructive action, it is one
-		// undo step, and re-adding under a new name is two.
+		// Remove, never rename: every [fontbind] row points at the name, so renaming would silently unbind elements.
 		if c.Button(sdl.Rect{X: row.X + row.W - editStepW, Y: row.Y, W: editStepW, H: row.H}, "x") {
 			a.editorApply(a.te.mutateFontFamily(i, "", ""))
 			return y
@@ -187,16 +127,10 @@ func (a *App) drawEditorFontFamilies(r sdl.Rect, y int32) int32 {
 	return y
 }
 
-// editorFontCycler is a `< family >` control over the families this theme declares,
-// with "(none)" first. Returns the (possibly changed) family.
-//
-// It shares pickAnchorNone's spelling of "nothing" with the inspector's own pickers so
-// the two surfaces do not invent two words for one state.
+// editorFontCycler is a `< family >` control, "(none)" first, using pickAnchorNone's spelling.
 func (a *App) editorFontCycler(r sdl.Rect, cur string, names []string) string {
 	c := a.ctx
-	// The list ALWAYS carries "(none)", so "nothing to pick from" is one entry, not
-	// zero — a bare len==0 test here would be a branch that can never run and a hint
-	// the user never sees.
+	// The list always carries "(none)", so nothing to pick from is one entry.
 	if len(names) <= 1 {
 		c.LabelClipped(r.X+2, r.Y+3, r.W-4, "no faces yet — drop a .ttf on this window", ColTextDim)
 		return cur
@@ -225,10 +159,7 @@ func (a *App) editorFontCycler(r sdl.Rect, cur string, names []string) string {
 	return pickValueAt(names, i)
 }
 
-// editorFontFamilyNames is the cycler's list: "(none)" plus every declared family. It
-// reuses the inspector's own cached pickFace list minus its class-id half, because the
-// two lists answer different questions — a BINDING may only name a family, while an
-// element's `font` may also name a class to inherit from.
+// editorFontFamilyNames is the cycler's list: a binding may only name a family, unlike an element's font.
 func (te *themeEditor) editorFontFamilyNames() []string {
 	te.fontNames = te.fontNames[:0]
 	te.fontNames = append(te.fontNames, pickAnchorNone)
@@ -240,13 +171,8 @@ func (te *themeEditor) editorFontFamilyNames() []string {
 	return te.fontNames
 }
 
-// ---------------------------------------------------------------------------
-// The mutators — top-level, returning ops, exactly like the inspector's
-// ---------------------------------------------------------------------------
-
-// mutateFontBind / mutateFontFamily build the two type-table ops. They are METHODS
-// only because they need the document to intern a string; they still write nothing,
-// which is the property the funnel's censuses are about.
+// mutateFontBind and mutateFontFamily build the type-table ops;
+// methods only to intern a string, and they write nothing.
 func (te *themeEditor) mutateFontBind(classIdx int, family string) themeEditOp {
 	if classIdx < 0 || classIdx >= len(theme.FontElements) {
 		return themeEditOp{}
@@ -267,19 +193,8 @@ func (te *themeEditor) mutateFontFamily(idx int, family, file string) themeEditO
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Intake — a dropped .ttf becomes a [fonts] row
-// ---------------------------------------------------------------------------
-
-// editorTakeFontDrop is W4's deferred half, landed.
-//
-// W4's handleThemeFontDrop wrote down exactly why it could not install a face: "landing
-// a font means writing two keys into somebody's asyncao_theme.ini, and the sidecar
-// WRITER is wired to the editor's document and its undo stack (W7)." With the editor
-// open both of those exist, so the drop installs; with it shut the W4 message still
-// stands and still tells the user what to do by hand.
-//
-// ok=false means "not ours" — the caller keeps its own message.
+// editorTakeFontDrop installs a dropped face when the editor is open, since writing keys needs its document and undo.
+// ok=false means not ours, and the caller keeps its own message.
 func (a *App) editorTakeFontDrop(path string) bool {
 	if a.te == nil || a.te.doc == nil {
 		return false
@@ -304,9 +219,7 @@ func (a *App) editorTakeFontDrop(path string) bool {
 			" faces, which is the limit — remove one before adding another")
 		return true
 	}
-	// The SIZE is checked before anything is read, so an enormous file is refused by
-	// name rather than copied and then ignored at apply time (design §3.3's shape:
-	// name the offender, name the limit, offer the fix).
+	// Checked before reading, so an enormous file is refused by name.
 	info, err := os.Stat(path)
 	if err != nil {
 		a.te.note("could not read " + base + ": " + err.Error())
@@ -324,28 +237,19 @@ func (a *App) editorTakeFontDrop(path string) bool {
 	}
 	dest := filepath.Join(dir, editFontDirName, base)
 	a.te.font = job
-	// OFF THE RENDER THREAD (hard rule 2), the same shape editorSave uses: the
-	// goroutine touches nothing but its two paths.
+	// Off the render thread (hard rule 2); the goroutine touches only its two paths.
 	go func() { job.done <- copyFileAtomically(path, dest) }()
 	a.te.note("copying " + base + "…")
 	return true
 }
 
-// pollEditorFont lands a finished face copy and turns it into an undoable [fonts] row.
-// Called once per editor frame beside pollEditorSave, and for the same reason: a
-// result that arrives between frames must not touch UI state from another goroutine.
+// pollEditorFont lands a finished copy as an undoable [fonts] row, once per editor frame.
 func (a *App) pollEditorFont() {
 	if a.te == nil || a.te.font == nil {
 		return
 	}
-	// PREVIEW DEFERS THE LANDING, it does not consume it (field batch 9). The row
-	// lands through editorApply, which refuses while the demo is up — so draining the
-	// channel here would throw away a face the user dropped seconds earlier, silently
-	// (the chip is not drawn over the demo) and with a false reason ("the [fonts]
-	// table is full", which it is not). Leaving the job in place costs nothing: the
-	// channel is buffered, the goroutine has already handed its result over, and the
-	// first editing frame after the demo lands it exactly as if Preview had never been
-	// pressed. Hard rule 7's shape — a finished result is deferred, never dropped.
+	// Preview defers the landing: editorApply refuses during the demo, so draining here would lose the face
+	// with a false reason. The channel is buffered, so a finished result waits (hard rule 7).
 	if a.editorPreviewOn() {
 		return
 	}
@@ -357,7 +261,7 @@ func (a *App) pollEditorFont() {
 			a.te.note("could not copy " + filepath.Base(job.file) + ": " + err.Error())
 			return
 		}
-		// THE ROW LANDS THROUGH THE FUNNEL, so it is one Ctrl+Z like everything else.
+		// Through editorApply, so it is one Ctrl+Z.
 		if !a.editorApply(a.te.mutateFontFamily(len(a.te.doc.side.Fonts), job.family, job.file)) {
 			a.te.note(job.family + " could not be added — the [fonts] table is full")
 			return
@@ -368,11 +272,8 @@ func (a *App) pollEditorFont() {
 	}
 }
 
-// editorThemeDir is the folder this document lives in, or the reason there is none.
-// It is editorSidecarPath's directory, deliberately: the ONE authority on "where this
-// theme lives and is it ours to write" already refuses a bundled or read-only theme
-// with a reason, and a face copied beside a sidecar we may not write would be a file
-// dropped into somebody else's folder.
+// editorThemeDir is the folder this document lives in, or why there is none: read-only and bundled themes are refused,
+// as a face must not land beside a sidecar we may not write.
 func (a *App) editorThemeDir() (string, error) {
 	p, err := a.editorSidecarPath()
 	if err != nil {
@@ -381,14 +282,8 @@ func (a *App) editorThemeDir() (string, error) {
 	return filepath.Dir(p), nil
 }
 
-// fontFamilyFromFile derives a family name from a file name: the stem, with separators
-// folded to spaces and the common weight suffix left alone.
-//
-// A DERIVED name rather than a typed one, because the alternative at drop time is a
-// modal asking for a string, and the design allows two modals in the whole editor and
-// spends both elsewhere. The name is editable afterwards only by removing and
-// re-adding (see drawEditorFontFamilies' `x`), which is the honest cost of never
-// silently unbinding an element.
+// fontFamilyFromFile derives a family name from the stem with separators folded to spaces,
+// avoiding a modal at drop time.
 func fontFamilyFromFile(base string) string {
 	stem := strings.TrimSuffix(base, filepath.Ext(base))
 	stem = strings.NewReplacer("_", " ", "-", " ", ".", " ").Replace(stem)
@@ -399,11 +294,7 @@ func fontFamilyFromFile(base string) string {
 	return stem
 }
 
-// copyFileAtomically writes src's bytes to dest via a temp file beside it, then
-// renames — the same shape writeFileAtomically uses, so a crash mid-copy leaves the
-// theme without the face rather than with half of one.
-//
-// GOROUTINE-ONLY, and it touches nothing but its two arguments.
+// copyFileAtomically writes via a temp file then renames, so a crash leaves no half face; goroutine-only.
 func copyFileAtomically(src, dest string) error {
 	b, err := os.ReadFile(src)
 	if err != nil {

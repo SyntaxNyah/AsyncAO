@@ -5,22 +5,12 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
-// The outgoing MS SFX_NAME decision — one concern, one place.
-//
-// It used to be four lines inline in the IC send path, and the line it was missing is
-// the first one AO2 writes: `QString f_sfx = "1";` (../AO2-Client/src/courtroom.cpp:2045).
-// The emote's char.ini sound accompanies the PREANIM in AO2, so a message sent with Pre
-// unticked carries no sound at all; AsyncAO sent the emote's sound on every line, which
-// is the wire half of the "auto SFX fires on non-Pre messages" report (2026-08-08).
-//
-// Extracted so the rule is drivable on its own (icsfx_test.go) rather than only through
-// the whole 200-line send builder — the receive half has its own gate in
-// internal/courtroom (preanimSFXPlays) and the two have to be readable side by side.
+// The outgoing MS SFX_NAME decision. AO2 starts f_sfx at "1" (courtroom.cpp:2045) and the emote's char.ini sound
+// accompanies the PREANIM, so a message sent with Pre unticked carries no sound.
+// The receive half is preanimSFXPlays in internal/courtroom.
 
-// icSilentSFX is the AO wire value for "this message plays no sound effect": what AO2
-// initialises f_sfx to (courtroom.cpp:2045) and leaves there for a non-preanim message,
-// and what play_sfx early-returns on (:4597-4600). Named because it is a wire sentinel,
-// not a filename.
+// icSilentSFX is the wire value for "no sound effect": what AO2 starts f_sfx at (courtroom.cpp:2045) and
+// play_sfx early-returns on (:4597-4600). A sentinel, not a filename.
 const icSilentSFX = "1"
 
 // outgoingSFXName is the SFX_NAME this message ships, transcribed from
@@ -33,13 +23,9 @@ const icSilentSFX = "1"
 //	:2102-2104  a custom SFX or any dropdown row other than "Default" overrides
 //	            f_sfx REGARDLESS of Pre.
 //
-// pre is our ui_pre (App.icPreanim); pickIdx/picks are the IC-bar picker, whose index 0
-// (sfxAutoLabel) is AO2's "Default" row — the row get_char_sfx answers with the emote's
-// own get_sfx_name (:5679-5683).
-//
-// The emote_mod → PREANIM promotion at :2107-2115 is NOT part of this rule: it changes
-// the EMOTE MOD, the pre name and the sfx delay, not the sound's name. It lives in
-// sfxIdlePromotion below, gated on the matching preference.
+// pre is our ui_pre (App.icPreanim); pickIdx/picks are the IC-bar picker, whose index 0 (sfxAutoLabel) is AO2's
+// "Default" row, answered with the emote's own sfx name (:5679-5683).
+// The emote_mod to PREANIM promotion at :2107-2115 is not part of this rule; see sfxIdlePromotion.
 func outgoingSFXName(emote *courtroom.Emote, pre bool, pickIdx int, picks []string) string {
 	name := icSilentSFX
 	if pre {
@@ -60,20 +46,11 @@ func outgoingSFXName(emote *courtroom.Emote, pre bool, pickIdx int, picks []stri
 //	:2107       AND Options::playSelectedSFXOnIdle() AND the emote mod is IDLE or ZOOM
 //	:2109-2114  → f_pre = "", f_sfx_delay = 0, and IDLE→PREANIM / ZOOM→PREANIM_ZOOM.
 //
-// The point of the rewrite is that AO2 plays a message's sound off the PREANIM
-// stage; a line whose mod says "idle" is silent at every receiver no matter what
-// SFX_NAME it carries. Promoting the mod while blanking the pre name is how the
-// sound is heard without an animation actually playing.
-//
-// Returns the (possibly promoted) mod and whether the promotion applied — the
-// caller blanks the pre name and zeroes the delay on true, so all three fields
-// move together or none do.
-//
-// prezoom gates the ZOOM arm alone: EmoteModPreanimZoom is a 2.8 value and
-// NormalizeOutgoingEmoteMod (protocol/ms.go) already refuses to invent it for a
-// server that does not advertise the feature. Sending it anyway from HERE would
-// route around that guard, and a strict receiver drops the whole message. The
-// IDLE arm needs no feature at all.
+// AO2 plays a message's sound off the PREANIM stage, so a line whose mod is idle is silent at every receiver.
+// Promoting the mod while blanking the pre name makes the sound heard without an animation.
+// Returns the (possibly promoted) mod and whether it applied; on true the caller blanks the pre name and delay.
+// prezoom gates the ZOOM arm: EmoteModPreanimZoom is a 2.8 value and NormalizeOutgoingEmoteMod (protocol/ms.go)
+// refuses it without the feature. Sending it from here would bypass that guard and a strict receiver drops the message.
 func sfxIdlePromotion(mod, pickIdx int, sfxOnIdle, prezoom bool) (int, bool) {
 	if !sfxOnIdle || pickIdx <= 0 {
 		return mod, false
@@ -90,19 +67,10 @@ func sfxIdlePromotion(mod, pickIdx int, sfxOnIdle, prezoom bool) (int, bool) {
 	return mod, false
 }
 
-// applySFXPick lands a per-message SFX choice from either IC bar's dropdown — the
-// classic row's and the themed one's — so the three things a pick does cannot
-// drift between two copies of the same control:
-//
-//	the choice itself, the audition, and the focus bounce.
-//
-// The bounce is canon, not garnish: on_sfx_dropdown_changed's whole body is
-// `custom_sfx = ""; focus_ic_input();` plus the remove-button toggle
-// (../AO2-Client/src/courtroom.cpp:5498-5505). Picking a sound is a step in
-// composing a line, so the keyboard goes back to the line.
-//
-// next is trusted only as an index: out-of-range rows land the choice without an
-// audition, exactly as the two inline copies did.
+// applySFXPick applies a per-message SFX choice from either IC bar's dropdown (classic or themed): the choice,
+// the audition and the focus bounce.
+// The bounce is canon: on_sfx_dropdown_changed is `custom_sfx = ""; focus_ic_input();` (courtroom.cpp:5498-5505).
+// next is trusted only as an index: out-of-range rows land the choice without an audition.
 func (a *App) applySFXPick(next int) {
 	a.sfxChoiceIdx = next
 	if next > 0 && next < len(a.sfxChoices) {

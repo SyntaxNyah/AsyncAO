@@ -12,146 +12,78 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// In-app .demo file browser (v1.72.2). The native OpenFileDialog shell-out
-// (pickDemoForVideo, removed) failed the user LIVE twice — a GUI-subsystem
-// CREATE_NO_WINDOW child can't reliably win foreground rights, so the dialog
-// opened behind the app or not at all (the "button does nothing" reports). An
-// in-app browser kills that whole failure class and is cross-platform (the
-// native path was Windows-only). It lists directories + .demo/.aorec files,
-// descends on click, and PICKS a recording straight into the shared Studio
-// import tail (importDroppedRecording → importRecordingToVideo) — the exact
-// same logic the drag-and-drop path uses, so there is one owner of the import.
-//
-// Perf/hard-rule discipline (spec §17): the entry list is read by ONE bounded
-// loader goroutine per navigation (never per-frame ReadDir on the render thread
-// — a network drive would freeze the UI), cached in the state, and every
-// per-navigation string is built once. Quick-jump paths resolve once at open.
+// In-app file browser: a native dialog shell-out can't reliably win foreground rights, and this is cross-platform.
+// One bounded loader goroutine per navigation lists entries (never ReadDir per frame;
+// a network drive would freeze the UI).
 
 const (
-	// browseResCap bounds the loader→render result channel: exactly one result
-	// in flight per navigation (single-flight is guarded by browse.loading), so a
-	// cap of 1 can never block the loader goroutine or drop a result. Named per
-	// hard rule §17.4 (no unbounded channels).
+	// browseResCap is 1: single-flight on browse.loading means one result in flight, so the loader never blocks.
 	browseResCap = 1
-	// maxBrowseEntries caps how many rows one directory contributes (§17.4: no
-	// unbounded caches/lists). A huge asset folder (miku.pizza ships 4000+ char
-	// dirs) must not build an unbounded slice or blow the label cache; past the
-	// cap a single "… and N more" tail row shows the overflow. 2000 is far above
-	// any real recordings\ folder yet cheap to hold and sort.
+	// maxBrowseEntries caps the rows per directory (hard rule 4); past it a single "and N more" row shows the overflow.
 	maxBrowseEntries = 2000
-	// browseRowH is the pitch of one entry/quick-jump row (matches the maker
-	// picker's 26px rows so the two in-app lists feel identical).
+	// browseRowH is one row's pitch, matching the maker picker's rows.
 	browseRowH = 26
-	// browseIconColW is the fixed x-offset (from the row's text start) where the
-	// entry NAME begins, leaving a constant column for the 📁/🎞/⬆ icon label so
-	// the icon and name draw as two separate cached labels (no per-frame concat).
+	// browseIconColW is where the name starts,
+	// so icon and name draw as separate cached labels with no per-frame concat.
 	browseIconColW = 30
 )
 
-// browsePurpose is what a picked recording is used FOR — the same in-app browser
-// serves three Studio flows now (v1.74). The video flow (the original, and the
-// drag-onto-Studio default) stays byte-identical: purposeVideo is the zero value,
-// so an un-set browser behaves exactly as before. check/package route to the
-// content-report engine (contentjob.go) instead of the video exporter.
+// browsePurpose is what a picked file is used for; purposeVideo is the zero value, so an unset browser imports video.
 type browsePurpose int
 
 const (
 	purposeVideo   browsePurpose = iota // pick → importRecordingToVideo (the original flow)
 	purposeCheck                        // pick → StartContentReport + open the report panel
 	purposePackage                      // pick → StartContentReport, then package once it's ready
-	// purposeThemeBundle (v1.90.0 W8): pick → handleThemeBundleDrop, the SAME
-	// funnel a dragged .aotheme goes through. It lists bundles instead of
-	// recordings, which is the first time this browser's file filter has had to
-	// depend on what it was opened for — see browseKeepRule.
+	// purposeThemeBundle: pick goes to handleThemeBundleDrop, as a dragged .aotheme does;
+	// lists bundles (see browseKeepRule).
 	purposeThemeBundle
-	// purposeThemeImage (v1.90.0 W10): pick → editorTakeImage, the SAME funnel a
-	// dragged .png / .webp / .gif enters by. The browse half of the theme editor's
-	// image intake, and it exists for the reason purposeThemeBundle does: a drop is
-	// undiscoverable, and a picture already saved into Downloads has no window to be
-	// dragged onto without going and finding it again.
+	// purposeThemeImage: pick goes to editorTakeImage, as a dragged picture does.
 	purposeThemeImage
-	// purposeBaseFolder: pick → the base-folder wizard's setBasePath (issue #72).
-	// The FIRST purpose whose answer is a DIRECTORY rather than a file, which is
-	// why browsePicksDir exists — the rows are still files and folders, but the
-	// pick is "the folder I am standing in".
-	//
-	// It is in-app for the reason the .demo picker moved in-app: the native folder
-	// dialog is a PowerShell shell-out that exists only on Windows and has failed
-	// to win foreground live before. browseForFolder's own comment names extending
-	// this browser to directories as the escalation path; this is it.
+	// purposeBaseFolder: pick goes to the base-folder wizard's setBasePath;
+	// its answer is a directory (see browsePicksDir).
 	purposeBaseFolder
-	// purposeEvidenceImage (issue #6): pick → the evidence editor's Image-file
-	// field. This is the ONE purpose whose browser navigates the MERGED LOCAL ASSET
-	// SOURCES instead of the machine's filesystem (Crystalwarrior's design): it
-	// seeds at the mounts' evidence/ folder, lists the union of every local mount
-	// with an earlier mount shadowing a later one, can walk back out into
-	// characters/, background/ — any folder, because an evidence image may reuse
-	// art from anywhere — and cannot leave the mounts at all. See mergebrowse.go.
+	// purposeEvidenceImage: pick goes to the evidence editor's Image-file field; it navigates the merged local mounts,
+	// with an earlier mount shadowing a later one, and cannot leave them (see mergebrowse.go).
 	purposeEvidenceImage
 )
 
-// browsePicksDir reports a purpose whose answer is the CURRENT DIRECTORY rather
-// than a row in it. Such a browser grows a "Use this folder" button beside the
-// path line; everything else about it is unchanged, so there is still one file
-// navigation surface rather than two.
+// browsePicksDir reports a purpose whose answer is the current directory, adding a "Use this folder" button.
 func browsePicksDir(p browsePurpose) bool { return p == purposeBaseFolder }
 
-// browseEntry is one row in the file browser: a directory to descend into or a
-// recording (.demo/.aorec) to pick. Built once per navigation by the loader.
+// browseEntry is one row: a directory to descend into or a file to pick.
 type browseEntry struct {
 	name  string
 	isDir bool
 }
 
-// demoBrowserState lives package-level like `settings` (one browser, the
-// Settings screen is single-instance). Session-remembered dir means reopening
-// the browser lands where you left off — deliberately NOT a saved pref: prefs
-// need prefsJSON + load-overlay wiring (memory: "new prefs MUST join prefsJSON
-// + the load overlay or they save-but-don't-load"), and a browse cursor doesn't
-// warrant that surface. First open seeds dir from UserHomeDir (openDemoBrowser).
+// demoBrowserState is package-level like settings; the remembered dir is session-only, deliberately not a pref.
 type demoBrowserState struct {
 	open bool
-	// purpose is what the picked file feeds (video export / content check /
-	// package / theme import). Set once at open (openDemoBrowserFor); the pick
-	// action branches on it. Defaults to purposeVideo so the historic Import-.demo
-	// button is unchanged.
+	// purpose is what the picked file feeds; set once at open.
 	purpose browsePurpose
-	// keep is the purpose's FILE FILTER, resolved once at open and captured by the
-	// loader goroutine. A field rather than a per-load read of `purpose`: the
-	// loader runs off the render thread, and reading a field the render thread can
-	// write is a race the detector would find the first time somebody re-opened the
-	// browser while a slow network directory was still listing.
+	// keep is the purpose's file filter, resolved at open so the loader goroutine doesn't race a re-open reading
+	// purpose.
 	keep func(string) bool
-	// dir is the directory being listed. "" is the Windows DRIVES view (a row per
-	// existing volume); off Windows there is no drives view and ".." stops at "/".
+	// dir is the directory listed; "" is the Windows drives view, and off Windows ".." stops at "/".
 	dir string
-	// merged marks the EVIDENCE browse's VIRTUAL navigation (issue #6 follow-up):
-	// dir is then a mount-relative ASSET path — "" is the merged root, "evidence",
-	// "characters/foo" — inside the union of the local mounts, never a filesystem
-	// path, so the seed / parent / child walks all route through the merged model
-	// (mergebrowse.go) instead of filepath. Every other purpose leaves this false
-	// and navigates the real disk.
+	// merged marks the evidence browse: dir is then a mount-relative asset path,
+	// and "" the merged root (see mergebrowse.go).
 	merged bool
-	// entries is the loaded+cached listing for dir (NO per-frame ReadDir). more is
-	// the overflow count when the directory exceeded maxBrowseEntries (0 = none).
+	// entries is the cached listing for dir; more is the overflow past maxBrowseEntries.
 	entries []browseEntry
 	more    int
-	// loading guards single-flight: a navigation only kicks a loader when no load
-	// is already in flight, so rapid clicks can't spawn unbounded goroutines (§17).
+	// loading guards single-flight, so rapid clicks can't spawn unbounded goroutines.
 	loading bool
 	loadErr string
 	scroll  int32
-	// res carries the loader goroutine's result back to the render thread; drained
-	// in drawDemoBrowser (never blocks or stats on the render thread).
+	// res carries the loader's result to the render thread; drained in drawDemoBrowser.
 	res chan browseResult
-	// Quick-jump targets, resolved ONCE at open (os.UserHomeDir + Join, recordingsDir)
-	// so the per-frame draw never touches the filesystem or allocates these.
+	// Quick-jump targets, resolved once at open so the draw never touches the filesystem.
 	homeDir, downloadsDir, desktopDir, recDir string
 }
 
-// browseResult is one loader outcome: the listing for dir (or an error), tagged
-// with the dir it was loading so a stale result from a superseded navigation is
-// ignored (the user can click fast while a slow network dir loads).
+// browseResult is one loader outcome, tagged with its dir so a superseded navigation's result is ignored.
 type browseResult struct {
 	dir     string
 	entries []browseEntry
@@ -161,26 +93,13 @@ type browseResult struct {
 
 var demoBrowser = demoBrowserState{res: make(chan browseResult, browseResCap)}
 
-// isDrivesView reports the sentinel dir ("" = the Windows drives list). Off
-// Windows this is never entered (openDemoBrowser/parentBrowseDir never yield "").
-// isDrivesView reports the sentinel dir ("" = the Windows drives list). In the
-// MERGED browse "" is not a sentinel at all — it is the merged ROOT, a real place
-// with real rows — so that browser is never in the drives view, and never offers
-// one: a volume list would be exactly the escape hatch the sandbox exists to
-// remove.
+// isDrivesView reports the "" sentinel; in the merged browse "" is the merged root, which offers no volume list.
 func (s *demoBrowserState) isDrivesView() bool { return !s.merged && s.dir == "" }
 
-// openDemoBrowser opens the browser for the ORIGINAL .demo → video flow (the
-// Studio call-out's Import button on every OS). Thin wrapper over the
-// purpose-taking variant so existing callers stay one-liners and the video flow
-// is unmistakably the default.
+// openDemoBrowser opens the browser for the .demo to video flow.
 func (a *App) openDemoBrowser() { a.openDemoBrowserFor(purposeVideo) }
 
-// openDemoBrowserFor opens the browser bound to a pick PURPOSE (video / content
-// check / package), resolving the quick-jump paths once, and navigates to the
-// session-remembered dir (first open → the user's home). The purpose steers what
-// picking a recording does (pickBrowsedRecording); the rest of the browser is
-// identical across purposes so there's one file-navigation surface, not three.
+// openDemoBrowserFor opens the browser for a pick purpose and navigates to the session-remembered dir.
 func (a *App) openDemoBrowserFor(purpose browsePurpose) {
 	s := &demoBrowser
 	s.purpose = purpose
@@ -194,36 +113,25 @@ func (a *App) openDemoBrowserFor(purpose browsePurpose) {
 		s.downloadsDir, s.desktopDir = "", ""
 	}
 	s.recDir = recordingsDir()
-	// Switching path models drops the remembered dir: a merged asset path is
-	// meaningless to the filesystem browser, and a C:\… path can never be a
-	// mount-relative one. Each model then starts at ITS OWN home — the merged browse
-	// at the mounts' evidence/ folder below, the filesystem browser at home (never at
-	// "", which is the drives sentinel and would open a theme/demo pick on "This PC"
-	// just because an evidence pick ran first).
+	// Switching path models drops the remembered dir, since neither is meaningful to the other; the filesystem browser
+	// restarts at home, because "" would open the drives view.
 	if merged := purpose == purposeEvidenceImage; s.merged != merged {
 		s.merged = merged
 		s.dir = home
 	}
 	start := s.dir
 	if s.merged {
-		// Both buttons open HERE, every time, deliberately: "Browse/Choose both
-		// start in the <merged_base>/evidence/" (Crystalwarrior). A remembered
-		// merged dir would make the two entries behave differently for no gain.
+		// Both entry buttons open here every time, so a remembered merged dir can't make them differ.
 		start = evidenceBrowseSeed
 	} else if start == "" && !s.open {
-		// Very first open this session: seed from home (drives view stays reachable
-		// via the 💾 button on Windows). A remembered dir survives re-opens.
+		// First open this session: seed from home. A remembered dir survives re-opens.
 		start = home
 	}
 	s.open = true
 	a.navBrowseTo(start)
 }
 
-// navBrowseTo points the browser at dir and kicks the single loader goroutine
-// for it. Single-flight: a navigation while a load is in flight is dropped (the
-// in-flight result, once drained, will not match and gets ignored, and the user
-// can click again). Resets scroll and clears the previous error immediately so
-// the UI reads responsive.
+// navBrowseTo points the browser at dir and kicks one loader; a navigation during a load is dropped.
 func (a *App) navBrowseTo(dir string) {
 	s := &demoBrowser
 	if s.loading {
@@ -233,16 +141,13 @@ func (a *App) navBrowseTo(dir string) {
 	s.scroll = 0
 	s.loadErr = ""
 	s.loading = true
-	// CAPTURED, not read from the state inside the goroutine: the filter belongs to
-	// the open browser and the loader must not touch a field the render thread owns.
+	// Captured: the loader must not touch a field the render thread owns.
 	keep := s.keep
 	if keep == nil {
 		keep = isRecordingName // a browser opened before W8's purpose field existed
 	}
 	if s.merged {
-		// The merged listing reads the mount set HERE, on the render thread — the
-		// loader goroutine may not touch prefs (§17.4 rail: off-thread work captures
-		// its inputs before it starts).
+		// The merged listing reads the mount set here, on the render thread; the loader may not touch prefs.
 		a.startMergedBrowseLoad(dir, keep)
 		return
 	}
@@ -252,17 +157,13 @@ func (a *App) navBrowseTo(dir string) {
 		if err != nil {
 			errStr = err.Error()
 		}
-		// Cap 1 + single-flight: this send can never block (the render thread drains
-		// exactly one result before clearing s.loading and allowing the next nav).
+		// Cap 1 and single-flight: this send can never block.
 		s.res <- browseResult{dir: target, entries: ents, more: more, err: errStr}
 	}(dir, keep)
 }
 
-// loadBrowseDir reads one directory OFF the render thread: the Windows drives
-// view when dir=="", else os.ReadDir filtered to sub-directories + recordings.
-// Returns the capped, sorted entries and the overflow count. Any I/O error
-// (an unreadable/rights-denied dir) comes back so the draw can show it while
-// leaving ".." and the quick-jumps navigable.
+// loadBrowseDir reads one directory off the render thread;
+// "" lists drives, and an I/O error returns for the draw to show.
 func loadBrowseDir(dir string, keep func(string) bool) (entries []browseEntry, more int, err error) {
 	if dir == "" { // Windows drives view (never reached off Windows)
 		return listDrives(), 0, nil
@@ -274,14 +175,8 @@ func loadBrowseDir(dir string, keep func(string) bool) (entries []browseEntry, m
 	return filterBrowseEntries(des, keep), overflowCount(des, keep), nil
 }
 
-// browseKeepRule is the FILE FILTER for a pick purpose — the one place a purpose
-// decides what a listing shows.
-//
-// A FUNCTION OF THE PURPOSE rather than a branch inside the filter, because the
-// filter is pure and generic over its entries (that is what makes it unit-testable
-// without a filesystem) and the purpose is state. The default is deliberately the
-// recording rule: a purpose added without a rule lists recordings, which is wrong
-// but harmless, rather than listing everything.
+// browseKeepRule is the file filter for a pick purpose;
+// the default lists recordings, wrong but harmless for a new purpose.
 func browseKeepRule(p browsePurpose) func(string) bool {
 	switch p {
 	case purposeThemeBundle:
@@ -296,47 +191,31 @@ func browseKeepRule(p browsePurpose) func(string) bool {
 	return isRecordingName
 }
 
-// isBaseMountName reports a file that can be mounted as a base in its own right,
-// which is .zip and nothing else. It exists so the base-folder browser is not
-// filtered down to directories only: a pack is a legitimate answer to "where are
-// your AO files", and hiding every file would make a folder full of them look
-// empty to somebody checking they had opened the right one.
+// isBaseMountName reports a .zip, which mounts as a base; hiding files would make a folder of packs look empty.
 func isBaseMountName(name string) bool {
 	return strings.EqualFold(filepath.Ext(name), ".zip")
 }
 
-// isEvidenceImageName reports an evidence-image candidate by extension — the same
-// decode-pipeline list the theme image intake uses (PNG/WebP/GIF/APNG/AVIF), so
-// the evidence browse never offers a file the thumbnailer can't sniff.
+// isEvidenceImageName reports a file the theme image intake's decode list accepts.
 func isEvidenceImageName(name string) bool {
 	return isThemeImageExt(strings.ToLower(filepath.Ext(name)))
 }
 
-// isThemeBundleName reports a theme bundle by its lowercased extension.
-//
-// PLAIN .zip IS LISTED, and that is not the same decision dropclaim.go made. A
-// DROP must not be claimed by extension alone — a .zip is far more likely to be
-// meant for something else, and stealing it would be a drop that vanished — but a
-// BROWSE is the user pointing at one file and saying "this one". The importer
-// never trusts either extension anyway: themepack.Inspect sniffs the archive's own
-// magic bytes (the assets.Sniff doctrine), so a .aotheme that is really a
-// screenshot is refused by name whichever way it arrived.
+// isThemeBundleName lists plain .zip too: unlike a drop, a browse is the user pointing at one file,
+// and themepack.Inspect sniffs the magic bytes regardless.
 func isThemeBundleName(name string) bool {
 	ext := strings.ToLower(filepath.Ext(name))
 	return ext == themePackExt || ext == ".zip"
 }
 
-// browseDirEntry is the tiny surface filterBrowseEntries needs from an entry, so
-// the filter/sort is pure and unit-testable without a real os.DirEntry.
+// browseDirEntry is what filterBrowseEntries needs from an entry, so it needs no real os.DirEntry.
 type browseDirEntry interface {
 	Name() string
 	IsDir() bool
 }
 
-// filterBrowseEntries keeps sub-directories (skipping hidden dotfiles) and files
-// the caller's keep rule accepts (recordings, or theme bundles — browseKeepRule),
-// sorts directories first then case-insensitively by name, and caps the result at
-// maxBrowseEntries. Pure over its input (no filesystem) so it unit-tests directly.
+// filterBrowseEntries keeps non-hidden directories and files keep accepts, directories first,
+// capped at maxBrowseEntries.
 func filterBrowseEntries[E browseDirEntry](des []E, keep func(string) bool) []browseEntry {
 	out := make([]browseEntry, 0, len(des))
 	for _, de := range des {
@@ -364,9 +243,7 @@ func filterBrowseEntries[E browseDirEntry](des []E, keep func(string) bool) []br
 	return out
 }
 
-// overflowCount is how many rows past maxBrowseEntries a directory holds (the
-// "… and N more" tail). It mirrors filterBrowseEntries' keep rule so the count
-// matches the truncation exactly.
+// overflowCount is how many rows past maxBrowseEntries a directory holds, using filterBrowseEntries' rule.
 func overflowCount[E browseDirEntry](des []E, keep func(string) bool) int {
 	kept := 0
 	for _, de := range des {
@@ -384,16 +261,12 @@ func overflowCount[E browseDirEntry](des []E, keep func(string) bool) int {
 	return 0
 }
 
-// isRecordingName reports a .demo/.aorec file by its lowercased extension (the
-// same two extensions HandleFileDrop and the recordings picker accept).
 func isRecordingName(name string) bool {
 	ext := strings.ToLower(filepath.Ext(name))
 	return ext == demoExt || ext == recordingExt
 }
 
-// listDrives probes A:\ … Z:\ (os.Stat off the render thread) and returns one
-// directory row per existing Windows volume. Empty off Windows (the drives view
-// is never entered there).
+// listDrives probes A:\ to Z:\ off the render thread for one row per Windows volume; empty off Windows.
 func listDrives() []browseEntry {
 	if runtime.GOOS != "windows" {
 		return nil
@@ -408,9 +281,7 @@ func listDrives() []browseEntry {
 	return out
 }
 
-// parentBrowseDir walks one level up from dir. On Windows a drive root (C:\)
-// walks to the drives sentinel (""); elsewhere ".." stops at "/". filepath.Dir
-// is idempotent at a root, so we detect "already at the root" and branch.
+// parentBrowseDir walks one level up; a Windows drive root goes to "", and filepath.Dir fixed-points at a root.
 func parentBrowseDir(dir string) string {
 	if dir == "" {
 		return "" // already the drives view: no parent
@@ -425,8 +296,7 @@ func parentBrowseDir(dir string) string {
 	return parent
 }
 
-// childBrowseDir joins a directory entry's name onto dir. In the drives view the
-// entry name is already a full root ("C:\"), so it IS the target.
+// childBrowseDir joins a name onto dir; in the drives view the name is already a full root.
 func childBrowseDir(dir, name string) string {
 	if dir == "" {
 		return name // drives view: the row name is the volume root itself
@@ -434,10 +304,7 @@ func childBrowseDir(dir, name string) string {
 	return filepath.Join(dir, name)
 }
 
-// parentDir climbs one level in whichever path model the OPEN browser uses. The
-// merged model clamps at the mount root — there is nothing above it, and that
-// clamp IS the sandbox — while the filesystem model keeps its drives-sentinel and
-// POSIX-root behaviour.
+// parentDir climbs one level in the open browser's path model; the merged model clamps at the mount root.
 func (s *demoBrowserState) parentDir() string {
 	if s.merged {
 		return mergedParentDir(s.dir)
@@ -445,11 +312,8 @@ func (s *demoBrowserState) parentDir() string {
 	return parentBrowseDir(s.dir)
 }
 
-// joinBrowseDir joins a row's name onto the open browser's current dir, in that
-// browser's path model. The merged model joins with a FORWARD SLASH, never
-// filepath.Join: those paths are asset rels that courtroom's Evidence() resolves
-// against the origin, so a Windows backslash would freeze into the field as a
-// literal filename ("evidence\cases\knife.png" matches nothing on the wire).
+// joinBrowseDir joins in the open browser's model;
+// merged uses a forward slash, as a backslash matches nothing on the wire.
 func (s *demoBrowserState) joinBrowseDir(name string) string {
 	if s.merged {
 		if s.dir == "" {
@@ -460,9 +324,7 @@ func (s *demoBrowserState) joinBrowseDir(name string) string {
 	return childBrowseDir(s.dir, name)
 }
 
-// browseTitle names the modal for its current purpose. Each string is a package
-// const built once (no per-frame alloc — the switch returns a constant); the
-// video wording is unchanged from the original single-purpose browser.
+// browseTitle names the modal for its purpose; each is a constant, so no per-frame alloc.
 func browseTitle(p browsePurpose) string {
 	switch p {
 	case purposeCheck:
@@ -482,8 +344,7 @@ func browseTitle(p browsePurpose) string {
 	}
 }
 
-// browseFileIcon is the glyph for a non-directory row. A constant per purpose, so
-// the flat draw loop still costs no allocation.
+// browseFileIcon is the glyph for a non-directory row; a constant per purpose, so the draw doesn't allocate.
 func browseFileIcon(p browsePurpose) string {
 	switch p {
 	case purposeThemeBundle, purposeBaseFolder:
@@ -494,11 +355,8 @@ func browseFileIcon(p browsePurpose) string {
 	return "🎞"
 }
 
-// drawDemoBrowser draws the modal file browser LAST in drawSettings (topmost),
-// with the page's modal fence already released by the caller so its
-// c.Button/c.VScrollbar/c.hovering widgets work normally (the app.go:6926
-// release-and-restore idiom). No-op when closed. Every navigation is a state
-// mutation that kicks the loader; the draw itself never touches the filesystem.
+// drawDemoBrowser draws the modal browser last in drawSettings,
+// with the caller having released the page's modal capture.
 func (a *App) drawDemoBrowser(w, h int32) {
 	s := &demoBrowser
 	if !s.open {
@@ -506,9 +364,7 @@ func (a *App) drawDemoBrowser(w, h int32) {
 	}
 	c := a.ctx
 
-	// Drain a pending loader result (render thread; never blocks). A result whose
-	// dir no longer matches s.dir is from a superseded navigation — clear loading
-	// so the next nav can proceed, but keep the current (newer) listing.
+	// A result for a dir other than s.dir is superseded: clear loading but keep the current listing.
 	select {
 	case r := <-s.res:
 		s.loading = false
@@ -518,8 +374,7 @@ func (a *App) drawDemoBrowser(w, h int32) {
 	default:
 	}
 
-	// Centered modal panel. Sized to a comfortable fraction of the window, clamped
-	// so it never overflows a tiny window.
+	// Clamped so it never overflows a tiny window.
 	const (
 		bwMaxW = 640
 		bwMaxH = 520
@@ -538,7 +393,6 @@ func (a *App) drawDemoBrowser(w, h int32) {
 	inW := pw - 24
 	y := py + 10
 
-	// Title + ✕ close (top-right).
 	c.Label(inX, y, browseTitle(s.purpose), ColText)
 	closeR := sdl.Rect{X: px + pw - 30, Y: py + 8, W: 22, H: 22}
 	if c.Button(closeR, "✕") {
@@ -547,14 +401,8 @@ func (a *App) drawDemoBrowser(w, h int32) {
 	}
 	y += 26
 
-	// Current path line (the drives view has no path). A directory-picking purpose
-	// puts its commit button here, on the same row as the path it commits, so what
-	// the button means is the line next to it. It is hidden in the drives view,
-	// where there is no directory to pick.
-	//
-	// The MERGED browse labels the same row with its own root, because "" there is
-	// the merged root and not a sentinel: "asset sources ▸ evidence" is what the row
-	// is telling you.
+	// A directory-picking purpose puts its commit button beside the path it commits; hidden in the drives view.
+	// The merged browse labels the row with its own root.
 	pathW := inW
 	if s.merged {
 		const srcLabel = "asset sources ▸"
@@ -580,14 +428,9 @@ func (a *App) drawDemoBrowser(w, h int32) {
 	}
 	y += 22
 
-	// Quick-jump row: Home / Downloads / Desktop / recordings\ (+ Drives on
-	// Windows). Each is a no-op when its path didn't resolve at open (empty).
-	//
-	// THE MERGED BROWSE HAS NO QUICK JUMPS, and that is the point: every one of them
-	// leaves the mounts, which is exactly what this browser must never do. Their row
-	// carries the one thing a user needs to know about this listing instead — that it
-	// is the LOCAL asset sources, merged, and nothing else (ChocomintCake: "have a
-	// highlight that tells u its local only like a tip").
+	// Each quick jump no-ops if its path didn't resolve. The merged browse has none,
+	// because every one leaves the mounts;
+	// its row says the listing is local only.
 	if s.merged {
 		c.LabelClipped(inX, y+4, inW, mergedBrowseTip, ColAccent)
 		y += btnH + 8
@@ -614,15 +457,12 @@ func (a *App) drawDemoBrowser(w, h int32) {
 		y += btnH + 8
 	}
 
-	// Status line: loading spinner-text or an error (an unreadable dir), leaving
-	// the list navigable below via ".." and the quick-jumps.
 	if s.loading {
 		c.Label(inX, y, "Loading…", ColTextDim)
 		y += 18
 	} else if s.loadErr != "" {
-		// The merged browse has no "folder" to fail to open — its one refusal is the
-		// no-sources state, which already reads as a sentence — so the filesystem
-		// wording is skipped rather than printed over it.
+		// The merged browse's one refusal is the no-sources state, already a sentence,
+		// so the filesystem wording is skipped.
 		note := "Can't open this folder: "
 		if s.merged {
 			note = ""
@@ -631,7 +471,6 @@ func (a *App) drawDemoBrowser(w, h int32) {
 		y += 18
 	}
 
-	// --- clipped, scrollable entry list --------------------------------------
 	listTop := y
 	listH := (py + ph - 10) - listTop
 	if listH < browseRowH {
@@ -640,10 +479,8 @@ func (a *App) drawDemoBrowser(w, h int32) {
 	listRect := sdl.Rect{X: inX, Y: listTop, W: inW, H: listH}
 	c.Fill(listRect, ColPanel)
 
-	// Row model: a leading "⬆ .." row (except in the drives view, which is the top
-	// of the tree on Windows, and at the MERGED ROOT, which is the top of the
-	// mounts — the clamp that makes this browser a sandbox), then the entries, then
-	// an optional "… and N more" tail. rowCount sizes the scrollbar content height.
+	// A leading ".." row, except at the drives view and the merged root,
+	// where the clamp keeps the browser in its mounts.
 	showUp := !s.isDrivesView() && !(s.merged && s.dir == "")
 	rowCount := len(s.entries)
 	if showUp {
@@ -654,14 +491,11 @@ func (a *App) drawDemoBrowser(w, h int32) {
 	}
 	contentH := int32(rowCount) * browseRowH
 	trackW := scrollBarW
-	// Reserve the scrollbar gutter only when the list actually overflows.
 	rowW := inW - 8
 	if contentH > listH {
 		rowW -= trackW + 4
 	}
 
-	// Wheel scrolls the list ONLY while hovered; mark it consumed (wheel
-	// single-consumer memory) though nothing after this reads it.
 	if c.hovering(listRect) && c.wheelY != 0 {
 		c.wheelTaken = true
 		s.scroll -= c.wheelY * browseRowH
@@ -672,12 +506,8 @@ func (a *App) drawDemoBrowser(w, h int32) {
 	}
 	s.scroll = value.Clamp(s.scroll, 0, maxScroll)
 
-	// Clip the rows to the list rect: raw Ren.SetClipRect clips DRAW only, so
-	// clicks/hovers would leak past the edge (project memory) — pushClip mirrors
-	// the clip into hovering()/ClickedIn(). Rows are drawn in a flat INDEX loop
-	// (no per-frame closure — sibling drawMakerList does the same for alloc-free
-	// draw): index 0..(showUp?1:0) is the ⬆ .. row, then the entries, then the
-	// optional "… and N more" tail.
+	// Raw SetClipRect clips drawing only; pushClip mirrors the clip into hovering and ClickedIn. A flat loop,
+	// so no closure.
 	clipPrev, clipHad := c.pushClip(listRect)
 	upRows := int32(0)
 	if showUp {
@@ -690,7 +520,6 @@ func (a *App) drawDemoBrowser(w, h int32) {
 		}
 		row := sdl.Rect{X: inX + 4, Y: ry, W: rowW, H: browseRowH - 2}
 
-		// Tail row ("… and N more"): a dim, non-clickable label at the very end.
 		if s.more > 0 && i == int32(rowCount)-1 {
 			c.LabelClipped(row.X+8, row.Y+4, row.W-16, browseMoreLabel(s.more), ColTextDim)
 			continue
@@ -700,7 +529,6 @@ func (a *App) drawDemoBrowser(w, h int32) {
 			c.Fill(row, ColPanelHi)
 		}
 
-		// Resolve which model row this index is: the ⬆ parent row, or an entry.
 		if showUp && i == 0 {
 			if c.ClickedIn(row) {
 				a.navBrowseTo(s.parentDir())
@@ -717,9 +545,7 @@ func (a *App) drawDemoBrowser(w, h int32) {
 				a.pickBrowsedFile(s.joinBrowseDir(e.name))
 			}
 		}
-		// Icon and name are SEPARATE labels (constant/cached icon + cached name) so
-		// no per-frame `icon+" "+name` concat allocates — the icon column is a fixed
-		// offset, matching drawMakerList's tag+text split.
+		// Separate labels, so no per-frame icon+name concat allocates.
 		icon := browseFileIcon(s.purpose)
 		if e.isDir {
 			icon = "📁"
@@ -729,41 +555,20 @@ func (a *App) drawDemoBrowser(w, h int32) {
 	}
 	c.popClip(clipPrev, clipHad)
 
-	// Scrollbar on the right edge of the list when it overflows.
 	if contentH > listH {
 		track := sdl.Rect{X: inX + inW - trackW, Y: listTop, W: trackW, H: listH}
 		s.scroll = c.VScrollbar("demobrowse", track, s.scroll, contentH, listH)
 	}
 }
 
-// browseModalMargin is the inset of the centered modal from the window edges.
 const browseModalMargin = 40
 
-// browseMoreLabel formats the overflow tail row. Only reached when a directory
-// exceeded maxBrowseEntries (rare) and only one row draws it, so the single
-// fmt.Sprintf mirrors drawMakerList's own "… and N more" tail (sibling budget).
+// browseMoreLabel formats the overflow row; only one row draws it, so the Sprintf is rare.
 func browseMoreLabel(more int) string {
 	return fmt.Sprintf("… and %d more (open a subfolder to narrow it down)", more)
 }
 
-// pickBrowsedFile is the browser's PICK action, routed by the browser's purpose.
-// Close the browser first (every branch does), then:
-//   - purposeVideo: run the SHARED Studio import tail (importDroppedRecording →
-//     importRecordingToVideo) — byte-identical to the drag-onto-Studio path.
-//   - purposeCheck / purposePackage: hand off to the content-report engine
-//     (openContentReportFor), which loads the recording, starts the probe, and
-//     opens the report panel.
-//   - purposeThemeBundle: hand off to handleThemeBundleDrop — the SAME funnel a
-//     dragged bundle enters by, so browsing and dropping cannot diverge about
-//     caps, consent or where a theme lands (v1.90.0 W8).
-//
-// EVERY BRANCH IS A HAND-OFF TO AN EXISTING OWNER; none of them does the work
-// itself. That is the property that has kept this function honest through four
-// purposes — it was renamed from pickBrowsedRecording when the fourth arrived,
-// because "recording" had stopped being true.
-//
-// The video branch is deliberately untouched from the original single-purpose
-// browser so that flow can't regress (pinned by a test).
+// pickBrowsedFile closes the browser and hands the pick to the existing owner for its purpose; no branch does the work.
 func (a *App) pickBrowsedFile(path string) {
 	purpose := demoBrowser.purpose
 	demoBrowser.open = false
@@ -775,30 +580,21 @@ func (a *App) pickBrowsedFile(path string) {
 	case purposeThemeBundle:
 		a.handleThemeBundleDrop(path)
 	case purposeThemeImage:
-		// The SAME funnel a dragged picture enters by (thememediaintake.go). It
-		// returns false only when no editor is open over a writable theme, which
-		// cannot happen from here — this browser is opened from the editor's own rail
-		// — so the refusal is a chip rather than a branch.
+		// Same as a dragged picture. False means no editor over a writable theme,
+		// impossible here as the editor opened this.
 		a.editorTakeImage(path)
 	case purposeBaseFolder:
-		// The SAME funnel a dropped folder enters by. path is the current DIRECTORY
-		// for the Use-this-folder button and a .zip pack for a row click; setBasePath
-		// takes either, and the scan reports which it got.
+		// path is the directory for Use-this-folder and a .zip for a row click; setBasePath takes either.
 		baseWizard.setBasePath(path)
 	case purposeEvidenceImage:
-		// The merged browse: an origin-relative asset path re-rooted at the mounts'
-		// evidence/ folder (issue #6 follow-up). No filesystem path is involved, so
-		// the "../../UPDATES/…" leak a relative mount used to cause here cannot
-		// exist — see evidenceRelFromMerged.
+		// An origin-relative asset path re-rooted at the mounts' evidence/ folder; no filesystem path is involved.
 		a.setEvidenceImageFromMergedPath(path)
 	default:
 		a.importRecordingToVideo(importDroppedRecording(path))
 	}
 }
 
-// setEvidenceImageFromMergedPath fills the evidence editor's Image-file field from
-// a pick in the MERGED browse (issue #6 follow-up). See evidenceRelFromMerged for
-// the conversion, which lives in mergebrowse.go beside the rest of that model.
+// setEvidenceImageFromMergedPath fills the Image-file field from a merged-browse pick (see evidenceRelFromMerged).
 func (a *App) setEvidenceImageFromMergedPath(path string) {
 	a.evidImage = evidenceRelFromMerged(path)
 }

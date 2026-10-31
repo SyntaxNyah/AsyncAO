@@ -6,19 +6,10 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// The proxy section of the Power-user tab.
-//
-// The READOUT is the load-bearing part of this, not the controls. The biggest
-// risk in honouring a machine's proxy configuration is honouring one that cannot
-// carry AO traffic — a proxy that blocks CONNECT to the non-443 ports community
-// AO servers use will make every room fail to load, and from the player's side
-// that looks exactly like the client being broken. So the user has to be able to
-// see WHAT was detected and WHERE it came from, on screen, without a debug log
-// and without guessing; and "Never use a proxy" has to be one click away from
-// reading that line.
+// The proxy section of the Power-user tab. A proxy blocking CONNECT to the non-443 ports AO servers use looks like a
+// broken client, so what was detected and where it came from must be on screen, one click from "Never use a proxy".
 
-// proxyModeLabel is the cycle button's text: what is IN EFFECT, not what
-// clicking would switch to.
+// proxyModeLabel is the cycle button's text: what is in effect, not what clicking would switch to.
 func proxyModeLabel(mode int) string {
 	switch mode {
 	case config.ProxyModeDirect:
@@ -30,8 +21,7 @@ func proxyModeLabel(mode int) string {
 	}
 }
 
-// applyProxyPrefs re-resolves the policy from the saved preferences. Called on
-// every change and by the re-check button — never per request.
+// applyProxyPrefs re-resolves the policy from saved preferences; called on change and re-check, never per request.
 func (a *App) applyProxyPrefs() {
 	p := netproxy.Configure(netproxy.Mode(a.d.Prefs.Load().ProxyModeVal), a.d.Prefs.Load().ProxyURL)
 	a.pushDebug("proxy: " + p.Describe())
@@ -52,10 +42,7 @@ func (a *App) drawProxySettings(y, w int32) int32 {
 		}
 		a.applyProxyPrefs()
 	}
-	// Re-check sits beside the mode rather than under it: the case it exists for
-	// is a user who just connected to a VPN or changed their network, and having
-	// to restart to be believed is the thing that makes a detected-proxy feature
-	// feel broken.
+	// Re-check is for a user who just joined a VPN or changed network: they should not have to restart.
 	if c.Button(sdl.Rect{X: pad + 308, Y: y, W: 110, H: btnH}, "Re-check") {
 		a.applyProxyPrefs()
 	}
@@ -76,9 +63,7 @@ func (a *App) drawProxySettings(y, w int32) int32 {
 		y += 6
 	}
 
-	// The status line. Colour carries the same information as the words, because
-	// the two states that matter — "nothing is proxied" and "connections are being
-	// blocked" — need to be distinguishable at a glance.
+	// Colour repeats the words so "nothing is proxied" and "connections are being blocked" differ at a glance.
 	p := netproxy.Current()
 	statusCol := ColTextDim
 	if p.AutoScript {

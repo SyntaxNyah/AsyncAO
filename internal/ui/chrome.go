@@ -11,12 +11,9 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// AsyncAO chrome themes (#M3): user-pickable palettes for the CLIENT UI itself,
-// independent of AO2 courtroom themes. The chosen preset becomes the BASE palette
-// (activeKitColors) that applyThemePalette restores to; a server theme's stylesheet
-// colours still overlay it (with none — the common case — the preset IS the chrome).
-// 100% local; the kit colours are package vars read as values, so the render loop stays
-// 0-alloc — only a theme/preset change reassigns them.
+// AsyncAO chrome themes: user-pickable palettes for the client UI, independent of AO2 courtroom themes.
+// The chosen preset is the base palette (activeKitColors) that applyThemePalette restores to; a server theme's
+// stylesheet colours still overlay it.
 
 // chromePreset is one named palette: the 7 base kit colours in defaultKitColors order
 // (Background, Panel, PanelHi, Accent, Text, TextDim, Danger).
@@ -26,10 +23,7 @@ type chromePreset struct {
 	colors [7]sdl.Color
 }
 
-// chromePresets are the built-in chrome palettes. "dark" mirrors the stock look.
-// "soft"/"warm" are the eye-friendly pair (lower contrast, a single calm accent, dim
-// but readable secondary text) — added so the default look can be made gentler without
-// a global recolour: pick one in Settings → Theme, it applies live and persists.
+// chromePresets are the built-in chrome palettes; "dark" mirrors the stock look, "soft"/"warm" are lower contrast.
 var chromePresets = []chromePreset{
 	{"dark", "Dark", defaultKitColors},
 	{"soft", "Soft Dark", [7]sdl.Color{ // gentle contrast, one calm blue accent, warm-neutral dark
@@ -73,9 +67,8 @@ func chromePresetIndex(key string) int {
 	return 0
 }
 
-// customChromeColors builds the user's Custom palette: each kit slot is the saved hex
-// colour, or the stock dark colour when that slot is blank / unparseable — so a
-// half-filled custom scheme is always coherent (no black-on-black slots).
+// customChromeColors builds the Custom palette: each slot is its saved hex colour, or the stock dark colour if
+// blank or unparseable.
 func (a *App) customChromeColors() [7]sdl.Color {
 	out := defaultKitColors
 	hex := a.d.Prefs.Load().CustomChromeHex
@@ -85,10 +78,8 @@ func (a *App) customChromeColors() [7]sdl.Color {
 			out[i] = col
 		}
 	}
-	// Readability floor: a custom scheme gets no AO2-theme overlay, so the kit-wide
-	// guard in applyThemePalette never runs for it. Re-derive Text (and dim text)
-	// from the Panel's lightness when the chosen Text would vanish into the Panel, so
-	// a user can't accidentally paint the Settings text invisible and get stuck.
+	// Readability floor: a Custom scheme gets no theme overlay, so re-derive Text from the Panel's lightness when
+	// it would vanish into the Panel.
 	if absInt(colLuma(out[4])-colLuma(out[1])) < minInkSkinContrast {
 		if colLuma(out[1]) < paletteLightPanelLuma {
 			out[4] = defaultKitColors[4] // light ink on a dark panel
@@ -100,10 +91,8 @@ func (a *App) customChromeColors() [7]sdl.Color {
 	return out
 }
 
-// applyChromePreset makes the preset for key the base palette and re-overlays the current
-// AO2 theme (if any), then purges the colour-keyed text cache so labels re-rasterise in
-// the new colours. Called on startup (from prefs) and when the user picks a theme. The
-// "custom" key reads the user's saved colours instead of the static table.
+// applyChromePreset makes the preset for key the base palette, re-overlays the current AO2 theme and purges the
+// colour-keyed text cache. The "custom" key reads the saved colours.
 func (a *App) applyChromePreset(key string) {
 	if key == chromeCustomKey {
 		activeKitColors = a.customChromeColors()
@@ -114,9 +103,7 @@ func (a *App) applyChromePreset(key string) {
 	a.ctx.purgeTextCache()
 }
 
-// drawChromeSettings draws the AsyncAO chrome-theme picker (#M3): a colour swatch + a
-// button per preset, the active one ringed. Picking one applies it live and persists it.
-// Settings-only; never a hot path.
+// drawChromeSettings draws a swatch and button per preset, applying the pick live and persisting it.
 func (a *App) drawChromeSettings(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -124,9 +111,7 @@ func (a *App) drawChromeSettings(y, _ int32) int32 {
 	cur := a.d.Prefs.Load().ChromeTheme()
 	c.Label(pad, y, "Client UI colours — AsyncAO's own panels, separate from AO2 courtroom themes.", ColTextDim)
 	y += 24
-	// Quick accent picker (#41): one click to edit JUST the UI accent on the Custom
-	// scheme (the colour wheel below opens on the Accent slot), so "recolour the accent"
-	// doesn't need hunting through the full editor.
+	// Quick accent picker: edits just the accent of the Custom scheme.
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Customize accent…") {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.ChromeThemeKey = chromeCustomKey })
 		a.applyChromePreset(chromeCustomKey)
@@ -162,8 +147,7 @@ func (a *App) drawChromeSettings(y, _ int32) int32 {
 			y += btnH + 8
 		}
 	}
-	// The user-defined "Custom" scheme, picked like any preset; its swatch previews
-	// the saved colours (stock dark for any slot left blank).
+	// The Custom scheme is picked like a preset; its swatch previews the saved colours.
 	custom := a.customChromeColors()
 	csw := sdl.Rect{X: x, Y: y + 3, W: 22, H: 22}
 	c.Fill(csw, custom[1])                                        // Panel
@@ -185,28 +169,21 @@ func (a *App) drawChromeSettings(y, _ int32) int32 {
 	return y + 10
 }
 
-// shapePickerEntry is one selectable chrome-shape preset in the Settings picker
-// (A5): the persisted key + its human label. Sharp is first (the default).
+// shapePickerEntry is one chrome-shape preset in the Settings picker: persisted key and label.
 type shapePickerEntry struct {
 	key  string
 	name string
 }
 
-// shapePickerEntries are the built-in chrome SHAPE presets, mirroring
-// chromePresets. Sharp leads as the byte-identical default.
+// shapePickerEntries are the built-in shape presets; sharp leads as the default.
 var shapePickerEntries = []shapePickerEntry{
 	{shapeSharp, "Sharp"},
 	{shapeRounded, "Rounded"},
 	{shapePillKey, "Pill"},
 }
 
-// drawShapeSettings draws the AsyncAO chrome-SHAPE picker (A5): a button per
-// shape preset with the active one ringed (the drawChromeSettings grammar), plus
-// a corner-radius tier slider shown only for the "rounded" preset (the user
-// prefers sliders over steppers). Picking a shape applies it live — build +
-// immediate Ctx re-resolve, so the rest of this very frame draws the new shape
-// — and sharp restores the byte-identical flat chrome. Settings-only, never a
-// hot path.
+// drawShapeSettings draws a button per shape preset, plus a corner-radius slider for "rounded" only.
+// Picking applies live: it rebuilds and re-resolves the Ctx so the rest of this frame uses the new shape.
 func (a *App) drawShapeSettings(y int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -225,11 +202,7 @@ func (a *App) drawShapeSettings(y int32) int32 {
 		}
 		if clicked && e.key != cur {
 			a.d.Prefs.SetChromeShape(e.key)
-			// Apply live (mirrors applyChromePreset), then re-resolve the Ctx
-			// mask pointers NOW: the build sweeps the departing shape's pages
-			// and replaces same-key uploads, either of which can destroy the
-			// pages the frame-start resolve still points at — the rest of this
-			// frame must draw from the fresh pages, never the stale handles.
+			// Re-resolve the Ctx mask pointers now: the build can destroy the pages the frame-start resolve points at.
 			a.buildShapeMasks()
 			a.refreshShapeMasks()
 		}
@@ -240,9 +213,7 @@ func (a *App) drawShapeSettings(y int32) int32 {
 		}
 	}
 	y += btnH + 12
-	// Corner-radius tier — only meaningful for the rounded preset (pill is always
-	// a full half-radius, sharp has no corners). A slider (0..tiers-1) so the
-	// user drags the roundness rather than clicking a stepper.
+	// Corner-radius tier slider, only for rounded (pill is a full half-radius, sharp has no corners).
 	if cur == shapeRounded {
 		c.Label(pad, y, "Corner radius", ColTextDim)
 		y += 20
@@ -250,10 +221,7 @@ func (a *App) drawShapeSettings(y int32) int32 {
 		// Slider yields a value in [0, shapeRadiusTiers-1]; apply + rebuild on change.
 		if nv := c.Slider("shapeTier", sdl.Rect{X: pad, Y: y, W: 220, H: fieldH}, tier, shapeRadiusTiers-1); nv != tier {
 			a.d.Prefs.SetChromeShapeTier(int(nv))
-			// Every tier's masks are already resident (buildShapeMasks rasters
-			// them all), so a tier change only needs the per-frame resolve to
-			// re-point Ctx at the new tier — no re-upload, and no same-key
-			// replace that could strand this frame's pointers.
+			// All tiers' masks are already resident, so a tier change only needs the per-frame resolve.
 			a.refreshShapeMasks()
 		}
 		c.Label(pad+230, y+2, "smaller … larger", ColTextDim)
@@ -262,11 +230,8 @@ func (a *App) drawShapeSettings(y int32) int32 {
 	return y + 6
 }
 
-// drawCustomChromeEditor edits the 7 kit colours with a colour WHEEL (playtest:
-// "improve custom colours to like a wheel"): a row of swatches picks which kit
-// colour to edit, then a hue/saturation disc + a brightness slider + a hex field
-// set it. A blank/untouched slot uses the stock dark colour. Edits apply live
-// (recolour + cache purge) and persist. Reuses the highlight picker's wheel.
+// drawCustomChromeEditor edits the 7 kit colours: a swatch row picks the colour, then a wheel, brightness slider
+// and hex field set it. A blank slot uses the stock dark colour; edits apply live and persist.
 func (a *App) drawCustomChromeEditor(y int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -326,12 +291,8 @@ func (a *App) drawCustomChromeEditor(y int32) int32 {
 	return y + btnH + 10
 }
 
-// wheelHexEditor is the shared colour-editing body (custom chrome + layout
-// part colours): the cached hue/sat disc, a brightness slider, a live swatch
-// and a hex field, all editing cur — apply fires on every change. fieldID
-// keys the hex TextField; hexBuf is the caller's edit buffer (reflects wheel
-// edits while not focused). Draws at the settings form origin; returns the
-// next y. Settings-only, never a hot path.
+// wheelHexEditor is the shared colour-editing body: hue/sat disc, brightness slider, swatch and hex field editing cur.
+// apply fires on every change; fieldID keys the hex TextField; hexBuf is the caller's edit buffer. Returns next y.
 func (a *App) wheelHexEditor(y int32, fieldID string, hexBuf *string, cur sdl.Color, apply func(sdl.Color)) int32 {
 	c := a.ctx
 	pad := a.formX

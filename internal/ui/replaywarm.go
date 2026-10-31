@@ -9,47 +9,21 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
-// H5 — replay pre-warm for FLAT (non-bundled) recordings.
-//
-// A bundled .aorec already plays gap-free: its assets are local files the Manager
-// reads from disk, so the very first frame has its sprites and the music starts on
-// time. A FLAT recording streams the SAME assets from the origin CDN, and the
-// replay's typewriter pacing runs faster than a cold async fetch — so without a
-// warm phase the first lines pop in sprite-by-sprite and the opening track plays
-// silent until it downloads. This inserts a bounded warm BEFORE the first event:
-// seed the origin's formats (so probes hit the right extension), submit the scene's
-// sprite/background refs through the SAME per-tick window discipline the export
-// warm uses (nextWarmBatch / warmRoom / warmSettled — reused, not forked), and
-// prefetch the scene's music refs (Exact URLs, bounded count) so sound is ready.
-//
-// It reuses the export warm's ceilings so the two can't drift and no origin can
-// hang the phase. An empty / non-http origin skips the warm entirely (the
-// HasPrefix "http" guard in startReplayWarm) and plays as before — so the only
-// dead-origin case that reaches the warm is a REACHABLE-scheme host that is
-// actually down or 404ing. Two exits cover it: the conclusive-404 release
-// (warmSettled counts a base whose whole chain returned clean 404s as done —
-// requires a REACHABLE host that answers with 404s) ends such an all-404 replay
-// promptly; a host that TRANSPORT-errors (DNS-gone / connection-refused / 5xx)
-// never becomes IsMissing (manager.go returns "done" on the first transport error
-// without reportMissing), so it does NOT release early and instead exits via the
-// wall-clock backstop (gifWarmHardCap) — bounded, but not sub-second. Either way
-// the phase always ends and playback begins; nothing hangs.
+// Replay pre-warm for flat (non-bundled) recordings. A bundled .aorec reads local files, but a flat one streams from
+// the origin CDN faster than a cold fetch can serve, so the first lines would pop in sprite by sprite and the opening
+// track would play silent. A bounded warm runs before the first event: seed the origin's formats, submit the scene's
+// sprite/background refs through the export warm's window (nextWarmBatch / warmRoom / warmSettled), prefetch music. An
+// empty or non-http origin skips the warm. A reachable host answering clean 404s ends it at once (warmSettled); a
+// transport-erroring host never becomes IsMissing (manager.go), so it exits only on the gifWarmHardCap backstop.
 
 const (
-	// replayMusicWarmCap bounds how many DISTINCT music tracks the replay pre-warm
-	// prefetches (hard rule §17.4 — no unbounded work). A scene rarely opens on more
-	// than a handful of tracks and only ONE plays at a time, so the first few are what
-	// matter for "sound starts on time"; the rest stream on demand as the replay
-	// reaches them (exactly as today). Small so a music-churn recording can't queue a
-	// storm of audio fetches at replay start.
+	// replayMusicWarmCap bounds how many distinct music tracks the pre-warm prefetches (hard rule 4);
+	// the rest stream on demand.
 	replayMusicWarmCap = 8
 )
 
-// replayWarmState is the FLAT-replay pre-warm phase (H5). It mirrors the export
-// warm's incremental-submission bookkeeping (see gifExportJob's warm fields) so the
-// two share nextWarmBatch / warmRoom / warmSettled and behave identically under an
-// all-404 origin. Allocated only while the phase runs (App.replayWarm), so it costs
-// nothing on the live path or a bundled replay.
+// replayWarmState is the flat-replay pre-warm phase. It shares nextWarmBatch / warmRoom / warmSettled with the export
+// warm (see gifExportJob) and exists only while the phase runs (App.replayWarm).
 type replayWarmState struct {
 	warmRefs     []courtroom.AssetRef // the FULL texture set (M in the overlay + settle counting)
 	pendingWarm  []courtroom.AssetRef // not-yet-submitted subset; drained a bounded batch per tick
@@ -65,24 +39,17 @@ type replayWarmState struct {
 	submitted  int       // cumulative real submits (observability + the overlay)
 	submitDone bool      // every ref has been submitted → the end-condition clock may run
 
-	// Format-seed sub-phase: fetch <origin>/extensions.json and seed the host's
-	// learned formats BEFORE submitting, exactly like the export warm, so the probes
-	// walk the manifest-declared format instead of the wrong default on a .demo whose
-	// recorded origin was never the session origin. seedDone (1-buffered) delivers the
-	// outcome; the phase submits nothing until it lands.
+	// Format-seed sub-phase: fetch <origin>/extensions.json and seed learned formats before submitting, so probes use
+	// the manifest format for a .demo whose recorded origin was never the session origin.
+	// seedDone is 1-buffered; nothing is submitted until it lands.
 	seeding    bool
 	seedDone   chan seedResult
 	seedOrigin string
 }
 
-// startReplayWarm builds the pre-warm phase for a FLAT recording and stashes it on
-// App.replayWarm, or returns without arming it when there's nothing to warm (an
-// empty / non-http origin — the recording plays exactly as before). Enumerates the
-// scene's assets ONCE via SceneAssets (the SAME enumeration the export warm and the
-// archive exporter use), splitting texture refs (submitted incrementally) from music
-// refs (Exact URLs, prefetched once). Optionally kicks the format seed ahead of
-// submission, reusing seedOriginFormats + the shared per-origin dedupe. Render thread
-// only (it reads a.d and starts one bounded goroutine like the export seed).
+// startReplayWarm builds the pre-warm phase for a flat recording and stores it on App.replayWarm, leaving it nil
+// when there is nothing to warm. Scene assets come from SceneAssets (shared with the export warm and archive exporter):
+// textures are submitted incrementally, music refs prefetched once. Render thread only.
 func (a *App) startReplayWarm(rec *sceneRecording) {
 	a.replayWarm = nil
 	if rec == nil || !strings.HasPrefix(rec.Origin, "http") {
@@ -96,8 +63,7 @@ func (a *App) startReplayWarm(rec *sceneRecording) {
 	var texRefs, musicRefs []courtroom.AssetRef
 	for _, r := range courtroom.SceneAssets(urls, rec.StartBg, evs) {
 		if r.Exact {
-			// Music (and any other exact-URL) refs: bounded so a music-churn recording
-			// can't queue a storm of audio fetches at replay start.
+			// Music and other exact-URL refs, capped so a music-churn recording can't queue a storm of fetches.
 			if r.Type == assets.AssetTypeMusic && len(musicRefs) < replayMusicWarmCap {
 				musicRefs = append(musicRefs, r) // AssetType: Music (Exact) — prefetched once in tickReplayWarm
 			}
@@ -116,10 +82,7 @@ func (a *App) startReplayWarm(rec *sceneRecording) {
 		musicRefs:   musicRefs,
 		created:     now, // anchors gifWarmHardCap so a never-settling ref can't hang the phase
 	}
-	// Seed the origin's formats BEFORE submitting, gated on the SAME http(s) +
-	// auto-detect + per-origin dedupe as the session and export paths — so a .demo's
-	// dead-origin replay probes the manifest format and a second replay of the same
-	// origin skips the (already-done) fetch.
+	// Seed formats before submitting, under the same auto-detect and per-origin dedupe as the session and export paths.
 	if a.d.Prefs.Load().AutoDetectFormats && !a.originSeeded(rec.Origin) {
 		a.markOriginSeeded(rec.Origin)
 		w.seeding = true
@@ -133,21 +96,14 @@ func (a *App) startReplayWarm(rec *sceneRecording) {
 	a.replayWarm = w
 }
 
-// replayWarming reports whether the FLAT-replay pre-warm phase is active (the
-// driver gates event-feeding on it and the overlay draws the loading line).
+// replayWarming reports whether the pre-warm is active; the driver holds event-feeding while it is.
 func (a *App) replayWarming() bool { return a.replayWarm != nil }
 
-// endReplayWarm clears the pre-warm phase (all-ready / quiesce / hard-cap / Skip /
-// replay stop). Idempotent so every teardown path can call it unconditionally.
+// endReplayWarm clears the pre-warm phase; idempotent so every teardown path can call it.
 func (a *App) endReplayWarm() { a.replayWarm = nil }
 
-// tickReplayWarm advances the FLAT-replay pre-warm one frame (render thread). Same
-// shape as tickGifWarm: (1) poll the format seed, (2) count settled refs + prune the
-// in-flight set, (3) submit a bounded batch, (4) prefetch the music once submission
-// is under way, (5) end on all-ready / quiescence / timeout / hard cap. Reuses
-// warmSettled (a conclusive 404 counts as done) so an all-404 replay ends promptly
-// instead of freezing. Nothing here blocks the render thread — submission is bounded
-// and every fetch is async.
+// tickReplayWarm advances the pre-warm one frame: poll the seed, count settled refs, submit a bounded batch, prefetch
+// music once, and end on all-ready, quiescence, timeout or hard cap. warmSettled counts a conclusive 404 as done.
 func (a *App) tickReplayWarm() {
 	w := a.replayWarm
 	if w == nil {
@@ -155,9 +111,8 @@ func (a *App) tickReplayWarm() {
 	}
 	now := time.Now()
 
-	// Format-seed sub-phase: hold submission until the seed lands (or is skipped), so
-	// the first probe sees the manifest format. Like tickGifSeed: republish the
-	// resolver table on the render thread once the seed applied.
+	// Hold submission until the format seed lands so the first probe sees the manifest format; republish the resolver
+	// then.
 	if w.seeding {
 		select {
 		case res := <-w.seedDone:
@@ -166,9 +121,8 @@ func (a *App) tickReplayWarm() {
 			}
 			w.seeding = false
 		default:
-			// Still seeding — but the hard cap below still applies (a dead origin's seed
-			// is itself bounded by seedOriginFormats' 15 s ctx, and the wall-clock anchor
-			// backstops even that), so fall through to the backstop check.
+			// Still seeding. The hard cap still applies: a dead origin's seed is bounded only by seedOriginFormats'
+			// context.
 			if !w.created.IsZero() && now.Sub(w.created) > gifWarmHardCap {
 				a.endReplayWarm()
 			}
@@ -190,8 +144,7 @@ func (a *App) tickReplayWarm() {
 		}
 	}
 
-	// Incremental submission, bounded to the same outstanding window as the export
-	// warm so a Submit can never find a full high lane and block the render thread.
+	// Submission is bounded to the export warm's outstanding window so Submit never finds a full high lane.
 	if len(w.pendingWarm) > 0 {
 		room := warmRoom(len(w.warmInFlight))
 		submit, rest := nextWarmBatch(w.pendingWarm, room, a.warmSettled)
@@ -209,10 +162,8 @@ func (a *App) tickReplayWarm() {
 		w.pendingWarm = rest
 	}
 
-	// Music: prefetch the scene's opening tracks ONCE, as soon as submission begins,
-	// so sound is warm in T2 by the time playback reaches the first MC. Exact URLs
-	// (music carries its own extension) → PrefetchExact, never the format-probing
-	// path. Bounded to replayMusicWarmCap at enumeration time.
+	// Music: prefetch the opening tracks once as submission begins so sound is warm by the first MC.
+	// Exact URLs (music carries its extension) use PrefetchExact, not the format-probing path.
 	if !w.musicDone {
 		for _, m := range w.musicRefs {
 			a.d.Manager.PrefetchExact(m.Base, assets.AssetTypeMusic, network.PriorityHigh) // AssetType: Music (Exact)
@@ -231,12 +182,8 @@ func (a *App) tickReplayWarm() {
 		w.lastGain = now
 	}
 
-	// Absolute backstop (from phase creation): the conclusive-404 release ends a
-	// REACHABLE all-404 origin in sub-second, but this last-resort ceiling is what
-	// ends the phase for a ref that neither resolves nor reports a conclusive miss —
-	// a TRANSPORT-error host (down / refused / 5xx) never becomes IsMissing (see the
-	// header), so a dead reachable-scheme origin exits ONLY here. Music is NOT gated
-	// on here (it prefetches once, above), so a slow track can't hold playback.
+	// Absolute backstop from phase creation: the only exit for a transport-erroring host, which never becomes
+	// IsMissing. Music is not gated on, so a slow track can't hold playback.
 	if !w.created.IsZero() && now.Sub(w.created) > gifWarmHardCap {
 		a.endReplayWarm()
 		return

@@ -13,16 +13,8 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Debug panel (Extras → Debug): the comprehensive, interactive diagnostics view
-// the user asked for — server software, session health, the live packet
-// inspector (#333), performance + asset/prefetch stats, and the failure log, in
-// one sectioned floating window (non-blocking, drag/resizable like the mod
-// dashboard). It DELIBERATELY reuses the existing readouts rather than cloning
-// them: the F3 perf HUD and the Settings "Debug overlay" stay as passive glances
-// (frame graph / failure ring); this panel is the interactive superset. All the
-// numbers are read on the render thread; the fmt draw here is a diagnostics path,
-// so its allocations are accepted (same policy as the perf HUD / debug overlay)
-// and never run while the panel is closed.
+// Debug panel (Extras > Debug): a sectioned, draggable floating diagnostics window. It reuses the existing readouts
+// rather than cloning them; its fmt allocations are accepted because it draws only while open.
 
 const (
 	debugPanelW    = int32(580)
@@ -32,15 +24,10 @@ const (
 	debugPanelIn   = int32(16)
 	// debugRowH is one text row in the scrollable Packets / Log lists.
 	debugRowH = int32(16)
-	// debugLineH is one text row in the panel's own FLOWED sections (Session, Perf,
-	// Cache): the label height plus its leading. Deliberately NOT debugRowH — that one
-	// is a virtualized LIST row and doubles as the packet list's hit-test and scroll
-	// pitch, so folding the two together would tie a readout's line spacing to scroll
-	// arithmetic. Named because nine sites step by it, and a literal repeated nine
-	// times is a magic number nine times over (hard rule 9).
+	// debugLineH is one text row in the flowed sections (Session, Perf, Cache). Separate from debugRowH,
+	// which is the packet list's hit-test and scroll pitch.
 	debugLineH = int32(19)
-	// debugSectionGap is the taller step a section HEADING advances by: one line plus
-	// a little air, so a heading reads as a heading rather than as another row.
+	// debugSectionGap is the step after a section heading.
 	debugSectionGap = int32(22)
 )
 
@@ -119,9 +106,7 @@ func (a *App) drawDebugPanel(w, h int32, pressed *bool) {
 	}
 }
 
-// drawDebugSession shows the connection at a glance: server-software family (the
-// mod dashboard keys its command syntax off this), the existing health + diag
-// readouts, the live WebSocket ping, and the raw conn packet counters.
+// drawDebugSession shows server software, health lines, ping, packet counters and chatbox geometry.
 func (a *App) drawDebugSession(r sdl.Rect) {
 	c := a.ctx
 	y := r.Y
@@ -155,12 +140,8 @@ func (a *App) drawDebugSession(r sdl.Rect) {
 		st := a.conn.Stats()
 		line(fmt.Sprintf("Conn packets: %d sent · %d received", st.Sent, st.Received), ColTextDim)
 	}
-	// Chatbox geometry. Every candidate for the "message text is cut off at a
-	// scaled UI" report was eliminated by measurement except the numbers on the
-	// affected screen, which nobody could see — so print them. "fits" is the whole
-	// question: the room under the showname strip versus what the wrapped message
-	// actually needs. A CUT verdict here says the box is too short; "fits" with
-	// text still missing says the fault is in the drawing, not the layout.
+	// Chatbox geometry: "fits" compares the room under the showname strip with the wrapped text's height.
+	// CUT means the box is too short; "fits" with text still missing means the fault is in drawing.
 	d := &a.chatDiag
 	need := d.lines * d.lineH
 	room := d.boxY + d.boxH - d.textY
@@ -180,9 +161,7 @@ func (a *App) drawDebugSession(r sdl.Rect) {
 		d.renderPct, d.devScale, d.visible, d.total), ColTextDim)
 }
 
-// drawDebugPackets renders the packet inspector (#333): the in/out totals for
-// the active connection plus a scrollable, newest-first list of recent packets
-// (direction, header, field count, approx wire size, age).
+// drawDebugPackets renders in/out totals and a scrollable newest-first list of recent packets.
 func (a *App) drawDebugPackets(r sdl.Rect) {
 	c := a.ctx
 	c.LabelClipped(r.X, r.Y, r.W, fmt.Sprintf("Active connection — %d in · %d out (%d total)",
@@ -223,9 +202,7 @@ func (a *App) drawDebugPackets(r sdl.Rect) {
 	}
 }
 
-// drawDebugPerf shows frame timing (avg / worst / fps + a compact bar graph) and
-// the 1 Hz profiler's heap / GC / asset-cache numbers — the "performance" and
-// "prefetches" the user asked for (cache hit rate, network probes, cached 404s).
+// drawDebugPerf shows frame timing with a bar graph and the 1 Hz profiler's heap, GC and asset-cache numbers.
 func (a *App) drawDebugPerf(r sdl.Rect) {
 	c := a.ctx
 	avg, worst, fps := a.frameStats()
@@ -260,19 +237,12 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 	c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Goroutines: %d", runtime.NumGoroutine()), ColTextDim)
 	y += debugLineH
 
-	// Pacer (#50): the last FramePace tier + WHY it's there — the census pattern
-	// has regressed repeatedly with no readout of the deciding branch. Read-only:
-	// lastPacerTier is stamped by FramePace, never consulted by any pacing gate.
-	// focusSuffix reads focus at panel-draw time while the tier was stamped at the
-	// previous FramePace call, so a focus flip between them can momentarily show a
-	// mismatched pair; diagnostic-only, self-corrects next frame.
+	// Pacer: the last FramePace tier and why. focusSuffix reads focus now while the tier was stamped last frame,
+	// so a focus flip can briefly show a mismatched pair.
 	c.LabelClipped(r.X, y, r.W, "Pacer: "+pacerTierLabel(a.lastPacerTier)+focusSuffix(a.ctx.WindowFocused()), ColTextDim)
 	y += debugLineH
 
-	// Pump (#50): GPU upload + transient network errors that reached the upload
-	// pump (previously test-only visibility). A rising uploads count means the
-	// texture budget is over-subscribed; transients spike during an origin
-	// backoff wave.
+	// Pump: GPU upload errors and transient network errors; rising uploads mean the texture budget is over-subscribed.
 	if a.d.Pump != nil {
 		ps := a.d.Pump.Stats()
 		col := ColTextDim
@@ -283,19 +253,14 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 		y += debugLineH
 	}
 
-	// Held-frame bridge (#50): steals/releases + how many stolen stage frames are
-	// pinned right now (the black-flash fix — live verify used to rely on eyeballs).
+	// Held-frame bridge: steals, releases and stolen stage frames pinned now.
 	// A Current stuck at the cap means the heal isn't landing the real pages.
 	if a.d.Store != nil {
 		hs := a.d.Store.HeldStats()
 		c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Held-frame bridge: %d steals · %d releases · %d held now", hs.Steals, hs.Releases, hs.Current), ColTextDim)
 		y += debugLineH
-		// Theme media (W4): the user-art allowance, spent and remaining, plus how many
-		// elements the planner turned into placeholders. It sits beside the held-frame
-		// counters because it answers the same class of question — "is the pinned tier
-		// doing what it claims" — and because the whole budget is invisible otherwise:
-		// pinned pages are eviction-exempt, so an accounting bug shows up as a client
-		// that is quietly heavier after every theme, with nothing on screen to blame.
+		// Theme media: user-art bytes spent and remaining, and elements turned into placeholders. Pinned pages are
+		// eviction-exempt, so an accounting bug would otherwise show only as a heavier client.
 		col := ColTextDim
 		if themeArtOverWarnPct(a.d.Store.ThemeMediaBytes(), render.ThemeMediaByteCap(a.d.Prefs.Load().TexBudgetMiB())) {
 			col = ColTierYellow
@@ -303,13 +268,8 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 		c.LabelClipped(r.X, y, r.W, a.themeMediaDebugLine(), col)
 		y += debugLineH
 	}
-	// Element clocks + effects (W5). It belongs on the PERF tab and nowhere else,
-	// because the only question it answers is a pacing question: a theme with live
-	// elements holds the frame rate at the animation cadence deliberately, and the
-	// pacer line two rows up is where somebody notices that and wants to know who is
-	// asking for it. The pool line also makes exhaustion visible before the editor's
-	// own chip exists — past themeFXCap a stateful effect freezes at its first frame,
-	// which is easy to mistake for "the effect is broken".
+	// Element clocks and effects: a theme with live elements holds the frame rate at the animation cadence on purpose,
+	// and past themeFXCap a stateful effect freezes at its first frame.
 	fxCol := ColTextDim
 	if a.themeFXOver {
 		fxCol = ColTierYellow
@@ -317,8 +277,7 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 	c.LabelClipped(r.X, y, r.W, a.themeFXDebugLine(), fxCol)
 }
 
-// themeFXDebugLine is the F8 panel's `theme fx` row. Built only while the panel is
-// open (the diagnostics-path allocation policy at the top of this file).
+// themeFXDebugLine is the panel's `theme fx` row.
 func (a *App) themeFXDebugLine() string {
 	state := "live"
 	if a.themeFXFrozen {
@@ -341,12 +300,8 @@ func focusSuffix(focused bool) string {
 	return "   [unfocused]"
 }
 
-// drawDebugCache renders the three-tier asset cache inspector (#164): where
-// assets are coming from this session (T1 / T2 / disk / network breakdown) plus
-// each tier's live fill, hit rate and eviction/error counters. Every number is a
-// cached atomic snapshot (no directory walk — DiskStats reads counters, not the
-// disk), so it is safe to draw each frame the panel is open. Nil-guarded so a
-// minimal (test) App with no pipeline wired still renders without panicking.
+// drawDebugCache renders where assets came from this session and each tier's fill, hit rate and counters.
+// All numbers are atomic snapshots (DiskStats reads counters, not the disk); nil-guarded for test Apps.
 func (a *App) drawDebugCache(r sdl.Rect) {
 	c := a.ctx
 	y := r.Y
@@ -355,14 +310,11 @@ func (a *App) drawDebugCache(r sdl.Rect) {
 		y += debugLineH
 	}
 
-	// Source breakdown: which tier served each demand this session (the streaming
-	// win is a high T1/T2/disk share and a low network count).
+	// Source breakdown: which tier served each demand this session.
 	if a.d.Manager != nil {
 		ms := a.d.Manager.Stats()
 		line("Asset sources this session:", ColAccent)
-		// pack is its own column: a local-mount hit used to be indistinguishable
-		// from a network fetch here, which made "is my pack actually being used?"
-		// unanswerable from the overlay.
+		// pack is its own column so a local-mount hit isn't mistaken for a network fetch.
 		line(fmt.Sprintf("  T1 %d · T2 %d · disk %d · pack %d · network %d · missing %d",
 			ms.T1Hits, ms.T2Hits, ms.DiskHits, ms.MountFetches, ms.NetFetches, ms.Missing), ColText)
 		if ms.PackQuarantined > 0 {
@@ -376,8 +328,7 @@ func (a *App) drawDebugCache(r sdl.Rect) {
 			line(fmt.Sprintf("  oversized animations — %.1f MiB (full, above the T1 budget)", float64(ob)/(1<<20)), ColTierYellow)
 		}
 	}
-	// Speaker sprite animation diagnostic: kept/source frame count + delay
-	// stats, to answer "is this sprite decimated / are its delays even" (#110).
+	// Speaker sprite animation: kept/source frame count and delay stats.
 	if a.d.Viewport != nil {
 		if si, ok := a.d.Viewport.SpeakerAnimInfo(); ok {
 			line(fmt.Sprintf("Speaker anim — %s · %d/%d frames · %d/%d/%d ms (min/avg/max)",
@@ -422,9 +373,7 @@ func hitRatePct(hits, misses int64) string {
 	return fmt.Sprintf("%.0f%%", float64(hits)*100/float64(total))
 }
 
-// drawFrameBars draws the frame-time bar graph into r (oldest → newest, green
-// under the 60 fps budget, amber to the 33 ms scale, red above). Shares the perf
-// HUD's ring + thresholds so the two views can't disagree.
+// drawFrameBars draws the frame-time bars oldest to newest, sharing the perf HUD's ring and thresholds.
 func (a *App) drawFrameBars(r sdl.Rect) {
 	c := a.ctx
 	barW := r.W / int32(perfHUDFrames)
@@ -446,8 +395,7 @@ func (a *App) drawFrameBars(r sdl.Rect) {
 	}
 }
 
-// frameStats reduces the frame-time ring to avg / worst / fps (shared by the
-// perf section; the F3 HUD computes the same numbers inline in its graph loop).
+// frameStats reduces the frame-time ring to avg, worst and fps.
 func (a *App) frameStats() (avg, worst, fps float32) {
 	var sum float32
 	for i := 0; i < perfHUDFrames; i++ {
@@ -464,12 +412,9 @@ func (a *App) frameStats() (avg, worst, fps float32) {
 	return
 }
 
-// drawDebugLogSection renders the bounded failure-log ring (newest first) —
-// the same lines the Settings "Debug overlay" shows, hosted here so the panel is
-// a one-stop view.
+// drawDebugLogSection renders the bounded failure-log ring, newest first.
 func (a *App) drawDebugLogSection(r sdl.Rect) {
 	c := a.ctx
-	// Export button at the top
 	btnR := sdl.Rect{X: r.X + r.W - 100, Y: r.Y, W: 90, H: btnH}
 	if c.Button(btnR, "Export Log") {
 		a.exportDebugLog()
@@ -507,7 +452,6 @@ func (a *App) exportDebugLog() {
 		return
 	}
 
-	// Build filename with timestamp
 	now := time.Now()
 	filename := fmt.Sprintf("asyncao-debug-%s.txt", now.Format("20060102-150405"))
 
@@ -518,7 +462,6 @@ func (a *App) exportDebugLog() {
 		path = filename // fallback to current directory
 	}
 
-	// Build content
 	var content string
 	content += "AsyncAO Debug Log Export\n"
 	content += fmt.Sprintf("Generated: %s\n", now.Format("2006-01-02 15:04:05"))
@@ -531,7 +474,6 @@ func (a *App) exportDebugLog() {
 		content += fmt.Sprintf("[%s] %s\n", e.at.Format("15:04:05"), e.text)
 	}
 
-	// Write file
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		a.pushDebug("Failed to export debug log: " + err.Error())
 	} else {
@@ -539,13 +481,7 @@ func (a *App) exportDebugLog() {
 	}
 }
 
-// drawDebugFonts renders the font-pick readout (v1.93.0 "funky fonts"
-// report, fontpickdebug.go): what the IC log's own font/colour resolution
-// actually returned for its most recent rows, so a report like "this row
-// rendered in a different font and dimmer than everything else" can be
-// diagnosed from a screenshot of this tab instead of another static-reading
-// pass. See fontpickdebug.go's header for the two unconfirmed candidates
-// this exists to catch.
+// drawDebugFonts shows the font and colour the IC log resolved for its recent rows (see fontpickdebug.go).
 func (a *App) drawDebugFonts(r sdl.Rect) {
 	c := a.ctx
 	y := r.Y

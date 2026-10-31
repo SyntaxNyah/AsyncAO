@@ -5,16 +5,10 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
-// Sprite Style (#103): a per-speaker visual customization of your OWN character —
-// recolour, opacity, glow, and gentle motion — that rides invisibly in your
-// message text so other AsyncAO players see your styled sprite, while AO2/webAO
-// see a normal character (and unaffected text). The controls live in a floating,
-// non-blocking panel (the Sprite Style box, stylebox.go) opened from the Extras
-// box, so you can recolour on the fly without leaving the chat. The chosen style
-// is sticky (config) and appended to each outgoing message in sendIC.
+// Sprite Style: a recolour, opacity, glow and motion for your own character, carried invisibly in the message text so
+// AsyncAO players see it while AO2/webAO see a normal character. Sticky (config), appended in sendIC.
 
-// styleFromPref converts the persisted config pref into the courtroom value the
-// wire codec + renderer use (config can't import courtroom).
+// styleFromPref converts the saved pref to the courtroom value; config can't import courtroom.
 func styleFromPref(p config.SpriteStylePref) courtroom.SpriteStyle {
 	s := courtroom.SpriteStyle{
 		Tint: p.Tint, R: p.R, G: p.G, B: p.B,
@@ -26,21 +20,18 @@ func styleFromPref(p config.SpriteStylePref) courtroom.SpriteStyle {
 		OutlineR: p.OutlineR, OutlineG: p.OutlineG, OutlineB: p.OutlineB, // custom outline colour (0,0,0 = white)
 		Brightness: p.Brightness, Scale: p.Scale, Rotation: p.Rotation,
 	}
-	// Custom motion path (#34): both are the same [6]uint8 array; ≥2 active points = on
-	// (PathLen 0 ⇒ no custom path, the render falls back to Motion).
+	// Custom motion path: 2 or more active points turn it on; PathLen 0 falls back to Motion.
 	s.Path = p.Path
 	if p.PathLen >= 2 && int(p.PathLen) <= len(s.Path) {
 		s.PathLen = p.PathLen
 	}
-	// Two-tone hue paint: carried only while the hue-paint composition itself is on
-	// (Tint+Grayscale) AND a split is set. Normalized to all-zero otherwise so a stale
-	// pref can't fatten the wire frame or fire a change marker that renders the same.
+	// Two-tone hue paint needs Tint+Grayscale and a split; otherwise all-zero, so a stale pref can't fatten the wire
+	// frame or fire a change marker that renders the same.
 	if p.Tint && p.Grayscale && p.PaintSplit != 0 {
 		s.PaintSplit = p.PaintSplit
 		s.Paint2R, s.Paint2G, s.Paint2B = p.Paint2R, p.Paint2G, p.Paint2B
 	}
-	// Glitch options: same gating — the mode + fringe colours ride only while Glitch
-	// itself is on (an out-of-range stored mode falls back to Classic, like decode).
+	// Same gating for Glitch; an out-of-range stored mode falls back to Classic, like decode.
 	if p.Glitch {
 		if p.GlitchMode < courtroom.GlitchModeCount {
 			s.GlitchMode = p.GlitchMode
@@ -51,15 +42,13 @@ func styleFromPref(p config.SpriteStylePref) courtroom.SpriteStyle {
 	return s
 }
 
-// mySpriteStyle is the user's current transmitted style, for the send path.
 func (a *App) mySpriteStyle() courtroom.SpriteStyle {
 	return styleFromPref(a.d.Prefs.Load().MySpriteStyle)
 }
 
-// openSpriteStyle toggles the floating Sprite Style box (the Extras entry).
 func (a *App) openSpriteStyle() { a.showStyleBox = !a.showStyleBox }
 
-// spriteStylePresets are quick "fun colour" tints for the picker swatches.
+// spriteStylePresets are the picker's quick tint swatches.
 var spriteStylePresets = []struct {
 	name    string
 	r, g, b uint8
@@ -68,7 +57,7 @@ var spriteStylePresets = []struct {
 	{"Lime", 150, 240, 70}, {"Green", 60, 220, 90}, {"Cyan", 60, 220, 230},
 	{"Blue", 80, 140, 255}, {"Purple", 180, 90, 245}, {"Pink", 255, 110, 220},
 	{"White", 255, 255, 255}, {"Shadow", 70, 70, 95},
-	// More recolour options (#34): a fuller palette so a mood is one swatch away.
+	// A fuller palette.
 	{"Crimson", 180, 30, 55}, {"Magenta", 235, 50, 190}, {"Indigo", 85, 65, 200},
 	{"Teal", 25, 170, 160}, {"Mint", 155, 245, 205}, {"Lavender", 200, 175, 255},
 	{"Rose", 255, 150, 175}, {"Brown", 150, 100, 60}, {"Slate", 110, 125, 150},

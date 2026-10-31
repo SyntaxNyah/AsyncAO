@@ -21,68 +21,44 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Replay → comic / storyboard export (#100): turn a recording into a single PNG
-// "page" — one still panel per IC line (the scene + that line's speech box) laid out
-// in a grid. It rides the SAME machinery as the GIF/WebP/Video kinds (asset
-// pre-warm, throwaway replay room, offscreen capture target, progress overlay,
-// off-thread write); the only differences are that it captures ONE frame per message
-// instead of an animation and writes a PNG. PNG is pure Go (image/png), so — unlike
-// the other kinds — comic needs no Available() gate (no CGO, no ffmpeg). Off by
-// default; nothing runs on the live render path unless the user exports.
+// Replay to comic export: one still panel per IC line, in a grid on a PNG page, using the shared export steps.
+// PNG is pure Go, so unlike the other kinds this needs no Available() check.
 const (
-	// comicPanelW/H size one panel (4:3). Deliberately small + FIXED (not the
-	// animation Size knob): the page stays a predictable size and the held panels
-	// stay within budget — maxComicPanels × (W·H·4 bytes) ≈ 11 MB at 360×270 (vs
-	// ~46 MB if a panel tracked an XL animation size). 270px tall leaves the speech
-	// box enough height that ordinary lines read without shrinking to the font floor.
+	// comicPanelW/H are fixed rather than following the animation size, keeping page and held panel memory predictable;
+	// 270 tall leaves the speech box enough height that ordinary lines don't shrink to the font floor.
 	comicPanelW = 360
 	comicPanelH = 270
 
-	// comicPanelsPerPage is one PNG page's worth of panels (comicCols × rows). 30 at
-	// 3 cols = a 10-row page; a scene with more lines spills onto further pages.
+	// comicPanelsPerPage is one page: 30 at 3 columns makes 10 rows; more lines spill onto further pages.
 	comicPanelsPerPage = 30
-	// maxComicPages bounds how many pages one export writes, and with it the TOTAL
-	// held panel RGBA (hard rule §17.4): maxComicPanels × (W·H·4) ≈ 35 MB at 360×270.
-	// A longer scene exports its first maxComicPanels lines (the user is told).
+	// maxComicPages bounds total held panel RGBA (hard rule 4); a longer scene exports its first maxComicPanels lines.
 	maxComicPages  = 3
 	maxComicPanels = comicPanelsPerPage * maxComicPages
 
-	// Page layout (a storyboard grid): comicCols panels per row, comicGutter between
-	// panels, comicMargin around the page, a comicBorder frame per panel. comicMargin
-	// must be ≥ comicBorder so the first row/column's frame stays on-page.
+	// Storyboard grid. comicMargin must be at least comicBorder so the first row and column's frames stay on the page.
 	comicCols   = 3
 	comicGutter = 12
 	comicMargin = 16
 	comicBorder = 2
 
-	// comicAdvanceSteps bounds the per-message fast-forward (shout→preanim→talking→
-	// linger is ≤4 phase hops; the margin covers a slow reveal). comicBigStep
-	// collapses every phase ROOM timer in one Update (the typewriter/timers clamp, so
-	// the room never spins — same step SkipToIdle uses), so the loop lands on
-	// PhaseLinger — the line fully typed and still on stage — in a handful of steps.
+	// comicAdvanceSteps bounds the per-message fast-forward. comicBigStep collapses every room phase timer in one
+	// Update
+	// (they clamp, so the room never spins), landing on PhaseLinger in a few steps.
 	comicAdvanceSteps = 12
 	comicBigStep      = time.Hour
-	// comicViewportStep advances the VIEWPORT a sane amount each step. Unlike the
-	// room, the viewport's animation clock drains dt frame-by-frame, so a huge dt
-	// would spin a looping sprite tens of thousands of iterations. A small step is
-	// all that's needed: the room reaches the talking pose on its own timer, and the
-	// viewport just has to sync that sprite onto the stage before the capture.
+	// comicViewportStep is small because the viewport's clock drains dt frame by frame; a huge dt would spin a looping
+	// sprite.
 	comicViewportStep = 80 * time.Millisecond
 )
 
-// comicPageColor is the page background (near-white "paper" so the panels read as a
-// printed comic page); comicBorderColor frames each panel.
+// comicPageColor is near-white paper; comicBorderColor frames each panel.
 var (
 	comicPageColor   = color.RGBA{R: 244, G: 244, B: 248, A: 255}
 	comicBorderColor = color.RGBA{R: 36, G: 36, B: 48, A: 255}
 )
 
-// tickComicExport captures ONE still panel per IC line (render thread). Non-message
-// events (background / music) are applied to the room so a later panel shows the
-// right scene, but emit no panel; blank posts (animated, no text) are skipped. One
-// line per tick keeps the window responsive. Each line is drained to idle before the
-// next is fed — REQUIRED because enqueue() queues a message fed while the room is
-// busy, which would otherwise merge two lines into one panel.
+// tickComicExport captures one panel per IC line per tick, keeping the window responsive; bg and music events only
+// carry the scene forward. Each line drains to idle first, because enqueue() would merge two lines into one panel.
 func (a *App) tickComicExport(j *gifExportJob) {
 	if j.captured >= j.maxFrames {
 		a.finishGifExport() // page full → compose + write (routes to finishComicExport)
@@ -102,33 +78,21 @@ func (a *App) tickComicExport(j *gifExportJob) {
 	a.finishGifExport() // events exhausted
 }
 
-// captureComicPanel feeds one IC message, fast-forwards it to the fully-revealed
-// (PhaseLinger) state, captures a single panel (unless it's a blank post), and
-// drains the room back to idle for the next line. The room is idle on entry (the
-// previous line drained, and bg/music don't change phase), so HandleEvent begins
-// this message immediately rather than queueing it.
+// captureComicPanel feeds one message, fast-forwards to PhaseLinger, captures a panel unless it's a blank post, and
+// drains to idle. The room is idle on entry, so HandleEvent begins this message at once rather than queueing it.
 func (a *App) captureComicPanel(j *gifExportJob, ev recEvent) {
 	j.room.HandleEvent(eventFromRec(ev))
-	// Advance past shout/preanim and reveal the whole line, stopping AT PhaseLinger
-	// (full text, still on stage). A huge dt collapses each phase timer; the viewport
-	// advances with it so the sprite shows its talking pose, not a frozen preanim frame.
+	// Stop at PhaseLinger (full text, still on stage); the viewport advances too, so the sprite shows its talking pose.
 	for i := 0; i < comicAdvanceSteps && j.room.Phase() != courtroom.PhaseLinger && j.room.Phase() != courtroom.PhaseIdle; i++ {
-		// A comic panel is a STILL of the FINISHED line, so say that outright rather
-		// than leaning on the step size to collapse the crawl. comicBigStep would in
-		// fact reveal the whole line (Typewriter.Update's reveal is proportional to dt),
-		// but only by ALSO burning one loop iteration per phase — and the blip budget
-		// (courtroom.blipsPerUpdate) means a fast-forwarded line would still be dribbling
-		// blips at the silent-sink boundary. Saying "this line is done" is the honest
-		// instruction and it does not depend on any pacing constant. Idempotent, and
-		// harmless before the text phase begins.
+		// SkipToEnd rather than relying on comicBigStep, which would reveal the text but leave blips dribbling out
+		// under
+		// courtroom.blipsPerUpdate. Harmless before the text phase.
 		j.room.Typewriter.SkipToEnd()
 		j.room.Update(comicBigStep) // collapse the room's phase timers (no spin: it clamps)
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
 		a.d.Viewport.Update(&j.room.Scene, comicViewportStep) // sane step so a looping sprite can't spin
 	}
-	// Safety net: if a 404-ing preanim never reached linger within the cap, force the
-	// full reveal so the panel still shows the line. No Update runs before Capture, so
-	// the room can't overwrite it back.
+	// If a 404-ing preanim never reached linger, force the full reveal; no Update runs before Capture to overwrite it.
 	j.room.Scene.VisibleRunes = utf8.RuneCountInString(j.room.Scene.MessageText)
 	if !j.room.Scene.IsBlankPost && j.room.Scene.MessageText != "" {
 		img, err := j.ct.Capture(a.ctx.Ren, func(dst sdl.Rect) {
@@ -145,10 +109,7 @@ func (a *App) captureComicPanel(j *gifExportJob, ev recEvent) {
 	j.room.SkipToIdle() // drain to idle so the NEXT message begins fresh (1 line : 1 panel)
 }
 
-// finishComicExport composes the captured panels into a PNG page and writes it
-// off-thread. The panels are CPU RGBA owned solely by this goroutine now (a.gif is
-// already nil), so the handoff is race-free — mirrors encodeAndWriteGIF. Called from
-// finishGifExport AFTER the shared teardown, so the capture target is already closed.
+// finishComicExport writes the page off-thread; a.gif is already nil, so this goroutine solely owns the panels.
 func (a *App) finishComicExport(j *gifExportJob) {
 	if len(j.panels) == 0 {
 		a.warnLine = "Comic export: nothing rendered (set an Origin/CDN and add a line)."
@@ -164,9 +125,7 @@ func (a *App) finishComicExport(j *gifExportJob) {
 	go func() { ch <- composeAndWriteComic(panels, stem, capped) }()
 }
 
-// paginateComic splits the captured panels into pages of at most perPage each, in
-// order, so a long scene becomes a multi-page comic instead of one giant image.
-// Pure + bounded — unit-tested. Returns nil for no panels.
+// paginateComic splits panels into in-order pages of at most perPage, or nil for no panels.
 func paginateComic(panels []*image.RGBA, perPage int) [][]*image.RGBA {
 	if perPage < 1 {
 		perPage = 1
@@ -182,10 +141,7 @@ func paginateComic(panels []*image.RGBA, perPage int) [][]*image.RGBA {
 	return pages
 }
 
-// composeAndWriteComic (off-thread) paginates the panels, composes + PNG-encodes
-// each page, and writes recordings\<stem>.png (single page) or \<stem>-pN.png (one
-// per page). Returns the result line for the UI (+ the first page's path, so the
-// #71 clipboard-copy hook has an artifact to grab).
+// composeAndWriteComic (off-thread) writes <stem>.png, or <stem>-pN.png per page; returns the result and first path.
 func composeAndWriteComic(panels []*image.RGBA, stem string, capped bool) exportResult {
 	pages := paginateComic(panels, comicPanelsPerPage)
 	if len(pages) == 0 {
@@ -237,11 +193,7 @@ func composeAndWriteComic(panels []*image.RGBA, stem string, capped bool) export
 	return exportResult{msg: msg, path: firstPath}
 }
 
-// composeComicPage lays panels into a storyboard grid: `cols` per row (fewer if
-// there aren't that many), a gutter between panels, a margin around the page, and a
-// border frame per panel on a paper-coloured background. Pure (no SDL) so the layout
-// math is unit-tested. Returns nil for no panels. panelW/H are parameters (not the
-// consts) so the test can drive it with tiny synthetic panels.
+// composeComicPage lays panels in a bordered grid on a paper background, or returns nil for no panels.
 func composeComicPage(panels []*image.RGBA, cols, panelW, panelH, gutter, margin, border, startNum int) *image.RGBA {
 	n := len(panels)
 	if n == 0 {
@@ -263,7 +215,7 @@ func composeComicPage(panels []*image.RGBA, cols, panelW, panelH, gutter, margin
 		row := i / cols
 		x := margin + col*(panelW+gutter)
 		y := margin + row*(panelH+gutter)
-		// Border frame just outside the panel (it sits in the gutter, leaving a gap).
+		// The frame sits just outside the panel, in the gutter.
 		frame := image.Rect(x-border, y-border, x+panelW+border, y+panelH+border)
 		draw.Draw(page, frame, &image.Uniform{C: comicBorderColor}, image.Point{}, draw.Src)
 		if panel != nil {
@@ -277,7 +229,7 @@ func composeComicPage(panels []*image.RGBA, cols, panelW, panelH, gutter, margin
 	return page
 }
 
-// Panel-number badge geometry / colours (a comic reads in sequence).
+// Panel-number badge geometry.
 const (
 	comicDigitW        = 7  // basicfont.Face7x13 advance width
 	comicBadgeH        = 16 // badge height
@@ -297,8 +249,7 @@ func drawPanelNumber(img *image.RGBA, x, y, n int) {
 	drawComicText(img, x+3, y+comicBadgeBaseline, s, comicBadgeTextColor)
 }
 
-// drawComicText renders text onto the CPU image with the built-in 7x13 bitmap face
-// (x/image, already a dep) — no SDL on the off-thread compose path. y is the baseline.
+// drawComicText draws with the built-in 7x13 face, avoiding SDL on the off-thread path; y is the baseline.
 func drawComicText(img *image.RGBA, x, y int, text string, col color.RGBA) {
 	(&font.Drawer{
 		Dst:  img,
@@ -308,14 +259,8 @@ func drawComicText(img *image.RGBA, x, y int, text string, col color.RGBA) {
 	}).DrawString(text)
 }
 
-// --- comic speech bubble -----------------------------------------------------
-//
-// Each comic panel renders a paper SPEECH BUBBLE (a tail pointing up to the speaker +
-// a dark name caption) instead of the GIF export's flat dark chatbox, so a storyboard
-// reads like a comic. It is drawn during CAPTURE via SDL (not the off-thread compose),
-// so it reuses the live font stack — Unicode / emoji shownames and inline \cN colours
-// render instead of tofu — with the message text forced to dark "ink" (renderRaster's
-// comicInk) so it reads on the white bubble. Render thread only.
+// Comic speech bubble: drawn during capture via SDL so it reuses the live font stack (Unicode names, inline colours),
+// with message text forced to dark ink. Render thread only.
 const (
 	comicBubbleMargin = 10 // gap from the panel edges
 	comicBubblePad    = 8  // text padding inside the bubble
@@ -331,10 +276,7 @@ var (
 	comicNameInk    = sdl.Color{R: 246, G: 246, B: 250, A: 255} // name text
 )
 
-// comicBubbleRect places the speech bubble across the bottom of a panel viewport vp,
-// sized to the rasterized text height (capped so it can't swallow the panel — the top
-// stays clear for the sprite, floored so a one-word line still reads). Pure (sdl.Rect
-// is a plain struct), so the geometry is unit-tested.
+// comicBubbleRect places the bubble across the panel's bottom, sized to the text, capped to leave room for the sprite.
 func comicBubbleRect(vp sdl.Rect, textH int32) sdl.Rect {
 	bubbleH := textH + 2*comicBubblePad
 	if maxH := vp.H * 3 / 5; bubbleH > maxH {
@@ -351,9 +293,7 @@ func comicBubbleRect(vp sdl.Rect, textH int32) sdl.Rect {
 	}
 }
 
-// drawComicBubble draws the paper speech bubble (tail + bubble + dark name caption) and
-// the message text for one panel. Mirrors drawGifChatbox's fit/cache, but ink-on-paper.
-// Render thread only (inside the capture callback).
+// drawComicBubble draws the tail, bubble, name caption and text for one panel, inside the capture callback.
 func (a *App) drawComicBubble(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect) {
 	if sc.IsBlankPost || (sc.MessageText == "" && sc.ShownameText == "") {
 		return
@@ -376,8 +316,7 @@ func (a *App) drawComicBubble(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect)
 	}
 	bubble := comicBubbleRect(vp, textH)
 
-	// Tail first (it rises FROM the bubble's top edge toward the speaker); then the paper
-	// bubble + dark border over it.
+	// Tail first, so the bubble and its border cover its base.
 	a.drawComicTail(bubble.X+bubble.W*2/3, bubble.Y, comicTailHalf, comicTailH)
 	c.Fill(bubble, comicBubbleFill)
 	c.Border(bubble, comicBubbleInk)
@@ -388,8 +327,8 @@ func (a *App) drawComicBubble(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect)
 		_ = c.Ren.SetClipRect(nil)
 	}
 
-	// Speaker name: a dark caption tag straddling the bubble's top-left, drawn with the
-	// covering-face pick so a non-Latin showname renders instead of tofu.
+	// A caption tag straddling the bubble's top-left; the covering-face pick keeps a non-Latin showname from being
+	// tofu.
 	if sc.ShownameText != "" {
 		nameW := c.TextWidth(sc.ShownameText) + 14
 		if nameW > bubble.W {
@@ -401,9 +340,8 @@ func (a *App) drawComicBubble(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect)
 	}
 }
 
-// drawComicTail fills an upward speech-bubble tail: apex at (cx, baseY-h), base of
-// half-width `half` at baseY (the bubble's top edge). A dark span then a 1px-inset paper
-// span per row gives the slanted sides a border. Render thread only.
+// drawComicTail fills an upward tail with its apex at (cx, baseY-h); a dark span then a 1px-inset paper span per row
+// borders the slanted sides.
 func (a *App) drawComicTail(cx, baseY, half, h int32) {
 	c := a.ctx
 	for dy := int32(0); dy < h; dy++ {

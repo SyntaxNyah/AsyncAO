@@ -1,83 +1,29 @@
 package ui
 
-// AO2's stock `default` theme geometry, as a fallback tier (#21).
-//
-// AO2 resolves a missing design key by falling through to the bundled
-// base/themes/default (get_config_value walks theme → subtheme → default). A
-// STREAMING client has no such tree on disk, so before this table a key the theme
-// omitted resolved to nothing at all. That is only safe while every widget also
-// has an AsyncAO-native place to fall back to — and the governing rule for issue
-// #21 is that it does not: inside a theme's canvas a missing rect means "draw
-// nothing", not "use AsyncAO's own arrangement".
-//
-// This table is what makes that rule survivable. A theme that declares `courtroom`
-// and `viewport` and nothing else still gets a complete, coherent AO2 courtroom,
-// exactly as it would under AO2 itself, instead of an empty canvas.
-//
-// It is transcribed from AO2-Client/base/themes/default/courtroom_design.ini —
-// machine-extracted from that file rather than typed, then filtered to the keys
-// the themeSlots registry actually reads. The precedent and the reasoning are
-// charSelectDefaultRects (charselectlayout.go), which solved the same problem for
-// the character-select screen.
-//
-// Keys deliberately absent:
-//   - player_list, which the stock default does not declare either.
-//   - the asyncao_* opt-ins, which are AsyncAO's own and have no AO2 default.
-//   - `immediate`, which AO2's stock file spells `pre_no_interrupt`; the registry
-//     row carries both and resolves the alt.
+// AO2's stock default theme geometry, used when a theme omits a courtroom key.
+// AO2 falls through to base/themes/default for a missing key; a streaming client has no such tree on disk.
+// Transcribed from AO2-Client/base/themes/default/courtroom_design.ini, filtered to the keys themeSlots reads.
+// Absent on purpose: player_list (the stock default lacks it), asyncao_* keys (no AO2 default), and
+// `immediate` (the stock file spells it pre_no_interrupt; the registry row carries both).
 
 import "github.com/SyntaxNyah/AsyncAO/internal/theme"
 
-// ao2CanvasKey / ao2ViewportKey are the two keys themeLayoutIn requires before it
-// will build a themed canvas at all (theme_layout.go). Named because the backstop
-// below gates on exactly that pair, and the two must never drift apart.
+// ao2CanvasKey / ao2ViewportKey are the two keys themeLayoutIn requires to build a themed canvas.
 const (
 	ao2CanvasKey   = "courtroom"
 	ao2ViewportKey = "viewport"
 )
 
-// ao2DefaultCanvas is the canvas the table's coordinates were authored in —
-// line 3 of AO2's own base/themes/default/courtroom_design.ini. Every rect below
-// is a position ON THIS CANVAS, and that is the fact the placement rule turns on:
-// carried onto a canvas of another size they are not a layout, just numbers.
+// ao2DefaultCanvas is the canvas the table's coordinates were authored in (line 3 of AO2's courtroom_design.ini).
 var ao2DefaultCanvas = theme.Rect{X: 0, Y: 0, W: 714, H: 579}
 
-// applyAO2DefaultRects fills AO2's per-key default for every courtroom key the
-// theme was silent about.
-//
-// GATED ON THE THEME DECLARING A CANVAS OF ITS OWN, which is the whole safety
-// argument: the stock table declares courtroom AND viewport, so an ungated fill
-// would hand those two keys to a theme directory that has no
-// courtroom_design.ini at all — and themeLayoutIn validates on exactly that pair.
-// Every user whose theme ships no design INI would be silently moved onto AO2's
-// 714x579 layout. This reproduces AO2's fallback for a theme that HAS a design
-// INI; it is not a way to invent one.
-//
-// SECOND GATE: a default is refused when it would land on a widget the theme's
-// author placed themselves, unless the theme is working on AO2's own canvas.
-//
-// The reason is generational, and it is the defect this gate was added for.
-// Widgets arrive in AO2 over time — slide_enable is a 2.11 addition — and the
-// enormous majority of themes in circulation were authored for 2.10 or earlier,
-// so they are silent about it through no fault of their own. AO2 fills that
-// silence from its own default file and gets away with it because those
-// coordinates are native there. AsyncAO carries the same numbers onto a canvas
-// the theme chose: aceattorney2x is 944x600, VA-11 HALL-A is 1262x700. On those,
-// slide_enable's stock {200,464} is not "where the Slide box goes" — it is a
-// point that happens to sit on top of the author's Pre row, their colour
-// dropdown and their music panel. Reported from a live run as a Slide checkbox
-// colliding with the toggle row, on two different themes.
-//
-// Scaling the rect instead was rejected: a proportional guess is still a guess,
-// and it would land somewhere equally unrelated to the author's arrangement,
-// only less obviously wrong. Drawing nothing is what AO2's own rule for a
-// missing rect says (set_size_and_pos hides a widget the theme is silent about,
-// courtroom.cpp:1334-1338) and what #21's rule (e) demands.
-//
-// On AO2's OWN canvas the defaults go in verbatim, overlaps included — the stock
-// file overlaps itself (slide_enable 200,464 against casing 200,470; pre 5,400
-// against flip 64,400), so a theme that adopts that canvas is asking for exactly
-// that arrangement and must get it.
+// applyAO2DefaultRects fills AO2's default for every courtroom key the theme left unset.
+// It only runs when the theme declares its own canvas: the table holds courtroom and viewport, so an ungated fill
+// would put a theme with no design INI onto AO2's 714x579 layout.
+// A default is also refused when it would land on a widget the theme's author placed, unless the theme uses AO2's
+// canvas: coordinates carried onto another canvas size are arbitrary and collide with the author's widgets.
+// Drawing nothing matches AO2 (set_size_and_pos hides a widget the theme is silent about, courtroom.cpp:1334-1338).
+// On AO2's own canvas the defaults go in verbatim, overlaps included, as the stock file overlaps itself.
 func applyAO2DefaultRects(layout map[string]theme.Rect) {
 	canvas, ok := layout[ao2CanvasKey]
 	if !ok {
@@ -86,19 +32,13 @@ func applyAO2DefaultRects(layout map[string]theme.Rect) {
 	if _, ok := layout[ao2ViewportKey]; !ok {
 		return
 	}
-	// Only the AUTHOR's rects count as occupied. Filling in key order would make
-	// the result depend on map iteration order — one default could block another —
-	// so the occupancy set is snapshotted before anything is added.
+	// Only the author's rects count as occupied; snapshot them first so map iteration order cannot change the result.
 	native := canvas.W == ao2DefaultCanvas.W && canvas.H == ao2DefaultCanvas.H
 	authored := make([]theme.Rect, 0, len(layout))
 	if !native {
 		for key, r := range layout {
-			// courtroom and viewport are CONTAINERS, not widgets: the canvas
-			// contains everything by definition and AO2 overlays the chatbox, the
-			// shouts and the desk on the stage on purpose (courtroom.cpp:3301).
-			// Counting either as occupied would refuse almost every stock rect and
-			// leave a theme that declares only those two — the exact case the
-			// backstop exists for — with no courtroom at all.
+			// courtroom and viewport are containers, and AO2 overlays chatbox, shouts and desk on the stage on purpose
+			// (courtroom.cpp:3301); counting them as occupied would refuse nearly every stock rect.
 			if key == ao2CanvasKey || key == ao2ViewportKey {
 				continue
 			}
@@ -118,8 +58,7 @@ func applyAO2DefaultRects(layout map[string]theme.Rect) {
 	}
 }
 
-// rectHitsAny reports whether r overlaps any of rs. Plain integer comparisons on
-// a slice built once per theme apply — this is not a draw path.
+// rectHitsAny reports whether r overlaps any of rs.
 func rectHitsAny(r theme.Rect, rs []theme.Rect) bool {
 	for _, o := range rs {
 		if r.X < o.X+o.W && o.X < r.X+r.W && r.Y < o.Y+o.H && o.Y < r.Y+r.H {

@@ -14,8 +14,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// The built-in About page: who made AsyncAO, why, and the original
-// developers this client owes everything to.
+// The built-in About page: who made AsyncAO and the original developers it builds on.
 const (
 	aboutRepoURL     = "https://github.com/SyntaxNyah/AsyncAO"
 	aboutAO2URL      = "https://github.com/AttorneyOnline/AO2-Client"
@@ -26,11 +25,9 @@ const (
 	aboutDROURL      = "https://github.com/Killing-Fever-Online/DRO-Client"
 	aboutKFOURL      = "https://github.com/Killing-Fever-Online/KFO-Client"
 	aboutSDLMixerURL = "https://github.com/libsdl-org/SDL_mixer"
-	// aboutMascotPx is the on-screen (logical) size of the Mayo portrait, drawn in
-	// the Mayo section; the texture is Catmull-Rom downscaled to this exact size.
+	// aboutMascotPx is the on-screen (logical) size of the Mayo portrait; the texture is downscaled to exactly this.
 	aboutMascotPx = int32(200)
-	// Reading-column + card geometry. The prose is constrained to a comfortable
-	// measure (not stretched edge-to-edge on wide windows) and centered.
+	// Reading-column and card geometry: prose is held to a readable measure and centered.
 	aboutMaxColW  = 760 // max reading-column width
 	aboutParaGap  = 12  // vertical space between paragraphs / blocks
 	aboutCardGap  = 12  // vertical space between credit cards
@@ -50,10 +47,7 @@ const (
 	abAccent                       // an accent-coloured call to action
 )
 
-// aboutBlock is one unit of About prose. The text is stored UN-wrapped (full
-// paragraphs); the renderer reflows it to the current column width. The wording
-// is identical to the old hard-wrapped lines — only the line breaks are gone, so
-// the page reads as paragraphs at any width.
+// aboutBlock is one unit of About prose, stored unwrapped; the renderer reflows it to the column width.
 type aboutBlock struct {
 	kind aboutBlockKind
 	text string
@@ -85,9 +79,7 @@ var aboutBlocks = []aboutBlock{
 	{abAccent, "Pull requests, bug fixes and feature requests are welcome!"},
 }
 
-// aboutLink is one row in the About link list. A blank url marks a SECTION HEADER
-// (a card title) — so the list renders as titled cards; the items under it are
-// clickable buttons.
+// aboutLink is one row in the About link list; a blank url marks a section header (a card title).
 type aboutLink struct {
 	label string
 	url   string
@@ -107,7 +99,7 @@ var aboutLinks = []aboutLink{
 	{"Artwork", ""},
 	{"hlenbchan — Mayo mascot & app icon artist (Instagram)", aboutArtistURL},
 
-	// Every dependency, linked + credited. All AGPL-v3-compatible free software.
+	// Every dependency, linked and credited.
 	{"Open-source dependencies — Go libraries (all free software)", ""},
 	{"coder/websocket — WebSocket client (ISC)", "https://github.com/coder/websocket"},
 	{"golang.org/x/image — image scaling & codecs (BSD-3)", "https://pkg.go.dev/golang.org/x/image"},
@@ -144,8 +136,7 @@ type aboutFlatLine struct {
 	gap    int32 // extra vertical space BEFORE this line (paragraph spacing)
 }
 
-// buildAboutFlat reflows every prose block to colW. Cached by width in drawAbout
-// so it runs only on a resize, never per frame.
+// buildAboutFlat reflows every prose block to colW; cached by width in drawAbout so it runs only on resize.
 func (a *App) buildAboutFlat(c *Ctx, colW int32) []aboutFlatLine {
 	out := make([]aboutFlatLine, 0, len(aboutBlocks)*3)
 	bulletIndent := c.TextWidth("•  ")
@@ -190,8 +181,7 @@ func (a *App) drawAbout(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
 
-	// --- header band ---------------------------------------------------------
-	// Content starts below the app-chrome band (#14, chrometop.go).
+	// Header band: content starts below the app-chrome band (chrometop.go).
 	hdrY := a.topChromeH() + pad
 	c.Heading(pad, hdrY, "About AsyncAO", ColText)
 	if c.Button(sdl.Rect{X: w - 90 - pad, Y: hdrY, W: 90, H: btnH}, "Back") {
@@ -203,7 +193,7 @@ func (a *App) drawAbout(w, h int32) {
 	c.Fill(sdl.Rect{X: 0, Y: top - 10, W: w, H: 1}, ColPanelHi) // hairline under the header
 	viewH := h - top - pad
 
-	// --- centered reading column --------------------------------------------
+	// Centered reading column.
 	colW := w - 2*pad - scrollBarW - 2*pad
 	colW = value.Clamp(colW, 200, aboutMaxColW)
 	x0 := (w - scrollBarW - colW) / 2
@@ -211,8 +201,7 @@ func (a *App) drawAbout(w, h int32) {
 		x0 = pad
 	}
 
-	// Reflow only when the column width changes (off the hot path, but kept
-	// alloc-free per frame per this repo's UI bar).
+	// Reflow only when the column width changes.
 	if a.aboutFlat == nil || a.aboutFlatW != colW {
 		a.aboutFlat = a.buildAboutFlat(c, colW)
 		a.aboutFlatW = colW
@@ -226,7 +215,7 @@ func (a *App) drawAbout(w, h int32) {
 		mayoBlock = mayoLogH + 12
 	}
 
-	// --- total content height (prose + portrait + link cards) ---------------
+	// Total content height (prose, portrait and link cards).
 	contentH := int32(0)
 	for _, fl := range a.aboutFlat {
 		contentH += fl.gap + lineH
@@ -247,10 +236,8 @@ func (a *App) drawAbout(w, h int32) {
 	a.aboutScroll -= c.WheelIn(sdl.Rect{X: 0, Y: top, W: w, H: viewH}) * scrollStepPx
 	a.aboutScroll = value.Clamp(a.aboutScroll, 0, maxScroll)
 
-	// #31: pushClip (not a raw SetClipRect) so hovering() honours the clip —
-	// a link Button or the Mayo portrait scrolled behind the header must not
-	// hit-test in its hidden half (raw clips draw-only, so the click leaked
-	// past the edge — the class that shipped the v1.55.8 char-select bug).
+	// pushClip, not a raw SetClipRect, so hovering() honours the clip: a link or the portrait scrolled behind the
+	// header must not hit-test in its hidden half (raw clips are draw-only).
 	clip := sdl.Rect{X: 0, Y: top, W: w, H: viewH}
 	clipPrev, clipHad := c.pushClip(clip)
 	defer c.popClip(clipPrev, clipHad)
@@ -269,12 +256,12 @@ func (a *App) drawAbout(w, h int32) {
 		y += lineH
 	}
 
-	// --- credit cards --------------------------------------------------------
+	// Credit cards.
 	y += aboutParaGap
 	for _, g := range aboutLinkGroups() {
 		y += aboutCardGap
 		ch := g.height(lineH)
-		// Only draw + hit-test a card while any of it is on screen.
+		// Only draw and hit-test a card while any of it is on screen.
 		if y+ch > top && y < top+viewH {
 			card := sdl.Rect{X: x0, Y: y, W: colW, H: ch}
 			c.Fill(card, cardColor())
@@ -289,11 +276,8 @@ func (a *App) drawAbout(w, h int32) {
 				if bw > colW-2*aboutCardPad {
 					bw = colW - 2*aboutCardPad
 				}
-				// #31: the per-button on-screen guard is gone — pushClip now
-				// gates the hit-test through hovering(), so a link scrolled
-				// behind the header no longer clicks in its hidden half. The
-				// outer card cull still skips fully off-screen cards (a pure
-				// draw optimization).
+				// No per-button guard: pushClip gates the hit-test through hovering(); the card cull only skips
+				// drawing.
 				if c.Button(sdl.Rect{X: x0 + aboutCardPad, Y: ry, W: bw, H: btnH}, it.label) {
 					openBrowser(it.url)
 				}
@@ -303,13 +287,11 @@ func (a *App) drawAbout(w, h int32) {
 		y += ch
 	}
 
-	// #234: let any loose bouncing Mayos roam the reading area, drawn on top of
-	// the content and confined to the scroll viewport (the active clip) so they
-	// don't scribble over the header / Back button.
+	// Loose bouncing Mayos roam the reading area, confined to the scroll viewport (the active clip).
 	a.updateAndDrawRoamers(c, mayoTex, clip)
 }
 
-// Pet-the-gopher easter egg (#234).
+// Pet-the-gopher easter egg.
 const (
 	mayoWiggleDur   = 520 * time.Millisecond  // portrait wiggle time after a pet
 	mayoWiggleDeg   = 7.0                     // peak wiggle angle (degrees)
@@ -317,12 +299,8 @@ const (
 	mayoCaptionRise = int32(34)               // px the caption drifts up over its life
 )
 
-// drawMayoPortrait draws the About Mayo portrait and runs the #234 easter egg:
-// clicking her "pets" her — bumping a session counter, wiggling the art and
-// floating a caption. It ONLY hit-tests while the portrait is actually on screen
-// in the scroll viewport (the same guard the About link buttons use), so a click
-// where she WOULD be while scrolled off never pets invisibly. About is off the
-// hot path, so the fmt/label allocations here are fine.
+// drawMayoPortrait draws the About Mayo portrait and runs the pet easter egg: clicking her bumps a session counter,
+// wiggles the art and floats a caption. It only hit-tests while the portrait is on screen in the scroll viewport.
 func (a *App) drawMayoPortrait(c *Ctx, tex *sdl.Texture, dst sdl.Rect) {
 	if tex == nil {
 		return
@@ -342,8 +320,7 @@ func (a *App) drawMayoPortrait(c *Ctx, tex *sdl.Texture, dst sdl.Rect) {
 		_ = c.Ren.Copy(tex, nil, &dst)
 	}
 
-	// #31: no on-screen guard — the enclosing pushClip makes hovering() ignore
-	// hits in the portrait's scrolled-out half, so a raw hit-test is correct.
+	// No on-screen guard: the enclosing pushClip makes hovering() ignore hits in the scrolled-out half.
 	if c.hovering(dst) {
 		tip := "Pet Mayo!"
 		if a.mayoPets > 0 {
@@ -371,10 +348,7 @@ func (a *App) drawMayoPortrait(c *Ctx, tex *sdl.Texture, dst sdl.Rect) {
 	}
 }
 
-// mayoPetFlavor is the playful caption for the Nth pet — a milestone fires at its
-// EXACT count (so it flashes as you cross it), and every other pet just shows the
-// running count. A big pile of milestones, several nodding to Maya Fey lore
-// (burgers, spirit channelling, the Steel Samurai).
+// mayoPetFlavor is the caption for the Nth pet: a milestone fires at its exact count, others show the running count.
 func mayoPetFlavor(n int) string {
 	switch n {
 	case 1:
@@ -426,8 +400,7 @@ func mayoPetFlavor(n int) string {
 	}
 }
 
-// mayoRoamer is a loose bouncing Mayo spawned by the #234 easter egg: it drifts
-// across the About screen DVD-logo style, bouncing off the edges and spinning.
+// mayoRoamer is a loose bouncing Mayo spawned by the pet easter egg; it bounces off the About edges and spins.
 type mayoRoamer struct {
 	x, y   float64 // top-left, screen space
 	vx, vy float64 // px/sec
@@ -436,7 +409,7 @@ type mayoRoamer struct {
 	size   int32   // drawn square size
 }
 
-// Roaming-Mayo tuning (#234). Everything bounded per the repo's no-unbounded rule.
+// Roaming-Mayo tuning; everything bounded (hard rule 4).
 const (
 	maxRoamingMayos  = 24                    // cap on the loose-Mayo pile (oldest drops out when full)
 	roamerSize       = int32(72)             // drawn size of a roaming Mayo
@@ -446,8 +419,7 @@ const (
 	roamerDtCap      = 60 * time.Millisecond // clamp dt so leaving + returning to About can't teleport them
 )
 
-// spawnMayoRoamer launches a new bouncing Mayo from the portrait centre. Bounded:
-// at the cap the oldest roamer drops out so the pile can't grow without limit.
+// spawnMayoRoamer launches a new bouncing Mayo from the portrait centre; at the cap the oldest drops out.
 func (a *App) spawnMayoRoamer(from sdl.Rect) {
 	ang := rand.Float64() * 2 * math.Pi
 	speed := roamerMinSpeed + rand.Float64()*roamerSpeedRange
@@ -467,9 +439,8 @@ func (a *App) spawnMayoRoamer(from sdl.Rect) {
 	a.mayoRoamers = append(a.mayoRoamers, r)
 }
 
-// updateAndDrawRoamers advances every loose Mayo (bouncing off box, spinning) and
-// draws it, confined to box (the About scroll viewport). dt is clamped so a
-// tab-away doesn't fling them; when none are loose it just re-stamps the clock.
+// updateAndDrawRoamers advances every loose Mayo and draws it confined to box (the About scroll viewport).
+// dt is clamped so a tab-away doesn't fling them; when none are loose it just re-stamps the clock.
 func (a *App) updateAndDrawRoamers(c *Ctx, tex *sdl.Texture, box sdl.Rect) {
 	if len(a.mayoRoamers) == 0 || tex == nil {
 		a.mayoRoamAt = a.now()
@@ -526,8 +497,7 @@ func (g aboutLinkGroup) height(lineH int32) int32 {
 var aboutGroupsCache []aboutLinkGroup
 
 // aboutLinkGroups parses aboutLinks into titled cards once: a blank-url entry
-// starts a new card (its label is the title); url entries are that card's items.
-// Items before the first header (the AsyncAO repo link) form an untitled card.
+// aboutLinkGroups parses aboutLinks into titled cards once: a blank-url entry starts a card, url entries are its items.
 func aboutLinkGroups() []aboutLinkGroup {
 	if aboutGroupsCache != nil {
 		return aboutGroupsCache
@@ -550,8 +520,7 @@ func aboutLinkGroups() []aboutLinkGroup {
 	return aboutGroupsCache
 }
 
-// openBrowser launches the system browser with a per-OS shellout (SDL_OpenURL
-// replaces it in the platform step of the SDL3 move).
+// openBrowser launches the system browser with a per-OS shellout.
 func openBrowser(url string) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {

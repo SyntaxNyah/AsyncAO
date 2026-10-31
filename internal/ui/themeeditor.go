@@ -1,29 +1,9 @@
 package ui
 
-// THE THEME EDITOR (v1.90.0 W7a) — docs/wip/THEME-EDITOR-DESIGN.md §Q7 and §3.
-//
-// One concern: the SCREEN. The document it edits lives in themeeditordoc.go, the
-// timeline in themeeditorop.go, the property rows in themeeditorinspector.go; this
-// file owns the pixels, the input and the screen's own lifecycle.
-//
-// A REAL SCREEN WHOSE CONTENT IS THE COURTROOM, NOT AN INSET PREVIEW. The editor
-// draws the live courtroom at FULL WINDOW SIZE with two translucent rails floating
-// over it, so you edit at exactly the size the theme will play — 1:1, no mode hop
-// for pixel work (the brief's requirement 1). Insetting the canvas would mean
-// teaching fitDesignCanvas about reserved bands, and that function is shared with
-// char select by product decision and is pinned by TestCharSelectCanvasHonoursThemeFit
-// — the constraint produced the better product.
-//
-// Hold SPACE and both rails drop to editRailPeekAlpha so you see the pure frame.
-// AN ALPHA CHANGE, NEVER A CLIP CHANGE, deliberately: the macOS blank-chatbox hunt
-// established that SDL clip timing is backend-specific (Metal evaluates at USE
-// time), so a peek that collapsed a clip is a class of bug this surface simply does
-// not open.
-//
-// ZERO COST WHEN CLOSED. App carries ONE pointer, a.te, nil while the editor is
-// shut. Nothing on the courtroom's frame path reads it, no goroutine, no timer, no
-// allocation — the v1.89.0 "0 base = 0 cost" rule, benchmarked rather than asserted
-// by TestClosedThemeEditorCostsNothing.
+// The theme editor screen: the live courtroom at full window size with two translucent rails over it.
+// Insetting the canvas would teach fitDesignCanvas, which char select shares, about reserved bands.
+// The Space peek changes alpha, never clip: SDL clip timing is backend-specific (Metal evaluates at use time).
+// A closed editor costs one nil pointer, a.te, which the courtroom's frame path does not read.
 
 import (
 	"strconv"
@@ -35,29 +15,18 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
-// ---------------------------------------------------------------------------
-// Named caps and metrics (hard rule 9)
-// ---------------------------------------------------------------------------
-
 const (
-	// themeSelCap bounds the selection AND any bulk op's children. A FIXED ARRAY on
-	// the editor, never a slice: the selection is walked every frame to outline what
-	// is picked, and a []selRef would allocate on a gated path.
+	// themeSelCap bounds the selection and bulk ops; a fixed array because a slice would allocate on the per-frame
+	// walk.
 	themeSelCap = 64
 
-	// editRailW is both rails' width. Wide enough for a label plus a value control at
-	// the chrome font, narrow enough that two of them still leave a 4:3 canvas
-	// readable at 1280 px.
+	// editRailW is both rails' width: fits a label and value, and two still leave a 4:3 canvas readable at 1280 px.
 	editRailW = 232
 
-	// editBannerH matches layoutBannerH so the editor's header band lines up with the
-	// legacy overlay editors' banner — the same band, in the same place, whichever
-	// tool you came from.
+	// editBannerH matches layoutBannerH so the header lines up with the legacy overlay editors' banner.
 	editBannerH = 26
 
-	// editRailAlpha / editRailPeekAlpha are the rails' plate alpha normally and while
-	// Space is held. 38 is faint enough to read the frame through and solid enough
-	// that the rails do not appear to have been deleted.
+	// editRailAlpha and editRailPeekAlpha are the rail plate alpha normally and while Space is held.
 	editRailAlpha     = 235
 	editRailPeekAlpha = 38
 
@@ -68,40 +37,24 @@ const (
 	// editToggleW is the eye / lock hit box on a rail row.
 	editToggleW = 18
 
-	// editFieldRowH is one inspector row's height, and editFieldLabelW how much of it
-	// the label takes.
+	// editFieldRowH is one inspector row's height; editFieldLabelW is the label's share of it.
 	editFieldRowH   = 22
 	editFieldLabelW = 84
 	// editStepW is a ± stepper button.
 	editStepW = 18
 
-	// editRectSpinStep / editRectSpinCoarse are the ± amounts a numeric stepper moves
-	// per click: one unit, and one grid line when Shift is held. LayoutGridPx is the
-	// editors' shared grid, so a typed nudge lands on the same lattice a snapped drag
-	// does.
+	// editRectSpinStep and editRectSpinCoarse are the stepper's amounts: one unit, or one grid line with Shift held.
 	editRectSpinStep   = 1
 	editRectSpinCoarse = layoutGridDesign
 
-	// editorHeaderBtnW / editorHeaderBtnGap size the header band's button row (Fonts,
-	// Undo, Redo, Save, Back), laid out from the right edge.
-	//
-	// PACKAGE-LEVEL rather than local to the draw, because the band's geometry is what a
-	// gate has to press to prove the header behaves — and a gate that hard-coded 62
-	// would stop pressing the button the day the row was re-spaced, silently.
+	// editorHeaderBtnW and editorHeaderBtnGap size the header button row, laid out from the right edge.
 	editorHeaderBtnW   = 62
 	editorHeaderBtnGap = 4
-	// editorHeaderBtnLabelInsetY / editorHeaderBtnLabelPadX place the label a DISABLED
-	// header button draws for itself (Ctx.Button is not called on that arm, so its own
-	// centring is not available). The Y inset puts the label on the band's own label
-	// baseline — the band draws its name at y=5 and the buttons' tops sit at y=2 — and
-	// the X pad is the 8 px Ctx.Button clamps its label to inside the same box.
+	// Placement of the label a disabled header button draws itself, since Ctx.Button is not called for it.
 	editorHeaderBtnLabelInsetY = 3
 	editorHeaderBtnLabelPadX   = 8
 
-	// editRailAddBtnW / editRailLiveBtnW size the element rail's two header buttons
-	// (v1.90.0 W10): "+ Image" and the Live/Frozen toggle. Measured against the
-	// rail's own width — editRowPad + "Elements" is about 66 px at the chrome face,
-	// and 74 + 56 + the two gaps leaves that intact at editRailW.
+	// editRailAddBtnW and editRailLiveBtnW size the element rail's two header buttons, leaving room for "Elements".
 	editRailAddBtnW  = 74
 	editRailLiveBtnW = 56
 
@@ -109,126 +62,70 @@ const (
 	editStatusMs = 4000
 )
 
-// ---------------------------------------------------------------------------
-// themeEditor — the screen's own state, alive only while the screen is open
-// ---------------------------------------------------------------------------
-
-// themeEditor is everything the editor screen needs. It is allocated by
-// openThemeEditor and released by closeThemeEditor, which is what makes the closed
-// editor cost exactly one nil pointer.
+// themeEditor is the screen's state; it exists only while open, so a closed editor costs one nil pointer.
 type themeEditor struct {
 	doc  *themeDoc
 	ring themeEditRing
 
-	// editorReturn is where Back goes. The editor carries its OWN return target
-	// rather than joining prevScreen (App.prevScreen is one field written at many
-	// sites; the editor keeps its own on the struct that owns the session).
+	// editorReturn is where Back goes.
 	editorReturn Screen
 
-	// sel is the selection: a FIXED array (see themeSelCap).
+	// sel is the selection (see themeSelCap).
 	sel  [themeSelCap]editTarget
 	selN int
-	// drag is the live canvas gesture (themeeditorcanvas.go). A VALUE: it is born
-	// and dies with the press, and its base rects ride inside it.
+	// drag is the live canvas gesture, alive only during the press.
 	drag editGesture
 
 	// railScroll is the element rail's scroll offset in pixels.
 	railScroll int32
 	// peek is Space-held: both rails drop to editRailPeekAlpha.
 	peek bool
-	// exitAt stamps a Back press that found unsaved edits. The SECOND press inside
-	// the chip's own window discards them — a confirmation that costs no modal, in a
-	// screen the design allows exactly two of (and W7a spends neither).
+	// exitAt stamps a Back press with unsaved edits; a second press within the chip's window discards them.
 	exitAt time.Time
-	// copyAt stamps a Save press that found a theme this client may not write. The
-	// SECOND press inside themeCopyConfirmWindow copies it into the user's own
-	// themes folder and saves there (themecopy.go) — the same no-modal confirmation
-	// exitAt is, for the other refusal a Save can produce.
+	// copyAt stamps a Save press on a read-only theme; a second press within themeCopyConfirmWindow saves a copy.
 	copyAt time.Time
-	// save is the in-flight write (themeeditorsave.go). One at a time, by
-	// construction: the channel is the flag.
+	// save is the in-flight write; non-nil means one is running, so there is only ever one.
 	save *editSaveJob
-	// export is the in-flight .aotheme bundle (themeexport.go). Same shape and
-	// same reason as save: the pointer IS the single-flight flag, and a second
-	// Share while one runs is refused with a chip rather than racing it.
+	// export is the in-flight .aotheme bundle; non-nil means running, and a second Share is refused with a chip.
 	export *editExportJob
 
-	// picks caches the inspector's two DYNAMIC pick lists (themeeditorpick.go). On the
-	// editor, not on App, so it dies with the screen — the closed-editor cost stays one
-	// nil pointer.
+	// picks caches the inspector's two dynamic pick lists; it lives here so it dies with the screen.
 	picks pickCache
 
-	// gallery is the PRESET GALLERY panel (themegallery.go), the surface design §3.1
-	// has owed since W7 and editorPanelUp's own comment names. A POINTER, and the
-	// pointer IS the open flag: it carries a bounded miniature cache and a one-deep
-	// preset undo, and neither should exist for a session that never opens it.
+	// gallery is the preset gallery panel; non-nil means open, and it holds a bounded miniature cache and one-deep
+	// undo.
 	gallery *themeGallery
 
-	// report is the IMPORT REPORT panel (themereportpanel.go), design §3.1's other
-	// owed surface and the reader App.themeReport did not have until W9. A POINTER
-	// for the same reason gallery is: it carries a 224-entry baked line array, and a
-	// session that never opens it should pay one nil pointer.
+	// report is the import report panel; non-nil means open.
 	report *themeReportPanel
-	// reportChip / reportChipN are the rail chip's BAKED label and the note count it
-	// was baked for. On the editor rather than inside the panel because the chip is
-	// drawn whether or not the panel is open, and the rail draws every frame: built
-	// at the draw it would be a per-frame concat inside editorChromeAllocBudget.
+	// reportChip and reportChipN are the chip's baked label and note count, so the per-frame rail draw does not concat.
 	reportChip  string
 	reportChipN int
 
-	// image is the one in-flight IMAGE INTAKE (thememediaintake.go). Same shape and
-	// same reason as `font`: the pointer IS the single-flight flag, and the channel
-	// is buffered so the goroutine never blocks on an editor that closed.
+	// image is the in-flight image intake; non-nil means running, and a buffered channel never blocks its goroutine.
 	image *editImageJob
 
-	// preview is the PREVIEW view state (themeeditorpreview.go): the canned offline
-	// demo, played full-bleed with every piece of editing chrome gone. A POINTER,
-	// and the pointer IS the flag — the shape `gallery` and `report` already use,
-	// for the same reason: it carries a whole offline session and a room, and a
-	// session that never presses the button should pay one nil pointer.
-	//
-	// DISTINCT FROM livePaused BELOW, deliberately. That is a FREEZE switch whose
-	// value is that its off state does LESS work; this is a player whose whole job
-	// is to do more. One control cannot honestly mean both.
+	// preview is the offline demo played full-bleed with no editing chrome; non-nil means playing.
+	// Distinct from livePaused, which freezes to do less work; this plays to do more.
 	preview *editorPreview
 
-	// livePaused is the LIVE PREVIEW toggle, stored INVERTED so the zero value is
-	// the live behaviour every session before this one had (the rule 4 shape a
-	// theme.Element field already follows: absent means version 1). See
-	// editorLiveOn / drawEditorHeader for what it gates and why the OFF state is
-	// the cheap one.
+	// livePaused is the live preview toggle, inverted so the zero value is live.
 	livePaused bool
 
-	// fontsOpen / font / fontNames are the FONT RAIL (themeeditorfonts.go): whether the
-	// panel is up, the one in-flight face copy (the pointer is the flag, exactly as
-	// `save` is), and the cycler's reusable name buffer.
+	// Font rail state: panel up, the in-flight face copy (non-nil means running), and the cycler's reusable name
+	// buffer.
 	fontsOpen bool
 	font      *editFontJob
 	fontNames []string
 
-	// status / statusAt are the rail chip: what just happened, and when. The chip is
-	// how a refused cap or a graveyard-full delete says so out loud (design §3.3:
-	// name the offender, name the limit, offer the fix — never a bare "failed").
+	// status and statusAt are the rail chip: what just happened, and when.
 	status   string
 	statusAt time.Time
 }
 
-// ---------------------------------------------------------------------------
-// Lifecycle
-// ---------------------------------------------------------------------------
-
-// openThemeEditor arms the editor over the applied theme.
-//
-// IT DISARMS THE TWO LEGACY OVERLAY EDITORS FIRST. They edit PREFERENCES
-// (ThemeRectOverrides / ClassicLayout); this edits a theme DOCUMENT. Two tools, two
-// scopes, never armed simultaneously — layouteditlock_test.go enforces the
-// exclusion, and arming without this would leave the courtroom fenced by an editor
-// nobody can see.
-//
-// ok=false when the applied theme has no native tier to edit yet. That is not an
-// error and it is not a dead end: copy-for-editing is the answer, and the Settings
-// row draws THAT button instead of this one when it applies (themecopy.go's
-// themeEditorRow). Opening an editor over nothing is the one thing this must not do.
+// openThemeEditor arms the editor over the applied theme, after disarming the two legacy overlay editors.
+// Those edit preferences and this edits a theme document, so they are never armed together.
+// Returns false when the theme has no native tier to edit; the Settings row offers copy-for-editing instead.
 func (a *App) openThemeEditor(from Screen) bool {
 	if a.themeSidecar == nil {
 		return false
@@ -239,50 +136,33 @@ func (a *App) openThemeEditor(from Screen) bool {
 	if a.layoutEdit {
 		a.stopLayoutEdit()
 	}
-	// Every return-to-top modal goes down with them: an editor armed under a modal is
-	// the hard lock the Esc ladder's own comment describes.
+	// Modals close too: an editor armed under a modal locks up the Esc handling.
 	a.closeEditorBlockingOverlays()
 	if !a.armThemeEditor(from) {
 		return false
 	}
 	a.screen = ScreenThemeEditor
 	a.uiDirty = true
-	// The catalog is what says WHERE this theme lives and whether it is ours to write
-	// (themeCatalogEntry.Origin), which is the question Save asks. Kicked here rather
-	// than at the save so the answer is already on hand when the button is pressed;
-	// the scan is off-thread and floored, so an editor opened twice costs one walk.
+	// Save needs the catalog's answer on whether this theme is writable; the scan is off-thread and rate limited.
 	a.requestThemeCatalog(themeScanOnOpen)
 	return true
 }
 
-// armThemeEditor builds the editor state over the applied theme. SDL-FREE, and that
-// is why it is split out: openThemeEditor's overlay teardown needs a renderer, so a
-// headless gate that had to re-implement this half would be a second construction
-// path — the exact drift the encapsulation rule forbids.
+// armThemeEditor builds the editor state over the applied theme, without SDL so headless callers use the same path.
 func (a *App) armThemeEditor(from Screen) bool {
 	name, _ := a.d.Prefs.Load().Theme()
 	doc := newThemeDoc(name, a.themeSidecar)
 	if doc == nil {
 		return false
 	}
-	// The document is bound to the APPLIED design map, because an [overrides] edit
-	// has to move a pixel as well as write a row (themeDoc.live).
+	// Bound to the applied design map: an [overrides] edit must move a pixel as well as write a row.
 	doc.bindLive(a.themeRects)
 	a.te = &themeEditor{doc: doc}
 	a.te.editorReturn = from
 	return true
 }
 
-// requestEditorExit is what Back and the Esc ladder call. It is the ONE place the
-// editor can be left, so "unsaved edits cannot vanish silently" is a property of the
-// exit rather than a rule every caller has to remember.
-//
-// A CLEAN DOCUMENT LEAVES IMMEDIATELY. A dirty one arms: the first press posts the
-// chip, a second press inside its window discards. That is a confirmation without a
-// modal — the design allows exactly two in the whole editor and spends both
-// elsewhere (copy-to-edit, delete-theme), so a third one here would be the modal
-// misery requirement 10 forbids. Saving first clears `dirty`, so Save-then-Back is
-// one press each.
+// requestEditorExit is the only exit: a clean document leaves at once, a dirty one needs a second press in the window.
 func (a *App) requestEditorExit() {
 	if a.te == nil {
 		return
@@ -293,9 +173,7 @@ func (a *App) requestEditorExit() {
 	}
 	if !a.te.exitAt.IsZero() && time.Since(a.te.exitAt) < editStatusMs*time.Millisecond {
 		a.te.doc.restoreBaseline()
-		// The GEOMETRY half of putting the baseline back on screen. The ART half — the
-		// media plan the bake resolves each element's page out of — is reconciled by
-		// closeThemeEditor below, for every exit at once.
+		// Restores geometry; closeThemeEditor below reconciles the art for every exit.
 		a.invalidateThemeCanvases()
 		a.closeThemeEditor()
 		return
@@ -304,39 +182,15 @@ func (a *App) requestEditorExit() {
 	a.te.note("unsaved edits — press Save, or Back again to discard them")
 }
 
-// closeThemeEditor releases the editor and returns to wherever it was opened from.
-//
-// The document is dropped, NOT the model: a.themeSidecar and doc.side are the same
-// *theme.Sidecar, so whatever the document holds at this moment stays live in the
-// applied theme. That is what makes "Save, then Back" leave the saved theme on
-// screen and "Back, Back" leave the theme it opened over — requestEditorExit has
-// already put the baseline back in the second case.
-//
-// AND THAT IS WHY THE ART IS RECONCILED HERE, on the way out. The model the app keeps
-// drawing is whatever the document holds RIGHT NOW, so the media plan has to agree with
-// it right now — and this is the last moment anything can make it, because dropping a.te
-// is what stops drawThemeEditor (and with it the per-frame editorSyncArt) from ever
-// running again. The discard-on-exit restore is the case that proved it: restoreBaseline
-// moves the model back, invalidateThemeCanvases only drops the geometry caches, and the
-// courtroom went on drawing the EDITED plan — a generator element whose orphaned tile
-// pruneEditorGenTiles had already released could draw nothing at all until the user
-// switched themes and back. Here rather than in requestEditorExit's discard arm because
-// a.te = nil lives in exactly one function (deliberately — themeeditorop.go's note on the
-// ring), so the one function is the only place that covers the clean exit, the
-// canvas-left exit and whatever W8 adds by construction rather than by remembering.
-//
-// A CLEAN EXIT PAYS ONE HASH AND A COMPARE (themeeditorart.go's settled path), which is
-// what makes covering all of them affordable.
+// closeThemeEditor releases the editor and returns to where it was opened from.
+// The model stays live because a.themeSidecar and doc.side are the same *theme.Sidecar.
+// Art is reconciled here: dropping a.te ends the per-frame editorSyncArt, and this is the only place that clears it.
+// Skipping it after a discard leaves the courtroom drawing the edited plan, possibly with tiles already released.
 func (a *App) closeThemeEditor() {
 	if a.te == nil {
 		return
 	}
-	// THE PAUSE IS LIFTED FIRST. Live preview off is a VIEW state of the open editor
-	// (editorLiveOn), and this is the last instant anything can reconcile the plan
-	// with the model — dropping a.te is what stops the frame from ever running
-	// again. A paused exit that skipped the sync would leave the courtroom drawing a
-	// plan the document has moved past, which is precisely the class the second call
-	// site in themeeditorart.go exists to close.
+	// Lift the pause first: a paused exit that skipped the sync would leave the courtroom drawing a stale plan.
 	a.te.livePaused = false
 	a.editorSyncArt()
 	back := a.te.editorReturn
@@ -348,50 +202,22 @@ func (a *App) closeThemeEditor() {
 	a.uiDirty = true
 }
 
-// themeEditorOpen reports the editor being armed AND on screen. Two questions
-// rather than one, for the same reason editorDrawSiteRuns exists: a.te outlives any
-// frame where App.Frame preempts the screen dispatch (gif export, replay, the scene
-// maker), and on those frames the editor must not be eating the keyboard.
+// themeEditorOpen reports the editor armed and on screen; on frames preempting the dispatch it must not eat the
+// keyboard.
 func (a *App) themeEditorOpen() bool {
 	return a.te != nil && a.screen == ScreenThemeEditor && !a.screenDispatchPreempted()
 }
 
-// ---------------------------------------------------------------------------
-// The mutation funnel — every edit in the UI goes through exactly this
-// ---------------------------------------------------------------------------
-
-// editorApply performs one op and records it. It is the ONLY place the screen
-// mutates the document.
-//
-// The three steps are inseparable and that is the point: apply (which fills in the
-// inverse), push (which makes it undoable), invalidate (which re-bakes the geometry
-// the edit is expressed in). A call site that did two of the three would produce an
-// edit that either cannot be undone or cannot be seen.
-//
-// PREVIEW REFUSES HERE, at the funnel, and not only at the input paths that feed
-// it. The demo hides every rail and neutralizes every click inside its own pass
-// (themeeditorpreview.go), so nothing SHOULD reach this — which is exactly why the
-// refusal belongs at the one place all of them converge rather than at seven doors
-// that each have to remember. Preview is a view state; a view state that could
-// write the document would be a mode.
+// editorApply performs and records one op; it is the only place the screen mutates the document.
+// Apply, push and invalidate go together, or the edit could not be undone or could not be seen.
+// Preview refuses here because every input path converges here.
 func (a *App) editorApply(op themeEditOp) bool {
 	if a.te == nil || op.kind == opNone || a.editorPreviewOn() {
 		return false
 	}
 	done, res := a.te.doc.apply(op)
 	if res != applyDone {
-		// THE CHIP FIRES ONLY FOR applyRefused, and the reason is a defect this arm
-		// used to have: it exempted opElemField by KIND, which silenced element drags
-		// and left every other kind chipping on its no-ops too. A widget drag holding
-		// still — i.e. every real human drag, on the frames the hand is not moving —
-		// asks applySlotRect for the rect it already holds, and so does every frame a
-		// drag sits against clampDesignRectToCanvas: those posted "a cap or a lock is
-		// in the way" for four seconds, naming a limit that was not there.
-		//
-		// The kind is no longer the question; the ANSWER is (editApplyResult). A real
-		// theme.OverrideCap / theme.ElementCap / graveyard-full refusal still says so
-		// out loud — design §3.3: name the offender, name the limit, never a bare
-		// "failed" — and a no-op stays as quiet as it always should have been.
+		// Only a real refusal chips: a drag holding still asks for the rect it already holds, which is a quiet no-op.
 		if res == applyRefused {
 			a.te.note("this " + op.kind.String() + " was refused — a cap or a lock is in the way")
 		}
@@ -403,33 +229,11 @@ func (a *App) editorApply(op themeEditOp) bool {
 	return true
 }
 
-// ---------------------------------------------------------------------------
-// LIVE PREVIEW — the toggle, and the one predicate that gates it
-// ---------------------------------------------------------------------------
-
-// editorLiveOn reports the live preview being on. TRUE when there is no editor at
-// all, so a caller outside the screen never has to special-case the closed state.
-//
-// WHAT "LIVE" ALREADY MEANT, AND WHAT THIS ADDS. The canvas has been a real
-// courtroom render since W7a and the art has re-derived per edit since W7b
-// (themeeditorart.go), so the preview was never the missing half — what was missing
-// was a way to STOP it. Every keystroke in a numeric field re-bakes the layout, and
-// every keystroke in a generator's params rasterises a fresh 256 KiB tile and
-// releases the old one (pruneEditorGenTiles' own note). On a big theme, on a slow
-// machine, that is the whole editing experience: type a digit, wait for the frame.
-//
-// So the toggle FREEZES the canvas rather than enabling it. Off, the document goes
-// on taking edits — the rails, the inspector, undo and Save are untouched — and the
-// picture simply stops re-baking until the toggle goes back on, which reconciles
-// once (setEditorLive). The frozen state is the CHEAP one by construction: the
-// gates below return before the signature hash and before the invalidate, so a
-// paused editor does exactly the work an idle one does. That is the zero-cost-closed
-// discipline, and it is the direction that makes the toggle worth having — a toggle
-// whose off-state still rebaked in the background would be a label.
+// editorLiveOn reports the live preview on; true with no editor so callers need not special-case the closed state.
+// Off freezes the canvas only: edits still land, and the checks return before the signature hash and the invalidate.
 func (te *themeEditor) editorLiveOn() bool { return te == nil || !te.livePaused }
 
-// editorInvalidateLive is invalidateThemeCanvases, gated by the toggle. One
-// spelling, so a future edit path cannot forget the gate and re-bake anyway.
+// editorInvalidateLive is invalidateThemeCanvases, skipped while the preview is frozen.
 func (a *App) editorInvalidateLive() {
 	if !a.te.editorLiveOn() {
 		return
@@ -437,12 +241,8 @@ func (a *App) editorInvalidateLive() {
 	a.invalidateThemeCanvases()
 }
 
-// setEditorLive flips the toggle and, on the way back ON, pays the one reconcile
-// the frozen frames skipped.
-//
-// THE RESUME IS UNCONDITIONAL, not "if anything changed": the plan's signature is
-// exactly what says whether anything changed (editorSyncArt compares it), and this
-// is the one moment the answer has to be re-asked rather than trusted.
+// setEditorLive flips the toggle; turning on always reconciles, since editorSyncArt's signature decides if anything
+// changed.
 func (a *App) setEditorLive(on bool) {
 	if a.te == nil {
 		return
@@ -457,15 +257,8 @@ func (a *App) setEditorLive(on bool) {
 	a.uiDirty = true
 }
 
-// editorUndo steps the timeline back by one op — or by one whole GROUP, which is
-// what makes "try a preset, hate it, Ctrl+Z" one keypress.
-//
-// IT REFUSES WHILE PREVIEW IS UP, and so does editorRedo below. The two are the
-// only document mutators that do NOT go through editorApply, and the Ctrl+Z chord
-// is claimed PRE-SCREEN (app.go, gated on themeEditorOpen) — so without this a
-// chord typed at the demo would silently rewind work the author cannot see. The
-// chord is still CONSUMED by editorUndoChord either way, which is its whole
-// promise: a key an armed editor owns never also fires whatever else it is bound to.
+// editorUndo steps back one op or one whole group; it refuses during preview, as does editorRedo.
+// Neither goes through editorApply and Ctrl+Z is claimed pre-screen, so the demo could otherwise rewind unseen work.
 func (a *App) editorUndo() bool {
 	if a.te == nil || a.editorPreviewOn() {
 		return false
@@ -529,17 +322,12 @@ func (a *App) editorRedo() bool {
 	return moved
 }
 
-// ---------------------------------------------------------------------------
-// Selection — a fixed array, never a slice
-// ---------------------------------------------------------------------------
-
 func (e *themeEditor) selectOnly(t editTarget) {
 	e.selN = 0
 	e.selectAdd(t)
 }
 
-// selectAdd appends unless the target is already selected or the array is full. A
-// FULL SELECTION REFUSES rather than growing: the array is the cap (hard rule 4).
+// selectAdd appends unless already selected or full; the array is the cap (hard rule 4).
 func (e *themeEditor) selectAdd(t editTarget) {
 	if !t.armed() {
 		return
@@ -571,13 +359,7 @@ func (e *themeEditor) selectToggle(t editTarget) {
 
 func (e *themeEditor) selectClear() { e.selN = 0 }
 
-// selectPrimary makes an ALREADY-SELECTED target the one the inspector follows and
-// the one a multi-drag is led by, by swapping it to the front.
-//
-// A swap rather than a re-select, because a press on one member of a multi-selection
-// must not throw the rest away — that is precisely the gesture "grab this box and
-// move all five" is made of. A target that is not selected at all is selected alone,
-// which is what a plain press on a fresh box means.
+// selectPrimary swaps a selected target to the front, keeping the rest so a multi-drag works; else it selects it alone.
 func (e *themeEditor) selectPrimary(t editTarget) {
 	for i := 0; i < e.selN; i++ {
 		if e.sel[i] != t {
@@ -599,8 +381,7 @@ func (e *themeEditor) selectedIs(t editTarget) bool {
 	return false
 }
 
-// primary is the selection the inspector follows: the FIRST, so a Shift-click that
-// adds a second element does not re-point the rail the user is reading.
+// primary is the first selection, so a Shift-click adding a second does not re-point the inspector.
 func (e *themeEditor) primary() editTarget {
 	if e.selN == 0 {
 		return noTarget()
@@ -614,30 +395,18 @@ func (e *themeEditor) note(msg string) {
 	e.statusAt = time.Now()
 }
 
-// ---------------------------------------------------------------------------
-// Draw
-// ---------------------------------------------------------------------------
-
-// drawThemeEditor is the screen. Canvas first, then the header band, then the two
-// rails — painter's order, so the rails float over the frame rather than reserving
-// space from it.
+// drawThemeEditor draws the canvas, then the header, then the rails, so the rails float over the frame.
 func (a *App) drawThemeEditor(w, h int32) {
 	if a.te == nil {
-		// The screen is armed with no editor: leave rather than draw an empty shell.
-		// Reachable only through a state restore that set a.screen directly.
+		// Reachable only through a state restore that set a.screen directly: leave rather than draw an empty shell.
 		a.screen = ScreenSettings
 		return
 	}
 	c := a.ctx
-	// Space PEEKS. Held, not toggled: a peek you have to switch off is a mode, and
-	// the whole point is to glance.
+	// Space peeks only while held.
 	a.te.peek = c.keyHeld(sdl.K_SPACE) && c.focusID == ""
-	// THE FILE BROWSER'S FENCE IS RAISED HERE and released at the very end, right
-	// before the browser draws — the same release-and-restore drawSettings uses, and
-	// for the same reason: everything behind a modal must be click-dead while its own
-	// rows must not be. It is raised BEFORE the key handler and the canvas, which is
-	// the half a fence raised later would miss: the canvas is a real courtroom and
-	// eats arrows, and editorCanvasInput hit-tests with raw pointIn.
+	// modalOn goes up before keys and canvas for the file browser: the canvas eats arrows and hit-tests with raw
+	// pointIn.
 	if demoBrowser.open {
 		c.modalOn = true
 	}
@@ -645,42 +414,24 @@ func (a *App) drawThemeEditor(w, h int32) {
 	a.pollEditorFont()
 	a.pollEditorExport()
 	a.pollEditorImage()
-	// PREVIEW PREEMPTS THE WHOLE SCREEN (field batch 9). It is a VIEW STATE, so it
-	// returns here — above the key handler, the canvas input, the overlay and both
-	// rails — and every one of them is hidden by NOT RUNNING rather than by being
-	// asked to hide itself. That is the only version of "hides all editing chrome"
-	// that stays true when the next rail is added.
-	//
-	// BELOW the poll cluster, deliberately: a save or an export started before
-	// Preview was pressed must still land while the demo plays, or the chip that
-	// says so would arrive minutes late. The two polls that MUTATE THE DOCUMENT
-	// (font, image) hold their finished job instead of landing it — they carry that
-	// rule themselves rather than depending on this ordering, see pollEditorFont.
+	// Preview returns above the key handler, canvas input and rails, so they are hidden by not running.
+	// Below the polls so a running save or export still lands; the font and image polls hold their results themselves.
 	if a.editorPreviewOn() {
 		a.te.peek = false
 		a.drawEditorPreviewScreen(w, h)
 		return
 	}
-	// THE KEYS ARE CLAIMED FIRST, before the canvas draws, and that ordering is the
-	// same one layoutnudge.go hoisted the legacy nudge out of a draw body for. This
-	// screen's canvas IS the courtroom, and the courtroom's own plain-arrow consumers
-	// — the IC/OOC recall rings, the pair-ghost offset nudge, the emote-preview
-	// cycler — run inside it. An editor key handler that ran after the canvas would be
-	// handed a key that was already spent.
+	// Keys are claimed before the canvas: it is the courtroom, whose arrow consumers would otherwise spend the key
+	// first.
 	a.handleEditorKeys()
-	// THE ART IS RECONCILED BEFORE THE CANVAS DRAWS, because the canvas is what bakes
-	// it: an element's page comes out of a.themeMediaPlan BY INDEX, and every fill row
-	// in the inspector (and every add and delete) changes what that index should
-	// resolve to. Here rather than in editorApply so undo, redo, a grouped paste and
-	// the discard-on-exit restore are covered by the same line — see themeeditorart.go.
+	// Art is reconciled before the canvas bakes it, because element pages resolve from a.themeMediaPlan by index.
+	// Here rather than in editorApply so undo, redo, grouped paste and discard are all covered.
 	a.editorSyncArt()
 
 	lay := a.themeWindowLayout(w, h)
 	a.drawEditorCanvas(w, h)
-	// THE CANVAS MAY HAVE LEFT. drawCourtroom sends the app to the lobby when the
-	// session drops mid-frame, and the editor has to follow it out rather than paint
-	// two rails over a lobby — with the screen it chose, not the one the editor was
-	// opened from, because a dropped connection is not a Back press.
+	// drawCourtroom may have moved to the lobby on a dropped session: follow to that screen, since it is not a Back
+	// press.
 	if a.screen != ScreenThemeEditor {
 		to := a.screen
 		a.closeThemeEditor()
@@ -688,32 +439,16 @@ func (a *App) drawThemeEditor(w, h int32) {
 		return
 	}
 	a.editorCanvasInput(w, h, lay)
-	// THE CACHE IS RE-ASKED FOR between the input and the overlay. Every geometry
-	// edit invalidates it (the layout is derived from the very rects the drag moves),
-	// so the outlines below would otherwise be drawn from the pre-edit numbers and
-	// the box would visibly lag the cursor by one frame. This is the ~40-rect rebuild
-	// per moved frame the legacy overlay editor already pays for the same reason.
+	// Fetched again after input: every geometry edit invalidates the layout, and stale outlines would lag the cursor.
 	lay = a.themeWindowLayout(w, h)
 	a.drawEditorCanvasOverlay(w, h, lay)
 	a.drawEditorHeader(w)
-	// BACK MAY HAVE LEFT. drawEditorHeader's own Back button closes the editor, and
-	// every rail below dereferences a.te — so without this a press on Back with a clean
-	// document is a nil dereference on the render thread rather than an exit.
+	// Back may have closed the editor, and every rail below dereferences a.te.
 	if a.te == nil {
 		return
 	}
-	// THE PANEL FENCE, RAISED HERE AND RELEASED BELOW (design §3.1: every editor
-	// surface but the two modals is a panel under the demoBrowser release-and-restore
-	// fence, so what is behind it goes click-dead without stranding modalOn).
-	//
-	// The rails are what needs it: editorFontPanelRect centres the panel over the
-	// canvas, and below ~928 px it overlaps a rail outright, so a press on a font row's
-	// `<` also reached drawEditorElementRow's ClickedIn underneath. modalOn blanks
-	// hovering(), which is what ClickedIn, Button and WheelIn are all built on.
-	//
-	// The HEADER is deliberately outside the fence and drew above: the panel's own rect
-	// starts below editBannerH by construction, so nothing behind it is at risk there —
-	// and fencing it would kill the Fonts button that closes the panel.
+	// modalOn over the rails while a panel is up: the centred panel can overlap a rail, and a click would reach both.
+	// The header stays outside: the panel starts below editBannerH, and blocking it would kill the Fonts close button.
 	savedModal := c.modalOn
 	if a.editorPanelUp() {
 		c.modalOn = true
@@ -721,49 +456,24 @@ func (a *App) drawThemeEditor(w, h int32) {
 	a.drawEditorElementRail(w, h)
 	a.drawEditorInspector(w, h)
 	c.modalOn = savedModal
-	// LAST, so the panel floats over both rails — it is a panel and not a modal
-	// (design §3.1), so the surface behind it keeps drawing and the theme keeps
-	// animating while a face is picked. It draws with the fence RELEASED, which is what
-	// makes its own buttons live while everything behind them is not.
+	// Drawn last with modalOn released, so panels float over the rails and their own buttons stay live.
 	a.drawEditorFontPanel(w, h)
 	a.drawThemeGallery(w, h)
 	a.drawThemeReportPanel(w, h)
-	// THE FILE BROWSER DRAWS LAST AND TOPMOST (v1.90.0 W10), with the fence released
-	// exactly as drawSettings releases it: it is the browse half of the image
-	// intake, and it is the one surface here that IS a modal rather than a panel —
-	// everything behind it must be click-dead while it is up, and its own rows must
-	// not be. It no-ops when closed, so the editor pays one bool for having it.
+	// The file browser is the one true modal here, so it draws topmost with modalOn released for its own rows.
 	if demoBrowser.open {
 		c.modalOn = false
 	}
 	a.drawDemoBrowser(w, h)
 }
 
-// editorPanelUp reports that an editor PANEL is on screen.
-//
-// ONE PREDICATE FOR BOTH HALVES OF THE FENCE, so the two can never disagree about when
-// it is up. The draw raises c.modalOn over the rails (hovering() honours it); the
-// canvas probe hit-tests with RAW pointIn and therefore sees through every fence, so
-// editorCanvasInput has to ask the same question in its own words — exactly as it
-// already does for the compact toolbox.
-//
-// OPEN to the panels design §3.1 still owes (budget details, export sheet): each joins
-// the OR here and is fenced on both sides for free — the preset gallery and the import
-// report took exactly that route in W9.
-// CLOSED against the two MODALS, which are not panels — they close the screen's input
-// path rather than floating over it.
+// editorPanelUp reports a panel on screen; the draw and the raw-pointIn canvas probe both ask it.
+// The two modals are not panels: they close the screen's input path rather than float over it.
 func (a *App) editorPanelUp() bool {
 	return a.te != nil && (a.te.fontsOpen || a.te.gallery != nil || a.te.report != nil)
 }
 
-// closeEditorPanels shuts whatever editorPanelUp reports. THE PREDICATE'S INVERSE, and
-// it lives beside it so the two are read together: a panel added to the OR above and
-// not closed here would be a panel Esc walks past — which is exactly the hole the Fonts
-// panel had (app.go's ScreenThemeEditor arm).
-//
-// It closes ALL of them rather than "the top one", because the editor has no panel
-// stack: design §3.1's panels are alternatives, never layers, and a "topmost" that is
-// really a one-element set is a z-order nobody maintains.
+// closeEditorPanels shuts all editorPanelUp reports, since panels never stack; one missing here is skipped by Esc.
 func (a *App) closeEditorPanels() {
 	if a.te == nil {
 		return
@@ -774,27 +484,12 @@ func (a *App) closeEditorPanels() {
 	a.uiDirty = true
 }
 
-// drawEditorCanvas paints what the theme looks like RIGHT NOW, full bleed.
-//
-// TWO ARMS, because the editor is reachable from Settings with no server attached
-// and "you must join a courtroom before you may edit your theme" is not an
-// acceptable sentence. With a live room it is the real courtroom pass, 1:1. Without
-// one it is the theme's fitted design canvas with every editable slot and every
-// free element outlined in place — the geometry, at the exact size it will play,
-// which is what the geometry work needs. The live-art offline preview room is
-// W7b's (it must be built through newRoom, which is the one construction site).
+// drawEditorCanvas paints the theme full bleed: the real courtroom with a live room, else the fitted geometry canvas.
 func (a *App) drawEditorCanvas(w, h int32) {
 	if a.room != nil && a.sess != nil && !a.theaterOn {
-		// THE COURTROOM'S OWN WIDGETS GO INERT while it is being used as a canvas.
-		// This is layoutEditFence's trick — modalOn blanks hovering() everywhere and
-		// the editor hit-tests with raw pointIn — and it is needed for the same
-		// reason: the kit is single-pass, so a press that selects a themed widget
-		// would ALSO press whatever real button is painted there.
-		//
-		// A BRACKET, not an assignment: an open dropdown belonging to the RAILS holds
-		// modalOn legitimately, and forcing it false on the way out would drop its
-		// fence and let the click behind it through. (app.go's own toolbox-under-an-
-		// editor arm saves and restores for exactly this reason.)
+		// Courtroom widgets go inert while used as a canvas: the kit is single-pass, so a select press would also press
+		// them.
+		// Save and restore, not assign: a rail's open dropdown may hold modalOn legitimately.
 		saved := a.ctx.modalOn
 		a.ctx.modalOn = true
 		a.drawCourtroom(w, h)
@@ -804,8 +499,7 @@ func (a *App) drawEditorCanvas(w, h int32) {
 	a.drawEditorGeometryCanvas(w, h)
 }
 
-// drawEditorGeometryCanvas is the session-free arm: the canvas outline, every
-// editable AO2 slot, and every free element, all in design geometry at 1:1.
+// drawEditorGeometryCanvas is the session-free arm, drawn in design geometry at 1:1.
 func (a *App) drawEditorGeometryCanvas(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
@@ -815,35 +509,25 @@ func (a *App) drawEditorGeometryCanvas(w, h int32) {
 			"This theme has no courtroom_design.ini canvas to lay out.", ColTextDim)
 		return
 	}
-	// The canvas itself, and nothing else: every editable widget and every element is
-	// outlined by drawEditorCanvasOverlay, which runs over BOTH arms so the two can
-	// never disagree about what is selectable or where its handles are.
+	// Only the canvas: drawEditorCanvasOverlay outlines widgets and elements over both arms, so they agree on hit
+	// areas.
 	if court, ok := lay.rect("courtroom"); ok {
 		c.Border(court, ColPanelHi)
 	}
 }
 
-// drawEditorHeader is the top band: the theme's name, the dirty state, undo/redo
-// and Back.
+// drawEditorHeader is the top band: theme name, dirty state, action buttons and Back.
 func (a *App) drawEditorHeader(w int32) {
 	c := a.ctx
 	band := sdl.Rect{X: 0, Y: 0, W: w, H: editBannerH}
-	// The band is OURS this frame, so the menu bar stands down (menubar.go's
-	// menuBarPaintsNow) — the same publication both legacy editors make from the
-	// statement that fills their banner. Without it an opaque 22 px strip paints over
-	// Undo / Redo / Save / Back after the screen dispatch.
+	// The band is ours this frame, so the menu bar stands down; otherwise its opaque strip paints over these buttons.
 	a.noteEditorBanner()
 	c.Fill(band, a.te.editorPlate(ColPanel))
 	name := a.te.doc.name
 	if name == "" {
 		name = "(unnamed theme)"
 	}
-	// THE TWO LABEL COLUMNS ARE CLAMPED AGAINST THE BUTTON ROW (field batch 9). They
-	// were w/3 and w/4 flat, which at 1280 px stopped just short of the row's left
-	// edge — the measurement this file's own note about a "ninth and tenth button"
-	// records. The wide Preview button moves that edge left, so the columns are told
-	// where it is instead of being trusted to stay clear of it. Never WIDER than
-	// before (the clamp only ever shrinks), so nothing that fitted stops fitting.
+	// The label columns are clamped against the button row, which the wide Preview button moves left.
 	edge := editorPreviewBtnRect(w).X - editorHeaderBtnGap
 	nameW := clampLabelColumn(w/3, editRowPad, edge)
 	if nameW > 0 {
@@ -864,11 +548,7 @@ func (a *App) drawEditorHeader(w int32) {
 	if c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Save") {
 		a.editorSave()
 	}
-	// THE TWO TIMELINE BUTTONS ARE GATED ON THE RING, which is what themeEditRing's
-	// canUndo / canRedo exist to say: they are the enabled state of exactly these two
-	// controls. A Redo that looks live with an empty tail is a button lying about what
-	// the app can do — and the empty tail is the ordinary state, because every fresh
-	// edit truncates it (themeEditRing.push).
+	// Disabled with an empty timeline, the ordinary Redo state because every fresh edit truncates it.
 	x -= btnW + btnGap
 	if a.editorHeaderBtn(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Redo", a.te.ring.canRedo()) {
 		a.editorRedo()
@@ -881,16 +561,8 @@ func (a *App) drawEditorHeader(w int32) {
 	if c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Fonts") {
 		a.te.fontsOpen = !a.te.fontsOpen
 	}
-	// THE IMAGE AND LIVE BUTTONS ARE NOT HERE, and that is a measurement rather than
-	// a preference. This band already carries seven buttons at editorHeaderBtnW plus
-	// the theme name (w/3) and the saved-state label (w/4); at 1280 px the two
-	// columns meet at 752 and the button row starts at 818, so a ninth and tenth
-	// button would draw straight over the name. They live on the ELEMENT RAIL
-	// instead (drawEditorElementRail), which is where they belong anyway: both act
-	// on the element list — one adds to it, the other decides whether it re-bakes.
-	// GALLERY (v1.90.0 W9) — the 21 x 14 preset grid. Beside Fonts because they are
-	// the same kind of thing: a panel that changes the whole theme at once, as
-	// against the rails, which change one row.
+	// Image and Live live on the element rail: at 1280 px two more buttons here would draw over the theme name.
+	// Gallery sits beside Fonts: both are panels that change the whole theme at once.
 	x -= btnW + btnGap
 	if c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Gallery") {
 		if a.te.gallery != nil {
@@ -899,33 +571,18 @@ func (a *App) drawEditorHeader(w int32) {
 			a.openThemeGallery()
 		}
 	}
-	// SHARE (v1.90.0 W8). It sits in the header rather than behind a menu because
-	// "hand this to a friend" is the whole point of having authored a theme, and a
-	// feature reachable only by knowing it exists is one nobody uses. The two
-	// modes and the whole zip live in themeexport.go.
 	x -= btnW + btnGap
 	if c.Button(sdl.Rect{X: x, Y: 2, W: btnW, H: editBannerH - 4}, "Share") {
 		a.editorExport()
 	}
-	// PREVIEW (field batch 9) — the headline control, and the one button in this
-	// band that is not the size of the others. It plays a canned offline scene over
-	// the real theme with every rail, handle and guide gone, which is the only way
-	// an author sees what a player will see; a small toggle beside six others would
-	// have been the least discoverable place in the client to put that.
-	//
-	// Beside Share because they are the two things you do with a finished theme —
-	// look at it, then hand it over — and LEFTMOST because the wide box has to grow
-	// away from the row rather than push it (editorPreviewBtnRect).
+	// Preview grows leftward from the row instead of pushing it (editorPreviewBtnRect).
 	if c.Button(editorPreviewBtnRect(w), editorPreviewEnterLabel) {
 		a.toggleEditorPreview()
 	}
 }
 
-// clampLabelColumn is one header label column's clip width: what it asked for, cut
-// off at the pixel the button row starts. NEGATIVE means the column has no room at
-// all, which the caller must treat as "draw nothing" — LabelClipped reads a
-// non-positive width as "no clip" rather than as "nothing fits" (the clipNowhere
-// trap editorHeaderBtn's own guard names), so the decision cannot be left to it.
+// clampLabelColumn is a label column's clip width, cut at the button row; callers must draw nothing when non-positive,
+// because LabelClipped reads a non-positive width as no clip.
 func clampLabelColumn(want, x, edge int32) int32 {
 	if lim := edge - x; want > lim {
 		want = lim
@@ -933,35 +590,18 @@ func clampLabelColumn(want, x, edge int32) int32 {
 	return want
 }
 
-// editorHeaderBtn is one header-band button whose action may be unavailable.
-//
-// A disabled control DRAWS DIM AND STAYS PUT rather than disappearing — the
-// disabled-not-absent rule menubar.go states and the content panel's source picker
-// already follows (drawContentSourcePicker's `seg`). A button that vanished with an
-// empty timeline would re-flow the whole band under the pointer, and "where did Redo
-// go?" is a worse question than a grey Redo.
-//
-// THE CLICK IS SWALLOWED HERE, at the button, not at the action. An action that
-// quietly no-ops is indistinguishable on screen from one that ran and did nothing
-// visible, which is exactly how a redo tail that stopped being reachable would go
-// unnoticed; refusing at the door keeps the answer in one place.
+// editorHeaderBtn is a header button that dims when disabled instead of vanishing, which would re-flow the band.
+// The click is swallowed here so the action never quietly no-ops.
 func (a *App) editorHeaderBtn(r sdl.Rect, label string, enabled bool) bool {
 	c := a.ctx
 	if enabled {
 		return c.Button(r, label)
 	}
-	// ColPanel, not the plate: an enabled Ctx.Button fills ColPanel, so only the
-	// border and the label change between the two states — the dim reads as the SAME
-	// button, greyed, rather than as a different widget.
+	// ColPanel as an enabled Ctx.Button fills, so it reads as the same button greyed.
 	c.Fill(r, ColPanel)
 	c.Border(r, ColPanelHi)
 	w := c.TextWidth(label)
-	// `maxW > 0` is Ctx.Button's own guard (ui.go), carried here for the same
-	// reason it exists there: a caller handing this a rect narrower than the pad
-	// would otherwise clamp the label to a NON-POSITIVE width, which LabelClipped
-	// reads as "no clip" rather than as "nothing fits" — the clipNowhere trap in a
-	// second place. Unreachable from the two live call sites (both pass
-	// editorHeaderBtnW), and that is exactly when a guard is cheap.
+	// maxW > 0 as in Ctx.Button: LabelClipped reads a non-positive width as no clip rather than nothing fits.
 	if maxW := r.W - editorHeaderBtnLabelPadX; w > maxW && maxW > 0 {
 		w = maxW
 	}
@@ -969,10 +609,7 @@ func (a *App) editorHeaderBtn(r sdl.Rect, label string, enabled bool) bool {
 	return false
 }
 
-// editorLiveLabel is the Live button's caption. Two package constants rather than a
-// formatted string, for the reason editorStateLabel gives below: the label cache
-// keys on the string, so a value built per frame would rasterise a fresh texture
-// sixty times a second.
+// editorLiveLabel is the Live button's caption; constants because the label cache keys on the string.
 func editorLiveLabel(on bool) string {
 	if on {
 		return "Live"
@@ -980,8 +617,7 @@ func editorLiveLabel(on bool) string {
 	return "Frozen"
 }
 
-// editorImageBtnLabel is the rail's add-an-image caption, busy or idle. Two
-// constants, same reason as editorLiveLabel.
+// editorImageBtnLabel is the rail's add-image caption, constants for the same reason as editorLiveLabel.
 func editorImageBtnLabel(busy bool) string {
 	if busy {
 		return "adding…"
@@ -989,10 +625,7 @@ func editorImageBtnLabel(busy bool) string {
 	return "+ Image"
 }
 
-// editorStateLabel is the one-word answer to "is my work safe". A CONSTANT string
-// per state rather than a formatted one: it sits in the header of every frame, and
-// the label cache keys on the string, so a value that changed per frame would
-// rasterise a fresh texture sixty times a second.
+// editorStateLabel is the saved state; one constant per state because the label cache keys on the string.
 func (te *themeEditor) editorStateLabel() string {
 	switch {
 	case te.save != nil:
@@ -1003,8 +636,7 @@ func (te *themeEditor) editorStateLabel() string {
 	return "Saved"
 }
 
-// editorPlate is a rail/band plate colour at the current peek alpha. ONE function,
-// so the peek can never apply to one surface and not another.
+// editorPlate is a plate colour at the current peek alpha, shared so the peek applies to every surface.
 func (te *themeEditor) editorPlate(base sdl.Color) sdl.Color {
 	base.A = editRailAlpha
 	if te != nil && te.peek {
@@ -1013,12 +645,9 @@ func (te *themeEditor) editorPlate(base sdl.Color) sdl.Color {
 	return base
 }
 
-// drawEditorElementRail is the LEFT rail: the z-order list.
-//
-// Clipped with pushClip/popClip and NEVER with a raw Ren.SetClipRect — the raw call
-// clips DRAW only and lets clicks and hovers leak past the edge, which is the class
-// of bug the char-select grid shipped in v1.55.8. hovering() honours the kit's clip
-// stack; the renderer's does not.
+// drawEditorElementRail is the left rail: the z-order list.
+// Use pushClip, never raw Ren.SetClipRect: the raw call clips drawing only, and hovering() honours only the kit's
+// stack.
 func (a *App) drawEditorElementRail(w, h int32) {
 	c := a.ctx
 	rail := sdl.Rect{X: 0, Y: editBannerH, W: editRailW, H: h - editBannerH}
@@ -1026,23 +655,18 @@ func (a *App) drawEditorElementRail(w, h int32) {
 	c.Label(editRowPad, rail.Y+4, "Elements", ColText)
 	a.drawEditorRailActions(rail)
 
-	// The report chip claims its row out of the BODY, not out of the footer, so a
-	// theme with notes shows one row fewer of elements rather than drawing the chip
-	// over the element count (design §3.1: the chip lives in the rail footer).
+	// The report chip takes a row from the body so it does not draw over the element count.
 	chipH := int32(0)
 	if len(a.themeReport) > 0 {
 		chipH = editRowH
 	}
 	body := sdl.Rect{X: rail.X, Y: rail.Y + editRowH, W: rail.W, H: rail.H - editRowH*2 - chipH}
 	n := a.te.doc.elementCount()
-	// The wheel BEFORE the clip, and through WheelIn — the kit's single-consumer
-	// wheel: taking it here means the courtroom underneath cannot also scroll from the
-	// same notch, which is what "one wheel, one consumer" is for.
+	// Through WheelIn before the clip, so the courtroom underneath cannot also scroll from the same notch.
 	if d := c.WheelIn(body); d != 0 {
 		a.te.railScroll -= d * editRowH
 	}
-	// Clamped after the take, so a theme that shrank does not strand the list scrolled
-	// past its own end with nothing to scroll back to.
+	// Clamped after the take, so a theme that shrank does not strand the list past its end.
 	if maxScroll := int32(n)*editRowH - body.H; a.te.railScroll > maxScroll {
 		a.te.railScroll = maxScroll
 	}
@@ -1059,39 +683,21 @@ func (a *App) drawEditorElementRail(w, h int32) {
 	}
 	c.popClip(prev, had)
 
-	// Footer: the count against the cap, so "why can I not add another" is answered
-	// before it is asked, and above it the import-report chip (design §3.1) when
-	// this client noticed anything about the theme.
+	// Footer: the count against the cap, with the import report chip above it when there are notes.
 	foot := rail.Y + rail.H - editRowH
 	a.drawEditorReportChip(rail, foot-chipH)
 	c.LabelClipped(editRowPad, foot+3, rail.W-editRowPad*2,
 		strconv.Itoa(n)+" / "+strconv.Itoa(theme.ElementCap)+" elements", ColTextDim)
-	// The status chip stacks ABOVE the report chip rather than at a fixed offset from
-	// the footer: with both drawn at foot-editRowH a theme with notes would paint a
-	// red refusal straight over the button that explains them.
+	// Status stacks above the report chip, or a refusal would paint over the button explaining the notes.
 	if a.te.status != "" && time.Since(a.te.statusAt) < editStatusMs*time.Millisecond {
 		c.LabelClipped(editRowPad, foot-chipH-editRowH+3, rail.W-editRowPad*2, a.te.status, ColDanger)
 	}
 }
 
-// drawEditorRailActions draws the element rail's header buttons: ADD AN IMAGE, and
-// the LIVE PREVIEW toggle.
-//
-// ON THE RAIL RATHER THAN THE HEADER BAND. The band is full (drawEditorHeader's own
-// note measures it), and this is the better home regardless: the rail is the
-// element list, "+ Image" is the one act that adds to it, and the Live toggle
-// decides whether the list re-bakes as you edit. Both are one press from the list
-// they act on instead of across the window from it.
-//
-// "+ IMAGE" IS THE FIRST ADD-AN-ELEMENT AFFORDANCE IN THE EDITOR. Until this wave
-// opElemAdd had no UI caller at all — it existed only as the inverse of a delete —
-// so an element could be deleted, hidden, locked and re-typed but never created. It
-// is a real gap and this closes it for the kind users asked for; the other five
-// kinds are still reached by re-typing an element in the inspector.
+// drawEditorRailActions draws + Image and the live toggle; other element kinds come from re-typing in the inspector.
 func (a *App) drawEditorRailActions(rail sdl.Rect) {
 	c := a.ctx
-	// Laid out from the RIGHT edge so the "Elements" label keeps the left and the
-	// two buttons cannot push each other off the rail as their labels change.
+	// Laid out from the right so the buttons cannot push each other off the rail as labels change.
 	live := a.te.editorLiveOn()
 	liveR := sdl.Rect{
 		X: rail.X + rail.W - editRowPad - editRailLiveBtnW,
@@ -1101,15 +707,10 @@ func (a *App) drawEditorRailActions(rail sdl.Rect) {
 	}
 	imgR := sdl.Rect{X: liveR.X - editRailAddBtnW - editRowPad/2, Y: liveR.Y, W: editRailAddBtnW, H: liveR.H}
 	if c.Button(imgR, editorImageBtnLabel(a.te.image != nil)) {
-		// THE SAME FUNNEL A DRAG ENTERS BY (thememediaintake.go): this opens the in-app
-		// browser bound to purposeThemeImage, whose pick calls editorTakeImage. There is
-		// no second intake path, so browsing and dropping cannot diverge about the
-		// caps, the destination or the budget verdict.
+		// Browsing uses the same intake as a drag (editorTakeImage), so caps and destination cannot diverge.
 		a.openDemoBrowserFor(purposeThemeImage)
 	}
-	// The label carries the STATE, not the verb: a toggle labelled with what it
-	// would do reads as the opposite of its own state half the time. Both strings
-	// are package constants, so the rail still costs no allocation per frame.
+	// The label shows the state, not the verb; both strings are constants, so no per-frame allocation.
 	if c.Button(liveR, editorLiveLabel(live)) {
 		a.setEditorLive(!live)
 	}
@@ -1129,9 +730,7 @@ func (a *App) drawEditorElementRow(idx int, r sdl.Rect) {
 	lockR := sdl.Rect{X: r.X + r.W - editToggleW - editRowPad, Y: r.Y + 1, W: editToggleW, H: r.H - 2}
 	eyeR := sdl.Rect{X: lockR.X - editToggleW - 2, Y: lockR.Y, W: editToggleW, H: lockR.H}
 
-	// DRAW THE WHOLE ROW FIRST, then take the input. The obvious order (handle the
-	// toggle, return early) leaves the row half-painted for exactly the frame the user
-	// clicked it on — the one frame they are looking at it.
+	// Draw the whole row before taking input, or it is half-painted on the frame it was clicked.
 	label := el.ID
 	if label == "" {
 		label = el.Kind.String()
@@ -1144,8 +743,7 @@ func (a *App) drawEditorElementRow(idx int, r sdl.Rect) {
 	c.Label(eyeR.X+4, r.Y+3, eyeGlyph(el.Hidden), ColTextDim)
 	c.Label(lockR.X+4, r.Y+3, lockGlyph(el.Locked), ColTextDim)
 
-	// The two toggles are probed BEFORE the row, so their hit boxes win: they sit
-	// inside the row's own rect, and ClickedIn consumes, so the order IS the priority.
+	// Toggles are probed first: they sit inside the row and ClickedIn consumes, so order is priority.
 	switch {
 	case c.ClickedIn(eyeR):
 		a.editorApply(mutateElemField(t, editFieldHidden, editValueBool(!el.Hidden)))
@@ -1163,9 +761,7 @@ func (a *App) drawEditorElementRow(idx int, r sdl.Rect) {
 	}
 }
 
-// eyeGlyph / lockGlyph are the row's two state characters. ASCII rather than emoji:
-// the rail runs at the chrome face, and a per-frame colour-emoji raster on a list
-// that redraws every frame is exactly the cost the font work spent v1.87.0 removing.
+// eyeGlyph and lockGlyph are the row's state characters; ASCII because a per-frame colour-emoji raster is costly.
 func eyeGlyph(hidden bool) string {
 	if hidden {
 		return "-"
@@ -1180,8 +776,7 @@ func lockGlyph(locked bool) string {
 	return "."
 }
 
-// drawEditorInspector is the RIGHT rail: the declarative property rows for the
-// primary selection.
+// drawEditorInspector is the right rail: the property rows for the primary selection.
 func (a *App) drawEditorInspector(w, h int32) {
 	c := a.ctx
 	rail := sdl.Rect{X: w - editRailW, Y: editBannerH, W: editRailW, H: h - editBannerH}
@@ -1216,30 +811,20 @@ func (a *App) drawEditorInspector(w, h int32) {
 	c.popClip(prev, had)
 }
 
-// drawInspectorTail is what a rail carries BELOW its rows: the widget arm's parity
-// note and its Reset, and the text arm's format-1 note.
-//
-// SEPARATE FROM THE TABLE because neither is a FIELD. Reset is an action (it removes a
-// row rather than setting a value), and the notes are statements about the format. A
-// row invented for either would have to carry a mutator that mutates nothing, which is
-// precisely the shape TestEveryInspectorFieldIsUndoable would then have to be widened
-// to excuse.
+// drawInspectorTail draws what sits below the rows: the widget parity note and Reset, and the text format-1 note.
+// Not table rows because neither is a field: a row would need a mutator that mutates nothing.
 func (a *App) drawInspectorTail(t editTarget, rail sdl.Rect, y int32) int32 {
 	c := a.ctx
 	switch t.space {
 	case spaceDesign:
-		// THE PARITY RULE, STATED WHERE IT BITES (the AO2 full-parity ruling, design §Q1):
-		// a theme may restate an AO2 widget's rect and nothing else about it, so this rail
-		// has one section and always will.
+		// A theme may restate an AO2 widget's rect and nothing else, so this rail has one section.
 		c.LabelClipped(rail.X+editRowPad, y+4, rail.W-editRowPad*2,
 			"AO2 widget — geometry only", ColTextDim)
 		y += editFieldRowH
 		_, authored := a.te.doc.side.OverrideRect(t.designKey())
 		btn := sdl.Rect{X: rail.X + editRowPad, Y: y, W: rail.W - editRowPad*2, H: editFieldRowH - 2}
 		if !authored {
-			// Nothing to reset. Drawn DISABLED rather than hidden, so the control does not
-			// appear and disappear as the user drags — a button that moves is a button that
-			// gets mis-clicked.
+			// Nothing to reset: drawn disabled rather than hidden, so the control does not move during a drag.
 			c.Fill(btn, ColPanelHi)
 			c.LabelClipped(btn.X+4, btn.Y+3, btn.W-8, "Reset to theme (unchanged)", ColTextDim)
 			return y + editFieldRowH
@@ -1253,14 +838,8 @@ func (a *App) drawInspectorTail(t editTarget, rail sdl.Rect, y int32) int32 {
 		if el == nil || el.Kind != theme.ElemText {
 			return y
 		}
-		// THE DOCUMENTED DEFERRAL, SAID OUT LOUD. `font` and `size` are carried and not
-		// drawn in format 1 (docs/THEME-FORMAT.md §3, paintElementText's measurement:
-		// giving each element its own point size means a fontSet rebuild per frame for
-		// every element that shares a panel's face). W4 wrote that down in the format doc
-		// and in the painter; nothing said it where the author sets the value, so setting
-		// `size = 27` and seeing nothing was a discovery rather than an answer. The
-		// [fontbind] rail below the element list is the tier that DOES render, and this
-		// line points at it.
+		// font and size are carried but not drawn in format 1 (docs/THEME-FORMAT.md): a per-element point size would
+		// rebuild the fontSet per frame. The [fontbind] rail is what renders, so this points there.
 		if el.Font != "" || el.Size != 0 {
 			c.LabelClipped(rail.X+editRowPad, y+4, rail.W-editRowPad*2,
 				"font/size are saved, not drawn yet —", ColTierYellow)
@@ -1273,9 +852,7 @@ func (a *App) drawInspectorTail(t editTarget, rail sdl.Rect, y int32) int32 {
 	return y
 }
 
-// drawInspectorRow draws ONE declarative row and routes its edit through the op the
-// row's own `mut` returns. It never writes a field itself — that is the whole
-// contract the table exists to enforce.
+// drawInspectorRow draws one row and routes its edit through the row's mut op; it never writes a field itself.
 func (a *App) drawInspectorRow(f *inspectorField, t editTarget, r sdl.Rect) {
 	c := a.ctx
 	if int(f.kind) >= int(fieldKindCount) {
@@ -1287,7 +864,7 @@ func (a *App) drawInspectorRow(f *inspectorField, t editTarget, r sdl.Rect) {
 		W: r.W - editRowPad*2 - editFieldLabelW, H: r.H - 2}
 	switch f.kind {
 	case fkRect:
-		// Four spinners on one row: x, y, w, h. Narrow, and the value is the readout.
+		// Four spinners on one row: x, y, w, h.
 		cw := ctl.W / 4
 		for lane := 0; lane < 4; lane++ {
 			cell := sdl.Rect{X: ctl.X + int32(lane)*cw, Y: ctl.Y, W: cw - 1, H: ctl.H}
@@ -1303,9 +880,7 @@ func (a *App) drawInspectorRow(f *inspectorField, t editTarget, r sdl.Rect) {
 			a.editorApply(f.mut(t, f.field, editValueInt(d)))
 		}
 	case fkBool:
-		// CheckboxIn returns the NEW value, not "was clicked" — comparing against the
-		// old one is what turns it into an edit, and it is why a click that lands on a
-		// muted row (which returns the value untouched) writes nothing.
+		// CheckboxIn returns the new value, so a click on a muted row, which returns it untouched, writes nothing.
 		if now := c.CheckboxIn(ctl, "", cur.i[0] != 0); now != (cur.i[0] != 0) {
 			a.editorApply(f.mut(t, f.field, editValueBool(now)))
 		}
@@ -1318,9 +893,8 @@ func (a *App) drawInspectorRow(f *inspectorField, t editTarget, r sdl.Rect) {
 		c.Fill(sw, sdl.Color{R: cur.b[0], G: cur.b[1], B: cur.b[2], A: 255})
 		c.Border(sw, ColPanelHi)
 		hexR := sdl.Rect{X: sw.X + sw.W + 2, Y: ctl.Y, W: ctl.W - sw.W - 2, H: ctl.H}
-		// TextField's second result is ENTER, not "changed" — the edit is the string
-		// coming back different, which is also what makes a half-typed hex inert
-		// instead of writing black.
+		// TextField's second result is Enter; comparing the string keeps a half-typed hex inert instead of writing
+		// black.
 		hex := editHex(cur)
 		if s, _ := c.TextField(editFieldID(f.field), hexR, hex, "rrggbbaa"); s != hex {
 			if c, good := parse.HexColor(s); good {
@@ -1338,30 +912,20 @@ func (a *App) drawInspectorRow(f *inspectorField, t editTarget, r sdl.Rect) {
 	}
 }
 
-// drawInspectorPick is an fkPick row: two step buttons that walk the LIVE list, then
-// the value itself as free text.
-//
-// THE TEXT FIELD IS NOT A FALLBACK, it is the row's contract. Every fkPick field is
-// read as free text by the format (see fieldKind's own comment), so a build that has
-// never heard of `generator = ripples` must still be able to hold and re-save that
-// line — and an author must be able to type it. The list is an affordance over the
-// same value, never a gate on it.
+// drawInspectorPick is an fkPick row: two step buttons over the live list, then the value as free text.
+// The text field must stay: the format reads these as free text, so an unknown generator name must still be editable.
 func (a *App) drawInspectorPick(f *inspectorField, t editTarget, ctl sdl.Rect, old string) {
 	c := a.ctx
 	names := a.te.editorPickNames(f.pick)
 	field := ctl
 	if len(names) > 0 {
-		// BOTH BUTTONS ARE ALWAYS DRAWN — never `if back { } else if fwd { }`. Ctx.Button
-		// draws AND answers in one call, so short-circuiting the second one would blank it
-		// for exactly the frame the first was pressed on, which is the frame the user is
-		// looking at it (the element rail's own draw-then-probe rule).
+		// Both buttons always draw: Ctx.Button draws and answers in one call, so short-circuiting would blank the
+		// second.
 		back := c.Button(sdl.Rect{X: ctl.X, Y: ctl.Y, W: editStepW, H: ctl.H}, "<")
 		fwd := c.Button(sdl.Rect{X: ctl.X + editStepW, Y: ctl.Y, W: editStepW, H: ctl.H}, ">")
 		field.X, field.W = ctl.X+editStepW*2, ctl.W-editStepW*2
 		if back || fwd {
-			// WRAP from the CURRENT value's position, and start at "(none)" when the value
-			// is not offered at all — the ordinary case for a name this build has never
-			// heard of, and the one that must not send the picker to a random entry.
+			// Wrap from the current position; a value not on the list starts at "(none)" rather than a random entry.
 			step := 1
 			if back {
 				step = -1
@@ -1380,17 +944,11 @@ func (a *App) drawInspectorPick(f *inspectorField, t editTarget, ctl sdl.Rect, o
 	}
 }
 
-// editorWriteStringField is the ONE path a typed or picked string takes to the
-// document: validate what the FORMAT validates, intern, apply.
-//
-// The validation is here rather than in the setter because a setter cannot say no —
-// it has no return value and the op has already been recorded by the time it runs, so
-// a refusal there is either a silent no-op (an undo step that does nothing) or a
-// truncation nobody was told about. Design §3.3: name the offender, name the limit.
+// editorWriteStringField validates, interns and applies a typed or picked string.
+// Validation is here because a setter cannot refuse: the op is already recorded by the time it runs.
 func (a *App) editorWriteStringField(f *inspectorField, t editTarget, s string) {
 	if f.field == editFieldGenParams {
-		// The FORMAT'S OWN parser, so the editor and the reader cannot disagree about
-		// what fits (theme.ParseGenParams == the reader's genParamsOf).
+		// The format's own parser, so the editor and the reader cannot disagree about what fits.
 		if _, err := theme.ParseGenParams(s); err != nil {
 			a.te.note("gen_params: at most " + strconv.Itoa(theme.GenParamCap) +
 				" k=v pairs, each under " + strconv.Itoa(theme.GenParamRuneCap) + " characters")
@@ -1398,15 +956,7 @@ func (a *App) editorWriteStringField(f *inspectorField, t editTarget, s string) 
 		}
 	}
 	if f.field == editFieldElemID {
-		// ASKED BEFORE IT IS RECORDED. The rename itself happens in the setter, on the
-		// document's own funnel; what happens here is the FORMAT deciding whether it
-		// would be allowed — a taken id, a `[element.<id>]` this build preserved and
-		// ignored, an id outside the reader's grammar — because a setter cannot say no
-		// and a refusal discovered there would leave an undo entry claiming a rename
-		// that never happened.
-		//
-		// The message is theme's own, so the editor cannot quote a grammar or a cap the
-		// format does not actually have.
+		// Asked before recording: a refusal in the setter would leave an undo entry for a rename that never happened.
 		el := a.te.doc.element(t)
 		if el == nil {
 			return
@@ -1424,16 +974,10 @@ func (a *App) editorWriteStringField(f *inspectorField, t editTarget, s string) 
 	a.editorApply(f.mut(t, f.field, editValueStr(id)))
 }
 
-// editFieldID is a widget id for one inspector row. Derived from the FIELD, not
-// from the element, so re-selecting a different element keeps focus on the same row
-// — which is what makes "click through five elements adjusting the same number"
-// bearable.
+// editFieldID is one inspector row's widget id, from the field so focus survives re-selecting another element.
 func editFieldID(f editField) string { return "themeedit.f." + f.String() }
 
-// editorSpinner is a − value + control. Returns the (possibly changed) value.
-//
-// Shift takes the coarse step, so the keyboard rule (arrow = 1 px, Shift = a grid
-// line) and the mouse rule are the same rule.
+// editorSpinner is a - value + control returning the possibly changed value; Shift takes the coarse step.
 func (a *App) editorSpinner(r sdl.Rect, v, lo, hi int32) int32 {
 	c := a.ctx
 	step := int32(editRectSpinStep)
@@ -1462,15 +1006,13 @@ func (a *App) editorEnumCycler(r sdl.Rect, v int32, names []string) int32 {
 	if c.Button(sdl.Rect{X: r.X + r.W - editStepW, Y: r.Y, W: editStepW, H: r.H}, ">") {
 		v++
 	}
-	// WRAP, never clamp: a cycler that stops at the ends makes the last value feel
-	// broken, and every one of these enums is a ring of equals.
+	// Wrap, never clamp: every one of these enums is a ring of equals.
 	n := int32(len(names))
 	v = ((v % n) + n) % n
 	c.LabelClipped(r.X+editStepW+2, r.Y+3, r.W-editStepW*2-4, names[v], ColText)
 	return v
 }
 
-// editHex renders a colour payload as rrggbbaa.
 func editHex(v editValue) string {
 	const digits = "0123456789abcdef"
 	out := make([]byte, 0, 8)
@@ -1480,30 +1022,9 @@ func editHex(v editValue) string {
 	return string(out)
 }
 
-// ---------------------------------------------------------------------------
-// Keyboard
-// ---------------------------------------------------------------------------
-
-// handleEditorKeys is the editor's own plain-key map. The Ctrl chords are claimed
-// PRE-SCREEN, by App.Frame's `if a.themeEditorOpen() { a.editorUndoChord() }`, for
-// the reason that function documents: HandleEvent routes every non-clipboard Ctrl
-// combination into c.hotkey, so an in-draw c.keyPressed check for Ctrl+Z is dead
-// code — and this screen has no courtroom pass of its own to ride when it is opened
-// from Settings with no server attached.
-//
-// It yields to a focused field, which is the house rule every other plain-key claim
-// already follows — typing "hex" into a colour row must not delete the selection.
-//
-// AND IT YIELDS TO A MODAL, which the focus check does NOT cover. c.modalOn only
-// gates hovering(), so the fence drawThemeEditor raises for the embedded file
-// browser buys the POINTER half its protection and the keyboard half none: with the
-// browser up over the editor, DELETE deleted the selected element, H/L toggled
-// hidden/locked and the arrows nudged it, under a panel that owns the screen. Worse
-// than a stray edit, this function ZEROES c.keyPressed on every arm, so the key is
-// spent — a modal that later wants Escape or a text field could not see it either.
-// The browser reads no keys today and has no field, so c.focusID stays empty and the
-// check above never fires. One line, and it covers the design's two planned modals
-// in advance.
+// handleEditorKeys is the editor's plain-key map; Ctrl chords are claimed before the screen (editorUndoChord).
+// HandleEvent routes non-clipboard Ctrl combinations into c.hotkey, so an in-draw Ctrl+Z check would be dead code.
+// It yields to a focused field and to a modal: modalOn only affects hovering(), and this zeroes c.keyPressed.
 func (a *App) handleEditorKeys() {
 	c := a.ctx
 	if c.modalOn {
@@ -1513,10 +1034,7 @@ func (a *App) handleEditorKeys() {
 		return
 	}
 	if a.te.drag.active() {
-		// A gesture in flight keeps the mouse in charge, exactly as on both legacy
-		// editors' nudge arms (`a.editDrag != 0`). An arrow tap mid-drag would write a
-		// value the next drag frame overwrites from its own press-time base, so the
-		// nudge would appear to do nothing and would still cost an undo entry.
+		// A drag keeps the mouse in charge: the next drag frame would overwrite a nudge from its press-time base.
 		return
 	}
 	if dx, dy, ok := nudgeKeyDir(c.keyPressed); ok {
@@ -1537,33 +1055,15 @@ func (a *App) handleEditorKeys() {
 	}
 }
 
-// editorNudgeSelection moves the whole selection by one step, as ONE grouped op.
-//
-// IT REUSES nudgeCoord AND layoutGridDesign — the very functions the two legacy
-// editors nudge through (layoutnudge.go) — so "arrow = 1 px, Ctrl = the next grid
-// line" is one implementation rather than three that agree today. An element's rect
-// is design px in its own declared Space, which is the space its authored numbers,
-// its anchor delta and the editors' shared grid all live in.
-//
-// NO CANVAS CLAMP, deliberately, and the argument is layoutnudge.go's: clamping is
-// a SLOT rule. Under design §6.6 R1 an anchored element's rect is a signed DELTA on
-// its anchor — negative values are the normal case for decoration that overhangs
-// its widget — and a SpaceWindow element is measured against no canvas at all.
-// Clamping here would forbid values the format defines.
-//
-// A BURST IS ONE UNDO STEP, and it costs nothing to arrange: consecutive nudges hit
-// the ring's coalescing window on the same (kind, target, field), so twenty taps
-// merge into one op whose `before` is where the element started.
+// editorNudgeSelection moves the selection one step through nudgeCoord, the function the legacy editors share.
+// No canvas clamp for elements: an anchored rect is a signed delta, and SpaceWindow elements have no canvas.
+// Consecutive nudges hit the ring's coalescing window, so a burst is one undo step.
 func (a *App) editorNudgeSelection(dx, dy int, coarse bool) {
 	if a.te == nil || a.te.selN == 0 {
 		return
 	}
-	// A GROUP ONLY WHEN THERE IS SOMETHING TO GROUP, and this is not a micro-
-	// optimisation — it is what makes a nudge burst one undo step. The group id is
-	// part of the coalescing identity (coalesceKey), so opening a FRESH group on every
-	// tap would give consecutive taps different keys and defeat the merge entirely.
-	// One element = no group = the taps coalesce; many elements = one group per tap,
-	// which undoes together and is the correct step for a multi-select nudge.
+	// Group only when there are several: the group id is part of coalesceKey, so a fresh group per tap defeats the
+	// merge.
 	if a.te.selN > 1 {
 		a.te.ring.begin()
 		defer a.te.ring.end()
@@ -1585,9 +1085,7 @@ func (a *App) editorNudgeSelection(dx, dy int, coarse bool) {
 			next.i[1] = int32(nudgeCoord(int(v.i[1]), dy, coarse, 0, layoutGridDesign))
 			a.editorApply(mutateElemField(t, editFieldRect, next))
 		case spaceDesign:
-			// A WIDGET NUDGES TOO, and it clamps where an element does not — the same
-			// asymmetry editorClampGeometry carries for the mouse, so the keyboard and
-			// the drag can never disagree about where the stage ends.
+			// A widget clamps where an element does not, as editorClampGeometry does for the mouse.
 			r, ok := a.te.doc.slotRect(t.designKey())
 			if !ok {
 				continue
@@ -1600,8 +1098,7 @@ func (a *App) editorNudgeSelection(dx, dy int, coarse bool) {
 	}
 }
 
-// editorToggleField flips a bool field across the whole selection, as ONE grouped
-// op — so H on twelve selected elements is one Ctrl+Z.
+// editorToggleField flips a bool field across the selection as one grouped op.
 func (a *App) editorToggleField(f editField) {
 	if a.te == nil || a.te.selN == 0 {
 		return
@@ -1618,17 +1115,13 @@ func (a *App) editorToggleField(f editField) {
 	}
 }
 
-// editorDeleteSelection removes every selected element as one grouped op.
-//
-// HIGHEST INDEX FIRST. Identity is the INDEX (theme.Element), so removing element 3
-// renumbers everything after it — deleting in ascending order would delete the
-// wrong rows from the second one on. Descending is the only order in which the
-// remaining targets stay valid.
+// editorDeleteSelection removes every selected element as one grouped op, highest index first.
+// Identity is the index, so removal renumbers everything after it.
 func (a *App) editorDeleteSelection() {
 	if a.te == nil || a.te.selN == 0 {
 		return
 	}
-	// A copy of the indices, sorted descending, on the stack-resident selection array.
+	// A copy of the indices, sorted descending.
 	var idxs [themeSelCap]int
 	n := 0
 	for i := 0; i < a.te.selN; i++ {
@@ -1648,17 +1141,8 @@ func (a *App) editorDeleteSelection() {
 	}
 	a.te.ring.begin()
 	defer a.te.ring.end()
-	// TWO REFUSALS, COUNTED APART. "some elements were locked or the undo graveyard is
-	// full" named neither offender and offered no fix, which is precisely what design
-	// §3.3's error-copy rule forbids — and the two have OPPOSITE remedies: a locked
-	// element wants L, a full graveyard wants a save or a reopen. One sentence covering
-	// both taught the user nothing about either.
-	//
-	// The counting needs no second predicate and no new state. The lock is tested here,
-	// before the funnel, so it is known without asking the document twice; a target the
-	// selection outlived is skipped as neither (nothing was prevented — see
-	// applyNoChange); and past those two the ONLY answer opElemDel has left is
-	// themeElemGraveCap, so a false from the funnel means the graveyard and nothing else.
+	// Counted apart because the remedies differ: a locked element wants L, a full graveyard wants a save or reopen.
+	// Past the lock and a missing element, the only refusal left for opElemDel is themeElemGraveCap.
 	locked, full := 0, 0
 	for i := 0; i < n; i++ {
 		t := elementTarget(idxs[i])
@@ -1680,11 +1164,7 @@ func (a *App) editorDeleteSelection() {
 	a.te.selectClear()
 }
 
-// editorDeleteRefusal is the chip a partly-refused delete posts, or "" when
-// everything the user asked for happened.
-//
-// A PURE FUNCTION so the wording is gate-able without a renderer: the sentence is the
-// feature here, not the arithmetic that reaches it.
+// editorDeleteRefusal is the chip a partly refused delete posts, or "" when everything happened.
 func editorDeleteRefusal(locked, full int) string {
 	switch {
 	case locked > 0 && full > 0:
@@ -1699,8 +1179,7 @@ func editorDeleteRefusal(locked, full int) string {
 	return ""
 }
 
-// editorPluralN is "1 thing" / "3 things". Named because three chips build the same
-// phrase and an inline copy in each is three chances to forget the plural.
+// editorPluralN is "1 thing" or "3 things".
 func editorPluralN(n int, noun string) string {
 	s := itoa(n) + " " + noun
 	if n != 1 {
@@ -1709,28 +1188,12 @@ func editorPluralN(n int, noun string) string {
 	return s
 }
 
-// itoa is strconv.Itoa under a name short enough to keep the sentences above
-// readable; the chip path is cold (a refusal, once per gesture), so the allocation
-// it costs is not on any gated path.
+// itoa keeps the chip sentences readable; the chip path is cold, so the allocation does not matter.
 func itoa(n int) string { return strconv.Itoa(n) }
 
-// ---------------------------------------------------------------------------
-// The reclaim seam — what makes an edit durable
-// ---------------------------------------------------------------------------
-
-// reclaimThemeDoc re-installs the editor's model after a theme apply.
-//
-// THE DEFECT IT CLOSES, recorded at its own site by W6 (layoutnudge.go): applies
-// are NOT user-initiated. healTheme re-kicks one on any T1 eviction of a theme
-// texture, the texture-filter row kicks one, boot kicks two — and each one does
-// `a.themeSidecar = res.sidecar`, discarding every unsaved edit with nothing on
-// screen to say why. A user could nudge a decoration into place, take their hand
-// off the keyboard, and watch it jump back.
-//
-// ONE NAMED CALL SITE: pollThemeApply, immediately after that assignment. It is
-// deliberately not a general "the editor owns the sidecar" rule — it is a single
-// re-install, guarded on the theme NAME, so switching themes mid-session correctly
-// loses the document rather than pasting the old theme's elements onto the new one.
+// reclaimThemeDoc reinstalls the editor's model after a theme apply, so unsaved edits survive.
+// Applies are not user-initiated: healTheme and the texture-filter row kick them too, each replacing a.themeSidecar.
+// Guarded on the theme name, so switching themes loses the document rather than pasting it onto the new theme.
 func (a *App) reclaimThemeDoc() {
 	if a.te == nil || a.te.doc == nil || a.te.doc.side == nil {
 		return
@@ -1740,20 +1203,9 @@ func (a *App) reclaimThemeDoc() {
 		return // a different theme is applied now; the document is not about it
 	}
 	a.themeSidecar = a.te.doc.side
-	// THE GEOMETRY TIER NEEDS THE SAME TREATMENT, and it needs it in this order.
-	// pollThemeApply has just replaced a.themeRects wholesale with a map built from
-	// the sidecar ON DISK, so every unsaved [overrides] edit is missing from it and
-	// the document is pointed at a map nobody draws from any more. Re-binding alone
-	// would leave the pixels wrong; re-folding alone would leave the document holding
-	// a dead map.
-	//
-	// The re-fold lands AFTER applyRectOverrides has already run (app.go), so while
-	// the editor is open the document beats the player's own live Ctrl+F2 tweaks for
-	// the keys it authors. That is the one place the documented precedence is
-	// inverted, and it is inverted deliberately and temporarily: the editor is the
-	// authoring surface, and a stale preference silently overwriting the widget the
-	// user is dragging is not a precedence rule anybody would defend. The next apply
-	// after the editor closes restores the ordinary order.
+	// pollThemeApply just rebuilt a.themeRects from disk, so bind and fold are both needed, in this order.
+	// This runs after applyRectOverrides, so while the editor is open the document beats live Ctrl+F2 tweaks for its
+	// keys.
 	a.te.doc.bindLive(a.themeRects)
 	foldSidecarOverrides(a.themeRects, a.te.doc.side)
 }

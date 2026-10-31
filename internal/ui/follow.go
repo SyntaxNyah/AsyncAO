@@ -5,13 +5,10 @@ import (
 	"time"
 )
 
-// Follow-a-player (M3): trail a player across areas. The PR/PU roster carries
-// every player's live area (PU type 3), so following just watches the followed
-// UID's area on each EventPlayersUpdated and auto-jumps when it differs from ours
-// — a mod tailing a suspect, or catching up to a friend.
+// Follow-a-player: the PR/PU roster carries every player's live area (PU type 3), so following watches the followed
+// UID's area on each EventPlayersUpdated and auto-jumps when it differs from ours.
 
-// followJumpDebounce bounds auto-jumps so a burst of PR/PU updates (or a jump
-// that hasn't reflected back as our own area yet) can't spam area transfers.
+// followJumpDebounce bounds auto-jumps so a burst of updates can't spam area transfers.
 const followJumpDebounce = 2 * time.Second
 
 // followTarget decides where a follower should jump: the followed player's area

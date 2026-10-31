@@ -1,33 +1,10 @@
 package ui
 
-// THE PRESET GALLERY (v1.90.0 W9) — docs/wip/THEME-EDITOR-DESIGN.md §3.1's panel
-// list, which has named this surface since W7 ("OPEN to the panels design §3.1
-// still owes (preset gallery, …)", editorPanelUp).
-//
-// ONE concern: choosing a point on the 21 x 14 grid and doing something with it.
-// It owns no merging (internal/theme's presetmerge.go), no writing (themepack's
-// CreateFromSidecar) and no format knowledge; what is here is the pick, the
-// miniature and the three acts.
-//
-// THE THREE ACTS, and why they are three and not one:
-//
-//   CREATE  — build a NEW theme from the pair. The primary act, and the only one
-//             that is unconditionally safe: it writes a fresh folder whose sidecar
-//             has never held anything else, so there is no previous tier to leave
-//             a trace of. It is also the flagship's actual use — "give me a theme".
-//   APPLY   — replace a tier of the theme already open in the editor. One
-//             snapshot, one undo (theme.PresetUndo), and it is how you swap the
-//             style of something you are already working on.
-//   UNDO    — put the last APPLY back, exactly. Not a ring op: see PresetUndo's
-//             own comment for why a bulk structural replace cannot be one.
-//
-// THE MINIATURE IS ARITHMETIC, NOT A RENDER. A live render of 294 combinations
-// would be 294 offscreen frames and 294 textures against a texture budget the
-// whole feature is already careful with (risk R2). What the card actually has to
-// answer is "where do things sit, and what colour is it", and both come straight
-// out of the merged model: the layout's [overrides] normalised to its own design
-// canvas, painted in the style's [palette]. It costs one bounded bake per pair,
-// cached, and it draws with plain Fill calls that upload nothing.
+// The preset gallery: choosing a point on the layout x style grid and creating, applying or undoing with it.
+// Merging, writing and format knowledge live elsewhere. Create is the only unconditionally safe act: a fresh folder.
+// The miniature is arithmetic, not a render:
+// the layout's [overrides] painted in the style's [palette], with plain fills,
+// because 294 live renders would be 294 textures.
 
 import (
 	"strconv"
@@ -36,85 +13,55 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
-// ---------------------------------------------------------------------------
-// Named caps and metrics (hard rule 9)
-// ---------------------------------------------------------------------------
-
 const (
-	// presetThumbCap bounds the baked-miniature cache. The panel shows ONE
-	// miniature at a time and hover-scrub walks a column, so the working set is a
-	// column's worth; 24 holds the longer axis (21 layouts) plus the pair the
-	// pointer left behind, which is what makes scrubbing back up a cache hit.
-	//
-	// It is a HARD bound with an LRU behind it (hard rule 4), not a hint: a cache
-	// keyed on 294 combinations that grew on demand would be 294 entries after one
-	// idle minute of scrubbing.
+	// presetThumbCap is a hard bound on the baked-miniature LRU (hard rule 4):
+	// a column's worth, plus the pair just left,
+	// so scrubbing back up is a cache hit.
 	presetThumbCap = 24
-	// presetThumbBoxCap bounds how many slot rects one miniature draws. A layout
-	// declares 59-60 [overrides] rows and the card is ~200 px wide, so past this
-	// the boxes are smaller than their own borders and the picture stops improving.
-	// The bake takes the FIRST presetThumbBoxCap in the layout's own declaration
-	// order, which is stage-first in every shipped fragment.
+	// presetThumbBoxCap bounds the rects one miniature draws, first in declaration order;
+	// smaller ones stop improving it.
 	presetThumbBoxCap = 48
-	// presetThumbUnit is the miniature's normalised coordinate space. Integer, so
-	// the bake has no floats in it and the draw is one multiply and one divide per
-	// edge; 1000 is finer than any card is wide.
+	// presetThumbUnit is the miniature's normalised integer coordinate space, finer than any card is wide.
 	presetThumbUnit = 1000
 
-	// editGalleryPanelW / editGalleryRowH size the panel. Two rails wide, exactly
-	// like the font panel, so the two do not need two answers to "how wide is a
-	// panel in this editor".
+	// editGalleryPanelW and editGalleryRowH size the panel, two rails wide like the font panel.
 	editGalleryPanelW = editRailW * 2
 	editGalleryRowH   = editFieldRowH
 	// editGalleryListW is one of the two axis columns.
 	editGalleryListW = 150
-	// editGalleryVisibleRows bounds how many axis rows are drawn at once. The
-	// panel is height-clamped, so this is the ceiling the scroll offset works
-	// against rather than a promise about what fits.
+	// editGalleryVisibleRows is the ceiling for the scroll offset; the panel is height-clamped, so fewer may fit.
 	editGalleryVisibleRows = 12
 
-	// presetCreditLineCap bounds the wrapped attribution. The shipped credits run
-	// 130-380 runes and the preview column is ~250 px, so four lines carries the
-	// short ones whole and the first two sentences of the longest — which is where
-	// every one of them says "zero bytes of bundled art". Past four the panel would
-	// be a licence page with a picture on it.
+	// presetCreditLineCap bounds the wrapped attribution,
+	// enough for the first sentences that say "zero bytes of bundled art".
 	presetCreditLineCap = 4
 )
 
-// presetThumbBox is one slot rect in a miniature: normalised into
-// [0, presetThumbUnit) and pre-coloured. No strings, no ids — the card never
-// labels a box, so carrying the key would be carrying it for nobody.
+// presetThumbBox is one rect in a miniature, normalised to presetThumbUnit and pre-coloured.
 type presetThumbBox struct {
 	x, y, w, h int32
 	col        sdl.Color
 }
 
-// presetThumb is one baked miniature. A FIXED ARRAY for the same reason the baked
-// element list is one: it is the thing the cache holds N of, and a slice per entry
-// is N allocations that outlive the frame that made them.
+// presetThumb is one baked miniature; a fixed array, so N cache entries aren't N long-lived slices.
 type presetThumb struct {
 	layout, style string
 	n             int
 	box           [presetThumbBoxCap]presetThumbBox
 	wash          sdl.Color // the style's panel colour: the card's ground
 	ink           sdl.Color // the style's text colour: the card's border
-	// stamp is the LRU clock at last use. Monotonic on the cache, so it cannot
-	// wrap into a false "most recent" inside one session.
+	// stamp is the cache's monotonic LRU clock at last use.
 	stamp uint64
 }
 
-// presetThumbCache is the bounded LRU. A fixed array and a linear scan: at
-// presetThumbCap entries a map plus a list would allocate on every miss to save
-// twenty-four comparisons on a path that runs once per pointer move.
+// presetThumbCache is the bounded LRU; linear scan, because a map plus a list would allocate on every miss.
 type presetThumbCache struct {
 	e     [presetThumbCap]presetThumb
 	n     int
 	clock uint64
 }
 
-// get returns the baked miniature for a pair, baking and interning it on a miss.
-// It is the ONLY way a thumb is produced, which is what makes the cap real —
-// TestPresetThumbCacheIsBounded drives it with every one of the 294 combinations.
+// get returns the baked miniature for a pair, baking on a miss; the only way a thumb is produced, so the cap holds.
 func (c *presetThumbCache) get(l, s *theme.Preset) *presetThumb {
 	if l == nil || s == nil {
 		return nil
@@ -138,14 +85,7 @@ func (c *presetThumbCache) get(l, s *theme.Preset) *presetThumb {
 	return &c.e[slot]
 }
 
-// holds reports whether a pair is resident WITHOUT touching the LRU clock. It is
-// a test seam and it is here rather than in the test file for the reason every
-// other seam in this package is: reading c.e/c.n from outside would be a second
-// reader of the cache's internals, and the first change to the layout would leave
-// the test asserting over a shape nothing else has.
-//
-// It must not use get(): asking through the front door would BAKE the miss it was
-// sent to detect, and the eviction gate would then measure its own probe.
+// holds reports whether a pair is resident without touching the LRU clock or baking, as get would.
 func (c *presetThumbCache) holds(l, s *theme.Preset) bool {
 	if l == nil || s == nil {
 		return false
@@ -158,7 +98,6 @@ func (c *presetThumbCache) holds(l, s *theme.Preset) bool {
 	return false
 }
 
-// oldest is the LRU victim. Linear over a fixed array; see the type's comment.
 func (c *presetThumbCache) oldest() int {
 	victim := 0
 	for i := 1; i < c.n; i++ {
@@ -169,14 +108,9 @@ func (c *presetThumbCache) oldest() int {
 	return victim
 }
 
-// bakePresetThumb fills one miniature from the two fragments.
-//
-// IT READS THE FRAGMENTS DIRECTLY rather than merging them, and that is the one
-// place in this wave where not going through the merge is right: a merge allocates
-// a whole Sidecar plus a document per pair, and the miniature needs two things the
-// merge cannot add to — the layout's rows and the style's palette are disjoint by
-// the very rule that makes the merge a concatenation. Pinned by
-// TestTheThumbnailShowsTheLayoutItIsFor.
+// bakePresetThumb fills one miniature directly from the fragments:
+// a merge allocates a Sidecar per pair and adds nothing,
+// since the layout's rows and the style's palette are disjoint.
 func bakePresetThumb(t *presetThumb, l, s *theme.Preset) {
 	t.layout, t.style = l.ID, s.ID
 	t.wash, t.ink = presetPaletteColor(s.Side.Palette.Panel, ColPanel), presetPaletteColor(s.Side.Palette.Text, ColText)
@@ -194,8 +128,7 @@ func bakePresetThumb(t *presetThumb, l, s *theme.Preset) {
 			continue // an off-design or degenerate row paints nothing in the real canvas either
 		}
 		col := fill
-		// The STAGE is the one box worth telling apart at this size: it is what a
-		// person recognises a layout by, and at 200 px wide everything else is texture.
+		// The stage is what a person recognises a layout by; at this size everything else is texture.
 		if o.Key == "viewport" {
 			col = accent
 		}
@@ -210,7 +143,6 @@ func bakePresetThumb(t *presetThumb, l, s *theme.Preset) {
 	}
 }
 
-// presetPaletteColor resolves an optional palette role to a drawable colour.
 func presetPaletteColor(p *theme.RGB, fallback sdl.Color) sdl.Color {
 	if p == nil {
 		return fallback
@@ -218,9 +150,7 @@ func presetPaletteColor(p *theme.RGB, fallback sdl.Color) sdl.Color {
 	return sdl.Color{R: p.R, G: p.G, B: p.B, A: 255}
 }
 
-// draw paints the miniature into r. Plain fills: nothing is uploaded, nothing is
-// cached in the texture store, and the whole card costs presetThumbBoxCap
-// rectangles at worst.
+// draw paints the miniature into r with plain fills; nothing is uploaded.
 func (t *presetThumb) draw(c *Ctx, r sdl.Rect) {
 	c.Fill(r, t.wash)
 	prev, had := c.pushClip(r)
@@ -237,46 +167,19 @@ func (t *presetThumb) draw(c *Ctx, r sdl.Rect) {
 	c.Border(r, t.ink)
 }
 
-// ---------------------------------------------------------------------------
-// The attribution line
-// ---------------------------------------------------------------------------
-
-// galleryCredit is the hovered style's `[preset] credit`, wrapped, baked on
-// change.
-//
-// IT EXISTS BECAUSE OF THE ALLOC GATE, not because wrapping is expensive.
-// Ctx.WrapText allocates a slice and its lines, and the panel draws inside the
-// editor frame that editorChromeAllocBudget bounds — so wrapping a 380-rune
-// attribution every frame is the exact per-frame-string-in-a-loop regression that
-// budget exists to catch. This is the bakeToggleLabels pattern: the work happens
-// when the INPUT changes (a different style under the pointer, or a resized
-// panel), and every other frame reads a fixed array.
-//
-// FIXED ARRAY, bounded by presetCreditLineCap (hard rule 4), for the same reason
-// presetThumb holds one: it is per-panel state that outlives the frame that filled it.
-//
-// WHY THE CREDIT IS ON SCREEN AT ALL. §6.5 clause 7 is a CONTRACT — "zero bytes of
-// bundled art; every [preset] credit line states it" — and a contract nobody can
-// read is a comment. TestEveryShippedPresetShipsZeroBytesOfArt proves the corpus
-// holds it; this is where the person who is about to build a theme out of one gets
-// told. Only the STYLE axis has one: a layout fragment is rects, and rects have no
-// provenance to state (TestOnlyTheStyleAxisCarriesACredit pins both halves).
+// galleryCredit is the hovered style's wrapped credit, baked on change: WrapText allocates, and this draws per frame.
+// Only the style axis has one; zero bundled art is a stated contract, so it is shown where a theme gets built.
 type galleryCredit struct {
-	// style / w are what the bake was for. Both, because a narrower panel rewraps
-	// the same text differently and a stale wrap overflows the column it was cut to.
+	// style and w are what the bake was for: a narrower panel rewraps the same text differently.
 	style string
 	w     int32
 	n     int
 	line  [presetCreditLineCap]string
-	// bakes counts rewraps. A TEST SEAM, and it is here rather than in the test file
-	// for the reason holds() is: the alloc claim is "this wraps on change, not per
-	// frame", and nothing observable from outside distinguishes those two.
+	// bakes counts rewraps, the only outside evidence that wrapping happens on change and not per frame.
 	bakes int
 }
 
-// lines returns the wrapped credit, rewrapping only when the style or the width
-// changed. The returned slice is a view into the fixed array — no allocation on
-// the steady-state frame.
+// lines returns the wrapped credit, a view into the fixed array, rewrapping only on a style or width change.
 func (gc *galleryCredit) lines(c *Ctx, p *theme.Preset, w int32) []string {
 	if p == nil || p.Credit == "" || w <= 0 {
 		gc.style, gc.n = "", 0
@@ -297,43 +200,24 @@ func (gc *galleryCredit) lines(c *Ctx, p *theme.Preset, w int32) []string {
 	return gc.line[:gc.n]
 }
 
-// ---------------------------------------------------------------------------
-// The panel's state
-// ---------------------------------------------------------------------------
-
-// themeGallery is the panel's whole state. It lives on the EDITOR, not on App,
-// so it dies with the screen — the closed-editor cost is one nil pointer, which
-// is the same shape pickCache and the font rail already have.
+// themeGallery is the panel's state; it lives on the editor so it dies with the screen.
 type themeGallery struct {
 	lib *theme.PresetLibrary
-	// layoutIdx / styleIdx are the PICK: what the three acts operate on.
+	// layoutIdx and styleIdx are the pick the three acts operate on.
 	layoutIdx, styleIdx int
-	// hoverLayout / hoverStyle are the SCRUB: what the miniature shows this frame,
-	// reset every frame and re-armed by the row under the pointer. Separate from
-	// the pick because scrubbing must not change what a click would do — a preview
-	// that commits by hovering is the least reversible affordance there is.
+	// hoverLayout and hoverStyle are what the miniature shows, re-armed each frame;
+	// scrubbing must not change what a click does.
 	hoverLayout, hoverStyle int
 	scrollLayout            int
 	scrollStyle             int
 	thumbs                  presetThumbCache
-	// credit is the hovered style's attribution, wrapped on change (galleryCredit).
+	// credit is the hovered style's attribution.
 	credit galleryCredit
-	// undo is the one-deep way back from APPLY. See theme.PresetUndo.
+	// undo is the one-deep way back from apply (see theme.PresetUndo).
 	undo *theme.PresetUndo
-	// THE IN-FLIGHT WRITE IS NOT HERE ANY MORE (v1.90.0 W10). It was a
-	// *galleryCreateJob on this struct with its own channel, poll and landing —
-	// the second theme mint in internal/ui. It is App.themeCreate now
-	// (themecreate.go), which is also where it belongs by lifetime: a folder write
-	// must not be cancelled by closing the panel that started it.
 }
 
-// openThemeGallery arms the panel, loading the library on first use.
-//
-// THE LIBRARY LOAD IS THE ONE BLOCKING THING HERE and it is 35 INI parses behind a
-// sync.Once, on a button press rather than on a frame — the same class of cold work
-// the font rail's directory walk already does at its own open. A failure is a chip,
-// never a refusal to open: an empty gallery that says why beats a button that does
-// nothing.
+// openThemeGallery arms the panel; the library load blocks once behind a sync.Once, on a press, and failure is a chip.
 func (a *App) openThemeGallery() {
 	if a.te == nil {
 		return
@@ -344,8 +228,7 @@ func (a *App) openThemeGallery() {
 		return
 	}
 	g := &themeGallery{lib: lib}
-	// Start on whatever the theme already declares, so opening the gallery on a
-	// preset theme shows you where you are rather than the top of the list.
+	// Start on what the theme declares, so a preset theme shows where it is.
 	if sc := a.te.doc.side; sc != nil {
 		g.layoutIdx = presetIndexOf(lib.Layouts(), sc.Meta.LayoutPreset)
 		g.styleIdx = presetIndexOf(lib.Styles(), sc.Meta.StylePreset)
@@ -354,9 +237,7 @@ func (a *App) openThemeGallery() {
 	a.te.gallery = g
 }
 
-// presetIndexOf finds an id in an ordered axis, or 0. Zero rather than -1: every
-// consumer here is an index into a non-empty list, and "the first one" is a
-// better answer than a branch at each of them.
+// presetIndexOf finds an id in an ordered axis, or 0, since every consumer indexes a non-empty list.
 func presetIndexOf(list []*theme.Preset, id string) int {
 	for i, p := range list {
 		if p.ID == id {
@@ -366,25 +247,18 @@ func presetIndexOf(list []*theme.Preset, id string) int {
 	return 0
 }
 
-// pair is the currently PICKED combination.
 func (g *themeGallery) pair() theme.PresetPair {
 	return theme.PresetPair{Layout: g.at(g.lib.Layouts(), g.layoutIdx), Style: g.at(g.lib.Styles(), g.styleIdx)}
 }
 
-// hovered is the combination the miniature shows.
 func (g *themeGallery) hovered() theme.PresetPair {
 	return theme.PresetPair{Layout: g.at(g.lib.Layouts(), g.hoverLayout), Style: g.at(g.lib.Styles(), g.hoverStyle)}
 }
 
-// at is a bounds-checked index into an axis. Nil rather than a panic: the indices
-// are UI state and a library that shrank under one (a future user-preset axis) is
-// a card that does not draw, not a crash on the render thread.
+// at is a bounds-checked index into an axis; nil, because a shrunken library must not crash the render thread.
 func (g *themeGallery) at(list []*theme.Preset, i int) *theme.Preset { return presetAt(list, i) }
 
-// presetAt is the bounds rule itself, package-level so the settings tab's own axis
-// dropdowns (settingsthemeeditor.go) share it rather than restating it. ONE answer
-// to "what is at index i of an axis", so a shrunken library cannot be safe in one
-// surface and a panic in the other.
+// presetAt is the bounds rule, shared with the settings tab's axis dropdowns.
 func presetAt(list []*theme.Preset, i int) *theme.Preset {
 	if i < 0 || i >= len(list) {
 		return nil
@@ -392,22 +266,9 @@ func presetAt(list []*theme.Preset, i int) *theme.Preset {
 	return list[i]
 }
 
-// ---------------------------------------------------------------------------
-// The three acts
-// ---------------------------------------------------------------------------
-
-// applyGalleryPick replaces both tiers of the OPEN theme with the picked pair, as
-// one undoable act.
-//
-// THE SNAPSHOT IS TAKEN FIRST AND THE APPLY IS ALL-OR-NOTHING. ApplyPresetTier
-// refuses before it moves a field, so a layout that lands and a style that does
-// not leaves a model that is half of two themes — hence both tiers go through one
-// MergePresets, whose result is only adopted once it exists.
-//
-// THE UNDO RING IS RESET, deliberately. Its ops identify an element BY INDEX
-// (theme.Element's own doc comment), and this replaces the element list wholesale,
-// so every op already in the ring points at a row that is no longer the row it
-// meant — the same reason the ring is reset on a theme change.
+// applyGalleryPick replaces both tiers of the open theme with the pair as one undoable act.
+// Both go through one MergePresets, adopted only once it exists, so a half-applied pair can't happen.
+// The undo ring resets: its ops identify elements by index, and this replaces the element list.
 func (a *App) applyGalleryPick() {
 	g, sc := a.gallery(), a.editorSidecar()
 	if g == nil || sc == nil {
@@ -437,7 +298,6 @@ func (a *App) applyGalleryPick() {
 	a.te.note("applied " + pair.Layout.Name + " × " + pair.Style.Name + " — Undo puts it back")
 }
 
-// undoGalleryPick puts the last apply back, exactly.
 func (a *App) undoGalleryPick() {
 	g, sc := a.gallery(), a.editorSidecar()
 	if g == nil || sc == nil || !g.undo.Valid() {
@@ -454,18 +314,8 @@ func (a *App) undoGalleryPick() {
 	a.te.note("the preset was undone")
 }
 
-// createThemeFromGalleryPick writes a NEW theme from the picked pair.
-//
-// IT OWNS THE PICK AND NOTHING ELSE (v1.90.0 W10). The job, the channel, the poll,
-// the landing, the write-root refusal and the catalog seed used to live here as a
-// second copy of themecopy.go's shape; they are now startThemeCreate's, and this is
-// the pick that feeds it. A gallery that minted its own folder was the second place
-// in internal/ui calling themepack.CreateFromSidecar, and TestOneThemeCreationFunnel
-// now forbids a third.
-//
-// THE INTENT IS themeCreateThenNote, which is the one thing this caller decides
-// differently: the editor is open over a theme the user may have unsaved work in,
-// so the new one is written and NAMED rather than applied and opened.
+// createThemeFromGalleryPick writes a new theme through startThemeCreate; the editor may hold unsaved work,
+// so the new one is named rather than applied and opened.
 func (a *App) createThemeFromGalleryPick() {
 	g := a.gallery()
 	if g == nil {
@@ -481,16 +331,8 @@ func (a *App) createThemeFromGalleryPick() {
 	a.startThemeCreate(name, sc, themeCreateThenNote)
 }
 
-// galleryThemeName is what a created theme is called. Both axes, because a name
-// that said only "Vaporwave" would collide with itself the moment the same style
-// is built on a second layout — and themepack's collision suffix would then be
-// the only thing telling them apart.
-//
-// NIL-SAFE ON BOTH AXES (v1.90.0 W10). It used to be called only behind a
-// pair.Empty() guard; the create moved to the shared funnel, which makes that guard
-// newThemeSidecarFrom's, and a name derived before the refusal would have
-// dereferenced a nil layout on an empty pair. "" is the honest answer and the
-// sanitizer's own refusal value.
+// galleryThemeName is a created theme's name, from both axes so one style on two layouts doesn't collide; nil-safe,
+// because newThemeSidecarFrom's refusal comes after this runs.
 func galleryThemeName(pair theme.PresetPair) string {
 	switch {
 	case pair.Layout == nil && pair.Style == nil:
@@ -503,12 +345,7 @@ func galleryThemeName(pair theme.PresetPair) string {
 	return pair.Style.Name + " — " + pair.Layout.Name
 }
 
-// (pollThemeGalleryCreate is gone: App.pollThemeCreate lands every mint now, from
-// App.Frame rather than from the editor's draw — so a create started here still
-// lands after the panel, or the whole editor, has been closed. themecreate.go.)
-
-// gallery is the nil-safe accessor every act above opens with. One spelling of
-// "is the panel there", so a future act cannot invent a second.
+// gallery is the nil-safe accessor every act opens with.
 func (a *App) gallery() *themeGallery {
 	if a.te == nil {
 		return nil
@@ -516,7 +353,6 @@ func (a *App) gallery() *themeGallery {
 	return a.te.gallery
 }
 
-// editorSidecar is the model the editor is editing, or nil.
 func (a *App) editorSidecar() *theme.Sidecar {
 	if a.te == nil || a.te.doc == nil {
 		return nil
@@ -524,12 +360,7 @@ func (a *App) editorSidecar() *theme.Sidecar {
 	return a.te.doc.side
 }
 
-// ---------------------------------------------------------------------------
-// Drawing
-// ---------------------------------------------------------------------------
-
-// editorGalleryPanelRect is the panel's box — the font panel's geometry, so the
-// editor has one answer to "where does a panel go".
+// editorGalleryPanelRect is the panel's box, the font panel's geometry.
 func editorGalleryPanelRect(w, h int32) sdl.Rect {
 	pw := int32(editGalleryPanelW)
 	if pw > w-editRowPad*2 {
@@ -542,8 +373,7 @@ func editorGalleryPanelRect(w, h int32) sdl.Rect {
 	return sdl.Rect{X: (w - pw) / 2, Y: editBannerH + editRowPad, W: pw, H: ph}
 }
 
-// drawThemeGallery paints the panel. A PANEL, not a modal (design §3.1): the
-// canvas behind it keeps drawing and the theme keeps animating while you scrub.
+// drawThemeGallery paints the panel; not a modal, so the canvas behind keeps animating while you scrub.
 func (a *App) drawThemeGallery(w, h int32) {
 	g := a.gallery()
 	if g == nil {
@@ -559,8 +389,7 @@ func (a *App) drawThemeGallery(w, h int32) {
 		return
 	}
 
-	// The scrub is re-armed from scratch every frame and falls back to the pick, so
-	// moving the pointer OFF the lists shows what a click would actually do.
+	// Re-armed every frame and falls back to the pick, so moving off the lists shows what a click would do.
 	g.hoverLayout, g.hoverStyle = g.layoutIdx, g.styleIdx
 
 	body := sdl.Rect{X: r.X + editRowPad, Y: r.Y + editGalleryRowH + 2,
@@ -581,8 +410,7 @@ func (a *App) drawThemeGallery(w, h int32) {
 	a.drawGalleryActions(g, r)
 }
 
-// drawGalleryAxis is one column of the grid: a heading and a scrolling list of
-// fragment names, with the picked one lit.
+// drawGalleryAxis is one column of the grid, with the picked row lit.
 func (a *App) drawGalleryAxis(g *themeGallery, r sdl.Rect, title string, list []*theme.Preset, pick, scroll, hover *int) {
 	c := a.ctx
 	c.Label(r.X, r.Y+3, title+" ("+strconv.Itoa(len(list))+")", ColAccent)
@@ -593,8 +421,8 @@ func (a *App) drawGalleryAxis(g *themeGallery, r sdl.Rect, title string, list []
 	if rows < 1 {
 		return
 	}
-	// The scroll follows the PICK rather than the pointer: a list that scrolled
-	// under a hover would move the row out from under the click that was aiming at it.
+	// Follows the pick, not the pointer: a list that scrolled under a hover would move the row out from under the
+	// click.
 	if *pick < *scroll {
 		*scroll = *pick
 	}
@@ -627,11 +455,7 @@ func (a *App) drawGalleryAxis(g *themeGallery, r sdl.Rect, title string, list []
 	}
 }
 
-// drawGalleryPreview is the miniature plus the hovered fragment's own words: what
-// the pair is for (both descriptions) and where its art came from (the style's
-// credit). The credit is LAST and dimmest because it is a statement of provenance
-// rather than a selling point — but it is on the same surface as the button that
-// builds a theme out of it, which is the whole of §6.5 clause 7's point.
+// drawGalleryPreview is the miniature, both descriptions and the style's credit, last and dimmest.
 func (a *App) drawGalleryPreview(g *themeGallery, r sdl.Rect) {
 	c := a.ctx
 	if r.W < editGalleryRowH*4 {
@@ -645,8 +469,7 @@ func (a *App) drawGalleryPreview(g *themeGallery, r sdl.Rect) {
 	if thumb == nil {
 		return
 	}
-	// 4:3-ish, which is every shipped design canvas' neighbourhood, and clamped so
-	// a tall panel does not stretch the picture into something the theme is not.
+	// 4:3-ish, like every shipped canvas; clamped so a tall panel doesn't stretch the picture.
 	tw := r.W
 	th := tw * 3 / 4
 	if th > r.H-editGalleryRowH*3 {
@@ -660,9 +483,7 @@ func (a *App) drawGalleryPreview(g *themeGallery, r sdl.Rect) {
 	y += editGalleryRowH
 	c.LabelClipped(r.X, y, r.W, pair.Layout.Description, ColTextDim)
 	y += editGalleryRowH
-	// The attribution, clipped to what is left of the column rather than pushed off
-	// the panel: the lists and the buttons keep working on a short window, and the
-	// wrap is baked so a resize costs one rewrap and not one per frame.
+	// Clipped to what is left of the column, so the lists and buttons keep working on a short window.
 	for _, line := range g.credit.lines(c, pair.Style, r.W) {
 		if y+editGalleryRowH > r.Y+r.H {
 			break
@@ -672,8 +493,7 @@ func (a *App) drawGalleryPreview(g *themeGallery, r sdl.Rect) {
 	}
 }
 
-// drawGalleryActions is the footer: the three acts, and the one line that says
-// which of them touches the theme that is open.
+// drawGalleryActions is the footer: the three acts and which of them touches the open theme.
 func (a *App) drawGalleryActions(g *themeGallery, r sdl.Rect) {
 	c := a.ctx
 	y := r.Y + r.H - editGalleryRowH*2

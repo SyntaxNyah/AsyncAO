@@ -1,13 +1,7 @@
 package ui
 
-// Jukebox: the Wardrobe's music-link library. AO DJs/CMs stream music by
-// typing "/play <url>" in OOC (YouTube/Discord links etc.); this stores those
-// links in named playlists so you click instead of paste, shuffle a set, or
-// fire a song from a bound key (Alt+<key> — see bareBindKey in qol.go; this
-// namespace was a bare letter until the IC input claimed that space). The
-// data is GLOBAL (config.Jukebox, its own
-// async file) — shared across every server. Render-thread only; the store does
-// the disk I/O off-thread.
+// Jukebox: named playlists of music links that /play through OOC, shared across servers (config.Jukebox).
+// Render-thread only; the store does the disk I/O off-thread.
 
 import (
 	"fmt"
@@ -21,20 +15,17 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// jukeboxOOCPlaylist is the playlist the one-click "save this shared link"
-// action (on an OOC log line) files into — created on first use.
+// jukeboxOOCPlaylist is where the "save this shared link" action on an OOC line files into; created on first use.
 const jukeboxOOCPlaylist = "Saved from chat"
 
-// jukeFilterKey memoizes the song search so a playlist of thousands isn't
-// re-filtered every frame (keyed by query + library revision + playlist).
+// jukeFilterKey memoizes the song search so a playlist of thousands isn't re-filtered every frame.
 type jukeFilterKey struct {
 	q   string
 	rev int64
 	pl  int
 }
 
-// pollJukebox lands the off-thread library load exactly once, then drains any
-// export/import results onto the in-app toast (both on the render thread).
+// pollJukebox lands the off-thread library load once, then drains export/import results onto the toast.
 func (a *App) pollJukebox() {
 	if a.juke == nil {
 		select {
@@ -53,8 +44,7 @@ func (a *App) pollJukebox() {
 	}
 }
 
-// jukeboxExportFileName sits beside the executable — easy to find and hand to a
-// friend, who drops it beside their exe and clicks Import to merge.
+// jukeboxExportFileName sits beside the executable, where a friend drops it to click Import.
 const jukeboxExportFileName = "jukebox-playlists.json"
 
 func jukeboxExportPath() (string, error) {
@@ -65,10 +55,7 @@ func jukeboxExportPath() (string, error) {
 	return filepath.Join(dir, jukeboxExportFileName), nil
 }
 
-// exportJukeboxAsync writes the whole playlist library beside the exe off-thread
-// (§17.2: no sync disk I/O on the render thread); the result lands on the
-// jukebox toast via jukeIORes. The Jukebox is concurrency-safe, so the goroutine
-// can read it directly.
+// exportJukeboxAsync writes the library off-thread (hard rule 2); the Jukebox is safe to read concurrently.
 func (a *App) exportJukeboxAsync() {
 	juke, res := a.juke, a.jukeIORes
 	if juke == nil {
@@ -94,9 +81,7 @@ func (a *App) exportJukeboxAsync() {
 	}()
 }
 
-// importJukeboxAsync merges a shared jukebox-playlists.json (placed beside the
-// exe) into the library: additive, dedup by URL, your key binds win. Off-thread;
-// result via jukeIORes.
+// importJukeboxAsync merges a shared export into the library: additive, dedup by URL, your key binds win.
 func (a *App) importJukeboxAsync() {
 	juke, res := a.juke, a.jukeIORes
 	if juke == nil {
@@ -124,16 +109,14 @@ func (a *App) importJukeboxAsync() {
 	}()
 }
 
-// CloseJukebox stops the debounce timer and writes any pending change. Called
-// from main on shutdown (no-op until the library has loaded).
+// CloseJukebox stops the debounce timer and writes any pending change; a no-op until the library has loaded.
 func (a *App) CloseJukebox() {
 	if a.juke != nil {
 		_ = a.juke.Close()
 	}
 }
 
-// refreshJukeCache re-snapshots the library when its revision changed, so the
-// per-frame draw reads a local copy instead of deep-copying under lock.
+// refreshJukeCache re-snapshots on a revision change so the draw reads a local copy instead of deep-copying under lock.
 func (a *App) refreshJukeCache() {
 	if a.juke == nil {
 		return
@@ -144,7 +127,7 @@ func (a *App) refreshJukeCache() {
 	}
 }
 
-// jukePlay streams a link to everyone (DJ/CM only — the server enforces it).
+// jukePlay streams a link to everyone; the server enforces DJ/CM.
 func (a *App) jukePlay(url string) {
 	if a.sess == nil {
 		a.jukeWarn("Connect to a server to play music (/play needs DJ/CM rights).")
@@ -154,9 +137,7 @@ func (a *App) jukePlay(url string) {
 	a.jukeWarn("Playing — /play " + url)
 }
 
-// jukeShare posts the raw link straight to OOC so others can grab it — a
-// one-press send (not just dropping it in the box), through the same paced OOC
-// pipeline as jukePlay, minus the /play prefix so it's a plain shareable line.
+// jukeShare posts the raw link to OOC as a plain line, through the same paced pipeline as jukePlay.
 func (a *App) jukeShare(url string) {
 	if a.sess == nil {
 		a.jukeWarn("Connect to a server first.")
@@ -171,9 +152,8 @@ func (a *App) jukeWarn(msg string) {
 	a.warnAt = time.Now()
 }
 
-// jukePasteMerge merges a jukebox export pasted on the clipboard — an
-// alternative to the file Import. MergeJSON is in-memory (the flush is async),
-// so this is safe on the render thread.
+// jukePasteMerge merges an export from the clipboard; MergeJSON is in-memory and the flush async, so render-thread
+// safe.
 func (a *App) jukePasteMerge() {
 	if a.juke == nil {
 		return
@@ -191,8 +171,6 @@ func (a *App) jukePasteMerge() {
 	a.jukeWarn(fmt.Sprintf("Merged %d new link(s) from the clipboard.", n))
 }
 
-// drawWardrobeJukeboxBody is the Jukebox section: playlists (folders) of music
-// links, then a song list inside the opened one.
 func (a *App) drawWardrobeJukeboxBody(panel sdl.Rect, w, h int32) {
 	c := a.ctx
 	if a.juke == nil {
@@ -212,9 +190,8 @@ func (a *App) drawWardrobeJukeboxBody(panel sdl.Rect, w, h int32) {
 	if !histOn {
 		a.jukeShowRecent = false // feature disabled in Settings: never show the recent view
 	}
-	// Top-level view toggles (right-aligned): ★ Favorites, and — when history is
-	// on — Recently played. Hidden inside a playlist and inside either sub-view
-	// (each has its own back button). Labels are cached so this draws 0-alloc.
+	// Hidden inside a playlist and inside either sub-view, which have their own back buttons. Labels are cached: 0
+	// allocs.
 	if atTop && !a.jukeShowRecent && !a.jukeShowFav {
 		bx := left + wide
 		if histOn {
@@ -260,12 +237,9 @@ func (a *App) drawWardrobeJukeboxBody(panel sdl.Rect, w, h int32) {
 	a.drawJukeboxEntries(left, top, wide, bottom)
 }
 
-// drawJukeboxPlaylists is the top level: create playlists, shuffle all, and a
-// scrollable list of playlist rows (open / shuffle / delete).
 func (a *App) drawJukeboxPlaylists(x, y, wide, bottom int32) {
 	c := a.ctx
 
-	// New-playlist row + Shuffle all.
 	a.jukeNewName, _ = c.TextField("jukenew", sdl.Rect{X: x, Y: y, W: 240, H: fieldH}, a.jukeNewName, "New playlist name…")
 	if c.Button(sdl.Rect{X: x + 246, Y: y, W: 90, H: btnH}, "+ Add") {
 		if a.juke.AddPlaylist(a.jukeNewName) {
@@ -283,8 +257,7 @@ func (a *App) drawJukeboxPlaylists(x, y, wide, bottom int32) {
 	}
 	y += fieldH + 8
 
-	// Search (filters playlists by name here) + share/merge the whole library as
-	// a JSON beside the exe (Export writes it; Import merges one in — additive).
+	// Export writes the library beside the exe; Import merges one in.
 	a.jukeSearch, _ = c.TextField("jukesearch", sdl.Rect{X: x, Y: y, W: 240, H: fieldH}, a.jukeSearch, "Search playlists…")
 	c.Label(x+250, y+5, fmt.Sprintf("%d playlists · %d links total", len(a.jukeCache), a.juke.TotalEntries()), ColTextDim)
 	if c.Button(sdl.Rect{X: x + wide - 350, Y: y, W: 104, H: btnH}, "Export…") {
@@ -302,7 +275,6 @@ func (a *App) drawJukeboxPlaylists(x, y, wide, bottom int32) {
 	lineH := int32(30)
 	listTop := y
 	listH := bottom - listTop
-	// Count matches for the scrollbar.
 	matches := 0
 	for _, pl := range a.jukeCache {
 		if query == "" || strings.Contains(strings.ToLower(pl.Name), query) {
@@ -334,14 +306,12 @@ func (a *App) drawJukeboxPlaylists(x, y, wide, bottom int32) {
 	}
 }
 
-// drawJukePlaylistRow draws one playlist: click to open, plus shuffle/delete.
 func (a *App) drawJukePlaylistRow(pl config.Playlist, idx int, r sdl.Rect) {
 	c := a.ctx
 	c.Fill(r, ColPanel)
 	if c.hovering(r) {
 		c.Border(r, ColAccent)
 	}
-	// Right-aligned controls.
 	bx := r.X + r.W - 30
 	if c.Button(sdl.Rect{X: bx, Y: r.Y, W: 28, H: r.H}, "×") {
 		a.jukeDelPlaylist = idx
@@ -360,14 +330,12 @@ func (a *App) drawJukePlaylistRow(pl config.Playlist, idx int, r sdl.Rect) {
 	}
 	bx -= 50
 	a.drawJukeKeyBadge(sdl.Rect{X: bx, Y: r.Y, W: 46, H: r.H}, pl.Key, fmt.Sprintf("p:%d", idx))
-	// Name + count fill the left; clicking the name area also opens it.
 	nameHit := sdl.Rect{X: r.X, Y: r.Y, W: bx - r.X - 6, H: r.H}
 	c.LabelClipped(r.X+8, r.Y+6, nameHit.W-12, fmt.Sprintf("%s  (%d)", pl.Name, len(pl.Entries)), ColText)
 	if c.hovering(nameHit) && c.clicked {
 		a.openJukePlaylist(idx)
 	}
 
-	// Inline delete confirmation.
 	if a.jukeDelPlaylist == idx {
 		cf := sdl.Rect{X: r.X + r.W - 240, Y: r.Y, W: 240, H: r.H}
 		c.Fill(cf, ColPanelHi)
@@ -390,13 +358,10 @@ func (a *App) openJukePlaylist(idx int) {
 	a.jukeDelPlaylist = -1
 }
 
-// drawJukeboxEntries is the inside-a-playlist view: add songs and a scrollable
-// song list (play / open / share / remove).
 func (a *App) drawJukeboxEntries(x, y, wide, bottom int32) {
 	c := a.ctx
 	pl := &a.jukeCache[a.jukeOpen]
 
-	// Header: back + name + shuffle.
 	if c.Button(sdl.Rect{X: x, Y: y, W: 110, H: btnH}, "‹ Playlists") {
 		a.jukeOpen = -1
 		a.jukeScroll = 0
@@ -413,7 +378,6 @@ func (a *App) drawJukeboxEntries(x, y, wide, bottom int32) {
 	}
 	y += btnH + 8
 
-	// Add-song row: URL + optional title.
 	a.jukeAddURL, _ = c.TextField("jukeurl", sdl.Rect{X: x, Y: y, W: wide - 360, H: fieldH}, a.jukeAddURL, "Paste a music URL (/play link)…")
 	a.jukeAddTitle, _ = c.TextField("juketitle", sdl.Rect{X: x + wide - 354, Y: y, W: 200, H: fieldH}, a.jukeAddTitle, "Title (optional)")
 	if c.Button(sdl.Rect{X: x + wide - 148, Y: y, W: 148, H: btnH}, "+ Add song") {
@@ -425,7 +389,6 @@ func (a *App) drawJukeboxEntries(x, y, wide, bottom int32) {
 	}
 	y += fieldH + 8
 
-	// Search within this playlist.
 	a.jukeSearch, _ = c.TextField("jukesearch", sdl.Rect{X: x, Y: y, W: 260, H: fieldH}, a.jukeSearch, "Search songs in this playlist…")
 	y += fieldH + 8
 
@@ -433,8 +396,7 @@ func (a *App) drawJukeboxEntries(x, y, wide, bottom int32) {
 	if query != "" {
 		a.refreshJukeFilter(a.jukeOpen, pl.Entries, query)
 	}
-	// The "Music history" playlist groups its songs under domain headers when not
-	// searching (M12 option A); other playlists, or an active search, stay flat.
+	// "Music history" groups its songs under domain headers unless searching.
 	grouped := query == "" && pl.Name == jukeboxHistoryPlaylist && len(pl.Entries) > 0
 	if grouped {
 		a.refreshJukeGroups(a.jukeOpen, pl.Entries)
@@ -491,7 +453,7 @@ func (a *App) drawJukeboxEntries(x, y, wide, bottom int32) {
 	}
 }
 
-// drawJukeEntryRow draws one song: play (button or row click), open, share, ×.
+// drawJukeEntryRow draws one song: play (button or row click), open, share, remove.
 func (a *App) drawJukeEntryRow(e config.JukeboxEntry, idx int, r sdl.Rect) {
 	c := a.ctx
 	c.Fill(r, ColPanel)
@@ -510,13 +472,11 @@ func (a *App) drawJukeEntryRow(e config.JukeboxEntry, idx int, r sdl.Rect) {
 	}
 	bx -= 50
 	a.drawJukeKeyBadge(sdl.Rect{X: bx, Y: r.Y, W: 46, H: r.H}, e.Key, fmt.Sprintf("e:%d:%d", a.jukeOpen, idx))
-	// A labelled "Play" button (not a ▶ glyph — that tofus on fonts without
-	// Geometric Shapes) so it's obvious the song /plays on click.
+	// A labelled button because a play glyph is missing from fonts without Geometric Shapes.
 	bx -= 60
 	if c.Button(sdl.Rect{X: bx, Y: r.Y, W: 56, H: r.H}, "Play") {
 		a.jukePlay(e.URL)
 	}
-	// ★ favorite toggle (M12): star a song to collect it in the Favorites view.
 	bx -= 28
 	sr := sdl.Rect{X: bx, Y: r.Y, W: 26, H: r.H}
 	starCol := ColTextDim
@@ -529,7 +489,6 @@ func (a *App) drawJukeEntryRow(e config.JukeboxEntry, idx int, r sdl.Rect) {
 	if c.hovering(sr) && c.clicked {
 		a.juke.SetEntryFav(a.jukeOpen, idx, !e.Fav)
 	}
-	// Title (or URL) fills the left; clicking it also /plays the song.
 	label := e.Title
 	if label == "" {
 		label = e.URL
@@ -545,10 +504,7 @@ func (a *App) drawJukeEntryRow(e config.JukeboxEntry, idx int, r sdl.Rect) {
 	}
 }
 
-// refreshJukeFilter recomputes the matching song indices for a non-empty query
-// (memoized against query + library revision + playlist). Only called when a
-// search is active, so the key's q is never "" and can't collide with the
-// zero-value key.
+// refreshJukeFilter recomputes matching song indices; only called with a query, so q never collides with the zero key.
 func (a *App) refreshJukeFilter(pl int, entries []config.JukeboxEntry, query string) {
 	key := jukeFilterKey{q: query, rev: a.jukeCacheRev, pl: pl}
 	if key == a.jukeFilteredKey {
@@ -563,11 +519,8 @@ func (a *App) refreshJukeFilter(pl int, entries []config.JukeboxEntry, query str
 	}
 }
 
-// handleJukeboxKeys fires a jukebox bind from the courtroom on Alt+<bound key>
-// (the shared bareBindKey gate — qol.go): an entry key /plays that song, a
-// playlist key /plays a random song from it. Slotted between macros and
-// char/emote keys (so it shadows char binds and the emote 1-9 digits — a
-// deliberate trade for a DJ). Returns true if it fired.
+// handleJukeboxKeys fires a bind on Alt+<key> via bareBindKey: an entry key /plays that song, a playlist key a random
+// one. Ordered between macros and char/emote keys, so it shadows those on purpose. Returns true if it fired.
 func (a *App) handleJukeboxKeys() bool {
 	k := a.bareBindKey()
 	if a.juke == nil || k == 0 {
@@ -580,10 +533,8 @@ func (a *App) handleJukeboxKeys() bool {
 	return false
 }
 
-// pollJukeBind completes an armed jukebox key-capture (badge click): the next
-// plain keypress binds it; Esc cancels. Runs in the frame polls BEFORE
-// handleHotkeys and CONSUMES the key, so binding a song never also plays it the
-// same frame.
+// pollJukeBind completes an armed key capture; it runs before handleHotkeys and consumes the key, so binding a song
+// never also plays it the same frame.
 func (a *App) pollJukeBind() {
 	if a.jukeBindFor == "" || a.juke == nil {
 		return
@@ -601,8 +552,7 @@ func (a *App) pollJukeBind() {
 	c.keyPressed = 0 // consume: don't let the just-bound key also fire this frame
 }
 
-// applyJukeKey sets (or clears, with "") the bind named by target: "p:<i>" is a
-// playlist shuffle key, "e:<pl>:<i>" is a song key.
+// applyJukeKey sets (or clears, with "") the bind named by target: "p:<i>" is a playlist, "e:<pl>:<i>" a song.
 func (a *App) applyJukeKey(target, key string) {
 	parts := strings.Split(target, ":")
 	switch {
@@ -619,10 +569,8 @@ func (a *App) applyJukeKey(target, key string) {
 	}
 }
 
-// drawJukeKeyBadge draws a bind chip: shows the CHORD that fires the bind, click
-// to arm a capture, right-click to clear. The chip prints bareBindLabel rather
-// than the raw letter — handleJukeboxKeys goes through bareBindKey (qol.go), so a
-// chip reading "M" would advertise a press that only types into the IC box now.
+// drawJukeKeyBadge draws a bind chip: click arms a capture, right-click clears. It prints bareBindLabel because a bare
+// letter would advertise a press that only types into the IC box.
 func (a *App) drawJukeKeyBadge(r sdl.Rect, bound, target string) {
 	c := a.ctx
 	armed := a.jukeBindFor == target

@@ -1,26 +1,8 @@
 package ui
 
-// Settings ▸ Assets ▸ "Use my own AO files…" — the guided way to point AsyncAO
-// at a base folder of your own (issue #72).
-//
-// WHY A WIZARD RATHER THAN THE ROWS UNDER IT. The controls it fronts are all
-// still there, and they are correct; they are just not a thing a sprite maker
-// can act on. Setting this up used to mean reading three radio labels, deciding
-// between them before knowing what any of them would do, typing an absolute path
-// into a text field with no picker, pressing Add, and then noticing — or not —
-// a yellow line further down saying the folder was configured but not being
-// used. Nothing on that page ever told the user what was in the folder they
-// named, so a typo, a folder one level too high, and a correct setup all looked
-// the same.
-//
-// So the panel keeps ONE button, and everything else happens here: pick, see
-// what was found, choose how it is used, apply. The order matters — the mode
-// choice comes AFTER the report, because "never stream" is only a safe answer
-// once you can see the folder actually holds a base.
-//
-// It changes nothing until "Use this folder". Cancel is always a full no-op:
-// browsing, scanning and re-picking are all read-only, which is what makes the
-// report worth showing before the commit rather than after it.
+// Settings > Assets > "Use my own AO files": pick a folder, see what was found, choose how it is used, apply.
+// The mode choice follows the report because "never stream" is only safe once the folder is seen to hold a base.
+// Nothing changes until "Use this folder"; browsing, scanning and re-picking are read-only.
 
 import (
 	"path/filepath"
@@ -33,13 +15,9 @@ import (
 )
 
 const (
-	// baseScanResCap is the wizard's scan result channel. Exactly one scan runs at
-	// a time (baseWizardState.scanning), so a cap of 1 can never block the scan
-	// goroutine or drop a result — the same bargain demobrowser's browseResCap
-	// strikes. Named per rule 4.
+	// baseScanResCap: one scan runs at a time (baseWizardState.scanning), so 1 can never block or drop a result.
 	baseScanResCap = 1
-	// The modal's geometry. Clamped against the window like the file browser's, so
-	// it is still usable on a small one.
+	// The modal's geometry, clamped against the window like the file browser's.
 	baseWizMaxW = 620
 	baseWizMaxH = 520
 	baseWizMinW = 340
@@ -48,40 +26,27 @@ const (
 	baseWizRowH = 16
 )
 
-// baseWizardState is package-level like `settings` and `demoBrowser`: the
-// Settings screen is single-instance, so a second wizard cannot exist.
+// baseWizardState is package-level because the Settings screen is single-instance.
 type baseWizardState struct {
 	open bool
-	// path is the folder the user has picked in this run ("" = none yet). It
-	// survives close, so re-opening to change the mode does not make the user find
-	// their folder again.
+	// path is the picked folder ("" = none yet); it survives close so re-opening to change the mode keeps it.
 	path string
-	// scan is the report for path, valid only once scanned. Tracked with a flag
-	// rather than inferred from the counts, because an empty folder is a real
-	// answer whose counts are all zero.
+	// scan is the report for path, valid only once scanned: an empty folder's counts are a real all-zero answer.
 	scan    baseScan
 	scanned bool
-	// scanning is the single-flight latch: at most ONE scan goroutine exists
-	// (rule 4). A pick made while a scan runs is not lost — pollBaseScan re-kicks
-	// when the superseded result lands.
+	// scanning allows at most one scan goroutine (hard rule 4); pollBaseScan rescans if the path changed meanwhile.
 	scanning bool
 	res      chan baseScan
-	// mode is the asset-source mode "Use this folder" will apply: assetSrcLayered
-	// or assetSrcLocal. Never assetSrcStream — this surface exists to turn the
-	// user's folder ON, and "stream everything" is the Advanced rows' business.
+	// mode is what "Use this folder" applies: assetSrcLayered or assetSrcLocal, never assetSrcStream.
 	mode int
-	// note is a refusal shown in place (the mount cap). Kept here rather than on
-	// settings.statusLine because the status line draws BEHIND this modal.
+	// note is a refusal shown in place (the mount cap), because the status line draws behind this modal.
 	note string
 }
 
 var baseWizard = baseWizardState{res: make(chan baseScan, baseScanResCap), mode: assetSrcLayered}
 
-// openBaseWizard opens the modal, seeded from the current setup.
-//
-// Seeding matters more than it looks: re-opening this to CHANGE something is at
-// least as common as a first run, and starting blank would make a user who only
-// wants to flip "never stream" go and find their folder on disk again.
+// openBaseWizard seeds from the current setup, so re-opening to change something does not mean finding the folder
+// again.
 func (a *App) openBaseWizard() {
 	w := &baseWizard
 	w.open = true
@@ -94,24 +59,14 @@ func (a *App) openBaseWizard() {
 	}
 }
 
-// setBasePath records a pick and starts its scan. The report is dropped
-// immediately so a stale one cannot be read as describing the new folder.
+// setBasePath drops the report at once so a stale one cannot be read as describing the new folder.
 func (w *baseWizardState) setBasePath(path string) {
 	w.path = strings.TrimSpace(path)
 	w.scan, w.scanned, w.note = baseScan{}, false, ""
 	w.kickScan()
 }
 
-// kickScan starts one bounded scan goroutine for w.path, or does nothing if one
-// is already running. The pick is never lost by that refusal: the in-flight
-// result is tagged with the path it scanned, and pollBaseScan re-kicks when a
-// superseded one lands — the same reconcile-on-landing shape applyMountLayer uses
-// for the mount index, and the reason neither needs a queue.
-//
-// BOTH the path and the channel are passed as arguments, so the goroutine holds
-// no reference to w at all and the only shared object left is the channel itself.
-// Reaching through w for the channel instead is a data race the moment anything
-// reassigns the struct, which is exactly what the race detector caught.
+// kickScan starts one scan for w.path, or nothing if one is running; pollBaseScan rescans when a stale result lands.
 func (w *baseWizardState) kickScan() {
 	if w.scanning || w.path == "" {
 		return
@@ -120,8 +75,7 @@ func (w *baseWizardState) kickScan() {
 	go func(p string, res chan baseScan) { res <- scanBaseFolder(p) }(w.path, w.res)
 }
 
-// pollBaseScan lands a finished scan. Render thread, drained from the wizard's
-// own draw; never blocks and never touches the disk itself.
+// pollBaseScan lands a finished scan; never blocks and never touches the disk.
 func (w *baseWizardState) pollBaseScan() {
 	select {
 	case s := <-w.res:
@@ -135,18 +89,8 @@ func (w *baseWizardState) pollBaseScan() {
 	}
 }
 
-// baseWizardTakesDrop gives the OPEN wizard first refusal on a dropped path,
-// reporting whether it consumed the drop.
-//
-// A modal that says "or drop a folder here" has to mean it. Without this the
-// drop falls through to the Settings screen's default arm, which points the
-// user's THEME ROOT at the dropped folder — the exact silent-wrong-action class
-// dropclaim.go was written to end, arriving by a different door.
-//
-// Global claims still win: a .aotheme or a recording dropped on the open wizard
-// belongs to HandleFileDrop, and stealing it here would resurrect the two-owners
-// bug from the other side. Anything unclaimed is a folder pick, including a .zip,
-// which is a mountable pack.
+// baseWizardTakesDrop reports whether the open wizard consumed a dropped path; unconsumed, it would fall through and
+// repoint the theme root. Global claims win (.aotheme, recordings); anything unclaimed is a pick, including a .zip.
 func (a *App) baseWizardTakesDrop(path string) bool {
 	if !baseWizard.open || claimDroppedFile(path, settings.importArmed) != dropClaimNone {
 		return false
@@ -155,33 +99,23 @@ func (a *App) baseWizardTakesDrop(path string) bool {
 	return true
 }
 
-// resolveDroppedBasePath turns an SDL drop into a pick, off-thread.
-//
-// A dropped FILE means its folder, matching resolveDroppedFolder and the rest of
-// the app — except for a .zip, which is a mountable pack in its own right and
-// whose parent folder is emphatically not what the user meant. The stat is why
-// this is a goroutine: a drop from a network share must not stall the frame.
+// resolveDroppedBasePath turns a drop into a pick, off-thread because a stat on a network share must not stall the
+// frame. A dropped file means its folder, except a .zip, which is a mountable pack itself.
 func resolveDroppedBasePath(path string) {
 	w := &baseWizard
 	if strings.EqualFold(filepath.Ext(path), ".zip") {
 		w.setBasePath(path)
 		return
 	}
-	// Reuses the scan goroutine's own single-flight slot: scanBaseFolder already
-	// answers "that is a file, not a folder", so a dropped file resolves to its
-	// directory here and the scan reports whatever that directory turns out to be.
+	// scanBaseFolder reports whatever that directory turns out to be.
 	if !isDir(path) {
 		path = filepath.Dir(path)
 	}
 	w.setBasePath(path)
 }
 
-// applyBaseWizard commits the pick: the folder becomes mount 1 and the chosen
-// mode is applied. The ONLY function in this file that writes anything.
-//
-// FIRST in the list, because mounts are searched first-hit-wins — the folder the
-// user just pointed at and inspected is the one that should win a tie. An exact
-// re-pick moves it to the front instead of adding a duplicate.
+// applyBaseWizard commits the pick; the only function in this file that writes. The folder goes first because mounts
+// are first-hit-wins; an exact re-pick moves it to the front instead of adding a duplicate.
 func (a *App) applyBaseWizard() {
 	w := &baseWizard
 	if w.path == "" {
@@ -207,8 +141,6 @@ func (a *App) applyBaseWizard() {
 }
 
 // baseWizardApplied is the line the Settings page shows after the modal closes.
-// A named function so the two modes cannot end up describing each other, and so
-// the wording is testable without a window.
 func baseWizardApplied(path string, mode int) string {
 	if mode == assetSrcLocal {
 		return "Using " + path + " only. Nothing will stream from the server."
@@ -216,20 +148,15 @@ func baseWizardApplied(path string, mode int) string {
 	return "Using " + path + " first, then streaming anything it doesn't have."
 }
 
-// drawBaseWizard draws the modal LAST in drawSettings (topmost) with the page's
-// modal fence released, like the file browser. No-op when closed.
+// drawBaseWizard draws last in drawSettings (topmost) with the page's modal blocking released, like the file browser.
 func (a *App) drawBaseWizard(w, h int32) {
 	s := &baseWizard
 	if !s.open {
 		return
 	}
 	c := a.ctx
-	// The in-app file browser opens ON TOP of this panel (step 1's Browse…), so
-	// while it is up every widget here must go click-dead — otherwise the click
-	// that picks a browser row would also fire whatever wizard control happens to
-	// sit under it. Restored on the way out so the browser's own draw is unfenced:
-	// the app.go release-and-restore idiom, deferred because this function returns
-	// from three places.
+	// The file browser opens on top of this panel, so widgets here must ignore clicks meanwhile, or a click on a
+	// browser row also fires the control beneath it. Restored by defer so the browser's own draw is unblocked.
 	fenced := c.modalOn
 	c.modalOn = fenced || demoBrowser.open
 	defer func() { c.modalOn = fenced }()
@@ -261,13 +188,11 @@ func (a *App) drawBaseWizard(w, h int32) {
 	y = a.baseWizStepMode(inX, y, inW)
 
 	if s.note != "" {
-		// Return value dropped on purpose: the buttons below are pinned to the
-		// panel, so this is the last thing that flows with the content.
+		// Return value dropped: the buttons below are pinned to the panel, so nothing flows after this.
 		a.baseWizText(inX, y+4, inW, s.note, ColDanger)
 	}
 
-	// Buttons pinned to the panel's bottom edge, so they do not walk up and down
-	// as the report above them grows and shrinks.
+	// Pinned to the bottom edge so the buttons don't move as the report grows and shrinks.
 	by := py + ph - btnH - 12
 	if c.Button(sdl.Rect{X: px + pw - 250, Y: by, W: 100, H: btnH}, "Cancel") {
 		s.open = false
@@ -279,16 +204,12 @@ func (a *App) drawBaseWizard(w, h int32) {
 	}
 }
 
-// baseWizStepPick is step 1: browse, drop, or fix a near-miss.
 func (a *App) baseWizStepPick(x, y, w int32) int32 {
 	c := a.ctx
 	s := &baseWizard
 	c.Label(x, y+4, "1. Pick your base folder", ColText)
 	y += 22
-	// The IN-APP browser, not a native dialog. The native folder picker is a
-	// PowerShell shell-out that only exists on Windows and has failed to win
-	// foreground live before (settings.go's browseForFolder says so in its own
-	// comment, and names this as the escalation path).
+	// The in-app browser: the native picker is a Windows-only PowerShell shell-out that can fail to take foreground.
 	if c.Button(sdl.Rect{X: x + 16, Y: y, W: 110, H: btnH}, "Browse…") {
 		a.openDemoBrowserFor(purposeBaseFolder)
 	}
@@ -300,10 +221,8 @@ func (a *App) baseWizStepPick(x, y, w int32) int32 {
 	}
 	c.LabelClipped(x+16, y, w-16, s.path, ColAccent)
 	y += baseWizRowH + 4
-	// The near-miss correction. It is a BUTTON rather than a sentence because the
-	// two mistakes it catches (the install root, the characters/ folder itself)
-	// are both one click from right, and a user who has just been told their pick
-	// is wrong should not have to go back through the browser to act on it.
+	// A button because both mistakes it catches (the install root, the characters/ folder itself) are one click from
+	// right.
 	if s.scanned && s.scan.suggest != "" {
 		if c.Button(sdl.Rect{X: x + 16, Y: y, W: 150, H: btnH}, "Use that one instead") {
 			s.setBasePath(s.scan.suggest)
@@ -314,8 +233,6 @@ func (a *App) baseWizStepPick(x, y, w int32) int32 {
 	return y + 4
 }
 
-// baseWizStepFound is step 2: what the scan actually found, and every warning
-// that follows from it.
 func (a *App) baseWizStepFound(x, y, w int32) int32 {
 	c := a.ctx
 	s := &baseWizard
@@ -342,8 +259,7 @@ func (a *App) baseWizStepFound(x, y, w int32) int32 {
 	return y + 8
 }
 
-// baseWizStepMode is step 3: how the folder is used. Radio semantics over
-// checkbox rows, matching the Advanced rows this fronts.
+// baseWizStepMode is step 3: how the folder is used, with radio behaviour over checkbox rows.
 func (a *App) baseWizStepMode(x, y, w int32) int32 {
 	c := a.ctx
 	s := &baseWizard
@@ -362,8 +278,7 @@ func (a *App) baseWizStepMode(x, y, w int32) int32 {
 		}
 		y += 24
 	}
-	// The warning, and it is the reason the mode choice sits below the report:
-	// "never stream" is a promise about everything the folder does NOT hold.
+	// "Never stream" is a promise about everything the folder does not hold, so warn.
 	if s.mode == assetSrcLocal {
 		return a.baseWizText(x+16, y+2, w-16,
 			"Anything this folder is missing will not load at all — no sprite, no background, no music. "+
@@ -374,8 +289,7 @@ func (a *App) baseWizStepMode(x, y, w int32) int32 {
 			"This is the safe choice for testing your own work on a normal server.", ColTextDim) + 6
 }
 
-// baseWizText draws a wrapped paragraph inside the modal and returns the y past
-// it. settingsDesc wraps to the settings CARD's width, which is not this panel's.
+// baseWizText wraps to this panel's width; settingsDesc wraps to the settings card's.
 func (a *App) baseWizText(x, y, w int32, text string, col sdl.Color) int32 {
 	for _, ln := range a.ctx.WrapText(text, w, 0) {
 		a.ctx.Label(x, y, ln, col)
@@ -384,8 +298,6 @@ func (a *App) baseWizText(x, y, w int32, text string, col sdl.Color) int32 {
 	return y
 }
 
-// baseScanReport is the neutral part of step 2: what is in the folder. Pure over
-// the scan so the wording is tested without a window.
 func baseScanReport(s baseScan) []string {
 	kind := "folder"
 	if s.isZip {
@@ -419,10 +331,7 @@ func baseScanReport(s baseScan) []string {
 	return out
 }
 
-// baseScanINILine reports the char.ini finding — the whole of issue #72 in one
-// line. It always says how many folders were LOOKED AT, because a folder scan
-// samples (baseScanINISample) and reporting a sample as a total would be the
-// same kind of quiet wrongness this screen exists to remove.
+// baseScanINILine always says how many folders were looked at: a folder scan samples (baseScanINISample).
 func baseScanINILine(s baseScan) string {
 	switch {
 	case s.iniOf == 0:
@@ -436,12 +345,7 @@ func baseScanINILine(s baseScan) string {
 	}
 }
 
-// baseScanWarnings is everything the user needs told about this folder BEFORE
-// they commit to it. Empty for a folder that is simply fine.
-//
-// Pure over the scan, and separate from baseScanReport, because these are the
-// lines with consequences: each one names something that would otherwise be
-// discovered as "I set it up and my character still looks wrong".
+// baseScanWarnings lists what the user must be told before committing; empty for a folder that is fine.
 func baseScanWarnings(s baseScan) []string {
 	var out []string
 	if !s.looksLikeBase() {
@@ -452,10 +356,8 @@ func baseScanWarnings(s baseScan) []string {
 		}
 		out = append(out, line)
 	}
-	// The #72 warning proper. A base whose characters ship no char.ini still loads
-	// their sprites, so it looks like it worked — while every emote list, showname,
-	// blip set and chatbox skin keeps coming from the server's copy of that
-	// character. That is a difference no amount of staring at the screen explains.
+	// A base with no char.ini still loads sprites, so it looks fine, while emotes, showname, blips and chatbox skin
+	// keep coming from the server's copy of that character.
 	if s.chars > 0 && s.iniOf > 0 && s.iniOK == 0 {
 		out = append(out, "None of the characters checked ship a char.ini, so their emote lists, shownames "+
 			"and blips will still come from the server.")

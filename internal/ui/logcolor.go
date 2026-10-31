@@ -7,15 +7,11 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
-// Inline-colour rendering for the IC log (#123): an IC message's inline colour
-// markup now colours its log line, not just the live chatbox. The chatbox already
-// parses markup into StyleRuns and resolves them to colours (buildColorSpans);
-// this file maps those runs onto the log's wrapped display rows and draws them.
+// Inline-colour rendering for the IC log: maps the chatbox's StyleRuns (see buildColorSpans) onto the log's wrapped
+// rows.
 
-// inlineSpanAt returns the render colour spans for one wrapped log row's body:
-// a leading default-colour span for the head (timestamp + "<speaker>: "), then
-// the style runs covering the body runes [bodyOff, bodyOff+bodyLen). Pure — no
-// SDL — so the mapping is drivable in a test.
+// inlineSpanAt returns the colour spans for one wrapped log row: a default-colour span for the head (timestamp and
+// speaker), then the style runs covering body runes [bodyOff, bodyOff+bodyLen). Pure, so it is testable without SDL.
 func inlineSpanAt(styles []courtroom.StyleRun, headRunes, bodyOff, bodyLen int, def sdl.Color) []render.ColorSpan {
 	out := make([]render.ColorSpan, 0, len(styles)+1)
 	if headRunes > 0 {

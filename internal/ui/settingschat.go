@@ -12,9 +12,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// drawSettingsChat: message timing, typing, casing alerts, callwords, plus the
-// friends / ignore / DND / music-history / mod sections — everything from the old
-// Audio & Chat tab except the volumes (now their own Audio tab).
+// drawSettingsChat: message timing, typing, casing alerts, callwords, and the friends / ignore / DND / mod sections.
 func (a *App) drawSettingsChat(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -37,8 +35,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y += 30
 
 	y = a.settingsSection(y, w, "Text & typing")
-	// Hold-to-clear: hold a key (default Backspace, rebindable) to wipe a text
-	// box at once instead of deleting char-by-char.
+	// Hold-to-clear: hold a key (default Backspace, rebindable) to wipe a text box at once.
 	hcOn, hcKey, hcMs := a.d.Prefs.Load().HoldClear()
 	if next := c.Checkbox(pad, y, "Hold a key to clear a text box (a fast wipe — no holding backspace char-by-char)", hcOn); next != hcOn {
 		a.d.Prefs.Update(func(
@@ -77,9 +74,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		y += 30
 	}
 
-	// Word delete (ON by default): Ctrl+Backspace removes the whole preceding
-	// word instead of one letter — the standard editor chord. Off restores
-	// plain-key behavior (Ctrl+Backspace does nothing inside a field).
+	// Word delete (on by default): Ctrl+Backspace removes the whole preceding word; off, it does nothing in a field.
 	wdOn := a.d.Prefs.Load().WordDelete
 	if next := c.Checkbox(pad, y, "Ctrl+Backspace deletes a word", wdOn); next != wdOn {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.WordDelete = next })
@@ -88,8 +83,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	c.Label(pad+16, y, "In any text box. Off restores plain-key behavior.", ColTextDim)
 	y += 22
 
-	// Message timing (AO2-Client options.ini parity); applies live. Plain
-	// descriptions beside each knob so they're self-explanatory.
+	// Message timing (AO2-Client options.ini parity); applies live.
 	c.Label(pad, y, "Text speed — how the IC chatbox plays messages:", ColTextDim)
 	y += 20
 	crawl, stay, rate := a.d.Prefs.Load().Timing()
@@ -107,12 +101,8 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		a.applyTimingToRoom()
 	}
 
-	// Packed-room catch-up vs. the OG-client queue. ON (default) = webAO pacing:
-	// when 20 people talk at once, backlog messages skip their animations so the
-	// stage tracks real-time. OFF = the original AO2 client's queue — every line
-	// plays in full and in order, nothing cut off, but a room full of webAO users
-	// (who skip the queue) can leave you behind. The log keeps every line either
-	// way. (This is the "message queue" toggle — it was a setting, not removed.)
+	// Packed-room catch-up (on by default) is webAO pacing: backlog messages skip their animations so the stage
+	// tracks real time. Off is the original AO2 queue: every line plays in full and in order. The log keeps every line.
 	cuOn, cuThresh := a.d.Prefs.Load().CatchUp()
 	const cuLabel = "Catch up in packed rooms — uncheck for the OG-client queue (every line plays in full, nothing cut off)"
 	if next := c.Checkbox(pad, y, cuLabel, cuOn); next != cuOn {
@@ -135,8 +125,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		}
 		y += 30
 	}
-	// Message-send extras — they shape the messages you TYPE, so they belong
-	// with text & typing.
+	// Message-send extras shape the messages you type, so they sit with text and typing.
 	re := a.d.Prefs.Load().RandomEmote
 	if next := c.Checkbox(pad, y, "Auto-random emote (OFF by default): every message picks a different emote from your character's set — for the lazy, and to show off more sprites", re); next != re {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.RandomEmote = next })
@@ -152,10 +141,8 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowMessages = next })
 	}
 	y += 26
-	// #14 2.8 additive text (ON by default): honor an incoming ADDITIVE=1 line
-	// (it appends to the previous message, mirroring AO2's additive_previous) and
-	// offer the Additive checkbox on servers that advertise it. Off falls back to
-	// the pre-2.8 replace behavior.
+	// 2.8 additive text (on by default): honour an incoming ADDITIVE=1 line (it appends to the previous message,
+	// like AO2's additive_previous) and offer the Additive checkbox on servers that advertise it.
 	add := a.d.Prefs.Load().AdditiveText
 	if next := c.Checkbox(pad, y, "Additive text (ON by default): let a message add to the previous one instead of replacing it (2.8 narration RP) — shows the Additive checkbox on servers that support it", add); next != add {
 		a.d.Prefs.Update(func(
@@ -176,9 +163,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y += 26
 
 	y = a.settingsSection(y, w, "Chat log")
-	// IC log depth (Nightingale's report): how many IC lines the on-screen log
-	// keeps before the oldest scrolls away. Type an exact number, or press ∞ to
-	// never cap it.
+	// IC log depth: how many IC lines the on-screen log keeps; type a number, or press the infinity button for no cap.
 	c.Label(pad, y+4, "IC log depth:", ColText)
 	depth := a.d.Prefs.Load().ICLogDepthVal
 	depthFieldID := "iclogdepth"
@@ -220,7 +205,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 
 			})
 
-			// blank / garbage → back to the default
+			// blank or garbage goes back to the default
 		}
 		c.focusID = ""
 	}
@@ -283,10 +268,8 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 
 	}
 	y += 26
-	// Detailed transcript logging (opt-OUT since the flip — every other
-	// AO client saves the log, and people only discover they wanted it afterwards).
-	// Existing configs are moved once by DetailedLogDefaultMigrated; turning it back
-	// off here sticks forever.
+	// Detailed transcript logging is opt-out. Existing configs are moved once by DetailedLogDefaultMigrated;
+	// turning it off here sticks.
 	detLog := a.d.Prefs.Load().DetailedLog
 	if next := c.Checkbox(pad, y, "Save the chat log to disk (ON by default): append every IC line to logs/transcript.log with timestamp, server, area, character + showname", detLog); next != detLog {
 		a.d.Prefs.Update(func(
@@ -302,9 +285,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 
 	}
 	y += 26
-	// Ghost text (Crystalwarrior's ask): the tail of a message the typewriter has
-	// not reached yet is drawn transparent instead of absent, so the line keeps its
-	// final shape and the log stops reflowing under the reader on every rune.
+	// Ghost text: the unreached tail of a message is drawn transparent, so the line keeps its final shape while typing.
 	ghost := a.d.Prefs.Load().GhostCrawlText
 	if next := c.Checkbox(pad, y, "Ghost the text a message hasn't typed out yet (ON by default): the rest of the line shows faintly while it crawls, instead of the log growing a word at a time", ghost); next != ghost {
 		a.d.Prefs.Update(func(
@@ -336,17 +317,14 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 
 	}
 	y += 26
-	// Show the full song URL in the "has played a song" log line instead of just
-	// the name (a song's link, on request).
+	// Show the full song URL in the "has played a song" log line instead of just the name.
 	songURL := a.d.Prefs.Load().ShowSongURL
 	if next := c.Checkbox(pad, y, "Show the full song URL in the music log line (OFF by default): the whole link instead of just the song name", songURL); next != songURL {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.ShowSongURL = next })
 	}
 	y += 26
-	// Smooth log scrolling (OFF by default = AO2 parity). The default snaps the log
-	// to a newly-arrived line the instant it lands, exactly as AO2-Client does;
-	// turning this on brings back the glide. It governs the FOLLOW only — the wheel
-	// and the scrollbar keep their own easing either way.
+	// Smooth log scrolling (off by default, AO2 parity: the log snaps to a new line). It governs the follow only;
+	// the wheel and scrollbar keep their own easing.
 	const smoothLogLabel = "Smooth log scrolling (OFF by default): when a new IC message arrives the log jumps straight to it, like AO2. Turn on to glide instead."
 	smoothLog := a.d.Prefs.Load().SmoothLogScroll
 	if next := c.Checkbox(pad, y, smoothLogLabel, smoothLog); next != smoothLog {
@@ -357,9 +335,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y += 26
 
 	y = a.settingsSection(y, w, "Area list")
-	// Current-area highlight (playtest ask): the row you're in reads coloured
-	// at a glance in the player list + mod dashboard; green by default,
-	// recolourable here (the Extras-box hex convention: blank = default).
+	// Current-area highlight: the row you are in is coloured in the player list and mod dashboard; blank = green.
 	c.Label(pad, y+4, "Your area's colour:", ColTextDim)
 	areaHex := a.d.Prefs.Load().AreaHighlightHex
 	sw := sdl.Rect{X: pad + 160, Y: y + 1, W: 18, H: 18}
@@ -378,9 +354,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	c.LabelClipped(pad+378, y+4, w-pad-378-scrollBarW, "hex like 4ac96c — blank = the stock green; marks the area you're in", ColTextDim)
 	y += 32
 	if a.showAreaWheel {
-		// The shared inline colour wheel (drawWheelPicker), writing back as hex —
-		// the same value the field above edits. The extra button restores the
-		// stock green (the blank-pref default).
+		// The shared inline colour wheel (drawWheelPicker), writing back as hex; the extra button restores green.
 		hi := a.areaHighlightCol()
 		wheelY := y
 		ny, hx := a.drawWheelPicker(pad, wheelY, int(hi.R)<<16|int(hi.G)<<8|int(hi.B), func(rgb int) {
@@ -402,10 +376,8 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y = a.drawCasingRow(y)
 
 	y = a.settingsSection(y, w, "Callwords")
-	// #203 self-mention: auto-treat your own showname / character name as a
-	// callword (whole-word match, never your own messages) so you're pinged when
-	// addressed by name without adding it manually. Honours the sound/toast/OS
-	// options below and the streamer / DND / login-grace suppressions.
+	// Self-mention: treat your own showname / character name as a callword (whole word, never your own messages).
+	// Honours the sound/toast/OS options below and the streamer / DND / login-grace suppressions.
 	ms := a.d.Prefs.Load().MentionSelf
 	if next := c.Checkbox(pad, y, "Alert me when someone says my name (OFF by default): treats your showname + character as callwords, matched as whole words and never on your own lines", ms); next != ms {
 		a.d.Prefs.Update(func(
@@ -421,8 +393,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 
 	}
 	y += 30
-	// Callwords manager: type a word (or paste "a, b, c") + Add, and each shows
-	// below with a × to remove. Flash + sound + toast fire on an IC/OOC match.
+	// Callwords manager: type a word (or paste "a, b, c") and Add; each shows with a x to remove.
 	c.Label(pad, y+4, "Add word(s):", ColTextDim)
 	var callCommit bool
 	settings.callAddInput, callCommit = c.TextField("callwordadd", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH}, settings.callAddInput, "your name, nickname… (comma-separates; flash + sound when seen in IC/OOC)")
@@ -435,8 +406,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		}
 	}
 	y += 26
-	// §3.5 rule reminder: whole-word match by default, trailing '*' for the loose
-	// prefix shorthand. Kept to one dim line so the manager layout is unchanged.
+	// Whole-word match by default, trailing * for the loose prefix shorthand; one dim line keeps the layout.
 	c.Label(pad+130, y, "Matched as whole words — add a trailing * for a loose prefix (e.g. obj* catches \"objection\").", ColTextDim)
 	y += 22
 	if words := a.d.Prefs.Load().CallWords(); len(words) > 0 {
@@ -458,8 +428,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 	y += 32
 	if c.Button(sdl.Rect{X: pad + 120, Y: y, W: 130, H: btnH}, "Test sound") {
-		// Play exactly what a callword/friend alert fires: the custom file if set,
-		// else the built-in ping — so people can confirm it's actually audible.
+		// Play exactly what a callword/friend alert fires: the custom file if set, else the built-in ping.
 		if f := a.d.Prefs.Load().CallwordSoundFile; f != "" {
 			a.d.Audio.PlayFile(f)
 		} else {
@@ -514,9 +483,8 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 	y += 30
 	y = a.settingsSection(y, w, "Do Not Disturb")
-	// Do Not Disturb: session-only by default (clears every launch so it can't
-	// silently kill your callwords days later) — mutes the personal pings only.
-	// The keybind (default Ctrl+D, rebindable on the Controls tab) toggles it too.
+	// Do Not Disturb is session-only by default (cleared every launch so it cannot silently kill callwords days later)
+	// and mutes the personal pings only. The keybind (default Ctrl+D) toggles it too.
 	dndPersist := a.d.Prefs.Load().DNDPersist
 	dndTail := "Clears on restart."
 	if dndPersist {
@@ -555,11 +523,9 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 	y += 30
 
-	// AO2's four send-time options, shipped with AsyncAO's defaults. The three
-	// "sticky" ones govern Courtroom::reset_ui (courtroom.cpp:2340, :2348, :2356),
-	// which clears each pick only when the matching option is OFF; AO2 ships all
-	// three ON, AsyncAO ships them OFF so the picks reset after every send (matching
-	// the one-shot Screenshake/Realization arms).
+	// AO2's four send-time options with AsyncAO's defaults. The three sticky ones govern Courtroom::reset_ui
+	// (courtroom.cpp:2340, :2348, :2356), which clears each pick only when the option is off. AO2 ships them on;
+	// AsyncAO ships them off so picks reset after every send, like the one-shot Screenshake/Realization arms.
 	y = a.settingsSection(y, w, "Sending a message")
 	y = a.settingsDesc(pad, y, "What the IC bar does to itself after you press Enter. These are Attorney Online's own options, shipped with AsyncAO's defaults (reset after every send).", ColTextDim)
 	y += 6
@@ -673,8 +639,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y += 30
 
 	y = a.settingsSection(y, w, "Sound effects")
-	// M11 per-SFX mute: silence an annoying emote sound effect by name. The
-	// last one you heard gets a one-click toggle; the muted list is below.
+	// Per-SFX mute: silence an emote sound effect by name; the last one heard gets a one-click toggle.
 	if a.lastSFXName != "" {
 		on := a.d.Prefs.Load().IsSFXMuted(a.lastSFXName)
 		lbl := "Mute last SFX: " + a.lastSFXName
@@ -706,10 +671,8 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		y += 6
 	}
 
-	// M11 per-character blip volume: quiet a character whose typing blips are
-	// too loud (their scale multiplies the global blip volume; 100% = no
-	// change). The last speaker gets a quick slider; everyone you've adjusted
-	// is listed below with their own slider and a × that resets to 100%.
+	// Per-character blip volume: the scale multiplies the global blip volume (100% = no change). The last speaker
+	// gets a quick slider; adjusted characters are listed below with a x that resets to 100%.
 	c.Label(pad, y+2, "Per-character blip volume (typing-sound loudness, 100% = unchanged):", ColTextDim)
 	y += 22
 	if a.lastBlipChar != "" {
@@ -744,7 +707,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 
 	y = a.settingsSection(y, w, "Music history")
-	// M12: keep a session "recently played" jukebox history (ON by default).
+	// Keep a session recently-played jukebox history (on by default).
 	mh := a.d.Prefs.Load().MusicHistory
 	if next := c.Checkbox(pad, y, "Keep a \"recently played\" music history (ON by default): the Jukebox tab lists songs played in the room so you can Save a link (into the \"Music history\" playlist), Play, or Share. Off = don't record.", mh); next != mh {
 		a.d.Prefs.Update(func(
@@ -761,9 +724,8 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 	y += 30
 
-	// Domain allowlist for the history: only songs from these "unique" user-hosted
-	// domains are recorded (the server's own music still plays, it's just not
-	// saved). Discord records audio files only. Add/remove like the muted-SFX list.
+	// Domain allowlist for the history: only songs from these user-hosted domains are recorded (the server's own music
+	// still plays). Discord records audio files only.
 	if mh {
 		c.Label(pad+16, y, "Only record songs from these hosts — others still play, just aren't saved. Add a host (catbox.moe), or a host/folder", ColTextDim)
 		y += 18
@@ -789,8 +751,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 
 	y = a.settingsSection(y, w, "Friends")
-	// Player-list friend button (ON by default): the per-row "+ Friend" /
-	// "Unfriend" button. Hide it if it clutters the panel.
+	// Player-list friend button (on by default): the per-row + Friend / Unfriend button.
 	sfb := a.d.Prefs.Load().ShowFriendButton
 	if next := c.Checkbox(pad, y, "Show the \"+ Friend\" / \"Unfriend\" button on player-list rows (ON by default): one click adds or removes a friend.", sfb); next != sfb {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.ShowFriendButton = next })
@@ -936,11 +897,9 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 	y += 28
 
-	// Mod-command feedback sounds (#60): a distinct sound on ban/kick/mute —
-	// fires when your own /ban /kick /mute lands in OOC, on mod actions you can
-	// see, and when you personally get kicked/banned. Each action has its own
-	// toggle + optional custom file (blank = the built-in default). A duty
-	// signal, so it plays through Do Not Disturb. Test plays it right now.
+	// Mod-command feedback sounds: fire when your own /ban /kick /mute lands in OOC, on mod actions you can see, and
+	// when you are kicked or banned. Each has a toggle and optional custom file (blank = built-in). A duty signal, so
+	// it plays through Do Not Disturb.
 	c.Label(pad, y, "Mod-command SFX — play a sound when a ban / kick / mute happens (blank file = built-in default):", ColTextDim)
 	y += 24
 	type modSFXRow struct {
@@ -982,7 +941,6 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	return y
 }
 
-// drawSettingsAccount: per-server login, the master-list override, Discord.
 // formatWaitMs renders a millisecond knob compactly ("850 ms", "1.5 s").
 func formatWaitMs(ms int) string {
 	if ms < 1000 {

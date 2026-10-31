@@ -1,18 +1,8 @@
 package ui
 
-// Classic-layout slots: the DEFAULT (non-themed) courtroom — and the Legacy
-// Developer theme, which shares the same procedural geometry — are laid out
-// fresh every frame, so unlike the themed editor there are no design rects to
-// drag. Instead each movable widget draws through slotRect, which returns a user
-// override (persisted as a window FRACTION, so the drag is resolution-
-// independent) or — when nothing is overridden — the exact rect the layout
-// already computed. Un-edited ⇒ pixel-identical to before (the safety
-// invariant); the override path is purely additive and off the hot frame.
-//
-// The editor (drawClassicEditor) reuses the themed editor's feel — drag = move,
-// edge / corner handles = resize (independently horizontal or vertical),
-// right-click = reset a box, Snap, Esc/Done — but works in screen space over the
-// live courtroom and persists to config.ClassicLayout.
+// Classic-layout boxes: the default courtroom is laid out fresh every frame, so each movable widget draws through
+// slotRect, which returns a user override (stored as a window fraction, so resolution-independent) or the computed
+// rect. Un-edited must stay pixel-identical. The editor works in screen space and persists to config.ClassicLayout.
 
 import (
 	"fmt"
@@ -24,26 +14,19 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Slot names — string literals so the render path never formats a key (which
-// would allocate every frame). Keep in sync with the call sites in drawCourtroom.
+// Slot names are string literals so the render path never formats a key, which would allocate every frame.
 const (
 	slotViewport = "viewport" // the stage (free move + resize; the scene fills it)
 	slotRightCol = "rightcol" // IC log / right column (both themes)
 	slotOOC      = "ooc"      // the new-default OOC box (independent of the log)
 	slotEmotes   = "emotes"   // the emote grid (pages within its rect; both themes)
-	// The whole-bar "icbar" slot was REMOVED in v1.50.5 (requested by Nightingale:
-	// drop the panel and make every element independent) — the pieces below are the
-	// only IC-bar slots now. A stale "icbar" override in old prefs is ignored.
-	// Individually-movable pieces pulled OUT of the IC bar (the "build your own
-	// layout" work). Each defaults to its spot in the bar — so an un-edited or
-	// whole-bar-moved layout is pixel-identical — and only goes free once dragged.
+	// Pieces pulled out of the IC bar; each defaults to its spot in the bar and goes free only once dragged.
+	// A stale "icbar" override in old prefs is ignored.
 	slotICImmediate = "icbar.immediate" // the Immediate (non-interrupting preanim) toggle
 	slotICPre       = "icbar.pre"       // the "Pre" toggle — send the emote's preanim (auto-follows each pick), same wrap-not-extract rule as Immediate
 	slotICAdditive  = "icbar.additive"  // the Additive (2.8 append-to-last) toggle — shown only on additive servers, same wrap-not-extract rule as Immediate
-	// More IC-bar pieces pulled out individually (#4a, Crystalwarrior — split the bar up
-	// so the colours, checkboxes and the rest can live elsewhere). Same wrap-not-extract rule as
-	// Immediate: each draws through slotRect but the row cursor advances by the DEFAULT
-	// width, so an un-edited bar is pixel-identical and moving one never cascades the rest.
+	// Each draws through slotRect but the row cursor advances by the default width, so moving one never cascades the
+	// rest.
 	slotICColor    = "icbar.color"    // the text-colour swatch + dropdown
 	slotICShowname = "icbar.showname" // the per-session showname box
 	slotICSFX      = "icbar.sfx"      // the per-message SFX picker
@@ -56,25 +39,13 @@ const (
 	slotOOCBar     = "oocbar"         // the bottom OOC bar (name + full-width input; shown when OOC is a tab)
 	slotControls   = "controls"       // the two control-button rows (shouts/pair/knobs + utility buttons) as one block
 	slotTabBar     = "tabbar"         // the floating server-tab switcher strip (move-only; issue #2 — it used to overlap the dock tabs)
-	// slotToolbox is the compact bottom-right toolbox grip's PERSISTED home (A1
-	// Phase 2). It rides the same classic-slot mechanism as every other movable
-	// piece: an absent override keeps the historical bottom-right default (untouched
-	// installs are pixel-identical), and dragging it in the editor writes an override
-	// via SetClassicSlot on drag-end. Move-only (slotResizeEdges) — the strip sizes
-	// itself from its fixed chip count, so a resize would do nothing. The themed
-	// courtroom has a parallel opt-in key "asyncao_toolbox" (mirrors slotICFx's
-	// asyncao_ic_fx twin).
+	// slotToolbox is the compact toolbox's saved position. Move-only: the strip sizes itself from its fixed chip count.
+	// The themed courtroom's parallel key is "asyncao_toolbox".
 	slotToolbox = "toolbox"
-	// slotMessages is the Group Chat / DMs panel's PERSISTED home. Unlike a torn
-	// tab, slot presence is geometry only — visibility stays the orthogonal
-	// showMessages toggle (Extras → Group Chat). The live floatWin (msgWin) seeds
-	// from this slot on open and writes back on drag/resize end (messaging_panel.go).
+	// slotMessages is the Group Chat / DMs panel's saved geometry only; visibility stays the showMessages toggle.
 	slotMessages = "panel:messages"
-	// The remaining floatWin panels persist their geometry through the SAME
-	// classic-slot mechanism as slotMessages (seedPanelFromSlot / persistPanelSlot,
-	// driven by panelSlotTable). Like slotMessages, slot presence is geometry only —
-	// each panel's OPEN state stays its own orthogonal flag. msgWin keeps its
-	// historical slotMessages key (not slotPanelMsg) for backward compat.
+	// The other floatWin panels save geometry the same way, via panelSlotTable; open state stays their own flag.
+	// msgWin keeps its slotMessages key for backward compatibility.
 	slotPanelPair    = "panel:pair"    // pairWin (Pairing)
 	slotPanelMod     = "panel:mod"     // modWin (Mod dashboard)
 	slotPanelCM      = "panel:cm"      // cmWin (CM room controls)
@@ -89,18 +60,10 @@ const (
 	slotPanelTimer   = "panel:timer"   // timerWin (personal countdown, #31)
 	slotPanelLogin   = "panel:login"   // loginWin (auto-login credentials, #31)
 	slotPanelPairPop = "panel:pairpop" // pairPopWin (click-to-pair /pair <UID>, #31)
-	// slotExtras is the Extras box's persisted home. The Extras box keeps its
-	// bespoke drag/resize handlers (it is NOT a floatWin) but rides the classic-slot
-	// mechanism for cross-session position persistence.
+	// slotExtras is the Extras box's saved position; it is not a floatWin, with its own drag and resize handlers.
 	slotExtras = "panel:extras"
-	// tornWidgetSlotPrefix keys a torn-off Extras widget's persisted box rect:
-	// "torn:widget:<id>" where <id> indexes extrasWidgets(). Torn widgets survive
-	// relaunch by riding the same classic-slot mechanism as slotExtras — the frac
-	// rect persists on gesture-end and re-tears at that spot on the next courtroom
-	// entry (floatbox.go: persistTornWidgetSlot / reconstructTornWidgets). Unlike
-	// the panel/extras slots these keys are FORMATTED (id appended) — but only on
-	// the cold gesture-end / reconstruction paths, never on a settled draw frame, so
-	// the no-per-frame-alloc rule holds.
+	// tornWidgetSlotPrefix keys a torn-off Extras widget's rect: "torn:widget:<id>", id indexing extrasWidgets().
+	// Formatted, but only on gesture end and reconstruction, never on a settled draw frame.
 	tornWidgetSlotPrefix = "torn:widget:"
 )
 
@@ -113,38 +76,26 @@ const (
 )
 
 const (
-	// classicSlotRegCap pre-sizes the per-frame slot registry (cosmetic; the
-	// durable bound is config.classicSlotCap on what persists).
+	// classicSlotRegCap pre-sizes the per-frame registry; the durable bound is config.classicSlotCap.
 	classicSlotRegCap = 24
-	// classicMinPx floors a resized slot in screen px so a box can't vanish. Kept
-	// small so thin bars (the IC input / OOC bar) shrink back to natural height —
-	// 48 stranded them tall, unable to resize back down.
+	// classicMinPx floors a resized box so it can't vanish, small enough that thin bars return to natural height.
 	classicMinPx = 20
 	// classicBannerH is the editor's top banner height (drags stay below it).
 	classicBannerH = 26
-	// classicTabTrayBot is the bottom Y of the editor's stacked top chrome — the
-	// tab tray sits at classicBannerH+8 (top-inset 4) with a 40 px strip
-	// (drawClassicTabTray), so its bottom is classicBannerH + 8 - 4 + 40. Slot name
-	// tags clamp below it (classicChromeBot). Kept in sync with drawClassicTabTray.
+	// classicTabTrayBot is the bottom Y of the editor's top chrome; keep in sync with drawClassicTabTray.
 	classicTabTrayBot = int32(classicBannerH + 8 - 4 + 40)
-	// ctrlBlockMinW floors a width-resized control-button block: wide enough
-	// for the widest single button (Disconnect, 110 px) plus its spacing, so
-	// no button can be wrapped into an unreachable zero-width column.
+	// ctrlBlockMinW floors the control block: the widest button (Disconnect, 110 px) plus spacing, so none is
+	// unreachable.
 	ctrlBlockMinW = 140
 )
 
-// slotInfo records, per registered slot this frame, the rect it actually drew at
-// (cur) and the rect it WOULD draw at with no override (def, for reset).
-// Populated only while editing, so the common frame is alloc-free.
+// slotInfo holds a slot's drawn rect (cur) and its rect with no override (def). Filled only while editing.
 type slotInfo struct {
 	cur sdl.Rect
 	def sdl.Rect
 }
 
-// ensureClassicOv loads the persisted overrides into the App-local snapshot once
-// (the editor is the sole writer thereafter). A nil snapshot means "no edits" —
-// slotRect then just returns the computed default. Called every courtroom frame;
-// after the first it is a single bool check (alloc-free).
+// ensureClassicOv loads saved overrides once; the editor is the sole writer after. A nil snapshot means no edits.
 func (a *App) ensureClassicOv() {
 	if a.classicOvLoaded {
 		return
@@ -155,26 +106,12 @@ func (a *App) ensureClassicOv() {
 	a.classicOvLoaded = true
 }
 
-// fracPx resolves one stored window-fraction against an extent, rounding to the NEAREST
-// pixel instead of truncating.
-//
-// Truncation does not round-trip. float64(x)/float64(e)*float64(e) is only guaranteed to
-// be within one ulp of x, and whenever that ulp falls short int32() throws a whole pixel
-// away: measured over every x < e for a dozen common window sizes, 346 positions came
-// back one pixel short, and the stock AO2 canvas width (714) loses roughly one position
-// in six. A mouse drag travels far enough that nobody could ever see it. The arrow-key
-// nudge (layoutnudge.go) moves exactly one pixel, so a dropped pixel is the ENTIRE
-// gesture — a held arrow key would visibly stall against nothing.
-//
-// Rounding is also the fix at the right end: it leaves what is written to disk alone (a
-// drag onto 360 of 1000 px still persists 0.36) and only makes reading it back exact.
-// math.Floor(v+0.5) rather than int32(v+0.5) so a hand-edited negative fraction rounds
-// the same way as a positive one instead of toward zero.
+// fracPx rounds to the nearest pixel because truncation does not round-trip: x/e*e can fall an ulp short and lose a
+// whole pixel, which is an entire arrow-key nudge. Floor(v+0.5) so a negative fraction rounds the same way.
 func fracPx(f float64, extent int32) int32 {
 	return int32(math.Floor(f*float64(extent) + 0.5))
 }
 
-// fracToRect converts a stored window-fraction override to screen pixels.
 func fracToRect(f [4]float64, w, h int32) sdl.Rect {
 	return sdl.Rect{
 		X: fracPx(f[0], w),
@@ -184,10 +121,7 @@ func fracToRect(f [4]float64, w, h int32) sdl.Rect {
 	}
 }
 
-// rectToFrac is the inverse — screen pixels to window fractions for persistence.
-// Deliberately the plain quotient: the stored value is the number a user (or a preset,
-// or a test) reads, so a drag that lands on 360 of 1000 px must persist 0.36 and nothing
-// cleverer. Exactness is fracPx's job, at the other end.
+// rectToFrac is the plain quotient on purpose: a drag onto 360 of 1000 px must persist 0.36. Exactness is fracPx's job.
 func rectToFrac(r sdl.Rect, w, h int32) [4]float64 {
 	if w <= 0 || h <= 0 {
 		return [4]float64{}
@@ -200,10 +134,7 @@ func rectToFrac(r sdl.Rect, w, h int32) [4]float64 {
 	}
 }
 
-// snapViewportTo43 sets the stage to 4:3 RIGHT NOW (width wins, height derived,
-// shrunk only if the result would leave the window) — the immediate feedback for
-// the editor's "4:3" toggle. Undoable and persisted like any drag. No-op when
-// the stage is already 4:3 or isn't registered this frame.
+// snapViewportTo43 sets the stage to 4:3 at once (width wins; height derived, shrunk only to stay in the window).
 func (a *App) snapViewportTo43(w, h int32) {
 	info, ok := a.slotReg[slotViewport]
 	if !ok {
@@ -233,16 +164,8 @@ func (a *App) snapViewportTo43(w, h int32) {
 	a.pushDebug("edit layout: stage snapped to 4:3")
 }
 
-// regSlot records a slot's drawn/default rects for the editor (edit-only path).
-//
-// AN EMPTY NAME IS REFUSED. "" is the classic editor's own spelling of "nothing
-// selected" (classicEditKey, and editTarget's whole reason for having a space
-// field), so an unnamed registration would put a hoverable, draggable box in
-// slotReg that compares equal to the unselected state — and its release would call
-// config.SetClassicSlot(""), which keys the persisted layout by name. The only way
-// to reach here with one is a caller passing a computed key, which is exactly what
-// W7's element work will be doing; refusing it costs one compare on an edit-only
-// path.
+// regSlot records a slot's rects for the editor. An empty name is refused: "" means "nothing selected", and its
+// release would call config.SetClassicSlot("").
 func (a *App) regSlot(name string, cur, def sdl.Rect) {
 	if name == "" {
 		return
@@ -253,9 +176,7 @@ func (a *App) regSlot(name string, cur, def sdl.Rect) {
 	a.slotReg[name] = slotInfo{cur: cur, def: def}
 }
 
-// slotRect returns a movable+resizable widget's rect: the user override (frac→px)
-// if present, else the layout's computed default. Reads a.classicOv lock-free; on
-// the common (non-edit) frame it touches no map writer and allocates nothing.
+// slotRect returns the override if present, else the default. Reads a.classicOv lock-free and allocates nothing.
 func (a *App) slotRect(name string, def sdl.Rect, w, h int32) sdl.Rect {
 	cur := def
 	if ov, ok := a.classicOv[name]; ok {
@@ -267,24 +188,14 @@ func (a *App) slotRect(name string, def sdl.Rect, w, h int32) sdl.Rect {
 	return cur
 }
 
-// movableButton draws a control button that can be pulled out of its row into its
-// own spot in the classic editor. Its rect routes through slotRect(key), so an
-// override repositions it, while the caller keeps advancing its layout cursor by the
-// button's DEFAULT width — so an un-edited row is pixel-identical and moving one
-// button never cascades the rest (the "wrap, not extract" pattern). key MUST be a
-// string literal (no per-frame formatting) to keep the row allocation-free. Returns
-// whether the button was clicked this frame.
+// movableButton draws a button movable in the classic editor; the caller advances by its default width, so moving it
+// never cascades the row. key must be a string literal, to stay allocation-free. Returns whether it was clicked.
 func (a *App) movableButton(key string, def sdl.Rect, label string, w, h int32) bool {
 	return a.ctx.Button(a.slotRect(key, def, w, h), label)
 }
 
-// ctrlSlot positions one courtroom control button at the shared row cursor *x and
-// advances it past the button — UNLESS the user hid that button (the customizable
-// toolbar: UI… popup → Buttons), in which case it returns ok=false and leaves the
-// cursor PUT, so the row COMPACTS with no gap. `adv` is the exact cursor step
-// (width + spacing) the inline row used, so a row with nothing hidden is
-// pixel-identical to before. The returned rect still routes through slotRect, so an
-// Edit-Layout override repositions a visible button as usual.
+// ctrlSlot places one control button at *x and advances past it by adv, unless the user hid it: then ok=false and the
+// cursor stays, so the row closes the gap.
 func (a *App) ctrlSlot(x *int32, y2, wdt, adv, w, h int32, key string) (sdl.Rect, bool) {
 	if a.panelHidden(key) {
 		return sdl.Rect{}, false
@@ -294,8 +205,7 @@ func (a *App) ctrlSlot(x *int32, y2, wdt, adv, w, h int32, key string) (sdl.Rect
 	return r, true
 }
 
-// classicSnapTo rounds a screen coordinate to the editor's grid step g
-// (user-tunable — the banner's Grid chip; config.Settings.LayoutGridSize).
+// classicSnapTo rounds a coordinate to the editor's grid step g (config.Settings.LayoutGridSize).
 func classicSnapTo(v, g int32) int32 {
 	if v < 0 {
 		return 0
@@ -306,7 +216,6 @@ func classicSnapTo(v, g int32) int32 {
 	return (v + g/2) / g * g
 }
 
-// classicSlotLabel is the human name shown on a slot's outline in the editor.
 func classicSlotLabel(k string) string {
 	switch k {
 	case slotViewport:
@@ -362,11 +271,9 @@ func classicSlotLabel(k string) string {
 	case "ctrl.favsfilter":
 		return "★ Favs filter"
 	default:
-		// Individually-movable control buttons carry a "ctrl.<name>" key.
 		if rest, ok := strings.CutPrefix(k, "ctrl."); ok {
 			return strings.ToUpper(rest[:1]) + rest[1:] + " button"
 		}
-		// Torn-off tab panels carry a "tab:<name>" key.
 		for i := range tornTabTable {
 			if tornTabTable[i].key == k {
 				return tornTabTable[i].title + " (panel)"
@@ -376,8 +283,7 @@ func classicSlotLabel(k string) string {
 	}
 }
 
-// classicEdgeAt reports which sides of r the cursor grips, within margin px. A
-// corner returns two adjacent sides; 0 means "inside / not on an edge" (= move).
+// classicEdgeAt reports which sides of r the cursor grips within margin px; a corner gives two, 0 means a move.
 func classicEdgeAt(mx, my int32, r sdl.Rect, margin int32) uint8 {
 	if mx < r.X-margin || mx > r.X+r.W+margin || my < r.Y-margin || my > r.Y+r.H+margin {
 		return 0
@@ -398,48 +304,27 @@ func classicEdgeAt(mx, my int32, r sdl.Rect, margin int32) uint8 {
 	return e
 }
 
-// slotResizeEdges reports which edges of a slot honour a resize drag; 0 means
-// move-only. Restricted slots paint only their live handles and the resize
-// hit-test masks the rest — critically so an inert edge can't STEAL a
-// neighbour's grip (smallest-area-wins would otherwise let a slot swallow the
-// resize of a box it merely touches, then do nothing — the "boxes in the
-// middle won't resize" bug).
+// slotResizeEdges reports which edges honour a resize drag; 0 means move-only. The hit-test masks the rest so an inert
+// edge can't take a neighbour's grip.
 func slotResizeEdges(name string) uint8 {
 	switch name {
 	case slotControls:
-		// v1.52.0 (Tifera): the control-button block is WIDTH-resizable — the
-		// override width drives the row-wrap edge (controlsBlockOrigin), so
-		// narrowing it re-wraps the buttons into a taller stack. Height stays
-		// content-driven (the rows decide it), so the horizontal edges stay
-		// inert rather than pretending to work.
+		// Width drives the row-wrap edge (controlsBlockOrigin); height comes from the rows, so those edges stay inert.
 		return edgeL | edgeR
 	case slotTabBar:
-		// The server-tab strip sizes itself from its chips, so resizing it
-		// would do nothing — move-only.
+		// The server-tab strip sizes itself from its chips.
 		return 0
 	case slotToolbox:
-		// The compact toolbox strip sizes itself from its fixed chip count
-		// (compactToolboxStripRect), so a resize would do nothing — move-only,
-		// exactly like the server-tab strip.
+		// The compact toolbox strip sizes itself from its fixed chip count.
 		return 0
 	default:
 		return edgeL | edgeR | edgeT | edgeB
 	}
 }
 
-// pickResizeSlot chooses which slot a resize grip at (mx,my) targets. It RESPECTS the
-// hovered box — the same box move would act on (the highlighted, Tab-selectable one) —
-// so "if I can move it, I can resize it": resize the hovered box when it's resizable
-// and its edge is gripped, otherwise don't resize it (the caller moves it). This is the
-// fix for "boxes in the middle won't resize": the old code resized the smallest gripped
-// box across ALL boxes, so a neighbour merely touching the edge (or the move-only
-// control block) would steal the grip. Only when the cursor is over NO box (a grip in
-// the outer margin between/around boxes) does it fall back to the smallest gripped
-// RESIZABLE box. Move-only slots are always skipped. Pure + testable.
-//
-// The per-slot edge rule goes through resizeEdgesFor (edittarget.go) rather than
-// straight to slotResizeEdges: one entry point for both editors' spaces, so the design
-// path's 8-handle probe and this one cannot grow different answers for the same widget.
+// pickResizeSlot picks the slot a grip at (mx,my) targets: the hovered box if resizable and gripped, so a touching
+// neighbour can't take the grip. Over no box, the smallest gripped resizable box. Edges come from resizeEdgesFor so
+// both editors give the same answer for a widget.
 func pickResizeSlot(reg map[string]slotInfo, keys []string, hoverKey string, mx, my, margin int32) (string, uint8) {
 	if hoverKey != "" { // pointing at a box → only that box may resize (matches move)
 		if e := classicEdgeAt(mx, my, reg[hoverKey].cur, margin) & resizeEdgesFor(classicTarget(hoverKey)); e != 0 {
@@ -460,14 +345,7 @@ func pickResizeSlot(reg map[string]slotInfo, keys []string, hoverKey string, mx,
 	return bestKey, bestEdges
 }
 
-// classicHandles returns the 8 resize handles (4 corners + 4 edge midpoints) of r
-// so the editor can paint them — making "drag an edge to resize one dimension"
-// discoverable.
-//
-// SHARED WITH THE DESIGN PATH since W6: the themed editor probes and paints these same
-// squares (edittarget.go handleGripAt / handleGripMask), which is what closed the
-// recon's PARTIAL — index handleBottomRight is bit-identical to the single corner grip
-// that editor used to have, so the generalization is a superset of it.
+// classicHandles returns the 8 resize handles of r (4 corners + 4 edge midpoints); the themed editor shares them.
 func classicHandles(r sdl.Rect) [handleCount]sdl.Rect {
 	const hp = layoutHandlePx
 	cx := r.X + r.W/2 - hp/2
@@ -484,15 +362,11 @@ func classicHandles(r sdl.Rect) [handleCount]sdl.Rect {
 	}
 }
 
-// startClassicEdit arms the default-courtroom slot editor. Open modals close
-// (they'd be fenced shut); mirrors startLayoutEdit.
+// startClassicEdit arms the default-courtroom editor and closes open modals, which it would block anyway.
 func (a *App) startClassicEdit() {
 	a.ensureClassicOv()
 	a.classicEdit = true
-	// A1 Phase 1: the compact toolbox (grip + per-piece hide/show panel) now SURVIVES
-	// into edit mode — it's the clean replacement for the retired top-band chip strip,
-	// so toolboxPinned/toolboxPieces are left as the user set them (they draw
-	// post-courtroom with the fence released; the strip is gone).
+	// The compact toolbox stays up in edit mode, drawn post-courtroom with pointer blocking released.
 	a.closeEditorBlockingOverlays() // table-driven, shared with startLayoutEdit (layoutedit.go)
 	a.classicTgt = noTarget()
 	a.classicEditDrag = 0
@@ -503,13 +377,12 @@ func (a *App) startClassicEdit() {
 	a.layoutSnap = true        // tidy placement by default; toggle off in the editor
 	a.layoutAspect = true      // keep the stage 4:3 while resizing (toggle off for a free / letterboxed stage)
 	a.layoutProfileCursor = -1 // no saved profile applied via the banner chip yet this edit
-	// layoutMagnetOff is NOT reset here: the sibling magnet applies in normal play
-	// too, so its zero value (magnet on) must persist across editor sessions — the
-	// chip is the only thing that flips it.
+	// layoutMagnetOff is not reset: the magnet also applies in normal play, so its zero value must persist across
+	// sessions.
 	a.pushDebug("edit layout (default courtroom): drag to move, edges/corners to resize, Ctrl+Z to undo, Esc to finish")
 }
 
-// stopClassicEdit disarms and releases the input fence.
+// stopClassicEdit disarms and releases input blocking.
 func (a *App) stopClassicEdit() {
 	a.classicEdit = false
 	a.classicTgt = noTarget()
@@ -519,29 +392,16 @@ func (a *App) stopClassicEdit() {
 	a.ctx.modalOn = false
 }
 
-// classicEditFence claims the pointer for the slot editor BEFORE the default
-// courtroom's widgets draw — they see hovering()==false and stay inert while the
-// editor reads raw cursor coordinates (pointIn). Mirrors layoutEditFence.
+// classicEditFence claims the pointer before the courtroom's widgets draw, so they stay inert. Mirrors layoutEditFence.
 func (a *App) classicEditFence() {
 	if a.classicEdit {
 		a.ctx.modalOn = true
 	}
 }
 
-// controlsBlockOrigin computes the control-button block's draw origin (clusterX,
-// blockY), its vertical offset from the default top (dy), and the row-wrap edge
-// (clusterRight) from the block's slot override, if present. Un-edited, the
-// content width is w-2*pad — clusterX==pad, dy==0, clusterRight==w-pad, so the
-// un-edited courtroom stays byte-identical (the safety invariant). An override
-// translates the block AND, since v1.52.0 (Tifera), its WIDTH drives the wrap
-// edge: narrowing re-wraps the rows into a taller stack (widgets below anchor
-// to the re-wrapped bottom, keeping clear of it). ctrlBlockMinW floors the
-// width so every button stays reachable; an override height is ignored (the
-// rows decide it). Old move-only overrides saved W as the full content width,
-// so they land exactly on the default wrap — nothing shifts on upgrade. Pure +
-// alloc-free so the invariant is unit-pinnable.
-// r is the slot's RESOLVED rect (anchoredRect — window pins included); ok
-// mirrors the override's presence.
+// controlsBlockOrigin computes the block's origin, its offset from the default top (dy) and the wrap edge. Un-edited:
+// clusterX==pad, dy==0, clusterRight==w-pad. An override translates it and its width drives the wrap (floored by
+// ctrlBlockMinW); its height is ignored. r is the resolved rect; ok mirrors the override's presence.
 func controlsBlockOrigin(r sdl.Rect, ok bool, w, defY int32) (clusterX, blockY, dy, clusterRight int32) {
 	clusterX, blockY = pad, defY
 	contentW := w - 2*pad
@@ -557,18 +417,13 @@ func controlsBlockOrigin(r sdl.Rect, ok bool, w, defY int32) (clusterX, blockY, 
 	return
 }
 
-// viewportOverridden reports whether the user has dragged/resized the stage in
-// the classic editor. The View knob and the edge divider then defer to that
-// override (it would otherwise change vpPct silently, which the override shadows)
-// until the box is reset.
+// viewportOverridden is true once the stage was dragged; the View knob and divider then defer until the box is reset.
 func (a *App) viewportOverridden() bool {
 	_, ok := a.classicOv[slotViewport]
 	return ok
 }
 
-// clearClassicSlot drops one slot's override from both the durable pref and the
-// App-local snapshot so it reverts to the computed default the same frame. The
-// window pin goes with it (config's ClearClassicSlot already cascades).
+// clearClassicSlot drops an override from pref and snapshot, so it reverts the same frame; the window pin goes too.
 func (a *App) clearClassicSlot(name string) {
 	a.d.Prefs.ClearClassicSlot(name)
 	if a.classicOv != nil {
@@ -582,9 +437,7 @@ func (a *App) clearClassicSlot(name string) {
 	}
 }
 
-// cloneClassicOv copies the override map for the undo history — the map is a reference,
-// so aliasing it would let a later edit silently mutate a snapshot (the classic undo
-// bug). An empty map clones to nil = the "no overrides" state, so it round-trips.
+// cloneClassicOv copies for the undo history, since aliasing lets a later edit mutate a snapshot. Empty clones to nil.
 func cloneClassicOv(m map[string][4]float64) map[string][4]float64 {
 	if len(m) == 0 {
 		return nil
@@ -596,9 +449,7 @@ func cloneClassicOv(m map[string][4]float64) map[string][4]float64 {
 	return cp
 }
 
-// pushClassicUndo snapshots the overrides BEFORE an edit and forks history (a fresh edit
-// drops the redo stack). Bounded by layoutUndoCap; edit-mode only, never on the render
-// frame, so the alloc-free guarantee for normal play is untouched.
+// pushClassicUndo snapshots before an edit and clears redo. Edit-mode only; bounded by layoutUndoCap.
 func (a *App) pushClassicUndo() {
 	a.classicUndo = append(a.classicUndo, cloneClassicOv(a.classicOv))
 	if len(a.classicUndo) > layoutUndoCap {
@@ -607,19 +458,15 @@ func (a *App) pushClassicUndo() {
 	a.classicRedo = a.classicRedo[:0]
 }
 
-// restoreClassicOv applies an undo/redo snapshot: it becomes the live overrides AND the
-// durable pref (so the result survives a relog, like the themed editor's restoreLayout).
-// The snapshot is cloned so the live map never aliases a history entry.
+// restoreClassicOv applies a snapshot to live overrides and the durable pref; cloned so nothing aliases a history
+// entry.
 func (a *App) restoreClassicOv(snap map[string][4]float64) {
 	a.classicOv = cloneClassicOv(snap)
 	a.d.Prefs.SetClassicLayout(a.classicOv)
 }
 
-// classicEditUndo / classicEditRedo swap the live override map with a history
-// snapshot and re-sync the durable pref, so a misdrag is one keystroke away —
-// and the result persists. (Right-click only resets a box to DEFAULT; undo gets
-// a previous CUSTOM spot back.) Driven by editorUndoChord — Ctrl chords arrive
-// on the hotkey channel, so the editor's draw loop never sees them.
+// classicEditUndo / classicEditRedo swap the override map with a snapshot and persist. Driven by editorUndoChord,
+// because Ctrl chords arrive on the hotkey channel and the editor's draw never sees them.
 func (a *App) classicEditUndo() {
 	if len(a.classicUndo) == 0 {
 		return
@@ -640,9 +487,7 @@ func (a *App) classicEditRedo() {
 	a.restoreClassicOv(snap)
 }
 
-// drawClassicEditor paints the slot-editor overlay and owns every interaction.
-// Called LAST from drawCourtroom (default layout only), after every widget has
-// registered its rect via slotRect this frame.
+// drawClassicEditor paints the overlay and owns input. Called last from drawCourtroom, after every slotRect this frame.
 func (a *App) drawClassicEditor(w, h int32) {
 	c := a.ctx
 	if w <= 0 || h <= 0 {
@@ -650,30 +495,22 @@ func (a *App) drawClassicEditor(w, h int32) {
 		return
 	}
 
-	// Banner GEOMETRY first — the click handlers below read these rects. The
-	// paint happens at the very END of this function, so the editor's own
-	// chrome always sits above slot outlines, name tags and the tab strip: a
-	// box parked in the top strip used to plaster its tag straight over the
-	// Snap/Done buttons (the "layering mess" playtest shot).
+	// Banner geometry first, as the click handlers read it; the paint comes last so chrome sits above outlines and
+	// tags.
 	doneBtn := sdl.Rect{X: w - 62 - pad, Y: 2, W: 62, H: classicBannerH - 4}
 	resetBtn := sdl.Rect{X: doneBtn.X - 90 - 6, Y: 2, W: 90, H: classicBannerH - 4}
 	snapBtn := sdl.Rect{X: resetBtn.X - 92 - 6, Y: 2, W: 92, H: classicBannerH - 4}
 	gridBtn := sdl.Rect{X: snapBtn.X - 78 - 6, Y: 2, W: 78, H: classicBannerH - 4}
 	aspectBtn := sdl.Rect{X: gridBtn.X - 80 - 6, Y: 2, W: 80, H: classicBannerH - 4}
-	// Magnet chip (Phase 3): persistent toggle beside Snap for the piece-to-piece
-	// sibling magnet, so it can be loosened without holding Shift on every drag.
+	// Toggle for the sibling magnet, so it can be loosened without holding Shift.
 	magnetBtn := sdl.Rect{X: aspectBtn.X - editChipMagnetW - 6, Y: 2, W: editChipMagnetW, H: classicBannerH - 4}
-	// Profile chip (Phase 3): surfaces the existing full-state layout-profile
-	// system (applyProfile) as a banner control — a click cycles to the next saved
-	// profile. Drawn only when at least one profile exists (else it would be dead).
+	// Cycles saved layout profiles; drawn only when at least one exists.
 	profileBtn := sdl.Rect{X: magnetBtn.X - editChipProfileW - 6, Y: 2, W: editChipProfileW, H: classicBannerH - 4}
 
 	pressed := c.mouseDown && !a.classicEditPrev
 	a.classicEditPrev = c.mouseDown
 
-	// Undo / redo (Ctrl+Z / Ctrl+Y) fire from editorUndoChord (handleHotkeys):
-	// Ctrl chords ride c.hotkey, never c.keyPressed, so an in-draw keyPressed
-	// check here was dead code — the chord had already been routed away.
+	// Undo / redo fire from editorUndoChord: Ctrl chords use c.hotkey, never c.keyPressed.
 
 	if c.escPressed || (c.clicked && pointIn(c.mouseX, c.mouseY, doneBtn)) {
 		a.stopClassicEdit()
@@ -691,8 +528,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 	if c.clicked && pointIn(c.mouseX, c.mouseY, snapBtn) {
 		a.layoutSnap = !a.layoutSnap
 	}
-	// Grid chip: cycles the snap step (4 → 8 → 16 → 32, persisted) — playtest
-	// request (Tifera): a user-editable snap grid.
+	// Cycles the snap step (4, 8, 16, 32), persisted.
 	if c.clicked && pointIn(c.mouseX, c.mouseY, gridBtn) {
 		gridPx := nextLayoutGridSize(a.d.Prefs.Load().LayoutGridSize())
 		a.d.Prefs.Update(func(sn *config.Settings) {
@@ -702,9 +538,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 
 	if c.clicked && pointIn(c.mouseX, c.mouseY, aspectBtn) {
 		a.layoutAspect = !a.layoutAspect // lock/unlock the stage's 4:3 while resizing it
-		// Turning it ON snaps the stage to 4:3 RIGHT NOW (width wins) — the old
-		// behaviour only constrained future resize drags, which read as "the 4:3
-		// button does nothing" in the playtest.
+		// Turning it on snaps the stage to 4:3 at once, not only on future resize drags.
 		if a.layoutAspect {
 			a.snapViewportTo43(w, h)
 		}
@@ -714,41 +548,28 @@ func (a *App) drawClassicEditor(w, h int32) {
 	}
 	if c.clicked && a.hasLayoutProfiles() && pointIn(c.mouseX, c.mouseY, profileBtn) {
 		a.cycleLayoutProfile() // apply the next saved full-state profile (applyProfile)
-		// Return like "Reset all" does: applyProfile replaced the whole override map,
-		// so this frame's slotReg (built earlier from the OLD overrides) is stale —
-		// bail and let the next frame rebuild from the applied profile.
+		// applyProfile replaced the override map, so this frame's slotReg is stale: bail and rebuild next frame.
 		return
 	}
 
-	// Pop-out tray (bottom): tear a log tab out into its own movable panel, or
-	// redock it. overTray suppresses a slot-move when you press a chip. (torntabs.go)
+	// overTray suppresses a slot move when a tray chip is pressed.
 	overTray := a.drawClassicTabTray(w, h)
-	// The stacked top chrome now ends at the tab-tray bottom (the full-width toolbox
-	// strip that used to sit under it is retired — A1 Phase 1). Slot name tags clamp
-	// below this so a box parked in the top strip can't plaster its tag over the
-	// editor's own controls (drawSlotTag reads classicChromeBot).
+	// Name tags clamp below this so a box in the top strip can't draw its tag over the editor's controls.
 	a.classicChromeBot = classicTabTrayBot
-	// Compact toolbox (bottom-right grip → Theater / Edit / Hide-UI): it now draws in
-	// edit mode too (post-courtroom, app.go), so a press over its strip or open
-	// pieces panel must suppress a slot-move — else the click would grab whatever box
-	// sits under the bottom-right corner. Mirrors overTray for the top tab tray.
+	// A press over the toolbox must not move the box beneath the bottom-right corner.
 	overToolbox := a.editOverToolbox(w, h)
 
-	// Slot names this frame, stable order.
 	keys := make([]string, 0, len(a.slotReg))
 	for k := range a.slotReg {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
-	// Hover: the stack of boxes under the cursor, SMALLEST area first (so a small box on
-	// a big one is grabbable), with Tab cycling which is armed — now that there are many
-	// slots they really can overlap (drag the control block over the emote grid, etc.).
-	// The pick index resets whenever the stack under the cursor changes.
+	// Boxes under the cursor, smallest first so a small box on a big one is grabbable; Tab cycles which is armed.
+	// The pick index resets whenever that stack changes.
 	hoverKey := ""
 	var stack []string
-	// The selected slot's key, resolved once: every arm below that used to read the
-	// bare string field reads THIS, so the space is checked exactly once per frame.
+	// Resolved once, so the target's space is checked once per frame.
 	editKey := a.classicTgt.classicKey()
 	if a.classicEditDrag != 0 {
 		hoverKey = editKey // mid-drag: keep the grabbed box highlighted
@@ -777,40 +598,28 @@ func (a *App) drawClassicEditor(w, h int32) {
 		}
 	}
 
-	// A pins the hovered box to a window corner / the centre (cycles off →
-	// ↖ → ↗ → ↙ → ↘ → ● — requested by Tifera: anchor layout items to the
-	// corners and centre of the screen): a pinned box keeps its PIXEL offsets from that
-	// reference when the window resizes, instead of drifting with the
-	// fractions. Consumed so a char keybind on A can't also fire mid-edit.
+	// A pins the hovered box to a window corner or the centre, keeping its pixel offsets on resize.
+	// Consumed so a char keybind on A can't also fire.
 	if a.classicEditDrag == 0 && hoverKey != "" && c.keyPressed == sdl.K_a {
 		a.cycleSlotAnchor(hoverKey, w, h)
 		c.keyPressed = 0
 	}
 
-	// R rotates the hovered box's texture-backed chrome (A4): coarse 0/90/180/270,
-	// Shift+R a fine 15° step. Non-undoable like the anchor pin. Consumed so a char
-	// keybind on R can't also fire mid-edit. No classic slot is texture-backed
-	// today, so cycleSlotRotation reports an "n/a" hint (honest, not silent).
+	// R rotates the hovered box's texture-backed chrome (Shift+R: fine step). Not undoable. Consumed like A.
+	// No classic slot is texture-backed today, so cycleSlotRotation reports "n/a".
 	if a.classicEditDrag == 0 && hoverKey != "" && c.keyPressed == sdl.K_r {
 		a.cycleSlotRotation(hoverKey, sdl.GetModState()&sdl.KMOD_SHIFT != 0)
 		c.keyPressed = 0
 	}
 
-	// Begin a drag on press: RESIZE (an edge/corner is gripped) takes priority over
-	// MOVE. pickResizeSlot targets the HOVERED box (so resize hits the box you're
-	// pointing at, like move does) and skips move-only slots so the little control
-	// block can't steal a neighbour's edge grip.
-	// A drag can begin ANYWHERE except over the editor's own chips (so the top strip
-	// is grabbable instead of a blanket no-drag banner row) or the pop-out tray.
+	// Resize takes priority over move, on the hovered box. A drag can begin anywhere except over the editor's own chips
+	// or the pop-out tray.
 	overChip := pointIn(c.mouseX, c.mouseY, doneBtn) || pointIn(c.mouseX, c.mouseY, resetBtn) ||
 		pointIn(c.mouseX, c.mouseY, snapBtn) || pointIn(c.mouseX, c.mouseY, aspectBtn) ||
 		pointIn(c.mouseX, c.mouseY, gridBtn)
 	if pressed && a.classicEditDrag == 0 && !overChip && !overTray && !overToolbox {
-		// Alt forces a MOVE (skips the resize-edge test). A small widget — a single
-		// button — is almost ALL edge, so a plain drag kept resizing it instead of
-		// moving it (playtest: dragging a small button resized it instead of moving it
-		// unless it was grown first). Hold Alt to grab-and-move anything regardless of size.
-		// Shift stays pixel-precise, so Alt+Shift = a precise move.
+		// Alt forces a move: a small widget is almost all edge, so a plain drag would resize it. Shift stays
+		// pixel-precise.
 		resizeKey, resizeEdges := "", uint8(0)
 		if sdl.GetModState()&sdl.KMOD_ALT == 0 {
 			resizeKey, resizeEdges = pickResizeSlot(a.slotReg, keys, hoverKey, c.mouseX, c.mouseY, layoutHandlePx)
@@ -831,9 +640,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 		}
 	}
 
-	// Right-click resets the hovered slot to its computed default (undoable, but only
-	// snapshot when there's actually an override to clear — else a right-click on a
-	// default box would litter the history with no-ops).
+	// Right-click resets to default; snapshot only with an override to clear, so the history gets no no-ops.
 	if c.rightClicked && hoverKey != "" && !overTray && !overToolbox {
 		if _, ov := a.classicOv[hoverKey]; ov {
 			a.pushClassicUndo()
@@ -841,9 +648,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 		}
 	}
 
-	// Live drag: screen deltas applied directly (screen space), clamped on-stage,
-	// snapped, then written to the App-local override (px→frac) so the widget
-	// redraws at the new spot NEXT frame.
+	// Screen deltas, clamped and snapped, then written to the local override; the widget redraws there next frame.
 	if a.classicEditDrag != 0 && c.mouseDown && editKey != "" {
 		dx := c.mouseX - a.classicEditStart[0]
 		dy := c.mouseY - a.classicEditStart[1]
@@ -884,10 +689,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 				r.H = classicMinPx
 			}
 		}
-		// Hold Shift while dragging = pixel-precise: it bypasses the grid AND the
-		// alignment magnet for this drag (the "Snap" button is the persistent
-		// toggle). GetModState is a cheap render-thread query, so the default
-		// snap path stays allocation-free.
+		// Shift bypasses the grid and the magnet for this drag. GetModState is a cheap render-thread query.
 		a.alignGuides = a.alignGuides[:0]
 		if a.layoutSnap && sdl.GetModState()&sdl.KMOD_SHIFT == 0 {
 			g := int32(a.d.Prefs.Load().LayoutGridSize())
@@ -898,11 +700,8 @@ func (a *App) drawClassicEditor(w, h int32) {
 			if r.H < classicMinPx {
 				r.H = classicMinPx
 			}
-			// Alignment magnet (reported by Tifera: boxes would not line up — the
-			// defaults aren't grid-aligned, so the grid alone can't make two
-			// boxes flush): the dragged box's edges/centre snap to the OTHER
-			// boxes' edges/centres and the window edges/centre, overriding the
-			// grid on the matched axis. Guides draw in the overlay below.
+			// The defaults aren't grid-aligned, so edges and centres also snap to other boxes and the window,
+			// overriding the grid on the matched axis.
 			a.alignScratch = a.alignScratch[:0]
 			for _, k := range keys {
 				if k != editKey {
@@ -911,11 +710,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 			}
 			r, a.alignGuides = alignRect(r, a.alignScratch, w, h, a.classicEditDrag == 1, a.classicEditEdges, a.alignGuides)
 		}
-		// Lock the stage to 4:3 while resizing (banner toggle): drive the other
-		// dimension from the edge you grabbed, so the scene never stretches off
-		// 4:3. Applied AFTER the grid snap — snapping W and H independently used
-		// to re-break the ratio the lock had just computed (the driven dimension
-		// deliberately leaves the grid; the ratio is the point of the lock).
+		// Lock the stage to 4:3 from the grabbed edge. After the grid snap, which would otherwise break the ratio.
 		if a.layoutAspect && a.classicEditDrag != 1 && editKey == slotViewport {
 			e := a.classicEditEdges
 			if e&(edgeL|edgeR) != 0 { // a side/corner handle → width drives height
@@ -924,32 +719,24 @@ func (a *App) drawClassicEditor(w, h int32) {
 				r.W = r.H * 4 / 3
 			}
 		}
-		// Keep it on-screen (solid feel). The top strip is usable — the banner is
-		// translucent and only its chips block a drag. Shared with the arrow-key nudge
-		// (layoutnudge.go) so a drag and a nudge stop in exactly the same places.
+		// Shared with the arrow-key nudge, so both stop in the same places. Only the banner's chips block a drag.
 		r = clampSlotToWindow(r, w, h)
 		if a.classicEditMoved {
 			if a.classicOv == nil {
 				a.classicOv = make(map[string][4]float64, classicSlotRegCap)
 			}
 			a.classicOv[editKey] = rectToFrac(r, w, h)
-			// A pinned slot's override now describes THIS window size —
-			// re-base the local anchor so resolution round-trips exactly.
+			// A pinned slot's override now describes this window size; re-base the anchor so resolution round-trips.
 			a.syncAnchorWindow(editKey, w, h)
 		}
 	}
 
-	// Release persists the edit (a no-move click changes nothing — and discards the
-	// begin snapshot so a bare click doesn't leave a no-op on the undo stack). The old
-	// "drag a slotted piece onto the toolbox to hide it" gesture is retired with the
-	// top-band strip (A1 Phase 1): per-piece hide/show now lives entirely in the
-	// pinned pieces panel (drawToolboxPieces), which is cleaner and reachable in edit.
+	// Release persists the edit; a no-move click discards the snapshot, leaving no no-op on the undo stack.
 	if a.classicEditDrag != 0 && !c.mouseDown {
 		switch {
 		case a.classicEditMoved && editKey != "":
 			if ov, ok := a.classicOv[editKey]; ok {
 				a.d.Prefs.SetClassicSlot(editKey, ov)
-				// Persist the pin's re-based window size with the override.
 				if m := a.slotAnchorMode(editKey); m != "" {
 					a.d.Prefs.SetClassicAnchor(editKey, config.ClassicAnchor{Mode: m, WinW: int(w), WinH: int(h)})
 				}
@@ -964,12 +751,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 		a.classicEditMoved = false
 	}
 
-	// Overlay: a QUIET outline on every slot so the layout structure reads, but the
-	// full treatment — bright border + resize handles + a name tag — ONLY on the box
-	// under the cursor (or being dragged). This keeps the editor from being a wall of
-	// boxes, handles and labels, and a slot's name never sits on the real buttons it
-	// covers (the tag floats just above the box). A dragged slot reflects its live
-	// (this-frame) override position.
+	// A quiet outline on every slot; border, handles and name tag only on the hovered or dragged box.
 	dimEdge := blendCol(ColAccent, ColBackground, 0.6)
 	for _, k := range keys {
 		r := a.slotReg[k].cur
@@ -992,8 +774,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 		}
 		a.drawAnchorPin(r, k) // pinned boxes show a green dot at their reference
 	}
-	// Alignment guides: full-length hairlines at whatever the dragged box just
-	// snapped flush to — the Inkscape-style "you are aligned" feedback.
+	// Full-length hairlines at whatever the dragged box just snapped flush to.
 	if a.classicEditDrag != 0 {
 		for _, g := range a.alignGuides {
 			if g.vertical {
@@ -1003,11 +784,8 @@ func (a *App) drawClassicEditor(w, h int32) {
 			}
 		}
 	}
-	// Editor chrome LAST — topmost over every outline, tag and strip. It stays
-	// translucent so widgets parked in the top strip remain visible through it
-	// (you can drag boxes up there — playtest: the top strip was wasted space). A
-	// side effect of painting after the click handlers: the Snap/4:3 labels
-	// show the state a click just set, not last frame's.
+	// Chrome last, topmost and translucent so widgets in the top strip stay visible. Painting after the click handlers
+	// means labels show the state a click just set.
 	a.noteEditorBanner() // the top band is ours this frame, so the menu bar stands down (menubar.go)
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: classicBannerH}, sdl.Color{R: 0, G: 0, B: 0, A: 150})
 	c.Label(pad, 6, "Edit Layout", ColTierYellow)
@@ -1023,16 +801,13 @@ func (a *App) drawClassicEditor(w, h int32) {
 	if a.layoutMagnetOff {
 		magnetLabel = "Magnet: off"
 	}
-	// The hint clips to end before the LEFTMOST chip actually drawn: the profile
-	// chip when it exists, else the magnet chip (both sit left of aspect). Using
-	// aspectBtn.X would let the hint overdraw the two Phase-3 chips.
+	// The hint ends before the leftmost chip drawn: the profile chip if it exists, else the magnet chip.
 	leftmostChipX := magnetBtn.X
 	if a.hasLayoutProfiles() {
 		leftmostChipX = profileBtn.X
 	}
 	hintX := pad + c.TextWidth("Edit Layout") + 18
-	// The nudge sits second, right after the mouse gesture it refines: the line clips
-	// from the right, so the tail is what a narrow window loses first.
+	// The line clips from the right, so the tail is what a narrow window loses first.
 	c.LabelClipped(hintX, 6, leftmostChipX-hintX-editBannerHintGap, "Drag to move · arrows = nudge 1 px (Ctrl = grid) · edge to resize · green lines = aligned · Alt = move · Shift = precise", ColTextDim)
 	a.rawChip(aspectBtn, aspectLabel)
 	a.rawChip(magnetBtn, magnetLabel)
@@ -1043,13 +818,10 @@ func (a *App) drawClassicEditor(w, h int32) {
 	a.rawChip(snapBtn, snapLabel)
 	a.rawChip(resetBtn, "Reset all")
 	a.rawChip(doneBtn, "Done")
-	// Rot readout (A4): a passive chip beside the Grid/Aspect chips, shown only when
-	// the hovered box carries a nonzero angle. Classic slots don't rotate today, so
-	// this stays hidden in practice — kept for symmetry with the themed editor.
+	// Shown only for a nonzero angle; classic slots don't rotate today, kept for symmetry with the themed editor.
 	if hoverKey != "" {
 		if label := rotationChipLabel(a.classicRot[hoverKey]); label != "" {
-			// Left of the Phase-3 chips (profile when present, else magnet) so it can't
-			// overpaint them — same as the themed editor's rot chip.
+			// Left of the profile or magnet chip, so it can't overpaint them.
 			rotRightX := magnetBtn.X
 			if a.hasLayoutProfiles() {
 				rotRightX = profileBtn.X
@@ -1076,17 +848,13 @@ func (a *App) drawClassicEditor(w, h int32) {
 	}
 }
 
-// handleEdgeMask maps each classicHandles index to the edges it grips (same
-// order: 4 corners, then top/bottom/left/right midpoints).
+// handleEdgeMask maps each classicHandles index to the edges it grips.
 var handleEdgeMask = [handleCount]uint8{
 	edgeL | edgeT, edgeR | edgeT, edgeL | edgeB, edgeR | edgeB,
 	edgeT, edgeB, edgeL, edgeR,
 }
 
-// drawSlotHandles paints a slot's resize grips — only the handles whose every
-// edge the slot honours (a width-only slot shows just its side midpoints, so
-// the affordance never lies), each with a dark outline so the bright squares
-// read on any background underneath. Move-only slots paint none.
+// drawSlotHandles paints only handles whose every edge the slot honours; move-only slots paint none.
 func (a *App) drawSlotHandles(r sdl.Rect, key string, col sdl.Color) {
 	allowed := resizeEdgesFor(classicTarget(key))
 	if allowed == 0 {
@@ -1102,13 +870,8 @@ func (a *App) drawSlotHandles(r sdl.Rect, key string, col sdl.Color) {
 	}
 }
 
-// drawSlotTag floats a slot's name on a small dark pill just ABOVE the box (so it
-// never covers the box's own content), tucking it just inside the top edge only when
-// there's no room above. Drawn only for the hovered / active slot, so at most one tag
-// shows at a time — no labels plastered across every box. Tags never enter the
-// editor's stacked top chrome (banner + tray, bottom recorded in classicChromeBot =
-// classicTabTrayBot): a box parked in the top strip gets its tag just BELOW the
-// chrome instead of over the hint text and buttons.
+// drawSlotTag floats a slot's name just above the box, or just inside when there's no room, and below the editor's
+// top chrome (classicChromeBot) so it never covers the hint text and buttons.
 func (a *App) drawSlotTag(r sdl.Rect, key string, col sdl.Color) {
 	c := a.ctx
 	label := classicSlotLabel(key)

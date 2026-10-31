@@ -1,21 +1,11 @@
 package ui
 
-// Inline emotes (#18): Discord-style :shortcode: tokens render as a colour emoji, in BOTH
-// the IC log and the live chatbox. The shortcode text travels LITERALLY on the wire (no
-// marker, no expansion before send), so AO2 / webAO show the readable ":joy:" while AsyncAO
-// substitutes the emoji at display time — it routes through the existing colour-emoji path,
-// so there's no new render machinery. Substitution is KNOWN-shortcode-only, so a stray colon
-// (a URL's "http://", a "12:30") or an unknown ":foo:" is left exactly as typed.
-//
-// This file is just the REGISTRY (the user-facing vocabulary); the parser lives in courtroom
-// (ExpandInlineEmotes), so the chatbox path — in the courtroom reducer, which can't import ui
-// — shares the same implementation. The log path (icMessageBody) and the chatbox path
-// (Courtroom.InlineEmote) both pass inlineEmoteFor as the resolver.
+// Inline emotes: known :shortcode: tokens display as colour emoji, but the text goes over the wire literally so other
+// clients show the readable form. Unknown codes and stray colons stay as typed. The parser is
+// courtroom.ExpandInlineEmotes, because the chatbox path in courtroom can't import ui.
 
-// inlineEmotes maps a shortcode stem (between the colons, lower-case) to its emoji. A
-// curated, widely-shipped set (≤ Unicode 11, like the picker) so nothing renders as tofu; a
-// BMP symbol carries its U+FE0F variation selector so it reaches the colour-emoji font.
-// Extend freely — the keys are the user-facing vocabulary.
+// inlineEmotes maps a lower-case shortcode stem to its emoji, at most Unicode 11 so nothing renders as tofu.
+// BMP symbols carry U+FE0F so they reach the colour-emoji font.
 var inlineEmotes = map[string]string{
 	"joy":        "😂",
 	"sob":        "😭",
@@ -50,9 +40,7 @@ var inlineEmotes = map[string]string{
 	"question":   "❓️",
 }
 
-// inlineEmoteFor resolves a shortcode stem to its emoji (ok=false when unknown). A plain
-// package func (not a closure), so passing it as courtroom.ExpandInlineEmotes' resolver — on
-// every IC log line and every chatbox message — allocates nothing.
+// inlineEmoteFor resolves a shortcode stem; a plain func, not a closure, so passing it as resolver allocates nothing.
 func inlineEmoteFor(stem string) (string, bool) {
 	e, ok := inlineEmotes[stem]
 	return e, ok

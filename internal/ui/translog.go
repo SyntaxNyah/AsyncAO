@@ -1,17 +1,11 @@
 package ui
 
-// Detailed transcript logging (opt-in, ON by default since the 2026-08-09
-// flip): when enabled, IC and OOC lines are INTERLEAVED into the same
-// per-server log file — logs/<server>/<date_time>.log beside the exe — AO2
-// style: IC as "[timestamp] showname (char): message"
-// (../AO2-Client/src/chatlogpiece.cpp ChatLogPiece::toString), OOC as
-// "[OOC][timestamp] name: text" (../AO2-Client/src/courtroom.cpp:1932,
-// Courtroom::append_server_chatmessage) — showname first, the server is the
-// folder so it isn't repeated per line, no area/pipe columns. One file per
-// server per TAB SESSION (translogKey). All disk I/O runs on a background
-// goroutine per writer fed by a bounded channel (rule §2: no synchronous disk
-// I/O on the message path; §17.4: bounded queue), so the message seam never
-// blocks.
+// Detailed transcript logging (opt-in, on by default): IC and OOC lines are interleaved into one per-server log file,
+// logs/<server>/<date_time>.log beside the exe, AO2 style: IC as "[timestamp] showname (char): message" (AO2-Client
+// chatlogpiece.cpp ChatLogPiece::toString), OOC as "[OOC][timestamp] name: text" (courtroom.cpp:1932,
+// append_server_chatmessage). Showname first; the server is the folder, so there are no per-line server, area or pipe
+// columns. One file per server per tab session (translogKey). Disk I/O runs on a background goroutine per writer fed by
+// a bounded channel (hard rules 2 and 4), so the message path never blocks.
 
 import (
 	"bufio"
@@ -26,19 +20,15 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
-// transcriptBufSize bounds the detailed-log line queue; a full buffer sheds the
-// line rather than blocking the seam (the on-screen IC log keeps everything).
+// transcriptBufSize bounds the detailed-log line queue; a full buffer sheds the line rather than blocking (the
+// on-screen IC log keeps everything).
 const transcriptBufSize = 256
 
-// transcriptWriter appends lines to a file on a single background goroutine fed
-// by a bounded channel.
+// transcriptWriter appends lines to a file on a single background goroutine fed by a bounded channel.
 //
-// ended is the one-shot latch that makes retire/close idempotent and write inert
-// afterwards. Both a mid-run retirement (the session that owned this file ended)
-// and the shutdown drain can reach the same writer, and closing an already-closed
-// channel — or sending on one — panics. Plain bool, no mutex: every one of these
-// calls is on the render thread (the message seams, the tab lifecycle, the exit
-// path), which is the same single-goroutine discipline the App state itself has.
+// ended makes retire/close idempotent and write inert afterwards: a mid-run retirement and the shutdown drain can reach
+// the same writer, and closing or sending on a closed channel panics. Plain bool, no mutex: every call is on the render
+// thread.
 type transcriptWriter struct {
 	lines chan string
 	wg    sync.WaitGroup
@@ -68,9 +58,8 @@ func newTranscriptWriter(path string) (*transcriptWriter, error) {
 	return w, nil
 }
 
-// write queues a line; a full buffer drops it (never blocks the render thread).
-// Inert once retired, so a line that raced a session teardown is shed rather than
-// sent on a closed channel.
+// write queues a line; a full buffer drops it (never blocks the render thread). Inert once retired, so a line racing a
+// session teardown is shed rather than sent on a closed channel.
 func (w *transcriptWriter) write(line string) {
 	if w == nil || w.ended {
 		return
@@ -81,18 +70,13 @@ func (w *transcriptWriter) write(line string) {
 	}
 }
 
-// retire ends the writer WITHOUT waiting for it: closing the channel is the signal
-// for the goroutine to drain what is already queued, flush, close the file and
-// exit on its own. Idempotent and nil-safe.
+// retire ends the writer without waiting: closing the channel tells the goroutine to drain what is queued, flush, close
+// the file and exit. Idempotent and nil-safe.
 //
-// It exists because a session can end mid-run — a tab closes, a reconnect mints a
-// new session — and the file + goroutine that session opened must go with it, or
-// every reconnect leaks one of each until transcriptWriterCap is reached and
-// transcription silently stops for the rest of the run. Deliberately NOT close():
-// waiting means blocking the render thread on a disk flush, which hard rule §2
-// forbids. Nothing is lost — the queued lines are written by the goroutine that
-// outlives this call, and the process-exit drain (App.CloseTranscript) is the one
-// place that legitimately waits.
+// A session can end mid-run (a tab closes, a reconnect mints a new session) and its file and goroutine must go with it,
+// or each reconnect leaks one until transcriptWriterCap is reached and transcription silently stops. Not close():
+// waiting blocks the render thread on a disk flush (hard rule 2). Queued lines are still written; the process-exit
+// drain (App.CloseTranscript) is the one place that waits.
 func (w *transcriptWriter) retire() {
 	if w == nil || w.ended {
 		return
@@ -101,9 +85,8 @@ func (w *transcriptWriter) retire() {
 	close(w.lines)
 }
 
-// close retires the writer and WAITS for the file to be flushed and closed.
-// Nil-safe and idempotent; the shutdown path (App.CloseTranscript) is its only
-// caller, because that is the only moment a synchronous disk wait is allowed.
+// close retires the writer and waits for the file to be flushed and closed. Nil-safe and idempotent; only the shutdown
+// path (App.CloseTranscript) calls it, the one moment a synchronous disk wait is allowed.
 func (w *transcriptWriter) close() {
 	if w == nil {
 		return
@@ -112,14 +95,12 @@ func (w *transcriptWriter) close() {
 	w.wg.Wait()
 }
 
-// detailedLogLine formats one IC message for the transcript, AO-style: a bracketed timestamp, then
-// "showname (char)" — showname FIRST, falling back to just the character when there's no distinct
-// showname — then the message. No server (it's the folder) or area/pipe columns. Pure — unit-tested.
+// detailedLogLine formats one IC message for the transcript, AO-style: a bracketed timestamp, "showname (char)"
+// (showname first, just the character when there is no distinct showname), then the message. Pure.
 //
-// The body is stripped of the zero-width sidechannel (courtroom/spritestyle.go) for the same reason
-// icMessageBody strips it: this file is READ — by the user, and by the in-app log browser — so it is
-// a display string, not a wire record. Nothing re-decodes a transcript, so keeping the marker would
-// buy nothing and cost a file full of invisible runes that break search and copy-paste.
+// The body is stripped of the zero-width sidechannel (courtroom/spritestyle.go), as icMessageBody does: this file is
+// read by the user and the in-app log browser and nothing re-decodes it, so the marker would only add invisible runes
+// that break search and copy-paste.
 func detailedLogLine(now time.Time, m *protocol.ChatMessage) string {
 	char := strings.TrimSpace(m.CharName)
 	show := strings.TrimSpace(m.Showname)
@@ -140,20 +121,12 @@ func detailedLogLine(now time.Time, m *protocol.ChatMessage) string {
 	return b.String()
 }
 
-// oocLogLine formats one OOC transcript line, matching AO2-Client's own OOC
-// log shape (Courtroom::append_server_chatmessage,
-// ../AO2-Client/src/courtroom.cpp:1932: `"[OOC][" + timestamp + "] " + name +
-// ": " + message`): a bracketed "OOC" tag beside the bracketed timestamp,
-// then LINE verbatim — line is whatever pushOOC / the parked-tab seam already
-// composed for the on-screen OOC panel ("name: text" for a real message, a
-// bare "[MOD CALL] …" / "SERVER: …" / "CLIENT: …" line for a system one), so
-// the file always matches what the screen showed rather than a second,
-// independently-derived rendering of it. Pure — unit-tested.
+// oocLogLine formats one OOC transcript line like AO2-Client's own OOC log (Courtroom::append_server_chatmessage,
+// courtroom.cpp:1932: `"[OOC][" + timestamp + "] " + name + ": " + message`): a bracketed "OOC" tag beside the
+// timestamp, then line verbatim, as composed for the on-screen OOC panel, so the file matches the screen. Pure.
 //
-// Still readable by logbrowser.ParseWho: the literal "[OOC]" tag has
-// no "] " substring of its own (its "]" is immediately followed by "[", never
-// a space), so the first "] " in the result is still the one right after the
-// timestamp, exactly as detailedLogLine's callers expect.
+// Still readable by logbrowser.ParseWho: the "]" of the literal "[OOC]" is followed by "[", never a space, so the first
+// "] " is still the one after the timestamp.
 func oocLogLine(now time.Time, line string) string {
 	var b strings.Builder
 	b.WriteString("[OOC][")
@@ -163,34 +136,23 @@ func oocLogLine(now time.Time, line string) string {
 	return b.String()
 }
 
-// transcriptWriterCap bounds how many live transcript writers ONE RUN may hold open (hard rule
-// #4: no unbounded goroutines / open files). One writer = one open file + one goroutine.
-//
-// It counts LIVE (server, tab session) pairs, not servers: a tab is a session, and two tabs on
-// one server are two logs. A pair is retired the moment nothing owns it any more (App.reapTranscripts
-// on every tab close / session reset), so the number here is bounded by the TAB CAP, not by how
-// many times you reconnect — 64 is far above any reachable tab count and exists purely as the
-// named ceiling rule §4 requires.
-//
-// The reap is what makes that true. Without it every reconnect minted a session, opened a file and
-// a goroutine, and abandoned both still-open; the 64th cycle hit this cap and transcription stopped
-// for the rest of the run with nothing on screen to say so. Past the cap a new session still simply
-// isn't transcribed (the on-screen logs are unaffected) — the same shedding rule the per-writer line
-// queue uses — but reaching it now means 64 tabs open at once.
+// transcriptWriterCap bounds how many transcript writers one run holds open (hard rule 4); each is an open file plus a
+// goroutine. It counts live (server, tab session) pairs: two tabs on one server are two logs. A pair is retired when
+// nothing owns it (App.reapTranscripts on tab close or session reset), so the bound is the tab cap, not the number of
+// reconnects. Past the cap a new session simply isn't transcribed (the on-screen logs are unaffected), like the
+// per-writer line queue.
 const transcriptWriterCap = 64
 
-// translogKey identifies ONE transcript writer: a server AND the tab session writing to it.
-// The session half is what keeps two tabs on the same server in two files — keyed by server
-// alone they shared a writer and interleaved into one. Comparable (both value fields), so it
-// is a map key directly.
+// translogKey identifies one transcript writer: a server and the tab session writing to it, so two tabs on one server
+// get two files. Comparable, so a direct map key.
 type translogKey struct {
 	server  string
 	session int
 }
 
-// sanitizeLogFolder makes a server name safe as a folder name: path separators and the
-// Windows-reserved characters become "_", control chars drop, surrounding spaces/dots trim (Windows
-// rejects trailing dots/spaces), empty → "server". Never lets a name escape logs/.
+// sanitizeLogFolder makes a server name safe as a folder name: path separators and Windows-reserved characters become
+// "_", control chars drop, surrounding spaces/dots trim (Windows rejects trailing ones), empty becomes "server". A name
+// never escapes logs/.
 func sanitizeLogFolder(server string) string {
 	var b strings.Builder
 	for _, r := range strings.TrimSpace(server) {
@@ -209,14 +171,12 @@ func sanitizeLogFolder(server string) string {
 	return "server"
 }
 
-// transcriptPathFor is logs/<server>/<YYYY-MM-DD_HH-MM-SS>[-<seq>].log beside the exe — one file
-// per TAB SESSION (the dirs are created). The timestamp names the file so each run is its own log.
+// transcriptPathFor is logs/<server>/<YYYY-MM-DD_HH-MM-SS>[-<seq>].log beside the exe, one file per tab session (the
+// dirs are created).
 //
-// seq is that server's 1-based file ordinal within this run and appears only from the SECOND file
-// on, so a single-tab session keeps the exact historical bare-timestamp name and every already-
-// written log still parses. It exists because the timestamp only resolves to the second: two tabs
-// joining one server in the same second would otherwise be handed the identical path and append
-// into each other, defeating the split. See transcriptFilename for the name rule (pure, tested).
+// seq is that server's 1-based file ordinal within this run, shown only from the second file on so a single-tab session
+// keeps the bare-timestamp name. It exists because the timestamp resolves to the second: two tabs joining one server in
+// the same second would otherwise append into each other's file. See transcriptFilename.
 func transcriptPathFor(server string, now time.Time, seq int) (string, error) {
 	root, err := exeDataDir()
 	if err != nil {
@@ -229,9 +189,8 @@ func transcriptPathFor(server string, now time.Time, seq int) (string, error) {
 	return filepath.Join(dir, transcriptFilename(now, seq)), nil
 }
 
-// transcriptFilename is the name rule alone: "<stamp>.log" for the first file of a run and
-// "<stamp>-<seq>.log" after it. Pure, so the naming and logbrowser.SessionLabel can be
-// pinned against each other without touching disk.
+// transcriptFilename is the name rule alone: "<stamp>.log" for the first file of a run and "<stamp>-<seq>.log" after.
+// Pure.
 func transcriptFilename(now time.Time, seq int) string {
 	stamp := now.Format(transcriptStampLayout)
 	if seq <= 1 {
@@ -240,7 +199,6 @@ func transcriptFilename(now time.Time, seq int) string {
 	return stamp + "-" + strconv.Itoa(seq) + ".log"
 }
 
-// transcriptStampLayout is the file-name timestamp, shared by the writer and the log browser's
-// label parser so the two can never drift (a browser that can't parse the writer's name shows a
-// raw file name instead of a date).
+// transcriptStampLayout is the file-name timestamp, shared by the writer and the log browser's label parser so they
+// can't drift.
 const transcriptStampLayout = "2006-01-02_15-04-05"

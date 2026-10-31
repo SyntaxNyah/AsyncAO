@@ -1,12 +1,7 @@
 package ui
 
-// Bundled zoom speedline fallback art (issue #126). AO2 reads <side>_speedlines
-// from the speaker's own folder first and falls back to themes/default; most
-// packs ship none, and AsyncAO's stock theme is procedural (no art files), so a
-// generated radial burst per side is embedded here and pinned under
-// render.Speedline*Key. The renderer draws it when a zoom emote's speaker ships
-// no speedline of their own. Generated offline as a radial burst per side (a
-// defence-blue tint and a prosecution-red tint on transparent).
+// Bundled zoom speedline fallback art. AO2 reads <side>_speedlines from the speaker's folder, then themes/default; the
+// stock theme is procedural, so a generated burst per side is embedded and pinned under render.Speedline*Key.
 
 import (
 	_ "embed"
@@ -21,10 +16,8 @@ var defenseSpeedlinesPNG []byte
 //go:embed assets/prosecution_speedlines.png
 var prosecutionSpeedlinesPNG []byte
 
-// uploadEmbeddedSpeedlines decodes and pins the two bundled speedline fallbacks.
-// Called once at startup (render thread), best-effort like uploadEmbeddedMissingno:
-// a decode/upload failure just means a zoom emote on a pack without speedlines
-// draws nothing behind the speaker — the effect degrades, it does not crash.
+// uploadEmbeddedSpeedlines decodes and pins the two bundled fallbacks; called once at startup (render thread).
+// A decode or upload failure leaves a zoom emote without speedlines drawing nothing behind the speaker.
 func (a *App) uploadEmbeddedSpeedlines() {
 	if a.d.Store == nil {
 		return

@@ -1,17 +1,8 @@
 package ui
 
-// The player-row action menu (playtest redesign): the per-row button cluster
-// (Pair / UID / IPID / Follow / Friend / Ignore / Profile) crowded the rows —
-// at higher text zoom it landed ON the OOC/IPID line — so every single-player
-// action now lives in one anchored popup, opened by the row's "…" button or by
-// right-clicking the row (the shortcut; the button keeps it discoverable).
-// Rows go back to clean two-lane height. The item list is data-driven so
-// future single-target actions (mod/CM commands) slot in as new kinds.
-//
-// Input discipline: while open the menu holds the kit's modal fence (modalOn),
-// so everything underneath — rows, lists, wheel — is pointer-blind on the
-// whole screen; the menu itself hit-tests with raw pointIn, exactly like the
-// emoji picker and the open-dropdown list. Esc closes via closeTopOverlay.
+// The player-row action menu: every single-player action lives in one anchored popup, opened by the row's "…" button or
+// a right-click, so the rows stay two lanes tall at high text zoom.
+// While open it holds the kit's modal fence and hit-tests with raw pointIn, like the emoji picker; Esc closes it.
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
@@ -33,9 +24,7 @@ const (
 	rosterActProfile
 )
 
-// rosterMenuItem is one row of the open menu: a kind plus its resolved label
-// (state-dependent labels — Unfollow/Unfriend/Unignore — resolve at OPEN; any
-// action closes the menu, so a label can never go stale on screen).
+// rosterMenuItem is one menu row: a kind plus its label, resolved at open since any action closes the menu.
 type rosterMenuItem struct {
 	kind  rosterMenuKind
 	label string
@@ -48,27 +37,20 @@ const (
 	rosterMenuMinW  = int32(150)
 )
 
-// hasRosterMenu reports whether a row gets the "…" trigger at all. Deliberately
-// loose (any identified row): the open call builds the real item list, and
-// every identified row has at least the ignore/friend pair or a copyable UID.
+// hasRosterMenu reports whether a row gets the "…" trigger; loose on purpose, openRosterMenu builds the real items.
 func hasRosterMenu(p *areaPlayer) bool {
 	return p.uid != "" || p.name != ""
 }
 
-// openRosterMenu snapshots the row's identity, builds the applicable items,
-// and opens the menu with its top-left preferred at `at` (the draw clamps and
-// flips to stay on screen). The snapshot copies the areaPlayer VALUE: the
-// roster can refresh/reorder while the menu is open, so acting through a live
-// index could hit the wrong player.
+// openRosterMenu snapshots the row, builds the applicable items and opens the menu preferring `at` (the draw clamps).
+// The areaPlayer is copied by value: the roster can refresh while open, and a live index could hit the wrong player.
 func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
 	items := a.rosterMenuItems[:0]
 	fk := p.showname
 	if fk == "" {
 		fk = p.name
 	}
-	// Message (PM): anything that targets one player belongs here (playtest) —
-	// no friending required. Spectators are excluded: DM threads key on the
-	// character name, and "Spectator" is ambiguous across clients.
+	// Message (PM) needs no friending; spectators are excluded since DM threads key on character name.
 	if !isSpec && p.name != "" && a.sess != nil {
 		items = append(items, rosterMenuItem{rosterActMessage, "Message (PM)"})
 	}
@@ -80,8 +62,7 @@ func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
 			items = append(items, rosterMenuItem{rosterActPairManual, "Pair… (enter UID)"})
 		}
 	}
-	// Follow rides the header's Follow toggle exactly like the old per-row
-	// button (OFF default: no follow affordances anywhere).
+	// Follow rides the header's Follow toggle (default OFF: no follow affordances).
 	if a.followShow && p.uid != "" {
 		fl := "Follow"
 		if a.followUID == p.uid {
@@ -92,7 +73,7 @@ func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
 	if p.uid != "" && !a.panelHidden(rosterBtnUID) {
 		items = append(items, rosterMenuItem{rosterActCopyUID, "Copy UID"})
 	}
-	// IPID is mod-only server data — its presence IS the authorization.
+	// IPID is mod-only server data; its presence is the authorization.
 	if p.ipid != "" && !a.panelHidden(rosterBtnIPID) {
 		items = append(items, rosterMenuItem{rosterActCopyIPID, "Copy IPID"})
 	}
@@ -124,10 +105,8 @@ func (a *App) openRosterMenu(p *areaPlayer, isMe, isSpec bool, at sdl.Point) {
 	a.rosterMenuOpen = true
 }
 
-// rosterMenuFence holds/releases the kit's modal fence for the open menu, and
-// force-closes it when its surface is gone (left the courtroom, switched tabs
-// — the snapshot must never act on another session). Same set/RELEASE
-// discipline as emojiPickerFence: an un-released modalOn freezes the UI.
+// rosterMenuFence holds and releases the modal fence for the open menu, and closes it when its surface is gone.
+// An unreleased modalOn freezes the UI, as with emojiPickerFence.
 func (a *App) rosterMenuFence(c *Ctx) {
 	live := a.screen == ScreenCourtroom && !a.gifExporting && !a.replaying &&
 		!a.makerOpen && a.activeTab == a.rosterMenuTab
@@ -158,9 +137,8 @@ func (a *App) rosterMenuRect(w, h int32) sdl.Rect {
 	return sdl.Rect{X: x, Y: y, W: mw, H: mh}
 }
 
-// drawRosterMenu paints the open menu and resolves its interaction (raw
-// pointIn — the modal fence blanks hovering() everywhere, including here).
-// Any item click acts on the snapshot and closes; a click elsewhere closes.
+// drawRosterMenu paints the open menu with raw pointIn, since the modal fence blanks hovering().
+// An item click acts on the snapshot and closes; a click elsewhere closes.
 func (a *App) drawRosterMenu(w, h int32) {
 	if !a.rosterMenuOpen {
 		return
@@ -185,8 +163,7 @@ func (a *App) drawRosterMenu(w, h int32) {
 		c.LabelClipped(row.X+rosterMenuPadX-2, row.Y+4, row.W-2*rosterMenuPadX+4, it.label, ColText)
 		y += rosterMenuItemH
 	}
-	// Click-away (or a fresh right-click) closes; the fence already kept the
-	// press from reaching anything underneath.
+	// Click-away (or a fresh right-click) closes; the fence kept the press from reaching anything underneath.
 	if (c.clicked || c.rightClicked) && !pointIn(c.mouseX, c.mouseY, panel) {
 		a.rosterMenuOpen = false
 		c.clicked = false
@@ -204,10 +181,7 @@ func (a *App) rosterMenuAct(kind rosterMenuKind) {
 	display := rosterName(p)
 	switch kind {
 	case rosterActMessage:
-		// Open the Group Chat panel straight onto this player's DM thread
-		// (threads key by character name; sendDirectMessage resolves the live
-		// UID per send). Works for non-AsyncAO players too — it rides the
-		// server's /pm, they just reply through OOC.
+		// Open the Group Chat panel on this player's DM thread (keyed by character name); it rides the server's /pm.
 		a.showMessages = true
 		a.msgSel = p.name
 		a.msgSelGroup = 0

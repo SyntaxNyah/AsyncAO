@@ -1,15 +1,7 @@
 package ui
 
-// The Players tab: AsyncAO's player list (Akashi/Nyathena-style), built from the
-// /getarea snapshot the click-to-pair parser already harvests. AO has no
-// per-player packet (only ARUP area COUNTS), so it's refresh-driven and stamped
-// "as of HH:MM", not live. IPIDs are mod-only data shown in-session — never
-// persisted. The foundation for future mod/user tools.
-//
-// On top of the bare roster this draws: a char-icon per row (the char grid's
-// demand/cache pipeline), role highlights (you / current speaker / friends),
-// Spectator + CM chips, a sort toggle, and — before any /ga — a live ARUP count
-// for the area you're in.
+// The Players tab, built from the /getarea snapshot the click-to-pair parser harvests.
+// IPIDs are mod-only data shown in-session, never persisted.
 
 import (
 	"sort"
@@ -28,22 +20,15 @@ const (
 	playerRowH    = int32(44) // a char icon flanked by two text rows (IC identity, OOC) — actions live in the … menu, so rows never grow past the icon
 	playerIconSz  = int32(38)
 	playerHeaderH = int32(26) // a /gas area-group header row (name + count, click to jump)
-	// currentAreaStatusStripH is the flat-roster (/ga) current-area ARUP status
-	// line's fixed height: one text row plus a hair of top padding, the same
-	// "one dim readout line" sizing as areaCountRowH (screens.go) uses for the
-	// Areas tab's own bare counter row.
+	// currentAreaStatusStripH is the fixed height of the flat roster's current-area ARUP status line.
 	currentAreaStatusStripH = int32(20)
 )
 
-// areaJumpFollowWindow is how long a "click to jump →" keeps re-nudging the
-// target area header into view. It must outlive the server round-trip that
-// reorders the grouped list — that PR/PU (or /gas) reply is when the row
-// actually moves to the top — yet stay bounded so a lost or server-rejected
-// transfer can never pin the scroll indefinitely (the latch just expires).
+// areaJumpFollowWindow is how long a jump keeps re-nudging the target area header into view.
+// It must outlive the server round-trip that reorders the list, yet expire so a lost transfer cannot pin the scroll.
 const areaJumpFollowWindow = 3 * time.Second
 
-// Roster sort modes, cycled by the Sort button (orders PLAYERS, flat or within
-// each /gas area group).
+// Roster sort modes, cycled by the Sort button; they order players, flat or within each /gas area group.
 const (
 	playerSortUID      = iota // by client UID, numeric
 	playerSortName            // by IC name (showname, else character)
@@ -51,9 +36,7 @@ const (
 	playerSortModes           // count, for the cycle
 )
 
-// Area-group sort modes, cycled by the Rooms button — orders the /gas area
-// HEADERS (a second axis from playerSort, which orders players). Default keeps
-// the server's /gas order so room 1 stays on top.
+// Area-group sort modes, cycled by the Rooms button; the default keeps the server's /gas order.
 const (
 	areaSortGas   = iota // our current area first, then the server's /gas order — default
 	areaSortName         // area name, A→Z
@@ -61,8 +44,7 @@ const (
 	areaSortModes        // count, for the cycle
 )
 
-// clampMode keeps a remembered sort index inside [0, n) — a stale pref or a future
-// change to the mode count can't select an out-of-range sort.
+// clampMode keeps a remembered sort index inside [0, n), so a stale pref cannot select an out-of-range sort.
 func clampMode(v, n int) int {
 	if v < 0 || v >= n {
 		return 0
@@ -81,10 +63,7 @@ func areaSortLabel(mode int) string {
 	}
 }
 
-// sortAreaOrder orders the area-group names in place for the A→Z and most-populated
-// modes (the default /gas mode is handled by applyGasAreaOrder, which needs our
-// current area + the snapshot order). Stable, so a tie keeps the incoming order.
-// Pure (groups supplies each area's size) — tested directly.
+// sortAreaOrder orders area-group names in place for the A-Z and most-populated modes; ties keep the incoming order.
 func sortAreaOrder(order []string, groups map[string][]int, mode int) {
 	switch mode {
 	case areaSortName:
@@ -98,14 +77,8 @@ func sortAreaOrder(order []string, groups map[string][]int, mode int) {
 	}
 }
 
-// applyGasAreaOrder reorders the area-group headers for the DEFAULT mode: OUR
-// current area first, then the server's /gas order (the order areaPlayers — the
-// /getareas snapshot — listed the areas), then any live-only areas keep their
-// first-seen order. This fixes the live roster grouping by the lowest-UID player's
-// area (UID 0 in "Pizza Room 1" floating above the Lobby you're standing in)
-// instead of the server's order. Stable; reuses the already-built order/groups; one
-// area-count-sized rank map. Runs ONLY on a grouped-rows REBUILD (memoized), so it
-// adds nothing to the per-frame draw.
+// applyGasAreaOrder orders headers for the default mode: our area, then the server's /gas order, then live-only areas.
+// Runs only on a grouped-rows rebuild, so it adds nothing to the per-frame draw.
 func (a *App) applyGasAreaOrder(order []string, groups map[string][]int) {
 	mine := a.myAreaName()
 	gasRank := make(map[string]int, len(order)) // area → its index in the /gas snapshot
@@ -147,49 +120,10 @@ func playerSortLabel(mode int) string {
 	}
 }
 
-// rosterMenuThemed is the `themed` answer the roster's ⋮ overflow opens with: it
-// reports whether a THEMED music list — AO2's own music_list element — is the list
-// this menu's rows act on.
-//
-// The roster shares the music panel, so its ⋮ is the SAME menu, and one of that
-// menu's rows is the Volume-sliders view. That row's whole effect is
-// `volMode := a.musicVolMode && !themed` inside drawMusicList (screens.go), so a
-// menu opened with themed=false while the canvas music list is the one on screen
-// offers a row that can never draw anything — and SetMusicVolMode still persists the
-// flip, arming a view the user did not ask for in their next un-themed layout. That
-// ghost/inert control is exactly what musicMenuRowLive's `!themed` guard and #21's
-// parity rule exist to prevent, so the roster has to answer the question honestly
-// instead of hardcoding it.
-//
-// It re-derives the answer rather than being handed it, the way themedListSearchDrew
-// already does (screens.go) and for the same reason: drawPlayerList is called from
-// THREE places — the classic docked Players tab (screens.go), a torn-off Players
-// panel (torntabs.go) and the themed music_list rect (theme_layout.go) — so a
-// parameter would have to be threaded through all three, two of which this panel does
-// not own. a.themeLay is the very cache drawCourtroomThemed lays out from
-// (themeLayoutIn returns &a.themeLay), so the two cannot disagree, and the layout is
-// rebuilt before the pass that calls us, so it cannot be stale either.
-//
-// The clauses are the screen's own dispatch, verbatim:
-//   - themeLay.valid + ThemeLayoutEnabled is what hands the courtroom to
-//     drawCourtroomThemed at all (screens.go). Without it the classic docked panel
-//     drew, its Music tab passes themed=false, and the volume view works there.
-//   - music_list + !panelHidden(panelLog) is the exact gate the themed panel is drawn
-//     behind (theme_layout.go). A theme with no music_list rect — or a hidden log
-//     panel — paints no canvas music list at all.
-//
-// Deliberately NOT gated on a.logTab: the canvas music list is what the row targets
-// whether or not the roster happens to be the view currently up, and gating on the
-// visible view is the same mistake musicMenuRowLive already refuses to make for the
-// roster rows.
-//
-// A torn-off Players panel is floating chrome drawn AFTER the courtroom pass, and
-// under CLASSIC geometry it reads false here — which is right, since a torn Music
-// panel honours volMode. Under a THEME it reads true, and that is the correct answer
-// too rather than a miss: the canvas music list is the one the row would have to
-// paint in, and it discards volMode. The one place the volume view still paints under
-// a theme is a torn-off MUSIC panel, and that panel passes themed=false from its own
-// header (torntabs.go), so the view is never made unreachable — only the ghost is.
+// rosterMenuThemed reports whether a themed music list is the list the roster's overflow menu acts on.
+// The Volume-sliders row draws nothing there (drawMusicList) yet would persist the flip, so it must not be offered.
+// It re-derives the answer from a.themeLay because drawPlayerList has three callers, two outside this panel.
+// Not based on a.logTab: the canvas music list is the row's target whichever view is up.
 func (a *App) rosterMenuThemed() bool {
 	if !a.themeLay.valid || !a.d.Prefs.Load().ThemeLayoutOn {
 		return false // classic geometry: this panel is chrome, and so is any torn panel
@@ -201,63 +135,32 @@ func (a *App) rosterMenuThemed() bool {
 	return ok
 }
 
-// drawPlayerList renders the area roster — one row per UID — under a ONE-ROW header
-// (Sort · Rooms · Status · ⋮), with per-row icon + highlights + Pair / Copy actions.
-// Everything the header used to carry and no longer does now lives in the ⋮ overflow
-// (musicheader.go); see playerlisttoolbar.go for what moved and why.
+// drawPlayerList renders the area roster, one row per UID, under a one-row header with per-row icon and actions.
 func (a *App) drawPlayerList(r sdl.Rect) {
-	// The user's own font for this panel, if they set one — every label, button,
-	// checkbox and field below follows it, so the panel changes as a whole rather
-	// than in halves. nil (the overwhelmingly common case) writes nothing and
-	// leaves the chrome face exactly as it was.
+	// The user's font for this panel, if set; every control below follows it, so the panel changes as a whole.
 	defer a.ctx.popPanelFont(a.ctx.pushPanelFont(a.elemChromeFont(elemPlayerList, a.playerPct)))
 	c := a.ctx
 	if a.playerPct < config.MinLogScalePercent { // uninit / stale → match the log
 		a.playerPct = a.logPct
 	}
-	// Pull the rich /getarea snapshot (UIDs/IPIDs/Pair) when the live tab first opens
-	// and on each area change. Nothing refreshes it on join/leave any more — that was
-	// maybeRefetchRoster, deleted with the whole automatic tier (liveroster.go) — so the
-	// top-up for stale rows is the person pressing "Refresh roster details".
+	// Pull the /getarea snapshot when the live tab opens and on each area change; join/leave does not refresh it.
 	if !a.rosterLegacy && a.sess != nil && a.liveDetailsArea != a.curArea {
 		a.liveDetailsArea = a.curArea
 		a.fetchRoster()
 	}
-	// The toolbar is ONE wrapping strip (playerlisttoolbar.go), not two rows of
-	// hardcoded offsets. It used to anchor half its controls left and half right,
-	// which collided the moment the panel was narrower than the two halves put
-	// together — a theme's music_list rect gives it 212 px — and its Status button
-	// was anchored on Follow rather than on Pairs, so it covered Pairs at every
-	// width. The plan below cannot overlap: it is one cursor.
-	//
-	// Three header rows are now ONE: the mode row (● LIVE / Refresh / Legacy), the
-	// Pairs/Follow row and the "12 here · live" readout are gone from the strip. The
-	// readouts were deleted outright — the roster IS the readout — and every FUNCTION
-	// moved into the ⋮ overflow the Music header already debloated into
-	// (musicheader.go), which this panel shares.
-	//
-	// Labels are built HERE, not in the planner: they come from App state, and
-	// building them at the call site keeps the planner pure (and testable without a
-	// renderer) while allocating no more than the old inline concatenations did.
+	// The toolbar is one wrapping strip (playerlisttoolbar.go), which cannot overlap.
+	// Labels are built here because they come from App state, keeping the planner pure.
 	labels := plToolbarLabels{
 		sort: "Sort: " + playerSortLabel(a.playerSort),
-		// #M1: your own cross-client status — the button cycles none → AFK → Busy →
-		// Writing → LFRP. Send-on-change transmits it on your next IC message;
-		// AsyncAO players see a coloured chip on your row, standard clients see nothing.
+		// The status transmits on your next IC message; AsyncAO players see a chip on your row, other clients nothing.
 		status: playerStatusButtonLabel(a.myStatus),
 	}
-	// Rooms orders the /gas AREA GROUPS (a second axis from Sort, which orders
-	// players). Only built when the roster spans areas — there is nothing to order
-	// in a single-area /ga list, and an unused label would be a wasted per-frame
-	// concatenation on the render path.
+	// Built only when the roster spans areas: a single-area list has nothing to order and would waste a concatenation.
 	multiArea := a.rosterMultiArea()
 	if multiArea {
 		labels.rooms = "Rooms: " + areaSortLabel(a.playerAreaSort)
 	}
-	// Both toggles are read ONCE here rather than at their (now menu-side) switches:
-	// drawPlayerRow consults followShow/pairStatusShow for every row, and the switches
-	// live in a menu that is usually closed, so the per-row answer has to come from
-	// the pref itself — otherwise a theme would silently turn the features off.
+	// Read here, not at the menu-side switches: drawPlayerRow needs them per row and the menu is usually closed.
 	a.followShow, a.pairStatusShow = a.d.Prefs.Load().FollowEnabled, a.d.Prefs.Load().ShowPairStatus
 	plan := planPlayerToolbar(r, labels, multiArea, c.TextWidth)
 	for i := 0; i < plan.n; i++ {
@@ -292,12 +195,8 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 			}
 			c.Tooltip(it.r, "Set your status (AFK / Busy / Writing / LFRP). Other AsyncAO players see a chip on your row after your next message; standard clients are unaffected.")
 		case plItemMenu:
-			// The panel's overflow, opened from the SAME helper the Music header uses —
-			// including its click consumption, without which the menu's own click-away
-			// test closes it on the frame it opened (musicheader.go documents the trap).
-			// `themed` is DERIVED, never hardcoded: this panel is drawn inside the
-			// theme's own music_list rect, so a hardcoded false would offer the
-			// Volume-sliders row where drawMusicList discards it — see rosterMenuThemed.
+			// Same helper as the Music header, click consumption included, or click-away closes the menu at once.
+			// themed is derived: inside the theme's music_list, drawMusicList discards the Volume-sliders row.
 			if a.musicIconButton(it.r, iconKebab, "Roster & playback options — refresh details, legacy snapshot, pair status, follow") {
 				a.openMusicMenuFromButton(sdl.Point{X: it.r.X, Y: it.r.Y + it.r.H}, a.rosterMenuThemed())
 			}
@@ -306,14 +205,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	r.Y += plan.h
 	r.H -= plan.h
 
-	// The flat single-area (/ga) roster has no per-area header row to carry the
-	// area's ARUP status (playerRosterRows never synthesizes one for a single
-	// area — TestPlayerRosterRowsFlat pins "no group headers"), so give it one
-	// always-visible, non-scrolling line of its own instead, between the
-	// toolbar and the scrollable rows. A /gas roster already shows this text
-	// per area via drawAreaHeaderRow, so this line is skipped there (reusing
-	// `multiArea`, already computed above for the Rooms button — one
-	// rosterMultiArea() call per frame, not two).
+	// The flat single-area roster has no area header row to carry the ARUP status, so give it one fixed line.
 	if !multiArea {
 		a.drawCurrentAreaStatusStrip(sdl.Rect{X: r.X, Y: r.Y, W: r.W - scrollBarW - 6, H: currentAreaStatusStripH})
 		r.Y += currentAreaStatusStripH
@@ -345,11 +237,8 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 
 	a.zoomWheel(r, &a.playerPct, config.MinLogScalePercent, config.MaxLogScalePercent) // Ctrl+wheel zooms text
 	if !c.ctrlHeld {
-		// Capture the wheel delta ONCE (WheelIn consumes the event — a second call
-		// returns 0). A non-zero plain-wheel scroll is the user taking the wheel, so
-		// it disarms the area-jump follow immediately. Ctrl+wheel is text zoom, not
-		// scrolling: it changes row heights, and the latch usefully re-nudges through
-		// it, so it deliberately does NOT disarm.
+		// WheelIn consumes the event, so read the delta once; a plain-wheel scroll disarms the area-jump follow.
+		// Ctrl+wheel is text zoom, which changes row heights, so it does not disarm.
 		if dy := c.WheelIn(r); dy != 0 {
 			a.playerScroll -= dy * scrollStepPx
 			a.areaJumpFollow = "" // user scrolled — stop pinning
@@ -362,24 +251,15 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	}
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.playerScroll = c.VScrollbar("playerlist", track, a.playerScroll, contentH, r.H)
-	// Disarm on an actual thumb DRAG, not any value change: c.dragID is set only
-	// while the user holds this scrollbar (ui.go, cleared on release), so a real
-	// drag stops the follow. VScrollbar also clamps its input to [0, content-visible]
-	// with no drag — and a same-frame roster shrink (a floated-to-top area + a
-	// player leaving) or a ctrl+wheel zoom-out shrinks contentH and would trip a
-	// bare "value changed" test, wrongly killing the follow on the very reorder
-	// frame scope-2 must track. Keying on the drag id ignores that clamp.
+	// Disarm on a thumb drag, not a value change: VScrollbar also clamps with no drag when the roster shrinks,
+	// which would wrongly end the follow on the very reorder frame it must track.
 	if c.dragID == "playerlist" {
 		a.areaJumpFollow = "" // the user is dragging the scrollbar — user scroll wins over the follow
 	}
-	// Re-nudge the jumped-to area header into view (armed by jumpToArea). Placed
-	// AFTER the wheel/scrollbar disarms so a same-frame user scroll beats it, and
-	// AFTER VScrollbar so the nudge — not the clamp — sets the final scroll for this
-	// frame, all BEFORE the draw loop reads playerScroll. Disarmed it's ~free.
+	// Placed after the wheel and scrollbar disarms so a user scroll wins, after VScrollbar so the nudge sets the final
+	// scroll, and before the draw loop reads playerScroll.
 	a.applyAreaJumpFollow(rows, r.H)
-	// While the profile popover is up and hovered, the rows underneath run
-	// pointer-blind (the kit's fence = its z-order): a click on the card must
-	// not also press the "…" trigger or jump an area header behind it.
+	// While the profile popover is hovered, rows beneath ignore the pointer: a click must not press what is behind it.
 	cardFenced := false
 	if a.profileCardShow && pointIn(c.mouseX, c.mouseY, profileCardRect(r)) {
 		c.fencePointer()
@@ -408,8 +288,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	a.drawProfileCardOverlay(r) // #101: the profile popover sits on top of the list
 }
 
-// rowHeight is the display height of one roster row (area headers are shorter);
-// player rows scale with the Players-tab text zoom (Ctrl+wheel).
+// rowHeight is the display height of one roster row; player rows scale with the Players-tab text zoom.
 func (a *App) rowHeight(row rosterRow) int32 {
 	if row.header {
 		return playerHeaderH
@@ -417,15 +296,7 @@ func (a *App) rowHeight(row rosterRow) int32 {
 	return playerRowH * int32(a.playerPct) / 100
 }
 
-// scrollAreaIntoView nudges playerScroll just enough to make the header row for
-// `area` fully visible, mirroring scrollServerIntoView: it walks the rows to find
-// the header's content-space top, then scrolls only if the row sits off an edge —
-// up to reveal a row above, down to reveal one below — and never negative. viewH
-// is the already-computed visible height (the caller passes r.H, the content
-// region left after the header rows are subtracted), so no extra offset is applied.
-// A missing header (a flat /ga roster, or the area vanished from the snapshot) is a
-// clean no-op. Bounded O(rows) — the same walk class the draw already does to sum
-// contentH — and allocation-free.
+// scrollAreaIntoView nudges playerScroll just enough to show area's header row; a missing header is a no-op.
 func (a *App) scrollAreaIntoView(area string, rows []rosterRow, viewH int32) {
 	if area == "" {
 		return
@@ -446,17 +317,10 @@ func (a *App) scrollAreaIntoView(area string, rows []rosterRow, viewH int32) {
 		}
 		top += a.rowHeight(rows[i])
 	}
-	// area not present as a header (flat roster or gone) → leave the scroll alone
+	// Not present as a header (flat roster or gone): leave the scroll alone.
 }
 
-// applyAreaJumpFollow is the per-frame lifecycle for the "click to jump →" scroll
-// follow: while the latch is armed (and unexpired) it re-nudges the target area
-// header into view every frame. Re-nudging (rather than a one-shot at click time)
-// is what makes the POST-reorder position win — the frame after the roster memo
-// rebuilds floats the jumped-to area to the top, and the next nudge follows the
-// row there. Disarmed (empty target) it costs one string compare; past its
-// deadline it disarms and leaves playerScroll untouched. Kept off the draw path
-// and SDL-free so it's unit-testable.
+// applyAreaJumpFollow re-nudges the target header each frame while armed, so the position after the reorder wins.
 func (a *App) applyAreaJumpFollow(rows []rosterRow, viewH int32) {
 	if a.areaJumpFollow == "" {
 		return
@@ -469,10 +333,6 @@ func (a *App) applyAreaJumpFollow(rows []rosterRow, viewH int32) {
 	a.scrollAreaIntoView(a.areaJumpFollow, rows, viewH)
 }
 
-// drawPlayerRow is one player: char icon + "[uid] showname · character" with the
-// OOC/IPID detail beneath, role highlight (you / speaker / friend), Spectator/CM
-// chips, and right-aligned Pair / Copy-UID / Copy-IPID actions. idx is the index
-// into areaPlayers (sort-stable) — the key for the icon cache.
 // joinFlashColor is the amber "just joined" row tint, faded out over joinFlashWindow.
 var joinFlashColor = sdl.Color{R: 240, G: 200, B: 90, A: 255}
 
@@ -483,10 +343,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	isMe := myUID != "" && p.uid == myUID
 	isSpeaker := speaker != "" && (strings.EqualFold(p.showname, speaker) || strings.EqualFold(p.name, speaker))
 	isCM := cmSet != nil && (cmSet[strings.ToLower(p.showname)] || cmSet[strings.ToLower(p.name)])
-	// Friend lookup, ONCE: drives the row tint (only when highlights are on) plus
-	// the per-friend nickname + name colour (#82, shown regardless of the toggle —
-	// they're labels, not the glow). isFriend is reused by the Ignore/Friend
-	// buttons below so the list isn't scanned twice per row.
+	// Friend lookup, once: drives the tint, nickname and name colour regardless of the toggle; reused by the buttons.
 	fk := p.showname
 	if fk == "" {
 		fk = p.name
@@ -505,7 +362,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 		nameCol = readableOnPanel(fColor) // custom colour, lifted so it stays legible on the dark panel
 	}
 
-	// Background + role tint (you > speaking > friend) + a left accent bar.
+	// Background, role tint (you > speaking > friend) and a left accent bar.
 	c.Fill(row, ColPanel)
 	switch {
 	case isMe:
@@ -515,8 +372,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	case friend:
 		c.Fill(row, friendTintColor)
 	}
-	// New-joiner highlight (#107): a brief, fading amber tint when this UID just
-	// appeared in the live roster, so a join is easy to spot. 0-alloc (a map lookup).
+	// A brief, fading amber tint when this UID just appeared in the live roster.
 	if p.uid != "" {
 		if t, ok := a.joinFlash[p.uid]; ok && !t.IsZero() {
 			if el := a.now().Sub(t); el >= 0 && el < joinFlashWindow {
@@ -533,16 +389,13 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 		c.Border(row, ColPanelHi)
 	}
 
-	// Char icon (left), scaled with the zoom so it never overflows a short row.
+	// Scaled with the zoom so the icon never overflows a short row.
 	iconSz := playerIconSz * int32(a.playerPct) / 100
 	iconR := sdl.Rect{X: row.X + 6, Y: row.Y + (row.H-iconSz)/2, W: iconSz, H: iconSz}
 	a.drawPlayerIcon(p, idx, iconR, isSpec)
 
-	// Right edge: ONE "…" trigger — every single-player action (Message/Pair/
-	// Follow/Copy/Friend/Ignore/Profile) lives in its popup menu (rostermenu.go).
-	// The playtest verdict on the old inline cluster: it crowded the name column
-	// and, zoomed, landed on the OOC/IPID line. Right-clicking anywhere on the
-	// row is the shortcut; the visible button keeps the menu discoverable.
+	// One trigger: single-player actions live in its popup menu (rostermenu.go);
+	// right-clicking the row is the shortcut.
 	bx := row.X + row.W - 4
 	if hasRosterMenu(p) {
 		bx -= rosterMenuBtnW
@@ -558,13 +411,11 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 		}
 	}
 
-	// Text column between the icon and the "…" trigger.
 	textX := row.X + 6 + iconSz + 8
 	textW := bx - textX - 8
 	if textW < 40 {
 		textW = 40
 	}
-	// Line 1 — role chips, then "[uid] showname · character".
 	cx := textX
 	if isCM {
 		cx += a.drawRosterChip(cx, row.Y+4, "CM", chipCMColor, ColBackground) + 5
@@ -572,16 +423,11 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	if isSpec {
 		cx += a.drawRosterChip(cx, row.Y+4, "SPEC", chipSpecColor, ColText) + 5
 	}
-	// AsyncAO chip: this player is on AsyncAO — detected because we've received their
-	// cross-client zero-width channel (AO2 / webAO never emit it). Passive: shows once
-	// they've spoken / reacted; your own row always shows it. It's a hint, not proof —
-	// the badge can be self-faked but never used to impersonate another player.
+	// This player sent the zero-width channel, which AO2 and webAO never emit; a hint, not proof (it can be faked).
 	if a.room != nil && (isMe || a.room.RemoteIsAsyncAO(p.name)) {
 		cx += a.drawRosterChip(cx, row.Y+4, "AO", ColAccent, ColBackground) + 5
 	}
-	// Status chip (#M1): your own from a.myStatus, others from the room's per-character
-	// status memory. RemoteStatus is a plain map read (0-alloc), safe per row per frame;
-	// only a set status draws a chip, so the common (none) case costs nothing.
+	// Yours from a.myStatus, others from the room's per-character memory; only a set status draws a chip.
 	st := courtroom.StatusNone
 	if isMe {
 		st = a.myStatus
@@ -593,7 +439,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	if lbl := statusLabel(st); lbl != "" {
 		cx += a.drawRosterChip(cx, row.Y+4, lbl, statusColor(st), ColText) + 5
 	}
-	// Pair chip (#20, opt-in): who this player is currently paired with (⇄), from their IC messages.
+	// Pair chip: who this player is paired with, from their IC messages.
 	if a.pairStatusShow {
 		if partner := a.pairPartnerOf(p); partner != "" {
 			cx += a.drawRosterChip(cx, row.Y+4, "⇄ "+partner, chipPairColor, ColBackground) + 5
@@ -603,19 +449,11 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	if !strings.EqualFold(display, p.name) {
 		ic = "[" + p.uid + "]  " + display + "  ·  " + p.name
 	}
-	// The roster's own font and size, through the same per-element table the
-	// chatlogs use. a.playerPct stays the per-panel zoom on top of it, exactly as
-	// a.logPct does for the IC log.
-	//
-	// labelEmoji, NOT LabelClippedFont: a roster row is SERVER-supplied text, and a
-	// single face cannot draw a name that needs two of them — an emoji or a script
-	// outside the picked face rendered as tofu here while the very same showname
-	// drew correctly in the chatbox and the log, which take this path already. The
-	// plain-text fast path inside is byte-identical, so a Latin roster is unchanged.
+	// a.playerPct is the per-panel zoom on top of the per-element font.
+	// labelEmoji, not LabelClippedFont: a server-supplied name may need more than one face, or it renders as tofu.
 	rosterEmoji := a.elemEmoji(elemPlayerList, a.playerPct)
 	a.labelEmoji(a.elemFontFor(elemPlayerList, a.playerPct, ic), rosterEmoji, cx, row.Y+5, textW-(cx-textX), ic, nameCol)
-	// Line 2 — OOC name (+ IPID for mods), dimmer. Skip OOC when it's already the
-	// display name above (no showname → OOC was promoted to the identity line).
+	// OOC name, plus IPID for mods; skip OOC when it was promoted to the display name above.
 	sub := ""
 	if p.ooc != "" && p.showname != "" {
 		sub = "OOC: " + p.ooc
@@ -627,14 +465,12 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 		sub += "IPID: " + p.ipid
 	}
 	if sub != "" {
-		// Same reason as the identity line above: the OOC name is the player's own.
+		// As on the identity line: the OOC name is the player's own text.
 		a.labelEmoji(a.elemFontFor(elemPlayerList, a.playerPct, sub), rosterEmoji, textX, row.Y+row.H-int32(16*a.playerPct/100), textW, sub, ColTextDim)
 	}
 }
 
-// drawPlayerIcon paints one roster row's character icon, reusing the char grid's
-// demand/cache pipeline (paced asks, 404 cache, generation-aware page cache).
-// Spectators have no character, so they get a plain placeholder and no demand.
+// drawPlayerIcon paints a row's character icon through the char grid's demand pipeline; spectators get a placeholder.
 func (a *App) drawPlayerIcon(p *areaPlayer, idx int, cell sdl.Rect, isSpec bool) {
 	c := a.ctx
 	c.Fill(cell, ColPanelHi)
@@ -654,12 +490,10 @@ func (a *App) drawPlayerIcon(p *areaPlayer, idx int, cell sdl.Rect, isSpec bool)
 	c.Label(cell.X+4, cell.Y+cell.H/2-8, initial, ColTextDim)
 }
 
-// chipPairColor is the pair-status chip's fill (#20) — a soft violet, distinct from the CM/SPEC/
-// status chips so a paired marker reads at a glance.
+// chipPairColor is the pair-status chip's fill, distinct from the CM, SPEC and status chips.
 var chipPairColor = sdl.Color{R: 168, G: 140, B: 224, A: 255}
 
-// drawRosterChip draws a small filled pill (e.g. "CM", "SPEC") and returns its
-// width so the caller can advance the cursor.
+// drawRosterChip draws a small filled pill and returns its width so the caller can advance the cursor.
 func (a *App) drawRosterChip(x, y int32, text string, bg, fg sdl.Color) int32 {
 	c := a.ctx
 	w := c.TextWidth(text) + 10
@@ -681,10 +515,7 @@ func rosterBarColor(isMe, isSpeaker, friend bool) (sdl.Color, bool) {
 	return sdl.Color{}, false
 }
 
-// currentSpeakerName is the lowercased displayed name of the most recent IC line
-// — the "who's talking now" signal for the speaker highlight and the
-// speakers-first sort. "" when nobody has spoken or the last line was a system
-// line.
+// currentSpeakerName is the lowercased name of the latest IC line; "" when there is none or it was a system line.
 func (a *App) currentSpeakerName() string {
 	if n := len(a.icLog); n > 0 {
 		return strings.ToLower(strings.TrimSpace(a.icLog[n-1].speaker))
@@ -692,16 +523,8 @@ func (a *App) currentSpeakerName() string {
 	return ""
 }
 
-// areaInfoByName returns the live ARUP record for the named area, matched
-// against a.sess.Areas by name (the same list ARUP fills a.sess.AreaInfo
-// parallel to, by index — session.go's ARUP handler). ok is false when there
-// is no session, no area has that name, or the index is out of range for
-// AreaInfo (a partial snapshot mid-connect).
-//
-// The single "name → *AreaInfo" lookup for the whole package: curAreaPlayers
-// below and drawAreaHeaderRow / drawCurrentAreaStatusStrip (both read it FRESH
-// every frame, never memoized — see the staleness note on drawAreaHeaderRow)
-// all go through this one scan rather than three copies of it.
+// areaInfoByName returns the live ARUP record for the named area, matched by index against a.sess.Areas.
+// ok is false with no session, no such name, or an index out of range for AreaInfo (partial snapshot mid-connect).
 func (a *App) areaInfoByName(name string) (*courtroom.AreaInfo, bool) {
 	if a.sess == nil || len(a.sess.AreaInfo) == 0 {
 		return nil, false
@@ -717,8 +540,7 @@ func (a *App) areaInfoByName(name string) (*courtroom.AreaInfo, bool) {
 	return nil, false
 }
 
-// curAreaPlayers returns the live ARUP head-count for the area we're in (matched
-// by name; area 0 on a fresh join before any area click). ok=false when unknown.
+// curAreaPlayers returns the live ARUP head-count for the area we are in; ok=false when unknown.
 func (a *App) curAreaPlayers() (int, bool) {
 	if a.sess == nil || len(a.sess.AreaInfo) == 0 {
 		return 0, false
@@ -738,9 +560,7 @@ func (a *App) curAreaPlayers() (int, bool) {
 	return info.Players, true
 }
 
-// cmNameSet is the lowercased set of case-master names across all areas (ARUP
-// cms), so a roster row whose name is a CM gets the chip. Excludes ""/FREE and
-// splits multi-CM lists. nil when no area has a CM.
+// cmNameSet is the lowercased set of case-master names across all areas, excluding ""/FREE; nil when there are none.
 func (a *App) cmNameSet() map[string]bool {
 	if a.sess == nil {
 		return nil
@@ -765,9 +585,7 @@ func (a *App) cmNameSet() map[string]bool {
 	return set
 }
 
-// playerRosterOrder returns the display order (indices into areaPlayers) for the
-// current sort. Memoized: it recomputes only when the roster, sort mode, or
-// current speaker change — never per frame.
+// playerRosterOrder returns the display order (indices into areaPlayers), recomputed on roster, sort or speaker change.
 func (a *App) playerRosterOrder(speaker string) []int {
 	spk := ""
 	if a.playerSort == playerSortSpeaking {
@@ -794,8 +612,7 @@ func (a *App) playerRosterOrder(speaker string) []int {
 	return ord
 }
 
-// sortRosterIdxs orders indices into areaPlayers in place by the current sort
-// mode (shared by the flat list and each /gas area group).
+// sortRosterIdxs orders indices into areaPlayers in place by the current sort mode.
 func (a *App) sortRosterIdxs(ord []int, spk string) {
 	switch a.playerSort {
 	case playerSortName:
@@ -814,8 +631,7 @@ func (a *App) sortRosterIdxs(ord []int, spk string) {
 	}
 }
 
-// rosterRow is one display row of the player list: a /gas area-group header
-// (name + count, click to jump) or a player (index into areaPlayers).
+// rosterRow is one display row: a /gas area-group header (name and count) or a player (index into areaPlayers).
 type rosterRow struct {
 	header bool
 	area   string // header: the area name
@@ -823,8 +639,7 @@ type rosterRow struct {
 	idx    int    // player: index into areaPlayers
 }
 
-// rosterMultiArea reports whether the roster spans ≥2 distinct named areas (a
-// /gas), so the list groups by area instead of showing one flat run (a /ga).
+// rosterMultiArea reports whether the roster spans two or more named areas, so the list groups by area.
 func (a *App) rosterMultiArea() bool {
 	first, seen := "", false
 	for i := range a.rosterView() {
@@ -841,10 +656,7 @@ func (a *App) rosterMultiArea() bool {
 	return false
 }
 
-// playerRosterRows is the memoized GROUPED display. A single-area roster (/ga) is
-// the flat sorted list (no headers); a /gas spanning areas emits an area header
-// before each group, players sorted within. Same invalidation keys as
-// playerRosterOrder, so it rebuilds only on roster/sort/speaker change.
+// playerRosterRows is the memoized display: flat for a single area, an area header before each group for a /gas.
 func (a *App) playerRosterRows(speaker string) []rosterRow {
 	spk := ""
 	if a.playerSort == playerSortSpeaking {
@@ -891,17 +703,13 @@ func (a *App) playerRosterRows(speaker string) []rosterRow {
 	return rows
 }
 
-// areaCurrentDefault is the stock current-area highlight — green, the
-// universal "you are here"; Settings → Chat → Area list recolours it.
+// areaCurrentDefault is the stock current-area highlight; Settings recolours it.
 var areaCurrentDefault = sdl.Color{R: 74, G: 201, B: 108, A: 255}
 
-// areaHighlightWashAlpha tints the whole current-area row with the highlight
-// colour at this alpha (over the header fill): the row reads coloured at a
-// glance while its text stays legible.
+// areaHighlightWashAlpha tints the whole current-area row with the highlight colour at this alpha.
 const areaHighlightWashAlpha = 56
 
-// areaHighlightCol resolves the current-area colour: the user's hex pref, or
-// the stock green when unset/malformed.
+// areaHighlightCol resolves the current-area colour: the user's hex pref, or the stock green when unset or malformed.
 func (a *App) areaHighlightCol() sdl.Color {
 	if c, ok := parse.HexColor(a.d.Prefs.Load().AreaHighlightHex); ok {
 		col := sdl.Color(c)
@@ -910,9 +718,7 @@ func (a *App) areaHighlightCol() sdl.Color {
 	return areaCurrentDefault
 }
 
-// drawAreaHeaderRow draws a /gas area-group header: the area name + headcount,
-// the whole row clickable to jump there (an area transfer by name via the music
-// list). Inert when there's no live session.
+// drawAreaHeaderRow draws a /gas area-group header, clickable to jump there; inert with no live session.
 func (a *App) drawAreaHeaderRow(hr rosterRow, r sdl.Rect) {
 	c := a.ctx
 	c.Fill(r, ColPanelHi)
@@ -920,10 +726,7 @@ func (a *App) drawAreaHeaderRow(hr rosterRow, r sdl.Rect) {
 	if name == "" {
 		name = "(unnamed area)"
 	}
-	// Playtest: the current area floats to the TOP of the /gas order, which read
-	// as "why is the last area first?" — mark it unmistakably: a coloured row
-	// wash ("you are here" green by default, recolourable in Settings → Chat),
-	// a matching edge bar + name, and "(current)" where the jump hint would be.
+	// The current area floats to the top of the /gas order, so mark it with a row wash, edge bar and "(current)".
 	current := a.sess != nil && hr.area != "" && hr.area == a.myAreaName()
 	nameCol := ColText
 	switch {
@@ -942,27 +745,14 @@ func (a *App) drawAreaHeaderRow(hr rosterRow, r sdl.Rect) {
 		}
 		c.LabelClipped(r.X+r.W-120, r.Y+6, 116, "click to jump →", ColTextDim)
 	}
-	// The header is part of the roster, so it takes the roster's font. Wiring only
-	// the name rows left the panel changing in halves — the names moved and the
-	// headers above them did not, which reads as the setting not working at all
-	// rather than as working on some of it.
+	// The header is part of the roster, so it takes the roster's font.
 	font := a.elemFont(elemPlayerList, a.playerPct)
 	base := name + "  ·  " + strconv.Itoa(hr.count) + " player(s)"
 	maxW := r.W - 132
 	c.LabelClippedFont(font, r.X+8, r.Y+6, maxW, base, nameCol)
 
-	// ARUP status/lock/CM (the user's ask: surface "casing, spectator, RP,
-	// Locked, gaming" in the Players tab, not just the separate Areas tab).
-	// Looked up LIVE here, every frame, via areaInfoByName — NEVER folded into
-	// rosterRow or memoized alongside playerRosterRows, whose cache key is
-	// rosterStamp()/areaListAt, not areaInfoSeq: an ARUP-only change (a mod
-	// locks this area, nobody joins or leaves) would not invalidate that memo
-	// and a baked-in string would go stale silently.
-	//
-	// arupStatusText and the colour buckets below are the Areas tab's own
-	// (screens.go) — reused, not reinvented, so the two tabs share one status
-	// vocabulary (TestArupStatusTextSharedAcrossAreaAndPlayerTabs pins both
-	// callers).
+	// Looked up every frame, never memoized with playerRosterRows: its key misses areaInfoSeq, so an ARUP-only change
+	// such as a lock would leave a stale string. The status text and colours are the Areas tab's.
 	if info, ok := a.areaInfoByName(hr.area); ok {
 		if extra := arupStatusText(info); extra != "" {
 			extraCol := ColTextDim
@@ -979,16 +769,8 @@ func (a *App) drawAreaHeaderRow(hr rosterRow, r sdl.Rect) {
 	}
 }
 
-// drawCurrentAreaStatusStrip draws the flat single-area (/ga) roster's own ARUP
-// status readout, above the scrollable rows: the current area's status/lock/CM
-// (courtroom.AreaInfo, via areaInfoByName), read LIVE every frame — same
-// staleness rule as drawAreaHeaderRow: never cached alongside a memoized roster
-// row, since playerRosterRows/the roster memo does not key on areaInfoSeq.
-//
-// A no-op (blank strip) when there's no session, the area name doesn't match
-// (a mid-transfer race), or ARUP simply hasn't reported anything notable yet —
-// the common case before a server's first ARUP burst, matching how the Areas
-// tab degrades (an empty detail block, not placeholder text).
+// drawCurrentAreaStatusStrip draws the flat roster's ARUP status line, read live as drawAreaHeaderRow explains.
+// Blank with no session, a name mismatch mid-transfer, or nothing reported yet.
 func (a *App) drawCurrentAreaStatusStrip(r sdl.Rect) {
 	c := a.ctx
 	info, ok := a.areaInfoByName(a.myAreaName())
@@ -1006,46 +788,26 @@ func (a *App) drawCurrentAreaStatusStrip(r sdl.Rect) {
 	case info.Status != "" && !strings.EqualFold(info.Status, "IDLE"):
 		col = areaStatusColor(info.Status)
 	}
-	// arupStatusText's leading "  ·  " is meant to follow a headline (a name, a
-	// headcount) that every OTHER caller already has on the same line; alone on
-	// its own strip that separator would just be an orphaned leading dot, so
-	// trim exactly the one leading occurrence back off.
+	// arupStatusText's leading separator follows a headline; alone on this strip it would be an orphaned dot.
 	text := strings.TrimPrefix(extra, "  ·  ")
 	c.LabelClippedFont(a.elemFont(elemPlayerList, a.playerPct), r.X, r.Y+3, r.W, text, col)
 }
 
-// jumpToArea transfers us to area by name (AO switches areas through the music
-// list: MC#<area name>#<char id>). The name comes from the same server, so it
-// matches the area list.
-//
-// The optimistic local updates (per-area scrollback swap, curArea, presence)
-// live here, not at the call sites, because every jump entry point — the
-// Players-tab header click, the Areas-tab cards, the Recent chips and the M3
-// auto-follow — must move the local selection identically. When they didn't,
-// the current-area highlight, per-area scrollback and Rich Presence only
-// worked from the one entry point that inlined them (the Areas-tab card),
-// which was the reported "click to jump doesn't update the selection" bug.
+// jumpToArea transfers us to area by name through the music list (MC#<area name>#<char id>).
+// The optimistic local updates live here so that every jump entry point moves the local selection identically.
 func (a *App) jumpToArea(area string) {
 	if a.sess == nil || area == "" {
 		return
 	}
-	// Arm the scroll-follow latch: keep the jumped-to area header in view until it
-	// expires, so once the server round-trip reorders the grouped roster the Players
-	// tab scrolls to the row wherever it lands (complaints 2 + 3, "click to jump").
+	// Keep the header in view until expiry, so the Players tab follows the row after the server reorders the roster.
 	a.areaJumpFollow = area
 	a.areaJumpFollowUntil = a.now().Add(areaJumpFollowWindow)
 	a.switchAreaScrollback(area) // per-area IC log (opt-in) — before curArea moves (it keys the outgoing log on the OLD curArea)
 	a.curArea = area             // optimistic local selection (Rich Presence, best-effort — myAreaName still prefers the server echo)
 	a.updatePresence()
 	a.sess.RequestMusic(area)
-	// Wipe the stage on OUR OWN area jump (#23). A deliberate ADDITION to the AO2
-	// path, not a conflict with it: akashi/KFO-family servers put a pos in the
-	// area-change BN, so the reducer's arity test already wipes for them — but the
-	// Athena/Nyathena family sends a ONE-field BN and never would, leaving the
-	// previous area's sprite and chatbox frozen on screen there forever. Clicking an
-	// area row is unambiguous local intent, and this is the one seam that knows the
-	// jump was client-initiated. Server-PUSHED area moves still rely on BN arity,
-	// exactly like AO2.
+	// Wipe the stage on our own jump: Athena/Nyathena send a one-field BN, which the reducer's arity test would
+	// not wipe on, leaving the old sprite and chatbox up. Server-pushed moves still rely on BN arity, like AO2.
 	if a.room != nil {
 		a.room.WipeStage()
 	}
@@ -1055,10 +817,7 @@ func (a *App) jumpToArea(area string) {
 	a.warnAt = a.now()
 }
 
-// toggleServerFriend adds or removes a name from this server's friend list (the
-// player-list "+ Friend" button). Friending matches by showname (else the
-// character), the same key the IC-log highlight uses. Reuses the cloned list +
-// SetServerFriends (which dedups, caps, and persists).
+// toggleServerFriend adds or removes a name from this server's friends, matched by showname, else character.
 func (a *App) toggleServerFriend(name string) {
 	if a.serverKey == "" || strings.TrimSpace(name) == "" {
 		return
@@ -1089,11 +848,7 @@ func (a *App) toggleServerFriend(name string) {
 	a.warnAt = a.now()
 }
 
-// toggleServerIgnore adds or removes a name from this server's ignore list (the
-// player-list "Ignore" button). Matching mirrors friends (showname else
-// character — the only identity the MS wire carries). Ignored players' IC and
-// OOC messages are dropped at ingest (#81). Reuses the cloned list +
-// SetServerIgnored (dedups, caps, persists).
+// toggleServerIgnore adds or removes a name from this server's ignore list, matched by showname, else character.
 func (a *App) toggleServerIgnore(name string) {
 	if a.serverKey == "" || strings.TrimSpace(name) == "" {
 		return
@@ -1120,11 +875,7 @@ func (a *App) toggleServerIgnore(name string) {
 	a.warnAt = a.now()
 }
 
-// readableOnPanel returns a packed 0xRRGGBB colour as an sdl.Color guaranteed
-// legible on the dark player panel (#82): a too-dark colour is lifted toward a
-// minimum brightness with its hue preserved, so a custom friend colour can tint
-// the name without it sinking into the background — the same readability concern
-// the theme ink guard handles. rgb must be >= 0.
+// readableOnPanel returns a packed 0xRRGGBB colour lifted to a minimum brightness, hue kept; rgb must be >= 0.
 func readableOnPanel(rgb int) sdl.Color {
 	const minLuma = 120
 	r, g, b := int(uint8(rgb>>16)), int(uint8(rgb>>8)), int(uint8(rgb))
@@ -1144,8 +895,7 @@ func readableOnPanel(rgb int) sdl.Color {
 	return sdl.Color{R: uint8(r), G: uint8(g), B: uint8(b), A: 255}
 }
 
-// rosterName is the recognisable display name: showname, else the OOC name (an
-// iniswapper with no showname is known by their OOC handle), else the character.
+// rosterName is the recognisable display name: showname, else OOC name, else character.
 func rosterName(p *areaPlayer) string {
 	if p.showname != "" {
 		return p.showname
@@ -1161,8 +911,7 @@ func rosterIsSpeaker(p *areaPlayer, spk string) bool {
 	return spk != "" && (strings.EqualFold(p.showname, spk) || strings.EqualFold(p.name, spk))
 }
 
-// uidLess orders two UID strings numerically (falling back to lexical for the
-// odd non-numeric id).
+// uidLess orders two UID strings numerically, falling back to lexical for a non-numeric id.
 func uidLess(x, y string) bool {
 	nx, ex := strconv.Atoi(x)
 	ny, ey := strconv.Atoi(y)

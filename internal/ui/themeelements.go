@@ -1,42 +1,9 @@
 package ui
 
-// The free-element render model (v1.90.0 W3) — docs/wip/THEME-EDITOR-DESIGN.md §2,
-// docs/THEME-FORMAT.md §4.
-//
-// An AsyncAO theme may declare up to theme.ElementCap FREE ELEMENTS: boxes the AO2
-// courtroom_design.ini registry has no row for. They are structurally disjoint from
-// themeSlots — different file, different identity (an INDEX, never a design key),
-// different geometry cache, different persistence — which is why AO2 parity here is
-// by CONSTRUCTION rather than by discipline: the totality census over
-// courtroom_design.ini's root keys structurally cannot see an element, and
-// applyRectOverrides / themeKeyEditable never meet one.
-//
-// THIS FILE IS THE DRAW PATH. The bake that fills the array lives beside it in
-// themeelementbake.go, and the split is load-bearing: TestElementDrawUsesNoStringBuilding
-// scans THIS file for string work, so the cold path has somewhere to be without
-// weakening the scan.
-//
-// THREE THINGS MAKE THIS SAFE INSIDE A ZERO-ALLOCATION FRAME:
-//
-//  1. BAKE, DON'T SORT. Everything an element needs to paint — its absolute rect
-//     after the anchor delta and the canvas fit, its resolved page pointer, its
-//     colours, its already-truncated label — is resolved ONCE on themeLayoutIn's
-//     cold rebuild into a FIXED ARRAY beside the slot rects. The draw loop reads
-//     values: never the map, never a slice header, never a sort, never a string op.
-//  2. THREE BANDS, NOT A GLOBAL Z-SORT. The themed pass is hand-ordered across
-//     phaseStage/phasePanels (themeslots.go) and carries a mid-sequence abort
-//     (drawCourtroomModals' early return). A flat sortable list cannot reproduce
-//     that, so elements paint at three fixed insertion points and sort only WITHIN
-//     a band, at bake time.
-//  3. A TOP-LEVEL PAINTER TABLE. elemPainters is indexed by kind, and every entry
-//     is a top-level func — never a method value, which would allocate a closure the
-//     first time the table were read (themeslots.go's `draw` field carries the same
-//     rule for the same reason).
-//
-// Zero base cost: a stock AO2 theme declares no elements, so lay.band is all-zero
-// and the three loops are three `for i := 0; i < 0`. That is BENCHMARKED
-// (BenchmarkThemedFrameNoElements), not asserted — the v1.89.0 "0 base = 0 cost"
-// rule.
+// Free elements: theme boxes the AO2 design registry has no row for, drawn inside a zero-allocation frame.
+// Everything is baked once into a fixed array (themeelementbake.go, which holds all string work); the draw path reads
+// values only, paints at three fixed points because the themed pass is hand-ordered, and dispatches through a table
+// of top-level funcs.
 
 import (
 	"math"
@@ -48,37 +15,22 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
-// bakedEffect is an element's motion, resolved at bake time: the effect id plus its
-// two parameters. The RESOLVER that turns it into design §6.6 R2's
-// (offset, scale, alpha, rot, static) is resolveElementEffect (themeclock.go, W5);
-// W3 carried these three fields unread for exactly that wave, which is the format's
-// rule 4 in the render model — a zero value behaves exactly as the version before it,
-// and FXNone still takes drawElement's fast path today.
+// bakedEffect is an element's motion resolved at bake time; resolveElementEffect turns it into per-frame terms.
 type bakedEffect struct {
 	kind     theme.EffectKind
 	periodMs int32
 	ampPct   int16
 }
 
-// bakedElement is ONE element, resolved. Every field is a value the painter can use
-// without a lookup: no map probe, no string build, no prefs read, no allocation.
-//
-// FIELD ORDER IS BY SIZE, not by theme.Element's authoring order — this struct is
-// replicated 96 times inside App and padding is the only cost nobody notices.
+// bakedElement is one resolved element, so the painter needs no lookup; fields are ordered by size as App holds 96.
 type bakedElement struct {
-	// r is ABSOLUTE window pixels: post-anchor (design §6.6 R1 — a non-empty anchor
-	// makes the authored rect a signed DELTA on the anchor's resolved box), post
-	// space transform, post canvas fit, post clamp.
+	// r is absolute window pixels, after anchor, space transform, canvas fit and clamp.
 	r sdl.Rect
-	// page is the element's art, resolved ONCE at bake. nil is the ordinary case for
-	// every non-image kind, and is also what an image whose media has not landed (or
-	// was evicted) resolves to — the painter draws nothing rather than probing.
+	// page is nil for non-image kinds and for media not loaded or evicted; the painter then draws nothing.
 	page *render.TexturePage
-	// label is an ElemText's string, ALREADY truncated to r at bake (truncateLabelTo,
-	// AO2's truncate_label_text). Truncation allocates, so it can never be a draw-path
-	// operation — the same reason themeLayoutCache.toggleLabel exists.
+	// label is already truncated to r at bake (AO2's truncate_label_text), because truncation allocates.
 	label string
-	// phase is the element's own clock offset. Free: it consumes no clock group.
+	// phase is the element's own clock offset.
 	phase    time.Duration
 	slice    [4]int32  // 9-slice insets, source px, (left, top, right, bottom) — R9
 	strokePx int32     // outline width; ElemPane reads it as the divider width
@@ -87,72 +39,40 @@ type bakedElement struct {
 	stroke   sdl.Color
 	tint     sdl.Color // multiplied into image/gen art at draw
 	fx       bakedEffect
-	// cond is the INTERNED index of VisibleWhen.Value, or condAlwaysVisible. Interning
-	// at bake is what keeps the visibility gate an integer compare instead of a string
-	// compare on the frame path.
+	// cond is the interned index of VisibleWhen.Value, or condAlwaysVisible; interning keeps the check an integer.
 	cond     int16
 	kind     theme.ElementKind
 	fit      theme.ElementFit
 	condAxis theme.ConditionAxis
 	opacity  uint8
 	ang      uint8 // 360/256 angle byte — the ThemeRectRotations convention
-	// fontIdx is the resolved face index for ElemText. Format 1 leaves it at
-	// elemFontChrome and draws every element string in the client chrome face — see
-	// paintElementText for the measurement, and the bake for the ruling. The field
-	// is carried so a later format can fill it without moving anything.
+	// fontIdx is the face index for ElemText; format 1 leaves it at elemFontChrome (see paintElementText).
 	fontIdx uint8
 	clock   uint8
-	// grad is the gradient axis as a 360/256 angle byte (0 = left-to-right,
-	// 64 = top-to-bottom), quantised to a cardinal direction at draw. Separate from
-	// ang, which is the element's own ROTATION.
+	// grad is the gradient axis as a 360/256 angle byte (0 left-to-right, 64 top-to-bottom); ang is the rotation.
 	grad uint8
-	// shape is the resolved elemShape silhouette id for ElemShape (never a string
-	// on the draw path).
+	// shape is the elemShape silhouette id for ElemShape.
 	shape uint8
 	// align is the resolved theme.TextAlign for ElemText.
 	align uint8
-	// fxDim is how much alpha THIS FRAME's effect takes off an ElemText, written by
-	// applyElementFX and put straight back after the painter. 0 is neutral, which is
-	// what makes the zero value — and therefore every baked row — correct without the
-	// bake ever touching it.
-	//
-	// It is a separate field from the folded colours because the LABEL CACHE KEYS ON
-	// COLOUR (ui.go textKey): folding a per-frame alpha into the ink would rasterise a
-	// new texture every frame a fade moved. paintElementText spends it through
-	// LabelClippedFontAlpha instead, which is a texture alpha mod over the same
-	// cached glyphs. The other five kinds have no such cache and take the fold.
+	// fxDim is the alpha this frame's effect takes off an ElemText, 0 neutral; kept out of the folded colours because
+	// the label cache keys on colour, so folding would rasterise a new texture every frame of a fade.
 	fxDim  uint8
 	radial bool // gradient: radial instead of linear
 	loop   bool
-	// wash marks an [effect.<widget key>] BIND: a plate over an AO2 widget's own box
-	// that exists ONLY because of its effect (themeelementbake.go bakeEffectBind).
-	//
-	// It changes exactly one rule, and the rule is not a detail: a wash's fill alpha
-	// is the effect's ENVELOPE (elemFX.env × the authored peak), not a modulation of
-	// an alpha it was authored with. A free element is there whether or not its effect
-	// runs; a wash is the effect. `[effect.viewport] effect = fade` is a shipped
-	// theme's scene-transition curtain, and under the modulation rule it would settle
-	// fully opaque over the entire stage rather than clearing.
+	// wash marks an [effect.<widget key>] plate that exists only for its effect: its fill alpha is the effect's curve,
+	// not a modulation, so `[effect.viewport] effect = fade` clears rather than settling opaque over the stage.
 	wash bool
 }
 
-// condAlwaysVisible is bakedElement.cond for an element with no condition, and for
-// one whose condition names a value the live session has never mentioned. -1 rather
-// than 0 because 0 is a legitimate interned index.
+// condAlwaysVisible marks no condition, or a value the session never mentioned; -1 because 0 is a valid interned index.
 const condAlwaysVisible = int16(-1)
 
-// elemBandRange is one band's half-open [lo, hi) window into themeLayoutCache.el.
-// int16 because ElementCap is 96: two of these per band is 12 bytes for the whole
-// paint order, and the draw loop's induction variable never touches memory.
+// elemBandRange is one band's half-open [lo, hi) window into themeLayoutCache.el; int16 because ElementCap is 96.
 type elemBandRange struct{ lo, hi int16 }
 
-// elemPainters dispatches by kind. A FIXED ARRAY, indexed — never a map, never a
-// switch that a new kind can silently fall out of, and never a method value (that
-// allocates a closure; themeslots.go carries the same rule for themeSlot.draw).
-//
-// Every entry is non-nil by contract, because drawElementBands calls through it
-// without a nil check: TestEveryElementKindHasAPainter is what keeps that true, and
-// paintElementStub is what a kind whose painter has not landed yet points at.
+// elemPainters dispatches by kind: a fixed array, never a method value (that allocates a closure);
+// every entry must be non-nil because drawElement calls through it with no check.
 var elemPainters = [theme.ElementKindCount]func(*App, *bakedElement){
 	theme.ElemImage:    paintElementArt,      // W4 — theme://m/<themeid>/<id> media
 	theme.ElemShape:    paintElementShape,    // W3 — the banded silhouette family
@@ -162,42 +82,19 @@ var elemPainters = [theme.ElementKindCount]func(*App, *bakedElement){
 	theme.ElemPane:     paintElementPane,     // W3 — the split-screen plate + divider
 }
 
-// paintElementStub is the placeholder painter: it draws nothing, deliberately.
-//
-// It exists so the table is TOTAL from the first commit of the wave — the band loop
-// indexes elemPainters with no nil check, and a nil entry would be a panic on the
-// render thread the first time a stranger's theme used that kind. It is also the
-// marker TestEveryElementKindHasAPainter compares against, so "which kinds do not
-// paint yet" is a mechanical fact rather than a comment somebody has to maintain.
+// paintElementStub draws nothing; it keeps the table total for a kind with no painter, since a nil entry
+// would panic the render thread.
 func paintElementStub(*App, *bakedElement) {}
 
-// drawElementBands paints one band of free elements.
-//
-// The design doc sketches this as `drawElementBand`; the shipped name is plural
-// because it is the whole of the element draw surface and its gates are named for
-// it (TestDrawElementBandsZeroAllocWithNoElements / …With96Elements).
-//
-// Called at THREE fixed points in drawCourtroomThemed (theme_layout.go), which is
-// the entire contract with the hand-ordered themed pass:
-//
-//	backdrop art          → BandBackdrop → stage widgets
-//	                      → BandMid      → the modal early-return
-//	                      → panel widgets → BandOverlay → client chrome
-//
-// ZERO ALLOCATIONS, ALWAYS. `&lay.el[i]` is a pointer INTO the cache (which lives on
-// App and is therefore already off the stack), so handing it to an opaque function
-// pointer cannot heap-allocate — passing the 100-odd-byte value instead would copy
-// it 96 times a frame. Nothing here builds a string, probes a map, reads prefs or
-// touches the disk. Gated by the two AllocsPerRun tests named above; every painter
-// added to the table inherits both.
+// drawElementBands paints one band, at three fixed points in drawCourtroomThemed:
+// backdrop art, BandBackdrop, stage widgets, BandMid, the modal early return, panels, BandOverlay, client chrome.
+// &lay.el[i] points into the cache on App, so handing it to a painter does not allocate.
 func (a *App) drawElementBands(lay *themeLayoutCache, b theme.ElementBand) {
 	if lay == nil || int(b) >= len(lay.band) {
 		return
 	}
 	rg := lay.band[b]
-	// The bake is the only producer of these indices and it fills el[0:elN]. The
-	// clamp costs one compare per band per frame and makes a mis-bake paint nothing
-	// instead of painting stale rows from a previous theme.
+	// The clamp makes a mis-bake paint nothing instead of stale rows from a previous theme.
 	if hi := int16(lay.elN); rg.hi > hi {
 		rg.hi = hi
 	}
@@ -206,148 +103,69 @@ func (a *App) drawElementBands(lay *themeLayoutCache, b theme.ElementBand) {
 	}
 }
 
-// drawElement paints ONE element: the visibility gate, the motion, the painter.
-//
-// It is the single funnel every element goes through, which is what lets the three
-// self-clear paths of the pacing doctrine be checked in one place (themeclock.go
-// carries the doctrine in full):
-//
-//  1. not visible          → return before touching the page or the FX pool
-//  2. ReduceMotion         → every effect neutral, every page frame 0, nothing noted
-//  3. the effect is static → nothing noted; the element draws its authored form
-//
-// Nothing here allocates. The FX terms are a value, the save is a local that does not
-// escape, and the painter is still handed the SAME &lay.el[i] the two AllocsPerRun
-// gates assert it gets — which is why the motion is applied in place and put back
-// rather than drawn through a scratch copy.
+// drawElement paints one element: visibility check, motion, painter; motion is applied in place and restored,
+// not drawn through a scratch copy, so the painter gets &lay.el[i] without allocating.
 func (a *App) drawElement(lay *themeLayoutCache, e *bakedElement, idx int16) {
-	// Defence in depth: kind ultimately comes from a file a stranger wrote. The
-	// reader SKIPS an element whose kind it does not know (docs/THEME-FORMAT.md
-	// §7.4) so this can only fire on a bug in the bake — but an out-of-range index
-	// here would panic the render thread, and one predictable compare is cheaper
-	// than that risk.
+	// kind comes from a theme file; the reader skips unknown kinds, but a bad index would panic the render thread.
 	if e.kind >= theme.ElementKindCount {
 		return
 	}
 	if !a.elementVisible(e) {
-		// Self-clear path 3. Its FX slot is NOT released here: the sweep does that
-		// after themeFXIdleFrames, which is what makes a decoration that blinks off and
-		// straight back on keep its place in its one-shot instead of restarting it on
-		// every flicker of the condition.
+		// The FX pool entry is not released here: themeFXIdleFrames lets a brief off and on keep its one-shot's place.
 		return
 	}
-	// The fast path, and the one every stock element takes: no effect at all. One
-	// compare, then the painter — this is what keeps "0 effects = 0 cost" true inside
-	// a themed frame that already has elements in it.
-	//
-	// The upper bound is the same defence in depth as the kind check above: the
-	// resolver degrades an out-of-range effect on its own, but effectIsStateful below
-	// is indexed with it, and an index panic on the render thread is not a thing to
-	// leave to a stranger's file.
+	// Fast path: no effect. The upper bound guards the effectIsStateful index against a bad theme file.
 	if e.fx.kind == theme.FXNone || e.fx.kind >= theme.EffectKindCount || a.themeFXFrozen {
 		if e.wash {
-			// A WASH IS ITS EFFECT, so with no live effect there is nothing to paint —
-			// and this branch is the one that matters, because ReduceMotion reaches it.
-			// Painting the plate here would draw it at the full baked PEAK, forever:
-			// `[effect.viewport] effect = fade, amp_pct = 100` (matsuribayashi_dawn) is
-			// an opaque sheet over the whole stage, and the accessibility option would
-			// be the thing that put it there. Freezing means amp 0 resolved still
-			// (elemFXNeutral, env 0), and env 0 on a wash is exactly this return.
+			// A wash is its effect: with no live effect, including under ReduceMotion, painting would leave the baked
+			// peak as a permanent sheet over the widget.
 			return
 		}
 		elemPainters[e.kind](a, e)
 		return
 	}
 	el := a.elementElapsed(e)
-	// A one-shot on an ALWAYS-visible element began when the theme applied, so its
-	// origin is elapsed zero and there is nothing to remember (fxAlwaysOrigin). Only a
-	// CONDITIONAL one needs a pool slot — it has to replay each time its condition
-	// opens, which is what makes `visible_when = shout:objection` + `effect = slam` a
-	// stamp that lands with the shout. Keeping the unconditional majority out of the
-	// pool is also what stops decoration with no state to keep from exhausting it.
+	// An always-visible one-shot began at theme apply, so its origin is elapsed zero; only a conditional one needs a
+	// pool entry, to replay each time its condition opens, and keeping the rest out stops them exhausting the pool.
 	st := fxAlwaysOrigin
 	if effectIsStateful[e.fx.kind] && e.condAxis != theme.CondAlways {
-		// A nil st (pool exhaustion) is the named graceful degrade: the resolver
-		// freezes the effect at its first frame and reports static.
-		//
-		// lay.condGen IS the bake generation (themeElemGen, stamped in
-		// bakeThemeElements): a cold rebuild re-numbers the baked array, so a slot
-		// stamped with the previous one must not answer for whatever element inherited
-		// its index.
+		// A nil st (pool exhausted) freezes the effect at its first frame. lay.condGen is the bake generation:
+		// a rebuild renumbers the array, so an entry from the previous bake must not answer for a new element there.
 		st, _ = a.acquireElementFX(idx, lay.condGen, el)
 	}
 	fx := resolveElementEffect(e.fx, el, st)
-	// The census is noted ONLY when the effect will look different next frame. A
-	// decayed one-shot and an amplitude-zero effect are both a still picture, and a
-	// still picture that pinned the frame rate is the idle-CPU-burn defect this
-	// doctrine exists to prevent.
-	//
-	// A PAUSED CLOCK IS THE SECOND WAY TO BE STILL, and it is the one the resolver
-	// cannot see: it is handed `el` and has no idea the clock stopped producing new
-	// ones. W5 recorded the whole failure here as a TODO because nothing wrote
-	// themeClock.paused yet; W7's scrub is the first writer, so the guard lands with
-	// it — via noteElementAnimating (themeclock.go), which carries the argument and
-	// covers the looping-page site too. The TERMS still apply while paused, which is
-	// the entire point of a scrub.
+	// Note animation only when the next frame will differ: a still picture must not pin the frame rate.
+	// noteElementAnimating also covers a paused clock, which the resolver cannot see; terms still apply while paused.
 	if !fx.static {
 		a.noteElementAnimating(e.clock)
 	}
-	// The terms are applied EVEN WHEN STATIC, and that is not a missed optimisation.
-	// A static effect's terms are its FINAL state, not "no effect": a wash whose fade
-	// has finished resolves to env 0 and must paint nothing, where skipping the apply
-	// would leave it drawing at its full authored opacity over an AO2 widget, forever.
-	// A free element's static terms are the neutral transform, so the two lines below
-	// cost it a struct copy and change nothing.
+	// Apply terms even when static: a static effect's terms are its final state, so a finished wash fade resolves to
+	// env 0 and must paint nothing. A free element's static terms are neutral.
 	saved := applyElementFX(e, fx)
 	elemPainters[e.kind](a, e)
 	restoreElementFX(e, saved)
 }
 
-// ---------------------------------------------------------------------------
-// visible_when — one axis, one interned value, an integer compare
-// ---------------------------------------------------------------------------
-
-// elementVisible is the per-element half of the visibility gate: an INTEGER
-// COMPARE against an index the bake interned and refreshElementConditions
-// resolved once for this frame. Deliberately not an expression language —
-// anything richer needs a parser on the frame path (docs/THEME-FORMAT.md §3).
-//
-// An unknown axis leaves the element VISIBLE, which is the format's own rule:
-// "an element a future condition would have hidden is better shown than lost".
+// elementVisible compares an interned index resolved once per frame; an unknown axis stays visible, per the format.
 func (a *App) elementVisible(e *bakedElement) bool {
 	switch e.condAxis {
 	case theme.CondAlways:
 		return true
 	case theme.CondSpeaking:
-		// The one value-less axis: no interning, just the live flag.
 		return a.condSpeaking
 	case theme.CondPos, theme.CondChar, theme.CondSide, theme.CondShout:
-		// cond < 0 means the element's value never interned, which the bake cannot
-		// produce for these axes — treat it as "never matches" rather than "always",
-		// because a gate that silently opens is the failure nobody notices.
+		// cond < 0 cannot come from the bake for these axes; treat it as no match, since a check that silently opens
+		// goes unnoticed.
 		return e.cond >= 0 && a.condLive[e.condAxis] == e.cond
 	}
 	return true
 }
 
-// elemCondSource is the live value of every condition axis for ONE pass, gathered
-// before any of it is interned.
-//
-// It exists because there are TWO passes with different truths. The live courtroom
-// reads the session; the GIF/video export (gifexport.go) drives its own
-// courtroom.Room off a recording and must resolve `side` / `shout` / `speaking`
-// against THAT room — an exported frame whose objection glow lit up because the
-// live stage happened to be mid-shout would be showing the viewer a thing that
-// never happened.
-//
-// A plain value struct, four string headers and a bool: it is an argument, it does
-// not escape, and it allocates nothing (the two AllocsPerRun gates over
-// drawElementBands' callers cover it).
+// elemCondSource is every condition axis's live value for one pass: the live courtroom reads the session, but the
+// video export drives its own Room and must resolve side, shout and speaking against that.
 type elemCondSource struct {
 	speaking bool
-	// pos / char are CLIENT-state axes — the local player's own pos dropdown and
-	// character folder. Neither has a recorded counterpart, so both passes read the
-	// same live values.
+	// pos and char are client state with no recorded counterpart, so both passes read the live values.
 	pos, char string
 	// side / shout are STAGE axes: whichever room this pass is drawing.
 	side, shout string
@@ -364,40 +182,25 @@ func (a *App) liveCondSource() elemCondSource {
 	}
 }
 
-// refreshElementConditions resolves the LIVE value of every condition axis to its
-// interned index, once per themed frame, before the first band paints.
+// refreshElementConditions resolves each live axis to its interned index, once per themed frame before the first band.
 func (a *App) refreshElementConditions(lay *themeLayoutCache) {
 	a.refreshElementConditionsFrom(lay, a.liveCondSource())
 }
 
-// refreshElementConditionsFrom is the shared body: intern one pass's axis values.
-//
-// ONCE PER PASS, NOT PER ELEMENT, and memoised on the live string: the scan below
-// only re-runs when the session actually changed pos / character / side / shout, so
-// a settled frame costs one string compare per axis and nothing else. That is what
-// lets the per-element gate be an integer compare (elementVisible) — the design's
-// whole reason for interning at bake.
-//
-// Zero allocations: every source is a field read or a switch over constants, and
-// the scan walks strings already resident in the layout cache.
+// refreshElementConditionsFrom interns one pass's axis values, memoised on the live string so a settled frame
+// costs one string compare per axis.
 func (a *App) refreshElementConditionsFrom(lay *themeLayoutCache, src elemCondSource) {
-	// The FX pool's own once-per-pass hook rides here rather than getting a second
-	// call site: this function is ALREADY the "start of an element pass" hook both
-	// the live courtroom and the offscreen export share, and two hooks that must fire
-	// together are one hook somebody will forget. Ahead of the nil guard on purpose —
-	// a pass with no layout still has to sweep, or a theme swap would strand every
-	// slot the outgoing theme held.
+	// Both live and export passes start here, so the FX pool hook rides along; before the nil guard because a pass
+	// with no layout must still sweep, or a theme swap would strand the outgoing theme's entries.
 	a.beginThemeFXPass()
 	if lay == nil {
 		return
 	}
-	// Speaking is a flag, not a value: nothing to intern, nothing to memoise.
 	a.condSpeaking = src.speaking
 	if lay.condN == 0 {
 		return // no valued condition anywhere in this theme — skip the whole pass
 	}
-	// The generation guard: a cold rebuild re-interns every value, so an index
-	// resolved against the OLD table would point at the wrong string.
+	// A cold rebuild re-interns every value, so an index from the old table would point at the wrong string.
 	if a.condGen != lay.condGen {
 		a.condGen = lay.condGen
 		for i := range a.condSrc {
@@ -411,13 +214,10 @@ func (a *App) refreshElementConditionsFrom(lay *themeLayoutCache, src elemCondSo
 	a.resolveConditionAxis(lay, theme.CondShout, src.shout)
 }
 
-// condSrcUnresolved is the memo's "never resolved" marker. It cannot collide with a
-// live value because no pos, character, side or shout is spelled with a NUL.
+// condSrcUnresolved marks a memo never resolved; no pos, character, side or shout contains a NUL.
 const condSrcUnresolved = "\x00"
 
-// resolveConditionAxis memoises ONE axis: unchanged live value ⇒ one string compare
-// and out; changed ⇒ a linear scan of the interned table (≤ 96 entries, and only on
-// the frame the session actually moved).
+// resolveConditionAxis memoises one axis: an unchanged value is one compare, a changed one scans the interned table.
 func (a *App) resolveConditionAxis(lay *themeLayoutCache, axis theme.ConditionAxis, live string) {
 	if a.condSrc[axis] == live {
 		return
@@ -435,11 +235,7 @@ func (a *App) resolveConditionAxis(lay *themeLayoutCache, axis theme.ConditionAx
 	}
 }
 
-// stageSide is the side the STAGE is currently showing — the speaker's pos, which
-// is what `visible_when = side:<name>` means. Distinct from mySide(), which is the
-// local player's own pos dropdown and is what `pos:<name>` means: a decoration that
-// dresses the defence bench wants the first, one that dresses YOUR controls wants
-// the second.
+// stageSide is the speaker's pos, what `side:<name>` means; mySide() is the local player's, what `pos:<name>` means.
 func (a *App) stageSide() string {
 	if a.room == nil {
 		return ""
@@ -447,11 +243,7 @@ func (a *App) stageSide() string {
 	return a.room.Scene.Position
 }
 
-// stageShout is the shout stem of the message on screen ("" when idle / none) —
-// holdit / objection / takethat / custom (courtroom.ShoutName). A theme that spelled
-// its condition with the DESIGN key (`shout:hold_it`, the spelling its own `anchor =`
-// lines use) interned the stem anyway, at bake: elemShoutConditions folds the two
-// spellings together so this side stays one field read.
+// stageShout is the shout stem on screen, "" if none; elemShoutConditions folds `shout:hold_it` spellings at bake.
 func (a *App) stageShout() string {
 	if a.room == nil {
 		return ""
@@ -459,23 +251,8 @@ func (a *App) stageShout() string {
 	return a.room.CurrentShout()
 }
 
-// ---------------------------------------------------------------------------
-// Painters
-// ---------------------------------------------------------------------------
-
-// elemShape ids. The wire names live in the bake (elemShapeNames); the draw path
-// only ever sees these integers.
-//
-// APPEND-ONLY: the id is baked, and a theme reloaded mid-session must resolve to
-// the same silhouette it did a frame ago. elemShapePill is appended rather than
-// slotted beside elemShapeRounded for exactly that reason.
-//
-// THE VOCABULARY IS shapemask.go's, EXTENDED (design §2): sharp / rounded / pill
-// are the three names this client already persists (shapemask.go:38-40, and the
-// same three in internal/config), and the 14 shipped themes were authored against
-// them. hex / ribbon / tape are W3's additions. "rect" is an accepted ALIAS of
-// sharp (elemShapeAliases) — it was this id's original spelling in W3 and a name
-// that once resolved has to keep resolving.
+// elemShape ids, append-only: the id is baked and a theme reloaded mid-session must resolve to the same silhouette.
+// Names extend shapemask.go's vocabulary (sharp, rounded, pill); "rect" stays an alias of sharp for older themes.
 const (
 	elemShapeSharp   uint8 = iota // a plain box — also what an unknown name degrades to
 	elemShapeRounded              // rounded rectangle
@@ -486,42 +263,22 @@ const (
 	elemShapeCount
 )
 
-// elemShapeBands bounds the horizontal strips ONE silhouette draws.
-//
-// A silhouette is painted as a stack of axis-aligned band fills, because the frame
-// this runs inside is gated at zero allocations and SDL's primitive API is rects.
-// 24 is smooth enough for a badge or a frame at any realistic element height and
-// small enough that the pathological theme — theme.ElementCap shapes, all visible,
-// every frame — is a bounded number of draw calls rather than a function of the
-// window height. (The mask-backed, anti-aliased path is W4's, where the theme-media
-// budget brings a texture tier with it.)
+// elemShapeBands bounds the strips one silhouette draws: SDL's primitive API is rects and the frame must not allocate,
+// so a silhouette is a stack of band fills, with a draw-call count independent of window height.
 const elemShapeBands = int32(24)
 
-// elemShapeChamferDiv is how deep a hex/ribbon/tape cut goes: one quarter of the
-// element's SHORT side. Named because three shapes share it and because a chamfer
-// deeper than half the side would invert the silhouette.
+// elemShapeChamferDiv is the depth of a hex, ribbon or tape cut, a quarter of the short side;
+// deeper than half would invert the silhouette.
 const elemShapeChamferDiv = int32(4)
 
 // elemShapeCornerDiv is the rounded corner radius as a fraction of the short side.
-// A sixth reads as "rounded" at a badge's size without eating a frame's interior.
 const elemShapeCornerDiv = int32(6)
 
-// elemShapePillDiv is the PILL's corner radius as a fraction of the short side: a
-// half, which is the definition of a capsule (shapemask.go's pill preset resolves
-// its corner as min(w,h)/2 for the same reason). It is the one silhouette whose
-// full radius is its identity — the CAPSULE CHIPS block above
-// themes/thh_trial/asyncao_theme.ini [element.chip_search] says so about its own
-// register plate — so it is a separate id rather than "rounded with a big
-// number", and it can never quietly degrade to a rectangle.
+// elemShapePillDiv is the pill's corner radius as a fraction of the short side: a half, the definition of a capsule.
 const elemShapePillDiv = int32(2)
 
-// paintElementShape draws a procedural silhouette: the fill first, then the outline
-// as per-band edge posts plus two caps.
-//
-// The outline is drawn as edges rather than as "fill the outer silhouette in the
-// stroke colour, then the inner one in the fill colour", because that trick needs an
-// OPAQUE fill — and a frame element is precisely a stroke over a TRANSPARENT fill,
-// which is why theme.RGBA carries alpha at all.
+// paintElementShape draws a silhouette fill, then the outline as per-band edge posts plus two caps;
+// edges, not overpainted silhouettes, because a frame element has a transparent fill.
 func paintElementShape(a *App, e *bakedElement) {
 	if e.r.W <= 0 || e.r.H <= 0 {
 		return
@@ -555,16 +312,14 @@ func paintElementShape(a *App, e *bakedElement) {
 		if !line {
 			continue
 		}
-		// The two edge posts. They are as wide as the pen, so a slanted edge reads as
-		// a staircase of pen-wide blocks — the same trade the band fill makes.
+		// Edge posts are pen-wide, so a slanted edge reads as a staircase.
 		p := pen
 		if p > w {
 			p = w
 		}
 		c.Fill(sdl.Rect{X: e.r.X + l, Y: y0, W: p, H: y1 - y0}, e.stroke)
 		c.Fill(sdl.Rect{X: e.r.X + e.r.W - r - p, Y: y0, W: p, H: y1 - y0}, e.stroke)
-		// A band whose inset JUMPED from the previous one leaves a horizontal gap in
-		// the outline; bridge it so a steep chamfer is a closed shape, not a comb.
+		// An inset jump leaves a gap in the outline; bridge it so a steep chamfer stays closed.
 		if i > 0 {
 			elemShapeBridge(c, e, y0, pen, prevL, l, prevR, r)
 		}
@@ -573,8 +328,7 @@ func paintElementShape(a *App, e *bakedElement) {
 	if !line {
 		return
 	}
-	// Caps: the top and bottom edges of the silhouette, at the first and last band's
-	// insets, so the outline closes.
+	// Caps close the outline at the first and last band's insets.
 	tl, tr := elemShapeInset(e.shape, 0, n, e.r.W, e.r.H)
 	bl, br := elemShapeInset(e.shape, n-1, n, e.r.W, e.r.H)
 	if w := e.r.W - tl - tr; w > 0 {
@@ -585,8 +339,7 @@ func paintElementShape(a *App, e *bakedElement) {
 	}
 }
 
-// elemShapeBridge closes the horizontal gap between two bands whose insets differ,
-// on whichever side moved. Called only on the stroked path.
+// elemShapeBridge closes the gap between two bands whose insets differ, on whichever side moved.
 func elemShapeBridge(c *Ctx, e *bakedElement, y int32, pen, prevL, l, prevR, r int32) {
 	if d := abs32(l - prevL); d > pen {
 		x := min(l, prevL)
@@ -598,8 +351,7 @@ func elemShapeBridge(c *Ctx, e *bakedElement, y int32, pen, prevL, l, prevR, r i
 	}
 }
 
-// elemShapeInset is the left and right inset of band i of n, for a w×h silhouette.
-// Pure integer/float arithmetic over constants — no allocation, no state.
+// elemShapeInset is the left and right inset of band i of n for a w×h silhouette.
 func elemShapeInset(shape uint8, i, n, w, h int32) (int32, int32) {
 	if n <= 1 {
 		return 0, 0
@@ -609,8 +361,7 @@ func elemShapeInset(shape uint8, i, n, w, h int32) (int32, int32) {
 	short := min(w, h)
 	switch shape {
 	case elemShapeRounded, elemShapePill:
-		// One quarter-circle for both: the only difference is how big it is, and a
-		// pill is the case where it is as big as the silhouette allows.
+		// One quarter-circle for both; a pill's is as big as the silhouette allows.
 		div := elemShapeCornerDiv
 		if shape == elemShapePill {
 			div = elemShapePillDiv
@@ -653,35 +404,23 @@ func elemShapeInset(shape uint8, i, n, w, h int32) (int32, int32) {
 		if ch <= 0 {
 			return 0, 0
 		}
-		// Both ends slant the SAME way, which is what makes it read as a torn strip
-		// rather than as a hexagon.
+		// Both ends slant the same way, so it reads as a torn strip, not a hexagon.
 		return int32(math.Round(t * float64(ch))), int32(math.Round((1 - t) * float64(ch)))
 	}
 	return 0, 0
 }
 
-// elemGradientBands bounds a gradient plate's strips. 32 is finer than the kit's own
-// FillGradient (48 over a whole panel) needs to be for element-sized art, and it is
-// the same bounded-strip idiom for the same reason.
+// elemGradientBands bounds a gradient plate's strips.
 const elemGradientBands = int32(32)
 
-// elemGradientDirCount is the number of cardinal directions a linear gradient
-// quantises to (left→right, top→bottom, right→left, bottom→top).
+// elemGradientDirCount is the number of cardinal directions a linear gradient quantises to.
 const elemGradientDirCount = 4
 
-// elemGradientDirStep is the angle-byte span of one cardinal direction
-// (theme.AngleCount / elemGradientDirCount), i.e. 90 degrees.
+// elemGradientDirStep is the angle-byte span of one cardinal direction, 90 degrees.
 const elemGradientDirStep = theme.AngleCount / elemGradientDirCount
 
-// paintElementGradient draws a two-stop plate: linear along a cardinal axis, or a
-// concentric ring ramp when the element asked for radial.
-//
-// LINEAR GRADIENTS QUANTISE TO THE NEAREST CARDINAL DIRECTION in W3, and that is a
-// deliberate deviation rather than an oversight: an arbitrary angle needs rotated
-// geometry (SDL_RenderGeometry), which would be a brand-new cgo surface inside the
-// one frame gated at exactly zero allocations. The format's own answer for a true
-// diagonal is the `gradient` GENERATOR (docs/THEME-FORMAT.md §5), which rasterises a
-// tile in W4 and costs nothing per frame.
+// paintElementGradient draws a two-stop plate, linear along the nearest cardinal axis or a ring ramp if radial;
+// a true angle needs SDL_RenderGeometry, a new cgo surface in a zero-allocation frame (use the `gradient` generator).
 func paintElementGradient(a *App, e *bakedElement) {
 	if e.r.W <= 0 || e.r.H <= 0 {
 		return
@@ -726,13 +465,8 @@ func paintElementGradient(a *App, e *bakedElement) {
 	}
 }
 
-// paintElementRadial ramps from stop B at the edge to stop A at the centre as
-// concentric RECTANGLE rings, drawn outside-in so each one covers the last.
-//
-// Rectangular, not circular, for the same reason the linear case is cardinal: a true
-// circle needs geometry. It reads correctly as a vignette or a centre glow inside a
-// box, which is what the two-stop plate is for; `generator = glow` is the circular
-// one, and it lands in W4 as a tile.
+// paintElementRadial ramps from stop B at the edge to stop A at the centre as concentric rectangles, drawn outside-in;
+// rectangular because a circle needs geometry (`generator = glow` is the circular one).
 func paintElementRadial(c *Ctx, e *bakedElement) {
 	n := elemGradientBands
 	if half := min(e.r.W, e.r.H) / 2; half > 0 && half < n {
@@ -753,15 +487,8 @@ func paintElementRadial(c *Ctx, e *bakedElement) {
 	}
 }
 
-// elemStopColor is the i-of-n step from a to b, ALPHA INCLUDED — which is why it
-// is not the kit's own lerpColor (eggs.go), whose alpha stays at a.A. A two-stop
-// plate ramping from opaque to transparent is the vignette idiom, and it is the
-// whole reason theme.RGBA carries alpha at all.
-//
-// Integer arithmetic, and no closure. Both are deliberate: a ramp that wobbled with
-// float rounding would shimmer between two frames of an unchanged window, and a
-// per-channel closure is exactly the allocation lerpColor's own comment warns about
-// on a per-frame draw.
+// elemStopColor is the i-of-n step from a to b including alpha, unlike lerpColor; integer maths so the ramp cannot
+// shimmer between frames, no closure so it cannot allocate.
 func elemStopColor(a, b sdl.Color, i, n int32) sdl.Color {
 	if n <= 0 {
 		return a
@@ -774,48 +501,17 @@ func elemStopColor(a, b sdl.Color, i, n int32) sdl.Color {
 	}
 }
 
-// elemStopByte interpolates one channel; split out so elemStopColor needs no
-// closure (the same rule, and the same reason, as lerpByte beside lerpColor).
+// elemStopByte interpolates one channel, split out so elemStopColor needs no closure.
 func elemStopByte(x, y uint8, i, n int32) uint8 {
 	return uint8(int32(x) + (int32(y)-int32(x))*i/n)
 }
 
-// elemFontChrome is bakedElement.fontIdx's "no theme face" value: the client's own
-// chrome face. It is deliberately OUT of themeFontElem's range so a future W4 value
-// cannot collide with it.
+// elemFontChrome is fontIdx's "no theme face" value, the client's chrome face, outside themeFontElem's range.
 const elemFontChrome = uint8(255)
 
-// paintElementText draws a baked, already-truncated string.
-//
-// FORMAT 1 DRAWS EVERY ELEMENT STRING IN THE CLIENT CHROME FACE. An element's own
-// `font`/`size` are parsed, bounds-checked and preserved on save, and they are not
-// read by this painter. W3 deferred them to W4 as "the wave that owns font intake";
-// W4 shipped the intake the design actually names — `[fonts]`/`[fontbind]`, the
-// theme-carries-its-own-file binding (themefonts.go applySidecarFonts) — and ruled
-// the per-element pair out on the measurement below. Both halves are stated in
-// docs/THEME-FORMAT.md §3 so an author is never guessing.
-//
-// THE COST. Every other face in this client lives in a fontSet that holds exactly
-// ONE point size (ui.go buildSet), so an element asking a panel's set for a
-// different size rebuilds that set — and purges the text cache with it — on every
-// frame the panel and the element are both on screen. That is precisely the
-// divergent-zoom defect TestDrawCourtroomThemedDivergentZoomZeroAlloc exists to
-// catch, and the shipped themes reach for it constantly: `font = music_name` beside
-// a music plate that is drawing at the user's own Ctrl+wheel zoom is a rebuild per
-// frame, forever. Giving elements their own pool instead costs a slot out of
-// themeFaceCap (4 for a whole theme) and a second face lifetime to keep straight —
-// the two threats §6.6 R3 names by name for the sibling escalation.
-//
-// THE PRIZE, measured rather than assumed: all fourteen shipped native themes write
-// `font =`, and not one of them ships a face FILE (their own headers say "CLASSES
-// AND METRICS, never files"). A family that names no file resolves to the client's
-// chain either way, so honouring `font` would change nothing visible on any theme
-// that exists — only `size` would, and `size` is the half that costs the fontSet.
-// A pool built for that trade is machinery bought with the frame gate's budget for
-// no shipped pixel.
-//
-// The chrome face has no such set: one face, one scale, memoised width, nothing to
-// thrash.
+// paintElementText draws a baked string, always in the chrome face: `font` and `size` are parsed but not read, because
+// a fontSet holds one point size, so a different size would rebuild it and purge the text cache every frame.
+// No shipped theme carries a face file, so honouring `font` alone would change nothing.
 func paintElementText(a *App, e *bakedElement) {
 	if e.label == "" || e.r.W <= 0 || e.r.H <= 0 || e.col.A == 0 {
 		return
@@ -836,60 +532,33 @@ func paintElementText(a *App, e *bakedElement) {
 			}
 		}
 	}
-	// Vertically centred in the element's box: an author sizes the box, not the
-	// baseline, and a string pinned to the top of a tall plate reads as a bug.
+	// Vertically centred: an author sizes the box, not the baseline.
 	y := e.r.Y
 	if lh := int32(f.Height()); lh > 0 && lh < e.r.H {
 		y += (e.r.H - lh) / 2
 	}
-	// The effect's alpha rides a texture alpha mod rather than the ink colour — see
-	// bakedElement.fxDim and LabelClippedFontAlpha. 0 (the ordinary case, and every
-	// frame with no alpha effect on this element) takes the plain cached path.
+	// Effect alpha rides a texture alpha mod, not the ink colour; see bakedElement.fxDim.
 	c.LabelClippedFontAlpha(f, x, y, e.r.W, e.label, e.col, 255-e.fxDim)
 }
 
-// elemTileCap bounds how many blits ONE tiled element may issue in a frame.
-//
-// `fit = tile` repeats a source at its NATIVE size, so a 4x4 generator tile stretched
-// across a 1512x648 canvas is 61 236 draw calls — a number that is a function of the
-// window rather than of the theme, which is exactly the shape hard rule 4 forbids.
-// Past the cap the element falls back to a single stretched blit: it still shows, it
-// just stops being a repeat. 4096 is more repeats than any pattern reads as at any
-// realistic window size, and it is a fixed ceiling on the whole element band.
+// elemTileCap bounds blits per tiled element; `fit = tile` at native size scales with the window (hard rule 4),
+// so past the cap the element falls back to one stretched blit.
 const elemTileCap = 4096
 
-// paintElementArt draws an ElemImage's media page or an ElemGen's generator tile —
-// ONE painter for both kinds, because after the bake they are the same thing: a
-// resolved *render.TexturePage plus a fit mode, a tint and a rotation. The only
-// difference is where the page came from, and that question was settled at bake.
-//
-// ZERO ALLOCATIONS, like every other painter here. Every *sdl.Rect handed across cgo
-// is one of the two persistent scratch fields (the ui.go cgoRect contract) — passing
-// &local would heap-allocate on every blit, which at 96 elements is the classic
-// themed-frame leak the whole-screen gate exists to catch.
+// paintElementArt draws an ElemImage's media page or an ElemGen's tile, the same thing after the bake.
+// Every *sdl.Rect across cgo is a persistent scratch field (cgoRect), since &local would allocate on every blit.
 func paintElementArt(a *App, e *bakedElement) {
 	if e.page == nil || e.r.W <= 0 || e.r.H <= 0 || len(e.page.Frames) == 0 {
 		return
 	}
-	// elementFrame, not themeFrame: an element steps on its OWN clock group, at its
-	// own phase, and honours `loop = no` — and it is the site that decides whether
-	// this page still moves (themeclock.go). themeFrame remains the chrome's.
+	// elementFrame, not themeFrame: an element has its own clock group and phase, and honours `loop = no`.
 	tex := a.elementFrame(e)
 	if tex == nil {
 		return
 	}
 	c := a.ctx
-	// The tint multiplies into the art, and the element's opacity was already folded
-	// into its alpha at bake (fadeColor). Both are restored afterwards, because the
-	// page is SHARED — two elements tinting one generator tile must not see each
-	// other's colour, and the theme's chrome draws from the same store.
-	//
-	// RESTORED INLINE, NOT WITH defer — and the reason is style, not allocation. Go
-	// open-codes a single non-escaping defer, so the closure form measures 0 allocs
-	// here and both AllocsPerRun gates stay green either way; what the inline form
-	// buys is the marginally cheaper call and consistency with every other painter in
-	// this file, none of which defers anything. Written down because the opposite
-	// claim ("defer allocates") was here first and is simply false.
+	// Tint multiplies into the art and opacity is already in its alpha; both are restored because the page is shared
+	// with other elements and the theme's chrome.
 	_ = tex.SetColorMod(e.tint.R, e.tint.G, e.tint.B)
 	_ = tex.SetAlphaMod(e.tint.A)
 	switch e.fit {
@@ -900,49 +569,27 @@ func paintElementArt(a *App, e *bakedElement) {
 	case theme.FitContain, theme.FitCover:
 		paintElementFitted(c, e, tex)
 	default:
-		// FitStretch, and the fall-through for a fit this build does not know: fill
-		// the rect, ignoring aspect. Format rule 3 — an unknown enum degrades to the
-		// nearest safe primitive and the element still draws.
+		// FitStretch, and any unknown fit: fill the rect, ignoring aspect, so the element still draws (format rule 3).
 		paintElementBlit(c, e, tex, e.r)
 	}
 	_ = tex.SetColorMod(255, 255, 255)
 	_ = tex.SetAlphaMod(255)
 }
 
-// paintElementBlit is the one place a rotation is applied — but it is NOT the only
-// place art reaches the renderer, so `rot` genuinely does reach some fit modes and
-// not others. Scoped here rather than left as the older, flatly false claim that no
-// fit mode could drop it:
-//
-//   - HONOURED: `stretch` (and any fit a future file names that this build does not
-//     know, which degrades to it), `contain`, `cover`, and `tile`'s over-cap
-//     fallback — all four arrive through this function.
-//   - DROPPED: `tile` and `nine` on their normal paths. Both issue their own
-//     Ren.Copy (paintElementTiled, paintElementNineSlice) because both draw MANY
-//     rects from one page, and CopyEx spins each rect about its own centre: a
-//     rotated 9-slice would skew its nine pieces apart instead of turning the frame,
-//     and a rotated tile field would turn every tile individually and leave gaps at
-//     the seams. Rotating either as a whole means rendering to an intermediate
-//     target first, which is a painter-contract change (and an allocation on the
-//     frame path), not a comment fix.
-//
-// So a theme that wants a spinning frame authors it at `fit = stretch|contain|cover`.
-// Pinned by the R2 rot gate in themeclock_test.go, which covers the angle arithmetic;
-// the fit-mode split above is documentation of the draw path, not of the resolver.
+// paintElementBlit is the one place rotation is applied: stretch, contain, cover and tile's over-cap fallback use it.
+// tile and nine draw many rects with their own Ren.Copy and drop it: CopyEx spins each rect about its own centre,
+// so the pieces would come apart.
 func paintElementBlit(c *Ctx, e *bakedElement, tex *sdl.Texture, dst sdl.Rect) {
 	c.cgoRect = dst
 	if e.ang == 0 {
 		_ = c.Ren.Copy(tex, nil, &c.cgoRect)
 		return
 	}
-	// The 360/256 angle byte, in the ThemeRectRotations convention CopyEx already
-	// proves out for AO2 widget rects.
+	// The 360/256 angle byte, as ThemeRectRotations.
 	_ = c.Ren.CopyEx(tex, nil, &c.cgoRect, float64(e.ang)*360/float64(theme.AngleCount), nil, sdl.FLIP_NONE)
 }
 
-// paintElementTiled repeats the source at its NATIVE size across the element,
-// clipped to the element's own rect so a partial tile at the edge is cropped rather
-// than overhanging.
+// paintElementTiled repeats the source at native size, clipped to the element so an edge tile is cropped.
 func paintElementTiled(c *Ctx, e *bakedElement, tex *sdl.Texture) {
 	tw, th := e.page.W, e.page.H
 	if tw <= 0 || th <= 0 {
@@ -951,9 +598,7 @@ func paintElementTiled(c *Ctx, e *bakedElement, tex *sdl.Texture) {
 	cols := (e.r.W + tw - 1) / tw
 	rows := (e.r.H + th - 1) / th
 	if cols*rows > elemTileCap {
-		// A repeat count that is a function of the WINDOW rather than of the theme.
-		// One stretched blit instead: the element still shows, and the alternative is
-		// a frame whose draw-call count nobody bounded.
+		// The repeat count depends on the window, not the theme; one stretched blit keeps draw calls bounded.
 		paintElementBlit(c, e, tex, e.r)
 		return
 	}
@@ -967,17 +612,13 @@ func paintElementTiled(c *Ctx, e *bakedElement, tex *sdl.Texture) {
 	c.popClip(prev, had)
 }
 
-// paintElementFitted is `contain` (scale to fit, letterboxed) and `cover` (scale to
-// fill, cropped). Both preserve the source's aspect; they differ only in which of
-// the two scales wins, so they share one body and one rounding rule.
+// paintElementFitted is `contain` (letterboxed) and `cover` (cropped), which differ only in which scale wins.
 func paintElementFitted(c *Ctx, e *bakedElement, tex *sdl.Texture) {
 	sw, sh := e.page.W, e.page.H
 	if sw <= 0 || sh <= 0 {
 		return
 	}
-	// Integer arithmetic throughout: a float scale that wobbled by a rounding step
-	// between two frames of an unchanged window would shimmer, which is the defect
-	// the device-exact field draw exists to prevent one tier up.
+	// Integer maths: a float scale that wobbled between frames of an unchanged window would shimmer.
 	byW := e.r.W * sh
 	byH := e.r.H * sw
 	fitW, fitH := e.r.W, e.r.W*sh/sw
@@ -991,8 +632,7 @@ func paintElementFitted(c *Ctx, e *bakedElement, tex *sdl.Texture) {
 		H: fitH,
 	}
 	if e.fit == theme.FitCover {
-		// Cover overflows the rect by construction, so it is clipped to it — that is
-		// the whole difference between "cropped" and "spilling over the neighbours".
+		// Cover overflows the rect, so it is clipped to it.
 		prev, had := c.pushClip(e.r)
 		paintElementBlit(c, e, tex, dst)
 		c.popClip(prev, had)
@@ -1001,27 +641,15 @@ func paintElementFitted(c *Ctx, e *bakedElement, tex *sdl.Texture) {
 	paintElementBlit(c, e, tex, dst)
 }
 
-// paintElementNineSlice draws the source as a 9-slice: corners at SOURCE size, edges
-// keeping their source thickness and stretching only along the edge axis, centre
-// stretched both ways.
-//
-// INSETS ARE (LEFT, TOP, RIGHT, BOTTOM) — design §6.6 R9, ratified from the six
-// preset fragments that independently assumed it. The edge rule is the other half of
-// that ruling (escalation N3): eleven of one preset's elements are hairlines that
-// depend on an edge region keeping its source height, and a 9-slice that stretched
-// edges on both axes would turn every one of them into a smear.
-//
-// Nine blits, two persistent scratch rects, no allocation. The rects are set and
-// consumed one at a time, which is what makes ONE src scratch and ONE dst scratch
-// enough for all nine.
+// paintElementNineSlice draws a 9-slice with insets (left, top, right, bottom): corners at source size, edges keeping
+// source thickness and stretching along their axis only, because hairline elements depend on that; centre both ways.
 func paintElementNineSlice(c *Ctx, e *bakedElement, tex *sdl.Texture) {
 	sw, sh := e.page.W, e.page.H
 	if sw <= 0 || sh <= 0 {
 		return
 	}
 	l, t, r, b := e.slice[0], e.slice[1], e.slice[2], e.slice[3]
-	// Insets that overlap collapse the middle to nothing; clamp them so a hostile or
-	// simply careless theme gets a plausible frame rather than negative geometry.
+	// Clamp overlapping insets so a careless theme gets a plausible frame, not negative geometry.
 	if l+r >= sw {
 		l, r = sw/2, sw-sw/2-1
 	}
@@ -1032,9 +660,7 @@ func paintElementNineSlice(c *Ctx, e *bakedElement, tex *sdl.Texture) {
 		paintElementBlit(c, e, tex, e.r)
 		return
 	}
-	// The destination edge bands keep the SOURCE thickness, so the frame reads the
-	// same at any element size — unless the element is smaller than its own frame, in
-	// which case the bands are scaled down together to keep the centre non-negative.
+	// Edge bands keep source thickness unless the element is smaller than its frame; then they scale down together.
 	dl, dt, dr, db := l, t, r, b
 	if dl+dr > e.r.W && dl+dr > 0 {
 		dl, dr = dl*e.r.W/(dl+dr), e.r.W-dl*e.r.W/(dl+dr)
@@ -1066,14 +692,7 @@ func paintElementNineSlice(c *Ctx, e *bakedElement, tex *sdl.Texture) {
 	}
 }
 
-// paintElementPane draws a split-screen region's PLATE and its divider frame.
-//
-// The [pane.*] section itself paints nothing — it reparents its host widgets and
-// that is all it does (design §Q1: "the host widget draws EXACTLY ONCE, at the
-// pane's rect"). A theme that wants the region to LOOK like a region declares a
-// `kind = pane` element anchored to it; the bake then folds the pane's own
-// `divider` / `divider_px` into that element's stroke when the element declares
-// none, so the two spellings agree instead of competing.
+// paintElementPane draws a `kind = pane` element's plate and divider frame; [pane.*] itself only reparents its widgets.
 func paintElementPane(a *App, e *bakedElement) {
 	if e.r.W <= 0 || e.r.H <= 0 {
 		return

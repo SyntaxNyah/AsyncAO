@@ -13,40 +13,23 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/voice"
 )
 
-// Live voice AUDIO — the slice that turns the VS_* signaling (courtroom/voice.go)
-// + the Opus codec (internal/voice) into real talking. It captures the mic,
-// encodes Opus, and hands frames to the session (VS_FRAME); and decodes peers'
-// VS_AUDIO, mixes them, and plays the result.
-//
-// Threading / hard rule #1: every SDL audio call here runs on the MAIN thread —
-// the engine is driven by voicePump() from App.Frame() each frame, using SDL's
-// callback-free QUEUE api (QueueAudio / DequeueAudio), so there are no audio-
-// thread callbacks into Go and no goroutines. Outgoing frames are sent from the
-// same loop (single writer — never races other packet sends).
-//
-// Safety: the engine only exists while you've JOINED a Nyathena voice channel
-// (opt-in; default is not-in-voice) and the server advertised voice (VS_CAPS), so
-// the audio path is unreachable for everyone else. Every init step is fail-safe:
-// a missing mic / device / codec disables that half (or voice entirely) and is
-// never fatal.
+// Live voice audio: captures the mic, encodes Opus and sends VS_FRAME; decodes peers' VS_AUDIO, mixes and plays it.
+// Hard rule 1: every SDL audio call runs on the main thread, driven by voicePump() each frame through SDL's
+// callback-free queue API, so there are no audio-thread callbacks and no goroutines.
+// The engine exists only while joined to a voice channel the server advertised (VS_CAPS); init failures disable a half.
 
 const (
 	// voiceFrameBytes is one Opus frame as raw S16 mono bytes (960 samples * 2).
 	voiceFrameBytes = voice.FrameSize * 2
-	// voiceJitterCap bounds a peer's decoded-frame backlog (hard rule #4): ~240 ms,
-	// then the oldest frame is dropped so a stalled peer can't grow unbounded.
+	// voiceJitterCap bounds a peer's decoded-frame backlog (hard rule 4); the oldest frame is dropped past it.
 	voiceJitterCap = 12
-	// voicePlayTargetFrames is how many frames we keep buffered in the output queue
-	// (~60 ms) — enough to ride network jitter, small enough to stay responsive.
+	// voicePlayTargetFrames is how many frames stay buffered in the output queue (~60 ms).
 	voicePlayTargetFrames = 3
-	// voiceCaptureDrainCap caps frames encoded per pump so a backlog can't stall a
-	// frame (bounded work per render frame).
+	// voiceCaptureDrainCap caps frames encoded per pump so a backlog cannot stall a frame.
 	voiceCaptureDrainCap = 4
 
-	// Adaptive jitter buffer bounds (in 20 ms frames): the playback target grows
-	// toward Max when audio runs dry while frames are still arriving (network jitter
-	// — TCP retransmit delays, since voice rides the reliable WebSocket), and decays
-	// toward Min when steady, trading latency for smoothness only as needed.
+	// Adaptive jitter buffer bounds in 20 ms frames: the target grows toward Max when audio runs dry while frames still
+	// arrive, and decays toward Min when steady.
 	voicePlayMinFrames = 2
 	voicePlayMaxFrames = 10
 	// voiceBytesPerMs converts queued bytes → ms of audio (48 kHz * 2 bytes / 1000).
@@ -54,21 +37,18 @@ const (
 	// voiceAdaptEveryFrames re-evaluates the buffer/bitrate ~once a second (60 fps).
 	voiceAdaptEveryFrames = 60
 
-	// Opus target bitrates (bits/sec): steady vs. the lower rate used when the buffer
-	// keeps backing up (a struggling connection — fewer bytes catch up faster).
+	// Opus target bitrates (bits/sec): steady, and the lower rate used while the buffer keeps backing up.
 	voiceBitrate    = 24000
 	voiceBitrateLow = 12000
 )
 
-// voicePeer is one remote speaker: its decoder + a bounded jitter FIFO of decoded
-// PCM frames awaiting mix.
+// voicePeer is one remote speaker: its decoder and a bounded jitter FIFO of decoded PCM frames.
 type voicePeer struct {
 	dec    *voice.Decoder
 	frames [][]int16
 }
 
-// voiceEngine owns the capture + playback devices and the per-peer decoders. nil
-// when not in voice; presence still works without it.
+// voiceEngine owns the capture and playback devices and the per-peer decoders; nil when not in voice.
 type voiceEngine struct {
 	capture  *sdl.AudioStream // nil = no mic (listen-only)
 	playback *sdl.AudioStream
@@ -93,10 +73,8 @@ type voiceEngine struct {
 	lowBitrate bool      // currently on the reduced bitrate
 }
 
-// newVoiceEngine opens the audio devices and the encoder. captureDev is the mic
-// device name ("" = system default); outVol is the initial output volume (0..100).
-// Playback is required; capture is best-effort (no mic ⇒ listen-only). Returns an
-// error only when no audio at all is possible — the caller stays presence-only.
+// newVoiceEngine opens the audio devices and the encoder; captureDev "" is the system default, outVol is 0..100.
+// Capture is best-effort (no mic means listen-only); an error means no audio at all is possible.
 func newVoiceEngine(send func(b64 string), captureDev string, outVol int) (*voiceEngine, error) {
 	spec := sdl.AudioSpec{
 		Freq:     voice.SampleRate,
@@ -122,8 +100,7 @@ func newVoiceEngine(send func(b64 string), captureDev string, outVol int) (*voic
 	}
 	play.Resume() // start the output clock
 
-	// Capture is optional: a machine with no mic can still listen. captureDev ""
-	// asks SDL for the system-default recording device.
+	// Capture is optional: a machine with no mic can still listen.
 	if cap, err := sdl.OpenAudioDeviceStream(captureDev, true, &spec); err == nil {
 		if enc, err := voice.NewEncoder(); err == nil {
 			enc.Tune(voiceBitrate, true) // DTX on (skip silence) + steady VOIP bitrate
@@ -139,8 +116,7 @@ func newVoiceEngine(send func(b64 string), captureDev string, outVol int) (*voic
 // canTalk reports whether this engine can transmit (has a mic + encoder).
 func (e *voiceEngine) canTalk() bool { return e != nil && e.capture != nil && e.enc != nil }
 
-// setMic toggles transmitting. Pausing the capture device when off means no
-// samples queue up to drain (and the OS mic indicator goes quiet).
+// setMic toggles transmitting; pausing the capture device when off stops samples queuing.
 func (e *voiceEngine) setMic(on bool) {
 	if e == nil || !e.canTalk() {
 		return
@@ -162,8 +138,7 @@ func (e *voiceEngine) setOutVol(v int) {
 	}
 }
 
-// pushRemote decodes one peer Opus frame (base64) and enqueues it for the mixer.
-// Called on the main loop from the EventVoiceAudio handler.
+// pushRemote decodes one peer Opus frame (base64) and enqueues it for the mixer, from the EventVoiceAudio handler.
 func (e *voiceEngine) pushRemote(uid int, b64 string) {
 	if e == nil || b64 == "" {
 		return
@@ -203,8 +178,7 @@ func (e *voiceEngine) dropPeer(uid int) {
 	}
 }
 
-// pump runs once per render frame (main thread): drain the mic → encode → send,
-// then mix any buffered peer audio → play. No-op-cheap when idle.
+// pump runs once per render frame: drain the mic, encode, send, then mix buffered peer audio and play it.
 func (e *voiceEngine) pump() {
 	if e == nil {
 		return
@@ -214,11 +188,8 @@ func (e *voiceEngine) pump() {
 	e.adaptVoice()
 }
 
-// adaptVoice re-tunes the jitter buffer + bitrate ~once a second: if the output
-// ran dry while frames were still arriving (network jitter), deepen the buffer and
-// drop to the lower bitrate; when it's been steady, shrink the buffer back toward
-// minimum and restore full bitrate. Bounded both ways, so the worst case is a
-// slightly deeper buffer, never broken audio.
+// adaptVoice re-tunes the jitter buffer and bitrate about once a second: deepen and drop bitrate after an underrun,
+// shrink back and restore bitrate when steady.
 func (e *voiceEngine) adaptVoice() {
 	if e.adaptCtr++; e.adaptCtr < voiceAdaptEveryFrames {
 		return
@@ -244,8 +215,7 @@ func (e *voiceEngine) adaptVoice() {
 	e.starves = 0
 }
 
-// bufferMs reports how much audio is buffered for playback, in milliseconds — the
-// voice output latency we add (shown on the voice-latency chip). 0 when not in voice.
+// bufferMs reports the buffered playback audio in ms, the voice latency shown on the chip; 0 when not in voice.
 func (e *voiceEngine) bufferMs() int {
 	if e == nil || e.playback == nil {
 		return 0
@@ -273,14 +243,11 @@ func (e *voiceEngine) pumpCapture() {
 }
 
 func (e *voiceEngine) pumpPlayback() {
-	// Starve = the output ran dry while a peer's audio was arriving (< ~250 ms ago) —
-	// a real jitter underrun, not just silence (DTX stops frames during silence, so a
-	// quiet gap must NOT be counted). adaptVoice deepens the buffer when this happens.
+	// Starve = the output ran dry while a peer's audio was arriving; silence must not count, as DTX stops frames then.
 	if e.playback.Queued() == 0 && time.Since(e.lastRecv) < 250*time.Millisecond {
 		e.starves++
 	}
-	// Pace to the (adaptive) output target so latency stays bounded: only mix-and-queue
-	// while fewer than playTarget frames are buffered.
+	// Pace to the adaptive target: only mix and queue while fewer than playTarget frames are buffered.
 	for e.playback.Queued() < e.playTarget*voiceFrameBytes {
 		if !e.mixOneFrame() {
 			return // nobody has audio queued — let the buffer drain to silence
@@ -288,8 +255,7 @@ func (e *voiceEngine) pumpPlayback() {
 	}
 }
 
-// mixOneFrame pops one frame from every peer that has data, mixes them, and
-// queues the result for playback. Returns false when no peer had a frame.
+// mixOneFrame mixes one frame from every peer that has data and queues it; false when no peer had one.
 func (e *voiceEngine) mixOneFrame() bool {
 	e.mixScratch = e.mixScratch[:0]
 	for _, p := range e.peers {
@@ -310,9 +276,8 @@ func (e *voiceEngine) mixOneFrame() bool {
 	return true
 }
 
-// mixFrames sums one PCM frame per active speaker into out, scaled by vol (0..100)
-// and clamped to int16. acc is reused scratch (same length as out). Returns
-// whether anything was mixed (false ⇒ all silent). Pure (no SDL) — unit-tested.
+// mixFrames sums one PCM frame per active speaker into out, scaled by vol (0..100) and clamped to int16.
+// acc is reused scratch the length of out; it reports whether anything was mixed.
 func mixFrames(out []int16, acc []int32, frames [][]int16, vol int) bool {
 	for i := range acc {
 		acc[i] = 0

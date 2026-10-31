@@ -1,36 +1,13 @@
 package ui
 
-// The courtroom_design.ini widget registry (#21).
-//
-// AO2 does not have a "list of keys". It has a list of WIDGETS, each of which
-// asks set_size_and_pos for its own identifier and HIDES ITSELF when the theme
-// is silent about it — qWarning + p_widget->hide(), AO2-Client
-// src/courtroom.cpp:1328-1344. AsyncAO's themeLayoutKeys was the other shape: a
-// whitelist of NAMES with no widget behind them. Two failure modes followed, and
-// issue #21 reported both. A key the theme declared but the list omitted was
-// structurally invisible (aceattorney2x declares ~100 rects; 35 were ingested).
-// And a key the list held but nothing painted became a ghost box in the layout
-// editor — music_search has been in themeLayoutKeys since it was written and has
-// never had a single draw site.
-//
-// This table is the widget list. Every row names one AO2 element, says which
-// coordinate system its rect lives in, which pass paints it, and whether anything
-// paints it YET. themeLayoutKeys, themeButtonStems and the editor's editable set
-// are all DERIVED from it, so a key cannot be ingested without a row, and a row
-// cannot be draggable without a painter.
-//
-// Rows land as slotStateInert and graduate to slotStateHandDrawn as each binding
-// commit of the #21 arc lands; the arc's last structural commit moves the
-// hand-ordered draw bodies into the `draw` field and flips them to
-// slotStateTable. That is why the state is data and not a bool.
+// The courtroom_design.ini widget registry. AO2 asks set_size_and_pos per widget and hides it when the theme is
+// silent (courtroom.cpp:1328-1344), so each row names one AO2 element, its coordinate system, its paint phase and
+// whether anything paints it yet. themeLayoutKeys, themeButtonStems and the editor's editable set derive from it.
+// Rows move from slotStateInert to slotStateHandDrawn to slotStateTable as bindings land, so the state is data.
 
 import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
 // themeSlotRelSpace is the coordinate system a design rect is expressed in.
-// AO2's own courtroom_design.ini says this out loud in its section banners
-// ("**COORDINATE SYSTEM RELATIVE TO ...**"). AsyncAO hard-coded exactly one case
-// of it — `key != "showname" && key != "message"` — and had no way to say the
-// other two.
 type themeSlotRelSpace uint8
 
 const (
@@ -49,10 +26,8 @@ const (
 type themeSlotState uint8
 
 const (
-	// slotStateInert: the rect is ingested for audit only. NOTHING paints here,
-	// so the layout editor must not offer a box for it — that was the
-	// music_search ghost. A bound-but-unpainted key draws nothing; it does not
-	// fall back to AsyncAO's own arrangement.
+	// slotStateInert: the rect is ingested for audit only. Nothing paints here, so the layout editor must not offer a
+	// box for it; a bound-but-unpainted key draws nothing instead of falling back to AsyncAO's arrangement.
 	slotStateInert themeSlotState = iota
 	// slotStateHandDrawn: a hand-ordered draw site owns this rect today.
 	slotStateHandDrawn
@@ -60,14 +35,12 @@ const (
 	slotStateTable
 )
 
-// themeSlotPhase splits the themed pass at drawCourtroomModals' early return. A
-// flat draw loop cannot reproduce a mid-sequence abort, so the eventual
-// dispatcher runs two loops over disjoint phases with the modal check between.
+// themeSlotPhase splits the themed pass at drawCourtroomModals' early return, so a dispatcher can run two loops with
+// the modal check between.
 type themeSlotPhase uint8
 
 const (
-	// phaseStage: painted BEFORE the modal return — the canvas, the viewport,
-	// the chatbox and its children, and the toolbox fence.
+	// phaseStage: painted before the modal return (canvas, viewport, chatbox and children, toolbox).
 	phaseStage themeSlotPhase = iota
 	// phasePanels: painted after it.
 	phasePanels
@@ -77,14 +50,10 @@ const (
 type themeSlot struct {
 	// key is the identifier AO2 passes to set_size_and_pos.
 	key string
-	// alt is a SECOND identifier AO2 itself probes for the same widget, LOWER
-	// priority than key. Exactly one exists upstream: ui_immediate reads
-	// "immediate" first and falls back to "pre_no_interrupt". Both are ingested;
-	// the draw site picks.
+	// alt is a second identifier AO2 probes for the same widget at lower priority than key: ui_immediate reads
+	// "immediate" first, then "pre_no_interrupt". Both are ingested; the draw site picks.
 	alt string
-	// art are the AOButton image stems AO2 loads for this element, in probe
-	// order. Empty means the widget has no theme art and draws as a text chip,
-	// which is what AOButton::setImage itself falls back to.
+	// art are the AOButton image stems AO2 loads for this element, in probe order. Empty means a text chip.
 	art []string
 	// rel is the coordinate system key's rect is expressed in.
 	rel themeSlotRelSpace
@@ -92,23 +61,18 @@ type themeSlot struct {
 	phase themeSlotPhase
 	// state is how much of this slot exists.
 	state themeSlotState
-	// fixed marks a rect the layout editor must never offer: the design canvas
-	// itself and the two chatbox children, which ride the chatbox rather than
-	// being placed independently. This is the whole of the old layoutEditSkip.
+	// fixed marks a rect the layout editor must never offer: the design canvas and the two chatbox children, which ride
+	// the chatbox.
 	fixed bool
-	// external marks a rect whose PAINTED geometry is not the design transform.
-	// Only asyncao_tabbar: the server-tab strip is intrinsically sized by its
-	// chips, so tabStripCacheRect overwrites the transform.
+	// external marks a rect whose painted geometry is not the design transform. Only asyncao_tabbar: tabStripCacheRect
+	// overwrites it because the strip is sized by its chips.
 	external bool
-	// draw is nil until the arc's harvest commit. It is a top-level func, never
-	// a method value — a method value would allocate a closure the first time the
-	// table is read, and the themed frame is gated at zero allocations. The
-	// registry test asserts every row is still nil (nothing paints through it yet).
+	// draw is nil until the dispatcher exists. It must be a top-level func, never a method value: a method value
+	// allocates a closure on first read and the themed frame allocates nothing.
 	draw func(*App, sdl.Rect)
 }
 
-// themeSlots is the registry. Order is NOT load-bearing: themeLayoutKeys sorts,
-// and the dispatcher orders by phase.
+// themeSlots is the registry. Order is not load-bearing: themeLayoutKeys sorts and the dispatcher orders by phase.
 var themeSlots = [...]themeSlot{
 	// ---- phaseStage: the canvas and its children ----------------------------
 	{key: "courtroom", phase: phaseStage, state: slotStateHandDrawn, fixed: true},
@@ -160,11 +124,8 @@ var themeSlots = [...]themeSlot{
 	{key: "additive", phase: phasePanels, state: slotStateHandDrawn},     // courtroom.cpp:1089
 	{key: "guard", phase: phasePanels, state: slotStateHandDrawn},        // courtroom.cpp:1092
 	{key: "slide_enable", phase: phasePanels, state: slotStateHandDrawn}, // courtroom.cpp:1096
-	// showname_enable and casing are NOT placed by upstream AO2-Client:
-	// ui_showname_enable is a bare declaration (courtroom.h) and there is no
-	// set_size_and_pos for it or for "casing" anywhere in src/. They are
-	// KFO-Client / 2.9-era elements, so the only citation we can honestly give is
-	// the theme itself (aceattorney2x courtroom_design.ini:162 and :213).
+	// showname_enable and casing are not placed by upstream AO2-Client (bare declaration in courtroom.h); they are
+	// KFO-Client / 2.9-era elements, cited from the theme itself (aceattorney2x courtroom_design.ini:162 and :213).
 	{key: "showname_enable", phase: phasePanels, state: slotStateHandDrawn},
 	{key: "casing", phase: phasePanels, state: slotStateInert},
 
@@ -205,30 +166,20 @@ var themeSlots = [...]themeSlot{
 	{key: "clock_3", phase: phasePanels, state: slotStateInert},
 	{key: "clock_4", phase: phasePanels, state: slotStateInert},
 
-	// ---- AsyncAO-only opt-ins (#4b) -----------------------------------------
-	// These have no AO2 equivalent. They are an AUTHOR OVERRIDE tier that WINS
-	// over the AO2 key a theme declares — not a fallback, and not the layout
-	// mechanism. asyncao_ic_react is deliberately absent: it is provably dead,
-	// as theme_layout.go says in its own source.
+	// AsyncAO-only opt-ins with no AO2 equivalent: an author override tier that wins over the AO2 key a theme declares.
+	// asyncao_ic_react is deliberately absent because nothing draws it.
 	{key: "asyncao_ic_color", phase: phasePanels, state: slotStateHandDrawn},
 	{key: "asyncao_ic_immediate", phase: phasePanels, state: slotStateHandDrawn},
 	{key: "asyncao_ic_pre", phase: phasePanels, state: slotStateHandDrawn},
 	{key: "asyncao_ic_sfx", phase: phasePanels, state: slotStateHandDrawn},
 	{key: "asyncao_ic_emoji", phase: phasePanels, state: slotStateHandDrawn},
 	{key: "asyncao_ic_fx", phase: phasePanels, state: slotStateHandDrawn},
-	// The screen-effect picker's override rect. AO2 has its own key
-	// (effects_dropdown, above) and this is the AsyncAO tier that WINS over it,
-	// exactly like asyncao_ic_sfx over sfx_dropdown.
+	// The screen-effect picker's override rect; it wins over effects_dropdown, like asyncao_ic_sfx over sfx_dropdown.
 	{key: "asyncao_ic_effects", phase: phasePanels, state: slotStateHandDrawn},
 }
 
-// themeSlotDeferred names every courtroom_design.ini rect key AsyncAO KNOWINGLY
-// does not ingest, with the reason. It is not a to-do list — it is the other half
-// of the totality oracle: a rect key a real theme declares must be in exactly one
-// of themeSlots, this map, or charSelectDefaultRects, or the fixture test fails.
-// (Non-rect keys — colours, pairs, scalars — are filtered by ElementRect before
-// the classification runs, so they need no set of their own.) Adding a key to a
-// theme corpus without deciding about it is what made issue #21 possible.
+// themeSlotDeferred names every courtroom_design.ini rect key AsyncAO knowingly does not ingest, with the reason.
+// A rect key a real theme declares must be in exactly one of themeSlots, this map or charSelectDefaultRects.
 var themeSlotDeferred = map[string]string{
 	"chatbox":                  "legacy spelling: AO2 places the chatbox from ao2_chatbox unconditionally (courtroom.cpp:3301). Reading it too would double-place.",
 	"ic_chat_message":          "legacy spelling: AO2 uses ao2_ic_chat_message (courtroom.cpp:906).",
@@ -242,12 +193,10 @@ var themeSlotDeferred = map[string]string{
 	"casing_button":            "AO2's case-announce dialog (KFO/2.9 era; no set_size_and_pos in upstream src/). AsyncAO announces cases from the CM panel, which is chrome.",
 	"area_list":                "AO2 places ui_area_list at the music_list rect (courtroom.cpp:864); the separate area_list key is declared by a few AOHD themes and read by no build we can cite.",
 	"area_password":            "AO2's placement is commented out (courtroom.cpp:922) — the widget is dead upstream.",
-	// The evidence panel. Its coordinate model is mixed: evidence_button is
-	// courtroom-relative, evidence_name/buttons/left/right are relative to
-	// evidence_background, and evidence_delete/image_name/image_button/x/ok/
-	// description are relative to evidence_overlay, which is itself parented to
-	// evidence_background. left_evidence_icon and right_evidence_icon are carved
-	// OUT of this deferral — they are viewport-relative and have rows above.
+	// The evidence panel's coordinates are mixed: evidence_button is courtroom-relative,
+	// evidence_name/buttons/left/right
+	// are relative to evidence_background, the rest to evidence_overlay, itself parented to evidence_background.
+	// left_evidence_icon and right_evidence_icon are viewport-relative and have rows above.
 	"evidence_background":   "evidence panel: deferred as a unit.",
 	"evidence_buttons":      "evidence panel: deferred as a unit.",
 	"evidence_name":         "evidence panel: deferred as a unit.",
@@ -267,8 +216,7 @@ var themeSlotDeferred = map[string]string{
 	"evidence_switch":       "evidence panel: deferred as a unit.",
 }
 
-// themeSlotIndex maps key (and alt) to its row. Built once at init from a fixed
-// compile-time table, so it is bounded by construction (hard rule 4).
+// themeSlotIndex maps key (and alt) to its row; built once from a fixed table, so bounded (hard rule 4).
 var themeSlotIndex = func() map[string]*themeSlot {
 	m := make(map[string]*themeSlot, 2*len(themeSlots))
 	for i := range themeSlots {
@@ -284,9 +232,7 @@ var themeSlotIndex = func() map[string]*themeSlot {
 // themeSlotFor returns the row that owns a design key, or nil.
 func themeSlotFor(key string) *themeSlot { return themeSlotIndex[key] }
 
-// themeSlotRel is the coordinate system a design key's rect lives in. An unknown
-// key is courtroom-relative, which is what the generic transform did before this
-// table existed.
+// themeSlotRel is the coordinate system a design key's rect lives in; an unknown key is courtroom-relative.
 func themeSlotRel(key string) themeSlotRelSpace {
 	if s := themeSlotIndex[key]; s != nil {
 		return s.rel
@@ -294,21 +240,9 @@ func themeSlotRel(key string) themeSlotRelSpace {
 	return relCourtroom
 }
 
-// themeSlotOtherSpelling returns AO2's OTHER name for the same widget, when the key
-// is one of the pair that has two.
-//
-// AO2 probes two identifiers for exactly one widget — "immediate" first, then
-// "pre_no_interrupt" (courtroom.cpp:1072, mirrored by themedToggleRect,
-// theme_layout.go:444-459) — and its own stock design file spells it
-// `pre_no_interrupt`, so that is the only spelling applyAO2DefaultRects can supply.
-// Anything that looks a design key up in a resolved layout therefore has to be
-// willing to try the other one, or an author who wrote the spelling AO2 reads FIRST
-// has written a line that resolves to nothing.
-//
-// One function, three callers (sidecarOverrideTarget, absSlotRect, and any future
-// one): the alias used to be spelled out inline in the [overrides] applier and
-// nowhere else, which made honouring it in one tier and not the next an easy
-// accident rather than a decision.
+// themeSlotOtherSpelling returns AO2's other name for the same widget, when the key is one of the pair that has two.
+// AO2 probes "immediate" first, then "pre_no_interrupt" (courtroom.cpp:1072, themedToggleRect), and its stock design
+// file spells it `pre_no_interrupt`, so a lookup in a resolved layout must try the other spelling too.
 func themeSlotOtherSpelling(key string) (string, bool) {
 	s := themeSlotIndex[key]
 	if s == nil || s.alt == "" {
@@ -320,11 +254,8 @@ func themeSlotOtherSpelling(key string) (string, bool) {
 	return s.alt, true
 }
 
-// themeKeyEditable reports whether the themed layout editor may offer a drag box
-// for a design key. It REPLACES layoutEditSkip, and it is derived rather than
-// stored so the table and the invariant cannot disagree: a rect nothing paints
-// must not be draggable, and the design canvas and the two chatbox-relative
-// children are never independently placeable.
+// themeKeyEditable reports whether the themed layout editor may offer a drag box for a design key.
+// It is derived from the table so a rect nothing paints is never draggable; the canvas and chatbox children never are.
 func themeKeyEditable(key string) bool {
 	s := themeSlotIndex[key]
 	if s == nil {

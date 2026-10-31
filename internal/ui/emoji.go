@@ -6,44 +6,21 @@ import (
 	"runtime"
 )
 
-// twemojiTTF is the bundled Twemoji colour-emoji face (CC BY 4.0 — see
-// fonts/Twemoji-LICENSE.txt). It's the fallback used whenever the OS emoji font
-// isn't renderable by SDL_ttf — notably Windows' 2025 Segoe UI Emoji, which
-// became COLRv1 (SDL_ttf 2.x draws COLRv1 glyphs as empty boxes). COLRv0 is
-// vector, small (~1.7 MB) and is exactly the format SDL_ttf renders in colour,
-// so it also gives Linux/macOS colour emoji for free.
-//
-// The old #35 gap is CLOSED. This used to be mozilla/twemoji-colr v0.7.0 — the
-// only published COLRv0 Twemoji TTF, from a dormant project frozen at the 2021
-// emoji set — so everything newer drew as a box: the pink/grey/light-blue hearts
-// (U+1FA75-77) and every addition from Emoji 15.0 on. The note here used to say
-// the real fix "would need the nanoemoji pipeline", so that is what this is: a
-// fresh COLRv0 compile of the maintained jdecked/twemoji artwork, produced by
-// scripts/build-emoji-font.ps1 — committed precisely so a binary blob in the
-// tree is reproducible rather than magic. Metrics are pinned to the old font's
-// glyph box (upem 512, ascender 448, descender -64), so emoji did not change
-// size; nanoemoji's own defaults would have made every one 11% larger.
-//
-// Two properties a replacement MUST keep, both pinned by emojifont_test.go:
-// COLR version 0 (colorFontRenderable silently falls back otherwise, which ships
-// as "emoji stopped working" with nothing in any log), and the GSUB ligatures —
-// Emoji 15.1 added ~118 emoji and ZERO new codepoints, all of them ZWJ
-// sequences, so a cmap probe alone cannot even see whether they work.
+// twemojiTTF is the bundled Twemoji colour-emoji face (CC BY 4.0, see fonts/Twemoji-LICENSE.txt), used when the OS
+// emoji font isn't renderable by SDL_ttf (Windows' Segoe UI Emoji is COLRv1, which SDL_ttf draws as empty boxes).
+// It is a COLRv0 compile of jdecked/twemoji produced by scripts/build-emoji-font.ps1, with metrics pinned to
+// upem 512, ascender 448, descender -64.
+// A replacement MUST keep COLR version 0 (colorFontRenderable silently falls back otherwise) and the GSUB
+// ligatures (Emoji 15.1 added only ZWJ sequences, which a cmap probe cannot see).
 //
 //go:embed fonts/Twemoji.ttf
 var twemojiTTF []byte
 
-// Color-emoji fallback face loader. SDL_ttf 2.20+ renders color emoji, but only
-// from a font that HAS them — and the chat font doesn't. So the first time a
-// message contains emoji, read the system emoji font off-thread (it's ~12 MB) and
-// hand it to the Ctx, which segments mixed messages onto it per glyph. Lazy: a
-// user who never types emoji never pays the read.
+// Colour-emoji fallback face loader: the chat font has no emoji, so the first message containing emoji reads the
+// system emoji font off-thread and hands it to the Ctx, which segments mixed messages onto it per glyph.
 
-// emojiFontSystemPath is the OS colour-emoji font, preferred when SDL_ttf can
-// render it. Windows ships Segoe UI Emoji; other platforms return "" so the
-// bundled Twemoji is used instead (bestEmojiFont). NOTE: Windows' 2025 Segoe UI
-// Emoji is COLRv1, which SDL_ttf can't render — bestEmojiFont detects that and
-// falls back to Twemoji there too.
+// emojiFontSystemPath is the OS colour-emoji font, preferred when SDL_ttf can render it. Windows ships Segoe UI
+// Emoji; other platforms return "" so the bundled Twemoji is used (bestEmojiFont).
 func emojiFontSystemPath() string {
 	if runtime.GOOS == "windows" {
 		return `C:\Windows\Fonts\seguiemj.ttf`
@@ -51,11 +28,8 @@ func emojiFontSystemPath() string {
 	return ""
 }
 
-// colorFontRenderable reports whether SDL_ttf (FreeType, via the version we ship)
-// can actually render this font's colour glyphs: a CBDT/sbix bitmap strike or a
-// COLR **version 0** table. A COLR **version 1** font (Windows' 2025 Segoe UI
-// Emoji) is NOT renderable — SDL_ttf 2.x has no COLRv1 paint support, so its
-// glyphs come out as empty boxes. Pure sfnt table-directory scan; unit-tested.
+// colorFontRenderable reports whether SDL_ttf can render this font's colour glyphs: a CBDT/sbix bitmap strike or a
+// COLR version 0 table. COLR version 1 (Windows' Segoe UI Emoji) has no paint support and draws empty boxes.
 func colorFontRenderable(b []byte) bool {
 	if len(b) < 12 {
 		return false
@@ -83,9 +57,8 @@ func colorFontRenderable(b []byte) bool {
 	return false
 }
 
-// bestEmojiFont returns the colour-emoji face bytes to install: the OS emoji font
-// when SDL_ttf can render it (colorFontRenderable), otherwise the bundled Twemoji
-// (COLRv0, always renderable). Run off-thread (it reads the ~12 MB system font).
+// bestEmojiFont returns the colour-emoji face bytes to install: the OS font when colorFontRenderable, otherwise
+// the bundled Twemoji. Run off-thread (it reads the ~12 MB system font).
 func bestEmojiFont() []byte {
 	if path := emojiFontSystemPath(); path != "" {
 		if b, err := os.ReadFile(path); err == nil && colorFontRenderable(b) {
@@ -95,10 +68,8 @@ func bestEmojiFont() []byte {
 	return twemojiTTF
 }
 
-// ensureEmojiFontLoad kicks off the ONE off-thread pick of the colour-emoji face,
-// the first time a message needs it. Idempotent; the bytes land on emojiFontRes,
-// drained by pollEmojiFont. Always yields a renderable face now (the OS font when
-// SDL_ttf can draw it, else bundled Twemoji), so emoji never tofu on a COLRv1 OS.
+// ensureEmojiFontLoad starts the one off-thread pick of the colour-emoji face the first time a message needs it.
+// Idempotent; the bytes land on emojiFontRes, drained by pollEmojiFont.
 func (a *App) ensureEmojiFontLoad() {
 	if a.emojiLoadStarted {
 		return
@@ -116,10 +87,8 @@ func (a *App) ensureEmojiFontLoad() {
 	}()
 }
 
-// pollEmojiFont installs the emoji face on the render thread once its bytes land:
-// pre-warm it at the current chat scale (so the first emoji doesn't stall a frame
-// building a ~12 MB face mid-raster) and force a chat re-raster so a visible emoji
-// message repaints in color.
+// pollEmojiFont installs the emoji face on the render thread once its bytes land: it pre-warms the current chat
+// scale so the first emoji doesn't stall a frame, and forces a chat re-raster.
 func (a *App) pollEmojiFont() {
 	select {
 	case data := <-a.emojiFontRes:

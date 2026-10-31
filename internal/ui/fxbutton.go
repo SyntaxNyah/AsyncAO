@@ -7,17 +7,13 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// #M5 Text FX on the IC bar. Clicking the FX button opens a small PICKER (a floating list) — with
-// 13 effects a sticky cycle-through-all was too many clicks. Pick one and it becomes the STICKY
-// effect: sendIC wraps every message in that effect's markup, so your lines animate for other
-// AsyncAO players while AO2 / webAO see the plain text. Power users can still type per-word
-// [shake]…[/shake] inline (which takes precedence — see applyStickyEffect). Shared by the classic
-// + themed layouts so they can't drift.
+// Text FX on the IC bar: a picked effect is sticky, and sendIC wraps every message in its markup, so AsyncAO players
+// see the animation while AO2 / webAO see plain text. Shared by the classic and themed layouts.
 
-// fxBtnW is the IC-bar Text FX button width (fits "Rainbow" / "Sparkle" in the chrome font).
+// fxBtnW fits "Rainbow" / "Sparkle" in the chrome font.
 const fxBtnW = 74
 
-// fxEffectOrder is the picker list order (Off, then motion effects, then colour effects).
+// fxEffectOrder is the picker list order: Off, motion effects, colour effects.
 var fxEffectOrder = []uint8{
 	courtroom.TextEffectNone,
 	courtroom.TextEffectShake, courtroom.TextEffectWave, courtroom.TextEffectBounce,
@@ -27,9 +23,7 @@ var fxEffectOrder = []uint8{
 	courtroom.TextEffectBlink, courtroom.TextEffectSparkle,
 }
 
-// inlineMarkupButtons is the picker's second section (#131): the position-based AO
-// codes a player would otherwise have to memorise. Clicking one inserts its code at
-// the IC caret (insertICInline) and closes the picker.
+// inlineMarkupButtons are the position-based AO codes; clicking one inserts it at the IC caret and closes the picker.
 var inlineMarkupButtons = []struct{ label, code string }{
 	{"Slow down", "{"},
 	{"Speed up", "}"},
@@ -40,13 +34,10 @@ var inlineMarkupButtons = []struct{ label, code string }{
 	{"Italic", `\i`},
 }
 
-// fxPickerRowCount is the picker's total rows: the sticky effects, one divider row,
-// then the inline-code section.
+// fxPickerRowCount counts the sticky effects, one divider row and the inline-code section.
 func fxPickerRowCount() int { return len(fxEffectOrder) + 1 + len(inlineMarkupButtons) }
 
-// fxButton draws the IC-bar Text FX button; clicking it toggles the picker. Accent-coloured when
-// an effect is active so the on-state reads at a glance. Records its rect so the picker anchors
-// to it (and the pointer fence can find the picker).
+// fxButton draws the Text FX button, accent-coloured when active; its recorded rect anchors the picker.
 func (a *App) fxButton(r sdl.Rect) {
 	c := a.ctx
 	label, border, txt := "FX", ColTextDim, ColText
@@ -60,7 +51,6 @@ func (a *App) fxButton(r sdl.Rect) {
 	c.Tooltip(r, "Text FX: pick an animation (shake, wave, bounce, rainbow, sparkle…). When set, every message you send animates for other AsyncAO players (AO2/webAO see plain text). Or type [shake]…[/shake] inline.")
 }
 
-// icEffectLabel is the short display name for an effect (button + picker rows).
 func icEffectLabel(e uint8) string {
 	switch e {
 	case courtroom.TextEffectShake:
@@ -128,19 +118,14 @@ func effectTagName(e uint8) string {
 	}
 }
 
-// fxPickerRow is one picker row's height.
 const fxPickerRow = int32(20)
 
-// fxPickerRect is the picker's floating rect, anchored just ABOVE the FX button (the IC bar sits
-// near the bottom), clamped on-screen. Derived from the remembered button rect so the draw and the
-// pointer fence agree.
+// fxPickerRect anchors the picker above the FX button, clamped on-screen; the draw and pointer blocking both use it.
 func (a *App) fxPickerRect(w, h int32) sdl.Rect {
 	pw := int32(120)
 	ph := int32(fxPickerRowCount())*fxPickerRow + 8
-	// Opened from the Extras menu with no button on screen (#21: a themed layout
-	// draws the FX button only where the theme asks for it), fxBtnRect is the zero
-	// value and the clamps below would pin the list to the top-left corner. Anchor
-	// it near the middle instead, which is where a menu-opened popup belongs.
+	// Opened from the Extras menu on a theme with no FX button, fxBtnRect is zero; anchor near the middle, not the
+	// corner.
 	if a.fxBtnRect.W == 0 && a.fxBtnRect.H == 0 {
 		return sdl.Rect{X: (w - pw) / 2, Y: (h - ph) / 2, W: pw, H: ph}
 	}
@@ -158,8 +143,7 @@ func (a *App) fxPickerRect(w, h int32) sdl.Rect {
 	return sdl.Rect{X: x, Y: y, W: pw, H: ph}
 }
 
-// drawFxPicker paints the effect list; clicking a row sets the sticky effect and closes. A
-// non-blocking floating list (chat stays live behind it); Esc / clicking the FX button closes it.
+// drawFxPicker is a non-blocking floating list; Esc or clicking the FX button closes it.
 func (a *App) drawFxPicker(w, h int32) {
 	c := a.ctx
 	if c.escPressed {
@@ -189,8 +173,6 @@ func (a *App) drawFxPicker(w, h int32) {
 		c.Label(row.X+4, y+3, name, col)
 		y += fxPickerRow
 	}
-	// Divider, then the inline-code section (#131): position-based codes a player
-	// can drop mid-sentence instead of memorising the markup language.
 	y += 2
 	c.Fill(sdl.Rect{X: r.X + 4, Y: y, W: r.W - 8, H: 1}, ColPanelHi)
 	y += 5
@@ -211,11 +193,8 @@ func (a *App) drawFxPicker(w, h int32) {
 	}
 }
 
-// applyStickyEffect wraps text in the sticky Text FX tag (the FX button's pick), so a normal
-// message animates without typing markup. No-op when: the picker is Off; the message is a
-// blankpost (empty / single space); or the user already typed their own [..] markup (inline wins,
-// and wrapping it would create unsupported nesting). Run BEFORE ParseTextEffects so the wrap is
-// parsed like any markup.
+// applyStickyEffect wraps text in the sticky effect's tag, unless the message is a blankpost or already has [..]
+// markup (wrapping would create unsupported nesting). Run before ParseTextEffects so the wrap is parsed like markup.
 func (a *App) applyStickyEffect(text string) string {
 	tag := effectTagName(a.icEffect)
 	if tag == "" || text == "" || text == " " || strings.ContainsRune(text, '[') {

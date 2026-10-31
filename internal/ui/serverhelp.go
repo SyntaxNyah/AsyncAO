@@ -1,10 +1,6 @@
 package ui
 
-// The "For server owners" screen: reached from the button beside the
-// legacy-servers notice in the lobby. Explains how to get a raw-TCP-era
-// server speaking WebSockets (and WSS for the green tier), then catalogs
-// the modern server software with clickable repo links. Every project
-// that supports WSS also speaks plain WS.
+// The "For server owners" screen: how to move a server onto WebSockets, plus a catalog of modern server software.
 
 import (
 	"strings"
@@ -13,8 +9,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// serverHelpOutro closes the catalog: nobody's contribution goes
-// uncredited just because this page was written before it.
+// serverHelpOutro closes the catalog.
 var serverHelpOutro = "Credit lists were taken from each project's git history at the time of writing. If you contributed to any of these projects and your name isn't here — or you contribute later on — all credit to you as well."
 
 // serverHelpIntro is the upgrade guidance shown before the catalog.
@@ -26,9 +21,7 @@ var serverHelpIntro = []string{
 	"Then advertise the ws:// (and wss://) ports on the master server, and web + desktop clients can finally reach you.",
 }
 
-// serverHelpLegend explains the per-server capability chips below. Worded with
-// colours + "tick/cross" rather than ✓/✕ glyphs — the chips draw the marks as
-// shapes (drawCheck/drawCrossMark), and the glyphs would render as tofu here.
+// serverHelpLegend explains the capability chips; the marks are drawn shapes because the font lacks the glyphs.
 var serverHelpLegend = "Each server carries three capability chips. WS — a yellow tick (every server here speaks plain WebSockets). WSS — a green tick for native secure WebSockets, or a red cross if it needs a reverse proxy for TLS. Players — a green tick for the modern live player list, a yellow tick if it comes via a plugin, or a red cross for none."
 
 // serverProject is one catalog entry.
@@ -45,8 +38,7 @@ type serverProject struct {
 	links       []string // first = main repo
 }
 
-// serverProjects: descriptions per the project owners' own positioning;
-// support notes current as of 2026-06.
+// serverProjects: descriptions follow each project owner's own positioning.
 var serverProjects = []serverProject{
 	{
 		name: "Akashi", lang: "C++", wss: true, plist: true,
@@ -217,21 +209,14 @@ const (
 	shCapsH      = 20  // capability-chip row height
 )
 
-// drawServerHelp renders the catalog as a centered column of per-server CARDS
-// (scrollable; every link clickable). Every fork link and credit is kept — the
-// cards + fork connectors are what make the ecosystem read at a glance.
+// drawServerHelp renders the catalog as a scrollable column of per-server cards.
 func (a *App) drawServerHelp(w, h int32) {
 	c := a.ctx
 	a.drawScreenBackdrop(w, h, "lobbybackground")
-	// Content starts below the app-chrome band (#14, chrometop.go).
+	// Content starts below the app-chrome band.
 	hdrY := a.topChromeH() + pad
 	c.Heading(pad, hdrY, "For server owners — the AsyncAO-ready ecosystem", ColText)
-	// Back returns to whatever opened this — prevScreen, exactly like the other
-	// full-screen menus and like this screen's own Esc arm (App.Frame). It used to be
-	// a hardcoded ScreenLobby, which was indistinguishable while the ONLY entry point
-	// was the lobby's legacy-server row; the Help menu (#14) can open it from the
-	// courtroom, where a Back that silently left the courtroom would disagree with
-	// the Esc that does not.
+	// Back returns to prevScreen, like Esc, because the Help menu can open this screen from the courtroom.
 	if c.Button(sdl.Rect{X: w - 90 - pad, Y: hdrY, W: 90, H: btnH}, "Back") {
 		a.screen = a.prevScreen
 		return
@@ -249,16 +234,12 @@ func (a *App) drawServerHelp(w, h int32) {
 	}
 	lineH := int32(c.font.Height()) + 4
 
-	// #31: pushClip (not raw SetClipRect) keeps scrolled content out of the
-	// header band AND makes hovering() honour the clip — a catalog link
-	// scrolled behind the header must not hit-test in its hidden half (a raw
-	// clip is draw-only, so the click leaked past the edge). One push spans
-	// both the measure and draw passes, exactly like the raw clip did.
+	// pushClip (not a raw clip) makes hovering() honour the clip,
+	// so a link scrolled behind the header can't be clicked.
 	clipPrev, clipHad := c.pushClip(view)
 	defer c.popClip(clipPrev, clipHad)
 
-	// Two passes: measure (for the scrollbar), then draw. WrapText is width-memoized,
-	// so the doubled calls are cheap; the catalog is a dozen entries.
+	// Two passes: measure for the scrollbar, then draw.
 	draw := func(measure bool) int32 {
 		y := top - a.helpScroll
 		para := func(text string, col sdl.Color, x, wrapW int32, maxLines int) {
@@ -326,11 +307,6 @@ func (a *App) drawServerHelp(w, h int32) {
 				if len(p.links) > 0 {
 					cy += 6
 					for _, link := range p.links {
-						// #31: the per-link on-screen guard is gone — pushClip now
-						// gates linkLabel's hit-test through hovering(), so a link
-						// scrolled behind the header no longer clicks in its hidden
-						// half. The card cull above still skips off-screen cards
-						// entirely (a pure draw optimization).
 						a.linkLabel(ix, cy, innerW, link)
 						cy += lineH
 					}
@@ -374,9 +350,7 @@ func (a *App) serverCardHeight(p *serverProject, innerW, lineH int32) int32 {
 	return hgt + shCardPad // bottom padding
 }
 
-// drawForkConnector links a fork CARD to the upstream above it: a vertical drop
-// in the indent gutter from the gap above down to the card's header, plus a stub
-// into the card. Drawn as lines, not glyphs, so it never needs box-drawing chars.
+// drawForkConnector links a fork card to its upstream with lines, so it needs no box-drawing glyphs.
 func (a *App) drawForkConnector(x0, cardX, y int32) {
 	c := a.ctx
 	railX := x0 + 9
@@ -385,9 +359,7 @@ func (a *App) drawForkConnector(x0, cardX, y int32) {
 	c.Fill(sdl.Rect{X: railX, Y: headMid, W: cardX - railX, H: 2}, ColAccent)
 }
 
-// serverCapBox is the slightly-brighter cell behind each WS/WSS/Players tick, so
-// the indicators stand out against the dark catalog backdrop (drawn straight on
-// the background they were too dim to read).
+// serverCapBox is the brighter cell behind each capability tick so it reads against the dark backdrop.
 var serverCapBox = sdl.Color{R: 78, G: 82, B: 96, A: 255}
 
 // drawServerCaps draws the WS / WSS / Players capability chips for one project:
@@ -431,9 +403,7 @@ func (a *App) drawServerCaps(x, y int32, p *serverProject) {
 	}
 }
 
-// drawCheck / drawCrossMark render a tick / cross as short thick strokes instead
-// of the ✓ / ✕ glyphs — the embedded font lacks them, so the glyphs rendered as
-// tofu (□). s is the icon box size. Same rationale as drawForkConnector.
+// drawCheck / drawCrossMark draw a tick / cross as strokes because the embedded font lacks the glyphs.
 func (c *Ctx) drawCheck(x, y, s int32, col sdl.Color) {
 	_ = c.Ren.SetDrawColor(col.R, col.G, col.B, col.A)
 	ax, ay := x+s*15/100, y+s*55/100
@@ -471,18 +441,10 @@ func (a *App) linkLabel(x, y, maxW int32, url string) {
 	}
 }
 
-// extractURLs pulls links out of free text (lobby descriptions, OOC/IC
-// scrollback), trimming trailing punctuation; capped so a hostile description
-// can't flood the box. Both scheme-prefixed (http/https) and bare "www." links
-// are recognised — a bare "www.x" keeps its bare display text everywhere and is
-// promoted to https:// only at OPEN time (schemeForOpen).
-//
-// Detection is token-based: strings.Fields splits on whitespace, so a candidate
-// must be a WHOLE token that starts with the prefix after the wrapper/trailing
-// trim. That gives the boundary rule for free: "foo.www.bar" is one token that
-// doesn't START with "www." (no match), "wwwill" has no dot so it isn't the
-// "www." prefix (no match), and a bare "www." trims its trailing "." to "www"
-// (also no match) — only a real "www.<host>…" token matches.
+// extractURLs pulls http(s) and bare "www." links out of free text, capped so a hostile description cannot flood
+// the box.
+// A bare "www." link stays bare for display and gets https:// only at open time (schemeForOpen).
+// A token must START with the prefix after trimming, so "foo.www.bar" and a lone "www." do not match.
 func extractURLs(s string, max int) []string {
 	var out []string
 	for _, tok := range strings.Fields(s) {
@@ -498,26 +460,16 @@ func extractURLs(s string, max int) []string {
 	return out
 }
 
-// urlWrapChars / urlTailChars are the two trim sets a link token is peeled with:
-// wrappers come off BOTH ends, sentence punctuation only off the tail (a leading
-// '.' would be part of no link anyway).
+// urlWrapChars / urlTailChars: wrappers are trimmed from both ends, sentence punctuation only from the tail.
 const (
 	urlWrapChars = "()[]<>\"'"
 	urlTailChars = ".,;!?"
 )
 
-// urlTokenRange returns the byte range of tok that survives those trims —
-// "(www.example.com)." → the range covering "www.example.com". Wrapper and
-// punctuation tails can alternate, so the two trims loop to a fixpoint: that
-// example needs a wrapper pass, a punct pass, then the wrapper pass AGAIN for
-// the ')' the '.' was shielding.
-//
-// It returns the RANGE, not the string, because the OOC link spans need to know
-// WHERE inside the token the link sits (so the highlight covers the link and not
-// its brackets — #38). extractURLs uses it too, so detector and span builder can
-// never disagree about what a link's text is. All four trim sets are ASCII, so
-// byte-wise scanning is exact on valid UTF-8 (a multi-byte rune's bytes are all
-// ≥ 0x80 and appear in neither set).
+// urlTokenRange returns the byte range of tok left after trimming, e.g. "(www.example.com)." gives "www.example.com".
+// Wrapper and punctuation trims alternate, so they loop until nothing changes.
+// It returns the range so OOC link spans can highlight the link without its brackets.
+// The trim sets are ASCII, so byte-wise scanning is safe on UTF-8.
 func urlTokenRange(tok string) (lo, hi int) {
 	lo, hi = 0, len(tok)
 	for {
@@ -538,18 +490,13 @@ func urlTokenRange(tok string) (lo, hi int) {
 	}
 }
 
-// isURLToken applies extractURLs' prefix rule to an ALREADY-trimmed token (see
-// the boundary discussion above): scheme-prefixed links and bare "www." hosts.
+// isURLToken applies extractURLs' prefix rule to an already-trimmed token.
 func isURLToken(tok string) bool {
 	return strings.HasPrefix(tok, "http://") || strings.HasPrefix(tok, "https://") ||
 		strings.HasPrefix(tok, "www.")
 }
 
-// schemeForOpen returns url ready to hand to the OS browser: a bare "www." link
-// (which extractURLs keeps bare for display/highlight) gets an "https://"
-// prefix, since the shellout handler needs a real scheme. A link that already
-// carries a scheme ("://") passes through untouched. Pure — the display/wrap
-// text is never rewritten, only the value passed to openBrowser at click time.
+// schemeForOpen adds "https://" to a bare "www." link, since the OS browser handler needs a scheme.
 func schemeForOpen(url string) string {
 	if strings.Contains(url, "://") {
 		return url

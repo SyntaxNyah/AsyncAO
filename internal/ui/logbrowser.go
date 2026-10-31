@@ -1,15 +1,8 @@
 package ui
 
-// Log browser (ScreenLogs): browse and search the per-server transcripts that
-// detailed logging writes under logs/<server>/<session>.log. A streaming client
-// can't index a server's history, but YOUR OWN logs are right here on disk, so
-// this is a "look through any log, any server, filter by text" view.
-//
-// Disk work is OFF the render thread (rule §2) and HARD-bounded (rule §4): a
-// scope load reads at most maxLogScopeFiles files / maxLogScopeLines lines into
-// memory once, and the live text filter then runs over that in-memory slice
-// (memoized — one pass per query change, never per frame). Opening / switching
-// scope kicks an off-thread load that lands on logBrowserRes (polled per frame).
+// Log browser (ScreenLogs): browse and search the per-server transcripts under logs/<server>/<session>.log.
+// Hard rules 2 and 4: a scope load runs off the render thread and reads at most maxLogScopeFiles files and
+// maxLogScopeLines lines; the text filter runs over that in-memory slice, one pass per query change.
 
 import (
 	"fmt"
@@ -27,8 +20,7 @@ const (
 	logBrowserRowH = int32(20)
 	logBrowserColW = int32(240) // left column (servers + sessions)
 
-	// Hard caps (rule §4: nothing unbounded). Generous — nobody logs to hundreds
-	// of servers — but a heavy logs/ dir can never balloon memory or stall.
+	// Hard caps (hard rule 4); generous, but a heavy logs/ dir can never balloon memory.
 	maxLogServers    = 200      // distinct server folders listed
 	maxLogSessions   = 500      // session files listed for one server
 	maxLogScopeFiles = 400      // files read into one scope load
@@ -36,12 +28,11 @@ const (
 	maxLogFileBytes  = 16 << 20 // skip a single log bigger than this
 	maxLogLineRunes  = 600      // truncate one very long line (display + match)
 
-	// logFilterUnset is a sentinel filterKey that never equals a real query, so
-	// new scope data always forces one refilter.
+	// logFilterUnset is a filterKey that never equals a real query, so new scope data forces one refilter.
 	logFilterUnset = "\x00unset"
 )
 
-// logBrowserState is all the browser's state (one field on App).
+// logBrowserState is all the browser's state.
 type logBrowserState struct {
 	servers    []string // server folders under logs/
 	selServer  int      // index into servers; -1 = all servers
@@ -134,8 +125,7 @@ func (a *App) pollLogBrowser() {
 	}
 }
 
-// logFiltered returns the indices of lines matching the query, recomputed only
-// when the query (or the scope data) changed — so typing never re-scans per frame.
+// logFiltered returns the indices of lines matching the query, recomputed only when the query or scope data changed.
 func (a *App) logFiltered() []int {
 	lb := &a.logBrowser
 	key := fmt.Sprintf("%t\x00%s\x00%s", lb.useRegex, lb.charFilter, lb.query)
@@ -147,10 +137,8 @@ func (a *App) logFiltered() []int {
 	return lb.filtered
 }
 
-// exportLogView writes the current filtered result lines to a timestamped text file
-// under logs/exports/, off the render thread — a "save this search" for sharing or
-// archiving. Each line carries its server · session so a mixed-scope export stays
-// attributable.
+// exportLogView writes the filtered result lines to a timestamped file under logs/exports/ off the render thread.
+// Each line carries its server and session so a mixed-scope export stays attributable.
 func (a *App) exportLogView(idx []int) {
 	lb := &a.logBrowser
 	if len(idx) == 0 {
@@ -179,16 +167,12 @@ func (a *App) exportLogView(idx []int) {
 	}()
 }
 
-// modcallClipLines is how many recent IC lines a modcall clip captures — enough
-// context to see what triggered the call without dumping the whole session.
+// modcallClipLines is how many recent IC lines a modcall clip captures.
 const modcallClipLines = 60
 
-// autoClipModcall snapshots the recent IC log when a modcall fires (sent or
-// received) and writes it to logs/<server>/modcalls/<ts>-modcall.txt off the
-// render thread, so mods/CMs always have a frozen record of the surrounding
-// context. The tail is flattened to fresh strings on the (main) calling thread
-// before the writer goroutine runs, so it never races the live icLog. Opt-out via
-// the AutoClipModcall pref (default ON); a no-op (one pref read) when off.
+// autoClipModcall snapshots the recent IC log when a modcall fires and writes logs/<server>/modcalls/<ts>-modcall.txt
+// off the render thread. The tail is flattened to fresh strings first so the writer never races the live icLog.
+// Opt-out via the AutoClipModcall pref (default ON).
 func (a *App) autoClipModcall(server string, log []icEntry, notice string) {
 	if !a.d.Prefs.Load().AutoClipModcall {
 		return
@@ -212,10 +196,8 @@ func (a *App) autoClipModcall(server string, log []icEntry, notice string) {
 	}()
 }
 
-// buildModcallClip flattens the header + the last min(n, len(log)) IC lines into
-// plain text. Pure (now injected) so the clip contents are unit-testable without
-// touching disk; the returned strings are fresh, so the caller can hand them to a
-// writer goroutine without racing the live icLog.
+// buildModcallClip flattens the header and the last min(n, len(log)) IC lines into text. Now is injected for tests;
+// the strings are fresh, so a writer goroutine cannot race the live icLog.
 func buildModcallClip(server, notice string, log []icEntry, n int, now time.Time) []string {
 	if n > len(log) {
 		n = len(log)
@@ -236,16 +218,15 @@ func buildModcallClip(server, notice string, log []icEntry, n int, now time.Time
 	return lines
 }
 
-// drawLogBrowser paints the full-window log browser screen: a left column to
-// pick the server then the session, and a main pane with a live text filter over
-// the matching lines (click a line to copy it). Back / Esc returns to prevScreen.
+// drawLogBrowser paints the log browser: server and session pickers on the left, a main pane with a live text filter
+// (click a line to copy it). Back / Esc returns to prevScreen.
 func (a *App) drawLogBrowser(w, h int32) {
 	c := a.ctx
 	lb := &a.logBrowser
 	a.drawScreenBackdrop(w, h, "lobbybackground")
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 150}) // dim for readability
 
-	// Content starts below the app-chrome band (#14, chrometop.go).
+	// Content starts below the app-chrome band (chrometop.go).
 	hdrY := a.topChromeH() + pad
 	c.Heading(pad, hdrY, "Logs — search your saved transcripts", ColText)
 	if c.Button(sdl.Rect{X: w - 110 - pad, Y: hdrY, W: 110, H: btnH}, "Back") {
@@ -351,8 +332,7 @@ func (a *App) drawLogBrowser(w, h int32) {
 	}
 }
 
-// drawLogStats renders the cached per-speaker tallies for the loaded scope: a totals
-// line, then each speaker with a line-count bar and their line / word counts.
+// drawLogStats renders the cached per-speaker tallies: a totals line, then each speaker's line-count bar and counts.
 func (a *App) drawLogStats(box sdl.Rect) {
 	c := a.ctx
 	lb := &a.logBrowser
@@ -389,9 +369,8 @@ func (a *App) drawLogStats(box sdl.Rect) {
 	}
 }
 
-// drawLogList draws a bordered, scrollable, single-select list of labels in r,
-// highlighting index sel; returns the index clicked this frame, or -1. id
-// namespaces the scrollbar; scroll is owned by the caller.
+// drawLogList draws a bordered scrollable single-select list in r and returns the index clicked this frame, or -1.
+// id namespaces the scrollbar; the caller owns scroll.
 func (a *App) drawLogList(id string, r sdl.Rect, labels []string, sel int, scroll *int32) int {
 	c := a.ctx
 	c.Border(r, ColPanelHi)
@@ -429,9 +408,7 @@ func (a *App) drawLogList(id string, r sdl.Rect, labels []string, sel int, scrol
 	return clicked
 }
 
-// drawLogResults paints the filtered transcript lines in r. Each line shows a
-// dim scope prefix (server · session, or just the session, depending on scope)
-// and the text; clicking a line copies it to the clipboard.
+// drawLogResults paints the filtered transcript lines in r with a dim scope prefix; clicking a line copies it.
 func (a *App) drawLogResults(r sdl.Rect, idx []int) {
 	c := a.ctx
 	lb := &a.logBrowser

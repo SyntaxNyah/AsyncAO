@@ -5,14 +5,9 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// #130 — the CM (area control) tools live in their OWN panel, separate from the mod (ban/kick)
-// dashboard, and surface only while you actually hold CM. In the CLASSIC layout both are
-// launched from compact "Mod" / "CM" buttons in the courtroom's button row (drawICControls),
-// shown only when you hold the role — in the row, so they never float over the emote sprites.
-// Under a THEME they are rows in the Extras menu instead, because the chip row that used to
-// carry them painted over the theme's own canvas (#21, rule (c)); those rows stay visible but
-// greyed until the server grants the role. Claiming CM is via /cm; this panel is the room
-// controls once you're CM.
+// The CM (area control) tools live in their own panel, separate from the mod dashboard, shown only while you hold CM.
+// Classic layout launches both from "Mod" / "CM" buttons in the button row; under a theme they are Extras menu rows,
+// greyed until the server grants the role, because chips there painted over the theme's canvas.
 
 // toggleCMPanel opens / closes the CM panel (its row button + the mod dashboard's pointer).
 func (a *App) toggleCMPanel() { a.showCMPanel = !a.showCMPanel }
@@ -32,9 +27,8 @@ const (
 	cmPanelMinH = 320
 )
 
-// drawCMPanel is the standalone CM (area control) panel: lock/unlock the area, release CM, and a
-// per-player kick-from-area. Gold-bordered (CM colour). Self-closes the moment amICMNow drops.
-// Now a movable/resizable, non-blocking floating box (chat stays live behind it).
+// drawCMPanel is the CM panel: lock/unlock the area, release CM, per-player area kick. A movable, non-blocking floating
+// box that self-closes the moment amICMNow drops.
 func (a *App) drawCMPanel(w, h int32, pressed *bool) {
 	c := a.ctx
 	if c.escPressed || !a.amICMNow {
@@ -86,7 +80,7 @@ func (a *App) drawCMPanel(w, h int32, pressed *bool) {
 	mk("Release CM", courtroom.CMRelease(sw))
 	y += btnH + 14
 
-	// Room roster with a per-row area-kick (the "room controls like kick" the user asked for).
+	// Room roster with a per-row area-kick.
 	c.Label(x, y, "Players in this area:", ColTextDim)
 	y += 22
 	footerH := int32(36)
@@ -96,8 +90,7 @@ func (a *App) drawCMPanel(w, h int32, pressed *bool) {
 	c.LabelClipped(x, fy, pw-2*modDashIn, "Claim / leave CM with /cm · /uncm. Lock seals the area to newcomers.", ColTextDim)
 }
 
-// drawCMRoster lists the area's players with a per-row "Kick" (area-kick) for the detected
-// software. Opt-in panel, so allocation here is off the hot path.
+// drawCMRoster lists the area's players with a per-row "Kick" for the detected server software.
 func (a *App) drawCMRoster(r sdl.Rect, sw courtroom.ServerSoftware) {
 	c := a.ctx
 	c.Border(r, ColPanelHi)

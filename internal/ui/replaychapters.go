@@ -9,20 +9,15 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Replay auto-chapters (#70): a loaded replay gets a jump list of its natural
-// beats — scene (background) changes, music changes, and shouts — so a long
-// recording is navigable instead of watch-from-the-top. Chapters are derived
-// once at startReplay (pure, bounded, unit-tested); jumping rebuilds the replay
-// room and seeds the target's context (the last background/music/message before
-// it, the buildClip trick) so the stage is RIGHT at the landing point without
-// replaying — or audibly blasting — everything in between.
+// Replay auto-chapters: a loaded replay gets a jump list of its natural beats (background changes, music changes,
+// shouts). Chapters are derived once at startReplay; jumping rebuilds the replay room and seeds the target's
+// context (the last background, music and message before it, as buildClip does) so the stage is right at the
+// landing point without replaying everything in between.
 
-// maxReplayChapters bounds the jump list (hard rule §17.4): a marathon
-// recording lists its first N beats rather than growing without limit.
+// maxReplayChapters bounds the jump list (hard rule 4): a long recording lists its first N beats.
 const maxReplayChapters = 96
 
-// replayChapter is one jump-list entry: the event index playback resumes from
-// and a short label.
+// replayChapter is one jump-list entry: the event index playback resumes from and a short label.
 type replayChapter struct {
 	idx   int
 	label string
@@ -49,10 +44,9 @@ func shoutChapterLabel(m *protocol.ChatMessage) string {
 	}
 }
 
-// buildReplayChapters derives the chapter list from a recording's events:
-// every background change ("Scene: …"), every music change ("♪ …"), and every
-// shouted message. The very first background/music (the recording's opening
-// state) are chapters too — they mark "the start". Bounded by maxReplayChapters.
+// buildReplayChapters derives the chapter list: every background change ("Scene: …"), music change ("♪ …") and
+// shouted message. The first background and music (the recording's opening state) are chapters too. Bounded by
+// maxReplayChapters.
 func buildReplayChapters(events []recEvent) []replayChapter {
 	var out []replayChapter
 	for i, e := range events {
@@ -77,9 +71,8 @@ func buildReplayChapters(events []recEvent) []replayChapter {
 	return out
 }
 
-// replayJumpContext scans events BEFORE idx for the state a jump must seed: the
-// most recent background and music change, and the last message (so the right
-// speaker stands on stage at the landing point). Pure; unit-tested.
+// replayJumpContext scans events before idx for the state a jump must seed: the most recent background and music
+// change and the last message (so the right speaker is on stage at the landing point). Pure.
 func replayJumpContext(events []recEvent, idx int) (bg, music string, lastMsg int) {
 	lastMsg = -1
 	if idx > len(events) {
@@ -98,10 +91,9 @@ func replayJumpContext(events []recEvent, idx int) (bg, music string, lastMsg in
 	return bg, music, lastMsg
 }
 
-// replayJumpTo restarts the replay AT chapter event idx: the room is rebuilt,
-// the jump context (bg + music + the previous speaker, instantly settled) is
-// seeded, and playback resumes from idx. The in-between messages are never fed,
-// so nothing flashes or blares during the seek.
+// replayJumpTo restarts the replay at chapter event idx: the room is rebuilt, the jump context (bg, music and the
+// previous speaker, instantly settled) is seeded and playback resumes from idx. The in-between messages are never
+// fed, so nothing flashes or blares during the seek.
 func (a *App) replayJumpTo(idx int) {
 	if a.replayRec == nil || idx < 0 || idx > len(a.replayRec.Events) {
 		return
@@ -118,7 +110,7 @@ func (a *App) replayJumpTo(idx int) {
 		a.replayRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: bg})
 	}
 	if music != "" {
-		// Loop: true — replay soundtrack loops, same as eventFromRec (#15 default).
+		// Loop: true, so the replay soundtrack loops, same as eventFromRec.
 		a.replayRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventMusic, Text: music, Loop: true})
 	}
 	if lastMsg >= 0 {
@@ -130,9 +122,8 @@ func (a *App) replayJumpTo(idx int) {
 	a.warnAt = time.Now()
 }
 
-// drawReplayChapters draws the Chapters toggle + the jump-list panel in the
-// overlay player. Rows are plain buttons; clicking one jumps and closes the
-// panel. Drawn above the transport strip so it never covers the stage.
+// drawReplayChapters draws the Chapters toggle and the jump-list panel in the overlay player. Clicking a row jumps
+// and closes the panel. Drawn above the transport strip so it never covers the stage.
 func (a *App) drawReplayChapters(stage sdl.Rect, w int32) {
 	c := a.ctx
 	if len(a.replayChapters) == 0 {

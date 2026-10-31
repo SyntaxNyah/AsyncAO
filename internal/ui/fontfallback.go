@@ -7,13 +7,10 @@ import (
 	"golang.org/x/image/font/sfnt"
 )
 
-// scanScriptBytes does ONE byte pass over s: nonASCII is set by any byte ≥ 0x80;
-// cjkMaybe by any byte ≥ 0xE3 (the UTF-8 lead bytes of U+3000+, where CJK lives —
-// Cyrillic/Greek/Arabic/Tifinagh/Indic all have lower leads). No rune decode, no
-// alloc: a pure-ASCII line returns both false, so the broad/CJK loads never trip and
-// the single-font fast path stays untouched (the 0-perf gate). Deliberately coarse —
-// over-triggering merely loads faces once off-thread; the sfnt PICK still resolves the
-// text to the right face, so there's no visual change, only availability.
+// scanScriptBytes does one byte pass over s: nonASCII is set by any byte >= 0x80; cjkMaybe by any byte >= 0xE3 (the
+// UTF-8 lead bytes of U+3000 and up, where CJK lives; Cyrillic, Greek, Arabic and Indic have lower leads). No rune
+// decode and no allocation, so a pure-ASCII line returns both false. It is coarse on purpose: over-triggering only
+// loads faces once off-thread, and the sfnt pick still chooses the right face.
 func scanScriptBytes(s string) (nonASCII, cjkMaybe bool) {
 	for i := 0; i < len(s); i++ {
 		if b := s[i]; b >= 0x80 {
@@ -26,11 +23,8 @@ func scanScriptBytes(s string) (nonASCII, cjkMaybe bool) {
 	return nonASCII, false
 }
 
-// isCJKRune reports a rune only the CJK faces draw: Han, Kana and Hangul letters,
-// and the CJK punctuation and full-width forms that come with them. 「」【】～・、。
-// and full-width Latin are in none of the broad fallback faces, so a line made of
-// them and ASCII (a bracketed name, a kaomoji) used to stay boxes until the
-// census found a face.
+// isCJKRune reports a rune only the CJK faces draw: Han, Kana and Hangul, plus the CJK punctuation and full-width
+// forms with them. 「」【】～・、。 and full-width Latin are in none of the broad fallback faces.
 func isCJKRune(r rune) bool {
 	switch {
 	case r >= 0x3000 && r <= 0x303F: // CJK Symbols and Punctuation
@@ -53,9 +47,8 @@ func isCJKRune(r rune) bool {
 	return false
 }
 
-// hasCJKRune confirms a rune only the CJK faces draw, after scanScriptBytes' cheap
-// byte gate said "maybe" (so the rune decode runs only on the rare ≥0xE3 line, never
-// on ASCII or the common European non-ASCII).
+// hasCJKRune confirms a CJK-only rune after scanScriptBytes' byte check said "maybe", so the rune decode runs only
+// on the rare >= 0xE3 line.
 func hasCJKRune(s string) bool {
 	for _, r := range s {
 		if isCJKRune(r) {
@@ -65,11 +58,10 @@ func hasCJKRune(s string) bool {
 	return false
 }
 
-// parseCover parses font bytes for the cmap-based coverage check used by the PICK.
-// SDL_ttf's GlyphMetrics returns .notdef metrics WITHOUT error for missing glyphs in
-// this build, so it can't tell coverage — sfnt's cmap lookup (GlyphIndex != 0) can.
-// Handles both single fonts (.ttf) and collections (.ttc, e.g. Nirmala) by trying the
-// first face. nil on parse failure → that face is simply never chosen by coverage.
+// parseCover parses font bytes for the cmap-based coverage check used by the pick. SDL_ttf's GlyphMetrics returns
+// .notdef metrics without error for missing glyphs in this build, so it can't tell coverage; sfnt's cmap lookup
+// (GlyphIndex != 0) can. Handles single fonts (.ttf) and collections (.ttc, e.g. Nirmala) via the first face. nil
+// on parse failure means that face is never chosen by coverage.
 func parseCover(data []byte) *sfnt.Font {
 	if f, err := sfnt.Parse(data); err == nil {
 		return f
@@ -82,36 +74,24 @@ func parseCover(data []byte) *sfnt.Font {
 	return nil
 }
 
-// Broad-Unicode TEXT fallback fonts. The embedded chat font (goregular) only covers
-// Latin-ish ranges, and the override chain is empty by default — so Cyrillic, Greek,
-// symbols and other scripts in shownames / messages rendered as tofu ("□□"). These
-// system fonts are read off-thread at launch and appended AFTER the embedded font, so
-// Latin keeps the embedded look and only the runes goregular LACKS fall through to a
-// covering face. Separate from the colour-EMOJI fallback (seguiemj), which is a
-// per-glyph colour path; this is whole-message script coverage via the existing
-// pickFont "first chain font that covers every rune" rule.
+// Broad-Unicode text fallback fonts. The embedded chat font (goregular) covers only Latin-ish ranges, so Cyrillic,
+// Greek, symbols and other scripts rendered as tofu. These system fonts are read off-thread at launch and appended
+// after the embedded font, so Latin keeps the embedded look and only runes goregular lacks fall through to a
+// covering face. This is whole-message script coverage via pickFont's "first chain font that covers every rune"
+// rule, separate from the per-glyph colour-emoji fallback (seguiemj).
 
-// fallbackFontCandidates lists the system fonts to try, broadest first — the
-// CURATED core, deliberately small. It is not trying to cover Unicode: each entry
-// costs an open FreeType face in every per-size font set, so this holds only the
-// few faces that answer most non-Latin text in one go, and the system-font census
-// (fontcensus.go) supplies anything else on demand, from whatever is actually
-// installed. Absent files are skipped, so an unusual install just leans on the
-// census sooner.
-//
-// Every OS gets a list. Returning nil off Windows — which this used to do — left
-// macOS and Linux with nothing but the embedded 744-glyph Latin face, so Cyrillic,
-// Greek, Hebrew, Arabic, every Indic script and all of CJK were permanently tofu
-// there. Those paths cannot be verified from a Windows dev box; the census is the
-// safety net that makes a wrong guess harmless rather than fatal.
+// fallbackFontCandidates lists the system fonts to try, broadest first: a small curated core. Each entry costs an
+// open FreeType face in every per-size font set, so it holds only faces that answer most non-Latin text, and the
+// system-font scan (fontcensus.go) supplies the rest from what is installed. Absent files are skipped.
+// Every OS gets a list; without one macOS and Linux would have only the embedded Latin face. The non-Windows paths
+// are unverified from a Windows dev box; the scan makes a wrong guess harmless.
 func fallbackFontCandidates() []string {
 	switch runtime.GOOS {
 	case "windows":
 		return []string{
-			// Broad Latin / Cyrillic / Greek / Armenian / Georgian / Hebrew / Arabic.
-			// NOT Thai, despite what this comment used to claim: segoeui.ttf has no
-			// U+0E01. Thai, Lao and Khmer live in Leelawadee UI / Khmer UI, and the
-			// census finds them.
+			// Broad Latin / Cyrillic / Greek / Armenian / Georgian / Hebrew / Arabic. segoeui.ttf has no Thai
+			// (U+0E01); Thai,
+			// Lao and Khmer live in Leelawadee UI / Khmer UI, which the scan finds.
 			`C:\Windows\Fonts\segoeui.ttf`,
 			`C:\Windows\Fonts\seguisym.ttf`, // Segoe UI Symbol — arrows / math / technical / dingbats / Braille
 			`C:\Windows\Fonts\ebrima.ttf`,   // Ebrima — African scripts incl. Tifinagh and Ethiopic
@@ -119,9 +99,9 @@ func fallbackFontCandidates() []string {
 		}
 	case "darwin":
 		return []string{
-			// Arial Unicode is the single broadest face Apple ships when it is present;
-			// the SF/Helvetica pair is what the system UI itself draws with, and Apple
-			// Symbols carries the technical/arrow blocks Segoe UI Symbol does on Windows.
+			// Arial Unicode is the broadest face Apple ships when present; SF/Helvetica is what the system UI draws
+			// with, and
+			// Apple Symbols carries the technical/arrow blocks.
 			"/Library/Fonts/Arial Unicode.ttf",
 			"/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
 			"/System/Library/Fonts/SFNS.ttf",
@@ -130,9 +110,9 @@ func fallbackFontCandidates() []string {
 		}
 	default: // linux and the other unixes
 		return []string{
-			// DejaVu is near-universal and covers Latin/Cyrillic/Greek/Armenian/Georgian
-			// plus a lot of symbols; Noto is the distro answer for everything else and is
-			// split per script, so the census does the rest.
+			// DejaVu is near-universal and covers Latin/Cyrillic/Greek/Armenian/Georgian and many symbols; Noto is
+			// split per
+			// script, so the scan does the rest.
 			"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 			"/usr/share/fonts/dejavu/DejaVuSans.ttf",
 			"/usr/share/fonts/TTF/DejaVuSans.ttf",
@@ -143,10 +123,9 @@ func fallbackFontCandidates() []string {
 	}
 }
 
-// ensureFallbackFontLoad reads the present system fallback fonts ONCE, off-thread,
-// landing their bytes on fallbackFontRes. Idempotent (gated by fallbackLoadStarted) —
-// called each frame, kicks the read on the first. Eager (not lazy like the emoji
-// face): script gaps are common, so we want coverage from the start.
+// ensureFallbackFontLoad reads the present system fallback fonts once, off-thread, landing their bytes on
+// fallbackFontRes. Idempotent (fallbackLoadStarted); eager rather than lazy like the emoji face, since script gaps
+// are common.
 func (a *App) ensureFallbackFontLoad() {
 	if a.fallbackLoadStarted {
 		return
@@ -159,12 +138,9 @@ func (a *App) ensureFallbackFontLoad() {
 	go loadFontFiles(cands, a.fallbackFontRes)
 }
 
-// fontWorkPending reports font loading the next frame has to act on: a request a
-// label raised while drawing (this frame's polls had already run), runes queued
-// for the census, or a finished load waiting to be installed. SkipFrame renders a
-// static screen only for a reason, and a wake event alone is not one, so without
-// this an idle screen kept its boxes until the next input. Cheap: field reads and
-// channel lengths.
+// fontWorkPending reports font loading the next frame has to act on: a request a label raised while drawing, runes
+// queued for the font scan, or a finished load waiting to be installed. SkipFrame renders a static screen only for a
+// reason, and a wake event alone is not one. Cheap: field reads and channel lengths.
 func (a *App) fontWorkPending() bool {
 	if c := a.ctx; c != nil && (c.wantFallback || c.wantCJK || c.missingN > 0) {
 		return true
@@ -172,10 +148,8 @@ func (a *App) fontWorkPending() bool {
 	return len(a.fallbackFontRes) > 0 || len(a.cjkFontRes) > 0 || len(a.emojiFontRes) > 0 || len(a.censusRes) > 0
 }
 
-// loadFontFiles reads the font files that exist, off the render thread, hands
-// their bytes to ch and wakes the render loop: an idle screen draws no frame of
-// its own, so without the wake the faces would sit in ch until the next input
-// and every label waiting on them would stay boxes.
+// loadFontFiles reads the font files that exist, off the render thread, hands their bytes to ch and wakes the
+// render loop; an idle screen draws no frame of its own, so without the wake the faces would sit in ch until input.
 func loadFontFiles(paths []string, ch chan<- [][]byte) {
 	var data [][]byte
 	for _, p := range paths {
@@ -193,9 +167,8 @@ func loadFontFiles(paths []string, ch chan<- [][]byte) {
 	}
 }
 
-// pollFallbackFont installs the broad fallback faces on the render thread once their
-// bytes land, forcing a chat re-raster so a visible message with previously-tofu runes
-// repaints with coverage.
+// pollFallbackFont installs the broad fallback faces on the render thread once their bytes land, forcing a chat
+// re-raster so a visible message with tofu runes repaints.
 func (a *App) pollFallbackFont() {
 	select {
 	case data := <-a.fallbackFontRes:
@@ -205,20 +178,12 @@ func (a *App) pollFallbackFont() {
 	}
 }
 
-// cjkHanCandidates is the ORDERED Han (+ Kana) face preference, Japanese FIRST. AO2 is a
-// Japanese-origin fandom, so a CJK showname is overwhelmingly Japanese — and the picker
-// takes the FIRST face that covers a rune (pickFont / coverRunes walk the chain in order),
-// so whichever Han face loads first wins Han. The old list put Microsoft YaHei (a CHINESE
-// face) first: present on nearly every box, it covers Han + Kana, so Japanese resolved to
-// YaHei's heavier, Simplified-shaped, uniform-width CJK glyphs — the "monospace-looking
-// legacy face" the user reported. A modern proportional Japanese Gothic (Yu Gothic /
-// Meiryo) must win instead.
-//
-// .ttc note: memFont opens face index 0 (OpenFontRW hardwires index 0). Index 0 of
-// YuGothR.ttc is "Yu Gothic Regular" — already a modern proportional Japanese Gothic (the
-// "Yu Gothic UI" faces live at higher indices in the same collection, but the non-UI face
-// at index 0 is the right modern look and needs no index support we don't have). Meiryo's
-// index 0 is "Meiryo" likewise. So the non-UI family at index 0 is deliberately used.
+// cjkHanCandidates is the ordered Han (+ Kana) face preference, Japanese first. AO2's fandom is Japanese-origin, so
+// a CJK showname is mostly Japanese, and the picker takes the first face that covers a rune, so whichever Han face
+// loads first wins Han. A Chinese face first (Microsoft YaHei) made Japanese render in heavier Simplified-shaped
+// glyphs; a proportional Japanese Gothic (Yu Gothic / Meiryo) must win.
+// .ttc note: memFont opens face index 0 (OpenFontRW hardwires index 0). Index 0 of YuGothR.ttc is "Yu Gothic
+// Regular" and of Meiryo is "Meiryo", both the right modern look, so the non-UI family at index 0 is used on purpose.
 var cjkHanCandidates = []string{
 	`C:\Windows\Fonts\YuGothM.ttc`,             // Yu Gothic Medium — modern proportional Japanese (best JP)
 	`C:\Windows\Fonts\YuGothR.ttc`,             // Yu Gothic Regular — modern proportional Japanese
@@ -232,14 +197,11 @@ var cjkHanCandidates = []string{
 	`C:\Windows\Fonts\msgothic.ttc`,            // MS Gothic — legacy Japanese, LAST resort (the monospace look)
 }
 
-// cjkHanChineseBackstop is the ORDERED Chinese Han face preference, loaded AFTER the
-// JP-first pick as a coverage backstop. Yu Gothic's cmap is JIS/Adobe-Japan1 — a SUBSET of
-// the GB18030 Han that YaHei covers — so Simplified-Chinese-only characters (讲/说/边, …)
-// that the old YaHei-first pick rendered would tofu if only Yu Gothic loaded. Appending a
-// Chinese face keeps those covered: coverRunes gives Yu Gothic the win for the shared Han a
-// Japanese showname uses (the pretty proportional glyphs), and this face catches the CN-only
-// runes it lacks. Residual: shared Han in a Chinese sentence shows JP glyph *shapes* — fixing
-// that needs per-run script detection (out of scope); this only kills the tofu.
+// cjkHanChineseBackstop is the ordered Chinese Han preference, loaded after the Japanese pick as a coverage
+// backstop. Yu Gothic's cmap is a subset of the GB18030 Han that YaHei covers, so Simplified-only characters
+// (讲/说/边) would tofu without it. coverRunes lets Yu Gothic win shared Han and this face catches the CN-only
+// runes. Shared Han in a Chinese sentence still shows Japanese glyph shapes; fixing that needs per-run script
+// detection.
 var cjkHanChineseBackstop = []string{
 	`C:\Windows\Fonts\msyh.ttc`,     // Microsoft YaHei — Simplified Chinese (GB18030)
 	`C:\Windows\Fonts\msjh.ttc`,     // Microsoft JhengHei — Traditional Chinese
@@ -247,24 +209,21 @@ var cjkHanChineseBackstop = []string{
 	`C:\Windows\Fonts\mingliub.ttc`, // PMingLiU — Traditional Chinese (older)
 }
 
-// cjkHangulCandidates is the ORDERED Korean face preference: modern proportional Malgun
-// Gothic first, the legacy bitmap-era faces last. Loaded IN ADDITION to a Han face (the
-// Han faces don't cover Hangul — proven by TestFontCoverageMatrix).
+// cjkHangulCandidates is the ordered Korean face preference: modern proportional Malgun Gothic first, legacy faces
+// last. Loaded in addition to a Han face, which doesn't cover Hangul.
 var cjkHangulCandidates = []string{
 	`C:\Windows\Fonts\malgun.ttf`, // Malgun Gothic — modern proportional Korean
 	`C:\Windows\Fonts\gulim.ttc`,  // Gulim — legacy Korean
 	`C:\Windows\Fonts\batang.ttc`, // Batang — legacy Korean serif
 }
 
-// firstReadable returns the first path in cands that exists and is a readable file, or ""
-// when none do. Factored out so cjkFontList's ordering is unit-testable with an injected
-// availability predicate (no real font files needed) — see firstReadableFunc.
+// firstReadable returns the first path in cands that exists and is a readable file, or "". Split out so cjkFontList's
+// ordering is testable with an injected predicate (firstReadableFunc).
 func firstReadable(cands []string) string {
 	return firstReadableFunc(cands, fileReadable)
 }
 
-// firstReadableFunc is firstReadable with an injectable existence predicate (the test
-// substitutes a fake availability set to pin the ORDER without touching disk).
+// firstReadableFunc is firstReadable with an injectable existence predicate.
 func firstReadableFunc(cands []string, exists func(string) bool) string {
 	for _, p := range cands {
 		if exists(p) {
@@ -274,16 +233,12 @@ func firstReadableFunc(cands []string, exists func(string) bool) string {
 	return ""
 }
 
-// cjkFontList picks the CJK faces to load: the FIRST present Han (+ Kana) face by the
-// Japanese-first cjkHanCandidates order, then a distinct Chinese Han face as a CN-coverage
-// backstop, then the first present Korean face for Hangul. Two Han faces at most (the JP
-// pick + one CN backstop only when the pick isn't already that CN face) keeps the CJK tier
-// near ~50 MB, lazy and only on a CJK line. os.Stat (disk) — called only off-thread.
+// cjkFontList picks the CJK faces to load: the first present Han (+ Kana) face by the Japanese-first order, then a
+// distinct Chinese Han face as a CN-coverage backstop, then the first present Korean face. At most two Han faces
+// keeps the CJK tier near 50 MB, loaded lazily on a CJK line. os.Stat (disk), so off-thread only.
 func cjkFontList() []string {
 	if runtime.GOOS != "windows" {
-		// Off Windows the census answers CJK too — it finds whatever Noto CJK /
-		// PingFang / Hiragino the machine actually has, instead of guessing at paths
-		// that vary by distro and macOS release.
+		// Off Windows the font scan answers CJK too, finding whatever Noto CJK / PingFang / Hiragino is installed.
 		return nil
 	}
 	var out []string
@@ -291,8 +246,8 @@ func cjkFontList() []string {
 	if han != "" {
 		out = append(out, han)
 	}
-	// Chinese backstop for the Simplified-only Han Yu Gothic's cmap lacks — but only when
-	// the JP pick isn't already a Chinese face (a CN-only box already loaded one above).
+	// Chinese backstop for the Simplified-only Han Yu Gothic's cmap lacks, unless the Japanese pick is already a
+	// Chinese face.
 	if cn := firstReadable(cjkHanChineseBackstop); cn != "" && cn != han {
 		out = append(out, cn)
 	}
@@ -307,11 +262,9 @@ func fileReadable(p string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// ensureCJKFontLoad reads the CJK faces ONCE, off-thread, the first time a CJK RUNE
-// is drawn. Its latch (cjkLoadStarted) is INDEPENDENT of the broad-fallback latch: a
-// session routinely hits a European non-ASCII name before any CJK, loading the broad
-// set — if CJK detection shared that guard it would die silently after the first
-// accent and never fire.
+// ensureCJKFontLoad reads the CJK faces once, off-thread, the first time a CJK rune is drawn. Its guard
+// (cjkLoadStarted) is separate from the broad-fallback one: a session usually hits a European non-ASCII name before
+// any CJK, and sharing the guard would stop CJK from ever loading.
 func (a *App) ensureCJKFontLoad() {
 	if a.cjkLoadStarted {
 		return
@@ -321,8 +274,7 @@ func (a *App) ensureCJKFontLoad() {
 	go func() { loadFontFiles(cjkFontList(), ch) }() // cjkFontList stats files, so it runs off-thread too
 }
 
-// pollCJKFont installs the CJK faces on the render thread once their bytes land,
-// re-rastering the visible message so a previously-tofu CJK name/line repaints.
+// pollCJKFont installs the CJK faces on the render thread once their bytes land, re-rastering the visible message.
 func (a *App) pollCJKFont() {
 	select {
 	case data := <-a.cjkFontRes:

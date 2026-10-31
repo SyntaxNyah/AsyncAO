@@ -7,13 +7,9 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// queryWindowDPI reports the baseline DPI (96 = 100%) on macOS instead of
-// querying the display. A macOS window is sized in POINTS, not physical pixels,
-// so a point already spans the Retina backing scale; sdl.GetDisplayDPI returns
-// the PHYSICAL dpi (≈227 on a Retina panel), which double-counts the density and
-// pushes the auto UI scale up to 200%. Reporting baseline keeps the auto scale
-// window-size-driven only on macOS (the window factor still lifts it on a large
-// display, so it never reads tiny). #77 Part B.
+// queryWindowDPI reports the baseline DPI (96 = 100%) on macOS. A window is sized in points, which already span the
+// Retina backing scale, while sdl.GetDisplayDPI returns the physical DPI and would double-count it. The window
+// factor still lifts the auto scale on a large display.
 func queryWindowDPI(_ *sdl.Window) (float64, bool) {
 	return config.BaselineDPI, true
 }

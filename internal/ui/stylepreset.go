@@ -8,15 +8,12 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Custom style presets (#126): named "mood" bundles of your own sprite style + text colour
-// (+ an emote, applied by name), created from the Sprite Style box, applied in one click, and
-// bound to a key (fires as Alt+<key>, bareBindKey) for hands-free swapping — the per-preset companion to the showname
-// keybinds (M6). All local: applying one just sets your existing style / colour / emote.
+// Custom style presets: named "mood" bundles of your sprite style and text colour (plus an emote, applied by name),
+// created from the Sprite Style box, applied in one click and bound to Alt+<key> (bareBindKey), the per-preset
+// companion to the showname keybinds. All local: applying one just sets your existing style, colour and emote.
 
-// applyStylePreset applies a saved mood. The sprite style + text colour always; the emote by
-// NAME only when the current character actually has one (best-effort, skipped outside a
-// session). Mutually exclusive with the extended-colour selection, like picking a palette
-// colour by hand.
+// applyStylePreset applies a saved mood: sprite style and text colour always, the emote by name only when the current
+// character has one (best effort, skipped outside a session). Mutually exclusive with the extended-colour selection.
 func (a *App) applyStylePreset(p config.StylePreset) {
 	a.d.Prefs.SetSpriteStyle(p.Style)
 	a.icColor = p.Color
@@ -36,9 +33,8 @@ func (a *App) applyStylePreset(p config.StylePreset) {
 	a.warnAt = a.now()
 }
 
-// saveStylePreset snapshots the current look — sprite style + text colour + the selected
-// emote's name — into a named preset (overwriting one of the same name in place). A blank
-// name is ignored.
+// saveStylePreset snapshots the current style, text colour and selected emote's name into a named preset (overwriting
+// one of the same name). A blank name is ignored.
 func (a *App) saveStylePreset(name string) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -56,12 +52,9 @@ func (a *App) saveStylePreset(name string) {
 	})
 }
 
-// drawStylePresets paints the #126 presets section near the TOP of the Sprite Style box
-// (moved up from the bottom so it's always reachable — #C): a Save row (name + button) and
-// one row per saved mood — Apply (the wide button) · bind a key · delete. Returns the y just
-// below the last row so the effect sections that follow continue from there. The box height
-// already reserves room for these rows (styleBoxRect counts them into its content sum), and
-// the whole body scrolls, so a long preset list never strands the effect controls.
+// drawStylePresets paints the presets section near the top of the Sprite Style box: a Save row (name + button) and one
+// row per saved mood (Apply, bind a key, delete). It returns the y below the last row for the sections that follow.
+// styleBoxRect already counts these rows into the box height, and the body scrolls.
 func (a *App) drawStylePresets(c *Ctx, x, y, w int32) int32 {
 	c.LabelClipped(x, y, w, "Saved styles — Save current, click to apply, bind a key:", ColTextDim)
 	y += 20

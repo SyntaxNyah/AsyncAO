@@ -15,8 +15,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
-// logSearchRowH sizes the log panel's search/export row to the chrome font,
-// floored at the historical 24px so the stock font is byte-identical.
+// logSearchRowH sizes the search/export row to the chrome font, floored at 24px.
 func logSearchRowH(fontH int32) int32 {
 	if h := fontH + logSearchRowPadV; h > logSearchRowMinH {
 		return h
@@ -24,33 +23,25 @@ func logSearchRowH(fontH int32) int32 {
 	return logSearchRowMinH
 }
 
-// unreadDividerH is the thickness of the accent line drawn at the first
-// unread IC line (the "last read" boundary the N-new pill jumps to).
+// unreadDividerH is the thickness of the accent line at the first unread IC line.
 const unreadDividerH = 2
 
-// friendTintColor is the warm "glow" behind a highlighted friend's IC line
-// (translucent so the text reads through; distinct from the blue selection).
-// A `name=RRGGBB` friends entry overrides the R/G/B per friend; the alpha is
-// the glow strength (and the pulse ceiling).
+// friendTintColor is the translucent glow behind a highlighted friend's IC line; alpha is the glow strength.
+// A `name=RRGGBB` friends entry overrides the R/G/B per friend.
 var friendTintColor = sdl.Color{R: 255, G: 210, B: 90, A: 64}
 
 const (
-	// friendGlowMinAlpha is the dim floor the pulsing glow breathes down to
-	// (up to friendTintColor.A and back) — only when FriendGlowPulse is on.
+	// friendGlowMinAlpha is the dim floor the pulsing glow breathes down to (FriendGlowPulse only).
 	friendGlowMinAlpha = 20
 	// friendGlowPulsePeriod is one full breathe cycle of the friend glow.
 	friendGlowPulsePeriod = 1600 * time.Millisecond
 )
 
-// logFastZoomMultiple scales the text-zoom step when the middle (wheel) button
-// is held — "hold the wheel and scroll to zoom the log fast".
+// logFastZoomMultiple scales the zoom step while the middle (wheel) button is held.
 const logFastZoomMultiple = 5
 
-// zoomWheel resizes a text scale (*pct, clamped to [min,max]) when the wheel
-// turns over rect with Ctrl (fine, one step) OR the middle button held (fast,
-// logFastZoomMultiple steps). Returns true if it consumed the wheel, so the
-// caller skips scrolling. Shared by every text-zoom surface (IC/OOC log, the
-// right-column panel, the chatbox) so the gesture is identical everywhere.
+// zoomWheel resizes *pct (clamped to [min,max]) on wheel over rect: Ctrl = one step, middle held = fast.
+// Returns true if it consumed the wheel, so the caller skips scrolling.
 func (a *App) zoomWheel(rect sdl.Rect, pct *int, min, max int) bool {
 	c := a.ctx
 	if c.wheelTaken || c.wheelY == 0 || !c.hovering(rect) || (!c.ctrlHeld && !c.middleHeld) {
@@ -66,14 +57,10 @@ func (a *App) zoomWheel(rect sdl.Rect, pct *int, min, max int) bool {
 	return true
 }
 
-// logScrollEaseTauMs is the smooth-scroll time constant (#22): the glide covers
-// ~63% of the remaining distance per τ, visually settled in ~4τ (≈0.2 s) —
-// well inside the input full-rate grace, so the pacer keeps it fluid.
+// logScrollEaseTauMs is the smooth-scroll time constant: the glide covers ~63% of the remaining distance per tau.
 const logScrollEaseTauMs = 50.0
 
-// easeICScroll advances the eased on-screen offset toward the a.icScroll
-// target and returns it clamped. snap (a scrollbar drag) pins it 1:1 — a drag
-// must track the hand exactly. Frame-rate independent via frameDtMs.
+// easeICScroll moves the on-screen offset toward a.icScroll and returns it clamped; snap (scrollbar drag) pins it 1:1.
 func (a *App) easeICScroll(maxScroll int32, snap bool) int32 {
 	target := float64(a.icScroll)
 	if snap || math.Abs(target-a.icScrollVis) < 0.5 {
@@ -95,31 +82,21 @@ func (a *App) easeICScroll(maxScroll int32, snap bool) int32 {
 	return int32(a.icScrollVis)
 }
 
-// drawICLogList renders the colored IC scrollback (search-filtered,
-// word-wrapped to the list width) into rect — used by the classic Log tab
-// and the themed ic_chatlog element.
-//
-// canvasInk is true only when this IS the themed ic_chatlog element, i.e. drawn
-// inside the theme's design canvas; see themeink.go for why the flag travels as
-// a parameter rather than being read off App.
+// drawICLogList renders the colored IC scrollback into rect (classic Log tab and themed ic_chatlog element).
+// canvasInk is true only for the themed ic_chatlog element, drawn inside the theme's design canvas (themeink.go).
 func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	c := a.ctx
-	// See drawPlayerList: the user's pick dresses this panel's chrome too — its
-	// search row, its export buttons — not just the scrollback rows.
+	// See drawPlayerList: the user's pick also dresses this panel's chrome.
 	defer c.popPanelFont(c.pushPanelFont(a.elemChromeFont(elemICChatlog, a.logPct)))
-	// #21 label 16: "ic_chatlog_color" is the log's DEFAULT ink. Resolved once per
-	// frame, outside the row loop.
+	// ic_chatlog_color is the log's default ink; resolved once per frame.
 	icInk := a.elemInkOr(elemICChatlog, canvasInk, ColText)
-	// #39: the theme's "ic_chatlog" size/family/bold, folded with the log zoom.
-	// icPct is the RESOLVED scale — everything below (the wrap cache key, the
-	// per-row pick, the emoji face) must use the same one or the wrap and the draw
-	// disagree (the #42 class of bug).
+	// The theme's ic_chatlog size/family/bold folded with the log zoom; wrap key, row pick and emoji face must use
+	// the same icPct or wrap and draw disagree.
 	icPct := a.elemPct(elemICChatlog, a.logPct)
 	font := a.elemFont(elemICChatlog, a.logPct)
 	lineH := int32(font.Height()) + 2
 	wrapW := list.W - scrollBarW - scrollBarGap
-	// Wrap against the indented width so a continuation row (drawn at
-	// +logWrapIndentPx) can never overflow the column.
+	// Wrap against the indented width so continuation rows (drawn at +logWrapIndentPx) cannot overflow.
 	rows := a.icWrapped(wrapW-logWrapIndentPx, a.d.Prefs.Load().ICTimestamps) // per-frame pref read, like the IC counter
 	contentH := int32(len(rows)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
@@ -129,11 +106,8 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
-	// The scroll offset as this frame FOUND it. Anything that moves it before the
-	// sticky clamp below is the USER's own gesture (a wheel step, a scrollbar drag or
-	// VScrollbar's clamp of a shrunken log); anything the clamp itself moves is the
-	// FOLLOW. The two get different easing, so they have to be told apart — see the
-	// instant-follow branch below.
+	// Offset as found this frame: moves before the sticky clamp are the user's own gesture, moves by the clamp are
+	// the follow. They ease differently (see the instant-follow branch).
 	scrollAtEntry := a.icScroll
 	if !zoomed { // a zoom consumed the wheel — don't also scroll
 		if d := c.WheelIn(list); d != 0 {
@@ -146,22 +120,10 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	if a.icScroll != before {
 		a.icStick = a.icScroll >= maxScroll // bar drag follows the same rule
 	}
-	// AUTO-SCROLL: while stuck, every new line lands in view no matter
-	// how many wrapped rows it added.
+	// Auto-scroll: while stuck, every new line lands in view.
 	if a.icStick {
-		// AO2 PARITY, and the default: the follow jump is INSTANT. AO2-Client's log is
-		// a QTextEdit whose scrollbar is slammed to maximum() the moment a line is
-		// appended — there is no glide — and a message that has already finished
-		// playing being eased into view reads as lag. So unless the user opted into
-		// "Smooth log scrolling", pin the VISUAL offset to the new bottom here, which
-		// makes easeICScroll's "already there" branch take over (no NoteAnimating, so
-		// the follow also costs no extra frames at a low idle cap).
-		//
-		// Guarded on `a.icScroll != maxScroll` (the log actually GREW this frame) and
-		// on the user not having moved the offset first, so a wheel step that lands
-		// exactly at the bottom, a scrollbar drag, and VScrollbar's clamp of a
-		// capped/cleared log all keep whatever smoothing they have today. Only the
-		// on-new-message follow changes.
+		// AO2 parity: the follow jump is instant (AO2-Client's log pins the scrollbar to maximum() on append) unless
+		// Smooth log scrolling is on. Only when the log grew this frame and the user did not move the offset first.
 		if a.icScroll != maxScroll && a.icScroll == scrollAtEntry && !a.d.Prefs.Load().SmoothLogScroll {
 			a.icScrollVis = float64(maxScroll)
 		}
@@ -171,21 +133,16 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	if a.icReadMark > len(a.icLog) {
 		a.icReadMark = len(a.icLog) // log was capped/cleared
 	}
-	// #22 smooth scrolling: the on-screen offset EASES toward the target so
-	// wheel steps and sticky-bottom jumps glide instead of teleporting
-	// ("messages just instantly appear"). A scrollbar drag snaps 1:1 (dragging
-	// must track the hand), and everything below — selection hit-math included
-	// — uses the SAME visual offset, so clicks always land on what's shown.
+	// Smooth scrolling: the on-screen offset eases toward the target; a scrollbar drag snaps 1:1.
+	// Selection hit-math uses the same visual offset.
 	visScroll := a.easeICScroll(maxScroll, c.dragID == "icscroll")
 	// Drag-select / Ctrl+C (before the loop so a real drag swallows the click).
 	a.handleLogSelect(logSelIC, list, visScroll, lineH, wrapW)
-	// Pin-to-notes can also fire on a configurable Ctrl-chord (default Ctrl+N):
-	// it pins the HOVERED line, like right-click. Resolved once (the chord is
-	// one key/frame); handleHotkeys leaves an unrecognized chord in c.hotkey.
+	// Pin-to-notes chord (default Ctrl+N) pins the hovered line; resolved once, handleHotkeys leaves an
+	// unrecognized chord in c.hotkey.
 	pinChord := c.hotkey != 0 && strings.EqualFold(sdl.GetKeyName(c.hotkey), a.hotkeyFor(hotkeyPinNote))
 	friendsOn := a.d.Prefs.Load().FriendHighlight // gates the per-line friend glow (read once)
-	// Per-speaker name colours (read once): tint each entry's name prefix on its
-	// first wrapped row. Short-circuit so the default OFF path adds nothing.
+	// Per-speaker name colours, read once: tint the name prefix on an entry's first wrapped row.
 	nameColorsOn := a.d.Prefs.Load().NameColors
 	boldNames := a.logRowBoldPref(logSelIC) // read once per frame, passed per line (#39: ic_chatlog_bold)
 	var nameSat, nameVal float64
@@ -193,10 +150,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 		nameSat = float64(a.d.Prefs.Load().NameSat) / 100
 		nameVal = float64(a.d.Prefs.Load().NameVal) / 100
 	}
-	// Glow alpha, computed once per frame: static by default, or a slow breathe
-	// when FriendGlowPulse is on (suppressed by reduce-motion). Short-circuit
-	// keeps the no-friend default path to a single pref read — no trig, no extra
-	// locks. Modulo-into-period keeps the sine argument small for precision.
+	// Glow alpha, computed once per frame: static, or a slow breathe with FriendGlowPulse (off under reduce-motion).
 	friendAlpha := friendTintColor.A
 	pulseOn := friendsOn && a.d.Prefs.Load().FriendGlowPulse && !a.d.Prefs.Load().ReduceMotionOn
 	if pulseOn {
@@ -205,10 +159,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 		lo, hi := float64(friendGlowMinAlpha), float64(friendTintColor.A)
 		friendAlpha = uint8(lo + (hi-lo)*(phase*0.5+0.5)) // [-1,1] -> [floor, full]
 	}
-	// First wrapped row of the first unread entry — the "jump to last read"
-	// target and where the unread divider draws. Scanned only while scrolled
-	// up with unread; caught-up frames (icReadMark == len) skip it entirely, so
-	// the hot render path pays nothing.
+	// First wrapped row of the first unread entry (jump target and divider); scanned only while unread.
 	firstUnreadRow := -1
 	if a.icReadMark < len(a.icLog) {
 		for ri := range rows {
@@ -218,16 +169,10 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 			}
 		}
 	}
-	// Ghost text (ghosttext.go, ON by default): the log is written when a packet
-	// ARRIVES and the courtroom says it later, so the log runs ahead of the crawl —
-	// rows nobody has spoken yet draw faint instead of spoiling the line. Resolved
-	// ONCE per frame, outside the row loop; the zero value ghosts nothing, so with
-	// the option off the whole feature costs the draw one comparison.
+	// Ghost text (ghosttext.go): the log runs ahead of the crawl, so rows not yet spoken draw faint.
+	// Resolved once per frame; the zero value ghosts nothing.
 	ghost := a.ghostLogSpan(rows)
-	// Link hover spans the WHOLE message: hovering any wrapped row of a linked
-	// entry tints every one of its rows (playtest: only the hovered row lit up,
-	// so a wrapped link read as one highlighted line among plain ones). O(1):
-	// the hovered row indexes straight into rows; the loop compares entry ids.
+	// Link hover spans the whole message: hovering any wrapped row tints every row of that entry.
 	hoverLinkEntry := -1
 	if c.hovering(list) && c.mouseX < list.X+wrapW {
 		if li := int((c.mouseY - list.Y + visScroll) / lineH); li >= 0 && li < len(rows) {
@@ -236,8 +181,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 			}
 		}
 	}
-	// Scissor the scrollback to the list rect so the partially scrolled
-	// top/bottom row can't draw past it onto the tab strip above.
+	// Scissor to the list rect so a partially scrolled row cannot draw onto the tab strip above.
 	clipPrev, clipHad := c.pushClip(list)
 	y := list.Y - visScroll
 	for ri := range rows {
@@ -246,21 +190,15 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 		}
 		if y >= list.Y-lineH {
 			row := &rows[ri]
-			// The theme's ink substitutes the DEFAULT colour only — an explicit \cN
-			// still wins. That is AO2's own order: filter_ic_text bakes every explicit
-			// code before the log line is built, and ic_chatlog_color is substituted
-			// into the leftover "$c0" placeholder (courtroom.cpp:3929/:3972), so it can
-			// never overwrite a colour the message actually asked for.
+			// The theme ink replaces only the default colour; an explicit \cN wins (AO2 bakes codes before substituting
+			// ic_chatlog_color into the leftover "$c0", courtroom.cpp:3929/:3972).
 			col := icInk
 			if ecol := a.icLog[row.entry].color; ecol > 0 {
 				col = render.TextColor(ecol)
 			}
 			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
 			font := a.elemFontFor(elemICChatlog, a.logPct, row.text)
-			// A highlighted friend's line glows (warm tint behind it), gated on
-			// the master toggle + the entry flag — a no-friend log is byte-
-			// identical to before. A `name=hex` entry recolors the glow per
-			// friend; the alpha carries the (optional) pulse.
+			// A highlighted friend's line glows; a `name=hex` entry recolors it per friend; alpha carries the pulse.
 			if friendsOn && a.icLog[row.entry].friend {
 				tint := friendTintColor
 				if fc := a.icLog[row.entry].friendColor; fc >= 0 {
@@ -274,41 +212,32 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 			}
 			// Selection highlight sits under the text (and the divider).
 			a.drawLogSelHighlight(logSelIC, ri, list.X, y, wrapW, lineH, row.text, font)
-			// Find highlight (Ctrl+F): a band behind each matched word, under the
-			// text, so a surviving (filtered) row shows WHERE the query matched.
+			// Find highlight (Ctrl+F): a band behind each matched word.
 			a.drawLogSearchHighlight(logSelIC, ri, list.X, y, wrapW, lineH, row.text, font)
-			// Unread divider: a thin accent rule at the top of the first unread
-			// line, so "jump to last read" lands on an obvious boundary.
+			// Unread divider: an accent rule at the top of the first unread line.
 			if ri == firstUnreadRow {
 				c.Fill(sdl.Rect{X: list.X, Y: y, W: wrapW, H: unreadDividerH}, ColAccent)
 			}
-			// A message carrying a link reads as a link on hover (accent, every
-			// wrapped row of it) and opens on click — the whole message is the
-			// hit target.
+			// A message with a link tints on hover (every wrapped row) and opens on click.
 			if row.entry == hoverLinkEntry {
 				col = ColAccent
 			}
-			// Per-speaker name colour: tint the name prefix on an entry's FIRST
-			// wrapped row (the shared helper falls back to a plain draw for
+			// Per-speaker name colour on an entry's first wrapped row (the helper falls back to a plain draw for
 			// system/evidence lines or when a long name wrapped off this row).
 			lineSpeaker := ""
 			if nameColorsOn && a.icRowIsEntryStart(ri) {
 				lineSpeaker = a.icLog[row.entry].speaker
 			}
-			// Not said yet → faint. AFTER the link-hover override deliberately: a
-			// hovered link on an unspoken line should still read as unspoken, and the
-			// accent would otherwise shout louder than the lines that HAVE been said.
-			// The per-speaker name tint is dropped with it for the same reason — a
-			// bright name over ghosted words is the loudest thing on the panel.
+			// Not said yet -> faint. After the link-hover override so a hovered unspoken link stays faint;
+			// the name tint is dropped with it.
 			ghostedRow := ghost.ghosted(ri, row.entry)
 			if ghostedRow {
 				col = ghostInk(col, ColPanel)
 				lineSpeaker = ""
 			}
 			indent := a.logRowIndent(logSelIC, ri) // continuation rows hang right of their first row
-			// Inline-colour body (#123): a styled entry draws its body in the
-			// authored colours; a ghosted or link-hovered row keeps the single-colour
-			// path (its override colour is a transient UI state, not the message).
+			// Inline-colour body: a styled entry draws in its authored colours; ghosted or link-hovered rows use the
+			// single-colour path.
 			if styles := a.icLog[row.entry].styles; len(styles) > 0 && row.entry != hoverLinkEntry && !ghostedRow {
 				bodyLen := utf8.RuneCountInString(row.text) - row.headRunes
 				spans := inlineSpanAt(styles, row.headRunes, row.bodyOff, bodyLen, col)
@@ -324,19 +253,14 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 					}
 				}
 			}
-			// The pin-note chord (default Ctrl+N) pins the WHOLE entry into the case
-			// notebook. Right-click now COPIES the log text (see handleLogSelect), so
-			// pinning lives on its chord; double-click selects the line; pairing moved
-			// to the player list's Pair button.
+			// The pin-note chord pins the whole entry into the case notebook; right-click copies the text.
 			if pinChord && c.hovering(sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}) {
 				a.pinNote(a.icLog[row.entry].text)
 			}
 		}
 		y += lineH
 	}
-	// "N new" pill: while scrolled up, show how many messages arrived since you
-	// last caught up. Clicking it jumps to the FIRST unread line (read forward
-	// from where you left off); the Jump-logs hotkey still snaps to newest.
+	// "N new" pill: while scrolled up, shows messages since you caught up; click jumps to the first unread line.
 	if unread := len(a.icLog) - a.icReadMark; unread > 0 && !a.icStick {
 		label := fmt.Sprintf("↓ %d new", unread)
 		bw := c.TextWidth(label) + 20
@@ -357,11 +281,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 			}
 		}
 	} else if !a.icStick && maxScroll > 0 {
-		// #217 scroll-to-bottom: scrolled up with nothing new to announce, so the
-		// accent "N new" pill above doesn't fire — offer a plain "jump to latest"
-		// button (Discord-style) so you don't have to drag the scrollbar all the
-		// way down after re-reading. Subtler colour than the unread pill because
-		// there's nothing new pulling the eye. Anchored bottom-right by the bar.
+		// Scrolled up with nothing new: offer a plain "jump to latest" button, subtler than the unread pill.
 		label := "↓ Latest"
 		bw := c.TextWidth(label) + 20
 		pill := sdl.Rect{X: list.X + list.W - scrollBarW - scrollBarGap - bw, Y: list.Y + list.H - 26, W: bw, H: 22}
@@ -378,31 +298,20 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	c.popClip(clipPrev, clipHad)
 }
 
-// drawOOCLogList renders the OOC scrollback into rect (themed
-// server_chatlog element; the classic OOC tab keeps its own copy with the
-// identity fields).
-//
-// canvasInk carries the caller's "am I the themed server_chatlog element", the
-// same contract as drawICLogList. Both of today's callers are the themed pass,
-// but the flag stays explicit: drawOOCPanel is the chrome twin of this function
-// and passes ColText, and nothing should be able to grow a third caller that
-// leaks canvas ink into chrome without saying so.
+// drawOOCLogList renders the OOC scrollback into rect (themed server_chatlog element).
+// canvasInk has the same contract as drawICLogList; drawOOCPanel, its chrome twin, passes ColText.
 func (a *App) drawOOCLogList(list sdl.Rect, canvasInk bool) {
 	c := a.ctx
 	// See drawPlayerList.
 	defer c.popPanelFont(c.pushPanelFont(a.elemChromeFont(elemServerChatlog, a.oocPct)))
-	// #21 label 16: "server_chatlog_color" is this panel's default foreground. AO2
-	// reads it through set_font's own key (courtroom.cpp:1199 → :1300); the
-	// per-sender tint is a SEPARATE server_chatlog_sender_color read through
-	// AOApplication::get_color, and is not in scope here.
+	// server_chatlog_color is the default foreground (courtroom.cpp:1199 -> :1300); the per-sender tint is a
+	// separate key and not handled here.
 	oocInk := a.elemInkOr(elemServerChatlog, canvasInk, ColText)
-	// #39: the theme's "server_chatlog" size/family/bold (AO2 folds ms_chatlog in
-	// here), folded with the OOC zoom.
+	// The theme's server_chatlog size/family/bold (AO2 folds ms_chatlog in), folded with the OOC zoom.
 	font := a.elemFont(elemServerChatlog, a.oocPct)
 	lineH := int32(font.Height()) + 2
 	wrapW := list.W - scrollBarW - scrollBarGap
-	// Wrap against the indented width so a continuation row (drawn at
-	// +logWrapIndentPx) can never overflow the column.
+	// Wrap against the indented width so continuation rows (drawn at +logWrapIndentPx) cannot overflow.
 	lines := a.oocWrapped(wrapW - logWrapIndentPx) // MOTDs wrap — never truncate
 	nameColorsOn := a.d.Prefs.Load().NameColors    // per-speaker OOC name colours (read once)
 	boldNames := a.logRowBoldPref(logSelOOC)       // read once per frame, passed per line
@@ -435,8 +344,7 @@ func (a *App) drawOOCLogList(list sdl.Rect, canvasInk bool) {
 	}
 	// Drag-select / Ctrl+C (before the loop so a real drag swallows the click).
 	a.handleLogSelect(logSelOOC, list, a.oocScroll, lineH, wrapW)
-	// Hovering a link tints THAT link (all of it, across the rows the wrap split
-	// it into) — not the whole message, and not its neighbours (#38).
+	// Hovering a link tints only that link, across the rows its wrap split it into.
 	hoverSpan, hoverID := a.oocHoverSpan(list, a.oocScroll, lineH, wrapW, len(lines))
 	clipPrev, clipHad := c.pushClip(list) // top/bottom row clipped to the rect, not the tabs
 	y := list.Y - a.oocScroll
@@ -453,9 +361,7 @@ func (a *App) drawOOCLogList(list sdl.Rect, canvasInk bool) {
 				sp = a.oocWrapName[li]
 			}
 			indent := a.logRowIndent(logSelOOC, li) // continuation rows hang right of their first row
-			// Links in OOC are openable (click) and copyable (right-click) —
-			// matching the IC log. The URL was resolved at wrap time, so one the
-			// wrap hard-split still opens whole.
+			// OOC links open on click and copy on right-click; the URL is resolved at wrap time.
 			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
 			a.oocRowLinkActions(hoverSpan, li, rowRect, list.X+indent, y, lineH)
 			a.drawOOCLogRow(list, li, font, list.X+indent, y, wrapW-indent, line, sp, hoverID, nameColorsOn, nameSat, nameVal, boldNames, oocInk)
@@ -465,17 +371,8 @@ func (a *App) drawOOCLogList(list sdl.Rect, canvasInk bool) {
 	c.popClip(clipPrev, clipHad)
 }
 
-// oocHoverSpan resolves the cursor to ONE link span of the OOC scrollback: its
-// index into a.oocWrapLink and that link's id (-1, -1 = the cursor is not on a
-// link). The id is what the draw tints by, so the wrapped pieces of ONE
-// hard-split link light up together while a different link on the same row stays
-// plain.
-//
-// #38: this used to resolve to a RUN OF ROWS sharing the row's single URL, which
-// tinted the whole message and made only a paragraph's first link clickable. The
-// hit test is now horizontal too — against the span's pixel range, measured at
-// wrap time in the row's own drawing face — so neighbouring text and a second
-// link on the same row are correctly missed.
+// oocHoverSpan resolves the cursor to one OOC link span: its index into a.oocWrapLink and the link id
+// (-1, -1 = not on a link). The hit test is against the span's pixel range measured at wrap time.
 func (a *App) oocHoverSpan(list sdl.Rect, scroll, lineH, wrapW int32, n int) (int, int32) {
 	c := a.ctx
 	if lineH <= 0 || !c.hovering(list) || c.mouseX >= list.X+wrapW {
@@ -489,10 +386,7 @@ func (a *App) oocHoverSpan(list sdl.Rect, scroll, lineH, wrapW int32, n int) (in
 	if len(spans) == 0 {
 		return -1, -1
 	}
-	// Spans are stored relative to the row's TEXT origin, so the hanging indent
-	// of a wrap-continuation row has to come off the cursor exactly the way the
-	// draw adds it — otherwise a continuation row's link would be off by
-	// logWrapIndentPx.
+	// Spans are relative to the row's text origin, so take the wrap-continuation indent off the cursor.
 	rel := c.mouseX - (list.X + a.logRowIndent(logSelOOC, li))
 	for k := range spans {
 		if rel >= spans[k].x0 && rel < spans[k].x1 {
@@ -502,11 +396,8 @@ func (a *App) oocHoverSpan(list sdl.Rect, scroll, lineH, wrapW int32, n int) (in
 	return -1, -1
 }
 
-// oocRowLinkActions runs the hover interactions when the hovered span sits on
-// display row li: the click/copy target is the LINK's rect (textX is the row's
-// text origin — the indent is already in it), while the Jukebox button still
-// anchors to the row. A no-op for every other row, so the draw loop can call it
-// unconditionally.
+// oocRowLinkActions runs the hover interactions when the hovered span is on display row li; no-op otherwise.
+// textX is the row's text origin; the click/copy target is the link's rect, the Jukebox button anchors to the row.
 func (a *App) oocRowLinkActions(hoverSpan, li int, rowRect sdl.Rect, textX, y, lineH int32) {
 	if hoverSpan < 0 || hoverSpan >= len(a.oocWrapLink) {
 		return
@@ -518,18 +409,10 @@ func (a *App) oocRowLinkActions(hoverSpan, li int, rowRect sdl.Rect, textX, y, l
 	a.oocLinkActions(rowRect, sdl.Rect{X: textX + s.x0, Y: y, W: s.x1 - s.x0, H: lineH}, s.url)
 }
 
-// drawOOCLogRow draws one wrapped OOC row, tinting ONLY the hovered link
-// (hoverID < 0 = none) instead of the whole row. The row is drawn whole in each
-// pass and the CLIP decides which slice of it lands, so the tinted and plain
-// parts share one glyph layout — no re-measure, no seam, and the speaker
-// name-split / emoji raster inside drawLogLineNamed keep working untouched. The
-// clip keeps the list's vertical bounds so a partially scrolled top/bottom row
-// still cuts at the rect edge.
-//
-// Per-frame cost: the common (nothing hovered) case is the single draw it always
-// was; a hovered link costs at most two extra clipped draws on its rows.
-// base is the row's plain-text colour: the themed server_chatlog_color when this
-// is the canvas panel, ColText when it is the chrome OOC box (drawOOCPanel).
+// drawOOCLogRow draws one wrapped OOC row, tinting only the hovered link (hoverID < 0 = none).
+// The row is drawn whole per pass and the clip picks the slice, so tinted and plain parts share one glyph layout.
+// The clip keeps the list's vertical bounds so a partly scrolled row still cuts at the rect edge.
+// base is the plain-text colour: server_chatlog_color on the canvas panel, ColText in the chrome OOC box.
 func (a *App) drawOOCLogRow(list sdl.Rect, li int, font *ttf.Font, x, y, textW int32, line, sp string, hoverID int32, nameOn bool, sat, val float64, bold bool, base sdl.Color) {
 	c := a.ctx
 	ef := a.elemEmoji(elemServerChatlog, a.oocPct) // #39: baseline must match the row's resolved text scale
@@ -562,11 +445,8 @@ func (a *App) drawOOCLogRow(list sdl.Rect, li int, font *ttf.Font, x, y, textW i
 	seg(drawn, textW, base) // the remainder of the row
 }
 
-// oocLinkActions handles the hover interactions for an OOC link: a one-click
-// "+ Jukebox" save button at the ROW's right edge (it needs the room), while
-// opening / copying is gated on linkRect — the link's own characters — so a
-// click on the plain text beside it does nothing (#38). Shared by the courtroom
-// OOC log and the OOC tab. Only ever called for the single hovered link.
+// oocLinkActions handles OOC link hover: a "+ Jukebox" button at the row's right edge, while open/copy is
+// gated on linkRect (the link's own characters). Only called for the single hovered link.
 func (a *App) oocLinkActions(rowRect, linkRect sdl.Rect, url string) {
 	c := a.ctx
 	if a.juke != nil {
@@ -594,9 +474,7 @@ func (a *App) oocLinkActions(rowRect, linkRect sdl.Rect, url string) {
 	}
 }
 
-// submitOOC sends the OOC input if non-blank (shared classic/themed).
-// The name falls back to the sticky AsyncAO<n> — servers reject empty
-// OOC names, and commands must always be sendable.
+// submitOOC sends the OOC input if non-blank; an empty name falls back to the sticky AsyncAO<n> (servers reject it).
 func (a *App) submitOOC() {
 	if strings.TrimSpace(a.oocInput) == "" || a.sess == nil {
 		return
@@ -606,9 +484,7 @@ func (a *App) submitOOC() {
 	a.oocInput = ""             // clears at send (no echo protocol) — the field's undo history catches it (Ctrl+Z)
 }
 
-// drawOOCPanel is the actual OOC box: full scrollable history plus the
-// identity fields — IC showname (live; outgoing messages read it per
-// send) and the permanent OOC name. Both persist via the debounced saver.
+// drawOOCPanel is the OOC box: scrollable history plus the permanent OOC name field, persisted via the saver.
 func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	c := a.ctx
 	fH := a.inputFieldH()
@@ -619,14 +495,11 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	fieldsH := nFields*(fH+6) + 4
 	list := sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: r.H - fieldsH}
 
-	// #39: same "server_chatlog" resolution as drawOOCLogList — this is the OTHER
-	// copy of the OOC scrollback (the clean right-column box / docked OOC tab), and
-	// a fix that lands in only one of the two is a silent miss.
+	// Same server_chatlog resolution as drawOOCLogList (this is the other copy of the OOC scrollback).
 	font := a.elemFont(elemServerChatlog, a.oocPct)
 	lineH := int32(font.Height()) + 2
 	wrapW := list.W - scrollBarW - scrollBarGap
-	// Wrap against the indented width so a continuation row (drawn at
-	// +logWrapIndentPx) can never overflow the column.
+	// Wrap against the indented width so continuation rows (drawn at +logWrapIndentPx) cannot overflow.
 	lines := a.oocWrapped(wrapW - logWrapIndentPx) // MOTDs wrap — never truncate
 	nameColorsOn := a.d.Prefs.Load().NameColors    // per-speaker OOC name colours (read once)
 	boldNames := a.logRowBoldPref(logSelOOC)       // read once per frame, passed per line
@@ -637,9 +510,8 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	}
 	contentH := int32(len(lines)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
-	// Ctrl+wheel (fine) / wheel-button (fast) zooms the OOC text, INDEPENDENT of the IC
-	// log. As a docked tab the right-column zoom already consumed the wheel (wheelTaken);
-	// as the standalone default OOC box this is the only handler.
+	// Ctrl+wheel / wheel-button zooms the OOC text, independent of the IC log. As a docked tab the right-column
+	// zoom already took the wheel (wheelTaken).
 	zoomed := a.zoomWheel(list, &a.oocPct, config.MinLogScalePercent, config.MaxLogScalePercent)
 	maxScroll := contentH - list.H
 	if maxScroll < 0 {
@@ -659,10 +531,9 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	if a.oocStick {
 		a.oocScroll = maxScroll
 	}
-	// Drag-select / Ctrl+C + links — same as the themed OOC log (this is the
-	// classic OOC tab's own scrollback; it must behave identically).
+	// Drag-select / Ctrl+C + links, same as the themed OOC log.
 	a.handleLogSelect(logSelOOC, list, a.oocScroll, lineH, wrapW)
-	// Hovering a link tints THAT link only — same contract as the themed log (#38).
+	// Hovering a link tints only that link, as in the themed log.
 	hoverSpan, hoverID := a.oocHoverSpan(list, a.oocScroll, lineH, wrapW, len(lines))
 	clipPrev, clipHad := c.pushClip(list) // scrollback only; restored before the fields below
 	y := list.Y - a.oocScroll
@@ -680,21 +551,17 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 			indent := a.logRowIndent(logSelOOC, li) // continuation rows hang right of their first row
 			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
 			a.oocRowLinkActions(hoverSpan, li, rowRect, list.X+indent, y, lineH)
-			// ColText, not the theme's server_chatlog_color: this box is the classic
-			// docked OOC tab / the Legacy bottom panel, i.e. AsyncAO chrome OUTSIDE any
-			// theme's design canvas, and it fills its own ColPanel background rather than
-			// drawing over the theme art that colour was authored against (#21 label 16).
+			// ColText, not server_chatlog_color: this box is chrome outside any theme canvas, on its own ColPanel.
 			a.drawOOCLogRow(list, li, font, list.X+indent, y, wrapW-indent, line, sp, hoverID, nameColorsOn, nameSat, nameVal, boldNames, ColText)
 		}
 		y += lineH
 	}
 	c.popClip(clipPrev, clipHad)
 
-	// Identity fields: full width (side labels squished the boxes in the
-	// narrow right column) — the placeholders carry the labels.
+	// Identity fields: full width; the placeholders carry the labels.
 	fy := r.Y + r.H - fieldsH + 4
 	if withInput {
-		// The OOC message bar lives INSIDE the box now (one unified OOC chat), not a separate bottom row.
+		// The OOC message bar lives inside the box.
 		var sent bool
 		oocPrimary, oocEmoji := a.icFieldFonts(a.oocInput)
 		a.oocInput, sent = c.TextFieldEmoji("oocmsg", sdl.Rect{X: r.X, Y: fy, W: r.W - 4, H: fH}, a.oocInput, "OOC chat… (Enter to send)", oocPrimary, oocEmoji)
@@ -704,43 +571,25 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 		a.recallOOC() // Up/Down recall recently-sent OOC lines when this field is focused
 		fy += fH + 6
 	}
-	// OOC carries only an OOC name + the OOC chat — the IC showname is set on the IC bar
-	// and in Settings, so it has no business in the OOC box (beta feedback).
-	// TAB-LOCAL: this field used to write the saved default too, so a name
-	// typed here followed you into every other tab (playtest). The permanent
-	// default lives in Settings → Identity.
-	// A CJK OOC name must render as real glyphs while typed (same fallback route as
-	// the IC input); plain ASCII keeps the single-font fast path (icFieldFonts is nil).
+	// OOC carries only an OOC name and the OOC chat. The field is tab-local; the permanent default is in Settings.
+	// A CJK OOC name renders via the IC input's font fallback; plain ASCII keeps the single-font path.
 	onPrimary, onEmoji := a.icFieldFonts(a.oocName)
 	a.oocName, _ = c.TextFieldEmoji("oocname2", sdl.Rect{X: r.X, Y: fy, W: r.W - 4, H: fH}, a.oocName, "OOC name (this tab)", onPrimary, onEmoji)
 }
 
-// areaWrapMaxLines bounds how many lines a single area name or its detail
-// line (Issue #22) wraps to before the wrap helper truncates — a named cap
-// so one runaway server-supplied area name can't blow a row's height out
-// without limit (CLAUDE.md rule: no unbounded growth).
+// areaWrapMaxLines caps how many lines an area name or detail line wraps to, bounding row height.
 const areaWrapMaxLines = 3
 
-// The area list can be drawn TWICE in one frame, under two different queries:
-// the themed canvas copy is filtered by AO2's own music_search field (the
-// duplicate-box rule in drawAreaList) while a torn-off Areas panel keeps its own
-// "Search areas…" box. Both memos below are therefore indexed by which box the
-// query came from. One shared slot would be worse than none: each drawer would
-// evict the other's entry every frame, so the O(N) filter scan AND the whole-list
-// re-wrap would run twice per frame forever, and the re-wrap allocates.
-//
-// Two slots is the exact number of simultaneous drawers: a tab that is torn off
-// leaves the docked strip (dockedLogTabs), so "docked + torn" cannot happen, and
-// the classic and themed courtrooms are alternatives, never both.
+// The area list can be drawn twice in one frame under different queries (themed copy via music_search, torn-off
+// Areas panel via its own box), so each query source gets its own memo; a shared one would be evicted every frame.
+// Two is the exact count: a torn-off tab leaves the docked strip, and classic and themed courtrooms are exclusive.
 const (
 	areaQuerySlotOwn    = iota // the panel's own field (a.areaSearch)
 	areaQuerySlotThemed        // AO2's music_search driving the canvas copy (a.musicSearch)
 	areaQuerySlots
 )
 
-// areaWrapCache is one memo slot for areaWrapped: the rows plus every input they
-// were built from. rows == nil means "never filled" (the [:0] reuse keeps a
-// non-nil empty slice once it has been).
+// areaWrapCache memoizes areaWrapped: the rows plus their inputs; rows == nil means never filled.
 type areaWrapCache struct {
 	rows  []areaWrapRow
 	seq   uint64 // a.areaInfoSeq at build time
@@ -750,9 +599,7 @@ type areaWrapCache struct {
 	gen   int // a.ctx.fontChainGen
 }
 
-// areaWrapRow is one ARUP row's word-wrapped display text, cached by
-// areaWrapped below so scrolling/resizing the panel doesn't re-wrap every
-// area every frame.
+// areaWrapRow is one ARUP row's word-wrapped display text, cached so scroll/resize does not re-wrap each frame.
 type areaWrapRow struct {
 	idx         int // ORIGINAL index into a.sess.Areas / a.sess.AreaInfo
 	name        string
@@ -761,10 +608,7 @@ type areaWrapRow struct {
 	detailLines []string
 }
 
-// areaWrapLines returns the number of visual lines a row occupies: the
-// wrapped name lines plus a detail block that reserves at least one line
-// even when empty (matching the pre-#22 fixed two-line row so areas with no
-// ARUP detail yet don't visually shrink).
+// areaWrapLines returns a row's visual line count: wrapped name lines plus a detail block of at least one line.
 func (row areaWrapRow) lineCount() int32 {
 	nameN := int32(len(row.nameLines))
 	if nameN < 1 {
@@ -777,20 +621,13 @@ func (row areaWrapRow) lineCount() int32 {
 	return nameN + detailN
 }
 
-// areaWrapped returns the word-wrapped rows for the currently shown
-// (possibly search-filtered) areas, rebuilding only when the ARUP state
-// (areaInfoSeq), search query, card width, zoom, or font chain changed —
-// never per frame (mirrors icWrapped in qol.go).
-//
-// query is passed IN, already lowered and trimmed, rather than read from
-// a.areaSearch here: the themed copy of this list is filtered by AO2's
-// music_search field instead (drawAreaList's duplicate-box rule), and a local
-// read would word-wrap a different set of areas than the count line above it
-// promised. slot is the matching memo slot (areaQuerySlotOwn/Themed).
+// areaWrapped returns the word-wrapped rows for the shown (search-filtered) areas, rebuilt only when the ARUP
+// state, query, card width, zoom or font chain changes (mirrors icWrapped in qol.go).
+// query is passed in, lowered and trimmed, because the themed copy filters by music_search, not a.areaSearch;
+// slot is the matching memo (areaQuerySlotOwn/Themed).
 func (a *App) areaWrapped(font *ttf.Font, cardW int32, query string, slot int) []areaWrapRow {
 	m := &a.areaWrap[slot]
-	// #39: key on the RESOLVED scale (theme "area_list" size × the area zoom), not
-	// the raw zoom — a theme swap that only changes the point size must re-wrap.
+	// Key on the resolved scale (theme area_list size x area zoom) so a theme swap that changes only size re-wraps.
 	pct := a.elemPct(elemAreaList, a.areaPct)
 	if m.rows != nil && m.seq == a.areaInfoSeq && m.query == query &&
 		m.cardW == cardW && m.pct == pct && m.gen == a.ctx.fontChainGen {
@@ -837,28 +674,10 @@ func (a *App) areaWrapped(font *ttf.Font, cardW int32, query string, slot int) [
 	return m.rows
 }
 
-// arupStatusText renders one area's live ARUP status/lock/CM fields
-// (courtroom.AreaInfo, filled field-by-field 0=players/1=status/2=CM/3=lock by
-// the ARUP case in session.go, matching AO2-Client's arup_modify) as a
-// "  ·  STATUS  ·  locked  ·  CM: Phoenix"-style suffix: one "  ·  "-joined
-// segment per present field, in ARUP field order, and "" (not even a stray
-// separator) when nothing has been reported at all — info's fields all sit at
-// their "unknown" zero value, or info itself is nil (the area index is out of
-// range, e.g. a partial snapshot mid-connect).
-//
-// The leading "  ·  " on a non-empty result is deliberate: every caller glues
-// this onto a headline it already has (the Areas tab's population count in
-// areaWrapped, the Players tab's headcount in drawAreaHeaderRow) rather than
-// knowing in advance which fields are set — see areaWrapped above and
-// drawAreaHeaderRow in playerlist.go, the two production call sites
-// share it. A caller with
-// nothing else on the line (drawCurrentAreaStatusStrip) trims it back off.
-//
-// AsyncAO deliberately keeps its own simplified status colour buckets
-// (areaStatusColor below) rather than adding AO2-Client's full
-// LFP/CASING/RP/GAMING/RECESS 5-way split (courtroom.cpp:1858-1877) as a
-// SECOND vocabulary for the Players tab — one status vocabulary across both
-// tabs beats upstream parity here.
+// arupStatusText renders an area's ARUP status/lock/CM fields (courtroom.AreaInfo, AO2-Client arup_modify) as a
+// "  ·  STATUS  ·  locked  ·  CM: Phoenix"-style suffix, in ARUP field order; "" if nothing is reported.
+// The leading separator is deliberate: callers glue it onto a headline; drawCurrentAreaStatusStrip trims it.
+// Status colours (areaStatusColor) stay simpler than AO2's five-way split (courtroom.cpp:1858-1877).
 func arupStatusText(info *courtroom.AreaInfo) string {
 	if info == nil {
 		return ""
@@ -879,29 +698,16 @@ func arupStatusText(info *courtroom.AreaInfo) string {
 	return detail
 }
 
-// areaCountRowH / areaCountRowLabelOffY size the bare "shown / total" line that
-// replaces the whole search row when the theme's own music_search field is driving
-// the filter (drawAreaList). One dim text line plus a hair of breathing space, and
-// the label sits at its optical centre — the rest of the old row's height goes back
-// to the list, which is the point of dropping the duplicate box.
+// areaCountRowH / areaCountRowLabelOffY size the bare "shown / total" line that replaces the search row when
+// the theme's music_search field drives the filter.
 const (
 	areaCountRowH         = int32(20)
 	areaCountRowLabelOffY = int32(3)
 )
 
-// themedListSearchDrew reports whether the themed courtroom painted AO2's own
-// `music_search` field this frame, i.e. whether the list panel already has a search
-// box above it.
-//
-// It re-derives drawCourtroomThemed's condition rather than being handed the answer,
-// because drawAreaList is called from THREE places (the classic docked tab in this
-// file, a torn-off Areas tab in torntabs.go, and the themed music_list panel in
-// theme_layout.go — AO2 has no separate area_list rect to draw into; switch_area_music
-// swaps the two views inside music_list) and only the last is inside the canvas — so
-// the flag would have to be threaded through every one of them. a.themeLay is the
-// very cache drawCourtroomThemed lays out from
-// (themeLayoutIn returns &a.themeLay), so the two cannot disagree; a stale cache is
-// impossible because the layout is rebuilt before the pass that calls us.
+// themedListSearchDrew reports whether the themed courtroom painted AO2's music_search field this frame.
+// Re-derived rather than passed in: drawAreaList has three callers and only the themed music_list one is in the
+// canvas. a.themeLay is the cache drawCourtroomThemed lays out from, so the two cannot disagree.
 func (a *App) themedListSearchDrew() bool {
 	if a.panelHidden(panelLog) {
 		return false
@@ -910,61 +716,36 @@ func (a *App) themedListSearchDrew() bool {
 	return ok
 }
 
-// areaRowHeaderPad is the fixed slack added on top of the two text rows of an
-// area card (the top inset + the gap between the name and detail line + the
-// bottom margin). Named so the row-height math is a single, testable formula
-// that stays in lock-step with the label offsets inside drawAreaList.
+// areaRowHeaderPad is the fixed slack on top of an area card's two text rows (top inset, name/detail gap, bottom).
 const areaRowHeaderPad = int32(11)
 
-// areaRowLineHN is the area row height generalized to an arbitrary visual line
-// count, for rows whose name and/or detail text wrapped to more than one
-// line each (Issue #22 — ARUP area names/details previously never wrapped
-// and just clipped off the panel edge).
+// areaRowLineHN is the area row height for an arbitrary visual line count.
 func areaRowLineHN(fontH, lines int32) int32 {
 	return fontH*lines + areaRowHeaderPad
 }
 
-// drawAreaList lists the server's areas; clicking one requests the room
-// swap. AO area transfers ride the MC packet with the area name in place
-// of a track (AO2-Client sends areas from the same list — the courtroom's
-// isAreaTransfer filter keeps them out of the audio path client-side).
-// canvasInk is true only inside the design canvas — the Areas view of the themed
-// music_list panel (theme_layout.go), the one call site that draws on the theme's
-// own art. The classic panel and a torn-off Areas tab pass false (themeink.go).
+// drawAreaList lists the server's areas; a click requests the swap via MC with the area name (isAreaTransfer
+// keeps it out of the audio path). canvasInk is true only for the Areas view of the themed music_list panel.
 func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 	c := a.ctx
 	if a.areaPct < config.MinLogScalePercent { // uninit / stale → match the log
 		a.areaPct = a.logPct
 	}
-	// See drawPlayerList. AFTER the zoom is settled, so the face is opened at the
-	// scale this frame actually draws at.
+	// See drawPlayerList. After the zoom is settled, so the face opens at the scale drawn.
 	defer c.popPanelFont(c.pushPanelFont(a.elemChromeFont(elemAreaList, a.areaPct)))
-	// #21 label 16: "area_list_color" replaces only the NEUTRAL row inks — the
-	// population dim/full pair and the detail block. AsyncAO's status, locked,
-	// current and hover colours stay: they are this client's status affordance, and
-	// AO2's own analogue of them is the row BACKGROUND brush
-	// (courtroom.cpp:1851-1882), not the text colour, so the theme's single
-	// foreground key has no claim on them.
-	//
-	// A theme that sets the key therefore paints empty and populated names alike,
-	// which is AO2's own behaviour: it has ONE area_list foreground and puts the
-	// population in the row's second COLUMN as text. AsyncAO's detail block already
-	// carries that count, so the information survives the flattening — and a theme
-	// that sets no colour keeps the dim/full pair exactly as before.
+	// area_list_color replaces only the neutral row inks (population pair, detail block); status, locked, current and
+	// hover colours stay. AO2 paints status as the row background brush (courtroom.cpp:1851-1882) and has one
+	// foreground key, with population as a column; our detail block carries the count.
 	areaIdleCol := a.elemInkOr(elemAreaList, canvasInk, ColTextDim)
 	areaLiveCol := a.elemInkOr(elemAreaList, canvasInk, ColText)
-	// Ctrl+wheel (or wheel-button) resizes the area text (areaPct). Lives HERE
-	// — not just the classic log panel — so it also works on the TORN tab and the
-	// THEMED courtroom, both of which draw drawAreaList directly. In the classic
-	// panel the outer zoomWheel already took the wheel (wheelTaken), so this
-	// no-ops there; no double-step.
+	// Ctrl+wheel (or wheel-button) resizes the area text (areaPct). Here so torn and themed callers get it too;
+	// in the classic panel zoomWheel already took the wheel (wheelTaken).
 	a.zoomWheel(r, &a.areaPct, config.MinLogScalePercent, config.MaxLogScalePercent)
 	if len(a.sess.Areas) == 0 {
 		c.Label(r.X+4, r.Y+4, "Server reported no areas.", ColTextDim)
 		return
 	}
-	// Recent areas (M3): one-click jump-back chips for the areas you've passed
-	// through (newest first; index 0 is the current area, so skip it). One row.
+	// Recent areas: one-click jump-back chips, newest first, skipping index 0 (the current area). One row.
 	if len(a.areaHistory) > 1 {
 		c.Label(r.X+2, r.Y+5, "Recent:", ColTextDim)
 		cx := r.X + 2 + c.TextWidth("Recent:") + 8
@@ -981,40 +762,22 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 		r.Y += 28
 		r.H -= 28
 	}
-	// Search filter (#20 — parity with the Music tab beside it): type to narrow
-	// a hub server's hundreds of areas. Memoized so the O(N) scan runs only when
-	// the query or the Areas list changes (refreshAreaFilter).
-	//
-	// DUPLICATE-BOX RULE. Inside the theme's design canvas the panel already carries a
-	// search field: AO2's own `music_search` rect, which drawCourtroomThemed paints in
-	// its own band with the A/M (switch_area_music) button beside it. Two search boxes
-	// for the same panel, in a 212 px music_list, is the debloat this pass exists to
-	// remove — so when that field is on screen it drives the AREA filter too and this
-	// row shrinks to its match count alone. Everywhere the theme field is absent (the
-	// classic docked tab, a torn-off Areas tab, a theme that declares no music_search)
-	// the field is drawn here exactly as before.
+	// Search filter, memoized so the O(N) scan runs only when the query or Areas list changes (refreshAreaFilter).
+	// Inside the theme canvas AO2's own music_search field already drives the area filter, so this row shrinks to
+	// the match count alone; elsewhere the field is drawn here.
 	searchExternal := canvasInk && a.themedListSearchDrew()
-	// The header row is SPLIT (areamenu.go), not laid out offset by offset: the Areas
-	// view's ⋮ goes at the right end and the search field and the counter are measured
-	// back from its left edge, so they shrink to fit it instead of drawing underneath
-	// it (the overlap class the roster toolbar was rebuilt to stop, on a theme's 212 px
-	// panel). Only THIS ROW is split — the cards and the scrollbar below keep the full
-	// panel. `canvasInk` is the same answer rosterMenuThemed derives: this drawer is
-	// inside the theme's design canvas exactly when it is true.
+	// The header row is split (areamenu.go): the menu button sits at the right end and the field and counter are
+	// measured back from its left edge. Only this row is split. canvasInk is the answer rosterMenuThemed derives.
 	head := splitAreaHeaderRow(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: fieldH})
 	a.drawAreaMenuButton(head.button, canvasInk)
 	var query string
-	// Both memos below are indexed by which box the query came from, so this
-	// drawer and a torn-off Areas panel filtered by the other box can share a
-	// frame without evicting each other (areaQuerySlots).
+	// Both memos are indexed by query source, so this drawer and a torn-off Areas panel can share a frame.
 	slot := areaQuerySlotOwn
 	if searchExternal {
 		slot = areaQuerySlotThemed
 		query = strings.ToLower(strings.TrimSpace(a.musicSearch))
 	} else {
-		// head.field, never a rect built here: the inset, the counter's room and the
-		// clearance from the ⋮ are one split (splitAreaHeaderRow), so the box cannot
-		// drift out from under the rule that keeps this row's three occupants apart.
+		// Use head.field, not a rect built here: splitAreaHeaderRow keeps the field, counter and menu button apart.
 		a.areaSearch, _ = c.TextField("areasearch", head.field, a.areaSearch, "Search areas…")
 		query = strings.ToLower(strings.TrimSpace(a.areaSearch))
 	}
@@ -1024,14 +787,12 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 		shown = len(a.refreshAreaFilter(query, slot))
 	}
 	if searchExternal {
-		// The count keeps its own (much shorter) line, left-aligned on the card column:
-		// it is the only thing left on this row, and right-aligning a lone "3 / 3"
-		// against a panel edge reads as a stray number.
+		// The count keeps its own short line, left-aligned on the card column.
 		c.Label(r.X+2, r.Y+areaCountRowLabelOffY, a.areaCount.text(shown, total), ColTextDim)
 		r.Y += areaCountRowH
 		r.H -= areaCountRowH
 	} else {
-		// Same split as the field above — the counter sits in the room the ⋮ left it.
+		// Same split as the field above.
 		c.Label(head.count.X, head.count.Y, a.areaCount.text(shown, total), ColTextDim)
 		r.Y += fieldH + 6
 		r.H -= fieldH + 6
@@ -1039,7 +800,7 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
 		a.areaScroll -= c.WheelIn(r) * scrollStepPx
 	}
-	// #39: the theme's "area_list" size/family, folded with the area zoom.
+	// The theme's area_list size/family, folded with the area zoom.
 	font := a.elemFont(elemAreaList, a.areaPct) // area-list zoom, independent of the IC log
 	areaBold := a.elemBold(elemAreaList)        // area_list_bold → the row's real bold cut
 	subH := int32(font.Height())
@@ -1063,11 +824,8 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 			card := sdl.Rect{X: r.X + 2, Y: y + 2, W: cardW, H: rowH - areaCardGap}
 			hover := c.hovering(card)
 			current := row.name == a.curArea
-			// Two-block entry: the name (population-coloured) on top, an indented
-			// detail block (count / status / lock / CM) under it, each independently
-			// word-wrapped (Issue #22). A locked room tints the whole row red, the
-			// area you're IN is accent. Fixes "it's all gray, I can't tell what's
-			// busy or where I am / every area looked the same".
+			// Two-block entry: population-coloured name on top, indented detail block under it, each word-wrapped.
+			// A locked room tints the row red; the area you are in is accent.
 			nameCol := areaIdleCol
 			locked := false
 			if row.idx < len(a.sess.AreaInfo) {
@@ -1115,16 +873,8 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 	}
 }
 
-// drawIniswapPanel is the custom character menu: every name from the
-// server's iniswap.txt as a char-select-grade grid — same demand pipeline
-// (paced asks, 64 px thumbnail icons, 404 cache), same search, same
-// scrollbar, same 3 s hover preview. Picking one iniswaps outgoing
-// messages into that folder; the server slot is untouched.
-// wardrobeFolders lists the distinct folder names in the current menu, in
-// first-seen order (stable, no per-frame sort) — the folder icons at the
-// wardrobe's top level. Membership-derived: a folder exists exactly while a
-// character is filed in it (filing the first creates it, emptying it removes
-// it), so there's no separate folder table to keep in sync.
+// wardrobeFolders lists the distinct folder names in the current menu in first-seen order (the wardrobe's
+// top-level folder icons); a folder exists exactly while a character is filed in it.
 func (a *App) wardrobeFolders() []string {
 	var out []string
 	seen := map[string]struct{}{}

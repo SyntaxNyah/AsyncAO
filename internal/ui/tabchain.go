@@ -1,29 +1,9 @@
 package ui
 
-// Tab focus order for the CHAT fields (playtest: Tab out of the IC box landed on
-// the showname field instead of the OOC box).
-//
-// AO2-Client never calls setTabOrder (0 hits across ../AO2-Client/src), so its
-// Tab chain is Qt's implicit one: widget CONSTRUCTION order. courtroom.cpp
-// builds ui_ic_chat_name (187) -> ui_ic_chat_message (193) ->
-// ui_ooc_chat_message (205) -> ui_ooc_chat_name (210) -> ui_music_search (219),
-// i.e. Tab out of the IC box lands on the OOC box. AO2-Client wins, so that is
-// the chain we reproduce.
-//
-// Our fieldSeq is pure DRAW order (Ctx.textField, ui.go) and NO layout draws in
-// that order: the default classic layout draws the whole right column — OOC box
-// included — BEFORE the IC bar (drawCourtroom, screens.go), and the themed
-// layout draws the OOC input FIRST and the showname LAST (drawCourtroomThemed,
-// theme_layout.go). Result: Tab from "ic" wrapped to the log search (classic)
-// or landed on the showname (themed).
-//
-// Ranking is by ROLE, never by a fixed id list, because the same role has
-// different ids per layout: the OOC input is "oocmsg" in the default box
-// (drawOOCPanel), "ooc" on the Legacy bottom bar (drawICControls) and "ooc"
-// again in the themed layout — and each box may or may not draw on a given
-// frame. A role with nothing drawn simply owns no slot, so a layout that hides
-// the OOC box keeps Tab inside what is actually on screen (focusing an undrawn
-// field would swallow keystrokes with no caret and no visible box).
+// Tab order for the chat fields. AO2-Client never calls setTabOrder, so its chain is Qt's widget construction order
+// (courtroom.cpp, lines 187-219): showname, IC, OOC, OOC name, music search. fieldSeq is draw order, which differs.
+// Ranked by role, not id, because a role's id varies by layout. A role with nothing drawn has no place in the chain,
+// since focusing an undrawn field would swallow keystrokes.
 const (
 	tabRankShowname = iota // AO2 ui_ic_chat_name
 	tabRankIC              // AO2 ui_ic_chat_message
@@ -32,23 +12,14 @@ const (
 	tabChainRanks          // count of roles — a loop bound, never a rank
 )
 
-// tabRankNone marks every field that is NOT part of the chat chain (search
-// boxes, panel fields, the pinned pane's "ic-split"): they keep pure draw order.
+// tabRankNone marks fields outside the chat chain; they keep draw order.
 const tabRankNone = -1
 
-// tabChainSpanCap bounds the window of fieldSeq this may rewrite — the distance
-// from the first chat field to the last, inclusive. The widest real frame is the
-// themed merged-log layout (notes tab + music list interleaved between the OOC
-// and IC inputs): noteadd, ooc, oocname, musicsearch, ic, icshownameov = 6. The
-// cap leaves generous slack; past it the reorder bails and draw order stands, so
-// a pathological frame degrades to the old behaviour instead of shuffling half
-// the screen. It also sizes the fixed stack scratch below, which is what keeps
-// the reorder allocation-free.
+// tabChainSpanCap bounds the fieldSeq window the reorder may rewrite and sizes its stack scratch, keeping it
+// allocation-free. The widest real frame spans 6 fields; past the cap, draw order stands.
 const tabChainSpanCap = 16
 
 // tabRank maps a field id to its AO2 chat-chain role, or tabRankNone.
-// A switch, not a map: no allocation, no init order, and the id list is the one
-// reviewable artifact for "what counts as a chat field".
 func tabRank(id string) int {
 	switch id {
 	case "icshownameov": // classic drawICInputRow / themed drawCourtroomThemed
@@ -63,25 +34,10 @@ func tabRank(id string) int {
 	return tabRankNone
 }
 
-// orderTabChain rewrites seq IN PLACE so the chat fields it contains form one
-// contiguous block in AO2 role order, starting at the slot the FIRST chat field
-// already occupied; any non-chat field that happened to be interleaved between
-// them slides to just after the block, keeping its own relative order.
-// Everything outside that window is untouched, so a search box or a floating
-// panel's field never jumps around.
-//
-// Stable within a role (draw order breaks ties), which is what the Legacy hybrid
-// needs: with "OOC in the log tab" selected AND the OOC tab open, the tab's own
-// input and the always-visible bottom bar are both tabRankOOC and both edit
-// a.oocInput — the one drawn first wins the slot.
-//
-// Idempotent (a second pass sees an already-contiguous, already-sorted window),
-// which matters because BeginFrame may cycle several times against the same
-// fieldSeq across draw-less frames.
-//
-// Pure and allocation-free: the scratch is a fixed [tabChainSpanCap]string on
-// the stack and the write-back is one copy. Called ONLY on a Tab press, never on
-// a render frame, so the whole-screen 0-alloc gates never even reach it.
+// orderTabChain rewrites seq in place so its chat fields form one block in role order, starting where the first was;
+// non-chat fields between them slide just after the block. Draw order breaks ties within a role: the Legacy layout can
+// draw two OOC inputs editing a.oocInput, and the first wins. Idempotent, because BeginFrame may cycle several times
+// against the same fieldSeq.
 func orderTabChain(seq []string) {
 	first, last, n := -1, -1, 0
 	for i, id := range seq {

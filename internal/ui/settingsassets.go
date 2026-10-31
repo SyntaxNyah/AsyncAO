@@ -1,14 +1,9 @@
 package ui
 
-// The Settings → Assets "Asset source" panel: where the user chooses between
-// streaming, layering their own folders over the stream, and the legacy
-// folders-only mode, and where they manage the folders and .zip packs those two
-// modes read.
-//
-// Copy note: two things MUST stay spelled out here rather than only in the docs —
-// that .zip packs work as mounts, and that the user's own files WIN over the
-// server's at the same path. Both are things people otherwise discover by being
-// confused.
+// The Settings → Assets "Asset source" panel: choose between streaming, layering the user's own folders over the
+// stream, and the legacy folders-only mode, and manage the folders and .zip packs those modes read.
+// Two things must stay spelled out here rather than only in the docs: .zip packs work as mounts, and the user's
+// own files win over the server's at the same path.
 
 import (
 	"fmt"
@@ -19,17 +14,16 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Asset-source modes, as the three-way control presents them. The STORAGE is two
-// independent bools (see config.LayeredAssets) so no saved prefs.json changes
-// meaning on upgrade; this enum exists only for the UI.
+// Asset-source modes as the three-way control presents them. Storage is two independent bools (config.LayeredAssets)
+// so no saved prefs.json changes meaning; this enum is UI only.
 const (
 	assetSrcStream  = iota // stream everything from the server (the default)
 	assetSrcLayered        // read the user's folders first, then stream the rest
 	assetSrcLocal          // never stream (legacy servers with no asset URL)
 )
 
-// assetSourceMode collapses the two stored bools into the mode the radio shows.
-// Local-only wins when both are somehow set, matching config.LayeredAssets.
+// assetSourceMode collapses the two stored bools into the radio's mode. Local-only wins when both are set,
+// matching config.LayeredAssets.
 func (a *App) assetSourceMode() int {
 	enabled, _ := a.d.Prefs.LocalAssets()
 	if enabled {
@@ -41,8 +35,7 @@ func (a *App) assetSourceMode() int {
 	return assetSrcStream
 }
 
-// setAssetSourceMode applies a radio selection, keeping the two stored bools
-// mutually exclusive so the ambiguous both-set combination is never persisted.
+// setAssetSourceMode applies a radio selection, keeping the two stored bools mutually exclusive.
 func (a *App) setAssetSourceMode(mode int, mounts []string) {
 	switch mode {
 	case assetSrcLocal:
@@ -55,8 +48,8 @@ func (a *App) setAssetSourceMode(mode int, mounts []string) {
 		a.d.Prefs.SetLayeredAssets(false)
 		a.d.Prefs.SetLocalAssets(false, mounts)
 	}
-	// rebuildAssetOrigin re-points the URL builder AND (deferred) reconciles the
-	// mount layer, so one call covers both halves of a mode change.
+	// rebuildAssetOrigin re-points the URL builder and (deferred) reconciles the mount layer, covering both halves of
+	// a mode change.
 	a.rebuildAssetOrigin()
 }
 
@@ -68,16 +61,10 @@ func (a *App) drawAssetSourceSettings(y, w int32) int32 {
 	return a.drawAssetSourceAdvanced(pad, y, mounts)
 }
 
-// drawAssetSourceHeadline is what a user who has never set this up sees: one
-// sentence saying what is happening now, and one button that starts the guided
-// setup (basewizard.go).
-//
-// It is the whole panel for that user, and that is the point. The controls below
-// it are not wrong, but they are not actionable either — three radio labels to
-// choose between before knowing what any of them does, a text field wanting an
-// absolute path with no picker beside it, and a warning further down that only
-// appears once you have got it half right. A sprite maker who wants to look at
-// their own character should not have to read a settings page to do it (#72).
+// drawAssetSourceHeadline is what a user who has never set this up sees: one sentence on what is happening now and
+// one button that starts the guided setup (basewizard.go). It is the whole panel for that user; the controls below
+// are not actionable until you know what they do (a path field with no picker, a warning that appears only once
+// you're half right).
 func (a *App) drawAssetSourceHeadline(pad, y int32, mounts []string) int32 {
 	c := a.ctx
 	y = a.settingsDesc(pad, y, assetSourceSummary(a.assetSourceMode(), mounts), ColAccent)
@@ -94,9 +81,7 @@ func (a *App) drawAssetSourceHeadline(pad, y int32, mounts []string) int32 {
 		ColTextDim) + 10
 }
 
-// assetSourceSummary states the CURRENT setup in one line. Present tense and
-// specific, because the question this panel kept failing to answer was not "what
-// are my options" but "what is it doing right now".
+// assetSourceSummary states the current setup in one specific present-tense line: what it is doing right now.
 func assetSourceSummary(mode int, mounts []string) string {
 	switch {
 	case mode == assetSrcLocal && len(mounts) > 0:
@@ -104,17 +89,14 @@ func assetSourceSummary(mode int, mounts []string) string {
 	case mode == assetSrcLayered && len(mounts) > 0:
 		return "Now: reading " + mounts[0] + only(len(mounts)) + " first, then streaming the rest."
 	case len(mounts) > 0:
-		// Configured but inert. The single most confusing state this panel can be
-		// in, so it is the headline rather than a note near the bottom of the page.
+		// Configured but inert: the most confusing state this panel can be in, so it is the headline.
 		return "Now: streaming everything. You have folders set up, but they are not being used."
 	default:
 		return "Now: streaming everything from the server."
 	}
 }
 
-// only names the folders past the first without listing them — the full list is
-// twenty lines further down, and repeating it in the summary would be the clutter
-// the summary exists to replace.
+// only names the folders past the first without listing them; the full list is further down.
 func only(n int) string {
 	if n <= 1 {
 		return ""
@@ -122,14 +104,9 @@ func only(n int) string {
 	return " (+" + strconv.Itoa(n-1) + " more)"
 }
 
-// drawAssetSourceAdvanced is the original panel, kept whole and moved below the
-// button.
-//
-// NOT HIDDEN BEHIND A DISCLOSURE, deliberately: a collapsed row is invisible to
-// the settings search, which only indexes rows that actually draw (noteSearchRow
-// runs at draw time), and "the setting exists but you cannot find it" is a worse
-// failure than a long page. Demoting it under a heading gets the clutter out of
-// the way of the common case without taking anything away from the uncommon one.
+// drawAssetSourceAdvanced is the original panel, moved below the button. It is not hidden behind a disclosure: the
+// settings search only indexes rows that draw (noteSearchRow runs at draw time), and a collapsed row would be
+// unfindable.
 func (a *App) drawAssetSourceAdvanced(pad, y int32, mounts []string) int32 {
 	c := a.ctx
 	mode := a.assetSourceMode()
@@ -139,9 +116,8 @@ func (a *App) drawAssetSourceAdvanced(pad, y int32, mounts []string) int32 {
 	c.Fill(sdl.Rect{X: pad + 80, Y: y + 11, W: a.formW - 80, H: 1}, ColPanelHi)
 	y += 24
 
-	// The three-way choice. Rows are drawn MUTED (greyed, inert) rather than
-	// hidden when no folder is configured yet, so the option is still visible and
-	// still findable by the settings search — a hidden row is never registered.
+	// The three-way choice. Rows are drawn muted and inert, not hidden, when no folder is configured, so the option
+	// stays visible and findable by the settings search.
 	for _, opt := range []struct {
 		mode  int
 		label string
@@ -153,13 +129,13 @@ func (a *App) drawAssetSourceAdvanced(pad, y int32, mounts []string) int32 {
 		on := mode == opt.mode
 		enabledRow := opt.mode == assetSrcStream || haveMounts
 		if !enabledRow {
-			// Muted: drawn so the user can SEE what adding a folder would unlock.
+			// Muted: drawn so the user can see what adding a folder would unlock.
 			c.Checkbox(pad, y, opt.label, on)
 			c.Fill(sdl.Rect{X: pad, Y: y, W: a.formW, H: 24}, sdl.Color{R: 0, G: 0, B: 0, A: 120})
 		} else if next := c.Checkbox(pad, y, opt.label, on); next != on && !on {
-			// Radio semantics over checkbox rows: selecting an unchecked row moves
-			// the mode; clicking the already-selected row does nothing (a radio group
-			// has no "none" state).
+			// Radio semantics over checkbox rows: selecting an unchecked row moves the mode; clicking the selected
+			// row does
+			// nothing.
 			a.setAssetSourceMode(opt.mode, mounts)
 		}
 		a.noteSearchRow(opt.label, y)
@@ -177,7 +153,7 @@ func (a *App) drawAssetSourceAdvanced(pad, y int32, mounts []string) int32 {
 	}
 	y += 6
 
-	// --- the mount list -----------------------------------------------------------
+	// the mount list
 	c.Label(pad, y+4, "Folders and .zip packs (searched in order — the first one with the file wins)", ColText)
 	y += 24
 	y = a.settingsDesc(pad, y, "A mount can be a folder or a .zip pack. Paths inside must match the server's layout (characters/, background/, sounds/, evidence/).", ColTextDim)
@@ -206,8 +182,7 @@ func (a *App) drawAssetSourceAdvanced(pad, y int32, mounts []string) int32 {
 		c.Label(a.formX+a.formW-170, y+4, kind, ColTextDim)
 		if c.Button(sdl.Rect{X: a.formX + a.formW - 90, Y: y, W: 90, H: 24}, "Remove") {
 			next := append(append([]string{}, mounts[:i]...), mounts[i+1:]...)
-			// Shrinking always succeeds — the cap only refuses growth, so a user who
-			// somehow has more than the cap can still prune back under it.
+			// Shrinking always succeeds; the cap only refuses growth, so a user over the cap can prune back under it.
 			a.d.Prefs.SetLocalAssets(a.assetSourceMode() == assetSrcLocal, next)
 			a.rebuildAssetOrigin()
 			break
@@ -215,9 +190,8 @@ func (a *App) drawAssetSourceAdvanced(pad, y int32, mounts []string) int32 {
 		y += 28
 	}
 
-	// Auto-mounted packages (issue #128): discovered beside the exe at startup
-	// and appended AFTER the manual mounts above, so a manual folder always wins.
-	// Read-only — managed by dropping/removing folders in packages/.
+	// Auto-mounted packages: discovered beside the exe at startup and appended after the manual mounts, so a manual
+	// folder always wins. Read-only; managed by dropping or removing folders in packages/.
 	if len(a.d.AutoMounts) > 0 {
 		y += 4
 		c.Label(pad, y+4, "Auto-mounted packages (from the packages/ folder next to the exe)", ColText)
@@ -240,11 +214,8 @@ func (a *App) drawAssetSourceAdvanced(pad, y int32, mounts []string) int32 {
 		y = a.settingsDesc(pad, y, "Rescan after adding or changing files. Art your folders cover reloads right away; everything else updates as it reloads. Rescan also re-tries files that failed to load last time.", ColTextDim)
 	}
 
-	// The nudge: folders configured but not actually being used is a silent dead
-	// end otherwise — the user sees their pack listed and nothing happening. The
-	// panel headline states it too, and this stays anyway: by the time the list is
-	// on screen the headline has scrolled off, and the nudge belongs beside the
-	// list it is about.
+	// The nudge: folders configured but unused is a silent dead end. The headline states it too, but it has scrolled
+	// off by the time the list is on screen.
 	if haveMounts && mode == assetSrcStream {
 		y += 4
 		y = a.settingsDesc(pad, y, "These folders aren't being used. Pick \"Use my folders first\" above, or press \"Use my own AO files…\" at the top of this section.", ColTierYellow)
@@ -252,8 +223,7 @@ func (a *App) drawAssetSourceAdvanced(pad, y int32, mounts []string) int32 {
 	return y + 10
 }
 
-// drawMountIndexStatus reports what the index actually holds, plus anything that
-// went wrong. Every number here comes from real state — nothing is estimated.
+// drawMountIndexStatus reports what the index holds plus anything that went wrong. Every number is real state.
 func (a *App) drawMountIndexStatus(y int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -264,9 +234,9 @@ func (a *App) drawMountIndexStatus(y int32) int32 {
 	case a.mountIndex != nil:
 		files, mounts := a.mountIndex.Stats()
 		line := fmt.Sprintf("Indexed %d file(s) in %d mount(s).", files, mounts)
-		// Served-this-session, not a "shadow count": the client never enumerates the
-		// server's files, so how many of these REPLACE a server asset is unknowable
-		// without crawling it. This number is one we actually have.
+		// Served-this-session, not a "shadow count": the client never enumerates the server's files, so how many of
+		// these
+		// replace a server asset is unknowable.
 		if n := a.d.Manager.Stats().MountFetches; n > 0 {
 			line += fmt.Sprintf(" %d asset(s) served from your folders this session.", n)
 		}
@@ -287,8 +257,7 @@ func (a *App) drawMountIndexStatus(y int32) int32 {
 	return y
 }
 
-// filepathExt is filepath.Ext without pulling the import into this file's
-// namespace for one call — it only ever sees a user-typed mount string.
+// filepathExt is filepath.Ext without importing path/filepath for one call; it only sees a user-typed mount string.
 func filepathExt(p string) string {
 	if i := strings.LastIndexByte(p, '.'); i >= 0 && !strings.ContainsAny(p[i:], `/\`) {
 		return p[i:]

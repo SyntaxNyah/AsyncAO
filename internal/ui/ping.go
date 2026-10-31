@@ -1,10 +1,8 @@
 package ui
 
-// Lobby connect-time ("ping") sort (M7, opt-in): the "Ping" button probes every
-// joinable server's TCP-connect RTT on a bounded worker pool and sorts the list
-// by it. Off by default — no probing happens until you press the button, so the
-// default lobby is byte-identical. Probing is pure network work on goroutines;
-// the render thread only drains a bounded result channel.
+// Lobby connect-time ("ping") sort, opt-in: the Ping button probes every joinable server's TCP-connect RTT on a
+// bounded worker pool and sorts by it. No probing happens until pressed. The render thread only drains a bounded
+// result channel.
 
 import (
 	"context"
@@ -16,16 +14,16 @@ import (
 )
 
 const (
-	// pingConcurrency bounds simultaneous probe dials (rule §17.4); pingTimeout
-	// caps each, so a dead host can't stall the sweep.
+	// pingConcurrency bounds simultaneous probe dials (hard rule 4);
+	// pingTimeout caps each so a dead host cannot stall the sweep.
 	pingConcurrency = 8
 	pingTimeout     = 2 * time.Second
 	// pingResBuf bounds the result channel; the lobby drains it every frame.
 	pingResBuf = 64
 )
 
-// pingResult carries one probe's outcome to the render thread. A blank url is
-// the "sweep done" sentinel; gen lets pollPing drop a superseded sweep.
+// pingResult carries one probe's outcome to the render thread. A blank url is the sweep-done sentinel;
+// gen lets pollPing drop a superseded sweep.
 type pingResult struct {
 	url string
 	rtt time.Duration
@@ -33,11 +31,9 @@ type pingResult struct {
 	gen int
 }
 
-// startPinging probes every joinable server's connect RTT on a bounded worker
-// pool and switches the lobby to connect-time sort. Targets are snapshotted
-// here (render thread) so the goroutines touch no shared App state except the
-// bounded result channel. A re-probe bumps pingGen so a prior sweep's late
-// results are ignored.
+// startPinging probes every joinable server's connect RTT on a bounded worker pool and switches the lobby to
+// connect-time sort. Targets are snapshotted on the render thread so the goroutines touch only the result channel.
+// A re-probe bumps pingGen so a prior sweep's late results are ignored.
 func (a *App) startPinging() {
 	if a.pinging {
 		return
@@ -90,15 +86,9 @@ func (a *App) startPinging() {
 	}()
 }
 
-// toggleConnectTimeSort flips the lobby between connect-time order and the default
-// player-count order — the body of the old lobby "Ping" button, lifted here when that
-// button moved into the Servers menu (menubar.go, #14). Turning the sort OFF has to
-// re-sort immediately (applyServerSort), because pingMode alone only decides which
-// comparator the NEXT sort uses; without it the list would stay in RTT order with the
-// toggle reading "off".
-//
-// Turning it ON goes through startPinging, which refuses a second in-flight sweep, so
-// this is safe to call repeatedly.
+// toggleConnectTimeSort flips the lobby between connect-time and player-count order. Turning it off re-sorts
+// immediately (applyServerSort), since pingMode only picks the comparator for the next sort. Turning it on goes
+// through startPinging, which refuses a second in-flight sweep.
 func (a *App) toggleConnectTimeSort() {
 	if a.pingMode {
 		a.pingMode = false
@@ -108,8 +98,7 @@ func (a *App) toggleConnectTimeSort() {
 	a.startPinging()
 }
 
-// pollPing drains probe results into a.pings on the render thread — a
-// non-blocking drain called from the lobby each frame, so it costs nothing idle.
+// pollPing drains probe results into a.pings on the render thread; non-blocking, called from the lobby each frame.
 func (a *App) pollPing() {
 	for {
 		select {
@@ -136,17 +125,16 @@ func (a *App) pollPing() {
 	}
 }
 
-// applyServerSort rebuilds the lobby list (ping-aware when pingMode) and resets
-// the index-based selection — mirroring the refresh / favourite re-sorts.
+// applyServerSort rebuilds the lobby list (ping-aware when pingMode) and resets the index-based selection.
 func (a *App) applyServerSort() {
 	a.servers = a.mergedFavorites()
-	// Clear all three selection caches together (descLinks included — a stale
-	// link slice is a latent trap for any draw path that consults it alone).
+	// Clear all three selection caches together; a stale descLinks slice is a trap for any draw path
+	// that reads it alone.
 	a.selServer, a.descLines, a.descLinks = -1, nil, nil // row indices changed with the sort
 }
 
-// sortByPing orders joinable servers by connect RTT — favorites pinned, probed
-// ascending, then unprobed/unreachable; legacy entries last. Stable.
+// sortByPing orders joinable servers by connect RTT: favorites pinned, probed ascending, then unprobed;
+// legacy last. Stable.
 func sortByPing(entries []network.ServerEntry, pings map[string]time.Duration) {
 	rank := func(e network.ServerEntry) (time.Duration, bool) {
 		d, ok := pings[e.WebSocketURL()]

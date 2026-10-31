@@ -1,13 +1,8 @@
 package ui
 
-// Background picker: a "change background" modal modeled on the wardrobe /
-// iniswap menu. AO has no protocol packet that lists a server's backgrounds
-// (BN only ever carries the CURRENT one), so the list is discovered the same
-// way iniswap.txt seeds the wardrobe — by fetching the asset host's
-// background/ directory and parsing its autoindex (nginx/apache/caddy all
-// emit <a href="folder/"> links). Each folder shows a defenseempty
-// thumbnail; hovering or selecting one shows a large preview, and an explicit
-// "/bg" button asks the server to change it for the area.
+// Background picker: a "change background" modal. AO has no packet listing a server's backgrounds (BN carries only
+// the current one), so the list comes from the asset host's background/ autoindex; an explicit "/bg" button asks the
+// server to change it.
 
 import (
 	"context"
@@ -26,44 +21,32 @@ import (
 )
 
 const (
-	// bgListCap bounds the parsed background list (rule §17.4, like
-	// iniswapListCap) — a hostile or huge autoindex can't grow it unbounded.
+	// bgListCap bounds the parsed background list (hard rule 4) against a huge autoindex.
 	bgListCap = 4096
 	// bgFetchTimeout caps the directory-listing download.
 	bgFetchTimeout = 15 * time.Second
-	// bgThumbPart is the background part rendered as each cell's thumbnail.
-	// defenseempty ships in essentially every AO courtroom background; a
-	// miss just falls back to the folder name (same as a char with no icon).
+	// bgThumbPart is the part rendered as each thumbnail; a miss falls back to the folder name.
 	bgThumbPart = "defenseempty"
-	// Landscape thumbnail cells (AO's classic 4:3 court aspect).
+	// Landscape thumbnail cells (classic 4:3 court aspect).
 	bgCellW      int32 = 160
 	bgCellH      int32 = 120
 	bgCellGap    int32 = 10
 	bgCellLabelH int32 = 14
-	// bgThumbBudgetBytes caps the bg-picker's resident thumbnail textures.
-	// Thumbnails are FULL-RESOLUTION backgrounds (≈3.5 MiB each at 1280x720),
-	// so a screenful of HD backgrounds would blow the 64 MiB T1 and the LRU
-	// would thrash -- cells flickering black ("disco"). Capping demand to ~52
-	// MiB keeps the resident set inside T1 (leaving room for the hover preview
-	// and UI text); overflow cells show the name until scrolled. The cap is
-	// BYTE-based off the observed thumbnail size, so small-background servers
-	// (where everything fits) still show every thumbnail -- no regression.
-	// (Proper fix: decode/render downscaled thumbnails -- a focused render pass.)
+	// bgThumbBudgetBytes caps resident thumbnail textures. Thumbnails are full-resolution backgrounds, so too many
+	// thrash T1 and cells flicker black; overflow cells show the name. Byte-based, so small backgrounds all still show.
 	bgThumbBudgetBytes int64 = 52 << 20
 	// bgThumbEstBytes seeds the per-thumb estimate before any has resolved.
 	bgThumbEstBytes int64 = 4 << 20
 )
 
-// bgFetch is one background-directory-listing result, tagged with the server
-// it was made for so a fetch that lands after a tab switch is ignored.
+// bgFetch is one directory-listing result, tagged with its server so a fetch landing after a tab switch is ignored.
 type bgFetch struct {
 	key   string
 	names []string
 	err   error
 }
 
-// bgPicker holds the "change background" modal state. Self-contained
-// (mirrors settingsState): the App embeds one as a.bgPick.
+// bgPicker holds the modal state; the App embeds one as a.bgPick.
 type bgPicker struct {
 	show     bool
 	list     []string // current + remembered + favorites, then the autoindex names
@@ -87,7 +70,7 @@ type bgPicker struct {
 	forKey   string // serverKey the current list belongs to
 }
 
-// openBgPicker shows the modal and kicks off (or reuses) the listing fetch.
+// openBgPicker shows the modal and starts (or reuses) the listing fetch.
 func (a *App) openBgPicker() {
 	a.bgPick.show = true
 	if a.bgPick.sel == "" {
@@ -96,15 +79,10 @@ func (a *App) openBgPicker() {
 	a.ensureBgList()
 }
 
-// ensureBgList rebuilds the list from local seeds immediately (so the modal
-// is never empty) and fetches the server's background/ autoindex once. The
-// fetch rides Manager.FetchRaw (T2 + disk cached, singleflight), so a reopen
-// is a memory hit — same path as the iniswap.txt fetch.
+// ensureBgList rebuilds the list from local seeds at once and fetches background/ once via Manager.FetchRaw (cached).
 func (a *App) ensureBgList() {
 	if a.bgPick.forKey != a.serverKey {
-		// New server: seed the list INSTANTLY from last session's cached
-		// discovery (snappy, like the char list), then refresh below. Cloned so
-		// the picker can't mutate the prefs' backing slice.
+		// New server: seed from last session's cached discovery, then refresh. Cloned so prefs stay unmutated.
 		a.bgPick.server = append([]string(nil), a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey).Backgrounds...)
 		a.bgPick.fetched = false
 		a.bgPick.listErr = ""
@@ -114,8 +92,7 @@ func (a *App) ensureBgList() {
 	if a.bgPick.res == nil {
 		a.bgPick.res = make(chan bgFetch, 1)
 	}
-	// Fetch once per server per session (gated on fetched, NOT on the seeded
-	// list — the cache shows immediately while the fresh listing loads).
+	// Fetch once per server per session, gated on fetched, not on the seeded list.
 	if a.bgPick.fetched || a.bgPick.busy || a.urls.Origin() == "" {
 		return
 	}
@@ -126,10 +103,7 @@ func (a *App) ensureBgList() {
 	ch := a.bgPick.res
 	mgr := a.d.Manager
 	go func() {
-		// A background list fetch/parse must NEVER crash the app: this is off the
-		// main thread, so no recover up the stack catches a panic here (e.g. a
-		// malformed autoindex tripping parseAutoindexDirs). Catch it, log the stack,
-		// and degrade to "no listing" instead of a logless hard-crash.
+		// Off the main thread, so no caller recovers a panic here: log it and show no listing.
 		defer func() {
 			if r := recover(); r != nil {
 				writeCrashLog("background list goroutine panic: ", r)
@@ -147,8 +121,7 @@ func (a *App) ensureBgList() {
 	}()
 }
 
-// pollBgList drains a finished listing fetch (key-guarded against tab
-// switches), then rebuilds the merged list.
+// pollBgList drains a finished fetch (key-guarded against tab switches), then rebuilds the merged list.
 func (a *App) pollBgList() {
 	select {
 	case res := <-a.bgPick.res:
@@ -158,8 +131,7 @@ func (a *App) pollBgList() {
 		a.bgPick.busy = false
 		a.bgPick.fetched = true // one fetch per server per session
 		if res.err != nil {
-			// Keep any cached seed (better than empty); only flag an error when
-			// we have nothing to show.
+			// Keep any cached seed; flag an error only when there is nothing to show.
 			if len(a.bgPick.server) == 0 {
 				a.bgPick.listErr = "no directory listing (" + res.err.Error() + ") — type/preview a known name or use the current one"
 			}
@@ -172,11 +144,8 @@ func (a *App) pollBgList() {
 	}
 }
 
-// rebuildBgList merges the menu: the current background first, then the last
-// remembered one, then this server's starred favorites, then every name from
-// the autoindex (de-duplicated, case-insensitively). Seeds float to the top so the
-// background on screen and the starred ones are always reachable even on a host
-// with no listing. fav is built parallel to the list for the per-cell star.
+// rebuildBgList merges the menu: current background, last remembered, starred favorites, then autoindex names
+// (case-insensitive dedup). fav is parallel to the list for the per-cell star.
 func (a *App) rebuildBgList() {
 	favList := a.d.Prefs.Load().FavBackgroundList(a.serverKey)
 	favSet := make(map[string]struct{}, len(favList))
@@ -215,16 +184,12 @@ func (a *App) rebuildBgList() {
 		_, a.bgPick.fav[i] = favSet[a.bgPick.lower[i]]
 	}
 	a.bgPick.ask = nil
-	// Starring reorders the list at the SAME length (favorites float up), and
-	// cachedPage keys its thumbnail slice by index without re-checking the URL —
-	// so the idx→page cache must drop here or a reorder would show the previous
-	// name's thumbnail. Pages re-resolve from T1 next frame (a map hit, no flash).
+	// Starring reorders at the same length and cachedPage keys by index without re-checking the URL, so drop the
+	// idx-to-page cache or a reorder shows the previous name's thumbnail.
 	a.bgPick.pages = nil
 }
 
-// requestBackground applies a pick: a live session asks the server via /bg
-// (the server enforces permissions and broadcasts BN to everyone); rehearsal
-// has no server, so it applies locally to preview the scene on the stage.
+// requestBackground applies a pick: a live session asks the server via /bg; rehearsal applies it locally.
 func (a *App) requestBackground(name string) {
 	if name == "" {
 		return
@@ -246,9 +211,7 @@ func (a *App) requestBackground(name string) {
 func (a *App) drawBgPanel(w, h int32) {
 	c := a.ctx
 	a.pollBgList()
-	// Kept clear of the app-chrome band (#14, chrometop.go): the menu bar and the
-	// docked server-tab strip paint AFTER the screens, so a panel starting at the raw
-	// pad*3 would have its top edge and title covered by the strip.
+	// Kept clear of the app-chrome band (chrometop.go), which paints after the screens.
 	top := a.topChromeH()
 	panel := sdl.Rect{X: pad * 3, Y: top + pad*3, W: w - pad*6, H: h - top - pad*6}
 	c.Fill(panel, ColPanel)
@@ -278,8 +241,7 @@ func (a *App) drawBgPanel(w, h int32) {
 	y += 32
 
 	a.bgPick.search, _ = c.TextField("bgsearch", sdl.Rect{X: panel.X + pad, Y: y, W: 230, H: fieldH}, a.bgPick.search, "Search...")
-	// Favorites-only filter: stars are per server (persisted), so this narrows
-	// the grid to the user's pinned backgrounds even on a host with no listing.
+	// Favorites-only filter: stars are per server, so this works even on a host with no listing.
 	a.bgPick.favOnly = c.Checkbox(panel.X+pad+244, y+(fieldH-16)/2, "Favorites only", a.bgPick.favOnly)
 	statusX := panel.X + pad + 380
 	switch {
@@ -294,7 +256,7 @@ func (a *App) drawBgPanel(w, h int32) {
 	}
 	y += 36
 
-	// Grid of landscape thumbnails (clone of the iniswap layout).
+	// Grid of landscape thumbnails.
 	gridTop := y
 	gridW := panel.W - 2*pad - scrollBarW - scrollBarGap
 	cols := gridW / (bgCellW + bgCellGap)
@@ -302,8 +264,7 @@ func (a *App) drawBgPanel(w, h int32) {
 		cols = 1
 	}
 	query := a.bgPick.q.get(a.bgPick.search)
-	// No search and no favorites filter → every entry matches; skip the
-	// per-frame full-list scan.
+	// No search and no favorites filter: every entry matches, so skip the full-list scan.
 	matches := int32(len(a.bgPick.list))
 	if query != "" || a.bgPick.favOnly {
 		matches = 0
@@ -325,12 +286,9 @@ func (a *App) drawBgPanel(w, h int32) {
 	track := sdl.Rect{X: panel.X + panel.W - pad - scrollBarW, Y: gridTop, W: scrollBarW, H: visibleH}
 	a.bgPick.scroll = c.VScrollbar("bgscroll", track, a.bgPick.scroll, contentH, visibleH)
 
-	// Clip the grid so a partially scrolled top/bottom row stays inside the
-	// panel (same overspill guard as the log lists).
+	// Clip the grid so a partially scrolled row stays inside the panel.
 	dlOn := a.d.Prefs.Load().CharDownloaderOn // read once per frame, not per cell
-	// Texture budget for THIS frame's visible thumbnails (drawn top-to-bottom);
-	// once spent, further cells show their name instead of demanding a texture,
-	// so the resident set can't overflow T1 and thrash. See bgThumbBudgetBytes.
+	// Texture budget for this frame's visible thumbnails; once spent, cells show their name. See bgThumbBudgetBytes.
 	thumbBudget := bgThumbBudgetBytes
 	clipPrev, clipHad := c.pushClip(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH})
 	col, row := int32(0), int32(0)
@@ -366,7 +324,7 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool, budget *int6
 	c.Fill(cell, ColBackground)
 	base := a.urls.Background(name, bgThumbPart)
 	if page, ok := a.cachedPage(&a.bgPick.pages, &a.bgPick.pagesGen, len(a.bgPick.list), idx, base); ok && len(page.Frames) > 0 {
-		// Resident: always draw it (it's already in T1) and bill its footprint.
+		// Resident: always draw it and bill its footprint.
 		_ = c.Ren.Copy(page.Frames[0], nil, &cell)
 		b := int64(page.W) * int64(page.H) * 4
 		*budget -= b
@@ -374,20 +332,17 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool, budget *int6
 			a.bgPick.thumbMax = b // learn the real per-thumb size for the estimate
 		}
 	} else if est := max(a.bgPick.thumbMax, bgThumbEstBytes); *budget >= est {
-		// Not resident, and the budget still allows another full-res thumbnail:
-		// demand it. Bill the estimate so we don't over-commit before it lands.
+		// Not resident and budget remains: demand it, billing the estimate to avoid over-committing.
 		*budget -= est
 		a.demandAsset(&a.bgPick.ask, len(a.bgPick.list), idx, base, assets.AssetTypeBackground) // AssetType: Background (picker thumb)
 		c.LabelClipped(cell.X+4, cell.Y+cell.H/2-8, cell.W-8, name, ColTextDim)
 	} else {
-		// Budget spent: show the name (scroll brings it into the budget). No
-		// demand here, so the LRU isn't asked to hold more than fits.
+		// Budget spent: show the name (scrolling brings it into budget) without demanding a texture.
 		c.LabelClipped(cell.X+4, cell.Y+cell.H/2-8, cell.W-8, name, ColTextDim)
 	}
 	c.Border(cell, ColPanelHi)
 
-	// The selected cell gets the accent ring; the live background gets a
-	// "current" tag so the two states read at a glance.
+	// The selected cell gets the accent ring; the live background gets a "current" tag.
 	if strings.EqualFold(name, a.bgPick.sel) {
 		c.Border(sdl.Rect{X: cell.X - 2, Y: cell.Y - 2, W: cell.W + 4, H: cell.H + 4}, ColAccent)
 	}
@@ -398,9 +353,7 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool, budget *int6
 	}
 	c.LabelClipped(cell.X, cell.Y+cell.H+1, cell.W, name, ColTextDim)
 
-	// Favorite star (top-right): pin this background on this server. Per-server
-	// and persisted; starred backgrounds float to the top of the list and the
-	// "Favorites only" toggle filters to them. Mirrors the wardrobe star.
+	// Favorite star: pins this background on this server (persisted); starred ones float to the top.
 	starred := idx < len(a.bgPick.fav) && a.bgPick.fav[idx]
 	star := sdl.Rect{X: cell.X + cell.W - 22, Y: cell.Y + 2, W: 20, H: 18}
 	c.Fill(star, sdl.Color{R: 0, G: 0, B: 0, A: 150}) // backing: the star must read over busy thumbnails
@@ -420,16 +373,14 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool, budget *int6
 		return // the star claimed the click; don't also select this background
 	}
 
-	// Mark the cell while this background is downloading or queued (v2).
+	// Mark the cell while this background is downloading or queued.
 	if a.dl.active && a.dl.target == name {
 		c.Fill(cell, sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 70})
 		c.Label(cell.X+4, cell.Y+4, downloadGlyph+"…", ColText)
 	} else if downloaderOn && a.dlQueuedTarget(name) {
 		c.Label(cell.X+4, cell.Y+4, downloadGlyph+"·", ColTextDim) // waiting in queue
 	}
-	// Download badge (only when the opt-in downloader is on): grabs this
-	// background's whole folder for offline use. Right-clicking the cell does
-	// the same — a quick grab without aiming at the badge (v2).
+	// Download badge (opt-in downloader only): grabs the whole folder; right-clicking the cell does the same.
 	if downloaderOn && a.drawDownloadBadge(cell, "Download / queue this background (or right-click the cell)") {
 		a.startBgDownload(name)
 		return
@@ -439,8 +390,7 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool, budget *int6
 		return
 	}
 
-	// Hover → large preview (the actual defenseempty image, high priority);
-	// click → select it as the /bg target (and keep the preview up).
+	// Hover shows the large preview at high priority; click selects the /bg target.
 	if c.HoverPreview("bg:"+name, cell) {
 		a.previewBase = base
 		a.d.Manager.Prefetch(base, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (preview)
@@ -460,17 +410,12 @@ type autoindexEntry struct {
 	dir  bool   // trailing slash in the listing
 }
 
-// autoindexHref captures href targets from an HTML directory listing. nginx,
-// Apache and Caddy all emit <a href="...">; [^"?#] drops Apache's
-// ?C=N;O=A column-sort links and fragment targets.
+// autoindexHref captures href targets from an HTML directory listing; [^"?#] drops Apache's ?C=N;O=A sort links.
 var autoindexHref = regexp.MustCompile(`(?i)href="([^"?#]+)"`)
 
-// cleanAutoindexEntry normalizes one raw href into an entry and reports
-// whether it's a usable, one-level-deep, non-escaping link. Pure (unit
-// tested) — it is the SECURITY boundary for the downloader: parent (../),
-// self (./), absolute (/x), external (x://), nested (a/b) and any ".."
-// (raw OR percent-encoded like %2e%2e) are rejected so a hostile listing
-// can never write outside the destination folder.
+// cleanAutoindexEntry normalizes one raw href into an entry and reports whether it is usable, one level deep and
+// non-escaping. It is the security boundary for the downloader: ../, ./, /x, x://, a/b and any raw or percent-encoded
+// ".." are rejected.
 func cleanAutoindexEntry(raw string) (autoindexEntry, bool) {
 	if raw == "" || strings.HasPrefix(raw, "/") || strings.Contains(raw, "://") {
 		return autoindexEntry{}, false
@@ -490,9 +435,7 @@ func cleanAutoindexEntry(raw string) (autoindexEntry, bool) {
 	return autoindexEntry{href: raw, name: name, dir: dir}, true
 }
 
-// parseAutoindexEntries returns up to limit unique files+dirs from a listing
-// page. On a non-autoindex response (custom 403/404 HTML) it finds no
-// qualifying links and returns nothing — never garbage names.
+// parseAutoindexEntries returns up to limit unique files and dirs; a non-autoindex response yields nothing.
 func parseAutoindexEntries(data []byte, limit int) []autoindexEntry {
 	out := make([]autoindexEntry, 0)
 	seen := make(map[string]struct{})
@@ -517,8 +460,7 @@ func parseAutoindexEntries(data []byte, limit int) []autoindexEntry {
 	return out
 }
 
-// parseAutoindexDirs is the background picker's discovery list: the sorted,
-// de-duplicated folder names from a directory listing.
+// parseAutoindexDirs is the picker's discovery list: sorted, de-duplicated folder names from a listing.
 func parseAutoindexDirs(data []byte) []string {
 	entries := parseAutoindexEntries(data, bgListCap)
 	names := make([]string, 0, len(entries))

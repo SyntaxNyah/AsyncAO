@@ -1,28 +1,13 @@
 package ui
 
-// THE INSPECTOR'S LIVE LISTS (v1.90.0 W7b).
+// The inspector's live lists: what an fkPick row may offer for this theme and build.
 //
-// ONE concern: what an fkPick row may offer, for THIS theme, on THIS build.
+// They are not the row's enum (the format's own append-only name table): they are facts about the current document
+// (placed widgets, declared families) and build (generators, silhouettes), and a value outside them is legal, so
+// they are offered, never enforced.
 //
-// WHY THEY ARE NOT `enum` ON THE ROW. inspectorField.enum is the FORMAT's own name
-// table — appended-only, never renamed, handed over by internal/theme so the editor
-// cannot hold a second copy of it. These four lists are a different kind of thing
-// entirely: they are facts about the CURRENT document (which widgets this theme
-// places, which families it declares) and about the CURRENT build (which generators
-// rasterise, which silhouettes draw). They change while the editor is open, they are
-// not the format, and a value outside them is legal — so they are offered, never
-// enforced.
-//
-// CACHED, BECAUSE THE RAIL DRAWS EVERY FRAME. Building a sorted key list per frame is
-// tens of allocations on a surface gated at editorChromeAllocBudget, so each dynamic
-// list is rebuilt only when its own cheap validity key moves (the number of placed
-// keys, the number of declared families). The two STATIC lists are built once at
-// package init and shared — a build's generator registry and shape vocabulary cannot
-// change at runtime.
-//
-// SORTED, ALWAYS. Both dynamic sources are maps or author-ordered slices; an unsorted
-// picker would offer the same theme's anchors in a different order on different runs,
-// which reads as the control shuffling itself.
+// The rail draws every frame, so each dynamic list is rebuilt only when its cheap validity key moves; the two
+// static lists are built once at init. All lists are sorted so the control does not reshuffle between runs.
 
 import (
 	"sort"
@@ -30,44 +15,31 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
-// pickAnchorNone is the first entry of the anchor picker: no anchor at all, i.e. the
-// element's rect is absolute in its own Space. Spelled out rather than left as a bare
-// empty row, because "(none)" is a choice an author makes and an empty line is not.
+// pickAnchorNone is the first anchor entry: no anchor, so the rect is absolute in its Space. "(none)" is a choice.
 const pickAnchorNone = "(none)"
 
-// pickListCap bounds ONE picker's offered list (hard rule 4). The anchor list is the
-// widest — every placed design key plus every [pane.*] id — and themeSlots is a fixed
-// registry of well under a hundred rows, so this is a ceiling rather than a limit
-// anybody meets. Past it the list simply stops growing; a name that is not offered is
-// still typeable, which is the whole reason fkPick keeps its text field.
+// pickListCap bounds one picker's offered list (hard rule 4). The anchor list is widest and themeSlots is well under
+// a hundred rows, so this is a ceiling; a name not offered is still typeable.
 const pickListCap = 128
 
-// pickStatic holds the two lists that are properties of the BUILD. Package-level and
-// built once: genRegistry and elemShapeNames are compile-time facts.
+// pickStatic holds the two lists that are properties of the build, built once.
 var pickStatic = [pickSourceCount][]string{
 	pickGenerator: sortedStrings(GeneratorNames()),
 	pickShape:     sortedStrings(elemShapeNames[:]),
 }
 
-// sortedStrings copies and sorts. A copy, not a sort in place: elemShapeNames is
-// indexed BY ID everywhere else in this package (elemShapeSharp is 0), so sorting the
-// real array would silently re-map every shape a theme names.
+// sortedStrings copies and sorts; elemShapeNames is indexed by id elsewhere, so an in-place sort would re-map shapes.
 func sortedStrings(in []string) []string {
 	out := append([]string(nil), in...)
 	sort.Strings(out)
 	return out
 }
 
-// pickCache is the editor's cache of the two DYNAMIC lists.
+// pickCache is the editor's cache of the two dynamic lists.
 //
-// A validity KEY rather than an invalidation call, and that is deliberate: an explicit
-// invalidate is a call somebody has to remember at every site that changes the
-// document, and W7a already has three of those (an op, a reclaim, a baseline restore).
-// A key that is a cheap function of the thing being cached cannot be forgotten — it is
-// re-read every frame, costs two len() calls, and is wrong only if a change leaves the
-// count identical, which for both of these lists means the picker offers the same
-// number of differently-named entries: recoverable (the value is still typeable) and
-// self-healing on the next add or remove.
+// It uses a validity key rather than an invalidate call, which someone must remember at every site that changes the
+// document. The key (two len() calls) is re-read every frame; it is wrong only if a change keeps the counts equal,
+// which is recoverable (the value is still typeable) and heals on the next add or remove.
 type pickCache struct {
 	names [pickSourceCount][]string
 	key   [pickSourceCount]int
@@ -76,16 +48,8 @@ type pickCache struct {
 
 // editorPickNames returns the live list for one source, or nil.
 //
-// pickNone — the zero value every non-picker row carries, which is what lets pickRow
-// stay a separate constructor instead of thirty rows spelling out "no list" — is
-// answered HERE rather than at the draw site. A row that names no source is asking
-// for nothing, whoever asks and however the caller reached this table, and it must
-// not take a cache slot to be told so.
-//
-// That last clause is the guard's ONLY observable — without it the slow path still
-// returns an empty list, it just caches one first — so it is what
-// TestOnlyPickerRowsNameAPickSource asserts. Deleting the pickNone disjunct fails
-// that test; a test on the return value alone would not notice.
+// pickNone, the zero value every non-picker row carries, is answered here rather than at the draw site so it does
+// not take a cache slot to be told there is no list.
 func (te *themeEditor) editorPickNames(src pickSource) []string {
 	if src == pickNone || int(src) >= int(pickSourceCount) {
 		return nil
@@ -118,16 +82,12 @@ func (te *themeEditor) editorPickKey(src pickSource) int {
 	return 0
 }
 
-// buildPickNames fills out one dynamic list, reusing the cached backing array so a
-// rebuild costs at most one grow rather than a fresh allocation every time.
+// buildPickNames fills out one dynamic list, reusing the cached backing array so a rebuild costs at most one grow.
 func (te *themeEditor) buildPickNames(src pickSource, out []string) []string {
 	d := te.doc
 	switch src {
 	case pickAnchor:
-		// EVERY key this build actually PLACED, not every key the registry knows: an
-		// anchor that resolves to nothing is an element parked at the origin with no
-		// explanation, and the difference between the two sets is exactly the widgets
-		// this theme chose not to declare.
+		// Every key this build placed, not every key the registry knows: an unplaced anchor parks at the origin.
 		out = append(out, pickAnchorNone)
 		for key := range d.live {
 			if len(out) >= pickListCap {
@@ -137,8 +97,7 @@ func (te *themeEditor) buildPickNames(src pickSource, out []string) []string {
 				out = append(out, key)
 			}
 		}
-		// The theme's own panes, which theme.Element.Anchor accepts alongside a slot key
-		// when Space == SpacePane.
+		// The theme's own panes, which theme.Element.Anchor accepts alongside a slot key when Space == SpacePane.
 		for i := range d.side.Panes {
 			if len(out) >= pickListCap {
 				break
@@ -149,9 +108,8 @@ func (te *themeEditor) buildPickNames(src pickSource, out []string) []string {
 		}
 		sortTailOfPickList(out)
 	case pickFace:
-		// THE LADDER, IN OWNER ORDER: the AO2 class ids this client honours first (a
-		// `font` that names one means "inherit that element's face" — theme.Element's
-		// own comment), then the families this theme declares in [fonts].
+		// The AO2 class ids this client honours first (a font naming one means inherit that element's face), then the
+		// families this theme declares in [fonts].
 		out = append(out, pickAnchorNone)
 		for _, id := range theme.FontElements {
 			if len(out) >= pickListCap {
@@ -167,23 +125,19 @@ func (te *themeEditor) buildPickNames(src pickSource, out []string) []string {
 				out = append(out, f)
 			}
 		}
-		// NOT sorted: the class ladder's order IS theme.FontElements' order, which is
-		// append-only and meaningful (TestFontElementsIsAppendOnly), and the families
-		// follow in the author's own declaration order — the order they read in the file.
+		// Not sorted: theme.FontElements' order is append-only and meaningful, and families keep the author's order.
 	}
 	return out
 }
 
-// sortTailOfPickList sorts everything after the leading "(none)" entry, so the escape
-// hatch stays first however the keys sort.
+// sortTailOfPickList sorts everything after the leading "(none)" entry, which stays first.
 func sortTailOfPickList(out []string) {
 	if len(out) > 1 {
 		sort.Strings(out[1:])
 	}
 }
 
-// pickIndexOf is where cur sits in the offered list, or -1. "" matches the leading
-// "(none)" entry, which is what makes the cycler step OFF an empty value.
+// pickIndexOf is where cur sits in the offered list, or -1; "" matches "(none)" so the cycler steps off an empty value.
 func pickIndexOf(names []string, cur string) int {
 	if cur == "" {
 		cur = pickAnchorNone
@@ -196,9 +150,7 @@ func pickIndexOf(names []string, cur string) int {
 	return -1
 }
 
-// pickValueAt is the value a list entry writes: "" for the "(none)" row, the name
-// itself otherwise. The inverse of pickIndexOf's mapping, and beside it for the same
-// reason rgbaValue/valueRGBA are beside each other.
+// pickValueAt is the value a list entry writes: "" for the "(none)" row, else the name; the inverse of pickIndexOf.
 func pickValueAt(names []string, i int) string {
 	if i < 0 || i >= len(names) || names[i] == pickAnchorNone {
 		return ""

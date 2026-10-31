@@ -1,11 +1,8 @@
 package ui
 
-// Server evidence image picker (#119, stream mode): the evidence editor's "Browse…"
-// button, when "Stream from server" is on, opens this modal grid of the server's
-// evidence/ autoindex instead of the local folder browser. Discovery is one
-// off-thread fetch of the autoindex (hard rule 2: no sync network on the render
-// path); the modal is seeded with the case's own evidence so it is never empty
-// while the index runs.
+// Server evidence image picker (stream mode): when "Stream from server" is on, the evidence editor's Browse button
+// opens this modal grid of the server's evidence/ autoindex. Discovery is one off-thread fetch (hard rule 2), and
+// the modal is seeded with the case's own evidence so it is never empty while the index runs.
 
 import (
 	"context"
@@ -32,8 +29,7 @@ func (a *App) openServerEvidencePicker() {
 		a.evidServerRes = make(chan []string, 4)
 	}
 	if a.evidServerNames == nil {
-		// Seed with the case evidence already on hand so the modal is never empty
-		// while the index fetch runs.
+		// Seed with the case evidence already on hand so the modal is never empty while the index fetch runs.
 		seen := map[string]bool{}
 		for _, it := range a.sess.Evidence {
 			name := strings.TrimSpace(it.Image)
@@ -57,8 +53,8 @@ func (a *App) openServerEvidencePicker() {
 	}
 }
 
-// fetchServerEvidenceIndex fetches the server's evidence/ autoindex and extracts
-// image filenames (AO has no evidence-list packet). Bounded by evidServerCap.
+// fetchServerEvidenceIndex fetches the server's evidence/ autoindex and extracts image filenames,
+// bounded by evidServerCap.
 func (a *App) fetchServerEvidenceIndex() {
 	defer func() {
 		if r := recover(); r != nil {
@@ -122,9 +118,8 @@ func (a *App) mergeServerEvidenceNames(names []string) {
 	}
 }
 
-// serverEvidenceEmptyLabel picks the empty-grid message: "Loading…" while the
-// index fetch is still in flight, a no-match message when a filter is set, and
-// the plain empty message otherwise. Pure so the three states are unit-testable.
+// serverEvidenceEmptyLabel picks the empty-grid message: Loading while the fetch is in flight, a no-match message
+// when a filter is set, else the plain empty message.
 func serverEvidenceEmptyLabel(busy, hasFilter bool) string {
 	switch {
 	case busy:
@@ -136,9 +131,8 @@ func serverEvidenceEmptyLabel(busy, hasFilter bool) string {
 	}
 }
 
-// drawServerEvidencePicker draws the "Choose evidence image" modal over the server
-// autoindex: a search field above a scrollable grid of thumbnails. Clicking a cell
-// fills the editor's Image file and closes.
+// drawServerEvidencePicker draws the "Choose evidence image" modal: a search field above a thumbnail grid.
+// A click fills Image file and closes.
 func (a *App) drawServerEvidencePicker(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 160})
@@ -178,10 +172,8 @@ func (a *App) drawServerEvidencePicker(w, h int32) {
 	a.evidServerScroll -= c.WheelIn(grid) * rowPitch
 	track := sdl.Rect{X: grid.X + grid.W - scrollBarW, Y: grid.Y, W: scrollBarW, H: grid.H}
 	a.evidServerScroll = c.VScrollbar("evidserverpicker", track, a.evidServerScroll, contentH, grid.H)
-	// Clip AFTER the wheel/scrollbar resolve, like the other icon grids
-	// (charGridScroll, drawEvidenceGrid, drawSfxBrowser): hovering() honours clipOn,
-	// and the scrollbar's grab slop extends past the grid's right edge, so pushing
-	// the clip first leaves the wheel band and the thumb un-hoverable.
+	// Clip after the wheel/scrollbar resolve, like the other icon grids: hovering() honours clipOn, and the scrollbar's
+	// grab slop extends past the grid's right edge, so an earlier clip leaves the wheel band and thumb un-hoverable.
 	clipPrev, clipHad := c.pushClip(grid)
 	for i, name := range names {
 		col, row := int32(i)%cols, int32(i)/cols

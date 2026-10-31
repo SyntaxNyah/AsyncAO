@@ -1,23 +1,9 @@
 package ui
 
-// Macro engine + built-in server account login. The login is for ANY
-// /login account system — member perks, donator ranks, mod powers alike
-// — not just staff auth.
-//
-// A macro is a sequence of OOC lines sent in order with a fixed pace
-// (macroLineDelay) — enough for prompt-style flows like Akashi's
-// two-step login ("/login" → server prompts → "user pass"). Lines go
-// out through the normal OOC send with the user's OOC name, falling
-// back to a sticky random "AsyncAO<1-200>" when none is set (servers
-// reject empty OOC names; commands and macros must always be sendable).
-//
-// The built-in login knows the two wire shapes in the wild:
-//   - Akashi:                       "/login" then "<user> <pass>"
-//     (the credential line answers Akashi's prompt and is NOT echoed
-//     into OOC by the server, so nothing leaks)
-//   - Nyathena/KFO/Athena/Whisker:  "/login <user> <pass>"
-// The flow picks itself from the server software announced in the ID
-// handshake; unknown servers get the one-line form (the common wire).
+// Macro engine and built-in server account login, for any /login account system, not just staff auth.
+// Macro lines go out as paced OOC sends under the user's OOC name, else a sticky random AsyncAO<N>, because servers
+// reject empty OOC names.
+// The login flow picks itself from the software announced in the ID handshake (loginLines).
 
 import (
 	"fmt"
@@ -30,41 +16,27 @@ import (
 )
 
 const (
-	// macroLineDelay paces multi-line macros: fast enough to feel
-	// instant, slow enough for a server prompt round-trip between lines.
+	// macroLineDelay paces multi-line macros: fast enough to feel instant, slow enough for a server prompt between
+	// lines.
 	macroLineDelay = 300 * time.Millisecond
-	// macroQueueCap bounds pending macro lines (rule §17.4) — spamming a
-	// macro key can't build an unbounded send backlog.
+	// macroQueueCap bounds pending macro lines (hard rule 4), so spamming a macro key can't build a backlog.
 	macroQueueCap = 32
-	// oocSendMinGap is the HARD floor between two automated OOC sends, enforced
-	// at drain time so a backlog can never leave as a burst.
-	//
-	// Servers flood-guard OOC per IP and KICK on breach, and the kick arrives as
-	// a bare close with no reason: Nyathena's pktOOC calls checkIPOOCRateLimit
-	// (ooc_rate_limit, commonly 4 per second) and CheckRateLimit
-	// (message_rate_limit, commonly 10 per 7 s ≈ 1.4/s) and on either breach runs
-	// KickForRateLimit, which queues its explanation ASYNCHRONOUSLY but closes
-	// SYNCHRONOUSLY — so the reason races off the wire and the client only sees
-	// the socket shut. One second keeps us under the tighter message_rate_limit
-	// even while draining a full queue back-to-back, and still lets a login macro
-	// finish quickly. Deliberately slower than macroLineDelay: being kicked is far
-	// worse than a macro taking an extra beat.
+	// oocSendMinGap is the hard floor between automated OOC sends, enforced at drain time so a backlog can't leave as a
+	// burst.
+	// Servers kick on an OOC flood, as a bare close with no reason (Nyathena: ooc_rate_limit, and message_rate_limit
+	// commonly 10 per 7 s). One second stays under the tighter limit; deliberately slower than macroLineDelay.
 	oocSendMinGap = time.Second
 	// defaultOOCNameRange is the N in the "AsyncAO<N>" fallback name.
 	defaultOOCNameRange = 200
 )
 
-// oocSend is one queued automated OOC line (login flows and macros share
-// the pipeline; the login itself is NOT a macro — it has its own
-// per-server credential store, dialog, and auto-on-join trigger).
+// oocSend is one queued automated OOC line, shared by login flows and macros.
 type oocSend struct {
 	line string
 	due  time.Time
 }
 
-// defaultOOCName is what a FRESH tab's OOC name starts as: the saved
-// default OOC name (the Settings field), else your saved showname —
-// per-tab edits in the courtroom never feed back into it.
+// defaultOOCName is a fresh tab's OOC name: the saved default, else the saved showname.
 func (a *App) defaultOOCName() string {
 	if s := a.d.Prefs.Load().OOCName; s != "" {
 		return s
@@ -72,9 +44,7 @@ func (a *App) defaultOOCName() string {
 	return a.d.Prefs.Load().Showname
 }
 
-// oocNameOrDefault is the OOC identity every command/macro send uses:
-// the user's name when set, else a sticky random AsyncAO<1-200> minted
-// once per run (so one session keeps one identity).
+// oocNameOrDefault is the OOC name for command and macro sends: the user's, else a random AsyncAO<N> kept for the run.
 func (a *App) oocNameOrDefault() string {
 	if n := strings.TrimSpace(a.oocName); n != "" {
 		return n
@@ -85,8 +55,7 @@ func (a *App) oocNameOrDefault() string {
 	return a.defaultOOC
 }
 
-// queueOOCLines schedules lines for paced automated OOC sending (the
-// shared pipeline under the login automation and user macros).
+// queueOOCLines schedules lines for paced automated OOC sending.
 func (a *App) queueOOCLines(lines []string) {
 	if a.sess == nil {
 		return
@@ -104,21 +73,14 @@ func (a *App) queueOOCLines(lines []string) {
 	}
 }
 
-// processOOCQueue sends at most ONE due line per oocSendMinGap. Called from
-// BOTH Frame and Background (App.Background), so the queue drains at the same
-// rate whether the window is focused, unfocused or minimized — the drain must
-// never be coupled to the render loop (see oocSendMinGap for why).
-//
-// The one-at-a-time walk is the point: the old loop sent every due entry in a
-// single pass, so a queue that accumulated while the drain was stalled left as
-// one burst and the server kicked us for OOC flooding.
+// processOOCQueue sends at most one due line per oocSendMinGap. Called from both Frame and Background so the drain rate
+// doesn't depend on the render loop; sending every due entry at once would get us kicked for flooding.
 func (a *App) processOOCQueue() {
 	if len(a.oocQueue) == 0 || a.sess == nil {
 		return
 	}
 	now := a.now()
-	// Space against the previous send. A zero stamp (first automated line of the
-	// run) sends immediately — the floor is between sends, not before the first.
+	// A zero stamp sends immediately: the floor is between sends, not before the first.
 	if !a.lastAutoOOC.IsZero() && now.Sub(a.lastAutoOOC) < oocSendMinGap {
 		return
 	}
@@ -130,9 +92,7 @@ func (a *App) processOOCQueue() {
 	a.oocQueue = a.oocQueue[:copy(a.oocQueue, a.oocQueue[1:])]
 }
 
-// oocQueuePending reports whether line is already waiting in the automation
-// queue. Pollers use it so a stalled drain can't stack duplicate copies of the
-// same command (the live roster's /gas re-fetch is the one that mattered).
+// oocQueuePending reports whether line is already queued, so a stalled drain can't stack duplicates from pollers.
 func (a *App) oocQueuePending(line string) bool {
 	for _, m := range a.oocQueue {
 		if m.line == line {
@@ -142,18 +102,13 @@ func (a *App) oocQueuePending(line string) bool {
 	return false
 }
 
-// runMacro queues one macro and reports it on the debug lane (lines may
-// hold credentials — never echo their content).
+// runMacro queues one macro and logs it; lines may hold credentials, so never echo their content.
 func (a *App) runMacro(m config.MacroSpec) {
 	a.queueOOCLines(m.Lines)
 	a.pushDebug(fmt.Sprintf("macro %q: %d line(s) queued", m.Name, len(m.Lines)))
 }
 
-// handleMacroKeys fires key-bound macros on Alt+<bound key> — the shared
-// bareBindKey gate every plain-key namespace moved onto (qol.go; the cheat sheet
-// already advertised macros as a chord, so this is also what makes that row
-// truthful). Macro binds win over character binds on conflict (they were bound
-// deliberately; the wardrobe badge shows char binds).
+// handleMacroKeys fires macros on Alt+<bound key>; macro binds win over character binds on conflict.
 func (a *App) handleMacroKeys() bool {
 	k := a.bareBindKey()
 	if k == 0 {
@@ -169,13 +124,8 @@ func (a *App) handleMacroKeys() bool {
 	return false
 }
 
-// --- built-in login ----------------------------------------------------------
-
-// loginLines builds the wire flow for this server's software. Three
-// shapes exist in the wild:
-//   - Akashi: "/login" then "<user> <pass>" answering its prompt
-//   - KFO-Server: "/login <pass>" — password only, no username
-//   - Athena/Nyathena/Whisker/unknown: "/login <user> <pass>"
+// loginLines builds the login flow: Akashi "/login" then "<user> <pass>" answering its prompt; KFO "/login <pass>";
+// everything else "/login <user> <pass>".
 func (a *App) loginLines(user, pass string) []string {
 	soft := ""
 	if a.sess != nil {
@@ -183,8 +133,7 @@ func (a *App) loginLines(user, pass string) []string {
 	}
 	switch {
 	case strings.Contains(soft, "akashi"):
-		// Two-step: the bare command, then the credential line answering
-		// Akashi's prompt (which the server does not echo into OOC).
+		// The server does not echo the answer to Akashi's prompt into OOC, so nothing leaks.
 		return []string{"/login", user + " " + pass}
 	case strings.Contains(soft, "kfo"):
 		return []string{"/login " + pass}
@@ -204,8 +153,7 @@ func (a *App) loginNow() {
 	a.pushDebug("login: flow queued as " + a.oocNameOrDefault())
 }
 
-// loginFlowPreview names the exact wire flow the dialog will use, so the
-// automation explains itself before you trust it with credentials.
+// loginFlowPreview names the wire flow the dialog will use, before you trust it with credentials.
 func (a *App) loginFlowPreview() string {
 	soft := "unknown software"
 	if a.sess != nil && a.sess.Software != "" {
@@ -224,16 +172,10 @@ func (a *App) loginFlowPreview() string {
 	return soft + `: sends "/login username password" ⏎`
 }
 
-// autoLoginOnReady fires the saved flow once per join when enabled, and pops a
-// one-shot toast so you KNOW the auto-login went out (players kept asking "am I
-// logged in rn?"). The login lines themselves send paced — one at a time — via
-// queueOOCLines, so a two-step flow (Akashi) still answers its prompt in order.
+// autoLoginOnReady sends the saved login once per session when enabled, with a toast to confirm it.
 func (a *App) autoLoginOnReady() {
-	// Fire at most once per session ("try once and stop"). EventReady rides the
-	// DONE packet, which some servers re-send mid-session (the WAP/Akashi fork,
-	// area changes) — each one re-ran this and re-queued the login, spamming OOC.
-	// The latch clears on a fresh connection (resetSessionState), so a real
-	// reconnect logs in again; a manual loginNow is unaffected (it's not gated).
+	// At most once per session: some servers re-send DONE mid-session, which would re-queue the login. The flag clears
+	// on a fresh connection, so a real reconnect logs in again; a manual loginNow is unaffected.
 	if a.autoLoginTried {
 		return
 	}
@@ -242,17 +184,11 @@ func (a *App) autoLoginOnReady() {
 	if !info.AutoLogin || info.LoginUser == "" {
 		return
 	}
-	// Every family — stock Akashi and the WAP / witches-akashi-party fork
-	// (SoftwareWitches) included — auto-logs in once on join. The fire-once
-	// latch above already ran, so a re-sent DONE (the WAP/Akashi fork, area
-	// changes) won't re-queue the login; a manual loginNow stays available.
 	a.loginNow()
 	if !a.d.Prefs.Load().AutoLoginToast {
 		return // the mod opted out of the notification (Settings → General)
 	}
-	// One notification per join (autoLoginOnReady fires once at PhaseReady). The
-	// username confirms WHO you signed in as ("am I logged in rn?"), but
-	// streamer mode masks it like every other name.
+	// Streamer mode masks the username.
 	line := "Auto-logging in"
 	if !a.d.Prefs.Load().StreamerModeOn {
 		line += " as " + info.LoginUser
@@ -262,27 +198,23 @@ func (a *App) autoLoginOnReady() {
 	}
 	a.warnLine = clampLine(line)
 	a.warnAt = time.Now()
-	// A desktop notification too, so a minimized mod still sees it — rate-limited
-	// (shares the friend-toast throttle) so a multi-tab restore-on-launch can't
-	// burst the notification centre with one popup per reconnecting server.
+	// Shares the friend-toast throttle so a multi-tab restore can't burst one popup per reconnecting server.
 	if time.Since(a.lastOSToast) >= osToastMinInterval {
 		a.lastOSToast = time.Now()
 		showOSToast("AsyncAO — auto-login", line)
 	}
 }
 
-// Login panel geometry — the old modal's fixed block, kept as the floatWin default.
+// Login panel geometry.
 const (
 	loginPanelDefW = int32(460)
 	loginPanelDefH = int32(262)
-	// "Save & login" (130) + "Save" (90) at a 140 pitch, and "Cancel" (90) pinned to
-	// the right edge: the row needs pad+140+90 before Cancel's own 90+pad can start.
+	// The button row needs pad+140+90 before Cancel's own 90+pad can start.
 	loginPanelMinW = int32(360)
 	loginPanelMinH = int32(240) // flow line + both fields + the checkbox + the note + the button row
 )
 
-// loginPanelRect is the panel's screen rect, seeded from its persisted layout slot
-// on first open and clamped on-screen thereafter (the modcallPanelRect idiom).
+// loginPanelRect is the panel's rect, seeded from its saved layout on first open and clamped on-screen after.
 func (a *App) loginPanelRect(w, h int32) sdl.Rect {
 	if r, ok := a.seedPanelFromSlot(&a.loginWin, slotPanelLogin, loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, w, h); ok {
 		return r
@@ -290,13 +222,8 @@ func (a *App) loginPanelRect(w, h int32) sdl.Rect {
 	return a.loginWin.rect(loginPanelDefW, loginPanelDefH, loginPanelMinW, loginPanelMinH, w, h)
 }
 
-// drawLoginDialog edits this server's credentials (plaintext storage —
-// the dialog says so) and fires the flow.
-//
-// A non-blocking floatWin rather than a return-to-top modal (#31): typing a
-// username should not blank the courtroom behind it, and the flow-preview line
-// describes what the server will be sent — which is easier to trust while you can
-// still see the room you are sending it to.
+// drawLoginDialog edits this server's credentials (stored in plain text, as it says) and runs the flow.
+// A floatWin, not a modal, so the courtroom stays visible behind the flow preview.
 func (a *App) drawLoginDialog(w, h int32, pressed *bool) {
 	c := a.ctx
 	wasActive := a.loginWin.dragging || a.loginWin.resizing // detect the drag/resize-end frame for slot persistence
@@ -320,8 +247,6 @@ func (a *App) drawLoginDialog(w, h int32, pressed *bool) {
 	y := panel.Y + floatTitleH + 8
 	c.LabelClipped(panel.X+pad, y, panel.W-2*pad, a.serverName, ColText)
 	y += 20
-	// The dialog names the exact flow it will run for THIS server's
-	// software — the automation explains itself.
 	c.LabelClipped(panel.X+pad, y, panel.W-2*pad, a.loginFlowPreview(), ColAccent)
 	y += 22
 	userField := c.TextField
@@ -358,10 +283,7 @@ func (a *App) openLoginDialog() {
 	a.showLogin = true
 }
 
-// --- settings: macro editor --------------------------------------------------
-
-// macroLineSeparator splits the editor's one-field line entry ("|" is
-// vanishingly rare in OOC commands; documented in the placeholder).
+// macroLineSeparator splits the editor's one-field line entry; "|" is very rare in OOC commands.
 const macroLineSeparator = "|"
 
 // drawMacroSettings renders the macro list + editor. Returns the next y.
@@ -375,10 +297,8 @@ func (a *App) drawMacroSettings(y int32, w int32) int32 {
 
 	removeIdx := -1
 	for i, m := range macros {
-		// The CHORD, not m.Key: handleMacroKeys goes through bareBindKey (qol.go),
-		// so the chain fires on Alt+<key> and a row printing the bare letter would
-		// advertise a press that just types into the IC box. A list row has no
-		// capture of its own, hence armed=false.
+		// The chord, not m.Key: the chain fires on Alt+<key>, and a bare letter would advertise a press that just
+		// types.
 		key := bindChipLabel(m.Key, false, "", "—")
 		line := fmt.Sprintf("[%s] %s: %s", key, m.Name, strings.Join(m.Lines, " "+macroLineSeparator+" "))
 		c.LabelClipped(pad+12, y+3, a.formW-90, clampLine(line), ColTextDim)
@@ -417,16 +337,12 @@ func (a *App) drawMacroSettings(y int32, w int32) int32 {
 		}
 	}
 	y += 30
-	// The focus fence is gone: handleMacroKeys reads bareBindKey, and an Alt chord
-	// is never text, so the chain fires even mid-sentence in the IC box.
+	// An Alt chord is never text, so the chain fires even mid-sentence in the IC box.
 	c.Label(pad, y, "Sends go to OOC as your OOC name (or AsyncAO<n> when unset); the chain fires on "+bareBindChordPrefix+"<key>, even while you are typing.", ColTextDim)
 	return y + 24
 }
 
-// drawLoginSettings is the Settings section for the built-in login:
-// pick ANY known server (connected or not) and configure its account
-// ahead of time — the credentials wait in its per-server slot and fire
-// (auto or manual) the next time you join. Returns the next y.
+// drawLoginSettings configures any known server's login ahead of time and returns the next y.
 func (a *App) drawLoginSettings(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -466,7 +382,7 @@ func (a *App) drawLoginSettings(y, _ int32) int32 {
 	}
 	y += btnH + 8
 
-	// Load the picked server's saved slots once per pick.
+	// Load the picked server's saved login once per pick.
 	if !settings.loginLoaded {
 		info := a.d.Prefs.Load().ServerWarmInfoFor(settings.loginKey)
 		settings.loginUser, settings.loginPass, settings.loginAuto = info.LoginUser, info.LoginPass, info.AutoLogin
@@ -509,9 +425,7 @@ func (a *App) drawLoginSettings(y, _ int32) int32 {
 	return y + 28
 }
 
-// loginTargets lists the login picker's servers: the connected one
-// first, then every joinable lobby/favorite entry. Cached against the
-// (server count, active key) pair — WebSocketURL allocates per entry.
+// loginTargets lists the picker's servers, connected one first; cached because WebSocketURL allocates per entry.
 func (a *App) loginTargets() ([]string, []string) {
 	if settings.loginSrvCount == len(a.servers) && settings.loginSrvFor == a.serverKey && settings.loginNames != nil {
 		return settings.loginNames, settings.loginKeys
@@ -538,8 +452,7 @@ func (a *App) loginTargets() ([]string, []string) {
 	return names, keys
 }
 
-// syncLoginBuffers loads this server's saved credentials into the edit
-// buffers (connect time, so the settings boxes show the truth).
+// syncLoginBuffers loads this server's saved credentials into the edit buffers at connect time.
 func (a *App) syncLoginBuffers() {
 	info := a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey)
 	a.loginUser, a.loginPass, a.loginAuto = info.LoginUser, info.LoginPass, info.AutoLogin

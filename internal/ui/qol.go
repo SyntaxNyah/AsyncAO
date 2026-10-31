@@ -1,8 +1,7 @@
 package ui
 
-// Quality-of-life: configurable Ctrl-chord hotkeys, callword alerts, IC
-// log search/copy/export, screenshots, music stop. Render thread except
-// the explicitly off-thread file writes.
+// Quality-of-life: hotkeys, callword alerts, IC log search and export, screenshots, music stop.
+// Render thread except the explicitly off-thread file writes.
 
 import (
 	"fmt"
@@ -25,8 +24,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
-// Hotkey actions (persisted overrides in Prefs.Hotkeys; all fire on
-// Ctrl+<key>).
+// Hotkey actions, with persisted overrides in Prefs.Hotkeys; all fire on Ctrl+<key>.
 const (
 	hotkeyHoldIt      = "holdit"
 	hotkeyObjection   = "objection"
@@ -46,8 +44,7 @@ const (
 	hotkeyPinNote     = "pin_note"
 	hotkeyFriendHi    = "friend_toggle"
 	hotkeyExtras      = "extras"
-	// Per-menu shortcuts: jump straight to an Extras menu (a legacy AO2 theme has
-	// no button for these), skipping the Extras box if you know the key.
+	// Jump straight to an Extras menu, which a legacy AO2 theme has no button for.
 	hotkeyCharMenu      = "char_menu"
 	hotkeyWardrobe      = "wardrobe"
 	hotkeyJukebox       = "jukebox"
@@ -68,8 +65,7 @@ const (
 	hotkeyQuickConnect  = "quick_connect"  // dial the saved last server (works offline / in the lobby)
 	hotkeyFavEmotes     = "fav_emote_box"  // toggle the floating favourite-emotes box
 	hotkeyClipReplay    = "clip_replay"    // save the last window of conversation (instant replay)
-	// Viewer-FX toggles (#121+ roadmap). The Ctrl+letter space is full, so these default to the
-	// free symbol keys (and are rebindable in Settings → Controls like every hotkey).
+	// Viewer-FX toggles; the Ctrl+letter space is full, so these default to free symbol keys.
 	hotkeySpotlight  = "spotlight"   // toggle speaker spotlight (#121)
 	hotkeyIdleBreath = "idle_breath" // toggle idle breathing (#122)
 	hotkeyReflection = "reflection"  // toggle glass-floor reflection (#123)
@@ -79,11 +75,7 @@ const (
 	hotkeyModDash    = "mod_dash"    // open the CM / mod dashboard (#130)
 	hotkeyPalette    = "palette"     // command palette (#39) — fuzzy search every action + server command
 	hotkeySearchLog  = "search_log"  // focus the log find field (Ctrl+F, the standard find chord)
-	// Hide/show the two chrome bars from the keyboard. They were reachable only
-	// through the UI-chrome panel, which is itself a piece of chrome — so anything
-	// that covered it (or a layout that put it awkwardly) left no way back except
-	// the mouse. A key that does not depend on being able to click the thing it
-	// controls is the point.
+	// Hide or show the two chrome bars by key, as the UI-chrome panel that controls them can itself be covered.
 	hotkeyToggleMenuBar = "toggle_menu_bar"
 	hotkeyToggleToolbox = "toggle_toolbox"
 )
@@ -91,8 +83,7 @@ const (
 // volumeKeyStep is how much the master-volume hotkeys nudge per press (percent).
 const volumeKeyStep = 5
 
-// hotkeyDefs drives both dispatch and the Settings rows: id, label, and
-// the default key (per the original request: shouts on Ctrl+1..4).
+// hotkeyDefs drives both dispatch and the Settings rows: id, label and default key.
 var hotkeyDefs = []struct {
 	id, label, def string
 }{
@@ -114,7 +105,7 @@ var hotkeyDefs = []struct {
 	{hotkeyPinNote, "Pin hovered log line to notes", "n"},
 	{hotkeyFriendHi, "Toggle friend highlights", "u"},
 	{hotkeyExtras, "Open the Extras menu (AsyncAO features box)", "x"},
-	// Direct menu shortcuts (skip the Extras box). Common menus on Ctrl+5..0.
+	// Direct menu shortcuts on Ctrl+5..0.
 	{hotkeyCharMenu, "Menu: Characters", "5"},
 	{hotkeyWardrobe, "Menu: Wardrobe", "6"},
 	{hotkeyJukebox, "Menu: Jukebox", "7"},
@@ -123,14 +114,8 @@ var hotkeyDefs = []struct {
 	{hotkeyPairMenu, "Menu: Pairing", "0"},
 	{hotkeyModcall, "Menu: Call mod", "o"},
 	{hotkeyUIChrome, "Menu: UI chrome", "f4"},
-	// Edit Layout (FIX 2b): defaults to Ctrl+F2. Collision sweep — every Ctrl+letter
-	// (a–z), Ctrl+digit (0–9) and Ctrl+symbol (- = , . [ ] ; ' \ ` /) default is
-	// already taken by a row above; the clipboard/select-all chords (Ctrl+C/V/X/A,
-	// ui.go) and the editor undo/redo chords (Ctrl+Z/Y, qol.go editorUndoChord) claim
-	// the rest of the printable space. The function-key band is entirely unused as a
-	// Ctrl chord, so Ctrl+F2 is the only conflict-free default left. (Plain F2 is a
-	// user style-preset bind, but that reads c.keyPressed and is gated on !ctrlHeld —
-	// a different namespace from this Ctrl chord, so no clash.)
+	// Ctrl+F2: every Ctrl+letter, digit and symbol is taken by a row above or by the clipboard and editor undo chords.
+	// Plain F2 is a style-preset bind that requires !ctrlHeld, so it does not clash.
 	{hotkeyEditLayout, "Edit layout (open the live editor)", "f2"},
 	{hotkeySettings, "Menu: Settings", ","}, // Ctrl+, (prefs convention); NOT z — that's the layout-editor undo
 	{hotkeyRandomChar, "Random character", "r"},
@@ -152,13 +137,8 @@ var hotkeyDefs = []struct {
 	{hotkeyModDash, "Open the CM / mod dashboard", "/"},                    // Ctrl+/ — mnemonic for a slash-command panel
 	{hotkeyPalette, "Command palette (search every action)", "space"},      // Ctrl+Space — the one shortcut that finds the rest
 	{hotkeySearchLog, "Focus the log search (find)", "f"},                  // Ctrl+F: the standard find chord
-	// Chrome toggles. The FUNCTION-KEY band for the same reason Edit Layout uses
-	// it (see the sweep above): every Ctrl+letter, Ctrl+digit and Ctrl+symbol is
-	// already claimed by a row here or by the clipboard / editor-undo chords. UI
-	// chrome is Ctrl+F4 (freeing Ctrl+F for log search); the two bar toggles use
-	// f5/f6 rather than f3/f4 because the cheat sheet already lists PLAIN F1, F3
-	// and F8 as fixed keys, and a Ctrl+F3 next to a plain F3 reads as a mistake
-	// even though they are different namespaces. All rebindable like every row.
+	// Function keys, for the same reason as Edit Layout. The bar toggles use f5 and f6 rather than f3 and f4,
+	// because the cheat sheet lists plain F1, F3 and F8 as fixed, and Ctrl+F3 beside F3 reads as a mistake.
 	{hotkeyToggleMenuBar, "Show / hide the menu bar", "f5"},
 	{hotkeyToggleToolbox, "Show / hide the toolbox", "f6"},
 }
@@ -176,8 +156,7 @@ func (a *App) hotkeyFor(action string) string {
 	return ""
 }
 
-// toggleFXPref flips a bool viewer-FX pref via its setter and flashes a brief on/off toast —
-// the shared body of the FX toggle hotkeys (#121+), so every effect gets a hands-free keybind.
+// toggleFXPref flips a bool viewer-FX pref via its setter and shows a brief on/off toast.
 func (a *App) toggleFXPref(cur bool, set func(bool), label string) {
 	set(!cur)
 	a.warnLine = label + " off"
@@ -187,10 +166,8 @@ func (a *App) toggleFXPref(cur bool, set func(bool), label string) {
 	a.warnAt = time.Now()
 }
 
-// hotkeyConflictKeys returns the set of keys bound to more than one action. The
-// dispatch switch in handleHotkeys matches the first case for a key, so a clash
-// silently dead-ends the later action(s) — the Controls tab flags these keys so
-// a rebind collision is visible, not a mystery.
+// hotkeyConflictKeys returns keys bound to several actions; handleHotkeys matches only the first,
+// so the Controls tab flags them.
 func (a *App) hotkeyConflictKeys() map[string]bool {
 	count := make(map[string]int, len(hotkeyDefs))
 	for _, def := range hotkeyDefs {
@@ -207,8 +184,7 @@ func (a *App) hotkeyConflictKeys() map[string]bool {
 	return out
 }
 
-// refreshCharKeys re-reads this server's character keybinds into the
-// per-frame lookup caches (connect + bind edits only — never per frame).
+// refreshCharKeys re-reads this server's character keybinds into the lookup caches; only on connect and bind edits.
 func (a *App) refreshCharKeys() {
 	a.charKeys = a.d.Prefs.Load().CharKeyBinds(a.serverKey)
 	if len(a.charKeys) == 0 {
@@ -221,17 +197,11 @@ func (a *App) refreshCharKeys() {
 	}
 }
 
-// charKeyFor reports the key bound to a character on this server ("" =
-// none) — the wardrobe badge lookup.
+// charKeyFor reports the key bound to a character on this server; "" is none.
 func (a *App) charKeyFor(char string) string { return a.charKeysRev[char] }
 
-// pollCharBind completes an armed wardrobe key-capture: the next plain
-// keypress binds key → character on this server. Esc OR any mouse click cancels
-// it — an accidental arm used to trap you into pressing a key (you only had a
-// tiny per-cell "press..." cue and no obvious way out), so clicking anywhere now
-// dismisses it, the natural "oops, didn't mean to" gesture. The arming click
-// itself can't self-cancel: pollCharBind runs in the update phase BEFORE the
-// wardrobe arms bindingFor in the render phase, and c.clicked is a one-frame edge.
+// pollCharBind completes an armed wardrobe key-capture: the next plain keypress binds; Esc or any click cancels.
+// The arming click cannot self-cancel: this runs in the update phase, before the wardrobe arms bindingFor in render.
 func (a *App) pollCharBind() {
 	if a.bindingFor == "" {
 		return
@@ -251,30 +221,11 @@ func (a *App) pollCharBind() {
 	a.refreshCharKeys()
 }
 
-// bareBindKey is THE gate for every user-assignable "plain key" bind namespace —
-// character keys, showname keys, IC quick-phrases, jukebox keys, the emote number
-// row and the voice push-to-talk key. It returns the keycode those namespaces may
-// act on this frame, or 0.
-//
-// They used to fire on a BARE key, fenced only by "no text field is focused". The
-// Discord focus model (chatfocus.go) retires that fence: typing now claims the IC
-// input on the very first character, so a bare-key namespace either never fires
-// again or — worse — races the claim for the same letter. The user's order was to
-// remove the bare-letter space and move the survivors onto chords, so all six
-// namespaces moved together onto ALT+<key>, in this one function, rather than six
-// copies of a slightly different guard.
-//
-// ALT specifically: Ctrl is fully occupied (hotkeyDefs' collision sweep documents
-// that every Ctrl+letter, Ctrl+digit and Ctrl+symbol is already claimed), Shift is
-// text, and Alt was unused as a key chord — the layout editor's Alt+DRAG is a
-// mouse gesture in a different namespace.
-//
-// !ctrlHeld is load-bearing, not tidiness: AltGr on Windows reports as Ctrl+Alt
-// and produces real text, so a bare altHeld test would swallow every accented
-// character a European layout types into the IC box.
-//
-// The BIND-CAPTURE paths (bindingFor, jukeBindFor, …) deliberately keep reading
-// the plain key: you still press "m" to bind m — it simply fires as Alt+M.
+// bareBindKey returns the keycode the user-assignable key namespaces may act on this frame (Alt+<key>), or 0.
+// Typing claims the IC input on the first character (chatfocus.go), so these cannot fire on a bare letter.
+// Alt because Ctrl is fully claimed (hotkeyDefs) and Shift is text.
+// !ctrlHeld is required: AltGr on Windows reports as Ctrl+Alt and types real text, which altHeld alone would swallow.
+// The bind-capture paths keep reading the plain key: you press "m" to bind m, and it fires as Alt+M.
 func (a *App) bareBindKey() sdl.Keycode {
 	c := a.ctx
 	if c.keyPressed == 0 || !c.altHeld || c.ctrlHeld || a.capturingKey() {
@@ -283,9 +234,7 @@ func (a *App) bareBindKey() sdl.Keycode {
 	return c.keyPressed
 }
 
-// handleCharKeys wears a bound character on Alt+<bound key> (see bareBindKey for
-// why this namespace is no longer a bare letter). Focus is irrelevant now — an
-// Alt chord is never text — but a capture in flight still owns the key.
+// handleCharKeys wears a bound character on Alt+<bound key>; a capture in flight still owns the key.
 func (a *App) handleCharKeys() {
 	key := a.bareBindKey()
 	if key == 0 {
@@ -296,10 +245,7 @@ func (a *App) handleCharKeys() {
 	}
 }
 
-// handleEmoteKeys picks the emote in number-key position N on the CURRENT page
-// (Alt+1 … Alt+9 — the digits are plain text in the IC box now, see bareBindKey),
-// and only when the digit isn't a deliberate character keybind, the same fence
-// handleCharKeys has always had. Picking focuses the IC input, matching a click.
+// handleEmoteKeys picks the emote in number-key position N on Alt+1..9, unless the digit is a character keybind.
 func (a *App) handleEmoteKeys() {
 	if a.d.Prefs.Load().DisableAltEmoteRow {
 		return // the user removed the Alt+1..9 number row; the digits are plain text again
@@ -311,8 +257,7 @@ func (a *App) handleEmoteKeys() {
 	if a.charKeys[strings.ToLower(sdl.GetKeyName(key))] != "" {
 		return // a character keybind owns this digit
 	}
-	// Map the on-screen slot through the visible list (favs-only filters it),
-	// so the number keys pick exactly what that grid cell shows.
+	// Map through the visible list (favs-only filters it), so the keys pick what that grid cell shows.
 	a.refreshEmoteView()
 	slot := a.emoteFirstSlot() + int(key-sdl.K_1)
 	if slot >= 0 && slot < len(a.emoteVisible) {
@@ -320,45 +265,19 @@ func (a *App) handleEmoteKeys() {
 	}
 }
 
-// editorUndoChord routes Ctrl+Z / Ctrl+Y to the ARMED layout editor (classic
-// or themed) ahead of every other chord consumer. The editors' own in-draw
-// checks read c.keyPressed — which a Ctrl chord never reaches: HandleEvent
-// puts non-clipboard chords in c.hotkey and returns (#96 configurable
-// hotkeys), so editor undo was silently dead AND Ctrl+Y fell through to its
-// default bind ("Reshow hidden sprites") mid-edit. Consumes the chord whether
-// or not history exists, so a bound action can never fire while editing.
-//
-// TWO CALL SITES, one per claimant, and the split is not redundancy:
-//
-//   - handleHotkeys, inside the courtroom pass, for the two LEGACY overlay editors —
-//     they only exist while that pass runs, so their chord belongs where their pixels
-//     are;
-//   - App.Frame, pre-screen, gated on themeEditorOpen(), for the v1.90.0 theme
-//     EDITOR SCREEN. It has no courtroom pass to ride when it is opened from Settings
-//     with no server attached, which is the design's headline entry point — dispatching
-//     it only from the courtroom left Ctrl+Z dead in exactly that case.
+// editorUndoChord routes Ctrl+Z and Ctrl+Y to the armed layout editor ahead of other chords, since HandleEvent puts
+// them in c.hotkey where the editors' own c.keyPressed checks cannot see them. It consumes the chord regardless.
+// Two call sites: handleHotkeys for the overlay editors, which exist only during the courtroom pass, and App.Frame
+// for the theme editor screen, which has no courtroom pass when opened from Settings with no server.
 func (a *App) editorUndoChord() bool {
 	c := a.ctx
-	// The v1.90.0 theme editor is the THIRD claimant, and it is checked FIRST because
-	// it is the only one that owns a whole screen: the two legacy overlay editors are
-	// force-disarmed when it opens (openThemeEditor), so the arms below cannot be live
-	// at the same time — but a stale flag must not be able to steal the chord from the
-	// screen the user is actually looking at.
+	// The theme editor is checked first because it owns a whole screen; a stale overlay flag must not steal the chord.
 	if a.themeEditorOpen() {
 		if c.hotkey != sdl.K_z && c.hotkey != sdl.K_y {
 			return false
 		}
-		// Ctrl+SHIFT+Z IS REDO TOO (v1.90.0 W7b). Not a preference: it is the second
-		// spelling every editor on this platform answers to, and this client already
-		// spells it once — app.go's focused-field arm routes Ctrl+Shift+Z to
-		// c.redoReq for exactly the same reason. An editor that answered Ctrl+Z and
-		// Ctrl+Y but not Ctrl+Shift+Z would be the only surface in the app that does
-		// not, and the user finds out by losing the thing they just undid.
-		//
-		// The shift test rides c.shiftHeld rather than a second hotkey value because
-		// HandleEvent folds every non-clipboard Ctrl combination into ONE c.hotkey
-		// keysym and keeps the modifier flags beside it (#96) — there is no
-		// "Ctrl+Shift+Z" keysym to compare against.
+		// Ctrl+Shift+Z is redo too, as in app.go's focused-field path. HandleEvent folds every non-clipboard Ctrl
+		// combination into one c.hotkey keysym with modifier flags beside it, so the shift test reads c.shiftHeld.
 		if c.hotkey == sdl.K_z && !c.shiftHeld {
 			a.editorUndo()
 		} else {
@@ -387,31 +306,16 @@ func (a *App) editorUndoChord() bool {
 	return true
 }
 
-// (The old inputUndoChord one-slot IC/OOC swap is gone: text fields carry a
-// real undo history now — fieldhistory.go — fed by the same clears through
-// the out-of-band detector, and the Ctrl+Z/Y chords are consumed pre-screen
-// in App.Frame while any field is focused.)
-
-// handleHotkeys consumes this frame's Ctrl chord on the courtroom screen
-// (and dispatches macro keybinds, then character keybinds — macros win
-// a key conflict since they were bound deliberately).
+// handleHotkeys consumes this frame's Ctrl chord on the courtroom screen, then macro and character keybinds;
+// macros win a key conflict.
 func (a *App) handleHotkeys() {
 	if a.serverNoticeDlg.open {
-		// A BB notice can land while the courtroom is fully LIVE, so this one is not
-		// about a dead socket: it is that the box owns the frame, and a shout or a
-		// pos-cycle fired blind underneath it is an action the user did not see
-		// themselves take. Esc is answered earlier (closeTopOverlay), so the box is
-		// still dismissable from the keyboard.
+		// A BB notice owns the frame, so a chord must not fire blind beneath it; Esc is handled earlier.
 		return
 	}
 	if a.disconnectDlg.open {
-		// The courtroom is FROZEN under the involuntary-disconnect dialog: its
-		// scene still draws (so this runs, called from drawCourtroom), but the
-		// session's socket is gone. The pointer fence stops mouse actions, but
-		// keyboard chords aren't fenced — suppress them here so a shout / pos-cycle
-		// / login hotkey can't fire a send into the dead connection while the modal
-		// is up. Esc is handled earlier (closeTopOverlay → Back to lobby) and never
-		// reaches this dispatcher.
+		// The courtroom is frozen under the disconnect dialog with its socket gone, and keyboard chords are not blocked
+		// by the modal, so stop them here before they send into the dead connection. Esc is handled earlier.
 		return
 	}
 	if a.editorUndoChord() {
@@ -425,17 +329,13 @@ func (a *App) handleHotkeys() {
 	if key == 0 || a.sess == nil {
 		return
 	}
-	// Hotkeys are opt-in: every Ctrl+key chord below is OFF until the user ticks
-	// "Enable hotkeys" in Settings → Hotkeys. A fresh install fires none of them,
-	// so no surprise chord (shout, FX, menu) can happen by accident.
+	// Hotkeys are opt-in: no Ctrl chord below fires until "Enable hotkeys" is ticked.
 	if !a.d.Prefs.Load().HotkeysEnabled {
 		return
 	}
 	name := strings.ToLower(sdl.GetKeyName(key))
 	switch name {
-	// The four shout chords ARM the interjection, exactly like the buttons they
-	// stand in for (courtroom.cpp:6048-6127) — they do not send. Pressing the
-	// armed one again disarms it.
+	// The shout chords arm the interjection, like the buttons (courtroom.cpp:6048-6127); pressing again disarms.
 	case a.hotkeyFor(hotkeyHoldIt):
 		a.toggleShout(protocol.ShoutHoldIt)
 	case a.hotkeyFor(hotkeyObjection):
@@ -510,12 +410,8 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeyModcall):
 		a.showModcall = true
 	case a.hotkeyFor(hotkeyUIChrome):
-		// A1: open the pinned per-piece hide/show panel directly. This works even
-		// when panelHidden(panelToolbox) hides the grip — drawToolboxPieces gates
-		// ONLY on toolboxPinned && toolboxPieces, so the hotkey is the un-strand
-		// path for a user who hid the toolbox itself. From stage-only theater the
-		// hotkey exits it first (setTheater cleared these very flags on entry;
-		// re-arming them under theater would float the panel over the bare stage).
+		// Opens the per-piece panel even when the grip is hidden, so a user who hid the toolbox can recover it.
+		// Theater mode exits first: re-arming these flags under theater would float the panel over the bare stage.
 		if a.theaterOn {
 			a.setTheater(false)
 		}
@@ -525,9 +421,7 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeyToggleToolbox):
 		a.toggleChromePanel(panelToolbox, "Toolbox")
 	case a.hotkeyFor(hotkeyEditLayout):
-		// FIX 2b: keyboard un-strand path for the layout editor. openLayoutEditor
-		// picks classic vs themed itself — the same entry the toolbox Edit chip and
-		// the palette "Edit Layout" action use (openLayoutEditor / compactEditLayout).
+		// Keyboard way into the layout editor; openLayoutEditor picks classic or themed itself.
 		a.openLayoutEditor()
 	case a.hotkeyFor(hotkeySettings):
 		a.prevScreen = ScreenCourtroom
@@ -588,8 +482,7 @@ func (a *App) handleHotkeys() {
 	}
 }
 
-// toggleFavEmoteBox flips the floating favourite-emotes box (its rebindable key
-// + the Settings tick). A short toast confirms, and points at how to fill it.
+// toggleFavEmoteBox flips the floating favourite-emotes box; a short toast points at how to fill it.
 func (a *App) toggleFavEmoteBox() {
 	on := !a.d.Prefs.Load().FavEmoteBox
 	a.d.Prefs.Update(func(
@@ -611,11 +504,7 @@ func (a *App) toggleFavEmoteBox() {
 	a.warnAt = time.Now()
 }
 
-// quickSwapNext wears the next character in this server's wardrobe ring (the
-// starred set, in the same alphabetical order the wardrobe menu shows). It
-// advances from whatever's worn now — so the cycle stays intuitive even after
-// a manual pick — and wraps. Empty wardrobe = a hint, no swap. The wardrobe is
-// per server, so the ring is too.
+// quickSwapNext wears the next starred character on this server, from whatever is worn now, wrapping.
 func (a *App) quickSwapNext() {
 	ring, _, _ := mergeWardrobe(a.d.Prefs.Load().WardrobeList(a.serverKey), nil)
 	if len(ring) == 0 {
@@ -635,13 +524,8 @@ func (a *App) quickSwapNext() {
 	a.warnAt = time.Now()
 }
 
-// toggleSFXMute flips the SFX mute and re-applies volumes. The music/blip
-// channels are untouched; the saved SFX volume is preserved (mute is an
-// overlay, not a volume write). Session-only: NOT persisted, so an accidental
-// press can never leave SFX silently muted across a restart (the Ctrl+K trap —
-// the hotkey now defaults to Ctrl+{ and resetSessionState re-seeds sfxMuted
-// false every session). The volume strip's SFX cell shares this same in-memory
-// flag, so the hotkey and the strip still never disagree within a session.
+// toggleSFXMute flips the SFX mute and re-applies volumes; an overlay, not a volume write.
+// Session-only, so an accidental press cannot leave SFX muted across a restart.
 func (a *App) toggleSFXMute() {
 	a.sfxMuted = !a.sfxMuted
 	a.applyAudioVolumes()
@@ -652,11 +536,8 @@ func (a *App) toggleSFXMute() {
 	a.warnAt = time.Now()
 }
 
-// mutedChannelsBootNotice builds the NewApp boot banner naming which
-// persisted channel mutes just restored ("" when none did) — the
-// silent-launch fix: without it, a user who quit muted gets total silence on
-// the next launch with the volume strip that would explain why hidden by
-// default (VolStripOn OFF).
+// mutedChannelsBootNotice names the persisted channel mutes just restored ("" for none);
+// without it a user who quit muted gets silence, with the explaining volume strip hidden by default.
 func mutedChannelsBootNotice(master, music, sfx, blip bool) string {
 	var names []string
 	if master {
@@ -677,47 +558,28 @@ func mutedChannelsBootNotice(master, music, sfx, blip bool) string {
 	return "Audio is muted (" + strings.Join(names, ", ") + ") — click a label in the volume strip to unmute."
 }
 
-// duckMusicPercent is how loud music plays (as a % of its set volume) while a
-// message is on stage, when music ducking is on.
+// duckMusicPercent is how loud music plays, as a % of its set volume, while a message is on stage with ducking on.
 const duckMusicPercent = 35
 
-// applyAudioVolumes pushes the saved volumes to the audio system, applying the
-// session SFX mute (SFX → 0), message-on-stage music ducking (music →
-// duckMusicPercent), and the cross-tab music duck (music → 0) when active. Call it
-// wherever those states change so they're always honored. A nil Audio (headless
-// tests) is a no-op, so every caller can invoke it unconditionally.
+// applyAudioVolumes pushes saved volumes to the audio system, with SFX mute, message ducking and cross-tab duck.
+// Call it wherever those states change; a nil Audio is a no-op.
 func (a *App) applyAudioVolumes() {
 	if a.d.Audio == nil {
 		return
 	}
 	music, sfx, blip := a.d.Prefs.Load().AudioVolumes()
 	master := a.d.Prefs.Load().MasterVol
-	// Per-server audio (sandboxed tab sound): the ACTIVE server's override, when
-	// enabled, replaces the global mixer levels — so each tab carries its own volumes.
-	// ServerAudio falls back to the global per channel for any level this server never
-	// set, so a profile can't silently mute a channel (e.g. SFX) just by existing — only
-	// an explicit 0 mutes. Re-applied on courtroom entry + every tab switch (buildRoom).
+	// The active server's override, when enabled, replaces global levels; ServerAudio falls back per channel
+	// to the global, so only an explicit 0 mutes. Re-applied on courtroom entry and every tab switch.
 	if on, m, mu, s, b := a.d.Prefs.ServerAudio(a.serverKey); on {
 		master, music, sfx, blip = m, mu, s, b
 	}
-	// The single music stream may belong to a BACKGROUNDED owner tab (MusicAcrossTabs
-	// ON keeps its continuity song audible under a different active tab). The MUSIC
-	// channel must then be governed by the OWNER's per-server (master, music), not the
-	// active tab's — else an active tab whose per-server music (or master) is 0 would
-	// silence the owner's stream (the ARM-3 "toggle does nothing" path). sfx/blip/alert
-	// stay the active tab's (they belong to the active room). ServerAudio is a lock+read
-	// with no allocation, so the owner read (only taken when a distinct owner is set) is
-	// hot-path safe; ownerMusicInputs is the pure resolution (unit-pinnable like
-	// mixChannels). See musicOwnerKey.
+	// The single music stream may belong to a backgrounded owner tab, so the music channel follows the owner's levels,
+	// or an active tab with music at 0 would silence the owner's stream. See musicOwnerKey.
 	musicMaster, musicVol := a.ownerMusicInputs(master, music)
 	alert := a.d.Prefs.Load().AlertVol // callword/friend ping — independent of SFX, always global
-	// The music channel rides the OWNER's (master, music); sfx/blip/alert ride the ACTIVE
-	// tab's (master, sfx, blip). The per-channel mute/duck flags are App-level (the active
-	// user's) and apply to both. mixChannels is the pure per-channel mute/duck/master math
-	// (unchanged, still TestMixChannels-pinned): call it once per master domain and take
-	// only the channel that belongs to that domain from each result. When owner is unset or
-	// == the active tab, ownerMusicInputs returns the active (master, music) and the two
-	// calls are identical — behaviour is unchanged for the common single-tab case.
+	// Music rides the owner's levels and sfx, blip and alert the active tab's;
+	// call mixChannels once per master domain and take only that domain's channel from each result.
 	mMusic, _, _, _ := mixChannels(musicMaster, musicVol, sfx, blip, alert,
 		a.masterMuted, a.musicMuted, a.sfxMuted, a.blipMuted, a.musicDucked, a.musicTabDucked)
 	_, mSFX, mBlip, mAlert := mixChannels(master, music, sfx, blip, alert,
@@ -726,15 +588,8 @@ func (a *App) applyAudioVolumes() {
 	a.d.Audio.SetAlertVolume(mAlert)
 }
 
-// ownerMusicInputs resolves the (master, music) pair that governs the single music
-// stream — the pure, unit-pinnable half of the ARM-3 owner-volume rule. When the
-// stream belongs to a DIFFERENT tab than the active one (musicOwnerKey set and not the
-// active serverKey) and that owner has a per-server audio profile enabled, the music
-// channel follows the OWNER's (master, music); otherwise it stays the active tab's
-// (the common single-owner case, and the graceful fallback when the owner has no
-// profile). It reads ServerAudio only for a distinct owner, so the frame-common path
-// makes no extra prefs call. A method with no mixer dependency, so the volume math
-// stays testable without a device (the codebase's settleAwaitTimeout idiom).
+// ownerMusicInputs resolves the (master, music) governing the music stream: the owner's when it is another tab with
+// an audio profile, else the active tab's. It reads ServerAudio only for a distinct owner.
 func (a *App) ownerMusicInputs(activeMaster, activeMusic int) (master, music int) {
 	if a.musicOwnerKey == "" || a.musicOwnerKey == a.serverKey {
 		return activeMaster, activeMusic
@@ -745,15 +600,9 @@ func (a *App) ownerMusicInputs(activeMaster, activeMusic int) (master, music int
 	return activeMaster, activeMusic
 }
 
-// mixChannels applies the per-channel mutes (#10), the music duck, the cross-tab
-// music duck, and the master scale to the effective levels — pure (no audio engine),
-// so the mute/duck/scale math is unit-pinnable. Master mute zeroes EVERYTHING (it
-// scales all channels + the alert); a per-channel mute zeroes just that channel
-// without touching its stored slider level. tabDuck (cross-tab continuity) silences
-// music entirely — the single stream is kept alive under a BACKGROUNDED tab so its
-// position survives a switch, but stays inaudible so tabs are acoustically isolated;
-// it composes AFTER the mute/message-duck (it's a stronger, to-zero duck) and the
-// master scale of 0 is a harmless no-op.
+// mixChannels applies per-channel mutes, music duck, cross-tab duck and master scale to the effective levels.
+// Master mute zeroes everything; a channel mute leaves its stored level. tabDuck silences music after the other ducks,
+// keeping the stream alive under a backgrounded tab so its position survives a switch.
 func mixChannels(master, music, sfx, blip, alert int, masterMute, musicMute, sfxMute, blipMute, ducked, tabDuck bool) (mMusic, mSFX, mBlip, mAlert int) {
 	if masterMute {
 		master = 0
@@ -773,8 +622,7 @@ func mixChannels(master, music, sfx, blip, alert int, masterMute, musicMute, sfx
 	if tabDuck {
 		music = 0 // backgrounded tab's still-rolling stream: silent, but not stopped
 	}
-	// Master multiplier scales everything (composes over mute/duck) — the one
-	// "too loud / too quiet" knob.
+	// Master scales everything, over mute and duck.
 	if master != 100 {
 		music, sfx, blip = music*master/100, sfx*master/100, blip*master/100
 		alert = alert * master / 100
@@ -782,18 +630,10 @@ func mixChannels(master, music, sfx, blip, alert int, masterMute, musicMute, sfx
 	return music, sfx, blip, alert
 }
 
-// settleAwaitedMusic lifts the cross-tab music duck once the track the ACTIVE tab
-// requested is actually the one the single mixer stream is playing — the delivery-
-// time un-duck that fixes "a /play-ed track plays a DIFFERENT (foreign) song until
-// the new bytes arrive". It runs once per frame right AFTER a.d.Audio.Frame() drains
-// delivered audio (so startMusic has already swapped musicURL to any just-landed
-// track), in both the drawn (Frame) and background (Background) loops. Cost when
-// idle is two string reads and one compare, both empty in the common case — no
-// allocation, no lock, safe on the render hot path. nil Audio = nothing to poll.
+// settleAwaitedMusic lifts the cross-tab duck once the track the active tab requested is what the mixer is playing.
+// Runs once per frame right after a.d.Audio.Frame() drains delivered audio, in both the Frame and Background loops.
 func (a *App) settleAwaitedMusic() {
-	// Idle short-circuit: the overwhelmingly common per-frame case is "nothing
-	// awaited" — one field read, no Audio call, no allocation. Only when a track is
-	// actually pending do we poll the mixer's current URL.
+	// The usual case is nothing awaited: one field read, no Audio call.
 	if a.musicAwaitURL == "" || a.d.Audio == nil {
 		return
 	}
@@ -801,21 +641,8 @@ func (a *App) settleAwaitedMusic() {
 	if a.settleAwaitedDuck(cur) {
 		return // the awaited track landed — normal delivery-time un-duck
 	}
-	// The awaited track still isn't current. Every event-driven release (park,
-	// close, disconnect, stop, streaming-off, settle-on-match above) has already had
-	// its chance; the only way we're STILL here is the silent-failure case — a fetch
-	// that 404'd, decoded to an unsupported format, built a URL CurrentMusicURL will
-	// never equal, or simply stalled. None of those fire an event, so without a
-	// deadline the duck would hold the backgrounded stream silent forever with no way
-	// out (the "toggle does nothing / music never comes back" wedge). Past the
-	// timeout, release the await so we stop waiting — but HOW we release depends on
-	// what's actually loaded (settleAwaitTimeout decides): if a foreign stream is
-	// still rolling under the duck (the outgoing tab/server's track, which parkActive
-	// keeps alive and never stopped — per-server full-URL keys mean it can never equal
-	// the awaited URL), un-ducking would reveal the WRONG song. So heal to SILENCE
-	// (StopMusic) in that case, never onto the foreign track; only when nothing foreign
-	// is loaded (cur == "") do we simply lift the duck. The common fast path (bytes land
-	// in ~16 ms) settles via settleAwaitedDuck long before this ever trips.
+	// Only silent failures reach here (a 404, unsupported format, stall, or URL never equal to CurrentMusicURL),
+	// which fire no event, so without a deadline the duck would hold forever. See settleAwaitTimeout for the release.
 	switch a.settleAwaitTimeout(cur, a.now()) {
 	case awaitTimeoutStop:
 		a.d.Audio.StopMusic() // foreign stream loaded: silence it rather than reveal the wrong song
@@ -829,38 +656,21 @@ func (a *App) settleAwaitedMusic() {
 	}
 }
 
-// awaitTimeoutAction is settleAwaitTimeout's pure decision (see settleAwaitedMusic).
+// awaitTimeoutAction is settleAwaitTimeout's decision.
 type awaitTimeoutAction int
 
 const (
-	// awaitTimeoutNone: the deadline hasn't been reached yet — keep waiting (a
-	// slow-but-real download may still arrive).
+	// awaitTimeoutNone keeps waiting; a slow but real download may still arrive.
 	awaitTimeoutNone awaitTimeoutAction = iota
-	// awaitTimeoutUnduck: deadline reached, nothing foreign loaded — just lift the duck.
+	// awaitTimeoutUnduck: deadline reached, nothing foreign loaded, so lift the duck.
 	awaitTimeoutUnduck
-	// awaitTimeoutStop: deadline reached, a foreign stream is loaded — heal to silence
-	// rather than reveal the wrong song.
+	// awaitTimeoutStop: deadline reached, a foreign stream is loaded, so stop rather than reveal the wrong song.
 	awaitTimeoutStop
 )
 
-// settleAwaitTimeout is the pure, unit-pinnable decision for settleAwaitedMusic's
-// never-arrives branch (split from the Audio calls like settleAwaitedDuck / mixChannels
-// / resumeSeek). Given the mixer's current URL and the clock, it decides how to release
-// a wedged await once the deadline passes:
-//
-//   - deadline not yet reached (or no stamp): awaitTimeoutNone — a slow-but-real
-//     download may still arrive, keep the duck.
-//   - past the deadline, cur == "": awaitTimeoutUnduck — nothing foreign is loaded
-//     (the awaited fetch delivered nothing, or delivered bytes that failed to decode,
-//     which startMusic already stopped to silence). Just lift the duck; the stream is
-//     already quiet, so this can't reveal a wrong track.
-//   - past the deadline, cur != "" (and, by construction here, cur != musicAwaitURL —
-//     settleAwaitedDuck already returned for a match): awaitTimeoutStop. A FOREIGN
-//     stream (the previous tab/server's still-rolling, ducked track) is loaded. Lifting
-//     the duck would make that wrong song audible — the cross-server "wrong music after
-//     switching" bug — so heal to SILENCE instead (the caller's StopMusic also purges the
-//     still-pending fetch, so it won't land late over the silence). A WRONG audible track
-//     is worse than silence; that's the sanctioned tradeoff here.
+// settleAwaitTimeout decides how to release an await past its deadline, given the mixer's current URL.
+// cur != "" here is a foreign stream, since settleAwaitedDuck already returned on a match: a wrong audible track
+// is worse than silence, so stop it (StopMusic also purges the pending fetch, so it cannot land late).
 func (a *App) settleAwaitTimeout(cur string, now time.Time) awaitTimeoutAction {
 	if a.musicAwaitSince.IsZero() || now.Sub(a.musicAwaitSince) < musicAwaitTimeout {
 		return awaitTimeoutNone
@@ -871,31 +681,18 @@ func (a *App) settleAwaitTimeout(cur string, now time.Time) awaitTimeoutAction {
 	return awaitTimeoutStop
 }
 
-// clearMusicAwait drops the cross-tab await latch and its timeout stamp together
-// (they're always cleared as a pair — an await with no stamp can never time out, a
-// stamp with no await is dead weight). The duck flag is cleared separately by callers
-// because some (streaming-off, disconnect) also stop the stream in the same breath.
+// clearMusicAwait drops the await and its timeout stamp as a pair; callers clear the duck flag separately,
+// because some also stop the stream at that point.
 func (a *App) clearMusicAwait() {
 	a.musicAwaitURL = ""
 	a.musicAwaitSince = time.Time{}
 }
 
-// musicAwaitTimeout bounds how long the cross-tab music duck may wait for an
-// awaited track to become current before releasing anyway. A normal delivery
-// settles in well under a second (the bytes land, startMusic swaps the mixer's
-// current URL, settleAwaitedMusic un-ducks the next frame). This deadline exists
-// ONLY for the silent-failure paths that fire no event — a 404, an unsupported
-// format, a resolver URL that never equals CurrentMusicURL, or a stalled fetch —
-// where the awaited track would otherwise never arrive and the stream would stay
-// inaudible forever. Ten seconds is generous enough to never clip a slow-but-real
-// download yet short enough that a wedged stream self-heals promptly.
+// musicAwaitTimeout bounds how long the cross-tab duck waits for a track, for silent failures that fire no event;
+// long enough not to clip a slow download.
 const musicAwaitTimeout = 10 * time.Second
 
-// settleAwaitedDuck is the pure decision for settleAwaitedMusic (unit-pinnable like
-// mixChannels): if a track is awaited and the mixer is now playing exactly it, clear
-// the tab-duck + the await and re-apply volumes so it becomes audible. Reports
-// whether it un-ducked (the applyAudioVolumes side effect happens here so callers
-// don't have to). A "" await is the idle no-op.
+// settleAwaitedDuck clears the tab duck and await and re-applies volumes if the mixer now plays the awaited track.
 func (a *App) settleAwaitedDuck(cur string) bool {
 	if a.musicAwaitURL == "" || cur != a.musicAwaitURL {
 		return false // nothing awaited, or the awaited track hasn't landed yet — keep the duck
@@ -907,8 +704,7 @@ func (a *App) settleAwaitedDuck(cur string) bool {
 	return true
 }
 
-// effectiveVolumes reads the volumes that apply right now: the active server's own
-// per-server profile if it has one, else the global defaults.
+// effectiveVolumes reads the active server's per-server profile if it has one, else the global defaults.
 func (a *App) effectiveVolumes() (master, music, sfx, blip int) {
 	master = a.d.Prefs.Load().MasterVol
 	music, sfx, blip = a.d.Prefs.Load().AudioVolumes()
@@ -920,9 +716,7 @@ func (a *App) effectiveVolumes() (master, music, sfx, blip int) {
 	return
 }
 
-// setEffectiveVolumes writes a volume change to the active server's OWN profile
-// when connected — so muting blips on one server leaves another untouched (each
-// tab keeps its own) — else to the global defaults. Applies it live.
+// setEffectiveVolumes writes to the active server's own profile when connected, else the global defaults; applies live.
 func (a *App) setEffectiveVolumes(master, music, sfx, blip int) {
 	if a.serverKey != "" {
 		a.d.Prefs.SetServerAudioVolumes(a.serverKey, master, music, sfx, blip)
@@ -943,9 +737,7 @@ func (a *App) setEffectiveVolumes(master, music, sfx, blip int) {
 	a.applyAudioVolumes()
 }
 
-// nudgeMasterVolume steps the master volume from the keyboard (Ctrl+-/Ctrl+=),
-// clamps it, applies it, and toasts the new level. Master scales every channel,
-// so this is the quick "turn it down/up" without reaching for a slider.
+// nudgeMasterVolume steps the master volume from the keyboard, clamps it, applies it and toasts the level.
 func (a *App) nudgeMasterVolume(delta int) {
 	v := value.Clamp(a.d.Prefs.Load().MasterVol+delta, 0, 100)
 	a.d.Prefs.Update(func(
@@ -964,13 +756,6 @@ func (a *App) nudgeMasterVolume(delta int) {
 	a.warnAt = a.now()
 }
 
-// drawHotkeyCheatSheet overlays every binding (F1 or the Extras "Hotkeys" entry
-// opens it). It lists the configurable Ctrl-chord actions resolved to the user's
-// keys AND their own custom bindings — macros, character keys, showname keys —
-// with section headers, in two columns so a long list fits the window. Your own
-// bindings (a remapped action or anything you created) show their key in gold so
-// they stand out from the defaults. Rows are cached per open (hkCache); drawing
-// only happens while open, so it costs nothing closed.
 const (
 	hkRowH      = int32(20)
 	hkKeyGap    = int32(116) // label x-offset (the key column width)
@@ -979,14 +764,12 @@ const (
 	hkSheetMinH = int32(160)
 )
 
-// hkSheetRect is the hotkey cheat sheet's floating-window rect (floatwin.go):
-// movable + resizable, default-sized to fit its two columns of shortcuts.
+// hkSheetRect is the hotkey cheat sheet's movable, resizable floating-window rect, default-sized for its shortcuts.
 func (a *App) hkSheetRect(w, h int32) sdl.Rect {
 	if a.hkCache == nil {
 		a.hkCache = a.hotkeyCheatEntries()
 	}
-	// Default tall enough to show a good chunk; the list scrolls, so the exact fit
-	// doesn't matter and resizing smaller never drops rows.
+	// The list scrolls, so the exact fit does not matter and shrinking never drops rows.
 	defH := int32(len(a.hkCache))*hkRowH + floatTitleH + 14
 	if defH > 540 {
 		defH = 540
@@ -997,13 +780,8 @@ func (a *App) hkSheetRect(w, h int32) sdl.Rect {
 	return a.hkWin.rect(hkSheetDefW, defH, hkSheetMinW, hkSheetMinH, w, h)
 }
 
-// hkSheetFencesPointer reports whether the SCREEN pass should run pointer-blind
-// because the floating hotkey sheet owns the cursor: open and hovered, or its
-// drag/resize is in flight (a fast drag must not leak presses underneath —
-// the boxFencesPointer rule). The courtroom pass already fences the sheet via
-// boxFencesPointer; this extends the same discipline to every OTHER screen
-// (lobby / settings / char-select / menus), where the sheet previously let
-// the wheel, hover and drags fall straight through to the list below it.
+// hkSheetFencesPointer reports whether the screen pass should ignore the pointer because the sheet owns it: open and
+// hovered, or mid drag or resize, so a fast drag cannot leak presses beneath. boxFencesPointer covers the courtroom.
 func (a *App) hkSheetFencesPointer(w, h int32) bool {
 	if !a.showHotkeys {
 		return false
@@ -1012,8 +790,7 @@ func (a *App) hkSheetFencesPointer(w, h int32) bool {
 		pointIn(a.ctx.mouseX, a.ctx.mouseY, a.hkSheetRect(w, h))
 }
 
-// drawHotkeyCheatSheet is now a movable/resizable, non-blocking floating box —
-// drag the title to park it out of the way and keep it open while you play.
+// drawHotkeyCheatSheet overlays every binding in a movable, resizable floating box; rows are cached per open.
 func (a *App) drawHotkeyCheatSheet(w, h int32) {
 	c := a.ctx
 	if a.hkCache == nil { // opened without openHotkeyCheatSheet (defensive)
@@ -1033,8 +810,7 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 		return
 	}
 	c.Label(r.X+r.W-150, r.Y+10, "F1 to close", ColTextDim)
-	// The sheet does its own capture, so a rebind started HERE completes here —
-	// without this the row would sit on "press a key…" until Settings was opened.
+	// The sheet does its own capture, or a rebind started here would wait until Settings opened.
 	a.consumeHotkeyCapture()
 	wasManip := a.hkWin.dragging || a.hkWin.resizing
 	a.floatWinDrag(&a.hkWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 160, H: floatTitleH}, &pressed)
@@ -1048,8 +824,7 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 		c.clicked = false // a finished drag/resize isn't a click underneath
 	}
 
-	// Scrollable single-column list: resizing smaller never drops rows now, and each
-	// label gets the full window width instead of being cut off at a fixed column.
+	// Single-column and scrollable: shrinking never drops rows, and each label gets the full window width.
 	body := sdl.Rect{X: r.X, Y: r.Y + floatTitleH + 2, W: r.W, H: r.Y + r.H - 4 - (r.Y + floatTitleH + 2)}
 	if body.H < hkRowH {
 		return
@@ -1074,13 +849,7 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 				if e.custom {
 					keyCol = ColStar // a binding you remapped or created
 				}
-				// A row that names an action is REBINDABLE right here. The sheet is
-				// where people actually go to find out what a key does, so it is also
-				// where they want to change it — sending them to Settings to act on
-				// what they are already looking at is the long way round.
-				//
-				// Same capture the Settings rows arm (a.hkCapture), so there is one
-				// rebinding path and not two that can disagree.
+				// A row naming an action is rebindable here, through the same a.hkCapture as the Settings rows.
 				row := sdl.Rect{X: x, Y: y, W: labelW + hkKeyGap, H: hkRowH}
 				if e.action != "" {
 					if c.hovering(row) {
@@ -1113,12 +882,9 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 	}
 }
 
-// theaterHint is the only chrome theater mode draws.
 const theaterHint = "Esc exits theater"
 
-// drawTheater is the borderless viewport-only courtroom: the stage
-// letterboxed to AO's 4:3 in a black surround, the chat overlay (it IS
-// the show), hotkeys, and nothing else. Esc or the theater hotkey exits.
+// drawTheater is the borderless viewport-only courtroom: the stage letterboxed to 4:3, chat overlay and hotkeys.
 func (a *App) drawTheater(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{A: 255})
@@ -1158,13 +924,9 @@ func (a *App) cyclePos() {
 	a.applySide(next) // also /pos the server so the cycle moves you instantly
 }
 
-// stopMusic stops the music. It HALTS OUR playback immediately, then also asks
-// the server to stop the area music (AO has no stop packet, so AO2-Client
-// requests a fake track: "~stop.mp3", or the first extension-less list entry a
-// server recognizes — courtroom.cpp music_stop). The local halt is what makes
-// the button reliable: the server-side request often fails (the server may not
-// have the fake track), and a listener should be able to silence music in their
-// own client regardless of DJ rights.
+// stopMusic halts our playback, then asks the server to stop the area music: AO has no stop packet, so AO2-Client
+// requests a fake track, "~stop.mp3" or the first extension-less list entry (courtroom.cpp music_stop).
+// The local halt is what makes this reliable, as the server request often fails.
 func (a *App) stopMusic() {
 	a.d.Audio.StopMusic()
 	a.musicTabDucked = false        // stream stopped: a later track must start audible (invariant: stopped ⇒ not ducked)
@@ -1204,11 +966,7 @@ func (a *App) jumpLogs() {
 	a.icStick, a.oocStick = true, true // jumping to newest re-arms follow
 }
 
-// --- callwords ----------------------------------------------------------------------
-
-// loginCallwordGrace is how long after a login flow we suppress callword alerts,
-// covering the paced login lines plus the server's (name-echoing) confirmation.
-// Short on purpose: a genuine callword a few seconds after join still pings.
+// loginCallwordGrace is how long after a login flow callword alerts are suppressed; short, so a real one still pings.
 const loginCallwordGrace = 5 * time.Second
 
 // inLoginGrace reports whether we're inside the post-login callword grace window.
@@ -1216,40 +974,26 @@ func (a *App) inLoginGrace() bool {
 	return !a.loginAt.IsZero() && a.now().Sub(a.loginAt) < loginCallwordGrace
 }
 
-// checkCallwords flashes + pings when a configured highlight word appears
-// in IC/OOC traffic (AO2-Client callwords: get_court_sfx("word_call")).
-// Streamer mode suppresses both — an on-stream name ping is exactly the
-// leak the toggle exists to prevent.
+// checkCallwords flashes and pings when a highlight word appears in IC or OOC traffic (AO2-Client's word_call sfx).
+// Streamer mode suppresses both, to prevent an on-stream name leak.
 func (a *App) checkCallwords(text string, selfNames []string, mine bool) {
 	if a.d.Prefs.Load().StreamerModeOn || a.dndOn {
 		return
 	}
-	// Brief grace after a login flow: the server's login replies (and the Akashi
-	// prompt) routinely echo your handle/name, which would self-ping the instant
-	// you join. The window is short so a real callword seconds later still alerts.
+	// Login replies routinely echo your handle, which would self-ping the instant you join.
 	if a.inLoginGrace() || text == "" {
 		return
 	}
 	lower := strings.ToLower(text)
-	// Configured highlight words match as WHOLE WORDS by default (reusing the
-	// #203 containsWord matcher), so "tif" fires on "hi tif" but not on "motif"
-	// / "artifact" — the old raw-substring match self-pinged on any three-letter
-	// coincidence. A trailing '*' is an opt-in loose escape hatch: "obj*" matches
-	// at a WORD START without a word-end boundary, so it still catches
-	// "objection" / "objecting" (the deliberately-loose shorthand the raw match
-	// used to give for free) while "tif*" still won't hit "motif" — "tif" isn't a
-	// word start there. See callwordHit / containsWordPrefix below.
+	// Words match whole ("tif" misses "motif"); a trailing '*' matches a word start ("obj*" hits "objection").
 	for _, w := range a.d.Prefs.Load().CallWords() {
 		if callwordHit(lower, w) {
 			a.callwordAlert("AsyncAO — callword", "Heard your callword: "+w)
 			return
 		}
 	}
-	// #203 name mentions: your own showname / character name, matched as a WHOLE
-	// word (so "Max" doesn't fire on "maximum") and NEVER on your own message —
-	// the server echoes your IC back and RP lines routinely contain your name.
-	// The names are session-scoped: the caller passes THIS message's session's
-	// identity, so multi-server play pings the right name per tab.
+	// Your own names match as whole words and never on your own message, which the server echoes.
+	// The caller passes this message's session identity, so multi-server play pings the right name per tab.
 	if mine || !a.d.Prefs.Load().MentionSelf {
 		return
 	}
@@ -1265,11 +1009,8 @@ func (a *App) checkCallwords(text string, selfNames []string, mine bool) {
 	}
 }
 
-// callwordAlert fires the shared personal-alert side effects — a sound (custom
-// if set, else the built-in ping; NOT the theme's word_call, which a theme may
-// name without shipping a loadable file, silently killing the alert), an optional
-// in-app toast, an optional rate-limited desktop toast while tabbed away, and a
-// window flash. Streamer / DND / login-grace are gated by the caller before here.
+// callwordAlert fires the personal alert: sound, toasts and window flash; the caller checks streamer, DND and grace.
+// Not the theme's word_call: a theme may name it without shipping a loadable file, silently killing the alert.
 func (a *App) callwordAlert(osTitle, body string) {
 	if f := a.d.Prefs.Load().CallwordSoundFile; f != "" {
 		a.d.Audio.PlayFile(f)
@@ -1287,15 +1028,10 @@ func (a *App) callwordAlert(osTitle, body string) {
 	a.ctx.FlashWindow()
 }
 
-// mentionMinRunes is the shortest self-name that triggers a #203 mention alert:
-// a 1-rune name, even as a whole word, matches far too much ordinary chat.
+// mentionMinRunes is the shortest self-name that alerts: a 1-rune name matches too much ordinary chat.
 const mentionMinRunes = 2
 
-// containsWord reports whether needle occurs in haystack as a whole word — not
-// flanked by a letter or digit on either side (so "max" matches "hi max" and
-// "max!" but not "maximum"). Both args must already be lowercased. Alloc-free
-// and Unicode-safe: it scans with strings.Index and checks the rune on each
-// side, so accented names work and there are no byte-boundary false splits.
+// containsWord reports whether needle occurs in haystack as a whole word; both must already be lowercased.
 func containsWord(haystack, needle string) bool {
 	if needle == "" {
 		return false
@@ -1314,9 +1050,7 @@ func containsWord(haystack, needle string) bool {
 	return false
 }
 
-// wordBoundary reports whether byte offset i in s is a word edge: the start/end
-// of the string, or a spot where the adjacent rune isn't a letter/digit. Used on
-// both ends of a candidate match by containsWord.
+// wordBoundary reports whether byte offset i in s is a word edge: string start or end, or a non-letter, non-digit rune.
 func wordBoundary(s string, i int) bool {
 	if i <= 0 || i >= len(s) {
 		return true
@@ -1326,18 +1060,11 @@ func wordBoundary(s string, i int) bool {
 	return !isWordRune(before) || !isWordRune(after)
 }
 
-// isWordRune classifies letters and digits as "inside a word" for the mention
-// boundary test (Unicode-aware, so accented / non-Latin names work).
+// isWordRune classifies letters and digits as inside a word, Unicode-aware.
 func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
 
-// callwordHit reports whether a single configured callword fires in lower (which
-// must already be lowercased). A bare word matches as a WHOLE word (containsWord)
-// so it can't self-ping on a coincidental substring. A trailing '*' opts into a
-// looser prefix match (containsWordPrefix): the stem must begin a word but need
-// not end one, so "obj*" catches "objection". A lone "*" (empty stem) never
-// matches — it would otherwise fire on every message, defeating the whole point.
-// Extracted from checkCallwords so the pure matching logic is unit-testable
-// without the SDL/audio side effects of callwordAlert.
+// callwordHit reports whether one callword fires in lower, which must be lowercased: whole word, or prefix with a
+// trailing '*'. A lone "*" never matches, as it would fire on every message.
 func callwordHit(lower, word string) bool {
 	if stem, ok := strings.CutSuffix(word, "*"); ok {
 		return stem != "" && containsWordPrefix(lower, stem)
@@ -1345,15 +1072,8 @@ func callwordHit(lower, word string) bool {
 	return containsWord(lower, word)
 }
 
-// containsWordPrefix reports whether needle occurs in haystack at a WORD START —
-// bounded by a non-word rune (or the string start) on its left, with NO
-// constraint on its right. So "obj" matches "objection" and "obj!" but not
-// "an obj-ish thing" spelled "kobj" (interior) — the classic prefix/shorthand
-// rule. Both args must already be lowercased. Like containsWord it's alloc-free
-// and Unicode-safe (scans with strings.Index, checks the rune to the left) and
-// keeps scanning past a rejected interior hit so a later true word-start match
-// still lands (e.g. "tif" in "motif tiffany" rejects at "motif", accepts at
-// "tiffany").
+// containsWordPrefix reports whether needle occurs at a word start, with no constraint on its right; lowercased inputs.
+// It keeps scanning past an interior hit, so "tif" in "motif tiffany" still matches.
 func containsWordPrefix(haystack, needle string) bool {
 	if needle == "" {
 		return false
@@ -1372,22 +1092,17 @@ func containsWordPrefix(haystack, needle string) bool {
 	return false
 }
 
-// mentionNames returns the names that count as "you" in the ACTIVE session for
-// #203 mention alerts: your effective showname (override or saved) and your
-// selected character. checkCallwords drops the blank / too-short ones.
+// mentionNames returns the names that count as you in the active session: effective showname and selected character.
 func (a *App) mentionNames() []string {
 	return []string{a.effectiveShowname(), a.myCharName()}
 }
 
-// mentionNamesFor returns the mention names for a BACKGROUND session tab: its
-// selected character (session-scoped, so multi-server play pings the right name)
-// and your saved showname — a parked tab can't carry the live showname override.
+// mentionNamesFor returns a background tab's names: its character and saved showname, as a parked tab has no override.
 func (a *App) mentionNamesFor(s *sessionState) []string {
 	return []string{sessionCharName(s), a.d.Prefs.Load().Showname}
 }
 
-// sessionCharName is the character a session is playing (its wire identity), or
-// "" if none is selected yet.
+// sessionCharName is the character a session is playing, or "" if none is selected.
 func sessionCharName(s *sessionState) string {
 	if s.sess == nil || s.sess.MyCharID < 0 || s.sess.MyCharID >= len(s.sess.Chars) {
 		return ""
@@ -1395,8 +1110,7 @@ func sessionCharName(s *sessionState) string {
 	return s.sess.Chars[s.sess.MyCharID].Name
 }
 
-// isSelfName reports whether name is (case-insensitively) one of selfNames — the
-// #203 self-ping guard, so your own echoed IC/OOC never alerts you by name.
+// isSelfName reports whether name is, case-insensitively, one of selfNames, so your own echoed lines never alert you.
 func isSelfName(name string, selfNames []string) bool {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -1410,12 +1124,8 @@ func isSelfName(name string, selfNames []string) bool {
 	return false
 }
 
-// --- screenshots ----------------------------------------------------------------------
-
-// captureScreenshot reads the back buffer (render thread — required for
-// ReadPixels) and writes a PNG off-thread next to the exe under screenshots\
-// (§17.2: file I/O never blocks the render thread). PNG over BMP: ~10× smaller
-// and it previews inline everywhere (Discord, etc.) — the point is to share it.
+// captureScreenshot reads the back buffer, which ReadPixels requires on the render thread, and writes a PNG off-thread
+// next to the exe under screenshots\ (hard rule 2).
 func (a *App) captureScreenshot() {
 	w, h, err := a.ctx.Ren.GetOutputSize()
 	if err != nil {
@@ -1437,8 +1147,7 @@ func (a *App) captureScreenshot() {
 	pitch := int(surf.Pitch)
 	go func() {
 		defer surf.Free()
-		// Copy the surface bytes into Go memory so the encode is decoupled from
-		// the SDL surface's lifetime (ABGR8888 == image.RGBA byte order).
+		// Copy into Go memory so the encode outlives the surface (ABGR8888 == image.RGBA byte order).
 		pix := make([]byte, len(surf.Pixels()))
 		copy(pix, surf.Pixels())
 		root, err := exeDataDir()
@@ -1456,9 +1165,7 @@ func (a *App) captureScreenshot() {
 	a.pushDebug("screenshot saved: " + rel)
 }
 
-// writeScreenshotPNG encodes ABGR8888 back-buffer bytes (already in image.RGBA
-// byte order) as a PNG at path. Pure + off the render thread; pitch is the row
-// stride (≥ w*4, may carry alignment padding).
+// writeScreenshotPNG encodes ABGR8888 back-buffer bytes as a PNG at path; pitch is the row stride (>= w*4).
 func writeScreenshotPNG(path string, pix []byte, w, h, pitch int) error {
 	img := &image.RGBA{Pix: pix, Stride: pitch, Rect: image.Rect(0, 0, w, h)}
 	f, err := os.Create(path)
@@ -1472,15 +1179,10 @@ func writeScreenshotPNG(path string, pix []byte, w, h, pitch int) error {
 	return f.Close()
 }
 
-// --- streamer mode ----------------------------------------------------------------------
-
-// streamerIPRe matches IPv4-looking tokens (modcall broadcasts on some
-// servers embed caller IPs).
+// streamerIPRe matches IPv4-looking tokens, which modcall broadcasts on some servers embed.
 var streamerIPRe = regexp.MustCompile(`\b\d{1,3}(?:\.\d{1,3}){3}\b`)
 
-// streamerMaskLine redacts one OOC display line: the sender prefix
-// becomes ???, IP-like tokens block out. Display-time only — the raw log
-// is untouched, so switching the mode off restores everything.
+// streamerMaskLine redacts one OOC display line: the sender becomes ???, IP-like tokens block out; the raw log is kept.
 func streamerMaskLine(line string) string {
 	if name, rest, found := strings.Cut(line, ": "); found && len(name) <= streamerNameMax {
 		line = "???: " + rest
@@ -1489,44 +1191,18 @@ func streamerMaskLine(line string) string {
 	return streamerIPRe.ReplaceAllString(line, "█.█.█.█")
 }
 
-// streamerNameMax bounds what counts as a "name:" prefix — a colon deep
-// inside a sentence is message text, not a sender.
+// streamerNameMax bounds a "name:" prefix: a colon deep in a sentence is message text, not a sender.
 const streamerNameMax = 32
 
-// --- OOC wrapping ----------------------------------------------------------------------
-
-// oocWrapMinCharsPerRow is the CONSERVATIVE floor for how many characters a
-// wrapped display row can hold at any real column width (≥100 px ≈ 11+ chars
-// even in a large font). It only exists to derive the per-entry row budget
-// below; the true chars/row is always far higher, so the budget can never cut
-// legitimate content.
+// oocWrapMinCharsPerRow is the conservative floor for characters per row, used only to derive the row budget below.
 const oocWrapMinCharsPerRow = 4
 
-// oocWrapMaxLinesPerEntry bounds ONE oocLog entry's total wrapped display rows
-// (across all its \n paragraphs) — a hostile MOTD cannot balloon the list, and
-// it therefore also bounds the link spans an entry can register (a link adds at
-// most one span per row it touches). It's DERIVED from the
-// stored cap so a legitimate entry can never be clipped: an entry is at most
-// oocLineCap (16384) bytes, and at the conservative floor of oocWrapMinCharsPerRow
-// chars/row that is 16384/4 = 4096 rows — well past the ~1500 rows a full 16 KiB
-// entry actually needs at any real width, so real /help and MOTD texts wrap
-// whole. The budget's marker (a trailing "…" row) is therefore only reachable
-// under a synthetic width that forces fewer than oocWrapMinCharsPerRow per row;
-// today's silent loss past 24 rows was the bug being fixed.
+// oocWrapMaxLinesPerEntry bounds one entry's wrapped rows, and so its link spans, against a hostile MOTD.
+// Derived from oocLineCap so a legitimate entry is never clipped; the "…" marker needs a synthetic width.
 const oocWrapMaxLinesPerEntry = oocLineCap / oocWrapMinCharsPerRow
 
-// oocLinkSpan is ONE clickable link region on ONE wrapped OOC display row: the
-// byte range the link occupies inside that row's DISPLAYED text, the pixel range
-// it covers (measured at wrap time in the very face the row draws in), and the
-// URL to open.
-//
-// #38: the old model was one URL string per row — a paragraph's FIRST link, on
-// every one of its rows. That made the hover tint swallow the whole message and
-// left every link after the first unclickable ("only 1 link outta this link dump
-// being clickable"). Spans replace it: each link in a paragraph gets its own id,
-// and a link the wrap HARD-SPLIT across rows contributes one span per row all
-// sharing that id — so the highlight still covers the whole link (the deliberate
-// earlier fix) while stopping at its edges.
+// oocLinkSpan is one clickable link on one wrapped OOC row: its byte range in the displayed text, pixel range and URL.
+// A link the wrap hard-split contributes one span per row sharing an id, so the highlight covers the whole link.
 type oocLinkSpan struct {
 	row    int32  // display-row index into a.oocWrap
 	lo, hi int32  // byte range inside a.oocWrap[row] (the drawn text)
@@ -1535,26 +1211,11 @@ type oocLinkSpan struct {
 	url    string // what a click opens — read from the UNMASKED paragraph (streamer mode masks display only)
 }
 
-// oocLinksPerParagraphMax bounds how many links ONE paragraph (one line of one
-// OOC entry) registers as clickable. A real link dump puts one URL per line, so
-// this is already far past anything legitimate; it exists so a hostile MOTD line
-// of thousands of "www.x.y" tokens cannot grow the span table without bound
-// (hard rule 4). Links past the cap still DISPLAY — they just aren't clickable.
-// Total spans stay bounded too: a link adds one span per row it touches, so a
-// paragraph contributes at most (links + its row count) spans.
+// oocLinksPerParagraphMax bounds the clickable links of one paragraph (hard rule 4); links past it still display.
 const oocLinksPerParagraphMax = 64
 
-// appendLinkSpans records the clickable link regions of ONE wrapped paragraph.
-//
-// rows are the display rows the wrap just produced for it, already appended to
-// the wrap at index rowBase. raw is the paragraph as it ARRIVED; masked is what
-// is actually DRAWN — streamer mode redacts the sender prefix and IP-like tokens
-// (streamerMaskLine), which shifts every byte offset after them. So positions
-// come from the MASKED text (the pixels the user sees and clicks) while the URL
-// to OPEN comes from the RAW one (masking is display-only; the log keeps the
-// real link, and that is the pre-existing contract).
-//
-// Runs only inside oocWrapped's cached rebuild — never per frame.
+// appendLinkSpans records the link regions of one wrapped paragraph; only inside oocWrapped's cached rebuild.
+// Positions come from masked, the drawn text, since streamer mode shifts offsets; the URL to open comes from raw.
 func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw, masked string, nextID int32) ([]oocLinkSpan, int32) {
 	rawLinks := extractURLs(raw, oocLinksPerParagraphMax)
 	if len(rawLinks) == 0 || len(rows) == 0 {
@@ -1564,13 +1225,8 @@ func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw
 	rawAt := 0          // cursor into rawLinks
 	rowIdx, pos := 0, 0 // walk position: row, byte offset within it
 	for _, tok := range strings.Fields(masked) {
-		// The drawn link, and the raw link it opens. Masking never INVENTS a
-		// link, but it can eat one (a sender whose name is a link becomes
-		// "???") and it can rewrite one (an IP host blocks out to "█.█.█.█"),
-		// so pair by exact match scanning forward from the cursor, and fall
-		// back to the next unconsumed raw link when the drawn text no longer
-		// matches it. With streamer mode off masked == raw and the very first
-		// comparison hits, so this costs nothing in the normal case.
+		// Masking can eat or rewrite a link, so pair by exact match scanning forward from the cursor,
+		// falling back to the next unconsumed raw link when the drawn text no longer matches.
 		tlo, thi := urlTokenRange(tok)
 		url := ""
 		if isURLToken(tok[tlo:thi]) && rawAt < len(rawLinks) {
@@ -1583,10 +1239,8 @@ func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw
 			url = rawLinks[rawAt]
 			rawAt++
 		}
-		// Walk the token across the display rows — EVERY token, link or not, so
-		// the position stays aligned. Both wrappers only ever drop whitespace at
-		// a break and cut mid-token when a token is wider than the whole column,
-		// so a token's bytes appear in order, possibly split across rows.
+		// Walk every token across the rows to keep the position aligned: the wrappers only drop whitespace at a break
+		// and cut mid-token when it is wider than the column, so a token's bytes stay in order.
 		consumed := 0
 		for consumed < len(tok) {
 			for rowIdx < len(rows) {
@@ -1595,10 +1249,8 @@ func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw
 					rowIdx, pos = rowIdx+1, 0
 					continue
 				}
-				// Whitespace is skipped only BEFORE a token starts: a token the
-				// wrap hard-split always resumes at the very start of the next
-				// row, so skipping mid-token would let "ab cd" masquerade as
-				// the token "abcd".
+				// Skip whitespace only before a token: a split token resumes at the next row's start,
+				// or "ab cd" would pass as "abcd".
 				if consumed == 0 && (row[pos] == ' ' || row[pos] == '\t') {
 					pos++
 					continue
@@ -1614,14 +1266,11 @@ func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw
 				n++
 			}
 			if n == 0 {
-				// Desync (a wrapper that rewrites text): emit NO spans for this
-				// paragraph rather than misplaced ones.
+				// Desync (a wrapper that rewrites text): emit no spans for this paragraph rather than misplaced ones.
 				return dst[:start], startID
 			}
 			if url != "" {
-				// Intersect this piece's token range [consumed, consumed+n)
-				// with the link's trimmed range [tlo, thi) — the brackets and
-				// the sentence period around a link are not part of it.
+				// Intersect with the link's trimmed range; brackets and a sentence period are not part of it.
 				ovLo, ovHi := max(consumed, tlo), min(consumed+n, thi)
 				if ovHi > ovLo {
 					dst = append(dst, oocLinkSpan{
@@ -1642,16 +1291,8 @@ func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw
 	return a.measureLinkSpans(dst, start, rows, rowBase), nextID
 }
 
-// measureLinkSpans fills in the pixel range of the spans dst[start:], in the
-// exact face each row DRAWS in (LogFontFor per row, like drawOOCLogList) — so
-// the tint and the hit test land on the glyphs the user sees.
-//
-// A row the per-glyph raster draws (emoji, or a mixed-script row no single face
-// covers) has no advance we can trust here: labelEmoji composes per-rune faces,
-// so a plain SizeUTF8 prefix would put the highlight in the wrong place. Such a
-// row degrades to the pre-#38 behaviour — its FIRST link covers the whole row —
-// which is honest instead of drawing a lie, and keeps the row's spans
-// non-overlapping.
+// measureLinkSpans fills the pixel range of dst[start:] in the face each row draws in, so tint and hit test match.
+// A row the per-glyph raster draws has no advance to trust here, so its first link covers the whole row.
 func (a *App) measureLinkSpans(dst []oocLinkSpan, start int, rows []string, rowBase int) []oocLinkSpan {
 	w := start
 	for k := start; k < len(dst); k++ {
@@ -1674,8 +1315,7 @@ func (a *App) measureLinkSpans(dst []oocLinkSpan, start int, rows []string, rowB
 	return dst[:w]
 }
 
-// oocRowLinks returns display row li's link spans (a view into the flat table —
-// no allocation, so the per-frame draw can ask freely).
+// oocRowLinks returns row li's link spans, a view into the flat table with no allocation.
 func (a *App) oocRowLinks(li int) []oocLinkSpan {
 	if li < 0 || li+1 >= len(a.oocWrapLinkAt) {
 		return nil
@@ -1683,16 +1323,11 @@ func (a *App) oocRowLinks(li int) []oocLinkSpan {
 	return a.oocWrapLink[a.oocWrapLinkAt[li]:a.oocWrapLinkAt[li+1]]
 }
 
-// oocWrapped returns the OOC log as display lines: long entries (MOTDs)
-// word-wrap to the list width and embedded newlines split, instead of the
-// old 120-char truncation. Streamer mode masks sender names and IPs here
-// (display only). Cached against (log seq, width, font scale, mask) —
-// rebuilds happen on new messages or resizes, never per frame.
+// oocWrapped returns the OOC log as display lines, word-wrapped with newlines split and streamer masking applied.
+// Cached against log seq, width, font scale and mask.
 func (a *App) oocWrapped(width int32) []string {
 	streamer := a.d.Prefs.Load().StreamerModeOn
-	// #39: key on the RESOLVED scale (theme "server_chatlog" size × the OOC zoom),
-	// so a theme swap that only changes the point size re-wraps instead of leaving
-	// rows measured at the old size.
+	// Key on the resolved scale, so a theme swap that only changes the point size re-wraps.
 	pct := a.elemPct(elemServerChatlog, a.oocPct)
 	if a.oocWrap != nil && a.oocWrapSeq == a.oocSeq && a.oocWrapEpoch == a.logViewEpoch &&
 		a.oocWrapGen == a.ctx.fontChainGen &&
@@ -1705,12 +1340,7 @@ func (a *App) oocWrapped(width int32) []string {
 	src := a.oocWrapSrc[:0]    // parallel to out: source oocLog entry index
 	links := a.oocWrapLink[:0] // NOT parallel: the flat link-span table, rows index it via linkAt below
 	var nextLinkID int32       // link ids are unique across the whole rebuild, so a span identifies its link alone
-	// Per-CANDIDATE drawn-width measure, matching the OOC draw row for row: every
-	// wrapped candidate is measured exactly the way drawOOCLogRow will draw it —
-	// the row's own covering face for a plain row, the per-glyph raster's per-rune
-	// faces for an emoji / mixed-script one (#42), and the bold speaker-name split
-	// drawLogLineNamed draws. Read once here; the per-entry closure below binds the
-	// speaker.
+	// Per-candidate measure matching drawOOCLogRow: covering face, per-rune faces for emoji, and the bold name split.
 	nameOn := a.d.Prefs.Load().NameColors
 	boldNames := a.logRowBoldPref(logSelOOC)
 	for i, entry := range a.oocLog {
@@ -1722,12 +1352,7 @@ func (a *App) oocWrapped(width int32) []string {
 			return a.logDrawnWidthNamed(elemServerChatlog, a.oocPct, s, sp, nameOn, boldNames)
 		}
 		entryFirst := true // the speaker tints only the entry's FIRST display line
-		// The row budget is PER ENTRY (across all its \n paragraphs), not per
-		// paragraph: a single-paragraph /help must be allowed all oocWrapMaxLinesPerEntry
-		// rows, and a multi-paragraph MOTD shares that same finite budget so the whole
-		// entry stays bounded. Only if the budget genuinely runs out (a synthetic
-		// width forcing < oocWrapMinCharsPerRow chars/row) do we append a visible "…"
-		// marker — the pre-fix code silently dropped everything past 24 rows/paragraph.
+		// The budget is per entry, across all paragraphs. A visible "…" is added only if it runs out.
 		remaining := oocWrapMaxLinesPerEntry
 		truncated := false
 		for _, rawPara := range strings.Split(entry, "\n") {
@@ -1739,25 +1364,13 @@ func (a *App) oocWrapped(width int32) []string {
 			if streamer {
 				para = streamerMaskLine(para)
 			}
-			// Latch the broad / CJK font load off the WHOLE paragraph up front: the
-			// per-candidate picks below only ever see the rows the budget lets
-			// through, and a script that appears past the cut would otherwise never
-			// kick its face load. (This used to be a paragraph-wide LogFontFor pick,
-			// which is exactly the measure #42 removed — noteScript is the part that
-			// was actually load-bearing.)
+			// Trigger the font load off the whole paragraph: per-candidate picks see only rows within budget,
+			// and a script past the cut would otherwise never load its face.
 			a.ctx.noteScript(para)
 			trimmed := strings.TrimRight(para, "\r")
-			// Rune-granular wrap for emoji lines (the plain word-wrap would size a
-			// colour emoji as narrow tofu and hard-split it mid-rune); plain lines keep
-			// the cheap word-wrap. BOTH break against the same per-candidate drawn
-			// width, so neither can measure a row in a face the draw won't use (#42).
-			//
-			// Ask for remaining+1 rows (the "+1 probe"): the wrap functions cap
-			// SILENTLY (they don't report truncation), so an extra row lets us tell a
-			// paragraph that exactly filled the budget from one that overflowed it. We
-			// only ever pass ≥ 2 here (remaining ≥ 1 is guaranteed above), which also
-			// dodges the two wrappers' disagreement on maxLines ≤ 0 (wrapToWidth cuts
-			// to nothing, WrapMeasured treats it as unbounded).
+			// Rune-granular wrap for emoji lines: the word-wrap would size emoji as tofu and split mid-rune.
+			// Ask for remaining+1 rows: wrappers cap silently, so the extra row separates an exact fit from overflow.
+			// That also sidesteps maxLines <= 0, where wrapToWidth yields nothing and WrapMeasured is unbounded.
 			probe := remaining + 1
 			var lines []string
 			if ef := a.ctx.EmojiFont(pct); ef != nil && render.NeedsEmojiFallback(trimmed) {
@@ -1789,10 +1402,7 @@ func (a *App) oocWrapped(width int32) []string {
 					name = append(name, "")
 				}
 			}
-			// Links PER PARAGRAPH: every URL on the line becomes its own clickable
-			// span (#38), positioned against the DRAWN — possibly streamer-masked —
-			// rows but opening the link as it arrived. A URL the wrap hard-split
-			// still forms ONE link across its rows.
+			// Each URL on the line gets its own span, positioned on the drawn rows but opening the link as it arrived.
 			links, nextLinkID = a.appendLinkSpans(links, lines, rowBase, rawPara, trimmed, nextLinkID)
 			remaining -= len(lines)
 			if truncated {
@@ -1800,8 +1410,7 @@ func (a *App) oocWrapped(width int32) []string {
 			}
 		}
 		if truncated {
-			// One visible marker row for the whole entry (parallel slices in lockstep):
-			// cont=true so it hangs under the entry as a tail, not a fresh paragraph.
+			// One marker row for the whole entry, parallel slices in step; cont=true hangs it under the entry.
 			out = append(out, "…")
 			name = append(name, "")
 			cont = append(cont, true)
@@ -1811,10 +1420,7 @@ func (a *App) oocWrapped(width int32) []string {
 	if out == nil {
 		out = []string{}
 	}
-	// linkAt[r] indexes the first span of display row r, so row r's spans are
-	// links[linkAt[r]:linkAt[r+1]] — hence len(rows)+1 entries. Spans were built
-	// in row order, so this is one linear pass, and it makes the per-frame row
-	// lookup (oocRowLinks) O(1) with no scan of the whole table.
+	// linkAt[r] is the first span of row r, so its spans are links[linkAt[r]:linkAt[r+1]]; hence len(rows)+1 entries.
 	linkAt := a.oocWrapLinkAt[:0]
 	for r, k := 0, 0; r <= len(out); r++ {
 		for k < len(links) && int(links[k].row) < r {
@@ -1830,41 +1436,25 @@ func (a *App) oocWrapped(width int32) []string {
 	return out
 }
 
-// icWrapLine is one display row of the wrapped IC log: a text slice plus
-// its source entry (the row inherits that entry's AO color).
+// icWrapLine is one display row of the wrapped IC log: a text slice plus its source entry.
 type icWrapLine struct {
 	text  string
 	entry int // index into icLog
-	// headRunes is the leading runes of text that are the timestamp + speaker
-	// head (not part of the message body); bodyOff is the rune offset of this
-	// row's body within its entry's body. Both are 0 for rows whose entry has no
-	// inline-colour runs — the renderer only reads them when the entry is styled.
+	// headRunes is the leading timestamp and speaker runes; bodyOff is this row's rune offset in the entry's body.
+	// Both are 0 unless the entry has inline-colour runs.
 	headRunes int
 	bodyOff   int
 }
 
-// logWrapIndentPx is the hanging indent for a message's wrapped continuation
-// rows (IC and OOC): rows two and up of one message start slightly right of
-// its first, so a wrapped message reads as ONE message instead of a run of
-// new paragraphs (playtest). The drawers wrap text against
-// width−logWrapIndentPx, so an indented row can never overflow the column.
+// logWrapIndentPx is the hanging indent of wrapped rows; drawers wrap against width-logWrapIndentPx.
 const logWrapIndentPx = 14
 
-// icRowIsEntryStart reports whether display row li of a.icWrap begins a NEW
-// icLog entry, as opposed to a wrap continuation of the row above (IC entries
-// are single paragraphs, so "continuation" and "same entry as the row above"
-// are the same fact). This is the ONE test for that fact: logRowIndent's
-// hanging indent below, drawICLogList's per-speaker name-tint gate, and
-// logRowNameStyle's selection-side twin (logselect_wire.go) all ask it
-// instead of re-deriving the entry-boundary comparison three separate times.
+// icRowIsEntryStart reports whether row li of a.icWrap begins a new icLog entry rather than continuing the row above.
 func (a *App) icRowIsEntryStart(li int) bool {
 	return li <= 0 || li >= len(a.icWrap) || a.icWrap[li-1].entry != a.icWrap[li].entry
 }
 
-// logRowIndent is display row li's draw indent in log `which`: a wrap
-// continuation row indents by logWrapIndentPx, a message's first row (and any
-// row without wrap data) sits at the column start. The selection hit-math and
-// highlight use the same offset, so clicks land exactly on what's drawn.
+// logRowIndent is row li's draw indent in log which; selection hit-testing uses the same offset.
 func (a *App) logRowIndent(which, li int) int32 {
 	if which == logSelIC {
 		if !a.icRowIsEntryStart(li) {
@@ -1878,17 +1468,12 @@ func (a *App) logRowIndent(which, li int) int32 {
 	return 0
 }
 
-// icWrapMaxLinesPerEntry bounds one entry's wrapped rows. IC messages cap
-// at 256 chars on the wire, so 16 rows survives even huge fonts in a
-// narrow column.
+// icWrapMaxLinesPerEntry bounds one entry's wrapped rows; IC messages cap at 256 chars on the wire.
 const icWrapMaxLinesPerEntry = 16
 
-// icWrapped returns the filtered IC log as display rows wrapped to the
-// list width (playtest: lines clipped at the right edge). Cached against
-// (log seq, query, width, font scale) — rebuilds on new messages,
-// searches, and resizes, never per frame.
+// icWrapped returns the filtered IC log as wrapped rows, cached against log seq, query, width and font scale.
 func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
-	// #39: key on the RESOLVED scale (theme "ic_chatlog" size × the log zoom).
+	// Key on the resolved scale.
 	pct := a.elemPct(elemICChatlog, a.logPct)
 	if a.icWrap != nil && a.icWrapSeq == a.icLogSeq && a.icWrapEpoch == a.logViewEpoch &&
 		a.icWrapQuery == a.logSearch && a.icWrapShowname == a.logFilterShowname && a.icWrapPos == a.logFilterPos &&
@@ -1898,12 +1483,7 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 		return a.icWrap
 	}
 	out := a.icWrap[:0]
-	// Per-CANDIDATE drawn-width measure, matching the IC draw row for row (the OOC
-	// log's twin), so the wrap and draw agree under a multi-face chain (#42) and on
-	// the bold speaker/prefix split drawLogLineNamed draws. Read once here; the
-	// per-entry closure below binds the speaker. Prefs are nil in the bare-App
-	// headless fixtures, so guard them (the bold split is unreachable there anyway:
-	// a nil font measures through the 8 px/char fallback).
+	// Per-candidate measure, as for OOC, so wrap and draw agree. Prefs are nil in headless fixtures, hence the guard.
 	nameOn := false
 	boldNames := false
 	if a.d.Prefs != nil {
@@ -1922,12 +1502,8 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 			text = prefix + text
 			stampRunes = utf8.RuneCountInString(prefix)
 		}
-		// Wrap against the width each row will really be DRAWN at (icMeasure). An
-		// emoji entry takes the rune-granular wrap: the plain word-wrap sizes colour
-		// emoji as narrow tofu and hard-splits by bytes, so a long emoji showname
-		// overflowed + clipped instead of wrapping. Plain entries keep the cheap
-		// word-wrap. Latch the CJK / broad face load off the whole entry first — the
-		// per-candidate picks only see the rows that survive the row cap.
+		// Wrap against the drawn width; emoji entries use the rune-granular wrap, as the word-wrap sizes them as tofu.
+		// Trigger the font load off the whole entry first: per-candidate picks see only rows within the cap.
 		a.ctx.noteScript(text)
 		var wrapped []string
 		if ef := a.ctx.EmojiFont(pct); ef != nil && render.NeedsEmojiFallback(text) {
@@ -1935,9 +1511,7 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 		} else {
 			wrapped = wrapToWidthMeasured(measure, text, width, icWrapMaxLinesPerEntry)
 		}
-		// Per-row body mapping for inline-colour entries (#123): each wrapped row is
-		// a contiguous rune slice of text, so track its rune offset and fold the
-		// head (timestamp + "<speaker>: ") into a leading default-colour span.
+		// For inline-colour entries, track each row's rune offset and fold the head into a leading default-colour span.
 		styled := len(entry.styles) > 0
 		bodyStart := stampRunes + entry.bodyRuneStart
 		off := 0
@@ -1969,35 +1543,15 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 	return out
 }
 
-// wrapToWidth greedily word-wraps text for an arbitrary font (the kit's
-// WrapText memo is chrome-font only; this measures with the actual log
-// font, and only runs on cache rebuilds). Words wider than the column
-// hard-split so a long URL can't force a 1-line overflow. A nil font
-// (headless tests) measures at a rough 8 px/char.
-// wrapToWidth breaks text to maxW, measuring each candidate string with the font
-// pick returns FOR THAT STRING — the same per-line covering face the log DRAW
-// picks (LogFontFor). This keeps wrap and draw in agreement even when the active
-// chain is multi-face (a custom font + the embedded last resort): a wrapped line
-// the custom font covers is measured AND drawn in the custom face, so it neither
-// overflows (the wrap measured the whole paragraph in the narrower fallback the
-// custom font couldn't fully cover) nor silently drops to the embedded face
-// (#42). A single-font chain makes pick constant, so this is a no-op there.
-// constFont adapts a single fixed face to wrapToWidth's per-string picker — for
-// callers (the area list, tests) whose text all draws in one font, where the
-// per-line pick can't diverge.
+// constFont adapts one fixed face to wrapToWidth's per-string picker.
 func constFont(f *ttf.Font) func(string) *ttf.Font {
 	return func(string) *ttf.Font { return f }
 }
 
-// wrapFallbackCharPx is the per-BYTE width assumed when there is no font (a
-// headless test Ctx, or a measure that errored): a rough monospace stand-in so
-// the wrap still produces plausible rows instead of one endless line.
+// wrapFallbackCharPx is the per-byte width assumed with no font: a headless Ctx or a measure that errored.
 const wrapFallbackCharPx = 8
 
-// fontWidth measures s in font, falling back to wrapFallbackCharPx per byte.
-// The wrap AND the OOC link-span measure both go through it so a span's pixel
-// range is derived exactly the way the row's break points were — one measuring
-// rule, no drift between where a link is drawn and where it is clickable.
+// fontWidth measures s in font, else by wrapFallbackCharPx; wrap and link spans share it, so they cannot drift.
 func fontWidth(font *ttf.Font, s string) int32 {
 	if font == nil {
 		return int32(len(s) * wrapFallbackCharPx)
@@ -2009,13 +1563,8 @@ func fontWidth(font *ttf.Font, s string) int32 {
 	return int32(w)
 }
 
-// logDrawnWidthNamed is logDrawnWidth for a row that drawLogLineNamed draws with a
-// bold speaker span: it measures the leading name/prefix at bold weight and the
-// message after it at plain weight — the same split drawLogLineNamed uses. Without
-// this the wrap under-measures a bold name (bold glyphs are wider than plain), so
-// the last word of a named row overflowed into the scrollbar lane instead of
-// wrapping. speaker == "" (a system/MOTD line) or bold == false falls back to the
-// plain single-face measure.
+// logDrawnWidthNamed measures a row with a bold speaker span, as drawLogLineNamed splits it: bold glyphs are wider,
+// and a plain measure would let the last word overflow. speaker == "" or bold == false measures plain.
 func (a *App) logDrawnWidthNamed(el themeFontElem, userPct int, s, speaker string, nameOn, bold bool) int32 {
 	c := a.ctx
 	primary := a.elemFontFor(el, userPct, s) // also populates the pick coversFace() reads below
@@ -2045,14 +1594,8 @@ func wrapToWidth(pick func(string) *ttf.Font, text string, maxW int32, maxLines 
 	return wrapToWidthMeasured(func(s string) int32 { return fontWidth(pick(s), s) }, text, maxW, maxLines)
 }
 
-// wrapToWidthMeasured is wrapToWidth's body with the metric handed in: measure
-// reports a candidate line's DRAWN width. wrapToWidth's per-string PICK answers
-// that for a row the log draws in one face, but a row the per-glyph raster draws
-// (emoji, or a mixed-script row no single face covers) is laid out from per-RUNE
-// faces, and no single face's SizeUTF8 predicts it — the log passes
-// App.logDrawnWidth here so both kinds of row break against their real widths
-// (#42). Break rules are untouched, so wrapToWidth's shipped behaviour (and its
-// tests) carry over exactly.
+// wrapToWidthMeasured breaks text using measure for a candidate's drawn width, since per-glyph raster rows
+// are laid out from per-rune faces that no single face's SizeUTF8 predicts.
 func wrapToWidthMeasured(measure func(string) int32, text string, maxW int32, maxLines int) []string {
 	if strings.TrimSpace(text) == "" {
 		return nil
@@ -2067,15 +1610,8 @@ func wrapToWidthMeasured(measure func(string) int32, text string, maxW int32, ma
 	}
 	width := measure
 	for _, word := range strings.Fields(text) {
-		// Hard-split single words wider than the column, bisecting on RUNE indices.
-		//
-		// This bisected on BYTE indices, which is fine for the Latin text it was
-		// written against and corrupts everything else. Japanese, Chinese and Thai do
-		// not put spaces between words, so strings.Fields hands a whole sentence over
-		// as one "word" and this split ALWAYS runs on them; halving a 3-bytes-per-rune
-		// run lands off a rune boundary most of the time, and the invalid UTF-8 that
-		// produced was then measured and drawn — mojibake at the wrap point of every
-		// long CJK/Thai line in the IC log, the OOC log and the area list.
+		// Hard-split words wider than the column on rune indices: CJK and Thai have no spaces,
+		// so this always runs on them, and splitting by bytes would produce invalid UTF-8.
 		rw := []rune(word)
 		for width(word) > maxW && len(rw) > 1 {
 			cut := len(rw) / 2
@@ -2112,28 +1648,9 @@ func wrapToWidthMeasured(measure func(string) int32, text string, maxW int32, ma
 	return lines
 }
 
-// wrapParagraphs wraps server-authored prose that carries embedded newlines, which
-// is the shape every "the server is telling you something" payload has: a kick/ban
-// reason, a BB popup notice, a lockdown message with its access code alone on the
-// last line (../Nyathena/internal/athena/lockdown_passkey.go), a KFO removal
-// formatted "<reason>\nUntil: <when>\nID: <n>".
-//
-// It exists because the wrapper underneath it CANNOT do this itself:
-// wrapToWidthMeasured loops strings.Fields, which discards newlines outright, so
-// handing it a multi-paragraph reason reflows the whole payload into one run and
-// the Until/ID/code lines stop being lines at all. This is oocWrapped's proven
-// split-then-wrap shape lifted out for the modal surfaces, same "+1 probe" and
-// same shared-budget rule, so the two stay consistent.
-//
-// maxLines is a budget shared across ALL paragraphs rather than per paragraph, so
-// the total row count stays bounded however the server chooses to split its text.
-// ok reports whether everything fit: false means the caller MUST show a truncation
-// marker, because these payloads put the part you actually need (the code, the
-// appeal link) at the tail, and silently dropping it is the whole bug.
-//
-// Callers must pass maxLines >= 1. The two wrappers in this package disagree on
-// maxLines <= 0 — wrapToWidthMeasured cuts to nothing, Ctx.WrapText treats it as
-// unbounded — so this refuses to guess rather than inheriting either reading.
+// wrapParagraphs wraps server prose with embedded newlines, which wrapToWidthMeasured's strings.Fields discards.
+// maxLines is shared across paragraphs and must be >= 1, as the wrappers disagree on <= 0.
+// ok=false means the caller must show a truncation marker: these payloads put the code or appeal link at the tail.
 func wrapParagraphs(measure func(string) int32, s string, maxW int32, maxLines int) (lines []string, ok bool) {
 	if maxLines < 1 {
 		return nil, false
@@ -2147,17 +1664,12 @@ func wrapParagraphs(measure func(string) int32, s string, maxW int32, maxLines i
 		}
 		para := strings.TrimRight(rawPara, "\r") // tolerate CRLF payloads
 		if strings.TrimSpace(para) == "" {
-			// A blank line is a deliberate paragraph break in a MOTD-style notice, so
-			// it survives as a spacer row and spends budget like any other row.
+			// A blank line is a deliberate break, so it stays as a spacer row and spends budget.
 			lines = append(lines, "")
 			remaining--
 			continue
 		}
-		// The "+1 probe": wrapToWidthMeasured caps SILENTLY (it never reports that it
-		// truncated), so asking for one row more than the budget is how we tell a
-		// paragraph that exactly filled the budget from one that overflowed it.
-		// remaining >= 1 is guaranteed above, so probe >= 2 and the maxLines <= 0
-		// disagreement documented above can never be reached from here.
+		// wrapToWidthMeasured caps silently, so asking for one extra row separates an exact fit from an overflow.
 		got := wrapToWidthMeasured(measure, para, maxW, remaining+1)
 		if len(got) > remaining {
 			got = got[:remaining]
@@ -2169,19 +1681,8 @@ func wrapParagraphs(measure func(string) int32, s string, maxW int32, maxLines i
 	return lines, fit
 }
 
-// paraWrapCache memoizes ONE wrapParagraphs result for a modal that redraws every
-// frame while it is up.
-//
-// It exists because the wrap is not cheap and the modals are not transient. Each
-// row is measured through chromeFaceFor, which for non-ASCII text builds a face set
-// and runs a per-candidate coverage pick; the wrap itself allocates (a []string, and
-// the rune slices behind the measure). Doing that 60 times a second for text that
-// CANNOT change while the box is open would put allocations on a drawn screen, which
-// is what the alloc gates exist to catch.
-//
-// Embedded by value in the two modal states that show server-authored prose — the
-// notice box and the involuntary-disconnect dialog — so there is one cache rule and
-// one place to get it wrong, and both are invalidated on the same keys.
+// paraWrapCache memoizes one wrapParagraphs result for a modal that redraws every frame,
+// as the wrap allocates and the text cannot change while the box is open.
 type paraWrapCache struct {
 	lines []string
 	fit   bool
@@ -2189,28 +1690,13 @@ type paraWrapCache struct {
 	width int32
 	rows  int
 	gen   int
-	// mark is part of the KEY, not just an argument. It decides what the last row says
-	// on an overflow, so a hit returned across two different markers would be a stale
-	// body: today both callers pass the same constant, but nothing about the type
-	// promises that, and the failure would be silent — which is the class of bug this
-	// cache was added in the middle of fixing.
+	// mark is part of the key: it decides the last row on overflow, so a hit across two markers would be stale.
 	mark string
 }
 
-// get returns the wrapped lines and whether everything fit, rewrapping only when
-// the text, the width, the row budget or the font generation changed.
-//
-// gen must be ctx.fontChainGen. It is load-bearing rather than paranoia: a Cyrillic
-// or CJK notice is first measured in the embedded face, which does NOT cover it, and
-// the covering fallback lands ASYNC a few frames later and bumps that counter
-// (ui.go, "wrap caches invalidate"). Without this key the rows would keep the widths
-// we guessed before the face we draw them in existed.
-//
-// mark, when non-empty, is spent on the LAST row whenever the text overflowed the
-// budget. wrapParagraphs reports the overflow but wrapToWidthMeasured underneath it
-// truncates silently, and silence is the actual bug being fixed here: the tail of a
-// server's removal notice is where the access code and the appeal link live, so a
-// body that just stops has to say so.
+// get returns the wrapped lines and whether everything fit, rewrapping when text, width, budget or font chain change.
+// gen must be ctx.fontChainGen: a non-Latin notice is measured before its fallback face lands.
+// mark, when non-empty, takes the last row on overflow, as the tail of a notice holds the access code and appeal link.
 func (p *paraWrapCache) get(measure func(string) int32, gen int, s string, width int32, rows int, mark string) ([]string, bool) {
 	if p.lines != nil && p.src == s && p.width == width && p.rows == rows && p.gen == gen &&
 		p.mark == mark {
@@ -2218,9 +1704,7 @@ func (p *paraWrapCache) get(measure func(string) int32, gen int, s string, width
 	}
 	lines, fit := wrapParagraphs(measure, s, width, rows)
 	if !fit && mark != "" {
-		// Spend the last row rather than growing past the height the budget was
-		// computed for. At rows == 1 that leaves the marker alone, which is still
-		// honest — the caller's Copy button has the whole text.
+		// Spend the last row rather than exceed the budgeted height; the caller's Copy button has the whole text.
 		keep := rows - 1
 		if keep < 0 {
 			keep = 0
@@ -2238,15 +1722,8 @@ func (p *paraWrapCache) get(measure func(string) int32, gen int, s string, width
 	return p.lines, p.fit
 }
 
-// --- IC log export --------------------------------------------------------------------
-
-// icLogFiltered returns the indices of log entries matching the search box AND
-// the advanced filters (showname, pos) — "" means no filter on that axis. All
-// matches are inclusive and case-insensitive (showname is a substring match on
-// the speaker, pos is an exact match on the normalized position). Cached against
-// (log seq, epoch, query, showname, pos): while the log tab is visible the
-// per-frame cost is a handful of comparisons instead of a 1024-line scan plus a
-// slice allocation.
+// icLogFiltered returns indices of log entries matching the search box and the showname and pos filters ("" for none).
+// Case-insensitive; cached against log seq, epoch, query, showname and pos.
 func (a *App) icLogFiltered() []int {
 	if a.icFilter != nil && a.icFilterSeq == a.icLogSeq && a.icFilterEpoch == a.logViewEpoch &&
 		a.icFilterQuery == a.logSearch && a.icFilterShowname == a.logFilterShowname && a.icFilterPos == a.logFilterPos &&
@@ -2294,9 +1771,7 @@ func (a *App) copyICLog() {
 	a.pushDebug(fmt.Sprintf("copied %d log lines to clipboard", len(idx)))
 }
 
-// exportICLog writes the full log next to the exe as TXT or HTML (colors
-// preserved in HTML via the AO palette). Snapshot on the render thread,
-// file I/O off it.
+// exportICLog writes the log next to the exe as TXT or HTML; snapshot on the render thread, file I/O off it.
 func (a *App) exportICLog(asHTML bool) {
 	entries := make([]icEntry, len(a.icLog))
 	copy(entries, a.icLog)
@@ -2344,8 +1819,7 @@ func (a *App) exportICLog(asHTML bool) {
 	a.pushDebug("exporting IC log (" + stamp + ")")
 }
 
-// icHTMLColor maps an AO text color index onto a CSS color matching the
-// in-client palette (render.TextColor).
+// icHTMLColor maps an AO text color index onto a CSS color matching render.TextColor.
 func icHTMLColor(index int) string {
 	col := render.TextColor(index)
 	return fmt.Sprintf("#%02x%02x%02x", col.R, col.G, col.B)

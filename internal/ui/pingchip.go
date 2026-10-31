@@ -9,11 +9,8 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Connection-quality chip (#128): an OPTIONAL, off-by-default signal-bar icon showing the
-// WebSocket round-trip time — green/amber/red bars, with the exact ms on hover. A single
-// background goroutine pings the ACTIVE connection and stores the RTT atomically; the frame
-// loop starts/stops/retargets it. When the chip is off there's no goroutine at all, so it's
-// truly zero-cost by default (the per-frame check is a pointer compare + one bool read).
+// Optional signal-bar chip showing WebSocket round-trip time, exact ms on hover.
+// A background goroutine pings the active connection and stores the RTT atomically; none runs while the chip is off.
 
 const (
 	pingChipInterval = 4 * time.Second // how often to ping the server
@@ -31,9 +28,7 @@ var (
 	pingColBad  = sdl.Color{R: 225, G: 70, B: 70, A: 255}  // red
 )
 
-// updatePingLoop (render thread, once per frame) keeps the background ping loop targeting the
-// ACTIVE conn while the chip is on, and runs no goroutine when it's off. Cheap: a pointer
-// compare + one pref read in steady state.
+// updatePingLoop keeps the ping loop on the active connection while the chip is on; render thread, once per frame.
 func (a *App) updatePingLoop() {
 	want := a.conn
 	if !a.d.Prefs.Load().PingChip {
@@ -56,8 +51,7 @@ func (a *App) startPingLoop(conn *protocol.Conn) {
 	go a.pingLoop(ctx, conn)
 }
 
-// stopPingLoop cancels the live loop (idempotent). Also clears the RTT so the chip doesn't show
-// a stale ping for a connection that's gone.
+// stopPingLoop cancels the live loop (idempotent) and clears the RTT so the chip shows no stale ping.
 func (a *App) stopPingLoop() {
 	if a.pingCancel != nil {
 		a.pingCancel()
@@ -67,8 +61,7 @@ func (a *App) stopPingLoop() {
 	a.pingRTT.Store(0)
 }
 
-// pingLoop pings conn every pingInterval until ctx is cancelled, storing the round-trip time
-// (or 0 = unknown on a failed/timed-out ping). Background goroutine — touches ONLY the atomic.
+// pingLoop pings conn every pingInterval until ctx is cancelled, storing the RTT (0 = unknown) in the atomic.
 func (a *App) pingLoop(ctx context.Context, conn *protocol.Conn) {
 	t := time.NewTicker(pingChipInterval)
 	defer t.Stop()
@@ -110,10 +103,7 @@ func pingQuality(ms int, unknown bool) (bars int32, col sdl.Color) {
 	}
 }
 
-// drawPingChip draws the signal-bar chip at (x,y) when the chip is on and connected — a row of
-// four rising bars, the first N filled by quality, with the exact ms on hover. Read-only of the
-// atomic RTT; the bars are Fill rects and the tooltip text is cached (rebuilt only when the ms
-// changes), so steady-state draw is 0-alloc.
+// drawPingChip draws four rising bars, the first N filled by quality, with the exact ms on hover.
 func (a *App) drawPingChip(x, y int32) {
 	if !a.d.Prefs.Load().PingChip || a.conn == nil {
 		return

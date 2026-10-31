@@ -1,84 +1,29 @@
 package ui
 
-// CHARACTER SELECT'S OWN DESIGN GEOMETRY AND ITS OWN CANVAS TRANSFORM (#20).
+// Character select's own design geometry and canvas. AO2's char select is a second fixed-size canvas
+// (charselect.cpp:83 setFixedSize(f_charselect.width, f_charselect.height); fallback 714x668 at :79).
+// AO2 falls back per key to the default theme (text_file_functions.cpp:245).
 //
-// AO2's character-select screen is a SECOND fixed-size canvas, entirely separate
-// from the courtroom's. Courtroom::set_char_select reads courtroom_design.ini and
-// calls `this->setFixedSize(f_charselect.width, f_charselect.height)` (AO2-Client
-// src/charselect.cpp:83), falling back to `setFixedSize(714, 668)` at :79 when the
-// key is absent — exactly as set_courtroom_size() does for the courtroom. The two
-// rects disagree on 41 of the 74 themes in the reference corpus, and stock AO2
-// genuinely resizes its OS window between the two screens.
+// Not in a.themeRects, for two reasons. Every key there becomes an editable box in the courtroom layout editor, and
+// themeLayoutIn discards keys outside the courtroom design space (spectator Y=640 > 579) and clamps char_select's
+// height.
 //
-// WHAT WENT WRONG (the issue #20 screenshot, reproduced from source, not guessed).
-// AceAttorney2x ships NO charselect_background.png and its courtroom_design.ini
-// declares only char_search, char_passworded and char_taken — no char_select, no
-// char_buttons, no char_button_spacing, no char_list. AO2 falls back PER KEY to the
-// default theme (get_design_element → get_config_value(..., default_theme),
-// AO2-Client src/text_file_functions.cpp:245), so AceAttorney2x inherits the stock
-// theme's 714×668 charselect_background.png — a grey panel whose 7×9 black slot
-// frames sit at exactly char_buttons = 226,36,518,596 with spacing 7,7 and 60 px
-// cells. AsyncAO stretched that art across the whole window while drawing its own
-// grid from a different origin at a different pitch. Two grids, two origins, two
-// pitches: that IS the screenshot.
-//
-// WHY THIS IS NOT a.themeRects / themeLayout(). Two independent blockers, both
-// structural:
-//
-//  1. Every key in a.themeRects becomes a draggable, persistable box in the
-//     COURTROOM layout editor — its editable set is built from the layout cache
-//     (layoutedit.go) and the only `fixed` themeSlots rows are courtroom/showname/message. The
-//     twelve char-select keys would drop eleven ghost boxes onto the courtroom.
-//  2. The courtroom DESIGN SPACE mangles them. themeLayoutIn drops any key with
-//     X > courtroom.W || Y > courtroom.H, so under the stock courtroom = 0,0,714,579
-//     the key spectator = 317,640,80,23 (Y=640 > 579) is silently DISCARDED, and
-//     char_select = 0,0,714,668 would have its height clamped 668 → 579.
-//
-// So char select gets its own rect map, its own canvas and its own transform — and
-// shares only fitDesignCanvas (theme_layout.go), because the locked product
-// decision is that both canvases honour the same ThemeFit.
-//
-// WHAT "SHARING THE TRANSFORM" DOES AND DOES NOT BUY (corrected — the first version
-// of this file claimed more than it delivered). Sharing fitDesignCanvas guarantees
-// the backdrop, the widgets and the grid all land inside ONE canvas rect that moves
-// and resizes as a unit. It does NOT by itself put a widget on the pixel the art
-// paints under it, because the art is stretched by SDL at the exact fractional ratio
-// area.W/designW while a scaled rect is `int32(designX * scaleX)` — two different
-// roundings of two slightly different numbers (area.W is itself a truncation of
-// designW*scaleX). At scale 1 they agree exactly; away from it they drift, and the
-// drift GROWS with the design coordinate.
-//
-// That difference is invisible on a 22 px control and fatal on a 7-column grid, so
-// the two are treated differently and deliberately:
-//
-//   - Widget rects (below) keep the canvas SCALE. They are AsyncAO controls parked
-//     in theme-declared slots; being within a pixel or two of the slot's painted
-//     edge is all a control needs.
-//   - The character GRID maps every cell through the canvas RECT itself
-//     (charselectgrid.go, scaleToCanvas), so a cell lands within one pixel of the
-//     slot frame the backdrop paints for it at every scale. That is the alignment
-//     issue #20 actually reported, and the design values it needs are cached here.
+// Only fitDesignCanvas is shared, so both canvases honour one ThemeFit. The art stretches at the exact ratio while
+// scaled rects truncate, and that drift grows with the coordinate. Widget rects tolerate it and keep the canvas scale;
+// the grid maps every cell through the canvas rect (charselectgrid.go, scaleToCanvas) to stay on the art.
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
-// The twelve courtroom_design.ini entries AO2's char select reads. Eleven are
-// rects (Courtroom::set_char_select's set_size_and_pos calls at
-// AO2-Client src/charselect.cpp:89-93, plus the four widgets built in
-// construct_char_select); charSelectSpacingKey is the odd one out, an "x, y"
-// tuple read through get_button_spacing (charselect.cpp:156).
+// The courtroom_design.ini keys AO2's char select reads: rects (charselect.cpp:89-93, plus construct_char_select) and
+// charSelectSpacingKey, an "x, y" tuple (charselect.cpp:156).
 const (
-	// charSelectCanvasKey sizes the whole screen. AO2 uses its WIDTH and HEIGHT
-	// ONLY — setFixedSize(w, h) takes no position — so the x/y components are
-	// deliberately ignored here too. That is not pedantry: three corpus themes
-	// (`WebAO Client`, `webao client comic sans edition`,
-	// `microsoft surface 4k webao`) declare `char_select = 0, 121, ...`, and
-	// treating the rect as positioned would offset all three by 121 px.
+	// charSelectCanvasKey sizes the whole screen. AO2 uses only width and height, so x/y are ignored:
+	// corpus themes declare `char_select = 0, 121, ...` and would otherwise shift by 121 px.
 	charSelectCanvasKey = "char_select"
-	// charSelectButtonsKey is the grid area. Every character button is placed
-	// RELATIVE to it (put_button_in_place, charselect.cpp:246-276).
+	// charSelectButtonsKey is the grid area; buttons are placed relative to it (charselect.cpp:246-276).
 	charSelectButtonsKey = "char_buttons"
 	// charSelectSpacingKey is the "x, y" gutter between buttons.
 	charSelectSpacingKey = "char_button_spacing"
@@ -86,40 +31,23 @@ const (
 	charSelectListKey = "char_list"
 	// charSelectSearchKey is the name filter field.
 	charSelectSearchKey = "char_search"
-	// charSelectPasswordedKey / charSelectTakenKey are AO2's two filter
-	// checkboxes, both default CHECKED (charselect.cpp:99-100).
+	// AO2's two filter checkboxes, both default checked (charselect.cpp:99-100).
 	charSelectPasswordedKey = "char_passworded"
 	charSelectTakenKey      = "char_taken"
 	// charSelectBackKey leaves for the server list.
 	charSelectBackKey = "back_to_lobby"
 	// charSelectPasswordKey is the per-character password field.
 	charSelectPasswordKey = "char_password"
-	// charSelectLeftKey / charSelectRightKey are the PAGE arrows: AO2's char
-	// select is paged, not scrolled (charselect.cpp:116-117, :146-154).
+	// Page arrows: AO2's char select is paged, not scrolled (charselect.cpp:116-117).
 	charSelectLeftKey  = "char_select_left"
 	charSelectRightKey = "char_select_right"
 	// charSelectSpectatorKey joins without a character.
 	charSelectSpectatorKey = "spectator"
 )
 
-// charSelectDefaultRects is the stock AO2 default theme's char-select table,
-// transcribed from AO2-Client/bin/base/themes/default/courtroom_design.ini with
-// the source line beside each value.
-//
-// THIS TABLE IS LOAD-BEARING, NOT A NICETY. AO2 resolves every design key through
-// get_config_value(id, file, theme, subTheme, DEFAULT_THEME) — the fallback is PER
-// KEY, not per file — so a theme that declares three of the twelve still gets the
-// other nine from the theme tree on disk. AsyncAO is a streaming client with no
-// base/themes/ tree to walk, so the table has to be here or those nine keys resolve
-// to nothing. It is not a rare path: of the 97 courtroom_design.ini files in the
-// 74-theme reference corpus, 28 declare no char_select, 29 declare no char_buttons
-// and no char_button_spacing, and 48 declare no char_list — AceAttorney2x, the
-// theme in issue #20's screenshot, among them.
-//
-// Verified against the stock art: a dark-run scan of the default theme's
-// 714×668 charselect_background.png finds exactly 7 horizontal runs starting at
-// x=226 and 9 vertical runs starting at y=36, each 60 px, pitch 67 — which is
-// char_buttons=226,36,518,596 with spacing 7,7 and button_width=60, to the pixel.
+// charSelectDefaultRects is the stock AO2 default theme's table, from bin/base/themes/default/courtroom_design.ini.
+// AO2 falls back per key, not per file, so partial themes need the rest; a streaming client has no base/themes/ tree.
+// Matches the stock art to the pixel: 7 columns from x=226 and 9 rows from y=36, 60 px cells at pitch 67.
 var charSelectDefaultRects = map[string]theme.Rect{
 	charSelectCanvasKey:     {X: 0, Y: 0, W: 714, H: 668},    // courtroom_design.ini:150
 	charSelectListKey:       {X: 25, Y: 36, W: 190, H: 596},  // :151
@@ -135,37 +63,23 @@ var charSelectDefaultRects = map[string]theme.Rect{
 }
 
 const (
-	// charSelectDefaultSpacingX / Y are courtroom_design.ini:155's
-	// `char_button_spacing = 7, 7`, the same per-key fallback as the table above.
+	// courtroom_design.ini:155's `char_button_spacing = 7, 7`, the same per-key fallback.
 	charSelectDefaultSpacingX = 7
 	charSelectDefaultSpacingY = 7
-	// charSelectButtonPx is AO2's character-button edge in DESIGN pixels:
-	// `const int button_width = 60;` (AO2-Client src/courtroom.h:561). It is the
-	// cell size in the grid formula at charselect.cpp:160-162 and the size
-	// AOCharButton stretches its icon into, so the whole grid hangs off it.
+	// charSelectButtonPx is AO2's button edge in design pixels (courtroom.h:561), the cell size in the grid
+	// formula at charselect.cpp:160-162.
 	charSelectButtonPx = 60
 )
 
-// charSelectDesign is ONE theme's char-select geometry, in DESIGN-space pixels,
-// with every one of the twelve keys already resolved: the theme's value where it
-// declares one, charSelectDefaultRects / charSelectDefaultSpacing* where it does
-// not. Resolving at parse time (off the render thread) is what lets the draw path
-// treat a partial theme and a complete one identically.
+// charSelectDesign is one theme's geometry in design pixels with every key resolved, so a partial theme and a
+// complete one draw identically.
 type charSelectDesign struct {
 	r       map[string]theme.Rect
 	spacing [2]int
 }
 
-// readCharSelectDesign resolves the twelve keys for a loaded theme. Called from
-// the theme-apply GOROUTINE (hard rules 1 and 2: it reads INIs, never SDL, never
-// App state), and landed on the render thread by pollThemeApply.
-//
-// A theme value wins only when the INI parses it as a rect at all; theme.ElementRect
-// already rejects a short tuple, matching AO2's get_element_dimensions, which
-// leaves width/height at -1 when the split yields fewer than four components
-// (text_file_functions.cpp:220-232) and makes set_size_and_pos skip the widget.
-// Anything it rejects therefore falls through to the default table, which is what
-// AO2's per-key default-theme fallback does with the same input.
+// readCharSelectDesign resolves the keys for a loaded theme on the theme-apply goroutine (hard rules 1 and 2). A short
+// tuple is rejected by theme.ElementRect, matching AO2 (text_file_functions.cpp:220-232), and falls to the defaults.
 func readCharSelectDesign(t *theme.Theme) charSelectDesign {
 	d := charSelectDesign{
 		r:       make(map[string]theme.Rect, len(charSelectDefaultRects)),
@@ -181,22 +95,15 @@ func readCharSelectDesign(t *theme.Theme) charSelectDesign {
 		}
 	}
 	if t != nil {
-		// designPair, not a private parser: it is the same "x, y" shape
-		// get_button_spacing reads, and it was fixed in an earlier wave to honour a
-		// LEGITIMATE 0 (twelve shipped themes declare `emote_button_spacing = 0, 0`
-		// and mean flush buttons). Re-implementing the parse here would re-break
-		// exactly that. A missing key falls back to the stock 7, 7 for the same
-		// reason the rect table exists: AO2 would have found it in the default theme.
+		// designPair, not a private parser: it honours a legitimate 0 (themes declare `emote_button_spacing = 0, 0`).
+		// A missing key falls back to the stock 7, 7.
 		d.spacing = designPair(t, charSelectSpacingKey, charSelectDefaultSpacingX, charSelectDefaultSpacingY)
 	}
 	return d
 }
 
-// canvasSize is the design canvas: char_select's WIDTH and HEIGHT, x/y discarded
-// (see charSelectCanvasKey). A theme declaring a degenerate size falls back to the
-// stock 714×668 rather than collapsing the screen — the same shape as AO2's
-// `if (f_charselect.width < 0 || f_charselect.height < 0) setFixedSize(714, 668)`
-// at charselect.cpp:77-80.
+// canvasSize is char_select's width and height. A degenerate size falls back to stock 714x668, as AO2 does
+// (charselect.cpp:77-80).
 func (d charSelectDesign) canvasSize() (int32, int32) {
 	if r, ok := d.r[charSelectCanvasKey]; ok && r.W > 0 && r.H > 0 {
 		return int32(r.W), int32(r.H)
@@ -205,68 +112,41 @@ func (d charSelectDesign) canvasSize() (int32, int32) {
 	return int32(def.W), int32(def.H)
 }
 
-// charSelectLayoutCache is the window-scaled char-select geometry — the exact twin
-// of themeLayoutCache, for the other canvas. Rebuilt only when the window size, the
-// app-chrome band, the fit mode or the theme changes; every render-loop read is a
-// plain map probe on pre-scaled rects.
+// charSelectLayoutCache is the window-scaled char-select geometry, the twin of themeLayoutCache.
+// Rebuilt when window size, chrome band, fit mode or theme changes; render reads are map probes.
 type charSelectLayoutCache struct {
-	// valid means "this screen draws on the theme's canvas, and the numbers below
-	// are current". False keeps char select on its classic full-window layout —
-	// which is the right answer for a themeless install, where there is no canvas
-	// and no backdrop art to align to.
+	// valid means this screen draws on the theme's canvas. False keeps the classic full-window layout.
 	valid      bool
 	winW, winH int32
-	// topOff is the app-chrome band reserved ABOVE the canvas (#14, topChromeH), part
-	// of the cache key for the same reason it is in themeLayoutCache: the band can
-	// change with no window, fit or theme change behind it (a tab opening is enough).
+	// topOff is the chrome band above the canvas; in the key because a tab opening can change it alone.
 	topOff int32
 	fit    int // ThemeFit mode it was built for
-	// scaleX/scaleY are per-axis and differ ONLY in Stretch, exactly as in
-	// themeLayoutCache. The character cell must scale by ONE factor whatever the
-	// window shape, because AO2 multiplies button_width by the single
-	// themeScalingFactor() — see cellScale.
+	// scaleX and scaleY differ only in Stretch. The cell scales by one factor (cellScale), as AO2 uses one
+	// themeScalingFactor().
 	scaleX, scaleY float64
-	// area is the whole scaled canvas. The backdrop blits into precisely this rect:
-	// AO2 resizes ui_char_select_background to the char_select rect and
-	// AOImage::setImage then scales the art into it with Qt::IgnoreAspectRatio
-	// (aoimage.cpp:29-31), so the art's own native size is irrelevant. That is what
-	// makes `alter ego (mobi)` — 576×639 art on a 537×1080 canvas — look right.
+	// area is the scaled canvas the backdrop blits into. AO2 scales the art with Qt::IgnoreAspectRatio
+	// (aoimage.cpp:29-31), so the art's native size is irrelevant.
 	area sdl.Rect
-	// clip is area intersected with the window BELOW the app-chrome band: the region
-	// this screen may paint and hit-test in. Native, Letterbox and Stretch always put
-	// the whole canvas under the band, so clip == area there; Crop scales UP by design
-	// and Custom can be panned anywhere, and in those two the canvas legitimately runs
-	// off every window edge, the band's included.
+	// clip is area intersected with the window below the chrome band, the region this screen may paint and hit-test.
+	// It differs from area only under Crop and Custom, where the canvas can run off the window.
 	clip sdl.Rect
-	// spacingX/spacingY are char_button_spacing at the canvas scale — pre-scaled here
-	// so the grid stage never repeats the multiply per frame.
+	// spacingX/Y are char_button_spacing at canvas scale, so the grid never repeats the multiply.
 	spacingX, spacingY int32
 	r                  map[string]sdl.Rect // scaled, window-absolute
 
-	// --- DESIGN-SPACE values, kept because the grid cannot be laid out from the
-	// scaled ones without drifting off the artwork (see the header comment).
-	//
-	// designW/designH are the canvas AO2 would have called setFixedSize with. Every
-	// mapping in charselectgrid.go is `design * area.<extent> / design<extent>`, so
-	// both halves of that ratio have to be reachable from the cache.
+	// Design-space values follow, because the grid drifts off the art if laid out from scaled ones.
+	// Mappings in charselectgrid.go are `design * area.<extent> / design<extent>`.
 	designW, designH int32
-	// spacingDesignX/Y are char_button_spacing AS DECLARED, before any scaling.
-	// AO2 computes its column and row COUNTS from the design rect and the design
-	// spacing (charselect.cpp:160-162 runs on unscaled widget geometry at scale 1,
-	// and on values multiplied by one INTEGER themeScalingFactor above it), so the
-	// count is scale-invariant there. Deriving it from three independently truncated
-	// scaled integers, as the first version did, is not: the stock table yields 8
-	// columns at 800x600 where the art paints 7.
+	// spacingDesignX/Y are char_button_spacing as declared. AO2's counts (charselect.cpp:160-162) are scale-invariant,
+	// while three truncated scaled integers are not: the stock table would give 8 columns at 800x600 where the art
+	// paints 7.
 	spacingDesignX, spacingDesignY int32
-	// buttonsDesign is char_buttons in design pixels, and is set ONLY when the
-	// scaled twin survived into r — so the grid stage's usability gate stays the
-	// single `rect(charSelectButtonsKey)` probe it always was.
+	// buttonsDesign is char_buttons in design pixels, set only when the scaled rect survived into r.
 	buttonsDesign sdl.Rect
 }
 
-// rect fetches a usable scaled rect. Absent when the theme hid the element (the
-// 11037 convention) or the canvas scale shrank it below minThemedElementPx —
-// both filtered at build time, so this stays a map probe.
+// rect fetches a usable scaled rect; absent when the theme hid the element (the 11037 convention) or it scaled below
+// minThemedElementPx.
 func (l *charSelectLayoutCache) rect(key string) (sdl.Rect, bool) {
 	r, ok := l.r[key]
 	if !ok || r.W <= 0 || r.H <= 0 {
@@ -275,13 +155,8 @@ func (l *charSelectLayoutCache) rect(key string) (sdl.Rect, bool) {
 	return r, true
 }
 
-// cellScale is the ONE factor the character cell and its gutter scale by — the
-// char-select twin of emoteCellScale, and for the identical reason. AO2 multiplies
-// button_width and char_button_spacing by the single Options::themeScalingFactor()
-// (charselect.cpp:158, text_file_functions.cpp:212-213), so the cell is square at
-// every window shape; our scale is per-axis and, in Stretch only, scaleX != scaleY.
-// min() rather than max(): a cell grown by the looser axis would overflow
-// char_buttons on the tighter one and silently drop a whole column off the grid.
+// cellScale is the one factor the cell and gutter scale by. AO2 uses a single factor (charselect.cpp:158,
+// text_file_functions.cpp:212-213). min, because the looser axis would overflow char_buttons and drop a column.
 func (l *charSelectLayoutCache) cellScale() float64 {
 	if l.scaleY < l.scaleX {
 		return l.scaleY
@@ -289,18 +164,9 @@ func (l *charSelectLayoutCache) cellScale() float64 {
 	return l.scaleX
 }
 
-// charSelectThemed reports whether char select draws on the theme's canvas.
-//
-// The gate is the COURTROOM's, on purpose. "Use the theme's layout" is one concept
-// and one preference: with it off, or with a theme that ships no usable
-// courtroom_design.ini geometry, the courtroom draws classic and so must this
-// screen. The two-key courtroom/viewport test is themeLayoutIn's own validity test,
-// re-spelled here rather than built through it — asking themeLayout() would build
-// (and key) the COURTROOM's cache from a screen that never draws a courtroom.
-//
-// Every corpus theme that ships any geometry at all declares both keys (courtroom
-// and viewport are the only two rects present in 100% of the corpus), so this
-// costs no real theme its canvas.
+// charSelectThemed reports whether char select draws on the theme's canvas, by the courtroom's own condition: "use the
+// theme's layout" is one preference. Tested directly, since themeLayout() would build the courtroom's cache from this
+// screen.
 func (a *App) charSelectThemed() bool {
 	if len(a.charSelDesign.r) == 0 || !a.d.Prefs.Load().ThemeLayoutOn {
 		return false
@@ -312,26 +178,18 @@ func (a *App) charSelectThemed() bool {
 	return ok
 }
 
-// charSelectLayout is THE accessor: the char-select canvas fitted into the window
-// with the app-chrome band (#14) reserved above it. Cached; the render loop calls
-// it once per frame.
+// charSelectLayout is the char-select canvas fitted into the window below the chrome band; cached, called once per
+// frame.
 func (a *App) charSelectLayout(w, h int32) *charSelectLayoutCache {
 	return a.charSelectLayoutIn(w, h, a.topChromeH())
 }
 
-// charSelectLayoutIn builds the cache for a (w, h) box with `top` px reserved at its
-// top edge. Split out from charSelectLayout so the band is an explicit parameter the
-// tests can drive, mirroring themeLayoutIn.
+// charSelectLayoutIn builds the cache for a (w, h) box with `top` px reserved at its top edge.
 func (a *App) charSelectLayoutIn(w, h, top int32) *charSelectLayoutCache {
 	lay := &a.charSelLay
 	fit := a.d.Prefs.Load().ThemeFit
-	// charSelectThemed() is part of the TEST, not just the build: it reads a
-	// preference ("use the theme's layout") that the user can flip with no window,
-	// band, fit or theme change behind it. Left out, a cache built while the canvas
-	// was on would keep the screen letterboxed after the toggle went off — the same
-	// class of stale-key bug the server-tab strip's parked-ness flag was added for.
-	// It is alloc-free and short-circuits on the commonest case (no design table at
-	// all) before it touches prefs, so the cache-hit path stays cheap.
+	// charSelectThemed is in the cache test because the preference can flip with nothing else changing,
+	// which would leave the screen letterboxed. It is alloc-free.
 	if lay.valid && lay.winW == w && lay.winH == h && lay.topOff == top && lay.fit == fit &&
 		a.charSelectThemed() {
 		return lay
@@ -343,23 +201,10 @@ func (a *App) charSelectLayoutIn(w, h, top int32) *charSelectLayoutCache {
 	designW, designH := a.charSelDesign.canvasSize()
 	f := a.fitDesignCanvas(designW, designH, w, h, top, fit)
 	lay.scaleX, lay.scaleY, lay.area = f.scaleX, f.scaleY, f.area
-	// PAINT/HIT REGION = the canvas intersected with the window BELOW the app-chrome
-	// band. In Native, Letterbox and Stretch the canvas already sits wholly inside
-	// that box and this is a no-op (clip == area). Crop scales UP on purpose and
-	// Custom's pan can push the canvas anywhere, so in those two the canvas
-	// legitimately runs off every window edge, the band's included — where the menu
-	// bar and the server-tab strip paint over it anyway. Trimming the CLIP rather
-	// than the canvas is what keeps Crop's overflow anchored where the mode says and
-	// leaves Custom's upward pan possible, while still guaranteeing this screen never
-	// paints into, or hit-tests inside, chrome that belongs to somebody else.
-	//
-	// Plain integer arithmetic rather than sdl.Rect.Intersect: that method takes both
-	// operands by pointer, so a &local would escape to the heap on a path both this
-	// screen and the grid stage rebuild from.
-	//
-	// A degenerate result (W or H == 0) is possible — an extreme Custom pan can carry
-	// the whole canvas off-screen — and means exactly what it says: nothing to draw
-	// this frame. Callers must treat it as such rather than clipping to it.
+	// The clip is trimmed, not the canvas, so Crop's overflow stays anchored and Custom can pan upward, yet this screen
+	// never paints or hit-tests inside chrome. Integer arithmetic: sdl.Rect.Intersect takes pointers, which would
+	// escape to the heap. W or H can reach 0 under an extreme Custom pan, meaning nothing to draw; callers must not
+	// clip to it.
 	lay.clip = lay.area
 	if lay.clip.Y < top {
 		lay.clip.H -= top - lay.clip.Y
@@ -413,51 +258,18 @@ func (a *App) charSelectLayoutIn(w, h, top int32) *charSelectLayoutCache {
 	return lay
 }
 
-// NOTE FOR THE GRID STAGE — why these rects are NOT run through clampRectInto.
-//
-// The courtroom SHIFTS an overhanging widget back inside its canvas, because Qt
-// amputated it at the window edge and a half-widget is worse than a moved one. Doing
-// that here would be a bug, and the stock default theme proves it: char_buttons is
-// 226,36,518,596, so its right edge is 744 on a 714-wide canvas — it overhangs by 30
-// px BY DESIGN. Qt clips the paint and leaves the origin alone, so the seven columns
-// land at x=226,293,…,628 (ending at 687, on the art). Shifting the rect left by 30
-// would move every column off the slot frames painted behind it — which is precisely
-// the desync issue #20 reported, reintroduced by the cure. The grid keeps the design
-// origin and the DRAW clips to lay.clip.
-//
-// The column/row count is then AO2's, verbatim (charselect.cpp:160-162):
-//
-//	cols = ((char_buttons.W - cell) / (spacing.x + cell)) + 1
-//	rows = ((char_buttons.H - cell) / (spacing.y + cell)) + 1
-//
-// and it is evaluated in DESIGN pixels — cell = charSelectButtonPx, spacing =
-// char_button_spacing as declared. AO2's own evaluation is scale-invariant because
-// Options::themeScalingFactor() is an INTEGER that multiplies the rect and the
-// button width alike; ours is a fraction, and feeding three independently truncated
-// scaled integers to that formula produces a count the art cannot honour (the stock
-// table yields 8 columns at 800x600 against 7 painted slot frames). AO2 divides with
-// no qMax guard (unlike evidence.cpp:211), so a theme shipping spacing = -60 crashes
-// it; the divisor is floored at charGridMinPitchPx here before it is used.
+// These rects are not run through clampRectInto. The stock char_buttons overhangs its canvas by 30 px by design: Qt
+// clips the paint and keeps the origin, and shifting left would move every column off the art. The draw clips to
+// lay.clip. Counts are AO2's, in design pixels (charselect.cpp:160-162). AO2 divides with no guard, unlike
+// evidence.cpp:211, so negative spacing crashes it; here the divisor is floored at charGridMinPitchPx.
 
-// drawCharSelectBackdrop paints the char-select background.
-//
-// On the theme canvas the art is blitted into lay.area — NOT stretched to the
-// window — with the flat client colour filling the bars around it. That is AO2's
-// own behaviour, not an invention: set_char_select resizes
-// ui_char_select_background to the char_select rect (charselect.cpp:85) and
-// AOImage::setImage then scales the file into that widget with
-// Qt::IgnoreAspectRatio (aoimage.cpp:29-31), so a theme whose art does not match
-// its declared canvas is stretched to fit, exactly as here.
-//
-// Sharing lay.area is the structural half of the #20 fix: the backdrop, the widgets
-// and the grid are all placed inside ONE rectangle, so they move and resize as a
-// unit in every fit mode — Stretch included, where the two axes scale differently.
-// Landing a CELL on the slot frame this art paints for it is the other half, and it
-// needs more than a shared rectangle: see charselectgrid.go's scaleToCanvas.
+// drawCharSelectBackdrop paints the background. On the theme canvas the art goes into lay.area with flat colour around
+// it, as AO2 resizes the background to the char_select rect (charselect.cpp:85) and stretches into it
+// (aoimage.cpp:29-31).
 func (a *App) drawCharSelectBackdrop(w, h int32, lay *charSelectLayoutCache) {
 	c := a.ctx
 	if !lay.valid {
-		// No theme canvas: the pre-#20 behaviour, unchanged.
+		// No theme canvas: stretch to the window.
 		a.drawScreenBackdrop(w, h, themeStemCharSelectBG)
 		return
 	}
@@ -466,14 +278,8 @@ func (a *App) drawCharSelectBackdrop(w, h int32, lay *charSelectLayoutCache) {
 	if !ok {
 		return // theme ships no charselect art; the canvas is just empty room
 	}
-	// &lay.area into cgo would heap-allocate per frame even on the branches above
-	// (escape analysis is static) — the shared scratch is the house idiom, and SDL
-	// copies the rect during the call without retaining the pointer.
-	//
-	// Plain Copy, no CopyEx rotation branch (unlike drawScreenBackdrop): A4's
-	// per-key angles are baked into the COURTROOM layout cache from the themed
-	// editor's key set, and char select is deliberately outside both — there is no
-	// key here that can ever carry a nonzero angle.
+	// &lay.area into cgo would allocate per frame, so use the shared scratch; SDL doesn't retain the pointer.
+	// No rotation branch: per-key angles exist only in the courtroom layout cache.
 	c.cgoRect = lay.area
 	_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
 }
