@@ -1,6 +1,6 @@
 //go:build windows
 
-package hwid
+package platform
 
 import (
 	"os/exec"
@@ -9,9 +9,10 @@ import (
 	"syscall"
 )
 
-// roots returns the account SID (what AO2-Client keys its HDID on) and the per-install MachineGuid; a failed
-// read is skipped, and the hostname is used only if both miss.
-func roots() []string {
+// MachineIdentity returns the machine's stable identity values, strongest first; nil when none is readable. They are
+// private: hwid hashes them, and nothing may send or log them.
+// Windows: the account SID (what AO2-Client keys its HDID on) and the per-install MachineGuid; a failed read is skipped.
+func MachineIdentity() []string {
 	var out []string
 	if u, err := user.Current(); err == nil {
 		if sid := strings.TrimSpace(u.Uid); sid != "" {

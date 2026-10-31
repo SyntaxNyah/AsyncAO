@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 )
 
 var hdidRe = regexp.MustCompile(`^asyncao-[0-9a-f]{64}$`)
@@ -104,13 +106,35 @@ func TestDeviceDeterministic(t *testing.T) {
 // at least one stable root, but a bare environment legitimately has none (then
 // compute() uses the hostname), so an empty result is not a failure.
 func TestRootsDeterministic(t *testing.T) {
-	first, second := roots(), roots()
+	first, second := platform.MachineIdentity(), platform.MachineIdentity()
 	if len(first) != len(second) {
 		t.Errorf("roots() changed between calls: %d != %d", len(first), len(second))
 	}
 	for _, r := range first {
 		if !strings.Contains(r, "=") {
 			t.Errorf("root %q is not label=value", r)
+		}
+	}
+}
+
+// The expected values were computed outside this package; a change here changes every device's id.
+func TestFingerprintIsStable(t *testing.T) {
+	cases := []struct {
+		name  string
+		parts []string
+		host  string
+		want  string
+	}{
+		{"identity wins over the hostname", []string{"sid=S-1-5-21", "machineguid=abc"}, "box",
+			"8849348113f7bb863dc616e19f3ed5da10fe9b27cf2fff2190ec1a1f44e31aa5"},
+		{"hostname when there is no identity", nil, " box ",
+			"055e86f5affa893ba1edfb53157293bd5af7f4e7cfcc2fcb2996ce8351c4e786"},
+		{"generic value as the last resort", nil, " ",
+			"31cd70d781f11cde6fe8f0a1b48d294a89df591c0ac9816db2863400a65620e7"},
+	}
+	for _, tc := range cases {
+		if got := fingerprint(tc.parts, tc.host); got != tc.want {
+			t.Errorf("%s: got %s, want %s", tc.name, got, tc.want)
 		}
 	}
 }

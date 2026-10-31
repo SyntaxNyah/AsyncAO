@@ -209,7 +209,6 @@ func (a *App) baseWizStepPick(x, y, w int32) int32 {
 	s := &baseWizard
 	c.Label(x, y+4, "1. Pick your base folder", ColText)
 	y += 22
-	// The in-app browser: the native picker is a Windows-only PowerShell shell-out that can fail to take foreground.
 	if c.Button(sdl.Rect{X: x + 16, Y: y, W: 110, H: btnH}, "Browse…") {
 		a.openDemoBrowserFor(purposeBaseFolder)
 	}
