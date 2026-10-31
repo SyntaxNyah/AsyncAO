@@ -1,6 +1,6 @@
-//go:build !nodiscord && !windows
+//go:build !windows
 
-package presence
+package platform
 
 import (
 	"fmt"
@@ -10,13 +10,13 @@ import (
 	"path/filepath"
 )
 
-// dialDiscord opens the local Discord IPC unix socket.
-func dialDiscord() (io.ReadWriteCloser, error) {
+// DialDiscord opens the local Discord IPC unix socket.
+func DialDiscord() (io.ReadWriteCloser, error) {
 	base := os.Getenv("XDG_RUNTIME_DIR")
 	if base == "" {
 		base = os.TempDir()
 	}
-	for i := 0; i < pipeCandidates; i++ {
+	for i := range discordPipeCandidates {
 		conn, err := net.Dial("unix", filepath.Join(base, fmt.Sprintf("discord-ipc-%d", i)))
 		if err == nil {
 			return conn, nil
