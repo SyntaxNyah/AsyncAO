@@ -201,7 +201,7 @@ func (a *App) autoLoginOnReady() {
 	// Shares the friend-toast throttle so a multi-tab restore can't burst one popup per reconnecting server.
 	if time.Since(a.lastOSToast) >= osToastMinInterval {
 		a.lastOSToast = time.Now()
-		showOSToast("AsyncAO — auto-login", line)
+		a.d.Desktop.Notify("AsyncAO — auto-login", line)
 	}
 }
 
