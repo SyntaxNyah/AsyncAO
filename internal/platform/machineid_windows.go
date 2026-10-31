@@ -25,7 +25,9 @@ func MachineIdentity() []string {
 	return out
 }
 
-// machineGUID uses reg.exe, as the stdlib has no registry access and one value isn't worth a dependency.
+// machineGUID shells out to reg.exe for this one HKLM value (the package reads other registry
+// values through syscall directly). Keep reading it exactly this way: the string feeds hwid and
+// thus every user's ban id, so a change that altered the value would re-identify everyone.
 func machineGUID() string {
 	cmd := exec.Command("reg", "query",
 		`HKLM\SOFTWARE\Microsoft\Cryptography`, "/v", "MachineGuid")
