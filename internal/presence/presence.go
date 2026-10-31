@@ -13,8 +13,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 )
 
 const (
@@ -37,9 +35,13 @@ type Activity struct {
 	Start   time.Time
 }
 
+// DialFunc opens the local connection to Discord.
+type DialFunc func() (io.ReadWriteCloser, error)
+
 // Client owns one worker goroutine that connects lazily; every method is non-blocking and safe from the render thread.
 type Client struct {
 	appID string
+	dial  DialFunc
 
 	updates chan Activity // cap 1: newest wins
 	clear   chan struct{}
@@ -50,9 +52,10 @@ type Client struct {
 }
 
 // New starts the worker; an empty appID leaves the client idle with an explanatory status.
-func New(appID string) *Client {
+func New(appID string, dial DialFunc) *Client {
 	c := &Client{
 		appID:   appID,
+		dial:    dial,
 		updates: make(chan Activity, 1),
 		clear:   make(chan struct{}, 1),
 		stop:    make(chan struct{}),
@@ -125,7 +128,7 @@ func (c *Client) worker() {
 			return false
 		}
 		lastTry = time.Now()
-		dialed, err := platform.DialDiscord()
+		dialed, err := c.dial()
 		if err != nil {
 			c.setStatus("Discord not detected (retrying)")
 			return false
