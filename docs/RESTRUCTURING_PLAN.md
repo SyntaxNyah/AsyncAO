@@ -44,6 +44,8 @@ in **Status**. Update Status in the same commit that completes a step.
         requires on Windows and on Linux with no .desktop entry. Push notifications are not planned
   - [x] item 6, clipboard: `Desktop.CopyFileToClipboard`
   - [x] item 6, fonts: `platform.Fonts`, where each OS keeps its fonts
+  - [x] item 6, proxy: not moved (decided 2026-10-31). Discovery builds `Policy` values inside `netproxy`, so moving it
+        means redesigning that boundary; that waits for the netproxy discussion, and item 7's lints exempt `netproxy` until then
   - [ ] the rest of Part 5g's sequence, items 6–7, which includes the platform code (dialogs, DPI seeding, URL opening, preview
         ownership, clipboard)
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
@@ -52,6 +54,9 @@ in **Status**. Update Status in the same commit that completes a step.
       wheel routing, layer stack)
 - [ ] 5. uikit scaling, layout and text (logical units, RmlUi layout, nine-slice, scroll
       container) + shared widgets; one text-colour palette in the engine
+      Font database (proposed 2026-10-31, Qt's QFontDatabase as the model): one off-thread index of family, style and
+      coverage, fonts opened only when used, `AddFolder` for system, user, theme and pack folders. Replaces the curated
+      lists, `fontCensus` and file-stem matching; `platform.Fonts` supplies the starting folders. Its own testing round
 - [ ] 6. Config API: `Set*` forwarder removal; engine option structs; engine stops importing config
 - [ ] 7. Feature loop (jukebox → notebook → … → courtroom screen), extract then move
 - [ ] 8. Remaining lower-layer work (Settings grouping, Manager `Source`, render debug sink)
