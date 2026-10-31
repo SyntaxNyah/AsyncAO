@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
@@ -29,6 +30,11 @@ func (Desktop) OpenPath(path string) error {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return err
+	}
+	if runtime.GOOS == "windows" {
+		// A plain path, not a file:// URL: SDL's Windows opener decodes the URL through
+		// PathCreateFromUrlW, which mangles a non-ASCII profile path like C:\Users\José.
+		return sdl.OpenURL(abs)
 	}
 	return sdl.OpenURL(fileURL(abs))
 }

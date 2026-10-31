@@ -94,6 +94,11 @@ func (r *Runtime) closeWindows() {
 	r.windows = nil
 }
 
+// SDL demands the main OS thread for its whole lifetime, so lock the main goroutine to it here in
+// init — before main does any work that could let the scheduler migrate the goroutine first; on
+// macOS, SDL started off the main thread crashes at launch.
+func init() { runtime.LockOSThread() }
+
 // Main runs client between process setup and teardown, and returns its error.
 func Main(app App, probe platform.Probe, client func(*Runtime) error) error {
 	return mainWith(app, probe, platform.RestartProgram, client)
@@ -101,9 +106,6 @@ func Main(app App, probe platform.Probe, client func(*Runtime) error) error {
 
 // mainWith is Main with the relaunch injected; it runs last, so the two clients never share SDL or the saved state.
 func mainWith(app App, probe platform.Probe, relaunch func([]string) error, client func(*Runtime) error) (err error) {
-	// SDL demands the main OS thread for the whole lifetime.
-	runtime.LockOSThread()
-
 	detected := platform.Detect(probe)
 	// Crash reports need every goroutine's stack, even in -H=windowsgui where stderr goes nowhere.
 	debug.SetTraceback("all")
