@@ -310,6 +310,11 @@ func IsDirectMusicURL(url string) bool {
 	return isMusicURL(url)
 }
 
+// HasLoopSidecars reports whether a resolved music URL sits under an asset origin's sounds/music, where sidecars live.
+func HasLoopSidecars(musicURL string) bool {
+	return !hasRawQueryOrFragment(musicURL) && strings.Contains(musicURL, soundsMusic)
+}
+
 // hasRawQueryOrFragment detects a direct link in a resolved URL: we encode '?' and '#', signed links keep them.
 // It misses a direct link with neither.
 func hasRawQueryOrFragment(s string) bool {
