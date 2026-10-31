@@ -1240,7 +1240,7 @@ App layer. It hands each consumer the services and hardware it uses through its 
 branch on the OS.
 
 **Hard rule 1** names `internal/platform/host` beside `render`, `ui` and `cmd/asyncao`: it
-imports the SDL binding and runs on the main thread. `internal/platform` itself stays SDL-free.
+imports the SDL binding. `internal/platform` itself stays SDL-free.
 
 **Enforcement.** golangci-lint `forbidigo` rejects `runtime.GOOS` outside `internal/platform`
 and the binding packages, and `depguard` rejects `os/exec` and `syscall` outside them. OS
