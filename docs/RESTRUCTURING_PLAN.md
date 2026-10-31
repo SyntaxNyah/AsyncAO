@@ -15,7 +15,7 @@ in **Status**. Update Status in the same commit that completes a step.
       — see the Result in Part 5e
 - [x] 2b. SDL facade (`internal/sdl`, `ttf`, `mix`) over go-sdl2; switch all importers
       (`render/mixerx` became `internal/mix`; `render/scalemode_cgo.go` still calls SDL C directly, see 2c)
-- [ ] 2c. SDL3 switch: SDL_GPU on Vulkan (hardware, else bundled software Vulkan), device-reset
+- [x] 2c. SDL3 switch: SDL_GPU on Vulkan (hardware, else bundled software Vulkan), device-reset
       re-upload; drop the SDL Mixer X fork; replace platform code
   - [x] binding over SDL3/SDL3_ttf/SDL3_mixer, audio on `MIX_Track`, fork and go-sdl2 dropped,
         scale-mode shim moved into the binding; deps scripts + CI (cached setup-sdl build on
@@ -56,7 +56,8 @@ in **Status**. Update Status in the same commit that completes a step.
   - [x] item 6, paths: `platform.UserFolders`, `SamePath`, `DriveRoots`; the crash log falls back to the cache folder. Config
         and cache locations stay in `config` and `cache`, which use the standard library and have no OS branch
   - [x] item 6, window details: `host.WindowDPI`, `LinkWindowOwner`, `RetinaScale`; this finishes item 6
-  - [ ] sequence item 7: turn on the lints, exempting `netproxy` and `presence` until their decisions are made
+  - [x] sequence item 7: `.golangci-platform.yml` keeps `runtime.GOOS`, `os/exec` and `syscall` in `internal/platform` and the
+        SDL binding; `netproxy` is exempt until its discussion. This closes step 2c
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
       pointer, no park/activate copies; fixes bug 4, #115, #141, #84)
 - [ ] 4. `internal/uikit`: extract the kit, then the input model (press/release + capture,

@@ -1,0 +1,40 @@
+# Only internal/platform and the SDL binding may know which OS they run on (docs/RESTRUCTURING_PLAN.md, Part 5g).
+# A separate file from .golangci.yml because this applies to every package, and mnd is opted in per package.
+# netproxy is exempt until its discussion; its OS discovery builds policy values and hasn't moved.
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - forbidigo
+    - depguard
+  settings:
+    forbidigo:
+      forbid:
+        - pattern: ^runtime\.GOOS$
+          msg: "ask internal/platform instead"
+    depguard:
+      rules:
+        os-code:
+          files:
+            - $all
+            - "!$test"
+            - "!**/internal/platform/**"
+            - "!**/internal/sdl/**"
+            - "!**/internal/netproxy/**"
+          deny:
+            - pkg: os/exec
+              desc: use platform.Command
+            - pkg: syscall
+              desc: OS calls belong in internal/platform
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - forbidigo
+      - path: internal[/\\](platform|sdl|netproxy)[/\\]
+        linters:
+          - forbidigo
+
+run:
+  tests: true

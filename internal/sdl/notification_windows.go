@@ -21,6 +21,12 @@ $x.LoadXml('<toast><visual><binding template="ToastGeneric"><text>%s</text><text
 $t=New-Object Windows.UI.Notifications.ToastNotification $x
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe').Show($t)`
 
+const (
+	// firstPrintableRune is the first rune after the control characters.
+	firstPrintableRune = 0x20
+	bitsPerByte        = 8
+)
+
 // xmlEscape escapes XML specials and the PS string delimiter, and drops control chars, so a crafted showname can't
 // inject.
 func xmlEscape(s string) string {
@@ -38,7 +44,7 @@ func xmlEscape(s string) string {
 		case '\'':
 			b.WriteString("&apos;")
 		default:
-			if r >= 0x20 {
+			if r >= firstPrintableRune {
 				b.WriteRune(r)
 			}
 		}
@@ -52,7 +58,7 @@ func ShowNotification(title, message string) error {
 	u16 := utf16.Encode([]rune(script))
 	raw := make([]byte, len(u16)*2)
 	for i, c := range u16 {
-		raw[i*2], raw[i*2+1] = byte(c), byte(c>>8) // little-endian
+		raw[i*2], raw[i*2+1] = byte(c), byte(c>>bitsPerByte) // little-endian
 	}
 	enc := base64.StdEncoding.EncodeToString(raw)
 	go func() {
