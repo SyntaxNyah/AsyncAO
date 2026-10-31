@@ -602,6 +602,9 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.FriendOSToast != o.FriendOSToast {
 		return false
 	}
+	if s.GroupInviteOSToast != o.GroupInviteOSToast {
+		return false
+	}
 	if s.CallwordOSToast != o.CallwordOSToast {
 		return false
 	}

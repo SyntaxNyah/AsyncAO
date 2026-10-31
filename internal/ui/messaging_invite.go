@@ -41,7 +41,7 @@ func (a *App) queueGroupInvite(gid uint32, name string, ownerUID int, ownerName 
 	a.warnLine = clampLine(ownerName + " invited you to the group \"" + name + "\"")
 	a.warnAt = a.now()
 	a.ctx.FlashWindow()
-	if !a.ctx.WindowFocused() && time.Since(a.lastOSToast) >= osToastMinInterval {
+	if a.d.Prefs.Load().GroupInviteOSToast && !a.ctx.WindowFocused() && time.Since(a.lastOSToast) >= osToastMinInterval {
 		a.lastOSToast = time.Now()
 		showOSToast("AsyncAO — group invite", ownerName+" invited you to \""+name+"\"")
 	}

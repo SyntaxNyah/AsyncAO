@@ -31,6 +31,26 @@ func TestCallwordOSToastPref(t *testing.T) {
 	}
 }
 
+// TestGroupInviteOSToastPref pins the group-invite desktop-toast pref: OFF by default and a
+// round-trip through Update (covers the load-merge).
+func TestGroupInviteOSToastPref(t *testing.T) {
+	p, err := New(filepath.Join(t.TempDir(), PrefsFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	if p.Load().GroupInviteOSToast {
+		t.Error("group-invite OS toast should default OFF")
+	}
+	p.Update(func(sn *Settings) {
+		sn.GroupInviteOSToast = true
+	})
+	if !p.Load().GroupInviteOSToast {
+		t.Error("GroupInviteOSToast=true didn't take")
+	}
+}
+
 // TestMentionSelfPref pins the #203 self-mention pref: OFF by default and a
 // round-trip through the setter (covers the load-merge).
 func TestMentionSelfPref(t *testing.T) {

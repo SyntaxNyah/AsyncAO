@@ -818,6 +818,11 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 
 	}
 	y += 26
+	gio := a.d.Prefs.Load().GroupInviteOSToast
+	if next := c.Checkbox(pad+16, y, "Pop a DESKTOP (OS) notification for a group invite while the window is unfocused (rate-limited)", gio); next != gio {
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.GroupInviteOSToast = next })
+	}
+	y += 26
 	fsnd := a.d.Prefs.Load().FriendSound
 	if next := c.Checkbox(pad+16, y, "Play a sound when a friend speaks", fsnd); next != fsnd {
 		a.d.Prefs.Update(func(

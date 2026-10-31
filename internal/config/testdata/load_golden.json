@@ -660,6 +660,7 @@
       "ghostCrawlText": true,
       "globalFallbacksEnabled": true,
       "groupChatButton": true,
+      "groupInviteOSToast": true,
       "hiddenPanels": [
         "v382"
       ],
@@ -1267,6 +1268,7 @@
       "friendSound": true,
       "friendSoundFile": "v531",
       "globalFallbacksEnabled": true,
+      "groupInviteOSToast": true,
       "hiddenPanels": [
         "v382"
       ],
