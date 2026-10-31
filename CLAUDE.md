@@ -154,6 +154,7 @@ heap corruption.
 | `internal/sdl`, `ttf`, `mix` | our cgo binding to SDL3, SDL3_ttf and SDL3_mixer (go-sdl2-style names, Rect/event/display conversion at the boundary) | **yes** |
 | `internal/render` | TextureStore (T1), viewport compositor, message raster, upload pump, SDL3_mixer audio | **yes** |
 | `internal/ui` | immediate-mode kit + screens (lobby/phone book, char select, courtroom, settings, about) | **yes** |
+| `internal/platform`, `platform/host` | what the machine is and can do (no SDL); process setup, SDL startup, hardware and shutdown (host only) | host only |
 | `cmd/asyncao` | flags, composition root, main loop | **yes** |
 
 ## Reference repos (read-only, sibling directories)
