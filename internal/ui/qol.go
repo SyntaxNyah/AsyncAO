@@ -1023,7 +1023,7 @@ func (a *App) callwordAlert(osTitle, body string) {
 	}
 	if a.d.Prefs.Load().CallwordOSToast && !a.ctx.WindowFocused() && time.Since(a.lastOSToast) >= osToastMinInterval {
 		a.lastOSToast = time.Now()
-		a.d.Desktop.Notify(osTitle, body)
+		showOSToast(osTitle, body)
 	}
 	a.ctx.FlashWindow()
 }

@@ -1,4 +1,4 @@
-package host
+package sdl
 
 import (
 	"encoding/base64"
@@ -45,9 +45,9 @@ func xmlEscape(s string) string {
 	return b.String()
 }
 
-// Notify shows a desktop notification, best-effort and off the calling thread; base64-UTF16 sidesteps shell quoting.
-func (Desktop) Notify(title, body string) {
-	script := fmt.Sprintf(windowsToastScript, xmlEscape(title), xmlEscape(body))
+// ShowNotification stands in for SDL 3.6's call of the same name; base64-UTF16 sidesteps shell quoting.
+func ShowNotification(title, message string) error {
+	script := fmt.Sprintf(windowsToastScript, xmlEscape(title), xmlEscape(message))
 	u16 := utf16.Encode([]rune(script))
 	raw := make([]byte, len(u16)*2)
 	for i, c := range u16 {
@@ -62,4 +62,5 @@ func (Desktop) Notify(title, body string) {
 		winexec.Hide(cmd)
 		_ = cmd.Start()
 	}()
+	return nil
 }
