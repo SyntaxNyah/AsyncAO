@@ -14,6 +14,17 @@ func TestFileURLEncodesThePath(t *testing.T) {
 	}
 }
 
+func TestFileClipboardDataOffersBothFormats(t *testing.T) {
+	const path = "/home/me/my file.gif"
+	data := fileClipboardData(path)
+	if got, want := string(data["text/uri-list"]), "file:///home/me/my%20file.gif\r\n"; got != want {
+		t.Errorf("uri list = %q, want %q", got, want)
+	}
+	if got, want := string(data["x-special/gnome-copied-files"]), "copy\nfile:///home/me/my%20file.gif"; got != want {
+		t.Errorf("gnome = %q, want %q", got, want)
+	}
+}
+
 // Links in chat come from the server: nothing but a web address may reach the OS.
 func TestOpenURLRefusesEverythingButWebAddresses(t *testing.T) {
 	for _, address := range []string{`C:\Windows\System32\calc.exe`, "file:///etc/passwd", "calc.exe", "ms-settings:", ""} {

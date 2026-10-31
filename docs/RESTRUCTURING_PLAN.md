@@ -42,7 +42,8 @@ in **Status**. Update Status in the same commit that completes a step.
   - [x] item 6, notifications: `sdl.ShowNotification` has SDL 3.6's name and arguments, on the Windows toast until
         then. Moving to 3.6 replaces only its body, deletes `notification_other.go`, and sets the header icon SDL
         requires on Windows and on Linux with no .desktop entry. Push notifications are not planned
-  - [x] item 6, clipboard: `Desktop.CopyFileToClipboard`
+  - [x] item 6, clipboard: `Desktop.CopyFileToClipboard`, on Win32 on Windows (SDL writes only text and images there) and
+        `sdl.SetClipboardData` on Linux. Off on macOS until a test shows Finder accepts SDL's offer
   - [x] item 6, fonts: `platform.Fonts`, where each OS keeps its fonts
   - [x] item 6, proxy: not moved (decided 2026-10-31). Discovery builds `Policy` values inside `netproxy`, so moving it
         means redesigning that boundary; that waits for the netproxy discussion, and item 7's lints exempt `netproxy` until then
