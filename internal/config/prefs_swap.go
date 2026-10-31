@@ -157,6 +157,14 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 		s.AutoReconnectDefaultMigrated = true
 		changed = true
 	}
+	// Older files have catchUpWhenBehind:true baked in, so only the absent stamp tells the old default from an opt-in.
+	if presence["catchUpDefaultMigrated"] && s.CatchUpDefaultMigrated {
+		// already migrated: the on-disk value is honoured as-is
+	} else {
+		s.CatchUpOn = defaultCatchUpWhenBehind
+		s.CatchUpDefaultMigrated = true
+		changed = true
+	}
 	// The migration reads the on-disk themeFit (zero when absent), not the default the overlay left there.
 	effectiveThemeFit := s.ThemeFit
 	if !presence["themeFit"] {

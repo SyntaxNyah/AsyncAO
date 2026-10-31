@@ -1625,16 +1625,17 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   music while a message is on stage (shout/preanim/talking) and restores it
   at idle, so dialogue stays clear. Transition-driven — the mixer volume is
   touched only when the duck state flips, never per frame.
-- **Packed-room catch-up** (Settings → Audio & Chat, ON by default): keeps the
-  IC stage real-time. **By default (threshold 1)** the newest message always
-  types out **in full — sprite, name, typewriter and effects** — while any
-  backlog stacked behind it flashes past, so when someone fires off several
-  lines a second the textbox jumps straight to the latest one instead of
-  crawling seconds behind. Normal back-and-forth (nothing waiting behind the
-  current line) plays every message in full, so you lose no animation in a
-  calm scene. The IC log keeps every line regardless (it stays the complete
-  record). Perf-positive (fewer frames spent on backlog). Raise the threshold
-  in Settings to watch more of a backlog animate; it sits alongside the
+- **Packed-room catch-up** (Settings → Audio & Chat, off by default): opt-in
+  webAO pacing. When enabled (threshold 1) the newest message always types out
+  **in full — sprite, name, typewriter and effects** — while any backlog stacked
+  behind it flashes past, so when someone fires off several lines a second the
+  textbox jumps straight to the latest one instead of crawling seconds behind.
+  Normal back-and-forth (nothing waiting behind the current line) plays every
+  message in full, so you lose no animation in a calm scene. **Off (default)**
+  is the original AO2 client's queue: every line plays in full and in order.
+  The IC log keeps every line regardless (it stays the complete record).
+  Perf-positive (fewer frames spent on backlog). Raise the threshold in
+  Settings to watch more of a backlog animate; it sits alongside the
   plain-English Text crawl / stay / chat-limit knobs.
 - **IC character counter** (ON by default, Settings → Audio & Chat): a live count
   to the right of the IC box that turns red past ~256 chars, where many servers

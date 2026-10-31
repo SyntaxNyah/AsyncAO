@@ -97,8 +97,8 @@ const defaultPlainLobby = true
 // defaultThemeFonts applies courtroom_fonts.ini as AO2-Client does (Courtroom::set_fonts, courtroom.cpp:1188).
 const defaultThemeFonts = true
 
-// defaultCatchUpWhenBehind keeps a packed room real-time; the IC log still keeps every message.
-const defaultCatchUpWhenBehind = true
+// defaultCatchUpWhenBehind matches the original AO2 queue: every IC message plays in full and in order.
+const defaultCatchUpWhenBehind = false
 
 // defaultShoutBypassQueue makes shouts skip the queue, exactly as AO2 does.
 const defaultShoutBypassQueue = true
@@ -889,6 +889,7 @@ func defaultSettings() *Settings {
 		DetailedLog:            defaultDetailedLog,
 		// One-shot stamps: a fresh install has nothing to move; only a file lacking them triggers the moves.
 		AutoReconnectDefaultMigrated: true,
+		CatchUpDefaultMigrated:       true,
 		ThemeFitDefaultMigrated:      true,
 		BlipSpeedDefaultMigrated:     true,
 		DeskManifestDefaultMigrated:  true,

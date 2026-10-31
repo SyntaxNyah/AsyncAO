@@ -829,6 +829,9 @@ func TestLoadDefaults(t *testing.T) {
 	if !p.Load().PreferAnimated {
 		t.Error("PreferAnimated default must be true")
 	}
+	if p.Load().CatchUpOn {
+		t.Error("CatchUpOn default must be false (the OG-client queue)")
+	}
 	for _, name := range TypeNames {
 		if _, ok := p.Load().AssetTypes[name]; !ok {
 			t.Errorf("default AssetTypes missing %s", name)
@@ -1837,6 +1840,40 @@ func TestAutoReconnectDefaultPullback(t *testing.T) {
 	}
 	if !q.Load().AutoReconnect {
 		t.Error("a stamped file's explicit ON must be respected (the pull-back already ran)")
+	}
+}
+
+// TestCatchUpDefaultPullback pins the one-shot ON→OFF move for packed-room
+// catch-up: older files carry catchUpWhenBehind:true (the old default the saver
+// always wrote) but no stamp, and must be forced to the OG-client queue once.
+// A stamped file's explicit ON survives, so turning it back on after updating
+// sticks.
+func TestCatchUpDefaultPullback(t *testing.T) {
+	old := filepath.Join(t.TempDir(), PrefsFileName)
+	if err := os.WriteFile(old, []byte(`{"catchUpWhenBehind": true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := load(old)
+	if err != nil {
+		t.Fatalf("load old file: %v", err)
+	}
+	if p.Load().CatchUpOn {
+		t.Error("an older file's ON catch-up must be forced OFF on update")
+	}
+	if !p.Load().CatchUpDefaultMigrated {
+		t.Error("the pull-back must stamp the file so it never runs twice")
+	}
+
+	stamped := filepath.Join(t.TempDir(), PrefsFileName)
+	if err := os.WriteFile(stamped, []byte(`{"catchUpWhenBehind": true, "catchUpDefaultMigrated": true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	q, err := load(stamped)
+	if err != nil {
+		t.Fatalf("load stamped file: %v", err)
+	}
+	if !q.Load().CatchUpOn {
+		t.Error("a stamped file's explicit ON must be respected")
 	}
 }
 

@@ -686,6 +686,7 @@
   "icTimestamps": true,
   "autoReconnect": true,
   "autoReconnectDefaultMigrated": true,
+  "catchUpDefaultMigrated": true,
   "themeFitDefaultMigrated": true,
   "blipSpeedDefaultMigrated": true,
   "deskManifestDefaultMigrated": true,
