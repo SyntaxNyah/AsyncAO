@@ -1,3 +1,5 @@
+// Temporary OS code in the binding: SDL 3.6's SDL_ShowNotification replaces this file.
+
 package sdl
 
 import (
