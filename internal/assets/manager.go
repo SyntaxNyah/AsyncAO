@@ -319,7 +319,8 @@ func (m *Manager) SetDeliveryNotify(f func()) {
 	m.deliveryNotify.Store(&f)
 }
 
-func (m *Manager) notifyDelivery() {
+// NotifyDelivery runs the delivery callback, which wakes a parked frame loop; safe from any goroutine.
+func (m *Manager) NotifyDelivery() {
 	if f := m.deliveryNotify.Load(); f != nil {
 		(*f)()
 	}
@@ -341,7 +342,7 @@ func (m *Manager) MusicFailures() <-chan MusicFailure { return m.musicFailCh }
 func (m *Manager) reportMusicFailure(url string, err error) {
 	select {
 	case m.musicFailCh <- MusicFailure{URL: url, Err: err}:
-		m.notifyDelivery()
+		m.NotifyDelivery()
 	default:
 	}
 }
@@ -541,7 +542,7 @@ func (m *Manager) resolveExact(url string, t AssetType) {
 			m.reportMusicFailure(url, err)
 		}
 		m.decodedCh <- DecodedAsset{URL: url, Base: url, Type: t, Err: err, Transient: true}
-		m.notifyDelivery()
+		m.NotifyDelivery()
 	}
 }
 
@@ -843,7 +844,7 @@ func (m *Manager) walkCandidates(urls []string, base, deliverBase string, t Asse
 		default:
 			// Tagged transient so it never enters the decode negative cache.
 			m.decodedCh <- DecodedAsset{URL: url, Base: deliverBase, Type: t, Err: err, Transient: true}
-			m.notifyDelivery()
+			m.NotifyDelivery()
 			return true, tried404
 		}
 	}
@@ -854,7 +855,7 @@ func (m *Manager) walkCandidates(urls []string, base, deliverBase string, t Asse
 func (m *Manager) deliver(url, base string, t AssetType, data []byte, fromPack bool) {
 	if t.IsAudio() {
 		m.audioCh <- AudioAsset{URL: url, Base: base, Type: t, Data: data, FromPack: fromPack}
-		m.notifyDelivery()
+		m.NotifyDelivery()
 		return
 	}
 	m.decoder.Submit(DecodeRequest{
@@ -870,7 +871,7 @@ func (m *Manager) deliver(url, base string, t AssetType, data []byte, fromPack b
 				m.thumbs.Store(base, d)
 			}
 			m.decodedCh <- DecodedAsset{URL: doneURL, Base: base, Type: t, Asset: d, Err: err, FromPack: fromPack}
-			m.notifyDelivery()
+			m.NotifyDelivery()
 		},
 	})
 }
