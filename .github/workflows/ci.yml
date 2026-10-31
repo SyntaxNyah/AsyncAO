@@ -209,6 +209,7 @@ jobs:
       # Homebrew path that the bundler can't rewrite, this fails the build and
       # catches the "Library not loaded on a clean Mac" regression before release.
       - name: Bundle dylibs + assert no Homebrew paths remain
+        timeout-minutes: 10 # dylibbundler loops forever on a library it can't find
         run: |
           bash scripts/bundle-macos.sh asyncao macos-stage
       - uses: actions/upload-artifact@v4
