@@ -625,6 +625,9 @@ type App struct {
 	themeCat atomic.Pointer[themeCatalog]
 	// proxyApplyBusy and proxyApplyAgain keep applyProxyPrefs to one goroutine.
 	proxyApplyBusy, proxyApplyAgain atomic.Bool
+	// proxyTestBusy keeps the Settings test to one goroutine; proxyTestResult is its last answer.
+	proxyTestBusy   atomic.Bool
+	proxyTestResult atomic.Pointer[netproxy.CheckResult]
 	// themesDirReady is a themes folder created off-thread and waiting to be opened.
 	themesDirReady atomic.Pointer[string]
 	// themeCatBusy single-flights the scan; atomic because the scanner goroutine clears it.

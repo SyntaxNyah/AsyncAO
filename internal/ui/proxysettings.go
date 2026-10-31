@@ -1,8 +1,12 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"log"
+	"net"
+	"net/url"
+	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
@@ -48,6 +52,77 @@ func (a *App) applyProxyPrefs() {
 			a.applyProxyPrefs()
 		}
 	}()
+}
+
+// proxyTestTimeout bounds the test button, longer than a working connection takes to set up.
+const proxyTestTimeout = 20 * time.Second
+
+// proxyTestTarget picks what to test against: the server in use, else the server list's host.
+func proxyTestTarget(serverURL, masterURL string) string {
+	for _, raw := range []string{serverURL, masterURL} {
+		u, err := url.Parse(raw)
+		if err != nil || u.Hostname() == "" {
+			continue
+		}
+		port := u.Port()
+		switch {
+		case port != "":
+		case u.Scheme == "wss" || u.Scheme == "https":
+			port = "443"
+		default:
+			port = "80"
+		}
+		return net.JoinHostPort(u.Hostname(), port)
+	}
+	return ""
+}
+
+// startProxyTest runs one connection test off the render thread; the readout polls proxyTestResult.
+func (a *App) startProxyTest() {
+	master := ""
+	if urls := a.masterListURLs(); len(urls) > 0 {
+		master = urls[0]
+	}
+	target := proxyTestTarget(a.lastConnURL, master)
+	if target == "" || a.proxyTestBusy.Swap(true) {
+		return
+	}
+	a.proxyTestResult.Store(nil)
+	sockets := a.sockets()
+	go func() {
+		defer PushWake()
+		defer a.proxyTestBusy.Store(false)
+		ctx, cancel := context.WithTimeout(context.Background(), proxyTestTimeout)
+		defer cancel()
+		result := sockets.Check(ctx, target)
+		log.Printf("proxy test: %s (%s)", result.Message, result.Elapsed)
+		a.proxyTestResult.Store(&result)
+	}()
+}
+
+// drawProxyTest is the button and its result, naming the step that failed.
+func (a *App) drawProxyTest(pad, y, w int32) int32 {
+	c := a.ctx
+	const testBtnW = 150
+	busy := a.proxyTestBusy.Load()
+	label := "Test connection"
+	if busy {
+		label = "Testing…"
+	}
+	if c.Button(sdl.Rect{X: pad, Y: y, W: testBtnW, H: btnH}, label) && !busy {
+		a.startProxyTest()
+	}
+	c.Tooltip(sdl.Rect{X: pad, Y: y, W: testBtnW, H: btnH},
+		"Opens one connection using the setting above, to the server you last joined or else the server list, and says which step failed.")
+	a.noteSearchRow("Test connection", y)
+	if result := a.proxyTestResult.Load(); result != nil && !busy {
+		col := ColDanger
+		if result.OK() {
+			col = ColTierGreen
+		}
+		c.LabelClipped(pad+testBtnW+10, y+4, w-pad-testBtnW-18, result.Message+" ("+result.Elapsed.String()+")", col)
+	}
+	return y + btnH + 8
 }
 
 func (a *App) drawProxySettings(y, w int32) int32 {
@@ -97,6 +172,7 @@ func (a *App) drawProxySettings(y, w int32) int32 {
 	c.Label(pad, y+4, "In effect:", ColText)
 	c.LabelClipped(pad+90, y+4, w-90-8, p.Describe(), statusCol)
 	y += 26
+	y = a.drawProxyTest(pad, y, w)
 
 	if errors.Is(p.Block, netproxy.ErrProxyUnresolvable) {
 		y = a.settingsDesc(pad, y, "This computer is set to find its proxy from a script, which AsyncAO can't run here. Rather than connect around a proxy you meant to use, connections are being BLOCKED. Two ways out: switch the setting above to \"the address below\" and enter the proxy yourself, or switch it to \"never use one\" if you don't want AsyncAO proxied at all.", ColDanger)
