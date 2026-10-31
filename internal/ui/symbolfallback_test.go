@@ -84,7 +84,9 @@ func TestUncoveredSymbolsRouteToTheEmojiFace(t *testing.T) {
 	// Find a pictograph this machine's chain genuinely cannot draw. On a stock box at
 	// least one of these is uncovered; if the chain happens to cover all of them the
 	// gap does not exist here and there is nothing to prove.
-	probes := []rune{0x2728, 0x2B50, 0x2764, 0x2665, 0x23F3, 0x2705}
+	// All of these default to TEXT presentation: an emoji-by-default character routes to
+	// the colour face on its own, so only these depend on the coverage promotion under test.
+	probes := []rune{0x2764, 0x2600, 0x2602, 0x2714, 0x2733, 0x2665}
 	var gap rune
 	for _, r := range probes {
 		if c.uncoveredPictograph(primary, string(r)) {

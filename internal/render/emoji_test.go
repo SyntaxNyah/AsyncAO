@@ -12,6 +12,7 @@ import (
 // read in source anyway. Visible emoji (😀, ❤, 👨…) are fine as literals.
 var (
 	vs16   = string(rune(0xFE0F)) // VARIATION SELECTOR-16: emoji presentation
+	vs15   = string(rune(0xFE0E)) // VARIATION SELECTOR-15: text presentation
 	zwj    = string(rune(0x200D)) // ZERO WIDTH JOINER
 	keycap = string(rune(0x20E3)) // COMBINING ENCLOSING KEYCAP
 )
@@ -32,6 +33,9 @@ func TestNeedsEmojiFallback(t *testing.T) {
 		{"❤" + vs16, true}, // BMP heart + VS16 (no supplementary byte — the second signal)
 		{"gg 👍🏽", true},    // skin-tone modifier (supplementary)
 		{vs16, true},       // lone VS16
+		{"⭐ star", true},   // BMP emoji by default (Emoji_Presentation=Yes)
+		{"✨✅", true},       // more of them
+		{"★ ♪ → ✓", false}, // BMP pictographs that default to text
 	}
 	for _, tc := range cases {
 		if got := needsEmojiFallback(tc.s); got != tc.want {
@@ -69,6 +73,9 @@ func TestAssignEmoji(t *testing.T) {
 	check("keycap", "1"+vs16+keycap, []bool{true, true, true})
 	// A bare '1' (no keycap) stays text.
 	check("bare digit", "1", []bool{false})
+	// ⭐ and ✨ are emoji by default; ★ is text by default; VS15 forces ⭐ back to text.
+	check("default emoji", "a⭐✨★", []bool{false, true, true, false})
+	check("vs15 text star", "⭐"+vs15, []bool{false, false})
 	check("cjk", "你好", []bool{false, false})
 }
 

@@ -1110,6 +1110,7 @@ type AssetPreferences struct {
 	StageFrameKind           int                  `json:"stageFrame"`        // #56 decorative viewport frame (0 = Off)
 	FriendNotify             bool                 `json:"friendNotify"`
 	FriendOSToast            bool                 `json:"friendOSToast"`
+	GroupInviteOSToast       bool                 `json:"groupInviteOSToast"`
 	CallwordOSToast          bool                 `json:"callwordOSToast"` // #M4 desktop toast on callword
 	FriendGlowPulse          bool                 `json:"friendGlowPulse"`
 	FriendSound              bool                 `json:"friendSound"`
@@ -1691,6 +1692,7 @@ type prefsJSON struct {
 	SpriteTintColor        *int                 `json:"spriteTintColor"`            // absent = default
 	FriendNotify           bool                 `json:"friendNotify"`               // default OFF
 	FriendOSToast          bool                 `json:"friendOSToast"`              // default OFF
+	GroupInviteOSToast     bool                 `json:"groupInviteOSToast"`         // default OFF
 	CallwordOSToast        bool                 `json:"callwordOSToast"`            // #M4 default OFF
 	MentionSelf            bool                 `json:"mentionSelf"`                // #203 default OFF
 	LoopPreanim            bool                 `json:"loopPreanim"`                // default OFF (non-canonical)
@@ -2519,6 +2521,7 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	p.FriendNotify = onDisk.FriendNotify
 	p.FriendOSToast = onDisk.FriendOSToast
+	p.GroupInviteOSToast = onDisk.GroupInviteOSToast
 	p.CallwordOSToast = onDisk.CallwordOSToast
 	p.MentionSelf = onDisk.MentionSelf
 	p.LoopPreanim = onDisk.LoopPreanim
@@ -6322,6 +6325,25 @@ func (p *AssetPreferences) SetFriendNotify(on bool) {
 	p.mu.Lock()
 	if p.FriendNotify != on {
 		p.FriendNotify = on
+		p.mu.Unlock()
+		p.markDirty()
+		return
+	}
+	p.mu.Unlock()
+}
+
+// GroupInviteOSToastOn / SetGroupInviteOSToast: pop a DESKTOP (OS) notification for
+// a group invite (OFF by default; Windows only, rate-limited by the UI).
+func (p *AssetPreferences) GroupInviteOSToastOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.GroupInviteOSToast
+}
+
+func (p *AssetPreferences) SetGroupInviteOSToast(on bool) {
+	p.mu.Lock()
+	if p.GroupInviteOSToast != on {
+		p.GroupInviteOSToast = on
 		p.mu.Unlock()
 		p.markDirty()
 		return

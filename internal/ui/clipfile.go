@@ -1,9 +1,9 @@
 package ui
 
 import (
+	"os"
 	"os/exec"
 	"runtime"
-	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/winexec"
 )
@@ -15,6 +15,9 @@ import (
 // off-thread by the caller's poll path. Elsewhere it reports false and the
 // toast simply doesn't claim a copy.
 
+// clipFilePathEnv hands the path to the PowerShell child.
+const clipFilePathEnv = "ASYNCAO_CLIP_FILE"
+
 // copyFileToClipboard places path on the clipboard as a file. Returns whether
 // the platform supports it (the spawn itself is async fire-and-forget; a
 // failure there is harmless — the file is still on disk either way).
@@ -22,11 +25,10 @@ func copyFileToClipboard(path string) bool {
 	if runtime.GOOS != "windows" || path == "" {
 		return false
 	}
-	// Single-quoted PowerShell literal; embedded quotes double. The path comes
-	// from our own recordings writer, but quote defensively anyway.
-	lit := "'" + strings.ReplaceAll(path, "'", "''") + "'"
+	// The path travels in the environment, so no file name is ever parsed as script.
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
-		"Set-Clipboard -LiteralPath "+lit)
+		"Set-Clipboard -LiteralPath $env:"+clipFilePathEnv)
+	cmd.Env = append(os.Environ(), clipFilePathEnv+"="+path)
 	winexec.Hide(cmd)
 	go func() { _ = cmd.Run() }() // fire-and-forget: never block the UI thread
 	return true

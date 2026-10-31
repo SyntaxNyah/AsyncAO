@@ -34,31 +34,28 @@ $x.LoadXml('<toast><visual><binding template="ToastGeneric"><text>%s</text><text
 $t=New-Object Windows.UI.Notifications.ToastNotification $x
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe').Show($t)`
 
-// xmlEscape makes a string safe inside the single-quoted toast XML: escapes the
-// XML specials AND the single quote (the PS string delimiter), and drops
-// control chars / newlines — so a crafted showname can't break out or inject.
+// xmlEscape makes text safe inside the toast script: XML specials and every character outside printable ASCII become
+// numeric references, which keeps the script plain ASCII, and control characters are dropped.
 func xmlEscape(s string) string {
 	var b strings.Builder
 	for _, r := range s {
-		switch r {
-		case '&':
-			b.WriteString("&amp;")
-		case '<':
-			b.WriteString("&lt;")
-		case '>':
-			b.WriteString("&gt;")
-		case '"':
-			b.WriteString("&quot;")
-		case '\'':
-			b.WriteString("&apos;")
+		switch {
+		case r < firstPrintableASCII:
+			// Dropped: a line break or control character has no place in a toast.
+		case r == '&' || r == '<' || r == '>' || r == '"' || r == '\'' || r > lastPrintableASCII:
+			fmt.Fprintf(&b, "&#%d;", r)
 		default:
-			if r >= 0x20 {
-				b.WriteRune(r)
-			}
+			b.WriteRune(r)
 		}
 	}
 	return b.String()
 }
+
+// The printable ASCII range; xmlEscape leaves only this as literal text.
+const (
+	firstPrintableASCII = 0x20
+	lastPrintableASCII  = 0x7E
+)
 
 // showOSToast pops a desktop notification (Windows only; no-op elsewhere). The
 // script is passed base64-UTF16 via -EncodedCommand, which sidesteps all shell
@@ -87,10 +84,8 @@ func showOSToast(title, body string) {
 		//     codepage (the exact hazard class CLAUDE.md documents for PowerShell
 		//     pipes); -EncodedCommand carries the full UTF-16 losslessly.
 		//  2. The payload is a FIXED const (windowsToastScript). The only
-		//     interpolations are the two shownames, each xmlEscape'd above
-		//     (XML specials + the ' string delimiter escaped, control chars/
-		//     newlines dropped), so command injection is already impossible —
-		//     the encoding is transport, not a sandbox.
+		//     interpolations are the two strings xmlEscape made plain ASCII; the
+		//     encoding is transport, not a sandbox.
 		//  3. This whole path is best-effort and opt-in; a failure is silent and
 		//     the always-available in-app toast/flash is the fallback.
 		//
