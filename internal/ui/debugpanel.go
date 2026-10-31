@@ -9,6 +9,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
@@ -449,10 +450,9 @@ func (a *App) exportDebugLog() {
 	filename := fmt.Sprintf("asyncao-debug-%s.txt", now.Format("20060102-150405"))
 
 	// Try Desktop first, fall back to current directory
-	desktop := filepath.Join(os.Getenv("USERPROFILE"), "Desktop")
-	path := filepath.Join(desktop, filename)
-	if err := os.MkdirAll(desktop, 0755); err != nil {
-		path = filename // fallback to current directory
+	path := filename
+	if desktop := platform.SystemUserFolders().Desktop; desktop != "" && os.MkdirAll(desktop, 0755) == nil {
+		path = filepath.Join(desktop, filename)
 	}
 
 	var content string

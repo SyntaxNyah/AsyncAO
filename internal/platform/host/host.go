@@ -15,10 +15,11 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
-// crashLogName is the file beside the executable that catches crashes no recover site saw.
+// crashLogName is the file that catches crashes no recover site saw.
 const (
-	crashLogName = "asyncao-crash.log"
-	crashLogMode = 0o644
+	crashLogName    = "asyncao-crash.log"
+	crashLogMode    = 0o644
+	crashLogDirMode = 0o755
 )
 
 // App identifies the client to the OS and to SDL.
@@ -106,7 +107,7 @@ func mainWith(app App, probe platform.Probe, relaunch func([]string) error, clie
 	detected := platform.Detect(probe)
 	// Crash reports need every goroutine's stack, even in -H=windowsgui where stderr goes nowhere.
 	debug.SetTraceback("all")
-	setupCrashOutput()
+	setupCrashOutput(app.Name)
 	log.Print(detected.Report())
 
 	rt := &Runtime{Platform: detected}
@@ -135,20 +136,40 @@ func mainWith(app App, probe platform.Probe, relaunch func([]string) error, clie
 	return client(rt)
 }
 
-// setupCrashOutput writes crashes the per-path recover sites miss beside the executable.
-func setupCrashOutput() {
-	exe, err := os.Executable()
-	if err != nil {
-		return
+// setupCrashOutput writes crashes the per-path recover sites miss to a file.
+func setupCrashOutput(appName string) {
+	exeDir := ""
+	if exe, err := os.Executable(); err == nil {
+		exeDir = filepath.Dir(exe)
 	}
-	f, err := os.OpenFile(filepath.Join(filepath.Dir(exe), crashLogName), os.O_CREATE|os.O_APPEND|os.O_WRONLY, crashLogMode)
-	if err != nil {
+	cacheDir, _ := os.UserCacheDir()
+	f := openCrashLog(exeDir, cacheDir, appName)
+	if f == nil {
 		return
 	}
 	// SetCrashOutput duplicates f's descriptor; we can close f immediately.
-	if err := debug.SetCrashOutput(f, debug.CrashOptions{}); err != nil {
-		_ = f.Close()
-		return
-	}
+	_ = debug.SetCrashOutput(f, debug.CrashOptions{})
 	_ = f.Close()
+}
+
+// openCrashLog prefers the executable's folder, which Program Files, a macOS bundle and a Flatpak don't let us write.
+func openCrashLog(exeDir, cacheDir, appName string) *os.File {
+	const flags = os.O_CREATE | os.O_APPEND | os.O_WRONLY
+	if exeDir != "" {
+		if f, err := os.OpenFile(filepath.Join(exeDir, crashLogName), flags, crashLogMode); err == nil {
+			return f
+		}
+	}
+	if cacheDir == "" {
+		return nil
+	}
+	dir := filepath.Join(cacheDir, appName)
+	if err := os.MkdirAll(dir, crashLogDirMode); err != nil {
+		return nil
+	}
+	f, err := os.OpenFile(filepath.Join(dir, crashLogName), flags, crashLogMode)
+	if err != nil {
+		return nil
+	}
+	return f
 }

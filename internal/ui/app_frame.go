@@ -3,13 +3,12 @@ package ui
 import (
 	"context"
 	"fmt"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
@@ -605,7 +604,7 @@ const themeSearchRootCap = 3
 // themeSearchRoots is the one ordered list of directories that may hold themes/, shared by loader, picker and catalog.
 // First hit per name wins downstream. configBase goes last: inserting it earlier flips which theme wins for anyone
 // with the same name in two places. Do not align config.UserThemesDir to <configBase>/themes for portable installs:
-// that moves their write root and strands their themes. The samePath skip is defensive; production never reaches it.
+// that moves their write root and strands their themes. The platform.SamePath skip is defensive; production never reaches it.
 func themeSearchRoots(customRoot, exeDir, configBase string) []string {
 	roots := make([]string, 0, themeSearchRootCap)
 	if customRoot != "" {
@@ -614,28 +613,16 @@ func themeSearchRoots(customRoot, exeDir, configBase string) []string {
 	if exeDir != "" {
 		roots = append(roots, exeDir)
 	}
-	if configBase != "" && !samePath(configBase, exeDir) {
+	if configBase != "" && !platform.SamePath(configBase, exeDir) {
 		roots = append(roots, configBase)
 	}
 	return roots
 }
 
 // themeSearchRootsNow resolves the live inputs; it can block on a cold process, so goroutine only (hard rule 2).
-// config.ExecutableDir, not os.Executable: only it applies EvalSymlinks, and samePath compares strings.
+// config.ExecutableDir, not os.Executable: only it applies EvalSymlinks, and platform.SamePath compares strings.
 func themeSearchRootsNow(customRoot string) []string {
 	exeDir := config.ExecutableDir()
 	configBase, _ := config.ConfigBaseDir()
 	return themeSearchRoots(customRoot, exeDir, configBase)
-}
-
-// samePath compares cleaned paths, case-insensitively on Windows; resolving links would be disk I/O.
-func samePath(a, b string) bool {
-	if a == "" || b == "" {
-		return false
-	}
-	a, b = filepath.Clean(a), filepath.Clean(b)
-	if runtime.GOOS == "windows" {
-		return strings.EqualFold(a, b)
-	}
-	return a == b
 }

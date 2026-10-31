@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -176,7 +177,7 @@ func scanThemeCatalog(customRoot string, prev *themeCatalog, statOnly bool) *the
 	}
 
 	root, _ := normalizeThemeRoot(customRoot)
-	// config.ExecutableDir, not os.Executable: samePath compares strings and UserThemesDir resolves symlinks, so a raw
+	// config.ExecutableDir, not os.Executable: platform.SamePath compares strings and UserThemesDir resolves symlinks, so a raw
 	// spelling on a symlinked install would scan one root twice or badge a bundled theme read-only.
 	exeDir := config.ExecutableDir()
 	configBase, _ := config.ConfigBaseDir()
@@ -200,7 +201,7 @@ func scanThemeCatalog(customRoot string, prev *themeCatalog, statOnly bool) *the
 	// Backstop: the write root's parent is already listed under every location policy today, but a theme the client
 	// just wrote must never be invisible in the browser.
 	if writeRoot != "" {
-		if parent := filepath.Dir(writeRoot); !samePath(parent, exeDir) && !samePath(parent, configBase) && !samePath(parent, root) {
+		if parent := filepath.Dir(writeRoot); !platform.SamePath(parent, exeDir) && !platform.SamePath(parent, configBase) && !platform.SamePath(parent, root) {
 			roots = append(roots, rootSpec{parent, themeOriginYours})
 		}
 	}
@@ -227,7 +228,7 @@ func scanThemeCatalog(customRoot string, prev *themeCatalog, statOnly bool) *the
 			seen[key] = true
 			themeDir := filepath.Join(dir, e.Name())
 			origin := rs.origin
-			if writeRoot != "" && samePath(dir, writeRoot) {
+			if writeRoot != "" && platform.SamePath(dir, writeRoot) {
 				origin = themeOriginYours
 			}
 			kind, sidecarErr := themeEntryKind(themeDir)
@@ -253,9 +254,9 @@ func scanThemeCatalog(customRoot string, prev *themeCatalog, statOnly bool) *the
 // themeOriginOf classifies one search root: exe dir ships bundled themes, config base is ours, anything else is copied.
 func themeOriginOf(dir, exeDir, configBase string) themeOrigin {
 	switch {
-	case samePath(dir, exeDir):
+	case platform.SamePath(dir, exeDir):
 		return themeOriginBundled
-	case samePath(dir, configBase):
+	case platform.SamePath(dir, configBase):
 		return themeOriginYours
 	default:
 		return themeOriginReadOnly
