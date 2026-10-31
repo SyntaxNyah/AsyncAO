@@ -3,7 +3,8 @@ package ui
 import (
 	_ "embed"
 	"os"
-	"runtime"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 )
 
 // twemojiTTF is the bundled Twemoji colour-emoji face (CC BY 4.0, see fonts/Twemoji-LICENSE.txt), used when the OS
@@ -18,15 +19,6 @@ var twemojiTTF []byte
 
 // Colour-emoji fallback face loader: the chat font has no emoji, so the first message containing emoji reads the
 // system emoji font off-thread and hands it to the Ctx, which segments mixed messages onto it per glyph.
-
-// emojiFontSystemPath is the OS colour-emoji font, preferred when SDL_ttf can render it. Windows ships Segoe UI
-// Emoji; other platforms return "" so the bundled Twemoji is used (bestEmojiFont).
-func emojiFontSystemPath() string {
-	if runtime.GOOS == "windows" {
-		return `C:\Windows\Fonts\seguiemj.ttf`
-	}
-	return ""
-}
 
 // colorFontRenderable reports whether SDL_ttf can render this font's colour glyphs: a CBDT/sbix bitmap strike or a
 // COLR version 0 table. COLR version 1 (Windows' Segoe UI Emoji) has no paint support and draws empty boxes.
@@ -60,7 +52,7 @@ func colorFontRenderable(b []byte) bool {
 // bestEmojiFont returns the colour-emoji face bytes to install: the OS font when colorFontRenderable, otherwise
 // the bundled Twemoji. Run off-thread (it reads the ~12 MB system font).
 func bestEmojiFont() []byte {
-	if path := emojiFontSystemPath(); path != "" {
+	if path := platform.SystemFonts().Emoji; path != "" {
 		if b, err := os.ReadFile(path); err == nil && colorFontRenderable(b) {
 			return b
 		}

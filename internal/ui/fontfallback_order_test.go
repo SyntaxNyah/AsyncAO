@@ -1,6 +1,13 @@
 package ui
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
+)
+
+// windowsCJK is the list these orders pin; they hold on any OS the tests run on.
+var windowsCJK = platform.FontsFor(platform.Windows, func(string) string { return "" }, "")
 
 // TestCJKHanCandidateOrder pins the Japanese-first Han preference — the root-cause fix.
 // The renderer takes the FIRST loaded face that covers a Han rune (pickFont / coverRunes
@@ -68,7 +75,7 @@ func TestCJKHanCandidateOrder(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		got := firstReadableFunc(cjkHanCandidates, availOf(tc.present...))
+		got := firstReadableFunc(windowsCJK.CJKHan, availOf(tc.present...))
 		if got != tc.want {
 			t.Errorf("%s: firstReadableFunc(han) = %q, want %q", tc.name, got, tc.want)
 		}
@@ -77,7 +84,7 @@ func TestCJKHanCandidateOrder(t *testing.T) {
 	// The candidate list itself must keep Japanese ahead of every Chinese face and MS
 	// Gothic dead last — a future edit that reorders it silently reintroduces the bug.
 	idx := func(p string) int {
-		for i, c := range cjkHanCandidates {
+		for i, c := range windowsCJK.CJKHan {
 			if c == p {
 				return i
 			}
@@ -85,13 +92,13 @@ func TestCJKHanCandidateOrder(t *testing.T) {
 		return -1
 	}
 	if !(idx(yuGothM) >= 0 && idx(yuGothM) < idx(yahei)) {
-		t.Error("Yu Gothic Medium must come before Microsoft YaHei in cjkHanCandidates")
+		t.Error("Yu Gothic Medium must come before Microsoft YaHei in windowsCJK.CJKHan")
 	}
 	if !(idx(meiryo) >= 0 && idx(meiryo) < idx(yahei)) {
-		t.Error("Meiryo must come before Microsoft YaHei in cjkHanCandidates")
+		t.Error("Meiryo must come before Microsoft YaHei in windowsCJK.CJKHan")
 	}
-	if last := len(cjkHanCandidates) - 1; cjkHanCandidates[last] != msgothic {
-		t.Errorf("MS Gothic must be the LAST resort, got %q at the tail", cjkHanCandidates[last])
+	if last := len(windowsCJK.CJKHan) - 1; windowsCJK.CJKHan[last] != msgothic {
+		t.Errorf("MS Gothic must be the LAST resort, got %q at the tail", windowsCJK.CJKHan[last])
 	}
 }
 
@@ -140,11 +147,11 @@ func TestCJKFontListChineseBackstop(t *testing.T) {
 // production logic exactly so the backstop can be asserted without touching disk.
 func hanFacesFor(exists func(string) bool) []string {
 	var out []string
-	han := firstReadableFunc(cjkHanCandidates, exists)
+	han := firstReadableFunc(windowsCJK.CJKHan, exists)
 	if han != "" {
 		out = append(out, han)
 	}
-	if cn := firstReadableFunc(cjkHanChineseBackstop, exists); cn != "" && cn != han {
+	if cn := firstReadableFunc(windowsCJK.CJKChineseBackstop, exists); cn != "" && cn != han {
 		out = append(out, cn)
 	}
 	return out
@@ -164,13 +171,13 @@ func TestCJKHangulCandidateOrder(t *testing.T) {
 		return func(p string) bool { return set[p] }
 	}
 
-	if got := firstReadableFunc(cjkHangulCandidates, availOf(malgun, gulim)); got != malgun {
+	if got := firstReadableFunc(windowsCJK.CJKHangul, availOf(malgun, gulim)); got != malgun {
 		t.Errorf("Malgun Gothic must win for Hangul, got %q", got)
 	}
-	if got := firstReadableFunc(cjkHangulCandidates, availOf(gulim)); got != gulim {
+	if got := firstReadableFunc(windowsCJK.CJKHangul, availOf(gulim)); got != gulim {
 		t.Errorf("Gulim should be picked when Malgun is absent, got %q", got)
 	}
-	if got := firstReadableFunc(cjkHangulCandidates, availOf()); got != "" {
+	if got := firstReadableFunc(windowsCJK.CJKHangul, availOf()); got != "" {
 		t.Errorf("no Korean face present -> empty, got %q", got)
 	}
 }
