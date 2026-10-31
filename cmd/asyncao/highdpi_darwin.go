@@ -4,9 +4,6 @@ package main
 
 import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
-// highDPIFlags makes the window Retina-aware; scale through SetScale, as SetLogicalSize also remaps mouse events.
-func highDPIFlags() uint32 { return sdl.WINDOW_ALLOW_HIGHDPI }
-
 // retinaScaleFactor is drawable pixels per point; mouse unprojection must keep the unmultiplied UI scale.
 func retinaScaleFactor(ren *sdl.Renderer, win *sdl.Window) float32 {
 	outW, _, err := ren.GetOutputSize()

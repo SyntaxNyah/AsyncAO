@@ -68,6 +68,18 @@ func Init(flags uint32) error {
 // Quit shuts every SDL subsystem down.
 func Quit() { C.SDL_Quit() }
 
+// WasInit reports which of flags are running.
+func WasInit(flags uint32) uint32 { return uint32(C.SDL_WasInit(C.SDL_InitFlags(flags))) }
+
+// SetAppMetadata names the app to the OS; it must run before Init.
+func SetAppMetadata(name, version, id string) error {
+	cName, cVersion, cID := C.CString(name), C.CString(version), C.CString(id)
+	defer C.free(unsafe.Pointer(cName))
+	defer C.free(unsafe.Pointer(cVersion))
+	defer C.free(unsafe.Pointer(cID))
+	return errorOr(C.SDL_SetAppMetadata(cName, cVersion, cID))
+}
+
 // GetError returns SDL's last error message, or nil when there is none.
 func GetError() error {
 	if msg := C.GoString(C.SDL_GetError()); msg != "" {
