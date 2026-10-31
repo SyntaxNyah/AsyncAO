@@ -12,11 +12,11 @@ package ui
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 	"github.com/SyntaxNyah/AsyncAO/internal/safepath"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
@@ -544,8 +544,7 @@ func (a *App) landThemeFonts(res *themeApply) {
 // systemFontDirs lists, in order, the fallback font folders theme.FontFiles searches for a family the theme doesn't
 // ship: (1) AsyncAO's own fonts folder, a drop folder, first because dropping a file there is explicit and should beat
 // an ambient system font of the same name; (2) the OS font folders, which make a theme declaring plain "Arial" resolve
-// at all (AO2 gets this from Qt, get_qfont, courtroom.cpp:1263). Windows only: mac/Linux font stores are laid out
-// per-family and per-user, so matching by file stem would pick the wrong cut more often than the right one.
+// at all (AO2 gets this from Qt, get_qfont, courtroom.cpp:1263).
 //
 // Both are scanned flat (depth 1), so files go directly in the folder. Called off-thread: it walks the disk.
 func systemFontDirs() []string {
@@ -553,12 +552,7 @@ func systemFontDirs() []string {
 	if d := config.UserFontsDir(); d != "" {
 		dirs = append(dirs, d)
 	}
-	if runtime.GOOS == "windows" {
-		if win := os.Getenv("WINDIR"); win != "" {
-			dirs = append(dirs, filepath.Join(win, "Fonts"))
-		}
-	}
-	return dirs
+	return append(dirs, platform.SystemFonts().ThemeDirs...)
 }
 
 // userFontsReadme is written into the fonts folder when it is first created, since an empty config folder explains

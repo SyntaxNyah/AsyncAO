@@ -6,13 +6,13 @@ package ui
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 
 	"golang.org/x/image/font/sfnt"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 )
 
 // Named caps (hard rule 4).
@@ -45,43 +45,13 @@ type fontCensus struct {
 	indexed  bool
 }
 
-// censusFontDirs is where each OS keeps fonts; the user's AsyncAO fonts folder comes first so it outranks system ones.
+// censusFontDirs lists the folders to scan; the user's AsyncAO fonts folder comes first so it outranks system ones.
 func censusFontDirs() []string {
 	var dirs []string
 	if d := config.UserFontsDir(); d != "" {
 		dirs = append(dirs, d)
 	}
-	switch runtime.GOOS {
-	case "windows":
-		if win := os.Getenv("WINDIR"); win != "" {
-			dirs = append(dirs, filepath.Join(win, "Fonts"))
-		}
-		// Per-user installs never appear in %WINDIR%\Fonts.
-		if local := os.Getenv("LOCALAPPDATA"); local != "" {
-			dirs = append(dirs, filepath.Join(local, "Microsoft", "Windows", "Fonts"))
-		}
-	case "darwin":
-		dirs = append(dirs,
-			"/System/Library/Fonts",
-			"/System/Library/Fonts/Supplemental",
-			"/Library/Fonts",
-		)
-		if home, err := os.UserHomeDir(); err == nil {
-			dirs = append(dirs, filepath.Join(home, "Library", "Fonts"))
-		}
-	default: // linux and the other unixes
-		dirs = append(dirs,
-			"/usr/share/fonts",
-			"/usr/local/share/fonts",
-			"/run/host/fonts", // flatpak's view of the host's fonts
-		)
-		if home, err := os.UserHomeDir(); err == nil {
-			dirs = append(dirs,
-				filepath.Join(home, ".local", "share", "fonts"),
-				filepath.Join(home, ".fonts"),
-			)
-		}
-	}
+	dirs = append(dirs, platform.SystemFonts().ScanDirs...)
 	return dirs
 }
 

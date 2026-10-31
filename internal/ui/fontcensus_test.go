@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 )
 
 // TestFontCensusMemoizesBothWays pins that a repeated lookup — including one that
@@ -135,7 +137,7 @@ func TestScaledChatboxStillAsksTheCensus(t *testing.T) {
 	defer c.Destroy()
 
 	var loaded [][]byte
-	for _, p := range fallbackFontCandidates() {
+	for _, p := range platform.SystemFonts().Fallback {
 		if b, err := os.ReadFile(p); err == nil && len(b) > 0 {
 			loaded = append(loaded, b)
 		}

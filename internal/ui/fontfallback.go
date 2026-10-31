@@ -2,9 +2,10 @@ package ui
 
 import (
 	"os"
-	"runtime"
 
 	"golang.org/x/image/font/sfnt"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 )
 
 // scanScriptBytes does one byte pass over s: nonASCII is set by any byte >= 0x80; cjkMaybe by any byte >= 0xE3 (the
@@ -80,49 +81,6 @@ func parseCover(data []byte) *sfnt.Font {
 // covering face. This is whole-message script coverage via pickFont's "first chain font that covers every rune"
 // rule, separate from the per-glyph colour-emoji fallback (seguiemj).
 
-// fallbackFontCandidates lists the system fonts to try, broadest first: a small curated core. Each entry costs an
-// open FreeType face in every per-size font set, so it holds only faces that answer most non-Latin text, and the
-// system-font scan (fontcensus.go) supplies the rest from what is installed. Absent files are skipped.
-// Every OS gets a list; without one macOS and Linux would have only the embedded Latin face. The non-Windows paths
-// are unverified from a Windows dev box; the scan makes a wrong guess harmless.
-func fallbackFontCandidates() []string {
-	switch runtime.GOOS {
-	case "windows":
-		return []string{
-			// Broad Latin / Cyrillic / Greek / Armenian / Georgian / Hebrew / Arabic. segoeui.ttf has no Thai
-			// (U+0E01); Thai,
-			// Lao and Khmer live in Leelawadee UI / Khmer UI, which the scan finds.
-			`C:\Windows\Fonts\segoeui.ttf`,
-			`C:\Windows\Fonts\seguisym.ttf`, // Segoe UI Symbol — arrows / math / technical / dingbats / Braille
-			`C:\Windows\Fonts\ebrima.ttf`,   // Ebrima — African scripts incl. Tifinagh and Ethiopic
-			`C:\Windows\Fonts\Nirmala.ttc`,  // Nirmala UI (a .ttc) — Indic (Devanagari, Tamil, Bengali, Sinhala, ...)
-		}
-	case "darwin":
-		return []string{
-			// Arial Unicode is the broadest face Apple ships when present; SF/Helvetica is what the system UI draws
-			// with, and
-			// Apple Symbols carries the technical/arrow blocks.
-			"/Library/Fonts/Arial Unicode.ttf",
-			"/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-			"/System/Library/Fonts/SFNS.ttf",
-			"/System/Library/Fonts/Helvetica.ttc",
-			"/System/Library/Fonts/Apple Symbols.ttf",
-		}
-	default: // linux and the other unixes
-		return []string{
-			// DejaVu is near-universal and covers Latin/Cyrillic/Greek/Armenian/Georgian and many symbols; Noto is
-			// split per
-			// script, so the scan does the rest.
-			"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-			"/usr/share/fonts/dejavu/DejaVuSans.ttf",
-			"/usr/share/fonts/TTF/DejaVuSans.ttf",
-			"/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-			"/usr/share/fonts/noto/NotoSans-Regular.ttf",
-			"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-		}
-	}
-}
-
 // ensureFallbackFontLoad reads the present system fallback fonts once, off-thread, landing their bytes on
 // fallbackFontRes. Idempotent (fallbackLoadStarted); eager rather than lazy like the emoji face, since script gaps
 // are common.
@@ -131,7 +89,7 @@ func (a *App) ensureFallbackFontLoad() {
 		return
 	}
 	a.fallbackLoadStarted = true
-	cands := fallbackFontCandidates()
+	cands := platform.SystemFonts().Fallback
 	if len(cands) == 0 {
 		return
 	}
@@ -178,45 +136,6 @@ func (a *App) pollFallbackFont() {
 	}
 }
 
-// cjkHanCandidates is the ordered Han (+ Kana) face preference, Japanese first. AO2's fandom is Japanese-origin, so
-// a CJK showname is mostly Japanese, and the picker takes the first face that covers a rune, so whichever Han face
-// loads first wins Han. A Chinese face first (Microsoft YaHei) made Japanese render in heavier Simplified-shaped
-// glyphs; a proportional Japanese Gothic (Yu Gothic / Meiryo) must win.
-// .ttc note: memFont opens face index 0 (OpenFontRW hardwires index 0). Index 0 of YuGothR.ttc is "Yu Gothic
-// Regular" and of Meiryo is "Meiryo", both the right modern look, so the non-UI family at index 0 is used on purpose.
-var cjkHanCandidates = []string{
-	`C:\Windows\Fonts\YuGothM.ttc`,             // Yu Gothic Medium — modern proportional Japanese (best JP)
-	`C:\Windows\Fonts\YuGothR.ttc`,             // Yu Gothic Regular — modern proportional Japanese
-	`C:\Windows\Fonts\meiryo.ttc`,              // Meiryo — modern proportional Japanese (older Windows)
-	`C:\Windows\Fonts\NotoSansJP-Regular.otf`,  // Noto Sans JP — if installed (never stock)
-	`C:\Windows\Fonts\NotoSansCJK-Regular.ttc`, // Noto Sans CJK — pan-CJK, JP-first glyphs
-	`C:\Windows\Fonts\msyh.ttc`,                // Microsoft YaHei — Simplified Chinese Han + Kana (CN fallback)
-	`C:\Windows\Fonts\msjh.ttc`,                // Microsoft JhengHei — Traditional Chinese
-	`C:\Windows\Fonts\simsun.ttc`,              // SimSun — Simplified Chinese (older)
-	`C:\Windows\Fonts\mingliub.ttc`,            // PMingLiU — Traditional Chinese (older)
-	`C:\Windows\Fonts\msgothic.ttc`,            // MS Gothic — legacy Japanese, LAST resort (the monospace look)
-}
-
-// cjkHanChineseBackstop is the ordered Chinese Han preference, loaded after the Japanese pick as a coverage
-// backstop. Yu Gothic's cmap is a subset of the GB18030 Han that YaHei covers, so Simplified-only characters
-// (讲/说/边) would tofu without it. coverRunes lets Yu Gothic win shared Han and this face catches the CN-only
-// runes. Shared Han in a Chinese sentence still shows Japanese glyph shapes; fixing that needs per-run script
-// detection.
-var cjkHanChineseBackstop = []string{
-	`C:\Windows\Fonts\msyh.ttc`,     // Microsoft YaHei — Simplified Chinese (GB18030)
-	`C:\Windows\Fonts\msjh.ttc`,     // Microsoft JhengHei — Traditional Chinese
-	`C:\Windows\Fonts\simsun.ttc`,   // SimSun — Simplified Chinese (older)
-	`C:\Windows\Fonts\mingliub.ttc`, // PMingLiU — Traditional Chinese (older)
-}
-
-// cjkHangulCandidates is the ordered Korean face preference: modern proportional Malgun Gothic first, legacy faces
-// last. Loaded in addition to a Han face, which doesn't cover Hangul.
-var cjkHangulCandidates = []string{
-	`C:\Windows\Fonts\malgun.ttf`, // Malgun Gothic — modern proportional Korean
-	`C:\Windows\Fonts\gulim.ttc`,  // Gulim — legacy Korean
-	`C:\Windows\Fonts\batang.ttc`, // Batang — legacy Korean serif
-}
-
 // firstReadable returns the first path in cands that exists and is a readable file, or "". Split out so cjkFontList's
 // ordering is testable with an injected predicate (firstReadableFunc).
 func firstReadable(cands []string) string {
@@ -237,21 +156,18 @@ func firstReadableFunc(cands []string, exists func(string) bool) string {
 // distinct Chinese Han face as a CN-coverage backstop, then the first present Korean face. At most two Han faces
 // keeps the CJK tier near 50 MB, loaded lazily on a CJK line. os.Stat (disk), so off-thread only.
 func cjkFontList() []string {
-	if runtime.GOOS != "windows" {
-		// Off Windows the font scan answers CJK too, finding whatever Noto CJK / PingFang / Hiragino is installed.
-		return nil
-	}
+	fonts := platform.SystemFonts()
 	var out []string
-	han := firstReadable(cjkHanCandidates)
+	han := firstReadable(fonts.CJKHan)
 	if han != "" {
 		out = append(out, han)
 	}
 	// Chinese backstop for the Simplified-only Han Yu Gothic's cmap lacks, unless the Japanese pick is already a
 	// Chinese face.
-	if cn := firstReadable(cjkHanChineseBackstop); cn != "" && cn != han {
+	if cn := firstReadable(fonts.CJKChineseBackstop); cn != "" && cn != han {
 		out = append(out, cn)
 	}
-	if kr := firstReadable(cjkHangulCandidates); kr != "" {
+	if kr := firstReadable(fonts.CJKHangul); kr != "" {
 		out = append(out, kr) // Korean Hangul — not in the Han faces
 	}
 	return out

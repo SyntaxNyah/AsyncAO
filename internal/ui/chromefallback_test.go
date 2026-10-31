@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
@@ -38,7 +39,7 @@ func TestChromeLabelFallsBackForNonLatin(t *testing.T) {
 	// Load a real broad face so the chain has something to fall back TO. Skips
 	// where none of the curated candidates exist (CI, containers).
 	var loaded [][]byte
-	for _, p := range fallbackFontCandidates() {
+	for _, p := range platform.SystemFonts().Fallback {
 		if b, err := os.ReadFile(p); err == nil && len(b) > 0 {
 			loaded = append(loaded, b)
 		}
@@ -106,7 +107,7 @@ func TestUncoveredChromeLabelAsksTheCensus(t *testing.T) {
 	// A chain with something in it, so the pick has more than one face to consider
 	// (a single-face set short-circuits before the pick runs at all).
 	var loaded [][]byte
-	for _, p := range fallbackFontCandidates() {
+	for _, p := range platform.SystemFonts().Fallback {
 		if b, err := os.ReadFile(p); err == nil && len(b) > 0 {
 			loaded = append(loaded, b)
 		}

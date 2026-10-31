@@ -43,6 +43,7 @@ in **Status**. Update Status in the same commit that completes a step.
         then. Moving to 3.6 replaces only its body, deletes `notification_other.go`, and sets the header icon SDL
         requires on Windows and on Linux with no .desktop entry. Push notifications are not planned
   - [x] item 6, clipboard: `Desktop.CopyFileToClipboard`
+  - [x] item 6, fonts: `platform.Fonts`, where each OS keeps its fonts
   - [ ] the rest of Part 5g's sequence, items 6–7, which includes the platform code (dialogs, DPI seeding, URL opening, preview
         ownership, clipboard)
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
