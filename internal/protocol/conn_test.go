@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 )
 
 // echoAOServer accepts one WebSocket client, greets it with decryptor, and
@@ -41,7 +43,7 @@ func wsURL(srv *httptest.Server) string {
 
 func TestConnDialReceiveSend(t *testing.T) {
 	srv := echoAOServer(t)
-	conn, err := Dial(context.Background(), wsURL(srv))
+	conn, err := Dial(context.Background(), netproxy.Direct(), wsURL(srv))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -88,7 +90,7 @@ func TestConnDialReceiveSend(t *testing.T) {
 // server receives repeated CH pings although the client NEVER calls Send.
 func TestKeepaliveGoroutineSends(t *testing.T) {
 	srv := echoAOServer(t)
-	conn, err := Dial(context.Background(), wsURL(srv), DialOptions{KeepaliveInterval: 20 * time.Millisecond})
+	conn, err := Dial(context.Background(), netproxy.Direct(), wsURL(srv), DialOptions{KeepaliveInterval: 20 * time.Millisecond})
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -140,7 +142,7 @@ func TestKeepaliveGoroutineSends(t *testing.T) {
 
 func TestConnCloseEndsIncomingCleanly(t *testing.T) {
 	srv := echoAOServer(t)
-	conn, err := Dial(context.Background(), wsURL(srv))
+	conn, err := Dial(context.Background(), netproxy.Direct(), wsURL(srv))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +179,7 @@ func TestConnServerDropReportsError(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	conn, err := Dial(context.Background(), wsURL(srv))
+	conn, err := Dial(context.Background(), netproxy.Direct(), wsURL(srv))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +211,7 @@ func TestDialRejectsUnreachable(t *testing.T) {
 	srv.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if _, err := Dial(ctx, dead); err == nil {
+	if _, err := Dial(ctx, netproxy.Direct(), dead); err == nil {
 		t.Error("Dial succeeded against a dead server")
 	}
 }

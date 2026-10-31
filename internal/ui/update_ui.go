@@ -42,15 +42,16 @@ func (a *App) maybeKickUpdateCheck() {
 	}
 	res := a.updateRes
 	experimental := a.d.Prefs.Load().UpdateExperimental // read on the render thread; the goroutine only captures the bool
+	client := a.sockets().Client(0)
 	go func() {
 		// assetMatch picks this platform's one swappable binary; a bare GOOS match could grab a .zip bundle.
 		// Failures are silent. The experimental channel follows the prerelease feed and may offer downgrades.
 		var rel *update.Release
 		var err error
 		if experimental {
-			rel, err = update.CheckExperimental(context.Background(), "", update.Version, update.SelfUpdateAssetMatch(platform.SystemProbe{}.GOOS()))
+			rel, err = update.CheckExperimental(context.Background(), client, "", update.Version, update.SelfUpdateAssetMatch(platform.SystemProbe{}.GOOS()))
 		} else {
-			rel, err = update.Check(context.Background(), "", update.Version, update.SelfUpdateAssetMatch(platform.SystemProbe{}.GOOS()))
+			rel, err = update.Check(context.Background(), client, "", update.Version, update.SelfUpdateAssetMatch(platform.SystemProbe{}.GOOS()))
 		}
 		if err != nil || rel == nil {
 			return
@@ -117,27 +118,28 @@ func (a *App) startSelfUpdate() {
 	sumsURL := a.updateRel.SumsURL
 	assetName := a.updateRel.AssetName
 	res := a.updateApplyRes
+	client := a.sockets().Client(0)
 	go func() {
 		defer PushWake() // wake the event-driven loop so pollUpdate surfaces the result (Restart-to-apply / error) at idle=0
 		layout := platform.UpdateLayoutFor(platform.CurrentOS())
 		if layout.Bundle {
-			res <- applyBundleUpdate(url, sumsURL, assetName, exe, layout.LibSubdir)
+			res <- applyBundleUpdate(client, url, sumsURL, assetName, exe, layout.LibSubdir)
 			return
 		}
-		res <- applyBinaryUpdate(url, sumsURL, assetName, exe)
+		res <- applyBinaryUpdate(client, url, sumsURL, assetName, exe)
 	}()
 }
 
 // applyBinaryUpdate is the single-binary path (Linux AppImage): download, verify, stage-replace.
-func applyBinaryUpdate(url, sumsURL, assetName, exe string) error {
+func applyBinaryUpdate(client update.Doer, url, sumsURL, assetName, exe string) error {
 	staged := update.StagedPath(exe)
-	if _, err := update.Download(context.Background(), url, staged); err != nil {
+	if _, err := update.Download(context.Background(), client, url, staged); err != nil {
 		return err
 	}
 	// A release without a checksum manifest (SumsURL == "") is not verified; one that ships sums must match,
 	// otherwise the partial download is deleted and the error shown.
 	if sumsURL != "" {
-		wantHex, err := update.FetchSums(context.Background(), sumsURL, assetName)
+		wantHex, err := update.FetchSums(context.Background(), client, sumsURL, assetName)
 		if err != nil {
 			_ = os.Remove(staged)
 			return err
@@ -158,14 +160,14 @@ func applyBinaryUpdate(url, sumsURL, assetName, exe string) error {
 
 // applyBundleUpdate is the bundle path (Windows DLL zip, macOS tarball): download, verify, extract, stage-replace the
 // binary and every runtime library. libSubdir is "" on Windows and "lib" on macOS.
-func applyBundleUpdate(url, sumsURL, assetName, exe, libSubdir string) error {
+func applyBundleUpdate(client update.Doer, url, sumsURL, assetName, exe, libSubdir string) error {
 	archivePath := update.StagedPath(exe) + ".archive"
 	defer os.Remove(archivePath)
-	if _, err := update.Download(context.Background(), url, archivePath); err != nil {
+	if _, err := update.Download(context.Background(), client, url, archivePath); err != nil {
 		return err
 	}
 	if sumsURL != "" {
-		wantHex, err := update.FetchSums(context.Background(), sumsURL, assetName)
+		wantHex, err := update.FetchSums(context.Background(), client, sumsURL, assetName)
 		if err != nil {
 			return err
 		}

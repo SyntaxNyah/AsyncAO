@@ -90,7 +90,7 @@ func TestDownloadTempAudio(t *testing.T) {
 		_, _ = w.Write(body)
 	}))
 	defer srv.Close()
-	path, err := downloadTempAudio(srv.URL)
+	path, err := downloadTempAudio(http.DefaultClient, srv.URL)
 	if err != nil {
 		t.Fatalf("download: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestDownloadTempAudio(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer srv404.Close()
-	if _, err := downloadTempAudio(srv404.URL); err == nil {
+	if _, err := downloadTempAudio(http.DefaultClient, srv404.URL); err == nil {
 		t.Error("downloadTempAudio should error on HTTP 404, not return a partial file")
 	}
 }

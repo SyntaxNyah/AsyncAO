@@ -1,6 +1,6 @@
-# Only internal/platform and the SDL binding may know which OS they run on (docs/RESTRUCTURING_PLAN.md, Part 5g).
+# Only internal/platform and the SDL binding may know which OS they run on (docs/RESTRUCTURING_PLAN.md, Part 5g), and
+# only internal/netproxy may open an outbound connection, so the proxy setting can't be bypassed.
 # A separate file from .golangci.yml because this applies to every package, and mnd is opted in per package.
-# netproxy is exempt until its discussion; its OS discovery builds policy values and hasn't moved.
 version: "2"
 
 linters:
@@ -13,6 +13,10 @@ linters:
       forbid:
         - pattern: ^runtime\.GOOS$
           msg: "ask internal/platform instead"
+        - pattern: ^http\.(DefaultClient|DefaultTransport|Client|Transport|Get|Head|Post|PostForm)$
+          msg: "use a client from netproxy.Factory, or the proxy setting is bypassed"
+        - pattern: ^net\.(Dial|DialTimeout|Dialer)$
+          msg: "use netproxy.Factory.DialContext, or the proxy setting is bypassed"
     depguard:
       rules:
         os-code:
@@ -21,7 +25,6 @@ linters:
             - "!$test"
             - "!**/internal/platform/**"
             - "!**/internal/sdl/**"
-            - "!**/internal/netproxy/**"
           deny:
             - pkg: os/exec
               desc: use platform.Command
@@ -32,7 +35,10 @@ linters:
       - path: _test\.go
         linters:
           - forbidigo
-      - path: internal[/\\](platform|sdl|netproxy)[/\\]
+      - path: internal[/\\](platform|sdl)[/\\]
+        linters:
+          - forbidigo
+      - path: internal[/\\]netproxy[/\\]
         linters:
           - forbidigo
 

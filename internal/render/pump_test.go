@@ -17,6 +17,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
@@ -136,7 +137,7 @@ func TestPumpTransientErrorsDontPin(t *testing.T) {
 	}))
 	defer srvCorrupt.Close()
 
-	mgr, _ := buildPumpManager(t, network.NewClientNotFoundTTL(0), false)
+	mgr, _ := buildPumpManager(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)

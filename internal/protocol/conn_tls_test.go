@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 )
 
 // tlsGreetServer is a wss AO server backed by httptest's generated self-signed
@@ -38,7 +40,7 @@ func TestDialTLSVerifyDefault(t *testing.T) {
 	srv := tlsGreetServer(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	conn, err := Dial(ctx, wssURL(srv)) // zero options = verify
+	conn, err := Dial(ctx, netproxy.Direct(), wssURL(srv)) // zero options = verify
 	if err == nil {
 		conn.Close()
 		t.Fatal("Dial accepted a self-signed cert with verification on; want failure")
@@ -52,7 +54,7 @@ func TestDialTLSSkipVerify(t *testing.T) {
 	srv := tlsGreetServer(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	conn, err := Dial(ctx, wssURL(srv), DialOptions{SkipTLSVerify: true})
+	conn, err := Dial(ctx, netproxy.Direct(), wssURL(srv), DialOptions{SkipTLSVerify: true})
 	if err != nil {
 		t.Fatalf("Dial with SkipTLSVerify against self-signed wss: %v", err)
 	}

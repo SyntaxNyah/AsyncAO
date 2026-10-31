@@ -56,6 +56,7 @@ func (a *App) startPinging() {
 	a.pingMode = true
 	a.pingGen++
 	gen, res := a.pingGen, a.pingRes
+	sockets := a.sockets()
 	go func() {
 		jobs := make(chan target)
 		var wg sync.WaitGroup
@@ -65,7 +66,7 @@ func (a *App) startPinging() {
 				defer wg.Done()
 				for t := range jobs {
 					ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
-					rtt, err := network.ProbeLatency(ctx, t.addr)
+					rtt, err := network.ProbeLatency(ctx, sockets, t.addr)
 					cancel()
 					select {
 					case res <- pingResult{url: t.url, rtt: rtt, ok: err == nil, gen: gen}:

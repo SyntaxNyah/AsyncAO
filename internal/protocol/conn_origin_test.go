@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 )
 
 // originCaptureServer accepts one WebSocket client and reports the Origin header
@@ -42,7 +44,7 @@ func TestDialWSOriginHeader(t *testing.T) {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		conn, err := Dial(ctx, wsURL(srv), opts...)
+		conn, err := Dial(ctx, netproxy.Direct(), wsURL(srv), opts...)
 		if err != nil {
 			t.Fatalf("Dial: %v", err)
 		}

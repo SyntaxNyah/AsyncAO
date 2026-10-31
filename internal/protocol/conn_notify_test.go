@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 )
 
 // TestConnNotify pins the packet-arrival wake hook (the experimental
@@ -37,7 +39,7 @@ func TestConnNotify(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	conn, err := Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http"))
+	conn, err := Dial(ctx, netproxy.Direct(), "ws"+strings.TrimPrefix(srv.URL, "http"))
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}

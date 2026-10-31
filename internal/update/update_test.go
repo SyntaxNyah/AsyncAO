@@ -69,7 +69,7 @@ func TestCheckExperimental(t *testing.T) {
 
 	// A stable build hops ONTO the test branch (the prerelease tag ranks
 	// BELOW no one — it differs, so it offers).
-	rel, err := CheckExperimental(context.Background(), srv.URL, "v1.54.5", "windows-x86_64.exe")
+	rel, err := CheckExperimental(context.Background(), http.DefaultClient, srv.URL, "v1.54.5", "windows-x86_64.exe")
 	if err != nil {
 		t.Fatalf("CheckExperimental: %v", err)
 	}
@@ -85,12 +85,12 @@ func TestCheckExperimental(t *testing.T) {
 
 	// Running the channel's newest build → nothing to do (the draft above it
 	// never counts).
-	if rel, err = CheckExperimental(context.Background(), srv.URL, "v1.55.0-test.2", "windows"); err != nil || rel != nil {
+	if rel, err = CheckExperimental(context.Background(), http.DefaultClient, srv.URL, "v1.55.0-test.2", "windows"); err != nil || rel != nil {
 		t.Fatalf("current test build must report no update, got %+v err=%v", rel, err)
 	}
 
 	// A dev build never self-updates on any channel.
-	if rel, err = CheckExperimental(context.Background(), srv.URL, "dev", ""); err != nil || rel != nil {
+	if rel, err = CheckExperimental(context.Background(), http.DefaultClient, srv.URL, "dev", ""); err != nil || rel != nil {
 		t.Fatalf("dev build must never update, got %+v err=%v", rel, err)
 	}
 }
@@ -106,7 +106,7 @@ func TestCheckExperimentalOffersStableReturn(t *testing.T) {
 		_, _ = w.Write([]byte(listStableFirst))
 	}))
 	defer srv.Close()
-	rel, err := CheckExperimental(context.Background(), srv.URL, "v1.54.5-test.9", "")
+	rel, err := CheckExperimental(context.Background(), http.DefaultClient, srv.URL, "v1.54.5-test.9", "")
 	if err != nil {
 		t.Fatalf("CheckExperimental: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestCheckNewer(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	rel, err := Check(context.Background(), srv.URL, "v1.2.0", "windows")
+	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.2.0", "windows")
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestSelfUpdatePicksSwappableDefault(t *testing.T) {
 		"darwin":  "https://example/mac-bundle.tar.gz",
 	}
 	for goos, wantURL := range want {
-		rel, err := Check(context.Background(), srv.URL, "v1.0.0", SelfUpdateAssetMatch(goos))
+		rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.0.0", SelfUpdateAssetMatch(goos))
 		if err != nil {
 			t.Fatalf("%s: Check: %v", goos, err)
 		}
@@ -214,7 +214,7 @@ func TestCheckNotNewer(t *testing.T) {
 	defer srv.Close()
 
 	for _, current := range []string{"v1.4.0", "v1.5.0", "v2.0.0"} {
-		rel, err := Check(context.Background(), srv.URL, current, "")
+		rel, err := Check(context.Background(), http.DefaultClient, srv.URL, current, "")
 		if err != nil {
 			t.Fatalf("Check(%s): %v", current, err)
 		}
@@ -232,7 +232,7 @@ func TestCheckDevNeverUpdates(t *testing.T) {
 	defer srv.Close()
 
 	for _, current := range []string{"dev", ""} {
-		rel, err := Check(context.Background(), srv.URL, current, "")
+		rel, err := Check(context.Background(), http.DefaultClient, srv.URL, current, "")
 		if err != nil || rel != nil {
 			t.Errorf("current %q: want (nil,nil), got (%+v,%v)", current, rel, err)
 		}
@@ -245,7 +245,7 @@ func TestCheckServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := Check(context.Background(), srv.URL, "v1.0.0", ""); err == nil {
+	if _, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.0.0", ""); err == nil {
 		t.Fatal("a non-200 response must surface an error")
 	}
 }
@@ -274,7 +274,7 @@ func TestCheckCapturesSumsAssetAndName(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	rel, err := Check(context.Background(), srv.URL, "v1.0.0", SelfUpdateAssetMatch("windows"))
+	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.0.0", SelfUpdateAssetMatch("windows"))
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestCheckNoSumsAssetLeavesSumsURLEmpty(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	rel, err := Check(context.Background(), srv.URL, "v1.2.0", "windows")
+	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.2.0", "windows")
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -350,7 +350,7 @@ func TestFetchSums(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	got, err := FetchSums(context.Background(), srv.URL, "asyncao-windows-x86_64.exe")
+	got, err := FetchSums(context.Background(), http.DefaultClient, srv.URL, "asyncao-windows-x86_64.exe")
 	if err != nil {
 		t.Fatalf("FetchSums: %v", err)
 	}
@@ -360,7 +360,7 @@ func TestFetchSums(t *testing.T) {
 	// A matched asset that is missing from a published manifest is an error (a
 	// release with sums lists every shipped binary — a gap means abort, not
 	// proceed-unverified).
-	if _, err := FetchSums(context.Background(), srv.URL, "asyncao-macos-arm64"); err == nil {
+	if _, err := FetchSums(context.Background(), http.DefaultClient, srv.URL, "asyncao-macos-arm64"); err == nil {
 		t.Fatal("an asset missing from the manifest must error")
 	}
 }
@@ -370,7 +370,7 @@ func TestFetchSumsServerError(t *testing.T) {
 		http.Error(w, "gone", http.StatusNotFound)
 	}))
 	defer srv.Close()
-	if _, err := FetchSums(context.Background(), srv.URL, "x.exe"); err == nil {
+	if _, err := FetchSums(context.Background(), http.DefaultClient, srv.URL, "x.exe"); err == nil {
 		t.Fatal("a non-200 SHA256SUMS fetch must surface an error")
 	}
 }

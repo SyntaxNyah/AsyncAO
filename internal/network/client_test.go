@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 )
 
 func TestSingleflightCollapsesConcurrentFetches(t *testing.T) {
@@ -23,7 +25,7 @@ func TestSingleflightCollapsesConcurrentFetches(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClientNotFoundTTL(0)
+	c := NewClientNotFoundTTL(0, netproxy.Direct())
 	const callers = 32
 	var wg sync.WaitGroup
 	results := make([][]byte, callers)
@@ -65,7 +67,7 @@ func TestFetchSendsIdentifiableUserAgent(t *testing.T) {
 		fmt.Fprint(w, "ok")
 	}))
 	defer srv.Close()
-	c := NewClientNotFoundTTL(0)
+	c := NewClientNotFoundTTL(0, netproxy.Direct())
 	if _, err := c.Fetch(context.Background(), srv.URL+"/a.webp"); err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +100,7 @@ func TestFetchRetriesTransient(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClientNotFoundTTL(0)
+	c := NewClientNotFoundTTL(0, netproxy.Direct())
 	data, err := c.Fetch(context.Background(), srv.URL+"/flaky.webp")
 	if err != nil || string(data) != "recovered-bytes" {
 		t.Fatalf("flaky fetch = %q, %v — want recovery on the bounded retry", data, err)
@@ -116,7 +118,7 @@ func TestFetchRetriesTransient(t *testing.T) {
 	}
 
 	upstream.Store(0)
-	c2 := NewClientNotFoundTTL(0) // fresh backoff state: the sick-origin case stands alone
+	c2 := NewClientNotFoundTTL(0, netproxy.Direct()) // fresh backoff state: the sick-origin case stands alone
 	if _, err := c2.Fetch(context.Background(), srv.URL+"/sick.webp"); err == nil {
 		t.Fatal("persistently sick origin must still error")
 	}
@@ -133,7 +135,7 @@ func TestNotFoundCachedWithinTTL(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClientNotFoundTTL(0)
+	c := NewClientNotFoundTTL(0, netproxy.Direct())
 	url := srv.URL + "/characters/edgeworth/(a)missing.webp"
 
 	if _, err := c.Fetch(context.Background(), url); !errors.Is(err, ErrAssetNotFound) {
@@ -161,7 +163,7 @@ func TestNotFoundTTLExpires(t *testing.T) {
 	defer srv.Close()
 
 	const ttl = 50 * time.Millisecond
-	c := newClient(DefaultRequestTimeout, ttl)
+	c := newClient(DefaultRequestTimeout, ttl, netproxy.Direct())
 	url := srv.URL + "/sounds/blips/missing.opus"
 
 	_, _ = c.Fetch(context.Background(), url)
@@ -180,7 +182,7 @@ func TestForgetNotFoundAllowsImmediateRetry(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClientNotFoundTTL(0)
+	c := NewClientNotFoundTTL(0, netproxy.Direct())
 	url := srv.URL + "/x.webp"
 	_, _ = c.Fetch(context.Background(), url)
 	c.ForgetNotFound(url)
@@ -204,7 +206,7 @@ func TestFetchKnownAndUnknownContentLength(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClientNotFoundTTL(0)
+	c := NewClientNotFoundTTL(0, netproxy.Direct())
 	for _, path := range []string{"/known", "/chunked"} {
 		got, err := c.Fetch(context.Background(), srv.URL+path)
 		if err != nil {
@@ -224,7 +226,7 @@ func TestCallerCancellationDoesNotKillSharedFetch(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClientNotFoundTTL(0)
+	c := NewClientNotFoundTTL(0, netproxy.Direct())
 	url := srv.URL + "/slow.webp"
 
 	impatient, cancel := context.WithCancel(context.Background())
@@ -266,7 +268,7 @@ func TestHostBackoffAfterFailure(t *testing.T) {
 	deadURL := srv.URL
 	srv.Close()
 
-	c := NewClientNotFoundTTL(0)
+	c := NewClientNotFoundTTL(0, netproxy.Direct())
 	if _, err := c.Fetch(context.Background(), deadURL+"/a.webp"); err == nil {
 		t.Fatal("fetch against dead server succeeded?")
 	}
@@ -287,7 +289,7 @@ func TestBackoffClearsOnSuccess(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClientNotFoundTTL(0)
+	c := NewClientNotFoundTTL(0, netproxy.Direct())
 	url := srv.URL + "/x.webp"
 	if _, err := c.Fetch(context.Background(), url); err == nil {
 		t.Fatal("expected first fetch to fail")
@@ -311,7 +313,7 @@ func TestBackoffClearsOnSuccess(t *testing.T) {
 // blanks the whole server's assets for 30s. The loop runs well inside the
 // first-tier window (backoffBase = 500ms), so it is deterministic.
 func TestBackoffBurstStaysFirstTier(t *testing.T) {
-	c := NewClientNotFoundTTL(0)
+	c := NewClientNotFoundTTL(0, netproxy.Direct())
 	const host = "cdn.example.com"
 	const burst = 32 // more than the 16 workers, to be sure
 	for i := 0; i < burst; i++ {
@@ -336,7 +338,7 @@ func TestBackoffBurstStaysFirstTier(t *testing.T) {
 // TestBackoffClimbsAcrossWindows checks a genuinely-down host still escalates:
 // a failure AFTER the window has elapsed increments the tier.
 func TestBackoffClimbsAcrossWindows(t *testing.T) {
-	c := NewClientNotFoundTTL(0)
+	c := NewClientNotFoundTTL(0, netproxy.Direct())
 	const host = "down.example.com"
 	c.recordFailure(host) // tier 1
 	b := c.backoffFor(host)
@@ -389,7 +391,7 @@ func TestDNSPreResolveCachesLocalhost(t *testing.T) {
 // budget must be far larger. Fast hosts are still cut by the request context's 2s
 // adaptive floor, so these generous ceilings cost them nothing.
 func TestTransportMusicTimeoutProfile(t *testing.T) {
-	c := NewClientNotFoundTTL(0)
+	c := NewClientNotFoundTTL(0, netproxy.Direct())
 	tr, ok := c.httpClient.Transport.(*http.Transport)
 	if !ok {
 		t.Fatalf("transport is %T, want *http.Transport", c.httpClient.Transport)

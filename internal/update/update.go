@@ -64,16 +64,21 @@ type ghRelease struct {
 	} `json:"assets"`
 }
 
+// Doer sends a request; the caller's comes from the socket factory, so updates follow the proxy setting.
+type Doer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
 // Check does one GET and returns the latest release if its tag is a higher semver than current; (nil, nil)
 // when already current or a dev build, and an error only on transport or decode failure.
-func Check(ctx context.Context, releasesURL, current, assetMatch string) (*Release, error) {
+func Check(ctx context.Context, client Doer, releasesURL, current, assetMatch string) (*Release, error) {
 	if current == "" || current == devVersion {
 		return nil, nil // unstamped/dev build never self-updates
 	}
 	if releasesURL == "" {
 		releasesURL = DefaultReleasesURL
 	}
-	body, err := fetchJSON(ctx, releasesURL)
+	body, err := fetchJSON(ctx, client, releasesURL)
 	if err != nil {
 		return nil, err
 	}
@@ -89,14 +94,14 @@ func Check(ctx context.Context, releasesURL, current, assetMatch string) (*Relea
 
 // CheckExperimental does one GET, and the newest published build wins if its tag differs from the running one.
 // It deliberately allows sideways and downgrade offers: test branch tags rank below the stable they preview.
-func CheckExperimental(ctx context.Context, listURL, current, assetMatch string) (*Release, error) {
+func CheckExperimental(ctx context.Context, client Doer, listURL, current, assetMatch string) (*Release, error) {
 	if current == "" || current == devVersion {
 		return nil, nil // unstamped/dev build never self-updates
 	}
 	if listURL == "" {
 		listURL = DefaultReleaseListURL
 	}
-	body, err := fetchJSON(ctx, listURL)
+	body, err := fetchJSON(ctx, client, listURL)
 	if err != nil {
 		return nil, err
 	}
@@ -118,12 +123,12 @@ func CheckExperimental(ctx context.Context, listURL, current, assetMatch string)
 	return nil, nil
 }
 
-func fetchJSON(ctx context.Context, url string) ([]byte, error) {
-	return fetchBounded(ctx, url, maxBodyBytes)
+func fetchJSON(ctx context.Context, client Doer, url string) ([]byte, error) {
+	return fetchBounded(ctx, client, url, maxBodyBytes)
 }
 
 // fetchBounded is the package's bounded, timeout-capped GET, with a per-call read cap.
-func fetchBounded(ctx context.Context, url string, maxBytes int64) ([]byte, error) {
+func fetchBounded(ctx context.Context, client Doer, url string, maxBytes int64) ([]byte, error) {
 	cctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(cctx, http.MethodGet, url, nil)
@@ -132,7 +137,7 @@ func fetchBounded(ctx context.Context, url string, maxBytes int64) ([]byte, erro
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "AsyncAO-updater") // GitHub rejects an empty UA
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -169,8 +174,8 @@ func newRelease(gh *ghRelease, assetMatch string) *Release {
 
 // FetchSums errors on a missing entry, as every shipped binary is listed and the update must not go unverified.
 // Don't call it with an empty sumsURL.
-func FetchSums(ctx context.Context, sumsURL, assetName string) (string, error) {
-	body, err := fetchBounded(ctx, sumsURL, maxSumsBytes)
+func FetchSums(ctx context.Context, client Doer, sumsURL, assetName string) (string, error) {
+	body, err := fetchBounded(ctx, client, sumsURL, maxSumsBytes)
 	if err != nil {
 		return "", err
 	}

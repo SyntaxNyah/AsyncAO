@@ -32,6 +32,8 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 )
 
 const (
@@ -270,7 +272,7 @@ func cmdWarm(args []string) error {
 	}
 	defer d.Close()
 
-	client := &http.Client{Timeout: warmTimeout}
+	client := newHTTPClient()
 	var okN, missN, failN atomic.Int64
 	jobs := make(chan string)
 	var wg sync.WaitGroup
@@ -307,7 +309,14 @@ func cmdWarm(args []string) error {
 	return nil
 }
 
-func fetch(client *http.Client, url string) ([]byte, int) {
+// newHTTPClient follows this computer's proxy setting; this tool has no preferences of its own.
+func newHTTPClient() *http.Client { //nolint:forbidigo // built by the socket factory
+	sockets := netproxy.New(platform.SystemProxySettings, os.Getenv)
+	sockets.Apply(netproxy.ModeSystem, "")
+	return sockets.Client(warmTimeout)
+}
+
+func fetch(client *http.Client, url string) ([]byte, int) { //nolint:forbidigo // built by the socket factory
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil, 0
@@ -325,7 +334,7 @@ func fetch(client *http.Client, url string) ([]byte, int) {
 
 // manifestIconExt reads the extension from extensions.json, defaulting to .png as webAO does.
 func manifestIconExt(base string) string {
-	client := &http.Client{Timeout: warmTimeout}
+	client := newHTTPClient()
 	data, status := fetch(client, base+"/"+assets.ManifestFileName)
 	if status != http.StatusOK {
 		return ".png"

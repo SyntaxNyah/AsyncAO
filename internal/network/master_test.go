@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 )
 
 // sampleMasterJSON is a real master-server response shape (trimmed): one
@@ -146,7 +147,7 @@ func TestFetchServerList(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	entries, err := FetchServerList(context.Background(), srv.URL)
+	entries, err := FetchServerList(context.Background(), netproxy.Direct(), srv.URL)
 	if err != nil {
 		t.Fatalf("FetchServerList: %v", err)
 	}
@@ -173,11 +174,11 @@ func TestFetchServerListETagRevalidation(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	first, err := FetchServerList(context.Background(), srv.URL)
+	first, err := FetchServerList(context.Background(), netproxy.Direct(), srv.URL)
 	if err != nil {
 		t.Fatalf("first fetch: %v", err)
 	}
-	second, err := FetchServerList(context.Background(), srv.URL)
+	second, err := FetchServerList(context.Background(), netproxy.Direct(), srv.URL)
 	if err != nil {
 		t.Fatalf("revalidated fetch: %v", err)
 	}
@@ -231,7 +232,7 @@ func TestFetchServerLists(t *testing.T) {
 	}))
 	defer srvB.Close()
 
-	entries, err := FetchServerLists(context.Background(), []string{srvA.URL, srvB.URL})
+	entries, err := FetchServerLists(context.Background(), netproxy.Direct(), []string{srvA.URL, srvB.URL})
 	if err != nil {
 		t.Fatalf("FetchServerLists: %v", err)
 	}
@@ -249,7 +250,7 @@ func TestFetchServerListsPartialFailure(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	entries, err := FetchServerLists(context.Background(), []string{"://no-network", srv.URL})
+	entries, err := FetchServerLists(context.Background(), netproxy.Direct(), []string{"://no-network", srv.URL})
 	if err != nil {
 		t.Fatalf("partial failure returned an error: %v", err)
 	}
@@ -258,7 +259,7 @@ func TestFetchServerListsPartialFailure(t *testing.T) {
 	}
 
 	// Every endpoint down: the error must surface.
-	if _, err := FetchServerLists(context.Background(), []string{"://no-network"}); err == nil {
+	if _, err := FetchServerLists(context.Background(), netproxy.Direct(), []string{"://no-network"}); err == nil {
 		t.Error("all endpoints failing must return an error")
 	}
 }
@@ -266,7 +267,7 @@ func TestFetchServerListsPartialFailure(t *testing.T) {
 // TestAdaptiveTimeout pins the per-host deadline math: global timeout
 // until samples exist, multiple×EWMA after, clamped both ways.
 func TestAdaptiveTimeout(t *testing.T) {
-	c := newClient(5*time.Second, time.Minute)
+	c := newClient(5*time.Second, time.Minute, netproxy.Direct())
 	const host = "cdn.example.com"
 
 	if got := c.adaptiveTimeout(host); got != 5*time.Second {
@@ -286,7 +287,7 @@ func TestAdaptiveTimeout(t *testing.T) {
 		t.Errorf("slow host → %v, want the 5s ceiling", got)
 	}
 	// Mid-range host: 350ms EWMA × 8 = 2.8s, inside both clamps.
-	c2 := newClient(5*time.Second, time.Minute)
+	c2 := newClient(5*time.Second, time.Minute, netproxy.Direct())
 	c2.observeLatency(host, 350*time.Millisecond)
 	if got := c2.adaptiveTimeout(host); got != 2800*time.Millisecond {
 		t.Errorf("mid host → %v, want 2.8s", got)

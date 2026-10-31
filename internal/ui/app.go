@@ -13,6 +13,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/logbrowser"
 	"github.com/SyntaxNyah/AsyncAO/internal/metrics"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
@@ -126,6 +127,8 @@ type Deps struct {
 	AudioDevices host.AudioDevices
 	// Capabilities says what this platform supports; the zero value supports everything.
 	Capabilities platform.Capabilities
+	// Sockets opens every outbound connection, by the proxy setting in force.
+	Sockets *netproxy.Factory
 	// Desktop opens web addresses and files in the programs the user chose.
 	Desktop host.Desktop
 	// GraphicsName says what is drawing, for the perf HUD and the About screen.
@@ -145,6 +148,14 @@ type Deps struct {
 	ConfigQuarantine *config.Quarantine
 	// AutoMounts are the auto-discovered packages/ folders, appended after the user's manual mounts.
 	AutoMounts []string
+}
+
+// sockets is the factory from Deps; tests that build an App without one get direct connections.
+func (a *App) sockets() *netproxy.Factory {
+	if a.d.Sockets == nil {
+		return netproxy.Direct()
+	}
+	return a.d.Sockets
 }
 
 // App is the whole client UI state machine. Render thread only.
@@ -612,6 +623,8 @@ type App struct {
 	// themeCat is the off-thread theme catalog as an immutable snapshot: the scan reads directories, the draw path
 	// may not (hard rules 2 and 5).
 	themeCat atomic.Pointer[themeCatalog]
+	// proxyApplyBusy and proxyApplyAgain keep applyProxyPrefs to one goroutine.
+	proxyApplyBusy, proxyApplyAgain atomic.Bool
 	// themesDirReady is a themes folder created off-thread and waiting to be opened.
 	themesDirReady atomic.Pointer[string]
 	// themeCatBusy single-flights the scan; atomic because the scanner goroutine clears it.

@@ -10,6 +10,9 @@ import (
 // maxBypassEntries bounds the match loop (hard rule 4); extra entries count into dropped for the readout.
 const maxBypassEntries = 128
 
+// bitsPerOctet converts a count of IPv4 labels to a prefix length.
+const bitsPerOctet = 8
+
 // bypassList is a "these hosts go direct" rule set, immutable once published in a Policy.
 type bypassList struct {
 	// noDot is the Windows `<local>` macro: bypass any host name with no period.
@@ -114,7 +117,19 @@ func octetWildcard(prefix string) (netip.Prefix, bool) {
 	if err != nil || !addr.Is4() {
 		return netip.Prefix{}, false
 	}
-	return netip.PrefixFrom(addr, 8*len(labels)).Masked(), true
+	return netip.PrefixFrom(addr, bitsPerOctet*len(labels)).Masked(), true
+}
+
+// count is how many rules are in force, for the readout.
+func (b *bypassList) count() int {
+	if b == nil {
+		return 0
+	}
+	n := len(b.hosts) + len(b.nets) + len(b.ips)
+	if b.noDot {
+		n++
+	}
+	return n
 }
 
 // match reports whether host (bare, no port or brackets) goes direct. Loopback is always direct, as in the

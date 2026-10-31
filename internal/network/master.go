@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 )
 
 // DefaultMasterServerURL is the AO master list endpoint, the same JSON API webAO and AO2-Client use.
@@ -182,7 +183,7 @@ var (
 	masterETagCache = map[string]cachedMasterList{} // listURL → last validated payload
 )
 
-func FetchServerList(ctx context.Context, listURL string) ([]ServerEntry, error) {
+func FetchServerList(ctx context.Context, sockets *netproxy.Factory, listURL string) ([]ServerEntry, error) {
 	ctx, cancel := context.WithTimeout(ctx, masterFetchTimeout)
 	defer cancel()
 
@@ -197,7 +198,7 @@ func FetchServerList(ctx context.Context, listURL string) ([]ServerEntry, error)
 	if hasPrev && prev.etag != "" {
 		req.Header.Set("If-None-Match", prev.etag)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := sockets.Client(0).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("network: fetching server list: %w", err)
 	}
@@ -258,11 +259,11 @@ func MergeServerLists(lists ...[]ServerEntry) []ServerEntry {
 }
 
 // FetchServerLists merges every endpoint, so a partial outage still shows a lobby; errors only if nothing came.
-func FetchServerLists(ctx context.Context, urls []string) ([]ServerEntry, error) {
+func FetchServerLists(ctx context.Context, sockets *netproxy.Factory, urls []string) ([]ServerEntry, error) {
 	var lists [][]ServerEntry
 	var errs []error
 	for _, u := range urls {
-		entries, err := FetchServerList(ctx, u)
+		entries, err := FetchServerList(ctx, sockets, u)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -276,12 +277,11 @@ func FetchServerLists(ctx context.Context, urls []string) ([]ServerEntry, error)
 	return merged, nil
 }
 
-// ProbeLatency measures TCP connect time for the lobby's sort: it undercounts wss:// (no TLS), and the first
-// dial includes DNS.
-func ProbeLatency(ctx context.Context, addr string) (time.Duration, error) {
-	var d net.Dialer
+// ProbeLatency measures connect time for the lobby's sort: it undercounts wss:// (no TLS), the first dial includes DNS,
+// and through a proxy it includes the proxy, because a direct probe would show the user's address to every server.
+func ProbeLatency(ctx context.Context, sockets *netproxy.Factory, addr string) (time.Duration, error) {
 	start := time.Now()
-	conn, err := d.DialContext(ctx, "tcp", addr)
+	conn, err := sockets.DialContext(ctx, "tcp", addr)
 	rtt := time.Since(start)
 	if conn != nil {
 		_ = conn.Close()

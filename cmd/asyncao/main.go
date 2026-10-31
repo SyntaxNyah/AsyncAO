@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"path/filepath"
 	"slices"
 	"time"
@@ -129,11 +130,11 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	}
 
 	// Resolve the proxy before anything can dial, or the earliest requests would go direct.
-	proxyPolicy := netproxy.Configure(netproxy.Mode(prefs.Load().ProxyModeVal), prefs.Load().ProxyURL)
-	log.Printf("proxy: %s", proxyPolicy.Describe())
+	sockets := netproxy.New(platform.SystemProxySettings, os.Getenv)
+	log.Printf("proxy: %s", sockets.Apply(netproxy.Mode(prefs.Load().ProxyModeVal), prefs.Load().ProxyURL).Describe())
 
 	// The 404 TTL is set at construction, so changing it needs a restart.
-	client := network.NewClientNotFoundTTL(time.Duration(prefs.Load().NotFoundTTLSecVal) * time.Second)
+	client := network.NewClientNotFoundTTL(time.Duration(prefs.Load().NotFoundTTLSecVal)*time.Second, sockets)
 	client.SetAssetOrigin(prefs.Load().AssetOrigin) // power-user Origin/CORS override for asset streaming
 	client.SetAdaptiveLatencyMultiple(prefs.Load().AdaptiveLatMultipleVal)
 	pool := network.NewPool(network.DefaultWorkers)
@@ -323,6 +324,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		AudioDevices:     rt.Audio,
 		GraphicsName:     graphics.Name(),
 		Desktop:          rt.Desktop,
+		Sockets:          sockets,
 		Capabilities:     rt.Platform.Capabilities,
 		Preview:          preview,
 		Presence:         pres,

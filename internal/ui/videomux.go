@@ -140,10 +140,14 @@ const (
 	maxAudioClips = 64
 )
 
+// httpGetter is the part of an HTTP client downloadTempAudio needs.
+type httpGetter interface {
+	Get(url string) (*http.Response, error)
+}
+
 // downloadTempAudio fetches url to a temp file and returns its path (the caller removes it).
 // It does blocking network and disk I/O, so it runs off the render thread only.
-func downloadTempAudio(url string) (string, error) {
-	client := &http.Client{Timeout: musicHTTPTimeout}
+func downloadTempAudio(client httpGetter, url string) (string, error) {
 	resp, err := client.Get(url)
 	if err != nil {
 		return "", err
@@ -171,9 +175,9 @@ func downloadTempAudio(url string) (string, error) {
 // fetchTempAudio lands a music track in a temp file for the mux. http(s) URLs use the bounded direct download; other
 // schemes (local:// from a mounted folder or archive) go through Manager.FetchRaw, which the raw client cannot do.
 // maxMusicBytes applies on both paths.
-func fetchTempAudio(mgr *assets.Manager, url string) (string, error) {
+func fetchTempAudio(mgr *assets.Manager, client httpGetter, url string) (string, error) {
 	if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
-		return downloadTempAudio(url)
+		return downloadTempAudio(client, url)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), musicHTTPTimeout)
 	defer cancel()
@@ -209,7 +213,7 @@ func writeTempBytes(data []byte) (string, error) {
 // silentPath, writing "<name>-audio.<ext>" beside it and removing the silent original on success.
 // It returns the final path and true, or ("", false) to keep the silent video. Each unique music url downloads once;
 // SFX bases resolve via mgr.ResolveRaw. It touches no App state, so it is safe on the finish goroutine.
-func muxSceneAudio(mgr *assets.Manager, silentPath string, songs []songSegment, sfx []sfxPlacement, format videoenc.Format) (string, bool) {
+func muxSceneAudio(mgr *assets.Manager, client httpGetter, silentPath string, songs []songSegment, sfx []sfxPlacement, format videoenc.Format) (string, bool) {
 	var temps []string
 	defer func() {
 		for _, t := range temps {
@@ -226,7 +230,7 @@ func muxSceneAudio(mgr *assets.Manager, silentPath string, songs []songSegment, 
 		}
 		path, seen := dl[s.url]
 		if !seen {
-			if p, err := fetchTempAudio(mgr, s.url); err == nil {
+			if p, err := fetchTempAudio(mgr, client, s.url); err == nil {
 				path = p
 				temps = append(temps, p)
 			}

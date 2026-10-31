@@ -63,7 +63,7 @@ func CleanupOldBundle(exePath string) {
 
 // Download streams url to destPath, which must be on the install's volume (use StagedPath); a truncated or
 // over-cap download is removed, so a partial file never reaches the swap.
-func Download(ctx context.Context, url, destPath string) (int64, error) {
+func Download(ctx context.Context, client Doer, url, destPath string) (int64, error) {
 	cctx, cancel := context.WithTimeout(ctx, downloadTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(cctx, http.MethodGet, url, nil)
@@ -71,7 +71,7 @@ func Download(ctx context.Context, url, destPath string) (int64, error) {
 		return 0, err
 	}
 	req.Header.Set("User-Agent", "AsyncAO-updater")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return 0, err
 	}

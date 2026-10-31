@@ -14,6 +14,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
@@ -203,7 +204,7 @@ func TestManagerWebPOnlyServerOneProbePerAsset(t *testing.T) {
 		"/characters/phoenix/(b)normal.webp":  sprite,
 		"/background/court/defenseempty.webp": sprite,
 	})
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 
 	bases := []struct {
 		base string
@@ -237,7 +238,7 @@ func TestManagerPNGOnlyServerWarnsThenFallbacksRecover(t *testing.T) {
 	cs := newCountingServer(t, map[string][]byte{
 		"/characters/edgeworth/(a)normal.png": sprite,
 	})
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	base := cs.srv.URL + "/characters/edgeworth/(a)normal"
 
 	rig.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
@@ -274,7 +275,7 @@ func TestManagerLearnedWarmStart(t *testing.T) {
 		payloads["/characters/"+c+"/char_icon.png"] = icon
 	}
 	cs := newCountingServer(t, payloads)
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 
 	host := hostOf(cs.srv.URL)
 	rig.resolver.RecordSuccess(host, AssetTypeCharIcon, config.ExtPNG)
@@ -305,7 +306,7 @@ func TestManagerT1ShortCircuitUsesBaseKey(t *testing.T) {
 	cs := newCountingServer(t, map[string][]byte{
 		"/characters/phoenix/char_icon.png": icon,
 	})
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	base := cs.srv.URL + "/characters/phoenix/char_icon"
 
 	// Simulate the render side: textures land keyed by base. Safe to set
@@ -360,7 +361,7 @@ func TestManagerUnprefixedSpriteFallback(t *testing.T) {
 	cs := newCountingServer(t, map[string][]byte{
 		"/characters/tung/1.webp": sprite, // bare spelling only — no (a)/(b)
 	})
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	primary := cs.srv.URL + "/characters/tung/(a)1"
 	bare := cs.srv.URL + "/characters/tung/1"
 
@@ -410,7 +411,7 @@ func TestManagerPrefetchChain(t *testing.T) {
 	cs := newCountingServer(t, map[string][]byte{
 		"/misc/YTTD/chat.png": art, // only the third spelling exists (misc defaults to png)
 	})
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	identity := cs.srv.URL + "/misc/yttd/chat"
 	alts := []string{
 		cs.srv.URL + "/misc/yttd/chatbox",
@@ -447,7 +448,7 @@ func TestManagerAbsentAssetKeepsLearned(t *testing.T) {
 	cs := newCountingServer(t, map[string][]byte{
 		"/characters/witch/emotions/button2_off.png": art, // button1_on ships no art (optional)
 	})
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	host := hostOf(cs.srv.URL + "/x")
 	rig.resolver.RecordSuccess(host, AssetTypeEmoteButton, config.ExtPNG) // the extensions.json seed
 
@@ -483,7 +484,7 @@ func TestManagerStaleLearnedFormatRecovers(t *testing.T) {
 	cs := newCountingServer(t, map[string][]byte{
 		"/characters/maya/(a)normal.png": sprite, // only PNG exists now
 	})
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	rig.prefs.SetGlobalFallbacks(true) // full list: webp, apng, gif, png
 	host := hostOf(cs.srv.URL)
 	rig.resolver.RecordSuccess(host, AssetTypeCharSprite, config.ExtWebP) // stale learn
@@ -508,7 +509,7 @@ func TestManagerAudioBypassesDecode(t *testing.T) {
 	cs := newCountingServer(t, map[string][]byte{
 		"/sounds/blips/male.opus": opus,
 	})
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 
 	rig.manager.Prefetch(cs.srv.URL+"/sounds/blips/male", AssetTypeBlip, network.PriorityHigh) // AssetType: Blip
 	select {
@@ -532,7 +533,7 @@ func TestManagerAudioBypassesDecode(t *testing.T) {
 func TestManagerDiskPromotion(t *testing.T) {
 	sprite := encodePNG(t, 8, 8, color.RGBA{R: 1, G: 2, B: 3, A: 255})
 	cs := newCountingServer(t, map[string][]byte{}) // network would 404 everything
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 
 	base := cs.srv.URL + "/characters/franziska/(a)normal"
 	url := base + config.ExtWebP
@@ -645,7 +646,7 @@ func TestManagerInflightDedup(t *testing.T) {
 	cs := newCountingServer(t, map[string][]byte{
 		"/characters/godot/(a)normal.webp": sprite,
 	})
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	base := cs.srv.URL + "/characters/godot/(a)normal"
 
 	for i := 0; i < 4; i++ {
@@ -680,7 +681,7 @@ func TestManagerPrefetchRawWarmsTiers(t *testing.T) {
 	cs := newCountingServer(t, map[string][]byte{
 		"/characters/tung/char.ini": ini,
 	})
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	url := cs.srv.URL + "/characters/tung/char.ini"
 
 	rig.manager.PrefetchRaw(url, network.PriorityLow) // raw text: char.ini
@@ -717,7 +718,7 @@ func TestPurgeCorruptEvictsTiers(t *testing.T) {
 	cs := newCountingServer(t, map[string][]byte{
 		"/characters/torn/(a)normal.webp": []byte("this is not a valid image payload"),
 	})
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	base := cs.srv.URL + "/characters/torn/(a)normal"
 	wantURL := base + ".webp" // the format probed first — the T2/T3 key
 
@@ -779,7 +780,7 @@ func TestPurgeCorruptEvictsTiers(t *testing.T) {
 // chain still warns, so this proves suppression is scoped to the variant.
 func TestPrefetchChainSpeculativeSuppressesWarning(t *testing.T) {
 	cs := newCountingServer(t, map[string][]byte{}) // serves nothing → every probe 404s
-	rig := newRig(t, network.NewClientNotFoundTTL(0), false)
+	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	base := cs.srv.URL + "/characters/ghost/(a)normal"
 
 	rig.manager.PrefetchChainSpeculative(base, nil, AssetTypeCharSprite, network.PriorityLow)

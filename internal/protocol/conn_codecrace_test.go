@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 	"testing"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 )
 
 // TestConcurrentDialCodecRegistrationIsSafe hammers the Dial path while a live
@@ -17,7 +19,7 @@ func TestConcurrentDialCodecRegistrationIsSafe(t *testing.T) {
 	srv := echoAOServer(t)
 
 	// A live session whose read loop keeps decoding the server's packets.
-	live, err := Dial(context.Background(), wsURL(srv))
+	live, err := Dial(context.Background(), netproxy.Direct(), wsURL(srv))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -30,7 +32,7 @@ func TestConcurrentDialCodecRegistrationIsSafe(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			c, err := Dial(context.Background(), wsURL(srv))
+			c, err := Dial(context.Background(), netproxy.Direct(), wsURL(srv))
 			if err == nil {
 				<-c.Incoming()
 				c.Close()
