@@ -118,6 +118,9 @@ type settingsState struct {
 	// Theme folder picker: dialog output and resolved drops land here from goroutines, never stat on the render thread.
 	folderRes  chan string
 	browseBusy bool
+	// mountPickRes carries the Asset source folder dialog's outcome; mountPickBusy keeps it to one dialog (hard rule 4).
+	mountPickRes  chan mountPick
+	mountPickBusy bool
 
 	// ioRes carries one-line results of off-thread file ops back to the status line.
 	ioRes chan string
@@ -142,9 +145,10 @@ type themeScan struct {
 }
 
 var settings = settingsState{
-	themeRes:  make(chan themeScan, 1),
-	folderRes: make(chan string, 1),
-	ioRes:     make(chan string, 1),
+	themeRes:     make(chan themeScan, 1),
+	folderRes:    make(chan string, 1),
+	mountPickRes: make(chan mountPick, 1),
+	ioRes:        make(chan string, 1),
 }
 
 // numSettingsTabs sizes the per-tab scroll array; keep it equal to len(settingsTabNames).
@@ -411,6 +415,7 @@ func (a *App) drawSettings(w, h int32) {
 	// These run regardless of the active tab, so async results land and drops are honored from any tab.
 	a.pollThemeScan()
 	a.pollFolderPick()
+	a.pollMountPick()
 	// baseWizardTakesDrop consumes the drop: an open wizard gets first refusal, or the folder becomes the theme root.
 	if c.dropped != "" && !a.baseWizardTakesDrop(c.dropped) {
 		// The classification is shared with HandleFileDrop (dropclaim.go): a recording or bundle must not also repoint

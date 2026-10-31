@@ -38,7 +38,7 @@ in **Status**. Update Status in the same commit that completes a step.
         shows in the perf HUD and About. The detached preview keeps SDL's own renderer until it becomes an ordinary
         window (sequence item 9)
   - [x] item 6, URL opening and file reveal: `host.Desktop` on `SDL_OpenURL`
-  - [x] item 6, dialogs: `Desktop.PickFiles` and `PickFolders` on SDL's file dialogs, with multiselect and filters
+  - [x] item 6, dialogs: `Desktop.PickFiles` and `PickFolders` on SDL's file dialogs, with multiselect and filters; Asset source adds several folders where `PickManyFolders` is on
   - [ ] the rest of Part 5g's sequence, items 6–7, which includes the platform code (dialogs, DPI seeding, URL opening, preview
         ownership, clipboard)
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by

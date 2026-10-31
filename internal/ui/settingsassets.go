@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
@@ -168,6 +169,12 @@ func (a *App) drawAssetSourceAdvanced(pad, y int32, mounts []string) int32 {
 			a.rebuildAssetOrigin()
 		} else {
 			settings.statusLine = "Up to " + strconv.Itoa(config.LocalMountCap) + " folders. Remove one first."
+		}
+	}
+	if a.d.Capabilities.Has(platform.PickFolder) {
+		many := a.d.Capabilities.Has(platform.PickManyFolders)
+		if label := mountPickLabel(many); c.Button(sdl.Rect{X: pad + mountPickBtnX, Y: y, W: mountPickBtnW, H: btnH}, label) {
+			a.browseForMounts(many)
 		}
 	}
 	a.noteSearchRow("Folder or .zip", y)

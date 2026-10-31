@@ -8,6 +8,8 @@ const (
 	OpenURL Capability = iota
 	RevealFile
 	PickFolder
+	// PickManyFolders is a folder dialog that lets the user select several at once.
+	PickManyFolders
 	CopyFilesToClipboard
 	SystemNotifications
 	Relaunch
@@ -26,7 +28,7 @@ const (
 
 func (c Capability) String() string {
 	return [...]string{
-		"open URL", "reveal file", "pick folder", "copy files to clipboard",
+		"open URL", "reveal file", "pick folder", "pick many folders", "copy files to clipboard",
 		"system notifications", "relaunch", "self-update", "external video encoder",
 		"system font discovery", "proxy discovery", "machine id", "discord presence",
 		"microphone capture", "extra windows", "background rendering", "high-memory features",
@@ -57,6 +59,7 @@ const (
 	reasonSandbox      = "not available in a sandbox"
 	reasonLinuxRelease = "Linux releases update as an AppImage"
 	reasonNoDiscovery  = "no OS proxy settings to read here"
+	reasonOneFolder    = "folder dialogs here pick one folder"
 )
 
 // capabilitiesFor mirrors the OS branches the client takes today.
@@ -69,6 +72,10 @@ func capabilitiesFor(env Environment, hardware Hardware) Capabilities {
 	}
 	if env.OS != Windows {
 		off(reasonWindowsOnly, CopyFilesToClipboard, SystemNotifications)
+	}
+	// SDL passes multiselect to the folder dialog on these three only (src/dialog).
+	if env.OS != Windows && env.OS != MacOS && env.OS != Linux {
+		off(reasonOneFolder, PickManyFolders)
 	}
 	if env.OS != Windows && env.OS != MacOS {
 		off(reasonNoDiscovery, ProxyDiscovery)
@@ -84,7 +91,7 @@ func capabilitiesFor(env Environment, hardware Hardware) Capabilities {
 		off(reasonLowMemory, HighMemoryFeatures)
 	}
 	if env.FormFactor == Mobile {
-		off(reasonMobile, OpenURL, RevealFile, PickFolder, CopyFilesToClipboard,
+		off(reasonMobile, OpenURL, RevealFile, PickFolder, PickManyFolders, CopyFilesToClipboard,
 			SystemNotifications, Relaunch, SelfUpdate, ExternalVideoEncoder,
 			SystemFontDiscovery, ProxyDiscovery, MachineID, DiscordPresence,
 			MicrophoneCapture, ExtraWindows, BackgroundRendering)

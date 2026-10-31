@@ -105,10 +105,10 @@ func TestCapabilities(t *testing.T) {
 			[]platform.Capability{platform.CopyFilesToClipboard, platform.SystemNotifications, platform.ProxyDiscovery, platform.SelfUpdate},
 			nil},
 		{"linux lacks them and has no OS proxy settings", fakeProbe{goos: "linux", exe: exe},
-			[]platform.Capability{platform.OpenURL, platform.PickFolder, platform.Relaunch, platform.MachineID},
+			[]platform.Capability{platform.OpenURL, platform.PickFolder, platform.PickManyFolders, platform.Relaunch, platform.MachineID},
 			[]platform.Capability{platform.CopyFilesToClipboard, platform.SystemNotifications, platform.ProxyDiscovery}},
 		{"macos reads OS proxy settings and self-updates", fakeProbe{goos: "darwin", exe: exe},
-			[]platform.Capability{platform.ProxyDiscovery, platform.SelfUpdate, platform.PickFolder},
+			[]platform.Capability{platform.ProxyDiscovery, platform.SelfUpdate, platform.PickFolder, platform.PickManyFolders},
 			[]platform.Capability{platform.CopyFilesToClipboard}},
 		{"linux self-updates only as an appimage", fakeProbe{goos: "linux", exe: exe, env: appImage},
 			[]platform.Capability{platform.SelfUpdate}, nil},
@@ -117,8 +117,10 @@ func TestCapabilities(t *testing.T) {
 		{"a sandbox blocks self-update and external tools", fakeProbe{goos: "linux", exe: exe, env: flatpak},
 			[]platform.Capability{platform.OpenURL},
 			[]platform.Capability{platform.SelfUpdate, platform.ExternalVideoEncoder}},
+		{"another unix picks one folder at a time", fakeProbe{goos: "freebsd", exe: exe},
+			[]platform.Capability{platform.PickFolder}, []platform.Capability{platform.PickManyFolders}},
 		{"mobile has none yet", fakeProbe{goos: "android", exe: exe},
-			nil, []platform.Capability{platform.OpenURL, platform.Relaunch, platform.ExtraWindows, platform.BackgroundRendering}},
+			nil, []platform.Capability{platform.OpenURL, platform.PickFolder, platform.PickManyFolders, platform.Relaunch, platform.ExtraWindows, platform.BackgroundRendering}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

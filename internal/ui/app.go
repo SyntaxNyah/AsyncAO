@@ -14,6 +14,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/logbrowser"
 	"github.com/SyntaxNyah/AsyncAO/internal/metrics"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
 	"github.com/SyntaxNyah/AsyncAO/internal/presence"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
@@ -123,6 +124,8 @@ type Deps struct {
 	Audio    *render.Audio
 	// AudioDevices opens the voice streams and lists microphones.
 	AudioDevices host.AudioDevices
+	// Capabilities says what this platform supports; the zero value supports everything.
+	Capabilities platform.Capabilities
 	// Desktop opens web addresses and files in the programs the user chose.
 	Desktop host.Desktop
 	// GraphicsName says what is drawing, for the perf HUD and the About screen.
