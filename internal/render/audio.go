@@ -15,10 +15,6 @@ import (
 )
 
 const (
-	// Audio device parameters; 48 kHz stereo matches modern opus content.
-	audioFrequency = 48000
-	audioChannels  = 2
-
 	// sfxTrackCount is how many SFX and shouts can overlap; blips and alerts have their own tracks.
 	sfxTrackCount = 14
 
@@ -153,15 +149,9 @@ func (a *Audio) HasChunk(base string) bool {
 	return a.chunks[base] != nil
 }
 
-// NewAudio opens the default device; a failed device gives a disabled but working sink.
-func NewAudio(mgr *assets.Manager) *Audio {
+// NewAudio builds the sink on mixer m and takes ownership of it; a nil m gives a disabled but working sink.
+func NewAudio(mgr *assets.Manager, m *mix.Mixer) *Audio {
 	EnableDebugLogCapture()
-
-	m, err := mix.OpenDevice(audioFrequency, audioChannels)
-	if err != nil {
-		log.Printf("render: audio disabled: %v", err)
-		m = nil
-	}
 	return newAudio(mgr, m)
 }
 

@@ -37,14 +37,14 @@ func (a *App) startMicTest(sidetone bool) {
 		Format:   sdl.AUDIO_S16SYS,
 		Channels: voice.Channels,
 	}
-	cap, err := sdl.OpenAudioDeviceStream(a.d.Prefs.Load().VoiceInputDevice, true, &spec)
+	cap, err := a.d.AudioDevices.OpenCapture(a.d.Prefs.Load().VoiceInputDevice, &spec)
 	if err != nil {
-		a.pushDebug("mic test: no capture device available")
+		a.pushDebug("mic test: " + err.Error())
 		return
 	}
 	mt := &micTester{capture: cap, buf: make([]byte, voiceFrameBytes), sidetone: sidetone}
 	if sidetone {
-		if play, err := sdl.OpenAudioDeviceStream("", false, &spec); err == nil {
+		if play, err := a.d.AudioDevices.OpenPlayback(&spec); err == nil {
 			mt.playback = play
 			play.Resume()
 		}

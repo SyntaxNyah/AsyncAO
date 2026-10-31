@@ -1,6 +1,10 @@
 package render
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
+)
 
 // TestPreviewWindowLinkOwnerDegradesSafely pins the "GetWMInfo can fail,
 // degrade silently, never crash, never block the pop-out" guardrail for
@@ -18,7 +22,7 @@ func TestPreviewWindowLinkOwnerDegradesSafely(t *testing.T) {
 		t.Error("LinkOwner on a nil *PreviewWindow reported true")
 	}
 
-	pw := NewPreviewWindow() // never opened: p.win is nil
+	pw := NewPreviewWindow(host.OpenExtraWindow) // never opened: p.win is nil
 	if pw.LinkOwner(nil) {
 		t.Error("LinkOwner(nil) on a never-opened PreviewWindow reported true")
 	}

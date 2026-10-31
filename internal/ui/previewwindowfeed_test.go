@@ -15,6 +15,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
@@ -58,7 +59,7 @@ func newPreviewFeedApp(t testing.TB) *App {
 	a := &App{ctx: ctx, activeTab: -1}
 	a.d.Prefs = prefs
 	a.d.Store = store
-	a.d.Preview = render.NewPreviewWindow()
+	a.d.Preview = render.NewPreviewWindow(host.OpenExtraWindow)
 	t.Cleanup(a.d.Preview.Close)
 	a.resetSessionState()
 	a.previewBase = previewFeedFixtureBase
@@ -404,7 +405,7 @@ func TestAdvanceDetachedPreviewClosedIsZeroAlloc(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 	a.d.Prefs = prefs
-	a.d.Preview = render.NewPreviewWindow()
+	a.d.Preview = render.NewPreviewWindow(host.OpenExtraWindow)
 	a.resetSessionState()
 
 	n := testing.AllocsPerRun(1000, func() { a.AdvanceDetachedPreview() })
@@ -426,7 +427,7 @@ func BenchmarkAdvanceDetachedPreviewClosed(b *testing.B) {
 	}
 	b.Cleanup(func() { _ = prefs.Close() })
 	a.d.Prefs = prefs
-	a.d.Preview = render.NewPreviewWindow()
+	a.d.Preview = render.NewPreviewWindow(host.OpenExtraWindow)
 	a.resetSessionState()
 
 	b.ReportAllocs()
@@ -602,7 +603,7 @@ func TestSyncPreviewWindowClosedIsZeroAlloc(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 	a.d.Prefs = prefs
-	a.d.Preview = render.NewPreviewWindow()
+	a.d.Preview = render.NewPreviewWindow(host.OpenExtraWindow)
 	a.resetSessionState()
 
 	n := testing.AllocsPerRun(1000, func() { a.syncPreviewWindow() })
@@ -626,7 +627,7 @@ func BenchmarkSyncPreviewWindowClosed(b *testing.B) {
 	}
 	b.Cleanup(func() { _ = prefs.Close() })
 	a.d.Prefs = prefs
-	a.d.Preview = render.NewPreviewWindow()
+	a.d.Preview = render.NewPreviewWindow(host.OpenExtraWindow)
 	a.resetSessionState()
 
 	b.ReportAllocs()

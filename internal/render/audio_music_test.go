@@ -9,6 +9,8 @@ import (
 )
 
 const (
+	testMixFrequency = 48000
+	testMixChannels  = 2
 	// testSongRate is the synthesized songs' sample rate.
 	testSongRate = 8000
 	// testMixStepSec is how much output one mixFor step generates.
@@ -21,7 +23,7 @@ const (
 // no sound card. Its output is pulled with mixFor.
 func newTestAudio(t *testing.T) *Audio {
 	t.Helper()
-	m, err := mix.NewHeadless(audioFrequency, audioChannels)
+	m, err := mix.NewHeadless(testMixFrequency, testMixChannels)
 	if err != nil {
 		t.Skipf("SDL3_mixer unavailable: %v", err)
 	}
@@ -42,7 +44,7 @@ func testSong(sec float64) []byte {
 // mixFor advances the headless mixer by sec seconds.
 func mixFor(t *testing.T, a *Audio, sec float64) {
 	t.Helper()
-	out := make([]float32, int(testMixStepSec*audioFrequency)*audioChannels)
+	out := make([]float32, int(testMixStepSec*testMixFrequency)*testMixChannels)
 	for mixed := 0.0; mixed < sec; mixed += testMixStepSec {
 		if err := a.mixer.Generate(out); err != nil {
 			t.Fatal(err)

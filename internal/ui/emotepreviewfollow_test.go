@@ -23,6 +23,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
@@ -185,7 +186,7 @@ func TestFollowPinnedPreviewFollowsWhileDetached(t *testing.T) {
 		t.Skipf("SDL unavailable: %v", err)
 	}
 	defer sdl.Quit()
-	a.d.Preview = render.NewPreviewWindow()
+	a.d.Preview = render.NewPreviewWindow(host.OpenExtraWindow)
 	if err := a.d.Preview.Open("test-detach-follow", 64, 64); err != nil {
 		t.Skipf("preview window unavailable: %v", err)
 	}
