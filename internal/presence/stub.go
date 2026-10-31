@@ -3,7 +3,13 @@
 // The nodiscord build: a no-op stub keeps the call sites identical.
 package presence
 
-import "time"
+import (
+	"io"
+	"time"
+)
+
+// DialFunc mirrors the real type so call sites compile.
+type DialFunc func() (io.ReadWriteCloser, error)
 
 // Activity mirrors the real type so call sites compile.
 type Activity struct {
@@ -15,8 +21,8 @@ type Activity struct {
 // Client is the inert stand-in.
 type Client struct{}
 
-func New(string) *Client       { return &Client{} }
-func (*Client) Set(Activity)   {}
-func (*Client) Clear()         {}
-func (*Client) Close()         {}
-func (*Client) Status() string { return "compiled out (-tags nodiscord)" }
+func New(string, DialFunc) *Client { return &Client{} }
+func (*Client) Set(Activity)       {}
+func (*Client) Clear()             {}
+func (*Client) Close()             {}
+func (*Client) Status() string     { return "compiled out (-tags nodiscord)" }

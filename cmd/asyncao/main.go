@@ -307,7 +307,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	ui.SetWindowIcon(window) // window / taskbar icon = the Mayo mascot (mascot.go)
 
 	// Enabled is checked in updatePresence, so dialing here is safe; it idles without Discord.
-	pres := presence.New(config.DefaultDiscordAppID)
+	pres := presence.New(config.DefaultDiscordAppID, platform.DialDiscord)
 	defer pres.Close()
 
 	app := ui.NewApp(uiCtx, ui.Deps{

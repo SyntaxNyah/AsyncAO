@@ -49,7 +49,7 @@ in **Status**. Update Status in the same commit that completes a step.
         means redesigning that boundary; that waits for the netproxy discussion, and item 7's lints exempt `netproxy` until then
   - [x] item 6, machine id: `platform.MachineIdentity`; `hwid` keeps the hashing, so the per-server HDID stays derived
         in `internal/ui` and existing ids do not change
-  - [x] item 6, presence: `platform.DialDiscord`, moved as it is; the Discord Social SDK is under consideration to replace `internal/presence`
+  - [x] item 6, presence: `platform.DialDiscord`, injected by `cmd/asyncao`. Discord stays on this client for now (decided 2026-10-31); Social SDK and join are not planned yet
   - [x] item 6, process runner: `platform.Command` and `FindTool`; `internal/winexec` is gone
   - [x] item 6, updater and relaunch: `platform.UpdateLayoutFor`, `platform.RestartProgram`, and `Runtime.RelaunchAfterExit`, which
         starts the new client after SDL has quit
