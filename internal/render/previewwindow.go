@@ -16,7 +16,7 @@ const previewWindowTexBudgetBytes = 16 << 20
 const previewWindowAnimCacheBudgetBytes = 32 << 20
 
 // PreviewWindow owns a second SDL window and renderer with one texture, created on Open, torn down on Close.
-// Every method must run on the main window's OS thread: SDL never allows a second thread (hard rule 1).
+// Every method must run on the main thread: SDL documents its renderer calls as main-thread-only (hard rule 1).
 type PreviewWindow struct {
 	open WindowOpener
 	win  *sdl.Window
