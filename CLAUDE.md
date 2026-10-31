@@ -27,8 +27,8 @@ add TCP framing back.
 
 1. **No SDL calls off the render thread.** SDL is reached through our own
    binding packages, `internal/sdl`, `internal/ttf` and `internal/mix`, the
-   only cgo code that includes SDL headers. Only `internal/render`, `internal/ui` and `cmd/asyncao`
-   may import the binding, and everything there runs on the locked main thread.
+   only cgo code that includes SDL headers. Only `internal/platform/host`, `internal/render`, `internal/ui`
+   and `cmd/asyncao` may import the binding, and everything there runs on the locked main thread.
    `internal/assets`' decoder outputs plain `image.RGBA`.
 2. **No synchronous disk I/O** on render/decode/resolver paths. Preferences
    use the debounced saver; the disk cache has one async writer goroutine.

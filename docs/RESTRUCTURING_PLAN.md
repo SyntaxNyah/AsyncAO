@@ -27,7 +27,11 @@ in **Status**. Update Status in the same commit that completes a step.
         its tabs; in-process rebuild with T1 re-upload moves to after step 3 (Part 5d)
   - [x] platform skeleton: `internal/platform` (`Detect(probe)`, environment, capabilities, report);
         no consumers yet, nothing moved (Part 5g, Review outcome, sequence item 2)
-  - [ ] the rest of Part 5g's sequence, items 3–7, which includes the backend name in the debug
+  - [x] `host.Main` owns process setup, SDL and shutdown (sequence item 3). Not yet moved: the frame loop stays in
+        `cmd/asyncao` with no host wrappers until the host owns something behind them (the wake event, the GPU
+        watcher; rule 12 rejects forwarding methods); relaunch still runs before SDL quits; low-memory mode is
+        detected and not applied; the memory limit is set in `main` until its removal commit
+  - [ ] the rest of Part 5g's sequence, items 4–7, which includes the backend name in the debug
         overlay and About, and the platform code (dialogs, DPI seeding, URL opening, preview
         ownership, clipboard)
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by

@@ -7,9 +7,7 @@ import (
 	"log"
 	"net/http"
 	_ "net/http/pprof"
-	"os"
 	"path/filepath"
-	"runtime"
 	"runtime/debug"
 	"slices"
 	"time"
@@ -20,11 +18,13 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/metrics"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
 	"github.com/SyntaxNyah/AsyncAO/internal/presence"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
-	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 	"github.com/SyntaxNyah/AsyncAO/internal/ui"
+	"github.com/SyntaxNyah/AsyncAO/internal/update"
 )
 
 const (
@@ -32,6 +32,7 @@ const (
 	memoryBudgetBytes = 700 << 20
 
 	windowTitle    = "AsyncAO"
+	appID          = "io.github.SyntaxNyah.AsyncAO"
 	windowWidth    = 1152
 	windowHeight   = 864
 	frameCap       = 16667 * time.Microsecond // ~60 FPS when vsync is off
@@ -43,9 +44,6 @@ const (
 )
 
 func main() {
-	// SDL demands the main OS thread for the whole lifetime (spec §12).
-	runtime.LockOSThread()
-
 	var (
 		flagServer      = flag.String("server", "", "skip the lobby and connect to this ws:// or wss:// URL")
 		flagMaster      = flag.String("master", network.DefaultMasterServerURL, "master server list endpoint")
@@ -57,9 +55,6 @@ func main() {
 	flag.Parse()
 
 	debug.SetMemoryLimit(memoryBudgetBytes)
-	// Crash reports need every goroutine's stack, even in -H=windowsgui where stderr goes nowhere.
-	debug.SetTraceback("all")
-	setupCrashOutput()
 
 	if *flagDebug {
 		go func() {
@@ -73,28 +68,13 @@ func main() {
 		ForceSoftware:      *flagSoftGPU,
 		SoftwareDriverFile: softwareVulkanDriverFile(),
 	}
-	if err := run(*flagServer, *flagMaster, gpuOpts, *flagGPURecovery, *flagDebug); err != nil {
+	app := host.App{Name: windowTitle, Version: update.Version, ID: appID}
+	err := host.Main(app, platform.SystemProbe{}, func(rt *host.Runtime) error {
+		return run(rt, *flagServer, *flagMaster, gpuOpts, *flagGPURecovery, *flagDebug)
+	})
+	if err != nil {
 		log.Fatal(err)
 	}
-}
-
-// setupCrashOutput writes crashes the per-path recover sites miss to asyncao-crash.log.
-func setupCrashOutput() {
-	exe, err := os.Executable()
-	if err != nil {
-		return
-	}
-	f, err := os.OpenFile(filepath.Join(filepath.Dir(exe), "asyncao-crash.log"),
-		os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	// SetCrashOutput duplicates f's descriptor; we can close f immediately.
-	if err := debug.SetCrashOutput(f, debug.CrashOptions{}); err != nil {
-		_ = f.Close()
-		return
-	}
-	_ = f.Close()
 }
 
 // logSamples prints the 1 Hz profiler snapshot in --debug mode.
@@ -111,7 +91,7 @@ func logSamples(p *metrics.Profiler) {
 	}
 }
 
-func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveries int, debugMode bool) error {
+func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveries int, debugMode bool) error {
 	vsync := gpuOpts.VSync
 	// --- engine singletons (SDL-free) ---
 	prefsPath, err := config.DefaultPath()
@@ -170,33 +150,17 @@ func run(serverURL, masterURL string, gpuOpts render.BackendOptions, gpuRecoveri
 	decoder.SetAnimatedDecodeConcurrency(prefs.Load().AnimDecodeConcurrency())
 
 	// --- SDL (render thread = this thread, forever) ---
-	if err := sdl.Init(sdl.INIT_VIDEO | sdl.INIT_AUDIO | sdl.INIT_EVENTS); err != nil {
-		return err
-	}
-	defer sdl.Quit()
 	// Packet arrivals and finished decodes push this event to wake a parked loop.
 	ui.EnsureWakeEvent()
-	if err := ttf.Init(); err != nil {
-		return err
-	}
-	defer ttf.Quit()
 
 	// Start at the saved windowed size if any, else the default.
 	winW, winH := int32(windowWidth), int32(windowHeight)
 	if sw, sh := prefs.Load().WindowSize(); sw > 0 && sh > 0 {
 		winW, winH = int32(sw), int32(sh)
 	}
-	// The primary display is right here only: no window exists yet and no position is saved.
-	window, err := sdl.CreateWindow(windowTitle,
-		sdl.WINDOWPOS_CENTERED, sdl.WINDOWPOS_CENTERED,
-		winW, winH, sdl.WINDOW_SHOWN|sdl.WINDOW_RESIZABLE|highDPIFlags())
+	window, err := rt.OpenMainWindow(host.WindowSpec{Title: windowTitle, Width: winW, Height: winH})
 	if err != nil {
 		return err
-	}
-	defer window.Destroy()
-	// SDL3 sends no text-input events until this is on.
-	if err := window.StartTextInput(); err != nil {
-		log.Printf("text input unavailable: %v", err)
 	}
 	mainWindowID, idErr := window.GetID()
 	if idErr != nil {
