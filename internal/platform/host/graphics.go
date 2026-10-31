@@ -1,4 +1,4 @@
-package render
+package host
 
 import (
 	"errors"
@@ -9,11 +9,11 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Backend is how the window is drawn; only the composition root's OpenBackend knows which kind it is.
-type Backend interface {
+// Graphics is how the window is drawn; only the composition root's OpenGraphics knows which kind it is.
+type Graphics interface {
 	// Renderer is what the compositor and the UI draw with.
 	Renderer() *sdl.Renderer
-	// Device is the SDL_GPU device the UI library shares; nil when the backend has none.
+	// Device is the SDL_GPU device the UI library shares; nil when the graphics has none.
 	Device() *sdl.GPUDevice
 	// Present shows the frame; its error goes to a GPUWatcher.
 	Present() error
@@ -28,8 +28,8 @@ type Backend interface {
 // vulkanDriverFilesEnv replaces the Vulkan loader's driver search; the lavapipe manifest selects software.
 const vulkanDriverFilesEnv = "VK_DRIVER_FILES"
 
-// BackendOptions configures how OpenBackend picks the backend.
-type BackendOptions struct {
+// GraphicsOptions configures how OpenGraphics picks the graphics.
+type GraphicsOptions struct {
 	VSync bool
 	// ForceSoftware skips the hardware driver, for machines whose GPU driver is broken.
 	ForceSoftware bool
@@ -37,23 +37,23 @@ type BackendOptions struct {
 	SoftwareDriverFile string
 }
 
-// OpenBackend tries an SDL_GPU device on hardware, then lavapipe (SDL doesn't fall back), then SDL's own renderer.
-func OpenBackend(window *sdl.Window, opts BackendOptions) (Backend, error) {
+// OpenGraphics tries an SDL_GPU device on hardware, then lavapipe (SDL doesn't fall back), then SDL's own renderer.
+func OpenGraphics(window *sdl.Window, opts GraphicsOptions) (Graphics, error) {
 	flags := uint32(0)
 	if opts.VSync {
 		flags = sdl.RENDERER_PRESENTVSYNC
 	}
 	if !opts.ForceSoftware {
-		b, err := openDeviceBackend(window, flags, false)
+		b, err := openDeviceGraphics(window, flags, false)
 		if err == nil {
 			return b, nil
 		}
 		log.Printf("gpu: hardware %s driver unavailable: %v", gpuDriverLabel, err)
 	}
 	if opts.SoftwareDriverFile != "" {
-		var b *deviceBackend
+		var b *deviceGraphics
 		err := withEnv(vulkanDriverFilesEnv, opts.SoftwareDriverFile, func() (err error) {
-			b, err = openDeviceBackend(window, flags, true)
+			b, err = openDeviceGraphics(window, flags, true)
 			return err
 		})
 		if err == nil {
@@ -61,7 +61,7 @@ func OpenBackend(window *sdl.Window, opts BackendOptions) (Backend, error) {
 		}
 		log.Printf("gpu: software driver %s unavailable: %v", opts.SoftwareDriverFile, err)
 	}
-	return openSDLRendererBackend(window, flags, opts.ForceSoftware)
+	return openSDLRendererGraphics(window, flags, opts.ForceSoftware)
 }
 
 // withEnv runs fn with name set, then restores it; left set it would leak into a client relaunched after device loss.
@@ -80,28 +80,28 @@ func withEnv(name, value string, fn func() error) error {
 	return fn()
 }
 
-// rendererBackend is the part every backend shares: renderer, name and whether it is software.
-type rendererBackend struct {
+// rendererGraphics is the part every graphics shares: renderer, name and whether it is software.
+type rendererGraphics struct {
 	renderer *sdl.Renderer
 	name     string
 	software bool
 }
 
-func (b *rendererBackend) Renderer() *sdl.Renderer { return b.renderer }
-func (b *rendererBackend) Present() error          { return b.renderer.Present() }
-func (b *rendererBackend) Name() string            { return b.name }
-func (b *rendererBackend) Software() bool          { return b.software }
+func (b *rendererGraphics) Renderer() *sdl.Renderer { return b.renderer }
+func (b *rendererGraphics) Present() error          { return b.renderer.Present() }
+func (b *rendererGraphics) Name() string            { return b.name }
+func (b *rendererGraphics) Software() bool          { return b.software }
 
-// deviceBackend draws through an SDL_GPU device, so the compositor and the UI library share one device.
-type deviceBackend struct {
-	rendererBackend
+// deviceGraphics draws through an SDL_GPU device, so the compositor and the UI library share one device.
+type deviceGraphics struct {
+	rendererGraphics
 	device *sdl.GPUDevice
 }
 
-var _ Backend = (*deviceBackend)(nil)
+var _ Graphics = (*deviceGraphics)(nil)
 
-// openDeviceBackend creates a device on the platform's driver and a renderer on it.
-func openDeviceBackend(window *sdl.Window, flags uint32, software bool) (*deviceBackend, error) {
+// openDeviceGraphics creates a device on the platform's driver and a renderer on it.
+func openDeviceGraphics(window *sdl.Window, flags uint32, software bool) (*deviceGraphics, error) {
 	device, err := sdl.CreateGPUDevice(gpuShaderFormats, gpuDriver)
 	if err != nil {
 		return nil, err
@@ -115,30 +115,30 @@ func openDeviceBackend(window *sdl.Window, flags uint32, software bool) (*device
 	if adapter := device.Name(); adapter != "" {
 		name = fmt.Sprintf("%s (%s)", name, adapter)
 	}
-	return &deviceBackend{rendererBackend: rendererBackend{renderer: ren, name: name, software: software}, device: device}, nil
+	return &deviceGraphics{rendererGraphics: rendererGraphics{renderer: ren, name: name, software: software}, device: device}, nil
 }
 
-func (b *deviceBackend) Device() *sdl.GPUDevice { return b.device }
+func (b *deviceGraphics) Device() *sdl.GPUDevice { return b.device }
 
-func (b *deviceBackend) Close() {
+func (b *deviceGraphics) Close() {
 	_ = b.renderer.Destroy()
 	b.device.Destroy()
 }
 
-// sdlRendererBackend is SDL's own renderer choice, with no SDL_GPU device.
-type sdlRendererBackend struct {
-	rendererBackend
+// sdlRendererGraphics is SDL's own renderer choice, with no SDL_GPU device.
+type sdlRendererGraphics struct {
+	rendererGraphics
 }
 
-var _ Backend = (*sdlRendererBackend)(nil)
+var _ Graphics = (*sdlRendererGraphics)(nil)
 
-// openSDLRendererBackend opens SDL's default renderer, or its software renderer on failure or when forced.
-func openSDLRendererBackend(window *sdl.Window, flags uint32, software bool) (*sdlRendererBackend, error) {
+// openSDLRendererGraphics opens SDL's default renderer, or its software renderer on failure or when forced.
+func openSDLRendererGraphics(window *sdl.Window, flags uint32, software bool) (*sdlRendererGraphics, error) {
 	var errs []error
 	if !software {
 		ren, err := sdl.CreateRenderer(window, -1, flags)
 		if err == nil {
-			return newSDLRendererBackend(ren, false), nil
+			return newSDLRendererGraphics(ren, false), nil
 		}
 		errs = append(errs, err)
 	}
@@ -146,17 +146,17 @@ func openSDLRendererBackend(window *sdl.Window, flags uint32, software bool) (*s
 	if err != nil {
 		return nil, errors.Join(append(errs, err)...)
 	}
-	return newSDLRendererBackend(ren, true), nil
+	return newSDLRendererGraphics(ren, true), nil
 }
 
-func newSDLRendererBackend(ren *sdl.Renderer, software bool) *sdlRendererBackend {
+func newSDLRendererGraphics(ren *sdl.Renderer, software bool) *sdlRendererGraphics {
 	name := "unknown"
 	if info, err := ren.GetInfo(); err == nil {
 		name = info.Name
 	}
-	return &sdlRendererBackend{rendererBackend{renderer: ren, name: name, software: software}}
+	return &sdlRendererGraphics{rendererGraphics{renderer: ren, name: name, software: software}}
 }
 
-func (b *sdlRendererBackend) Device() *sdl.GPUDevice { return nil }
+func (b *sdlRendererGraphics) Device() *sdl.GPUDevice { return nil }
 
-func (b *sdlRendererBackend) Close() { _ = b.renderer.Destroy() }
+func (b *sdlRendererGraphics) Close() { _ = b.renderer.Destroy() }

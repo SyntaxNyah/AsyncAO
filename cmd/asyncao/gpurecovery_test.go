@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
 )
 
 // TestGPURecoveryArgs pins the restarted client's command line: the loss is
@@ -16,17 +16,17 @@ func TestGPURecoveryArgs(t *testing.T) {
 	const master = "https://servers.example/list"
 	cases := []struct {
 		name         string
-		recovery     render.GPURecovery
-		opts         render.BackendOptions
+		recovery     host.GPURecovery
+		opts         host.GraphicsOptions
 		recoveries   int
 		debug        bool
 		wantSoftware bool
 		wantCount    int
 	}{
-		{"first loss", render.GPURestart, render.BackendOptions{VSync: true}, 0, false, false, 1},
-		{"late loss after a restart counts as a first loss", render.GPURestart, render.BackendOptions{VSync: true}, 1, false, false, 1},
-		{"second loss escalates to software", render.GPURestartSoftware, render.BackendOptions{VSync: true}, 1, true, true, 2},
-		{"forced software stays forced", render.GPURestart, render.BackendOptions{ForceSoftware: true}, 0, false, true, 1},
+		{"first loss", host.GPURestart, host.GraphicsOptions{VSync: true}, 0, false, false, 1},
+		{"late loss after a restart counts as a first loss", host.GPURestart, host.GraphicsOptions{VSync: true}, 1, false, false, 1},
+		{"second loss escalates to software", host.GPURestartSoftware, host.GraphicsOptions{VSync: true}, 1, true, true, 2},
+		{"forced software stays forced", host.GPURestart, host.GraphicsOptions{ForceSoftware: true}, 0, false, true, 1},
 	}
 	for _, tc := range cases {
 		args := gpuRecoveryArgs(tc.recovery, master, tc.opts, tc.recoveries, tc.debug)

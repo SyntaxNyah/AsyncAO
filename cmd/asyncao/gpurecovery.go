@@ -3,7 +3,7 @@ package main
 import (
 	"strconv"
 
-	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
 )
 
 // gpuGiveUpMessage tells the user why the client closes when even the software driver lost its device.
@@ -13,9 +13,9 @@ const gpuGiveUpMessage = "The graphics device stopped working, and restarting As
 
 // gpuRecoveryArgs is the command line for the restart after a GPU device loss; -server is left out because
 // the restarted client reopens its saved tabs.
-func gpuRecoveryArgs(recovery render.GPURecovery, masterURL string, opts render.BackendOptions, recoveries int, debug bool) []string {
+func gpuRecoveryArgs(recovery host.GPURecovery, masterURL string, opts host.GraphicsOptions, recoveries int, debug bool) []string {
 	next := 1
-	if recovery == render.GPURestartSoftware {
+	if recovery == host.GPURestartSoftware {
 		next = recoveries + 1
 	}
 	args := []string{
@@ -23,7 +23,7 @@ func gpuRecoveryArgs(recovery render.GPURecovery, masterURL string, opts render.
 		"-vsync=" + strconv.FormatBool(opts.VSync),
 		"-gpu-recovery=" + strconv.Itoa(next),
 	}
-	if recovery == render.GPURestartSoftware || opts.ForceSoftware {
+	if recovery == host.GPURestartSoftware || opts.ForceSoftware {
 		args = append(args, "-software-gpu")
 	}
 	if debug {

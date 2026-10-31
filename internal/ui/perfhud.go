@@ -35,7 +35,7 @@ func (a *App) drawPerfHUD(w, h int32) {
 	c := a.ctx
 	const x0, y0 = 8, 30
 	graphW := int32(perfHUDFrames * perfHUDBarW)
-	panel := sdl.Rect{X: x0 - 4, Y: y0 - 4, W: graphW + 8, H: perfHUDGraphH + 96}
+	panel := sdl.Rect{X: x0 - 4, Y: y0 - 4, W: graphW + 8, H: perfHUDGraphH + 114}
 	c.Fill(panel, sdl.Color{R: 0, G: 0, B: 0, A: 200})
 	c.Border(panel, ColPanelHi)
 
@@ -70,6 +70,8 @@ func (a *App) drawPerfHUD(w, h int32) {
 		fps = 1000 / avg
 	}
 	c.Label(x0, ty, fmt.Sprintf("frame %5.2fms avg (%4.0f fps)  worst %5.1fms", avg, fps, worst), ColText)
+	ty += 18
+	c.Label(x0, ty, a.d.GraphicsName, ColText)
 	ty += 18
 
 	// The 1 Hz sampler's numbers (nil before its first tick / in tests).

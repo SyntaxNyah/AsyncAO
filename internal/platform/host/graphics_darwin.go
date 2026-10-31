@@ -1,4 +1,4 @@
-package render
+package host
 
 import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 

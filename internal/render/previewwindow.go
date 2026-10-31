@@ -20,8 +20,8 @@ const previewWindowAnimCacheBudgetBytes = 32 << 20
 type PreviewWindow struct {
 	open WindowOpener
 	win  *sdl.Window
-	ren *sdl.Renderer
-	tex *sdl.Texture
+	ren  *sdl.Renderer
+	tex  *sdl.Texture
 	// texW/texH are the displayed texture's size, for Present's fit math.
 	texW, texH int32
 	// texIsCached means tex belongs to animFrames, not the display alone; confusing them double-frees or leaks.
