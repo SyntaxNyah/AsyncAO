@@ -35,6 +35,9 @@ type Runtime struct {
 	Audio    AudioDevices
 	Desktop  Desktop
 	windows  []*sdl.Window
+	// relaunch and relaunchArgs are set by RelaunchAfterExit.
+	relaunch     bool
+	relaunchArgs []string
 }
 
 // WindowSpec describes a window to open.
@@ -78,6 +81,11 @@ func OpenExtraWindow(title string, w, h int32) (*sdl.Window, *sdl.Renderer, erro
 	return win, ren, nil
 }
 
+// RelaunchAfterExit starts the client again with args once it has returned and SDL has quit.
+func (r *Runtime) RelaunchAfterExit(args []string) {
+	r.relaunch, r.relaunchArgs = true, args
+}
+
 func (r *Runtime) closeWindows() {
 	for i := len(r.windows) - 1; i >= 0; i-- {
 		_ = r.windows[i].Destroy()
@@ -87,6 +95,11 @@ func (r *Runtime) closeWindows() {
 
 // Main runs client between process setup and teardown, and returns its error.
 func Main(app App, probe platform.Probe, client func(*Runtime) error) error {
+	return mainWith(app, probe, platform.RestartProgram, client)
+}
+
+// mainWith is Main with the relaunch injected; it runs last, so the two clients never share SDL or the saved state.
+func mainWith(app App, probe platform.Probe, relaunch func([]string) error, client func(*Runtime) error) (err error) {
 	// SDL demands the main OS thread for the whole lifetime.
 	runtime.LockOSThread()
 
@@ -95,6 +108,16 @@ func Main(app App, probe platform.Probe, client func(*Runtime) error) error {
 	debug.SetTraceback("all")
 	setupCrashOutput()
 	log.Print(detected.Report())
+
+	rt := &Runtime{Platform: detected}
+	defer func() {
+		if err != nil || !rt.relaunch {
+			return
+		}
+		if startErr := relaunch(rt.relaunchArgs); startErr != nil {
+			log.Printf("relaunch: %v", startErr)
+		}
+	}()
 
 	if err := sdl.SetAppMetadata(app.Name, app.Version, app.ID); err != nil {
 		log.Printf("app metadata: %v", err)
@@ -108,7 +131,6 @@ func Main(app App, probe platform.Probe, client func(*Runtime) error) error {
 	}
 	defer ttf.Quit()
 
-	rt := &Runtime{Platform: detected}
 	defer rt.closeWindows()
 	return client(rt)
 }

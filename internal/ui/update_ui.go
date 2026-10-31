@@ -6,7 +6,6 @@ package ui
 import (
 	"context"
 	"os"
-	"runtime"
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/platform"
@@ -49,9 +48,9 @@ func (a *App) maybeKickUpdateCheck() {
 		var rel *update.Release
 		var err error
 		if experimental {
-			rel, err = update.CheckExperimental(context.Background(), "", update.Version, update.SelfUpdateAssetMatch(runtime.GOOS))
+			rel, err = update.CheckExperimental(context.Background(), "", update.Version, update.SelfUpdateAssetMatch(platform.SystemProbe{}.GOOS()))
 		} else {
-			rel, err = update.Check(context.Background(), "", update.Version, update.SelfUpdateAssetMatch(runtime.GOOS))
+			rel, err = update.Check(context.Background(), "", update.Version, update.SelfUpdateAssetMatch(platform.SystemProbe{}.GOOS()))
 		}
 		if err != nil || rel == nil {
 			return
@@ -120,19 +119,12 @@ func (a *App) startSelfUpdate() {
 	res := a.updateApplyRes
 	go func() {
 		defer PushWake() // wake the event-driven loop so pollUpdate surfaces the result (Restart-to-apply / error) at idle=0
-		var err error
-		switch runtime.GOOS {
-		case "windows":
-			// Windows ships the exe with its runtime DLLs, so they update together.
-			err = applyBundleUpdate(url, sumsURL, assetName, exe, "")
-		case "darwin":
-			// macOS updates the bundle tarball (binary + lib/) so a SONAME bump can't strand a stale lib/.
-			err = applyBundleUpdate(url, sumsURL, assetName, exe, "lib")
-		default:
-			// Linux ships a single-file AppImage.
-			err = applyBinaryUpdate(url, sumsURL, assetName, exe)
+		layout := platform.UpdateLayoutFor(platform.CurrentOS())
+		if layout.Bundle {
+			res <- applyBundleUpdate(url, sumsURL, assetName, exe, layout.LibSubdir)
+			return
 		}
-		res <- err
+		res <- applyBinaryUpdate(url, sumsURL, assetName, exe)
 	}()
 }
 
@@ -214,18 +206,8 @@ func (a *App) RequestRelaunch(args []string, keepTabs bool) {
 	_, _ = sdl.PushEvent(&sdl.QuitEvent{Type: sdl.QUIT})
 }
 
-// MaybeRelaunch starts the binary again if requested; main calls it after the run loop exits and state is saved.
-func (a *App) MaybeRelaunch() {
-	if !a.relaunchOnExit {
-		return
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		return
-	}
-	cmd := platform.Command(exe, a.relaunchArgs...)
-	_ = cmd.Start()
-}
+// RelaunchRequest says whether the client should start again after it exits, and with which arguments.
+func (a *App) RelaunchRequest() ([]string, bool) { return a.relaunchArgs, a.relaunchOnExit }
 
 // updateChipRect is the reopen chip, top-right under the app-chrome band.
 func (a *App) updateChipRect(w int32) sdl.Rect {
