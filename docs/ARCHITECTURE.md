@@ -453,6 +453,8 @@ what the client does cannot disagree. `cmd/asyncao` builds one and injects it. A
 - OS discovery is in `internal/platform` and returns raw text. Automatic detection alone counts as no proxy.
 - **Fail closed** when a proxy is configured but unusable (a PAC script, which is not evaluated, or an unreadable manual
   address) and before the first `Apply`. Bypassed destinations are exempt: we know where those go.
+- Only the socket changes hands, so HTTP/2, connection reuse and TLS session resumption work as usual, through tunnels too.
+  Plain `http://` stays HTTP/1.1 and needs one tunnel per in-flight request, capped by the transport.
 - `Factory.Check` backs the Settings test button: one connection, reporting whether the setting, the proxy or the
   destination failed.
 - Bypass matching is hand-written; see the dependency table for the measurements that rule out every library alternative.

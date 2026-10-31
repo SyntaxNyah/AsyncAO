@@ -22,6 +22,8 @@ const (
 	directKeepAlive   = 30 * time.Second
 	// maxTrackedTransports bounds the transports Apply flushes (hard rule 4); the client has very few.
 	maxTrackedTransports = 16
+	// tlsSessionCacheEntries is the resumable TLS sessions one transport keeps; the client talks to few hosts.
+	tlsSessionCacheEntries = 32
 )
 
 // errNotConfigured fails connections made before the first Apply, so a wiring mistake can't go direct.
@@ -113,6 +115,8 @@ func (f *Factory) NewTransport() *http.Transport {
 	t := base.Clone()
 	t.Proxy = nil
 	t.DialContext = f.DialContext
+	t.TLSClientConfig = tlsConfigOf(t)
+	t.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(tlsSessionCacheEntries)
 	return t
 }
 
@@ -136,8 +140,16 @@ func (f *Factory) Client(timeout time.Duration) *http.Client {
 // WebSocket that leaves the idle pool, so it isn't tracked.
 func (f *Factory) InsecureClient() *http.Client {
 	t := f.NewTransport()
-	t.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	t.TLSClientConfig.InsecureSkipVerify = true
 	return &http.Client{Transport: t}
+}
+
+// tlsConfigOf keeps the clone's own config where it has one, as that can carry the protocols it offers.
+func tlsConfigOf(t *http.Transport) *tls.Config {
+	if t.TLSClientConfig != nil {
+		return t.TLSClientConfig
+	}
+	return &tls.Config{}
 }
 
 func dialDirect(ctx context.Context, network, addr string) (net.Conn, error) {

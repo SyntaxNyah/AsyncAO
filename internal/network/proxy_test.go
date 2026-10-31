@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
@@ -49,6 +51,44 @@ func TestServerListGoesThroughTheProxy(t *testing.T) {
 	}
 	if !slices.Equal(proxy.Asked(), []string{proxiedAddr}) {
 		t.Errorf("proxy was asked for %v", proxy.Asked())
+	}
+}
+
+// Tunnelling must not cost the asset client its HTTP/2: a room's sprites share one connection.
+func TestAssetsKeepHTTP2ThroughTheProxy(t *testing.T) {
+	const (
+		requests   = 8
+		http2Major = 2
+		asset      = "https://asyncao-test.invalid:443/a"
+	)
+	var sawProto atomic.Int64
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawProto.Store(int64(r.ProtoMajor))
+		_, _ = io.WriteString(w, "sprite")
+	}))
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	defer srv.Close()
+	proxy := netproxytest.Start(t, strings.TrimPrefix(srv.URL, "https://"))
+	sockets := netproxy.New(nil, func(string) string { return "" })
+	sockets.Apply(netproxy.ModeManual, proxy.URL)
+	c := NewClientNotFoundTTL(0, sockets)
+	transport, ok := c.httpClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport is %T", c.httpClient.Transport)
+	}
+	transport.TLSClientConfig.InsecureSkipVerify = true // the test server's certificate is self-signed
+
+	for i := range requests {
+		if _, err := c.Fetch(context.Background(), asset+strconv.Itoa(i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if sawProto.Load() != http2Major {
+		t.Errorf("server saw HTTP/%d", sawProto.Load())
+	}
+	if got := len(proxy.Asked()); got != 1 {
+		t.Errorf("used %d tunnels, want 1", got)
 	}
 }
 
