@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -64,7 +63,7 @@ func (a *App) drawDownloaderSettings(y, _ int32) int32 {
 		root := downloadsRoot()
 		c.LabelClipped(pad+20, y+4, w-pad-360-scrollBarW, "Folder: "+root, ColText)
 		if c.Button(sdl.Rect{X: a.formX + a.formW - 340, Y: y, W: 150, H: btnH}, "Open folder") {
-			_ = exec.Command("explorer.exe", root).Start()
+			a.openInFileManager(root)
 		}
 		if c.Button(sdl.Rect{X: a.formX + a.formW - 180, Y: y, W: 180, H: btnH}, "Add to local mounts") {
 			mode := a.assetSourceMode()
@@ -449,7 +448,7 @@ func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 	c.LabelClipped(pad+themeRowLabelW, y+4, w-pad-themeRowLabelW-themeGetBtnsW-scrollBarW, themeGetNote, ColTextDim)
 	if c.Button(sdl.Rect{X: w - themeGetBtnW - scrollBarW, Y: y, W: themeGetBtnW, H: btnH}, "Open the repo") {
 		// The About screen's launcher and aboutRepoURL, so the two surfaces cannot name different repositories.
-		openBrowser(aboutRepoURL)
+		a.openBrowser(aboutRepoURL)
 	}
 	y += themeGetRowH
 
@@ -469,7 +468,7 @@ func (a *App) drawThemeCatalogRows(y, w int32) int32 {
 	}
 	c.LabelClipped(pad+themeRowLabelW, y+4, w-pad-themeRowLabelW-themeFolderBtnsW-scrollBarW, root, ColAccent)
 	if c.Button(sdl.Rect{X: w - themeFolderBtnsW - scrollBarW, Y: y, W: themeOpenFolderBtnW, H: btnH}, "Open folder") {
-		openThemesFolder(root)
+		a.openThemesFolder(root)
 	}
 	if c.Button(sdl.Rect{X: w - themeRefreshBtnW - scrollBarW, Y: y, W: themeRefreshBtnW, H: btnH}, "Refresh") {
 		a.requestThemeCatalog(themeScanExplicit) // trigger 4: unconditional

@@ -123,6 +123,8 @@ type Deps struct {
 	Audio    *render.Audio
 	// AudioDevices opens the voice streams and lists microphones.
 	AudioDevices host.AudioDevices
+	// Desktop opens web addresses and files in the programs the user chose.
+	Desktop host.Desktop
 	// GraphicsName says what is drawing, for the perf HUD and the About screen.
 	GraphicsName string
 	// Preview is the detachable emote-preview OS window; consumers must stay nil-safe for headless tests.
@@ -607,6 +609,8 @@ type App struct {
 	// themeCat is the off-thread theme catalog as an immutable snapshot: the scan reads directories, the draw path
 	// may not (hard rules 2 and 5).
 	themeCat atomic.Pointer[themeCatalog]
+	// themesDirReady is a themes folder created off-thread and waiting to be opened.
+	themesDirReady atomic.Pointer[string]
 	// themeCatBusy single-flights the scan; atomic because the scanner goroutine clears it.
 	themeCatBusy atomic.Bool
 	// themeCatFocusStat records a window focus-gain for Settings to rescan on; render and event thread only, so a plain
@@ -1440,6 +1444,7 @@ func (a *App) Background(dt time.Duration) {
 	// burst on restore reads as OOC flooding, which servers answer with a silent kick.
 	a.processOOCQueue()
 	a.drainWarnings()
+	a.pollThemesFolder()
 	a.drainMusicFailures() // transient music-fetch failures → jukebox warn line (§1.1)
 	// Auto-reconnect is deliberately not polled here: the retry fires only from Frame, so a drop while minimized waits
 	// at the lobby instead of silently reconnecting and stranding the user at char select.

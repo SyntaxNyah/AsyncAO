@@ -436,7 +436,7 @@ func (a *App) linkLabel(x, y, maxW int32, url string) {
 	if c.hovering(hit) {
 		c.Fill(sdl.Rect{X: x, Y: y + 15, W: tw, H: 1}, ColAccent) // underline
 		if c.clicked {
-			openBrowser(schemeForOpen(url)) // bare "www." link → https:// at open time
+			a.openBrowser(schemeForOpen(url)) // bare "www." link → https:// at open time
 		}
 	}
 }

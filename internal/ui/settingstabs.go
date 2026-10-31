@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"os/exec"
 	"runtime"
 	"sort"
 	"strconv"
@@ -1047,8 +1046,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	}
 	if c.Button(sdl.Rect{X: pad + 180, Y: y, W: 170, H: btnH}, "Open cache folder") {
 		if root := a.d.Manager.DiskRoot(); root != "" {
-			// Fire-and-forget Explorer launch.
-			_ = exec.Command("explorer.exe", root).Start()
+			a.openInFileManager(root)
 		}
 	}
 	y += 32

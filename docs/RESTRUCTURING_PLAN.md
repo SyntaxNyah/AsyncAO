@@ -37,6 +37,7 @@ in **Status**. Update Status in the same commit that completes a step.
   - [x] driver lists and the GPU watcher in the host, `render.Backend` now `host.Graphics` (sequence item 5); the name
         shows in the perf HUD and About. The detached preview keeps SDL's own renderer until it becomes an ordinary
         window (sequence item 9)
+  - [x] item 6, URL opening and file reveal: `host.Desktop` on `SDL_OpenURL`
   - [ ] the rest of Part 5g's sequence, items 6–7, which includes the platform code (dialogs, DPI seeding, URL opening, preview
         ownership, clipboard)
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by

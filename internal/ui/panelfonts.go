@@ -71,7 +71,7 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 		c.Label(pad, y+4, "Folder:", ColText)
 		c.LabelClipped(pad+60, y+4, w-60-190, dir, ColTextDim)
 		if c.Button(sdl.Rect{X: pad + w - 186, Y: y, W: 86, H: btnH}, "Open") {
-			openInFileManager(dir) // windows→explorer / darwin→open / else→xdg-open (openpath.go)
+			a.openInFileManager(dir)
 		}
 		if c.Button(sdl.Rect{X: pad + w - 96, Y: y, W: 92, H: btnH}, "Reload theme") {
 			a.applyThemeAsync()

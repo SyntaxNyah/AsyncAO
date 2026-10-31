@@ -306,6 +306,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.drainMusicFailures() // transient music-fetch failures → jukebox warn line (§1.1)
 	a.drainThumbs()        // loaded low-q stand-ins → T1 (render thread; bounded per frame)
 	a.pollThemeApply()
+	a.pollThemesFolder()
 	a.pollThemeBundle() // lands a finished .aotheme inspect/extract (themeimport.go)
 	a.pollThemeCopy()   // lands a finished copy-for-editing (themecopy.go)
 	a.pollThemeCreate() // lands a finished theme mint (themecreate.go)

@@ -450,7 +450,7 @@ func (a *App) openRecordingsFolder() {
 		a.pushDebug("recordings folder: " + err.Error())
 		return
 	}
-	openInFileManager(dir) // windows→explorer / darwin→open / else→xdg-open (openpath.go)
+	a.openInFileManager(dir)
 	a.warnLine = "Opened recordings folder: " + dir
 	a.warnAt = time.Now()
 }

@@ -5,8 +5,6 @@ import (
 	"log"
 	"math"
 	"math/rand"
-	"os/exec"
-	"runtime"
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
@@ -282,7 +280,7 @@ func (a *App) drawAbout(w, h int32) {
 				// No per-button guard: pushClip gates the hit-test through hovering(); the card cull only skips
 				// drawing.
 				if c.Button(sdl.Rect{X: x0 + aboutCardPad, Y: ry, W: bw, H: btnH}, it.label) {
-					openBrowser(it.url)
+					a.openBrowser(it.url)
 				}
 				ry += btnH + aboutLinkGap
 			}
@@ -523,18 +521,9 @@ func aboutLinkGroups() []aboutLinkGroup {
 	return aboutGroupsCache
 }
 
-// openBrowser launches the system browser with a per-OS shellout.
-func openBrowser(url string) {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	case "darwin":
-		cmd = exec.Command("open", url)
-	default:
-		cmd = exec.Command("xdg-open", url)
-	}
-	if err := cmd.Start(); err != nil {
+// openBrowser opens a web address; a failure only logs, as no click depends on it.
+func (a *App) openBrowser(url string) {
+	if err := a.d.Desktop.OpenURL(url); err != nil {
 		log.Printf("ui: opening %s: %v", url, err)
 	}
 }
