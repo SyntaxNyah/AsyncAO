@@ -244,6 +244,7 @@
   "stageFrame": 1,
   "friendNotify": true,
   "friendOSToast": true,
+  "groupInviteOSToast": true,
   "callwordOSToast": true,
   "friendGlowPulse": true,
   "friendSound": true,

@@ -24,29 +24,23 @@ $t=New-Object Windows.UI.Notifications.ToastNotification $x
 const (
 	// firstPrintableRune is the first rune after the control characters.
 	firstPrintableRune = 0x20
-	bitsPerByte        = 8
+	// lastPrintableRune is the last printable ASCII rune; xmlEscape leaves only this range literal.
+	lastPrintableRune = 0x7E
+	bitsPerByte       = 8
 )
 
-// xmlEscape escapes XML specials and the PS string delimiter, and drops control chars, so a crafted showname can't
-// inject.
+// xmlEscape makes text safe inside the toast script: XML specials and every character outside printable ASCII become
+// numeric references, which keeps the script plain ASCII, and control characters are dropped.
 func xmlEscape(s string) string {
 	var b strings.Builder
 	for _, r := range s {
-		switch r {
-		case '&':
-			b.WriteString("&amp;")
-		case '<':
-			b.WriteString("&lt;")
-		case '>':
-			b.WriteString("&gt;")
-		case '"':
-			b.WriteString("&quot;")
-		case '\'':
-			b.WriteString("&apos;")
+		switch {
+		case r < firstPrintableRune:
+			// Dropped: a control character has no place in a toast.
+		case r == '&' || r == '<' || r == '>' || r == '"' || r == '\'' || r > lastPrintableRune:
+			fmt.Fprintf(&b, "&#%d;", r)
 		default:
-			if r >= firstPrintableRune {
-				b.WriteRune(r)
-			}
+			b.WriteRune(r)
 		}
 	}
 	return b.String()

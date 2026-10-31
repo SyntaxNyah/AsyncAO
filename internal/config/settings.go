@@ -113,6 +113,7 @@ type Settings struct {
 	StageFrameKind               int                          `json:"stageFrame"`
 	FriendNotify                 bool                         `json:"friendNotify"`
 	FriendOSToast                bool                         `json:"friendOSToast"`
+	GroupInviteOSToast           bool                         `json:"groupInviteOSToast"`
 	CallwordOSToast              bool                         `json:"callwordOSToast"`
 	FriendGlowPulse              bool                         `json:"friendGlowPulse"`
 	FriendSound                  bool                         `json:"friendSound"`

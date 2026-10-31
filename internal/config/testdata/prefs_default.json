@@ -116,6 +116,7 @@
   "stageFrame": 0,
   "friendNotify": false,
   "friendOSToast": false,
+  "groupInviteOSToast": false,
   "callwordOSToast": false,
   "friendGlowPulse": false,
   "friendSound": false,
