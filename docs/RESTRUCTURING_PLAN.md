@@ -39,7 +39,9 @@ in **Status**. Update Status in the same commit that completes a step.
         window (sequence item 9)
   - [x] item 6, URL opening and file reveal: `host.Desktop` on `SDL_OpenURL`
   - [x] item 6, dialogs: `Desktop.PickFiles` and `PickFolders` on SDL's file dialogs, with multiselect and filters; Asset source adds several folders where `PickManyFolders` is on
-  - [x] item 6, notifications: `Desktop.Notify`
+  - [x] item 6, notifications: `sdl.ShowNotification` has SDL 3.6's name and arguments, on the Windows toast until
+        then. Moving to 3.6 replaces only its body, deletes `notification_other.go`, and sets the header icon SDL
+        requires on Windows and on Linux with no .desktop entry. Push notifications are not planned
   - [ ] the rest of Part 5g's sequence, items 6–7, which includes the platform code (dialogs, DPI seeding, URL opening, preview
         ownership, clipboard)
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by

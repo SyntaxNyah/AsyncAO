@@ -947,7 +947,7 @@ func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 		if serverName != "" {
 			body += " on " + serverName
 		}
-		a.d.Desktop.Notify("AsyncAO — friend online", body)
+		showOSToast("AsyncAO — friend online", body)
 	}
 }
 
@@ -964,7 +964,7 @@ func (a *App) signalModcall(serverName, notice string) {
 	if serverName != "" {
 		body = serverName + ": " + body
 	}
-	a.d.Desktop.Notify("AsyncAO — mod call", body)
+	showOSToast("AsyncAO — mod call", body)
 }
 
 // switchAreaScrollback swaps the IC log to toArea's history when opt-in per-area scrollback is on, in a bounded FIFO.

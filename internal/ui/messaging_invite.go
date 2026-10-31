@@ -43,7 +43,7 @@ func (a *App) queueGroupInvite(gid uint32, name string, ownerUID int, ownerName 
 	a.ctx.FlashWindow()
 	if !a.ctx.WindowFocused() && time.Since(a.lastOSToast) >= osToastMinInterval {
 		a.lastOSToast = time.Now()
-		a.d.Desktop.Notify("AsyncAO — group invite", ownerName+" invited you to \""+name+"\"")
+		showOSToast("AsyncAO — group invite", ownerName+" invited you to \""+name+"\"")
 	}
 }
 
