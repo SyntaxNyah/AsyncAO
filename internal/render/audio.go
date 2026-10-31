@@ -61,9 +61,6 @@ type pendingPlay struct {
 	effects int
 	// seekSec is a best-effort start position for a cross-tab resume; 0 plays from the top.
 	seekSec float64
-	// heldBytes is a delivered song waiting for its loop sidecars, until holdUntil at the latest.
-	heldBytes []byte
-	holdUntil time.Time
 }
 
 // Audio implements courtroom.AudioSink over SDL3_mixer, with no Go audio decoding; render thread only.
@@ -104,6 +101,9 @@ type Audio struct {
 	loopResults     chan loopMetaResult
 	loopFetchCtx    context.Context
 	cancelLoopFetch context.CancelFunc
+	// loopRearmURL is a song whose loop points arrived; musicFadeInEnd delays applying them past a fade-in.
+	loopRearmURL   string
+	musicFadeInEnd time.Time
 
 	// swapSnaps maps an outgoing URL to its position when swapped out, so the cross-tab resume can seek back.
 	swapSnaps     map[string]musicSwapSnap
@@ -432,7 +432,7 @@ func (a *Audio) Frame() {
 		case asset := <-a.mgr.Audio():
 			a.onAudioBytes(asset)
 		default:
-			a.stepHeldMusic()
+			a.stepLoopMeta()
 			a.expirePending()
 			a.stepFadeOutOld()    // reap the crossfade's old track once its native fade halts it
 			a.reapFinishedMusic() // clear a naturally-ended one-shot so it's not seen as "still playing"
@@ -458,9 +458,6 @@ func (a *Audio) onAudioBytes(asset assets.AudioAsset) {
 	}
 	p, wanted := a.pending[asset.Base]
 	if wanted && p.kind == pendingMusic {
-		if p.heldBytes != nil || a.holdForLoopMeta(asset.Base, asset.Data, p) {
-			return
-		}
 		delete(a.pending, asset.Base)
 		a.startMusic(asset.Base, asset.Data, p.loop, p.effects, p.seekSec) // 2.9 loop/effects (#15) + cross-tab resume seek
 		return
@@ -754,6 +751,10 @@ func (a *Audio) startMusic(url string, data []byte, loop bool, effects int, seek
 		return
 	}
 	a.music.audio, a.music.bytes = song, data
+	a.musicFadeInEnd = time.Now().Add(time.Duration(opts.FadeInMs) * time.Millisecond)
+	if loop {
+		a.requestLoopMeta(url, data)
+	}
 	a.musicLoop = loop // remember loop-ness so reapFinishedMusic only reaps a finished one-shot
 	if crossfade {
 		// stepFadeOutOld unloads the old song once the fade has stopped its track.

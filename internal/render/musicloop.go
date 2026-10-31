@@ -7,6 +7,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/mix"
 )
 
 const (
@@ -19,11 +20,8 @@ const (
 	// loopMetaCacheCap bounds the sidecar cache.
 	loopMetaCacheCap = 256
 
-	// loopFetchCap bounds concurrent sidecar fetches; past it a song starts without waiting.
+	// loopFetchCap bounds concurrent sidecar fetches; past it a song plays without loop points.
 	loopFetchCap = 4
-
-	// loopFetchWait is how long a looping song waits for its sidecars; the previous song keeps playing meanwhile.
-	loopFetchWait = time.Second
 
 	unknownDurationSec = -1.0
 )
@@ -44,42 +42,71 @@ type loopMetaResult struct {
 	meta loopMeta
 }
 
-// holdForLoopMeta keeps a looping song's bytes until its sidecars are known, since SDL3_mixer takes loop points
-// as play options and the fetch must not block the render thread. False means start now.
-func (a *Audio) holdForLoopMeta(url string, data []byte, p pendingPlay) bool {
-	if !p.loop || courtroom.IsDirectMusicURL(url) {
-		return false
+// requestLoopMeta fetches a looping song's sidecars in the background; stepLoopMeta applies them on arrival.
+func (a *Audio) requestLoopMeta(url string, data []byte) {
+	if !courtroom.HasLoopSidecars(url) {
+		return
 	}
 	if meta, cached := a.loopMeta[url]; cached && time.Since(meta.fetchedAt) <= loopMetaCacheMaxAge {
-		return false
+		return
 	}
-	if _, fetching := a.loopFetches[url]; !fetching {
-		if len(a.loopFetches) >= loopFetchCap {
-			return false
-		}
-		a.loopFetches[url] = struct{}{}
-		go func() {
-			a.loopResults <- loopMetaResult{url: url, meta: fetchLoopMeta(a.loopFetchCtx, a.fetchSidecar, url, data)}
-			a.wake()
-		}()
+	if _, fetching := a.loopFetches[url]; fetching || len(a.loopFetches) >= loopFetchCap {
+		return
 	}
-	p.heldBytes, p.holdUntil = data, time.Now().Add(loopFetchWait)
-	a.pending[url] = p
-	time.AfterFunc(loopFetchWait, a.wake) // a parked frame loop must still start the song on time
-	return true
+	a.loopFetches[url] = struct{}{}
+	go func() {
+		a.loopResults <- loopMetaResult{url: url, meta: fetchLoopMeta(a.loopFetchCtx, a.fetchSidecar, url, data)}
+		a.wake()
+	}()
 }
 
-// stepHeldMusic stores finished sidecar fetches and starts held songs whose sidecars arrived or whose wait ran out.
-func (a *Audio) stepHeldMusic() {
+// stepLoopMeta stores finished sidecar fetches and applies new loop points to the song playing.
+func (a *Audio) stepLoopMeta() {
 	for {
 		select {
 		case result := <-a.loopResults:
 			delete(a.loopFetches, result.url)
+			previous := a.loopMeta[result.url]
 			a.storeLoopMeta(result)
+			if result.meta.found && (!previous.found || previous.points != result.meta.points) {
+				a.loopRearmURL = result.url
+			}
 		default:
-			a.startDueHeldMusic()
+			a.rearmLoopPoints()
 			return
 		}
+	}
+}
+
+// rearmLoopPoints replays the live song from where it is, because SDL3_mixer takes loop points only at play time.
+func (a *Audio) rearmLoopPoints() {
+	url := a.loopRearmURL
+	if url == "" {
+		return
+	}
+	if url != a.musicURL || !a.musicLoop || a.music.audio == nil {
+		a.loopRearmURL = ""
+		return
+	}
+	// Replaying during a fade-in would restart the ramp from silence.
+	if time.Now().Before(a.musicFadeInEnd) {
+		return
+	}
+	a.loopRearmURL = ""
+	pos, ok := a.music.track.Position()
+	if !ok {
+		return
+	}
+	durSec, haveDur := a.music.audio.Duration()
+	points, ok := a.loopPointsFor(url, durSec, haveDur, pos)
+	if !ok {
+		return
+	}
+	err := a.music.track.Play(mix.PlayOptions{
+		Loops: mix.LoopForever, StartSec: pos, LoopStartSec: points.StartSec, LoopEndSec: points.EndSec,
+	})
+	if err != nil {
+		log.Printf("render: applying loop points to %q: %v", url, err)
 	}
 }
 
@@ -94,21 +121,7 @@ func (a *Audio) storeLoopMeta(result loopMetaResult) {
 	a.loopMeta[result.url] = result.meta
 }
 
-func (a *Audio) startDueHeldMusic() {
-	for url, p := range a.pending {
-		if p.heldBytes == nil {
-			continue
-		}
-		if _, fetching := a.loopFetches[url]; fetching && time.Now().Before(p.holdUntil) {
-			continue
-		}
-		delete(a.pending, url)
-		a.startMusic(url, p.heldBytes, p.loop, p.effects, p.seekSec)
-		return // at most one music entry is ever pending
-	}
-}
-
-// loopPointsFor returns cached loop points or ok=false, without fetching; a late fetch serves the next play.
+// loopPointsFor returns cached loop points or ok=false, without fetching.
 func (a *Audio) loopPointsFor(url string, durSec float64, haveDur bool, startSec float64) (courtroom.LoopPoints, bool) {
 	meta, cached := a.loopMeta[url]
 	// Most tracks take this path, so logging would be spam.
