@@ -13,6 +13,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 )
 
 const (
@@ -24,8 +26,6 @@ const (
 	retryInterval = 30 * time.Second
 	// maxFrameLen bounds inbound frames (hard rule 4).
 	maxFrameLen = 64 << 10
-	// pipeCandidates is the count of pipes Discord may listen on, discord-ipc-0..9.
-	pipeCandidates = 10
 	// largeImageKey is the art asset name to upload the icon under in the Discord application.
 	largeImageKey = "appicon"
 )
@@ -125,7 +125,7 @@ func (c *Client) worker() {
 			return false
 		}
 		lastTry = time.Now()
-		dialed, err := dialDiscord()
+		dialed, err := platform.DialDiscord()
 		if err != nil {
 			c.setStatus("Discord not detected (retrying)")
 			return false
