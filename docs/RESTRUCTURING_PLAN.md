@@ -1144,7 +1144,7 @@ OS it is on.
   client, self-update, an external video encoder (ffmpeg), system font discovery, proxy
   discovery, machine id, Discord presence, extra OS windows, background rendering.
 - One service interface per capability, each with one job (`URLOpener`, `FileRevealer`,
-  `FilePicker`, `Notifier`, `ClipboardFiles`, `Relauncher`, `Updater`, `ProcessRunner`,
+  `FilePicker`, `ClipboardFiles`, `Relauncher`, `Updater`, `ProcessRunner`,
   `FontLocator`, `ProxyDiscoverer`, `MachineID`, `PresenceDialer`, …). A capability is present
   exactly when its service is: `Platform` hands a service out as `(service, ok)`, and the
   capability set is derived from the services, so the two cannot disagree.
@@ -1166,7 +1166,7 @@ Rows marked *mobile* are reserved for the mobile milestone and not built before 
 | Process | `ProcessRunner` (hidden console, find a tool such as ffmpeg); `Relauncher`; `Updater` (release asset, permissions, quarantine) | `winexec`, `videoenc`, `update/apply.go`, `ui/update_ui.go` |
 | Network and IPC | `ProxyDiscoverer` (the OS proxy settings); `PresenceDialer` (Discord's socket or pipe) | `netproxy/discover_*.go`; `presence/dial_*.go`, `XDG_RUNTIME_DIR` |
 | Fonts | `FontLocator` (system font folders, well-known faces per role) | `ui/fontcensus.go`, `fontfallback.go`, `themefonts.go`, `emoji.go`, `WINDIR`, `LOCALAPPDATA` |
-| Desktop integration (*host*) | `URLOpener`, `FileRevealer`, `FilePicker`, `ClipboardFiles`, `Notifier`, `WindowIcon`, `Windows` (extra OS windows) | `ui/about.go`, `openpath.go`, `settingstabs.go`, `settingswidgets.go`, `clipfile.go`, `ostoast.go`, `mascot_icon_*.go`, `render/previewowner_*.go` |
+| Desktop integration (*host*) | `URLOpener`, `FileRevealer`, `FilePicker`, `ClipboardFiles`, `WindowIcon`, `Windows` (extra OS windows) | `ui/about.go`, `openpath.go`, `settingstabs.go`, `settingswidgets.go`, `clipfile.go`, `ostoast.go`, `mascot_icon_*.go`, `render/previewowner_*.go` |
 | OS preferences (*host*) | `DisplayScale`; system light/dark theme and reduced motion (*mobile*) | `ui/dpiseed_*.go` |
 | Hardware (*host*) | window, `Graphics`, audio device, displays, input devices (touch); power and low-memory warnings (*mobile*) | `cmd/asyncao/main.go`, `render` audio |
 | Lifecycle (*host*) | frame loop in the OS's style; background and foreground; GPU loss | `cmd/asyncao/main.go` |
