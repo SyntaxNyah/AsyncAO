@@ -60,16 +60,23 @@ cp -f "$BIN" "$STAGE/$BIN_NAME"
 # just below, so the very same rewrite works whether the binary sits inside the
 # staging dir (bundled install) or is dropped as a bare self-update asset next
 # to an existing lib/.
-# Point dylibbundler at the Homebrew prefix's lib/ and, when SDL3 was built
-# from source (CI's setup-sdl3 sets SDL3_PREFIX), at that prefix's lib/ too (-s),
-# so a dylib referenced by @rpath or a bare install name resolves instead of
-# looping on "does not exist. Try again".
+# Point dylibbundler (-s) at the Homebrew prefix's lib/ and at wherever pkg-config
+# says each SDL library lives, so a dylib referenced by @rpath or a bare install
+# name resolves. setup-sdl builds SDL3, SDL3_ttf and SDL3_mixer into separate
+# prefixes. With a library unfound, dylibbundler asks where it is and, with no
+# one to answer, loops on "does not exist. Try again" forever.
+search_args=(-s "$(brew --prefix)/lib")
+for pkg in sdl3 sdl3-ttf sdl3-mixer; do
+  libdir="$(pkg-config --variable=libdir "$pkg" 2>/dev/null || true)"
+  if [ -n "$libdir" ]; then
+    search_args+=(-s "$libdir")
+  fi
+done
 dylibbundler -od -b \
   -x "$STAGE/$BIN_NAME" \
   -d "$LIBDIR" \
   -p "@rpath/" \
-  -s "$(brew --prefix)/lib" \
-  ${SDL3_PREFIX:+-s "$SDL3_PREFIX/lib"}
+  "${search_args[@]}"
 
 # Teach the binary WHERE @rpath points, in priority order. First hit wins, so:
 #   1. @executable_path/lib  — the bundled libs we just staged. THIS is the fix:
