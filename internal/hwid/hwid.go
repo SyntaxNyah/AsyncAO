@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 )
 
 const (
@@ -57,11 +59,16 @@ func device() string {
 }
 
 func compute() string {
-	parts := roots() // platform-specific, strongest first
+	host, _ := os.Hostname()
+	return fingerprint(platform.MachineIdentity(), host)
+}
+
+// fingerprint hashes the identity values. Changing what it produces changes every id, which lifts every server's bans.
+func fingerprint(parts []string, host string) string {
 	if len(parts) == 0 {
 		// No stable root: use the hostname so such machines still differ; only here does a rename move the id.
-		if h, err := os.Hostname(); err == nil && strings.TrimSpace(h) != "" {
-			parts = []string{"host=" + strings.TrimSpace(h)}
+		if h := strings.TrimSpace(host); h != "" {
+			parts = []string{"host=" + h}
 		} else {
 			parts = []string{genericFallback}
 		}

@@ -1,14 +1,16 @@
 //go:build darwin
 
-package hwid
+package platform
 
 import (
 	"os/exec"
 	"strings"
 )
 
-// roots returns the hardware UUID (IOPlatformUUID) from ioreg; on failure the hostname is used.
-func roots() []string {
+// MachineIdentity returns the machine's stable identity values, strongest first; nil when none is readable. They are
+// private: hwid hashes them, and nothing may send or log them.
+// macOS: the hardware UUID (IOPlatformUUID) from ioreg.
+func MachineIdentity() []string {
 	out, err := exec.Command("ioreg", "-rd1", "-c", "IOPlatformExpertDevice").Output()
 	if err != nil {
 		return nil

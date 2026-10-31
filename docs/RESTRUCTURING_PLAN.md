@@ -47,6 +47,8 @@ in **Status**. Update Status in the same commit that completes a step.
   - [x] item 6, fonts: `platform.Fonts`, where each OS keeps its fonts
   - [x] item 6, proxy: not moved (decided 2026-10-31). Discovery builds `Policy` values inside `netproxy`, so moving it
         means redesigning that boundary; that waits for the netproxy discussion, and item 7's lints exempt `netproxy` until then
+  - [x] item 6, machine id: `platform.MachineIdentity`; `hwid` keeps the hashing, so the per-server HDID stays derived
+        in `internal/ui` and existing ids do not change
   - [ ] the rest of Part 5g's sequence, items 6–7, which includes the platform code (dialogs, DPI seeding, URL opening, preview
         ownership, clipboard)
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
