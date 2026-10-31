@@ -6,13 +6,12 @@ package ui
 import (
 	"context"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/update"
-	"github.com/SyntaxNyah/AsyncAO/internal/winexec"
 )
 
 const (
@@ -224,8 +223,7 @@ func (a *App) MaybeRelaunch() {
 	if err != nil {
 		return
 	}
-	cmd := exec.Command(exe, a.relaunchArgs...)
-	winexec.Hide(cmd) // dev builds are console-subsystem; no console flash on relaunch
+	cmd := platform.Command(exe, a.relaunchArgs...)
 	_ = cmd.Start()
 }
 
