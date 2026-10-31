@@ -32,6 +32,7 @@ type App struct {
 // Runtime is what the host hands the client once SDL is running.
 type Runtime struct {
 	Platform platform.Platform
+	Audio    AudioDevices
 	windows  []*sdl.Window
 }
 
@@ -55,6 +56,25 @@ func (r *Runtime) OpenMainWindow(spec WindowSpec) (*sdl.Window, error) {
 		log.Printf("text input unavailable: %v", err)
 	}
 	return window, nil
+}
+
+// OpenExtraWindow opens a window beyond the main one with its own renderer; the caller destroys both.
+func OpenExtraWindow(title string, w, h int32) (*sdl.Window, *sdl.Renderer, error) {
+	win, err := sdl.CreateWindow(title, sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
+		w, h, sdl.WINDOW_SHOWN|sdl.WINDOW_RESIZABLE)
+	if err != nil {
+		return nil, nil, fmt.Errorf("window: %w", err)
+	}
+	ren, err := sdl.CreateRenderer(win, -1, sdl.RENDERER_ACCELERATED|sdl.RENDERER_PRESENTVSYNC)
+	if err != nil {
+		// VMs and the dummy video driver have no accelerated backend.
+		ren, err = sdl.CreateRenderer(win, -1, sdl.RENDERER_SOFTWARE)
+		if err != nil {
+			_ = win.Destroy()
+			return nil, nil, fmt.Errorf("renderer: %w", err)
+		}
+	}
+	return win, ren, nil
 }
 
 func (r *Runtime) closeWindows() {

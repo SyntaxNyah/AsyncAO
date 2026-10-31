@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
@@ -86,7 +87,7 @@ func TestPreviewWindowCloseNeverQuitsTheAppButClosesThePreview(t *testing.T) {
 		t.Fatalf("main window id: %v", err)
 	}
 
-	preview := render.NewPreviewWindow()
+	preview := render.NewPreviewWindow(host.OpenExtraWindow)
 	if err := preview.Open("test-preview", 64, 64); err != nil {
 		t.Skipf("preview window unavailable: %v", err)
 	}
@@ -173,7 +174,7 @@ func TestPreviewWindowMouseNeverReachesMainCtx(t *testing.T) {
 	uiCtx, cleanupCtx := newHeadlessMainCtx(t)
 	defer cleanupCtx()
 
-	preview := render.NewPreviewWindow()
+	preview := render.NewPreviewWindow(host.OpenExtraWindow)
 	if err := preview.Open("test-preview-aliasing", 64, 64); err != nil {
 		t.Skipf("preview window unavailable: %v", err)
 	}

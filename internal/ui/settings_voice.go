@@ -105,7 +105,7 @@ func (a *App) drawSettingsVoice(y, _ int32) int32 {
 // cycleVoiceInput advances the chosen mic to the next capture device, wrapping through "System default";
 // enumerated on click.
 func (a *App) cycleVoiceInput() {
-	devs := append([]string{""}, sdl.GetAudioDeviceNames(true)...) // system default first
+	devs := append([]string{""}, a.d.AudioDevices.CaptureDeviceNames()...) // system default first
 	cur := a.d.Prefs.Load().VoiceInputDevice
 	idx := 0
 	for i, d := range devs {

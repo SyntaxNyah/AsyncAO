@@ -9,6 +9,7 @@ import (
 	"unsafe"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/voice"
 )
@@ -75,13 +76,13 @@ type voiceEngine struct {
 
 // newVoiceEngine opens the audio devices and the encoder; captureDev "" is the system default, outVol is 0..100.
 // Capture is best-effort (no mic means listen-only); an error means no audio at all is possible.
-func newVoiceEngine(send func(b64 string), captureDev string, outVol int) (*voiceEngine, error) {
+func newVoiceEngine(devices host.AudioDevices, send func(b64 string), captureDev string, outVol int) (*voiceEngine, error) {
 	spec := sdl.AudioSpec{
 		Freq:     voice.SampleRate,
 		Format:   sdl.AUDIO_S16SYS, // native order ⇒ []int16 aliases the bytes 1:1
 		Channels: voice.Channels,
 	}
-	play, err := sdl.OpenAudioDeviceStream("", false, &spec)
+	play, err := devices.OpenPlayback(&spec)
 	if err != nil {
 		return nil, err // no output ⇒ no audio engine (presence-only)
 	}
@@ -101,7 +102,7 @@ func newVoiceEngine(send func(b64 string), captureDev string, outVol int) (*voic
 	play.Resume() // start the output clock
 
 	// Capture is optional: a machine with no mic can still listen.
-	if cap, err := sdl.OpenAudioDeviceStream(captureDev, true, &spec); err == nil {
+	if cap, err := devices.OpenCapture(captureDev, &spec); err == nil {
 		if enc, err := voice.NewEncoder(); err == nil {
 			enc.Tune(voiceBitrate, true) // DTX on (skip silence) + steady VOIP bitrate
 			e.capture, e.enc = cap, enc

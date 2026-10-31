@@ -89,7 +89,7 @@ func (a *App) voiceJoinChannel() {
 	a.sess.VoiceJoin()
 	a.voiceJoined = true
 	if a.voiceAudio == nil {
-		eng, err := newVoiceEngine(func(b64 string) {
+		eng, err := newVoiceEngine(a.d.AudioDevices, func(b64 string) {
 			if a.sess != nil {
 				a.sess.VoiceFrame(b64) // single send path: main loop only
 			}

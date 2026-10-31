@@ -54,6 +54,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
@@ -117,11 +118,11 @@ func stageFrameDrivenApp(t *testing.T) (*App, func()) {
 		Decoder:   decoder,
 	})
 	a.d.Pump = render.NewPump(a.d.Store, a.d.Manager, nil)
-	// The REAL audio sink, built exactly as cmd/asyncao builds it. NewAudio degrades
-	// to a disabled-but-functional device when the mixer cannot open one (which is
-	// the headless case), and Frame drains the manager's audio channel through it
+	// The REAL audio sink, built exactly as cmd/asyncao builds it. A nil mixer gives
+	// a disabled-but-functional device (which is the headless case), and Frame drains the manager's audio channel through it
 	// either way — a zero-value &render.Audio{} would nil-deref on that drain.
-	a.d.Audio = render.NewAudio(a.d.Manager)
+	mixer, _ := host.AudioDevices{}.OpenMixer()
+	a.d.Audio = render.NewAudio(a.d.Manager, mixer)
 	// The device closes before the courtroom's SDL teardown, as in the app: an
 	// SDL3_mixer device destroyed after SDL_Quit crashes the process.
 	sdlCleanup := cleanup

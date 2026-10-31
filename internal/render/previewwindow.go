@@ -18,7 +18,8 @@ const previewWindowAnimCacheBudgetBytes = 32 << 20
 // PreviewWindow owns a second SDL window and renderer with one texture, created on Open, torn down on Close.
 // Every method must run on the main window's OS thread: SDL never allows a second thread (hard rule 1).
 type PreviewWindow struct {
-	win *sdl.Window
+	open WindowOpener
+	win  *sdl.Window
 	ren *sdl.Renderer
 	tex *sdl.Texture
 	// texW/texH are the displayed texture's size, for Present's fit math.
@@ -45,8 +46,11 @@ type previewAnimFrame struct {
 	w, h int32
 }
 
-// NewPreviewWindow returns a closed PreviewWindow.
-func NewPreviewWindow() *PreviewWindow { return &PreviewWindow{} }
+// WindowOpener opens a window with its own renderer; the caller destroys both.
+type WindowOpener func(title string, w, h int32) (*sdl.Window, *sdl.Renderer, error)
+
+// NewPreviewWindow returns a closed PreviewWindow that opens through open.
+func NewPreviewWindow(open WindowOpener) *PreviewWindow { return &PreviewWindow{open: open} }
 
 // IsOpen reports whether the OS window exists; the nil check is the entire cost when closed.
 func (p *PreviewWindow) IsOpen() bool { return p != nil && p.win != nil }
@@ -62,19 +66,9 @@ func (p *PreviewWindow) ID() uint32 {
 // Open creates the window and renderer, replacing any previous; two vsync'd direct3d renderers don't serialize.
 func (p *PreviewWindow) Open(title string, w, h int32) error {
 	p.Close() // idempotent-replace, not additive
-	win, err := sdl.CreateWindow(title, sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
-		w, h, sdl.WINDOW_SHOWN|sdl.WINDOW_RESIZABLE)
+	win, ren, err := p.open(title, w, h)
 	if err != nil {
-		return fmt.Errorf("preview window: %w", err)
-	}
-	ren, err := sdl.CreateRenderer(win, -1, sdl.RENDERER_ACCELERATED|sdl.RENDERER_PRESENTVSYNC)
-	if err != nil {
-		// VMs and the dummy video driver have no accelerated backend.
-		ren, err = sdl.CreateRenderer(win, -1, sdl.RENDERER_SOFTWARE)
-		if err != nil {
-			win.Destroy()
-			return fmt.Errorf("preview renderer: %w", err)
-		}
+		return fmt.Errorf("preview: %w", err)
 	}
 	_ = ren.SetDrawBlendMode(sdl.BLENDMODE_BLEND)
 	id, err := win.GetID()

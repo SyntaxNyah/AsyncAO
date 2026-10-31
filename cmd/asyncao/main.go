@@ -271,7 +271,11 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts render.BackendOp
 	manager.SetDiskBudget(int64(prefs.Load().DiskCacheBudgetMiBVal) << 20)
 
 	viewport := render.NewViewport(store)
-	audio := render.NewAudio(manager)
+	mixer, err := rt.Audio.OpenMixer()
+	if err != nil {
+		log.Printf("audio disabled: %v", err)
+	}
+	audio := render.NewAudio(manager, mixer)
 	defer audio.Close()
 	audio.SetVolumes(prefs.Load().AudioVolumes())
 
@@ -303,7 +307,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts render.BackendOp
 	defer uiCtx.Destroy()
 	uiCtx.SetWindow(window) // modcall/case-alert taskbar flashing
 	// preview stays closed, at no cost, until the user pops it out.
-	preview := render.NewPreviewWindow()
+	preview := render.NewPreviewWindow(host.OpenExtraWindow)
 	defer preview.Close()
 	ui.SetWindowIcon(window) // window / taskbar icon = the Mayo mascot (mascot.go)
 
@@ -322,6 +326,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts render.BackendOp
 		Viewport:         viewport,
 		Pump:             nil, // set below (needs app for liveness)
 		Audio:            audio,
+		AudioDevices:     rt.Audio,
 		Preview:          preview,
 		Presence:         pres,
 		MasterURL:        masterURL,
