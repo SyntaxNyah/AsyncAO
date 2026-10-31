@@ -136,7 +136,7 @@ func NewClientNotFoundTTL(ttl time.Duration, sockets *netproxy.Factory) *Client 
 
 func newClient(timeout, notFoundTTL time.Duration, sockets *netproxy.Factory) *Client {
 	dns := newDNSCache()
-	transport := sockets.NewTransport()
+	transport := sockets.ForwardTransport(dns.DialContext)
 	transport.MaxConnsPerHost = defaultMaxConnsPerHost
 	transport.MaxIdleConnsPerHost = defaultMaxIdleConnsPerHost
 	transport.MaxIdleConns = defaultMaxIdleConnsTotal
@@ -147,7 +147,6 @@ func newClient(timeout, notFoundTTL time.Duration, sockets *netproxy.Factory) *C
 	transport.ForceAttemptHTTP2 = true
 	transport.TLSHandshakeTimeout = defaultTLSHandshakeTimeout
 	transport.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(tlsSessionCacheSize)
-	transport.DialContext = sockets.Dialer(dns.DialContext)
 	return &Client{
 		sockets:    sockets,
 		httpClient: &http.Client{Transport: transport}, //nolint:forbidigo // its transport comes from the factory

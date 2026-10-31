@@ -133,7 +133,7 @@ func Dial(ctx context.Context, sockets *netproxy.Factory, wsURL string, opts ...
 	if len(opts) > 0 && opts[0].Origin != "" {
 		dialOpts.HTTPHeader.Set("Origin", opts[0].Origin)
 	}
-	dialOpts.HTTPClient = sockets.Client(0)
+	dialOpts.HTTPClient = sockets.TunnelClient()
 	if len(opts) > 0 && opts[0].SkipTLSVerify {
 		dialOpts.HTTPClient = sockets.InsecureClient()
 	}

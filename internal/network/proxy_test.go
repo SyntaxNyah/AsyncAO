@@ -39,8 +39,9 @@ func TestAssetsGoThroughTheProxy(t *testing.T) {
 	if string(got) != body {
 		t.Errorf("body = %q", got)
 	}
-	if !slices.Equal(proxy.Asked(), []string{proxiedAddr}) {
-		t.Errorf("proxy was asked for %v", proxy.Asked())
+	// An http asset is forwarded, so it loads through a proxy that only allows CONNECT to 443.
+	if !slices.Equal(proxy.Forwards(), []string{proxiedAddr}) {
+		t.Errorf("proxy was asked to forward %v", proxy.Forwards())
 	}
 }
 
@@ -49,8 +50,8 @@ func TestServerListGoesThroughTheProxy(t *testing.T) {
 	if _, err := FetchServerList(context.Background(), sockets, "http://"+proxiedAddr+"/servers"); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(proxy.Asked(), []string{proxiedAddr}) {
-		t.Errorf("proxy was asked for %v", proxy.Asked())
+	if !slices.Equal(proxy.Forwards(), []string{proxiedAddr}) {
+		t.Errorf("proxy was asked to forward %v", proxy.Forwards())
 	}
 }
 

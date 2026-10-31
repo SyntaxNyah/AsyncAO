@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -34,10 +35,11 @@ type DialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 
 // Factory opens sockets according to the policy in force. It is safe from any goroutine.
 type Factory struct {
-	system func() platform.ProxySettings
-	getenv func(string) string
-	policy atomic.Pointer[Policy]
-	shared *http.Transport
+	system        func() platform.ProxySettings
+	getenv        func(string) string
+	policy        atomic.Pointer[Policy]
+	shared        *http.Transport // CONNECT-always, for the game WebSocket
+	sharedForward *http.Transport // forwards http://, CONNECTs https://, for plain fetches
 
 	mu    sync.Mutex
 	conns map[*trackedConn]struct{}
@@ -48,6 +50,7 @@ func New(system func() platform.ProxySettings, getenv func(string) string) *Fact
 	f := &Factory{system: system, getenv: getenv, conns: map[*trackedConn]struct{}{}}
 	f.policy.Store(&Policy{Mode: ModeDirect, Source: "not configured yet", Block: errNotConfigured})
 	f.shared = f.NewTransport()
+	f.sharedForward = f.ForwardTransport(dialDirect)
 	return f
 }
 
@@ -121,6 +124,46 @@ func (f *Factory) NewTransport() *http.Transport {
 	return t
 }
 
+// ForwardTransport builds an HTTP transport that proxies from the one policy through the stdlib:
+// plain http:// is forwarded to the proxy as an ordinary request, https:// is tunnelled with
+// CONNECT, and a block fails the request. SOCKS, bypass and direct dials still go through the
+// factory's own socket path (forwardDial), so SOCKS keeps sending host names, never a local lookup.
+func (f *Factory) ForwardTransport(direct DialFunc) *http.Transport {
+	t := f.NewTransport()
+	t.Proxy = f.proxyForRequest
+	t.DialContext = f.forwardDial(direct)
+	return t
+}
+
+// proxyForRequest hands the stdlib an http/https proxy to forward or CONNECT through, nil for SOCKS,
+// bypass and direct (forwardDial routes those), and the block error when connections are refused.
+func (f *Factory) proxyForRequest(req *http.Request) (*url.URL, error) {
+	via, err := f.policy.Load().route(req.URL.Hostname())
+	if err != nil {
+		return nil, err
+	}
+	if via != nil && (via.Scheme == "http" || via.Scheme == schemeHTTPS) {
+		return via, nil
+	}
+	return nil, nil
+}
+
+// forwardDial dials the http/https proxy itself directly (the stdlib is tunnelling or forwarding
+// through it), and routes everything else — SOCKS, bypass, direct — through the socket path.
+func (f *Factory) forwardDial(direct DialFunc) DialFunc {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if via := f.policy.Load().Via; via != nil &&
+			(via.Scheme == "http" || via.Scheme == schemeHTTPS) && addr == proxyAddress(via) {
+			conn, err := direct(ctx, network, addr)
+			if err != nil {
+				return nil, err
+			}
+			return f.track(conn), nil
+		}
+		return f.Dialer(direct)(ctx, network, addr)
+	}
+}
+
 // trackedConn lets Apply close a live connection, not just an idle one: every socket the factory
 // opens is registered, and closed when the policy changes, so nothing keeps serving on a route the
 // user has switched away from.
@@ -165,9 +208,16 @@ func (f *Factory) closeAllConns() {
 	}
 }
 
-// Client returns an HTTP client on the shared transport; 0 means no overall timeout.
+// Client returns an HTTP client for plain fetches (assets, server lists, updates): it forwards
+// http:// and tunnels https:// with CONNECT. 0 means no overall timeout.
 func (f *Factory) Client(timeout time.Duration) *http.Client {
-	return &http.Client{Transport: f.shared, Timeout: timeout}
+	return &http.Client{Transport: f.sharedForward, Timeout: timeout}
+}
+
+// TunnelClient tunnels every request with CONNECT, for the game WebSocket, which a forward proxy
+// cannot carry. Its connection drops on the next Apply like any other.
+func (f *Factory) TunnelClient() *http.Client {
+	return &http.Client{Transport: f.shared}
 }
 
 // InsecureClient skips TLS verification, for the user's option on self-signed servers. Like every

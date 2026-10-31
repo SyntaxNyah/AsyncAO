@@ -37,7 +37,7 @@ func targetServer(t *testing.T) (*httptest.Server, string) {
 	return srv, strings.TrimPrefix(srv.URL, "http://")
 }
 
-func TestManualProxyCarriesPlainHTTPThroughAConnectTunnel(t *testing.T) {
+func TestPlainHTTPIsForwardedNotTunnelled(t *testing.T) {
 	_, target := targetServer(t)
 	proxy := netproxytest.Start(t, target)
 	f := netproxy.New(noSystem, noEnv)
@@ -52,8 +52,32 @@ func TestManualProxyCarriesPlainHTTPThroughAConnectTunnel(t *testing.T) {
 	if string(body) != testBody {
 		t.Errorf("body = %q", body)
 	}
+	// Plain http goes as a forward request, so it loads through a proxy that only allows CONNECT to 443.
+	if got := proxy.Forwards(); !slices.Equal(got, []string{unreachable}) {
+		t.Errorf("proxy was asked to forward %v", got)
+	}
+	if got := proxy.Asked(); len(got) != 0 {
+		t.Errorf("http was tunnelled with CONNECT: %v", got)
+	}
+}
+
+func TestHTTPSStillTunnelsThroughTheForwardingClient(t *testing.T) {
+	proxy := netproxytest.Start(t, http2Target(t))
+	f := netproxy.New(noSystem, noEnv)
+	f.Apply(netproxy.ModeManual, proxy.URL)
+	// The forwarding client must still CONNECT for https, where forwarding is impossible.
+	client := f.Client(0)
+	if tr, ok := client.Transport.(*http.Transport); ok {
+		tr.TLSClientConfig.InsecureSkipVerify = true
+	}
+	resp, err := client.Get("https://" + unreachable + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
 	if got := proxy.Asked(); !slices.Equal(got, []string{unreachable}) {
-		t.Errorf("proxy was asked for %v", got)
+		t.Errorf("https was not tunnelled with CONNECT: asked=%v forwards=%v", got, proxy.Forwards())
 	}
 }
 
@@ -204,8 +228,8 @@ func TestApplyDropsIdleConnectionsSoTheNewRouteTakesEffect(t *testing.T) {
 	get()
 	f.Apply(netproxy.ModeManual, second.URL)
 	get()
-	if len(second.Asked()) != 1 {
-		t.Errorf("the new proxy saw %v; the old connection was reused", second.Asked())
+	if len(second.Forwards()) != 1 {
+		t.Errorf("the new proxy saw %v; the old connection was reused", second.Forwards())
 	}
 }
 
