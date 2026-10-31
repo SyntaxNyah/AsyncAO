@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,8 +19,9 @@ import (
 const (
 	directDialTimeout = 30 * time.Second
 	directKeepAlive   = 30 * time.Second
-	// maxTrackedTransports bounds the transports Apply flushes (hard rule 4); the client has very few.
-	maxTrackedTransports = 16
+	// maxTrackedConns bounds the open connections Apply closes (hard rule 4); the client opens far
+	// fewer, so the cap is never reached in practice.
+	maxTrackedConns = 512
 	// tlsSessionCacheEntries is the resumable TLS sessions one transport keeps; the client talks to few hosts.
 	tlsSessionCacheEntries = 32
 )
@@ -39,16 +39,15 @@ type Factory struct {
 	policy atomic.Pointer[Policy]
 	shared *http.Transport
 
-	mu         sync.Mutex
-	transports []*http.Transport
+	mu    sync.Mutex
+	conns map[*trackedConn]struct{}
 }
 
 // New returns a factory that refuses connections until Apply; system reads the OS proxy settings and may block.
 func New(system func() platform.ProxySettings, getenv func(string) string) *Factory {
-	f := &Factory{system: system, getenv: getenv}
+	f := &Factory{system: system, getenv: getenv, conns: map[*trackedConn]struct{}{}}
 	f.policy.Store(&Policy{Mode: ModeDirect, Source: "not configured yet", Block: errNotConfigured})
 	f.shared = f.NewTransport()
-	f.Track(f.shared)
 	return f
 }
 
@@ -59,17 +58,13 @@ func Direct() *Factory {
 	return f
 }
 
-// Apply resolves and publishes the policy; idle connections close so the next request takes the new route. Live
-// connections keep their route until they reconnect. It may block on the OS, so never call it on the render thread.
+// Apply resolves and publishes the policy, then closes every open connection so nothing keeps
+// serving on the old route: the game socket drops with the proxy, by design. It may block on the
+// OS, so never call it on the render thread.
 func (f *Factory) Apply(mode Mode, manualURL string) *Policy {
 	p := resolvePolicy(mode, manualURL, f.getenv, f.system)
 	f.policy.Store(p)
-	f.mu.Lock()
-	transports := slices.Clone(f.transports)
-	f.mu.Unlock()
-	for _, t := range transports {
-		t.CloseIdleConnections()
-	}
+	f.closeAllConns()
 	return p
 }
 
@@ -98,10 +93,16 @@ func (f *Factory) Dialer(direct DialFunc) DialFunc {
 		if err != nil {
 			return nil, err
 		}
+		var conn net.Conn
 		if via == nil {
-			return direct(ctx, network, addr)
+			conn, err = direct(ctx, network, addr)
+		} else {
+			conn, err = dialTunnel(ctx, via, addr)
 		}
-		return dialTunnel(ctx, via, addr)
+		if err != nil {
+			return nil, err
+		}
+		return f.track(conn), nil
 	}
 }
 
@@ -120,14 +121,47 @@ func (f *Factory) NewTransport() *http.Transport {
 	return t
 }
 
-// Track makes Apply flush t's idle connections, as a reused connection would keep its old route.
-func (f *Factory) Track(t *http.Transport) {
+// trackedConn lets Apply close a live connection, not just an idle one: every socket the factory
+// opens is registered, and closed when the policy changes, so nothing keeps serving on a route the
+// user has switched away from.
+type trackedConn struct {
+	net.Conn
+	f *Factory
+}
+
+func (c *trackedConn) Close() error {
+	c.f.forget(c)
+	return c.Conn.Close()
+}
+
+// track registers conn so Apply can close it; over the cap it is left untracked rather than growing
+// without bound (hard rule 4) — unreachable in practice, and such a conn still works.
+func (f *Factory) track(conn net.Conn) net.Conn {
+	c := &trackedConn{Conn: conn, f: f}
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.transports = append(f.transports, t)
-	if len(f.transports) > maxTrackedTransports {
-		f.transports[0].CloseIdleConnections()
-		f.transports = slices.Delete(f.transports, 0, 1)
+	if len(f.conns) < maxTrackedConns {
+		f.conns[c] = struct{}{}
+	}
+	f.mu.Unlock()
+	return c
+}
+
+func (f *Factory) forget(c *trackedConn) {
+	f.mu.Lock()
+	delete(f.conns, c)
+	f.mu.Unlock()
+}
+
+func (f *Factory) closeAllConns() {
+	f.mu.Lock()
+	open := make([]*trackedConn, 0, len(f.conns))
+	for c := range f.conns {
+		open = append(open, c)
+	}
+	clear(f.conns)
+	f.mu.Unlock()
+	for _, c := range open {
+		_ = c.Conn.Close()
 	}
 }
 
@@ -136,8 +170,8 @@ func (f *Factory) Client(timeout time.Duration) *http.Client {
 	return &http.Client{Transport: f.shared, Timeout: timeout}
 }
 
-// InsecureClient skips TLS verification, for the user's option on self-signed servers. Its one connection is a
-// WebSocket that leaves the idle pool, so it isn't tracked.
+// InsecureClient skips TLS verification, for the user's option on self-signed servers. Like every
+// connection the factory opens, its socket is dropped on the next Apply.
 func (f *Factory) InsecureClient() *http.Client {
 	t := f.NewTransport()
 	t.TLSClientConfig.InsecureSkipVerify = true

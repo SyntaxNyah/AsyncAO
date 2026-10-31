@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy/netproxytest"
@@ -18,8 +19,9 @@ import (
 )
 
 const (
-	testBody    = "through"
-	unreachable = "asyncao-test.invalid:1234"
+	testBody        = "through"
+	unreachable     = "asyncao-test.invalid:1234"
+	testReadTimeout = 2 * time.Second
 )
 
 func noEnv(string) string { return "" }
@@ -161,6 +163,25 @@ func TestSystemServerListPrefersHTTPS(t *testing.T) {
 		if p := f.Apply(netproxy.ModeSystem, ""); p.Via == nil || p.Via.Host != tc.want {
 			t.Errorf("%q: via = %v, want %s", tc.server, p.Via, tc.want)
 		}
+	}
+}
+
+// A live connection keeps the route it was opened on, so changing the setting must close it, not
+// wait for it to become idle: the game socket drops with the proxy, by design.
+func TestApplyDropsLiveConnectionsNotJustIdleOnes(t *testing.T) {
+	_, target := targetServer(t)
+	proxy := netproxytest.Start(t, target)
+	f := netproxy.New(noSystem, noEnv)
+	f.Apply(netproxy.ModeManual, proxy.URL)
+	conn, err := f.DialContext(context.Background(), "tcp", unreachable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	f.Apply(netproxy.ModeDirect, "")
+	_ = conn.SetReadDeadline(time.Now().Add(testReadTimeout))
+	if _, err := conn.Read(make([]byte, 1)); err == nil {
+		t.Error("the live tunnel survived a proxy change")
 	}
 }
 

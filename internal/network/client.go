@@ -148,7 +148,6 @@ func newClient(timeout, notFoundTTL time.Duration, sockets *netproxy.Factory) *C
 	transport.TLSHandshakeTimeout = defaultTLSHandshakeTimeout
 	transport.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(tlsSessionCacheSize)
 	transport.DialContext = sockets.Dialer(dns.DialContext)
-	sockets.Track(transport)
 	return &Client{
 		sockets:    sockets,
 		httpClient: &http.Client{Transport: transport}, //nolint:forbidigo // its transport comes from the factory
