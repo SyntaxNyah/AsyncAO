@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 	"github.com/SyntaxNyah/AsyncAO/internal/themepack"
 )
 
@@ -64,7 +65,7 @@ type themeImport struct {
 // armed reports whether path is the bundle already shown and still inside its consent window.
 // The path is part of the test so dropping bundle B after A describes B instead of importing A.
 func (ti *themeImport) armedFor(path string) bool {
-	return ti.armedPath != "" && samePath(ti.armedPath, path) &&
+	return ti.armedPath != "" && platform.SamePath(ti.armedPath, path) &&
 		time.Since(ti.armedAt) < themeImportConsentWindow
 }
 

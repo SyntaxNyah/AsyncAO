@@ -53,6 +53,8 @@ in **Status**. Update Status in the same commit that completes a step.
   - [x] item 6, process runner: `platform.Command` and `FindTool`; `internal/winexec` is gone
   - [x] item 6, updater and relaunch: `platform.UpdateLayoutFor`, `platform.RestartProgram`, and `Runtime.RelaunchAfterExit`, which
         starts the new client after SDL has quit
+  - [x] item 6, paths: `platform.UserFolders`, `SamePath`, `DriveRoots`; the crash log falls back to the cache folder. Config
+        and cache locations stay in `config` and `cache`, which use the standard library and have no OS branch
   - [ ] the rest of Part 5g's sequence, items 6–7, which includes the platform code (dialogs, DPI seeding, URL opening, preview
         ownership, clipboard)
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by

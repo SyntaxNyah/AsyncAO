@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
@@ -104,11 +104,11 @@ func (a *App) openDemoBrowserFor(purpose browsePurpose) {
 	s := &demoBrowser
 	s.purpose = purpose
 	s.keep = browseKeepRule(purpose)
-	home, _ := os.UserHomeDir() // "" is tolerated: the quick-jump button just no-ops
-	s.homeDir = home
-	if home != "" {
-		s.downloadsDir = filepath.Join(home, "Downloads")
-		s.desktopDir = filepath.Join(home, "Desktop")
+	folders := platform.SystemUserFolders() // "" is tolerated: the quick-jump button just no-ops
+	s.homeDir = folders.Home
+	if folders.Home != "" {
+		s.downloadsDir = folders.Downloads
+		s.desktopDir = folders.Desktop
 	} else {
 		s.downloadsDir, s.desktopDir = "", ""
 	}
@@ -117,7 +117,7 @@ func (a *App) openDemoBrowserFor(purpose browsePurpose) {
 	// restarts at home, because "" would open the drives view.
 	if merged := purpose == purposeEvidenceImage; s.merged != merged {
 		s.merged = merged
-		s.dir = home
+		s.dir = folders.Home
 	}
 	start := s.dir
 	if s.merged {
@@ -125,7 +125,7 @@ func (a *App) openDemoBrowserFor(purpose browsePurpose) {
 		start = evidenceBrowseSeed
 	} else if start == "" && !s.open {
 		// First open this session: seed from home. A remembered dir survives re-opens.
-		start = home
+		start = folders.Home
 	}
 	s.open = true
 	a.navBrowseTo(start)
@@ -268,15 +268,9 @@ func isRecordingName(name string) bool {
 
 // listDrives probes A:\ to Z:\ off the render thread for one row per Windows volume; empty off Windows.
 func listDrives() []browseEntry {
-	if runtime.GOOS != "windows" {
-		return nil
-	}
 	var out []browseEntry
-	for c := 'A'; c <= 'Z'; c++ {
-		root := string(c) + ":\\"
-		if _, err := os.Stat(root); err == nil {
-			out = append(out, browseEntry{name: root, isDir: true})
-		}
+	for _, root := range platform.DriveRoots() {
+		out = append(out, browseEntry{name: root, isDir: true})
 	}
 	return out
 }
@@ -288,7 +282,7 @@ func parentBrowseDir(dir string) string {
 	}
 	parent := filepath.Dir(dir)
 	if parent == dir { // filepath.Dir fixed-points at a root
-		if runtime.GOOS == "windows" {
+		if platform.HasDriveRoots() {
 			return "" // C:\ → drives view
 		}
 		return "/" // POSIX root has no parent; stay at "/"
@@ -451,7 +445,7 @@ func (a *App) drawDemoBrowser(w, h int32) {
 		quick("⬇ Downloads", s.downloadsDir, s.downloadsDir != "")
 		quick("🖥 Desktop", s.desktopDir, s.desktopDir != "")
 		quick("📼 recordings\\", s.recDir, s.recDir != "")
-		if runtime.GOOS == "windows" {
+		if platform.HasDriveRoots() {
 			quick("💾 Drives", "", true) // dir="" is the drives view
 		}
 		y += btnH + 8
