@@ -7,13 +7,12 @@ import (
 	"fmt"
 	"image"
 	"io"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
-	"github.com/SyntaxNyah/AsyncAO/internal/winexec"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 )
 
 // Format selects the container/codec pair.
@@ -70,9 +69,7 @@ var (
 // FFmpegPath returns the system ffmpeg path, looked up once; "" (a supported state, not an error) if none.
 func FFmpegPath() string {
 	ffmpegOnce.Do(func() {
-		if p, err := exec.LookPath("ffmpeg"); err == nil {
-			ffmpegPath = p
-		}
+		ffmpegPath = platform.FindTool("ffmpeg")
 	})
 	return ffmpegPath
 }
@@ -85,7 +82,7 @@ const stderrTailBytes = 600
 
 // Encoder is driven from one goroutine; call Finish off the render thread, as it waits for ffmpeg to flush.
 type Encoder struct {
-	cmd      *exec.Cmd
+	cmd      *platform.Process
 	stdin    io.WriteCloser
 	stderr   *bytes.Buffer
 	w, h     int
@@ -107,8 +104,7 @@ func New(outPath string, w, h, fps, quality int, format Format) (*Encoder, error
 	if fps < 1 {
 		fps = 1
 	}
-	cmd := exec.Command(bin, ffmpegArgs(outPath, w, h, fps, quality, format)...)
-	winexec.Hide(cmd) // GUI-subsystem build: no ffmpeg console window on export
+	cmd := platform.Command(bin, ffmpegArgs(outPath, w, h, fps, quality, format)...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -219,8 +215,7 @@ func runMux(args []string) error {
 	if bin == "" {
 		return fmt.Errorf("videoenc: ffmpeg not found on PATH")
 	}
-	cmd := exec.Command(bin, args...)
-	winexec.Hide(cmd)
+	cmd := platform.Command(bin, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -258,8 +253,7 @@ func probeDurationSec(path string) (secs float64, ok bool) {
 	if bin == "" {
 		return 0, false
 	}
-	cmd := exec.Command(bin, "-i", path)
-	winexec.Hide(cmd)
+	cmd := platform.Command(bin, "-i", path)
 	var st bytes.Buffer
 	cmd.Stderr = &st
 	_ = cmd.Run() // non-zero exit expected

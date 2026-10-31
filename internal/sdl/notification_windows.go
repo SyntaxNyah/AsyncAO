@@ -5,11 +5,10 @@ package sdl
 import (
 	"encoding/base64"
 	"fmt"
-	"os/exec"
 	"strings"
 	"unicode/utf16"
 
-	"github.com/SyntaxNyah/AsyncAO/internal/winexec"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 )
 
 // windowsToastScript shows a toast via WinRT: the two %s are the XML-escaped title and body.
@@ -60,8 +59,7 @@ func ShowNotification(title, message string) error {
 		// -EncodedCommand looks like a dropper to AV, but -Command would mangle non-ASCII shownames through the console
 		// codepage. The payload is a fixed const with two xmlEscape'd shownames, so injection is already impossible. Do
 		// not "simplify" this.
-		cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", enc)
-		winexec.Hide(cmd)
+		cmd := platform.Command("powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", enc)
 		_ = cmd.Start()
 	}()
 	return nil

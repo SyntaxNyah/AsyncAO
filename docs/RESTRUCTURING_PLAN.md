@@ -50,6 +50,7 @@ in **Status**. Update Status in the same commit that completes a step.
   - [x] item 6, machine id: `platform.MachineIdentity`; `hwid` keeps the hashing, so the per-server HDID stays derived
         in `internal/ui` and existing ids do not change
   - [x] item 6, presence: `platform.DialDiscord`, moved as it is; the Discord Social SDK is under consideration to replace `internal/presence`
+  - [x] item 6, process runner: `platform.Command` and `FindTool`; `internal/winexec` is gone
   - [ ] the rest of Part 5g's sequence, items 6–7, which includes the platform code (dialogs, DPI seeding, URL opening, preview
         ownership, clipboard)
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
