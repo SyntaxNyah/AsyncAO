@@ -834,10 +834,10 @@ func (a *App) drawSettingsData(y, _ int32) int32 {
 	}
 	y += 6
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 180, H: btnH}, "Open config folder") {
-		openConfigFolder()
+		a.openConfigFolder()
 	}
 	if c.Button(sdl.Rect{X: pad + 190, Y: y, W: 180, H: btnH}, "Open settings file") {
-		openSettingsFile()
+		a.openSettingsFile()
 	}
 	y += 38
 	if !config.ConfigIsPortable() {

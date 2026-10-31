@@ -249,7 +249,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 				if c.hovering(rowRect) {
 					c.Tooltip(rowRect, "Open "+u)
 					if c.clicked {
-						openBrowser(schemeForOpen(u)) // bare "www." link → https:// at open time
+						a.openBrowser(schemeForOpen(u)) // bare "www." link → https:// at open time
 					}
 				}
 			}
@@ -466,7 +466,7 @@ func (a *App) oocLinkActions(rowRect, linkRect sdl.Rect, url string) {
 	}
 	c.Tooltip(linkRect, "Click to open · right-click to copy · or + Jukebox to save: "+url)
 	if c.clicked {
-		openBrowser(schemeForOpen(url)) // bare "www." link → https:// at open time (copy stays bare, as displayed)
+		a.openBrowser(schemeForOpen(url)) // bare "www." link → https:// at open time (copy stays bare, as displayed)
 	} else if c.rightClicked {
 		_ = sdl.SetClipboardText(url)
 		a.warnLine = "Link copied to clipboard"

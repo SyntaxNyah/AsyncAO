@@ -90,6 +90,13 @@ func GetError() error {
 
 // errorOr returns SDL's error when ok is false. SDL3 reports failure through a
 // bool return; an empty message still counts as a failure.
+// OpenURL hands url to the OS's default handler.
+func OpenURL(url string) error {
+	c := C.CString(url)
+	defer C.free(unsafe.Pointer(c))
+	return errorOr(C.SDL_OpenURL(c))
+}
+
 func errorOr(ok C.bool) error {
 	if ok {
 		return nil

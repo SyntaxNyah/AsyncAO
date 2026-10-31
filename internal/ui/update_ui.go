@@ -100,7 +100,7 @@ func (a *App) startSelfUpdate() {
 	}
 	if a.updateRel.AssetURL == "" {
 		if a.updateRel.PageURL != "" {
-			openBrowser(a.updateRel.PageURL)
+			a.openBrowser(a.updateRel.PageURL)
 		}
 		a.updateErr = "This release has no downloadable build for your platform — opened the release page."
 		return
@@ -108,7 +108,7 @@ func (a *App) startSelfUpdate() {
 	exe, err := os.Executable()
 	if err != nil || !update.TargetWritable(exe) {
 		if a.updateRel.PageURL != "" {
-			openBrowser(a.updateRel.PageURL)
+			a.openBrowser(a.updateRel.PageURL)
 		}
 		a.updateErr = "Can't self-update here (read-only install) — opened the release page."
 		return

@@ -33,6 +33,7 @@ type App struct {
 type Runtime struct {
 	Platform platform.Platform
 	Audio    AudioDevices
+	Desktop  Desktop
 	windows  []*sdl.Window
 }
 

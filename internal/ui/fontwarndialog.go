@@ -82,7 +82,7 @@ func (a *App) drawFontWarnDialog(w, h int32) {
 	by := m.Y + fontWarnH - btnH - pad
 	if a.fontWarnDlg.dir != "" {
 		if c.Button(sdl.Rect{X: m.X + pad, Y: by, W: 170, H: btnH}, "Open fonts folder") {
-			openInFileManager(a.fontWarnDlg.dir)
+			a.openInFileManager(a.fontWarnDlg.dir)
 		}
 		if c.Button(sdl.Rect{X: m.X + pad + 178, Y: by, W: 140, H: btnH}, "Reload theme") {
 			a.fontWarnDlg = fontWarnDialog{}

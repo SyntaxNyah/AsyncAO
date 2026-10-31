@@ -468,7 +468,7 @@ func (a *App) drawJukeEntryRow(e config.JukeboxEntry, idx int, r sdl.Rect) {
 	}
 	bx -= 64
 	if c.Button(sdl.Rect{X: bx, Y: r.Y, W: 60, H: r.H}, "Open") {
-		openBrowser(schemeForOpen(e.URL)) // a bare "www." link saved from a log opens with https://
+		a.openBrowser(schemeForOpen(e.URL)) // a bare "www." link saved from a log opens with https://
 	}
 	bx -= 50
 	a.drawJukeKeyBadge(sdl.Rect{X: bx, Y: r.Y, W: 46, H: r.H}, e.Key, fmt.Sprintf("e:%d:%d", a.jukeOpen, idx))

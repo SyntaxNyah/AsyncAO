@@ -362,14 +362,22 @@ func (a *App) consumeThemeFocusStat() bool {
 }
 
 // openThemesFolder opens the write root, creating it first; off-thread because MkdirAll is disk I/O (hard rule 2).
-func openThemesFolder(dir string) {
+func (a *App) openThemesFolder(dir string) {
 	if dir == "" {
 		return
 	}
 	go func() {
 		_ = os.MkdirAll(dir, themesDirPerm)
-		openInFileManager(dir)
+		a.themesDirReady.Store(&dir)
+		PushWake()
 	}()
+}
+
+// pollThemesFolder opens the folder openThemesFolder created; SDL_OpenURL belongs on the main thread (hard rule 1).
+func (a *App) pollThemesFolder() {
+	if dir := a.themesDirReady.Swap(nil); dir != nil {
+		a.openInFileManager(*dir)
+	}
 }
 
 // themesDirPerm is the permission the themes folder is created with.
