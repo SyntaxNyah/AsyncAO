@@ -47,6 +47,7 @@ jobs:
       - uses: ./.github/actions/setup-build
         with:
           extra-packages: ${{ matrix.target.packages }}
+          go-cache-key-file: scripts/package.sh
       - name: Build
         run: bash scripts/package.sh build "$VERSION"
       - name: Sign (Windows)

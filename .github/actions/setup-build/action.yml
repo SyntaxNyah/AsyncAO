@@ -10,6 +10,11 @@ inputs:
     description: More apt (Linux) or brew (macOS) packages the job needs.
     required: false
     default: ""
+  go-cache-key-file:
+    description: >-
+      A file naming this job's Go cache. Compiler flags decide what a cache can reuse, and setup-go
+      saves only under a new key, so jobs with different flags need different files.
+    required: true
 runs:
   using: composite
   steps:
@@ -18,12 +23,15 @@ runs:
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
         go-version: "1.25"
+        cache-dependency-path: |
+          go.sum
+          ${{ inputs.go-cache-key-file }}
     # path-type inherit makes setup-go's toolchain visible inside the MSYS2 shell.
     - if: runner.os == 'Windows'
       uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
       with:
         msystem: UCRT64
-        update: true
+        update: false
         path-type: inherit
         install: >-
           mingw-w64-ucrt-x86_64-gcc
