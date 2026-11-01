@@ -56,10 +56,22 @@ in **Status**. Update Status in the same commit that completes a step.
   - [x] item 6, paths: `platform.UserFolders`, `SamePath`, `DriveRoots`; the crash log falls back to the cache folder. Config
         and cache locations stay in `config` and `cache`, which use the standard library and have no OS branch
   - [x] item 6, window details: `host.WindowDPI`, `LinkWindowOwner`, `RetinaScale`; this finishes item 6
-  - [x] sequence item 7: `.golangci-platform.yml` keeps `runtime.GOOS`, `os/exec` and `syscall` in `internal/platform` and the
-        SDL binding. This closes step 2c
+  - [x] sequence item 7: lint rules (since merged into `.golangci.yml`) keep `runtime.GOOS`, `os/exec` and `syscall` in
+        `internal/platform` and the SDL binding. This closes step 2c
   - [x] `netproxy` rebuilt as a socket factory (decided 2026-10-31, replaces decision C3's process-wide policy); every
         outbound connection comes from an injected `netproxy.Factory`, and OS discovery moved to `internal/platform`
+- [x] 2d. CI and releases rebuilt, not part of the original plan (decided 2026-11-01; design in `docs/RELEASING.md`):
+      contributor CI and releases are separate pipelines sharing `checks.yml` and `build.yml`, `scripts/package.sh` is the
+      one build path, branch pushes leave test builds as artifacts, and a release runs its own checks
+- [x] 2e. Voice chat and the `nodiscord` / `novoice` builds removed (decided 2026-11-01), so the feature loop has one less
+      feature and the code one build. Rich Presence stays, on by default. Mentions of voice in Part 1 and in the
+      decision records below are history; capture and the audio stream binding are gone from the host and `internal/sdl`
+- [ ] Before this branch merges (open from the steps above; none block step 3):
+  - [ ] first PR run: race tests on Windows and macOS have never run in CI, and the smoke tests have never run on GitHub
+  - [ ] first release run: signing, the Flatpak and publishing have never run; use a `v0.0.0-ci.1` prerelease and delete it
+  - [ ] `netproxy` against a real proxy, which has not been tried
+  - [ ] the owner requires `ci-ok`; until then a red PR can merge, though it cannot release untested
+  - [ ] review CodeQL's 32 open Go alerts, in their own PR
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
       pointer, no park/activate copies; fixes bug 4, #115, #141, #84)
 - [ ] 4. `internal/uikit`: extract the kit, then the input model (press/release + capture,
@@ -385,7 +397,7 @@ func (p *AsyncResult[T]) Take() (T, error, bool) // non-blocking, once
 func (p *AsyncResult[T]) Cancel()                // supersede (replaces gen counters)
 ```
 Owned by the `Panel`, `Tab` or `client.Session` that started the work, so a per-tab result
-follows its tab (fixes bug 3 by construction). Long-lived workers (voice, ping loop,
+follows its tab (fixes bug 3 by construction). Long-lived workers (ping loop,
 downloader, transcripts) keep named bounded channels.
 
 ### Panels and screens
@@ -517,7 +529,7 @@ call it are owned or moved, so moved code is touched once:
    by App; engine packages stop importing config (`network` → `config.FavoriteServer` moves).
 7. **Feature loop.** For each feature, in this order: jukebox (proves a global feature),
    notebook (proves a per-tab `Tab` + `AsyncResult` + the first `Dock` panel), update, timer,
-   lobby (first `Screen`), effects picker, messaging/voice, evidence, roster, wardrobe, mod/CM,
+   lobby (first `Screen`), effects picker, messaging, evidence, roster, wardrobe, mod/CM,
    logs, composer, studio, split, layout editors, settings, courtroom screen composition.
    Theme runtime and the font pipeline go into uikit styling, not a package of their own.
    Each feature goes through:

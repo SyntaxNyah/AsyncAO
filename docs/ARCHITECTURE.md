@@ -439,7 +439,7 @@ No new module dependency: `archive/zip` is stdlib.
 
 `netproxy.Factory` is the socket factory: **every outbound HTTP and WebSocket connection is opened by it**, so what Settings shows and
 what the client does cannot disagree. `cmd/asyncao` builds one and injects it. A golangci rule
-(`.golangci-platform.yml`) rejects `http.DefaultClient`, `http.Client`, `http.Transport` and `net.Dial` elsewhere.
+(`.golangci.yml`) rejects `http.DefaultClient`, `http.Client`, `http.Transport` and `net.Dial` elsewhere.
 
 - Each configuration is one read-only `Network`, published through an `atomic.Pointer`. `Apply` builds a new one off the
   render thread and swaps it in. Callers ask for `Current()` per connection, so a changed setting applies to the next
