@@ -61,7 +61,7 @@ func (a *audioRecorder) StopMusic() { a.stops++ }
 // newCourtroomRig builds a courtroom over a no-network manager (local mounts
 // pointing at an empty dir — prefetches resolve to warnings, which the
 // lifecycle ignores).
-func newCourtroomRig(t *testing.T) (*Courtroom, *Session, *sentRecorder, *audioRecorder) {
+func newCourtroomRig(t testing.TB) (*Courtroom, *Session, *sentRecorder, *audioRecorder) {
 	t.Helper()
 	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
 	if err != nil {

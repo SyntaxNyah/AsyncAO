@@ -72,8 +72,18 @@ in **Status**. Update Status in the same commit that completes a step.
   - [ ] the owner requires `ci-ok`; until then a red PR can merge, though it cannot release untested
   - [ ] fix the real CodeQL findings, in their own PR: RGB values wrap instead of clamping (`theme.go`, `stylesheet.go`), and
         check `ResizeWindow`'s sizes. The workflow-permission alerts close once this branch merges
-- [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
-      pointer, no park/activate copies; fixes bug 4, #115, #141, #84)
+- [ ] 3. Feature extraction and stable boundaries (decided 2026-11-01; replaces splitting the monolith first). Take tertiary
+      functions out of `courtroom.Courtroom` and `internal/ui` into purpose-built types that own their state. Every move
+      starts from a benchmark and is measured again after it; a cheap rewrite or optimisation found on the way is welcome.
+      Moving work to a goroutine needs a measured cost or a blocking call, and work that applies in message order stays
+      in order. `Scene` and the message state machine stay on the game thread
+  - [x] baseline benchmarks: `internal/courtroom/bench_test.go`, `internal/ui/framebench_test.go`, recorded in
+        `docs/BENCHMARKS.md`
+  - [ ] one shape for background jobs, replacing the separate goroutine, channel and poll of each `ui` job
+  - [ ] extract chat extras: marker decoding (duplicated in `begin` and `beginCaughtUp`) and per-player memory
+- [ ] 3b. Deferred, not dropped: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
+      pointer, no park/activate copies; fixes bug 4, #115, #141, #84). A first attempt at `internal/scene` is in a git
+      stash on the maintainer's machine
 - [ ] 4. `internal/uikit`: extract the kit, then the input model (press/release + capture,
       wheel routing, layer stack)
 - [ ] 5. uikit scaling, layout and text (logical units, RmlUi layout, nine-slice, scroll

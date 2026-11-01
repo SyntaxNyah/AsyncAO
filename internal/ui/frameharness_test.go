@@ -86,7 +86,7 @@ const (
 // Everything it adds beyond stageThemedCourtroom is either a dependency Frame
 // dereferences without a nil check, or a one-shot latch that would otherwise start a
 // goroutine or a network read on frame 1. Nothing here changes what is DRAWN.
-func stageFrameDrivenApp(t *testing.T) (*App, func()) {
+func stageFrameDrivenApp(t testing.TB) (*App, func()) {
 	t.Helper()
 	a, cleanup := stageThemedCourtroom(t)
 
