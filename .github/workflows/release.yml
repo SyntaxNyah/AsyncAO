@@ -1,9 +1,15 @@
-# Run by hand with a version; merging to main never releases. See docs/RELEASING.md.
-# Runs its own checks, so no earlier run has to be trusted. Assets upload to a
-# draft, and only a complete draft is published, which also creates the tag.
+# Three ways in, one pipeline: a CHANGELOG change on main with a new version, a
+# pushed v* tag, or the Run workflow button. Ordinary merges start nothing. See
+# docs/RELEASING.md. Runs its own checks, so no earlier run has to be trusted.
+# Assets upload to a draft, and only a complete draft is published, which also
+# creates the tag; a tag made that way starts no workflow, so nothing recurses.
 name: Release
 
 on:
+  push:
+    branches: [main]
+    paths: [internal/ui/assets/CHANGELOG.md]
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       version:
@@ -23,6 +29,8 @@ jobs:
     name: Choose version
     runs-on: ubuntu-24.04
     outputs:
+      proceed: ${{ steps.resolve.outputs.proceed }}
+      version: ${{ steps.resolve.outputs.version }}
       prerelease: ${{ steps.resolve.outputs.prerelease }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -31,18 +39,20 @@ jobs:
       - id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ inputs.version }}
-        run: bash scripts/release-resolve.sh "$VERSION"
+          # A tag push or the button names the version; a push to main reads the CHANGELOG.
+          SOURCE: ${{ inputs.version || (github.ref_type == 'tag' && github.ref_name) || 'changelog' }}
+        run: bash scripts/release-resolve.sh "$SOURCE"
 
   checks:
     needs: resolve
+    if: needs.resolve.outputs.proceed == 'true'
     uses: ./.github/workflows/checks.yml
 
   build:
-    needs: checks
+    needs: [resolve, checks]
     uses: ./.github/workflows/build.yml
     with:
-      version: ${{ inputs.version }}
+      version: ${{ needs.resolve.outputs.version }}
       variants: '["default", "nodiscord"]'
       sign: true
     secrets: inherit
@@ -50,7 +60,7 @@ jobs:
   # Optional: a failure here leaves the Flatpak out and blocks nothing.
   build-flatpak:
     name: Flatpak (${{ matrix.variant }})
-    needs: checks
+    needs: [resolve, checks]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     continue-on-error: true
@@ -67,7 +77,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends flatpak flatpak-builder elfutils
       - name: Build
         env:
-          ASYNCAO_VERSION: ${{ inputs.version }}
+          ASYNCAO_VERSION: ${{ needs.resolve.outputs.version }}
           VARIANT: ${{ matrix.variant }}
         run: bash scripts/build-flatpak.sh "$VARIANT"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -89,7 +99,7 @@ jobs:
       attestations: write
     env:
       GH_TOKEN: ${{ github.token }}
-      VERSION: ${{ inputs.version }}
+      VERSION: ${{ needs.resolve.outputs.version }}
       PRERELEASE: ${{ needs.resolve.outputs.prerelease }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

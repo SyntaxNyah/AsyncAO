@@ -9,9 +9,9 @@ Contributor CI and releases are separate pipelines that share only `checks.yml` 
 | Push to a branch with no open PR | Compile on Windows, Linux and macOS. Run the local checks in `CLAUDE.md` yourself. |
 | Draft PR commit | The same compile. |
 | Commit on a PR that is ready for review, manual CI run | gofmt, vet, staticcheck, golangci-lint, race tests on all three OSes, lean-build tests, benchmark alloc gates, packaging and a smoke test on all three OSes. |
-| Merge or push to `main` | Nothing. |
+| Merge or push to `main` | Nothing, unless it releases (below). |
 | Only docs changed (`docs/`, root `*.md`, `LICENSE`) | Nothing. |
-| Someone runs the Release workflow | All the checks again, then packaging of every variant, then publishing. |
+| A release starts (below) | All the checks again, then packaging of every variant, then publishing. |
 
 `ci-ok` summarises contributor CI. It is the status to require on PRs, and it
 keeps working when the jobs behind it change. Requiring it takes repo admin
@@ -29,14 +29,20 @@ access.
 ## Cutting a release
 
 Add a `## vX.Y.Z - date` section at the top of `internal/ui/assets/CHANGELOG.md`
-in a PR and merge it. Merging ships nothing. Then run the Release workflow on
-`main` with that version: Actions, Release, Run workflow, or
-`gh workflow run release.yml -f version=vX.Y.Z`. It runs the checks, builds and
-signs every platform and variant, checks the assets against the manifest, uploads
-them to a draft and publishes it. Publishing creates the tag.
+in a PR, then use any of these. They all start the same pipeline:
+
+- **Merge it to `main`.** A CHANGELOG change with a new newest version releases
+  right away. Merges that don't touch the file start nothing.
+- **Push a tag:** `git tag vX.Y.Z && git push origin vX.Y.Z`.
+- **Press the button:** Actions, Release, Run workflow, or
+  `gh workflow run release.yml -f version=vX.Y.Z`. Use this for prereleases and retries.
+
+The pipeline runs the checks, builds and signs every platform and variant, checks
+the assets against the manifest, uploads them to a draft and publishes it.
+Publishing creates the tag, if a pushed tag didn't already.
 
 A stable version must be on `main` and have a CHANGELOG section. A hyphenated
-version (`v2.1.0-test.1`) publishes a prerelease and may run from any branch:
+version (`v2.1.0-test.1`) publishes a prerelease and may come from any branch:
 stable clients never see it, the in-app experimental channel does.
 
 The checks run again because a green PR only tested its own merge: several PRs
@@ -48,7 +54,7 @@ together may never have run, and a direct push to `main` never ran at all.
 - **Retrying:** re-run the failed jobs, or run the workflow again. A failed run leaves at most a draft, which the next attempt replaces.
 - **Every platform must build.** Only the Flatpaks are optional.
 - **Signing** is skipped without certificates, and fails the release if a certificate exists and signing breaks. See `docs/CODE-SIGNING.md`.
-- **Who can release:** anyone with write access can run the workflow.
+- **Who can release:** anyone with write access.
 
 ## Asset names
 

@@ -1,6 +1,6 @@
 # Contributor CI. Branch pushes and draft PRs only prove the client compiles on
 # every platform; a PR that is ready for review gets every check and a packaged
-# build. Merging to main runs nothing: release.yml does its own checks. Require
+# build. Merging to main runs no CI: release.yml does its own checks. Require
 # `ci-ok`: it stays the one status whatever the jobs behind it are. See docs/RELEASING.md.
 name: CI
 
