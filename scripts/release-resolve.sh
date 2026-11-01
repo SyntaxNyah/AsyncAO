@@ -39,7 +39,7 @@ else
 	git merge-base --is-ancestor HEAD origin/main ||
 		fail "stable version $version must be released from main; only hyphenated prereleases may come from other branches"
 	awk -v ver="$version" '$1 == "##" && $2 == ver { found = 1 } END { exit !found }' "$CHANGELOG" ||
-		fail "$CHANGELOG has no '## $version' section"
+		echo "::warning::$CHANGELOG has no '## $version' section: the notes fall back to the tag annotation, and What's New won't list it."
 fi
 
 # A published version is never replaced; a leftover draft is, by the publish job.

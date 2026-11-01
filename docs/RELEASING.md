@@ -28,8 +28,9 @@ access.
 
 ## Cutting a release
 
-Add a `## vX.Y.Z - date` section at the top of `internal/ui/assets/CHANGELOG.md`
-in a PR, then use any of these. They all start the same pipeline:
+Normally, add a `## vX.Y.Z - date` section at the top of
+`internal/ui/assets/CHANGELOG.md` in a PR. Then use any of these. They all start
+the same pipeline:
 
 - **Merge it to `main`.** A CHANGELOG change with a new newest version releases
   right away. Merges that don't touch the file start nothing.
@@ -41,7 +42,9 @@ The pipeline runs the checks, builds and signs every platform and variant, check
 the assets against the manifest, uploads them to a draft and publishes it.
 Publishing creates the tag, if a pushed tag didn't already.
 
-A stable version must be on `main` and have a CHANGELOG section. A hyphenated
+A stable version must be on `main`. Without a CHANGELOG section it still releases,
+with a warning: the notes fall back to the tag annotation and the in-app What's
+New won't list it. A hyphenated
 version (`v2.1.0-test.1`) publishes a prerelease and may come from any branch:
 stable clients never see it, the in-app experimental channel does.
 
