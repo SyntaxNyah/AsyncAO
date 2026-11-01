@@ -31,7 +31,8 @@ runs:
       uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
       with:
         msystem: UCRT64
-        update: false
+        # Without it, pacman installs from the action's stale package list (SDL 3.4.16 with 3.4.18 out).
+        update: true
         path-type: inherit
         install: >-
           mingw-w64-ucrt-x86_64-gcc
