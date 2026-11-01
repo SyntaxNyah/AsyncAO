@@ -79,8 +79,19 @@ in **Status**. Update Status in the same commit that completes a step.
       in order. `Scene` and the message state machine stay on the game thread
   - [x] baseline benchmarks: `internal/courtroom/bench_test.go`, `internal/ui/framebench_test.go`, recorded in
         `docs/BENCHMARKS.md`
-  - [ ] one shape for background jobs, replacing the separate goroutine, channel and poll of each `ui` job
+  - [ ] writer goroutine for `Conn.Send`, which proves the worker shape (one shape for background jobs, replacing the
+        separate goroutine, channel and poll of each `ui` job)
+  - [ ] dial off the main thread (#115)
+  - [ ] one loop mode: remove the classic loop, pending the maintainer's decision
+  - [ ] `FrameScheduler` beside the existing loop, then producers move to it and `SkipFrame` goes last
+  - [ ] off-thread texture preparation (decided 2026-11-01): spike, then asset uploads, then prerendered variants. See below
+  - [ ] blips on the audio clock
   - [ ] extract chat extras: marker decoding (duplicated in `begin` and `beginCaughtUp`) and per-player memory
+  - Off-thread rendering is allowed by hard rule 1 and wanted, so textures are ready before a streamed asset first draws.
+    `SDL_CreateTexture` and `SDL_UpdateTexture` are main-thread only, so `Pump` and `TextureStore` can't simply move. SDL_GPU
+    allows it: a worker acquires, fills and submits its own command buffer on its own thread, and the main thread wraps the
+    finished texture with `SDL_PROP_TEXTURE_CREATE_GPU_TEXTURE_POINTER`. Without a GPU device (SDL's own renderer) the
+    main-thread path stays. The spike must prove this on Vulkan and lavapipe, then Direct3D 12 and Metal
 - [ ] 3b. Deferred, not dropped: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
       pointer, no park/activate copies; fixes bug 4, #115, #141, #84). A first attempt at `internal/scene` is in a git
       stash on the maintainer's machine
