@@ -43,6 +43,7 @@ go test -race -count=1 ./...   # the assertion-style gates live in tests
 | Whole idle frame, headless | **~297 µs/op, 0 allocs** | `BenchmarkFrameIdle` |
 | Background pass, idle | **220 ns/op, 0 allocs** | `BenchmarkBackgroundIdle` |
 | `Conn.Send`, time the caller waits | **~2.4 µs/op, 2 allocs** (queues the packet; ~48 µs and 8 allocs when the caller wrote to the socket itself) | `BenchmarkConnSend` |
+| Wait gate, one tick holding a message under strict sequencing | **~17 ns/op, 0 allocs** (~6 µs and 174 allocs on a tick that rebuilds the list) | `BenchmarkWaitGateHeld` |
 | Race detector | **clean across all packages** | CI `go test -race ./...` |
 
 Notes:

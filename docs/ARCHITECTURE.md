@@ -461,7 +461,8 @@ what the client does cannot disagree. `cmd/asyncao` builds one and injects it. A
 - Fetch pool: 16 workers (fetches are RTT-bound; the transport is sized
   for 16 conns/host and h2 bases multiplex them over one connection —
   spec §7's original 8 halved cold-viewport fill for nothing), HIGH lane
-  (live message — blocks producer briefly, never sheds) and LOW lane
+  (live message — never sheds, and refuses new work when full so the
+  frame thread never waits) and LOW lane
   (speculation — sheds **oldest** job when full).
   Epoch counter cancels queued jobs on room/server change; cancelled jobs
   still get `Run(stale=true)` so no waiter hangs.

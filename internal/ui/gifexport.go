@@ -120,12 +120,11 @@ const (
 	gifWarmHardCap = 20 * time.Second
 
 	// Incremental warm submission: startSceneExport must not loop PrefetchChain(PriorityHigh) over every scene ref. The
-	// high lane holds only highLaneCap (64) jobs and Submit blocks the producer when full (network/pool.go), so
-	// thousands of refs from an all-day .demo would block the render thread before the overlay draws. Refs are stored
-	// on the job and submitted a bounded batch per warm tick. warmInFlightWindow bounds submitted-but-not-resident
-	// refs, well under highLaneCap. warmPrefetchPerTick is the per-tick burst cap (the pool's worker count,
-	// DefaultWorkers).
-	warmInFlightWindow  = 32 // < highLaneCap(64): outstanding high-lane jobs stay below the cap
+	// high lane holds only highLaneCap jobs and Submit refuses more (network/pool.go), so thousands of refs from an
+	// all-day .demo would be lost, and take the live scene's requests with them. Refs are stored on the job and
+	// submitted a bounded batch per warm tick. warmInFlightWindow bounds submitted-but-not-resident refs, well under
+	// highLaneCap. warmPrefetchPerTick is the per-tick burst cap (the pool's worker count, DefaultWorkers).
+	warmInFlightWindow  = 32 // well under highLaneCap: outstanding high-lane jobs stay below the cap
 	warmPrefetchPerTick = 16 // = network.DefaultWorkers: a frame's-worth of submissions
 
 	// gifLoadBuf is the buffer of the disk-load result channel (hard rule 4). One is enough: a single loader sends once
@@ -799,7 +798,7 @@ func nextWarmBatch(pending []courtroom.AssetRef, batch int, resident func(base s
 // warmRoom is how many more refs the pre-warm may submit this tick without filling the high lane, given the outstanding
 // count (submitted bases not yet resident, warmInFlight). outstanding counts only refs this phase submitted. A ref can
 // be resident without being submitted (warm cache, assets already in T1), and counting it would deflate the window and
-// push in-flight past highLaneCap until Submit blocks the render thread. So warmRoom is window - outstanding, capped at
+// push in-flight past highLaneCap until Submit refuses. So warmRoom is window - outstanding, capped at
 // the per-tick burst and floored at 0. Pure.
 func warmRoom(outstanding int) int {
 	room := warmInFlightWindow - outstanding
@@ -819,7 +818,7 @@ func (a *App) warmSettled(base string) bool {
 }
 
 // tickGifWarm runs during the pre-warm phase. It submits a bounded batch of pending refs to the pool (never the whole
-// list, so the high lane cannot fill and block the render thread), then counts assets that are settled (T1-resident or
+// list, so the high lane cannot fill), then counts assets that are settled (T1-resident or
 // conclusively 404'd, warmSettled). The wait ends when all are settled, when none has settled for gifWarmQuiet, or at
 // gifWarmMax. The quiescence/timeout clock starts only once every ref has been submitted (warmSubmitDone).
 func (a *App) tickGifWarm(j *gifExportJob) {

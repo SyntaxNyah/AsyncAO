@@ -283,6 +283,11 @@ type Courtroom struct {
 	// waitLeft counts down an armed hold; waitFor is its message by pointer, so a new head re-arms.
 	waitLeft time.Duration
 	waitFor  *protocol.ChatMessage
+	// waitRefused is the manager's refusal count when the gate last asked, waitBlocker the need holding the message,
+	// and needs is messageNeeds' reused list.
+	waitRefused int64
+	waitBlocker messageNeed
+	needs       []messageNeed
 	// missingSprites holds 404'd bases of every kind, not just sprites, so a miss releases the wait gate's hold.
 	// A dummy "-<n>" preanim releases this way. Bounded; game thread only.
 	missingSprites map[string]struct{}
@@ -547,176 +552,28 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 		c.waitFor = nil // catch-up wins: this message fast-forwards, waiting would only add lag
 		return false
 	}
-	idle := c.urls.Emote(msg.CharName, msg.Emote, EmoteIdle)
-	ready := c.speakerSpriteSettled(idle)
-	// Also the talk sprite: with no preanim the stage draws it first, and waiting for idle alone flashes a placeholder.
-	if ready {
-		ready = c.speakerSpriteSettled(c.urls.Emote(msg.CharName, msg.Emote, EmoteTalk))
-	}
-	// The partner's idle: SpriteWaitPair, or always under strict sequencing.
-	if ready && (c.SpriteWaitPair || c.SequentialWait) && msg.Pair.Active() {
-		ready = c.spriteSettled(c.urls.Emote(msg.Pair.Name, msg.Pair.Emote, EmoteIdle))
-	}
-	// A preanim that will play shows first. preanimWillPlay, not hasPreanim: packs fill the field with dummies.
-	if ready && hasPreanim(msg) && (preanimWillPlay(msg) || c.SpriteWaitPreanim) {
-		pre := c.urls.Emote(msg.CharName, msg.PreEmote, EmotePreanim)
-		// A conclusively 404'd preanim releases on the miss, mirroring the play path's NotifyAssetMissing skip.
-		ready = c.speakerSpriteSettled(pre)
-	}
-	// Group pairing: strict sequencing waits for every other member's idle too.
-	if ready && c.SequentialWait {
-		for _, m := range msg.Additional {
-			if m.CharID == msg.CharID {
-				continue
-			}
-			ready = c.spriteSettled(c.urls.Emote(m.Name, m.Emote, EmoteIdle))
-			if !ready {
-				break
+	// This runs every frame of a hold: the need that stopped the last check is one lookup, the full list 174 allocations.
+	// A release is always decided on a fresh list.
+	armed := c.waitFor == msg
+	refused := armed && c.mgr.RefusedRequests() != c.waitRefused
+	if !armed || refused || c.needSettled(c.waitBlocker) {
+		needs := c.messageNeeds(msg)
+		blocker, blocked := c.firstUnsettled(needs)
+		if !blocked {
+			c.waitFor = nil
+			return false
+		}
+		c.waitBlocker = blocker
+		if !armed { // a new head arms: start the countdown + warm its sprites
+			c.waitFor = msg
+			c.waitLeft = c.SpriteWaitTimeout
+			if c.SequentialWait {
+				c.waitLeft = sequentialWaitLimit
 			}
 		}
-	}
-	// Strict sequencing also waits for scenery and audio, computed as begin() does so they can't disagree.
-	if ready && c.SequentialWait {
-		if c.sess != nil && c.sess.Background != "" {
-			bgPart, deskPart := PositionScene(msg.Side)
-			bgBase := c.urls.Background(c.sess.Background, bgPart)
-			ready = c.spriteSettled(bgBase) // identity base; the witness ladder resolves/404s under it
-			if ready && deskVisible(msg.DeskMod, false) && !zoomEmote(msg.EmoteMod) {
-				ready = c.deskResolutionOf(c.urls.Background(c.sess.Background, deskPart)) != DeskUnresolved
-			}
-		}
-		if ready && c.Chars != nil {
-			if misc := c.Chars.ChatSkinFor(msg.CharName); misc != "" {
-				cands := c.urls.MiscChatboxCandidates(misc)
-				ready = c.spriteSettled(cands[0])
-			}
-		}
-		if ready && zoomEmote(msg.EmoteMod) {
-			chain := c.urls.SpeedlinesCandidates(msg.CharName, msg.Side)
-			ready = c.spriteSettled(chain[0])
-		}
-		if ready && c.Assets != nil && preanimSFXPlays(msg) {
-			if sfx := c.sfxBaseFor(msg); sfx != "" {
-				ready = c.audioSettled(sfx)
-			}
-		}
-		if ready && c.Assets != nil {
-			blipWire := msg.Blipname
-			if !validBlipName(blipWire) {
-				blipWire = ""
-			}
-			if ref, pending := c.blipRefFor(blipWire, msg.CharName); !pending && ref.Base != "" {
-				ready = c.audioSettled(ref.Base)
-			}
-		}
-		// A queued shout (bypass off) also waits for its bubble art + cry.
-		if ready && msg.IsShout() {
-			charBase, defaultBase, shoutSFX := c.shoutBases(msg)
-			ready = c.spriteSettled(charBase)
-			if ready && defaultBase != "" {
-				ready = c.spriteSettled(defaultBase)
-			}
-			if ready && c.Assets != nil && shoutSFX != "" {
-				ready = c.audioSettled(shoutSFX)
-			}
-		}
-		// The REALIZATION=1 sound and the EFFECTS overlay art and sound.
-		if ready && msg.Realization && c.Assets != nil {
-			if sfx := c.realizationSFXFor(msg.CharName); sfx != "" {
-				ready = c.audioSettled(sfx)
-			}
-		}
-		if ready && msg.Effects != "" {
-			fx, folder, sound := parseEffectsField(msg.Effects)
-			if folder == "" {
-				folder = c.OverlayEffectsFolderFor(msg.CharName)
-			}
-			if c.Assets != nil && OverlaySoundPlayable(sound) {
-				ready = c.audioSettled(c.urls.SFX(sound))
-			}
-			// Overlay art is best-effort: a pending resolve has no base to wait on; the deferred overlay re-arms it.
-			if ready && c.Assets != nil {
-				if res, ok := c.Assets.OverlayFor(fx, folder); ok && !res.Pending && res.Base != "" {
-					ready = c.spriteSettled(res.Base)
-				}
-			}
-		}
-	}
-	if ready {
-		c.waitFor = nil
-		return false
-	}
-	if c.waitFor != msg { // a new head arms: start the countdown + warm its sprites
-		c.waitFor = msg
-		c.waitLeft = c.SpriteWaitTimeout
-		if c.SequentialWait {
-			c.waitLeft = sequentialWaitLimit
-		}
-		c.mgr.PrefetchChain(idle, c.spriteAlts(msg.CharName, msg.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh)                                             // AssetType: CharSprite (wait-gate warm)
-		c.mgr.PrefetchChain(c.urls.Emote(msg.CharName, msg.Emote, EmoteTalk), c.spriteAlts(msg.CharName, msg.Emote, EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm)
-		if (c.SpriteWaitPair || c.SequentialWait) && msg.Pair.Active() {
-			c.mgr.PrefetchChain(c.urls.Emote(msg.Pair.Name, msg.Pair.Emote, EmoteIdle), c.spriteAlts(msg.Pair.Name, msg.Pair.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm, pair)
-		}
-		if hasPreanim(msg) && (preanimWillPlay(msg) || c.SpriteWaitPreanim) {
-			c.mgr.Prefetch(c.urls.Emote(msg.CharName, msg.PreEmote, EmotePreanim), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm, preanim)
-		}
-		if c.SequentialWait {
-			for _, m := range msg.Additional {
-				if m.CharID == msg.CharID {
-					continue
-				}
-				c.mgr.PrefetchChain(c.urls.Emote(m.Name, m.Emote, EmoteIdle), c.spriteAlts(m.Name, m.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm, group)
-			}
-			// The prefetches begin(), armSFXDelay and resolveBlip would issue, at HIGH so the gate can end.
-			if c.sess != nil && c.sess.Background != "" {
-				bgPart, deskPart := PositionScene(msg.Side)
-				c.mgr.PrefetchChain(c.urls.Background(c.sess.Background, bgPart), backgroundAltURLs(c.urls, c.sess.Background, bgPart), assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (wait-gate warm)
-				c.mgr.Prefetch(c.urls.Background(c.sess.Background, deskPart), assets.AssetTypeDeskOverlay, network.PriorityHigh)                                                         // AssetType: DeskOverlay (wait-gate warm)
-			}
-			if c.Chars != nil {
-				if misc := c.Chars.ChatSkinFor(msg.CharName); misc != "" {
-					cands := c.urls.MiscChatboxCandidates(misc)
-					c.mgr.PrefetchChain(cands[0], cands[1:], assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (wait-gate warm, chatbox)
-				}
-			}
-			if zoomEmote(msg.EmoteMod) {
-				chain := c.urls.SpeedlinesCandidates(msg.CharName, msg.Side)
-				c.mgr.PrefetchChain(chain[0], chain[1:], assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (wait-gate warm, speedlines)
-			}
-			if preanimSFXPlays(msg) {
-				if sfx := c.sfxBaseFor(msg); sfx != "" {
-					c.mgr.Prefetch(sfx, assets.AssetTypeSFX, network.PriorityHigh) // AssetType: SFX (wait-gate warm)
-				}
-			}
-			blipWire := msg.Blipname
-			if !validBlipName(blipWire) {
-				blipWire = ""
-			}
-			if ref, pending := c.blipRefFor(blipWire, msg.CharName); !pending && ref.Base != "" {
-				c.mgr.PrefetchChain(ref.Base, ref.Alts, ref.Type, network.PriorityHigh) // AssetType: Blip (wait-gate warm)
-			}
-			if msg.IsShout() {
-				charBase, defaultBase, shoutSFX := c.shoutBases(msg)
-				c.mgr.Prefetch(charBase, assets.AssetTypeShoutBubble, network.PriorityHigh) // AssetType: ShoutBubble (wait-gate warm)
-				if defaultBase != "" {
-					c.mgr.Prefetch(defaultBase, assets.AssetTypeShoutBubble, network.PriorityHigh) // AssetType: ShoutBubble (wait-gate warm)
-				}
-				if shoutSFX != "" {
-					c.mgr.Prefetch(shoutSFX, assets.AssetTypeSFX, network.PriorityHigh) // AssetType: SFX (wait-gate warm, shout cry)
-				}
-			}
-			if msg.Realization {
-				if sfx := c.realizationSFXFor(msg.CharName); sfx != "" {
-					c.mgr.Prefetch(sfx, assets.AssetTypeSFX, network.PriorityHigh) // AssetType: SFX (wait-gate warm, realization)
-				}
-			}
-			if msg.Effects != "" {
-				_, _, sound := parseEffectsField(msg.Effects)
-				if OverlaySoundPlayable(sound) {
-					c.mgr.Prefetch(c.urls.SFX(sound), assets.AssetTypeSFX, network.PriorityHigh) // AssetType: SFX (wait-gate warm, effect sound)
-				}
-				// The gate's OverlayFor call starts the overlay art resolve; nothing to prefetch.
-			}
+		// A full lane may have lost a request, and nothing else re-requests an asset that isn't on stage yet.
+		if !armed || refused {
+			c.requestNeeds(needs)
 		}
 	}
 	c.waitLeft -= dt

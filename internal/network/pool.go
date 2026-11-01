@@ -3,15 +3,14 @@ package network
 import (
 	"sync"
 	"sync/atomic"
-	"time"
 )
 
 const (
 	// DefaultWorkers: fetches are RTT-bound, not CPU-bound, and the transport allows 16 conns per host.
 	DefaultWorkers = 16
-	// highLaneCap and lowLaneCap bound the lanes: low sheds its oldest job when full, high briefly blocks the
-	// producer; results are never dropped or stolen (hard rule 7).
-	highLaneCap = 64
+	// highLaneCap and lowLaneCap bound the lanes: low sheds its oldest job when full, high refuses the new one;
+	// accepted high jobs always run (hard rule 7). High is sized so a refusal means a stalled host, not a busy room.
+	highLaneCap = 256
 	lowLaneCap  = 256
 )
 
@@ -57,9 +56,6 @@ type Pool struct {
 
 	workers int
 	busy    atomic.Int64
-	// blocked and longestBlockNs record callers that waited on a full high lane, which is a frozen UI on the render thread.
-	blocked        atomic.Int64
-	longestBlockNs atomic.Int64
 }
 
 // NewPool starts workers goroutines draining the two lanes, high first.
@@ -95,9 +91,9 @@ func (p *Pool) BumpEpoch() int64 {
 	return p.epoch.Add(1)
 }
 
-// Submit: high priority blocks briefly when full (live-message work is never shed); low never blocks and
-// sheds the oldest low job, as the newest speculation is the best informed.
-// It returns false only when the pool is closed, with Run(stale=true) called on the caller's goroutine.
+// Submit never blocks, as the caller is often the frame thread. A full high lane refuses the new job, since accepted
+// live-message work is never shed; low sheds its oldest, as the newest speculation is the best informed.
+// It returns false when refused or closed, with Run(stale=true) called on the caller's goroutine.
 func (p *Pool) Submit(prio Priority, job Job) bool {
 	if job.Run == nil {
 		return false
@@ -114,12 +110,6 @@ func (p *Pool) Submit(prio Priority, job Job) bool {
 		case p.high <- job:
 			return true
 		default:
-		}
-		defer p.noteBlocked(time.Now())
-		select {
-		case p.high <- job:
-			return true
-		case <-p.stop:
 			job.Run(true)
 			return false
 		}
@@ -141,17 +131,6 @@ func (p *Pool) Submit(prio Priority, job Job) bool {
 			p.runJob(victim, true)
 		default:
 			// A worker drained the lane; loop and enqueue.
-		}
-	}
-}
-
-func (p *Pool) noteBlocked(start time.Time) {
-	p.blocked.Add(1)
-	waited := int64(time.Since(start))
-	for {
-		longest := p.longestBlockNs.Load()
-		if waited <= longest || p.longestBlockNs.CompareAndSwap(longest, waited) {
-			return
 		}
 	}
 }
@@ -219,8 +198,6 @@ type PoolStats struct {
 	Workers, Busy       int64
 	HighQueued, HighCap int
 	LowQueued, LowCap   int
-	Blocked             int64         // Submit calls that waited on a full high lane
-	LongestBlock        time.Duration // the longest of those waits
 }
 
 // Stats snapshots the pool's counters.
@@ -230,13 +207,11 @@ func (p *Pool) Stats() PoolStats {
 		Stale:    p.stale.Load(),
 		Shed:     p.shed.Load(),
 
-		Workers:      int64(p.workers),
-		Busy:         p.busy.Load(),
-		HighQueued:   len(p.high),
-		HighCap:      cap(p.high),
-		LowQueued:    len(p.low),
-		LowCap:       cap(p.low),
-		Blocked:      p.blocked.Load(),
-		LongestBlock: time.Duration(p.longestBlockNs.Load()),
+		Workers:    int64(p.workers),
+		Busy:       p.busy.Load(),
+		HighQueued: len(p.high),
+		HighCap:    cap(p.high),
+		LowQueued:  len(p.low),
+		LowCap:     cap(p.low),
 	}
 }

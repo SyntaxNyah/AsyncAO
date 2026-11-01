@@ -41,7 +41,7 @@ func occupyWorkers(t *testing.T, rig *testRig, src *stalledSource) {
 }
 
 // TestRepeatRequestsDoNotFillTheHighLane: UI code asks every frame for a missing asset, and a stalled host must not turn
-// those asks into a full lane and a blocked caller.
+// those asks into a full lane and refused requests.
 func TestRepeatRequestsDoNotFillTheHighLane(t *testing.T) {
 	const repeats = 1000 // well past the lane's capacity
 	src := newStalledSource()
@@ -64,9 +64,62 @@ func TestRepeatRequestsDoNotFillTheHighLane(t *testing.T) {
 	if got := rig.pool.Stats().HighQueued; got != 1 {
 		t.Errorf("high lane holds %d jobs, want the one job for the asset", got)
 	}
-	if rig.pool.Stats().Blocked != 0 {
-		t.Error("no caller should have waited on the lane")
+	if got := rig.manager.RefusedRequests(); got != 0 {
+		t.Errorf("refused = %d, want none", got)
 	}
+}
+
+// TestFullHighLaneRefusesInsteadOfBlocking: the caller is the frame thread, so a stalled host must never make it wait.
+func TestFullHighLaneRefusesInsteadOfBlocking(t *testing.T) {
+	const extra = 8
+	const refusedBase = "https://h.example/characters/c/(a)refused"
+	src := newStalledSource()
+	rig := newRig(t, src, false)
+	// Every released fetch reports a failure here, and the frame loop isn't running to take them.
+	go func() {
+		for range rig.manager.Decoded() {
+		}
+	}()
+	occupyWorkers(t, rig, src)
+	released := false
+	release := func() {
+		if !released {
+			released = true
+			close(src.release)
+		}
+	}
+	t.Cleanup(release)
+
+	lane := rig.pool.Stats().HighCap
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := range lane + extra {
+			rig.manager.Prefetch(fmt.Sprintf("https://h.example/characters/c/(a)fill%d", i), AssetTypeCharSprite, network.PriorityHigh)
+		}
+		rig.manager.Prefetch(refusedBase, AssetTypeCharSprite, network.PriorityHigh)
+	}()
+	select {
+	case <-done:
+	case <-time.After(managerWait):
+		t.Fatal("a full high lane blocked the caller")
+	}
+	if got := rig.manager.RefusedRequests(); got != extra+1 {
+		t.Errorf("refused = %d, want %d", got, extra+1)
+	}
+	if got := rig.manager.WorkStats().Refused; got != extra+1 {
+		t.Errorf("work stats refused = %d, want %d", got, extra+1)
+	}
+
+	// A refusal leaves no trace, so the asset can be asked for again once there's room.
+	release()
+	waitUntil(t, "the lane to drain", func() bool {
+		s := rig.pool.Stats()
+		return s.HighQueued == 0 && s.Busy == 0
+	})
+	before := src.fetches.Load()
+	rig.manager.Prefetch(refusedBase, AssetTypeCharSprite, network.PriorityHigh)
+	waitUntil(t, "the refused asset to be fetched when asked again", func() bool { return src.fetches.Load() > before })
 }
 
 // TestHighRequestIsNotMergedIntoLowJob: an asset that becomes urgent must not wait behind shed-able speculation.

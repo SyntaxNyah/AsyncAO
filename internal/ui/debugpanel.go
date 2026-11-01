@@ -373,10 +373,10 @@ func (a *App) drawDebugWorkers(r sdl.Rect) {
 	line(fmt.Sprintf("Decode: %d/%d busy · queue %d/%d", len(s.Decoding), s.DecodeWorkers, s.DecodeQueued, s.DecodeCap), ColText)
 	line(fmt.Sprintf("Waiting for the frame loop: images %d/%d · audio %d/%d", s.DecodedQueued, s.DecodedCap, s.AudioQueued, s.AudioCap), ColText)
 	col := ColText
-	if s.Pool.Blocked > 0 {
+	if s.Refused > 0 {
 		col = ColDanger
 	}
-	line(fmt.Sprintf("Caller blocked on a full high lane: %d times · longest %v", s.Pool.Blocked, s.Pool.LongestBlock.Round(time.Millisecond)), col)
+	line(fmt.Sprintf("Requests refused by a full high lane: %d", s.Refused), col)
 	if a.d.Audio != nil {
 		line(fmt.Sprintf("Audio load on the main thread: longest %v", a.d.Audio.LongestLoad().Round(time.Millisecond)), ColText)
 	}

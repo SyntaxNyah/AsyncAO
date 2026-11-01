@@ -98,3 +98,19 @@ func BenchmarkParseCharINI(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkWaitGateHeld is one tick of strict sequencing holding a message whose first sprite hasn't arrived.
+func BenchmarkWaitGateHeld(b *testing.B) {
+	room, sess, _, _ := newCourtroomRig(b)
+	room.SequentialWait = true
+	sess.Background = "court"
+	room.Assets = assetFake{sprite: func(string) bool { return false }}
+	msg := waitMsg("Phoenix", "normal", "hi")
+	msg.Pair = protocol.PairInfo{CharID: 1, Name: "Maya", Emote: "smile"}
+	room.waitHolds(msg, 0, 0)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		room.waitHolds(msg, 0, 0)
+	}
+}

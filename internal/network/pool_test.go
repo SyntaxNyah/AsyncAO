@@ -197,6 +197,35 @@ func TestPoolShedsOldestLowJobWhenFull(t *testing.T) {
 	}
 }
 
+func TestPoolRefusesHighJobWhenLaneIsFull(t *testing.T) {
+	p := NewPool(1)
+	defer p.Close()
+	gate := make(chan struct{})
+	defer close(gate)
+	started := make(chan struct{})
+	p.Submit(PriorityHigh, Job{Epoch: EpochAny, Run: func(bool) {
+		close(started)
+		<-gate
+	}})
+	<-started
+
+	for i := 0; i < highLaneCap; i++ {
+		if !p.Submit(PriorityHigh, Job{Epoch: EpochAny, Run: func(bool) {}}) {
+			t.Fatalf("job %d refused before the lane was full", i)
+		}
+	}
+	var stale, runs int
+	accepted := p.Submit(PriorityHigh, Job{Epoch: EpochAny, Run: func(s bool) {
+		runs++
+		if s {
+			stale++
+		}
+	}})
+	if accepted || runs != 1 || stale != 1 {
+		t.Errorf("accepted=%v runs=%d stale=%d, want refused and told once, on this goroutine", accepted, runs, stale)
+	}
+}
+
 func TestPoolCloseCancelsQueuedJobs(t *testing.T) {
 	p := NewPool(1)
 	gate := make(chan struct{})

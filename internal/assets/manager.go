@@ -107,6 +107,7 @@ type Manager struct {
 	perType [AssetTypeCount + 1]typeWork
 	// coalesced counts requests answered by a job already queued.
 	coalesced atomic.Int64
+	refused   atomic.Int64
 
 	// conclusiveMiss holds chains probed to exhaustion, checked before the pool submit; no TTL (see missSet).
 	conclusiveMiss *missSet
@@ -366,7 +367,7 @@ func (m *Manager) enqueue(req queuedRequest, run func()) {
 	work := &m.perType[req.typ]
 	work.queued.Add(1)
 	queuedAt := time.Now()
-	m.pool.Submit(req.prio, network.Job{
+	accepted := m.pool.Submit(req.prio, network.Job{
 		ID:    m.pool.NextID(),
 		Epoch: req.epoch,
 		Run: func(stale bool) {
@@ -378,7 +379,14 @@ func (m *Manager) enqueue(req queuedRequest, run func()) {
 			run()
 		},
 	})
+	if !accepted {
+		work.queued.Add(-1)
+		m.refused.Add(1)
+	}
 }
+
+// RefusedRequests counts requests lost to a full lane; a caller that needs its asset asks again when this changes.
+func (m *Manager) RefusedRequests() int64 { return m.refused.Load() }
 
 // TypeWorkStats is one asset type's counters; wait is time queued before a worker took the job.
 type TypeWorkStats struct {
@@ -392,7 +400,7 @@ type TypeWorkStats struct {
 // WorkStats shows what the asset pipeline is waiting on and working on, for diagnostics.
 type WorkStats struct {
 	Pool                      network.PoolStats
-	Coalesced                 int64
+	Coalesced, Refused        int64
 	DecodeQueued, DecodeCap   int
 	DecodeWorkers             int
 	DecodedQueued, DecodedCap int
@@ -406,6 +414,7 @@ func (m *Manager) WorkStats() WorkStats {
 	s := WorkStats{
 		Pool:          m.pool.Stats(),
 		Coalesced:     m.coalesced.Load(),
+		Refused:       m.refused.Load(),
 		DecodeQueued:  len(m.decoder.jobs),
 		DecodeCap:     cap(m.decoder.jobs),
 		DecodeWorkers: m.decoder.workers,
