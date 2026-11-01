@@ -1,6 +1,7 @@
-# Contributor CI. Branch pushes and draft PRs only prove the client compiles on
-# every platform; a PR that is ready for review gets every check and a packaged
-# build. Merging to main runs no CI: release.yml does its own checks. Require
+# Contributor CI. Branch pushes and draft PRs only package the client on every
+# platform, which proves it compiles and leaves test builds as artifacts; a PR that
+# is ready for review also gets every check and a smoke test. Merging to main runs no
+# CI: release.yml does its own checks. Require
 # `ci-ok`: it stays the one status whatever the jobs behind it are. See docs/RELEASING.md.
 name: CI
 
@@ -42,13 +43,13 @@ jobs:
         run: |
           mode=full
           if [ "$EVENT" = push ]; then
-            mode=compile
+            mode=package
             # An open PR's own run already covers this commit.
             if [ "$(gh pr list --head "$BRANCH" --state open --json number --jq length)" != 0 ]; then
               mode=none
             fi
           elif [ "$IS_DRAFT" = true ]; then
-            mode=compile
+            mode=package
           fi
           base="${PR_BASE:-$PUSH_BEFORE}"
           # Changing nothing but docs needs no checks. A new branch or a force push
@@ -59,27 +60,6 @@ jobs:
           fi
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
 
-  compile:
-    name: Compile (${{ matrix.os }})
-    needs: scope
-    if: needs.scope.outputs.mode == 'compile'
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: ubuntu-24.04, shell: bash }
-          - { os: windows-2025, shell: "msys2 {0}" }
-          - { os: macos-15, shell: bash }
-    defaults:
-      run:
-        shell: ${{ matrix.shell }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-build
-      - run: go build ./...
-
   checks:
     needs: scope
     if: needs.scope.outputs.mode == 'full'
@@ -87,12 +67,14 @@ jobs:
 
   build:
     needs: scope
-    if: needs.scope.outputs.mode == 'full'
+    if: needs.scope.outputs.mode != 'none'
     uses: ./.github/workflows/build.yml
+    with:
+      smoke-test: ${{ needs.scope.outputs.mode == 'full' }}
 
   ci-ok:
     name: ci-ok
-    needs: [scope, compile, checks, build]
+    needs: [scope, checks, build]
     if: always()
     runs-on: ubuntu-24.04
     steps:
