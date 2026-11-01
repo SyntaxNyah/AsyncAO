@@ -26,6 +26,15 @@ access.
 - `scripts/package.sh build|pack|smoke` is the one build path, and also runs locally.
 - `packaging/release-assets.txt` lists every asset a release publishes.
 
+## Caches
+
+Each kind of job has its own Go cache, named from `go.sum`, the C compiler version and a
+file for that job, so changing any of them starts a fresh cache. After a successful first
+attempt on a branch or PR, `clean-caches` deletes that ref's Go, MSYS2 and SDL caches the
+run didn't use. A deleted branch or closed PR loses them all. GitHub removes anything
+unused for 7 days. A new branch's first build is cold, because `main` runs no CI to fill a
+shared cache.
+
 ## Cutting a release
 
 Normally, add a `## vX.Y.Z - date` section at the top of

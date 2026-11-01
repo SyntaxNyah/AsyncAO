@@ -72,6 +72,27 @@ jobs:
     with:
       smoke-test: ${{ needs.scope.outputs.mode == 'full' }}
 
+  # Only after a first attempt that ran everything it was going to: a partial re-run
+  # would make the jobs it skipped look unused.
+  clean-caches:
+    name: Remove unused caches
+    needs: [scope, checks, build]
+    if: >-
+      github.run_attempt == 1 && needs.build.result == 'success' &&
+      (needs.checks.result == 'success' || needs.checks.result == 'skipped') &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+        run: bash scripts/clean-caches.sh "$REF" "$GITHUB_RUN_ID"
+
   ci-ok:
     name: ci-ok
     needs: [scope, checks, build]
