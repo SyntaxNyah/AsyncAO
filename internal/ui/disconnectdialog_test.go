@@ -217,6 +217,7 @@ func TestAutoReconnectRetriesFromLobbyNeverGivesUp(t *testing.T) {
 	const attempts = 10 // well past the 8-try cutoff a prior version enforced
 	for i := 1; i <= attempts; i++ {
 		a.pollAutoReconnect()
+		awaitDial(t, a)
 		if a.autoReconnectAt.IsZero() {
 			t.Fatalf("attempt %d: auto-reconnect stopped retrying — it must never give up", i)
 		}
@@ -277,6 +278,7 @@ func TestReconnectFromDialogRedials(t *testing.T) {
 	a.lastConnName, a.lastConnURL = "Other", "ws://other.example"
 
 	a.reconnectFromDisconnectDialog()
+	awaitDial(t, a)
 
 	if a.disconnectDlg.open {
 		t.Error("Reconnect must clear the dialog first (fence release)")

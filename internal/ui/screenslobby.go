@@ -123,7 +123,13 @@ func (a *App) drawLobby(w, h int32) {
 	hdrY := a.topChromeH() + pad
 	c.Heading(pad, hdrY, "AsyncAO", ColText)
 	c.Label(pad, hdrY+30, a.lobbyStatus, ColTextDim)
-	if a.connErr != "" {
+	if a.dial != nil {
+		c.Label(pad+220, hdrY+30, a.dial.label, ColText)
+		const label = "Cancel"
+		if c.Button(sdl.Rect{X: pad + 220, Y: hdrY + 50, W: c.TextWidth(label) + 20, H: btnH}, label) {
+			a.cancelDial()
+		}
+	} else if a.connErr != "" {
 		c.Label(pad+220, hdrY+30, a.connErrLabel(), ColDanger)
 		if a.lastConnURL != "" { // one-click Reconnect to the server we dropped from
 			label := "Reconnect to " + a.lastConnName

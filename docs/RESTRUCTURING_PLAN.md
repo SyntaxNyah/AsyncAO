@@ -87,7 +87,8 @@ in **Status**. Update Status in the same commit that completes a step.
   - [x] a sprite sometimes shows its old animation for a frame before the right one (reported 2026-11-01): the wait gate
         released on a first frame or a reduced page. The speaker's sprites now wait for every frame; a pair partner's still
         release on the first frame, as stilling them each message would re-decode them each time
-  - [ ] dial off the main thread (#115)
+  - [x] dial off the main thread (#115): `startDial` runs it on a worker and the lobby shows Connecting with Cancel; nothing about
+        the session changes until `connectWith` takes the result
   - [ ] `FrameScheduler` beside the existing loop, then producers move to it and `SkipFrame` goes last
   - [ ] blips on the audio clock
   - [ ] extract chat extras: marker decoding (duplicated in `begin` and `beginCaughtUp`) and per-player memory

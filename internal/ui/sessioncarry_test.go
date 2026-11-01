@@ -75,6 +75,7 @@ func TestReconnectFromDialogRestoresLogOnSameServer(t *testing.T) {
 	}
 
 	a.reconnectFromDisconnectDialog()
+	awaitDial(t, a)
 
 	if a.conn == nil {
 		t.Fatal("the redial to a real, reachable server must have succeeded")
@@ -112,6 +113,7 @@ func TestDeliberateLeavePathsNeverCarryTheLog(t *testing.T) {
 
 		a.Disconnect()
 		a.Connect("Test Server", url)
+		awaitDial(t, a)
 
 		if a.conn == nil {
 			t.Fatal("the redial to a real, reachable server must have succeeded")
@@ -133,6 +135,7 @@ func TestDeliberateLeavePathsNeverCarryTheLog(t *testing.T) {
 
 		a.closeDisconnectDialogToLobby()
 		a.Connect("Test Server", url)
+		awaitDial(t, a)
 
 		if a.conn == nil {
 			t.Fatal("the redial to a real, reachable server must have succeeded")
@@ -163,6 +166,7 @@ func TestKickAndBanNeverCarryTheLog(t *testing.T) {
 			}
 
 			a.Connect("Test Server", url)
+			awaitDial(t, a)
 			if a.conn == nil {
 				t.Fatal("the redial to a real, reachable server must have succeeded")
 			}
@@ -218,6 +222,7 @@ func TestAutoReconnectCarriesLogAcrossAFailedThenSuccessfulRetry(t *testing.T) {
 	a.lastConnURL = badURL
 	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 	a.pollAutoReconnect()
+	awaitDial(t, a)
 	if a.conn != nil {
 		t.Fatal("test setup: the bad address must fail to dial")
 	}
@@ -229,6 +234,7 @@ func TestAutoReconnectCarriesLogAcrossAFailedThenSuccessfulRetry(t *testing.T) {
 	a.lastConnURL = goodURL
 	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 	a.pollAutoReconnect()
+	awaitDial(t, a)
 
 	if a.conn == nil {
 		t.Fatal("the retry against a real, reachable server must have succeeded")
@@ -280,6 +286,7 @@ func TestReconnectToADifferentServerNeverCarriesTheLog(t *testing.T) {
 	// DIFFERENT server (Connect cancels the pending auto-retry but must NOT
 	// let A's stale carry follow them onto B).
 	a.Connect("Server B", urlB)
+	awaitDial(t, a)
 	if a.conn == nil {
 		t.Fatal("the join to server B must have succeeded")
 	}
@@ -295,6 +302,7 @@ func TestReconnectToADifferentServerNeverCarriesTheLog(t *testing.T) {
 	// it back up under the wrong session entirely.
 	a.Disconnect()
 	a.Connect("Server A", urlA)
+	awaitDial(t, a)
 	if a.conn == nil {
 		t.Fatal("the rejoin to server A must have succeeded")
 	}
@@ -328,6 +336,7 @@ func TestSessionCarryDoesNotLeakIntoAParkedTab(t *testing.T) {
 		t.Fatal("test setup: expected the dialog to freeze open")
 	}
 	a.reconnectFromDisconnectDialog()
+	awaitDial(t, a)
 
 	if a.conn == nil {
 		t.Fatal("the redial to a real, reachable server must have succeeded")

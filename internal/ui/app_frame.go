@@ -256,7 +256,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	if a.themeEditorOpen() {
 		a.editorUndoChord()
 	}
-	a.pumpTabRestore()  // restore-on-launch: one reconnect/frame, then idle
+	a.pollDial()
+	a.pumpTabRestore()  // restore-on-launch: one dial at a time, then idle
 	a.fireAutoConnect() // one-shot: auto-connect to the last server on launch (opt-in)
 	// The courtroom hotkey handler never runs in the lobby, so dispatch here while offline.
 	// Not under the notice box: the server just removed us, and a keypress must not reconnect past it.

@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"context"
 	"strconv"
 	"strings"
 	"time"
@@ -92,22 +91,15 @@ func (a *App) cancelAutoReconnect() {
 	a.autoReconnectMsg = ""
 }
 
-// pollAutoReconnect fires a due retry, blocking the frame like the manual button. It calls connectWith, not Connect,
-// so the backoff counter survives. Called only from the foreground Frame loop, and retries only from the lobby, so a
-// drop while minimized waits there instead of landing the user at char-select before they restore.
+// pollAutoReconnect starts a due retry; finishDial applies its result. It calls startDial, not Connect, so the backoff
+// counter survives. Called only from the foreground Frame loop, and retries only from the lobby, so a drop while
+// minimized waits there instead of landing the user at char-select before they restore.
 func (a *App) pollAutoReconnect() {
-	if a.autoReconnectAt.IsZero() || a.now().Before(a.autoReconnectAt) || a.screen != ScreenLobby {
+	if a.autoReconnectAt.IsZero() || a.now().Before(a.autoReconnectAt) || a.screen != ScreenLobby || a.dial != nil {
 		return
 	}
 	a.autoReconnectTries++
 	a.autoReconnectMsg = "Auto-reconnecting to " + a.lastConnName + "… (attempt " +
 		strconv.Itoa(a.autoReconnectTries) + ")"
-	ctx, cancel := context.WithTimeout(context.Background(), restoreDialTimeout)
-	a.connectWith(a.lastConnName, a.lastConnURL, ctx)
-	cancel()
-	if a.screen != ScreenLobby { // left the lobby = the dial connected; stop retrying
-		a.cancelAutoReconnect()
-		return
-	}
-	a.autoReconnectAt = a.now().Add(autoReconnectDelay(a.autoReconnectTries)) // failed: back off
+	a.startDial(a.lastConnName, a.lastConnURL, restoreDialTimeout, true)
 }

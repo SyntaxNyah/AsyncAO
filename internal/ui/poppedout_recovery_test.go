@@ -40,6 +40,7 @@ func TestAutoReconnectIdempotentInDueWindow(t *testing.T) {
 	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 
 	a.pollAutoReconnect()
+	awaitDial(t, a)
 	firstTries := a.autoReconnectTries
 	if firstTries == 0 {
 		t.Fatal("the first poll must fire the due retry")

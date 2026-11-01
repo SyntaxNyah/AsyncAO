@@ -675,11 +675,10 @@ func TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou(t *testing.T) {
 	a.lastLobbyRefreshAt = a.now()
 
 	a.openServerNotice(serverNoticeRemoved, "The server banned you.", "Refuser", noticeLockdownReason)
-	a.lastConnURL = ""
 	driveEnter(a)
-	if a.lastConnURL != "" {
+	if a.dial != nil {
 		t.Errorf("Enter under the notice box dialled %q — the box's own text is the reason that "+
-			"server is unreachable", a.lastConnURL)
+			"server is unreachable", a.dial.url)
 	}
 	if !a.serverNoticeDlg.open {
 		t.Error("Enter dismissed the box; only Esc and its own button do that, and a ban reason " +
@@ -690,10 +689,9 @@ func TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou(t *testing.T) {
 	a.selServer = 0
 	a.ctx.focusID = ""
 	driveEnter(a)
-	if a.lastConnURL != wantURL {
-		t.Fatalf("Enter with nothing in the way left lastConnURL = %q, want %q — the lobby's "+
-			"Enter-to-join is not reached at all, so the arm above is a fence around dead code",
-			a.lastConnURL, wantURL)
+	if a.dial == nil || a.dial.url != wantURL {
+		t.Fatalf("Enter with nothing in the way started no dial to %q — the lobby's "+
+			"Enter-to-join is not reached at all, so the arm above is a fence around dead code", wantURL)
 	}
 }
 

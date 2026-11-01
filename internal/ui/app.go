@@ -436,6 +436,8 @@ type App struct {
 	tabDragStart [2]int32
 	tabDragging  bool
 	tabPrevDown  bool
+	// dial is the connection attempt in progress, nil when there is none.
+	dial *pendingDial
 	// restoreQueue holds the tabs to reopen on launch, drained one reconnect per frame by pumpTabRestore
 	// so blocking dials never pile into one boot freeze.
 	restoreQueue []config.OpenTab
@@ -1440,6 +1442,7 @@ func (a *App) Background(dt time.Duration) {
 	// deadline, including the music-await release in settleAwaitedMusic, and a failed music fetch would stay silent
 	// forever.
 	a.frameNow = time.Now()
+	a.pollDial()
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
 	// Drain the OOC queue here as well as in Frame: producers keep queueing while minimized, and flushing them as one

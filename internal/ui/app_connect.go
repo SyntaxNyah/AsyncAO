@@ -26,7 +26,107 @@ import (
 
 func (a *App) Connect(name, wsURL string) {
 	a.cancelAutoReconnect() // a deliberate Join/Reconnect takes over from any pending auto-retry
-	a.connectWith(name, wsURL, context.Background())
+	a.startDial(name, wsURL, 0, false)
+}
+
+// pendingDial is the one dial in progress; nothing about the session changes until it finishes.
+type pendingDial struct {
+	name, url string
+	// label is the lobby line, built once because the lobby draws every frame.
+	label string
+	// retry marks an auto-reconnect attempt, so its result drives the backoff.
+	retry  bool
+	cancel context.CancelFunc
+	// res has room for the one result, so the worker never waits on a dial nobody wants.
+	res chan dialResult
+}
+
+type dialResult struct {
+	conn *protocol.Conn
+	err  error
+}
+
+// startDial runs the dial on a worker, so a slow or dead server can't freeze the UI; pollDial picks up the result.
+// A timeout of 0 means the dial's own. Dialling a new server replaces a dial in progress.
+func (a *App) startDial(name, wsURL string, timeout time.Duration, retry bool) {
+	if d := a.dial; d != nil {
+		if d.url == wsURL {
+			d.retry = d.retry && retry // a click on the same server keeps its dial and takes over from the retry
+			return
+		}
+		a.cancelDial()
+	}
+	a.connErr = ""
+	ctx, cancel := context.WithCancel(context.Background())
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), timeout)
+	}
+	d := &pendingDial{
+		name: name, url: wsURL, label: "Connecting to " + name + "…", retry: retry,
+		cancel: cancel, res: make(chan dialResult, 1),
+	}
+	a.dial = d
+	a.uiDirty = true
+	sockets := a.sockets()
+	// TLS: default off accepts self-signed wss certs (most community AO servers); the Security toggle enables strict
+	// verification.
+	opts := protocol.DialOptions{
+		SkipTLSVerify: !a.d.Prefs.Load().ValidateTLSCerts,
+		Origin:        a.d.Prefs.Load().WSOrigin, // power-user: servers that allowlist their web client's origin ("" = none)
+	}
+	go func() {
+		defer cancel()
+		conn, err := protocol.Dial(ctx, sockets, wsURL, opts)
+		d.res <- dialResult{conn: conn, err: err}
+		PushWake()
+	}()
+}
+
+// cancelDial abandons the dial in progress; a cancelled retry also stops the auto-reconnect, as the player said stop.
+func (a *App) cancelDial() {
+	d := a.dial
+	if d == nil {
+		return
+	}
+	a.dial = nil
+	a.uiDirty = true
+	if d.retry {
+		a.cancelAutoReconnect()
+	}
+	d.cancel()
+	// The dial may have connected just before the cancel. Ends when the dial does, which the cancel makes prompt.
+	go func() {
+		if r := <-d.res; r.conn != nil {
+			r.conn.Close()
+		}
+	}()
+}
+
+// pollDial finishes a dial whose result has arrived; called from Frame and Background.
+func (a *App) pollDial() {
+	d := a.dial
+	if d == nil {
+		return
+	}
+	select {
+	case r := <-d.res:
+		a.finishDial(d, r)
+	default:
+	}
+}
+
+func (a *App) finishDial(d *pendingDial, r dialResult) {
+	a.dial = nil
+	a.uiDirty = true
+	a.connectWith(d.name, d.url, r.conn, r.err)
+	if !d.retry {
+		return
+	}
+	if a.screen != ScreenLobby { // left the lobby = the dial connected; stop retrying
+		a.cancelAutoReconnect()
+		return
+	}
+	a.autoReconnectAt = a.now().Add(autoReconnectDelay(a.autoReconnectTries)) // failed: back off
 }
 
 // friendlyConnError turns a raw dial error into plain lobby guidance; the raw error still goes to the debug log.
@@ -78,15 +178,17 @@ func friendlyConnError(wsURL string, err error) string {
 	}
 }
 
-// connectWith is Connect with a caller-chosen dial context; restore-on-launch passes a short timeout so a dead
-// remembered server can't freeze boot.
-func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
+// connectWith opens the tab and session for a finished dial, or reports the dial's failure in the lobby.
+func (a *App) connectWith(name, wsURL string, conn *protocol.Conn, err error) {
 	a.connErr = ""                              // a fresh attempt clears any stale lobby error/reason
 	a.deliberateClose = false                   // a fresh connection starts with no pending deliberate-close intent
 	a.lastConnName, a.lastConnURL = name, wsURL // remember for one-click Reconnect on a drop/failure
 	a.d.Prefs.SetLastServer(name, wsURL)        // persist for auto-connect / quick-connect on next launch
 	a.parkActive()
 	if !a.allocateTab() {
+		if conn != nil {
+			conn.Close()
+		}
 		return // connErr set; lobby shows it
 	}
 	a.resetSessionState()
@@ -111,12 +213,6 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 			}
 		}
 	}(wsURL)
-	// TLS: default off accepts self-signed wss certs (most community AO servers); the Security toggle enables strict
-	// verification.
-	conn, err := protocol.Dial(dialCtx, a.sockets(), wsURL, protocol.DialOptions{
-		SkipTLSVerify: !a.d.Prefs.Load().ValidateTLSCerts,
-		Origin:        a.d.Prefs.Load().WSOrigin, // power-user: servers that allowlist their web client's origin ("" = none)
-	})
 	if err != nil {
 		a.connErr = friendlyConnError(wsURL, err) // #9: human guidance, not a raw Go error
 		a.pushDebug("connect failed: " + err.Error())
@@ -152,17 +248,14 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	a.screen = ScreenCharSelect
 }
 
-// pumpTabRestore reconnects one remembered tab per frame, each on a short dial budget, so blocking dials don't pile
-// into one boot freeze.
+// pumpTabRestore reconnects remembered tabs one dial at a time, each on a short budget, so tabs reopen in order.
 func (a *App) pumpTabRestore() {
-	if len(a.restoreQueue) == 0 {
+	if len(a.restoreQueue) == 0 || a.dial != nil {
 		return
 	}
 	tab := a.restoreQueue[0]
 	a.restoreQueue = a.restoreQueue[1:]
-	ctx, cancel := context.WithTimeout(context.Background(), restoreDialTimeout)
-	defer cancel()
-	a.connectWith(tab.Name, tab.URL, ctx)
+	a.startDial(tab.Name, tab.URL, restoreDialTimeout, false)
 }
 
 // collectOpenTabs snapshots the open server tabs (name + ws URL) for restore-on-launch: the active tab from the session
