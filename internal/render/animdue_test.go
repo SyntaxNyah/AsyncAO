@@ -345,6 +345,18 @@ func TestPreanimLoopFiresDoneOnce(t *testing.T) {
 	}
 }
 
+// TestStilledPageDoesNotFinishPreanim: a returning speaker's preanim was reduced to one frame while someone else spoke.
+// It is re-decoding, so finishing on that frame would skip the animation.
+func TestStilledPageDoesNotFinishPreanim(t *testing.T) {
+	const step = 100 * time.Millisecond
+	v := NewViewport(nil)
+	v.speakerAnim.reset("characters/x/intro")
+	stilled := &TexturePage{Frames: make([]*sdl.Texture, 1), Delays: []time.Duration{0}, Animated: true, Stilled: true}
+	if v.advanceSpeaker(stilled, step, true) || v.speakerAnim.finished {
+		t.Fatal("a page reduced to one frame must not finish the preanim")
+	}
+}
+
 // TestProgressivePartialDoesNotFinishPreanim pins the progressive-decode swap
 // fix: the renderer's fast 1-frame "Partial" delivery (assets.Decoded.Partial)
 // must NOT be mistaken for a genuine single-frame animation. A playOnce preanim

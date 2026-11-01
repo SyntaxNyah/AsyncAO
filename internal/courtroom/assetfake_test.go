@@ -7,8 +7,17 @@ type assetFake struct {
 	effects func(char string) string
 	overlay func(name, folder string) (OverlayResolved, bool)
 	sprite  func(base string) bool
-	audio   func(base string) bool
-	scaling func(charName string) ScalingMode
+	// playable defaults to sprite, as most tests don't separate resident from fully decoded.
+	playable func(base string) bool
+	audio    func(base string) bool
+	scaling  func(charName string) ScalingMode
+}
+
+func (f assetFake) SpritePlayable(base string) bool {
+	if f.playable != nil {
+		return f.playable(base)
+	}
+	return f.SpriteReady(base)
 }
 
 func (f assetFake) EffectsFolderFor(char string) string {

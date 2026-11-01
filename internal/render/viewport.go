@@ -134,8 +134,8 @@ func (a *animState) advance(page *TexturePage, dt time.Duration, playOnce bool) 
 // advanceMax caps each frame's delay, not the clip (setMaximumDurationPerFrame, animationlayer.cpp:281-286).
 func (a *animState) advanceMax(page *TexturePage, dt time.Duration, playOnce bool, maxDelay time.Duration) (justFinished bool) {
 	if page == nil || len(page.Frames) <= 1 {
-		// A partial page is not a real single-frame animation: finishing here would fire OnPreanimDone early.
-		if playOnce && !a.finished && (page == nil || !page.Partial) {
+		// A partial or reduced page is not a real single-frame animation: finishing here would fire OnPreanimDone early.
+		if playOnce && !a.finished && (page == nil || (!page.Partial && !page.Stilled)) {
 			// INVARIANT: finished is set only under playOnce; the speaker block's restart guard in Update relies on it.
 			a.finished = true
 			return true

@@ -404,16 +404,30 @@ func (s *TextureStore) Contains(base string) bool {
 
 // ContainsAnimated is Contains with Stilled pages absent, so a reduced page re-streams.
 func (s *TextureStore) ContainsAnimated(base string) bool {
+	page, ok := s.peek(base)
+	return ok && !page.Stilled
+}
+
+// ContainsPlayable reports every frame resident, or a recent decode failure, as waiting longer can't improve that.
+func (s *TextureStore) ContainsPlayable(base string) bool {
+	if page, ok := s.peek(base); ok && !page.Partial && !page.Stilled {
+		return true
+	}
+	return s.FailedRecently(base)
+}
+
+// peek finds a page without touching LRU order.
+func (s *TextureStore) peek(base string) (*TexturePage, bool) {
 	if page, ok := s.small.Peek(base); ok {
-		return !page.Stilled
+		return page, true
 	}
 	if page, ok := s.t1.Peek(base); ok {
-		return !page.Stilled
+		return page, true
 	}
 	s.oversizedMu.RLock()
 	page, ok := s.oversized[base]
 	s.oversizedMu.RUnlock()
-	return ok && !page.Stilled
+	return page, ok
 }
 
 // ReduceAnimatedExcept reduces animated pages not in active to one frame; they re-stream when active.
@@ -634,9 +648,12 @@ func (s *TextureStore) AppendStream(base string, d *assets.Decoded) error {
 	if d.FrameOffset == 0 && len(d.Frames) > 0 {
 		// A re-decode can race this stream; re-establishing would shrink the page and strand the cursor, so keep it.
 		s.oversizedMu.RLock()
-		_, exists := s.oversized[base]
+		existing, exists := s.oversized[base]
 		s.oversizedMu.RUnlock()
 		if exists {
+			if existing.Stilled {
+				existing.Partial = true // the frames to regrow it follow
+			}
 			return nil
 		}
 		page, err := s.buildPage(d)
@@ -682,6 +699,9 @@ func (s *TextureStore) AppendStream(base string, d *assets.Decoded) error {
 	if !d.Partial {
 		page.Partial = false
 		page.SourceFrames = d.SourceFrames
+		if len(page.Frames) > 1 {
+			page.Stilled = false
+		}
 	}
 	s.generation.Add(1)
 	return nil

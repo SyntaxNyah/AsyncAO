@@ -83,7 +83,9 @@ in **Status**. Update Status in the same commit that completes a step.
   - [ ] writer goroutine for `Conn.Send`, which proves the worker shape (one shape for background jobs, replacing the
         separate goroutine, channel and poll of each `ui` job)
   - [ ] off-thread texture preparation (decided 2026-11-01): spike, then asset uploads, then prerendered variants. See below
-  - [ ] find why a sprite sometimes shows its old animation for a frame before the right one (reported 2026-11-01)
+  - [x] a sprite sometimes shows its old animation for a frame before the right one (reported 2026-11-01): the wait gate
+        released on a first frame or a reduced page. The speaker's sprites now wait for every frame; a pair partner's still
+        release on the first frame, as stilling them each message would re-decode them each time
   - [ ] dial off the main thread (#115)
   - [ ] `FrameScheduler` beside the existing loop, then producers move to it and `SkipFrame` goes last
   - [ ] blips on the audio clock

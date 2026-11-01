@@ -27,7 +27,9 @@ const (
 	// DefaultQueueCap is what QueueCap seeds to and what a 0 pref restores.
 	DefaultQueueCap = messageQueueCap
 	// missingSpritesCap bounds the 404'd base set (hard rule 4); past it SpriteWaitTimeout bounds any unrecorded miss.
-	missingSpritesCap = 512
+	// sequentialWaitLimit releases a strict-sequencing hold: a transient error or dropped warning never settles an asset.
+	sequentialWaitLimit = 10 * time.Second
+	missingSpritesCap   = 512
 	// missingDesksCap bounds the 404'd desk set (hard rule 4); past it the render-side release covers the layer.
 	missingDesksCap = 512
 	// blipVolumeFull is the unattenuated blip scale, used with no BlipVolumeFor callback.
@@ -192,6 +194,8 @@ type AssetResolver interface {
 	OverlayFor(name, folder string) (OverlayResolved, bool)
 	// SpriteReady reports texture residency; same thread, a plain map probe.
 	SpriteReady(base string) bool
+	// SpritePlayable reports every frame resident, or nothing more to wait for; same thread.
+	SpritePlayable(base string) bool
 	// AudioReady reports a cached decoded chunk; same thread, a plain map probe.
 	AudioReady(base string) bool
 	SpriteScaling(charName string) ScalingMode
@@ -507,6 +511,14 @@ func (c *Courtroom) spriteSettled(base string) bool {
 	return c.spriteConfirmedMissing(base)
 }
 
+// speakerSpriteSettled also rejects a partial or reduced page: the stage would hold the old sprite or skip a one-shot.
+func (c *Courtroom) speakerSpriteSettled(base string) bool {
+	if c.Assets != nil && c.Assets.SpritePlayable(base) {
+		return true
+	}
+	return c.spriteConfirmedMissing(base)
+}
+
 // audioSettled is spriteSettled for audio: decoded and cached, or in the shared 404 set.
 func (c *Courtroom) audioSettled(base string) bool {
 	if c.Assets != nil && c.Assets.AudioReady(base) {
@@ -536,10 +548,10 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 		return false
 	}
 	idle := c.urls.Emote(msg.CharName, msg.Emote, EmoteIdle)
-	ready := c.spriteSettled(idle)
+	ready := c.speakerSpriteSettled(idle)
 	// Also the talk sprite: with no preanim the stage draws it first, and waiting for idle alone flashes a placeholder.
 	if ready {
-		ready = c.spriteSettled(c.urls.Emote(msg.CharName, msg.Emote, EmoteTalk))
+		ready = c.speakerSpriteSettled(c.urls.Emote(msg.CharName, msg.Emote, EmoteTalk))
 	}
 	// The partner's idle: SpriteWaitPair, or always under strict sequencing.
 	if ready && (c.SpriteWaitPair || c.SequentialWait) && msg.Pair.Active() {
@@ -549,7 +561,7 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 	if ready && hasPreanim(msg) && (preanimWillPlay(msg) || c.SpriteWaitPreanim) {
 		pre := c.urls.Emote(msg.CharName, msg.PreEmote, EmotePreanim)
 		// A conclusively 404'd preanim releases on the miss, mirroring the play path's NotifyAssetMissing skip.
-		ready = c.spriteSettled(pre)
+		ready = c.speakerSpriteSettled(pre)
 	}
 	// Group pairing: strict sequencing waits for every other member's idle too.
 	if ready && c.SequentialWait {
@@ -637,6 +649,9 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 	if c.waitFor != msg { // a new head arms: start the countdown + warm its sprites
 		c.waitFor = msg
 		c.waitLeft = c.SpriteWaitTimeout
+		if c.SequentialWait {
+			c.waitLeft = sequentialWaitLimit
+		}
 		c.mgr.PrefetchChain(idle, c.spriteAlts(msg.CharName, msg.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh)                                             // AssetType: CharSprite (wait-gate warm)
 		c.mgr.PrefetchChain(c.urls.Emote(msg.CharName, msg.Emote, EmoteTalk), c.spriteAlts(msg.CharName, msg.Emote, EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm)
 		if (c.SpriteWaitPair || c.SequentialWait) && msg.Pair.Active() {
@@ -703,10 +718,6 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 				// The gate's OverlayFor call starts the overlay art resolve; nothing to prefetch.
 			}
 		}
-	}
-	// Strict sequencing waits for settlement, never a timeout: the per-host deadline makes every sprite settle.
-	if c.SequentialWait {
-		return true
 	}
 	c.waitLeft -= dt
 	if c.waitLeft <= 0 {

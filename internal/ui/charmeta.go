@@ -251,7 +251,10 @@ func (r roomAssetResolver) OverlayFor(name, folder string) (courtroom.OverlayRes
 	return r.a.overlayResolve(name, folder)
 }
 func (r roomAssetResolver) SpriteReady(base string) bool { return r.a.d.Store.Contains(base) }
-func (r roomAssetResolver) AudioReady(base string) bool  { return r.a.d.Audio.HasChunk(base) }
+func (r roomAssetResolver) SpritePlayable(base string) bool {
+	return r.a.d.Store.ContainsPlayable(base)
+}
+func (r roomAssetResolver) AudioReady(base string) bool { return r.a.d.Audio.HasChunk(base) }
 func (r roomAssetResolver) SpriteScaling(charName string) courtroom.ScalingMode {
 	return r.a.remoteScalingFor(charName)
 }

@@ -19,8 +19,9 @@ func (f spriteProbe) EffectsFolderFor(string) string { return "" }
 func (f spriteProbe) OverlayFor(string, string) (courtroom.OverlayResolved, bool) {
 	return courtroom.OverlayResolved{}, false
 }
-func (f spriteProbe) SpriteReady(base string) bool { return f(base) }
-func (f spriteProbe) AudioReady(string) bool       { return false }
+func (f spriteProbe) SpriteReady(base string) bool    { return f(base) }
+func (f spriteProbe) SpritePlayable(base string) bool { return f(base) }
+func (f spriteProbe) AudioReady(string) bool          { return false }
 func (f spriteProbe) SpriteScaling(string) courtroom.ScalingMode {
 	return courtroom.ScalingAuto
 }
