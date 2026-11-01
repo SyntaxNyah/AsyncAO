@@ -758,9 +758,6 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.InputGraceFramesVal != o.InputGraceFramesVal {
 		return false
 	}
-	if s.EventDrivenLoop != o.EventDrivenLoop {
-		return false
-	}
 	if s.DisableFrameLimiter != o.DisableFrameLimiter {
 		return false
 	}

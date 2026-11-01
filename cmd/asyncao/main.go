@@ -448,33 +448,21 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 			// Keep the preview animating on passes the main window skips.
 			app.AdvanceDetachedPreview()
 			preview.Present()
-			if prefs.Load().EventDrivenLoop {
-				// Background may have produced work: render it. Otherwise wait for input, a wake or a deadline.
-				if app.RenderNeeded() && !app.RenderSuppressed(focused) {
-					continue
-				}
-				wait, renderDue := app.NextWakeDelay(focused)
-				// Only shortens the wait; it never forces a main-window redraw.
-				if wakeCap := app.PreviewAnimWakeCap(); wakeCap > 0 && wait > wakeCap {
-					wait = wakeCap
-				}
-				scheduledNap = wait
-				if ev := sdl.WaitEventTimeout(int(wait / time.Millisecond)); ev != nil {
-					pendingEv = ev
-				} else if renderDue {
-					app.NoteDeadline() // a real deadline is due — draw one frame for it
-				}
+			// Background may have produced work: render it. Otherwise wait for input, a wake or a deadline.
+			if app.RenderNeeded() && !app.RenderSuppressed(focused) {
 				continue
 			}
-			nap := app.FramePace(focused)
-			if nap <= 0 || nap > maxFrameDelta {
-				nap = maxFrameDelta
+			wait, renderDue := app.NextWakeDelay(focused)
+			// Only shortens the wait; it never forces a main-window redraw.
+			if wakeCap := app.PreviewAnimWakeCap(); wakeCap > 0 && wait > wakeCap {
+				wait = wakeCap
 			}
-			if wakeCap := app.PreviewAnimWakeCap(); wakeCap > 0 && nap > wakeCap {
-				nap = wakeCap
+			scheduledNap = wait
+			if ev := sdl.WaitEventTimeout(int(wait / time.Millisecond)); ev != nil {
+				pendingEv = ev
+			} else if renderDue {
+				app.NoteDeadline() // a real deadline is due — draw one frame for it
 			}
-			scheduledNap = nap
-			time.Sleep(nap)
 			continue
 		}
 
@@ -565,13 +553,11 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 			if sleep := pace - time.Since(now); sleep > 0 {
 				switch {
 				case audioPace:
-					fineAdvance(sleep, prefs.Load().EventDrivenLoop)
-				case prefs.Load().EventDrivenLoop:
+					fineAdvance(sleep, true)
+				default:
 					if ev := sdl.WaitEventTimeout(int(sleep / time.Millisecond)); ev != nil {
 						pendingEv = ev
 					}
-				default:
-					time.Sleep(sleep)
 				}
 			}
 		}

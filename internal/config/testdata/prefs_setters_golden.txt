@@ -203,8 +203,6 @@ SetErrorSpritePath|zero|
 SetErrorSpritePath|valid|ErrorSpriteFile=v
 SetErrorSpritePath|empty|
 SetErrorSpritePath|huge|ErrorSpriteFile=x*4096
-SetEventDrivenLoop|zero|EventDrivenLoop=false
-SetEventDrivenLoop|valid|
 SetExportOpts|zero|Export.FPS=6;Export.HeightPx=240;Export.Loop=false;Export.Quality=20;Export.TextScale=50
 SetExportOpts|valid|Export.FPS=6;Export.HeightPx=240;Export.Loop=false;Export.Quality=20;Export.TextScale=50
 SetExtProfile|zero|

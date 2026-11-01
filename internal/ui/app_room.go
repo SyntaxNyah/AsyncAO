@@ -650,17 +650,15 @@ func (a *App) MarkRoomPreAdvanced() { a.roomPreAdvanced = true }
 // and waving over dead space stops costing frames soon after.
 const motionInputGrace = 200 * time.Millisecond
 
-// NoteMotion marks a pointer-motion-only pass; in the classic loop motion is plain input.
+// NoteMotion marks a pointer-motion-only pass.
 func (a *App) NoteMotion() {
-	if a.d.Prefs != nil && a.d.Prefs.Load().EventDrivenLoop {
+	if a.d.Prefs != nil {
 		// The motion event already earns one frame (SkipFrame refuses on sawEvent), so don't arm the full-rate grace.
 		if a.d.Prefs.Load().MotionRedrawPerEvent {
 			return
 		}
 		a.lastMotionAt = time.Now()
-		return
 	}
-	a.lastInputAt = time.Now()
 }
 
 // staticTalkFPS paces a message over all-static art: runes reveal at about 40 ms or slower, so 30 fps samples them.
@@ -714,19 +712,6 @@ func (a *App) roomBusy() bool {
 	return a.room != nil && (a.room.Phase() != courtroom.PhaseIdle || a.room.QueueLen() > 0)
 }
 
-// serverTimersLive reports any visible TI timer chip, whose readout changes every second.
-func (a *App) serverTimersLive() bool {
-	if a.sess == nil {
-		return false
-	}
-	for i := range a.sess.Timers {
-		if a.sess.Timers[i].Visible {
-			return true
-		}
-	}
-	return false
-}
-
 // talkBudget is the budget for a message over static art, revealing at most one rune per frame:
 // blips fire from the per-frame Update, so a slower frame audibly coalesces them.
 func (a *App) talkBudget(full time.Duration) time.Duration {
@@ -753,7 +738,6 @@ const (
 	pacerTalk                           // a message is playing (typewriter/blip cadence)
 	pacerContentAnim                    // only stage animations move (next frame flip)
 	pacerIdleActiveCap                  // rendered-but-idle, active cap (event-driven/∞ idle)
-	pacerIdleNap                        // classic idle nap at the idle rate
 )
 
 // pacerTierLabel renders a pacerTier for the F8 panel.
@@ -771,8 +755,6 @@ func pacerTierLabel(t pacerTier) string {
 		return "content — stage animation cadence"
 	case pacerIdleActiveCap:
 		return "idle → active cap (event-driven/∞ idle)"
-	case pacerIdleNap:
-		return "idle nap (classic idle rate)"
 	default:
 		return "?"
 	}
@@ -781,7 +763,7 @@ func pacerTierLabel(t pacerTier) string {
 // FramePace returns the sleep between rendered frames (0 = no cap), trying these tiers, fastest first.
 // Full rate: wantsFullRate. UI animation (NoteAnimating): the cap, floored by backstopBudget.
 // Talk: talkBudget, which a speaker's frame flip may only tighten. Content: the next stage frame flip.
-// Idle: the event-driven loop's damage frame uses the cap so sleep adds no input latency; the classic loop uses idle.
+// Idle: a damage frame uses the cap so sleep adds no input latency.
 // FPSOff means the active cap here; not rendering at idle is decided in the skip and park path.
 func (a *App) FramePace(focused bool) time.Duration {
 	focused = a.pacingFocused(focused)            // the "full speed while unfocused" option (pacingfocus.go)
@@ -851,14 +833,10 @@ func (a *App) FramePace(focused bool) time.Duration {
 		}
 		return value.Clamp(due, full, idle) // content cadence, never slower than the idle rate
 	}
-	// Must not reach a zero budget for a frame nothing demanded: under the infinite cap the classic loop would spin.
+	// Must not reach a zero budget for a frame nothing demanded: under the infinite cap the loop would spin.
 	// Infinite idle resolves through the cap so a finite cap still rules.
-	if a.d.Prefs.Load().EventDrivenLoop || idleOff || idleUnlimited {
-		a.lastPacerTier = pacerIdleActiveCap
-		return backstopBudget(full)
-	}
-	a.lastPacerTier = pacerIdleNap
-	return idle // classic idle nap (N → 1s/N)
+	a.lastPacerTier = pacerIdleActiveCap
+	return backstopBudget(full)
 }
 
 // backstopBudget returns b when finite, else about 60 fps (FPSCapUnlimitedOff): a zero budget leaves only vsync.
@@ -871,8 +849,8 @@ func backstopBudget(b time.Duration) time.Duration {
 }
 
 // SkipFrame reports that the last drawn frame is still right, so the loop may skip render and present and just pump.
-// A wrong skip heals on the next damage or deadline, never a hang. The event-driven loop also skips menu screens
-// and turns caret and clock refusals into wakes (NextWakeDelay); the classic loop re-renders at the idle rate.
+// A wrong skip heals on the next damage or deadline, never a hang. It also skips menu screens
+// and turns caret and clock refusals into wakes (NextWakeDelay).
 func (a *App) SkipFrame(focused, sawEvent bool) bool {
 	focused = a.pacingFocused(focused) // the "full speed while unfocused" option (pacingfocus.go)
 	if sawEvent {
@@ -884,22 +862,9 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 			return true
 		}
 	}
-	exp := a.d.Prefs != nil && a.d.Prefs.Load().EventDrivenLoop
-	if exp {
-		if !a.expScreenSkippable() {
-			return false
-		}
-		// The event-driven loop parks on NextWakeDelay, whose idle tick is the periodic render.
-	} else {
-		if a.room == nil || a.sess == nil {
-			return false // classic: only the courtroom skips (the lobby keeps its idle render)
-		}
-		// The classic loop does not track damage, so a static courtroom re-renders at the idle rate; off opts out.
-		if idleB, idleOff := rateBudget(a.d.Prefs.Load().IdleFPS()); !idleOff && idleB > 0 {
-			if time.Since(a.lastFrameDrawn) >= idleB {
-				return false
-			}
-		}
+	// The loop parks on NextWakeDelay, whose idle tick is the periodic render.
+	if !a.screenSkippable() {
+		return false
 	}
 	if a.wantsFullRate() || a.roomBusy() || a.warnActive() || a.fontWorkPending() {
 		return false
@@ -910,21 +875,8 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 		// switch has no one left to close it, and a state check would hold the event-driven loop at the cap forever.
 		return false
 	}
-	if exp {
-		if a.RenderNeeded() {
-			return false // pending damage: packets landed / textures moved / a caret flip is showing
-		}
-	} else {
-		if a.ctx != nil {
-			// Check that the blink is stale, not that a field is focused: the IC input is usually focused, which would
-			// render every pass. The skip nap re-polls well inside a blink period, so the caret still flips on time.
-			if on, focused := a.ctx.CaretVisible(); focused && on != a.drawnCaretOn {
-				return false // the focused caret's blink phase flipped — draw it
-			}
-		}
-		if a.timerActive() || a.serverTimersLive() {
-			return false // countdown readouts change every second
-		}
+	if a.RenderNeeded() {
+		return false // pending damage: packets landed / textures moved / a caret flip is showing
 	}
 	if a.d.Viewport != nil && a.room != nil {
 		if _, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
@@ -935,9 +887,9 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 	return true
 }
 
-// expScreenSkippable reports whether the current screen may skip in the experimental loop; others always render.
+// screenSkippable reports whether the current screen may skip; others always render.
 // Settings' moving parts still force frames through SkipFrame's later checks; its T2 cache-stat line refreshes at idle.
-func (a *App) expScreenSkippable() bool {
+func (a *App) screenSkippable() bool {
 	switch a.screen {
 	case ScreenCourtroom, ScreenCharSelect:
 		return a.sess != nil

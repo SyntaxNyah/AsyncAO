@@ -1331,17 +1331,6 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 
 	})
 
-	// default-ON *bool — explicit false must survive
-	p.Update(func(
-		sn *Settings) {
-
-		sn.
-			EventDrivenLoop =
-
-			false
-
-	})
-
 	// default-ON *bool — the experimental-loop kill switch must stick
 	p.Update(func(
 		sn *Settings) {
@@ -1446,9 +1435,6 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if q.Load().ShowFriendButton {
 		t.Error("ShowFriendButton=false lost (absent-default ON must not clobber explicit false)")
-	}
-	if q.Load().EventDrivenLoop {
-		t.Error("EventDrivenLoop=false lost (absent-default ON must not clobber the explicit kill switch)")
 	}
 	if !q.Load().DisableFrameLimiter {
 		t.Error("DisableFrameLimiter=true lost across reload")
@@ -1820,16 +1806,6 @@ func TestResetPowerUser(t *testing.T) {
 		sn *Settings) {
 
 		sn.
-			EventDrivenLoop =
-
-			false
-
-	})
-
-	p.Update(func(
-		sn *Settings) {
-
-		sn.
 			DisableFrameLimiter =
 
 			true
@@ -1909,9 +1885,6 @@ func TestResetPowerUser(t *testing.T) {
 	}
 	if p.Load().FPSCap() != FPSCapDefault || p.Load().IdleFPS() != IdleFPSDefault || p.Load().UnfocusedFPS() != UnfocusedFPSDefault {
 		t.Error("nuke must reset the frame-pacing rates to their defaults")
-	}
-	if !p.Load().EventDrivenLoop {
-		t.Error("nuke must restore the experimental event-driven loop to its default ON")
 	}
 	if p.Load().DisableFrameLimiter {
 		t.Error("nuke must restore the frame-limiter bypass to its default OFF")

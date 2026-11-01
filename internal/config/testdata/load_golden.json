@@ -615,7 +615,6 @@
       "emoteHoverNames": true,
       "emoteHoverNamesMs": 500,
       "errorSpritePath": "v723",
-      "eventDrivenLoop": true,
       "export": {
         "fps": 6,
         "heightPx": 240,

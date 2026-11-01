@@ -25,18 +25,18 @@ func TestSkipFrameExpExtendsToMenus(t *testing.T) {
 	a := expApp(t)
 
 	if !a.SkipFrame(true, false) {
-		t.Error("exp: a static lobby must skip")
+		t.Error("a static lobby must skip")
 	}
 	a.lobbyFetching = true
 	if a.SkipFrame(true, false) {
-		t.Error("exp: a lobby refresh in flight must keep rendering (spinner + row repaints)")
+		t.Error("a lobby refresh in flight must keep rendering (spinner + row repaints)")
 	}
 	a.lobbyFetching = false
 
 	// Settings now skips when static (the user's ask: a still screen must not redraw).
 	a.screen = ScreenSettings
 	if !a.SkipFrame(true, false) {
-		t.Error("exp: a static Settings screen must skip")
+		t.Error("a static Settings screen must skip")
 	}
 	// …but a live surface on Settings still forces frames through the later
 	// gates (the mic-test meter, streaming damage, or a DRAWN animated preview
@@ -46,35 +46,19 @@ func TestSkipFrameExpExtendsToMenus(t *testing.T) {
 	// cap until restart (the stuck-at-active-cap report).
 	a.previewBase = "srv/characters/witch/(a)normal"
 	if !a.SkipFrame(true, false) {
-		t.Error("exp: a bare previewBase (no drawn box) must skip — the orphan cap latch")
+		t.Error("a bare previewBase (no drawn box) must skip — the orphan cap latch")
 	}
 	a.drawnAnimChrome = true // what an actually-DRAWN animated preview reports
 	if a.SkipFrame(true, false) {
-		t.Error("exp: a drawn animated preview must keep rendering (census)")
+		t.Error("a drawn animated preview must keep rendering (census)")
 	}
 	a.drawnAnimChrome = false
 	a.previewBase = ""
 	a.screen = ScreenAbout
 	if !a.SkipFrame(true, false) {
-		t.Error("exp: a static About screen must skip")
+		t.Error("a static About screen must skip")
 	}
 
-	// Kill switch: classic mode never skips outside the courtroom.
-	a.screen = ScreenLobby
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			EventDrivenLoop =
-
-			false
-
-	})
-
-	if a.SkipFrame(true, false) {
-		t.Error("classic: the lobby must keep its idle render")
-	}
 }
 
 // TestSkipFrameCaretScheduled pins the caret conversion: in BOTH loop modes a
@@ -91,37 +75,17 @@ func TestSkipFrameCaretScheduled(t *testing.T) {
 	a.drawnCaretOn = true
 
 	if !a.SkipFrame(true, false) {
-		t.Error("exp: a focused field with an un-flipped caret must skip (the flip wake is scheduled)")
+		t.Error("a focused field with an un-flipped caret must skip (the flip wake is scheduled)")
 	}
 	a.ctx.caretOn = false // BeginFrame flipped it: the drawn frame is stale now
 	if a.SkipFrame(true, false) {
-		t.Error("exp: a pending caret flip must render")
+		t.Error("a pending caret flip must render")
 	}
 	if !a.RenderNeeded() {
 		t.Error("a caret flip is redraw-worthy damage")
 	}
 
 	a.ctx.caretOn = true // matches drawn again
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			EventDrivenLoop =
-
-			false
-
-	})
-
-	a.room = &courtroom.Courtroom{}
-	a.sess = &courtroom.Session{}
-	if !a.SkipFrame(true, false) {
-		t.Error("classic: a focused field with an un-flipped caret must skip (the blanket refusal was the render spin)")
-	}
-	a.ctx.caretOn = false // the blink flipped since the drawn frame
-	if a.SkipFrame(true, false) {
-		t.Error("classic: a stale caret flip must render")
-	}
 }
 
 // TestSkipFrameDamageRefuses pins the damage sources: drained packets
@@ -133,7 +97,7 @@ func TestSkipFrameDamageRefuses(t *testing.T) {
 	}
 	a.uiDirty = true
 	if a.SkipFrame(true, false) {
-		t.Error("exp: pending packet damage must render")
+		t.Error("pending packet damage must render")
 	}
 	if !a.RenderNeeded() {
 		t.Error("uiDirty is redraw-worthy damage")
@@ -145,49 +109,35 @@ func TestSkipFrameDamageRefuses(t *testing.T) {
 // animated chrome — which is also how a DRAWN animated sprite preview holds
 // frames now; the bare previewBase state must not (the orphan cap latch).
 func TestSkipFrameSharedRefusals(t *testing.T) {
-	for _, exp := range []bool{true, false} {
-		a := expApp(t)
-		a.d.Prefs.Update(func(
-			sn *config.
-				Settings) {
+	a := expApp(t)
+	a.room = &courtroom.Courtroom{}
+	a.sess = &courtroom.Session{}
 
-			sn.
-				EventDrivenLoop =
-
-				exp
-
-		})
-
-		a.room = &courtroom.Courtroom{}
-		a.sess = &courtroom.Session{}
-
-		if a.SkipFrame(true, true) {
-			t.Errorf("exp=%v: input this pass must render", exp)
-		}
-		if !a.SkipFrame(true, false) {
-			t.Fatalf("exp=%v: precondition — static courtroom should skip", exp)
-		}
-		// A bare previewBase must NOT hold frames in either mode: an orphaned
-		// preview (screen switched under it) has no draw tail left to close it,
-		// and keying the skip on the state latched the pace at the active cap.
-		a.previewBase = "srv/characters/witch/(a)normal"
-		if !a.SkipFrame(true, false) {
-			t.Errorf("exp=%v: a bare previewBase (no drawn box) must skip — the orphan cap latch", exp)
-		}
-		a.previewBase = ""
-		a.drawnAnimChrome = true
-		if a.SkipFrame(true, false) {
-			t.Errorf("exp=%v: animated chrome on screen (theme art, splash, badge, a DRAWN animated preview) must keep frames coming", exp)
-		}
-		a.drawnAnimChrome = false
+	if a.SkipFrame(true, true) {
+		t.Errorf("input this pass must render")
 	}
+	if !a.SkipFrame(true, false) {
+		t.Fatalf("precondition — static courtroom should skip")
+	}
+	// A bare previewBase must NOT hold frames in either mode: an orphaned
+	// preview (screen switched under it) has no draw tail left to close it,
+	// and keying the skip on the state latched the pace at the active cap.
+	a.previewBase = "srv/characters/witch/(a)normal"
+	if !a.SkipFrame(true, false) {
+		t.Errorf("a bare previewBase (no drawn box) must skip — the orphan cap latch")
+	}
+	a.previewBase = ""
+	a.drawnAnimChrome = true
+	if a.SkipFrame(true, false) {
+		t.Errorf("animated chrome on screen (theme art, splash, badge, a DRAWN animated preview) must keep frames coming")
+	}
+	a.drawnAnimChrome = false
 }
 
 // TestSkipFrameIdleCadence pins the heartbeat rework: the fixed 500 ms heartbeat
-// is gone. Under the event-driven loop a static courtroom SKIPS however stale it
+// is gone. A static courtroom SKIPS however stale it
 // gets — NextWakeDelay's idle-rate wake redraws it (or nothing does at idle=off);
-// the park owns the cadence, not SkipFrame. The classic loop re-renders once per
-// idle budget instead, and idle=off makes it skip indefinitely too.
+// the park owns the cadence, not SkipFrame.
 func TestSkipFrameIdleCadence(t *testing.T) {
 	a := expApp(t)
 	a.room = &courtroom.Courtroom{}
@@ -196,58 +146,7 @@ func TestSkipFrameIdleCadence(t *testing.T) {
 	// Event-driven: however stale, a static courtroom keeps skipping.
 	a.lastFrameDrawn = time.Now().Add(-time.Hour)
 	if !a.SkipFrame(true, false) {
-		t.Error("exp: a stale static courtroom still skips (NextWakeDelay owns the idle re-render, not a heartbeat)")
-	}
-
-	// Classic, idle rate on: past one idle budget it re-renders.
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			EventDrivenLoop =
-
-			false
-
-	})
-
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			IdleFPSVal =
-
-			4
-
-	})
-
-	// 250 ms budget
-	a.lastFrameDrawn = time.Now()
-	if !a.SkipFrame(true, false) {
-		t.Error("classic: a just-drawn static courtroom skips within the idle budget")
-	}
-	a.lastFrameDrawn = time.Now().Add(-time.Second) // well past 250 ms
-	if a.SkipFrame(true, false) {
-		t.Error("classic: past the idle budget the static courtroom re-renders")
-	}
-
-	// Classic, idle=off: it skips indefinitely (leans on caret/timer/input).
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			IdleFPSVal =
-
-			config.
-				FPSOff
-
-	})
-
-	a.lastFrameDrawn = time.Now().Add(-time.Hour)
-	if !a.SkipFrame(true, false) {
-		t.Error("classic idle=off: no heartbeat — a static courtroom skips indefinitely")
+		t.Error("a stale static courtroom still skips (NextWakeDelay owns the idle re-render, not a heartbeat)")
 	}
 }
 

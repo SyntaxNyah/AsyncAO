@@ -265,23 +265,6 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y += 6
 	y = a.settingsDesc(pad, y, "\"Animating\" = messages typing or queued, shouts/preanims, shakes/flashes, replays, the Scene Maker, exports, reactions, toasts, the pinned second courtroom, the F3 graph, and any always-moving effect you enable. Sprite loops and theme art run at their own ≤15 fps timings, so the idle default never visibly slows them; raise it if something looks choppy while idle.", ColTextDim)
 	y += 10
-	edl := a.d.Prefs.Load().EventDrivenLoop
-	if next := c.Checkbox(pad, y, "Event-driven renderer (EXPERIMENTAL, default ON on this test build)", edl); next != edl {
-		a.d.Prefs.Update(func(
-			sn *config.
-				Settings) {
-
-			sn.
-				EventDrivenLoop =
-
-				next
-
-		})
-
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "Static screens stop redrawing entirely: input wakes the renderer instantly, incoming messages and finished loads push their own wake, and a blinking caret or ticking clock redraws one frame exactly when it's due. Sounds and the connection never slow down — only wasted redraws go. Applies live. If anything looks frozen or choppy, turn this off (the classic pacing loop) and report what it was.", ColTextDim)
-	y += 10
 	mrp := a.d.Prefs.Load().MotionRedrawPerEvent
 	if next := c.Checkbox(pad, y, "Redraw once per mouse-move event (less power on cursor motion)", mrp); next != mrp {
 		a.d.Prefs.Update(func(

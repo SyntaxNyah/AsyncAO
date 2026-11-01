@@ -258,18 +258,18 @@ func TestEditorUndoChordReachesTheEditorThroughAFrameWithNoRoom(t *testing.T) {
 }
 
 // TestEditorScreenIsFrameRateSkippable pins the arm whose absence is invisible: an
-// unwired expScreenSkippable burns full CPU on a still screen forever, and the
+// unwired screenSkippable burns full CPU on a still screen forever, and the
 // tempting join (onto the courtroom pair) would make the editor non-skippable in
 // exactly the Settings-with-no-server case it is most often opened in.
 func TestEditorScreenIsFrameRateSkippable(t *testing.T) {
 	a := &App{screen: ScreenThemeEditor}
-	if !a.expScreenSkippable() {
+	if !a.screenSkippable() {
 		t.Fatal("ScreenThemeEditor is not frame-rate skippable — it would render at full rate forever, " +
 			"with a still theme on screen and nothing to explain why the fans are on")
 	}
 	// …and with no session, which is the case the courtroom pair would have failed.
 	a.sess = nil
-	if !a.expScreenSkippable() {
+	if !a.screenSkippable() {
 		t.Fatal("the editor stopped being skippable with no session — that is the Settings entry point, " +
 			"i.e. the common case")
 	}

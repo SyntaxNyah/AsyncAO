@@ -353,7 +353,7 @@ func stageCountingFetcher(t *testing.T, a *App) *countingFetcher {
 
 // TestEditorPreviewRidesAndReleasesThePacingCensus pins requirement 5, both
 // halves. While the demo animates it must mark the anim-chrome census every frame
-// (the editor's screen is skippable — expScreenSkippable returns true for it — so
+// (the editor's screen is skippable — screenSkippable returns true for it — so
 // without the census the crawl would run at the idle rate). And leaving must stop
 // marking it, or the client burns the active cap forever on a still editor.
 func TestEditorPreviewRidesAndReleasesThePacingCensus(t *testing.T) {

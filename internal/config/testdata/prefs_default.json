@@ -146,7 +146,6 @@
   "volStripOn": false,
   "spriteLoadMode": 3,
   "shoutBypassQueue": true,
-  "eventDrivenLoop": true,
   "motionRedrawPerEvent": true,
   "musicFlags": 2,
   "openTabs": null,

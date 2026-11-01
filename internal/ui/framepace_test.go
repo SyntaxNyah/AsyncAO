@@ -12,9 +12,8 @@ import (
 )
 
 // TestFramePace pins the adaptive frame pacing (the GPU-burn fix): any recent
-// input or live animation = the full cap, unfocused = the trickle, and the idle
-// tier splits by loop mode. The classic loop naps at the idle rate; the event-
-// driven loop paces a rendered-but-idle frame at the ACTIVE cap — a truly idle
+// input or live animation = the full cap, unfocused = the trickle, and the loop
+// paces a rendered-but-idle frame at the ACTIVE cap — a truly idle
 // screen SKIPS and parks (NextWakeDelay owns the idle cadence there), so a
 // FramePace-idle frame is a lone damage frame that must return to parking fast,
 // not sleep out a whole idle period. Interaction ALWAYS restores the cap.
@@ -51,31 +50,6 @@ func TestFramePace(t *testing.T) {
 	if got := a.FramePace(true); got != budget(60) {
 		t.Fatalf("event-driven idle pace = %v, want the active cap %v (parking owns idle)", got, budget(60))
 	}
-	// Classic loop: the idle tier naps at the idle rate.
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			EventDrivenLoop =
-
-			false
-
-	})
-	if got := a.FramePace(true); got != budget(2) {
-		t.Fatalf("classic idle pace = %v, want the idle rate %v", got, budget(2))
-	}
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			EventDrivenLoop =
-
-			true
-
-	})
-
 	// Unfocused beats everything else (both modes).
 	if got := a.FramePace(false); got != budget(10) {
 		t.Errorf("unfocused pace = %v, want the 10 fps default budget", got)
@@ -116,31 +90,6 @@ func TestFramePace(t *testing.T) {
 			IdleFPSVal =
 
 			15
-
-	})
-
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			EventDrivenLoop =
-
-			false
-
-	})
-
-	if got := a.FramePace(true); got != budget(15) {
-		t.Errorf("custom classic idle pace = %v, want 15 fps", got)
-	}
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			EventDrivenLoop =
-
-			true
 
 	})
 
@@ -510,8 +459,7 @@ func TestFramePaceUnlimited(t *testing.T) {
 	// words): the tier resolves THROUGH the cap, so a finite cap keeps ruling —
 	// the old raw-0 return was indistinguishable from uncapped and, with the ∞
 	// default cap, left an idle render loop with a zero-sleep budget (the
-	// idle-CPU-burn class). Tested on the classic loop, where the tier is
-	// observable.
+	// idle-CPU-burn class).
 	a.d.Prefs.Update(func(
 		sn *config.
 			Settings) {
@@ -532,17 +480,6 @@ func TestFramePaceUnlimited(t *testing.T) {
 
 			config.
 				FPSUnlimited
-
-	})
-
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			EventDrivenLoop =
-
-			false
 
 	})
 
@@ -577,16 +514,6 @@ func TestFramePaceUnlimited(t *testing.T) {
 
 	})
 
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			EventDrivenLoop =
-
-			true
-
-	})
 	{
 		pv3 :=
 
@@ -633,17 +560,6 @@ func TestFramePaceIdleOff(t *testing.T) {
 	if got := a.FramePace(true); got != paceBudget(60) {
 		t.Errorf("event-driven idle=off pace = %v, want the active cap (rendered idle frame ≠ 0 fps)", got)
 	}
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			EventDrivenLoop =
-
-			false
-
-	})
-
 	if got := a.FramePace(true); got != paceBudget(60) {
 		t.Errorf("classic idle=off pace = %v, want the active cap", got)
 	}
@@ -683,17 +599,6 @@ func TestFramePaceAnimatedChrome(t *testing.T) {
 	if got := a.FramePace(true); got != paceBudget(60) {
 		t.Errorf("event-driven animated chrome = %v, want the active cap (not the idle rate)", got)
 	}
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			EventDrivenLoop =
-
-			false
-
-	})
-
 	if got := a.FramePace(true); got != paceBudget(60) {
 		t.Errorf("classic animated chrome = %v, want the active cap (not the idle rate)", got)
 	}
@@ -704,17 +609,6 @@ func TestFramePaceAnimatedChrome(t *testing.T) {
 	// budget would disable pacing entirely (vsync is not a reliable throttle —
 	// the idle-CPU-burn class). Input still returns the true uncapped full rate
 	// through wantsFullRate, so responsiveness is untouched.
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			EventDrivenLoop =
-
-			true
-
-	})
-
 	a.d.Prefs.Update(func(
 		sn *config.
 			Settings) {
@@ -758,56 +652,8 @@ func TestWantsFullRateStateGated(t *testing.T) {
 	}
 }
 
-// TestSkipFrameClassicCaret pins the classic loop's caret refusal as
-// state-gated: a merely-FOCUSED field must not force a render every pass —
-// the IC input is habitually focused in the courtroom, and the blanket focus
-// refusal kept the classic loop rendering every pass forever (with the ∞
-// default cap, a zero-sleep spin). Only a blink phase that actually FLIPPED
-// since the last drawn frame refuses the skip.
-func TestSkipFrameClassicCaret(t *testing.T) {
-	a := testTabApp(t)
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			EventDrivenLoop =
-
-			false
-
-	})
-
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			IdleFPSVal =
-
-			config.
-				FPSOff
-
-	})
-
-	// no classic idle heartbeat in this test
-	a.room = &courtroom.Courtroom{}
-	a.sess = &courtroom.Session{}
-	a.lastInputAt, a.lastMotionAt = time.Time{}, time.Time{}
-	a.ctx.focusID = "ic-input"
-	a.ctx.caretOn = true
-	a.drawnCaretOn = true // the blink state already on screen
-	if !a.SkipFrame(true, false) {
-		t.Fatal("a focused-but-unflipped caret must skip (the blanket focus refusal was the classic render spin)")
-	}
-	a.ctx.caretOn = false // the blink flipped since the last drawn frame
-	if a.SkipFrame(true, false) {
-		t.Fatal("a stale caret flip must refuse the skip and draw")
-	}
-}
-
-// TestMotionGrace pins the pointer-motion split (experimental loop): bare
-// motion holds full rate only through the short motion grace, while the
-// classic loop keeps treating motion as plain input.
+// TestMotionGrace pins the pointer-motion split: bare motion holds full rate
+// only through the short motion grace.
 func TestMotionGrace(t *testing.T) {
 	a := testTabApp(t)
 
@@ -837,23 +683,6 @@ func TestMotionGrace(t *testing.T) {
 	a.lastMotionAt = time.Now().Add(-2 * motionInputGrace)
 	if a.wantsFullRate() {
 		t.Error("a stopped pointer must release full rate after the short motion grace")
-	}
-
-	// Classic loop: motion is plain input (byte-identical pacing to before).
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			EventDrivenLoop =
-
-			false
-
-	})
-
-	a.NoteMotion()
-	if time.Since(a.lastInputAt) > time.Second {
-		t.Error("classic mode: NoteMotion must stamp the full input grace")
 	}
 }
 

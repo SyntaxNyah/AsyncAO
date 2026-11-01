@@ -166,7 +166,6 @@ type Settings struct {
 	IdleFPSVal                   int                          `json:"idleFps,omitempty"`
 	UnfocusedFPSVal              int                          `json:"unfocusedFps,omitempty"`
 	InputGraceFramesVal          int                          `json:"inputGraceFrames,omitempty"`
-	EventDrivenLoop              bool                         `json:"eventDrivenLoop"`
 	DisableFrameLimiter          bool                         `json:"disableFrameLimiter,omitempty"`
 	MotionRedrawPerEvent         bool                         `json:"motionRedrawPerEvent"`
 	SpriteDownscalePctVal        int                          `json:"spriteDownscalePct,omitempty"`

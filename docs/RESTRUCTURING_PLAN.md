@@ -79,12 +79,13 @@ in **Status**. Update Status in the same commit that completes a step.
       in order. `Scene` and the message state machine stay on the game thread
   - [x] baseline benchmarks: `internal/courtroom/bench_test.go`, `internal/ui/framebench_test.go`, recorded in
         `docs/BENCHMARKS.md`
+  - [x] one loop mode: the classic loop and its setting are gone (decided 2026-11-01)
   - [ ] writer goroutine for `Conn.Send`, which proves the worker shape (one shape for background jobs, replacing the
         separate goroutine, channel and poll of each `ui` job)
-  - [ ] dial off the main thread (#115)
-  - [ ] one loop mode: remove the classic loop, pending the maintainer's decision
-  - [ ] `FrameScheduler` beside the existing loop, then producers move to it and `SkipFrame` goes last
   - [ ] off-thread texture preparation (decided 2026-11-01): spike, then asset uploads, then prerendered variants. See below
+  - [ ] find why a sprite sometimes shows its old animation for a frame before the right one (reported 2026-11-01)
+  - [ ] dial off the main thread (#115)
+  - [ ] `FrameScheduler` beside the existing loop, then producers move to it and `SkipFrame` goes last
   - [ ] blips on the audio clock
   - [ ] extract chat extras: marker decoding (duplicated in `begin` and `beginCaughtUp`) and per-player memory
   - Off-thread rendering is allowed by hard rule 1 and wanted, so textures are ready before a streamed asset first draws.

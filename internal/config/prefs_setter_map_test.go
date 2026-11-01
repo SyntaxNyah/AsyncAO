@@ -65,7 +65,6 @@ var setterFieldMap = map[string]setterField{
 	"SetEmoteGridGap":          {field: "EmoteGridGapPx"},
 	"SetEmoteHoverNames":       {field: "EmoteHoverNamesOn"},
 	"SetEmoteHoverNamesMs":     {field: "EmoteHoverNamesMs"},
-	"SetEventDrivenLoop":       {field: "EventDrivenLoop"},
 	"SetFavEmoteBox":           {field: "FavEmoteBox"},
 	"SetFollowEnabled":         {field: "FollowEnabled"},
 	"SetFontCensus":            {field: "FontCensus"},

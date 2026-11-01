@@ -264,9 +264,6 @@ const defaultAutoReconnect = false
 // defaultClipSpritesToStage stops a large pair or reposition offset spilling a sprite over the chatbox or log.
 const defaultClipSpritesToStage = true
 
-// defaultEventDrivenLoop stops rendering static screens between real signals; off restores the pacing loop.
-const defaultEventDrivenLoop = true
-
 // defaultMotionRedrawPerEvent renders one frame per pointer event instead of holding full rate, saving GPU.
 const defaultMotionRedrawPerEvent = true
 
@@ -848,7 +845,6 @@ func defaultSettings() *Settings {
 		EmoteButtonImages:    defaultEmoteButtonImages,
 		ShowFriendButton:     defaultShowFriendButton,
 		ClipSpritesToStage:   defaultClipSpritesToStage,
-		EventDrivenLoop:      defaultEventDrivenLoop,
 		AutoClipModcall:      defaultAutoClipModcall,
 		GroupChatButton:      defaultGroupChatButton,
 		CharChatbox:          defaultCharChatbox,
@@ -2870,7 +2866,6 @@ func (p *AssetPreferences) ResetPowerUser() {
 		s.IdleFPSVal = 0
 		s.UnfocusedFPSVal = 0
 		s.InputGraceFramesVal = 0
-		s.EventDrivenLoop = defaultEventDrivenLoop
 		s.DisableFrameLimiter = false                        // #5 bypass resets OFF
 		s.MotionRedrawPerEvent = defaultMotionRedrawPerEvent // per-event motion redraw resets to its default (ON)
 		s.ClipSpritesToStage = defaultClipSpritesToStage

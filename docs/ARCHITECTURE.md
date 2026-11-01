@@ -82,7 +82,7 @@ UNINTERRUPTIBLY (so an input flood — mouse motion streams an event every few m
 can never bust the cap), then any surplus INTERRUPTIBLY (input during a slow idle
 tier renders within one ceiling instead of waiting the whole budget out).
 
-With the **event-driven loop** (`EventDrivenLoopOn`, default ON) a static screen
+With the **event-driven loop** a static screen
 (`SkipFrame` true: no input, nothing animating, nobody talking) renders nothing and
 parks on `sdl.WaitEventTimeout`. It wakes on real input, on the cross-thread
 `PushWake` doorbell (a user event pushed by the WS read loop / decode delivery — the

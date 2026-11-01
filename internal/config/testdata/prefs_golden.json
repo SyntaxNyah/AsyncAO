@@ -295,7 +295,6 @@
   "idleFps": 1,
   "unfocusedFps": 2,
   "inputGraceFrames": 1,
-  "eventDrivenLoop": true,
   "disableFrameLimiter": true,
   "motionRedrawPerEvent": true,
   "spriteDownscalePct": 50,
