@@ -11,8 +11,7 @@ ships only the binary, not the library closure. Apple Silicon only.
 
    xattr -dr com.apple.quarantine .
 
-3. Make the binary runnable (the extracted file is named asyncao-macos-arm64, or
-   asyncao-macos-nodiscord-arm64 for the Discord-free edition):
+3. Make the binary runnable (the extracted file is named asyncao-macos-arm64):
 
    chmod +x ./asyncao-macos-*arm64
 

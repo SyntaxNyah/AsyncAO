@@ -12,8 +12,7 @@ this can work without the command.
 
 IF YOU'RE A MASOCHIST
 
-2. Make the binary runnable (the extracted file is named asyncao-macos-arm64, or
-   asyncao-macos-nodiscord-arm64 for the Discord-free edition):
+2. Make the binary runnable (the extracted file is named asyncao-macos-arm64):
 
    chmod +x ./asyncao-macos-*arm64
 

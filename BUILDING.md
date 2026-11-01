@@ -104,11 +104,9 @@ sudo apt-get install -y patchelf desktop-file-utils   # AppImage tooling
 The script builds the release binary, downloads `linuxdeploy` (cached under
 `/.deps/`), bundles the binary's shared-library dependencies, and packs them
 with the Mayo icon and `packaging/linux/asyncao.desktop`. The result runs on any
-reasonably modern x86_64 desktop with no install step. CI builds the same
-AppImage on every push in two flavors (Actions → latest run):
-`asyncao-linux-x86_64-AppImage` (default) and
-`asyncao-linux-x86_64-AppImage-nodiscord` (the lean build: Discord **and** voice
-chat compiled out, `-tags "nodiscord novoice"`). To build the lean one locally:
+reasonably modern x86_64 desktop with no install step. CI packages the same
+AppImage on every ready PR and release. To build one with Discord **and** voice
+chat compiled out:
 `go build -tags "nodiscord novoice" -o asyncao ./cmd/asyncao && APPIMAGE_OUTPUT=AsyncAO-nodiscord-x86_64.AppImage ./scripts/build-appimage.sh ./asyncao`.
 
 ## macOS
@@ -246,10 +244,8 @@ fetched, or vendored.
   "remove Discord").
 - **`-tags nodiscord`**: even that code compiles out; the package becomes
   a no-op stub with the same API. Use this if your distro policy wants
-  zero proprietary-service integration in the binary. CI builds every
-  platform in both flavors, so you can also just download the prebuilt
-  `asyncao-<platform>-nodiscord` artifact (Actions → latest run) — which is
-  also **voice-free** (built `-tags "nodiscord novoice"`; see *Voice chat* below).
+  zero proprietary-service integration in the binary. No prebuilt download
+  exists: build it yourself.
 - To get the AsyncAO icon on profiles, create a Discord application named
   "AsyncAO" in the developer portal, upload the icon under the asset key
   `appicon`, and paste the application ID into Settings → Discord.
@@ -269,10 +265,7 @@ plus the Opus codec in `internal/voice` — is off unless a server advertises it
   uses `libopusfile`/`libopus` independently of the voice binding, so `.opus`
   tracks still decode in a `novoice` build (those DLLs ship for SDL3_mixer either
   way — the voice binding was never what carried them).
-- The **prebuilt Discord-free downloads are also voice-free**: every
-  `asyncao-<platform>-nodiscord` artifact is built `-tags "nodiscord novoice"`,
-  so the "no Discord" build is the lean build with neither Discord nor voice.
-  Build it locally with `go build -tags "nodiscord novoice" ./cmd/asyncao`.
+- For neither Discord nor voice, build with `go build -tags "nodiscord novoice" ./cmd/asyncao`.
 
 ## Tests & benchmarks
 

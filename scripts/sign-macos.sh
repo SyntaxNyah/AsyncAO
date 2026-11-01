@@ -2,10 +2,9 @@
 # Developer ID codesign and notarize. Skips with no certificate, because
 # bundle-macos.sh already ad-hoc signed everything; fails if a certificate exists
 # and signing breaks. See docs/CODE-SIGNING.md for the secrets.
-# Usage: scripts/sign-macos.sh <variant-suffix>
 set -euo pipefail
 
-BINARY="asyncao-macos${1:-}-arm64"
+BINARY=asyncao-macos-arm64
 BARE="dist/assets/$BINARY"
 STAGE=dist/stage
 

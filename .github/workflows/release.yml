@@ -53,21 +53,16 @@ jobs:
     uses: ./.github/workflows/build.yml
     with:
       version: ${{ needs.resolve.outputs.version }}
-      variants: '["default", "nodiscord"]'
       sign: true
     secrets: inherit
 
   # Optional: a failure here leaves the Flatpak out and blocks nothing.
   build-flatpak:
-    name: Flatpak (${{ matrix.variant }})
+    name: Flatpak
     needs: [resolve, checks]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     continue-on-error: true
-    strategy:
-      fail-fast: false
-      matrix:
-        variant: [default, nodiscord]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install flatpak
@@ -78,11 +73,10 @@ jobs:
       - name: Build
         env:
           ASYNCAO_VERSION: ${{ needs.resolve.outputs.version }}
-          VARIANT: ${{ matrix.variant }}
-        run: bash scripts/build-flatpak.sh "$VARIANT"
+        run: bash scripts/build-flatpak.sh
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: release-flatpak-${{ matrix.variant }}
+          name: release-flatpak
           path: dist/*.flatpak
           if-no-files-found: error
 

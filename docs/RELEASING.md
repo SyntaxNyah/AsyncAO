@@ -11,7 +11,7 @@ Contributor CI and releases are separate pipelines that share only `checks.yml` 
 | Commit on a PR that is ready for review, manual CI run | gofmt, vet, staticcheck, golangci-lint, race tests on all three OSes, lean-build tests, benchmark alloc gates, packaging and a smoke test on all three OSes. |
 | Merge or push to `main` | Nothing, unless it releases (below). |
 | Only docs changed (`docs/`, root `*.md`, `LICENSE`) | Nothing. |
-| A release starts (below) | All the checks again, then packaging of every variant, then publishing. |
+| A release starts (below) | All the checks again, then packaging, then publishing. |
 
 `ci-ok` summarises contributor CI. It is the status to require on PRs, and it
 keeps working when the jobs behind it change. Requiring it takes repo admin
@@ -38,7 +38,7 @@ the same pipeline:
 - **Press the button:** Actions, Release, Run workflow, or
   `gh workflow run release.yml -f version=vX.Y.Z`. Use this for prereleases and retries.
 
-The pipeline runs the checks, builds and signs every platform and variant, checks
+The pipeline runs the checks, builds and signs every platform, checks
 the assets against the manifest, uploads them to a draft and publishes it.
 Publishing creates the tag, if a pushed tag didn't already.
 
@@ -55,14 +55,14 @@ together may never have run, and a direct push to `main` never ran at all.
 
 - **A published version is never replaced.** Fix forward with a new patch version.
 - **Retrying:** re-run the failed jobs, or run the workflow again. A failed run leaves at most a draft, which the next attempt replaces.
-- **Every platform must build.** Only the Flatpaks are optional.
+- **Every platform must build.** Only the Flatpak is optional.
 - **Signing** is skipped without certificates, and fails the release if a certificate exists and signing breaks. See `docs/CODE-SIGNING.md`.
 - **Who can release:** anyone with write access.
 
 ## Asset names
 
 The self-updater picks one asset by name, `update.SelfUpdateAssetMatch`, and must
-never match a variant: `macos-bundle-arm64` deliberately does not contain the
+never match the wrong file: `macos-bundle-arm64` deliberately does not contain the
 `macos-arm64` of the bare binary, and neither does the Homebrew tarball. A test in
 `internal/update` checks the matcher against the manifest, so renaming an asset
 means changing both.

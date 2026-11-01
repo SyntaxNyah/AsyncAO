@@ -2,7 +2,7 @@
 # The one build path for CI, releases and local packaging. The platform comes
 # from the machine this runs on; Windows runs it in an MSYS2 UCRT64 shell.
 #
-# Usage: scripts/package.sh build|pack|smoke <default|nodiscord> [version]
+# Usage: scripts/package.sh build|pack|smoke [version]
 #   build  compile and collect runtime libraries into dist/stage; signing runs after this
 #   pack   write the release assets to dist/assets
 #   smoke  unpack the shipped asset and run it with -version
@@ -12,23 +12,13 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-COMMAND="${1:?usage: package.sh build|pack|smoke <default|nodiscord> [version]}"
-VARIANT="${2:?variant required: default or nodiscord}"
-VERSION="${3:-dev}"
+COMMAND="${1:?usage: package.sh build|pack|smoke [version]}"
+VERSION="${2:-dev}"
 
 STAGE=dist/stage
 ASSETS=dist/assets
 SMOKE=dist/smoke
 VERSION_VAR=github.com/SyntaxNyah/AsyncAO/internal/update.Version
-
-case "$VARIANT" in
-default) TAGS="" SUFFIX="" ;;
-nodiscord) TAGS="nodiscord novoice" SUFFIX="-nodiscord" ;;
-*)
-	echo "unknown variant: $VARIANT" >&2
-	exit 2
-	;;
-esac
 
 case "$(uname -s)" in
 MINGW* | MSYS* | CYGWIN*) PLATFORM=windows ;;
@@ -40,10 +30,10 @@ Darwin) PLATFORM=macos ;;
 	;;
 esac
 
-MAC_BINARY="asyncao-macos${SUFFIX}-arm64"
+MAC_BINARY=asyncao-macos-arm64
 
 go_build() { # output extra-ldflags
-	CGO_ENABLED=1 go build -tags "$TAGS" -pgo=auto -trimpath \
+	CGO_ENABLED=1 go build -pgo=auto -trimpath \
 		-ldflags "-s -w -X $VERSION_VAR=$VERSION $2" -o "$1" ./cmd/asyncao
 }
 
@@ -103,7 +93,7 @@ build_macos() {
 }
 
 pack_windows() {
-	local exe="asyncao-windows-x86_64${SUFFIX}.exe" bundle="asyncao-windows-x86_64${SUFFIX}-bundle.zip"
+	local exe=asyncao-windows-x86_64.exe bundle=asyncao-windows-x86_64-bundle.zip
 	cp "$STAGE/asyncao.exe" "$ASSETS/$exe"
 	# The updater needs a flat zip; no stage entry has a subfolder.
 	powershell.exe -NoProfile -NonInteractive -Command \
@@ -111,14 +101,14 @@ pack_windows() {
 }
 
 pack_linux() {
-	local output="AsyncAO-linux-x86_64${SUFFIX}.AppImage"
+	local output=AsyncAO-linux-x86_64.AppImage
 	APPIMAGE_OUTPUT="$output" bash scripts/build-appimage.sh "$STAGE/asyncao"
 	mv -f "dist/$output" "$ASSETS/$output"
 }
 
 pack_macos() {
-	local bundle="asyncao-macos${SUFFIX}-bundle-arm64.tar.gz"
-	local homebrew="asyncao-macos-homebrew${SUFFIX}-arm64.tar.gz"
+	local bundle=asyncao-macos-bundle-arm64.tar.gz
+	local homebrew=asyncao-macos-homebrew-arm64.tar.gz
 	local brew_stage=dist/brew-stage
 	cp packaging/macos/INSTALL-bundle.txt "$STAGE/INSTALL.txt"
 	tar -czf "$ASSETS/$bundle" -C "$STAGE" .
@@ -132,7 +122,7 @@ pack_macos() {
 
 # PATH and LD_LIBRARY_PATH are cleared so only what the asset bundles can satisfy its imports.
 smoke_windows() {
-	local bundle="asyncao-windows-x86_64${SUFFIX}-bundle.zip" name
+	local bundle=asyncao-windows-x86_64-bundle.zip name
 	powershell.exe -NoProfile -NonInteractive -Command \
 		"Expand-Archive -Path '$(cygpath -w "$ASSETS/$bundle")' -DestinationPath '$(cygpath -w "$SMOKE")' -Force"
 	while read -r name; do
@@ -143,12 +133,12 @@ smoke_windows() {
 }
 
 smoke_linux() {
-	local image="$PWD/$ASSETS/AsyncAO-linux-x86_64${SUFFIX}.AppImage"
+	local image="$PWD/$ASSETS/AsyncAO-linux-x86_64.AppImage"
 	check_version "$(env -u LD_LIBRARY_PATH APPIMAGE_EXTRACT_AND_RUN=1 "$image" -version)"
 }
 
 smoke_macos() {
-	tar -xzf "$ASSETS/asyncao-macos${SUFFIX}-bundle-arm64.tar.gz" -C "$SMOKE"
+	tar -xzf "$ASSETS/asyncao-macos-bundle-arm64.tar.gz" -C "$SMOKE"
 	check_version "$("$SMOKE/$MAC_BINARY" -version)"
 }
 
@@ -157,7 +147,7 @@ check_version() {
 		echo "smoke test: binary reports '$1', expected '$VERSION'" >&2
 		exit 1
 	fi
-	echo "smoke test: $PLATFORM $VARIANT reports $VERSION"
+	echo "smoke test: $PLATFORM reports $VERSION"
 }
 
 case "$COMMAND" in

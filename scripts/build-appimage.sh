@@ -13,7 +13,7 @@
 #   scripts/build-appimage.sh path/to/asyncao  # package an already-built binary
 #
 # Env: APPIMAGE_OUTPUT overrides the output filename (default
-# AsyncAO-x86_64.AppImage) — used by CI to name the Discord-free variant.
+# AsyncAO-x86_64.AppImage) — used by scripts/package.sh to name the release asset.
 #
 # Note: codec back-ends SDL3_mixer dlopen()s at runtime are not visible to ldd
 # and so are not bundled. scripts/build-sdl3.sh and the CI setup build the mixer

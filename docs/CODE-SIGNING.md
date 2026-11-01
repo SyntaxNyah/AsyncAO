@@ -79,7 +79,7 @@ the nested dylibs. A folder/bare binary can't be *stapled* (stapling needs an
 `.app`/`.dmg`/`.pkg`), so verification happens online on first run. Packaging a
 `.dmg` for offline stapling is a future step.
 
-Three macOS assets ship per variant: the bundle tarball
+Three macOS assets ship: the bundle tarball
 (`asyncao-macos-bundle-arm64.tar.gz`, binary + bundled `lib/` + `INSTALL.txt`)
 for a no-Homebrew first install, the Homebrew edition tarball
 (`asyncao-macos-homebrew-arm64.tar.gz`, bare binary + `INSTALL.txt`, libraries

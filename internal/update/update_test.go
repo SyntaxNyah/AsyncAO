@@ -154,7 +154,7 @@ func TestCheckNewer(t *testing.T) {
 // macos-arm64 binary on purpose — an adversarial ordering that proves the darwin
 // token "macos-arm64" matches neither "macos-bundle-arm64" nor
 // "macos-homebrew-arm64" — and the .flatpak decoys sit before the AppImage for
-// the same reason. Keep this list in lockstep with packaging/release-assets.txt: it
+// the same reason. packaging/release-assets.txt is the current list; the -nodiscord names stay as decoys because older releases carry them: it
 // is the enumeration gate that catches a future token loosened toward a
 // non-default asset name.
 const ghMultiAssetJSON = `{

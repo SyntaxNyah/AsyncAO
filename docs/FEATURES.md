@@ -2295,7 +2295,5 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   single-file Linux download that **bundles the SDL3 / SDL3_ttf / SDL3_mixer /
   libwebp / libavif runtime** (resolved from the binary by `linuxdeploy`) so it
   runs with no install step — the Linux equivalent of the Windows DLL bundle. CI
-  builds it on every push in **two flavors**, default and **Discord-free**
-  (`-tags nodiscord`), uploaded as `asyncao-linux-x86_64-AppImage` and
-  `…-AppImage-nodiscord`. Build it locally with `scripts/build-appimage.sh`
+  packages it on every ready PR and release. Build it locally with `scripts/build-appimage.sh`
   (see [BUILDING.md](../BUILDING.md)).

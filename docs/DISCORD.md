@@ -88,17 +88,14 @@ version:
   > (`SDL2.dll`, `libwebp`, `libavif`, …) are the rendering/audio engine —
   > **the client needs those to run at all.** Don't delete them expecting
   > to remove Discord; that just breaks the app. To get a binary with the
-  > Discord code gone, use the `-nodiscord` build below instead.
+  > Discord code gone, build with `-tags nodiscord` as below.
 - `go build -tags nodiscord ./cmd/asyncao` compiles the integration out
   **entirely**: `internal/presence` becomes a no-op stub, and the whole
   **Settings → Discord** section is compiled out too (it lives in a
   build-tagged file). So a Discord-free binary carries **no Discord code at
-  all** — not even the settings UI — and is a touch smaller. CI publishes a
-  prebuilt `asyncao-<platform>-nodiscord` artifact for every platform (in the
-  **Actions** tab → latest run → **Artifacts**; downloading needs a free GitHub
-  account), so you don't have to build it yourself. That prebuilt artifact is
-  the **lean build** — it also has **voice chat** compiled out (built `-tags
-  "nodiscord novoice"`); see *Voice chat (never required)* in `BUILDING.md`.
+  all** — not even the settings UI — and is a touch smaller. No prebuilt
+  download exists: build it yourself. See *Voice chat (never required)* in
+  `BUILDING.md` to compile voice out too.
 
 ## Troubleshooting
 
