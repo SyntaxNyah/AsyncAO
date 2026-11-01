@@ -1,6 +1,6 @@
-# Branch pushes only prove the client compiles on every platform. PRs, main and
-# manual runs get every check and a packaged build. Require `ci-ok` on main: it
-# stays the one status whatever the jobs behind it are. See docs/RELEASING.md.
+# Branch pushes only prove the client compiles on every platform. PRs and manual
+# runs get every check and a packaged build; main gets the checks. Require `ci-ok`
+# on main: it stays the one status whatever the jobs behind it are. See docs/RELEASING.md.
 name: CI
 
 on:
@@ -73,9 +73,10 @@ jobs:
     if: needs.scope.outputs.mode == 'full'
     uses: ./.github/workflows/checks.yml
 
+  # Not on a push to main: the PR packaged this code, and a release packages it again before publishing.
   build:
     needs: scope
-    if: needs.scope.outputs.mode == 'full'
+    if: needs.scope.outputs.mode == 'full' && github.event_name != 'push'
     uses: ./.github/workflows/build.yml
 
   ci-ok:

@@ -5,7 +5,8 @@
 | Event | Checks |
 |---|---|
 | Push to a branch | Compile on Windows, Linux and macOS. Run the local checks in `CLAUDE.md` yourself. |
-| PR commit, push to `main`, manual run | gofmt, vet, staticcheck, golangci-lint, race tests on all three OSes, lean-build tests, benchmark alloc gates, packaging and a smoke test on all three OSes. |
+| PR commit, manual run | gofmt, vet, staticcheck, golangci-lint, race tests on all three OSes, lean-build tests, benchmark alloc gates, packaging and a smoke test on all three OSes. |
+| Push to `main` | The same checks, without packaging: the PR already packaged the code, and a release packages it again before publishing. |
 | Only docs changed (`docs/`, root `*.md`, `LICENSE`) | Nothing. |
 
 `ci-ok` summarises all of this. It is the status to require on `main`, and it
