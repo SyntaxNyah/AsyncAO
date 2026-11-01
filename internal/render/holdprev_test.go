@@ -96,6 +96,69 @@ func TestSpriteLoadHoldPrevious(t *testing.T) {
 	}
 }
 
+// TestHoldPreviousYieldsToFirstFrame: once the new sprite's first frame is resident the right character draws,
+// even though the rest of its animation is still decoding.
+func TestHoldPreviousYieldsToFirstFrame(t *testing.T) {
+	const (
+		targetW, targetH = 512, 384
+		centreX, centreY = targetW / 2, targetH / 2
+		fixtureSize      = 64
+		bytesPerPixel    = 4
+		frameDelay       = 50 * time.Millisecond
+		step             = 16 * time.Millisecond
+	)
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStoreBudget(ren, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+	if err := store.Upload("red", decodedFixture()); err != nil {
+		t.Fatal(err)
+	}
+	green := image.NewRGBA(image.Rect(0, 0, fixtureSize, fixtureSize))
+	for p := 0; p < len(green.Pix); p += bytesPerPixel {
+		green.Pix[p+1], green.Pix[p+3] = 0xFF, 0xFF
+	}
+	partial := &assets.Decoded{
+		Width: fixtureSize, Height: fixtureSize, Animated: true, Partial: true,
+		Frames: []*image.RGBA{green}, Delays: []time.Duration{frameDelay},
+	}
+	if err := store.Upload("green", partial); err != nil {
+		t.Fatal(err)
+	}
+	ct, err := NewCaptureTarget(ren, targetW, targetH)
+	if err != nil {
+		t.Skipf("capture target unavailable headlessly: %v", err)
+	}
+	defer ct.Close()
+
+	vp := NewViewport(store)
+	vp.SetSpriteLoadMode(SpriteLoadHoldPrev)
+	scene := &courtroom.Scene{}
+	scene.Speaker.Visible = true
+	scene.Speaker.Active = "red"
+	centre := func() (r, g uint8) {
+		img, err := ct.Capture(ren, func(dst sdl.Rect) {
+			vp.Update(scene, step)
+			vp.Render(ren, scene, dst)
+		})
+		if err != nil {
+			t.Skipf("ReadPixels unavailable headlessly: %v", err)
+		}
+		px := img.RGBAAt(centreX, centreY)
+		return px.R, px.G
+	}
+	if r, _ := centre(); r == 0 {
+		t.Fatal("setup: the previous sprite did not draw")
+	}
+	scene.Speaker.Active = "green"
+	if r, g := centre(); r != 0 || g == 0 {
+		t.Errorf("the new sprite's first frame must replace the previous sprite, got r=%d g=%d", r, g)
+	}
+}
+
 // TestSpeakerSwapCrossfade pins the crossfade knob: mid-fade, BOTH the old
 // (red) and new (green) sprites contribute to the frame; after the fade only
 // the new one does; off (the default) the swap is a hard cut. 0-alloc during

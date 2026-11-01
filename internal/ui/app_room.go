@@ -1054,6 +1054,9 @@ func (a *App) applySpriteCap() {
 	a.d.Manager.SetAnimatedDecodeConcurrency(a.d.Prefs.Load().AnimDecodeConcurrency())
 }
 
+// webAOSpriteHold lets a cached sprite finish decoding, so it doesn't start on the previous sprite; too short to notice.
+const webAOSpriteHold = 150 * time.Millisecond
+
 // vpSpriteLoadMode maps the loading-mode pref to the renderer: Wait and Default are courtroom message gates,
 // so they fall back to hold-previous and a timed-out hold keeps the previous sprite instead of a blank.
 func (a *App) vpSpriteLoadMode() int {
@@ -1076,11 +1079,14 @@ func (a *App) applyTimingToRoom() {
 	a.room.CatchUp, a.room.CatchUpThreshold = a.d.Prefs.Load().CatchUp()
 	a.room.SpriteWait = a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadWait              // "Hold the message": hold until its speaker sprite decodes
 	a.room.SpriteWaitTimeout = time.Duration(a.d.Prefs.Load().SpriteWaitMs()) * time.Millisecond // its user-tunable hold cap
-	a.room.SpriteWaitPair = a.d.Prefs.Load().SpriteWaitPair                                      // strictness: gate on the pair partner too
-	a.room.SpriteWaitPreanim = a.d.Prefs.Load().SpriteWaitPreanim                                // strictness: gate on the preanim too
-	a.room.SequentialWait = a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadDefault       // "Default": wait for every asset a message presents
-	a.room.ShoutBypassQueue = a.d.Prefs.Load().ShoutBypassQueue                                  // AO2 parity: shouts skip the queue (toggleable)
-	a.room.ShoutDuration = courtroom.DefaultShoutDuration                                        // core-timing knobs: 0 = the canonical defaults
+	if a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadHoldPrev {
+		a.room.SpriteWait, a.room.SpriteWaitTimeout = true, webAOSpriteHold
+	}
+	a.room.SpriteWaitPair = a.d.Prefs.Load().SpriteWaitPair                                // strictness: gate on the pair partner too
+	a.room.SpriteWaitPreanim = a.d.Prefs.Load().SpriteWaitPreanim                          // strictness: gate on the preanim too
+	a.room.SequentialWait = a.d.Prefs.Load().SpriteLoadModeVal == config.SpriteLoadDefault // "Default": wait for every asset a message presents
+	a.room.ShoutBypassQueue = a.d.Prefs.Load().ShoutBypassQueue                            // AO2 parity: shouts skip the queue (toggleable)
+	a.room.ShoutDuration = courtroom.DefaultShoutDuration                                  // core-timing knobs: 0 = the canonical defaults
 	if ms := a.d.Prefs.Load().ShoutDurationMsVal; ms != 0 {
 		a.room.ShoutDuration = time.Duration(ms) * time.Millisecond
 	}

@@ -976,7 +976,7 @@ func spriteLoadModeDesc(mode int) string {
 	case config.SpriteLoadDefault:
 		return "Default: every message holds until ALL its assets have loaded — character sprites (speaker, pair, group), the background + desk, the custom chatbox, zoom speedlines, the emote SFX + blip, and any screen-effect art or realization/effect sound. Nothing pops in mid-ceremony. Shouts still skip the queue (toggle below), and catch-up (AO2's skip-to-newest, above) still fast-forwards a backlog."
 	case config.SpriteLoadHoldPrev:
-		return "webAO: while an uncached sprite is still downloading, the layer's last drawn sprite stays on screen until the new one lands (the old default)."
+		return "webAO: a message waits a brief moment for its sprite, then plays regardless. While an uncached sprite is still downloading, the layer's last drawn sprite stays on screen until the new sprite's first frame lands. A long animation can still be cut short, as nothing waits for it to finish loading."
 	case config.SpriteLoadWait:
 		return "Hold the message: the message stays off-stage until its speaker sprite decodes, capped by the timeout below (a broken sprite only ever delays it)."
 	}

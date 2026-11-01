@@ -1219,15 +1219,6 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		return
 	}
 	page, ok := anim.resolve(v.store)
-	// A partial must not displace the hold-previous stand-in, or the old animation freezes during the decode.
-	if ok && page.Partial && v.spriteLoadMode == SpriteLoadHoldPrev &&
-		anim.lastGood != "" && anim.lastGood != anim.base &&
-		(v.holdMaxAge <= 0 || anim.coldFor <= v.holdMaxAge) {
-		if held, ok2 := v.store.Get(anim.lastGood); ok2 && len(held.Frames) > 0 {
-			v.drawHeldSprite(ren, layer, held, vp)
-			return
-		}
-	}
 	if !ok || len(page.Frames) == 0 {
 		// A missing base has no held or thumb page, and lastGood survives swaps: hold-previous would pin forever.
 		// Only still-loading sprites take the chain below; loading and confirmed missing are disjoint.
