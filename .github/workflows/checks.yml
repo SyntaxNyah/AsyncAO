@@ -1,14 +1,8 @@
-# Everything a commit must pass before it can reach main or a release, except packaging.
+# Everything a commit must pass before it can merge or release, except packaging.
 name: Checks
 
 on:
   workflow_call:
-    inputs:
-      ref:
-        description: Commit to check.
-        type: string
-        required: false
-        default: ""
 
 permissions:
   contents: read
@@ -20,8 +14,6 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.ref }}
       - uses: ./.github/actions/setup-build
       - name: gofmt
         run: |
@@ -41,9 +33,9 @@ jobs:
           version: v2.13.2
 
   test:
-    name: Race tests (${{ matrix.os }})
+    name: Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -56,34 +48,21 @@ jobs:
         shell: ${{ matrix.shell }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.ref }}
       - uses: ./.github/actions/setup-build
-      - run: go test -race -timeout 600s -count=1 ./...
-
-  lean:
-    name: Lean build tests
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.ref }}
-      - uses: ./.github/actions/setup-build
-      - run: go test -tags "nodiscord novoice" -timeout 600s -count=1 ./...
-
-  benchmarks:
-    name: Benchmark alloc gates
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.ref }}
-      - uses: ./.github/actions/setup-build
-      - run: go test -run=NONE -bench=. -benchmem -benchtime=200ms -count=1 ./... | tee bench.txt
-      - run: bash scripts/check-bench.sh bench.txt
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - name: Race tests
+        run: go test -race -timeout 600s -count=1 ./...
+      # Linux only, sharing this job's setup; !cancelled() so one failure doesn't hide the next.
+      - name: Lean build tests
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: go test -tags "nodiscord novoice" -timeout 600s -count=1 ./...
+      - name: Benchmarks
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: go test -run=NONE -bench=. -benchmem -benchtime=200ms -count=1 ./... | tee bench.txt
+      - name: Benchmark alloc gates
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: bash scripts/check-bench.sh bench.txt
+      - if: ${{ !cancelled() && runner.os == 'Linux' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: benchmarks
           path: bench.txt

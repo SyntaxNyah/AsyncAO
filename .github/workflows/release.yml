@@ -1,17 +1,15 @@
-# Publishes a release in one of two ways. See docs/RELEASING.md.
-#   - CI passed on main and the CHANGELOG's newest version has no tag yet.
-#   - A v* tag was pushed by hand; this runs the checks itself, as CI skips tags.
-# Assets upload to a draft, and only a complete draft is published, which also
-# creates the tag for the CHANGELOG path.
+# Run by hand with a version; merging to main never releases. See docs/RELEASING.md.
+# Runs its own checks, so no earlier run has to be trusted. Assets upload to a
+# draft, and only a complete draft is published, which also creates the tag.
 name: Release
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, like v2.1.0, or v2.1.0-test.1 for a prerelease.
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -23,49 +21,28 @@ concurrency:
 jobs:
   resolve:
     name: Choose version
-    if: >-
-      github.event_name == 'push' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-24.04
     outputs:
-      proceed: ${{ steps.resolve.outputs.proceed }}
-      version: ${{ steps.resolve.outputs.version }}
       prerelease: ${{ steps.resolve.outputs.prerelease }}
-      sha: ${{ steps.commit.outputs.sha }}
     steps:
-      - id: commit
-        env:
-          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-        run: echo "sha=$SHA" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ steps.commit.outputs.sha }}
           fetch-depth: 0
       - id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE: ${{ github.event_name == 'push' && 'tag' || 'changelog' }}
-          TAG: ${{ github.ref_name }}
-        run: bash scripts/release-resolve.sh "$SOURCE" "$TAG"
+          VERSION: ${{ inputs.version }}
+        run: bash scripts/release-resolve.sh "$VERSION"
 
   checks:
     needs: resolve
-    if: github.event_name == 'push' && needs.resolve.outputs.proceed == 'true'
     uses: ./.github/workflows/checks.yml
-    with:
-      ref: ${{ needs.resolve.outputs.sha }}
 
   build:
-    needs: [resolve, checks]
-    if: >-
-      !cancelled() && needs.resolve.outputs.proceed == 'true' &&
-      (needs.checks.result == 'success' || needs.checks.result == 'skipped')
+    needs: checks
     uses: ./.github/workflows/build.yml
     with:
-      ref: ${{ needs.resolve.outputs.sha }}
-      version: ${{ needs.resolve.outputs.version }}
+      version: ${{ inputs.version }}
       variants: '["default", "nodiscord"]'
       sign: true
     secrets: inherit
@@ -73,10 +50,7 @@ jobs:
   # Optional: a failure here leaves the Flatpak out and blocks nothing.
   build-flatpak:
     name: Flatpak (${{ matrix.variant }})
-    needs: [resolve, checks]
-    if: >-
-      !cancelled() && needs.resolve.outputs.proceed == 'true' &&
-      (needs.checks.result == 'success' || needs.checks.result == 'skipped')
+    needs: checks
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     continue-on-error: true
@@ -86,8 +60,6 @@ jobs:
         variant: [default, nodiscord]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.resolve.outputs.sha }}
       - name: Install flatpak
         # flatpak-builder strips module debuginfo with elfutils' eu-strip.
         run: |
@@ -95,7 +67,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends flatpak flatpak-builder elfutils
       - name: Build
         env:
-          ASYNCAO_VERSION: ${{ needs.resolve.outputs.version }}
+          ASYNCAO_VERSION: ${{ inputs.version }}
           VARIANT: ${{ matrix.variant }}
         run: bash scripts/build-flatpak.sh "$VARIANT"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -107,8 +79,7 @@ jobs:
   publish:
     name: Publish
     needs: [resolve, build, build-flatpak]
-    if: >-
-      !cancelled() && needs.resolve.outputs.proceed == 'true' && needs.build.result == 'success'
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-24.04
     environment: release
     timeout-minutes: 20
@@ -118,13 +89,11 @@ jobs:
       attestations: write
     env:
       GH_TOKEN: ${{ github.token }}
-      VERSION: ${{ needs.resolve.outputs.version }}
+      VERSION: ${{ inputs.version }}
       PRERELEASE: ${{ needs.resolve.outputs.prerelease }}
-      SHA: ${{ needs.resolve.outputs.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.resolve.outputs.sha }}
           fetch-depth: 0
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -150,6 +119,6 @@ jobs:
           if [ "$PRERELEASE" = true ]; then
             prerelease_flag=(--prerelease)
           fi
-          gh release create "$VERSION" --draft --target "$SHA" \
+          gh release create "$VERSION" --draft --target "$GITHUB_SHA" \
             --title "AsyncAO $VERSION" --notes-file notes.md "${prerelease_flag[@]}" dist/*
           gh release edit "$VERSION" --draft=false

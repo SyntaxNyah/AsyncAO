@@ -1,26 +1,30 @@
-# Branch pushes only prove the client compiles on every platform. PRs and manual
-# runs get every check and a packaged build; main gets the checks. Require `ci-ok`
-# on main: it stays the one status whatever the jobs behind it are. See docs/RELEASING.md.
+# Contributor CI. Branch pushes and draft PRs only prove the client compiles on
+# every platform; a PR that is ready for review gets every check and a packaged
+# build. Merging to main runs nothing: release.yml does its own checks. Require
+# `ci-ok`: it stays the one status whatever the jobs behind it are. See docs/RELEASING.md.
 name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches-ignore: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Never cancel on main: the release starts from that run's success.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: true
 
 jobs:
   scope:
     name: Choose checks
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       mode: ${{ steps.mode.outputs.mode }}
     steps:
@@ -29,13 +33,21 @@ jobs:
           fetch-depth: 0
       - id: mode
         env:
+          GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
-          REF: ${{ github.ref }}
+          BRANCH: ${{ github.ref_name }}
+          IS_DRAFT: ${{ github.event.pull_request.draft }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           PUSH_BEFORE: ${{ github.event.before }}
         run: |
           mode=full
-          if [ "$EVENT" = push ] && [ "$REF" != refs/heads/main ]; then
+          if [ "$EVENT" = push ]; then
+            mode=compile
+            # An open PR's own run already covers this commit.
+            if [ "$(gh pr list --head "$BRANCH" --state open --json number --jq length)" != 0 ]; then
+              mode=none
+            fi
+          elif [ "$IS_DRAFT" = true ]; then
             mode=compile
           fi
           base="${PR_BASE:-$PUSH_BEFORE}"
@@ -73,10 +85,9 @@ jobs:
     if: needs.scope.outputs.mode == 'full'
     uses: ./.github/workflows/checks.yml
 
-  # Not on a push to main: the PR packaged this code, and a release packages it again before publishing.
   build:
     needs: scope
-    if: needs.scope.outputs.mode == 'full' && github.event_name != 'push'
+    if: needs.scope.outputs.mode == 'full'
     uses: ./.github/workflows/build.yml
 
   ci-ok:

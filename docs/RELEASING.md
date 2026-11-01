@@ -2,20 +2,24 @@
 
 ## What runs when
 
-| Event | Checks |
-|---|---|
-| Push to a branch | Compile on Windows, Linux and macOS. Run the local checks in `CLAUDE.md` yourself. |
-| PR commit, manual run | gofmt, vet, staticcheck, golangci-lint, race tests on all three OSes, lean-build tests, benchmark alloc gates, packaging and a smoke test on all three OSes. |
-| Push to `main` | The same checks, without packaging: the PR already packaged the code, and a release packages it again before publishing. |
-| Only docs changed (`docs/`, root `*.md`, `LICENSE`) | Nothing. |
+Contributor CI and releases are separate pipelines that share only `checks.yml` and `build.yml`.
 
-`ci-ok` summarises all of this. It is the status to require on `main`, and it
+| Event | What runs |
+|---|---|
+| Push to a branch with no open PR | Compile on Windows, Linux and macOS. Run the local checks in `CLAUDE.md` yourself. |
+| Draft PR commit | The same compile. |
+| Commit on a PR that is ready for review, manual CI run | gofmt, vet, staticcheck, golangci-lint, race tests on all three OSes, lean-build tests, benchmark alloc gates, packaging and a smoke test on all three OSes. |
+| Merge or push to `main` | Nothing. |
+| Only docs changed (`docs/`, root `*.md`, `LICENSE`) | Nothing. |
+| Someone runs the Release workflow | All the checks again, then packaging of every variant, then publishing. |
+
+`ci-ok` summarises contributor CI. It is the status to require on PRs, and it
 keeps working when the jobs behind it change. Requiring it takes repo admin
 access.
 
 ## Layout
 
-- `.github/workflows/ci.yml` chooses the checks.
+- `.github/workflows/ci.yml` chooses the checks for branches and PRs.
 - `.github/workflows/checks.yml` holds lint and tests, `build.yml` holds packaging. CI and releases share both.
 - `.github/workflows/release.yml` publishes; `security.yml` runs `govulncheck` weekly, outside `ci-ok`.
 - `.github/actions/setup-build` installs Go and the C libraries. It is the one place the Go and SDL versions are set for CI.
@@ -25,21 +29,26 @@ access.
 ## Cutting a release
 
 Add a `## vX.Y.Z - date` section at the top of `internal/ui/assets/CHANGELOG.md`
-in the PR and merge it. Once CI passes on `main`, `release.yml` builds and signs
-every platform and variant, checks the assets against the manifest, uploads them
-to a draft and publishes it. Publishing creates the tag.
+in a PR and merge it. Merging ships nothing. Then run the Release workflow on
+`main` with that version: Actions, Release, Run workflow, or
+`gh workflow run release.yml -f version=vX.Y.Z`. It runs the checks, builds and
+signs every platform and variant, checks the assets against the manifest, uploads
+them to a draft and publishes it. Publishing creates the tag.
 
-A hyphenated tag (`v2.1.0-test.1`) pushed by hand publishes a prerelease from any
-branch: stable clients never see it, the in-app experimental channel does. A
-stable tag pushed by hand must be on `main`. Tag pushes run the checks themselves.
+A stable version must be on `main` and have a CHANGELOG section. A hyphenated
+version (`v2.1.0-test.1`) publishes a prerelease and may run from any branch:
+stable clients never see it, the in-app experimental channel does.
+
+The checks run again because a green PR only tested its own merge: several PRs
+together may never have run, and a direct push to `main` never ran at all.
 
 ## Rules
 
 - **A published version is never replaced.** Fix forward with a new patch version.
-- **Retrying:** re-run the failed jobs of the Release run. A failed run leaves at most a draft, which the next attempt replaces.
+- **Retrying:** re-run the failed jobs, or run the workflow again. A failed run leaves at most a draft, which the next attempt replaces.
 - **Every platform must build.** Only the Flatpaks are optional.
 - **Signing** is skipped without certificates, and fails the release if a certificate exists and signing breaks. See `docs/CODE-SIGNING.md`.
-- `release.yml` triggered by CI runs the workflow file from `main`, so changes to that path only take effect after merging.
+- **Who can release:** anyone with write access can run the workflow.
 
 ## Asset names
 
