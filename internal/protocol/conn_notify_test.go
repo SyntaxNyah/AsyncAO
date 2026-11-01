@@ -53,7 +53,7 @@ func TestConnNotify(t *testing.T) {
 		}
 	})
 
-	if err := conn.Send(ctx, Packet{Header: "HI", Fields: []string{"hdid"}}); err != nil {
+	if err := conn.Send(Packet{Header: "HI", Fields: []string{"hdid"}}); err != nil {
 		t.Fatalf("send: %v", err)
 	}
 	select {
@@ -71,7 +71,7 @@ func TestConnNotify(t *testing.T) {
 	}
 
 	// The close wake: a server-side drop must surface as fast as a packet.
-	if err := conn.Send(ctx, Packet{Header: "CH", Fields: []string{"0"}}); err != nil {
+	if err := conn.Send(Packet{Header: "CH", Fields: []string{"0"}}); err != nil {
 		t.Fatalf("send close cue: %v", err)
 	}
 	select {

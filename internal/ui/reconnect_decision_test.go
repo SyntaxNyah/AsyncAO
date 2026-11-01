@@ -89,13 +89,13 @@ func TestPumpConnectionReconnectsOnTransportDrop(t *testing.T) {
 	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
 	a.conn = conn
 	a.sess = courtroom.NewSession(func(p protocol.Packet) error {
-		return conn.Send(context.Background(), p)
+		return conn.Send(p)
 	}, "test-hdid")
 
 	// Prod the server into dropping: send one packet, then pump until the drop
 	// lands. The keepalive Ping in pumpConnection also writes, but sending HI
 	// explicitly makes the server's Read return promptly.
-	if err := conn.Send(context.Background(), protocol.NewPacket("HI", "x")); err != nil {
+	if err := conn.Send(protocol.NewPacket("HI", "x")); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 
@@ -162,13 +162,13 @@ func TestPumpConnectionFreezesAnInCourtDrop(t *testing.T) {
 	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
 	a.conn = conn
 	a.sess = courtroom.NewSession(func(p protocol.Packet) error {
-		return conn.Send(context.Background(), p)
+		return conn.Send(p)
 	}, "test-hdid")
 	// The difference from the test above: a courtroom the user is looking at.
 	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, a.sess, courtroom.NopAudio{})
 	a.screen = ScreenCourtroom
 
-	if err := conn.Send(context.Background(), protocol.NewPacket("HI", "x")); err != nil {
+	if err := conn.Send(protocol.NewPacket("HI", "x")); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	deadline := time.Now().Add(5 * time.Second)

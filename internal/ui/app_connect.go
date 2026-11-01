@@ -144,7 +144,7 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 		if conn == a.conn { // record only the ACTIVE connection's sends (a parked tab's Ping won't match)
 			a.recordPacket(p, true)
 		}
-		return conn.Send(context.Background(), p)
+		return conn.Send(p)
 	}, hdid(wsURL))
 	// Prime the keepalive goroutine immediately so the CH ping flows even if the first frame is delayed or the window
 	// is minimized; pumpConnection refreshes it as MyCharID changes.

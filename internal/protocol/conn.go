@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -22,6 +23,10 @@ const (
 	dialTimeout = 10 * time.Second
 	// writeTimeout caps one outgoing packet write.
 	writeTimeout = 10 * time.Second
+	// writeQueueCap bounds packets waiting for the socket; a connection this far behind is treated as dead.
+	writeQueueCap = 64
+	// closeDrainTimeout caps sending what was queued before a deliberate Close.
+	closeDrainTimeout = 2 * time.Second
 	// keepaliveInterval matches AO2-Client's keepalive_timer (courtroom.cpp).
 	keepaliveInterval = 45 * time.Second
 	// incomingQueueCap bounds the deliver-loop to client channel; the game loop drains it every frame.
@@ -45,6 +50,9 @@ const (
 
 // errReadBacklogOverflow ends the connection when Incoming went undrained for the whole backlog bound.
 var errReadBacklogOverflow = errors.New("protocol: incoming packet backlog overflowed (client stopped draining)")
+
+// errWriteQueueFull ends the connection when the socket stopped taking packets for the whole queue.
+var errWriteQueueFull = errors.New("protocol: outgoing packet queue full (connection stalled)")
 
 // sizedPacket carries a packet's wire size so the backlog's byte bound can be released on hand-off.
 type sizedPacket struct {
@@ -73,8 +81,10 @@ type Conn struct {
 	// backlogBytes counts wire bytes parked in backlog; readLoop only adds, deliverLoop only subtracts.
 	backlogBytes atomic.Int64
 
-	// writeMu serializes ws.Write: coder/websocket permits a single writer, and keepalive shares the socket.
-	writeMu sync.Mutex
+	// writes holds encoded frames for writeLoop, the only code that writes to or closes the socket.
+	writes chan []byte
+	// writeErr is set when a write fails; the socket is unusable after that, so later sends fail at once.
+	writeErr atomic.Pointer[error]
 	// keepalive is the CH ping payload carrying the current char id; nil means nothing to send yet.
 	keepalive atomic.Pointer[string]
 	// keepaliveEvery is the ping interval; 0 means keepaliveInterval.
@@ -165,10 +175,11 @@ func Dial(ctx context.Context, sockets *netproxy.Factory, wsURL string, opts ...
 		ws:       ws,
 		incoming: make(chan Packet, incomingQueueCap),
 		backlog:  make(chan sizedPacket, backlogCap),
+		writes:   make(chan []byte, writeQueueCap),
 		closed:   make(chan struct{}),
 	}
 	c.sess = aolib.NewServer(aolib.SessionConfig{
-		Send: func(wire []byte) { _ = c.write(wire) },
+		Send: func(wire []byte) { _ = c.queueWrite(wire) },
 		// Headers aolib doesn't model (MU, UM, SD, CASEA, checkconnection) are framed positionally from the Fanta wire.
 		OnUnknownHeader: func(header string, wire []byte) {
 			pkt, err := aolib.NewPacket(strings.TrimSuffix(string(wire), "%"))
@@ -184,6 +195,7 @@ func Dial(ctx context.Context, sockets *netproxy.Factory, wsURL string, opts ...
 		c.keepaliveEvery = opts[0].KeepaliveInterval
 	}
 	go c.readLoop()
+	go c.writeLoop()
 	go c.deliverLoop()   // backlog → Incoming hand-off; exits when backlog closes or on Close (§17.4)
 	go c.keepaliveLoop() // fires the CH ping off the render loop; exits on Close (no per-conn leak, §17.4)
 	return c, nil
@@ -207,9 +219,8 @@ func (c *Conn) SetJSONMode(enabled bool) { c.jsonMode.Store(enabled) }
 
 func (c *Conn) JSONMode() bool { return c.jsonMode.Load() }
 
-func (c *Conn) Send(ctx context.Context, p Packet) error {
-	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
-	defer cancel()
+// Send queues a packet and never waits on the network; a failed write is reported by later sends and by Err.
+func (c *Conn) Send(p Packet) error {
 	mode := aolib.WireFanta
 	if c.jsonMode.Load() {
 		mode = aolib.WireJSON
@@ -219,13 +230,9 @@ func (c *Conn) Send(ctx context.Context, p Packet) error {
 		// A packet failing aolib validation falls back to positional framing, accepted in either wire mode.
 		raw = []byte(p.String())
 	}
-	c.writeMu.Lock()
-	err = c.ws.Write(ctx, websocket.MessageText, raw)
-	c.writeMu.Unlock()
-	if err != nil {
+	if err := c.queueWrite(raw); err != nil {
 		return fmt.Errorf("protocol: sending %s: %w", p.Header, err)
 	}
-	c.sent.Add(1)
 	return nil
 }
 
@@ -245,14 +252,69 @@ func (c *Conn) encode(p Packet, mode aolib.WireMode) ([]byte, error) {
 	return []byte(p.String()), nil
 }
 
-// write sends one encoded frame, serializing with the keepalive goroutine.
-func (c *Conn) write(raw []byte) error {
-	ctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
+// queueWrite hands one encoded frame to writeLoop without blocking; a full queue ends the connection.
+func (c *Conn) queueWrite(raw []byte) error {
+	if p := c.writeErr.Load(); p != nil {
+		return *p
+	}
+	select {
+	case <-c.closed:
+		return net.ErrClosed
+	default:
+	}
+	select {
+	case c.writes <- raw:
+		return nil
+	default:
+		c.readErr.CompareAndSwap(nil, &errWriteQueueFull)
+		c.Close()
+		return errWriteQueueFull
+	}
+}
+
+// writeLoop keeps a stalled socket off every other thread. A failed write leaves the socket unusable: closing it ends
+// readLoop with parked packets intact, so a kick the server sent just before dropping still reaches the UI.
+func (c *Conn) writeLoop() {
+	defer func() { _ = c.ws.Close(websocket.StatusGoingAway, "client closing") }()
+	for {
+		select {
+		case raw := <-c.writes:
+			ctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
+			err := c.ws.Write(ctx, websocket.MessageText, raw)
+			cancel()
+			if err != nil {
+				e := fmt.Errorf("protocol: write failed: %w", err)
+				c.writeErr.Store(&e)
+				select {
+				case <-c.closed: // deliberate Close: not an error
+				default:
+					c.readErr.CompareAndSwap(nil, &e)
+				}
+				return
+			}
+			c.sent.Add(1)
+		case <-c.closed:
+			c.drainWrites()
+			return
+		}
+	}
+}
+
+// drainWrites sends what was queued before Close, such as a parting packet, within closeDrainTimeout.
+func (c *Conn) drainWrites() {
+	ctx, cancel := context.WithTimeout(context.Background(), closeDrainTimeout)
 	defer cancel()
-	c.writeMu.Lock()
-	err := c.ws.Write(ctx, websocket.MessageText, raw)
-	c.writeMu.Unlock()
-	return err
+	for {
+		select {
+		case raw := <-c.writes:
+			if err := c.ws.Write(ctx, websocket.MessageText, raw); err != nil {
+				return
+			}
+			c.sent.Add(1)
+		default:
+			return
+		}
+	}
 }
 
 // SetKeepalive sets the CH ping payload, or with an empty string stops the ping; safe from any goroutine.
@@ -264,8 +326,8 @@ func (c *Conn) SetKeepalive(payload string) {
 	c.keepalive.Store(&payload)
 }
 
-// keepaliveLoop has its own goroutine because Windows stalls the frame loop of an occluded app; a write
-// failure means a dead socket, so it closes. It exits on Close so reconnects can't leak it (hard rule 4).
+// keepaliveLoop has its own goroutine because Windows stalls the frame loop of an occluded app.
+// It exits on Close or a failed write, so reconnects can't leak it (hard rule 4).
 func (c *Conn) keepaliveLoop() {
 	every := c.keepaliveEvery
 	if every <= 0 {
@@ -283,28 +345,15 @@ func (c *Conn) keepaliveLoop() {
 		if p == nil {
 			continue // not joined yet — nothing to ping with
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
-		c.writeMu.Lock()
-		err := c.ws.Write(ctx, websocket.MessageText, []byte(*p))
-		c.writeMu.Unlock()
-		cancel()
-		if err != nil {
-			// First error wins; Close makes the drop reach the UI without waiting for the read side.
-			e := fmt.Errorf("protocol: keepalive write failed: %w", err)
-			c.readErr.CompareAndSwap(nil, &e)
-			c.Close()
+		if err := c.queueWrite([]byte(*p)); err != nil {
 			return
 		}
-		c.sent.Add(1)
 	}
 }
 
-// Close tears the connection down; safe to call more than once.
+// Close starts the teardown and returns at once; writeLoop closes the socket. Safe to call more than once.
 func (c *Conn) Close() {
-	c.once.Do(func() {
-		close(c.closed)
-		_ = c.ws.Close(websocket.StatusGoingAway, "client closing")
-	})
+	c.once.Do(func() { close(c.closed) })
 }
 
 // readLoop must always return to ws.Read promptly: the library answers pings only inside Read, and an
@@ -367,13 +416,22 @@ func (c *Conn) deliverLoop() {
 		close(c.incoming)
 		c.wake() // the close wake: a drop must surface as fast as a packet would
 	}()
-	for item := range c.backlog {
+	for {
+		// Watches closed while idle too: a stalled socket can keep readLoop from ending for a whole write timeout.
 		select {
-		case c.incoming <- item.p:
-			c.backlogBytes.Add(-int64(item.n))
-			c.wake()
+		case item, ok := <-c.backlog:
+			if !ok {
+				return
+			}
+			select {
+			case c.incoming <- item.p:
+				c.backlogBytes.Add(-int64(item.n))
+				c.wake()
+			case <-c.closed:
+				return // deliberate Close / overflow teardown: stop delivering
+			}
 		case <-c.closed:
-			return // deliberate Close / overflow teardown: stop delivering
+			return
 		}
 	}
 }

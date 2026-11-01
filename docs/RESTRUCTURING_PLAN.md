@@ -80,8 +80,9 @@ in **Status**. Update Status in the same commit that completes a step.
   - [x] baseline benchmarks: `internal/courtroom/bench_test.go`, `internal/ui/framebench_test.go`, recorded in
         `docs/BENCHMARKS.md`
   - [x] one loop mode: the classic loop and its setting are gone (decided 2026-11-01)
-  - [ ] writer goroutine for `Conn.Send`, which proves the worker shape (one shape for background jobs, replacing the
-        separate goroutine, channel and poll of each `ui` job)
+  - [x] writer goroutine for `Conn.Send`, which proves the worker shape (one shape for background jobs, replacing the
+        separate goroutine, channel and poll of each `ui` job). A full queue of 64 or a failed write ends the connection and
+        takes the regular reconnect, with nothing resent, as a reconnect resets our identity (decided 2026-11-01)
   - [ ] off-thread texture preparation (decided 2026-11-01): spike, then asset uploads, then prerendered variants. See below
   - [x] a sprite sometimes shows its old animation for a frame before the right one (reported 2026-11-01): the wait gate
         released on a first frame or a reduced page. The speaker's sprites now wait for every frame; a pair partner's still

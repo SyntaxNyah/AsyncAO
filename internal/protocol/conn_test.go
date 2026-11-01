@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"context"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -61,7 +63,7 @@ func TestConnDialReceiveSend(t *testing.T) {
 
 	// Send HI; the echo comes back with our escaped payload intact.
 	hdid := "hd#id&100%"
-	if err := conn.Send(context.Background(), NewPacket("HI", hdid)); err != nil {
+	if err := conn.Send(NewPacket("HI", hdid)); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	select {
@@ -77,9 +79,100 @@ func TestConnDialReceiveSend(t *testing.T) {
 		t.Fatal("no echo received")
 	}
 
+	// The worker counts a packet after its write returns, which can be after the echo arrives.
+	deadline := time.Now().Add(5 * time.Second)
+	for conn.Stats().Sent != 1 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
 	s := conn.Stats()
 	if s.Sent != 1 || s.Received != 2 {
 		t.Errorf("stats = %+v", s)
+	}
+}
+
+// TestSendNeverWaitsOnAStalledSocket: a server that stops reading must not hold up the caller, which is the UI thread,
+// and the connection ends once the queue is full.
+func TestSendNeverWaitsOnAStalledSocket(t *testing.T) {
+	const (
+		packetBytes = 1 << 20
+		maxPackets  = 4096
+		maxSendWait = time.Second
+	)
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := websocket.Accept(w, r, nil); err != nil {
+			return
+		}
+		<-release
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) })
+
+	conn, err := Dial(context.Background(), netproxy.Direct(), wsURL(srv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	p := NewPacket("CT", strings.Repeat("x", packetBytes))
+	var sendErr error
+	for i := 0; i < maxPackets && sendErr == nil; i++ {
+		start := time.Now()
+		sendErr = conn.Send(p)
+		if wait := time.Since(start); wait > maxSendWait {
+			t.Fatalf("Send %d waited %v on a stalled socket", i, wait)
+		}
+	}
+	if !errors.Is(sendErr, errWriteQueueFull) {
+		t.Fatalf("a stalled socket must end in a full queue, got %v", sendErr)
+	}
+	if !errors.Is(conn.Err(), errWriteQueueFull) {
+		t.Errorf("Err = %v, want the full queue", conn.Err())
+	}
+	select {
+	case <-time.After(maxSendWait):
+		t.Error("Incoming must close soon after the queue overflows")
+	case _, open := <-conn.Incoming():
+		if open {
+			t.Error("the stalled server sent nothing, so Incoming should only close")
+		}
+	}
+}
+
+// TestCloseSendsWhatWasQueued: a packet sent just before Close still reaches the server.
+func TestCloseSendsWhatWasQueued(t *testing.T) {
+	const wait = 5 * time.Second
+	got := make(chan string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		_, data, err := ws.Read(r.Context())
+		if err == nil {
+			got <- string(data)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	conn, err := Dial(context.Background(), netproxy.Direct(), wsURL(srv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.Send(NewPacket("CH", "7")); err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	select {
+	case data := <-got:
+		if !strings.HasPrefix(data, "CH#7") {
+			t.Errorf("server read %q", data)
+		}
+	case <-time.After(wait):
+		t.Fatal("the queued packet never arrived")
+	}
+	if err := conn.Send(NewPacket("CH", "7")); !errors.Is(err, net.ErrClosed) {
+		t.Errorf("Send after Close = %v, want net.ErrClosed", err)
 	}
 }
 
@@ -185,7 +278,7 @@ func TestConnServerDropReportsError(t *testing.T) {
 	}
 	defer conn.Close()
 	<-conn.Incoming() // greeting
-	if err := conn.Send(context.Background(), NewPacket("HI", "x")); err != nil {
+	if err := conn.Send(NewPacket("HI", "x")); err != nil {
 		t.Fatal(err)
 	}
 
