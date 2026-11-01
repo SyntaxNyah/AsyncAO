@@ -77,8 +77,9 @@ jobs:
   clean-caches:
     name: Remove unused caches
     needs: [scope, checks, build]
+    # !cancelled(): without a status function, the skipped checks job would skip this too.
     if: >-
-      github.run_attempt == 1 && needs.build.result == 'success' &&
+      !cancelled() && github.run_attempt == 1 && needs.build.result == 'success' &&
       (needs.checks.result == 'success' || needs.checks.result == 'skipped') &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
