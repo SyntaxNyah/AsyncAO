@@ -83,6 +83,9 @@ in **Status**. Update Status in the same commit that completes a step.
   - [x] writer goroutine for `Conn.Send`, which proves the worker shape (one shape for background jobs, replacing the
         separate goroutine, channel and poll of each `ui` job). A full queue of 64 or a failed write ends the connection and
         takes the regular reconnect, with nothing resent, as a reconnect resets our identity (decided 2026-11-01)
+  - [ ] worker architecture, design under discussion with the maintainer: the main thread never waits on a worker. `Pool.Submit` at
+        high priority still blocks when its lane is full (reproduced: after 80 prefetches on a stalled host). One queued job per asset
+        makes that harder to reach, and the debug panel's Workers tab shows waits and running jobs; the blocking path is not fixed yet
   - [ ] off-thread texture preparation (decided 2026-11-01): spike, then asset uploads, then prerendered variants. See below
   - [x] a sprite sometimes shows its old animation for a frame before the right one (reported 2026-11-01): the wait gate
         released on a first frame or a reduced page. The speaker's sprites now wait for every frame; a pair partner's still

@@ -9,6 +9,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
@@ -33,7 +34,7 @@ const (
 )
 
 // debugSections are the panel's tabs, indexed by a.debugSection.
-var debugSections = []string{"Session", "Packets", "Perf", "Cache", "Log", "Fonts"}
+var debugSections = []string{"Session", "Packets", "Perf", "Cache", "Workers", "Log", "Fonts"}
 
 // toggleDebugPanel opens / closes the Debug panel (Extras → Debug, the F8 key,
 // or Settings → Power user → Diagnostics).
@@ -99,8 +100,10 @@ func (a *App) drawDebugPanel(w, h int32, pressed *bool) {
 	case 3:
 		a.drawDebugCache(body)
 	case 4:
-		a.drawDebugLogSection(body)
+		a.drawDebugWorkers(body)
 	case 5:
+		a.drawDebugLogSection(body)
+	case 6:
 		a.drawDebugFonts(body)
 	default:
 		a.drawDebugSession(body)
@@ -347,6 +350,54 @@ func (a *App) drawDebugCache(r sdl.Rect) {
 	if a.d.Client != nil {
 		ns := a.d.Client.Stats()
 		line(fmt.Sprintf("Network — %d requests · %d cached 404s", ns.Requests, ns.Cached404s), ColTextDim)
+	}
+}
+
+// debugWorkListMax bounds the running-job rows so the per-type table stays on screen.
+const debugWorkListMax = 6
+
+// drawDebugWorkers shows what the asset and audio pipeline is waiting on and working on.
+func (a *App) drawDebugWorkers(r sdl.Rect) {
+	if a.d.Manager == nil {
+		return
+	}
+	c := a.ctx
+	y := r.Y
+	line := func(s string, col sdl.Color) {
+		c.LabelClipped(r.X, y, r.W, s, col)
+		y += debugLineH
+	}
+	s := a.d.Manager.WorkStats()
+	line(fmt.Sprintf("Fetch: %d/%d busy · high lane %d/%d · low lane %d/%d · shed %d · repeat asks merged %d",
+		s.Pool.Busy, s.Pool.Workers, s.Pool.HighQueued, s.Pool.HighCap, s.Pool.LowQueued, s.Pool.LowCap, s.Pool.Shed, s.Coalesced), ColText)
+	line(fmt.Sprintf("Decode: %d/%d busy · queue %d/%d", len(s.Decoding), s.DecodeWorkers, s.DecodeQueued, s.DecodeCap), ColText)
+	line(fmt.Sprintf("Waiting for the frame loop: images %d/%d · audio %d/%d", s.DecodedQueued, s.DecodedCap, s.AudioQueued, s.AudioCap), ColText)
+	col := ColText
+	if s.Pool.Blocked > 0 {
+		col = ColDanger
+	}
+	line(fmt.Sprintf("Caller blocked on a full high lane: %d times · longest %v", s.Pool.Blocked, s.Pool.LongestBlock.Round(time.Millisecond)), col)
+	if a.d.Audio != nil {
+		line(fmt.Sprintf("Audio load on the main thread: longest %v", a.d.Audio.LongestLoad().Round(time.Millisecond)), ColText)
+	}
+	y += debugLineH / 2
+	work := func(title string, items []network.WorkItem) {
+		line(fmt.Sprintf("%s now (%d):", title, len(items)), ColAccent)
+		now := time.Now()
+		for i, it := range items {
+			if i == debugWorkListMax {
+				break
+			}
+			line(fmt.Sprintf("  %v  %s  %s", now.Sub(it.Since).Round(time.Millisecond), it.Kind, it.Name), ColTextDim)
+		}
+	}
+	work("Fetching", s.Fetching)
+	work("Decoding", s.Decoding)
+	y += debugLineH / 2
+	line("By type: queued · started · decoded · average wait · longest wait", ColAccent)
+	for _, t := range s.PerType {
+		line(fmt.Sprintf("  %s: %d · %d · %d · %v · %v", t.Type, t.Queued, t.Started, t.Decoded,
+			t.AverageWait.Round(time.Millisecond), t.LongestWait.Round(time.Millisecond)), ColText)
 	}
 }
 

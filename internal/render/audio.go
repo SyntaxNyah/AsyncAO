@@ -71,7 +71,9 @@ type Audio struct {
 
 	chunks     map[string]*mix.Audio // key: asset base
 	chunkOrder []string              // FIFO eviction order
-	pending    map[string]pendingPlay
+	// longestLoad is the longest SDL3_mixer load so far, for diagnostics.
+	longestLoad time.Duration
+	pending     map[string]pendingPlay
 
 	// alert is the built-in ping for when the user set no custom sound; it never enters the chunk cache.
 	alert *mix.Audio
@@ -464,12 +466,19 @@ func (a *Audio) onAudioBytes(asset assets.AudioAsset) {
 	a.playChunk(chunk, p.kind)
 }
 
+func (a *Audio) noteLoad(d time.Duration) { a.longestLoad = max(a.longestLoad, d) }
+
+// LongestLoad reports the longest a sound took to load, all of it on the render thread.
+func (a *Audio) LongestLoad() time.Duration { return a.longestLoad }
+
 // loadChunk decodes bytes through SDL3_mixer and caches the sound by base.
 func (a *Audio) loadChunk(base string, data []byte) *mix.Audio {
 	if chunk, ok := a.chunks[base]; ok {
 		return chunk
 	}
+	start := time.Now()
 	chunk, err := a.mixer.Load(data, true)
+	a.noteLoad(time.Since(start))
 	if err != nil {
 		log.Printf("render: audio decode %s failed: %v", base, err)
 		return nil
@@ -701,7 +710,9 @@ func (a *Audio) startMusic(url string, data []byte, loop bool, effects int, seek
 	} else {
 		a.stopMusic() // clears musicURL; set below only on a successful start
 	}
+	start := time.Now()
 	song, err := a.mixer.Load(data, false) // streamed: data stays pinned in the slot
+	a.noteLoad(time.Since(start))
 	if err != nil {
 		log.Printf("render: music decode failed: %v", err)
 		a.restoreOldMusic()

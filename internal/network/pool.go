@@ -3,6 +3,7 @@ package network
 import (
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const (
@@ -53,6 +54,12 @@ type Pool struct {
 	executed atomic.Int64
 	stale    atomic.Int64
 	shed     atomic.Int64
+
+	workers int
+	busy    atomic.Int64
+	// blocked and longestBlockNs record callers that waited on a full high lane, which is a frozen UI on the render thread.
+	blocked        atomic.Int64
+	longestBlockNs atomic.Int64
 }
 
 // NewPool starts workers goroutines draining the two lanes, high first.
@@ -61,9 +68,10 @@ func NewPool(workers int) *Pool {
 		workers = DefaultWorkers
 	}
 	p := &Pool{
-		high: make(chan Job, highLaneCap),
-		low:  make(chan Job, lowLaneCap),
-		stop: make(chan struct{}),
+		high:    make(chan Job, highLaneCap),
+		low:     make(chan Job, lowLaneCap),
+		stop:    make(chan struct{}),
+		workers: workers,
 	}
 	p.workersWG.Add(workers)
 	for i := 0; i < workers; i++ {
@@ -105,6 +113,12 @@ func (p *Pool) Submit(prio Priority, job Job) bool {
 		select {
 		case p.high <- job:
 			return true
+		default:
+		}
+		defer p.noteBlocked(time.Now())
+		select {
+		case p.high <- job:
+			return true
 		case <-p.stop:
 			job.Run(true)
 			return false
@@ -131,6 +145,17 @@ func (p *Pool) Submit(prio Priority, job Job) bool {
 	}
 }
 
+func (p *Pool) noteBlocked(start time.Time) {
+	p.blocked.Add(1)
+	waited := int64(time.Since(start))
+	for {
+		longest := p.longestBlockNs.Load()
+		if waited <= longest || p.longestBlockNs.CompareAndSwap(longest, waited) {
+			return
+		}
+	}
+}
+
 func (p *Pool) worker() {
 	defer p.workersWG.Done()
 	for {
@@ -153,6 +178,8 @@ func (p *Pool) worker() {
 
 func (p *Pool) dispatch(job Job) {
 	stale := job.Epoch != EpochAny && job.Epoch != p.epoch.Load()
+	p.busy.Add(1)
+	defer p.busy.Add(-1)
 	p.runJob(job, stale)
 }
 
@@ -188,6 +215,12 @@ type PoolStats struct {
 	Executed int64 // jobs run fresh
 	Stale    int64 // jobs cancelled (epoch bump, shed, shutdown)
 	Shed     int64 // low-priority jobs shed by backpressure (subset of Stale)
+
+	Workers, Busy       int64
+	HighQueued, HighCap int
+	LowQueued, LowCap   int
+	Blocked             int64         // Submit calls that waited on a full high lane
+	LongestBlock        time.Duration // the longest of those waits
 }
 
 // Stats snapshots the pool's counters.
@@ -196,5 +229,14 @@ func (p *Pool) Stats() PoolStats {
 		Executed: p.executed.Load(),
 		Stale:    p.stale.Load(),
 		Shed:     p.shed.Load(),
+
+		Workers:      int64(p.workers),
+		Busy:         p.busy.Load(),
+		HighQueued:   len(p.high),
+		HighCap:      cap(p.high),
+		LowQueued:    len(p.low),
+		LowCap:       cap(p.low),
+		Blocked:      p.blocked.Load(),
+		LongestBlock: time.Duration(p.longestBlockNs.Load()),
 	}
 }

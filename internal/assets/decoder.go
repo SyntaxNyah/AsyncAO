@@ -20,6 +20,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
 const (
@@ -405,6 +406,10 @@ type DecoderPool struct {
 
 	// decodeNsEWMA tracks decode+fit wall time.
 	decodeNsEWMA atomic.Int64
+
+	workers int
+	// running lists the decodes in progress, for diagnostics.
+	running *network.ActiveWork
 }
 
 // ewmaFoldWeightDen is the EWMA weight denominator (1/4, as the network TTFB EWMA).
@@ -470,6 +475,8 @@ func NewDecoderPool(workers int) *DecoderPool {
 		jobs:     make(chan DecodeRequest, decodeQueueCap),
 		stop:     make(chan struct{}),
 		animGate: newAnimGate(defaultAnimatedDecodeConcurrency),
+		workers:  workers,
+		running:  network.NewActiveWork(workers),
 	}
 	p.wg.Add(workers)
 	for i := 0; i < workers; i++ {
@@ -611,6 +618,7 @@ func (p *DecoderPool) worker() {
 
 // runJob decodes one payload; animated payloads deliver frame 0 first, then the full set replaces it at upload.
 func (p *DecoderPool) runJob(req DecodeRequest) {
+	defer p.running.End(p.running.Begin(req.Type.Name(), req.URL))
 	animated := req.PlayAnimations && sniffMaybeAnimated(req.Data)
 	streamable := animated && streamableFormat(req.Data)
 

@@ -188,7 +188,7 @@ func (a *App) drawServerEvidencePicker(w, h int32) {
 			_ = c.Ren.Copy(page.Frames[0], nil, &rc)
 		} else {
 			c.Fill(rc, ColPanelHi)
-			a.d.Manager.PrefetchExact(url, assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (server evidence picker thumbnail)
+			a.d.Manager.PrefetchExact(url, assets.AssetTypeMisc, network.PriorityLow) // AssetType: Misc (server evidence picker thumbnail)
 		}
 		c.Border(rc, ColPanelHi)
 		c.LabelClipped(cx, cy+evidServerCell+2, evidServerCell, name, ColTextDim)

@@ -98,6 +98,15 @@ type Manager struct {
 	deliveryNotify atomic.Pointer[func()]
 
 	inflight sync.Map // base|type → struct{}: one pipeline pass per asset
+	// queued holds requests waiting in a pool lane; UI code re-asks every frame, which must not fill the lane.
+	queued sync.Map // queuedRequest → struct{}
+
+	// running lists the pipeline passes in progress, for diagnostics.
+	running *network.ActiveWork
+	// perType counts requests by asset type; the last entry is untyped raw URLs.
+	perType [AssetTypeCount + 1]typeWork
+	// coalesced counts requests answered by a job already queued.
+	coalesced atomic.Int64
 
 	// conclusiveMiss holds chains probed to exhaustion, checked before the pool submit; no TTL (see missSet).
 	conclusiveMiss *missSet
@@ -290,6 +299,10 @@ type ManagerDeps struct {
 
 // NewManager builds the Manager from its dependencies.
 func NewManager(deps ManagerDeps) *Manager {
+	workers := int64(network.DefaultWorkers)
+	if deps.Pool != nil {
+		workers = deps.Pool.Stats().Workers
+	}
 	return &Manager{
 		resolver:       deps.Resolver,
 		prefs:          deps.Prefs,
@@ -307,7 +320,122 @@ func NewManager(deps ManagerDeps) *Manager {
 		warningCh:      make(chan Warning, warningChanCap),
 		musicFailCh:    make(chan MusicFailure, musicFailChanCap),
 		conclusiveMiss: newMissSet(conclusiveMissCap),
+		running:        network.NewActiveWork(int(workers)),
 	}
+}
+
+// rawWorkName labels diagnostics for raw URL fetches, which have no AssetType.
+const rawWorkName = "raw"
+
+// queuedRequest identifies a queued job. Epoch is part of it: a job left from the last room runs stale, so it must not
+// answer for this room. Lane too: a low job waiting must not hold back the same asset asked for at high priority.
+type queuedRequest struct {
+	base  string
+	typ   AssetType
+	prio  network.Priority
+	epoch int64
+	quiet bool
+}
+
+// typeWork counts one asset type's journey through the pipeline.
+type typeWork struct {
+	queued, started atomic.Int64
+	decoded         atomic.Int64
+	waitNs          atomic.Int64
+	longestWaitNs   atomic.Int64
+}
+
+func (w *typeWork) noteStart(queuedAt time.Time) {
+	waited := int64(time.Since(queuedAt))
+	w.started.Add(1)
+	w.waitNs.Add(waited)
+	for {
+		longest := w.longestWaitNs.Load()
+		if waited <= longest || w.longestWaitNs.CompareAndSwap(longest, waited) {
+			return
+		}
+	}
+}
+
+// enqueue submits run unless the same request is already queued; a stale or shed job never calls run.
+func (m *Manager) enqueue(req queuedRequest, run func()) {
+	if _, loaded := m.queued.LoadOrStore(req, struct{}{}); loaded {
+		m.coalesced.Add(1)
+		return
+	}
+	work := &m.perType[req.typ]
+	work.queued.Add(1)
+	queuedAt := time.Now()
+	m.pool.Submit(req.prio, network.Job{
+		ID:    m.pool.NextID(),
+		Epoch: req.epoch,
+		Run: func(stale bool) {
+			m.queued.Delete(req)
+			if stale {
+				return
+			}
+			work.noteStart(queuedAt)
+			run()
+		},
+	})
+}
+
+// TypeWorkStats is one asset type's counters; wait is time queued before a worker took the job.
+type TypeWorkStats struct {
+	Type            string
+	Queued, Started int64
+	Decoded         int64
+	AverageWait     time.Duration
+	LongestWait     time.Duration
+}
+
+// WorkStats shows what the asset pipeline is waiting on and working on, for diagnostics.
+type WorkStats struct {
+	Pool                      network.PoolStats
+	Coalesced                 int64
+	DecodeQueued, DecodeCap   int
+	DecodeWorkers             int
+	DecodedQueued, DecodedCap int
+	AudioQueued, AudioCap     int
+	Fetching, Decoding        []network.WorkItem
+	PerType                   []TypeWorkStats
+}
+
+// WorkStats snapshots the pipeline; it allocates, so call it only while the debug panel is showing it.
+func (m *Manager) WorkStats() WorkStats {
+	s := WorkStats{
+		Pool:          m.pool.Stats(),
+		Coalesced:     m.coalesced.Load(),
+		DecodeQueued:  len(m.decoder.jobs),
+		DecodeCap:     cap(m.decoder.jobs),
+		DecodeWorkers: m.decoder.workers,
+		DecodedQueued: len(m.decodedCh),
+		DecodedCap:    cap(m.decodedCh),
+		AudioQueued:   len(m.audioCh),
+		AudioCap:      cap(m.audioCh),
+		Fetching:      m.running.Snapshot(),
+		Decoding:      m.decoder.running.Snapshot(),
+	}
+	for i := range m.perType {
+		w := &m.perType[i]
+		started := w.started.Load()
+		if w.queued.Load() == 0 {
+			continue
+		}
+		name := rawWorkName
+		if t := AssetType(i); t.Valid() {
+			name = t.Name()
+		}
+		stat := TypeWorkStats{
+			Type: name, Queued: w.queued.Load(), Started: started, Decoded: w.decoded.Load(),
+			LongestWait: time.Duration(w.longestWaitNs.Load()),
+		}
+		if started > 0 {
+			stat.AverageWait = time.Duration(w.waitNs.Load() / started)
+		}
+		s.PerType = append(s.PerType, stat)
+	}
+	return s
 }
 
 // SetDeliveryNotify installs or clears the callback fired after each Decoded/Audio delivery, from any goroutine.
@@ -382,15 +510,8 @@ func (m *Manager) prefetchChain(base string, alts []string, t AssetType, prio ne
 		m.skipExhausted(base, t, suppressMissing)
 		return
 	}
-	m.pool.Submit(prio, network.Job{
-		ID:    m.pool.NextID(),
-		Epoch: m.pool.Epoch(),
-		Run: func(stale bool) {
-			if stale {
-				return
-			}
-			m.resolveChain(base, alts, t, suppressMissing)
-		},
+	m.enqueue(queuedRequest{base: base, typ: t, prio: prio, epoch: m.pool.Epoch(), quiet: suppressMissing}, func() {
+		m.resolveChain(base, alts, t, suppressMissing)
 	})
 }
 
@@ -484,15 +605,8 @@ func (m *Manager) PrefetchExact(url string, t AssetType, prio network.Priority) 
 		m.skipExhausted(url, t, false)
 		return
 	}
-	m.pool.Submit(prio, network.Job{
-		ID:    m.pool.NextID(),
-		Epoch: m.pool.Epoch(),
-		Run: func(stale bool) {
-			if stale {
-				return
-			}
-			m.resolveExact(url, t)
-		},
+	m.enqueue(queuedRequest{base: url, typ: t, prio: prio, epoch: m.pool.Epoch()}, func() {
+		m.resolveExact(url, t)
 	})
 }
 
@@ -501,6 +615,7 @@ func (m *Manager) resolveExact(url string, t AssetType) {
 		return
 	}
 	defer m.inflight.Delete(url)
+	defer m.running.End(m.running.Begin(t.Name(), url))
 
 	if m.t1Contains != nil && m.t1Contains(url) {
 		m.t1Hits.Add(1)
@@ -561,42 +676,36 @@ func (m *Manager) PrefetchRaw(url string, prio network.Priority) {
 	if l := m.activeMountLayer(); l != nil && l.Covers(url) {
 		return
 	}
-	m.pool.Submit(prio, network.Job{
-		ID:    m.pool.NextID(),
-		Epoch: m.pool.Epoch(),
-		Run: func(stale bool) {
-			if stale {
+	m.enqueue(queuedRequest{base: url, typ: missTypeRaw, prio: prio, epoch: m.pool.Epoch()}, func() {
+		if _, loaded := m.inflight.LoadOrStore(url, struct{}{}); loaded {
+			return
+		}
+		defer m.inflight.Delete(url)
+		defer m.running.End(m.running.Begin(rawWorkName, url))
+		if _, ok := m.t2.Get(url); ok {
+			m.t2Hits.Add(1)
+			return
+		}
+		if !m.skipDisk(url) {
+			if data, ok := m.disk.Get(url); ok {
+				m.diskHits.Add(1)
+				m.t2.Add(url, data, int64(len(data)))
 				return
 			}
-			if _, loaded := m.inflight.LoadOrStore(url, struct{}{}); loaded {
-				return
+		}
+		data, err := m.netFetch(context.Background(), url)
+		if err != nil {
+			// The current generation, as in resolveExact: a complete URL builds no candidate list.
+			if errors.Is(err, network.ErrAssetNotFound) {
+				m.rememberExhausted(key, m.probeListGen())
 			}
-			defer m.inflight.Delete(url)
-			if _, ok := m.t2.Get(url); ok {
-				m.t2Hits.Add(1)
-				return
-			}
-			if !m.skipDisk(url) {
-				if data, ok := m.disk.Get(url); ok {
-					m.diskHits.Add(1)
-					m.t2.Add(url, data, int64(len(data)))
-					return
-				}
-			}
-			data, err := m.netFetch(context.Background(), url)
-			if err != nil {
-				// The current generation, as in resolveExact: a complete URL builds no candidate list.
-				if errors.Is(err, network.ErrAssetNotFound) {
-					m.rememberExhausted(key, m.probeListGen())
-				}
-				return // any other error is transient and leaves the URL probeable
-			}
-			m.netFetches.Add(1)
-			m.t2.Add(url, data, int64(len(data)))
-			if !m.skipDisk(url) {
-				m.disk.Put(url, data)
-			}
-		},
+			return // any other error is transient and leaves the URL probeable
+		}
+		m.netFetches.Add(1)
+		m.t2.Add(url, data, int64(len(data)))
+		if !m.skipDisk(url) {
+			m.disk.Put(url, data)
+		}
 	})
 }
 
@@ -705,15 +814,8 @@ func (m *Manager) PrefetchSticky(base string, t AssetType, prio network.Priority
 		m.skipExhausted(base, t, false)
 		return
 	}
-	m.pool.Submit(prio, network.Job{
-		ID:    m.pool.NextID(),
-		Epoch: network.EpochAny,
-		Run: func(stale bool) {
-			if stale {
-				return
-			}
-			m.resolveChain(base, nil, t, false)
-		},
+	m.enqueue(queuedRequest{base: base, typ: t, prio: prio, epoch: network.EpochAny}, func() {
+		m.resolveChain(base, nil, t, false)
 	})
 }
 
@@ -724,6 +826,7 @@ func (m *Manager) resolveChain(primary string, alts []string, t AssetType, suppr
 		return // an identical pass is already in flight
 	}
 	defer m.inflight.Delete(key)
+	defer m.running.End(m.running.Begin(t.Name(), primary))
 	// Sampled before the walk: rememberExhausted drops the verdict if the probe list changed during the pass.
 	startGen := m.probeListGen()
 
@@ -869,6 +972,9 @@ func (m *Manager) deliver(url, base string, t AssetType, data []byte, fromPack b
 				d != nil && len(d.Frames) > 0 && d.FrameOffset == 0 {
 				// Store only frame 0: later appends and the finalize would overwrite it with a mid-clip or empty frame.
 				m.thumbs.Store(base, d)
+			}
+			if err == nil && d != nil && !d.Partial {
+				m.perType[t].decoded.Add(1)
 			}
 			m.decodedCh <- DecodedAsset{URL: doneURL, Base: base, Type: t, Asset: d, Err: err, FromPack: fromPack}
 			m.NotifyDelivery()
