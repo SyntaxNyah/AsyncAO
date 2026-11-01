@@ -13,13 +13,14 @@ Contributor CI and releases are separate pipelines that share only `checks.yml` 
 | Only docs changed (`docs/`, root `*.md`, `LICENSE`) | Nothing. |
 | A release starts (below) | All the checks again, then packaging, then publishing. |
 
-`ci-ok` summarises contributor CI. It is the status to require on PRs, and it
-keeps working when the jobs behind it change. Requiring it takes repo admin
-access.
+`ci-ok` summarises PR CI. It is the status to require on PRs, and it keeps working
+when the jobs behind it change. Requiring it takes repo admin access. Branch pushes
+never report it, so a commit has one result for it. Opening a PR on a commit that was
+already pushed builds that commit a second time; later pushes build once.
 
 ## Layout
 
-- `.github/workflows/ci.yml` chooses the checks for branches and PRs.
+- `.github/workflows/ci.yml` chooses the checks for PRs; `branch-build.yml` packages branches with no open PR.
 - `.github/workflows/checks.yml` holds lint and tests, `build.yml` holds packaging. CI and releases share both.
 - `.github/workflows/release.yml` publishes; `security.yml` runs `govulncheck` weekly, outside `ci-ok`.
 - `.github/actions/setup-build` installs Go and the C libraries. It is the one place the Go and SDL versions are set for CI.

@@ -1,13 +1,11 @@
-# Contributor CI. Branch pushes and draft PRs only package the client on every
-# platform, which proves it compiles and leaves test builds as artifacts; a PR that
-# is ready for review also gets every check and a smoke test. Merging to main runs no
-# CI: release.yml does its own checks. Require
-# `ci-ok`: it stays the one status whatever the jobs behind it are. See docs/RELEASING.md.
+# PR CI. Draft PRs only package the client on every platform, which proves it compiles
+# and leaves test builds as artifacts; a PR that is ready for review also gets every
+# check and a smoke test. Merging to main runs no CI: release.yml does its own checks.
+# Require `ci-ok`: it stays the one status whatever the jobs behind it are. Branches
+# with no PR use branch-build.yml. See docs/RELEASING.md.
 name: CI
 
 on:
-  push:
-    branches-ignore: [main]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
@@ -23,9 +21,6 @@ jobs:
   scope:
     name: Choose checks
     runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      pull-requests: read
     outputs:
       mode: ${{ steps.mode.outputs.mode }}
     steps:
@@ -34,27 +29,17 @@ jobs:
           fetch-depth: 0
       - id: mode
         env:
-          GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
-          BRANCH: ${{ github.ref_name }}
           IS_DRAFT: ${{ github.event.pull_request.draft }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PUSH_BEFORE: ${{ github.event.before }}
         run: |
           mode=full
-          if [ "$EVENT" = push ]; then
-            mode=package
-            # An open PR's own run already covers this commit.
-            if [ "$(gh pr list --head "$BRANCH" --state open --json number --jq length)" != 0 ]; then
-              mode=none
-            fi
-          elif [ "$IS_DRAFT" = true ]; then
+          if [ "$IS_DRAFT" = true ]; then
             mode=package
           fi
-          base="${PR_BASE:-$PUSH_BEFORE}"
-          # Changing nothing but docs needs no checks. A new branch or a force push
-          # has no usable base, so it counts as a code change.
-          if [ "$EVENT" != workflow_dispatch ] && changed="$(git diff --name-only "$base" "$GITHUB_SHA")" &&
+          # Changing nothing but docs needs no checks. This can't be a paths-ignore
+          # filter: a required `ci-ok` that never reports would block the PR.
+          if [ "$EVENT" != workflow_dispatch ] && changed="$(git diff --name-only "$PR_BASE" "$GITHUB_SHA")" &&
             [ -n "$changed" ] && ! grep -qvE '^docs/|^[^/]+\.md$|^LICENSE' <<<"$changed"; then
             mode=none
           fi
