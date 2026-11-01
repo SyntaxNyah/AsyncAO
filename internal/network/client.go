@@ -74,7 +74,7 @@ type Client struct {
 	// assets is the asset client for the Network it was built from; see assetClient.
 	assets atomic.Pointer[assetClient]
 	// tune sizes each asset transport.
-	tune     func(*http.Transport)
+	tune     func(*http.Transport) //nolint:forbidigo // tunes a transport the Factory built; it opens nothing
 	group    singleflight.Group
 	notFound *expirable.LRU[string, struct{}]
 	dns      *dnsCache
@@ -138,7 +138,7 @@ func NewClientNotFoundTTL(ttl time.Duration, sockets *netproxy.Factory) *Client 
 }
 
 // tuneAssetTransport sizes the pool for asset streaming; assets are pre-compressed media, so transparent gzip would waste CPU.
-func tuneAssetTransport(t *http.Transport) {
+func tuneAssetTransport(t *http.Transport) { //nolint:forbidigo // tunes a transport the Factory built; it opens nothing
 	t.MaxConnsPerHost = defaultMaxConnsPerHost
 	t.MaxIdleConnsPerHost = defaultMaxIdleConnsPerHost
 	t.MaxIdleConns = defaultMaxIdleConnsTotal
