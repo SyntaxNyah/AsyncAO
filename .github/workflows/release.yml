@@ -1,548 +1,155 @@
-# AsyncAO release pipeline. Pushing a tag like `v0.1.0` builds every platform
-# (full default + a lean `-tags "nodiscord novoice"` flavour with Discord Rich
-# Presence AND the LemmyAO/Nyathena voice chat compiled out), STAMPS the running
-# version into the binary (so the in-app self-update check works — an unstamped
-# build reports "dev" and never updates), and publishes a GitHub Release with all
-# the assets attached. This is the "use the GitHub API instead of shipping to
-# testers by hand" pipeline: tag, push, done.
-#
-# Asset names are deliberate — the self-updater downloads ONE asset and renames
-# it straight over the running executable, so the swappable default MUST be a bare
-# binary whose name carries this platform's token (see update.SelfUpdateAssetMatch):
-#   asyncao-windows-x86_64.exe            <- Windows self-update target (DLLs already beside it)
-#   asyncao-windows-x86_64-bundle.zip     <- Windows FIRST install (exe + runtime DLLs)
-#   AsyncAO-linux-x86_64.AppImage         <- Linux: self-contained, serves install AND self-update
-#   asyncao-macos-arm64                   <- macOS (Apple Silicon) self-update target (rewritten, loads ./lib)
-#   asyncao-macos-bundle-arm64.tar.gz     <- macOS FIRST install (binary + bundled lib/, self-contained)
-#   asyncao-macos-homebrew-arm64.tar.gz   <- macOS Homebrew edition (bare binary + INSTALL.txt, brew supplies libs)
-# The -nodiscord / -bundle / -homebrew variants are named so they never collide
-# with a token. Token-dodge for the macOS bundle AND homebrew tarballs: the darwin
-# self-update token is the substring "macos-arm64"; neither "macos-bundle-arm64"
-# nor "macos-homebrew-arm64" contains it (the "-bundle-"/"-homebrew-" breaks the
-# run), so the self-updater never renames a .tar.gz over the running binary —
-# same dodge as the -nodiscord- and Windows -bundle.zip names.
+# Publishes a release in one of two ways. See docs/RELEASING.md.
+#   - CI passed on main and the CHANGELOG's newest version has no tag yet.
+#   - A v* tag was pushed by hand; this runs the checks itself, as CI skips tags.
+# Assets upload to a draft, and only a complete draft is published, which also
+# creates the tag for the CHANGELOG path.
 name: Release
 
 on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   push:
     tags: ["v*"]
-  # Manual re-run for debugging the pipeline without cutting a tag (publishes
-  # nothing unless a matching tag exists — gh --verify-tag guards that).
-  workflow_dispatch:
 
 permissions:
-  contents: write # gh release create writes a Release on this repo
+  contents: read
 
-env:
-  GO_VERSION: "1.25" # must match the go directive in go.mod
-  # The version stamped into every binary for the self-update check (inlined into
-  # each build step as `…Version=${{ github.ref_name }}`). github.ref_name is the
-  # tag (e.g. v0.1.0) on a tag push; a manual dispatch from a branch stamps the
-  # branch name, which compareSemver reads as 0.0.0 (harmless — that run won't
-  # publish anyway, see the release job's tag guard).
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  build-windows:
-    name: Windows x86_64${{ matrix.variant.label }}
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        variant:
-          - { id: default, label: "", tags: "", exe: "asyncao-windows-x86_64.exe", zip: "asyncao-windows-x86_64-bundle.zip" }
-          - { id: nodiscord, label: " (Discord-free, no voice)", tags: "nodiscord novoice", exe: "asyncao-windows-x86_64-nodiscord.exe", zip: "asyncao-windows-x86_64-nodiscord-bundle.zip" }
-    defaults:
-      run:
-        shell: msys2 {0}
+  resolve:
+    name: Choose version
+    if: >-
+      github.event_name == 'push' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    outputs:
+      proceed: ${{ steps.resolve.outputs.proceed }}
+      version: ${{ steps.resolve.outputs.version }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
+      sha: ${{ steps.commit.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: UCRT64
-          update: true
-          install: >-
-            mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-pkgconf
-            mingw-w64-ucrt-x86_64-sdl3
-            mingw-w64-ucrt-x86_64-sdl3-ttf
-            mingw-w64-ucrt-x86_64-sdl3-mixer
-            mingw-w64-ucrt-x86_64-libwebp
-            mingw-w64-ucrt-x86_64-libavif
-            mingw-w64-ucrt-x86_64-opus
-            mingw-w64-ucrt-x86_64-opusfile
-            mingw-w64-ucrt-x86_64-vulkan-loader
-            mingw-w64-ucrt-x86_64-mesa
-            git
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-      # See ci.yml: setup-go's PATH edit is invisible to the MSYS2 shell, so
-      # republish GOROOT (a non-PATH env var DOES cross into MSYS2).
-      - name: Expose GOROOT to the MSYS2 shell
-        shell: pwsh
-        run: '"GOROOT=$(go env GOROOT)" | Out-File -FilePath $env:GITHUB_ENV -Append'
-      # Regenerate the Windows VERSIONINFO syso with THIS tag's version so the
-      # .exe's Properties → Details shows the real release version, not the
-      # committed 1.62.0.0 baseline. BEST-EFFORT: continue-on-error + a guarded
-      # script, so any failure (network, tool, a non-semver dispatch ref) falls
-      # back silently to the committed cmd/asyncao/versioninfo_windows.syso — the
-      # build never depends on this succeeding. goversioninfo is PINNED (never
-      # @latest) and run via `go run` so it never enters go.mod. -64 emits an
-      # amd64 COFF the amd64 link can consume (a 32-bit syso would fail to link).
-      - name: Regenerate VERSIONINFO with the tag version (best-effort)
-        continue-on-error: true
-        run: |
-          export PATH="$(cygpath -u "$GOROOT")/bin:$PATH"
-          ver="${{ github.ref_name }}"
-          ver="${ver#v}"                 # strip a leading v
-          ver="${ver%%-*}"               # drop any prerelease suffix (-test.N)
-          IFS='.' read -r MA MI PA _ <<< "$ver"
-          # Only proceed when the tag parsed into numeric major.minor.patch;
-          # otherwise leave the committed syso in place.
-          if [[ "$MA" =~ ^[0-9]+$ && "$MI" =~ ^[0-9]+$ && "$PA" =~ ^[0-9]+$ ]]; then
-            j=cmd/asyncao/versioninfo.json
-            gen=cmd/asyncao/_versioninfo.tag.json
-            # Rewrite the four numeric FixedFileInfo fields and both dotted
-            # StringFileInfo version strings to this tag; leave every other field.
-            sed -e "s/\"Major\": [0-9]*/\"Major\": $MA/g" \
-                -e "s/\"Minor\": [0-9]*/\"Minor\": $MI/g" \
-                -e "s/\"Patch\": [0-9]*/\"Patch\": $PA/g" \
-                -e "s/\"FileVersion\": \"[0-9.]*\"/\"FileVersion\": \"$MA.$MI.$PA.0\"/g" \
-                -e "s/\"ProductVersion\": \"[0-9.]*\"/\"ProductVersion\": \"$MA.$MI.$PA.0\"/g" \
-                "$j" > "$gen"
-            go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.0 \
-              -64 -o cmd/asyncao/versioninfo_windows.syso "$gen"
-            rm -f "$gen"
-            echo "Regenerated VERSIONINFO for $MA.$MI.$PA.0"
-          else
-            echo "::notice::Non-numeric ref ${{ github.ref_name }} - keeping the committed VERSIONINFO syso."
-          fi
-      - name: Build + bundle DLLs
-        run: |
-          export PATH="$(cygpath -u "$GOROOT")/bin:$PATH"
-          export CGO_ENABLED=1
-          mkdir -p dist
-          # -H=windowsgui: GUI subsystem, so the released exe opens no console window.
-          go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath \
-            -ldflags "-s -w -H=windowsgui -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=${{ github.ref_name }}" \
-            -o dist/asyncao.exe ./cmd/asyncao
-          # Ship the runtime DLLs next to the exe so the bundle runs anywhere.
-          # Libraries loaded on demand appear in no import table, so they and their
-          # own imports are added by hand (build.ps1 does the same): SDL3_mixer's
-          # opusfile, SDL's Vulkan loader, and lavapipe (the software Vulkan driver).
-          ondemand="/ucrt64/bin/libopusfile-0.dll /ucrt64/bin/vulkan-1.dll /ucrt64/bin/vulkan_lvp.dll"
-          { ldd dist/asyncao.exe; for d in $ondemand; do echo "$d"; ldd "$d"; done; } |
-            grep -io '/ucrt64/bin/[a-z0-9_.+-]*\.dll' | sort -u | while read -r dll; do
-            cp "$dll" dist/
-          done
-          # lavapipe's manifest, pointing at the staged DLL (msys2's points into its own tree).
-          sed 's|"library_path": *"[^"]*"|"library_path": ".\\\\vulkan_lvp.dll"|' \
-            /ucrt64/share/vulkan/icd.d/lvp_icd.x86_64.json > dist/lvp_icd.x86_64.json
-      # Authenticode signing — reduces the SmartScreen "unknown publisher" warning
-      # (an OV cert builds reputation over time; an EV cert clears it immediately).
-      # GATED: with no WINDOWS_CODESIGN_PFX_BASE64 secret it skips cleanly and ships
-      # an UNSIGNED build, so the pipeline works before the user has a certificate.
-      # Runs BEFORE zipping so both the bare exe AND the bundle carry the signature.
-      # See docs/CODE-SIGNING.md for the secrets to add.
-      - name: Sign the Windows binary (skipped without a cert secret)
-        shell: pwsh
+      - id: commit
         env:
-          WIN_CERT_BASE64: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
-          WIN_CERT_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
-        run: |
-          if ([string]::IsNullOrEmpty($env:WIN_CERT_BASE64)) {
-            Write-Host "::notice::No WINDOWS_CODESIGN_PFX_BASE64 secret - shipping an UNSIGNED Windows build (SmartScreen may warn). See docs/CODE-SIGNING.md."
-            exit 0
-          }
-          $pfx = Join-Path $env:RUNNER_TEMP "asyncao-codesign.pfx"
-          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WIN_CERT_BASE64))
-          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
-            Sort-Object FullName -Descending | Select-Object -First 1
-          if (-not $signtool) { Write-Error "signtool.exe not found in the Windows SDK"; exit 1 }
-          # SHA-256 digest + an RFC-3161 timestamp so the signature stays valid after the cert expires.
-          & $signtool.FullName sign /f $pfx /p $env:WIN_CERT_PASSWORD /fd SHA256 `
-            /tr http://timestamp.digicert.com /td SHA256 dist\asyncao.exe
-          if ($LASTEXITCODE -ne 0) { Write-Error "signtool failed ($LASTEXITCODE)"; exit 1 }
-          & $signtool.FullName verify /pa dist\asyncao.exe
-          Remove-Item $pfx -Force
-          Write-Host "Signed dist\asyncao.exe"
-      - name: Name the release assets (bare exe + DLL bundle)
-        shell: pwsh
-        run: |
-          Copy-Item dist\asyncao.exe ".\${{ matrix.variant.exe }}"
-          Compress-Archive -Path dist\* -DestinationPath ".\${{ matrix.variant.zip }}" -Force
-      - uses: actions/upload-artifact@v4
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          name: release-windows-${{ matrix.variant.id }}
-          path: |
-            ${{ matrix.variant.exe }}
-            ${{ matrix.variant.zip }}
+          ref: ${{ steps.commit.outputs.sha }}
+          fetch-depth: 0
+      - id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE: ${{ github.event_name == 'push' && 'tag' || 'changelog' }}
+          TAG: ${{ github.ref_name }}
+        run: bash scripts/release-resolve.sh "$SOURCE" "$TAG"
 
-  build-linux:
-    name: Linux x86_64 AppImage${{ matrix.variant.label }}
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        variant:
-          - { id: default, label: "", tags: "", out: "AsyncAO-linux-x86_64.AppImage" }
-          - { id: nodiscord, label: " (Discord-free, no voice)", tags: "nodiscord novoice", out: "AsyncAO-linux-x86_64-nodiscord.AppImage" }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-      - name: Install C dependencies + SDL3 (cached build) + AppImage tooling
-        uses: ./.github/actions/setup-sdl3
-        with:
-          extra-packages: patchelf desktop-file-utils
-      - name: Build (version-stamped)
-        run: |
-          export CGO_ENABLED=1
-          go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath \
-            -ldflags "-s -w -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=${{ github.ref_name }}" \
-            -o asyncao ./cmd/asyncao
-      - name: Package the AppImage
-        run: |
-          chmod +x scripts/build-appimage.sh
-          APPIMAGE_OUTPUT="${{ matrix.variant.out }}" scripts/build-appimage.sh ./asyncao
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-linux-${{ matrix.variant.id }}
-          path: dist/${{ matrix.variant.out }}
+  checks:
+    needs: resolve
+    if: github.event_name == 'push' && needs.resolve.outputs.proceed == 'true'
+    uses: ./.github/workflows/checks.yml
+    with:
+      ref: ${{ needs.resolve.outputs.sha }}
 
-  build-macos:
-    name: macOS arm64${{ matrix.variant.label }}
-    runs-on: macos-latest
-    strategy:
-      matrix:
-        # `asset`  = the bare, self-contained self-update binary (its name carries
-        #            the darwin "macos-arm64" token; the self-updater matches it).
-        # `bundle` = the FIRST-install tarball (binary + bundled lib/). Its name is
-        #            "...-macos-bundle-arm64.tar.gz": it must NOT contain the
-        #            "macos-arm64" substring, or the self-updater would rename the
-        #            .tar.gz over the running binary and brick the install. The
-        #            "-bundle-" between "macos" and "arm64" breaks the substring —
-        #            NEVER rename this to "...-macos-arm64-bundle...".
-        #
-        # `homebrew` = the SMALL Homebrew edition (bare binary + INSTALL.txt, NO
-        #            bundled lib/): the user runs `brew install …` and the binary
-        #            resolves its libs via the /opt/homebrew/lib rpath fallback
-        #            bundle-macos.sh added. Its name "...-macos-homebrew-arm64.tar.gz"
-        #            must NOT contain "macos-arm64" for the same token reason as the
-        #            bundle — "-homebrew-" breaks the run. NEVER rename it to put
-        #            "arm64" straight after "macos".
-        variant:
-          - { id: default, label: "", tags: "", asset: "asyncao-macos-arm64", bundle: "asyncao-macos-bundle-arm64.tar.gz", homebrew: "asyncao-macos-homebrew-arm64.tar.gz" }
-          - { id: nodiscord, label: " (Discord-free, no voice)", tags: "nodiscord novoice", asset: "asyncao-macos-nodiscord-arm64", bundle: "asyncao-macos-nodiscord-bundle-arm64.tar.gz", homebrew: "asyncao-macos-homebrew-nodiscord-arm64.tar.gz" }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-      # The cached SDL3 build (see .github/actions/setup-sdl3) plus dylibbundler
-      # for scripts/bundle-macos.sh. Ogg-Opus MUSIC decode/seek comes from the
-      # opusfile formula, linked into that libSDL3_mixer; the bare `opus` formula
-      # is only the codec (voice chat).
-      - name: Install C dependencies + SDL3 (cached build)
-        uses: ./.github/actions/setup-sdl3
-        with:
-          extra-packages: dylibbundler
-      - name: Build (version-stamped)
-        run: |
-          export CGO_ENABLED=1
-          # Embed NSHighResolutionCapable so the bare binary (no .app/Info.plist)
-          # still gets a 2x Retina backing store on macOS instead of 1x compat mode.
-          go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath \
-            -ldflags "-s -w -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=${{ github.ref_name }} -extldflags=-Wl,-sectcreate,__TEXT,__info_plist,$PWD/packaging/macos/Info.plist" \
-            -o "${{ matrix.variant.asset }}" ./cmd/asyncao
-      # Make the binary self-contained: bundle its dylib closure into a staging
-      # folder with @rpath install names, and rewrite the bare `asset` in place so
-      # it too loads ./lib. This runs BEFORE codesign so the proper Developer-ID
-      # signature (when secrets exist) is the LAST thing applied. The script also
-      # ad-hoc signs, so the no-secret path still ships runnable arm64 code.
-      #
-      # FAIL-OPEN, like every other fragile mac step (codesign below, Flatpak, the
-      # Windows VERSIONINFO regen): a bundler/otool-guard hiccup on macOS must NOT
-      # strand the Windows + Linux release (continue-on-error keeps the job green,
-      # so the release job's needs.build-macos success gate still passes). But
-      # fail-open must not become fail-DIRTY: the bare asset already exists from
-      # the build step still Homebrew-linked, and bundle-macos.sh creates the
-      # staging dir before its fallible steps — so on ANY bundler/guard failure we
-      # DELETE both. Shipping that bare asset would hand every tarball-install
-      # self-updater a binary dyld can't launch without Homebrew (the updater's
-      # preflight now refuses Homebrew-linked binaries, but the asset must not
-      # exist in the first place), and tar would happily pack the partial stage.
-      # With both gone, upload-artifact finds nothing (if-no-files-found default
-      # `warn`), the release ships without this variant's mac assets, and the
-      # in-app updater falls back to opening the release page. The same blocking
-      # assertion runs in ci.yml (identical brew set + script) on every branch
-      # push; this cleanup covers formula drift between that CI run and tag time.
-      - name: Bundle dylibs (self-contained)
-        continue-on-error: true
-        env:
-          ASSET: ${{ matrix.variant.asset }}
-        run: |
-          if ! bash scripts/bundle-macos.sh "$ASSET" "macos-stage"; then
-            echo "::warning::bundle-macos.sh failed — deleting the $ASSET assets so nothing Homebrew-linked can ship"
-            rm -f "$ASSET"
-            rm -rf macos-stage
-            exit 1
-          fi
-      # Developer ID codesign + notarize. GATED on the Apple secrets and entirely
-      # BEST-EFFORT: with no cert it skips cleanly, and a signing/notary hiccup logs a
-      # warning but never fails the job (an unsigned-but-built binary still ships) — the
-      # same non-blocking stance as the Flatpak job, since this can't be tested here.
-      # See docs/CODE-SIGNING.md for the secrets and how to obtain the certificate.
-      - name: Codesign + notarize (skipped without Apple secrets)
-        continue-on-error: true
-        env:
-          APPLE_P12_BASE64: ${{ secrets.APPLE_CODESIGN_P12_BASE64 }}
-          APPLE_P12_PASSWORD: ${{ secrets.APPLE_CODESIGN_PASSWORD }}
-          APPLE_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_NOTARY_TEAM_ID }}
-          ASSET: ${{ matrix.variant.asset }}
-        run: |
-          # A failed bundle step deleted the asset + stage: skip deliberately
-          # (quiet, accurate log) instead of dying mid-keychain-setup on a
-          # missing path — and never print the "shipping" notice for a variant
-          # that ships nothing.
-          if [ ! -f "macos-stage/$ASSET" ]; then
-            echo "::warning::no staged bundle (bundler failed earlier) — skipping codesign"
-            exit 1
-          fi
-          if [ -z "$APPLE_P12_BASE64" ]; then
-            # No cert: bundle-macos.sh already ad-hoc signed the binary AND every
-            # lib/*.dylib, so the staged folder runs on a clean Mac (Gatekeeper
-            # warns, nothing breaks). Nothing to re-sign here.
-            echo "::notice::No APPLE_CODESIGN_P12_BASE64 secret - shipping an ad-hoc-signed (unnotarized) macOS build (Gatekeeper will warn). See docs/CODE-SIGNING.md."
-            exit 0
-          fi
-          set -x
-          KEYCHAIN="$RUNNER_TEMP/asyncao.keychain-db"
-          KEYCHAIN_PW="$(uuidgen)"
-          security create-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN"
-          security unlock-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
-          echo "$APPLE_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
-          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$APPLE_P12_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PW" "$KEYCHAIN"
-          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
-          # Sign INSIDE-OUT: notarization requires every nested Mach-O (the bundled
-          # dylibs) to be signed before the code that loads them. --force replaces
-          # the ad-hoc signature bundle-macos.sh applied. The bare self-update
-          # `$ASSET` and the staged copy are the same file content but separate
-          # paths, so sign both.
-          STAGED="macos-stage/$ASSET"
-          for dylib in macos-stage/lib/*.dylib; do
-            [ -e "$dylib" ] || continue
-            codesign --force --options runtime --timestamp --sign "$APPLE_IDENTITY" "$dylib"
-          done
-          codesign --force --options runtime --timestamp --sign "$APPLE_IDENTITY" "$STAGED"
-          codesign --verify --strict --verbose=2 "$STAGED"
-          # The bare self-update asset ships without lib/, so sign it standalone too.
-          codesign --force --options runtime --timestamp --sign "$APPLE_IDENTITY" "$ASSET"
-          codesign --verify --strict --verbose=2 "$ASSET"
-          # Notarize the WHOLE staged folder (binary + lib/), not just the bare
-          # binary: Gatekeeper checks the nested dylibs too. A folder/binary can't
-          # be stapled (needs an .app/.dmg/.pkg), so verification is online on
-          # first run — zip the staged dir with its lib/ intact.
-          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_ID_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
-            ditto -c -k --keepParent "macos-stage" "$RUNNER_TEMP/notarize.zip"
-            xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
-              --apple-id "$APPLE_ID" --password "$APPLE_ID_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
-          else
-            echo "::notice::Codesigned but NOT notarized (no APPLE_NOTARY_* secrets)."
-          fi
-          security delete-keychain "$KEYCHAIN"
-      # Pack the first-install tarball: the staged folder (binary + lib/) that
-      # runs on a clean Mac. --keepParent isn't used; we cd into the stage so the
-      # archive holds the binary + lib/ at the top level (unzip-and-run).
-      # FAIL-OPEN for the same reason as the bundle step above: a mac packaging
-      # hiccup omits the mac assets (upload-artifact warns on the absent file) but
-      # never blocks the Windows + Linux release. The explicit stage-dir guard
-      # (not just letting tar error) makes the skip-on-failed-bundle deliberate:
-      # the bundle step deleted the stage, so there is nothing safe to pack.
-      - name: Pack first-install tarball
-        continue-on-error: true
-        env:
-          ASSET: ${{ matrix.variant.asset }}
-        run: |
-          if [ ! -f "macos-stage/$ASSET" ]; then
-            echo "::warning::no staged bundle (bundler failed earlier) — skipping the tarball"
-            exit 1
-          fi
-          # Drop the bundle-edition install guide INTO the tarball (packed by the
-          # `-C macos-stage .` below). It surfaces the Gatekeeper quarantine relief
-          # (`xattr -dr com.apple.quarantine .`) right where a user extracts, which
-          # is the fix for the per-dylib "allow this library" prompt storm on an
-          # unsigned/unnotarized download. Adding a FILE inside the tarball does not
-          # change the asset NAME, so the self-updater (which matches on name only)
-          # is unaffected; the SHA256SUMS digest is recomputed over final artifacts
-          # at release-assembly time, so it stays consistent.
-          cp packaging/macos/INSTALL-bundle.txt macos-stage/INSTALL.txt
-          tar -czf "${{ matrix.variant.bundle }}" -C "macos-stage" .
-      # The Homebrew edition: a SMALL tarball with just the bare (already rewritten
-      # + signed) binary and its install guide, NO bundled lib/. The binary is the
-      # same bytes as the bare self-update asset — it resolves its libs via the
-      # /opt/homebrew/lib rpath fallback bundle-macos.sh added, so a `brew install`
-      # user runs it with a fraction of the download. We build a CLEAN dir (copying
-      # only the single binary, never the whole stage) so the bundle's lib/ and the
-      # bundle INSTALL.txt can't leak in. FAIL-OPEN + the same staged-binary guard
-      # as the Pack step, and it reuses the built binary — never a fresh go build.
-      #
-      # Updater-safe by name: "asyncao-macos-homebrew-arm64.tar.gz" does not contain
-      # the darwin token "macos-arm64" (the "-homebrew-" breaks the run), so the
-      # self-updater never picks it (see update.SelfUpdateAssetMatch + the decoy in
-      # internal/update's TestSelfUpdatePicksSwappableDefault).
-      - name: Pack Homebrew edition tarball
-        continue-on-error: true
-        env:
-          ASSET: ${{ matrix.variant.asset }}
-        run: |
-          if [ ! -f "macos-stage/$ASSET" ]; then
-            echo "::warning::no staged binary (bundler failed earlier) — skipping the Homebrew tarball"
-            exit 1
-          fi
-          rm -rf macos-brew
-          mkdir -p macos-brew
-          cp "macos-stage/$ASSET" "macos-brew/$ASSET"
-          cp packaging/macos/INSTALL-homebrew.txt macos-brew/INSTALL.txt
-          tar -czf "${{ matrix.variant.homebrew }}" -C "macos-brew" .
-      - uses: actions/upload-artifact@v4
-        with:
-          # Three assets per variant: the bare self-update binary, the bundle
-          # tarball (binary + lib/ + INSTALL.txt), and the Homebrew edition tarball
-          # (binary + INSTALL.txt). download-artifact merge-multiple flattens them
-          # into dist/. A missing file (a failed continue-on-error step) is simply
-          # not uploaded (if-no-files-found default `warn`).
-          name: release-macos-${{ matrix.variant.id }}
-          path: |
-            ${{ matrix.variant.asset }}
-            ${{ matrix.variant.bundle }}
-            ${{ matrix.variant.homebrew }}
+  build:
+    needs: [resolve, checks]
+    if: >-
+      !cancelled() && needs.resolve.outputs.proceed == 'true' &&
+      (needs.checks.result == 'success' || needs.checks.result == 'skipped')
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: ${{ needs.resolve.outputs.sha }}
+      version: ${{ needs.resolve.outputs.version }}
+      variants: '["default", "nodiscord"]'
+      sign: true
+    secrets: inherit
 
+  # Optional: a failure here leaves the Flatpak out and blocks nothing.
   build-flatpak:
-    name: Linux x86_64 Flatpak${{ matrix.variant.label }}
-    runs-on: ubuntu-latest
-    # AsyncAO is AGPLv3, so we ship a Flatpak too. This packaging was authored
-    # without a Linux box to test on, so the job is NON-BLOCKING (continue-on-error
-    # + the release job's success gates exclude it): a flatpak hiccup never holds up
-    # the release — iterate from these logs. Two variants like every other platform.
+    name: Flatpak (${{ matrix.variant }})
+    needs: [resolve, checks]
+    if: >-
+      !cancelled() && needs.resolve.outputs.proceed == 'true' &&
+      (needs.checks.result == 'success' || needs.checks.result == 'skipped')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
-        variant:
-          - { id: default, label: "", tags: "", out: "AsyncAO-linux-x86_64.flatpak" }
-          - { id: nodiscord, label: " (Discord-free, no voice)", tags: "nodiscord novoice", out: "AsyncAO-linux-x86_64-nodiscord.flatpak" }
+        variant: [default, nodiscord]
     steps:
-      - uses: actions/checkout@v4
-      - name: Install flatpak + flatpak-builder + the runtime/SDK
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+      - name: Install flatpak
+        # flatpak-builder strips module debuginfo with elfutils' eu-strip.
         run: |
           sudo apt-get update
-          # elfutils provides eu-strip / eu-elfcompress, which flatpak-builder uses to
-          # strip module debuginfo — absent on the runner, the SDL3_ttf build fails at
-          # the strip step ("Failed to execute child process eu-strip").
           sudo apt-get install -y --no-install-recommends flatpak flatpak-builder elfutils
-          flatpak remote-add --if-not-exists --user flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak install -y --user flathub \
-            org.freedesktop.Platform//24.08 \
-            org.freedesktop.Sdk//24.08 \
-            org.freedesktop.Sdk.Extension.golang//24.08
-      - name: Build the Flatpak bundle (version-stamped)
-        run: |
-          mkdir -p dist
-          # Substitute the template's build tags + version (see the manifest header),
-          # writing the generated manifest beside it so `path: ../..` still resolves.
-          gen=packaging/flatpak/_build.yaml
-          sed -e 's/@ASYNCAO_TAGS@/${{ matrix.variant.tags }}/g' \
-              -e 's/@ASYNCAO_VERSION@/${{ github.ref_name }}/g' \
-              packaging/flatpak/io.github.SyntaxNyah.AsyncAO.yaml > "$gen"
-          flatpak-builder --force-clean --user --repo=_repo _build "$gen"
-          flatpak build-bundle _repo "dist/${{ matrix.variant.out }}" io.github.SyntaxNyah.AsyncAO
-      - uses: actions/upload-artifact@v4
+      - name: Build
+        env:
+          ASYNCAO_VERSION: ${{ needs.resolve.outputs.version }}
+          VARIANT: ${{ matrix.variant }}
+        run: bash scripts/build-flatpak.sh "$VARIANT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: release-flatpak-${{ matrix.variant.id }}
-          path: dist/${{ matrix.variant.out }}
+          name: release-flatpak-${{ matrix.variant }}
+          path: dist/*.flatpak
+          if-no-files-found: error
 
-  release:
-    name: Publish GitHub Release
-    needs: [build-windows, build-linux, build-macos, build-flatpak]
-    runs-on: ubuntu-latest
-    # Only publish on a real tag push — a manual workflow_dispatch from a branch
-    # builds the binaries (handy for debugging the pipeline) but doesn't publish.
-    # build-flatpak is a dependency so its bundle is READY to attach, but it must
-    # never block the release: !cancelled() + the explicit core-platform success
-    # gates mean a flatpak failure is simply omitted, everything else still ships.
-    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/') && needs.build-windows.result == 'success' && needs.build-linux.result == 'success' && needs.build-macos.result == 'success' }}
+  publish:
+    name: Publish
+    needs: [resolve, build, build-flatpak]
+    if: >-
+      !cancelled() && needs.resolve.outputs.proceed == 'true' && needs.build.result == 'success'
+    runs-on: ubuntu-24.04
+    environment: release
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.resolve.outputs.version }}
+      PRERELEASE: ${{ needs.resolve.outputs.prerelease }}
+      SHA: ${{ needs.resolve.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # need the annotated tag's message for the release notes
-      - name: Collect all built assets
-        uses: actions/download-artifact@v4
+          ref: ${{ needs.resolve.outputs.sha }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: dist
           pattern: release-*
           merge-multiple: true
-      - name: Compute SHA256SUMS over the assembled (already-signed) assets
+      - name: Check the assets against the manifest
+        run: bash scripts/check-release-assets.sh dist
+      # The in-app updater verifies its download against this file (internal/update.FetchSums).
+      - name: Compute SHA256SUMS
         run: |
-          # Hash the FINAL artifacts here, at release-assembly time, so the
-          # published digest matches whatever shipped — including the Windows
-          # signature (signing happens inside build-windows on dist\asyncao.exe
-          # BEFORE it's named/zipped, so every downloaded artifact is already
-          # signed by now) and the macOS codesign. The in-app self-updater
-          # (internal/update.FetchSums) fetches this asset and verifies the
-          # download before the swap; releases cut before this step existed carry
-          # no SHA256SUMS.txt and the updater proceeds unverified (integrity-only).
-          #
-          # Globbed, never a hardcoded asset list, so a missing asset (e.g. the
-          # continue-on-error Flatpak) simply isn't hashed. Computed while the
-          # file does NOT yet live in dist/, so the manifest can't hash itself;
-          # then moved in so `gh release create dist/*` attaches it. Coreutils
-          # two-space "<hex>  <name>" format — parseSums reads exactly this.
-          ( cd dist && sha256sum * ) > SHA256SUMS.txt
+          ( cd dist && sha256sum -- * ) > SHA256SUMS.txt
           mv SHA256SUMS.txt dist/
-          echo "----- SHA256SUMS.txt -----"; cat dist/SHA256SUMS.txt
-      - name: Build release notes from the CHANGELOG (fall back to the tag annotation)
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+      - name: Draft, then publish
         run: |
-          # The Release notes are the version's CHANGELOG section — the SAME text the
-          # in-app "What's New" tab shows — so the two never drift and every feature for
-          # this version is listed. Falls back to the tag annotation, then a bare title.
-          awk -v ver="${{ github.ref_name }}" '
-            index($0, "## " ver) == 1 { grab=1; next }
-            grab && /^## / { exit }
-            grab { print }
-          ' internal/ui/assets/CHANGELOG.md | sed '/./,$!d' > notes.md
-          if [ ! -s notes.md ]; then
-            git tag -l --format='%(contents)' "${{ github.ref_name }}" > notes.md
+          bash scripts/release-notes.sh "$VERSION" > notes.md
+          # Left behind by an earlier failed run; a published version never reaches this job.
+          gh release delete "$VERSION" --yes 2>/dev/null || true
+          prerelease_flag=()
+          if [ "$PRERELEASE" = true ]; then
+            prerelease_flag=(--prerelease)
           fi
-          if [ ! -s notes.md ]; then
-            echo "AsyncAO ${{ github.ref_name }}" > notes.md
-          fi
-          echo "----- release notes -----"; cat notes.md
-          echo "----- assets -----"; ls -la dist
-      - name: Create / update the GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # Idempotent: drop any existing Release for this tag (the tag itself is kept) so
-          # a re-pushed tag re-publishes cleanly with the current notes + assets.
-          #
-          # Experimental channel automation: a HYPHENATED tag (v1.55.0-test.1 —
-          # cut from the MayAO-Test branch; tag pushes build whatever commit the
-          # tag points at, on any branch) publishes as a PRERELEASE. Stable
-          # clients never see it (/releases/latest excludes prereleases); the
-          # in-app experimental channel (Settings → Power user) follows it.
-          PRE=""
-          case "${{ github.ref_name }}" in
-            *-*) PRE="--prerelease" ;;
-          esac
-          gh release delete "${{ github.ref_name }}" --yes 2>/dev/null || true
-          gh release create "${{ github.ref_name }}" \
-            --title "AsyncAO ${{ github.ref_name }}" \
-            --notes-file notes.md \
-            --verify-tag \
-            $PRE \
-            dist/*
+          gh release create "$VERSION" --draft --target "$SHA" \
+            --title "AsyncAO $VERSION" --notes-file notes.md "${prerelease_flag[@]}" dist/*
+          gh release edit "$VERSION" --draft=false

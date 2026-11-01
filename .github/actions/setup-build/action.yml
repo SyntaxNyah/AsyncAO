@@ -1,0 +1,87 @@
+# Go plus AsyncAO's C dependencies. Windows uses MSYS2's packages. Linux and macOS
+# use a cached libsdl-org/setup-sdl build: Ubuntu's packages are older than the
+# SDL 3.4 AsyncAO needs, and Homebrew's sdl3_mixer links LGPL tracker and MIDI
+# libraries that would all get bundled. Versions and mixer options match
+# scripts/build-sdl3.sh.
+name: Set up build
+description: Install Go and AsyncAO's C dependencies, and point cgo at them.
+inputs:
+  extra-packages:
+    description: More apt (Linux) or brew (macOS) packages the job needs.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    # The one place the Go version is set. A minor version, not go.mod's 1.25.0, so
+    # CI gets security patches. Keep the minor in step with go.mod.
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: "1.25"
+    # path-type inherit makes setup-go's toolchain visible inside the MSYS2 shell.
+    - if: runner.os == 'Windows'
+      uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+      with:
+        msystem: UCRT64
+        update: true
+        path-type: inherit
+        install: >-
+          mingw-w64-ucrt-x86_64-gcc
+          mingw-w64-ucrt-x86_64-pkgconf
+          mingw-w64-ucrt-x86_64-sdl3
+          mingw-w64-ucrt-x86_64-sdl3-ttf
+          mingw-w64-ucrt-x86_64-sdl3-mixer
+          mingw-w64-ucrt-x86_64-libwebp
+          mingw-w64-ucrt-x86_64-libavif
+          mingw-w64-ucrt-x86_64-opus
+          mingw-w64-ucrt-x86_64-opusfile
+          mingw-w64-ucrt-x86_64-vulkan-loader
+          mingw-w64-ucrt-x86_64-mesa
+    - name: Install C dependencies (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      env:
+        EXTRA_PACKAGES: ${{ inputs.extra-packages }}
+      run: |
+        sudo apt-get update
+        # shellcheck disable=SC2086 # one word per package
+        sudo apt-get install -y --no-install-recommends \
+          libwebp-dev libavif-dev libopus-dev libopusfile-dev libfreetype-dev libharfbuzz-dev \
+          cmake ninja-build pkg-config $EXTRA_PACKAGES
+    - name: Install C dependencies (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      env:
+        EXTRA_PACKAGES: ${{ inputs.extra-packages }}
+      run: |
+        # shellcheck disable=SC2086 # one word per package
+        brew install webp libavif opus opusfile freetype harfbuzz ninja pkg-config $EXTRA_PACKAGES
+    # Mixer: zlib-only built-in decoders plus Opus linked at build time so ldd
+    # bundling sees it. SDL and SDL_ttf ignore the SDLMIXER_* arguments.
+    - id: sdl
+      if: runner.os != 'Windows'
+      uses: libsdl-org/setup-sdl@30cb786f3595c27d05018cd374b679f2313c59d3 # v1.0.1
+      with:
+        version: 3.4.18
+        version-sdl-ttf: 3.2.2
+        version-sdl-mixer: 3.2.4
+        pre-release: false
+        build-type: Release
+        install-linux-dependencies: true
+        add-to-environment: true
+        cmake-generator: Ninja
+        cmake-arguments: >-
+          -DSDL_TESTS=OFF -DSDLTTF_VENDORED=OFF -DSDLTTF_HARFBUZZ=ON -DSDLTTF_SAMPLES=OFF
+          -DSDLMIXER_VENDORED=OFF -DSDLMIXER_TESTS=OFF -DSDLMIXER_EXAMPLES=OFF
+          -DSDLMIXER_MIDI=OFF -DSDLMIXER_MOD=OFF -DSDLMIXER_GME=OFF -DSDLMIXER_WAVPACK=OFF
+          -DSDLMIXER_FLAC_LIBFLAC=OFF -DSDLMIXER_MP3_MPG123=OFF -DSDLMIXER_VORBIS_VORBISFILE=OFF
+          -DSDLMIXER_OPUS=ON -DSDLMIXER_DEPS_SHARED=OFF
+    - name: Point cgo at SDL3
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        SDL_PREFIX: ${{ steps.sdl.outputs.prefix }}
+      run: |
+        echo "PKG_CONFIG_PATH=$SDL_PREFIX/lib/pkgconfig:$SDL_PREFIX/lib64/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
+        echo "SDL3_PREFIX=$SDL_PREFIX" >> "$GITHUB_ENV"
+        echo "LD_LIBRARY_PATH=$SDL_PREFIX/lib:$SDL_PREFIX/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"

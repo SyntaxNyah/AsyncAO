@@ -5,8 +5,8 @@
 # Output: dist/AsyncAO-x86_64.AppImage — a single executable that bundles the
 # SDL3 / SDL3_ttf / SDL3_mixer / libwebp / libavif runtime (resolved from the
 # binary's NEEDED libraries by linuxdeploy), so it runs on any reasonably modern
-# x86_64 desktop with no install step. Mirrors the CI "AppImage (Linux x86_64)"
-# job; run it locally after installing the dev deps (scripts/setup-deps.sh).
+# x86_64 desktop with no install step. CI calls this through scripts/package.sh;
+# run it locally after installing the dev deps (scripts/setup-deps.sh).
 #
 # Usage:
 #   scripts/build-appimage.sh                  # build the release binary, then package
@@ -33,9 +33,11 @@ APPDIR="$ROOT/AppDir"
 DESKTOP="$ROOT/packaging/linux/asyncao.desktop"
 ICON="$ROOT/internal/ui/assets/mayo.png"    # the Mayo mascot is the app icon
 
-# linuxdeploy only publishes a rolling "continuous" release.
-LD_URL="https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
-LD_PLUGIN_URL="https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage"
+# Dated releases, not the rolling "continuous" one, so a commit always packages the same way.
+LD_URL="https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage"
+LD_SHA256=c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d
+LD_PLUGIN_URL="https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-appimage-x86_64.AppImage"
+LD_PLUGIN_SHA256=992d502a248e14ab185448ddf6f6e7d25558cb84d4623c354c3af350c25fccb3
 
 # CI runners (and many containers) have no FUSE; run the tool AppImages by
 # self-extraction instead of mounting them.
@@ -62,16 +64,18 @@ BIN="$STAGE/asyncao"
 
 # --- 2. fetch linuxdeploy + the appimage plugin (cached) ---------------------
 mkdir -p "$TOOLS"
-fetch() {  # fetch <url> <dest>
-	local url="$1" dest="$2"
+fetch() {  # fetch <url> <sha256> <dest>
+	local url="$1" sha256="$2" dest="$3"
 	if [[ ! -f "$dest" ]]; then
 		echo ">> downloading $(basename "$dest")"
-		curl -fsSL "$url" -o "$dest"
+		curl -fsSL "$url" -o "$dest.download"
+		echo "$sha256  $dest.download" | sha256sum -c -
+		mv "$dest.download" "$dest"
 		chmod +x "$dest"
 	fi
 }
-fetch "$LD_URL"        "$TOOLS/linuxdeploy"
-fetch "$LD_PLUGIN_URL" "$TOOLS/linuxdeploy-plugin-appimage"
+fetch "$LD_URL"        "$LD_SHA256"        "$TOOLS/linuxdeploy"
+fetch "$LD_PLUGIN_URL" "$LD_PLUGIN_SHA256" "$TOOLS/linuxdeploy-plugin-appimage"
 export PATH="$TOOLS:$PATH"
 
 # --- 3. assemble the AppDir + package ----------------------------------------

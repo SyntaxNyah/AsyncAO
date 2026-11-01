@@ -1,6 +1,6 @@
 # Code signing (Windows SmartScreen + macOS notarization)
 
-The release pipeline (`.github/workflows/release.yml`) signs the Windows `.exe`
+The release pipeline (`.github/workflows/build.yml`) signs the Windows `.exe`
 and codesigns/notarizes the macOS binary **and its bundled dylibs** **when the
 signing secrets are present**.
 
@@ -15,10 +15,9 @@ signing on; nothing else changes.
 > `docs/DEFENDER-FALSE-POSITIVE.md` for the full maintainer checklist and the
 > OV-vs-EV tradeoff in context.
 
-> These steps were authored without certificates to test against. The macOS step
-> is **best-effort** (a hiccup logs a warning but never fails the release, like
-> the Flatpak job). Treat the first signed release as a shakedown and read the CI
-> logs.
+> These steps were authored without certificates to test against. With a
+> certificate set, a signing failure fails the release; with none, signing is
+> skipped. Treat the first signed release as a shakedown and read the CI logs.
 
 ## Windows (Authenticode → fewer SmartScreen warnings)
 

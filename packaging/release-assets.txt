@@ -1,0 +1,16 @@
+# Every file a release publishes, besides SHA256SUMS.txt. A missing required
+# asset or an unlisted file stops the release before anything is published.
+required asyncao-windows-x86_64.exe
+required asyncao-windows-x86_64-bundle.zip
+required asyncao-windows-x86_64-nodiscord.exe
+required asyncao-windows-x86_64-nodiscord-bundle.zip
+required AsyncAO-linux-x86_64.AppImage
+required AsyncAO-linux-x86_64-nodiscord.AppImage
+required asyncao-macos-arm64
+required asyncao-macos-bundle-arm64.tar.gz
+required asyncao-macos-homebrew-arm64.tar.gz
+required asyncao-macos-nodiscord-arm64
+required asyncao-macos-nodiscord-bundle-arm64.tar.gz
+required asyncao-macos-homebrew-nodiscord-arm64.tar.gz
+optional AsyncAO-linux-x86_64.flatpak
+optional AsyncAO-linux-x86_64-nodiscord.flatpak

@@ -46,7 +46,7 @@ type Release struct {
 }
 
 const (
-	// sumsAssetName has one "<sha256>  <filename>" line per binary (release.yml); if absent, downloads go unverified.
+	// sumsAssetName has one "<sha256>  <filename>" line per binary; if absent, downloads go unverified.
 	sumsAssetName = "SHA256SUMS.txt"
 	// maxSumsBytes caps the SHA256SUMS download (hard rule 4).
 	maxSumsBytes = 64 << 10

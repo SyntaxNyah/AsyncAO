@@ -4,7 +4,7 @@
 # Flatpak is a natural distribution channel.
 #
 # Output: dist/<name>.flatpak — a single-file bundle (flatpak install --bundle).
-# Mirrors the CI "Linux x86_64 Flatpak" job; that job is where this is actually
+# CI's build-flatpak job in release.yml runs this; that is where it is actually
 # validated, because the dev box is Windows and can't run flatpak-builder.
 #
 # Usage:
@@ -31,7 +31,7 @@ VARIANT="${1:-default}"
 TAGS=""
 SUFFIX=""
 if [[ "$VARIANT" == "nodiscord" ]]; then
-	TAGS="nodiscord"
+	TAGS="nodiscord novoice"
 	SUFFIX="-nodiscord"
 fi
 OUT="${FLATPAK_OUTPUT:-AsyncAO-linux-x86_64${SUFFIX}.flatpak}"

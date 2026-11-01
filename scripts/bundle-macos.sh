@@ -108,7 +108,7 @@ add_rpath "/usr/local/lib"       "$STAGE/$BIN_NAME"
 # refuses to run code with a broken/absent signature. Ad-hoc sign (`-s -`)
 # EVERYTHING we modified so the staged bundle runs on a clean machine even with
 # no Apple secrets. When real Developer-ID secrets exist, the release workflow
-# re-signs properly AFTER this script (order matters — see release.yml); an
+# re-signs properly AFTER this script (order matters — see scripts/sign-macos.sh); an
 # ad-hoc signature here does no harm because that later step uses --force.
 # Sign inside-out: the libraries first, then the binary that references them.
 for dylib in "$LIBDIR"/*.dylib; do
@@ -161,7 +161,7 @@ done
 # codec to a dlopen shim (SDL_LoadObject), that library vanishes from the link
 # table: dylibbundler stages nothing, the no-Homebrew guard above still passes,
 # and on a clean Mac the dlopen finds nothing — music playback breaks silently.
-# Fail loudly instead: ci.yml runs this script as a blocking gate, so a build
+# Fail loudly instead: every PR packages through this script, so a build
 # change turns CI red before a release ships.
 check_present() {
   local glob="$1" why="$2"

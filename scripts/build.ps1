@@ -44,7 +44,7 @@ Write-Host "Built bin\asyncao.exe"
 # the UCRT64 bin, rather than a hardcoded list: that list silently rotted once
 # (the mixer pulled in libFLAC/libjpeg-8, the list didn't, the dev build broke
 # with "DLL missing"). This computes the exact set, so it can't drift again.
-# CI's release path does the equivalent with `ldd`.
+# scripts/package.sh does the equivalent with `ldd` for CI and releases.
 # SDL3_mixer loads its codec libraries on demand, so no import table names
 # them: they are seeded here. Opus (AO's main music format) needs opusfile;
 # Vorbis, MP3, FLAC and WAV are built into SDL3_mixer. MIDI and the LGPL
@@ -52,7 +52,7 @@ Write-Host "Built bin\asyncao.exe"
 # SDL loads the Vulkan loader on demand too, and the loader loads lavapipe (the
 # software Vulkan driver, for machines without a GPU driver) through the
 # manifest written below; the walk then stages lavapipe's LLVM and SPIRV-Tools.
-$onDemand = @("libopusfile-0.dll", "vulkan-1.dll", "vulkan_lvp.dll")
+$onDemand = Get-Content "$PSScriptRoot\..\packaging\windows\on-demand-dlls.txt"
 $seen = @{}
 $queue = New-Object System.Collections.Generic.Queue[string]
 $queue.Enqueue("bin\asyncao.exe")

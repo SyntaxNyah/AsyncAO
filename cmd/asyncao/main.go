@@ -4,6 +4,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
@@ -47,8 +48,14 @@ func main() {
 		flagVsync       = flag.Bool("vsync", true, "use vsync presentation")
 		flagSoftGPU     = flag.Bool("software-gpu", false, "draw with the bundled software GPU driver (for broken GPU drivers)")
 		flagGPURecovery = flag.Int("gpu-recovery", 0, "set by the client when it restarts after a GPU device loss: losses so far")
+		flagVersion     = flag.Bool("version", false, "print the version and exit")
 	)
 	flag.Parse()
+
+	if *flagVersion {
+		fmt.Println(update.Version)
+		return
+	}
 
 	if *flagDebug {
 		go func() {

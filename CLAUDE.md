@@ -131,7 +131,7 @@ they skip if SDL is unavailable).
 AsyncAO needs SDL 3.4 or newer (per-renderer default texture scale mode).
 MSYS2, Homebrew, Fedora and Arch package it; Debian/Ubuntu build it with
 `scripts/build-sdl3.sh`, and CI's Linux/macOS jobs use the cached
-`.github/actions/setup-sdl3` build with the same versions and mixer options.
+`.github/actions/setup-build` build with the same versions and mixer options.
 SDL3_mixer loads some codecs on demand, so no import table names them: the
 Windows build scripts stage `libopusfile-0.dll` explicitly. A test that opens
 an SDL3_mixer device must close it before `sdl.Quit`, or the process dies with
@@ -210,9 +210,9 @@ Protocol gotchas already encoded in code/tests — don't "fix" them:
 - If CGO linking suddenly fails with `collect2: cannot find 'ld'`, check
   that `C:\msys64\ucrt64\bin\ld.exe` exists. If binutils went missing,
   restore it with `pacman -S mingw-w64-ucrt-x86_64-binutils`.
-- `go.mod` pins `go 1.25.0` and `golang.org/x/sync v0.20.0`, and CI's
-  `GO_VERSION` must match the `go` directive; don't let `go get` bump either
-  without bumping the other.
+- `go.mod` pins `go 1.25.0` and `golang.org/x/sync v0.20.0`, and
+  `.github/actions/setup-build` must use the same Go minor version; don't let
+  `go get` bump either without bumping the other.
 - devkitPro's MSYS2 at `C:\devkitPro\msys2` belongs to other projects — never
   touch it; AsyncAO uses `C:\msys64`.
 - WebP test fixtures were generated with msys2's `cwebp`/`img2webp`,

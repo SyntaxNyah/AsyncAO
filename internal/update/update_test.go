@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -142,7 +144,7 @@ func TestCheckNewer(t *testing.T) {
 	}
 }
 
-// ghMultiAssetJSON enumerates EVERY asset release.yml publishes (default +
+// ghMultiAssetJSON enumerates EVERY asset a release publishes (default +
 // Discord-free builds, the first-install bundles — Windows DLL .zip, macOS
 // dylib .tar.gz —, the macOS Homebrew-edition .tar.gz, both .flatpak variants,
 // and SHA256SUMS.txt), in SCRAMBLED order. Asset matching is the brick-risk
@@ -152,7 +154,7 @@ func TestCheckNewer(t *testing.T) {
 // macos-arm64 binary on purpose — an adversarial ordering that proves the darwin
 // token "macos-arm64" matches neither "macos-bundle-arm64" nor
 // "macos-homebrew-arm64" — and the .flatpak decoys sit before the AppImage for
-// the same reason. Keep this list in lockstep with release.yml's asset table: it
+// the same reason. Keep this list in lockstep with packaging/release-assets.txt: it
 // is the enumeration gate that catches a future token loosened toward a
 // non-default asset name.
 const ghMultiAssetJSON = `{
@@ -372,5 +374,31 @@ func TestFetchSumsServerError(t *testing.T) {
 	defer srv.Close()
 	if _, err := FetchSums(context.Background(), http.DefaultClient, srv.URL, "x.exe"); err == nil {
 		t.Fatal("a non-200 SHA256SUMS fetch must surface an error")
+	}
+}
+
+// TestSelfUpdateMatchesOneManifestAsset checks the matcher against what a release really publishes.
+func TestSelfUpdateMatchesOneManifestAsset(t *testing.T) {
+	const manifestPath = "../../packaging/release-assets.txt"
+	manifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for line := range strings.Lines(string(manifest)) {
+		if kind, name, ok := strings.Cut(strings.TrimSpace(line), " "); ok && kind != "#" {
+			names = append(names, name)
+		}
+	}
+	for _, goos := range []string{"windows", "linux", "darwin"} {
+		var matches []string
+		for _, name := range names {
+			if strings.Contains(strings.ToLower(name), SelfUpdateAssetMatch(goos)) {
+				matches = append(matches, name)
+			}
+		}
+		if len(matches) != 1 {
+			t.Errorf("%s: matcher %q matches %v, want exactly one asset", goos, SelfUpdateAssetMatch(goos), matches)
+		}
 	}
 }

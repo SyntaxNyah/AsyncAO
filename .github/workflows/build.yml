@@ -1,0 +1,87 @@
+# Packages and smoke-tests the client on every platform through scripts/package.sh,
+# so a PR artifact is built the same way as a release.
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit to build.
+        type: string
+        required: false
+        default: ""
+      version:
+        description: Version stamped into the binary.
+        type: string
+        required: false
+        default: dev
+      variants:
+        description: JSON list of variants to build.
+        type: string
+        required: false
+        default: '["default"]'
+      sign:
+        description: Sign with the release certificates, when those secrets exist.
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: ${{ matrix.target.name }} (${{ matrix.variant }})
+    runs-on: ${{ matrix.target.os }}
+    environment: ${{ inputs.sign && 'release' || '' }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(inputs.variants) }}
+        target:
+          - { name: Windows, os: windows-2025, shell: "msys2 {0}", packages: "" }
+          - { name: Linux, os: ubuntu-24.04, shell: bash, packages: patchelf desktop-file-utils }
+          - { name: macOS, os: macos-15, shell: bash, packages: dylibbundler }
+    defaults:
+      run:
+        shell: ${{ matrix.target.shell }}
+    env:
+      VARIANT: ${{ matrix.variant }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: ./.github/actions/setup-build
+        with:
+          extra-packages: ${{ matrix.target.packages }}
+      - name: Build
+        run: bash scripts/package.sh build "$VARIANT" "$VERSION"
+      - name: Sign (Windows)
+        if: inputs.sign && runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WIN_CERT_BASE64: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
+          WIN_CERT_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
+        run: scripts/sign-windows.ps1
+      - name: Sign (macOS)
+        if: inputs.sign && runner.os == 'macOS'
+        env:
+          APPLE_P12_BASE64: ${{ secrets.APPLE_CODESIGN_P12_BASE64 }}
+          APPLE_P12_PASSWORD: ${{ secrets.APPLE_CODESIGN_PASSWORD }}
+          APPLE_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_NOTARY_TEAM_ID }}
+          VARIANT_SUFFIX: ${{ matrix.variant == 'nodiscord' && '-nodiscord' || '' }}
+        run: bash scripts/sign-macos.sh "$VARIANT_SUFFIX"
+      - name: Pack
+        run: bash scripts/package.sh pack "$VARIANT" "$VERSION"
+      - name: Smoke test
+        run: bash scripts/package.sh smoke "$VARIANT" "$VERSION"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.target.name }}-${{ matrix.variant }}
+          path: dist/assets/*
+          if-no-files-found: error
