@@ -64,14 +64,14 @@ in **Status**. Update Status in the same commit that completes a step.
       contributor CI and releases are separate pipelines sharing `checks.yml` and `build.yml`, `scripts/package.sh` is the
       one build path, branch pushes leave test builds as artifacts, and a release runs its own checks
 - [x] 2e. Voice chat and the `nodiscord` / `novoice` builds removed (decided 2026-11-01), so the feature loop has one less
-      feature and the code one build. Rich Presence stays, on by default. Mentions of voice in Part 1 and in the
-      decision records below are history; capture and the audio stream binding are gone from the host and `internal/sdl`
+      feature and the code one build. Rich Presence stays, on by default. Capture and the audio stream binding are gone from the host and `internal/sdl`
 - [ ] Before this branch merges (open from the steps above; none block step 3):
   - [ ] first PR run: race tests on Windows and macOS have never run in CI, and the smoke tests have never run on GitHub
   - [ ] first release run: signing, the Flatpak and publishing have never run; use a `v0.0.0-ci.1` prerelease and delete it
   - [ ] `netproxy` against a real proxy, which has not been tried
   - [ ] the owner requires `ci-ok`; until then a red PR can merge, though it cannot release untested
-  - [ ] review CodeQL's 32 open Go alerts, in their own PR
+  - [ ] fix the real CodeQL findings, in their own PR: RGB values wrap instead of clamping (`theme.go`, `stylesheet.go`), and
+        check `ResizeWindow`'s sizes. The workflow-permission alerts close once this branch merges
 - [ ] 3. Engine: `internal/scene`, then `client.Session` per tab (async connect; tabs held by
       pointer, no park/activate copies; fixes bug 4, #115, #141, #84)
 - [ ] 4. `internal/uikit`: extract the kit, then the input model (press/release + capture,
@@ -103,7 +103,7 @@ ground rules for the second attempt:
 4. One solid helper for the commonly repeated validation snippets (KISS, DRY).
 
 Baseline: `codebuster-take2` @ `b60adb1f`, full `go test -race -p 1 ./...` green on the
-Windows box (toolchain now installed: MSYS2 UCRT64 + SDL Mixer X).
+Windows box (toolchain now installed: MSYS2 UCRT64 + SDL3, SDL3_ttf and SDL3_mixer).
 
 ---
 
@@ -125,7 +125,7 @@ render (SDL) ─► courtroom ─► assets ─► network ─► cache
    │               ├► protocol ─► packetutil, netproxy
    │               └► theme ─► safepath
    └► config ─► theme          leaves: cache safepath packetutil netproxy update metrics
-                               presence voice hwid gifenc webpenc winexec debuglog(orphan)
+                               presence hwid gifenc webpenc
 ```
 
 ui → lower-layer reference counts: theme 707, courtroom 637 (+313 `a.sess.X` field reads),
@@ -142,7 +142,6 @@ config 618 (+`Prefs.Load()` 779 / `Prefs.Update` 238), render 237, assets 155.
 | `assets.Manager` | 69 methods (fetch + mounts + archive + disk admin + decoder knobs + stats) | god |
 | `theme.Sidecar` | 77 methods | large but cohesive (document) |
 | `courtroom.URLBuilder` | 2 fields / 36 methods | fine (pure functions on a base) |
-| `packetutil.VS_*` | 8 structs, 1–2 fields each | micro (wire codec, acceptable) |
 | ui resolver adapters (`roomAssetResolver` …) | 4 types wrapping `*App` | micro, exist only to implement courtroom interfaces |
 
 ### internal/ui today
@@ -170,7 +169,7 @@ config 618 (+`Prefs.Load()` 779 / `Prefs.Update` 238), render 237, assets 155.
 - Package-global singletons bypassing App: `settings`, `contentPanel`, `demoBrowser`,
   `baseWizard`, `aboutGroupsCache`, `exeDataRoot`.
 - Already-owned subsystems (good precedent): `te *themeEditor`, `bgPicker`, `downloader`,
-  `iniBaseBrowser`, `logBrowserState`, `gifExportJob`, `voiceEngine`.
+  `iniBaseBrowser`, `logBrowserState`, `gifExportJob`.
 
 ### Feature boundaries (fields from the agent map, files from the coupling measure)
 
@@ -186,7 +185,7 @@ config 618 (+`Prefs.Load()` 779 / `Prefs.Update` 238), render 237, assets 155.
 | Hover sprite preview + preview window | 35 | global | previewEmoteRes, d.Preview |
 | Font pipeline | 20 | global | feeds Ctx only |
 | Layout editors (themed + classic + toolbox + extras) | 75 | global | fences/latches in courtroom draw |
-| Messaging + voice | ~20 | split App/session | small |
+| Messaging | ~20 | split App/session | small |
 | Settings screen (+package globals `settings`, `baseWizard`) | 63+ | global | Prefs |
 | Theme runtime (apply, fonts, elements, media, layout cache) | ~100 | global | read by every themed draw |
 | Session sub-areas: evidence 34, mod/CM 22, roster/pair/follow 70, wardrobe/iniswap 34, composer (IC/OOC input, emotes, arms) 33, logs 37, pacer 24 (belongs on App) | | per tab | |
@@ -657,7 +656,6 @@ New names follow Part 2c (common names only).
 | `theme.Sidecar` (77 methods, split over `sidecar_*.go`) | large but cohesive document model | keep. DRY only (helper for parsing, hex, clamps). | helper phase |
 | `theme.Element` (37 fields), `protocol.ChatMessage`/`OutgoingMS` (31–32) | big but plain data mirroring wire/INI formats | keep (data, no behaviour to split) | — |
 | `courtroom.URLBuilder` (2 fields, 36 methods) | pure functions over a base URL | keep (KISS-compliant) | — |
-| `packetutil.VS_*` (8 structs, 1–2 fields) | 1:1 with wire packets | keep the types. If their parse/encode bodies prove duplicated, fold them into one table-driven codec. | verify in helper phase |
 | `network.Client`, `Pool`, `cache.*`, `protocol.Conn`, `metrics`, `presence`, `update`, encoders | sized and scoped well | keep; DRY via helper only | helper phase |
 | `network → update` import (version string only) | odd edge | **keep (C3):** reads a constant from a leaf package; injecting it is noise | — |
 
@@ -745,7 +743,6 @@ separate SDL3_mixer satellite library. What changes is that **SDL3_mixer 3.x ups
 - `MIX_PROP_PLAY_LOOP_START_FRAME_NUMBER` + `MIX_PROP_PLAY_MAX_FRAME_NUMBER` (loop points);
 - fades (`MIX_PROP_PLAY_FADE_IN_*`, `MIX_StopTrack(track, fadeFrames)`);
 - `MIX_SetTrackPlaybackPosition` (seek), per-track gain, tags, a track-stopped callback;
-- raw PCM / `SDL_AudioStream` track input (voice playback could use it).
 
 So the fork goes: the SDL Mixer X code in `internal/mix` (formerly `render/mixerx`), `scripts/build-sdl-mixer-x.sh`, the CI fork builds,
 the loop-point patch. Open check: whether `MAX_FRAME` acts as the loop end on *every*
@@ -1019,7 +1016,7 @@ step 2c; 3, 4, 6, 7, 9, 10 and 11 before step 4). None reopens the toolkit choic
    - RmlUi itself is not in the repo. msys2 has no RmlUi package, so a script builds a pinned
      RmlUi 6.3 tag as a static library, with the FreeType font engine, into a local prefix
      (`scripts/build-rmlui.sh`, run under msys2 bash on Windows), and CI caches it like
-     `setup-sdl3`. RmlUi stays unmodified.
+     `setup-build`. RmlUi stays unmodified.
    - Shaders are compiled to SPIR-V by a generation script and committed as Go-embedded bytes,
      so a normal build needs no shader compiler (the same approach as the committed
      `versioninfo_windows.syso`).
@@ -1341,8 +1338,7 @@ Decided 2026-10-30:
   rate with no catch-up burst, even blips at any cap, connections alive while minimised, the
   user's caps respected.
 - **Hardware (F2).** The host offers a window factory (every window gets the same driver order
-  and the same GPU watcher) and audio devices (playback, capture, enumeration; capture is
-  consent-aware). `render/previewwindow.go`, `ui/voiceaudio.go`, `ui/voicemictest.go` and
+  and the same GPU watcher) and the audio mixer device. `render/previewwindow.go` and
   `render/audio.go` stop opening devices themselves.
 - **GPU reset (F3).** "Nothing outside the host knows a device can be lost" holds only for the
   desktop restart. In-place re-acquisition adds a `GraphicsReset` event on `Application`.

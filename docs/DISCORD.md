@@ -85,7 +85,7 @@ version:
   *cannot* fail to boot because of Discord, whether or not Discord is
   installed.
   > ⚠️ The DLLs shipped next to `asyncao.exe` on Windows
-  > (`SDL2.dll`, `libwebp`, `libavif`, …) are the rendering/audio engine —
+  > (`SDL3.dll`, `libwebp`, `libavif`, …) are the rendering/audio engine —
   > **the client needs those to run at all.** Don't delete them expecting
   > to remove Discord; that just breaks the app. Turn it off in Settings instead.
 

@@ -53,7 +53,7 @@ Everything else is pure Go and fetched by `go build` automatically.
    go build -pgo=auto -trimpath -ldflags "-s -w" -o bin\asyncao.exe .\cmd\asyncao
    ```
 
-   To run the exe outside an MSYS2 shell, the SDL2/webp DLLs must sit next to
+   To run the exe outside an MSYS2 shell, the SDL3/webp DLLs must sit next to
    it — `scripts\build.ps1` copies them for you.
 
 ### Windows troubleshooting
@@ -163,7 +163,7 @@ a tarball over the running binary (it always targets the bare
 
 ## Android / iOS
 
-Out of scope: the SDL2 + CGO toolchain story on mobile is a project of its
+Out of scope: the SDL3 + CGO toolchain story on mobile is a project of its
 own. Desktop Windows/Linux/macOS are the supported targets.
 
 ## Supported platforms (why no 32-bit or Windows 7 build)
@@ -213,7 +213,7 @@ inlining — full `file:line` traces, and the binary loads in Delve:
 Every build now installs a **process-wide crash hook** at startup
 (`cmd/asyncao/main.go` → `setupCrashOutput`) via `runtime/debug.SetCrashOutput`,
 so any unhandled panic or fatal runtime error — including cgo signal faults from
-the SDL2/webp/avif decode paths — is written with a full goroutine dump
+the SDL3/webp/avif decode paths — is written with a full goroutine dump
 (`debug.SetTraceback("all")`) to:
 
 - `asyncao-crash.log` — next to the exe (all builds)
@@ -234,7 +234,7 @@ fetched, or vendored.
 - The feature is ON by default; turn it off in Settings → Discord. Without Discord running it idles silently (one paced
   reconnect probe per 30 s, only while updates are pending). There is no
   Discord DLL — the code is in the exe itself; the DLLs staged next to
-  `asyncao.exe` on Windows are the SDL2/webp/avif engine and are required
+  `asyncao.exe` on Windows are the SDL3/webp/avif engine and are required
   regardless of Discord, so deleting one breaks the client (it does not
   "remove Discord").
 - To get the AsyncAO icon on profiles, create a Discord application named
@@ -250,4 +250,4 @@ go test -run=NONE -bench=. -benchmem ./...   # alloc-gated benchmarks
 
 The pure-Go packages (`config`, `cache`, `network`, `protocol`, `assets`,
 `courtroom`, `theme`) test fine with `CGO_ENABLED=0`; `render`/`ui` need the
-SDL2 toolchain and use SDL's dummy video driver headlessly.
+SDL3 toolchain and use SDL's dummy video driver headlessly.

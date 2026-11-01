@@ -438,7 +438,7 @@ it's a stale build (`scripts\build.ps1 -Release`).
 
 ## In flight / larger (separate tracks)
 
-- **Voice chat — Nyathena-gated** *(#17, requested for v1.2)*. Server-relayed over
+- **Voice chat — removed 2026-11-01; kept here as history** *(#17, requested for v1.2)*. Server-relayed over
   the existing WebSocket — **not** P2P/WebRTC (confirmed: `../LemmyAO/src/voice/
   voice.ts` "There is no WebRTC"), so peer IPs never leak. Wire (canonical, from the
   Nyathena/LemmyAO `aolib` `VS_*` packets): `VS_CAPS` (caps advert) · `VS_PEERS`

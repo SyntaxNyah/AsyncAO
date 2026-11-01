@@ -148,11 +148,11 @@ heap corruption.
 | `internal/network` | dedup HTTP client (singleflight, 404 TTL, backoff, DNS warm), priority worker pool with epoch cancellation, master list + tiers + direct connect | no |
 | `internal/assets` | AssetType enum, lock-free resolver (learned formats), tier-walking manager, decode pool (magic-byte sniffing), WebP CGO binding + fallback, local mounts, Markov prefetcher | no (decoder is SDL-free by rule) |
 | `internal/protocol` | AO wire (delegated to aolib-go: FantaCode + JSON), MS 2.6/2.8 parse/build, pairing semantics, FeatureSet, WebSocket conn | no |
-| `internal/packetutil` | thin bridge over aolib-go: FantaCode primitives, enum maps, typed-parser dispatch, VS_*/MS both-wire codecs | no |
+| `internal/packetutil` | thin bridge over aolib-go: FantaCode primitives, enum maps, typed-parser dispatch, MS both-wire codec | no |
 | `internal/courtroom` | session handshake reducer, message lifecycle state machine, typewriter pacing, URL conventions, char.ini | no |
 | `internal/theme` | AO2 theme INIs (design/fonts/sounds), asset lookup ladder | no |
 | `internal/metrics` | 1 Hz sampler (heap, GC p99, hit rates), cold-load report | no |
-| `internal/sdl`, `ttf`, `mix` | our cgo binding to SDL3, SDL3_ttf and SDL3_mixer (go-sdl2-style names, Rect/event/display conversion at the boundary) | **yes** |
+| `internal/sdl`, `ttf`, `mix` | our cgo binding to SDL3, SDL3_ttf and SDL3_mixer (Go-style names, Rect/event/display conversion at the boundary) | **yes** |
 | `internal/render` | TextureStore (T1), viewport compositor, message raster, upload pump, SDL3_mixer audio | **yes** |
 | `internal/ui` | immediate-mode kit + screens (lobby/phone book, char select, courtroom, settings, about) | **yes** |
 | `internal/platform`, `platform/host` | what the machine is and can do (no SDL); process setup, SDL startup, hardware and shutdown (host only) | host only |

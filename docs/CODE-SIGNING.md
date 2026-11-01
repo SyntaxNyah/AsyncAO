@@ -66,7 +66,7 @@ Codesigning works with just the first three secrets; add the `APPLE_NOTARY_*`
 three to also notarize.
 
 **What gets signed.** The macOS build is self-contained: `scripts/bundle-macos.sh`
-collects the SDL2/libwebp/libavif dylib closure into a `lib/` folder beside the
+collects the SDL3/libwebp/libavif dylib closure into a `lib/` folder beside the
 binary (the macOS analogue of the Windows DLL staging). The codesign step then
 signs **inside-out** — every `lib/*.dylib` first, then the binary that loads
 them — because notarization rejects a Mach-O whose nested code is unsigned. With
