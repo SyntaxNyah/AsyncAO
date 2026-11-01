@@ -1157,9 +1157,6 @@ func (a *App) applyFactoryReset(wipeAll bool) {
 		a.warnLine = "Settings reset to defaults."
 	}
 	a.applyPrefsToState()
-	// RefreshServers preserves ping state, so a reset clears it here; the generation bump discards an in-flight sweep.
-	a.pings, a.pingMode, a.pinging = nil, false, false
-	a.pingGen++
 	a.RefreshServers() // favourites/master re-merge
 	a.showReset = false
 	a.warnAt = time.Now()

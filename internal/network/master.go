@@ -198,7 +198,7 @@ func FetchServerList(ctx context.Context, sockets *netproxy.Factory, listURL str
 	if hasPrev && prev.etag != "" {
 		req.Header.Set("If-None-Match", prev.etag)
 	}
-	resp, err := sockets.Client(0).Do(req)
+	resp, err := sockets.Current().Client(netproxy.Web, 0).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("network: fetching server list: %w", err)
 	}
@@ -275,32 +275,6 @@ func FetchServerLists(ctx context.Context, sockets *netproxy.Factory, urls []str
 		return nil, errors.Join(errs...)
 	}
 	return merged, nil
-}
-
-// ProbeLatency measures connect time for the lobby's sort: it undercounts wss:// (no TLS), the first dial includes DNS,
-// and through a proxy it includes the proxy, because a direct probe would show the user's address to every server.
-func ProbeLatency(ctx context.Context, sockets *netproxy.Factory, addr string) (time.Duration, error) {
-	start := time.Now()
-	conn, err := sockets.DialContext(ctx, "tcp", addr)
-	rtt := time.Since(start)
-	if conn != nil {
-		_ = conn.Close()
-	}
-	if err != nil {
-		return 0, err
-	}
-	return rtt, nil
-}
-
-// DialTarget is the host:port the lobby would connect to (wss preferred), empty for unjoinable entries.
-func (e ServerEntry) DialTarget() string {
-	switch e.Security() {
-	case SecurityWSS:
-		return net.JoinHostPort(e.IP, strconv.Itoa(e.WSSPort))
-	case SecurityWS:
-		return net.JoinHostPort(e.IP, strconv.Itoa(e.WSPort))
-	}
-	return ""
 }
 
 // SortServers puts favorites first, then joinable servers by player count and name, and legacy TCP last.

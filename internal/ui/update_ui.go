@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/update"
@@ -42,7 +43,7 @@ func (a *App) maybeKickUpdateCheck() {
 	}
 	res := a.updateRes
 	experimental := a.d.Prefs.Load().UpdateExperimental // read on the render thread; the goroutine only captures the bool
-	client := a.sockets().Client(0)
+	client := a.sockets().Current().Client(netproxy.Web, 0)
 	go func() {
 		// assetMatch picks this platform's one swappable binary; a bare GOOS match could grab a .zip bundle.
 		// Failures are silent. The experimental channel follows the prerelease feed and may offer downgrades.
@@ -118,7 +119,7 @@ func (a *App) startSelfUpdate() {
 	sumsURL := a.updateRel.SumsURL
 	assetName := a.updateRel.AssetName
 	res := a.updateApplyRes
-	client := a.sockets().Client(0)
+	client := a.sockets().Current().Client(netproxy.Web, 0)
 	go func() {
 		defer PushWake() // wake the event-driven loop so pollUpdate surfaces the result (Restart-to-apply / error) at idle=0
 		layout := platform.UpdateLayoutFor(platform.CurrentOS())

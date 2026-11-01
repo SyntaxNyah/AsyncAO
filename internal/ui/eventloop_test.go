@@ -32,11 +32,6 @@ func TestSkipFrameExpExtendsToMenus(t *testing.T) {
 		t.Error("exp: a lobby refresh in flight must keep rendering (spinner + row repaints)")
 	}
 	a.lobbyFetching = false
-	a.pinging = true
-	if a.SkipFrame(true, false) {
-		t.Error("exp: a ping sweep must keep rendering")
-	}
-	a.pinging = false
 
 	// Settings now skips when static (the user's ask: a still screen must not redraw).
 	a.screen = ScreenSettings

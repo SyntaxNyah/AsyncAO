@@ -2,6 +2,7 @@ package network
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net/http"
@@ -392,10 +393,8 @@ func TestDNSPreResolveCachesLocalhost(t *testing.T) {
 // adaptive floor, so these generous ceilings cost them nothing.
 func TestTransportMusicTimeoutProfile(t *testing.T) {
 	c := NewClientNotFoundTTL(0, netproxy.Direct())
-	tr, ok := c.httpClient.Transport.(*http.Transport)
-	if !ok {
-		t.Fatalf("transport is %T, want *http.Transport", c.httpClient.Transport)
-	}
+	tr := &http.Transport{TLSClientConfig: &tls.Config{}}
+	tuneAssetTransport(tr)
 	if tr.TLSHandshakeTimeout != defaultTLSHandshakeTimeout {
 		t.Errorf("TLSHandshakeTimeout = %v, want %v", tr.TLSHandshakeTimeout, defaultTLSHandshakeTimeout)
 	}

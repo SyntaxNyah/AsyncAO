@@ -1749,15 +1749,15 @@ func (p *AssetPreferences) ClearPanelFonts() {
 const (
 	// ProxyModeSystem takes the machine's own proxy configuration.
 	ProxyModeSystem = 0
-	// ProxyModeDirect never proxies: the one-click escape when a detected proxy can't carry AO traffic.
+	// ProxyModeDirect never proxies.
 	ProxyModeDirect = 1
-
+	// ProxyModeManual ignores the machine and uses the address and bypass list in Settings.
 	ProxyModeManual = 2
-	// ProxyModeCount bounds the Settings cycle button and both clamps.
+	// ProxyModeCount bounds the clamp.
 	ProxyModeCount = 3
 )
 
-// SetProxyURL doesn't validate: a bad address must reach netproxy, which fails closed and says so in the readout.
+// SetProxyURL doesn't validate: a bad address must reach netproxy, which blocks connections and says so in the readout.
 func (p *AssetPreferences) SetProxyURL(s string) {
 	s = strings.TrimSpace(s)
 	if p.Load().ProxyURL == s {
@@ -2842,6 +2842,7 @@ func (p *AssetPreferences) ResetPowerUser() {
 		s.AssetCharCase = 0
 		s.ProxyModeVal = ProxyModeSystem // back to "use the machine's setting"
 		s.ProxyURL = ""
+		s.ProxyBypass = ""
 		s.SpriteLoadModeVal = defaultSpriteLoadMode
 		s.SpriteWaitMsVal = 0
 		s.SpriteWaitPair = false

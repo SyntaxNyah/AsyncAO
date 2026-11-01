@@ -30,8 +30,8 @@ func TestGameConnectionGoesThroughTheProxyForWSS(t *testing.T) {
 	}))
 	defer srv.Close()
 	proxy := netproxytest.Start(t, strings.TrimPrefix(srv.URL, "https://"))
-	sockets := netproxy.New(nil, func(string) string { return "" })
-	sockets.Apply(netproxy.ModeManual, proxy.URL)
+	sockets := netproxy.New(nil)
+	sockets.Apply(netproxy.ModeManual, proxy.URL, "")
 
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 	defer cancel()
@@ -46,7 +46,7 @@ func TestGameConnectionGoesThroughTheProxyForWSS(t *testing.T) {
 	}
 }
 
-// The game connection must take the proxy: a user relying on one would otherwise show their real address to the server.
+// A forward proxy cannot carry a WebSocket, so ws:// must tunnel too.
 func TestGameConnectionGoesThroughTheProxyForWS(t *testing.T) {
 	const (
 		testTimeout = 5 * time.Second
@@ -62,8 +62,8 @@ func TestGameConnectionGoesThroughTheProxyForWS(t *testing.T) {
 	}))
 	defer srv.Close()
 	proxy := netproxytest.Start(t, strings.TrimPrefix(srv.URL, "http://"))
-	sockets := netproxy.New(nil, func(string) string { return "" })
-	sockets.Apply(netproxy.ModeManual, proxy.URL)
+	sockets := netproxy.New(nil)
+	sockets.Apply(netproxy.ModeManual, proxy.URL, "")
 
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 	defer cancel()
@@ -74,5 +74,45 @@ func TestGameConnectionGoesThroughTheProxyForWS(t *testing.T) {
 	defer conn.Close()
 	if got := proxy.Asked(); !slices.Equal(got, []string{asked}) {
 		t.Errorf("proxy was asked for %v", got)
+	}
+}
+
+// An open game connection keeps its route when the setting changes.
+func TestGameConnectionKeepsItsRouteAcrossAChange(t *testing.T) {
+	const (
+		testTimeout = 5 * time.Second
+		message     = "still here"
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer ws.CloseNow()
+		kind, data, err := ws.Read(r.Context())
+		if err != nil {
+			return
+		}
+		_ = ws.Write(r.Context(), kind, data)
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+	proxy := netproxytest.Start(t, strings.TrimPrefix(srv.URL, "http://"))
+	sockets := netproxy.New(nil)
+	sockets.Apply(netproxy.ModeManual, proxy.URL, "")
+
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+	ws, _, err := websocket.Dial(ctx, "ws://asyncao-test.invalid:27016", &websocket.DialOptions{HTTPClient: sockets.Current().Client(netproxy.Game, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.CloseNow()
+	sockets.Apply(netproxy.ModeDirect, "", "")
+	if err := ws.Write(ctx, websocket.MessageText, []byte(message)); err != nil {
+		t.Fatal(err)
+	}
+	if _, data, err := ws.Read(ctx); err != nil || string(data) != message {
+		t.Errorf("after the change: %q, %v", data, err)
 	}
 }

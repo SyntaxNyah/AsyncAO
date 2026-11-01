@@ -1,7 +1,6 @@
 package netproxy_test
 
 import (
-	"context"
 	"io"
 	"net"
 	"net/http"
@@ -27,10 +26,10 @@ func httpsTarget(t *testing.T) (*httptest.Server, string) {
 func TestHTTPSGoesThroughATunnel(t *testing.T) {
 	_, target := httpsTarget(t)
 	proxy := netproxytest.Start(t, target)
-	f := netproxy.New(noSystem, noEnv)
-	f.Apply(netproxy.ModeManual, proxy.URL)
+	f := netproxy.New(noSystem)
+	f.Apply(netproxy.ModeManual, proxy.URL, "")
 
-	resp, err := f.InsecureClient().Get("https://" + unreachable + "/")
+	resp, err := f.Current().Client(netproxy.GameSkipVerify, 0).Get("https://" + unreachable + "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,10 +47,10 @@ func TestHTTPSGoesThroughATunnel(t *testing.T) {
 func TestHTTPSStillVerifiesTheServerThroughATunnel(t *testing.T) {
 	_, target := httpsTarget(t)
 	proxy := netproxytest.Start(t, target)
-	f := netproxy.New(noSystem, noEnv)
-	f.Apply(netproxy.ModeManual, proxy.URL)
+	f := netproxy.New(noSystem)
+	f.Apply(netproxy.ModeManual, proxy.URL, "")
 
-	resp, err := f.Client(0).Get("https://" + unreachable + "/")
+	resp, err := f.Current().Client(netproxy.Game, 0).Get("https://" + unreachable + "/")
 	if err == nil {
 		resp.Body.Close()
 		t.Fatal("an untrusted certificate was accepted through the tunnel")
@@ -69,10 +68,10 @@ func TestHTTPSProxyAddressSpeaksTLSToTheProxy(t *testing.T) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
 	defer proxy.Close()
-	f := netproxy.New(noSystem, noEnv)
-	f.Apply(netproxy.ModeManual, proxy.URL)
+	f := netproxy.New(noSystem)
+	f.Apply(netproxy.ModeManual, proxy.URL, "")
 
-	_, err := f.DialContext(context.Background(), "tcp", unreachable)
+	_, err := f.Current().Client(netproxy.Game, 0).Get(address)
 	if err == nil {
 		t.Fatal("expected the untrusted test proxy to fail verification")
 	}
@@ -89,16 +88,16 @@ func TestHTTPSProxyAddressSpeaksTLSToTheProxy(t *testing.T) {
 func TestBypassedHTTPSGoesDirect(t *testing.T) {
 	srv, target := httpsTarget(t)
 	proxy := netproxytest.Start(t, "")
-	f := netproxy.New(noSystem, noEnv)
-	f.Apply(netproxy.ModeManual, proxy.URL)
+	f := netproxy.New(noSystem)
+	f.Apply(netproxy.ModeManual, proxy.URL, "")
 	host, _, err := net.SplitHostPort(target)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.Proxied(host) {
+	if f.Current().Proxied(host) {
 		t.Fatalf("%s should be direct, as loopback always is", host)
 	}
-	resp, err := f.InsecureClient().Get(srv.URL)
+	resp, err := f.Current().Client(netproxy.GameSkipVerify, 0).Get(srv.URL)
 	if err != nil {
 		t.Fatal(err)
 	}

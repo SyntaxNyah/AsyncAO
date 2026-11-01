@@ -23,8 +23,6 @@ func (a *App) RefreshServers() {
 	// refresh fires a second request. Below the dedup check: a coalesced call started nothing.
 	a.lastLobbyRefreshAt = a.now()
 	a.lobbyStatus = "Fetching server list..."
-	// Ping state survives a refresh so a ping-sorted lobby keeps its order on re-entry; a.pings is keyed by URL,
-	// and pollLobbyFetch prunes it when a fresh list lands (hard rule 4).
 	urls := a.masterListURLs()
 	ch := a.lobbyResult
 	sockets := a.sockets()
@@ -57,8 +55,8 @@ func (a *App) pollLobbyFetch() {
 	case res := <-a.lobbyResult:
 		a.lobbyFetching = false
 		if res.err != nil {
-			// A failed fetch keeps the list: a master hiccup with no user action must not erase a joinable list
-			// or lose pings by pruning against it. Only a boot failure rebuilds, so favorites still show.
+			// A failed fetch keeps the list: a master hiccup with no user action must not erase a joinable list.
+			// Only a boot failure rebuilds, so favorites still show.
 			a.lobbyStatus = "Master list error: " + res.err.Error()
 			if len(a.servers) == 0 {
 				a.servers = a.mergedFavorites()
@@ -73,8 +71,6 @@ func (a *App) pollLobbyFetch() {
 		a.lobbyStatus = fmt.Sprintf("%d servers", len(res.entries))
 		a.masterEntries = res.entries
 		a.servers = a.mergedFavorites()
-		// Each landing re-prunes to the current list (hard rule 4).
-		a.pruneStalePings()
 		a.reselectServer(prevSel)
 	default:
 	}
@@ -94,32 +90,12 @@ func (a *App) reselectServer(url string) {
 	}
 }
 
-// pruneStalePings drops connect times for servers no longer in the merged list (hard rule 4).
-func (a *App) pruneStalePings() {
-	if len(a.pings) == 0 {
-		return
-	}
-	live := make(map[string]struct{}, len(a.servers))
-	for i := range a.servers {
-		live[a.servers[i].WebSocketURL()] = struct{}{}
-	}
-	for url := range a.pings {
-		if _, ok := live[url]; !ok {
-			delete(a.pings, url)
-		}
-	}
-}
-
 // mergedFavorites merges the phone book into a copy of the master list, sorted favorites first and legacy last.
 func (a *App) mergedFavorites() []network.ServerEntry {
 	entries := make([]network.ServerEntry, len(a.masterEntries))
 	copy(entries, a.masterEntries)
 	entries = network.MergeFavorites(entries, a.d.Prefs.Load().FavoriteServers())
-	if a.pingMode {
-		sortByPing(entries, a.pings) // lobby "Ping" sort: connect-time ascending
-	} else {
-		network.SortServers(entries)
-	}
+	network.SortServers(entries)
 	return entries
 }
 

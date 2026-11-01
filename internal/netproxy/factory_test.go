@@ -1,7 +1,6 @@
 package netproxy_test
 
 import (
-	"context"
 	"encoding/base64"
 	"errors"
 	"io"
@@ -11,7 +10,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy/netproxytest"
@@ -19,14 +17,18 @@ import (
 )
 
 const (
-	testBody        = "through"
-	unreachable     = "asyncao-test.invalid:1234"
-	testReadTimeout = 2 * time.Second
+	testBody    = "through"
+	unreachable = "asyncao-test.invalid:1234"
+	address     = "http://" + unreachable + "/"
 )
 
-func noEnv(string) string { return "" }
-
 func noSystem() platform.ProxySettings { return platform.ProxySettings{} }
+
+func systemServer(server, bypass string) func() platform.ProxySettings {
+	return func() platform.ProxySettings {
+		return platform.ProxySettings{Server: server, Bypass: platform.ParseProxyBypass(bypass)}
+	}
+}
 
 func targetServer(t *testing.T) (*httptest.Server, string) {
 	t.Helper()
@@ -37,13 +39,9 @@ func targetServer(t *testing.T) (*httptest.Server, string) {
 	return srv, strings.TrimPrefix(srv.URL, "http://")
 }
 
-func TestPlainHTTPIsForwardedNotTunnelled(t *testing.T) {
-	_, target := targetServer(t)
-	proxy := netproxytest.Start(t, target)
-	f := netproxy.New(noSystem, noEnv)
-	f.Apply(netproxy.ModeManual, proxy.URL)
-
-	resp, err := f.Client(0).Get("http://" + unreachable + "/")
+func readAll(t *testing.T, client *http.Client) {
+	t.Helper()
+	resp, err := client.Get(address)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,6 +50,15 @@ func TestPlainHTTPIsForwardedNotTunnelled(t *testing.T) {
 	if string(body) != testBody {
 		t.Errorf("body = %q", body)
 	}
+}
+
+func TestPlainHTTPIsForwardedNotTunnelled(t *testing.T) {
+	_, target := targetServer(t)
+	proxy := netproxytest.Start(t, target)
+	f := netproxy.New(noSystem)
+	f.Apply(netproxy.ModeManual, proxy.URL, "")
+
+	readAll(t, f.Current().Client(netproxy.Web, 0))
 	// Plain http goes as a forward request, so it loads through a proxy that only allows CONNECT to 443.
 	if got := proxy.Forwards(); !slices.Equal(got, []string{unreachable}) {
 		t.Errorf("proxy was asked to forward %v", got)
@@ -61,15 +68,11 @@ func TestPlainHTTPIsForwardedNotTunnelled(t *testing.T) {
 	}
 }
 
-func TestHTTPSStillTunnelsThroughTheForwardingClient(t *testing.T) {
+func TestHTTPSStillTunnelsThroughTheWebClient(t *testing.T) {
 	proxy := netproxytest.Start(t, http2Target(t))
-	f := netproxy.New(noSystem, noEnv)
-	f.Apply(netproxy.ModeManual, proxy.URL)
-	// The forwarding client must still CONNECT for https, where forwarding is impossible.
-	client := f.Client(0)
-	if tr, ok := client.Transport.(*http.Transport); ok {
-		tr.TLSClientConfig.InsecureSkipVerify = true
-	}
+	f := netproxy.New(noSystem)
+	f.Apply(netproxy.ModeManual, proxy.URL, "")
+	client := f.Current().WebClient(netproxy.DialFunc((&net.Dialer{}).DialContext), func(tr *http.Transport) { tr.TLSClientConfig.InsecureSkipVerify = true })
 	resp, err := client.Get("https://" + unreachable + "/")
 	if err != nil {
 		t.Fatal(err)
@@ -81,17 +84,25 @@ func TestHTTPSStillTunnelsThroughTheForwardingClient(t *testing.T) {
 	}
 }
 
+func TestGameClientTunnelsPlainHTTP(t *testing.T) {
+	_, target := targetServer(t)
+	proxy := netproxytest.Start(t, target)
+	f := netproxy.New(noSystem)
+	f.Apply(netproxy.ModeManual, proxy.URL, "")
+
+	readAll(t, f.Current().Client(netproxy.Game, 0))
+	if got := proxy.Asked(); !slices.Equal(got, []string{unreachable}) {
+		t.Errorf("proxy was asked for %v", got)
+	}
+}
+
 func TestProxyLoginTravelsWithTheConnect(t *testing.T) {
 	_, target := targetServer(t)
 	proxy := netproxytest.Start(t, target)
-	f := netproxy.New(noSystem, noEnv)
-	f.Apply(netproxy.ModeManual, strings.Replace(proxy.URL, "http://", "http://me:secret@", 1))
+	f := netproxy.New(noSystem)
+	f.Apply(netproxy.ModeManual, strings.Replace(proxy.URL, "http://", "http://me:secret@", 1), "")
 
-	conn, err := f.DialContext(context.Background(), "tcp", unreachable)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
+	readAll(t, f.Current().Client(netproxy.Game, 0))
 	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("me:secret"))
 	if got := proxy.Header(0).Get("Proxy-Authorization"); got != want {
 		t.Errorf("auth header = %q", got)
@@ -103,74 +114,49 @@ func TestProxyLoginTravelsWithTheConnect(t *testing.T) {
 
 func TestARefusedTunnelNamesTheProxy(t *testing.T) {
 	proxy := netproxytest.Start(t, "")
-	f := netproxy.New(noSystem, noEnv)
-	f.Apply(netproxy.ModeManual, proxy.URL)
-	_, err := f.DialContext(context.Background(), "tcp", unreachable)
+	f := netproxy.New(noSystem)
+	f.Apply(netproxy.ModeManual, proxy.URL, "")
+	_, err := f.Current().Client(netproxy.Game, 0).Get(address)
 	if err == nil || !strings.Contains(err.Error(), "proxy") || !strings.Contains(err.Error(), "403") {
 		t.Errorf("err = %v", err)
 	}
 }
 
-// A connection before Apply would otherwise go direct, the leak this package exists to prevent.
-func TestNothingConnectsBeforeTheFirstApply(t *testing.T) {
-	f := netproxy.New(noSystem, noEnv)
-	_, err := f.DialContext(context.Background(), "tcp", unreachable)
-	if err == nil || !strings.Contains(err.Error(), "before the proxy setting") {
-		t.Errorf("err = %v", err)
-	}
-}
-
-func TestBadManualAddressBlocksInsteadOfGoingDirect(t *testing.T) {
-	_, target := targetServer(t)
-	f := netproxy.New(noSystem, noEnv)
-	f.Apply(netproxy.ModeManual, "ftp://nope")
-	// Loopback is always direct, so a public name proves the block.
-	if _, err := f.DialContext(context.Background(), "tcp", unreachable); !errors.Is(err, netproxy.ErrBadProxyAddress) {
-		t.Errorf("err = %v", err)
-	}
-	if conn, err := f.DialContext(context.Background(), "tcp", target); err != nil {
-		t.Errorf("loopback was blocked: %v", err)
-	} else {
-		conn.Close()
-	}
-}
-
-func TestProxyScriptBlocksButBypassedHostsStillConnect(t *testing.T) {
-	f := netproxy.New(func() platform.ProxySettings {
-		return platform.ProxySettings{AutoConfigURL: "http://wpad.test/p.pac", Bypass: "asyncao-test.invalid"}
-	}, noEnv)
-	p := f.Apply(netproxy.ModeSystem, "")
-	if !p.Blocked() {
-		t.Fatal("a proxy script must block")
-	}
-	if _, err := f.DialContext(context.Background(), "tcp", "example.test:1"); !errors.Is(err, netproxy.ErrProxyUnresolvable) {
-		t.Errorf("err = %v", err)
-	}
-	if f.Proxied("asyncao-test.invalid") {
-		t.Error("a bypassed host counted as proxied")
-	}
-}
-
-func TestDirectModeIgnoresTheComputersProxy(t *testing.T) {
-	f := netproxy.New(func() platform.ProxySettings { return platform.ProxySettings{Server: "proxy.test:1"} },
-		func(string) string { return "http://env.test:1" })
-	if p := f.Apply(netproxy.ModeDirect, ""); p.Via != nil {
-		t.Errorf("via = %v", p.Via)
-	}
-}
-
-func TestEnvironmentBeatsTheOSAndBothSpellingsWork(t *testing.T) {
-	for _, name := range []string{"https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"} {
-		f := netproxy.New(func() platform.ProxySettings { return platform.ProxySettings{Server: "os.test:1"} },
-			func(key string) string {
-				if key == name {
-					return "env.test:2"
-				}
-				return ""
-			})
-		if p := f.Apply(netproxy.ModeSystem, ""); p.Via == nil || p.Via.Host != "env.test:2" {
-			t.Errorf("%s: via = %v", name, p.Via)
+func TestBadManualAddressBlocksEveryKindButNotLoopback(t *testing.T) {
+	srv, _ := targetServer(t)
+	f := netproxy.New(noSystem)
+	for _, raw := range []string{"ftp://nope", "socks5://nope:1080"} {
+		if p := f.Apply(netproxy.ModeManual, raw, ""); !p.Blocked() {
+			t.Errorf("%q did not block", raw)
 		}
+		for _, kind := range []netproxy.Kind{netproxy.Web, netproxy.Game} {
+			if _, err := f.Current().Client(kind, 0).Get(address); !errors.Is(err, netproxy.ErrBadProxyAddress) {
+				t.Errorf("%q kind %d: err = %v", raw, kind, err)
+			}
+			resp, err := f.Current().Client(kind, 0).Get(srv.URL)
+			if err != nil {
+				t.Errorf("%q kind %d: loopback was blocked: %v", raw, kind, err)
+				continue
+			}
+			resp.Body.Close()
+		}
+	}
+}
+
+func TestDirectAndManualIgnoreEverythingTheMachineSays(t *testing.T) {
+	f := netproxy.New(systemServer("proxy.test:1", "intranet.test"))
+	if n := f.Apply(netproxy.ModeDirect, "", ""); n.UsesProxy() || n.Blocked() {
+		t.Errorf("direct mode must connect directly: %s", n.Describe())
+	}
+	if n := f.Apply(netproxy.ModeManual, " ", ""); !n.Blocked() {
+		t.Errorf("manual with no address must block: %s", n.Describe())
+	}
+	n := f.Apply(netproxy.ModeManual, "manual.test:2", "")
+	if !strings.Contains(n.Describe(), "manual.test:2") {
+		t.Errorf("describe = %q", n.Describe())
+	}
+	if !n.Proxied("intranet.test") {
+		t.Error("the OS bypass list applied to a manual proxy")
 	}
 }
 
@@ -178,147 +164,83 @@ func TestSystemServerListPrefersHTTPS(t *testing.T) {
 	cases := []struct{ server, want string }{
 		{"http=a.test:1;https=b.test:2;socks=c.test:3", "b.test:2"},
 		{"http=a.test:1;socks=c.test:3", "a.test:1"},
-		{"socks=c.test:3", "c.test:3"},
 		{"bare.test:4", "bare.test:4"},
 		{"http=;https=b.test:2", "b.test:2"},
 	}
 	for _, tc := range cases {
-		f := netproxy.New(func() platform.ProxySettings { return platform.ProxySettings{Server: tc.server} }, noEnv)
-		if p := f.Apply(netproxy.ModeSystem, ""); p.Via == nil || p.Via.Host != tc.want {
-			t.Errorf("%q: via = %v, want %s", tc.server, p.Via, tc.want)
+		f := netproxy.New(systemServer(tc.server, ""))
+		if got := f.Apply(netproxy.ModeSystem, "", "").Describe(); !strings.Contains(got, tc.want) {
+			t.Errorf("%q: %q lacks %s", tc.server, got, tc.want)
 		}
 	}
-}
-
-// A live connection keeps the route it was opened on, so changing the setting must close it, not
-// wait for it to become idle: the game socket drops with the proxy, by design.
-func TestApplyDropsLiveConnectionsNotJustIdleOnes(t *testing.T) {
-	_, target := targetServer(t)
-	proxy := netproxytest.Start(t, target)
-	f := netproxy.New(noSystem, noEnv)
-	f.Apply(netproxy.ModeManual, proxy.URL)
-	conn, err := f.DialContext(context.Background(), "tcp", unreachable)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	f.Apply(netproxy.ModeDirect, "")
-	_ = conn.SetReadDeadline(time.Now().Add(testReadTimeout))
-	if _, err := conn.Read(make([]byte, 1)); err == nil {
-		t.Error("the live tunnel survived a proxy change")
+	if p := netproxy.New(systemServer("socks=c.test:3", "")).Apply(netproxy.ModeSystem, "", ""); p.UsesProxy() {
+		t.Error("a SOCKS-only setting counted as a proxy")
 	}
 }
 
-// A reused connection keeps the route it was opened on, so changing the setting must drop idle ones.
-func TestApplyDropsIdleConnectionsSoTheNewRouteTakesEffect(t *testing.T) {
+func TestSystemBypassListSendsHostsDirect(t *testing.T) {
+	f := netproxy.New(systemServer("proxy.test:1", "intranet.test"))
+	f.Apply(netproxy.ModeSystem, "", "")
+	if f.Current().Proxied("intranet.test") {
+		t.Error("a host the OS bypasses counted as proxied")
+	}
+	if !f.Current().Proxied("example.test") {
+		t.Error("a host the OS doesn't bypass went direct")
+	}
+}
+
+func TestManualBypassSendsHostsDirect(t *testing.T) {
+	f := netproxy.New(systemServer("proxy.test:1", "os-list.test"))
+	n := f.Apply(netproxy.ModeManual, "manual.test:2", "lan.test;10.*")
+	for _, host := range []string{"lan.test", "api.lan.test", "10.0.0.7"} {
+		if n.Proxied(host) {
+			t.Errorf("%s went through the proxy", host)
+		}
+	}
+	if !n.Proxied("example.test") {
+		t.Error("a host not on the list went direct")
+	}
+	// A bad address still leaves listed hosts reachable, as loopback is.
+	if blocked := f.Apply(netproxy.ModeManual, "ftp://nope", "lan.test"); !blocked.Blocked() || blocked.Proxied("lan.test") {
+		t.Errorf("blocked = %v, lan proxied = %v", blocked.Blocked(), blocked.Proxied("lan.test"))
+	}
+}
+
+func TestAChangedSettingAppliesToTheNextConnection(t *testing.T) {
 	_, target := targetServer(t)
 	first, second := netproxytest.Start(t, target), netproxytest.Start(t, target)
-	f := netproxy.New(noSystem, noEnv)
-	address := "http://" + unreachable + "/"
-	get := func() {
-		t.Helper()
-		resp, err := f.Client(0).Get(address)
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, _ = io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
+	f := netproxy.New(noSystem)
+	f.Apply(netproxy.ModeManual, first.URL, "")
+	readAll(t, f.Current().Client(netproxy.Web, 0))
+	f.Apply(netproxy.ModeManual, second.URL, "")
+	readAll(t, f.Current().Client(netproxy.Web, 0))
+	if got := len(first.Forwards()); got != 1 {
+		t.Errorf("the old proxy saw %d requests, want 1", got)
 	}
-	f.Apply(netproxy.ModeManual, first.URL)
-	get()
-	f.Apply(netproxy.ModeManual, second.URL)
-	get()
-	if len(second.Forwards()) != 1 {
-		t.Errorf("the new proxy saw %v; the old connection was reused", second.Forwards())
+	if got := len(second.Forwards()); got != 1 {
+		t.Errorf("the new proxy saw %d requests, want 1", got)
 	}
 }
 
-// socksServer speaks just enough SOCKS5 to record the request and tunnel to target.
-func socksServer(t *testing.T, target string, wantLogin bool) (string, chan []byte) {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = listener.Close() })
-	seen := make(chan []byte, 1)
-	go func() {
-		conn, err := listener.Accept()
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		const headerBytes, bufBytes = 2, 512
-		buf := make([]byte, bufBytes)
-		if _, err := io.ReadFull(conn, buf[:headerBytes]); err != nil {
-			return
-		}
-		if _, err := io.ReadFull(conn, buf[:buf[1]]); err != nil {
-			return
-		}
-		if wantLogin {
-			_, _ = conn.Write([]byte{5, 2})
-			n, _ := conn.Read(buf)
-			seen <- append([]byte(nil), buf[:n]...)
-			_, _ = conn.Write([]byte{1, 0})
-		} else {
-			_, _ = conn.Write([]byte{5, 0})
-		}
-		n, err := conn.Read(buf)
-		if err != nil {
-			return
-		}
-		if !wantLogin {
-			seen <- append([]byte(nil), buf[:n]...)
-		}
-		upstream, err := net.Dial("tcp", target)
-		if err != nil {
-			return
-		}
-		defer upstream.Close()
-		_, _ = conn.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0})
-		go func() { _, _ = io.Copy(upstream, conn) }()
-		_, _ = io.Copy(conn, upstream)
-	}()
-	return listener.Addr().String(), seen
-}
-
-func TestSOCKS5SendsTheNameNotALocalLookup(t *testing.T) {
+func TestAnOpenResponseSurvivesAChange(t *testing.T) {
 	_, target := targetServer(t)
-	addr, seen := socksServer(t, target, false)
-	f := netproxy.New(noSystem, noEnv)
-	f.Apply(netproxy.ModeManual, "socks5://"+addr)
-	resp, err := f.Client(0).Get("http://" + unreachable + "/")
+	proxy := netproxytest.Start(t, target)
+	f := netproxy.New(noSystem)
+	f.Apply(netproxy.ModeManual, proxy.URL, "")
+	resp, err := f.Current().Client(netproxy.Game, 0).Get(address)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if string(body) != testBody {
-		t.Errorf("body = %q", body)
-	}
-	if request := <-seen; !strings.Contains(string(request), "asyncao-test.invalid") {
-		t.Errorf("request %v does not carry the host name", request)
-	}
-}
-
-func TestSOCKS5SendsTheLogin(t *testing.T) {
-	_, target := targetServer(t)
-	addr, seen := socksServer(t, target, true)
-	f := netproxy.New(noSystem, noEnv)
-	f.Apply(netproxy.ModeManual, "socks5://me:secret@"+addr)
-	conn, err := f.DialContext(context.Background(), "tcp", unreachable)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	if login := string(<-seen); !strings.Contains(login, "me") || !strings.Contains(login, "secret") {
-		t.Errorf("login message = %q", login)
+	f.Apply(netproxy.ModeDirect, "", "")
+	body, err := io.ReadAll(resp.Body)
+	if err != nil || string(body) != testBody {
+		t.Errorf("after the change: %q, %v", body, err)
 	}
 }
 
 func TestDescribeSaysWhatIsInEffect(t *testing.T) {
-	f := netproxy.New(noSystem, noEnv)
+	f := netproxy.New(noSystem)
 	cases := []struct {
 		mode netproxy.Mode
 		url  string
@@ -330,7 +252,7 @@ func TestDescribeSaysWhatIsInEffect(t *testing.T) {
 		{netproxy.ModeSystem, "", "no proxy configured"},
 	}
 	for _, tc := range cases {
-		if got := f.Apply(tc.mode, tc.url).Describe(); !strings.Contains(got, tc.want) {
+		if got := f.Apply(tc.mode, tc.url, "").Describe(); !strings.Contains(got, tc.want) {
 			t.Errorf("%d %q: %q lacks %q", tc.mode, tc.url, got, tc.want)
 		}
 	}

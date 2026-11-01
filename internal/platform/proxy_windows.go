@@ -1,7 +1,6 @@
 package platform
 
 import (
-	"encoding/binary"
 	"syscall"
 	"unsafe"
 )
@@ -14,18 +13,11 @@ const (
 	windowsProxyName  = "Windows proxy settings"
 	utf16BytesPerUnit = 2
 	bitsPerByte       = 8
-	// connectionsSubkey holds DefaultConnectionSettings, whose flags DWORD at pacFlagsOffset says
-	// which proxy modes are on; pacEnabledFlag (PROXY_TYPE_AUTO_PROXY_URL) marks the auto-config script.
-	connectionsSubkey   = "Connections"
-	defaultConnSettings = "DefaultConnectionSettings"
-	pacFlagsOffset      = 8
-	pacFlagBytes        = 4
-	pacEnabledFlag      = 0x04
 )
 
-// SystemProxySettings reads the registry. Automatic detection alone is ignored: it is on by default on machines with no
+// osProxySettings reads the registry. Automatic detection alone is ignored: it is on by default on machines with no
 // proxy at all, so treating it as configured would strand them.
-func SystemProxySettings() ProxySettings {
+func osProxySettings() ProxySettings {
 	var key syscall.Handle
 	path, err := syscall.UTF16PtrFromString(internetSettingsKey)
 	if err != nil {
@@ -36,60 +28,12 @@ func SystemProxySettings() ProxySettings {
 	}
 	defer syscall.RegCloseKey(key)
 
-	settings := ProxySettings{Bypass: regString(key, "ProxyOverride")}
+	settings := ProxySettings{Bypass: ParseProxyBypass(regString(key, "ProxyOverride"))}
 	if regDWORD(key, "ProxyEnable") != 0 {
 		settings.Server = regString(key, "ProxyServer")
 		settings.Source = windowsProxyName
 	}
-	// Honor the auto-config (PAC) URL only when its flag is set: a leftover AutoConfigURL from a
-	// since-disabled script must not pass as configured and block every connection.
-	if autoConfigEnabled(key) {
-		settings.AutoConfigURL = regString(key, "AutoConfigURL")
-	}
 	return settings
-}
-
-// autoConfigEnabled reports whether the PAC flag is set in the DefaultConnectionSettings blob,
-// so an AutoConfigURL left behind by a since-disabled script is ignored rather than honored.
-func autoConfigEnabled(parent syscall.Handle) bool {
-	name, err := syscall.UTF16PtrFromString(connectionsSubkey)
-	if err != nil {
-		return false
-	}
-	var conn syscall.Handle
-	if err := syscall.RegOpenKeyEx(parent, name, 0, syscall.KEY_QUERY_VALUE, &conn); err != nil {
-		return false
-	}
-	defer syscall.RegCloseKey(conn)
-	return pacURLEnabled(regBinary(conn, defaultConnSettings))
-}
-
-// pacURLEnabled reads the PAC flag out of a DefaultConnectionSettings blob; false for a short or
-// missing blob, so an AutoConfigURL is honored only when the blob positively confirms it.
-func pacURLEnabled(blob []byte) bool {
-	if len(blob) < pacFlagsOffset+pacFlagBytes {
-		return false
-	}
-	flags := binary.LittleEndian.Uint32(blob[pacFlagsOffset : pacFlagsOffset+pacFlagBytes])
-	return flags&pacEnabledFlag != 0
-}
-
-// regBinary reads a REG_BINARY value, nil when absent or of another type.
-func regBinary(key syscall.Handle, name string) []byte {
-	value, err := syscall.UTF16PtrFromString(name)
-	if err != nil {
-		return nil
-	}
-	var kind uint32
-	size := uint32(regValueMaxBytes)
-	buf := make([]byte, regValueMaxBytes)
-	if err := syscall.RegQueryValueEx(key, value, nil, &kind, &buf[0], &size); err != nil {
-		return nil
-	}
-	if kind != syscall.REG_BINARY {
-		return nil
-	}
-	return buf[:size]
 }
 
 // regString reads a text value, "" when absent, the normal case on a machine with no proxy.

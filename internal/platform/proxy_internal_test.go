@@ -1,7 +1,6 @@
 package platform
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -25,8 +24,10 @@ func TestParseScutilManualProxy(t *testing.T) {
 	if want := "http=proxy.corp.example:8080;https=sproxy.corp.example:8443"; got.Server != want {
 		t.Errorf("server = %q, want %q", got.Server, want)
 	}
-	if want := "*.local,169.254/16,<local>"; got.Bypass != want {
-		t.Errorf("bypass = %q, want %q", got.Bypass, want)
+	for _, host := range []string{"printer.local", "169.254.1.1", "intranet"} {
+		if !got.Bypass.Match(host) {
+			t.Errorf("%q was not bypassed", host)
+		}
 	}
 	if got.Source == "" {
 		t.Error("no source for the readout")
@@ -41,15 +42,38 @@ func TestParseScutilIgnoresDisabledProxies(t *testing.T) {
 	}
 }
 
-func TestParseScutilReadsSocksAndProxyScript(t *testing.T) {
-	got := parseScutil("<dictionary> {\n    SOCKSEnable : 1\n    SOCKSProxy : s.example\n    SOCKSPort : 1080\n}")
-	if got.Server != "socks=s.example:1080" {
-		t.Errorf("server = %q", got.Server)
+func TestEnvironmentBeatsTheOSAndBothSpellingsWork(t *testing.T) {
+	readOS := func() ProxySettings { return ProxySettings{Server: "os.test:1"} }
+	for _, name := range []string{"https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"} {
+		got := proxySettings(func(key string) string {
+			if key == name {
+				return "env.test:2"
+			}
+			return ""
+		}, readOS)
+		if got.Server != "env.test:2" {
+			t.Errorf("%s: server = %q", name, got.Server)
+		}
 	}
-	const script = "http://wpad.corp.example/proxy.pac"
-	got = parseScutil("<dictionary> {\n    ProxyAutoConfigEnable : 1\n    ProxyAutoConfigURLString : " + script + "\n}")
-	if !strings.HasPrefix(script, "http") || got.AutoConfigURL != script {
-		t.Errorf("script = %q", got.AutoConfigURL)
+	if got := proxySettings(func(string) string { return "" }, readOS); got.Server != "os.test:1" {
+		t.Errorf("with no variables, server = %q", got.Server)
+	}
+}
+
+func TestEnvironmentBypassApplies(t *testing.T) {
+	for _, spelling := range []string{"no_proxy", "NO_PROXY"} {
+		got := proxySettings(func(key string) string {
+			switch key {
+			case "http_proxy":
+				return "env.test:2"
+			case spelling:
+				return "direct.test"
+			}
+			return ""
+		}, nil)
+		if !got.Bypass.Match("direct.test") || got.Bypass.Match("other.test") {
+			t.Errorf("%s was not applied", spelling)
+		}
 	}
 }
 

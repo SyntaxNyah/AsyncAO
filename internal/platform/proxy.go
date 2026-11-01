@@ -1,17 +1,38 @@
 package platform
 
-import "strings"
+import (
+	"os"
+	"strings"
+)
 
-// ProxySettings is the OS's proxy configuration as raw text; netproxy decides what it means.
+// ProxySettings is the machine's proxy configuration; netproxy decides how to reach the server it names.
 type ProxySettings struct {
 	// Source names where this came from, for the Settings readout.
 	Source string
-	// Server is a bare host:port or a scheme=host:port list split by ;, "" for none.
+	// Server is a host:port, a URL or a scheme=host:port list split by ;, "" for none.
 	Server string
-	// Bypass lists the destinations that go direct, split by ; or comma.
-	Bypass string
-	// AutoConfigURL is a proxy script the OS is told to use, "" for none.
-	AutoConfigURL string
+	// Bypass is the destinations the machine sends direct.
+	Bypass *ProxyBypass
+}
+
+// SystemProxySettings reads the machine's proxy configuration. It may start a process, so never call it on the render
+// thread.
+func SystemProxySettings() ProxySettings { return proxySettings(os.Getenv, osProxySettings) }
+
+// proxySettings puts the environment first: a variable is an explicit per-launch instruction, the OS setting is ambient.
+func proxySettings(getenv func(string) string, readOS func() ProxySettings) ProxySettings {
+	for _, name := range []string{"https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"} {
+		server := strings.TrimSpace(getenv(name))
+		if server == "" {
+			continue
+		}
+		noProxy := getenv("no_proxy")
+		if noProxy == "" {
+			noProxy = getenv("NO_PROXY")
+		}
+		return ProxySettings{Source: "environment variable " + name, Server: server, Bypass: ParseProxyBypass(noProxy)}
+	}
+	return readOS()
 }
 
 const macProxySource = "macOS network settings"
@@ -47,7 +68,7 @@ func parseScutil(out string) ProxySettings {
 
 	// macOS keeps host and port after the box is unticked, so only the Enable key decides.
 	var servers []string
-	for _, kind := range []struct{ scheme, prefix string }{{"http", "HTTP"}, {"https", "HTTPS"}, {"socks", "SOCKS"}} {
+	for _, kind := range []struct{ scheme, prefix string }{{"http", "HTTP"}, {"https", "HTTPS"}} {
 		host := vals[kind.prefix+"Proxy"]
 		if vals[kind.prefix+"Enable"] != "1" || host == "" {
 			continue
@@ -61,10 +82,7 @@ func parseScutil(out string) ProxySettings {
 	if vals["ExcludeSimpleHostnames"] == "1" {
 		exceptions = append(exceptions, "<local>")
 	}
-	settings := ProxySettings{Server: strings.Join(servers, ";"), Bypass: strings.Join(exceptions, ",")}
-	if vals["ProxyAutoConfigEnable"] == "1" {
-		settings.AutoConfigURL = vals["ProxyAutoConfigURLString"]
-	}
+	settings := ProxySettings{Server: strings.Join(servers, ";"), Bypass: ParseProxyBypass(strings.Join(exceptions, ","))}
 	if settings.Server != "" {
 		settings.Source = macProxySource
 	}

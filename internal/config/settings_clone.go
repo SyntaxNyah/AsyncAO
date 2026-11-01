@@ -463,6 +463,9 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.ProxyURL != o.ProxyURL {
 		return false
 	}
+	if s.ProxyBypass != o.ProxyBypass {
+		return false
+	}
 	if (s.PanelFontsVal == nil) != (o.PanelFontsVal == nil) {
 		return false
 	}

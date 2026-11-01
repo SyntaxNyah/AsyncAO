@@ -16,7 +16,7 @@ linters:
         - pattern: ^http\.(DefaultClient|DefaultTransport|Client|Transport|Get|Head|Post|PostForm)$
           msg: "use a client from netproxy.Factory, or the proxy setting is bypassed"
         - pattern: ^net\.(Dial|DialTimeout|Dialer)$
-          msg: "use netproxy.Factory.DialContext, or the proxy setting is bypassed"
+          msg: "use a client from netproxy.Factory, or the proxy setting is bypassed"
     depguard:
       rules:
         os-code:

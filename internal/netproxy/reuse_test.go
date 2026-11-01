@@ -29,13 +29,13 @@ func http2Target(t *testing.T) string {
 func TestHTTPSThroughATunnelMultiplexesOverHTTP2(t *testing.T) {
 	const concurrentRequests = 20
 	proxy := netproxytest.Start(t, http2Target(t))
-	f := netproxy.New(noSystem, noEnv)
-	f.Apply(netproxy.ModeManual, proxy.URL)
-	client := f.InsecureClient()
-	address := "https://" + unreachable + "/"
+	f := netproxy.New(noSystem)
+	f.Apply(netproxy.ModeManual, proxy.URL, "")
+	client := f.Current().Client(netproxy.GameSkipVerify, 0)
+	target := "https://" + unreachable + "/"
 
 	get := func() *http.Response {
-		resp, err := client.Get(address)
+		resp, err := client.Get(target)
 		if err != nil {
 			t.Error(err)
 			return nil
@@ -65,17 +65,13 @@ func TestHTTPSThroughATunnelMultiplexesOverHTTP2(t *testing.T) {
 
 func TestReconnectingResumesTheTLSSession(t *testing.T) {
 	proxy := netproxytest.Start(t, http2Target(t))
-	f := netproxy.New(noSystem, noEnv)
-	f.Apply(netproxy.ModeManual, proxy.URL)
-	client := f.InsecureClient()
-	transport, ok := client.Transport.(*http.Transport)
-	if !ok {
-		t.Fatalf("transport is %T", client.Transport)
-	}
-	address := "https://" + unreachable + "/"
+	f := netproxy.New(noSystem)
+	f.Apply(netproxy.ModeManual, proxy.URL, "")
+	client := f.Current().Client(netproxy.GameSkipVerify, 0)
+	target := "https://" + unreachable + "/"
 	get := func() *http.Response {
 		t.Helper()
-		resp, err := client.Get(address)
+		resp, err := client.Get(target)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -86,7 +82,7 @@ func TestReconnectingResumesTheTLSSession(t *testing.T) {
 	if get().TLS.DidResume {
 		t.Error("the first connection can't have resumed")
 	}
-	transport.CloseIdleConnections()
+	client.CloseIdleConnections()
 	if !get().TLS.DidResume {
 		t.Error("the second connection did a full handshake")
 	}

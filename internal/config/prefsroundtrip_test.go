@@ -116,7 +116,7 @@ func TestSubthemeRoundTripsAndIsSanitizedOnBothSides(t *testing.T) {
 }
 
 // TestProxyPrefsRoundTrip: the whole point of the proxy setting is that it
-// survives a restart. A user who switches to "never use a proxy" because the
+// survives a restart. A user who turns on the manual proxy because the
 // detected one cannot carry AO traffic must not find themselves back on it the
 // next time they launch.
 func TestProxyPrefsRoundTrip(t *testing.T) {
@@ -129,7 +129,8 @@ func TestProxyPrefsRoundTrip(t *testing.T) {
 		t.Fatalf("default proxy URL = %q, want empty", p.Load().ProxyURL)
 	}
 	p.Update(func(sn *Settings) { sn.ProxyModeVal = ProxyModeManual })
-	p.SetProxyURL("  socks5://box.example:1080  ") // trimmed on the way in
+	p.SetProxyURL("  http://box.example:8080  ") // trimmed on the way in
+	p.Update(func(sn *Settings) { sn.ProxyBypass = "  lan.test;10.*  " })
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
@@ -137,19 +138,19 @@ func TestProxyPrefsRoundTrip(t *testing.T) {
 	if back.Load().ProxyModeVal != ProxyModeManual {
 		t.Errorf("mode after reload = %d, want ProxyModeManual", back.Load().ProxyModeVal)
 	}
-	if got := back.Load().ProxyURL; got != "socks5://box.example:1080" {
+	if got := back.Load().ProxyURL; got != "http://box.example:8080" {
 		t.Errorf("url after reload = %q, want it trimmed and preserved", got)
 	}
+	if got := back.Load().ProxyBypass; got != "lan.test;10.*" {
+		t.Errorf("bypass after reload = %q, want it trimmed and preserved", got)
+	}
 
-	// The escape hatch specifically: mode 1 is not the zero value, but mode 0 is,
-	// and a user switching BACK to 0 must persist that rather than be
-	// indistinguishable from a file written before the setting existed.
 	back.Update(func(sn *Settings) { sn.ProxyModeVal = ProxyModeDirect })
 	if err := back.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
 	if got := loadPrefs(t, path).Load().ProxyModeVal; got != ProxyModeDirect {
-		t.Errorf("mode after reload = %d, want ProxyModeDirect — the escape hatch must survive a restart", got)
+		t.Errorf("mode after reload = %d, want ProxyModeDirect", got)
 	}
 }
 
@@ -305,9 +306,7 @@ func TestPanelFontsHandsOutACopy(t *testing.T) {
 	}
 }
 
-// TestProxyModeClampsGarbage: an out-of-range mode indexes past the label table,
-// and the safe landing is System — the shipped default — rather than Direct,
-// which would silently turn the feature off for someone whose file got mangled.
+// TestProxyModeClampsGarbage: an out-of-range mode lands on System, the shipped default.
 func TestProxyModeClampsGarbage(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)

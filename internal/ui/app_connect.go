@@ -52,11 +52,9 @@ func friendlyConnError(wsURL string, err error) string {
 	// Proxy cases come first: the websocket library wraps every dial failure with its own name, so a proxy error would
 	// fall into the "not a WebSocket server" arm below.
 	case errors.Is(err, netproxy.ErrBadProxyAddress):
-		return "The proxy address in Settings can't be read, so connections are blocked rather than sent around it. Settings → Power user → Proxy: fix the address, or choose \"never use one\"."
-	case errors.Is(err, netproxy.ErrProxyUnresolvable):
-		return "This computer is set to find its proxy from a script AsyncAO can't run, so connections are blocked rather than sent around it. Settings → Power user → Proxy: enter the proxy yourself, or choose \"never use one\"."
+		return "The proxy address in Settings is missing or can't be read, so connections are blocked rather than sent around it. Settings → Power user → Proxy: fix the address, or choose \"Don't use a proxy\"."
 	case strings.Contains(s, "proxyconnect") || strings.Contains(s, "proxy"):
-		return "Couldn't reach the proxy this computer is configured to use. Settings → Power user → Proxy shows which one that is; \"never use one\" connects directly instead."
+		return "Couldn't reach the proxy. Settings → Power user → Proxy shows which one is in use; \"Don't use a proxy\" connects directly instead."
 	case strings.Contains(s, "no such host") || strings.Contains(s, "lookup"):
 		return "Couldn't find that server — double-check the address."
 	case strings.Contains(s, "refused"):
@@ -87,7 +85,6 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	a.deliberateClose = false                   // a fresh connection starts with no pending deliberate-close intent
 	a.lastConnName, a.lastConnURL = name, wsURL // remember for one-click Reconnect on a drop/failure
 	a.d.Prefs.SetLastServer(name, wsURL)        // persist for auto-connect / quick-connect on next launch
-	a.pinging = false                           // leaving the lobby: don't let a dropped done-sentinel wedge re-ping
 	a.parkActive()
 	if !a.allocateTab() {
 		return // connErr set; lobby shows it

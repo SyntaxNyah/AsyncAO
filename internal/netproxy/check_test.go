@@ -44,9 +44,9 @@ func TestCheckNamesTheStepThatFailed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			f := netproxy.New(noSystem, noEnv)
-			f.Apply(tc.mode, tc.address)
-			got := f.Check(context.Background(), tc.addr)
+			f := netproxy.New(noSystem)
+			f.Apply(tc.mode, tc.address, "")
+			got := f.Current().Check(context.Background(), tc.addr)
 			if got.Stage != tc.want {
 				t.Errorf("stage = %d, want %d (%s)", got.Stage, tc.want, got.Message)
 			}
@@ -62,9 +62,9 @@ func TestCheckNamesTheStepThatFailed(t *testing.T) {
 
 func TestCheckMessageHidesTheProxyPassword(t *testing.T) {
 	refusing := netproxytest.Start(t, "").URL
-	f := netproxy.New(noSystem, noEnv)
-	f.Apply(netproxy.ModeManual, strings.Replace(refusing, "http://", "http://me:secret@", 1))
-	if got := f.Check(context.Background(), unreachable).Message; strings.Contains(got, "secret") {
+	f := netproxy.New(noSystem)
+	f.Apply(netproxy.ModeManual, strings.Replace(refusing, "http://", "http://me:secret@", 1), "")
+	if got := f.Current().Check(context.Background(), unreachable).Message; strings.Contains(got, "secret") {
 		t.Errorf("message shows the password: %q", got)
 	}
 }

@@ -140,7 +140,6 @@ const (
 // menuServersItems is the lobby's server plumbing. "Direct connect…" focuses the field the lobby draws.
 var menuServersItems = []menuItem{
 	{kind: menuItemAction, label: "Refresh server list", enabled: menuCanRefreshServers, act: menuActRefreshServers},
-	{kind: menuItemCheck, label: "Sort by connect time", checked: menuPingSortOn, enabled: menuCanPingSort, act: menuTogglePingSort},
 	{kind: menuItemCheck, label: "Phone Book", checked: menuPhoneBookOn, act: menuTogglePhoneBook},
 	{kind: menuItemAction, label: "Direct connect…", act: menuActDirectConnect},
 	{kind: menuItemSeparator},
@@ -241,14 +240,6 @@ func menuPhoneBookOn(a *App, _ int) bool { return a.phoneBookPage }
 func menuTogglePhoneBook(a *App, _ int) {
 	a.menuGoto(ScreenLobby)
 	a.setPhoneBookPage(!a.phoneBookPage)
-}
-
-// menuCanPingSort dims the row during a sweep: startPinging refuses a second one, which would race its own results.
-func menuCanPingSort(a *App, _ int) bool { return !a.pinging }
-func menuPingSortOn(a *App, _ int) bool  { return a.pingMode }
-func menuTogglePingSort(a *App, _ int) {
-	a.menuGoto(ScreenLobby)
-	a.toggleConnectTimeSort()
 }
 
 // menuActDirectConnect focuses the lobby's direct-connect field. The field only draws on the all-servers page, and

@@ -46,10 +46,10 @@ func TestFriendlyConnErrorNamesTheProxy(t *testing.T) {
 	// The shape the error really arrives in: our dial wrapper, then the
 	// library's, then the transport's, then ours at the bottom.
 	wrapped := fmt.Errorf("protocol: dialing wss://x: failed to WebSocket dial: Get %q: %w",
-		"https://x", netproxy.ErrProxyUnresolvable)
+		"https://x", netproxy.ErrBadProxyAddress)
 	got := friendlyConnError("wss://x", wrapped)
 	if !strings.Contains(got, "proxy") {
-		t.Errorf("an unresolvable-proxy failure reported %q — it must name the proxy", got)
+		t.Errorf("a bad-address failure reported %q — it must name the proxy", got)
 	}
 	if strings.Contains(got, "WebSocket connection") {
 		t.Errorf("a proxy failure was blamed on the server: %q", got)

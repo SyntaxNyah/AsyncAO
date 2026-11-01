@@ -24,8 +24,8 @@ func proxiedTarget(t *testing.T, body string) (*netproxy.Factory, *netproxytest.
 	}))
 	t.Cleanup(srv.Close)
 	proxy := netproxytest.Start(t, strings.TrimPrefix(srv.URL, "http://"))
-	sockets := netproxy.New(nil, func(string) string { return "" })
-	sockets.Apply(netproxy.ModeManual, proxy.URL)
+	sockets := netproxy.New(nil)
+	sockets.Apply(netproxy.ModeManual, proxy.URL, "")
 	return sockets, proxy
 }
 
@@ -55,6 +55,32 @@ func TestServerListGoesThroughTheProxy(t *testing.T) {
 	}
 }
 
+// A client lives for the whole process, so it must follow a changed setting.
+func TestAssetsFollowAChangedSetting(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "sprite")
+	}))
+	defer srv.Close()
+	target := strings.TrimPrefix(srv.URL, "http://")
+	first, second := netproxytest.Start(t, target), netproxytest.Start(t, target)
+	sockets := netproxy.New(nil)
+	sockets.Apply(netproxy.ModeManual, first.URL, "")
+	c := NewClientNotFoundTTL(0, sockets)
+	if _, err := c.Fetch(context.Background(), "http://"+proxiedAddr+"/a.png"); err != nil {
+		t.Fatal(err)
+	}
+	sockets.Apply(netproxy.ModeManual, second.URL, "")
+	if _, err := c.Fetch(context.Background(), "http://"+proxiedAddr+"/b.png"); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(first.Forwards()); got != 1 {
+		t.Errorf("the old proxy saw %d requests, want 1", got)
+	}
+	if got := len(second.Forwards()); got != 1 {
+		t.Errorf("the new proxy saw %d requests, want 1", got)
+	}
+}
+
 // Tunnelling must not cost the asset client its HTTP/2: a room's sprites share one connection.
 func TestAssetsKeepHTTP2ThroughTheProxy(t *testing.T) {
 	const (
@@ -71,14 +97,13 @@ func TestAssetsKeepHTTP2ThroughTheProxy(t *testing.T) {
 	srv.StartTLS()
 	defer srv.Close()
 	proxy := netproxytest.Start(t, strings.TrimPrefix(srv.URL, "https://"))
-	sockets := netproxy.New(nil, func(string) string { return "" })
-	sockets.Apply(netproxy.ModeManual, proxy.URL)
+	sockets := netproxy.New(nil)
+	sockets.Apply(netproxy.ModeManual, proxy.URL, "")
 	c := NewClientNotFoundTTL(0, sockets)
-	transport, ok := c.httpClient.Transport.(*http.Transport)
-	if !ok {
-		t.Fatalf("transport is %T", c.httpClient.Transport)
+	c.tune = func(tr *http.Transport) {
+		tuneAssetTransport(tr)
+		tr.TLSClientConfig.InsecureSkipVerify = true // the test server's certificate is self-signed
 	}
-	transport.TLSClientConfig.InsecureSkipVerify = true // the test server's certificate is self-signed
 
 	for i := range requests {
 		if _, err := c.Fetch(context.Background(), asset+strconv.Itoa(i)); err != nil {
@@ -93,18 +118,7 @@ func TestAssetsKeepHTTP2ThroughTheProxy(t *testing.T) {
 	}
 }
 
-// A direct ping would show the user's address to every server in the list.
-func TestLatencyProbeGoesThroughTheProxy(t *testing.T) {
-	sockets, proxy := proxiedTarget(t, "")
-	if _, err := ProbeLatency(context.Background(), sockets, proxiedAddr); err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(proxy.Asked(), []string{proxiedAddr}) {
-		t.Errorf("proxy was asked for %v", proxy.Asked())
-	}
-}
-
-// Resolving a proxied name locally would publish it to the machine's resolver.
+// The proxy resolves a proxied name.
 func TestPreResolveSkipsProxiedHosts(t *testing.T) {
 	const host = "asyncao-test.invalid"
 	sockets, _ := proxiedTarget(t, "")

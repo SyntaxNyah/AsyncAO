@@ -16,7 +16,6 @@ const (
 	SelfUpdate
 	ExternalVideoEncoder
 	SystemFontDiscovery
-	ProxyDiscovery
 	MachineID
 	DiscordPresence
 	MicrophoneCapture
@@ -30,7 +29,7 @@ func (c Capability) String() string {
 	return [...]string{
 		"open URL", "reveal file", "pick folder", "pick many folders", "copy files to clipboard",
 		"system notifications", "relaunch", "self-update", "external video encoder",
-		"system font discovery", "proxy discovery", "machine id", "discord presence",
+		"system font discovery", "machine id", "discord presence",
 		"microphone capture", "extra windows", "background rendering", "high-memory features",
 	}[c]
 }
@@ -58,7 +57,6 @@ const (
 	reasonWindowsOnly  = "implemented on Windows only"
 	reasonSandbox      = "not available in a sandbox"
 	reasonLinuxRelease = "Linux releases update as an AppImage"
-	reasonNoDiscovery  = "no OS proxy settings to read here"
 	reasonOneFolder    = "folder dialogs here pick one folder"
 	reasonNoFileCopy   = "copying a file for Finder is not confirmed to work yet"
 )
@@ -81,9 +79,6 @@ func capabilitiesFor(env Environment, hardware Hardware) Capabilities {
 	if env.OS != Windows && env.OS != MacOS && env.OS != Linux {
 		off(reasonOneFolder, PickManyFolders)
 	}
-	if env.OS != Windows && env.OS != MacOS {
-		off(reasonNoDiscovery, ProxyDiscovery)
-	}
 	if (env.OS == Linux || env.OS == OtherOS) && env.Packaging != AppImage {
 		off(reasonLinuxRelease, SelfUpdate)
 	}
@@ -97,7 +92,7 @@ func capabilitiesFor(env Environment, hardware Hardware) Capabilities {
 	if env.FormFactor == Mobile {
 		off(reasonMobile, OpenURL, RevealFile, PickFolder, PickManyFolders, CopyFilesToClipboard,
 			SystemNotifications, Relaunch, SelfUpdate, ExternalVideoEncoder,
-			SystemFontDiscovery, ProxyDiscovery, MachineID, DiscordPresence,
+			SystemFontDiscovery, MachineID, DiscordPresence,
 			MicrophoneCapture, ExtraWindows, BackgroundRendering)
 	}
 	return caps

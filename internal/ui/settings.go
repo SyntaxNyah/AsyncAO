@@ -326,9 +326,8 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"origin", "cors", "referer", "asset origin", "origin header", "stream from base",
 		"casing", "capital", "capitalize", "capitalise", "uppercase", "lowercase", "character folder", "folder case",
 		// Someone looking for this usually cannot connect, so include the terms they might type.
-		"proxy", "socks", "socks5", "vpn", "tunnel", "corporate network", "work network",
-		"wpad", "proxy script", "pac file", "system proxy", "no proxy", "bypass",
-		// Not bare "pac": it is a substring of General's "opacity" and would take that query.
+		"proxy", "vpn", "tunnel", "corporate network", "work network",
+		"system proxy", "no proxy", "bypass",
 	},
 }
 

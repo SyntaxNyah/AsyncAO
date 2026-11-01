@@ -311,9 +311,9 @@ func cmdWarm(args []string) error {
 
 // newHTTPClient follows this computer's proxy setting; this tool has no preferences of its own.
 func newHTTPClient() *http.Client { //nolint:forbidigo // built by the socket factory
-	sockets := netproxy.New(platform.SystemProxySettings, os.Getenv)
-	sockets.Apply(netproxy.ModeSystem, "")
-	return sockets.Client(warmTimeout)
+	sockets := netproxy.New(platform.SystemProxySettings)
+	sockets.Apply(netproxy.ModeSystem, "", "")
+	return sockets.Current().Client(netproxy.Web, warmTimeout)
 }
 
 func fetch(client *http.Client, url string) ([]byte, int) { //nolint:forbidigo // built by the socket factory

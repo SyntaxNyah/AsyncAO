@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"errors"
 	"log"
 	"net"
 	"net/url"
@@ -14,21 +13,9 @@ import (
 )
 
 // The proxy section of the Power-user tab. A proxy blocking CONNECT to the non-443 ports AO servers use looks like a
-// broken client, so what was detected and where it came from must be on screen, one click from "Never use a proxy".
+// broken client, so what is in effect and where it came from must be on screen.
 
-// proxyModeLabel is the cycle button's text: what is in effect, not what clicking would switch to.
-func proxyModeLabel(mode int) string {
-	switch mode {
-	case config.ProxyModeDirect:
-		return "Proxy: never use one"
-	case config.ProxyModeManual:
-		return "Proxy: the address below"
-	default:
-		return "Proxy: use this computer's setting"
-	}
-}
-
-// applyProxyPrefs re-resolves the policy from saved preferences, off the render thread because it may read the registry
+// applyProxyPrefs re-resolves the configuration from saved preferences, off the render thread because it may read the registry
 // or start a process. One goroutine at a time (hard rule 4): a change made meanwhile runs right after it.
 func (a *App) applyProxyPrefs() {
 	if a.proxyApplyBusy.Swap(true) {
@@ -40,7 +27,7 @@ func (a *App) applyProxyPrefs() {
 		defer PushWake()
 		for {
 			a.proxyApplyAgain.Store(false)
-			p := sockets.Apply(netproxy.Mode(prefs.Load().ProxyModeVal), prefs.Load().ProxyURL)
+			p := sockets.Apply(netproxy.Mode(prefs.Load().ProxyModeVal), prefs.Load().ProxyURL, prefs.Load().ProxyBypass)
 			log.Printf("proxy: %s", p.Describe())
 			if !a.proxyApplyAgain.Load() {
 				break
@@ -52,6 +39,16 @@ func (a *App) applyProxyPrefs() {
 			a.applyProxyPrefs()
 		}
 	}()
+}
+
+// applyProxyFields puts typed manual settings in force once editing has ended; applying per keystroke would send new
+// requests to a half-typed address.
+func (a *App) applyProxyFields() {
+	s := a.d.Prefs.Load()
+	if s.ProxyURL != a.proxyURLApplied || s.ProxyBypass != a.proxyBypassApplied {
+		a.proxyURLApplied, a.proxyBypassApplied = s.ProxyURL, s.ProxyBypass
+		a.applyProxyPrefs()
+	}
 }
 
 // proxyTestTimeout bounds the test button, longer than a working connection takes to set up.
@@ -94,7 +91,7 @@ func (a *App) startProxyTest() {
 		defer a.proxyTestBusy.Store(false)
 		ctx, cancel := context.WithTimeout(context.Background(), proxyTestTimeout)
 		defer cancel()
-		result := sockets.Check(ctx, target)
+		result := sockets.Current().Check(ctx, target)
 		log.Printf("proxy test: %s (%s)", result.Message, result.Elapsed)
 		a.proxyTestResult.Store(&result)
 	}()
@@ -131,34 +128,25 @@ func (a *App) drawProxySettings(y, w int32) int32 {
 
 	y = a.settingsSection(y, w, "Proxy")
 	mode := a.d.Prefs.Load().ProxyModeVal
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 300, H: btnH}, proxyModeLabel(mode)) {
-		{
-			pv1 := (mode + 1) % config.ProxyModeCount
-			a.d.Prefs.Update(func(sn *config.Settings) {
-				sn.ProxyModeVal = pv1
-			})
-		}
-		a.applyProxyPrefs()
-	}
-	// Re-check is for a user who just joined a VPN or changed network: they should not have to restart.
-	if c.Button(sdl.Rect{X: pad + 308, Y: y, W: 110, H: btnH}, "Re-check") {
-		a.applyProxyPrefs()
-	}
-	c.Tooltip(sdl.Rect{X: pad + 308, Y: y, W: 110, H: btnH},
-		"Read this computer's proxy configuration again — after connecting to a VPN, or changing network settings, without restarting.")
-	y += btnH + 6
-
-	if mode == config.ProxyModeManual {
-		c.Label(pad, y+4, "Proxy address:", ColText)
-		cur := a.d.Prefs.Load().ProxyURL
-		if next, _ := c.TextField("proxyurl", sdl.Rect{X: pad + 160, Y: y, W: 340, H: fieldH}, cur,
-			"http://host:8080  ·  socks5://host:1080"); next != cur {
-			a.d.Prefs.SetProxyURL(next)
+	for _, choice := range []struct {
+		mode  int
+		label string
+	}{
+		{config.ProxyModeSystem, "Use this computer's proxy settings"},
+		{config.ProxyModeDirect, "Don't use a proxy"},
+		{config.ProxyModeManual, "Configure the proxy manually"},
+	} {
+		if c.Checkbox(pad, y, choice.label, mode == choice.mode) && mode != choice.mode {
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.ProxyModeVal = choice.mode })
 			a.applyProxyPrefs()
 		}
+		a.noteSearchRow(choice.label, y)
 		y += 24
-		y = a.settingsDesc(pad, y, "http://, https:// and socks5:// are all understood. A bare host:port is read as http://. An address that can't be read blocks connections rather than quietly going direct — the line below will say so.", ColTextDim)
-		y += 6
+	}
+	y += 6
+
+	if mode == config.ProxyModeManual {
+		y = a.drawManualProxy(pad, y)
 	}
 
 	// Colour repeats the words so "nothing is proxied" and "connections are being blocked" differ at a glance.
@@ -166,7 +154,7 @@ func (a *App) drawProxySettings(y, w int32) int32 {
 	statusCol := ColTextDim
 	if p.Blocked() {
 		statusCol = ColDanger
-	} else if p.Via != nil {
+	} else if p.UsesProxy() {
 		statusCol = ColAccent
 	}
 	c.Label(pad, y+4, "In effect:", ColText)
@@ -174,11 +162,39 @@ func (a *App) drawProxySettings(y, w int32) int32 {
 	y += 26
 	y = a.drawProxyTest(pad, y, w)
 
-	if errors.Is(p.Block, netproxy.ErrProxyUnresolvable) {
-		y = a.settingsDesc(pad, y, "This computer is set to find its proxy from a script, which AsyncAO can't run here. Rather than connect around a proxy you meant to use, connections are being BLOCKED. Two ways out: switch the setting above to \"the address below\" and enter the proxy yourself, or switch it to \"never use one\" if you don't want AsyncAO proxied at all.", ColDanger)
-		y += 6
+	if mode == config.ProxyModeSystem {
+		// Re-check is for a user who just joined a VPN or changed network: they should not have to restart.
+		if c.Button(sdl.Rect{X: pad, Y: y, W: 110, H: btnH}, "Re-check") {
+			a.applyProxyPrefs()
+		}
+		c.Tooltip(sdl.Rect{X: pad, Y: y, W: 110, H: btnH},
+			"Read this computer's proxy configuration again — after connecting to a VPN, or changing network settings, without restarting.")
+		y += btnH + 6
 	}
-	y = a.settingsDesc(pad, y, "Everything AsyncAO connects to follows this: the server connection, all character and background art, music, the server list and its pings, and updates. A change applies to new connections, so reconnect to move a server you're already on. If a proxy can't carry AO traffic — some block the ports community servers use — nothing will load, and \"never use one\" is the fix.", ColTextDim)
-	y += 10
-	return y
+	y = a.settingsDesc(pad, y, "Everything AsyncAO connects to follows this: the server connection, all character and background art, music, the server list, and updates. A change applies to new connections, so reconnect to move a server you're already on. If a proxy can't carry AO traffic — some block the ports community servers use — nothing will load, and \"Don't use a proxy\" is the fix.", ColTextDim)
+	return y + 10
+}
+
+// drawManualProxy is the address and bypass fields, which exist only in manual mode.
+func (a *App) drawManualProxy(pad, y int32) int32 {
+	c := a.ctx
+	c.Label(pad, y+4, "Proxy address:", ColText)
+	cur := a.d.Prefs.Load().ProxyURL
+	next, addressEntered := c.TextField("proxyurl", sdl.Rect{X: pad + 160, Y: y, W: 340, H: fieldH}, cur, "http://host:8080")
+	if next != cur {
+		a.d.Prefs.SetProxyURL(next)
+	}
+	y += 24
+	c.Label(pad, y+4, "Skip the proxy for:", ColText)
+	curBypass := a.d.Prefs.Load().ProxyBypass
+	nextBypass, bypassEntered := c.TextField("proxybypass", sdl.Rect{X: pad + 160, Y: y, W: 340, H: fieldH}, curBypass, "lan.example;192.168.*")
+	if nextBypass != curBypass {
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ProxyBypass = nextBypass })
+	}
+	if addressEntered || bypassEntered || (c.focusID != "proxyurl" && c.focusID != "proxybypass") {
+		a.applyProxyFields()
+	}
+	y += 24
+	y = a.settingsDesc(pad, y, "This computer's proxy settings are ignored. http:// and https:// are understood, and a bare host:port is read as http://. A missing or unreadable address blocks connections, and the line below will say so. Skipped hosts are split by ; or a comma: names cover their subdomains, and 192.168.*, 10.0.0.0/8 and <local> also work.", ColTextDim)
+	return y + 6
 }

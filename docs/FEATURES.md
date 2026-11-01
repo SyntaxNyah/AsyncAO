@@ -814,7 +814,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 ## Quality of life
 
 - **App-wide menu bar** (#14): a persistent strip along the top of **every**
-  screen with real dropdown menus — **Servers** (refresh, connect-time sort,
+  screen with real dropdown menus — **Servers** (refresh,
   Phone Book, direct connect, disconnect, quit), **View** (keep aspect ratio, a
   **Theme fit ▸** submenu, plain backdrops, the F3 performance overlay),
   **Window** (restore default size, **Theme's design size**, fit to screen,

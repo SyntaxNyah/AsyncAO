@@ -1860,6 +1860,7 @@ func TestResetPowerUser(t *testing.T) {
 
 	p.Update(func(sn *Settings) { sn.ProxyModeVal = ProxyModeManual })
 	p.SetProxyURL("http://proxy.example:8080")
+	p.Update(func(sn *Settings) { sn.ProxyBypass = "lan.test" })
 	p.SetAssetCharCasing(2)
 	p.AddModDuration("45m") // user data — must SURVIVE the nuke
 
@@ -1868,11 +1869,9 @@ func TestResetPowerUser(t *testing.T) {
 	if p.Load().ValidateTLSCerts || p.Load().AssetOrigin != "" || p.Load().WSOrigin != "" {
 		t.Error("nuke must clear TLS + both Origin overrides")
 	}
-	// Back to "use the machine's setting", NOT to "never proxy": the nuke is a
-	// return to shipped defaults, and shipping with the proxy ignored is the
-	// defect the setting exists to fix.
-	if p.Load().ProxyModeVal != ProxyModeSystem || p.Load().ProxyURL != "" {
-		t.Errorf("nuke left proxy mode=%d url=%q, want the system default and no manual URL", p.Load().ProxyModeVal, p.Load().ProxyURL)
+	// The nuke returns to shipped defaults, which follow the machine's setting.
+	if p.Load().ProxyModeVal != ProxyModeSystem || p.Load().ProxyURL != "" || p.Load().ProxyBypass != "" {
+		t.Errorf("nuke left proxy mode=%d url=%q bypass=%q, want the system default and no manual settings", p.Load().ProxyModeVal, p.Load().ProxyURL, p.Load().ProxyBypass)
 	}
 	if p.Load().AssetCharCase != 0 {
 		t.Errorf("nuke left character-folder casing at %d, want lowercase", p.Load().AssetCharCase)

@@ -102,13 +102,13 @@ func TestCapabilities(t *testing.T) {
 		off   []platform.Capability
 	}{
 		{"windows has the windows-only services", fakeProbe{goos: "windows", exe: exe},
-			[]platform.Capability{platform.CopyFilesToClipboard, platform.SystemNotifications, platform.ProxyDiscovery, platform.SelfUpdate},
+			[]platform.Capability{platform.CopyFilesToClipboard, platform.SystemNotifications, platform.SelfUpdate},
 			nil},
-		{"linux lacks them and has no OS proxy settings", fakeProbe{goos: "linux", exe: exe},
+		{"linux lacks them", fakeProbe{goos: "linux", exe: exe},
 			[]platform.Capability{platform.OpenURL, platform.PickFolder, platform.PickManyFolders, platform.CopyFilesToClipboard, platform.Relaunch, platform.MachineID},
-			[]platform.Capability{platform.SystemNotifications, platform.ProxyDiscovery}},
-		{"macos reads OS proxy settings and self-updates", fakeProbe{goos: "darwin", exe: exe},
-			[]platform.Capability{platform.ProxyDiscovery, platform.SelfUpdate, platform.PickFolder, platform.PickManyFolders},
+			[]platform.Capability{platform.SystemNotifications}},
+		{"macos self-updates", fakeProbe{goos: "darwin", exe: exe},
+			[]platform.Capability{platform.SelfUpdate, platform.PickFolder, platform.PickManyFolders},
 			[]platform.Capability{platform.CopyFilesToClipboard}},
 		{"linux self-updates only as an appimage", fakeProbe{goos: "linux", exe: exe, env: appImage},
 			[]platform.Capability{platform.SelfUpdate}, nil},

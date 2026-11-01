@@ -72,51 +72,22 @@ func TestMenuServersPhoneBookSharesTheLobbySetter(t *testing.T) {
 	}
 }
 
-// TestMenuServersRefreshAndPingGateOnTheirOwnState pins the two rows whose shipped
-// helpers refuse to re-enter: RefreshServers while a fetch is in flight, startPinging
-// while a sweep is. Both would be dead clicks, so both dim instead — and for the ping
-// row the dimming is also the only progress feedback a static menu row can give (the
-// button it replaced said "Pinging…" in its label).
-func TestMenuServersRefreshAndPingGateOnTheirOwnState(t *testing.T) {
+// TestMenuServersRefreshGatesOnItsOwnState: RefreshServers coalesces a click during a fetch, so the row dims instead.
+func TestMenuServersRefreshGatesOnItsOwnState(t *testing.T) {
 	a := stageMenuBarApp(t)
 	refresh := menuRow(t, menuServersTitle, "Refresh server list")
-	ping := menuRow(t, menuServersTitle, "Sort by connect time")
-
-	if !a.menuItemEnabled(refresh) || !a.menuItemEnabled(ping) {
-		t.Fatal("an idle lobby must offer both rows")
+	if !a.menuItemEnabled(refresh) {
+		t.Fatal("an idle lobby must offer the row")
 	}
 	a.lobbyFetching = true
 	if a.menuItemEnabled(refresh) {
-		t.Error("Refresh must dim while a fetch is in flight — RefreshServers coalesces it away")
-	}
-	a.lobbyFetching = false
-	a.pinging = true
-	if a.menuItemEnabled(ping) {
-		t.Error("the connect-time row must dim while a sweep runs — startPinging refuses a second one")
-	}
-	a.pinging = false
-
-	// The check tracks pingMode, and turning it OFF re-sorts immediately (pingMode
-	// alone only picks the comparator for the NEXT sort).
-	a.pingMode = true
-	a.selServer = 3
-	if !ping.checked(a, 0) {
-		t.Error("the row must read as checked while the lobby is in connect-time order")
-	}
-	a.fireMenuItem(ping)
-	if a.pingMode {
-		t.Fatal("firing the row again must leave connect-time order")
-	}
-	if a.selServer != -1 {
-		t.Errorf("leaving connect-time order must re-sort (applyServerSort), sel=%d", a.selServer)
+		t.Error("Refresh must dim while a fetch is in flight")
 	}
 }
 
 // TestLobbyListActionsAreOnTheLobby pins where the SERVER-LIST actions live.
 //
-// Refresh and the connect-time sort came back out of the menu by request: they act
-// on the server list, so a menu carrying them is dead weight the moment you are in
-// a server, and a refresh button belongs beside the thing it refreshes. The
+// Refresh acts on the server list, so it belongs beside the thing it refreshes. The
 // cluster's count MUST match the number of cursor steps drawLobby takes, because
 // that constant is what turns "does the row fit?" into arithmetic instead of a
 // measured pass.
@@ -124,21 +95,20 @@ func TestMenuServersRefreshAndPingGateOnTheirOwnState(t *testing.T) {
 // Both surfaces survive on purpose and call the same setters, so they cannot
 // drift — this test is what stops one of them quietly growing a second copy.
 func TestLobbyListActionsAreOnTheLobby(t *testing.T) {
-	// The HEADER cluster keeps exactly one button. Refresh and Sort deliberately do
+	// The HEADER cluster keeps exactly one button. Refresh deliberately does
 	// NOT join it: that row is shared with the Privacy/Glossary/What's New trio, and
-	// three buttons there squeezed the trio to nothing at MinWindowW — which would
-	// strand What's New, whose only other home is that row. They live on the list's
+	// more buttons there squeezed the trio to nothing at MinWindowW — which would
+	// strand What's New, whose only other home is that row. It lives on the list's
 	// own strip instead. TestLobbyHeaderRowSheds... is what caught that.
 	if lobbyUtilBtnCount != 1 {
-		t.Errorf("the header cluster lays out %d buttons, want 1 — Refresh/Sort belong on the list strip", lobbyUtilBtnCount)
+		t.Errorf("the header cluster lays out %d buttons, want 1 — Refresh belongs on the list strip", lobbyUtilBtnCount)
 	}
 	if !strings.Contains(readSourceFile(t, "screens.go"), "lobbyListActionsDropY") {
-		t.Error("the server list's action strip is gone — Refresh/Sort would be menu-only again")
+		t.Error("the server list's action strip is gone — Refresh would be menu-only again")
 	}
 	// Still reachable from the menu, for the keyboard and for muscle memory.
 	for _, tc := range []struct{ menuTitle, label string }{
 		{menuServersTitle, "Refresh server list"},
-		{menuServersTitle, "Sort by connect time"},
 		{menuServersTitle, "Phone Book"},
 		{menuExtrasTitle, "Settings"},
 		{menuHelpTitle, "About AsyncAO"},
@@ -151,7 +121,7 @@ func TestLobbyListActionsAreOnTheLobby(t *testing.T) {
 	for _, row := range menuServersItems {
 		switch row.label {
 		case "Disconnect", "Quit AsyncAO", "Direct connect…",
-			"Refresh server list", "Sort by connect time", "Phone Book", "":
+			"Refresh server list", "Phone Book", "":
 		default:
 			t.Errorf("unexpected Servers row %q — decide whether it is lobby-only and move it", row.label)
 		}

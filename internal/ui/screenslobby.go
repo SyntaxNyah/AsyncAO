@@ -117,7 +117,6 @@ func (a *App) connErrLabel() string {
 
 func (a *App) drawLobby(w, h int32) {
 	a.pollLobbyFetch()
-	a.pollPing() // drain connect-time probes (no-op unless a sweep is running)
 	c := a.ctx
 	a.drawScreenBackdrop(w, h, "lobbybackground")
 	// hdrY is this screen's header row, below the app-chrome band; offsets below are relative to it.
@@ -244,19 +243,6 @@ func (a *App) drawLobby(w, h int32) {
 		a.RefreshServers()
 	}
 	c.Tooltip(refreshBtn, "Re-fetch the master server list")
-
-	sortLabel := "Sort: name"
-	if a.pingMode {
-		sortLabel = "Sort: speed"
-	}
-	if a.pinging {
-		sortLabel = "Pinging…"
-	}
-	sortBtn := sdl.Rect{X: pad + lobbyListActionW + lobbyUtilBtnGap, Y: listActY, W: lobbyListActionW, H: btnH}
-	if c.Button(sortBtn, sortLabel) && !a.pinging {
-		a.toggleConnectTimeSort()
-	}
-	c.Tooltip(sortBtn, "Order the list by how fast each server answers, instead of by name")
 
 	// Server rows: one click expands the description, a second joins. The wheel scrolls only over the list.
 	listTop := lobbyListTop(a.topChromeH())
@@ -444,20 +430,7 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 	}
 	c.LabelClipped(nameX, y+5, row.W-260-(nameX-(row.X+52)), name, textCol)
 
-	// Right-side label: security tier, or in ping mode the connect time; the tier colour still reads off the swatch.
-	if a.pingMode && e.Joinable() {
-		label, col := "…", ColTextDim
-		if d, ok := a.pings[e.WebSocketURL()]; ok {
-			if d < 0 {
-				label, col = "unreachable", ColDanger
-			} else {
-				label, col = fmt.Sprintf("%d ms", int(d/time.Millisecond)), ColText
-			}
-		}
-		c.Label(row.X+row.W-260, y+5, label, col)
-	} else {
-		c.Label(row.X+row.W-260, y+5, e.Security().String(), tierColor(*e))
-	}
+	c.Label(row.X+row.W-260, y+5, e.Security().String(), tierColor(*e))
 
 	joinHover := false
 	if e.Joinable() {
@@ -1194,17 +1167,11 @@ func (a *App) noteScreenTransition() {
 	if a.screen == a.drawnScreen {
 		return // settled frame: one int compare, nothing below runs (the lobby draw is 0-alloc-gated)
 	}
-	prev := a.drawnScreen
 	a.drawnScreen = a.screen
+	a.applyProxyFields()   // leaving Settings ends an edit of the manual proxy
 	a.closeSpritePreview() // also clears the trigger id — no cross-screen dwell carry-over
 	a.previewFrameRect = sdl.Rect{}
 	a.previewTriggerRect = sdl.Rect{}
-	// pollPing only runs from drawLobby, so leaving mid-sweep would leave a.pinging stuck true: clear it here, and bump
-	// the generation so the sweep's stragglers and late done sentinel are discarded, as connectWith does.
-	if prev == ScreenLobby && a.pinging {
-		a.pinging = false
-		a.pingGen++
-	}
 	// Entry edge for auto-refresh, catching every path to the lobby here rather than at each a.screen = ScreenLobby.
 	// Boot is not an edge (drawnScreen's zero value is ScreenLobby); the constructor's RefreshServers covers launch.
 	if a.screen == ScreenLobby {

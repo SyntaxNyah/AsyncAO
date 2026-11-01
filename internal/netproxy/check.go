@@ -35,9 +35,9 @@ type CheckResult struct {
 // OK reports whether the connection opened.
 func (r CheckResult) OK() bool { return r.Stage == CheckConnected }
 
-// Check opens one connection to addr by the current policy and reports which step failed. It blocks on the network, so
+// Check opens one connection to addr on this Network and reports which step failed. It blocks on the network, so
 // never call it on the render thread.
-func (f *Factory) Check(ctx context.Context, addr string) CheckResult {
+func (n *Network) Check(ctx context.Context, addr string) CheckResult {
 	start := time.Now()
 	finish := func(stage CheckStage, format string, args ...any) CheckResult {
 		return CheckResult{Stage: stage, Message: fmt.Sprintf(format, args...), Elapsed: time.Since(start).Round(time.Millisecond)}
@@ -46,7 +46,7 @@ func (f *Factory) Check(ctx context.Context, addr string) CheckResult {
 	if err != nil {
 		return finish(CheckDirectFailed, "%s isn't a host and port: %v", addr, err)
 	}
-	via, err := f.policy.Load().route(host)
+	via, err := n.route(host)
 	if err != nil {
 		return finish(CheckBlocked, "Blocked by the setting: %v", err)
 	}

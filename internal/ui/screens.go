@@ -67,7 +67,7 @@ const (
 	// header row to nothing at config.MinWindowW, stranding What's New, so Refresh and Sort sit on their own strip.
 	lobbyUtilBtnCount int32 = 1
 	// lobbyDirectRowDropY is how far below the header the direct-connect row sits; lobbyListActionsDropY how far below
-	// that the Refresh / Sort strip sits; lobbyListActionW each button's width there. Named so lobbyListTop is the
+	// that the Refresh strip sits; lobbyListActionW each button's width there. Named so lobbyListTop is the
 	// single source.
 	lobbyDirectRowDropY   int32 = 56
 	lobbyListActionsDropY int32 = 34

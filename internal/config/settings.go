@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"sync/atomic"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
@@ -72,6 +73,7 @@ type Settings struct {
 	AssetCharCase                uint8                        `json:"assetCharCase,omitempty"`
 	ProxyModeVal                 int                          `json:"proxyMode"`
 	ProxyURL                     string                       `json:"proxyUrl,omitempty"`
+	ProxyBypass                  string                       `json:"proxyBypass,omitempty"`
 	PanelFontsVal                map[string]PanelFont         `json:"panelFonts,omitempty"`
 	FontWarnThemes               []string                     `json:"fontWarnThemes,omitempty"`
 	VoiceInputDevice             string                       `json:"voiceInputDevice,omitempty"`
@@ -458,6 +460,7 @@ func normalizeSettings(s *Settings) {
 	if s.ProxyModeVal < 0 || s.ProxyModeVal >= ProxyModeCount {
 		s.ProxyModeVal = defaultSettings().ProxyModeVal
 	}
+	s.ProxyBypass = strings.TrimSpace(s.ProxyBypass)
 	if s.ICLogDepthVal < 0 {
 		s.ICLogDepthVal = ICLogDepthUnlimited
 	} else if s.ICLogDepthVal != 0 {

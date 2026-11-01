@@ -217,14 +217,6 @@ type App struct {
 	descLines  []string
 	descLinks  []string // clickable URLs found in the description
 	helpScroll int32    // ScreenServerHelp scroll position
-	// Ping sort: pings holds each server's TCP-connect RTT by URL (0 = unprobed, <0 = unreachable);
-	// pingGen drops stale results after a re-probe.
-	pings    map[string]time.Duration
-	pingRes  chan pingResult
-	pingMode bool
-	pinging  bool
-	pingGen  int
-
 	// Connection-quality chip: one goroutine pings the active conn, and exists only while the chip is on.
 	// pingRTT is the only field it touches; the rest are render-thread-only.
 	pingRTT     atomic.Int64       // round-trip nanoseconds (0 = unknown); goroutine→render
@@ -625,6 +617,8 @@ type App struct {
 	themeCat atomic.Pointer[themeCatalog]
 	// proxyApplyBusy and proxyApplyAgain keep applyProxyPrefs to one goroutine.
 	proxyApplyBusy, proxyApplyAgain atomic.Bool
+	// proxyURLApplied and proxyBypassApplied are the manual proxy fields last put in force.
+	proxyURLApplied, proxyBypassApplied string
 	// proxyTestBusy keeps the Settings test to one goroutine; proxyTestResult is its last answer.
 	proxyTestBusy   atomic.Bool
 	proxyTestResult atomic.Pointer[netproxy.CheckResult]
@@ -1158,7 +1152,8 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		screen:              ScreenLobby,
 		lastDPIDisplayIndex: -1, // #77 Part B: no DPI query yet (SeedDisplayDPIScale sets it)
 		lobbyResult:         make(chan lobbyFetch, 1),
-		pingRes:             make(chan pingResult, pingResBuf),
+		proxyURLApplied:     d.Prefs.Load().ProxyURL,
+		proxyBypassApplied:  d.Prefs.Load().ProxyBypass,
 		charINIres:          make(chan charINIFetch, 1),
 		previewEmoteRes:     make(chan previewEmoteFetch, 1),
 		updateRes:           make(chan *update.Release, 1),

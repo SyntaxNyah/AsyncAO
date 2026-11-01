@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	_ "net/http/pprof"
-	"os"
 	"path/filepath"
 	"slices"
 	"time"
@@ -130,8 +129,8 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	}
 
 	// Resolve the proxy before anything can dial, or the earliest requests would go direct.
-	sockets := netproxy.New(platform.SystemProxySettings, os.Getenv)
-	log.Printf("proxy: %s", sockets.Apply(netproxy.Mode(prefs.Load().ProxyModeVal), prefs.Load().ProxyURL).Describe())
+	sockets := netproxy.New(platform.SystemProxySettings)
+	log.Printf("proxy: %s", sockets.Apply(netproxy.Mode(prefs.Load().ProxyModeVal), prefs.Load().ProxyURL, prefs.Load().ProxyBypass).Describe())
 
 	// The 404 TTL is set at construction, so changing it needs a restart.
 	client := network.NewClientNotFoundTTL(time.Duration(prefs.Load().NotFoundTTLSecVal)*time.Second, sockets)

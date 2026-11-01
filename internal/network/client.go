@@ -70,14 +70,17 @@ var ErrHostBackingOff = errors.New("network: host backing off after failures")
 
 // Client is the deduplicating, negatively-caching asset fetcher, safe for concurrent use.
 type Client struct {
-	sockets    *netproxy.Factory
-	httpClient *http.Client //nolint:forbidigo // its transport comes from the factory
-	group      singleflight.Group
-	notFound   *expirable.LRU[string, struct{}]
-	dns        *dnsCache
-	backoff    sync.Map // host string → *hostBackoff
-	hostLat    sync.Map // host string → *hostLatency (TTFB EWMA)
-	timeout    time.Duration
+	sockets *netproxy.Factory
+	// assets is the asset client for the Network it was built from; see assetClient.
+	assets atomic.Pointer[assetClient]
+	// tune sizes each asset transport.
+	tune     func(*http.Transport)
+	group    singleflight.Group
+	notFound *expirable.LRU[string, struct{}]
+	dns      *dnsCache
+	backoff  sync.Map // host string → *hostBackoff
+	hostLat  sync.Map // host string → *hostLatency (TTFB EWMA)
+	timeout  time.Duration
 	// bodyBudget is a field rather than the const so tests can shrink it.
 	bodyBudget time.Duration
 	bufPool    sync.Pool // *bytes.Buffer for unknown-length reads
@@ -134,22 +137,24 @@ func NewClientNotFoundTTL(ttl time.Duration, sockets *netproxy.Factory) *Client 
 	return newClient(DefaultRequestTimeout, ttl, sockets)
 }
 
+// tuneAssetTransport sizes the pool for asset streaming; assets are pre-compressed media, so transparent gzip would waste CPU.
+func tuneAssetTransport(t *http.Transport) {
+	t.MaxConnsPerHost = defaultMaxConnsPerHost
+	t.MaxIdleConnsPerHost = defaultMaxIdleConnsPerHost
+	t.MaxIdleConns = defaultMaxIdleConnsTotal
+	t.IdleConnTimeout = defaultIdleConnTimeout
+	t.ResponseHeaderTimeout = defaultResponseHeaderTimeout
+	t.DisableCompression = true
+	t.ForceAttemptHTTP2 = true
+	t.TLSHandshakeTimeout = defaultTLSHandshakeTimeout
+	t.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(tlsSessionCacheSize)
+}
+
 func newClient(timeout, notFoundTTL time.Duration, sockets *netproxy.Factory) *Client {
 	dns := newDNSCache()
-	transport := sockets.ForwardTransport(dns.DialContext)
-	transport.MaxConnsPerHost = defaultMaxConnsPerHost
-	transport.MaxIdleConnsPerHost = defaultMaxIdleConnsPerHost
-	transport.MaxIdleConns = defaultMaxIdleConnsTotal
-	transport.IdleConnTimeout = defaultIdleConnTimeout
-	transport.ResponseHeaderTimeout = defaultResponseHeaderTimeout
-	// Assets are pre-compressed media, so transparent gzip would waste CPU.
-	transport.DisableCompression = true
-	transport.ForceAttemptHTTP2 = true
-	transport.TLSHandshakeTimeout = defaultTLSHandshakeTimeout
-	transport.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(tlsSessionCacheSize)
 	return &Client{
 		sockets:    sockets,
-		httpClient: &http.Client{Transport: transport}, //nolint:forbidigo // its transport comes from the factory
+		tune:       tuneAssetTransport,
 		notFound:   expirable.NewLRU[string, struct{}](NotFoundCacheSize, nil, notFoundTTL),
 		dns:        dns,
 		timeout:    timeout,
@@ -164,10 +169,32 @@ func newClient(timeout, notFoundTTL time.Duration, sockets *netproxy.Factory) *C
 	}
 }
 
+// assetClient pairs an asset client with the Network it belongs to.
+type assetClient struct {
+	network *netproxy.Network
+	http    *http.Client //nolint:forbidigo // its transport comes from the factory
+}
+
+// assetHTTP returns the asset client for the Network in force. Racing callers may each build one after a change; the
+// loser's pool is freed once its requests finish.
+func (c *Client) assetHTTP() *http.Client { //nolint:forbidigo // its transport comes from the factory
+	network := c.sockets.Current()
+	current := c.assets.Load()
+	if current != nil && current.network == network {
+		return current.http
+	}
+	if current != nil {
+		current.http.CloseIdleConnections()
+	}
+	fresh := &assetClient{network: network, http: network.WebClient(c.dns.DialContext, c.tune)}
+	c.assets.Store(fresh)
+	return fresh.http
+}
+
 // PreResolve warms the DNS cache for host so the first asset probe doesn't block on a lookup.
-// A proxied name is never looked up here, as that would publish it to the machine's resolver.
+// A proxied name is resolved by the proxy.
 func (c *Client) PreResolve(ctx context.Context, host string) {
-	if host == "" || c.sockets.Proxied(host) {
+	if host == "" || c.sockets.Current().Proxied(host) {
 		return
 	}
 	c.dns.preResolve(ctx, host)
@@ -298,7 +325,7 @@ func (c *Client) fetchAttempt(url string) ([]byte, error) {
 	}
 
 	start := time.Now()
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.assetHTTP().Do(req)
 	if err != nil {
 		c.recordFailure(host)
 		c.failures.Add(1)

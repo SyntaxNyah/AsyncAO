@@ -133,10 +133,11 @@ func Dial(ctx context.Context, sockets *netproxy.Factory, wsURL string, opts ...
 	if len(opts) > 0 && opts[0].Origin != "" {
 		dialOpts.HTTPHeader.Set("Origin", opts[0].Origin)
 	}
-	dialOpts.HTTPClient = sockets.TunnelClient()
+	kind := netproxy.Game
 	if len(opts) > 0 && opts[0].SkipTLSVerify {
-		dialOpts.HTTPClient = sockets.InsecureClient()
+		kind = netproxy.GameSkipVerify
 	}
+	dialOpts.HTTPClient = sockets.Current().Client(kind, 0)
 
 	ws, resp, err := websocket.Dial(ctx, wsURL, dialOpts)
 	if err != nil {
