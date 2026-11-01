@@ -98,7 +98,7 @@ var privacySections = []privacySection{
 		"Bottom line: prefer green (WSS) servers, treat yellow (WS) like a postcard anyone on the way can read, and pair either with a VPN if your IP is also a concern.",
 	}},
 	{"What AsyncAO does NOT do", []string{
-		"AsyncAO has no analytics, ads or tracking. It only talks to the network for things you'd expect: the public server list (to fill the lobby), the assets you load from a server, and an optional update check. Discord Rich Presence and voice chat are both OFF until you turn them on, and Discord-free / voice-free builds exist.",
+		"AsyncAO has no analytics, ads or tracking. It only talks to the network for things you'd expect: the public server list (to fill the lobby), the assets you load from a server, and an optional update check. Discord Rich Presence is ON by default: if Discord is running, it shows your server, character and showname on your profile. Turn it off, or choose what it shows, in Settings → Discord.",
 	}},
 }
 

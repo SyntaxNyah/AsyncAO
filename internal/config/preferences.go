@@ -685,7 +685,7 @@ type DiscordPrefs struct {
 // DefaultDiscordAppID is the AsyncAO Discord application, dialed directly, so it overrides any saved AppID.
 const DefaultDiscordAppID = "1519625107188744222"
 
-// defaultDiscordPrefs is on for fresh installs: stdlib IPC that no-ops without Discord (`-tags nodiscord` excludes).
+// defaultDiscordPrefs is on for fresh installs: stdlib IPC that no-ops without Discord.
 func defaultDiscordPrefs() DiscordPrefs {
 	return DiscordPrefs{Enabled: true, ShowServer: true, ShowChar: true, ShowName: true, AppID: DefaultDiscordAppID}
 }
