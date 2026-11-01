@@ -3,6 +3,7 @@
 *.sh text eol=lf
 *.yml text eol=lf
 *.md text eol=lf
+packaging/**/*.txt text eol=lf
 
 # Test fixtures are checked in VERBATIM — they are third-party files a test reads
 # back and compares against measured counts. `* text=auto` above would normalise

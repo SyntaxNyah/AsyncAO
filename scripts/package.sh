@@ -56,6 +56,11 @@ regenerate_windows_versioninfo() {
 		-64 -o cmd/asyncao/versioninfo_windows.syso "$generated"
 }
 
+# git checks text out as CRLF on Windows, and a stray carriage return makes a name that doesn't exist.
+on_demand_dlls() {
+	tr -d '\r' <packaging/windows/on-demand-dlls.txt
+}
+
 build_windows() {
 	local syso=cmd/asyncao/versioninfo_windows.syso
 	cp "$syso" dist/versioninfo.syso.committed
@@ -66,8 +71,8 @@ build_windows() {
 	# Libraries loaded on demand appear in no import table, so they are seeded by hand.
 	local on_demand=() name
 	while read -r name; do
-		on_demand+=("/ucrt64/bin/${name%$'\r'}")
-	done <packaging/windows/on-demand-dlls.txt
+		on_demand+=("/ucrt64/bin/$name")
+	done < <(on_demand_dlls)
 	{
 		ldd "$STAGE/asyncao.exe"
 		for name in "${on_demand[@]}"; do
@@ -126,8 +131,8 @@ smoke_windows() {
 	powershell.exe -NoProfile -NonInteractive -Command \
 		"Expand-Archive -Path '$(cygpath -w "$ASSETS/$bundle")' -DestinationPath '$(cygpath -w "$SMOKE")' -Force"
 	while read -r name; do
-		test -f "$SMOKE/${name%$'\r'}"
-	done <packaging/windows/on-demand-dlls.txt
+		test -f "$SMOKE/$name"
+	done < <(on_demand_dlls)
 	test -f "$SMOKE/lvp_icd.x86_64.json"
 	check_version "$(env PATH=/usr/bin "$SMOKE/asyncao.exe" -version)"
 }
