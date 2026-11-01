@@ -217,8 +217,6 @@ func (a *App) Disconnect() {
 		a.musicAwaitURL = ""            // stream stopped: drop any pending un-duck (invariant: stopped ⇒ no await)
 		a.musicAwaitSince = time.Time{} // and its timeout stamp
 	}
-	a.stopVoiceAudio() // free the voice capture/playback devices with the connection
-	a.voiceJoined, a.voiceMicOn = false, false
 	if a.rehearsal {
 		a.d.Manager.SetOffline(false)
 	}
@@ -699,16 +697,6 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			}
 		case courtroom.EventWTCE:
 			a.handleWTCE(ev.Text, ev.Int)
-		case courtroom.EventVoiceCaps:
-			// Voice just became available (VS_CAPS): point the user at the Voice button once per session.
-			if a.sess != nil && a.sess.VoiceAvailable() && !a.voiceCapsAnnounced {
-				a.voiceCapsAnnounced = true
-				a.pushOOC("[Voice] This area supports voice chat — use the Voice button (bottom row / Extras) to join.", "")
-			}
-		case courtroom.EventVoiceAudio:
-			a.voiceOnAudio(ev.Int, ev.Text) // decode + queue a peer's frame for the mixer
-		case courtroom.EventVoicePeers:
-			a.voiceReconcilePeers() // someone joined/left voice — sync the decoder set
 		case courtroom.EventModcall:
 			a.pushOOC("[MOD CALL] "+ev.Text, "")
 			// AO2's ui_guard silences only the modcall alert (courtroom.cpp:4997-5001: sound and window flash); the OOC

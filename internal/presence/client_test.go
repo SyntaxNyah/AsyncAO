@@ -1,5 +1,3 @@
-//go:build !nodiscord
-
 package presence
 
 import (

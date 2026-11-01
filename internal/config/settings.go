@@ -76,10 +76,7 @@ type Settings struct {
 	ProxyBypass                  string                       `json:"proxyBypass,omitempty"`
 	PanelFontsVal                map[string]PanelFont         `json:"panelFonts,omitempty"`
 	FontWarnThemes               []string                     `json:"fontWarnThemes,omitempty"`
-	VoiceInputDevice             string                       `json:"voiceInputDevice,omitempty"`
-	VoiceOutVolume               int                          `json:"voiceOutVolume,omitempty"`
 	PrefetchAggro                int                          `json:"prefetchAggro,omitempty"`
-	VoicePTTKey                  string                       `json:"voicePttKey,omitempty"`
 	QuitConfirmSkip              bool                         `json:"quitConfirmSkip,omitempty"`
 	LegacyDevTheme               bool                         `json:"legacyDevTheme"`
 	OOCInLogTab                  bool                         `json:"oocInLogTab"`
@@ -377,7 +374,6 @@ func clampSettingsStrictPhase(s *Settings) {
 	s.SpriteWaitMsVal = value.ClampSet(s.SpriteWaitMsVal, SpriteWaitMinMs, SpriteWaitMaxMs)
 	s.OOCScalePct = value.ClampSet(s.OOCScalePct, MinLogScalePercent, MaxLogScalePercent)
 	s.PreviewHeightPxVal = value.ClampSet(s.PreviewHeightPxVal, MinPreviewHeightPx, MaxPreviewHeightPx)
-	s.VoiceOutVolume = value.ClampSet(s.VoiceOutVolume, 0, percentMax)
 	s.WeatherDensity = value.ClampSet(s.WeatherDensity, 1, percentMax)
 	s.BgSlideshowSecs = value.ClampSet(s.BgSlideshowSecs, minBgSlideshowSecs, maxBgSlideshowSecs)
 	s.PrefetchAggro = value.ClampSet(s.PrefetchAggro, 1, prefetchAggroMax)

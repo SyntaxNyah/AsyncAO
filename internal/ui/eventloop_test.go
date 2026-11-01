@@ -141,7 +141,7 @@ func TestSkipFrameDamageRefuses(t *testing.T) {
 }
 
 // TestSkipFrameSharedRefusals pins the refusals shared by BOTH modes: input
-// this pass, a live voice session (voicePump is Frame-driven), and on-screen
+// this pass and on-screen
 // animated chrome — which is also how a DRAWN animated sprite preview holds
 // frames now; the bare previewBase state must not (the orphan cap latch).
 func TestSkipFrameSharedRefusals(t *testing.T) {
@@ -167,11 +167,6 @@ func TestSkipFrameSharedRefusals(t *testing.T) {
 		if !a.SkipFrame(true, false) {
 			t.Fatalf("exp=%v: precondition — static courtroom should skip", exp)
 		}
-		a.voiceJoined = true
-		if a.SkipFrame(true, false) {
-			t.Errorf("exp=%v: a live voice session must keep frames coming (voicePump)", exp)
-		}
-		a.voiceJoined = false
 		// A bare previewBase must NOT hold frames in either mode: an orphaned
 		// preview (screen switched under it) has no draw tail left to close it,
 		// and keying the skip on the state latched the pace at the active cap.
@@ -259,8 +254,7 @@ func TestSkipFrameIdleCadence(t *testing.T) {
 // TestSkipFrameBackgroundOff pins the 0-fps background cap: an UNFOCUSED window
 // with UnfocusedFPS=off skips everything — even a full-rate input grace that
 // would normally force a frame — so a stage animation can't drive frames while
-// tabbed out. A FOCUSED window is unaffected, a live event always renders, and
-// a voice/mic session still renders (its audio engine is frame-driven).
+// tabbed out. A FOCUSED window is unaffected, and a live event always renders.
 func TestSkipFrameBackgroundOff(t *testing.T) {
 	a := expApp(t)
 	{
@@ -282,11 +276,6 @@ func TestSkipFrameBackgroundOff(t *testing.T) {
 	if a.SkipFrame(false, true) {
 		t.Error("a live event must render even when unfocused + bg-off")
 	}
-	a.voiceJoined = true
-	if a.SkipFrame(false, false) {
-		t.Error("a live voice session must keep rendering when unfocused + bg-off")
-	}
-	a.voiceJoined = false
 }
 
 // TestNextWakeDelay pins the park math and the render-vs-housekeeping flag: the

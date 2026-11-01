@@ -51,10 +51,7 @@ jobs:
       - uses: ./.github/actions/setup-build
       - name: Race tests
         run: go test -race -timeout 600s -count=1 ./...
-      # Linux only, sharing this job's setup; !cancelled() so one failure doesn't hide the next.
-      - name: Lean build tests
-        if: ${{ !cancelled() && runner.os == 'Linux' }}
-        run: go test -tags "nodiscord novoice" -timeout 600s -count=1 ./...
+      # Linux only, sharing this job's setup; !cancelled() so failed tests don't hide the gates.
       - name: Benchmarks
         if: ${{ !cancelled() && runner.os == 'Linux' }}
         run: go test -run=NONE -bench=. -benchmem -benchtime=200ms -count=1 ./... | tee bench.txt

@@ -28,13 +28,8 @@ type sessionState struct {
 	cmSoftwareOverride courtroom.ServerSoftware
 	// autoLoginTried makes the auto-login fire once per session; some servers re-send DONE mid-session.
 	autoLoginTried bool
-	// voiceJoined = we sent VS_JOIN; voiceMicOn = our speak state is on (announced via VS_SPEAK).
-	voiceJoined bool
-	voiceMicOn  bool
-	// voiceCapsAnnounced: the one-time "this area supports voice" OOC hint was posted this session.
-	voiceCapsAnnounced bool
-	showModDash        bool // the mod (ban/kick) dashboard panel is open
-	showCMPanel        bool // the separate CM (area control) panel is open
+	showModDash    bool // the mod (ban/kick) dashboard panel is open
+	showCMPanel    bool // the separate CM (area control) panel is open
 	// Debug panel (Extras → Debug): packet inspector, perf and log sections.
 	showDebugPanel bool
 	debugSection   int         // active tab: 0 Session · 1 Packets · 2 Perf · 3 Cache · 4 Log · 5 Fonts
@@ -806,9 +801,6 @@ type sessionState struct {
 	playerIconPages    []*render.TexturePage
 	playerIconPagesGen uint64
 	playerIconAsk      []time.Time
-	// voiceIconAsk paces char-icon fetches for the voice panel rows; textures come straight from the URL-keyed Store.
-	// Sized to the live peer count.
-	voiceIconAsk []time.Time
 
 	// Client-side sprite position overrides, keyed by lowercased character folder; they win over the server's
 	// per-message positions (drag in the viewport; right-click a sprite resets).

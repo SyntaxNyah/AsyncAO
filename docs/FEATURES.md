@@ -136,7 +136,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   (v1.55.0): active = ∞ / vsync** while you interact (`NoteInput`, an
   input-responsiveness hold measured in FRAMES, `NoteMotion`) or anything animates
   (`wantsFullRate` / `NoteAnimating`: message ceremony/queue, shake/flash,
-  transmitted sprite motion, replay/maker/export/voice, reaction floats, toasts,
+  transmitted sprite motion, replay/maker/export, reaction floats, toasts,
   the pinned second courtroom, the perf HUD, always-animating FX), **idle = off** —
   a static screen renders *nothing at all* (near-zero GPU) — and
   **background/unfocused = 5 fps**; minimized draws nothing. Each is a slider (the
@@ -2261,7 +2261,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   cap** (KiB/s, 0 = unlimited) paces downloads so a big grab doesn't hog your
   connection.
 - **Discord Rich Presence**: **enabled by default** on a normal build (untick
-  in Settings → Discord, or run a `-tags nodiscord` build), per-field privacy
+  in Settings → Discord), per-field privacy
   checkboxes, zero build/run dependency. The official AsyncAO **Application ID
   is baked in** (no user-editable ID box), so it shows "Playing AsyncAO" out of
   the box whenever Discord is running — full guide in [DISCORD.md](DISCORD.md).

@@ -488,16 +488,7 @@ func (s *Settings) equal(o *Settings) bool {
 			return false
 		}
 	}
-	if s.VoiceInputDevice != o.VoiceInputDevice {
-		return false
-	}
-	if s.VoiceOutVolume != o.VoiceOutVolume {
-		return false
-	}
 	if s.PrefetchAggro != o.PrefetchAggro {
-		return false
-	}
-	if s.VoicePTTKey != o.VoicePTTKey {
 		return false
 	}
 	if s.QuitConfirmSkip != o.QuitConfirmSkip {

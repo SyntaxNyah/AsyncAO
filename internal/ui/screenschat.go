@@ -990,22 +990,6 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 		}
 		c.Border(gcR, ColAccent)
 		c.Tooltip(gcR, "Private DMs & group chats with other AsyncAO players (also Extras → Group Chat)")
-		x += gcW + btnGap
-	}
-	// Voice button: only in a voice-enabled area (VS_CAPS / Nyathena); no x advance when off.
-	if a.voiceOfferable() && !a.panelHidden("ctrl.voice") {
-		const vcW = int32(80)
-		if x+vcW > clusterRight {
-			y2 += btnH + 4
-			x = clusterX
-		}
-		vcLabel, vcBord := a.voiceButtonState()
-		vcR := sdl.Rect{X: x, Y: y2, W: vcW, H: btnH}
-		if c.Button(vcR, vcLabel) {
-			a.toggleVoice()
-		}
-		c.Border(vcR, vcBord)
-		c.Tooltip(vcR, "Voice chat — this area supports it. Join to talk (Nyathena). Red dot = your mic is live.")
 		// No cursor advance: this is the row's last block and nothing reads x after it (staticcheck SA4006).
 	}
 	return y2, false
@@ -1140,22 +1124,6 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 		c.Border(gcR, ColAccent)
 		c.Tooltip(gcR, "Private DMs & group chats with other AsyncAO players (also Extras → Group Chat)")
 		x += gcW + 6
-	}
-	// Voice button: only in an area that advertises voice (VS_CAPS, i.e. Nyathena); no x advance when unavailable.
-	if a.voiceOfferable() && !a.panelHidden("ctrl.voice") {
-		const vcW = int32(80)
-		if x+vcW > clusterRight {
-			y2 += btnH + 4
-			x = clusterX
-		}
-		vcLabel, vcBord := a.voiceButtonState()
-		vcR := a.slotRect("ctrl.voice", sdl.Rect{X: x, Y: y2, W: vcW, H: btnH}, w, h)
-		if c.Button(vcR, vcLabel) {
-			a.toggleVoice()
-		}
-		c.Border(vcR, vcBord)
-		c.Tooltip(vcR, "Voice chat — this area supports it. Join to talk (Nyathena). Red dot = your mic is live.")
-		x += vcW + 6
 	}
 	// — Leave — set apart at the end.
 	x += gGap

@@ -1,11 +1,6 @@
-//go:build !nodiscord
-
 package ui
 
 import "github.com/SyntaxNyah/AsyncAO/internal/config"
-
-// Discord Rich Presence settings live in their own build-tagged file; a -tags nodiscord build compiles it out and
-// the no-op drawDiscordSection in settings_discord_nodiscord.go takes over.
 
 // drawDiscordSection renders the Settings → Discord section: its header plus the Rich
 // Presence row. Returns the next y.

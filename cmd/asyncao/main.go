@@ -327,7 +327,6 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		Viewport:         viewport,
 		Pump:             nil, // set below (needs app for liveness)
 		Audio:            audio,
-		AudioDevices:     rt.Audio,
 		GraphicsName:     graphics.Name(),
 		Desktop:          rt.Desktop,
 		Sockets:          sockets,

@@ -88,7 +88,7 @@ func TestFramePace(t *testing.T) {
 	a.lastInputAt = time.Now().Add(-2 * time.Second) // grace expired (max hold is ~1s)
 
 	// A live animation surface forces the full cap even with no input (the
-	// replay transport here; the same branch covers maker/export/voice/toasts).
+	// replay transport here; the same branch covers maker/export/toasts).
 	a.replaying = true
 	if got := a.FramePace(true); got != budget(60) {
 		t.Errorf("replaying pace = %v, want the full cap", got)
@@ -736,8 +736,6 @@ func TestFramePaceAnimatedChrome(t *testing.T) {
 // report): the ambient-FX prefs alone must never hold full rate — they count
 // only through the viewport draw-site census (Viewport.AmbientAnimating →
 // NoteAnimating), which cannot fire on the lobby/Settings or an empty stage.
-// The voice panel's OPEN flag no longer pins the rate either — only a live
-// call (voiceJoined) does; a merely-open panel rides damage and input.
 func TestWantsFullRateStateGated(t *testing.T) {
 	a := testTabApp(t)
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.RainbowSprites = true })
@@ -757,14 +755,6 @@ func TestWantsFullRateStateGated(t *testing.T) {
 	a.d.Prefs.SetWeatherType(1)
 	if a.wantsFullRate() {
 		t.Fatal("FX pref knobs alone must not hold full rate (knob-not-state)")
-	}
-	a.showVoice = true
-	if a.wantsFullRate() {
-		t.Fatal("an open-but-idle voice panel must not hold full rate")
-	}
-	a.voiceJoined = true
-	if !a.wantsFullRate() {
-		t.Fatal("a live voice call needs full rate")
 	}
 }
 

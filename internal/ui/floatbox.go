@@ -67,14 +67,6 @@ const (
 	panelNomPairH   = int32(560) // pairPanelRect's default-height clamp ceiling
 )
 
-// Voice panel geometry lives here because voicepanel.go is compiled out under -tags novoice but this table is not.
-const (
-	voicePanelDefW = 320
-	voicePanelDefH = 300
-	voicePanelMinW = 240
-	voicePanelMinH = 180
-)
-
 // panelSlotTable lists the persistable floatWin panels except msgWin, for applyProfile's .placed reset and the live
 // magnetism list; it is iterated only on cold paths and during a drag, so no settled frame touches it.
 // Adding a panel needs a slotPanel const, a row here and seed/persist wiring in its draw.
@@ -86,7 +78,6 @@ var panelSlotTable = []panelSlot{
 	{slotPanelHK, func(a *App) *floatWin { return &a.hkWin }, hkSheetDefW, panelNomHKH, hkSheetMinW, hkSheetMinH, func(a *App) bool { return a.showHotkeys }},
 	{slotPanelEvid, func(a *App) *floatWin { return &a.evidWin }, evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, func(a *App) bool { return a.showEvid }},
 	{slotPanelModcall, func(a *App) *floatWin { return &a.modcallWin }, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, func(a *App) bool { return a.showModcall }},
-	{slotPanelVoice, func(a *App) *floatWin { return &a.voiceWin }, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, func(a *App) bool { return a.showVoice }},
 	{slotPanelBan, func(a *App) *floatWin { return &a.banWin }, banBoxDefW, panelNomBanH, banBoxMinW, panelNomBanMinH, func(a *App) bool { return a.banBoxKind != 0 }},
 	{slotPanelDebug, func(a *App) *floatWin { return &a.debugWin }, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, func(a *App) bool { return a.showDebugPanel }},
 	{slotPanelClient, func(a *App) *floatWin { return &a.clientWin }, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, func(a *App) bool { return a.splitActive() }},
@@ -132,7 +123,6 @@ func (a *App) extrasWidgets() []extrasWidget {
 			{"Logs", "Search your saved chat transcripts — any server, any session, filter by text", "", func() { a.prevScreen = ScreenCourtroom; a.openLogBrowser(); a.screen = ScreenLogs }},
 			{"Help", "Glossary of AO terms + a privacy explainer — what IC / OOC / CM / WTCE / HDID mean, and what a server can see", "", func() { a.prevScreen = ScreenCourtroom; a.openHelp(0) }},
 			{"Group Chat", "Private DMs & group chats with other AsyncAO players — over the server's /pm, never the room", "", func() { a.toggleMessages() }},
-			{voiceExtraLabel, "Voice chat (Nyathena): join the voice channel, see who's talking. Live mic audio is coming; for now it shares presence + speaking state", "", func() { a.toggleVoice() }},
 			{"Settings", "Open settings", hotkeySettings, func() { a.prevScreen = ScreenCourtroom; a.screen = ScreenSettings }},
 			{"Disconnect", "Leave this server", "", func() { a.requestDisconnect() }},
 		}
@@ -203,38 +193,7 @@ func (a *App) courtModalOpen() bool {
 // capturingKey reports whether any key-bind capture is armed; they use Esc to cancel.
 func (a *App) capturingKey() bool {
 	return a.bindingFor != "" || a.shownameBindFor != "" || a.jukeBindFor != "" ||
-		a.icPhraseBindFor != "" || a.stylePresetBindFor != "" || a.holdKeyArmed ||
-		a.voicePTTBindArmed || a.macroBind >= 0
-}
-
-// pollVoicePTT captures the push-to-talk key when the rebind is armed, otherwise toggles the mic on it while in voice.
-func (a *App) pollVoicePTT() {
-	c := a.ctx
-	if a.voicePTTBindArmed {
-		if c.escPressed {
-			a.voicePTTBindArmed = false // Esc cancels the capture
-			return
-		}
-		if c.keyPressed != 0 {
-			{
-				pv1 := sdl.GetKeyName(c.keyPressed)
-				a.d.Prefs.Update(func(sn *config.Settings) {
-					sn.VoicePTTKey = pv1
-				})
-			}
-			a.voicePTTBindArmed = false
-			c.keyPressed = 0
-		}
-		return
-	}
-	k := a.bareBindKey() // Alt+<bound key>, like every other plain-key namespace (qol.go)
-	if !a.voiceJoined || k == 0 {
-		return
-	}
-	if key := a.d.Prefs.Load().VoicePTTKey; key != "" && sdl.GetKeyName(k) == key {
-		a.voiceSetMic(!a.voiceMicOn)
-		c.keyPressed = 0
-	}
+		a.icPhraseBindFor != "" || a.stylePresetBindFor != "" || a.holdKeyArmed || a.macroBind >= 0
 }
 
 // closeTopOverlay closes the topmost open popup or panel, most modal first, and reports whether it closed anything;
@@ -307,8 +266,6 @@ func (a *App) closeTopOverlay() bool {
 	case a.showHotkeys:
 		a.showHotkeys, a.hkCache = false, nil
 	// Non-blocking floating panels.
-	case a.showVoice:
-		a.showVoice = false
 	case a.showMessages:
 		a.showMessages = false
 	case a.showEvid:
@@ -468,7 +425,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
 		a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
 		a.evidWin.dragging || a.evidWin.resizing || a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||
-		a.voiceWin.dragging || a.voiceWin.resizing || a.banWin.dragging || a.banWin.resizing || a.debugWin.dragging || a.debugWin.resizing ||
+		a.banWin.dragging || a.banWin.resizing || a.debugWin.dragging || a.debugWin.resizing ||
 		a.hkWin.dragging || a.hkWin.resizing ||
 		a.timerWin.dragging || a.timerWin.resizing || a.loginWin.dragging || a.loginWin.resizing ||
 		a.pairPopWin.dragging || a.pairPopWin.resizing ||
@@ -513,9 +470,6 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 		return true
 	}
 	if a.showMessages && pointIn(mx, my, a.msgPanelRect(w, h)) { // Group Chat / DMs box
-		return true
-	}
-	if a.showVoice && pointIn(mx, my, a.voicePanelRect(w, h)) { // Voice box — clicks must not fall through to the area list (was swapping rooms)
 		return true
 	}
 	if a.showHotkeys && pointIn(mx, my, a.hkSheetRect(w, h)) { // the floating hotkey sheet fences too
@@ -741,7 +695,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 			a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
 			a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
 			a.evidWin.dragging || a.evidWin.resizing || a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||
-			a.voiceWin.dragging || a.voiceWin.resizing || a.banWin.dragging || a.banWin.resizing || a.debugWin.dragging || a.debugWin.resizing ||
+			a.banWin.dragging || a.banWin.resizing || a.debugWin.dragging || a.debugWin.resizing ||
 			a.timerWin.dragging || a.timerWin.resizing || a.loginWin.dragging || a.loginWin.resizing ||
 			a.pairPopWin.dragging || a.pairPopWin.resizing ||
 			a.clientWin.dragging || a.clientWin.resizing || a.clientPanning {
@@ -791,9 +745,6 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	}
 	if a.showMessages { // Group Chat / DMs — non-blocking floating panel
 		a.drawMessagesPanel(w, h, &pressed)
-	}
-	if a.showVoice { // Voice (Nyathena) — non-blocking floating panel
-		a.drawVoicePanel(w, h, &pressed)
 	}
 	// The ban box draws last, topmost, instead of the dashboard.
 	if a.banBoxKind != 0 {
@@ -878,8 +829,8 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 	widgets := a.extrasWidgets()
 	// Count shown cells first: content height decides the scrollbar, which takes width from the cells.
 	shown := int32(0)
-	for id, wd := range widgets {
-		if a.widgetDetached(id) || (wd.label == voiceExtraLabel && !a.voiceOfferable()) {
+	for id := range widgets {
+		if a.widgetDetached(id) {
 			continue
 		}
 		shown++
@@ -904,9 +855,6 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 	for id, wd := range widgets {
 		if a.widgetDetached(id) {
 			continue
-		}
-		if wd.label == voiceExtraLabel && !a.voiceOfferable() {
-			continue // voice option only shows on servers that advertise it (Nyathena)
 		}
 		br := g.cellRect(slot, a.extrasScroll)
 		slot++
@@ -1072,9 +1020,6 @@ func (a *App) drawExtrasDetached(w, h int32, pressed *bool) {
 			continue
 		}
 		wd := widgets[id]
-		if wd.label == voiceExtraLabel && !a.voiceOfferable() {
-			continue // hidden on non-Nyathena servers, even if it was torn off earlier
-		}
 		r := a.detachedBoxRect(i, w, h)
 		if pal.gradient {
 			c.FillGradient(r, pal.bg, pal.bg2)

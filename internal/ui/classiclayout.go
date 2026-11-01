@@ -52,7 +52,6 @@ const (
 	slotPanelHK      = "panel:hk"      // hkWin (Hotkey sheet)
 	slotPanelEvid    = "panel:evid"    // evidWin (Evidence)
 	slotPanelModcall = "panel:modcall" // modcallWin (Call Mod)
-	slotPanelVoice   = "panel:voice"   // voiceWin (Voice chat)
 	slotPanelBan     = "panel:ban"     // banWin (ban / kick box)
 	slotPanelDebug   = "panel:debug"   // debugWin (Debug panel)
 	slotPanelClient  = "panel:client"  // clientWin (second-client / pinned server)
@@ -264,8 +263,6 @@ func classicSlotLabel(k string) string {
 		return "Pos selector"
 	case "ctrl.groupchat":
 		return "Group Chat button"
-	case "ctrl.voice":
-		return "Voice chat button"
 	case "ctrl.randchar":
 		return "Rand char button"
 	case "ctrl.favsfilter":

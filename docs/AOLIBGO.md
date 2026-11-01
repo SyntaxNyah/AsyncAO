@@ -21,9 +21,8 @@ auto-detects which one a frame uses and answers the server in kind.
 | Booleans | `"1"`/`"0"` | `true`/`false` |
 | Effects | `name\|folder\|sound` | `{"name":…,"folder":…,"sound":…}` |
 
-A packet **not** in the canonical spec (the voice `VS_*` family, removed from
-aolib in `aa8d0fb`) has *no* canonical JSON form — so AsyncAO registers it as a
-both-wire codec (see below) instead of expecting aolib to model it.
+A packet **not** in the canonical spec has *no* canonical JSON form — so AsyncAO
+registers it as a codec (see below) instead of expecting aolib to model it.
 
 ### How the wire is chosen
 
@@ -52,7 +51,6 @@ internal/packetutil ── thin bridge over aolib-go
    ├── c2s.go     client→server parsers (typed reconstruction on send)
    ├── s2c.go     server→client decode (Fanta + JSON → positional)
    ├── codec.go   RegisterCodec dispatch + framing helpers
-   ├── voice*.go  VS_* both-wire codecs
    └── ms_codec.go MS both-wire codec
         │
         ▼
@@ -75,14 +73,10 @@ github.com/AO-Underground/aolib/go/v2  (the canonical library)
 
 ## Custom codecs
 
-Canonical packets come from aolib's generated registry. Two non-canonical
-surfaces are registered with `packetutil.RegisterCodec` so they still round-trip
+Canonical packets come from aolib's generated registry. One non-canonical
+surface is registered with `packetutil.RegisterCodec` so it still round-trips
 on **both** wires:
 
-- **Voice `VS_*`** (`internal/packetutil/voice.go`) — `VS_CAPS`, `VS_PEERS`,
-  `VS_AUDIO`, `VS_FRAME`, and the bidirectional `VS_JOIN`/`VS_LEAVE`/`VS_SPEAK`
-  (encode the client→server shape, decode the server→client shape). Wire shapes
-  match Nyathena/LemmyAO exactly.
 - **MS** (`internal/packetutil/ms_codec.go`) — see below.
 
 ## MS (in-character chat) — the one deliberate divergence

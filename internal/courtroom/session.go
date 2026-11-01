@@ -171,14 +171,6 @@ const (
 	EventTimer
 	// EventPlayersUpdated signals the live player list changed (PR/PU).
 	EventPlayersUpdated
-	// EventVoiceCaps signals VS_CAPS arrived.
-	EventVoiceCaps
-	// EventVoicePeers signals the voice peer set changed (VS_PEERS/JOIN/LEAVE).
-	EventVoicePeers
-	// EventVoiceSpeak is a peer speaking toggle (VS_SPEAK): Int = uid, Int2 = 1 speaking, 0 stopped.
-	EventVoiceSpeak
-	// EventVoiceAudio is one inbound opus frame (VS_AUDIO): Int = from-uid, Text = base64 payload.
-	EventVoiceAudio
 	// EventGroupPair signals the group-pair roster changed (GP).
 	EventGroupPair
 )
@@ -366,11 +358,6 @@ type Session struct {
 
 	// GroupPair is the active roster (GP), ordered front to back including the speaker; nil when not in a group.
 	GroupPair *protocol.GroupPair
-
-	// Voice state (VS_* relay); mutated only by HandlePacket on the caller's loop.
-	voiceCaps     VoiceCaps
-	voicePeers    map[int]bool // uids currently in voice (≤ voicePeerCap)
-	voiceSpeaking map[int]bool // uids currently transmitting (subset of voicePeers)
 
 	// Rehearsal marks an offline session: picks resolve locally and sends are swallowed.
 	Rehearsal bool
@@ -924,9 +911,6 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 			return nil
 		}
 		return []Event{{Kind: EventModcall, Text: p.Field(0)}}
-
-	case "VS_CAPS", "VS_PEERS", "VS_JOIN", "VS_LEAVE", "VS_SPEAK", "VS_AUDIO":
-		return s.handleVoicePacket(p)
 
 	case "ARUP":
 		// ARUP#<type>#<area0>#...: field n applies to area n-1; out-of-range entries drop (courtroom.cpp arup_modify).

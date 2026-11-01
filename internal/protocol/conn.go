@@ -118,7 +118,6 @@ type DialOptions struct {
 var registerCodecsOnce sync.Once
 
 func registerCodecs() {
-	packetutil.RegisterVoiceCodecs()
 	packetutil.RegisterGroupPairCodec()
 }
 
@@ -230,7 +229,7 @@ func (c *Conn) Send(ctx context.Context, p Packet) error {
 	return nil
 }
 
-// encode serializes typed forms through aolib, custom headers (VS_*) by codec, and the rest as Fanta.
+// encode serializes typed forms through aolib, custom headers (GP) by codec, and the rest as Fanta.
 func (c *Conn) encode(p Packet, mode aolib.WireMode) ([]byte, error) {
 	if p.typed != nil {
 		if packetutil.IsCustom(p.Header) {

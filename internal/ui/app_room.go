@@ -879,8 +879,7 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 		return false // input this pass (incl. a focus-regain window event)
 	}
 	// Background cap off and unfocused: a 0 fps ceiling, overriding animation, damage and the input grace.
-	// Voice and mic capture are the exception because their audio engine is frame-driven.
-	if !focused && !a.voiceJoined && a.micTest == nil {
+	if !focused {
 		if _, off := rateBudget(a.d.Prefs.Load().UnfocusedFPS()); off {
 			return true
 		}
@@ -903,10 +902,6 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 		}
 	}
 	if a.wantsFullRate() || a.roomBusy() || a.warnActive() || a.fontWorkPending() {
-		return false
-	}
-	// voicePump is driven from Frame, so frames must keep coming or the audio engine starves.
-	if a.voiceJoined || a.micTest != nil {
 		return false
 	}
 	if a.drawnAnimChrome {
@@ -979,7 +974,7 @@ func (a *App) RenderNeeded() bool {
 // The main loop must park then, because Background sets uiDirty on every packet and only a drawn frame clears it.
 func (a *App) RenderSuppressed(focused bool) bool {
 	focused = a.pacingFocused(focused) // the "full speed while unfocused" option (pacingfocus.go)
-	if focused || a.voiceJoined || a.micTest != nil {
+	if focused {
 		return false
 	}
 	_, off := rateBudget(a.d.Prefs.Load().UnfocusedFPS())
@@ -1090,8 +1085,7 @@ func (a *App) wantsFullRate() bool {
 			return true // sub-second effect countdowns — self-terminating
 		}
 	}
-	// voiceJoined, not the panel's open flag: only a live call's audio engine needs steady frames at full rate.
-	if a.replaying || a.makerOpen || a.gifExporting || a.voiceJoined || a.perfHUD {
+	if a.replaying || a.makerOpen || a.gifExporting || a.perfHUD {
 		return true
 	}
 	return len(a.reactionFloats) > 0 || a.splitActive()

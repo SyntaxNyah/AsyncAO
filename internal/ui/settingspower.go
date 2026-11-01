@@ -263,7 +263,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y += 26
 	y = a.settingsDesc(pad, y, "After a click or keypress the client holds the active rate for this many frames, then falls back to the idle rate. 0 turns the hold off entirely; 1 (the default) is nearly as snappy — the input still shows instantly either way, it just doesn't keep the frame rate up afterward. Mouse movement has its own brief hold and isn't affected.", ColTextDim)
 	y += 6
-	y = a.settingsDesc(pad, y, "\"Animating\" = messages typing or queued, shouts/preanims, shakes/flashes, replays, the Scene Maker, exports, voice, reactions, toasts, the pinned second courtroom, the F3 graph, and any always-moving effect you enable. Sprite loops and theme art run at their own ≤15 fps timings, so the idle default never visibly slows them; raise it if something looks choppy while idle.", ColTextDim)
+	y = a.settingsDesc(pad, y, "\"Animating\" = messages typing or queued, shouts/preanims, shakes/flashes, replays, the Scene Maker, exports, reactions, toasts, the pinned second courtroom, the F3 graph, and any always-moving effect you enable. Sprite loops and theme art run at their own ≤15 fps timings, so the idle default never visibly slows them; raise it if something looks choppy while idle.", ColTextDim)
 	y += 10
 	edl := a.d.Prefs.Load().EventDrivenLoop
 	if next := c.Checkbox(pad, y, "Event-driven renderer (EXPERIMENTAL, default ON on this test build)", edl); next != edl {
@@ -726,7 +726,6 @@ func (a *App) drawSettingsAccount(y, _ int32) int32 {
 	}
 	y += 34
 
-	// Discord Rich Presence lives in a build-tagged file, so a -tags nodiscord binary compiles it out.
 	y = a.drawDiscordSection(y, w)
 	return y
 }

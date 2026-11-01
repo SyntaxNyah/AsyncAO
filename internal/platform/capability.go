@@ -18,7 +18,6 @@ const (
 	SystemFontDiscovery
 	MachineID
 	DiscordPresence
-	MicrophoneCapture
 	ExtraWindows
 	BackgroundRendering
 	HighMemoryFeatures
@@ -30,7 +29,7 @@ func (c Capability) String() string {
 		"open URL", "reveal file", "pick folder", "pick many folders", "copy files to clipboard",
 		"system notifications", "relaunch", "self-update", "external video encoder",
 		"system font discovery", "machine id", "discord presence",
-		"microphone capture", "extra windows", "background rendering", "high-memory features",
+		"extra windows", "background rendering", "high-memory features",
 	}[c]
 }
 
@@ -93,7 +92,7 @@ func capabilitiesFor(env Environment, hardware Hardware) Capabilities {
 		off(reasonMobile, OpenURL, RevealFile, PickFolder, PickManyFolders, CopyFilesToClipboard,
 			SystemNotifications, Relaunch, SelfUpdate, ExternalVideoEncoder,
 			SystemFontDiscovery, MachineID, DiscordPresence,
-			MicrophoneCapture, ExtraWindows, BackgroundRendering)
+			ExtraWindows, BackgroundRendering)
 	}
 	return caps
 }

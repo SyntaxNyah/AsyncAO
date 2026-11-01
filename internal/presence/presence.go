@@ -1,7 +1,5 @@
-//go:build !nodiscord
-
 // Package presence is an optional stdlib-only Discord Rich Presence client over local IPC; it does nothing
-// when Discord isn't running, and -tags nodiscord compiles it out.
+// when Discord isn't running.
 package presence
 
 import (

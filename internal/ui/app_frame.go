@@ -268,7 +268,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.handleUpdateInput(winW, winH) // modal/chip clicks resolve before screens
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
-	a.voicePump()              // live voice: drain mic→encode→send + decode→mix→play (no-op unless joined)
 	a.handleTabBar(winW, winH) // chip clicks resolve BEFORE screens see them
 	if a.pendingControlSwap {  // a click on the floating client last frame → take control now (before any draw)
 		a.pendingControlSwap = false
@@ -314,7 +313,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollMacroBind()
 	a.pollShownameBind()
 	a.pollICPhraseBind()
-	a.pollVoicePTT()        // voice push-to-talk: capture the rebind, or toggle the mic on the bound key
 	a.pollStylePresetBind() // #126
 	// After every bind-capture poll, which owns the next keypress; before the draws, so the first character lands.
 	a.claimTypingForIC()

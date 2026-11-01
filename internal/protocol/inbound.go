@@ -6,9 +6,6 @@ import (
 	aolib "github.com/AO-Underground/aolib/go/v2"
 )
 
-// voiceHeaders are custom headers with AsyncAO codecs; aolib models only the canonical spec.
-var voiceHeaders = []string{"VS_CAPS", "VS_PEERS", "VS_AUDIO", "VS_FRAME", "VS_JOIN", "VS_LEAVE", "VS_SPEAK"}
-
 // registerInbound wires the session's typed hooks so every inbound packet reaches the backlog.
 func (c *Conn) registerInbound() {
 	s := c.sess
@@ -59,14 +56,6 @@ func (c *Conn) registerInbound() {
 		}
 		enq(p)
 	})
-
-	for _, h := range voiceHeaders {
-		_ = s.OnCustom(h, func(p any) {
-			if o, ok := p.(aolib.Outgoing); ok {
-				c.enqueue(Packet{Header: o.Header(), Fields: unescapeArgs(o.Args()), typed: o})
-			}
-		})
-	}
 
 	// GP is the JSON-only group-pair roster (Nyathena extension).
 	_ = s.OnCustom("GP", func(p any) {

@@ -8,7 +8,7 @@ Contributor CI and releases are separate pipelines that share only `checks.yml` 
 |---|---|
 | Push to a branch with no open PR | Compile on Windows, Linux and macOS. Run the local checks in `CLAUDE.md` yourself. |
 | Draft PR commit | The same compile. |
-| Commit on a PR that is ready for review, manual CI run | gofmt, vet, staticcheck, golangci-lint, race tests on all three OSes, lean-build tests, benchmark alloc gates, packaging and a smoke test on all three OSes. |
+| Commit on a PR that is ready for review, manual CI run | gofmt, vet, staticcheck, golangci-lint, race tests on all three OSes, benchmark alloc gates, packaging and a smoke test on all three OSes. |
 | Merge or push to `main` | Nothing, unless it releases (below). |
 | Only docs changed (`docs/`, root `*.md`, `LICENSE`) | Nothing. |
 | A release starts (below) | All the checks again, then packaging, then publishing. |

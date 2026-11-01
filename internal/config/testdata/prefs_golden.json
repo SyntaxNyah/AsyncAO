@@ -196,10 +196,7 @@
   "fontWarnThemes": [
     "v411"
   ],
-  "voiceInputDevice": "v511",
-  "voiceOutVolume": 1,
   "prefetchAggro": 2,
-  "voicePttKey": "v811",
   "quitConfirmSkip": true,
   "legacyDevTheme": true,
   "oocInLogTab": true,

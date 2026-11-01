@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
-	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 func TestOpenExtraWindowGivesAWindowAndRenderer(t *testing.T) {
@@ -26,10 +25,6 @@ func TestOpenExtraWindowGivesAWindowAndRenderer(t *testing.T) {
 }
 
 func TestRuntimeOpensAudioDevices(t *testing.T) {
-	const (
-		sampleRate = 48000
-		channels   = 1
-	)
 	t.Setenv("SDL_AUDIO_DRIVER", "dummy")
 	err := runMain(t, func(rt *host.Runtime) error {
 		mixer, err := rt.Audio.OpenMixer()
@@ -37,12 +32,6 @@ func TestRuntimeOpensAudioDevices(t *testing.T) {
 			return err
 		}
 		mixer.Close()
-		spec := sdl.AudioSpec{Freq: sampleRate, Format: sdl.AUDIO_S16SYS, Channels: channels}
-		stream, err := rt.Audio.OpenPlayback(&spec)
-		if err != nil {
-			return err
-		}
-		stream.Destroy()
 		return nil
 	})
 	if err != nil {

@@ -123,8 +123,6 @@ type Deps struct {
 	Viewport *render.Viewport
 	Pump     *render.Pump
 	Audio    *render.Audio
-	// AudioDevices opens the voice streams and lists microphones.
-	AudioDevices host.AudioDevices
 	// Capabilities says what this platform supports; the zero value supports everything.
 	Capabilities platform.Capabilities
 	// Sockets opens every outbound connection, by the proxy setting in force.
@@ -256,8 +254,6 @@ type App struct {
 	macroBind int
 	// holdKeyArmed means the hold-to-clear rebind is capturing the next key.
 	holdKeyArmed bool
-	// voicePTTBindArmed means the push-to-talk rebind is capturing the next key.
-	voicePTTBindArmed bool
 	// F3 perf HUD: toggle plus the frame-time ring it graphs.
 	perfHUD     bool
 	frameDts    [perfHUDFrames]float32 // milliseconds
@@ -889,17 +885,9 @@ type App struct {
 	extrasScroll int32
 	// Floating-window geometries for non-blocking panels, so chat stays live behind them.
 	// Geometry is global; open state is per tab or per flag.
-	pairWin, modWin, cmWin, hkWin, evidWin, modcallWin, msgWin, voiceWin, banWin, debugWin floatWin
+	pairWin, modWin, cmWin, hkWin, evidWin, modcallWin, msgWin, banWin, debugWin floatWin
 	// Timer, login and pair popups are floating too, so the scene stays visible while they are open.
 	timerWin, loginWin, pairPopWin floatWin
-	// Voice chat (Nyathena VS_* relay): showVoice is global; membership and mic state are per session.
-	showVoice bool
-	// voiceAudio is the capture and playback engine, non-nil only while joined to a voice channel.
-	voiceAudio *voiceEngine
-	// micTest is the Settings "Test microphone" capture device, non-nil only during a test.
-	// micTestSidetone remembers the "hear myself" toggle.
-	micTest         *micTester
-	micTestSidetone bool
 	// makerExportPack > 0 means the "include your own files?" dialog holds the scene until answered.
 	// makerExportPackOK is the one-shot consent it grants.
 	makerExportPack   int

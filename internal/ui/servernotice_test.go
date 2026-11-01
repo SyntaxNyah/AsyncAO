@@ -609,7 +609,7 @@ func TestTheNoticeBoxKeepsCourtroomHotkeysOffTheWire(t *testing.T) {
 // closes the box, or one keystroke would tear down two layers.
 func TestEscClosesTheNoticeBoxFirst(t *testing.T) {
 	a := froomApp(t)
-	a.showVoice = true
+	a.showMessages = true
 	a.openServerNotice(serverNoticeRemoved, "The server banned you.", "S", noticeLockdownReason)
 
 	if !a.closeTopOverlay() {
@@ -618,7 +618,7 @@ func TestEscClosesTheNoticeBoxFirst(t *testing.T) {
 	if a.serverNoticeDlg.open {
 		t.Error("Esc closed something else and left the box up")
 	}
-	if !a.showVoice {
+	if !a.showMessages {
 		t.Error("Esc closed the panel behind the box as well — one layer per press")
 	}
 }

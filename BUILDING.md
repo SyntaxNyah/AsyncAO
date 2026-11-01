@@ -9,7 +9,7 @@ AsyncAO is Go ≥ 1.24 with CGO. The C dependencies are:
 | SDL3_mixer (with opusfile) | music + SFX: Opus/OGG/MP3/FLAC/WAV decoding, loop points, crossfades |
 | libwebp + libwebpdemux | static & animated WebP decode (SIMD) |
 | libavif (+ dav1d/aom) | AVIF image decode |
-| opus | Opus (voice chat + Opus music via SDL3_mixer) |
+| opus | Opus music via SDL3_mixer |
 
 Everything else is pure Go and fetched by `go build` automatically.
 
@@ -105,9 +105,7 @@ The script builds the release binary, downloads `linuxdeploy` (cached under
 `/.deps/`), bundles the binary's shared-library dependencies, and packs them
 with the Mayo icon and `packaging/linux/asyncao.desktop`. The result runs on any
 reasonably modern x86_64 desktop with no install step. CI packages the same
-AppImage on every ready PR and release. To build one with Discord **and** voice
-chat compiled out:
-`go build -tags "nodiscord novoice" -o asyncao ./cmd/asyncao && APPIMAGE_OUTPUT=AsyncAO-nodiscord-x86_64.AppImage ./scripts/build-appimage.sh ./asyncao`.
+AppImage on every ready PR and release.
 
 ## macOS
 
@@ -119,7 +117,7 @@ go build -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
 
 Works on Apple Silicon and Intel. Homebrew is a **build-time** dependency here:
 a from-source build links against the brew dylibs and needs them present to run.
-(`opusfile` — not the bare `opus` codec, which serves voice chat — is what gives
+(`opusfile` — not the bare `opus` codec — is what gives
 SDL3_mixer Ogg-Opus **music** decode and seeking; the formula links it, so
 brew pulls it in anyway, but it's named explicitly to pin the requirement.)
 Release builds use a cached source build of SDL3_mixer instead (the same one
@@ -195,8 +193,6 @@ build has been asked about; it isn't offered, for two independent reasons:
 | `GOAMD64=v3 go build ...` | AVX2-tuned build (2013+ CPUs); ship the default build as baseline fallback |
 | `go build -tags nocgo_webp ...` | pure-Go WebP fallback (static images only; animated WebP errors visibly) |
 | `go build -tags nocgo_avif ...` | no libavif binding (AVIF sniffing stays; decode errors visibly) |
-| `go build -tags nodiscord ...` | Rich Presence compiled out entirely (see below) |
-| `go build -tags novoice ...` | voice chat compiled out entirely — the LemmyAO/Nyathena VS_* relay + Opus codec, plus its UI, buttons and settings (see below). Opus **music** is unaffected. |
 | `CGO_ENABLED=0 go build ./cmd/asyncao-cache` | cache companion CLI (stats/inspect/prune/warm T3) — pure Go, no SDL/CGO, builds anywhere |
 
 ## Debug builds & crash logs
@@ -235,37 +231,15 @@ running Discord client over its IPC pipe (`\\.\pipe\discord-ipc-N` on
 Windows, `$XDG_RUNTIME_DIR/discord-ipc-N` elsewhere) — nothing is linked,
 fetched, or vendored.
 
-- **Default build**: the feature exists but is OFF until the user enables
-  it in Settings. Without Discord running it idles silently (one paced
+- The feature is ON by default; turn it off in Settings → Discord. Without Discord running it idles silently (one paced
   reconnect probe per 30 s, only while updates are pending). There is no
   Discord DLL — the code is in the exe itself; the DLLs staged next to
   `asyncao.exe` on Windows are the SDL2/webp/avif engine and are required
   regardless of Discord, so deleting one breaks the client (it does not
   "remove Discord").
-- **`-tags nodiscord`**: even that code compiles out; the package becomes
-  a no-op stub with the same API. Use this if your distro policy wants
-  zero proprietary-service integration in the binary. No prebuilt download
-  exists: build it yourself.
 - To get the AsyncAO icon on profiles, create a Discord application named
   "AsyncAO" in the developer portal, upload the icon under the asset key
   `appicon`, and paste the application ID into Settings → Discord.
-
-## Voice chat (never required)
-
-The optional **voice chat** — the LemmyAO/Nyathena server-relayed VS_* transport
-plus the Opus codec in `internal/voice` — is off unless a server advertises it
-(VS_CAPS) and you join. Like Discord, it can be compiled out entirely:
-
-- **`-tags novoice`**: the whole voice stack is removed — the Opus encoder/
-  decoder binding, the VS_* protocol reducer, the floating voice panel, the
-  courtroom **Voice** button, the Extras → *Voice* entry, and the **Settings →
-  Voice** tab. The remaining UI surface is inert no-op stubs, so no voice control
-  ever appears.
-- **Opus MUSIC keeps working.** Music and SFX play through SDL3_mixer, which
-  uses `libopusfile`/`libopus` independently of the voice binding, so `.opus`
-  tracks still decode in a `novoice` build (those DLLs ship for SDL3_mixer either
-  way — the voice binding was never what carried them).
-- For neither Discord nor voice, build with `go build -tags "nodiscord novoice" ./cmd/asyncao`.
 
 ## Tests & benchmarks
 

@@ -1779,11 +1779,6 @@ func (p *AssetPreferences) SetAssetCharCasing(c uint8) {
 	})
 }
 
-// VoiceOutVol reports the volume 0..100, 100 when unset.
-func (s *Settings) VoiceOutVol() int {
-	return value.Clamp(orDefault(s.VoiceOutVolume, defaultVoiceOutVol), 0, percentMax)
-}
-
 // PrefetchAggressiveness is how many predicted sprites the Markov prefetcher warms per message, 1..4.
 func (s *Settings) PrefetchAggressiveness() int {
 	return value.Clamp(s.PrefetchAggro, 1, prefetchAggroMax)

@@ -155,7 +155,7 @@ var settings = settingsState{
 const numSettingsTabs = 14
 
 var settingsTabNames = [numSettingsTabs]string{
-	"General", "Theme", "Theme editor", "Assets", "Formats", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Voice", "Power user", "Reset",
+	"General", "Theme", "Theme editor", "Assets", "Formats", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Power user", "Reset",
 }
 
 // Tab indices, in settingsTabNames order.
@@ -174,7 +174,6 @@ const (
 	tabHotkeys
 	tabStudio
 	tabData
-	tabVoice
 	tabPowerUser
 	tabReset
 )
@@ -302,12 +301,6 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"data", "settings file", "config folder", "config location", "open config", "open settings file",
 		"asset_preferences", "where are my settings", "appdata", "export", "import", "backup", "portable", "usb", "move to another pc", "json",
 	},
-	tabVoice: {
-		// Microphone, Test microphone, Output, Push-to-talk.
-		"voice", "voice chat", "microphone", "mic", "input device", "recording device", "capture",
-		"test microphone", "mic test", "sidetone", "hear myself", "level meter", "meter",
-		"output volume", "speaker", "nyathena", "vc", "ptt", "talk", "push-to-talk", "push to talk",
-	},
 	tabStudio: {
 		// Scene recording, Instant replay, Scene maker, Recordings, Replay playback, Export to GIF / WebP.
 		"studio", "scene recording", "record", "recording", "instant replay", "clip", "rolling buffer",
@@ -340,17 +333,11 @@ func settingsSearchMatch(query string) int {
 	}
 	// A tab-name match wins.
 	for i, name := range settingsTabNames {
-		if !voiceBuilt && i == tabVoice {
-			continue // no Voice tab in the -tags novoice build
-		}
 		if strings.Contains(strings.ToLower(name), q) {
 			return i
 		}
 	}
 	for i, kws := range settingsSearchKeywords {
-		if !voiceBuilt && i == tabVoice {
-			continue
-		}
 		for _, kw := range kws {
 			if strings.Contains(kw, q) {
 				return i
@@ -456,9 +443,6 @@ func (a *App) drawSettings(w, h int32) {
 	// Left sidebar.
 	navY := contentTop + 4
 	for i, name := range settingsTabNames {
-		if !voiceBuilt && i == tabVoice {
-			continue // voice chat is compiled out (-tags novoice): no Voice tab
-		}
 		r := sdl.Rect{X: pad, Y: navY, W: settSidebarW, H: settNavItemH}
 		active := i == settings.tab
 		switch {
@@ -583,8 +567,6 @@ func (a *App) drawSettingsTabBody(tab int, y, w, h int32) int32 {
 		y = a.drawSettingsStudio(y, w)
 	case tabData:
 		y = a.drawSettingsData(y, w)
-	case tabVoice:
-		y = a.drawSettingsVoice(y, w)
 	case tabPowerUser:
 		y = a.drawSettingsPowerUser(y, w)
 	case tabReset:
@@ -610,8 +592,8 @@ func (a *App) buildSettingsIndex(w, contentTop int32) {
 		settings.index = append(settings.index, settingsIndexRow{label: label, tab: curTab, y: y - contentTop})
 	}
 	for t := 0; t < numSettingsTabs; t++ {
-		if (!voiceBuilt && t == tabVoice) || t == tabReset {
-			continue // no Voice tab in lean builds; the Reset tab is all danger buttons — don't index it
+		if t == tabReset {
+			continue // the Reset tab is all danger buttons — don't index it
 		}
 		curTab = t
 		a.drawSettingsTabBody(t, contentTop, w, contentTop) // h only matters for the Theme grid's own scroll — harmless here

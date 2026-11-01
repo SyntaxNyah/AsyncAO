@@ -127,12 +127,10 @@ var hideableButtons = []struct{ id, label string }{
 	{"ctrl.hotkeys", "Hotkeys"},
 	{"ctrl.about", "About"},
 	{"ctrl.login", "Login"},
-	// The once-contextual buttons are hideable too. Each still self-checks (Voice only in VC areas, GC behind
-	// its pref); hiding wins. Mod/CM stay auto-only.
+	// The once-contextual buttons are hideable too. Each still self-checks (GC behind its pref); hiding wins. Mod/CM stay auto-only.
 	{"ctrl.pair", "Pair"},
 	{"ctrl.pos", "Pos selector"},
 	{"ctrl.groupchat", "Group Chat"},
-	{"ctrl.voice", "Voice chat"},
 	{"ctrl.disconnect", "Disconnect (Esc still leaves)"},
 	{"ctrl.randchar", "Rand char (emote grid)"},
 	{"ctrl.favsfilter", "★ Favs filter (emote grid)"},

@@ -170,7 +170,7 @@ func (a *App) anyPanelDragging() bool {
 		a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing ||
 		a.cmWin.dragging || a.cmWin.resizing || a.evidWin.dragging || a.evidWin.resizing ||
 		a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||
-		a.voiceWin.dragging || a.voiceWin.resizing || a.banWin.dragging || a.banWin.resizing ||
+		a.banWin.dragging || a.banWin.resizing ||
 		a.debugWin.dragging || a.debugWin.resizing || a.hkWin.dragging || a.hkWin.resizing ||
 		a.timerWin.dragging || a.timerWin.resizing || a.loginWin.dragging || a.loginWin.resizing ||
 		a.pairPopWin.dragging || a.pairPopWin.resizing ||

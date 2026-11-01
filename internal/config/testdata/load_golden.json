@@ -1099,9 +1099,6 @@
       "validateTLSCerts": true,
       "viewportExactW": 256,
       "viewportPercent": 40,
-      "voiceInputDevice": "v511",
-      "voiceOutVolume": 1,
-      "voicePttKey": "v811",
       "volStripOn": true,
       "wardrobe": [
         "v182"
@@ -1686,9 +1683,6 @@
       "validateTLSCerts": true,
       "viewportExactW": 256,
       "viewportPercent": 40,
-      "voiceInputDevice": "v511",
-      "voiceOutVolume": 1,
-      "voicePttKey": "v811",
       "volStripOn": true,
       "wardrobe": [
         "v182"

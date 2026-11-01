@@ -13,7 +13,7 @@ import (
 // modal when reactivated (tabs.go, activateTab), so it can't boot the user off the tab they're viewing.
 // The tab's courtroom stays on screen frozen, with the IC/OOC log tail readable (the frozen pass is pointer-fenced,
 // so scrolling history is unavailable), under a modal offering Reconnect or Back to lobby.
-// Frozen means the network session is torn down (conn closed and nilled, music/voice stopped) but a.sess and
+// Frozen means the network session is torn down (conn closed and nilled, music stopped) but a.sess and
 // a.room are kept so drawCourtroom keeps rendering the last scene. The pointer fence makes the courtroom pass
 // click-proof and handleHotkeys short-circuits while the dialog is up. The non-blocking floating panels (Extras,
 // Pair, the pinned second-server client) draw after the fence lifts and stay live; a send into the closed conn
@@ -133,8 +133,6 @@ func (a *App) freezeSessionUnderDialog(raw string) {
 		a.musicAwaitURL = ""
 		a.musicAwaitSince = time.Time{}
 	}
-	a.stopVoiceAudio() // free the voice devices with the connection
-	a.voiceJoined, a.voiceMicOn = false, false
 	// hiddenUntil is the zero value: the dialog is always visible immediately, so a drop never self-heals silently.
 	a.openDisconnectDialog(a.serverName, a.serverKey, raw, time.Time{})
 }
