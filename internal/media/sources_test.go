@@ -233,7 +233,7 @@ func TestJoinConfirmsHostEvenWithA404(t *testing.T) {
 	waitUntil(t, func() bool { return r.fetch.active.Load() == HostAnsweredWorkers })
 }
 
-func TestManifestLimitsFormatsButDoesNotSetTheirOrder(t *testing.T) {
+func TestManifestSetsFormatsAndTheirOrder(t *testing.T) {
 	manifest := []byte(`{"emote_extensions": [".png", ".webp.animated", ".bogus"]}`)
 	r := newRemoteRig(t, map[string][]byte{testOrigin + ManifestFile: manifest})
 	done := make(chan bool, 1)
@@ -243,22 +243,23 @@ func TestManifestLimitsFormatsButDoesNotSetTheirOrder(t *testing.T) {
 	}
 	a := r.m.Get(sprite("c/e"), Now)
 	waitFinal(t, a)
-	want := []string{testOrigin + ManifestFile, testOrigin + "c/e.webp", testOrigin + "c/e.png"}
+	want := []string{testOrigin + ManifestFile, testOrigin + "c/e.png", testOrigin + "c/e.webp"}
 	if asked := r.fetch.askedFor(); !slices.Equal(asked, want) {
 		t.Fatalf("asked %v, want %v", asked, want)
 	}
 }
 
-func TestLearnedFormatGoesFirstAndStaysInsideTheManifest(t *testing.T) {
+func TestLearnedFormatGoesFirstOnlyWithoutAManifest(t *testing.T) {
 	b := NewCandidateBuilder()
 	key := sprite("e")
 	b.Learn(testOrigin, ClassEmote, config.ExtPNG)
 	if got := b.Build(key)[0]; got != File(testOrigin+"e"+config.ExtPNG) {
 		t.Fatalf("first %v", got)
 	}
-	b.Allow(testOrigin, map[Class][]string{ClassEmote: {config.ExtWebP}})
-	if got := b.Build(key); !slices.Equal(got, []File{File(testOrigin + "e" + config.ExtWebP)}) {
-		t.Fatalf("got %v", got)
+	b.Allow(testOrigin, map[Class][]string{ClassEmote: {config.ExtWebP, config.ExtPNG}})
+	want := []File{File(testOrigin + "e" + config.ExtWebP), File(testOrigin + "e" + config.ExtPNG)}
+	if got := b.Build(key); !slices.Equal(got, want) {
+		t.Fatalf("got %v: learning must not reorder a host's own list", got)
 	}
 }
 

@@ -17,7 +17,7 @@ const ManifestFile = "extensions.json"
 // manifestExtCap bounds each list, so a hostile manifest can't grow the search.
 const manifestExtCap = 16
 
-// defaultImageOrder is the built-in order; formats that have worked on an origin go ahead of it.
+// defaultImageOrder is the order for a host with no list of its own; formats that have worked there go ahead of it.
 var defaultImageOrder = []string{config.ExtWebP, config.ExtPNG, config.ExtAPNG, config.ExtGIF, config.ExtAVIF, config.ExtJPG}
 
 // defaultAudioOrder is the built-in order for sounds.
@@ -69,7 +69,8 @@ func (b *CandidateBuilder) Build(key Key) []File {
 	return files
 }
 
-// order puts what has worked first, then the built-in order, keeping only what the host allows.
+// order is the host's own list when it published one, which it expects to be used as written.
+// Without one, what has worked goes first, then the built-in order.
 func (b *CandidateBuilder) order(origin string, class Class) []string {
 	defaults := defaultImageOrder
 	if class == ClassSFX || class == ClassBlips {
@@ -79,16 +80,10 @@ func (b *CandidateBuilder) order(origin string, class Class) []string {
 	if h == nil {
 		return defaults
 	}
-	order := slices.Clone(defaults)
-	// A format the host allows that isn't in the defaults still gets tried, last.
-	for _, ext := range h.allowed[class] {
-		if !slices.Contains(order, ext) {
-			order = append(order, ext)
-		}
-	}
 	if allowed := h.allowed[class]; len(allowed) > 0 {
-		order = slices.DeleteFunc(order, func(ext string) bool { return !slices.Contains(allowed, ext) })
+		return allowed
 	}
+	order := slices.Clone(defaults)
 	counts := h.learned[class]
 	slices.SortStableFunc(order, func(x, y string) int { return counts[y] - counts[x] })
 	return order
@@ -113,7 +108,7 @@ func (b *CandidateBuilder) Learn(origin string, class Class, ext string) {
 	h.learned[class][ext]++
 }
 
-// Allow sets which formats a host's extensions.json permits for its classes.
+// Allow sets the formats and their order from a host's extensions.json.
 func (b *CandidateBuilder) Allow(origin string, allowed map[Class][]string) {
 	h := b.hints(origin)
 	for class, exts := range allowed {
@@ -121,7 +116,7 @@ func (b *CandidateBuilder) Allow(origin string, allowed map[Class][]string) {
 	}
 }
 
-// ParseManifest reads an extensions.json into format lists per class, ignoring its order and anything unknown.
+// ParseManifest reads an extensions.json into ordered format lists per class, ignoring anything unknown.
 func ParseManifest(data []byte) (map[Class][]string, error) {
 	var raw struct {
 		CharIcon   []string `json:"charicon_extensions"`
