@@ -28,6 +28,21 @@ const (
 	KindFont
 )
 
+// Class says which formats a file may have; ClassExact means its path already names one file.
+type Class uint8
+
+// The classes a host's extensions.json can describe.
+const (
+	ClassExact Class = iota
+	ClassCharIcon
+	ClassEmote
+	ClassEmotions
+	ClassBackground
+	ClassMisc
+	ClassSFX
+	ClassBlips
+)
+
 // Urgency orders waiting work: a request for the current message goes ahead of everything else.
 type Urgency uint8
 
@@ -37,12 +52,18 @@ const (
 	Now
 )
 
+// maxAlts is how many other spellings a file can have, such as a sprite without its (a) folder prefix.
+const maxAlts = 3
+
 // Key names one thing a caller wants; Size separates an icon from the full image of the same file.
 type Key struct {
-	Place Place
-	Path  string
-	Kind  Kind
-	Size  int
+	Place  Place
+	Origin string
+	Path   string
+	Alts   [maxAlts]string
+	Kind   Kind
+	Class  Class
+	Size   int
 }
 
 // File is one exact location a source can answer for, such as a candidate URL.

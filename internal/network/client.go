@@ -65,6 +65,9 @@ const (
 // ErrAssetNotFound reports a 404, possibly served from the negative cache.
 var ErrAssetNotFound = errors.New("network: asset not found")
 
+// ErrUnexpectedStatus reports an HTTP status other than 200 or 404, so the host did answer.
+var ErrUnexpectedStatus = errors.New("network: unexpected status")
+
 // ErrHostBackingOff reports that the host is inside its exponential backoff window.
 var ErrHostBackingOff = errors.New("network: host backing off after failures")
 
@@ -362,7 +365,7 @@ func (c *Client) fetchAttempt(url string) ([]byte, error) {
 		// 5xx means the host is misbehaving, so it counts toward backoff; fetchOnce's retry absorbs one-off hiccups.
 		c.recordFailure(host)
 		c.failures.Add(1)
-		return nil, fmt.Errorf("network: fetching %s: unexpected status %s", url, resp.Status)
+		return nil, fmt.Errorf("%w: fetching %s: %s", ErrUnexpectedStatus, url, resp.Status)
 	}
 }
 

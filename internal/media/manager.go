@@ -5,10 +5,15 @@ import (
 	"errors"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
-// DefaultMaxAssets caps the Assets the shared map holds.
-const DefaultMaxAssets = 32768
+const (
+	// DefaultMaxAssets caps the Assets the shared map holds.
+	DefaultMaxAssets = 32768
+	// DefaultMissingTTL is how long a missing answer lasts, so a file a server owner adds gets noticed.
+	DefaultMissingTTL = 60 * time.Second
+)
 
 // Config is everything a Manager is built from.
 type Config struct {
@@ -19,11 +24,16 @@ type Config struct {
 	Compute    *Pool
 	// KeepBytes stores fetched bytes so an evicted result can be rebuilt without I/O; nil keeps nothing.
 	KeepBytes func(File, []byte)
+	// Found runs on the Manager's goroutine when a key's file turns up, so later searches can try that format first.
+	Found func(Key, File)
 	// ClaimLimit is the memory decodes may claim at once; Now work may pass it, so a message can't wait on memory.
 	ClaimLimit int64
 	MaxAssets  int
+	MissingTTL time.Duration
 	// IsMainThread lets Load refuse to block the main thread.
 	IsMainThread func() bool
+	// Clock defaults to time.Now.
+	Clock func() time.Time
 }
 
 type step uint8
@@ -32,10 +42,24 @@ const (
 	stepData step = iota
 	stepMeasure
 	stepDecode
+	stepWork
 )
 
-// request is the Manager's side of an Asset, like a QPromise; only the Manager's goroutine touches it.
+type eventKind uint8
+
+const (
+	eventNew eventKind = iota
+	eventRaise
+	eventWithdraw
+	eventWithdrawOrigin
+	eventWork
+)
+
+// request is the Manager's side of an Asset, like a QPromise; only the Manager's goroutine touches it after posting.
 type request struct {
+	event   eventKind
+	key     Key
+	origin  string
 	asset   *Asset
 	urgency Urgency
 	skip    map[tried]bool
@@ -47,10 +71,16 @@ type request struct {
 	claim   int64
 	result  any
 	err     error
+	lastErr error
+	queued  bool
+	dead    bool
+	pool    *Pool
+	work    func() any
+	done    func(any)
 	next    *request
 }
 
-// pipe is a lock-free list many threads push to and one thread takes whole, newest first.
+// pipe is a lock-free list many threads push to and one thread takes whole.
 type pipe struct{ head atomic.Pointer[request] }
 
 func (p *pipe) push(r *request) {
@@ -86,12 +116,19 @@ func (w *waiting) push(r *request) {
 	}
 }
 
+// peek returns the next live request, dropping ones withdrawn or raised to the other list since they queued.
 func (w *waiting) peek() *request {
-	if len(w.now) > 0 {
-		return w.now[0]
+	for len(w.now) > 0 {
+		if !w.now[0].dead {
+			return w.now[0]
+		}
+		w.now = w.now[1:]
 	}
-	if len(w.later) > 0 {
-		return w.later[0]
+	for len(w.later) > 0 {
+		if r := w.later[0]; !r.dead && r.urgency == Later {
+			return r
+		}
+		w.later = w.later[1:]
 	}
 	return nil
 }
@@ -111,17 +148,17 @@ type poolQueue struct {
 	order  []string
 }
 
-func (q *poolQueue) push(r *request) {
-	w := q.groups[r.host]
+func (q *poolQueue) list(host string) *waiting {
+	w := q.groups[host]
 	if w == nil {
 		w = &waiting{}
-		q.groups[r.host] = w
-		q.order = append(q.order, r.host)
+		q.groups[host] = w
+		q.order = append(q.order, host)
 	}
-	w.push(r)
+	return w
 }
 
-// Manager owns every table on one goroutine, like a QObject on a QThread; only Get and the calls beside it are safe from other threads.
+// Manager owns every table on one goroutine, like a QObject on a QThread; only the exported methods are safe from other threads.
 type Manager struct {
 	cfg    Config
 	assets sync.Map // Key to *Asset
@@ -137,6 +174,7 @@ type Manager struct {
 	stopped  chan struct{}
 	closing  sync.Once
 
+	active   map[Key]*request
 	queues   map[*Pool]*poolQueue
 	queueSeq []*poolQueue
 	hostBusy map[string]int
@@ -148,8 +186,14 @@ func NewManager(cfg Config) *Manager {
 	if cfg.MaxAssets <= 0 {
 		cfg.MaxAssets = DefaultMaxAssets
 	}
+	if cfg.MissingTTL <= 0 {
+		cfg.MissingTTL = DefaultMissingTTL
+	}
+	if cfg.Clock == nil {
+		cfg.Clock = time.Now
+	}
 	m := &Manager{cfg: cfg, wake: make(chan struct{}, 1), stop: make(chan struct{}), stopped: make(chan struct{}),
-		queues: map[*Pool]*poolQueue{}, hostBusy: map[string]int{}}
+		active: map[Key]*request{}, queues: map[*Pool]*poolQueue{}, hostBusy: map[string]int{}}
 	go m.run()
 	return m
 }
@@ -163,22 +207,37 @@ func (m *Manager) Close() {
 // Get returns the Asset for key from any thread and never blocks: a repeat ask takes no lock and posts nothing.
 func (m *Manager) Get(key Key, urgency Urgency) *Asset {
 	if v, ok := m.assets.Load(key); ok {
-		return v.(*Asset)
+		a := v.(*Asset)
+		if !m.expired(a) {
+			if urgency == Now && !a.urgent.Load() && a.urgent.CompareAndSwap(false, true) {
+				m.post(&request{event: eventRaise, key: key})
+			}
+			return a
+		}
+		fresh := newAsset(key, urgency)
+		if m.assets.CompareAndSwap(key, a, fresh) {
+			m.post(&request{event: eventNew, asset: fresh, urgency: urgency})
+			return fresh
+		}
+		return m.Get(key, urgency)
 	}
 	// Later work is refused at the cap, unstored, so the caller's next ask tries again.
 	if urgency == Later && m.count.Load() >= int64(m.cfg.MaxAssets) {
-		a := newAsset(key)
-		a.finish(Refused, nil, ErrRefused)
+		a := newAsset(key, urgency)
+		a.finish(Refused, nil, ErrRefused, m.cfg.Clock())
 		return a
 	}
-	a := newAsset(key)
+	a := newAsset(key, urgency)
 	if v, loaded := m.assets.LoadOrStore(key, a); loaded {
 		return v.(*Asset)
 	}
 	m.count.Add(1)
-	m.incoming.push(&request{asset: a, urgency: urgency})
-	m.signal()
+	m.post(&request{event: eventNew, asset: a, urgency: urgency})
 	return a
+}
+
+func (m *Manager) expired(a *Asset) bool {
+	return a.State() == Missing && m.cfg.Clock().Sub(time.Unix(0, a.finished.Load())) >= m.cfg.MissingTTL
 }
 
 // Load waits for key on a worker thread; it panics on the main thread, which must never wait.
@@ -202,6 +261,28 @@ func (m *Manager) Forget(key Key) {
 	}
 }
 
+// Withdraw says nobody wants key any more: work not yet started never starts, and a running step's result is dropped.
+func (m *Manager) Withdraw(key Key) {
+	m.Forget(key)
+	m.post(&request{event: eventWithdraw, key: key})
+}
+
+// WithdrawOrigin withdraws everything asked for from one server, for when a tab disconnects.
+func (m *Manager) WithdrawOrigin(origin string) {
+	m.assets.Range(func(k, _ any) bool {
+		if key := k.(Key); key.Origin == origin {
+			m.Forget(key)
+		}
+		return true
+	})
+	m.post(&request{event: eventWithdrawOrigin, origin: origin})
+}
+
+// Run does work on pool, then done on the Manager's goroutine with its result, for jobs that aren't one file.
+func (m *Manager) Run(pool *Pool, urgency Urgency, work func() any, done func(any)) {
+	m.post(&request{event: eventWork, pool: pool, urgency: urgency, work: work, done: done, step: stepWork})
+}
+
 // TakeResults hands the main thread every result that needs it, once per frame, with one atomic swap.
 func (m *Manager) TakeResults(use func(*Asset, any)) {
 	for r := m.results.take(); r != nil; r = r.next {
@@ -215,7 +296,12 @@ func (m *Manager) Finish(a *Asset, result any) {
 		m.freed.Add(c)
 		m.signal()
 	}
-	a.finish(Ready, result, nil)
+	a.finish(Ready, result, nil, m.cfg.Clock())
+}
+
+func (m *Manager) post(r *request) {
+	m.incoming.push(r)
+	m.signal()
 }
 
 func (m *Manager) signal() {
@@ -236,7 +322,7 @@ func (m *Manager) run() {
 	for {
 		for r := m.incoming.take(); r != nil; {
 			next := r.next
-			m.search(r)
+			m.event(r)
 			r = next
 		}
 		for r := m.finished.take(); r != nil; {
@@ -266,74 +352,142 @@ func (m *Manager) run() {
 	}
 }
 
-// search finds the next place to get the bytes from, or ends the request.
-func (m *Manager) search(r *request) {
-	chain := m.cfg.Chains[r.asset.key.Place]
-	if chain == nil {
-		m.fail(r, Missing, ErrMissing)
-		return
+func (m *Manager) event(r *request) {
+	switch r.event {
+	case eventNew:
+		m.active[r.asset.key] = r
+		m.search(r)
+	case eventRaise:
+		if a := m.active[r.key]; a != nil && a.urgency == Later {
+			a.urgency = Now
+			if a.queued {
+				m.queueList(a).now = append(m.queueList(a).now, a)
+			}
+		}
+	case eventWithdraw:
+		if a := m.active[r.key]; a != nil {
+			m.kill(a)
+		}
+	case eventWithdrawOrigin:
+		for key, a := range m.active {
+			if key.Origin == r.origin {
+				m.kill(a)
+			}
+		}
+	case eventWork:
+		m.queue(r.pool, r)
 	}
-	i, file, found := chain.find(m.cfg.Candidates(r.asset.key), r.skip)
-	if !found {
-		m.fail(r, Missing, ErrMissing)
-		return
-	}
-	e := chain.entries[i]
-	r.entry, r.file, r.step, r.host = i, file, stepData, ""
-	if e.Pool == nil {
-		data, err := e.Source.Data(file)
-		r.bytes, r.err = data, err
-		m.dataDone(r)
-		return
-	}
-	if l, ok := e.Source.(HostLimiter); ok {
-		r.host = l.Host(file)
-	}
-	m.queue(e.Pool, r)
 }
 
-func (m *Manager) queue(p *Pool, r *request) {
-	q := m.queues[p]
-	if q == nil {
-		q = &poolQueue{pool: p, groups: map[string]*waiting{}}
-		m.queues[p] = q
-		m.queueSeq = append(m.queueSeq, q)
+// kill ends a request now if it is only waiting; one on a worker ends when the worker reports.
+func (m *Manager) kill(r *request) {
+	r.dead = true
+	if r.queued {
+		m.end(r, Withdrawn, nil, ErrWithdrawn)
 	}
-	q.push(r)
 }
 
-func (m *Manager) fail(r *request, state AssetState, err error) {
+// end finishes a request and takes it off the tables; a failed one leaves the map, so the next ask tries again.
+func (m *Manager) end(r *request, state AssetState, result any, err error) {
+	if m.active[r.asset.key] == r {
+		delete(m.active, r.asset.key)
+	}
 	if c := r.asset.claim.Swap(0); c != 0 {
 		m.claimed -= c
 	}
-	r.asset.finish(state, nil, err)
+	if state == Failed && m.assets.CompareAndDelete(r.asset.key, r.asset) {
+		m.count.Add(-1)
+	}
+	r.asset.finish(state, result, err, m.cfg.Clock())
+}
+
+// search finds the next place to get the bytes from, or ends the request.
+func (m *Manager) search(r *request) {
+	chain := m.cfg.Chains[r.asset.key.Place]
+	if chain != nil {
+		if i, file, found := chain.find(m.cfg.Candidates(r.asset.key), r.skip); found {
+			e := chain.entries[i]
+			r.entry, r.file, r.step, r.host = i, file, stepData, ""
+			if e.Pool == nil {
+				r.bytes, r.err = e.Source.Data(file)
+				m.dataDone(r)
+				return
+			}
+			if l, ok := e.Source.(HostLimiter); ok {
+				r.host = l.Host(file)
+			}
+			r.pool = e.Pool
+			m.queue(e.Pool, r)
+			return
+		}
+	}
+	// A candidate that failed rather than being absent means the file may still exist.
+	if r.lastErr != nil {
+		m.end(r, Failed, nil, r.lastErr)
+		return
+	}
+	m.end(r, Missing, nil, ErrMissing)
+}
+
+func (m *Manager) queue(p *Pool, r *request) {
+	r.queued = true
+	r.pool = p
+	m.queueList(r).push(r)
+}
+
+func (m *Manager) queueList(r *request) *waiting {
+	q := m.queues[r.pool]
+	if q == nil {
+		q = &poolQueue{pool: r.pool, groups: map[string]*waiting{}}
+		m.queues[r.pool] = q
+		m.queueSeq = append(m.queueSeq, q)
+	}
+	return q.list(r.host)
 }
 
 // handle takes one finished step on the Manager's goroutine.
 func (m *Manager) handle(r *request) {
+	r.pool.busy--
+	if r.step == stepWork {
+		r.done(r.result)
+		return
+	}
+	if r.host != "" {
+		m.hostBusy[r.host]--
+	}
+	if r.step == stepData {
+		// A dead request's answer still updates the tables, as it is true whoever asked.
+		m.observe(r)
+	}
+	if r.dead {
+		m.end(r, Withdrawn, nil, ErrWithdrawn)
+		return
+	}
 	switch r.step {
 	case stepData:
-		e := m.cfg.Chains[r.asset.key.Place].entries[r.entry]
-		e.Pool.busy--
-		if r.host != "" {
-			m.hostBusy[r.host]--
-		}
-		m.dataDone(r)
+		m.afterData(r)
 	case stepMeasure:
-		m.cfg.Compute.busy--
 		r.step = stepDecode
 		m.queue(m.cfg.Compute, r)
 	case stepDecode:
-		m.cfg.Compute.busy--
 		m.decodeDone(r)
 	}
 }
 
-func (m *Manager) dataDone(r *request) {
+func (m *Manager) observe(r *request) {
 	e := m.cfg.Chains[r.asset.key.Place].entries[r.entry]
 	if o, ok := e.Source.(Observer); ok {
 		o.Observe(r.file, r.bytes, r.err)
 	}
+}
+
+func (m *Manager) dataDone(r *request) {
+	m.observe(r)
+	m.afterData(r)
+}
+
+func (m *Manager) afterData(r *request) {
+	e := m.cfg.Chains[r.asset.key.Place].entries[r.entry]
 	if r.err != nil {
 		m.retry(r)
 		return
@@ -341,9 +495,12 @@ func (m *Manager) dataDone(r *request) {
 	if m.cfg.KeepBytes != nil && e.Pool != nil {
 		m.cfg.KeepBytes(r.file, r.bytes)
 	}
+	if m.cfg.Found != nil {
+		m.cfg.Found(r.asset.key, r.file)
+	}
 	format := m.cfg.Formats[r.asset.key.Kind]
 	if format == nil {
-		r.asset.finish(Ready, r.bytes, nil)
+		m.end(r, Ready, r.bytes, nil)
 		return
 	}
 	r.asset.state.Store(int32(Decoding))
@@ -365,22 +522,22 @@ func (m *Manager) decodeDone(r *request) {
 		return
 	}
 	if m.cfg.Formats[r.asset.key.Kind].OnMainThread() {
+		delete(m.active, r.asset.key)
 		m.results.push(r)
 		return
 	}
-	if c := r.asset.claim.Swap(0); c != 0 {
-		m.claimed -= c
-	}
-	r.asset.finish(Ready, r.result, nil)
+	m.end(r, Ready, r.result, nil)
 }
 
-// retry skips the copy that just failed and searches again.
+// retry skips the copy that just failed and searches again; a source reporting absence isn't an error to keep.
 func (m *Manager) retry(r *request) {
 	if r.skip == nil {
 		r.skip = map[tried]bool{}
 	}
-	// A file its source now answers No for needs no mark, and a marked one can't be retried by this request.
 	r.skip[tried{r.entry, r.file}] = true
+	if !IsAbsent(r.err) {
+		r.lastErr = r.err
+	}
 	r.bytes, r.err = nil, nil
 	r.asset.state.Store(int32(Searching))
 	m.search(r)
@@ -398,7 +555,7 @@ func (m *Manager) dispatchUrgency(q *poolQueue, u Urgency) {
 		w := q.groups[host]
 		for q.pool.canStart(u) {
 			r := w.peek()
-			if r == nil || (u == Later && r.urgency == Now) || (u == Now && r.urgency != Now) || !m.allowed(q.pool, r) {
+			if r == nil || r.urgency != u || !m.allowed(r) {
 				break
 			}
 			w.pop()
@@ -408,43 +565,49 @@ func (m *Manager) dispatchUrgency(q *poolQueue, u Urgency) {
 }
 
 // allowed checks the limits that apply beyond a free worker: a host's limit and the memory claim.
-func (m *Manager) allowed(p *Pool, r *request) bool {
+func (m *Manager) allowed(r *request) bool {
 	if r.host != "" {
 		l := m.cfg.Chains[r.asset.key.Place].entries[r.entry].Source.(HostLimiter)
 		if m.hostBusy[r.host] >= l.Limit(r.host) {
 			return false
 		}
 	}
-	if r.step == stepDecode && r.urgency != Now && m.claimed > 0 && m.cfg.ClaimLimit > 0 && m.claimed+r.claim > m.cfg.ClaimLimit {
-		return false
-	}
-	return p != nil
+	return r.step != stepDecode || r.urgency == Now || m.claimed == 0 || m.cfg.ClaimLimit <= 0 || m.claimed+r.claim <= m.cfg.ClaimLimit
 }
 
 func (m *Manager) start(p *Pool, r *request) {
+	r.queued = false
 	p.busy++
 	switch r.step {
+	case stepWork:
+		p.jobs <- func() {
+			r.result = r.work()
+			m.report(r)
+		}
 	case stepData:
 		if r.host != "" {
 			m.hostBusy[r.host]++
 		}
 		source := m.cfg.Chains[r.asset.key.Place].entries[r.entry].Source
+		file := r.file
 		p.jobs <- func() {
-			r.bytes, r.err = source.Data(r.file)
+			r.bytes, r.err = source.Data(file)
 			m.report(r)
 		}
 	case stepMeasure:
 		measurer := m.cfg.Formats[r.asset.key.Kind].(Measurer)
+		data := r.bytes
 		p.jobs <- func() {
-			r.claim = measurer.Measure(r.bytes)
+			r.claim = measurer.Measure(data)
 			m.report(r)
 		}
 	case stepDecode:
 		m.claimed += r.claim
 		r.asset.claim.Store(r.claim)
 		format := m.cfg.Formats[r.asset.key.Kind]
+		key, data := r.asset.key, r.bytes
 		p.jobs <- func() {
-			r.result, r.err = format.Decode(r.asset.key, r.bytes)
+			r.result, r.err = format.Decode(key, data)
 			m.report(r)
 		}
 	}
@@ -454,6 +617,12 @@ func (m *Manager) report(r *request) {
 	m.finished.push(r)
 	m.signal()
 }
+
+// ErrAbsent is what a source's Data returns when the file isn't there, as opposed to failing to find out.
+var ErrAbsent = errors.New("media: file absent from this source")
+
+// IsAbsent reports whether err means the file isn't in that source.
+func IsAbsent(err error) bool { return errors.Is(err, ErrAbsent) }
 
 // IsMissing reports whether err means no source has the file.
 func IsMissing(err error) bool { return errors.Is(err, ErrMissing) }

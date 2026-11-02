@@ -90,7 +90,9 @@ in **Status**. Update Status in the same commit that completes a step.
   - [ ] media system and its threading (design decided 2026-11-02: https://claude.ai/artifact/5CvNJgYsE5a2DkhYqz4ZtU), built as
         `internal/media` beside `internal/assets`, with callers moved over in slices and the old pipeline deleted last
     - [x] core: `Manager` on its own goroutine, `Get` over a concurrent map, `Pool`, `Chain`, `Source`. Not used by the client yet
-    - [ ] real sources: memory, disk index, packs, remote index and host limits; candidates and `extensions.json`
+    - [x] sources: memory, disk index, remote index with host limits (1 worker until a host answers, then 16); candidates,
+          format learning and `extensions.json`; withdrawing and raising requests. Not used by the client yet
+    - [ ] sources still to build: packs on shadow paging, saving the disk index and learned formats, character mapping
     - [ ] image format on `DecoderPool`'s streaming decode, and `Pump` on `TakeResults`
     - [ ] move callers: courtroom, then screens, theme and audio; music streaming; then delete the old pipeline
   - [ ] off-thread texture preparation: waits for the renderer overhaul (decided 2026-11-02). See below
