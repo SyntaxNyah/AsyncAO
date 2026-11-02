@@ -996,6 +996,11 @@ func (a *App) installAssetOrigin(origin string) {
 	a.d.Manager.ForgetConclusiveMissesUnder(origin) // nil-safe: a headless App has no Manager and nothing to forget
 }
 
+// applyAssetHosts hands the connected server's extra asset hosts to the media system.
+func (a *App) applyAssetHosts() {
+	a.d.Manager.SetAssetHosts(a.urls.Origin(), a.d.Prefs.Load().ServerAssetHosts(a.serverKey))
+}
+
 // rebuildAssetOrigin wires the URL builder to local mounts or the server's
 // asset URL, in that priority (the no-streaming checkbox wins).
 func (a *App) rebuildAssetOrigin() {
@@ -1039,6 +1044,7 @@ func (a *App) rebuildAssetOrigin() {
 	if a.rehearsal {
 		return // offline: no DNS warm, no manifest fetch
 	}
+	a.applyAssetHosts()
 	if host := hostOfURL(origin); host != "" {
 		a.d.Client.PreResolve(context.Background(), strings.Split(host, ":")[0])
 	}

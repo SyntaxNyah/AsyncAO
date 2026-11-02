@@ -703,6 +703,8 @@ type ServerWarmInfo struct {
 	WardrobeFolder map[string]string `json:"wardrobeFolder,omitempty"`
 	// Origin is the last asset URL; rehearsal mode rebuilds asset paths from it without connecting.
 	Origin string `json:"origin,omitempty"`
+	// AssetHosts are the user's extra asset origins, asked in this order after Origin misses.
+	AssetHosts []string `json:"assetHosts,omitempty"`
 	// Per-server audio override; channels are pointers so nil (use the global) differs from 0 (mute).
 	AudioOn     bool `json:"audioOn,omitempty"`
 	AudioMaster *int `json:"audioMaster,omitempty"`

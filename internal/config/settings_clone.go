@@ -1612,6 +1612,12 @@ func snapCloneServerWarmInfo(src ServerWarmInfo) ServerWarmInfo {
 	} else {
 		dst.WardrobeFolder = nil
 	}
+	if src.AssetHosts != nil {
+		dst.AssetHosts = make([]string, len(src.AssetHosts))
+		copy(dst.AssetHosts, src.AssetHosts)
+	} else {
+		dst.AssetHosts = nil
+	}
 	if src.AudioMaster != nil {
 		v := *src.AudioMaster
 		dst.AudioMaster = &v
@@ -1818,6 +1824,17 @@ func snapEqualServerWarmInfo(a, b ServerWarmInfo) bool {
 	if a.Origin != b.Origin {
 		return false
 	}
+	if (a.AssetHosts == nil) != (b.AssetHosts == nil) {
+		return false
+	}
+	if len(a.AssetHosts) != len(b.AssetHosts) {
+		return false
+	}
+	for i134 := range a.AssetHosts {
+		if a.AssetHosts[i134] != b.AssetHosts[i134] {
+			return false
+		}
+	}
 	if a.AudioOn != b.AudioOn {
 		return false
 	}
@@ -1859,8 +1876,8 @@ func snapEqualServerWarmInfo(a, b ServerWarmInfo) bool {
 	if len(a.Chars) != len(b.Chars) {
 		return false
 	}
-	for i134 := range a.Chars {
-		if a.Chars[i134] != b.Chars[i134] {
+	for i135 := range a.Chars {
+		if a.Chars[i135] != b.Chars[i135] {
 			return false
 		}
 	}
@@ -1870,8 +1887,8 @@ func snapEqualServerWarmInfo(a, b ServerWarmInfo) bool {
 	if len(a.Backgrounds) != len(b.Backgrounds) {
 		return false
 	}
-	for i135 := range a.Backgrounds {
-		if a.Backgrounds[i135] != b.Backgrounds[i135] {
+	for i136 := range a.Backgrounds {
+		if a.Backgrounds[i136] != b.Backgrounds[i136] {
 			return false
 		}
 	}
@@ -1881,8 +1898,8 @@ func snapEqualServerWarmInfo(a, b ServerWarmInfo) bool {
 	if len(a.Friends) != len(b.Friends) {
 		return false
 	}
-	for i136 := range a.Friends {
-		if a.Friends[i136] != b.Friends[i136] {
+	for i137 := range a.Friends {
+		if a.Friends[i137] != b.Friends[i137] {
 			return false
 		}
 	}
@@ -1892,8 +1909,8 @@ func snapEqualServerWarmInfo(a, b ServerWarmInfo) bool {
 	if len(a.Ignored) != len(b.Ignored) {
 		return false
 	}
-	for i137 := range a.Ignored {
-		if a.Ignored[i137] != b.Ignored[i137] {
+	for i138 := range a.Ignored {
+		if a.Ignored[i138] != b.Ignored[i138] {
 			return false
 		}
 	}

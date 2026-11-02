@@ -93,8 +93,8 @@ in **Status**. Update Status in the same commit that completes a step.
     - [x] sources: memory, disk index, remote index with host limits (1 worker until a host answers, then 16); candidates,
           format learning and `extensions.json`; withdrawing and raising requests. Not used by the client yet
     - [ ] sources still to build: packs on shadow paging, saving the disk index and learned formats, character mapping
-    - [ ] extra asset hosts per server: the user adds them in a fixed order with no speed ranking, the ASS packet's host is always
-          first. Needs a list of origins per server in the media system (a key has one origin today) and a Settings page to edit it
+    - [x] extra asset hosts per server: the user adds them in a fixed order with no speed ranking, the ASS packet's host is always
+          first; Settings → Assets edits them. Raw fetch paths not on the media system yet don't ask them
     - [x] the client runs on it: `assets.Manager`'s requests go through `internal/media`, so callers and `Pump` are unchanged, and
           `-old-media` switches back for comparison. Raw fetch paths, the debug panel counts and music streaming aren't moved
     - [x] test build for real rooms: tried by the maintainer 2026-11-02, stable, slightly more memory than the old pipeline

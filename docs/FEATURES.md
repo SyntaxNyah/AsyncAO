@@ -38,6 +38,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   A server can also declare `sfx_extensions` / `blips_extensions` to seed
   its sound-effect and blip formats; audio classes the manifest doesn't
   cover fall back to `.opus` → `.ogg` → `.mp3` → `.wav`.
+- **Extra asset hosts** (Settings → Assets): per server, a list of up to 8
+  more asset hosts in an order you choose. When the server's own host (from
+  ASS, always asked first) lacks a file, the hosts are asked top to bottom,
+  each with the formats its own `extensions.json` lists; the first host that
+  has the file wins. Changing the list makes files already marked missing
+  searched again. The new media system only; `-old-media` ignores them.
 - **Desks follow the manifest by default** (Settings → Formats): desk overlays
   auto-detect from the server's `extensions.json` like every other class
   (desks share the manifest's background class). Tick "Always use WebP for

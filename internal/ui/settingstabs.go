@@ -976,6 +976,9 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Asset source")
 	y = a.drawAssetSourceSettings(y, w)
 
+	y = a.settingsSection(y, w, "Extra asset hosts")
+	y = a.drawAssetHostSettings(y, w)
+
 	y = a.settingsSection(y, w, "Downloader")
 	// Built-in single-asset downloader (opt-in).
 	y = a.drawDownloaderSettings(y, w)

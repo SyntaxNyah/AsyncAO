@@ -3,11 +3,13 @@ package assets
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
@@ -232,6 +234,28 @@ func (b *mediaBridge) noteManifest(origin, file string, data []byte, err error) 
 		if allowed != nil {
 			b.builder.Allow(origin, allowed)
 		}
+	})
+}
+
+// SetAssetHosts sets the hosts asked, in order, after origin misses. A changed list reads each host's
+// extensions.json and lets files already missing be searched again. The old pipeline ignores them.
+func (m *Manager) SetAssetHosts(origin string, hosts []string) {
+	if m == nil || m.bridge == nil || origin == "" {
+		return
+	}
+	b := m.bridge
+	clean := slices.DeleteFunc(config.CleanAssetHosts(hosts), func(h string) bool { return h == origin })
+	b.media.Do(func() {
+		if !b.builder.SetHosts(origin, clean) {
+			return
+		}
+		for _, host := range clean {
+			media.Join(b.media, b.network, b.remote, bridgeFetcher{m}, b.builder, host, nil)
+		}
+		b.media.ForgetIf(func(a *media.Asset) bool {
+			return a.State() == media.Missing && strings.HasPrefix(a.Key().Path, origin)
+		})
+		b.remote.ForgetMissing(origin)
 	})
 }
 

@@ -73,6 +73,9 @@ type settingsState struct {
 
 	// themeBindKey is the theme-binding picker, sharing the login section's server list cache.
 	themeBindKey string
+	// assetHostKey is the server the Extra asset hosts section edits; assetHostInput is its add field.
+	assetHostKey   string
+	assetHostInput string
 
 	// Login section: the picked server and its credential buffers, for any known server, connected or not.
 	loginKey      string
@@ -241,7 +244,8 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"aotheme", "theme bundle", "share a theme", "send a theme", "give a theme",
 	},
 	tabAssets: {
-		// Predictive prefetch, Missing sprites, Asset source, Downloader, Cache.
+		// Predictive prefetch, Missing sprites, Asset source, Extra asset hosts, Downloader, Cache.
+		"extra asset hosts", "asset host", "mirror", "webhost",
 		"predictive prefetch", "prefetch", "aggressiveness", "speculative", "preload",
 		"local assets", "local", "mount", "downloader", "download",
 		// Keep terms specific, since a broad word would take the query; not bare "stream" (General's "streamer mode").

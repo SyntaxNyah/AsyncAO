@@ -268,3 +268,27 @@ func TestBridgeOfflineRecordsNothing(t *testing.T) {
 		t.Fatalf("a file offline said nothing about was not fetched: %v", d.Err)
 	}
 }
+
+func TestBridgeExtraHostServesWhatTheServerLacks(t *testing.T) {
+	const mirror = "http://mirror.test/ao/"
+	webp := fixture(t, "sprite_256x192.webp")
+	host := &bridgeFakeHost{files: map[string][]byte{mirror + "c/e.webp": webp}}
+	r := newBridgeRig(t, host)
+	base := bridgeTestOrigin + "c/e"
+	r.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh)
+	select {
+	case <-r.manager.Warnings():
+	case <-time.After(bridgeTestTimeout):
+		t.Fatal("no missing warning without the mirror")
+	}
+	r.manager.SetAssetHosts(bridgeTestOrigin, []string{mirror})
+	waitUntil(t, "the miss to be forgotten", func() bool { return !r.manager.IsConclusiveMiss(base, AssetTypeCharSprite) })
+	r.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh)
+	d := nextDecoded(t, r.manager, base)
+	if d.Err != nil || d.Asset == nil || d.URL != mirror+"c/e.webp" {
+		t.Fatalf("url %q err %v", d.URL, d.Err)
+	}
+	if !slices.Contains(host.askedFor(), mirror+ManifestFileName) {
+		t.Fatal("the mirror's extensions.json was not read")
+	}
+}

@@ -107,7 +107,7 @@ SetCharChatbox|valid|
 SetCharDownloader|zero|
 SetCharDownloader|valid|CharDownloaderOn=true
 SetCharKeyBind|zero|
-SetCharKeyBind|valid|ServerWarm=map[v:{  [] [] map[] map[v:v] map[]  false <nil> <nil> <nil> <nil> [] [] [] []   false }]
+SetCharKeyBind|valid|ServerWarm=map[v:{  [] [] map[] map[v:v] map[]  [] false <nil> <nil> <nil> <nil> [] [] [] []   false }]
 SetChatboxOpacity|zero|ChatboxOpacity=0
 SetChatboxOpacity|valid|ChatboxOpacity=1
 SetChatboxOpacity|neg|ChatboxOpacity=0
@@ -214,7 +214,7 @@ SetFPSCap|valid|FPSCapVal=1
 SetFPSCap|neg|FPSCapVal=-1
 SetFPSCap|huge|FPSCapVal=240
 SetFavBackgroundFolder|zero|
-SetFavBackgroundFolder|valid|ServerWarm=map[v:{  [] [] map[v:v] map[] map[]  false <nil> <nil> <nil> <nil> [] [] [] []   false }]
+SetFavBackgroundFolder|valid|ServerWarm=map[v:{  [] [] map[v:v] map[] map[]  [] false <nil> <nil> <nil> <nil> [] [] [] []   false }]
 SetFavEmoteBox|zero|
 SetFavEmoteBox|valid|FavEmoteBox=true
 SetFollowEnabled|zero|
@@ -522,18 +522,20 @@ SetSaveErrorHook|zero|
 SetSaveErrorHook|valid|
 SetScreenEffects|zero|ScreenEffects=false
 SetScreenEffects|valid|
+SetServerAssetHosts|zero|
+SetServerAssetHosts|valid|ServerWarm=map[v:{  [] [] map[] map[] map[]  [] false <nil> <nil> <nil> <nil> [] [] [] []   false }]
 SetServerAudioOn|zero|
-SetServerAudioOn|valid|ServerWarm=map[v:{  [] [] map[] map[] map[]  true <nil> <nil> <nil> <nil> [] [] [] []   false }]
+SetServerAudioOn|valid|ServerWarm=map[v:{  [] [] map[] map[] map[]  [] true <nil> <nil> <nil> <nil> [] [] [] []   false }]
 SetServerAudioVolumes|zero|
-SetServerAudioVolumes|valid|ServerWarm=map[v:{  [] [] map[] map[] map[]  true &1 &1 &1 &1 [] [] [] []   false }]
+SetServerAudioVolumes|valid|ServerWarm=map[v:{  [] [] map[] map[] map[]  [] true &1 &1 &1 &1 [] [] [] []   false }]
 SetServerFriends|zero|
-SetServerFriends|valid|ServerWarm=map[v:{  [] [] map[] map[] map[]  false <nil> <nil> <nil> <nil> [] [] [v] []   false }]
+SetServerFriends|valid|ServerWarm=map[v:{  [] [] map[] map[] map[]  [] false <nil> <nil> <nil> <nil> [] [] [v] []   false }]
 SetServerIgnored|zero|
-SetServerIgnored|valid|ServerWarm=map[v:{  [] [] map[] map[] map[]  false <nil> <nil> <nil> <nil> [] [] [] [v]   false }]
+SetServerIgnored|valid|ServerWarm=map[v:{  [] [] map[] map[] map[]  [] false <nil> <nil> <nil> <nil> [] [] [] [v]   false }]
 SetServerLogin|zero|
-SetServerLogin|valid|ServerWarm=map[v:{  [] [] map[] map[] map[]  false <nil> <nil> <nil> <nil> [] [] [] [] v v true }]
+SetServerLogin|valid|ServerWarm=map[v:{  [] [] map[] map[] map[]  [] false <nil> <nil> <nil> <nil> [] [] [] [] v v true }]
 SetServerTheme|zero|
-SetServerTheme|valid|ServerWarm=map[v:{  [] [] map[] map[] map[]  false <nil> <nil> <nil> <nil> [] [] [] []   false v}]
+SetServerTheme|valid|ServerWarm=map[v:{  [] [] map[] map[] map[]  [] false <nil> <nil> <nil> <nil> [] [] [] []   false v}]
 SetShoutBypassQueue|zero|ShoutBypassQueue=false
 SetShoutBypassQueue|valid|
 SetShoutDurationMs|zero|
@@ -711,7 +713,7 @@ SetWSOriginHeader|valid|WSOrigin=v
 SetWSOriginHeader|empty|
 SetWSOriginHeader|huge|WSOrigin=x*4096
 SetWardrobeFolder|zero|
-SetWardrobeFolder|valid|ServerWarm=map[v:{  [] [] map[] map[] map[v:v]  false <nil> <nil> <nil> <nil> [] [] [] []   false }]
+SetWardrobeFolder|valid|ServerWarm=map[v:{  [] [] map[] map[] map[v:v]  [] false <nil> <nil> <nil> <nil> [] [] [] []   false }]
 SetWeatherIntensity|zero|WeatherDensity=1
 SetWeatherIntensity|valid|WeatherDensity=1
 SetWeatherIntensity|neg|WeatherDensity=1
