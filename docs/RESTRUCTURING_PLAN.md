@@ -93,8 +93,10 @@ in **Status**. Update Status in the same commit that completes a step.
     - [x] sources: memory, disk index, remote index with host limits (1 worker until a host answers, then 16); candidates,
           format learning and `extensions.json`; withdrawing and raising requests. Not used by the client yet
     - [ ] sources still to build: packs on shadow paging, saving the disk index and learned formats, character mapping
-    - [ ] image format on `DecoderPool`'s streaming decode, and `Pump` on `TakeResults`
-    - [ ] move callers: courtroom, then screens, theme and audio; music streaming; then delete the old pipeline
+    - [x] the client runs on it: `assets.Manager`'s requests go through `internal/media`, so callers and `Pump` are unchanged, and
+          `-old-media` switches back for comparison. Raw fetch paths, the debug panel counts and music streaming aren't moved
+    - [ ] test build for real rooms
+    - [ ] move callers: courtroom, then screens, theme and audio; `Pump` on `TakeResults`; music streaming; then delete the old pipeline
   - [ ] off-thread texture preparation: waits for the renderer overhaul (decided 2026-11-02). See below
   - [x] a sprite sometimes shows its old animation for a frame before the right one (reported 2026-11-01): the wait gate
         released on a first frame or a reduced page. The speaker's sprites now wait for every frame; a pair partner's still
