@@ -64,6 +64,10 @@ type Key struct {
 	Kind   Kind
 	Class  Class
 	Size   int
+	// Tag is the caller's own label for this request; Quiet and Sticky are for the caller's finish handler and WithdrawIf.
+	Tag    uint8
+	Quiet  bool
+	Sticky bool
 }
 
 // File is one exact location a source can answer for, such as a candidate URL.
@@ -105,9 +109,15 @@ type HostLimiter interface {
 	Limit(host string) int
 }
 
+// Hit says which copy of a key's file a search found.
+type Hit struct {
+	File   File
+	Source Source
+}
+
 // Format turns bytes into a result on a Compute worker, and holds no shared state.
 type Format interface {
-	Decode(key Key, data []byte) (any, error)
+	Decode(key Key, hit Hit, data []byte) (any, error)
 	// OnMainThread reports whether a result needs the main thread, such as a texture upload, before it is ready.
 	OnMainThread() bool
 }

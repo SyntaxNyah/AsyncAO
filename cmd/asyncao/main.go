@@ -45,6 +45,7 @@ func main() {
 		flagServer      = flag.String("server", "", "skip the lobby and connect to this ws:// or wss:// URL")
 		flagMaster      = flag.String("master", network.DefaultMasterServerURL, "master server list endpoint")
 		flagDebug       = flag.Bool("debug", false, "expose pprof on "+debugPprofAddr)
+		flagOldMedia    = flag.Bool("old-media", false, "use the old media pipeline, to compare it with the new one")
 		flagVsync       = flag.Bool("vsync", true, "use vsync presentation")
 		flagSoftGPU     = flag.Bool("software-gpu", false, "draw with the bundled software GPU driver (for broken GPU drivers)")
 		flagGPURecovery = flag.Int("gpu-recovery", 0, "set by the client when it restarts after a GPU device loss: losses so far")
@@ -71,7 +72,7 @@ func main() {
 	}
 	app := host.App{Name: windowTitle, Version: update.Version, ID: appID}
 	err := host.Main(app, platform.SystemProbe{}, func(rt *host.Runtime) error {
-		return run(rt, *flagServer, *flagMaster, gpuOpts, *flagGPURecovery, *flagDebug)
+		return run(rt, *flagServer, *flagMaster, gpuOpts, *flagGPURecovery, *flagDebug, *flagOldMedia)
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -92,7 +93,7 @@ func logSamples(p *metrics.Profiler) {
 	}
 }
 
-func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOptions, gpuRecoveries int, debugMode bool) error {
+func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOptions, gpuRecoveries int, debugMode, oldMedia bool) error {
 	vsync := gpuOpts.VSync
 	// --- engine singletons (SDL-free) ---
 	prefsPath, err := config.DefaultPath()
@@ -262,7 +263,10 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		Thumbs:     thumbs, // opt-in low-q sprite thumbnails (nil when unavailable)
 		T1Contains: store.ContainsAnimated,
 		T1Failed:   store.FailedRecently,
+
+		MediaSystem: !oldMedia,
 	})
+	defer manager.CloseMedia()
 	// Mounts also resolve recordings, so seed the overlay regardless of the local-folders flag.
 	if len(allMounts) > 0 {
 		manager.SetLocalOverlay(assets.NewLocalFetcher(allMounts))

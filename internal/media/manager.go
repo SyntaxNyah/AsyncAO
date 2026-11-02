@@ -26,6 +26,8 @@ type Config struct {
 	KeepBytes func(File, []byte)
 	// Found runs on the Manager's goroutine when a key's file turns up, so later searches can try that format first.
 	Found func(Key, File)
+	// Finished runs on the Manager's goroutine when a request ends, and must not block.
+	Finished func(*Asset)
 	// ClaimLimit is the memory decodes may claim at once; Now work may pass it, so a message can't wait on memory.
 	ClaimLimit int64
 	MaxAssets  int
@@ -51,15 +53,16 @@ const (
 	eventNew eventKind = iota
 	eventRaise
 	eventWithdraw
-	eventWithdrawOrigin
+	eventWithdrawIf
 	eventWork
+	eventDo
 )
 
 // request is the Manager's side of an Asset, like a QPromise; only the Manager's goroutine touches it after posting.
 type request struct {
 	event   eventKind
 	key     Key
-	origin  string
+	keep    func(Key) bool
 	asset   *Asset
 	urgency Urgency
 	skip    map[tried]bool
@@ -269,13 +272,48 @@ func (m *Manager) Withdraw(key Key) {
 
 // WithdrawOrigin withdraws everything asked for from one server, for when a tab disconnects.
 func (m *Manager) WithdrawOrigin(origin string) {
-	m.assets.Range(func(k, _ any) bool {
-		if key := k.(Key); key.Origin == origin {
-			m.Forget(key)
+	m.WithdrawIf(func(k Key) bool { return k.Origin == origin })
+}
+
+// WithdrawIf withdraws every request whose key matches; match also runs on the Manager's goroutine.
+func (m *Manager) WithdrawIf(match func(Key) bool) {
+	m.ForgetIf(func(a *Asset) bool { return match(a.key) })
+	m.post(&request{event: eventWithdrawIf, keep: match})
+}
+
+// ForgetIf drops every Asset that matches, so the next Get asks again.
+func (m *Manager) ForgetIf(match func(*Asset) bool) {
+	m.assets.Range(func(_, v any) bool {
+		if a := v.(*Asset); match(a) {
+			m.ForgetAsset(a)
 		}
 		return true
 	})
-	m.post(&request{event: eventWithdrawOrigin, origin: origin})
+}
+
+// ForgetAsset drops this exact Asset, leaving a newer one for the same key alone.
+func (m *Manager) ForgetAsset(a *Asset) {
+	if m.assets.CompareAndDelete(a.key, a) {
+		m.count.Add(-1)
+	}
+}
+
+// Peek returns the Asset for key without asking for anything, or nil if there is none or its answer has expired.
+func (m *Manager) Peek(key Key) *Asset {
+	v, ok := m.assets.Load(key)
+	if !ok {
+		return nil
+	}
+	a := v.(*Asset)
+	if m.expired(a) {
+		return nil
+	}
+	return a
+}
+
+// Do runs fn on the Manager's goroutine, for touching a source's tables; fn must not block.
+func (m *Manager) Do(fn func()) {
+	m.post(&request{event: eventDo, work: func() any { fn(); return nil }})
 }
 
 // Run does work on pool, then done on the Manager's goroutine with its result, for jobs that aren't one file.
@@ -368,14 +406,16 @@ func (m *Manager) event(r *request) {
 		if a := m.active[r.key]; a != nil {
 			m.kill(a)
 		}
-	case eventWithdrawOrigin:
+	case eventWithdrawIf:
 		for key, a := range m.active {
-			if key.Origin == r.origin {
+			if r.keep(key) {
 				m.kill(a)
 			}
 		}
 	case eventWork:
 		m.queue(r.pool, r)
+	case eventDo:
+		r.work()
 	}
 }
 
@@ -399,6 +439,9 @@ func (m *Manager) end(r *request, state AssetState, result any, err error) {
 		m.count.Add(-1)
 	}
 	r.asset.finish(state, result, err, m.cfg.Clock())
+	if m.cfg.Finished != nil {
+		m.cfg.Finished(r.asset)
+	}
 }
 
 // search finds the next place to get the bytes from, or ends the request.
@@ -606,8 +649,9 @@ func (m *Manager) start(p *Pool, r *request) {
 		r.asset.claim.Store(r.claim)
 		format := m.cfg.Formats[r.asset.key.Kind]
 		key, data := r.asset.key, r.bytes
+		hit := Hit{File: r.file, Source: m.cfg.Chains[key.Place].entries[r.entry].Source}
 		p.jobs <- func() {
-			r.result, r.err = format.Decode(key, data)
+			r.result, r.err = format.Decode(key, hit, data)
 			m.report(r)
 		}
 	}

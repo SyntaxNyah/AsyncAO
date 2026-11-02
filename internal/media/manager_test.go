@@ -107,7 +107,7 @@ type fakeFormat struct {
 	measured int64
 }
 
-func (f *fakeFormat) Decode(_ Key, b []byte) (any, error) {
+func (f *fakeFormat) Decode(_ Key, _ Hit, b []byte) (any, error) {
 	f.started.Add(1)
 	if f.hold != nil {
 		<-f.hold

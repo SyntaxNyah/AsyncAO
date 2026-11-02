@@ -72,6 +72,8 @@ type Fetcher interface {
 
 // Manager walks the tiers: T1 texture, T2 raw bytes, T3 disk, then a network probe in candidate order.
 type Manager struct {
+	// bridge is non-nil when requests run on internal/media.
+	bridge   *mediaBridge
 	resolver *Resolver
 	prefs    *config.AssetPreferences
 	t2       *cache.ByteBudgetLRU[string, []byte]
@@ -294,6 +296,8 @@ type ManagerDeps struct {
 	Decoder    *DecoderPool
 	T1Contains func(url string) bool
 	T1Failed   func(base string) bool
+	// MediaSystem runs requests on internal/media in place of the pool and walk below; local-only mode keeps the walk.
+	MediaSystem bool
 	// Thumbs, when set, receives every decoded character sprite for thumbnailing.
 	Thumbs *ThumbCache
 }
@@ -304,7 +308,7 @@ func NewManager(deps ManagerDeps) *Manager {
 	if deps.Pool != nil {
 		workers = deps.Pool.Stats().Workers
 	}
-	return &Manager{
+	m := &Manager{
 		resolver:       deps.Resolver,
 		prefs:          deps.Prefs,
 		t2:             deps.T2,
@@ -323,6 +327,10 @@ func NewManager(deps ManagerDeps) *Manager {
 		conclusiveMiss: newMissSet(conclusiveMissCap),
 		running:        network.NewActiveWork(int(workers)),
 	}
+	if deps.MediaSystem && !deps.LocalMode {
+		m.bridge = newMediaBridge(m)
+	}
+	return m
 }
 
 // rawWorkName labels diagnostics for raw URL fetches, which have no AssetType.
@@ -515,6 +523,10 @@ func (m *Manager) prefetchChain(base string, alts []string, t AssetType, prio ne
 	if m.t1Failed != nil && m.t1Failed(base) {
 		return // recently failed to decode — back off (the negative cache absorbs retries)
 	}
+	if m.bridge.handles(base) {
+		m.bridge.askChain(base, alts, t, prio, suppressMissing, false)
+		return
+	}
 	if m.conclusiveMiss.has(missChainFor(base, alts, t), m.probeListGen()) {
 		m.skipExhausted(base, t, suppressMissing)
 		return
@@ -542,6 +554,9 @@ func (m *Manager) IsConclusiveMiss(base string, t AssetType) bool {
 	if m == nil {
 		return false
 	}
+	if m.bridge.handles(base) {
+		return m.bridge.isMissing(base, t)
+	}
 	return m.conclusiveMiss.has(missChain{base: base, typ: t}, m.probeListGen())
 }
 
@@ -559,6 +574,7 @@ func (m *Manager) ForgetConclusiveMisses() {
 		return
 	}
 	m.conclusiveMiss.forget()
+	m.bridge.forgetMissing("")
 }
 
 // ForgetNotFound clears the 404 cache: the network client's LRU or, in local mode, the fetcher's miss memo.
@@ -580,6 +596,7 @@ func (m *Manager) ForgetConclusiveMissesUnder(origin string) {
 		return
 	}
 	m.conclusiveMiss.forgetUnder(origin)
+	m.bridge.forgetMissing(origin)
 }
 
 // ConclusiveMissCount reports how many chains are remembered as exhausted.
@@ -608,6 +625,10 @@ func (m *Manager) PrefetchExact(url string, t AssetType, prio network.Priority) 
 	}
 	if m.t1Failed != nil && m.t1Failed(url) {
 		return // recently failed to decode — back off
+	}
+	if m.bridge.handles(url) {
+		m.bridge.askExact(url, t, prio)
+		return
 	}
 	// One rule for the Manager: a chain exhausted this session is not probed again.
 	if m.conclusiveMiss.has(missChain{base: url, typ: t}, m.probeListGen()) {
@@ -673,6 +694,10 @@ func (m *Manager) resolveExact(url string, t AssetType) {
 // PrefetchRaw warms T2/T3 for a complete URL without decoding (char.ini on hover); silent on 404.
 func (m *Manager) PrefetchRaw(url string, prio network.Priority) {
 	if url == "" {
+		return
+	}
+	if m.bridge.handles(url) {
+		m.bridge.askRaw(url, prio)
 		return
 	}
 	// Same session memory: warmCharINI re-fires when the hover returns to a name.
@@ -816,6 +841,10 @@ func fullProbeChain(prefs *config.AssetPreferences, t AssetType) []string {
 // PrefetchSticky is Prefetch for assets that survive room changes, such as UI chrome.
 func (m *Manager) PrefetchSticky(base string, t AssetType, prio network.Priority) {
 	if base == "" || !t.Valid() {
+		return
+	}
+	if m.bridge.handles(base) {
+		m.bridge.askChain(base, nil, t, prio, false, true)
 		return
 	}
 	// A sticky asset outlives room changes, so an absent one would be re-demanded in every room.
@@ -976,19 +1005,24 @@ func (m *Manager) deliver(url, base string, t AssetType, data []byte, fromPack b
 		Type:           t,
 		PlayAnimations: m.prefs.Load().PreferAnimated,
 		OnDone: func(doneURL string, d *Decoded, err error) {
-			// Never for pack bytes: this disk cache is keyed by the server URL, so user art would pose as its copy.
-			if m.thumbs != nil && err == nil && t == AssetTypeCharSprite && !fromPack &&
-				d != nil && len(d.Frames) > 0 && d.FrameOffset == 0 {
-				// Store only frame 0: later appends and the finalize would overwrite it with a mid-clip or empty frame.
-				m.thumbs.Store(base, d)
-			}
-			if err == nil && d != nil && !d.Partial {
-				m.perType[t].decoded.Add(1)
-			}
-			m.decodedCh <- DecodedAsset{URL: doneURL, Base: base, Type: t, Asset: d, Err: err, FromPack: fromPack}
-			m.NotifyDelivery()
+			m.onDecoded(doneURL, base, t, fromPack, d, err)
 		},
 	})
+}
+
+// onDecoded hands one decoded page to the render thread.
+func (m *Manager) onDecoded(url, base string, t AssetType, fromPack bool, d *Decoded, err error) {
+	// Never for pack bytes: this disk cache is keyed by the server URL, so user art would pose as its copy.
+	if m.thumbs != nil && err == nil && t == AssetTypeCharSprite && !fromPack &&
+		d != nil && len(d.Frames) > 0 && d.FrameOffset == 0 {
+		// Store only frame 0: later appends and the finalize would overwrite it with a mid-clip or empty frame.
+		m.thumbs.Store(base, d)
+	}
+	if err == nil && d != nil && !d.Partial {
+		m.perType[t].decoded.Add(1)
+	}
+	m.decodedCh <- DecodedAsset{URL: url, Base: base, Type: t, Asset: d, Err: err, FromPack: fromPack}
+	m.NotifyDelivery()
 }
 
 // SetMountLayer installs or clears the local-pack layer; readers load the atomic pointer and never lock.

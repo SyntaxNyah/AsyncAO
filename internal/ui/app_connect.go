@@ -349,6 +349,7 @@ func (a *App) Disconnect() {
 	a.cancelDownload()   // a download targets this server's assets; stop it
 	if a.d.Pool != nil { // nil in headless tests
 		a.d.Pool.BumpEpoch() // cancel queued speculation for the old server
+		a.d.Manager.CancelRoomWork()
 	}
 	a.updatePresence() // sess is nil now → clears the Discord activity
 	// A bound theme leaves with its server; the global pick returns.
@@ -1333,7 +1334,7 @@ func seedOriginFormats(mgr *assets.Manager, prefs *config.AssetPreferences, orig
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
 	defer cancel()
-	data, err := mgr.FetchRaw(ctx, origin+assets.ManifestFileName)
+	data, err := mgr.FetchManifest(ctx, origin)
 	if err != nil {
 		if errors.Is(err, network.ErrAssetNotFound) {
 			return seedResult{status: seedAbsent} // host ships no extensions.json

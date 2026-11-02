@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
@@ -197,6 +198,15 @@ func (s *RemoteSource) Observe(f File, _ []byte, err error) {
 		s.answered[host] = true
 	default:
 		s.answered[host] = false
+	}
+}
+
+// ForgetMissing drops known-missing answers for files under prefix, so they are asked about again.
+func (s *RemoteSource) ForgetMissing(prefix string) {
+	for f := range s.missing {
+		if strings.HasPrefix(string(f), prefix) {
+			delete(s.missing, f)
+		}
 	}
 }
 

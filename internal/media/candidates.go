@@ -53,7 +53,7 @@ func (b *CandidateBuilder) Build(key Key) []File {
 	if key.Class == ClassExact {
 		return []File{File(key.Origin + key.Path)}
 	}
-	order := b.order(key.Origin, key.Class)
+	order := b.order(b.originOf(key), key.Class)
 	files := make([]File, 0, len(order)*(maxAlts+1))
 	add := func(path string) {
 		for _, ext := range order {
@@ -67,6 +67,23 @@ func (b *CandidateBuilder) Build(key Key) []File {
 		}
 	}
 	return files
+}
+
+// originOf is the key's own origin, or for a key holding a whole URL, the longest origin known to contain it, then its host.
+func (b *CandidateBuilder) originOf(key Key) string {
+	if key.Origin != "" {
+		return key.Origin
+	}
+	best := ""
+	for origin := range b.origins {
+		if len(origin) > len(best) && strings.HasPrefix(key.Path, origin) {
+			best = origin
+		}
+	}
+	if best != "" {
+		return best
+	}
+	return hostOf(File(key.Path))
 }
 
 // order is the host's own list when it published one, which it expects to be used as written.
@@ -95,7 +112,7 @@ func (b *CandidateBuilder) Found(key Key, f File) {
 		return
 	}
 	if dot := strings.LastIndexByte(string(f), '.'); dot >= 0 {
-		b.Learn(key.Origin, key.Class, string(f[dot:]))
+		b.Learn(b.originOf(key), key.Class, string(f[dot:]))
 	}
 }
 
