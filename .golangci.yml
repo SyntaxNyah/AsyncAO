@@ -45,7 +45,7 @@ linters:
   exclusions:
     rules:
       # mnd applies per package: one joins this list once clean and never leaves it.
-      - path-except: ^internal[/\\](network|safepath|hwid|metrics|presence|render|theme|helper|protocol|config|courtroom|sdl|ttf|mix|platform|netproxy)[/\\]
+      - path-except: ^internal[/\\](network|safepath|hwid|metrics|presence|render|theme|helper|protocol|config|courtroom|sdl|ttf|mix|platform|netproxy|media)[/\\]
         linters:
           - mnd
       - path: _test\.go

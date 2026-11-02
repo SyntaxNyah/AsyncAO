@@ -87,8 +87,13 @@ in **Status**. Update Status in the same commit that completes a step.
         `Run(stale)`, and the debug panel's Workers tab counts refusals. The wait gate asks again when the count changes; other one-shot
         requests, such as `begin`'s, are lost if refused, though the scene repair re-requests what the stage draws
   - [x] `messageNeeds`: one list feeds the wait gate's checks and its requests. `begin` still builds its own
-  - [ ] worker architecture, design under discussion with the maintainer: the main thread never waits on a worker
-  - [ ] off-thread texture preparation (decided 2026-11-01): spike, then asset uploads, then prerendered variants. See below
+  - [ ] media system and its threading (design decided 2026-11-02: https://claude.ai/artifact/5CvNJgYsE5a2DkhYqz4ZtU), built as
+        `internal/media` beside `internal/assets`, with callers moved over in slices and the old pipeline deleted last
+    - [x] core: `Manager` on its own goroutine, `Get` over a concurrent map, `Pool`, `Chain`, `Source`. Not used by the client yet
+    - [ ] real sources: memory, disk index, packs, remote index and host limits; candidates and `extensions.json`
+    - [ ] image format on `DecoderPool`'s streaming decode, and `Pump` on `TakeResults`
+    - [ ] move callers: courtroom, then screens, theme and audio; music streaming; then delete the old pipeline
+  - [ ] off-thread texture preparation: waits for the renderer overhaul (decided 2026-11-02). See below
   - [x] a sprite sometimes shows its old animation for a frame before the right one (reported 2026-11-01): the wait gate
         released on a first frame or a reduced page. The speaker's sprites now wait for every frame; a pair partner's still
         release on the first frame, as stilling them each message would re-decode them each time

@@ -39,13 +39,10 @@ add TCP framing back.
 3. **No per-asset preference writes** — learning marks dirty, the saver flushes.
 4. **No unbounded** goroutines, channels, queues, or caches. Everything has a
    named cap.
-5. **No mutex on the resolver read path** — `atomic.Pointer` snapshot only;
-   writes are copy-on-write + CAS.
+5. *(Removed; the number stays so other rules keep theirs.)*
 6. **Never re-probe a cached 404** inside its TTL; singleflight collapses
    duplicate in-flight fetches.
-7. **Results are never dropped or stolen.** Backpressure sheds *speculative
-   jobs* (oldest low-priority), and every accepted job's `Run(stale)` is
-   invoked exactly once.
+7. *(Removed; the number stays so other rules keep theirs.)*
 8. **Race-detector clean.** `go test -race ./...` must pass before any commit.
 9. **No magic numbers, ever** — production and test code alike. Every number
    is a named `const` (or an `iota` enum when the values form a set), never a
@@ -147,6 +144,7 @@ heap corruption.
 | `internal/cache` | ByteBudgetLRU (T1/T2) + async disk tier (T3, xxhash full-URL keys) | no |
 | `internal/network` | dedup HTTP client (singleflight, 404 TTL, backoff, DNS warm), priority worker pool with epoch cancellation, master list + tiers + direct connect | no |
 | `internal/assets` | AssetType enum, lock-free resolver (learned formats), tier-walking manager, decode pool (magic-byte sniffing), WebP CGO binding + fallback, local mounts, Markov prefetcher | no (decoder is SDL-free by rule) |
+| `internal/media` | the new media system, replacing `assets` in slices: `Manager` owns every table on one goroutine, `Get` is safe from any thread, pools run single steps. Not used by the client yet | no |
 | `internal/protocol` | AO wire (delegated to aolib-go: FantaCode + JSON), MS 2.6/2.8 parse/build, pairing semantics, FeatureSet, WebSocket conn | no |
 | `internal/packetutil` | thin bridge over aolib-go: FantaCode primitives, enum maps, typed-parser dispatch, MS both-wire codec | no |
 | `internal/courtroom` | session handshake reducer, message lifecycle state machine, typewriter pacing, URL conventions, char.ini | no |
