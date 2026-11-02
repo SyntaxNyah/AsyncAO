@@ -95,7 +95,9 @@ in **Status**. Update Status in the same commit that completes a step.
     - [ ] sources still to build: packs on shadow paging, saving the disk index and learned formats, character mapping
     - [x] the client runs on it: `assets.Manager`'s requests go through `internal/media`, so callers and `Pump` are unchanged, and
           `-old-media` switches back for comparison. Raw fetch paths, the debug panel counts and music streaming aren't moved
-    - [ ] test build for real rooms
+    - [ ] test build for real rooms: pushed 2026-11-02, not yet tried in a room by anyone. Do this first, then send it to SyntaxNyah
+    - [ ] known problems from the benchmark: on a host with no `extensions.json`, 200 missing sprites cost 2,400 requests against the
+          old 1,600 until character mapping exists; peak heap with files asked for every frame is 384-617 MiB, unexplained
     - [ ] move callers: courtroom, then screens, theme and audio; `Pump` on `TakeResults`; music streaming; then delete the old pipeline
   - [ ] off-thread texture preparation: waits for the renderer overhaul (decided 2026-11-02). See below
   - [x] a sprite sometimes shows its old animation for a frame before the right one (reported 2026-11-01): the wait gate
