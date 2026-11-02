@@ -96,7 +96,7 @@ in **Status**. Update Status in the same commit that completes a step.
     - [x] the client runs on it: `assets.Manager`'s requests go through `internal/media`, so callers and `Pump` are unchanged, and
           `-old-media` switches back for comparison. Raw fetch paths, the debug panel counts and music streaming aren't moved
     - [x] test build for real rooms: tried by the maintainer 2026-11-02, stable, slightly more memory than the old pipeline
-    - [ ] send the test build to SyntaxNyah
+    - [x] send the test build to SyntaxNyah: tested 2026-11-02, went well
     - [ ] known problems from the benchmark: on a host with no `extensions.json`, 200 missing sprites cost 2,400 requests against the
           old 1,600 until character mapping exists; peak heap with files asked for every frame is 384-617 MiB, unexplained
     - [ ] move callers: courtroom, then screens, theme and audio; `Pump` on `TakeResults`; music streaming; then delete the old pipeline
