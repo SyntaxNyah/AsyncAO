@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
@@ -33,6 +34,10 @@ type mediaBridge struct {
 	compute *media.Pool
 	cancel  context.CancelFunc
 	closing sync.Once
+	// hostLists maps each extra host in use to its media.ManifestState; written on the Manager's goroutine.
+	// hostListsGen counts its changes, so a reader can skip it while nothing changed.
+	hostLists    sync.Map
+	hostListsGen atomic.Uint64
 }
 
 func newMediaBridge(m *Manager) *mediaBridge {
@@ -249,14 +254,46 @@ func (m *Manager) SetAssetHosts(origin string, hosts []string) {
 		if !b.builder.SetHosts(origin, clean) {
 			return
 		}
+		// Only hosts still in some list keep a state, so the table stays as small as the lists.
+		b.hostLists.Range(func(k, _ any) bool {
+			if !b.builder.Uses(k.(string)) {
+				b.hostLists.Delete(k)
+			}
+			return true
+		})
 		for _, host := range clean {
-			media.Join(b.media, b.network, b.remote, bridgeFetcher{m}, b.builder, host, nil)
+			b.hostLists.Store(host, media.ManifestUnchecked)
+			media.Join(b.media, b.network, b.remote, bridgeFetcher{m}, b.builder, host, func(s media.ManifestState) {
+				if b.builder.Uses(host) {
+					b.hostLists.Store(host, s)
+					b.hostListsGen.Add(1)
+				}
+			})
 		}
 		b.media.ForgetIf(func(a *media.Asset) bool {
 			return a.State() == media.Missing && strings.HasPrefix(a.Key().Path, origin)
 		})
 		b.remote.ForgetMissing(origin)
 	})
+}
+
+// HostListsChanged counts changes to the extra hosts' format-list states.
+func (m *Manager) HostListsChanged() uint64 {
+	if m == nil || m.bridge == nil {
+		return 0
+	}
+	return m.bridge.hostListsGen.Load()
+}
+
+// HostListState says what reading an extra host's extensions.json found; safe from any thread.
+func (m *Manager) HostListState(host string) media.ManifestState {
+	if m == nil || m.bridge == nil {
+		return media.ManifestUnchecked
+	}
+	if v, ok := m.bridge.hostLists.Load(host); ok {
+		return v.(media.ManifestState)
+	}
+	return media.ManifestUnchecked
 }
 
 // CancelRoomWork withdraws everything not started that isn't sticky, when leaving a server.

@@ -216,12 +216,12 @@ func TestTransportFailurePutsAHostBackToOneWorker(t *testing.T) {
 
 func TestJoinConfirmsHostEvenWithA404(t *testing.T) {
 	r := newRemoteRig(t, map[string][]byte{})
-	done := make(chan bool, 1)
-	Join(r.m, r.network, r.remote, r.fetch, r.builder, testOrigin, func(found bool) { done <- found })
+	done := make(chan ManifestState, 1)
+	Join(r.m, r.network, r.remote, r.fetch, r.builder, testOrigin, func(s ManifestState) { done <- s })
 	select {
-	case found := <-done:
-		if found {
-			t.Fatal("a 404 counted as a manifest")
+	case s := <-done:
+		if s != ManifestAbsent {
+			t.Fatalf("a 404 reported state %d, want absent", s)
 		}
 	case <-time.After(testTimeout):
 		t.Fatal("join did not finish")
@@ -236,9 +236,9 @@ func TestJoinConfirmsHostEvenWithA404(t *testing.T) {
 func TestManifestSetsFormatsAndTheirOrder(t *testing.T) {
 	manifest := []byte(`{"emote_extensions": [".png", ".webp.animated", ".bogus"]}`)
 	r := newRemoteRig(t, map[string][]byte{testOrigin + ManifestFile: manifest})
-	done := make(chan bool, 1)
-	Join(r.m, r.network, r.remote, r.fetch, r.builder, testOrigin, func(found bool) { done <- found })
-	if !<-done {
+	done := make(chan ManifestState, 1)
+	Join(r.m, r.network, r.remote, r.fetch, r.builder, testOrigin, func(s ManifestState) { done <- s })
+	if <-done != ManifestRead {
 		t.Fatal("manifest not read")
 	}
 	a := r.m.Get(sprite("c/e"), Now)

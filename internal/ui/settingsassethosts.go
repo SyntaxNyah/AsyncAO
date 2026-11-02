@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
@@ -17,6 +18,7 @@ const (
 	assetHostFieldW   = 420
 	assetHostAddW     = 70
 	assetHostMoveW    = 56
+	assetHostMoves    = 2 // Up and Down
 	assetHostRemoveW  = 80
 	assetHostGap      = 8
 	assetHostRowH     = 30
@@ -53,17 +55,26 @@ func (a *App) drawAssetHostSettings(y, w int32) int32 {
 
 	snap := a.d.Prefs.Load()
 	own := snap.ServerWarmInfoFor(key).Origin
+	shown := own
 	if own == "" {
-		own = "not known until you join this server once"
+		shown = "not known until you join this server once"
 	}
-	c.LabelClipped(pad+assetHostIndent, y, w-pad-assetHostIndent-scrollBarW, "1. "+own+"  (the server's own host)", ColTextDim)
+	buttonsX := pad + assetHostIndent + assetHostFieldW + assetHostGap
+	statusX := buttonsX + assetHostMoves*(assetHostMoveW+assetHostGap) + assetHostRemoveW + assetHostGap
+	statusW := w - statusX - scrollBarW
+	c.LabelClipped(pad+assetHostIndent, y, assetHostFieldW, "1. "+shown+"  (the server's own host)", ColTextDim)
+	if own != "" {
+		text, col := hostListLabel(a.ownHostListState(own))
+		c.LabelClipped(statusX, y, statusW, text, col)
+	}
 	y += assetHostLineH
 
 	hosts := snap.ServerAssetHosts(key)
 	changed := false
-	buttonsX := pad + assetHostIndent + assetHostFieldW + assetHostGap
 	for i, h := range hosts {
 		c.LabelClipped(pad+assetHostIndent, y+assetHostLabelDY, assetHostFieldW, strconv.Itoa(i+2)+". "+h, ColText)
+		text, col := hostListLabel(a.d.Manager.HostListState(h))
+		c.LabelClipped(statusX, y+assetHostLabelDY, statusW, text, col)
 		x := buttonsX
 		if i > 0 && c.Button(sdl.Rect{X: x, Y: y, W: assetHostMoveW, H: btnH}, "Up") {
 			hosts[i-1], hosts[i] = hosts[i], hosts[i-1]
@@ -113,4 +124,35 @@ func (a *App) drawAssetHostSettings(y, w int32) int32 {
 		}
 	}
 	return y + assetHostSectionB
+}
+
+// hostListLabel says in words what reading a host's extensions.json found, and in which color.
+func hostListLabel(s media.ManifestState) (string, sdl.Color) {
+	switch s {
+	case media.ManifestRead:
+		return "format list read", ColAccent
+	case media.ManifestAbsent:
+		return "no format list", ColTextDim
+	case media.ManifestFailed:
+		return "couldn't read format list", ColDanger
+	default:
+		return "not checked yet", ColTextDim
+	}
+}
+
+// ownHostListState is the server's own host's result, which the connect path records per host.
+func (a *App) ownHostListState(origin string) media.ManifestState {
+	st, ok := a.manifestStatus[hostOfURL(origin)]
+	switch {
+	case !ok:
+		return media.ManifestUnchecked
+	case st == seedApplied:
+		return media.ManifestRead
+	case st == seedAbsent:
+		return media.ManifestAbsent
+	case st == seedFailed:
+		return media.ManifestFailed
+	default:
+		return media.ManifestUnchecked
+	}
 }

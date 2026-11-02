@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
@@ -291,4 +292,18 @@ func TestBridgeExtraHostServesWhatTheServerLacks(t *testing.T) {
 	if !slices.Contains(host.askedFor(), mirror+ManifestFileName) {
 		t.Fatal("the mirror's extensions.json was not read")
 	}
+	waitUntil(t, "the mirror to report no list", func() bool { return r.manager.HostListState(mirror) == media.ManifestAbsent })
+}
+
+func TestBridgeReportsAnExtraHostsListAndForgetsARemovedHost(t *testing.T) {
+	const mirror = "http://mirror.test/ao/"
+	host := &bridgeFakeHost{files: map[string][]byte{mirror + ManifestFileName: []byte(`{"emote_extensions": [".png"]}`)}}
+	r := newBridgeRig(t, host)
+	if s := r.manager.HostListState(mirror); s != media.ManifestUnchecked {
+		t.Fatalf("before joining: %d, want unchecked", s)
+	}
+	r.manager.SetAssetHosts(bridgeTestOrigin, []string{mirror})
+	waitUntil(t, "the mirror's list to be read", func() bool { return r.manager.HostListState(mirror) == media.ManifestRead })
+	r.manager.SetAssetHosts(bridgeTestOrigin, nil)
+	waitUntil(t, "the removed mirror to be forgotten", func() bool { return r.manager.HostListState(mirror) == media.ManifestUnchecked })
 }

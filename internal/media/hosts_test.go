@@ -1,9 +1,11 @@
 package media
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 )
@@ -122,5 +124,29 @@ func TestSettingTheSameHostsAgainChangesNothing(t *testing.T) {
 	}
 	if b.SetHosts(testOrigin, []string{testMirror}) {
 		t.Fatal("the same list reported a change, which would ask known misses again")
+	}
+}
+
+func joinState(t *testing.T, r *remoteRig) ManifestState {
+	t.Helper()
+	done := make(chan ManifestState, 1)
+	Join(r.m, r.network, r.remote, r.fetch, r.builder, testMirror, func(s ManifestState) { done <- s })
+	select {
+	case s := <-done:
+		return s
+	case <-time.After(testTimeout):
+		t.Fatal("join did not finish")
+		return ManifestUnchecked
+	}
+}
+
+func TestAnUnreadableListOrADeadHostReportsFailed(t *testing.T) {
+	r := newRemoteRig(t, map[string][]byte{testMirror + ManifestFile: []byte("not json")})
+	if s := joinState(t, r); s != ManifestFailed {
+		t.Fatalf("unreadable list reported %d, want failed", s)
+	}
+	r.fetch.setBroken(errors.New("connection refused"))
+	if s := joinState(t, r); s != ManifestFailed {
+		t.Fatalf("dead host reported %d, want failed", s)
 	}
 }

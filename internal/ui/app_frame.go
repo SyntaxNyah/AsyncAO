@@ -287,6 +287,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollThemeCopy()   // lands a finished copy-for-editing (themecopy.go)
 	a.pollThemeCreate() // lands a finished theme mint (themecreate.go)
 	a.pollManifest()
+	a.logHostLists()
 	a.maybeProbeCasing() // OFF unless the user picked Auto casing (cheap no-op otherwise)
 	a.pollCasingProbe()
 	a.pollMountIndex() // lands a finished local-pack index (no-op when no mounts)

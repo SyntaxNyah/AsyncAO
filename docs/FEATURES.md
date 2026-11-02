@@ -43,7 +43,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   ASS, always asked first) lacks a file, the hosts are asked top to bottom,
   each with the formats its own `extensions.json` lists; the first host that
   has the file wins. Changing the list makes files already marked missing
-  searched again. The new media system only; `-old-media` ignores them.
+  searched again. Each host, the server's own included, shows whether its
+  format list was read, is absent, couldn't be read, or isn't checked yet,
+  and the debug log gets one line per extra host when its result lands.
+  The new media system only; `-old-media` ignores them.
 - **Desks follow the manifest by default** (Settings → Formats): desk overlays
   auto-detect from the server's `extensions.json` like every other class
   (desks share the manifest's background class). Tick "Always use WebP for

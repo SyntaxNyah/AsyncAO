@@ -16,6 +16,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/hwid"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/presence"
@@ -998,7 +999,29 @@ func (a *App) installAssetOrigin(origin string) {
 
 // applyAssetHosts hands the connected server's extra asset hosts to the media system.
 func (a *App) applyAssetHosts() {
-	a.d.Manager.SetAssetHosts(a.urls.Origin(), a.d.Prefs.Load().ServerAssetHosts(a.serverKey))
+	a.assetHosts = a.d.Prefs.Load().ServerAssetHosts(a.serverKey)
+	a.d.Manager.SetAssetHosts(a.urls.Origin(), a.assetHosts)
+}
+
+// logHostLists writes each extra host's format-list result to the debug log once it lands.
+func (a *App) logHostLists() {
+	gen := a.d.Manager.HostListsChanged()
+	if gen == a.hostListsSeen {
+		return
+	}
+	a.hostListsSeen = gen
+	for _, host := range a.assetHosts {
+		state := a.d.Manager.HostListState(host)
+		if state == media.ManifestUnchecked || a.hostListsLogged[host] == state {
+			continue
+		}
+		if a.hostListsLogged == nil {
+			a.hostListsLogged = map[string]media.ManifestState{}
+		}
+		a.hostListsLogged[host] = state
+		text, _ := hostListLabel(state)
+		a.pushDebug("extensions.json: extra host " + host + ": " + text)
+	}
 }
 
 // rebuildAssetOrigin wires the URL builder to local mounts or the server's

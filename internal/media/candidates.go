@@ -41,6 +41,16 @@ func NewCandidateBuilder() *CandidateBuilder {
 	return &CandidateBuilder{origins: map[string]*originHints{}, extras: map[string][]string{}}
 }
 
+// Uses reports whether any origin asks host as an extra host.
+func (b *CandidateBuilder) Uses(host string) bool {
+	for _, hosts := range b.extras {
+		if slices.Contains(hosts, host) {
+			return true
+		}
+	}
+	return false
+}
+
 // SetHosts sets the hosts asked, in this order, after origin, and reports whether that changed anything;
 // each must be an origin ending in a slash.
 func (b *CandidateBuilder) SetHosts(origin string, hosts []string) bool {
@@ -227,8 +237,19 @@ func cleanExts(in []string) []string {
 	return out
 }
 
-// Join fetches a server's extensions.json on the Network pool. Any answer, even a 404, proves the host is alive.
-func Join(m *Manager, pool *Pool, remote *RemoteSource, fetch Fetcher, builder *CandidateBuilder, origin string, done func(found bool)) {
+// ManifestState is what reading a host's extensions.json found.
+type ManifestState uint8
+
+// The states a host's format list can be in.
+const (
+	ManifestUnchecked ManifestState = iota
+	ManifestRead
+	ManifestAbsent
+	ManifestFailed
+)
+
+// Join fetches a host's extensions.json on the Network pool. Any answer, even a 404, proves the host is alive.
+func Join(m *Manager, pool *Pool, remote *RemoteSource, fetch Fetcher, builder *CandidateBuilder, origin string, done func(ManifestState)) {
 	type answer struct {
 		data []byte
 		err  error
@@ -242,15 +263,18 @@ func Join(m *Manager, pool *Pool, remote *RemoteSource, fetch Fetcher, builder *
 		if a.err == nil || isNotFound(a.err) || isStatus(a.err) {
 			remote.Confirm(hostOf(file))
 		}
-		found := false
-		if a.err == nil {
+		state := ManifestFailed
+		switch {
+		case isNotFound(a.err):
+			state = ManifestAbsent
+		case a.err == nil:
 			if allowed, err := ParseManifest(a.data); err == nil {
 				builder.Allow(origin, allowed)
-				found = true
+				state = ManifestRead
 			}
 		}
 		if done != nil {
-			done(found)
+			done(state)
 		}
 	})
 }

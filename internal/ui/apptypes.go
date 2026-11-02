@@ -10,6 +10,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -149,6 +150,11 @@ type sessionState struct {
 	// manifestStatus records per asset host how the extensions.json probe ended; Settings → Formats reads it.
 	// Render thread only, same bound as manifestSeeded.
 	manifestStatus map[string]seedStatus
+	// assetHosts are the connected server's extra asset hosts as last handed to the media system;
+	// hostListsLogged is the format-list state each last wrote to the debug log, as of hostListsSeen. Render thread only.
+	assetHosts      []string
+	hostListsLogged map[string]media.ManifestState
+	hostListsSeen   uint64
 	// themeBound is this server's bound theme ("" = the global pick);
 	// themeBound is this server's bound theme ("" = the global pick); it wins in applyThemeAsync.
 	themeBound string
