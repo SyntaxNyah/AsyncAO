@@ -48,7 +48,7 @@ func TestAppendStreamGrowsResidentPage(t *testing.T) {
 	defer store.Purge()
 
 	base := "srv/characters/witch/(a)normal"
-	if err := store.AppendStream(base, streamChunk(0, true, 3)); err != nil {
+	if err := store.AppendStream(base, "", streamChunk(0, true, 3)); err != nil {
 		t.Fatalf("establish: %v", err)
 	}
 	page, ok := store.Get(base)
@@ -56,7 +56,7 @@ func TestAppendStreamGrowsResidentPage(t *testing.T) {
 		t.Fatalf("after establish: ok=%v frames=%d partial=%v, want true/1/true", ok, len(page.Frames), page.Partial)
 	}
 
-	if err := store.AppendStream(base, streamChunk(1, true, 3)); err != nil {
+	if err := store.AppendStream(base, "", streamChunk(1, true, 3)); err != nil {
 		t.Fatalf("append 1: %v", err)
 	}
 	page, _ = store.Get(base)
@@ -64,7 +64,7 @@ func TestAppendStreamGrowsResidentPage(t *testing.T) {
 		t.Fatalf("after append 1: frames=%d partial=%v, want 2/true", len(page.Frames), page.Partial)
 	}
 
-	if err := store.AppendStream(base, finalizeChunk(3)); err != nil {
+	if err := store.AppendStream(base, "", finalizeChunk(3)); err != nil {
 		t.Fatalf("finalize: %v", err)
 	}
 	page, _ = store.Get(base)
@@ -91,7 +91,7 @@ func TestAppendStreamKeepsLatchedScaleMode(t *testing.T) {
 	defer store.Purge()
 
 	base := "srv/characters/witch/(a)normal"
-	if err := store.AppendStream(base, streamChunk(0, true, 3)); err != nil {
+	if err := store.AppendStream(base, "", streamChunk(0, true, 3)); err != nil {
 		t.Fatalf("establish: %v", err)
 	}
 	page, ok := store.Get(base)
@@ -101,10 +101,10 @@ func TestAppendStreamKeepsLatchedScaleMode(t *testing.T) {
 	// A draw latches the filter exactly the way viewport.go does.
 	page.applyScaleMode(ren, sdl.ScaleModeNearest)
 
-	if err := store.AppendStream(base, streamChunk(1, true, 3)); err != nil {
+	if err := store.AppendStream(base, "", streamChunk(1, true, 3)); err != nil {
 		t.Fatalf("append: %v", err)
 	}
-	if err := store.AppendStream(base, streamChunk(2, true, 3)); err != nil {
+	if err := store.AppendStream(base, "", streamChunk(2, true, 3)); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	page, _ = store.Get(base)
@@ -132,10 +132,10 @@ func TestAppendStreamDropsOutOfOrder(t *testing.T) {
 	defer store.Purge()
 
 	base := "srv/characters/witch/(a)normal"
-	if err := store.AppendStream(base, streamChunk(0, true, 3)); err != nil {
+	if err := store.AppendStream(base, "", streamChunk(0, true, 3)); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.AppendStream(base, streamChunk(2, true, 3)); err != nil {
+	if err := store.AppendStream(base, "", streamChunk(2, true, 3)); err != nil {
 		t.Fatal(err)
 	}
 	page, _ := store.Get(base)
@@ -226,10 +226,10 @@ func TestAppendStreamDropsRedundantEstablish(t *testing.T) {
 	defer store.Purge()
 
 	base := "srv/characters/witch/(a)normal"
-	if err := store.AppendStream(base, streamChunk(0, true, 3)); err != nil {
+	if err := store.AppendStream(base, "", streamChunk(0, true, 3)); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.AppendStream(base, streamChunk(1, true, 3)); err != nil {
+	if err := store.AppendStream(base, "", streamChunk(1, true, 3)); err != nil {
 		t.Fatal(err)
 	}
 	page, _ := store.Get(base)
@@ -238,7 +238,7 @@ func TestAppendStreamDropsRedundantEstablish(t *testing.T) {
 	}
 
 	// A second stream re-establishing the same base must be ignored.
-	if err := store.AppendStream(base, streamChunk(0, true, 3)); err != nil {
+	if err := store.AppendStream(base, "", streamChunk(0, true, 3)); err != nil {
 		t.Fatal(err)
 	}
 	page, _ = store.Get(base)
@@ -261,7 +261,7 @@ func TestResolveRestartsOnReplacement(t *testing.T) {
 
 	base := "srv/characters/witch/(a)normal"
 	for i := 0; i < 3; i++ {
-		if err := store.AppendStream(base, streamChunk(i, true, 3)); err != nil {
+		if err := store.AppendStream(base, "", streamChunk(i, true, 3)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -306,7 +306,7 @@ func TestResolveRestartsFromNilCursor(t *testing.T) {
 
 	base := "srv/characters/witch/(a)normal"
 	for i := 0; i < 3; i++ {
-		if err := store.AppendStream(base, streamChunk(i, true, 3)); err != nil {
+		if err := store.AppendStream(base, "", streamChunk(i, true, 3)); err != nil {
 			t.Fatal(err)
 		}
 	}

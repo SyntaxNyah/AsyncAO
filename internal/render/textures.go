@@ -58,8 +58,10 @@ type TexturePage struct {
 	SourceFrames int
 	// Stilled marks a page reduced to frame 0: ContainsAnimated treats it as absent, Get still draws it.
 	Stilled bool
-	W, H    int32
-	bytes   int64
+	// File is the file a streamed page's frames come from; frames of another file never join it.
+	File  string
+	W, H  int32
+	bytes int64
 	// scaleMode/scaleModeSet memoise the filter, as the cgo call and flush must not run per frame per draw.
 	scaleMode    sdl.ScaleMode
 	scaleModeSet bool
@@ -642,15 +644,16 @@ func (s *TextureStore) enforceOversizedCapLocked(keep string) {
 	}
 }
 
-// AppendStream grows a page in the oversized map, avoiding LRU churn; the finalize chunk clears Partial.
-func (s *TextureStore) AppendStream(base string, d *assets.Decoded) error {
+// AppendStream grows a page from file in the oversized map, avoiding LRU churn; the finalize chunk clears Partial.
+// A stream from another file replaces the page, so one page never plays two files.
+func (s *TextureStore) AppendStream(base, file string, d *assets.Decoded) error {
 	defer d.Release()
 	if d.FrameOffset == 0 && len(d.Frames) > 0 {
 		// A re-decode can race this stream; re-establishing would shrink the page and strand the cursor, so keep it.
 		s.oversizedMu.RLock()
 		existing, exists := s.oversized[base]
 		s.oversizedMu.RUnlock()
-		if exists {
+		if exists && existing.File == file {
 			if existing.Stilled {
 				existing.Partial = true // the frames to regrow it follow
 			}
@@ -660,6 +663,7 @@ func (s *TextureStore) AppendStream(base string, d *assets.Decoded) error {
 		if err != nil {
 			return err
 		}
+		page.File = file
 		s.storeOversized(base, page)
 		s.clearFailed(base)
 		s.releaseHeld(base)
@@ -670,8 +674,8 @@ func (s *TextureStore) AppendStream(base string, d *assets.Decoded) error {
 	s.oversizedMu.RLock()
 	page, ok := s.oversized[base]
 	s.oversizedMu.RUnlock()
-	if !ok {
-		return nil // stream page gone (oversized cap eviction); a re-demand re-decodes
+	if !ok || page.File != file {
+		return nil // stream page gone (oversized cap eviction) or replaced; a re-demand re-decodes
 	}
 	if len(d.Frames) > 0 {
 		if len(page.Frames) != d.FrameOffset {

@@ -325,8 +325,8 @@ type Viewport struct {
 	overlayAnim animState
 	overlayGen  uint32
 
-	// prevActive* are last frame's speaker bases, so ReduceAnimatedExcept runs only when the active set changes.
-	prevActiveIdle, prevActiveTalk, prevActivePreanim string
+	// shownBases is last frame's on-screen bases, so ReduceAnimatedExcept runs only when they change.
+	shownBases [shownLayers]string
 
 	// OnPreanimDone forwards one-shot completion to the courtroom.
 	OnPreanimDone func()
@@ -686,29 +686,27 @@ func (v *Viewport) syncAnim(a *animState, base string) {
 	}
 }
 
-// reduceInactiveAnimations collapses non-speaker animations to frame 0; they re-stream when active.
+// reduceInactiveAnimations collapses animations off screen to frame 0; they re-stream when shown again.
 func (v *Viewport) reduceInactiveAnimations(scene *courtroom.Scene) {
-	if scene.Speaker.IdleBase == v.prevActiveIdle &&
-		scene.Speaker.TalkBase == v.prevActiveTalk &&
-		scene.Speaker.PreanimBase == v.prevActivePreanim {
+	// The drawn scenery can differ from the scene's while a new background loads, and both stay whole.
+	shown := [shownLayers]string{scene.Speaker.IdleBase, scene.Speaker.TalkBase, scene.Speaker.PreanimBase,
+		scene.Pair.Active, scene.BackgroundBase, v.bgAnim.base, scene.DeskBase, v.deskAnim.base}
+	if shown == v.shownBases {
 		return
 	}
-	v.prevActiveIdle = scene.Speaker.IdleBase
-	v.prevActiveTalk = scene.Speaker.TalkBase
-	v.prevActivePreanim = scene.Speaker.PreanimBase
-	const speakerSprites = 3 // idle, talk, preanim
-	active := make(map[string]bool, speakerSprites)
-	if scene.Speaker.IdleBase != "" {
-		active[scene.Speaker.IdleBase] = true
-	}
-	if scene.Speaker.TalkBase != "" {
-		active[scene.Speaker.TalkBase] = true
-	}
-	if scene.Speaker.PreanimBase != "" {
-		active[scene.Speaker.PreanimBase] = true
+	v.shownBases = shown
+	active := make(map[string]bool, shownLayers)
+	for _, base := range shown {
+		if base != "" {
+			active[base] = true
+		}
 	}
 	v.store.ReduceAnimatedExcept(active)
 }
+
+// shownLayers is how many bases reduceInactiveAnimations keeps whole: speaker idle, talk and preanim, the pair, and the
+// scene's and drawn background and desk.
+const shownLayers = 8
 
 // syncAnimSticky rebinds scenery once the new base is resident, so a position flip doesn't blank it.
 func (v *Viewport) syncAnimSticky(a *animState, base string) {
