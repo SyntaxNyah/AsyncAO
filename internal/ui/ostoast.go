@@ -1,15 +1,13 @@
 package ui
 
-import (
-	"time"
-
-	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
-)
+import "time"
 
 // osToastMinInterval rate-limits only the OS popup, so a chatty friend can't storm the notification centre.
 const osToastMinInterval = 4 * time.Second
 
-// showOSToast is best-effort: a failure stays silent, and the in-app toast is the fallback.
-func showOSToast(title, body string) {
-	_ = sdl.ShowNotification(title, body)
+// showOSToast is best-effort: the in-app toast is the fallback, and tests run without a notifier.
+func (a *App) showOSToast(title, body string) {
+	if a.d.Toasts != nil {
+		a.d.Toasts.Show(title, body)
+	}
 }

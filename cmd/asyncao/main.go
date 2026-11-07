@@ -20,6 +20,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform/toast"
 	"github.com/SyntaxNyah/AsyncAO/internal/presence"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
@@ -319,6 +320,8 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	// Enabled is checked in updatePresence, so dialing here is safe; it idles without Discord.
 	pres := presence.New(config.DefaultDiscordAppID, platform.DialDiscord)
 	defer pres.Close()
+	toasts := toast.New(toast.App{ID: appID, Name: windowTitle, Icon: appIcon})
+	defer toasts.Close()
 
 	app := ui.NewApp(uiCtx, ui.Deps{
 		Profiler:         profiler,
@@ -337,6 +340,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		Capabilities:     rt.Platform.Capabilities,
 		Preview:          preview,
 		Presence:         pres,
+		Toasts:           toasts,
 		MasterURL:        masterURL,
 		RestoreTabs:      gpuRecoveries > 0, // restarted after a GPU device loss: reopen the saved tabs
 		ConfigQuarantine: configQuarantine,

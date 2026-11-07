@@ -154,6 +154,7 @@ heap corruption.
 | `internal/render` | TextureStore (T1), viewport compositor, message raster, upload pump, SDL3_mixer audio | **yes** |
 | `internal/ui` | immediate-mode kit + screens (lobby/phone book, char select, courtroom, settings, about) | **yes** |
 | `internal/platform`, `platform/host` | what the machine is and can do (no SDL); process setup, SDL startup, hardware and shutdown (host only) | host only |
+| `internal/platform/toast` | desktop notifications: WinRT toasts under AsyncAO's own AppUserModelID and icon on Windows, none elsewhere until SDL 3.6 | no |
 | `cmd/asyncao` | flags, composition root, main loop | **yes** |
 
 ## Reference repos (read-only, sibling directories)

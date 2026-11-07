@@ -17,6 +17,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform/toast"
 	"github.com/SyntaxNyah/AsyncAO/internal/presence"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -135,6 +136,8 @@ type Deps struct {
 	Preview *render.PreviewWindow
 	// Presence is the optional Discord Rich Presence client; nil in tests.
 	Presence *presence.Client
+	// Toasts shows desktop notifications; nil in tests.
+	Toasts *toast.Notifier
 	// Profiler is the 1 Hz sampler the F3 perf HUD reads; nil in tests.
 	Profiler *metrics.Profiler
 	// MasterURL is the server-list endpoint.
