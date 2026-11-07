@@ -87,20 +87,28 @@ runs:
       env:
         SDL_PREFIX: ${{ steps.sdl.outputs.prefix }}
       run: |
-        # A cached build keeps the absolute prefix of the runner that built it, and macOS runners
-        # differ in TMPDIR, so point each package's .pc files at where the package is now.
+        # setup-sdl unpacks under TMPDIR, which differs between macOS runners, and Go's build cache
+        # keeps the link flags pkg-config gave. So every package is reached through $HOME/sdl, the
+        # same on every runner, and its .pc files name that path instead of where it was built.
+        mkdir -p "$HOME/sdl"
+        paths=""
         for root in "$SDL3_ROOT" "$SDL3_ttf_ROOT" "$SDL3_mixer_ROOT"; do
+          [ -n "$root" ] || continue
+          stable="$HOME/sdl/$(basename "$(dirname "$root")")"
+          ln -sfn "$root" "$stable"
           for pc in "$root"/lib/pkgconfig/*.pc "$root"/lib64/pkgconfig/*.pc; do
             [ -f "$pc" ] || continue
             old=$(sed -n 's/^prefix=//p' "$pc")
-            if [ -n "$old" ] && [ "$old" != "$root" ]; then
-              sed -i.bak "s|$old|$root|g" "$pc" && rm -f "$pc.bak"
+            if [ -n "$old" ] && [ "$old" != "$stable" ]; then
+              sed -i.bak "s|$old|$stable|g" "$pc" && rm -f "$pc.bak"
             fi
           done
+          paths="$paths:$stable/lib/pkgconfig:$stable/lib64/pkgconfig"
         done
-        echo "PKG_CONFIG_PATH=$SDL_PREFIX/lib/pkgconfig:$SDL_PREFIX/lib64/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
-        echo "SDL3_PREFIX=$SDL_PREFIX" >> "$GITHUB_ENV"
-        echo "LD_LIBRARY_PATH=$SDL_PREFIX/lib:$SDL_PREFIX/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+        sdl="$HOME/sdl/$(basename "$(dirname "$SDL_PREFIX")")"
+        echo "PKG_CONFIG_PATH=${paths#:}${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
+        echo "SDL3_PREFIX=$sdl" >> "$GITHUB_ENV"
+        echo "LD_LIBRARY_PATH=$sdl/lib:$sdl/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
     - name: Record the C compiler version (Windows)
       if: runner.os == 'Windows'
       shell: msys2 {0}
@@ -108,7 +116,8 @@ runs:
     - name: Record the C compiler version
       if: runner.os != 'Windows'
       shell: bash
-      run: mkdir -p .deps && cc --version > .deps/c-compiler-version
+      # The SDL path joins the Go cache key, so a cache whose link flags name another path isn't reused.
+      run: mkdir -p .deps && cc --version > .deps/c-compiler-version && echo "sdl=$HOME/sdl" >> .deps/c-compiler-version
     # Last, because the key needs the compiler above. The one place the Go version is
     # set. A minor version, not go.mod's 1.25.0, so CI gets security patches. Keep the
     # minor in step with go.mod.
