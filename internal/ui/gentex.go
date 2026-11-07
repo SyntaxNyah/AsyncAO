@@ -220,14 +220,14 @@ func genParseParams(g theme.GeneratorSpec) GenParams {
 				p.Colors[slot] = c
 			}
 		case genSlotSeed:
-			// The seed is not clamped: it is a hash input, and every value is legal.
-			p.Ints[genSlotSeed-genSlotPitch] = int32(parse.AtoiOr(kv.Value, 0))
+			// The seed takes the whole int32 range: it is a hash input, and every value is legal.
+			p.Ints[genSlotSeed-genSlotPitch], _ = parse.Int32(kv.Value, math.MinInt32, math.MaxInt32)
 		case genSlotPitch, genSlotSize, genSlotCount:
-			p.Ints[slot-genSlotPitch] = int32(value.Clamp(parse.AtoiOr(kv.Value, 0), 0, int(genIntParamMax)))
+			p.Ints[slot-genSlotPitch], _ = parse.Int32(kv.Value, 0, genIntParamMax)
 		case genSlotAngle:
 			p.Angle = uint8(parse.AtoiOr(kv.Value, 0) % theme.AngleCount)
 		case genSlotPct0, genSlotPct1:
-			p.Pcts[slot-genSlotPct0] = int16(value.Clamp(parse.AtoiOr(kv.Value, 0), 0, int(genPctMax)))
+			p.Pcts[slot-genSlotPct0], _ = parse.Int16(kv.Value, 0, int16(genPctMax))
 		}
 	}
 	return p

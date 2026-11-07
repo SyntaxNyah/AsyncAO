@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
-	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -294,11 +293,11 @@ func parseRGBTuple(raw string) (theme.RGB, bool) {
 	}
 	var rgb [channels]uint8
 	for i := range channels {
-		n, err := strconv.Atoi(strings.TrimSpace(parts[i]))
-		if err != nil {
+		c, ok := parse.Uint8(parts[i], 0, math.MaxUint8)
+		if !ok {
 			return theme.RGB{}, false
 		}
-		rgb[i] = uint8(value.Clamp(n, 0, math.MaxUint8))
+		rgb[i] = c
 	}
 	return theme.RGB{R: rgb[0], G: rgb[1], B: rgb[2]}, true
 }

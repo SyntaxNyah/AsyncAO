@@ -3,8 +3,11 @@ package parse
 
 import (
 	"image/color"
+	"math"
 	"strconv"
 	"strings"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 )
 
 // AtoiOr gives fallback for unparsable input: AO2 reads numbers with QString::toInt and uses the 0 unchecked
@@ -15,6 +18,49 @@ func AtoiOr(s string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+// Uint8 reads a decimal clamped to [lo, hi]; ok is false, and the result 0 clamped, when s is not a number.
+func Uint8(s string, lo, hi uint8) (uint8, bool) {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		n = 0 // out of range counts as no number, as in AtoiOr
+	}
+	// Bounded by constants before the narrowing, which a code scanner can follow and a generic clamp hides.
+	if n < 0 {
+		n = 0
+	} else if n > math.MaxUint8 {
+		n = math.MaxUint8
+	}
+	return value.Clamp(uint8(n), lo, hi), err == nil
+}
+
+// Int16 reads a decimal clamped to [lo, hi]; ok is false, and the result 0 clamped, when s is not a number.
+func Int16(s string, lo, hi int16) (int16, bool) {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		n = 0 // out of range counts as no number, as in AtoiOr
+	}
+	if n < math.MinInt16 {
+		n = math.MinInt16
+	} else if n > math.MaxInt16 {
+		n = math.MaxInt16
+	}
+	return value.Clamp(int16(n), lo, hi), err == nil
+}
+
+// Int32 reads a decimal clamped to [lo, hi]; ok is false, and the result 0 clamped, when s is not a number.
+func Int32(s string, lo, hi int32) (int32, bool) {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		n = 0 // out of range counts as no number, as in AtoiOr
+	}
+	if n < math.MinInt32 {
+		n = math.MinInt32
+	} else if n > math.MaxInt32 {
+		n = math.MaxInt32
+	}
+	return value.Clamp(int32(n), lo, hi), err == nil
 }
 
 const (

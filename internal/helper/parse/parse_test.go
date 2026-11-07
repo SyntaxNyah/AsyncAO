@@ -2,6 +2,7 @@ package parse_test
 
 import (
 	"image/color"
+	"math"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
@@ -62,6 +63,76 @@ func TestHexColor(t *testing.T) {
 		got, ok := parse.HexColor(tc.in)
 		if ok != tc.ok || got != tc.want {
 			t.Errorf("HexColor(%q) = %+v, %v; want %+v, %v", tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+func TestUint8(t *testing.T) {
+	const (
+		lo, hi    = 10, 200
+		inRange   = 42
+		wraps     = "300" // narrowed without a check, 300 would read as 44
+		overflows = "99999999999999999999999"
+	)
+	cases := []struct {
+		in     string
+		want   uint8
+		wantOK bool
+	}{
+		{" 42 ", inRange, true},
+		{"5", lo, true},
+		{wraps, hi, true},
+		{"-1", lo, true},
+		{"x", lo, false},
+		{overflows, lo, false},
+	}
+	for _, tc := range cases {
+		if got, ok := parse.Uint8(tc.in, lo, hi); got != tc.want || ok != tc.wantOK {
+			t.Errorf("Uint8(%q) = %d, %v, want %d, %v", tc.in, got, ok, tc.want, tc.wantOK)
+		}
+	}
+}
+
+func TestInt16(t *testing.T) {
+	const (
+		lo, hi  = -100, 100
+		inRange = -42
+	)
+	cases := []struct {
+		in     string
+		want   int16
+		wantOK bool
+	}{
+		{"-42", inRange, true},
+		{"40000", hi, true},
+		{"-40000", lo, true},
+		{"", 0, false},
+	}
+	for _, tc := range cases {
+		if got, ok := parse.Int16(tc.in, lo, hi); got != tc.want || ok != tc.wantOK {
+			t.Errorf("Int16(%q) = %d, %v, want %d, %v", tc.in, got, ok, tc.want, tc.wantOK)
+		}
+	}
+}
+
+func TestInt32(t *testing.T) {
+	const (
+		fullLo, fullHi = math.MinInt32, math.MaxInt32
+		inRange        = 123456
+	)
+	cases := []struct {
+		in     string
+		want   int32
+		wantOK bool
+	}{
+		{"123456", inRange, true},
+		{"3000000000", fullHi, true},
+		{"-3000000000", fullLo, true},
+		{"1e3", 0, false},
+	}
+	for _, tc := range cases {
+		if got, ok := parse.Int32(tc.in, fullLo, fullHi); got != tc.want || ok != tc.wantOK {
+			t.Errorf("Int32(%q) = %d, %v, want %d, %v", tc.in, got, ok, tc.want, tc.wantOK)
 		}
 	}
 }

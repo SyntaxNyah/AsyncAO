@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -1544,9 +1545,9 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		c.Label(pad+262, y+4, "×", ColTextDim)
 		settings.winHInput, hCommit = c.TextField("winh", sdl.Rect{X: pad + 276, Y: y, W: 66, H: fieldH}, settings.winHInput, "H")
 		if c.Button(sdl.Rect{X: pad + 350, Y: y, W: 70, H: btnH}, "Apply") || wCommit || hCommit {
-			if iw, ew := strconv.Atoi(strings.TrimSpace(settings.winWInput)); ew == nil {
-				if ih, eh := strconv.Atoi(strings.TrimSpace(settings.winHInput)); eh == nil && iw > 0 && ih > 0 {
-					a.applyWindowSize(iw, ih)
+			if iw, okW := parse.Int32(settings.winWInput, math.MinInt32, math.MaxInt32); okW {
+				if ih, okH := parse.Int32(settings.winHInput, math.MinInt32, math.MaxInt32); okH && iw > 0 && ih > 0 {
+					a.applyWindowSize(int(iw), int(ih))
 					settings.winLoaded = false
 				}
 			}

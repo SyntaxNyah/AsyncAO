@@ -173,10 +173,11 @@ func parseCSSColor(v string) (RGB, bool) {
 		}
 		parts := strings.Split(inner, ",")
 		if len(parts) >= rgbFields {
-			r := parse.AtoiOr(parts[0], 0)
-			g := parse.AtoiOr(parts[1], 0)
-			b := parse.AtoiOr(parts[2], 0)
-			return RGB{R: uint8(r), G: uint8(g), B: uint8(b)}, true
+			var c RGB
+			c.R, _ = parse.Uint8(parts[0], 0, math.MaxUint8)
+			c.G, _ = parse.Uint8(parts[1], 0, math.MaxUint8)
+			c.B, _ = parse.Uint8(parts[2], 0, math.MaxUint8)
+			return c, true
 		}
 	}
 	if named, ok := cssNamedColors[v]; ok {

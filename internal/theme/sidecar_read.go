@@ -448,7 +448,7 @@ func (s *Sidecar) readPane(d *INIDoc, name string, keys []string) error {
 	if c, ok := parseRGBAValue(get("divider")); ok {
 		p.Divider = c
 	}
-	p.DividerPx = uint8(value.Clamp(parse.AtoiOr(get("divider_px"), 0), 0, math.MaxUint8))
+	p.DividerPx, _ = parse.Uint8(get("divider_px"), 0, math.MaxUint8)
 
 	hosts, err := parseTextList(get("hosts"), PaneHostCap)
 	if err != nil {
@@ -522,8 +522,8 @@ func (s *Sidecar) readEffectBind(d *INIDoc, name string, keys []string) error {
 	if c, ok := parseRGBAValue(get("color")); ok {
 		e.Color = c
 	}
-	e.PeriodMs = int32(value.Clamp(parse.AtoiOr(get("period_ms"), 0), TimeMsMin, TimeMsMax))
-	e.AmpPct = int16(value.Clamp(parse.AtoiOr(get("amp_pct"), 0), 0, AmpMaxPct))
+	e.PeriodMs, _ = parse.Int32(get("period_ms"), TimeMsMin, TimeMsMax)
+	e.AmpPct, _ = parse.Int16(get("amp_pct"), 0, AmpMaxPct)
 	e.Clock = parseClockIndex(get("clock"))
 	s.Effects = append(s.Effects, e)
 	return s.markUnknownKeys(name, keys, effectBindKeyKnown)
@@ -570,7 +570,7 @@ func (s *Sidecar) readElement(d *INIDoc, name string, keys []string) error {
 
 	e := Element{ID: id, Kind: kind}
 	e.Band = ElementBand(s.enumOrDegrade(name, "band", get("band"), elementBandNames[:], uint8(BandBackdrop)))
-	e.Z = int16(value.Clamp(parse.AtoiOr(get("z"), 0), ZMin, ZMax))
+	e.Z, _ = parse.Int16(get("z"), ZMin, ZMax)
 	e.Space = Space(s.enumOrDegrade(name, "space", get("space"), spaceNames[:], uint8(SpaceCourtroom)))
 
 	var err error
@@ -595,7 +595,7 @@ func (s *Sidecar) readElement(d *INIDoc, name string, keys []string) error {
 	e.Fit = ElementFit(s.enumOrDegrade(name, "fit", get("fit"), fitNames[:], uint8(FitStretch)))
 	e.Slice = parseSliceValue(get("slice"))
 	if raw := get("nine_slice"); raw != "" && get("slice") == "" {
-		n := int16(value.Clamp(parse.AtoiOr(raw, 0), ZMin, ZMax))
+		n, _ := parse.Int16(raw, ZMin, ZMax)
 		e.Slice = [4]int16{n, n, n, n}
 	}
 
@@ -610,11 +610,11 @@ func (s *Sidecar) readElement(d *INIDoc, name string, keys []string) error {
 	if c, ok := parseRGBAValue(get("stroke")); ok {
 		e.Stroke = c
 	}
-	e.StrokePx = uint8(value.Clamp(parse.AtoiOr(get("stroke_px"), 0), 0, math.MaxUint8))
+	e.StrokePx, _ = parse.Uint8(get("stroke_px"), 0, math.MaxUint8)
 	if c, ok := parseRGBAValue(get("tint")); ok {
 		e.Tint = c
 	}
-	e.Opacity = uint8(value.Clamp(parse.AtoiOr(get("opacity"), 0), 0, math.MaxUint8))
+	e.Opacity, _ = parse.Uint8(get("opacity"), 0, math.MaxUint8)
 
 	if e.Text, err = s.elementText(name, get("text")); err != nil {
 		return err
@@ -630,11 +630,11 @@ func (s *Sidecar) readElement(d *INIDoc, name string, keys []string) error {
 
 	e.Clock = parseClockIndex(get("clock"))
 	// Clamp, never convert: see TimeMsMin.
-	e.PhaseMs = int32(value.Clamp(parse.AtoiOr(get("phase_ms"), 0), TimeMsMin, TimeMsMax))
+	e.PhaseMs, _ = parse.Int32(get("phase_ms"), TimeMsMin, TimeMsMax)
 	e.Loop = parseBoolValue(get("loop"))
 	e.Effect = EffectKind(s.enumOrDegrade(name, "effect", get("effect"), effectNames[:], uint8(FXNone)))
-	e.EffectPeriodMs = int32(value.Clamp(parse.AtoiOr(get("effect_period_ms"), 0), TimeMsMin, TimeMsMax))
-	e.EffectAmpPct = int16(value.Clamp(parse.AtoiOr(get("effect_amp_pct"), 0), 0, AmpMaxPct))
+	e.EffectPeriodMs, _ = parse.Int32(get("effect_period_ms"), TimeMsMin, TimeMsMax)
+	e.EffectAmpPct, _ = parse.Int16(get("effect_amp_pct"), 0, AmpMaxPct)
 	// "decimate" is stored inverted, so an absent key must leave NoDecimate false.
 	if raw := get("decimate"); raw != "" {
 		e.NoDecimate = !parseBoolValue(raw)
@@ -804,7 +804,7 @@ func parseSliceValue(raw string) [4]int16 {
 	}
 	parts := strings.Split(raw, tupleSeparator)
 	for i := 0; i < len(out) && i < len(parts); i++ {
-		out[i] = int16(value.Clamp(parse.AtoiOr(parts[i], 0), ZMin, ZMax))
+		out[i], _ = parse.Int16(parts[i], ZMin, ZMax)
 	}
 	return out
 }
@@ -823,14 +823,12 @@ func parseRGBAValue(raw string) (RGBA, bool) {
 	if len(parts) < rgbFields {
 		return RGBA{}, false
 	}
-	c := RGBA{
-		R: uint8(value.Clamp(parse.AtoiOr(parts[0], 0), 0, math.MaxUint8)),
-		G: uint8(value.Clamp(parse.AtoiOr(parts[1], 0), 0, math.MaxUint8)),
-		B: uint8(value.Clamp(parse.AtoiOr(parts[2], 0), 0, math.MaxUint8)),
-		A: OpacityOpaque,
-	}
+	c := RGBA{A: OpacityOpaque}
+	c.R, _ = parse.Uint8(parts[0], 0, math.MaxUint8)
+	c.G, _ = parse.Uint8(parts[1], 0, math.MaxUint8)
+	c.B, _ = parse.Uint8(parts[2], 0, math.MaxUint8)
 	if len(parts) > rgbFields {
-		c.A = uint8(value.Clamp(parse.AtoiOr(parts[3], 0), 0, math.MaxUint8))
+		c.A, _ = parse.Uint8(parts[3], 0, math.MaxUint8)
 	}
 	return c, true
 }
@@ -873,11 +871,11 @@ func parseAngle(raw string) uint8 {
 
 // parseSpeedPct clamps a clock's speed; 0 means undeclared and stays 0.
 func parseSpeedPct(raw string) int16 {
-	v := parse.AtoiOr(raw, 0)
+	v, _ := parse.Int16(raw, math.MinInt16, math.MaxInt16)
 	if v == 0 {
 		return 0
 	}
-	return int16(value.Clamp(v, SpeedMinPct, SpeedMaxPct))
+	return value.Clamp(v, SpeedMinPct, SpeedMaxPct)
 }
 
 // parseClockIndex falls back to shared clock 0 past the pool, not a neighbour's group.

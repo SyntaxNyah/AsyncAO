@@ -407,7 +407,7 @@ func sliceIsHeldByItsAlias(d *INIDoc, section string, e *Element) bool {
 	if _, canonical := d.Get(section, "slice"); canonical {
 		return false // both spellings present: the canonical one is the one we keep
 	}
-	n := int16(value.Clamp(parse.AtoiOr(raw, 0), ZMin, ZMax))
+	n, _ := parse.Int16(raw, ZMin, ZMax)
 	return e.Slice == [4]int16{n, n, n, n}
 }
 

@@ -2,6 +2,7 @@ package theme
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -607,9 +608,9 @@ func parseRGB(raw string) (RGB, bool) {
 	if len(parts) < rgbFields {
 		return RGB{}, false
 	}
-	return RGB{
-		R: uint8(parse.AtoiOr(parts[0], 0)),
-		G: uint8(parse.AtoiOr(parts[1], 0)),
-		B: uint8(parse.AtoiOr(parts[2], 0)),
-	}, true
+	var c RGB
+	c.R, _ = parse.Uint8(parts[0], 0, math.MaxUint8)
+	c.G, _ = parse.Uint8(parts[1], 0, math.MaxUint8)
+	c.B, _ = parse.Uint8(parts[2], 0, math.MaxUint8)
+	return c, true
 }
