@@ -85,14 +85,22 @@ func ScanDiskIndex(root string) ([]string, error) {
 // Adopt adds scanned entries to the index, on the Manager's goroutine.
 func (s *DiskSource) Adopt(keys []string) {
 	for _, k := range keys {
-		s.index[k] = struct{}{}
+		s.add(k)
 	}
 }
 
 // Keep queues bytes for the disk writer and indexes them; a dropped write heals through a failed read.
 func (s *DiskSource) Keep(f File, data []byte) {
 	s.disk.Put(string(f), data)
-	s.index[cache.Key(string(f))] = struct{}{}
+	s.add(cache.Key(string(f)))
+}
+
+// add indexes one entry; past diskIndexCap the index starts over, which only costs repeat requests.
+func (s *DiskSource) add(key string) {
+	if len(s.index) >= diskIndexCap {
+		clear(s.index)
+	}
+	s.index[key] = struct{}{}
 }
 
 // Has answers from the index.
@@ -133,6 +141,8 @@ const (
 	HostAnsweredWorkers = 16
 	// remoteIndexCap bounds each table; past it the table starts over, which only costs repeat requests.
 	remoteIndexCap = 1 << 20
+	// diskIndexCap bounds the disk index, which never shrinks when the disk cache evicts.
+	diskIndexCap = 1 << 20
 )
 
 // RemoteSource is the remote index and the query behind it: a table of files known to exist and known to be missing.

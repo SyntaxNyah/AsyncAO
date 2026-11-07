@@ -14,27 +14,26 @@ type Chain struct {
 // NewChain builds a chain that asks its sources in this order.
 func NewChain(entries ...Entry) *Chain { return &Chain{entries: entries} }
 
-// tried marks one source's copy of a file that failed, so a bad copy can't hide the next one.
-type tried struct {
+// location is one source's copy of one file.
+type location struct {
 	entry int
 	file  File
 }
 
-// find asks each source about every candidate before moving on, so any known copy beats a request that may miss.
-func (c *Chain) find(files []File, skip map[tried]bool) (index int, file File, found bool) {
+// locations lists where one name's files may be, in the order to ask: copies a source has, then copies no source
+// knows about yet, each in source order; a copy a source knows is absent is left out. Any copy of a name wins, as AO2's
+// get_real_path asks every mount for one name (path_functions.cpp:399).
+func (c *Chain) locations(files []File) []location {
+	var held, unknown []location
 	for i, e := range c.entries {
 		for _, f := range files {
-			if !skip[tried{i, f}] && e.Source.Has(f) == Yes {
-				return i, f, true
+			switch e.Source.Has(f) {
+			case Yes:
+				held = append(held, location{i, f})
+			case Unknown:
+				unknown = append(unknown, location{i, f})
 			}
 		}
 	}
-	for i, e := range c.entries {
-		for _, f := range files {
-			if !skip[tried{i, f}] && e.Source.Has(f) == Unknown {
-				return i, f, true
-			}
-		}
-	}
-	return 0, "", false
+	return append(held, unknown...)
 }

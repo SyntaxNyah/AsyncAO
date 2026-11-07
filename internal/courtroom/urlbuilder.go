@@ -203,11 +203,11 @@ func emotePrefix(kind EmoteKind) string {
 	return ""
 }
 
-// EmoteAlts returns the spellings behind Emote(): bare, then prefix folder; for PrefetchChain.
+// EmoteAlts returns the spellings behind Emote() in AO2's order: prefix folder, then bare (animationlayer.cpp:437-443).
 func (u URLBuilder) EmoteAlts(character, emote string, kind EmoteKind) []string {
 	return []string{
-		u.EmoteBare(character, emote),
 		u.EmoteFolder(character, emote, kind),
+		u.EmoteBare(character, emote),
 	}
 }
 
@@ -217,7 +217,18 @@ const emotePrefixLen = 3
 // SpriteHealAlts rebuilds EmoteAlts' chain from an Emote() base, for holders of only a live URL, keeping this out of
 // internal/ui. // AssetType: CharSprite
 func SpriteHealAlts(active string) []string {
-	return []string{bareSpriteBase(active), folderSpriteBase(active)}
+	return []string{folderSpriteBase(active), bareSpriteBase(active)}
+}
+
+// BackgroundAlts returns AO2's fallbacks for a position background base, in order (path_functions.cpp:108-120).
+func BackgroundAlts(base string) []string {
+	i := strings.LastIndexByte(base, '/')
+	stems := BackgroundFallbacks(base[i+1:])
+	alts := make([]string, 0, len(stems))
+	for _, stem := range stems {
+		alts = append(alts, base[:i+1]+stem)
+	}
+	return alts
 }
 
 // bareSpriteBase strips a leading "(a)"/"(b)" from the final segment; unprefixed bases pass through unchanged.

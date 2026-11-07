@@ -1653,9 +1653,12 @@ func (a *App) keepSceneAssetsWarm() {
 		// the placeholder. missChainFor keys on exact chain identity too. Others have no alternate spelling, so a plain
 		// Prefetch.
 		if throttleOpen && !demanded && a.sceneHealAllowed(base) {
-			if t == assets.AssetTypeCharSprite {
-				a.d.Manager.PrefetchChain(base, courtroom.SpriteHealAlts(base), t, network.PriorityHigh) // AssetType: CharSprite (bare + folder, so no spelling ever false-flags missing)
-			} else {
+			switch t {
+			case assets.AssetTypeCharSprite:
+				a.d.Manager.PrefetchChain(base, courtroom.SpriteHealAlts(base), t, network.PriorityHigh) // AssetType: CharSprite (folder + bare, so no spelling ever false-flags missing)
+			case assets.AssetTypeBackground:
+				a.d.Manager.PrefetchChain(base, courtroom.BackgroundAlts(base), t, network.PriorityHigh) // AssetType: Background (AO2's witness fallbacks)
+			default:
 				a.d.Manager.Prefetch(base, t, network.PriorityHigh)
 			}
 			demanded = true

@@ -75,54 +75,38 @@ func (b *CandidateBuilder) hints(origin string) *originHints {
 	return h
 }
 
-// Build lists the files a key may be: each spelling in turn, each with the formats in best-first order,
-// then the same on each extra host in its order.
-func (b *CandidateBuilder) Build(key Key) []File {
+// Build lists the files one name of a key may be: the name in each format, best first, then the same on each extra host
+// in its order, as AO2 asks every mount for a name before the next name.
+func (b *CandidateBuilder) Build(key Key, name string) []File {
 	origin := b.originOf(key)
-	paths := []string{key.Path}
-	if key.Class != ClassExact {
-		for _, alt := range key.Alts {
-			if alt != "" {
-				paths = append(paths, alt)
-			}
-		}
-	}
-	files := b.at(key.Class, origin, key.Origin, paths)
+	files := b.at(key.Class, origin, key.Origin, name)
 	extras := b.extras[origin]
 	if len(extras) == 0 {
 		return files
 	}
 	if key.Origin == "" {
 		// A key holding whole URLs moves to another host by its path under origin.
-		rel := paths[:0:0]
-		for _, p := range paths {
-			if r, ok := strings.CutPrefix(p, origin); ok {
-				rel = append(rel, r)
-			}
+		rel, ok := strings.CutPrefix(name, origin)
+		if !ok {
+			return files
 		}
-		paths = rel
+		name = rel
 	}
 	for _, host := range extras {
-		files = append(files, b.at(key.Class, host, host, paths)...)
+		files = append(files, b.at(key.Class, host, host, name)...)
 	}
 	return files
 }
 
-// at lists each path under prefix with host's formats; an exact path is already one file.
-func (b *CandidateBuilder) at(class Class, host, prefix string, paths []string) []File {
+// at lists name under prefix with host's formats; an exact name is already one file.
+func (b *CandidateBuilder) at(class Class, host, prefix, name string) []File {
 	if class == ClassExact {
-		files := make([]File, 0, len(paths))
-		for _, p := range paths {
-			files = append(files, File(prefix+p))
-		}
-		return files
+		return []File{File(prefix + name)}
 	}
 	order := b.order(host, class)
-	files := make([]File, 0, len(order)*len(paths))
-	for _, p := range paths {
-		for _, ext := range order {
-			files = append(files, File(prefix+p+ext))
-		}
+	files := make([]File, 0, len(order))
+	for _, ext := range order {
+		files = append(files, File(prefix+name+ext))
 	}
 	return files
 }

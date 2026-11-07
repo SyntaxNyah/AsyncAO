@@ -138,15 +138,13 @@ func newRemoteRig(t *testing.T, files map[string][]byte) *remoteRig {
 	return &remoteRig{m, remote, builder, fetch, net, clock}
 }
 
-func sprite(path string, alts ...string) Key {
-	k := Key{Place: PlaceServer, Origin: testOrigin, Path: path, Kind: KindImage, Class: ClassEmote}
-	copy(k.Alts[:], alts)
-	return k
+func sprite(path string) Key {
+	return Key{Place: PlaceServer, Origin: testOrigin, Path: path, Kind: KindImage, Class: ClassEmote}
 }
 
 func TestRemoteTriesFormatsAndSpellingsInOrder(t *testing.T) {
 	r := newRemoteRig(t, map[string][]byte{testOrigin + "c/e.png": []byte("x")})
-	a := r.m.Get(sprite("c/(a)e", "c/e"), Now)
+	a := r.m.Get(sprite("c/(a)e"), Now, 0, "c/e")
 	waitFinal(t, a)
 	if !a.Ready() {
 		t.Fatalf("state %d err %v", a.State(), a.Err())
@@ -159,18 +157,18 @@ func TestRemoteTriesFormatsAndSpellingsInOrder(t *testing.T) {
 
 func TestMissingIsRememberedThenNoticedAfterItsTime(t *testing.T) {
 	r := newRemoteRig(t, map[string][]byte{})
-	a := r.m.Get(sprite("c/e"), Now)
+	a := r.m.Get(sprite("c/e"), Now, 0)
 	waitFinal(t, a)
 	if a.State() != Missing {
 		t.Fatalf("state %d err %v", a.State(), a.Err())
 	}
 	asked := len(r.fetch.askedFor())
-	if again := r.m.Get(sprite("c/e"), Now); again != a {
+	if again := r.m.Get(sprite("c/e"), Now, 0); again != a {
 		t.Fatal("a repeat ask inside the time asked the host again")
 	}
 	r.fetch.add(testOrigin+"c/e.webp", []byte("added"))
 	r.clock.add(testShortTTL)
-	b := r.m.Get(sprite("c/e"), Now)
+	b := r.m.Get(sprite("c/e"), Now, 0)
 	waitFinal(t, b)
 	if !b.Ready() || len(r.fetch.askedFor()) <= asked {
 		t.Fatalf("a file added later was not noticed: state %d", b.State())
@@ -182,7 +180,7 @@ func TestHostStartsAtOneWorkerAndAnAnswerUnlocksTheRest(t *testing.T) {
 	first := make(chan struct{})
 	r.fetch.setHang(first)
 	for i := range testAskCount {
-		r.m.Get(sprite(fmt.Sprintf("c%d/e", i)), Later)
+		r.m.Get(sprite(fmt.Sprintf("c%d/e", i)), Later, 0)
 	}
 	waitUntil(t, func() bool { return r.fetch.active.Load() == HostStartWorkers })
 	time.Sleep(testSettle)
@@ -228,7 +226,7 @@ func TestJoinConfirmsHostEvenWithA404(t *testing.T) {
 	}
 	r.fetch.setHang(make(chan struct{}))
 	for i := range testAskCount {
-		r.m.Get(sprite(fmt.Sprintf("c%d/e", i)), Later)
+		r.m.Get(sprite(fmt.Sprintf("c%d/e", i)), Later, 0)
 	}
 	waitUntil(t, func() bool { return r.fetch.active.Load() == HostAnsweredWorkers })
 }
@@ -241,7 +239,7 @@ func TestManifestSetsFormatsAndTheirOrder(t *testing.T) {
 	if <-done != ManifestRead {
 		t.Fatal("manifest not read")
 	}
-	a := r.m.Get(sprite("c/e"), Now)
+	a := r.m.Get(sprite("c/e"), Now, 0)
 	waitFinal(t, a)
 	want := []string{testOrigin + ManifestFile, testOrigin + "c/e.png", testOrigin + "c/e.webp"}
 	if asked := r.fetch.askedFor(); !slices.Equal(asked, want) {
@@ -253,12 +251,12 @@ func TestLearnedFormatGoesFirstOnlyWithoutAManifest(t *testing.T) {
 	b := NewCandidateBuilder()
 	key := sprite("e")
 	b.Learn(testOrigin, ClassEmote, config.ExtPNG)
-	if got := b.Build(key)[0]; got != File(testOrigin+"e"+config.ExtPNG) {
+	if got := b.Build(key, key.Path)[0]; got != File(testOrigin+"e"+config.ExtPNG) {
 		t.Fatalf("first %v", got)
 	}
 	b.Allow(testOrigin, map[Class][]string{ClassEmote: {config.ExtWebP, config.ExtPNG}})
 	want := []File{File(testOrigin + "e" + config.ExtWebP), File(testOrigin + "e" + config.ExtPNG)}
-	if got := b.Build(key); !slices.Equal(got, want) {
+	if got := b.Build(key, key.Path); !slices.Equal(got, want) {
 		t.Fatalf("got %v: learning must not reorder a host's own list", got)
 	}
 }
@@ -268,9 +266,9 @@ func TestAFoundFormatIsTriedFirstNextTime(t *testing.T) {
 		testOrigin + "a" + config.ExtPNG: []byte("x"),
 		testOrigin + "b" + config.ExtPNG: []byte("y"),
 	})
-	waitFinal(t, r.m.Get(sprite("a"), Now))
+	waitFinal(t, r.m.Get(sprite("a"), Now, 0))
 	before := len(r.fetch.askedFor())
-	waitFinal(t, r.m.Get(sprite("b"), Now))
+	waitFinal(t, r.m.Get(sprite("b"), Now, 0))
 	if asked := r.fetch.askedFor(); len(asked) != before+1 {
 		t.Fatalf("the second file cost %d requests: %v", len(asked)-before, asked)
 	}
@@ -282,14 +280,15 @@ func TestOneLearnedSuccessDoesNotBeatACommonFormat(t *testing.T) {
 		b.Learn(testOrigin, ClassEmote, config.ExtWebP)
 	}
 	b.Learn(testOrigin, ClassEmote, config.ExtPNG)
-	if got := b.Build(sprite("e"))[0]; got != File(testOrigin+"e"+config.ExtWebP) {
+	if got := b.Build(sprite("e"), "e")[0]; got != File(testOrigin+"e"+config.ExtWebP) {
 		t.Fatalf("first %v", got)
 	}
 }
 
 func TestExactClassIsOneFile(t *testing.T) {
 	b := NewCandidateBuilder()
-	got := b.Build(Key{Origin: testOrigin, Path: "sounds/music/a.opus", Class: ClassExact})
+	music := Key{Origin: testOrigin, Path: "sounds/music/a.opus", Class: ClassExact}
+	got := b.Build(music, music.Path)
 	if !slices.Equal(got, []File{File(testOrigin + "sounds/music/a.opus")}) {
 		t.Fatalf("got %v", got)
 	}
@@ -298,13 +297,13 @@ func TestExactClassIsOneFile(t *testing.T) {
 func TestTransportFailureFailsRatherThanMissingAndRetries(t *testing.T) {
 	r := newRemoteRig(t, map[string][]byte{testOrigin + "c/e.webp": []byte("x")})
 	r.fetch.setBroken(errors.New("connection refused"))
-	a := r.m.Get(sprite("c/e"), Now)
+	a := r.m.Get(sprite("c/e"), Now, 0)
 	waitFinal(t, a)
 	if a.State() != Failed {
 		t.Fatalf("state %d: a host that can't be reached must not mean missing", a.State())
 	}
 	r.fetch.setBroken(nil)
-	b := r.m.Get(sprite("c/e"), Now)
+	b := r.m.Get(sprite("c/e"), Now, 0)
 	waitFinal(t, b)
 	if !b.Ready() {
 		t.Fatalf("state %d after the host came back", b.State())
@@ -376,7 +375,7 @@ func heldRig(t *testing.T) (*Manager, *fakeFormat, []*Asset) {
 	m := newRig(t, format, Entry{src, nil})
 	var all []*Asset
 	for i := range later {
-		all = append(all, m.Get(image(fmt.Sprintf("l%d", i)), Later))
+		all = append(all, m.Get(image(fmt.Sprintf("l%d", i)), Later, 0))
 	}
 	waitUntil(t, func() bool { return format.started.Load() == testWorkers-1 })
 	return m, format, all
@@ -386,7 +385,7 @@ func TestNowRaisesAWaitingLaterRequest(t *testing.T) {
 	m, format, all := heldRig(t)
 	last := all[len(all)-1]
 	// Asking again with Now moves the last waiting one onto the kept worker.
-	if m.Get(last.Key(), Now) != last {
+	if m.Get(last.Key(), Now, 0) != last {
 		t.Fatal("a raise made a second Asset")
 	}
 	waitUntil(t, func() bool { return format.started.Load() == testWorkers })
@@ -421,7 +420,7 @@ func TestWithdrawDuringAStepEndsWhenItReports(t *testing.T) {
 	src.put("a", []byte("x"))
 	format := &fakeFormat{hold: make(chan struct{})}
 	m := newRig(t, format, Entry{src, nil})
-	a := m.Get(image("a"), Now)
+	a := m.Get(image("a"), Now, 0)
 	waitUntil(t, func() bool { return format.started.Load() == 1 })
 	m.Withdraw(a.Key())
 	time.Sleep(testSettle)
@@ -436,9 +435,9 @@ func TestWithdrawOriginLeavesOtherServersAlone(t *testing.T) {
 	r := newRemoteRig(t, map[string][]byte{})
 	hold := make(chan struct{})
 	r.fetch.setHang(hold)
-	gone := r.m.Get(sprite("b"), Later)
+	gone := r.m.Get(sprite("b"), Later, 0)
 	other := Key{Place: PlaceServer, Origin: "http://other.test/", Path: "c", Kind: KindImage, Class: ClassEmote}
-	stays := r.m.Get(other, Later)
+	stays := r.m.Get(other, Later, 0)
 	r.m.WithdrawOrigin(testOrigin)
 	time.Sleep(testSettle)
 	r.fetch.setHang(nil)
@@ -448,7 +447,7 @@ func TestWithdrawOriginLeavesOtherServersAlone(t *testing.T) {
 	if gone.State() != Withdrawn || stays.State() != Missing {
 		t.Fatalf("gone %d stays %d", gone.State(), stays.State())
 	}
-	if r.m.Get(sprite("b"), Later) == gone {
+	if r.m.Get(sprite("b"), Later, 0) == gone {
 		t.Fatal("a withdrawn Asset came back")
 	}
 }

@@ -52,23 +52,30 @@ const (
 	Now
 )
 
-// maxAlts is how many other spellings a file can have, such as a sprite without its (a) folder prefix.
-const maxAlts = 3
+// maxNames bounds the names one key is searched under; AO2's longest list, a blip's, has six.
+const maxNames = 8
 
 // Key names one thing a caller wants; Size separates an icon from the full image of the same file.
 type Key struct {
 	Place  Place
 	Origin string
 	Path   string
-	Alts   [maxAlts]string
 	Kind   Kind
 	Class  Class
 	Size   int
-	// Tag is the caller's own label for this request; Quiet and Sticky are for the caller's finish handler and WithdrawIf.
-	Tag    uint8
-	Quiet  bool
-	Sticky bool
+	// Tag is the caller's own label for what the key is, such as its asset type.
+	Tag uint8
 }
+
+// Flags are a caller's wishes for a request; every ask for the same key adds its own.
+type Flags uint8
+
+const (
+	// Quiet asks for no warning when the file is missing; it holds only while every caller asked for it.
+	Quiet Flags = 1 << iota
+	// Sticky marks work the caller keeps when it withdraws the rest; one caller asking is enough.
+	Sticky
+)
 
 // File is one exact location a source can answer for, such as a candidate URL.
 type File string

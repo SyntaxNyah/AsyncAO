@@ -99,6 +99,12 @@ in **Status**. Update Status in the same commit that completes a step.
           `-old-media` switches back for comparison. Raw fetch paths, the debug panel counts and music streaming aren't moved
     - [x] test build for real rooms: tried by the maintainer 2026-11-02, stable, slightly more memory than the old pipeline
     - [x] send the test build to SyntaxNyah: tested 2026-11-02, went well
+    - [x] fallback names in AO2's order (2026-11-07, from a background flicker): `Get(key, urgency, flags, alts...)` asks
+          every source for one name before the next, and a later name counts only once the earlier ones are known absent
+          (AO2 `get_image_path` then `get_real_path`); the file a key was found as is tried first next time, as AO2's
+          `asset_lookup_cache` is; flags left the key, so one asset is one request. The background and desk on screen
+          are never cut down, a page never grows frames from another file, and a room's background folder stays pinned
+          in memory until the background changes
     - [ ] known problems from the benchmark: on a host with no `extensions.json`, 200 missing sprites cost 2,400 requests against the
           old 1,600 until character mapping exists; peak heap with files asked for every frame is 384-617 MiB, unexplained
     - [ ] move callers: courtroom, then screens, theme and audio; `Pump` on `TakeResults`; music streaming; then delete the old pipeline

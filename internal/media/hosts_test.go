@@ -18,7 +18,7 @@ const (
 func TestExtraHostsAreAskedInOrderAfterTheServer(t *testing.T) {
 	r := newRemoteRig(t, map[string][]byte{testBackup + "c/e" + config.ExtPNG: []byte("x")})
 	r.m.Do(func() { r.builder.SetHosts(testOrigin, []string{testMirror, testBackup}) })
-	a := r.m.Get(sprite("c/e"), Now)
+	a := r.m.Get(sprite("c/e"), Now, 0)
 	waitFinal(t, a)
 	if !a.Ready() {
 		t.Fatalf("state %d err %v", a.State(), a.Err())
@@ -49,7 +49,7 @@ func TestExtraHostsAreAskedInOrderAfterTheServer(t *testing.T) {
 func TestNoExtraHostsAskedWhenTheServerHasTheFile(t *testing.T) {
 	r := newRemoteRig(t, map[string][]byte{testOrigin + "c/e" + config.ExtWebP: []byte("x")})
 	r.m.Do(func() { r.builder.SetHosts(testOrigin, []string{testMirror}) })
-	waitFinal(t, r.m.Get(sprite("c/e"), Now))
+	waitFinal(t, r.m.Get(sprite("c/e"), Now, 0))
 	if asked := r.fetch.askedFor(); !slices.Equal(asked, []string{testOrigin + "c/e" + config.ExtWebP}) {
 		t.Fatalf("asked %v", asked)
 	}
@@ -59,7 +59,7 @@ func TestEachExtraHostUsesItsOwnFormatList(t *testing.T) {
 	b := NewCandidateBuilder()
 	b.SetHosts(testOrigin, []string{testMirror})
 	b.Allow(testMirror, map[Class][]string{ClassEmote: {config.ExtPNG}})
-	got := b.Build(sprite("e"))
+	got := b.Build(sprite("e"), "e")
 	if got[len(got)-1] != File(testMirror+"e"+config.ExtPNG) || slices.Contains(got, File(testMirror+"e"+config.ExtWebP)) {
 		t.Fatalf("got %v: the mirror's list must decide its formats", got)
 	}
@@ -72,9 +72,9 @@ func TestWholeURLKeysMoveToExtraHostsByTheirPath(t *testing.T) {
 	b := NewCandidateBuilder()
 	b.SetHosts(testOrigin, []string{testMirror})
 	key := Key{Place: PlaceServer, Path: testOrigin + "c/(a)e", Kind: KindImage, Class: ClassEmote}
-	key.Alts[0] = testOrigin + "c/e"
-	got := b.Build(key)
-	for _, want := range []File{File(testMirror + "c/(a)e" + config.ExtWebP), File(testMirror + "c/e" + config.ExtPNG)} {
+	for _, name := range []string{key.Path, testOrigin + "c/e"} {
+		got := b.Build(key, name)
+		want := File(testMirror + strings.TrimPrefix(name, testOrigin) + config.ExtPNG)
 		if !slices.Contains(got, want) {
 			t.Fatalf("got %v, missing %v", got, want)
 		}
@@ -84,7 +84,8 @@ func TestWholeURLKeysMoveToExtraHostsByTheirPath(t *testing.T) {
 func TestExactFilesAreAskedOnExtraHostsToo(t *testing.T) {
 	b := NewCandidateBuilder()
 	b.SetHosts(testOrigin, []string{testMirror})
-	got := b.Build(Key{Path: testOrigin + "characters/c/char.ini", Class: ClassExact})
+	exact := Key{Path: testOrigin + "characters/c/char.ini", Class: ClassExact}
+	got := b.Build(exact, exact.Path)
 	want := []File{File(testOrigin + "characters/c/char.ini"), File(testMirror + "characters/c/char.ini")}
 	if !slices.Equal(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
@@ -97,7 +98,7 @@ func TestAFormatFoundOnAnExtraHostIsLearnedForThatHost(t *testing.T) {
 	for range testWorkers {
 		b.Found(sprite("e"), File(testMirror+"e"+config.ExtPNG))
 	}
-	got := b.Build(sprite("e"))
+	got := b.Build(sprite("e"), "e")
 	if got[0] != File(testOrigin+"e"+config.ExtWebP) {
 		t.Fatalf("got %v: the server's order changed", got)
 	}
@@ -110,7 +111,7 @@ func TestClearingExtraHostsStopsAskingThem(t *testing.T) {
 	b := NewCandidateBuilder()
 	b.SetHosts(testOrigin, []string{testMirror})
 	b.SetHosts(testOrigin, nil)
-	for _, f := range b.Build(sprite("e")) {
+	for _, f := range b.Build(sprite("e"), "e") {
 		if strings.HasPrefix(string(f), testMirror) {
 			t.Fatalf("still asks %v", f)
 		}

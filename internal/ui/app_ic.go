@@ -819,7 +819,7 @@ func (a *App) healScenery() {
 	// each heal would evict another live base forever.
 	if sc.BackgroundBase != "" && !(sc.BackgroundBase == a.bgAskBase && now.Sub(a.bgAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.BackgroundBase) && a.sceneHealAllowed(sc.BackgroundBase) {
 		a.bgAskBase, a.bgAskAt = sc.BackgroundBase, now
-		a.d.Manager.Prefetch(sc.BackgroundBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
+		a.d.Manager.PrefetchChain(sc.BackgroundBase, courtroom.BackgroundAlts(sc.BackgroundBase), assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
 	}
 	// A conclusively 404'd base never becomes Contains, so without IsMissing this re-demands a known-absent desk.
 	// The background arm skips the check: Background is never marked, to keep the viewport's hold-previous behaviour.

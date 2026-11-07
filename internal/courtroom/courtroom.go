@@ -440,14 +440,9 @@ func (c *Courtroom) prefetchScenery(bg, bgPart string) {
 	c.mgr.PrefetchChain(c.Scene.BackgroundBase, backgroundAltURLs(c.urls, bg, bgPart), assets.AssetTypeBackground, network.PriorityHigh)
 }
 
-// backgroundAltURLs turns BackgroundFallbacks into URLs; shared so the exporter bundles what the live path accepts.
+// backgroundAltURLs is BackgroundAlts for a background and position; shared so the exporter bundles what the live path accepts.
 func backgroundAltURLs(urls URLBuilder, bg, bgPart string) []string {
-	stems := BackgroundFallbacks(bgPart)
-	alts := make([]string, 0, len(stems))
-	for _, stem := range stems {
-		alts = append(alts, urls.Background(bg, stem))
-	}
-	return alts
+	return BackgroundAlts(urls.Background(bg, bgPart))
 }
 
 // isMusicStop reports AO's ~stop sentinel.
@@ -632,6 +627,7 @@ func (c *Courtroom) setBackground(bg, pos string, wipe bool) {
 	bgPart, deskPart := PositionScene(c.Scene.Position)
 	c.Scene.BackgroundBase = c.urls.Background(bg, bgPart)
 	c.Scene.DeskBase = c.urls.Background(bg, deskPart)
+	c.mgr.PinScenery(c.Scene.BackgroundBase[:strings.LastIndexByte(c.Scene.BackgroundBase, '/')+1])
 	c.prefetchScenery(bg, bgPart)
 	c.mgr.Prefetch(c.Scene.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
 	// Re-derive from the new desk base, or the new room draws the old desk: a settled message has no phase edge.

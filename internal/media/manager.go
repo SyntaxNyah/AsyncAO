@@ -3,6 +3,7 @@ package media
 import (
 	"context"
 	"errors"
+	"maps"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -13,14 +14,16 @@ const (
 	DefaultMaxAssets = 32768
 	// DefaultMissingTTL is how long a missing answer lasts, so a file a server owner adds gets noticed.
 	DefaultMissingTTL = 60 * time.Second
+	// winnersCap bounds the table of files keys were found as; a full table starts over.
+	winnersCap = 16384
 )
 
 // Config is everything a Manager is built from.
 type Config struct {
 	Chains  map[Place]*Chain
 	Formats map[Kind]Format
-	// Candidates lists the exact files a key may be, best first; it runs on the Manager's goroutine for each search.
-	Candidates func(Key) []File
+	// Candidates lists the exact files one name of a key may be, best first; it runs on the Manager's goroutine.
+	Candidates func(Key, string) []File
 	Compute    *Pool
 	// KeepBytes stores fetched bytes so an evicted result can be rebuilt without I/O; nil keeps nothing.
 	KeepBytes func(File, []byte)
@@ -62,10 +65,16 @@ const (
 type request struct {
 	event   eventKind
 	key     Key
-	keep    func(Key) bool
+	keep    func(*Asset) bool
 	asset   *Asset
 	urgency Urgency
-	skip    map[tried]bool
+	// The search only moves forward: names holds each name's files, the file found last time first; name is the next
+	// one to list; left is the current name's copies not yet asked; failed means one of them failed rather than being
+	// absent, so the file may exist and no later name may count.
+	names   [][]File
+	name    int
+	left    []location
+	failed  bool
 	step    step
 	entry   int
 	file    File
@@ -182,6 +191,8 @@ type Manager struct {
 	queueSeq []*poolQueue
 	hostBusy map[string]int
 	claimed  int64
+	// winners maps a key to the file it was last found as, tried first next time, as AO2's asset_lookup_cache is.
+	winners map[Key]File
 }
 
 // NewManager starts a Manager's goroutine.
@@ -196,7 +207,7 @@ func NewManager(cfg Config) *Manager {
 		cfg.Clock = time.Now
 	}
 	m := &Manager{cfg: cfg, wake: make(chan struct{}, 1), stop: make(chan struct{}), stopped: make(chan struct{}),
-		active: map[Key]*request{}, queues: map[*Pool]*poolQueue{}, hostBusy: map[string]int{}}
+		active: map[Key]*request{}, queues: map[*Pool]*poolQueue{}, hostBusy: map[string]int{}, winners: map[Key]File{}}
 	go m.run()
 	return m
 }
@@ -208,30 +219,33 @@ func (m *Manager) Close() {
 }
 
 // Get returns the Asset for key from any thread and never blocks: a repeat ask takes no lock and posts nothing.
-func (m *Manager) Get(key Key, urgency Urgency) *Asset {
+// alts are the other names it may be found under, best first, each asked only once every earlier one is known absent.
+func (m *Manager) Get(key Key, urgency Urgency, flags Flags, alts ...string) *Asset {
 	if v, ok := m.assets.Load(key); ok {
 		a := v.(*Asset)
-		if !m.expired(a) {
+		if !m.expired(a) && !a.lacks(alts) {
+			a.add(flags)
 			if urgency == Now && !a.urgent.Load() && a.urgent.CompareAndSwap(false, true) {
 				m.post(&request{event: eventRaise, key: key})
 			}
 			return a
 		}
-		fresh := newAsset(key, urgency)
+		fresh := newAsset(key, urgency, flags, alts)
 		if m.assets.CompareAndSwap(key, a, fresh) {
 			m.post(&request{event: eventNew, asset: fresh, urgency: urgency})
 			return fresh
 		}
-		return m.Get(key, urgency)
+		return m.Get(key, urgency, flags, alts...)
 	}
 	// Later work is refused at the cap, unstored, so the caller's next ask tries again.
 	if urgency == Later && m.count.Load() >= int64(m.cfg.MaxAssets) {
-		a := newAsset(key, urgency)
+		a := newAsset(key, urgency, flags, alts)
 		a.finish(Refused, nil, ErrRefused, m.cfg.Clock())
 		return a
 	}
-	a := newAsset(key, urgency)
+	a := newAsset(key, urgency, flags, alts)
 	if v, loaded := m.assets.LoadOrStore(key, a); loaded {
+		v.(*Asset).add(flags)
 		return v.(*Asset)
 	}
 	m.count.Add(1)
@@ -248,7 +262,7 @@ func (m *Manager) Load(ctx context.Context, key Key, urgency Urgency) (any, erro
 	if m.cfg.IsMainThread != nil && m.cfg.IsMainThread() {
 		panic("media: Load called on the main thread")
 	}
-	a := m.Get(key, urgency)
+	a := m.Get(key, urgency, 0)
 	select {
 	case <-a.done:
 		return a.Result(), a.Err()
@@ -272,13 +286,18 @@ func (m *Manager) Withdraw(key Key) {
 
 // WithdrawOrigin withdraws everything asked for from one server, for when a tab disconnects.
 func (m *Manager) WithdrawOrigin(origin string) {
-	m.WithdrawIf(func(k Key) bool { return k.Origin == origin })
+	m.WithdrawIf(func(a *Asset) bool { return a.key.Origin == origin })
 }
 
-// WithdrawIf withdraws every request whose key matches; match also runs on the Manager's goroutine.
-func (m *Manager) WithdrawIf(match func(Key) bool) {
-	m.ForgetIf(func(a *Asset) bool { return match(a.key) })
+// WithdrawIf withdraws every request whose Asset matches; match also runs on the Manager's goroutine.
+func (m *Manager) WithdrawIf(match func(*Asset) bool) {
+	m.ForgetIf(match)
 	m.post(&request{event: eventWithdrawIf, keep: match})
+}
+
+// ForgetWinners drops the remembered files that match, such as ones on a host no longer asked; call it inside Do.
+func (m *Manager) ForgetWinners(match func(Key, File) bool) {
+	maps.DeleteFunc(m.winners, match)
 }
 
 // ForgetIf drops every Asset that matches, so the next Get asks again.
@@ -407,8 +426,8 @@ func (m *Manager) event(r *request) {
 			m.kill(a)
 		}
 	case eventWithdrawIf:
-		for key, a := range m.active {
-			if r.keep(key) {
+		for _, a := range m.active {
+			if r.keep(a.asset) {
 				m.kill(a)
 			}
 		}
@@ -444,32 +463,56 @@ func (m *Manager) end(r *request, state AssetState, result any, err error) {
 	}
 }
 
-// search finds the next place to get the bytes from, or ends the request.
+// search asks the next copy of the current name, moving to the next name only once every copy is known absent, as AO2's
+// get_image_path does (path_functions.cpp:231); it ends the request when no name is left.
 func (m *Manager) search(r *request) {
 	chain := m.cfg.Chains[r.asset.key.Place]
-	if chain != nil {
-		if i, file, found := chain.find(m.cfg.Candidates(r.asset.key), r.skip); found {
-			e := chain.entries[i]
-			r.entry, r.file, r.step, r.host = i, file, stepData, ""
-			if e.Pool == nil {
-				r.bytes, r.err = e.Source.Data(file)
-				m.dataDone(r)
-				return
-			}
-			if l, ok := e.Source.(HostLimiter); ok {
-				r.host = l.Host(file)
-			}
-			r.pool = e.Pool
-			m.queue(e.Pool, r)
-			return
-		}
-	}
-	// A candidate that failed rather than being absent means the file may still exist.
-	if r.lastErr != nil {
-		m.end(r, Failed, nil, r.lastErr)
+	if chain == nil {
+		m.end(r, Missing, nil, ErrMissing)
 		return
 	}
-	m.end(r, Missing, nil, ErrMissing)
+	if r.names == nil {
+		r.names = m.namesOf(r.asset)
+	}
+	for len(r.left) == 0 {
+		if r.failed {
+			m.end(r, Failed, nil, r.lastErr)
+			return
+		}
+		if r.name == len(r.names) {
+			delete(m.winners, r.asset.key)
+			m.end(r, Missing, nil, ErrMissing)
+			return
+		}
+		r.left = chain.locations(r.names[r.name])
+		r.name++
+	}
+	at := r.left[0]
+	r.left = r.left[1:]
+	e := chain.entries[at.entry]
+	r.entry, r.file, r.step, r.host = at.entry, at.file, stepData, ""
+	if e.Pool == nil {
+		r.bytes, r.err = e.Source.Data(at.file)
+		m.dataDone(r)
+		return
+	}
+	if l, ok := e.Source.(HostLimiter); ok {
+		r.host = l.Host(at.file)
+	}
+	r.pool = e.Pool
+	m.queue(e.Pool, r)
+}
+
+// namesOf lists each name's files in order, after the file the key was found as last time.
+func (m *Manager) namesOf(a *Asset) [][]File {
+	names := make([][]File, 0, len(a.names)+1)
+	if w, ok := m.winners[a.key]; ok {
+		names = append(names, []File{w})
+	}
+	for _, name := range a.names {
+		names = append(names, m.cfg.Candidates(a.key, name))
+	}
+	return names
 }
 
 func (m *Manager) queue(p *Pool, r *request) {
@@ -541,6 +584,13 @@ func (m *Manager) afterData(r *request) {
 	if m.cfg.Found != nil {
 		m.cfg.Found(r.asset.key, r.file)
 	}
+	// An exact key with one name is one file already, so only a key with formats or names to choose from is remembered.
+	if r.asset.key.Class != ClassExact || len(r.asset.names) > 1 {
+		if len(m.winners) >= winnersCap {
+			clear(m.winners)
+		}
+		m.winners[r.asset.key] = r.file
+	}
 	format := m.cfg.Formats[r.asset.key.Kind]
 	if format == nil {
 		m.end(r, Ready, r.bytes, nil)
@@ -572,13 +622,10 @@ func (m *Manager) decodeDone(r *request) {
 	m.end(r, Ready, r.result, nil)
 }
 
-// retry skips the copy that just failed and searches again; a source reporting absence isn't an error to keep.
+// retry moves past the copy that just failed; a source reporting absence isn't an error to keep.
 func (m *Manager) retry(r *request) {
-	if r.skip == nil {
-		r.skip = map[tried]bool{}
-	}
-	r.skip[tried{r.entry, r.file}] = true
 	if !IsAbsent(r.err) {
+		r.failed = true
 		r.lastErr = r.err
 	}
 	r.bytes, r.err = nil, nil

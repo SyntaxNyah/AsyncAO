@@ -124,7 +124,7 @@ type measuringFormat struct{ *fakeFormat }
 
 func (f measuringFormat) Measure([]byte) int64 { return f.measured }
 
-func oneFile(k Key) []File { return []File{File(k.Path)} }
+func oneFile(_ Key, name string) []File { return []File{File(name)} }
 
 func image(path string) Key { return Key{Place: PlaceServer, Path: path, Kind: KindImage} }
 
@@ -160,7 +160,7 @@ func TestFileFromASourceBecomesReady(t *testing.T) {
 	defer disk.Close()
 	m := newRig(t, &fakeFormat{}, Entry{src, disk})
 
-	a := m.Get(image("a"), Now)
+	a := m.Get(image("a"), Now, 0)
 	waitFinal(t, a)
 	if !a.Ready() || a.Result() != "hello" {
 		t.Fatalf("state %d result %v", a.State(), a.Result())
@@ -180,7 +180,7 @@ func TestRepeatAsksShareOneAssetAndOneRead(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			got[i] = m.Get(image("a"), Now)
+			got[i] = m.Get(image("a"), Now, 0)
 		}()
 	}
 	wg.Wait()
@@ -197,7 +197,7 @@ func TestRepeatAsksShareOneAssetAndOneRead(t *testing.T) {
 
 func TestMissingEverywhereEnds(t *testing.T) {
 	m := newRig(t, &fakeFormat{}, Entry{newFakeSource("disk"), nil})
-	a := m.Get(image("nowhere"), Now)
+	a := m.Get(image("nowhere"), Now, 0)
 	waitFinal(t, a)
 	if a.State() != Missing || !IsMissing(a.Err()) {
 		t.Fatalf("state %d err %v", a.State(), a.Err())
@@ -212,7 +212,7 @@ func TestStaleEntryFallsThroughToNextSource(t *testing.T) {
 	defer pool.Close()
 	m := newRig(t, &fakeFormat{}, Entry{stale, pool}, Entry{good, pool})
 
-	a := m.Get(image("a"), Now)
+	a := m.Get(image("a"), Now, 0)
 	waitFinal(t, a)
 	if !a.Ready() || a.Result() != "real" {
 		t.Fatalf("state %d err %v", a.State(), a.Err())
@@ -230,7 +230,7 @@ func TestBadCopyDoesNotHideTheNextSource(t *testing.T) {
 	defer pool.Close()
 	m := newRig(t, &fakeFormat{bad: map[string]bool{"broken": true}}, Entry{pack, pool}, Entry{server, pool})
 
-	a := m.Get(image("a"), Now)
+	a := m.Get(image("a"), Now, 0)
 	waitFinal(t, a)
 	if !a.Ready() || a.Result() != "good" {
 		t.Fatalf("state %d err %v", a.State(), a.Err())
@@ -245,7 +245,7 @@ func TestKnownCopyBeatsAskingAnEarlierUnknownSource(t *testing.T) {
 	defer pool.Close()
 	m := newRig(t, &fakeFormat{}, Entry{remote, pool}, Entry{disk, pool})
 
-	a := m.Get(image("a"), Now)
+	a := m.Get(image("a"), Now, 0)
 	waitFinal(t, a)
 	if a.Result() != "local" || remote.calls.Load() != 0 {
 		t.Fatalf("result %v, %d remote requests", a.Result(), remote.calls.Load())
@@ -283,16 +283,16 @@ func TestHungHostHoldsOnlyItsOwnWorkers(t *testing.T) {
 	for i := range testAskCount {
 		k := image(string(rune('A' + i)))
 		hung.answer(File(k.Path), Unknown)
-		m.Get(k, Now)
+		m.Get(k, Now, 0)
 	}
 	deadline := time.Now().Add(testTimeout)
 	for hung.active.Load() < testHungWorkers && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 
-	inMemory := m.Get(Key{Place: PlaceTheme, Path: "cached", Kind: KindImage}, Now)
+	inMemory := m.Get(Key{Place: PlaceTheme, Path: "cached", Kind: KindImage}, Now, 0)
 	waitFinal(t, inMemory)
-	cold := m.Get(Key{Place: PlacePacks, Path: "cold", Kind: KindImage}, Now)
+	cold := m.Get(Key{Place: PlacePacks, Path: "cold", Kind: KindImage}, Now, 0)
 	waitFinal(t, cold)
 	if !inMemory.Ready() || !cold.Ready() {
 		t.Fatal("work on other sources did not finish")
@@ -314,14 +314,14 @@ func TestNowGoesAheadOfWaitingLaterWork(t *testing.T) {
 
 	waitingWork := make([]*Asset, later)
 	for i := range waitingWork {
-		waitingWork[i] = m.Get(image(string(rune('a'+i))), Later)
+		waitingWork[i] = m.Get(image(string(rune('a'+i))), Later, 0)
 	}
 	deadline := time.Now().Add(testTimeout)
 	// One worker is kept for Now work, so later work fills all but one.
 	for format.started.Load() < testWorkers-1 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	now := m.Get(image("message"), Now)
+	now := m.Get(image("message"), Now, 0)
 	for format.started.Load() < testWorkers && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
@@ -352,8 +352,8 @@ func TestClaimLimitHoldsLaterDecodesButNotNow(t *testing.T) {
 	})
 	defer m.Close()
 
-	first := m.Get(image("a"), Later)
-	second := m.Get(image("b"), Later)
+	first := m.Get(image("a"), Later, 0)
+	second := m.Get(image("b"), Later, 0)
 	deadline := time.Now().Add(testTimeout)
 	for format.started.Load() < 1 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
@@ -362,7 +362,7 @@ func TestClaimLimitHoldsLaterDecodesButNotNow(t *testing.T) {
 	if n := format.started.Load(); n != 1 {
 		t.Fatalf("%d later decodes under a limit that fits one", n)
 	}
-	now := m.Get(image("message"), Now)
+	now := m.Get(image("message"), Now, 0)
 	for format.started.Load() < 2 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
@@ -382,7 +382,7 @@ func TestMainThreadResultsWaitForFinish(t *testing.T) {
 	src.put("a", []byte("pixels"))
 	m := newRig(t, &fakeFormat{onMain: true}, Entry{src, nil})
 
-	a := m.Get(image("a"), Now)
+	a := m.Get(image("a"), Now, 0)
 	var got any
 	deadline := time.Now().Add(testTimeout)
 	for got == nil && time.Now().Before(deadline) {
@@ -408,10 +408,10 @@ func TestForgetAsksAgain(t *testing.T) {
 	defer disk.Close()
 	m := newRig(t, &fakeFormat{}, Entry{src, disk})
 
-	first := m.Get(image("a"), Now)
+	first := m.Get(image("a"), Now, 0)
 	waitFinal(t, first)
 	m.Forget(image("a"))
-	second := m.Get(image("a"), Now)
+	second := m.Get(image("a"), Now, 0)
 	if first == second {
 		t.Fatal("Forget kept the old Asset")
 	}
@@ -436,12 +436,12 @@ func TestLaterIsRefusedAtTheCapButNowIsNot(t *testing.T) {
 	})
 	defer m.Close()
 
-	waitFinal(t, m.Get(image("a"), Later))
-	refused := m.Get(image("b"), Later)
+	waitFinal(t, m.Get(image("a"), Later, 0))
+	refused := m.Get(image("b"), Later, 0)
 	if refused.State() != Refused || !errors.Is(refused.Err(), ErrRefused) {
 		t.Fatalf("state %d", refused.State())
 	}
-	now := m.Get(image("message"), Now)
+	now := m.Get(image("message"), Now, 0)
 	waitFinal(t, now)
 	if !now.Ready() {
 		t.Fatalf("state %d", now.State())
@@ -504,13 +504,13 @@ func TestEveryRequestEnds(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for _, k := range keys {
-				m.Get(k, Later)
+				m.Get(k, Later, 0)
 			}
 		}()
 	}
 	wg.Wait()
 	for _, k := range keys {
-		a := m.Get(k, Later)
+		a := m.Get(k, Later, 0)
 		waitFinal(t, a)
 		if s := a.State(); s == Searching || s == Decoding {
 			t.Fatalf("%q ended in state %d", k.Path, s)

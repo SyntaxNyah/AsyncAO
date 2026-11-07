@@ -38,6 +38,7 @@ type mediaBridge struct {
 	// hostListsGen counts its changes, so a reader can skip it while nothing changed.
 	hostLists    sync.Map
 	hostListsGen atomic.Uint64
+	pin          *sceneryPin
 }
 
 func newMediaBridge(m *Manager) *mediaBridge {
@@ -48,12 +49,13 @@ func newMediaBridge(m *Manager) *mediaBridge {
 		compute: media.NewPool("compute", DecodeWorkers(), mediaComputeKept),
 		disk:    media.NewDiskSource(m.disk),
 		pack:    &bridgePack{m: m},
+		pin:     newSceneryPin(),
 	}
 	cfg := media.Config{Candidates: b.builder.Build, Found: b.builder.Found, Finished: b.finished, Compute: b.compute}
 	b.remote = media.NewRemoteSource(ctx, bridgeFetcher{m}, media.DefaultMissingTTL, time.Now)
 	cfg.Chains = map[media.Place]*media.Chain{media.PlaceServer: media.NewChain(
-		media.Entry{Source: bridgeMemory{m.t2}},
-		media.Entry{Source: bridgeDisk{b.disk, m.t2}, Pool: b.diskP},
+		media.Entry{Source: bridgeMemory{m.t2, b.pin}},
+		media.Entry{Source: bridgeDisk{b.disk, m.t2, b.pin}, Pool: b.diskP},
 		media.Entry{Source: b.pack, Pool: b.diskP},
 		media.Entry{Source: bridgeRemote{b.remote, b}, Pool: b.network},
 	)}
@@ -118,16 +120,19 @@ func kindOf(t AssetType) media.Kind {
 	return media.KindImage
 }
 
-func chainKey(base string, alts []string, t AssetType, quiet, sticky bool) media.Key {
-	k := media.Key{Place: media.PlaceServer, Path: base, Kind: kindOf(t), Class: classOf(t), Tag: uint8(t), Quiet: quiet, Sticky: sticky}
-	i := 0
-	for _, alt := range alts {
-		if alt != "" && alt != base && i < len(k.Alts) {
-			k.Alts[i] = alt
-			i++
-		}
+func chainKey(base string, t AssetType) media.Key {
+	return media.Key{Place: media.PlaceServer, Path: base, Kind: kindOf(t), Class: classOf(t), Tag: uint8(t)}
+}
+
+func flagsOf(quiet, sticky bool) media.Flags {
+	var f media.Flags
+	if quiet {
+		f |= media.Quiet
 	}
-	return k
+	if sticky {
+		f |= media.Sticky
+	}
+	return f
 }
 
 func (b *mediaBridge) askChain(base string, alts []string, t AssetType, p network.Priority, quiet, sticky bool) {
@@ -135,7 +140,7 @@ func (b *mediaBridge) askChain(base string, alts []string, t AssetType, p networ
 		b.m.t1Hits.Add(1)
 		return
 	}
-	b.ask(chainKey(base, alts, t, quiet, sticky), p)
+	b.ask(chainKey(base, t), flagsOf(quiet, sticky), p, alts...)
 }
 
 func (b *mediaBridge) askExact(url string, t AssetType, p network.Priority) {
@@ -143,28 +148,28 @@ func (b *mediaBridge) askExact(url string, t AssetType, p network.Priority) {
 		b.m.t1Hits.Add(1)
 		return
 	}
-	k := chainKey(url, nil, t, false, false)
+	k := chainKey(url, t)
 	k.Class = media.ClassExact
-	b.ask(k, p)
+	b.ask(k, 0, p)
 }
 
 func (b *mediaBridge) askRaw(url string, p network.Priority) {
-	b.media.Get(media.Key{Place: media.PlaceServer, Path: url, Kind: media.KindRaw, Class: media.ClassExact, Quiet: true}, urgencyOf(p))
+	b.media.Get(media.Key{Place: media.PlaceServer, Path: url, Kind: media.KindRaw, Class: media.ClassExact}, urgencyOf(p), media.Quiet)
 }
 
-func (b *mediaBridge) ask(k media.Key, p network.Priority) {
-	a := b.media.Get(k, urgencyOf(p))
+func (b *mediaBridge) ask(k media.Key, f media.Flags, p network.Priority, alts ...string) {
+	a := b.media.Get(k, urgencyOf(p), f, alts...)
 	switch a.State() {
 	case media.Missing:
 		// Asked again inside the file's missing time: no request, and the warning still fires.
-		b.m.skipExhausted(k.Path, AssetType(k.Tag), k.Quiet)
+		b.m.skipExhausted(k.Path, AssetType(k.Tag), f&media.Quiet != 0)
 	case media.Refused:
 		b.m.refused.Add(1)
 	}
 }
 
 func (b *mediaBridge) isMissing(base string, t AssetType) bool {
-	a := b.media.Peek(chainKey(base, nil, t, false, false))
+	a := b.media.Peek(chainKey(base, t))
 	return a != nil && a.State() == media.Missing
 }
 
@@ -190,7 +195,7 @@ func (b *mediaBridge) finished(a *media.Asset) {
 		if k.Kind == media.KindRaw {
 			return
 		}
-		if k.Quiet {
+		if a.Quiet() {
 			b.m.missing.Add(1)
 			return
 		}
@@ -273,6 +278,7 @@ func (m *Manager) SetAssetHosts(origin string, hosts []string) {
 		b.media.ForgetIf(func(a *media.Asset) bool {
 			return a.State() == media.Missing && strings.HasPrefix(a.Key().Path, origin)
 		})
+		b.media.ForgetWinners(func(k media.Key, _ media.File) bool { return strings.HasPrefix(k.Path, origin) })
 		b.remote.ForgetMissing(origin)
 	})
 }
@@ -301,7 +307,7 @@ func (m *Manager) CancelRoomWork() {
 	if m == nil || m.bridge == nil {
 		return
 	}
-	m.bridge.media.WithdrawIf(func(k media.Key) bool { return !k.Sticky })
+	m.bridge.media.WithdrawIf(func(a *media.Asset) bool { return !a.Sticky() })
 }
 
 // CloseMedia stops the media system and its workers.
@@ -332,20 +338,25 @@ func (f bridgeFetcher) Fetch(ctx context.Context, url string) ([]byte, error) {
 	return data, err
 }
 
-// bridgeMemory is T2 as a source, shared with the raw fetch paths.
+// bridgeMemory is T2 as a source, shared with the raw fetch paths, with the pinned room scenery in front.
 type bridgeMemory struct {
-	t2 *cache.ByteBudgetLRU[string, []byte]
+	t2  *cache.ByteBudgetLRU[string, []byte]
+	pin *sceneryPin
 }
 
 func (s bridgeMemory) Has(f media.File) media.Answer {
-	if s.t2.Contains(string(f)) {
+	if s.pin.has(string(f)) || s.t2.Contains(string(f)) {
 		return media.Yes
 	}
 	return media.No
 }
 
 func (s bridgeMemory) Data(f media.File) ([]byte, error) {
+	if d, ok := s.pin.get(string(f)); ok {
+		return d, nil
+	}
 	if d, ok := s.t2.Get(string(f)); ok {
+		s.pin.keep(string(f), d)
 		return d, nil
 	}
 	return nil, media.ErrAbsent
@@ -358,13 +369,15 @@ func (s bridgeMemory) Size() media.Contents {
 // bridgeDisk promotes what it reads into T2.
 type bridgeDisk struct {
 	*media.DiskSource
-	t2 *cache.ByteBudgetLRU[string, []byte]
+	t2  *cache.ByteBudgetLRU[string, []byte]
+	pin *sceneryPin
 }
 
 func (s bridgeDisk) Observe(f media.File, data []byte, err error) {
 	s.DiskSource.Observe(f, data, err)
 	if err == nil {
 		s.t2.Add(string(f), data, int64(len(data)))
+		s.pin.keep(string(f), data)
 	}
 }
 
@@ -381,6 +394,7 @@ func (s bridgeRemote) Observe(f media.File, data []byte, err error) {
 	s.RemoteSource.Observe(f, data, err)
 	if err == nil {
 		s.b.m.t2.Add(string(f), data, int64(len(data)))
+		s.b.pin.keep(string(f), data)
 		s.b.disk.Keep(f, data)
 	}
 }
