@@ -27,8 +27,9 @@ jobs:
       - run: go vet ./...
       # Lint versions are pinned so an upstream release can't turn CI red by itself.
       # To bump: install the version locally, clear what it finds, move the pin in the same commit.
+      # v0.7.0 is staticcheck 2026.1, the last release that builds with Go 1.25.
       - name: staticcheck
-        run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.1 ./...
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
