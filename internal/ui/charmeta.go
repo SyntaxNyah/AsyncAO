@@ -250,7 +250,8 @@ func (r roomAssetResolver) EffectsFolderFor(char string) string {
 func (r roomAssetResolver) OverlayFor(name, folder string) (courtroom.OverlayResolved, bool) {
 	return r.a.overlayResolve(name, folder)
 }
-func (r roomAssetResolver) SpriteReady(base string) bool { return r.a.d.Store.Contains(base) }
+func (r roomAssetResolver) SpriteReady(base string) bool   { return r.a.d.Store.Contains(base) }
+func (r roomAssetResolver) SceneryFile(base string) string { return r.a.d.Store.FileOf(base) }
 func (r roomAssetResolver) SpritePlayable(base string) bool {
 	return r.a.d.Store.ContainsPlayable(base)
 }

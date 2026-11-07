@@ -96,7 +96,7 @@ func (p *Pump) Frame() {
 		// Small UI art goes to the small tier, so sprite streaming can't evict the visible grids.
 		var err error
 		if d.Asset.Stream {
-			err = p.store.AppendStream(d.Base, d.URL, d.Asset)
+			err = p.store.AppendStream(d.Base, d.Asset)
 		} else if smallTexTier(d.Type) {
 			err = p.store.UploadSmall(d.Base, d.Asset)
 		} else {

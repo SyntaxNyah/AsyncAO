@@ -11,7 +11,11 @@ type assetFake struct {
 	playable func(base string) bool
 	audio    func(base string) bool
 	scaling  func(charName string) ScalingMode
+	// files maps a resident base to the file it was decoded from; nil means none.
+	files map[string]string
 }
+
+func (f assetFake) SceneryFile(base string) string { return f.files[base] }
 
 func (f assetFake) SpritePlayable(base string) bool {
 	if f.playable != nil {

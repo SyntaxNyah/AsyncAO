@@ -619,6 +619,13 @@ func (p *DecoderPool) worker() {
 // runJob decodes one payload; animated payloads deliver frame 0 first, then the full set replaces it at upload.
 func (p *DecoderPool) runJob(req DecodeRequest) {
 	defer p.running.End(p.running.Begin(req.Type.Name(), req.URL))
+	done := req.OnDone
+	req.OnDone = func(url string, d *Decoded, err error) {
+		if d != nil {
+			d.File = url
+		}
+		done(url, d, err)
+	}
 	animated := req.PlayAnimations && sniffMaybeAnimated(req.Data)
 	streamable := animated && streamableFormat(req.Data)
 

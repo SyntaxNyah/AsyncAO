@@ -507,28 +507,44 @@ func BackgroundFallbacks(bgPart string) []string {
 
 // PositionScene maps a position to background and desk stems (get_pos_path); unknown uses <pos> and <pos>_overlay.
 func PositionScene(pos string) (bgPart, deskPart string) {
-	switch pos {
-	case "def":
-		return "defenseempty", "defensedesk"
-	case "pro":
-		return "prosecutorempty", "prosecutiondesk"
-	case "wit":
-		return "witnessempty", "stand"
-	case "jud":
-		return "judgestand", "judgedesk"
-	case "hld":
-		return "helperstand", "helperdesk"
-	case "hlp":
-		return "prohelperstand", "prohelperdesk"
-	case "jur":
-		return "jurystand", "jurydesk"
-	case "sea":
-		return "seancestand", "seancedesk"
-	case "":
-		return "witnessempty", "stand" // AO defaults to witness
-	default:
-		return pos, pos + "_overlay"
+	if pos == "" {
+		return defaultPosBackground, defaultPosDesk // AO defaults to witness
 	}
+	for _, p := range positionScenery {
+		if p.pos == pos {
+			return p.background, p.desk
+		}
+	}
+	return pos, pos + overlaySuffix
+}
+
+// DeskOf returns the desk AO2 pairs with a background name that exists; any other name takes "<name>_overlay",
+// which covers "wit" too (path_functions.cpp:108-148).
+func DeskOf(bgPart string) string {
+	for _, p := range positionScenery {
+		if p.background == bgPart {
+			return p.desk
+		}
+	}
+	return bgPart + overlaySuffix
+}
+
+// overlaySuffix makes a desk name from a background name that has no desk of its own.
+const overlaySuffix = "_overlay"
+
+// defaultPosDesk is witnessempty's desk.
+const defaultPosDesk = "stand"
+
+// positionScenery is AO2's position table: each position's background and the desk that goes with it.
+var positionScenery = [...]struct{ pos, background, desk string }{
+	{"def", "defenseempty", "defensedesk"},
+	{"pro", "prosecutorempty", "prosecutiondesk"},
+	{"wit", defaultPosBackground, defaultPosDesk},
+	{"jud", "judgestand", "judgedesk"},
+	{"hld", "helperstand", "helperdesk"},
+	{"hlp", "prohelperstand", "prohelperdesk"},
+	{"jur", "jurystand", "jurydesk"},
+	{"sea", "seancestand", "seancedesk"},
 }
 
 // ZoomSide returns prosecution for pro, hlp and wit, defense otherwise, as AO2 hardcodes (courtroom.cpp:3463-3471).

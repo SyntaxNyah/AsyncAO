@@ -89,6 +89,8 @@ type Decoded struct {
 	FrameOffset int
 	// Width and Height are the canvas size in pixels.
 	Width, Height int
+	// File is the file the frames were decoded from, which may be a fallback name of the asset.
+	File string
 	// Compressed holds DXT payloads parallel to Frames, nil when off; when set, Frames has been released.
 	Compressed [][]byte
 	// DXTFormat is the FOURCC of Compressed (0 = raw RGBA).

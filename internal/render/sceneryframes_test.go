@@ -66,7 +66,9 @@ func TestACutDownPageNeverGrowsFramesFromAnotherFile(t *testing.T) {
 	defer store.Purge()
 	stream := func(file string, offset int) {
 		t.Helper()
-		if err := store.AppendStream(sceneryTestBg, file, streamChunk(offset, true, sceneryTestSources)); err != nil {
+		chunk := streamChunk(offset, true, sceneryTestSources)
+		chunk.File = file
+		if err := store.AppendStream(sceneryTestBg, chunk); err != nil {
 			t.Fatal(err)
 		}
 	}

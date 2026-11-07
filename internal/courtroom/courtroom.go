@@ -194,6 +194,8 @@ type AssetResolver interface {
 	OverlayFor(name, folder string) (OverlayResolved, bool)
 	// SpriteReady reports texture residency; same thread, a plain map probe.
 	SpriteReady(base string) bool
+	// SceneryFile returns the file a resident page was decoded from, "" when not resident; same thread.
+	SceneryFile(base string) string
 	// SpritePlayable reports every frame resident, or nothing more to wait for; same thread.
 	SpritePlayable(base string) bool
 	// AudioReady reports a cached decoded chunk; same thread, a plain map probe.
@@ -255,6 +257,8 @@ type Courtroom struct {
 
 	// Assets is the asset lookup (see AssetResolver).
 	Assets AssetResolver
+	// followBg, followFile and followDesk are the background, its file and the desk followBackground last settled on.
+	followBg, followFile, followDesk string
 
 	// Env is the local state lookup (see EnvResolver).
 	Env EnvResolver
@@ -630,6 +634,7 @@ func (c *Courtroom) setBackground(bg, pos string, wipe bool) {
 	c.mgr.PinScenery(c.Scene.BackgroundBase[:strings.LastIndexByte(c.Scene.BackgroundBase, '/')+1])
 	c.prefetchScenery(bg, bgPart)
 	c.mgr.Prefetch(c.Scene.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
+	c.followBackground()
 	// Re-derive from the new desk base, or the new room draws the old desk: a settled message has no phase edge.
 	if wipe {
 		c.wipeStage()
@@ -917,6 +922,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		// HIGH like every live-message asset: at low priority a busy lane sheds these and nothing draws.
 		c.prefetchScenery(c.sess.Background, bgPart)
 		c.mgr.Prefetch(c.Scene.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
+		c.followBackground()
 	}
 	// Start on the talk column; phase changes call applyDeskMods (set_scene at preanim_start, start_chat_ticking).
 	// A zoom's talk side hides the desk, and a missing desk stays hidden.
@@ -1426,6 +1432,7 @@ func (c *Courtroom) RestoreMessage(msg *protocol.ChatMessage) {
 }
 
 func (c *Courtroom) Update(dt time.Duration) {
+	c.followBackground()
 	// Effect countdowns run independent of the phase machine.
 	if c.Scene.FlashLeft > 0 {
 		c.Scene.FlashLeft -= dt
@@ -1611,6 +1618,33 @@ func (c *Courtroom) recordMissingDesk(base string) {
 		return // full: the render-side release (Store.IsMissing) still covers the draw
 	}
 	c.missingDesks[base] = struct{}{}
+}
+
+// followBackground gives the scene the desk of the background name that loaded, which may be a fallback, as AO2's
+// get_pos_path pairs them (path_functions.cpp:108-148); until the background is resident the position's own desk stays.
+func (c *Courtroom) followBackground() {
+	bg := c.Scene.BackgroundBase
+	if c.Assets == nil || bg == "" {
+		return
+	}
+	file := c.Assets.SceneryFile(bg)
+	if file == "" || (bg == c.followBg && file == c.followFile && c.Scene.DeskBase == c.followDesk) {
+		return
+	}
+	name := file[strings.LastIndexByte(file, '/')+1:]
+	if dot := strings.LastIndexByte(name, '.'); dot > 0 {
+		name = name[:dot]
+	}
+	desk := bg[:strings.LastIndexByte(bg, '/')+1] + DeskOf(name)
+	c.followBg, c.followFile, c.followDesk = bg, file, desk
+	if desk == c.Scene.DeskBase {
+		return
+	}
+	c.Scene.DeskBase = desk
+	c.mgr.Prefetch(desk, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
+	if c.current != nil {
+		c.applyDeskMods(c.phase == PhasePreanim)
+	}
 }
 
 // zoomEmote reports a mod that makes a solo shot, as AO2's zoom does (handle_ic_speaking).

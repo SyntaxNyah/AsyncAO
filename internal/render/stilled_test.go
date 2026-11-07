@@ -84,7 +84,7 @@ func TestContainsPlayable(t *testing.T) {
 		}
 	}
 	store.ReduceAnimatedExcept(map[string]bool{complete: true})
-	if err := store.AppendStream(streaming, "", streamChunk(0, true, sourceCount)); err != nil {
+	if err := store.AppendStream(streaming, streamChunk(0, true, sourceCount)); err != nil {
 		t.Fatal(err)
 	}
 	store.MarkFailed(failed)
@@ -94,7 +94,7 @@ func TestContainsPlayable(t *testing.T) {
 			t.Errorf("ContainsPlayable(%s) = %v, want %v", base, got, want)
 		}
 	}
-	if err := store.AppendStream(streaming, "", finalizeChunk(sourceCount)); err != nil {
+	if err := store.AppendStream(streaming, finalizeChunk(sourceCount)); err != nil {
 		t.Fatal(err)
 	}
 	if !store.ContainsPlayable(streaming) {
@@ -117,27 +117,27 @@ func TestStilledStreamPageGrowsBack(t *testing.T) {
 	}
 	defer store.Purge()
 
-	if err := store.AppendStream(base, "", streamChunk(0, true, sourceCount)); err != nil {
+	if err := store.AppendStream(base, streamChunk(0, true, sourceCount)); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.AppendStream(base, "", streamChunk(1, true, sourceCount)); err != nil {
+	if err := store.AppendStream(base, streamChunk(1, true, sourceCount)); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.AppendStream(base, "", finalizeChunk(sourceCount)); err != nil {
+	if err := store.AppendStream(base, finalizeChunk(sourceCount)); err != nil {
 		t.Fatal(err)
 	}
 	store.ReduceAnimatedExcept(nil)
 
-	if err := store.AppendStream(base, "", streamChunk(0, true, sourceCount)); err != nil {
+	if err := store.AppendStream(base, streamChunk(0, true, sourceCount)); err != nil {
 		t.Fatal(err)
 	}
 	if page, ok := store.Get(base); !ok || !page.Partial {
 		t.Fatal("a re-decode must mark the reduced page as still growing, or a one-shot finishes on a growing page")
 	}
-	if err := store.AppendStream(base, "", streamChunk(1, true, sourceCount)); err != nil {
+	if err := store.AppendStream(base, streamChunk(1, true, sourceCount)); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.AppendStream(base, "", finalizeChunk(sourceCount)); err != nil {
+	if err := store.AppendStream(base, finalizeChunk(sourceCount)); err != nil {
 		t.Fatal(err)
 	}
 	page, ok := store.Get(base)

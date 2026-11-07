@@ -58,7 +58,7 @@ type TexturePage struct {
 	SourceFrames int
 	// Stilled marks a page reduced to frame 0: ContainsAnimated treats it as absent, Get still draws it.
 	Stilled bool
-	// File is the file a streamed page's frames come from; frames of another file never join it.
+	// File is the file the page was decoded from; a stream's frames from another file never join it.
 	File  string
 	W, H  int32
 	bytes int64
@@ -466,6 +466,17 @@ func (s *TextureStore) ReduceAnimatedExcept(active map[string]bool) int {
 	return reduced
 }
 
+// FileOf returns the file base's resident page was decoded from, without touching LRU order; "" when not resident.
+func (s *TextureStore) FileOf(base string) string {
+	if page, ok := s.pinned[base]; ok {
+		return page.File
+	}
+	if page, ok := s.peek(base); ok {
+		return page.File
+	}
+	return ""
+}
+
 // Get returns the page, checking pinned, oversized, small then main; render thread only.
 func (s *TextureStore) Get(base string) (*TexturePage, bool) {
 	if page, ok := s.pinned[base]; ok {
@@ -490,6 +501,7 @@ func (s *TextureStore) buildPage(d *assets.Decoded) (*TexturePage, error) {
 		Animated:     d.Animated,
 		Partial:      d.Partial,      // progressive first-frame delivery (full set follows)
 		SourceFrames: d.SourceFrames, // carry the un-decimated frame count for #17 frame-effect mapping
+		File:         d.File,
 		W:            int32(d.Width),
 		H:            int32(d.Height),
 	}
@@ -644,9 +656,10 @@ func (s *TextureStore) enforceOversizedCapLocked(keep string) {
 	}
 }
 
-// AppendStream grows a page from file in the oversized map, avoiding LRU churn; the finalize chunk clears Partial.
+// AppendStream grows a page in the oversized map, avoiding LRU churn; the finalize chunk clears Partial.
 // A stream from another file replaces the page, so one page never plays two files.
-func (s *TextureStore) AppendStream(base, file string, d *assets.Decoded) error {
+func (s *TextureStore) AppendStream(base string, d *assets.Decoded) error {
+	file := d.File
 	defer d.Release()
 	if d.FrameOffset == 0 && len(d.Frames) > 0 {
 		// A re-decode can race this stream; re-establishing would shrink the page and strand the cursor, so keep it.
@@ -663,7 +676,6 @@ func (s *TextureStore) AppendStream(base, file string, d *assets.Decoded) error 
 		if err != nil {
 			return err
 		}
-		page.File = file
 		s.storeOversized(base, page)
 		s.clearFailed(base)
 		s.releaseHeld(base)
