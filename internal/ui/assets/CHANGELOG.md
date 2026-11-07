@@ -4,6 +4,72 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v2.1.0-rc.1 - 2026-11-07
+
+A test build of the next release. AsyncAO moves from SDL2 to SDL3 and draws
+through the GPU, and a lot changed underneath. Expect rough edges and report
+what breaks. Only players with test builds switched on get this update.
+Switching them off afterwards keeps you on this build until v2.1.0 is out.
+
+### Before you update
+- **Video export is gone.** The 🎥 Video button, its sound mixing and the
+  subtitle files are removed with the ffmpeg dependency they needed. GIF, WebP
+  and Comic exports stay and need no extra program.
+- **Voice chat is gone.**
+- **The Discord-free builds are gone.** Players on one are moved to the regular
+  build. Rich Presence is on by default there; turn it off in Settings.
+- **PAC and SOCKS5 proxies are no longer supported**, and the server list no
+  longer pings each lobby. HTTP proxies still work for all traffic, including
+  the proxy set in Windows or macOS.
+- **Packed-room catch-up is now off by default**, and turned off once if it was
+  on, so the courtroom plays every message in order like the original client.
+- **Clients from v1.95.1 or older can't update themselves to this.** They open
+  the release page instead; download the bundle from there.
+- The Windows download is larger, because it ships a software renderer for PCs
+  whose graphics driver can't run the GPU renderer.
+
+### SDL3 and the GPU renderer
+- Everything draws through SDL3's GPU API: Vulkan where the driver supports it,
+  a software renderer where it doesn't.
+- If the graphics driver resets, AsyncAO restarts itself instead of freezing.
+- File and folder pickers are the operating system's own dialogs, and you can
+  add several asset folders at once where the dialog allows it.
+
+### Text and emoji
+- Every label falls back glyph by glyph to a font that has the character, the
+  way Qt does, so mixed scripts and symbols no longer turn into boxes.
+- Colour emoji show in every label, and fallback glyphs sit on the line with
+  the text around them.
+
+### Courtroom
+- A speaker's whole animation plays before their message starts.
+- The Pos dropdown lists the positions the background defines, and moving
+  between them slides across the panorama, as in AO2.
+- The desk is the one that belongs to the background that actually loaded.
+- webAO mode no longer starts a message on the previous sprite.
+- Streamed music picks up its loop points.
+
+### Assets and connections
+- Assets load through a new media system that asks file names in AO2's order,
+  follows the order in the server's extensions.json, and tries a server's extra
+  asset hosts after its own. The debug panel shows whether each host's format
+  list was read.
+- Connecting runs in the background, so the window never freezes while a server
+  answers.
+
+### Desktop notifications
+- On Windows, notifications come from AsyncAO with its own name and icon, not
+  from Windows PowerShell.
+
+## v2.0.2 - 2026-10-31
+
+- Emoji and symbols fall back to a font that has them in more places.
+- The desktop notification for a group invite is now opt-in, off by default.
+
+## v2.0.1 - 2026-10-06
+
+- Fixed the address of the Umineko master server list.
+
 ## v2.0.0 - 2026-10-06
 
 AsyncAO 2.0. The headline this time is the wire: every packet now goes through
