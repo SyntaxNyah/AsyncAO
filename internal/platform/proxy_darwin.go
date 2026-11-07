@@ -6,6 +6,9 @@ import (
 	"time"
 )
 
+// scutilPath is absolute so no program earlier on PATH can stand in for it.
+const scutilPath = "/usr/sbin/scutil"
+
 // scutilTimeout stops a wedged SystemConfiguration daemon hanging the caller.
 const scutilTimeout = 2 * time.Second
 
@@ -14,7 +17,7 @@ const scutilTimeout = 2 * time.Second
 func osProxySettings() ProxySettings {
 	ctx, cancel := context.WithTimeout(context.Background(), scutilTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "scutil", "--proxy").Output()
+	out, err := exec.CommandContext(ctx, scutilPath, "--proxy").Output()
 	if err != nil {
 		return ProxySettings{}
 	}

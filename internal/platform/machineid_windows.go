@@ -3,10 +3,14 @@
 package platform
 
 import (
-	"os/exec"
 	"os/user"
 	"strings"
 	"syscall"
+)
+
+const (
+	cryptographyKey  = `SOFTWARE\Microsoft\Cryptography`
+	machineGUIDValue = "MachineGuid"
 )
 
 // MachineIdentity returns the machine's stable identity values, strongest first; nil when none is readable. They are
@@ -25,23 +29,17 @@ func MachineIdentity() []string {
 	return out
 }
 
-// machineGUID shells out to reg.exe for this one HKLM value (the package reads other registry
-// values through syscall directly). Keep reading it exactly this way: the string feeds hwid and
-// thus every user's ban id, so a change that altered the value would re-identify everyone.
+// machineGUID reads MachineGuid from the 64-bit registry view, the one reg.exe reported when it was read that way. Keep
+// the value exactly as read: it feeds hwid and thus every user's ban id, so a changed string would re-identify everyone.
 func machineGUID() string {
-	cmd := exec.Command("reg", "query",
-		`HKLM\SOFTWARE\Microsoft\Cryptography`, "/v", "MachineGuid")
-	// HideWindow stops reg.exe flashing a console in a -H windowsgui build.
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	out, err := cmd.Output()
+	path, err := syscall.UTF16PtrFromString(cryptographyKey)
 	if err != nil {
 		return ""
 	}
-	// Matching line: "    MachineGuid    REG_SZ    <guid>".
-	for _, line := range strings.Split(string(out), "\n") {
-		if i := strings.Index(line, "REG_SZ"); i >= 0 {
-			return strings.TrimSpace(line[i+len("REG_SZ"):])
-		}
+	var key syscall.Handle
+	if syscall.RegOpenKeyEx(syscall.HKEY_LOCAL_MACHINE, path, 0, syscall.KEY_QUERY_VALUE|syscall.KEY_WOW64_64KEY, &key) != nil {
+		return ""
 	}
-	return ""
+	defer func() { _ = syscall.RegCloseKey(key) }()
+	return strings.TrimSpace(regString(key, machineGUIDValue))
 }
