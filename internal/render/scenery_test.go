@@ -2,6 +2,7 @@ package render
 
 import (
 	"testing"
+	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
@@ -60,5 +61,42 @@ func TestInOutCubicEasesBothEnds(t *testing.T) {
 	}
 	if inOutCubic(quarter) >= quarter || inOutCubic(threeQuarters) <= threeQuarters {
 		t.Fatal("the curve must start slow and end slow")
+	}
+}
+
+func TestASlidePausesTheCharactersAndKeepsFramesComing(t *testing.T) {
+	const (
+		budget  = 64 << 20
+		side    = 64
+		frames  = 3
+		elapsed = 200 * time.Millisecond
+		speaker = "live://characters/a/(a)normal"
+	)
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStoreBudget(ren, budget)
+	if err != nil {
+		t.Skipf("texture store unavailable: %v", err)
+	}
+	defer store.Purge()
+	if err := store.Upload(speaker, sizedFixture(side, frames)); err != nil {
+		t.Fatal(err)
+	}
+	scene := &courtroom.Scene{}
+	scene.Speaker = courtroom.SpriteLayer{Visible: true, Active: speaker, IdleBase: speaker}
+	scene.Slide = courtroom.SlideScene{Active: true, Total: elapsed, Left: elapsed}
+
+	v := NewViewport(store)
+	if due, ok := v.NextAnimDue(scene); !ok || due != 0 {
+		t.Errorf("next frame due %v %v during a slide, want now", due, ok)
+	}
+	v.Update(scene, elapsed)
+	if v.speakerAnim.frame != 0 {
+		t.Errorf("speaker frame %d during a slide, want it paused", v.speakerAnim.frame)
+	}
+	scene.Slide = courtroom.SlideScene{}
+	v.Update(scene, elapsed)
+	if v.speakerAnim.frame == 0 {
+		t.Error("the speaker must animate again once the slide is over")
 	}
 }

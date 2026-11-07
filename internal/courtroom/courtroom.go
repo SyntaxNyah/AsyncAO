@@ -65,13 +65,18 @@ const (
 	PhaseSlide
 )
 
-// SlideScene is a pan across a panorama from the last position to the message's, with the last speaker held where they
-// stood (courtroom.cpp:3007-3155); the stage eases from origin From to To over Total.
+// SlideScene is a pan across a panorama from the last position to the message's, with the last speaker and pair held
+// where they stood (courtroom.cpp:3007-3155); the stage eases from origin From to To over Total, and every character
+// is paused, as AO2 pauses them.
 type SlideScene struct {
 	Active      bool
 	From, To    int
 	Left, Total time.Duration
 	Previous    SpriteLayer
+	// PreviousPair is the last message's pair, drawn when PreviousPaired, in front of Previous unless PreviousInFront.
+	PreviousPair    SpriteLayer
+	PreviousPaired  bool
+	PreviousInFront bool
 }
 
 // SpriteLayer describes one character layer; bases are extension-less URL bases.
@@ -282,9 +287,13 @@ type Courtroom struct {
 	Assets AssetResolver
 	// followBg, followFile and followDesk are the background, its file and the desk followBackground last settled on.
 	followBg, followFile, followDesk string
-	// slideFrom and slideSpeaker are the last message's position and speaker, which a slide starts from.
+	// slideFrom and the slideSpeaker, slidePair, slidePaired and slideInFront are the last message's position and
+	// characters, which a slide starts from.
 	slideFrom    string
 	slideSpeaker SpriteLayer
+	slidePair    SpriteLayer
+	slidePaired  bool
+	slideInFront bool
 	// design is designBg's design.ini once read, nil when absent; designURL is asked until designRead.
 	design     *theme.INI
 	designBg   string
@@ -946,6 +955,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 
 	// --- scene state ---
 	c.slideFrom, c.slideSpeaker = c.Scene.Position, c.Scene.Speaker
+	c.slidePair, c.slidePaired, c.slideInFront = c.Scene.Pair, c.Scene.PairActive, c.Scene.SpeakerInFront
 	c.Scene.Position = msg.Side
 	if c.sess != nil && c.sess.Background != "" {
 		c.setScenery(c.sess.Background, msg.Side)
@@ -1188,10 +1198,13 @@ func (c *Courtroom) startSlide() bool {
 		return false
 	}
 	total := time.Duration(ms) * time.Millisecond
-	previous := c.slideSpeaker
+	previous, previousPair := c.slideSpeaker, c.slidePair
 	previous.Active, previous.PlayOnce = previous.IdleBase, false
-	c.Scene.Slide = SlideScene{Active: true, From: fromOrigin, To: toOrigin, Left: total, Total: total, Previous: previous}
+	previousPair.Active, previousPair.PlayOnce = previousPair.IdleBase, false
+	c.Scene.Slide = SlideScene{Active: true, From: fromOrigin, To: toOrigin, Left: total, Total: total,
+		Previous: previous, PreviousPair: previousPair, PreviousPaired: c.slidePaired, PreviousInFront: c.slideInFront}
 	c.Scene.Speaker.Active = c.Scene.Speaker.IdleBase
+	c.Scene.Pair.Active = c.Scene.Pair.IdleBase
 	c.phase, c.timer = PhaseSlide, total
 	return true
 }

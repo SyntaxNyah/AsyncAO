@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -66,6 +67,21 @@ func TestAMoveOnTheCourtSlidesFromTheLastSpeaker(t *testing.T) {
 	}
 	if room.Phase() == PhaseSlide || room.Scene.Slide.Active {
 		t.Fatal("the slide must end after its duration and the message carry on")
+	}
+}
+
+func TestTheLastPairIsHeldThroughTheSlide(t *testing.T) {
+	room := slideRoom(t)
+	msg := waitMsg("Phoenix", "normal", "hi")
+	msg.Side = "def"
+	msg.Pair = protocol.PairInfo{CharID: 1, Name: "Maya", Emote: "normal", Order: protocol.PairSpeakerBehind, HasOrder: true}
+	room.begin(msg)
+	maya := room.Scene.Pair.IdleBase
+	say(room, "Edgeworth", "pro", true)
+
+	sl := room.Scene.Slide
+	if !sl.Active || !sl.PreviousPaired || sl.PreviousPair.Active != maya || sl.PreviousInFront {
+		t.Fatalf("slide %+v: the last pair must be held idle, behind order kept", sl)
 	}
 }
 

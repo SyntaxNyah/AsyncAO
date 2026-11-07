@@ -321,8 +321,9 @@ type Viewport struct {
 	bgAnim        animState
 	deskAnim      animState
 	speedlineAnim animState
-	// slideAnim draws the last speaker during a panorama slide, held on a frame as AO2 pauses it.
-	slideAnim animState
+	// slideAnim and slidePairAnim draw the last speaker and pair during a panorama slide, held on a frame.
+	slideAnim     animState
+	slidePairAnim animState
 	// panorama and origin are this frame's panorama placement, set by placeStage.
 	panorama bool
 	origin   int
@@ -504,6 +505,7 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	v.syncAnim(&v.speakerAnim, scene.Speaker.Active)
 	v.syncAnim(&v.pairAnim, scene.Pair.Active)
 	v.syncAnim(&v.slideAnim, scene.Slide.Previous.Active)
+	v.syncAnim(&v.slidePairAnim, scene.Slide.PreviousPair.Active)
 	if len(v.groupAnims) != len(scene.Group) {
 		v.groupAnims = make([]animState, len(scene.Group))
 	}
@@ -533,7 +535,9 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 			v.shoutAnim.advance(page, dt, true)
 		}
 	}
-	if scene.Speaker.Visible {
+	// A slide pauses every character, as do_transition pauses their playback (courtroom.cpp:3082).
+	paused := scene.Slide.Active
+	if scene.Speaker.Visible && !paused {
 		if page, ok := v.speakerAnim.resolve(v.store); ok {
 			// Report a multi-frame preanim's duration once, so the fallback timeout can't cut it short.
 			if scene.Speaker.PlayOnce && !v.speakerAnim.startReported && v.OnPreanimStart != nil && !page.Partial && len(page.Frames) > 1 {
@@ -549,13 +553,13 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 			v.reportSpeakerFrame(page)
 		}
 	}
-	if scene.PairActive {
+	if scene.PairActive && !paused {
 		if page, ok := v.pairAnim.resolve(v.store); ok {
 			v.pairAnim.advance(page, dt, false)
 		}
 	}
 	for i := range scene.Group {
-		if page, ok := v.groupAnims[i].resolve(v.store); ok {
+		if page, ok := v.groupAnims[i].resolve(v.store); ok && !paused {
 			v.groupAnims[i].advance(page, dt, false)
 		}
 	}
@@ -591,6 +595,10 @@ func (v *Viewport) overlayAnimating(scene *courtroom.Scene) bool {
 
 // NextAnimDue returns the next animation deadline: 0 during a ramp, ok=false when nothing is scheduled.
 func (v *Viewport) NextAnimDue(scene *courtroom.Scene) (time.Duration, bool) {
+	// A slide moves the stage every frame.
+	if scene.Slide.Active {
+		return 0, true
+	}
 	// Each ramp checks its enabling option, so a countdown tracked in Update but invisible doesn't hold the rate up.
 	if v.fx.ShoutPunch && v.punchLeft > 0 {
 		return 0, true
@@ -816,10 +824,16 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		_ = ren.SetClipRect(&v.maskClip)
 	}
 	// Group pairing (JSON-only GP roster): draw other members first, front-most last, so the roster's z-order holds.
-	if scene.Slide.Active {
+	if sl := &scene.Slide; sl.Active {
 		lastVP := vp
 		lastVP.X += lastDX
-		v.drawSprite(ren, &scene.Slide.Previous, &v.slideAnim, lastVP, 0, spotPct)
+		if sl.PreviousPaired && sl.PreviousInFront {
+			v.drawSprite(ren, &sl.PreviousPair, &v.slidePairAnim, lastVP, 0, spotPct)
+		}
+		v.drawSprite(ren, &sl.Previous, &v.slideAnim, lastVP, 0, spotPct)
+		if sl.PreviousPaired && !sl.PreviousInFront {
+			v.drawSprite(ren, &sl.PreviousPair, &v.slidePairAnim, lastVP, 0, spotPct)
+		}
 	}
 	for i := range scene.Group {
 		v.drawSprite(ren, &scene.Group[i], &v.groupAnims[i], charVP, 0, spotPct)
