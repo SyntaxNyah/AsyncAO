@@ -692,7 +692,7 @@ func probeRef(mgr *assets.Manager, ref courtroom.AssetRef) (string, AssetStatus,
 	if ref.Exact {
 		// A bounded fetch (a dead host must not stall a worker past the hard cap). A clean not-found is Missing; any
 		// other error is a transport fault, Unreachable. Empty without error is Missing.
-		ctx, cancel := context.WithTimeout(context.Background(), musicHTTPTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), exactFetchTimeout)
 		defer cancel()
 		data, err := mgr.FetchRaw(ctx, ref.Base)
 		if err != nil {
@@ -1115,12 +1115,15 @@ func writeContentBundleCancel(mgr *assets.Manager, destDir, stem string, rec *sc
 
 // fetchBundleBytes re-drains one found asset's bytes. The URL is the resolved one the probe fetched, so FetchRaw
 // hits T2 or T3 and touches the network only if both evicted, fetching the same URL with no format probing.
-// Bounded by the music timeout.
+// exactFetchTimeout bounds one exact-URL fetch, so a dead host cannot stall a content worker.
+const exactFetchTimeout = 30 * time.Second
+
+// Bounded by exactFetchTimeout.
 func fetchBundleBytes(mgr *assets.Manager, url string) ([]byte, error) {
 	if mgr == nil {
 		return nil, fmt.Errorf("contentjob: no asset manager")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), musicHTTPTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), exactFetchTimeout)
 	defer cancel()
 	return mgr.FetchRaw(ctx, url)
 }

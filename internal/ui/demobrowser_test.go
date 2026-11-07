@@ -237,7 +237,7 @@ func TestEveryBrowsePurposeHasItsOwnFileFilter(t *testing.T) {
 		t.Error("the base-folder browser hides .zip packs — a pack is a legitimate answer to " +
 			"\"where are your AO files\", and hiding every file makes a full folder look empty")
 	}
-	for _, p := range []browsePurpose{purposeVideo, purposeCheck, purposePackage} {
+	for _, p := range []browsePurpose{purposeCheck, purposePackage} {
 		if browseKeepRule(p)("umineko" + themePackExt) {
 			t.Errorf("purpose %d lists theme bundles — the recording flows must not change", p)
 		}

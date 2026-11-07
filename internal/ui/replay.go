@@ -25,8 +25,7 @@ const (
 	recordingExt     = ".aorec"
 	// maxRecordedEvents bounds one recording (hard rule 4): recording and import stop accepting events past the cap,
 	// keeping a coherent leading prefix. Sized to import a whole real session (the largest real fixture is under 9000
-	// scene events). Video export streams to ffmpeg under its own maxVideoHours limit, so a big import is still fully
-	// exportable.
+	// scene events).
 	maxRecordedEvents = 50000
 
 	// instantReplayMaxEvents bounds the rolling clip buffer (hard rule 4): past the cap the oldest events fall off the

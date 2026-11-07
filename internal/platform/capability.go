@@ -14,7 +14,6 @@ const (
 	SystemNotifications
 	Relaunch
 	SelfUpdate
-	ExternalVideoEncoder
 	SystemFontDiscovery
 	MachineID
 	DiscordPresence
@@ -27,14 +26,14 @@ const (
 func (c Capability) String() string {
 	return [...]string{
 		"open URL", "reveal file", "pick folder", "pick many folders", "copy files to clipboard",
-		"system notifications", "relaunch", "self-update", "external video encoder",
+		"system notifications", "relaunch", "self-update",
 		"system font discovery", "machine id", "discord presence",
 		"extra windows", "background rendering", "high-memory features",
 	}[c]
 }
 
 // Capabilities is what this machine supports, fixed at detection. Whether something
-// works right now (ffmpeg installed, permission granted) is the service call's result.
+// works right now (permission granted, say) is the service call's result.
 type Capabilities struct {
 	offReason [capabilityCount]string
 }
@@ -83,14 +82,14 @@ func capabilitiesFor(env Environment, hardware Hardware) Capabilities {
 	}
 	// After the rows above: the sandbox is the reason a user can act on.
 	if env.Sandboxed {
-		off(reasonSandbox, SelfUpdate, ExternalVideoEncoder)
+		off(reasonSandbox, SelfUpdate)
 	}
 	if hardware.LowMemory() {
 		off(reasonLowMemory, HighMemoryFeatures)
 	}
 	if env.FormFactor == Mobile {
 		off(reasonMobile, OpenURL, RevealFile, PickFolder, PickManyFolders, CopyFilesToClipboard,
-			SystemNotifications, Relaunch, SelfUpdate, ExternalVideoEncoder,
+			SystemNotifications, Relaunch, SelfUpdate,
 			SystemFontDiscovery, MachineID, DiscordPresence,
 			ExtraWindows, BackgroundRendering)
 	}

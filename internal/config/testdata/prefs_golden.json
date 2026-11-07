@@ -53,8 +53,7 @@
     "fps": 6,
     "quality": 20,
     "loop": true,
-    "textScale": 50,
-    "videoFormat": "mp4"
+    "textScale": 50
   },
   "mySpriteStyle": {
     "tint": true,

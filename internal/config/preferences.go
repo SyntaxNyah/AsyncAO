@@ -315,8 +315,6 @@ const (
 	minExportText        = 50 // chat-text size in the export, percent of the fitted base
 	maxExportText        = 200
 	defaultExportText    = 100
-	// Video export format: only "mp4" (H.264) and "webm" (VP9) are valid; anything else normalizes to MP4.
-	defaultVideoFormat = "mp4"
 )
 
 // ExportOptions: output is 4:3; TextScale is a percent of a base fitted to the output, so chat zoom can't inflate it.
@@ -326,13 +324,9 @@ type ExportOptions struct {
 	Quality   int  `json:"quality"`
 	Loop      bool `json:"loop"`
 	TextScale int  `json:"textScale"`
-	// VideoFormat is "mp4" or "webm" and doesn't affect GIF or WebP; empty means MP4.
-	VideoFormat string `json:"videoFormat,omitempty"`
 	// Watermark stamps the top-right corner with WatermarkText, or the recording's server and date when blank.
 	Watermark     bool   `json:"watermark,omitempty"`
 	WatermarkText string `json:"watermarkText,omitempty"`
-	// Subtitles writes .srt and .vtt sidecars beside a video, timed to the exported frames.
-	Subtitles bool `json:"subtitles,omitempty"`
 	// CopyToClipboard puts the finished file on the OS clipboard (Windows).
 	CopyToClipboard bool `json:"copyToClipboard,omitempty"`
 }
@@ -341,15 +335,7 @@ type ExportOptions struct {
 const maxWatermarkLen = 64
 
 func defaultExportOptions() ExportOptions {
-	return ExportOptions{HeightPx: defaultExportHeight, FPS: defaultExportFPS, Quality: defaultExportQuality, Loop: true, TextScale: defaultExportText, VideoFormat: defaultVideoFormat}
-}
-
-// normalizeVideoFormat lives here, not in videoenc, so config has no UI dependency.
-func normalizeVideoFormat(s string) string {
-	if strings.EqualFold(s, "webm") {
-		return "webm"
-	}
-	return defaultVideoFormat
+	return ExportOptions{HeightPx: defaultExportHeight, FPS: defaultExportFPS, Quality: defaultExportQuality, Loop: true, TextScale: defaultExportText}
 }
 
 // SpriteStylePref mirrors courtroom.SpriteStyle, which config can't import; all zero means no style.
@@ -1493,7 +1479,6 @@ func (p *AssetPreferences) SetExportOpts(o ExportOptions) {
 	o.FPS = value.Clamp(o.FPS, minExportFPS, maxExportFPS)
 	o.Quality = value.Clamp(o.Quality, minExportQuality, maxExportQuality)
 	o.TextScale = value.Clamp(o.TextScale, minExportText, maxExportText)
-	o.VideoFormat = normalizeVideoFormat(o.VideoFormat)
 	if runes := []rune(o.WatermarkText); len(runes) > maxWatermarkLen {
 		o.WatermarkText = string(runes[:maxWatermarkLen]) // rune-safe: never split a glyph
 	}

@@ -14,12 +14,11 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// drawSettingsStudio: the Studio tab (scene recording, recordings library and replay, GIF/WebP/Video export).
+// drawSettingsStudio: the Studio tab (scene recording, recordings library and replay, GIF/WebP/Comic export).
 func (a *App) drawSettingsStudio(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	w := a.formW2()
-	y = a.drawDemoToVideoCallout(y, w)
 	y = a.drawContentToolsCallout(y, w)
 	y = a.settingsSection(y, w, "Scene recording")
 	c.Label(pad, y, "Record the courtroom to a tiny .aorec replay file — it stores the scene EVENTS (who spoke,", ColTextDim)
@@ -124,13 +123,10 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 			if c.Button(sdl.Rect{X: pad + 204, Y: y, W: 74, H: btnH}, "🎬 WebP") {
 				a.sceneExportFromPath(r.path, exportWebP) // higher-quality animated WebP
 			}
-			if c.Button(sdl.Rect{X: pad + 282, Y: y, W: 78, H: btnH}, "🎥 Video") {
-				a.sceneExportFromPath(r.path, exportVideo) // MP4/WebM via ffmpeg (Export-options format)
-			}
-			if c.Button(sdl.Rect{X: pad + 364, Y: y, W: 82, H: btnH}, "🖼 Comic") {
+			if c.Button(sdl.Rect{X: pad + 282, Y: y, W: 82, H: btnH}, "🖼 Comic") {
 				a.sceneExportFromPath(r.path, exportComic) // single PNG storyboard page (pure Go)
 			}
-			c.LabelClipped(pad+450, y+4, w-pad-450-scrollBarW, r.name, ColText)
+			c.LabelClipped(pad+368, y+4, w-pad-368-scrollBarW, r.name, ColText)
 			y += 28
 		}
 	}

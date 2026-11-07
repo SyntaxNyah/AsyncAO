@@ -266,9 +266,6 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 		if s.Export.TextScale > 0 {
 			e.TextScale = value.Clamp(s.Export.TextScale, minExportText, maxExportText)
 		}
-		if s.Export.VideoFormat != "" {
-			e.VideoFormat = normalizeVideoFormat(s.Export.VideoFormat)
-		}
 		e.Loop = s.Export.Loop
 		if presence["export"] && !presence["export.loop"] {
 			// A present export object without a loop key reads false, not the default.

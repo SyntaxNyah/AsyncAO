@@ -1054,54 +1054,22 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   every frame for the final encode). Saved to `recordings\<name>.webp`. Falls back
   to a clear message if a build was made without the encoder; the GIF path always
   works.
-- **Scene → MP4 / WebM video** (**🎥 Video**, beside every 🎞 GIF / 🎬 WebP
-  button — in the maker and Settings → Studio per recording): a **real video file**
-  for content creation. Same capture pipeline, but each raw frame is **streamed
-  into a system `ffmpeg`** (`internal/videoenc`, pure-Go — it shells out, no CGO)
-  over a stdin pipe: `rawvideo` → **H.264/MP4** (plays everywhere) or **VP9/WebM**
-  (smaller, open). **ffmpeg is runtime-optional** — the app boots and runs fully
-  without it; only the 🎥 Video button disables (with an "install ffmpeg" hint),
-  and GIF/WebP still work. Format is picked in **⚙ Export options**; the **quality
-  %** slider drives the codec CRF and the **size / frame-rate** apply as usual.
-  Because it **never holds frames** (each is written to ffmpeg and dropped — memory
-  stays flat no matter the length), video can run **hours long** — the only limit is a
-  generous **24-hour** wedge-brake so a stuck export can't encode forever. GIF, WebP,
-  and Comic keep their **much shorter** caps because they accumulate frames/panels in
-  memory. Saved to `recordings\<name>.mp4|webm`.
-  **Audio is baked in** (#99): the scene's **music bed** and each **SFX / shout
-  cry** are captured during the (silent, faster-than-realtime) render and, after
-  the encode, mixed into the video's audio track by a second ffmpeg pass — so the
-  saved file plays **with sound**. It **degrades cleanly** — full mix → music-only
-  bed → silent — so a missing track or an ffmpeg hiccup never breaks the export
-  (blips are excluded to keep the mix sane). The sound version is saved as
-  `<name>-audio.mp4|webm` (subtitle sidecars, if any, follow that name).
-- **Import an AO2 `.demo`** — **drag it anywhere onto the window**, or use the
-  **📥 Import .demo…** button in the **`.demo → video`** call-out at the top of
-  **Settings → Studio**. The button opens an **in-app file browser** (on **every
-  OS**) — navigate your PC, jump to Home / Downloads / Desktop / `recordings\`
-  (and your drives on Windows), and click any `.demo`/`.aorec` to pick it. (This
-  replaced the old Windows-only native file dialog, which could open behind the
-  app.) A dropped/picked `.demo` is **copied
+- **Import an AO2 `.demo`** — **drag it anywhere onto the window**. A dropped `.demo` is **copied
   into `recordings\`** (with a `-2` / `-3` suffix if the name is taken) so it joins
   the recordings library, where its rows get the **same buttons as a native
   `.aorec`** — **▶ Play**, **✎ Edit** (in the Scene Maker), and **🎞 GIF / 🎬 WebP /
-  🎥 Video / 🖼 Comic** export. The `.demo` is converted to AsyncAO's scene model on
+  🖼 Comic** export. The `.demo` is converted to AsyncAO's scene model on
   the fly — no separate format, so everything downstream just works. (The Scene
   Maker's **⇄ .demo** button does the reverse: it writes a scene back out as a
   `.demo` that AO2's own demo player can watch.)
-- **`.demo → video` in one step**: the **📥 Import .demo…** in-app browser (or a drop
-  onto the Studio tab) both **imports** the file and **kicks off a video export** of it —
-  turn a raw AO2 session recording into a shareable MP4/WebM without opening the
-  editor. Import is **bounded** (hard rule — no unbounded buffers): the **50,000-event
+- **Import is bounded** (hard rule — no unbounded buffers): the **50,000-event
   scene cap** is sized to swallow a **whole real session** (the largest real fixture is
   ~8,900 events), so a full demo imports intact; anything past it is dropped with a
   coherent leading prefix kept (the timeline stays consistent), and the **Debug panel**
   notes it, e.g. *"stopped at the 50000-event scene cap (N later events not
   imported)"*. Non-scene packets the model doesn't cover (SC/CT/HP/…) are
   **skipped** with their own separate count in that same note, so you can tell
-  "this demo has chatter" from "this demo is longer than the cap." If ffmpeg isn't
-  on PATH the import **still lands in Recordings** (GIF/WebP export it there); only
-  the video step needs ffmpeg.
+  "this demo has chatter" from "this demo is longer than the cap."
 - **Where a `.demo`'s assets come from** — a `.demo` records only bare asset *names*
   (songs, sprites, backgrounds), never the server they live on. On import, AsyncAO
   stamps the recording with the **asset host of the server you're connected to at
@@ -1113,7 +1081,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   — for a server that's gone — set **Settings → Assets → Asset source** to
   **"Only use my folders"** with a mount of the content folder you have on disk
   *before* importing, and the
-  recording resolves everything (including exported-video music) from your own
+  recording resolves everything (including music) from your own
   files, no network needed.
 - **Export options** (**⚙ Export** in the maker, and **Settings → Studio**): set
   the **size** (Small 384×288 → XL 720×540), **frame rate** (8–24 fps), **WebP

@@ -53,8 +53,7 @@
     "fps": 12,
     "quality": 80,
     "loop": true,
-    "textScale": 100,
-    "videoFormat": "mp4"
+    "textScale": 100
   },
   "mySpriteStyle": {
     "motionPath": [

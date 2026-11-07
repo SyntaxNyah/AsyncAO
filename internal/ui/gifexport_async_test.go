@@ -162,11 +162,11 @@ func TestWarmRoom(t *testing.T) {
 // TestTickGifLoadErrorTeardown pins the async-load error path: a load failure
 // tears the export down cleanly — a.gif nil, a.gifExporting false, the error on
 // the warnLine — with nothing to leak (the loading shell holds no capture target
-// or encoder yet, so a failed load can't strand the scale bracket or an ffmpeg).
+// or encoder yet, so a failed load can't strand the scale bracket or an encoder).
 func TestTickGifLoadErrorTeardown(t *testing.T) {
 	a := testTabApp(t)
 	loadCh := make(chan gifLoadResult, gifLoadBuf)
-	a.gif = &gifExportJob{loading: true, loadCh: loadCh, loadName: "broken.demo", loadPath: "broken.demo", loadKind: exportVideo}
+	a.gif = &gifExportJob{loading: true, loadCh: loadCh, loadName: "broken.demo", loadPath: "broken.demo", loadKind: exportWebP}
 	a.gifExporting = true
 	loadCh <- gifLoadResult{err: errors.New("bad file")}
 

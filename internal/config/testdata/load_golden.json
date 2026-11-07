@@ -620,8 +620,7 @@
         "heightPx": 240,
         "loop": true,
         "quality": 20,
-        "textScale": 50,
-        "videoFormat": "mp4"
+        "textScale": 50
       },
       "extProfiles": {
         "v572": "v672"

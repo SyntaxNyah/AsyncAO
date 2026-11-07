@@ -39,9 +39,10 @@ in **Status**. Update Status in the same commit that completes a step.
         window (sequence item 9)
   - [x] item 6, URL opening and file reveal: `host.Desktop` on `SDL_OpenURL`
   - [x] item 6, dialogs: `Desktop.PickFiles` and `PickFolders` on SDL's file dialogs, with multiselect and filters; Asset source adds several folders where `PickManyFolders` is on
-  - [x] item 6, notifications: `sdl.ShowNotification` has SDL 3.6's name and arguments, on the Windows toast until
-        then. Moving to 3.6 replaces only its body, deletes `notification_other.go`, and sets the header icon SDL
-        requires on Windows and on Linux with no .desktop entry. Push notifications are not planned
+  - [x] item 6, notifications: `platform/toast` shows WinRT toasts under AsyncAO's own AppUserModelID and icon,
+        injected into the UI as `Deps.Toasts`. Moving to SDL 3.6's `SDL_ShowNotification` replaces its Windows sender
+        and its no-op elsewhere, and sets the header icon SDL requires on Windows and on Linux with no .desktop entry.
+        Push notifications are not planned
   - [x] item 6, clipboard: `Desktop.CopyFileToClipboard`, on Win32 on Windows (SDL writes only text and images there) and
         `sdl.SetClipboardData` on Linux. Off on macOS until a test shows Finder accepts SDL's offer
   - [x] item 6, fonts: `platform.Fonts`, where each OS keeps its fonts
@@ -817,7 +818,7 @@ end is emulated with the stopped callback.
 | `render/previewowner_windows.go` (Win32 window ownership for the preview window) | parent windows (`SDL_PROP_WINDOW_CREATE_PARENT_POINTER`) |
 | clipboard file/image hand-off via PowerShell (clipfile.go) | SDL3 MIME clipboard (`SDL_SetClipboardData`); verify the Windows file-drop format first |
 
-Keep: OS toast (ostoast.go, no SDL3 equivalent), `winexec` + `os/exec` for ffmpeg (KISS),
+Keep: OS toast (ostoast.go, no SDL3 equivalent), `winexec` + `os/exec` for child processes (KISS),
 libwebp/libavif/opus cgo (not SDL).
 
 **Scale:** go-sdl2 is imported by 187 prod files (ui 163, render 19, cmd 5): ~4,430 references
@@ -1227,7 +1228,7 @@ OS it is on.
   paths (config, cache, data, logs, user fonts).
 - `Capability` (an enum) and `Capabilities` (the set present): open a URL, reveal a file,
   pick a folder or file, copy files to the clipboard, system notifications, relaunch the
-  client, self-update, an external video encoder (ffmpeg), system font discovery, proxy
+  client, self-update, system font discovery, proxy
   discovery, machine id, Discord presence, extra OS windows, background rendering.
 - One service interface per capability, each with one job (`URLOpener`, `FileRevealer`,
   `FilePicker`, `ClipboardFiles`, `Relauncher`, `Updater`, `ProcessRunner`,
@@ -1249,7 +1250,7 @@ Rows marked *mobile* are reserved for the mobile milestone and not built before 
 | Identity | `AppIdentity` (name, version, channel, executable, packaging); `DeviceFingerprint` (the machine's stable fingerprint) | `update.Version`, `ui/datadir.go`; `hwid/hwid_{windows,darwin,linux,other}.go` |
 | System | `SystemInfo` (OS and version, arch, CPU count, total memory, form factor) | `runtime.GOOS` branches; memory budget in `main` |
 | Paths and storage | `Paths` (config, cache, data, logs and crash log, user fonts, desktop, temp; portable mode); `FileSystem` (roots, case-insensitive paths) | `config/location.go`, `ui/datadir.go`, `setupCrashOutput`, `USERPROFILE` in `ui/debugpanel.go`, `ui/demobrowser.go`, `ui/app_frame.go` |
-| Process | `ProcessRunner` (hidden console, find a tool such as ffmpeg); `Relauncher`; `Updater` (release asset, permissions, quarantine) | `winexec`, `videoenc`, `update/apply.go`, `ui/update_ui.go` |
+| Process | `ProcessRunner` (hidden console); `Relauncher`; `Updater` (release asset, permissions, quarantine) | `winexec`, `update/apply.go`, `ui/update_ui.go` |
 | Network and IPC | `ProxyDiscoverer` (the OS proxy settings); `PresenceDialer` (Discord's socket or pipe) | `netproxy/discover_*.go`; `presence/dial_*.go`, `XDG_RUNTIME_DIR` |
 | Fonts | `FontLocator` (system font folders, well-known faces per role) | `ui/fontcensus.go`, `fontfallback.go`, `themefonts.go`, `emoji.go`, `WINDIR`, `LOCALAPPDATA` |
 | Desktop integration (*host*) | `URLOpener`, `FileRevealer`, `FilePicker`, `ClipboardFiles`, `WindowIcon`, `Windows` (extra OS windows) | `ui/about.go`, `openpath.go`, `settingstabs.go`, `settingswidgets.go`, `clipfile.go`, `ostoast.go`, `mascot_icon_*.go`, `render/previewowner_*.go` |
@@ -1346,7 +1347,7 @@ Capabilities, Detect, report; (2) the host: init, window, frame loop, graphics a
 on `GraphicsAPIs()` and GPU loss, bootstrap in `main`; (3) the audio device and displays move
 into the host; (4) the services, one commit each, deleting the OS branches they replace: URL
 and reveal, dialogs, notifications, clipboard, fonts, proxy, machine id, presence, process
-runner and ffmpeg, updater and relaunch, paths; (5) turn on the lints. Android and iOS
+runner, updater and relaunch, paths; (5) turn on the lints. Android and iOS
 implementations, and main callbacks, come with the mobile milestone.
 
 ### Review outcome (2026-10-30; replaces the text above where they differ)

@@ -41,7 +41,7 @@ func openBrowserOverEditor(t *testing.T) {
 	demoBrowser.purpose = purposeThemeImage
 	t.Cleanup(func() {
 		demoBrowser.open = false
-		demoBrowser.purpose = purposeVideo
+		demoBrowser.purpose = purposeCheck
 	})
 }
 

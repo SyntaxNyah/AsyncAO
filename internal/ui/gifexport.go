@@ -13,12 +13,10 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/gifenc"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
-	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
-	"github.com/SyntaxNyah/AsyncAO/internal/videoenc"
 	"github.com/SyntaxNyah/AsyncAO/internal/webpenc"
 )
 
@@ -38,7 +36,7 @@ func exportChatPct(vpH int32, textScale int) int {
 	return pct
 }
 
-// sceneExportFromPath begins exporting a recording straight to a GIF, an animated WebP or an MP4/WebM video, without
+// sceneExportFromPath begins exporting a recording straight to a GIF, an animated WebP or a comic page, without
 // the maker. A bundled archive renders from its own folder. The disk read and parse is deferred to one goroutine off
 // the render thread; this function only validates, creates the job shell in its loading phase, sets a.gifExporting, and
 // spawns the loader. tickGifExport polls the result. The a.gifExporting guard refuses a second export.
@@ -77,8 +75,8 @@ func (a *App) finishLoadedExport(res gifLoadResult) {
 	kind := a.gif.loadKind
 	path := a.gif.loadPath
 	// The shell job is replaced by startSceneExport's real job; clear the flags first so its `if a.gifExporting` guard
-	// sees a clean state. If startSceneExport refuses (empty scene, no ffmpeg), the flags stay cleared and its warnLine
-	// shows.
+	// sees a clean state. If startSceneExport refuses (empty scene, no WebP encoder), the flags stay cleared and its
+	// warnLine shows.
 	a.gif = nil
 	a.gifExporting = false
 	a.emitLoadNotes(res)
@@ -143,30 +141,14 @@ type exportResult struct {
 	path string // "" on failure
 }
 
-// exportKind selects the output format of one gifExportJob. GIF and WebP use the encoders here; Video streams raw
-// frames into a system ffmpeg (internal/videoenc).
+// exportKind selects the output format of one gifExportJob.
 type exportKind int
 
 const (
 	exportGIF   exportKind = iota // animated GIF (paletted, every frame held for gifenc)
 	exportWebP                    // animated WebP (libwebp streams + compresses each frame)
-	exportVideo                   // MP4/WebM via a system ffmpeg (videoenc streams frames)
 	exportComic                   // a single PNG storyboard: one still panel per IC line (pure Go)
 )
-
-// maxVideoHours stops a wedged exporter from encoding forever. It is not a memory bound: video frames stream to ffmpeg
-// and are never retained, so it must not limit a real film. 24 h is far above any real export.
-const maxVideoHours = 24
-
-// videoMaxFrames derives the video frame cap from the chosen fps, so the cap is the same duration at any cadence. The
-// config clamp allows [6,30] fps (maxExportFPS=30 in internal/config), so the cap reaches 24*3600*30 frames. The frame
-// counter and cue offsets are computed multiply-first (frameToMs) and stay within int64. Pure.
-func videoMaxFrames(fps int) int {
-	if fps < 1 {
-		fps = 1
-	}
-	return maxVideoHours * 3600 * fps
-}
 
 // gifResultBuf is the buffer of the off-thread export result channel (hard rule 4). One is enough: one export runs at a
 // time and pollGifResult drains it every frame. comicexport.go also writes it, for the single in-flight export.
@@ -178,20 +160,7 @@ var (
 	exportHeightLabels  = []string{"Small · 384×288", "Medium · 480×360", "Large · 640×480", "XL · 720×540"}
 	exportFPSPresets    = []int{8, 12, 15, 24}
 	exportFPSLabels     = []string{"8 fps · smallest", "12 fps", "15 fps", "24 fps · smoothest"}
-
-	// Video container/codec choices; the index matches the persisted VideoFormat string, MP4/H.264 first as the
-	// default.
-	videoFormatValues = []string{"mp4", "webm"}
-	videoFormatLabels = []string{"MP4 · H.264 (plays everywhere)", "WebM · VP9 (smaller, open)"}
 )
-
-// videoFormatIdx maps a persisted VideoFormat to its dropdown row.
-func videoFormatIdx(s string) int {
-	if strings.EqualFold(s, "webm") {
-		return 1
-	}
-	return 0
-}
 
 // nearestPresetIdx returns the index of the preset closest to v, so a hand-edited pref lands on a sensible row.
 func nearestPresetIdx(presets []int, v int) int {
@@ -238,25 +207,6 @@ func (a *App) drawExportOptions(x, y int32, withSpeed bool) int32 {
 	c.Label(fx+190, y+5, "higher = smoother but bigger", ColTextDim)
 	y += 32
 
-	c.Label(pad, y+5, "Video format:", ColText)
-	if next, changed := c.Dropdown("exp_vfmt", sdl.Rect{X: fx, Y: y, W: 180, H: fieldH}, videoFormatLabels, videoFormatIdx(opts.VideoFormat)); changed {
-		opts.VideoFormat = videoFormatValues[next]
-		a.d.Prefs.SetExportOpts(opts)
-	}
-	if videoenc.Available() {
-		c.Label(fx+190, y+5, "for the 🎥 Video button", ColTextDim)
-	} else {
-		c.Label(fx+190, y+5, "🎥 Video needs ffmpeg on PATH — GIF/WebP work without it", ColDanger)
-	}
-	y += 32
-
-	// Subtitle sidecar for the video export, cue-timed to the video.
-	if next := c.Checkbox(pad, y, "Write subtitles beside the video (.srt + .vtt, speaker + line)", opts.Subtitles); next != opts.Subtitles {
-		opts.Subtitles = next
-		a.d.Prefs.SetExportOpts(opts)
-	}
-	y += 28
-
 	// Put the finished export file on the clipboard (Windows) so it pastes straight into Discord.
 	if next := c.Checkbox(pad, y, "Copy the finished file to the clipboard (paste straight into Discord — Windows)", opts.CopyToClipboard); next != opts.CopyToClipboard {
 		opts.CopyToClipboard = next
@@ -264,8 +214,8 @@ func (a *App) drawExportOptions(x, y int32, withSpeed bool) int32 {
 	}
 	y += 28
 
-	// Quality drives both the WebP encoder and the video CRF (higher = better and bigger).
-	if next := a.sliderRow(y, "  Quality % (WebP / video)", opts.Quality, 5, 20, 100); next != opts.Quality {
+	// Quality drives the WebP encoder (higher = better and bigger).
+	if next := a.sliderRow(y, "  Quality % (WebP)", opts.Quality, 5, 20, 100); next != opts.Quality {
 		opts.Quality = next
 		a.d.Prefs.SetExportOpts(opts)
 	}
@@ -285,7 +235,7 @@ func (a *App) drawExportOptions(x, y int32, withSpeed bool) int32 {
 	}
 	y += 28
 
-	// Watermark: a small corner credit on GIF/WebP/Video exports, not the comic.
+	// Watermark: a small corner credit on GIF/WebP exports, not the comic.
 	if next := c.Checkbox(pad, y, "Watermark the export (top-right corner stamp)", opts.Watermark); next != opts.Watermark {
 		opts.Watermark = next
 		a.d.Prefs.SetExportOpts(opts)
@@ -335,28 +285,11 @@ type gifExportJob struct {
 	name     string
 	captured int // frames captured (both formats) — drives the cap + progress
 
-	kind exportKind       // which format this job produces (GIF / WebP / Video)
+	kind exportKind       // which format this job produces (GIF / WebP / Comic)
 	webp *webpenc.Encoder // WebP only — streams + compresses frames as they arrive
-
-	// Video only: ffmpeg streams frames to vidPath as they arrive and holds none. vidPath is resolved up front because
-	// ffmpeg owns the file while it runs.
-	vid       *videoenc.Encoder
-	vidPath   string
-	vidFormat videoenc.Format // Video only — codec choice for the post-capture audio mux
-	audioCap  *audioCapture   // Video only — records the scene's music + SFX for the audio mux (#99)
-
-	// Video only: subtitle cues, frame-timed to match the video. subPend waits for its text to become visible, subOpen
-	// is on screen now, subs holds the closed cues.
-	subsOn     bool
-	subs       []subCue
-	subPend    subCue
-	subHasPend bool
-	subOpen    subCue
-	subHasOpen bool
 
 	// Per-export output settings from config ExportOptions, resolved once.
 	w, h      int32         // capture/output size (4:3)
-	fps       int           // chosen frame rate; drives frameToMs cue offsets (multiply-first)
 	frameDt   time.Duration // room Update step per captured frame (= 1/fps)
 	delayCs   int           // GIF per-frame delay, centiseconds
 	loop      bool          // loop the animation forever vs play once
@@ -422,8 +355,8 @@ type gifLoadResult struct {
 	warnMsg string   // empty-origin honesty warning ("" = none), emitted via warnLine
 }
 
-// startSceneExport starts the offscreen render of scene into an animated GIF (exportGIF), WebP (exportWebP) or MP4/WebM
-// video (exportVideo). Render thread only (it creates the capture target).
+// startSceneExport starts the offscreen render of scene into an animated GIF (exportGIF), WebP (exportWebP) or comic
+// page (exportComic). Render thread only (it creates the capture target).
 func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKind) {
 	if a.gifExporting {
 		return
@@ -435,12 +368,6 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 	}
 	if kind == exportWebP && !webpenc.Available() {
 		a.warnLine = "Animated WebP isn't available in this build — use 🎞 GIF."
-		a.warnAt = time.Now()
-		return
-	}
-	if kind == exportVideo && !videoenc.Available() {
-		// ffmpeg is optional at runtime; only this action needs it.
-		a.warnLine = "Video export needs ffmpeg — install it and add it to PATH (the app works fine without it; GIF/WebP still export)."
 		a.warnAt = time.Now()
 		return
 	}
@@ -462,18 +389,13 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 	if delayCs < 1 {
 		delayCs = 1
 	}
-	// WebP stores one integer per-frame duration, so a rounded constant is the best it can do (video and subtitle cue
-	// offsets use frameToMs instead). Round to nearest so 24 fps gives 42 ms (about 41.67), not 41.
+	// WebP stores one integer per-frame duration, so a rounded constant is the best it can do. Round to nearest so
+	// 24 fps gives 42 ms (about 41.67), not 41.
 	frameMs := (1000 + fps/2) / fps
 	if frameMs < 1 {
 		frameMs = 1
 	}
-	// Video streams to ffmpeg and holds no frames, so scene length drives the cap up to the duration limit (24 h at the
-	// chosen fps), not the small memory cap GIF/WebP/Comic keep.
 	maxFrames := exportMaxFrames(w, h)
-	if kind == exportVideo {
-		maxFrames = videoMaxFrames(fps)
-	}
 	if kind == exportComic {
 		maxFrames = maxComicPanels // one page's worth of panels (the cap bounds the held RGBA)
 	}
@@ -485,52 +407,22 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 		return
 	}
 	var enc *webpenc.Encoder
-	var vid *videoenc.Encoder
-	var vidPath string
-	var vidFormat videoenc.Format
-	switch kind {
-	case exportWebP:
+	if kind == exportWebP {
 		if enc, err = webpenc.New(int(w), int(h), opts.Quality, frameMs, opts.Loop); err != nil {
 			ct.Close()
 			a.warnLine = "WebP export unavailable: " + err.Error()
 			a.warnAt = time.Now()
 			return
 		}
-	case exportVideo:
-		vidFormat = videoenc.FormatFromString(opts.VideoFormat)
-		vidPath, err = videoExportPath(sanitizeStem(name), vidFormat)
-		if err != nil {
-			ct.Close()
-			a.warnLine = "Video export unavailable: " + err.Error()
-			a.warnAt = time.Now()
-			return
-		}
-		if vid, err = videoenc.New(vidPath, int(w), int(h), fps, opts.Quality, vidFormat); err != nil {
-			ct.Close()
-			a.warnLine = "Video export unavailable: " + err.Error()
-			a.warnAt = time.Now()
-			return
-		}
 	}
-	// Audio sink per kind: GIF/WebP keep real audio. A comic is a silent still page whose fast-forward would play every
-	// blip at once and rip through music, so it gets a no-op sink. A video is silent at capture (export speed garbles
-	// live audio), but an audioCapture sink records music and SFX for finishVideoExport to mux in.
+	// GIF/WebP keep real audio. A comic is a silent still page whose fast-forward would play every blip at once and rip
+	// through music, so it gets a no-op sink.
 	var audio courtroom.AudioSink = a.d.Audio
-	var audioCap *audioCapture
-	switch kind {
-	case exportComic:
+	if kind == exportComic {
 		audio = courtroom.NopAudio{}
-	case exportVideo:
-		audioCap = &audioCapture{frameRef: func() int {
-			if a.gif != nil {
-				return a.gif.captured
-			}
-			return 0
-		}}
-		audio = audioCap
 	}
-	// Constructed and wired through newroom.go so the export room gets the screen-effect resolver the comic and video
-	// ask for below.
+	// Constructed and wired through newroom.go so the export room gets the screen-effect resolver the comic asks for
+	// below.
 	room := a.newRoom(courtroom.NewURLBuilder(scene.Origin), nil, audio)
 	room.Typewriter.Interval, room.TextStay = a.replayTiming()
 	room.CatchUp = false
@@ -574,20 +466,14 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 		name:        sanitizeStem(name),
 		kind:        kind,
 		webp:        enc,
-		vid:         vid,
-		vidPath:     vidPath,
-		vidFormat:   vidFormat,
-		audioCap:    audioCap,
 		w:           w,
 		h:           h,
-		fps:         fps,
 		frameDt:     frameDt,
 		delayCs:     delayCs,
 		loop:        opts.Loop,
 		maxFrames:   maxFrames,
 		stamp:       exportStamp(opts, scene),
-		subsOn:      kind == exportVideo && opts.Subtitles, // #69 frame-timed .srt/.vtt beside the video
-		chatPct:     exportChatPct(h, opts.TextScale),      // font fitted to the capture, not the live zoom
+		chatPct:     exportChatPct(h, opts.TextScale), // font fitted to the capture, not the live zoom
 		warming:     true,
 		warmRefs:    warmRefs, // full set (M in the overlay + residency counting)
 		warmCreated: now,      // anchors gifWarmHardCap so never-resident refs can't hang the phase
@@ -713,11 +599,7 @@ func (a *App) tickGifExport() {
 				a.finishGifExport()
 				return
 			}
-			ev := j.events[j.idx]
-			if courtroom.EventKind(ev.Kind) == courtroom.EventMessage {
-				j.subFeed(ev.Message, j.captured) // #69: close the on-screen cue, pend the new line
-			}
-			j.room.HandleEvent(eventFromRec(ev))
+			j.room.HandleEvent(eventFromRec(j.events[j.idx]))
 			j.idx++
 		}
 		j.room.Update(j.frameDt)
@@ -741,18 +623,9 @@ func (a *App) tickGifExport() {
 				a.finishGifExport()
 				return
 			}
-		case exportVideo:
-			// Stream the raw frame into ffmpeg (synchronous; the export owns the window). A broken pipe means ffmpeg
-			// died: stop, and finishVideoExport reaps the process and reports the stderr tail.
-			if err := j.vid.AddFrame(img); err != nil {
-				a.pushDebug("video add: " + err.Error())
-				a.finishGifExport()
-				return
-			}
 		default: // exportGIF
 			j.frames = append(j.frames, gifenc.Quantize(img))
 		}
-		j.subAnchor(j.room.Scene.VisibleRunes, j.captured) // #69: cue starts on the first frame that shows text
 		j.captured++
 	}
 }
@@ -1203,10 +1076,6 @@ func (a *App) finishGifExport() {
 	a.restoreViewportPreanim()
 	a.makerPreviewIdx = -1 // the export drove the shared viewport — force the preview pane to rebuild
 
-	if j.kind == exportVideo {
-		a.finishVideoExport(j) // ffmpeg has been writing vidPath all along — just flush + wait
-		return
-	}
 	if j.kind == exportComic {
 		// Sits after the shared teardown (ct.Close / chatRaster.Destroy / restoreViewportPreanim) on purpose: an early
 		// return would leak the capture target and leave the viewport's preanim callback pointing at the dead comic
@@ -1257,105 +1126,6 @@ func (a *App) finishWebpExport(j *gifExportJob, stem string) {
 		}
 		ch <- writeWebp(data, stem)
 	}()
-}
-
-// finishVideoExport closes ffmpeg's stdin and waits off-thread for the encode to finalize (ffmpeg writes the moov atom
-// on EOF, which can take a moment). ffmpeg has written vidPath throughout, so nothing is assembled. This goroutine
-// solely owns the encoder (a.gif is already nil).
-func (a *App) finishVideoExport(j *gifExportJob) {
-	if j.vid == nil {
-		return
-	}
-	enc, path := j.vid, j.vidPath
-	if j.captured == 0 {
-		enc.Close()
-		_ = os.Remove(path) // drop the empty container ffmpeg may have created
-		a.warnLine = "Video export: nothing rendered (set an Origin/CDN and add a line)."
-		a.warnAt = time.Now()
-		return
-	}
-	// Resolve the soundtrack now, on the render thread: the capture sink's cues are complete and a.gif is about to be
-	// cleared. The cue functions place each cue with frameToMs(frame, fps) (multiply-first, so long exports do not
-	// drift). The mux runs off-thread below and falls back to the silent video on any failure.
-	var songs []songSegment
-	var sfx []sfxPlacement
-	audioDropped := 0
-	if j.audioCap != nil {
-		songs = j.audioCap.songSegments(j.fps, j.captured) // windows to the final frame count
-		sfx = j.audioCap.sfxPlacements(j.fps)
-		// Cues are turned away at two caps: the per-list guard in audioCapture (droppedAtCapture) and the combined
-		// maxAudioClips cap the mux applies (music first, then SFX). Report both so a trimmed soundtrack is not a
-		// surprise.
-		offered := len(songs) + len(sfx)
-		admitted := offered
-		if admitted > maxAudioClips {
-			admitted = maxAudioClips
-		}
-		audioDropped = j.audioCap.droppedAtCapture + (offered - admitted)
-	}
-	format := j.vidFormat
-	mgr := a.d.Manager
-	// Close the final subtitle cue at the last captured frame and hand the list to the finisher goroutine (j is dead
-	// after this).
-	j.subClose(j.captured)
-	subs := j.subs
-	subFps := j.fps
-	a.warnLine = fmt.Sprintf("Finishing video (%d frames)…", j.captured)
-	a.warnAt = time.Now()
-	ch := a.gifResultCh
-	musicClient := a.sockets().Current().Client(netproxy.Web, musicHTTPTimeout)
-	go func() {
-		if err := enc.Finish(); err != nil {
-			_ = os.Remove(path) // a failed encode leaves a corrupt file — don't keep it
-			ch <- exportResult{msg: "Video export failed: " + err.Error()}
-			return
-		}
-		// Mux first to learn the final on-disk name: a successful mux renames the video to <stem>-audio.<ext> and
-		// deletes the silent original (videomux.go). Write the .srt/.vtt sidecars against finalPath afterwards; on the
-		// silent fallback finalPath is the original.
-		finalPath, soundNote := path, ""
-		if len(songs) > 0 || len(sfx) > 0 {
-			if muxed, ok := muxSceneAudio(mgr, musicClient, path, songs, sfx, format); ok {
-				finalPath, soundNote = muxed, "  ♪ with sound"
-				// A factual note when the 64-clip cap trimmed the soundtrack, on the success branch only (the
-				// silent-fallback message already says there is no sound). Say "left out", not "past the cap": failed
-				// downloads do not consume cap slots, so the count can include resolve failures.
-				if audioDropped > 0 {
-					soundNote += fmt.Sprintf(" (%d sound cue(s) left out)", audioDropped)
-				}
-			} else {
-				soundNote = "  (couldn't add the sound — saved silent)"
-			}
-		}
-		subNote := ""
-		if writeSubtitleFiles(finalPath, subs, subFps) {
-			subNote = "  + subtitles (.srt/.vtt)"
-		}
-		ch <- exportResult{msg: videoSavedMsg(finalPath) + soundNote + subNote, path: finalPath}
-	}()
-}
-
-// videoExportPath resolves recordings\<stem>-<timestamp>.<ext> (creating the folder). The path must exist up front
-// because ffmpeg owns the file for the whole encode.
-func videoExportPath(stem string, format videoenc.Format) (string, error) {
-	dir := recordingsDir()
-	if dir == "" {
-		return "", fmt.Errorf("no recordings folder")
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	name := stem + "-" + time.Now().Format("20060102-150405") + "." + videoenc.FormatExt(format)
-	return filepath.Join(dir, name), nil
-}
-
-// videoSavedMsg reports a finished video with its on-disk size.
-func videoSavedMsg(path string) string {
-	name := filepath.Base(path)
-	if st, err := os.Stat(path); err == nil {
-		return fmt.Sprintf("Video saved: recordings\\%s (%.2f MB).", name, float64(st.Size())/(1024*1024))
-	}
-	return "Video saved: recordings\\" + name + "."
 }
 
 // restoreViewportPreanim rebinds the viewport's one-shot preanim callback to whatever room is now live (maker preview,
@@ -1495,28 +1265,21 @@ func (a *App) drawGifProgress(winW, winH int32) {
 		switch j.kind {
 		case exportWebP:
 			label = "🎬  Rendering WebP…"
-		case exportVideo:
-			label = "🎥  Rendering video…"
 		case exportComic:
 			label = "🖼  Rendering comic…"
 		}
 	}
 	c.Label(cx-120, cy-30, label, ColText)
 
-	// Progress fraction: GIF/WebP are bounded by the frame cap, so their bar is frames/cap. Video almost always
-	// finishes by exhausting the script long before its cap, so its bar tracks progress through the events.
+	// Progress fraction: GIF/WebP are bounded by the frame cap, so their bar is frames/cap. A comic streams the script
+	// rather than fill a frame cap, so its bar tracks progress through the events.
 	var frac float64
 	var sub string
-	if j != nil && (j.kind == exportVideo || j.kind == exportComic) {
-		// Both stream the script rather than fill a frame cap, so the bar tracks progress through the events.
+	if j != nil && j.kind == exportComic {
 		if n := len(j.events); n > 0 {
 			frac = float64(j.idx) / float64(n)
 		}
-		if j.kind == exportComic {
-			sub = fmt.Sprintf("%d panels (%d%% of the script)", done, int(frac*100))
-		} else {
-			sub = fmt.Sprintf("%d frames written (%d%% of the script)", done, int(frac*100))
-		}
+		sub = fmt.Sprintf("%d panels (%d%% of the script)", done, int(frac*100))
 	} else {
 		capFrames := maxGifFrames
 		if j != nil && j.maxFrames > 0 {

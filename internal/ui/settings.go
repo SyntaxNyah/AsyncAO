@@ -11,7 +11,6 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
-	"github.com/SyntaxNyah/AsyncAO/internal/videoenc"
 )
 
 type settingsState struct {
@@ -1698,43 +1697,6 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	y += 28
 	return y
-}
-
-// Package-level strings because these draw every frame.
-const (
-	demoVideoCalloutLead = "Have an AO2 .demo session file? Turn it into a shareable video."
-	demoVideoCalloutDrag = "…or drag the .demo file anywhere onto this window."
-	// So the MP4 promise does not dead-end: GIF/WebP still work, and the import still lands.
-	demoVideoCalloutNoFF = "🎥 Video needs ffmpeg on PATH — GIF/WebP work without it, and the import still lands in Recordings."
-)
-
-// drawDemoToVideoCallout draws the .demo to video entry point at the top of the Studio tab.
-func (a *App) drawDemoToVideoCallout(y, w int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	y = a.settingsSection(y, w, ".demo → video")
-
-	// The Import button shows on every OS, so the panel is always the full two-row height.
-	panelH := int32(60)
-	if !videoenc.Available() {
-		panelH += 18 // room for the ffmpeg fallback line
-	}
-	panel := sdl.Rect{X: pad, Y: y, W: w - pad - scrollBarW, H: panelH}
-	c.Fill(panel, ColPanel)
-	c.Border(panel, ColAccent)
-
-	iy := y + 8
-	c.Label(pad+12, iy, demoVideoCalloutLead, ColText)
-	iy += 22
-	if c.Button(sdl.Rect{X: pad + 12, Y: iy, W: 170, H: btnH}, "📥 Import .demo…") {
-		a.openDemoBrowser() // in-app file browser — pick any .demo/.aorec from your PC
-	}
-	c.Label(pad+192, iy+5, demoVideoCalloutDrag, ColTextDim)
-	iy += btnH + 6
-	if !videoenc.Available() {
-		c.Label(pad+12, iy, demoVideoCalloutNoFF, ColDanger)
-	}
-	return y + panelH + 12
 }
 
 // Package-level literals because these draw every frame.

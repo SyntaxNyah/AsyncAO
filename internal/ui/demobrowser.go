@@ -28,12 +28,11 @@ const (
 	browseIconColW = 30
 )
 
-// browsePurpose is what a picked file is used for; purposeVideo is the zero value, so an unset browser imports video.
+// browsePurpose is what a picked file is used for.
 type browsePurpose int
 
 const (
-	purposeVideo   browsePurpose = iota // pick → importRecordingToVideo (the original flow)
-	purposeCheck                        // pick → StartContentReport + open the report panel
+	purposeCheck   browsePurpose = iota // pick → StartContentReport + open the report panel
 	purposePackage                      // pick → StartContentReport, then package once it's ready
 	// purposeThemeBundle: pick goes to handleThemeBundleDrop, as a dragged .aotheme does;
 	// lists bundles (see browseKeepRule).
@@ -95,9 +94,6 @@ var demoBrowser = demoBrowserState{res: make(chan browseResult, browseResCap)}
 
 // isDrivesView reports the "" sentinel; in the merged browse "" is the merged root, which offers no volume list.
 func (s *demoBrowserState) isDrivesView() bool { return !s.merged && s.dir == "" }
-
-// openDemoBrowser opens the browser for the .demo to video flow.
-func (a *App) openDemoBrowser() { a.openDemoBrowserFor(purposeVideo) }
 
 // openDemoBrowserFor opens the browser for a pick purpose and navigates to the session-remembered dir.
 func (a *App) openDemoBrowserFor(purpose browsePurpose) {
@@ -583,8 +579,6 @@ func (a *App) pickBrowsedFile(path string) {
 	case purposeEvidenceImage:
 		// An origin-relative asset path re-rooted at the mounts' evidence/ folder; no filesystem path is involved.
 		a.setEvidenceImageFromMergedPath(path)
-	default:
-		a.importRecordingToVideo(importDroppedRecording(path))
 	}
 }
 

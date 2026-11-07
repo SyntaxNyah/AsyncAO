@@ -349,19 +349,12 @@ func importDroppedRecording(path string) string {
 }
 
 // HandleFileDrop imports a file dropped onto the window: a .aorec or AO2 .demo is copied into recordings\ and then
-// starts playing. Anything else is ignored. When the Settings Studio tab is showing, the drop is a ".demo to video"
-// request and routes to importRecordingToVideo instead of playback. This is the single owner of dropped
-// recordings (the Settings c.dropped consumer skips them) and of dropped theme bundles via claimDroppedFile; see
-// dropclaim.go.
+// starts playing. Anything else is ignored. This is the single owner of dropped recordings (the Settings c.dropped
+// consumer skips them) and of dropped theme bundles via claimDroppedFile; see dropclaim.go.
 func (a *App) HandleFileDrop(path string) {
 	switch claimDroppedFile(path, settings.importArmed) {
 	case dropClaimRecording:
-		dest := importDroppedRecording(path)
-		if a.Screen() == ScreenSettings && settings.tab == tabStudio {
-			a.importRecordingToVideo(dest) // Studio's dedicated .demo → video entry point
-			return
-		}
-		a.replayFromPath(dest)
+		a.replayFromPath(importDroppedRecording(path))
 	case dropClaimThemeBundle:
 		a.handleThemeBundleDrop(path)
 	case dropClaimThemeFont:
@@ -425,15 +418,6 @@ func (a *App) handleUnclaimedDrop(path string) {
 	}
 	a.warnLine = "Dropped file isn't a recording (.aorec), an AO2 demo (.demo) or a theme bundle (" + themePackExt + ") — ignored."
 	a.warnAt = time.Now()
-}
-
-// importRecordingToVideo is the shared tail of both Studio entry points (the native picker and a drop onto the
-// Studio tab): start the video export. sceneExportFromPath owns the on-screen banner from here: it posts
-// "Reading …" synchronously, and startSceneExport's ffmpeg-refusal message still wins. No warnLine is set here
-// because the export path overwrites it before any frame draws. The import happened upstream
-// (importDroppedRecording), which falls back to the original path when the copy fails.
-func (a *App) importRecordingToVideo(dest string) {
-	a.sceneExportFromPath(dest, exportVideo)
 }
 
 // makerExportDemo writes the maker's scene as recordings\<stem>.demo (makerSave's .demo sibling; never overwrites,
