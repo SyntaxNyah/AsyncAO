@@ -1,6 +1,7 @@
 package courtroom
 
 import (
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -90,8 +91,16 @@ type SpriteLayer struct {
 type Scene struct {
 	Position       string
 	BackgroundBase string
+	// BackgroundAlts are the background's other names in AO2's order, so a repair asks for the same names.
+	BackgroundAlts []string
 	DeskBase       string
 	ShowDesk       bool
+	// SceneryStretch and SceneryScaling are the background design.ini's stretch and scaling; SceneryPanorama says the
+	// position sits on a panorama at x SceneryOrigin. They place the background and desk as set_scene does.
+	SceneryStretch  bool
+	SceneryScaling  ScalingMode
+	SceneryPanorama bool
+	SceneryOrigin   int
 
 	Speaker SpriteLayer
 	Pair    SpriteLayer
@@ -196,6 +205,8 @@ type AssetResolver interface {
 	SpriteReady(base string) bool
 	// SceneryFile returns the file a resident page was decoded from, "" when not resident; same thread.
 	SceneryFile(base string) string
+	// BackgroundDesign returns a background's parsed design.ini, nil when it has none; ok is false while it is read.
+	BackgroundDesign(url string) (design *theme.INI, ok bool)
 	// SpritePlayable reports every frame resident, or nothing more to wait for; same thread.
 	SpritePlayable(base string) bool
 	// AudioReady reports a cached decoded chunk; same thread, a plain map probe.
@@ -259,6 +270,11 @@ type Courtroom struct {
 	Assets AssetResolver
 	// followBg, followFile and followDesk are the background, its file and the desk followBackground last settled on.
 	followBg, followFile, followDesk string
+	// design is designBg's design.ini once read, nil when absent; designURL is asked until designRead.
+	design     *theme.INI
+	designBg   string
+	designURL  string
+	designRead bool
 
 	// Env is the local state lookup (see EnvResolver).
 	Env EnvResolver
@@ -439,14 +455,16 @@ func (c *Courtroom) HandleEvent(ev Event) {
 	}
 }
 
-// prefetchScenery warms the position background, walking AO2's witness fallback (path_functions.cpp:108-159).
-func (c *Courtroom) prefetchScenery(bg, bgPart string) {
-	c.mgr.PrefetchChain(c.Scene.BackgroundBase, backgroundAltURLs(c.urls, bg, bgPart), assets.AssetTypeBackground, network.PriorityHigh)
-}
-
-// backgroundAltURLs is BackgroundAlts for a background and position; shared so the exporter bundles what the live path accepts.
-func backgroundAltURLs(urls URLBuilder, bg, bgPart string) []string {
-	return BackgroundAlts(urls.Background(bg, bgPart))
+// setScenery points the scene at pos in bg and asks for its background under every name AO2 tries and its likely desk,
+// HIGH like every live-message asset; the desk follows the name that loads.
+func (c *Courtroom) setScenery(bg, pos string) {
+	s := c.urls.PositionScenery(bg, pos, c.design)
+	c.Scene.BackgroundBase, c.Scene.BackgroundAlts, c.Scene.DeskBase = s.Background, s.Alts, s.Desk
+	c.placeScenery(fileStem(s.Background))
+	c.mgr.PinScenery(s.Background[:strings.LastIndexByte(s.Background, '/')+1])
+	c.mgr.PrefetchChain(s.Background, s.Alts, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
+	c.mgr.Prefetch(s.Desk, assets.AssetTypeDeskOverlay, network.PriorityHigh)                   // AssetType: DeskOverlay
+	c.followBackground()
 }
 
 // isMusicStop reports AO's ~stop sentinel.
@@ -628,13 +646,10 @@ func (c *Courtroom) setBackground(bg, pos string, wipe bool) {
 			c.Scene.Position = pos
 		}
 	}
-	bgPart, deskPart := PositionScene(c.Scene.Position)
-	c.Scene.BackgroundBase = c.urls.Background(bg, bgPart)
-	c.Scene.DeskBase = c.urls.Background(bg, deskPart)
-	c.mgr.PinScenery(c.Scene.BackgroundBase[:strings.LastIndexByte(c.Scene.BackgroundBase, '/')+1])
-	c.prefetchScenery(bg, bgPart)
-	c.mgr.Prefetch(c.Scene.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
-	c.followBackground()
+	if bg != c.designBg {
+		c.design, c.designBg, c.designURL, c.designRead = nil, bg, c.urls.BackgroundDesign(bg), false
+	}
+	c.setScenery(bg, c.Scene.Position)
 	// Re-derive from the new desk base, or the new room draws the old desk: a settled message has no phase edge.
 	if wipe {
 		c.wipeStage()
@@ -916,13 +931,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// --- scene state ---
 	c.Scene.Position = msg.Side
 	if c.sess != nil && c.sess.Background != "" {
-		bgPart, deskPart := PositionScene(msg.Side)
-		c.Scene.BackgroundBase = c.urls.Background(c.sess.Background, bgPart)
-		c.Scene.DeskBase = c.urls.Background(c.sess.Background, deskPart)
-		// HIGH like every live-message asset: at low priority a busy lane sheds these and nothing draws.
-		c.prefetchScenery(c.sess.Background, bgPart)
-		c.mgr.Prefetch(c.Scene.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
-		c.followBackground()
+		c.setScenery(c.sess.Background, msg.Side)
 	}
 	// Start on the talk column; phase changes call applyDeskMods (set_scene at preanim_start, start_chat_ticking).
 	// A zoom's talk side hides the desk, and a missing desk stays hidden.
@@ -1432,6 +1441,7 @@ func (c *Courtroom) RestoreMessage(msg *protocol.ChatMessage) {
 }
 
 func (c *Courtroom) Update(dt time.Duration) {
+	c.readDesign()
 	c.followBackground()
 	// Effect countdowns run independent of the phase machine.
 	if c.Scene.FlashLeft > 0 {
@@ -1621,22 +1631,16 @@ func (c *Courtroom) recordMissingDesk(base string) {
 }
 
 // followBackground gives the scene the desk of the background name that loaded, which may be a fallback, as AO2's
-// get_pos_path pairs them (path_functions.cpp:108-148); until the background is resident the position's own desk stays.
+// get_pos_path pairs them (path_functions.cpp:108-153); until the background is resident the likely desk stays.
 func (c *Courtroom) followBackground() {
 	bg := c.Scene.BackgroundBase
-	if c.Assets == nil || bg == "" {
-		return
-	}
-	file := c.Assets.SceneryFile(bg)
+	file := c.sceneryFile(bg)
 	if file == "" || (bg == c.followBg && file == c.followFile && c.Scene.DeskBase == c.followDesk) {
 		return
 	}
-	name := file[strings.LastIndexByte(file, '/')+1:]
-	if dot := strings.LastIndexByte(name, '.'); dot > 0 {
-		name = name[:dot]
-	}
-	desk := bg[:strings.LastIndexByte(bg, '/')+1] + DeskOf(name)
+	desk := deskBeside(bg, file, c.design)
 	c.followBg, c.followFile, c.followDesk = bg, file, desk
+	c.placeScenery(fileStem(file))
 	if desk == c.Scene.DeskBase {
 		return
 	}
@@ -1644,6 +1648,67 @@ func (c *Courtroom) followBackground() {
 	c.mgr.Prefetch(desk, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
 	if c.current != nil {
 		c.applyDeskMods(c.phase == PhasePreanim)
+	}
+}
+
+// deskBeside returns the desk in base's folder that AO2 pairs with the name of the file base loaded as.
+func deskBeside(base, file string, design *theme.INI) string {
+	return base[:strings.LastIndexByte(base, '/')+1] + DeskOf(fileStem(file), design)
+}
+
+// fileStem returns the last path segment of file without its extension: the background name it was asked as.
+func fileStem(file string) string {
+	name := file[strings.LastIndexByte(file, '/')+1:]
+	if dot := strings.LastIndexByte(name, '.'); dot > 0 {
+		name = name[:dot]
+	}
+	return name
+}
+
+// placeScenery takes the background design.ini's geometry for the scene's position shown as name: stretch, scaling,
+// and the origin AO2 reads from "court:<pos>" when name is the court and from "<pos>" otherwise
+// (path_functions.cpp:86-103, animationlayer.cpp:614-616).
+func (c *Courtroom) placeScenery(name string) {
+	c.Scene.SceneryStretch, c.Scene.SceneryScaling, c.Scene.SceneryPanorama, c.Scene.SceneryOrigin = false, ScalingAuto, false, 0
+	if c.design == nil {
+		return
+	}
+	stretch, _ := c.design.Get(designStretchKey)
+	scaling, _ := c.design.Get(designScalingKey)
+	c.Scene.SceneryStretch = strings.HasPrefix(stretch, designTrue)
+	c.Scene.SceneryScaling = ParseScalingMode(scaling)
+	section := c.Scene.Position
+	if name == courtPanorama {
+		section = courtPanorama + ":" + section
+	}
+	if raw, ok := c.design.GetSection(section, designOriginKey); ok {
+		origin, err := strconv.Atoi(strings.TrimSpace(raw))
+		c.Scene.SceneryPanorama, c.Scene.SceneryOrigin = err == nil, origin
+	}
+}
+
+// sceneryFile returns the file base's resident page was decoded from, "" when unknown.
+func (c *Courtroom) sceneryFile(base string) string {
+	if c.Assets == nil || base == "" {
+		return ""
+	}
+	return c.Assets.SceneryFile(base)
+}
+
+// readDesign takes the background's design.ini once it has been read and asks for the scenery again under it, as
+// design.ini can put the position on the court panorama or give its desk.
+func (c *Courtroom) readDesign() {
+	if c.designRead || c.designURL == "" || c.Assets == nil {
+		return
+	}
+	design, ok := c.Assets.BackgroundDesign(c.designURL)
+	if !ok {
+		return
+	}
+	c.design, c.designRead = design, true
+	if design != nil && c.Scene.BackgroundBase != "" {
+		c.followBg = ""
+		c.setScenery(c.designBg, c.Scene.Position)
 	}
 }
 

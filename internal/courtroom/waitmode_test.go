@@ -528,8 +528,7 @@ func TestSequentialWaitSceneryAndAudio(t *testing.T) {
 		if room.QueueLen() != 1 {
 			t.Fatal("a cold background must hold the message")
 		}
-		bgPart, _ := PositionScene("wit")
-		ready[room.urls.Background("court", bgPart)] = true
+		ready[room.urls.PositionScenery("court", "wit", nil).Background] = true
 		room.Update(16 * time.Millisecond)
 		if room.QueueLen() != 0 {
 			t.Fatal("the background landing must release the hold")
@@ -542,17 +541,20 @@ func TestSequentialWaitSceneryAndAudio(t *testing.T) {
 		ready := map[string]bool{}
 		room.SequentialWait = true
 		room.SpriteWaitTimeout = 50 * time.Millisecond
-		room.Assets = assetFake{sprite: func(base string) bool { return ready[base] }}
+		bg := room.urls.PositionScenery("court", "wit", nil).Background
+		room.Assets = assetFake{
+			sprite: func(base string) bool { return ready[base] },
+			files:  map[string]string{bg: room.urls.Background("court", defaultPosBackground) + ".webp"},
+		}
 		m := waitMsg("Phoenix", "normal", "hi")
 		m.DeskMod = protocol.DeskShow // the desk is on screen, so it must be waited for
 		readySpeaker(room, ready, "Phoenix", "normal")
-		bgPart, deskPart := PositionScene("wit")
-		ready[room.urls.Background("court", bgPart)] = true // background settled; only the desk is cold
+		ready[bg] = true // background settled; only the desk is cold
 		room.HandleEvent(Event{Kind: EventMessage, Message: m})
 		if room.QueueLen() != 1 {
 			t.Fatal("a cold desk must hold the message")
 		}
-		ready[room.urls.Background("court", deskPart)] = true
+		ready[room.urls.Background("court", "stand")] = true
 		room.Update(16 * time.Millisecond)
 		if room.QueueLen() != 0 {
 			t.Fatal("the desk landing must release the hold")
@@ -615,8 +617,7 @@ func TestSequentialWaitSceneryAndAudio(t *testing.T) {
 		if room.QueueLen() != 1 {
 			t.Fatal("a cold background must NOT release on any timeout under strict sequencing")
 		}
-		bgPart, _ := PositionScene("wit")
-		room.NotifyAssetMissing(room.urls.Background("court", bgPart)) // the warning relay
+		room.NotifyAssetMissing(room.urls.PositionScenery("court", "wit", nil).Background) // the warning relay
 		room.Update(16 * time.Millisecond)
 		if room.QueueLen() != 0 {
 			t.Fatal("a conclusively-404'd background must release the hold on the miss signal")

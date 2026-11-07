@@ -2,13 +2,16 @@
 package courtroom
 
 import (
+	"cmp"
 	"net/url"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 // Asset path conventions, mirroring webAO (URLs) and AO2-Client (semantics).
@@ -218,17 +221,6 @@ const emotePrefixLen = 3
 // internal/ui. // AssetType: CharSprite
 func SpriteHealAlts(active string) []string {
 	return []string{folderSpriteBase(active), bareSpriteBase(active)}
-}
-
-// BackgroundAlts returns AO2's fallbacks for a position background base, in order (path_functions.cpp:108-120).
-func BackgroundAlts(base string) []string {
-	i := strings.LastIndexByte(base, '/')
-	stems := BackgroundFallbacks(base[i+1:])
-	alts := make([]string, 0, len(stems))
-	for _, stem := range stems {
-		alts = append(alts, base[:i+1]+stem)
-	}
-	return alts
 }
 
 // bareSpriteBase strips a leading "(a)"/"(b)" from the final segment; unprefixed bases pass through unchanged.
@@ -487,65 +479,107 @@ func escapePreservingSlashes(p string) string {
 	return strings.Join(parts, "/")
 }
 
-// AO2's witness-view spellings, the fallback without art (path_functions.cpp:108-117, courtroom.cpp:4613-4626).
-const (
-	defaultPosBackground = "witnessempty"
-	legacyPosBackground  = "wit"
-)
-
-// BackgroundFallbacks returns further stems, in AO2's order. Desks get none (courtroom.cpp:4628-4634):
-// "stand" would resurrect the previous room's desk.
-func BackgroundFallbacks(bgPart string) []string {
-	alts := make([]string, 0, 2)
-	for _, stem := range [...]string{defaultPosBackground, legacyPosBackground} {
-		if stem != bgPart {
-			alts = append(alts, stem)
-		}
-	}
-	return alts
+// Scenery is how a position's background is asked for: Background is its identity and first name, Alts the rest in
+// AO2's order. Desk is the desk to show until a name has loaded, when DeskOf gives the one AO2 pairs with it.
+type Scenery struct {
+	Background string
+	Alts       []string
+	Desk       string
 }
 
-// PositionScene maps a position to background and desk stems (get_pos_path); unknown uses <pos> and <pos>_overlay.
-func PositionScene(pos string) (bgPart, deskPart string) {
-	if pos == "" {
-		return defaultPosBackground, defaultPosDesk // AO defaults to witness
-	}
-	for _, p := range positionScenery {
-		if p.pos == pos {
-			return p.background, p.desk
+// PositionScenery returns a position's background names in AO2's order (path_functions.cpp:81-148): the court
+// panorama when design places pos on it, the position's own file (2.8 style), its legacy name, then witnessempty and
+// wit. design may be nil.
+func (u URLBuilder) PositionScenery(bg, pos string, design *theme.INI) Scenery {
+	court := ""
+	if design != nil {
+		if _, ok := design.GetSection(courtPanorama+":"+pos, designOriginKey); ok {
+			court = courtPanorama
 		}
 	}
-	return pos, pos + overlaySuffix
+	legacy := legacyOf(pos)
+	names := [...]string{court, pos, legacy, defaultPosBackground, legacyPosBackground}
+	urls := make([]string, 0, maxPositionNames)
+	for _, name := range names {
+		if name == "" {
+			continue
+		}
+		if url := u.Background(bg, name); !slices.Contains(urls, url) {
+			urls = append(urls, url)
+		}
+	}
+	// The desk shown before a name loads is that of the name most backgrounds have: the court design.ini names, else the
+	// legacy name, else the position's own file, else the witness view.
+	likely := cmp.Or(court, legacy, pos, defaultPosBackground)
+	return Scenery{Background: urls[0], Alts: urls[1:], Desk: u.Background(bg, DeskOf(likely, design))}
 }
 
-// DeskOf returns the desk AO2 pairs with a background name that exists; any other name takes "<name>_overlay",
-// which covers "wit" too (path_functions.cpp:108-148).
-func DeskOf(bgPart string) string {
+// DeskOf returns the desk AO2 pairs with a background name that loaded: design.ini's overlays/<name>, else the legacy
+// name's desk, else "<name>_overlay", which covers wit and the 2.8 position files (path_functions.cpp:108-153).
+func DeskOf(name string, design *theme.INI) string {
+	if design != nil {
+		if desk, ok := design.GetSection(designOverlaysSection, name); ok && desk != "" {
+			return desk
+		}
+	}
 	for _, p := range positionScenery {
-		if p.background == bgPart {
+		if p.legacy == name {
 			return p.desk
 		}
 	}
-	return bgPart + overlaySuffix
+	return name + overlaySuffix
 }
 
-// overlaySuffix makes a desk name from a background name that has no desk of its own.
-const overlaySuffix = "_overlay"
+// BackgroundDesign returns a background's design.ini URL.
+func (u URLBuilder) BackgroundDesign(bg string) string {
+	return u.Background(bg, designFile)
+}
 
-// defaultPosDesk is witnessempty's desk.
-const defaultPosDesk = "stand"
+// legacyOf returns a position's pre-2.8 background name, "" for a position without one.
+func legacyOf(pos string) string {
+	for _, p := range positionScenery {
+		if p.pos == pos {
+			return p.legacy
+		}
+	}
+	return ""
+}
 
-// positionScenery is AO2's position table: each position's background and the desk that goes with it.
-var positionScenery = [...]struct{ pos, background, desk string }{
+// position is one row of AO2's table of positions with pre-2.8 art: its legacy background and that background's desk.
+type position struct{ pos, legacy, desk string }
+
+var positionScenery = [...]position{
 	{"def", "defenseempty", "defensedesk"},
 	{"pro", "prosecutorempty", "prosecutiondesk"},
-	{"wit", defaultPosBackground, defaultPosDesk},
+	{"wit", defaultPosBackground, "stand"},
 	{"jud", "judgestand", "judgedesk"},
 	{"hld", "helperstand", "helperdesk"},
 	{"hlp", "prohelperstand", "prohelperdesk"},
 	{"jur", "jurystand", "jurydesk"},
 	{"sea", "seancestand", "seancedesk"},
 }
+
+const (
+	// defaultPosBackground and legacyPosBackground are tried for every position after its own names.
+	defaultPosBackground = "witnessempty"
+	legacyPosBackground  = "wit"
+	// courtPanorama is the wide background design.ini places positions on as "court:<pos>/origin".
+	courtPanorama = "court"
+	// overlaySuffix makes a desk name from a background name with no desk of its own.
+	overlaySuffix = "_overlay"
+	// designFile is a background's own settings; the keys below are the ones AO2 reads from it.
+	designFile            = "design.ini"
+	designOriginKey       = "origin"
+	designOverlaysSection = "overlays"
+	designStretchKey      = "stretch"
+	designScalingKey      = "scaling"
+	// designTrue is how AO2 reads stretch: any value starting with it (animationlayer.cpp:616).
+	designTrue = "true"
+)
+
+// maxPositionNames is the most names PositionScenery returns: court, the position, its legacy name and the two witness
+// names.
+const maxPositionNames = 5
 
 // ZoomSide returns prosecution for pro, hlp and wit, defense otherwise, as AO2 hardcodes (courtroom.cpp:3463-3471).
 func ZoomSide(pos string) string {

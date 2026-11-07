@@ -1612,7 +1612,7 @@ func (a *App) cachedPage(pages *[]*render.TexturePage, gen *uint64, n, idx int, 
 // demandAsset paces one visible cell's asset asks, reporting false only if every format was probed to exhaustion.
 // That check precedes the pacing: a 404'd base never becomes resident, so asks would otherwise repeat forever.
 // "Not asked yet" still answers true.
-func (a *App) demandAsset(stamps *[]time.Time, n, idx int, base string, t assets.AssetType) bool {
+func (a *App) demandAsset(stamps *[]time.Time, n, idx int, base string, t assets.AssetType, alts ...string) bool {
 	if idx < 0 || idx >= n {
 		return false
 	}
@@ -1631,7 +1631,7 @@ func (a *App) demandAsset(stamps *[]time.Time, n, idx int, base string, t assets
 	}
 	(*stamps)[idx] = now
 	a.iconAskBudget--
-	a.d.Manager.Prefetch(base, t, network.PriorityLow)
+	a.d.Manager.PrefetchChain(base, alts, t, network.PriorityLow)
 	return true
 }
 

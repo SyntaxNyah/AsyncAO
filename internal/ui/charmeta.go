@@ -252,6 +252,9 @@ func (r roomAssetResolver) OverlayFor(name, folder string) (courtroom.OverlayRes
 }
 func (r roomAssetResolver) SpriteReady(base string) bool   { return r.a.d.Store.Contains(base) }
 func (r roomAssetResolver) SceneryFile(base string) string { return r.a.d.Store.FileOf(base) }
+func (r roomAssetResolver) BackgroundDesign(url string) (*theme.INI, bool) {
+	return r.a.backgroundDesign(url)
+}
 func (r roomAssetResolver) SpritePlayable(base string) bool {
 	return r.a.d.Store.ContainsPlayable(base)
 }

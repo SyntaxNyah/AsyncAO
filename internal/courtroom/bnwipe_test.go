@@ -218,12 +218,11 @@ func TestBackgroundWipeReScenesAtOurOwnSideWhenBNCarriesNone(t *testing.T) {
 	if room.Scene.Position != "def" {
 		t.Fatalf("re-scened at %q, want our own side def", room.Scene.Position)
 	}
-	wantBG, wantDesk := PositionScene("def")
-	if room.Scene.BackgroundBase != room.urls.Background("newarea", wantBG) {
-		t.Errorf("background base = %q, want the def cut", room.Scene.BackgroundBase)
+	if want := room.urls.PositionScenery("newarea", "def", nil).Background; room.Scene.BackgroundBase != want {
+		t.Errorf("background base = %q, want the def cut %q", room.Scene.BackgroundBase, want)
 	}
-	if room.Scene.DeskBase != room.urls.Background("newarea", wantDesk) {
-		t.Errorf("desk base = %q, want the def cut", room.Scene.DeskBase)
+	if want := room.urls.Background("newarea", "defensedesk"); room.Scene.DeskBase != want {
+		t.Errorf("desk base = %q, want the def cut's %q", room.Scene.DeskBase, want)
 	}
 }
 

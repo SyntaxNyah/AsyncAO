@@ -674,9 +674,9 @@ func linesContain(lines []string, sub string) bool {
 // TestRebindSceneryForcesNewBaseAcrossSwitch.
 func TestBuildRoomRebindsSceneryPerTab(t *testing.T) {
 	u := courtroom.URLBuilder{}
-	bgPart, _ := courtroom.PositionScene("") // fresh room starts at the default position
-	baseA := u.Background("gs4", bgPart)
-	baseB := u.Background("prosecutorlobby", bgPart)
+	// A fresh room starts at the default position.
+	baseA := u.PositionScenery("gs4", "", nil).Background
+	baseB := u.PositionScenery("prosecutorlobby", "", nil).Background
 	if baseA == "" || baseB == "" {
 		t.Fatalf("each background must map to a non-empty base, A=%q B=%q", baseA, baseB)
 	}

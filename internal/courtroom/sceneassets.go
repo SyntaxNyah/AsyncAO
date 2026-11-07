@@ -50,10 +50,13 @@ func SceneAssets(urls URLBuilder, startBg string, events []Event) []AssetRef {
 			if m == nil {
 				continue
 			}
-			bgPart, deskPart := PositionScene(m.Side) // Scene.Position == msg.Side
-			// The background carries the witness ladder, or an archive shows black where live showed the witness view.
-			add(urls.Background(bg, bgPart), backgroundAltURLs(urls, bg, bgPart), assets.AssetTypeBackground, false)
-			add(urls.Background(bg, deskPart), nil, assets.AssetTypeDeskOverlay, false)
+			s := urls.PositionScenery(bg, m.Side, nil) // Scene.Position == msg.Side
+			// The background carries every name, or an archive shows black where live showed a fallback; which name a
+			// server has is unknown here, so each name's desk comes too.
+			add(s.Background, s.Alts, assets.AssetTypeBackground, false)
+			for _, name := range append([]string{s.Background}, s.Alts...) {
+				add(deskBeside(s.Background, name, nil), nil, assets.AssetTypeDeskOverlay, false)
+			}
 			// Sprites carry the spelling chain "(a)X", X, "(a)/X"; a blank speaker or emote has no sprite to bundle.
 			if !IsBlankSpeaker(m.CharName) && m.Emote != "" {
 				add(urls.Emote(m.CharName, m.Emote, EmoteIdle), urls.EmoteAlts(m.CharName, m.Emote, EmoteIdle), assets.AssetTypeCharSprite, false)

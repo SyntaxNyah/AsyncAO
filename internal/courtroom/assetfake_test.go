@@ -1,5 +1,7 @@
 package courtroom
 
+import "github.com/SyntaxNyah/AsyncAO/internal/theme"
+
 // assetFake is a test double for AssetResolver with independently settable lookups,
 // so a test can set only the lookup it exercises and leave the rest at their AO
 // defaults.
@@ -16,6 +18,9 @@ type assetFake struct {
 }
 
 func (f assetFake) SceneryFile(base string) string { return f.files[base] }
+
+// BackgroundDesign answers that no background has a design.ini.
+func (f assetFake) BackgroundDesign(string) (*theme.INI, bool) { return nil, true }
 
 func (f assetFake) SpritePlayable(base string) bool {
 	if f.playable != nil {

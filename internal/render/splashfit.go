@@ -46,15 +46,23 @@ func (v *Viewport) drawSplash(ren *sdl.Renderer, base string, anim *animState, v
 
 // layerFrame resolves a full-viewport layer's texture this frame and its source size.
 func (v *Viewport) layerFrame(anim *animState) (tex *sdl.Texture, w, h int32, ok bool) {
-	frame := 0
+	page, frame, ok := v.layerPage(anim)
+	if !ok {
+		return nil, 0, 0, false
+	}
+	return page.Frames[frame], page.W, page.H, true
+}
+
+// layerPage resolves a full-viewport layer's page this frame and the frame to draw, falling back to its held frame.
+func (v *Viewport) layerPage(anim *animState) (page *TexturePage, frame int, ok bool) {
 	page, live := anim.resolve(v.store)
 	if live && len(page.Frames) > 0 {
 		frame = clampFrame(anim.frame, len(page.Frames))
 	} else if page, live = v.resolveHeld(anim); !live {
-		return nil, 0, 0, false
+		return nil, 0, false
 	}
 	if len(page.Frames) == 0 {
-		return nil, 0, 0, false
+		return nil, 0, false
 	}
-	return page.Frames[frame], page.W, page.H, true
+	return page, frame, true
 }

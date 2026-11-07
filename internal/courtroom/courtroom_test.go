@@ -866,23 +866,14 @@ func TestKFOCompatDetect(t *testing.T) {
 	}
 }
 
-func TestPositionSceneTable(t *testing.T) {
-	cases := map[string][2]string{
-		"def":    {"defenseempty", "defensedesk"},
-		"pro":    {"prosecutorempty", "prosecutiondesk"},
-		"wit":    {"witnessempty", "stand"},
-		"jud":    {"judgestand", "judgedesk"},
-		"hld":    {"helperstand", "helperdesk"},
-		"hlp":    {"prohelperstand", "prohelperdesk"},
-		"jur":    {"jurystand", "jurydesk"},
-		"sea":    {"seancestand", "seancedesk"},
-		"":       {"witnessempty", "stand"},
-		"podium": {"podium", "podium_overlay"}, // 2.8 unique pos
-	}
-	for pos, want := range cases {
-		bg, desk := PositionScene(pos)
-		if bg != want[0] || desk != want[1] {
-			t.Errorf("PositionScene(%q) = %s/%s, want %s/%s", pos, bg, desk, want[0], want[1])
+func TestEachLegacyBackgroundBringsItsDesk(t *testing.T) {
+	for bg, desk := range map[string]string{
+		"defenseempty": "defensedesk", "prosecutorempty": "prosecutiondesk", "witnessempty": "stand",
+		"judgestand": "judgedesk", "helperstand": "helperdesk", "prohelperstand": "prohelperdesk",
+		"jurystand": "jurydesk", "seancestand": "seancedesk", "podium": "podium_overlay", "wit": "wit_overlay",
+	} {
+		if got := DeskOf(bg, nil); got != desk {
+			t.Errorf("DeskOf(%q) = %q, want %q", bg, got, desk)
 		}
 	}
 }
@@ -1490,7 +1481,7 @@ func TestPairedMessageSceneState(t *testing.T) {
 	if !strings.HasSuffix(sc.Pair.IdleBase, "characters/edgeworth/(a)thinking") {
 		t.Errorf("pair idle base = %q", sc.Pair.IdleBase)
 	}
-	if !strings.HasSuffix(sc.BackgroundBase, "background/gs4/defenseempty") {
+	if !strings.HasSuffix(sc.BackgroundBase, "background/gs4/def") {
 		t.Errorf("background base = %q", sc.BackgroundBase)
 	}
 	if sc.ShownameText != "Nick" {

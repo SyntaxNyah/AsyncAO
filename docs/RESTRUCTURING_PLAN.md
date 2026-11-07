@@ -105,6 +105,11 @@ in **Status**. Update Status in the same commit that completes a step.
           `asset_lookup_cache` is; flags left the key, so one asset is one request. The background and desk on screen
           are never cut down, a page never grows frames from another file, and a room's background folder stays pinned
           in memory until the background changes
+    - [x] positions as one table (2026-11-07): `URLBuilder.PositionScenery` asks AO2's names in order (court when the
+          background's design.ini places the position on it, the position's own 2.8 file, its legacy name, witnessempty,
+          wit); a likely desk shows at once and follows the name that loaded (`DeskOf`, design.ini `overlays/` first).
+          Background and desk are placed as set_scene does: fit by height and centred unless `stretch`, `scaling` for
+          the filter, and a panorama panned to the position's `origin`. Not yet used: `positions` and slide transitions
     - [ ] known problems from the benchmark: on a host with no `extensions.json`, 200 missing sprites cost 2,400 requests against the
           old 1,600 until character mapping exists; peak heap with files asked for every frame is 384-617 MiB, unexplained
     - [ ] move callers: courtroom, then screens, theme and audio; `Pump` on `TakeResults`; music streaming; then delete the old pipeline

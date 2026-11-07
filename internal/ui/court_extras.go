@@ -609,9 +609,8 @@ func (a *App) prewarmServer() {
 	if info.Background != "" {
 		// wit/def/pro/jud cover the courtroom core (standardPositions leads with those four).
 		for _, pos := range standardPositions[:4] {
-			bgPart, deskPart := courtroom.PositionScene(pos)
-			a.d.Manager.Prefetch(a.urls.Background(info.Background, bgPart), assets.AssetTypeBackground, network.PriorityLow)    // AssetType: Background (pre-warm)
-			a.d.Manager.Prefetch(a.urls.Background(info.Background, deskPart), assets.AssetTypeDeskOverlay, network.PriorityLow) // AssetType: DeskOverlay (pre-warm)
+			s := a.urls.PositionScenery(info.Background, pos, nil)
+			a.d.Manager.PrefetchChain(s.Background, s.Alts, assets.AssetTypeBackground, network.PriorityLow) // AssetType: Background (pre-warm)
 		}
 	}
 }
@@ -761,13 +760,13 @@ func (a *App) posThumbDraw(i int, tr sdl.Rect) {
 		c.Border(tr, ColPanelHi)
 		return
 	}
-	bgPart, _ := courtroom.PositionScene(choices[i])
-	base := a.urls.Background(bg, bgPart)
+	scenery := a.urls.PositionScenery(bg, choices[i], nil)
+	base := scenery.Background
 	if page, ok := a.cachedPage(&a.posBgPages, &a.posBgGen, len(choices), i, base); ok && len(page.Frames) > 0 {
 		_ = c.Ren.Copy(page.Frames[0], nil, &tr)
 	} else {
 		c.Fill(tr, sdl.Color{R: 10, G: 10, B: 14, A: 255})
-		a.demandAsset(&a.posBgAsk, len(choices), i, base, assets.AssetTypeBackground) // AssetType: Background (pos thumb)
+		a.demandAsset(&a.posBgAsk, len(choices), i, base, assets.AssetTypeBackground, scenery.Alts...) // AssetType: Background (pos thumb)
 	}
 	c.Border(tr, ColPanelHi)
 }

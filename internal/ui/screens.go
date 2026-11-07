@@ -298,6 +298,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	// an editor mid-pass, or the strip paints twice or not at all.
 	a.latchTabStripPaint()
 	a.pollCharINI()
+	a.pollBackgroundDesigns()
 	if a.room == nil || a.sess == nil {
 		if a.classicEdit {
 			a.stopClassicEdit() // session dropped mid-edit — release the fence so the lobby isn't stuck

@@ -66,14 +66,17 @@ func (c *Courtroom) messageNeeds(msg *protocol.ChatMessage) []messageNeed {
 		}
 	}
 	if c.sess != nil && c.sess.Background != "" {
-		bgPart, deskPart := PositionScene(msg.Side)
-		// Identity base; the witness ladder resolves or 404s under it.
-		add(c.urls.Background(c.sess.Background, bgPart), backgroundAltURLs(c.urls, c.sess.Background, bgPart), assets.AssetTypeBackground, gateSprite)
+		s := c.urls.PositionScenery(c.sess.Background, msg.Side, c.design)
+		add(s.Background, s.Alts, assets.AssetTypeBackground, gateSprite)
+		desk := s.Desk
+		if file := c.sceneryFile(s.Background); file != "" {
+			desk = deskBeside(s.Background, file, c.design)
+		}
 		deskGate := gateNone
 		if deskVisible(msg.DeskMod, false) && !zoomEmote(msg.EmoteMod) {
 			deskGate = gateDesk
 		}
-		add(c.urls.Background(c.sess.Background, deskPart), nil, assets.AssetTypeDeskOverlay, deskGate)
+		add(desk, nil, assets.AssetTypeDeskOverlay, deskGate)
 	}
 	if c.Chars != nil {
 		if misc := c.Chars.ChatSkinFor(msg.CharName); misc != "" {

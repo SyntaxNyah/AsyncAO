@@ -920,7 +920,11 @@ type App struct {
 	// set.
 	overlayRosterInFlight map[string]bool
 	overlayRosterRes      chan overlayRosterFetch
-	overlayRosterGen      uint64
+	// bgDesigns holds each background's design.ini by URL, nil when it has none; bgDesignReading marks reads in flight.
+	bgDesigns        map[string]*theme.INI
+	bgDesignReading  map[string]bool
+	bgDesignRes      chan bgDesignRead
+	overlayRosterGen uint64
 	// overlayTheme is the applied theme's snapshot, read off-thread by roster resolves instead of re-running
 	// theme.Load. *theme.Theme is read-only after Load, so sharing it with the fetch goroutine is race-free.
 	overlayTheme      *theme.Theme
@@ -1453,6 +1457,7 @@ func (a *App) Background(dt time.Duration) {
 	a.drainMusicFailures() // transient music-fetch failures → jukebox warn line (§1.1)
 	// Auto-reconnect is deliberately not polled here: the retry fires only from Frame, so a drop while minimized waits
 	// at the lobby instead of silently reconnecting and stranding the user at char select.
+	a.pollBackgroundDesigns()
 	a.pollCharINI()    // drain the async char.ini result here too, so the emote list appears at idle=0 (a skipped courtroom frame never reaches the draw-time poll)
 	a.pollLogBrowser() // same for the log browser's off-thread scope load (session list + log area) — else it stays blank at idle=0 until cursor motion
 	a.pollUpdate()     // and the self-update result — else "Downloading…" never flips to "Restart to apply" at idle=0 until cursor motion
@@ -1657,7 +1662,7 @@ func (a *App) keepSceneAssetsWarm() {
 			case assets.AssetTypeCharSprite:
 				a.d.Manager.PrefetchChain(base, courtroom.SpriteHealAlts(base), t, network.PriorityHigh) // AssetType: CharSprite (folder + bare, so no spelling ever false-flags missing)
 			case assets.AssetTypeBackground:
-				a.d.Manager.PrefetchChain(base, courtroom.BackgroundAlts(base), t, network.PriorityHigh) // AssetType: Background (AO2's witness fallbacks)
+				a.d.Manager.PrefetchChain(base, sc.BackgroundAlts, t, network.PriorityHigh) // AssetType: Background (every name AO2 tries)
 			default:
 				a.d.Manager.Prefetch(base, t, network.PriorityHigh)
 			}

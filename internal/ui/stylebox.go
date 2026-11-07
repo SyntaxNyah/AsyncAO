@@ -410,8 +410,8 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	if !a.stylePrevOff {
 		pv := sdl.Rect{X: x, Y: y, W: noteW, H: stylePrevH}
 		// A flat fill stands in until the real stage background streams.
-		bgPart, _ := courtroom.PositionScene(a.mySide())
-		bgBase := a.urls.Background(a.sess.Background, bgPart)
+		scenery := a.urls.PositionScenery(a.sess.Background, a.mySide(), nil)
+		bgBase := scenery.Background
 		if bgBase != a.stylePrevBgKey {
 			a.stylePrevBgPages, a.stylePrevBgKey = nil, bgBase
 		}
@@ -420,7 +420,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		} else {
 			c.Fill(pv, sdl.Color{R: 12, G: 12, B: 16, A: 255})
 			if a.sess.Background != "" {
-				a.d.Manager.Prefetch(bgBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (style preview)
+				a.d.Manager.PrefetchChain(bgBase, scenery.Alts, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (style preview)
 			}
 		}
 		if me := a.activeCharName(); me != "" && a.d.Viewport != nil {

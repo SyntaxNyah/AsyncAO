@@ -769,9 +769,9 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		_ = ren.SetClipRect(&v.stageClip)
 	}
 	if v.fx.DoF {
-		v.drawBackgroundDoF(ren, scene.BackgroundBase, &v.bgAnim, vp) // #11 soft-focus + dim
+		v.drawBackgroundDoF(ren, scene, &v.bgAnim, vp) // #11 soft-focus + dim
 	} else {
-		v.drawFill(ren, scene.BackgroundBase, &v.bgAnim, vp, percentMax) // bg full-bright (spotlight dims pair+desk, not bg)
+		v.drawScenery(ren, scene, scene.BackgroundBase, &v.bgAnim, vp, percentMax) // bg full-bright (spotlight dims pair+desk, not bg)
 	}
 	// Speaker's speedlines during a zoom emote: over the background, under the characters.
 	if base := effectiveSpeedlineBase(scene, v.store); base != "" {
@@ -836,7 +836,7 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 			v.stageClip = stage
 			_ = ren.SetClipRect(&v.stageClip)
 		}
-		v.drawFill(ren, scene.DeskBase, &v.deskAnim, vp, spotPct)
+		v.drawScenery(ren, scene, scene.DeskBase, &v.deskAnim, vp, spotPct)
 		if contain {
 			_ = ren.SetClipRect(nil)
 		}
@@ -1102,23 +1102,22 @@ const (
 )
 
 // drawBackgroundDoF draws the bg soft-focused and dimmed, restoring alpha as the T1 page is shared.
-func (v *Viewport) drawBackgroundDoF(ren *sdl.Renderer, base string, anim *animState, vp sdl.Rect) {
-	if base == "" {
+func (v *Viewport) drawBackgroundDoF(ren *sdl.Renderer, scene *courtroom.Scene, anim *animState, vp sdl.Rect) {
+	if scene.BackgroundBase == "" {
 		return
 	}
-	frame := 0
-	page, ok := anim.resolve(v.store)
-	if ok && len(page.Frames) > 0 {
-		frame = clampFrame(anim.frame, len(page.Frames))
-	} else if page, ok = v.resolveHeld(anim); !ok {
+	page, frame, ok := v.layerPage(anim)
+	if !ok {
 		return // no page, no held bridge frame — see drawFill
 	}
 	tex := page.Frames[frame]
+	dst := sceneryRect(vp, page.W, page.H, scene.SceneryStretch, scene.SceneryPanorama, scene.SceneryOrigin)
+	page.applyScaleMode(ren, sceneryScaleMode(v.fx.UserScaling, scene.SceneryScaling, scene.SceneryStretch, page.H, dst.H))
 	r := vp.H / dofBlurDivisor
 	if r < dofBlurMin {
 		r = dofBlurMin
 	}
-	v.fillRect = vp // the sharp base
+	v.fillRect = dst // the sharp base
 	_ = ren.Copy(tex, nil, &v.fillRect)
 	for i := range outlineDirs { // eight offset ghosts → a smear blur
 		a := uint8(dofAlphaCard)
@@ -1126,7 +1125,7 @@ func (v *Viewport) drawBackgroundDoF(ren *sdl.Renderer, base string, anim *animS
 			a = dofAlphaDiag
 		}
 		_ = tex.SetAlphaMod(a)
-		v.fillRect = vp
+		v.fillRect = dst
 		v.fillRect.X += outlineDirs[i][0] * r
 		v.fillRect.Y += outlineDirs[i][1] * r
 		_ = ren.Copy(tex, nil, &v.fillRect)

@@ -72,7 +72,7 @@ func TestExportReplayRoundTrip(t *testing.T) {
 		r, _ := strings.CutPrefix(base, origin)
 		return r + config.ExtWebP
 	}
-	bgPart, deskPart := courtroom.PositionScene("wit")
+	bgPart, deskPart := "witnessempty", "stand" // legacy art; the export bundles every name and each name's desk
 	idleBytes := []byte("PHOENIX-IDLE")
 	writeFixture(t, srcDir, rel(urls.Emote("Phoenix", "normal", courtroom.EmoteIdle)), idleBytes)
 	writeFixture(t, srcDir, rel(urls.Emote("Phoenix", "normal", courtroom.EmoteTalk)), []byte("PHOENIX-TALK"))
@@ -130,7 +130,7 @@ func TestExportNestedBackgroundSubfolder(t *testing.T) {
 		return r + config.ExtWebP
 	}
 	const nestedBg = "cases/case1"
-	bgPart, deskPart := courtroom.PositionScene("wit")
+	bgPart, deskPart := "witnessempty", "stand" // legacy art; the export bundles every name and each name's desk
 	writeFixture(t, srcDir, rel(urls.Emote("Phoenix", "normal", courtroom.EmoteIdle)), []byte("IDLE"))
 	writeFixture(t, srcDir, rel(urls.Emote("Phoenix", "normal", courtroom.EmoteTalk)), []byte("TALK"))
 	writeFixture(t, srcDir, rel(urls.Background(nestedBg, bgPart)), []byte("BG"))
@@ -182,7 +182,7 @@ func TestExportDecodesBundleNames(t *testing.T) {
 	// raw-first); the export is what must decode.
 	writeFixture(t, srcDir, rel(urls.Emote(char, "normal", courtroom.EmoteIdle)), idle)
 	writeFixture(t, srcDir, rel(urls.Emote(char, "normal", courtroom.EmoteTalk)), []byte("TALK"))
-	bgPart, deskPart := courtroom.PositionScene("wit")
+	bgPart, deskPart := "witnessempty", "stand" // legacy art; the export bundles every name and each name's desk
 	writeFixture(t, srcDir, rel(urls.Background("gs4", bgPart)), []byte("BG"))
 	writeFixture(t, srcDir, rel(urls.Background("gs4", deskPart)), []byte("DESK"))
 	srcMgr, _ := buildManager(t, srcLocal, true)

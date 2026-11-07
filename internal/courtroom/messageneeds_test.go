@@ -66,8 +66,9 @@ func TestMessageNeedsHiddenDeskIsRequestedButNotWaitedOn(t *testing.T) {
 	room.SequentialWait = true
 	sess.Background = "court"
 	msg := waitMsg("Phoenix", "normal", "hi")
-	_, deskPart := PositionScene(msg.Side)
-	desk := room.urls.Background(sess.Background, deskPart)
+	bg := room.urls.PositionScenery(sess.Background, msg.Side, nil).Background
+	room.Assets = assetFake{files: map[string]string{bg: room.urls.Background(sess.Background, defaultPosBackground) + ".webp"}}
+	desk := room.urls.Background(sess.Background, "stand")
 
 	msg.DeskMod = protocol.DeskShow
 	if n := needFor(t, room.messageNeeds(msg), desk); n.gate != gateDesk {

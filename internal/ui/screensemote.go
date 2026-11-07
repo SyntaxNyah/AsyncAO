@@ -718,8 +718,8 @@ func (a *App) drawPairGhost(pv, grip sdl.Rect) {
 	prevClip, hadClip := c.pushClip(pv)
 	defer c.popClip(prevClip, hadClip)
 	// Real background behind the ghosts, from your own position; a flat fill until it streams in.
-	bgPart, _ := courtroom.PositionScene(a.mySide())
-	base := a.urls.Background(a.sess.Background, bgPart)
+	scenery := a.urls.PositionScenery(a.sess.Background, a.mySide(), nil)
+	base := scenery.Background
 	if base != a.pairBgKey {
 		a.pairBgPages, a.pairBgKey = nil, base
 	}
@@ -728,7 +728,7 @@ func (a *App) drawPairGhost(pv, grip sdl.Rect) {
 	} else {
 		c.Fill(pv, sdl.Color{R: 12, G: 12, B: 16, A: 255})
 		if a.sess.Background != "" {
-			a.d.Manager.Prefetch(base, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (pair preview)
+			a.d.Manager.PrefetchChain(base, scenery.Alts, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (pair preview)
 		}
 	}
 	c.Border(pv, ColPanelHi)
