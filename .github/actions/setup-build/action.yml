@@ -87,6 +87,17 @@ runs:
       env:
         SDL_PREFIX: ${{ steps.sdl.outputs.prefix }}
       run: |
+        # A cached build keeps the absolute prefix of the runner that built it, and macOS runners
+        # differ in TMPDIR, so point each package's .pc files at where the package is now.
+        for root in "$SDL3_ROOT" "$SDL3_ttf_ROOT" "$SDL3_mixer_ROOT"; do
+          for pc in "$root"/lib/pkgconfig/*.pc "$root"/lib64/pkgconfig/*.pc; do
+            [ -f "$pc" ] || continue
+            old=$(sed -n 's/^prefix=//p' "$pc")
+            if [ -n "$old" ] && [ "$old" != "$root" ]; then
+              sed -i.bak "s|$old|$root|g" "$pc" && rm -f "$pc.bak"
+            fi
+          done
+        done
         echo "PKG_CONFIG_PATH=$SDL_PREFIX/lib/pkgconfig:$SDL_PREFIX/lib64/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
         echo "SDL3_PREFIX=$SDL_PREFIX" >> "$GITHUB_ENV"
         echo "LD_LIBRARY_PATH=$SDL_PREFIX/lib:$SDL_PREFIX/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
