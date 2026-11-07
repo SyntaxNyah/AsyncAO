@@ -71,11 +71,12 @@ together may never have run, and a direct push to `main` never ran at all.
 
 ## Asset names
 
-The self-updater picks one asset by name, `update.SelfUpdateAssetMatch`, and must
-never match the wrong file: `macos-bundle-arm64` deliberately does not contain the
-`macos-arm64` of the bare binary, and neither does the Homebrew tarball. A test in
-`internal/update` checks the matcher against the manifest, so renaming an asset
-means changing both.
+The self-updater picks one asset by name, `update.SelfUpdateAssetMatch`: the
+Windows bundle zip, the Linux AppImage or the macOS bundle tarball. Clients up to
+v1.95.1 match `windows-x86_64.exe` and `macos-arm64` instead and copy that bare
+binary over themselves without its libraries, so no published name may contain
+either. Finding nothing, they open the release page. Tests in `internal/update`
+check both rules against the manifest, so renaming an asset means changing both.
 
 ## Requiring manual approval later
 

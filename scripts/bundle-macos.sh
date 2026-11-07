@@ -21,8 +21,7 @@
 #
 # On success the staging dir contains the rewritten binary and a lib/ holding
 # every non-system dependency with @rpath install names. The binary itself is
-# also left rewritten in place so it can ship as the bare self-update asset
-# (which, next to a bundled lib/, still loads its libs — see the rpath below).
+# also left rewritten in place.
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then

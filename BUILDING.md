@@ -132,11 +132,10 @@ Mac. The script asserts both directions: no Homebrew path survives in the
 binary, **and** the SDL3_mixer + opusfile dylibs made it into `lib/` (SDL3_mixer
 builds Vorbis/MP3/FLAC into its own dylib, so those need no separate staging)
 — the bundler only follows hard links, so a switch to dlopen codec shims would
-otherwise silently ship a tarball whose music can't play on a brew-less Mac. The
-bare `asyncao-macos-arm64` asset is the
-self-update target; for a first install, `tar -xzf
-asyncao-macos-bundle-arm64.tar.gz` (the binary and its `lib/` land flat in the
-current folder) and run `./asyncao-macos-arm64`.
+otherwise silently ship a tarball whose music can't play on a brew-less Mac. To
+install, `tar -xzf asyncao-macos-bundle-arm64.tar.gz` (the binary and its `lib/`
+land flat in the current folder) and run `./asyncao-macos-arm64`. The in-app
+updater downloads the same tarball and replaces the binary and `lib/` together.
 
 A downloaded, unsigned/unnotarized build carries `com.apple.quarantine` on every
 extracted file, so on first launch Gatekeeper asks to allow each bundled library
@@ -154,12 +153,9 @@ then right-click → Open once (macOS remembers the choice). Each tarball ships 
 For a smaller download the release also publishes a **Homebrew edition**,
 `asyncao-macos-homebrew-arm64.tar.gz` (bare binary + `INSTALL.txt`, no bundled
 `lib/`). Run `brew install sdl3 sdl3_ttf sdl3_mixer webp libavif opus opusfile` and the
-binary resolves its libraries via its `/opt/homebrew/lib` rpath fallback — the
-same rewrite `bundle-macos.sh` applies to the bare asset. Neither
-`asyncao-macos-bundle-arm64.tar.gz` nor `asyncao-macos-homebrew-arm64.tar.gz`
-contains the `macos-arm64` self-update token, so the in-app updater never renames
-a tarball over the running binary (it always targets the bare
-`asyncao-macos-arm64`).
+binary resolves its libraries via its `/opt/homebrew/lib` rpath fallback, which
+`bundle-macos.sh` writes into it. No bare binary is published: clients up to
+v1.95.1 would copy one over themselves without its libraries.
 
 ## Android / iOS
 

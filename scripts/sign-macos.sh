@@ -5,7 +5,6 @@
 set -euo pipefail
 
 BINARY=asyncao-macos-arm64
-BARE="dist/assets/$BINARY"
 STAGE=dist/stage
 
 if [[ -z "${APPLE_P12_BASE64:-}" ]]; then
@@ -33,10 +32,8 @@ sign() {
 for dylib in "$STAGE"/lib/*.dylib; do
 	sign "$dylib"
 done
-for binary in "$STAGE/$BINARY" "$BARE"; do
-	sign "$binary"
-	codesign --verify --strict --verbose=2 "$binary"
-done
+sign "$STAGE/$BINARY"
+codesign --verify --strict --verbose=2 "$STAGE/$BINARY"
 
 if [[ -z "${APPLE_ID:-}" || -z "${APPLE_ID_PASSWORD:-}" || -z "${APPLE_TEAM_ID:-}" ]]; then
 	echo "::notice::Codesigned but not notarized: no APPLE_NOTARY_* secrets."

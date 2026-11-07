@@ -41,8 +41,8 @@ Encode the PFX to base64 and add two secrets:
 | `WINDOWS_CODESIGN_PASSWORD`   | the PFX password |
 
 The step signs with SHA-256 and an RFC-3161 timestamp (so the signature outlives
-the certificate), then verifies, **before** zipping — so both the bare
-self-update `.exe` and the install bundle carry the signature.
+the certificate), then verifies, **before** zipping, so the bundle carries the
+signed `.exe`.
 
 ## macOS (Developer ID codesign + notarization)
 
@@ -79,42 +79,20 @@ the nested dylibs. A folder/bare binary can't be *stapled* (stapling needs an
 `.app`/`.dmg`/`.pkg`), so verification happens online on first run. Packaging a
 `.dmg` for offline stapling is a future step.
 
-Three macOS assets ship: the bundle tarball
-(`asyncao-macos-bundle-arm64.tar.gz`, binary + bundled `lib/` + `INSTALL.txt`)
-for a no-Homebrew first install, the Homebrew edition tarball
-(`asyncao-macos-homebrew-arm64.tar.gz`, bare binary + `INSTALL.txt`, libraries
-from `brew`), and the rewritten bare binary (`asyncao-macos-arm64`) as the
-self-update target. See `internal/update.SelfUpdateAssetMatch` for why both
-tarball names deliberately dodge the `macos-arm64` self-update token (the
-`-bundle-`/`-homebrew-` run breaks the substring). Both tarballs' `INSTALL.txt`
+Two macOS assets ship: the bundle tarball
+(`asyncao-macos-bundle-arm64.tar.gz`, binary + bundled `lib/` + `INSTALL.txt`),
+which installs without Homebrew and is what the in-app updater downloads, and
+the Homebrew edition tarball (`asyncao-macos-homebrew-arm64.tar.gz`, the binary
++ `INSTALL.txt`, libraries from `brew`). No bare binary ships, because clients
+up to v1.95.1 would copy it over themselves without its libraries. Both tarballs' `INSTALL.txt`
 carries the `xattr -dr com.apple.quarantine .` relief for the first-launch
 Gatekeeper prompts an unsigned/unnotarized download triggers per bundled Mach-O.
 
-> **Self-update constraint (SONAME skew).** On macOS the self-updater swaps only
-> the bare `asyncao-macos-arm64` binary — it does NOT refresh the sibling `lib/`
-> from the tarball. The rewritten binary loads its dylibs by `@rpath`, resolved
-> in order `@executable_path/lib` → `/opt/homebrew/lib` → `/usr/local/lib`
-> (`scripts/bundle-macos.sh`). That is safe as long as the dylib SONAMEs the new
-> binary references still exist in the installed `lib/`. If a future release bumps
-> a Homebrew dependency across a SONAME change (libwebp/libavif do this — e.g.
-> `libavif.16.dylib` → `libavif.17.dylib`), a self-updated binary would reference
-> the NEW soname, the stale bundled `lib/` only has the OLD one, `@executable_path/lib`
-> misses, and the rpath falls through to `/opt/homebrew/lib` — which the tarball's
-> no-Homebrew audience (the whole reason the bundle exists) does not have, so the
-> app would fail to launch.
->
-> **This is guarded in code, not just here.** Before it swaps anything,
-> `internal/update.StageReplace` runs `preflightDarwinSwap`: when a sibling `lib/`
-> exists (the tarball install — the population that can skew), it parses the
-> downloaded binary's Mach-O `@rpath` dylib imports and, if any is absent from that
-> `lib/`, REFUSES the swap *before touching the install* and surfaces a
-> "re-download the bundle tarball" message. The install is left pristine, so the
-> user simply grabs the new tarball (which carries a matching `lib/`). A bare brew
-> install has no sibling `lib/`, so the guard is a no-op there (the rpath fallback
-> to `/opt/homebrew/lib` covers it), and the check fails open on any binary it
-> can't inspect — it never blocks a legitimate update. The durable fix, when
-> in scope, is to move macOS self-update to fetch the tarball and replace the
-> binary + `lib/` in lockstep rather than swapping the bare binary alone.
+> **Self-update and `lib/`.** The in-app updater downloads the bundle tarball and
+> replaces the binary and every dylib in `lib/` together (`internal/update.StageBundle`),
+> so a library version change (`libavif.16.dylib` → `libavif.17.dylib`) can't leave a
+> new binary beside an old `lib/`. `preflightDarwinSwap` still refuses a single-binary
+> swap whose `@rpath` imports are missing from a sibling `lib/`.
 
 ## What is NOT signed
 

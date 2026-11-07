@@ -93,13 +93,12 @@ build_linux() {
 
 build_macos() {
 	# Info.plist gives the bare binary a 2x Retina backing store without a .app.
-	go_build "$ASSETS/$MAC_BINARY" "-extldflags=-Wl,-sectcreate,__TEXT,__info_plist,$PWD/packaging/macos/Info.plist"
-	bash scripts/bundle-macos.sh "$ASSETS/$MAC_BINARY" "$STAGE"
+	go_build "dist/$MAC_BINARY" "-extldflags=-Wl,-sectcreate,__TEXT,__info_plist,$PWD/packaging/macos/Info.plist"
+	bash scripts/bundle-macos.sh "dist/$MAC_BINARY" "$STAGE"
 }
 
 pack_windows() {
-	local exe=asyncao-windows-x86_64.exe bundle=asyncao-windows-x86_64-bundle.zip
-	cp "$STAGE/asyncao.exe" "$ASSETS/$exe"
+	local bundle=asyncao-windows-x86_64-bundle.zip
 	# The updater needs a flat zip; no stage entry has a subfolder.
 	powershell.exe -NoProfile -NonInteractive -Command \
 		"Compress-Archive -Path '$(cygpath -w "$STAGE")\\*' -DestinationPath '$(cygpath -w "$ASSETS/$bundle")' -Force"

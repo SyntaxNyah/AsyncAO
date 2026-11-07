@@ -377,8 +377,23 @@ func TestFetchSumsServerError(t *testing.T) {
 	}
 }
 
-// TestSelfUpdateMatchesOneManifestAsset checks the matcher against what a release really publishes.
-func TestSelfUpdateMatchesOneManifestAsset(t *testing.T) {
+// legacyAssetMatches are the names clients up to v1.95.1 match. They copy the matched binary over themselves without
+// its libraries, so a release must publish nothing they match; they then open the release page instead.
+var legacyAssetMatches = []string{"windows-x86_64.exe", "macos-arm64"}
+
+// TestNoManifestAssetMatchesLegacyClients keeps old clients from installing a binary without its libraries.
+func TestNoManifestAssetMatchesLegacyClients(t *testing.T) {
+	for _, name := range manifestAssets(t) {
+		for _, legacy := range legacyAssetMatches {
+			if strings.Contains(strings.ToLower(name), legacy) {
+				t.Errorf("%s matches %q, so clients up to v1.95.1 would install it without its libraries", name, legacy)
+			}
+		}
+	}
+}
+
+func manifestAssets(t *testing.T) []string {
+	t.Helper()
 	const manifestPath = "../../packaging/release-assets.txt"
 	manifest, err := os.ReadFile(manifestPath)
 	if err != nil {
@@ -390,6 +405,12 @@ func TestSelfUpdateMatchesOneManifestAsset(t *testing.T) {
 			names = append(names, name)
 		}
 	}
+	return names
+}
+
+// TestSelfUpdateMatchesOneManifestAsset checks the matcher against what a release really publishes.
+func TestSelfUpdateMatchesOneManifestAsset(t *testing.T) {
+	names := manifestAssets(t)
 	for _, goos := range []string{"windows", "linux", "darwin"} {
 		var matches []string
 		for _, name := range names {
