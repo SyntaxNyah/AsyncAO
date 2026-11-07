@@ -61,7 +61,18 @@ const (
 	PhasePreanim
 	PhaseTalking
 	PhaseLinger
+	// PhaseSlide pans a panorama to the message's position after the shout, before the emote (do_transition).
+	PhaseSlide
 )
+
+// SlideScene is a pan across a panorama from the last position to the message's, with the last speaker held where they
+// stood (courtroom.cpp:3007-3155); the stage eases from origin From to To over Total.
+type SlideScene struct {
+	Active      bool
+	From, To    int
+	Left, Total time.Duration
+	Previous    SpriteLayer
+}
 
 // SpriteLayer describes one character layer; bases are extension-less URL bases.
 type SpriteLayer struct {
@@ -101,6 +112,7 @@ type Scene struct {
 	SceneryScaling  ScalingMode
 	SceneryPanorama bool
 	SceneryOrigin   int
+	Slide           SlideScene
 
 	Speaker SpriteLayer
 	Pair    SpriteLayer
@@ -270,6 +282,9 @@ type Courtroom struct {
 	Assets AssetResolver
 	// followBg, followFile and followDesk are the background, its file and the desk followBackground last settled on.
 	followBg, followFile, followDesk string
+	// slideFrom and slideSpeaker are the last message's position and speaker, which a slide starts from.
+	slideFrom    string
+	slideSpeaker SpriteLayer
 	// design is designBg's design.ini once read, nil when absent; designURL is asked until designRead.
 	design     *theme.INI
 	designBg   string
@@ -670,6 +685,7 @@ func (c *Courtroom) wipeStage() {
 	// drawSprite returns early on `!Visible || Active == ""`, so a zeroed layer can't leak a frame.
 	c.Scene.Speaker = SpriteLayer{}
 	c.Scene.Pair = SpriteLayer{}
+	c.Scene.Slide = SlideScene{}
 	c.Scene.Group = nil
 	c.Scene.PairActive = false
 	c.Scene.SpeakerInFront = true
@@ -929,6 +945,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// The emote SFX is armed in enterAfterShout, to land SFX_DELAY x 40ms in (sfx_delay_timer, courtroom.cpp:4052).
 
 	// --- scene state ---
+	c.slideFrom, c.slideSpeaker = c.Scene.Position, c.Scene.Speaker
 	c.Scene.Position = msg.Side
 	if c.sess != nil && c.sess.Background != "" {
 		c.setScenery(c.sess.Background, msg.Side)
@@ -1144,6 +1161,53 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 func (c *Courtroom) enterAfterShout() {
 	c.Scene.ShoutBase = ""
 	c.Scene.ShoutFallbackBase = ""
+	if c.startSlide() {
+		return
+	}
+	c.playEmote()
+}
+
+// startSlide starts the pan when do_transition would (courtroom.cpp:3032): a new position, both on the loaded court with
+// an origin, the message asking for a slide, a duration in design.ini, no zoom and motion not reduced.
+func (c *Courtroom) startSlide() bool {
+	msg := c.current
+	if !msg.Slide || c.ReduceMotion || msg.Emote == "" || zoomEmote(msg.EmoteMod) || c.design == nil ||
+		c.slideFrom == "" || c.slideFrom == c.Scene.Position ||
+		fileStem(c.sceneryFile(c.Scene.BackgroundBase)) != courtPanorama {
+		return false
+	}
+	from, to := PanoramaPosition(c.slideFrom, c.design), PanoramaPosition(c.Scene.Position, c.design)
+	_, sub, toOnPanorama := strings.Cut(to, panoramaSep)
+	if !strings.Contains(from, panoramaSep) || !toOnPanorama {
+		return false
+	}
+	fromOrigin, fromOK := c.designInt(from, designOriginKey)
+	toOrigin, toOK := c.designInt(to, designOriginKey)
+	ms, msOK := c.designInt(from, designSlidePrefix+sub)
+	if !fromOK || !toOK || !msOK || ms < 0 {
+		return false
+	}
+	total := time.Duration(ms) * time.Millisecond
+	previous := c.slideSpeaker
+	previous.Active, previous.PlayOnce = previous.IdleBase, false
+	c.Scene.Slide = SlideScene{Active: true, From: fromOrigin, To: toOrigin, Left: total, Total: total, Previous: previous}
+	c.Scene.Speaker.Active = c.Scene.Speaker.IdleBase
+	c.phase, c.timer = PhaseSlide, total
+	return true
+}
+
+// designInt reads a whole number from the background design.ini.
+func (c *Courtroom) designInt(section, key string) (int, bool) {
+	raw, ok := c.design.GetSection(section, key)
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	return n, err == nil
+}
+
+// playEmote shows the message's emote once any shout and slide are over: the preanim, or straight to talking.
+func (c *Courtroom) playEmote() {
 	msg := c.current
 	// The SFX arms here (play_preanim, courtroom.cpp:4054); effects wait for start_chat_ticking
 	// (courtroom.cpp:4154-4172), reached through preanim_done (courtroom.cpp:4108-4118, :3506). See startTalking.
@@ -1474,6 +1538,14 @@ func (c *Courtroom) Update(dt time.Duration) {
 			c.enterAfterShout()
 		}
 
+	case PhaseSlide:
+		c.timer -= dt
+		c.Scene.Slide.Left = max(c.timer, 0)
+		if c.timer <= 0 {
+			c.Scene.Slide = SlideScene{}
+			c.playEmote()
+		}
+
 	case PhasePreanim:
 		c.timer -= dt
 		if c.preanimDone || c.timer <= 0 {
@@ -1679,12 +1751,9 @@ func (c *Courtroom) placeScenery(name string) {
 	c.Scene.SceneryScaling = ParseScalingMode(scaling)
 	section := c.Scene.Position
 	if name == courtPanorama {
-		section = courtPanorama + ":" + section
+		section = PanoramaPosition(section, c.design)
 	}
-	if raw, ok := c.design.GetSection(section, designOriginKey); ok {
-		origin, err := strconv.Atoi(strings.TrimSpace(raw))
-		c.Scene.SceneryPanorama, c.Scene.SceneryOrigin = err == nil, origin
-	}
+	c.Scene.SceneryOrigin, c.Scene.SceneryPanorama = c.designInt(section, designOriginKey)
 }
 
 // sceneryFile returns the file base's resident page was decoded from, "" when unknown.

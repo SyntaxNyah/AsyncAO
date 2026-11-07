@@ -44,7 +44,7 @@ func (v *Viewport) drawScenery(ren *sdl.Renderer, scene *courtroom.Scene, base s
 	if !ok {
 		return
 	}
-	v.fillRect = sceneryRect(vp, page.W, page.H, scene.SceneryStretch, scene.SceneryPanorama, scene.SceneryOrigin)
+	v.fillRect = sceneryRect(vp, page.W, page.H, scene.SceneryStretch, v.panorama, v.origin)
 	page.applyScaleMode(ren, sceneryScaleMode(v.fx.UserScaling, scene.SceneryScaling, scene.SceneryStretch, page.H, v.fillRect.H))
 	tex := page.Frames[frame]
 	if dimPct < percentMax {
@@ -55,4 +55,33 @@ func (v *Viewport) drawScenery(ren *sdl.Renderer, scene *courtroom.Scene, base s
 	if dimPct < percentMax {
 		_ = tex.SetColorMod(channelMax, channelMax, channelMax)
 	}
+}
+
+// placeStage sets this frame's panorama placement, the slide's eased origin while one runs, and returns how far the
+// new and the last position's characters sit from the stage's centre, as they ride the pan (courtroom.cpp:3072-3089).
+func (v *Viewport) placeStage(scene *courtroom.Scene, vp sdl.Rect) (newDX, lastDX int32) {
+	v.panorama, v.origin = scene.SceneryPanorama, scene.SceneryOrigin
+	slide := &scene.Slide
+	if !slide.Active || slide.Total <= 0 {
+		return 0, 0
+	}
+	v.panorama = true
+	done := 1 - float64(slide.Left)/float64(slide.Total)
+	v.origin = slide.From + int(float64(slide.To-slide.From)*inOutCubic(done))
+	page, _, ok := v.layerPage(&v.bgAnim)
+	if !ok || page.H <= 0 {
+		return 0, 0
+	}
+	at := func(origin int) int32 { return int32(int64(origin-v.origin) * int64(vp.H) / int64(page.H)) }
+	return at(slide.To), at(slide.From)
+}
+
+// inOutCubic is Qt's QEasingCurve::InOutCubic, the slide's curve (courtroom.cpp:3065).
+func inOutCubic(t float64) float64 {
+	const half, cubicScale, cubicShift = 0.5, 4, 2
+	if t < half {
+		return cubicScale * t * t * t
+	}
+	u := -cubicShift*t + cubicShift
+	return 1 - u*u*u/cubicShift
 }

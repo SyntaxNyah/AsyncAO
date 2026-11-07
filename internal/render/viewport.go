@@ -321,6 +321,11 @@ type Viewport struct {
 	bgAnim        animState
 	deskAnim      animState
 	speedlineAnim animState
+	// slideAnim draws the last speaker during a panorama slide, held on a frame as AO2 pauses it.
+	slideAnim animState
+	// panorama and origin are this frame's panorama placement, set by placeStage.
+	panorama bool
+	origin   int
 	// overlayGen mirrors Scene.Overlay.Gen so the same effect fired twice restarts; reset only fires on a base change.
 	overlayAnim animState
 	overlayGen  uint32
@@ -498,6 +503,7 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	v.syncAnim(&v.shoutAnim, shoutBase)
 	v.syncAnim(&v.speakerAnim, scene.Speaker.Active)
 	v.syncAnim(&v.pairAnim, scene.Pair.Active)
+	v.syncAnim(&v.slideAnim, scene.Slide.Previous.Active)
 	if len(v.groupAnims) != len(scene.Group) {
 		v.groupAnims = make([]animState, len(scene.Group))
 	}
@@ -768,6 +774,7 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		v.stageClip = stage
 		_ = ren.SetClipRect(&v.stageClip)
 	}
+	newDX, lastDX := v.placeStage(scene, vp)
 	if v.fx.DoF {
 		v.drawBackgroundDoF(ren, scene, &v.bgAnim, vp) // #11 soft-focus + dim
 	} else {
@@ -793,8 +800,10 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 	if v.fx.Spotlight {
 		spotPct = spotlightBrightness(v.fx.SpotlightLevel)
 	}
-	// The slide rect is the speaker's only; the pair stays put.
-	spkVP := vp
+	// A panorama slide moves every character with the stage; the entrance slide moves only the speaker.
+	charVP := vp
+	charVP.X += newDX
+	spkVP := charVP
 	if v.fx.Entrance && v.entranceLeft > 0 {
 		spkVP.X += entranceSlide(v.entranceLeft, vp.W)
 	}
@@ -807,14 +816,19 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		_ = ren.SetClipRect(&v.maskClip)
 	}
 	// Group pairing (JSON-only GP roster): draw other members first, front-most last, so the roster's z-order holds.
+	if scene.Slide.Active {
+		lastVP := vp
+		lastVP.X += lastDX
+		v.drawSprite(ren, &scene.Slide.Previous, &v.slideAnim, lastVP, 0, spotPct)
+	}
 	for i := range scene.Group {
-		v.drawSprite(ren, &scene.Group[i], &v.groupAnims[i], vp, 0, spotPct)
+		v.drawSprite(ren, &scene.Group[i], &v.groupAnims[i], charVP, 0, spotPct)
 	}
 	if scene.PairActive && !scene.SpeakerInFront {
 		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0, noDim)
-		v.drawSprite(ren, &scene.Pair, &v.pairAnim, vp, pairShift, spotPct)
+		v.drawSprite(ren, &scene.Pair, &v.pairAnim, charVP, pairShift, spotPct)
 	} else if scene.PairActive {
-		v.drawSprite(ren, &scene.Pair, &v.pairAnim, vp, pairShift, spotPct)
+		v.drawSprite(ren, &scene.Pair, &v.pairAnim, charVP, pairShift, spotPct)
 		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0, noDim)
 	} else {
 		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0, noDim)
@@ -1111,7 +1125,7 @@ func (v *Viewport) drawBackgroundDoF(ren *sdl.Renderer, scene *courtroom.Scene, 
 		return // no page, no held bridge frame — see drawFill
 	}
 	tex := page.Frames[frame]
-	dst := sceneryRect(vp, page.W, page.H, scene.SceneryStretch, scene.SceneryPanorama, scene.SceneryOrigin)
+	dst := sceneryRect(vp, page.W, page.H, scene.SceneryStretch, v.panorama, v.origin)
 	page.applyScaleMode(ren, sceneryScaleMode(v.fx.UserScaling, scene.SceneryScaling, scene.SceneryStretch, page.H, dst.H))
 	r := vp.H / dofBlurDivisor
 	if r < dofBlurMin {

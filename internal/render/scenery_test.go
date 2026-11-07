@@ -52,3 +52,13 @@ func TestSceneryScaleModeFollowsAO2(t *testing.T) {
 		}
 	}
 }
+
+func TestInOutCubicEasesBothEnds(t *testing.T) {
+	const start, mid, end, quarter, threeQuarters = 0.0, 0.5, 1.0, 0.25, 0.75
+	if inOutCubic(start) != start || inOutCubic(mid) != mid || inOutCubic(end) != end {
+		t.Fatalf("ends and middle: %v %v %v", inOutCubic(start), inOutCubic(mid), inOutCubic(end))
+	}
+	if inOutCubic(quarter) >= quarter || inOutCubic(threeQuarters) <= threeQuarters {
+		t.Fatal("the curve must start slow and end slow")
+	}
+}

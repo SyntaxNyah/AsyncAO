@@ -654,11 +654,36 @@ func (a *App) customShoutLabel() string {
 // standardPositions is the classic AO side set used until an SD packet supplies the server's own list.
 var standardPositions = []string{"wit", "def", "pro", "jud", "hld", "hlp", "jur", "sea"}
 
+// posChoices is the server's SD list, else AO2's list for the background (courtroom.cpp:1395-1426): its positions
+// with art of their own, each shown until its art is known; the standard set when none qualifies. Kept until the
+// background, its design.ini or the texture store changes, as the frame must not allocate.
 func (a *App) posChoices() []string {
 	if a.sess != nil && len(a.sess.PosList) > 0 {
 		return a.sess.PosList
 	}
-	return standardPositions
+	if a.sess == nil || a.sess.Background == "" {
+		return standardPositions
+	}
+	if bg := a.sess.Background; bg != a.posListBg {
+		a.posListBg, a.posListDesignURL, a.posList = bg, a.urls.BackgroundDesign(bg), nil
+	}
+	design, _ := a.backgroundDesign(a.posListDesignURL)
+	gen := a.d.Store.Generation()
+	if a.posList != nil && gen == a.posListGen && design == a.posListDesign {
+		return a.posList
+	}
+	list := make([]string, 0, len(standardPositions))
+	for _, pos := range courtroom.BackgroundPositions(design) {
+		base := a.urls.PositionScenery(a.posListBg, pos, design).Background
+		if courtroom.PositionHasArt(pos, a.d.Store.FileOf(base), design) {
+			list = append(list, pos)
+		}
+	}
+	if len(list) == 0 {
+		list = standardPositions
+	}
+	a.posList, a.posListGen, a.posListDesign = list, gen, design
+	return list
 }
 
 // applySide sets our side and, when connected, sends the /pos OOC command. AO2-Client's pos dropdown is

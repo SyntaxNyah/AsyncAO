@@ -921,9 +921,15 @@ type App struct {
 	overlayRosterInFlight map[string]bool
 	overlayRosterRes      chan overlayRosterFetch
 	// bgDesigns holds each background's design.ini by URL, nil when it has none; bgDesignReading marks reads in flight.
-	bgDesigns        map[string]*theme.INI
-	bgDesignReading  map[string]bool
-	bgDesignRes      chan bgDesignRead
+	bgDesigns       map[string]*theme.INI
+	bgDesignReading map[string]bool
+	bgDesignRes     chan bgDesignRead
+	// posList is posChoices' answer for posListBg, kept until the store generation or the design.ini changes.
+	posList          []string
+	posListBg        string
+	posListDesignURL string
+	posListDesign    *theme.INI
+	posListGen       uint64
 	overlayRosterGen uint64
 	// overlayTheme is the applied theme's snapshot, read off-thread by roster resolves instead of re-running
 	// theme.Load. *theme.Theme is read-only after Load, so sharing it with the fetch goroutine is race-free.

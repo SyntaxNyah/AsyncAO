@@ -491,14 +491,14 @@ type Scenery struct {
 // panorama when design places pos on it, the position's own file (2.8 style), its legacy name, then witnessempty and
 // wit. design may be nil.
 func (u URLBuilder) PositionScenery(bg, pos string, design *theme.INI) Scenery {
+	first, _, onPanorama := strings.Cut(PanoramaPosition(pos, design), panoramaSep)
+	own, _, _ := strings.Cut(pos, panoramaSep)
 	court := ""
-	if design != nil {
-		if _, ok := design.GetSection(courtPanorama+":"+pos, designOriginKey); ok {
-			court = courtPanorama
-		}
+	if onPanorama {
+		court = first
 	}
 	legacy := legacyOf(pos)
-	names := [...]string{court, pos, legacy, defaultPosBackground, legacyPosBackground}
+	names := [...]string{first, own, legacy, defaultPosBackground, legacyPosBackground}
 	urls := make([]string, 0, maxPositionNames)
 	for _, name := range names {
 		if name == "" {
@@ -510,8 +510,52 @@ func (u URLBuilder) PositionScenery(bg, pos string, design *theme.INI) Scenery {
 	}
 	// The desk shown before a name loads is that of the name most backgrounds have: the court design.ini names, else the
 	// legacy name, else the position's own file, else the witness view.
-	likely := cmp.Or(court, legacy, pos, defaultPosBackground)
+	likely := cmp.Or(court, legacy, own, defaultPosBackground)
 	return Scenery{Background: urls[0], Alts: urls[1:], Desk: u.Background(bg, DeskOf(likely, design))}
+}
+
+// PanoramaPosition returns the key AO2 reads a position's design.ini settings under: "court:<pos>" when design.ini
+// places pos on the court, else pos itself, which may already name a panorama as "<background>:<sub>"
+// (path_functions.cpp:86-94).
+func PanoramaPosition(pos string, design *theme.INI) string {
+	if design == nil || strings.Contains(pos, panoramaSep) {
+		return pos
+	}
+	if _, ok := design.GetSection(courtPanorama+panoramaSep+pos, designOriginKey); ok {
+		return courtPanorama + panoramaSep + pos
+	}
+	return pos
+}
+
+// BackgroundPositions returns the positions AO2's dropdown offers for a background, before checking which have art
+// (courtroom.cpp:1395-1426): the legacy positions, those design.ini places on the court, then design.ini's positions.
+func BackgroundPositions(design *theme.INI) []string {
+	out := make([]string, 0, len(positionScenery))
+	for _, p := range positionScenery {
+		out = append(out, p.pos)
+	}
+	if design == nil {
+		return out
+	}
+	extra, _ := design.Get(designPositionsKey)
+	for _, pos := range strings.Split(extra, designListSep) {
+		if pos = strings.TrimSpace(pos); pos != "" && !slices.Contains(out, pos) && len(out) < maxBackgroundPositions {
+			out = append(out, pos)
+		}
+	}
+	return out
+}
+
+// PositionHasArt reports whether a position's background loaded as a name of its own, as AO2 lists only those; a
+// background still loading, file "", counts as having art until it lands as a witness fallback.
+func PositionHasArt(pos, file string, design *theme.INI) bool {
+	if file == "" {
+		return true
+	}
+	name := fileStem(file)
+	first, _, _ := strings.Cut(PanoramaPosition(pos, design), panoramaSep)
+	own, _, _ := strings.Cut(pos, panoramaSep)
+	return name == first || name == own || name == legacyOf(pos)
 }
 
 // DeskOf returns the desk AO2 pairs with a background name that loaded: design.ini's overlays/<name>, else the legacy
@@ -548,13 +592,14 @@ func legacyOf(pos string) string {
 // position is one row of AO2's table of positions with pre-2.8 art: its legacy background and that background's desk.
 type position struct{ pos, legacy, desk string }
 
+// positionScenery is in the order AO2's dropdown lists positions (courtroom.cpp:1396).
 var positionScenery = [...]position{
 	{"def", "defenseempty", "defensedesk"},
+	{"hld", "helperstand", "helperdesk"},
 	{"pro", "prosecutorempty", "prosecutiondesk"},
+	{"hlp", "prohelperstand", "prohelperdesk"},
 	{"wit", defaultPosBackground, "stand"},
 	{"jud", "judgestand", "judgedesk"},
-	{"hld", "helperstand", "helperdesk"},
-	{"hlp", "prohelperstand", "prohelperdesk"},
 	{"jur", "jurystand", "jurydesk"},
 	{"sea", "seancestand", "seancedesk"},
 }
@@ -573,6 +618,14 @@ const (
 	designOverlaysSection = "overlays"
 	designStretchKey      = "stretch"
 	designScalingKey      = "scaling"
+	designPositionsKey    = "positions"
+	designSlidePrefix     = "slide_ms_"
+	// designListSep joins a QSettings list, as read_design_ini returns one (text_file_functions.cpp:164-167).
+	designListSep = ","
+	// panoramaSep splits "<background>:<sub>" positions.
+	panoramaSep = ":"
+	// maxBackgroundPositions bounds the dropdown a hostile design.ini can grow.
+	maxBackgroundPositions = 64
 	// designTrue is how AO2 reads stretch: any value starting with it (animationlayer.cpp:616).
 	designTrue = "true"
 )
