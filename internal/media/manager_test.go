@@ -102,7 +102,6 @@ type fakeFormat struct {
 	bad      map[string]bool
 	hold     chan struct{}
 	onMain   bool
-	active   atomic.Int64
 	started  atomic.Int64
 	measured int64
 }
