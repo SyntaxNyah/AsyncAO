@@ -95,6 +95,7 @@ func TestNoSlideWithoutEverythingAO2Asks(t *testing.T) {
 			say(room, "Phoenix", "def", true)
 		},
 		"motion reduced": func(room *Courtroom) { room.ReduceMotion = true; say(room, "Edgeworth", "pro", true) },
+		"webAO pacing":   func(room *Courtroom) { room.CatchUp = true; say(room, "Edgeworth", "pro", true) },
 	}
 	for name, run := range cases {
 		room := slideRoom(t)

@@ -1178,10 +1178,11 @@ func (c *Courtroom) enterAfterShout() {
 }
 
 // startSlide starts the pan when do_transition would (courtroom.cpp:3032): a new position, both on the loaded court with
-// an origin, the message asking for a slide, a duration in design.ini, no zoom and motion not reduced.
+// an origin, the message asking for a slide, a duration in design.ini, no zoom and motion not reduced. Only with the
+// AO2 queue: webAO pacing has no such slide.
 func (c *Courtroom) startSlide() bool {
 	msg := c.current
-	if !msg.Slide || c.ReduceMotion || msg.Emote == "" || zoomEmote(msg.EmoteMod) || c.design == nil ||
+	if !msg.Slide || c.ReduceMotion || c.CatchUp || msg.Emote == "" || zoomEmote(msg.EmoteMod) || c.design == nil ||
 		c.slideFrom == "" || c.slideFrom == c.Scene.Position ||
 		fileStem(c.sceneryFile(c.Scene.BackgroundBase)) != courtPanorama {
 		return false
