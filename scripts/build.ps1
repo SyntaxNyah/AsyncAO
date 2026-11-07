@@ -20,13 +20,13 @@ $env:PKG_CONFIG_PATH = "$msys\lib\pkgconfig"
 
 $flags = @()
 if ($Release) {
-    # Stamp the build version for the self-update check (M13) from the git tag,
-    # e.g. v1.2.3 or v1.2.3-5-gabc1234-dirty. No tag -> stays "dev" (a dev build
-    # never self-updates). Dev (non -Release) builds are intentionally unstamped.
+    # Stamp the version only when HEAD is exactly a tag. Anything else stays "dev",
+    # which never self-updates: a describe string like v2.0.1-470-gabc reads as a
+    # prerelease of v2.0.1 and would be offered the latest release as an update.
     # -H=windowsgui links a GUI-subsystem exe so no console window opens on
     # launch (release builds only; dev builds keep the console for logs).
     $ldflags = "-s -w -H=windowsgui"
-    $ver = (git describe --tags --dirty 2>$null)
+    $ver = (git describe --tags --exact-match 2>$null)
     if ($LASTEXITCODE -eq 0 -and $ver) {
         $ldflags = "$ldflags -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=$ver"
         Write-Host "Stamping version $ver"

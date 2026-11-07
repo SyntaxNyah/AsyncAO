@@ -6,7 +6,7 @@ Contributor CI and releases are separate pipelines that share only `checks.yml` 
 
 | Event | What runs |
 |---|---|
-| Push to a branch with no open PR | Package on Windows, Linux and macOS, with no smoke test. Test builds appear under Actions, the run, Artifacts, for 14 days, and report version `dev`, so they never self-update. Run the local checks in `CLAUDE.md` yourself. |
+| Push to a branch with no open PR | Package on Windows, Linux and macOS, with no smoke test. Test builds appear under Actions, the run, Artifacts, for 14 days, one bundle file per platform with no extra zip around it, and report version `dev`, so they never self-update. Run the local checks in `CLAUDE.md` yourself. |
 | Draft PR commit | The same packaging. |
 | Commit on a PR that is ready for review, manual CI run | gofmt, vet, staticcheck, golangci-lint, race tests on all three OSes, benchmark alloc gates, packaging and a smoke test on all three OSes. |
 | Merge or push to `main` | Nothing, unless it releases (below). |

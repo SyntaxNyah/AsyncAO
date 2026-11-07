@@ -34,9 +34,10 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - { name: Windows, os: windows-2025, shell: "msys2 {0}", packages: "" }
-          - { name: Linux, os: ubuntu-24.04, shell: bash, packages: patchelf desktop-file-utils }
-          - { name: macOS, os: macos-15, shell: bash, packages: dylibbundler }
+          # bundle is the one file a tester downloads from a test build.
+          - { name: Windows, os: windows-2025, shell: "msys2 {0}", packages: "", bundle: asyncao-windows-x86_64-bundle.zip }
+          - { name: Linux, os: ubuntu-24.04, shell: bash, packages: patchelf desktop-file-utils, bundle: AsyncAO-linux-x86_64.AppImage }
+          - { name: macOS, os: macos-15, shell: bash, packages: dylibbundler, bundle: asyncao-macos-bundle-arm64.tar.gz }
     defaults:
       run:
         shell: ${{ matrix.target.shell }}
@@ -72,9 +73,19 @@ jobs:
       - name: Smoke test
         if: inputs.smoke-test
         run: bash scripts/package.sh smoke "$VERSION"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      # A release needs every asset, so the publish job downloads them as one zipped artifact per platform.
+      - if: inputs.sign
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-${{ matrix.target.name }}
           path: dist/assets/*
+          if-no-files-found: error
+          retention-days: 14
+      # A test build uploads only the bundle, unzipped, so a tester does not unpack a zip to find another zip.
+      - if: ${{ !inputs.sign }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: dist/assets/${{ matrix.target.bundle }}
+          archive: false
           if-no-files-found: error
           retention-days: 14
