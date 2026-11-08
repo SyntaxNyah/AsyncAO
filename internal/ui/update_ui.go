@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
@@ -43,9 +44,22 @@ func (a *App) maybeKickUpdateCheck() {
 			update.CleanupOldBundle(exe)
 		}
 	}()
+	a.tickPrereleaseOnce(update.Version)
 	if a.d.Prefs.Load().UpdateCheck {
 		a.startUpdateCheck()
 	}
+}
+
+// tickPrereleaseOnce ticks "Include pre-releases" on a pre-release build's first launch, so the first check
+// doesn't offer the way back to stable; unticking holds until a different pre-release runs.
+func (a *App) tickPrereleaseOnce(version string) {
+	if !update.IsPrerelease(version) || a.d.Prefs.Load().PrereleaseTickedFor == version {
+		return
+	}
+	a.d.Prefs.Update(func(sn *config.Settings) {
+		sn.UpdatePrerelease = true
+		sn.PrereleaseTickedFor = version
+	})
 }
 
 // startUpdateCheck runs one check off-thread; it does nothing while a check or install runs.

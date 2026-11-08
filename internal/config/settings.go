@@ -19,6 +19,7 @@ type Settings struct {
 	SpriteScalingMigrated        bool                         `json:"spriteScalingMigrated"`
 	UpdateCheck                  bool                         `json:"updateCheck"`
 	UpdatePrerelease             bool                         `json:"updateExperimental"`
+	PrereleaseTickedFor          string                       `json:"prereleaseTickedFor,omitempty"`
 	HighlightColor               int                          `json:"highlightColor"`
 	ICCustomColor                int                          `json:"icCustomColor"`
 	NameColors                   bool                         `json:"nameColors"`

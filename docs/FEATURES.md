@@ -2247,7 +2247,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   entirely. When a newer version is published, a **What's New** panel shows that
   release's **patch notes** (scrollable); Settings → Updates reopens it, shows the
   running version, commit and build date, checks again on demand, and can include
-  pre-releases. Turn launch checks off for no outbound call at launch.
+  pre-releases (ticked on a pre-release build's first launch). A pre-release build
+  is offered the highest stable release at or above its version, or else the
+  newest one, even if lower; a stable build is only offered higher versions.
+  Turn launch checks off for no outbound call at launch.
   **"Download & Install…"** then downloads the new build next to the running exe,
   verifies it, and **stages an atomic self-replace** (rename the old aside →
   move the new in, **rolling back** if anything fails — so an AV lock mid-swap

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/update"
 )
 
@@ -58,5 +59,30 @@ func TestStartUpdateCheckSkipsWhileInstalling(t *testing.T) {
 	a.startUpdateCheck()
 	if a.updateChecking {
 		t.Fatal("a check must not start once an update is staged")
+	}
+}
+
+func TestTickPrereleaseOncePerBuild(t *testing.T) {
+	const rc2, rc3 = "v2.1.0-rc.2", "v2.1.0-rc.3"
+	a := testTabApp(t)
+	untick := func() { a.d.Prefs.Update(func(sn *config.Settings) { sn.UpdatePrerelease = false }) }
+	ticked := func() bool { return a.d.Prefs.Load().UpdatePrerelease }
+
+	a.tickPrereleaseOnce("v2.0.2")
+	if ticked() {
+		t.Fatal("a stable build must not tick pre-releases")
+	}
+	a.tickPrereleaseOnce(rc2)
+	if !ticked() {
+		t.Fatal("a pre-release build's first launch must tick pre-releases")
+	}
+	untick()
+	a.tickPrereleaseOnce(rc2)
+	if ticked() {
+		t.Fatal("unticking must hold for the same build")
+	}
+	a.tickPrereleaseOnce(rc3)
+	if !ticked() {
+		t.Fatal("a different pre-release build must tick pre-releases again")
 	}
 }

@@ -293,6 +293,9 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.UpdatePrerelease != o.UpdatePrerelease {
 		return false
 	}
+	if s.PrereleaseTickedFor != o.PrereleaseTickedFor {
+		return false
+	}
 	if s.HighlightColor != o.HighlightColor {
 		return false
 	}
