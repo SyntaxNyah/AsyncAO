@@ -37,6 +37,8 @@ jobs:
 
   test:
     name: Tests (${{ matrix.os }})
+    # A lint failure is cheaper to find than three race runs, so they wait for it.
+    needs: lint
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
