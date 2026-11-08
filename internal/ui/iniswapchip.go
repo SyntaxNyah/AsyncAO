@@ -48,17 +48,6 @@ func (a *App) iniswapChipRect(w int32) (sdl.Rect, bool) {
 	}, true
 }
 
-// menuBarLeftContentRight is the right edge of everything left-anchored in the band, so the two chips cannot overlap.
-func (a *App) menuBarLeftContentRight(w int32) int32 {
-	right := a.menuBarTitlesRight()
-	if r, ok := a.iniswapChipRect(w); ok {
-		if e := r.X + r.W; e > right {
-			right = e
-		}
-	}
-	return right
-}
-
 // handleIniswapChipInput claims a click, before the strip publishes its overlay block, which covers the chip.
 // closeMenuBar is a precaution: an open pane holds c.modalOn, so hovering() is false and this cannot be reached.
 func (a *App) handleIniswapChipInput(w int32) {
