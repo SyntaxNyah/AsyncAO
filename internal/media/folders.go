@@ -460,6 +460,14 @@ func (d *dirMount) read(rel string) ([]byte, error) {
 	return b, nil
 }
 
+// dir is the on-disk path of the folder at rel, "" being the mount itself, which safepath.Join refuses.
+func (d *dirMount) dir(rel string) (string, error) {
+	if rel == "" {
+		return d.root, nil
+	}
+	return safepath.Join(d.root, rel)
+}
+
 // resolve finds the on-disk folder for a folded path, segment by segment so case may differ and no link is followed,
 // as no walk of user folders follows one.
 func (d *dirMount) resolve(folded string) (real string, mod time.Time, ok bool) {
@@ -496,7 +504,7 @@ func (d *dirMount) child(parent, seg string) (string, time.Time, bool) {
 			return seg, st.ModTime(), true
 		}
 	}
-	p, err := safepath.Join(d.root, parent)
+	p, err := d.dir(parent)
 	if err != nil {
 		return "", time.Time{}, false
 	}
@@ -518,7 +526,7 @@ func (d *dirMount) child(parent, seg string) (string, time.Time, bool) {
 
 // list returns the names of the regular files directly in real; folders, links and devices are left out.
 func (d *dirMount) list(real string) []string {
-	p, err := safepath.Join(d.root, real)
+	p, err := d.dir(real)
 	if err != nil {
 		return nil
 	}

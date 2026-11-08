@@ -156,32 +156,6 @@ func waitDecoded(t *testing.T, m *Manager) DecodedAsset {
 	}
 }
 
-// retryDecoded re-issues prefetch on a ticker until a decoded asset lands.
-// A single immediate re-prefetch after a failure can race the prior pass's
-// per-asset inflight-key release (the missing-asset warning is delivered just
-// before resolveChain returns and frees the key) and get collapsed by the
-// singleflight dedup (§17.6) — then dropped. Production never single-shots
-// like that: the demand pipeline retries on its interval and self-heals. This
-// mirrors that, so the test pins "eventually delivers", not a one-shot race.
-func retryDecoded(t *testing.T, m *Manager, prefetch func()) DecodedAsset {
-	t.Helper()
-	deadline := time.After(managerWait)
-	tick := time.NewTicker(50 * time.Millisecond)
-	defer tick.Stop()
-	prefetch()
-	for {
-		select {
-		case d := <-m.Decoded():
-			return d
-		case <-tick.C:
-			prefetch() // deduped while a pass is in flight; lands once it clears
-		case <-deadline:
-			t.Fatal("no decoded asset delivered after retries")
-			return DecodedAsset{}
-		}
-	}
-}
-
 func waitWarning(t *testing.T, m *Manager) Warning {
 	t.Helper()
 	select {
@@ -383,18 +357,6 @@ func TestManagerAudioBypassesDecode(t *testing.T) {
 	if s := rig.decoder.Stats(); s.Decoded+s.Failed != 0 {
 		t.Error("audio payload went through the image decoder")
 	}
-}
-
-func waitForDiskBlob(t *testing.T, d *cache.DiskCache, url string) {
-	t.Helper()
-	deadline := time.Now().Add(managerWait)
-	for time.Now().Before(deadline) {
-		if _, ok := d.Get(url); ok {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatal("disk blob never landed")
 }
 
 // TestManagerLocalMounts covers the no-streaming legacy mode: assets come

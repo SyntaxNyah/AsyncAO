@@ -86,6 +86,16 @@ func TestFolderFileIsFoundWhateverItsCase(t *testing.T) {
 	}
 }
 
+func TestFileAtTheMountRootIsFound(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "cover.png", "art")
+	fs, _ := newTestFolders(t, root)
+
+	if got, ok := dataOf(t, fs, "cover.png"); !ok || got != "art" {
+		t.Fatalf("got %q, %v", got, ok)
+	}
+}
+
 func TestHasIsUnknownUntilAWorkerHasCheckedTheFolder(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "sounds/general/hit.opus", "x")

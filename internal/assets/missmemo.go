@@ -115,13 +115,3 @@ func (m *missMemo) size() int {
 	defer m.mu.Unlock()
 	return len(m.entries)
 }
-
-// clear forgets every miss, so the next lookup re-walks the mounts.
-func (m *missMemo) clear() {
-	if m == nil || m.entries == nil {
-		return
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	clear(m.entries)
-}
