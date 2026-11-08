@@ -602,14 +602,16 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 			return false
 		}
 		c.waitBlocker = blocker
-		if !armed { // a new head arms: start the countdown + warm its sprites
+		if !armed { // a new head arms: start the countdown
 			c.waitFor = msg
 			c.waitLeft = c.SpriteWaitTimeout
 			if c.SequentialWait {
 				c.waitLeft = sequentialWaitLimit
 			}
-			c.requestNeeds(needs)
 		}
+		// Every fresh list, not only the first: a need that joins once char.ini lands (chat skin, blip) has no other
+		// requester until begin, which runs only after the gate releases.
+		c.requestNeeds(needs)
 	}
 	c.waitLeft -= dt
 	if c.waitLeft <= 0 {
