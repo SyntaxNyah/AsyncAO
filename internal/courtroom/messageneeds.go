@@ -150,6 +150,19 @@ func (c *Courtroom) needSettled(n messageNeed) bool {
 	}
 }
 
+// HeldNeed reports whether base is something the message the gate holds is waiting for; it doesn't allocate.
+func (c *Courtroom) HeldNeed(base string) bool {
+	if c.waitFor == nil || base == "" {
+		return false
+	}
+	for _, n := range c.needs {
+		if n.base == base && n.gate != gateOverlay {
+			return true
+		}
+	}
+	return false
+}
+
 // firstUnsettled checks in order and stops at the first it finds, so a later overlay doesn't start resolving early.
 func (c *Courtroom) firstUnsettled(needs []messageNeed) (messageNeed, bool) {
 	for _, n := range needs {

@@ -174,3 +174,39 @@ func TestWaitGateRequestsANeedThatJoinsLater(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 }
+
+func TestHeldNeedCoversTheHeldMessageOnly(t *testing.T) {
+	const (
+		tick = 16 * time.Millisecond
+		runs = 100
+	)
+	room, _, _, _ := newCourtroomRig(t)
+	room.SpriteWait = true
+	room.SpriteWaitTimeout = time.Minute
+	ready := map[string]bool{}
+	room.Assets = assetFake{sprite: func(base string) bool { return ready[base] }}
+	idle := room.urls.Emote("Phoenix", "normal", EmoteIdle)
+
+	if room.HeldNeed(idle) {
+		t.Fatal("nothing is held yet")
+	}
+	room.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Phoenix", "normal", "hi")})
+	if !room.HeldNeed(idle) {
+		t.Fatal("the held message's idle sprite is not a held need")
+	}
+	if room.HeldNeed(room.urls.Emote("Edgeworth", "normal", EmoteIdle)) {
+		t.Error("another character's sprite counts as held")
+	}
+	if n := testing.AllocsPerRun(runs, func() { room.HeldNeed(idle) }); n != 0 {
+		t.Errorf("HeldNeed allocates %.1f per call; the pump asks for every delivery", n)
+	}
+
+	readySpeaker(room, ready, "Phoenix", "normal")
+	room.Update(tick)
+	if room.QueueLen() != 0 {
+		t.Fatal("the message should have been released")
+	}
+	if room.HeldNeed(idle) {
+		t.Error("a released message still counts as held")
+	}
+}

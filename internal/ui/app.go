@@ -1707,7 +1707,8 @@ func (a *App) Screen() Screen { return a.screen }
 // Room exposes the courtroom (nil before joining).
 func (a *App) Room() *courtroom.Courtroom { return a.room }
 
-// IsLiveBase reports whether base belongs to the on-screen message, which bypasses the upload budget.
+// IsLiveBase reports whether base belongs to the on-screen message or the one the wait gate holds, which bypasses the
+// upload budget: a held message waits for every frame of its speaker, so budgeted uploads would hold it longer.
 func (a *App) IsLiveBase(base string) bool {
 	if a.room == nil {
 		return false
@@ -1718,7 +1719,7 @@ func (a *App) IsLiveBase(base string) bool {
 		sc.Speaker.Active, sc.Pair.Active:
 		return true
 	}
-	return false
+	return a.room.HeldNeed(base)
 }
 
 // IsLiveStageBase reports whether base is a drawn stage layer, deciding what the held-frame bridge keeps (onEvict).

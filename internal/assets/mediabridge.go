@@ -16,7 +16,10 @@ import (
 )
 
 const (
-	mediaDiskWorkers    = 4
+	// mediaDiskWorkers serve the disk cache and the player's folders; mediaDiskKept of them take only Now work, so
+	// background folder lookups can't hold up the live message.
+	mediaDiskWorkers    = 6
+	mediaDiskKept       = 2
 	mediaNetworkWorkers = 32
 	mediaComputeKept    = 1
 )
@@ -44,7 +47,7 @@ type mediaBridge struct {
 func newMediaBridge(m *Manager) *mediaBridge {
 	ctx, cancel := context.WithCancel(context.Background())
 	b := &mediaBridge{m: m, cancel: cancel, builder: media.NewCandidateBuilder(),
-		diskP:   media.NewPool("disk", mediaDiskWorkers, 0),
+		diskP:   media.NewPool("disk", mediaDiskWorkers, mediaDiskKept),
 		network: media.NewPool("network", mediaNetworkWorkers, 0),
 		compute: media.NewPool("compute", DecodeWorkers(), mediaComputeKept),
 		disk:    media.NewDiskSource(m.disk),
