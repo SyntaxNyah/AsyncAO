@@ -60,14 +60,9 @@ func (a *App) startUpdateCheck() {
 	client := a.sockets().Current().Client(netproxy.Web, 0)
 	go func() {
 		// assetMatch picks this platform's one swappable binary; a bare GOOS match could grab a .zip bundle.
-		// Including pre-releases follows the full release feed and may offer a downgrade.
 		match := update.SelfUpdateAssetMatch(platform.SystemProbe{}.GOOS())
 		out := updateCheckResult{prerelease: prerelease}
-		if prerelease {
-			out.rel, out.err = update.CheckPrerelease(context.Background(), client, "", update.Version, match)
-		} else {
-			out.rel, out.err = update.Check(context.Background(), client, "", update.Version, match)
-		}
+		out.rel, out.err = update.Check(context.Background(), client, "", update.Version, match, prerelease)
 		res <- out
 		PushWake() // wake the loop so pollUpdate surfaces the result at idle=0
 	}()

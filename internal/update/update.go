@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -24,8 +25,7 @@ func IsDev() bool { return Version == "" || Version == devVersion }
 const (
 	// DefaultReleasesURL is the latest non-draft, non-prerelease release: the stable channel.
 	DefaultReleasesURL = "https://api.github.com/repos/SyntaxNyah/AsyncAO/releases/latest"
-	// DefaultReleaseListURL lists newest first with prereleases: the pre-release choice, as test branch builds
-	// publish as pre-releases. per_page bounds the page (hard rule 4).
+	// DefaultReleaseListURL lists newest first with prereleases; per_page bounds the page (hard rule 4).
 	DefaultReleaseListURL = "https://api.github.com/repos/SyntaxNyah/AsyncAO/releases?per_page=10"
 	// checkTimeout stops a hung endpoint stalling the caller's goroutine forever.
 	checkTimeout = 10 * time.Second
@@ -69,62 +69,70 @@ type Doer interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
-// Check does one GET and returns the latest release if its tag is a higher semver than current; (nil, nil)
-// when already current or a dev build, and an error only on transport or decode failure.
-func Check(ctx context.Context, client Doer, releasesURL, current, assetMatch string) (*Release, error) {
+// Check does one GET of the channel's feed (with prerelease, the release list; otherwise the latest stable release)
+// and returns the release to move to; (nil, nil) when there is none or current is a dev build.
+func Check(ctx context.Context, client Doer, url, current, assetMatch string, prerelease bool) (*Release, error) {
 	if current == "" || current == devVersion {
-		return nil, nil // unstamped/dev build never self-updates
+		return nil, nil
 	}
-	if releasesURL == "" {
-		releasesURL = DefaultReleasesURL
-	}
-	body, err := fetchJSON(ctx, client, releasesURL)
+	list, err := fetchReleases(ctx, client, url, prerelease)
 	if err != nil {
 		return nil, err
 	}
-	var gh ghRelease
-	if err := json.Unmarshal(body, &gh); err != nil {
-		return nil, fmt.Errorf("update: decoding release: %w", err)
-	}
-	if gh.TagName == "" || compareSemver(gh.TagName, current) <= 0 {
-		return nil, nil // no published tag, or not newer than us
-	}
-	return newRelease(&gh, assetMatch), nil
-}
-
-// CheckPrerelease does one GET, and the newest published build wins if its tag differs from the running one.
-// It deliberately allows sideways and downgrade offers: pre-release tags rank below the stable they preview.
-func CheckPrerelease(ctx context.Context, client Doer, listURL, current, assetMatch string) (*Release, error) {
-	if current == "" || current == devVersion {
-		return nil, nil // unstamped/dev build never self-updates
-	}
-	if listURL == "" {
-		listURL = DefaultReleaseListURL
-	}
-	body, err := fetchJSON(ctx, client, listURL)
-	if err != nil {
-		return nil, err
-	}
-	var list []ghRelease
-	if err := json.Unmarshal(body, &list); err != nil {
-		return nil, fmt.Errorf("update: decoding release list: %w", err)
-	}
-	// GitHub returns newest first: the first published, tagged entry is the current build.
-	for i := range list {
-		gh := &list[i]
-		if gh.Draft || gh.TagName == "" {
-			continue
-		}
-		if trimVPrefix(gh.TagName) == trimVPrefix(current) {
-			return nil, nil // the newest published build IS the one running
-		}
+	if gh := pick(list, current); gh != nil {
 		return newRelease(gh, assetMatch), nil
 	}
 	return nil, nil
 }
 
-func fetchJSON(ctx context.Context, client Doer, url string) ([]byte, error) {
-	return fetchBounded(ctx, client, url, maxBodyBytes)
+// fetchReleases returns the feed newest first; the stable feed is the one latest release.
+func fetchReleases(ctx context.Context, client Doer, url string, prerelease bool) ([]ghRelease, error) {
+	if url == "" {
+		url = DefaultReleasesURL
+		if prerelease {
+			url = DefaultReleaseListURL
+		}
+	}
+	body, err := fetchBounded(ctx, client, url, maxBodyBytes)
+	if err != nil {
+		return nil, err
+	}
+	if prerelease {
+		var list []ghRelease
+		if err := json.Unmarshal(body, &list); err != nil {
+			return nil, fmt.Errorf("update: decoding release list: %w", err)
+		}
+		return list, nil
+	}
+	var gh ghRelease
+	if err := json.Unmarshal(body, &gh); err != nil {
+		return nil, fmt.Errorf("update: decoding release: %w", err)
+	}
+	return []ghRelease{gh}, nil
+}
+
+// pick moves a pre-release build to the highest stable release at or above its version when one is published,
+// else to the newest release; a stable build only moves up. Pre-release tags rank below the stable they preview,
+// so the way back to stable may be a lower version.
+func pick(list []ghRelease, current string) *ghRelease {
+	list = slices.DeleteFunc(list, func(gh ghRelease) bool { return gh.Draft || gh.TagName == "" })
+	if len(list) == 0 {
+		return nil
+	}
+	if IsPrerelease(current) {
+		stableAbove := slices.DeleteFunc(slices.Clone(list), func(gh ghRelease) bool {
+			return gh.Prerelease || IsPrerelease(gh.TagName) || compareSemver(gh.TagName, current) <= 0
+		})
+		if len(stableAbove) > 0 {
+			best := slices.MaxFunc(stableAbove, func(a, b ghRelease) int { return compareSemver(a.TagName, b.TagName) })
+			return &best
+		}
+	}
+	target := &list[0]
+	if cmp := compareSemver(target.TagName, current); cmp == 0 || (cmp < 0 && !IsPrerelease(current)) {
+		return nil
+	}
+	return target
 }
 
 // fetchBounded is the package's bounded, timeout-capped GET, with a per-call read cap.

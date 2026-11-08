@@ -59,21 +59,18 @@ const ghListJSON = `[
    "assets": [{"name": "asyncao-windows-x86_64.exe", "browser_download_url": "https://example/stable.exe"}]}
 ]`
 
-// TestCheckPrerelease pins the pre-release choice: drafts never offer,
-// the newest published entry wins on ANY tag difference (sideways/downgrade
-// included — that's how you hop on AND off the test branch), and running the
-// channel's newest build reports nothing.
+// TestCheckPrerelease pins the pre-release feed: drafts never offer, a stable
+// build moves up to the newest build, and running the newest build reports nothing.
 func TestCheckPrerelease(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(ghListJSON))
 	}))
 	defer srv.Close()
 
-	// A stable build hops ONTO the test branch (the prerelease tag ranks
-	// BELOW no one — it differs, so it offers).
-	rel, err := CheckPrerelease(context.Background(), http.DefaultClient, srv.URL, "v1.54.5", "windows-x86_64.exe")
+	// A stable build hops onto the newer test build.
+	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.54.5", "windows-x86_64.exe", true)
 	if err != nil {
-		t.Fatalf("CheckPrerelease: %v", err)
+		t.Fatalf("Check: %v", err)
 	}
 	if rel == nil || rel.Tag != "v1.55.0-test.2" {
 		t.Fatalf("must offer the newest published build, got %+v", rel)
@@ -87,12 +84,12 @@ func TestCheckPrerelease(t *testing.T) {
 
 	// Running the channel's newest build → nothing to do (the draft above it
 	// never counts).
-	if rel, err = CheckPrerelease(context.Background(), http.DefaultClient, srv.URL, "v1.55.0-test.2", "windows"); err != nil || rel != nil {
+	if rel, err = Check(context.Background(), http.DefaultClient, srv.URL, "v1.55.0-test.2", "windows", true); err != nil || rel != nil {
 		t.Fatalf("current pre-release build must report no update, got %+v err=%v", rel, err)
 	}
 
 	// A dev build never self-updates on any channel.
-	if rel, err = CheckPrerelease(context.Background(), http.DefaultClient, srv.URL, "dev", ""); err != nil || rel != nil {
+	if rel, err = Check(context.Background(), http.DefaultClient, srv.URL, "dev", "", true); err != nil || rel != nil {
 		t.Fatalf("dev build must never update, got %+v err=%v", rel, err)
 	}
 }
@@ -108,12 +105,62 @@ func TestCheckPrereleaseOffersStableReturn(t *testing.T) {
 		_, _ = w.Write([]byte(listStableFirst))
 	}))
 	defer srv.Close()
-	rel, err := CheckPrerelease(context.Background(), http.DefaultClient, srv.URL, "v1.54.5-test.9", "")
+	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.54.5-test.9", "", true)
 	if err != nil {
-		t.Fatalf("CheckPrerelease: %v", err)
+		t.Fatalf("Check: %v", err)
 	}
 	if rel == nil || rel.Tag != "v1.54.5" || rel.Prerelease {
 		t.Fatalf("a pre-release build must be offered the newest stable, got %+v", rel)
+	}
+}
+
+func TestCheckPrereleaseOffersOwnStable(t *testing.T) {
+	const listNewerTestFirst = `[
+	  {"tag_name": "v1.55.0-test.3", "prerelease": true, "body": "t", "html_url": "https://example/t", "assets": []},
+	  {"tag_name": "v1.55.0", "prerelease": false, "body": "s", "html_url": "https://example/s", "assets": []},
+	  {"tag_name": "v1.55.0-test.2", "prerelease": true, "body": "t", "html_url": "https://example/t2", "assets": []}
+	]`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(listNewerTestFirst))
+	}))
+	defer srv.Close()
+
+	for _, current := range []string{"v1.55.0-test.2", "v1.55.0-test.3"} {
+		rel, err := Check(context.Background(), http.DefaultClient, srv.URL, current, "", true)
+		if err != nil {
+			t.Fatalf("Check(%s): %v", current, err)
+		}
+		if rel == nil || rel.Tag != "v1.55.0" {
+			t.Errorf("pre-release %s must be offered its own stable release, got %+v", current, rel)
+		}
+	}
+	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.55.0", "", true)
+	if err != nil {
+		t.Fatalf("Check(v1.55.0): %v", err)
+	}
+	if rel != nil {
+		t.Errorf("a stable build only moves up, got %+v", rel)
+	}
+}
+
+func TestCheckPrereleaseOffersHighestStable(t *testing.T) {
+	const listSkippedAhead = `[
+	  {"tag_name": "v1.57.0-test.1", "prerelease": true, "body": "t", "html_url": "https://example/t", "assets": []},
+	  {"tag_name": "v1.55.0", "prerelease": false, "body": "s", "html_url": "https://example/s1", "assets": []},
+	  {"tag_name": "v1.56.0", "prerelease": false, "body": "s", "html_url": "https://example/s2", "assets": []},
+	  {"tag_name": "v1.55.0-test.2", "prerelease": true, "body": "t", "html_url": "https://example/t2", "assets": []}
+	]`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(listSkippedAhead))
+	}))
+	defer srv.Close()
+
+	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.55.0-test.2", "", true)
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if rel == nil || rel.Tag != "v1.56.0" {
+		t.Errorf("a pre-release build must be offered the highest stable above it, got %+v", rel)
 	}
 }
 
@@ -126,7 +173,7 @@ func TestCheckNewer(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.2.0", "windows")
+	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.2.0", "windows", false)
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -196,7 +243,7 @@ func TestSelfUpdatePicksSwappableDefault(t *testing.T) {
 		"darwin":  "https://example/mac-bundle.tar.gz",
 	}
 	for goos, wantURL := range want {
-		rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.0.0", SelfUpdateAssetMatch(goos))
+		rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.0.0", SelfUpdateAssetMatch(goos), false)
 		if err != nil {
 			t.Fatalf("%s: Check: %v", goos, err)
 		}
@@ -216,12 +263,29 @@ func TestCheckNotNewer(t *testing.T) {
 	defer srv.Close()
 
 	for _, current := range []string{"v1.4.0", "v1.5.0", "v2.0.0"} {
-		rel, err := Check(context.Background(), http.DefaultClient, srv.URL, current, "")
+		rel, err := Check(context.Background(), http.DefaultClient, srv.URL, current, "", false)
 		if err != nil {
 			t.Fatalf("Check(%s): %v", current, err)
 		}
 		if rel != nil {
 			t.Errorf("current %s is >= latest, must report no update, got %+v", current, rel)
+		}
+	}
+}
+
+func TestCheckOffersStableToPrereleaseBuild(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(ghJSON))
+	}))
+	defer srv.Close()
+
+	for _, current := range []string{"v1.5.0-rc.2", "v1.4.0-rc.1"} {
+		rel, err := Check(context.Background(), http.DefaultClient, srv.URL, current, "", false)
+		if err != nil {
+			t.Fatalf("Check(%s): %v", current, err)
+		}
+		if rel == nil || rel.Version != "1.4.0" {
+			t.Errorf("pre-release %s must be offered the latest stable, got %+v", current, rel)
 		}
 	}
 }
@@ -234,7 +298,7 @@ func TestCheckDevNeverUpdates(t *testing.T) {
 	defer srv.Close()
 
 	for _, current := range []string{"dev", ""} {
-		rel, err := Check(context.Background(), http.DefaultClient, srv.URL, current, "")
+		rel, err := Check(context.Background(), http.DefaultClient, srv.URL, current, "", false)
 		if err != nil || rel != nil {
 			t.Errorf("current %q: want (nil,nil), got (%+v,%v)", current, rel, err)
 		}
@@ -247,7 +311,7 @@ func TestCheckServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.0.0", ""); err == nil {
+	if _, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.0.0", "", false); err == nil {
 		t.Fatal("a non-200 response must surface an error")
 	}
 }
@@ -276,7 +340,7 @@ func TestCheckCapturesSumsAssetAndName(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.0.0", SelfUpdateAssetMatch("windows"))
+	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.0.0", SelfUpdateAssetMatch("windows"), false)
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -300,7 +364,7 @@ func TestCheckNoSumsAssetLeavesSumsURLEmpty(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.2.0", "windows")
+	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.2.0", "windows", false)
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
