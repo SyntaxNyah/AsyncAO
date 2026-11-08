@@ -18,7 +18,6 @@ import (
 
 const (
 	testOrigin     = "http://host.test/base/"
-	testBudget     = int64(1 << 20)
 	testRemotePool = 32
 	testShortTTL   = time.Minute
 	testPollEvery  = time.Millisecond
@@ -347,20 +346,6 @@ func TestScanOfAMissingFolderIsEmpty(t *testing.T) {
 	keys, err := ScanDiskIndex(filepath.Join(t.TempDir(), "nothing"))
 	if err != nil || len(keys) != 0 {
 		t.Fatalf("%v %v", keys, err)
-	}
-}
-
-func TestMemorySourceKeepsWithinBudget(t *testing.T) {
-	src, err := NewMemorySource(testBudget)
-	if err != nil {
-		t.Fatal(err)
-	}
-	src.Keep("a", []byte("x"))
-	if src.Has("a") != Yes || src.Size().Entries != 1 {
-		t.Fatal("not kept")
-	}
-	if _, err := src.Data("b"); !IsAbsent(err) {
-		t.Fatalf("err %v", err)
 	}
 }
 

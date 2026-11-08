@@ -25,8 +25,6 @@ type Config struct {
 	// Candidates lists the exact files one name of a key may be, best first; it runs on the Manager's goroutine.
 	Candidates func(Key, string) []File
 	Compute    *Pool
-	// KeepBytes stores fetched bytes so an evicted result can be rebuilt without I/O; nil keeps nothing.
-	KeepBytes func(File, []byte)
 	// Found runs on the Manager's goroutine when a key's file turns up, so later searches can try that format first.
 	Found func(Key, File)
 	// Finished runs on the Manager's goroutine when a request ends, and must not block.
@@ -573,13 +571,9 @@ func (m *Manager) dataDone(r *request) {
 }
 
 func (m *Manager) afterData(r *request) {
-	e := m.cfg.Chains[r.asset.key.Place].entries[r.entry]
 	if r.err != nil {
 		m.retry(r)
 		return
-	}
-	if m.cfg.KeepBytes != nil && e.Pool != nil {
-		m.cfg.KeepBytes(r.file, r.bytes)
 	}
 	if m.cfg.Found != nil {
 		m.cfg.Found(r.asset.key, r.file)

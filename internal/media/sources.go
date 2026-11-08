@@ -15,44 +15,6 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
-// MemorySource keeps recently used bytes; its Data needs no pool, as nothing can wait.
-type MemorySource struct {
-	lru *cache.ByteBudgetLRU[File, []byte]
-}
-
-const memoryMaxEntries = cache.DefaultMaxEntries
-
-// NewMemorySource holds up to budget bytes.
-func NewMemorySource(budget int64) (*MemorySource, error) {
-	lru, err := cache.NewByteBudgetLRU[File, []byte](memoryMaxEntries, budget, nil)
-	if err != nil {
-		return nil, fmt.Errorf("media: memory source: %w", err)
-	}
-	return &MemorySource{lru: lru}, nil
-}
-
-// Keep stores bytes; it matches Config.KeepBytes.
-func (s *MemorySource) Keep(f File, data []byte) { s.lru.Add(f, data, int64(len(data))) }
-
-// Has reports whether the bytes are held.
-func (s *MemorySource) Has(f File) Answer {
-	if s.lru.Contains(f) {
-		return Yes
-	}
-	return No
-}
-
-// Data returns the held bytes.
-func (s *MemorySource) Data(f File) ([]byte, error) {
-	if d, ok := s.lru.Get(f); ok {
-		return d, nil
-	}
-	return nil, ErrAbsent
-}
-
-// Size reports the held entries.
-func (s *MemorySource) Size() Contents { return Contents{Name: "memory", Entries: s.lru.Len()} }
-
 // DiskSource answers from an index of the cache's file names, so a miss never touches the disk.
 type DiskSource struct {
 	disk  *cache.DiskCache
