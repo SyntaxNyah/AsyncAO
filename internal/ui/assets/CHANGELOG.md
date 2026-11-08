@@ -54,6 +54,9 @@ features few players used.
 ### Settings
 - **Updates** sits above **Reset** in the sidebar.
 - The sidebar no longer has an empty extra tab at the bottom.
+- The Windows build no longer shows "(modified)" beside its commit in
+  **Updates**: the release build marked itself modified while stamping its
+  version, though it was built from the commit as published.
 
 ## v2.1.0-rc.3 - 2026-11-08
 

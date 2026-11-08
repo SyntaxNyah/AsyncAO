@@ -62,12 +62,26 @@ on_demand_dlls() {
 	tr -d '\r' <packaging/windows/on-demand-dlls.txt
 }
 
+WINDOWS_SYSO=cmd/asyncao/versioninfo_windows.syso
+
+# restore_windows_syso puts the committed version resource back and lets git see the file again.
+restore_windows_syso() {
+	if [[ -f dist/versioninfo.syso.committed ]]; then
+		mv -f dist/versioninfo.syso.committed "$WINDOWS_SYSO"
+	fi
+	git update-index --no-skip-worktree "$WINDOWS_SYSO"
+}
+
 build_windows() {
-	local syso=cmd/asyncao/versioninfo_windows.syso
-	cp "$syso" dist/versioninfo.syso.committed
+	cp "$WINDOWS_SYSO" dist/versioninfo.syso.committed
+	# The regenerated resource only carries the release's version numbers. Hidden from git, it doesn't make Go stamp
+	# the build "modified"; the trap restores both even when the build fails.
+	trap restore_windows_syso EXIT
+	git update-index --skip-worktree "$WINDOWS_SYSO"
 	regenerate_windows_versioninfo
 	go_build "$STAGE/asyncao.exe" "-H=windowsgui"
-	mv -f dist/versioninfo.syso.committed "$syso"
+	restore_windows_syso
+	trap - EXIT
 
 	# Libraries loaded on demand appear in no import table, so they are seeded by hand.
 	local on_demand=() name
