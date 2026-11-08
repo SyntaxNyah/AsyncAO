@@ -31,6 +31,8 @@ if ($Release) {
         $ldflags = "$ldflags -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=$ver"
         Write-Host "Stamping version $ver"
     }
+    $built = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    $ldflags = "$ldflags -X github.com/SyntaxNyah/AsyncAO/internal/update.BuildTime=$built"
     $flags = @("-pgo=auto", "-trimpath", "-ldflags", $ldflags)
 }
 

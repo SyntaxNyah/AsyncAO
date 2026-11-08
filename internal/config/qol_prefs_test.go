@@ -1199,8 +1199,8 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	p.Update(func(sn *Settings) { sn.SpritePreviewOn = false })
 	p.Update(func(sn *Settings) { sn.PreviewHoverMs = 8000 })
-	p.SetPreviewHeightPx(512)                                     // default-when-0 int — must survive
-	p.Update(func(sn *Settings) { sn.UpdateExperimental = true }) // default-OFF plain bool — must survive (the test-branch channel)
+	p.SetPreviewHeightPx(512)                                   // default-when-0 int — must survive
+	p.Update(func(sn *Settings) { sn.UpdatePrerelease = true }) // default-OFF plain bool — must survive (the pre-release choice)
 	p.Update(func(
 		sn *Settings) {
 
@@ -1443,8 +1443,8 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if got := q.Load().PreviewHeightPx(); got != 512 {
 		t.Errorf("PreviewHeightPx lost: %d, want 512", got)
 	}
-	if !q.Load().UpdateExperimental {
-		t.Error("UpdateExperimental=true lost across reload (the channel swap must stick)")
+	if !q.Load().UpdatePrerelease {
+		t.Error("UpdatePrerelease=true lost across reload (the pre-release choice must stick)")
 	}
 	if q.Load().RainbowSpriteSpeed != 30 || q.Load().RainbowSpriteVividness != 95 {
 		t.Errorf("rainbow speed/vividness lost: %d/%d, want 30/95", q.Load().RainbowSpriteSpeed, q.Load().RainbowSpriteVividness)

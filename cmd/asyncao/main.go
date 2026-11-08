@@ -158,7 +158,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	if sw, sh := prefs.Load().WindowSize(); sw > 0 && sh > 0 {
 		winW, winH = int32(sw), int32(sh)
 	}
-	window, err := rt.OpenMainWindow(host.WindowSpec{Title: windowTitle, Width: winW, Height: winH})
+	window, err := rt.OpenMainWindow(host.WindowSpec{Title: windowTitle + " " + update.Current().Label(), Width: winW, Height: winH})
 	if err != nil {
 		return err
 	}

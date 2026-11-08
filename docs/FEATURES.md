@@ -2241,13 +2241,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   checkboxes, zero build/run dependency. The official AsyncAO **Application ID
   is baked in** (no user-editable ID box), so it shows "Playing AsyncAO" out of
   the box whenever Discord is running — full guide in [DISCORD.md](DISCORD.md).
-- **Update check + "What's New"** (Settings → on by default): one async check
-  of the GitHub Releases API at launch — fired once, after the window is up,
+- **Update check + "What's New"** (Settings → Updates, on by default): one async
+  check of the GitHub Releases API at launch — fired once, after the window is up,
   **never on the boot path** (zero startup cost), and a dev build skips it
-  entirely. When a newer version is published, a top-right **"Update N
-  available"** chip appears and a **What's New** panel shows that release's
-  **patch notes** (scrollable). Turn the setting off for no outbound call.
-  **"Get the update"** then downloads the new build next to the running exe,
+  entirely. When a newer version is published, a **What's New** panel shows that
+  release's **patch notes** (scrollable); Settings → Updates reopens it, shows the
+  running version, commit and build date, checks again on demand, and can include
+  pre-releases. Turn launch checks off for no outbound call at launch.
+  **"Download & Install…"** then downloads the new build next to the running exe,
   verifies it, and **stages an atomic self-replace** (rename the old aside →
   move the new in, **rolling back** if anything fails — so an AV lock mid-swap
   can't break the install); restart to finish, and the old binary is cleaned

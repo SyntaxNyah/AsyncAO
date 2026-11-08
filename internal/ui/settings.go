@@ -155,10 +155,10 @@ var settings = settingsState{
 }
 
 // numSettingsTabs sizes the per-tab scroll array; keep it equal to len(settingsTabNames).
-const numSettingsTabs = 14
+const numSettingsTabs = 15
 
 var settingsTabNames = [numSettingsTabs]string{
-	"General", "Theme", "Theme editor", "Assets", "Formats", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Power user", "Reset",
+	"General", "Theme", "Theme editor", "Assets", "Formats", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Power user", "Reset", "Updates",
 }
 
 // Tab indices, in settingsTabNames order.
@@ -179,6 +179,7 @@ const (
 	tabData
 	tabPowerUser
 	tabReset
+	tabUpdates
 )
 
 // settingsSearchKeywords maps each tab to terms the search box matches, including every section title.
@@ -325,6 +326,11 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		// Someone looking for this usually cannot connect, so include the terms they might type.
 		"proxy", "vpn", "tunnel", "corporate network", "work network",
 		"system proxy", "no proxy", "bypass",
+	},
+	tabUpdates: {
+		// Version, Updates, Options.
+		"updates", "updater", "check for updates", "version", "about this build", "commit", "compiled", "build date",
+		"release", "prerelease", "pre-release", "beta", "stable", "patch notes", "changelog",
 	},
 }
 
@@ -575,6 +581,8 @@ func (a *App) drawSettingsTabBody(tab int, y, w, h int32) int32 {
 		y = a.drawSettingsPowerUser(y, w)
 	case tabReset:
 		y = a.drawSettingsReset(y, w)
+	case tabUpdates:
+		y = a.drawSettingsUpdates(y, w)
 	}
 	return y
 }
@@ -1301,11 +1309,6 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	y += 30
 	y = a.settingsSection(y, w, "Application")
-	upd := a.d.Prefs.Load().UpdateCheck
-	if next := c.Checkbox(pad, y, "Check for updates on launch (one async check of GitHub Releases; shows the patch notes — off = no outbound call)", upd); next != upd {
-		a.d.Prefs.Update(func(sn *config.Settings) { sn.UpdateCheck = next })
-	}
-	y += 26
 	alt := a.d.Prefs.Load().AutoLoginToast
 	if next := c.Checkbox(pad, y, "Notify me when auto-login signs me in (toast + desktop notification — ON by default, so a mod knows they're logged in)", alt); next != alt {
 		a.d.Prefs.Update(func(

@@ -59,11 +59,11 @@ const ghListJSON = `[
    "assets": [{"name": "asyncao-windows-x86_64.exe", "browser_download_url": "https://example/stable.exe"}]}
 ]`
 
-// TestCheckExperimental pins the experimental channel: drafts never offer,
+// TestCheckPrerelease pins the pre-release choice: drafts never offer,
 // the newest published entry wins on ANY tag difference (sideways/downgrade
 // included — that's how you hop on AND off the test branch), and running the
 // channel's newest build reports nothing.
-func TestCheckExperimental(t *testing.T) {
+func TestCheckPrerelease(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(ghListJSON))
 	}))
@@ -71,15 +71,15 @@ func TestCheckExperimental(t *testing.T) {
 
 	// A stable build hops ONTO the test branch (the prerelease tag ranks
 	// BELOW no one — it differs, so it offers).
-	rel, err := CheckExperimental(context.Background(), http.DefaultClient, srv.URL, "v1.54.5", "windows-x86_64.exe")
+	rel, err := CheckPrerelease(context.Background(), http.DefaultClient, srv.URL, "v1.54.5", "windows-x86_64.exe")
 	if err != nil {
-		t.Fatalf("CheckExperimental: %v", err)
+		t.Fatalf("CheckPrerelease: %v", err)
 	}
 	if rel == nil || rel.Tag != "v1.55.0-test.2" {
 		t.Fatalf("must offer the newest published build, got %+v", rel)
 	}
 	if !rel.Prerelease {
-		t.Error("a prerelease offer must be flagged (the UI says 'test build')")
+		t.Error("a prerelease offer must be flagged (the UI says 'pre-release')")
 	}
 	if rel.AssetURL != "https://example/test.exe" {
 		t.Errorf("asset match picked %q", rel.AssetURL)
@@ -87,20 +87,20 @@ func TestCheckExperimental(t *testing.T) {
 
 	// Running the channel's newest build → nothing to do (the draft above it
 	// never counts).
-	if rel, err = CheckExperimental(context.Background(), http.DefaultClient, srv.URL, "v1.55.0-test.2", "windows"); err != nil || rel != nil {
-		t.Fatalf("current test build must report no update, got %+v err=%v", rel, err)
+	if rel, err = CheckPrerelease(context.Background(), http.DefaultClient, srv.URL, "v1.55.0-test.2", "windows"); err != nil || rel != nil {
+		t.Fatalf("current pre-release build must report no update, got %+v err=%v", rel, err)
 	}
 
 	// A dev build never self-updates on any channel.
-	if rel, err = CheckExperimental(context.Background(), http.DefaultClient, srv.URL, "dev", ""); err != nil || rel != nil {
+	if rel, err = CheckPrerelease(context.Background(), http.DefaultClient, srv.URL, "dev", ""); err != nil || rel != nil {
 		t.Fatalf("dev build must never update, got %+v err=%v", rel, err)
 	}
 }
 
-// TestCheckExperimentalOffersStableReturn pins the way back OFF the test
+// TestCheckPrereleaseOffersStableReturn pins the way back OFF pre-releases
 // branch: when the newest published entry is a STABLE release and we run a
 // prerelease, it offers even though the semver may not rank higher.
-func TestCheckExperimentalOffersStableReturn(t *testing.T) {
+func TestCheckPrereleaseOffersStableReturn(t *testing.T) {
 	const listStableFirst = `[
 	  {"tag_name": "v1.54.5", "prerelease": false, "body": "n", "html_url": "https://example/s", "assets": []}
 	]`
@@ -108,12 +108,12 @@ func TestCheckExperimentalOffersStableReturn(t *testing.T) {
 		_, _ = w.Write([]byte(listStableFirst))
 	}))
 	defer srv.Close()
-	rel, err := CheckExperimental(context.Background(), http.DefaultClient, srv.URL, "v1.54.5-test.9", "")
+	rel, err := CheckPrerelease(context.Background(), http.DefaultClient, srv.URL, "v1.54.5-test.9", "")
 	if err != nil {
-		t.Fatalf("CheckExperimental: %v", err)
+		t.Fatalf("CheckPrerelease: %v", err)
 	}
 	if rel == nil || rel.Tag != "v1.54.5" || rel.Prerelease {
-		t.Fatalf("a test build must be offered the newest stable, got %+v", rel)
+		t.Fatalf("a pre-release build must be offered the newest stable, got %+v", rel)
 	}
 }
 
@@ -420,6 +420,14 @@ func TestSelfUpdateMatchesOneManifestAsset(t *testing.T) {
 		}
 		if len(matches) != 1 {
 			t.Errorf("%s: matcher %q matches %v, want exactly one asset", goos, SelfUpdateAssetMatch(goos), matches)
+		}
+	}
+}
+
+func TestIsPrerelease(t *testing.T) {
+	for v, want := range map[string]bool{"v2.1.0-rc.1": true, "2.1.0-test.2": true, "v2.1.0": false, "dev": false, "": false} {
+		if got := IsPrerelease(v); got != want {
+			t.Errorf("IsPrerelease(%q) = %v, want %v", v, got, want)
 		}
 	}
 }

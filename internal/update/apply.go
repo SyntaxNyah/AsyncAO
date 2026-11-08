@@ -371,7 +371,7 @@ func preflightDarwinSwap(newPath, targetPath string) error {
 	// A correct release is all @rpath (bundle-macos.sh check_clean), so a Homebrew import means a mis-bundled
 	// binary, and dyld would fail at launch for tarball users without Homebrew.
 	if hb := homebrewImports(imported); len(hb) > 0 {
-		// "or any newer release": this also fires on an experimental downgrade onto a release with no tarball.
+		// "or any newer release": this also fires on a pre-release downgrade onto a release with no tarball.
 		return fmt.Errorf("update: the new macOS build links %s directly from Homebrew instead of its bundled lib/ "+
 			"(a mis-bundled release asset) — install from the release page's bundle tarball, or any newer release", hb[0])
 	}

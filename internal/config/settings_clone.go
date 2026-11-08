@@ -290,7 +290,7 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.UpdateCheck != o.UpdateCheck {
 		return false
 	}
-	if s.UpdateExperimental != o.UpdateExperimental {
+	if s.UpdatePrerelease != o.UpdatePrerelease {
 		return false
 	}
 	if s.HighlightColor != o.HighlightColor {

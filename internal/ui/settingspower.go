@@ -67,21 +67,6 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Puts every option on this tab back to its default. Image-format probing keeps its own controls below; saved presets and mod chips are untouched.", ColTextDim)
 	y += 10
 
-	// Update channel: stable vs the experimental test-branch feed. Test builds may move sideways or down in version;
-	// the per-platform asset match still applies.
-	y = a.settingsSection(y, w, "Update channel")
-	expCh := a.d.Prefs.Load().UpdateExperimental
-	if next := c.Checkbox(pad, y, "Get experimental test builds (the MayAO-Test branch) instead of stable releases", expCh); next != expCh {
-		a.d.Prefs.Update(func(sn *config.Settings) { sn.UpdateExperimental = next })
-		// Re-arm the launch check so the swap applies next frame; drop a stale offer from the other channel.
-		a.updateChecked = false
-		a.updateRel = nil
-		a.updateShow = false
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "OFF (default): the launch check follows stable releases and only ever moves forward. ON: it follows the newest published build INCLUDING prereleases cut from the test branch — riskier, less tested, and it may offer a lower version than you run (that's also how you get back: turn this off and take the next stable offer). Toggling re-checks immediately.", ColTextDim)
-	y += 10
-
 	// Message sequencing: how each IC message is presented while assets stream and decode. Default (strict) is shipped;
 	// it touches the render/message path, so it sits behind the reveal.
 	y = a.settingsSection(y, w, "Message sequencing")

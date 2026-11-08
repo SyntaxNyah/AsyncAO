@@ -24,8 +24,8 @@ func IsDev() bool { return Version == "" || Version == devVersion }
 const (
 	// DefaultReleasesURL is the latest non-draft, non-prerelease release: the stable channel.
 	DefaultReleasesURL = "https://api.github.com/repos/SyntaxNyah/AsyncAO/releases/latest"
-	// DefaultReleaseListURL lists newest first with prereleases: the experimental channel, as test branch builds
-	// publish as prereleases. per_page bounds the page (hard rule 4).
+	// DefaultReleaseListURL lists newest first with prereleases: the pre-release choice, as test branch builds
+	// publish as pre-releases. per_page bounds the page (hard rule 4).
 	DefaultReleaseListURL = "https://api.github.com/repos/SyntaxNyah/AsyncAO/releases?per_page=10"
 	// checkTimeout stops a hung endpoint stalling the caller's goroutine forever.
 	checkTimeout = 10 * time.Second
@@ -42,7 +42,7 @@ type Release struct {
 	AssetURL   string // browser_download_url of the matched asset
 	AssetName  string // file name of the matched asset — the key into the SHA256SUMS list
 	SumsURL    string // browser_download_url of the SHA256SUMS asset ("" on releases cut before checksums shipped)
-	Prerelease bool   // published as a prerelease (a test-branch build) — the UI says "test build"
+	Prerelease bool   // published as a prerelease (a test-branch build) — the UI says "pre-release"
 }
 
 const (
@@ -92,9 +92,9 @@ func Check(ctx context.Context, client Doer, releasesURL, current, assetMatch st
 	return newRelease(&gh, assetMatch), nil
 }
 
-// CheckExperimental does one GET, and the newest published build wins if its tag differs from the running one.
-// It deliberately allows sideways and downgrade offers: test branch tags rank below the stable they preview.
-func CheckExperimental(ctx context.Context, client Doer, listURL, current, assetMatch string) (*Release, error) {
+// CheckPrerelease does one GET, and the newest published build wins if its tag differs from the running one.
+// It deliberately allows sideways and downgrade offers: pre-release tags rank below the stable they preview.
+func CheckPrerelease(ctx context.Context, client Doer, listURL, current, assetMatch string) (*Release, error) {
 	if current == "" || current == devVersion {
 		return nil, nil // unstamped/dev build never self-updates
 	}
@@ -109,7 +109,7 @@ func CheckExperimental(ctx context.Context, client Doer, listURL, current, asset
 	if err := json.Unmarshal(body, &list); err != nil {
 		return nil, fmt.Errorf("update: decoding release list: %w", err)
 	}
-	// GitHub returns newest first: the first published, tagged entry is the channel's current build.
+	// GitHub returns newest first: the first published, tagged entry is the current build.
 	for i := range list {
 		gh := &list[i]
 		if gh.Draft || gh.TagName == "" {
@@ -276,4 +276,10 @@ func compareSemver(a, b string) int {
 	default:
 		return strings.Compare(ap, bp)
 	}
+}
+
+// IsPrerelease reports whether a version string carries a pre-release suffix such as "-rc.1".
+func IsPrerelease(version string) bool {
+	_, pre := parseSemver(version)
+	return pre != ""
 }

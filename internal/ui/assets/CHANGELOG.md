@@ -4,6 +4,26 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v2.1.0-rc.2 - 2026-11-08
+
+The second pre-release of v2.1.0. Pre-releases reach only players who turned on
+**Include pre-releases** in Settings → Updates; turn it off to go back to
+stable releases once v2.1.0 is out.
+
+### Updates
+- A new **Updates** tab at the bottom of Settings shows the version you're
+  running with the commit and the date it was built, and the newest version on
+  offer, marked **Release** or **Pre-release**. **Check for updates** checks
+  again at any time, and **Patch notes & install…** opens the patch notes.
+- The update options moved there: **Check for updates on launch** (from
+  General) and **Include pre-releases**, which replaces the "experimental test
+  builds" option from Power user. Your choice carries over.
+- The window title shows the version.
+- The banner that stayed in the top-right corner while an update was on offer
+  is gone; the patch notes open once, and the Updates tab opens them again.
+- The patch notes' install button is now **Download & Install…**.
+- A failed update check is shown in the Updates tab instead of passing silently.
+
 ## v2.1.0-rc.1 - 2026-11-07
 
 A test build of the next release. AsyncAO moves from SDL2 to SDL3 and draws

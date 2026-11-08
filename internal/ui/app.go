@@ -451,15 +451,17 @@ type App struct {
 	partColors  [config.LayoutPartColorCount]sdl.Color
 	partColorOn [config.LayoutPartColorCount]bool
 
-	// Self-update: the probe fires once on the first frame, off the boot path; a newer release lands on updateRes,
-	// is stored in updateRel and opens the What's New modal once.
-	updateRes       chan *update.Release
+	// Self-update: the launch probe fires once on the first frame, off the boot path; the Updates tab can run it again.
+	// A newer release lands on updateRes, is stored in updateRel and opens the What's New modal.
+	updateRes       chan updateCheckResult
 	updateChecked   bool
+	updateChecking  bool      // one check in flight at a time, so updateRes never blocks
+	updateCheckedAt time.Time // zero until a check has finished
+	updateCheckErr  string
 	updateRel       *update.Release
 	updateShow      bool
 	updateFenceOn   bool // WE hold the modal fence for the open What's New modal (released on close — see updateModalFence)
 	updateScroll    int32
-	updateChipLabel string
 	// Update apply flow: updateBusy while it runs, updateStaged once the new binary is in place, updateErr on failure.
 	updateApplyRes chan error
 	updateBusy     bool
@@ -1154,7 +1156,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		proxyBypassApplied:  d.Prefs.Load().ProxyBypass,
 		charINIres:          make(chan charINIFetch, 1),
 		previewEmoteRes:     make(chan previewEmoteFetch, 1),
-		updateRes:           make(chan *update.Release, 1),
+		updateRes:           make(chan updateCheckResult, 1),
 		updateApplyRes:      make(chan error, 1),
 		iniRes:              make(chan iniswapFetch, 1),
 		manifestRes:         make(chan manifestFetch, 1),

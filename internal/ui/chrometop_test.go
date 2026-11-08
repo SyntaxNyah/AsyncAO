@@ -30,8 +30,8 @@ func TestTopChromeHIsTheSumOfTheTwoStrips(t *testing.T) {
 // export, replay, the scene maker and theater mode all PREEMPT the screen dispatch
 // and take the whole window, so the menu bar neither paints nor reserves space
 // there. The tab strip does still paint over them (app.go draws it after the
-// dispatch), so its band survives — which is why the scene maker's content top, the
-// download chip and the update chip all read this accessor rather than menuBarH.
+// dispatch), so its band survives — which is why the scene maker's content top and the
+// download chip both read this accessor rather than menuBarH.
 func TestTopChromeHDropsTheMenuBarOnFullWindowOverlays(t *testing.T) {
 	cases := []struct {
 		name string
@@ -219,18 +219,6 @@ func TestMenuBarIsAMouseLifeline(t *testing.T) {
 	c.seedHiddenFromPrefs()
 	if c.panelHidden(panelToolbox) {
 		t.Error("a stranded saved set must un-hide the toolbox on load")
-	}
-}
-
-// TestFloatingChipsClearTheChromeBand pins the two chips that used to be anchored at
-// a bare tabBarH+4 and would otherwise be buried under the relocated strip.
-func TestFloatingChipsClearTheChromeBand(t *testing.T) {
-	a := testTabApp(t)
-	a.tabs = []*courtTab{{}}
-	a.activeTab = 0
-	a.updateChipLabel = "Update available"
-	if got := a.updateChipRect(1280).Y; got < a.topChromeH() {
-		t.Errorf("update chip Y = %d, want it at or below the chrome band %d", got, a.topChromeH())
 	}
 }
 

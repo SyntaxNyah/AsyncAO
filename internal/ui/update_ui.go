@@ -1,6 +1,6 @@
 package ui
 
-// Self-update UI: the launch check, the update-available chip and the What's New modal. handleUpdateInput runs before
+// Self-update UI: the launch check and the What's New modal. handleUpdateInput runs before
 // the screens draw because the kit has one per-frame click bool a modal must consume first.
 
 import (
@@ -15,8 +15,6 @@ import (
 )
 
 const (
-	// updateChipH is the height of the persistent reopen chip (top-right).
-	updateChipH int32 = 22
 	// updateModalW/H size the What's New panel.
 	updateModalW int32 = 560
 	updateModalH int32 = 420
@@ -26,7 +24,14 @@ const (
 	updateNotesMaxLines = 400
 )
 
-// maybeKickUpdateCheck fires the update probe once, on the first frame, to keep it off the boot path.
+// updateCheckResult is one finished check; prerelease says whether it asked for pre-releases, so a toggle mid-check drops it.
+type updateCheckResult struct {
+	rel        *update.Release
+	err        error
+	prerelease bool
+}
+
+// maybeKickUpdateCheck fires the launch probe once, on the first frame, to keep it off the boot path.
 func (a *App) maybeKickUpdateCheck() {
 	if a.updateChecked {
 		return
@@ -38,44 +43,57 @@ func (a *App) maybeKickUpdateCheck() {
 			update.CleanupOldBundle(exe)
 		}
 	}()
-	if !a.d.Prefs.Load().UpdateCheck {
+	if a.d.Prefs.Load().UpdateCheck {
+		a.startUpdateCheck()
+	}
+}
+
+// startUpdateCheck runs one check off-thread; it does nothing while a check or install runs.
+func (a *App) startUpdateCheck() {
+	if a.updateChecking || a.updateBusy || a.updateStaged {
 		return
 	}
+	a.updateChecking = true
+	a.updateCheckErr = ""
 	res := a.updateRes
-	experimental := a.d.Prefs.Load().UpdateExperimental // read on the render thread; the goroutine only captures the bool
+	prerelease := a.d.Prefs.Load().UpdatePrerelease // read on the render thread; the goroutine only captures the bool
 	client := a.sockets().Current().Client(netproxy.Web, 0)
 	go func() {
 		// assetMatch picks this platform's one swappable binary; a bare GOOS match could grab a .zip bundle.
-		// Failures are silent. The experimental channel follows the prerelease feed and may offer downgrades.
-		var rel *update.Release
-		var err error
-		if experimental {
-			rel, err = update.CheckExperimental(context.Background(), client, "", update.Version, update.SelfUpdateAssetMatch(platform.SystemProbe{}.GOOS()))
+		// Including pre-releases follows the full release feed and may offer a downgrade.
+		match := update.SelfUpdateAssetMatch(platform.SystemProbe{}.GOOS())
+		out := updateCheckResult{prerelease: prerelease}
+		if prerelease {
+			out.rel, out.err = update.CheckPrerelease(context.Background(), client, "", update.Version, match)
 		} else {
-			rel, err = update.Check(context.Background(), client, "", update.Version, update.SelfUpdateAssetMatch(platform.SystemProbe{}.GOOS()))
+			out.rel, out.err = update.Check(context.Background(), client, "", update.Version, match)
 		}
-		if err != nil || rel == nil {
-			return
-		}
-		res <- rel
-		PushWake() // wake the loop so pollUpdate surfaces the update chip at idle=0
+		res <- out
+		PushWake() // wake the loop so pollUpdate surfaces the result at idle=0
 	}()
 }
 
-// pollUpdate drains a found release, builds the chip label once, and opens the modal the first time.
+// pollUpdate drains a finished check and opens the modal when a release was found.
 func (a *App) pollUpdate() {
 	select {
-	case rel := <-a.updateRes:
-		if rel == nil {
-			return
+	case out := <-a.updateRes:
+		a.updateChecking = false
+		a.uiDirty = true // the Updates tab or modal changed: force a redraw at idle=0
+		if out.prerelease != a.d.Prefs.Load().UpdatePrerelease {
+			a.startUpdateCheck() // the pre-release choice changed mid-check: ask the one now chosen
+			break
 		}
-		a.updateRel = rel
-		a.updateChipLabel = "Update " + rel.Version + " available"
-		if rel.Prerelease {
-			a.updateChipLabel = "Test build " + rel.Version + " available" // experimental channel: say what it is
+		a.updateCheckedAt = a.now()
+		if out.err != nil {
+			a.updateCheckErr = out.err.Error() // the launch check stays silent; only the Updates tab shows it
+			break
+		}
+		a.updateRel = out.rel
+		if out.rel == nil {
+			a.updateShow = false
+			break
 		}
 		a.updateShow = true
-		a.uiDirty = true // the update chip/modal just appeared: force a redraw at idle=0
 	default:
 	}
 	select {
@@ -212,12 +230,6 @@ func (a *App) RequestRelaunch(args []string, keepTabs bool) {
 // RelaunchRequest says whether the client should start again after it exits, and with which arguments.
 func (a *App) RelaunchRequest() ([]string, bool) { return a.relaunchArgs, a.relaunchOnExit }
 
-// updateChipRect is the reopen chip, top-right under the app-chrome band.
-func (a *App) updateChipRect(w int32) sdl.Rect {
-	cw := a.ctx.TextWidth(a.updateChipLabel) + 18
-	return sdl.Rect{X: w - cw - pad, Y: a.topChromeH() + 4, W: cw, H: updateChipH}
-}
-
 // updateModalRects lays out the What's New panel, shared by the input pass and the overlay draw.
 func updateModalRects(w, h int32) (panel, notes, getBtn, laterBtn sdl.Rect) {
 	panel = sdl.Rect{X: (w - updateModalW) / 2, Y: (h - updateModalH) / 2, W: updateModalW, H: updateModalH}
@@ -228,7 +240,7 @@ func updateModalRects(w, h int32) (panel, notes, getBtn, laterBtn sdl.Rect) {
 	return panel, notes, getBtn, laterBtn
 }
 
-// handleUpdateInput consumes chip and modal clicks before the screens see them.
+// handleUpdateInput consumes the modal's clicks before the screens see them.
 // The modal hit-tests with raw pointIn because updateModalFence makes hovering() false everywhere, itself included.
 func (a *App) handleUpdateInput(w, h int32) {
 	if a.updateRel == nil {
@@ -236,10 +248,6 @@ func (a *App) handleUpdateInput(w, h int32) {
 	}
 	c := a.ctx
 	if !a.updateShow {
-		if chip := a.updateChipRect(w); c.hovering(chip) && c.clicked {
-			a.updateShow = true
-			c.clicked = false
-		}
 		return
 	}
 	panel, notes, getBtn, laterBtn := updateModalRects(w, h)
@@ -283,18 +291,15 @@ func (a *App) updateModalFence(c *Ctx) {
 	}
 }
 
-// drawUpdateAvailable paints the reopen chip, or the modal when it is open.
+// drawUpdateAvailable paints the What's New modal while it is open.
 func (a *App) drawUpdateAvailable(w, h int32) {
 	if a.updateRel == nil {
 		return
 	}
-	c := a.ctx
 	if !a.updateShow {
-		chip := a.updateChipRect(w)
-		c.Fill(chip, ColAccent)
-		c.Label(chip.X+9, chip.Y+4, a.updateChipLabel, ColBackground)
 		return
 	}
+	c := a.ctx
 
 	panel, notes, getBtn, laterBtn := updateModalRects(w, h)
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{A: 150}) // scrim
@@ -302,7 +307,7 @@ func (a *App) drawUpdateAvailable(w, h int32) {
 	c.Border(panel, ColAccent)
 	kind := "Update "
 	if a.updateRel.Prerelease {
-		kind = "Test build " // experimental channel — never dress a prerelease up as a stable update
+		kind = "Pre-release "
 	}
 	c.Heading(panel.X+pad, panel.Y+10, kind+a.updateRel.Version+" available", ColText)
 	c.Label(panel.X+pad, panel.Y+38, "What's new:", ColAccent)
@@ -339,7 +344,7 @@ func (a *App) drawUpdateAvailable(w, h int32) {
 	case a.updateBusy:
 		c.Label(panel.X+pad, statusY, "Downloading and installing...", ColTextDim)
 	}
-	getLabel := "Get the update"
+	getLabel := "Download & Install…"
 	switch {
 	case a.updateBusy:
 		getLabel = "Downloading..."

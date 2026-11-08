@@ -2816,7 +2816,7 @@ func (p *AssetPreferences) ResetPowerUser() {
 		s.ValidateTLSCerts = false
 		s.AssetOrigin = ""
 		s.WSOrigin = ""
-		s.UpdateExperimental = false // back to the stable update channel
+		s.UpdatePrerelease = false // back to stable releases only
 		s.AssetCharCase = 0
 		s.ProxyModeVal = ProxyModeSystem // back to "use the machine's setting"
 		s.ProxyURL = ""

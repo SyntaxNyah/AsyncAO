@@ -19,6 +19,7 @@ STAGE=dist/stage
 ASSETS=dist/assets
 SMOKE=dist/smoke
 VERSION_VAR=github.com/SyntaxNyah/AsyncAO/internal/update.Version
+BUILD_TIME_VAR=github.com/SyntaxNyah/AsyncAO/internal/update.BuildTime
 
 case "$(uname -s)" in
 MINGW* | MSYS* | CYGWIN*) PLATFORM=windows ;;
@@ -34,7 +35,7 @@ MAC_BINARY=asyncao-macos-arm64
 
 go_build() { # output extra-ldflags
 	CGO_ENABLED=1 go build -pgo=auto -trimpath \
-		-ldflags "-s -w -X $VERSION_VAR=$VERSION $2" -o "$1" ./cmd/asyncao
+		-ldflags "-s -w -X $VERSION_VAR=$VERSION -X $BUILD_TIME_VAR=$(date -u +%Y-%m-%dT%H:%M:%SZ) $2" -o "$1" ./cmd/asyncao
 }
 
 # The syso is committed with a baseline version, so a non-numeric version keeps it.
