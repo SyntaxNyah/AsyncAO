@@ -4,6 +4,22 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v2.1.0-rc.3 - 2026-11-08
+
+The third pre-release of v2.1.0, fixing how pre-releases update.
+
+### Updates
+- A pre-release turns on **Include pre-releases** the first time it starts, so
+  it no longer offers to go back to the last stable release right away. If you
+  turn it off, it stays off until you run a different pre-release.
+- A pre-release is offered the newest stable release that is the same version
+  or newer: v2.1.0-rc.3 updates to v2.1.0 once it is out, or straight to a
+  later release such as v2.2.0.
+- Turning off **Include pre-releases** on a pre-release now offers the latest
+  stable release, even when its version number is lower.
+- Stable releases are only ever offered newer versions, with or without
+  **Include pre-releases**.
+
 ## v2.1.0-rc.2 - 2026-11-08
 
 The second pre-release of v2.1.0. Pre-releases reach only players who turned on
