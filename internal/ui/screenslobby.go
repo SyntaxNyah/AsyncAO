@@ -775,7 +775,6 @@ func (a *App) drawCharSelect(w, h int32) {
 	matches := rows.matches(query, showTaken)
 	a.charScroll = a.charGridScroll(w, "charscroll", g, a.charScroll, matches)
 
-	dlOn := a.d.Prefs.Load().CharDownloaderOn // read once per frame, not per cell
 	n := int32(0)
 	// AO2 raises char_selector above every button (aocharbutton.cpp); paint it after the loop or the next cell covers
 	// it.
@@ -793,7 +792,7 @@ func (a *App) drawCharSelect(w, h int32) {
 			if c.hovering(cell) {
 				hoverCell = cell
 			}
-			a.drawCharCell(slot, cell, i, dlOn, g)
+			a.drawCharCell(slot, cell, i, g)
 			if i == a.charListSel {
 				// The name column's selection, shown on the grid too (charselectwidgets.go).
 				c.Border(cell, ColStar)
@@ -817,7 +816,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	}
 }
 
-func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int, downloaderOn bool, g charGridPlan) {
+func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int, g charGridPlan) {
 	c := a.ctx
 	c.Fill(cell, ColPanel)
 	base := a.urls.CharIcon(slot.Name)
@@ -851,18 +850,8 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 		// Registered before the badge and star tooltips, which override it on their rects (last write wins).
 		c.Tooltip(cell, slot.Name)
 	}
-	// While this character is the active download, mark the cell.
-	if a.dl.active && a.dl.target == slot.Name {
-		c.Fill(cell, sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 70})
-		c.Label(cell.X+4, cell.Y+4, downloadGlyph+"…", ColText)
-	}
 	// Fixed-size badge and star would cover a small cell and steal its clicks, so below the floor both go.
 	if cellFitsCornerChrome(cell) {
-		// Download badge, opt-in: grabs the folder and the sfx/blips its char.ini names. Works on taken characters too.
-		if downloaderOn && a.drawDownloadBadge(cell, "Press the green down arrow to download this character") {
-			a.startCharDownload(slot.Name)
-			return
-		}
 		// The star saves to the Wardrobe; the click is consumed so it cannot also pick the character.
 		// Works on taken too.
 		starred := idx >= 0 && idx < len(a.charLower) && a.wardrobeMembers[a.charLower[idx]]

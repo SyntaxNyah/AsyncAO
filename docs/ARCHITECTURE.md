@@ -259,7 +259,7 @@ those changes so no call site can forget them:
 |---|---|
 | `config.FormatGeneration` moves (format order, fallback toggles) | all |
 | `installAssetOrigin` (connect / reconnect / mounts change) | that origin |
-| `SetFolders` with a **different** mount set, `RecheckFolders` (focus gain, Check folders now) | all |
+| `SetFolders` with a **different** mount set, `RecheckFolders` (focus gain, reordering the folders) | all |
 | Settings > Cache > **Retry missing assets** | all |
 
 The first row is not a call at all: every entry carries the format generation
@@ -328,7 +328,7 @@ changes under a page afterwards. No mounts: nothing is read.
 1. **Identity is the server's base.** Folder bytes are delivered under the
    server's URL everywhere downstream (T1 key, warnings, scene layers).
 2. **A folder hit never teaches the learned table**, never answers
-   `extensions.json`, and never writes T3, ThumbCache or T2 under the server's
+   `extensions.json`, and never writes T3 or T2 under the server's
    URL: those would outlive the folder as the server's own content.
 3. **A folder failure is never a server failure.** A decode error sets the file
    aside (`QuarantinePack`, cap `folderBadCap`) so the server's copy is fetched,
@@ -339,19 +339,23 @@ changes under a page afterwards. No mounts: nothing is read.
 
 **Text too (issue #72).** `char.ini` and `effects.ini` come from the folders
 like the art beside them, so a character's emotes and metadata match its
-sprites. A parsed ini is UI state no texture invalidation touches, so
-**Check folders now** calls `forgetParsedINIs` and reloads the active
-character's ini in place rather than rebuilding the room, because `buildRoom`
-re-arms the roster poll whose OOC `/gas` is the known flood-kick vector.
+sprites. A parsed ini is UI state no texture invalidation touches, so an edited
+`char.ini` (seen on focus gain through `Folders.Changed`) calls
+`forgetParsedINIs` and reloads the active character's ini in place rather than
+rebuilding the room, because `buildRoom` re-arms the roster poll whose OOC
+`/gas` is the known flood-kick vector.
 
-**Setup surface.** `internal/ui/basescan.go` reads a candidate folder (counts, a
-bounded `char.ini` sample, the standard subfolders, and the two off-by-one-level
-corrections) and `basewizard.go` reports it *before* anything is written.
-`applyBaseWizard` is the only writer in that flow, pinned by a census gate: the
-report is only worth reading if browsing, scanning and re-picking cannot change
-what the user is currently running. The scan runs off the render thread behind a
-single-flight latch (hard rule 2), and its result carries the path it scanned so
-a superseded pick is reconciled on landing rather than queued.
+**Edits.** `Folders` records each file it reads (path, modified time, size; a
+`.zip` member by its pack's). On focus gain the UI asks `ChangedFolderFiles` off
+the render thread and drops only the textures of files whose copy on disk
+changed, so an alt-tab with nothing edited reloads nothing.
+
+**Folder checks.** `internal/ui/basescan.go` reads each folder in the Asset
+source list (which media folders it holds, and the two off-by-one-level
+corrections) so its row shows a pill per kind of media, or "Not an AO base" with
+the folder that would work. `foldercheck.go` runs one scan at a time off the
+render thread (hard rule 2) and keeps reports only for folders still listed
+(hard rule 4).
 
 **Name order, not source order.** Each spelling is asked of every source
 before the next spelling (`Get(key, urgency, flags, alts...)`), so a legacy

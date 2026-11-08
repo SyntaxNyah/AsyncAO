@@ -309,46 +309,23 @@ func TestDiskPutGetRoundTrip(t *testing.T) {
 	}
 }
 
-// TestDiskZstdRoundTrip pins the compressed tier: compressible payloads
-// land as zstd frames yet read back verbatim, incompressible payloads stay
-// raw (no decompress tax for pre-compressed sprites), and blobs written
-// before the toggle keep reading after it (the format self-describes).
-func TestDiskZstdRoundTrip(t *testing.T) {
+// TestDiskOldCompressedBlobIsAMiss: a blob an older build compressed reads as a miss and is deleted, so the asset is
+// fetched again instead of handing compressed bytes to the decoder.
+func TestDiskOldCompressedBlobIsAMiss(t *testing.T) {
+	const oldBlobMode = 0o644
 	d := newTestDisk(t)
-
-	const rawURL = "http://example.com/pre-toggle.webp"
-	d.Put(rawURL, []byte("written-before-compression"))
-	waitForBlob(t, d, rawURL)
-
-	d.SetCompression(true)
-	compressible := bytes.Repeat([]byte("courtroom_design.ini ftw "), 200)
-	const czURL = "http://example.com/design.ini"
-	d.Put(czURL, append([]byte(nil), compressible...))
-	if got := waitForBlob(t, d, czURL); !bytes.Equal(got, compressible) {
-		t.Fatalf("compressed round trip mismatch (%d bytes)", len(got))
+	const url = "http://example.com/design.ini"
+	d.Put(url, []byte("placeholder"))
+	waitForBlob(t, d, url)
+	old := append(zstdMagic[:], []byte("compressed frame")...)
+	if err := os.WriteFile(d.pathFor(url), old, oldBlobMode); err != nil {
+		t.Fatal(err)
 	}
-	onDisk, err := os.ReadFile(d.pathFor(czURL))
-	if err != nil || !isZstdBlob(onDisk) {
-		t.Errorf("compressible blob not stored as zstd (err=%v, %d bytes)", err, len(onDisk))
+	if _, ok := d.Get(url); ok {
+		t.Fatal("an old compressed blob was served")
 	}
-	if len(onDisk) >= len(compressible) {
-		t.Errorf("zstd blob (%d) not smaller than payload (%d)", len(onDisk), len(compressible))
-	}
-
-	// Incompressible (already-random) data must stay raw on disk.
-	random := make([]byte, 4096)
-	for i := range random {
-		random[i] = byte(i*7919 + i>>3) // cheap pseudo-noise
-	}
-	const rndURL = "http://example.com/sprite.webp"
-	d.Put(rndURL, append([]byte(nil), random...))
-	if got := waitForBlob(t, d, rndURL); !bytes.Equal(got, random) {
-		t.Fatal("incompressible round trip mismatch")
-	}
-
-	// Pre-toggle blob still reads.
-	if got, ok := d.Get(rawURL); !ok || string(got) != "written-before-compression" {
-		t.Errorf("pre-toggle blob unreadable after enabling compression: %q ok=%v", got, ok)
+	if _, err := os.Stat(d.pathFor(url)); !os.IsNotExist(err) {
+		t.Errorf("the old compressed blob was not deleted (stat err %v)", err)
 	}
 }
 
@@ -542,34 +519,6 @@ func TestDiskSetBudgetWakesWriter(t *testing.T) {
 		if _, ok := d.Get(u); !ok {
 			t.Errorf("newest blob %s was wrongly evicted", u)
 		}
-	}
-}
-
-// BenchmarkDiskZstd quantifies the CPU-vs-disk trade the setting buys:
-// encode+decode cost per blob for INI-like text (the win case) vs
-// pseudo-random bytes (the skip case).
-func BenchmarkDiskZstd(b *testing.B) {
-	text := bytes.Repeat([]byte("emote_button_spacing = 1, 1\nemotions = 454, 602, 590, 100\n"), 600)
-	noise := make([]byte, len(text))
-	for i := range noise {
-		noise[i] = byte(i*2654435761 + i>>5)
-	}
-	for _, bench := range []struct {
-		name string
-		data []byte
-	}{{"ini-text", text}, {"noise", noise}} {
-		b.Run(bench.name, func(b *testing.B) {
-			b.SetBytes(int64(len(bench.data)))
-			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
-				cz := zstdEnc.EncodeAll(bench.data, nil)
-				if len(cz) < len(bench.data) {
-					if _, err := zstdDec.DecodeAll(cz, nil); err != nil {
-						b.Fatal(err)
-					}
-				}
-			}
-		})
 	}
 }
 

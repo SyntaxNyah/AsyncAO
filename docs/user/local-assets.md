@@ -1,19 +1,33 @@
 # Local assets — your own folders and .zip packs
 
-**Settings → Assets → Asset source** picks where AsyncAO reads art, sound and
-music from. There are three choices:
+**Settings → Assets → Asset source** is one list of everywhere AsyncAO looks
+for art, sound and music, searched top to bottom:
 
-| Mode | What it does |
+1. Your folders and `.zip` packs, in the order you set with ▲ ▼.
+2. Packages found in the `packages/` folder next to AsyncAO.
+3. The web: the server's own asset host, then any mirrors you added for it.
+
+Two switches control the halves of the list:
+
+| Switch | What it does |
 |---|---|
-| **Stream everything from the server** *(default)* | Every asset comes from the server's asset URL. |
-| **Use my folders first, then stream the rest** | Your folders and `.zip` packs are read first; anything you don't have still streams. |
-| **Only use my folders — never stream** | Nothing is streamed. For legacy servers that provide no asset URL at all. |
+| **Use my folders and packs** | Off *(default)*: every asset streams from the web. On: your folders are read first. |
+| **Stream from the web** | On *(default)*: anything your folders don't have streams. Off: nothing streams, for legacy servers that provide no asset URL at all. |
+
+Add a folder, a `.zip` or a mirror's `https://` address in the field under the
+list, pick folders with **Add folders…**, or drag a folder or `.zip` onto the
+Assets tab.
+
+Each folder is checked when it's added. The arrow on its **Folder** or **ZIP**
+tag shows what it contains (Characters, Backgrounds, Sounds, Evidence, Misc). A
+folder with none of those is marked **Not an AO base**, and if you picked the
+folder one level too high or too deep, a button offers the right one.
 
 ## Layering your own content over a server
 
-The middle mode is the one most people want. Add a folder (or a `.zip`), pick
-it, and your files are used **instead of the server's copies at the same
-paths** — while everything you *don't* have keeps streaming normally.
+Turn on **Use my folders and packs**, and your files are used **instead of the
+server's copies at the same paths**, while everything you *don't* have keeps
+streaming normally.
 
 One exception: a file AsyncAO already downloaded from the server and keeps in
 its cache wins over yours. Clear the cache (Settings → Cache) to make your copy
@@ -52,16 +66,18 @@ new, removed and renamed files by itself: it looks again when a file is missing
 and its last look is more than 30 seconds old, and every time you come back to
 the AsyncAO window.
 
-Press **Check folders now** after changing a file the game is already showing:
-the art drawn from your folders reloads, and anything that failed to load is
-tried again.
+Edits show by themselves too: when you come back to the AsyncAO window, every
+file it already read from your folders is checked, and anything you changed
+reloads, including a character's `char.ini`. Nothing that didn't change is
+reloaded.
 
 ## When a file in your pack is damaged
 
 If a file in your folders can't be read or decoded, AsyncAO **uses the server's
 copy for that one asset instead** and tells you how many files that happened
 to. Your pack is not disabled, and the server's copy is not penalised for your
-file being broken. Fix the file and press Check folders now.
+file being broken. Fix the file and switch back to AsyncAO: the fixed file is
+used.
 
 One exception: a damaged music or sound file is only re-tried the next time
 that track plays.
@@ -105,5 +121,6 @@ at all**.
 
 ## Legacy: never stream
 
-The third mode is the old behaviour, for servers that provide no asset URL.
-Everything must come from your folders; nothing falls back to the network.
+Turning **Stream from the web** off is the old behaviour, for servers that
+provide no asset URL. Everything must come from your folders; nothing falls back
+to the network.

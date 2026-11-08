@@ -317,9 +317,6 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.BgSlideshowSecs != o.BgSlideshowSecs {
 		return false
 	}
-	if s.DownloadKBps != o.DownloadKBps {
-		return false
-	}
 	if s.ForceCharNames != o.ForceCharNames {
 		return false
 	}
@@ -442,12 +439,6 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.HideReactions != o.HideReactions {
 		return false
 	}
-	if s.CharBundlePrefetch != o.CharBundlePrefetch {
-		return false
-	}
-	if s.PingChip != o.PingChip {
-		return false
-	}
 	if s.ValidateTLSCerts != o.ValidateTLSCerts {
 		return false
 	}
@@ -490,9 +481,6 @@ func (s *Settings) equal(o *Settings) bool {
 		if s.FontWarnThemes[i41] != o.FontWarnThemes[i41] {
 			return false
 		}
-	}
-	if s.PrefetchAggro != o.PrefetchAggro {
-		return false
 	}
 	if s.QuitConfirmSkip != o.QuitConfirmSkip {
 		return false
@@ -725,18 +713,6 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.CatchUpLingerMsVal != o.CatchUpLingerMsVal {
 		return false
 	}
-	if s.ThumbCache != o.ThumbCache {
-		return false
-	}
-	if s.ThumbHeightPxVal != o.ThumbHeightPxVal {
-		return false
-	}
-	if s.ThumbQualityVal != o.ThumbQualityVal {
-		return false
-	}
-	if s.ThumbBudgetMiBVal != o.ThumbBudgetMiBVal {
-		return false
-	}
 	if s.DiskCacheBudgetMiBVal != o.DiskCacheBudgetMiBVal {
 		return false
 	}
@@ -954,9 +930,6 @@ func (s *Settings) equal(o *Settings) bool {
 		if o.ClassicRotations[k64] != v65 {
 			return false
 		}
-	}
-	if s.DiskZstd != o.DiskZstd {
-		return false
 	}
 	if s.StreamerModeOn != o.StreamerModeOn {
 		return false
@@ -1233,6 +1206,9 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.LocalAssetsLayered != o.LocalAssetsLayered {
 		return false
 	}
+	if s.PackagesOff != o.PackagesOff {
+		return false
+	}
 	if s.EmoteCaptions != o.EmoteCaptions {
 		return false
 	}
@@ -1373,13 +1349,7 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.ChromeShapeTierIdx != o.ChromeShapeTierIdx {
 		return false
 	}
-	if s.CharDownloaderOn != o.CharDownloaderOn {
-		return false
-	}
 	if s.ToolboxSeen != o.ToolboxSeen {
-		return false
-	}
-	if s.ShowAssetWarnings != o.ShowAssetWarnings {
 		return false
 	}
 	if s.SpriteMoveOn != o.SpriteMoveOn {
@@ -1454,9 +1424,6 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.MentionSelf != o.MentionSelf {
 		return false
 	}
-	if s.LoopPreanim != o.LoopPreanim {
-		return false
-	}
 	if s.DisableAltEmoteRow != o.DisableAltEmoteRow {
 		return false
 	}
@@ -1497,6 +1464,9 @@ func (s *Settings) equal(o *Settings) bool {
 		return false
 	}
 	if s.ShowMissingPlaceholder != o.ShowMissingPlaceholder {
+		return false
+	}
+	if s.ErrorSpriteCustom != o.ErrorSpriteCustom {
 		return false
 	}
 	if s.ErrorSpriteFile != o.ErrorSpriteFile {

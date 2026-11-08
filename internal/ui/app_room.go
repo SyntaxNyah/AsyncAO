@@ -27,20 +27,6 @@ func (a *App) buildRoom() {
 	a.room = a.newRoom(a.urls, a.sess, a.d.Audio) // construction IS wiring (newroom.go): char.ini callbacks, the overlay engine, the visual prefs
 	// Apply this server's volume profile before the music below is re-seeded.
 	a.applyAudioVolumes()
-	urls := a.urls
-	mgr := a.d.Manager
-	a.room.Predictor = assets.NewPrefetcher(func(character, emote string) {
-		if emote == "" {
-			emote = "normal" // no chain signal yet: the default loop
-		}
-		// Bare-named packs answer only the bare and (b) spellings, and the talk sprite shows first.
-		// Speculative: a total miss must not warn. PriorityLow so it sheds under backpressure.
-		idle := urls.Emote(character, emote, courtroom.EmoteIdle)
-		talk := urls.Emote(character, emote, courtroom.EmoteTalk)
-		mgr.PrefetchChainSpeculative(idle, urls.EmoteAlts(character, emote, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (predicted next speaker, idle)
-		mgr.PrefetchChainSpeculative(talk, urls.EmoteAlts(character, emote, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (predicted next speaker, talk)
-	})
-	a.room.Predictor.SetAggressiveness(a.d.Prefs.Load().PrefetchAggressiveness()) // #100 predictive-prefetch level
 	a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
 	a.d.Viewport.OnPreanimStart = a.room.NotifyPreanimStarted // extend the fallback for long decoded preanims (phase-guarded — safe if a preview later shares this viewport)
 	// Must track the room owning the on-screen sprite, like OnPreanimDone: NotifyFrameShown has no stale check,
@@ -1635,6 +1621,9 @@ func (a *App) demandAsset(stamps *[]time.Time, n, idx int, base string, t assets
 	return true
 }
 
+// charINIFileName is the per-character config every character folder holds.
+const charINIFileName = "char.ini"
+
 // charINIURL builds a character's char.ini location.
 //
 // Through CharFolder, which alone decides casing, per-segment escaping and nested names, so the cache key matches.
@@ -1856,21 +1845,14 @@ func (a *App) pollCharINI() {
 		// Keep the selection across a reactivation reload. A real character change zeroes these before the fetch.
 		a.emoteIdx, a.emoteRow = clampEmoteSel(a.emoteIdx, a.emoteRow, len(a.emotes))
 		a.emoteAsk = nil // fresh char: re-demand its button art from scratch
-		// LOW priority sheds under load. The bundle toggle fetches every emote's idle and talk; off, the first few.
+		// LOW priority sheds under load: the first few emotes' idle sprites.
 		me := a.myCharName()
-		if a.d.Prefs.Load().CharBundlePrefetch {
-			for _, e := range a.emotes {
-				a.d.Manager.PrefetchChain(a.urls.Emote(me, e.Anim, courtroom.EmoteIdle), a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (#127 bundle)
-				a.d.Manager.PrefetchChain(a.urls.Emote(me, e.Anim, courtroom.EmoteTalk), a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (#127 bundle)
+		for i, e := range a.emotes {
+			if i >= 8 {
+				break
 			}
-		} else {
-			for i, e := range a.emotes {
-				if i >= 8 {
-					break
-				}
-				// A mixed-naming pack may ship this emote unprefixed; one spelling would 404 and flag it missing.
-				a.d.Manager.PrefetchChain(a.urls.Emote(me, e.Anim, courtroom.EmoteIdle), a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite
-			}
+			// A mixed-naming pack may ship this emote unprefixed; one spelling would 404 and flag it missing.
+			a.d.Manager.PrefetchChain(a.urls.Emote(me, e.Anim, courtroom.EmoteIdle), a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite
 		}
 	default:
 	}

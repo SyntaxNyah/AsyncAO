@@ -379,9 +379,6 @@ type Courtroom struct {
 	// statusByName remembers each speaker's Status by bare character name; a clear frees the entry. Bounded.
 	statusByName map[string]Status
 
-	// Predictor warms the predicted next speaker's sprite (optional).
-	Predictor *assets.Prefetcher
-
 	// preanimDone is set by NotifyPreanimDone.
 	preanimDone bool
 
@@ -906,11 +903,6 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 			c.mgr.Prefetch(charBase, assets.AssetTypeShoutBubble, network.PriorityHigh) // AssetType: ShoutBubble
 		}
 		c.audio.PlayShout(shoutSFX) // AssetType: SFX
-	}
-
-	// Warm the likely next speaker and their likely next emote.
-	if c.Predictor != nil {
-		c.Predictor.OnMessage(speakerName, msg.Pair.Name, msg.Emote)
 	}
 
 	// Blip set: wire first, then char.ini (webAO); in-flight stays pending, and only known-but-empty uses AO's default.

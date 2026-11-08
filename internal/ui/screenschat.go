@@ -773,8 +773,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			a.saveLayout()
 		}
 	}
-	// The warnLine toast and the DND badge share this row (missing-asset reports have their own chip,
-	// assetmisschip.go). With DND on, clip the toast so it can't run under the badge.
+	// The warnLine toast and the DND badge share this row. With DND on, clip the toast so it can't run under the badge.
 	toastW := w - 2*pad
 	dndMsg := ""
 	var dndW int32

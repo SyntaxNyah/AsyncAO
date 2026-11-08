@@ -794,7 +794,7 @@ func (s *TextureStore) Remove(base string) {
 }
 
 // reservedKeySchemes aren't server asset URLs; a local-pack sweep must skip them, as no mount can re-answer them.
-var reservedKeySchemes = [...]string{"theme://", "held://", "thumb://", "shape://", "missingno://"}
+var reservedKeySchemes = [...]string{"theme://", "held://", "shape://", "missingno://"}
 
 func reservedKey(key string) bool {
 	for _, s := range reservedKeySchemes {

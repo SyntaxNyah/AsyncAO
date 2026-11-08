@@ -114,9 +114,6 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if got := p.Load().PreviewHoverMillis(); got != DefaultPreviewHoverMs {
 		t.Errorf("PreviewHoverMillis default = %d, want %d", got, DefaultPreviewHoverMs)
 	}
-	if p.Load().ShowAssetWarnings {
-		t.Error("AssetWarningsOn default must be false (banner is opt-in)")
-	}
 	if p.Load().SpriteMoveOn {
 		t.Error("SpriteMoveEnabled default must be false")
 	}
@@ -161,9 +158,6 @@ func TestQoLPrefDefaults(t *testing.T) {
 	}
 	if p.Load().RainbowSpriteGlow || p.Load().RainbowPairDesync || p.Load().SpriteSolidTint {
 		t.Error("sprite-FX glow/desync/solid must default OFF")
-	}
-	if p.Load().LoopPreanim {
-		t.Error("LoopPreanim must default OFF (canonical AO2 plays preanims once)")
 	}
 }
 
@@ -1201,16 +1195,6 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.Update(func(sn *Settings) { sn.PreviewHoverMs = 8000 })
 	p.SetPreviewHeightPx(512)                                   // default-when-0 int — must survive
 	p.Update(func(sn *Settings) { sn.UpdatePrerelease = true }) // default-OFF plain bool — must survive (the pre-release choice)
-	p.Update(func(
-		sn *Settings) {
-
-		sn.
-			ShowAssetWarnings =
-
-			true
-
-	})
-
 	p.Update(func(sn *Settings) { sn.SpriteMoveOn = true })
 	p.Update(func(
 		sn *Settings) {
@@ -1302,18 +1286,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	})
 
 	// same absent-default-ON pointer — explicit OFF must survive
-	p.Update(func(sn *Settings) { sn.RainbowSprites = true }) // default-OFF plain bool — must survive as true
-	p.Update(func(
-		sn *Settings) {
-
-		sn.
-			LoopPreanim =
-
-			true
-
-	})
-
-	// default-OFF plain bool — must survive as true
+	p.Update(func(sn *Settings) { sn.RainbowSprites = true })    // default-OFF plain bool — must survive as true
 	p.Update(func(sn *Settings) { sn.ShowRecordButton = true })  // default-OFF plain bool
 	p.Update(func(sn *Settings) { sn.ShowFriendButton = false }) // default-ON *bool — explicit false must survive
 	p.Update(func(
@@ -1383,9 +1356,6 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if got := q.Load().PreviewHoverMillis(); got != 8000 {
 		t.Errorf("PreviewHoverMillis = %d, want 8000", got)
 	}
-	if !q.Load().ShowAssetWarnings {
-		t.Error("ShowAssetWarnings lost")
-	}
 	if !q.Load().SpriteMoveOn {
 		t.Error("SpriteMove lost")
 	}
@@ -1418,9 +1388,6 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if !q.Load().RainbowSprites {
 		t.Error("RainbowSprites=true lost across reload")
-	}
-	if !q.Load().LoopPreanim {
-		t.Error("LoopPreanim=true lost across reload (default-OFF plain bool must persist an explicit ON)")
 	}
 	if !q.Load().ShowRecordButton {
 		t.Error("ShowRecordButton=true lost across reload")
@@ -1729,10 +1696,6 @@ func TestResetPowerUser(t *testing.T) {
 
 	})
 
-	p.Update(func(sn *Settings) { sn.ThumbCache = true })
-	p.Update(func(sn *Settings) { sn.ThumbHeightPxVal = 120 })
-	p.Update(func(sn *Settings) { sn.ThumbQualityVal = 40 })
-	p.Update(func(sn *Settings) { sn.ThumbBudgetMiBVal = 256 })
 	p.Update(func(
 		sn *Settings) {
 
@@ -1865,9 +1828,6 @@ func TestResetPowerUser(t *testing.T) {
 	}
 	if !p.Load().ClipSpritesToStage {
 		t.Error("nuke must restore the sprite mask to its default ON")
-	}
-	if p.Load().ThumbCache || p.Load().ThumbHeightPx() != ThumbHeightDefaultPx || p.Load().ThumbQuality() != ThumbQualityDefault || p.Load().ThumbBudgetMiB() != ThumbBudgetDefaultMiB {
-		t.Error("nuke must reset the thumbnail-cache knobs (stored thumbs on disk are untouched — Clear is separate)")
 	}
 	if p.Load().NotFoundTTLSecVal != 0 || p.Load().AdaptiveLatMultipleVal != 0 {
 		t.Error("nuke must reset the network knobs to their 0 = default sentinels")

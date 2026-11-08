@@ -855,10 +855,8 @@ func (a *App) drawMenuBar(w, _ int32) {
 		}
 		c.Label(r.X+menuBarTitlePadX, r.Y+textY, menuBarMenus[i].title, col.text)
 	}
-	// The band's chips are drawn only here so they can't intrude on an AO2 design canvas or the emote grid. The
-	// missing-asset chip measures its clearance against the Iniswap button and the theme-sidecar chip's anchor.
+	// The band's chips are drawn only here so they can't intrude on an AO2 design canvas or the emote grid.
 	a.drawIniswapChip(w)
-	a.drawAssetMissChip(w)
 	a.drawThemeErrChip(w)
 }
 

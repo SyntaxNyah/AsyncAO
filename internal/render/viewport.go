@@ -33,8 +33,6 @@ type animState struct {
 	finished bool
 	// startReported guards the one-shot OnPreanimStart report; reset clears it on a base change.
 	startReported bool
-	// loopReported makes OnPreanimDone fire once when the loop-preanim pref keeps the clip wrapping; reset clears it.
-	loopReported bool
 	// shownSrc is the last source frame reported through OnFrameShown; -1 is none, because frame 0 is a valid trigger.
 	shownSrc int
 
@@ -45,8 +43,6 @@ type animState struct {
 	coldFor time.Duration
 	// fadeLeft counts down a crossfade, ticking only while the new sprite is resident.
 	fadeLeft time.Duration
-	// thumbKey is the precomputed thumb:// key ("" when no base), so the cold-load miss path doesn't allocate.
-	thumbKey string
 	// heldKey is the precomputed held:// key the store parks a scenery frame under when the LRU evicts it on screen.
 	heldKey string
 
@@ -65,14 +61,11 @@ func (a *animState) reset(base string) {
 	a.elapsed = 0
 	a.finished = false
 	a.startReported = false
-	a.loopReported = false
 	a.shownSrc = -1 // nothing reported for the new base yet (frame 0 is a valid trigger)
 	a.page = nil
 	a.pageGen = 0
-	a.thumbKey = ""
 	a.heldKey = ""
 	if base != "" {
-		a.thumbKey = ThumbKeyPrefix + base
 		a.heldKey = HeldKeyPrefix + base
 	}
 }
@@ -83,7 +76,6 @@ func (a *animState) restart() {
 	a.elapsed = 0
 	a.finished = false
 	a.startReported = false
-	a.loopReported = false
 	a.shownSrc = -1
 }
 
@@ -185,22 +177,6 @@ func (v *Viewport) advanceSpeaker(page *TexturePage, dt time.Duration, playOnce 
 		a.finished = false
 		a.frame = 0
 		a.elapsed = 0
-	}
-	if playOnce && v.preanimLoop {
-		if a.loopReported {
-			// OnPreanimDone already fired; keep wrapping with finished clear so NextAnimDue keeps scheduling.
-			a.advance(page, dt, false)
-			return false
-		}
-		// Clear finished here: one frame set stops NextAnimDue scheduling and stalls the loop.
-		if a.advance(page, dt, true) {
-			a.loopReported = true
-			a.finished = false
-			a.frame = 0
-			a.elapsed = 0
-			return true
-		}
-		return false
 	}
 	return a.advance(page, dt, playOnce) && playOnce
 }
@@ -360,14 +336,8 @@ type Viewport struct {
 	holdMaxAge time.Duration
 	tintHeld   bool
 
-	// thumbSprites shows the right character's thumbnail during a cold load, before spriteLoadMode.
-	thumbSprites bool
-
 	// missingnoEnabled draws AO2's placeholder for a base that 404'd; hold-previous would keep another character.
 	missingnoEnabled bool
-
-	// preanimLoop wraps an active preanim, deliberately unlike AO2 (animationlayer.cpp forces play-once).
-	preanimLoop bool
 
 	// crossfade is the speaker-swap blend duration (0 = hard swap).
 	crossfade time.Duration
@@ -1175,20 +1145,11 @@ func (v *Viewport) SetHoldMaxAge(d time.Duration) { v.holdMaxAge = d }
 // SetHoldDebugTint washes held stand-in sprites amber, as a diagnostic.
 func (v *Viewport) SetHoldDebugTint(on bool) { v.tintHeld = on }
 
-// SetThumbSprites toggles the thumbnail stand-in on the cold-load miss path.
-func (v *Viewport) SetThumbSprites(on bool) { v.thumbSprites = on }
-
 // SetMissingno toggles AO2's placeholder for a sprite confirmed missing.
 func (v *Viewport) SetMissingno(on bool) { v.missingnoEnabled = on }
 
 // SetCrossfade sets the speaker-swap blend duration (0 = hard swap); the App passes 0 under Reduce motion.
 func (v *Viewport) SetCrossfade(d time.Duration) { v.crossfade = d }
-
-// SetPreanimLoop toggles looping preanims, deliberately unlike AO2; OnPreanimDone still fires once.
-func (v *Viewport) SetPreanimLoop(on bool) { v.preanimLoop = on }
-
-// ThumbKeyPrefix namespaces thumbnails in T1; a scheme prefix can't collide with an asset URL.
-const ThumbKeyPrefix = "thumb://"
 
 // tickCold tracks a layer's cold time and ticks a crossfade only while resident.
 func (v *Viewport) tickCold(a *animState, dt time.Duration) {
@@ -1245,7 +1206,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	}
 	page, ok := anim.resolve(v.store)
 	if !ok || len(page.Frames) == 0 {
-		// A missing base has no held or thumb page, and lastGood survives swaps: hold-previous would pin forever.
+		// A missing base has no held page, and lastGood survives swaps: hold-previous would pin forever.
 		// Only still-loading sprites take the chain below; loading and confirmed missing are disjoint.
 		if v.missingnoEnabled && !layer.PlayOnce && v.store.IsMissing(anim.base) {
 			if mp, ok2 := v.store.Get(MissingKey); ok2 && len(mp.Frames) > 0 {
@@ -1253,17 +1214,10 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 				return
 			}
 		}
-		// A parked frame of this same sprite at full quality beats the thumbnail and a different character.
+		// A parked frame of this same sprite at full quality beats a different character.
 		if held, ok2 := v.resolveHeld(anim); ok2 {
 			v.drawHeldSprite(ren, layer, held, vp)
 			return
-		}
-		// The thumbnail wins next: the right character at low quality beats the previous one at full quality.
-		if v.thumbSprites && anim.thumbKey != "" {
-			if tp, ok2 := v.store.Get(anim.thumbKey); ok2 && len(tp.Frames) > 0 {
-				v.drawHeldSprite(ren, layer, tp, vp)
-				return
-			}
 		}
 		// Hold by string as the LRU owns lifetime; draw path only, so the preanim lifecycle never sees it.
 		if v.spriteLoadMode == SpriteLoadHoldPrev && anim.lastGood != "" && anim.lastGood != anim.base &&

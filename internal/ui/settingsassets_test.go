@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -79,20 +80,119 @@ func TestAssetSourceSettingsSearchFindsTheNewTerms(t *testing.T) {
 	}
 }
 
-// TestSettingsCopyExplainsZipAndPriority is a copy gate, not a logic one. The
-// product owner asked specifically that the UI — not just the docs — say that
-// .zip packs work and that the user's own files take priority over the stream.
-// Both are things people otherwise only discover by being confused.
+// TestSettingsCopyExplainsZipAndPriority: the product owner asked that the UI, not just the docs, say that .zip packs
+// work, that the user's own files beat the stream, and that the list order decides.
 func TestSettingsCopyExplainsZipAndPriority(t *testing.T) {
-	src := readSourceFile(t, "settingsassets.go")
-	for _, want := range []struct{ what, needle string }{
-		{"zip packs are accepted as mounts", ".zip pack"},
-		{"the user's files replace the server's", "REPLACE the server's copies"},
-		{"first mount wins", "the first one with the file wins"},
-		{"anything not held still streams", "still streams from the server"},
+	for _, want := range []struct{ what, text, needle string }{
+		{"zip packs are accepted as mounts", mountOrderHint, ".zip pack"},
+		{"first mount wins", mountOrderHint, "first one with the file wins"},
+		{"the user's files replace the server's", assetModeHint(assetSrcLayered), "replace the server's"},
+		{"anything not held still streams", assetModeHint(assetSrcLayered), "still streams from the server"},
 	} {
-		if !strings.Contains(src, want.needle) {
-			t.Errorf("the Asset source panel no longer explains %s (looked for %q)", want.what, want.needle)
+		if !strings.Contains(want.text, want.needle) {
+			t.Errorf("the Asset source cards no longer explain %s (looked for %q in %q)", want.what, want.needle, want.text)
+		}
+	}
+}
+
+// TestMoveMountChangesTheSearchOrder: moving a folder up makes the folders search it first.
+func TestMoveMountChangesTheSearchOrder(t *testing.T) {
+	a := headlessProbeApp(t, assets.NewLocalFetcher([]string{t.TempDir()}), false)
+	first, second, third := t.TempDir(), t.TempDir(), t.TempDir()
+	a.setAssetSourceMode(assetSrcLayered, []string{first, second, third})
+
+	const from, to = 2, 0
+	a.moveMount(from, to)
+
+	want := []string{third, first, second}
+	if _, saved := a.d.Prefs.LocalAssets(); !slices.Equal(saved, want) {
+		t.Errorf("saved order %v, want %v", saved, want)
+	}
+	if mounted, _, _ := a.d.Manager.FolderStatus(); !slices.Equal(mounted, want) {
+		t.Errorf("search order %v, want %v", mounted, want)
+	}
+	if a.assetSourceMode() != assetSrcLayered {
+		t.Error("moving a folder changed the asset source mode")
+	}
+}
+
+// TestAddSourceRoutesByWhatWasTyped: the one add field puts a web address under the picked server's mirrors and
+// anything else in the folder list.
+func TestAddSourceRoutesByWhatWasTyped(t *testing.T) {
+	a := headlessProbeApp(t, assets.NewLocalFetcher([]string{t.TempDir()}), false)
+	const key, mirror = "wss://srv.test/", "https://mirror.test/base/"
+	dir := t.TempDir()
+
+	if _, ok := a.addSource(key, "  "+mirror+"  ", nil); !ok {
+		t.Fatal("the mirror was refused")
+	}
+	if _, ok := a.addSource(key, dir, nil); !ok {
+		t.Fatal("the folder was refused")
+	}
+	if hosts := a.d.Prefs.Load().ServerAssetHosts(key); !slices.Equal(hosts, []string{mirror}) {
+		t.Errorf("mirrors %v, want [%s]", hosts, mirror)
+	}
+	if _, mounts := a.d.Prefs.LocalAssets(); !slices.Equal(mounts, []string{dir}) {
+		t.Errorf("folders %v, want [%s]", mounts, dir)
+	}
+	if _, ok := a.addSource("", mirror, nil); ok {
+		t.Error("a mirror was added with no server picked")
+	}
+	if _, ok := a.addSource(key, dir, []string{dir}); ok {
+		t.Error("a folder already in the list was added again")
+	}
+}
+
+// TestModeAfterToggle: the two toggles never leave a source with nothing to read.
+func TestModeAfterToggle(t *testing.T) {
+	for _, tc := range []struct {
+		folders, stream bool
+		want            int
+	}{
+		{true, true, assetSrcLayered},
+		{true, false, assetSrcLocal},
+		{false, true, assetSrcStream},
+		{false, false, assetSrcStream},
+	} {
+		if got := modeAfterToggle(tc.folders, tc.stream); got != tc.want {
+			t.Errorf("folders=%v stream=%v: mode %d, want %d", tc.folders, tc.stream, got, tc.want)
+		}
+	}
+}
+
+func TestMoveItemKeepsTheInputAndEveryEntry(t *testing.T) {
+	in := []string{"a", "b", "c", "d"}
+	const last = 3
+	for _, tc := range []struct {
+		from, to int
+		want     []string
+	}{
+		{0, 1, []string{"b", "a", "c", "d"}},
+		{last, last - 1, []string{"a", "b", "d", "c"}},
+		{0, last, []string{"b", "c", "d", "a"}},
+	} {
+		if got := moveItem(in, tc.from, tc.to); !slices.Equal(got, tc.want) {
+			t.Errorf("moveItem(%d→%d) = %v, want %v", tc.from, tc.to, got, tc.want)
+		}
+	}
+	if !slices.Equal(in, []string{"a", "b", "c", "d"}) {
+		t.Errorf("moveItem changed its input: %v", in)
+	}
+}
+
+func TestMountSummaryCountsFoldersPacksAndServed(t *testing.T) {
+	const auto, served = 1, 412
+	for _, tc := range []struct {
+		mounts       []string
+		auto, served int
+		want         string
+	}{
+		{nil, 0, 0, "No folders or packs added."},
+		{[]string{`C:\AO2\base`}, 0, 0, "1 folder"},
+		{[]string{`C:\AO2\base`, `D:\a.ZIP`, `D:\b.zip`}, auto, served, "1 folder  ·  2 packs  ·  1 auto-mounted  ·  412 assets from them this session"},
+	} {
+		if got := mountSummary(tc.mounts, tc.auto, int64(tc.served)); got != tc.want {
+			t.Errorf("mountSummary(%v) = %q, want %q", tc.mounts, got, tc.want)
 		}
 	}
 }

@@ -57,11 +57,29 @@ type MountError struct {
 func (e *MountError) Error() string { return "media: mount " + e.Mount + ": " + e.Err.Error() }
 func (e *MountError) Unwrap() error { return e.Err }
 
+// folderReadCap bounds the files remembered for Changed (hard rule 4); past it the record starts over, so an edit to
+// a file read before then is only seen once it is read again.
+const folderReadCap = 8192
+
 // Folders is described above.
 type Folders struct {
 	state atomic.Pointer[folderSet]
 	mu    sync.Mutex // held only by Mount, the one writer of state
 	now   func() time.Time
+	reads readLog
+}
+
+// readLog is what each file read looked like on disk, so Changed can tell an edit from an unchanged file.
+type readLog struct {
+	mu    sync.Mutex
+	files map[File]readStamp
+}
+
+// readStamp is a read file's on-disk path and its modified time and size when read; a .zip member is its pack's.
+type readStamp struct {
+	path string
+	mod  time.Time
+	size int64
 }
 
 // NewFolders starts with no mounts; now is the clock, time.Now outside tests.
@@ -131,6 +149,60 @@ func (fs *Folders) Mount(paths, origins []string) {
 	if cur != nil {
 		cur.mounts.release() // the publishing reference; readers keep theirs until done
 	}
+	fs.reads.mu.Lock()
+	clear(fs.reads.files) // the files belonged to the old mounts
+	fs.reads.mu.Unlock()
+}
+
+// Changed reports the files read since the mounts were set whose copy on disk has since changed or gone, and takes
+// the current copy as the new reference. It stats every file read, so call it off the render thread.
+func (fs *Folders) Changed() []File {
+	fs.reads.mu.Lock()
+	stamps := make(map[File]readStamp, len(fs.reads.files))
+	for f, st := range fs.reads.files {
+		stamps[f] = st
+	}
+	fs.reads.mu.Unlock()
+
+	var changed []File
+	for f, was := range stamps {
+		now, err := statStamp(was.path)
+		if err == nil && now == was {
+			continue
+		}
+		changed = append(changed, f)
+		fs.reads.mu.Lock()
+		if err != nil {
+			delete(fs.reads.files, f)
+		} else if _, kept := fs.reads.files[f]; kept {
+			fs.reads.files[f] = now
+		}
+		fs.reads.mu.Unlock()
+	}
+	return changed
+}
+
+// note records what a file looked like when read.
+func (fs *Folders) note(f File, path string) {
+	st, err := statStamp(path)
+	if err != nil {
+		return
+	}
+	fs.reads.mu.Lock()
+	defer fs.reads.mu.Unlock()
+	if fs.reads.files == nil || len(fs.reads.files) >= folderReadCap {
+		fs.reads.files = map[File]readStamp{}
+	}
+	fs.reads.files[f] = st
+}
+
+// statStamp reads a file's stamp, its time in the form Equal compares, so two stamps compare with ==.
+func statStamp(path string) (readStamp, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return readStamp{}, err
+	}
+	return readStamp{path: path, mod: info.ModTime().UTC(), size: info.Size()}, nil
 }
 
 // Stale ends every folder check's trust, so the next miss in each folder lists it again.
@@ -193,7 +265,11 @@ func (fs *Folders) Data(f File) ([]byte, error) {
 	if !ok {
 		return nil, ErrAbsent
 	}
-	return s.read(dir, name, fs.now())
+	data, onDisk, err := s.read(dir, name, fs.now())
+	if err == nil {
+		fs.note(f, onDisk)
+	}
+	return data, err
 }
 
 // Size reports the pages held.
@@ -215,7 +291,8 @@ func (fs *Folders) Read(rel string) ([]byte, error) {
 	if !ok {
 		return nil, ErrAbsent
 	}
-	return s.read(dir, name, fs.now())
+	data, _, err := s.read(dir, name, fs.now())
+	return data, err
 }
 
 // FindStem reports whether the folders hold any format of a URL without extension, checking its folder like Data;
@@ -293,23 +370,25 @@ func (s *folderSet) locate(rawURL string) (dir, name string, ok bool) {
 	return dir, name, true
 }
 
-func (s *folderSet) read(dir, name string, now time.Time) ([]byte, error) {
+// read returns a file's bytes and the on-disk file they came from: the file itself, or the .zip holding it.
+func (s *folderSet) read(dir, name string, now time.Time) ([]byte, string, error) {
 	if !s.mounts.acquire() {
-		return nil, ErrAbsent // swapped out and closed between load and read
+		return nil, "", ErrAbsent // swapped out and closed between load and read
 	}
 	defer s.mounts.release()
 	p := s.refresh(dir, now)
 	pf, ok := p.files[name]
 	if !ok {
-		return nil, ErrAbsent
+		return nil, "", ErrAbsent
 	}
 	switch m := s.mounts.mounts[pf.mount].(type) {
 	case *dirMount:
 		return m.read(path.Join(p.real[pf.mount], pf.name))
 	case *zipMount:
-		return m.read(pf.name)
+		data, err := m.read(pf.name)
+		return data, m.path, err
 	}
-	return nil, ErrAbsent
+	return nil, "", ErrAbsent
 }
 
 // refresh returns dir's page, listing it again only if a folder mount's copy changed since its last check.
@@ -448,16 +527,16 @@ func (d *dirMount) failure() error {
 	return nil
 }
 
-func (d *dirMount) read(rel string) ([]byte, error) {
+func (d *dirMount) read(rel string) ([]byte, string, error) {
 	p, err := safepath.Join(d.root, rel)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	b, err := os.ReadFile(p)
 	if err != nil || len(b) == 0 {
-		return nil, ErrAbsent // gone since the listing, or empty: the next source answers
+		return nil, "", ErrAbsent // gone since the listing, or empty: the next source answers
 	}
-	return b, nil
+	return b, p, nil
 }
 
 // dir is the on-disk path of the folder at rel, "" being the mount itself, which safepath.Join refuses.

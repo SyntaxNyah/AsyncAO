@@ -305,46 +305,6 @@ func TestFinishedOneShotRestartsAsLoop(t *testing.T) {
 	}
 }
 
-// TestPreanimLoopFiresDoneOnce pins the opt-in "loop preanimations" pref: with it
-// ON, a preanim keeps WRAPPING while it stays the active one-shot layer, but
-// OnPreanimDone fires EXACTLY ONCE at the first completion (so the message
-// lifecycle is byte-identical to loop-off), and the finished latch never sticks
-// so NextAnimDue keeps scheduling the wraps.
-func TestPreanimLoopFiresDoneOnce(t *testing.T) {
-	page := threeFramePage()
-	v := NewViewport(nil)
-	v.SetPreanimLoop(true)
-	v.speakerAnim.reset("characters/x/intro")
-
-	done := 0
-	// Run well past one full clip (3 frames) so it would loop several times.
-	for i := 0; i < 12; i++ {
-		if v.advanceSpeaker(page, 100*time.Millisecond, true) {
-			done++
-		}
-		if v.speakerAnim.finished {
-			t.Fatalf("loop-on preanim must not leave finished latched (step %d) — it would stall NextAnimDue", i)
-		}
-	}
-	if done != 1 {
-		t.Fatalf("loop-on preanim fired OnPreanimDone %d times, want exactly 1", done)
-	}
-	if !v.speakerAnim.loopReported {
-		t.Error("the first completion must latch loopReported")
-	}
-
-	// A collided-base handoff with loop ON (courtroom clears PlayOnce, same base)
-	// must still keep the layer looping cleanly, never re-firing completion.
-	for i := 0; i < 6; i++ {
-		if v.advanceSpeaker(page, 100*time.Millisecond, false) {
-			t.Fatalf("a collided handoff with loop ON re-fired completion (step %d)", i)
-		}
-	}
-	if v.speakerAnim.finished {
-		t.Error("collided loop-on handoff must not latch finished")
-	}
-}
-
 // TestStilledPageDoesNotFinishPreanim: a returning speaker's preanim was reduced to one frame while someone else spoke.
 // It is re-decoding, so finishing on that frame would skip the animation.
 func TestStilledPageDoesNotFinishPreanim(t *testing.T) {

@@ -14,7 +14,6 @@
   "nameColorVal": 50,
   "bgSlideshow": true,
   "bgSlideshowSecs": 3,
-  "downloadKBps": 2,
   "forceCharNames": true,
   "randomEmote": true,
   "friendHighlight": true,
@@ -179,8 +178,6 @@
   ],
   "hideSpriteStyles": true,
   "hideReactions": true,
-  "charBundlePrefetch": true,
-  "pingChip": true,
   "validateTLSCerts": true,
   "assetOrigin": "v601",
   "wsOrigin": "v701",
@@ -195,7 +192,6 @@
   "fontWarnThemes": [
     "v411"
   ],
-  "prefetchAggro": 2,
   "quitConfirmSkip": true,
   "legacyDevTheme": true,
   "oocInLogTab": true,
@@ -282,10 +278,6 @@
   "icQueueCap": 8,
   "icLogDepth": 2,
   "catchUpLingerMs": 1,
-  "thumbCache": true,
-  "thumbHeightPx": 32,
-  "thumbQuality": 5,
-  "thumbBudgetMiB": 8,
   "diskCacheBudgetMiB": 128,
   "notFoundTTLSec": 30,
   "adaptiveLatMultiple": 2,
@@ -387,7 +379,6 @@
   "classicRotations": {
     "v212": 2
   },
-  "diskZstd": true,
   "streamerMode": true,
   "themeName": "v412",
   "themeDir": "v512",
@@ -650,9 +641,7 @@
   "chromeTheme": "v613",
   "chromeShape": "sharp",
   "chromeShapeTier": 1,
-  "charDownloader": true,
   "toolboxSeen": true,
-  "showAssetWarnings": true,
   "spriteMove": true,
   "deskFollowManifest": true,
   "spritePreview": true,
@@ -677,7 +666,6 @@
   "unfocusedFullRate": true,
   "ghostCrawlText": true,
   "mentionSelf": true,
-  "loopPreanim": true,
   "disableAltEmoteRow": true,
   "icTimestamps": true,
   "autoReconnect": true,
@@ -692,6 +680,7 @@
   "musicStreaming": true,
   "musicAcrossTabs": true,
   "showMissingPlaceholder": true,
+  "errorSpriteCustom": true,
   "errorSpritePath": "v723",
   "musicHosts": [
     "v823"

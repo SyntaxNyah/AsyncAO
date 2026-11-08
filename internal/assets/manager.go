@@ -74,7 +74,6 @@ type Manager struct {
 	disk     *cache.DiskCache
 	client   Fetcher
 	decoder  *DecoderPool
-	thumbs   *ThumbCache // optional persistent low-q sprite thumbnails (nil = feature absent)
 
 	// t1Contains reports whether a texture is uploaded; pass the upload's key: base if probed, full URL if exact.
 	t1Contains func(url string) bool
@@ -187,7 +186,7 @@ func (m *Manager) ColdLoadStats() (fetch, decode time.Duration) {
 	return fetch, m.decoder.Stats().AvgDecode
 }
 
-// ManagerDeps wires a Manager; every field is required except T1Contains, T1Failed and Thumbs.
+// ManagerDeps wires a Manager; every field is required except T1Contains and T1Failed.
 type ManagerDeps struct {
 	Resolver *Resolver
 	Prefs    *config.AssetPreferences
@@ -198,8 +197,6 @@ type ManagerDeps struct {
 	Decoder    *DecoderPool
 	T1Contains func(url string) bool
 	T1Failed   func(base string) bool
-	// Thumbs, when set, receives every decoded character sprite for thumbnailing.
-	Thumbs *ThumbCache
 }
 
 // NewManager builds the Manager and starts its media system; CloseMedia stops it.
@@ -211,7 +208,6 @@ func NewManager(deps ManagerDeps) *Manager {
 		disk:        deps.Disk,
 		client:      deps.Source,
 		decoder:     deps.Decoder,
-		thumbs:      deps.Thumbs,
 		t1Contains:  deps.T1Contains,
 		t1Failed:    deps.T1Failed,
 		decodedCh:   make(chan DecodedAsset, decodedChanCap),
@@ -293,22 +289,13 @@ func (m *Manager) Prefetch(base string, t AssetType, prio network.Priority) {
 // PrefetchChain asks for base, then each alt while earlier names miss, like CharLayer::load_image ("(a)X" then "X");
 // call sites bound the length (hard rule 4).
 func (m *Manager) PrefetchChain(base string, alts []string, t AssetType, prio network.Priority) {
-	m.prefetchChain(base, alts, t, prio, false)
-}
-
-// PrefetchChainSpeculative is PrefetchChain with no warning on a total miss; pass PriorityLow so it sheds.
-func (m *Manager) PrefetchChainSpeculative(base string, alts []string, t AssetType, prio network.Priority) {
-	m.prefetchChain(base, alts, t, prio, true)
-}
-
-func (m *Manager) prefetchChain(base string, alts []string, t AssetType, prio network.Priority, quiet bool) {
 	if base == "" || !t.Valid() {
 		return
 	}
 	if m.t1Failed != nil && m.t1Failed(base) {
 		return // recently failed to decode — back off (the negative cache absorbs retries)
 	}
-	m.bridge.askChain(base, alts, t, prio, quiet, false)
+	m.bridge.askChain(base, alts, t, prio, false)
 }
 
 // PrefetchSticky is Prefetch for assets that survive room changes, such as UI chrome.
@@ -316,7 +303,7 @@ func (m *Manager) PrefetchSticky(base string, t AssetType, prio network.Priority
 	if base == "" || !t.Valid() {
 		return
 	}
-	m.bridge.askChain(base, nil, t, prio, false, true)
+	m.bridge.askChain(base, nil, t, prio, true)
 }
 
 // PrefetchExact asks for a complete URL with no candidate probing, such as a music track.
@@ -491,18 +478,9 @@ func fullProbeChain(prefs *config.AssetPreferences, t AssetType) []string {
 
 // onDecoded hands one decoded page to the render thread.
 func (m *Manager) onDecoded(url, base string, t AssetType, fromPack bool, d *Decoded, err error) {
-	// Never for folder bytes: this disk cache is keyed by the server URL, so user art would pose as its copy.
-	if m.thumbs != nil && err == nil && t == AssetTypeCharSprite && !fromPack &&
-		d != nil && len(d.Frames) > 0 && d.FrameOffset == 0 {
-		// Store only frame 0: later appends and the finalize would overwrite it with a mid-clip or empty frame.
-		m.thumbs.Store(base, d)
-	}
 	m.decodedCh <- DecodedAsset{URL: url, Base: base, Type: t, Asset: d, Err: err, FromPack: fromPack}
 	m.NotifyDelivery()
 }
-
-// Thumbs returns the optional thumbnail store, nil when not wired.
-func (m *Manager) Thumbs() *ThumbCache { return m.thumbs }
 
 // PurgeCorrupt evicts url from memory and the disk cache so the next demand refetches; url is the full fetch URL.
 func (m *Manager) PurgeCorrupt(url string) {
@@ -528,13 +506,6 @@ func (m *Manager) DiskRoot() string {
 		return ""
 	}
 	return m.disk.Root()
-}
-
-// SetDiskCompression toggles zstd for new disk-cache writes.
-func (m *Manager) SetDiskCompression(on bool) {
-	if m.disk != nil {
-		m.disk.SetCompression(on)
-	}
 }
 
 // SetDiskBudget sets the disk cache's auto-prune byte cap; 0 = unlimited, so no cache is silently deleted.

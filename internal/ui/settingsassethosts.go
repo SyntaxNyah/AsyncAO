@@ -1,5 +1,8 @@
 package ui
 
+// The web half of the Asset source list: the picked server's own host, then its mirrors, asked in order when the
+// server's own host lacks a file.
+
 import (
 	"slices"
 	"strconv"
@@ -9,121 +12,100 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Layout of the Extra asset hosts section.
-const (
-	assetHostIndent   = 12
-	assetHostLabelDY  = 4
-	assetHostLabelW   = 80
-	assetHostPickW    = 280
-	assetHostFieldW   = 420
-	assetHostAddW     = 70
-	assetHostMoveW    = 56
-	assetHostMoves    = 2 // Up and Down
-	assetHostRemoveW  = 80
-	assetHostGap      = 8
-	assetHostRowH     = 30
-	assetHostLineH    = 22
-	assetHostSectionB = 10
-)
-
-// drawAssetHostSettings edits a server's extra asset hosts, asked in order when the server's own host lacks a file.
-func (a *App) drawAssetHostSettings(y, w int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	y = a.settingsDesc(pad, y, "When a server's own asset host doesn't have a file, AsyncAO asks these hosts, top to bottom. "+
-		"The server's host is always asked first. Each host's extensions.json decides which formats are asked there. "+
-		"Use mirrors of the same content: a file is taken from the first host that has it.", ColTextDim)
-	y += assetHostGap
-
-	names, keys := a.loginTargets()
-	if len(names) == 0 {
-		c.Label(pad+assetHostIndent, y, "No servers known yet — Refresh the lobby once, then add hosts here ahead of time.", ColTextDim)
-		return y + assetHostRowH
+// hostServerKey is the server whose mirrors the list shows, defaulting to the connected one; "" when none is known.
+func (a *App) hostServerKey() (key string, names, keys []string) {
+	names, keys = a.loginTargets()
+	if len(keys) == 0 {
+		return "", nil, nil
 	}
 	if settings.assetHostKey == "" && a.serverKey != "" {
 		settings.assetHostKey = a.serverKey
 	}
 	cur := max(slices.Index(keys, settings.assetHostKey), 0)
 	settings.assetHostKey = keys[cur]
-	key := settings.assetHostKey
-	c.Label(pad+assetHostIndent, y+assetHostLabelDY, "Server:", ColText)
-	if next, changed := c.Dropdown("assethostsrv", sdl.Rect{X: pad + assetHostLabelW, Y: y, W: assetHostPickW, H: btnH}, names, cur); changed {
-		settings.assetHostKey = keys[next]
-		key = keys[next]
-	}
-	y += btnH + assetHostGap
+	return keys[cur], names, keys
+}
 
+// drawHostRows draws the server's own host and its mirrors, numbered after the rows above the divider. A row's
+// format-list state shows while it is hovered, or always when it failed.
+func (a *App) drawHostRows(y int32, key string, first int, on bool) int32 {
+	if key == "" {
+		return y
+	}
+	col := sourceRowColor(on)
 	snap := a.d.Prefs.Load()
 	own := snap.ServerWarmInfoFor(key).Origin
-	shown := own
+	hovered := a.hoverRow(y)
+	line := sourceLine{pos: first, text: own, kind: "Server", col: col}
 	if own == "" {
-		shown = "not known until you join this server once"
+		line.text, line.col = "Known once you join this server", ColTextDim
+	} else {
+		line.note, line.noteCol = hostNote(a.ownHostListState(own), hovered)
 	}
-	buttonsX := pad + assetHostIndent + assetHostFieldW + assetHostGap
-	statusX := buttonsX + assetHostMoves*(assetHostMoveW+assetHostGap) + assetHostRemoveW + assetHostGap
-	statusW := w - statusX - scrollBarW
-	c.LabelClipped(pad+assetHostIndent, y, assetHostFieldW, "1. "+shown+"  (the server's own host)", ColTextDim)
-	if own != "" {
-		text, col := hostListLabel(a.ownHostListState(own))
-		c.LabelClipped(statusX, y, statusW, text, col)
-	}
-	y += assetHostLineH
+	a.drawSourceLine(y, line)
+	y += mountRowH
 
 	hosts := snap.ServerAssetHosts(key)
-	changed := false
 	for i, h := range hosts {
-		c.LabelClipped(pad+assetHostIndent, y+assetHostLabelDY, assetHostFieldW, strconv.Itoa(i+2)+". "+h, ColText)
-		text, col := hostListLabel(a.d.Manager.HostListState(h))
-		c.LabelClipped(statusX, y+assetHostLabelDY, statusW, text, col)
-		x := buttonsX
-		if i > 0 && c.Button(sdl.Rect{X: x, Y: y, W: assetHostMoveW, H: btnH}, "Up") {
-			hosts[i-1], hosts[i] = hosts[i], hosts[i-1]
-			changed = true
+		hovered := a.hoverRow(y)
+		mirror := sourceLine{pos: first + 1 + i, text: h, kind: "Mirror", col: col}
+		mirror.note, mirror.noteCol = hostNote(a.d.Manager.HostListState(h), hovered)
+		a.drawSourceLine(y, mirror)
+		act := rowKeep
+		if hovered {
+			act = a.rowControls(y, i, len(hosts))
 		}
-		x += assetHostMoveW + assetHostGap
-		if i < len(hosts)-1 && c.Button(sdl.Rect{X: x, Y: y, W: assetHostMoveW, H: btnH}, "Down") {
-			hosts[i], hosts[i+1] = hosts[i+1], hosts[i]
-			changed = true
-		}
-		x += assetHostMoveW + assetHostGap
-		if c.Button(sdl.Rect{X: x, Y: y, W: assetHostRemoveW, H: btnH}, "Remove") {
-			hosts = slices.Delete(hosts, i, i+1)
-			changed = true
+		switch act {
+		case rowUp:
+			a.setServerHosts(key, moveItem(hosts, i, i-1))
+		case rowDown:
+			a.setServerHosts(key, moveItem(hosts, i, i+1))
+		case rowRemove:
+			a.setServerHosts(key, slices.Delete(slices.Clone(hosts), i, i+1))
 			settings.statusLine = "Removed " + h + "."
-		}
-		y += assetHostRowH
-		if changed {
-			break
-		}
-	}
-
-	var commit bool
-	settings.assetHostInput, commit = c.TextField("assethostadd", sdl.Rect{X: pad + assetHostIndent, Y: y, W: assetHostFieldW, H: fieldH},
-		settings.assetHostInput, "https://mirror.example/base/")
-	if c.Button(sdl.Rect{X: buttonsX, Y: y, W: assetHostAddW, H: btnH}, "Add") || commit {
-		switch added := config.NormalizeAssetHost(settings.assetHostInput); {
-		case added == "":
-			settings.statusLine = "That isn't an http:// or https:// address."
-		case added == snap.ServerWarmInfoFor(key).Origin || slices.Contains(hosts, added):
-			settings.statusLine = added + " is already asked for this server."
-		case len(hosts) >= config.AssetHostCap:
-			settings.statusLine = "Up to " + strconv.Itoa(config.AssetHostCap) + " extra hosts per server. Remove one first."
 		default:
-			hosts = append(hosts, added)
-			changed = true
-			settings.assetHostInput = ""
-			settings.statusLine = "Added " + added + "."
+			y += mountRowH
+			continue
 		}
+		return y
 	}
-	y += assetHostRowH
+	return y
+}
 
-	if changed {
-		a.d.Prefs.SetServerAssetHosts(key, hosts)
-		if key == a.serverKey && a.sess != nil {
-			a.applyAssetHosts()
-		}
+// hostNote is a host row's format-list note: shown while hovered, and always when reading it failed.
+func hostNote(s media.ManifestState, hovered bool) (string, sdl.Color) {
+	if !hovered && s != media.ManifestFailed {
+		return "", ColTextDim
 	}
-	return y + assetHostSectionB
+	return hostListLabel(s)
+}
+
+// addHost adds a mirror for the server key; it returns the status line and whether the list changed.
+func (a *App) addHost(key, input string) (string, bool) {
+	if key == "" {
+		return "Refresh the lobby once before adding a mirror.", false
+	}
+	snap := a.d.Prefs.Load()
+	hosts := snap.ServerAssetHosts(key)
+	switch added := config.NormalizeAssetHost(input); {
+	case added == "":
+		return "That isn't an http:// or https:// address.", false
+	case added == snap.ServerWarmInfoFor(key).Origin || slices.Contains(hosts, added):
+		return added + " is already asked for this server.", false
+	case len(hosts) >= config.AssetHostCap:
+		return "Only " + strconv.Itoa(config.AssetHostCap) + " mirrors fit per server, so remove one first.", false
+	default:
+		a.setServerHosts(key, append(slices.Clone(hosts), added))
+		return "Added " + added + ".", true
+	}
+}
+
+// setServerHosts saves a server's mirrors and applies them at once when it is the connected server.
+func (a *App) setServerHosts(key string, hosts []string) {
+	a.d.Prefs.SetServerAssetHosts(key, hosts)
+	if key == a.serverKey && a.sess != nil {
+		a.applyAssetHosts()
+	}
 }
 
 // hostListLabel says in words what reading a host's extensions.json found, and in which color.

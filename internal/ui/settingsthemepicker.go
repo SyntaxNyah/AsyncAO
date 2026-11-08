@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -13,95 +12,6 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
-
-// drawDownloaderSettings renders the opt-in single-asset downloader section, returning the next y.
-func (a *App) drawDownloaderSettings(y, _ int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	w := a.formW2()
-	on := a.d.Prefs.Load().CharDownloaderOn
-	if next := c.Checkbox(pad, y, "Built-in downloader (OFF by default) — grab one character or background straight from the server", on); next != on {
-		a.d.Prefs.Update(func(
-			sn *config.
-				Settings) {
-
-			sn.
-				CharDownloaderOn =
-
-				next
-
-		})
-	}
-	y += 24
-	c.Label(pad+20, y, "Tired of a multi-GB pack download for one file? Turn this on and a Download button appears on each", ColTextDim)
-	y += 18
-	c.Label(pad+20, y, "character (char-select) and background (Background menu) cell. Characters also pull the sfx/blips their", ColTextDim)
-	y += 18
-	c.Label(pad+20, y, "char.ini references (those live outside the folder). Files save below — point \"Read assets from local", ColTextDim)
-	y += 18
-	c.Label(pad+20, y, "folders\" (above) at this folder to use them offline / in rehearsal.", ColTextDim)
-	y += 24
-
-	if on {
-		// KiB/s, 0 = unlimited; average rate, applied per grab.
-		capKBps := a.d.Prefs.DownloadCapKBps()
-		if next := a.numberRow(y, "Bandwidth cap", capKBps, 256, 0, 1<<20); next != capKBps {
-			a.d.Prefs.Update(func(
-				sn *config.
-					Settings) {
-
-				sn.
-					DownloadKBps =
-
-					next
-
-			})
-
-		}
-		c.Label(pad+270, y+4, "KiB/s — 0 = unlimited (full speed)", ColTextDim)
-		y += 30
-		root := downloadsRoot()
-		c.LabelClipped(pad+20, y+4, w-pad-360-scrollBarW, "Folder: "+root, ColText)
-		if c.Button(sdl.Rect{X: a.formX + a.formW - 340, Y: y, W: 150, H: btnH}, "Open folder") {
-			a.openInFileManager(root)
-		}
-		if c.Button(sdl.Rect{X: a.formX + a.formW - 180, Y: y, W: 180, H: btnH}, "Add to local mounts") {
-			mode := a.assetSourceMode()
-			_, mounts := a.d.Prefs.LocalAssets()
-			if !a.d.Prefs.SetLocalAssets(mode == assetSrcLocal, append(append([]string{}, mounts...), root)) {
-				settings.statusLine = "Up to " + strconv.Itoa(config.LocalMountCap) + " folders. Remove one in Asset source first."
-			} else if mode == assetSrcStream {
-				// A mount that is never read is a dead end, so turn layering on and say so.
-				a.setAssetSourceMode(assetSrcLayered, append(append([]string{}, mounts...), root))
-				settings.statusLine = `Added the downloads folder and switched Asset source to "Use my folders first".`
-			} else {
-				a.rebuildAssetOrigin()
-				settings.statusLine = "Added the downloads folder to local mounts."
-			}
-		}
-		y += 30
-		if a.dl.active || len(a.dl.queue) > 0 {
-			status := a.dl.status
-			pauseLabel := "Pause"
-			if a.dlPaused.Load() {
-				pauseLabel = "Resume"
-				status = "Paused — " + status
-			}
-			c.LabelClipped(pad+20, y+4, w-pad-240-scrollBarW, status, ColAccent)
-			if c.Button(sdl.Rect{X: a.formX + a.formW - 218, Y: y, W: 100, H: btnH}, pauseLabel) {
-				a.dlPaused.Store(!a.dlPaused.Load())
-			}
-			if c.Button(sdl.Rect{X: a.formX + a.formW - 110, Y: y, W: 110, H: btnH}, "Cancel") {
-				a.cancelDownload()
-			}
-			y += 30
-		} else if a.dl.status != "" {
-			c.LabelClipped(pad+20, y+4, w-pad-40-scrollBarW, a.dl.status, ColTextDim)
-			y += 26
-		}
-	}
-	return y + 8
-}
 
 // casingRoles drives the per-role subscription checkboxes, in wire order.
 var casingRoles = []struct {

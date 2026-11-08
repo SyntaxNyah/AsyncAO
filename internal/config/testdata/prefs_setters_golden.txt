@@ -35,8 +35,6 @@ SetAssetOriginHeader|zero|
 SetAssetOriginHeader|valid|AssetOrigin=v
 SetAssetOriginHeader|empty|
 SetAssetOriginHeader|huge|AssetOrigin=x*4096
-SetAssetWarnings|zero|
-SetAssetWarnings|valid|ShowAssetWarnings=true
 SetAudioVolumes|zero|BlipVol=0;MusicVol=0;SFXVol=0
 SetAudioVolumes|valid|BlipVol=1;MusicVol=1;SFXVol=1
 SetAutoClipModcall|zero|AutoClipModcall=false
@@ -100,12 +98,8 @@ SetChangelogSeen|zero|
 SetChangelogSeen|valid|ChangelogSeen=v
 SetChangelogSeen|empty|
 SetChangelogSeen|huge|ChangelogSeen=x*4096
-SetCharBundlePrefetch|zero|
-SetCharBundlePrefetch|valid|CharBundlePrefetch=true
 SetCharChatbox|zero|CharChatbox=false
 SetCharChatbox|valid|
-SetCharDownloader|zero|
-SetCharDownloader|valid|CharDownloaderOn=true
 SetCharKeyBind|zero|
 SetCharKeyBind|valid|ServerWarm=map[v:{  [] [] map[] map[v:v] map[]  [] false <nil> <nil> <nil> <nil> [] [] [] []   false }]
 SetChatboxOpacity|zero|ChatboxOpacity=0
@@ -171,12 +165,6 @@ SetDiskCacheBudgetMiB|zero|
 SetDiskCacheBudgetMiB|valid|DiskCacheBudgetMiBVal=128
 SetDiskCacheBudgetMiB|neg|DiskCacheBudgetMiBVal=128
 SetDiskCacheBudgetMiB|huge|DiskCacheBudgetMiBVal=65536
-SetDiskZstd|zero|
-SetDiskZstd|valid|DiskZstd=true
-SetDownloadCapKBps|zero|
-SetDownloadCapKBps|valid|DownloadKBps=1
-SetDownloadCapKBps|neg|
-SetDownloadCapKBps|huge|DownloadKBps=1048576
 SetDragLayout|zero|DragLayout=false
 SetDragLayout|valid|
 SetDyslexiaFont|zero|
@@ -338,8 +326,6 @@ SetLegacyDevTheme|zero|
 SetLegacyDevTheme|valid|LegacyDevTheme=true
 SetLocalAssets|zero|
 SetLocalAssets|valid|LocalAssetsEnabled=true;LocalAssetsPaths=[v]
-SetLoopPreanim|zero|
-SetLoopPreanim|valid|LoopPreanim=true
 SetMacros|zero|UserMacros=[]
 SetMacros|valid|UserMacros=[]
 SetMacros|nil|UserMacros=[]
@@ -422,8 +408,6 @@ SetPanelFont|zero|
 SetPanelFont|valid|
 SetPerAreaScrollback|zero|
 SetPerAreaScrollback|valid|PerAreaScroll=true
-SetPingChip|zero|
-SetPingChip|valid|PingChip=true
 SetPlainLobby|zero|PlainLobby=false
 SetPlainLobby|valid|
 SetPlayerListAreaSort|zero|
@@ -446,10 +430,6 @@ SetPreanimTimeoutMs|zero|
 SetPreanimTimeoutMs|valid|PreanimTimeoutMsVal=200
 SetPreanimTimeoutMs|neg|PreanimTimeoutMsVal=200
 SetPreanimTimeoutMs|huge|PreanimTimeoutMsVal=10000
-SetPrefetchAggressiveness|zero|PrefetchAggro=1
-SetPrefetchAggressiveness|valid|PrefetchAggro=1
-SetPrefetchAggressiveness|neg|PrefetchAggro=1
-SetPrefetchAggressiveness|huge|PrefetchAggro=4
 SetPreviewHeightPx|zero|PreviewHeightPxVal=96
 SetPreviewHeightPx|valid|PreviewHeightPxVal=96
 SetPreviewHeightPx|neg|PreviewHeightPxVal=96
@@ -658,20 +638,6 @@ SetThemeRectOverride|zero|
 SetThemeRectOverride|valid|ThemeRectOv=map[v:map[v:[0 0 0 0]]]
 SetThemeRectRotation|zero|
 SetThemeRectRotation|valid|ThemeRectRotations=map[v:map[v:1]]
-SetThumbBudgetMiB|zero|
-SetThumbBudgetMiB|valid|ThumbBudgetMiBVal=8
-SetThumbBudgetMiB|neg|ThumbBudgetMiBVal=8
-SetThumbBudgetMiB|huge|ThumbBudgetMiBVal=512
-SetThumbCache|zero|
-SetThumbCache|valid|ThumbCache=true
-SetThumbHeightPx|zero|
-SetThumbHeightPx|valid|ThumbHeightPxVal=32
-SetThumbHeightPx|neg|ThumbHeightPxVal=32
-SetThumbHeightPx|huge|ThumbHeightPxVal=160
-SetThumbQuality|zero|
-SetThumbQuality|valid|ThumbQualityVal=5
-SetThumbQuality|neg|ThumbQualityVal=5
-SetThumbQuality|huge|ThumbQualityVal=60
 SetTimerRepeat|zero|
 SetTimerRepeat|valid|TimerRepeat=true
 SetTimerSeconds|zero|TimerSeconds=300

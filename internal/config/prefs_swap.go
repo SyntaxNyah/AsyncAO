@@ -213,6 +213,11 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 		s.DetailedLogDefaultMigrated = true
 		changed = true
 	}
+	// Older files have no switch: a saved path meant the custom image was on.
+	if !presence["errorSpriteCustom"] && s.ErrorSpriteFile != "" {
+		s.ErrorSpriteCustom = true
+		changed = true
+	}
 
 	// A garbage or newer sprite-load mode falls back to the default.
 	if s.SpriteLoadModeVal < SpriteLoadBlank || s.SpriteLoadModeVal >= SpriteLoadModeCount {

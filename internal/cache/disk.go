@@ -13,7 +13,6 @@ import (
 	"sync/atomic"
 
 	"github.com/cespare/xxhash/v2"
-	"github.com/klauspost/compress/zstd"
 )
 
 const (
@@ -73,24 +72,14 @@ type DiskCache struct {
 	writeErrors atomic.Int64
 	dropped     atomic.Int64
 
-	// compress turns on zstd for new blobs; reads always sniff the magic, so mixed caches work without migration.
-	compress atomic.Bool
-
 	// budget is the auto-prune byte cap; 0 = unlimited, the default, so no cache is silently deleted.
 	budget atomic.Int64
 
 	onError atomic.Pointer[func(error)]
 }
 
-// Level-1 zstd on the writer goroutine, kept only if it shrank: WebP/AVIF would pay decompression for nothing.
-// Nil-writer encoder and decoder are safe for concurrent EncodeAll/DecodeAll.
-var (
-	zstdEnc, _ = zstd.NewWriter(nil,
-		zstd.WithEncoderLevel(zstd.SpeedFastest), zstd.WithEncoderConcurrency(1))
-	zstdDec, _ = zstd.NewReader(nil, zstd.WithDecoderConcurrency(1))
-)
-
-// zstdMagic is the standard zstd frame header (little-endian 0xFD2FB528), which makes blobs self-describing.
+// zstdMagic is the zstd frame header (little-endian 0xFD2FB528). Builds before v2.1.0 could compress blobs; a blob
+// still in that form is read as a miss and deleted, so the asset is fetched again.
 var zstdMagic = [4]byte{0x28, 0xB5, 0x2F, 0xFD}
 
 func isZstdBlob(data []byte) bool {
@@ -98,9 +87,6 @@ func isZstdBlob(data []byte) bool {
 		data[0] == zstdMagic[0] && data[1] == zstdMagic[1] &&
 		data[2] == zstdMagic[2] && data[3] == zstdMagic[3]
 }
-
-// SetCompression toggles zstd for new writes.
-func (d *DiskCache) SetCompression(on bool) { d.compress.Store(on) }
 
 // SetBudget sets the byte cap (0 = unlimited) and wakes the writer so it applies even in a read-only session.
 func (d *DiskCache) SetBudget(bytes int64) {
@@ -160,25 +146,16 @@ func (d *DiskCache) pathFor(url string) string {
 	return filepath.Join(d.root, key[:shardPrefixLen], key)
 }
 
-// Get reads the blob for url; a zero-length blob is a torn write from a crash, so it is deleted and treated as a miss.
+// Get reads the blob for url. A zero-length blob, a torn write from a crash, and a compressed blob from an older
+// build are deleted and treated as a miss.
 func (d *DiskCache) Get(url string) ([]byte, bool) {
 	data, err := os.ReadFile(d.pathFor(url))
-	if err != nil || len(data) == 0 {
+	if err != nil || len(data) == 0 || isZstdBlob(data) {
 		if err == nil {
 			_ = os.Remove(d.pathFor(url))
 		}
 		d.misses.Add(1)
 		return nil, false
-	}
-	if isZstdBlob(data) {
-		raw, derr := zstdDec.DecodeAll(data, nil)
-		if derr != nil {
-			// Corrupt frame: treat as a miss so the pipeline refetches over this path.
-			_ = os.Remove(d.pathFor(url))
-			d.misses.Add(1)
-			return nil, false
-		}
-		data = raw
 	}
 	d.hits.Add(1)
 	return data, true
@@ -273,11 +250,6 @@ func (d *DiskCache) write(w diskWrite) bool {
 			d.reportError(fmt.Errorf("cache: deleting blob %s: %w", w.path, err))
 		}
 		return false
-	}
-	if d.compress.Load() {
-		if cz := zstdEnc.EncodeAll(w.data, nil); len(cz) < len(w.data) {
-			w.data = cz
-		}
 	}
 	dir := filepath.Dir(w.path)
 	if err := os.MkdirAll(dir, diskDirPerm); err != nil {

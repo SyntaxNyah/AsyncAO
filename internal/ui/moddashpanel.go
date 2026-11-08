@@ -90,7 +90,7 @@ func (a *App) banBoxRect(w, h int32) sdl.Rect {
 	return a.banWin.rect(banBoxDefW, defH, banBoxMinW, minH, w, h)
 }
 
-// modDashChipOn is the "active" status-chip colour (green; matches the ping chip's "good").
+// modDashChipOn is the "active" status-chip colour (green).
 var modDashChipOn = sdl.Color{R: 70, G: 200, B: 90, A: 255}
 
 // drawReasonTemplateChips draws the reason chips; manage adds Save and Edit controls. Returns the y past the block.

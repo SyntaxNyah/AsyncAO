@@ -205,8 +205,7 @@ AGPL-v3-compatible licence**, with no proprietary or licence-incompatible pieces
   MIT ([aolib](https://github.com/AO-Underground/aolib/tree/main/go),
   [xxhash](https://github.com/cespare/xxhash)), Apache-2.0
   ([jsonschema](https://github.com/santhosh-tekuri/jsonschema)), BSD-3
-  ([kettek/apng](https://github.com/kettek/apng),
-  [klauspost/compress](https://github.com/klauspost/compress), and the
+  ([kettek/apng](https://github.com/kettek/apng) and the
   `golang.org/x/*` libraries), and MPL-2.0
   ([hashicorp/golang-lru](https://github.com/hashicorp/golang-lru)).
 - **Bundled engine** — zlib ([SDL3](https://www.libsdl.org) / SDL3_ttf / SDL3_mixer);

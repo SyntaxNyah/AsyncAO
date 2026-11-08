@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"context"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -217,13 +216,6 @@ type App struct {
 	descLines  []string
 	descLinks  []string // clickable URLs found in the description
 	helpScroll int32    // ScreenServerHelp scroll position
-	// Connection-quality chip: one goroutine pings the active conn, and exists only while the chip is on.
-	// pingRTT is the only field it touches; the rest are render-thread-only.
-	pingRTT     atomic.Int64       // round-trip nanoseconds (0 = unknown); goroutine→render
-	pingConn    *protocol.Conn     // the conn the live loop targets (nil = no loop)
-	pingCancel  context.CancelFunc // stops the live loop
-	pingLabel   string             // cached tooltip text, rebuilt only when the ms bucket changes
-	pingLabelMs int                // the ms the cached label was built for (-1 = none)
 
 	// --- the active server session (every per-server field) ---
 	// sessionState is embedded so the whole session parks and restores as one struct move on tab switch.
@@ -327,17 +319,9 @@ type App struct {
 	oocWrapMask   bool // streamer-mode masking baked into the cache
 	oocWrapGen    int  // font chain generation baked into the wrap
 
-	// warnLine is the last transient toast; missing-asset reports use the menu-bar chip instead.
+	// warnLine is the last transient toast; missing assets go to the debug log instead.
 	warnLine string
 	warnAt   time.Time
-
-	// Missing-assets chip: the ring suppresses bursts; label and tip are memoized so its draw allocates nothing.
-	assetMissSeen   assetMissRing
-	assetMissCount  int
-	assetMissAt     time.Time
-	assetMissLabel  string
-	assetMissLabelN int // count the memoized label was built for
-	assetMissTip    string
 
 	// dndOn silences personal pings (callword, friend) but not duty signals. Session-only, so it can't silently
 	// kill callwords days later.
@@ -627,6 +611,9 @@ type App struct {
 	themeCatFocusStat bool
 	// lastLocalRecheck rate-limits the focus-gain re-check of the player's folders; render and event thread only.
 	lastLocalRecheck time.Time
+	// folderChangeRes carries which folder files changed on disk; folderChangeRunning keeps it to one check.
+	folderChangeRes     chan []string
+	folderChangeRunning bool
 	// themeReport is the last apply's import report: every degrade, missing family and unbound key.
 	// Bounded by themeReportCap and replaced at each landing, never appended to.
 	themeReport []string
@@ -1135,11 +1122,6 @@ type App struct {
 	jukeFavs        []favRef // memoized list of starred songs across all playlists
 	jukeFavRev      int64    // library revision the favorites list was built for
 	jukeFavLbl      string   // cached "★ Favorites (N)" toggle label (rebuilt only on change)
-
-	// dlPaused is the download worker's pause flag, outside sessionState because that is copied per tab and an atomic
-	// can't be. It is the only state shared with the worker; everything else is snapshotted at launch, so they never
-	// race.
-	dlPaused atomic.Bool
 }
 
 // The room is deliberately not parked with sessionState: background tabs don't animate, and activation rebuilds it.
@@ -1167,6 +1149,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		fallbackFontRes:     make(chan [][]byte, 1),
 		cjkFontRes:          make(chan [][]byte, 1),
 		errorSpriteRes:      make(chan errorSpriteLoad, 1),
+		folderChangeRes:     make(chan []string, 1),
 		notebookRes:         make(chan notebookLoad, 1),
 		jukeRes:             make(chan *config.Jukebox, 1),
 		jukeIORes:           make(chan string, 4),
@@ -1195,13 +1178,9 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	if d.Store != nil {
 		d.Store.SetLiveScenery(a.IsLiveStageBase)
 	}
-	// Pin the embedded placeholder first, so a failed custom load leaves a valid page in place.
-	a.uploadEmbeddedMissingno()
+	a.reloadErrorSprite()
 	a.uploadEmbeddedSpeedlines() // #126 bundled zoom speedline fallback
-	if p := d.Prefs.Load().ErrorSpriteFile; p != "" {
-		a.applyErrorSprite(p)
-	}
-	a.seedHiddenFromPrefs() // hidden-chrome set + the A6 no-strand normalization
+	a.seedHiddenFromPrefs()      // hidden-chrome set + the A6 no-strand normalization
 	// The jukebox can be large, so it loads off-thread and lands via pollJukebox.
 	go func() {
 		if j, err := config.LoadJukebox(); err == nil {

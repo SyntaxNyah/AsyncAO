@@ -140,12 +140,11 @@ func TestHeldSpeakerBridge(t *testing.T) {
 		t.Fatalf("the bridge holds exactly the stolen first frame, got %d frames", len(held.Frames))
 	}
 
-	// Drive the REAL drawSprite miss path. Thumbnails OFF and no prior sprite to
-	// hold (lastGood == "") leave the held probe as the only non-blank branch, so
-	// v.dstRect landing on the held page's geometry proves drawSprite consulted
-	// resolveHeld ahead of the thumbnail/hold-previous paths.
+	// Drive the REAL drawSprite miss path. No prior sprite to hold (lastGood == "")
+	// leaves the held probe as the only non-blank branch, so v.dstRect landing on
+	// the held page's geometry proves drawSprite consulted resolveHeld ahead of the
+	// hold-previous path.
 	v := &Viewport{store: store}
-	v.thumbSprites = false                // thumbnail path stays off (default)
 	v.spriteLoadMode = SpriteLoadHoldPrev // hold-previous armed but has nothing to hold
 	anim := &animState{}
 	anim.reset(speaker) // precomputes heldKey = held://<speaker>, like the real path

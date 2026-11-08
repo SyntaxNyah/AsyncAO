@@ -562,46 +562,6 @@ func TestPurgeCorruptEvictsTiers(t *testing.T) {
 	}
 }
 
-// TestPrefetchChainSpeculativeSuppressesWarning pins #42's suppression: a
-// speculative chain that misses in every spelling+format must NOT surface the
-// §4 missing-asset warning (it feeds the debug log, the on-screen banner, and
-// NotifyAssetMissing — false alarms for a sprite no one demanded). The plain
-// chain still warns, so this proves suppression is scoped to the variant.
-func TestPrefetchChainSpeculativeSuppressesWarning(t *testing.T) {
-	cs := newCountingServer(t, map[string][]byte{}) // serves nothing → every probe 404s
-	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
-	base := cs.srv.URL + "/characters/ghost/(a)normal"
-
-	rig.manager.PrefetchChainSpeculative(base, nil, AssetTypeCharSprite, network.PriorityLow)
-	select {
-	case w := <-rig.manager.Warnings():
-		t.Fatalf("speculative miss raised a warning: %+v", w)
-	case <-time.After(300 * time.Millisecond):
-		// No warning — correct.
-	}
-	// The miss is still counted (metrics), just not surfaced.
-	if rig.manager.Stats().Missing == 0 {
-		t.Error("speculative miss not counted in Missing metric")
-	}
-
-	// A NON-speculative chain for the same base still warns (proves the
-	// suppression is variant-scoped, not global). The prior speculative pass
-	// 404-cached the probes, so re-issue until the warning lands (the demand
-	// pipeline retries likewise).
-	deadline := time.Now().Add(managerWait)
-	for {
-		rig.manager.PrefetchChain(base, nil, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
-		select {
-		case <-rig.manager.Warnings():
-			return
-		case <-time.After(20 * time.Millisecond):
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("non-speculative chain never warned")
-		}
-	}
-}
-
 // waitUntil polls done until it holds, failing the test after managerWait.
 func waitUntil(t *testing.T, what string, done func() bool) {
 	t.Helper()

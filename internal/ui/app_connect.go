@@ -347,7 +347,6 @@ func (a *App) Disconnect() {
 	case <-a.bgPick.res:
 	default:
 	}
-	a.cancelDownload()           // a download targets this server's assets; stop it
 	a.d.Manager.CancelRoomWork() // nil-safe; cancels queued work for the old server
 	a.updatePresence()           // sess is nil now → clears the Discord activity
 	// A bound theme leaves with its server; the global pick returns.

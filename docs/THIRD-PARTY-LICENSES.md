@@ -38,7 +38,6 @@ Nothing AsyncAO ships is under a proprietary or AGPL-incompatible licence.
 | [cespare/xxhash/v2](https://github.com/cespare/xxhash) | fast hashing for cache keys | MIT |
 | [hashicorp/golang-lru/v2](https://github.com/hashicorp/golang-lru) | LRU caches | MPL-2.0 |
 | [kettek/apng](https://github.com/kettek/apng) | animated-PNG decoding | BSD-3-Clause |
-| [klauspost/compress](https://github.com/klauspost/compress) | compression (indirect) | BSD-3-Clause |
 
 ## Bundled native libraries (Windows DLLs)
 

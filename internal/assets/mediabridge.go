@@ -133,12 +133,12 @@ func flagsOf(quiet, sticky bool) media.Flags {
 	return f
 }
 
-func (b *mediaBridge) askChain(base string, alts []string, t AssetType, p network.Priority, quiet, sticky bool) {
+func (b *mediaBridge) askChain(base string, alts []string, t AssetType, p network.Priority, sticky bool) {
 	if b.m.t1Contains != nil && b.m.t1Contains(base) {
 		b.m.t1Hits.Add(1)
 		return
 	}
-	b.ask(chainKey(base, t), flagsOf(quiet, sticky), p, alts...)
+	b.ask(chainKey(base, t), flagsOf(false, sticky), p, alts...)
 }
 
 func (b *mediaBridge) askExact(url string, t AssetType, p network.Priority) {

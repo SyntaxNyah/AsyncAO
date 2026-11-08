@@ -16,7 +16,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -151,7 +150,7 @@ func TestSidecarRefusalChipDoesNotOverlapItsNeighbours(t *testing.T) {
 	const w = int32(1280)
 	if got := a.menuBarRightContentLeft(w); got != w {
 		t.Fatalf("menuBarRightContentLeft = %d with no theme error, want the window width %d — "+
-			"the other two chips' rects must be unchanged for every install without one", got, w)
+			"the Iniswap chip's rect must be unchanged for every install without one", got, w)
 	}
 
 	a.themeSidecarErr = "theme \"x\": refused"
@@ -166,30 +165,10 @@ func TestSidecarRefusalChipDoesNotOverlapItsNeighbours(t *testing.T) {
 	if got := a.menuBarRightContentLeft(w); got != errRect.X {
 		t.Errorf("menuBarRightContentLeft = %d, want the refusal chip's left edge %d", got, errRect.X)
 	}
-	// The missing-asset chip now sits INSIDE that, not on top of it.
-	a.assetMissCount = 3
-	a.assetMissAt = a.now()
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			ShowAssetWarnings =
-
-			true
-
-	})
-
-	if missRect, missOK := a.assetMissChipRect(w); missOK {
-		if missRect.X+missRect.W > errRect.X {
-			t.Errorf("the missing-asset chip %+v overlaps the refusal chip %+v — two right-anchored "+
-				"chips measured from the same edge", missRect, errRect)
-		}
-	}
-	// And the left-anchored Iniswap chip keeps clear of both, or drops.
+	// The left-anchored Iniswap chip keeps clear of it, or drops.
 	if iniRect, iniOK := a.iniswapChipRect(w); iniOK {
 		if iniRect.X+iniRect.W > errRect.X {
-			t.Errorf("the Iniswap chip %+v overlaps the refusal chip %+v — the reserve must come off "+
+			t.Errorf("the Iniswap chip %+v overlaps the refusal chip %+v — its limit must come off "+
 				"menuBarRightContentLeft, not off the window width", iniRect, errRect)
 		}
 	}

@@ -388,9 +388,9 @@ gamepad track below._
   caps) and audio decoupled from the frame rate. A finer per-tile damage/dirty-rect
   pass (only re-composite the changed region of a *rendered* frame) remains the SDL3
   track below.
-- ~~**Low-quality persistent sprite cache**~~ — **shipped in v1.40.0** (Settings →
-  Power user → "Sprite thumbnail cache", default OFF; see FEATURES), including the
-  byte-budget auto-prune (oldest-first past the cap).
+- ~~**Low-quality persistent sprite cache**~~ — shipped in v1.40.0, removed in v2.1.0:
+  the default strict sequencing waits for the real sprite, and the disk cache already
+  holds it, so the stand-in almost never showed.
 - ~~**Cold-load per-stage profiling**~~ — **shipped in v1.40.0**: the debug overlay
   carries a `cold-load · fetch · decode · upload` EWMA line (F8 / Settings → Power
   user → Diagnostics). Original note kept for context: add per-stage timing

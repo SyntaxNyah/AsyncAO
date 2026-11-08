@@ -280,7 +280,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	}
 	a.drainWarnings()
 	a.drainMusicFailures() // transient music-fetch failures → jukebox warn line (§1.1)
-	a.drainThumbs()        // loaded low-q stand-ins → T1 (render thread; bounded per frame)
 	a.pollThemeApply()
 	a.pollThemesFolder()
 	a.pollThemeBundle() // lands a finished .aotheme inspect/extract (themeimport.go)
@@ -293,7 +292,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollFontChain()
 	a.pollLogBrowser()
 	a.pollEmojiFont()
-	a.updatePingLoop()             // #128: keep the ping loop targeting the active conn (no-op/no goroutine when the chip is off)
 	if a.ctx.TakeWantsFallback() { // a non-ASCII rune was drawn → kick the one broad-font read
 		a.ensureFallbackFontLoad()
 	}
@@ -304,7 +302,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollCJKFont()
 	a.drainMissingRunes() // a rune NOTHING covered → ask the census for an installed face
 	a.pollCensusFont()
-	a.pollErrorSprite()    // land an off-thread custom missingno image → UploadPinned over MissingKey
+	a.pollErrorSprite() // land an off-thread custom missingno image → UploadPinned over MissingKey
+	a.pollFolderChanges()
 	a.pollOverlayRosters() // land resolved effects rosters + theme-tier overlay art (effectspicker.go)
 	a.pollServerEvidencePicker()
 	a.pollNotebook()
@@ -319,12 +318,11 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.claimTypingForIC()
 	a.pollAutoReconnect() // M2: due auto-retry fires from the lobby; a single time-compare otherwise
 	a.pollTimer()         // #97 local alarm: one compare while running, zero cost when idle
-	a.pollDownload()
-	a.pollMakerExport() // M16: deliver the self-contained archive export result
-	a.tickContentJob()  // content report / package: drain probe results + poll the package goroutine (no-op when idle)
-	a.pollGifExport()   // M16: deliver the off-thread GIF encode result
-	a.pollCharMeta()    // land remote char.ini fetches (per-character blips + chatbox skins)
-	a.pollBgList()      // drain bg discovery even when the picker is closed (slideshow)
+	a.pollMakerExport()   // M16: deliver the self-contained archive export result
+	a.tickContentJob()    // content report / package: drain probe results + poll the package goroutine (no-op when idle)
+	a.pollGifExport()     // M16: deliver the off-thread GIF encode result
+	a.pollCharMeta()      // land remote char.ini fetches (per-character blips + chatbox skins)
+	a.pollBgList()        // drain bg discovery even when the picker is closed (slideshow)
 	a.processOOCQueue()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	switch {
@@ -353,10 +351,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.d.Viewport.SetClipSprites(a.d.Prefs.Load().ClipSpritesToStage)                                      // viewport sprite mask (default ON): offsets can't spill past the stage
 		a.d.Viewport.SetHoldMaxAge(time.Duration(a.d.Prefs.Load().HoldPrevMaxAgeMsVal) * time.Millisecond)    // hold-previous stand-in cap (0 = forever)
 		a.d.Viewport.SetHoldDebugTint(a.d.Prefs.Load().HoldDebugTint)                                         // amber-tint stand-ins (diagnostics)
-		a.d.Viewport.SetThumbSprites(a.d.Prefs.Load().ThumbCache)                                             // opt-in low-q thumbnail stand-ins on the cold miss path
 		a.d.Viewport.SetMissingno(a.d.Prefs.Load().ShowMissingPlaceholder)                                    // AO2 placeholder for conclusively-missing sprites (default ON)
 		a.d.Viewport.SetCrossfade(a.crossfadeDur())                                                           // speaker-swap blend (0 = off; zeroed under Reduce motion)
-		a.d.Viewport.SetPreanimLoop(a.d.Prefs.Load().LoopPreanim)                                             // opt-in: keep preanims wrapping (default OFF; AO2 plays them once)
 		a.d.Viewport.SetPostFX(a.postFX())                                                                    // #10 retro overlays
 		a.d.Viewport.SetWeather(render.Weather(a.d.Prefs.WeatherType()), a.d.Prefs.Load().WeatherIntensity()) // #124 ambient weather
 		a.d.Viewport.Update(&a.room.Scene, dt)
@@ -371,10 +367,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.splitVP.SetClipSprites(a.d.Prefs.Load().ClipSpritesToStage)
 			a.splitVP.SetHoldMaxAge(time.Duration(a.d.Prefs.Load().HoldPrevMaxAgeMsVal) * time.Millisecond)
 			a.splitVP.SetHoldDebugTint(a.d.Prefs.Load().HoldDebugTint)
-			a.splitVP.SetThumbSprites(a.d.Prefs.Load().ThumbCache)
 			a.splitVP.SetMissingno(a.d.Prefs.Load().ShowMissingPlaceholder)
 			a.splitVP.SetCrossfade(a.crossfadeDur())
-			a.splitVP.SetPreanimLoop(a.d.Prefs.Load().LoopPreanim)
 			a.splitVP.Update(&a.splitRoom.Scene, dt)
 		}
 		// Changes volumes only when the duck state flips, so it costs nothing between messages.
@@ -412,9 +406,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.updateModalFence(a.ctx) // What's New modal: modal fence on ANY screen (raw pointIn hit tests inside)
 
 	// Claimed before the bar publishes its strip block, which covers these rects and blanks hovering() for them.
-	// Outermost first: the missing-asset chip anchors to the theme-error chip's left edge.
 	a.handleThemeErrChipInput(winW)
-	a.handleAssetMissChipInput(winW)
 
 	// Must stay above the screen dispatch: drawCourtroom's pointer blocks and the compact toolbox's suspend are scoped
 	// by overlayFenceMark, so one published later cannot cover that pass. The paint half runs after the screens.
@@ -498,8 +490,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	if a.tabStripPaintsOverEverything() {
 		a.drawTabBar(winW, winH)
 	}
-	a.drawDownloadIndicator(winW)
-	a.drawPingChip(8, winH-16) // #128 connection-quality chip (bottom-left; off by default)
 	// The paint half of a.menuBarFrame: after the screens because the kit is single-pass, below diagnostics and modals.
 	a.drawMenuBar(winW, winH)
 	// Allocation is acceptable: opt-in diagnostics paths.

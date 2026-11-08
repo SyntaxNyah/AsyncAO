@@ -74,6 +74,20 @@ func (m *Manager) FolderStatus() (mounts []string, folders int, errs []error) {
 	return f.Mounts(), f.Size().Entries, f.Errors()
 }
 
+// ChangedFolderFiles reports the files read from the player's folders whose copy on disk changed or went away since,
+// releasing any set aside after a failed decode so the new copy is tried. It stats every file read, so call it off
+// the render thread.
+func (m *Manager) ChangedFolderFiles() []string {
+	f := m.bridge.folders
+	changed := f.Changed()
+	urls := make([]string, 0, len(changed))
+	for _, file := range changed {
+		f.bad.forget(string(file))
+		urls = append(urls, string(file))
+	}
+	return urls
+}
+
 // PackCovers reports whether the player's folders hold any format of base; it may read the disk, so workers only.
 func (m *Manager) PackCovers(base string) bool { return m.bridge.folders.FindStem(base) }
 
@@ -141,4 +155,12 @@ func (q *quarantine) reset() {
 	q.ring = [folderBadCap]string{}
 	q.seq = 0
 	q.n.Store(0)
+}
+
+// forget takes one file out, so its next read is tried again; its ring slot empties when overwritten.
+func (q *quarantine) forget(url string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	delete(q.set, url)
+	q.n.Store(int64(len(q.set)))
 }

@@ -147,9 +147,9 @@ func TestPackCharMetaComesFromTheMount(t *testing.T) {
 	}
 }
 
-// TestCheckFoldersNowForgetsEveryParsedINI: a parsed ini is UI state no texture cache knows about, so without this
+// TestReloadFromFoldersForgetsEveryParsedINI: a parsed ini is UI state no texture cache knows about, so without this
 // an edited char.ini keeps its old answer for the rest of the session.
-func TestCheckFoldersNowForgetsEveryParsedINI(t *testing.T) {
+func TestReloadFromFoldersForgetsEveryParsedINI(t *testing.T) {
 	a := packApp(t, map[string]string{"characters/witch/char.ini": "[Options]\nshowname = X\n"})
 	a.charMetaCache = map[string]charMeta{a.charINIURL("witch"): {showname: "STALE", done: true}}
 	a.previewChar = "witch"
@@ -158,7 +158,7 @@ func TestCheckFoldersNowForgetsEveryParsedINI(t *testing.T) {
 	a.previewEmoteIdx = 3
 	a.iniWarmed = "witch"
 
-	a.CheckFoldersNow()
+	a.reloadFromFolders()
 
 	if len(a.charMetaCache) != 0 {
 		t.Errorf("charMetaCache survived a source change (%v) — every speaker keeps their pre-edit ini", a.charMetaCache)
@@ -169,5 +169,23 @@ func TestCheckFoldersNowForgetsEveryParsedINI(t *testing.T) {
 	}
 	if a.iniWarmed != "" {
 		t.Error("the hover-warm latch survived — the next hover skips the refetch")
+	}
+}
+
+// TestAnEditedCharINIIsReadAgain: an edited char.ini found on focus gain drops the parsed copies; an edited sprite
+// leaves them alone.
+func TestAnEditedCharINIIsReadAgain(t *testing.T) {
+	a := packApp(t, map[string]string{"characters/witch/char.ini": "[Options]\nshowname = X\n"})
+	parsed := map[string]charMeta{a.charINIURL("witch"): {showname: "STALE", done: true}}
+
+	a.charMetaCache = parsed
+	a.reloadChangedFiles([]string{a.urls.CharFolder("witch") + "(a)normal.png"})
+	if len(a.charMetaCache) == 0 {
+		t.Error("an edited sprite dropped the parsed char.ini copies")
+	}
+
+	a.reloadChangedFiles([]string{a.charINIURL("witch")})
+	if len(a.charMetaCache) != 0 {
+		t.Errorf("an edited char.ini kept its parsed copy: %v", a.charMetaCache)
 	}
 }

@@ -669,11 +669,7 @@ func TestSmallCellsSuppressCornerChromeOnBothTabs(t *testing.T) {
 	}{
 		{"Characters ★", func(cell sdl.Rect, on bool) []byte {
 			a.wardrobeMembers = map[string]bool{"phoenix": on}
-			return shot(cell, func() { a.drawCharCell(&a.sess.Chars[0], cell, 0, false, plan) })
-		}},
-		{"Characters download badge", func(cell sdl.Rect, on bool) []byte {
-			a.wardrobeMembers = map[string]bool{}
-			return shot(cell, func() { a.drawCharCell(&a.sess.Chars[0], cell, 0, on, plan) })
+			return shot(cell, func() { a.drawCharCell(&a.sess.Chars[0], cell, 0, plan) })
 		}},
 		{"Wardrobe ★", func(cell sdl.Rect, on bool) []byte {
 			a.iniWardrobe = []bool{on}

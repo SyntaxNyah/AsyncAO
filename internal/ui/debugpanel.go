@@ -131,15 +131,6 @@ func (a *App) drawDebugSession(r sdl.Rect) {
 	line(a.debugHealthLine(), ColText) // phase · server · wire · last pkt · log fill
 	line(a.debugDiagLine(), ColText)   // tabs · area · queue · ic · ooc · goroutines
 
-	rtt := a.pingRTT.Load()
-	switch {
-	case rtt > 0:
-		line(fmt.Sprintf("Ping (WS round-trip): %d ms", rtt/int64(time.Millisecond)), ColText)
-	case a.d.Prefs.Load().PingChip:
-		line("Ping: measuring…", ColTextDim)
-	default:
-		line("Ping: off (enable the connection chip in Settings to measure it)", ColTextDim)
-	}
 	if a.conn != nil {
 		st := a.conn.Stats()
 		line(fmt.Sprintf("Conn packets: %d sent · %d received", st.Sent, st.Received), ColTextDim)

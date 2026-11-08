@@ -287,7 +287,6 @@ func (a *App) drawBgPanel(w, h int32) {
 	a.bgPick.scroll = c.VScrollbar("bgscroll", track, a.bgPick.scroll, contentH, visibleH)
 
 	// Clip the grid so a partially scrolled row stays inside the panel.
-	dlOn := a.d.Prefs.Load().CharDownloaderOn // read once per frame, not per cell
 	// Texture budget for this frame's visible thumbnails; once spent, cells show their name. See bgThumbBudgetBytes.
 	thumbBudget := bgThumbBudgetBytes
 	clipPrev, clipHad := c.pushClip(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH})
@@ -302,7 +301,7 @@ func (a *App) drawBgPanel(w, h int32) {
 		x := panel.X + pad + col*(bgCellW+bgCellGap)
 		yy := gridTop + row*cellStride - a.bgPick.scroll
 		if yy > gridTop-bgCellH && yy < panel.Y+panel.H {
-			a.drawBgCell(i, sdl.Rect{X: x, Y: yy, W: bgCellW, H: bgCellH}, dlOn, &thumbBudget)
+			a.drawBgCell(i, sdl.Rect{X: x, Y: yy, W: bgCellW, H: bgCellH}, &thumbBudget)
 		}
 		col++
 		if col >= cols {
@@ -318,7 +317,7 @@ func (a *App) drawBgPanel(w, h int32) {
 	}
 }
 
-func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool, budget *int64) {
+func (a *App) drawBgCell(idx int, cell sdl.Rect, budget *int64) {
 	c := a.ctx
 	name := a.bgPick.list[idx]
 	c.Fill(cell, ColBackground)
@@ -373,23 +372,6 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool, budget *int6
 		return // the star claimed the click; don't also select this background
 	}
 
-	// Mark the cell while this background is downloading or queued.
-	if a.dl.active && a.dl.target == name {
-		c.Fill(cell, sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 70})
-		c.Label(cell.X+4, cell.Y+4, downloadGlyph+"…", ColText)
-	} else if downloaderOn && a.dlQueuedTarget(name) {
-		c.Label(cell.X+4, cell.Y+4, downloadGlyph+"·", ColTextDim) // waiting in queue
-	}
-	// Download badge (opt-in downloader only): grabs the whole folder; right-clicking the cell does the same.
-	if downloaderOn && a.drawDownloadBadge(cell, "Download / queue this background (or right-click the cell)") {
-		a.startBgDownload(name)
-		return
-	}
-	if downloaderOn && c.rightClicked && c.hovering(cell) {
-		a.startBgDownload(name)
-		return
-	}
-
 	// Hover shows the large preview at high priority; click selects the /bg target.
 	if c.HoverPreview("bg:"+name, cell) {
 		a.previewBase = base
@@ -414,7 +396,7 @@ type autoindexEntry struct {
 var autoindexHref = regexp.MustCompile(`(?i)href="([^"?#]+)"`)
 
 // cleanAutoindexEntry normalizes one raw href into an entry and reports whether it is usable, one level deep and
-// non-escaping. It is the security boundary for the downloader: ../, ./, /x, x://, a/b and any raw or percent-encoded
+// non-escaping. It is the security boundary for the listing: ../, ./, /x, x://, a/b and any raw or percent-encoded
 // ".." are rejected.
 func cleanAutoindexEntry(raw string) (autoindexEntry, bool) {
 	if raw == "" || strings.HasPrefix(raw, "/") || strings.Contains(raw, "://") {

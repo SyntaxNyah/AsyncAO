@@ -197,23 +197,9 @@ func TestEnsureLocalCharFoldersIsAllocationFreeWhenUnchanged(t *testing.T) {
 	}
 }
 
-// TestIniswapChipDropsRatherThanOverlapping pins the width-drop contract with plain
-// arithmetic — no renderer needed. The chip's reserve has to be at least as wide as
-// the right-aligned missing-asset chip it must never sit under, or the two would
-// collide on a narrow window instead of one of them standing down.
-func TestIniswapChipDropsRatherThanOverlapping(t *testing.T) {
-	// A realistic longest label for the sibling chip, at a generous 8 px/rune (the
-	// 14 px chrome face averages nearer 7), plus its plate padding, its margin and
-	// its own minimum gap. The reserve must cover it.
-	const worstCaseLabel = "! 12 assets missing"
-	const glyphPx = int32(8)
-	need := int32(len(worstCaseLabel))*glyphPx + 2*assetMissChipPadX + assetMissChipMarginX + assetMissChipMinGapX
-	if iniswapChipRightReservePx < need {
-		t.Errorf("iniswapChipRightReservePx = %d, want at least %d so the Iniswap chip never lands under the missing-asset chip",
-			iniswapChipRightReservePx, need)
-	}
-	// And the plate must fit inside the band, hairline included, or it would paint
-	// over the separator the band draws to divide itself from the screen below.
+// TestIniswapChipPlateFitsTheBand: the plate must fit inside the band, hairline included, or it would paint over the
+// separator the band draws to divide itself from the screen below.
+func TestIniswapChipPlateFitsTheBand(t *testing.T) {
 	if h := menuBarH - menuBarHairlineH - 2*iniswapChipInsetY; h <= 0 || h > menuBarH-menuBarHairlineH {
 		t.Errorf("the chip's plate height resolves to %d in a %d px band", h, menuBarH)
 	}

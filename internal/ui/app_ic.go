@@ -586,29 +586,8 @@ func (a *App) pushDebugAt(line string, now time.Time) {
 	}
 }
 
-// drainThumbs uploads loaded sprite thumbnails into T1 under thumb:// keys, bounded per frame.
-func (a *App) drainThumbs() {
-	th := a.d.Manager.Thumbs()
-	if th == nil {
-		return
-	}
-	const perFrame = 2 // thumbs are tiny; two uploads/frame clears any real burst
-	for i := 0; i < perFrame; i++ {
-		select {
-		case r := <-th.Results():
-			if r.Asset != nil {
-				_ = a.d.Store.Upload(render.ThumbKeyPrefix+r.Base, r.Asset)
-			}
-		default:
-			return
-		}
-	}
-}
-
-// drainWarnings empties the manager's bounded missing-asset lane into the debug log and the menu-bar chip.
+// drainWarnings empties the manager's bounded missing-asset lane into the debug log.
 func (a *App) drainWarnings() {
-	// Always drained and logged; only the on-screen chip is opt-in.
-	show := a.d.Prefs.Load().ShowAssetWarnings
 	for {
 		select {
 		case w := <-a.d.Manager.Warnings():
@@ -628,8 +607,7 @@ func (a *App) drainWarnings() {
 					a.makerPreviewRoom.NotifyAssetMissing(w.Base)
 				}
 				// The viewport draws the AO2 placeholder rather than a stale hold-previous. Warnings fire only on full
-				// chain exhaustion
-				// and speculative Markov prefetches suppress them, so a predicted-but-absent base is never marked.
+				// chain exhaustion.
 				if a.d.Store != nil {
 					a.d.Store.MarkMissing(w.Base)
 				}
@@ -677,11 +655,7 @@ func (a *App) drainWarnings() {
 			if len(w.Tried) > 0 {
 				line += " (tried " + strings.Join(w.Tried, " ") + " — see Settings → formats)"
 			}
-			a.pushDebug(line) // unconditional: the Debug ▸ Log tab is the detail view
-			if show {
-				// The chip, not warnLine; see assetmisschip.go for why.
-				a.noteAssetMiss(w.Base, w.Type == assets.AssetTypeDeskOverlay, time.Now())
-			}
+			a.pushDebug(line) // the Debug ▸ Log tab is the detail view
 		default:
 			return
 		}
@@ -848,10 +822,6 @@ func (a *App) healSpriteLayer(layer *courtroom.SpriteLayer, askBase *string, ask
 	}
 	*askBase, *askAt = layer.Active, now
 	a.d.Manager.PrefetchChain(layer.Active, courtroom.SpriteHealAlts(layer.Active), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (heal evicted live sprite: bare + folder)
-	// Cold sprite with thumbnails on: also ask for the low-q stand-in; drainThumbs uploads it.
-	if th := a.d.Manager.Thumbs(); th != nil && th.Enabled() && !a.d.Store.Contains(render.ThumbKeyPrefix+layer.Active) {
-		th.RequestLoad(layer.Active)
-	}
 }
 
 // icEntry is one IC log line with its AO text color preserved.

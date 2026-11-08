@@ -8,14 +8,8 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-const (
-	// mountPickBtnX and mountPickBtnW place the picker right of the Asset source Add button.
-	mountPickBtnX = 548
-	mountPickBtnW = 130
-)
-
-// mountPick is what the Asset source folder dialog returned.
-type mountPick struct {
+// dialogPick is what a file or folder dialog returned.
+type dialogPick struct {
 	paths []string
 	err   error
 }
@@ -28,28 +22,50 @@ func mountPickLabel(many bool) string {
 	return "Add folder…"
 }
 
+// packPickLabel is the button that picks .zip packs.
+const packPickLabel = "Add packs…"
+
+// packFilters limits the pack dialog to .zip files, the one kind of pack AsyncAO mounts.
+var packFilters = []sdl.DialogFilter{{Name: ".zip packs", Pattern: "zip"}}
+
 // browseForMounts shows the folder dialog; the result lands on mountPickRes for pollMountPick.
 func (a *App) browseForMounts(many bool) {
-	if settings.mountPickBusy {
-		settings.statusLine = "The folder picker is already open — finish or close it first (Alt-Tab if you don't see it)."
-		return
+	if a.mountPickOpen() {
+		a.d.Desktop.PickFolders(sdl.DialogOptions{Window: a.ctx.win, Title: mountPickLabel(many), Many: many}, deliverMountPick)
 	}
-	settings.mountPickBusy = true
-	a.d.Desktop.PickFolders(sdl.DialogOptions{Window: a.ctx.win, Title: mountPickLabel(many), Many: many},
-		func(paths []string, err error) {
-			// mountPickBusy leaves the channel's one place free, so SDL's callback never blocks here.
-			settings.mountPickRes <- mountPick{paths: paths, err: err}
-			PushWake()
-		})
 }
 
-// pollMountPick adds the chosen folders to the mount list on the render thread.
+// browseForPacks shows the file dialog for .zip packs; the picks land on mountPickRes like picked folders.
+func (a *App) browseForPacks() {
+	if a.mountPickOpen() {
+		a.d.Desktop.PickFiles(sdl.DialogOptions{Window: a.ctx.win, Title: "Add .zip packs", Many: true, Filters: packFilters}, deliverMountPick)
+	}
+}
+
+// mountPickOpen claims the one folder-or-pack dialog, or says it is already open.
+func (a *App) mountPickOpen() bool {
+	if settings.mountPickBusy {
+		settings.statusLine = "A picker is already open, possibly behind this window."
+		return false
+	}
+	settings.mountPickBusy = true
+	return true
+}
+
+// deliverMountPick hands a dialog's answer to pollMountPick; mountPickBusy leaves the channel's one place free, so
+// SDL's callback never blocks here.
+func deliverMountPick(paths []string, err error) {
+	settings.mountPickRes <- dialogPick{paths: paths, err: err}
+	PushWake()
+}
+
+// pollMountPick adds the chosen folders or packs to the mount list on the render thread.
 func (a *App) pollMountPick() {
 	select {
 	case pick := <-settings.mountPickRes:
 		settings.mountPickBusy = false
 		if pick.err != nil {
-			settings.statusLine = "Couldn't open the folder picker — type the path instead."
+			settings.statusLine = "Couldn't open the folder picker, so type the path instead."
 			return
 		}
 		if len(pick.paths) == 0 {
@@ -63,7 +79,8 @@ func (a *App) pollMountPick() {
 		}
 		settings.statusLine = "Added " + strconv.Itoa(added) + " to your folders."
 		if refused > 0 {
-			settings.statusLine += " " + strconv.Itoa(refused) + " didn't fit: the limit is " + strconv.Itoa(config.LocalMountCap) + "."
+			settings.statusLine = "Added " + strconv.Itoa(added) + " to your folders, but " + strconv.Itoa(refused) +
+				" didn't fit under the limit of " + strconv.Itoa(config.LocalMountCap) + "."
 		}
 	default:
 	}

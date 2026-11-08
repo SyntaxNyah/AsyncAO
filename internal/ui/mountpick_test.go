@@ -32,7 +32,7 @@ func TestPollMountPickAddsTheChosenFolders(t *testing.T) {
 	t.Cleanup(func() { settings.mountPickBusy = false })
 
 	settings.mountPickBusy = true
-	settings.mountPickRes <- mountPick{paths: []string{"one", "two"}}
+	settings.mountPickRes <- dialogPick{paths: []string{"one", "two"}}
 	a.pollMountPick()
 	if settings.mountPickBusy {
 		t.Error("the picker still counts as open")
@@ -41,11 +41,35 @@ func TestPollMountPickAddsTheChosenFolders(t *testing.T) {
 		t.Errorf("mounts = %v", got)
 	}
 
-	for _, pick := range []mountPick{{}, {err: errors.New("no portal")}} {
+	for _, pick := range []dialogPick{{}, {err: errors.New("no portal")}} {
 		settings.mountPickRes <- pick
 		a.pollMountPick()
 		if _, got := a.d.Prefs.LocalAssets(); !slices.Equal(got, []string{"one", "two"}) {
 			t.Errorf("%+v changed the mounts to %v", pick, got)
 		}
+	}
+}
+
+// TestPickedPacksJoinTheList: .zip packs from the pack dialog join the list like picked folders, and only one
+// folder-or-pack dialog opens at a time.
+func TestPickedPacksJoinTheList(t *testing.T) {
+	a := expApp(t)
+	a.d.Prefs.SetLocalAssets(false, nil)
+	t.Cleanup(func() { settings.mountPickBusy = false })
+
+	if !a.mountPickOpen() {
+		t.Fatal("the first dialog was refused")
+	}
+	if a.mountPickOpen() {
+		t.Error("a second dialog opened while one was up")
+	}
+	packs := []string{`C:\packs\witches.zip`, `C:\packs\music.zip`}
+	deliverMountPick(packs, nil)
+	a.pollMountPick()
+	if settings.mountPickBusy {
+		t.Error("the picker still counts as open")
+	}
+	if _, got := a.d.Prefs.LocalAssets(); !slices.Equal(got, packs) {
+		t.Errorf("mounts = %v, want %v", got, packs)
 	}
 }

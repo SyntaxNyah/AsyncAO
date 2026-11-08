@@ -147,7 +147,7 @@ func TestParseAutoindexDirs(t *testing.T) {
 	}
 }
 
-// TestCleanAutoindexEntry pins the downloader's security boundary: parent,
+// TestCleanAutoindexEntry pins the autoindex listing's security boundary: parent,
 // self, absolute, external, nested and ".." links (raw OR percent-encoded)
 // are all rejected, so a hostile listing can never write outside the dest.
 func TestCleanAutoindexEntry(t *testing.T) {

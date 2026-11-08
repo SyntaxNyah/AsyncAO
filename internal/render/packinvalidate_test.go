@@ -18,7 +18,7 @@ func TestRemoveWhereSkipsReservedSchemes(t *testing.T) {
 	s, done := packStore(t)
 	defer done()
 	reserved := []string{
-		"theme://chatbox", "held://background", "thumb://witch",
+		"theme://chatbox", "held://background",
 		"shape://mask", "missingno://placeholder",
 	}
 	for _, k := range reserved {

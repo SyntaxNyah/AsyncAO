@@ -677,10 +677,6 @@ type sessionState struct {
 	// bgPick is the "change background" modal (background/ autoindex grid).
 	bgPick bgPicker
 
-	// dl is the opt-in single-asset downloader. Its pause flag lives in App (a.dlPaused): this struct is copied by
-	// value on tab park/activate, which can't copy an atomic.
-	dl downloader
-
 	// sfxMuted is the Mute SFX hotkey; showHotkeys toggles the F1 cheat-sheet; musicDucked tracks music ducking under
 	// a playing message. masterMuted/musicMuted/blipMuted are the per-channel mutes; all four persist and zero the
 	// channel in applyAudioVolumes without touching the stored slider level. resetSessionState reseeds them from

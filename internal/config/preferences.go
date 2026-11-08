@@ -166,9 +166,6 @@ func ClampSpriteScaling(v int) int {
 // defaultUpdateCheck enables a one-shot async release check at launch; a dev build never hits the network.
 const defaultUpdateCheck = true
 
-// defaultShowAssetWarnings is off because every 404 is noise on sparse packs; failures still reach the debug overlay.
-const defaultShowAssetWarnings = false
-
 // defaultSpriteMove is off because click-drag repositioning surprises players who grab a sprite by accident.
 const defaultSpriteMove = false
 
@@ -483,9 +480,6 @@ const (
 	maxBgSlideshowSecs     = 600
 )
 
-// maxDownloadKBps bounds the optional download cap; 0 means unlimited and is the default.
-const maxDownloadKBps = 1 << 20
-
 // Layout scale bounds in percent.
 const (
 	DefaultViewportPercent = 66
@@ -554,11 +548,10 @@ func ClampWindowSize(reqW, reqH, usableW, usableH int) (int, int) {
 }
 
 const (
-	percentMax       = 100      // the top of every 0..100 percentage setting
-	rgbMask          = 0xFFFFFF // a packed 0xRRGGBB colour
-	prefetchAggroMax = 4        // most predicted sprites the prefetcher warms per message
-	rotationSteps    = 256      // a rotation byte covers one full turn
-	degreesPerTurn   = 360
+	percentMax     = 100      // the top of every 0..100 percentage setting
+	rgbMask        = 0xFFFFFF // a packed 0xRRGGBB colour
+	rotationSteps  = 256      // a rotation byte covers one full turn
+	degreesPerTurn = 360
 )
 
 // defaultAudioVolume is also the slider ceiling and load-clamp max, so it must stay 100.
@@ -849,7 +842,6 @@ func defaultSettings() *Settings {
 		SpriteScaling:          defaultSpriteScaling,
 		SpriteScalingMigrated:  true,
 		UpdateCheck:            defaultUpdateCheck,
-		ShowAssetWarnings:      defaultShowAssetWarnings,
 		SpriteMoveOn:           defaultSpriteMove,
 		DeskFollowManifest:     defaultDeskFollowManifest,
 		SpritePreviewOn:        defaultSpritePreview,
@@ -1390,19 +1382,6 @@ func (s *Settings) BgSlideshowSeconds() int {
 	return value.Clamp(orDefault(s.BgSlideshowSecs, defaultBgSlideshowSecs), minBgSlideshowSecs, maxBgSlideshowSecs)
 }
 
-// DownloadCapKBps reports the bandwidth cap in KiB/s, 0 = unlimited.
-func (p *AssetPreferences) DownloadCapKBps() int {
-	snap := p.Load()
-
-	if snap.DownloadKBps < 0 {
-		return 0
-	}
-	if snap.DownloadKBps > maxDownloadKBps {
-		return maxDownloadKBps
-	}
-	return snap.DownloadKBps
-}
-
 // Instant-replay window bounds: a floor so a clip has context, a 1-hour ceiling; 0 reads as default.
 const (
 	InstantReplayMinSeconds     = 10
@@ -1759,18 +1738,6 @@ func (p *AssetPreferences) SetAssetCharCasing(c uint8) {
 	}
 	p.Update(func(sn *Settings) {
 		sn.AssetCharCase = c
-	})
-}
-
-// PrefetchAggressiveness is how many predicted sprites the Markov prefetcher warms per message, 1..4.
-func (s *Settings) PrefetchAggressiveness() int {
-	return value.Clamp(s.PrefetchAggro, 1, prefetchAggroMax)
-}
-
-func (p *AssetPreferences) SetPrefetchAggressiveness(n int) {
-	n = value.Clamp(n, 1, prefetchAggroMax)
-	p.Update(func(sn *Settings) {
-		sn.PrefetchAggro = n
 	})
 }
 
@@ -2628,19 +2595,6 @@ const (
 	ICLogDepthMin       = 1     // shallowest log worth keeping
 	ICLogDepthMax       = 65536 // deepest a typed number may set (still bounded; ∞ is the true uncap)
 
-	// Thumbnail knobs: about 1 KB per sprite, low quality by design so a stand-in is never mistaken for real art.
-	ThumbHeightDefaultPx = 64  // matches assets.ThumbHeightDefault (pinned by test)
-	ThumbHeightMinPx     = 32  // barely a silhouette
-	ThumbHeightMaxPx     = 160 // "low-q" stops meaning anything past this
-	ThumbQualityDefault  = 20  // matches assets.ThumbQualityDefault (pinned by test)
-	ThumbQualityMin      = 5   // maximum crunch
-	ThumbQualityMax      = 60  // still clearly a placeholder
-
-	// Thumb-store budget; prunes oldest past it, and 64 MiB is about 60k thumbnails.
-	ThumbBudgetDefaultMiB = 64
-	ThumbBudgetMinMiB     = 8
-	ThumbBudgetMaxMiB     = 512
-
 	// T3 auto-prune cap: 0 = unlimited, the default, so an update never silently deletes a user's cache.
 	// A positive cap makes the writer sweep oldest blobs; one character can run tens of MiB.
 	DiskCacheBudgetMinMiB = 128   // smallest meaningful cap
@@ -2726,19 +2680,6 @@ func normalizeFPSPref(fps, min, max int) int {
 		return FPSUnlimited
 	}
 	return value.Clamp(fps, min, max)
-}
-
-func (s *Settings) ThumbHeightPx() int {
-	return orDefault(s.ThumbHeightPxVal, ThumbHeightDefaultPx)
-}
-
-func (s *Settings) ThumbQuality() int {
-	return orDefault(s.ThumbQualityVal, ThumbQualityDefault)
-}
-
-// ThumbBudgetMiB reports the thumbnail store budget; the store prunes oldest past it.
-func (s *Settings) ThumbBudgetMiB() int {
-	return orDefault(s.ThumbBudgetMiBVal, ThumbBudgetDefaultMiB)
 }
 
 // TexBudgetMiB reports the T1 budget in MiB; applies on restart.
@@ -2833,10 +2774,6 @@ func (p *AssetPreferences) ResetPowerUser() {
 		s.PreanimTimeoutMsVal = 0
 		s.ICQueueCapVal = 0
 		s.CatchUpLingerMsVal = 0
-		s.ThumbCache = false
-		s.ThumbHeightPxVal = 0
-		s.ThumbQualityVal = 0
-		s.ThumbBudgetMiBVal = 0
 		s.DiskCacheBudgetMiBVal = 0 // back to unlimited (the default)
 		s.NotFoundTTLSecVal = 0
 		s.AdaptiveLatMultipleVal = 0

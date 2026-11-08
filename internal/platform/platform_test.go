@@ -105,7 +105,7 @@ func TestCapabilities(t *testing.T) {
 			[]platform.Capability{platform.CopyFilesToClipboard, platform.SystemNotifications, platform.SelfUpdate},
 			nil},
 		{"linux lacks them", fakeProbe{goos: "linux", exe: exe},
-			[]platform.Capability{platform.OpenURL, platform.PickFolder, platform.PickManyFolders, platform.CopyFilesToClipboard, platform.Relaunch, platform.MachineID},
+			[]platform.Capability{platform.OpenURL, platform.PickFolder, platform.PickManyFolders, platform.PickFile, platform.CopyFilesToClipboard, platform.Relaunch, platform.MachineID},
 			[]platform.Capability{platform.SystemNotifications}},
 		{"macos self-updates", fakeProbe{goos: "darwin", exe: exe},
 			[]platform.Capability{platform.SelfUpdate, platform.PickFolder, platform.PickManyFolders},
@@ -120,7 +120,7 @@ func TestCapabilities(t *testing.T) {
 		{"another unix picks one folder at a time", fakeProbe{goos: "freebsd", exe: exe},
 			[]platform.Capability{platform.PickFolder}, []platform.Capability{platform.PickManyFolders}},
 		{"mobile has none yet", fakeProbe{goos: "android", exe: exe},
-			nil, []platform.Capability{platform.OpenURL, platform.PickFolder, platform.PickManyFolders, platform.Relaunch, platform.ExtraWindows, platform.BackgroundRendering}},
+			nil, []platform.Capability{platform.OpenURL, platform.PickFolder, platform.PickManyFolders, platform.PickFile, platform.Relaunch, platform.ExtraWindows, platform.BackgroundRendering}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

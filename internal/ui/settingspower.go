@@ -48,14 +48,9 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 340, H: btnH}, nukeLabel) {
 		if a.powerNukeArm {
 			a.d.Prefs.ResetPowerUser()
-			a.d.Manager.SetAssetOrigin("") // the live network override too, not just the pref
-			a.rebuildAssetOrigin()         // re-derive the URL builder (character casing reset)
-			a.applyTimingToRoom()          // push the reset renderer/timing knobs to the live room
-			if th := a.d.Manager.Thumbs(); th != nil {
-				th.SetEnabled(false) // the thumbnail store follows its reset pref (stored thumbs are kept — Clear is separate)
-				th.SetParams(0, 0)
-				th.SetBudget(0)
-			}
+			a.d.Manager.SetAssetOrigin("")            // the live network override too, not just the pref
+			a.rebuildAssetOrigin()                    // re-derive the URL builder (character casing reset)
+			a.applyTimingToRoom()                     // push the reset renderer/timing knobs to the live room
 			a.d.Manager.SetAdaptiveLatencyMultiple(0) // back to the ×8 default, live
 			a.applySpriteCap()                        // re-derive the downscale cap from defaults
 			a.warnLine = "Power-user options reset to defaults."
@@ -285,89 +280,6 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Off by default. On = no idle skipping and no pacing at all: the client redraws continuously, paced only by vsync (or a 60 fps floor with -vsync=false). The opposite of everything above — it trades GPU for the last drop of responsiveness. Leave it off unless you have a specific reason.", ColTextDim)
 	y += 10
 
-	// Sprite thumbnail cache: the persistent low-quality stand-in store.
-	y = a.settingsSection(y, w, "Sprite thumbnail cache")
-	th := a.d.Manager.Thumbs()
-	if th == nil {
-		y = a.settingsDesc(pad, y, "Unavailable in this build (the thumbnail store could not open).", ColTextDim)
-		y += 10
-	} else {
-		tcOn := a.d.Prefs.Load().ThumbCache
-		if next := c.Checkbox(pad, y, "Keep tiny low-quality thumbnails of every sprite (default OFF)", tcOn); next != tcOn {
-			a.d.Prefs.Update(func(sn *config.Settings) { sn.ThumbCache = next })
-			th.SetEnabled(next)
-		}
-		y += 26
-		y = a.settingsDesc(pad, y, "Every sprite that finishes loading leaves a ~1 KB low-quality thumbnail on disk (its own folder, kept after the full sprite is evicted). The next cold load shows the thumbnail instantly while the real one streams, then swaps — covering the case where there's no previous sprite to hold. Costs a little disk and a moment of visibly crunchy art.", ColTextDim)
-		y += 6
-		if a.d.Prefs.Load().ThumbCache {
-			c.Label(pad, y+4, "Thumbnail height:", ColText)
-			tHp := a.d.Prefs.Load().ThumbHeightPx()
-			ttrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-			nth := int(value.Clamp(c.Slider("thumbheight", ttrack, int32(tHp), config.ThumbHeightMaxPx), 0, config.ThumbHeightMaxPx))
-			if nth != 0 && nth < config.ThumbHeightMinPx {
-				nth = 0 // bottom of the track = the default (64 px)
-			}
-			c.Tooltip(ttrack, "How tall a stored thumbnail is (32–160 px). Bigger = sharper stand-in, bigger files. Applies to NEWLY stored thumbnails.")
-			thLabel := "default (64 px)"
-			if nth != 0 {
-				thLabel = strconv.Itoa(nth) + " px"
-			}
-			c.Label(pad+200+236, y+4, thLabel, ColTextDim)
-			if nth != tHp {
-				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThumbHeightPxVal = nth })
-				th.SetParams(a.d.Prefs.Load().ThumbHeightPx(), a.d.Prefs.Load().ThumbQuality())
-			}
-			y += 26
-			c.Label(pad, y+4, "Thumbnail quality:", ColText)
-			tq := a.d.Prefs.Load().ThumbQuality()
-			qtrack2 := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-			ntq := int(value.Clamp(c.Slider("thumbquality", qtrack2, int32(tq), config.ThumbQualityMax), 0, config.ThumbQualityMax))
-			if ntq != 0 && ntq < config.ThumbQualityMin {
-				ntq = 0
-			}
-			c.Tooltip(qtrack2, "WebP quality of a stored thumbnail (5–60). Lower = smaller + crunchier; the default 20 lands ~1 KB.")
-			tqLabel := "default (20)"
-			if ntq != 0 {
-				tqLabel = strconv.Itoa(ntq)
-			}
-			c.Label(pad+200+236, y+4, tqLabel, ColTextDim)
-			if ntq != tq {
-				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThumbQualityVal = ntq })
-				th.SetParams(a.d.Prefs.Load().ThumbHeightPx(), a.d.Prefs.Load().ThumbQuality())
-			}
-			y += 26
-			c.Label(pad, y+4, "Thumbnail store budget:", ColText)
-			tb := a.d.Prefs.Load().ThumbBudgetMiB()
-			btrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-			ntb := int(value.Clamp(c.Slider("thumbbudget", btrack, int32(tb), config.ThumbBudgetMaxMiB), 0, config.ThumbBudgetMaxMiB))
-			if ntb != 0 && ntb < config.ThumbBudgetMinMiB {
-				ntb = 0 // bottom of the track = the default (64 MiB)
-			}
-			c.Tooltip(btrack, "Hard cap on the thumbnail folder (8–512 MiB): past it the OLDEST thumbnails auto-delete. 64 MiB ≈ ~60,000 thumbnails.")
-			tbLabel := "default (64 MiB)"
-			if ntb != 0 {
-				tbLabel = strconv.Itoa(ntb) + " MiB"
-			}
-			c.Label(pad+200+236, y+4, tbLabel, ColTextDim)
-			if ntb != tb {
-				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThumbBudgetMiBVal = ntb })
-				th.SetBudget(int64(a.d.Prefs.Load().ThumbBudgetMiB()) << 20)
-			}
-			y += 26
-			if c.Button(sdl.Rect{X: pad, Y: y, W: 200, H: btnH}, "Clear stored thumbnails") {
-				if err := th.Clear(); err != nil {
-					a.warnLine = clampLine("Clear thumbnails: " + err.Error())
-				} else {
-					a.warnLine = "Stored thumbnails cleared."
-				}
-				a.warnAt = a.now()
-			}
-			y += btnH + 6
-		}
-		y += 10
-	}
-
 	// Core message timings: the courtroom's hard-coded spans, exposed.
 	y = a.settingsSection(y, w, "Core message timings")
 	c.Label(pad, y+4, "Shout bubble duration:", ColText)
@@ -514,35 +426,6 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 
 	// Network tuning: the streaming pipeline's self-tuning bounds, exposed.
 	y = a.settingsSection(y, w, "Network tuning")
-	c.Label(pad, y+4, "Missing-asset (404) memory:", ColText)
-	ttl := a.d.Prefs.Load().NotFoundTTLSecVal
-	ntrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
-	nttl := int(value.Clamp(c.Slider("notfoundttl", ntrack, int32(ttl), config.NotFoundTTLMaxSec), 0, config.NotFoundTTLMaxSec))
-	if nttl != 0 && nttl < config.NotFoundTTLMinSec {
-		nttl = 0 // bottom of the track = the default (5 min)
-	}
-	c.Tooltip(ntrack, "How long a 404'd asset stays \"missing\" before AsyncAO will probe it again (30 s – 60 min). Applies on RESTART.")
-	ttlLabel := "default (5 min)"
-	if nttl != 0 {
-		ttlLabel = formatWaitMs(nttl * 1000)
-	}
-	c.Label(pad+210+226, y+4, ttlLabel, ColTextDim)
-	if nttl != ttl {
-		a.d.Prefs.Update(func(
-			sn *config.
-				Settings) {
-
-			sn.
-				NotFoundTTLSecVal =
-
-				nttl
-
-		})
-
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "How long a missing (404) asset is remembered before it may be probed again. Shorter picks up newly-uploaded art sooner; longer wastes fewer probes on sparse packs. Applies on restart.", ColTextDim)
-	y += 8
 	c.Label(pad, y+4, "Slow-host patience:", ColText)
 	lm := a.d.Prefs.Load().AdaptiveLatMultipleVal
 	ltrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
@@ -626,13 +509,6 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}, &settings.memBufs[3], "", "How many long animations decode at once. The decoded pixels of a full clip are the RAM spike, so fewer = less peak memory (slower loads); more = faster loads (more RAM). Applies LIVE.")
 	y = a.settingsDesc(pad, y, "How many full animations may decode at once. Each long clip holds every frame in memory until it uploads, so capping this flattens the memory spike while a character's animations stream in (at the cost of slightly slower loads). Applies live.", ColTextDim)
 	y += 8
-	y = a.numSliderRow(y, "texbudget", "Texture memory budget:", config.TexBudgetMinMiB, config.TexBudgetMaxMiB, 16, config.TexBudgetDefaultMiB, func() int { return a.d.Prefs.Load().TexBudgetMiB() }, func(v int) {
-		a.d.Prefs.Update(func(sn *config.Settings) {
-			sn.TexBudgetMiBVal = v
-		})
-	}, &settings.memBufs[4], " MiB", "How much GPU-texture memory decoded art may occupy before the least-recently-used is evicted (32-256 MiB). Above 128 is EXPERIMENTAL and may stutter or crash on low-RAM machines. Applies on RESTART.")
-	y = a.settingsDesc(pad, y, "GPU memory for decoded art; past it the least-recently-used is evicted (and re-fetched if needed again). Bigger = fewer evictions in packed rooms AND longer animations decode before they truncate; smaller = lighter footprint. Above 128 is EXPERIMENTAL, so only raise it there if long animations are cut and you have RAM to spare. Applies on restart.", ColTextDim)
-	y += 10
 
 	// Texture compression (restart-applied; lossy).
 	y += 8

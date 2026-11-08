@@ -51,9 +51,8 @@ type settingsState struct {
 	fontInput  string
 	fontLoaded bool
 
-	// errorSpriteInput is the custom missing-sprite path, seeded once from the pref (errorSpriteLoaded).
-	errorSpriteInput  string
-	errorSpriteLoaded bool
+	// errorSpriteFocused is whether the custom missing-sprite field had focus last frame; losing it loads the image.
+	errorSpriteFocused bool
 
 	// winWInput and winHInput are seeded from the live size and again after a preset or fit.
 	winWInput, winHInput string
@@ -73,9 +72,8 @@ type settingsState struct {
 
 	// themeBindKey is the theme-binding picker, sharing the login section's server list cache.
 	themeBindKey string
-	// assetHostKey is the server the Extra asset hosts section edits; assetHostInput is its add field.
-	assetHostKey   string
-	assetHostInput string
+	// assetHostKey is the server whose mirrors the Asset source list shows.
+	assetHostKey string
 
 	// Login section: the picked server and its credential buffers, for any known server, connected or not.
 	loginKey      string
@@ -122,8 +120,31 @@ type settingsState struct {
 	folderRes  chan string
 	browseBusy bool
 	// mountPickRes carries the Asset source folder dialog's outcome; mountPickBusy keeps it to one dialog (hard rule 4).
-	mountPickRes  chan mountPick
+	mountPickRes  chan dialogPick
 	mountPickBusy bool
+	// errorSpritePickRes carries the custom missing-sprite file dialog's outcome; errorSpritePickBusy keeps it to one.
+	errorSpritePickRes  chan dialogPick
+	errorSpritePickBusy bool
+	// folderScans holds each listed folder's report; checkFolders keeps it to the listed folders (hard rule 4).
+	folderScans map[string]baseScan
+	// folderOpen is which listed folders show what they contain; checkFolders prunes it with folderScans.
+	folderOpen map[string]bool
+	// packagesOpen shows each package under the packages row.
+	packagesOpen      bool
+	folderScanRunning bool
+	folderScanGen     int
+	folderScanRes     chan baseScan
+	// mountDropRes carries a folder dropped on the Assets tab, resolved off-thread.
+	mountDropRes chan string
+
+	// The Cache card: which rows show their settings, and the disk counts with when they were taken.
+	cacheOpen       [cacheRowCount]bool
+	cacheSizes      cacheSizes
+	cacheMeasuredAt time.Time
+	cacheMeasuring  bool
+	cacheSizeRes    chan cacheSizes
+	// learnedKeys is the learned-formats map size learnedServers was counted for.
+	learnedKeys, learnedServers int
 
 	// ioRes carries one-line results of off-thread file ops back to the status line.
 	ioRes chan string
@@ -150,15 +171,19 @@ type themeScan struct {
 var settings = settingsState{
 	themeRes:     make(chan themeScan, 1),
 	folderRes:    make(chan string, 1),
-	mountPickRes: make(chan mountPick, 1),
-	ioRes:        make(chan string, 1),
+	mountPickRes: make(chan dialogPick, 1),
+
+	errorSpritePickRes: make(chan dialogPick, 1),
+	folderScans:        map[string]baseScan{},
+	folderOpen:         map[string]bool{},
+	folderScanRes:      make(chan baseScan, folderScanResCap),
+	mountDropRes:       make(chan string, mountDropResCap),
+	cacheSizeRes:       make(chan cacheSizes, cacheSizeResCap),
+	ioRes:              make(chan string, 1),
 }
 
-// numSettingsTabs sizes the per-tab scroll array; keep it equal to len(settingsTabNames).
-const numSettingsTabs = 15
-
 var settingsTabNames = [numSettingsTabs]string{
-	"General", "Theme", "Theme editor", "Assets", "Formats", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Power user", "Reset", "Updates",
+	"General", "Theme", "Theme editor", "Assets", "Formats", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Power user", "Updates", "Reset",
 }
 
 // Tab indices, in settingsTabNames order.
@@ -178,8 +203,10 @@ const (
 	tabStudio
 	tabData
 	tabPowerUser
-	tabReset
 	tabUpdates
+	tabReset
+	// numSettingsTabs is the tab count, so every per-tab table is sized by the list itself.
+	numSettingsTabs
 )
 
 // settingsSearchKeywords maps each tab to terms the search box matches, including every section title.
@@ -245,19 +272,18 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"aotheme", "theme bundle", "share a theme", "send a theme", "give a theme",
 	},
 	tabAssets: {
-		// Predictive prefetch, Missing sprites, Asset source, Extra asset hosts, Downloader, Cache.
+		// Asset source (folders, packs, mirrors), Cache (memory, disk, missing, learned), Missing sprites.
 		"extra asset hosts", "asset host", "mirror", "webhost",
-		"predictive prefetch", "prefetch", "aggressiveness", "speculative", "preload",
-		"local assets", "local", "mount", "downloader", "download",
+		"local assets", "local", "mount",
 		// Keep terms specific, since a broad word would take the query; not bare "stream" (General's "streamer mode").
 		"asset source", "layered", "layer", "pack", "content pack", "zip", "override",
 		"rescan", "folders", "my folders",
-		"cache", "disk cache", "disk", "zstd", "clear cache",
-		"loop preanim", "preanimation", "preanim loop", "loop preanimations",
+		"cache", "disk cache", "disk", "clear cache", "texture memory",
+		"learned format", "learned formats", "learned", "clear learned", "retry missing",
 		"placeholder", "missing sprite", "missingno", "missing character", "error sprite", "custom error sprite", "404",
 	},
 	tabFormats: {
-		// How formats work, This server, Automatic detection, Formats per asset type, Fallbacks, Learned formats.
+		// How formats work, This server, Automatic detection, Formats per asset type, Fallbacks.
 		// Absent because a later tab owns the word: "blip", "volume" (Audio); "ignore", "callword" (Chat);
 		// "password" (Account); "webp", "gif" (Studio); "export", "import" (Studio, Data);
 		// "extensions.json" (its ".json" would take Data's "json").
@@ -267,7 +293,6 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"fallback", "fallbacks", "legacy format", "legacy audio", "audio format", "sound format",
 		"autodetect", "auto-detect", "detect formats", "desk format",
 		"png", "apng", "avif", "jpg", "jpeg", "opus", "ogg", "mp3", "wav",
-		"learned format", "learned formats", "learned", "clear learned",
 		"emotes not loading", "assets not loading", "images not loading", "art not loading",
 		"stuck images", "repeated images", "same image", "nothing loads",
 	},
@@ -403,8 +428,7 @@ func (a *App) drawSettings(w, h int32) {
 
 	// While a blocking modal is open the whole screen behind it takes no clicks. Set before the header widgets draw and
 	// released right before the modals draw, so their own widgets work.
-	// The wizard's step 1 opens the browser on top of itself.
-	if demoBrowser.open || contentPanel.open || baseWizard.open {
+	if demoBrowser.open || contentPanel.open {
 		c.modalOn = true
 	}
 
@@ -412,18 +436,25 @@ func (a *App) drawSettings(w, h int32) {
 	a.pollThemeScan()
 	a.pollFolderPick()
 	a.pollMountPick()
-	// baseWizardTakesDrop consumes the drop: an open wizard gets first refusal, or the folder becomes the theme root.
-	if c.dropped != "" && !a.baseWizardTakesDrop(c.dropped) {
+	a.pollErrorSpritePick()
+	a.pollMountDrop()
+	if c.dropped != "" {
 		// The classification is shared with HandleFileDrop (dropclaim.go): a recording or bundle must not also repoint
-		// the theme folder at its parent. Anything unclaimed still points the theme folder.
-		switch settingsDropAction(claimDroppedFile(c.dropped, settings.importArmed)) {
-		case settingsDropImportSettings:
-			settings.importArmed = false
-			importSettingsAsync(a.d, c.dropped)
-		case settingsDropIgnore:
-			// HandleFileDrop is the single owner of dropped recordings, theme bundles and theme fonts.
-		case settingsDropRepointThemeRoot:
-			resolveDroppedFolder(c.dropped)
+		// the theme folder at its parent. Anything unclaimed adds a folder on the Assets tab, else points the theme
+		// folder.
+		claim := claimDroppedFile(c.dropped, settings.importArmed)
+		if settings.tab == tabAssets && claim == dropClaimNone {
+			resolveDroppedMount(c.dropped)
+		} else {
+			switch settingsDropAction(claim) {
+			case settingsDropImportSettings:
+				settings.importArmed = false
+				importSettingsAsync(a.d, c.dropped)
+			case settingsDropIgnore:
+				// HandleFileDrop is the single owner of dropped recordings, theme bundles and theme fonts.
+			case settingsDropRepointThemeRoot:
+				resolveDroppedFolder(c.dropped)
+			}
 		}
 	}
 	select {
@@ -543,11 +574,9 @@ func (a *App) drawSettings(w, h int32) {
 
 	// These draw last with input released, so their widgets work; the content panel follows the browser,
 	// because a pick closes the browser and opens the panel in the same click.
-	if demoBrowser.open || contentPanel.open || baseWizard.open {
+	if demoBrowser.open || contentPanel.open {
 		c.modalOn = false
 	}
-	// Before the browser: step 1 opens one on top of itself, and the topmost must draw last.
-	a.drawBaseWizard(w, h)
 	a.drawDemoBrowser(w, h)
 	a.drawContentPanel(w, h)
 }
@@ -1406,12 +1435,8 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.invalidateShapeMasks()
 		c.purgeTextCache()
 		a.applyThemeAsync()
-		// Purge also destroyed the pinned missingno placeholder; re-pin the default and re-kick a custom image
-		// so the missing-sprite fallback survives a filtering swap (missingno.go).
-		a.uploadEmbeddedMissingno()
-		if p := a.d.Prefs.Load().ErrorSpriteFile; p != "" {
-			a.applyErrorSprite(p)
-		}
+		// Purge also destroyed the pinned missingno placeholder, so it is reloaded to survive a filtering swap.
+		a.reloadErrorSprite()
 		settings.statusLine = "Re-streaming textures with new filtering."
 	}
 	y += 26

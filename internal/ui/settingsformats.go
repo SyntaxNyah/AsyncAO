@@ -132,7 +132,6 @@ func (a *App) drawSettingsFormats(y, _ int32) int32 {
 	y = a.drawFormatsAutoDetect(y, w)
 	y = a.drawFormatsPerType(y, w)
 	y = a.drawFormatsFallbacks(y, w)
-	y = a.drawFormatsLearnedTools(y, w)
 
 	// Casing is the other cause of a server fetching nothing; its control lives on the Power user tab.
 	y = a.settingsDesc(pad, y, "Still nothing loading for a server, in any format? The other cause is the character-folder capitalisation in asset URLs — that control is on the Power user tab under \"Character folder casing\".", ColTextDim)
@@ -495,52 +494,6 @@ func (a *App) drawFormatsFallbacks(y, w int32) int32 {
 	y = a.settingsDesc(pad, y, "On: a miss is retried down the chain (WebP → APNG → GIF → PNG), so art is found almost whatever a server ships — at the cost of extra requests for every asset that misses, on every server, which is felt most on a cold room load. Off (default): one request per asset, and a miss stays missing.", ColTextDim)
 	y += 6
 	y = a.settingsDesc(pad, y, "Reach for this only when a server's art is inconsistent asset by asset. If it's one server that simply uses a different type, pin that server's format under \"This server\" above — same result, none of the cost.", ColTextDim)
-	y += 12
-	return y
-}
-
-// drawFormatsLearnedTools draws the global learned-format resets and the export/import.
-func (a *App) drawFormatsLearnedTools(y, w int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	y = a.settingsSection(y, w, "Learned formats")
-	y = a.settingsDesc(pad, y, "Every server AsyncAO has loaded art from is remembered, so the next visit asks correctly from the first request. These act on ALL servers at once — to fix a single one, use \"This server\" above.", ColTextDim)
-	y += 6
-
-	// A server repack or stale CDN needs the learned format and the cached file dropped together;
-	// either alone leaves the other stuck.
-	const fixLabel = "Fix stuck / repeated images (all servers)"
-	a.noteSearchRow(fixLabel, y)
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 320, H: btnH}, fixLabel) {
-		a.d.Prefs.ClearLearned()
-		a.d.Resolver.InvalidateAll()
-		settings.statusLine = "Cleared learned formats + disk cache — images re-derive on next use."
-		if err := a.d.Manager.ClearDisk(); err != nil {
-			settings.statusLine = "Cleared learned formats; disk clear failed: " + err.Error()
-		}
-	}
-	y += btnH + 4
-	y = a.settingsDesc(pad, y, "Use if art has gone wrong everywhere — for example every emote button showing the same picture. It drops the remembered formats and the cached files together, so both re-derive from scratch.", ColTextDim)
-	y += 8
-
-	const clearLabel = "Clear learned formats"
-	a.noteSearchRow(clearLabel, y)
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 190, H: btnH}, clearLabel) {
-		a.d.Prefs.ClearLearned()
-		a.d.Resolver.InvalidateAll()
-		settings.statusLine = "Learned formats cleared."
-	}
-	const exportLabel, importLabel = "Export learned formats", "Import learned formats"
-	a.noteSearchRow(exportLabel, y)
-	a.noteSearchRow(importLabel, y)
-	if c.Button(sdl.Rect{X: pad + 200, Y: y, W: 190, H: btnH}, exportLabel) {
-		exportLearnedAsync(a.d)
-	}
-	if c.Button(sdl.Rect{X: pad + 400, Y: y, W: 190, H: btnH}, importLabel) {
-		importLearnedAsync(a.d)
-	}
-	y += btnH + 4
-	y = a.settingsDesc(pad, y, "Export writes the whole table beside the program so it can be shared or carried to another machine; import merges one in, which warms every server it covers before you ever visit them.", ColTextDim)
 	y += 12
 	return y
 }

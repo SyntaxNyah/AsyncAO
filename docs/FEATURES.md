@@ -120,24 +120,6 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   tab — TLS, both Origin overrides, folder casing, renderer modes + knobs, sprite
   mask, timings — while user *data* (saved mod chips, learned formats) survives
   (`TestResetPowerUser` pins the scope).
-- **Sprite thumbnail cache** (Settings → Power user, **OFF by default**): the
-  opt-in persistent low-quality stand-in store (`internal/assets/thumbcache.go`).
-  Every character sprite that decodes leaves a **~1 KB WebP still** (frame 0,
-  CatmullRom-shrunk to a tunable height, tunable quality) in `cache/thumbs/` —
-  its **own DiskCache instance** beside T3, so thumbs outlive the full sprites
-  they stand in for. On a cold sprite the paced heal path requests the thumb, a
-  dedicated loader reads + decodes it **off-thread**, the render thread uploads
-  it under a **`thumb://` T1 key** (the `theme://` scheme-prefix precedent), and
-  the miss path draws it **before** hold-previous (right character > right
-  quality; the key is precomputed per base-change so the miss path allocates
-  nothing). Every hand-off queue is **bounded and sheds** (thumbs are
-  speculative); the store hook rides the Manager's decode completion
-  (char-sprite type only, non-blocking); a webpenc-less fallback build simply
-  never stores. **Free when off** (one atomic gate per entry point); knobs:
-  height (32–160 px), quality (5–60), Clear button; the nuke reset disables it
-  but keeps the stored thumbs (Clear is deliberate). Pinned by
-  `TestThumbCacheRoundTrip`, `TestThumbStandIn` (draw order + 0-alloc) and
-  `TestThumbDefaultsPinned` (config↔assets constants).
 - **Frame limiter + event-driven renderer** (the GPU-burn fix; Settings → Power
   user → "Frame rate & GPU"): the main loop paces to `App.FramePace(focused)` /
   `App.HardCapBudget(focused)` instead of the monitor. **Shipped defaults
@@ -212,22 +194,6 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   bg/desk already fill the stage) and only when nothing else owns a clip, so
   screenshake and the reflection's own clip are untouched; **off → no `SetClipRect`
   at all → byte-identical** (`TestSpriteMaskClipsToStage`, 0-alloc with the mask on).
-- **Full-character sprite preload** (#127, Settings → Assets, **OFF by default**):
-  on a character load the default grabs only the first few emotes' idle sprites;
-  with this on, AsyncAO pre-grabs the character's **whole** set — every emote's
-  idle *and* talk (with the bare-spelling fallback) — at **LOW priority**, so
-  switching emotes is instant. Speculative, so backpressure **sheds** it before
-  any live HIGH fetch and singleflight collapses anything already cached; it just
-  costs more bandwidth + cache up front, hence opt-in. Keybind `Ctrl+\`.
-- **Connection-quality chip** (#128, Settings → Assets, **OFF by default**): a tiny
-  signal-bar icon (bottom-left) showing the WebSocket round-trip — four bars,
-  green / amber / red by latency — with the **exact ms on hover**. A single
-  background goroutine pings the **active** connection (`Conn.Ping` → a WS ping/pong,
-  safe alongside the read loop) and stores the RTT atomically; the frame loop
-  starts / stops / retargets it as the active conn changes (connect, tab switch,
-  reconnect, disconnect) or the toggle flips. **Off → no goroutine at all**, so it's
-  genuinely zero-cost by default; on, the chip draw is 0-alloc (Fill bars + a cached
-  tooltip rebuilt only when the ms moves). Keybind `Ctrl+\``.
 - **CM / mod dashboard — server-software-aware** (#130, **Extras → Mod / CM**, or
   `Ctrl+/`; a standalone panel, never bloats the player list): one place to moderate
   that **builds each command for the server you're actually on**. AO moderation is
@@ -268,10 +234,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   the texture budget. Downscale-only, so already-small art is untouched — and the
   WebP/AVIF *decode* stays exact; this is purely the resample that used to fall
   to the GPU every frame.
-- **Missing-asset banner is opt-in** (Settings → Assets, **default OFF**): the
-  red on-screen warning naming an asset that failed every format is off by
-  default (it was noisy on sparse-pack servers); the failures still stream to
-  the **debug overlay** (the dedicated failure log) regardless.
+- **Missing assets are logged, not shown**: an asset that failed every format is
+  written to the **Debug ▸ Log** tab; there's no on-screen warning (it was noisy
+  on sparse-pack servers).
 - **Decode-failure backoff + corrupt-cache purge**: a payload that downloads but
   won't *decode* (a corrupt/truncated file — e.g. a mangled TLS stream — distinct
   from a 404, which the network tier already caches) goes into a short-lived
@@ -289,13 +254,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **AVIF**: `.avif` probe format; `ftyp avif/avis` sniffing, libavif CGO
   decode (stills + animated sequences), Settings chip like every format.
 - **Typing-driven speculation**: picking an emote prefetches its idle/talk/
-  preanim/SFX at LOW priority; the Markov predictor now also learns
-  per-character **emote chains** and warms the predicted next speaker's
-  predicted next emote. The predictor now warms **both the idle and talk sprite
-  through the full spelling chain** (`(a)`/`(b)`/bare), so a bare-named pack no
-  longer 404s every prediction in all formats — and a speculative miss no longer
-  fires a missing-asset warning (real demand warnings are unchanged; the 404
-  cache and singleflight are untouched, so nothing re-probes).
+  preanim/SFX at LOW priority.
 - **Per-server pre-warm**: last-used character + last-seen background are
   remembered per server (ws URL key, capped) and prefetched on Ready.
 - **Master-list ETag**: lobby Refresh sends `If-None-Match`; unchanged
@@ -313,8 +272,6 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   the current window the delay extends without incrementing), so a 2-second CDN
   hiccup stays at the first-failure tier while a genuinely-down host still climbs
   across windows.
-- **Zstd disk cache** (Settings, default off): self-describing zstd
-  blobs, kept only when smaller — sprites stay raw, INIs shrink 2–4×.
 - **Label texture atlas**: UI labels pack into ≤4 shared pages — the 4K
   char grid's ~1200 labels cost a handful of binds instead of 1200.
 - **Frame pacing**: dt clamp after stalls + a 144 Hz zero-missed-reveal
@@ -2213,29 +2170,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   inspect / prune (-older, -max-bytes, -all) / warm a URL list or char
   icons via a server's `extensions.json` into T3 — pre-seed a fresh
   install before ever connecting.
-- **Built-in single-asset downloader** (Settings, **OFF by default**): for
-  hosts that serve a directory listing, grab one character or background
-  straight off the server instead of a multi-GB pack. Turn it on and a
-  download (↓) badge appears on each character (char-select) and background
-  (Background menu) cell; it walks that folder's autoindex and saves the
-  files under `downloads/` — and a downloaded character also pulls the
-  `sounds/general` sfx and `sounds/blips` its `char.ini` names (those live
-  outside the folder, so a plain grab would be silent — the `char.ini` is
-  re-read from the server so this never depends on the just-walked copy).
-  A floating progress chip ("Downloading … — N files, X MiB") shows from any
-  screen while a grab runs, and the cell is marked. Bounded (file / byte /
-  depth caps), off-thread, cancelable, and path-traversal-guarded. Point
-  "Read assets from local folders" at the downloads folder to use the grabs
-  offline / in rehearsal. **Local mounts now resolve names with spaces and
-  parentheses**: a mounted pack folder like "Phoenix Wright" was requested as
-  `phoenix%20wright` and missed on disk — the local reader now also tries the
-  percent-decoded path (the `..` traversal guard runs on the decoded form too, so
-  an encoded `%2e%2e` can't escape the mount).
-  **v2:** grabs **queue** instead of refusing while one runs (the chip shows
-  "+N queued"); **right-click** a background cell to queue it; **Pause / Resume**
-  the active grab and the whole queue (Settings); and an optional **bandwidth
-  cap** (KiB/s, 0 = unlimited) paces downloads so a big grab doesn't hog your
-  connection.
+- **Local mounts resolve names with spaces and parentheses**: a mounted pack
+  folder like "Phoenix Wright" was requested as `phoenix%20wright` and missed on
+  disk; the local reader also tries the percent-decoded path (the `..` traversal
+  guard runs on the decoded form too, so an encoded `%2e%2e` can't escape the mount).
 - **Discord Rich Presence**: **enabled by default** on a normal build (untick
   in Settings → Discord), per-field privacy
   checkboxes, zero build/run dependency. The official AsyncAO **Application ID

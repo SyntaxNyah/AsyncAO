@@ -538,9 +538,7 @@
       "catchUpThreshold": 1,
       "catchUpWhenBehind": true,
       "changelogSeenVersion": "v641",
-      "charBundlePrefetch": true,
       "charChatbox": true,
-      "charDownloader": true,
       "chatBoxPercent": 50,
       "chatRateLimitMs": 2,
       "chatScalePercent": 50,
@@ -596,10 +594,8 @@
         "showServer": true
       },
       "diskCacheBudgetMiB": 128,
-      "diskZstd": true,
       "dndPersist": true,
       "dndSaved": true,
-      "downloadKBps": 2,
       "dragLayout": true,
       "dyslexiaFont": true,
       "emoteButtonImages": true,
@@ -614,6 +610,7 @@
       "emoteGridGapPx": 1,
       "emoteHoverNames": true,
       "emoteHoverNamesMs": 500,
+      "errorSpriteCustom": true,
       "errorSpritePath": "v723",
       "export": {
         "fps": 6,
@@ -729,7 +726,6 @@
         "v772"
       ],
       "logScalePercent": 75,
-      "loopPreanim": true,
       "macros": [
         {
           "key": "v771",
@@ -850,7 +846,6 @@
         }
       },
       "perAreaScrollback": true,
-      "pingChip": true,
       "plainLobby": true,
       "playerListAreaSort": 2,
       "playerListSort": 1,
@@ -860,7 +855,6 @@
       "postVignette": true,
       "preanimTimeoutMs": 200,
       "preferAnimated": true,
-      "prefetchAggro": 2,
       "previewHeightPx": 96,
       "previewHoverMs": 500,
       "previewPinned": true,
@@ -951,7 +945,6 @@
       "shoutBypassQueue": true,
       "shoutDurationMs": 100,
       "shoutPunch": true,
-      "showAssetWarnings": true,
       "showFriendButton": true,
       "showMissingPlaceholder": true,
       "showPairStatus": true,
@@ -1081,10 +1074,6 @@
           "v681": 2
         }
       },
-      "thumbBudgetMiB": 8,
-      "thumbCache": true,
-      "thumbHeightPx": 32,
-      "thumbQuality": 5,
       "timerRepeat": true,
       "timerSeconds": 2,
       "toolboxSeen": true,
@@ -1162,8 +1151,6 @@
       "catchUpLingerMs": 1,
       "catchUpWhenBehind": true,
       "changelogSeenVersion": "v641",
-      "charBundlePrefetch": true,
-      "charDownloader": true,
       "chatBoxPercent": 50,
       "chatRateLimitMs": 2,
       "chatScalePercent": 50,
@@ -1209,10 +1196,8 @@
         "showArea": true
       },
       "diskCacheBudgetMiB": 128,
-      "diskZstd": true,
       "dndPersist": true,
       "dndSaved": true,
-      "downloadKBps": 2,
       "dyslexiaFont": true,
       "emoteCaptions": true,
       "emoteFavOnly": true,
@@ -1224,6 +1209,7 @@
       },
       "emoteGridGapPx": 1,
       "emoteHoverNamesMs": 500,
+      "errorSpriteCustom": true,
       "errorSpritePath": "v723",
       "export": {
         "fps": 6,
@@ -1333,7 +1319,6 @@
         "v772"
       ],
       "logScalePercent": 75,
-      "loopPreanim": true,
       "macros": [
         {
           "key": "v771",
@@ -1450,7 +1435,6 @@
         }
       },
       "perAreaScrollback": true,
-      "pingChip": true,
       "playerListAreaSort": 2,
       "playerListSort": 1,
       "postCRT": true,
@@ -1458,7 +1442,6 @@
       "postScanlines": true,
       "postVignette": true,
       "preanimTimeoutMs": 200,
-      "prefetchAggro": 2,
       "previewHeightPx": 96,
       "previewHoverMs": 500,
       "previewPinned": true,
@@ -1545,7 +1528,6 @@
       "sfxVolume": 2,
       "shoutDurationMs": 100,
       "shoutPunch": true,
-      "showAssetWarnings": true,
       "showPairStatus": true,
       "showRecordButton": true,
       "showSongURL": true,
@@ -1667,10 +1649,6 @@
           "v681": 2
         }
       },
-      "thumbBudgetMiB": 8,
-      "thumbCache": true,
-      "thumbHeightPx": 32,
-      "thumbQuality": 5,
       "timerRepeat": true,
       "timerSeconds": 2,
       "toolboxSeen": true,

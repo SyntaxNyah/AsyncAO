@@ -4,6 +4,57 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v2.1.0-rc.4 - 2026-11-08
+
+The fourth pre-release of v2.1.0, reworking the Assets settings and removing
+features few players used.
+
+### Before you update
+- **The single-asset downloader is gone**, with its download badges on
+  characters and backgrounds.
+- **Predictive prefetch is gone**, with **Preload a character's whole sprite
+  set** and its hotkey. Your own character's first emotes still load ahead.
+- **The connection ping chip**, its hotkey and the **missing-asset warnings**
+  chip are gone. Missing assets are still listed in Debug ▸ Log.
+- **Loop preanimations is gone**: preanimations play once, as in AO2.
+- **Sprite thumbnails are gone.** The `cache/thumbs` folder is left on disk;
+  delete it if you like.
+- **Disk cache compression is gone.** Files it compressed are downloaded again
+  the first time they're needed.
+
+### Assets
+- **Asset source** is one list of everywhere AsyncAO looks, searched top to
+  bottom: your folders and .zip packs, the packages folder, then the server
+  and its mirrors. Move your folders up or down with ▲ ▼; the buttons show on
+  the row under the mouse.
+- **Use my folders and packs** and **Stream from the web** replace the three
+  modes. Pick the server whose mirrors you're editing on the Stream line.
+- Add a folder, a .zip or a mirror's https:// address in one field, pick
+  folders with **Add folders…**, pick .zip packs with **Add packs…**, or drag
+  a folder or .zip onto the Assets tab.
+- Each folder is checked when added. The arrow by its kind shows what it holds
+  (Characters, Backgrounds, Sounds, Evidence, Misc); a folder with none of
+  those says **Not an AO base**, with a button for the right folder when you
+  picked one level too high or too deep.
+- The **Use my own AO files…** setup window is gone; the list does its job.
+- Edits to your files show by themselves when you switch back to AsyncAO, so
+  **Check folders now** is gone. Only files you changed are reloaded.
+- The packages folder is one row with its own **Turn off** / **Turn on**
+  button. Packages alone can now be switched on: the folder switch used to stay
+  greyed out without a folder of your own.
+- **Cache** lists each cache with what it holds now: art and files in memory,
+  the disk cache, missing assets and learned formats, each with its Clear or
+  Retry and its settings under its arrow. The texture memory budget, how long
+  a missing asset is remembered and the learned-format tools moved here.
+- **Missing sprites** has a **Use a custom image** switch, a path field and a
+  **Browse…** button.
+- Card order: Asset source, Cache, Missing sprites. The "Image & audio
+  formats" pointer is gone; Formats has its own tab.
+
+### Settings
+- **Updates** sits above **Reset** in the sidebar.
+- The sidebar no longer has an empty extra tab at the bottom.
+
 ## v2.1.0-rc.3 - 2026-11-08
 
 The third pre-release of v2.1.0, fixing how pre-releases update.

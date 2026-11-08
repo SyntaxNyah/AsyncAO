@@ -2,7 +2,7 @@ package ui
 
 // Theme-sidecar refusal chip in the menu-bar band. A refused sidecar (a cap exceeded, or not INI) is swallowed on
 // load, so this chip is the only sign the theme applied without its AsyncAO tier.
-// Geometry and input/paint split follow assetmisschip.go and iniswapchip.go; the chip drops rather than overlaps.
+// Geometry and input/paint split follow iniswapchip.go; the chip drops rather than overlaps.
 // Not time-limited: a refusal is a state, so the chip clears on click (opens the log) and re-arms on the next refusal.
 
 import (
@@ -15,7 +15,7 @@ import (
 const (
 	// themeErrChipLabel names the consequence (the theme looks wrong), not the fault.
 	themeErrChipLabel = "! theme extras skipped"
-	// themeErrChipPadX / themeErrChipInsetY repeat assetmisschip.go's values under this file's names.
+	// themeErrChipPadX / themeErrChipInsetY repeat iniswapchip.go's values under this file's names.
 	themeErrChipPadX   = int32(8)
 	themeErrChipInsetY = int32(2)
 	// themeErrChipMarginX insets the chip from the window's right edge (mirrors menuBarPadX).
@@ -70,7 +70,7 @@ func (a *App) menuBarTitlesRight() int32 {
 	return last.X + last.W
 }
 
-// handleThemeErrChipInput claims a click pre-screen, as handleAssetMissChipInput does, before the screens see it.
+// handleThemeErrChipInput claims a click pre-screen, before the screens see it.
 func (a *App) handleThemeErrChipInput(w int32) {
 	r, ok := a.themeErrChipRect(w)
 	if !ok {
@@ -86,7 +86,7 @@ func (a *App) handleThemeErrChipInput(w int32) {
 	}
 	c.clicked = false
 	a.showDebugPanel = true
-	a.debugSection = assetMissDebugLogTab()
+	a.debugSection = debugLogTab()
 	// Acknowledged: the log holds the detail, and the next apply that still refuses re-arms the chip (pollThemeApply).
 	a.themeSidecarErrAck = true
 }
@@ -98,7 +98,7 @@ func (a *App) drawThemeErrChip(w int32) {
 		return
 	}
 	c := a.ctx
-	// Filled plate with a danger border, like the missing-asset chip.
+	// Filled plate with a danger border.
 	c.Fill(r, ColPanelHi)
 	c.Border(r, ColDanger)
 	c.Label(r.X+themeErrChipPadX, r.Y+a.menuBarTextY(r.H), themeErrChipLabel, ColDanger)
@@ -128,4 +128,14 @@ func themeSidecarRefusalTip(name string, err error) string {
 		"The theme's AO2 files applied normally. Everything in the AsyncAO file — elements, "+
 		"[overrides], [palette], [pane.*] — was skipped.\nClick for the full line (Debug ▸ Log).",
 		theme.SidecarFileName, name, err)
+}
+
+// debugLogTab finds the Log tab by name, so reordering debugSections can't send the chip to the wrong tab.
+func debugLogTab() int {
+	for i, name := range debugSections {
+		if name == "Log" {
+			return i
+		}
+	}
+	return 0
 }

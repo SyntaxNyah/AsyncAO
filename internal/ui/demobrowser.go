@@ -39,16 +39,10 @@ const (
 	purposeThemeBundle
 	// purposeThemeImage: pick goes to editorTakeImage, as a dragged picture does.
 	purposeThemeImage
-	// purposeBaseFolder: pick goes to the base-folder wizard's setBasePath;
-	// its answer is a directory (see browsePicksDir).
-	purposeBaseFolder
 	// purposeEvidenceImage: pick goes to the evidence editor's Image-file field; it navigates the merged local mounts,
 	// with an earlier mount shadowing a later one, and cannot leave them (see mergebrowse.go).
 	purposeEvidenceImage
 )
-
-// browsePicksDir reports a purpose whose answer is the current directory, adding a "Use this folder" button.
-func browsePicksDir(p browsePurpose) bool { return p == purposeBaseFolder }
 
 // browseEntry is one row: a directory to descend into or a file to pick.
 type browseEntry struct {
@@ -179,17 +173,10 @@ func browseKeepRule(p browsePurpose) func(string) bool {
 		return isThemeBundleName
 	case purposeThemeImage:
 		return isThemeImageName
-	case purposeBaseFolder:
-		return isBaseMountName
 	case purposeEvidenceImage:
 		return isEvidenceImageName
 	}
 	return isRecordingName
-}
-
-// isBaseMountName reports a .zip, which mounts as a base; hiding files would make a folder of packs look empty.
-func isBaseMountName(name string) bool {
-	return strings.EqualFold(filepath.Ext(name), ".zip")
 }
 
 // isEvidenceImageName reports a file the theme image intake's decode list accepts.
@@ -327,8 +314,6 @@ func browseTitle(p browsePurpose) string {
 		return "Pick an image to add to this theme (PNG, WebP, GIF, APNG, AVIF — animated is fine)"
 	case purposeEvidenceImage:
 		return "Pick an evidence image from your local asset sources"
-	case purposeBaseFolder:
-		return "Open your base folder, then press Use this folder"
 	default:
 		return "Pick a .demo to turn into a video"
 	}
@@ -337,7 +322,7 @@ func browseTitle(p browsePurpose) string {
 // browseFileIcon is the glyph for a non-directory row; a constant per purpose, so the draw doesn't allocate.
 func browseFileIcon(p browsePurpose) string {
 	switch p {
-	case purposeThemeBundle, purposeBaseFolder:
+	case purposeThemeBundle:
 		return "📦"
 	case purposeThemeImage, purposeEvidenceImage:
 		return "🖼"
@@ -407,12 +392,6 @@ func (a *App) drawDemoBrowser(w, h int32) {
 		pathText := s.dir
 		if s.isDrivesView() {
 			pathText = "This PC (drives)"
-		} else if browsePicksDir(s.purpose) {
-			const useBtnW = 130
-			pathW = inW - useBtnW - 8
-			if c.Button(sdl.Rect{X: inX + inW - useBtnW, Y: y - 2, W: useBtnW, H: btnH}, "Use this folder") {
-				a.pickBrowsedFile(s.dir)
-			}
 		}
 		c.LabelClipped(inX, y, pathW, pathText, ColTextDim)
 	}
@@ -573,9 +552,6 @@ func (a *App) pickBrowsedFile(path string) {
 		// Same as a dragged picture. False means no editor over a writable theme,
 		// impossible here as the editor opened this.
 		a.editorTakeImage(path)
-	case purposeBaseFolder:
-		// path is the directory for Use-this-folder and a .zip for a row click; setBasePath takes either.
-		baseWizard.setBasePath(path)
 	case purposeEvidenceImage:
 		// An origin-relative asset path re-rooted at the mounts' evidence/ folder; no filesystem path is involved.
 		a.setEvidenceImageFromMergedPath(path)

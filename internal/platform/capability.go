@@ -10,6 +10,8 @@ const (
 	PickFolder
 	// PickManyFolders is a folder dialog that lets the user select several at once.
 	PickManyFolders
+	// PickFile is the open-file dialog.
+	PickFile
 	CopyFilesToClipboard
 	SystemNotifications
 	Relaunch
@@ -25,7 +27,7 @@ const (
 
 func (c Capability) String() string {
 	return [...]string{
-		"open URL", "reveal file", "pick folder", "pick many folders", "copy files to clipboard",
+		"open URL", "reveal file", "pick folder", "pick many folders", "pick file", "copy files to clipboard",
 		"system notifications", "relaunch", "self-update",
 		"system font discovery", "machine id", "discord presence",
 		"extra windows", "background rendering", "high-memory features",
@@ -88,7 +90,7 @@ func capabilitiesFor(env Environment, hardware Hardware) Capabilities {
 		off(reasonLowMemory, HighMemoryFeatures)
 	}
 	if env.FormFactor == Mobile {
-		off(reasonMobile, OpenURL, RevealFile, PickFolder, PickManyFolders, CopyFilesToClipboard,
+		off(reasonMobile, OpenURL, RevealFile, PickFolder, PickManyFolders, PickFile, CopyFilesToClipboard,
 			SystemNotifications, Relaunch, SelfUpdate,
 			SystemFontDiscovery, MachineID, DiscordPresence,
 			ExtraWindows, BackgroundRendering)

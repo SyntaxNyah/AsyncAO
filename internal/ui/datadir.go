@@ -6,12 +6,11 @@ import (
 	"sync"
 )
 
-// exeDataMu guards exeDataRoot and downloadsRootMemo. Tests set the root while goroutines under test (such as the
-// async .aorec write) are still reading it, so an unguarded package var races under -race.
+// exeDataMu guards exeDataRoot. Tests set the root while goroutines under test (such as the async .aorec write) are
+// still reading it, so an unguarded package var races under -race.
 var (
-	exeDataMu         sync.RWMutex
-	exeDataRoot       string
-	downloadsRootMemo string
+	exeDataMu   sync.RWMutex
+	exeDataRoot string
 )
 
 // exeDataDir is the base directory for exe-adjacent data: the injected test root when set, else the binary's
@@ -30,11 +29,9 @@ func exeDataDir() (string, error) {
 	return filepath.Dir(exe), nil
 }
 
-// setExeDataRoot points every exe-adjacent path at root and drops the downloads memo built from the previous root.
-// Tests use it through withExeDataRoot.
+// setExeDataRoot points every exe-adjacent path at root. Tests use it through withExeDataRoot.
 func setExeDataRoot(root string) {
 	exeDataMu.Lock()
 	exeDataRoot = root
-	downloadsRootMemo = ""
 	exeDataMu.Unlock()
 }

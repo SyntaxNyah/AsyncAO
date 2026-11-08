@@ -38,32 +38,6 @@ func applyPresetAsync(d Deps, name string) {
 	}()
 }
 
-// measureDiskCacheAsync walks the T3 directory off-thread and reports blob count and size.
-func measureDiskCacheAsync(root string) {
-	if root == "" {
-		return
-	}
-	go func() {
-		var files int
-		var bytes int64
-		_ = filepath.WalkDir(root, func(_ string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return nil //nolint:nilerr // best-effort measurement
-			}
-			if info, ierr := d.Info(); ierr == nil {
-				files++
-				bytes += info.Size()
-			}
-			return nil
-		})
-		line := fmt.Sprintf("Disk cache (T3): %d blobs · %.1f MiB at %s", files, float64(bytes)/(1<<20), root)
-		select {
-		case settings.ioRes <- line:
-		default:
-		}
-	}()
-}
-
 // learnedExportFileName sits next to the executable.
 const learnedExportFileName = "learned-formats.json"
 

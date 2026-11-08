@@ -70,8 +70,6 @@ const (
 	hotkeyIdleBreath = "idle_breath" // toggle idle breathing (#122)
 	hotkeyReflection = "reflection"  // toggle glass-floor reflection (#123)
 	hotkeyWeather    = "weather"     // cycle ambient weather (#124)
-	hotkeyCharBundle = "char_bundle" // toggle full-character sprite prefetch (#127)
-	hotkeyPingChip   = "ping_chip"   // toggle the connection-quality chip (#128)
 	hotkeyModDash    = "mod_dash"    // open the CM / mod dashboard (#130)
 	hotkeyPalette    = "palette"     // command palette (#39) — fuzzy search every action + server command
 	hotkeySearchLog  = "search_log"  // focus the log find field (Ctrl+F, the standard find chord)
@@ -132,8 +130,6 @@ var hotkeyDefs = []struct {
 	{hotkeyIdleBreath, "Toggle idle breathing", "]"},                       // Ctrl+]
 	{hotkeyReflection, "Toggle glass-floor reflection", ";"},               // Ctrl+;
 	{hotkeyWeather, "Cycle ambient weather", "'"},                          // Ctrl+'
-	{hotkeyCharBundle, "Toggle full-character sprite preload", "\\"},       // Ctrl+\
-	{hotkeyPingChip, "Toggle connection ping chip", "`"},                   // Ctrl+`
 	{hotkeyModDash, "Open the CM / mod dashboard", "/"},                    // Ctrl+/ — mnemonic for a slash-command panel
 	{hotkeyPalette, "Command palette (search every action)", "space"},      // Ctrl+Space — the one shortcut that finds the rest
 	{hotkeySearchLog, "Focus the log search (find)", "f"},                  // Ctrl+F: the standard find chord
@@ -461,18 +457,6 @@ func (a *App) handleHotkeys() {
 		}, "Glass-floor reflection")
 	case a.hotkeyFor(hotkeyWeather):
 		a.cycleWeather()
-	case a.hotkeyFor(hotkeyCharBundle):
-		a.toggleFXPref(a.d.Prefs.Load().CharBundlePrefetch, func(v bool) {
-			a.d.Prefs.Update(func(sn *config.Settings) {
-				sn.CharBundlePrefetch = v
-			})
-		}, "Full-character preload")
-	case a.hotkeyFor(hotkeyPingChip):
-		a.toggleFXPref(a.d.Prefs.Load().PingChip, func(v bool) {
-			a.d.Prefs.Update(func(sn *config.Settings) {
-				sn.PingChip = v
-			})
-		}, "Ping chip")
 	case a.hotkeyFor(hotkeyModDash):
 		a.toggleModDash()
 	case a.hotkeyFor(hotkeyFavEmotes):

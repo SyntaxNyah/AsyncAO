@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	_ "net/http/pprof"
-	"path/filepath"
 	"slices"
 	"time"
 
@@ -124,17 +123,6 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		return err
 	}
 	defer disk.Close()
-	// Thumbnails live beside T3 and outlive pruned assets. Failing to open them is not fatal.
-	thumbs, err := assets.NewThumbCache(filepath.Join(filepath.Dir(diskRoot), "thumbs"))
-	if err != nil {
-		log.Printf("thumbcache: %v (thumbnails disabled)", err)
-		thumbs = nil
-	} else {
-		defer thumbs.Close()
-		thumbs.SetEnabled(prefs.Load().ThumbCache)
-		thumbs.SetParams(prefs.Load().ThumbHeightPx(), prefs.Load().ThumbQuality())
-		thumbs.SetBudget(int64(prefs.Load().ThumbBudgetMiB()) << 20)
-	}
 
 	// Resolve the proxy before anything can dial, or the earliest requests would go direct.
 	sockets := netproxy.New(platform.SystemProxySettings)
@@ -248,12 +236,10 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		Disk:       disk,
 		Source:     client,
 		Decoder:    decoder,
-		Thumbs:     thumbs, // opt-in low-q sprite thumbnails (nil when unavailable)
 		T1Contains: store.ContainsAnimated,
 		T1Failed:   store.FailedRecently,
 	})
 	defer manager.CloseMedia()
-	manager.SetDiskCompression(prefs.Load().DiskZstd)
 	// 0 = unlimited.
 	manager.SetDiskBudget(int64(prefs.Load().DiskCacheBudgetMiBVal) << 20)
 
