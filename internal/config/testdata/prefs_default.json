@@ -350,6 +350,7 @@
   "blipSpeedDefaultMigrated": true,
   "deskManifestDefaultMigrated": true,
   "detailedLogDefaultMigrated": true,
+  "assetSwitchesMigrated": true,
   "smoothLogScroll": false,
   "musicHistory": true,
   "musicStreaming": true,

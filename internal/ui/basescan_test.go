@@ -238,7 +238,7 @@ func TestFolderChecksCoverEveryListedFolderAndForgetRemovedOnes(t *testing.T) {
 func TestReplaceMountKeepsItsPlace(t *testing.T) {
 	a := headlessProbeApp(t, assets.NewLocalFetcher([]string{t.TempDir()}), false)
 	first, wrong, last, right := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
-	a.setAssetSourceMode(assetSrcLayered, []string{first, wrong, last})
+	a.setSources(true, true, []string{first, wrong, last})
 
 	const wrongAt = 1
 	a.replaceMount(wrongAt, right)

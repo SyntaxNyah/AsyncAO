@@ -268,6 +268,7 @@ func mountedProbeApp(t *testing.T, mount string) (*App, string) {
 	local := assets.NewLocalFetcher([]string{mount})
 	a := headlessProbeApp(t, local, true)
 	a.d.Prefs.SetLocalAssets(true, []string{mount})
+	a.d.Prefs.SetLayeredAssets(true)
 	return a, local.BaseURL()
 }
 

@@ -44,8 +44,6 @@ const (
 )
 
 const (
-	// asrcMuteAlpha fades a toggle that needs a folder first into the card.
-	asrcMuteAlpha uint8 = 160
 	// asrcServerPickW is the server dropdown on the "Stream from the web" line.
 	asrcServerPickW int32 = 260
 	// asrcHoverAlpha is the strength of the hovered row's highlight; a row's buttons show only while it is hovered.
@@ -84,52 +82,62 @@ const (
 	asrcStreamHint  = "Every asset comes from the web."
 	asrcUseFolders  = "Use my folders and packs"
 	asrcStream      = "Stream from the web"
-	asrcPackages    = "Packages"
+	asrcPackages    = "Use packages"
 	mountOrderHint  = "Folders and .zip packs are searched top to bottom, and the first one with the file wins."
 )
 
-// assetSourceMode collapses the two stored bools into a mode. Local-only wins when both are set, matching
-// config.LayeredAssets.
+// assetSourceMode is what the three switches add up to: nothing local read is streaming, local read with streaming
+// off is local-only, and anything else layers local files over the stream.
 func (a *App) assetSourceMode() int {
-	enabled, _ := a.d.Prefs.LocalAssets()
-	if enabled {
+	if local, _ := a.localAssets(); local {
 		return assetSrcLocal
 	}
-	if a.d.Prefs.Load().LocalAssetsLayered {
+	if layered, _ := a.layeredAssets(); layered {
 		return assetSrcLayered
 	}
 	return assetSrcStream
 }
 
-// setAssetSourceMode applies a mode, keeping the two stored bools mutually exclusive.
-func (a *App) setAssetSourceMode(mode int, mounts []string) {
-	switch mode {
-	case assetSrcLocal:
-		a.d.Prefs.SetLayeredAssets(false)
-		a.d.Prefs.SetLocalAssets(true, mounts)
-	case assetSrcLayered:
-		a.d.Prefs.SetLocalAssets(false, mounts)
+// setSources sets "Use my folders and packs", streaming and the player's folders together.
+func (a *App) setSources(folders, stream bool, mounts []string) {
+	a.d.Prefs.SetLayeredAssets(folders)
+	a.d.Prefs.SetLocalAssets(!stream, mounts)
+	a.applySources()
+}
+
+// setStreaming flips "Stream from the web"; switching it off switches the folders and packages on, so there is
+// something to read.
+func (a *App) setStreaming(on bool, mounts []string) {
+	if !on {
 		a.d.Prefs.SetLayeredAssets(true)
-	default:
-		a.d.Prefs.SetLayeredAssets(false)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.PackagesOff = false })
+	}
+	a.d.Prefs.SetLocalAssets(!on, mounts)
+	a.applySources()
+}
+
+// applySources re-points the asset origin after a switch or the folder list changed, switching streaming back on
+// first when nothing local is left to read.
+func (a *App) applySources() {
+	if streamOff, mounts := a.d.Prefs.LocalAssets(); streamOff && !a.haveLocalSources() {
 		a.d.Prefs.SetLocalAssets(false, mounts)
 	}
-	// rebuildAssetOrigin re-points the URL builder and (deferred) reconciles the mount layer, covering both halves of
-	// a mode change.
+	// rebuildAssetOrigin re-points the URL builder and (deferred) reconciles the mount layer.
 	a.rebuildAssetOrigin()
 }
 
-// modeAfterToggle is the mode once "Use my folders" or "Stream" is flipped; streaming comes back on when the
-// folders go off, since a source with neither has nothing to read.
-func modeAfterToggle(folders, stream bool) int {
-	switch {
-	case !folders:
-		return assetSrcStream
-	case stream:
-		return assetSrcLayered
-	default:
-		return assetSrcLocal
+// saveMounts stores the player's folders and applies them; false past the cap. A folder added to an empty list is
+// meant to be used, so it switches folders on.
+func (a *App) saveMounts(next []string) bool {
+	_, prev := a.d.Prefs.LocalAssets()
+	if !a.d.Prefs.SetLocalMounts(next) {
+		return false
 	}
+	if len(prev) == 0 && len(next) > 0 {
+		a.d.Prefs.SetLayeredAssets(true)
+	}
+	a.applySources()
+	return true
 }
 
 // drawAssetSourceSettings is the whole card: what is happening now and the one ordered list. A row's buttons show
@@ -139,14 +147,15 @@ func (a *App) drawAssetSourceSettings(y, _ int32) int32 {
 	_, mounts := a.d.Prefs.LocalAssets()
 	mode := a.assetSourceMode()
 
-	title, kind, bg := assetSourceHeading(mode, a.haveLocalSources())
+	title, kind, bg := assetSourceHeading(mode, len(mounts) > 0 || len(a.d.AutoMounts) > 0)
 	a.badgeHeading(y, title, kind, bg)
 	a.drawSourceHelp(y, title, kind, mounts, mode)
 	y += settHeadingH + settDetailGap + settDetailGap
 
-	useFolders, stream := mode != assetSrcStream, mode != assetSrcLocal
-	if next := a.toggleRow(pad, y, asrcUseFolders, useFolders, a.haveLocalSources()); next != useFolders {
-		a.setAssetSourceMode(modeAfterToggle(next, stream), mounts)
+	streamOff, _ := a.d.Prefs.LocalAssets()
+	useFolders, stream := a.d.Prefs.Load().LocalAssetsLayered, !streamOff
+	if next := a.ctx.Checkbox(pad, y, asrcUseFolders, useFolders); next != useFolders {
+		a.setSources(next, stream, mounts)
 		return y
 	}
 	a.noteSearchRow(asrcUseFolders, y)
@@ -157,21 +166,18 @@ func (a *App) drawAssetSourceSettings(y, _ int32) int32 {
 	if changed {
 		return y
 	}
-	if len(mounts) == 0 && len(a.d.AutoMounts) == 0 {
-		y = a.settingsDesc(pad+mountNumW, y, "No folders or packs yet.", ColTextDim) + settDetailGap
-	}
 	y = a.drawFolderProblems(y)
 
-	next, key := a.drawWebDivider(y+settDetailGap, stream, a.haveLocalSources())
+	next, key := a.drawWebDivider(y+settDetailGap, stream)
 	if next != stream {
-		a.setAssetSourceMode(modeAfterToggle(useFolders || !next, next), mounts)
+		a.setStreaming(next, mounts)
 		return y
 	}
 	y += settDetailGap + mountRowH
 	if key == "" {
 		y = a.settingsDesc(pad+mountNumW, y, "Refresh the lobby once to see each server's host here.", ColTextDim) + settDetailGap
 	}
-	y = a.drawHostRows(y, key, len(mounts)+packageRows(a.packagesInUse()), stream)
+	y = a.drawHostRows(y, key, len(searchedFolders(mounts, useFolders))+packageRows(a.packagesInUse()), stream)
 	return a.drawAddSourceRow(y+settDetailGap, key, mounts) + settSectionGap
 }
 
@@ -192,9 +198,9 @@ func (a *App) drawSourceHelp(y int32, title, kind string, mounts []string, mode 
 func assetSourceHeading(mode int, haveMounts bool) (title, kind string, bg sdl.Color) {
 	switch {
 	case mode == assetSrcLocal && haveMounts:
-		return "Your folders only", "Local only", ColTierYellow
+		return "Your files only", "Local only", ColTierYellow
 	case mode == assetSrcLayered && haveMounts:
-		return "Your folders, then the web", "Layered", ColAccent
+		return "Your files, then the web", "Layered", ColAccent
 	case haveMounts:
 		return "Streaming from the web", "Folders off", ColTextDim
 	default:
@@ -250,19 +256,6 @@ func assetModeHint(mode int) string {
 	}
 }
 
-// toggleRow is a checkbox that draws faded and never flips while it is not enabled, so the search still finds it.
-func (a *App) toggleRow(x, y int32, label string, on, enabled bool) bool {
-	c := a.ctx
-	if enabled {
-		return c.Checkbox(x, y, label, on)
-	}
-	c.Checkbox(x, y, label, on)
-	fade := ColPanel
-	fade.A = asrcMuteAlpha
-	c.Fill(sdl.Rect{X: x, Y: y, W: c.CheckboxWidth(label), H: settRowH}, fade)
-	return on
-}
-
 // drawMountRows draws the player's mounts and the auto-mounted packages after them, and returns the y below them and
 // whether a button changed the list. Auto-mounted packages come last, so a manual folder always wins; they are
 // managed in packages/.
@@ -274,7 +267,11 @@ func (a *App) drawMountRows(y int32, mounts []string, on bool) (int32, bool) {
 			kind = "ZIP"
 		}
 		hovered := a.hoverRow(y)
-		if fix := a.drawFoldingLine(y, i, m, kind, col, hovered, true); fix != "" {
+		pos := i
+		if !on {
+			pos = noPosition // not searched, so no place in the order
+		}
+		if fix := a.drawFoldingLine(y, pos, m, kind, col, hovered, true); fix != "" {
 			a.replaceMount(i, fix)
 			return y, true
 		}
@@ -286,18 +283,32 @@ func (a *App) drawMountRows(y int32, mounts []string, on bool) (int32, bool) {
 		}
 		y = a.drawFolderContents(y+mountRowH, m)
 	}
+	if len(mounts) == 0 {
+		y = a.settingsDesc(a.formX+mountNumW, y, "No folders or packs yet.", ColTextDim) + settDetailGap
+	}
 	return a.drawPackagesLine(y, mounts, on)
 }
 
-// drawPackagesLine is the packages folder as one row after the player's folders: the packages it holds, a problem
-// with any of them, and its own on/off button, always shown. Its arrow opens a line per package.
+// drawPackagesLine is the packages folder after the player's folders: its own "Use packages" switch, then one row
+// with the packages it holds and a problem with any of them. The row's arrow opens a line per package.
 func (a *App) drawPackagesLine(y int32, mounts []string, on bool) (int32, bool) {
-	if len(a.d.AutoMounts) == 0 {
-		return y, false
-	}
 	c := a.ctx
+	// Its own switch, like the folders': packages are read with it on, whatever the folder switch says. It shows even
+	// with no packages yet, so the switch is always where people look for it.
+	switchOn := !a.d.Prefs.Load().PackagesOff
+	if next := c.Checkbox(a.formX, y, asrcPackages, switchOn); next != switchOn {
+		a.setPackagesInUse(next)
+		return y, true
+	}
+	c.Tooltip(sdl.Rect{X: a.formX, Y: y, W: c.CheckboxWidth(asrcPackages), H: settRowH},
+		"Packages are the folders in \"packages\" next to AsyncAO, searched after yours.")
+	a.noteSearchRow(asrcPackages, y)
+	y += settRowH
+	if len(a.d.AutoMounts) == 0 {
+		return a.settingsDesc(a.formX+mountNumW, y, "No packages yet: put package folders in a \"packages\" folder next to AsyncAO.", ColTextDim) + settDetailGap, false
+	}
 	inUse := len(a.packagesInUse()) > 0
-	line := sourceLine{pos: len(mounts), kind: "Auto", col: sourceRowColor(on && inUse), fold: foldClosed}
+	line := sourceLine{pos: len(searchedFolders(mounts, on)), kind: "Auto", col: sourceRowColor(inUse), fold: foldClosed}
 	if !inUse {
 		line.pos = noPosition // not searched, so no place in the order
 	}
@@ -323,17 +334,6 @@ func (a *App) drawPackagesLine(y int32, mounts []string, on bool) (int32, bool) 
 		if c.clicked {
 			settings.packagesOpen = !settings.packagesOpen
 		}
-	}
-	label := "Turn off"
-	if !inUse {
-		label = "Turn on"
-	}
-	toggle := sdl.Rect{X: a.formX + a.formW - mountRemoveW, Y: y, W: mountRemoveW, H: mountCtlH}
-	c.Tooltip(toggle, "Packages are the folders in \"packages\" next to AsyncAO, searched after yours.")
-	a.noteSearchRow(asrcPackages, y)
-	if c.Button(toggle, label) {
-		a.setPackagesInUse(!inUse, mounts)
-		return y, true
 	}
 	y += mountRowH
 	if settings.packagesOpen {
@@ -376,15 +376,18 @@ func packageRows(inUse []string) int {
 	return 1
 }
 
-// setPackagesInUse switches the packages folder in or out of the search order. Streaming comes back on when that
-// leaves nothing local to read.
-func (a *App) setPackagesInUse(on bool, mounts []string) {
+// setPackagesInUse switches the packages folder in or out of the search order, whatever the folder switch says.
+func (a *App) setPackagesInUse(on bool) {
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.PackagesOff = !on })
-	if !a.haveLocalSources() && a.assetSourceMode() != assetSrcStream {
-		a.setAssetSourceMode(assetSrcStream, mounts)
-		return
+	a.applySources()
+}
+
+// searchedFolders is the player's folders while their switch is on, for numbering what comes after them.
+func searchedFolders(mounts []string, on bool) []string {
+	if !on {
+		return nil
 	}
-	a.rebuildAssetOrigin()
+	return mounts
 }
 
 // drawFoldingLine is drawSourceLine for a folder. Once its contents are known its kind label opens and closes the
@@ -478,16 +481,14 @@ func (a *App) applyMountAction(act, i int, mounts []string) {
 		a.moveMount(i, i+1)
 	case rowRemove:
 		// Shrinking always succeeds; the cap only refuses growth, so a user over the cap can prune back under it.
-		a.d.Prefs.SetLocalAssets(a.assetSourceMode() == assetSrcLocal, slices.Delete(slices.Clone(mounts), i, i+1))
-		a.rebuildAssetOrigin()
+		a.saveMounts(slices.Delete(slices.Clone(mounts), i, i+1))
 	}
 }
 
 // moveMount moves the mount at from to position to, then reloads what the folders drew, as the winner may change.
 func (a *App) moveMount(from, to int) {
 	_, mounts := a.d.Prefs.LocalAssets()
-	a.d.Prefs.SetLocalAssets(a.assetSourceMode() == assetSrcLocal, moveItem(mounts, from, to))
-	a.rebuildAssetOrigin()
+	a.saveMounts(moveItem(mounts, from, to))
 	a.reloadFromFolders()
 }
 
@@ -499,11 +500,11 @@ func moveItem(list []string, from, to int) []string {
 
 // drawWebDivider draws the Stream toggle at the left edge, like the folders' toggle, then the server the web rows
 // belong to and the dividing line. It returns the toggle's value and the server's key, "" when none is known.
-func (a *App) drawWebDivider(y int32, stream, haveSources bool) (bool, string) {
+func (a *App) drawWebDivider(y int32, stream bool) (bool, string) {
 	c := a.ctx
 	pad := a.formX
 	toggleW := c.CheckboxWidth(asrcStream)
-	next := a.toggleRow(pad, y, asrcStream, stream, haveSources)
+	next := c.Checkbox(pad, y, asrcStream, stream)
 	c.Tooltip(sdl.Rect{X: pad, Y: y, W: toggleW, H: settRowH}, "Off reads only your folders, for servers with no asset URL.")
 	a.noteSearchRow("Extra asset hosts", y)
 	x := pad + toggleW + settBtnGap
@@ -677,10 +678,9 @@ func (a *App) addSource(key, input string, mounts []string) (string, bool) {
 	if slices.Contains(mounts, input) {
 		return input + " is already in the list.", false
 	}
-	if !a.d.Prefs.SetLocalAssets(a.assetSourceMode() == assetSrcLocal, append(slices.Clone(mounts), input)) {
+	if !a.saveMounts(append(slices.Clone(mounts), input)) {
 		return "Only " + strconv.Itoa(config.LocalMountCap) + " folders fit, so remove one first.", false
 	}
-	a.rebuildAssetOrigin()
 	return "Added " + input + ".", true
 }
 

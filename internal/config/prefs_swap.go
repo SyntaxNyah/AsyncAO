@@ -213,6 +213,15 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 		s.DetailedLogDefaultMigrated = true
 		changed = true
 	}
+	// "Only use my folders" stored the no-streaming flag alone; with independent switches that reads as folders off,
+	// so it gains the folder switch once.
+	if !presence["assetSwitchesMigrated"] || !s.AssetSwitchesMigrated {
+		if s.LocalAssetsEnabled {
+			s.LocalAssetsLayered = true
+		}
+		s.AssetSwitchesMigrated = true
+		changed = true
+	}
 	// Older files have no switch: a saved path meant the custom image was on.
 	if !presence["errorSpriteCustom"] && s.ErrorSpriteFile != "" {
 		s.ErrorSpriteCustom = true

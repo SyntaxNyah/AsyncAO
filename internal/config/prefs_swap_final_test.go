@@ -109,6 +109,7 @@ func TestMigrationStampsMarkDirty(t *testing.T) {
 		"blipSpeedDefaultMigrated": true, "textCrawlMs": 18,
 		"deskManifestDefaultMigrated": true, "deskFollowManifest": true,
 		"detailedLogDefaultMigrated": true, "detailedLog": true,
+		"assetSwitchesMigrated": true,
 	}
 	cases := []struct {
 		name  string
@@ -123,6 +124,7 @@ func TestMigrationStampsMarkDirty(t *testing.T) {
 		{"blipSpeed_unmigrated", map[string]any{"blipSpeedDefaultMigrated": false, "textCrawlMs": 18}, true},
 		{"deskManifest_unmigrated", map[string]any{"deskManifestDefaultMigrated": false, "deskFollowManifest": false}, true},
 		{"detailedLog_unmigrated", map[string]any{"detailedLogDefaultMigrated": false, "detailedLog": false}, true},
+		{"assetSwitches_unmigrated", map[string]any{"assetSwitchesMigrated": false, "localAssetsEnabled": true}, true},
 	}
 	for _, c := range cases {
 		raw, _ := json.Marshal(c.input)

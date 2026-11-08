@@ -9,22 +9,97 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
-// TestAssetSourceModeIsExclusive pins that the three-way control can never
-// persist the ambiguous both-bools state, whichever order the user clicks in.
-func TestAssetSourceModeIsExclusive(t *testing.T) {
+// TestSwitchesAddUpToTheMode: the folder, packages and stream switches are independent, and the mode is what they
+// add up to.
+func TestSwitchesAddUpToTheMode(t *testing.T) {
 	a := headlessProbeApp(t, assets.NewLocalFetcher([]string{t.TempDir()}), false)
 	mounts := []string{t.TempDir()}
+	a.d.AutoMounts = []string{t.TempDir()}
 
-	for _, want := range []int{assetSrcLayered, assetSrcLocal, assetSrcStream, assetSrcLocal, assetSrcLayered} {
-		a.setAssetSourceMode(want, mounts)
-		if got := a.assetSourceMode(); got != want {
-			t.Fatalf("set mode %d, read back %d", want, got)
+	for _, tc := range []struct {
+		folders, packages, stream bool
+		want                      int
+	}{
+		{true, false, true, assetSrcLayered},
+		{false, true, true, assetSrcLayered},
+		{false, true, false, assetSrcLocal},
+		{true, true, false, assetSrcLocal},
+		{false, false, true, assetSrcStream},
+	} {
+		a.setPackagesInUse(tc.packages)
+		a.setSources(tc.folders, tc.stream, mounts)
+		if got := a.assetSourceMode(); got != tc.want {
+			t.Errorf("folders=%v packages=%v stream=%v: mode %d, want %d", tc.folders, tc.packages, tc.stream, got, tc.want)
 		}
-		enabled, _ := a.d.Prefs.LocalAssets()
-		layered, _ := a.d.Prefs.LayeredAssets()
-		if enabled && layered {
-			t.Fatalf("mode %d persisted BOTH bools — the ambiguous state is reachable", want)
+		if got := a.d.Prefs.Load().LocalAssetsLayered; got != tc.folders {
+			t.Errorf("folders=%v packages=%v stream=%v: the folder switch read back %v", tc.folders, tc.packages, tc.stream, got)
 		}
+	}
+
+	// Nothing local and streaming off would read nothing, so streaming comes back on.
+	a.setPackagesInUse(false)
+	a.setSources(false, false, mounts)
+	if streamOff, _ := a.d.Prefs.LocalAssets(); streamOff {
+		t.Error("streaming stayed off with nothing local to read")
+	}
+}
+
+// TestStreamOffSwitchesLocalSourcesOn: switching streaming off with folders and packages off switches both on, and
+// switching both off again brings streaming back.
+func TestStreamOffSwitchesLocalSourcesOn(t *testing.T) {
+	a := headlessProbeApp(t, assets.NewLocalFetcher([]string{t.TempDir()}), false)
+	mounts := []string{t.TempDir()}
+	a.d.AutoMounts = []string{t.TempDir()}
+	a.setPackagesInUse(false)
+	a.setSources(false, true, mounts)
+
+	a.setStreaming(false, mounts)
+	snap := a.d.Prefs.Load()
+	if !snap.LocalAssetsLayered || snap.PackagesOff {
+		t.Errorf("streaming off left folders=%v packages=%v, want both on", snap.LocalAssetsLayered, !snap.PackagesOff)
+	}
+	if got := a.assetSourceMode(); got != assetSrcLocal {
+		t.Errorf("mode %d after streaming off, want local only (%d)", got, assetSrcLocal)
+	}
+
+	a.setPackagesInUse(false)
+	if got := a.assetSourceMode(); got != assetSrcLocal {
+		t.Errorf("packages off with folders on: mode %d, want local only (%d)", got, assetSrcLocal)
+	}
+	a.setSources(false, false, mounts)
+	if streamOff, _ := a.d.Prefs.LocalAssets(); streamOff {
+		t.Error("folders and packages both off, but streaming stayed off")
+	}
+}
+
+// TestPackagesAreSearchedWithFoldersOff: the packages switch works on its own, and folders on their own.
+func TestPackagesAreSearchedWithFoldersOff(t *testing.T) {
+	a := headlessProbeApp(t, assets.NewLocalFetcher([]string{t.TempDir()}), false)
+	mount, pkg := t.TempDir(), t.TempDir()
+	a.d.AutoMounts = []string{pkg}
+
+	a.setSources(false, true, []string{mount})
+	if _, got := a.layeredAssets(); !slices.Equal(got, []string{pkg}) {
+		t.Errorf("folders off, packages on: searched %v, want only the package", got)
+	}
+	a.setPackagesInUse(false)
+	a.setSources(true, true, []string{mount})
+	if _, got := a.layeredAssets(); !slices.Equal(got, []string{mount}) {
+		t.Errorf("folders on, packages off: searched %v, want only the folder", got)
+	}
+}
+
+// TestFirstFolderSwitchesFoldersOn: a folder added to an empty list is meant to be used.
+func TestFirstFolderSwitchesFoldersOn(t *testing.T) {
+	a := headlessProbeApp(t, assets.NewLocalFetcher([]string{t.TempDir()}), false)
+	if a.d.Prefs.Load().LocalAssetsLayered {
+		t.Fatal("folders start on")
+	}
+	if _, ok := a.addSource("", t.TempDir(), nil); !ok {
+		t.Fatal("the folder was refused")
+	}
+	if !a.d.Prefs.Load().LocalAssetsLayered {
+		t.Error("adding the first folder left folders switched off")
 	}
 }
 
@@ -37,7 +112,7 @@ func TestAssetSourceLayeredCoversTheServer(t *testing.T) {
 
 	dir := t.TempDir()
 	writeUIPack(t, dir, "characters/witch/(a)normal.png")
-	a.setAssetSourceMode(assetSrcLayered, []string{dir})
+	a.setSources(true, true, []string{dir})
 
 	if !a.d.Manager.PackCovers(origin + "characters/witch/(a)normal") {
 		t.Error("the layered folder does not answer for the server's asset")
@@ -52,7 +127,7 @@ func TestAssetSourceStreamModeNeverLayers(t *testing.T) {
 
 	dir := t.TempDir()
 	writeUIPack(t, dir, "characters/witch/(a)normal.png")
-	a.setAssetSourceMode(assetSrcStream, []string{dir})
+	a.setSources(false, true, []string{dir})
 
 	if a.d.Manager.PackCovers(origin + "characters/witch/(a)normal") {
 		t.Error("Stream mode layered the folder over the server")
@@ -99,7 +174,7 @@ func TestSettingsCopyExplainsZipAndPriority(t *testing.T) {
 func TestMoveMountChangesTheSearchOrder(t *testing.T) {
 	a := headlessProbeApp(t, assets.NewLocalFetcher([]string{t.TempDir()}), false)
 	first, second, third := t.TempDir(), t.TempDir(), t.TempDir()
-	a.setAssetSourceMode(assetSrcLayered, []string{first, second, third})
+	a.setSources(true, true, []string{first, second, third})
 
 	const from, to = 2, 0
 	a.moveMount(from, to)
@@ -140,23 +215,6 @@ func TestAddSourceRoutesByWhatWasTyped(t *testing.T) {
 	}
 	if _, ok := a.addSource(key, dir, []string{dir}); ok {
 		t.Error("a folder already in the list was added again")
-	}
-}
-
-// TestModeAfterToggle: the two toggles never leave a source with nothing to read.
-func TestModeAfterToggle(t *testing.T) {
-	for _, tc := range []struct {
-		folders, stream bool
-		want            int
-	}{
-		{true, true, assetSrcLayered},
-		{true, false, assetSrcLocal},
-		{false, true, assetSrcStream},
-		{false, false, assetSrcStream},
-	} {
-		if got := modeAfterToggle(tc.folders, tc.stream); got != tc.want {
-			t.Errorf("folders=%v stream=%v: mode %d, want %d", tc.folders, tc.stream, got, tc.want)
-		}
 	}
 }
 

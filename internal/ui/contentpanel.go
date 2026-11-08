@@ -397,10 +397,9 @@ func (a *App) useLocalSetupPath() {
 	if path == "" {
 		return // empty input: nothing to set
 	}
-	enabled, mounts := a.d.Prefs.LocalAssets()
-	a.d.Prefs.SetLocalAssets(enabled, append(mounts, path)) // enabled UNCHANGED
-	a.rebuildAssetOrigin()                                  // pushes the new overlay into the Manager
-	s.originLocal = a.mountOrigin()                         // recompute against the now-configured base
+	_, mounts := a.d.Prefs.LocalAssets()
+	a.saveMounts(append(mounts, path)) // pushes the new overlay into the Manager
+	s.originLocal = a.mountOrigin()    // recompute against the now-configured base
 	s.localSetupInput = ""
 	s.localSetupOpen = false
 	// Clear any stale sticky useLocal, which would trip switchContentSource's "already on this source" check and skip

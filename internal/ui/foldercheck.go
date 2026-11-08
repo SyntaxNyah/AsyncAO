@@ -77,8 +77,7 @@ func (a *App) replaceMount(i int, path string) {
 	}
 	next := slices.Clone(mounts)
 	next[i] = path
-	a.d.Prefs.SetLocalAssets(a.assetSourceMode() == assetSrcLocal, next)
-	a.rebuildAssetOrigin()
+	a.saveMounts(next)
 }
 
 // resolveDroppedMount turns a drop on the Assets tab into a folder off-thread, as a stat on a network share must not

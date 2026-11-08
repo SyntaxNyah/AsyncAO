@@ -74,8 +74,7 @@ func (a *App) pollMountPick() {
 		_, mounts := a.d.Prefs.LocalAssets()
 		next, added, refused := mergeMounts(mounts, pick.paths, config.LocalMountCap)
 		if added > 0 {
-			a.d.Prefs.SetLocalAssets(a.assetSourceMode() == assetSrcLocal, next)
-			a.rebuildAssetOrigin()
+			a.saveMounts(next)
 		}
 		settings.statusLine = "Added " + strconv.Itoa(added) + " to your folders."
 		if refused > 0 {

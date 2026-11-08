@@ -244,8 +244,10 @@ type Settings struct {
 	EmoteFavs                map[string][]int             `json:"emoteFavorites,omitempty"`
 	EmoteFavOnly             bool                         `json:"emoteFavOnly"`
 	EmoteFavStars            bool                         `json:"emoteFavStars"`
-	LocalAssetsEnabled       bool                         `json:"localAssetsEnabled"`
-	LocalAssetsLayered       bool                         `json:"localAssetsLayered"`
+	// LocalAssetsEnabled is "Stream from the web" switched off; LocalAssetsLayered is "Use my folders and packs".
+	// The packages folder has its own switch, PackagesOff, so the three are independent.
+	LocalAssetsEnabled bool `json:"localAssetsEnabled"`
+	LocalAssetsLayered bool `json:"localAssetsLayered"`
 	// PackagesOff leaves the packages/ folder out of the search order; stored inverted so packages default on.
 	PackagesOff                  bool                      `json:"packagesOff,omitempty"`
 	EmoteCaptions                bool                      `json:"emoteCaptions"`
@@ -306,14 +308,16 @@ type Settings struct {
 	BlipSpeedDefaultMigrated     bool                      `json:"blipSpeedDefaultMigrated"`
 	DeskManifestDefaultMigrated  bool                      `json:"deskManifestDefaultMigrated"`
 	DetailedLogDefaultMigrated   bool                      `json:"detailedLogDefaultMigrated"`
-	SmoothLogScroll              bool                      `json:"smoothLogScroll"`
-	MusicHistory                 bool                      `json:"musicHistory"`
-	MusicStreaming               bool                      `json:"musicStreaming"`
-	MusicAcrossTabs              bool                      `json:"musicAcrossTabs"`
-	ShowMissingPlaceholder       bool                      `json:"showMissingPlaceholder"`
-	ErrorSpriteCustom            bool                      `json:"errorSpriteCustom"`
-	ErrorSpriteFile              string                    `json:"errorSpritePath,omitempty"`
-	MusicHosts                   []string                  `json:"musicHosts,omitempty"`
+	// AssetSwitchesMigrated stamps the move from three asset-source modes to independent switches.
+	AssetSwitchesMigrated  bool     `json:"assetSwitchesMigrated"`
+	SmoothLogScroll        bool     `json:"smoothLogScroll"`
+	MusicHistory           bool     `json:"musicHistory"`
+	MusicStreaming         bool     `json:"musicStreaming"`
+	MusicAcrossTabs        bool     `json:"musicAcrossTabs"`
+	ShowMissingPlaceholder bool     `json:"showMissingPlaceholder"`
+	ErrorSpriteCustom      bool     `json:"errorSpriteCustom"`
+	ErrorSpriteFile        string   `json:"errorSpritePath,omitempty"`
+	MusicHosts             []string `json:"musicHosts,omitempty"`
 }
 
 // Load returns the shared current snapshot, seeding defaults on first call; callers must not mutate or retain it.

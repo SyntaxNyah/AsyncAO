@@ -1,88 +1,52 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
 )
 
-// v1.89.0 stores the asset-source mode as TWO independent bools rather than a
-// tri-state enum, so that localAssetsEnabled keeps its exact pre-1.89 meaning and
-// no saved prefs.json changes meaning on upgrade. That buys zero migration at the
-// cost of one reachable ambiguous combination, so these tests pin the
-// normalization, the cap policy, and the reset behaviour.
+// The asset source is three independent switches: localAssetsLayered is "Use my folders and packs",
+// localAssetsEnabled is "Stream from the web" switched off, and packagesOff leaves the packages folder out. These
+// tests pin their independence, the cap policy, the reset behaviour and the migration from the three old modes.
 
-// TestLayeredAssetsIsInertWithoutMounts pins that the mode is only "on" when it
-// can actually do something: layering with an empty mount list must report false,
-// or the UI would claim a pack is active when there is nothing to read.
-func TestLayeredAssetsIsInertWithoutMounts(t *testing.T) {
+func newLocalPrefs(t *testing.T) *AssetPreferences {
+	t.Helper()
 	p, err := New(filepath.Join(t.TempDir(), PrefsFileName))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.Close()
-
-	p.SetLayeredAssets(true)
-	if on, _ := p.LayeredAssets(); on {
-		t.Error("layering reports ON with no mounts configured")
-	}
-	if !p.SetLocalAssets(false, []string{t.TempDir()}) {
-		t.Fatal("adding one mount was refused")
-	}
-	if on, mounts := p.LayeredAssets(); !on || len(mounts) != 1 {
-		t.Errorf("layering with a mount = %v (%d mounts), want true (1)", on, len(mounts))
-	}
+	t.Cleanup(func() { _ = p.Close() })
+	return p
 }
 
-// TestLayeredAndLocalOnlyAreMutuallyExclusive pins the resolution of the
-// reachable fourth state. Local-only builds a local-mode Manager whose URLs
-// already carry the local:// origin; layering a mount origin OVER a mount origin
-// would double-serve, so exactly one of them may be live and Local-only wins.
-func TestLayeredAndLocalOnlyAreMutuallyExclusive(t *testing.T) {
-	p, err := New(filepath.Join(t.TempDir(), PrefsFileName))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer p.Close()
+// TestFolderAndStreamSwitchesAreIndependent: switching folders on or off never touches streaming, and back.
+func TestFolderAndStreamSwitchesAreIndependent(t *testing.T) {
+	p := newLocalPrefs(t)
 	mount := t.TempDir()
 
-	// Selecting layered clears the exclusive flag.
-	p.SetLocalAssets(true, []string{mount})
+	p.SetLocalAssets(true, []string{mount}) // streaming off
+	p.SetLayeredAssets(false)               // folders off
+	if streamOff, _ := p.LocalAssets(); !streamOff {
+		t.Error("switching folders off turned streaming back on")
+	}
 	p.SetLayeredAssets(true)
-	if enabled, _ := p.LocalAssets(); enabled {
-		t.Error("selecting layered left the exclusive no-streaming flag set")
+	if streamOff, _ := p.LocalAssets(); !streamOff {
+		t.Error("switching folders on turned streaming back on")
 	}
-	if on, _ := p.LayeredAssets(); !on {
-		t.Error("layered did not take effect")
+	if !p.SetLocalMounts([]string{mount, t.TempDir()}) {
+		t.Fatal("adding a folder was refused")
 	}
-
-	// And if both somehow end up set (a hand-edited prefs.json), Local-only wins
-	// and layering reports inert — one defined meaning, no crash. Write through Update so
-	// the snapshot the getters now read stays in sync (the setter's mutual-exclusion is
-	// bypassed on purpose, like a hand-edited file).
-	p.Update(func(s *Settings) {
-		s.LocalAssetsEnabled = true
-		s.LocalAssetsLayered = true
-	})
-	if on, _ := p.LayeredAssets(); on {
-		t.Error("both bools set: layering must be inert, Local-only wins")
-	}
-	if enabled, _ := p.LocalAssets(); !enabled {
-		t.Error("both bools set: Local-only must stay in force")
+	if streamOff, mounts := p.LocalAssets(); !streamOff || len(mounts) != 2 || !p.Load().LocalAssetsLayered {
+		t.Errorf("SetLocalMounts changed a switch: streamOff=%v folders=%v mounts=%d", streamOff, p.Load().LocalAssetsLayered, len(mounts))
 	}
 }
 
-// TestSetLocalAssetsRefusesGrowthButAllowsShrink pins the cap policy. A flat
-// length rejection would brick any user who already has more mounts saved than
-// the cap: the mode toggle, the Remove button and the downloader all push the
-// WHOLE list through this setter, so they could never prune back under it.
+// TestSetLocalAssetsRefusesGrowthButAllowsShrink pins the cap policy. A flat length rejection would brick any user
+// who already has more mounts saved than the cap, since every edit pushes the whole list through this setter.
 func TestSetLocalAssetsRefusesGrowthButAllowsShrink(t *testing.T) {
-	p, err := New(filepath.Join(t.TempDir(), PrefsFileName))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer p.Close()
-
+	p := newLocalPrefs(t)
 	full := make([]string, LocalMountCap)
 	for i := range full {
 		full[i] = "/mnt/pack" + strconv.Itoa(i)
@@ -90,76 +54,85 @@ func TestSetLocalAssetsRefusesGrowthButAllowsShrink(t *testing.T) {
 	if !p.SetLocalAssets(false, full) {
 		t.Fatal("a list exactly at the cap was refused")
 	}
-	if p.SetLocalAssets(false, append(append([]string{}, full...), "/mnt/one-too-many")) {
+	if p.SetLocalMounts(append(append([]string{}, full...), "/mnt/one-too-many")) {
 		t.Error("growing past the cap was accepted")
 	}
 	if _, got := p.LocalAssets(); len(got) != LocalMountCap {
 		t.Errorf("the refused add mutated the list: %d entries", len(got))
 	}
 
-	// An over-cap list already on disk (or from an older build) must stay
-	// editable: same-length calls and shrinks always succeed.
+	// An over-cap list already on disk must stay editable: same-length calls and shrinks always succeed.
 	over := append(append([]string{}, full...), "/mnt/legacy-extra")
 	p.Update(func(sn *Settings) { sn.LocalAssetsPaths = over })
 	if !p.SetLocalAssets(true, over) {
-		t.Error("toggling the mode on an over-cap saved list was refused — the user is locked out")
+		t.Error("switching streaming on an over-cap saved list was refused, which locks the user out")
 	}
-	if !p.SetLocalAssets(true, over[:len(over)-1]) {
-		t.Error("REMOVING a mount from an over-cap list was refused — the user can never prune")
+	if !p.SetLocalMounts(over[:len(over)-1]) {
+		t.Error("removing a mount from an over-cap list was refused, so the user can never prune")
 	}
 }
 
-// TestLayeredSurvivesSettingsReset pins that a Reset does not silently change
-// which source a user's assets come from. Without LocalAssetsLayered in the
-// preserved set, a reset would keep the mounts but drop the mode that reads
-// them, which presents as "my pack stopped working" with the folders still
-// listed in Settings.
-func TestLayeredSurvivesSettingsReset(t *testing.T) {
-	p, err := New(filepath.Join(t.TempDir(), PrefsFileName))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer p.Close()
-
-	mount := t.TempDir()
-	p.SetLocalAssets(false, []string{mount})
+// TestSwitchesSurviveSettingsReset: a Reset keeps the folders and all three switches, or the folders stay listed
+// while nothing reads them, which reads as "my pack stopped working".
+func TestSwitchesSurviveSettingsReset(t *testing.T) {
+	p := newLocalPrefs(t)
+	p.SetLocalAssets(true, []string{t.TempDir()})
 	p.SetLayeredAssets(true)
+	p.Update(func(sn *Settings) { sn.PackagesOff = true })
 
 	p.ResetSettings()
 
-	on, mounts := p.LayeredAssets()
-	if len(mounts) != 1 {
-		t.Fatalf("the mount list did not survive the reset: %v", mounts)
-	}
-	if !on {
-		t.Error("the mounts survived the reset but the mode that reads them did not")
+	snap := p.Load()
+	if len(snap.LocalAssetsPaths) != 1 || !snap.LocalAssetsLayered || !snap.LocalAssetsEnabled || !snap.PackagesOff {
+		t.Errorf("after reset: mounts=%v folders=%v streamOff=%v packagesOff=%v, want all kept",
+			snap.LocalAssetsPaths, snap.LocalAssetsLayered, snap.LocalAssetsEnabled, snap.PackagesOff)
 	}
 }
 
-// TestLocalAssetsLayeredRoundTripsToDisk is the belt-and-braces companion to the
-// reflective TestEverySavedPreferenceIsAlsoLoaded: it proves the field actually
-// survives a real save/reload cycle, not just that both structs declare it.
-func TestLocalAssetsLayeredRoundTripsToDisk(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, PrefsFileName)
-	mount := t.TempDir()
-
+// TestFolderSwitchRoundTripsToDisk: the folder switch survives a real save and reload.
+func TestFolderSwitchRoundTripsToDisk(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
 	p, err := New(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p.SetLocalAssets(false, []string{mount})
+	p.SetLocalAssets(false, []string{t.TempDir()})
 	p.SetLayeredAssets(true)
 	if err := p.Close(); err != nil { // Close flushes the debounced saver
 		t.Fatal(err)
 	}
-
 	reloaded, err := New(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer reloaded.Close()
-	if on, mounts := reloaded.LayeredAssets(); !on || len(mounts) != 1 {
-		t.Errorf("after reload: layered=%v mounts=%v, want true with 1 mount", on, mounts)
+	if !reloaded.Load().LocalAssetsLayered {
+		t.Error("the folder switch did not survive a reload")
+	}
+}
+
+// TestOldLocalOnlyModeKeepsItsFolders: "Only use my folders" stored the no-streaming flag alone, so the migration
+// switches folders on for it once; a file that already has the stamp is taken as it is.
+func TestOldLocalOnlyModeKeepsItsFolders(t *testing.T) {
+	const fileMode = 0o600
+	for _, tc := range []struct {
+		name, file  string
+		wantFolders bool
+	}{
+		{"old local-only mode", `{"localAssetsEnabled": true, "localAssetsPaths": ["x"]}`, true},
+		{"old stream mode", `{"localAssetsPaths": ["x"]}`, false},
+		{"new: packages only, no stream", `{"assetSwitchesMigrated": true, "localAssetsEnabled": true, "localAssetsPaths": ["x"]}`, false},
+	} {
+		path := filepath.Join(t.TempDir(), PrefsFileName)
+		if err := os.WriteFile(path, []byte(tc.file), fileMode); err != nil {
+			t.Fatal(err)
+		}
+		p, err := load(path)
+		if err != nil {
+			t.Fatalf("%s: load: %v", tc.name, err)
+		}
+		if got := p.Load().LocalAssetsLayered; got != tc.wantFolders {
+			t.Errorf("%s: folders switch = %v, want %v", tc.name, got, tc.wantFolders)
+		}
 	}
 }

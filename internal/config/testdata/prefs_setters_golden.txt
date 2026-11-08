@@ -326,6 +326,9 @@ SetLegacyDevTheme|zero|
 SetLegacyDevTheme|valid|LegacyDevTheme=true
 SetLocalAssets|zero|
 SetLocalAssets|valid|LocalAssetsEnabled=true;LocalAssetsPaths=[v]
+SetLocalMounts|zero|
+SetLocalMounts|valid|LocalAssetsPaths=[v]
+SetLocalMounts|nil|
 SetMacros|zero|UserMacros=[]
 SetMacros|valid|UserMacros=[]
 SetMacros|nil|UserMacros=[]

@@ -403,6 +403,7 @@ func TestDemoDefaultOriginPolicy(t *testing.T) {
 			a := testTabApp(t)
 			if tc.mounts {
 				a.d.Prefs.SetLocalAssets(true, []string{mount})
+				a.d.Prefs.SetLayeredAssets(true)
 			}
 			if tc.connected {
 				a.urls = courtroom.NewURLBuilder(sessionOrigin)
@@ -451,6 +452,7 @@ func TestMountOriginIgnoresEnabledFlag(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			a := testTabApp(t)
 			a.d.Prefs.SetLocalAssets(false, []string{mount})
+			a.d.Prefs.SetLayeredAssets(true)
 			if connected {
 				a.urls = courtroom.NewURLBuilder(sessionOrigin)
 			}
@@ -477,6 +479,7 @@ func TestDemoImportUnderMountsWarnsPositively(t *testing.T) {
 	a := testTabApp(t)
 	mount := t.TempDir()
 	a.d.Prefs.SetLocalAssets(true, []string{mount})
+	a.d.Prefs.SetLayeredAssets(true)
 
 	demo := strings.Join([]string{
 		"SC#Phoenix#%",

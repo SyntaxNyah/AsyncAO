@@ -135,18 +135,14 @@ func scanLocalCharFolders(mounts []string) iniBaseScan {
 	return out
 }
 
-// baseMounts is empty unless a local mode is on: both accessors return the stored paths whatever the flag says, and
-// listing mounts the asset pipeline isn't reading offers characters that fail to load. LayeredAssets normalizes the
-// both-set state, so asking it second is enough. This copies; the mode-to-list mapping must agree with
-// config.BaseMountsEqual.
+// baseMounts is the player's folders while "Use my folders and packs" is on, else empty: listing folders the asset
+// pipeline isn't reading offers characters that fail to load. This copies; it must agree with config.BaseMountsEqual.
 func (a *App) baseMounts() []string {
-	if on, mounts := a.d.Prefs.LocalAssets(); on {
-		return mounts
+	if !a.d.Prefs.Load().LocalAssetsLayered {
+		return nil
 	}
-	if layered, mounts := a.d.Prefs.LayeredAssets(); layered {
-		return mounts
-	}
-	return nil
+	_, mounts := a.d.Prefs.LocalAssets()
+	return mounts
 }
 
 // ensureLocalCharFolders starts a scan when the mount list changed. It uses config.BaseMountsEqual on the unchanged

@@ -879,6 +879,7 @@ func defaultSettings() *Settings {
 		BlipSpeedDefaultMigrated:     true,
 		DeskManifestDefaultMigrated:  true,
 		DetailedLogDefaultMigrated:   true,
+		AssetSwitchesMigrated:        true,
 		MusicHistory:                 defaultMusicHistory,
 		MusicStreaming:               defaultMusicStreaming,
 		ShowMissingPlaceholder:       defaultShowMissingPlaceholder,
@@ -1038,7 +1039,8 @@ var resetContentFields = map[string]bool{
 	"OpenTabs":           true,
 	"LocalAssetsPaths":   true, // local mount config
 	"LocalAssetsEnabled": true,
-	"LocalAssetsLayered": true, // ...and the mode that reads them; without this a Reset drops a layered user to stream-only while KEEPING their mounts, which reads as "my pack stopped working"
+	"LocalAssetsLayered": true, // ...and the switches that read them; without these a Reset drops a user to stream-only while KEEPING their mounts, which reads as "my pack stopped working"
+	"PackagesOff":        true,
 	"Showname":           true, // your identity
 	"OOCName":            true,
 }
@@ -4007,7 +4009,7 @@ func dropLearnedType(sn *Settings, typeName string) {
 	}
 }
 
-// LocalAssets reports no-streaming mode; mounts are searched in order, mirroring AO2-Client mount paths.
+// LocalAssets reports streaming switched off, and the player's folders, searched in order like AO2-Client mount paths.
 func (p *AssetPreferences) LocalAssets() (enabled bool, mounts []string) {
 	snap := p.Load()
 
@@ -4016,7 +4018,8 @@ func (p *AssetPreferences) LocalAssets() (enabled bool, mounts []string) {
 	return snap.LocalAssetsEnabled, out
 }
 
-// SetLocalAssets refuses only growth past the cap; a flat length check would brick a user already over it.
+// SetLocalAssets sets streaming off and the player's folders; it refuses only growth past the cap, as a flat length
+// check would brick a user already over it.
 func (p *AssetPreferences) SetLocalAssets(enabled bool, mounts []string) bool {
 	accepted := true
 	p.Update(func(sn *Settings) {
@@ -4030,33 +4033,23 @@ func (p *AssetPreferences) SetLocalAssets(enabled bool, mounts []string) bool {
 	return accepted
 }
 
-// LayeredAssets reports reading mounts alongside the stream, the user's files winning at the same path.
-func (p *AssetPreferences) LayeredAssets() (layered bool, mounts []string) {
-	snap := p.Load()
-
-	out := make([]string, len(snap.LocalAssetsPaths))
-	copy(out, snap.LocalAssetsPaths)
-	return snap.LocalAssetsLayered && !snap.LocalAssetsEnabled && len(out) > 0, out
+// SetLocalMounts replaces the player's folders, leaving the switches; it refuses growth past the cap like
+// SetLocalAssets.
+func (p *AssetPreferences) SetLocalMounts(mounts []string) bool {
+	enabled, _ := p.LocalAssets()
+	return p.SetLocalAssets(enabled, mounts)
 }
 
-// SetLayeredAssets clears the no-streaming flag, so the two bools never persist the ambiguous both-set state.
+// SetLayeredAssets switches "Use my folders and packs" on or off; streaming is left as it is.
 func (p *AssetPreferences) SetLayeredAssets(layered bool) {
-	p.Update(func(sn *Settings) {
-		if sn.LocalAssetsLayered == layered && !(layered && sn.LocalAssetsEnabled) {
-			return
-		}
-		sn.LocalAssetsLayered = layered
-		if layered {
-			sn.LocalAssetsEnabled = false // the radio is exclusive; keep the store unambiguous
-		}
-	})
+	p.Update(func(sn *Settings) { sn.LocalAssetsLayered = layered })
 }
 
 // BaseMountsEqual compares without copying, as internal/ui asks once per frame; mirrors ui's baseMounts.
 func (p *AssetPreferences) BaseMountsEqual(want []string) bool {
 	snap := p.Load()
 
-	if !snap.LocalAssetsEnabled && !(snap.LocalAssetsLayered && len(snap.LocalAssetsPaths) > 0) {
+	if !snap.LocalAssetsLayered {
 		return len(want) == 0
 	}
 	return slices.Equal(snap.LocalAssetsPaths, want)

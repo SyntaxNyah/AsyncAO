@@ -127,27 +127,22 @@ func TestBaseMountsEqualMatchesBaseMounts(t *testing.T) {
 
 	paths := []string{"C:\\packs\\one", "C:\\packs\\two"}
 	for _, tc := range []struct {
-		name            string
-		local, layered  bool
-		mounts          []string
-		wantScannedList bool // true = the two mounts, false = nothing to scan
+		name               string
+		streamOff, folders bool
+		mounts             []string
+		wantScannedList    bool // true = the two mounts, false = nothing to scan
 	}{
-		{"streaming, no mounts saved", false, false, nil, false},
-		{"streaming with mounts saved (mode is OFF, so nothing is scanned)", false, false, paths, false},
-		{"local-only", true, false, paths, true},
-		{"layered", false, true, paths, true},
-		{"layered with no mounts is inert", false, true, nil, false},
-		{"both set: local-only wins, and it yields the same list anyway", true, true, paths, true},
+		{"no folders saved", false, false, nil, false},
+		{"folders saved but switched off, so nothing is scanned", false, false, paths, false},
+		{"folders off and streaming off: packages only", true, false, paths, false},
+		{"folders on, streaming", false, true, paths, true},
+		{"folders on, streaming off", true, true, paths, true},
+		{"folders on with none saved is inert", false, true, nil, false},
 	} {
-		if !prefs.SetLocalAssets(tc.local, tc.mounts) {
+		if !prefs.SetLocalAssets(tc.streamOff, tc.mounts) {
 			t.Fatalf("%s: SetLocalAssets refused", tc.name)
 		}
-		prefs.SetLayeredAssets(tc.layered)
-		if tc.local && tc.layered { // SetLayeredAssets clears the exclusive flag; put it back
-			if !prefs.SetLocalAssets(true, tc.mounts) {
-				t.Fatalf("%s: SetLocalAssets refused", tc.name)
-			}
-		}
+		prefs.SetLayeredAssets(tc.folders)
 		got := a.baseMounts()
 		want := []string(nil)
 		if tc.wantScannedList {

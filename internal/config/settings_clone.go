@@ -1451,6 +1451,9 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.DetailedLogDefaultMigrated != o.DetailedLogDefaultMigrated {
 		return false
 	}
+	if s.AssetSwitchesMigrated != o.AssetSwitchesMigrated {
+		return false
+	}
 	if s.SmoothLogScroll != o.SmoothLogScroll {
 		return false
 	}

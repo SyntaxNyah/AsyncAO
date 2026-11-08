@@ -7,16 +7,17 @@ for art, sound and music, searched top to bottom:
 2. Packages found in the `packages/` folder next to AsyncAO.
 3. The web: the server's own asset host, then any mirrors you added for it.
 
-Two switches control the halves of the list:
+Three independent switches decide what is searched:
 
 | Switch | What it does |
 |---|---|
-| **Use my folders and packs** | Off *(default)*: every asset streams from the web. On: your folders are read first. |
-| **Stream from the web** | On *(default)*: anything your folders don't have streams. Off: nothing streams, for legacy servers that provide no asset URL at all. |
+| **Use my folders and packs** | On: your folders and `.zip` packs are read first. Adding your first folder switches it on. |
+| **Use packages** | On *(default)*: the packages folder is read after your folders, whether or not they are on. |
+| **Stream from the web** | On *(default)*: anything your files don't have streams. Off: nothing streams, for legacy servers that provide no asset URL at all; turning it off switches your folders and packages on, and turning both of those off switches it back on. |
 
 Add a folder, a `.zip` or a mirror's `https://` address in the field under the
-list, pick folders with **Add folders…**, or drag a folder or `.zip` onto the
-Assets tab.
+list, pick folders with **Add folders…** or `.zip` packs with **Add packs…**, or
+drag a folder or `.zip` onto the Assets tab.
 
 Each folder is checked when it's added. The arrow on its **Folder** or **ZIP**
 tag shows what it contains (Characters, Backgrounds, Sounds, Evidence, Misc). A

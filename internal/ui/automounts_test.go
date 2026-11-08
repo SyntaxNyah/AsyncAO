@@ -15,6 +15,7 @@ func TestLocalAssetsAppendsAutoMounts(t *testing.T) {
 	if !a.d.Prefs.SetLocalAssets(true, []string{mount}) {
 		t.Fatal("mount rejected")
 	}
+	a.d.Prefs.SetLayeredAssets(true)
 	a.d.AutoMounts = []string{pkg}
 
 	enabled, mounts := a.localAssets()
@@ -46,8 +47,8 @@ func TestLayeredAssetsAppendsAutoMounts(t *testing.T) {
 	}
 }
 
-// TestPackagesAloneCanBeUsed: with no folders of your own, packages still count as something local to read, so the
-// folder and stream switches can be turned on.
+// TestPackagesAloneCanBeUsed: with no folders of your own, packages still count as something local to read, so
+// streaming can stay off.
 func TestPackagesAloneCanBeUsed(t *testing.T) {
 	a := testTabApp(t)
 	if a.haveLocalSources() {
@@ -55,7 +56,7 @@ func TestPackagesAloneCanBeUsed(t *testing.T) {
 	}
 	a.d.AutoMounts = []string{t.TempDir()}
 	if !a.haveLocalSources() {
-		t.Error("packages alone don't count as a local source, so their switches stay greyed out")
+		t.Error("packages alone don't count as a local source, so streaming is forced back on")
 	}
 }
 
@@ -69,11 +70,11 @@ func TestPackagesSwitchLeavesThemOut(t *testing.T) {
 	a.d.Prefs.SetLayeredAssets(true)
 	a.d.AutoMounts = []string{pkg}
 
-	a.setPackagesInUse(false, []string{mount})
+	a.setPackagesInUse(false)
 	if _, mounts := a.layeredAssets(); !reflect.DeepEqual(mounts, []string{mount}) {
 		t.Errorf("with packages off, layeredAssets = %v, want only %v", mounts, []string{mount})
 	}
-	a.setPackagesInUse(true, []string{mount})
+	a.setPackagesInUse(true)
 	if _, mounts := a.layeredAssets(); !reflect.DeepEqual(mounts, []string{mount, pkg}) {
 		t.Errorf("with packages back on, layeredAssets = %v", mounts)
 	}
@@ -84,9 +85,9 @@ func TestPackagesSwitchLeavesThemOut(t *testing.T) {
 func TestPackagesOffNeverLeavesNothingToRead(t *testing.T) {
 	a := testTabApp(t)
 	a.d.AutoMounts = []string{t.TempDir()}
-	a.setAssetSourceMode(assetSrcLocal, nil)
+	a.setSources(true, false, nil)
 
-	a.setPackagesInUse(false, nil)
+	a.setPackagesInUse(false)
 	if got := a.assetSourceMode(); got != assetSrcStream {
 		t.Errorf("mode = %d after the last local source went away, want streaming (%d)", got, assetSrcStream)
 	}

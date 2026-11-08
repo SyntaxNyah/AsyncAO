@@ -27,7 +27,7 @@ func layeredFolderApp(t *testing.T, origin string) (*App, string) {
 	a := headlessProbeApp(t, assets.NewLocalFetcher([]string{t.TempDir()}), false)
 	a.urls = courtroom.NewURLBuilder(origin)
 	dir := t.TempDir()
-	a.setAssetSourceMode(assetSrcLayered, []string{dir})
+	a.setSources(true, true, []string{dir})
 	return a, dir
 }
 
@@ -43,7 +43,7 @@ func TestFolderOriginIsTheNormalizedServerOrigin(t *testing.T) {
 func TestNoFoldersUnmountsEverything(t *testing.T) {
 	a, _ := layeredFolderApp(t, "http://h/base/")
 
-	a.setAssetSourceMode(assetSrcLayered, nil)
+	a.setSources(true, true, nil)
 	if mounts, _, _ := a.d.Manager.FolderStatus(); len(mounts) != 0 {
 		t.Errorf("mounts %v after the last folder was removed", mounts)
 	}

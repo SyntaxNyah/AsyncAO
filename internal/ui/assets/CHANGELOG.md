@@ -39,9 +39,15 @@ features few players used.
 - The **Use my own AO files…** setup window is gone; the list does its job.
 - Edits to your files show by themselves when you switch back to AsyncAO, so
   **Check folders now** is gone. Only files you changed are reloaded.
-- The packages folder is one row with its own **Turn off** / **Turn on**
-  button. Packages alone can now be switched on: the folder switch used to stay
-  greyed out without a folder of your own.
+- The packages folder has its own **Use packages** switch above its row,
+  separate from **Use my folders and packs**: either can be on without the
+  other. Packages alone can now be used; the folder switch used to stay greyed
+  out without a folder of your own, so they were never read.
+- **Stream from the web** is never greyed out. Switching it off switches your
+  folders and packages on, and switching both of those off brings streaming
+  back.
+- **Only use my folders** from earlier versions carries over: your folders stay
+  switched on with streaming off.
 - **Cache** lists each cache with what it holds now: art and files in memory,
   the disk cache, missing assets and learned formats, each with its Clear or
   Retry and its settings under its arrow. The texture memory budget, how long
